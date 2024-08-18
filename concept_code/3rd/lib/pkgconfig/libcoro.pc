@@ -1,0 +1,9 @@
+prefix="D:/workspace/mysrc/fireball/concept_code/3rd"
+libdir="${prefix}/lib"
+includedir="${prefix}/include"
+
+Name: libcoro
+Description: C++20 coroutine library
+Version: 0.11.1
+Cflags: -I${includedir}
+Libs: -L${libdir} -llibcoro

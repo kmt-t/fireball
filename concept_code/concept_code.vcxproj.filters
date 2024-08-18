@@ -1,0 +1,84 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="ソース ファイル">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="ヘッダー ファイル">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
+    </Filter>
+    <Filter Include="リソース ファイル">
+      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    </Filter>
+    <Filter Include="ソース ファイル\allocator">
+      <UniqueIdentifier>{8df744d5-938c-4ef5-8285-e56e7d72ee4a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ソース ファイル\devices.vmcore">
+      <UniqueIdentifier>{64515c90-f4ad-4444-b3bb-902d9890a49f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ソース ファイル\services">
+      <UniqueIdentifier>{1fe4f265-1f16-49a4-ba69-e69f44f6a035}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ヘッダー ファイル\alllocator">
+      <UniqueIdentifier>{fd06db2c-8b0f-4d0e-aa63-ef19dd52e0f4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ヘッダー ファイル\devices.vmcore">
+      <UniqueIdentifier>{a81f175d-2762-40bb-9354-d2456cf0a877}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="ヘッダー ファイル\services">
+      <UniqueIdentifier>{cba1b983-55ef-4bb3-90be-159ca54c3ff8}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="inc\allocator\bump_allocator.hxx">
+      <Filter>ヘッダー ファイル\alllocator</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\allocator\stdcxx_allocator.hxx">
+      <Filter>ヘッダー ファイル\alllocator</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\allocator\reserved_allocator.hxx">
+      <Filter>ヘッダー ファイル\alllocator</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\allocator\specified_allocator.hxx">
+      <Filter>ヘッダー ファイル\alllocator</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\devices\vmcore\vmdport.hxx">
+      <Filter>ヘッダー ファイル\devices.vmcore</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\devices\vmcore\vmirq.hxx">
+      <Filter>ヘッダー ファイル\devices.vmcore</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\devices\vmcore\vmtimer.hxx">
+      <Filter>ヘッダー ファイル\devices.vmcore</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\services\log_service.hxx">
+      <Filter>ヘッダー ファイル\services</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\commons.hxx">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\allocator\malloc.c">
+      <Filter>ソース ファイル\allocator</Filter>
+    </ClCompile>
+    <ClCompile Include="src\devices\vmcore\vmtimer.cxx">
+      <Filter>ソース ファイル\devices.vmcore</Filter>
+    </ClCompile>
+    <ClCompile Include="src\services\log_service.cxx">
+      <Filter>ソース ファイル\services</Filter>
+    </ClCompile>
+    <ClCompile Include="src\main.cxx">
+      <Filter>ソース ファイル</Filter>
+    </ClCompile>
+    <ClCompile Include="src\allocator\stdcxx_allocator.cxx">
+      <Filter>ソース ファイル\allocator</Filter>
+    </ClCompile>
+  </ItemGroup>
+</Project>

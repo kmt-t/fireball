@@ -3,6 +3,4 @@
  *
  * Copyright (c) 2024 Takuya Matsunaga.
  */
-int main(int argc, char const** argv) {
-  return 0;
-}
+int main(int argc, char const** argv) { return 0; }

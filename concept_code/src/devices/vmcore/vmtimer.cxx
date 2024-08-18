@@ -6,9 +6,7 @@
 #include <devices/vmcore/vmtimer.hxx>
 
 namespace fireball {
-	namespace devices {
-		namespace vmcore {
-
-		}  // namespace vmcore {
-	}  // namespace devices {
-}  // namespace fireball {
+namespace devices {
+namespace vmcore {}  // namespace vmcore
+}  // namespace devices
+}  // namespace fireball

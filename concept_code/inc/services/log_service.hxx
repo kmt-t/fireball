@@ -48,11 +48,11 @@ class log_service {
   static constexpr uint8_t CODE_TYPE_U32 = 1U;
   static constexpr uint8_t CODE_TYPE_F32 = 2U;
 
-  static constexpr uint8_t LEVEL_INFO = CODE_EVENT_INFO;
-  static constexpr uint8_t LEVEL_WARNING = CODE_EVENT_WARNING;
-  static constexpr uint8_t LEVEL_ERROR = CODE_EVENT_ERROR;
-  static constexpr uint8_t LEVEL_FATAL = CODE_EVENT_FATAL;
-  static constexpr uint8_t LEVEL_DEBUG = CODE_EVENT_DEBUG;
+  static constexpr uint8_t LEVEL_INFO = 1 << CODE_EVENT_INFO;
+  static constexpr uint8_t LEVEL_WARNING = 1 << CODE_EVENT_WARNING;
+  static constexpr uint8_t LEVEL_ERROR = 1 << CODE_EVENT_ERROR;
+  static constexpr uint8_t LEVEL_FATAL = 1 << CODE_EVENT_FATAL;
+  static constexpr uint8_t LEVEL_DEBUG = 1 << CODE_EVENT_DEBUG;
 
   typedef union {
     uint32_t raw;
@@ -92,15 +92,27 @@ class log_service {
     return inst;
   }
 
+  uint8_t loglevel() const { return level_; }
+
+  void loglevel(uint8_t level) { level_ = level; }
+
+  bool enable_trace() const { return enable_trace_; }
+
+  void enable_trace(bool en) { enable_trace_ = en; }
+
+  void start_transaction();
+
+  void put_event(uint32_t level, uint32_t evid);
+
+  void put_trace(uint32_t tag, uint32_t evid);
+
+  void put_value(uint32_t tag, uint32_t val);
+
+  void put_value(uint32_t tag, f32_t val);
+
   coro::task<void> start_service() const;
 
   coro::generator<entry_view_t> view() const;
-
-  void put(uint8_t level, uint16_t evid);
-
-  void put(uint16_t tag, uint8_t evid);
-
-  void put(uint16_t tag, value_t val);
 
  private:
   log_service(void);
@@ -108,6 +120,8 @@ class log_service {
   boost::circular_buffer<entry_t, std::pmr::polymorphic_allocator<entry_t>>
       ringbuffer_;
   uint64_t last_ts_;
+  uint8_t level_;
+  uint8_t enable_trace_;
 
 };  // class log_service {
 

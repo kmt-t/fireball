@@ -18,6 +18,16 @@ log_service::log_service()
   // nothing.
 }
 
+void log_service::start_transaction() {}
+
+void log_service::put_event(uint32_t level, uint32_t evid) {}
+
+void log_service::put_trace(uint32_t func, uint32_t evid) {}
+
+void log_service::put_value(uint32_t tag, uint32_t val) {}
+
+void log_service::put_value(uint32_t tag, f32_t val) {}
+
 coro::task<void> log_service::start_service() const { co_return; }
 
 coro::generator<log_service::entry_view_t> log_service::view() const {
@@ -38,7 +48,7 @@ coro::generator<log_service::entry_view_t> log_service::view() const {
     ++iter;
   }
 
-  for (; iter != ringbuffer_.end(); ++iter) {
+  for (; iter != ringbuffer_.cend(); ++iter) {
     switch (iter->packet.category) {
       case CATEGORY_TIME:
         switch (iter->packet.code) {
@@ -46,7 +56,7 @@ coro::generator<log_service::entry_view_t> log_service::view() const {
             curr_ts = static_cast<uint64_t>(iter->packet.arg) * TIMESTAMP_AMP;
             break;
           case CODE_TIME_DELTA:
-            curr_ts = static_cast<uint64_t>(iter->packet.arg) * TIMESTAMP_AMP;
+            curr_ts += iter->packet.arg;
             break;
         }
         break;
@@ -126,12 +136,6 @@ coro::generator<log_service::entry_view_t> log_service::view() const {
 
   co_return;
 }
-
-void log_service::put(uint8_t level, uint16_t evid) {}
-
-void log_service::put(uint16_t func, uint8_t evid) {}
-
-void log_service::put(uint16_t tag, value_t val) {}
 
 }  // namespace services
 }  // namespace fireball

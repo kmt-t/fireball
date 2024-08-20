@@ -53,7 +53,7 @@ extern transaction_t read_strem(uint8_t* buff, uint32_t bnum);
 
 extern transaction_t write_strem(const uint8_t* buff, uint32_t bnum);
 
-extern transaction_t read_storagek(block_address_t addr, uint8_t* buff,
+extern transaction_t read_storage(block_address_t addr, uint8_t* buff,
                                    uint32_t bnum);
 
 extern transaction_t write_storage(block_address_t addr, const uint8_t* buff,

@@ -8,6 +8,12 @@
 
 #include <cstdint>
 
+#if HAS_FP16
+typedef __fp16 f16_t;
+#else
+typedef int16_t f16_t;
+#endif  // #if HAS_FP16
+
 typedef float f32_t;
 typedef double f64_t;
 

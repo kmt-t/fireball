@@ -211,17 +211,15 @@
     <ClInclude Include="inc\allocator\reserved_allocator.hxx" />
     <ClInclude Include="inc\allocator\specified_allocator.hxx" />
     <ClInclude Include="inc\commons.hxx" />
-    <ClInclude Include="inc\devices\vmcore\vmdport.hxx" />
-    <ClInclude Include="inc\devices\vmcore\vmirq.hxx" />
-    <ClInclude Include="inc\devices\vmcore\vmtimer.hxx" />
     <ClInclude Include="inc\services\log_service.hxx" />
+    <ClInclude Include="inc\syscall\syscall.hxx" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\allocator\malloc.c" />
     <ClCompile Include="src\allocator\stdcxx_allocator.cxx" />
-    <ClCompile Include="src\devices\vmcore\vmtimer.cxx" />
     <ClCompile Include="src\main.cxx" />
     <ClCompile Include="src\services\log_service.cxx" />
+    <ClCompile Include="src\syacall\syscall.cxx" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

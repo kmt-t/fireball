@@ -44,9 +44,12 @@ class log_service {
   static constexpr uint8_t CODE_TRACE_ENTER = 0U;
   static constexpr uint8_t CODE_TRACE_LEAVE = 1U;
 
-  static constexpr uint8_t CODE_TYPE_S32 = 0U;
-  static constexpr uint8_t CODE_TYPE_U32 = 1U;
-  static constexpr uint8_t CODE_TYPE_F32 = 2U;
+  static constexpr uint8_t CODE_TYPE_S16 = 0U;
+  static constexpr uint8_t CODE_TYPE_U16 = 1U;
+  static constexpr uint8_t CODE_TYPE_S32 = 2U;
+  static constexpr uint8_t CODE_TYPE_U32 = 3U;
+  static constexpr uint8_t CODE_TYPE_F24 = 4U;
+  static constexpr uint8_t CODE_TYPE_F32 = 6U;
 
   static constexpr uint8_t LEVEL_INFO = 1 << CODE_EVENT_INFO;
   static constexpr uint8_t LEVEL_WARNING = 1 << CODE_EVENT_WARNING;
@@ -75,9 +78,7 @@ class log_service {
     uint32_t tag;
   } trace_view_t;
 
-  typedef std::variant<int8_t, uint8_t, int16_t, uint16_t, int32_t, uint32_t,
-                       f32_t>
-      value_t;
+  typedef std::variant<int16_t, uint16_t, int32_t, uint32_t, f32_t> value_t;
 
   typedef struct {
     uint64_t ts;
@@ -106,9 +107,17 @@ class log_service {
 
   void put_trace(uint32_t tag, uint32_t evid);
 
-  void put_value(uint32_t tag, uint32_t val);
+  void put_value_i16(uint32_t tag, int16_t val);
 
-  void put_value(uint32_t tag, f32_t val);
+  void put_value_u16(uint32_t tag, uint16_t val);
+
+  void put_value_i32(uint32_t tag, int32_t val);
+
+  void put_value_u32(uint32_t tag, uint32_t val);
+
+  void put_value_f24(uint32_t tag, f32_t val);
+
+  void put_value_f32(uint32_t tag, f32_t val);
 
   coro::task<void> start_service() const;
 

@@ -17,6 +17,7 @@ typedef uint32_t block_address_t;
 
 static constexpr handle_t INVALID_HANDLE = 0;
 static constexpr uint16_t INVALID_TRANSACTION = 0xFFFF;
+static constexpr const uint8_t* BUFFLESS_ACCESS = nullptr;
 
 typedef enum class transaction_status : int8_t {
   COMPLETE = 0,
@@ -37,10 +38,19 @@ extern void close(handle_t h);
 
 extern uint32_t block_size(handle_t h);
 
-extern bool setopt(handle_t h, uint32_t code, const uint8_t* opt,
+extern void set_read_buff(handle_t h, uint8_t* buff, uint32_t bnum);
+
+extern void get_read_buff(handle_t h, uint8_t** buff, uint32_t* bnum);
+
+extern void set_write_buff(handle_t h, uint8_t* buff, uint32_t bnum);
+
+extern void get_write_buff(handle_t h, uint8_t** buff, uint32_t* bnum);
+
+extern bool set_option(handle_t h, uint32_t code, const uint8_t* opt,
                    uint32_t optsize);
 
-extern bool getopt(handle_t h, uint16_t code, uint8_t* opt, uint32_t opt_size);
+extern bool get_option(handle_t h, uint16_t code, uint8_t* opt,
+                   uint32_t opt_size);
 
 extern transaction_t execute(handle_t h, uint16_t cmd, uint8_t* param,
                              uint32_t param_size);
@@ -49,14 +59,17 @@ extern transaction_status wait(transaction_t trans);
 
 extern transaction_status cancel(transaction_t trans);
 
-extern transaction_t read_strem(uint8_t* buff, uint32_t bnum);
+extern transaction_t read_stream(handle_t h, uint8_t* buff, uint32_t bnum);
 
-extern transaction_t write_strem(const uint8_t* buff, uint32_t bnum);
+extern transaction_t write_stream(handle_t h, const uint8_t* buff,
+                                 uint32_t bnum);
 
-extern transaction_t read_storage(block_address_t addr, uint8_t* buff,
+extern transaction_t read_storage(handle_t h, block_address_t addr,
+                                  uint8_t* buff,
                                    uint32_t bnum);
 
-extern transaction_t write_storage(block_address_t addr, const uint8_t* buff,
+extern transaction_t write_storage(handle_t h, block_address_t addr,
+                                   const uint8_t* buff,
                                    uint32_t bnum);
 
 }  // namespace syscall

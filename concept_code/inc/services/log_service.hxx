@@ -39,6 +39,7 @@ class log_service {
 
   static constexpr uint8_t CODE_TRACE_ENTER = 0U;
   static constexpr uint8_t CODE_TRACE_LEAVE = 1U;
+  static constexpr uint8_t CODE_TRACE_EXCEPTION = 2U;
 
   static constexpr uint8_t CODE_TYPE_S16 = 0U;
   static constexpr uint8_t CODE_TYPE_U16 = 1U;

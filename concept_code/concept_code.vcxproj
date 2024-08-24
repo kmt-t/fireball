@@ -213,7 +213,7 @@
     <ClInclude Include="inc\commons.hxx" />
     <ClInclude Include="inc\hal\base_device.hxx" />
     <ClInclude Include="inc\hal\clock_device.hxx" />
-    <ClInclude Include="inc\hal\execution_device.hxx" />
+    <ClInclude Include="inc\hal\command_device.hxx" />
     <ClInclude Include="inc\hal\event_notifier.hxx" />
     <ClInclude Include="inc\hal\device_registory.hxx" />
     <ClInclude Include="inc\hal\storage_device.hxx" />
@@ -228,8 +228,8 @@
     <ClCompile Include="src\hal\base_device.cxx" />
     <ClCompile Include="src\hal\clock_device.cxx" />
     <ClCompile Include="src\hal\event_notifier.cxx" />
-    <ClCompile Include="src\hal\execution_device.cxx" />
-    <ClCompile Include="src\hal\registory.cxx" />
+    <ClCompile Include="src\hal\command_device.cxx" />
+    <ClCompile Include="src\hal\device_registory.cxx" />
     <ClCompile Include="src\hal\storage_device.cxx" />
     <ClCompile Include="src\hal\stream_device.cxx" />
     <ClCompile Include="src\hal\transaction.cxx" />

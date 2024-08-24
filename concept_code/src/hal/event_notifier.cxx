@@ -6,8 +6,5 @@
 #include <hal/event_notifier.hxx>
 
 namespace fireball {
-namespace hal {
-
-
-}  // namespace hal
+namespace hal {}  // namespace hal
 }  // namespace fireball

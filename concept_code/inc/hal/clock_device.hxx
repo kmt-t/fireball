@@ -24,7 +24,7 @@ class clock_device : public base_device {
   void countup() {
     if (opened_ == true) {
       tick_ += precision_;
-      notifier_.notify(TICK_EVENT);    
+      notifier_.notify(TICK_EVENT);
     }
   }
 
@@ -36,7 +36,6 @@ class clock_device : public base_device {
   clock_device(uint64_t pred);
 
  private:
-
   event_notifier notifier_;
   bool opened_;
   uint64_t precision_;

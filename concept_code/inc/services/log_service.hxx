@@ -64,14 +64,14 @@ class log_service {
 
   using event_view_type = struct {
     uint64_t timestamp;
-    uint32_t event;
     uint32_t level;
+    uint32_t event;
   };
 
   using trace_view_type = struct {
     uint64_t timestamp;
-    uint32_t tag;
     uint32_t trace;
+    uint32_t tag;
   };
 
   using ringbuffer_type =

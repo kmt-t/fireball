@@ -13,8 +13,8 @@ static constexpr uint64_t TIMESTAMP_AMP = 1000U;
 }  // namespace
 
 log_service::log_service()
-    : ringbuffer_(RINGBUFF_SIZE, fireball::allocator::sys_allocator::allocator<
-                  entry_type>()),
+    : ringbuffer_(RINGBUFF_SIZE,
+                  fireball::allocator::sys_allocator::allocator<entry_type>()),
       last_ts_(0U) {
   // nothing.
 }
@@ -88,26 +88,26 @@ coro::generator<log_service::entry_view_type> log_service::view() const {
         switch (iter->packet.code) {
           case CODE_TYPE_S16:
             co_yield value_view_type{curr_ts, iter->packet.arg,
-                                  static_cast<int16_t>(0U)};
+                                     static_cast<int16_t>(0U)};
             break;
           case CODE_TYPE_U16:
             co_yield value_view_type{curr_ts, iter->packet.arg,
-                                  static_cast<uint16_t>(0U)};
+                                     static_cast<uint16_t>(0U)};
             break;
           case CODE_TYPE_S32:
             co_yield value_view_type{curr_ts, iter->packet.arg,
-                                  static_cast<int32_t>(0U)};
+                                     static_cast<int32_t>(0U)};
             break;
           case CODE_TYPE_U32:
             co_yield value_view_type{curr_ts, iter->packet.arg,
-                                  static_cast<uint32_t>(0U)};
+                                     static_cast<uint32_t>(0U)};
             break;
           case CODE_TYPE_F24:
             co_yield value_view_type{curr_ts, iter->packet.arg,
-                                  std::bit_cast<fp32_t, int32_t>(0)};
+                                     std::bit_cast<fp32_t, int32_t>(0)};
           case CODE_TYPE_F32:
             co_yield value_view_type{curr_ts, iter->packet.arg,
-                                  std::bit_cast<fp32_t, int32_t>(0)};
+                                     std::bit_cast<fp32_t, int32_t>(0)};
             break;
         }
         break;
@@ -116,11 +116,11 @@ coro::generator<log_service::entry_view_type> log_service::view() const {
         switch (iter->packet.code) {
           case CODE_TYPE_S16:
             co_yield value_view_type{curr_ts, iter->packet.arg,
-                                  static_cast<int16_t>(iter->packet.arg)};
+                                     static_cast<int16_t>(iter->packet.arg)};
             break;
           case CODE_TYPE_U16:
             co_yield value_view_type{curr_ts, iter->packet.arg,
-                                  static_cast<uint16_t>(iter->packet.arg)};
+                                     static_cast<uint16_t>(iter->packet.arg)};
             break;
           case CODE_TYPE_S32:
             co_yield value_view_type{
@@ -131,7 +131,7 @@ coro::generator<log_service::entry_view_type> log_service::view() const {
             break;
           case CODE_TYPE_U32:
             co_yield value_view_type{curr_ts, iter->packet.arg,
-                                  static_cast<uint32_t>(iter->packet.arg)};
+                                     static_cast<uint32_t>(iter->packet.arg)};
             break;
           case CODE_TYPE_F24:
             co_yield value_view_type{
@@ -160,12 +160,12 @@ coro::generator<log_service::entry_view_type> log_service::view() const {
             break;
           case CODE_TYPE_F24:
             co_yield value_view_type{curr_ts, iter->packet.arg,
-                                  std::bit_cast<fp32_t, uint32_t>(val << 8)};
+                                     std::bit_cast<fp32_t, uint32_t>(val << 8)};
             break;
           case CODE_TYPE_F32:
             co_yield value_view_type{curr_ts, iter->packet.arg,
-                                  std::bit_cast<fp32_t, uint32_t>(
-                                      val | (iter->packet.arg << 24U))};
+                                     std::bit_cast<fp32_t, uint32_t>(
+                                         val | (iter->packet.arg << 24U))};
             break;
         }
         break;

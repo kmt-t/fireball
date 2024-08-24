@@ -211,15 +211,32 @@
     <ClInclude Include="inc\allocator\reserved_allocator.hxx" />
     <ClInclude Include="inc\allocator\specified_allocator.hxx" />
     <ClInclude Include="inc\commons.hxx" />
+    <ClInclude Include="inc\hal\base_device.hxx" />
+    <ClInclude Include="inc\hal\clock_device.hxx" />
+    <ClInclude Include="inc\hal\execution_device.hxx" />
+    <ClInclude Include="inc\hal\event_notifier.hxx" />
+    <ClInclude Include="inc\hal\device_registory.hxx" />
+    <ClInclude Include="inc\hal\storage_device.hxx" />
+    <ClInclude Include="inc\hal\stream_device.hxx" />
+    <ClInclude Include="inc\hal\transaction.hxx" />
+    <ClInclude Include="inc\hal\transaction_task.hxx" />
     <ClInclude Include="inc\services\log_service.hxx" />
-    <ClInclude Include="inc\syscall\syscall.hxx" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\allocator\malloc.c" />
     <ClCompile Include="src\allocator\stdcxx_allocator.cxx" />
+    <ClCompile Include="src\hal\base_device.cxx" />
+    <ClCompile Include="src\hal\clock_device.cxx" />
+    <ClCompile Include="src\hal\event_notifier.cxx" />
+    <ClCompile Include="src\hal\execution_device.cxx" />
+    <ClCompile Include="src\hal\registory.cxx" />
+    <ClCompile Include="src\hal\storage_device.cxx" />
+    <ClCompile Include="src\hal\stream_device.cxx" />
+    <ClCompile Include="src\hal\transaction.cxx" />
+    <ClCompile Include="src\hal\transaction_task.cxx" />
+    <ClCompile Include="src\hal\transform_device.cxx" />
     <ClCompile Include="src\main.cxx" />
     <ClCompile Include="src\services\log_service.cxx" />
-    <ClCompile Include="src\syacall\syscall.cxx" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

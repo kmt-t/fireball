@@ -9,13 +9,13 @@
 #include <cstdint>
 
 #if HAS_FP16
-typedef __fp16 f16_t;
+typedef __fp16 fp16_t;
 #else
-typedef int16_t f16_t;
+typedef int16_t fp16_t;
 #endif  // #if HAS_FP16
 
-typedef float f32_t;
-typedef double f64_t;
+typedef float fp32_t;
+typedef double fp64_t;
 
 #include <allocator/stdcxx_allocator.hxx>
 

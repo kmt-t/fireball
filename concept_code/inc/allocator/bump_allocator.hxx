@@ -15,16 +15,17 @@ namespace allocator {
 template <uint32_t N, typename Tag>
 struct bump_allocator : public std::pmr::monotonic_buffer_resource {
  public:
-  static bump_allocator& instance() {
-    static bump_allocator inst;
+  using this_type = bump_allocator;
+
+  static this_type& instance() {
+    static this_type inst;
     return inst;
   }
 
   template <typename T>
-  static std::pmr::polymorphic_allocator<T>& allocator() {
-    static std::pmr::polymorphic_allocator<T> inst(&bump_allocator::instance());
-    return inst;
-  }
+  struct allocator : public std::pmr::polymorphic_allocator<T> {
+    allocator() : std::pmr::polymorphic_allocator<T>(&this_type::instance()) {}
+  };
 
  private:
   bump_allocator()

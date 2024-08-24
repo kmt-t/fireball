@@ -31,18 +31,6 @@
     <Filter Include="ヘッダー ファイル\hal">
       <UniqueIdentifier>{2357ca1e-1a8e-49af-be8a-78239a3b364c}</UniqueIdentifier>
     </Filter>
-    <Filter Include="ヘッダー ファイル\syscall">
-      <UniqueIdentifier>{88a3acd3-ee2a-4767-8536-f08f243b8496}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="ソース ファイル\syscall">
-      <UniqueIdentifier>{4472e203-95e1-4713-aca9-4e964bfbb81c}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="ヘッダー ファイル\wasi">
-      <UniqueIdentifier>{55020381-8095-45ea-9f6b-a698f587b378}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="ソース ファイル\wasi">
-      <UniqueIdentifier>{e26b7434-ce4f-4424-9eb6-9212da2bf3c8}</UniqueIdentifier>
-    </Filter>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
@@ -66,8 +54,32 @@
     <ClInclude Include="inc\commons.hxx">
       <Filter>ヘッダー ファイル</Filter>
     </ClInclude>
-    <ClInclude Include="inc\syscall\syscall.hxx">
-      <Filter>ヘッダー ファイル\syscall</Filter>
+    <ClInclude Include="inc\hal\base_device.hxx">
+      <Filter>ヘッダー ファイル\hal</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\hal\clock_device.hxx">
+      <Filter>ヘッダー ファイル\hal</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\hal\execution_device.hxx">
+      <Filter>ヘッダー ファイル\hal</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\hal\event_notifier.hxx">
+      <Filter>ヘッダー ファイル\hal</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\hal\device_registory.hxx">
+      <Filter>ヘッダー ファイル\hal</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\hal\storage_device.hxx">
+      <Filter>ヘッダー ファイル\hal</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\hal\stream_device.hxx">
+      <Filter>ヘッダー ファイル\hal</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\hal\transaction.hxx">
+      <Filter>ヘッダー ファイル\hal</Filter>
+    </ClInclude>
+    <ClInclude Include="inc\hal\transaction_task.hxx">
+      <Filter>ヘッダー ファイル\hal</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -83,8 +95,35 @@
     <ClCompile Include="src\allocator\stdcxx_allocator.cxx">
       <Filter>ソース ファイル\allocator</Filter>
     </ClCompile>
-    <ClCompile Include="src\syacall\syscall.cxx">
-      <Filter>ソース ファイル\syscall</Filter>
+    <ClCompile Include="src\hal\base_device.cxx">
+      <Filter>ソース ファイル\hal</Filter>
+    </ClCompile>
+    <ClCompile Include="src\hal\clock_device.cxx">
+      <Filter>ソース ファイル\hal</Filter>
+    </ClCompile>
+    <ClCompile Include="src\hal\execution_device.cxx">
+      <Filter>ソース ファイル\hal</Filter>
+    </ClCompile>
+    <ClCompile Include="src\hal\registory.cxx">
+      <Filter>ソース ファイル\hal</Filter>
+    </ClCompile>
+    <ClCompile Include="src\hal\storage_device.cxx">
+      <Filter>ソース ファイル\hal</Filter>
+    </ClCompile>
+    <ClCompile Include="src\hal\stream_device.cxx">
+      <Filter>ソース ファイル\hal</Filter>
+    </ClCompile>
+    <ClCompile Include="src\hal\transaction.cxx">
+      <Filter>ソース ファイル\hal</Filter>
+    </ClCompile>
+    <ClCompile Include="src\hal\transaction_task.cxx">
+      <Filter>ソース ファイル\hal</Filter>
+    </ClCompile>
+    <ClCompile Include="src\hal\transform_device.cxx">
+      <Filter>ソース ファイル\hal</Filter>
+    </ClCompile>
+    <ClCompile Include="src\hal\event_notifier.cxx">
+      <Filter>ソース ファイル\hal</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

@@ -19,10 +19,6 @@ namespace services {
 
 class log_service {
  public:
-  static constexpr uint32_t RINGBUFF_SIZE_SHIFT = 8U;
-  static constexpr uint32_t RINGBUFF_SIZE = 1 << RINGBUFF_SIZE_SHIFT;
-  static constexpr uint32_t RINGBUFF_SIZE_MASK = RINGBUFF_SIZE - 1U;
-
   static constexpr uint8_t CATEGORY_EVENT = 0U;
   static constexpr uint8_t CATEGORY_TIME = 1U;
   static constexpr uint8_t CATEGORY_TRACE = 2U;
@@ -57,36 +53,45 @@ class log_service {
   static constexpr uint8_t LEVEL_FATAL = 1 << CODE_EVENT_FATAL;
   static constexpr uint8_t LEVEL_DEBUG = 1 << CODE_EVENT_DEBUG;
 
-  typedef union {
+  using entry_type = union {
     uint32_t raw;
     struct {
       uint32_t category : 4U;
       uint32_t code : 4U;
       uint32_t arg : 24U;
     } packet;
-  } entry_t;
+  };
 
-  typedef struct {
-    uint64_t ts;
+  using event_view_type = struct {
+    uint64_t timestamp;
+    uint32_t event;
     uint32_t level;
-    uint32_t evt;
-  } event_view_t;
+  };
 
-  typedef struct {
-    uint64_t ts;
-    uint32_t evt;
+  using trace_view_type = struct {
+    uint64_t timestamp;
     uint32_t tag;
-  } trace_view_t;
+    uint32_t trace;
+  };
 
-  typedef std::variant<int16_t, uint16_t, int32_t, uint32_t, f32_t> value_t;
+  using ringbuffer_type =
+      boost::circular_buffer<log_service::entry_type,
+                             std::pmr::polymorphic_allocator<entry_type>>;
 
-  typedef struct {
+  static constexpr uint32_t RINGBUFF_SIZE_SHIFT = 8U;
+  static constexpr ringbuffer_type::capacity_type RINGBUFF_SIZE =
+      1U << RINGBUFF_SIZE_SHIFT;
+
+  using value_type = std::variant<int16_t, uint16_t, int32_t, uint32_t, fp32_t>;
+
+  using value_view_type = struct {
     uint64_t ts;
     uint32_t tag;
-    value_t val;
-  } value_view_t;
+    value_type val;
+  };
 
-  typedef std::variant<event_view_t, trace_view_t, value_view_t> entry_view_t;
+  using entry_view_type =
+      std::variant<event_view_type, trace_view_type, value_view_type>;
 
   static log_service& instance(void) {
     static log_service inst;
@@ -115,18 +120,19 @@ class log_service {
 
   void put_value_u32(uint32_t tag, uint32_t val);
 
-  void put_value_f24(uint32_t tag, f32_t val);
+  void put_value_f24(uint32_t tag, fp32_t val);
 
-  void put_value_f32(uint32_t tag, f32_t val);
+  void put_value_f32(uint32_t tag, fp32_t val);
 
   coro::task<void> start_service() const;
 
-  coro::generator<entry_view_t> view() const;
+  coro::generator<entry_view_type> view() const;
 
  private:
   log_service(void);
 
-  boost::circular_buffer<entry_t, std::pmr::polymorphic_allocator<entry_t>>
+  boost::circular_buffer<entry_type,
+                         std::pmr::polymorphic_allocator<entry_type>>
       ringbuffer_;
   uint64_t last_ts_;
   uint8_t level_;

@@ -26,8 +26,10 @@ namespace allocator {
 template <uint32_t N, typename Tag>
 struct specified_allocator : public std::pmr::memory_resource {
  public:
-  static specified_allocator& instance() {
-    static specified_allocator inst;
+  using this_type = specified_allocator;
+
+  static this_type& instance() {
+    static this_type inst;
     return inst;
   }
 
@@ -48,11 +50,9 @@ struct specified_allocator : public std::pmr::memory_resource {
   }
 
   template <typename T>
-  static std::pmr::polymorphic_allocator<T>& allocator() {
-    static std::pmr::polymorphic_allocator<T> inst(
-        specified_allocator::instance());
-    return inst;
-  }
+  struct allocator : public std::pmr::polymorphic_allocator<T> {
+    allocator() : std::pmr::polymorphic_allocator<T>(&this_type::instance()) {}
+  };
 
  private:
   specified_allocator() : std::pmr::memory_resource(), arena_() {

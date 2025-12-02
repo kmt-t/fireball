@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>platforms</title>
+  <style>
+    html {
+      color: #1a1a1a;
+      background-color: #fdfdfd;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        background-color: white;
+      }
+      body {
+        background-color: transparent;
+        color: black;
+        font-size: 12pt;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a {
+      color: #1a1a1a;
+    }
+    a:visited {
+      color: #1a1a1a;
+    }
+    img {
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid #e6e6e6;
+      color: #606060;
+    }
+    code {
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      background-color: #1a1a1a;
+      border: none;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    th {
+      border-top: 1px solid #1a1a1a;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+    /* CSS for syntax highlighting */
+    pre > code.sourceCode { white-space: pre; position: relative; }
+    pre > code.sourceCode > span { line-height: 1.25; }
+    pre > code.sourceCode > span:empty { height: 1.2em; }
+    .sourceCode { overflow: visible; }
+    code.sourceCode > span { color: inherit; text-decoration: inherit; }
+    div.sourceCode { margin: 1em 0; }
+    pre.sourceCode { margin: 0; }
+    @media screen {
+    div.sourceCode { overflow: auto; }
+    }
+    @media print {
+    pre > code.sourceCode { white-space: pre-wrap; }
+    pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+    }
+    pre.numberSource code
+      { counter-reset: source-line 0; }
+    pre.numberSource code > span
+      { position: relative; left: -4em; counter-increment: source-line; }
+    pre.numberSource code > span > a:first-child::before
+      { content: counter(source-line);
+        position: relative; left: -1em; text-align: right; vertical-align: baseline;
+        border: none; display: inline-block;
+        -webkit-touch-callout: none; -webkit-user-select: none;
+        -khtml-user-select: none; -moz-user-select: none;
+        -ms-user-select: none; user-select: none;
+        padding: 0 4px; width: 4em;
+        color: #aaaaaa;
+      }
+    pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+    div.sourceCode
+      {   }
+    @media screen {
+    pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+    }
+    code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+    code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+    code span.at { color: #7d9029; } /* Attribute */
+    code span.bn { color: #40a070; } /* BaseN */
+    code span.bu { color: #008000; } /* BuiltIn */
+    code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+    code span.ch { color: #4070a0; } /* Char */
+    code span.cn { color: #880000; } /* Constant */
+    code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+    code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+    code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+    code span.dt { color: #902000; } /* DataType */
+    code span.dv { color: #40a070; } /* DecVal */
+    code span.er { color: #ff0000; font-weight: bold; } /* Error */
+    code span.ex { } /* Extension */
+    code span.fl { color: #40a070; } /* Float */
+    code span.fu { color: #06287e; } /* Function */
+    code span.im { color: #008000; font-weight: bold; } /* Import */
+    code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+    code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+    code span.op { color: #666666; } /* Operator */
+    code span.ot { color: #007020; } /* Other */
+    code span.pp { color: #bc7a00; } /* Preprocessor */
+    code span.sc { color: #4070a0; } /* SpecialChar */
+    code span.ss { color: #bb6688; } /* SpecialString */
+    code span.st { color: #4070a0; } /* String */
+    code span.va { color: #19177c; } /* Variable */
+    code span.vs { color: #4070a0; } /* VerbatimString */
+    code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+  </style>
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">platforms</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#fireball-ターゲットハードウェアプラットフォーム"
+id="toc-fireball-ターゲットハードウェアプラットフォーム">Fireball
+ターゲットハードウェアプラットフォーム</a>
+<ul>
+<li><a href="#概要" id="toc-概要">概要</a></li>
+<li><a href="#ターゲット-arm-cortex-m"
+id="toc-ターゲット-arm-cortex-m">1. ターゲット: ARM Cortex-M</a>
+<ul>
+<li><a href="#なぜ-arm-cortex-m-か" id="toc-なぜ-arm-cortex-m-か">1.1
+なぜ ARM Cortex-M か</a></li>
+<li><a href="#cortex-m-バリエーション"
+id="toc-cortex-m-バリエーション">1.2 Cortex-M バリエーション</a></li>
+<li><a href="#zephyr-rtos-との統合" id="toc-zephyr-rtos-との統合">1.3
+Zephyr RTOS との統合</a></li>
+</ul></li>
+<li><a href="#セカンダリターゲット-risc-v"
+id="toc-セカンダリターゲット-risc-v">2. セカンダリターゲット: RISC-V</a>
+<ul>
+<li><a href="#risc-v-を選ぶ理由" id="toc-risc-v-を選ぶ理由">2.1 RISC-V
+を選ぶ理由</a></li>
+<li><a href="#推奨-risc-v-プラットフォーム"
+id="toc-推奨-risc-v-プラットフォーム">2.2 推奨 RISC-V
+プラットフォーム</a></li>
+<li><a href="#risc-v-インタプリタ実装"
+id="toc-risc-v-インタプリタ実装">2.3 RISC-V インタプリタ実装</a></li>
+</ul></li>
+<li><a href="#開発テスト-x86-64" id="toc-開発テスト-x86-64">3.
+開発・テスト: x86-64</a>
+<ul>
+<li><a href="#用途" id="toc-用途">3.1 用途</a></li>
+<li><a href="#ビルド設定" id="toc-ビルド設定">3.2 ビルド設定</a></li>
+</ul></li>
+<li><a href="#プラットフォーム固有の実装戦略"
+id="toc-プラットフォーム固有の実装戦略">4.
+プラットフォーム固有の実装戦略</a>
+<ul>
+<li><a href="#共有抽象層" id="toc-共有抽象層">4.1 共有抽象層</a></li>
+<li><a href="#ボード定義ディレクトリ構造"
+id="toc-ボード定義ディレクトリ構造">4.2
+ボード定義ディレクトリ構造</a></li>
+</ul></li>
+<li><a href="#マイグレーション計画" id="toc-マイグレーション計画">5.
+マイグレーション計画</a>
+<ul>
+<li><a href="#phase-2-arm-cortex-m4-ベースライン"
+id="toc-phase-2-arm-cortex-m4-ベースライン">Phase 2: ARM Cortex-M4
+ベースライン</a></li>
+<li><a href="#phase-3-超低消費電力対応"
+id="toc-phase-3-超低消費電力対応">Phase 3: 超低消費電力対応</a></li>
+<li><a href="#phase-4-risc-v-対応" id="toc-phase-4-risc-v-対応">Phase 4:
+RISC-V 対応</a></li>
+<li><a href="#phase-5-高性能バリエーション"
+id="toc-phase-5-高性能バリエーション">Phase 5:
+高性能バリエーション</a></li>
+</ul></li>
+<li><a href="#ビルドテストマトリックス"
+id="toc-ビルドテストマトリックス">6. ビルド・テストマトリックス</a>
+<ul>
+<li><a href="#cicd-プラットフォーム対応"
+id="toc-cicd-プラットフォーム対応">6.1 CI/CD
+プラットフォーム対応</a></li>
+<li><a href="#エミュレーションツール"
+id="toc-エミュレーションツール">6.2 エミュレーションツール</a></li>
+</ul></li>
+<li><a href="#実装チェックリスト" id="toc-実装チェックリスト">7.
+実装チェックリスト</a>
+<ul>
+<li><a href="#arm-cortex-m-対応" id="toc-arm-cortex-m-対応">ARM Cortex-M
+対応</a></li>
+<li><a href="#risc-v-対応" id="toc-risc-v-対応">RISC-V 対応</a></li>
+<li><a href="#cicd" id="toc-cicd">CI/CD</a></li>
+</ul></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="fireball-ターゲットハードウェアプラットフォーム">Fireball
+ターゲットハードウェアプラットフォーム</h1>
+<p><strong>Version:</strong> 0.1.0 <strong>Date:</strong> 2025-11-30
+<strong>Author:</strong> Takuya Matsunaga</p>
+<hr />
+<h2 id="概要">概要</h2>
+<p>Fireball のターゲットプラットフォームは以下の通り：</p>
+<ol type="1">
+<li><strong>ARM Cortex-M シリーズ（第一優先）</strong> -
+IoT・組み込みシステムの標準</li>
+<li><strong>RISC-V（第二優先）</strong> - オープン
+ISA、成長中のエコシステム</li>
+<li><strong>x86/x64（開発・テスト用）</strong> - 本番運用非対応</li>
+</ol>
+<hr />
+<h2 id="ターゲット-arm-cortex-m">1. ターゲット: ARM Cortex-M</h2>
+<h3 id="なぜ-arm-cortex-m-か">1.1 なぜ ARM Cortex-M か</h3>
+<table>
+<colgroup>
+<col style="width: 57%" />
+<col style="width: 42%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>利点</th>
+<th>説明</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>普及率</strong></td>
+<td>毎年数十億個が出荷される、組み込みシステムの事実上の標準</td>
+</tr>
+<tr class="even">
+<td><strong>エコシステム</strong></td>
+<td>優秀なツールチェーン（ARM Compiler、GCC）</td>
+</tr>
+<tr class="odd">
+<td><strong>メモリ範囲</strong></td>
+<td>Cortex-M0（32KB）から Cortex-M7（2MB）まで対応</td>
+</tr>
+<tr class="even">
+<td><strong>電力効率</strong></td>
+<td>バッテリー駆動 IoT デバイス向けに設計</td>
+</tr>
+<tr class="odd">
+<td><strong>WASM 最適化</strong></td>
+<td>パフォーマンスとコード密度のバランス最適</td>
+</tr>
+</tbody>
+</table>
+<h3 id="cortex-m-バリエーション">1.2 Cortex-M バリエーション</h3>
+<h4 id="グレード-1-第一優先対応">グレード 1: 第一優先対応</h4>
+<table style="width:100%;">
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 10%" />
+<col style="width: 10%" />
+<col style="width: 14%" />
+<col style="width: 21%" />
+<col style="width: 17%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>MCU ファミリ</th>
+<th>CPU</th>
+<th>RAM</th>
+<th>Flash</th>
+<th>用途</th>
+<th>対応予定</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>STM32L0</strong></td>
+<td>M0</td>
+<td>8-20KB</td>
+<td>32-192KB</td>
+<td>超低消費電力、低コスト</td>
+<td>✅ Phase 2-3</td>
+</tr>
+<tr class="even">
+<td><strong>STM32L4</strong></td>
+<td>M4F</td>
+<td>128KB</td>
+<td>256KB</td>
+<td>中程度、FPU搭載</td>
+<td>✅ Phase 2-3</td>
+</tr>
+<tr class="odd">
+<td><strong>STM32H7</strong></td>
+<td>M7</td>
+<td>512KB</td>
+<td>2MB</td>
+<td>高性能</td>
+<td>✅ Phase 3</td>
+</tr>
+<tr class="even">
+<td><strong>nRF52840</strong></td>
+<td>M4F</td>
+<td>256KB</td>
+<td>1MB</td>
+<td>Bluetooth + 高性能</td>
+<td>✅ Phase 2-3</td>
+</tr>
+<tr class="odd">
+<td><strong>nRF5340</strong></td>
+<td>M33</td>
+<td>512KB</td>
+<td>1MB</td>
+<td>デュアルコア、最新アーキ</td>
+<td>✅ Phase 3</td>
+</tr>
+</tbody>
+</table>
+<h4 id="グレード-2-第二優先対応">グレード 2: 第二優先対応</h4>
+<table>
+<thead>
+<tr class="header">
+<th>MCU ファミリ</th>
+<th>CPU</th>
+<th>RAM</th>
+<th>Flash</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>STM32F1</strong></td>
+<td>M3</td>
+<td>64KB</td>
+<td>128KB</td>
+<td>レガシー、低優先度</td>
+</tr>
+<tr class="even">
+<td><strong>ATSAMD21</strong></td>
+<td>M0</td>
+<td>32KB</td>
+<td>256KB</td>
+<td>Arduino エコシステム</td>
+</tr>
+<tr class="odd">
+<td><strong>NXP LPC1769</strong></td>
+<td>M3</td>
+<td>64KB</td>
+<td>256KB</td>
+<td>産業用応用</td>
+</tr>
+</tbody>
+</table>
+<h3 id="zephyr-rtos-との統合">1.3 Zephyr RTOS との統合</h3>
+<p>Fireball は Zephyr RTOS のボード定義を活用：</p>
+<pre><code>Fireball レイヤー
+    ↓
+Zephyr RTOS（ボード定義、デバイスツリー）
+    ↓
+マイクロコントローラ（STM32、nRF など）</code></pre>
+<p>メリット：Zephyr のボード定義を再利用し、HAL の重複実装を回避。</p>
+<hr />
+<h2 id="セカンダリターゲット-risc-v">2. セカンダリターゲット:
+RISC-V</h2>
+<h3 id="risc-v-を選ぶ理由">2.1 RISC-V を選ぶ理由</h3>
+<table>
+<colgroup>
+<col style="width: 42%" />
+<col style="width: 57%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>要素</th>
+<th>利点</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>オープン ISA</strong></td>
+<td>ライセンス不要、完全な透明性</td>
+</tr>
+<tr class="even">
+<td><strong>シンプルな設計</strong></td>
+<td>最小限の ISA で WASM インタプリタ/JIT 実装が簡潔</td>
+</tr>
+<tr class="odd">
+<td><strong>成長中のエコシステム</strong></td>
+<td>SoC 選択肢が増加中</td>
+</tr>
+<tr class="even">
+<td><strong>差別化要因</strong></td>
+<td>オープン ISA の採用でFireball を差別化</td>
+</tr>
+</tbody>
+</table>
+<h3 id="推奨-risc-v-プラットフォーム">2.2 推奨 RISC-V
+プラットフォーム</h3>
+<h4 id="t-head">T-Head</h4>
+<p>推奨 SoC：</p>
+<table>
+<colgroup>
+<col style="width: 16%" />
+<col style="width: 20%" />
+<col style="width: 16%" />
+<col style="width: 23%" />
+<col style="width: 23%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>SoC</th>
+<th>コア</th>
+<th>RAM</th>
+<th>Flash</th>
+<th>説明</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>TH1100</strong></td>
+<td>C906 (32-bit)</td>
+<td>4-8MB</td>
+<td>16MB</td>
+<td>組み込み用途の最適ターゲット</td>
+</tr>
+<tr class="even">
+<td><strong>TH1520</strong></td>
+<td>C910 (64-bit)</td>
+<td>512MB</td>
+<td>32MB</td>
+<td>高性能用途</td>
+</tr>
+</tbody>
+</table>
+<p><strong>推奨：</strong> まず
+<strong>TH1100</strong>（組み込み）から開始、その後
+<strong>TH1520</strong>（高性能）へ。</p>
+<h4 id="wchwinchip-electronics">WCH（WinChip Electronics）</h4>
+<p>推奨 SoC：</p>
+<table style="width:100%;">
+<colgroup>
+<col style="width: 13%" />
+<col style="width: 16%" />
+<col style="width: 13%" />
+<col style="width: 18%" />
+<col style="width: 18%" />
+<col style="width: 18%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>SoC</th>
+<th>コア</th>
+<th>RAM</th>
+<th>Flash</th>
+<th>消費電力</th>
+<th>説明</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>CH32V203</strong></td>
+<td>RV32IMC</td>
+<td>20KB</td>
+<td>64KB</td>
+<td>&lt;5mW</td>
+<td>超低消費電力、エントリーレベル</td>
+</tr>
+<tr class="even">
+<td><strong>CH32V307</strong></td>
+<td>RV32IMC</td>
+<td>64KB</td>
+<td>256KB</td>
+<td>&lt;10mW</td>
+<td>中程度</td>
+</tr>
+</tbody>
+</table>
+<p><strong>推奨：</strong> <strong>CH32V203</strong>
+を主要ターゲット（消費電力とパフォーマンスのバランス最適）。</p>
+<h4 id="sifive">SiFive</h4>
+<table>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 26%" />
+<col style="width: 21%" />
+<col style="width: 30%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>SoC</th>
+<th>コア</th>
+<th>RAM</th>
+<th>説明</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>FE310-G002</strong></td>
+<td>E31 (32-bit)</td>
+<td>16KB</td>
+<td>RISC-V パイオニア、成熟したエコシステム</td>
+</tr>
+</tbody>
+</table>
+<p><strong>状態：</strong>
+成熟しているが高コスト、先進機能検討時のみ。</p>
+<h3 id="risc-v-インタプリタ実装">2.3 RISC-V インタプリタ実装</h3>
+<p>RISC-V は ISA がシンプルなため、WASM インタプリタ実装も簡潔：</p>
+<pre><code>x86 インタプリタ: 複雑（多数のレジスタ、モード）
+ARM Cortex-M インタプリタ: 中程度の複雑さ
+RISC-V インタプリタ: シンプル、明快な設計</code></pre>
+<p><strong>JIT コンパイル：</strong> RISC-V は ISA
+がシンプルなため、コード生成も効率的。</p>
+<hr />
+<h2 id="開発テスト-x86-64">3. 開発・テスト: x86-64</h2>
+<h3 id="用途">3.1 用途</h3>
+<p>x86-64 は以下の用途 <strong>のみ</strong> に使用： - COOS
+コア機能のユニットテスト - パフォーマンス分析、プロファイリング -
+ハードウェア実装前の CI/CD テスト - 本番運用には使用しない</p>
+<h3 id="ビルド設定">3.2 ビルド設定</h3>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode cmake"><code class="sourceCode cmake"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="co"># プラットフォーム選択（CMakeLists.txt）</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="kw">set</span>(FIREBALL_PLATFORM <span class="st">&quot;arm-cortex-m4&quot;</span> <span class="ot">CACHE</span> <span class="ot">STRING</span> <span class="st">&quot;ターゲットプラットフォーム&quot;</span>)</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="co"># 選択肢: arm-cortex-m0, arm-cortex-m4, riscv32, riscv64, x86-64</span></span></code></pre></div>
+<hr />
+<h2 id="プラットフォーム固有の実装戦略">4.
+プラットフォーム固有の実装戦略</h2>
+<h3 id="共有抽象層">4.1 共有抽象層</h3>
+<pre><code>Fireball コア
+  ├─ COOS カーネル（アーキテクチャ非依存）
+  ├─ vSoC ランタイム（インタプリタ/JIT、ほぼ非依存）
+  └─ IPC ルータ（完全非依存）
+
+HAL（ハードウェア抽象化レイヤー）
+  ├─ GPIO ドライバ
+  ├─ UART ドライバ
+  ├─ I2C ドライバ
+  ├─ SPI ドライバ
+  ├─ Timer ドライバ
+  └─ 割り込みハンドリング
+
+プラットフォーム固有の実装
+  ├─ ARM Cortex-M: STM32 SDK、Nordic SDK など
+  └─ RISC-V: T-Head SDK、WCH SDK、SiFive ツール など</code></pre>
+<h3 id="ボード定義ディレクトリ構造">4.2 ボード定義ディレクトリ構造</h3>
+<pre><code>fireball/
+  ├─ platform/
+  │   ├─ cortex-m/
+  │   │   ├─ cortex-m0.cmake
+  │   │   ├─ cortex-m4.cmake
+  │   │   └─ cortex-m7.cmake
+  │   ├─ riscv/
+  │   │   ├─ rv32.cmake
+  │   │   ├─ rv64.cmake
+  │   │   ├─ thead-th1100.cmake
+  │   │   └─ wch-ch32v203.cmake
+  │   ├─ x86-64/
+  │   │   └─ x86-64-posix.cmake
+  │   ├─ boards/
+  │   │   ├─ stm32l476g-disco/
+  │   │   ├─ nrf52840-dk/
+  │   │   └─ wch-ch32v203-evt/</code></pre>
+<hr />
+<h2 id="マイグレーション計画">5. マイグレーション計画</h2>
+<h3 id="phase-2-arm-cortex-m4-ベースライン">Phase 2: ARM Cortex-M4
+ベースライン</h3>
+<p><strong>主要:</strong> STM32L4（STM32L476）or nRF52840 - Zephyr
+成熟対応 - 機能・コストのバランス最適 - RAM 128-256 KB、Flash 256 KB-1
+MB</p>
+<h3 id="phase-3-超低消費電力対応">Phase 3: 超低消費電力対応</h3>
+<p><strong>追加:</strong> STM32L0 or nRF52（低電力バリエーション） - 4
+KB RAM 予算での COOS 検証 -
+小コードキャッシュでのインタプリタ効率測定</p>
+<h3 id="phase-4-risc-v-対応">Phase 4: RISC-V 対応</h3>
+<p><strong>追加:</strong> T-Head TH1100 or WCH CH32V203 - RISC-V
+インタプリタ実装完成 - ARM vs RISC-V クロスプラットフォームテスト -
+アーキテクチャ非依存性の実証</p>
+<h3 id="phase-5-高性能バリエーション">Phase 5: 高性能バリエーション</h3>
+<p><strong>追加:</strong> STM32H7、nRF5340、T-Head TH1520 -
+マルチコア対応（nRF5340） - GPU/DSP アクセラレータ（STM32H7） -
+大メモリシステム（TH1520）</p>
+<hr />
+<h2 id="ビルドテストマトリックス">6. ビルド・テストマトリックス</h2>
+<h3 id="cicd-プラットフォーム対応">6.1 CI/CD プラットフォーム対応</h3>
+<table>
+<colgroup>
+<col style="width: 18%" />
+<col style="width: 11%" />
+<col style="width: 11%" />
+<col style="width: 16%" />
+<col style="width: 20%" />
+<col style="width: 20%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>ターゲット</th>
+<th>CPU</th>
+<th>RAM</th>
+<th>Flash</th>
+<th>CI テスト</th>
+<th>実装予定</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>x86-64 (POSIX)</td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+<td>✅ 全コミット</td>
+<td>Phase 2+</td>
+</tr>
+<tr class="even">
+<td>STM32L476</td>
+<td>M4F</td>
+<td>128KB</td>
+<td>256KB</td>
+<td>エミュレーション</td>
+<td>✅ Phase 2</td>
+</tr>
+<tr class="odd">
+<td>nRF52840</td>
+<td>M4F</td>
+<td>256KB</td>
+<td>1MB</td>
+<td>エミュレーション</td>
+<td>✅ Phase 2</td>
+</tr>
+<tr class="even">
+<td>WCH CH32V203</td>
+<td>RV32IMC</td>
+<td>20KB</td>
+<td>64KB</td>
+<td>エミュレーション</td>
+<td>✅ Phase 3</td>
+</tr>
+<tr class="odd">
+<td>T-Head TH1100</td>
+<td>RV32IMC</td>
+<td>4-8MB</td>
+<td>16MB</td>
+<td>エミュレーション</td>
+<td>✅ Phase 3</td>
+</tr>
+</tbody>
+</table>
+<h3 id="エミュレーションツール">6.2 エミュレーションツール</h3>
+<ul>
+<li><strong>ARM Cortex-M:</strong> QEMU ARM（優秀なサポート）</li>
+<li><strong>RISC-V:</strong> QEMU RISC-V（成熟、TH1100・CH32V203
+対応）</li>
+<li><strong>x86-64:</strong> ネイティブ
+POSIX（Linux、macOS、Windows）</li>
+</ul>
+<hr />
+<h2 id="実装チェックリスト">7. 実装チェックリスト</h2>
+<h3 id="arm-cortex-m-対応">ARM Cortex-M 対応</h3>
+<ul class="task-list">
+<li><label><input type="checkbox" />STM32L4 HAL
+アダプター設定</label></li>
+<li><label><input type="checkbox" />nRF52840 ボード定義追加</label></li>
+<li><label><input type="checkbox" />Zephyr
+デバイスツリー統合</label></li>
+<li><label><input type="checkbox" />STM32L476 実機での COOS
+テスト</label></li>
+<li><label><input type="checkbox" />メモリ予算検証（最小 128 KB
+RAM）</label></li>
+<li><label><input
+type="checkbox" />実機でのパフォーマンス測定</label></li>
+</ul>
+<h3 id="risc-v-対応">RISC-V 対応</h3>
+<ul class="task-list">
+<li><label><input type="checkbox" />T-Head or WCH 選択決定</label></li>
+<li><label><input type="checkbox" />RISC-V
+インタプリタバックエンド実装</label></li>
+<li><label><input
+type="checkbox" />ボード定義作成（TH1100、CH32V203）</label></li>
+<li><label><input type="checkbox" />RISC-V 実機での COOS
+テスト</label></li>
+<li><label><input type="checkbox" />ARM vs RISC-V
+パフォーマンス比較</label></li>
+<li><label><input
+type="checkbox" />ツールチェーン検証（GCC、LLVM）</label></li>
+</ul>
+<h3 id="cicd">CI/CD</h3>
+<ul class="task-list">
+<li><label><input type="checkbox" />QEMU ベース
+CI（ARM）構築</label></li>
+<li><label><input type="checkbox" />QEMU ベース
+CI（RISC-V）構築</label></li>
+<li><label><input
+type="checkbox" />プラットフォーム固有テスト追加</label></li>
+<li><label><input
+type="checkbox" />全対応ターゲットのビルド自動化</label></li>
+</ul>
+</body>
+</html>

@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>CODING_STYLE</title>
+  <style>
+    html {
+      color: #1a1a1a;
+      background-color: #fdfdfd;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        background-color: white;
+      }
+      body {
+        background-color: transparent;
+        color: black;
+        font-size: 12pt;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a {
+      color: #1a1a1a;
+    }
+    a:visited {
+      color: #1a1a1a;
+    }
+    img {
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid #e6e6e6;
+      color: #606060;
+    }
+    code {
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      background-color: #1a1a1a;
+      border: none;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    th {
+      border-top: 1px solid #1a1a1a;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+  </style>
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">CODING_STYLE</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#fireball-coding-style"
+id="toc-fireball-coding-style">Fireball Coding Style</a>
+<ul>
+<li><a href="#c-coresubsystems" id="toc-c-coresubsystems">1. C++
+(Core/Subsystems)</a>
+<ul>
+<li><a href="#命名ファイル" id="toc-命名ファイル">1.1
+命名・ファイル</a></li>
+<li><a href="#スタイル" id="toc-スタイル">1.2 スタイル</a></li>
+<li><a href="#制限-embedded-constraints"
+id="toc-制限-embedded-constraints">1.3 制限 (Embedded
+Constraints)</a></li>
+<li><a href="#設計パターン" id="toc-設計パターン">1.4
+設計パターン</a></li>
+</ul></li>
+<li><a href="#c-driversplatform" id="toc-c-driversplatform">2. C
+(Drivers/Platform)</a></li>
+<li><a href="#checklist" id="toc-checklist">3. Checklist</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="fireball-coding-style">Fireball Coding Style</h1>
+<p><strong>原則</strong>:
+標準C/C++準拠。独自拡張禁止。メモリ効率最優先。</p>
+<h2 id="c-coresubsystems">1. C++ (Core/Subsystems)</h2>
+<h3 id="命名ファイル">1.1 命名・ファイル</h3>
+<ul>
+<li><strong>ファイル</strong>: <code>inc/path/to/file.hxx</code> (IF),
+<code>src/path/to/file.cxx</code> (Impl)</li>
+<li><strong>Class/Func/Var</strong>: <code>snake_case</code> (e.g.,
+<code>ipc_router</code>, <code>send_message</code>)</li>
+<li><strong>Struct</strong>: <code>typedef struct { ... } name_t;</code>
+(<code>_t</code> suffix)</li>
+<li><strong>Const/Macro</strong>: <code>UPPER_SNAKE_CASE</code></li>
+<li><strong>Member</strong>: <code>variable_</code> (trailing
+underscore)</li>
+</ul>
+<h3 id="スタイル">1.2 スタイル</h3>
+<ul>
+<li><strong>Indent</strong>: 2 spaces (No tabs)</li>
+<li><strong>Brace</strong>: Allman style (New line)</li>
+<li><strong>Limit</strong>: 100 chars/line</li>
+<li><strong>Pointer</strong>: <code>int* ptr</code> (Left aligned)</li>
+</ul>
+<h3 id="制限-embedded-constraints">1.3 制限 (Embedded Constraints)</h3>
+<ul>
+<li><strong>Prohibited</strong>: <code>std::map</code>,
+<code>std::unordered_map</code>, <code>std::function</code>,
+<code>std::exception</code>, RTTI</li>
+<li><strong>Allowed</strong>: <code>std::array</code>,
+<code>std::string_view</code>, <code>std::optional</code>,
+<code>&lt;algorithm&gt;</code>, <code>&lt;cstring&gt;</code></li>
+<li><strong>String</strong>: <code>std::string</code>
+使用禁止。<code>std::string_view</code> か <code>char[]</code>
+を使用。</li>
+<li><strong>Lookup</strong>: <code>sorted std::array</code> +
+<code>std::lower_bound</code> (Binary Search)</li>
+<li><strong>Flags</strong>: <code>-fno-exceptions -fno-rtti</code></li>
+</ul>
+<h3 id="設計パターン">1.4 設計パターン</h3>
+<ul>
+<li><strong>Smart Ptr</strong>: <code>std::unique_ptr</code> 推奨。裸の
+<code>new/delete</code> 禁止。</li>
+<li><strong>Error</strong>: <code>int</code> return code (POSIX
+<code>errno</code> style)。例外禁止。</li>
+<li><strong>Callback</strong>: 関数ポインタを使用
+(<code>typedef int (*handler_t)(u32, u8);</code>)。<code>void*</code>
+コンテキスト回避。</li>
+</ul>
+<h2 id="c-driversplatform">2. C (Drivers/Platform)</h2>
+<ul>
+<li><strong>Style</strong>: Zephyr/Linux kernel style</li>
+<li><strong>Struct</strong>: <code>snake_case_t</code></li>
+<li><strong>Func</strong>: <code>module_action()</code></li>
+</ul>
+<h2 id="checklist">3. Checklist</h2>
+<ul class="task-list">
+<li><label><input type="checkbox" /><code>clang-format</code>
+適用済みか</label></li>
+<li><label><input type="checkbox" />STL
+禁止コンテナを使っていないか</label></li>
+<li><label><input type="checkbox" /><code>.text</code>
+サイズ肥大化していないか</label></li>
+</ul>
+</body>
+</html>

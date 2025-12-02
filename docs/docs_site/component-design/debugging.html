@@ -1,0 +1,1017 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>debugging</title>
+  <style>
+    html {
+      color: #1a1a1a;
+      background-color: #fdfdfd;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        background-color: white;
+      }
+      body {
+        background-color: transparent;
+        color: black;
+        font-size: 12pt;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a {
+      color: #1a1a1a;
+    }
+    a:visited {
+      color: #1a1a1a;
+    }
+    img {
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid #e6e6e6;
+      color: #606060;
+    }
+    code {
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      background-color: #1a1a1a;
+      border: none;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    th {
+      border-top: 1px solid #1a1a1a;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+    /* CSS for syntax highlighting */
+    pre > code.sourceCode { white-space: pre; position: relative; }
+    pre > code.sourceCode > span { line-height: 1.25; }
+    pre > code.sourceCode > span:empty { height: 1.2em; }
+    .sourceCode { overflow: visible; }
+    code.sourceCode > span { color: inherit; text-decoration: inherit; }
+    div.sourceCode { margin: 1em 0; }
+    pre.sourceCode { margin: 0; }
+    @media screen {
+    div.sourceCode { overflow: auto; }
+    }
+    @media print {
+    pre > code.sourceCode { white-space: pre-wrap; }
+    pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+    }
+    pre.numberSource code
+      { counter-reset: source-line 0; }
+    pre.numberSource code > span
+      { position: relative; left: -4em; counter-increment: source-line; }
+    pre.numberSource code > span > a:first-child::before
+      { content: counter(source-line);
+        position: relative; left: -1em; text-align: right; vertical-align: baseline;
+        border: none; display: inline-block;
+        -webkit-touch-callout: none; -webkit-user-select: none;
+        -khtml-user-select: none; -moz-user-select: none;
+        -ms-user-select: none; user-select: none;
+        padding: 0 4px; width: 4em;
+        color: #aaaaaa;
+      }
+    pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+    div.sourceCode
+      {   }
+    @media screen {
+    pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+    }
+    code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+    code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+    code span.at { color: #7d9029; } /* Attribute */
+    code span.bn { color: #40a070; } /* BaseN */
+    code span.bu { color: #008000; } /* BuiltIn */
+    code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+    code span.ch { color: #4070a0; } /* Char */
+    code span.cn { color: #880000; } /* Constant */
+    code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+    code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+    code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+    code span.dt { color: #902000; } /* DataType */
+    code span.dv { color: #40a070; } /* DecVal */
+    code span.er { color: #ff0000; font-weight: bold; } /* Error */
+    code span.ex { } /* Extension */
+    code span.fl { color: #40a070; } /* Float */
+    code span.fu { color: #06287e; } /* Function */
+    code span.im { color: #008000; font-weight: bold; } /* Import */
+    code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+    code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+    code span.op { color: #666666; } /* Operator */
+    code span.ot { color: #007020; } /* Other */
+    code span.pp { color: #bc7a00; } /* Preprocessor */
+    code span.sc { color: #4070a0; } /* SpecialChar */
+    code span.ss { color: #bb6688; } /* SpecialString */
+    code span.st { color: #4070a0; } /* String */
+    code span.va { color: #19177c; } /* Variable */
+    code span.vs { color: #4070a0; } /* VerbatimString */
+    code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+  </style>
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">debugging</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#fireball-debugging-strategy"
+id="toc-fireball-debugging-strategy">Fireball Debugging Strategy</a>
+<ul>
+<li><a href="#overview" id="toc-overview">Overview</a></li>
+<li><a href="#gdb-remote-protocol-support"
+id="toc-gdb-remote-protocol-support">1. GDB Remote Protocol Support</a>
+<ul>
+<li><a href="#概要overview"
+id="toc-概要overview">概要（Overview）</a></li>
+<li><a href="#サポートされる-rsp-コマンド"
+id="toc-サポートされる-rsp-コマンド">サポートされる RSP
+コマンド</a></li>
+<li><a href="#rsp-通信層transport-layer"
+id="toc-rsp-通信層transport-layer">RSP 通信層（Transport
+Layer）</a></li>
+<li><a href="#rsp-パケットフォーマットpacket-format"
+id="toc-rsp-パケットフォーマットpacket-format">RSP
+パケットフォーマット（Packet Format）</a></li>
+<li><a href="#デバッガバックエンド選択"
+id="toc-デバッガバックエンド選択">デバッガバックエンド選択</a></li>
+</ul></li>
+<li><a href="#ブレークポイント管理breakpoint-management"
+id="toc-ブレークポイント管理breakpoint-management">2.
+ブレークポイント管理（Breakpoint Management）</a>
+<ul>
+<li><a href="#ブレークポイントタイプbreakpoint-types"
+id="toc-ブレークポイントタイプbreakpoint-types">ブレークポイントタイプ（Breakpoint
+Types）</a></li>
+<li><a href="#ブレークポイント設定例setting-breakpoints"
+id="toc-ブレークポイント設定例setting-breakpoints">ブレークポイント設定例（Setting
+Breakpoints）</a></li>
+<li><a href="#実装implementation"
+id="toc-実装implementation">実装（Implementation）</a></li>
+</ul></li>
+<li><a href="#レジスタマップregister-map"
+id="toc-レジスタマップregister-map">3. レジスタマップ（Register
+Map）</a>
+<ul>
+<li><a href="#レジスタ読み取り実装register-read"
+id="toc-レジスタ読み取り実装register-read">レジスタ読み取り実装（Register
+Read）</a></li>
+</ul></li>
+<li><a href="#メモリアクセス制御memory-access-control"
+id="toc-メモリアクセス制御memory-access-control">4.
+メモリアクセス制御（Memory Access Control）</a>
+<ul>
+<li><a href="#アクセス検証access-validation"
+id="toc-アクセス検証access-validation">アクセス検証（Access
+Validation）</a></li>
+<li><a href="#メモリ読み取り例memory-read"
+id="toc-メモリ読み取り例memory-read">メモリ読み取り例（Memory
+Read）</a></li>
+</ul></li>
+<li><a href="#ステップ実行stepping" id="toc-ステップ実行stepping">5.
+ステップ実行（Stepping）</a>
+<ul>
+<li><a href="#ステップタイプstep-types"
+id="toc-ステップタイプstep-types">ステップタイプ（Step Types）</a></li>
+<li><a href="#gdb-rsp-ステップコマンド"
+id="toc-gdb-rsp-ステップコマンド">GDB RSP ステップコマンド</a></li>
+</ul></li>
+<li><a href="#vscode-統合vscode-integration"
+id="toc-vscode-統合vscode-integration">6. VSCode 統合（VSCode
+Integration）</a>
+<ul>
+<li><a href="#launch.json-設定例"
+id="toc-launch.json-設定例">launch.json 設定例</a></li>
+<li><a href="#python-pretty-printerfireball-構造体用"
+id="toc-python-pretty-printerfireball-構造体用">Python Pretty
+Printer（Fireball 構造体用）</a></li>
+</ul></li>
+<li><a href="#デバッグ情報の可視化debug-information-visualization"
+id="toc-デバッグ情報の可視化debug-information-visualization">7.
+デバッグ情報の可視化（Debug Information Visualization）</a>
+<ul>
+<li><a href="#デバッグコンソール出力例"
+id="toc-デバッグコンソール出力例">デバッグコンソール出力例</a></li>
+</ul></li>
+<li><a href="#セキュリティ考慮事項security-considerations"
+id="toc-セキュリティ考慮事項security-considerations">8.
+セキュリティ考慮事項（Security Considerations）</a>
+<ul>
+<li><a href="#アクセス制限access-restrictions"
+id="toc-アクセス制限access-restrictions">アクセス制限（Access
+Restrictions）</a></li>
+<li><a href="#実装例implementation"
+id="toc-実装例implementation">実装例（Implementation）</a></li>
+</ul></li>
+<li><a href="#ディレクトリ構造directory-structure"
+id="toc-ディレクトリ構造directory-structure">9.
+ディレクトリ構造（Directory Structure）</a></li>
+<li><a href="#phase-3-実装タスク" id="toc-phase-3-実装タスク">10. Phase
+3 実装タスク</a></li>
+<li><a href="#将来の拡張future-enhancements"
+id="toc-将来の拡張future-enhancements">11. 将来の拡張（Future
+Enhancements）</a></li>
+<li><a href="#まとめsummary"
+id="toc-まとめsummary">まとめ（Summary）</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="fireball-debugging-strategy">Fireball Debugging Strategy</h1>
+<p><strong>Version:</strong> 0.1.0 <strong>Date:</strong> 2025-11-28
+<strong>Author:</strong> Takuya Matsunaga</p>
+<hr />
+<h2 id="overview">Overview</h2>
+<p><strong>概要：</strong> Fireball debugger サブシステム（Phase 3
+で実装予定）は、GDB Remote Protocol をサポートし、VSCode、GDB、lldb
+などの標準的なデバッガと統合します。これにより、WASM ゲストコード、COOS
+コルーチン、システムサブシステムをステップ実行したり、ブレークポイントを設定したりできるようになります。</p>
+<p><strong>デバッグの 3 つのレベル：</strong></p>
+<ol type="1">
+<li><strong>WASM ゲストレベル</strong>: 個々の WASM
+命令のステップ実行、ローカル変数の監視</li>
+<li><strong>コルーチンレベル</strong>:
+コルーチン間のコンテキストスイッチ、チャネル操作の追跡</li>
+<li><strong>システムレベル</strong>:
+メモリ割り当て、サービス通信の可視化</li>
+</ol>
+<hr />
+<h2 id="gdb-remote-protocol-support">1. GDB Remote Protocol Support</h2>
+<h3 id="概要overview">概要（Overview）</h3>
+<p>GDB Remote
+Protocol（RSP）は、デバッガとデバッグターゲットの標準的な通信プロトコルです。Fireball
+デバッガサブシステムは RSP
+サーバーとして動作し、以下の機能を提供します：</p>
+<ul>
+<li><strong>ブレークポイント管理</strong>: 最大 5
+個のブレークポイント設定・削除</li>
+<li><strong>ステップ実行</strong>: 1 WASM 命令単位での実行制御</li>
+<li><strong>レジスタ読み取り</strong>:
+コルーチンレジスタ状態（PC、ローカル変数、スタック）</li>
+<li><strong>メモリアクセス</strong>: WASM
+線形メモリの読み取り・書き込み（バウンダリチェック付き）</li>
+<li><strong>スレッド情報</strong>: コルーチン一覧、現在のコルーチン ID
+取得</li>
+<li><strong>IDE 統合</strong>: VSCode、GDB、lldb との通信</li>
+</ul>
+<h3 id="サポートされる-rsp-コマンド">サポートされる RSP コマンド</h3>
+<table>
+<thead>
+<tr class="header">
+<th>コマンド</th>
+<th>説明</th>
+<th>実装状態</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>g</code></td>
+<td>レジスタ読み取り</td>
+<td>✅ Phase 3</td>
+</tr>
+<tr class="even">
+<td><code>G</code></td>
+<td>レジスタ書き込み</td>
+<td>⚠️ Future</td>
+</tr>
+<tr class="odd">
+<td><code>m</code></td>
+<td>メモリ読み取り</td>
+<td>✅ Phase 3</td>
+</tr>
+<tr class="even">
+<td><code>M</code></td>
+<td>メモリ書き込み</td>
+<td>⚠️ Future</td>
+</tr>
+<tr class="odd">
+<td><code>z/Z</code></td>
+<td>ブレークポイント設定・削除</td>
+<td>✅ Phase 3</td>
+</tr>
+<tr class="even">
+<td><code>c</code></td>
+<td>実行継続</td>
+<td>✅ Phase 3</td>
+</tr>
+<tr class="odd">
+<td><code>s</code></td>
+<td>ステップ実行</td>
+<td>✅ Phase 3</td>
+</tr>
+<tr class="even">
+<td><code>H</code></td>
+<td>スレッド選択</td>
+<td>✅ Phase 3</td>
+</tr>
+<tr class="odd">
+<td><code>?</code></td>
+<td>停止理由取得</td>
+<td>✅ Phase 3</td>
+</tr>
+<tr class="even">
+<td><code>qfThreadInfo</code></td>
+<td>スレッド一覧</td>
+<td>✅ Phase 3</td>
+</tr>
+<tr class="odd">
+<td><code>qC</code></td>
+<td>現在のスレッド</td>
+<td>✅ Phase 3</td>
+</tr>
+</tbody>
+</table>
+<h3 id="rsp-通信層transport-layer">RSP 通信層（Transport Layer）</h3>
+<p><strong>概要：</strong> RSP
+はプロトコルレベルの仕様のみ定義し、物理的な通信経路は実装に任されています。Fireball
+では、以下の 3 つの通信方法をサポートします：</p>
+<h4 id="方式-1-serial-port-uart---推奨">方式 1: Serial Port (UART) -
+推奨</h4>
+<p><strong>特徴：</strong> - 標準的な組み込みシステムの選択 -
+ハードウェア: UART（ボーレート 115200、8N1） - 物理層:
+RS232、USB-Serial、など</p>
+<p><strong>フロー：</strong></p>
+<pre><code>┌──────────────────────┐
+│ VSCode/GDB (Host)    │
+│ RSP クライアント     │
+└──────────┬───────────┘
+           │ TCP localhost:3333
+           ▼
+┌──────────────────────┐
+│ Fireball Debugger    │
+│ RSP サーバー         │
+└──────────┬───────────┘
+           │
+        UART (/dev/ttyUSB0)
+           │
+┌──────────▼───────────┐
+│ Hardware (STM32等)   │
+└──────────────────────┘</code></pre>
+<p><strong>実装例：</strong></p>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Debugger が RSP コマンドを UART から受信</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> debugger_uart_backend <span class="op">{</span></span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a> <span class="kw">private</span><span class="op">:</span></span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">int</span> <span class="va">uart_fd_</span><span class="op">;</span></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>  <span class="bu">std::</span>vector<span class="op">&lt;</span><span class="dt">uint8_t</span><span class="op">&gt;</span> <span class="va">rx_buffer_</span><span class="op">;</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a> <span class="kw">public</span><span class="op">:</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>  <span class="co">// UART からデータ受信（RSP フォーマット）</span></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>  <span class="bu">std::</span>optional<span class="op">&lt;</span><span class="bu">std::</span>string<span class="op">&gt;</span> read_rsp_command<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint8_t</span> c <span class="op">=</span> uart_read_byte<span class="op">();</span>  <span class="co">// ブロッキング読み込み</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>    <span class="co">// RSP はパケット形式： $&lt;data&gt;#&lt;checksum&gt;</span></span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(</span>c <span class="op">==</span> <span class="ch">&#39;$&#39;</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>      <span class="bu">std::</span>string cmd<span class="op">;</span></span>
+<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>      <span class="cf">while</span> <span class="op">(</span><span class="kw">true</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>        c <span class="op">=</span> uart_read_byte<span class="op">();</span></span>
+<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a>        <span class="cf">if</span> <span class="op">(</span>c <span class="op">==</span> <span class="ch">&#39;#&#39;</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a>          <span class="co">// チェックサム読み込み</span></span>
+<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a>          <span class="dt">uint8_t</span> cksum_hi <span class="op">=</span> uart_read_byte<span class="op">();</span></span>
+<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a>          <span class="dt">uint8_t</span> cksum_lo <span class="op">=</span> uart_read_byte<span class="op">();</span></span>
+<span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a>          <span class="cf">return</span> cmd<span class="op">;</span></span>
+<span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb2-23"><a href="#cb2-23" aria-hidden="true" tabindex="-1"></a>        cmd <span class="op">+=</span> <span class="op">(</span><span class="dt">char</span><span class="op">)</span>c<span class="op">;</span></span>
+<span id="cb2-24"><a href="#cb2-24" aria-hidden="true" tabindex="-1"></a>      <span class="op">}</span></span>
+<span id="cb2-25"><a href="#cb2-25" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb2-26"><a href="#cb2-26" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="bu">std::</span>nullopt<span class="op">;</span></span>
+<span id="cb2-27"><a href="#cb2-27" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb2-28"><a href="#cb2-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-29"><a href="#cb2-29" aria-hidden="true" tabindex="-1"></a>  <span class="co">// RSP レスポンス送信</span></span>
+<span id="cb2-30"><a href="#cb2-30" aria-hidden="true" tabindex="-1"></a>  <span class="dt">void</span> send_rsp_response<span class="op">(</span><span class="at">const</span> <span class="bu">std::</span>string<span class="op">&amp;</span> data<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb2-31"><a href="#cb2-31" aria-hidden="true" tabindex="-1"></a>    <span class="co">// フォーマット: $&lt;data&gt;#&lt;checksum&gt;</span></span>
+<span id="cb2-32"><a href="#cb2-32" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint8_t</span> cksum <span class="op">=</span> calculate_checksum<span class="op">(</span>data<span class="op">);</span></span>
+<span id="cb2-33"><a href="#cb2-33" aria-hidden="true" tabindex="-1"></a>    uart_printf<span class="op">(</span><span class="st">&quot;$</span><span class="sc">%s</span><span class="st">#</span><span class="sc">%02x</span><span class="st">&quot;</span><span class="op">,</span> data<span class="op">.</span>c_str<span class="op">(),</span> cksum<span class="op">);</span></span>
+<span id="cb2-34"><a href="#cb2-34" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb2-35"><a href="#cb2-35" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code></pre></div>
+<p><strong>プラットフォーム別ボーレート設定：</strong></p>
+<table>
+<thead>
+<tr class="header">
+<th>プラットフォーム</th>
+<th>ボーレート</th>
+<th>注釈</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>WCH CH32V307</td>
+<td>115200</td>
+<td>デフォルト</td>
+</tr>
+<tr class="even">
+<td>nRF52840</td>
+<td>115200</td>
+<td>Zephyr デフォルト</td>
+</tr>
+<tr class="odd">
+<td>STM32F4</td>
+<td>115200</td>
+<td>互換性保証</td>
+</tr>
+</tbody>
+</table>
+<h4 id="方式-2-stdinstdout---デバッグのみ非推奨">方式 2: stdin/stdout -
+デバッグのみ（非推奨）</h4>
+<p><strong>特徴：</strong> - ホスト PC での開発・テスト用 - UART
+ハードウェアが不要 - パフォーマンスは低い（遅延が大きい）</p>
+<p><strong>用途：</strong> - Simulator (x86/POSIX) での単体テスト -
+CI/CD パイプライン</p>
+<p><strong>実装例：</strong></p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> debugger_stdio_backend <span class="op">{</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a> <span class="kw">public</span><span class="op">:</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>  <span class="bu">std::</span>optional<span class="op">&lt;</span><span class="bu">std::</span>string<span class="op">&gt;</span> read_rsp_command<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>string cmd<span class="op">;</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">char</span> c<span class="op">;</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>    <span class="co">// stdin からパケット受信</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>    <span class="cf">while</span> <span class="op">(</span><span class="bu">std::</span>cin<span class="op">.</span>get<span class="op">(</span>c<span class="op">))</span> <span class="op">{</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> <span class="op">(</span>c <span class="op">==</span> <span class="ch">&#39;$&#39;</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>        <span class="cf">while</span> <span class="op">(</span><span class="bu">std::</span>cin<span class="op">.</span>get<span class="op">(</span>c<span class="op">)</span> <span class="op">&amp;&amp;</span> c <span class="op">!=</span> <span class="ch">&#39;#&#39;</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>          cmd <span class="op">+=</span> c<span class="op">;</span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>        <span class="op">}</span></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>        <span class="co">// チェックサム破棄（単体テスト用）</span></span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a>        <span class="bu">std::</span>cin<span class="op">.</span>ignore<span class="op">(</span><span class="dv">3</span><span class="op">);</span>  <span class="co">// #XX を読み飛ばし</span></span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> cmd<span class="op">;</span></span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a>      <span class="op">}</span></span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="bu">std::</span>nullopt<span class="op">;</span></span>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a>  <span class="dt">void</span> send_rsp_response<span class="op">(</span><span class="at">const</span> <span class="bu">std::</span>string<span class="op">&amp;</span> data<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-21"><a href="#cb3-21" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint8_t</span> cksum <span class="op">=</span> calculate_checksum<span class="op">(</span>data<span class="op">);</span></span>
+<span id="cb3-22"><a href="#cb3-22" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">&quot;$&quot;</span> <span class="op">&lt;&lt;</span> data <span class="op">&lt;&lt;</span> <span class="st">&quot;#&quot;</span> <span class="op">&lt;&lt;</span> <span class="bu">std::</span>hex <span class="op">&lt;&lt;</span> <span class="op">(</span><span class="dt">int</span><span class="op">)</span>cksum <span class="op">&lt;&lt;</span> <span class="bu">std::</span>endl<span class="op">;</span></span>
+<span id="cb3-23"><a href="#cb3-23" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb3-24"><a href="#cb3-24" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code></pre></div>
+<p><strong>制限：</strong> - ボーレート無制限（TCP/IP over USB） -
+ローカルホストのみ（Network 接続不可） - デバッグ・テスト専用</p>
+<h4 id="方式-3-tcpip---将来対応">方式 3: TCP/IP - 将来対応</h4>
+<p><strong>特徴：</strong> - Ethernet / Wi-Fi 経由のリモートデバッグ -
+高帯域幅 - ネットワークデバイスが必須</p>
+<p><strong>計画：</strong> - Phase 3 では未実装 - 将来の拡張予定（Nordic
+nRF + Thread/Wi-Fi）</p>
+<h3 id="rsp-パケットフォーマットpacket-format">RSP
+パケットフォーマット（Packet Format）</h3>
+<p>RSP の基本パケット構造：</p>
+<pre><code>┌─────────┬──────────────┬─────┬───────────┐
+│ &#39;$&#39;     │   &lt;data&gt;     │ &#39;#&#39; │ &lt;checksum&gt;│
+├─────────┼──────────────┼─────┼───────────┤
+│ 開始    │ コマンド/    │ 区切 │ チェック │
+│ マーク  │ レスポンス   │     │ サム      │
+└─────────┴──────────────┴─────┴───────────┘
+
+チェックサム = sum(&lt;data&gt;) &amp; 0xFF (16進数表記)</code></pre>
+<p><strong>例：</strong></p>
+<pre><code>送信 (Host → Target):
+$m400,10#2a
+
+分解:
+  $ : 開始マーク
+  m : コマンド (メモリ読み取り)
+  400,10 : パラメータ（アドレス 0x400、サイズ 16 バイト）
+  # : チェックサム区切り
+  2a : チェックサム
+
+受信 (Target → Host):
+$48656c6c6f20576f726c64212021#56
+
+分解:
+  $ : 開始マーク
+  48656c6c6f... : レスポンス（16進数エンコード）
+  # : チェックサム区切り
+  56 : チェックサム</code></pre>
+<h3 id="デバッガバックエンド選択">デバッガバックエンド選択</h3>
+<p><strong>ビルド時フラグ：</strong></p>
+<div class="sourceCode" id="cb6"><pre
+class="sourceCode cmake"><code class="sourceCode cmake"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="co"># UART backend (組み込みシステム)</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="kw">target_compile_definitions</span>(<span class="bn">debugger</span> <span class="ot">PRIVATE</span> DEBUGGER_BACKEND_UART)</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a><span class="co"># stdio backend (シミュレーター)</span></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a><span class="kw">target_compile_definitions</span>(<span class="bn">debugger</span> <span class="ot">PRIVATE</span> DEBUGGER_BACKEND_STDIO)</span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a><span class="co"># TCP/IP backend (将来)</span></span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a><span class="co"># target_compile_definitions(debugger PRIVATE DEBUGGER_BACKEND_TCP)</span></span></code></pre></div>
+<p><strong>ランタイム選択：</strong></p>
+<div class="sourceCode" id="cb7"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> debugger_service <span class="op">{</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a> <span class="kw">private</span><span class="op">:</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>  <span class="bu">std::</span>unique_ptr<span class="op">&lt;</span>debugger_backend<span class="op">&gt;</span> <span class="va">backend_</span><span class="op">;</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a> <span class="kw">public</span><span class="op">:</span></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>  <span class="kw">explicit</span> debugger_service<span class="op">(</span><span class="dt">debugger_backend_type</span> type<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>    <span class="cf">switch</span> <span class="op">(</span>type<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>      <span class="cf">case</span> <span class="dt">debugger_backend_type</span><span class="op">::</span>UART<span class="op">:</span></span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>        <span class="va">backend_</span> <span class="op">=</span> <span class="bu">std::</span>make_unique<span class="op">&lt;</span>debugger_uart_backend<span class="op">&gt;();</span></span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a>        <span class="cf">break</span><span class="op">;</span></span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a>      <span class="cf">case</span> <span class="dt">debugger_backend_type</span><span class="op">::</span>STDIO<span class="op">:</span></span>
+<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a>        <span class="va">backend_</span> <span class="op">=</span> <span class="bu">std::</span>make_unique<span class="op">&lt;</span>debugger_stdio_backend<span class="op">&gt;();</span></span>
+<span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a>        <span class="cf">break</span><span class="op">;</span></span>
+<span id="cb7-14"><a href="#cb7-14" aria-hidden="true" tabindex="-1"></a>      <span class="cf">default</span><span class="op">:</span></span>
+<span id="cb7-15"><a href="#cb7-15" aria-hidden="true" tabindex="-1"></a>        <span class="va">backend_</span> <span class="op">=</span> <span class="kw">nullptr</span><span class="op">;</span></span>
+<span id="cb7-16"><a href="#cb7-16" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb7-17"><a href="#cb7-17" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb7-18"><a href="#cb7-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-19"><a href="#cb7-19" aria-hidden="true" tabindex="-1"></a>  <span class="co">// コマンド受信・処理・送信</span></span>
+<span id="cb7-20"><a href="#cb7-20" aria-hidden="true" tabindex="-1"></a>  <span class="dt">void</span> event_loop<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb7-21"><a href="#cb7-21" aria-hidden="true" tabindex="-1"></a>    <span class="cf">while</span> <span class="op">(</span><span class="kw">true</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb7-22"><a href="#cb7-22" aria-hidden="true" tabindex="-1"></a>      <span class="kw">auto</span> cmd <span class="op">=</span> <span class="va">backend_</span><span class="op">-&gt;</span>read_rsp_command<span class="op">();</span></span>
+<span id="cb7-23"><a href="#cb7-23" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> <span class="op">(!</span>cmd<span class="op">)</span> <span class="cf">continue</span><span class="op">;</span></span>
+<span id="cb7-24"><a href="#cb7-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-25"><a href="#cb7-25" aria-hidden="true" tabindex="-1"></a>      <span class="kw">auto</span> response <span class="op">=</span> process_command<span class="op">(*</span>cmd<span class="op">);</span></span>
+<span id="cb7-26"><a href="#cb7-26" aria-hidden="true" tabindex="-1"></a>      <span class="va">backend_</span><span class="op">-&gt;</span>send_rsp_response<span class="op">(</span>response<span class="op">);</span></span>
+<span id="cb7-27"><a href="#cb7-27" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb7-28"><a href="#cb7-28" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb7-29"><a href="#cb7-29" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code></pre></div>
+<hr />
+<h2 id="ブレークポイント管理breakpoint-management">2.
+ブレークポイント管理（Breakpoint Management）</h2>
+<h3
+id="ブレークポイントタイプbreakpoint-types">ブレークポイントタイプ（Breakpoint
+Types）</h3>
+<div class="sourceCode" id="cb8"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="kw">enum</span> <span class="kw">class</span> <span class="dt">breakpoint_type</span> <span class="op">{</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>  INSTRUCTION<span class="op">,</span>      <span class="co">// WASM 命令ポインタ上</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>  MEMORY_READ<span class="op">,</span>      <span class="co">// メモリ読み取りアクセス</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>  MEMORY_WRITE<span class="op">,</span>     <span class="co">// メモリ書き込みアクセス</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>  SYSCALL<span class="op">,</span>          <span class="co">// システムコール実行時</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> breakpoint <span class="op">{</span></span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a>  <span class="dt">uint32_t</span> id<span class="op">;</span></span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a>  <span class="dt">uint32_t</span> address<span class="op">;</span>           <span class="co">// コード中のオフセット</span></span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a>  <span class="dt">breakpoint_type</span> type<span class="op">;</span></span>
+<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a>  <span class="dt">bool</span> enabled<span class="op">;</span></span>
+<span id="cb8-13"><a href="#cb8-13" aria-hidden="true" tabindex="-1"></a>  <span class="dt">uint32_t</span> hit_count<span class="op">;</span>         <span class="co">// ヒット回数（条件付きブレークポイント用）</span></span>
+<span id="cb8-14"><a href="#cb8-14" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code></pre></div>
+<h3
+id="ブレークポイント設定例setting-breakpoints">ブレークポイント設定例（Setting
+Breakpoints）</h3>
+<div class="sourceCode" id="cb9"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="co">// GDB RSP: Z0,1024,1 (命令ブレークポイント、アドレス 0x400)</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>debugger_service<span class="op">-&gt;</span>add_breakpoint<span class="op">(</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">breakpoint_type</span><span class="op">::</span>INSTRUCTION<span class="op">,</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>  <span class="bn">0x400</span><span class="op">,</span></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>  <span class="kw">true</span>  <span class="co">// enabled</span></span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a><span class="op">);</span></span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a><span class="co">// GDB RSP: z0,1024,1 (ブレークポイント削除)</span></span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a>debugger_service<span class="op">-&gt;</span>remove_breakpoint<span class="op">(</span><span class="bn">0x400</span><span class="op">);</span></span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a><span class="co">// リスト表示</span></span>
+<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a><span class="kw">auto</span> bps <span class="op">=</span> debugger_service<span class="op">-&gt;</span>list_breakpoints<span class="op">();</span></span>
+<span id="cb9-13"><a href="#cb9-13" aria-hidden="true" tabindex="-1"></a><span class="cf">for</span> <span class="op">(</span><span class="at">const</span> <span class="kw">auto</span><span class="op">&amp;</span> bp <span class="op">:</span> bps<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb9-14"><a href="#cb9-14" aria-hidden="true" tabindex="-1"></a>  <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> <span class="st">&quot;BP[&quot;</span> <span class="op">&lt;&lt;</span> bp<span class="op">.</span>id <span class="op">&lt;&lt;</span> <span class="st">&quot;]: addr=0x&quot;</span> <span class="op">&lt;&lt;</span> <span class="bu">std::</span>hex <span class="op">&lt;&lt;</span> bp<span class="op">.</span>address</span>
+<span id="cb9-15"><a href="#cb9-15" aria-hidden="true" tabindex="-1"></a>            <span class="op">&lt;&lt;</span> <span class="st">&quot; type=&quot;</span> <span class="op">&lt;&lt;</span> <span class="op">(</span><span class="dt">int</span><span class="op">)</span>bp<span class="op">.</span>type <span class="op">&lt;&lt;</span> <span class="st">&quot; hits=&quot;</span> <span class="op">&lt;&lt;</span> bp<span class="op">.</span>hit_count <span class="op">&lt;&lt;</span> <span class="bu">std::</span>endl<span class="op">;</span></span>
+<span id="cb9-16"><a href="#cb9-16" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="実装implementation">実装（Implementation）</h3>
+<div class="sourceCode" id="cb10"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="kw">namespace</span> fireball <span class="op">{</span> <span class="kw">namespace</span> services <span class="op">{</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> debugger_service <span class="op">{</span></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a> <span class="kw">private</span><span class="op">:</span></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>  <span class="bu">std::</span>map<span class="op">&lt;</span><span class="dt">uint32_t</span><span class="op">,</span> breakpoint<span class="op">&gt;</span> <span class="va">breakpoints_</span><span class="op">;</span></span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">uint32_t</span> <span class="va">next_bp_id_</span> <span class="op">=</span> <span class="dv">1</span><span class="op">;</span></span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a> <span class="kw">public</span><span class="op">:</span></span>
+<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a>  <span class="co">// ブレークポイント追加</span></span>
+<span id="cb10-10"><a href="#cb10-10" aria-hidden="true" tabindex="-1"></a>  <span class="dt">uint32_t</span> add_breakpoint<span class="op">(</span><span class="dt">uint32_t</span> address<span class="op">,</span> <span class="dt">breakpoint_type</span> type<span class="op">);</span></span>
+<span id="cb10-11"><a href="#cb10-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-12"><a href="#cb10-12" aria-hidden="true" tabindex="-1"></a>  <span class="co">// ブレークポイント削除</span></span>
+<span id="cb10-13"><a href="#cb10-13" aria-hidden="true" tabindex="-1"></a>  <span class="dt">void</span> remove_breakpoint<span class="op">(</span><span class="dt">uint32_t</span> address<span class="op">);</span></span>
+<span id="cb10-14"><a href="#cb10-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-15"><a href="#cb10-15" aria-hidden="true" tabindex="-1"></a>  <span class="co">// ブレークポイント有効化/無効化</span></span>
+<span id="cb10-16"><a href="#cb10-16" aria-hidden="true" tabindex="-1"></a>  <span class="dt">void</span> enable_breakpoint<span class="op">(</span><span class="dt">uint32_t</span> address<span class="op">,</span> <span class="dt">bool</span> enabled<span class="op">);</span></span>
+<span id="cb10-17"><a href="#cb10-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-18"><a href="#cb10-18" aria-hidden="true" tabindex="-1"></a>  <span class="co">// ブレークポイント一覧取得</span></span>
+<span id="cb10-19"><a href="#cb10-19" aria-hidden="true" tabindex="-1"></a>  <span class="bu">std::</span>vector<span class="op">&lt;</span>breakpoint<span class="op">&gt;</span> list_breakpoints<span class="op">()</span> <span class="at">const</span><span class="op">;</span></span>
+<span id="cb10-20"><a href="#cb10-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-21"><a href="#cb10-21" aria-hidden="true" tabindex="-1"></a>  <span class="co">// ブレークポイントチェック（命令実行時）</span></span>
+<span id="cb10-22"><a href="#cb10-22" aria-hidden="true" tabindex="-1"></a>  <span class="dt">bool</span> check_breakpoint<span class="op">(</span><span class="dt">uint32_t</span> pc<span class="op">);</span></span>
+<span id="cb10-23"><a href="#cb10-23" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb10-24"><a href="#cb10-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-25"><a href="#cb10-25" aria-hidden="true" tabindex="-1"></a><span class="op">}</span> <span class="op">}</span> <span class="co">// namespace fireball { namespace services</span></span></code></pre></div>
+<hr />
+<h2 id="レジスタマップregister-map">3. レジスタマップ（Register
+Map）</h2>
+<p>Fireball は WASM の実行状態を以下のレジスタセットで表現します：</p>
+<table>
+<colgroup>
+<col style="width: 39%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+<col style="width: 26%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>レジスタ</th>
+<th>ID</th>
+<th>内容</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>pc</code></td>
+<td>0</td>
+<td>Program Counter</td>
+<td>コード位置（バイトオフセット）</td>
+</tr>
+<tr class="even">
+<td><code>fp</code></td>
+<td>1</td>
+<td>Frame Pointer</td>
+<td>コルーチンフレーム位置</td>
+</tr>
+<tr class="odd">
+<td><code>sp</code></td>
+<td>2</td>
+<td>Stack Pointer</td>
+<td>スタック頂点</td>
+</tr>
+<tr class="even">
+<td><code>locals[0-15]</code></td>
+<td>3-18</td>
+<td>ローカル変数</td>
+<td>現在のコルーチン内のローカル</td>
+</tr>
+<tr class="odd">
+<td><code>memory_base</code></td>
+<td>19</td>
+<td>メモリベースアドレス</td>
+<td>WASM 線形メモリの開始位置</td>
+</tr>
+<tr class="even">
+<td><code>memory_size</code></td>
+<td>20</td>
+<td>メモリサイズ</td>
+<td>WASM 線形メモリのサイズ</td>
+</tr>
+<tr class="odd">
+<td><code>coro_id</code></td>
+<td>21</td>
+<td>コルーチン ID</td>
+<td>現在のコルーチン識別子</td>
+</tr>
+<tr class="even">
+<td><code>status</code></td>
+<td>22</td>
+<td>ステータス</td>
+<td>0=running, 1=blocked, 2=suspended</td>
+</tr>
+</tbody>
+</table>
+<h3
+id="レジスタ読み取り実装register-read">レジスタ読み取り実装（Register
+Read）</h3>
+<div class="sourceCode" id="cb11"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> debugger_service<span class="op">::</span>read_registers<span class="op">(</span><span class="dt">uint32_t</span> coro_id<span class="op">,</span> register_set<span class="op">&amp;</span> regs<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>  <span class="kw">auto</span> coro <span class="op">=</span> scheduler<span class="op">-&gt;</span>get_coroutine<span class="op">(</span>coro_id<span class="op">);</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> <span class="op">(!</span>coro<span class="op">)</span> <span class="cf">return</span><span class="op">;</span></span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a>  regs<span class="op">.</span>pc <span class="op">=</span> coro<span class="op">-&gt;</span>frame<span class="op">-&gt;</span>pc<span class="op">;</span></span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a>  regs<span class="op">.</span>fp <span class="op">=</span> coro<span class="op">-&gt;</span>frame<span class="op">-&gt;</span>frame_ptr<span class="op">;</span></span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a>  regs<span class="op">.</span>sp <span class="op">=</span> coro<span class="op">-&gt;</span>stack_ptr<span class="op">;</span></span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a>  <span class="co">// ローカル変数を読み取り</span></span>
+<span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> i <span class="op">&lt;</span> <span class="dv">16</span> <span class="op">&amp;&amp;</span> i <span class="op">&lt;</span> coro<span class="op">-&gt;</span>frame<span class="op">-&gt;</span>locals_count<span class="op">;</span> <span class="op">++</span>i<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a>    regs<span class="op">.</span>locals<span class="op">[</span>i<span class="op">]</span> <span class="op">=</span> coro<span class="op">-&gt;</span>frame<span class="op">-&gt;</span>locals<span class="op">[</span>i<span class="op">];</span></span>
+<span id="cb11-12"><a href="#cb11-12" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb11-13"><a href="#cb11-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-14"><a href="#cb11-14" aria-hidden="true" tabindex="-1"></a>  regs<span class="op">.</span>memory_base <span class="op">=</span> coro<span class="op">-&gt;</span><span class="kw">module</span><span class="op">-&gt;</span>linear_memory<span class="op">;</span></span>
+<span id="cb11-15"><a href="#cb11-15" aria-hidden="true" tabindex="-1"></a>  regs<span class="op">.</span>memory_size <span class="op">=</span> coro<span class="op">-&gt;</span><span class="kw">module</span><span class="op">-&gt;</span>memory_size<span class="op">;</span></span>
+<span id="cb11-16"><a href="#cb11-16" aria-hidden="true" tabindex="-1"></a>  regs<span class="op">.</span>coro_id <span class="op">=</span> coro_id<span class="op">;</span></span>
+<span id="cb11-17"><a href="#cb11-17" aria-hidden="true" tabindex="-1"></a>  regs<span class="op">.</span>status <span class="op">=</span> <span class="op">(</span><span class="dt">uint32_t</span><span class="op">)</span>coro<span class="op">-&gt;</span>state<span class="op">;</span></span>
+<span id="cb11-18"><a href="#cb11-18" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<hr />
+<h2 id="メモリアクセス制御memory-access-control">4.
+メモリアクセス制御（Memory Access Control）</h2>
+<h3 id="アクセス検証access-validation">アクセス検証（Access
+Validation）</h3>
+<div class="sourceCode" id="cb12"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="dt">bool</span> debugger_service<span class="op">::</span>validate_memory_access<span class="op">(</span></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">uint32_t</span> coro_id<span class="op">,</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">uint32_t</span> address<span class="op">,</span></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">uint32_t</span> size<span class="op">,</span></span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">bool</span> write<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a>  <span class="kw">auto</span> coro <span class="op">=</span> scheduler<span class="op">-&gt;</span>get_coroutine<span class="op">(</span>coro_id<span class="op">);</span></span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> <span class="op">(!</span>coro<span class="op">)</span> <span class="cf">return</span> <span class="kw">false</span><span class="op">;</span></span>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a>  <span class="dt">uint32_t</span> mem_base <span class="op">=</span> coro<span class="op">-&gt;</span><span class="kw">module</span><span class="op">-&gt;</span>linear_memory<span class="op">;</span></span>
+<span id="cb12-10"><a href="#cb12-10" aria-hidden="true" tabindex="-1"></a>  <span class="dt">uint32_t</span> mem_size <span class="op">=</span> coro<span class="op">-&gt;</span><span class="kw">module</span><span class="op">-&gt;</span>memory_size<span class="op">;</span></span>
+<span id="cb12-11"><a href="#cb12-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-12"><a href="#cb12-12" aria-hidden="true" tabindex="-1"></a>  <span class="co">// バウンダリチェック</span></span>
+<span id="cb12-13"><a href="#cb12-13" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> <span class="op">(</span>address <span class="op">+</span> size <span class="op">&gt;</span> mem_base <span class="op">+</span> mem_size<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb12-14"><a href="#cb12-14" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="kw">false</span><span class="op">;</span>  <span class="co">// メモリ範囲外</span></span>
+<span id="cb12-15"><a href="#cb12-15" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb12-16"><a href="#cb12-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-17"><a href="#cb12-17" aria-hidden="true" tabindex="-1"></a>  <span class="co">// 将来: パーミッションチェック</span></span>
+<span id="cb12-18"><a href="#cb12-18" aria-hidden="true" tabindex="-1"></a>  <span class="co">// if (write &amp;&amp; !has_write_permission(coro_id, address)) return false;</span></span>
+<span id="cb12-19"><a href="#cb12-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-20"><a href="#cb12-20" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> <span class="kw">true</span><span class="op">;</span></span>
+<span id="cb12-21"><a href="#cb12-21" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="メモリ読み取り例memory-read">メモリ読み取り例（Memory
+Read）</h3>
+<div class="sourceCode" id="cb13"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="co">// GDB RSP: m10,10 (アドレス 0x10 から 16 バイト読み取り)</span></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="bu">std::</span>vector<span class="op">&lt;</span><span class="dt">uint8_t</span><span class="op">&gt;</span> data <span class="op">=</span> debugger_service<span class="op">-&gt;</span>read_memory<span class="op">(</span></span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>  current_coro_id<span class="op">,</span></span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>  <span class="bn">0x10</span><span class="op">,</span></span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a>  <span class="dv">16</span></span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a><span class="op">);</span></span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a><span class="co">// GDB RSP レスポンス: &quot;48656c6c6f...&quot; (16 進数エンコード)</span></span></code></pre></div>
+<hr />
+<h2 id="ステップ実行stepping">5. ステップ実行（Stepping）</h2>
+<h3 id="ステップタイプstep-types">ステップタイプ（Step Types）</h3>
+<div class="sourceCode" id="cb14"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="kw">enum</span> <span class="kw">class</span> <span class="dt">step_type</span> <span class="op">{</span></span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a>  INSTRUCTION<span class="op">,</span>     <span class="co">// 1 WASM 命令実行</span></span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a>  OVER<span class="op">,</span>            <span class="co">// 関数呼び出しを 1 ステップ</span></span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a>  INTO<span class="op">,</span>            <span class="co">// 関数内へステップイン</span></span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a>  OUT<span class="op">,</span>             <span class="co">// 関数から抜ける</span></span>
+<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb14-7"><a href="#cb14-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-8"><a href="#cb14-8" aria-hidden="true" tabindex="-1"></a><span class="co">// WASM インタプリタメインループ内で処理</span></span>
+<span id="cb14-9"><a href="#cb14-9" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> execute_with_step<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb14-10"><a href="#cb14-10" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> <span class="op">(</span>debugger<span class="op">-&gt;</span>is_stepping<span class="op">())</span> <span class="op">{</span></span>
+<span id="cb14-11"><a href="#cb14-11" aria-hidden="true" tabindex="-1"></a>    execute_one_instruction<span class="op">();</span></span>
+<span id="cb14-12"><a href="#cb14-12" aria-hidden="true" tabindex="-1"></a>    debugger<span class="op">-&gt;</span>handle_step<span class="op">();</span>  <span class="co">// デバッガに通知</span></span>
+<span id="cb14-13"><a href="#cb14-13" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span> <span class="cf">else</span> <span class="op">{</span></span>
+<span id="cb14-14"><a href="#cb14-14" aria-hidden="true" tabindex="-1"></a>    <span class="co">// 通常実行</span></span>
+<span id="cb14-15"><a href="#cb14-15" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb14-16"><a href="#cb14-16" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="gdb-rsp-ステップコマンド">GDB RSP ステップコマンド</h3>
+<pre><code>s          # ステップイン（1 命令）
+s:1        # コルーチン 1 のステップ
+n          # ステップオーバー
+c          # 実行継続</code></pre>
+<hr />
+<h2 id="vscode-統合vscode-integration">6. VSCode 統合（VSCode
+Integration）</h2>
+<h3 id="launch.json-設定例">launch.json 設定例</h3>
+<div class="sourceCode" id="cb16"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;version&quot;</span><span class="fu">:</span> <span class="st">&quot;0.2.0&quot;</span><span class="fu">,</span></span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;configurations&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a>    <span class="fu">{</span></span>
+<span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;name&quot;</span><span class="fu">:</span> <span class="st">&quot;Debug Fireball&quot;</span><span class="fu">,</span></span>
+<span id="cb16-6"><a href="#cb16-6" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;type&quot;</span><span class="fu">:</span> <span class="st">&quot;gdb&quot;</span><span class="fu">,</span></span>
+<span id="cb16-7"><a href="#cb16-7" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;request&quot;</span><span class="fu">:</span> <span class="st">&quot;launch&quot;</span><span class="fu">,</span></span>
+<span id="cb16-8"><a href="#cb16-8" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;program&quot;</span><span class="fu">:</span> <span class="st">&quot;${workspaceFolder}/build/fireball-simulator&quot;</span><span class="fu">,</span></span>
+<span id="cb16-9"><a href="#cb16-9" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;args&quot;</span><span class="fu">:</span> <span class="ot">[]</span><span class="fu">,</span></span>
+<span id="cb16-10"><a href="#cb16-10" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;stopAtEntry&quot;</span><span class="fu">:</span> <span class="kw">true</span><span class="fu">,</span></span>
+<span id="cb16-11"><a href="#cb16-11" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;cwd&quot;</span><span class="fu">:</span> <span class="st">&quot;${workspaceFolder}&quot;</span><span class="fu">,</span></span>
+<span id="cb16-12"><a href="#cb16-12" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;externalConsole&quot;</span><span class="fu">:</span> <span class="kw">false</span><span class="fu">,</span></span>
+<span id="cb16-13"><a href="#cb16-13" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;MIMode&quot;</span><span class="fu">:</span> <span class="st">&quot;gdb&quot;</span><span class="fu">,</span></span>
+<span id="cb16-14"><a href="#cb16-14" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;miDebuggerPath&quot;</span><span class="fu">:</span> <span class="st">&quot;/usr/bin/gdb&quot;</span><span class="fu">,</span></span>
+<span id="cb16-15"><a href="#cb16-15" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;setupCommands&quot;</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb16-16"><a href="#cb16-16" aria-hidden="true" tabindex="-1"></a>        <span class="fu">{</span></span>
+<span id="cb16-17"><a href="#cb16-17" aria-hidden="true" tabindex="-1"></a>          <span class="dt">&quot;description&quot;</span><span class="fu">:</span> <span class="st">&quot;Enable pretty-printing for gdb&quot;</span><span class="fu">,</span></span>
+<span id="cb16-18"><a href="#cb16-18" aria-hidden="true" tabindex="-1"></a>          <span class="dt">&quot;text&quot;</span><span class="fu">:</span> <span class="st">&quot;-enable-pretty-printing&quot;</span><span class="fu">,</span></span>
+<span id="cb16-19"><a href="#cb16-19" aria-hidden="true" tabindex="-1"></a>          <span class="dt">&quot;ignoreFailures&quot;</span><span class="fu">:</span> <span class="kw">true</span></span>
+<span id="cb16-20"><a href="#cb16-20" aria-hidden="true" tabindex="-1"></a>        <span class="fu">}</span></span>
+<span id="cb16-21"><a href="#cb16-21" aria-hidden="true" tabindex="-1"></a>      <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb16-22"><a href="#cb16-22" aria-hidden="true" tabindex="-1"></a>      <span class="dt">&quot;preLaunchTask&quot;</span><span class="fu">:</span> <span class="st">&quot;build&quot;</span></span>
+<span id="cb16-23"><a href="#cb16-23" aria-hidden="true" tabindex="-1"></a>    <span class="fu">}</span></span>
+<span id="cb16-24"><a href="#cb16-24" aria-hidden="true" tabindex="-1"></a>  <span class="ot">]</span></span>
+<span id="cb16-25"><a href="#cb16-25" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<h3 id="python-pretty-printerfireball-構造体用">Python Pretty
+Printer（Fireball 構造体用）</h3>
+<div class="sourceCode" id="cb17"><pre
+class="sourceCode python"><code class="sourceCode python"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="co"># ~/.gdbinit</span></span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a>python</span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a><span class="im">import</span> sys</span>
+<span id="cb17-4"><a href="#cb17-4" aria-hidden="true" tabindex="-1"></a>sys.path.insert(<span class="dv">0</span>, <span class="st">&#39;/path/to/fireball/tools/gdb&#39;</span>)</span>
+<span id="cb17-5"><a href="#cb17-5" aria-hidden="true" tabindex="-1"></a><span class="im">from</span> fireball_pretty_printers <span class="im">import</span> register_printers</span>
+<span id="cb17-6"><a href="#cb17-6" aria-hidden="true" tabindex="-1"></a>register_printers(gdb.current_objfile())</span>
+<span id="cb17-7"><a href="#cb17-7" aria-hidden="true" tabindex="-1"></a>end</span>
+<span id="cb17-8"><a href="#cb17-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-9"><a href="#cb17-9" aria-hidden="true" tabindex="-1"></a><span class="co"># Coroutine 構造体の可視化</span></span>
+<span id="cb17-10"><a href="#cb17-10" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> CoroutineType:</span>
+<span id="cb17-11"><a href="#cb17-11" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> <span class="fu">__init__</span>(<span class="va">self</span>, val):</span>
+<span id="cb17-12"><a href="#cb17-12" aria-hidden="true" tabindex="-1"></a>        <span class="va">self</span>.val <span class="op">=</span> val</span>
+<span id="cb17-13"><a href="#cb17-13" aria-hidden="true" tabindex="-1"></a>    <span class="kw">def</span> to_string(<span class="va">self</span>):</span>
+<span id="cb17-14"><a href="#cb17-14" aria-hidden="true" tabindex="-1"></a>        coro_id <span class="op">=</span> <span class="va">self</span>.val[<span class="st">&#39;id&#39;</span>]</span>
+<span id="cb17-15"><a href="#cb17-15" aria-hidden="true" tabindex="-1"></a>        state <span class="op">=</span> <span class="va">self</span>.val[<span class="st">&#39;state&#39;</span>]</span>
+<span id="cb17-16"><a href="#cb17-16" aria-hidden="true" tabindex="-1"></a>        <span class="cf">return</span> <span class="ss">f&quot;Coroutine#</span><span class="sc">{</span>coro_id<span class="sc">}</span><span class="ss"> [</span><span class="sc">{</span>state<span class="sc">}</span><span class="ss">]&quot;</span></span></code></pre></div>
+<hr />
+<h2 id="デバッグ情報の可視化debug-information-visualization">7.
+デバッグ情報の可視化（Debug Information Visualization）</h2>
+<h3 id="デバッグコンソール出力例">デバッグコンソール出力例</h3>
+<pre><code>(gdb) info threads
+  Id   Target Id         Frame
+* 1    Coro#0            0x00001024 in main ()
+  2    Coro#1            0x00002048 in producer_task ()
+  3    Coro#2            [blocked on channel]
+
+(gdb) info locals
+id = 42
+buffer = 0x20001000 &quot;Hello, Fireball!&quot;
+remaining = 16
+
+(gdb) x/16bx $sp
+0x2000ff00:  0x01  0x02  0x03  0x04  0x05  0x06  0x07  0x08
+0x2000ff08:  0x09  0x0a  0x0b  0x0c  0x0d  0x0e  0x0f  0x10
+
+(gdb) break *0x1024
+Breakpoint 1 at 0x1024
+
+(gdb) continue
+Breakpoint 1, 0x00001024 in main ()
+
+(gdb) step
+0x00001028 in main ()</code></pre>
+<hr />
+<h2 id="セキュリティ考慮事項security-considerations">8.
+セキュリティ考慮事項（Security Considerations）</h2>
+<h3 id="アクセス制限access-restrictions">アクセス制限（Access
+Restrictions）</h3>
+<ul>
+<li><strong>ホストメモリ保護</strong>: WASM
+線形メモリ外へのアクセスを禁止</li>
+<li><strong>パーミッションチェック</strong>:
+将来的にはデバッガ実行権限の検証</li>
+<li><strong>監査ログ</strong>: すべてのデバッグ操作をログ記録</li>
+</ul>
+<h3 id="実装例implementation">実装例（Implementation）</h3>
+<div class="sourceCode" id="cb19"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="co">// デバッグ操作を監査ログに記録</span></span>
+<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> debugger_service<span class="op">::</span>log_debug_operation<span class="op">(</span><span class="at">const</span> <span class="bu">std::</span>string<span class="op">&amp;</span> op<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a>  logger_service<span class="op">-&gt;</span>log<span class="op">({</span></span>
+<span id="cb19-4"><a href="#cb19-4" aria-hidden="true" tabindex="-1"></a>    <span class="op">.</span>level <span class="op">=</span> log_level<span class="op">::</span>DEBUG<span class="op">,</span></span>
+<span id="cb19-5"><a href="#cb19-5" aria-hidden="true" tabindex="-1"></a>    <span class="op">.</span>message <span class="op">=</span> <span class="st">&quot;DEBUG_OP: &quot;</span> <span class="op">+</span> op<span class="op">,</span></span>
+<span id="cb19-6"><a href="#cb19-6" aria-hidden="true" tabindex="-1"></a>    <span class="op">.</span>timestamp <span class="op">=</span> get_timestamp<span class="op">()</span></span>
+<span id="cb19-7"><a href="#cb19-7" aria-hidden="true" tabindex="-1"></a>  <span class="op">});</span></span>
+<span id="cb19-8"><a href="#cb19-8" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<hr />
+<h2 id="ディレクトリ構造directory-structure">9.
+ディレクトリ構造（Directory Structure）</h2>
+<pre><code>fireball/
+├── inc/
+│   └── services/
+│       └── debugger.hxx        # Debugger API
+├── src/
+│   └── services/debugger/
+│       ├── debugger.cpp        # Debugger implementation
+│       ├── gdb_rsp.cpp         # GDB Remote Protocol parser
+│       ├── breakpoint.cpp      # Breakpoint management
+│       └── register.cpp        # Register map
+├── tools/
+│   └── gdb/
+│       └── fireball_pretty_printers.py
+└── docs/
+    └── debugging.md</code></pre>
+<hr />
+<h2 id="phase-3-実装タスク">10. Phase 3 実装タスク</h2>
+<ul class="task-list">
+<li><label><input type="checkbox" />GDB Remote Protocol
+パーサー実装</label></li>
+<li><label><input
+type="checkbox" />ブレークポイント管理（追加・削除・有効化）</label></li>
+<li><label><input
+type="checkbox" />レジスタスナップショット機構</label></li>
+<li><label><input
+type="checkbox" />メモリアクセス制御（バウンダリチェック）</label></li>
+<li><label><input type="checkbox" />UART 通信層（GDB
+プロトコル送受信）</label></li>
+<li><label><input type="checkbox" />VSCode GDB 統合テスト</label></li>
+<li><label><input type="checkbox" />Python Pretty Printer
+実装</label></li>
+</ul>
+<hr />
+<h2 id="将来の拡張future-enhancements">11. 将来の拡張（Future
+Enhancements）</h2>
+<ul>
+<li><strong>ウォッチポイント</strong>: メモリ値の変更を監視</li>
+<li><strong>条件付きブレークポイント</strong>: 特定条件で一時停止</li>
+<li><strong>デバッグスクリプト</strong>: GDB スクリプト言語対応</li>
+<li><strong>リモートデバッグ</strong>: ネットワーク経由のデバッグ</li>
+<li><strong>パフォーマンスプロファイリング</strong>: ホットパス検出、CPU
+使用率計測</li>
+</ul>
+<hr />
+<h2 id="まとめsummary">まとめ（Summary）</h2>
+<p>Fireball デバッガサブシステムは、GDB Remote Protocol
+を通じて標準的なデバッグツール（VSCode、GDB、lldb）と統合します。これにより、WASM
+ゲストコードとコルーチンの挙動を可視化し、効率的にデバッグできます。</p>
+<p>セキュリティと性能を両立させながら、組み込みシステムのデバッグニーズに対応する設計です。</p>
+</body>
+</html>

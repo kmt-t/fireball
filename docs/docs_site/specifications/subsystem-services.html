@@ -1,0 +1,2374 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>subsystem-services</title>
+  <style>
+    html {
+      color: #1a1a1a;
+      background-color: #fdfdfd;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        background-color: white;
+      }
+      body {
+        background-color: transparent;
+        color: black;
+        font-size: 12pt;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a {
+      color: #1a1a1a;
+    }
+    a:visited {
+      color: #1a1a1a;
+    }
+    img {
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid #e6e6e6;
+      color: #606060;
+    }
+    code {
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      background-color: #1a1a1a;
+      border: none;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    th {
+      border-top: 1px solid #1a1a1a;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+    /* CSS for syntax highlighting */
+    pre > code.sourceCode { white-space: pre; position: relative; }
+    pre > code.sourceCode > span { line-height: 1.25; }
+    pre > code.sourceCode > span:empty { height: 1.2em; }
+    .sourceCode { overflow: visible; }
+    code.sourceCode > span { color: inherit; text-decoration: inherit; }
+    div.sourceCode { margin: 1em 0; }
+    pre.sourceCode { margin: 0; }
+    @media screen {
+    div.sourceCode { overflow: auto; }
+    }
+    @media print {
+    pre > code.sourceCode { white-space: pre-wrap; }
+    pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+    }
+    pre.numberSource code
+      { counter-reset: source-line 0; }
+    pre.numberSource code > span
+      { position: relative; left: -4em; counter-increment: source-line; }
+    pre.numberSource code > span > a:first-child::before
+      { content: counter(source-line);
+        position: relative; left: -1em; text-align: right; vertical-align: baseline;
+        border: none; display: inline-block;
+        -webkit-touch-callout: none; -webkit-user-select: none;
+        -khtml-user-select: none; -moz-user-select: none;
+        -ms-user-select: none; user-select: none;
+        padding: 0 4px; width: 4em;
+        color: #aaaaaa;
+      }
+    pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+    div.sourceCode
+      {   }
+    @media screen {
+    pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+    }
+    code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+    code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+    code span.at { color: #7d9029; } /* Attribute */
+    code span.bn { color: #40a070; } /* BaseN */
+    code span.bu { color: #008000; } /* BuiltIn */
+    code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+    code span.ch { color: #4070a0; } /* Char */
+    code span.cn { color: #880000; } /* Constant */
+    code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+    code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+    code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+    code span.dt { color: #902000; } /* DataType */
+    code span.dv { color: #40a070; } /* DecVal */
+    code span.er { color: #ff0000; font-weight: bold; } /* Error */
+    code span.ex { } /* Extension */
+    code span.fl { color: #40a070; } /* Float */
+    code span.fu { color: #06287e; } /* Function */
+    code span.im { color: #008000; font-weight: bold; } /* Import */
+    code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+    code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+    code span.op { color: #666666; } /* Operator */
+    code span.ot { color: #007020; } /* Other */
+    code span.pp { color: #bc7a00; } /* Preprocessor */
+    code span.sc { color: #4070a0; } /* SpecialChar */
+    code span.ss { color: #bb6688; } /* SpecialString */
+    code span.st { color: #4070a0; } /* String */
+    code span.va { color: #19177c; } /* Variable */
+    code span.vs { color: #4070a0; } /* VerbatimString */
+    code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+  </style>
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">subsystem-services</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#subsystems-services-design"
+id="toc-subsystems-services-design">Subsystems &amp; Services Design</a>
+<ul>
+<li><a href="#overview" id="toc-overview">Overview</a></li>
+<li><a href="#ipc-router-dependency-injection-container-di-hub"
+id="toc-ipc-router-dependency-injection-container-di-hub">0. IPC Router
+(Dependency Injection Container &amp; DI Hub)</a>
+<ul>
+<li><a href="#目的purpose" id="toc-目的purpose">目的（Purpose）</a></li>
+<li><a href="#アーキテクチャarchitecture"
+id="toc-アーキテクチャarchitecture">アーキテクチャ（Architecture）</a></li>
+<li><a href="#インターフェースinterface"
+id="toc-インターフェースinterface">インターフェース（Interface）</a></li>
+<li><a href="#メモリ構成memory-layout"
+id="toc-メモリ構成memory-layout">メモリ構成（Memory Layout）</a></li>
+<li><a href="#設計原則" id="toc-設計原則">設計原則</a></li>
+</ul></li>
+<li><a href="#ipc複数モード戦略multi-mode-ipc-strategy"
+id="toc-ipc複数モード戦略multi-mode-ipc-strategy">IPC複数モード戦略（Multi-Mode
+IPC Strategy）</a>
+<ul>
+<li><a href="#概要" id="toc-概要">概要</a></li>
+<li><a href="#mode-0-pod値ベース小規模高速"
+id="toc-mode-0-pod値ベース小規模高速">Mode 0:
+POD値ベース（小規模、高速）</a></li>
+<li><a href="#mode-1-co_value共有ヒープ大容量"
+id="toc-mode-1-co_value共有ヒープ大容量">Mode 1:
+co_value（共有ヒープ、大容量）</a></li>
+<li><a href="#mode-2-型付きkey-value形式柔軟エンコード必須"
+id="toc-mode-2-型付きkey-value形式柔軟エンコード必須">Mode 2:
+型付きKey-Value形式（柔軟、エンコード必須）</a></li>
+<li><a href="#操作別モード選択ガイド"
+id="toc-操作別モード選択ガイド">操作別モード選択ガイド</a></li>
+<li><a href="#共有ヒープshared-heapの設計"
+id="toc-共有ヒープshared-heapの設計">共有ヒープ（Shared
+Heap）の設計</a></li>
+</ul></li>
+<li><a href="#logger-subsystem" id="toc-logger-subsystem">1. Logger
+Subsystem</a>
+<ul>
+<li><a href="#目的purpose-1"
+id="toc-目的purpose-1">目的（Purpose）</a></li>
+<li><a href="#インターフェースinterface-1"
+id="toc-インターフェースinterface-1">インターフェース（Interface）</a></li>
+<li><a href="#実装implementation"
+id="toc-実装implementation">実装（Implementation）</a></li>
+<li><a href="#coos-との統合integration-with-coos"
+id="toc-coos-との統合integration-with-coos">COOS との統合（Integration
+with COOS）</a></li>
+<li><a href="#phase-1-実装タスク" id="toc-phase-1-実装タスク">Phase 1
+実装タスク</a></li>
+</ul></li>
+<li><a href="#hal-subsystem" id="toc-hal-subsystem">2. HAL Subsystem</a>
+<ul>
+<li><a href="#目的purpose-2"
+id="toc-目的purpose-2">目的（Purpose）</a></li>
+<li><a href="#インターフェースinterface-2"
+id="toc-インターフェースinterface-2">インターフェース（Interface）</a></li>
+<li><a href="#操作詳細" id="toc-操作詳細">操作詳細</a></li>
+<li><a href="#ioctl-による柔軟な制御"
+id="toc-ioctl-による柔軟な制御">ioctl による柔軟な制御</a></li>
+<li><a href="#実装implementation-1"
+id="toc-実装implementation-1">実装（Implementation）</a></li>
+<li><a href="#phase-2-実装タスク" id="toc-phase-2-実装タスク">Phase 2
+実装タスク</a></li>
+</ul></li>
+<li><a href="#debugger-subsystem-future"
+id="toc-debugger-subsystem-future">3. Debugger Subsystem [Future]</a>
+<ul>
+<li><a href="#目的purpose-3"
+id="toc-目的purpose-3">目的（Purpose）</a></li>
+<li><a href="#主な機能key-features"
+id="toc-主な機能key-features">主な機能（Key Features）</a></li>
+<li><a href="#実装implementation-2"
+id="toc-実装implementation-2">実装（Implementation）</a></li>
+<li><a href="#phase-3-実装タスク" id="toc-phase-3-実装タスク">Phase 3
+実装タスク</a></li>
+</ul></li>
+<li><a href="#jit-subsystem-future" id="toc-jit-subsystem-future">4. JIT
+Subsystem [Future]</a>
+<ul>
+<li><a href="#目的purpose-4"
+id="toc-目的purpose-4">目的（Purpose）</a></li>
+<li><a href="#主な機能key-features-1"
+id="toc-主な機能key-features-1">主な機能（Key Features）</a></li>
+<li><a href="#実装implementation-3"
+id="toc-実装implementation-3">実装（Implementation）</a></li>
+<li><a href="#phase-4-実装タスク" id="toc-phase-4-実装タスク">Phase 4
+実装タスク</a></li>
+</ul></li>
+<li><a href="#通信モデルcommunication-model"
+id="toc-通信モデルcommunication-model">通信モデル（Communication
+Model）</a>
+<ul>
+<li><a href="#csp-チャネルの使用" id="toc-csp-チャネルの使用">CSP
+チャネルの使用</a></li>
+<li><a href="#統合ポイントintegration-points"
+id="toc-統合ポイントintegration-points">統合ポイント（Integration
+Points）</a></li>
+</ul></li>
+<li><a href="#wasm-runtime-architecture-interpreter-vsoc-jit-voffloader"
+id="toc-wasm-runtime-architecture-interpreter-vsoc-jit-voffloader">5.
+WASM Runtime Architecture: Interpreter, vSoC, JIT, vOffloader</a>
+<ul>
+<li><a href="#目的purpose-5"
+id="toc-目的purpose-5">目的（Purpose）</a></li>
+<li><a href="#全体アーキテクチャ"
+id="toc-全体アーキテクチャ">全体アーキテクチャ</a></li>
+<li><a href="#インタープリタinterpreter"
+id="toc-インタープリタinterpreter">5.1
+インタープリタ（Interpreter）</a></li>
+<li><a href="#vsocvirtual-system-on-chip"
+id="toc-vsocvirtual-system-on-chip">5.2 vSoC（Virtual
+System-on-Chip）</a></li>
+<li><a href="#voffloaderハードウェアアクセラレータ-インターフェース"
+id="toc-voffloaderハードウェアアクセラレータ-インターフェース">5.3
+vOffloader（ハードウェアアクセラレータ インターフェース）</a></li>
+<li><a href="#jitjust-in-timeコンパイラ"
+id="toc-jitjust-in-timeコンパイラ">5.4
+JIT（Just-In-Time）コンパイラ</a></li>
+<li><a href="#統合パターン-インタープリタ-jit-voffloader"
+id="toc-統合パターン-インタープリタ-jit-voffloader">5.5 統合パターン:
+インタープリタ → JIT → vOffloader</a></li>
+<li><a href="#wasmvsocjit-分離のルール"
+id="toc-wasmvsocjit-分離のルール">5.6 WASM/vSoC/JIT
+分離のルール</a></li>
+</ul></li>
+<li><a href="#実装タイムラインimplementation-roadmap"
+id="toc-実装タイムラインimplementation-roadmap">実装タイムライン（Implementation
+Roadmap）</a>
+<ul>
+<li><a href="#sloc-ベース見積もりestimates-in-source-lines-of-code"
+id="toc-sloc-ベース見積もりestimates-in-source-lines-of-code">SLOC
+ベース見積もり（Estimates in Source Lines of Code）</a></li>
+<li><a href="#phase-1-logger-subsystem"
+id="toc-phase-1-logger-subsystem">Phase 1: Logger Subsystem</a></li>
+<li><a href="#phase-2-hal-subsystem"
+id="toc-phase-2-hal-subsystem">Phase 2: HAL Subsystem</a></li>
+<li><a href="#phase-3-debugger-subsystem"
+id="toc-phase-3-debugger-subsystem">Phase 3: Debugger Subsystem</a></li>
+<li><a href="#phase-4-jit-subsystem"
+id="toc-phase-4-jit-subsystem">Phase 4: JIT Subsystem</a></li>
+<li><a href="#wasm-runtime-architecture-components"
+id="toc-wasm-runtime-architecture-components">WASM Runtime Architecture
+Components</a></li>
+<li><a href="#総合-sloc-集計" id="toc-総合-sloc-集計">総合 SLOC
+集計</a></li>
+<li><a href="#開発優先度と依存関係"
+id="toc-開発優先度と依存関係">開発優先度と依存関係</a></li>
+<li><a href="#チームスケーリング"
+id="toc-チームスケーリング">チームスケーリング</a></li>
+</ul></li>
+<li><a href="#platform-target-strategy"
+id="toc-platform-target-strategy">6. Platform Target Strategy</a>
+<ul>
+<li><a href="#目的purpose-6"
+id="toc-目的purpose-6">目的（Purpose）</a></li>
+<li><a href="#優先順位付きプラットフォーム"
+id="toc-優先順位付きプラットフォーム">優先順位付きプラットフォーム</a></li>
+<li><a href="#プラットフォーム別-hal-実装"
+id="toc-プラットフォーム別-hal-実装">プラットフォーム別 HAL
+実装</a></li>
+<li><a href="#ビルド構成" id="toc-ビルド構成">ビルド構成</a></li>
+<li><a href="#リソース制約ガイドライン"
+id="toc-リソース制約ガイドライン">リソース制約ガイドライン</a></li>
+<li><a href="#移植チェックリスト"
+id="toc-移植チェックリスト">移植チェックリスト</a></li>
+<li><a href="#今後の展開" id="toc-今後の展開">今後の展開</a></li>
+</ul></li>
+<li><a href="#設計制約design-constraints"
+id="toc-設計制約design-constraints">設計制約（Design
+Constraints）</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="subsystems-services-design">Subsystems &amp; Services
+Design</h1>
+<p><strong>Version:</strong> 0.1.0 <strong>Date:</strong> 2025-11-28
+<strong>Author:</strong> Takuya Matsunaga</p>
+<hr />
+<h2 id="overview">Overview</h2>
+<p><strong>概要：</strong> Fireball システムは、2 つのレイヤーで COOS
+コアの外部に機能を提供します：</p>
+<ol type="1">
+<li><strong>Subsystems</strong>（ネイティブ実装、C++）：ROM/RAM
+制約が厳しい基本機能</li>
+<li><strong>Services</strong>（WASM
+プラグイン、ユーザー提供）：アプリケーション固有の拡張機能</li>
+</ol>
+<p>両者とも COOS カーネルから完全に独立し、IPC（型付きKey-Value形式 over
+CSP チャネル）で通信します。</p>
+<p><strong>マイクロカーネル設計の要点：</strong></p>
+<p>Fireball は、カーネルを最小限（4
+つのコンポーネント）に保ち、ロギング、HAL、デバッグなどの固定機能は
+Subsystems として、カスタム機能は Services
+として独立させています。これにより：</p>
+<ul>
+<li><strong>カーネルの単純性</strong>:
+スケジューラー、チャネル、メモリ管理、値追跡の 4 つだけに集中</li>
+<li><strong>拡張性</strong>: ユーザーが WASM
+プラグイン（Services）を追加・カスタマイズ可能</li>
+<li><strong>テスト容易性</strong>: Subsystems と Services は COOS
+に依存しないため、独立してテスト可能</li>
+<li><strong>プラットフォーム移植</strong>: 各プラットフォームで
+Subsystems 実装を変更するだけで対応可能</li>
+</ul>
+<p><strong>Subsystems の特性（本ドキュメントで扱う）：</strong> -
+<strong>COOS 非依存</strong>: COOS
+カーネルコンポーネント（co_sched、co_csp など）に直接依存しない -
+<strong>IPC 通信</strong>: すべての通信は IPC（型付きKey-Value形式 over
+CSP チャネル）経由 - <strong>命名規約</strong>:
+<code>logger</code>、<code>hal</code>、<code>debugger</code>、<code>jit</code>
+など、<code>co_</code> プリフィックスなし -
+<strong>ネイティブ実装</strong>: C++ で実装、ROM/RAM 効率を最優先 -
+<strong>段階的実装</strong>: Phase ごとに異なるサブシステムを実装（Phase
+1: logger、Phase 2: hal、Phase 3～4: debugger、jit）</p>
+<p><strong>Services の特性（plugin-system.md で詳細）：</strong> -
+<strong>ユーザー実装</strong>: C、Rust、AssemblyScript などで記述可能 -
+<strong>WASM プラグイン</strong>: Fireball
+ランタイム上で実行される拡張機能 - <strong>ホットロード対応</strong>:
+実行中にプラグインの読み込み・アンロード可能 - <strong>IPC
+通信</strong>: Subsystems や COOS との通信は IPC 経由 -
+<strong>リッチな機能</strong>:
+計装、セキュリティサンドボックス、カスタム命令など</p>
+<hr />
+<h2 id="ipc-router-dependency-injection-container-di-hub">0. IPC Router
+(Dependency Injection Container &amp; DI Hub)</h2>
+<h3 id="目的purpose">目的（Purpose）</h3>
+<p><strong>概要：</strong> IPC Router は、Subsystems &amp; Services
+Layer の<strong>依存性注入（DI）コンテナ兼通信ハブ</strong>です。</p>
+<p><strong>2つの責務：</strong></p>
+<ol type="1">
+<li><strong>DI コンテナ（上層による制御）</strong>
+<ul>
+<li>Subsystem・Service の登録・検索</li>
+<li>コンポーネント間の依存関係を上層（WASM Runtime、COOS）が注入</li>
+<li>URI ベースのコンポーネント検索と動的バインディング</li>
+<li>アクセス権管理と検証</li>
+</ul></li>
+<li><strong>IPC 通信ハブ（スター型トポロジ）</strong>
+<ul>
+<li>すべてのコンポーネント間通信を Router 経由で管理</li>
+<li>型付きKey-Value形式 エンコード/デコード</li>
+<li>複数通信モード対応（値ベース/参照ベース/型付きKey-Value形式）</li>
+</ul></li>
+</ol>
+<p><strong>主な役割：</strong> -
+<strong>コンポーネント登録</strong>：Subsystem/Service を URI で管理 -
+<strong>動的ルーティング</strong>：URI → ルートID 変換、アクセス権検証 -
+<strong>スター型トポロジ</strong>：全コンポーネントから Router
+のみへの接続 - <strong>通信モード分岐</strong>：IPC
+メッセージ種別に応じた処理 - <strong>隔離性保証</strong>：Point-to-Point
+直接通信を禁止</p>
+<h3 id="アーキテクチャarchitecture">アーキテクチャ（Architecture）</h3>
+<p><strong>DI コンテナとしてのRouter：</strong></p>
+<pre><code>┌─────────────────────────────────────┐
+│  COOS Kernel / WASM Runtime（上層） │
+│                                      │
+│  ┌──────────────────────────────┐   │
+│  │ Component Registration       │   │
+│  │ - register(&quot;wasi://stdio&quot;)   │   │
+│  │ - register(&quot;io://uart/0&quot;)    │   │
+│  │ - register(&quot;accel://blas&quot;)   │   │
+│  └──────────────────────────────┘   │
+└──────────────────┬──────────────────┘
+                   │ (DI)
+                   ▼
+┌─────────────────────────────────────┐
+│  IPC Router（DIコンテナ兼Hub）      │
+│                                      │
+│  ┌──────────────────────────────┐   │
+│  │ Component Registry           │   │
+│  │ - uri → route_id mapping     │   │
+│  │ - access control table       │   │
+│  │ - binary search（URI lookup）│   │
+│  └──────────────────────────────┘   │
+│                                      │
+│  ┌──────────────────────────────┐   │
+│  │ IPC Communication Hub        │   │
+│  │ - StarTopology routing       │   │
+│  │ - Multi-mode IPC             │   │
+│  │ - 型付きKey-Value形式 encode/decode  │   │
+│  └──────────────────────────────┘   │
+└──────────────────┬──────────────────┘
+        ┌─────────┼──────────┬──────────┐
+        ▼         ▼          ▼          ▼
+    [logger] [hal] [debugger] [Services]</code></pre>
+<p><strong>通信フロー（例：WASM が HAL を呼び出す）：</strong></p>
+<pre><code>WASM Runtime (Coroutine A)
+  │
+  ├─ Query: resolve_route(&quot;io://uart/0&quot;)
+  │         ↓ Router verifies access
+  │         ↓ Returns ルートID (access granted)
+  │
+  └─ Send IPC message to ルートID
+           ↓ Router routes to HAL
+           ↓ Decode 型付きKey-Value形式
+           ↓
+          [HAL] executes operation
+           ↓
+           └─ Send response back to ルートID
+                  ↓ Router re-routes to Coroutine A
+                  ↓ Encode result
+                  ↓
+            Coroutine A receives</code></pre>
+<h3 id="インターフェースinterface">インターフェース（Interface）</h3>
+<p><strong>ファイル:</strong> <code>inc/subsystems/router.hxx</code></p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">namespace</span> fireball <span class="op">{</span> <span class="kw">namespace</span> subsystems <span class="op">{</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="co">// コンポーネント情報</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="kw">typedef</span> <span class="kw">struct</span> <span class="op">{</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>  <span class="bu">std::</span>string_view uri<span class="op">;</span>              <span class="co">// e.g. &quot;io://uart/0&quot;, &quot;wasi://stdio&quot;</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">uint32_t</span> route_id<span class="op">;</span>                 <span class="co">// ルートID（内部識別子 = コルーチンID）</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">uint16_t</span> access_mask<span class="op">;</span>              <span class="co">// アクセス制御ビット</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="op">}</span> <span class="dt">component_entry_t</span><span class="op">;</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="co">// IPC メッセージ（複数モード対応）</span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a><span class="kw">typedef</span> <span class="kw">struct</span> <span class="op">{</span></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>  <span class="dt">uint32_t</span> source_route_id<span class="op">;</span>          <span class="co">// 送信元のルートID</span></span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a>  <span class="dt">uint32_t</span> dest_route_id<span class="op">;</span>            <span class="co">// 送信先のルートID</span></span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a>  <span class="dt">uint16_t</span> <span class="dt">message_type</span><span class="op">;</span>             <span class="co">// IPC メッセージ種別</span></span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a>  <span class="dt">uint8_t</span>  mode<span class="op">;</span>                     <span class="co">// 0=POD, 1=co_value (ownership), 2=型付きKey-Value形式</span></span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a>  <span class="bu">std::</span>span<span class="op">&lt;</span><span class="dt">uint8_t</span><span class="op">&gt;</span> payload<span class="op">;</span>        <span class="co">// モード別ペイロード</span></span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a><span class="op">}</span> <span class="dt">ipc_message_t</span><span class="op">;</span></span>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> ipc_router <span class="op">{</span></span>
+<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a> <span class="kw">public</span><span class="op">:</span></span>
+<span id="cb3-21"><a href="#cb3-21" aria-hidden="true" tabindex="-1"></a>  <span class="co">// ─────────────────────────────────────</span></span>
+<span id="cb3-22"><a href="#cb3-22" aria-hidden="true" tabindex="-1"></a>  <span class="co">// DI Container Interface（上層使用）</span></span>
+<span id="cb3-23"><a href="#cb3-23" aria-hidden="true" tabindex="-1"></a>  <span class="co">// ─────────────────────────────────────</span></span>
+<span id="cb3-24"><a href="#cb3-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-25"><a href="#cb3-25" aria-hidden="true" tabindex="-1"></a>  <span class="co">// コンポーネント登録：上層（COOS or WASM Runtime）が下層の依存を注入</span></span>
+<span id="cb3-26"><a href="#cb3-26" aria-hidden="true" tabindex="-1"></a>  <span class="dt">void</span> register_component<span class="op">(</span></span>
+<span id="cb3-27"><a href="#cb3-27" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>string_view uri<span class="op">,</span>              <span class="co">// &quot;io://uart/0&quot;, &quot;wasi://stdio&quot;, etc</span></span>
+<span id="cb3-28"><a href="#cb3-28" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint32_t</span> route_id<span class="op">,</span>                 <span class="co">// ルートID（コルーチンID または サブシステムID）</span></span>
+<span id="cb3-29"><a href="#cb3-29" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint16_t</span> access_mask <span class="op">=</span> <span class="bn">0xFFFF</span><span class="op">);</span>    <span class="co">// デフォルト：フルアクセス</span></span>
+<span id="cb3-30"><a href="#cb3-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-31"><a href="#cb3-31" aria-hidden="true" tabindex="-1"></a>  <span class="co">// URI からルートIDを動的解決（アクセス権検証付き）</span></span>
+<span id="cb3-32"><a href="#cb3-32" aria-hidden="true" tabindex="-1"></a>  <span class="co">// 失敗時は std::nullopt</span></span>
+<span id="cb3-33"><a href="#cb3-33" aria-hidden="true" tabindex="-1"></a>  <span class="bu">std::</span>optional<span class="op">&lt;</span><span class="dt">uint32_t</span><span class="op">&gt;</span> resolve_route<span class="op">(</span></span>
+<span id="cb3-34"><a href="#cb3-34" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>string_view uri<span class="op">,</span></span>
+<span id="cb3-35"><a href="#cb3-35" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint32_t</span> requester_route_id<span class="op">);</span>      <span class="co">// リクエスト元のルートID</span></span>
+<span id="cb3-36"><a href="#cb3-36" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-37"><a href="#cb3-37" aria-hidden="true" tabindex="-1"></a>  <span class="co">// アクセス権検証</span></span>
+<span id="cb3-38"><a href="#cb3-38" aria-hidden="true" tabindex="-1"></a>  <span class="dt">bool</span> verify_access<span class="op">(</span></span>
+<span id="cb3-39"><a href="#cb3-39" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint32_t</span> requester_route_id<span class="op">,</span></span>
+<span id="cb3-40"><a href="#cb3-40" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>string_view uri<span class="op">);</span></span>
+<span id="cb3-41"><a href="#cb3-41" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-42"><a href="#cb3-42" aria-hidden="true" tabindex="-1"></a>  <span class="co">// ─────────────────────────────────────</span></span>
+<span id="cb3-43"><a href="#cb3-43" aria-hidden="true" tabindex="-1"></a>  <span class="co">// IPC Communication Interface</span></span>
+<span id="cb3-44"><a href="#cb3-44" aria-hidden="true" tabindex="-1"></a>  <span class="co">// ─────────────────────────────────────</span></span>
+<span id="cb3-45"><a href="#cb3-45" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-46"><a href="#cb3-46" aria-hidden="true" tabindex="-1"></a>  <span class="co">// メッセージ送信（ルーティング・エンコード）</span></span>
+<span id="cb3-47"><a href="#cb3-47" aria-hidden="true" tabindex="-1"></a>  <span class="dt">bool</span> send<span class="op">(</span><span class="at">const</span> <span class="dt">ipc_message_t</span><span class="op">&amp;</span> msg<span class="op">);</span></span>
+<span id="cb3-48"><a href="#cb3-48" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-49"><a href="#cb3-49" aria-hidden="true" tabindex="-1"></a>  <span class="co">// メッセージ受信（ルーティング・デコード）</span></span>
+<span id="cb3-50"><a href="#cb3-50" aria-hidden="true" tabindex="-1"></a>  <span class="dt">bool</span> recv<span class="op">(</span><span class="dt">uint32_t</span> dest_route_id<span class="op">,</span> <span class="dt">ipc_message_t</span><span class="op">&amp;</span> msg<span class="op">);</span></span>
+<span id="cb3-51"><a href="#cb3-51" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-52"><a href="#cb3-52" aria-hidden="true" tabindex="-1"></a>  <span class="co">// ─────────────────────────────────────</span></span>
+<span id="cb3-53"><a href="#cb3-53" aria-hidden="true" tabindex="-1"></a>  <span class="co">// Multi-Mode IPC Helpers</span></span>
+<span id="cb3-54"><a href="#cb3-54" aria-hidden="true" tabindex="-1"></a>  <span class="co">// ─────────────────────────────────────</span></span>
+<span id="cb3-55"><a href="#cb3-55" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-56"><a href="#cb3-56" aria-hidden="true" tabindex="-1"></a>  <span class="co">// Mode 0: POD値ベース（小規模、所有権不要）</span></span>
+<span id="cb3-57"><a href="#cb3-57" aria-hidden="true" tabindex="-1"></a>  <span class="co">// 制約：sizeof(data) &lt; threshold（通常 256B以下）</span></span>
+<span id="cb3-58"><a href="#cb3-58" aria-hidden="true" tabindex="-1"></a>  <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb3-59"><a href="#cb3-59" aria-hidden="true" tabindex="-1"></a>  <span class="dt">bool</span> send_pod<span class="op">(</span><span class="dt">uint32_t</span> dest_route_id<span class="op">,</span> <span class="at">const</span> T<span class="op">&amp;</span> data<span class="op">);</span></span>
+<span id="cb3-60"><a href="#cb3-60" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-61"><a href="#cb3-61" aria-hidden="true" tabindex="-1"></a>  <span class="co">// Mode 1: 共有ヒープメモリ（大規模、所有権移譲）</span></span>
+<span id="cb3-62"><a href="#cb3-62" aria-hidden="true" tabindex="-1"></a>  <span class="co">// co_value&lt;T&gt;を使用して、所有権を明示的に移譲</span></span>
+<span id="cb3-63"><a href="#cb3-63" aria-hidden="true" tabindex="-1"></a>  <span class="kw">template</span><span class="op">&lt;</span><span class="kw">typename</span> T<span class="op">&gt;</span></span>
+<span id="cb3-64"><a href="#cb3-64" aria-hidden="true" tabindex="-1"></a>  <span class="dt">bool</span> send_shmem<span class="op">(</span></span>
+<span id="cb3-65"><a href="#cb3-65" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint32_t</span> dest_route_id<span class="op">,</span></span>
+<span id="cb3-66"><a href="#cb3-66" aria-hidden="true" tabindex="-1"></a>    co_value<span class="op">&lt;</span>T<span class="op">&gt;</span> shared_mem<span class="op">);</span>           <span class="co">// co_value&lt;T&gt; により所有権移譲</span></span>
+<span id="cb3-67"><a href="#cb3-67" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-68"><a href="#cb3-68" aria-hidden="true" tabindex="-1"></a>  <span class="co">// Mode 2: 型付きKey-Value形式 ベース（柔軟、エンコード・デコード時間あり）</span></span>
+<span id="cb3-69"><a href="#cb3-69" aria-hidden="true" tabindex="-1"></a>  <span class="bu">std::</span>vector<span class="op">&lt;</span><span class="dt">uint8_t</span><span class="op">&gt;</span> encode_to_kv<span class="op">(</span><span class="at">const</span> <span class="dt">void</span><span class="op">*</span> data<span class="op">,</span> <span class="dt">size_t</span> size<span class="op">);</span></span>
+<span id="cb3-70"><a href="#cb3-70" aria-hidden="true" tabindex="-1"></a>  <span class="dt">bool</span> decode_from_kv<span class="op">(</span><span class="bu">std::</span>span<span class="op">&lt;</span><span class="dt">uint8_t</span><span class="op">&gt;</span> data<span class="op">,</span> <span class="dt">void</span><span class="op">*</span> dest<span class="op">,</span> <span class="dt">size_t</span> size<span class="op">);</span></span>
+<span id="cb3-71"><a href="#cb3-71" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-72"><a href="#cb3-72" aria-hidden="true" tabindex="-1"></a>  <span class="co">// ─────────────────────────────────────</span></span>
+<span id="cb3-73"><a href="#cb3-73" aria-hidden="true" tabindex="-1"></a>  <span class="co">// Utility</span></span>
+<span id="cb3-74"><a href="#cb3-74" aria-hidden="true" tabindex="-1"></a>  <span class="co">// ─────────────────────────────────────</span></span>
+<span id="cb3-75"><a href="#cb3-75" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-76"><a href="#cb3-76" aria-hidden="true" tabindex="-1"></a>  <span class="co">// 登録済みコンポーネント一覧</span></span>
+<span id="cb3-77"><a href="#cb3-77" aria-hidden="true" tabindex="-1"></a>  <span class="bu">std::</span>vector<span class="op">&lt;</span><span class="dt">component_entry_t</span><span class="op">&gt;</span> list_components<span class="op">()</span> <span class="at">const</span><span class="op">;</span></span>
+<span id="cb3-78"><a href="#cb3-78" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-79"><a href="#cb3-79" aria-hidden="true" tabindex="-1"></a>  <span class="co">// URI検索（二分検索）</span></span>
+<span id="cb3-80"><a href="#cb3-80" aria-hidden="true" tabindex="-1"></a>  <span class="bu">std::</span>optional<span class="op">&lt;</span><span class="dt">component_entry_t</span><span class="op">&gt;</span> lookup_by_uri<span class="op">(</span><span class="bu">std::</span>string_view uri<span class="op">)</span> <span class="at">const</span><span class="op">;</span></span>
+<span id="cb3-81"><a href="#cb3-81" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb3-82"><a href="#cb3-82" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-83"><a href="#cb3-83" aria-hidden="true" tabindex="-1"></a><span class="op">}</span> <span class="op">}</span> <span class="co">// namespace fireball { namespace subsystems</span></span></code></pre></div>
+<h3 id="メモリ構成memory-layout">メモリ構成（Memory Layout）</h3>
+<p>Router が P3（Subsystems Heap）に割り当てるメモリ：</p>
+<pre><code>Router Heap Usage (P3 内):
+├── Component Registry (~512B)
+│   └── 最大 32 エントリ（URI→ルートID マッピング）
+│       各エントリ 16B（uri string_view + ルートID + access_mask）
+│       → 二分検索対応（事前ソート）
+│
+├── Access Control Table (~256B)
+│   └── 32 × (ルートID, access_mask) ペア
+│
+├── IPC Send/Receive Buffers (~256B)
+│   ├── Mode 0 (POD): ~100B - 小規模PODデータ
+│   ├── Mode 1 (co_value): ~64B - co_value&lt;T&gt;所有権メタデータ
+│   └── Mode 2 (型付きKey-Value形式): ~92B - 型付きKey-Value形式バッファ
+│
+└── Router Metadata (~128B)
+    └── Statistics, state flags, etc
+
+合計：~1.4KB / P3 (4KB)</code></pre>
+<h3 id="設計原則">設計原則</h3>
+<ol type="1">
+<li><strong>依存関係の反転</strong>：下層（Router, HAL,
+logger）の仕様を上層（COOS, WASM Runtime）が決める
+<ul>
+<li>上層がコンポーネント登録（DI注入）</li>
+<li>下層は受動的</li>
+</ul></li>
+<li><strong>URI
+ベースのルーティング</strong>：コンパイル時固定から動的へ
+<ul>
+<li>例：<code>"io://uart/0"</code>、<code>"wasi://stdio"</code>、<code>"accel://blas"</code></li>
+<li>アクセス権も同時に検証</li>
+</ul></li>
+<li><strong>複数 IPC モード</strong>：用途に応じた効率化
+<ul>
+<li>POD（値）：高速、小データ向け</li>
+<li>co_value（所有権移譲）：大容量データ向け</li>
+<li>型付きKey-Value形式：柔軟性重視</li>
+</ul></li>
+<li><strong>二分検索による URI 検索</strong>：事前にソート
+<ul>
+<li>O(log N) 検索時間</li>
+<li>静的なレジストリ</li>
+</ul></li>
+</ol>
+<hr />
+<h2
+id="ipc複数モード戦略multi-mode-ipc-strategy">IPC複数モード戦略（Multi-Mode
+IPC Strategy）</h2>
+<h3 id="概要">概要</h3>
+<p>IPC には 3
+つのモードがあり、データサイズ・帯域幅・遅延のトレードオフに応じて使い分けます。</p>
+<table>
+<colgroup>
+<col style="width: 20%" />
+<col style="width: 15%" />
+<col style="width: 20%" />
+<col style="width: 15%" />
+<col style="width: 30%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>モード</th>
+<th>対象</th>
+<th>所有権</th>
+<th>用途</th>
+<th>オーバーヘッド</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Mode 0: POD（値）</strong></td>
+<td>構造体等PODデータ</td>
+<td>不要</td>
+<td>小規模制御信号、ステータス</td>
+<td>低（コピー）</td>
+</tr>
+<tr class="even">
+<td><strong>Mode 1: co_value（共有ヒープ）</strong></td>
+<td>大規模バッファ（画像、バイナリ）</td>
+<td>必須</td>
+<td>read/write等の大容量 I/O</td>
+<td>中（所有権管理）</td>
+</tr>
+<tr class="odd">
+<td><strong>Mode 2: 型付きKey-Value形式</strong></td>
+<td>柔軟なデータ型</td>
+<td>不要</td>
+<td>ioctl、ログ出力</td>
+<td>高（エンコード/デコード）</td>
+</tr>
+</tbody>
+</table>
+<h3 id="mode-0-pod値ベース小規模高速">Mode 0:
+POD値ベース（小規模、高速）</h3>
+<p><strong>特徴：</strong> - 小規模 POD 構造体をそのままコピー転送 -
+所有権管理不要（値セマンティクス） - 実装が単純、オーバーヘッド最小</p>
+<p><strong>制約：</strong> - <code>sizeof(data) ≤ 256B</code>（Router
+バッファサイズ） - POD型のみ（トリビアルコピー可能）</p>
+<p><strong>使用例：</strong></p>
+<div class="sourceCode" id="cb5"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co">// HAL ioctl のパラメータ (Mode 0)</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> <span class="op">{</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">uint32_t</span> baud_rate<span class="op">;</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">uint8_t</span>  data_bits<span class="op">;</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">uint8_t</span>  parity<span class="op">;</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a>router<span class="op">.</span>send_pod<span class="op">(</span>uart_route_id<span class="op">,</span> uart_config<span class="op">{</span><span class="dv">115200</span><span class="op">,</span> <span class="dv">8</span><span class="op">,</span> <span class="dv">0</span><span class="op">});</span></span></code></pre></div>
+<h3 id="mode-1-co_value共有ヒープ大容量">Mode 1:
+co_value（共有ヒープ、大容量）</h3>
+<p><strong>特徴：</strong> - 大規模バッファを共有ヒープ経由で転送 -
+<code>co_value&lt;T&gt;</code> による明示的な所有権移譲 -
+バッファ本体はコピーしない（ポインタのみ転送）</p>
+<p><strong>前提条件：</strong></p>
+<ol type="1">
+<li><p><strong>共有ヒープ（Shared Heap）の存在</strong></p>
+<ul>
+<li>COOS が管理する特別なメモリ領域（P3の一部または独立）</li>
+<li>Subsystem と Service 間で共有可能</li>
+<li>アクセス権管理あり</li>
+</ul></li>
+<li><p><strong>所有権のライフサイクル</strong></p>
+<pre><code>COOS malloc → co_value&lt;T&gt;取得
+  ↓ 所有権移譲（co_value経由）
+→ Router（一時保持）
+  ↓ 所有権移譲
+→ Subsystem（操作実施）
+  ↓ co_value release時に自動dealloc</code></pre></li>
+<li><p><strong>メモリ管理ルール</strong></p>
+<ul>
+<li>送信側：<code>co_value&lt;T&gt; buf = shared_heap.allocate&lt;T&gt;(size)</code>
+で確保</li>
+<li>Router：<code>send_shmem(dest_route_id, std::move(buf))</code>
+で所有権移譲</li>
+<li>受信側：受信時に所有権を得る</li>
+<li>所有権を持たなくなったら自動解放</li>
+</ul></li>
+</ol>
+<p><strong>使用例：</strong></p>
+<div class="sourceCode" id="cb7"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="co">// WASM Runtime が HAL に大容量バッファを送信 (Mode 1)</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>co_value<span class="op">&lt;</span><span class="dt">uint8_t</span><span class="op">[]&gt;</span> write_buffer <span class="op">=</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>  shared_heap<span class="op">.</span>allocate<span class="op">&lt;</span><span class="dt">uint8_t</span><span class="op">[]&gt;(</span><span class="dv">4096</span><span class="op">);</span>  <span class="co">// 4KB確保</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a><span class="co">// バッファにデータコピー</span></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>memcpy<span class="op">(</span>write_buffer<span class="op">.</span>get<span class="op">(),</span> data<span class="op">,</span> <span class="dv">4096</span><span class="op">);</span></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a><span class="co">// 所有権を移譲して送信</span></span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>router<span class="op">.</span>send_shmem<span class="op">(</span></span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a>  uart_route_id<span class="op">,</span></span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a>  <span class="bu">std::</span>move<span class="op">(</span>write_buffer<span class="op">)</span>  <span class="co">// 所有権移譲</span></span>
+<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a><span class="op">);</span></span>
+<span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-14"><a href="#cb7-14" aria-hidden="true" tabindex="-1"></a><span class="co">// この後、write_buffer は無効（アクセス禁止）</span></span></code></pre></div>
+<p><strong>HAL受信側：</strong></p>
+<div class="sourceCode" id="cb8"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="co">// HAL が受信</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>co_value<span class="op">&lt;</span><span class="dt">uint8_t</span><span class="op">[]&gt;</span> buffer <span class="op">=</span> recv_shmem<span class="op">&lt;</span><span class="dt">uint8_t</span><span class="op">[]&gt;(</span>uart_route_id<span class="op">);</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a><span class="co">// 実際のI/O実行</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>uart_write<span class="op">(</span>buffer<span class="op">.</span>get<span class="op">(),</span> buffer<span class="op">.</span>size<span class="op">());</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a><span class="co">// 自動的に解放（スコープ脱出時）</span></span></code></pre></div>
+<h3 id="mode-2-型付きkey-value形式柔軟エンコード必須">Mode 2:
+型付きKey-Value形式（柔軟、エンコード必須）</h3>
+<p><strong>特徴：</strong> - JSON互換の構造化データ -
+エンコード・デコードのオーバーヘッドあり -
+型の柔軟性あり（可変長、ネストされた構造など）</p>
+<p><strong>所有権：</strong> - 不要（型付きKey-Value形式 バッファ自体は
+ephemeral）</p>
+<p><strong>使用例：</strong></p>
+<div class="sourceCode" id="cb9"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="co">// HAL ioctl のレスポンス (Mode 2)</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> ioctl_response <span class="op">{</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">uint32_t</span> status<span class="op">;</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">uint32_t</span> flags<span class="op">;</span></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a>  <span class="bu">std::</span>string_view error_msg<span class="op">;</span></span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a><span class="kw">auto</span> kv_data <span class="op">=</span> router<span class="op">.</span>encode_to_kv<span class="op">(&amp;</span>response<span class="op">,</span> <span class="kw">sizeof</span><span class="op">(</span>response<span class="op">));</span></span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a>router<span class="op">.</span>send_kv<span class="op">(</span>requester_route_id<span class="op">,</span> kv_data<span class="op">);</span></span></code></pre></div>
+<p><strong>ログ出力 (Mode 2)：</strong></p>
+<div class="sourceCode" id="cb10"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="co">// logger への送信（Mode 2 型付きKey-Value形式固定）</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> log_event <span class="op">{</span></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>  log_level level<span class="op">;</span></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">uint32_t</span> timestamp<span class="op">;</span></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>  <span class="bu">std::</span>string_view message<span class="op">;</span></span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a><span class="kw">auto</span> encoded <span class="op">=</span> router<span class="op">.</span>encode_to_kv<span class="op">(&amp;</span>event<span class="op">,</span> <span class="kw">sizeof</span><span class="op">(</span>event<span class="op">));</span></span>
+<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a>router<span class="op">.</span>send_kv<span class="op">(</span>logger_route_id<span class="op">,</span> encoded<span class="op">);</span></span></code></pre></div>
+<h3 id="操作別モード選択ガイド">操作別モード選択ガイド</h3>
+<table>
+<colgroup>
+<col style="width: 30%" />
+<col style="width: 40%" />
+<col style="width: 30%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>操作</th>
+<th>モード</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>open</strong></td>
+<td>Mode 2 (型付きKey-Value形式)</td>
+<td>デバイスパス・オプションが可変長</td>
+</tr>
+<tr class="even">
+<td><strong>close</strong></td>
+<td>Mode 0 (POD)</td>
+<td>デバイスハンドルのみ（数bytes）</td>
+</tr>
+<tr class="odd">
+<td><strong>read</strong></td>
+<td>Mode 1 (co_value)</td>
+<td>大容量バッファ読み込み（効率重視）</td>
+</tr>
+<tr class="even">
+<td><strong>write</strong></td>
+<td>Mode 1 (co_value)</td>
+<td>大容量バッファ書き込み（効率重視）</td>
+</tr>
+<tr class="odd">
+<td><strong>seek</strong></td>
+<td>Mode 0 (POD)</td>
+<td>offset, whence のみ（16bytes）</td>
+</tr>
+<tr class="even">
+<td><strong>ioctl</strong></td>
+<td>Mode 2 (型付きKey-Value形式)</td>
+<td>可変パラメータ、柔軟性重視</td>
+</tr>
+<tr class="odd">
+<td><strong>ログ出力</strong></td>
+<td>Mode 2 (型付きKey-Value形式)</td>
+<td>構造化ログ、可変長メッセージ</td>
+</tr>
+<tr class="even">
+<td><strong>デバッグ情報</strong></td>
+<td>Mode 2 (型付きKey-Value形式)</td>
+<td>複雑な構造、ツール連携</td>
+</tr>
+</tbody>
+</table>
+<h3 id="共有ヒープshared-heapの設計">共有ヒープ（Shared
+Heap）の設計</h3>
+<p><strong>目的：</strong> - Subsystem と Service
+間で大容量データを効率的に転送 -
+ポインタベースの転送により、メモリコピーを最小化 -
+所有権管理により、メモリリークを防止</p>
+<p><strong>配置：</strong></p>
+<pre><code>P3 (Subsystems Heap) の一部、または独立
+├── Subsystem Metadata (~1.5KB)
+│   ├── Router (1.4KB)
+│   ├── logger (2.0KB)
+│   ├── hal (1.8KB)
+│   └── debugger [Phase 3]
+│
+└── Shared Heap (~6KB, 共有領域)
+    ├── 大容量バッファプール
+    └── co_value&lt;T&gt; メタデータ</code></pre>
+<p><strong>ルール：</strong></p>
+<ol type="1">
+<li><strong>割り当て</strong>
+<ul>
+<li>COOS が共有ヒープを管理</li>
+<li><code>co_value&lt;T&gt; buf = shared_heap.allocate&lt;T&gt;(size)</code>
+で確保</li>
+<li>失敗時は <code>std::nullopt</code></li>
+</ul></li>
+<li><strong>移譲</strong>
+<ul>
+<li><code>co_value&lt;T&gt;</code> で所有権を明示的に move</li>
+<li>送信側は move 後アクセス禁止（コンパイル時チェック）</li>
+</ul></li>
+<li><strong>受信</strong>
+<ul>
+<li>受信側が所有権を取得</li>
+<li>スコープ脱出で自動解放</li>
+</ul></li>
+<li><strong>リサイクル</strong>
+<ul>
+<li>deallocate されたメモリは、shared_heap に戻される</li>
+<li>次の allocate で再利用可能</li>
+</ul></li>
+</ol>
+<p><strong>メモリプール戦略：</strong></p>
+<div class="sourceCode" id="cb12"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> shared_heap <span class="op">{</span></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>  <span class="co">// 事前割り当て：最大 64 エントリ（各 4KB）</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>  <span class="kw">struct</span> pool_entry <span class="op">{</span></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>    co_value<span class="op">&lt;</span><span class="dt">void</span><span class="op">&gt;</span> data<span class="op">;</span></span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint32_t</span> size<span class="op">;</span></span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a>    <span class="dt">bool</span> in_use<span class="op">;</span></span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a>  <span class="op">};</span></span>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a>  <span class="co">// ルーティングテーブル：owner_route_id → in_use</span></span>
+<span id="cb12-10"><a href="#cb12-10" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code></pre></div>
+<hr />
+<h2 id="logger-subsystem">1. Logger Subsystem</h2>
+<h3 id="目的purpose-1">目的（Purpose）</h3>
+<p><strong>概要：</strong> logger サブシステムは、Fireball
+システム全体のイベント記録を一元管理します。COOS
+カーネル内の各コンポーネント（スケジューラー、チャネル、メモリ管理）や他のサブシステムがイベントを記録し、ロギングバックエンドを通じて外部へ出力します。</p>
+<p><strong>主な役割：</strong> - <strong>イベント記録</strong>:
+コルーチンのライフサイクル（spawn、resume、suspend、complete）、チャネル操作（send、recv）、メモリ割り当て失敗などのイベント
+- <strong>バッファリング</strong>:
+リングバッファにイベントを蓄積し、メモリ割り当てなしで動作 -
+<strong>フォーマット変換</strong>: イベントを 型付きKey-Value形式
+バイナリ形式にエンコード - <strong>複数バックエンド対応</strong>:
+UART、ファイル、ネットワークなど、異なる出力先をサポート</p>
+<h3 id="インターフェースinterface-1">インターフェース（Interface）</h3>
+<p><strong>ファイル:</strong> <code>inc/subsystems/logger.hxx</code></p>
+<div class="sourceCode" id="cb13"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="kw">namespace</span> fireball <span class="op">{</span> <span class="kw">namespace</span> subsystems <span class="op">{</span></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a><span class="kw">enum</span> <span class="kw">class</span> log_level <span class="op">{</span></span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>  DEBUG <span class="op">=</span> <span class="dv">0</span><span class="op">,</span></span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a>  INFO <span class="op">=</span> <span class="dv">1</span><span class="op">,</span></span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a>  WARN <span class="op">=</span> <span class="dv">2</span><span class="op">,</span></span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a>  ERROR <span class="op">=</span> <span class="dv">3</span><span class="op">,</span></span>
+<span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a>  FATAL <span class="op">=</span> <span class="dv">4</span></span>
+<span id="cb13-9"><a href="#cb13-9" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb13-10"><a href="#cb13-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-11"><a href="#cb13-11" aria-hidden="true" tabindex="-1"></a><span class="kw">typedef</span> <span class="kw">struct</span> <span class="op">{</span></span>
+<span id="cb13-12"><a href="#cb13-12" aria-hidden="true" tabindex="-1"></a>  log_level level<span class="op">;</span></span>
+<span id="cb13-13"><a href="#cb13-13" aria-hidden="true" tabindex="-1"></a>  <span class="dt">uint32_t</span> timestamp<span class="op">;</span></span>
+<span id="cb13-14"><a href="#cb13-14" aria-hidden="true" tabindex="-1"></a>  <span class="dt">uint32_t</span> source_module_id<span class="op">;</span></span>
+<span id="cb13-15"><a href="#cb13-15" aria-hidden="true" tabindex="-1"></a>  <span class="bu">std::</span>string_view message<span class="op">;</span></span>
+<span id="cb13-16"><a href="#cb13-16" aria-hidden="true" tabindex="-1"></a>  <span class="co">// Additional context fields</span></span>
+<span id="cb13-17"><a href="#cb13-17" aria-hidden="true" tabindex="-1"></a><span class="op">}</span> <span class="dt">logger_event_t</span><span class="op">;</span></span>
+<span id="cb13-18"><a href="#cb13-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-19"><a href="#cb13-19" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> logger_service <span class="op">{</span></span>
+<span id="cb13-20"><a href="#cb13-20" aria-hidden="true" tabindex="-1"></a> <span class="kw">public</span><span class="op">:</span></span>
+<span id="cb13-21"><a href="#cb13-21" aria-hidden="true" tabindex="-1"></a>  <span class="kw">virtual</span> <span class="op">~</span>logger_service<span class="op">()</span> <span class="op">=</span> <span class="cf">default</span><span class="op">;</span></span>
+<span id="cb13-22"><a href="#cb13-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-23"><a href="#cb13-23" aria-hidden="true" tabindex="-1"></a>  <span class="co">// Log event with context</span></span>
+<span id="cb13-24"><a href="#cb13-24" aria-hidden="true" tabindex="-1"></a>  <span class="kw">virtual</span> <span class="dt">void</span> log<span class="op">(</span><span class="at">const</span> <span class="dt">logger_event_t</span><span class="op">&amp;</span> event<span class="op">)</span> <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb13-25"><a href="#cb13-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-26"><a href="#cb13-26" aria-hidden="true" tabindex="-1"></a>  <span class="co">// Flush pending logs</span></span>
+<span id="cb13-27"><a href="#cb13-27" aria-hidden="true" tabindex="-1"></a>  <span class="kw">virtual</span> <span class="dt">void</span> flush<span class="op">()</span> <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb13-28"><a href="#cb13-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-29"><a href="#cb13-29" aria-hidden="true" tabindex="-1"></a>  <span class="co">// Register output backend</span></span>
+<span id="cb13-30"><a href="#cb13-30" aria-hidden="true" tabindex="-1"></a>  <span class="kw">virtual</span> <span class="dt">void</span> register_backend<span class="op">(</span></span>
+<span id="cb13-31"><a href="#cb13-31" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>function<span class="op">&lt;</span><span class="dt">void</span><span class="op">(</span><span class="at">const</span> <span class="dt">logger_event_t</span><span class="op">&amp;)&gt;</span> backend<span class="op">)</span> <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb13-32"><a href="#cb13-32" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb13-33"><a href="#cb13-33" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-34"><a href="#cb13-34" aria-hidden="true" tabindex="-1"></a><span class="op">}</span> <span class="op">}</span> <span class="co">// namespace fireball { namespace subsystems</span></span></code></pre></div>
+<h3 id="実装implementation">実装（Implementation）</h3>
+<p><strong>ロケーション:</strong>
+<code>src/subsystems/logger/</code></p>
+<p><strong>実装の特徴：</strong> - <strong>リングバッファ</strong>:
+固定サイズのリングバッファでイベントを蓄積、メモリ割り当てなし -
+<strong>UART バックエンド</strong>: デフォルトは UART（ボーレート
+115200、8N1）へのテキスト出力 - <strong>タイムスタンプ生成</strong>:
+co_sched の tick カウンターから相対時間を取得 -
+<strong>型付きKey-Value形式 フォーマット</strong>:
+バイナリ形式でのコンパクト化、JSON への変換可能 -
+<strong>ノンブロッキング</strong>:
+イベント記録時にブロック不可（スケジューラー安全性）</p>
+<h3 id="coos-との統合integration-with-coos">COOS との統合（Integration
+with COOS）</h3>
+<p><strong>通信モデル：</strong> COOS カーネルコンポーネントは、logger
+サブシステムと直接リンクせず、CSP
+チャネル経由でイベントを送信します。これにより、logger
+の実装変更がカーネルに波及しません。</p>
+<p><strong>イベントフロー：</strong> - <code>co_sched</code> → logger:
+コルーチンライフサイクルイベント - <code>co_csp</code> → logger:
+チャネル送受信イベント - <code>co_mem</code> → logger:
+メモリ割り当て失敗イベント - WASM インタプリタ → logger:
+実行エラーイベント</p>
+<p><strong>コード例：</strong> COOS
+コンポーネント内でのロギング呼び出し</p>
+<div class="sourceCode" id="cb14"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="co">// In co_mem.cpp</span></span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> allocate_in_partition<span class="op">(...)</span> <span class="op">{</span></span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> <span class="op">(</span>part<span class="op">-&gt;</span>current_usage <span class="op">+</span> size <span class="op">&gt;</span> part<span class="op">-&gt;</span>max_size<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a>    logger_event error <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a>      <span class="op">.</span>level <span class="op">=</span> LOG_ERROR<span class="op">,</span></span>
+<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a>      <span class="op">.</span>type <span class="op">=</span> LOG_ERROR_HEAP_OVERFLOW<span class="op">,</span></span>
+<span id="cb14-7"><a href="#cb14-7" aria-hidden="true" tabindex="-1"></a>      <span class="op">.</span>module_id <span class="op">=</span> part<span class="op">-&gt;</span>module_id<span class="op">,</span></span>
+<span id="cb14-8"><a href="#cb14-8" aria-hidden="true" tabindex="-1"></a>      <span class="op">.</span>requested <span class="op">=</span> size</span>
+<span id="cb14-9"><a href="#cb14-9" aria-hidden="true" tabindex="-1"></a>    <span class="op">};</span></span>
+<span id="cb14-10"><a href="#cb14-10" aria-hidden="true" tabindex="-1"></a>    get_logger<span class="op">()-&gt;</span>log<span class="op">(</span>error<span class="op">);</span></span>
+<span id="cb14-11"><a href="#cb14-11" aria-hidden="true" tabindex="-1"></a>    kernel<span class="op">-&gt;</span>terminate_module<span class="op">(</span>part<span class="op">-&gt;</span>module_id<span class="op">);</span></span>
+<span id="cb14-12"><a href="#cb14-12" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb14-13"><a href="#cb14-13" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="phase-1-実装タスク">Phase 1 実装タスク</h3>
+<ul class="task-list">
+<li><label><input type="checkbox" />logger
+インターフェース定義</label></li>
+<li><label><input
+type="checkbox" />リングバッファ実装（イベント蓄積）</label></li>
+<li><label><input type="checkbox" />UART バックエンド実装</label></li>
+<li><label><input type="checkbox" />タイムスタンプ生成機構</label></li>
+<li><label><input type="checkbox" />COOS
+コンポーネントとの統合テスト</label></li>
+</ul>
+<hr />
+<h2 id="hal-subsystem">2. HAL Subsystem</h2>
+<h3 id="目的purpose-2">目的（Purpose）</h3>
+<p><strong>概要：</strong> HAL（Hardware Abstraction
+Layer）サブシステムは、POSIX風の統一インターフェース（open/close/read/write/seek/ioctl）を通じて、物理デバイスへのアクセスを抽象化します。複雑な操作は
+ioctl で柔軟に対応します。</p>
+<p><strong>主な役割：</strong> - <strong>統一インターフェース</strong>:
+open、close、read、write、seek、ioctl の 6 操作のみ - <strong>Virtual
+SoC</strong>: URI
+ベースのデバイス識別（<code>io://uart/0</code>、<code>accel://blas</code>
+など） - <strong>プラットフォーム実装</strong>:
+Zephyr、ベアメタル、RISC-V など各プラットフォーム向けドライバ -
+<strong>柔軟な制御</strong>: ioctl
+で設定・状態取得・カスタム操作に対応</p>
+<h3 id="インターフェースinterface-2">インターフェース（Interface）</h3>
+<p><strong>ファイル:</strong> <code>inc/subsystems/hal.hxx</code></p>
+<div class="sourceCode" id="cb15"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="kw">namespace</span> fireball <span class="op">{</span> <span class="kw">namespace</span> subsystems <span class="op">{</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a><span class="co">// ファイルディスクリプタ型（デバイスハンドル）</span></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a><span class="kw">typedef</span> <span class="dt">uint32_t</span> <span class="dt">fd_t</span><span class="op">;</span></span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a><span class="co">// ioctl コマンド定義</span></span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a><span class="kw">enum</span> <span class="kw">class</span> ioctl_cmd <span class="op">:</span> <span class="dt">uint16_t</span> <span class="op">{</span></span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a>  <span class="co">// 共通コマンド</span></span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a>  GET_INFO <span class="op">=</span> <span class="bn">0x0001</span><span class="op">,</span>        <span class="co">// デバイス情報取得</span></span>
+<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a>  SET_CONFIG <span class="op">=</span> <span class="bn">0x0002</span><span class="op">,</span>      <span class="co">// 設定値変更（ボーレート、周波数など）</span></span>
+<span id="cb15-11"><a href="#cb15-11" aria-hidden="true" tabindex="-1"></a>  GET_STATUS <span class="op">=</span> <span class="bn">0x0003</span><span class="op">,</span>      <span class="co">// ステータス取得</span></span>
+<span id="cb15-12"><a href="#cb15-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-13"><a href="#cb15-13" aria-hidden="true" tabindex="-1"></a>  <span class="co">// デバイス固有コマンド（0x1000 以上をメーカー領域に）</span></span>
+<span id="cb15-14"><a href="#cb15-14" aria-hidden="true" tabindex="-1"></a>  CUSTOM_START <span class="op">=</span> <span class="bn">0x1000</span><span class="op">,</span></span>
+<span id="cb15-15"><a href="#cb15-15" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb15-16"><a href="#cb15-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-17"><a href="#cb15-17" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> hal_subsystem <span class="op">{</span></span>
+<span id="cb15-18"><a href="#cb15-18" aria-hidden="true" tabindex="-1"></a> <span class="kw">public</span><span class="op">:</span></span>
+<span id="cb15-19"><a href="#cb15-19" aria-hidden="true" tabindex="-1"></a>  <span class="kw">virtual</span> <span class="op">~</span>hal_subsystem<span class="op">()</span> <span class="op">=</span> <span class="cf">default</span><span class="op">;</span></span>
+<span id="cb15-20"><a href="#cb15-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-21"><a href="#cb15-21" aria-hidden="true" tabindex="-1"></a>  <span class="co">// ─────────────────────────────────────</span></span>
+<span id="cb15-22"><a href="#cb15-22" aria-hidden="true" tabindex="-1"></a>  <span class="co">// Mode 0: POD値ベース操作</span></span>
+<span id="cb15-23"><a href="#cb15-23" aria-hidden="true" tabindex="-1"></a>  <span class="co">// ─────────────────────────────────────</span></span>
+<span id="cb15-24"><a href="#cb15-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-25"><a href="#cb15-25" aria-hidden="true" tabindex="-1"></a>  <span class="co">// open: URI からデバイスを開く（複数ポート対応）</span></span>
+<span id="cb15-26"><a href="#cb15-26" aria-hidden="true" tabindex="-1"></a>  <span class="co">//</span></span>
+<span id="cb15-27"><a href="#cb15-27" aria-hidden="true" tabindex="-1"></a>  <span class="co">// デバイスが複数の入出力ポートを持つ場合がある：</span></span>
+<span id="cb15-28"><a href="#cb15-28" aria-hidden="true" tabindex="-1"></a>  <span class="co">// - UART デバイス: 複数のシリアルポートを持つ場合、ポート番号で区別</span></span>
+<span id="cb15-29"><a href="#cb15-29" aria-hidden="true" tabindex="-1"></a>  <span class="co">// - GPIO：複数のピンを持つ場合、ピン番号で区別</span></span>
+<span id="cb15-30"><a href="#cb15-30" aria-hidden="true" tabindex="-1"></a>  <span class="co">// - その他センサー、インターフェース: デバイス固有のストリーム構成</span></span>
+<span id="cb15-31"><a href="#cb15-31" aria-hidden="true" tabindex="-1"></a>  <span class="co">//</span></span>
+<span id="cb15-32"><a href="#cb15-32" aria-hidden="true" tabindex="-1"></a>  <span class="co">// URI はデバイスを指定し、flags やデバイス固有パラメータでポート/ストリームを選択</span></span>
+<span id="cb15-33"><a href="#cb15-33" aria-hidden="true" tabindex="-1"></a>  <span class="co">// 戻り値: fd（成功）or 負の値（エラー）</span></span>
+<span id="cb15-34"><a href="#cb15-34" aria-hidden="true" tabindex="-1"></a>  <span class="kw">virtual</span> <span class="dt">fd_t</span> open<span class="op">(</span></span>
+<span id="cb15-35"><a href="#cb15-35" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>string_view uri<span class="op">,</span>              <span class="co">// e.g. &quot;io://uart/0&quot;, &quot;accel://blas&quot;</span></span>
+<span id="cb15-36"><a href="#cb15-36" aria-hidden="true" tabindex="-1"></a>    <span class="dt">uint16_t</span> flags <span class="op">=</span> <span class="dv">0</span><span class="op">)</span> <span class="op">=</span> <span class="dv">0</span><span class="op">;</span>          <span class="co">// ポート選択など、デバイス固有の flags</span></span>
+<span id="cb15-37"><a href="#cb15-37" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-38"><a href="#cb15-38" aria-hidden="true" tabindex="-1"></a>  <span class="co">// close: ファイルディスクリプタを閉じる</span></span>
+<span id="cb15-39"><a href="#cb15-39" aria-hidden="true" tabindex="-1"></a>  <span class="kw">virtual</span> <span class="dt">int</span> close<span class="op">(</span><span class="dt">fd_t</span> fd<span class="op">)</span> <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb15-40"><a href="#cb15-40" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-41"><a href="#cb15-41" aria-hidden="true" tabindex="-1"></a>  <span class="co">// seek: ファイルポジション移動（デバイスに依存）</span></span>
+<span id="cb15-42"><a href="#cb15-42" aria-hidden="true" tabindex="-1"></a>  <span class="kw">virtual</span> <span class="dt">int64_t</span> seek<span class="op">(</span><span class="dt">fd_t</span> fd<span class="op">,</span> <span class="dt">int64_t</span> offset<span class="op">,</span> <span class="dt">int</span> whence<span class="op">)</span> <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb15-43"><a href="#cb15-43" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-44"><a href="#cb15-44" aria-hidden="true" tabindex="-1"></a>  <span class="co">// ioctl: デバイス制御（可変パラメータ、型付きKey-Value形式使用）</span></span>
+<span id="cb15-45"><a href="#cb15-45" aria-hidden="true" tabindex="-1"></a>  <span class="co">// 戻り値: 操作固有の値</span></span>
+<span id="cb15-46"><a href="#cb15-46" aria-hidden="true" tabindex="-1"></a>  <span class="kw">virtual</span> <span class="dt">int</span> ioctl<span class="op">(</span></span>
+<span id="cb15-47"><a href="#cb15-47" aria-hidden="true" tabindex="-1"></a>    <span class="dt">fd_t</span> fd<span class="op">,</span></span>
+<span id="cb15-48"><a href="#cb15-48" aria-hidden="true" tabindex="-1"></a>    ioctl_cmd cmd<span class="op">,</span></span>
+<span id="cb15-49"><a href="#cb15-49" aria-hidden="true" tabindex="-1"></a>    <span class="at">const</span> <span class="bu">std::</span>vector<span class="op">&lt;</span><span class="dt">uint8_t</span><span class="op">&gt;&amp;</span> input<span class="op">,</span>   <span class="co">// 型付きKey-Value形式 encoded</span></span>
+<span id="cb15-50"><a href="#cb15-50" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>vector<span class="op">&lt;</span><span class="dt">uint8_t</span><span class="op">&gt;&amp;</span> output<span class="op">)</span> <span class="op">=</span> <span class="dv">0</span><span class="op">;</span>  <span class="co">// 型付きKey-Value形式 encoded result</span></span>
+<span id="cb15-51"><a href="#cb15-51" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-52"><a href="#cb15-52" aria-hidden="true" tabindex="-1"></a>  <span class="co">// ─────────────────────────────────────</span></span>
+<span id="cb15-53"><a href="#cb15-53" aria-hidden="true" tabindex="-1"></a>  <span class="co">// Mode 1: co_value ベース操作（大容量I/O）</span></span>
+<span id="cb15-54"><a href="#cb15-54" aria-hidden="true" tabindex="-1"></a>  <span class="co">// ─────────────────────────────────────</span></span>
+<span id="cb15-55"><a href="#cb15-55" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-56"><a href="#cb15-56" aria-hidden="true" tabindex="-1"></a>  <span class="co">// read: 大容量バッファ読み込み（共有ヒープ経由）</span></span>
+<span id="cb15-57"><a href="#cb15-57" aria-hidden="true" tabindex="-1"></a>  <span class="kw">virtual</span> <span class="dt">int64_t</span> read<span class="op">(</span></span>
+<span id="cb15-58"><a href="#cb15-58" aria-hidden="true" tabindex="-1"></a>    <span class="dt">fd_t</span> fd<span class="op">,</span></span>
+<span id="cb15-59"><a href="#cb15-59" aria-hidden="true" tabindex="-1"></a>    co_value<span class="op">&lt;</span><span class="dt">uint8_t</span><span class="op">[]&gt;&amp;</span> buffer<span class="op">)</span> <span class="op">=</span> <span class="dv">0</span><span class="op">;</span>  <span class="co">// 所有権取得、読み込み結果サイズ返却</span></span>
+<span id="cb15-60"><a href="#cb15-60" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-61"><a href="#cb15-61" aria-hidden="true" tabindex="-1"></a>  <span class="co">// write: 大容量バッファ書き込み（共有ヒープ経由）</span></span>
+<span id="cb15-62"><a href="#cb15-62" aria-hidden="true" tabindex="-1"></a>  <span class="kw">virtual</span> <span class="dt">int64_t</span> write<span class="op">(</span></span>
+<span id="cb15-63"><a href="#cb15-63" aria-hidden="true" tabindex="-1"></a>    <span class="dt">fd_t</span> fd<span class="op">,</span></span>
+<span id="cb15-64"><a href="#cb15-64" aria-hidden="true" tabindex="-1"></a>    co_value<span class="op">&lt;</span><span class="dt">uint8_t</span><span class="op">[]&gt;</span> buffer<span class="op">)</span> <span class="op">=</span> <span class="dv">0</span><span class="op">;</span>   <span class="co">// 所有権移譲、書き込みサイズ返却</span></span>
+<span id="cb15-65"><a href="#cb15-65" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb15-66"><a href="#cb15-66" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-67"><a href="#cb15-67" aria-hidden="true" tabindex="-1"></a><span class="op">}</span> <span class="op">}</span> <span class="co">// namespace fireball { namespace subsystems</span></span></code></pre></div>
+<h3 id="操作詳細">操作詳細</h3>
+<table>
+<colgroup>
+<col style="width: 22%" />
+<col style="width: 37%" />
+<col style="width: 22%" />
+<col style="width: 18%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>操作</th>
+<th>通信モード</th>
+<th>用途</th>
+<th>例</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>open</strong></td>
+<td>Mode 2 (型付きKey-Value形式)</td>
+<td>デバイス オープン、オプション指定</td>
+<td><code>open("io://uart/0", O_RDWR)</code></td>
+</tr>
+<tr class="even">
+<td><strong>close</strong></td>
+<td>Mode 0 (POD)</td>
+<td>デバイス クローズ</td>
+<td><code>close(fd)</code></td>
+</tr>
+<tr class="odd">
+<td><strong>read</strong></td>
+<td>Mode 1 (co_value)</td>
+<td>大容量データ読み込み</td>
+<td><code>read(fd, buf)</code> → 共有ヒープから読み込み</td>
+</tr>
+<tr class="even">
+<td><strong>write</strong></td>
+<td>Mode 1 (co_value)</td>
+<td>大容量データ書き込み</td>
+<td><code>write(fd, buf)</code> → 共有ヒープへ書き込み</td>
+</tr>
+<tr class="odd">
+<td><strong>seek</strong></td>
+<td>Mode 0 (POD)</td>
+<td>ファイルポジション移動</td>
+<td><code>seek(fd, 0, SEEK_SET)</code></td>
+</tr>
+<tr class="even">
+<td><strong>ioctl</strong></td>
+<td>Mode 2 (型付きKey-Value形式)</td>
+<td>設定・状態取得・カスタム操作</td>
+<td>ボーレート設定、GPIO制御など</td>
+</tr>
+</tbody>
+</table>
+<h3 id="ioctl-による柔軟な制御">ioctl による柔軟な制御</h3>
+<p>ioctl を通じて、デバイス固有のすべての操作を実装します。</p>
+<p><strong>共通コマンド例：</strong></p>
+<div class="sourceCode" id="cb16"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="co">// UART ボーレート設定</span></span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> uart_config <span class="op">{</span></span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">uint32_t</span> baud_rate<span class="op">;</span></span>
+<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">uint8_t</span> data_bits<span class="op">;</span></span>
+<span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">uint8_t</span> parity<span class="op">;</span></span>
+<span id="cb16-6"><a href="#cb16-6" aria-hidden="true" tabindex="-1"></a><span class="op">}</span> cfg<span class="op">{</span><span class="dv">115200</span><span class="op">,</span> <span class="dv">8</span><span class="op">,</span> <span class="dv">0</span><span class="op">};</span></span>
+<span id="cb16-7"><a href="#cb16-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-8"><a href="#cb16-8" aria-hidden="true" tabindex="-1"></a><span class="bu">std::</span>vector<span class="op">&lt;</span><span class="dt">uint8_t</span><span class="op">&gt;</span> input <span class="op">=</span> kv_encode<span class="op">(&amp;</span>cfg<span class="op">);</span></span>
+<span id="cb16-9"><a href="#cb16-9" aria-hidden="true" tabindex="-1"></a><span class="bu">std::</span>vector<span class="op">&lt;</span><span class="dt">uint8_t</span><span class="op">&gt;</span> output<span class="op">;</span></span>
+<span id="cb16-10"><a href="#cb16-10" aria-hidden="true" tabindex="-1"></a>hal<span class="op">.</span>ioctl<span class="op">(</span>uart_fd<span class="op">,</span> ioctl_cmd<span class="op">::</span>SET_CONFIG<span class="op">,</span> input<span class="op">,</span> output<span class="op">);</span></span></code></pre></div>
+<div class="sourceCode" id="cb17"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="co">// GPIO ピン出力設定</span></span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> gpio_cmd <span class="op">{</span></span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">uint32_t</span> pin<span class="op">;</span></span>
+<span id="cb17-4"><a href="#cb17-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">uint8_t</span> value<span class="op">;</span>     <span class="co">// 0=LOW, 1=HIGH</span></span>
+<span id="cb17-5"><a href="#cb17-5" aria-hidden="true" tabindex="-1"></a><span class="op">}</span> cmd<span class="op">{</span><span class="dv">5</span><span class="op">,</span> <span class="dv">1</span><span class="op">};</span></span>
+<span id="cb17-6"><a href="#cb17-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-7"><a href="#cb17-7" aria-hidden="true" tabindex="-1"></a><span class="bu">std::</span>vector<span class="op">&lt;</span><span class="dt">uint8_t</span><span class="op">&gt;</span> input <span class="op">=</span> kv_encode<span class="op">(&amp;</span>cmd<span class="op">);</span></span>
+<span id="cb17-8"><a href="#cb17-8" aria-hidden="true" tabindex="-1"></a>hal<span class="op">.</span>ioctl<span class="op">(</span>gpio_fd<span class="op">,</span> ioctl_cmd<span class="op">::</span>SET_CONFIG<span class="op">,</span> input<span class="op">,</span> <span class="op">{});</span></span></code></pre></div>
+<p><strong>デバイス固有コマンド（0x1000 以上）：</strong></p>
+<ul>
+<li>I2C: START、STOP、FREQUENCY 設定</li>
+<li>SPI: MODE、速度設定</li>
+<li>Timer: 周期設定、割り込み設定</li>
+<li>その他: 各メーカー実装領域</li>
+</ul>
+<h3 id="実装implementation-1">実装（Implementation）</h3>
+<p><strong>ファイル構成：</strong></p>
+<pre><code>src/subsystems/hal/
+├── hal_subsystem.cpp       # インターフェース実装
+└── platform/{zephyr,riscv}/
+    ├── hal_device_map.cpp  # URI → ドライバマッピング
+    ├── hal_uart.cpp        # UART ドライバ
+    ├── hal_gpio.cpp        # GPIO ドライバ
+    ├── hal_i2c.cpp         # I2C ドライバ
+    ├── hal_spi.cpp         # SPI ドライバ
+    └── hal_timer.cpp       # Timer ドライバ</code></pre>
+<p><strong>特徴：</strong> - 単純な 6 操作のみ - ioctl
+で全てのカスタム機能に対応 - プラットフォーム固有の実装は
+<code>platform/</code> に隔離 - 型付きKey-Value形式
+で複雑なパラメータを処理</p>
+<h3 id="phase-2-実装タスク">Phase 2 実装タスク</h3>
+<ul class="task-list">
+<li><label><input type="checkbox" />HAL
+インターフェース定義（open/close/read/write/seek/ioctl）</label></li>
+<li><label><input type="checkbox" />URI →
+ファイルディスクリプタマッピング</label></li>
+<li><label><input type="checkbox" />型付きKey-Value形式
+エンコード・デコード（ioctl パラメータ用）</label></li>
+<li><label><input type="checkbox" />Zephyr HAL
+バックエンド実装</label></li>
+<li><label><input
+type="checkbox" />標準ドライバ実装（UART、GPIO）</label></li>
+<li><label><input type="checkbox" />カスタム ioctl
+コマンド定義</label></li>
+<li><label><input type="checkbox" />統合テスト</label></li>
+</ul>
+<hr />
+<h2 id="debugger-subsystem-future">3. Debugger Subsystem [Future]</h2>
+<h3 id="目的purpose-3">目的（Purpose）</h3>
+<p><strong>概要：</strong> debugger サブシステム（Phase 3
+で実装予定）は、GDB Remote Protocol をサポートし、VSCode、GDB、lldb
+などの標準的なデバッガと統合します。これにより、Fireball
+実行環境のコルーチンをステップ実行したり、ブレークポイントを設定したりできるようになります。</p>
+<h3 id="主な機能key-features">主な機能（Key Features）</h3>
+<ul>
+<li><strong>ブレークポイント管理</strong>: 最大 5
+個のブレークポイント設定・削除</li>
+<li><strong>ステップ実行</strong>: 1 命令単位での WASM 実行制御</li>
+<li><strong>レジスタ読み取り</strong>:
+現在のコルーチン状態（ローカル変数、スタック）のスナップショット</li>
+<li><strong>メモリアクセス</strong>: WASM
+線形メモリの読み取り（セキュリティ制御あり）</li>
+<li><strong>IDE 統合</strong>: VSCode、GDB、lldb などとの通信</li>
+</ul>
+<h3 id="実装implementation-2">実装（Implementation）</h3>
+<p><strong>ロケーション:</strong>
+<code>src/subsystems/debugger/</code></p>
+<p>詳細設計は <a href="debugging.md">debugging.md</a> を参照。</p>
+<h3 id="phase-3-実装タスク">Phase 3 実装タスク</h3>
+<ul class="task-list">
+<li><label><input type="checkbox" />GDB Remote Protocol
+パーサー</label></li>
+<li><label><input
+type="checkbox" />ブレークポイント管理（追加・削除・有効化）</label></li>
+<li><label><input
+type="checkbox" />レジスタスナップショット取得</label></li>
+<li><label><input
+type="checkbox" />メモリアクセス制御（バウンダリチェック）</label></li>
+<li><label><input type="checkbox" />UART 通信層（GDB
+プロトコル送受信）</label></li>
+</ul>
+<hr />
+<h2 id="jit-subsystem-future">4. JIT Subsystem [Future]</h2>
+<h3 id="目的purpose-4">目的（Purpose）</h3>
+<p><strong>概要：</strong>
+JIT（Just-In-Time）コンパイラサブシステム（Phase 4 で実装予定）は、WASM
+インタプリタのボトルネックを検出し、頻繁に実行される「ホットパス」をネイティブコードに動的コンパイルします。インタプリタから
+JIT
+へ段階的にマイグレーションすることで、パフォーマンスを保ちながら初期起動時間を短縮します。</p>
+<h3 id="主な機能key-features-1">主な機能（Key Features）</h3>
+<ul>
+<li><strong>ホットパス検出</strong>:
+実行頻度カウント、閾値超過時にコンパイル対象として選別</li>
+<li><strong>基本ブロック単位のコンパイル</strong>:
+分岐点でコンパイル境界を決定、最小単位化</li>
+<li><strong>段階的マイグレーション</strong>: インタプリタから JIT
+へ動的に切り替え、フォールバックも可能</li>
+<li><strong>キャッシュ管理</strong>: コンパイル済みコードの保存、LRU
+キャッシュで容量制限</li>
+</ul>
+<h3 id="実装implementation-3">実装（Implementation）</h3>
+<p><strong>ロケーション:</strong> <code>src/subsystems/jit/</code></p>
+<p>詳細は Phase 4 計画で指定予定。</p>
+<h3 id="phase-4-実装タスク">Phase 4 実装タスク</h3>
+<ul class="task-list">
+<li><label><input type="checkbox" />ホットパス
+プロファイリング機構</label></li>
+<li><label><input
+type="checkbox" />基本ブロック抽出アルゴリズム</label></li>
+<li><label><input type="checkbox" />ネイティブコード生成（ARM
+Thumb-2/RISC-V 対応）</label></li>
+<li><label><input
+type="checkbox" />コンパイルキャッシュ管理</label></li>
+<li><label><input
+type="checkbox" />インタプリタへのフォールバック</label></li>
+</ul>
+<hr />
+<hr />
+<h2 id="通信モデルcommunication-model">通信モデル（Communication
+Model）</h2>
+<h3 id="csp-チャネルの使用">CSP チャネルの使用</h3>
+<p><strong>概要：</strong> Subsystems と Services
+は、入力チャネルでリクエストを受け取り、出力チャネルでレスポンスを送信します。この単方向通信により、各コンポーネント間の疎結合を維持し、スケーラビリティを確保します。</p>
+<p><strong>Subsystem/Service のイベントループパターン：</strong></p>
+<div class="sourceCode" id="cb19"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb19-1"><a href="#cb19-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Input channel: リクエスト受け取り</span></span>
+<span id="cb19-2"><a href="#cb19-2" aria-hidden="true" tabindex="-1"></a>co_channel<span class="op">&lt;</span><span class="dt">message_type</span><span class="op">&gt;*</span> input_ch <span class="op">=</span> <span class="op">...;</span></span>
+<span id="cb19-3"><a href="#cb19-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-4"><a href="#cb19-4" aria-hidden="true" tabindex="-1"></a><span class="co">// Output channel: レスポンス送信</span></span>
+<span id="cb19-5"><a href="#cb19-5" aria-hidden="true" tabindex="-1"></a>co_channel<span class="op">&lt;</span><span class="dt">message_type</span><span class="op">&gt;*</span> output_ch <span class="op">=</span> <span class="op">...;</span></span>
+<span id="cb19-6"><a href="#cb19-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-7"><a href="#cb19-7" aria-hidden="true" tabindex="-1"></a><span class="co">// Event loop</span></span>
+<span id="cb19-8"><a href="#cb19-8" aria-hidden="true" tabindex="-1"></a><span class="cf">while</span> <span class="op">(</span><span class="kw">true</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb19-9"><a href="#cb19-9" aria-hidden="true" tabindex="-1"></a>  <span class="co">// ブロッキング受信（rendezvous）</span></span>
+<span id="cb19-10"><a href="#cb19-10" aria-hidden="true" tabindex="-1"></a>  <span class="dt">message_type</span> req <span class="op">=</span> input_ch<span class="op">-&gt;</span>recv<span class="op">();</span></span>
+<span id="cb19-11"><a href="#cb19-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-12"><a href="#cb19-12" aria-hidden="true" tabindex="-1"></a>  <span class="co">// リクエスト処理</span></span>
+<span id="cb19-13"><a href="#cb19-13" aria-hidden="true" tabindex="-1"></a>  <span class="dt">message_type</span> resp <span class="op">=</span> process_request<span class="op">(</span>req<span class="op">);</span></span>
+<span id="cb19-14"><a href="#cb19-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb19-15"><a href="#cb19-15" aria-hidden="true" tabindex="-1"></a>  <span class="co">// ブロッキング送信</span></span>
+<span id="cb19-16"><a href="#cb19-16" aria-hidden="true" tabindex="-1"></a>  output_ch<span class="op">-&gt;</span>send<span class="op">(</span>resp<span class="op">);</span></span>
+<span id="cb19-17"><a href="#cb19-17" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="統合ポイントintegration-points">統合ポイント（Integration
+Points）</h3>
+<p><strong>COOS カーネルとサービスの接続：</strong> -
+<code>co_sched</code> → logger:
+コルーチンライフサイクルイベント（spawn、resume、suspend、complete） -
+<code>co_csp</code> → logger: チャネル操作イベント（send、recv） -
+<code>co_mem</code> → logger: メモリ割り当て失敗イベント - WASM
+インタプリタ → hal: I/O syscall（write、read、ioctl）</p>
+<p><strong>サービス間の接続：</strong> - logger → hal:
+ログを外部デバイス（UART など）に出力 - debugger → hal:
+デバッガ情報をシリアルポート経由で GDB に送信 - (将来) jit → logger:
+コンパイル情報の記録</p>
+<hr />
+<h2 id="wasm-runtime-architecture-interpreter-vsoc-jit-voffloader">5.
+WASM Runtime Architecture: Interpreter, vSoC, JIT, vOffloader</h2>
+<h3 id="目的purpose-5">目的（Purpose）</h3>
+<p>WASM Runtime は、WASM
+バイナリを実行するコア実行エンジンです。本セクションでは、WASM
+インタープリタ、Virtual SoC (vSoC)、JIT
+コンパイラ、vOffloader（ハードウェアアクセラレータインターフェース）の関係を明確に定義し、パフォーマンスと柔軟性のバランスを取ります。</p>
+<p><strong>核となる設計戦略：</strong></p>
+<ol type="1">
+<li><strong>vSoC（Virtual System-on-Chip）が主体</strong>：HAL
+サブシステムとの通信はすべて vSoC 経由で行う（インタープリタは vSoC
+の「クライアント」）</li>
+<li><strong>インタープリタと JIT
+は命令セット実装</strong>：命令セットの詳細（i32
+命令、演算、制御フロー）を担当</li>
+<li><strong>vOffloader は加速器ブリッジ</strong>：BLAS、暗号化など CPU
+では遅い操作を MMIO 経由でアクセラレータに委譲</li>
+<li><strong>密結合な内部 vs
+疎結合な外部</strong>：インタープリタ・JIT・vOffloader
+は最適化のため密結合だが、HAL との通信は IPC Router 経由（疎結合）</li>
+</ol>
+<h3 id="全体アーキテクチャ">全体アーキテクチャ</h3>
+<pre><code>┌─────────────────────────────────────────────────────────┐
+│  WebAssembly Guest Code (user)                          │
+│  - WASM bytecode (i32 instructions)                     │
+│  - System calls (WASI: read, write, etc)               │
+└─────────────────────────────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────┐
+│  WASM Runtime (Command: wasm_interpreter.exe)           │
+│                                                          │
+│  ┌──────────────────────────────────────────────────┐   │
+│  │ WASM Interpreter (または JIT)                   │   │
+│  │ - i32 instruction execution                     │   │
+│  │ - Call stack, local variables management        │   │
+│  │ - Memory access (linear memory)                 │   │
+│  │                                                 │   │
+│  │ ┌─ Instruction Type ──────────────────────┐   │   │
+│  │ │ a) Arithmetic/Logic (local only)        │   │   │
+│  │ │    → execute inline, no vSoC call      │   │   │
+│  │ │ b) Memory access (local memory)         │   │   │
+│  │ │    → Linear Memory, no vSoC call       │   │   │
+│  │ │ c) I/O syscalls (WASI: read/write)     │   │   │
+│  │ │    → delegate to vSoC.hal_syscall()    │   │   │
+│  │ │ d) Accelerator operations (BLAS, etc)  │   │   │
+│  │ │    → delegate to vSoC.voffloader       │   │   │
+│  │ └─────────────────────────────────────────┘   │   │
+│  └──────────────────────────────────────────────────┘   │
+│                     │                                    │
+│  ┌──────────────────┼──────────────────┐               │
+│  ▼                  ▼                   ▼               │
+│ [Inline]        [vSoC]              [JIT Cache]        │
+│ Local ops      HAL syscalls         Compiled code      │
+│                                                         │
+│ ┌───────────────────────────────────────────┐         │
+│ │ vSoC (Virtual SoC)                        │         │
+│ │ - URI routing (device://uart/0, etc)      │         │
+│ │ - HAL subsystem delegation                │         │
+│ │ - IPC Router message formatting           │         │
+│ │ - fd table management (open/close)        │         │
+│ └───────────────────────────────────────────┘         │
+│                     │                                  │
+│ ┌───────────────────┼──────────────────┐              │
+│ ▼                   ▼                   ▼              │
+│ [I/O]            [Accel]            [System]          │
+│ read/write       vOffloader          ioctl/seek       │
+│ HAL I/O ops      (MMIO Mapped)       Management       │
+│                                                        │
+└─────────────────────────────────────────────────────────┘
+                     │
+        ┌────────────┼────────────┐
+        ▼            ▼            ▼
+    [IPC Router via HAL subsystem]
+         │
+    [HAL Backend: Zephyr/BareMetal/FreeRTOS]
+         │
+    [Hardware: UART, GPIO, I2C, SPI, Timer, etc]</code></pre>
+<h3 id="インタープリタinterpreter">5.1
+インタープリタ（Interpreter）</h3>
+<p><strong>責務：</strong> - WASM i32 命令セットの解析・実行 -
+ローカル変数・スタック管理 - 制御フロー（分岐、ループ、関数呼び出し） -
+Linear Memory へのアクセス</p>
+<p><strong>特徴：</strong> - <strong>命令セット実装</strong>: i32
+命令のみ（f32/f64 は非対応） -
+<strong>インラインで実行される操作</strong>:
+算術・論理演算、メモリアクセス、ローカル変数操作はすべてインプロセス -
+<strong>vSoC へのデリゲーション</strong>: I/O
+syscall（WASI）や加速器操作は vSoC へ委譲</p>
+<p><strong>例：</strong></p>
+<div class="sourceCode" id="cb21"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="co">// Interpreter 内でのインラインコード実行</span></span>
+<span id="cb21-2"><a href="#cb21-2" aria-hidden="true" tabindex="-1"></a><span class="cf">case</span> i32_add<span class="op">:</span> <span class="op">{</span></span>
+<span id="cb21-3"><a href="#cb21-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">uint32_t</span> a <span class="op">=</span> pop_from_stack<span class="op">();</span></span>
+<span id="cb21-4"><a href="#cb21-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">uint32_t</span> b <span class="op">=</span> pop_from_stack<span class="op">();</span></span>
+<span id="cb21-5"><a href="#cb21-5" aria-hidden="true" tabindex="-1"></a>  push_to_stack<span class="op">(</span>a <span class="op">+</span> b<span class="op">);</span>  <span class="co">// 即座に実行、vSoC呼び出しなし</span></span>
+<span id="cb21-6"><a href="#cb21-6" aria-hidden="true" tabindex="-1"></a>  <span class="cf">break</span><span class="op">;</span></span>
+<span id="cb21-7"><a href="#cb21-7" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb21-8"><a href="#cb21-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb21-9"><a href="#cb21-9" aria-hidden="true" tabindex="-1"></a><span class="co">// WASI syscall の場合は vSoC へデリゲーション</span></span>
+<span id="cb21-10"><a href="#cb21-10" aria-hidden="true" tabindex="-1"></a><span class="cf">case</span> i32_call<span class="op">:</span> <span class="op">{</span></span>
+<span id="cb21-11"><a href="#cb21-11" aria-hidden="true" tabindex="-1"></a>  <span class="dt">uint32_t</span> func_idx <span class="op">=</span> operand<span class="op">;</span></span>
+<span id="cb21-12"><a href="#cb21-12" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> <span class="op">(</span>is_wasi_syscall<span class="op">(</span>func_idx<span class="op">))</span> <span class="op">{</span></span>
+<span id="cb21-13"><a href="#cb21-13" aria-hidden="true" tabindex="-1"></a>    <span class="co">// vSoC.hal_syscall() を呼び出す（後述）</span></span>
+<span id="cb21-14"><a href="#cb21-14" aria-hidden="true" tabindex="-1"></a>    result <span class="op">=</span> vsoc<span class="op">-&gt;</span>handle_syscall<span class="op">(</span>func_idx<span class="op">,</span> args<span class="op">...);</span></span>
+<span id="cb21-15"><a href="#cb21-15" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span> <span class="cf">else</span> <span class="op">{</span></span>
+<span id="cb21-16"><a href="#cb21-16" aria-hidden="true" tabindex="-1"></a>    <span class="co">// ローカルユーザー関数の呼び出し</span></span>
+<span id="cb21-17"><a href="#cb21-17" aria-hidden="true" tabindex="-1"></a>    enter_function<span class="op">(</span>func_idx<span class="op">);</span></span>
+<span id="cb21-18"><a href="#cb21-18" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb21-19"><a href="#cb21-19" aria-hidden="true" tabindex="-1"></a>  <span class="cf">break</span><span class="op">;</span></span>
+<span id="cb21-20"><a href="#cb21-20" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="vsocvirtual-system-on-chip">5.2 vSoC（Virtual
+System-on-Chip）</h3>
+<p><strong>責務：</strong> - <strong>HAL インターフェース</strong>: WASI
+syscall（read、write、ioctl など）を HAL サブシステムへ変換 -
+<strong>デバイスルーティング</strong>: URI
+ベースのデバイス識別（<code>io://uart/0</code> など） - <strong>FD
+テーブル管理</strong>: open/close によるファイルディスクリプタの管理 -
+<strong>vOffloader ブリッジ</strong>: 加速器操作を MMIO 経由で実装</p>
+<p><strong>命名規則：</strong> - vSoC
+は「Virtual」なので、実際のハードウェアを抽象化 -
+アーキテクチャ非依存（ARM Cortex-M、RISC-V など）</p>
+<p><strong>実装：</strong></p>
+<div class="sourceCode" id="cb22"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb22-1"><a href="#cb22-1" aria-hidden="true" tabindex="-1"></a><span class="kw">namespace</span> fireball <span class="op">{</span> <span class="kw">namespace</span> runtime <span class="op">{</span></span>
+<span id="cb22-2"><a href="#cb22-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb22-3"><a href="#cb22-3" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> vsoc <span class="op">{</span></span>
+<span id="cb22-4"><a href="#cb22-4" aria-hidden="true" tabindex="-1"></a> <span class="kw">private</span><span class="op">:</span></span>
+<span id="cb22-5"><a href="#cb22-5" aria-hidden="true" tabindex="-1"></a>  ipc_router<span class="op">*</span> <span class="va">router_</span><span class="op">;</span>              <span class="co">// HAL subsystem へのルーター</span></span>
+<span id="cb22-6"><a href="#cb22-6" aria-hidden="true" tabindex="-1"></a>  <span class="bu">std::</span>vector<span class="op">&lt;</span><span class="dt">fd_entry_t</span><span class="op">&gt;</span> <span class="va">fd_table_</span><span class="op">;</span>  <span class="co">// open ファイルディスクリプタ</span></span>
+<span id="cb22-7"><a href="#cb22-7" aria-hidden="true" tabindex="-1"></a>  voffloader<span class="op">*</span> <span class="va">voffloader_</span><span class="op">;</span>          <span class="co">// 加速器インターフェース</span></span>
+<span id="cb22-8"><a href="#cb22-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb22-9"><a href="#cb22-9" aria-hidden="true" tabindex="-1"></a> <span class="kw">public</span><span class="op">:</span></span>
+<span id="cb22-10"><a href="#cb22-10" aria-hidden="true" tabindex="-1"></a>  <span class="co">// WASI syscall ハンドラ</span></span>
+<span id="cb22-11"><a href="#cb22-11" aria-hidden="true" tabindex="-1"></a>  <span class="dt">int64_t</span> handle_syscall<span class="op">(</span><span class="dt">uint32_t</span> syscall_id<span class="op">,</span> <span class="at">const</span> <span class="dt">uint32_t</span><span class="op">*</span> args<span class="op">);</span></span>
+<span id="cb22-12"><a href="#cb22-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb22-13"><a href="#cb22-13" aria-hidden="true" tabindex="-1"></a>  <span class="co">// POSIX-like HAL operations</span></span>
+<span id="cb22-14"><a href="#cb22-14" aria-hidden="true" tabindex="-1"></a>  <span class="dt">fd_t</span> open<span class="op">(</span><span class="at">const</span> <span class="dt">char</span><span class="op">*</span> uri<span class="op">,</span> <span class="dt">int</span> flags<span class="op">);</span></span>
+<span id="cb22-15"><a href="#cb22-15" aria-hidden="true" tabindex="-1"></a>  <span class="dt">int</span> close<span class="op">(</span><span class="dt">fd_t</span> fd<span class="op">);</span></span>
+<span id="cb22-16"><a href="#cb22-16" aria-hidden="true" tabindex="-1"></a>  <span class="dt">int64_t</span> read<span class="op">(</span><span class="dt">fd_t</span> fd<span class="op">,</span> co_value<span class="op">&lt;</span><span class="dt">uint8_t</span><span class="op">[]&gt;</span> buffer<span class="op">);</span></span>
+<span id="cb22-17"><a href="#cb22-17" aria-hidden="true" tabindex="-1"></a>  <span class="dt">int64_t</span> write<span class="op">(</span><span class="dt">fd_t</span> fd<span class="op">,</span> co_value<span class="op">&lt;</span><span class="dt">uint8_t</span><span class="op">[]&gt;</span> buffer<span class="op">);</span></span>
+<span id="cb22-18"><a href="#cb22-18" aria-hidden="true" tabindex="-1"></a>  <span class="dt">int64_t</span> seek<span class="op">(</span><span class="dt">fd_t</span> fd<span class="op">,</span> <span class="dt">int64_t</span> offset<span class="op">,</span> <span class="dt">int</span> whence<span class="op">);</span></span>
+<span id="cb22-19"><a href="#cb22-19" aria-hidden="true" tabindex="-1"></a>  <span class="dt">int</span> ioctl<span class="op">(</span><span class="dt">fd_t</span> fd<span class="op">,</span> <span class="dt">uint16_t</span> cmd<span class="op">,</span> <span class="at">const</span> <span class="dt">uint8_t</span><span class="op">*</span> input<span class="op">,</span> <span class="dt">size_t</span> input_len<span class="op">,</span></span>
+<span id="cb22-20"><a href="#cb22-20" aria-hidden="true" tabindex="-1"></a>           <span class="dt">uint8_t</span><span class="op">*</span> output<span class="op">,</span> <span class="dt">size_t</span> output_len<span class="op">);</span></span>
+<span id="cb22-21"><a href="#cb22-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb22-22"><a href="#cb22-22" aria-hidden="true" tabindex="-1"></a>  <span class="co">// Accelerator delegation</span></span>
+<span id="cb22-23"><a href="#cb22-23" aria-hidden="true" tabindex="-1"></a>  <span class="dt">int64_t</span> accel_call<span class="op">(</span><span class="dt">uint32_t</span> accel_id<span class="op">,</span> <span class="at">const</span> <span class="dt">void</span><span class="op">*</span> input<span class="op">,</span> <span class="dt">size_t</span> input_len<span class="op">,</span></span>
+<span id="cb22-24"><a href="#cb22-24" aria-hidden="true" tabindex="-1"></a>                    <span class="dt">void</span><span class="op">*</span> output<span class="op">,</span> <span class="dt">size_t</span> output_len<span class="op">);</span></span>
+<span id="cb22-25"><a href="#cb22-25" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb22-26"><a href="#cb22-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb22-27"><a href="#cb22-27" aria-hidden="true" tabindex="-1"></a><span class="op">}</span> <span class="op">}</span> <span class="co">// namespace fireball { namespace runtime</span></span></code></pre></div>
+<p><strong>設計の利点：</strong> -
+<strong>インタープリタの責務明確化</strong>: 命令実行のみに集中、I/O は
+vSoC へ - <strong>テスト容易性</strong>: vSoC を mock
+して、インタープリタ単体テスト可能 -
+<strong>プラットフォーム移植</strong>: HAL 実装変更時も vSoC
+インターフェースは安定</p>
+<h3 id="voffloaderハードウェアアクセラレータ-インターフェース">5.3
+vOffloader（ハードウェアアクセラレータ インターフェース）</h3>
+<p><strong>責務：</strong> - BLAS（行列計算）、暗号化、圧縮など CPU
+では遅い操作を外部アクセラレータへ委譲 - MMIO（メモリマップド
+I/O）ベースのアクセラレータドライバ実装 - 将来：GPU、ML
+加速器などの統一インターフェース</p>
+<p><strong>配置：</strong> - vSoC 内部に統合（密結合） - HAL subsystem
+と別の経路で実装（MMIO） - IPC Router 経由ではなく、直接 MMIO
+アクセス</p>
+<p><strong>例：</strong></p>
+<div class="sourceCode" id="cb23"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb23-1"><a href="#cb23-1" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> voffloader <span class="op">{</span></span>
+<span id="cb23-2"><a href="#cb23-2" aria-hidden="true" tabindex="-1"></a> <span class="kw">private</span><span class="op">:</span></span>
+<span id="cb23-3"><a href="#cb23-3" aria-hidden="true" tabindex="-1"></a>  <span class="co">// アクセラレータ別のドライバハンドル</span></span>
+<span id="cb23-4"><a href="#cb23-4" aria-hidden="true" tabindex="-1"></a>  <span class="kw">struct</span> accelerator_device <span class="op">{</span></span>
+<span id="cb23-5"><a href="#cb23-5" aria-hidden="true" tabindex="-1"></a>    <span class="bu">std::</span>string_view id<span class="op">;</span>           <span class="co">// &quot;blas&quot;, &quot;crypto&quot;, &quot;compress&quot;</span></span>
+<span id="cb23-6"><a href="#cb23-6" aria-hidden="true" tabindex="-1"></a>    <span class="dt">void</span><span class="op">*</span> mmio_base<span class="op">;</span>               <span class="co">// メモリマップドベースアドレス</span></span>
+<span id="cb23-7"><a href="#cb23-7" aria-hidden="true" tabindex="-1"></a>    <span class="dt">accel_descriptor_t</span><span class="op">*</span> descriptor<span class="op">;</span> <span class="co">// 操作ディスクリプタ</span></span>
+<span id="cb23-8"><a href="#cb23-8" aria-hidden="true" tabindex="-1"></a>  <span class="op">};</span></span>
+<span id="cb23-9"><a href="#cb23-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb23-10"><a href="#cb23-10" aria-hidden="true" tabindex="-1"></a>  <span class="bu">std::</span>vector<span class="op">&lt;</span>accelerator_device<span class="op">&gt;</span> <span class="va">devices_</span><span class="op">;</span></span>
+<span id="cb23-11"><a href="#cb23-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb23-12"><a href="#cb23-12" aria-hidden="true" tabindex="-1"></a> <span class="kw">public</span><span class="op">:</span></span>
+<span id="cb23-13"><a href="#cb23-13" aria-hidden="true" tabindex="-1"></a>  <span class="dt">int64_t</span> call<span class="op">(</span><span class="bu">std::</span>string_view accel_id<span class="op">,</span></span>
+<span id="cb23-14"><a href="#cb23-14" aria-hidden="true" tabindex="-1"></a>              <span class="at">const</span> <span class="dt">void</span><span class="op">*</span> input<span class="op">,</span> <span class="dt">size_t</span> input_len<span class="op">,</span></span>
+<span id="cb23-15"><a href="#cb23-15" aria-hidden="true" tabindex="-1"></a>              <span class="dt">void</span><span class="op">*</span> output<span class="op">,</span> <span class="dt">size_t</span> output_len<span class="op">);</span></span>
+<span id="cb23-16"><a href="#cb23-16" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code></pre></div>
+<p><strong>設計のポイント：</strong> - <strong>CPU オフロード</strong>:
+計算量が多い操作を MMIO ベースで実装、CPU リソース節約 -
+<strong>プラットフォーム依存</strong>: MMIO アドレスは Zephyr
+デバイスツリー（DT）で定義</p>
+<h3 id="jitjust-in-timeコンパイラ">5.4
+JIT（Just-In-Time）コンパイラ</h3>
+<p><strong>責務（Phase 4）：</strong> -
+ホットパスの検出：実行頻度カウント、閾値超過時に JIT 対象として選別 -
+ネイティブコード生成：WASM i32 命令列を ARM Thumb-2 または RISC-V
+コードへコンパイル - 段階的マイグレーション：インタープリタから JIT
+へ動的に切り替え</p>
+<p><strong>インタープリタとの関係：</strong></p>
+<p>インタープリタと JIT
+の関係は、実行頻度に基づいた動的な切り替えです。JIT
+は「命令セット独立」の部分（スタック管理、メモリアクセス）を大きくし、バックグラウンドで低レイテンシコンパイルを行います。</p>
+<div class="sourceCode" id="cb24"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb24-1"><a href="#cb24-1" aria-hidden="true" tabindex="-1"></a><span class="co">// インタープリタ実行中にホットパスを検出</span></span>
+<span id="cb24-2"><a href="#cb24-2" aria-hidden="true" tabindex="-1"></a><span class="cf">case</span> i32_call<span class="op">:</span> <span class="op">{</span></span>
+<span id="cb24-3"><a href="#cb24-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">func_idx_t</span> idx <span class="op">=</span> operand<span class="op">;</span></span>
+<span id="cb24-4"><a href="#cb24-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb24-5"><a href="#cb24-5" aria-hidden="true" tabindex="-1"></a>  <span class="co">// ホットパス計数</span></span>
+<span id="cb24-6"><a href="#cb24-6" aria-hidden="true" tabindex="-1"></a>  <span class="va">execution_count_</span><span class="op">[</span>idx<span class="op">]++;</span></span>
+<span id="cb24-7"><a href="#cb24-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb24-8"><a href="#cb24-8" aria-hidden="true" tabindex="-1"></a>  <span class="co">// JIT 候補か判定</span></span>
+<span id="cb24-9"><a href="#cb24-9" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> <span class="op">(</span><span class="va">execution_count_</span><span class="op">[</span>idx<span class="op">]</span> <span class="op">&gt;</span> JIT_THRESHOLD<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb24-10"><a href="#cb24-10" aria-hidden="true" tabindex="-1"></a>    <span class="co">// JIT コンパイル（バックグラウンド）</span></span>
+<span id="cb24-11"><a href="#cb24-11" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(!</span><span class="va">jit_compiled_</span><span class="op">[</span>idx<span class="op">])</span> <span class="op">{</span></span>
+<span id="cb24-12"><a href="#cb24-12" aria-hidden="true" tabindex="-1"></a>      schedule_jit_compile<span class="op">(</span>idx<span class="op">);</span></span>
+<span id="cb24-13"><a href="#cb24-13" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb24-14"><a href="#cb24-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb24-15"><a href="#cb24-15" aria-hidden="true" tabindex="-1"></a>    <span class="co">// JIT済みなら、ネイティブコード実行</span></span>
+<span id="cb24-16"><a href="#cb24-16" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(</span><span class="va">jit_compiled_</span><span class="op">[</span>idx<span class="op">])</span> <span class="op">{</span></span>
+<span id="cb24-17"><a href="#cb24-17" aria-hidden="true" tabindex="-1"></a>      <span class="dt">void</span> <span class="op">(*</span>native_fn<span class="op">)()</span> <span class="op">=</span> <span class="va">jit_cache_</span><span class="op">[</span>idx<span class="op">];</span></span>
+<span id="cb24-18"><a href="#cb24-18" aria-hidden="true" tabindex="-1"></a>      <span class="cf">return</span> native_fn<span class="op">();</span></span>
+<span id="cb24-19"><a href="#cb24-19" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb24-20"><a href="#cb24-20" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb24-21"><a href="#cb24-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb24-22"><a href="#cb24-22" aria-hidden="true" tabindex="-1"></a>  <span class="co">// まだインタープリタで実行</span></span>
+<span id="cb24-23"><a href="#cb24-23" aria-hidden="true" tabindex="-1"></a>  enter_function<span class="op">(</span>idx<span class="op">);</span></span>
+<span id="cb24-24"><a href="#cb24-24" aria-hidden="true" tabindex="-1"></a>  <span class="cf">break</span><span class="op">;</span></span>
+<span id="cb24-25"><a href="#cb24-25" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p><strong>命令セット独立性：</strong> - <strong>JIT
+が共通化できる部分</strong>:
+スタック管理、レジスタ割り当て、メモリアクセス - <strong>JIT
+が実装定義な部分</strong>: i32 命令の機械語への変換（ARM vs RISC-V） -
+<strong>目標</strong>: 「i32 フロントエンド +
+複数バックエンド（ARM、RISC-V）」の構成</p>
+<h3 id="統合パターン-インタープリタ-jit-voffloader">5.5 統合パターン:
+インタープリタ → JIT → vOffloader</h3>
+<p><strong>典型的な実行フロー：</strong></p>
+<pre><code>WASM アプリケーション実行
+  │
+  ├─ Phase 1: 初期実行（インタープリタ）
+  │  - ホットパス検出開始
+  │  - I/O syscall → vSoC → HAL → ハードウェア
+  │  - 計算量少ない処理 → インライン実行
+  │
+  ├─ Phase 2: ホットパス JIT コンパイル（バックグラウンド）
+  │  - 実行頻度高い関数を検出
+  │  - ネイティブコードへコンパイル
+  │  - キャッシュに保存
+  │
+  └─ Phase 3: JIT + vOffloader 実行
+     - 頻出関数 → ネイティブコード（高速）
+     - 計算集約操作 → vOffloader（GPU/加速器）
+     - I/O syscall → vSoC（変わらず）</code></pre>
+<h3 id="wasmvsocjit-分離のルール">5.6 WASM/vSoC/JIT 分離のルール</h3>
+<p><strong>密結合エリア（最適化優先）：</strong> -
+インタープリタ内部：スタック、レジスタ、制御フロー - vSoC 内部：FD
+テーブル、MMIO ドライバ、vOffloader -
+これらは同一プロセス・コンテキストで実行</p>
+<p><strong>疎結合エリア（モジュール性優先）：</strong> - HAL subsystem
+との通信：IPC Router 経由 - Logger との統合：IPC チャネル経由 - Debugger
+との統合：IPC チャネル経由</p>
+<p><strong>Credo: 「内は高速化、外は保証」</strong> -
+インタープリタ・vSoC・vOffloader 内部は密結合で最適化 -
+外部（HAL、logger、debugger）との通信は IPC で保証</p>
+<hr />
+<h2
+id="実装タイムラインimplementation-roadmap">実装タイムライン（Implementation
+Roadmap）</h2>
+<h3 id="sloc-ベース見積もりestimates-in-source-lines-of-code">SLOC
+ベース見積もり（Estimates in Source Lines of Code）</h3>
+<p>本セクションでは、各サブシステム・コンポーネントの実装規模を
+<strong>SLOC（Source Lines of Code）</strong> で定量化します。SLOC
+はコメント・空行を除いた実行可能コード行数です。</p>
+<p><strong>見積もり方針：</strong> - <strong>実装コード（ヘッダ +
+ソース）のみカウント</strong> - <strong>テストコードは別途集計</strong>
+- <strong>記号コード（{ } など）は行にカウント</strong></p>
+<h3 id="phase-1-logger-subsystem">Phase 1: Logger Subsystem</h3>
+<table>
+<colgroup>
+<col style="width: 41%" />
+<col style="width: 19%" />
+<col style="width: 19%" />
+<col style="width: 19%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>コンポーネント</th>
+<th>機能</th>
+<th>SLOC</th>
+<th>備考</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>ipc_router</strong></td>
+<td>Router インターフェース定義</td>
+<td>150</td>
+<td>DI コンテナ、ルート管理、アクセス制御</td>
+</tr>
+<tr class="even">
+<td><strong>logger_service</strong></td>
+<td>Logger インターフェース</td>
+<td>100</td>
+<td>イベント定義、ログレベル</td>
+</tr>
+<tr class="odd">
+<td><strong>logger_impl</strong></td>
+<td>Ring buffer 実装</td>
+<td>250</td>
+<td>バッファ管理、イベント蓄積</td>
+</tr>
+<tr class="even">
+<td><strong>logger_backend_uart</strong></td>
+<td>UART バックエンド</td>
+<td>120</td>
+<td>UART I/O、フォーマット変換</td>
+</tr>
+<tr class="odd">
+<td><strong>co_value template</strong></td>
+<td>所有権管理 (header)</td>
+<td>80</td>
+<td>Move semantics、shared_heap 統合</td>
+</tr>
+<tr class="even">
+<td><strong>shared_heap</strong></td>
+<td>共有メモリプール</td>
+<td>180</td>
+<td>メモリ割り当て、リサイクル管理</td>
+</tr>
+<tr class="odd">
+<td><strong>Phase 1 合計</strong></td>
+<td></td>
+<td><strong>880 SLOC</strong></td>
+<td>インタープリタ開発と並行</td>
+</tr>
+</tbody>
+</table>
+<h3 id="phase-2-hal-subsystem">Phase 2: HAL Subsystem</h3>
+<table>
+<colgroup>
+<col style="width: 41%" />
+<col style="width: 19%" />
+<col style="width: 19%" />
+<col style="width: 19%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>コンポーネント</th>
+<th>機能</th>
+<th>SLOC</th>
+<th>備考</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>hal_subsystem</strong></td>
+<td>HAL インターフェース定義</td>
+<td>120</td>
+<td>open/close/read/write/seek/ioctl</td>
+</tr>
+<tr class="even">
+<td><strong>hal_router</strong></td>
+<td>Device URI ルーター</td>
+<td>200</td>
+<td>二分検索、URI マッピング</td>
+</tr>
+<tr class="odd">
+<td><strong>hal_uart_driver</strong></td>
+<td>UART ドライバ</td>
+<td>180</td>
+<td>open/close/read/write/ioctl 実装</td>
+</tr>
+<tr class="even">
+<td><strong>hal_gpio_driver</strong></td>
+<td>GPIO ドライバ</td>
+<td>140</td>
+<td>pin I/O、割り込み対応</td>
+</tr>
+<tr class="odd">
+<td><strong>hal_i2c_driver</strong></td>
+<td>I2C ドライバ</td>
+<td>160</td>
+<td>マスター mode、周波数設定</td>
+</tr>
+<tr class="even">
+<td><strong>hal_spi_driver</strong></td>
+<td>SPI ドライバ</td>
+<td>150</td>
+<td>モード設定、speed 制御</td>
+</tr>
+<tr class="odd">
+<td><strong>hal_timer_driver</strong></td>
+<td>Timer ドライバ</td>
+<td>130</td>
+<td>周期設定、割り込みハンドラ</td>
+</tr>
+<tr class="even">
+<td><strong>kv_codec</strong></td>
+<td>型付きKey-Value形式 en/decode</td>
+<td>200</td>
+<td>ioctl パラメータエンコード</td>
+</tr>
+<tr class="odd">
+<td><strong>Phase 2 合計</strong></td>
+<td></td>
+<td><strong>1,280 SLOC</strong></td>
+<td>Platform: Zephyr/BareMetal</td>
+</tr>
+</tbody>
+</table>
+<h3 id="phase-3-debugger-subsystem">Phase 3: Debugger Subsystem</h3>
+<table>
+<colgroup>
+<col style="width: 41%" />
+<col style="width: 19%" />
+<col style="width: 19%" />
+<col style="width: 19%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>コンポーネント</th>
+<th>機能</th>
+<th>SLOC</th>
+<th>備考</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>debugger_service</strong></td>
+<td>Debugger インターフェース</td>
+<td>100</td>
+<td>ブレークポイント、ステップ実行</td>
+</tr>
+<tr class="even">
+<td><strong>gdb_protocol</strong></td>
+<td>GDB Remote Protocol パーサ</td>
+<td>280</td>
+<td>コマンド解析、レスポンス生成</td>
+</tr>
+<tr class="odd">
+<td><strong>breakpoint_manager</strong></td>
+<td>ブレークポイント管理</td>
+<td>120</td>
+<td>追加・削除・有効化、最大 5 個</td>
+</tr>
+<tr class="even">
+<td><strong>register_snapshot</strong></td>
+<td>レジスタ取得</td>
+<td>150</td>
+<td>コルーチン状態キャプチャ</td>
+</tr>
+<tr class="odd">
+<td><strong>memory_access</strong></td>
+<td>メモリアクセス制御</td>
+<td>100</td>
+<td>バウンダリチェック、セキュリティ</td>
+</tr>
+<tr class="even">
+<td><strong>debugger_uart_backend</strong></td>
+<td>UART 通信層</td>
+<td>110</td>
+<td>GDB プロトコル送受信</td>
+</tr>
+<tr class="odd">
+<td><strong>Phase 3 合計</strong></td>
+<td></td>
+<td><strong>860 SLOC</strong></td>
+<td>GDB/VSCode 統合</td>
+</tr>
+</tbody>
+</table>
+<h3 id="phase-4-jit-subsystem">Phase 4: JIT Subsystem</h3>
+<table>
+<colgroup>
+<col style="width: 41%" />
+<col style="width: 19%" />
+<col style="width: 19%" />
+<col style="width: 19%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>コンポーネント</th>
+<th>機能</th>
+<th>SLOC</th>
+<th>備考</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>jit_compiler</strong></td>
+<td>JIT コンパイラ基盤</td>
+<td>200</td>
+<td>ホットパス検出、スケジューリング</td>
+</tr>
+<tr class="even">
+<td><strong>hotpath_profiler</strong></td>
+<td>実行頻度プロファイラ</td>
+<td>120</td>
+<td>関数カウント、閾値判定</td>
+</tr>
+<tr class="odd">
+<td><strong>basic_block_extractor</strong></td>
+<td>基本ブロック抽出</td>
+<td>180</td>
+<td>CFG 構築、コンパイル単位決定</td>
+</tr>
+<tr class="even">
+<td><strong>arm_codegen</strong></td>
+<td>ARM Thumb-2 コード生成</td>
+<td>350</td>
+<td>i32 命令 → ARM 機械語</td>
+</tr>
+<tr class="odd">
+<td><strong>riscv_codegen</strong></td>
+<td>RISC-V コード生成</td>
+<td>380</td>
+<td>i32 命令 → RISC-V 機械語</td>
+</tr>
+<tr class="even">
+<td><strong>jit_cache_manager</strong></td>
+<td>コンパイルキャッシュ</td>
+<td>150</td>
+<td>LRU eviction、容量管理</td>
+</tr>
+<tr class="odd">
+<td><strong>jit_fallback</strong></td>
+<td>インタープリタ フォールバック</td>
+<td>80</td>
+<td>JIT 失敗時の復帰</td>
+</tr>
+<tr class="even">
+<td><strong>Phase 4 合計</strong></td>
+<td></td>
+<td><strong>1,460 SLOC</strong></td>
+<td>Arch-specific codegen</td>
+</tr>
+</tbody>
+</table>
+<h3 id="wasm-runtime-architecture-components">WASM Runtime Architecture
+Components</h3>
+<table>
+<colgroup>
+<col style="width: 41%" />
+<col style="width: 19%" />
+<col style="width: 19%" />
+<col style="width: 19%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>コンポーネント</th>
+<th>機能</th>
+<th>SLOC</th>
+<th>備考</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>wasm_interpreter</strong></td>
+<td>i32 命令セット</td>
+<td>450</td>
+<td>算術、分岐、メモリアクセス</td>
+</tr>
+<tr class="even">
+<td><strong>vsoc</strong></td>
+<td>Virtual SoC</td>
+<td>200</td>
+<td>HAL delegation、FD table</td>
+</tr>
+<tr class="odd">
+<td><strong>voffloader</strong></td>
+<td>加速器インターフェース</td>
+<td>120</td>
+<td>MMIO 基底、BLAS 統合</td>
+</tr>
+<tr class="even">
+<td><strong>wasi_syscall_handler</strong></td>
+<td>WASI syscall 処理</td>
+<td>140</td>
+<td>System call routing</td>
+</tr>
+<tr class="odd">
+<td><strong>合計</strong></td>
+<td></td>
+<td><strong>910 SLOC</strong></td>
+<td>インタープリタ本体</td>
+</tr>
+</tbody>
+</table>
+<h3 id="総合-sloc-集計">総合 SLOC 集計</h3>
+<table>
+<thead>
+<tr class="header">
+<th>フェーズ</th>
+<th>説明</th>
+<th>SLOC</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Phase 1</td>
+<td>Logger + shared_heap</td>
+<td>880</td>
+</tr>
+<tr class="even">
+<td>Phase 2</td>
+<td>HAL + drivers</td>
+<td>1,280</td>
+</tr>
+<tr class="odd">
+<td>Phase 3</td>
+<td>Debugger</td>
+<td>860</td>
+</tr>
+<tr class="even">
+<td>Phase 4</td>
+<td>JIT</td>
+<td>1,460</td>
+</tr>
+<tr class="odd">
+<td>WASM Runtime</td>
+<td>Interpreter + vSoC</td>
+<td>910</td>
+</tr>
+<tr class="even">
+<td><strong>合計（Subsystems + Runtime）</strong></td>
+<td></td>
+<td><strong>5,390 SLOC</strong></td>
+</tr>
+</tbody>
+</table>
+<p>（注：テストコード、ドキュメント生成、ビルドスクリプトは別途）</p>
+<h3 id="開発優先度と依存関係">開発優先度と依存関係</h3>
+<pre><code>Phase 1: Logger
+  ↓ (Phase 1 完了後)
+Phase 2: HAL Subsystem
+  ↓ (Phase 1, 2 完了後)
+WASM Runtime (Interpreter + vSoC + vOffloader)
+  ↓ (WASM Runtime 完了後)
+Phase 3: Debugger
+  ↓ (Phase 3 完了後)
+Phase 4: JIT</code></pre>
+<p><strong>並行可能な項目：</strong> - Phase 1 の logger と WASM Runtime
+インタープリタは並行開発可能 - Phase 2 の HAL
+ドライバ実装はプラットフォーム別に並行化可</p>
+<h3 id="チームスケーリング">チームスケーリング</h3>
+<p>例：平均 <strong>10 SLOC/人・日</strong> のペースで開発する場合：</p>
+<table>
+<thead>
+<tr class="header">
+<th>フェーズ</th>
+<th>SLOC</th>
+<th>1 人</th>
+<th>2 人</th>
+<th>3 人</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Phase 1</td>
+<td>880</td>
+<td>88 日</td>
+<td>44 日</td>
+<td>30 日</td>
+</tr>
+<tr class="even">
+<td>Phase 2</td>
+<td>1,280</td>
+<td>128 日</td>
+<td>64 日</td>
+<td>43 日</td>
+</tr>
+<tr class="odd">
+<td>WASM Runtime</td>
+<td>910</td>
+<td>91 日</td>
+<td>46 日</td>
+<td>31 日</td>
+</tr>
+<tr class="even">
+<td>Phase 3</td>
+<td>860</td>
+<td>86 日</td>
+<td>43 日</td>
+<td>29 日</td>
+</tr>
+<tr class="odd">
+<td>Phase 4</td>
+<td>1,460</td>
+<td>146 日</td>
+<td>73 日</td>
+<td>49 日</td>
+</tr>
+<tr class="even">
+<td><strong>合計</strong></td>
+<td>5,390</td>
+<td>539 日</td>
+<td>270 日</td>
+<td>182 日</td>
+</tr>
+</tbody>
+</table>
+<p>（注：統合テスト、デバッグ、ドキュメントは別途）</p>
+<hr />
+<h2 id="platform-target-strategy">6. Platform Target Strategy</h2>
+<h3 id="目的purpose-6">目的（Purpose）</h3>
+<p>Fireball
+は複数のハードウェアプラットフォームをサポートします。本セクションでは、各プラットフォームへの対応戦略、優先順位、および移植チェックリストを定義します。</p>
+<p><strong>戦略方針：</strong> 1.
+<strong>リソース制約の優先順位</strong>：限られた RAM/ROM
+で動作することを優先（低消費電力組み込みシステム向け） 2.
+<strong>アーキテクチャ中立性</strong>：ISA（Instruction Set
+Architecture）に依存しない設計 3.
+<strong>段階的移植</strong>：コア機能から優先的にサポート拡大</p>
+<h3 id="優先順位付きプラットフォーム">優先順位付きプラットフォーム</h3>
+<h4 id="tier-1-第一優先完全サポート対象">Tier 1:
+第一優先（完全サポート対象）</h4>
+<p><strong>RISC-V ベースプロセッサ（推奨）</strong></p>
+<table>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 12%" />
+<col style="width: 14%" />
+<col style="width: 10%" />
+<col style="width: 10%" />
+<col style="width: 12%" />
+<col style="width: 17%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>プロセッサ</th>
+<th>製造元</th>
+<th>周波数</th>
+<th>RAM</th>
+<th>ROM</th>
+<th>特徴</th>
+<th>優先度</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>WCH CH32V307</strong></td>
+<td>WCH (中国)</td>
+<td>144 MHz</td>
+<td>32 KB</td>
+<td>256 KB</td>
+<td>RISC-V RV32IM、超低消費</td>
+<td>⭐⭐⭐</td>
+</tr>
+<tr class="even">
+<td><strong>T-Head C906</strong></td>
+<td>Alibaba</td>
+<td>1-2 GHz</td>
+<td>可変</td>
+<td>可変</td>
+<td>RISC-V RV64、高性能</td>
+<td>⭐⭐⭐</td>
+</tr>
+<tr class="odd">
+<td><strong>SiFive HiFive1 Rev B</strong></td>
+<td>SiFive</td>
+<td>320 MHz</td>
+<td>16 KB</td>
+<td>16 MB Flash</td>
+<td>RISC-V RV32IM、Reference Design</td>
+<td>⭐⭐</td>
+</tr>
+</tbody>
+</table>
+<p><strong>理由：</strong> - RISC-V はオープン ISA（特許フリー） -
+シンプルな命令セット → インタープリタ実装が容易 -
+エコシステム拡大中（Nordic Wireless も RISC-V への転換検討） -
+中国国内での供給チェーン確保</p>
+<p><strong>Zephyr RTOS による統合：</strong> - WCH CH32V307、T-Head C906
+は Zephyr で完全サポート - Device Tree (DT) で HAL
+ドライバ自動マッピング - GPIO、UART、I2C、SPI、Timer
+など標準デバイスサポート</p>
+<h4 id="tier-2-第二優先部分サポート">Tier 2:
+第二優先（部分サポート）</h4>
+<p><strong>Nordic nRF シリーズ（無線 MCU）</strong></p>
+<table>
+<colgroup>
+<col style="width: 24%" />
+<col style="width: 17%" />
+<col style="width: 12%" />
+<col style="width: 12%" />
+<col style="width: 14%" />
+<col style="width: 19%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>プロセッサ</th>
+<th>周波数</th>
+<th>RAM</th>
+<th>ROM</th>
+<th>特徴</th>
+<th>優先度</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>nRF52840</strong></td>
+<td>ARM Cortex-M4</td>
+<td>64 MHz</td>
+<td>256 KB</td>
+<td>1 MB</td>
+<td>BLE/Thread、Zephyr 完全対応</td>
+</tr>
+<tr class="even">
+<td><strong>nRF5340</strong></td>
+<td>ARM Cortex-M33</td>
+<td>128 MHz</td>
+<td>512 KB</td>
+<td>1.5 MB</td>
+<td>Dual-core、高機能</td>
+</tr>
+</tbody>
+</table>
+<p><strong>理由：</strong> -
+IoT・ウェアラブル向けの事実上の標準（BLE対応） - Zephyr での Bluetooth
+Stack 統合 - ARM Cortex-M は既存 STM32 との互換性</p>
+<p><strong>留意点：</strong> - Proprietary SDK (nRF SDK)
+への依存を最小化 - Zephyr layer を厳密に守る</p>
+<h4 id="tier-3-レガシ互換性維持のみ">Tier 3:
+レガシ（互換性維持のみ）</h4>
+<p><strong>STM32 シリーズ（ARM Cortex-M4/M7）</strong></p>
+<table>
+<colgroup>
+<col style="width: 27%" />
+<col style="width: 19%" />
+<col style="width: 13%" />
+<col style="width: 16%" />
+<col style="width: 22%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>プロセッサ</th>
+<th>周波数</th>
+<th>RAM</th>
+<th>特徴</th>
+<th>対応方針</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>STM32F4 Discovery</strong></td>
+<td>168 MHz</td>
+<td>192 KB</td>
+<td>HAL/LL library</td>
+<td>Zephyr layer で統合</td>
+</tr>
+<tr class="even">
+<td><strong>STM32H7</strong></td>
+<td>400+ MHz</td>
+<td>512 KB</td>
+<td>High-speed</td>
+<td>段階的サポート</td>
+</tr>
+</tbody>
+</table>
+<p><strong>理由：</strong> - すでに Fireball がサポート中 -
+既存プロジェクトとの互換性維持 - ただし、新規開発の推奨対象から外す</p>
+<p><strong>東を削除した理由：</strong> - ❌ <strong>ESP32</strong>:
+廃止対象（human review で指摘） - Xtensa ISA は Zephyr
+サポートに遅れあり - 無線スタック（Wi-Fi/BLE）は標準 Zephyr では不十分 -
+Nordic nRF で置き換え（BLE 用途） - RISC-V で置き換え（汎用 MCU
+用途）</p>
+<h3 id="プラットフォーム別-hal-実装">プラットフォーム別 HAL 実装</h3>
+<pre><code>src/subsystems/hal/
+├── hal_subsystem.cpp       # 汎用インターフェース
+├── platform/
+│   ├── zephyr/             # ⭐ Zephyr RTOS 統合層
+│   │   ├── hal_device_map.cpp     # Device Tree → URI マッピング
+│   │   ├── hal_uart.cpp
+│   │   ├── hal_gpio.cpp
+│   │   ├── hal_i2c.cpp
+│   │   ├── hal_spi.cpp
+│   │   └── hal_timer.cpp
+│   │
+│   ├── riscv_native/       # ⭐ RISC-V ベアメタル（DT不要）
+│   │   ├── hal_uart_riscv.cpp     # WCH UART コントローラ
+│   │   └── hal_gpio_riscv.cpp     # Direct MMIO
+│   │
+│   └── arm_legacy/         # STM32 互換（段階廃止）
+│       ├── hal_uart_arm.cpp
+│       └── hal_gpio_arm.cpp</code></pre>
+<p><strong>戦略：</strong> - <strong>デバイスツリー（DT）</strong>:
+Zephyr が管理、HAL は DT から URI マップを生成 - <strong>MMIO
+直接アクセス</strong>: DT 不可用な環境では、プラットフォーム固有の実装 -
+<strong>テスト用 Mock</strong>: PC 上での開発・テスト用に POSIX ベースの
+HAL も提供</p>
+<h3 id="ビルド構成">ビルド構成</h3>
+<p><strong>CMake でのプラットフォーム指定：</strong></p>
+<div class="sourceCode" id="cb28"><pre
+class="sourceCode cmake"><code class="sourceCode cmake"><span id="cb28-1"><a href="#cb28-1" aria-hidden="true" tabindex="-1"></a><span class="co"># RISC-V WCH CH32V307（推奨）</span></span>
+<span id="cb28-2"><a href="#cb28-2" aria-hidden="true" tabindex="-1"></a><span class="fu">cmake -DPLATFORM=wch_ch32v307 \</span></span>
+<span id="cb28-3"><a href="#cb28-3" aria-hidden="true" tabindex="-1"></a><span class="fu">      -DZEPHYR_BOARD=wch_ch32v307 \</span></span>
+<span id="cb28-4"><a href="#cb28-4" aria-hidden="true" tabindex="-1"></a><span class="fu">      ..</span></span>
+<span id="cb28-5"><a href="#cb28-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb28-6"><a href="#cb28-6" aria-hidden="true" tabindex="-1"></a><span class="fu"># Nordic nRF52840（BLE必要な場合）</span></span>
+<span id="cb28-7"><a href="#cb28-7" aria-hidden="true" tabindex="-1"></a><span class="fu">cmake -DPLATFORM=nrf52840 \</span></span>
+<span id="cb28-8"><a href="#cb28-8" aria-hidden="true" tabindex="-1"></a><span class="fu">      -DZEPHYR_BOARD=nrf52840dk_nrf52840 \</span></span>
+<span id="cb28-9"><a href="#cb28-9" aria-hidden="true" tabindex="-1"></a><span class="fu">      ..</span></span>
+<span id="cb28-10"><a href="#cb28-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb28-11"><a href="#cb28-11" aria-hidden="true" tabindex="-1"></a><span class="fu"># STM32F4（レガシ）</span></span>
+<span id="cb28-12"><a href="#cb28-12" aria-hidden="true" tabindex="-1"></a><span class="fu">cmake -DPLATFORM=stm32f4 \</span></span>
+<span id="cb28-13"><a href="#cb28-13" aria-hidden="true" tabindex="-1"></a><span class="fu">      -DZEPHYR_BOARD=stm32f4_discovery \</span></span>
+<span id="cb28-14"><a href="#cb28-14" aria-hidden="true" tabindex="-1"></a><span class="fu">      ..</span></span>
+<span id="cb28-15"><a href="#cb28-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb28-16"><a href="#cb28-16" aria-hidden="true" tabindex="-1"></a><span class="fu"># x86 + POSIX（開発・テスト用）</span></span>
+<span id="cb28-17"><a href="#cb28-17" aria-hidden="true" tabindex="-1"></a><span class="fu">cmake -DPLATFORM=posix \</span></span>
+<span id="cb28-18"><a href="#cb28-18" aria-hidden="true" tabindex="-1"></a><span class="fu">      -DZEPHYR_BOARD=native_sim \</span></span>
+<span id="cb28-19"><a href="#cb28-19" aria-hidden="true" tabindex="-1"></a><span class="fu">      ..</span></span></code></pre></div>
+<p><strong>コンパイル時条件分岐：</strong></p>
+<div class="sourceCode" id="cb29"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb29-1"><a href="#cb29-1" aria-hidden="true" tabindex="-1"></a><span class="co">// platform/wch_ch32v307/hal_uart.cpp</span></span>
+<span id="cb29-2"><a href="#cb29-2" aria-hidden="true" tabindex="-1"></a><span class="pp">#if defined(PLATFORM_WCH_CH32V307)</span></span>
+<span id="cb29-3"><a href="#cb29-3" aria-hidden="true" tabindex="-1"></a>  <span class="co">// WCH UART コントローラ固有の実装</span></span>
+<span id="cb29-4"><a href="#cb29-4" aria-hidden="true" tabindex="-1"></a>  <span class="pp">#define UART_BASE </span><span class="bn">0x40000000</span></span>
+<span id="cb29-5"><a href="#cb29-5" aria-hidden="true" tabindex="-1"></a>  <span class="pp">#define UART_CR1_OFFSET </span><span class="bn">0x00</span></span>
+<span id="cb29-6"><a href="#cb29-6" aria-hidden="true" tabindex="-1"></a>  <span class="co">// ...</span></span>
+<span id="cb29-7"><a href="#cb29-7" aria-hidden="true" tabindex="-1"></a><span class="pp">#elif defined(PLATFORM_NRF52840)</span></span>
+<span id="cb29-8"><a href="#cb29-8" aria-hidden="true" tabindex="-1"></a>  <span class="co">// Nordic HAL (Zephyr device_get_binding)</span></span>
+<span id="cb29-9"><a href="#cb29-9" aria-hidden="true" tabindex="-1"></a>  <span class="kw">struct</span> device<span class="op">*</span> uart_dev <span class="op">=</span> device_get_binding<span class="op">(</span><span class="st">&quot;UART_0&quot;</span><span class="op">);</span></span>
+<span id="cb29-10"><a href="#cb29-10" aria-hidden="true" tabindex="-1"></a>  <span class="co">// ...</span></span>
+<span id="cb29-11"><a href="#cb29-11" aria-hidden="true" tabindex="-1"></a><span class="pp">#endif</span></span></code></pre></div>
+<h3 id="リソース制約ガイドライン">リソース制約ガイドライン</h3>
+<p><strong>各プラットフォームでの推奨メモリ割り当て：</strong></p>
+<table>
+<thead>
+<tr class="header">
+<th>プラットフォーム</th>
+<th>総 RAM</th>
+<th>Kernel</th>
+<th>Subsys</th>
+<th>WASM App</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>WCH CH32V307</strong> (32 KB)</td>
+<td>32 KB</td>
+<td>8 KB</td>
+<td>6 KB</td>
+<td>18 KB</td>
+<td>最小構成</td>
+</tr>
+<tr class="even">
+<td><strong>nRF52840</strong> (256 KB)</td>
+<td>256 KB</td>
+<td>16 KB</td>
+<td>32 KB</td>
+<td>200 KB</td>
+<td>中規模</td>
+</tr>
+<tr class="odd">
+<td><strong>T-Head C906</strong> (可変)</td>
+<td>512 KB+</td>
+<td>32 KB</td>
+<td>64 KB</td>
+<td>400 KB+</td>
+<td>高性能</td>
+</tr>
+</tbody>
+</table>
+<p><strong>最小メモリ要件：</strong> - <strong>COOS Kernel</strong>:
+8-12 KB（固定） - <strong>Subsystems</strong>: Logger (2 KB) + HAL (2
+KB) = 4 KB（固定） - <strong>Shared Heap</strong>: 2-4 KB（構成可能） -
+<strong>WASM Runtime</strong>: インタープリタ 8 KB + アプリ用 4 KB
+以上</p>
+<h3 id="移植チェックリスト">移植チェックリスト</h3>
+<p>各プラットフォームへの移植は以下の順序で実施：</p>
+<div class="sourceCode" id="cb30"><pre
+class="sourceCode markdown"><code class="sourceCode markdown"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a><span class="fu">## [ ] デバイスツリー/HAL 統合</span></span>
+<span id="cb30-2"><a href="#cb30-2" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="va">[ ]</span> Device Tree Blob (DTB) 作成（Zephyr 向け）</span>
+<span id="cb30-3"><a href="#cb30-3" aria-hidden="true" tabindex="-1"></a>  または</span>
+<span id="cb30-4"><a href="#cb30-4" aria-hidden="true" tabindex="-1"></a><span class="ss">  - </span><span class="va">[ ]</span> HAL_DEVICE_MAP テーブル作成（ベアメタル）</span>
+<span id="cb30-5"><a href="#cb30-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb30-6"><a href="#cb30-6" aria-hidden="true" tabindex="-1"></a><span class="fu">## [ ] UART I/O</span></span>
+<span id="cb30-7"><a href="#cb30-7" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="va">[ ]</span> ボーレート設定（115200 デフォルト）</span>
+<span id="cb30-8"><a href="#cb30-8" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="va">[ ]</span> Interrupt/Polling モード選択</span>
+<span id="cb30-9"><a href="#cb30-9" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="va">[ ]</span> Loopback テスト</span>
+<span id="cb30-10"><a href="#cb30-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb30-11"><a href="#cb30-11" aria-hidden="true" tabindex="-1"></a><span class="fu">## [ ] GPIO</span></span>
+<span id="cb30-12"><a href="#cb30-12" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="va">[ ]</span> Input/Output 設定</span>
+<span id="cb30-13"><a href="#cb30-13" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="va">[ ]</span> Edge/Level Interrupt（オプション）</span>
+<span id="cb30-14"><a href="#cb30-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb30-15"><a href="#cb30-15" aria-hidden="true" tabindex="-1"></a><span class="fu">## [ ] Timer</span></span>
+<span id="cb30-16"><a href="#cb30-16" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="va">[ ]</span> 周期タイマー生成</span>
+<span id="cb30-17"><a href="#cb30-17" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="va">[ ]</span> 割り込みハンドラ登録</span>
+<span id="cb30-18"><a href="#cb30-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb30-19"><a href="#cb30-19" aria-hidden="true" tabindex="-1"></a><span class="fu">## [ ] I2C/SPI（オプション）</span></span>
+<span id="cb30-20"><a href="#cb30-20" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="va">[ ]</span> クロック周波数設定</span>
+<span id="cb30-21"><a href="#cb30-21" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="va">[ ]</span> マスター mode 実装</span>
+<span id="cb30-22"><a href="#cb30-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb30-23"><a href="#cb30-23" aria-hidden="true" tabindex="-1"></a><span class="fu">## [ ] ビルド・テスト</span></span>
+<span id="cb30-24"><a href="#cb30-24" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="va">[ ]</span> Zephyr ビルドスイート統合</span>
+<span id="cb30-25"><a href="#cb30-25" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="va">[ ]</span> メモリ使用量測定</span>
+<span id="cb30-26"><a href="#cb30-26" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="va">[ ]</span> ブート〜WASM 実行確認</span>
+<span id="cb30-27"><a href="#cb30-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb30-28"><a href="#cb30-28" aria-hidden="true" tabindex="-1"></a><span class="fu">## [ ] ドキュメント</span></span>
+<span id="cb30-29"><a href="#cb30-29" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="va">[ ]</span> プラットフォーム固有 README</span>
+<span id="cb30-30"><a href="#cb30-30" aria-hidden="true" tabindex="-1"></a><span class="ss">- </span><span class="va">[ ]</span> Device Tree 説明書</span></code></pre></div>
+<h3 id="今後の展開">今後の展開</h3>
+<p><strong>短期（3-6 ヶ月）：</strong> - ✅ RISC-V（WCH
+CH32V307）完全サポート - ✅ Nordic nRF52840 BLE サポート - ⚠️ ESP32
+サポート廃止予定通知</p>
+<p><strong>中期（6-12 ヶ月）：</strong> - ✅ T-Head C906（RISC-V
+64bit）サポート - ✅ RISC-V SIG（Zephyr）での標準化推進 - ✅ STM32
+サポート段階廃止</p>
+<p><strong>長期（1 年以上）：</strong> - ✅ ARM Cortex-M0+
+サポート（最小メモリ環境） - ⏳ GPU/NPU 加速器統合（T-Head Mali-G
+など）</p>
+<hr />
+<h2 id="設計制約design-constraints">設計制約（Design Constraints）</h2>
+<ol type="1">
+<li><strong>IPC Router ハブ</strong>: すべての Subsystem・Service
+間通信は Router を経由（スター型トポロジ、Point-to-Point
+直接通信なし）</li>
+<li><strong>静的コンパイル時構成</strong>:
+すべてのサービスタイプはコンパイル時に定義（動的ロード不可）</li>
+<li><strong>メッセージベースのみ</strong>: Subsystem・Service
+間でメモリを共有しない（すべてのデータはメッセージ経由）</li>
+<li><strong>独立したヒープ</strong>: 各 Subsystem・Service
+は独自のメモリ割り当て領域を持つ（メモリ隔離）</li>
+<li><strong>CSP のみの同期</strong>:
+ロック、ミューテックス、セマフォはない（データ競合なし）</li>
+</ol>
+<hr />
+<p><strong>For detailed component designs, see:</strong> - <a
+href="ipc-protocol.md">ipc-protocol.md</a> - 型付きKey-Value形式 format
+- <a href="debugging.md">debugging.md</a> - GDB protocol - <a
+href="hal-virtual-soc.md">hal-virtual-soc.md</a> - Virtual SoC
+details</p>
+</body>
+</html>

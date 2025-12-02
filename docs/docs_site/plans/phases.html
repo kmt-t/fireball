@@ -1,0 +1,1334 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>phases</title>
+  <style>
+    html {
+      color: #1a1a1a;
+      background-color: #fdfdfd;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        background-color: white;
+      }
+      body {
+        background-color: transparent;
+        color: black;
+        font-size: 12pt;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a {
+      color: #1a1a1a;
+    }
+    a:visited {
+      color: #1a1a1a;
+    }
+    img {
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid #e6e6e6;
+      color: #606060;
+    }
+    code {
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      background-color: #1a1a1a;
+      border: none;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    th {
+      border-top: 1px solid #1a1a1a;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+    /* CSS for syntax highlighting */
+    pre > code.sourceCode { white-space: pre; position: relative; }
+    pre > code.sourceCode > span { line-height: 1.25; }
+    pre > code.sourceCode > span:empty { height: 1.2em; }
+    .sourceCode { overflow: visible; }
+    code.sourceCode > span { color: inherit; text-decoration: inherit; }
+    div.sourceCode { margin: 1em 0; }
+    pre.sourceCode { margin: 0; }
+    @media screen {
+    div.sourceCode { overflow: auto; }
+    }
+    @media print {
+    pre > code.sourceCode { white-space: pre-wrap; }
+    pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+    }
+    pre.numberSource code
+      { counter-reset: source-line 0; }
+    pre.numberSource code > span
+      { position: relative; left: -4em; counter-increment: source-line; }
+    pre.numberSource code > span > a:first-child::before
+      { content: counter(source-line);
+        position: relative; left: -1em; text-align: right; vertical-align: baseline;
+        border: none; display: inline-block;
+        -webkit-touch-callout: none; -webkit-user-select: none;
+        -khtml-user-select: none; -moz-user-select: none;
+        -ms-user-select: none; user-select: none;
+        padding: 0 4px; width: 4em;
+        color: #aaaaaa;
+      }
+    pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+    div.sourceCode
+      {   }
+    @media screen {
+    pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+    }
+    code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+    code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+    code span.at { color: #7d9029; } /* Attribute */
+    code span.bn { color: #40a070; } /* BaseN */
+    code span.bu { color: #008000; } /* BuiltIn */
+    code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+    code span.ch { color: #4070a0; } /* Char */
+    code span.cn { color: #880000; } /* Constant */
+    code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+    code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+    code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+    code span.dt { color: #902000; } /* DataType */
+    code span.dv { color: #40a070; } /* DecVal */
+    code span.er { color: #ff0000; font-weight: bold; } /* Error */
+    code span.ex { } /* Extension */
+    code span.fl { color: #40a070; } /* Float */
+    code span.fu { color: #06287e; } /* Function */
+    code span.im { color: #008000; font-weight: bold; } /* Import */
+    code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+    code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+    code span.op { color: #666666; } /* Operator */
+    code span.ot { color: #007020; } /* Other */
+    code span.pp { color: #bc7a00; } /* Preprocessor */
+    code span.sc { color: #4070a0; } /* SpecialChar */
+    code span.ss { color: #bb6688; } /* SpecialString */
+    code span.st { color: #4070a0; } /* String */
+    code span.va { color: #19177c; } /* Variable */
+    code span.vs { color: #4070a0; } /* VerbatimString */
+    code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+  </style>
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">phases</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#fireball-implementation-roadmap"
+id="toc-fireball-implementation-roadmap">Fireball Implementation
+Roadmap</a>
+<ul>
+<li><a href="#overview" id="toc-overview">Overview</a></li>
+<li><a href="#phase-0-coos-kernel-core"
+id="toc-phase-0-coos-kernel-core">Phase 0: COOS Kernel Core</a>
+<ul>
+<li><a href="#コンポーネント"
+id="toc-コンポーネント">コンポーネント</a></li>
+<li><a href="#実装チェックリスト"
+id="toc-実装チェックリスト">実装チェックリスト</a></li>
+<li><a href="#ビルド-テスト" id="toc-ビルド-テスト">ビルド &amp;
+テスト</a></li>
+<li><a href="#期待される結果"
+id="toc-期待される結果">期待される結果</a></li>
+<li><a href="#備考" id="toc-備考">備考</a></li>
+</ul></li>
+<li><a href="#phase-1-wasm-interpreter-minimal"
+id="toc-phase-1-wasm-interpreter-minimal">Phase 1: WASM Interpreter
+(Minimal)</a>
+<ul>
+<li><a href="#コンポーネント-1"
+id="toc-コンポーネント-1">コンポーネント</a></li>
+<li><a href="#実装チェックリスト-1"
+id="toc-実装チェックリスト-1">実装チェックリスト</a></li>
+<li><a href="#ビルド-テスト-1" id="toc-ビルド-テスト-1">ビルド &amp;
+テスト</a></li>
+<li><a href="#期待される結果-1"
+id="toc-期待される結果-1">期待される結果</a></li>
+<li><a href="#備考-1" id="toc-備考-1">備考</a></li>
+</ul></li>
+<li><a href="#phase-2-subsystems-logger-hal"
+id="toc-phase-2-subsystems-logger-hal">Phase 2: Subsystems (logger +
+hal)</a>
+<ul>
+<li><a href="#コンポーネント-2"
+id="toc-コンポーネント-2">コンポーネント</a></li>
+<li><a href="#実装チェックリスト-2"
+id="toc-実装チェックリスト-2">実装チェックリスト</a></li>
+<li><a href="#ipc-protocol-integration-from-ipc-protocol.md"
+id="toc-ipc-protocol-integration-from-ipc-protocol.md">IPC Protocol
+Integration (from ipc-protocol.md)</a></li>
+<li><a href="#ビルド-テスト-2" id="toc-ビルド-テスト-2">ビルド &amp;
+テスト</a></li>
+<li><a href="#期待される結果-2"
+id="toc-期待される結果-2">期待される結果</a></li>
+<li><a href="#備考-2" id="toc-備考-2">備考</a></li>
+</ul></li>
+<li><a href="#phase-3-debugger-gdb-rsp"
+id="toc-phase-3-debugger-gdb-rsp">Phase 3: Debugger (GDB RSP)</a>
+<ul>
+<li><a href="#コンポーネント-3"
+id="toc-コンポーネント-3">コンポーネント</a></li>
+<li><a href="#実装チェックリスト-3"
+id="toc-実装チェックリスト-3">実装チェックリスト</a></li>
+<li><a href="#gdb統合テスト"
+id="toc-gdb統合テスト">GDB統合テスト</a></li>
+<li><a href="#ビルド-テスト-3" id="toc-ビルド-テスト-3">ビルド &amp;
+テスト</a></li>
+<li><a href="#期待される結果-3"
+id="toc-期待される結果-3">期待される結果</a></li>
+</ul></li>
+<li><a href="#build-configuration-testing"
+id="toc-build-configuration-testing">Build Configuration &amp;
+Testing</a>
+<ul>
+<li><a href="#cmake-オプション" id="toc-cmake-オプション">CMake
+オプション</a></li>
+<li><a href="#size-measurement" id="toc-size-measurement">Size
+Measurement</a></li>
+<li><a href="#unit-tests" id="toc-unit-tests">Unit Tests</a></li>
+<li><a href="#continuous-integration"
+id="toc-continuous-integration">Continuous Integration</a></li>
+</ul></li>
+<li><a href="#verification-checklist"
+id="toc-verification-checklist">Verification Checklist</a>
+<ul>
+<li><a href="#phase-0-completion" id="toc-phase-0-completion">Phase 0
+Completion</a></li>
+<li><a href="#phase-1-completion" id="toc-phase-1-completion">Phase 1
+Completion</a></li>
+<li><a href="#phase-2-completion" id="toc-phase-2-completion">Phase 2
+Completion</a></li>
+<li><a href="#phase-3-completion" id="toc-phase-3-completion">Phase 3
+Completion</a></li>
+</ul></li>
+<li><a href="#resource-budget-validation"
+id="toc-resource-budget-validation">Resource Budget Validation</a>
+<ul>
+<li><a href="#rom-budgetstm32f401-256kb-flash"
+id="toc-rom-budgetstm32f401-256kb-flash">ROM Budget（STM32F401: 256KB
+Flash）</a></li>
+<li><a href="#ram-budgetstm32f401-96kb-sram"
+id="toc-ram-budgetstm32f401-96kb-sram">RAM Budget（STM32F401: 96KB
+SRAM）</a></li>
+</ul></li>
+<li><a href="#next-steps-after-phase-3"
+id="toc-next-steps-after-phase-3">Next Steps (After Phase 3)</a></li>
+<li><a href="#references" id="toc-references">References</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="fireball-implementation-roadmap">Fireball Implementation
+Roadmap</h1>
+<p><strong>Version:</strong> 0.1.0 <strong>Date:</strong> 2025-11-30
+<strong>Author:</strong> Takuya Matsunaga <strong>Target
+Platform:</strong> STM32F401 (ARM Cortex-M4, 96KB SRAM, 256KB Flash)</p>
+<hr />
+<h2 id="overview">Overview</h2>
+<p>このドキュメントは、Fireball の <strong>PoC（Proof of
+Concept）実装をPhase 0 からPhase 3
+まで段階的に進めるためのロードマップ</strong>です。</p>
+<p>各フェーズでは、以下の目標を達成します：</p>
+<ol type="1">
+<li><strong>バイナリサイズ目標の検証</strong> - 実装後に
+<code>arm-none-eabi-size</code> で測定</li>
+<li><strong>メモリ予算の検証</strong> - performance.md
+で定義されたRAM/ROMバジェットに収まることを確認</li>
+<li><strong>機能の段階的拡張</strong> - Phase 0 コアから Phase 3
+完全実装まで</li>
+</ol>
+<p><strong>基準条件（STM32F401）:</strong> - ROM: ≤ 100KB（Fireball
+Core、30% マージン含む） - RAM: 63-80KB（固定 23.2KB + ゲスト 32-48KB +
+マージン 16-32KB）</p>
+<hr />
+<h2 id="phase-0-coos-kernel-core">Phase 0: COOS Kernel Core</h2>
+<p><strong>目標:</strong> COOS
+カーネルの最小実装（スケジューラー、チャネル、メモリ管理）</p>
+<h3 id="コンポーネント">コンポーネント</h3>
+<table>
+<colgroup>
+<col style="width: 34%" />
+<col style="width: 23%" />
+<col style="width: 15%" />
+<col style="width: 26%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>コンポーネント</th>
+<th>ファイル</th>
+<th>説明</th>
+<th>目標サイズ</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>co_sched</strong></td>
+<td><code>src/coos/co_sched.cpp</code></td>
+<td>コルーチンスケジューラー</td>
+<td>512B</td>
+</tr>
+<tr class="even">
+<td><strong>co_csp</strong></td>
+<td><code>src/coos/co_csp.cpp</code></td>
+<td>CSP チャネル実装</td>
+<td>3.0KB</td>
+</tr>
+<tr class="odd">
+<td><strong>co_mem</strong></td>
+<td><code>src/coos/co_mem.cpp</code></td>
+<td>dlmalloc ラッパー</td>
+<td>1.2KB</td>
+</tr>
+<tr class="even">
+<td><strong>co_value</strong></td>
+<td><code>src/coos/co_value.cpp</code></td>
+<td>所有権追跡</td>
+<td>1.0KB</td>
+</tr>
+<tr class="odd">
+<td><strong>Promise &amp; Task</strong></td>
+<td><code>src/coos/coroutine_promise.h</code></td>
+<td>コルーチンクラス実装</td>
+<td>-</td>
+</tr>
+</tbody>
+</table>
+<h3 id="実装チェックリスト">実装チェックリスト</h3>
+<h4 id="co_sched-ready-queue-scheduling">co_sched: Ready Queue &amp;
+Scheduling</h4>
+<ul class="task-list">
+<li><label><input type="checkbox" />Ready Queue（リスト型、最大 8
+コルーチン）実装</label>
+<ul>
+<li>コルーチン ID (1-4 Bytes)</li>
+<li>ハンドル保存（std::coroutine_handle）</li>
+<li>タイムスタンプ追跡</li>
+</ul></li>
+<li><label><input type="checkbox" />スケジューリングアルゴリズム</label>
+<ul>
+<li>非プリエンプティブ（協調型）</li>
+<li>Round-robin (次の Ready コルーチンを実行)</li>
+</ul></li>
+<li><label><input type="checkbox" />コルーチン作成・破棄</label>
+<ul>
+<li><code>spawn(std::function&lt;void()&gt;, co_mem*)</code></li>
+<li><code>yield()</code> - コンテキストスイッチ</li>
+<li><code>join(uint32_t coro_id)</code> - 完了待機</li>
+</ul></li>
+</ul>
+<h4 id="co_csp-channel-wait-queues">co_csp: Channel &amp; Wait
+Queues</h4>
+<ul class="task-list">
+<li><label><input type="checkbox" />Channel
+struct（チャネルメタデータ）</label>
+<ul>
+<li>Channel ID</li>
+<li>送受信ポーター (co_value<T>)</li>
+<li>Wait queue（送信側・受信側各 1 個）</li>
+</ul></li>
+<li><label><input type="checkbox" />Wait Queue 実装</label>
+<ul>
+<li>最大 4 コルーチンまで待機</li>
+<li>FIFO 順序</li>
+</ul></li>
+<li><label><input type="checkbox" />Channel operations</label>
+<ul>
+<li><code>ch_open()</code> - チャネル作成</li>
+<li><code>ch_send(int ch_id, co_value&lt;T&gt;)</code> - 送信</li>
+<li><code>ch_recv(int ch_id) -&gt; co_value&lt;T&gt;</code> - 受信</li>
+<li><code>ch_close(int ch_id)</code></li>
+</ul></li>
+</ul>
+<h4 id="co_mem-memory-allocation">co_mem: Memory Allocation</h4>
+<ul class="task-list">
+<li><label><input type="checkbox" />dlmalloc 統合</label>
+<ul>
+<li><code>allocate(size_t size) -&gt; void*</code></li>
+<li><code>deallocate(void* ptr, size_t size)</code></li>
+<li>メモリ統計（使用率追跡）</li>
+</ul></li>
+<li><label><input type="checkbox" />6 分割パーティション初期化</label>
+<ul>
+<li>P1-P4: 固定割り当て（23.2KB）</li>
+<li>P5: ゲストヒープ（32-48KB、未使用）</li>
+<li>P6: システムマージン（2-4KB、予約）</li>
+</ul></li>
+<li><label><input type="checkbox" />コルーチン固有メモリ</label>
+<ul>
+<li>各コルーチン用 1KB スタック × 8 個</li>
+</ul></li>
+</ul>
+<h4 id="co_value-ownership-tracking">co_value: Ownership Tracking</h4>
+<ul class="task-list">
+<li><label><input type="checkbox" />Template class:
+<code>template&lt;typename T&gt; class co_value&lt;T&gt;</code></label>
+<ul>
+<li>Move-only semantics (no copy)</li>
+<li>RAII デストラクタ（自動削除）</li>
+</ul></li>
+<li><label><input type="checkbox" />64 個までの値追跡</label>
+<ul>
+<li>グローバルレジストリ</li>
+<li>オーナーシップ表記（コルーチン ID）</li>
+</ul></li>
+<li><label><input type="checkbox" />Debug: 値のダンプ出力</label></li>
+</ul>
+<h4 id="promise-task-from-coroutine-class-design.md">Promise &amp; Task
+(from coroutine-class-design.md)</h4>
+<ul class="task-list">
+<li><label><input type="checkbox" /><code>task&lt;T&gt;</code>
+クラス実装</label>
+<ul>
+<li><code>std::coroutine_handle&lt;promise_type&gt;</code> 管理</li>
+<li>Awaitable インターフェース（<code>operator co_await()</code>）</li>
+</ul></li>
+<li><label><input type="checkbox" />Promise::operator new/delete</label>
+<ul>
+<li>TLS (Thread Local Storage) から co_mem を取得</li>
+<li>例外安全性 (try-catch)</li>
+</ul></li>
+<li><label><input type="checkbox" />co_await チェーン対応</label>
+<ul>
+<li><code>co_await task1; co_await task2;</code> の順序実行</li>
+</ul></li>
+</ul>
+<h3 id="ビルド-テスト">ビルド &amp; テスト</h3>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co"># ビルド</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="bu">cd</span> build</span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="fu">cmake</span> <span class="at">-DCMAKE_BUILD_TYPE</span><span class="op">=</span>Release <span class="at">-DFIREBALL_PHASE</span><span class="op">=</span>0 ..</span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> VERBOSE=1</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="co"># サイズ測定</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="ex">arm-none-eabi-size</span> fireball_phase0.elf</span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="co"># 期待値: text ≤ 12KB</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="co"># ユニットテスト</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="ex">ctest</span> <span class="at">-V</span></span></code></pre></div>
+<h3 id="期待される結果">期待される結果</h3>
+<table>
+<thead>
+<tr class="header">
+<th>メトリクス</th>
+<th>期待値</th>
+<th>判断</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Binary Size (.text)</td>
+<td>8-12KB</td>
+<td>✅ OK → Phase 1 へ</td>
+</tr>
+<tr class="even">
+<td>RAM (Fixed OH)</td>
+<td>5-7KB</td>
+<td>✅ OK</td>
+</tr>
+<tr class="odd">
+<td>Memory Leak</td>
+<td>0</td>
+<td>✅ OK (valgrind)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="備考">備考</h3>
+<ul>
+<li>Promise の実装は <code>src/coos/coroutine_promise.h</code>
+を参照（既に設計済み）</li>
+<li>TLS パターンは <code>co_mem::set_current_instance()</code> /
+<code>get_current_instance()</code> 使用</li>
+<li>x86-64 POSIX で最初に実装、その後 ARM Cortex-M4 に移植</li>
+</ul>
+<hr />
+<h2 id="phase-1-wasm-interpreter-minimal">Phase 1: WASM Interpreter
+(Minimal)</h2>
+<p><strong>目標:</strong> WASM インタプリタの最小実装（i32/i64
+命令セット、約 60 命令）</p>
+<h3 id="コンポーネント-1">コンポーネント</h3>
+<table>
+<colgroup>
+<col style="width: 34%" />
+<col style="width: 23%" />
+<col style="width: 15%" />
+<col style="width: 26%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>コンポーネント</th>
+<th>ファイル</th>
+<th>説明</th>
+<th>目標サイズ</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Interpreter</strong></td>
+<td><code>src/wasm/interpreter.cpp</code></td>
+<td>i32/i64 命令実装</td>
+<td>18KB</td>
+</tr>
+<tr class="even">
+<td><strong>Module Loader</strong></td>
+<td><code>src/wasm/module_loader.cpp</code></td>
+<td>WASM バイナリ解析</td>
+<td>5KB</td>
+</tr>
+<tr class="odd">
+<td><strong>Execution Context</strong></td>
+<td><code>src/wasm/exec_context.cpp</code></td>
+<td>実行状態（PC/SP/FP/Stack）</td>
+<td>2.5KB</td>
+</tr>
+</tbody>
+</table>
+<h3 id="実装チェックリスト-1">実装チェックリスト</h3>
+<h4 id="interpreter-instruction-execution">Interpreter: Instruction
+Execution</h4>
+<ul class="task-list">
+<li><label><input type="checkbox" /><strong>i32 命令</strong> (35
+命令)</label>
+<ul>
+<li><code>i32.const</code>, <code>i32.add</code>, <code>i32.sub</code>,
+<code>i32.mul</code>, <code>i32.div_s</code>,
+<code>i32.div_u</code></li>
+<li><code>i32.rem_s</code>, <code>i32.rem_u</code>,
+<code>i32.and</code>, <code>i32.or</code>, <code>i32.xor</code>,
+<code>i32.shl</code>, <code>i32.shr_s</code>,
+<code>i32.shr_u</code></li>
+<li><code>i32.load</code>, <code>i32.load8_s</code>,
+<code>i32.load8_u</code>, <code>i32.load16_s</code>,
+<code>i32.load16_u</code></li>
+<li><code>i32.store</code>, <code>i32.store8</code>,
+<code>i32.store16</code></li>
+<li><code>i32.eq</code>, <code>i32.ne</code>, <code>i32.lt_s</code>,
+<code>i32.le_s</code>, <code>i32.gt_s</code>, <code>i32.ge_s</code>
+(比較)</li>
+<li><code>i32.clz</code>, <code>i32.ctz</code>, <code>i32.popcnt</code>
+(ビット操作)</li>
+</ul></li>
+<li><label><input type="checkbox" /><strong>i64 命令</strong> (35
+命令)</label>
+<ul>
+<li>i32 と同様の 64 ビット版</li>
+</ul></li>
+<li><label><input type="checkbox" /><strong>制御フロー</strong> (10
+命令)</label>
+<ul>
+<li><code>block</code>, <code>loop</code>, <code>if</code>,
+<code>else</code>, <code>end</code></li>
+<li><code>br</code>, <code>br_if</code>, <code>br_table</code></li>
+<li><code>call</code>, <code>return</code></li>
+</ul></li>
+<li><label><input
+type="checkbox" /><strong>スタック操作</strong></label>
+<ul>
+<li><code>drop</code>, <code>select</code></li>
+<li>値スタック（最大 512 エントリ）</li>
+</ul></li>
+<li><label><input
+type="checkbox" /><strong>ローカル変数</strong></label>
+<ul>
+<li><code>local.get</code>, <code>local.set</code>,
+<code>local.tee</code></li>
+<li>最大 32 ローカル変数</li>
+</ul></li>
+</ul>
+<h4 id="module-loader-binary-parsing">Module Loader: Binary Parsing</h4>
+<ul class="task-list">
+<li><label><input type="checkbox" />WASM ヘッダ検証</label>
+<ul>
+<li>マジック番号 <code>\0asm</code></li>
+<li>バージョン確認</li>
+</ul></li>
+<li><label><input type="checkbox" />セクション解析</label>
+<ul>
+<li>Type セクション（関数シグネチャ）</li>
+<li>Import セクション（外部関数）</li>
+<li>Code セクション（関数ボディ）</li>
+<li>Memory セクション（線形メモリ）</li>
+<li>Export セクション（外部インターフェース）</li>
+</ul></li>
+<li><label><input type="checkbox" />コード解析</label>
+<ul>
+<li>命令列の検証</li>
+<li>リロケーション情報の抽出</li>
+</ul></li>
+</ul>
+<h4 id="execution-context-state-management">Execution Context: State
+Management</h4>
+<ul class="task-list">
+<li><label><input type="checkbox" /><strong>Registers</strong></label>
+<ul>
+<li>PC (Program Counter)</li>
+<li>SP (Stack Pointer)</li>
+<li>FP (Frame Pointer)</li>
+</ul></li>
+<li><label><input type="checkbox" /><strong>Value Stack</strong></label>
+<ul>
+<li>512 × <code>uint64_t</code> スタック</li>
+<li>スタックトレース情報（デバッグ用）</li>
+</ul></li>
+<li><label><input type="checkbox" /><strong>Error
+Handling</strong></label>
+<ul>
+<li>Trap 情報（エラーコード、PC）</li>
+<li>スタックアンワインド</li>
+</ul></li>
+</ul>
+<h3 id="ビルド-テスト-1">ビルド &amp; テスト</h3>
+<div class="sourceCode" id="cb2"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co"># ビルド</span></span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a><span class="fu">cmake</span> <span class="at">-DCMAKE_BUILD_TYPE</span><span class="op">=</span>Release <span class="at">-DFIREBALL_PHASE</span><span class="op">=</span>1 ..</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> VERBOSE=1</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a><span class="co"># サイズ測定</span></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="ex">arm-none-eabi-size</span> fireball_phase1.elf</span>
+<span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a><span class="co"># 期待値: text ≤ 30KB (Core + Interpreter)</span></span>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a><span class="co"># テスト: 簡単な WASM プログラムを実行</span></span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a><span class="co"># 例: i32.const 42, i32.const 8, i32.add -&gt; 50</span></span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a><span class="ex">python</span> tools/generate_wasm.py <span class="at">--test</span><span class="op">=</span>add_test.wasm</span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a><span class="ex">./build/fireball_phase1</span> add_test.wasm</span></code></pre></div>
+<h3 id="期待される結果-1">期待される結果</h3>
+<table>
+<thead>
+<tr class="header">
+<th>メトリクス</th>
+<th>期待値</th>
+<th>判断</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Binary Size (.text)</td>
+<td>20-30KB</td>
+<td>✅ OK → Phase 2 へ</td>
+</tr>
+<tr class="even">
+<td>Memory (Interpreter)</td>
+<td>4.7KB</td>
+<td>✅ OK</td>
+</tr>
+<tr class="odd">
+<td>Instructions/Second</td>
+<td>&gt;1M IPS</td>
+<td>✅ OK（STM32F401）</td>
+</tr>
+</tbody>
+</table>
+<h3 id="備考-1">備考</h3>
+<ul>
+<li>インタプリタは Switch-Case 実装が最適（コンパイラ最適化）</li>
+<li>スタックオーバーフロー検出は Phase 3 で追加</li>
+<li>JIT コンパイル対応は Phase 5</li>
+</ul>
+<hr />
+<h2 id="phase-2-subsystems-logger-hal">Phase 2: Subsystems (logger +
+hal)</h2>
+<p><strong>目標:</strong> ロギング・HAL サブシステムの実装</p>
+<h3 id="コンポーネント-2">コンポーネント</h3>
+<table>
+<colgroup>
+<col style="width: 34%" />
+<col style="width: 23%" />
+<col style="width: 15%" />
+<col style="width: 26%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>コンポーネント</th>
+<th>ファイル</th>
+<th>説明</th>
+<th>目標サイズ</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>IPC Router</strong></td>
+<td><code>src/subsystems/ipc_router.cpp</code></td>
+<td>メッセージルーティング</td>
+<td>2.2KB</td>
+</tr>
+<tr class="even">
+<td><strong>logger</strong></td>
+<td><code>src/subsystems/logger.cpp</code></td>
+<td>ロギング（リングバッファ）</td>
+<td>3.0KB</td>
+</tr>
+<tr class="odd">
+<td><strong>hal</strong></td>
+<td><code>src/subsystems/hal.cpp</code></td>
+<td>GPIO/UART デバイスドライバ</td>
+<td>2.8KB</td>
+</tr>
+<tr class="even">
+<td><strong>Module Loader</strong></td>
+<td>Phase 1 からの統合</td>
+<td>-</td>
+<td>-</td>
+</tr>
+</tbody>
+</table>
+<h3 id="実装チェックリスト-2">実装チェックリスト</h3>
+<h4 id="ipc-router-message-hub">IPC Router: Message Hub</h4>
+<ul class="task-list">
+<li><label><input type="checkbox" />Component Registry</label>
+<ul>
+<li>Subsystem/Service URI を DI コンテナに登録</li>
+<li>URI → Route ID マッピング（binary search で高速化）</li>
+</ul></li>
+<li><label><input type="checkbox" />Message Routing</label>
+<ul>
+<li>Functional メッセージ（Scope ID = <code>01x</code>） →
+ターゲットサービスへ</li>
+<li>Dict ID メッセージ（Scope ID = <code>001</code>） → Logger へ</li>
+</ul></li>
+<li><label><input type="checkbox" />CSP チャネル統合</label>
+<ul>
+<li>ルーターが各サービスへのチャネルを管理</li>
+<li>型付きKey-Value形式 エンコード/デコード</li>
+</ul></li>
+</ul>
+<h4 id="logger-logging-service">logger: Logging Service</h4>
+<ul class="task-list">
+<li><label><input type="checkbox" /><strong>Ring Buffer</strong></label>
+<ul>
+<li>Event struct: timestamp, level (DEBUG/INFO/WARN/ERROR), message</li>
+<li>256 イベント × 8B = 2KB リングバッファ</li>
+</ul></li>
+<li><label><input type="checkbox" /><strong>ROM
+Dictionary</strong></label>
+<ul>
+<li><code>logger_dictionary.cxx</code>: ログメッセージ文字列（ROM
+に配置）</li>
+<li><code>log_keys_offsets.hxx</code>: <code>constexpr</code>
+オフセット定数</li>
+</ul></li>
+<li><label><input type="checkbox" /><strong>UART
+Backend</strong></label>
+<ul>
+<li>UART 経由でホスト PC へ送信</li>
+<li>型付きKey-Value形式 エンコード</li>
+</ul></li>
+<li><label><input type="checkbox" /><strong>Filtering</strong></label>
+<ul>
+<li>ログレベル（DEBUG, INFO, WARN, ERROR）</li>
+<li>リアルタイムフィルタリング</li>
+</ul></li>
+</ul>
+<h4 id="hal-hal-device-driver">hal: HAL Device Driver</h4>
+<ul class="task-list">
+<li><label><input type="checkbox" /><strong>GPIO
+Controller</strong></label>
+<ul>
+<li><code>hal_gpio_set(int pin, int value)</code></li>
+<li><code>hal_gpio_get(int pin) -&gt; int</code></li>
+<li>最大 32 ピン管理</li>
+</ul></li>
+<li><label><input type="checkbox" /><strong>UART Driver</strong></label>
+<ul>
+<li><code>hal_uart_write(const uint8_t* data, int len)</code></li>
+<li><code>hal_uart_read(uint8_t* buf, int len) -&gt; int</code></li>
+<li>Interrupt mode（優先度: Phase 3 で）</li>
+</ul></li>
+<li><label><input type="checkbox" /><strong>Device
+Registry</strong></label>
+<ul>
+<li>Device Handle 管理（最大 16 デバイス）</li>
+<li>Device Capabilities クエリ</li>
+</ul></li>
+</ul>
+<h3 id="ipc-protocol-integration-from-ipc-protocol.md">IPC Protocol
+Integration (from ipc-protocol.md)</h3>
+<ul class="task-list">
+<li><label><input type="checkbox" />固定長レコード（8B）</label>
+<ul>
+<li>Scope ID | Key ID (3B) | Value (4B)</li>
+</ul></li>
+<li><label><input type="checkbox" />Message Queue</label>
+<ul>
+<li>CSP チャネルを通じたメッセージ転送</li>
+<li>256B バッファ = 32 レコード</li>
+</ul></li>
+</ul>
+<h3 id="ビルド-テスト-2">ビルド &amp; テスト</h3>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="co"># ビルド</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a><span class="fu">cmake</span> <span class="at">-DCMAKE_BUILD_TYPE</span><span class="op">=</span>Release <span class="at">-DFIREBALL_PHASE</span><span class="op">=</span>2 ..</span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> VERBOSE=1</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="co"># サイズ測定</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="ex">arm-none-eabi-size</span> fireball_phase2.elf</span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="co"># 期待値: text ≤ 55KB (Core + Interpreter + Subsystems)</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="co"># テスト: logger + WASM インタプリタ統合</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="co"># ゲストが logger へメッセージを送信し、ホスト PC で受信確認</span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> test</span></code></pre></div>
+<h3 id="期待される結果-2">期待される結果</h3>
+<table>
+<thead>
+<tr class="header">
+<th>メトリクス</th>
+<th>期待値</th>
+<th>判断</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Binary Size (.text)</td>
+<td>40-55KB</td>
+<td>✅ OK → Phase 3 へ</td>
+</tr>
+<tr class="even">
+<td>Memory (Router+logger+hal)</td>
+<td>8.8KB</td>
+<td>✅ OK</td>
+</tr>
+<tr class="odd">
+<td>Message Latency</td>
+<td>&lt;100µs (STM32F401)</td>
+<td>✅ OK</td>
+</tr>
+</tbody>
+</table>
+<h3 id="備考-2">備考</h3>
+<ul>
+<li>logger の ROM 辞書サイズは実装後に測定（予想: 1-2KB）</li>
+<li>Device API は WASM から呼び出し可能に（Phase 3 で export）</li>
+<li>Interrupt handling は初版では Polling で実装</li>
+</ul>
+<hr />
+<h2 id="phase-3-debugger-gdb-rsp">Phase 3: Debugger (GDB RSP)</h2>
+<p><strong>目標:</strong> デバッガ バックエンド（RSP over
+UART）の実装</p>
+<h3 id="コンポーネント-3">コンポーネント</h3>
+<table>
+<colgroup>
+<col style="width: 34%" />
+<col style="width: 23%" />
+<col style="width: 15%" />
+<col style="width: 26%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>コンポーネント</th>
+<th>ファイル</th>
+<th>説明</th>
+<th>目標サイズ</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>debugger</strong></td>
+<td><code>src/subsystems/debugger.cpp</code></td>
+<td>GDB RSP プロトコル</td>
+<td>4KB</td>
+</tr>
+<tr class="even">
+<td><strong>Transport</strong></td>
+<td><code>src/debug/transport_*.cpp</code></td>
+<td>UART/stdio トランスポート</td>
+<td>1-2KB</td>
+</tr>
+</tbody>
+</table>
+<h3 id="実装チェックリスト-3">実装チェックリスト</h3>
+<h4 id="debugger-gdb-remote-protocol-rsp">debugger: GDB Remote Protocol
+(RSP)</h4>
+<ul class="task-list">
+<li><label><input type="checkbox" /><strong>Command
+Handlers</strong></label>
+<ul>
+<li><code>g</code> - Register read (<code>$g#...</code> →
+<code>$&lt;hexdata&gt;#...</code>)</li>
+<li><code>m</code> - Memory read
+(<code>$m&lt;addr&gt;,&lt;len&gt;#...</code>)</li>
+<li><code>G</code> - Register write</li>
+<li><code>M</code> - Memory write</li>
+<li><code>c</code> - Continue</li>
+<li><code>s</code> - Step</li>
+<li><code>z0</code>/<code>Z0</code> - Breakpoint clear/set</li>
+<li><code>?</code> - Query stop reason</li>
+<li><code>H</code> - Thread select</li>
+</ul></li>
+<li><label><input type="checkbox" /><strong>Breakpoint
+Storage</strong></label>
+<ul>
+<li>最大 10 ブレークポイント</li>
+<li>アドレス + 条件フラグ</li>
+</ul></li>
+<li><label><input type="checkbox" /><strong>Register
+Snapshot</strong></label>
+<ul>
+<li>32 レジスタ（ARM Cortex-M4）</li>
+<li>PC, SP, LR など</li>
+</ul></li>
+</ul>
+<h4 id="transport-uartstdio">Transport: UART/stdio</h4>
+<ul class="task-list">
+<li><label><input type="checkbox" /><strong>uart_transport</strong>
+(本番)</label>
+<ul>
+<li>RSP フレーミング: <code>$&lt;data&gt;#&lt;checksum&gt;</code></li>
+<li>Checksum 計算（モジュロ 256）</li>
+<li>UART write/read（115200 bps デフォルト）</li>
+</ul></li>
+<li><label><input type="checkbox" /><strong>stdio_transport</strong>
+(開発・テスト)</label>
+<ul>
+<li>シンプル行プロトコル: <code>&lt;command&gt;\n</code></li>
+<li>x86-64 POSIX で使用</li>
+</ul></li>
+</ul>
+<h3 id="gdb統合テスト">GDB統合テスト</h3>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="co"># ターミナル 1: Fireball (STM32F401 シミュレータ, QEMU)</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="ex">qemu-arm-softmmu</span> <span class="at">-M</span> stm32f401 <span class="at">-serial</span> stdio <span class="at">-kernel</span> fireball_phase3.elf</span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="co"># ターミナル 2: GDB</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a><span class="ex">arm-none-eabi-gdb</span> ./build/fireball_phase3.elf</span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="kw">(</span><span class="fu">gdb</span><span class="kw">)</span> <span class="ex">target</span> remote /dev/ttyUSB0 115200</span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a><span class="kw">(</span><span class="fu">gdb</span><span class="kw">)</span> <span class="cf">break</span> <span class="ex">main</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a><span class="kw">(</span><span class="fu">gdb</span><span class="kw">)</span> <span class="cf">continue</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a><span class="kw">(</span><span class="fu">gdb</span><span class="kw">)</span> <span class="ex">info</span> registers</span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a><span class="kw">(</span><span class="fu">gdb</span><span class="kw">)</span> <span class="ex">x/4x</span> 0x20000000  <span class="co"># メモリ読み取り</span></span></code></pre></div>
+<h3 id="ビルド-テスト-3">ビルド &amp; テスト</h3>
+<div class="sourceCode" id="cb5"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co"># ビルド</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a><span class="fu">cmake</span> <span class="at">-DCMAKE_BUILD_TYPE</span><span class="op">=</span>Release <span class="at">-DFIREBALL_PHASE</span><span class="op">=</span>3 ..</span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> VERBOSE=1</span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a><span class="co"># サイズ測定</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a><span class="ex">arm-none-eabi-size</span> fireball_phase3.elf</span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a><span class="co"># 期待値: text ≤ 85KB</span></span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a><span class="co"># GDB テスト</span></span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a><span class="fu">make</span> test-gdb</span></code></pre></div>
+<h3 id="期待される結果-3">期待される結果</h3>
+<table>
+<thead>
+<tr class="header">
+<th>メトリクス</th>
+<th>期待値</th>
+<th>判断</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Binary Size (.text)</td>
+<td>65-85KB</td>
+<td>✅ OK → 本実装開始</td>
+</tr>
+<tr class="even">
+<td>Memory (debugger+transport)</td>
+<td>3KB</td>
+<td>✅ OK</td>
+</tr>
+<tr class="odd">
+<td>GDB Response Time</td>
+<td>&lt;50ms</td>
+<td>✅ OK</td>
+</tr>
+<tr class="even">
+<td>マージン</td>
+<td>16-32KB</td>
+<td>✅ OK （96KB SRAM）</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="build-configuration-testing">Build Configuration &amp;
+Testing</h2>
+<h3 id="cmake-オプション">CMake オプション</h3>
+<div class="sourceCode" id="cb6"><pre
+class="sourceCode cmake"><code class="sourceCode cmake"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Platform Selection</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="kw">set</span>(FIREBALL_PLATFORM <span class="st">&quot;arm-cortex-m4&quot;</span> <span class="ot">CACHE</span> <span class="ot">STRING</span> <span class="st">&quot;Target platform&quot;</span>)</span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="co"># Options: arm-cortex-m0, arm-cortex-m4, arm-cortex-m7, riscv32, riscv64, x86-64</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a><span class="co"># Phase Selection</span></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a><span class="kw">set</span>(FIREBALL_PHASE <span class="st">&quot;3&quot;</span> <span class="ot">CACHE</span> <span class="ot">STRING</span> <span class="st">&quot;Implementation phase&quot;</span>)</span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a><span class="co"># Options: 0 (COOS only), 1 (+ Interpreter), 2 (+ Subsystems), 3 (+ Debugger)</span></span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a><span class="co"># Build Optimization (STM32F401推奨)</span></span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a><span class="kw">set</span>(<span class="dv">CMAKE_CXX_FLAGS_RELEASE</span> <span class="st">&quot;-O2 -flto -fno-unroll-loops&quot;</span>)</span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a><span class="kw">set</span>(<span class="dv">CMAKE_EXE_LINKER_FLAGS</span> <span class="st">&quot;</span><span class="dv">${CMAKE_EXE_LINKER_FLAGS}</span><span class="st"> -Wl,--gc-sections -Wl,--print-memory-usage&quot;</span>)</span>
+<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a><span class="co"># Debug Build (開発用)</span></span>
+<span id="cb6-14"><a href="#cb6-14" aria-hidden="true" tabindex="-1"></a><span class="kw">set</span>(<span class="dv">CMAKE_CXX_FLAGS_DEBUG</span> <span class="st">&quot;-g -O0&quot;</span>)</span></code></pre></div>
+<h3 id="size-measurement">Size Measurement</h3>
+<div class="sourceCode" id="cb7"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Detailed size breakdown</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="ex">arm-none-eabi-size</span> <span class="at">-A</span> fireball_phase3.elf</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Top 20 symbols (code bloat detection)</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a><span class="ex">arm-none-eabi-nm</span> <span class="at">--print-size</span> <span class="at">--size-sort</span> fireball_phase3.elf <span class="kw">|</span> <span class="fu">tail</span> <span class="at">-20</span></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a><span class="co"># Section analysis</span></span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a><span class="ex">arm-none-eabi-objdump</span> <span class="at">-h</span> fireball_phase3.elf <span class="kw">|</span> <span class="fu">grep</span> <span class="st">&quot;.text\|.data\|.rodata&quot;</span></span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a><span class="co"># Memory map</span></span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a><span class="ex">arm-none-eabi-objdump</span> <span class="at">-M</span> intel <span class="at">-S</span> fireball_phase3.elf <span class="kw">|</span> <span class="fu">head</span> <span class="at">-100</span></span></code></pre></div>
+<h3 id="unit-tests">Unit Tests</h3>
+<div class="sourceCode" id="cb8"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="co"># All tests</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="ex">ctest</span> <span class="at">-V</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Specific test suites</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="ex">ctest</span> <span class="at">-R</span> <span class="st">&quot;test_coos&quot;</span> <span class="at">-V</span>      <span class="co"># COOS kernel tests</span></span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a><span class="ex">ctest</span> <span class="at">-R</span> <span class="st">&quot;test_interpreter&quot;</span> <span class="at">-V</span>  <span class="co"># WASM interpreter tests</span></span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a><span class="ex">ctest</span> <span class="at">-R</span> <span class="st">&quot;test_ipc&quot;</span> <span class="at">-V</span>       <span class="co"># IPC router tests</span></span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a><span class="ex">ctest</span> <span class="at">-R</span> <span class="st">&quot;test_gdb&quot;</span> <span class="at">-V</span>       <span class="co"># Debugger tests</span></span></code></pre></div>
+<h3 id="continuous-integration">Continuous Integration</h3>
+<div class="sourceCode" id="cb9"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="co"># GitHub Actions / CI Pipeline</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="co"># .github/workflows/fireball-ci.yml</span></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="ex">name:</span> Fireball CI</span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a><span class="ex">on:</span> [push, pull_request]</span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a><span class="ex">jobs:</span></span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a>  <span class="ex">build:</span></span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a>    <span class="ex">runs-on:</span> ubuntu-latest</span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a>    <span class="ex">steps:</span></span>
+<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a>      <span class="ex">-</span> uses: actions/checkout@v3</span>
+<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a>      <span class="ex">-</span> name: Install ARM Toolchain</span>
+<span id="cb9-13"><a href="#cb9-13" aria-hidden="true" tabindex="-1"></a>        <span class="ex">run:</span> sudo apt-get install gcc-arm-none-eabi</span>
+<span id="cb9-14"><a href="#cb9-14" aria-hidden="true" tabindex="-1"></a>      <span class="ex">-</span> name: Build Phase 0-3</span>
+<span id="cb9-15"><a href="#cb9-15" aria-hidden="true" tabindex="-1"></a>        <span class="ex">run:</span> <span class="kw">|</span></span>
+<span id="cb9-16"><a href="#cb9-16" aria-hidden="true" tabindex="-1"></a>          <span class="fu">mkdir</span> build <span class="kw">&amp;&amp;</span> <span class="bu">cd</span> build</span>
+<span id="cb9-17"><a href="#cb9-17" aria-hidden="true" tabindex="-1"></a>          <span class="cf">for</span> phase <span class="kw">in</span> 0 1 2 3<span class="kw">;</span> <span class="cf">do</span></span>
+<span id="cb9-18"><a href="#cb9-18" aria-hidden="true" tabindex="-1"></a>            <span class="fu">cmake</span> <span class="at">-DFIREBALL_PHASE</span><span class="op">=</span><span class="va">$phase</span> ..</span>
+<span id="cb9-19"><a href="#cb9-19" aria-hidden="true" tabindex="-1"></a>            <span class="fu">make</span> clean <span class="kw">&amp;&amp;</span> <span class="fu">make</span></span>
+<span id="cb9-20"><a href="#cb9-20" aria-hidden="true" tabindex="-1"></a>            <span class="ex">arm-none-eabi-size</span> fireball_phase<span class="va">$phase</span>.elf</span>
+<span id="cb9-21"><a href="#cb9-21" aria-hidden="true" tabindex="-1"></a>          <span class="cf">done</span></span>
+<span id="cb9-22"><a href="#cb9-22" aria-hidden="true" tabindex="-1"></a>      <span class="ex">-</span> name: Run Tests</span>
+<span id="cb9-23"><a href="#cb9-23" aria-hidden="true" tabindex="-1"></a>        <span class="ex">run:</span> cd build <span class="kw">&amp;&amp;</span> <span class="ex">ctest</span> <span class="at">-V</span></span></code></pre></div>
+<hr />
+<h2 id="verification-checklist">Verification Checklist</h2>
+<h3 id="phase-0-completion">Phase 0 Completion</h3>
+<ul class="task-list">
+<li><label><input type="checkbox" />COOS コア（co_sched, co_csp, co_mem,
+co_value）が動作</label></li>
+<li><label><input type="checkbox" />バイナリサイズ 8-12KB
+以内</label></li>
+<li><label><input
+type="checkbox" />メモリリークなし（valgrind）</label></li>
+<li><label><input type="checkbox" />8 コルーチン× 1KB
+スタック動作確認</label></li>
+<li><label><input type="checkbox" />Unit tests 全パス</label></li>
+</ul>
+<h3 id="phase-1-completion">Phase 1 Completion</h3>
+<ul class="task-list">
+<li><label><input type="checkbox" />WASM インタプリタが i32/i64
+命令を実行</label></li>
+<li><label><input type="checkbox" />Module loader が WASM
+バイナリを解析</label></li>
+<li><label><input type="checkbox" />バイナリサイズ 20-30KB 以内（Core +
+Interpreter）</label></li>
+<li><label><input type="checkbox" />簡単な WASM プログラム（add,
+条件分岐）が動作</label></li>
+<li><label><input type="checkbox" />Unit tests 全パス</label></li>
+</ul>
+<h3 id="phase-2-completion">Phase 2 Completion</h3>
+<ul class="task-list">
+<li><label><input type="checkbox" />IPC Router
+がメッセージを正しくルーティング</label></li>
+<li><label><input type="checkbox" />logger が UART で出力</label></li>
+<li><label><input type="checkbox" />hal が GPIO/UART
+デバイスを制御</label></li>
+<li><label><input type="checkbox" />バイナリサイズ 40-55KB
+以内</label></li>
+<li><label><input type="checkbox" />ゲストが logger、hal
+を通じて通信可能</label></li>
+<li><label><input type="checkbox" />Unit tests 全パス</label></li>
+</ul>
+<h3 id="phase-3-completion">Phase 3 Completion</h3>
+<ul class="task-list">
+<li><label><input type="checkbox" />GDB が RSP over UART
+で接続</label></li>
+<li><label><input
+type="checkbox" />ブレークポイント設定・継続・ステップ実行が動作</label></li>
+<li><label><input
+type="checkbox" />レジスタ・メモリ読み取り/書き込みが動作</label></li>
+<li><label><input type="checkbox" />バイナリサイズ 65-85KB
+以内（マージン 30% 込み）</label></li>
+<li><label><input type="checkbox" />RAM 使用量 63-80KB（マージン 16-32KB
+確保）</label></li>
+<li><label><input type="checkbox" />GDB統合テスト全パス</label></li>
+</ul>
+<hr />
+<h2 id="resource-budget-validation">Resource Budget Validation</h2>
+<h3 id="rom-budgetstm32f401-256kb-flash">ROM Budget（STM32F401: 256KB
+Flash）</h3>
+<table>
+<thead>
+<tr class="header">
+<th>Phase</th>
+<th>Core</th>
+<th>Guest Space</th>
+<th>OTA Slot</th>
+<th>使用率</th>
+<th>余裕</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>0</td>
+<td>8-12KB</td>
+<td>200KB+</td>
+<td>32KB</td>
+<td>15-18%</td>
+<td>✅ OK</td>
+</tr>
+<tr class="even">
+<td>1</td>
+<td>20-30KB</td>
+<td>190KB+</td>
+<td>32KB</td>
+<td>22-29%</td>
+<td>✅ OK</td>
+</tr>
+<tr class="odd">
+<td>2</td>
+<td>40-55KB</td>
+<td>170KB+</td>
+<td>32KB</td>
+<td>32-40%</td>
+<td>✅ OK</td>
+</tr>
+<tr class="even">
+<td>3</td>
+<td>65-85KB</td>
+<td>150KB+</td>
+<td>32KB</td>
+<td>45-50%</td>
+<td>✅ OK</td>
+</tr>
+</tbody>
+</table>
+<h3 id="ram-budgetstm32f401-96kb-sram">RAM Budget（STM32F401: 96KB
+SRAM）</h3>
+<table>
+<colgroup>
+<col style="width: 11%" />
+<col style="width: 16%" />
+<col style="width: 17%" />
+<col style="width: 22%" />
+<col style="width: 9%" />
+<col style="width: 12%" />
+<col style="width: 9%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Phase</th>
+<th>Core Fixed</th>
+<th>Guest Heap</th>
+<th>System Margin</th>
+<th>合計</th>
+<th>使用率</th>
+<th>余裕</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>0</td>
+<td>10.7KB</td>
+<td>40KB</td>
+<td>20KB</td>
+<td>70.7KB</td>
+<td>74%</td>
+<td>✅ 25KB</td>
+</tr>
+<tr class="even">
+<td>1</td>
+<td>15.4KB</td>
+<td>40KB</td>
+<td>20KB</td>
+<td>75.4KB</td>
+<td>79%</td>
+<td>✅ 21KB</td>
+</tr>
+<tr class="odd">
+<td>2</td>
+<td>23.2KB</td>
+<td>40KB</td>
+<td>16KB</td>
+<td>79.2KB</td>
+<td>83%</td>
+<td>✅ 17KB</td>
+</tr>
+<tr class="even">
+<td>3</td>
+<td>23.2KB</td>
+<td>32-48KB</td>
+<td>16-32KB</td>
+<td>63-80KB</td>
+<td>66-83%</td>
+<td>✅ 16-32KB</td>
+</tr>
+</tbody>
+</table>
+<p><strong>重要:</strong> Phase 3 では WAMR
+最悪ケース（104KB）を回避し、Fireball は 80KB で収まる。</p>
+<hr />
+<h2 id="next-steps-after-phase-3">Next Steps (After Phase 3)</h2>
+<ol type="1">
+<li><strong>Phase 4: Multi-Platform Support</strong>
+<ul>
+<li>RISC-V (T-Head TH1100, WCH CH32V203) 対応</li>
+<li>STM32L0（超低消費電力）対応</li>
+</ul></li>
+<li><strong>Phase 5: JIT Compiler</strong>
+<ul>
+<li>Cranelift 統合（コード生成）</li>
+<li>Dynamic code cache</li>
+</ul></li>
+<li><strong>Phase 6: Advanced Debugging</strong>
+<ul>
+<li>VSCode Cortex-Debug 拡張</li>
+<li>Real-time event tracing</li>
+</ul></li>
+<li><strong>Phase 7: Production Hardening</strong>
+<ul>
+<li>Security audit</li>
+<li>Stress testing (100+ コルーチン)</li>
+<li>Memory fuzzing</li>
+</ul></li>
+</ol>
+<hr />
+<h2 id="references">References</h2>
+<ul>
+<li><a href="performance.md">performance.md</a> - メモリ予算詳細</li>
+<li><a href="coroutine-class-design.md">coroutine-class-design.md</a> -
+Promise/Task 実装</li>
+<li><a href="ipc-protocol.md">ipc-protocol.md</a> - IPC
+プロトコル仕様</li>
+<li><a href="subsystem-services.md">subsystem-services.md</a> -
+サブシステムアーキテクチャ</li>
+<li><a href="rsp-specification.md">rsp-specification.md</a> - GDB RSP
+仕様</li>
+<li><a href="architecture.md">architecture.md</a> -
+全体アーキテクチャ</li>
+</ul>
+</body>
+</html>

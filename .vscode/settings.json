@@ -1,0 +1,12 @@
+{
+    "C_Cpp.default.compileCommands": "w:\\mysrc\\fireball\\builddir/compile_commands.json",
+    "C_Cpp.default.cppStandard": "c++23",
+    "C_Cpp.default.intelliSenseMode": "linux-clang-x64",
+    "files.associations": {
+        "*.hxx": "cpp",
+        "*.cxx": "cpp"
+    },
+    "editor.formatOnSave": false,
+    "mesonbuild.configureOnOpen": false,
+    "C_Cpp.default.configurationProvider": "mesonbuild.mesonbuild"
+}

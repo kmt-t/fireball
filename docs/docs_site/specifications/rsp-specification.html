@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>rsp-specification</title>
+  <style>
+    html {
+      color: #1a1a1a;
+      background-color: #fdfdfd;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        background-color: white;
+      }
+      body {
+        background-color: transparent;
+        color: black;
+        font-size: 12pt;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a {
+      color: #1a1a1a;
+    }
+    a:visited {
+      color: #1a1a1a;
+    }
+    img {
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid #e6e6e6;
+      color: #606060;
+    }
+    code {
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      background-color: #1a1a1a;
+      border: none;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    th {
+      border-top: 1px solid #1a1a1a;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+    /* CSS for syntax highlighting */
+    pre > code.sourceCode { white-space: pre; position: relative; }
+    pre > code.sourceCode > span { line-height: 1.25; }
+    pre > code.sourceCode > span:empty { height: 1.2em; }
+    .sourceCode { overflow: visible; }
+    code.sourceCode > span { color: inherit; text-decoration: inherit; }
+    div.sourceCode { margin: 1em 0; }
+    pre.sourceCode { margin: 0; }
+    @media screen {
+    div.sourceCode { overflow: auto; }
+    }
+    @media print {
+    pre > code.sourceCode { white-space: pre-wrap; }
+    pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+    }
+    pre.numberSource code
+      { counter-reset: source-line 0; }
+    pre.numberSource code > span
+      { position: relative; left: -4em; counter-increment: source-line; }
+    pre.numberSource code > span > a:first-child::before
+      { content: counter(source-line);
+        position: relative; left: -1em; text-align: right; vertical-align: baseline;
+        border: none; display: inline-block;
+        -webkit-touch-callout: none; -webkit-user-select: none;
+        -khtml-user-select: none; -moz-user-select: none;
+        -ms-user-select: none; user-select: none;
+        padding: 0 4px; width: 4em;
+        color: #aaaaaa;
+      }
+    pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+    div.sourceCode
+      {   }
+    @media screen {
+    pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+    }
+    code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+    code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+    code span.at { color: #7d9029; } /* Attribute */
+    code span.bn { color: #40a070; } /* BaseN */
+    code span.bu { color: #008000; } /* BuiltIn */
+    code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+    code span.ch { color: #4070a0; } /* Char */
+    code span.cn { color: #880000; } /* Constant */
+    code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+    code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+    code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+    code span.dt { color: #902000; } /* DataType */
+    code span.dv { color: #40a070; } /* DecVal */
+    code span.er { color: #ff0000; font-weight: bold; } /* Error */
+    code span.ex { } /* Extension */
+    code span.fl { color: #40a070; } /* Float */
+    code span.fu { color: #06287e; } /* Function */
+    code span.im { color: #008000; font-weight: bold; } /* Import */
+    code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+    code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+    code span.op { color: #666666; } /* Operator */
+    code span.ot { color: #007020; } /* Other */
+    code span.pp { color: #bc7a00; } /* Preprocessor */
+    code span.sc { color: #4070a0; } /* SpecialChar */
+    code span.ss { color: #bb6688; } /* SpecialString */
+    code span.st { color: #4070a0; } /* String */
+    code span.va { color: #19177c; } /* Variable */
+    code span.vs { color: #4070a0; } /* VerbatimString */
+    code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+  </style>
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">rsp-specification</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#fireball-rspremote-serial-protocol仕様と説明"
+id="toc-fireball-rspremote-serial-protocol仕様と説明">Fireball
+RSP（Remote Serial Protocol）仕様と説明</a>
+<ul>
+<li><a href="#概要" id="toc-概要">概要</a></li>
+<li><a href="#デバッガ-トランスポート-オプション"
+id="toc-デバッガ-トランスポート-オプション">1. デバッガ トランスポート
+オプション</a>
+<ul>
+<li><a href="#選択肢-1-stdinstdoutposix---開発用"
+id="toc-選択肢-1-stdinstdoutposix---開発用">1.1 選択肢 1:
+stdin/stdout（POSIX - 開発用）</a></li>
+<li><a href="#選択肢-2-rsp-over-uartハードウェア---本番"
+id="toc-選択肢-2-rsp-over-uartハードウェア---本番">1.2 選択肢 2: RSP
+over UART（ハードウェア - 本番）</a></li>
+<li><a href="#選択肢-3-tcpip-over-network将来"
+id="toc-選択肢-3-tcpip-over-network将来">1.3 選択肢 3: TCP/IP over
+Network（将来）</a></li>
+</ul></li>
+<li><a href="#fireball-戦略ハイブリッド-アプローチ"
+id="toc-fireball-戦略ハイブリッド-アプローチ">2. Fireball
+戦略：ハイブリッド アプローチ</a>
+<ul>
+<li><a href="#設計" id="toc-設計">2.1 設計</a></li>
+<li><a href="#実装パターン" id="toc-実装パターン">2.2
+実装パターン</a></li>
+</ul></li>
+<li><a href="#rsp-完全仕様概要" id="toc-rsp-完全仕様概要">3. RSP
+完全仕様（概要）</a>
+<ul>
+<li><a href="#パケット構造" id="toc-パケット構造">3.1
+パケット構造</a></li>
+<li><a href="#コア-コマンド" id="toc-コア-コマンド">3.2 コア
+コマンド</a></li>
+<li><a href="#データ交換例" id="toc-データ交換例">3.3
+データ交換例</a></li>
+</ul></li>
+<li><a href="#プラットフォーム選択基準"
+id="toc-プラットフォーム選択基準">4. プラットフォーム選択基準</a>
+<ul>
+<li><a href="#決定ツリー" id="toc-決定ツリー">4.1 決定ツリー</a></li>
+<li><a href="#推奨" id="toc-推奨">4.2 推奨</a></li>
+</ul></li>
+<li><a href="#テスト戦略" id="toc-テスト戦略">5. テスト戦略</a>
+<ul>
+<li><a href="#ユニット-テストstdinstdout"
+id="toc-ユニット-テストstdinstdout">5.1 ユニット
+テスト（stdin/stdout）</a></li>
+<li><a href="#統合テストqemu-rsp" id="toc-統合テストqemu-rsp">5.2
+統合テスト（QEMU + RSP）</a></li>
+<li><a href="#ハードウェア-テスト実-stm32"
+id="toc-ハードウェア-テスト実-stm32">5.3 ハードウェア テスト（実
+STM32）</a></li>
+</ul></li>
+<li><a href="#実装チェックリスト" id="toc-実装チェックリスト">6.
+実装チェックリスト</a></li>
+<li><a href="#まとめ" id="toc-まとめ">まとめ</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="fireball-rspremote-serial-protocol仕様と説明">Fireball
+RSP（Remote Serial Protocol）仕様と説明</h1>
+<p><strong>Version:</strong> 0.1.0 <strong>Date:</strong> 2025-11-30
+<strong>Author:</strong> Takuya Matsunaga</p>
+<hr />
+<h2 id="概要">概要</h2>
+<p>本ドキュメントは Fireball デバッガ バックエンド向け
+<strong>RSP（Remote Serial Protocol）仕様</strong>
+を説明し、設計判断を明記するものです。</p>
+<p><strong>疑問：</strong> stdin/stdout ではなく RSP を使うべきか？
+<strong>答：</strong> 開発・テスト時は stdin/stdout
+で良い。本番・ハードウェアでは RSP 必須。</p>
+<hr />
+<h2 id="デバッガ-トランスポート-オプション">1. デバッガ トランスポート
+オプション</h2>
+<h3 id="選択肢-1-stdinstdoutposix---開発用">1.1 選択肢 1:
+stdin/stdout（POSIX - 開発用）</h3>
+<p><strong>用途</strong>：x86-64 シミュレータ、CI/CD
+テスト、ローカル開発</p>
+<p><strong>利点：</strong> - 実装简潔 - ハードウェア依存性なし - POSIX
+環境全対応</p>
+<p><strong>欠点：</strong> - 実ハードウェア デバッグ不可 - localhost
+のみ - 実時間デバッグ困難</p>
+<p><strong>実装例：</strong></p>
+<div class="sourceCode" id="cb1"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> debugger_read_command<span class="op">(</span><span class="bu">std::</span>string<span class="op">&amp;</span> cmd<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a>  cmd<span class="op">.</span>clear<span class="op">();</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">char</span> c<span class="op">;</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>  <span class="cf">while</span> <span class="op">(</span><span class="bu">std::</span>cin<span class="op">.</span>get<span class="op">(</span>c<span class="op">))</span> <span class="op">{</span></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(</span>c <span class="op">==</span> <span class="ch">&#39;</span><span class="sc">\n</span><span class="ch">&#39;</span><span class="op">)</span> <span class="cf">break</span><span class="op">;</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    cmd <span class="op">+=</span> c<span class="op">;</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="dt">void</span> debugger_send_response<span class="op">(</span><span class="at">const</span> <span class="bu">std::</span>string<span class="op">&amp;</span> resp<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>  <span class="bu">std::</span>cout <span class="op">&lt;&lt;</span> resp <span class="op">&lt;&lt;</span> <span class="bu">std::</span>endl<span class="op">;</span></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="選択肢-2-rsp-over-uartハードウェア---本番">1.2 選択肢 2: RSP
+over UART（ハードウェア - 本番）</h3>
+<p><strong>用途</strong>：実ハードウェア（STM32、nRF52、RISC-V）</p>
+<p><strong>利点：</strong> - 業界標準（GDB、lldb 全対応） - UART
+ハードウェア対応全プラットフォーム - IDE 拡張機能整備（VSCode
+Cortex-Debug） - エラー検出（チェックサム）</p>
+<p><strong>欠点：</strong> - 実装複雑（~300 行） - UART ハードウェア必須
+- オーバーヘッド（16 進エンコーディング）</p>
+<h3 id="選択肢-3-tcpip-over-network将来">1.3 選択肢 3: TCP/IP over
+Network（将来）</h3>
+<p><strong>用途</strong>：リモート デバッグ（Ethernet/Wi-Fi）</p>
+<p><strong>状態</strong>：Phase 3 未実装、将来対応予定</p>
+<hr />
+<h2 id="fireball-戦略ハイブリッド-アプローチ">2. Fireball
+戦略：ハイブリッド アプローチ</h2>
+<h3 id="設計">2.1 設計</h3>
+<pre><code>┌────────────────────────────────────────┐
+│   デバッガ サービス（コア ロジック）    │
+│   - ブレークポイント管理                │
+│   - レジスタ/メモリ アクセス             │
+│   - 単一コマンド ハンドラ インターフェース │
+└──────────────┬──────────────────────────┘
+               │
+     ┌─────────┼──────────┐
+     │         │          │
+     ▼         ▼          ▼
+┌─────────┐┌──────────┐┌─────────┐
+│ UART    ││ stdio    ││ TCP/IP  │
+│トランス│ │トランス  ││トランス  │
+│ポート  ││         ││（将来）   │
+│(本番) ││(テスト) ││         │
+└─────────┘└──────────┘└─────────┘</code></pre>
+<p><strong>メリット：</strong> 単一プロトコル
+ハンドラ、複数トランスポート実装</p>
+<h3 id="実装パターン">2.2 実装パターン</h3>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> debugger_transport <span class="op">{</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a> <span class="kw">public</span><span class="op">:</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a>  <span class="kw">virtual</span> <span class="op">~</span>debugger_transport<span class="op">()</span> <span class="op">=</span> <span class="cf">default</span><span class="op">;</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>  <span class="kw">virtual</span> <span class="bu">std::</span>optional<span class="op">&lt;</span><span class="bu">std::</span>string<span class="op">&gt;</span> read_command<span class="op">()</span> <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>  <span class="kw">virtual</span> <span class="dt">void</span> send_response<span class="op">(</span><span class="at">const</span> <span class="bu">std::</span>string<span class="op">&amp;</span> data<span class="op">)</span> <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a><span class="co">// UART トランスポート（本番ハードウェア）</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> uart_transport <span class="op">:</span> <span class="kw">public</span> debugger_transport <span class="op">{</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a>  <span class="co">// RSP: $&lt;data&gt;#&lt;checksum&gt;</span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a>  <span class="bu">std::</span>optional<span class="op">&lt;</span><span class="bu">std::</span>string<span class="op">&gt;</span> read_command<span class="op">()</span> <span class="kw">override</span><span class="op">;</span></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a>  <span class="dt">void</span> send_response<span class="op">(</span><span class="at">const</span> <span class="bu">std::</span>string<span class="op">&amp;</span> data<span class="op">)</span> <span class="kw">override</span><span class="op">;</span></span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a><span class="co">// stdio トランスポート（シミュレータ/テスト）</span></span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> stdio_transport <span class="op">:</span> <span class="kw">public</span> debugger_transport <span class="op">{</span></span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a>  <span class="co">// シンプル行プロトコル: &lt;command&gt;\n</span></span>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a>  <span class="bu">std::</span>optional<span class="op">&lt;</span><span class="bu">std::</span>string<span class="op">&gt;</span> read_command<span class="op">()</span> <span class="kw">override</span><span class="op">;</span></span>
+<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a>  <span class="dt">void</span> send_response<span class="op">(</span><span class="at">const</span> <span class="bu">std::</span>string<span class="op">&amp;</span> data<span class="op">)</span> <span class="kw">override</span><span class="op">;</span></span>
+<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb3-21"><a href="#cb3-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-22"><a href="#cb3-22" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> debugger_service <span class="op">{</span></span>
+<span id="cb3-23"><a href="#cb3-23" aria-hidden="true" tabindex="-1"></a> <span class="kw">private</span><span class="op">:</span></span>
+<span id="cb3-24"><a href="#cb3-24" aria-hidden="true" tabindex="-1"></a>  <span class="bu">std::</span>unique_ptr<span class="op">&lt;</span>debugger_transport<span class="op">&gt;</span> <span class="va">transport_</span><span class="op">;</span></span>
+<span id="cb3-25"><a href="#cb3-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-26"><a href="#cb3-26" aria-hidden="true" tabindex="-1"></a> <span class="kw">public</span><span class="op">:</span></span>
+<span id="cb3-27"><a href="#cb3-27" aria-hidden="true" tabindex="-1"></a>  <span class="dt">void</span> event_loop<span class="op">()</span> <span class="op">{</span></span>
+<span id="cb3-28"><a href="#cb3-28" aria-hidden="true" tabindex="-1"></a>    <span class="cf">while</span> <span class="op">(</span><span class="kw">true</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-29"><a href="#cb3-29" aria-hidden="true" tabindex="-1"></a>      <span class="kw">auto</span> cmd <span class="op">=</span> <span class="va">transport_</span><span class="op">-&gt;</span>read_command<span class="op">();</span>  <span class="co">// 全トランスポート対応</span></span>
+<span id="cb3-30"><a href="#cb3-30" aria-hidden="true" tabindex="-1"></a>      <span class="cf">if</span> <span class="op">(!</span>cmd<span class="op">)</span> <span class="cf">continue</span><span class="op">;</span></span>
+<span id="cb3-31"><a href="#cb3-31" aria-hidden="true" tabindex="-1"></a>      <span class="kw">auto</span> resp <span class="op">=</span> handle_command<span class="op">(*</span>cmd<span class="op">);</span>      <span class="co">// 同一ハンドラ</span></span>
+<span id="cb3-32"><a href="#cb3-32" aria-hidden="true" tabindex="-1"></a>      <span class="va">transport_</span><span class="op">-&gt;</span>send_response<span class="op">(</span>resp<span class="op">);</span></span>
+<span id="cb3-33"><a href="#cb3-33" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb3-34"><a href="#cb3-34" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb3-35"><a href="#cb3-35" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span></code></pre></div>
+<hr />
+<h2 id="rsp-完全仕様概要">3. RSP 完全仕様（概要）</h2>
+<h3 id="パケット構造">3.1 パケット構造</h3>
+<pre><code>$&lt;data&gt;#&lt;checksum&gt;
+│     │  │         │
+│     │  │         └─ チェックサム（2 16 進数字）
+│     │  └─────────── デリミタ
+│     └───────────── コマンド/レスポンス
+└───────────────── 開始マーク</code></pre>
+<p><strong>チェックサム計算：</strong></p>
+<div class="sourceCode" id="cb5"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="dt">uint8_t</span> calculate_checksum<span class="op">(</span><span class="at">const</span> <span class="bu">std::</span>string<span class="op">&amp;</span> data<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">uint8_t</span> sum <span class="op">=</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> <span class="op">(</span><span class="dt">char</span> c <span class="op">:</span> data<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>    sum <span class="op">+=</span> <span class="op">(</span><span class="dt">uint8_t</span><span class="op">)</span>c<span class="op">;</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> sum<span class="op">;</span>  <span class="co">// 下位 8 ビット</span></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<h3 id="コア-コマンド">3.2 コア コマンド</h3>
+<table>
+<colgroup>
+<col style="width: 29%" />
+<col style="width: 19%" />
+<col style="width: 32%" />
+<col style="width: 19%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>コマンド</th>
+<th>名前</th>
+<th>フォーマット</th>
+<th>返却</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>g</code></td>
+<td>レジスタ読み取り</td>
+<td><code>$g#&lt;cksum&gt;</code></td>
+<td><code>$&lt;hexdata&gt;#&lt;cksum&gt;</code></td>
+</tr>
+<tr class="even">
+<td><code>m</code></td>
+<td>メモリ読み取り</td>
+<td><code>$m&lt;addr&gt;,&lt;len&gt;#&lt;cksum&gt;</code></td>
+<td><code>$&lt;hexdata&gt;#&lt;cksum&gt;</code></td>
+</tr>
+<tr class="odd">
+<td><code>c</code></td>
+<td>実行継続</td>
+<td><code>$c#&lt;cksum&gt;</code></td>
+<td>実行（ブレークで停止）</td>
+</tr>
+<tr class="even">
+<td><code>s</code></td>
+<td>ステップ実行</td>
+<td><code>$s#&lt;cksum&gt;</code></td>
+<td>1 命令実行</td>
+</tr>
+<tr class="odd">
+<td><code>z0</code></td>
+<td>ブレークポイント削除</td>
+<td><code>$z0,&lt;addr&gt;,&lt;kind&gt;#&lt;cksum&gt;</code></td>
+<td><code>$OK#&lt;cksum&gt;</code></td>
+</tr>
+<tr class="even">
+<td><code>Z0</code></td>
+<td>ブレークポイント設定</td>
+<td><code>$Z0,&lt;addr&gt;,&lt;kind&gt;#&lt;cksum&gt;</code></td>
+<td><code>$OK#&lt;cksum&gt;</code></td>
+</tr>
+<tr class="odd">
+<td><code>?</code></td>
+<td>停止理由</td>
+<td><code>$?#&lt;cksum&gt;</code></td>
+<td><code>$S05#&lt;cksum&gt;</code>（SIGTRAP）</td>
+</tr>
+<tr class="even">
+<td><code>H</code></td>
+<td>スレッド選択</td>
+<td><code>$H&lt;op&gt;&lt;tid&gt;#&lt;cksum&gt;</code></td>
+<td><code>$OK#&lt;cksum&gt;</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="データ交換例">3.3 データ交換例</h3>
+<pre><code>Host → Target:
+  $m1000,10#1f
+
+分解:
+  $ : 開始
+  m : メモリ読み取り
+  1000,10 : アドレス 0x1000、16 バイト
+  # : デリミタ
+  1f : チェックサム
+
+Target → Host:
+  $48656c6c6f20576f726c64#ab
+
+分解:
+  $ : 開始
+  48656c6c6f... : データ（16 進）= &quot;Hello World&quot;
+  # : デリミタ
+  ab : チェックサム</code></pre>
+<hr />
+<h2 id="プラットフォーム選択基準">4. プラットフォーム選択基準</h2>
+<h3 id="決定ツリー">4.1 決定ツリー</h3>
+<pre><code>これは本番ハードウェアか？
+  ├─ YES: RSP over UART 使用
+  │       （標準、IDE 統合、実績あり）
+  └─ NO: x86-64 シミュレータか？
+         ├─ YES: stdin/stdout 使用
+         │       （簡潔、外部ツール不要）
+         └─ NO: やはりハードウェア
+                └─ RSP over UART 使用</code></pre>
+<h3 id="推奨">4.2 推奨</h3>
+<table>
+<colgroup>
+<col style="width: 36%" />
+<col style="width: 40%" />
+<col style="width: 24%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>プラットフォーム</th>
+<th>トランスポート</th>
+<th>理由</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>ARM Cortex-M4</strong></td>
+<td>RSP/UART</td>
+<td>標準、UART 常装備</td>
+</tr>
+<tr class="even">
+<td><strong>nRF52840</strong></td>
+<td>RSP/UART</td>
+<td>Nordic ボード UART サポート、GDB 対応</td>
+</tr>
+<tr class="odd">
+<td><strong>RISC-V（WCH）</strong></td>
+<td>RSP/UART</td>
+<td>低リソース制約、UART 最適</td>
+</tr>
+<tr class="even">
+<td><strong>x86-64 POSIX</strong></td>
+<td>stdin/stdout</td>
+<td>テスト用、ハードウェア不要</td>
+</tr>
+<tr class="odd">
+<td><strong>CI/CD（GitHub Actions）</strong></td>
+<td>stdin/stdout</td>
+<td>自動テスト、シリアル ハードウェア無し</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="テスト戦略">5. テスト戦略</h2>
+<h3 id="ユニット-テストstdinstdout">5.1 ユニット
+テスト（stdin/stdout）</h3>
+<div class="sourceCode" id="cb8"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>debugger_transport_mock transport<span class="op">;</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>transport<span class="op">.</span>inject_command<span class="op">(</span><span class="st">&quot;$m1000,4#&lt;cksum&gt;&quot;</span><span class="op">);</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a><span class="kw">auto</span> response <span class="op">=</span> debugger_service<span class="op">-&gt;</span>process_command<span class="op">(</span><span class="st">&quot;m1000,4&quot;</span><span class="op">);</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>assert_response_matches<span class="op">(</span>response<span class="op">,</span> <span class="st">&quot;$&lt;hexdata&gt;#&lt;cksum&gt;&quot;</span><span class="op">);</span></span></code></pre></div>
+<h3 id="統合テストqemu-rsp">5.2 統合テスト（QEMU + RSP）</h3>
+<div class="sourceCode" id="cb9"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="co"># ターミナル 1: QEMU シミュレータ</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a><span class="ex">qemu-arm-softmmu</span> <span class="at">-m</span> 128M <span class="at">-serial</span> stdio <span class="at">-kernel</span> fireball.elf</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="co"># ターミナル 2: GDB クライアント</span></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a><span class="fu">gdb</span> ./fireball.elf</span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a><span class="kw">(</span><span class="fu">gdb</span><span class="kw">)</span> <span class="ex">target</span> remote localhost:3333</span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a><span class="kw">(</span><span class="fu">gdb</span><span class="kw">)</span> <span class="cf">break</span> <span class="ex">0x2000</span></span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a><span class="kw">(</span><span class="fu">gdb</span><span class="kw">)</span> <span class="cf">continue</span></span></code></pre></div>
+<h3 id="ハードウェア-テスト実-stm32">5.3 ハードウェア テスト（実
+STM32）</h3>
+<div class="sourceCode" id="cb10"><pre
+class="sourceCode bash"><code class="sourceCode bash"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="co"># ST-Link USB ターゲット接続</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="fu">gdb</span> ./fireball.elf</span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a><span class="kw">(</span><span class="fu">gdb</span><span class="kw">)</span> <span class="ex">target</span> remote /dev/ttyUSB0 115200</span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a><span class="kw">(</span><span class="fu">gdb</span><span class="kw">)</span> <span class="cf">break</span> <span class="ex">main</span></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a><span class="kw">(</span><span class="fu">gdb</span><span class="kw">)</span> <span class="ex">load</span></span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a><span class="kw">(</span><span class="fu">gdb</span><span class="kw">)</span> <span class="cf">continue</span></span></code></pre></div>
+<hr />
+<h2 id="実装チェックリスト">6. 実装チェックリスト</h2>
+<ul class="task-list">
+<li><label><input type="checkbox" /><code>debugger_transport</code>
+抽象インターフェース定義</label></li>
+<li><label><input type="checkbox" /><code>uart_transport</code> RSP
+プロトコル実装</label></li>
+<li><label><input type="checkbox" /><code>stdio_transport</code>
+シンプル行プロトコル実装</label></li>
+<li><label><input type="checkbox" />コア コマンド ハンドラ：</label>
+<ul class="task-list">
+<li><label><input type="checkbox" />メモリ読み書き</label></li>
+<li><label><input type="checkbox" />レジスタアクセス</label></li>
+<li><label><input
+type="checkbox" />ブレークポイント設定/削除</label></li>
+<li><label><input type="checkbox" />実行継続/ステップ実行</label></li>
+<li><label><input
+type="checkbox" />クエリ（停止理由、スレッド情報）</label></li>
+</ul></li>
+<li><label><input
+type="checkbox" />インタプリタ統合（各命令でブレークポイント確認）</label></li>
+<li><label><input type="checkbox" />GDB テスト確認</label></li>
+<li><label><input type="checkbox" />VSCode Cortex-Debug
+拡張機能テスト</label></li>
+</ul>
+<hr />
+<h2 id="まとめ">まとめ</h2>
+<p><strong>stdin/stdout vs RSP か？</strong></p>
+<p>✅ <strong>開発・テスト</strong>：stdin/stdout
+で十分（シンプル、ハードウェア不要） ❌
+<strong>本番・ハードウェア</strong>：RSP over UART 必須（標準、IDE
+統合）</p>
+<p>Fireball の解決： - 抽象 <code>debugger_transport</code>
+インターフェース - 複数実装（UART、stdio、TCP/IP 将来） - 単一コマンド
+ハンドラ（全トランスポート対応）</p>
+<p>結果：<strong>開発時は簡潔、本番時は業界標準</strong> を両立。</p>
+</body>
+</html>

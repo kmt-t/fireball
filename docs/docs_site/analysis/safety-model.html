@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>safety-model</title>
+  <style>
+    html {
+      color: #1a1a1a;
+      background-color: #fdfdfd;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        background-color: white;
+      }
+      body {
+        background-color: transparent;
+        color: black;
+        font-size: 12pt;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a {
+      color: #1a1a1a;
+    }
+    a:visited {
+      color: #1a1a1a;
+    }
+    img {
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid #e6e6e6;
+      color: #606060;
+    }
+    code {
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      background-color: #1a1a1a;
+      border: none;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    th {
+      border-top: 1px solid #1a1a1a;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+  </style>
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">safety-model</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#fireball-safety-model-draft"
+id="toc-fireball-safety-model-draft">Fireball Safety Model Draft</a>
+<ul>
+<li><a href="#目的とスコープ" id="toc-目的とスコープ">1.
+目的とスコープ</a></li>
+<li><a href="#安全性に関する設計原則" id="toc-安全性に関する設計原則">2.
+安全性に関する設計原則</a></li>
+<li><a href="#主要な安全機能" id="toc-主要な安全機能">3.
+主要な安全機能</a>
+<ul>
+<li><a href="#メモリ保護とフォールトアイソレーション"
+id="toc-メモリ保護とフォールトアイソレーション">3.1
+メモリ保護とフォールトアイソレーション</a></li>
+<li><a href="#実行とスケジューリングの安全性"
+id="toc-実行とスケジューリングの安全性">3.2
+実行とスケジューリングの安全性</a></li>
+<li><a href="#通信とデータ完全性" id="toc-通信とデータ完全性">3.3
+通信とデータ完全性</a></li>
+<li><a href="#エラー検出とハンドリング"
+id="toc-エラー検出とハンドリング">3.4 エラー検出とハンドリング</a></li>
+<li><a href="#セキュリティと堅牢性" id="toc-セキュリティと堅牢性">3.5
+セキュリティと堅牢性</a></li>
+</ul></li>
+<li><a href="#今後の詳細な安全分析計画-future-work"
+id="toc-今後の詳細な安全分析計画-future-work">4.
+今後の詳細な安全分析計画 (Future Work)</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="fireball-safety-model-draft">Fireball Safety Model Draft</h1>
+<p><strong>Version:</strong> 0.1.0 <strong>Date:</strong> 2025-12-02
+<strong>Author:</strong> Cline (AI Assistant)</p>
+<hr />
+<h2 id="目的とスコープ">1. 目的とスコープ</h2>
+<p>本ドキュメントは、Fireball WebAssembly
+ハイパーバイザーの初期段階のSafety Model (安全モデル)
+のたたき台を提供する。Fireballの設計がどのように潜在的なハザードを軽減し、システム全体の堅牢性と安全性を確保するかを体系的に記述することを目的とする。</p>
+<p><strong>スコープ:</strong> Fireballコアカーネル
+(COOS)、WASMランタイム、HAL、および主要なサブシステムに焦点を当てる。アプリケーション層の安全要件は、本モデルの範囲外とするが、Fireballが提供する安全機構がその基盤となる。</p>
+<h2 id="安全性に関する設計原則">2. 安全性に関する設計原則</h2>
+<p>Fireballのアーキテクチャは、組み込みシステム、特に高い信頼性と安全性が求められる環境向けに、以下の設計原則に基づいている。</p>
+<ul>
+<li><strong>マイクロカーネル設計</strong>:
+COOSカーネルを最小限の機能に限定することで、信頼性分析の範囲を狭め、攻撃面を減少させる。</li>
+<li><strong>フォールトアイソレーション</strong>:
+各WASMモジュール/ゲストに独立したメモリ空間（mspace）を提供し、あるモジュールのメモリ枯渇や障害が他のモジュールやシステム全体に波及するのを防ぐ。</li>
+<li><strong>決定論的動作</strong>: 協調的マルチタスクとCSP
+(Communicating Sequential Processes)
+による同期メカニズムを採用し、プリエンプティブな割り込みやロックを排除することで、実行の決定論性を確保する。</li>
+<li><strong>ISR安全性</strong>:
+割り込みサービスルーチン（ISR）の実行時間を最小限に抑え、HALからの割り込みフラグ監視を通じて、割り込み起因のイベントを安全かつ予測可能に処理する。</li>
+<li><strong>最小特権</strong>:
+各コンポーネントとゲストは、その機能遂行に必要な最小限の権限のみを持つ。</li>
+</ul>
+<h2 id="主要な安全機能">3. 主要な安全機能</h2>
+<h3 id="メモリ保護とフォールトアイソレーション">3.1
+メモリ保護とフォールトアイソレーション</h3>
+<ul>
+<li><strong>モジュールごとの独立ヒープ</strong>: <code>co_mem</code>
+は、各WASMモジュールに対して独立した<code>mspace</code> (dlmallocベース)
+を割り当てる。これにより、あるゲストがヒープ枯渇に陥っても、他のゲストやFireballカーネルに影響が及ばないことを保証する。</li>
+<li><strong>スタック保護</strong>:
+各コルーチンは独立したスタックを持ち、オプションでガードページを設定することでスタックオーバーフローを検出する。</li>
+<li><strong>固定メモリパーティショニング (ADR-003)</strong>:
+コンフィグレーションヘッダファイルのマクロにより、ビルド時にメモリ容量を固定。これによりランタイムの複雑性を低減し、予測可能なメモリ使用を保証する。</li>
+</ul>
+<h3 id="実行とスケジューリングの安全性">3.2
+実行とスケジューリングの安全性</h3>
+<ul>
+<li><strong>協調的スケジューリング</strong>:
+COOSの<code>co_sched</code>は、コルーチンが明示的に制御を譲り合う協調的スケジューリングモデルを採用。これにより、複雑なロック機構やデッドロックのリスクを排除し、並行性のバグを減らす。</li>
+<li><strong>ISR安全メカニズム (ADR-002)</strong>:
+HALドライバのISRは、イベント発生時にグローバルフラグをセットするのみに留まり、インタープリタまたはランタイムがコンテキストスイッチ時にこのフラグを監視してイベントを処理する。ISRの実行時間を最小化し、競合状態を防ぐ。</li>
+<li><strong>JIT Fallback Strategy (ADR-005)</strong>:
+JITコンパイラは、レイテンシ最小化を最優先し、テンプレート展開とパッチ当て方式を採用。予測不可能な遅延や複雑なフォールバックメカニズムを回避し、システムのリアルタイム性を維持する。</li>
+</ul>
+<h3 id="通信とデータ完全性">3.3 通信とデータ完全性</h3>
+<ul>
+<li><strong>CSPによる安全な通信</strong>:
+CSPチャネルは、コルーチン間の唯一の通信・同期メカニズム。Rendezvous（出会い）セマンティクスと<code>co_value&lt;T&gt;</code>による所有権自動移譲により、データ競合（Race
+Condition）を設計レベルで排除する。</li>
+<li><strong>型付きKey-Valueプロトコルによるシリアライゼーション</strong>:
+Routerを通じたIPC通信は型付きKey-Valueプロトコルでデータがシリアライズ/デシリアライズされ、データの整合性と堅牢性を確保する。</li>
+</ul>
+<h3 id="エラー検出とハンドリング">3.4 エラー検出とハンドリング</h3>
+<ul>
+<li><strong>Assertion Failures</strong>:
+所有権違反や予期せぬ状態はアサーション失敗として捕捉され、スタックトレース出力とシステムアボートにより、早期に問題を特定する。</li>
+<li><strong>Channel Errors</strong>:
+閉じたチャネルへの送受信は、<code>std::nullopt</code>の返却やグレースフルシャットダウンなど、定義された方法で処理される。</li>
+<li><strong>Memory Errors</strong>:
+ヒープ枯渇は<code>nullptr</code>を返却し、呼び出し側で適切に処理されることを要求する。</li>
+<li><strong>WASM Errors</strong>:
+不正命令やスタックオーバーフローなどのWASMレベルのエラーは<code>trap</code>として捕捉され、ログに記録される。</li>
+</ul>
+<h3 id="セキュリティと堅牢性">3.5 セキュリティと堅牢性</h3>
+<ul>
+<li><strong>WASMモジュール分離</strong>:
+各WASMモジュールは独立したサンドボックス環境で実行され、システムリソースへの直接アクセスは制限される。すべてのハードウェアアクセスはHALを介し、システムサービスはRouter経由のIPCによって行われる。</li>
+</ul>
+<h2 id="今後の詳細な安全分析計画-future-work">4.
+今後の詳細な安全分析計画 (Future Work)</h2>
+<p>このたたき台を基に、より詳細なSafety
+Modelを構築するためには、以下の活動が必要となる。</p>
+<ul>
+<li><strong>ハザード分析 (HAZOP / FMEA)</strong>:
+システムレベルの潜在的ハザードを特定し、その原因、影響、既存の軽減策を分析する。</li>
+<li><strong>安全要件の導出</strong>:
+ハザード分析の結果に基づき、具体的な安全要件を導出し、仕様ドキュメントに組み込む。</li>
+<li><strong>安全性検証とテスト戦略</strong>:
+各安全機能が正しく実装され、意図通りに動作することを検証するためのテスト計画を策定する。</li>
+<li><strong>認証準拠性評価</strong>:
+FDA/DO-178Cなどの対象とする認証規格への準拠性を評価し、必要な文書化とプロセスを定義する。</li>
+</ul>
+</body>
+</html>

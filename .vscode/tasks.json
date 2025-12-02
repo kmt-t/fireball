@@ -1,0 +1,56 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "build debug meson",
+            "type": "shell",
+            "command": "ninja",
+            "args": ["-C", "build"],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": "$gcc",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "meson setup debug",
+            "type": "shell",
+            "command": "meson",
+            "args": [
+                "setup",
+                "build",
+                "--buildtype=debug",
+                "--native-file=native.ini"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "meson reconfigure",
+            "type": "shell",
+            "command": "meson",
+            "args": [
+                "setup",
+                "build",
+                "--reconfigure"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "clean build",
+            "type": "shell",
+            "command": "ninja",
+            "args": ["-C", "build", "clean"],
+            "problemMatcher": []
+        },
+        {
+            "label": "full rebuild",
+            "type": "shell",
+            "command": "rm -rf build && meson setup build --buildtype=debug --native-file=native.ini && ninja -C build",
+            "problemMatcher": "$gcc"
+        }
+    ]
+}

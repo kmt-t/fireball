@@ -1,0 +1,1122 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>binary-search-optimization</title>
+  <style>
+    html {
+      color: #1a1a1a;
+      background-color: #fdfdfd;
+    }
+    body {
+      margin: 0 auto;
+      max-width: 36em;
+      padding-left: 50px;
+      padding-right: 50px;
+      padding-top: 50px;
+      padding-bottom: 50px;
+      hyphens: auto;
+      overflow-wrap: break-word;
+      text-rendering: optimizeLegibility;
+      font-kerning: normal;
+    }
+    @media (max-width: 600px) {
+      body {
+        font-size: 0.9em;
+        padding: 12px;
+      }
+      h1 {
+        font-size: 1.8em;
+      }
+    }
+    @media print {
+      html {
+        background-color: white;
+      }
+      body {
+        background-color: transparent;
+        color: black;
+        font-size: 12pt;
+      }
+      p, h2, h3 {
+        orphans: 3;
+        widows: 3;
+      }
+      h2, h3, h4 {
+        page-break-after: avoid;
+      }
+    }
+    p {
+      margin: 1em 0;
+    }
+    a {
+      color: #1a1a1a;
+    }
+    a:visited {
+      color: #1a1a1a;
+    }
+    img {
+      max-width: 100%;
+    }
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.4em;
+    }
+    h5, h6 {
+      font-size: 1em;
+      font-style: italic;
+    }
+    h6 {
+      font-weight: normal;
+    }
+    ol, ul {
+      padding-left: 1.7em;
+      margin-top: 1em;
+    }
+    li > ol, li > ul {
+      margin-top: 0;
+    }
+    blockquote {
+      margin: 1em 0 1em 1.7em;
+      padding-left: 1em;
+      border-left: 2px solid #e6e6e6;
+      color: #606060;
+    }
+    code {
+      font-family: Menlo, Monaco, Consolas, 'Lucida Console', monospace;
+      font-size: 85%;
+      margin: 0;
+      hyphens: manual;
+    }
+    pre {
+      margin: 1em 0;
+      overflow: auto;
+    }
+    pre code {
+      padding: 0;
+      overflow: visible;
+      overflow-wrap: normal;
+    }
+    .sourceCode {
+     background-color: transparent;
+     overflow: visible;
+    }
+    hr {
+      background-color: #1a1a1a;
+      border: none;
+      height: 1px;
+      margin: 1em 0;
+    }
+    table {
+      margin: 1em 0;
+      border-collapse: collapse;
+      width: 100%;
+      overflow-x: auto;
+      display: block;
+      font-variant-numeric: lining-nums tabular-nums;
+    }
+    table caption {
+      margin-bottom: 0.75em;
+    }
+    tbody {
+      margin-top: 0.5em;
+      border-top: 1px solid #1a1a1a;
+      border-bottom: 1px solid #1a1a1a;
+    }
+    th {
+      border-top: 1px solid #1a1a1a;
+      padding: 0.25em 0.5em 0.25em 0.5em;
+    }
+    td {
+      padding: 0.125em 0.5em 0.25em 0.5em;
+    }
+    header {
+      margin-bottom: 4em;
+      text-align: center;
+    }
+    #TOC li {
+      list-style: none;
+    }
+    #TOC ul {
+      padding-left: 1.3em;
+    }
+    #TOC > ul {
+      padding-left: 0;
+    }
+    #TOC a:not(:hover) {
+      text-decoration: none;
+    }
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+    /* CSS for syntax highlighting */
+    pre > code.sourceCode { white-space: pre; position: relative; }
+    pre > code.sourceCode > span { line-height: 1.25; }
+    pre > code.sourceCode > span:empty { height: 1.2em; }
+    .sourceCode { overflow: visible; }
+    code.sourceCode > span { color: inherit; text-decoration: inherit; }
+    div.sourceCode { margin: 1em 0; }
+    pre.sourceCode { margin: 0; }
+    @media screen {
+    div.sourceCode { overflow: auto; }
+    }
+    @media print {
+    pre > code.sourceCode { white-space: pre-wrap; }
+    pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+    }
+    pre.numberSource code
+      { counter-reset: source-line 0; }
+    pre.numberSource code > span
+      { position: relative; left: -4em; counter-increment: source-line; }
+    pre.numberSource code > span > a:first-child::before
+      { content: counter(source-line);
+        position: relative; left: -1em; text-align: right; vertical-align: baseline;
+        border: none; display: inline-block;
+        -webkit-touch-callout: none; -webkit-user-select: none;
+        -khtml-user-select: none; -moz-user-select: none;
+        -ms-user-select: none; user-select: none;
+        padding: 0 4px; width: 4em;
+        color: #aaaaaa;
+      }
+    pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+    div.sourceCode
+      {   }
+    @media screen {
+    pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+    }
+    code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+    code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+    code span.at { color: #7d9029; } /* Attribute */
+    code span.bn { color: #40a070; } /* BaseN */
+    code span.bu { color: #008000; } /* BuiltIn */
+    code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+    code span.ch { color: #4070a0; } /* Char */
+    code span.cn { color: #880000; } /* Constant */
+    code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+    code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+    code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+    code span.dt { color: #902000; } /* DataType */
+    code span.dv { color: #40a070; } /* DecVal */
+    code span.er { color: #ff0000; font-weight: bold; } /* Error */
+    code span.ex { } /* Extension */
+    code span.fl { color: #40a070; } /* Float */
+    code span.fu { color: #06287e; } /* Function */
+    code span.im { color: #008000; font-weight: bold; } /* Import */
+    code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+    code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+    code span.op { color: #666666; } /* Operator */
+    code span.ot { color: #007020; } /* Other */
+    code span.pp { color: #bc7a00; } /* Preprocessor */
+    code span.sc { color: #4070a0; } /* SpecialChar */
+    code span.ss { color: #bb6688; } /* SpecialString */
+    code span.st { color: #4070a0; } /* String */
+    code span.va { color: #19177c; } /* Variable */
+    code span.vs { color: #4070a0; } /* VerbatimString */
+    code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+  </style>
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">binary-search-optimization</h1>
+</header>
+<nav id="TOC" role="doc-toc">
+<ul>
+<li><a href="#fireball-バイナリサーチ最適化エントリ検索"
+id="toc-fireball-バイナリサーチ最適化エントリ検索">Fireball
+バイナリサーチ最適化：エントリ検索</a>
+<ul>
+<li><a href="#概要" id="toc-概要">概要</a></li>
+<li><a href="#問題ステートメント" id="toc-問題ステートメント">1.
+問題ステートメント</a>
+<ul>
+<li><a href="#線形探索-vs-バイナリサーチ"
+id="toc-線形探索-vs-バイナリサーチ">1.1 線形探索 vs
+バイナリサーチ</a></li>
+<li><a href="#パフォーマンス予算" id="toc-パフォーマンス予算">1.2
+パフォーマンス予算</a></li>
+</ul></li>
+<li><a href="#データ構造設計" id="toc-データ構造設計">2.
+データ構造設計</a>
+<ul>
+<li><a href="#コア概念事前ソート済みレジストリ"
+id="toc-コア概念事前ソート済みレジストリ">2.1
+コア概念：事前ソート済みレジストリ</a></li>
+<li><a href="#特殊化phase-0-1-完全静的レジストリ"
+id="toc-特殊化phase-0-1-完全静的レジストリ">2.2 特殊化：Phase 0-1
+完全静的レジストリ</a></li>
+</ul></li>
+<li><a href="#実装戦略の選択" id="toc-実装戦略の選択">3.
+実装戦略の選択</a>
+<ul>
+<li><a href="#戦略比較表" id="toc-戦略比較表">3.1 戦略比較表</a></li>
+<li><a href="#戦略-1動的生配列推奨phase-2-3"
+id="toc-戦略-1動的生配列推奨phase-2-3">3.2 戦略
+1：動的生配列（推奨：Phase 2-3）</a></li>
+<li><a href="#戦略-2完全静的登録phase-0-1"
+id="toc-戦略-2完全静的登録phase-0-1">3.3 戦略 2：完全静的登録（Phase
+0-1）</a></li>
+</ul></li>
+<li><a href="#バイナリサーチ実装stdlower_bound-と生配列"
+id="toc-バイナリサーチ実装stdlower_bound-と生配列">4.
+バイナリサーチ実装：std::lower_bound と生配列</a>
+<ul>
+<li><a href="#推奨パターンstdlower_bound-生配列"
+id="toc-推奨パターンstdlower_bound-生配列">4.1
+推奨パターン：std::lower_bound + 生配列</a></li>
+<li><a href="#uri-の字句順序付けルール"
+id="toc-uri-の字句順序付けルール">4.2 URI の字句順序付けルール</a></li>
+</ul></li>
+<li><a href="#fireball-における応用例"
+id="toc-fireball-における応用例">5. Fireball における応用例</a>
+<ul>
+<li><a href="#サービス発見ルータ" id="toc-サービス発見ルータ">5.1
+サービス発見（ルータ）</a></li>
+<li><a href="#ログ辞書-ルックアップ" id="toc-ログ辞書-ルックアップ">5.2
+ログ辞書 ルックアップ</a></li>
+<li><a href="#ルート-テーブル-ルックアップhal"
+id="toc-ルート-テーブル-ルックアップhal">5.3 ルート テーブル
+ルックアップ（HAL）</a></li>
+</ul></li>
+<li><a href="#パフォーマンス特性" id="toc-パフォーマンス特性">6.
+パフォーマンス特性</a>
+<ul>
+<li><a href="#レイテンシ分析" id="toc-レイテンシ分析">6.1
+レイテンシ分析</a></li>
+<li><a href="#メモリ-オーバーヘッド" id="toc-メモリ-オーバーヘッド">6.2
+メモリ オーバーヘッド</a></li>
+</ul></li>
+<li><a href="#実装チェックリスト" id="toc-実装チェックリスト">7.
+実装チェックリスト</a>
+<ul>
+<li><a href="#phase-1動的生配列実装"
+id="toc-phase-1動的生配列実装">Phase 1：動的生配列実装</a></li>
+<li><a href="#phase-2コード生成ツール静的レジストリ"
+id="toc-phase-2コード生成ツール静的レジストリ">Phase
+2：コード生成ツール（静的レジストリ）</a></li>
+<li><a href="#テスト" id="toc-テスト">テスト</a></li>
+</ul></li>
+<li><a href="#コード例完全な実装" id="toc-コード例完全な実装">8.
+コード例：完全な実装</a>
+<ul>
+<li><a href="#バイナリサーチ付きサービス-レジストリ生配列戦略"
+id="toc-バイナリサーチ付きサービス-レジストリ生配列戦略">バイナリサーチ付きサービス
+レジストリ（生配列戦略）</a></li>
+</ul></li>
+<li><a href="#まとめ" id="toc-まとめ">まとめ</a></li>
+</ul></li>
+</ul>
+</nav>
+<h1 id="fireball-バイナリサーチ最適化エントリ検索">Fireball
+バイナリサーチ最適化：エントリ検索</h1>
+<p><strong>Version:</strong> 0.1.0 <strong>Date:</strong> 2025-11-30
+<strong>Author:</strong> Takuya Matsunaga</p>
+<hr />
+<h2 id="概要">概要</h2>
+<p>Fireball は <strong>O(log N) バイナリサーチ</strong>
+を使用して、サービス発見とルーティングを &lt;15 μs
+で実現します。本ドキュメントでは以下を規定します：</p>
+<ol type="1">
+<li><strong>実装戦略</strong>：<code>std::lower_bound</code>
+と生配列による O(log N) ルックアップ</li>
+<li><strong>メモリ効率</strong>：100 サービス = 8.5KB（Phase 2 予算 16KB
+以内）</li>
+<li><strong>2 段階展開</strong>：Phase 0-1（静的ビルド時生成）と Phase
+2-3（動的生配列）</li>
+</ol>
+<hr />
+<h2 id="問題ステートメント">1. 問題ステートメント</h2>
+<h3 id="線形探索-vs-バイナリサーチ">1.1 線形探索 vs バイナリサーチ</h3>
+<p><strong>線形探索（素朴）:</strong></p>
+<pre><code>時間計算量: O(N)
+例：100 個のサービス → 平均 50 回の比較
+レイテンシ：~50 μs（ホットパスには不可能）</code></pre>
+<p><strong>バイナリサーチ（最適化）:</strong></p>
+<pre><code>時間計算量: O(log N)
+例：100 個のサービス → 最大 7 回の比較
+レイテンシ：~1 μs（ホットパスに許容）</code></pre>
+<h3 id="パフォーマンス予算">1.2 パフォーマンス予算</h3>
+<p>architecture.md から：</p>
+<table>
+<thead>
+<tr class="header">
+<th>操作</th>
+<th>予算</th>
+<th>現状</th>
+<th>ギャップ</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>ルータ サービス クエリ</td>
+<td>&lt;15 μs</td>
+<td>???</td>
+<td>最適化必要</td>
+</tr>
+<tr class="even">
+<td>ログ記録（O(1) 辞書）</td>
+<td>&lt;5 μs</td>
+<td>✅</td>
+<td>検索不要</td>
+</tr>
+<tr class="odd">
+<td>GPIO 書き込み</td>
+<td>&lt;50 μs</td>
+<td>✅</td>
+<td>直接 MMIO</td>
+</tr>
+</tbody>
+</table>
+<p><strong>目標</strong>：バイナリサーチで &lt;15 μs のサービス
+クエリを実現</p>
+<hr />
+<h2 id="データ構造設計">2. データ構造設計</h2>
+<h3 id="コア概念事前ソート済みレジストリ">2.1
+コア概念：事前ソート済みレジストリ</h3>
+<p>O(log N)
+バイナリサーチ検索を実現するため、<code>std::lower_bound</code>
+を使用した生配列実装を使用します：</p>
+<div class="sourceCode" id="cb3"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;algorithm&gt;</span></span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="kw">namespace</span> fireball <span class="op">{</span> <span class="kw">namespace</span> router <span class="op">{</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="co">// サービス レジストリ エントリ</span></span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> service_entry <span class="op">{</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>  <span class="at">const</span> <span class="dt">char</span><span class="op">*</span> uri<span class="op">;</span>              <span class="co">// ソート キー（例：&quot;service://gpio/output/5&quot;）</span></span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>  <span class="dt">uint32_t</span> route_id<span class="op">;</span>            <span class="co">// コルーチン ID</span></span>
+<span id="cb3-9"><a href="#cb3-9" aria-hidden="true" tabindex="-1"></a>  access_policy<span class="op">*</span> policy<span class="op">;</span>        <span class="co">// 権限ルール</span></span>
+<span id="cb3-10"><a href="#cb3-10" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb3-11"><a href="#cb3-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-12"><a href="#cb3-12" aria-hidden="true" tabindex="-1"></a><span class="co">// URI 字句順序比較器</span></span>
+<span id="cb3-13"><a href="#cb3-13" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> uri_compare <span class="op">{</span></span>
+<span id="cb3-14"><a href="#cb3-14" aria-hidden="true" tabindex="-1"></a>  <span class="dt">bool</span> <span class="kw">operator</span><span class="op">()(</span><span class="at">const</span> service_entry<span class="op">&amp;</span> a<span class="op">,</span> <span class="at">const</span> service_entry<span class="op">&amp;</span> b<span class="op">)</span> <span class="at">const</span> <span class="op">{</span></span>
+<span id="cb3-15"><a href="#cb3-15" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> strcmp<span class="op">(</span>a<span class="op">.</span>uri<span class="op">,</span> b<span class="op">.</span>uri<span class="op">)</span> <span class="op">&lt;</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a>  <span class="dt">bool</span> <span class="kw">operator</span><span class="op">()(</span><span class="at">const</span> service_entry<span class="op">&amp;</span> a<span class="op">,</span> <span class="at">const</span> <span class="dt">char</span><span class="op">*</span> b<span class="op">)</span> <span class="at">const</span> <span class="op">{</span></span>
+<span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> strcmp<span class="op">(</span>a<span class="op">.</span>uri<span class="op">,</span> b<span class="op">)</span> <span class="op">&lt;</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a>  <span class="dt">bool</span> <span class="kw">operator</span><span class="op">()(</span><span class="at">const</span> <span class="dt">char</span><span class="op">*</span> a<span class="op">,</span> <span class="at">const</span> service_entry<span class="op">&amp;</span> b<span class="op">)</span> <span class="at">const</span> <span class="op">{</span></span>
+<span id="cb3-21"><a href="#cb3-21" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> strcmp<span class="op">(</span>a<span class="op">,</span> b<span class="op">.</span>uri<span class="op">)</span> <span class="op">&lt;</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb3-22"><a href="#cb3-22" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb3-23"><a href="#cb3-23" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb3-24"><a href="#cb3-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-25"><a href="#cb3-25" aria-hidden="true" tabindex="-1"></a><span class="co">// 生配列 + std::lower_bound によるレジストリ</span></span>
+<span id="cb3-26"><a href="#cb3-26" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> service_registry <span class="op">{</span></span>
+<span id="cb3-27"><a href="#cb3-27" aria-hidden="true" tabindex="-1"></a> <span class="kw">private</span><span class="op">:</span></span>
+<span id="cb3-28"><a href="#cb3-28" aria-hidden="true" tabindex="-1"></a>  <span class="at">static</span> <span class="kw">constexpr</span> <span class="dt">int</span> MAX_SERVICES <span class="op">=</span> <span class="dv">256</span><span class="op">;</span></span>
+<span id="cb3-29"><a href="#cb3-29" aria-hidden="true" tabindex="-1"></a>  service_entry <span class="va">entries_</span><span class="op">[</span>MAX_SERVICES<span class="op">];</span>     <span class="co">// ソート済み生配列</span></span>
+<span id="cb3-30"><a href="#cb3-30" aria-hidden="true" tabindex="-1"></a>  <span class="dt">int</span> <span class="va">count_</span><span class="op">;</span>                                <span class="co">// 現在のエントリ数</span></span>
+<span id="cb3-31"><a href="#cb3-31" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-32"><a href="#cb3-32" aria-hidden="true" tabindex="-1"></a> <span class="kw">public</span><span class="op">:</span></span>
+<span id="cb3-33"><a href="#cb3-33" aria-hidden="true" tabindex="-1"></a>  service_registry<span class="op">()</span> <span class="op">:</span> <span class="va">count_</span><span class="op">(</span><span class="dv">0</span><span class="op">)</span> <span class="op">{}</span></span>
+<span id="cb3-34"><a href="#cb3-34" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-35"><a href="#cb3-35" aria-hidden="true" tabindex="-1"></a>  <span class="co">// O(log N) ルックアップ（std::lower_bound）</span></span>
+<span id="cb3-36"><a href="#cb3-36" aria-hidden="true" tabindex="-1"></a>  <span class="at">const</span> service_entry<span class="op">*</span> find<span class="op">(</span><span class="at">const</span> <span class="dt">char</span><span class="op">*</span> uri<span class="op">)</span> <span class="at">const</span> <span class="op">{</span></span>
+<span id="cb3-37"><a href="#cb3-37" aria-hidden="true" tabindex="-1"></a>    <span class="kw">auto</span> it <span class="op">=</span> <span class="bu">std::</span>lower_bound<span class="op">(</span><span class="va">entries_</span><span class="op">,</span> <span class="va">entries_</span> <span class="op">+</span> <span class="va">count_</span><span class="op">,</span> uri<span class="op">,</span> uri_compare<span class="op">());</span></span>
+<span id="cb3-38"><a href="#cb3-38" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-39"><a href="#cb3-39" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(</span>it <span class="op">!=</span> <span class="va">entries_</span> <span class="op">+</span> <span class="va">count_</span> <span class="op">&amp;&amp;</span> strcmp<span class="op">(</span>it<span class="op">-&gt;</span>uri<span class="op">,</span> uri<span class="op">)</span> <span class="op">==</span> <span class="dv">0</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-40"><a href="#cb3-40" aria-hidden="true" tabindex="-1"></a>      <span class="cf">return</span> it<span class="op">;</span></span>
+<span id="cb3-41"><a href="#cb3-41" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb3-42"><a href="#cb3-42" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="kw">nullptr</span><span class="op">;</span></span>
+<span id="cb3-43"><a href="#cb3-43" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb3-44"><a href="#cb3-44" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-45"><a href="#cb3-45" aria-hidden="true" tabindex="-1"></a>  <span class="co">// O(log N) 検索 + O(N) 挿入</span></span>
+<span id="cb3-46"><a href="#cb3-46" aria-hidden="true" tabindex="-1"></a>  <span class="dt">int</span> register_service<span class="op">(</span><span class="at">const</span> <span class="dt">char</span><span class="op">*</span> uri<span class="op">,</span></span>
+<span id="cb3-47"><a href="#cb3-47" aria-hidden="true" tabindex="-1"></a>                       <span class="dt">uint32_t</span> route_id<span class="op">,</span></span>
+<span id="cb3-48"><a href="#cb3-48" aria-hidden="true" tabindex="-1"></a>                       access_policy<span class="op">*</span> policy<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-49"><a href="#cb3-49" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(</span><span class="va">count_</span> <span class="op">&gt;=</span> MAX_SERVICES<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-50"><a href="#cb3-50" aria-hidden="true" tabindex="-1"></a>      <span class="cf">return</span> <span class="op">-</span>ENOMEM<span class="op">;</span></span>
+<span id="cb3-51"><a href="#cb3-51" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb3-52"><a href="#cb3-52" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-53"><a href="#cb3-53" aria-hidden="true" tabindex="-1"></a>    <span class="kw">auto</span> it <span class="op">=</span> <span class="bu">std::</span>lower_bound<span class="op">(</span><span class="va">entries_</span><span class="op">,</span> <span class="va">entries_</span> <span class="op">+</span> <span class="va">count_</span><span class="op">,</span> uri<span class="op">,</span> uri_compare<span class="op">());</span></span>
+<span id="cb3-54"><a href="#cb3-54" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> pos <span class="op">=</span> it <span class="op">-</span> <span class="va">entries_</span><span class="op">;</span></span>
+<span id="cb3-55"><a href="#cb3-55" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-56"><a href="#cb3-56" aria-hidden="true" tabindex="-1"></a>    <span class="co">// 既に存在するか確認</span></span>
+<span id="cb3-57"><a href="#cb3-57" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(</span>it <span class="op">!=</span> <span class="va">entries_</span> <span class="op">+</span> <span class="va">count_</span> <span class="op">&amp;&amp;</span> strcmp<span class="op">(</span>it<span class="op">-&gt;</span>uri<span class="op">,</span> uri<span class="op">)</span> <span class="op">==</span> <span class="dv">0</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-58"><a href="#cb3-58" aria-hidden="true" tabindex="-1"></a>      <span class="cf">return</span> <span class="op">-</span>EEXIST<span class="op">;</span>  <span class="co">// 既に登録済み</span></span>
+<span id="cb3-59"><a href="#cb3-59" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb3-60"><a href="#cb3-60" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-61"><a href="#cb3-61" aria-hidden="true" tabindex="-1"></a>    <span class="co">// 配列をシフト：pos 以降を後ろへ</span></span>
+<span id="cb3-62"><a href="#cb3-62" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i <span class="op">=</span> <span class="va">count_</span><span class="op">;</span> i <span class="op">&gt;</span> pos<span class="op">;</span> <span class="op">--</span>i<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-63"><a href="#cb3-63" aria-hidden="true" tabindex="-1"></a>      <span class="va">entries_</span><span class="op">[</span>i<span class="op">]</span> <span class="op">=</span> <span class="va">entries_</span><span class="op">[</span>i <span class="op">-</span> <span class="dv">1</span><span class="op">];</span></span>
+<span id="cb3-64"><a href="#cb3-64" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb3-65"><a href="#cb3-65" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-66"><a href="#cb3-66" aria-hidden="true" tabindex="-1"></a>    <span class="co">// 新規エントリを挿入</span></span>
+<span id="cb3-67"><a href="#cb3-67" aria-hidden="true" tabindex="-1"></a>    <span class="va">entries_</span><span class="op">[</span>pos<span class="op">]</span> <span class="op">=</span> <span class="op">{</span>uri<span class="op">,</span> route_id<span class="op">,</span> policy<span class="op">};</span></span>
+<span id="cb3-68"><a href="#cb3-68" aria-hidden="true" tabindex="-1"></a>    <span class="va">count_</span><span class="op">++;</span></span>
+<span id="cb3-69"><a href="#cb3-69" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-70"><a href="#cb3-70" aria-hidden="true" tabindex="-1"></a>    <span class="va">logger_</span><span class="op">-&gt;</span>log<span class="op">(</span><span class="st">&quot;Service registered: </span><span class="sc">{}</span><span class="st"> → </span><span class="sc">{}</span><span class="st">&quot;</span><span class="op">,</span> uri<span class="op">,</span> route_id<span class="op">);</span></span>
+<span id="cb3-71"><a href="#cb3-71" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb3-72"><a href="#cb3-72" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb3-73"><a href="#cb3-73" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-74"><a href="#cb3-74" aria-hidden="true" tabindex="-1"></a>  <span class="co">// O(log N) 検索 + O(N) 削除</span></span>
+<span id="cb3-75"><a href="#cb3-75" aria-hidden="true" tabindex="-1"></a>  <span class="dt">int</span> unregister_service<span class="op">(</span><span class="at">const</span> <span class="dt">char</span><span class="op">*</span> uri<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-76"><a href="#cb3-76" aria-hidden="true" tabindex="-1"></a>    <span class="kw">auto</span> it <span class="op">=</span> <span class="bu">std::</span>lower_bound<span class="op">(</span><span class="va">entries_</span><span class="op">,</span> <span class="va">entries_</span> <span class="op">+</span> <span class="va">count_</span><span class="op">,</span> uri<span class="op">,</span> uri_compare<span class="op">());</span></span>
+<span id="cb3-77"><a href="#cb3-77" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-78"><a href="#cb3-78" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(</span>it <span class="op">==</span> <span class="va">entries_</span> <span class="op">+</span> <span class="va">count_</span> <span class="op">||</span> strcmp<span class="op">(</span>it<span class="op">-&gt;</span>uri<span class="op">,</span> uri<span class="op">)</span> <span class="op">!=</span> <span class="dv">0</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-79"><a href="#cb3-79" aria-hidden="true" tabindex="-1"></a>      <span class="cf">return</span> <span class="op">-</span>ENOENT<span class="op">;</span>  <span class="co">// サービス未検出</span></span>
+<span id="cb3-80"><a href="#cb3-80" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb3-81"><a href="#cb3-81" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-82"><a href="#cb3-82" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> pos <span class="op">=</span> it <span class="op">-</span> <span class="va">entries_</span><span class="op">;</span></span>
+<span id="cb3-83"><a href="#cb3-83" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-84"><a href="#cb3-84" aria-hidden="true" tabindex="-1"></a>    <span class="co">// 配列をシフト：pos+1 以降を前へ</span></span>
+<span id="cb3-85"><a href="#cb3-85" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i <span class="op">=</span> pos<span class="op">;</span> i <span class="op">&lt;</span> <span class="va">count_</span> <span class="op">-</span> <span class="dv">1</span><span class="op">;</span> <span class="op">++</span>i<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb3-86"><a href="#cb3-86" aria-hidden="true" tabindex="-1"></a>      <span class="va">entries_</span><span class="op">[</span>i<span class="op">]</span> <span class="op">=</span> <span class="va">entries_</span><span class="op">[</span>i <span class="op">+</span> <span class="dv">1</span><span class="op">];</span></span>
+<span id="cb3-87"><a href="#cb3-87" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb3-88"><a href="#cb3-88" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-89"><a href="#cb3-89" aria-hidden="true" tabindex="-1"></a>    <span class="va">count_</span><span class="op">--;</span></span>
+<span id="cb3-90"><a href="#cb3-90" aria-hidden="true" tabindex="-1"></a>    <span class="va">logger_</span><span class="op">-&gt;</span>log<span class="op">(</span><span class="st">&quot;Service unregistered: </span><span class="sc">{}</span><span class="st">&quot;</span><span class="op">,</span> uri<span class="op">);</span></span>
+<span id="cb3-91"><a href="#cb3-91" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb3-92"><a href="#cb3-92" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb3-93"><a href="#cb3-93" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb3-94"><a href="#cb3-94" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb3-95"><a href="#cb3-95" aria-hidden="true" tabindex="-1"></a><span class="op">}</span> <span class="op">}</span> <span class="co">// namespace</span></span></code></pre></div>
+<p><strong>設計判断：</strong> - ✅ <strong>std::lower_bound</strong>:
+STL の信頼性、バグ回避 - ✅ <strong>生配列</strong>: std::vector
+不使用、メモリ効率 - ✅ <strong>uri_compare</strong>: 複数型の比較に対応
+- ✅ <strong>O(log N) ルックアップ</strong>: バイナリサーチ保証 - ⚠️
+<strong>登録・削除の O(N) シフト</strong>: Phase 2
+以降、サービス数が安定しているため許容</p>
+<h3 id="特殊化phase-0-1-完全静的レジストリ">2.2 特殊化：Phase 0-1
+完全静的レジストリ</h3>
+<p>最初の段階でサービス構成が固定されている場合、ビルド時生成を使用：</p>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="kw">namespace</span> fireball <span class="op">{</span> <span class="kw">namespace</span> router <span class="op">{</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="co">// ビルド時生成：tools/gen_service_registry.py</span></span>
+<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="co">// 例：サービスリスト (URI, route_id) をコンパイル時にソート</span></span>
+<span id="cb4-5"><a href="#cb4-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-6"><a href="#cb4-6" aria-hidden="true" tabindex="-1"></a><span class="at">const</span> <span class="dt">char</span> REGISTRY_URIS<span class="op">[]</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb4-7"><a href="#cb4-7" aria-hidden="true" tabindex="-1"></a>  <span class="st">&quot;service://adc/channel/0</span><span class="sc">\0</span><span class="st">&quot;</span></span>
+<span id="cb4-8"><a href="#cb4-8" aria-hidden="true" tabindex="-1"></a>  <span class="st">&quot;service://gpio/input/3</span><span class="sc">\0</span><span class="st">&quot;</span></span>
+<span id="cb4-9"><a href="#cb4-9" aria-hidden="true" tabindex="-1"></a>  <span class="st">&quot;service://gpio/output/5</span><span class="sc">\0</span><span class="st">&quot;</span></span>
+<span id="cb4-10"><a href="#cb4-10" aria-hidden="true" tabindex="-1"></a>  <span class="st">&quot;service://uart/tx/0</span><span class="sc">\0</span><span class="st">&quot;</span></span>
+<span id="cb4-11"><a href="#cb4-11" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb4-12"><a href="#cb4-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a><span class="at">const</span> <span class="dt">uint32_t</span> REGISTRY_ROUTE_IDS<span class="op">[]</span> <span class="op">=</span> <span class="op">{</span><span class="dv">5</span><span class="op">,</span> <span class="dv">10</span><span class="op">,</span> <span class="dv">20</span><span class="op">,</span> <span class="dv">30</span><span class="op">};</span></span>
+<span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a><span class="at">const</span> access_policy<span class="op">*</span> REGISTRY_POLICIES<span class="op">[]</span> <span class="op">=</span> <span class="op">{&amp;</span>adc_policy<span class="op">,</span> <span class="op">&amp;</span>gpio_in_policy<span class="op">,</span> <span class="op">&amp;</span>gpio_out_policy<span class="op">,</span> <span class="op">&amp;</span>uart_policy<span class="op">};</span></span>
+<span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a><span class="at">const</span> <span class="dt">int</span> REGISTRY_COUNT <span class="op">=</span> <span class="dv">4</span><span class="op">;</span></span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a><span class="co">// ルックアップ：完全にコンパイル時最適化、O(1) または O(log N)</span></span>
+<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a><span class="at">const</span> service_entry<span class="op">*</span> static_find<span class="op">(</span><span class="at">const</span> <span class="dt">char</span><span class="op">*</span> target_uri<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a>  <span class="co">// constexpr で実行される二分探索</span></span>
+<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a>  <span class="dt">int</span> pos <span class="op">=</span> lower_bound_static<span class="op">(</span>target_uri<span class="op">);</span></span>
+<span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> <span class="op">(</span>pos <span class="op">&lt;</span> REGISTRY_COUNT <span class="op">&amp;&amp;</span> strcmp_static<span class="op">(</span>target_uri<span class="op">,</span> REGISTRY_URIS<span class="op">,</span> pos<span class="op">)</span> <span class="op">==</span> <span class="dv">0</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb4-22"><a href="#cb4-22" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="op">&amp;</span>SERVICE_ENTRIES<span class="op">[</span>pos<span class="op">];</span></span>
+<span id="cb4-23"><a href="#cb4-23" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb4-24"><a href="#cb4-24" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> <span class="kw">nullptr</span><span class="op">;</span></span>
+<span id="cb4-25"><a href="#cb4-25" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb4-26"><a href="#cb4-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-27"><a href="#cb4-27" aria-hidden="true" tabindex="-1"></a><span class="op">}</span> <span class="op">}</span> <span class="co">// namespace</span></span></code></pre></div>
+<p><strong>使用時期：</strong> - Phase
+0-1：デバイスドライバとシステムサービスが固定 - Phase
+2-3：動的レジストリに移行（登録・削除が必要になったら）</p>
+<hr />
+<h2 id="実装戦略の選択">3. 実装戦略の選択</h2>
+<h3 id="戦略比較表">3.1 戦略比較表</h3>
+<table>
+<colgroup>
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 14%" />
+<col style="width: 19%" />
+<col style="width: 21%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>戦略</th>
+<th>検索</th>
+<th>挿入</th>
+<th>削除</th>
+<th>メモリ</th>
+<th>使用時期</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>動的配列</strong></td>
+<td>O(log N)</td>
+<td>O(N)</td>
+<td>O(N)</td>
+<td>~12.8KB（100 service）</td>
+<td>Phase 2-3</td>
+</tr>
+<tr class="even">
+<td><strong>完全静的</strong></td>
+<td>O(log N)</td>
+<td>ビルド時</td>
+<td>ビルド時</td>
+<td>~1.6KB（100 service）</td>
+<td>Phase 0-1</td>
+</tr>
+</tbody>
+</table>
+<h3 id="戦略-1動的生配列推奨phase-2-3">3.2 戦略
+1：動的生配列（推奨：Phase 2-3）</h3>
+<p>サービス数が時間とともに増減する場合、固定サイズ生配列を使用：</p>
+<div class="sourceCode" id="cb5"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co">// service_registry クラス（前述）を使用</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>service_registry registry<span class="op">;</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a><span class="co">// 実行時に動的登録（生配列にシフト挿入）</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>registry<span class="op">.</span>register_service<span class="op">(</span><span class="st">&quot;service://gpio/output/5&quot;</span><span class="op">,</span> gpio_coro_id<span class="op">,</span> <span class="op">&amp;</span>gpio_policy<span class="op">);</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>registry<span class="op">.</span>register_service<span class="op">(</span><span class="st">&quot;service://uart/tx/0&quot;</span><span class="op">,</span> uart_coro_id<span class="op">,</span> <span class="op">&amp;</span>uart_policy<span class="op">);</span></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-8"><a href="#cb5-8" aria-hidden="true" tabindex="-1"></a><span class="co">// ルックアップ：O(log N)</span></span>
+<span id="cb5-9"><a href="#cb5-9" aria-hidden="true" tabindex="-1"></a><span class="at">const</span> service_entry<span class="op">*</span> entry <span class="op">=</span> registry<span class="op">.</span>find<span class="op">(</span><span class="st">&quot;service://gpio/output/5&quot;</span><span class="op">);</span></span>
+<span id="cb5-10"><a href="#cb5-10" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> <span class="op">(</span>entry<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb5-11"><a href="#cb5-11" aria-hidden="true" tabindex="-1"></a>  route_id <span class="op">=</span> entry<span class="op">-&gt;</span>route_id<span class="op">;</span></span>
+<span id="cb5-12"><a href="#cb5-12" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb5-13"><a href="#cb5-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-14"><a href="#cb5-14" aria-hidden="true" tabindex="-1"></a><span class="co">// 実行時に削除（ハードウェア削除時など）</span></span>
+<span id="cb5-15"><a href="#cb5-15" aria-hidden="true" tabindex="-1"></a>registry<span class="op">.</span>unregister_service<span class="op">(</span><span class="st">&quot;service://gpio/output/5&quot;</span><span class="op">);</span></span></code></pre></div>
+<p><strong>メリット：</strong> - ✅ 動的登録・削除可能（std::lower_bound
++ 手動シフト） - ✅ メモリ効率（生配列、std::vector 不使用） - ✅
+キャッシュ局所性良好</p>
+<p><strong>デメリット：</strong> - ⚠️ 登録・削除が O(N)（配列シフト） -
+⚠️ MAX_SERVICES 固定制限 - ⚠️ サービス数頻繁に変動する場合は適さない</p>
+<h3 id="戦略-2完全静的登録phase-0-1">3.3 戦略 2：完全静的登録（Phase
+0-1）</h3>
+<p>デバイスドライバとシステムサービスが固定されている初期段階：</p>
+<div class="sourceCode" id="cb6"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="co">// ビルド時生成スクリプト：tools/gen_service_registry.py</span></span>
+<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a><span class="co">// 入力：サービスマニフェスト（YAML/JSON）</span></span>
+<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a><span class="co">// 出力：ソート済み C++ コード</span></span>
+<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a><span class="pp"># </span><span class="er">例：services.yaml</span></span>
+<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>services<span class="op">:</span></span>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>  <span class="op">-</span> uri<span class="op">:</span> <span class="st">&quot;service://adc/channel/0&quot;</span></span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a>    route_id<span class="op">:</span> <span class="dv">5</span></span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a>  <span class="op">-</span> uri<span class="op">:</span> <span class="st">&quot;service://gpio/input/3&quot;</span></span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a>    route_id<span class="op">:</span> <span class="dv">10</span></span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a>  <span class="op">-</span> uri<span class="op">:</span> <span class="st">&quot;service://gpio/output/5&quot;</span></span>
+<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a>    route_id<span class="op">:</span> <span class="dv">20</span></span></code></pre></div>
+<p>生成されるコード：</p>
+<div class="sourceCode" id="cb7"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="co">// 自動生成：inc/generated/service_registry_static.hxx</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="kw">namespace</span> fireball <span class="op">{</span> <span class="kw">namespace</span> router <span class="op">{</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="kw">constexpr</span> <span class="at">const</span> <span class="dt">char</span> REGISTRY_URIS<span class="op">[]</span> <span class="op">=</span> <span class="op">{</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>  <span class="st">&quot;service://adc/channel/0</span><span class="sc">\0</span><span class="st">&quot;</span></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>  <span class="st">&quot;service://gpio/input/3</span><span class="sc">\0</span><span class="st">&quot;</span></span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>  <span class="st">&quot;service://gpio/output/5</span><span class="sc">\0</span><span class="st">&quot;</span></span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a><span class="kw">constexpr</span> <span class="at">const</span> <span class="dt">uint32_t</span> REGISTRY_ROUTE_IDS<span class="op">[]</span> <span class="op">=</span> <span class="op">{</span><span class="dv">5</span><span class="op">,</span> <span class="dv">10</span><span class="op">,</span> <span class="dv">20</span><span class="op">};</span></span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a><span class="kw">constexpr</span> <span class="at">const</span> <span class="dt">int</span> REGISTRY_COUNT <span class="op">=</span> <span class="dv">3</span><span class="op">;</span></span>
+<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a><span class="co">// O(log N) ルックアップ、constexpr で実行可能</span></span>
+<span id="cb7-14"><a href="#cb7-14" aria-hidden="true" tabindex="-1"></a><span class="kw">constexpr</span> <span class="at">const</span> service_entry<span class="op">*</span> static_registry_find<span class="op">(</span><span class="at">const</span> <span class="dt">char</span><span class="op">*</span> uri<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb7-15"><a href="#cb7-15" aria-hidden="true" tabindex="-1"></a>  <span class="dt">int</span> left <span class="op">=</span> <span class="dv">0</span><span class="op">,</span> right <span class="op">=</span> REGISTRY_COUNT<span class="op">;</span></span>
+<span id="cb7-16"><a href="#cb7-16" aria-hidden="true" tabindex="-1"></a>  <span class="cf">while</span> <span class="op">(</span>left <span class="op">&lt;</span> right<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb7-17"><a href="#cb7-17" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> mid <span class="op">=</span> left <span class="op">+</span> <span class="op">(</span>right <span class="op">-</span> left<span class="op">)</span> <span class="op">/</span> <span class="dv">2</span><span class="op">;</span></span>
+<span id="cb7-18"><a href="#cb7-18" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> cmp <span class="op">=</span> strcmp<span class="op">(</span>REGISTRY_URIS<span class="op">[</span>mid<span class="op">],</span> uri<span class="op">);</span></span>
+<span id="cb7-19"><a href="#cb7-19" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(</span>cmp <span class="op">&lt;</span> <span class="dv">0</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb7-20"><a href="#cb7-20" aria-hidden="true" tabindex="-1"></a>      left <span class="op">=</span> mid <span class="op">+</span> <span class="dv">1</span><span class="op">;</span></span>
+<span id="cb7-21"><a href="#cb7-21" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span> <span class="cf">else</span> <span class="op">{</span></span>
+<span id="cb7-22"><a href="#cb7-22" aria-hidden="true" tabindex="-1"></a>      right <span class="op">=</span> mid<span class="op">;</span></span>
+<span id="cb7-23"><a href="#cb7-23" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb7-24"><a href="#cb7-24" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb7-25"><a href="#cb7-25" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> <span class="op">(</span>left <span class="op">&lt;</span> REGISTRY_COUNT <span class="op">&amp;&amp;</span> strcmp<span class="op">(</span>REGISTRY_URIS<span class="op">[</span>left<span class="op">],</span> uri<span class="op">)</span> <span class="op">==</span> <span class="dv">0</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb7-26"><a href="#cb7-26" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="op">&amp;</span>REGISTRY_ENTRIES<span class="op">[</span>left<span class="op">];</span></span>
+<span id="cb7-27"><a href="#cb7-27" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb7-28"><a href="#cb7-28" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> <span class="kw">nullptr</span><span class="op">;</span></span>
+<span id="cb7-29"><a href="#cb7-29" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb7-30"><a href="#cb7-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-31"><a href="#cb7-31" aria-hidden="true" tabindex="-1"></a><span class="op">}</span> <span class="op">}</span> <span class="co">// namespace</span></span></code></pre></div>
+<p>使用例：</p>
+<div class="sourceCode" id="cb8"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="co">// ルックアップ：O(log N)</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="at">const</span> service_entry<span class="op">*</span> entry <span class="op">=</span> static_registry_find<span class="op">(</span><span class="st">&quot;service://gpio/output/5&quot;</span><span class="op">);</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> <span class="op">(</span>entry<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>  route_id <span class="op">=</span> entry<span class="op">-&gt;</span>route_id<span class="op">;</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span></code></pre></div>
+<p><strong>メリット：</strong> - ✅
+ルックアップ超高速（キャッシュ最適化可能） - ✅ メモリ最小 - ✅
+登録・削除不要（静的構成）</p>
+<p><strong>デメリット：</strong> - ❌ ビルド時のみ変更可能 - ❌
+動的デバイス追加不可</p>
+<hr />
+<h2 id="バイナリサーチ実装stdlower_bound-と生配列">4.
+バイナリサーチ実装：std::lower_bound と生配列</h2>
+<h3 id="推奨パターンstdlower_bound-生配列">4.1
+推奨パターン：std::lower_bound + 生配列</h3>
+<p>生配列に対して <code>std::lower_bound</code>
+を使用。バグ回避のため手動実装は避ける：</p>
+<div class="sourceCode" id="cb9"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;algorithm&gt;</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a><span class="kw">namespace</span> fireball <span class="op">{</span> <span class="kw">namespace</span> router <span class="op">{</span></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a><span class="co">// URI 比較器</span></span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> uri_compare <span class="op">{</span></span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a>  <span class="dt">bool</span> <span class="kw">operator</span><span class="op">()(</span><span class="at">const</span> service_entry<span class="op">&amp;</span> a<span class="op">,</span> <span class="at">const</span> service_entry<span class="op">&amp;</span> b<span class="op">)</span> <span class="at">const</span> <span class="op">{</span></span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> strcmp<span class="op">(</span>a<span class="op">.</span>uri<span class="op">,</span> b<span class="op">.</span>uri<span class="op">)</span> <span class="op">&lt;</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a>  <span class="dt">bool</span> <span class="kw">operator</span><span class="op">()(</span><span class="at">const</span> service_entry<span class="op">&amp;</span> a<span class="op">,</span> <span class="at">const</span> <span class="dt">char</span><span class="op">*</span> b<span class="op">)</span> <span class="at">const</span> <span class="op">{</span></span>
+<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> strcmp<span class="op">(</span>a<span class="op">.</span>uri<span class="op">,</span> b<span class="op">)</span> <span class="op">&lt;</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb9-13"><a href="#cb9-13" aria-hidden="true" tabindex="-1"></a>  <span class="dt">bool</span> <span class="kw">operator</span><span class="op">()(</span><span class="at">const</span> <span class="dt">char</span><span class="op">*</span> a<span class="op">,</span> <span class="at">const</span> service_entry<span class="op">&amp;</span> b<span class="op">)</span> <span class="at">const</span> <span class="op">{</span></span>
+<span id="cb9-14"><a href="#cb9-14" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> strcmp<span class="op">(</span>a<span class="op">,</span> b<span class="op">.</span>uri<span class="op">)</span> <span class="op">&lt;</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb9-15"><a href="#cb9-15" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb9-16"><a href="#cb9-16" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb9-17"><a href="#cb9-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-18"><a href="#cb9-18" aria-hidden="true" tabindex="-1"></a><span class="co">// O(log N) ルックアップ：生配列での std::lower_bound</span></span>
+<span id="cb9-19"><a href="#cb9-19" aria-hidden="true" tabindex="-1"></a><span class="at">const</span> service_entry<span class="op">*</span> registry_find<span class="op">(</span></span>
+<span id="cb9-20"><a href="#cb9-20" aria-hidden="true" tabindex="-1"></a>    <span class="at">const</span> service_entry<span class="op">*</span> services<span class="op">,</span> <span class="dt">int</span> count<span class="op">,</span> <span class="at">const</span> <span class="dt">char</span><span class="op">*</span> target_uri<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb9-21"><a href="#cb9-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-22"><a href="#cb9-22" aria-hidden="true" tabindex="-1"></a>  <span class="kw">auto</span> it <span class="op">=</span> <span class="bu">std::</span>lower_bound<span class="op">(</span>services<span class="op">,</span> services <span class="op">+</span> count<span class="op">,</span> target_uri<span class="op">,</span> uri_compare<span class="op">());</span></span>
+<span id="cb9-23"><a href="#cb9-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-24"><a href="#cb9-24" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> <span class="op">(</span>it <span class="op">!=</span> services <span class="op">+</span> count <span class="op">&amp;&amp;</span> strcmp<span class="op">(</span>it<span class="op">-&gt;</span>uri<span class="op">,</span> target_uri<span class="op">)</span> <span class="op">==</span> <span class="dv">0</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb9-25"><a href="#cb9-25" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> it<span class="op">;</span></span>
+<span id="cb9-26"><a href="#cb9-26" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb9-27"><a href="#cb9-27" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> <span class="kw">nullptr</span><span class="op">;</span></span>
+<span id="cb9-28"><a href="#cb9-28" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb9-29"><a href="#cb9-29" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-30"><a href="#cb9-30" aria-hidden="true" tabindex="-1"></a><span class="co">// 登録：O(log N) 検索 + O(N) 手動シフト</span></span>
+<span id="cb9-31"><a href="#cb9-31" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> registry_register<span class="op">(</span></span>
+<span id="cb9-32"><a href="#cb9-32" aria-hidden="true" tabindex="-1"></a>    service_entry<span class="op">*</span> services<span class="op">,</span> <span class="dt">int</span><span class="op">&amp;</span> count<span class="op">,</span> <span class="dt">int</span> max_count<span class="op">,</span></span>
+<span id="cb9-33"><a href="#cb9-33" aria-hidden="true" tabindex="-1"></a>    <span class="at">const</span> <span class="dt">char</span><span class="op">*</span> uri<span class="op">,</span> <span class="dt">uint32_t</span> route_id<span class="op">,</span> access_policy<span class="op">*</span> policy<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb9-34"><a href="#cb9-34" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-35"><a href="#cb9-35" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> <span class="op">(</span>count <span class="op">&gt;=</span> max_count<span class="op">)</span> <span class="cf">return</span> <span class="op">-</span>ENOMEM<span class="op">;</span></span>
+<span id="cb9-36"><a href="#cb9-36" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-37"><a href="#cb9-37" aria-hidden="true" tabindex="-1"></a>  <span class="kw">auto</span> it <span class="op">=</span> <span class="bu">std::</span>lower_bound<span class="op">(</span>services<span class="op">,</span> services <span class="op">+</span> count<span class="op">,</span> uri<span class="op">,</span> uri_compare<span class="op">());</span></span>
+<span id="cb9-38"><a href="#cb9-38" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> <span class="op">(</span>it <span class="op">!=</span> services <span class="op">+</span> count <span class="op">&amp;&amp;</span> strcmp<span class="op">(</span>it<span class="op">-&gt;</span>uri<span class="op">,</span> uri<span class="op">)</span> <span class="op">==</span> <span class="dv">0</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb9-39"><a href="#cb9-39" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="op">-</span>EEXIST<span class="op">;</span></span>
+<span id="cb9-40"><a href="#cb9-40" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb9-41"><a href="#cb9-41" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-42"><a href="#cb9-42" aria-hidden="true" tabindex="-1"></a>  <span class="dt">int</span> pos <span class="op">=</span> it <span class="op">-</span> services<span class="op">;</span></span>
+<span id="cb9-43"><a href="#cb9-43" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i <span class="op">=</span> count<span class="op">;</span> i <span class="op">&gt;</span> pos<span class="op">;</span> <span class="op">--</span>i<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb9-44"><a href="#cb9-44" aria-hidden="true" tabindex="-1"></a>    services<span class="op">[</span>i<span class="op">]</span> <span class="op">=</span> services<span class="op">[</span>i <span class="op">-</span> <span class="dv">1</span><span class="op">];</span></span>
+<span id="cb9-45"><a href="#cb9-45" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb9-46"><a href="#cb9-46" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-47"><a href="#cb9-47" aria-hidden="true" tabindex="-1"></a>  services<span class="op">[</span>pos<span class="op">]</span> <span class="op">=</span> <span class="op">{</span>uri<span class="op">,</span> route_id<span class="op">,</span> policy<span class="op">};</span></span>
+<span id="cb9-48"><a href="#cb9-48" aria-hidden="true" tabindex="-1"></a>  count<span class="op">++;</span></span>
+<span id="cb9-49"><a href="#cb9-49" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb9-50"><a href="#cb9-50" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb9-51"><a href="#cb9-51" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-52"><a href="#cb9-52" aria-hidden="true" tabindex="-1"></a><span class="co">// 削除：O(log N) 検索 + O(N) 手動シフト</span></span>
+<span id="cb9-53"><a href="#cb9-53" aria-hidden="true" tabindex="-1"></a><span class="dt">int</span> registry_unregister<span class="op">(</span></span>
+<span id="cb9-54"><a href="#cb9-54" aria-hidden="true" tabindex="-1"></a>    service_entry<span class="op">*</span> services<span class="op">,</span> <span class="dt">int</span><span class="op">&amp;</span> count<span class="op">,</span> <span class="at">const</span> <span class="dt">char</span><span class="op">*</span> uri<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb9-55"><a href="#cb9-55" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-56"><a href="#cb9-56" aria-hidden="true" tabindex="-1"></a>  <span class="kw">auto</span> it <span class="op">=</span> <span class="bu">std::</span>lower_bound<span class="op">(</span>services<span class="op">,</span> services <span class="op">+</span> count<span class="op">,</span> uri<span class="op">,</span> uri_compare<span class="op">());</span></span>
+<span id="cb9-57"><a href="#cb9-57" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> <span class="op">(</span>it <span class="op">==</span> services <span class="op">+</span> count <span class="op">||</span> strcmp<span class="op">(</span>it<span class="op">-&gt;</span>uri<span class="op">,</span> uri<span class="op">)</span> <span class="op">!=</span> <span class="dv">0</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb9-58"><a href="#cb9-58" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="op">-</span>ENOENT<span class="op">;</span></span>
+<span id="cb9-59"><a href="#cb9-59" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb9-60"><a href="#cb9-60" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-61"><a href="#cb9-61" aria-hidden="true" tabindex="-1"></a>  <span class="dt">int</span> pos <span class="op">=</span> it <span class="op">-</span> services<span class="op">;</span></span>
+<span id="cb9-62"><a href="#cb9-62" aria-hidden="true" tabindex="-1"></a>  <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i <span class="op">=</span> pos<span class="op">;</span> i <span class="op">&lt;</span> count <span class="op">-</span> <span class="dv">1</span><span class="op">;</span> <span class="op">++</span>i<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb9-63"><a href="#cb9-63" aria-hidden="true" tabindex="-1"></a>    services<span class="op">[</span>i<span class="op">]</span> <span class="op">=</span> services<span class="op">[</span>i <span class="op">+</span> <span class="dv">1</span><span class="op">];</span></span>
+<span id="cb9-64"><a href="#cb9-64" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb9-65"><a href="#cb9-65" aria-hidden="true" tabindex="-1"></a>  count<span class="op">--;</span></span>
+<span id="cb9-66"><a href="#cb9-66" aria-hidden="true" tabindex="-1"></a>  <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb9-67"><a href="#cb9-67" aria-hidden="true" tabindex="-1"></a><span class="op">}</span></span>
+<span id="cb9-68"><a href="#cb9-68" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-69"><a href="#cb9-69" aria-hidden="true" tabindex="-1"></a><span class="op">}</span> <span class="op">}</span> <span class="co">// namespace</span></span></code></pre></div>
+<p><strong>重要：</strong> - ✅ <code>std::lower_bound</code> で O(log
+N) 検索保証 - ✅ 生配列（std::vector 不要） - ✅
+バグ回避（手動実装のリスク排除） - ⚠️ 登録・削除は手動シフト O(N)</p>
+<h3 id="uri-の字句順序付けルール">4.2 URI の字句順序付けルール</h3>
+<p>すべてのサービス URI は <code>strcmp()</code> の字句順で整列：</p>
+<pre><code>service://adc/channel/0
+service://gpio/input/3
+service://gpio/output/5     ← クエリ対象、std::lower_bound で O(log N) 検出
+service://uart/rx/0
+service://uart/tx/0</code></pre>
+<p><strong>比較ルール：</strong> 標準 C の <code>strcmp()</code>
+に準拠。階層的なセマンティクスなし。</p>
+<hr />
+<h2 id="fireball-における応用例">5. Fireball における応用例</h2>
+<h3 id="サービス発見ルータ">5.1 サービス発見（ルータ）</h3>
+<div class="sourceCode" id="cb11"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="co">// URI でサービス クエリ：O(log N)</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="kw">auto</span> result <span class="op">=</span> <span class="va">router_</span><span class="op">-&gt;</span>query<span class="op">(</span><span class="st">&quot;service://gpio/output/5&quot;</span><span class="op">,</span> caller_id<span class="op">);</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a><span class="co">// ├─ サービス レジストリでバイナリサーチ：O(log N)</span></span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a><span class="co">// ├─ アクセス ポリシーを確認：O(1)</span></span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a><span class="co">// └─ route_id を返却</span></span></code></pre></div>
+<h3 id="ログ辞書-ルックアップ">5.2 ログ辞書 ルックアップ</h3>
+<p>既に O(1)（constexpr
+オフセット使用）だが、必要に応じてバイナリサーチで最適化可能：</p>
+<div class="sourceCode" id="cb12"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="co">// ログ エントリを名前で検索：O(log N)</span></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="kw">auto</span> offset <span class="op">=</span> <span class="va">logger_</span><span class="op">-&gt;</span>find_log_key<span class="op">(</span><span class="st">&quot;HAL_DEVICE_READ_SUCCESS&quot;</span><span class="op">);</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a><span class="co">// ├─ 事前ソート済みログキーでバイナリサーチ：O(log N)</span></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a><span class="co">// └─ O(1) 文字列アクセス用 ROM オフセットを返却</span></span></code></pre></div>
+<h3 id="ルート-テーブル-ルックアップhal">5.3 ルート テーブル
+ルックアップ（HAL）</h3>
+<div class="sourceCode" id="cb13"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="co">// URI でデバイス ドライバを検索：O(log N)</span></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="kw">auto</span> driver <span class="op">=</span> <span class="va">hal_</span><span class="op">-&gt;</span>find_device<span class="op">(</span><span class="st">&quot;device://uart/0&quot;</span><span class="op">);</span></span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a><span class="co">// ├─ デバイス レジストリでバイナリサーチ：O(log N)</span></span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a><span class="co">// └─ ドライバ関数ポインタを返却</span></span></code></pre></div>
+<hr />
+<h2 id="パフォーマンス特性">6. パフォーマンス特性</h2>
+<h3 id="レイテンシ分析">6.1 レイテンシ分析</h3>
+<table>
+<colgroup>
+<col style="width: 26%" />
+<col style="width: 17%" />
+<col style="width: 21%" />
+<col style="width: 17%" />
+<col style="width: 17%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>操作</th>
+<th>回数</th>
+<th>時間/操作</th>
+<th>合計</th>
+<th>備考</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>文字列比較</strong></td>
+<td>O(log N)</td>
+<td>~0.1 μs</td>
+<td>O(log N)</td>
+<td>“service://xxx” を比較</td>
+</tr>
+<tr class="even">
+<td><strong>バイナリサーチ ループ</strong></td>
+<td>O(log N)</td>
+<td>~0.05 μs</td>
+<td>O(log N)</td>
+<td>ツリー走査</td>
+</tr>
+<tr class="odd">
+<td><strong>アクセス制御確認</strong></td>
+<td>1</td>
+<td>~0.5 μs</td>
+<td>0.5 μs</td>
+<td>ポリシー評価</td>
+</tr>
+<tr class="even">
+<td><strong>返却</strong></td>
+<td>1</td>
+<td>&lt;0.1 μs</td>
+<td>&lt;0.1 μs</td>
+<td>ポインタ演算</td>
+</tr>
+<tr class="odd">
+<td><strong>合計（N=100）</strong></td>
+<td>-</td>
+<td>-</td>
+<td><strong>~7 回の比較 × 0.15 μs = 1 μs</strong></td>
+<td>✅ &lt;15 μs 予算内</td>
+</tr>
+</tbody>
+</table>
+<h3 id="メモリ-オーバーヘッド">6.2 メモリ オーバーヘッド</h3>
+<h4 id="動的生配列戦略">動的生配列戦略</h4>
+<table>
+<thead>
+<tr class="header">
+<th>コンポーネント</th>
+<th>サイズ</th>
+<th>備考</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>URI ポインタ（const char*）</td>
+<td>8B</td>
+<td>各エントリ</td>
+</tr>
+<tr class="even">
+<td>Route ID</td>
+<td>4B</td>
+<td>uint32_t</td>
+</tr>
+<tr class="odd">
+<td>Policy ポインタ</td>
+<td>8B</td>
+<td>access_policy*</td>
+</tr>
+<tr class="even">
+<td><strong>エントリあたり</strong></td>
+<td><strong>~20B</strong></td>
+<td>ポインタのみ、構造体 packed</td>
+</tr>
+<tr class="odd">
+<td>固定生配列（MAX_SERVICES=256）</td>
+<td>5.1KB</td>
+<td>256 × 20B</td>
+</tr>
+<tr class="even">
+<td>URI 文字列データ（典型値）</td>
+<td>40B × N</td>
+<td>“service://gpio/output/5”</td>
+</tr>
+<tr class="odd">
+<td>count_ カウンタ</td>
+<td>4B</td>
+<td>int</td>
+</tr>
+<tr class="even">
+<td><strong>典型値（100 サービス）</strong></td>
+<td><strong>~8.5KB</strong></td>
+<td>配列 5.1KB + URI 3.4KB</td>
+</tr>
+<tr class="odd">
+<td><strong>Phase 2 予算</strong></td>
+<td><strong>16KB</strong></td>
+<td>✅ 十分な余裕</td>
+</tr>
+</tbody>
+</table>
+<h4 id="完全静的戦略">完全静的戦略</h4>
+<table>
+<thead>
+<tr class="header">
+<th>コンポーネント</th>
+<th>サイズ</th>
+<th>備考</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>URI 文字列データ</td>
+<td>~4KB</td>
+<td>100 サービス × 40B 平均</td>
+</tr>
+<tr class="even">
+<td>Route ID 配列</td>
+<td>400B</td>
+<td>100 × 4B</td>
+</tr>
+<tr class="odd">
+<td>Policy ポインタ配列</td>
+<td>800B</td>
+<td>100 × 8B</td>
+</tr>
+<tr class="even">
+<td><strong>合計（100 サービス）</strong></td>
+<td><strong>~5.2KB</strong></td>
+<td>ROM に配置、ほぼ圧縮可能</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="実装チェックリスト">7. 実装チェックリスト</h2>
+<h3 id="phase-1動的生配列実装">Phase 1：動的生配列実装</h3>
+<ul class="task-list">
+<li><label><input type="checkbox" /><code>service_registry</code>
+クラス実装：生配列 + std::lower_bound</label></li>
+<li><label><input type="checkbox" /><code>uri_compare</code>
+比較器実装</label></li>
+<li><label><input type="checkbox" /><code>find(uri)</code> →
+std::lower_bound + O(log N) ルックアップ</label></li>
+<li><label><input
+type="checkbox" /><code>register_service(uri, route_id, policy)</code> →
+std::lower_bound + O(N) 手動シフト挿入</label></li>
+<li><label><input type="checkbox" /><code>unregister_service(uri)</code>
+→ std::lower_bound + O(N) 手動シフト削除</label></li>
+<li><label><input type="checkbox" />10、100、256
+サービスでテスト</label></li>
+</ul>
+<h3 id="phase-2コード生成ツール静的レジストリ">Phase
+2：コード生成ツール（静的レジストリ）</h3>
+<ul class="task-list">
+<li><label><input
+type="checkbox" /><code>tools/gen_service_registry.py</code>
+を実装</label>
+<ul class="task-list">
+<li><label><input type="checkbox" />YAML/JSON
+サービスマニフェスト入力</label></li>
+<li><label><input type="checkbox" />URI でソート</label></li>
+<li><label><input type="checkbox" />C++ コード生成（constexpr
+対応）</label></li>
+</ul></li>
+<li><label><input type="checkbox" />ビルド統合（CMake）</label></li>
+</ul>
+<h3 id="テスト">テスト</h3>
+<ul class="task-list">
+<li><label><input type="checkbox" />ユニット
+テスト：既存サービス検索</label></li>
+<li><label><input type="checkbox" />ユニット
+テスト：未検出サービス検索</label></li>
+<li><label><input type="checkbox" />ユニット
+テスト：動的登録・削除</label></li>
+<li><label><input type="checkbox" />ストレス テスト：256
+個の同時サービス登録・削除</label></li>
+<li><label><input type="checkbox" />パフォーマンス テスト：&lt;15 μs
+クエリレイテンシ確認（100 サービス）</label></li>
+<li><label><input type="checkbox" />統合テスト：ルータが URI
+を正しく解決</label></li>
+<li><label><input type="checkbox" />メモリ プロファイリング：8.5KB
+未満（100 サービス）</label></li>
+</ul>
+<hr />
+<h2 id="コード例完全な実装">8. コード例：完全な実装</h2>
+<h3
+id="バイナリサーチ付きサービス-レジストリ生配列戦略">バイナリサーチ付きサービス
+レジストリ（生配列戦略）</h3>
+<div class="sourceCode" id="cb14"><pre
+class="sourceCode cpp"><code class="sourceCode cpp"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="pp">#include </span><span class="im">&lt;algorithm&gt;</span></span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a><span class="co">// inc/router/service_registry.hxx</span></span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a><span class="kw">namespace</span> fireball <span class="op">{</span> <span class="kw">namespace</span> router <span class="op">{</span></span>
+<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-7"><a href="#cb14-7" aria-hidden="true" tabindex="-1"></a><span class="co">// サービス レジストリ エントリ（軽量）</span></span>
+<span id="cb14-8"><a href="#cb14-8" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> service_entry <span class="op">{</span></span>
+<span id="cb14-9"><a href="#cb14-9" aria-hidden="true" tabindex="-1"></a>  <span class="at">const</span> <span class="dt">char</span><span class="op">*</span> uri<span class="op">;</span>              <span class="co">// URI ポインタ（外部管理）</span></span>
+<span id="cb14-10"><a href="#cb14-10" aria-hidden="true" tabindex="-1"></a>  <span class="dt">uint32_t</span> route_id<span class="op">;</span>            <span class="co">// コルーチン ID</span></span>
+<span id="cb14-11"><a href="#cb14-11" aria-hidden="true" tabindex="-1"></a>  access_policy<span class="op">*</span> policy<span class="op">;</span>        <span class="co">// アクセス制御ルール</span></span>
+<span id="cb14-12"><a href="#cb14-12" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb14-13"><a href="#cb14-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-14"><a href="#cb14-14" aria-hidden="true" tabindex="-1"></a><span class="co">// URI 比較器</span></span>
+<span id="cb14-15"><a href="#cb14-15" aria-hidden="true" tabindex="-1"></a><span class="kw">struct</span> uri_compare <span class="op">{</span></span>
+<span id="cb14-16"><a href="#cb14-16" aria-hidden="true" tabindex="-1"></a>  <span class="dt">bool</span> <span class="kw">operator</span><span class="op">()(</span><span class="at">const</span> service_entry<span class="op">&amp;</span> a<span class="op">,</span> <span class="at">const</span> service_entry<span class="op">&amp;</span> b<span class="op">)</span> <span class="at">const</span> <span class="op">{</span></span>
+<span id="cb14-17"><a href="#cb14-17" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> strcmp<span class="op">(</span>a<span class="op">.</span>uri<span class="op">,</span> b<span class="op">.</span>uri<span class="op">)</span> <span class="op">&lt;</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb14-18"><a href="#cb14-18" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb14-19"><a href="#cb14-19" aria-hidden="true" tabindex="-1"></a>  <span class="dt">bool</span> <span class="kw">operator</span><span class="op">()(</span><span class="at">const</span> service_entry<span class="op">&amp;</span> a<span class="op">,</span> <span class="at">const</span> <span class="dt">char</span><span class="op">*</span> b<span class="op">)</span> <span class="at">const</span> <span class="op">{</span></span>
+<span id="cb14-20"><a href="#cb14-20" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> strcmp<span class="op">(</span>a<span class="op">.</span>uri<span class="op">,</span> b<span class="op">)</span> <span class="op">&lt;</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb14-21"><a href="#cb14-21" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb14-22"><a href="#cb14-22" aria-hidden="true" tabindex="-1"></a>  <span class="dt">bool</span> <span class="kw">operator</span><span class="op">()(</span><span class="at">const</span> <span class="dt">char</span><span class="op">*</span> a<span class="op">,</span> <span class="at">const</span> service_entry<span class="op">&amp;</span> b<span class="op">)</span> <span class="at">const</span> <span class="op">{</span></span>
+<span id="cb14-23"><a href="#cb14-23" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> strcmp<span class="op">(</span>a<span class="op">,</span> b<span class="op">.</span>uri<span class="op">)</span> <span class="op">&lt;</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb14-24"><a href="#cb14-24" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb14-25"><a href="#cb14-25" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb14-26"><a href="#cb14-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-27"><a href="#cb14-27" aria-hidden="true" tabindex="-1"></a><span class="co">// O(log N) バイナリサーチ対応レジストリ</span></span>
+<span id="cb14-28"><a href="#cb14-28" aria-hidden="true" tabindex="-1"></a><span class="kw">class</span> service_registry <span class="op">{</span></span>
+<span id="cb14-29"><a href="#cb14-29" aria-hidden="true" tabindex="-1"></a> <span class="kw">private</span><span class="op">:</span></span>
+<span id="cb14-30"><a href="#cb14-30" aria-hidden="true" tabindex="-1"></a>  <span class="at">static</span> <span class="kw">constexpr</span> <span class="dt">int</span> MAX_SERVICES <span class="op">=</span> <span class="dv">256</span><span class="op">;</span></span>
+<span id="cb14-31"><a href="#cb14-31" aria-hidden="true" tabindex="-1"></a>  service_entry <span class="va">entries_</span><span class="op">[</span>MAX_SERVICES<span class="op">];</span>     <span class="co">// ソート済み生配列</span></span>
+<span id="cb14-32"><a href="#cb14-32" aria-hidden="true" tabindex="-1"></a>  <span class="dt">int</span> <span class="va">count_</span><span class="op">;</span>                                <span class="co">// 現在のエントリ数</span></span>
+<span id="cb14-33"><a href="#cb14-33" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-34"><a href="#cb14-34" aria-hidden="true" tabindex="-1"></a> <span class="kw">public</span><span class="op">:</span></span>
+<span id="cb14-35"><a href="#cb14-35" aria-hidden="true" tabindex="-1"></a>  service_registry<span class="op">()</span> <span class="op">:</span> <span class="va">count_</span><span class="op">(</span><span class="dv">0</span><span class="op">)</span> <span class="op">{}</span></span>
+<span id="cb14-36"><a href="#cb14-36" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-37"><a href="#cb14-37" aria-hidden="true" tabindex="-1"></a>  <span class="co">// O(log N) ルックアップ：std::lower_bound + 生配列</span></span>
+<span id="cb14-38"><a href="#cb14-38" aria-hidden="true" tabindex="-1"></a>  <span class="at">const</span> service_entry<span class="op">*</span> find<span class="op">(</span><span class="at">const</span> <span class="dt">char</span><span class="op">*</span> uri<span class="op">)</span> <span class="at">const</span> <span class="op">{</span></span>
+<span id="cb14-39"><a href="#cb14-39" aria-hidden="true" tabindex="-1"></a>    <span class="kw">auto</span> it <span class="op">=</span> <span class="bu">std::</span>lower_bound<span class="op">(</span><span class="va">entries_</span><span class="op">,</span> <span class="va">entries_</span> <span class="op">+</span> <span class="va">count_</span><span class="op">,</span> uri<span class="op">,</span> uri_compare<span class="op">());</span></span>
+<span id="cb14-40"><a href="#cb14-40" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-41"><a href="#cb14-41" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(</span>it <span class="op">!=</span> <span class="va">entries_</span> <span class="op">+</span> <span class="va">count_</span> <span class="op">&amp;&amp;</span> strcmp<span class="op">(</span>it<span class="op">-&gt;</span>uri<span class="op">,</span> uri<span class="op">)</span> <span class="op">==</span> <span class="dv">0</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb14-42"><a href="#cb14-42" aria-hidden="true" tabindex="-1"></a>      <span class="cf">return</span> it<span class="op">;</span></span>
+<span id="cb14-43"><a href="#cb14-43" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb14-44"><a href="#cb14-44" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="kw">nullptr</span><span class="op">;</span></span>
+<span id="cb14-45"><a href="#cb14-45" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb14-46"><a href="#cb14-46" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-47"><a href="#cb14-47" aria-hidden="true" tabindex="-1"></a>  <span class="co">// O(log N) 検索 + O(N) 挿入</span></span>
+<span id="cb14-48"><a href="#cb14-48" aria-hidden="true" tabindex="-1"></a>  <span class="dt">int</span> register_service<span class="op">(</span><span class="at">const</span> <span class="dt">char</span><span class="op">*</span> uri<span class="op">,</span> <span class="dt">uint32_t</span> route_id<span class="op">,</span></span>
+<span id="cb14-49"><a href="#cb14-49" aria-hidden="true" tabindex="-1"></a>                       access_policy<span class="op">*</span> policy<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb14-50"><a href="#cb14-50" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(</span><span class="va">count_</span> <span class="op">&gt;=</span> MAX_SERVICES<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb14-51"><a href="#cb14-51" aria-hidden="true" tabindex="-1"></a>      <span class="cf">return</span> <span class="op">-</span>ENOMEM<span class="op">;</span>  <span class="co">// レジストリ満杯</span></span>
+<span id="cb14-52"><a href="#cb14-52" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb14-53"><a href="#cb14-53" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-54"><a href="#cb14-54" aria-hidden="true" tabindex="-1"></a>    <span class="kw">auto</span> it <span class="op">=</span> <span class="bu">std::</span>lower_bound<span class="op">(</span><span class="va">entries_</span><span class="op">,</span> <span class="va">entries_</span> <span class="op">+</span> <span class="va">count_</span><span class="op">,</span> uri<span class="op">,</span> uri_compare<span class="op">());</span></span>
+<span id="cb14-55"><a href="#cb14-55" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> pos <span class="op">=</span> it <span class="op">-</span> <span class="va">entries_</span><span class="op">;</span></span>
+<span id="cb14-56"><a href="#cb14-56" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-57"><a href="#cb14-57" aria-hidden="true" tabindex="-1"></a>    <span class="co">// 重複チェック</span></span>
+<span id="cb14-58"><a href="#cb14-58" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(</span>it <span class="op">!=</span> <span class="va">entries_</span> <span class="op">+</span> <span class="va">count_</span> <span class="op">&amp;&amp;</span> strcmp<span class="op">(</span>it<span class="op">-&gt;</span>uri<span class="op">,</span> uri<span class="op">)</span> <span class="op">==</span> <span class="dv">0</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb14-59"><a href="#cb14-59" aria-hidden="true" tabindex="-1"></a>      <span class="cf">return</span> <span class="op">-</span>EEXIST<span class="op">;</span></span>
+<span id="cb14-60"><a href="#cb14-60" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb14-61"><a href="#cb14-61" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-62"><a href="#cb14-62" aria-hidden="true" tabindex="-1"></a>    <span class="co">// 配列シフト：pos 以降を後ろへ</span></span>
+<span id="cb14-63"><a href="#cb14-63" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i <span class="op">=</span> <span class="va">count_</span><span class="op">;</span> i <span class="op">&gt;</span> pos<span class="op">;</span> <span class="op">--</span>i<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb14-64"><a href="#cb14-64" aria-hidden="true" tabindex="-1"></a>      <span class="va">entries_</span><span class="op">[</span>i<span class="op">]</span> <span class="op">=</span> <span class="va">entries_</span><span class="op">[</span>i <span class="op">-</span> <span class="dv">1</span><span class="op">];</span></span>
+<span id="cb14-65"><a href="#cb14-65" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb14-66"><a href="#cb14-66" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-67"><a href="#cb14-67" aria-hidden="true" tabindex="-1"></a>    <span class="co">// 新規エントリ挿入</span></span>
+<span id="cb14-68"><a href="#cb14-68" aria-hidden="true" tabindex="-1"></a>    <span class="va">entries_</span><span class="op">[</span>pos<span class="op">]</span> <span class="op">=</span> <span class="op">{</span>uri<span class="op">,</span> route_id<span class="op">,</span> policy<span class="op">};</span></span>
+<span id="cb14-69"><a href="#cb14-69" aria-hidden="true" tabindex="-1"></a>    <span class="va">count_</span><span class="op">++;</span></span>
+<span id="cb14-70"><a href="#cb14-70" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-71"><a href="#cb14-71" aria-hidden="true" tabindex="-1"></a>    <span class="va">logger_</span><span class="op">-&gt;</span>log<span class="op">(</span><span class="st">&quot;Service registered: </span><span class="sc">{}</span><span class="st"> → </span><span class="sc">{}</span><span class="st">&quot;</span><span class="op">,</span> uri<span class="op">,</span> route_id<span class="op">);</span></span>
+<span id="cb14-72"><a href="#cb14-72" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb14-73"><a href="#cb14-73" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb14-74"><a href="#cb14-74" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-75"><a href="#cb14-75" aria-hidden="true" tabindex="-1"></a>  <span class="co">// O(log N) 検索 + O(N) 削除</span></span>
+<span id="cb14-76"><a href="#cb14-76" aria-hidden="true" tabindex="-1"></a>  <span class="dt">int</span> unregister_service<span class="op">(</span><span class="at">const</span> <span class="dt">char</span><span class="op">*</span> uri<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb14-77"><a href="#cb14-77" aria-hidden="true" tabindex="-1"></a>    <span class="kw">auto</span> it <span class="op">=</span> <span class="bu">std::</span>lower_bound<span class="op">(</span><span class="va">entries_</span><span class="op">,</span> <span class="va">entries_</span> <span class="op">+</span> <span class="va">count_</span><span class="op">,</span> uri<span class="op">,</span> uri_compare<span class="op">());</span></span>
+<span id="cb14-78"><a href="#cb14-78" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-79"><a href="#cb14-79" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> <span class="op">(</span>it <span class="op">==</span> <span class="va">entries_</span> <span class="op">+</span> <span class="va">count_</span> <span class="op">||</span> strcmp<span class="op">(</span>it<span class="op">-&gt;</span>uri<span class="op">,</span> uri<span class="op">)</span> <span class="op">!=</span> <span class="dv">0</span><span class="op">)</span> <span class="op">{</span></span>
+<span id="cb14-80"><a href="#cb14-80" aria-hidden="true" tabindex="-1"></a>      <span class="cf">return</span> <span class="op">-</span>ENOENT<span class="op">;</span>  <span class="co">// 未検出</span></span>
+<span id="cb14-81"><a href="#cb14-81" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb14-82"><a href="#cb14-82" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-83"><a href="#cb14-83" aria-hidden="true" tabindex="-1"></a>    <span class="dt">int</span> pos <span class="op">=</span> it <span class="op">-</span> <span class="va">entries_</span><span class="op">;</span></span>
+<span id="cb14-84"><a href="#cb14-84" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-85"><a href="#cb14-85" aria-hidden="true" tabindex="-1"></a>    <span class="co">// 配列シフト：pos+1 以降を前へ</span></span>
+<span id="cb14-86"><a href="#cb14-86" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i <span class="op">=</span> pos<span class="op">;</span> i <span class="op">&lt;</span> <span class="va">count_</span> <span class="op">-</span> <span class="dv">1</span><span class="op">;</span> <span class="op">++</span>i<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb14-87"><a href="#cb14-87" aria-hidden="true" tabindex="-1"></a>      <span class="va">entries_</span><span class="op">[</span>i<span class="op">]</span> <span class="op">=</span> <span class="va">entries_</span><span class="op">[</span>i <span class="op">+</span> <span class="dv">1</span><span class="op">];</span></span>
+<span id="cb14-88"><a href="#cb14-88" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb14-89"><a href="#cb14-89" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-90"><a href="#cb14-90" aria-hidden="true" tabindex="-1"></a>    <span class="va">count_</span><span class="op">--;</span></span>
+<span id="cb14-91"><a href="#cb14-91" aria-hidden="true" tabindex="-1"></a>    <span class="va">logger_</span><span class="op">-&gt;</span>log<span class="op">(</span><span class="st">&quot;Service unregistered: </span><span class="sc">{}</span><span class="st">&quot;</span><span class="op">,</span> uri<span class="op">);</span></span>
+<span id="cb14-92"><a href="#cb14-92" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="dv">0</span><span class="op">;</span></span>
+<span id="cb14-93"><a href="#cb14-93" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb14-94"><a href="#cb14-94" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-95"><a href="#cb14-95" aria-hidden="true" tabindex="-1"></a>  <span class="co">// デバッグ：すべてのサービスをリスト</span></span>
+<span id="cb14-96"><a href="#cb14-96" aria-hidden="true" tabindex="-1"></a>  <span class="dt">void</span> list_services<span class="op">(</span><span class="dt">void</span> <span class="op">(*</span>callback<span class="op">)(</span><span class="at">const</span> <span class="dt">char</span><span class="op">*</span> uri<span class="op">,</span> <span class="dt">uint32_t</span> route_id<span class="op">))</span> <span class="at">const</span> <span class="op">{</span></span>
+<span id="cb14-97"><a href="#cb14-97" aria-hidden="true" tabindex="-1"></a>    <span class="co">// ロック不要（読み取り専用）</span></span>
+<span id="cb14-98"><a href="#cb14-98" aria-hidden="true" tabindex="-1"></a>    <span class="cf">for</span> <span class="op">(</span><span class="dt">int</span> i <span class="op">=</span> <span class="dv">0</span><span class="op">;</span> i <span class="op">&lt;</span> <span class="va">count_</span><span class="op">;</span> <span class="op">++</span>i<span class="op">)</span> <span class="op">{</span></span>
+<span id="cb14-99"><a href="#cb14-99" aria-hidden="true" tabindex="-1"></a>      callback<span class="op">(</span><span class="va">entries_</span><span class="op">[</span>i<span class="op">].</span>uri<span class="op">,</span> <span class="va">entries_</span><span class="op">[</span>i<span class="op">].</span>route_id<span class="op">);</span></span>
+<span id="cb14-100"><a href="#cb14-100" aria-hidden="true" tabindex="-1"></a>    <span class="op">}</span></span>
+<span id="cb14-101"><a href="#cb14-101" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb14-102"><a href="#cb14-102" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-103"><a href="#cb14-103" aria-hidden="true" tabindex="-1"></a>  <span class="dt">int</span> service_count<span class="op">()</span> <span class="at">const</span> <span class="op">{</span></span>
+<span id="cb14-104"><a href="#cb14-104" aria-hidden="true" tabindex="-1"></a>    <span class="cf">return</span> <span class="va">count_</span><span class="op">;</span></span>
+<span id="cb14-105"><a href="#cb14-105" aria-hidden="true" tabindex="-1"></a>  <span class="op">}</span></span>
+<span id="cb14-106"><a href="#cb14-106" aria-hidden="true" tabindex="-1"></a><span class="op">};</span></span>
+<span id="cb14-107"><a href="#cb14-107" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-108"><a href="#cb14-108" aria-hidden="true" tabindex="-1"></a><span class="op">}</span> <span class="op">}</span> <span class="co">// namespace fireball { namespace router</span></span></code></pre></div>
+<p><strong>設計メモ：</strong> - ✅
+<code>std::lower_bound</code>：バグ回避、生配列ポインタ対応 - ✅
+生配列：std::vector 不要 - ✅ <code>const char*</code>
+URI：文字列リテラルまたは静的領域で管理 - ✅ ロック最小化：find()
+は読み取り専用、ロック不要 - ✅
+キャッシュ局所性：配列メモリウォーク、CPU キャッシュ効率 - ✅
+メモリ効率：100 サービス = 8.5KB</p>
+<hr />
+<h2 id="まとめ">まとめ</h2>
+<p><strong>Fireball 向けバイナリサーチ最適化戦略：</strong></p>
+<ol type="1">
+<li><strong>コア実装：std::lower_bound + 生配列</strong>
+<ul>
+<li>ホットパス（find）：<code>std::lower_bound</code> で O(log N)
+バイナリサーチ</li>
+<li>コールドパス（register/unregister）：std::lower_bound +
+手動配列シフト</li>
+<li>バグ回避：STL バイナリサーチ採用、手動実装なし</li>
+</ul></li>
+<li><strong>メモリ効率</strong>
+<ul>
+<li>動的生配列：100 サービス = 8.5KB（std::vector 不使用）</li>
+<li>完全静的レジストリ：100 サービス = 5.2KB（ビルド時生成）</li>
+<li>Phase 2 予算 16KB に十分に収まる</li>
+</ul></li>
+<li><strong>2 段階展開</strong>
+<ul>
+<li><strong>Phase
+0-1</strong>：完全静的レジストリ（ビルド時生成、変更不可）</li>
+<li><strong>Phase
+2-3</strong>：動的生配列レジストリ（実行時登録・削除、MAX_SERVICES=256）</li>
+</ul></li>
+<li><strong>パフォーマンス特性</strong>
+<ul>
+<li>クエリレイテンシ：&lt;15 μs（100 サービス）</li>
+<li>検索：O(log N)、~7 回の比較</li>
+<li>登録・削除：O(N) シフト（サービス数安定時は許容）</li>
+<li>CPU キャッシュ効率：生配列メモリウォーク、局所性良好</li>
+</ul></li>
+</ol>
+<p><strong>結果：</strong> STL
+バイナリサーチと生配列を組み合わせた、低オーバーヘッドで O(log N)
+を保証したサービス発見。</p>
+</body>
+</html>

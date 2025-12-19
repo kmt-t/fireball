@@ -1,12 +1,15 @@
 {
-    "C_Cpp.default.compileCommands": "w:\\mysrc\\fireball\\builddir/compile_commands.json",
+    "C_Cpp.default.compileCommands": "/workspaces/fireball/builddir/compile_commands.json",
     "C_Cpp.default.cppStandard": "c++23",
     "C_Cpp.default.intelliSenseMode": "linux-clang-x64",
+    "C_Cpp.default.configurationProvider": "mesonbuild.mesonbuild",
+    "C_Cpp.clang_format_style": "file",
     "files.associations": {
         "*.hxx": "cpp",
         "*.cxx": "cpp"
     },
-    "editor.formatOnSave": false,
+    "editor.defaultFormatter": "ms-vscode.cpptools",
+    "editor.formatOnSave": true,
+    "editor.formatOnPaste": true,
     "mesonbuild.configureOnOpen": false,
-    "C_Cpp.default.configurationProvider": "mesonbuild.mesonbuild"
 }

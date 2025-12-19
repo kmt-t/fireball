@@ -1,8 +1,0 @@
-# Fireball AI Rules
-
-1. **必読**: 開始時に `docs/README.md` を読む。判断迷い時は `docs/analysis/decision-package.md` 参照。
-2. **制約**: STM32F401 (RAM 96KB中80KB以下) 厳守。
-3. **範囲**: `docs/`, `meson.build`, `inc/**/*.hxx`, `src/**/*.cxx` のみ参照。
-4. **規約**: `docs/CODING_STYLE.md` 厳守。
-5. **フォルダ構造参照**: `inc/` および `src/` フォルダ内のソースコードを参照または作成する際は、最初にそれぞれのルートに存在する `README.md` を参照すること。
-6. ADR: 仕様から ADR を分離して docs/adr にまとめる

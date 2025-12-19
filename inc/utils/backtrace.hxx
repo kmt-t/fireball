@@ -8,15 +8,15 @@
 
 #include <commons.hxx>
 #include <stdexcept>
-#include <stacktrace>
 
-namespace fireball { namespace utils {
+namespace fireball {
+namespace utils {
 
 /**
  * バックトレース付き例外.
  */
 class exception_with_backtrace : public std::runtime_error {
- public:
+public:
   /**
    * コンストラクタ.
    */
@@ -28,27 +28,28 @@ class exception_with_backtrace : public std::runtime_error {
   virtual ~exception_with_backtrace() noexcept = default;
 };
 
-#define BACKTRACE(msg)                                    \
-  do {                                                    \
-    throw fireball::utils::exception_with_backtrace(msg); \
+#define BACKTRACE(msg)                                                                             \
+  do {                                                                                             \
+    throw fireball::utils::exception_with_backtrace(msg);                                          \
   } while (false);
 
 #ifdef __DEBUG__
-#define ASSERT_WITH_BACKTRACE(x) \
-  do {                           \
-    if (!(x)) {                  \
-      BACKTRACE(#x);             \
-    }                            \
+#define ASSERT_WITH_BACKTRACE(x)                                                                   \
+  do {                                                                                             \
+    if (!(x)) {                                                                                    \
+      BACKTRACE(#x);                                                                               \
+    }                                                                                              \
   } while (false);
 #else
 #define ASSERT_WITH_BACKTRACE(x)
-#endif  // #ifdef __DEBUG__
+#endif // #ifdef __DEBUG__
 
-#define NOT_IMPLEMENTED                               \
-  do {                                                \
-    BACKTRACE("this is not implemented yet."); \
+#define NOT_IMPLEMENTED                                                                            \
+  do {                                                                                             \
+    BACKTRACE("this is not implemented yet.");                                                     \
   } while (false);
 
-} } // namespace fireball { namespace utils {
+} // namespace utils
+} // namespace fireball
 
-#endif  // #ifndef __BACKTRACE_HXX__
+#endif // #ifndef __BACKTRACE_HXX__

@@ -1,0 +1,22 @@
+{
+  "name": "cpp-cpp23-dev",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "remoteUser": "developer",
+  "customizations": {
+    "vscode": {
+      "settings": {},
+      "extensions": [
+        "ms-azuretools.vscode-containers",
+        "ms-vscode.cpptools",
+        "vadimcn.vscode-lldb",
+        "mesonbuild.mesonbuild",
+        "rooveterinaryinc.roo-code-nightly",
+        "continue.continue"
+      ]
+    }
+  }
+}
+  

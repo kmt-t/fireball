@@ -19,8 +19,6 @@ src = files(
   'src/utils/backtrace.cxx',
   'src/allocator/malloc.c',
   'src/allocator/stdcxx_allocator.cxx',
-  'src/scheduler/example.cxx',
-  'src/coos/co_mem.cxx',
 )
 
 fireball_exe = executable('fireball',

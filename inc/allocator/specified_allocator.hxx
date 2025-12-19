@@ -3,8 +3,8 @@
  *
  * Copyright (c) 2025 Takuya Matsunaga.
  */
-#ifndef __SPECIFIED_ALLOCATOR_HXX__
-#define __SPECIFIED_ALLOCATOR_HXX__
+#ifndef FIREBALL_ALLOCATOR_SPECIFIED_ALLOCATOR_HXX
+#define FIREBALL_ALLOCATOR_SPECIFIED_ALLOCATOR_HXX
 
 #include <array>
 #include <commons.hxx>
@@ -23,6 +23,20 @@ extern void mspace_free(mspace, void*);
 namespace fireball {
 namespace allocator {
 
+/**
+ * specified_allocator - Flexible memory allocator using dlmalloc (mspace).
+ *
+ * This allocator wraps dlmalloc's mspace interface to provide flexible allocation and
+ * deallocation within a fixed-size arena. Unlike bump_allocator, it supports arbitrary
+ * allocation patterns with full deallocation capability, making it suitable for heap
+ * partitions with dynamic memory requirements (e.g., subsystem heap, service heap).
+ * The allocator manages fragmentation through dlmalloc's internal strategies and provides
+ * O(log n) allocation/deallocation time complexity.
+ *
+ * Template Parameters:
+ *   N   - Size of the arena in bytes (compile-time constant)
+ *   Tag - Type tag for distinguishing multiple allocator instances
+ */
 template <uint32_t N, typename Tag> struct specified_allocator : public std::pmr::memory_resource {
 public:
   using this_type = specified_allocator;
@@ -69,4 +83,4 @@ private:
 } // namespace allocator
 } // namespace fireball
 
-#endif // #ifndef __SPECIFIED_ALLOCATOR_HXX__
+#endif // #ifndef FIREBALL_ALLOCATOR_SPECIFIED_ALLOCATOR_HXX

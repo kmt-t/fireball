@@ -3,8 +3,8 @@
  *
  * Copyright (c) 2025 Takuya Matsunaga.
  */
-#ifndef __BUMP_ALLOCATOR_HXX__
-#define __BUMP_ALLOCATOR_HXX__
+#ifndef FIREBALL_ALLOCATOR_BUMP_ALLOCATOR_HXX
+#define FIREBALL_ALLOCATOR_BUMP_ALLOCATOR_HXX
 
 #include <commons.hxx>
 #include <memory_resource>
@@ -12,6 +12,19 @@
 namespace fireball {
 namespace allocator {
 
+/**
+ * bump_allocator - Monotonic buffer resource for fixed-size heap partitions.
+ *
+ * This allocator implements a bump allocation strategy using std::pmr::monotonic_buffer_resource.
+ * It is designed for heap partitions with predictable allocation patterns where deallocation
+ * is not required (e.g., COOS kernel heap, WASM runtime heap). The allocator maintains a
+ * fixed-size arena and allocates sequentially, returning memory only when the entire arena
+ * is deallocated. This approach minimizes fragmentation and provides O(1) allocation time.
+ *
+ * Template Parameters:
+ *   N   - Size of the arena in bytes (compile-time constant)
+ *   Tag - Type tag for distinguishing multiple allocator instances
+ */
 template <uint32_t N, typename Tag>
 struct bump_allocator : public std::pmr::monotonic_buffer_resource {
 public:
@@ -38,4 +51,4 @@ private:
 } // namespace allocator
 } // namespace fireball
 
-#endif // #ifndef __BUMP_ALLOCATOR_HXX__
+#endif // #ifndef FIREBALL_ALLOCATOR_BUMP_ALLOCATOR_HXX

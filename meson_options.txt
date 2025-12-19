@@ -1,0 +1,6 @@
+option('target_machine',
+  type : 'combo',
+  choices : ['native', 'cortex-m33', 'riscv32'],
+  value : 'native',
+  description : 'Target machine architecture for cross-compilation'
+)

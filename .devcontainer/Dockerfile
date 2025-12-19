@@ -1,8 +1,38 @@
-# -----------------------------------------------------------------------------
-# Ubuntu 24.04 + rolling clang (via apt.llvm.org/llvm.sh)
-# meson/lizard installed into 'developer' user via pipx (no distutils)
-# plus: clang/clangd/lld, ninja, pandoc+TeX, mermaid-cli, Node 24.x
-# -----------------------------------------------------------------------------
+# =============================================================================
+# Development Container: Ubuntu 24.04 with C/C++ Embedded Development Tools
+# =============================================================================
+#
+# Environment Overview:
+#   - Base Image: Ubuntu 24.04 LTS
+#   - Development User: developer (sudo NOPASSWD)
+#   - Locale: C.UTF-8
+#
+# Compiler & Build Tools:
+#   - Clang/Clang-D/LLD: Latest version (via apt.llvm.org/llvm.sh)
+#   - Ninja: Build system
+#   - CMake: Build configuration
+#   - Build-essential: Basic tools (GCC/Make, etc.)
+#
+# Build System & Code Analysis:
+#   - Meson: Build system (installed via pipx for developer user)
+#   - Lizard: Code complexity analysis (installed via pipx for developer user)
+#
+# Documentation Generation:
+#   - Pandoc: Document conversion
+#   - TeX Live: LaTeX (texlive-latex-recommended/extra/fonts/xetex)
+#   - Mermaid CLI: Diagram generation (Node.js 24.x + npm)
+#
+# Debug & Profiling:
+#   - Valgrind: Memory profiling
+#   - QEMU: ARM Cortex-M33, RISC-V 32bit cross-target execution
+#   - LLDB: Debugger
+#
+# Python Environment:
+#   - Python 3 + venv + setuptools (distutils not used)
+#   - pipx: User-level tool installation (system pip not used)
+#
+# =============================================================================
+
 FROM ubuntu:24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -13,7 +43,7 @@ ENV DEVELOPER_USER=developer
 ENV DEVELOPER_HOME=/home/${DEVELOPER_USER}
 ENV PATH=${DEVELOPER_HOME}/.local/bin:/root/.local/bin:${PATH}
 
-# 1) Basic packages — avoid python3-distutils; use python3-venv / setuptools
+# Basic packages (build-essential, git, python3, cmake, etc.)
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends software-properties-common; \
@@ -25,20 +55,20 @@ RUN set -eux; \
       unzip fontconfig locales less pkg-config cmake sudo; \
     rm -rf /var/lib/apt/lists/*
 
-# 2) Create developer user (no password, with sudo NOPASSWD)
+# Create development user (no password, sudo NOPASSWD)
 RUN set -eux; \
     useradd -m -s /bin/bash ${DEVELOPER_USER}; \
     usermod -aG sudo ${DEVELOPER_USER}; \
     echo "${DEVELOPER_USER} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/${DEVELOPER_USER}; \
     chmod 0440 /etc/sudoers.d/${DEVELOPER_USER}
 
-# 3) Node.js 24.x for mermaid-cli
+# Node.js 24.x (for Mermaid CLI)
 RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
  && apt-get update \
  && apt-get install -y --no-install-recommends nodejs \
  && rm -rf /var/lib/apt/lists/*
 
-# 4) LLVM repo via official script -> install rolling clang/clangd/lld
+# LLVM latest version (Clang/Clang-D/LLD/LLDB/Ninja)
 RUN set -eux; \
     wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh; \
     chmod +x /tmp/llvm.sh; \
@@ -47,28 +77,27 @@ RUN set -eux; \
     apt-get install -y --no-install-recommends clang clangd lld lldb ninja-build; \
     rm -rf /var/lib/apt/lists/* /tmp/llvm.sh
 
-# 5) Install pipx (system) so we can install per-developer-user tools (no system pip installs)
+# pipx (for user-level tool installation)
 RUN apt-get update \
  && apt-get install -y --no-install-recommends pipx python3-venv \
  && rm -rf /var/lib/apt/lists/* \
  && python3 -m pipx ensurepath || true
 
-# 6) Install meson and lizard into developer's account via pipx (user-level)
+# Meson + Lizard (installed in developer user's ~/.local/bin)
 RUN set -eux; \
     mkdir -p ${DEVELOPER_HOME}/.local/bin; \
     chown -R ${DEVELOPER_USER}:${DEVELOPER_USER} ${DEVELOPER_HOME}; \
-    # run pipx as developer so installs go to /home/developer/.local
     runuser -u ${DEVELOPER_USER} -- /usr/bin/pipx install meson || true; \
     runuser -u ${DEVELOPER_USER} -- /usr/bin/pipx install lizard || true
 
-# 7) pandoc + TeX (mid-sized texlive set)
+# Pandoc + TeX Live (for documentation generation)
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
     pandoc \
     texlive-latex-recommended texlive-latex-extra texlive-fonts-recommended texlive-xetex \
  && rm -rf /var/lib/apt/lists/*
 
-# 8) mermaid-cli deps + install (puppeteer will download Chromium during npm install)
+# Mermaid CLI dependencies + installation
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
     ca-certificates fonts-liberation libasound2t64 libatk1.0-0 libatk-bridge2.0-0 libcairo2 \
@@ -78,9 +107,14 @@ RUN apt-get update \
 
 RUN npm install -g --unsafe-perm=true @mermaid-js/mermaid-cli puppeteer
 
-RUN chown -R ${DEVELOPER_USER}:${DEVELOPER_USER} ${DEVELOPER_HOME} /workspace || true
+# Valgrind + QEMU (for memory profiling and cross-target execution)
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+    valgrind \
+    qemu-system-arm qemu-system-riscv32 \
+ && rm -rf /var/lib/apt/lists/*
 
-# Show versions for build logs (non-fatal)
+# Display tool versions for build log
 RUN echo "=== Tools versions ===" \
  && clang --version || true \
  && clangd --version || true \

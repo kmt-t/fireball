@@ -2,7 +2,7 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "meson: setup",
+            "label": "Meson: Setup",
             "type": "shell",
             "command": "meson",
             "args": [
@@ -26,7 +26,7 @@
             }
         },
         {
-            "label": "meson: compile (debug)",
+            "label": "Meson: Compile (Debug)",
             "type": "shell",
             "command": "meson",
             "args": [
@@ -48,37 +48,11 @@
                 "panel": "shared"
             },
             "dependsOn": [
-                "meson: setup"
+                "Meson: Setup"
             ]
         },
         {
-            "label": "meson: compile (release)",
-            "type": "shell",
-            "command": "meson",
-            "args": [
-                "compile",
-                "-C",
-                "builddir"
-            ],
-            "problemMatcher": [
-                "$gcc"
-            ],
-            "group": {
-                "kind": "build",
-                "isDefault": false
-            },
-            "presentation": {
-                "echo": true,
-                "reveal": "always",
-                "focus": false,
-                "panel": "shared"
-            },
-            "dependsOn": [
-                "meson: setup (release)"
-            ]
-        },
-        {
-            "label": "meson: setup (release)",
+            "label": "Meson: Setup (Release)",
             "type": "shell",
             "command": "meson",
             "args": [
@@ -103,12 +77,42 @@
             }
         },
         {
-            "label": "meson: clean",
+            "label": "Meson: Compile (Release)",
             "type": "shell",
-            "command": "rm",
+            "command": "meson",
             "args": [
-                "-rf",
+                "compile",
+                "-C",
                 "builddir"
+            ],
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "dependsOn": [
+                "Meson: Setup (Release)"
+            ]
+        },
+        {
+            "label": "Meson: Setup (Cortex-M33)",
+            "type": "shell",
+            "command": "meson",
+            "args": [
+                "setup",
+                "build-arm",
+                "--cross-file",
+                "cross-arm-cortex-m33.ini",
+                "-Dbuildtype=debug",
+                "-Dwarning_level=3"
             ],
             "problemMatcher": [],
             "group": {
@@ -123,7 +127,105 @@
             }
         },
         {
-            "label": "meson: reconfigure",
+            "label": "Meson: Compile (Cortex-M33)",
+            "type": "shell",
+            "command": "meson",
+            "args": [
+                "compile",
+                "-C",
+                "build-arm"
+            ],
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "dependsOn": [
+                "Meson: Setup (Cortex-M33)"
+            ]
+        },
+        {
+            "label": "Meson: Setup (RISC-V 32bit)",
+            "type": "shell",
+            "command": "meson",
+            "args": [
+                "setup",
+                "build-riscv",
+                "--cross-file",
+                "cross-riscv32.ini",
+                "-Dbuildtype=debug",
+                "-Dwarning_level=3"
+            ],
+            "problemMatcher": [],
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Meson: Compile (RISC-V 32bit)",
+            "type": "shell",
+            "command": "meson",
+            "args": [
+                "compile",
+                "-C",
+                "build-riscv"
+            ],
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "dependsOn": [
+                "Meson: Setup (RISC-V 32bit)"
+            ]
+        },
+        {
+            "label": "Meson: Clean",
+            "type": "shell",
+            "command": "rm",
+            "args": [
+                "-rf",
+                "builddir",
+                "build-arm",
+                "build-riscv"
+            ],
+            "problemMatcher": [],
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            }
+        },
+        {
+            "label": "Meson: Reconfigure",
             "type": "shell",
             "command": "meson",
             "args": [

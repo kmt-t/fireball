@@ -41,4 +41,5 @@
 *.dwo
 
 # Directries.
+builddir*/
 docs/gen/

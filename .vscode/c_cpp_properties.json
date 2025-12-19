@@ -7,6 +7,7 @@
                 "${workspaceFolder}/src"
             ],
             "defines": [
+                "_POSIX_C_SOURCE=200809L",
                 "HAVE_MMAP=0",
                 "HAVE_MORECORE=0",
                 "USE_LOCKS=0",

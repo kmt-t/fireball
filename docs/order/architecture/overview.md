@@ -28,7 +28,7 @@ COOSは最小限のカーネルで、コルーチンによる協調的マルチ�
 
 ### コルーチン
 
-- C++20のスタックレスコルーチンを採用し (`{UseCpp20Coroutine}`)、コンテキストスイッチのオーバーヘッドを最小化する。 `{LowOverheadSwitch}`
+- C++20のスタックレスコルーチンを採用し (`{UseCpp20Coroutine}`) 、コンテキストスイッチのオーバーヘッドを最小化する。 `{LowOverheadSwitch}`
 
 ### CSPチャネル
 
@@ -47,11 +47,12 @@ COOSは最小限のカーネルで、コルーチンによる協調的マルチ�
 ### 安全性と隔離
 
 - タスクごとに独立したヒープ領域を割り当てる。 `{IndependentHeap}`
-- メモリ使用量を厳密に制限し (`{StrictMemoryLimit}`)、障害を隔離する。 `{FaultIsolation}`
+- メモリ使用量を厳密に制限し (`{StrictMemoryLimit}`) 、障害を隔離する。 `{FaultIsolation}`
 
 ## IPCルータ
 
-IPCルータはコンポーネント間の通信をURIベースのルーティングとアクセス制御で担う。vSoCとサブシステムはIPCルータに登録され、CSPチャネル経由で型付きKey-Valueプロトコルを用いたIPC通信を行う。
+- IPCルータはコンポーネント間の通信をURIベースのルーティングとアクセス制御で担う。 `{IPCRouter}`
+- vSoCとサブシステムはIPCルータに登録され、CSPチャネル経由 (`{CSPCommunication}`) で型付きKey-Valueプロトコル (`{TypeSafeMessaging}`) を用いたIPC通信を行う。
 
 ### ヒープパーティション
 

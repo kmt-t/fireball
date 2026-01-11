@@ -1,0 +1,14 @@
+Language: Cpp
+IndentWidth: 2
+UseTabs: Never
+BreakBeforeBraces: Attach
+ColumnLimit: 100
+PointerAlignment: Left
+AccessModifierOffset: -2
+AlignTrailingComments: true
+AlwaysBreakAfterReturnType: None
+AlwaysBreakTemplateDeclarations: MultiLine
+BinPackArguments: true
+BinPackParameters: true
+BreakBeforeBinaryOperators: None
+BreakBeforeTernaryOperators: true

@@ -1,0 +1,27 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "fireball (LLDB)",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/builddir/fireball",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "stopOnEntry": false,
+            "console": "integratedTerminal",
+            "sourceMap": {},
+        },
+        {
+            "name": "fireball (LLDB) - Release",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/builddir/fireball",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "stopOnEntry": false,
+            "console": "integratedTerminal",
+            "sourceMap": {},
+        }
+    ]
+}

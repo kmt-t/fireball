@@ -12,7 +12,45 @@
 
 進め方のイメージは「盆栽」です。全体をみて気になるところを少し整える、それを繰り返してゆっくり作る。整えたら観察し、フィードバックを求める。整えた結果、課題が出ればそれをすぐに解決するのではなく、一旦棚上げにし、全体に戻る。雑にならない。ステップバイステップで方向性を調整し、進める。互いに影響し合う領域を少しずつ整えて全体を進める流れです。
 
+```mermaid
+graph TB
+    Start([Start]) --> Overview[View Overall System]
+    Overview --> Identify[Identify Area to Refine]
+    Identify --> Adjust[Make Small Adjustments]
+    Adjust --> Observe[Observe and Gather Feedback]
+    Observe --> Decision{Issues Found?}
+    Decision -->|Yes| Defer[Defer to Backlog]
+    Decision -->|No| Complete{All Areas<br/>Refined?}
+    Defer --> Overview
+    Complete -->|No| Overview
+    Complete -->|Yes| End([Complete])
+    
+    style Start fill:#90EE90
+    style End fill:#FFB6C6
+    style Overview fill:#87CEEB
+    style Adjust fill:#FFD700
+    style Observe fill:#DDA0DD
+```
+
 原則として設計駆動開発です。すべてにおいて設計が先です。エージェントにとって設計が明確であれば実装は派生物でしかありません。派生物の構文と実装、トレーサビリティの確保はラピッド開発の回転を遅くするだけであり、設計フェーズでは不要です。
+
+```mermaid
+graph TB
+    Design[Design Task] --> Interface[Interface Definition]
+    Interface -->|User Approval| Implementation[Implementation Task]
+    Implementation -->|User Approval| Debug[Debug Task]
+    Debug -->|User Approval| Review[Review]
+    Review -->|Issues Found| Refactor[Refactoring]
+    Refactor -->|Apply Plan| Review
+    Review -->|No Issues| Design
+    
+    style Design fill:#E1F5FF
+    style Interface fill:#F3E5F5
+    style Implementation fill:#FFF3E0
+    style Debug fill:#FCE4EC
+    style Review fill:#E8F5E9
+    style Refactor fill:#F1F8E9
+```
 
 ユーザのオープンクエスチョンに対し複数の選択肢がある場合、積極的にユーザにどうしたいか想定されるシナリオを提示し、質問を返してください。ほとんどの場合、ユーザにクローズドクエスチョンで返してもその中に解はないので、オープンクエスチョンで返すのが望ましいです。
 
@@ -44,15 +82,16 @@
 実装が終わると振り返りのラピッド開発の回転が始まります。
 
 1. 振り返り
-  - できあがった実装を設計と比較し、差分を検証する。
-    - 設計がない場合はトップダウンで仕様をまとめ直す。
-  - なぜそういう実装になったか分析する。
-  - 分析の結果を根本的な問題にリフトアップし、設計をリファイメントし、ユーザにフィードバックする。
-    - 責務と仕組みを見直す。
-  - 振り返りタスクを終了する。  
+   - できあがった実装を設計と比較し、差分を検証する。
+     - 設計がない場合はトップダウンで仕様をまとめ直す。
+   - なぜそういう実装になったか分析する。
+   - 分析の結果を根本的な問題にリフトアップし、設計をリファイメントし、ユーザにフィードバックする。
+     - 責務と仕組みを見直す。
 2. リファクタリング
-  - 振り返りからリファクタリングプランを立てユーザに提示する。
-  - リファクタリングプランがユーザに承認されたらプランをひとつずつ確認しながら適用する。
+   - 振り返りからリファクタリングプランを立てユーザに提示する。
+   - リファクタリングプランがユーザに承認されたらプランをひとつずつ確認しながら適用する。
+   - リファクタリング適用後、再度振り返りタスクで検証する。
+   - 振り返りで問題がなくなったら、次のコンポーネント設計（Design Task）に進む。
 
 ## ドキュメントの生成ルール
 

@@ -15,6 +15,120 @@ IPCルータは、**URIベースのサービスディスカバリとロールベ
 - 所有権管理: `{OwnershipTransfer}` ([`docs/order/architecture/overview.md`](docs/order/architecture/overview.md)) - `co_value` による排他的なデータ所有権移譲を行う。
 - CSP通信: `{CSPCommunication}` ([`docs/order/requires/list.md`](docs/order/requires/list.md)) - COOSの並列処理の同期はホーアCSPで行う。
 
+## 構成要素
+
+IPCルータは以下の5つの構成要素で構成される。
+
+### 1. Registry（レジストリ管理）
+
+**責務**: URIベースのサービス登録・検索、チャンネルID・ロール情報の管理
+
+**機能**:
+- `register(uri, role, channel_id)`: サービスをURIで登録
+- `lookup(uri)`: URIからサービス情報を検索
+- `search(uri_pattern)`: パターンマッチングによる検索
+
+**実装方式**:
+- バンプアロケータで管理されるエントリ配列
+- URIハッシュテーブルで O(1) 検索を実現
+- エントリ構造: `{uri, role, channel_id, timestamp}`
+
+**導出元**: `{IPCRegistry}` - IPCルータで接続する必要があるサブシステム、サービスは起動時にルータに自分のURIをレジストリに登録する。
+
+### 2. AccessControl（アクセス制御）
+
+**責務**: ロール定義の管理、クライアント・サーバ間の通信許可判定
+
+**機能**:
+- `check_permission(client_role, server_role)`: 通信許可判定
+- `get_role(task_id)`: タスクのロール取得
+- `validate_role(role)`: ロール値の妥当性検証
+
+**実装方式**:
+- 静的定義されたロール定義マトリックス（コンフィグファイル）
+- 実行時チェックで許可判定を実施
+- ロール定義は変更不可（イミュータブル）
+
+**導出元**: `{RoleBasedAccessControl}` - グローバルなロールの定義はタスクから変更することはできない。
+
+### 3. Router（ルーティング）
+
+**責務**: クライアント要求の処理、サービス検索と接続の仲介
+
+**機能**:
+- `lookup(uri)`: クライアントのサービス検索要求を処理
+- `route_message(channel_id, message)`: メッセージをサーバに転送
+- `handle_request(client_id, request)`: クライアント要求の処理
+
+**実装方式**:
+- Registry と AccessControl を組み合わせて動作
+- CSPチャネル経由でクライアント・サーバと通信
+- エラーハンドリング（`ERROR_NOT_FOUND`, `ERROR_PERMISSION_DENIED` 等）
+
+**導出元**: `{ServiceDiscovery}` `{RoleBasedAccessControl}` - クライアントはサーバのIDをURIを用いてIPCルータに問い合わせ、ルータが通信の許可、拒否の判定を行う。
+
+### 4. MessageHandler（メッセージ処理）
+
+**責務**: Key-Valueメッセージの解析、検証、転送
+
+**機能**:
+- `parse_message(raw_data)`: メッセージをパース
+- `validate_message(message)`: メッセージ形式の検証
+- `forward_message(target_channel, message)`: メッセージを転送
+- `sort_keys(message)`: ソート済み配列インデックスを付加
+
+**実装方式**:
+- Key-Value値の型・スコープ検証
+- 共有メモリIDの抽出と検証
+- ソート済み配列インデックスの自動付加（stdlib.md に準じたアルゴリズム）
+
+**導出元**: `{TypeSafeMessaging}` `{MessageRouting}` - Key-Valueプロトコルで型安全な通信を実現し、メッセージをサーバに転送する。
+
+### 5. OwnershipManager（所有権管理）
+
+**責務**: 共有メモリの所有権移譲、メモリ安全性の保証
+
+**機能**:
+- `transfer_ownership(shared_mem_id, from_task, to_task)`: 所有権を移譲
+- `validate_ownership(shared_mem_id, task_id)`: 所有権の妥当性検証
+- `cleanup_ownership(task_id)`: タスク終了時の所有権クリーンアップ
+
+**実装方式**:
+- `co_value` による排他的所有権管理
+- メッセージ内の共有メモリIDを検出し、所有権を自動移譲
+- データ競合を原理的に排除
+
+**導出元**: `{OwnershipTransfer}` `{EliminateDataRace}` - 共有メモリには所有権が設定されているため、ルータが所有権を適切にサーバに渡す。
+
+### 構成要素間の依存関係
+
+```mermaid
+graph TB
+    subgraph "IPC Router"
+        A["Registry<br/>Service Registration"]
+        B["AccessControl<br/>Permission Check"]
+        C["Router<br/>Request Handling"]
+        D["MessageHandler<br/>Message Processing"]
+        E["OwnershipManager<br/>Ownership Transfer"]
+    end
+    
+    subgraph "Dependencies"
+        F["BumpAllocator<br/>Memory Management"]
+        G["co_csp<br/>CSP Channel"]
+        H["co_value<br/>Ownership"]
+    end
+    
+    C -->|lookup/register| A
+    C -->|check_permission| B
+    C -->|parse/forward| D
+    D -->|transfer_ownership| E
+    A -->|allocate| F
+    C -->|send/recv| G
+    E -->|move| H
+```
+
+**導出元**: [`docs/order/architecture/overview.md`](docs/order/architecture/overview.md) - IPCルータはコンポーネント間の通信をURIベースのルーティングとアクセス制御で担う。
+
 ## 提供する機能
 
 | 機能 | 説明 | 導出元 |
@@ -186,119 +300,5 @@ sequenceDiagram
 | **所有権管理** | `co_value` で共有メモリの所有権を厳密に管理。`{OwnershipTransfer}` `{EliminateDataRace}` | [`docs/order/architecture/overview.md`](docs/order/architecture/overview.md) - OwnershipTransfer、[`docs/order/requires/list.md`](docs/order/requires/list.md) - EliminateDataRace |
 | **URI検証** | 登録時にURI形式を検証、不正なURIを拒否。`{URIValidation}` | [`docs/order/components/router.md`](docs/order/components/router.md) - URIは`fireball://<subsystem_id>/<stream>`形式 |
 | **レジストリ整合性** | シャットダウン以外でエントリ削除なし、一貫性を保証。`{RegistryConsistency}` | [`docs/order/components/router.md`](docs/order/components/router.md) - IPCルータのシャットダウン以外でレジストリのエントリが削除されることはない |
-
-## 構成要素
-
-IPCルータは以下の5つの構成要素で構成される。
-
-### 1. Registry（レジストリ管理）
-
-**責務**: URIベースのサービス登録・検索、チャンネルID・ロール情報の管理
-
-**機能**:
-- `register(uri, role, channel_id)`: サービスをURIで登録
-- `lookup(uri)`: URIからサービス情報を検索
-- `search(uri_pattern)`: パターンマッチングによる検索
-
-**実装方式**:
-- バンプアロケータで管理されるエントリ配列
-- URIハッシュテーブルで O(1) 検索を実現
-- エントリ構造: `{uri, role, channel_id, timestamp}`
-
-**導出元**: `{IPCRegistry}` - IPCルータで接続する必要があるサブシステム、サービスは起動時にルータに自分のURIをレジストリに登録する。
-
-### 2. AccessControl（アクセス制御）
-
-**責務**: ロール定義の管理、クライアント・サーバ間の通信許可判定
-
-**機能**:
-- `check_permission(client_role, server_role)`: 通信許可判定
-- `get_role(task_id)`: タスクのロール取得
-- `validate_role(role)`: ロール値の妥当性検証
-
-**実装方式**:
-- 静的定義されたロール定義マトリックス（コンフィグファイル）
-- 実行時チェックで許可判定を実施
-- ロール定義は変更不可（イミュータブル）
-
-**導出元**: `{RoleBasedAccessControl}` - グローバルなロールの定義はタスクから変更することはできない。
-
-### 3. Router（ルーティング）
-
-**責務**: クライアント要求の処理、サービス検索と接続の仲介
-
-**機能**:
-- `lookup(uri)`: クライアントのサービス検索要求を処理
-- `route_message(channel_id, message)`: メッセージをサーバに転送
-- `handle_request(client_id, request)`: クライアント要求の処理
-
-**実装方式**:
-- Registry と AccessControl を組み合わせて動作
-- CSPチャネル経由でクライアント・サーバと通信
-- エラーハンドリング（`ERROR_NOT_FOUND`, `ERROR_PERMISSION_DENIED` 等）
-
-**導出元**: `{ServiceDiscovery}` `{RoleBasedAccessControl}` - クライアントはサーバのIDをURIを用いてIPCルータに問い合わせ、ルータが通信の許可、拒否の判定を行う。
-
-### 4. MessageHandler（メッセージ処理）
-
-**責務**: Key-Valueメッセージの解析、検証、転送
-
-**機能**:
-- `parse_message(raw_data)`: メッセージをパース
-- `validate_message(message)`: メッセージ形式の検証
-- `forward_message(target_channel, message)`: メッセージを転送
-- `sort_keys(message)`: ソート済み配列インデックスを付加
-
-**実装方式**:
-- Key-Value値の型・スコープ検証
-- 共有メモリIDの抽出と検証
-- ソート済み配列インデックスの自動付加（stdlib.md に準じたアルゴリズム）
-
-**導出元**: `{TypeSafeMessaging}` `{MessageRouting}` - Key-Valueプロトコルで型安全な通信を実現し、メッセージをサーバに転送する。
-
-### 5. OwnershipManager（所有権管理）
-
-**責務**: 共有メモリの所有権移譲、メモリ安全性の保証
-
-**機能**:
-- `transfer_ownership(shared_mem_id, from_task, to_task)`: 所有権を移譲
-- `validate_ownership(shared_mem_id, task_id)`: 所有権の妥当性検証
-- `cleanup_ownership(task_id)`: タスク終了時の所有権クリーンアップ
-
-**実装方式**:
-- `co_value` による排他的所有権管理
-- メッセージ内の共有メモリIDを検出し、所有権を自動移譲
-- データ競合を原理的に排除
-
-**導出元**: `{OwnershipTransfer}` `{EliminateDataRace}` - 共有メモリには所有権が設定されているため、ルータが所有権を適切にサーバに渡す。
-
-### 構成要素間の依存関係
-
-```mermaid
-graph TB
-    subgraph "IPC Router"
-        A["Registry<br/>Service Registration"]
-        B["AccessControl<br/>Permission Check"]
-        C["Router<br/>Request Handling"]
-        D["MessageHandler<br/>Message Processing"]
-        E["OwnershipManager<br/>Ownership Transfer"]
-    end
-    
-    subgraph "Dependencies"
-        F["BumpAllocator<br/>Memory Management"]
-        G["co_csp<br/>CSP Channel"]
-        H["co_value<br/>Ownership"]
-    end
-    
-    C -->|lookup/register| A
-    C -->|check_permission| B
-    C -->|parse/forward| D
-    D -->|transfer_ownership| E
-    A -->|allocate| F
-    C -->|send/recv| G
-    E -->|move| H
-```
-
-**導出元**: [`docs/order/architecture/overview.md`](docs/order/architecture/overview.md) - IPCルータはコンポーネント間の通信をURIベースのルーティングとアクセス制御で担う。
 
 

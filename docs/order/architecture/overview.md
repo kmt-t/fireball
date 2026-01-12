@@ -8,7 +8,7 @@
   - ユーザー提供のWASMサービス
 - vSoC (Virtual System-on-Chip)
   - インタープリタ
-  - vOffloader
+  - MMIO
   - デバッガ
   - JITコンパイラ
 - COOSカーネル

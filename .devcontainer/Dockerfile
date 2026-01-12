@@ -28,7 +28,7 @@
 #   - LLDB: Debugger
 #
 # Python Environment:
-#   - Python 3 + venv + setuptools (distutils not used)
+#   - Python 3 + setuptools (distutils not used)
 #   - pipx: User-level tool installation (system pip not used)
 #
 # =============================================================================
@@ -51,16 +51,14 @@ RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
       ca-certificates wget curl gnupg lsb-release software-properties-common \
-      build-essential git python3 python3-pip python3-venv python3-setuptools \
+      build-essential git python3 python3-setuptools \
       unzip fontconfig locales less pkg-config cmake sudo; \
     rm -rf /var/lib/apt/lists/*
 
 # Create development user (no password, sudo NOPASSWD)
 RUN set -eux; \
     useradd -m -s /bin/bash ${DEVELOPER_USER}; \
-    usermod -aG sudo ${DEVELOPER_USER}; \
-    echo "${DEVELOPER_USER} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/${DEVELOPER_USER}; \
-    chmod 0440 /etc/sudoers.d/${DEVELOPER_USER}
+    usermod -aG users ${DEVELOPER_USER};
 
 # Node.js 24.x (for Mermaid CLI)
 RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
@@ -79,7 +77,7 @@ RUN set -eux; \
 
 # pipx (for user-level tool installation)
 RUN apt-get update \
- && apt-get install -y --no-install-recommends pipx python3-venv \
+ && apt-get install -y --no-install-recommends pipx \
  && rm -rf /var/lib/apt/lists/* \
  && python3 -m pipx ensurepath || true
 

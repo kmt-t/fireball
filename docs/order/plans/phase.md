@@ -8,7 +8,7 @@
 
 2025年12月1日時点で開発は以下の5つのフェーズに分割されている。
 
-- 設計 Phase0（～2025年12月末）
+- 設計 Phase0（～2026年2月末）
 - 実装1 Phase1（～2026年5月末）
 - 実装2 Phase2（～2026年10月末）
 - PoC Phase3（～2026年12月末）
@@ -22,9 +22,7 @@
 
 - vSoC
   - インタープリタ
-  - vOffloader
-    - MMIO
-    - システムコール
+  - vMMIO
 - COOSカーネル
 - IPCルータ
 - HAL
@@ -51,5 +49,4 @@
 
 - vSoC (Virtual System-on-Chip)
   - JITコンパイラ
-  - vOffloader
-    - アクセラレータ
+  - アクセラレータ

@@ -10,12 +10,6 @@ The design of Fireball is built on three core pillars: a "Cooperative Scheduler"
 - **Ownership-Aware Communication**: By combining explicit ownership transfer with shared memory management by the IPC Router, memory can be safely passed between subsystems.
 - **Predictable Behavior**: Heap and buffer sizes are fixed upfront through header-based static configurations. This allows for precise control over system behavior, even in memory-constrained environments.
 
-## Architecture Overview
-
-To maintain clear separation of concerns, Fireball is structured by isolating guest applications, various services, the vSoC, the COOS kernel, subsystems, and device drivers.
-
-The COOS kernel leverages C++20 stackless coroutines and CSP channels, ensuring data ownership through interrupt coordination and independent heap areas.
-
 ## Key Components
 
 - **COOS Kernel**: Manages task switching, communication, interrupt handling, and memory isolation to achieve efficient multitasking.

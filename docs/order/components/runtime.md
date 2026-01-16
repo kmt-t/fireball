@@ -21,17 +21,6 @@ wasmバイナリをパースする。
 - wasmバイナリの正当性を検証するベリファイアは簡易的なものにする。
 - ローダで使用するメモリはモジュールが破棄されるまで解放されないのでバンプアロケータ (＠docs/order/patterns/stdlib.md) でメモリを確保する。
 
-## インタープリタ
-
-インタープリタはwasmバイナリを実行する。
-
-- goto文のラベルをテーブルとするスレッドインタープリタとする。 `{ThreadedInterpreter}`
-- デバッガが動いている場合はテーブルのジャンプ先を入れ替える。 `{DebuggerLabelTableSwitch}`
-- ジャンプ命令や関数呼び出し時にwasmゲストの連続実行時間が300usecを超えていた場合、co_yieldし、別のタスクに制御を渡す。 `{YieldOnTimeLimit}`
-- ジャンプ命令や関数呼び出し時にHALから割り込みフラグが立てられていた場合、さらに割り込み要因をチェックし、wasmゲストの割り込み処理を行う。 `{InterruptCheckOnBranch}`
-- インタープリタの実行状態はコンテキスト構造体に保持され、PIC対応のJITコードと共有される。 `{InterpreterContextManagement}`
-- 将来的なJITコンパイラの出力バイナリをPICとするため、インタープリタからアクセスする情報はコンテキストに集約する。
-
 ## ランタイムAPI
 
 ランタイムAPIはwasm命令の抽象化を行わない。ランタイムの性能のポイントはインタープリタではなく最適化されたランタイムAPIにある。
@@ -39,6 +28,58 @@ wasmバイナリをパースする。
 - ランタイムAPIの機能は原則としてwasm命令と一対一で対応する。
 - インタープリタでは算術演算命令以外は実行コンテキストを引数にランタイムAPIを呼び出すだけである。
 - ランタイムAPIの関数の型はJITコンパイラの簡略化のためすべて同一である。
+
+## インタープリタ
+
+インタープリタはwasmバイナリを実行する。
+
+- ハンドラを継続渡しで連鎖させるスレッドインタープリタとする。 `{ThreadedInterpreter}`
+  - ハンドラではランタイムAPIをインライン展開して呼び出す。
+  - ジャンプ、分岐命令は継続渡しをせずインタープリタに戻ってくる。
+  - この仕組みでトレース単位で継続渡しでwasm命令が連続実行される。
+- デバッガが動いている場合はテーブルのジャンプ先を入れ替える。 `{DebuggerLabelTableSwitch}`
+- ジャンプ命令や関数呼び出し時にwasmゲストの連続実行時間が300usecを超えていた場合、co_yieldし、別のタスクに制御を渡す。 `{YieldOnTimeLimit}`
+  - 30msecを計測するのにはタイマを用いず, 実行したトレースの数で超概算する。
+  - トレースの平均実行時間を10usecとした場合、300msecは30000トレースを意味する。
+- ジャンプ命令や関数呼び出し時にHALから割り込みフラグが立てられていた場合、さらに割り込み要因をチェックし、wasmゲストの割り込み処理を行う。 `{InterruptCheckOnBranch}`
+- インタープリタの実行状態はコンテキスト構造体に保持され、PIC対応のJITコードと共有される。 `{InterpreterContextManagement}`
+- 将来的なJITコンパイラの出力バイナリをPICとするため、インタープリタからアクセスする情報はコンテキストに集約する。
+
+```mermaid
+sequenceDiagram
+    participant OS as OS Scheduler
+    participant Interp as Interpreter
+    participant HN as Handler N
+    participant API as API Function
+    
+    OS->>Interp: interpreter_main(ctx)
+    
+    loop Instruction execution loop
+        Interp->>HN: call handlerN(ctx)
+        HN->>API: call api_fn(ctx)
+        API->>API: Update context<br/>Update PC
+        API-->>HN: return
+        
+        alt Normal instruction
+            HN->>HN: fetch next instruction from PC
+            HN->>HN: tail call next handler
+        else Branch instruction
+            HN-->>Interp: return to interpreter
+            
+            alt Yield check: elapsed >= 300 usec
+                Interp->>Interp: should_yield(ctx) = true
+                Interp-->>OS: co_yield()
+                OS->>OS: schedule other tasks
+                OS->>Interp: notify (resume)
+            else Yield check: elapsed < 300 usec
+                Interp->>Interp: should_yield(ctx) = false
+            end
+                        
+            Interp->>Interp: fetch next instruction from PC
+            Interp->>HN: call handler(next)
+        end
+    end
+```
 
 ## 付録A: サポートするWASM命令セット
 

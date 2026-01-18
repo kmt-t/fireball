@@ -8,6 +8,7 @@ IPCルータは、**URIベースのサービスディスカバリとロールベ
 - **アクセス制御**: ロールベースの認可（RBAC）により、通信許可/拒否を判定。`{RoleBasedAccessControl}`
 - **型付きメッセージング**: Key-Valueプロトコルで型安全な通信を実現。`{TypeSafeMessaging}`
 - **所有権管理**: 共有メモリの所有権をルータが管理し、安全なデータ移動を保証。`{OwnershipTransfer}`
+- **依存性の注入 (DI)**: URIをインターフェイスとして扱い、実行時に具体的な実装（タスク）を紐付けることで、クリーンアーキテクチャにおけるDIコンテナの役割を果たす。 `{IPCDI}`
 
 導出元：
 - 要件: `{IPCRouter}` ([`docs/order/requires/list.md`](docs/order/requires/list.md) - システムコール、IPC経路管理) - システムコールはIPCで行われ、IPCの経路はIPCルータが管理する。

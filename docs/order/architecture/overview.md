@@ -80,22 +80,22 @@ IPCルータはコンポーネント間の通信をURIベースのルーティ�
 
 ```mermaid
 graph TD
-    subgraph "システムRAM"
-        A[COOSカーネルヒープ]
-        B[WASMランタイムヒープ]
-        C[サブシステムヒープ]
-        D[サービスヒープ]
-        E[ゲストモジュールヒープ]
-        F[コルーチンスタック領域]
+    subgraph System_RAM
+        A[COOS Kernel Heap]
+        B[WASM Runtime Heap]
+        C[Subsystem Heap]
+        D[Service Heap]
+        E[Guest Module Heap]
+        F[Coroutine Stack Area]
     end
 
-    subgraph "COOSカーネル"
-        G[コルーチン]
-        H[CSPチャネル]
+    subgraph COOS_Kernel
+        G[Coroutine]
+        H[CSP Channel]
     end
 
-    G -- スタック確保 --> F
-    H -- メタデータ確保 --> A
+    G -- Stack Allocation --> F
+    H -- Metadata Allocation --> A
     G <--> H
 ```
 

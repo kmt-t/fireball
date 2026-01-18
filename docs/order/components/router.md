@@ -106,17 +106,17 @@ IPCルータは以下の5つの構成要素で構成される。
 ```mermaid
 graph TB
     subgraph "IPC Router"
-        A["Registry<br/>Service Registration"]
-        B["AccessControl<br/>Permission Check"]
-        C["Router<br/>Request Handling"]
-        D["MessageHandler<br/>Message Processing"]
-        E["OwnershipManager<br/>Ownership Transfer"]
+        A[Registry<br/>Service Registration]
+        B[AccessControl<br/>Permission Check]
+        C[Router<br/>Request Handling]
+        D[MessageHandler<br/>Message Processing]
+        E[OwnershipManager<br/>Ownership Transfer]
     end
     
-    subgraph "Dependencies"
-        F["BumpAllocator<br/>Memory Management"]
-        G["co_csp<br/>CSP Channel"]
-        H["co_value<br/>Ownership"]
+    subgraph Dependencies
+        F[BumpAllocator<br/>Memory Management]
+        G[co_csp<br/>CSP Channel]
+        H[co_value<br/>Ownership]
     end
     
     C -->|lookup/register| A

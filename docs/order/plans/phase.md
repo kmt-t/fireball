@@ -47,6 +47,5 @@
 
 ## OSS Phase4
 
-- vSoC (Virtual System-on-Chip)
+- vSoC
   - JITコンパイラ
-  - アクセラレータ

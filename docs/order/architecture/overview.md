@@ -59,7 +59,8 @@ COOSは最小限のカーネルで、コルーチンによる協調的マルチ�
 
 ### JITコンパイラ
 
-- 低レイテンシ実行を実現するため、複雑な最適化を省き、事前定義テンプレートの連結方式を採用する。 `{LowLatencyJIT}`
+- コンパイルレイテンシの最小化を最優先し、複雑な最適化を省いた事前定義テンプレートの連結方式（Copy-and-Patch）を採用する。 `{LowLatencyJIT}`
+- WASMバイナリが生成時に最適化済みであることを活かし、実行時の解析コストを削減する。高速なコンパイルによりキャッシュの再生成コストが低下するため、小規模なコードキャッシュで効率的に動作し、プロファイラ等の複雑な機構を排除できる。 `{SimpleJITArchitecture}`
 - JITコンパイラの出力バイナリはPIC (Position Independent Code) とし、コンテキストポインタをレジスタに保持する。 `{PositionIndependentCode}` `{ContextPointerRegister}`
 
 ## IPCルータ

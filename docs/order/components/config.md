@@ -55,6 +55,7 @@ Fireballハイパーバイザは、リソース制約の厳しい組み込み環
 | 項目名 | 説明 | 制約・デフォルト値 | 導出元 |
 |---|---|---|---|
 | `VMMIO_ALLOWED_ADDRS` | ゲストからのアクセスを許可する物理アドレス範囲 | アドレス範囲のリスト | `{RestrictedPhysicalAccess}` |
+| `JIT_CODE_CACHE_SIZE` | JITコンパイル済みコードを保持する静的配列のサイズ | ターゲットのRAM容量に依存 | `{JITCodeCache}` |
 
 ### 6. サービス (Services)
 

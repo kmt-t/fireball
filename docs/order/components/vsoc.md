@@ -65,7 +65,7 @@ sequenceDiagram
   - ジャンプ、分岐命令は継続渡しをせずインタープリタに戻ってくる。
   - この仕組みでトレース単位で継続渡しでwasm命令が連続実行される。
 - デバッガが動いている場合はテーブルのジャンプ先を入れ替える。 `{DebuggerLabelTableSwitch}`
-- ジャンプ命令や関数呼び出し時にwasmゲストの連続実行時間が300msecを超えていた場合、co_yieldし、別のタスクに制御を渡す。 `{YieldOnTimeLimit}`
+- ジャンプ命令や関数呼び出し時にwasmゲストの連続実行時間が300usecを超えていた場合、co_yieldし、別のタスクに制御を渡す。 `{YieldOnTimeLimit}`
   - 300usecを計測するのにはタイマを用いず、実行したトレースの数で超概算する。
   - トレースの平均実行時間を10usecとした場合、300usecは30トレースを意味する。
 - ジャンプ命令や関数呼び出し時にHALから割り込みフラグが立てられていた場合、さらに割り込み要因をチェックし、wasmゲストの割り込み処理を行う。 `{InterruptCheckOnBranch}` `{TaskPollInterruptFlag}`
@@ -128,7 +128,7 @@ wasmゲストをデバッグするためにRSP (GDB Remote Serial Protocol) を�
 - 算術演算命令以外はランタイムAPIを呼び出すコードを埋め込む。重い処理をAPIに委ねることで、JITエンジンの複雑さを抑制する。
 - コンパイルが高速であるため、キャッシュミス時の再生成コストが低い。これにより、小規模なコードキャッシュ領域でも十分な性能が得られ、複雑なホットスポットプロファイラを不要とする。 `{SimpleJITArchitecture}`
 - デバッガやサービスによる命令フックが有効な場合、追加コードを埋め込む。
-- LRU方式でコンパイルキャッシュを管理し、限られたメモリ領域を効率的に利用する。 `{JITCodeCache}`
+- LRU方式でコンパイルキャッシュを管理し、限られたメモリ領域を効率的に利用する。キャッシュ領域はコンパイル時に固定サイズで確保された静的配列を用いる。 `{JITCodeCache}`
 - 出力バイナリはPIC (Position Independent Code) とし、コンテキストポインタをレジスタに保持する。 `{PositionIndependentCode}` `{ContextPointerRegister}`
 
 ### vMMIO

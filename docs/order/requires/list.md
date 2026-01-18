@@ -25,6 +25,7 @@
 # OS
 
 - コルーチンを用いた協調型OSであるCOOSを独自設計する。
+- FireballはRTOS（リアルタイムOS）ではない。厳密な時間制約や決定論的応答よりも、メモリ効率と移植性を最優先する。 `{NotRTOS}`
 - シングルスレッド動作とし、グリーンスレッド（コルーチン）で並列処理を行う。 `{CooperativeMultitasking}`
 - COOSの並列処理の同期はホーアCSPで行う。 `{CSPCommunication}`
 - タスクの実行管理は公平性を期すためラウンドロビン方式とする。 `{TaskScheduling}`

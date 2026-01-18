@@ -31,7 +31,7 @@ IPCルータは以下の5つの構成要素で構成される。
 
 **実装方式**:
 - バンプアロケータで管理されるエントリ配列
-- URIハッシュテーブルで O(1) 検索を実現
+- ソート済みインデックス配列による二分探索（O(log N)）を実現
 - エントリ構造: `{uri, role, channel_id, timestamp}`
 
 **導出元**: `{IPCRegistry}` - IPCルータで接続する必要があるサブシステム、サービスは起動時にルータに自分のURIをレジストリに登録する。
@@ -153,7 +153,7 @@ graph TB
 
 ### メッセージ形式
 
-- 一度に64ビットのKey-Value値を32個送ることができる。
+- 一度に64ビットのKey-Value値を12個送ることができる。
 - Key-Value値の内容は下記のとおりである。
   - 型およびスコープ (1 バイト)：上位 3 ビットで Scopeスコープ、下位 5 ビットでデータ型を表す。  
   - Key (3 バイト): スコープにより解釈が変わる。
@@ -282,7 +282,7 @@ sequenceDiagram
 
 | 制約 | 方策 | 導出元 |
 |------|------|--------|
-| **低レイテンシ** | URIハッシュテーブルで O(1) 検索、バンプアロケータで高速登録。`{LowLatencyLookup}` | [`docs/order/architecture/overview.md`](docs/order/architecture/overview.md) - LowOverheadSwitch |
+| **低レイテンシ** | ソート済みインデックス配列による二分探索、バンプアロケータで高速登録。`{LowLatencyLookup}` | [`docs/order/architecture/overview.md`](docs/order/architecture/overview.md) - LowOverheadSwitch |
 | **メモリ効率** | レジストリはバンプアロケータで管理、シャットダウン時に一括解放。`{EfficientMemoryManagement}` | [`docs/order/components/router.md`](docs/order/components/router.md) - バンプアロケータ使用 |
 | **スケーラビリティ** | 最大サービス数をコンフィグで固定、静的メモリ割り当て。`{StaticScalability}` | [`docs/order/requires/list.md`](docs/order/requires/list.md) - ヘッダファイル形式のコンフィグ |
 

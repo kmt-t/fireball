@@ -10,6 +10,9 @@ COOSは、シングルスレッド環境向けのホーアCSPベースのグリ�
 - **CSPベースの同期**
   - 概要: タスク間通信および同期はホーアのCSPモデルに基づき、共有メモリではなくメッセージパッシング（所有権移譲）で行う。
   - 導出元: `{CSPCommunication}` ([`docs/gen/requires/list.md`](docs/gen/requires/list.md))
+- **ハードウェア非依存**
+  - 概要: カーネルは特定のハードウェア機能（サイクルカウンタ等）に依存せず、抽象化されたインターフェイスのみを使用する。
+  - 導出元: `{NotRTOS}` ([`docs/order/requires/list.md`](docs/order/requires/list.md))
 
 ## 構成要素
 

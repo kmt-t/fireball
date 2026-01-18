@@ -133,11 +133,11 @@ wasmゲストをデバッグするためにRSP (GDB Remote Serial Protocol) を�
 
 ### vMMIO
 
-wasmゲストから見たメモリマップドI/O의 処理コンポーネント。
+wasmゲストから見たメモリマップドI/O処理コンポーネント。
 
 - システムコール、ネイティブライブラリ呼び出し、ハードウェアアクセスなどの機能を呼び出す。
 - 応答性が必要なGPIOなどはvMMIO内で物理アドレスに直接アクセスする。
-- コンフィグで許可された物理アドレスのみアクセス可能とする。 `{RestrictedPhysicalAccess}`
+- コンフィグで許可された物理アドレスをvMMIO経由でゲストに公開できる。 `{RestrictedPhysicalAccess}`
 
 ## インターフェイス
 

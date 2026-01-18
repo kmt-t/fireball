@@ -300,5 +300,3 @@ sequenceDiagram
 | **所有権管理** | `co_value` で共有メモリの所有権を厳密に管理。`{OwnershipTransfer}` `{EliminateDataRace}` | [`docs/order/architecture/overview.md`](docs/order/architecture/overview.md) - OwnershipTransfer、[`docs/order/requires/list.md`](docs/order/requires/list.md) - EliminateDataRace |
 | **URI検証** | 登録時にURI形式を検証、不正なURIを拒否。`{URIValidation}` | [`docs/order/components/router.md`](docs/order/components/router.md) - URIは`fireball://<subsystem_id>/<stream>`形式 |
 | **レジストリ整合性** | シャットダウン以外でエントリ削除なし、一貫性を保証。`{RegistryConsistency}` | [`docs/order/components/router.md`](docs/order/components/router.md) - IPCルータのシャットダウン以外でレジストリのエントリが削除されることはない |
-
-

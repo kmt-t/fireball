@@ -43,7 +43,7 @@ std::mapのメモリ断片化の問題を避けるために下記の代替手法
 - 要素が100要素以下の場合
   - Key-Value配列のインデックス配列をソートし、検索時はインデックス配列を用いて二分検索する。
 
-検索には`std::lower_bound`を用いる。
+検索には`std::lower_bound`を用いる。コンセプトコードは `docs/order/patterns/sorted_indexed_array.md` を参照すること。
 
 ## バンプアロケータ
 

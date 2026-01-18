@@ -10,7 +10,7 @@
 
 ## 隔離レベル
 
-サービスをTierで分離する。
+サービスをTierで分離する。 `{FaultIsolation}`
 
 | Tier | 通信方式 | コンテキスト | 説明 |
 | --- | --- | --- | --- |
@@ -19,7 +19,7 @@
 
 ## WASI
 
-HALのWASIラッパーはサービスとして提供される。wasmゲストから呼び出すことができる。
+HALのWASIラッパーはサービスとして提供される。wasmゲストから呼び出すことができる。 `{IPCRouter}`
 
 ※ 参考URL: `https://github.com/WebAssembly/WASI/blob/main/specifications/wasi-0.2.9/Overview.md`
 
@@ -40,3 +40,8 @@ OSSのWASIが実装されている環境向けのlibc(wasi-libc)をサービス�
 ## ガベージコレクション
 
 wasmの新しい仕様に含まれるガベージコレクションはサービスとして実装される。
+
+## 非機能制約達成のための方策
+
+- **メモリ隔離**: Tier 1 サービスは独立したヒープパーティションを使用する。 `{IndependentHeap}` `{MemoryIsolation}`
+- **障害隔離**: サービス内でのエラーがシステム全体に波及しないよう隔離する。 `{FaultIsolation}`

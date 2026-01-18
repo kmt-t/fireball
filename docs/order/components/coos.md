@@ -45,6 +45,15 @@ COOSは、シングルスレッド環境向けのホーアCSPベースのグリ�
   - 概要: `co_value`によるメモリブロックの排他的所有権移譲。RAIIによる自動解放を保証する。
   - 導出元: `{OwnershipTransfer}` ([`docs/gen/architecture/overview.md`](docs/gen/architecture/overview.md))
 
+## 割り込み連携
+
+- **強制ウェイクアップ**
+  - 概要: HALから割り込み通知を受け、関連タスクを `INTERRUPTED` 状態に遷移させる。
+  - 導出元: `{InterruptWakeup}` ([`docs/gen/requires/list.md`](docs/gen/requires/list.md))
+- **割り込みハンドラ実行**
+  - 概要: タスクが `INTERRUPTED` 状態から再開される際、通常のメイン処理ではなく登録された割り込みハンドラが実行される。
+  - 導出元: `{TaskPollInterruptFlag}` ([`docs/gen/requires/list.md`](docs/gen/requires/list.md))
+
 ## インターフェイス
 
 ### `co_sched` (スケジューラ)

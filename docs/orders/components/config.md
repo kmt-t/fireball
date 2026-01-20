@@ -21,13 +21,11 @@ Fireballハイパーバイザは、リソース制約の厳しい組み込み環
 
 | 項目名 | 説明 | 制約・デフォルト値 | 導出元 |
 |---|---|---|---|
-| `COOS_KERNEL_HEAP_SIZE` | COOSカーネルヒープのサイズ | 2.0KB - 4.0KB | `{IndependentHeap}` |
-| `WASM_RUNTIME_HEAP_SIZE` | WASMランタイムヒープのサイズ | 2.0KB - 8.0KB | `{IndependentHeap}` |
-| `SUBSYSTEM_HEAP_SIZE` | サブシステムヒープのサイズ | 2.0KB - 8.0KB | `{IndependentHeap}` |
-| `TIER1_SERVICE_HEAP_SIZE` | Tier1サービスヒープのサイズ | 2.0KB - 8.0KB | `{IndependentHeap}` |
+| `COOS_KERNEL_HEAP_SIZE` | COOSカーネルヒープのサイズ | 4.0KB - 8.0KB | `{IndependentHeap}` |
+| `WASM_RUNTIME_HEAP_SIZE` | WASMランタイムヒープのサイズ | 2.0KB - 4.0KB | `{IndependentHeap}` |
+| `SUBSYSTEM_HEAP_SIZE` | サブシステムヒープのサイズ | 1.0KB - 4.0KB | `{IndependentHeap}` |
+| `TIER1_SERVICE_HEAP_SIZE` | Tier1サービスヒープのサイズ | 1.0KB - 4.0KB | `{IndependentHeap}` |
 | `GUEST_MODULE_HEAP_SIZE` | ゲストモジュールヒープのサイズ | 24KB - 残余 | `{IndependentHeap}` |
-| `CORO_STACK_SIZE` | 1コルーチンあたりのスタックサイズ | 1KB | `{IndependentHeap}` |
-| `MAX_CORO_COUNT` | 最大コルーチン数 | 8 - 16 | `{IndependentHeap}` |
 
 ### 2. IPCルータ (IPC Router)
 

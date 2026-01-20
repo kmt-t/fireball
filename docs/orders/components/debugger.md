@@ -1,13 +1,40 @@
-# デバッガ 詳細仕様
+# デバッガ
 
 ## 概要
 本ドキュメントは `docs/oders/components/vsoc.md` に基づき、デバッガの詳細仕様を定義する。
 
 ## コンセプト
 - **RSP最小実装**: VSCodeのC/C++拡張が必要とする最小セットのGDB Remote Serial Protocol (RSP) を実装する。`{RSPMinimalSet}`
-- **軽量・固定構成**: 組み込み向けにメモリを固定し、サブシステムヒープ内で完結させる。`{ConfigurableSystem}` `{MemoryIsolation}`
+- **軽量・固定構成**: 組み込み向けにメモリを固定し、vSoCヒープ内で完結させる。`{ConfigurableSystem}` `{MemoryIsolation}`
 - **インタープリタ連携**: デバッガ有効時はハンドラテーブルを切り替え、命令実行前後で停止条件を評価する。`{DebuggerLabelTableSwitch}`
 - **単一ゲスト前提**: 1ゲスト=1スレッドのRSPマッピングを基本とし、マルチゲストは将来拡張とする。`{SingleGuestThread}`
+
+## プロトコル選定の根拠
+
+Fireballでは、デバッグプロトコルとして **RSP (GDB Remote Serial Protocol)** を採用する。VSCodeのネイティブプロトコルである **DAP (Debug Adapter Protocol)** と比較し、以下の理由からRSPがプロジェクト要件に最適であると判断した。
+
+### RSP vs DAP 比較
+
+| 項目 | RSP | DAP | 選定理由 |
+| :--- | :--- | :--- | :--- |
+| **リソース消費** | 極めて低い。数KBの固定バッファで動作。 | 高い。JSONパースに多大なRAMを消費。 |
+| **実装規模** | 小さい。単純な文字列処理で完結。 | 大きい。JSON-RPCの実装が必要。 |
+| **通信路** | UART等のシリアル通信で直接動作。 | 通常はTCP/IP等のソケットを想定。 |
+| **標準サポート** | GDBのネイティブプロトコル。 | VSCodeのネイティブプロトコル。 |
+
+### デバッグフロー
+
+VSCodeからのデバッグは、ホスト側で動作するGDBまたはDebug AdapterがDAP-RSP翻訳を行うことで実現する。
+
+```mermaid
+graph LR
+    subgraph Host_PC
+        VSCode[VSCode] -- DAP / JSON --> Adapter[GDB / Debug Adapter]
+    end
+    
+    Adapter -- RSP / Serial --> Fireball[Fireball vSoC]
+    Fireball -- RSP / Serial --> Adapter
+```
 
 ## 構成要素
 - **RSPトランスポート**: x64では標準出力、それ以外はUARTを使用する。`{DebuggerTransport}`

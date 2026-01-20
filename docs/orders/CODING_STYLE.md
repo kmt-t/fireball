@@ -16,7 +16,7 @@
 
 ## 3 設計パターン
 
-特に @docs/order/patterns/stdlib.md の内容は守ること。 
+特に @docs/oders/patterns/stdlib.md の内容は守ること。 
 
-その他も`docs/order/patterns/*.md`を適宜参照すること。
+その他も`docs/oders/patterns/*.md`を適宜参照すること。
   

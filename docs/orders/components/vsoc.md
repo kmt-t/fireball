@@ -19,11 +19,11 @@ vSoCはいくつかの主要コンポーネントで構成される：wasmロー
 wasmバイナリをパースする。
 
 - ひとつのランタイムに複数のwasmモジュールがロードできる。
-- ハイパーバイザ組み込みのwasmモジュールをサービス (@docs/order/components/services.md)と呼ぶ。
+- ハイパーバイザ組み込みのwasmモジュールをサービス (@docs/oders/components/services.md)と呼ぶ。
 - wasmバイナリはRAMに展開しない。ROM上でパースし、アクセスを効率化するための辞書を持つ。 `{ROMParsing}` `{AccessDictionary}`
 - wasmバイナリの正当性を検証するベリファイアは簡易的なものにする。 `{LightweightVerifier}`
-- ローダで使用するメモリはモジュールが破棄されるまで解放されないのでバンプアロケータ (＠docs/order/patterns/stdlib.md) でメモリを確保する。 `{BumpAllocator}`
-- 辞書は `/workspaces/fireball/docs/order/patterns/stdlib.md` で示されるKey-Value配列を用いる。
+- ローダで使用するメモリはモジュールが破棄されるまで解放されないのでバンプアロケータ (＠docs/oders/patterns/stdlib.md) でメモリを確保する。 `{BumpAllocator}`
+- 辞書は `/workspaces/fireball/docs/oders/patterns/stdlib.md` で示されるKey-Value配列を用いる。
 
 シーケンスの概要は下記の通り。
 

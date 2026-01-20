@@ -11,10 +11,10 @@ IPCルータは、**URIベースのサービスディスカバリとロールベ
 - **依存性の注入 (DI)**: URIをインターフェイスとして扱い、実行時に具体的な実装（タスク）を紐付けることで、クリーンアーキテクチャにおけるDIコンテナの役割を果たす。 `{IPCDI}`
 
 導出元：
-- 要件: `{IPCRouter}` ([`docs/order/requires/list.md`](docs/order/requires/list.md) - システムコール、IPC経路管理) - システムコールはIPCで行われ、IPCの経路はIPCルータが管理する。
-- アーキテクチャ: `{IPCRouter}` ([`docs/order/architecture/overview.md`](docs/order/architecture/overview.md) - URIベースルーティング、アクセス制御) - IPCルータはコンポーネント間の通信をURIベースのルーティングとアクセス制御で担う。
-- 所有権管理: `{OwnershipTransfer}` ([`docs/order/architecture/overview.md`](docs/order/architecture/overview.md)) - `co_value` による排他的なデータ所有権移譲を行う。
-- CSP通信: `{CSPCommunication}` ([`docs/order/requires/list.md`](docs/order/requires/list.md)) - COOSの並列処理の同期はホーアCSPで行う。
+- 要件: `{IPCRouter}` ([`docs/oders/requires/list.md`](docs/oders/requires/list.md) - システムコール、IPC経路管理) - システムコールはIPCで行われ、IPCの経路はIPCルータが管理する。
+- アーキテクチャ: `{IPCRouter}` ([`docs/oders/architecture/overview.md`](docs/oders/architecture/overview.md) - URIベースルーティング、アクセス制御) - IPCルータはコンポーネント間の通信をURIベースのルーティングとアクセス制御で担う。
+- 所有権管理: `{OwnershipTransfer}` ([`docs/oders/architecture/overview.md`](docs/oders/architecture/overview.md)) - `co_value` による排他的なデータ所有権移譲を行う。
+- CSP通信: `{CSPCommunication}` ([`docs/oders/requires/list.md`](docs/oders/requires/list.md)) - COOSの並列処理の同期はホーアCSPで行う。
 
 ## 構成要素
 
@@ -128,18 +128,18 @@ graph TB
     E -->|move| H
 ```
 
-**導出元**: [`docs/order/architecture/overview.md`](docs/order/architecture/overview.md) - IPCルータはコンポーネント間の通信をURIベースのルーティングとアクセス制御で担う。
+**導出元**: [`docs/oders/architecture/overview.md`](docs/oders/architecture/overview.md) - IPCルータはコンポーネント間の通信をURIベースのルーティングとアクセス制御で担う。
 
 ## 提供する機能
 
 | 機能 | 説明 | 導出元 |
 |------|------|--------|
-| **サービス登録** | コンポーネントがURIをレジストリに登録。`{IPCRegistry}` | [`docs/order/components/router.md`](docs/order/components/router.md) - IPCレジストリ |
-| **サービス検索** | クライアントがURIからサーバのチャンネルIDを取得。`{ServiceDiscovery}` | [`docs/order/components/router.md`](docs/order/components/router.md) - ルータの通信プロトコル |
-| **アクセス制御** | ロールに基づいて通信を許可/拒否。`{RoleBasedAccessControl}` | [`docs/order/components/router.md`](docs/order/components/router.md) - 通信の許可と拒否 |
-| **メッセージルーティング** | Key-Valueメッセージをサーバに転送。`{MessageRouting}` | [`docs/order/components/router.md`](docs/order/components/router.md) - メッセージ形式 |
-| **所有権移譲** | 共有メモリの所有権をクライアントからサーバに移譲。`{OwnershipTransfer}` | [`docs/order/architecture/overview.md`](docs/order/architecture/overview.md) - OwnershipTransfer |
-| **辞書参照IPC** | constexprで定義された辞書を用いた効率的なキー参照。`{DictionaryBasedIPC}` | [`docs/order/components/router.md`](docs/order/components/router.md) - 辞書参照IPC |
+| **サービス登録** | コンポーネントがURIをレジストリに登録。`{IPCRegistry}` | [`docs/oders/components/router.md`](docs/oders/components/router.md) - IPCレジストリ |
+| **サービス検索** | クライアントがURIからサーバのチャンネルIDを取得。`{ServiceDiscovery}` | [`docs/oders/components/router.md`](docs/oders/components/router.md) - ルータの通信プロトコル |
+| **アクセス制御** | ロールに基づいて通信を許可/拒否。`{RoleBasedAccessControl}` | [`docs/oders/components/router.md`](docs/oders/components/router.md) - 通信の許可と拒否 |
+| **メッセージルーティング** | Key-Valueメッセージをサーバに転送。`{MessageRouting}` | [`docs/oders/components/router.md`](docs/oders/components/router.md) - メッセージ形式 |
+| **所有権移譲** | 共有メモリの所有権をクライアントからサーバに移譲。`{OwnershipTransfer}` | [`docs/oders/architecture/overview.md`](docs/oders/architecture/overview.md) - OwnershipTransfer |
+| **辞書参照IPC** | constexprで定義された辞書を用いた効率的なキー参照。`{DictionaryBasedIPC}` | [`docs/oders/components/router.md`](docs/oders/components/router.md) - 辞書参照IPC |
 
 ## インターフェイス
 
@@ -160,7 +160,7 @@ graph TB
   - Value (4 バイト): 32bitのデータ、ハンドル、または小さな即値。
 - ソート済み配列インデックス
   - ルータが自動的に付加する。
-  - アルゴリズムは @docs/order/patterns/stdlib.mdを参照すること。
+  - アルゴリズムは @docs/oders/patterns/stdlib.mdを参照すること。
 
 ### スコープ
 
@@ -188,7 +188,7 @@ graph TB
 ### IPCレジストリ
 
 - IPCルータで接続する必要があるサブシステム、サービスは起動時にルータに自分のURIをレジストリに登録する。
-- IPCルータのシャットダウン以外でレジストリのエントリが削除されることはない。レジストリは @docs/order/patterns/stdlib.md に準じ、バンプアロケータを用いる。
+- IPCルータのシャットダウン以外でレジストリのエントリが削除されることはない。レジストリは @docs/oders/patterns/stdlib.md に準じ、バンプアロケータを用いる。
 
 ### 辞書参照IPC
 
@@ -268,7 +268,7 @@ sequenceDiagram
 | **Logging** | ✗ | ✗ | ✗ | ✗ |
 | **Service** | ✗ | ✗ | ✓ | ✗ |
 
-**導出元**: [`docs/order/components/router.md`](docs/order/components/router.md) - ロール定義（vSoC、HAL、ロギング）
+**導出元**: [`docs/oders/components/router.md`](docs/oders/components/router.md) - ロール定義（vSoC、HAL、ロギング）
 
 ### アクセス制御の実装方式
 
@@ -276,28 +276,28 @@ sequenceDiagram
 - **実行時チェック**: ルータが `lookup()` 時に許可判定を実施。`{RuntimeAccessControl}`
 - **変更不可**: タスク実行中にロール定義を変更することはできない。`{ImmutableRoleDefinition}`
 
-**導出元**: `{RoleBasedAccessControl}` - グローバルなロールの定義はタスクから変更することはできない。`{ConfigurableSystem}` ([`docs/order/requires/list.md`](docs/order/requires/list.md)) - ヘッダファイル形式のコンフィグファイルを定義しその中のマクロで容量などは固定する。
+**導出元**: `{RoleBasedAccessControl}` - グローバルなロールの定義はタスクから変更することはできない。`{ConfigurableSystem}` ([`docs/oders/requires/list.md`](docs/oders/requires/list.md)) - ヘッダファイル形式のコンフィグファイルを定義しその中のマクロで容量などは固定する。
 
 ### 性能制約と方策
 
 | 制約 | 方策 | 導出元 |
 |------|------|--------|
-| **低レイテンシ** | ソート済みインデックス配列による二分探索、バンプアロケータで高速登録。`{LowLatencyLookup}` | [`docs/order/architecture/overview.md`](docs/order/architecture/overview.md) - LowOverheadSwitch |
-| **メモリ効率** | レジストリはバンプアロケータで管理、シャットダウン時に一括解放。`{EfficientMemoryManagement}` | [`docs/order/components/router.md`](docs/order/components/router.md) - バンプアロケータ使用 |
-| **スケーラビリティ** | 最大サービス数をコンフィグで固定、静的メモリ割り当て。`{StaticScalability}` | [`docs/order/requires/list.md`](docs/order/requires/list.md) - ヘッダファイル形式のコンフィグ |
+| **低レイテンシ** | ソート済みインデックス配列による二分探索、バンプアロケータで高速登録。`{LowLatencyLookup}` | [`docs/oders/architecture/overview.md`](docs/oders/architecture/overview.md) - LowOverheadSwitch |
+| **メモリ効率** | レジストリはバンプアロケータで管理、シャットダウン時に一括解放。`{EfficientMemoryManagement}` | [`docs/oders/components/router.md`](docs/oders/components/router.md) - バンプアロケータ使用 |
+| **スケーラビリティ** | 最大サービス数をコンフィグで固定、静的メモリ割り当て。`{StaticScalability}` | [`docs/oders/requires/list.md`](docs/oders/requires/list.md) - ヘッダファイル形式のコンフィグ |
 
 ### メモリ制約と方策
 
 | 制約 | 方策 | 導出元 |
 |------|------|--------|
-| **ヒープ枯渇対応** | バンプアロケータの枯渇時は `ERROR_OUT_OF_MEMORY` を返却。`{OutOfMemoryHandling}` | [`docs/order/architecture/overview.md`](docs/order/architecture/overview.md) - MemoryIsolation |
-| **メモリ隔離** | ルータのメモリはサブシステムヒープから確保、他タスクに影響なし。`{MemoryIsolation}` `{FaultIsolation}` | [`docs/order/architecture/overview.md`](docs/order/architecture/overview.md) - IndependentHeap、FaultIsolation |
+| **ヒープ枯渇対応** | バンプアロケータの枯渇時は `ERROR_OUT_OF_MEMORY` を返却。`{OutOfMemoryHandling}` | [`docs/oders/architecture/overview.md`](docs/oders/architecture/overview.md) - MemoryIsolation |
+| **メモリ隔離** | ルータのメモリはサブシステムヒープから確保、他タスクに影響なし。`{MemoryIsolation}` `{FaultIsolation}` | [`docs/oders/architecture/overview.md`](docs/oders/architecture/overview.md) - IndependentHeap、FaultIsolation |
 
 ### 安全性制約と方策
 
 | 制約 | 方策 | 導出元 |
 |------|------|--------|
-| **アクセス制御** | ロールベースの認可で不正アクセスを防止。`{RoleBasedAccessControl}` | [`docs/order/components/router.md`](docs/order/components/router.md) - 通信の許可と拒否 |
-| **所有権管理** | `co_value` で共有メモリの所有権を厳密に管理。`{OwnershipTransfer}` `{EliminateDataRace}` | [`docs/order/architecture/overview.md`](docs/order/architecture/overview.md) - OwnershipTransfer、[`docs/order/requires/list.md`](docs/order/requires/list.md) - EliminateDataRace |
-| **URI検証** | 登録時にURI形式を検証、不正なURIを拒否。`{URIValidation}` | [`docs/order/components/router.md`](docs/order/components/router.md) - URIは`fireball://<subsystem_id>/<stream>`形式 |
-| **レジストリ整合性** | シャットダウン以外でエントリ削除なし、一貫性を保証。`{RegistryConsistency}` | [`docs/order/components/router.md`](docs/order/components/router.md) - IPCルータのシャットダウン以外でレジストリのエントリが削除されることはない |
+| **アクセス制御** | ロールベースの認可で不正アクセスを防止。`{RoleBasedAccessControl}` | [`docs/oders/components/router.md`](docs/oders/components/router.md) - 通信の許可と拒否 |
+| **所有権管理** | `co_value` で共有メモリの所有権を厳密に管理。`{OwnershipTransfer}` `{EliminateDataRace}` | [`docs/oders/architecture/overview.md`](docs/oders/architecture/overview.md) - OwnershipTransfer、[`docs/oders/requires/list.md`](docs/oders/requires/list.md) - EliminateDataRace |
+| **URI検証** | 登録時にURI形式を検証、不正なURIを拒否。`{URIValidation}` | [`docs/oders/components/router.md`](docs/oders/components/router.md) - URIは`fireball://<subsystem_id>/<stream>`形式 |
+| **レジストリ整合性** | シャットダウン以外でエントリ削除なし、一貫性を保証。`{RegistryConsistency}` | [`docs/oders/components/router.md`](docs/oders/components/router.md) - IPCルータのシャットダウン以外でレジストリのエントリが削除されることはない |

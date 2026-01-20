@@ -21,7 +21,7 @@
 ## メモリアロケータ
 
 - dlmallocのmspaceを用いる。
-- mspaceの分割は @docs/order/architecture/overview.md のヒープパーテーションの仕様に準じる。
+- mspaceの分割は @docs/oders/architecture/overview.md のヒープパーテーションの仕様に準じる。
 - newおよびdelete演算子はオーバーロードしてmspaceからメモリを確保する。
 - newおよびdelete演算子はmspace選択ロジックをポリシーとして分離する。
 
@@ -43,7 +43,7 @@ std::mapのメモリ断片化の問題を避けるために下記の代替手法
 - データがROMにある、データのコピーコストが高い、またはデータの更新がある場合
   - Key-Value配列のインデックス配列をソートし、検索時はインデックス配列を用いて二分検索する。
 
-検索には`std::lower_bound`を用いる。コンセプトコードは `docs/order/patterns/sorted_indexed_array.md` を参照すること。
+検索には`std::lower_bound`を用いる。コンセプトコードは `docs/oders/patterns/sorted_indexed_array.md` を参照すること。
 
 ## バンプアロケータ
 

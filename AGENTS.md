@@ -4,10 +4,10 @@
 
 ※ ファイルパスのルートディレクトリはワーススペースのルートです。
 
-1. 必読: 開始時に @docs/order/architecture/overview.md および @docs/order/requires/list.md を読むこと。
-2. 参照: 外部仕様および技術の詳細は @docs/order/REFERENCES.md を参照すること。
-3. 規約: @docs/order/CODING_STYLE.md を厳守すること。
-4. 範囲: `docs/order/**/**.md`、`inc/**/*.hxx`、`src/**/*.cxx`のみ参照すること。
+1. 必読: 開始時に @docs/oders/architecture/overview.md および @docs/oders/requires/list.md を読むこと。
+2. 参照: 外部仕様および技術の詳細は @docs/oders/REFERENCES.md を参照すること。
+3. 規約: @docs/oders/CODING_STYLE.md を厳守すること。
+4. 範囲: `docs/oders/**/**.md`、`inc/**/*.hxx`、`src/**/*.cxx`のみ参照すること。
 
 ## ワークフロー
 
@@ -66,7 +66,7 @@ graph TB
   - ユーザの承認で設計タスクを終了する。
 2. インターフェイス定義タスク
   - エージェントがコンポーネント単位でヘッダファイルにインターフェイスを定義する。
-    - `docs/order/patterns/interface.md` の設計原則を守ること。
+    - `docs/oders/patterns/interface.md` の設計原則を守ること。
   - 不備があればユーザが仕様を改定する。
   - ユーザの承認でインターフェイス定義タスクを終了する。
 
@@ -112,10 +112,10 @@ graph TB
 
 参照するドキュメントは下記の4階層とする。
 
-1. 要求（`docs/order/requires/*.md`）
-2. アーキテクチャ（`docs/order/architecture/*.md`）
-3. コンポーネント（`docs/order/components/*.md`）
-4. パターン（`docs/order/patterns/*.md`）
+1. 要求（`docs/oders/requires/*.md`）
+2. アーキテクチャ（`docs/oders/architecture/*.md`）
+3. コンポーネント（`docs/oders/components/*.md`）
+4. パターン（`docs/oders/patterns/*.md`）
 
 ドキュメントを参照し作業をする前に下記のリストに従いチェックし、フィードバックせよ。
 

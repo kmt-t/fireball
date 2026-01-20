@@ -1,6 +1,6 @@
 # ソート済みインデックス付き配列のコンセプトコード
 
-このドキュメントは、[`docs/order/patterns/stdlib.md`](../../order/patterns/stdlib.md) で定義された「std::map/std::unordered_map の代替手法」のコンセプトを Python で記述したものです。
+このドキュメントは、[`docs/oders/patterns/stdlib.md`](../../oders/patterns/stdlib.md) で定義された「std::map/std::unordered_map の代替手法」のコンセプトを Python で記述したものです。
 
 ## コンセプト
 

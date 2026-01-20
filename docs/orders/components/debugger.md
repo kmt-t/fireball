@@ -1,7 +1,7 @@
 # デバッガ 詳細仕様
 
 ## 概要
-本ドキュメントは `docs/order/components/vsoc.md` に基づき、デバッガの詳細仕様を定義する。
+本ドキュメントは `docs/oders/components/vsoc.md` に基づき、デバッガの詳細仕様を定義する。
 
 ## コンセプト
 - **RSP最小実装**: VSCodeのC/C++拡張が必要とする最小セットのGDB Remote Serial Protocol (RSP) を実装する。`{RSPMinimalSet}`
@@ -18,7 +18,7 @@
 ## 提供する機能
 | 機能 | 説明 | 導出元 |
 |---|---|---|
-| RSP最小コマンド対応 | `docs/order/components/vsoc.md` 付録Bの最小セットを実装 | `{RSPMinimalSet}` |
+| RSP最小コマンド対応 | `docs/oders/components/vsoc.md` 付録Bの最小セットを実装 | `{RSPMinimalSet}` |
 | ブレークポイント管理 | `Z/z` の type0 を必須対応 | `{RSPCommandSet}` |
 | レジスタ読み書き | `g/G/p/P` により仮想レジスタを取得/更新 | `{RSPCommandSet}` |
 | メモリ読み書き | `m/M/X` によりWASMリニアメモリにアクセス | `{RSPCommandSet}` |
@@ -116,7 +116,7 @@ public:
 ```
 
 ## RSP最小コマンド仕様
-本節は `docs/order/components/vsoc.md` 付録Bに準拠する。未対応は `DebugError::UNSUPPORTED` を返す。
+本節は `docs/oders/components/vsoc.md` 付録Bに準拠する。未対応は `DebugError::UNSUPPORTED` を返す。
 
 ### セッション管理
 - `?`, `c`, `C`, `s`, `S`, `k`

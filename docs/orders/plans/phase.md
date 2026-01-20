@@ -2,7 +2,7 @@
 
 ## 概要
 
-`docs/order/architecture/overview.md`に従い、コンポーネントの開発スケジュールをフェーズ分けする。
+`docs/oders/architecture/overview.md`に従い、コンポーネントの開発スケジュールをフェーズ分けする。
 
 ## フェーズと日程
 

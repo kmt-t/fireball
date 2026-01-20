@@ -23,7 +23,7 @@ wasmバイナリをパースする。
 - wasmバイナリはRAMに展開しない。ROM上でパースし、アクセスを効率化するための辞書を持つ。 `{ROMParsing}` `{AccessDictionary}`
 - wasmバイナリの正当性を検証するベリファイアは簡易的なものにする。 `{LightweightVerifier}`
 - ローダで使用するメモリはモジュールが破棄されるまで解放されないのでバンプアロケータ (＠docs/oders/patterns/stdlib.md) でメモリを確保する。 `{BumpAllocator}`
-- 辞書は `/workspaces/fireball/docs/oders/patterns/stdlib.md` で示されるKey-Value配列を用いる。
+- 辞書は `oders/patterns/stdlib.md` で示されるKey-Value配列を用いる。
 
 シーケンスの概要は下記の通り。
 
@@ -68,7 +68,6 @@ sequenceDiagram
 - ジャンプ命令や関数呼び出し時にwasmゲストの連続実行時間が300usecを超えていた場合、co_yieldし、別のタスクに制御を渡す。 `{YieldOnTimeLimit}`
   - 300usecを計測するのにはタイマを用いず、実行したトレースの数で超概算する。
   - トレースの平均実行時間を10usecとした場合、300usecは30トレースを意味する。
-- ジャンプ命令や関数呼び出し時にHALから割り込みフラグが立てられていた場合、さらに割り込み要因をチェックし、wasmゲストの割り込み処理を行う。 `{InterruptCheckOnBranch}` `{TaskPollInterruptFlag}`
 - インタープリタの実行状態はコンテキスト構造体に保持され、PIC対応のJITコードと共有される。 `{InterpreterContextInterruptManagement}`
 - 将来的なJITコンパイラの出力バイナリをPICとするため、インタープリタからアクセスする情報はコンテキストに集約する。 `{PositionIndependentCode}` `{ContextPointerRegister}`
 

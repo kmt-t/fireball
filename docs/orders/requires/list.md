@@ -39,7 +39,7 @@
 - **確定的な実行**: コンテキストスイッチを明示的なポイント（`co_await`等）に限定する。 `{COOS_Deterministic}`
 - **透明性の確保**: スケジューラは各タスクの待ち状態（URI等）を可視化可能とする。 `{COOS_Transparent}`
 - 通信はホーアCSPに基づき、所有権移譲によるゼロコピーメッセージパッシングを行う。 `{CSPCommunication}` `{EliminateDataRace}` `{IPC_ZeroCopy}`
-- 割り込み発生時、関連タスクの割り込みルーチンを強制ウェイクアップし、割り込みフラグなどを設定する。タスク側で割り込みフラグを確認する。 `{InterruptWakeup}` `{TaskPollInterruptFlag}`
+- 割り込み発生時、関連タスクの割り込みハンドラをウェイクアップする。 `{InterruptWakeup}`
 
 ## vSoC (WASM Runtime)
 - wasm32ランタイム（浮動小数点除外）とvMMIOを備える。

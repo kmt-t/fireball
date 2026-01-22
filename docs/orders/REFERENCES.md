@@ -18,6 +18,7 @@
 
 ## リファレンス実装
 - **WAMR (WebAssembly Micro Runtime)**: [GitHub - bytecodealliance/wasm-micro-runtime](https://github.com/bytecodealliance/wasm-micro-runtime) (組み込み向けWASMランタイムの参照)
+- **WasmEdge**: [GitHub - WasmEdge/WasmEdge](https://github.com/WasmEdge/WasmEdge) (高性能WASMランタイムの参照)
 - **wasi-libc**: [GitHub - WebAssembly/wasi-libc](https://github.com/WebAssembly/wasi-libc) (WASI実装の参照)
 - **dlmalloc**: [Doug Lea's Memory Allocator](https://gee.cs.oswego.edu/dl/html/malloc.html) (メモリ管理実装の参照)
 

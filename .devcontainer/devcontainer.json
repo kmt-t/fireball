@@ -21,6 +21,11 @@
         "bierner.markdown-mermaid"
       ]
     }
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "24"
+    }
   }
 }
   

@@ -41,6 +41,7 @@
 *.dwo
 
 # Directries.
+.roo
 builddir*/
 docs/gen/
 home/

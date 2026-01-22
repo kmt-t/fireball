@@ -9,6 +9,7 @@ vSoCからHALをIPCで呼び出し、ハードウェアへアクセスする。H
 - 割り込みはフラグでインタープリタに通知する。 `{TaskPollInterruptFlag}`
 - wasmゲストの割り込みハンドラは決め打ちの`__interrupt_handler`関数で定義される。
 - 割り込み要因などは`__interrupt_handler`関数の引数に渡される。
+- **安全性確保の方策**: 実行コンテキストの安全性を確保するため、HALは割り込み発生時にフラグ通知（およびタスクのウェイクアップ要求）のみを行い、実際の処理はインタープリタ側のPoll（`co_yield` 後のチェック）に委ねる。 `{Challenge_InterruptSafety}`
 
 ## 想定されるバックエンド
 

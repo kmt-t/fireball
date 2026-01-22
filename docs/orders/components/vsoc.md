@@ -65,49 +65,10 @@ sequenceDiagram
   - ジャンプ、分岐命令は継続渡しをせずインタープリタに戻ってくる。
   - この仕組みでトレース単位で継続渡しでwasm命令が連続実行される。
 - デバッガが動いている場合はテーブルのジャンプ先を入れ替える。 `{DebuggerLabelTableSwitch}`
-- ジャンプ命令や関数呼び出し時にwasmゲストの連続実行時間が300usecを超えていた場合、co_yieldし、別のタスクに制御を渡す。 `{YieldOnTimeLimit}`
-  - 300usecを計測するのにはタイマを用いず、実行したトレースの数で超概算する。
-  - トレースの平均実行時間を10usecとした場合、300usecは30トレースを意味する。
+- ジャンプ命令や関数呼び出し時にwasmゲストの連続実行時間が一定時間を超えていた場合、co_yieldし、別のタスクに制御を渡す。 `{YieldOnTimeLimit}`
+  - **概算Yieldの運用**: 時間を計測するのにはタイマを用いず、実行したトレースの数で超概算する。パフォーマンス優先のためこの方式を採用し、実行時間の逸脱はログ出力により検知する。 `{Challenge_ApproximateYield}`
 - インタープリタの実行状態はコンテキスト構造体に保持され、PIC対応のJITコードと共有される。 `{InterpreterContextInterruptManagement}`
 - 将来的なJITコンパイラの出力バイナリをPICとするため、インタープリタからアクセスする情報はコンテキストに集約する。 `{PositionIndependentCode}` `{ContextPointerRegister}`
-
-```mermaid
-sequenceDiagram
-    participant OS as OS Scheduler
-    participant Interp as Interpreter
-    participant HN as Handler N
-    participant API as API Function
-    
-    OS->>Interp: interpreter_main(ctx)
-    
-    loop Instruction execution loop
-        Interp->>HN: call handlerN(ctx)
-        HN->>API: call api_fn(ctx)
-        API->>API: Update context<br/>Update PC
-        API-->>HN: return
-        
-        alt Normal instruction
-            HN->>HN: fetch next instruction from PC
-            HN->>HN: tail call next handler
-        else Branch instruction
-            HN-->>Interp: return to interpreter
-            
-            alt Yield check: elapsed >= 300 usec
-                Interp->>Interp: should_yield(ctx) = true
-                Interp-->>OS: co_yield()
-                OS->>OS: schedule other tasks
-                OS->>Interp: notify (resume)
-            else Yield check: elapsed < 300 usec
-                Interp->>Interp: should_yield(ctx) = false
-            end
-                        
-            Interp->>Interp: fetch next instruction from PC
-            Interp->>HN: call handler(next)
-        end
-    end
-```
-
-実装すべき最小セットのwasm命令は、clang++が出力するバイナリの仕様から導出される。
 
 ### デバッガ
 
@@ -126,8 +87,9 @@ wasmゲストをデバッグするためにRSP (GDB Remote Serial Protocol) を�
 - WASMバイナリは生成時に最適化済みであるため、JIT実行時のデータフロー解析等は行わず、事前定義された命令テンプレートを連結する。 `{CopyAndPatchJIT}`
 - 算術演算命令以外はランタイムAPIを呼び出すコードを埋め込む。重い処理をAPIに委ねることで、JITエンジンの複雑さを抑制する。
 - コンパイルが高速であるため、キャッシュミス時の再生成コストが低い。これにより、小規模なコードキャッシュ領域でも十分な性能が得られ、複雑なホットスポットプロファイラを不要とする。 `{SimpleJITArchitecture}`
+- **キャッシュ管理戦略**: RAM 64KB制約下での効率的なキャッシュ管理のため、Active/Oldダブルバッファを採用する。コピーGCベースの単純な入れ替えを行い、断片化を防止する。 `{Challenge_JITCacheEfficiency}` `{JIT_DoubleBuffer_Cache}`
+- **遅延ホットスポット検知**: 実行中は履歴記録のみを行い、`co_yield` 時に一括してホットスポット判定を行うことで、実行時のオーバーヘッドを最小化する。
 - デバッガやサービスによる命令フックが有効な場合、追加コードを埋め込む。
-- コピーGCでコンパイルキャッシュを管理し、限られたメモリ領域を効率的に利用する。キャッシュ領域はコンパイル時に固定サイズで確保された静的配列を用いる。 `{JITCodeCache}`
 - 出力バイナリはPIC (Position Independent Code) とし、コンテキストポインタをレジスタに保持する。 `{PositionIndependentCode}` `{ContextPointerRegister}`
 
 ### vMMIO
@@ -181,7 +143,7 @@ JITコンパイル時および実行時のメモリ確保を、事前に割り�
 低レイテンシ実行を実現するための方策。
 
 - **コピーアンドパッチJIT**: 複雑な最適化を省き、事前定義された命令テンプレートを連結することで、コンパイル時間を最小化しつつ実行速度を向上させる。 `{CopyAndPatchJIT}`
-- **LRUキャッシュ**: コンパイル済みコードをLRU (Least Recently Used) 方式で管理し、限られたコードキャッシュ領域を効率的に利用する。 `{JITCodeCache}`
+- **ダブルバッファキャッシュ**: Active/Oldの2領域によるキャッシュ管理を行い、コンパイルオーバーヘッドとメモリ使用量のバランスを最適化する。 `{JIT_DoubleBuffer_Cache}`
 
 ### メモリ制約と方策
 
@@ -196,6 +158,7 @@ JITコンパイル時および実行時のメモリ確保を、事前に割り�
 
 - **境界チェックのJIT埋め込み**: メモリアクセス命令に対し、JITコンパイル時に境界チェックコードをインライン展開し、不正アクセスを即座にトラップする。 `{MemoryBoundaryCheck}`
 - **物理アドレスアクセスの制限**: vMMIO経由の物理アドレスアクセスは、コンフィグで明示的に許可された範囲に限定し、HAL層で検証を行う。 `{RestrictedPhysicalAccess}`
+- **割り込みガード**: Poll方式による割り込みチェックを基本とし、実行コンテキストの安全性を確保する。 `{Challenge_InterruptSafety}`
 
 ## 付録A: サポートするWASM命令セット
 

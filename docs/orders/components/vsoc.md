@@ -52,7 +52,9 @@ vSoCの動作パラメータを定義する。 `{ConfigurableSystem}`
 | :--- | :--- | :--- |
 | `jit_enabled` | `bool` | JITコンパイルの有効化フラグ |
 | `code_cache_size` | `size_t` | JITコードキャッシュのサイズ |
-| `vmmio_base` | `uint32_t` | vMMIO領域の開始アドレス |
+| `ram_base` | `uint32_t` | ゲストRAMの開始アドレス (通常 0x0) |
+| `ram_size` | `uint32_t` | ゲストRAMのサイズ |
+| `vmmio_base` | `uint32_t` | vMMIO領域の開始アドレス (通常 0x4000_0000) |
 
 ## 3. 動的モデル (Dynamic Model)
 
@@ -106,7 +108,23 @@ sequenceDiagram
 | `notify_interrupt` | `irq_id` | `void` | 仮想割り込みを通知 | なし | コンテキストにフラグセット |
 | `register_vmmio_hook` | `addr, size, cb` | `status_t` | vMMIOフックを登録 | なし | フックが有効になる |
 
-### 4.2 URI/IPCインターフェイス
+### 4.2 Native API エクスポート (WAMR互換)
+WASMゲストからホスト関数を呼び出すためのインターフェイスを提供する。 `{NativeAPI_Export}`
+
+- **NativeSymbol**: 関数名、関数ポインタ、シグネチャのペア。
+- **シグネチャ形式**: `(ii)i` (i32, i32 -> i32) 等。
+  - `*`: バッファアドレス (自動変換)
+  - `~`: バッファサイズ (境界チェック)
+  - `$`: 文字列 (自動変換)
+- **呼び出し規約**: 第1引数は常に `execution_context_t*` とする。
+
+### 4.3 マルチモジュール対応
+複数のWASMモジュール間の依存関係を解決し、動的にリンクする。 `{MultiModule_Support}`
+
+- **Module Registry**: ロード済みのモジュールを名前で管理する。
+- **Dynamic Linking**: インポートセクションに基づき、他モジュールのエクスポートを解決する。
+
+### 4.4 URI/IPCインターフェイス
 - **URI**: `fireball://vsoc/control/<instance_id>`
 - **メッセージ形式**: 実行制御、状態取得用のKey-Valueプロトコル。
 
@@ -119,6 +137,7 @@ sequenceDiagram
 ### 5.2 メモリ制約と方策
 - **目標**: 64KB RAM環境で動作させる。
 - **方策**: `{JIT_DoubleBuffer_Cache}` `{IndependentHeap}` ダブルバッファによる効率的なキャッシュ管理と、厳密なヒープ分離によりメモリ使用量を制御する。
+- **高速アドレス判定**: ゲストRAMを `0x0` から配置し、単一の比較命令でRAMアクセスを判定することで、インタープリタおよびJITのオーバーヘッドを最小化する。
 
 ### 5.3 安全性制約と方策
 - **目標**: ゲストアプリケーションの暴走を完全に隔離する。

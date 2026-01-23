@@ -7,6 +7,7 @@ WASMローダは、ROM上のWASM32バイナリをパースし、実行環境が�
 
 ### 2.1 データ構造
 - **module_view_t**: ROM上のバイナリへの参照と、パース済みの索引群を保持するルート構造体。
+- **module_registry_t**: ロード済みのモジュールを名前で管理する静的辞書。 `{MultiModule_Support}`
 - **section_index_t**: 各WASMセクションの開始位置とサイズを保持する索引。
 - **module_dictionary_t**: 関数、型、エクスポート名などの高速検索用辞書。 `{AccessDictionary}`
 
@@ -46,6 +47,7 @@ ROM上のセクションの位置とサイズを定義する。
 ### 3.1 アルゴリズム
 - **バイナリパース**: ROM上のデータを `std::span` でラップし、境界チェックを行いながら順次読み取る。
 - **辞書構築**: 関数ボディやエクスポート名を抽出し、ソート済みインデックス付き配列として構築する。検索には二分探索を用いる。 `{AccessDictionary}`
+- **依存関係解決**: インポートセクションをスキャンし、必要なモジュールが未ロードの場合は `module_reader` を介して再帰的にロードを試みる。 `{MultiModule_Support}`
 
 ### 3.2 状態遷移図
 ```mermaid
@@ -83,9 +85,11 @@ sequenceDiagram
 ### 4.1 公開API
 | メソッド名 | 引数 | 戻り値 | 説明 | 事前条件 | 事後条件 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `load_module` | `binary_ptr, size` | `module_view_t*` | モジュールをロードする | なし | ModuleViewが生成される |
+| `load_module` | `name, binary_ptr, size` | `module_view_t*` | モジュールをロードし登録 | なし | ModuleViewが生成・登録される |
+| `find_module` | `name` | `module_view_t*` | 登録済みモジュールを検索 | なし | 見つかればポインタを返す |
 | `get_section` | `module_view, id` | `section_span_t` | セクション範囲を取得 | ロード済み | 指定セクションの範囲 |
 | `lookup_export` | `module_view, name` | `uint32_t` | エクスポートを検索 | ロード済み | 関数インデックス等 |
+| `set_module_reader` | `reader_fn` | `void` | モジュール読み込み関数を設定 | なし | コールバックが登録される |
 
 ### 4.2 URI/IPCインターフェイス
 本コンポーネントは vSoC 内部で使用されるライブラリであり、直接のIPCインターフェイスは持たない。

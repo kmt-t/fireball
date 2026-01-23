@@ -31,6 +31,10 @@ Fireballハイパーバイザの動作パラメータを定義するコンパイ
 | マクロ名 | 説明 | デフォルト値 (例) | 導出元 |
 | :--- | :--- | :--- | :--- |
 | `FB_CONF_JIT_CACHE_SIZE` | JITキャッシュサイズ (Active/Old合計) | `4096` | `{JIT_DoubleBuffer_Cache}` |
+| `FB_CONF_GUEST_RAM_BASE` | ゲストRAMの開始アドレス | `0x00000000` | `{FastAddressCheck}` |
+| `FB_CONF_GUEST_RAM_SIZE` | ゲストRAMのサイズ | `65536` | `{StrictMemoryLimit}` |
+| `FB_CONF_VMMIO_BASE` | vMMIO領域の開始アドレス | `0x40000000` | `{vMMIO_Isolation}` |
+| `FB_CONF_VMMIO_MAX_REGIONS` | 登録可能な最大vMMIO領域数 | `8` | `{ConfigurableSystem}` |
 | `FB_CONF_VMMIO_ALLOWED_ADDRS` | ゲストからのアクセスを許可する物理アドレス範囲 | `constexpr`定義 | `{RestrictedPhysicalAccess}` |
 
 ### 2.5 ロギング (Logging)

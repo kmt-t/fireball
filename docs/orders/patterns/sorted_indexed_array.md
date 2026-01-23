@@ -1,9 +1,9 @@
-# ソート済みインデックス付き配列パターン (改定案)
+# ソート済みインデックス付き配列パターン
 
-## 1. 意図 (Intent)
+## 1. 意図
 `std::map` や `std::unordered_map` の使用が禁止されている環境において、メモリ断片化を避けつつ、効率的な Key-Value 検索を実現する。特に、データが ROM にある場合や、検索回数が多い場合に最適化された手法を提供する。
 
-## 2. 構造 (Structure)
+## 2. 構造
 
 ### 2.1 クラス図 / ブロック図
 
@@ -25,7 +25,7 @@ classDiagram
     map_interface <|-- indexed_array_map
 ```
 
-### 2.2 相互作用 (Interaction)
+### 2.2 相互作用
 
 ```mermaid
 sequenceDiagram

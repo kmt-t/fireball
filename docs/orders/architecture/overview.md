@@ -25,36 +25,47 @@ Fireballは、極小リソース環境での柔軟性と高性能を両立させ
 
 ### 2.2 コンポーネント俯瞰図
 
+矢印は**仕様の依存関係 (Dependency)** を示す。`{CleanArchitecture}` `{IoC}`
+
 ```mermaid
 graph TD
-    subgraph Guest_Layer
+    subgraph Guest_Layer [Guest Layer]
         App[Guest Application]
         Svc[WASM Services]
     end
 
-    subgraph Runtime_Layer
+    subgraph Runtime_Layer [Runtime Layer]
         vSoC[vSoC / WASM Runtime]
     end
 
-    subgraph Kernel_Layer
+    subgraph Kernel_Layer [Kernel Layer]
         COOS[COOS Kernel]
         IPCR[IPC Router]
     end
 
-    subgraph Hardware_Abstraction_Layer
-        HAL[HAL]
-        Log[Logging]
+    subgraph Subsystem_Layer [Subsystem Layer]
+        HAL[HAL Implementation]
+        Log[Logging Implementation]
     end
 
+    subgraph Hardware_Layer [Hardware Layer]
+        HW[Hardware]
+    end
+
+    %% 依存性の方向 (Implementation -> Interface/Specification)
     App --> vSoC
     Svc --> vSoC
     vSoC --> IPCR
-    IPCR --> HAL
-    IPCR --> Log
-    COOS --> vSoC
-    COOS --> IPCR
-    HAL --> HW[Hardware]
+    vSoC --> COOS
+    HAL --> IPCR
+    Log --> IPCR
+    IPCR --> COOS
+    HAL --> HW
 ```
+
+#### 依存性ルール
+- **内側への依存**: 上位レイヤー（Kernel, IPCR）は下位レイヤー（HAL, Driver）の実装に依存してはならない。下位レイヤーが上位レイヤーの定義したインターフェイスを実装することで、依存性の逆転 (IoC) を実現する。
+- **URIベースの疎結合**: コンポーネント間の具体的な依存は `fireball://` URI を介したルックアップにより解決され、コンパイル時の静的DIによって結合される。
 
 ## 3. 動的構造 (Dynamic Model)
 

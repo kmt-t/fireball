@@ -84,7 +84,7 @@ sequenceDiagram
 | `set_level` | `level` | `void` | 出力レベルを変更 | なし | レベルが更新される |
 
 ### 4.2 URI/IPCインターフェイス
-- **URI**: `fireball://logging/system`
+- **URI**: `fireball://logging/system/0`
 - **メッセージ形式**: Key-Valueプロトコル。 `level`, `dict_offset`, `arg0`〜`arg3` を含む。 `{DictionaryBasedIPC}`
 
 ## 5. 制約達成の方策

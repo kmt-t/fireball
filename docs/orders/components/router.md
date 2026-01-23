@@ -93,7 +93,7 @@ sequenceDiagram
     participant Reg as Registry
     participant S as Server
     
-    C->>R: lookup("fireball://hal/uart0")
+    C->>R: lookup("fireball://hal/uart/0")
     R->>Reg: search(uri)
     Reg-->>R: entry(role, channel_id)
     Note over R: Check Permission
@@ -115,7 +115,7 @@ sequenceDiagram
 | `route_message` | `channel, message` | `status_t` | メッセージを転送 | なし | 所有権移譲と転送 |
 
 ### 4.2 URI/IPCインターフェイス
-- **URI形式**: `fireball://<subsystem_id>/<stream>`
+- **URI形式**: `fireball://<subsystem_id>/<stream>/<instance_id>`
 - **メッセージ形式**: 64ビットのKey-Value値を最大12個含むパケット。 `{TypeSafeMessaging}`
 
 ## 5. 制約達成の方策

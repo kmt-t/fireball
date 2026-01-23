@@ -34,7 +34,7 @@ sequenceDiagram
     participant provider as outer_layer_impl
 
     Note over client, provider: 依存性の注入 (DI)
-    client->>router: lookup("fireball://service/target")
+    client->>router: lookup("fireball://service/target/id")
     router-->>client: interface_handle
     client->>provider: operation(handle)
 ```
@@ -44,7 +44,7 @@ sequenceDiagram
 - **適用対象**: 全てのコンポーネント間API。
 - **原則**:
     - **IoC (Inversion of Control)**: インターフェイスの仕様は「利用側（内側の層）」が定義する。 `{CleanArchitecture}`
-    - **URIによる抽象化**: サービスはURI（例：`fireball://hal/uart`）で識別し、具体的な実装クラスを隠蔽する。 `{URIAbstraction}`
+    - **URIによる抽象化**: サービスはURI（例：`fireball://hal/uart/0`）で識別し、具体的な実装クラスを隠蔽する。 `{URIAbstraction}`
     - **DTOの型安全性**: `void*` の使用を禁止し、型が確定できない場合は構造化データ（辞書形式等）を用いる。
 - **トレードオフ**:
     - **メリット**: 実装の差し替えが容易になり、単体テストが容易になる。
@@ -82,10 +82,10 @@ class ipc_router:
 
 # Usage
 router = ipc_router()
-router.register("fireball://hal/uart", uart_service())
+router.register("fireball://hal/uart/0", uart_service())
 
 # Client side (Inner Layer)
-service = router.lookup("fireball://hal/uart")
+service = router.lookup("fireball://hal/uart/0")
 if service:
     service.execute()
 ```

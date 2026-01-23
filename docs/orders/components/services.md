@@ -80,7 +80,7 @@ sequenceDiagram
 | `unload_service` | `uri` | `status_t` | サービスをアンロード | ロード済み | リソース解放 |
 
 ### 4.2 URI/IPCインターフェイス
-- **URI**: `fireball://services/<service_name>/<instance_id`>`
+- **URI**: `fireball://services/<service_name>/<instance_id>`
 - **メッセージ形式**: サービス固有のKey-Valueプロトコル。
 
 ## 5. 制約達成の方策

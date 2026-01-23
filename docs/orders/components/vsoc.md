@@ -107,7 +107,7 @@ sequenceDiagram
 | `register_vmmio_hook` | `addr, size, cb` | `status_t` | vMMIOフックを登録 | なし | フックが有効になる |
 
 ### 4.2 URI/IPCインターフェイス
-- **URI**: `fireball://vsoc/control/<instance_id`>
+- **URI**: `fireball://vsoc/control/<instance_id>`
 - **メッセージ形式**: 実行制御、状態取得用のKey-Valueプロトコル。
 
 ## 5. 制約達成の方策

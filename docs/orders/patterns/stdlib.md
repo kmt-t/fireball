@@ -1,50 +1,84 @@
-# 標準ライブラリの利用パターン
+# 標準ライブラリ利用パターン (改定案)
 
-## 仕様を禁止された標準ライブラリ
+## 1. 意図 (Intent)
+リソース制約の厳しい組み込み環境において、メモリ断片化や実行時オーバーヘッドを最小化しつつ、C++20のモダンな機能を安全に利用するためのガイドラインを定義する。
 
-下記の標準ライブラリは用いない。
+## 2. 構造 (Structure)
 
-- ファイルシステム関連
-- std::vector
-- std::map
-- std::unordered_map
-- std::thread
-- 下記を除くランタイムのリンクが必要な標準C++ライブラリ。
-  - コルーチン
-  - スタックトレース
-  - 標準入出力
-  - 文字列ストリーム
-  - std::chrono
+### 2.1 利用可能ライブラリ分類
 
-詳細仕様では使用して良い標準C++ライブラリをリスト化すること。
+| 分類 | 利用可能要素 | 禁止要素 |
+| :--- | :--- | :--- |
+| **コンテナ** | `std::array`, `std::span` | `std::vector`, `std::map`, `std::list` |
+| **ランタイム** | コルーチン, `std::chrono` | `std::thread`, `std::filesystem` |
+| **ユーティリティ** | `std::optional`, `std::variant` | 例外 (`try-catch`) |
 
-## メモリアロケータ
+### 2.2 共通ステータスコード (Status)
+システム全体で統一して使用するステータスコード。
 
-- dlmallocのmspaceを用いる。
-- mspaceの分割は @docs/oders/architecture/overview.md のヒープパーテーションの仕様に準じる。
-- newおよびdelete演算子はオーバーロードしてmspaceからメモリを確保する。
-- newおよびdelete演算子はmspace選択ロジックをポリシーとして分離する。
+| 定数名 | 値 | 説明 |
+| :--- | :--- | :--- |
+| `STATUS_OK` | 0 | 成功 |
+| `STATUS_ERROR` | 1 | 一般エラー |
+| `STATUS_NOT_FOUND` | 2 | 対象が見つからない |
+| `STATUS_PERMISSION_DENIED` | 3 | 権限不足 |
+| `STATUS_OUT_OF_MEMORY` | 4 | メモリ不足 |
+| `STATUS_INVALID_ARGUMENT` | 5 | 引数不正 |
 
-# バイナリデータへのアクセス
+## 3. 適用ガイドライン
 
-バイナリデータにアクセスする際にはstd::spanを積極的に用いる。アクセスする前にアクセスして良い領域をstd::spanで定義し、不正アクセスを防止する。
+### 3.1 メモリ管理ポリシー
+- **動的確保**: `dlmalloc` の `mspace` を使用し、ヒープパーティションごとに隔離する。 `{Policy_Memory}`
+- **アロケータ**: `new`/`delete` をオーバーロードし、コンパイル時に決定されたパーティションから確保する。 `{StaticDI}`
+- **バンプアロケータ**: 解放が不要な一時的なメモリ確保にはバンプアロケータを優先する。
 
-## std::vectorの代替
+### 3.2 データアクセス
+- **バイナリデータ**: `std::span` を用いて境界チェックを行い、不正アクセスを防止する。
+- **文字列**: `std::string_view` を積極的に用い、コピーを避ける。
 
-- std::arrayの固定長配列を用いる。
-- 部分配列をが必要な場合はstd::spanを用いる。
+## 4. 設計完了チェックリスト（網羅性確認）
 
-## std::map/std::unordered_mapの代替
+- [x] パターンの解決する問題（意図）が明確か
+- [x] 利用可能・禁止ライブラリのリストが明示されているか
+- [x] メモリ管理の方針がアーキテクチャと整合しているか
+- [x] コンセプトコード（Python）が提供されているか
 
-std::mapのメモリ断片化の問題を避けるために下記の代替手法を用いてKey-Value配列で保存する。
+## 5. コンセプトコード
 
-- データの更新がなく想定される検索の回数が10回以上の場合
-  - 事前に配列をKeyでソートしておき、二分検索する。
-- データがROMにある、コピーコストが高い、または更新がある場合
-  - Key-Value配列のインデックス配列をソートし、検索時はインデックス配列を用いて二分検索する。
+```python
+# Concept of Memory Partitioning and Allocation Policy
+class memory_partition:
+    def __init__(self, name, size):
+        self.name = name
+        self.size = size
+        self.used = 0
 
-検索には`std::lower_bound`を用いる。コンセプトコードは `docs/oders/patterns/sorted_indexed_array.md` を参照すること。
+    def allocate(self, amount):
+        if self.used + amount <= self.size:
+            self.used += amount
+            return True
+        return False
 
-## バンプアロケータ
+class system_allocator:
+    def __init__(self):
+        self.partitions = {
+            "kernel": memory_partition("Kernel", 8192),
+            "guest": memory_partition("Guest", 24576)
+        }
 
-メモリに対し、コンポーネントの終了時以外に解放が必要がない場合バンプアロケータからメモリを確保する。
+    def new_object(self, partition_name, size):
+        partition = self.partitions.get(partition_name)
+        if partition and partition.allocate(size):
+            print(f"Allocated {size} bytes from {partition_name}")
+            return True
+        print(f"Allocation failed in {partition_name}")
+        return False
+
+# Usage
+allocator = system_allocator()
+allocator.new_object("kernel", 1024)
+```
+
+## 6. 関連パターン
+- **ソート済みインデックス付き配列**: `std::map` の代替。
+- **インターフェイス設計パターン**: DTOの定義。

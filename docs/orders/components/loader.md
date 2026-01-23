@@ -1,238 +1,114 @@
-# wasmローダ
+# WASMローダ コンポーネント設計書
 
-## コンセプト
+## 1. コンセプト
+WASMローダは、ROM上のWASM32バイナリをパースし、実行環境が参照しやすい索引構造（ModuleView）を生成する。RAMへの全展開を避け、ROM上のデータを直接参照することでメモリ消費を極小化する。 `{ROMParsing}` `{AccessDictionary}` `{BumpAllocator}`
 
-wasmローダは、ROM上のwasm32バイナリをパースし、インタープリタおよびランタイムAPIが参照しやすい**モジュール参照構造**を生成する。RAMへ全展開は行わず、バイナリへのアクセスは`std::span`で境界を定義した上で行う。ローダ用メモリはモジュール破棄まで解放されないため、バンプアロケータを用いる。`{BumpAllocator}` `{ConfigurableSystem}` `{MemoryIsolation}`
+## 2. 静的モデル
 
-目的:
-- ROM上のwasm32バイナリを**オフセット参照**で扱う。`{ROMParsing}`
-- 主要セクションの境界を索引化し、アクセスを効率化する**辞書**を保持する。`{AccessDictionary}`
-- 簡易ベリファイアの検証結果を保持し、実行前チェックを明確化する。`{LightweightVerifier}`
+### 2.1 データ構造
+- **module_view_t**: ROM上のバイナリへの参照と、パース済みの索引群を保持するルート構造体。
+- **section_index_t**: 各WASMセクションの開始位置とサイズを保持する索引。
+- **module_dictionary_t**: 関数、型、エクスポート名などの高速検索用辞書。 `{AccessDictionary}`
 
-導出元:
-- wasmローダの要件: [`docs/oders/components/runtime.md`](docs/oders/components/runtime.md:1)
-- ヒープ分割: [`docs/oders/architecture/overview.md`](docs/oders/architecture/overview.md:57)
-- 設定方式: [`docs/oders/requires/list.md`](docs/oders/requires/list.md:59)
-- バイナリアクセス指針: [`docs/oders/patterns/stdlib.md`](docs/oders/patterns/stdlib.md:28)
-
-### 用語
-
-- **ModuleView**: ROM上のバイナリを参照する読み取り専用ビュー。
-- **SectionSpan**: セクションのオフセットと長さを保持する範囲情報。
-- **SectionIndex**: 主要セクションの索引。
-- **ModuleDictionary**: アクセス効率化のための付加索引群。
-- **VerificationResult**: 簡易検証の結果とエラー理由。
-
-## 構成要素
-
-wasmローダは以下の5つの構成要素で構成される。
-
-### 1. ModuleHeader
-
-**責務**: バイナリ種別とバージョンの識別、参照範囲の提示
-
-**機能**:
-- `magic`: `\0asm` のマジック値を保持
-- `version`: wasmバージョンを保持
-- `binary_span`: バイナリ全体の`std::span`を保持
-
-**実装方式**:
-- 参照のみ保持し、ROM上のバイナリはコピーしない
-
-| 項目 | 説明 |
-|---|---|
-| magic | `\0asm` のマジック値 |
-| version | wasmバージョン |
-| binary_span | バイナリ全体の`std::span` |
-
-**導出元**: `{ROMParsing}` - ROM上のwasm32バイナリをオフセット参照で扱う。
-
-### 2. SectionSpan
-
-**責務**: セクションの位置とサイズを保持し、境界付き参照を提供
-
-**機能**:
-- `section_id`: wasmセクション識別子の保持
-- `offset`, `size`: ROM上の開始位置とペイロード長の保持
-- `payload_span`: ペイロード範囲の`std::span`提供
-
-**実装方式**:
-- オフセットとサイズのみ保持し、ROM上のデータを参照する
-
-| 項目 | 説明 |
-|---|---|
-| section_id | wasmセクション識別子 |
-| offset | ROM上の開始位置 |
-| size | ペイロード長 |
-| payload_span | `std::span`で定義したペイロード |
-
-**導出元**: `{ROMParsing}` - ROM上のバイナリをパースする。
-
-### 3. SectionIndex
-
-**責務**: 主要セクションの境界を索引化し、参照を高速化
-
-**機能**:
-- 主要セクションを順序付きで保持
-- 存在しないセクションは空`span`を保持
-
-**実装方式**:
-- wasmバイナリの登場順に一致させた固定長構造
-
-| 項目 | 説明 |
-|---|---|
-| type | 型セクションの`SectionSpan` |
-| import | importセクションの`SectionSpan` |
-| function | functionセクションの`SectionSpan` |
-| table | tableセクションの`SectionSpan` |
-| memory | memoryセクションの`SectionSpan` |
-| global | globalセクションの`SectionSpan` |
-| export | exportセクションの`SectionSpan` |
-| start | startセクションの`SectionSpan` |
-| element | elementセクションの`SectionSpan` |
-| code | codeセクションの`SectionSpan` |
-| data | dataセクションの`SectionSpan` |
-| custom | customセクションの`SectionSpan` |
-
-**導出元**: `{AccessDictionary}` - 主要セクションの境界を索引化する。
-
-### 4. ModuleDictionary
-
-**責務**: ROM上のアクセスを効率化するための辞書群を提供
-
-**機能**:
-- 関数ボディ、型、export/import名の参照を高速化
-- 文字列プールによる名前解決の共通化
-
-**実装方式**:
-- 全てバンプアロケータから確保し、`std::array`と`std::span`で管理する。`{AccessDictionary}` `{BumpAllocator}`
-- 辞書の検索は**ソート済みインデックス付き配列**による二分探索（`std::lower_bound`）を用いる。
-
-| 辞書 | 目的 | 格納内容 |
-|---|---|---|
-| function_body_index | 関数ボディのランダムアクセス | `funcidx -> SectionSpan` |
-| type_index | 関数型の参照を高速化 | `typeidx -> SectionSpan` |
-| export_name_index | export名から対象を参照 | `name_offset -> export_entry` |
-| import_name_index | import名から対象を参照 | `name_offset -> import_entry` |
-| string_pool | 文字列の集約領域 | NULL終端連結の文字列群 |
-
-補足:
-- `name_offset`は`string_pool`内のオフセット。
-- 文字列コピーは行わず、ROMの範囲を`string_pool`として扱う設計を優先する。
-
-**導出元**: `{AccessDictionary}` - ROM上のアクセスを効率化するための辞書を保持する。
-
-### 5. VerificationResult
-
-**責務**: 簡易ベリファイアの検証結果を保持
-
-**機能**:
-- バイナリ検証の成否と失敗位置を記録
-- 検証済みセクションの範囲を記録
-
-**実装方式**:
-- 仕様は最小限とし、詳細な命令検証は行わない。
-
-| 項目 | 説明 |
-|---|---|---|
-| ok | 検証成功フラグ |
-| error_code | 失敗理由（例: magic不一致、範囲外アクセス） |
-| error_offset | 失敗位置のROMオフセット |
-| verified_sections | どのセクションを検証したかのビット集合 |
-
-**導出元**: `{LightweightVerifier}` - 簡易ベリファイアの検証結果を保持する。
-
-### 構成要素間の依存関係
-
+### 2.2 内部ブロック図
 ```mermaid
 graph TB
-  Loader[WasmLoader] --> Module[ModuleView]
-  Module --> Header[ModuleHeader]
-  Module --> Sections[SectionIndex]
-  Module --> Dict[ModuleDictionary]
-  Module --> Verify[VerificationResult]
-  Sections --> Span[SectionSpan]
-  Dict --> FuncIdx[FunctionBodyIndex]
-  Dict --> TypeIdx[TypeIndex]
-  Dict --> ExpIdx[ExportNameIndex]
-  Dict --> ImpIdx[ImportNameIndex]
-  Dict --> Pool[StringPool]
+    Loader[WasmLoader] --> Module[module_view_t]
+    Module --> Header[module_header_t]
+    Module --> Sections[section_index_t]
+    Module --> Dict[module_dictionary_t]
+    Module --> Verify[verification_result_t]
+    Sections --> Span[section_span_t]
 ```
 
-## 提供する機能
+### 2.3 主要な構造体・クラス・定数
 
-| 機能 | 説明 | 導出元 |
-|------|------|------|
-| **ROMオフセット参照** | ROM上のバイナリを`std::span`で境界付き参照し、RAM展開を行わない。 | `{ROMParsing}` |
-| **セクション索引化** | 主要セクションの境界を索引化し、高速にアクセスする。 | `{AccessDictionary}` |
-| **名前解決辞書** | export/import名や型参照を辞書で高速化する。 | `{AccessDictionary}` |
-| **簡易ベリファイア結果保持** | バイナリ検証の成否と位置を保持する。 |`{LightweightVerifier}` |
+#### `section_span_t` (セクション範囲)
+ROM上のセクションの位置とサイズを定義する。
 
-## インターフェイス
+| メンバ名 | 型 | 説明 |
+| :--- | :--- | :--- |
+| `section_id` | `uint8_t` | WASMセクション識別子 |
+| `offset` | `uint32_t` | ROM上の開始オフセット |
+| `size` | `uint32_t` | ペイロードのサイズ |
 
-### モジュール参照構造
+#### `verification_result_t` (検証結果)
+バイナリ検証の結果を保持する。 `{LightweightVerifier}`
 
-- `ModuleView` から `ModuleHeader` / `SectionIndex` / `ModuleDictionary` / `VerificationResult` を参照できる。
-- `SectionSpan` は各セクションの境界付き`std::span`を提供する。
+| メンバ名 | 型 | 説明 |
+| :--- | :--- | :--- |
+| `is_ok` | `bool` | 検証成功フラグ |
+| `error_code` | `uint8_t` | 失敗理由コード |
+| `error_offset` | `uint32_t` | 失敗箇所のオフセット |
 
-### データ構造の関係
+## 3. 動的モデル (Dynamic Model)
 
+### 3.1 アルゴリズム
+- **バイナリパース**: ROM上のデータを `std::span` でラップし、境界チェックを行いながら順次読み取る。
+- **辞書構築**: 関数ボディやエクスポート名を抽出し、ソート済みインデックス付き配列として構築する。検索には二分探索を用いる。 `{AccessDictionary}`
+
+### 3.2 状態遷移図
 ```mermaid
-graph TB
-  Loader[WasmLoader] --> Module[ModuleView]
-  Module --> Header[ModuleHeader]
-  Module --> Sections[SectionIndex]
-  Module --> Dict[ModuleDictionary]
-  Module --> Verify[VerificationResult]
-  Sections --> Span[SectionSpan]
-  Dict --> FuncIdx[FunctionBodyIndex]
-  Dict --> TypeIdx[TypeIndex]
-  Dict --> ExpIdx[ExportNameIndex]
-  Dict --> ImpIdx[ImportNameIndex]
-  Dict --> Pool[StringPool]
+stateDiagram-v2
+    [*] --> Idle
+    Idle --> Parsing: load_module
+    Parsing --> Verifying: header_ok
+    Verifying --> Ready: verify_ok
+    Verifying --> Error: verify_fail
+    Parsing --> Error: parse_fail
+    Ready --> Idle: unload
 ```
 
-## 機能制約達成のための方策
+### 3.3 内部シーケンス
+#### モジュールロードシーケンス
+```mermaid
+sequenceDiagram
+    participant Client as LoaderClient
+    participant Loader as WasmLoader
+    participant Alloc as BumpAllocator
+    participant ROM as WasmBinary
+    
+    Client->>Loader: load_module(binary_ptr)
+    Loader->>Alloc: allocate(module_view_t)
+    Loader->>ROM: read_header
+    Loader->>Loader: verify_magic_and_version
+    Loader->>ROM: scan_sections
+    Loader->>Alloc: allocate(section_index_t)
+    Loader->>Loader: build_dictionaries
+    Loader-->>Client: module_view_ptr
+```
 
-### ROMパースと参照方式
+## 4. インターフェイス定義
 
-- バイナリへのアクセスは`std::span`で境界を定義し、ROMを直接参照する。`{ROMParsing}`
-- RAMへの全展開は行わない。
+### 4.1 公開API
+| メソッド名 | 引数 | 戻り値 | 説明 | 事前条件 | 事後条件 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `load_module` | `binary_ptr, size` | `module_view_t*` | モジュールをロードする | なし | ModuleViewが生成される |
+| `get_section` | `module_view, id` | `section_span_t` | セクション範囲を取得 | ロード済み | 指定セクションの範囲 |
+| `lookup_export` | `module_view, name` | `uint32_t` | エクスポートを検索 | ロード済み | 関数インデックス等 |
 
-### 辞書の検索方式
+### 4.2 URI/IPCインターフェイス
+本コンポーネントは vSoC 内部で使用されるライブラリであり、直接のIPCインターフェイスは持たない。
 
-- 辞書検索は**ソート済みインデックス付き配列**の二分探索（`std::lower_bound`）を用いる。`{AccessDictionary}`
-- 文字列コピーは行わず、ROMの範囲を`string_pool`として扱う設計を優先する。
+## 5. 制約達成の方策
 
-### 簡易ベリファイア
+### 5.1 性能制約と方策
+- **目標**: モジュールロード時間を最小化する。
+- **方策**: `{ROMParsing}` `{AccessDictionary}` RAMへのコピーを排除し、主要な要素を索引化することで、実行時の探索コストを抑える。
 
-- 詳細な命令検証は行わず、必要最低限の検証結果を保持する。`{LightweightVerifier}`
+### 5.2 メモリ制約と方策
+- **目標**: ロード時のRAM消費を極小化する。
+- **方策**: `{BumpAllocator}` `{NoStdVector}` バンプアロケータを使用し、断片化を防止しつつ、固定長配列による索引管理を行う。
 
-## 非機能制約達成のための方策
+### 5.3 安全性制約と方策
+- **目標**: 不正なWASMバイナリによるクラッシュを防止する。
+- **方策**: `{LightweightVerifier}` `{Wasm32Only}` ロード時にマジック値、バージョン、セクション境界の整合性を検証し、不正なバイナリを拒否する。
 
-### 性能制約と方策
-
-| 制約 | 方策 | 導出元 |
-|------|------|------|
-| **アクセス効率** | セクション索引と辞書を用いてROM参照を高速化する。 | `{AccessDictionary}` |
-| **検索効率** | ソート済みインデックス付き配列の二分探索を採用する。 | `{AccessDictionary}` |
-
-### メモリ制約と方策
-
-| 制約 | 方策 | 導出元 |
-|------|------|------|
-| **ヒープ隔離** | ローダ用メモリは**WASMランタイムヒープ**から確保し、他タスクと隔離する。 | `{IndependentHeap}` |
-| **解放タイミング** | モジュール破棄まで解放されないため、バンプアロケータを用いる。 | `{BumpAllocator}` |
-| **固定長管理** | 配列は`std::array`と`std::span`で固定長管理する。 | `{NoStdVector}` |
-
-### 安全性制約と方策
-
-| 制約 | 方策 | 導出元 |
-|------|------|--------|
-| **簡易検証** | magic不一致や範囲外アクセスを検知し、検証結果を保持する。 | `{LightweightVerifier}` |
-| **対象限定** | wasm32のみを対象とし、浮動小数点命令は実装しない。 | `{Wasm32Only}` |
-
-### 仕様上の前提
-
-- wasm32のみを対象とする。浮動小数点命令は実装しない。`{Wasm32Only}`
-- 具体的な命令セットはclang出力に基づく別リストで定義する。`{InstructionSubsetFromClang}`
+## 6. 設計完了チェックリスト（網羅性確認）
+- [x] コンポーネントの責務が明確に定義されているか
+- [x] 内部設計（データ構造、ブロック図、クラス、アルゴリズム）が適切に定義されているか
+- [x] 内部ブロック図（静的）とシーケンス/状態遷移図（動的）がセットで定義されているか
+- [x] 公開APIのメソッド名が英語で記述され、事前/事後条件が明確か
+- [x] 非機能制約（性能、メモリ、安全性）に対する具体的な方策が明示されているか
+- [x] 設計の交差点（トレードオフ）が解消されているか
+- [x] 上位の要求 `{Keyword}` とのトレーサビリティが確保されているか

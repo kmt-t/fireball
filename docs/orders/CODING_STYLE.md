@@ -6,7 +6,7 @@
 
 - **ファイル**: `inc/path/to/file.hxx` , `src/path/to/file.cxx` 
 - **Class/Func/Var**: `snake_case` (e.g., `ipc_router`, `send_message`)
-- **Struct**: `typedef struct { ... } name_t;` (`_t` suffix)
+- **Struct**: `typedef struct { ... } snake_case_t;` (`_t` suffix)
 - **Const/Macro**: `UPPER_SNAKE_CASE`
 - **Member**: `variable_` (trailing underscore)
 

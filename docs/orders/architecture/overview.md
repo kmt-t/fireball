@@ -1,6 +1,17 @@
-# アーキテクチャ
+# アーキテクチャ設計書：Fireball システム概要
 
-## システムレイヤー構成
+## 1. アーキテクチャコンセプト
+
+Fireballは、極小リソース環境での柔軟性と高性能を両立させるため、以下の設計思想を採用する。
+
+- **クリーンアーキテクチャとDI**: URIベースの抽象化とIPCルータによる依存性の注入により、コンポーネント間の結合度を下げ、移植性を向上させる。 `{CleanArchitecture}` `{URIAbstraction}` `{IPCDI}`
+- **協調型マルチタスク (COOS)**: C++20コルーチンを活用し、スタックレスで低オーバーヘッドなタスク切り替えを実現する。 `{UseCpp20Coroutine}` `{LowOverheadSwitch}`
+- **高速JIT (Copy-and-Patch)**: コンパイルレイテンシを最小化し、小規模なコードキャッシュで効率的に動作するJITアーキテクチャを採用する。 `{LowLatencyJIT}` `{SimpleJITArchitecture}`
+- **静的構成**: システムパラメータや依存関係の多くをコンパイル時に決定し、実行時の動的メモリ確保や探索コストを排除する。 `{StaticDI}` `{ConfigurableSystem}`
+
+## 2. 静的構造 (Static Model)
+
+### 2.1 レイヤー構成
 
 | レイヤー | 構成要素 | 説明 |
 | :--- | :--- | :--- |
@@ -9,100 +20,113 @@
 | **vSoC** | インタープリタ, JIT, デバッガ, vMMIO | WASM実行環境と仮想ハードウェア抽象化を提供。 |
 | **COOSカーネル** | スケジューラ, CSP, メモリ | 協調型マルチタスクと安全な通信の基盤。 |
 | **サブシステム** | IPCルータ, HAL, ロギング | システムの共通機能とハードウェア抽象化層。 |
-| **デバイスドライバ** | 各種ドライバ | UART, GPIO, I2C, Timer 等の物理デバイス制御。 |
-| **ハードウェア** | CPU, 周辺機器 | ARM Cortex-M, RISC-V, x86 等の物理基盤。 |
+| **デバイスドライバ** | 各種ドライバ | 物理デバイス制御（UART, GPIO等）。 |
+| **ハードウェア** | CPU, 周辺機器 | 物理基盤（ARM Cortex-M, RISC-V等）。 |
 
-## クリーンアーキテクチャと依存性の注入 (DI)
-
-Fireballでは、コンポーネント間の結合度を下げ、移植性を向上させるためにクリーンアーキテクチャの原則を採用する。 `{CleanArchitecture}`
-
-- **URIによる抽象化**: URI（例：`fireball://hal/uart`）をインターフェイスとして定義する。利用側（内側の層）は、具体的な実装の詳細を知ることなくURIを指定してサービスを検索（`lookup`）する。 `{URIAbstraction}`
-- **IPCルータによるDI**: IPCルータがDIコンテナとして機能する。起動時に特定のURIに対してどのコンポーネントが登録（`register`）されるかによって、依存性が注入される。 `{IPCDI}`
-- **コンフィグレーションによる制御**: どの実装を有効にし、どのURIに紐付けるかは、コンパイル時のコンフィグレーション（ヘッダファイルのマクロ）によって決定される。これにより、コードを変更せずにハードウェア依存部などの実装を差し替えることが可能となる。 `{StaticDI}`
-
-## 協調型OS: COOS
-
-COOSは最小限のカーネルで、コルーチンによる協調的マルチタスクとCSPチャネルによる通信を基盤とする。
-
-### コルーチン
-
-- C++20のスタックレスコルーチンを採用し (`{UseCpp20Coroutine}`)、コンテキストスイッチのオーバーヘッドを最小化する。 `{LowOverheadSwitch}`
-
-### タスクスケジューリング
-
-- ラウンドロビン方式によるタスク実行管理を採用し、公平性を確保する。 `{TaskScheduling}`
-- **概算Yieldの運用**: パフォーマンス優先のため、タイマを使わないトレース数ベースのYieldを採用する。実行時間の逸脱はログで検知し、設計にフィードバックする。 `{Challenge_ApproximateYield}`
-
-### CSPチャネル
-
-- CSPモデルを採用し、データ競合なく安全な通信を実現する。 `{CSPChannel}`
-- `co_value` による排他的なデータ所有権移譲を行う。 `{OwnershipTransfer}`
-- タスク間のデータ共有は所有権の移譲を伴うメッセージパッシングによって行い、データ競合を原理的に排除する。 `{EliminateDataRace}`
-
-### 割り込み連携アーキテクチャ
-
-- **強制ウェイクアップ機構**
-  - 割り込み発生時、HALはCOOSスケジューラに対し、関連するタスクの強制ウェイクアップを要求する。 `{InterruptWakeup}`
-  - スケジューラは対象タスクを割り込み状態に遷移させ、次回の実行サイクルで優先的にスケジュールする。
-- **割り込みハンドラ実行**
-  - タスクが `INTERRUPTED` 状態から再開される際、通常のメイン処理ではなく、登録された「割り込みハンドラ」が実行される。
-  - 割り込みハンドラはHALの割り込みフラグ、割り込み要因をインタープリタコンテキストに書き込む。 `{TaskPollInterruptFlag}`
-  - インタープリタコンテキストは割り込みフラグと割り込み要因を保持し、分岐時にチェックされる。 `{InterpreterContextInterruptManagement}`
-- **安全性確保の方針**: 割り込みハンドラによる実行コンテキスト破壊を防ぐため、Poll方式（`co_yield` 後のフラグチェック）を基本とする。将来的にJITスキャンやスタック分離などのより強固なガード機構の導入を検討する。 `{Challenge_InterruptSafety}`
-
-### 安全性と隔離
-
-- タスクごとに独立したヒープ領域を割り当てる。 `{IndependentHeap}`
-- メモリ使用量を厳密に制限し (`{StrictMemoryLimit}`)、障害を隔離する。 `{FaultIsolation}`
-
-## vSoC
-
-### JITコンパイラ
-
-- コンパイルレイテンシの最小化を最優先し、複雑な最適化を省いた事前定義テンプレートの連結方式（Copy-and-Patch）を採用する。 `{LowLatencyJIT}`
-- WASMバイナリが生成時に最適化済みであることを活かし、実行時の解析コストを削減する。高速なコンパイルによりキャッシュの再生成コストが低下するため、小規模なコードキャッシュで効率的に動作し、プロファイラ等の複雑な機構を排除できる。 `{SimpleJITArchitecture}`
-- JITコンパイラの出力バイナリはPIC (Position Independent Code) とし、コンテキストポインタをレジスタに保持する。 `{PositionIndependentCode}` `{ContextPointerRegister}`
-- **キャッシュ・コンパイル戦略**: RAM 64KB制約下での効率的なキャッシュ管理のため、Active/Oldダブルバッファを採用する。ホットスポット判定は `co_yield` 時に一括して行うことで、実行時のオーバーヘッドを抑制する。 `{Challenge_JITCacheEfficiency}` `{JIT_DoubleBuffer_Cache}`
-
-## IPCルータ
-
-IPCルータはコンポーネント間の通信をURIベースのルーティングとアクセス制御で担う。vSoCとサブシステムはIPCルータに登録され、CSPチャネル経由で型付きKey-Valueプロトコルを用いたIPC通信を行う。 `{IPCRouter}`
-
-### ヒープパーティション
-
-システムRAMを以下の5つの独立したヒープに分割する。
-
-| パーティション名 | 目的 | 最小サイズ | 最大サイズ | メモリ確保失敗時の影響 |
-|---|---|---|---|---|
-| COOSカーネルヒープ | `co_sched`, `co_csp`, `co_mem`, `co_value`メタデータ | 4.0KB | 8.0KB | システムパニック |
-| WASMランタイムヒープ | インタープリタ, モジュールローダ, 実行コンテキスト, デバッガ | 2.0KB | 4.0KB | システムパニック |
-| サブシステムヒープ | IPCルータ, ロギング, HAL, | 1.0KB | 4.0KB | IPC停止（機能継続） |
-| Tier1サービスヒープ | その他サービス | 1.0KB | 4.0KB | サービスのみ終了 |
-| ゲストモジュールヒープ | ゲストアプリケーション | 24KB | 残余 | ゲストのみ終了 |
+### 2.2 コンポーネント俯瞰図
 
 ```mermaid
 graph TD
-    subgraph System_RAM
-        A[COOS Kernel Heap]
-        B[WASM Runtime Heap]
-        C[Subsystem Heap]
-        D[Service Heap]
-        E[Guest Module Heap]
-        F[Coroutine Stack Area]
+    subgraph Guest_Layer
+        App[Guest Application]
+        Svc[WASM Services]
     end
 
-    subgraph COOS_Kernel
-        G[Coroutine]
-        H[CSP Channel]
+    subgraph Runtime_Layer
+        vSoC[vSoC / WASM Runtime]
     end
 
-    G -- Stack Allocation --> F
-    H -- Metadata Allocation --> A
-    G <--> H
+    subgraph Kernel_Layer
+        COOS[COOS Kernel]
+        IPCR[IPC Router]
+    end
+
+    subgraph Hardware_Abstraction_Layer
+        HAL[HAL]
+        Log[Logging]
+    end
+
+    App --> vSoC
+    Svc --> vSoC
+    vSoC --> IPCR
+    IPCR --> HAL
+    IPCR --> Log
+    COOS --> vSoC
+    COOS --> IPCR
+    HAL --> HW[Hardware]
 ```
 
-各ヒープパーティションは、コンフィグファイルで定義されるマクロによってサイズが固定される。
+## 3. 動的構造 (Dynamic Model)
 
-## 設定方式
+### 3.1 主要シーケンス
 
-- ヘッダファイル形式のコンフィグファイルでシステムパラメータを定義し、コンパイル時に固定する。 `{ConfigurableSystem}`
+#### 起動およびタスク登録
+```mermaid
+sequenceDiagram
+    participant Boot as Bootloader
+    participant IPCR as IPC Router
+    participant HAL as HAL
+    participant COOS as COOS Kernel
+    
+    Boot->>HAL: Initialize Hardware
+    Boot->>IPCR: Register System Services (URI)
+    Boot->>COOS: Initialize Scheduler
+    COOS->>COOS: Start Idle Task
+```
+
+#### IPC通信 (URIベース)
+```mermaid
+sequenceDiagram
+    participant App as Guest App
+    participant vSoC as vSoC
+    participant IPCR as IPC Router
+    participant Svc as Target Service
+    
+    App->>vSoC: System Call (URI)
+    vSoC->>IPCR: Lookup(URI)
+    IPCR-->>vSoC: Handle (Pointer)
+    vSoC->>Svc: Send Message (Zero-copy)
+    Svc-->>vSoC: Reply
+    vSoC-->>App: Return
+```
+
+## 4. 設計判断 (ADR)
+
+- **決定事項**: `{Challenge_ApproximateYield}`
+  - **背景**: タイマ割り込みによる厳密なプリエンプションはオーバーヘッドが大きい。
+  - **選択肢と評価**: 
+    - 案1: タイマ割り込みによるプリエンプション（高精度だが重い）
+    - 案2: トレース数ベースの概算Yield（低オーバーヘッドだが実行時間が逸脱する可能性あり）
+  - **結論**: 案2を採用。実行時間の逸脱はログで検知し、設計にフィードバックする。
+
+- **決定事項**: `{Challenge_InterruptSafety}`
+  - **背景**: 割り込みハンドラによる実行コンテキスト破壊の防止。
+  - **結論**: Poll方式（`co_yield` 後のフラグチェック）を基本とする。将来的にJITスキャンやスタック分離を検討。
+
+- **決定事項**: `{Challenge_JITCacheEfficiency}`
+  - **背景**: RAM 64KB制約下での効率的なキャッシュ管理。
+  - **結論**: Active/Oldダブルバッファを採用し、`co_yield` 時に一括してホットスポット判定を行う。
+
+## 5. 設計完了チェックリスト（網羅性確認）
+
+- [x] システムレイヤー構成が定義され、各レイヤーの責務が明確か
+- [x] コンポーネント間の依存方向がアーキテクチャ原則に従っているか
+- [x] 主要な動的振る舞い（シーケンス）が定義されているか
+- [x] 重要な設計上のトレードオフが ADR として記録されているか
+- [x] 共通ポリシー（エラー、メモリ、ログ）が定義されているか
+
+## 6. 共通ポリシー
+
+### ヒープパーティション
+システムRAMを独立したヒープに分割し、障害隔離を実現する。 `{IndependentHeap}` `{FaultIsolation}` `{StrictMemoryLimit}`
+
+| パーティション名 | 目的 | 最小サイズ | メモリ確保失敗時の影響 |
+|---|---|---|---|
+| COOSカーネルヒープ | スケジューラ, CSP等 | 4.0KB | システムパニック |
+| WASMランタイムヒープ | インタープリタ, コンテキスト等 | 2.0KB | システムパニック |
+| サブシステムヒープ | IPCルータ, HAL等 | 1.0KB | IPC停止 |
+| サービスヒープ | その他サービス | 1.0KB | サービスのみ終了 |
+| ゲストモジュールヒープ | ゲストアプリケーション | 24KB | ゲストのみ終了 |
+
+### 設定方式
+ヘッダファイル形式のコンフィグファイルでシステムパラメータを定義し、コンパイル時に固定する。 `{ConfigurableSystem}`

@@ -1,12 +1,12 @@
 # vSoC コンポーネント設計書
 
 ## 1. コンセプト
-vSoC (Virtual System-on-Chip) は、リソース制限の厳しい組み込み環境において、セキュアかつ高性能なWASM実行環境を提供する。ハードウェア抽象化 (vMMIO)、低レイテンシ実行 (Copy-and-Patch JIT)、および厳密な隔離を実現する。また、HAL層から供給されるデバッグコマンドキューを介して、外部デバッガとの連携を可能にする。 `{LowLatencyJIT}` `{MemoryIsolation}` `{FaultIsolation}`
+vSoC (Virtual System-on-Chip) は、WASM実行環境の統合マネージャであり、Loader、Interpreter、JIT、vMMIO、Debugger を統括して実行制御を行う。実行エンジンの詳細は各コンポーネントに分離し、vSoC は状態管理とオーケストレーションに集中する。 `{LowLatencyJIT}` `{MemoryIsolation}` `{FaultIsolation}`
 
 ## 2. 静的モデル
 
 ### 2.1 データ構造
-- **execution_context_t**: WASMのレジスタ、スタック、メモリ、および実行状態を保持する。 `{InterpreterContextStackless}`
+- **vsoc_runtime_t**: vSoCが管理する実行ユニットの集合（Loader/Interpreter/JIT/vMMIO/Debuggerの参照）。
 - **JIT Code Cache**: コンパイル済みのネイティブコードを保持するダブルバッファ領域。 `{JIT_DoubleBuffer_Cache}`
 - **vMMIO Map**: 仮想的なメモリマップドI/Oのフック情報を管理する。
 
@@ -14,6 +14,7 @@ vSoC (Virtual System-on-Chip) は、リソース制限の厳しい組み込み�
 ```mermaid
 graph TD
     subgraph vSoC
+        Manager[vSoC Manager]
         Loader[WasmLoader]
         Interp[Interpreter]
         JIT[JIT Compiler]
@@ -21,40 +22,31 @@ graph TD
         Debug[Debugger]
         API[Runtime API]
     end
-    
+
     HAL[HAL RSP Parser] --> Queue[debug_command_queue_t]
     Queue --> Debug
-    Loader --> Interp
+    Manager --> Loader
+    Manager --> Interp
+    Manager --> JIT
+    Manager --> vMMIO
+    Manager --> Debug
     Interp --> API
     JIT --> API
-    Interp --> JIT
-    Interp --> vMMIO
-    Interp --> Debug
 ```
 
 ### 2.3 主要な構造体・クラス・定数
 
-#### `execution_context_t` (実行コンテキスト)
-WASMゲストの全実行状態を管理する。 `{PositionIndependentCode}` `{ContextPointerRegister}`
+#### `vsoc_runtime_t` (vSoC実行ユニット)
+vSoCが管理する実行構成を保持する。実行コンテキストの詳細は Interpreter で定義する。
 
 | メンバ名 | 型 | 説明 |
 | :--- | :--- | :--- |
-| `pc` | `uint32_t` | プログラムカウンタ |
-| `stack_ptr` | `uint32_t*` | オペランドスタックポインタ |
-| `memory_base` | `uint8_t*` | リニアメモリ開始アドレス |
-| `memory_size` | `uint32_t` | リニアメモリサイズ |
-| `yield_count` | `uint32_t` | 次のyieldまでの残りトレース数 `{Challenge_ApproximateYield}` |
-| `frame_ptr` | `call_frame_t*` | 現在のコールフレームへのポインタ |
-
-#### `call_frame_t` (コールフレーム)
-関数呼び出しごとの実行状態を保持する。
-
-| メンバ名 | 型 | 説明 |
-| :--- | :--- | :--- |
-| `return_address` | `uint32_t` | 呼び出し元のPC（戻り先） |
-| `frame_base` | `uint32_t*` | このフレームのスタック基点 |
-| `prev_frame` | `call_frame_t*` | 前のコールフレームへのポインタ |
-| `func_idx` | `uint32_t` | 関数インデックス |
+| `loader` | `loader_t*` | WASMローダ参照 |
+| `interpreter` | `interpreter_t*` | インタープリタ参照 |
+| `jit` | `jit_compiler_t*` | JITコンパイラ参照 |
+| `vmmio` | `vmmio_t*` | vMMIO参照 |
+| `debugger` | `debugger_t*` | デバッガ参照 |
+| `exec_ctx` | `execution_context_t*` | 実行コンテキスト参照 |
 
 #### `vsoc_config_t` (vSoC構成)
 vSoCの動作パラメータを定義する。 `{ConfigurableSystem}`
@@ -67,13 +59,12 @@ vSoCの動作パラメータを定義する。 `{ConfigurableSystem}`
 | `ram_size` | `uint32_t` | ゲストRAMのサイズ |
 | `vmmio_base` | `uint32_t` | vMMIO領域の開始アドレス (通常 0x4000_0000) |
 
-## 3. 動的モデル (Dynamic Model)
+## 3. 動的モデル
 
 ### 3.1 アルゴリズム
-- **スレッドインタープリタ**: ハンドラを継続渡しで連鎖させ、高速な命令実行を実現する。 `{ThreadedInterpreter}`
-- **Copy-and-Patch JIT**: 命令テンプレートを連結し、実行時にパッチを当てることで、最小限のレイテンシでネイティブコードを生成する。 `{CopyAndPatchJIT}`
-- **概算Yield**: 実行したトレース数をカウントし、一定数を超えた場合に `co_yield` を発行する。 `{Challenge_ApproximateYield}`
-- **デバッグ連携**: `step()` 実行前後にデバッガコンポーネントを呼び出し、HAL層から供給されたデバッグコマンド（ブレークポイント設定、レジスタ参照等）を処理する。
+- **実行エンジン委譲**: vSoCは `step()` で Interpreter/JIT のいずれかに実行を委譲する。 `{ThreadedInterpreter}` `{CopyAndPatchJIT}`
+- **概算Yield**: 監視対象の `yield_count` を基準に `co_yield` を発行する。 `{Challenge_ApproximateYield}`
+- **デバッグ連携**: `step()` 前後で Debugger を呼び出し、HAL層からのコマンドを処理する。
 
 ### 3.2 状態遷移図
 ```mermaid
@@ -94,19 +85,30 @@ stateDiagram-v2
 ```mermaid
 sequenceDiagram
     participant S as Scheduler
+    participant V as vSoC
     participant I as Interpreter
     participant J as JIT Compiler
     participant C as Code Cache
     
-    S->>I: step()
-    I->>I: Execute WASM Instructions
-    Note over I: Hotspot Detected
-    I->>J: compile(func_idx)
-    J->>C: Write Native Code
-    J-->>I: code_ptr
-    I->>C: jump to code_ptr
-    C-->>I: return on yield/trap
-    I-->>S: yield
+    S->>V: step()
+    loop until yield
+        alt JIT Code exists
+            V->>C: jump to code_ptr
+            C-->>V: return
+        else Interpreter
+            V->>I: step(exec_ctx)
+            I-->>V: return (trace end)
+        end
+    end
+    V-->>S: yield
+    
+    Note over V,J: co_yield processing (Hotspot Detection)
+    V->>V: scan_history_buffer()
+    V->>J: enqueue_compile_request(pc)
+    
+    Note over J,C: Background JIT Task
+    J->>J: dequeue_request()
+    J->>C: write_native_code
 ```
 
 ## 4. インターフェイス定義
@@ -138,6 +140,14 @@ WASMゲストからホスト関数を呼び出すためのインターフェイ�
 ### 4.4 URI/IPCインターフェイス
 - **URI**: `fireball://vsoc/control/<instance_id>`
 - **メッセージ形式**: 実行制御、状態取得用のKey-Valueプロトコル。
+
+### 4.5 関連コンポーネントとの連携
+| コンポーネント | 連携内容 | 参照データ構造 |
+| :--- | :--- | :--- |
+| **Interpreter** | インタープリタ実行の委譲とホットスポット履歴の取得 | `interpreter_t`, 履歴バッファ |
+| **JIT Compiler** | トレース単位のコンパイル要求とコードキャッシュ管理 | `jit_compiler_t`, `JIT Code Cache` |
+| **Wasm Loader** | モジュールロードと `module_view_t` の管理 | `loader_t`, `module_view_t` |
+| **Debugger** | デバッグコマンドの処理と実行状態の同期 | `debugger_t`, `debug_command_queue_t` |
 
 ## 5. 制約達成の方策
 

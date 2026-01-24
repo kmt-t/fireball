@@ -28,10 +28,12 @@ graph TD
 | メンバ名 | 型 | 説明 |
 | :--- | :--- | :--- |
 | `id` | `task_id_t` | タスクを一意に識別するID |
+| `name` | `char[16]` | タスク名（デバッグ表示用） |
 | `state` | `task_state_t` | タスクの状態 (READY, RUNNING, BLOCKED, INTERRUPTED) |
 | `coro_handle` | `std::coroutine_handle<>` | C++20コルーチンハンドル |
-| `heap_base` | `void*` | タスク固有ヒープの開始アドレス |
+| `heap_base` | `uint8_t*` | タスク固有ヒープの開始アドレス |
 | `heap_size` | `size_t` | タスク固有ヒープのサイズ |
+| `next` | `task_t*` | 次のタスクへのポインタ（デバッガ用リスト） |
 
 #### `channel_t` (CSPチャネル)
 タスク間の同期と通信を仲介する。

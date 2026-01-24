@@ -1,7 +1,7 @@
 # デバッガ コンポーネント設計書
 
 ## 1. コンセプト
-デバッガは、VSCode等の外部ツールからのデバッグを可能にするため、GDB Remote Serial Protocol (RSP) に基づく実行制御を行う。RSPパケットの解析はHAL層で行われ、デバッガはHALから供給されるコマンドキューを消費して実行状態を制御する。リソース制約に対応するため、デバッグ中はJITを無効化し、インタープリタ実行にフォールバックする設計を採用する。 `{RSPMinimalSet}` `{DebuggerLabelTableSwitch}` `{MemoryIsolation}`
+デバッガは、VSCode等の外部ツールからのデバッグを可能にするため、GDB Remote Serial Protocol (RSP) に基づく実行制御を行う。標準環境として VSCode, UART, J-Link をサポートする。RSPパケットの解析はHAL層で行われ、デバッガはHALから供給されるコマンドキューを消費して実行状態を制御する。リソース制約に対応するため、デバッグ中はJITを無効化し、インタープリタ実行にフォールバックする設計を採用する。 `{RSPMinimalSet}` `{DebuggerLabelTableSwitch}` `{MemoryIsolation}` `{Debug_Standard_Env}`
 
 ## 2. 静的モデル
 
@@ -48,6 +48,14 @@ GDB RSPに対して公開する仮想的なレジスタセット。 `{RSPMinimal
 | `LR` | 1 | `call_frame_t.return_address` | リンクレジスタ（戻り先アドレス） |
 | `SP` | 2 | `execution_context_t.stack_ptr` | スタックポインタ（オペランドスタック） |
 | `FP` | 3 | `call_frame_t.frame_base` | フレームポインタ（スタックフレーム基点） |
+
+#### `J-Link RTOS Awareness` 用シンボル
+J-Link GDB Serverプラグインがターゲットのメモリを解析するために必要なグローバルシンボル。
+
+| シンボル名 | 型 | 説明 |
+| :--- | :--- | :--- |
+| `g_task_list` | `task_t*` | 全タスクのリストの先頭ポインタ |
+| `g_current_task` | `task_t*` | 現在実行中のタスクへのポインタ |
 
 ## 3. 動的モデル (Dynamic Model)
 

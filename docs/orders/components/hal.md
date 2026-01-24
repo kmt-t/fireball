@@ -15,6 +15,7 @@ HAL (Hardware Abstraction Layer) は、ハードウェアへのアクセスを�
 graph TD
     IPCR[IPC Router] --> HAL[HAL Subsystem]
     HAL --> UART[UART Driver]
+    HAL --> RTT[RTT Driver]
     HAL --> GPIO[GPIO Driver]
     HAL --> I2C[I2C Driver]
     HAL --> Timer[Timer Driver]
@@ -47,7 +48,7 @@ HAL全体の制限値を定義する。 `{ConfigurableSystem}`
 
 ### 3.1 アルゴリズム
 - **コマンドルーティング**: IPCで受信したコマンド（read/write等）を、デバイスIDに基づいて適切なドライバへ振り分ける。
-- **RSPパケット解析**: UART等から受信したRSPパケットを解析し、`debug_command_t` 構造体へ変換してコマンドキューへ投入する。
+- **RSPパケット解析**: UARTまたはRTTから受信したRSPパケットを解析し、`debug_command_t` 構造体へ変換してコマンドキューへ投入する。 `{RSP_Transport_Selectable}`
 - **割り込み通知**: 物理割り込み発生時、ISR内でフラグをセットし、COOSスケジューラに対して関連タスクのウェイクアップを要求する。 `{TaskPollInterruptFlag}`
 
 ### 3.2 状態遷移図
@@ -89,6 +90,14 @@ sequenceDiagram
 
 ### 4.2 URI/IPCインターフェイス
 - **URI**: `fireball://hal/<device_name>/<instance_id>`
+
+### 4.3 RSPトランスポート構成
+RSPパケットの送受信に使用する物理層を選択可能とする。 `{RSP_Transport_Selectable}`
+
+| トランスポート | 説明 | メリット |
+| :--- | :--- | :--- |
+| **UART** | 標準的なシリアル通信 | 汎用性が高い |
+| **RTT** | J-Link Real Time Transfer | 高速、ピン節約、J-Link経由で直接デバッグ可能 |
 - **メッセージ形式**: Key-Valueプロトコル。 `device_id`, `command`, `shared_mem_id` 等を含む。 `{TypeSafeMessaging}`
 
 ## 5. 制約達成の方策

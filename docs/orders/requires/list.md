@@ -93,7 +93,7 @@ graph LR
 
 ## 4. 制約事項
 
-- **メモリ制約**: 最小構成 Cortex-M33/RAM 64KB/ROM 128KB。
+- **メモリ制約**: 最小構成 Cortex-M33/RAM 32KB/ROM 96KB。
 - **パフォーマンス制約**: AOTを使用しない条件下で、WAMRインタープリタを上回る実行速度。
 - **互換性**: WASM MVP準拠（浮動小数点除外）。
 - **開発環境**: clang (C99, C++20, libstdc++)。
@@ -115,3 +115,4 @@ graph LR
 - **vSoC**: Virtual System on Chip. WASMランタイムと仮想周辺機器を含む実行環境。
 - **CSP**: Communicating Sequential Processes. プロセス間通信のモデル。
 - **Copy-and-Patch**: 高速なJITコンパイル手法の一種。
+- **ゲストリニアメモリ**: WASMリニアメモリ領域。

@@ -91,7 +91,7 @@ WASM命令と1対1対応する命令ハンドラ配列。デバッグ時は専�
 | :--- | :--- | :--- |
 | `handlers[]` | `opcode_handler_t` | デバッグ用命令ハンドラ配列（`void(PC, StackTop, Context)`） |
 
-## 3. 動的モデル (Dynamic Model)
+## 3. 動的モデル
 
 ### 3.1 アルゴリズム
 - **Threaded Dispatch**: 命令ハンドラを連鎖させるテーブルディスパッチ方式で分岐コストを削減する。 `{ThreadedInterpreter}`

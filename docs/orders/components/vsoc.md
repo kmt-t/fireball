@@ -44,6 +44,17 @@ WASMゲストの全実行状態を管理する。 `{PositionIndependentCode}` `{
 | `memory_base` | `uint8_t*` | リニアメモリ開始アドレス |
 | `memory_size` | `uint32_t` | リニアメモリサイズ |
 | `yield_count` | `uint32_t` | 次のyieldまでの残りトレース数 `{Challenge_ApproximateYield}` |
+| `frame_ptr` | `call_frame_t*` | 現在のコールフレームへのポインタ |
+
+#### `call_frame_t` (コールフレーム)
+関数呼び出しごとの実行状態を保持する。
+
+| メンバ名 | 型 | 説明 |
+| :--- | :--- | :--- |
+| `return_address` | `uint32_t` | 呼び出し元のPC（戻り先） |
+| `frame_base` | `uint32_t*` | このフレームのスタック基点 |
+| `prev_frame` | `call_frame_t*` | 前のコールフレームへのポインタ |
+| `func_idx` | `uint32_t` | 関数インデックス |
 
 #### `vsoc_config_t` (vSoC構成)
 vSoCの動作パラメータを定義する。 `{ConfigurableSystem}`

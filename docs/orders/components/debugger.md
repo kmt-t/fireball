@@ -39,6 +39,16 @@ graph TD
 | `address` | `uint32_t` | WASM命令オフセット |
 | `enabled` | `bool` | 有効/無効フラグ |
 
+#### `virtual_register_set_t` (仮想レジスタセット)
+GDB RSPに対して公開する仮想的なレジスタセット。 `{RSPMinimalSet}`
+
+| レジスタ名 | 番号 | 対応する内部状態 | 説明 |
+| :--- | :--- | :--- | :--- |
+| `PC` | 0 | `execution_context_t.pc` | プログラムカウンタ（命令オフセット） |
+| `LR` | 1 | `call_frame_t.return_address` | リンクレジスタ（戻り先アドレス） |
+| `SP` | 2 | `execution_context_t.stack_ptr` | スタックポインタ（オペランドスタック） |
+| `FP` | 3 | `call_frame_t.frame_base` | フレームポインタ（スタックフレーム基点） |
+
 ## 3. 動的モデル (Dynamic Model)
 
 ### 3.1 アルゴリズム

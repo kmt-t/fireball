@@ -1,7 +1,7 @@
 # Interpreter コンポーネント設計書
 
 ## 1. コンセプト
-Interpreter は、WASM命令をスレッドインタープリタ方式で実行し、低レイテンシかつ小フットプリントでゲストを動作させる。JIT と同一の `execution_context_t` を共有し、ホットスポット検知により JIT へ移行可能な実行エンジンとして振る舞う。 `{ThreadedInterpreter}` `{LowLatencyJIT}` `{InterpreterContextStackless}`
+Interpreter は、WASM命令をスレッドインタープリタ方式で実行し、低レイテンシかつ小フットプリントでゲストを動作させる。`execution_context_t` を仮想CPUレジスタセットとして定義し、周辺コンポーネントへの参照は Environment Pointer (`env`) を介して階層化することで、実行ループの認知負荷を低減する。 `{ThreadedInterpreter}` `{LowLatencyJIT}` `{InterpreterContextStackless}` `{EnvironmentPointer}`
 
 ## 2. 静的モデル
 
@@ -45,14 +45,11 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 | `stack_base` | `uint32_t*` | オペランドスタック底面 |
 | `memory_base` | `uint8_t*` | リニアメモリ開始アドレス |
 | `memory_size` | `uint32_t` | リニアメモリサイズ |
-| `module_view` | `module_view_t*` | WASMバイナリのメタ情報参照（`opcode_table`, `immediates`, `func_table`, `global_table`, `local_layouts`） |
 | `active_handlers` | `opcode_handler_table*` | 現在使用中の命令ハンドラ配列への参照（通常/デバッグ切替） |
-| `handlers` | `opcode_handler_table*` | 通常時に使用する命令ハンドラ配列への参照 |
-| `debug_handlers` | `opcode_handler_table*` | デバッグ時に切り替える命令ハンドラ配列への参照 |
 | `yield_count` | `uint32_t` | 次のyieldまでの残りトレース数 `{Challenge_ApproximateYield}` |
 | `frame_ptr` | `call_frame_t*` | 現在のコールフレーム |
 | `control_ptr` | `control_frame_t*` | 現在の制御フレーム |
-| `interrupt_flags` | `uint32_t` | 仮想割り込みフラグ `{Challenge_InterruptSafety}` |
+| `env` | `vsoc_runtime_t*` | Environment Pointer (周辺コンポーネントへの参照) `{EnvironmentPointer}` |
 
 #### `call_frame_t` (コールフレーム)
 関数呼び出しごとの実行状態を保持する。WAMR の `WASMInterpFrame` を参考に最小化し、JIT復帰に必要な情報のみを残す。
@@ -64,16 +61,6 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 | `frame_base` | `uint32_t*` | ローカル基点（lp） |
 | `func_idx` | `uint32_t` | 関数インデックス |
 | `sp_boundary` | `uint32_t*` | スタック境界（オーバーフロー判定） |
-
-#### `control_frame_t` (制御フレーム)
-`block/loop/if` のネストを管理する。WAMR の CSP 相当の最小構成を採用する。
-
-| メンバ名 | 型 | 説明 |
-| :--- | :--- | :--- |
-| `type` | `uint8_t` | `block/loop/if` 種別 |
-| `pc_on_exit` | `uint32_t` | ブロック終了時のPC |
-| `sp_on_entry` | `uint32_t*` | ブロック開始時のSP |
-| `prev` | `control_frame_t*` | 前の制御フレーム |
 
 #### `interp_config_t` (インタープリタ構成)
 インタープリタの動作パラメータを定義する。 `{ConfigurableSystem}`

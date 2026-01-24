@@ -1,7 +1,7 @@
 # vSoC コンポーネント設計書
 
 ## 1. コンセプト
-vSoC (Virtual System-on-Chip) は、WASM実行環境の統合マネージャであり、Loader、Interpreter、JIT、vMMIO、Debugger を統括して実行制御を行う。実行エンジンの詳細は各コンポーネントに分離し、vSoC は状態管理とオーケストレーションに集中する。 `{LowLatencyJIT}` `{MemoryIsolation}` `{FaultIsolation}`
+vSoC (Virtual System-on-Chip) は、WASM実行環境の統合マネージャであり、Loader、Interpreter、JIT、vMMIO、Debugger を統括して実行制御を行う。各サブコンポーネントを統合する「環境」としての役割を持ち、`vsoc_runtime_t` を `execution_context_t` から参照される Environment として提供する。 `{LowLatencyJIT}` `{MemoryIsolation}` `{FaultIsolation}` `{EnvironmentPointer}`
 
 ## 2. 静的モデル
 
@@ -42,11 +42,12 @@ vSoCが管理する実行構成を保持する。実行コンテキストの詳�
 | メンバ名 | 型 | 説明 |
 | :--- | :--- | :--- |
 | `loader` | `loader_t*` | WASMローダ参照 |
+| `module_view` | `module_view_t*` | 現在ロードされているモジュールのビュー |
 | `interpreter` | `interpreter_t*` | インタープリタ参照 |
 | `jit` | `jit_compiler_t*` | JITコンパイラ参照 |
-| `vmmio` | `vmmio_t*` | vMMIO参照 |
 | `debugger` | `debugger_t*` | デバッガ参照 |
-| `exec_ctx` | `execution_context_t*` | 実行コンテキスト参照 |
+| `vmmio` | `vmmio_t*` | vMMIO参照 |
+| `interrupt_flags` | `uint32_t` | 仮想割り込みフラグ `{Challenge_InterruptSafety}` |
 
 #### `vsoc_config_t` (vSoC構成)
 vSoCの動作パラメータを定義する。 `{ConfigurableSystem}`

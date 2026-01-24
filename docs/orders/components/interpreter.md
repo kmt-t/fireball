@@ -46,7 +46,6 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 | `memory_base` | `uint8_t*` | リニアメモリ開始アドレス |
 | `memory_size` | `uint32_t` | リニアメモリサイズ |
 | `active_handlers` | `opcode_handler_table*` | 現在使用中の命令ハンドラ配列への参照（通常/デバッグ切替） |
-| `yield_count` | `uint32_t` | 次のyieldまでの残りトレース数 `{Challenge_ApproximateYield}` |
 | `frame_ptr` | `call_frame_t*` | 現在のコールフレーム |
 | `control_ptr` | `control_frame_t*` | 現在の制御フレーム |
 | `env` | `vsoc_runtime_t*` | Environment Pointer (周辺コンポーネントへの参照) `{EnvironmentPointer}` |

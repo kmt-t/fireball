@@ -44,7 +44,7 @@ graph TD
 | `sender_wait_queue` | `task_id_t` | 送信待ちタスク |
 | `receiver_wait_queue` | `task_id_t` | 受信待ちタスク |
 
-## 3. 動的モデル (Dynamic Model)
+## 3. 動的モデル
 
 ### 3.1 アルゴリズム
 - **スケジューリング**: ラウンドロビン方式。`READY` 状態のタスクを順次実行する。

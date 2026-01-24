@@ -25,18 +25,29 @@ classDiagram
     ipc_router --> component_interface : manages
 ```
 
-### 2.2 相互作用
+### 2.2 相互作用 (Service Facade Pattern)
+
+IPCのプリミティブな操作を隠蔽し、依存性の逆転 (IoC) を実現するため、内側の層（利用側）が「サービスファサード」を定義する。 `{ServiceFacade}` `{IoC}`
 
 ```mermaid
 sequenceDiagram
-    participant client as inner_layer
-    participant router as ipc_router
-    participant provider as outer_layer_impl
+    participant client as Inner Layer Logic
+    participant facade as Service Facade (Defined by Inner)
+    participant router as IPC Router
+    participant provider as Service Provider (Outer)
 
-    Note over client, provider: 依存性の注入 (DI)
-    client->>router: lookup("fireball://service/target/id")
-    router-->>client: interface_handle
-    client->>provider: operation(handle)
+    Note over client, provider: サービス接続 (初回のみ)
+    facade->>router: lookup("fireball://svc/storage")
+    router-->>facade: channel_id
+    
+    Note over client, provider: メソッド呼び出し
+    client->>facade: write(offset, data)
+    Note over facade: Pack Message (DTO to KV)
+    facade->>router: send(channel_id, msg)
+    Note over router: Ownership Transfer (co_value)
+    router->>provider: deliver(msg)
+    provider-->>facade: reply
+    facade-->>client: status
 ```
 
 ## 3. 適用ガイドライン
@@ -46,6 +57,7 @@ sequenceDiagram
     - **IoC (Inversion of Control)**: インターフェイスの仕様は「利用側（内側の層）」が定義する。 `{CleanArchitecture}`
     - **URIによる抽象化**: サービスはURI（例：`fireball://hal/uart/0`）で識別し、具体的な実装クラスを隠蔽する。 `{URIAbstraction}`
     - **DTOの型安全性**: `void*` の使用を禁止し、型が確定できない場合は構造化データ（辞書形式等）を用いる。
+    - **ファサードによる隠蔽とIoC**: IPCのハンドル管理、メッセージ構築、所有権移譲のボイラープレートは、内側の層が定義するファサード層に閉じ込める。これにより、内側の層は外側の層（サービス提供側）の具体的なメッセージ構造に依存しなくなる。 `{ServiceFacade}` `{IoC}`
 - **トレードオフ**:
     - **メリット**: 実装の差し替えが容易になり、単体テストが容易になる。
     - **コスト**: 間接参照（ルックアップ）による僅かなオーバーヘッドが発生する。

@@ -118,6 +118,15 @@ sequenceDiagram
 - **URI形式**: `fireball://<subsystem_id>/<stream>/<instance_id>`
 - **メッセージ形式**: 64ビットのKey-Value値を最大12個含むパケット。 `{TypeSafeMessaging}`
 
+### 4.3 サービスファサード (Service Facade)
+IPCのプリミティブ性を隠蔽し、依存性の逆転 (IoC) を実現するため、サービスの利用側（内側の層）がファサードクラスを定義する。 `{ServiceFacade}` `{IoC}`
+
+- **責務**:
+    - URI解決とチャンネルIDのキャッシュ。
+    - DTO（構造体）から `message_t` への相互変換。
+    - `co_value_t` の所有権移譲の適切なハンドリング。
+    - エラーレスポンスの例外/ステータス変換。
+
 ## 5. 制約達成の方策
 
 ### 5.1 性能制約と方策

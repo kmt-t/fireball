@@ -4,7 +4,7 @@
 
 ※ ファイルパスのルートディレクトリはワーススペースのルートです。
 
-1. 必読: 開始時に @docs/oders/architecture/overview.md および @docs/oders/requires/list.md を読むこと。
+1. 必読: 開始時に @docs/oders/architecture/overview.md および @docs/oders/requires/list.md を読むこと。 @docs/gen/summary.md は更新されているとは限らないが、参考にとどめる。
 2. 参照: 外部仕様および技術の詳細は @docs/oders/REFERENCES.md を参照すること。
 3. 規約: @docs/oders/CODING_STYLE.md を厳守すること。
 4. 範囲: `docs/oders/**/**.md`、`inc/**/*.hxx`、`src/**/*.cxx`のみ参照すること。

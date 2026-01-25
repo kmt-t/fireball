@@ -8,9 +8,9 @@ Interpreter は、WASM命令をスレッドインタープリタ方式で実行�
 ### 2.1 データ構造
 - **execution_context_t**: 仮想CPU状態。JITとインタープリタが共用する最小の実行状態を保持する。
 - **call_frame_t**: 関数呼び出しごとのフレーム。WASMのローカルとオペランドスタックを参照する。
-- **control_frame_t**: `block/loop/if` の制御構造を管理するフレームスタック。
+- **control_frame_t**: `block/loop/if` の制御構造を管理するフレームスタック。ジャンプ先の実行エントリ（`exec_trace`）を保持する。
 - **interp_config_t**: インタープリタの動作パラメータ（スタックサイズ、yield閾値など）を保持する。
-- **opcode_handler_t**: 命令ハンドラの関数型。ランタイムAPIと同一の `void(PC, StackTop, Context)` を採用する。
+- **opcode_handler_t**: 命令ハンドラの関数型。ランタイムAPIと同一の `void __fastcall (PC, StackTop, Context)` を採用する。
 - **opcode_handler_table**: 命令ハンドラの配列。WASM命令と1対1対応する。
 - **debug_handler_table**: デバッグ時に使用する命令ハンドラ配列。ブレークポイント判定や計測を内蔵する。
 
@@ -61,6 +61,16 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 | `func_idx` | `uint32_t` | 関数インデックス |
 | `sp_boundary` | `uint32_t*` | スタック境界（オーバーフロー判定） |
 
+#### `control_frame_t` (制御フレーム)
+`block/loop/if` 命令による制御構造を管理する。ジャンプ先のPCと実行エントリを保持し、高速な分岐を実現する。
+
+| メンバ名 | 型 | 説明 |
+| :--- | :--- | :--- |
+| `label_pc` | `uint32_t` | ジャンプ先のバイトコードオフセット |
+| `exec_trace` | `exec_trace_t` | 実行エントリ（JITコードまたはインタープリタ） |
+| `stack_ptr` | `uint32_t*` | ブロック開始時のスタックポインタ（復元用） |
+| `is_loop` | `bool` | ループ構造かどうかのフラグ |
+
 #### `interp_config_t` (インタープリタ構成)
 インタープリタの動作パラメータを定義する。 `{ConfigurableSystem}`
 
@@ -70,12 +80,12 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 | `control_stack_size` | `uint32_t` | 制御スタックサイズ |
 | `yield_threshold` | `uint32_t` | yield判定のトレース数しきい値 |
 
-#### `opcode_handler_t` (命令ハンドラ型)
-命令ハンドラはランタイムAPIと同一の関数型を採用する。
+#### `opcode_handler_t` / `exec_trace_t` (実行エントリ型)
+命令ハンドラおよびJITトレースの実行エントリは、ランタイムAPIと同一の関数型を採用する。 `{JIT_RuntimeAPI_Fallback}`
 
 | 要素 | 型 | 説明 |
 | :--- | :--- | :--- |
-| `signature` | `void(PC, StackTop, Context)` | `PC`, `StackTop`, `Context` を引数に取り、結果は `Context` に書き込む。 `{JIT_RuntimeAPI_Fallback}` |
+| `signature` | `void __fastcall (uint32_t pc, uint32_t stacktop, execution_context_t* ctx)` | `pc`, `stacktop`, `ctx` をレジスタ経由で受け取り、実行を継続する。 |
 
 #### `opcode_handler_table` (命令ハンドラ配列)
 WASM命令と1対1対応する命令ハンドラ配列。デバッグ時は専用の配列に切り替える。
@@ -95,9 +105,15 @@ WASM命令と1対1対応する命令ハンドラ配列。デバッグ時は専�
 
 ### 3.1 アルゴリズム
 - **Threaded Dispatch**: 命令ハンドラを連鎖させるテーブルディスパッチ方式で分岐コストを削減する。 `{ThreadedInterpreter}`
-- **WASM命令とRuntime APIの1対1対応**: 各命令ハンドラは対応する `void(PC, StackTop, Context)` ランタイムAPIを呼び出し、結果は `Context` に書き込まれる。 `{JIT_RuntimeAPI_Fallback}`
-- **継続渡しトレース実行**: 命令ハンドラは継続渡しで次ハンドラへ遷移する。clang前提の `[[clang::musttail]]` を使用し、**非制御命令のみ**末尾呼び出しを行う。制御命令（`block/loop/if/else/end/br/br_if/br_table/return/call/call_indirect`）は末尾呼び出しを行わず、制御フレーム更新や関数復帰を優先する。
-    - **Fireballにおけるトレースの定義**: 一般的なJITにおける「基本ブロックの連鎖」ではなく、**「単一の基本ブロック（制御命令で終了する命令列）」**をトレースの単位とする。
+- **WASM命令とRuntime APIの1対1対応**: 各命令ハンドラは対応する `void __fastcall (PC, StackTop, Context)` ランタイムAPIを呼び出し、結果は `Context` に書き込まれる。 `{JIT_RuntimeAPI_Fallback}`
+- **継続渡しトレース実行**: 命令ハンドラは継続渡しで次ハンドラへ遷移する。clang前提の `[[clang::musttail]]` を使用し、**非制御命令のみ**末尾呼び出しを行う。
+- **ジャンプの高速化 (exec_trace)**: 制御命令（`br`, `br_if` 等）によるジャンプ先を `control_frame_t` 内の `exec_trace` に保持する。
+    - `exec_trace` は初期状態ではインタープリタのディスパッチャを指すが、JITコンパイル後はJITコードのエントリポイントを指すように動的に切り替わる。
+    - `br` 命令ハンドラは、ターゲットフレームの `exec_trace` を `[[clang::musttail]]` で呼び出すことで、インタープリタとJITの境界を意識せずに高速な遷移を実現する。
+- **JIT更新戦略 (案C採用)**: JITコンパイルが完了しても、既存の制御スタック上の `exec_trace` は書き換えない。
+    - 新しく `block`/`loop`/`if` 命令を実行して制御フレームを積む際に、最新の `exec_trace`（JIT済みならそのアドレス、未ならインタープリタ）を取得して保持する。
+    - これにより、実装の複雑さを抑えつつ、次回のループ進入時から高速化の恩恵を受けることができる。
+- **Fireballにおけるトレースの定義**: 一般的なJITにおける「基本ブロックの連鎖」ではなく、**「単一の基本ブロック（制御命令で終了する命令列）」**をトレースの単位とする。
 - **次命令取得の責務**: 次の命令のオペコード取得は各命令ハンドラ内で行い、`opcode_handler_table` から次ハンドラを取得して末尾呼び出しする。
 - **Hotspot検知**: トレース開始時のPCを履歴バッファに記録する。実際のホットスポット判定とJITコンパイル要求は、`co_yield` 時のアイドル時間に一括して行われる。 `{LowLatencyJIT}` `{SimpleJITArchitecture}`
 - **概算Yield**: トレース実行数ベースで `co_yield` を発行し、協調型マルチタスクに整合させる。 `{Challenge_ApproximateYield}`

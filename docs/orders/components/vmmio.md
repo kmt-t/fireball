@@ -48,13 +48,13 @@ typedef status_t (*vmmio_write_handler_t)(uint32_t addr, uint32_t val);
 - **フォールバック**: 該当する領域がない場合は、メモリアクセス違反としてトラップを発生させる。
 
 ### 3.2 仮想デバイスマップ (Default Map)
-| ベースアドレス | デバイス名 | 説明 |
-| :--- | :--- | :--- |
-| `0x4000_0000` | **SYSCTL** | システム制御（Yield, Halt, IRQ状態, Syscall引数） |
-| `0x4000_1000` | **UART0** | デバッグコンソール入出力 |
-| `0x4000_2000` | **GPIO0** | 仮想汎用入出力 |
-| `0x4000_3000` | **TIMER0** | 仮想タイマー |
-| `0x4000_4000` | **IPCR** | IPCルータ連携レジスタ |
+ベースアドレス | デバイス名 | 説明 |
+:--- | :--- | :--- |
+`0x4000_0000` | **SYSCTL** | システム制御（Yield, Halt, IRQ状態, Syscall引数） |
+`0x4000_1000` | **TIMER0** | 仮想タイマー |
+`0x4000_2000` | **IPCR** | IPCルータ連携レジスタ |
+`0x4000_3000` | **VDMA** | 仮想DMA（リニアメモリ・vMMIO間バッチ転送） |
+`0x4000_8000` | **DYNAMIC** | 動的マッピング領域（mmap用、サイズ 32KB） |
 
 ### 3.3 SYSCTL レジスタ詳細
 | オフセット | レジスタ名 | R/W | 説明 |
@@ -67,14 +67,42 @@ typedef status_t (*vmmio_write_handler_t)(uint32_t addr, uint32_t val);
 | `0x18` | `REG_SYSCALL_ARG1` | R/W | 第2引数 |
 | `0x1C` | `REG_SYSCALL_ARG2` | R/W | 第3引数 |
 
+### 3.4 VDMA レジスタ詳細
+オフセット | レジスタ名 | R/W | 説明 |
+:--- | :--- | :--- | :--- |
+`0x00` | `REG_VDMA_SRC` | R/W | 転送元アドレス（LMオフセットまたはvMMIOアドレス） |
+`0x04` | `REG_VDMA_DST` | R/W | 転送先アドレス（LMオフセットまたはvMMIOアドレス） |
+`0x08` | `REG_VDMA_COUNT` | R/W | 転送ワード数 (32-bit words) |
+`0x0C` | `REG_VDMA_CTRL` | W | Bit0: START, Bit1: DIR (0:LM->vMMIO, 1:vMMIO->LM), Bit2: INC_SRC, Bit3: INC_DST |
+
+### 3.5 動的マッピング (mmap) シーケンス
+ゲストがHAL等のサービスから受け取った `shared_mem_id` を vMMIO 空間にマッピングし、直接アクセスを可能にする。
+
+```mermaid
+sequenceDiagram
+    participant Guest as Guest App
+    participant vSoC as vSoC / vMMIO
+    participant COOS as COOS Kernel
+    
+    Guest->>vSoC: Write shared_mem_id to REG_SYSCALL_ARG0
+    Guest->>vSoC: Write SYSCALL_MMAP to REG_SYSCALL_ID
+    Guest->>vSoC: Write 1 to REG_SYS_CONTROL (Yield)
+    vSoC->>COOS: Resolve shared_mem_id to Physical Address
+    COOS-->>vSoC: Physical Address & Size
+    vSoC->>vSoC: Register PASSTHROUGH region in DYNAMIC area
+    vSoC-->>Guest: Return vMMIO Base Address in REG_SYSCALL_ARG0
+```
+
 ## 4. インターフェイス定義
 
 ### 4.1 公開API
 | メソッド名 | 引数 | 戻り値 | 説明 | 事前条件 | 事後条件 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `register_hook` | `region` | `status_t` | vMMIO領域を登録する | なし | 領域がマップに追加される |
-| `dispatch_read` | `addr, val` | `status_t` | 読み出しアクセスを処理 | なし | ハンドラが実行される |
-| `dispatch_write` | `addr, val` | `status_t` | 書き込みアクセスを処理 | なし | ハンドラが実行される |
+`register_hook` | `region` | `status_t` | vMMIO領域を登録する | なし | 領域がマップに追加される |
+`map_buffer` | `phys_addr, size` | `uint32_t` | 物理メモリを動的領域にマップ | なし | vMMIOアドレスを返却 |
+`unmap_buffer` | `vmmio_addr` | `status_t` | マッピングを解除 | マップ済み | 領域が解放される |
+`dispatch_read` | `addr, val` | `status_t` | 読み出しアクセスを処理 | なし | ハンドラが実行される |
+`dispatch_write` | `addr, val` | `status_t` | 書き込みアクセスを処理 | なし | ハンドラが実行される |
 
 ## 5. 制約達成の方策
 

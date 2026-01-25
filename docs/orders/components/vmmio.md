@@ -51,10 +51,9 @@ typedef status_t (*vmmio_write_handler_t)(uint32_t addr, uint32_t val);
 ベースアドレス | デバイス名 | 説明 |
 :--- | :--- | :--- |
 `0x4000_0000` | **SYSCTL** | システム制御（Yield, Halt, IRQ状態, Syscall引数） |
-`0x4000_1000` | **TIMER0** | 仮想タイマー |
-`0x4000_2000` | **IPCR** | IPCルータ連携レジスタ |
-`0x4000_3000` | **VDMA** | 仮想DMA（リニアメモリ・vMMIO間バッチ転送） |
-`0x4000_8000` | **DYNAMIC** | 動的マッピング領域（mmap用、サイズ 32KB） |
+`0x4000_1000` | **IPCR** | IPCルータ連携レジスタ |
+`0x4000_2000` | **VDMA** | 仮想DMA（リニアメモリ・vMMIO間バッチ転送） |
+`0x4100_0000` | **DYNAMIC** | 動的マッピング領域（mmap用） |
 
 ### 3.3 SYSCTL レジスタ詳細
 | オフセット | レジスタ名 | R/W | 説明 |

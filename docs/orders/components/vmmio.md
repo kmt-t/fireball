@@ -40,7 +40,7 @@ typedef status_t (*vmmio_write_handler_t)(uint32_t addr, uint32_t val);
 | `write_fn` | `vmmio_write_handler_t` | 書き込みハンドラ |
 | `target_phys_addr` | `uintptr_t` | パススルー時の物理アドレス (PASSTHROUGH時のみ) |
 
-## 3. 動的モデル (Dynamic Model)
+## 3. 動的モデル
 
 ### 3.1 アルゴリズム
 - **ディスパッチ**: ゲストのアドレスが `vmmio_base` 以降である場合、`vmmio_map` を線形探索し、該当する領域のハンドラを呼び出す。

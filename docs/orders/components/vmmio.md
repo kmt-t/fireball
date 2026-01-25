@@ -71,7 +71,7 @@ typedef status_t (*vmmio_write_handler_t)(uint32_t addr, uint32_t val);
 :--- | :--- | :--- | :--- |
 `0x00` | `REG_VDMA_SRC` | R/W | 転送元アドレス（LMオフセットまたはvMMIOアドレス） |
 `0x04` | `REG_VDMA_DST` | R/W | 転送先アドレス（LMオフセットまたはvMMIOアドレス） |
-`0x08` | `REG_VDMA_COUNT` | R/W | 転送ワード数 (32-bit words) |
+`0x08` | `REG_VDMA_COUNT` | R/W | 転送ワード数 (8-bit words) |
 `0x0C` | `REG_VDMA_CTRL` | W | Bit0: START, Bit1: DIR (0:LM->vMMIO, 1:vMMIO->LM), Bit2: INC_SRC, Bit3: INC_DST |
 
 ### 3.5 動的マッピング (mmap) シーケンス

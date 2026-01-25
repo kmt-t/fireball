@@ -4,7 +4,7 @@
 
 ※ ファイルパスのルートディレクトリはワーススペースのルートです。
 
-1. 必読: 開始時に @docs/oders/architecture/overview.md および @docs/oders/requires/list.md を読むこと。 @docs/gen/summary.md は更新されているとは限らないが、参考にとどめる。
+1. 必読: 開始時に @docs/order/SUMMARY.md (存在しない場合は @docs/oders/architecture/overview.md ) および @docs/oders/requires/list.md を読むこと。 @docs/gen/summary.md は更新されているとは限らないが、参考にとどめる。
 2. 参照: 外部仕様および技術の詳細は @docs/oders/REFERENCES.md を参照すること。
 3. 規約: @docs/oders/CODING_STYLE.md を厳守すること。
 4. 範囲: `docs/oders/**/**.md`、`inc/**/*.hxx`、`src/**/*.cxx`のみ参照すること。
@@ -62,8 +62,8 @@
 - `docs/orders/patterns/*.md`
   - 設計パターンを2000文字程度にまとめる。
 - `docs/orders/components/*.md` `docs/orders/concept/*.md`
-  - コンポーネントの設計で使っているテクニックの概念、狙っている効果、解決する問題を3000文字程度にまとめる。
-  - コンポーネントの設計意図、設計を5000文字程度にまとめる。
+  - コンポーネントの設計で使っているテクニックの概念、狙っている効果、解決する問題を4000文字程度にまとめる。
+  - コンポーネントの設計意図、設計を8000文字程度にまとめる。
 
 解像度が高く情報密度の高い記述とすること。表現として難解でもかまわない。また元のドキュメントへのリンクを添付すること。
 

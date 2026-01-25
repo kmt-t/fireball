@@ -15,7 +15,8 @@ graph TD
     Guest --> T1[Tier 1: IPC]
     T0 --> libc[wasi-libc]
     T0 --> GC[Garbage Collection]
-    T1 --> WASI[WASI Wrapper]
+    T0 --> WASI[WASI Wrapper]
+    T1 --> Something[Something Service]
     WASI --> HAL[HAL Subsystem]
 ```
 

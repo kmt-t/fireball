@@ -48,12 +48,12 @@ typedef status_t (*vmmio_write_handler_t)(uint32_t addr, uint32_t val);
 - **フォールバック**: 該当する領域がない場合は、メモリアクセス違反としてトラップを発生させる。
 
 ### 3.2 仮想デバイスマップ (Default Map)
-ベースアドレス | デバイス名 | 説明 |
-:--- | :--- | :--- |
-`0x4000_0000` | **SYSCTL** | システム制御（Yield, Halt, IRQ状態, Syscall引数） |
-`0x4000_1000` | **IPCR** | IPCルータ連携レジスタ |
-`0x4000_2000` | **VDMA** | 仮想DMA（リニアメモリ・vMMIO間バッチ転送） |
-`0x4100_0000` | **DYNAMIC** | 動的マッピング領域（mmap用） |
+| ベースアドレス | デバイス名 | 説明 |
+| :--- | :--- | :--- |
+| `0x4000_0000` | **SYSCTL** | システム制御（Yield, Halt, IRQ状態, Syscall引数） |
+| `0x4000_1000` | **IPCR** | IPCルータ連携レジスタ |
+| `0x4000_2000` | **VDMA** | 仮想DMA（リニアメモリ・vMMIO間バッチ転送） |
+| `0x4100_0000` | **DYNAMIC** | 動的マッピング領域（mmap用） |
 
 ### 3.3 SYSCTL レジスタ詳細
 | オフセット | レジスタ名 | R/W | 説明 |
@@ -67,12 +67,12 @@ typedef status_t (*vmmio_write_handler_t)(uint32_t addr, uint32_t val);
 | `0x1C` | `REG_SYSCALL_ARG2` | R/W | 第3引数 |
 
 ### 3.4 VDMA レジスタ詳細
-オフセット | レジスタ名 | R/W | 説明 |
-:--- | :--- | :--- | :--- |
-`0x00` | `REG_VDMA_SRC` | R/W | 転送元アドレス（LMオフセットまたはvMMIOアドレス） |
-`0x04` | `REG_VDMA_DST` | R/W | 転送先アドレス（LMオフセットまたはvMMIOアドレス） |
-`0x08` | `REG_VDMA_COUNT` | R/W | 転送ワード数 (8-bit words) |
-`0x0C` | `REG_VDMA_CTRL` | W | Bit0: START, Bit1: DIR (0:LM->vMMIO, 1:vMMIO->LM), Bit2: INC_SRC, Bit3: INC_DST |
+| オフセット | レジスタ名 | R/W | 説明 |
+| :--- | :--- | :--- | :--- |
+| `0x00` | `REG_VDMA_SRC` | R/W | 転送元アドレス |
+| `0x04` | `REG_VDMA_DST` | R/W | 転送先アドレス |
+| `0x08` | `REG_VDMA_COUNT` | R/W | 転送バイト数 |
+| `0x0C` | `REG_VDMA_CTRL` | W | 制御（Bit0: START） |
 
 ### 3.5 動的マッピング (mmap) シーケンス
 ゲストがHAL等のサービスから受け取った `shared_mem_id` を vMMIO 空間にマッピングし、直接アクセスを可能にする。

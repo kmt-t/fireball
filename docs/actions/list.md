@@ -18,21 +18,22 @@
 
 Phase0延長により、vSoCの設計を完璧に固めることに集中する。
 
-- [-] **vSoC詳細設計の完成**:
+- [x] **vSoC詳細設計の完成**:
     - [x] インタープリタ実行モデルの定義 (`docs/orders/requires/wasm_instructions.md`)
-    - [ ] JITテンプレート設計（constexprアセンブラ仕様含む）
-    - [ ] メモリモデル（ゲスト/ホスト境界、スタック管理）の精緻化
-    - [ ] 実行コンテキスト構造体の完全定義
-    - [ ] vMMIOレジスタマップの確定
+    - [x] JITテンプレート設計 (`docs/orders/components/jit_compiler.md`)
+    - [x] メモリモデル（ゲスト/ホスト境界、スタック管理）の精緻化 (`docs/orders/components/interpreter.md`)
+    - [x] 実行コンテキスト構造体の完全定義 (`docs/orders/components/interpreter.md`)
+    - [x] vMMIOレジスタマップの確定 (`docs/orders/components/vmmio.md`)
+    - [x] Native API 方式の決定 (Single Trap + vMMIO)
 
-- [ ] **vSoC C++インターフェースの完全定義**:
-    - [ ] `inc/vsoc.hxx` の完成
+- [-] **vSoC C++インターフェースの完全定義**:
+    - [ ] `inc/vsoc.hxx` の作成（設計ドキュメントからの導出）
     - [ ] 全パブリックAPIのシグネチャ確定
     - [ ] エラーハンドリング体系の明確化
     - [ ] ライフサイクル管理の詳細設計
 
-- [ ] **JIT実現可能性の検証**:
-    - [ ] constexprアセンブラの技術的PoC（1-2日）
+- [-] **JIT実現可能性の検証**:
+    - [ ] constexprアセンブラの技術的PoC
     - [ ] ARM/RISC-V両対応の難易度確認
     - [ ] テンプレート生成の行数見積もり
     - [ ] Copy-and-Patchパッチ処理の詳細設計
@@ -75,25 +76,26 @@ vSoCの動作を支える周辺機能の設計を完了させる。
 Phase0完了後、速やかにPhase1に移行できるよう準備する。
 
 - [ ] **vSoC スタンドアロン・ハーネスの設計**: Linux上での評価環境の設計。
+- [ ] **WASI Shim ライブラリの設計**: `libfireball_shim` のディレクトリ構造とビルド環境の策定。
 - [ ] **WAMR比較ベンチマーク計画の詳細化**: 評価項目と手順の明確化。
 - [ ] **Phase1タスク分解**: 3ヶ月での実装完了に向けた詳細計画。
 
 ## Week別アクションアイテム（Phase0: 2026/01-03）
 
-### Week 1-2（即時着手）
-- [ ] JIT技術PoC: constexprアセンブラの実現可能性検証（1-2日）
-- [ ] vSoC実行コンテキスト設計: 完全な構造体定義とライフサイクル
-- [ ] vSoCインターフェース定義: `inc/vsoc.hxx` のドラフト作成
+### Week 1-2（2026/01/25 進捗会議結果）
+- [x] vSoC詳細設計ドキュメントの作成 (`jit_compiler.md`, `vsoc.md`, `interpreter.md`)
+- [-] vSoCインターフェース定義: `inc/vsoc.hxx` の作成
+- [ ] JIT技術PoC: constexprアセンブラの実現可能性検証
 
 ### Week 3-4
-- [ ] JITテンプレート設計: Copy-and-Patchの詳細アルゴリズム
-- [ ] vSoCメモリモデル精緻化: ゲスト/ホスト境界の完全定義
 - [ ] 周辺Mock定義: COOS, IPC, HALの最小インターフェース
+- [ ] トレーサビリティマトリクスの作成 (`docs/gen/trace/`)
+- [ ] 表記揺れチェックと用語統一
 
 ### Week 5-6
-- [ ] vSoC詳細設計レビュー: トレーサビリティ確認と表記揺れチェック
-- [ ] 15 KLOC見積もり: 実装行数の精緻な見積もりと調整
-- [ ] vSoC設計ドキュメント完成: `docs/gen/components/vsoc.md` の最終版
+- [ ] 15 KLOC見積もり: 各コンポーネントの実装行数の精緻な見積もり
+- [ ] vSoC詳細設計レビュー: ユーザ承認
+- [ ] コンセプトコードによる主要ロジックの検証
 
 ### Week 7-8（Phase0完了前）
 - [ ] 統合レビュー: 全設計ドキュメントの整合性確認

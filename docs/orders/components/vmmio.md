@@ -50,11 +50,22 @@ typedef status_t (*vmmio_write_handler_t)(uint32_t addr, uint32_t val);
 ### 3.2 仮想デバイスマップ (Default Map)
 | ベースアドレス | デバイス名 | 説明 |
 | :--- | :--- | :--- |
-| `0x4000_0000` | **SYSCTL** | システム制御（Yield, Halt, IRQ状態） |
+| `0x4000_0000` | **SYSCTL** | システム制御（Yield, Halt, IRQ状態, Syscall引数） |
 | `0x4000_1000` | **UART0** | デバッグコンソール入出力 |
 | `0x4000_2000` | **GPIO0** | 仮想汎用入出力 |
 | `0x4000_3000` | **TIMER0** | 仮想タイマー |
 | `0x4000_4000` | **IPCR** | IPCルータ連携レジスタ |
+
+### 3.3 SYSCTL レジスタ詳細
+| オフセット | レジスタ名 | R/W | 説明 |
+| :--- | :--- | :--- | :--- |
+| `0x00` | `REG_SYS_CONTROL` | W | `1`: Yield, `2`: Halt |
+| `0x04` | `REG_SYS_STATUS` | R | システム状態フラグ |
+| `0x08` | `REG_IRQ_FLAGS` | R/W | 仮想割り込みフラグ |
+| `0x10` | `REG_SYSCALL_ID` | R/W | サービスID (fireball_call用) |
+| `0x14` | `REG_SYSCALL_ARG0` | R/W | 第1引数 / 戻り値 |
+| `0x18` | `REG_SYSCALL_ARG1` | R/W | 第2引数 |
+| `0x1C` | `REG_SYSCALL_ARG2` | R/W | 第3引数 |
 
 ## 4. インターフェイス定義
 

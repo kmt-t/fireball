@@ -40,7 +40,7 @@ graph LR
 | `{JIT_RuntimeAPI_Fallback}` | 複雑な命令はC++で記述されたランタイムAPIへフォールバックする。 | 高 | テスト |
 | `{JIT_DoubleBuffer_Cache}` | Active/Oldの2領域によるダブルバッファ管理を行う。 | 中 | テスト |
 | `{PositionIndependentCode}` | 出力バイナリはPIC（位置独立コード）とする。 | 高 | テスト |
-| `{NativeAPI_Export}` | WAMR互換のシグネチャ方式によるホスト関数エクスポートをサポートする。 | 高 | テスト |
+| `{NativeAPI_Export}` | 最小限のトラップ命令とvMMIOによるホストサービス提供をサポートする。 | 高 | テスト |
 | `{MultiModule_Support}` | 複数WASMモジュールのロードと、モジュール間の動的リンクをサポートする。 | 中 | テスト |
 
 #### タスク管理・通信 (COOS)

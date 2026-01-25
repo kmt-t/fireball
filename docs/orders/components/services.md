@@ -39,7 +39,7 @@ graph TD
 | `guest_id` | `uint32_t` | 対象ゲストID |
 | `load_list` | `const char**` | ロードするサービスのURIリスト |
 
-## 3. 動的モデル (Dynamic Model)
+## 3. 動的モデル
 
 ### 3.1 アルゴリズム
 - **サービス分離**: Tier 0 サービスはゲストのWASMモジュールとして直接リンクされ、Tier 1 サービスは独立したタスクとして動作し、IPCルータを介して通信する。 `{FaultIsolation}`

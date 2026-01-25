@@ -57,7 +57,7 @@ J-Link GDB Serverプラグインがターゲットのメモリを解析するた
 | `g_task_list` | `task_t*` | 全タスクのリストの先頭ポインタ |
 | `g_current_task` | `task_t*` | 現在実行中のタスクへのポインタ |
 
-## 3. 動的モデル (Dynamic Model)
+## 3. 動的モデル
 
 ### 3.1 アルゴリズム
 - **コマンド消費**: `poll()` により `debug_command_queue_t` から解析済みコマンドを取り出し、実行コンテキスト（`execution_context_t`）に対して操作を行う。

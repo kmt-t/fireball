@@ -67,7 +67,7 @@ Key-Valueペアの集合。 `{TypeSafeMessaging}`
 | `role` | `role_t` | サービスのロール |
 | `channel_id` | `channel_id_t` | 対応するCSPチャンネルID |
 
-## 3. 動的モデル (Dynamic Model)
+## 3. 動的モデル
 
 ### 3.1 アルゴリズム
 - **サービス検索**: `constexpr` でソートされたURI文字列配列に対し、二分探索を用いることで O(log N) でチャンネルIDを取得する。 `{LowLatencyLookup}`

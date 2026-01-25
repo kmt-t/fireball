@@ -44,7 +44,7 @@ HAL全体の制限値を定義する。 `{ConfigurableSystem}`
 | `max_buffers` | `uint8_t` | 通信バッファの最大数 |
 | `buffer_size` | `size_t` | 各バッファのサイズ |
 
-## 3. 動的モデル (Dynamic Model)
+## 3. 動的モデル
 
 ### 3.1 アルゴリズム
 - **コマンドルーティング**: IPCで受信したコマンド（read/write等）を、デバイスIDに基づいて適切なドライバへ振り分ける。

@@ -77,6 +77,7 @@ graph LR
 | `{SimpleJITArchitecture}` | 小規模なJITキャッシュ領域で効率的に運用する。 | 高 | 計測 |
 | `{JIT_RegisterMapping}` | 重要変数を物理レジスタに固定する。 | 高 | レビュー |
 | `{ContextPointerRegister}` | コンテキストポインタを物理レジスタに保持する。 | 高 | レビュー |
+| `{Resource_Estimation_Model}` | 設計段階でROM/RAMフットプリントを概算し、制約適合性を検証する。 | 高 | 概算レポート |
 
 #### 開発方針・品質
 | キーワード | 内容 | 優先度 | 検証方法 |
@@ -93,7 +94,10 @@ graph LR
 
 ## 4. 制約事項
 
-- **メモリ制約**: 最小構成 Cortex-M33/RAM 32KB/ROM 96KB。
+- **メモリ制約**:
+    - 最小構成: Cortex-M33 / RAM 32KB / ROM 96KB
+    - 想定構成: Cortex-M33 / RAM 64KB / ROM 128KB
+    - ※ 評価は最小構成（32KB/96KB）をターゲットとする。
 - **パフォーマンス制約**: AOTを使用しない条件下で、WAMRインタープリタを上回る実行速度。
 - **互換性**: WASM MVP準拠（浮動小数点除外）。
 - **開発環境**: clang (C99, C++20, libstdc++)。

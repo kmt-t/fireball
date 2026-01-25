@@ -12,6 +12,8 @@ WAMRに対する優位性を早期に証明するため、vSoCを他のコンポ
 - [ ] **WASI Shim ライブラリ (libfireball_shim)**: ゲスト側で動作し、WASI呼び出しを `fireball_call` に変換するライブラリの作成。
 - [ ] **WAMR比較ベンチマークの実施**: CoreMark-PRO等の標準的なベンチマークをFireball vSoC and WAMR (Interp) で実行し、性能・メモリ消費を比較。
 - [ ] **JITテンプレートのプロトタイプ**: Copy-and-Patch方式の実現可能性を確認するための、主要命令のテンプレート生成。
+- [ ] **constexprアセンブラの設計**: C++20 constexprを活用した、型安全な実行時/コンパイル時アセンブラの設計。 `{JIT_Constexpr_Assembler}`
+- [ ] **JITテンプレート生成エンジンの設計**: WASM命令からネイティブコードテンプレートへの変換ロジックの設計。 `{JIT_Template_Generation}`
 - [ ] **JITホットスポット検知のパラメータ最適化**: カードビットマップのサイズ（1024枚）とインデックス計算式 `(pc >> 3) & 0x3FF` の妥当性検証。
 
 ## 1. 周辺設計の深化 (Phase 1: Deepening Design)

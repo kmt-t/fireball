@@ -157,14 +157,7 @@ sequenceDiagram
     - `{JIT_RegisterMapping}`: `Context`, `StackTop`, `WASM_PC` を物理レジスタに固定し、メモリアクセスを削減。
     - `Card Marking + Binary Search`: 検索範囲を限定し、対数時間での検索を実現。
 
-### 5.2 メモリ制約と方策
-- **目標**: RAM 64KB環境で動作（JITキャッシュ合計 4KB以内）。
-- **方策**: 
-    - `{JIT_DoubleBuffer_Cache}`: Active/Old 方式により、最小限のメモリでワーキングセットを維持。
-    - `Packed Entry`: 1エントリ 6バイトに抑え、メタデータ領域を節約。
-    - `Configurable Alignment`: `code_align_shift` により、ターゲットアーキテクチャに最適なアライメントとアドレス表現範囲を選択可能。
-
-### 5.3 安全性制約と方策
+### 5.2 安全性制約と方策
 - **目標**: 不正なコード実行の防止。
 - **方策**: 
     - `{PositionIndependentCode}`: 生成コードを位置独立とし、配置場所の自由度を確保。

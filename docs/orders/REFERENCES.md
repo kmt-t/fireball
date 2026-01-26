@@ -7,7 +7,6 @@
 
 ## RFC (Request for Comments)
 - **RFC 3986**: [Uniform Resource Identifier (URI): Generic Syntax](https://datatracker.ietf.org/doc/html/rfc3986) (IPCルータのURI形式)
-- **RFC 3629**: [UTF-8, a transformation format of ISO 10646](https://datatracker.ietf.org/doc/html/rfc3629) (文字列エンコーディング)
 
 ## アーキテクチャ・理論
 - **CSP (Communicating Sequential Processes)**: [C.A.R. Hoare (1978)](https://www.usingcsp.com/)

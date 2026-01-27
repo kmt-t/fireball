@@ -6,7 +6,7 @@ vSoC (Virtual System-on-Chip) は、WASM実行環境の統合マネージャで�
 ## 2. 静的モデル
 
 ### 2.1 データ構造
-- **vsoc_runtime_t**: vSoCが管理する実行ユニットの集合（Loader/Interpreter/JIT/vMMIO/Debuggerの参照）。
+- **vsoc_runtime**: vSoCが管理する実行ユニットの集合（Loader/Interpreter/JIT/vMMIO/Debuggerの参照）。
 - **JIT Code Cache**: コンパイル済みのネイティブコードを保持するダブルバッファ領域。 `{JIT_DoubleBuffer_Cache}`
 - **vMMIO Map**: 仮想的なメモリマップドI/Oのフック情報を管理する。
 
@@ -34,31 +34,31 @@ graph TD
     JIT --> API
 ```
 
-### 2.3 主要な構造体・クラス・定数
+### 2.3 主要なクラス・構造体・配列・定数
 
-#### `vsoc_runtime_t` (vSoC実行ユニット)
+#### `vsoc_runtime` (vSoC実行ユニット)
 vSoCが管理する実行構成を保持する。実行コンテキストの詳細は Interpreter で定義する。
 
 | メンバ名 | 型 | 説明 |
 | :--- | :--- | :--- |
-| `loader` | `loader_t*` | WASMローダ参照 |
-| `module_view` | `module_view_t*` | 現在ロードされているモジュールのビュー |
-| `interpreter` | `interpreter_t*` | インタープリタ参照 |
-| `jit` | `jit_compiler_t*` | JITコンパイラ参照 |
-| `debugger` | `debugger_t*` | デバッガ参照 |
-| `vmmio` | `vmmio_t*` | vMMIO参照 |
-| `interrupt_flags` | `uint32_t` | 仮想割り込みフラグ `{Challenge_InterruptSafety}` |
+| `loader` | `loader*` | WASMローダ参照 |
+| `module_view` | `module_view*` | 現在ロードされているモジュールのビュー |
+| `interpreter` | `interpreter*` | インタープリタ参照 |
+| `jit` | `jit_compiler*` | JITコンパイラ参照 |
+| `debugger` | `debugger*` | デバッガ参照 |
+| `vmmio` | `vmmio*` | vMMIO参照 |
+| `interrupt_flags` | `std::uint32_t` | 仮想割り込みフラグ `{Challenge_InterruptSafety}` |
 
-#### `vsoc_config_t` (vSoC構成)
+#### `vsoc_config` (vSoC構成)
 vSoCの動作パラメータを定義する。 `{ConfigurableSystem}`
 
 | メンバ名 | 型 | 説明 |
 | :--- | :--- | :--- |
 | `jit_enabled` | `bool` | JITコンパイルの有効化フラグ |
-| `code_cache_size` | `size_t` | JITコードキャッシュのサイズ |
-| `ram_base` | `uint32_t` | ゲストRAMの開始アドレス (通常 0x0) |
-| `ram_size` | `uint32_t` | ゲストRAMのサイズ |
-| `vmmio_base` | `uint32_t` | vMMIO領域の開始アドレス (通常 0x4000_0000) |
+| `code_cache_size` | `std::size_t` | JITコードキャッシュのサイズ |
+| `ram_base` | `std::uint32_t` | ゲストRAMの開始アドレス (通常 0x0) |
+| `ram_size` | `std::uint32_t` | ゲストRAMのサイズ |
+| `vmmio_base` | `std::uint32_t` | vMMIO領域の開始アドレス (通常 0x4000_0000) |
 
 ## 3. 動的モデル
 
@@ -112,12 +112,48 @@ sequenceDiagram
 ## 4. インターフェイス定義
 
 ### 4.1 公開API
-| メソッド名 (English) | 引数 | 戻り値 | 説明 | 事前条件 | 事後条件 |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `load` | `module_data` | `status_t` | WASMモジュールをロード | なし | 状態がReadyになる |
-| `step` | `void` | `status_t` | 実行を再開/継続 | Ready状態 | yieldまたは終了まで実行 |
-| `notify_interrupt` | `irq_id` | `void` | 仮想割り込みを通知 | なし | コンテキストにフラグセット |
-| `register_vmmio_hook` | `addr, size, cb` | `status_t` | vMMIOフックを登録 | なし | フックが有効になる |
+### 4.1 公開API
+
+```cpp
+class vsoc_manager {
+public:
+    /**
+     * @brief WASMモジュールをロードする
+     * @param data モジュールデータ
+     * @return status 実行結果
+     * @pre なし
+     * @post 状態がReadyになる
+     */
+    status load(const module_data& data);
+
+    /**
+     * @brief 実行を再開/継続する
+     * @return status 実行結果
+     * @pre Ready状態
+     * @post yieldまたは終了まで実行
+     */
+    status step();
+
+    /**
+     * @brief 仮想割り込みを通知する
+     * @param irq_id 割り込みID
+     * @pre なし
+     * @post コンテキストにフラグがセットされる
+     */
+    void notify_interrupt(irq_id irq_id);
+
+    /**
+     * @brief vMMIOフックを登録する
+     * @param addr 開始アドレス
+     * @param size サイズ
+     * @param cb コールバック関数
+     * @return status 実行結果
+     * @pre なし
+     * @post フックが有効になる
+     */
+    status register_vmmio_hook(std::uint32_t addr, std::uint32_t size, vmmio_callback cb);
+};
+```
 
 ### 4.2 Native API エクスポート (Single Trap 方式)
 WASMゲストからホストサービスを呼び出すための最小限のインターフェイスを提供する。 `{NativeAPI_Export}`
@@ -142,10 +178,10 @@ Fireballでは、ホスト側のコードサイズを極限まで削減するた
 ### 4.5 関連コンポーネントとの連携
 | コンポーネント | 連携内容 | 参照データ構造 |
 | :--- | :--- | :--- |
-| **Interpreter** | インタープリタ実行の委譲とホットスポット履歴の取得 | `interpreter_t`, 履歴バッファ |
-| **JIT Compiler** | トレース単位のコンパイル要求とコードキャッシュ管理 | `jit_compiler_t`, `JIT Code Cache` |
-| **Wasm Loader** | モジュールロードと `module_view_t` の管理 | `loader_t`, `module_view_t` |
-| **Debugger** | デバッグコマンドの処理と実行状態の同期 | `debugger_t`, `debug_command_queue_t` |
+| **Interpreter** | インタープリタ実行の委譲とホットスポット履歴の取得 | `interpreter`, 履歴バッファ |
+| **JIT Compiler** | トレース単位のコンパイル要求とコードキャッシュ管理 | `jit_compiler`, `JIT Code Cache` |
+| **Wasm Loader** | モジュールロードと `module_view` の管理 | `loader`, `module_view` |
+| **Debugger** | デバッグコマンドの処理と実行状態の同期 | `debugger`, `debug_command_queue` |
 
 ## 5. 制約達成の方策
 

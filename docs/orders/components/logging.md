@@ -6,8 +6,8 @@
 ## 2. 静的モデル
 
 ### 2.1 データ構造
-- **log_ring_buffer_t**: 受信したログメッセージを一時的に保持する固定長リングバッファ。
-- **log_dictionary_t**: `constexpr` で定義された、ログメッセージのテンプレート辞書。
+- **log_ring_buffer**: 受信したログメッセージを一時的に保持する固定長リングバッファ。
+- **log_dictionary**: `constexpr` で定義された、ログメッセージのテンプレート辞書。
 
 ### 2.2 内部ブロック図
 ```mermaid
@@ -19,25 +19,25 @@ graph TD
     Output --> DMA[DMA / Interrupt]
 ```
 
-### 2.3 主要な構造体・クラス・定数
+### 2.3 主要なクラス・構造体・配列・定数
 
-#### `log_entry_t` (ログエントリ)
+#### `log_entry` (ログエントリ)
 リングバッファ内に保持される単一のログデータ。
 
 | メンバ名 | 型 | 説明 |
 | :--- | :--- | :--- |
-| `timestamp` | `uint64_t` | ログ発生時刻 |
-| `level` | `uint8_t` | ログレベル (TRACE, DEBUG, INFO, etc.) |
-| `dict_offset` | `uint16_t` | 辞書内のメッセージオフセット |
-| `args` | `uint32_t[4]` | メッセージ埋め込み用の引数 |
+| `timestamp` | `std::uint64_t` | ログ発生時刻 |
+| `level` | `std::uint8_t` | ログレベル (TRACE, DEBUG, INFO, etc.) |
+| `dict_offset` | `std::uint16_t` | 辞書内のメッセージオフセット |
+| `args` | `std::uint32_t[4]` | メッセージ埋め込み用の引数 |
 
-#### `logging_config_t` (ロギング構成)
+#### `logging_config` (ロギング構成)
 ロギングの動作パラメータを定義する。 `{ConfigurableSystem}`
 
 | メンバ名 | 型 | 説明 |
 | :--- | :--- | :--- |
-| `buffer_size` | `size_t` | リングバッファのサイズ |
-| `default_level` | `uint8_t` | デフォルトの出力ログレベル |
+| `buffer_size` | `std::size_t` | リングバッファのサイズ |
+| `default_level` | `std::uint8_t` | デフォルトの出力ログレベル |
 
 ## 3. 動的モデル
 
@@ -78,10 +78,31 @@ sequenceDiagram
 ## 4. インターフェイス定義
 
 ### 4.1 公開API
-| メソッド名 (English) | 引数 | 戻り値 | 説明 | 事前条件 | 事後条件 |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `log` | `level, offset, args` | `status_t` | ログを記録する | なし | バッファに格納される |
-| `set_level` | `level` | `void` | 出力レベルを変更 | なし | レベルが更新される |
+### 4.1 公開API
+
+```cpp
+class logger {
+public:
+    /**
+     * @brief ログを記録する
+     * @param level ログレベル
+     * @param offset 辞書オフセット
+     * @param args 引数リスト
+     * @return status 実行結果
+     * @pre なし
+     * @post バッファに格納される
+     */
+    status log(std::uint8_t level, std::uint16_t offset, const std::uint32_t* args);
+
+    /**
+     * @brief 出力レベルを変更する
+     * @param level 新しいログレベル
+     * @pre なし
+     * @post レベルが更新される
+     */
+    void set_level(std::uint8_t level);
+};
+```
 
 ### 4.2 URI/IPCインターフェイス
 - **URI**: `fireball://logging/system/0`

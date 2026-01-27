@@ -11,7 +11,7 @@
 | :--- | :--- | :--- |
 | **コンテナ** | `std::array`, `std::span` | `std::vector`, `std::map`, `std::list` |
 | **ランタイム** | コルーチン, `std::chrono` | `std::thread`, `std::filesystem` |
-| **ユーティリティ** | `std::optional`, `std::variant` | 例外 (`try-catch`) |
+| **ユーティリティ** | `std::optional`, `std::variant` | 例外 (`try-catch`), `std::function` |
 
 ### 2.2 共通ステータスコード
 システム全体で統一して使用するステータスコード。

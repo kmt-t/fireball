@@ -6,7 +6,7 @@ IPCルータは、URIベースのサービスディスカバリとロールベ�
 ## 2. 静的モデル
 
 ### 2.1 データ構造
-- **registry_entry_t Array**: 登録されたサービスのURI、ロール、チャンネルIDを保持するソート済み配列。 `{IPCRegistry}`
+- **registry_entry Array**: 登録されたサービスのURI、ロール、チャンネルIDを保持するソート済み配列。 `{IPCRegistry}`
 - **Role Matrix**: コンパイル時に定義された、ロール間の通信許可を判定するマトリックス。 `{StaticRoleDefinition}`
 
 ### 2.2 内部ブロック図
@@ -26,16 +26,16 @@ graph TB
     MH --> OM
 ```
 
-### 2.3 主要な構造体・クラス・定数
+### 2.3 主要なクラス・構造体・配列・定数
 
-#### `kv_pair_t` (Key-Valueペア)
+#### `kv_pair` (Key-Valueペア)
 IPC通信の最小単位。1つのメッセージで8個のペアを送信できる。
 
 | メンバ名 | 型 | 説明 |
 | :--- | :--- | :--- |
-| `type_scope` | `uint8_t` | 上位3bit: スコープ, 下位5bit: データ型 |
-| `key` | `uint8_t[3]` | スコープにより解釈が変わるキー |
-| `value` | `uint32_t` | 32bitデータ、ハンドル、または即値 |
+| `type_scope` | `std::uint8_t` | 上位3bit: スコープ, 下位5bit: データ型 |
+| `key` | `std::uint8_t[3]` | スコープにより解釈が変わるキー |
+| `value` | `std::uint32_t` | 32bitデータ、ハンドル、または即値 |
 
 ##### スコープ定義
 `type_scope` の上位3ビットで定義される。
@@ -43,36 +43,36 @@ IPC通信の最小単位。1つのメッセージで8個のペアを送信でき
 - **機能的IPC (Functional IPC)**: キーを機能的な識別子として使用する。
 - **辞書参照IPC (Dictionary-based IPC)**: キーを受信側が保持する辞書の文字列オフセットとして解釈する。 `{DictionaryBasedIPC}`
 
-#### `message_t` (IPCメッセージ)
+#### `message` (IPCメッセージ)
 Key-Valueペアの集合。 `{TypeSafeMessaging}`
 
 | メンバ名 | 型 | 説明 |
 | :--- | :--- | :--- |
-| `pairs` | `kv_pair_t[8]` | 8個のKey-Valueペア |
+| `pairs` | `kv_pair[8]` | 8個のKey-Valueペア |
 
-#### `indexed_array_adapter_t` (インデックス付き配列アダプタ)
+#### `indexed_array_adapter` (インデックス付き配列アダプタ)
 `std::array` や `std::span` などの配列をラップし、インデックス配列を用いた二分探索機能を提供するクラス。ルータはメッセージ転送時にこのアダプタを介してメッセージを処理する。
 
 | メンバ名 | 型 | 説明 |
 | :--- | :--- | :--- |
-| `data_ptr` | `const kv_pair_t*` | 元のデータ配列へのポインタ |
-| `indices` | `uint8_t[8]` | ソート済みインデックス配列 |
+| `data_ptr` | `const kv_pair*` | 元のデータ配列へのポインタ |
+| `indices` | `std::uint8_t[8]` | ソート済みインデックス配列 |
 
-#### `registry_entry_t` (レジストリエントリ)
+#### `registry_entry` (レジストリエントリ)
 登録されたサービス情報を管理する。
 
 | メンバ名 | 型 | 説明 |
 | :--- | :--- | :--- |
 | `uri` | `const char*` | サービスのURI（検索キー） |
-| `role` | `role_t` | サービスのロール |
-| `channel_id` | `channel_id_t` | 対応するCSPチャンネルID |
+| `role` | `role` | サービスのロール |
+| `channel_id` | `channel_id` | 対応するCSPチャンネルID |
 
 ## 3. 動的モデル
 
 ### 3.1 アルゴリズム
 - **サービス検索**: `constexpr` でソートされたURI文字列配列に対し、二分探索を用いることで O(log N) でチャンネルIDを取得する。 `{LowLatencyLookup}`
-- **インデックス付き検索**: `indexed_array_adapter_t` は、元のデータの順序を変えずに、インデックス配列をソートすることで高速な二分探索を実現する。 `{AccessDictionary}`
-- **所有権移譲**: メッセージ内の `kv_pair_t` に共有メモリIDが含まれる場合、送信側タスクから受信側タスクへ `co_value_t` の所有権を自動的に移譲する。 `{OwnershipTransfer}`
+- **インデックス付き検索**: `indexed_array_adapter` は、元のデータの順序を変えずに、インデックス配列をソートすることで高速な二分探索を実現する。 `{AccessDictionary}`
+- **所有権移譲**: メッセージ内の `kv_pair` に共有メモリIDが含まれる場合、送信側タスクから受信側タスクへ `co_value` の所有権を自動的に移譲する。 `{OwnershipTransfer}`
 
 ### 3.2 状態遷移図
 ```mermaid
@@ -108,11 +108,41 @@ sequenceDiagram
 ## 4. インターフェイス定義
 
 ### 4.1 公開API
-| メソッド名 (English) | 引数 | 戻り値 | 説明 | 事前条件 | 事後条件 |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `register_service` | `uri, role, channel` | `status_t` | サービスを登録する | なし | レジストリに追加 |
-| `lookup_service` | `uri` | `channel_id_t` | サービスを検索する | なし | チャンネルIDを返却 |
-| `route_message` | `channel, message` | `status_t` | メッセージを転送 | なし | 所有権移譲と転送 |
+
+```cpp
+class ipc_router {
+public:
+    /**
+     * @brief サービスを登録する
+     * @param uri サービスのURI
+     * @param role サービスのロール
+     * @param channel 対応するチャンネルID
+     * @return status 実行結果
+     * @pre なし
+     * @post レジストリに追加される
+     */
+    status register_service(const char* uri, role role, channel_id channel);
+
+    /**
+     * @brief サービスを検索する
+     * @param uri サービスのURI
+     * @return channel_id 対応するチャンネルID。見つからない場合はエラー値。
+     * @pre なし
+     * @post なし
+     */
+    channel_id lookup_service(const char* uri);
+
+    /**
+     * @brief メッセージを転送する
+     * @param channel 転送先チャンネルID
+     * @param msg 転送するメッセージ
+     * @return status 実行結果
+     * @pre なし
+     * @post 所有権が移譲され、メッセージが転送される
+     */
+    status route_message(channel_id channel, const message& msg);
+};
+```
 
 ### 4.2 URI/IPCインターフェイス
 - **URI形式**: `fireball://<subsystem_id>/<stream>/<instance_id>`
@@ -129,7 +159,7 @@ IPCのプリミティブ性を隠蔽し、依存性の逆転 (IoC) を実現す�
 
 - **実装方針**:
     - **型安全なプロキシ**: C++テンプレートを用いて、構造体とIPCメッセージを自動マッピングする。
-    - **ゼロコピーの維持**: `co_value_t` の所有権移譲を前提としたAPI設計。
+    - **ゼロコピーの維持**: `co_value` の所有権移譲を前提としたAPI設計。
 
 ## 5. 制約達成の方策
 

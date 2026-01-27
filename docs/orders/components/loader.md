@@ -6,47 +6,45 @@ WASMローダは、ROM上のWASM32バイナリをパースし、実行環境が�
 ## 2. 静的モデル
 
 ### 2.1 データ構造
-- **module_view_t**: ROM上のバイナリへの参照と、インタープリタ向けの高速アクセス索引群を保持するルート構造体。
-- **module_registry_t**: ロード済みのモジュールを名前で管理する静的辞書。 `{MultiModule_Support}`
-- **section_index_t**: 各WASMセクションの開始位置とサイズを保持する索引。
-- **module_dictionary_t**: 関数、型、エクスポート名などの高速検索用辞書。 `{AccessDictionary}`
+- **module_view**: ROM上のバイナリへの参照と、インタープリタ向けの高速アクセス索引群を保持するルート構造体。
+- **module_registry**: ロード済みのモジュールを名前で管理する静的辞書。 `{MultiModule_Support}`
+- **section_index**: 各WASMセクションの開始位置とサイズを保持する索引。
+- **module_dictionary**: 関数、型、エクスポート名などの高速検索用辞書。 `{AccessDictionary}`
 
 ### 2.2 内部ブロック図
 ```mermaid
 graph TB
-    Loader[WasmLoader] --> Module[module_view_t]
-    Module --> Header[module_header_t]
-    Module --> Sections[section_index_t]
-    Module --> Dict[module_dictionary_t]
-    Module --> Verify[verification_result_t]
-    Sections --> Span[section_span_t]
+    Loader[WasmLoader] --> Module[module_view]
+    Module --> Header[module_header]
+    Module --> Sections[section_index]
+    Module --> Dict[module_dictionary]
+    Module --> Verify[verification_result]
+    Sections --> Span[section_span]
 ```
 
-### 2.3 主要な構造体・クラス・定数
+### 2.3 主要なクラス・構造体・配列・定数
 
-#### `section_span_t` (セクション範囲)
-ROM上のセクションの位置とサイズを定義する。
+#### `section_span` (セクション範囲)
+ROM上のセクションの範囲を定義する。
 
 | メンバ名 | 型 | 説明 |
 | :--- | :--- | :--- |
-| `section_id` | `uint8_t` | WASMセクション識別子 |
-| `offset` | `uint32_t` | ROM上の開始オフセット |
-| `size` | `uint32_t` | ペイロードのサイズ |
+| `section_id` | `std::uint8_t` | WASMセクション識別子 |
+| `span` | `std::span<std::uint8_t>` | ROM上の開始オフセット |
 
-#### `verification_result_t` (検証結果)
+#### `verification_result` (検証結果)
 バイナリ検証の結果を保持する。 `{LightweightVerifier}`
 
 | メンバ名 | 型 | 説明 |
 | :--- | :--- | :--- |
 | `is_ok` | `bool` | 検証成功フラグ |
-| `error_code` | `uint8_t` | 失敗理由コード |
-| `error_offset` | `uint32_t` | 失敗箇所のオフセット |
+| `error_span` | `std::span<std::uint8_t>` | 失敗箇所の範囲 |
 
 ## 3. 動的モデル
 
 ### 3.1 アルゴリズム
 - **バイナリパース**: ROM上のデータを `std::span` でラップし、境界チェックを行いながら順次読み取る。
-- **module_view_t 構築**: 関数ボディやエクスポート名を抽出し、ソート済みインデックス付き配列として構築する。検索には二分探索を用いる。 `{AccessDictionary}`
+- **module_view 構築**: 関数ボディやエクスポート名を抽出し、ソート済みインデックス付き配列として構築する。検索には二分探索を用いる。 `{AccessDictionary}`
 - **依存関係解決**: インポートセクションをスキャンし、必要なモジュールが未ロードの場合は `module_reader` を介して再帰的にロードを試みる。 `{MultiModule_Support}`
 
 ### 3.2 状態遷移図
@@ -71,11 +69,11 @@ sequenceDiagram
     participant ROM as WasmBinary
     
     Client->>Loader: load_module(binary_ptr)
-    Loader->>Alloc: allocate(module_view_t)
+    Loader->>Alloc: allocate(module_view)
     Loader->>ROM: read_header
     Loader->>Loader: verify_magic_and_version
     Loader->>ROM: scan_sections
-    Loader->>Alloc: allocate(section_index_t)
+    Loader->>Alloc: allocate(section_index)
     Loader->>Loader: build_dictionaries
     Loader-->>Client: module_view_ptr
 ```
@@ -83,13 +81,61 @@ sequenceDiagram
 ## 4. インターフェイス定義
 
 ### 4.1 公開API
-| メソッド名 | 引数 | 戻り値 | 説明 | 事前条件 | 事後条件 |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `load_module` | `name, binary_ptr, size` | `module_view_t*` | モジュールをロードし登録 | なし | ModuleViewが生成・登録される |
-| `find_module` | `name` | `module_view_t*` | 登録済みモジュールを検索 | なし | 見つかればポインタを返す |
-| `get_section` | `module_view, id` | `section_span_t` | セクション範囲を取得 | ロード済み | 指定セクションの範囲 |
-| `lookup_export` | `module_view, name` | `uint32_t` | エクスポートを検索 | ロード済み | 関数インデックス等 |
-| `set_module_reader` | `reader_fn` | `void` | モジュール読み込み関数を設定 | なし | コールバックが登録される |
+### 4.1 公開API
+
+```cpp
+class wasm_loader {
+public:
+    /**
+     * @brief モジュールをロードし登録する
+     * @param name モジュール名
+     * @param binary_ptr バイナリデータへのポインタ
+     * @param size バイナリサイズ
+     * @return module_view* 生成されたModuleView。失敗時はNULL。
+     * @pre なし
+     * @post ModuleViewが生成・登録される
+     */
+    module_view* load_module(const char* name, const std::uint8_t* binary_ptr, std::size_t size);
+
+    /**
+     * @brief 登録済みモジュールを検索する
+     * @param name モジュール名
+     * @return module_view* モジュールビューへのポインタ
+     * @pre なし
+     * @post 見つかればポインタを返す
+     */
+    module_view* find_module(const char* name);
+
+    /**
+     * @brief セクション範囲を取得する
+     * @param view モジュールビュー
+     * @param id セクションID
+     * @return section_span セクション範囲
+     * @pre ロード済み
+     * @post 指定セクションの範囲
+     */
+    section_span get_section(const module_view* view, std::uint8_t id);
+
+    /**
+     * @brief エクスポートを検索する
+     * @param view モジュールビュー
+     * @param name エクスポート名
+     * @return uint32_t 関数インデックス等
+     * @pre ロード済み
+     * @post なし
+     */
+    std::uint32_t lookup_export(const module_view* view, const char* name);
+
+    /**
+     * @brief モジュール読み込み関数を設定する
+     * @param reader_fn 読み込み関数
+     * @pre なし
+     * @post コールバックが登録される
+     */
+    using module_reader_t = module_view* (*)(const char* name);
+    void set_module_reader(module_reader_t reader_fn);
+};
+```
 
 ### 4.2 URI/IPCインターフェイス
 本コンポーネントは vSoC 内部で使用されるライブラリであり、直接のIPCインターフェイスは持たない。

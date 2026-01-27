@@ -6,8 +6,8 @@
 #ifndef __FIREBALL_HXX__
 #define __FIREBALL_HXX__
 
+#include <cstdint>
 #include <fireball_config.hxx>
-#include <stdint.h>
 
 namespace fireball {} // namespace fireball
 

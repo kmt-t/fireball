@@ -6,7 +6,7 @@
 ## 2. 静的モデル
 
 ### 2.1 データ構造
-- **service_registry_t**: ロードされているサービスの情報（URI、Tier、エントリポイント）を管理する。
+- **service_registry**: ロードされているサービスの情報（URI、Tier、エントリポイント）を管理する。
 
 ### 2.2 内部ブロック図
 ```mermaid
@@ -20,23 +20,23 @@ graph TD
     WASI --> HAL[HAL Subsystem]
 ```
 
-### 2.3 主要な構造体・クラス・定数
+### 2.3 主要なクラス・構造体・配列・定数
 
-#### `service_t` (サービス定義)
+#### `service` (サービス定義)
 個別のサービスの属性を管理する。
 
 | メンバ名 | 型 | 説明 |
 | :--- | :--- | :--- |
 | `name` | `const char*` | サービス名 |
-| `tier` | `uint8_t` | 隔離レベル (0: Direct, 1: IPC) |
+| `tier` | `std::uint8_t` | 隔離レベル (0: Direct, 1: IPC) |
 | `uri` | `const char*` | IPCルータ登録用URI |
 
-#### `service_config_t` (サービス構成)
+#### `service_config` (サービス構成)
 ゲストごとにロードするサービスを定義する。 `{ConfigurableSystem}`
 
 | メンバ名 | 型 | 説明 |
 | :--- | :--- | :--- |
-| `guest_id` | `uint32_t` | 対象ゲストID |
+| `guest_id` | `std::uint32_t` | 対象ゲストID |
 | `load_list` | `const char**` | ロードするサービスのURIリスト |
 
 ## 3. 動的モデル
@@ -75,10 +75,30 @@ sequenceDiagram
 ## 4. インターフェイス定義
 
 ### 4.1 公開API
-| メソッド名| 引数 | 戻り値 | 説明 | 事前条件 | 事後条件 |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `load_service` | `uri` | `status_t` | サービスをロードする | なし | サービスが利用可能になる |
-| `unload_service` | `uri` | `status_t` | サービスをアンロード | ロード済み | リソース解放 |
+### 4.1 公開API
+
+```cpp
+class service_manager {
+public:
+    /**
+     * @brief サービスをロードする
+     * @param uri サービスのURI
+     * @return status 実行結果
+     * @pre なし
+     * @post サービスが利用可能になる
+     */
+    status load_service(const char* uri);
+
+    /**
+     * @brief サービスをアンロードする
+     * @param uri サービスのURI
+     * @return status 実行結果
+     * @pre ロード済み
+     * @post リソース解放
+     */
+    status unload_service(const char* uri);
+};
+```
 
 ### 4.2 URI/IPCインターフェイス
 - **URI**: `fireball://services/<service_name>/<instance_id>`

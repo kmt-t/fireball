@@ -6,9 +6,9 @@ vMMIO (Virtual Memory-Mapped I/O) は、WASMゲストアプリケーションに
 ## 2. 静的モデル
 
 ### 2.1 データ構造
-- **vmmio_region_t**: 仮想アドレス範囲と、それに対応する読み書きハンドラ（コールバック）を保持する。
-- **vmmio_type_t**: 領域の種別（EMULATED, PASSTHROUGH）を定義する。
-- **vmmio_map_t**: 登録されたすべての `vmmio_region_t` を管理する静的配列。
+- **vmmio_region**: 仮想アドレス範囲と、それに対応する読み書きハンドラ（コールバック）を保持する。
+- **vmmio_type**: 領域の種別（EMULATED, PASSTHROUGH）を定義する。
+- **vmmio_map**: 登録されたすべての `vmmio_region` を管理する静的配列。
 
 ### 2.2 内部ブロック図
 ```mermaid
@@ -22,23 +22,23 @@ graph TD
     Hook --> HAL[HAL / Physical Hardware]
 ```
 
-### 2.3 主要な構造体・クラス・定数
+### 2.3 主要なクラス・構造体・配列・定数
 
-#### `vmmio_handler_t` (ハンドラ関数型)
+#### `vmmio_handler` (ハンドラ関数型)
 ```cpp
-typedef status_t (*vmmio_read_handler_t)(uint32_t addr, uint32_t* val);
-typedef status_t (*vmmio_write_handler_t)(uint32_t addr, uint32_t val);
+typedef status (*vmmio_read_handler)(std::uint32_t addr, std::uint32_t* val);
+typedef status (*vmmio_write_handler)(std::uint32_t addr, std::uint32_t val);
 ```
 
-#### `vmmio_region_t` (vMMIO領域定義)
+#### `vmmio_region` (vMMIO領域定義)
 | メンバ名 | 型 | 説明 |
 | :--- | :--- | :--- |
-| `base_addr` | `uint32_t` | 領域の開始アドレス |
-| `size` | `uint32_t` | 領域のサイズ |
-| `type` | `vmmio_type_t` | 領域種別 (EMULATED / PASSTHROUGH) |
-| `read_fn` | `vmmio_read_handler_t` | 読み出しハンドラ |
-| `write_fn` | `vmmio_write_handler_t` | 書き込みハンドラ |
-| `target_phys_addr` | `uintptr_t` | パススルー時の物理アドレス (PASSTHROUGH時のみ) |
+| `base_addr` | `std::uint32_t` | 領域の開始アドレス |
+| `size` | `std::uint32_t` | 領域のサイズ |
+| `type` | `vmmio_type` | 領域種別 (EMULATED / PASSTHROUGH) |
+| `read_fn` | `vmmio_read_handler` | 読み出しハンドラ |
+| `write_fn` | `vmmio_write_handler` | 書き込みハンドラ |
+| `target_phys_addr` | `std::uintptr_t` | パススルー時の物理アドレス (PASSTHROUGH時のみ) |
 
 ## 3. 動的モデル
 
@@ -95,13 +95,59 @@ sequenceDiagram
 ## 4. インターフェイス定義
 
 ### 4.1 公開API
-| メソッド名 | 引数 | 戻り値 | 説明 | 事前条件 | 事後条件 |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-`register_hook` | `region` | `status_t` | vMMIO領域を登録する | なし | 領域がマップに追加される |
-`map_buffer` | `phys_addr, size` | `uint32_t` | 物理メモリを動的領域にマップ | なし | vMMIOアドレスを返却 |
-`unmap_buffer` | `vmmio_addr` | `status_t` | マッピングを解除 | マップ済み | 領域が解放される |
-`dispatch_read` | `addr, val` | `status_t` | 読み出しアクセスを処理 | なし | ハンドラが実行される |
-`dispatch_write` | `addr, val` | `status_t` | 書き込みアクセスを処理 | なし | ハンドラが実行される |
+
+```cpp
+class vmmio_controller {
+public:
+    /**
+     * @brief vMMIO領域を登録する
+     * @param region 領域定義
+     * @return status 実行結果
+     * @pre なし
+     * @post 領域がマップに追加される
+     */
+    status register_hook(const vmmio_region& region);
+
+    /**
+     * @brief 物理メモリを動的領域にマップする
+     * @param phys_addr 物理アドレス
+     * @param size サイズ
+     * @return uint32_t vMMIOアドレス
+     * @pre なし
+     * @post vMMIOアドレスを返却
+     */
+    std::uint32_t map_buffer(std::uintptr_t phys_addr, std::size_t size);
+
+    /**
+     * @brief マッピングを解除する
+     * @param vmmio_addr vMMIOアドレス
+     * @return status 実行結果
+     * @pre マップ済み
+     * @post 領域が解放される
+     */
+    status unmap_buffer(std::uint32_t vmmio_addr);
+
+    /**
+     * @brief 読み出しアクセスを処理する
+     * @param addr アドレス
+     * @param val 読み出し値を格納するポインタ
+     * @return status 実行結果
+     * @pre なし
+     * @post ハンドラが実行される
+     */
+    status dispatch_read(std::uint32_t addr, std::uint32_t* val);
+
+    /**
+     * @brief 書き込みアクセスを処理する
+     * @param addr アドレス
+     * @param val 書き込み値
+     * @return status 実行結果
+     * @pre なし
+     * @post ハンドラが実行される
+     */
+    status dispatch_write(std::uint32_t addr, std::uint32_t val);
+};
+```
 
 ## 5. 制約達成の方策
 

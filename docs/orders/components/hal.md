@@ -6,9 +6,9 @@ HAL (Hardware Abstraction Layer) は、ハードウェアへのアクセスを�
 ## 2. 静的モデル
 
 ### 2.1 データ構造
-- **device_t Registry**: 管理対象のデバイス情報を保持する静的配列。
-- **hal_buffer_t Pool**: デバイス通信用に使用する、ドライバ側で管理されるバッファプール。
-- **rsp_packet_buffer_t**: RSPパケットの送受信に使用する固定長バッファ。
+- **device Registry**: 管理対象のデバイス情報を保持する静的配列。
+- **hal_buffer Pool**: デバイス通信用に使用する、ドライバ側で管理されるバッファプール。
+- **rsp_packet_buffer**: RSPパケットの送受信に使用する固定長バッファ。
 
 ### 2.2 内部ブロック図
 ```mermaid
@@ -20,35 +20,35 @@ graph TD
     HAL --> I2C[I2C Driver]
     HAL --> Timer[Timer Driver]
     HAL --> RSP[RSP Parser]
-    RSP --> Queue[debug_command_queue_t]
+    RSP --> Queue[debug_command_queue]
 ```
 
-### 2.3 主要な構造体・クラス・定数
+### 2.3 主要なクラス・構造体・配列・定数
 
-#### `device_t` (デバイス情報)
+#### `device` (デバイス情報)
 個別のデバイスの属性と状態を管理する。
 
 | メンバ名 | 型 | 説明 |
 | :--- | :--- | :--- |
-| `id` | `device_id_t` | デバイスを一意に識別するID |
+| `id` | `device_id` | デバイスを一意に識別するID |
 | `name` | `char[16]` | デバイス名 |
-| `type` | `device_type_t` | デバイス種別 (BLOCK, STREAM) |
-| `block_size` | `size_t` | 最小転送単位 |
+| `type` | `device_type` | デバイス種別 (BLOCK, STREAM) |
+| `block_size` | `std::size_t` | 最小転送単位 |
 
-#### `hal_config_t` (HAL構成)
+#### `hal_config` (HAL構成)
 HAL全体の制限値を定義する。 `{ConfigurableSystem}`
 
 | メンバ名 | 型 | 説明 |
 | :--- | :--- | :--- |
-| `max_devices` | `uint8_t` | 管理可能な最大デバイス数 |
-| `max_buffers` | `uint8_t` | 通信バッファの最大数 |
-| `buffer_size` | `size_t` | 各バッファのサイズ |
+| `max_devices` | `std::uint8_t` | 管理可能な最大デバイス数 |
+| `max_buffers` | `std::uint8_t` | 通信バッファの最大数 |
+| `buffer_size` | `std::size_t` | 各バッファのサイズ |
 
 ## 3. 動的モデル
 
 ### 3.1 アルゴリズム
 - **コマンドルーティング**: IPCで受信したコマンド（read/write等）を、デバイスIDに基づいて適切なドライバへ振り分ける。
-- **RSPパケット解析**: UARTまたはRTTから受信したRSPパケットを解析し、`debug_command_t` 構造体へ変換してコマンドキューへ投入する。 `{RSP_Transport_Selectable}`
+- **RSPパケット解析**: UARTまたはRTTから受信したRSPパケットを解析し、`debug_command` 構造体へ変換してコマンドキューへ投入する。 `{RSP_Transport_Selectable}`
 - **割り込み通知**: 物理割り込み発生時、ISR内でフラグをセットし、COOSスケジューラに対して関連タスクのウェイクアップを要求する。 `{TaskPollInterruptFlag}`
 
 ### 3.2 状態遷移図
@@ -81,12 +81,52 @@ sequenceDiagram
 ## 4. インターフェイス定義
 
 ### 4.1 公開API
-| メソッド名 | 引数 | 戻り値 | 説明 | 事前条件 | 事後条件 |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `read` | `device_id, buffer` | `status_t` | データを読み出す | Ready状態 | 完了またはエラー |
-| `write` | `device_id, buffer` | `status_t` | データを書き込む | Ready状態 | 完了またはエラー |
-| `ioctl` | `device_id, cmd, args` | `status_t` | 制御コマンドを実行 | なし | デバイス依存 |
-| `acquire_buffer` | `size` | `buffer_id_t` | 通信バッファを確保 | なし | バッファが確保される |
+### 4.1 公開API
+
+```cpp
+class hal {
+public:
+    /**
+     * @brief データを読み出す
+     * @param id デバイスID
+     * @param buffer 読み出しバッファ
+     * @return status 実行結果
+     * @pre Ready状態
+     * @post 完了またはエラー
+     */
+    status read(device_id id, const hal_buffer& buffer);
+
+    /**
+     * @brief データを書き込む
+     * @param id デバイスID
+     * @param buffer 書き込みバッファ
+     * @return status 実行結果
+     * @pre Ready状態
+     * @post 完了またはエラー
+     */
+    status write(device_id id, const hal_buffer& buffer);
+
+    /**
+     * @brief 制御コマンドを実行する
+     * @param id デバイスID
+     * @param cmd コマンドID
+     * @param args 引数
+     * @return status 実行結果
+     * @pre なし
+     * @post デバイス依存
+     */
+    status ioctl(device_id id, std::uint32_t cmd, void* args);
+
+    /**
+     * @brief 通信バッファを確保する
+     * @param size 要求サイズ
+     * @return buffer_id バッファID
+     * @pre なし
+     * @post バッファが確保される
+     */
+    buffer_id acquire_buffer(std::size_t size);
+};
+```
 
 ### 4.2 URI/IPCインターフェイス
 - **URI**: `fireball://hal/<device_name>/<instance_id>`

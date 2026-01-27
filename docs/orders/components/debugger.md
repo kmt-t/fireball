@@ -6,61 +6,61 @@
 ## 2. 静的モデル
 
 ### 2.1 データ構造
-- **debug_command_queue_t**: HAL層のRSPパーサから供給される、解析済みデバッグコマンドのキュー。
-- **breakpoint_t**: ソフトウェアブレークポイントを管理する固定長配列。 `{NoStdVector}`
+- **debug_command_queue**: HAL層のRSPパーサから供給される、解析済みデバッグコマンドのキュー。
+- **breakpoint**: ソフトウェアブレークポイントを管理する固定長配列。 `{NoStdVector}`
 
 ### 2.2 内部ブロック図
 ```mermaid
 graph TD
-    HAL[HAL RSP Parser] --> Queue[debug_command_queue_t]
+    HAL[HAL RSP Parser] --> Queue[debug_command_queue]
     Queue --> Ctrl[Debug Controller]
     Ctrl --> Interp[Interpreter Hook]
     Ctrl --> BP[Breakpoint Mgr]
-    Interp --> vSoC[execution_context_t]
+    Interp --> vSoC[execution_context]
 ```
 
-### 2.3 主要な構造体・クラス・定数
+### 2.3 主要なクラス・構造体・配列・定数
 
-#### `debug_command_t` (デバッグコマンド)
+#### `debug_command` (デバッグコマンド)
 解析済みのRSPコマンドを表現する。
 
 | メンバ名 | 型 | 説明 |
 | :--- | :--- | :--- |
-| `type` | `debug_cmd_type_t` | コマンド種別 (READ_REG, WRITE_MEM, CONTINUE, etc.) |
-| `address` | `uint32_t` | 対象アドレス（メモリ/ブレークポイント用） |
-| `data` | `std::span<uint8_t>` | 書き込みデータ等への参照 |
+| `type` | `debug_cmd_type` | コマンド種別 (READ_REG, WRITE_MEM, CONTINUE, etc.) |
+| `address` | `std::uint32_t` | 対象アドレス（メモリ/ブレークポイント用） |
+| `data` | `std::span<std::uint8_t>` | 書き込みデータ等への参照 |
 
-#### `breakpoint_t` (ブレークポイント情報)
+#### `breakpoint` (ブレークポイント情報)
 ブレークポイントの状態と位置を管理する。
 
 | メンバ名 | 型 | 説明 |
 | :--- | :--- | :--- |
-| `type` | `breakpoint_type_t` | 種類 (Software, Hardware, etc.) |
-| `address` | `uint32_t` | WASM命令オフセット |
+| `type` | `breakpoint_type` | 種類 (Software, Hardware, etc.) |
+| `address` | `std::uint32_t` | WASM命令オフセット |
 | `enabled` | `bool` | 有効/無効フラグ |
 
-#### `virtual_register_set_t` (仮想レジスタセット)
+#### `virtual_register_set` (仮想レジスタセット)
 GDB RSPに対して公開する仮想的なレジスタセット。 `{RSPMinimalSet}`
 
 | レジスタ名 | 番号 | 対応する内部状態 | 説明 |
 | :--- | :--- | :--- | :--- |
-| `PC` | 0 | `execution_context_t.pc` | プログラムカウンタ（命令オフセット） |
-| `LR` | 1 | `call_frame_t.return_address` | リンクレジスタ（戻り先アドレス） |
-| `SP` | 2 | `execution_context_t.stack_ptr` | スタックポインタ（オペランドスタック） |
-| `FP` | 3 | `call_frame_t.frame_base` | フレームポインタ（スタックフレーム基点） |
+| `PC` | 0 | `execution_context.pc` | プログラムカウンタ（命令オフセット） |
+| `LR` | 1 | `call_frame.return_address` | リンクレジスタ（戻り先アドレス） |
+| `SP` | 2 | `execution_context.stack_ptr` | スタックポインタ（オペランドスタック） |
+| `FP` | 3 | `call_frame.frame_base` | フレームポインタ（スタックフレーム基点） |
 
 #### `J-Link RTOS Awareness` 用シンボル
 J-Link GDB Serverプラグインがターゲットのメモリを解析するために必要なグローバルシンボル。
 
 | シンボル名 | 型 | 説明 |
 | :--- | :--- | :--- |
-| `g_task_list` | `task_t*` | 全タスクのリストの先頭ポインタ |
-| `g_current_task` | `task_t*` | 現在実行中のタスクへのポインタ |
+| `g_task_list` | `task*` | 全タスクのリストの先頭ポインタ |
+| `g_current_task` | `task*` | 現在実行中のタスクへのポインタ |
 
 ## 3. 動的モデル
 
 ### 3.1 アルゴリズム
-- **コマンド消費**: `poll()` により `debug_command_queue_t` から解析済みコマンドを取り出し、実行コンテキスト（`execution_context_t`）に対して操作を行う。
+- **コマンド消費**: `poll()` により `debug_command_queue` から解析済みコマンドを取り出し、実行コンテキスト（`execution_context`）に対して操作を行う。
 - **ステップ実行**: インタープリタを「1命令実行」モードで呼び出し、実行後に `Stopped` 状態へ遷移し、HAL層へ停止理由を通知する。
 
 ### 3.2 状態遷移図
@@ -83,7 +83,7 @@ sequenceDiagram
     participant HAL as HAL (RSP Parser)
     participant Q as Command Queue
     participant Ctrl as Debug Controller
-    participant vSoC as execution_context_t
+    participant vSoC as execution_context
     
     HAL->>Q: Push(READ_REG)
     Ctrl->>Q: Pop()
@@ -95,12 +95,45 @@ sequenceDiagram
 ## 4. インターフェイス定義
 
 ### 4.1 公開API
-| メソッド名 | 引数 | 戻り値 | 説明 | 事前条件 | 事後条件 |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `init` | `debug_config_t*` | `status_t` | デバッガを初期化する | なし | 状態がDisabledになる |
-| `attach` | `execution_context_t*` | `status_t` | 実行コンテキストに接続 | Disabled状態 | 状態がStoppedになる |
-| `poll` | `void` | `status_t` | コマンドキューを処理する | なし | 必要に応じて状態遷移 |
-| `step` | `void` | `status_t` | 1命令実行する | Stopped状態 | 実行後Stoppedに戻る |
+
+```cpp
+class debugger {
+public:
+    /**
+     * @brief デバッガを初期化する
+     * @param config 設定情報
+     * @return status 実行結果
+     * @pre なし
+     * @post 状態がDisabledになる
+     */
+    status init(const debug_config* config);
+
+    /**
+     * @brief 実行コンテキストに接続する
+     * @param context 実行コンテキスト
+     * @return status 実行結果
+     * @pre Disabled状態
+     * @post 状態がStoppedになる
+     */
+    status attach(execution_context* context);
+
+    /**
+     * @brief コマンドキューを処理する
+     * @return status 実行結果
+     * @pre なし
+     * @post 必要に応じて状態遷移
+     */
+    status poll();
+
+    /**
+     * @brief 1命令実行する
+     * @return status 実行結果
+     * @pre Stopped状態
+     * @post 実行後Stoppedに戻る
+     */
+    status step();
+};
+```
 
 ### 4.2 URI/IPCインターフェイス
 - **コマンド入力**: HAL層からの内部関数呼び出し、または共有メモリ上のキュー経由。

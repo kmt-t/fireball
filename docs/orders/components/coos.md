@@ -6,43 +6,43 @@ COOSは、シングルスレッド環境向けのホーアCSPベースのグリ�
 ## 2. 静的モデル
 
 ### 2.1 データ構造
-- **task_t**: タスクの状態、コルーチンハンドル、スタック/ヒープ情報を保持する。
-- **channel_t**: 1エントリのバッファを持つ同期オブジェクト。
-- **co_value_t**: ムーブセマンティクスによる所有権管理スマートポインタ。
+- **task**: タスクの状態、コルーチンハンドル、スタック/ヒープ情報を保持する。
+- **channel**: 1エントリのバッファを持つ同期オブジェクト。
+- **co_value**: ムーブセマンティクスによる所有権管理スマートポインタ。
 
 ### 2.2 内部ブロック図
 ```mermaid
 graph TD
-    Sched[co_sched<br/>Scheduler] --> TCB[task_t]
+    Sched[co_sched<br/>Scheduler] --> TCB[task]
     Sched --> CSP[co_csp<br/>CSP Sync]
     Sched --> Mem[co_mem<br/>Memory Mgr]
-    CSP --> Value[co_value_t]
+    CSP --> Value[co_value]
     Mem --> Heap[Task Heap]
 ```
 
-### 2.3 主要な構造体・クラス・定数
+### 2.3 主要なクラス・構造体・配列・定数
 
-#### `task_t` (タスク制御ブロック)
+#### `task` (タスク制御ブロック)
 タスクの実行コンテキストとリソース状態を管理する。
 
 | メンバ名 | 型 | 説明 |
 | :--- | :--- | :--- |
-| `id` | `task_id_t` | タスクを一意に識別するID |
+| `id` | `task_id` | タスクを一意に識別するID |
 | `name` | `char[16]` | タスク名（デバッグ表示用） |
-| `state` | `task_state_t` | タスクの状態 (READY, RUNNING, BLOCKED, INTERRUPTED) |
+| `state` | `task_state` | タスクの状態 (READY, RUNNING, BLOCKED, INTERRUPTED) |
 | `coro_handle` | `std::coroutine_handle<>` | C++20コルーチンハンドル |
-| `heap_base` | `uint8_t*` | タスク固有ヒープの開始アドレス |
-| `heap_size` | `size_t` | タスク固有ヒープのサイズ |
-| `next` | `task_t*` | 次のタスクへのポインタ（デバッガ用リスト） |
+| `heap_base` | `std::uint8_t*` | タスク固有ヒープの開始アドレス |
+| `heap_size` | `std::size_t` | タスク固有ヒープのサイズ |
+| `next` | `task*` | 次のタスクへのポインタ（デバッガ用リスト） |
 
-#### `channel_t` (CSPチャネル)
+#### `channel` (CSPチャネル)
 タスク間の同期と通信を仲介する。
 
 | メンバ名 | 型 | 説明 |
 | :--- | :--- | :--- |
-| `buffer` | `co_value_t` | 通信バッファ（1エントリ） |
-| `sender_wait_queue` | `task_id_t` | 送信待ちタスク |
-| `receiver_wait_queue` | `task_id_t` | 受信待ちタスク |
+| `buffer` | `co_value` | 通信バッファ（1エントリ） |
+| `sender_wait_queue` | `task_id` | 送信待ちタスク |
+| `receiver_wait_queue` | `task_id` | 受信待ちタスク |
 
 ## 3. 動的モデル
 
@@ -94,12 +94,46 @@ sequenceDiagram
 ## 4. インターフェイス定義
 
 ### 4.1 公開API
-| メソッド名 | 引数 | 戻り値 | 説明 | 事前条件 | 事後条件 |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `spawn` | `func, isr, heap_size` | `task_id_t` | タスクを生成する | なし | タスクがREADYになる |
-| `yield` | `void` | `void` | 実行権を譲る | RUNNING状態 | READY状態になる |
-| `exit` | `void` | `void` | タスクを終了する | RUNNING状態 | リソースが解放される |
-| `notify_interrupt` | `task_id` | `status_t` | 割り込みを通知する | なし | タスクがINTERRUPTEDになる |
+### 4.1 公開API
+
+```cpp
+class scheduler {
+public:
+    /**
+     * @brief タスクを生成する
+     * @param func タスクのエントリポイント
+     * @param isr 割り込みハンドラ
+     * @param heap_size スタック/ヒープサイズ
+     * @return task_id 生成されたタスクID
+     * @pre なし
+     * @post タスクがREADYになる
+     */
+    task_id spawn(task_func func, interrupt_handler isr, std::size_t heap_size);
+
+    /**
+     * @brief 実行権を譲る
+     * @pre RUNNING状態
+     * @post READY状態になる
+     */
+    void yield();
+
+    /**
+     * @brief タスクを終了する
+     * @pre RUNNING状態
+     * @post リソースが解放される
+     */
+    void exit();
+
+    /**
+     * @brief 割り込みを通知する
+     * @param id 通知先タスクID
+     * @return status 実行結果
+     * @pre なし
+     * @post タスクがINTERRUPTEDになる
+     */
+    status notify_interrupt(task_id id);
+};
+```
 
 ### 4.2 URI/IPCインターフェイス
 本コンポーネントはカーネル基盤のため、直接のURIインターフェイスは持たず、IPCルータの基盤として機能する。

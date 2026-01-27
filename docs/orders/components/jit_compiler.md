@@ -37,39 +37,39 @@ graph TD
     Context --- JIT_Compiler
 ```
 
-### 2.3 主要な構造体・クラス・定数
+### 2.3 主要なクラス・構造体・配列・定数
 
-#### `jit_entry_t` (JITエントリ)
+#### `jit_entry` (JITエントリ)
 WASMバイトコードのオフセットと、対応するネイティブコードのキャッシュ内位置を紐付ける。メモリ節約のため `__attribute__((packed))` を使用する。
 
 | メンバ名 | 型 | 説明 |
 | :--- | :--- | :--- |
-| `pc` | `uint32_t` | WASMバイトコードオフセット |
-| `code_offset` | `uint16_t` | キャッシュ先頭からのオフセット（`JIT_CODE_ALIGN_SHIFT` 分のシフト済み値） |
+| `pc` | `std::uint32_t` | WASMバイトコードオフセット |
+| `code_offset` | `std::uint16_t` | キャッシュ先頭からのオフセット（`JIT_CODE_ALIGN_SHIFT` 分のシフト済み値） |
 
-#### `jit_cache_partition_t` (キャッシュパーティション)
+#### `jit_cache_partition` (キャッシュパーティション)
 Active/Old の各領域を管理する構造体。
 
 | メンバ名 | 型 | 説明 |
 | :--- | :--- | :--- |
-| `base_addr` | `uint8_t*` | パーティションの開始アドレス |
-| `used_size` | `uint32_t` | 現在の使用量 |
-| `entries` | `jit_entry_t*` | エントリ配列へのポインタ |
-| `entry_count` | `uint16_t` | 現在のエントリ数 |
-| `group_index` | `uint16_t*` | カードグループインデックス配列へのポインタ |
+| `base_addr` | `std::uint8_t*` | パーティションの開始アドレス |
+| `used_size` | `std::uint32_t` | 現在の使用量 |
+| `entries` | `jit_entry*` | エントリ配列へのポインタ |
+| `entry_count` | `std::uint16_t` | 現在のエントリ数 |
+| `group_index` | `std::uint16_t*` | カードグループインデックス配列へのポインタ |
 
-#### `jit_config_t` (JIT構成)
+#### `jit_config` (JIT構成)
 JITコンパイラの動作パラメータ。システム構成に応じてコンパイル時に決定される。 `{ConfigurableSystem}`
 
 | メンバ名 | 型 | 説明 |
 | :--- | :--- | :--- |
-| `cache_size_per_side` | `uint32_t` | 片側キャッシュサイズ（デフォルト 2KB） |
-| `max_entries` | `uint16_t` | 最大エントリ数 |
-| `history_buffer_size` | `uint16_t` | 履歴バッファサイズ（デフォルト 128） |
-| `num_cards_shift` | `uint8_t` | カードマーキング総数のログ2値（デフォルト 10 → 1024枚） |
-| `card_size_shift` | `uint8_t` | 1カードあたりのWASMコードサイズのログ2値（デフォルト 6 → 64バイト） |
-| `cards_per_group_shift` | `uint8_t` | 1グループあたりのカード数のログ2値（デフォルト 5 → 32枚） |
-| `code_align_shift` | `uint8_t` | コードアライメントのシフト量（デフォルト 3 = 8バイト境界） |
+| `cache_size_per_side` | `std::uint32_t` | 片側キャッシュサイズ（デフォルト 2KB） |
+| `max_entries` | `std::uint16_t` | 最大エントリ数 |
+| `history_buffer_size` | `std::uint16_t` | 履歴バッファサイズ（デフォルト 128） |
+| `num_cards_shift` | `std::uint8_t` | カードマーキング総数のログ2値（デフォルト 10 → 1024枚） |
+| `card_size_shift` | `std::uint8_t` | 1カードあたりのWASMコードサイズのログ2値（デフォルト 6 → 64バイト） |
+| `cards_per_group_shift` | `std::uint8_t` | 1グループあたりのカード数のログ2値（デフォルト 5 → 32枚） |
+| `code_align_shift` | `std::uint8_t` | コードアライメントのシフト量（デフォルト 3 = 8バイト境界） |
 
 ## 3. 動的モデル
 
@@ -82,7 +82,7 @@ JITコンパイラの動作パラメータ。システム構成に応じてコ�
     - 即値（定数）をプレースホルダに書き込む。
     - ランタイムAPIのアドレスを書き込む。
     - 相対ジャンプ先を計算して書き込む。
-4. **エントリ登録**: `jit_entry_t` を作成し、`pc` 順を維持するようにエントリ配列に挿入する。同時に `group_index` を更新する。
+4. **エントリ登録**: `jit_entry` を作成し、`pc` 順を維持するようにエントリ配列に挿入する。同時に `group_index` を更新する。
 
 #### JITトレース検索アルゴリズム
 1. **事前フィルタ**: ホットスポットビットマップを確認し、該当PCのカードが `HOT` でない場合は即座に終了（インタープリタ継続）。
@@ -138,12 +138,46 @@ sequenceDiagram
 ## 4. インターフェイス定義
 
 ### 4.1 公開API
-| メソッド名 | 引数 | 戻り値 | 説明 | 事前条件 | 事後条件 |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `initialize` | `jit_config_t*` | `status_t` | JITエンジンを初期化 | なし | Ready状態 |
-| `lookup_trace` | `uint32_t pc` | `void*` | PCに対応するJITコードを検索 | Ready状態 | ヒットすればアドレス、未ならNULL |
-| `process_hotspots` | `uint32_t* history, size_t len` | `void` | ホットスポット判定とコンパイルを実行 | `co_yield` 時 | キューが空になるまでコンパイル |
-| `clear_cache` | `void` | `void` | キャッシュを全クリア | なし | 全エントリ無効化 |
+### 4.1 公開API
+
+```cpp
+class jit_compiler {
+public:
+    /**
+     * @brief JITエンジンを初期化する
+     * @param config 設定情報
+     * @return status 実行結果
+     * @pre なし
+     * @post Ready状態
+     */
+    status initialize(const jit_config* config);
+
+    /**
+     * @brief PCに対応するJITコードを検索する
+     * @param pc WASM PC
+     * @return void* JITコードのアドレス。未コンパイルならNULL。
+     * @pre Ready状態
+     * @post なし
+     */
+    void* lookup_trace(std::uint32_t pc);
+
+    /**
+     * @brief ホットスポット判定とコンパイルを実行する
+     * @param history 履歴バッファ
+     * @param len 履歴バッファサイズ
+     * @pre co_yield 時
+     * @post キューが空になるまでコンパイル
+     */
+    void process_hotspots(const std::uint32_t* history, std::size_t len);
+
+    /**
+     * @brief キャッシュを全クリアする
+     * @pre なし
+     * @post 全エントリ無効化
+     */
+    void clear_cache();
+};
+```
 
 ### 4.2 URI/IPCインターフェイス
 本コンポーネントは vSoC の内部ライブラリであり、直接のIPCインターフェイスは持たない。

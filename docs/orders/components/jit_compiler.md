@@ -138,7 +138,6 @@ sequenceDiagram
 ## 4. インターフェイス定義
 
 ### 4.1 公開API
-### 4.1 公開API
 
 ```cpp
 class jit_compiler {

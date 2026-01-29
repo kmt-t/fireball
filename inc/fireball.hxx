@@ -7,6 +7,18 @@
 #define __FIREBALL_HXX__
 
 #include <cstdint>
+#include <cstddef>
+#include <version>
+#include <span>
+#include <string_view>
+#include <optional>
+#include <variant>
+#include <utility>
+#include <concepts>
+#include <type_traits>
+#include <coroutine>
+#include <source_location>
+
 #include <fireball_config.hxx>
 
 namespace fireball {

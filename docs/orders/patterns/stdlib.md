@@ -7,13 +7,16 @@
 
 ### 2.1 利用可能ライブラリ分類
 
-| 分類 | 利用可能要素 | 禁止要素 |
-| :--- | :--- | :--- |
-| **コンテナ** | `std::array`, `std::span` | `std::vector`, `std::map`, `std::list` |
-| **ランタイム** | コルーチン, `std::chrono` | `std::thread`, `std::filesystem` |
-| **ユーティリティ** | `std::optional`, `std::variant` | 例外 (`try-catch`), `std::function` |
+原則として、動的メモリ確保や重いランタイムを必要としない「フリースタンディング環境」に近いヘッダのみを許可する。
 
-### 2.2 共通ステータスコード
+| 分類 | ヘッダファイル |
+| :--- | :--- |
+| **基本** | `<cstdint>`, `<cstddef>`, `<limits>`, `<cassert>`, `<version>`, `<source_location>` |
+| **構造・型** | `<array>`, `<span>`, `<string_view>`, `<optional>`, `<variant>`, `<tuple>`, `<bitset>`, `<initializer_list>` |
+| **ロジック** | `<algorithm>`, `<utility>`, `<iterator>`, `<bit>`, `<compare>`, `<concepts>`, `<numbers>` |
+| **言語機能** | `<coroutine>`, `<type_traits>`, `<new>` (placement new目的のみ) |
+
+### 2.3 共通ステータスコード
 システム全体で統一して使用するステータスコード。
 
 | 定数名 | 値 | 説明 |

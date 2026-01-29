@@ -27,18 +27,18 @@ graph TB
 #### `section_span` (セクション範囲)
 ROM上のセクションの範囲を定義する。
 
-| メンバ名 | 型 | 説明 |
+| 構成項目 | 機能と役割 | 備考（制約、型など） |
 | :--- | :--- | :--- |
-| `section_id` | `std::uint8_t` | WASMセクション識別子 |
-| `span` | `std::span<std::uint8_t>` | ROM上の開始オフセット |
+| `section_id` | WASM仕様に基づいたセクション識別子（Code, Data, Export等）。 | 8bitインデックス |
+| `span` | ROM上の開始オフセットとサイズを抽象化したデータ範囲。 | ポインタ+サイズ (std::span相当) |
 
 #### `verification_result` (検証結果)
-バイナリ検証の結果を保持する。 `{LightweightVerifier}`
+バイナリ検証の結果と、不備があった場合の情報を保持する。 `{LightweightVerifier}`
 
-| メンバ名 | 型 | 説明 |
+| 構成項目 | 機能と役割 | 備考（制約、型など） |
 | :--- | :--- | :--- |
-| `is_ok` | `bool` | 検証成功フラグ |
-| `error_span` | `std::span<std::uint8_t>` | 失敗箇所の範囲 |
+| `is_ok` | 検証がすべてパスしたかどうかを示すフラグ。 | ブール値 |
+| `error_span` | 検証が失敗したバイナリ上の位置と範囲。デバッグ用。 | データ範囲 |
 
 ## 3. 動的モデル
 
@@ -81,61 +81,55 @@ sequenceDiagram
 ## 4. インターフェイス定義
 
 ### 4.1 公開API
-### 4.1 公開API
+外部から利用可能なオブジェクト指向APIを定義する。
 
-```cpp
-class wasm_loader {
-public:
-    /**
-     * @brief モジュールをロードし登録する
-     * @param name モジュール名
-     * @param binary_ptr バイナリデータへのポインタ
-     * @param size バイナリサイズ
-     * @return module_view* 生成されたModuleView。失敗時はNULL。
-     * @pre なし
-     * @post ModuleViewが生成・登録される
-     */
-    module_view* load_module(const char* name, const std::uint8_t* binary_ptr, std::size_t size);
+#### モジュールのロード
+| 項目 | 内容 |
+| :--- | :--- |
+| 機能概要 | ROM上のWASMバイナリをパースし、システムに登録して実行可能なビューを取得する。 |
+| 引数と役割 | `name`: 登録名, `binary_ptr`: バイナリ先頭, `size`: データサイズ。 |
+| 期待する結果 | 正常：索引構築済みの `module_view` ポインタ。異常：NULL（検証失敗時）。 |
+| 事前条件 | 与えられたメモリ範囲が有効であること。 |
+| 事後条件 | 内部のモジュールレジストリに登録され、他からの参照が可能になる。 |
+| 不変条件 | ROM上のバイナリデータが変更されないこと（読み取り専用）。 |
+| エラー時の挙動 | マジック値やバージョンが不正確な場合は即座に中断し、エラーを記録する。 |
+| 補足 | メモリ節約のため、コードセクション自体は展開せずROMを直接指し示す。 |
 
-    /**
-     * @brief 登録済みモジュールを検索する
-     * @param name モジュール名
-     * @return module_view* モジュールビューへのポインタ
-     * @pre なし
-     * @post 見つかればポインタを返す
-     */
-    module_view* find_module(const char* name);
+#### モジュールの検索
+| 項目 | 内容 |
+| :--- | :--- |
+| 機能概要 | 登録済みのモジュールを名前で検索し、そのビューを取得する。 |
+| 引数と役割 | `name`: 検索するモジュール名。 |
+| 期待する結果 | 正常：該当するビューのポインタ。異常：NULL。 |
+| 事前条件 | なし。 |
+| 事後条件 | なし。 |
+| 不変条件 | なし。 |
+| エラー時の挙動 | 未登録の場合はNULLを返す。 |
+| 補足 | 動的リンク（Import解決）時に主に使用される。 |
 
-    /**
-     * @brief セクション範囲を取得する
-     * @param view モジュールビュー
-     * @param id セクションID
-     * @return section_span セクション範囲
-     * @pre ロード済み
-     * @post 指定セクションの範囲
-     */
-    section_span get_section(const module_view* view, std::uint8_t id);
+#### セクションの取得
+| 項目 | 内容 |
+| :--- | :--- |
+| 機能概要 | 指定されたモジュール内の特定のWASMセクションの範囲情報を取得する。 |
+| 引数と役割 | `view`: モジュールビュー, `id`: セクション識別子。 |
+| 期待する結果 | 正常：ROM上の範囲を示す `section_span`。 |
+| 事前条件 | `view` が有効、かつロード済みであること。 |
+| 事後条件 | なし。 |
+| 不変条件 | 範囲外アクセスが発生しないこと。 |
+| エラー時の挙動 | 存在しないセクションの場合はサイズ0の範囲を返す。 |
+| 補足 | インタープリタやJITが命令を読み出す際に使用する。 |
 
-    /**
-     * @brief エクスポートを検索する
-     * @param view モジュールビュー
-     * @param name エクスポート名
-     * @return uint32_t 関数インデックス等
-     * @pre ロード済み
-     * @post なし
-     */
-    std::uint32_t lookup_export(const module_view* view, const char* name);
-
-    /**
-     * @brief モジュール読み込み関数を設定する
-     * @param reader_fn 読み込み関数
-     * @pre なし
-     * @post コールバックが登録される
-     */
-    using module_reader_t = module_view* (*)(const char* name);
-    void set_module_reader(module_reader_t reader_fn);
-};
-```
+#### エクスポートの検索 (Lookup)
+| 項目 | 内容 |
+| :--- | :--- |
+| 機能概要 | モジュールが公開している関数やグローバル変数を名前で検索し、そのインデックスを取得する。 |
+| 引数と役割 | `view`: モジュールビュー, `name`: エクスポート名。 |
+| 期待する結果 | 正常：WASMインデックス値。異常：エラーID。 |
+| 事前条件 | `view` のエクスポート辞書が構築済みであること。 |
+| 事後条件 | なし。 |
+| 不変条件 | 検索は `constexpr` に準じた高速な方式で行われること。 |
+| エラー時の挙動 | 見つからない場合は無効値を返す。 |
+| 補足 | 二分探索により O(log N) の性能を実現する。 |
 
 ### 4.2 URI/IPCインターフェイス
 本コンポーネントは vSoC 内部で使用されるライブラリであり、直接のIPCインターフェイスは持たない。

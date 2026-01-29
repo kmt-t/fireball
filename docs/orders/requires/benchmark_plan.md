@@ -50,17 +50,17 @@ graph LR
 - `RAM_stack`: `Stack_bytes` + `Control_stack_bytes` + `N_tasks * task_stack_bytes`
 - `RAM_heap`: `N_modules * (module_view_t + section_index_t) + N_exports * dict_entry` 等
 
-## 4. 設計完了チェックリスト（網羅性確認）
+## 4. 設計へのフィードバック
+- **反映先**: `{vSoC_Benchmark_Goal}`
+- **反映内容**: 概算レンジが制約（RAM 32KB / ROM 96KB）を超える場合、Loaderの辞書構造やInterpreterのスタック配置を再設計する。
+
+## 5. 参考文献・リソース
+- **WAMR**: [GitHub](https://github.com/bytecodealliance/wasm-micro-runtime)
+- **CoreMark**: [EEMBC](https://www.eembc.org/coremark/)
+
+## 6. 設計完了チェックリスト（網羅性確認）
 
 - [x] 解決したい課題と仮説が論理的に結びついているか
 - [x] 評価指標が具体的かつ定量的か
 - [x] 比較対象（WAMR）との条件が公平に設定されているか
 - [x] ROM/RAMの内訳カテゴリが定義されているか
-
-## 5. 設計へのフィードバック
-- **反映先**: `{vSoC_Benchmark_Goal}`
-- **反映内容**: 概算レンジが制約（RAM 32KB / ROM 96KB）を超える場合、Loaderの辞書構造やInterpreterのスタック配置を再設計する。
-
-## 6. 参考文献・リソース
-- **WAMR**: [GitHub](https://github.com/bytecodealliance/wasm-micro-runtime)
-- **CoreMark**: [EEMBC](https://www.eembc.org/coremark/)

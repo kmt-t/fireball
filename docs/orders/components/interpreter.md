@@ -1,7 +1,7 @@
 # Interpreter コンポーネント設計書
 
 ## 1. コンセプト
-Interpreter は、WASM命令をスレッドインタープリタ方式で実行し、低レイテンシかつ小フットプリントでゲストを動作させる。`execution_context_t` を仮想CPUレジスタセットとして定義し、周辺コンポーネントへの参照は Environment Pointer (`env`) を介して階層化することで、実行ループの認知負荷を低減する。 `{ThreadedInterpreter}` `{LowLatencyJIT}` `{InterpreterContextStackless}` `{EnvironmentPointer}`
+Interpreter は、WASM命令をスレッドインタープリタ方式で実行し、低レイテンシかつ小フットプリントでゲストを動作させる。`execution_context` を仮想CPUレジスタセットとして定義し、周辺コンポーネントへの参照は Environment Pointer (`env`) を介して階層化することで、実行ループの認知負荷を低減する。 `{ThreadedInterpreter}` `{LowLatencyJIT}` `{InterpreterContextStackless}` `{EnvironmentPointer}`
 
 ## 2. 静的モデル
 
@@ -36,70 +36,56 @@ graph TD
 ### 2.3 主要なクラス・構造体・配列・定数
 
 #### `execution_context` (実行コンテキスト)
-WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想CPUレジスタ群として設計する。前提となるアドレス型は **専用の型別名**（例: `wasm_addr`）で表現し、将来の拡張時に型変更を局所化する。 `{PositionIndependentCode}` `{ContextPointerRegister}`
+WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想CPUレジスタ群として設計する。 `{PositionIndependentCode}` `{ContextPointerRegister}`
 
-| メンバ名 | 型 | 説明 |
+| 構成項目 | 機能と役割 | 備考（制約、型など） |
 | :--- | :--- | :--- |
-| `pc` | `std::uint32_t` | 命令ポインタ（バイトコードオフセット） |
-| `stack_ptr` | `std::uint32_t*` | オペランドスタックポインタ |
-| `stack_base` | `std::uint32_t*` | オペランドスタック底面 |
-| `memory_base` | `std::uint8_t*` | リニアメモリ開始アドレス |
-| `memory_size` | `std::uint32_t` | リニアメモリサイズ |
-| `active_handlers` | `opcode_handler_table*` | 現在使用中の命令ハンドラ配列への参照（通常/デバッグ切替） |
-| `frame_ptr` | `call_frame*` | 現在のコールフレーム |
-| `control_ptr` | `control_frame*` | 現在の制御フレーム |
-| `env` | `vsoc_runtime*` | Environment Pointer (周辺コンポーネントへの参照) `{EnvironmentPointer}` |
+| `pc` | 現在実行中の命令を指し示すプログラムカウンタ（WASMバイトコードオフセット）。 | 32bitオフセット |
+| `stack_ptr` | オペランドスタックの現在の頂点を指すポインタ。 | ポインタ |
+| `stack_base` | オペランドスタックのメモリ領域の基点。 | ポインタ |
+| `memory_base` | ゲストリニアメモリの開始アドレス。 | ポインタ |
+| `memory_size` | ゲストリニアメモリの有効サイズ。境界チェックに使用。 | バイト数 |
+| `active_handlers` | 現在有効な命令ハンドラテーブル（通常用またはデバッグ用）への参照。 | テーブルへのポインタ |
+| `frame_ptr` | 現在実行中の関数に対応するコールフレームの頂点。 | ポインタ |
+| `control_ptr` | 現在のブロック構造（loop/if等）を管理する制御フレームの頂点。 | ポインタ |
+| `env` | vSoCランタイム等の周辺コンポーネントへアクセスするための環境ポインタ。 `{EnvironmentPointer}` | ポインタ |
 
 #### `call_frame` (コールフレーム)
-関数呼び出しごとの実行状態を保持する。WAMR の `WASMInterpFrame` を参考に最小化し、JIT復帰に必要な情報のみを残す。
+関数呼び出しごとのローカル変数や戻り先情報を保持する。
 
-| メンバ名 | 型 | 説明 |
+| 構成項目 | 機能と役割 | 備考（制約、型など） |
 | :--- | :--- | :--- |
-| `prev_frame` | `call_frame*` | 呼び出し元フレーム |
-| `return_pc` | `std::uint32_t` | 戻り先のバイトコードオフセット |
-| `frame_base` | `std::uint32_t*` | ローカル基点（lp） |
-| `func_idx` | `std::uint32_t` | 関数インデックス |
-| `sp_boundary` | `std::uint32_t*` | スタック境界（オーバーフロー判定） |
+| `prev_frame` | 呼び出し元（親）のコールフレームへのポインタ。 | リスト構造 |
+| `return_pc` | 関数終了後に戻るべきWASMバイトコードのオフセット。 | 32bitオフセット |
+| `frame_base` | WASMローカル変数が格納されているスタック上の基点アドレス。 | ポインタ |
+| `func_idx` | 現在の関数のインデックス。デバッグやプロファイリングで使用。 | インデックス |
+| `sp_boundary` | 呼び出し時に計算されたスタックの最大許容レベル。オーバーフロー検知に使用。 | ポインタ |
 
 #### `control_frame` (制御フレーム)
-`block/loop/if` 命令による制御構造を管理する。ジャンプ先のPCと実行エントリを保持し、高速な分岐を実現する。
+`block/loop/if` 命令によるネスト構造とジャンプ先を管理する。
 
-| メンバ名 | 型 | 説明 |
+| 構成項目 | 機能と役割 | 備考（制約、型など） |
 | :--- | :--- | :--- |
-| `label_pc` | `std::uint32_t` | ジャンプ先のバイトコードオフセット |
-| `exec_trace` | `exec_trace` | 実行エントリ（JITコードまたはインタープリタ） |
-| `stack_ptr` | `std::uint32_t*` | ブロック開始時のスタックポインタ（復元用） |
-| `is_loop` | `bool` | ループ構造かどうかのフラグ |
+| `label_pc` | ブロックを抜ける際、またはループの先頭に戻る際のジャンプ先バイトコード位置。 | 32bitオフセット |
+| `exec_trace` | ジャンプ先の実行エントリ（JITコードまたはインタープリタハンドラ）。 | 関数ポインタ |
+| `stack_ptr` | ブロック開始時点のオペランドスタックポインタ。ブロック脱出時のスタック復元に使用。 | ポインタ |
+| `is_loop` | 現在の構造がループ（先頭へ戻る）かブロック（末尾へ抜ける）かを示すフラグ。 | ブール値 |
 
 #### `interp_config` (インタープリタ構成)
 インタープリタの動作パラメータを定義する。 `{ConfigurableSystem}`
 
-| メンバ名 | 型 | 説明 |
+| 構成項目 | 機能と役割 | 備考（制約、型など） |
 | :--- | :--- | :--- |
-| `stack_size` | `std::uint32_t` | オペランドスタックサイズ |
-| `control_stack_size` | `std::uint32_t` | 制御スタックサイズ |
-| `yield_threshold` | `std::uint32_t` | yield判定のトレース数しきい値 |
+| `stack_size` | オペランドスタックとして確保する総バイト数。 | バイト数 |
+| `control_stack_size` | 制御フレームのネストを許容する最大数。 | エントリ数 |
+| `yield_threshold` | 指定した数のトレース（基本ブロック）を実行した際に自発的に yield する閾値。 | 回数 |
 
-#### `opcode_handler` / `exec_trace` (実行エントリ型)
-命令ハンドラおよびJITトレースの実行エントリは、ランタイムAPIと同一の関数型を採用する。 `{JIT_RuntimeAPI_Fallback}`
+#### `opcode_handler` / `exec_trace` (実行エントリ)
+命令ハンドラおよびJITトレースの共通実行シグネチャ。 `{JIT_RuntimeAPI_Fallback}`
 
-| 要素 | 型 | 説明 |
+| 構成項目 | 機能と役割 | 備考（制約、型など） |
 | :--- | :--- | :--- |
-| `signature` | `void __fastcall (std::uint32_t pc, std::uint32_t stacktop, execution_context* ctx)` | `pc`, `stacktop`, `ctx` をレジスタ経由で受け取り、実行を継続する。 |
-
-#### `opcode_handler_table` (命令ハンドラ配列)
-WASM命令と1対1対応する命令ハンドラ配列。デバッグ時は専用の配列に切り替える。
-
-| 要素 | 型 | 説明 |
-| :--- | :--- | :--- |
-| `handlers[]` | `opcode_handler` | opcodeに対応する命令ハンドラ配列 |
-
-#### `debug_handler_table` (デバッグ用ハンドラテーブル)
-デバッグモード時に `opcode_handler_table` から切り替えて使用する。各ハンドラは命令実行前後のブレークポイント判定と計測フックを含む。
-
-| 要素 | 型 | 説明 |
-| :--- | :--- | :--- |
-| `handlers[]` | `opcode_handler` | デバッグ用命令ハンドラ配列（`void(PC, StackTop, Context)`） |
+| `signature` | PC, StackTop, Context をレジスタ経由で受け取り、実行を行う関数インターフェイス。 | `__fastcall` 推奨 |
 
 ## 3. 動的モデル
 
@@ -108,17 +94,10 @@ WASM命令と1対1対応する命令ハンドラ配列。デバッグ時は専�
 - **WASM命令とRuntime APIの1対1対応**: 各命令ハンドラは対応する `void __fastcall (PC, StackTop, Context)` ランタイムAPIを呼び出し、結果は `Context` に書き込まれる。 `{JIT_RuntimeAPI_Fallback}`
 - **継続渡しトレース実行**: 命令ハンドラは継続渡しで次ハンドラへ遷移する。clang前提の `[[clang::musttail]]` を使用し、**非制御命令のみ**末尾呼び出しを行う。
 - **ジャンプの高速化 (exec_trace)**: 制御命令（`br`, `br_if` 等）によるジャンプ先を `control_frame` 内の `exec_trace` に保持する。
-    - `exec_trace` は初期状態ではインタープリタのディスパッチャを指すが、JITコンパイル後はJITコードのエントリポイントを指すように動的に切り替わる。
-    - `br` 命令ハンドラは、ターゲットフレームの `exec_trace` を `[[clang::musttail]]` で呼び出すことで、インタープリタとJITの境界を意識せずに高速な遷移を実現する。
-- **JIT更新戦略 (案C採用)**: JITコンパイルが完了しても、既存の制御スタック上の `exec_trace` は書き換えない。
-    - 新しく `block`/`loop`/`if` 命令を実行して制御フレームを積む際に、最新の `exec_trace`（JIT済みならそのアドレス、未ならインタープリタ）を取得して保持する。
-    - これにより、実装の複雑さを抑えつつ、次回のループ進入時から高速化の恩恵を受けることができる。
-- **Fireballにおけるトレースの定義**: 一般的なJITにおける「基本ブロックの連鎖」ではなく、**「単一の基本ブロック（制御命令で終了する命令列）」**をトレースの単位とする。
-- **次命令取得の責務**: 次の命令のオペコード取得は各命令ハンドラ内で行い、`opcode_handler_table` から次ハンドラを取得して末尾呼び出しする。
+- **JIT更新戦略**: 新しく `block`/`loop`/`if` 命令を実行して制御フレームを積む際に、最新の `exec_trace`（JIT済みならそのアドレス、未ならインタープリタ）を取得して保持する。
 - **Hotspot検知**: トレース開始時のPCを履歴バッファに記録する。実際のホットスポット判定とJITコンパイル要求は、`co_yield` 時のアイドル時間に一括して行われる。 `{LowLatencyJIT}` `{SimpleJITArchitecture}`
 - **概算Yield**: トレース実行数ベースで `co_yield` を発行し、協調型マルチタスクに整合させる。 `{Challenge_ApproximateYield}`
 - **デバッグフック**: 命令実行前後でブレークポイント判定を行い、Debugger に制御を委譲する。 `{Debug_Integrated}`
-- **デバッグ時のテーブル切替**: デバッグ状態に遷移した場合、通常の命令ハンドラ配列を `debug_handler_table` に切り替える。復帰時に通常配列へ戻す。
 
 ### 3.2 状態遷移図
 ```mermaid
@@ -158,48 +137,43 @@ sequenceDiagram
 ## 4. インターフェイス定義
 
 ### 4.1 公開API
-### 4.1 公開API
+外部から利用可能なオブジェクト指向APIを定義する。
 
-```cpp
-class interpreter {
-public:
-    /**
-     * @brief インタープリタを初期化する
-     * @param config 設定情報
-     * @return status 実行結果
-     * @pre なし
-     * @post Ready状態になる
-     */
-    status initialize(const interp_config* config);
+#### インタープリタの初期化
+| 項目 | 内容 |
+| :--- | :--- |
+| 機能概要 | 命令ハンドラテーブルのセットアップやスタック領域の確保等、実行エンジンの初期状態を構築する。 |
+| 引数と役割 | `config`: スタックサイズやyield閾値等の設定パラメータ。 |
+| 期待する結果 | 正常：エンジンがReady状態になる。 |
+| 事前条件 | 設定値がシステム制限（メモリサイズ等）に適合していること。 |
+| 事後条件 | `opcode_handler_table` が正しく配置される。 |
+| 不変条件 | 初期化後に設定値を変更できないこと。 |
+| エラー時の挙動 | メモリ確保失敗時は初期化を中断し、エラー値を返す。 |
+| 補足 | デバッグモードが指定された場合は `debug_handler_table` を使用するように構成する。 |
 
-    /**
-     * @brief 実行コンテキストを接続する
-     * @param context 実行コンテキスト
-     * @return status 実行結果
-     * @pre Ready状態
-     * @post コンテキストが関連付けられる
-     */
-    status attach_context(execution_context* context);
+#### 命令の実行 (step)
+| 項目 | 内容 |
+| :--- | :--- |
+| 機能概要 | 指定された実行コンテキストを用いてWASM命令を1トレース分（基本ブロック）実行する。 |
+| 引数と役割 | `context`: WASM仮想レジスタやリソース参照を保持する実行状態。 |
+| 期待する結果 | 正常：命令が実行され、制御命令またはyieldポイントで停止する。 |
+| 事前条件 | コンテキストがロード済みのモジュールに紐付けられていること。 |
+| 事後条件 | `context` 内の PC, SP 等の状態が最新の実行結果を反映していること。 |
+| 不変条件 | スタックポインタが割り当て領域を逸脱しないこと。 |
+| エラー時の挙動 | 不正命令（unreachable等）実行時はトラップを発生させる。 |
+| 補足 | 実行中にJIT済みトレースに遭遇した場合は、透過的にネイティブ実行へ移行する。 |
 
-    /**
-     * @brief 命令を実行する
-     * @param context 実行コンテキスト
-     * @return status 実行結果
-     * @pre コンテキスト接続済み
-     * @post yield/trap/readyに遷移
-     */
-    status step(execution_context* context);
-
-    /**
-     * @brief 割り込み通知を反映する
-     * @param context 実行コンテキスト
-     * @param irq_id 割り込みID
-     * @pre なし
-     * @post フラグが更新される
-     */
-    void notify_interrupt(execution_context* context, irq_id irq_id);
-};
-```
+#### 割り込み状態の同期
+| 項目 | 内容 |
+| :--- | :--- |
+| 機能概要 | 外部から通知された割り込みフラグを、実行コンテキストの仮想レジスタに反映する。 |
+| 引数と役割 | `context`: 対象の実行コンテキスト, `irq_id`: 割り込み識別子。 |
+| 期待する結果 | `context` 内の `interrupt_flags` が更新され、次回のyield機会で反映される。 |
+| 事前条件 | なし。 |
+| 事後条件 | フラグがアトミックに書き込まれる。 |
+| 不変条件 | 実行中の命令ハンドラから安全に参照可能であること。 |
+| エラー時の挙動 | なし。 |
+| 補足 | vSoC からの通知を仲介する役割を持つ。 |
 
 ### 4.2 URI/IPCインターフェイス
 本コンポーネントは vSoC の内部ライブラリとして利用され、直接のIPCインターフェイスは持たない。
@@ -208,9 +182,9 @@ public:
 | コンポーネント | 連携内容 | 参照データ構造 |
 | :--- | :--- | :--- |
 | **WASM Loader** | WASMバイナリの索引情報（関数、命令、即値）の提供 | `module_view_t` |
-| **JIT Compiler** | ホットスポット情報の共有と実行エンジンの切り替え | `execution_context_t`, 履歴バッファ |
-| **Debugger** | ブレークポイント判定と実行状態の可視化 | `debug_handler_table`, `execution_context_t` |
-| **vSoC** | 実行制御（step）と協調型マルチタスク（yield）の管理 | `execution_context_t` |
+| **JIT Compiler** | ホットスポット情報の共有と実行エンジンの切り替え | `execution_context`, 履歴バッファ |
+| **Debugger** | ブレークポイント判定と実行状態の可視化 | `debug_handler_table`, `execution_context` |
+| **vSoC** | 実行制御（step）と協調型マルチタスク（yield）の管理 | `execution_context` |
 
 ## 5. 制約達成の方策
 

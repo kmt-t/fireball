@@ -1,7 +1,7 @@
 # vSoC コンポーネント設計書
 
 ## 1. コンセプト
-vSoC (Virtual System-on-Chip) は、WASM実行環境の統合マネージャであり、Loader、Interpreter、JIT、vMMIO、Debugger を統括して実行制御を行う。各サブコンポーネントを統合する「環境」としての役割を持ち、`vsoc_runtime_t` を `execution_context_t` から参照される Environment として提供する。 `{LowLatencyJIT}` `{MemoryIsolation}` `{FaultIsolation}` `{EnvironmentPointer}`
+vSoC (Virtual System-on-Chip) は、WASM実行環境の統合マネージャであり、Loader、Interpreter、JIT、vMMIO、Debugger を統括して実行制御を行う。各サブコンポーネントを統合する「環境」としての役割を持ち、`vsoc_runtime_t` を `execution_context` から参照される Environment として提供する。 `{LowLatencyJIT}` `{MemoryIsolation}` `{FaultIsolation}` `{EnvironmentPointer}`
 
 ## 2. 静的モデル
 
@@ -39,26 +39,26 @@ graph TD
 #### `vsoc_runtime` (vSoC実行ユニット)
 vSoCが管理する実行構成を保持する。実行コンテキストの詳細は Interpreter で定義する。
 
-| メンバ名 | 型 | 説明 |
+| 構成項目 | 機能と役割 | 備考（制約、型など） |
 | :--- | :--- | :--- |
-| `loader` | `loader*` | WASMローダ参照 |
-| `module_view` | `module_view*` | 現在ロードされているモジュールのビュー |
-| `interpreter` | `interpreter*` | インタープリタ参照 |
-| `jit` | `jit_compiler*` | JITコンパイラ参照 |
-| `debugger` | `debugger*` | デバッガ参照 |
-| `vmmio` | `vmmio*` | vMMIO参照 |
-| `interrupt_flags` | `std::uint32_t` | 仮想割り込みフラグ `{Challenge_InterruptSafety}` |
+| `loader` | WASMローダへの参照。バイナリのパースとセクション管理を担う。 | ポインタ |
+| `module_view` | 現在ロードされているWASMモジュールのビュー。索引情報を含む。 | ポインタ |
+| `interpreter` | インタープリタ実行エンジンへの参照。 | ポインタ |
+| `jit` | JITコンパイラへの参照。 | ポインタ |
+| `debugger` | デバッガコンポーネントへの参照。 | ポインタ |
+| `vmmio` | vMMIOコントローラへの参照。 | ポインタ |
+| `interrupt_flags` | ゲストに通知された仮想割り込みの状態を保持する。 | 32bitフラグ `{Challenge_InterruptSafety}` |
 
 #### `vsoc_config` (vSoC構成)
 vSoCの動作パラメータを定義する。 `{ConfigurableSystem}`
 
-| メンバ名 | 型 | 説明 |
+| 構成項目 | 機能と役割 | 備考（制約、型など） |
 | :--- | :--- | :--- |
-| `jit_enabled` | `bool` | JITコンパイルの有効化フラグ |
-| `code_cache_size` | `std::size_t` | JITコードキャッシュのサイズ |
-| `ram_base` | `std::uint32_t` | ゲストRAMの開始アドレス (通常 0x0) |
-| `ram_size` | `std::uint32_t` | ゲストRAMのサイズ |
-| `vmmio_base` | `std::uint32_t` | vMMIO領域の開始アドレス (通常 0x4000_0000) |
+| `jit_enabled` | JITコンパイル機能を有効化するかどうかの静的な設定。 | ブール値 |
+| `code_cache_size` | JITコードキャッシュに割り当てるメモリサイズ。 | バイト数 |
+| `ram_base` | ゲストRAMの仮想アドレス空間における開始位置。 | 通常 0x0 |
+| `ram_size` | ゲストに割り当てるRAMの総量。 | バイト数 |
+| `vmmio_base` | vMMIO領域の開始アドレス。 | 通常 0x4000_0000 |
 
 ## 3. 動的モデル
 
@@ -112,48 +112,55 @@ sequenceDiagram
 ## 4. インターフェイス定義
 
 ### 4.1 公開API
-### 4.1 公開API
+外部から利用可能なオブジェクト指向APIを定義する。
 
-```cpp
-class vsoc_manager {
-public:
-    /**
-     * @brief WASMモジュールをロードする
-     * @param data モジュールデータ
-     * @return status 実行結果
-     * @pre なし
-     * @post 状態がReadyになる
-     */
-    status load(const module_data& data);
+#### WASMモジュールのロード
+| 項目 | 内容 |
+| :--- | :--- |
+| 機能概要 | 指定されたWASMバイナリデータを読み込み、実行準備を完了させる。 |
+| 引数と役割 | `data`: ロード対象のバイナリデータとそのサイズ。 |
+| 期待する結果 | 正常：モジュールがロードされ、内部状態がReadyになる。異常：検証失敗時等のエラー。 |
+| 事前条件 | システムが初期化済みであること。 |
+| 事後条件 | 内部の `module_view` が構築され、実行可能状態になる。 |
+| 不変条件 | 既存の実行コンテキストが破壊されないこと。 |
+| エラー時の挙動 | 不正なバイナリの場合はロードを中断し、エラー値を返す。 |
+| 補足 | ROM上のデータを直接参照するため、RAMへのコピーは発生しない。 |
 
-    /**
-     * @brief 実行を再開/継続する
-     * @return status 実行結果
-     * @pre Ready状態
-     * @post yieldまたは終了まで実行
-     */
-    status step();
+#### 実行ステップ
+| 項目 | 内容 |
+| :--- | :--- |
+| 機能概要 | ゲストのプログラム実行を再開し、コルーチンの `yield` またはトラップが発生するまで継続する。 |
+| 引数と役割 | なし。 |
+| 期待する結果 | 正常：一定期間の実行後に制御が戻る。異常：トラップ発生。 |
+| 事前条件 | 状態が Ready であること。 |
+| 事後条件 | PCやレジスタ状態が更新されていること。 |
+| 不変条件 | ゲストRAMの境界外へのアクセスが発生しないこと。 |
+| エラー時の挙動 | トラップ（例外）発生時は、トラップ要因を保持してエラーを返す。 |
+| 補足 | 内部的にはインタープリタとJITコードを透過的に切り替えて実行する。 |
 
-    /**
-     * @brief 仮想割り込みを通知する
-     * @param irq_id 割り込みID
-     * @pre なし
-     * @post コンテキストにフラグがセットされる
-     */
-    void notify_interrupt(irq_id irq_id);
+#### 仮想割り込み通知
+| 項目 | 内容 |
+| :--- | :--- |
+| 機能概要 | 物理割り込み等の外部イベントをゲストOS/アプリに通知するための仮想フラグを設定する。 |
+| 引数と役割 | `irq_id`: 通知する仮想割り込みの識別子。 |
+| 期待する結果 | 特定位のアドレス（SYSCTLレジスタ）にフラグが反映される。 |
+| 事前条件 | なし。 |
+| 事後条件 | 実行コンテキスト内の `interrupt_flags` が更新される。 |
+| 不変条件 | 他の実行状態に副作用を及ぼさないこと。 |
+| エラー時の挙動 | 無効なIDの場合は無視される。 |
+| 補足 | ISRから呼び出されることを想定し、排他制御を考慮する。 |
 
-    /**
-     * @brief vMMIOフックを登録する
-     * @param addr 開始アドレス
-     * @param size サイズ
-     * @param cb コールバック関数
-     * @return status 実行結果
-     * @pre なし
-     * @post フックが有効になる
-     */
-    status register_vmmio_hook(std::uint32_t addr, std::uint32_t size, vmmio_callback cb);
-};
-```
+#### vMMIO登録
+| 項目 | 内容 |
+| :--- | :--- |
+| 機能概要 | ゲストの特定のメモリ範囲（hook_idで識別）へのアクセスに対し、ホスト側の関数をプラガブルに登録する。 |
+| 引数と役割 | `hook_id`: 領域識別子（ROM定義等）, `cb`: アクセス時に呼び出すコールバック。 |
+| 期待する結果 | 指定範囲へのアクセス時に登録したコールバックが実行されるようになる。 |
+| 事前条件 | 指定された `hook_id` が定義済みであること。 |
+| 事後条件 | RAM上の vMMIO フックレジストリにエントリが追加される。 |
+| 不変条件 | アドレスマップ定義自体は変更されない。 |
+| エラー時の挙動 | 無効なIDの場合はエラーを返す。 |
+| 補足 | デバイスドライバのエミュレーションを動的に差し替えるために使用される。 |
 
 ### 4.2 Native API エクスポート (Single Trap 方式)
 WASMゲストからホストサービスを呼び出すための最小限のインターフェイスを提供する。 `{NativeAPI_Export}`
@@ -173,7 +180,7 @@ Fireballでは、ホスト側のコードサイズを極限まで削減するた
 
 ### 4.4 URI/IPCインターフェイス
 - **URI**: `fireball://vsoc/control/<instance_id>`
-- **メッセージ形式**: 実行制御、状態取得用のKey-Valueプロトコル。
+- **メッセージ形式**: 実行制御、状態取得用のKey-Valueプロトコル。詳細定義は IPCルータの仕様に準ずる。
 
 ### 4.5 関連コンポーネントとの連携
 | コンポーネント | 連携内容 | 参照データ構造 |

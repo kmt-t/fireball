@@ -6,16 +6,18 @@ vMMIO (Virtual Memory-Mapped I/O) は、WASMゲストアプリケーションに
 ## 2. 静的モデル
 
 ### 2.1 データ構造
-- **vmmio_region**: 仮想アドレス範囲と、それに対応する読み書きハンドラ（コールバック）を保持する。
+- **vmmio_static_region**: ROMに配置される静的な領域定義（ベースアドレス、サイズ、種別、およびフックID）。 `{Static_Resolution}`
+- **vmmio_hook_registry**: RAMに配置されるフック関数のテーブル。 `vmmio_static_region` のフックIDをインデックスとして参照する。
 - **vmmio_type**: 領域の種別（EMULATED, PASSTHROUGH）を定義する。
-- **vmmio_map**: 登録されたすべての `vmmio_region` を管理する静的配列。
+- **vmmio_dynamic_region**: mmap等で一時的に使用されるRAM上の動的領域定義。数に制限がある。
 
 ### 2.2 内部ブロック図
 ```mermaid
 graph TD
     vSoC[vSoC Interpreter/JIT] --> |Memory Access Trap| vMMIO[vMMIO Dispatcher]
-    vMMIO --> |Lookup| Map[vMMIO Map]
-    vMMIO --> |Call| Hook[Registered Hooks]
+    vMMIO --> |Binary Search| ROM_Map[vMMIO ROM Map]
+    ROM_Map --> |Hook ID| RAM_Registry[vMMIO Hook Registry]
+    RAM_Registry --> |Call| Hook[Registered Hooks]
     Hook --> UART[Virtual UART]
     Hook --> GPIO[Virtual GPIO]
     Hook --> SYS[Virtual SYSCTL]
@@ -24,27 +26,40 @@ graph TD
 
 ### 2.3 主要なクラス・構造体・配列・定数
 
-#### `vmmio_handler` (ハンドラ関数型)
-```cpp
-typedef status (*vmmio_read_handler)(std::uint32_t addr, std::uint32_t* val);
-typedef status (*vmmio_write_handler)(std::uint32_t addr, std::uint32_t val);
-```
+#### `vmmio_static_region` (ROM領域定義)
+コンパイル時に確定し、ROMに配置される静的な領域。
 
-#### `vmmio_region` (vMMIO領域定義)
-| メンバ名 | 型 | 説明 |
+| 構成項目 | 機能と役割 | 備考（制約、型など） |
 | :--- | :--- | :--- |
-| `base_addr` | `std::uint32_t` | 領域の開始アドレス |
-| `size` | `std::uint32_t` | 領域のサイズ |
-| `type` | `vmmio_type` | 領域種別 (EMULATED / PASSTHROUGH) |
-| `read_fn` | `vmmio_read_handler` | 読み出しハンドラ |
-| `write_fn` | `vmmio_write_handler` | 書き込みハンドラ |
-| `target_phys_addr` | `std::uintptr_t` | パススルー時の物理アドレス (PASSTHROUGH時のみ) |
+| `base_addr` | 仮想デバイスの開始アドレス。 | 32bitアドレス |
+| `size` | デバイスのアドレス範囲。 | バイト数 |
+| `type` | EMULATED または PASSTHROUGH。 | 列挙型 |
+| `hook_id` | 実行時に対応付けるフックの登録ID。 | 数値索引 |
+
+#### `vmmio_hook_registry` (RAMフック管理)
+実行時にフックを登録・差し替え可能な実体。
+
+| 構成項目 | 機能と役割 | 備考（制約、型など） |
+| :--- | :--- | :--- |
+| `read_fn` | 読み出し用コールバック関数。 | 関数ポインタ（プラガブル） |
+| `write_fn` | 書き込み用コールバック関数。 | 関数ポインタ（プラガブル） |
+| `context` | フックに渡す任意のコンテキスト。 | ポインタ |
+
+#### `vmmio_handler` (ハンドラ定義)
+読み書きアクセス発生時に呼び出される関数の共通インターフェイス。
+
+| 構成項目 | 機能と役割 | 備考（制約、型など） |
+| :--- | :--- | :--- |
+| `signature` | アクセスされたオフセット、および代入/取得される値のポインタを受け取り、成功の成否を返す。 | `status(addr, val)` |
 
 ## 3. 動的モデル
 
 ### 3.1 アルゴリズム
-- **ディスパッチ**: ゲストのアドレスが `vmmio_base` 以降である場合、`vmmio_map` を線形探索し、該当する領域のハンドラを呼び出す。
-- **パススルー処理**: `type` が `PASSTHROUGH` の場合、ハンドラ内で `FB_CONF_VMMIO_ALLOWED_ADDRS` との照合を行い、許可されている場合のみ物理メモリへアクセスする。
+- **ディスパッチ**:
+    1. ゲストのアドレスが `vmmio_base` 以降である場合、ROM上の `vmmio_static_map` を二分探索する。 `{SortedIndexedArray}`
+    2. 該当エントリの `hook_id` を用いて、RAM上の `vmmio_hook_registry` からハンドラを取得する。
+    3. ハンドラが登録されていれば呼び出す。
+- **パススルー処理**: `type` が `PASSTHROUGH` の場合、フック内で `FB_CONF_VMMIO_ALLOWED_ADDRS` との照合を行い、許可されている場合のみ物理メモリへアクセスする。
 - **フォールバック**: 該当する領域がない場合は、メモリアクセス違反としてトラップを発生させる。
 
 ### 3.2 仮想デバイスマップ (Default Map)
@@ -53,7 +68,7 @@ typedef status (*vmmio_write_handler)(std::uint32_t addr, std::uint32_t val);
 | `0x4000_0000` | **SYSCTL** | システム制御（Yield, Halt, IRQ状態, Syscall引数） |
 | `0x4000_1000` | **IPCR** | IPCルータ連携レジスタ |
 | `0x4000_2000` | **VDMA** | 仮想DMA（リニアメモリ・vMMIO間バッチ転送） |
-| `0x4100_0000` | **DYNAMIC** | 動的マッピング領域（mmap用） |
+| `0x5000_0000` | **DYNAMIC** | 動的マッピング領域（mmap用） |
 
 ### 3.3 SYSCTL レジスタ詳細
 | オフセット | レジスタ名 | R/W | 説明 |
@@ -95,59 +110,43 @@ sequenceDiagram
 ## 4. インターフェイス定義
 
 ### 4.1 公開API
+外部から利用可能なオブジェクト指向APIを定義する。
 
-```cpp
-class vmmio_controller {
-public:
-    /**
-     * @brief vMMIO領域を登録する
-     * @param region 領域定義
-     * @return status 実行結果
-     * @pre なし
-     * @post 領域がマップに追加される
-     */
-    status register_hook(const vmmio_region& region);
+#### vMMIOフックの登録
+| 項目 | 内容 |
+| :--- | :--- |
+| 機能概要 | 既に定義（ROM）されている、または動的に確保された領域に対して、ホスト側のハンドラを紐づける。 |
+| 引数と役割 | `hook_id`: 対象の領域識別子, `read/write_fn`: ハンドラ関数。 |
+| 期待する結果 | 正常：フックが登録され、以降のアクセスで呼び出される。 |
+| 事前条件 | 有効な `hook_id` であること。 |
+| 事後条件 | RAM上のレジストリが更新される。 |
+| 不変条件 | ROM上のアドレス定義は変更されない。 |
+| エラー時の挙動 | 不正なIDの場合はエラー。 |
+| 補足 | 起動時、または各デバイスサービスの初期化時に呼び出される。 |
 
-    /**
-     * @brief 物理メモリを動的領域にマップする
-     * @param phys_addr 物理アドレス
-     * @param size サイズ
-     * @return uint32_t vMMIOアドレス
-     * @pre なし
-     * @post vMMIOアドレスを返却
-     */
-    std::uint32_t map_buffer(std::uintptr_t phys_addr, std::size_t size);
+#### 物理メモリの動的マッピング (map_buffer)
+| 項目 | 内容 |
+| :--- | :--- |
+| 機能概要 | 物理的なバッファを、ゲストからアクセス可能な vMMIO 空間（DYNAMIC領域）に一時的にマッピングする。 |
+| 引数と役割 | `phys_addr`: 物理基点アドレス, `size`: マップするバイト数。 |
+| 期待する結果 | 正常：マッピング先の vMMIO 仮想アドレス。 |
+| 事前条件 | 指定された物理範囲が安全（アクセス許可内）であること。 |
+| 事後条件 | DYNAMIC領域内のスロットが消費され、PASSTHROUGHリージョンが作成される。 |
+| 不変条件 | バッファ境界を越えた物理メモリアクセスが発生しないこと。 |
+| エラー時の挙動 | DYNAMIC領域に空きがない場合、または安全でない物理アドレスの場合はエラー。 |
+| 補足 | 共用メモリ共有やDMAバッファ共有に使用される。 |
 
-    /**
-     * @brief マッピングを解除する
-     * @param vmmio_addr vMMIOアドレス
-     * @return status 実行結果
-     * @pre マップ済み
-     * @post 領域が解放される
-     */
-    status unmap_buffer(std::uint32_t vmmio_addr);
-
-    /**
-     * @brief 読み出しアクセスを処理する
-     * @param addr アドレス
-     * @param val 読み出し値を格納するポインタ
-     * @return status 実行結果
-     * @pre なし
-     * @post ハンドラが実行される
-     */
-    status dispatch_read(std::uint32_t addr, std::uint32_t* val);
-
-    /**
-     * @brief 書き込みアクセスを処理する
-     * @param addr アドレス
-     * @param val 書き込み値
-     * @return status 実行結果
-     * @pre なし
-     * @post ハンドラが実行される
-     */
-    status dispatch_write(std::uint32_t addr, std::uint32_t val);
-};
-```
+#### アクセスのディスパッチ (Read/Write)
+| 項目 | 内容 |
+| :--- | :--- |
+| 機能概要 | vSoC 実行エンジンからトラップされたメモリアクセスを解析し、適切なハンドラへ振り分ける。 |
+| 引数と役割 | `addr`: アクセスアドレス, `val`: 読み出し先または書き込み値。 |
+| 期待する結果 | 正常：登録されたハンドラが実行され、レジスタ操作の結果がゲストに反映される。 |
+| 事前条件 | アクセスアドレスが vMMIO 範囲内であること。 |
+| 事後条件 | ハンドラの実行により必要に応じて周辺機器の状態が更新される。 |
+| 不変条件 | 指定されたアドレス以外へのサイドエフェクトを及ぼさないこと。 |
+| エラー時の挙動 | 未登録アドレスへのアクセスの場合はトラップを発生（バスエラー相当）させる。 |
+| 補足 | ホットパスであるため、探索アルゴリズムは軽量である必要がある。 |
 
 ## 5. 制約達成の方策
 
@@ -160,8 +159,10 @@ public:
 - **方策**: `{ConfigurableSystem}` 最大登録数をコンパイル時に固定し、静的配列として確保する。
 
 ## 6. 設計完了チェックリスト（網羅性確認）
-- [x] コンポーネントの責務が明確に定義されているか
-- [x] 内部設計（データ構造、ブロック図、クラス、アルゴリズム）が適切に定義されているか
-- [x] 仮想デバイスマップが具体的に定義されているか
-- [x] 公開APIのメソッド名が英語で記述され、事前/事後条件が明確か
-- [x] 非機能制約（性能、メモリ）に対する具体的な方策が明示されているか
+- [ ] コンポーネントの責務が明確に定義されているか
+- [ ] 内部設計（データ構造、ブロック図、クラス、アルゴリズム）が適切に定義されているか
+- [ ] 仮想デバイスマップが具体的に定義されているか
+- [ ] 公開APIのメソッド名が英語で記述され、事前/事後条件が明確か
+- [ ] 非機能制約（性能、メモリ）に対する具体的な方策が明示されているか
+- [ ] 設計の交差点（トレードオフ）が解消されているか
+- [ ] 上位の要求 `{Keyword}` とのトレーサビリティが確保されているか

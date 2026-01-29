@@ -80,10 +80,11 @@
 (各フォルダに `FORMAT.md` が配置されているのでドキュメントをメンテナンスするときには参考にしてほしい)
 
 1. 要求（`docs/oders/requires/*.md`）
-2. アーキテクチャ（`docs/oders/architecture/*.md`）
-3. コンポーネント（`docs/oders/components/*.md`）
-4. パターン（`docs/oders/patterns/*.md`）
-5. 設計コンセプト（`docs/oders/concept/*.md`）
+2. 準拠する項目（`docs/oders/items/*.md`）
+3. アーキテクチャ（`docs/oders/architecture/*.md`）
+4. コンポーネント（`docs/oders/components/*.md`）
+5. パターン（`docs/oders/patterns/*.md`）
+6. 設計コンセプト（`docs/oders/concept/*.md`）
 
 ドキュメントを参照し作業をする前に下記のリストに従いチェックし、フィードバックせよ。
 

@@ -102,7 +102,7 @@
 4. コンポーネント（`docs/gen/components/`）
 5. パターン（`docs/gen/patterns/`）
 6. コンセプトコード（`docs/gen/concept/`）
-7. 単語・キーワードトレーサビリティチェック（`docs/gen/trace/`）
+7. 直行表・単語・キーワードトレーサビリティチェック（`docs/gen/trace/`）
 
 ## ワークフロー
 

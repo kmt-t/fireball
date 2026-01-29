@@ -78,7 +78,7 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 | :--- | :--- | :--- |
 | `stack_size` | オペランドスタックとして確保する総バイト数。 | バイト数 |
 | `control_stack_size` | 制御フレームのネストを許容する最大数。 | エントリ数 |
-| `yield_threshold` | 指定した数のトレース（基本ブロック）を実行した際に自発的に yield する閾値。 | 回数 |
+| `yield_threshold` | 自発的に yield するまでのトレース実行数。同時に、ホットスポット検知用の実行履歴バッファ（History Buffer）のサイズもこの値に等しくなる。 | 回数 |
 
 #### `opcode_handler` / `exec_trace` (実行エントリ)
 命令ハンドラおよびJITトレースの共通実行シグネチャ。 `{JIT_RuntimeAPI_Fallback}`
@@ -95,7 +95,7 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 - **継続渡しトレース実行**: 命令ハンドラは継続渡しで次ハンドラへ遷移する。clang前提の `[[clang::musttail]]` を使用し、**非制御命令のみ**末尾呼び出しを行う。
 - **ジャンプの高速化 (exec_trace)**: 制御命令（`br`, `br_if` 等）によるジャンプ先を `control_frame` 内の `exec_trace` に保持する。
 - **JIT更新戦略**: 新しく `block`/`loop`/`if` 命令を実行して制御フレームを積む際に、最新の `exec_trace`（JIT済みならそのアドレス、未ならインタープリタ）を取得して保持する。
-- **Hotspot検知**: トレース開始時のPCを履歴バッファに記録する。実際のホットスポット判定とJITコンパイル要求は、`co_yield` 時のアイドル時間に一括して行われる。 `{LowLatencyJIT}` `{SimpleJITArchitecture}`
+- **Hotspot検知**: トレース開始時のPCを履歴バッファに記録する。このバッファは `step` 実行中にのみスタック等に一時保持される揮発的なデータであり、判定終了とともに自動的に破棄される。 `{LowLatencyJIT}` `{SimpleJITArchitecture}`
 - **概算Yield**: トレース実行数ベースで `co_yield` を発行し、協調型マルチタスクに整合させる。 `{Challenge_ApproximateYield}`
 - **デバッグフック**: 命令実行前後でブレークポイント判定を行い、Debugger に制御を委譲する。 `{Debug_Integrated}`
 

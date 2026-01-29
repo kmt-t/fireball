@@ -1,7 +1,5 @@
-# ロギング コンポーネント設計書
-
 ## 1. コンセプト
-ロギングコンポーネントは、ハイパーバイザ内部の状態を記録し、外部（UART/ITM等）へ出力する。メモリ消費と通信負荷を抑えるため、辞書参照IPCと内部リングバッファによる遅延出力を採用する。 `{IPCRouter}` `{DictionaryBasedIPC}` `{BufferedLogging}`
+ロギングコンポーネントは、ハイパーバイザ内部の状態を記録し、外部（UART/ITM等）へ出力する。メモリ消費と通信負荷を抑えるため、辞書参照IPCと内部リングバッファによる遅延出力を採用する。また、COOSの **Idle Hook** を利用してシステム負荷が低い時に集中的に出力を行うことで、実行性能への影響を抑える。 `{IPCRouter}` `{DictionaryBasedIPC}` `{BufferedLogging}` `{IdleDetection}`
 
 ## 2. 静的モデル
 

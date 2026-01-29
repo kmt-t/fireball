@@ -1,7 +1,5 @@
-# JIT Compiler コンポーネント設計書
-
 ## 1. コンセプト
-JIT Compiler は、WASMバイトコードを実行時にネイティブコードへ変換し、実行速度を向上させる。極小リソース環境（RAM 64KB）において、コンパイルコストを極小化する「Zero Compile Cost 定理」に基づき、最適化を省いた高速な **Copy-and-Patch** 方式を採用する。インタープリタと実行コンテキストを共有し、`co_yield` 時のアイドル時間を利用してホットスポットの判定とコンパイルを行うことで、実行時のオーバーヘッドを最小化する。 `{LowLatencyJIT}` `{JIT_CopyAndPatch}` `{JIT_ZeroCompileCostTheorem}` `{SimpleJITArchitecture}`
+JIT Compiler は、WASMバイトコードを実行時にネイティブコードへ変換し、実行速度を向上させる。極小リソース環境（RAM 64KB）において、コンパイルコストを極小化する「Zero Compile Cost 定理」に基づき、最適化を省いた高速な **Copy-and-Patch** 方式を採用する。インタープリタと実行コンテキストを共有し、COOSの定期実行タスク（Callback Task）や **Idle Hook** による「隙間時間」を活用して、実行時のオーバーヘッドを最小化する。 `{LowLatencyJIT}` `{JIT_CopyAndPatch}` `{JIT_ZeroCompileCostTheorem}` `{SimpleJITArchitecture}` `{PeriodicTask}` `{IdleDetection}`
 
 ## 2. 静的モデル
 
@@ -69,7 +67,6 @@ JITエンジンの挙動を制御する性能パラメータ。 `{ConfigurableSy
 | :--- | :--- | :--- |
 | `cache_size_per_side` | 片方のキャッシュ（ActiveまたはOld）に割り当てる領域サイズ。 | バイト数（2のべき乗推奨） |
 | `max_entries` | 単一パーティションに登録可能な最大トレース数。 | エントリ数 |
-| `history_buffer_size` | ホットスポット検知のために保持する実行履歴の最大容量。 | リングバッファサイズ |
 | `card_size_shift` | 検索を高速化するための「カード」一枚がカバーするWASMコードの範囲（2のべき乗）。 | シフト量 (6=64B等) |
 | `code_align_shift` | 生成するネイティブコードの命令アライメント。 | シフト量 (3=8B等) |
 
@@ -108,22 +105,30 @@ JITエンジンの挙動を制御する性能パラメータ。 `{ConfigurableSy
     - **昇格（Promotion）時**: Old から Active へコピーされる際、リンクを再評価する。常に **Active 領域内のアドレス**、または **Stub** へリンクを行う。
 4. **再配置の安全性**: 昇格（コピー）時に必ず新しい Active 領域のアドレスでリンク情報を再書き込みするため、Old 領域の古いアドレスへ飛ぶ（Dangling Pointer）ことはない。
 
-#### ホットスポット判定 (co_yield 時)
-1. **履歴走査**: インタープリタが記録した履歴バッファを走査する。
+#### ホットスポット判定 (yield 時)
+1. **履歴走査**: インタープリタのタイムスライス開始時に一時的に確保されたトレース履歴バッファ（サイズは `yield_threshold`）を走査する。
 2. **状態更新**: 2-bit ビットマップの状態が `HOT` に達したPCを `Compile Queue` に投入する。
-3. **バッチコンパイル**: キュー内のPCを順次コンパイルし、キャッシュへ書き込む。
+
+#### バッチコンパイル (周期実行またはアイドル時)
+1. **キューの取得**: `Compile Queue` からコンパイル待ちのPCを取り出す。
+2. **コンパイル実行**: 配列内のPCを順次コンパイルし、キャッシュへ書き込む。
+3. **補足**: COOSの `register_periodic_callback` または `set_idle_hook` により実行される。これにより、実行スレッドのブロッキング時間を抑える。 `{PeriodicTask}` `{IdleDetection}`
 
 ### 3.2 状態遷移図
 ```mermaid
 stateDiagram-v2
-    [*] --> Idle
-    Idle --> Detecting: co_yield trigger
-    Detecting --> Compiling: Hotspot found
-    Compiling --> Idle: Queue empty
-    Compiling --> Evicting: Cache full
-    Evicting --> Compiling: Swap Active/Old
-    Idle --> Searching: Interpreter lookup
-    Searching --> Idle: Return trace address
+    state "Interpreting" as Interp
+    state "Detecting (at yield)" as Detect
+    state "Background (Idle/Periodic)" as Background
+    state "Compiling" as Compile
+
+    [*] --> Interp
+    Interp --> Detect: yield / trap
+    Detect --> Background: Queue populated
+    Detect --> Interp: No hotspot
+    Background --> Compile: Trigger
+    Compile --> Background: Done
+    Background --> Interp: Task Wakeup
 ```
 
 ### 3.3 内部シーケンス

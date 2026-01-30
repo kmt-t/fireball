@@ -62,7 +62,17 @@ graph TD
 - **パススルー処理**: `type` が `PASSTHROUGH` の場合、フック内で `FB_CONF_VMMIO_ALLOWED_ADDRS` との照合を行い、許可されている場合のみ物理メモリへアクセスする。
 - **フォールバック**: 該当する領域がない場合は、メモリアクセス違反としてトラップを発生させる。
 
-### 3.2 仮想デバイスマップ (Default Map)
+### 3.2 アルゴリズム: 仮想DMA (VDMA)
+ゲストリニアメモリと vMMIO 空間（または他のメモリ領域）間の高速転送を実現する。 `{VDMA}`
+
+1. **転送設定**: ゲストが `REG_VDMA_SRC`, `REG_VDMA_DST`, `REG_VDMA_COUNT` にパラメータを書き込む。
+2. **トリガー**: `REG_VDMA_CTRL` の `START` ビットを `1` に書き込む。
+3. **実行**: 
+   - vMMIO ハンドラが物理アドレスを解決（境界チェック含む）。
+   - `std::memcpy` または HAL経由のDMAを用いて一括転送を実行。
+4. **完了**: 転送完了後、必要に応じてゲストに仮想割り込み（`IRQ_VDMA_DONE`）を通知する。
+
+### 3.3 仮想デバイスマップ (Default Map)
 | ベースアドレス | デバイス名 | 説明 |
 | :--- | :--- | :--- |
 | `0x4000_0000` | **SYSCTL** | システム制御（Yield, Halt, IRQ状態, Syscall引数） |
@@ -105,6 +115,11 @@ sequenceDiagram
     COOS-->>vSoC: Physical Address & Size
     vSoC->>vSoC: Register PASSTHROUGH region in DYNAMIC area
     vSoC-->>Guest: Return vMMIO Base Address in REG_SYSCALL_ARG0
+
+#### 動的マッピングのライフサイクルと安全
+1. **Map (SYSCALL_MMAP)**: 共有メモリIDから物理範囲を特定し、vMMIO `DYNAMIC` 領域に `PASSTHROUGH` エントリを作成。
+2. **Access**: ゲストが返却された仮想アドレス経由で物理メモリを直接操作。
+3. **Unmap (SYSCALL_MUNMAP)**: ゲストが明示的にアンマップを要求、またはタスク終了時に vSoC がエントリを破棄し、物理アクセスを遮断。 `{RestrictedPhysicalAccess}`
 ```
 
 ## 4. インターフェイス定義

@@ -104,7 +104,35 @@ sequenceDiagram
     Note over S: Restore Task State
 ```
 
-## 4. インターフェイス定義
+## 4. 検証 (Verification) - Tier 3
+
+### 4.1 直行表: CSP通信と状態遷移
+チャネル通信時のタスク状態とスケジューラの挙動を検証する。
+
+| ケース | 自タスク要求 | チャネル状態 | 相手状態 | 期待される動作 (自) | 期待される動作 (他) |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| 1 | SEND | Empty | - | BLOCKEDへ遷移 | (なし) |
+| 2 | SEND | Full | - | BLOCKEDへ遷移 | (なし) |
+| 3 | SEND | (待機RXあり) | BLOCKED | **READYへ遷移(直接)** | **READYへ遷移(直接)** |
+| 4 | RECV | Full | - | **READYへ遷移** | (チャネル空へ) |
+| 5 | RECV | Empty | - | BLOCKEDへ遷移 | (なし) |
+| 6 | RECV | (待機TXあり) | BLOCKED | **READYへ遷移(直接)** | **READYへ遷移(直接)** |
+| 7 | NOTIFY_INT | - | BLOCKED/READY | (継続) | **INTERRUPTEDへ遷移** |
+
+### 4.2 内部コンポーネントのデコンポジション
+COOSカーネルの責務を詳細化する。
+
+- **co_sched (Scheduler)**:
+  - **Task Manager**: TCBのライフサイクル（spawn/exit）管理。
+  - **Ready Queue Manager**: ラウンドロビン待ち行列の維持。
+  - **Interrupt Dispatcher**: HALからの通知を `INTERRUPTED` 状態へ反映。
+- **co_csp (Communication Engine)**:
+  - **Channel Manager**: チャネルの待機キュー管理。
+  - **Handoff Optimizer**: 相手タスクへの直接コンテキストスイッチ（`DirectContextSwitch`）の実行。
+- **co_mem (Memory Manager)**:
+  - **Task Heap Allocator**: 独立したヒープパーティションの境界管理。
+
+## 5. インターフェイス定義
 
 ### 4.1 公開API
 外部から利用可能なオブジェクト指向APIを定義する。

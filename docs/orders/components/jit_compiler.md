@@ -12,7 +12,7 @@ JIT Compiler は、WASMバイトコードを実行時にネイティブコード
     - `1: EXECUTED` (実行済み)
     - `2: HOT` (コンパイル要求中)
     - `3: COMPILED` (コンパイル済み/JIT実行可能)
-- **Compile Queue**: コンパイル待ちのWASM PCを保持するFIFO。
+- **Compile Queue (Stack behavior)**: コンパイル待ちのWASM PCを保持する。即時チェイニングを最大化するため、**後入れ先出し (LIFO)** または **履歴の逆順** で処理される。
 
 ### 2.2 内部ブロック図
 ```mermaid
@@ -110,8 +110,8 @@ JITエンジンの挙動を制御する性能パラメータ。 `{ConfigurableSy
 2. **状態更新**: 2-bit ビットマップの状態が `HOT` に達したPCを `Compile Queue` に投入する。
 
 #### バッチコンパイル (周期実行またはアイドル時)
-1. **キューの取得**: `Compile Queue` からコンパイル待ちのPCを取り出す。
-2. **コンパイル実行**: 配列内のPCを順次コンパイルし、キャッシュへ書き込む。
+1. **キューの取得**: `Compile Queue` からコンパイル待ちのPCを**逆順（LIFO）**で取り出す。 `{JIT_ReverseCompilationOrder}`
+2. **コンパイル実行**: 後続のトレースを先にコンパイルすることで、先行するトレースのリンク時（Patching 時）にターゲットが既にキャッシュ内に存在する確率を上げ、即時チェイニングを実現する。
 3. **補足**: COOSの `register_periodic_callback` または `set_idle_hook` により実行される。これにより、実行スレッドのブロッキング時間を抑える。 `{PeriodicTask}` `{IdleDetection}`
 
 ### 3.2 状態遷移図
@@ -169,7 +169,36 @@ sequenceDiagram
     end
 ```
 
-## 4. インターフェイス定義
+## 4. 検証 (Verification) - Tier 3
+
+### 4.1 直行表: 検索・昇格・GC
+JITトレース検索時の内部状態と期待される挙動を検証する。
+
+| ケース | ホットスポットBitmap | Active Cache | Old Cache | 期待される動作 |
+| :--- | :--- | :--- | :--- | :--- |
+| 1 | UNEXECUTED (0) | miss | miss | インタープリタ実行継続 |
+| 2 | EXECUTED (1) | miss | miss | インタープリタ実行継続 |
+| 3 | HOT (2) | miss | miss | インタープリタ継続 + キュー投入検討 |
+| 4 | COMPILED (3) | **hit** | - | **JITコード実行** |
+| 5 | COMPILED (3) | miss | **hit** | **Activeへ昇格(Copy)** + JIT実行 |
+| 6 | COMPILED (3) | miss | miss | BitmapをHOT(2)へ戻す + インタープリタ |
+| 7 | (昇格時) | Active満杯 | Old hit | **Old破棄 -> ActiveをOldへ -> 新Active** |
+
+### 4.2 内部コンポーネントのデコンポジション
+JITエンジンの責務を詳細化する。
+
+- **Hotspot Detector**:
+  - `yield` 時に履歴バッファを走査し、ビットマップを更新。
+  - 閾値超えのPCを `Compile Queue` へプッシュ。
+- **Copy-and-Patch Engine**:
+  - **Template Resolver**: WASM命令に対応する符号化済みバイナリテンプレートを検索。
+  - **Patch Applicator**: テンプレート内のプレースホルダ（即値、API、相対ジャンプ）を解決。
+  - **Code Writer**: Active領域へ書き込み、アラインメントを調整。
+- **Searcher / Entry Table Manager**:
+  - `jit_entry` のソート済み挿入。
+  - `group_index` (Card Group) の更新と二分探索の実行。
+
+## 5. インターフェイス定義
 
 ### 4.1 公開API
 外部から利用可能なオブジェクト指向APIを定義する。

@@ -64,7 +64,7 @@ vSoCの動作パラメータを定義する。 `{ConfigurableSystem}`
 
 ### 3.1 アルゴリズム
 - **実行エンジン委譲 (exec_trace)**: vSoCは `step()` で現在のPCに対応する `exec_trace` を呼び出す。 `exec_trace` はインタープリタのディスパッチャまたはJITコードを指し、呼び出し側は実行エンジンを意識する必要がない。 `{ThreadedInterpreter}` `{CopyAndPatchJIT}`
-- **概算Yield**: 監視対象の `yield_count` を基準に `co_yield` を発行する。 `{Challenge_ApproximateYield}`
+- **概算Yield**: 監視対象の `yield_threshold` を基準に `co_yield` を発行する。 `{Challenge_ApproximateYield}`
 - **デバッグ連携**: `step()` 前後で Debugger を呼び出し、HAL層からのコマンドを処理する。
 
 ### 3.2 状態遷移図
@@ -89,7 +89,7 @@ sequenceDiagram
     participant V as vSoC
     participant I as Interpreter
     participant J as JIT Compiler
-    participant C as Code Cache
+    participant C as JIT Code Cache
     
     S->>V: step()
     loop until yield
@@ -104,9 +104,31 @@ sequenceDiagram
     V->>V: scan_history_buffer()
     V->>J: enqueue_compile_request(pc)
     
-    Note over J,C: Background JIT Task
-    J->>J: dequeue_request()
+    Note over J,C: Background JIT Task (LIFO Order)
+    J->>J: dequeue_request_reverse()
     J->>C: write_native_code
+
+#### マルチモジュール動的リンクシーケンス
+複数学のWASMモジュール間の依存関係を解決し、関数ポインタを接続する。 `{MultiModule_Support}`
+
+```mermaid
+sequenceDiagram
+    participant V as vSoC Manager
+    participant L as Wasm Loader
+    participant R as Module Registry
+    participant M as Target Module
+    
+    V->>L: load_module(binary)
+    L->>L: parse_import_section()
+    loop for each import
+        L->>R: resolve_symbol(module_name, func_name)
+        R->>M: get_exported_func(func_name)
+        M-->>R: func_addr
+        R-->>L: func_addr
+        L->>L: patch_interp_table(func_addr)
+    end
+    L-->>V: load_complete
+```
 ```
 
 ## 4. インターフェイス定義
@@ -186,7 +208,7 @@ Fireballでは、ホスト側のコードサイズを極限まで削減するた
 | コンポーネント | 連携内容 | 参照データ構造 |
 | :--- | :--- | :--- |
 | **Interpreter** | インタープリタ実行の委譲とホットスポット履歴の取得 | `interpreter`, 履歴バッファ |
-| **JIT Compiler** | トレース単位のコンパイル要求とコードキャッシュ管理 | `jit_compiler`, `JIT Code Cache` |
+| **JIT Compiler** | トレース単位のコンパイル要求とJITコードキャッシュ管理 | `jit_compiler`, `JIT Code Cache` |
 | **Wasm Loader** | モジュールロードと `module_view` の管理 | `loader`, `module_view` |
 | **Debugger** | デバッグコマンドの処理と実行状態の同期 | `debugger`, `debug_command_queue` |
 

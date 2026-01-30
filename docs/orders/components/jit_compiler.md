@@ -185,18 +185,12 @@ JITトレース検索時の内部状態と期待される挙動を検証する�
 | 7 | (昇格時) | Active満杯 | Old hit | **Old破棄 -> ActiveをOldへ -> 新Active** |
 
 ### 4.2 内部コンポーネントのデコンポジション
-JITエンジンの責務を詳細化する。
+JITエンジンの責務を、以下の独立したサブコンポーネントに分離して設計する。
 
-- **Hotspot Detector**:
-  - `yield` 時に履歴バッファを走査し、ビットマップを更新。
-  - 閾値超えのPCを `Compile Queue` へプッシュ。
-- **Copy-and-Patch Engine**:
-  - **Template Resolver**: WASM命令に対応する符号化済みバイナリテンプレートを検索。
-  - **Patch Applicator**: テンプレート内のプレースホルダ（即値、API、相対ジャンプ）を解決。
-  - **Code Writer**: Active領域へ書き込み、アラインメントを調整。
-- **Searcher / Entry Table Manager**:
-  - `jit_entry` のソート済み挿入。
-  - `group_index` (Card Group) の更新と二分探索の実行。
+- **[JIT Hotspot Detector](file:///n:/sources/fireball/docs/orders/components/jit_hotspot_detector.md)**: 実行履歴の監視とコンパイル要否の判定。
+- **[Copy-and-Patch Engine](file:///n:/sources/fireball/docs/orders/components/jit_copy_and_patch_engine.md)**: 命令テンプレートを用いたネイティブコード生成。
+- **[JIT Entry Index](file:///n:/sources/fireball/docs/orders/components/jit_entry_index.md)**: PC-アドレス変換テーブルの管理と検索高速化。
+- **[constexpr Assembler](file:///n:/sources/fireball/docs/orders/components/constexpr_assembler.md)**: 静的な命令エンコード DSL。
 
 ## 5. インターフェイス定義
 

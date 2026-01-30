@@ -99,7 +99,7 @@ JITエンジンの挙動を制御する性能パラメータ。 `{ConfigurableSy
 #### トレース・チェイニング（連鎖実行）
 検索オーバーヘッドを排除するため、ネイティブコード同士を直接接続（チェイニング）する。
 1. **トレース構造**: 各トレースの末尾に、次に実行すべきネイティブアドレスを保持する「チェイニング・スロット（`chain_next`）」を設ける。
-2. **デフォルト状態**: スロットは初期状態で **Dispatcher Stub**（JIT検索エンジンを呼び出すスタック）を指す。
+2. **デフォルト状態**: スロットは初期状態で **Interpreter Fallback**（インタープリタのメインルーチンへ戻る）を指す。これにより、不必要な検索検索（Dispatcher Stub 経由）を排除する。 `{JIT_LazyChaining}`
 3. **連結（Linking）タイミング**:
     - **新規コンパイル時**: 生成したトレースから次に遷移するPCが既に Active 領域にあれば、スロットをそのアドレスへ書き換える。
     - **昇格（Promotion）時**: Old から Active へコピーされる際、リンクを再評価する。常に **Active 領域内のアドレス**、または **Stub** へリンクを行う。
@@ -163,7 +163,7 @@ sequenceDiagram
                 S-->>I: Native Code Address
             else Old Miss
                 S->>S: Set Bitmap to HOT
-                S-->>I: Fallback to Interpreter (NULL)
+                S-->>I: Fallback to Interpreter (Return)
             end
         end
     end

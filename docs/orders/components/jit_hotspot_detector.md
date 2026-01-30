@@ -41,7 +41,7 @@ WASM カード（領域）に対応する2ビットの状態。
    - `UNEXECUTED` -> `EXECUTED`
    - `EXECUTED` -> `HOT`
 4. 状態が `HOT` に遷移したカード（およびその最初のきっかけとなったPC）を `Compile Queue` へプッシュし、ビットマップ状態を `COMPILED` に更新する。
-   - ※ 以降、このカード内の他のPCが実行された際は、`JIT Searcher` が直接（オンデマンドで）コンパイルをトリガーする。
+   - ※ 以降、このカード内の他のPCが実行された際は、`JIT Searcher` が `Compile Queue` への投入をトリガーする。
 
 ### 3.2 状態遷移図
 ```mermaid

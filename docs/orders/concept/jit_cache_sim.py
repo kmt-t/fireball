@@ -9,11 +9,12 @@ class JITCacheSim:
     - Copy-GC eviction (Swap Active/Old)
     """
 
-    def __init__(self, partition_size_bytes=2048, history_size=16, jit_threshold=2, card_size=64):
+    def __init__(self, partition_size_bytes=2048, history_size=16, jit_threshold=2, card_size=64, code_align_shift=3):
         self.partition_size = partition_size_bytes
         self.history_size = history_size
         self.jit_threshold = jit_threshold
         self.card_size = card_size
+        self.code_align_shift = code_align_shift
         
         self.active_cache = {}  # trace_id -> size
         self.old_cache = {}     # trace_id -> size
@@ -49,8 +50,11 @@ class JITCacheSim:
         
         # 3. Check Card Status (On-demand Queuing)
         if card_id in self.compiled_cards:
-            self._compile_to_active(trace_id, trace_size) # In sim, this represents queuing + eventual compile
-            return "INTERP_QUEUED" # Correctly return to interpreter while queuing
+            # Simulation of queuing + eventually compiling
+            # In real system, it would return INTERP until compiled.
+            self._add_to_active(trace_id, trace_size)
+            self.stats['jit_compile'] += 1
+            return "INTERP_QUEUED"
 
         # 4. Interpreter Execution
         self.stats['interp_exec'] += 1
@@ -64,6 +68,20 @@ class JITCacheSim:
             return "INTERP_JIT_TRIGGERED"
             
         return "INTERP"
+
+    def _add_to_active(self, trace_id, trace_size):
+        if self.active_used + trace_size > self.partition_size:
+            self._evict()
+        
+        if trace_id not in self.active_cache:
+            # Emulate shifted 16-bit offset storage
+            offset = self.active_used
+            shifted_offset = offset >> self.code_align_shift
+            if shifted_offset > 0xFFFF:
+                raise OverflowError(f"Scalability limit reached! Offset {offset} exceeds 16-bit shifted range.")
+            
+            self.active_cache[trace_id] = trace_size
+            self.active_used += trace_size
 
     def _promote_to_active(self, trace_id, trace_size):
         # Remove from old, add to active

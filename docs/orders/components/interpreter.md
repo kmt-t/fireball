@@ -1,7 +1,7 @@
 # Interpreter コンポーネント設計書
 
 ## 1. コンセプト
-Interpreter は、WASM命令をスレッドインタープリタ方式で実行し、低レイテンシかつ小フットプリントでゲストを動作させる。`execution_context` を仮想CPUレジスタセットとして定義し、周辺コンポーネントへの参照は Environment Pointer (`env`) を介して階層化することで、実行ループの認知負荷を低減する。 `{ThreadedInterpreter}` `{LowLatencyJIT}` `{InterpreterContextStackless}` `{EnvironmentPointer}`
+Interpreter は、WASM命令をスレッドインタープリタ方式で実行し、低レイテンシかつ小フットプリントでゲストを動作させる。Execution Engine (`executor`) の一部として設計され、JITと実行状態を完全に共有する。周辺コンポーネントへの参照は Environment Pointer (`vsoc_runtime* env`) を介して型安全に行う。 `{ThreadedInterpreter}` `{LowLatencyJIT}` `{InterpreterContextStackless}` `{EnvironmentPointer}`
 
 ## 2. 静的モデル
 
@@ -48,7 +48,7 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 | `active_handlers` | 現在有効な命令ハンドラテーブル（通常用またはデバッグ用）への参照。 | テーブルへのポインタ |
 | `frame_ptr` | 現在実行中の関数に対応するコールフレームの頂点。 | ポインタ |
 | `control_ptr` | 現在のブロック構造（loop/if等）を管理する制御フレームの頂点。 | ポインタ |
-| `env` | vSoCランタイム等の周辺コンポーネントへアクセスするための環境ポインタ。 `{EnvironmentPointer}` | ポインタ |
+| `env` | vSoCランタイム等の周辺コンポーネントへアクセスするための環境ポインタ。 `vsoc_runtime` を介して `vmmio` や `debugger` へキャストなしでアクセス可能。 `{EnvironmentPointer}` | `vsoc_runtime*` |
 
 #### `call_frame` (コールフレーム)
 関数呼び出しごとのローカル変数や戻り先情報を保持する。
@@ -153,17 +153,11 @@ sequenceDiagram
 | エラー時の挙動 | メモリ確保失敗時は初期化を中断し、エラー値を返す。 |
 | 補足 | デバッグモードが指定された場合は `debug_handler_table` を使用するように構成する。 |
 
-#### 命令の実行 (step)
+#### 命令の実行 (executor::step)
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | 指定された実行コンテキストを用いてWASM命令を1トレース分（基本ブロック）実行する。 |
-| 引数と役割 | `context`: WASM仮想レジスタやリソース参照を保持する実行状態。 |
-| 期待する結果 | 正常：命令が実行され、制御命令またはyieldポイントで停止する。 |
-| 事前条件 | コンテキストがロード済みのモジュールに紐付けられていること。 |
-| 事後条件 | `context` 内の PC, SP 等の状態が最新の実行結果を反映していること。 |
-| 不変条件 | スタックポインタが割り当て領域を逸脱しないこと。 |
-| エラー時の挙動 | 不正命令（unreachable等）実行時はトラップを発生させる。 |
-| 補足 | 実行中にJIT済みトレースに遭遇した場合は、透過的にネイティブ実行へ移行する。 |
+| 機能概要 | 抽象インターフェイス `executor` の実装として、WASM命令を1トレース分実行する。 |
+| 補足 | 必要に応じて内部的に JIT コードへのジャンプを行い、JIT/Interpreter を透過的に切り替える。 |
 
 #### 割り込み状態の同期
 | 項目 | 内容 |

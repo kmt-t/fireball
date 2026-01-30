@@ -1,5 +1,5 @@
 ## 1. コンセプト
-JIT Compiler は、WASMバイトコードを実行時にネイティブコードへ変換し、実行速度を向上させる。極小リソース環境（RAM 64KB）において、コンパイルコストを極小化する「Zero Compile Cost 定理」に基づき、最適化を省いた高速な **Copy-and-Patch** 方式を採用する。インタープリタと実行コンテキストを共有し、COOSの定期実行タスク（Callback Task）や **Idle Hook** による「隙間時間」を活用して、実行時のオーバーヘッドを最小化する。 `{LowLatencyJIT}` `{JIT_CopyAndPatch}` `{JIT_ZeroCompileCostTheorem}` `{SimpleJITArchitecture}` `{PeriodicTask}` `{IdleDetection}`
+JIT Compiler は、WASMバイトコードを実行時にネイティブコードへ変換し、実行速度を向上させる。Execution Engine (`executor`) の一部として、インタープリタと一対の「実行エンジン」として機能する。極小リソース環境（RAM 64KB）において、コンパイルコストを極小化する「Zero Compile Cost 定理」に基づき、最適化を省いた高速な **Copy-and-Patch** 方式を採用する。 `{LowLatencyJIT}` `{JIT_CopyAndPatch}` `{JIT_ZeroCompileCostTheorem}` `{SimpleJITArchitecture}` `{PeriodicTask}` `{IdleDetection}`
 
 ## 2. 静的モデル
 
@@ -227,14 +227,8 @@ JITエンジンの責務を、以下の独立したサブコンポーネント�
 #### ホットスポットの処理 (Batch Compile)
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | インタープリタが収集した実行履歴を分析し、頻繁に実行される（HOTな）ブロックをネイティブコードへコンパイルする。 |
-| 引数と役割 | `history`: PCの配列、`len`: 配列の長さ。 |
-| 期待する結果 | HOT判定されたブロックがすべてキャッシュに書き込まれ、索引が更新される。 |
-| 事前条件 | `co_yield` によるアイドル時間中に呼び出されること。 |
-| 事後条件 | `history` で示された履歴が処理済みとしてビットマップに反映される。 |
-| 不変条件 | キャッシュが溢れた場合は、適切な追い出し（Eviction/GC）アルゴリズムを起動すること。 |
-| エラー時の挙動 | コンパイルに失敗したブロックはスキップされ、インタープリタ実行対象として維持される。 |
-| 補足 | `{SimpleJITArchitecture}` に従い、コンパイル中の並行実行は行わない（バッチ処理）。 |
+| 機能概要 | インタープリタが収集した履歴を基にコンパイルを実行する。 |
+| 補足 | `executor` 実装内で `co_yield` 発生時に呼び出され、アイドル時間等を活用して処理される。 |
 
 ### 4.2 URI/IPCインターフェイス
 本コンポーネントは vSoC の内部ライブラリであり、直接のIPCインターフェイスは持たない。

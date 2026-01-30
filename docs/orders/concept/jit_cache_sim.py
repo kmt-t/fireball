@@ -47,10 +47,10 @@ class JITCacheSim:
             self._promote_to_active(trace_id, trace_size)
             return "JIT_OLD"
         
-        # 3. Check Card Status (On-demand Compile)
+        # 3. Check Card Status (On-demand Queuing)
         if card_id in self.compiled_cards:
-            self._compile_to_active(trace_id, trace_size)
-            return "JIT_ON_DEMAND"
+            self._compile_to_active(trace_id, trace_size) # In sim, this represents queuing + eventual compile
+            return "INTERP_QUEUED" # Correctly return to interpreter while queuing
 
         # 4. Interpreter Execution
         self.stats['interp_exec'] += 1

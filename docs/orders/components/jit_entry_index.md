@@ -48,7 +48,7 @@ PCとコードアドレスの対応。
     - ※ カード単位の管理であるため、コンパイルされていないPCでも同じカード内の他PCの影響でパスする場合がある（後に二分探索で厳密にチェックされる）。
 2. **カードグループ検索**: 検索対象の PC をシフト演算し、対応する `card_group_index` を取得する。これにより二分探索の範囲 `[low, high]` を限定する。
 3. **二分探索**: `jit_entry` 配列の限定された範囲から `pc` を検索する。
-4. **オンデマンド・コンパイル**: Active/Old キャッシュでミスし、かつ `Hotspot Bitmap` が `COMPILED` 状態である場合は、Engine を呼び出してその場でコンパイルを行い、Active キャッシュへ登録する。
+4. **オンデマンド・キューイング**: Active/Old キャッシュでミスし、かつ `Hotspot Bitmap` が `COMPILED` 状態である場合は、対象の PC を `Compile Queue` へプッシュし、インタープリタ実行を継続する。
 
 ### 3.2 状態遷移図
 本コンポーネントは管理情報の更新と検索を行うため、明確な内部状態（ステートマシン）は持たないが、エントリの `Valid/Invalid` を管理する。
@@ -72,11 +72,9 @@ sequenceDiagram
             M->>M: Promote to Active
         else Old Miss
             alt Bitmap == COMPILED
-                M->>E: Sync Compile(PC)
-                E-->>M: code_addr
-            else Bitmap != COMPILED
-                M-->>I: NULL (Fallback)
+                M->>Q: Push(PC)
             end
+            M-->>I: NULL (Fallback)
         end
     end
     M-->>I: code_addr

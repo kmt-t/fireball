@@ -101,6 +101,7 @@ sequenceDiagram
     Note over J,C: Background JIT Task (LIFO Order)
     J->>J: dequeue_request_reverse()
     J->>C: write_native_code
+```
 
 #### マルチモジュール動的リンクシーケンス
 複数学のWASMモジュール間の依存関係を解決し、関数ポインタを接続する。 `{MultiModule_Support}`
@@ -122,7 +123,6 @@ sequenceDiagram
         L->>L: patch_interp_table(func_addr)
     end
     L-->>V: load_complete
-```
 ```
 
 ### 4.1 公開API (vsoc)

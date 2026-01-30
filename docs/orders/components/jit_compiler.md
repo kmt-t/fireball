@@ -5,9 +5,9 @@ JIT Compiler は、WASMバイトコードを実行時にネイティブコード
 
 ### 2.1 データ構造
 - **JIT Cache (Active/Old)**: ネイティブコードを保持するダブルバッファ。Copy-GC方式により、フラグメンテーションを回避しつつ効率的にメモリを再利用する。 `{JIT_DoubleBuffer_Cache}`
-- **JIT Entry Table**: WASM PCとキャッシュ内のコードオフセットを紐付ける管理テーブル。カードマーキングと二分探索を組み合わせ、高速な検索を実現する。 `{SimpleJITArchitecture}`
-- **Card Group Index**: 指定されたカード数をグループ単位で管理するインデックステーブル。検索範囲の絞り込みに使用する。高速化のため、カード数およびグループサイズは2のべき乗（シフト量）で管理される。
-- **Hotspot Bitmap (2-bit)**: 各コードブロックの実行頻度とコンパイル状態を管理する。
+- **JIT Entry Table**: WASM PCとキャッシュ内のコードオフセットを紐付ける管理テーブル。**カードマーキング**と二分探索を組み合わせ、高速な検索を実現する。 `{SimpleJITArchitecture}`
+- **Card Group Index**: 複数のカードをグループ化して管理するインデックステーブル。検索範囲の絞り込みに使用する。高速化のため、カード数およびグループサイズは2のべき乗（シフト量）で管理される。
+- **Hotspot Bitmap (2-bit / Card Marking)**: **カード単位**で実行頻度とコンパイル状態を管理する。一つのカードに複数のPCが含まれるため、このビットマップによる判定は「同じカード内のいずれかのPCがコンパイル済み」であることを示す**近似的なフィルタ**として機能する。
     - `0: UNEXECUTED` (未実行)
     - `1: EXECUTED` (実行済み)
     - `2: HOT` (コンパイル要求中)
@@ -22,7 +22,7 @@ graph TD
         Queue[Compile Queue]
         Engine[Copy-and-Patch Engine]
         Cache[Cache Manager]
-        Searcher[Trace Searcher]
+        Searcher[JIT Searcher]
     end
 
     subgraph External
@@ -58,7 +58,7 @@ JITコンパイル済みのコードおよび管理索引を保持するメモ�
 | `used_size` | 現在この領域に書き込まれているネイティブコードの総バイト数。 | 32bitサイズ |
 | `entries` | `jit_entry` 構造体の配列。PC順にソートされて保持される。 | 配列へのポインタ |
 | `entry_count` | 現在このパーティションに登録されている有効なエントリ数。 | 16bit数 |
-| `group_index` | 範囲を絞り込むためのカードグループインデックスへの参照。 | 配列ポインタ |
+| card_group_index | 範囲を絞り込むためのカードグループインデックスへの参照。 | 配列ポインタ |
 
 #### `jit_config` (JIT構成)
 JITエンジンの挙動を制御する性能パラメータ。 `{ConfigurableSystem}`
@@ -77,20 +77,21 @@ JITエンジンの挙動を制御する性能パラメータ。 `{ConfigurableSy
 #### Copy-and-Patch コンパイル手順
 1. **テンプレート選択**: WASM命令に対応する事前定義済みのネイティブコードテンプレートを選択する。
 2. **コードコピー**: テンプレートを Active Cache の `base_addr + used_size` へコピーする。
-3. **パッチ適用 (Hole Filling)**: 
+3. **パッチ適用 (Hole Filling)**:
     - 即値（定数）をプレースホルダに書き込む。
     - ランタイムAPIのアドレスを書き込む。
     - 相対ジャンプ先を計算して書き込む。
-4. **エントリ登録**: `jit_entry` を作成し、`pc` 順を維持するようにエントリ配列に挿入する。同時に `group_index` を更新する。
+4. **エントリ登録**: `jit_entry` を作成し、`pc` 順を維持するようにエントリ配列に挿入する。同時に `Card Group Index` を更新する。
 
 #### JITトレース検索アルゴリズム
-1. **事前フィルタ**: ホットスポットビットマップを確認し、該当PCの状態が `COMPILED (3)` でない場合は即座に終了（インタープリタ継続）。 `{SimpleJITArchitecture}`
+1. **事前フィルタ (Card Marking)**: PCをカードインデックスに変換し、ホットスポットビットマップを確認する。該当カードの状態が `COMPILED (3)` でない場合は即座に終了。
+    - ※ 同じカード内の別PCがコンパイルされている場合、ここはパスするが、後の二分探索でミス（正常な動作）となる。
 2. **Active領域検索**:
-    - `group_index` を用いてActive領域の探索範囲を絞り込み、`pc` で二分探索を行う。
+    - `Card Group Index` を用いてActive領域の探索範囲を絞り込み、`pc` で二分探索を行う。
     - ヒットした場合は、そのネイティブコードのアドレスを返して終了。
 3. **Old領域検索と昇格 (Promotion)**:
     - Active領域でミスした場合、同様にOld領域を検索する。
-    - Old領域でヒットした場合、そのトレースをActive領域へコピー（昇格）し、Active領域のエントリテーブルと `group_index` を更新する。
+    - Old領域でヒットした場合、そのトレースをActive領域へコピー（昇格）し、Active領域のエントリテーブルと `Card Group Index` を更新する。
     - 昇格時にActive領域が溢れた場合は、ダブルバッファの入れ替え（Swap/Eviction）が発生する。
 4. **結果の返却**:
     - ヒット（または昇格成功）時はネイティブコードのアドレスを返す。
@@ -139,7 +140,7 @@ sequenceDiagram
     participant D as Detector
     participant E as Engine
     participant C as Cache
-    participant S as Searcher
+    participant S as JIT Searcher
 
     Note over I, S: co_yield 時のバッチ処理
     I->>D: Process History Buffer
@@ -243,7 +244,7 @@ JITエンジンの責務を、以下の独立したサブコンポーネント�
 - **方策**: 
     - `{JIT_CopyAndPatch}`: 複雑な最適化を省き、テンプレートコピーのみでコンパイルを完了。
     - `{JIT_RegisterMapping}`: `Context`, `StackTop`, `WASM_PC` を物理レジスタに固定し、メモリアクセスを削減。
-    - `Card Marking + Binary Search`: 検索範囲を限定し、対数時間での検索を実現。
+    - `Card Marking + Card Group Index + Binary Search`: 検索範囲を限定し、高速な検索を実現。
 
 ### 5.2 安全性制約と方策
 - **目標**: 不正なコード実行の防止。

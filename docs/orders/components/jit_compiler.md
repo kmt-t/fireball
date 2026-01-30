@@ -7,11 +7,11 @@ JIT Compiler は、WASMバイトコードを実行時にネイティブコード
 - **JIT Cache (Active/Old)**: ネイティブコードを保持するダブルバッファ。Copy-GC方式により、フラグメンテーションを回避しつつ効率的にメモリを再利用する。 `{JIT_DoubleBuffer_Cache}`
 - **JIT Entry Table**: WASM PCとキャッシュ内のコードオフセットを紐付ける管理テーブル。**カードマーキング**と二分探索を組み合わせ、高速な検索を実現する。 `{SimpleJITArchitecture}`
 - **Card Group Index**: 複数のカードをグループ化して管理するインデックステーブル。検索範囲の絞り込みに使用する。高速化のため、カード数およびグループサイズは2のべき乗（シフト量）で管理される。
-- **Hotspot Bitmap (2-bit / Card Marking)**: **カード単位**で実行頻度とコンパイル状態を管理する。一つのカードに複数のPCが含まれるため、このビットマップによる判定は「同じカード内のいずれかのPCがコンパイル済み」であることを示す**近似的なフィルタ**として機能する。
+- **Hotspot Bitmap (2-bit / Card Marking)**: **カード単位**で実行頻度とコンパイル状態を管理する。
     - `0: UNEXECUTED` (未実行)
     - `1: EXECUTED` (実行済み)
     - `2: HOT` (コンパイル要求中)
-    - `3: COMPILED` (コンパイル済み/JIT実行可能)
+    - `3: COMPILED` (Hotカード。いずれかのPCがコンパイル済み、またはオンデマンド・コンパイルが許可された状態)
 - **Compile Queue (Stack behavior)**: コンパイル待ちのWASM PCを保持する。即時チェイニングを最大化するため、**後入れ先出し (LIFO)** または **履歴の逆順** で処理される。
 
 ### 2.2 内部ブロック図
@@ -93,9 +93,11 @@ JITエンジンの挙動を制御する性能パラメータ。 `{ConfigurableSy
     - Active領域でミスした場合、同様にOld領域を検索する。
     - Old領域でヒットした場合、そのトレースをActive領域へコピー（昇格）し、Active領域のエントリテーブルと `Card Group Index` を更新する。
     - 昇格時にActive領域が溢れた場合は、ダブルバッファの入れ替え（Swap/Eviction）が発生する。
-4. **結果の返却**:
-    - ヒット（または昇格成功）時はネイティブコードのアドレスを返す。
-    - いずれの領域でもミスした場合は、ビットマップ状態を `HOT (2)` に戻して NULL を返し、インタープリタ実行を継続する。
+4. **オンデマンド・コンパイル (Hot Card Fallback)**:
+    - Active/Old両方でミスし、かつ Bitmap 状態が `COMPILED (3)` の場合、対象のPCをその場でコンパイル（Synchronous Compile）し、Active領域へ登録する。
+5. **結果の返却**:
+    - ヒット（またはコンパイル成功）時はネイティブコードのアドレスを返す。
+    - Bitmapが `COMPILED` でない場合、またはコンパイル不可能な場合は NULL を返し、インタープリタ実行を継続する。
 
 #### トレース・チェイニング（連鎖実行）
 検索オーバーヘッドを排除するため、ネイティブコード同士を直接接続（チェイニング）する。
@@ -163,7 +165,7 @@ sequenceDiagram
                 S->>S: Promote to Active (Copy & Patch Next Trace)
                 S-->>I: Native Code Address
             else Old Miss
-                S->>S: Set Bitmap to HOT
+                S->>S: Set Bitmap to EXECUTED
                 S-->>I: Fallback to Interpreter (Return)
             end
         end

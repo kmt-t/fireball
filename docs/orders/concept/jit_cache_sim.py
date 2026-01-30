@@ -9,16 +9,18 @@ class JITCacheSim:
     - Copy-GC eviction (Swap Active/Old)
     """
 
-    def __init__(self, partition_size_bytes=2048, history_size=16, jit_threshold=2):
+    def __init__(self, partition_size_bytes=2048, history_size=16, jit_threshold=2, card_size=64):
         self.partition_size = partition_size_bytes
         self.history_size = history_size
         self.jit_threshold = jit_threshold
+        self.card_size = card_size
         
         self.active_cache = {}  # trace_id -> size
         self.old_cache = {}     # trace_id -> size
         self.active_used = 0
         
         self.history = deque(maxlen=history_size)
+        self.compiled_cards = set() # Set of card_ids (pc // card_size)
         
         # Statistics
         self.stats = {
@@ -32,7 +34,8 @@ class JITCacheSim:
 
     def execute(self, trace_id, trace_size):
         self.stats['total_exec'] += 1
-        
+        card_id = trace_id // self.card_size # Simplified trace_id as PC
+
         # 1. Check Active Cache
         if trace_id in self.active_cache:
             self.stats['jit_hit_active'] += 1
@@ -44,13 +47,19 @@ class JITCacheSim:
             self._promote_to_active(trace_id, trace_size)
             return "JIT_OLD"
         
-        # 3. Interpreter Execution
+        # 3. Check Card Status (On-demand Compile)
+        if card_id in self.compiled_cards:
+            self._compile_to_active(trace_id, trace_size)
+            return "JIT_ON_DEMAND"
+
+        # 4. Interpreter Execution
         self.stats['interp_exec'] += 1
         self.history.append(trace_id)
         
-        # 4. Check Hotspot Detection
+        # 5. Check Hotspot Detection
         counts = Counter(self.history)
         if counts[trace_id] >= self.jit_threshold:
+            self.compiled_cards.add(card_id)
             self._compile_to_active(trace_id, trace_size)
             return "INTERP_JIT_TRIGGERED"
             

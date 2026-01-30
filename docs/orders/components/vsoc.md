@@ -178,7 +178,7 @@ WASMゲストからホストサービスを呼び出すための最小限のイ�
 
 Fireballでは、ホスト側のコードサイズを極限まで削減するため、標準的なWASIの実装をホストから排除し、単一のトラップ命令とvMMIOレジスタによるサービス提供を行う。
 
-- **トラップ命令**: `void fireball_call(uint32_t service_id)`
+- **トラップ命令**: `void fireball_call(uint32_t service_id, uint32_t arg0, uint32_t arg1, uint32_t arg2)`
   - ゲストはこの関数をインポートし、サービスIDを指定して呼び出す。
   - 引数および戻り値の受け渡しは vMMIO レジスタ（`REG_SYSCALL_ARG0`等）を介して行う。
 - **WASI互換性**: ゲスト側で `wasi-libc` と Fireball専用の Shim ライブラリをリンクすることで実現する。

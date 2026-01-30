@@ -82,10 +82,10 @@ graph TD
 ### 3.3 SYSCTL レジスタ詳細
 | オフセット | レジスタ名 | R/W | 説明 |
 | :--- | :--- | :--- | :--- |
-| `0x00` | `REG_SYS_CONTROL` | W | `1`: Yield, `2`: Halt |
+| `0x00` | `REG_SYS_CONTROL` | W | `1`: Reset, `2`: Yield, `3`: Halt, `4`: Syscall |
 | `0x04` | `REG_SYS_STATUS` | R | システム状態フラグ |
 | `0x08` | `REG_IRQ_FLAGS` | R/W | 仮想割り込みフラグ |
-| `0x10` | `REG_SYSCALL_ID` | R/W | サービスID (fireball_call用) |
+| `0x10` | `REG_SYSCALL_ID` | R/W | サービスID |
 | `0x14` | `REG_SYSCALL_ARG0` | R/W | 第1引数 / 戻り値 |
 | `0x18` | `REG_SYSCALL_ARG1` | R/W | 第2引数 |
 | `0x1C` | `REG_SYSCALL_ARG2` | R/W | 第3引数 |

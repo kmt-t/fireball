@@ -21,6 +21,27 @@ classDiagram
     economic_function --> vtable_t : points to static instances
 ```
 
+### 2.2 相互作用
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant EcoFn as economic_function(Capacity)
+    participant Lambda as Lambda(Closure)
+
+    User->>EcoFn: assign(lambda)
+    alt sizeof(lambda) <= Capacity
+        EcoFn->>EcoFn: memcpy(buffer_, &lambda)
+        EcoFn->>EcoFn: set vtable (call/destroy)
+    else sizeof(lambda) > Capacity
+        EcoFn--xUser: Compile Error (static_assert)
+    end
+    
+    User->>EcoFn: operator()(...)
+    EcoFn->>Lambda: vtable_->call(buffer_, args...)
+    Lambda-->>User: result
+```
+
 ## 3. 適用ガイドライン
 
 - **適用対象**: 状態を持ちうる非同期コールバック（vMMIOハンドラ、COOSイベントハンドラ等）。
@@ -29,14 +50,7 @@ classDiagram
     - **静的検証**: ラムダのキャプチャサイズが `Capacity` を超えた場合、`static_assert` でビルドを停止させる。
     - **所有権**: 現時点ではシンプルさを優先し、コピー禁止・ムーブのみを基本とする。
 
-## 4. 設計完了チェックリスト
-
-- [x] ヒープ不使用が保証されているか (`static_assert`)
-- [x] 型消去が正しく実装されているか
-- [x] メモリレイアウト（アラインメント）が考慮されているか
-- [x] 意図が明確に文書化されているか
-
-## 5. コンセプトコード
+## 4. コンセプトコード
 
 ```python
 # Concept: Economic Function (Heap-less type erasure)
@@ -54,6 +68,13 @@ class EconomicFunction:
         return self.callable(*args)
 ```
 
-## 6. 関連パターン
+## 5. 関連パターン
 - **標準ライブラリ利用パターン**: `std::function` の禁止に関連。
 - **制御の反転 (IoC)**: コールバックの型定義に使用。
+
+## 6. 設計完了チェックリスト
+
+- [x] ヒープ不使用が保証されているか (`static_assert`)
+- [x] 型消去が正しく実装されているか
+- [x] メモリレイアウト（アラインメント）が考慮されているか
+- [x] 意図が明確に文書化されているか

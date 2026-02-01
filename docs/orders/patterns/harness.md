@@ -6,38 +6,74 @@
 **インターフェイスは「状態を持たない純粋な振る舞いの契約」** として定義し、**オブジェクト（実装クラス）は「内部状態（キャッシュや設定）」** をカプセル化する。
 アプリケーションの状態（Context）は、メソッドの引数として明示的に渡される。
 
-## 2. 構造：ステートレス・インターフェイス
+## 2. 構造
 
 システムを「神クラス」や「深い階層」で構築せず、**Harness (依存)**、**Data (状態)**、**View (不変定義)**、**Interface (操作)** の4要素に分解・平坦化する。
 
-### 2.1 4つの構成要素
+### 2.1 クラス図 / ブロック図
+
+**4つの構成要素**:
 1.  **Harness (Dependencies)**: システム構成要素（インターフェイス）へのポインタを集約した構造体。DIコンテナとして機能する。
 2.  **Data (Context)**: 実行時の可変状態（State）を集約した構造体。オブジェクト内部に隠蔽せず、DTOとして公開する。
 3.  **View (Immutable)**: 読み取り専用データへの構造化されたビュー。
 4.  **Interface (Contract)**: 純粋仮想関数のみを持つインターフェイス。メンバ変数（状態）を持たない。
     - **Concrete Object (Implementation)**: インターフェイスの実装。JITキャッシュや変換テーブルなどの「内部状態」を持つことができるが、実行コンテキスト（Data）は持たない。
 
-### 2.2 概念図
 ```mermaid
 graph TD
-    User[Client] --> Int[Interface (IExecutor)]
+    Client[Client Code]
     
-    subgraph Implementation
-        Obj[Concrete Object (JIT)]
+    subgraph Structure
+        Harness[Harness (Static DI)]
+        Int[Interface (IExecutor)]
+        Obj[Concrete Object]
         Internal[Internal State (Cache)]
-        Obj -- owns --> Internal
     end
-    
-    Int <|.. Obj : implements
-    
+
     subgraph App_State
         Data[Context (Mutable)]
         View[View (Immutable)]
     end
 
-    User -- Passes --> Data
-    User -- Passes --> View
-    Obj -- Reads/Writes --> Data
+    Client -- holds --> Harness
+    Harness -- points to --> Int
+    Int <|.. Obj : implements
+    Obj -- owns --> Internal
+    
+    Client -- passes --> Data
+    Client -- passes --> View
+    
+    Obj -- reads/writes --> Data
+    Obj -- reads --> View
+```
+
+### 2.2 相互作用
+
+ステートレスなインターフェイスに対し、データ(Context/View)を引き渡すことで処理を行う。
+
+```mermaid
+sequenceDiagram
+    participant User as Client
+    participant Obj as ConcreteObject
+    participant Data as Context
+    participant View as View
+
+    Note over User, Obj: Static Setup (Harness) done previously
+
+    User->>Obj: process(view, context)
+    
+    Obj->>View: read config
+    View-->>Obj: config value
+    
+    Obj->>Data: read state
+    Data-->>Obj: current state
+    
+    Note over Obj: Execute Logic (using internal cache if needed)
+    
+    Obj->>Data: update state
+    Data-->>Obj: (ack)
+    
+    Obj-->>User: void
 ```
 
 ## 3. 適用ガイドライン

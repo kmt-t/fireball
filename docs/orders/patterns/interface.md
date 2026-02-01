@@ -4,7 +4,52 @@
 システム全体の複雑度に応じて、適切なモジュール分離方式を選択するための指針を定義する。
 過度な抽象化によるオーバーヘッドと、密結合による柔軟性の欠如のトレードオフを最適化することを目的とする。
 
-## 2. 3-Tier 分離構造
+## 2. 構造
+
+### 2.1 コンセプト図 (3-Tier Model)
+
+システムを複雑度と役割に応じて3つの階層に分類する。
+
+```mermaid
+graph TD
+    subgraph Tier1[Tier 1: Architecture Domain]
+        T1Desc[System Boundaries<br/>Plugin/Service/IPC]
+    end
+    
+    subgraph Tier2[Tier 2: Subsystem Domain]
+        T2Desc[Complex Logic Decomposition<br/>Stateless Interface + Harness]
+    end
+    
+    subgraph Tier3[Tier 3: Implementation Domain]
+        T3Desc[Local Objects<br/>Natural OO / Algorithm]
+    end
+    
+    Tier1 --> Tier2
+    Tier2 --> Tier3
+    
+    style Tier1 fill:#f9f,stroke:#333
+    style Tier2 fill:#bbf,stroke:#333
+    style Tier3 fill:#dfd,stroke:#333
+```
+
+### 2.2 意思決定フロー
+
+```mermaid
+graph TD
+    Start[Start Design] --> Q1{Cross System Boundary?}
+    
+    Q1 -- Yes --> T1[Tier 1: IoC / URI-DI]
+    Q1 -- No --> Q2{High Complexity / Testing Needed?}
+    
+    Q2 -- Yes --> T2[Tier 2: Harness / Stateless Interface]
+    Q2 -- No --> T3[Tier 3: Natural OO]
+    
+    T1 --> End[Implement]
+    T2 --> End
+    T3 --> End
+```
+
+### 2.3 3-Tier 分離構造
 
 | Tier | ドメイン | 適用対象 | 分離方式 | 参照パターン |
 | :--- | :--- | :--- | :--- | :--- |

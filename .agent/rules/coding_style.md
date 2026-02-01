@@ -1,3 +1,7 @@
+---
+trigger: always_on
+---
+
 # コーディングスタイル
 
 **原則**: 標準C/C++準拠。メモリ効率最優先。
@@ -9,6 +13,7 @@
 - **Const/Macro**: `UPPER_SNAKE_CASE`
 - **Class Instance Member**: `variable_` (trailing underscore)
 - **Class Static Member**: `variable__` (trailing double underscore)
+- **Type Postfix**: `_t` postfix is allowed ONLY for `typedef`. Do NOT use it for struct/class names.
 
 ## 2 スタイル
 

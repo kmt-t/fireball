@@ -114,12 +114,12 @@ sequenceDiagram
     COOS-->>vSoC: Physical Address & Size
     vSoC->>vSoC: Register PASSTHROUGH region in DYNAMIC area
     vSoC-->>Guest: Return vMMIO Base Address in REG_SYSCALL_ARG0
+```
 
 #### 動的マッピングのライフサイクルと安全
 1. **Map (SYSCALL_MMAP)**: 共有メモリIDから物理範囲を特定し、vMMIO `DYNAMIC` 領域に `PASSTHROUGH` エントリを作成。
 2. **Access**: ゲストが返却された仮想アドレス経由で物理メモリを直接操作。
 3. **Unmap (SYSCALL_MUNMAP)**: ゲストが明示的にアンマップを要求、またはタスク終了時に vSoC がエントリを破棄し、物理アクセスを遮断。 `{RestrictedPhysicalAccess}`
-```
 
 ## 4. インターフェイス定義
 

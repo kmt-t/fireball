@@ -15,7 +15,7 @@ description: 本プロジェクト固有のアーキテクチャパターン（3
 - **参照**: [docs/orders/patterns/interface.md](../../docs/orders/patterns/interface.md)
   - 3つのTier定義と選択基準
 
-## 2. 制御の反転 (IoC) とサービスファサード DEPRECATED
+## 2. 制御の反転 (IoC) とサービスファサード
 
 Tier 1 (Architecture Domain) における結合度低減手法。
 

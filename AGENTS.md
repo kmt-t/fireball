@@ -15,6 +15,7 @@
 
 - **[プロトコルと配置パス](.agent/rules/protocols.md)**: 情報の探し方、ドキュメントの配置場所、ディレクトリ構造のルール。
 - **[設計原則とルール](.agent/rules/design_principles.md)**: 設計アプローチ、インターフェイス設計の原則。
+- **[コーディングスタイル](.agent/rules/coding_style.md)**: 標準C/C++準拠、メモリ効率、命名規則。
 - **[ドキュメント作成と品質](.agent/rules/documentation.md)**: ドキュメントの書き方、コード生成のルール、品質基準。
 
 ## 🔄 ワークフロー (Workflows)
@@ -36,7 +37,7 @@
 | :--- | :--- |
 | **[リスクベース・ティアリング](.agent/skills/risk_assessment.md)** | 実装リスクに基づいた設計詳細度の決定手法 |
 | **[組み込みC++最適化](.agent/skills/embedded_cpp.md)** | ヒープ禁止、コンテナ最適化、Economic Function等の実装技術 |
-| **[Fireballアーキテクチャ](.agent/skills/fireball_architecture.md)** | 3-Tier分離、IoC、Harnessパターン等の設計原則 |
+| **[Fireballアーキテクチャ](.agent/skills/fireball.md)** | 3-Tier分離、IoC、Harnessパターン等の設計原則 |
 
 ---
 

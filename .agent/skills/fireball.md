@@ -44,17 +44,6 @@ description: Fireballプロジェクト固有のアーキテクチャパター�
 - **型の明示**: `auto` は型が自明な場合のみ使用
 - **void* 禁止**: 型安全性のため禁止、構造化データを使用
 
-### 4. 共通ステータスコード
-
-| 定数名 | 値 | 説明 |
-|:---|:---|:---|
-| `STATUS_OK` | 0 | 成功 |
-| `STATUS_ERROR` | 1 | 一般エラー |
-| `STATUS_NOT_FOUND` | 2 | 対象が見つからない |
-| `STATUS_PERMISSION_DENIED` | 3 | 権限不足 |
-| `STATUS_OUT_OF_MEMORY` | 4 | メモリ不足 |
-| `STATUS_INVALID_ARGUMENT` | 5 | 引数不正 |
-
 ---
 
 ## L2: 設計原則

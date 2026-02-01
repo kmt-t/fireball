@@ -1,47 +1,53 @@
 # vSoC コンポーネント設計書
 
 ## 1. コンセプト
-vSoC (Virtual System-on-Chip) は、WASM実行環境の統合マネージャであり、各サブコンポーネントを統合する「ハーネス」としての役割を持つ。サブコンポーネントとして Loader、Execution Engine (Interpreter + JIT)、vMMIO、Debugger を統括して実行制御を行う。 `{LowLatencyJIT}` `{MemoryIsolation}` `{FaultIsolation}` `{EnvironmentPointer}` `{ComponentHarness}`
+vSoC (Virtual System-on-Chip) は、WASM実行環境の統合マネージャであり、Loader、Interpreter、JIT、vMMIO、Debugger を統括して実行制御を行う。各サブコンポーネントを統合する「環境」としての役割を持ち、`vsoc_runtime` を `execution_context` から参照される Environment として提供する。 `{LowLatencyJIT}` `{MemoryIsolation}` `{FaultIsolation}` `{EnvironmentPointer}`
 
 ## 2. 静的モデル
 
 ### 2.1 データ構造
-- **vsoc_harness**: vSoCを構成する実行ユニット（サブコンポーネント）の集合。
-- **vsoc_runtime**: ハーネスのエイリアスであり、実行コンテキストから参照される周辺環境のインターフェイス。
+- **vsoc_runtime**: vSoCが管理する実行ユニットの集合（Loader/Interpreter/JIT/vMMIO/Debuggerの参照）。
 - **JIT Code Cache**: コンパイル済みのネイティブコードを保持するダブルバッファ領域。 `{JIT_DoubleBuffer_Cache}`
-- **vMMIO Map**: 仮想的なメモリマップドI/Oのフック情報および物理空間との対応を管理する。
+- **vMMIO Map**: 仮想的なメモリマップドI/Oのフック情報を管理する。
 
 ### 2.2 内部ブロック図
 ```mermaid
 graph TD
-    subgraph vsoc_harness
+    subgraph vSoC
+        Manager[vSoC Manager]
         Loader[WasmLoader]
-        Engine[Execution Engine]
+        Interp[Interpreter]
+        JIT[JIT Compiler]
         vMMIO[vMMIO]
         Debug[Debugger]
+        API[Runtime API]
     end
 
-    vSoC[vSoC Manager] -- uses --> vsoc_harness
-    Engine -- contains --> Interp[Interpreter]
-    Engine -- contains --> JIT[JIT Compiler]
-    Engine -- accesses --> vMMIO
-    Engine -- notifies --> Debug
-    
     HAL[HAL RSP Parser] --> Queue[debug_command_queue_t]
     Queue --> Debug
+    Manager --> Loader
+    Manager --> Interp
+    Manager --> JIT
+    Manager --> vMMIO
+    Manager --> Debug
+    Interp --> API
+    JIT --> API
 ```
 
 ### 2.3 主要なクラス・構造体・配列・定数
 
-#### `vsoc_harness` / `vsoc_runtime` (実行ハーネス)
-各サブコンポーネントへのインターフェイスを保持する。
+#### `vsoc_runtime` (vSoC実行ユニット)
+vSoCが管理する実行構成を保持する。実行コンテキストの詳細は Interpreter で定義する。
 
-| 構成項目 | 機能と役割 | 備考 |
+| 構成項目 | 機能と役割 | 備考（制約、型など） |
 | :--- | :--- | :--- |
-| `loader` | `wasm_loader` へのポインタ。バイナリパースを担う。 | interface |
-| `engine` | `executor` (Interpreter + JIT) へのポインタ。実行制御を担う。 | interface |
-| `mmio` | `vmmio` へのポインタ。仮想ハードウェアアクセスを担う。 | interface |
-| `dbg` | `debugger` へのポインタ。デバッグ支援を担う。 | interface |
+| `loader` | WASMローダへの参照。バイナリのパースとセクション管理を担う。 | ポインタ |
+| `module_view` | 現在ロードされているWASMモジュールのビュー。索引情報を含む。 | ポインタ |
+| `interpreter` | インタープリタ実行エンジンへの参照。 | ポインタ |
+| `jit` | JITコンパイラへの参照。 | ポインタ |
+| `debugger` | デバッガコンポーネントへの参照。 | ポインタ |
+| `vmmio` | vMMIOコントローラへの参照。 | ポインタ |
+| `interrupt_flags` | ゲストに通知された仮想割り込みの状態を保持する。 | 32bitフラグ `{Challenge_InterruptSafety}` |
 
 #### `vsoc_config` (vSoC構成)
 vSoCの動作パラメータを定義する。 `{ConfigurableSystem}`
@@ -81,16 +87,16 @@ stateDiagram-v2
 sequenceDiagram
     participant S as Scheduler
     participant V as vSoC
-    participant E as Execution Engine
+    participant I as Interpreter
+    participant J as JIT Compiler
     participant C as JIT Code Cache
     
     S->>V: step()
     loop until yield
-        V->>E: step(ctx)
-        Note over E: Internally switches Interp/JIT
-        E->>C: call native code
-        C-->>E: return
-        E-->>V: status (ok/yield/trap)
+        V->>V: get_exec_trace(pc)
+        V->>C: call exec_trace(pc, sp, ctx)
+        Note over C: JIT Code or Interpreter
+        C-->>V: return (trace end)
     end
     V-->>S: yield
     
@@ -125,17 +131,10 @@ sequenceDiagram
     L-->>V: load_complete
 ```
 
-### 4.1 公開API (vsoc)
-vSoC Manager の主要な操作。
+## 4. インターフェイス定義
 
-#### 初期化 (init)
-| 項目 | 内容 |
-| :--- | :--- |
-| 機能概要 | 外部から提供されたサブコンポーネント（ハーネス）を用いてシステムを初期化する。 |
-| 引数と役割 | `harness`: 設定済みのサブコンポーネント群。 |
-| 期待する結果 | 正常：初期化完了。異常：コンポーネント不足等のエラー。 |
-| 事前条件 | 各サブコンポーネントが生成済みであること。 |
-| 事後条件 | vSoC が稼働準備状態（Idle）になる。 |
+### 4.1 公開API
+外部から利用可能なオブジェクト指向APIを定義する。
 
 #### WASMモジュールのロード
 | 項目 | 内容 |
@@ -149,11 +148,17 @@ vSoC Manager の主要な操作。
 | エラー時の挙動 | 不正なバイナリの場合はロードを中断し、エラー値を返す。 |
 | 補足 | ROM上のデータを直接参照するため、RAMへのコピーは発生しない。 |
 
-#### 実行ステップ (step)
+#### 実行ステップ
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | 現在ロードされているモジュールの実行を `executor::step` に委譲して継続する。 |
-| 補足 | インタープリタとJITの切り替えは `executor` の実装内で隠蔽される。 |
+| 機能概要 | ゲストのプログラム実行を再開し、コルーチンの `yield` またはトラップが発生するまで継続する。 |
+| 引数と役割 | なし。 |
+| 期待する結果 | 正常：一定期間の実行後に制御が戻る。異常：トラップ発生。 |
+| 事前条件 | 状態が Ready であること。 |
+| 事後条件 | PCやレジスタ状態が更新されていること。 |
+| 不変条件 | ゲストRAMの境界外へのアクセスが発生しないこと。 |
+| エラー時の挙動 | トラップ（例外）発生時は、トラップ要因を保持してエラーを返す。 |
+| 補足 | 内部的にはインタープリタとJITコードを透過的に切り替えて実行する。 |
 
 #### 仮想割り込み通知
 | 項目 | 内容 |
@@ -170,15 +175,21 @@ vSoC Manager の主要な操作。
 #### vMMIO登録
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | ハーネス内の `vmmio` に対してハンドラを登録する。 |
-| 補足 | 具体的なディスパッチロジックは `vmmio` インターフェイスに委譲される。 |
+| 機能概要 | ゲストの特定のメモリ範囲（hook_idで識別）へのアクセスに対し、ホスト側の関数をプラガブルに登録する。 |
+| 引数と役割 | `hook_id`: 領域識別子（ROM定義等）, `cb`: アクセス時に呼び出すコールバック。 |
+| 期待する結果 | 指定範囲へのアクセス時に登録したコールバックが実行されるようになる。 |
+| 事前条件 | 指定された `hook_id` が定義済みであること。 |
+| 事後条件 | RAM上の vMMIO フックレジストリにエントリが追加される。 |
+| 不変条件 | アドレスマップ定義自体は変更されない。 |
+| エラー時の挙動 | 無効なIDの場合はエラーを返す。 |
+| 補足 | デバイスドライバのエミュレーションを動的に差し替えるために使用される。 |
 
 ### 4.2 Native API エクスポート (Single Trap 方式)
 WASMゲストからホストサービスを呼び出すための最小限のインターフェイスを提供する。 `{NativeAPI_Export}`
 
 Fireballでは、ホスト側のコードサイズを極限まで削減するため、標準的なWASIの実装をホストから排除し、単一のトラップ命令とvMMIOレジスタによるサービス提供を行う。
 
-- **トラップ命令**: `void fireball_call(uint32_t service_id, uint32_t arg0, uint32_t arg1, uint32_t arg2)`
+- **トラップ命令**: `void fireball_call(uint32_t service_id)`
   - ゲストはこの関数をインポートし、サービスIDを指定して呼び出す。
   - 引数および戻り値の受け渡しは vMMIO レジスタ（`REG_SYSCALL_ARG0`等）を介して行う。
 - **WASI互換性**: ゲスト側で `wasi-libc` と Fireball専用の Shim ライブラリをリンクすることで実現する。

@@ -10,9 +10,11 @@ trigger: always_on
 
 - **ファイル**: `inc/path/to/file.hxx` , `src/path/to/file.cxx` 
 - **Class/Struct/Enum/Func/Var**: `snake_case` (e.g., `ipc_router`, `send_message`)
+- **Interface**: No prefix (`i`, `I`) or postfix (`_interface`, `_if`). Use pure `snake_case`.
 - **Const/Macro**: `UPPER_SNAKE_CASE`
 - **Class Instance Member**: `variable_` (trailing underscore)
 - **Class Static Member**: `variable__` (trailing double underscore)
+- **Struct (POD/DTO) Member**: `variable` (No trailing underscore. Only classes use trailing underscores for encapsulated members).
 - **Type Postfix**: `_t` postfix is allowed ONLY for `typedef`. Do NOT use it for struct/class names.
 
 ## 2 スタイル

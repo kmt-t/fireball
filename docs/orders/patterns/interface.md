@@ -54,7 +54,7 @@ graph TD
 | Tier | ドメイン | 適用対象 | 分離方式 | 参照パターン |
 | :--- | :--- | :--- | :--- | :--- |
 | **Tier 1** | **アーキテクチャドメイン** | システム全体の主要境界 | クリーンアーキテクチャ、IoC、URIベースDI | [docs/orders/patterns/ioc.md](docs/orders/patterns/ioc.md) |
-| **Tier 2** | **サブシステムドメイン** | 複雑な内部構造を持つサブシステム | インターフェイスとハーネスによる分離 (Stateless Interface) | [docs/orders/patterns/harness.md](docs/orders/patterns/harness.md) |
+| **Tier 2** | **サブシステムドメイン** | 高リスク・高複雑度でデコンポジションが必要なサブシステム | インターフェイスとハーネスによる分離 (Stateless Interface) | [docs/orders/patterns/harness.md](docs/orders/patterns/harness.md) |
 | **Tier 3** | **実装ドメイン** | 複雑度が低く、限定的なスコープのモジュール | オブジェクト指向による自然な分割 (Encapsulation) | - |
 
 ---

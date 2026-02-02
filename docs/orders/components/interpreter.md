@@ -3,91 +3,98 @@
 ## 1. コンセプト
 Interpreter は、WASM命令をスレッドインタープリタ方式で実行し、低レイテンシかつ小フットプリントでゲストを動作させる。Execution Engine (`executor`) の一部として設計され、JITと実行状態を完全に共有する。周辺コンポーネントへの参照は Environment Pointer (`vsoc_runtime* env`) を介して型安全に行う。 `{ThreadedInterpreter}` `{LowLatencyJIT}` `{InterpreterContextStackless}` `{EnvironmentPointer}`
 
-## 2. 静的モデル
+## 2. アーキテクチャ分類 (Tier 3: Implementation Domain)
+本コンポーネントは **Tier 3 (実装ドメイン)** に属する。デコンポジション（サブモジュール分割）を必要としない単一責務の実行エンジンとして、カプセル化（Natural OO）に基づき設計する。 `{3TierSeparation}`
 
-### 2.1 データ構造
-- **execution_context**: 仮想CPU状態。JITとインタープリタが共用する最小の実行状態を保持する。
-- **call_frame**: 関数呼び出しごとのフレーム。WASMのローカルとオペランドスタックを参照する。
-- **control_frame**: `block/loop/if` の制御構造を管理するフレームスタック。ジャンプ先の実行エントリ（`exec_trace`）を保持する。
-- **interp_config**: インタープリタの動作パラメータ（スタックサイズ、yield閾値など）を保持する。
-- **opcode_handler**: 命令ハンドラの関数型。ランタイムAPIと同一の `void __fastcall (PC, StackTop, Context)` を採用する。
-- **opcode_handler_table**: 命令ハンドラの配列。WASM命令と1対1対応する。
-- **debug_handler_table**: デバッグ時に使用する命令ハンドラ配列。ブレークポイント判定や計測を内蔵する。
+## 3. 静的モデル
+
+### 3.1 データ構造 (Harness / Context / View)
+- **`interpreter_harness` (Harness)**: インタープリタが依存する vSoC (Environment) への参照を集約した構造体。 `{StaticDI}`
+- **`execution_context` (Context)**: 仮想CPUレジスタ、スタックポインタ等、JITと共用される可変な実行状態。
+- **`interp_config` (View)**: スタックサイズやyield閾値などの不変な構成情報。
 
 ### 2.2 内部ブロック図
 ```mermaid
 graph TD
-    subgraph Interpreter
-        Decode[Decoder]
-        Dispatch[Threaded Dispatch]
-        Stack[Operand Stack]
-        Control[Control Stack]
-        Frame[Call Frame]
-        Hotspot[Hotspot Counter]
+    subgraph Interpreter_Layer
+        Harness[interpreter_harness]
+        Interp[interpreter_engine]
+        Context[execution_context]
     end
 
-    Decode --> Dispatch
-    Dispatch --> Stack
-    Dispatch --> Control
-    Dispatch --> Frame
-    Dispatch --> Hotspot
+    subgraph Dependency
+        Env[vsoc_runtime]
+    end
+
+    Interp -- uses --> Harness
+    Harness -- points to --> Env
+    Interp -- operates on --> Context
+    Interp -- manages --> Frame[call_frame]
+    Interp -- manages --> Control[control_frame]
 ```
 
 ### 2.3 主要なクラス・構造体・配列・定数
 
+#### `interpreter_harness` (インタープリタハーネス)
+外部依存関係を集約する。
+
+| 項目名 | 機能と役割 | 備考（制約、型など） |
+| :--- | :--- | :--- |
+| ランタイム環境 | vSoCランタイム環境（メモリ、I/O等）への参照。 | `vsoc_runtime*` |
+
 #### `execution_context` (実行コンテキスト)
 WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想CPUレジスタ群として設計する。 `{PositionIndependentCode}` `{ContextPointerRegister}`
 
-| 構成項目 | 機能と役割 | 備考（制約、型など） |
+| 項目名 | 機能と役割 | 備考（制約、型など） |
 | :--- | :--- | :--- |
-| `pc` | 現在実行中の命令を指し示すプログラムカウンタ（WASMバイトコードオフセット）。 | 32bitオフセット |
-| `stack_ptr` | オペランドスタックの現在の頂点を指すポインタ。 | ポインタ |
-| `stack_base` | オペランドスタックのメモリ領域の基点。 | ポインタ |
-| `memory_base` | ゲストリニアメモリの開始アドレス。 | ポインタ |
-| `memory_size` | ゲストリニアメモリの有効サイズ。境界チェックに使用。 | バイト数 |
-| `active_handlers` | 現在有効な命令ハンドラテーブル（通常用またはデバッグ用）への参照。 | テーブルへのポインタ |
-| `frame_ptr` | 現在実行中の関数に対応するコールフレームの頂点。 | ポインタ |
-| `control_ptr` | 現在のブロック構造（loop/if等）を管理する制御フレームの頂点。 | ポインタ |
-| `env` | vSoCランタイム等の周辺コンポーネントへアクセスするための環境ポインタ。 `vsoc_runtime` を介して `vmmio` や `debugger` へキャストなしでアクセス可能。 `{EnvironmentPointer}` | `vsoc_runtime*` |
+| プログラムカウンタ | 現在実行中の命令を指し示すプログラムカウンタ（WASMバイトコードオフセット）。 | 32bitオフセット |
+| スタックポインタ | オペランドスタックの現在の頂点を指すポインタ。 | ポインタ |
+| スタック基点 | オペランドスタックのメモリ領域の開始位置。 | ポインタ |
+| リニアメモリ基点 | ゲストリニアメモリの開始アドレス。 | ポインタ |
+| リニアメモリサイズ | ゲストリニアメモリの有効サイズ。境界チェックに使用。 | バイト数 |
+| 有効命令ハンドラ | 現在使用されているハンドラ（通常用/デバッグ用）への参照。 | テーブルポインタ |
+| フレームポインタ | 現在のコールフレームの頂点を指すポインタ。 | ポインタ |
+| 制御フレームポインタ | 現在の制御構造（loop/if等）を管理するスタックの頂点。 | ポインタ |
+| 環境ポインタ | 実行に必要な環境（vSoC等）への参照。 `{EnvironmentPointer}` | `vsoc_runtime*` |
 
 #### `call_frame` (コールフレーム)
 関数呼び出しごとのローカル変数や戻り先情報を保持する。
 
-| 構成項目 | 機能と役割 | 備考（制約、型など） |
+| 項目名 | 機能と役割 | 備考（制約、型など） |
 | :--- | :--- | :--- |
-| `prev_frame` | 呼び出し元（親）のコールフレームへのポインタ。 | リスト構造 |
-| `return_pc` | 関数終了後に戻るべきWASMバイトコードのオフセット。 | 32bitオフセット |
-| `frame_base` | WASMローカル変数が格納されているスタック上の基点アドレス。 | ポインタ |
-| `func_idx` | 現在の関数のインデックス。デバッグやプロファイリングで使用。 | インデックス |
-| `sp_boundary` | 呼び出し時に計算されたスタックの最大許容レベル。オーバーフロー検知に使用。 | ポインタ |
+| 親フレームポインタ | 呼び出し元（親）のコールフレームへの参照。 | リスト構造 |
+| 戻り先PC | 関数終了後に戻るべきWASMバイトコードのオフセット。 | 32bitオフセット |
+| フレーム基点 | ローカル変数が格納されているスタック上の開始位置。 | ポインタ |
+| 関数インデックス | 現在実行中の関数の管理番号。 | |
+| スタック境界 | 呼び出し時に許可されたスタックの最大許容レベル。 | ポインタ |
 
 #### `control_frame` (制御フレーム)
 `block/loop/if` 命令によるネスト構造とジャンプ先を管理する。
 
-| 構成項目 | 機能と役割 | 備考（制約、型など） |
+| 項目名 | 機能と役割 | 備考（制約、型など） |
 | :--- | :--- | :--- |
-| `label_pc` | ブロックを抜ける際、またはループの先頭に戻る際のジャンプ先バイトコード位置。 | 32bitオフセット |
-| `exec_trace` | ジャンプ先の実行エントリ（JITコードまたはインタープリタハンドラ）。 | 関数ポインタ |
-| `stack_ptr` | ブロック開始時点のオペランドスタックポインタ。ブロック脱出時のスタック復元に使用。 | ポインタ |
-| `is_loop` | 現在の構造がループ（先頭へ戻る）かブロック（末尾へ抜ける）かを示すフラグ。 | ブール値 |
+| ラベルPC | ブロックを抜ける際、またはループ先頭に戻る際のジャンプ先。 | 32bitオフセット |
+| 実行トレース | ジャンプ先のエントリポイント（JITコードまたはハンドラ）。 | 関数ポインタ |
+| 保存済みSP | ブロック開始時点のスタック頂点。脱出時の復元に使用。 | ポインタ |
+| ループフラグ | 現在の構造が `loop` かどうかを示す。 | ブール値 |
 
 #### `interp_config` (インタープリタ構成)
 インタープリタの動作パラメータを定義する。 `{ConfigurableSystem}`
 
-| 構成項目 | 機能と役割 | 備考（制約、型など） |
+| 項目名 | 機能と役割 | 備考（制約、型など） |
 | :--- | :--- | :--- |
-| `stack_size` | オペランドスタックとして確保する総バイト数。 | バイト数 |
-| `control_stack_size` | 制御フレームのネストを許容する最大数。 | エントリ数 |
-| `yield_threshold` | 自発的に yield するまでのトレース実行数。同時に、ホットスポット検知用の実行履歴バッファ（History Buffer）のサイズもこの値に等しくなる。 | 回数 |
+| スタック容量 | オペランドスタックとして確保する総バイト数。 | バイト数 |
+| 制御スタック容量 | 制御フレームの最大ネスト可能数。 | エントリ数 |
+| Yield 閾値 | 次の yield までに実行を許可する命令（トレース）数。 | 回数 |
 
 #### `opcode_handler` / `exec_trace` (実行エントリ)
 命令ハンドラおよびJITトレースの共通実行シグネチャ。 `{JIT_RuntimeAPI_Fallback}`
 
-| 構成項目 | 機能と役割 | 備考（制約、型など） |
+| 項目名 | 機能と役割 | 備考（制約、型など） |
 | :--- | :--- | :--- |
-| `signature` | PC, StackTop, Context をレジスタ経由で受け取り、実行を行う関数インターフェイス。 | `__fastcall` 推奨 |
+| 実行シグネチャ | PC, スタック頂点, 環境をレジスタで受け取る関数の形式。 | `__fastcall` 推奨 |
 
-## 3. 動的モデル
+## 4. 動的モデル
 
 ### 3.1 アルゴリズム
 - **Threaded Dispatch**: 命令ハンドラを連鎖させるテーブルディスパッチ方式で分岐コストを削減する。 `{ThreadedInterpreter}`
@@ -136,16 +143,16 @@ sequenceDiagram
     I-->>V: return (trace end)
 ```
 
-## 4. インターフェイス定義
+## 5. インターフェイス定義
 
 ### 4.1 公開API
 外部から利用可能なオブジェクト指向APIを定義する。
 
-#### インタープリタの初期化
+#### `initialize`
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | 命令ハンドラテーブルのセットアップやスタック領域の確保等、実行エンジンの初期状態を構築する。 |
-| 引数と役割 | `config`: スタックサイズやyield閾値等の設定パラメータ。 |
+| 引数と役割 | `config`: インタープリタ構成。 |
 | 期待する結果 | 正常：エンジンがReady状態になる。 |
 | 事前条件 | 設定値がシステム制限（メモリサイズ等）に適合していること。 |
 | 事後条件 | `opcode_handler_table` が正しく配置される。 |
@@ -153,18 +160,19 @@ sequenceDiagram
 | エラー時の挙動 | メモリ確保失敗時は初期化を中断し、エラー値を返す。 |
 | 補足 | デバッグモードが指定された場合は `debug_handler_table` を使用するように構成する。 |
 
-#### 命令の実行 (executor::step)
+#### `step`
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | 抽象インターフェイス `executor` の実装として、WASM命令を1トレース分実行する。 |
+| 引数と役割 | `ctx`: execution_context, `harness`: interpreter_harness |
 | 補足 | 必要に応じて内部的に JIT コードへのジャンプを行い、JIT/Interpreter を透過的に切り替える。 |
 
-#### 割り込み状態の同期
+#### `sync_interrupts`
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | 外部から通知された割り込みフラグを、実行コンテキストの仮想レジスタに反映する。 |
-| 引数と役割 | `context`: 対象の実行コンテキスト, `irq_id`: 割り込み識別子。 |
-| 期待する結果 | `context` 内の `interrupt_flags` が更新され、次回のyield機会で反映される。 |
+| 引数と役割 | `ctx`: execution_context, `irq_id`: 割り込み識別子。 |
+| 期待する結果 | `ctx` 内の `interrupt_flags` が更新され、次回のyield機会で反映される。 |
 | 事前条件 | なし。 |
 | 事後条件 | フラグがアトミックに書き込まれる。 |
 | 不変条件 | 実行中の命令ハンドラから安全に参照可能であること。 |
@@ -182,7 +190,7 @@ sequenceDiagram
 | **Debugger** | ブレークポイント判定と実行状態の可視化 | `debug_handler_table`, `execution_context` |
 | **vSoC** | 実行制御（step）と協調型マルチタスク（yield）の管理 | `execution_context` |
 
-## 5. 制約達成の方策
+## 6. 制約達成の方策
 
 ### 5.1 性能制約と方策
 - **目標**: WAMRインタープリタを上回る実行速度。
@@ -196,8 +204,11 @@ sequenceDiagram
 - **目標**: ゲストの暴走を隔離。
 - **方策**: `sp_boundary` と `memory_size` による境界チェック、`interrupt_flags` による安全な割り込み処理。
 
-## 6. 設計完了チェックリスト（網羅性確認）
+## 7. 設計完了チェックリスト（網羅性確認）
+- [x] Tier 3 (Implementation Domain) に基づき設計となっているか
+- [x] インタープリタの責務が明確に定義されているか
 - [x] コンポーネントの責務が明確に定義されているか
+- [x] **設計が実装詳細（言語仕様）に依存せず、目的・意図と課題を解消するコンセプトが定義されているか**
 - [x] 内部設計（データ構造、ブロック図、クラス、アルゴリズム）が適切に定義されているか
 - [x] 内部ブロック図（静的）とシーケンス/状態遷移図（動的）がセットで定義されているか
 - [x] 公開APIのメソッド名が英語で記述され、事前/事後条件が明確か

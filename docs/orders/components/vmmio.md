@@ -3,24 +3,32 @@
 ## 1. コンセプト
 vMMIO (Virtual Memory-Mapped I/O) は、WASMゲストアプリケーションに対して仮想的なハードウェアレジスタインターフェイスを提供スル。WASMの仕様に基づき、**割り当て単位は1ページ（64KB）**とし、各デバイス領域は64KB境界に配置される。これにより、WASMのメモリアクセスチェックと親和性の高いトラップ＆エミュレートを実現する。 `{RestrictedPhysicalAccess}` `{vMMIO_TrapAndEmulate}` `{PhysicalPassthrough}` `{WasmPageAlignment}`
 
-## 2. 静的モデル
+## 2. アーキテクチャ分類 (Tier 3: Implementation Domain)
+本コンポーネントは **Tier 3 (実装ドメイン)** に属する。仮想的なレジスタアクセスとDMA転送に特化した単一責務のモジュールとして設計する。 `{3TierSeparation}`
 
-### 2.1 データ構造
-- **vmmio_static_region**: ROMに配置される静的な領域定義。**ページ番号（vMMIO基点からの64KB単位のインデックス）**と**ページ数**で定義される。 `vmmio_ids.hxx` にて `VMMIO_STATIC_MAP` として集約定義される。 `{Static_Resolution}`
-- **vmmio_hook_registry**: RAMに配置されるフック関数のテーブル。 `vmmio_static_region` のフックIDをインデックスとして参照する。
-- **vmmio_dynamic_region**: mmap等で一時的に使用されるRAM上の動的領域定義。これもページ単位で管理される。
+## 3. 静的モデル
+
+### 3.1 データ構造 (Harness / Context / View)
+- **`vmmio_harness` (Harness)**: vMMIOが依存する `hook_registry` へのアクセスインターフェイスを集約した構造体。 `{StaticDI}`
+- **`vmmio_context` (Context)**: 動的なマッピング領域 (`vmmio_dynamic_region`) の管理情報。
+- **`vmmio_config` (View)**: 静的な領域定義 (`vmmio_static_region`) の不変なテーブル。 `{Static_Resolution}`
 
 ### 2.2 内部ブロック図
 ```mermaid
-graph TD
-    vSoC[vSoC Interpreter/JIT] --> |Memory Access Trap| vMMIO[vMMIO Dispatcher]
-    vMMIO --> |Binary Search| ROM_Map[vMMIO ROM Map]
-    ROM_Map --> |Hook ID| RAM_Registry[vMMIO Hook Registry]
-    RAM_Registry --> |Call| Hook[Registered Hooks]
-    Hook --> UART[Virtual UART]
-    Hook --> GPIO[Virtual GPIO]
-    Hook --> SYS[Virtual SYSCTL]
-    Hook --> HAL[HAL / Physical Hardware]
+    subgraph vMMIO_Layer
+        Harness[vmmio_harness]
+        Dispatcher[vmmio_dispatcher]
+        Context[vmmio_context]
+    end
+
+    subgraph Dependency
+        Registry[hook_registry]
+    end
+
+    Dispatcher -- uses --> Harness
+    Harness -- points to --> Registry
+    Dispatcher -- operates on --> Context
+    Registry -- calls --> Hook[Registered Hooks]
 ```
 
 ### 2.3 主要なクラス・構造体・配列・定数
@@ -28,29 +36,29 @@ graph TD
 #### `vmmio_static_region` (ROM領域定義)
 コンパイル時に確定し、ROMに配置される静的な領域。
 
-| 構成項目 | 機能と役割 | 備考（制約、型など） |
+| 項目名 | 機能と役割 | 備考（制約、型など） |
 | :--- | :--- | :--- |
-| `page_index` | vMMIO基点からの開始ページ番号。 | `(addr - base) >> 16` |
-| `page_count` | 領域のサイズをページ数で指定。 | 1ページ=64KB |
-| `hook_id` | 実行時に対応付けるフックの登録ID。 | 数値索引 |
+| 開始ページ番号 | vMMIO基底アドレスからのオフセットページ。 | `(addr - base) >> 16` |
+| ページ数 | 領域の広さをWASMページ（64KB）単位で定義する。 | 1ページ=64KB |
+| フック登録ID | 実行時に対応付けるフック（RAM登録）の識別番号。 | 数値索引 |
 
 #### `vmmio_hook_registry` (RAMフック管理)
 実行時にフックを登録・差し替え可能な実体。
 
-| 構成項目 | 機能と役割 | 備考（制約、型など） |
+| 項目名 | 機能と役割 | 備考（制約、型など） |
 | :--- | :--- | :--- |
-| `read_fn` | 読み出し用コールバック関数。 | 関数ポインタ（プラガブル） |
-| `write_fn` | 書き込み用コールバック関数。 | 関数ポインタ（プラガブル） |
+| 読み出し関数 | メモリ参照発生時に呼び出されるコールバック。 | 関数ポインタ |
+| 書き込み関数 | メモリ書き込み発生時に呼び出されるコールバック。 | 関数ポインタ |
 | `context` | フックに渡す任意のコンテキスト。 | ポインタ |
 
 #### `vmmio_handler` (ハンドラ定義)
 読み書きアクセス発生時に呼び出される関数の共通インターフェイス。
 
-| 構成項目 | 機能と役割 | 備考（制約、型など） |
+| 項目名 | 機能と役割 | 備考（制約、型など） |
 | :--- | :--- | :--- |
-| `signature` | アクセスされたオフセット、およびデータバッファ（span）を受け取り、成功の成否を返す。 | `status(offset, span<uint8_t>, is_write)` |
+| アクセス形式定義 | 相対オフセットとデータ列（span）を引数に取る関数の形式。 | `status(offset, span<uint8_t>, is_write)` |
 
-## 3. 動的モデル
+## 4. 動的モデル
 
 - **ディスパッチ**:
     1. ゲストのアドレスが `vmmio_base` 以降である場合、ROM上の `VMMIO_STATIC_MAP` を二分探索する。 `{SortedIndexedArray}`
@@ -121,16 +129,16 @@ sequenceDiagram
 2. **Access**: ゲストが返却された仮想アドレス経由で物理メモリを直接操作。
 3. **Unmap (SYSCALL_MUNMAP)**: ゲストが明示的にアンマップを要求、またはタスク終了時に vSoC がエントリを破棄し、物理アクセスを遮断。 `{RestrictedPhysicalAccess}`
 
-## 4. インターフェイス定義
+## 5. インターフェイス定義
 
 ### 4.1 公開API
 外部から利用可能なオブジェクト指向APIを定義する。
 
-#### vMMIOフックの登録
+#### `register_hook`
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | 既に定義（ROM）されている領域に対して、ホスト側の `vmmio_handler` 実装を紐づける。 |
-| 引数と役割 | `hook_id`: 対象の領域識別子, `handler`: `vmmio_handler` インターフェイス実装へのポインタ。 |
+| 引数と役割 | `reg`: hook_registry, `hook_id`: 対象の領域識別子, `handler`: ハンドラ実装 |
 | 期待する結果 | 正常：フックが登録され、以降のアクセスで呼び出される。 |
 | 事前条件 | 有効な `hook_id` であること。 |
 | 事後条件 | RAM上のレジストリが更新される。 |
@@ -138,11 +146,11 @@ sequenceDiagram
 | エラー時の挙動 | 不正なIDの場合はエラー。 |
 | 補足 | 起動時、または各デバイスサービスの初期化時に呼び出される。 |
 
-#### 物理メモリの動的マッピング (map_buffer)
+#### `map_buffer`
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | 物理的なバッファを、ゲストからアクセス可能な vMMIO 空間（DYNAMIC領域）に一時的にマッピングする。 |
-| 引数と役割 | `phys_addr`: 物理基点アドレス, `size`: マップするバイト数。 |
+| 引数と役割 | `ctx`: vmmio_context, `phys_addr`: 物理基点アドレス, `size`: バイト数 |
 | 期待する結果 | 正常：マッピング先の vMMIO 仮想アドレス。 |
 | 事前条件 | 指定された物理範囲が安全（アクセス許可内）であること。 |
 | 事後条件 | DYNAMIC領域内のスロットが消費され、PASSTHROUGHリージョンが作成される。 |
@@ -150,15 +158,15 @@ sequenceDiagram
 | エラー時の挙動 | DYNAMIC領域に空きがない場合、または安全でない物理アドレスの場合はエラー。 |
 | 補足 | 共用メモリ共有やDMAバッファ共有に使用される。 |
 
-#### アクセスのディスパッチ (Read/Write)
+#### `dispatch_access`
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | vSoC 実行エンジンからトラップされたメモリアクセスを解析し、適切なハンドラへ振り分ける。 |
-| 引数と役割 | `addr`: 基点アドレス, `buffer`: 読み出し先または書き込み値（`std::span`）, `is_write`: 方向。 |
+| 引数と役割 | `harness`: vmmio_harness, `ctx`: vmmio_context, `addr`: 基点アドレス, `buffer`: データ (`std::span`), `is_write`: 方向 |
 | 期待する結果 | 正常：登録されたハンドラが一括実行され、レジスタ操作の結果がゲストに反映される。 |
 | 補足 | `std::span` を用いることで、バイト/ワード単位のアクセスおよび連続領域へのバルクアクセスを統一的に扱う。 |
 
-## 5. 制約達成の方策
+## 6. 制約達成の方策
 
 ### 5.1 性能制約と方策
 - **目標**: MMIOアクセスのオーバーヘッドを最小化する。
@@ -168,11 +176,13 @@ sequenceDiagram
 - **目標**: マップ管理用のメモリを最小化する。
 - **方策**: `{ConfigurableSystem}` 最大登録数をコンパイル時に固定し、静的配列として確保する。
 
-## 6. 設計完了チェックリスト（網羅性確認）
-- [ ] コンポーネントの責務が明確に定義されているか
-- [ ] 内部設計（データ構造、ブロック図、クラス、アルゴリズム）が適切に定義されているか
-- [ ] 仮想デバイスマップが具体的に定義されているか
-- [ ] 公開APIのメソッド名が英語で記述され、事前/事後条件が明確か
-- [ ] 非機能制約（性能、メモリ）に対する具体的な方策が明示されているか
-- [ ] 設計の交差点（トレードオフ）が解消されているか
-- [ ] 上位の要求 `{Keyword}` とのトレーサビリティが確保されているか
+## 7. 設計完了チェックリスト（網羅性確認）
+- [x] Tier 3 (Implementation Domain) に基づき設計となっているか
+- [x] vMMIOの責務が明確に定義されているか
+- [x] コンポーネントの責務が明確に定義されているか
+- [x] 内部設計（データ構造、ブロック図、クラス、アルゴリズム）が適切に定義されているか
+- [x] 仮想デバイスマップが具体的に定義されているか
+- [x] 公開APIのメソッド名が英語で記述され、事前/事後条件が明確か
+- [x] 非機能制約（性能、メモリ）に対する具体的な方策が明示されているか
+- [x] 設計の交差点（トレードオフ）が解消されているか
+- [x] 上位の要求 `{Keyword}` とのトレーサビリティが確保されているか

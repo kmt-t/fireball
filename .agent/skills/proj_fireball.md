@@ -83,7 +83,7 @@ description: Fireballプロジェクト固有のアーキテクチャパター�
 | Tier | ドメイン | 分離方式 | 適用対象 |
 |:---|:---|:---|:---|
 | **Tier 1** | アーキテクチャ | IoC / URI-DI | システム境界（HAL/Kernel等） |
-| **Tier 2** | サブシステム | Harness / Stateless IF | 複雑な内部構造（3個以上の責務） |
+| **Tier 2** | サブシステム | Harness / Stateless IF | 複雑な内部構造 |
 | **Tier 3** | 実装 | Natural OO | 単一責務・低複雑度 |
 
 **詳細**: [interface.md](../../docs/orders/patterns/interface.md)

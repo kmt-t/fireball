@@ -13,7 +13,7 @@ vMMIO (Virtual Memory-Mapped I/O) は、WASMゲストアプリケーションに
 - **`vmmio_config` (View)**: 静的な領域定義 (`vmmio_static_region`) の不変なテーブル。 `{Static_Resolution}`
 - **`vmmio_dynamic_region` (Internal)**: 実行時に追加された動的マッピング情報のリスト（プライベートメンバ）。
 
-### 2.2 内部ブロック図
+### 3.2 内部ブロック図
 ```mermaid
 graph TD
     subgraph vMMIO_Layer
@@ -50,7 +50,7 @@ graph TD
 - **パススルー処理**: `type` が `PASSTHROUGH` の場合、フック内で `FB_CONF_VMMIO_ALLOWED_ADDRS` との照合を行い、許可されている場合のみ物理メモリへアクセスする。
 - **フォールバック**: 該当する領域がない場合は、メモリアクセス違反としてトラップを発生させる。
 
-### 3.2 アルゴリズム: 仮想DMA (VDMA)
+### 4.1 アルゴリズム: 仮想DMA (VDMA)
 ゲストリニアメモリと vMMIO 空間（または他のメモリ領域）間の高速転送を実現する。 `{VDMA}`
 
 1. **転送設定**: ゲストが `REG_VDMA_SRC`, `REG_VDMA_DST`, `REG_VDMA_COUNT` にパラメータを書き込む。
@@ -60,7 +60,7 @@ graph TD
    - `std::memcpy` または HAL経由のDMAを用いて一括転送を実行。
 4. **完了**: 転送完了後、必要に応じてゲストに仮想割り込み（`IRQ_VDMA_DONE`）を通知する。
 
-### 3.3 仮想デバイスマップ (Default Map)
+### 4.2 仮想デバイスマップ (Default Map)
 各領域は 64KB (WASM 1 page) 単位で割り当てられる。 `vMMIO_BASE = 0x4000_0000` とする。
 
 | ページ番号 | ページ数 | デバイス名 | 説明 |
@@ -70,7 +70,7 @@ graph TD
 | `2` | `1` | **VDMA** | 仮想DMA（バルク転送） |
 | `4096` | `4096` | **DYNAMIC** | 動的マッピング領域 (0x5000_0000 〜) |
 
-### 3.3 SYSCTL レジスタ詳細
+### 4.3 SYSCTL レジスタ詳細
 | オフセット | レジスタ名 | R/W | 説明 |
 | :--- | :--- | :--- | :--- |
 | `0x00` | `REG_SYS_CONTROL` | W | `1`: Reset, `2`: Yield, `3`: Halt, `4`: Syscall |
@@ -81,7 +81,7 @@ graph TD
 | `0x18` | `REG_SYSCALL_ARG1` | R/W | 第2引数 |
 | `0x1C` | `REG_SYSCALL_ARG2` | R/W | 第3引数 |
 
-### 3.4 VDMA レジスタ詳細
+### 4.4 VDMA レジスタ詳細
 | オフセット | レジスタ名 | R/W | 説明 |
 | :--- | :--- | :--- | :--- |
 | `0x00` | `REG_VDMA_SRC` | R/W | 転送元アドレス |
@@ -89,7 +89,7 @@ graph TD
 | `0x08` | `REG_VDMA_COUNT` | R/W | 転送バイト数 |
 | `0x0C` | `REG_VDMA_CTRL` | W | 制御（Bit0: START） |
 
-### 3.5 動的マッピング (mmap) シーケンス
+### 4.5 動的マッピング (mmap) シーケンス
 ゲストがHAL等のサービスから受け取った `shared_mem_id` を vMMIO 空間にマッピングし、直接アクセスを可能にする。
 
 ```mermaid
@@ -114,7 +114,7 @@ sequenceDiagram
 
 ## 5. インターフェイス定義
 
-### 4.1 公開API
+### 5.1 公開API
 外部から利用可能なオブジェクト指向APIを定義する。
 
 #### `register_hook`
@@ -140,11 +140,11 @@ sequenceDiagram
 
 ## 6. 制約達成の方策
 
-### 5.1 性能制約と方策
+### 6.1 性能制約と方策
 - **目標**: MMIOアクセスのオーバーヘッドを最小化する。
 - **方策**: `{ConfigurableSystem}` 頻繁にアクセスされるデバイス（SYSCTL等）をマップの先頭に配置し、探索コストを削減する。
 
-### 5.2 メモリ制約と方策
+### 6.2 メモリ制約と方策
 - **目標**: マップ管理用のメモリを最小化する。
 - **方策**: `{ConfigurableSystem}` 最大登録数をコンパイル時に固定し、静的配列として確保する。
 

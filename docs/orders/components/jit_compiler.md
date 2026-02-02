@@ -6,7 +6,7 @@ JIT Compiler は、WASMバイトコードを実行時にネイティブコード
 
 ## 3. 静的モデル
 
-### 2.1 データ構造
+### 3.1 データ構造
 - **JIT Cache (Active/Old)**: ネイティブコードを保持するダブルバッファ。Copy-GC方式により、フラグメンテーションを回避しつつ効率的にメモリを再利用する。 `{JIT_DoubleBuffer_Cache}`
 - **JIT Entry Table**: WASM PCとキャッシュ内のコードオフセットを紐付ける管理テーブル。**カードマーキング**と二分探索を組み合わせ、高速な検索を実現する。 `{SimpleJITArchitecture}`
 - **Card Group Index**: 複数のカードをグループ化して管理するインデックステーブル。検索範囲の絞り込みに使用する。高速化のため、カード数およびグループサイズは2のべき乗（シフト量）で管理される。
@@ -17,7 +17,7 @@ JIT Compiler は、WASMバイトコードを実行時にネイティブコード
     - `3: COMPILED` (Hotカード。いずれかのPCがコンパイル済み、またはオンデマンド・コンパイルが許可された状態)
 - **Compile Queue (Stack behavior)**: コンパイル待ちのWASM PCを保持する。即時チェイニングを最大化するため、**後入れ先出し (LIFO)** または **履歴の逆順** で処理される。
 
-### 2.2 内部ブロック図
+### 3.2 内部ブロック図
 ```mermaid
 graph TD
     subgraph JIT_Layer
@@ -41,7 +41,7 @@ graph TD
     Manager -- operates on --> Context
 ```
 
-### 2.3 主要なクラス・構造体・配列・定数
+### 3.3 主要なクラス・構造体・配列・定数
 
 #### `jit_harness` (JITハーネス)
 サブコンポーネントへのポインタを集約する。
@@ -75,7 +75,7 @@ JITエンジンの挙動を制御する性能パラメータ。 `{ConfigurableSy
 
 ## 4. 動的モデル
 
-### 3.1 アルゴリズム
+### 4.1 アルゴリズム
 
 #### Copy-and-Patch コンパイル手順
 1. **テンプレート選択**: WASM命令に対応する事前定義済みのネイティブコードテンプレートを選択する。
@@ -120,7 +120,7 @@ JITエンジンの挙動を制御する性能パラメータ。 `{ConfigurableSy
 2. **コンパイル実行**: 後続のトレースを先にコンパイルすることで、先行するトレースのリンク時（Patching 時）にターゲットが既にキャッシュ内に存在する確率を上げ、即時チェイニングを実現する。
 3. **補足**: COOSの `register_periodic_callback` または `set_idle_hook` により実行される。これにより、実行スレッドのブロッキング時間を抑える。 `{PeriodicTask}` `{IdleDetection}`
 
-### 3.2 状態遷移図
+### 4.2 状態遷移図
 ```mermaid
 stateDiagram-v2
     state "Interpreting" as Interp
@@ -137,7 +137,7 @@ stateDiagram-v2
     Background --> Interp: Task Wakeup
 ```
 
-### 3.3 内部シーケンス
+### 4.3 内部シーケンス
 #### JITコンパイルおよび検索シーケンス
 ```mermaid
 sequenceDiagram
@@ -177,7 +177,7 @@ sequenceDiagram
 
 ## 5. 検証 (Verification)
 
-### 4.1 直行表: 検索・昇格・GC
+### 5.1 直行表: 検索・昇格・GC
 JITトレース検索時の内部状態と期待される挙動を検証する。
 
 | ケース | ホットスポットBitmap | Active Cache | Old Cache | 期待される動作 |
@@ -190,7 +190,7 @@ JITトレース検索時の内部状態と期待される挙動を検証する�
 | 6 | COMPILED (3) | miss | miss | BitmapをHOT(2)へ戻す + インタープリタ |
 | 7 | (昇格時) | Active満杯 | Old hit | **Old破棄 -> ActiveをOldへ -> 新Active** |
 
-### 4.2 内部コンポーネントのデコンポジション
+### 5.2 内部コンポーネントのデコンポジション
 JITエンジンの責務を、以下の独立したサブコンポーネントに分離して設計する。
 
 - **[JIT Hotspot Detector](file:///n:/sources/fireball/docs/orders/components/jit_hotspot_detector.md)**: 実行履歴の監視とコンパイル要否の判定。
@@ -200,7 +200,7 @@ JITエンジンの責務を、以下の独立したサブコンポーネント�
 
 ## 6. インターフェイス定義
 
-### 4.1 公開API
+### 6.1 公開API
 外部から利用可能なオブジェクト指向APIを定義する。
 
 #### `initialize`
@@ -234,19 +234,19 @@ JITエンジンの責務を、以下の独立したサブコンポーネント�
 | 引数と役割 | `ctx`: jit_context, `harness`: jit_harness |
 | 補足 | `executor` 実装内で `co_yield` 発生時に呼び出され、アイドル時間等を活用して処理される。 |
 
-### 4.2 URI/IPCインターフェイス
+### 6.2 URI/IPCインターフェイス
 本コンポーネントは vSoC の内部ライブラリであり、直接のIPCインターフェイスは持たない。
 
 ## 7. 制約達成の方策
 
-### 5.1 性能制約と方策
+### 7.1 性能制約と方策
 - **目標**: コンパイルレイテンシを最小化し、WAMRインタープリタを上回る実行速度を実現。
 - **方策**: 
     - `{JIT_CopyAndPatch}`: 複雑な最適化を省き、テンプレートコピーのみでコンパイルを完了。
     - `{JIT_RegisterMapping}`: `Context`, `StackTop`, `WASM_PC` を物理レジスタに固定し、メモリアクセスを削減。
     - `Card Marking + Card Group Index + Binary Search`: 検索範囲を限定し、高速な検索を実現。
 
-### 5.2 安全性制約と方策
+### 7.2 安全性制約と方策
 - **目標**: 不正なコード実行の防止。
 - **方策**: 
     - `{PositionIndependentCode}`: 生成コードを位置独立とし、配置場所の自由度を確保。

@@ -13,7 +13,7 @@ Interpreter は、WASM命令をスレッドインタープリタ方式で実行�
 - **`execution_context` (Context)**: 仮想CPUレジスタ、スタックポインタ等、JITと共用される可変な実行状態。
 - **`interpreter_config` (View)**: スタックサイズやyield閾値などの不変な構成情報。
 
-### 2.2 内部ブロック図
+### 3.2 内部ブロック図
 ```mermaid
 graph TD
     subgraph Interpreter_Layer
@@ -31,7 +31,7 @@ graph TD
     Engine -- manages --> Control[control_frame]
 ```
 
-### 2.3 主要なクラス・構造体・配列・定数
+### 3.3 主要なクラス・構造体・配列・定数
 
 #### `Interpreter` クラス
 依存関係（vSoC環境等）と実行に必要なテーブルをカプセル化する。
@@ -95,7 +95,7 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 
 ## 4. 動的モデル
 
-### 3.1 アルゴリズム
+### 4.1 アルゴリズム
 - **Threaded Dispatch**: 命令ハンドラを連鎖させるテーブルディスパッチ方式で分岐コストを削減する。 `{ThreadedInterpreter}`
 - **WASM命令とRuntime APIの1対1対応**: 各命令ハンドラは対応する `void __fastcall (PC, StackTop, Context)` ランタイムAPIを呼び出し、結果は `Context` に書き込まれる。 `{JIT_RuntimeAPI_Fallback}`
 - **継続渡しトレース実行**: 命令ハンドラは継続渡しで次ハンドラへ遷移する。clang前提の `[[clang::musttail]]` を使用し、**非制御命令のみ**末尾呼び出しを行う。
@@ -107,7 +107,7 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 - **概算Yield**: トレース実行数ベースで `co_yield` を発行し、協調型マルチタスクに整合させる。 `{Challenge_ApproximateYield}`
 - **デバッグフック**: 命令実行前後でブレークポイント判定を行い、Debugger に制御を委譲する。 `{Debug_Integrated}`
 
-### 3.2 状態遷移図
+### 4.2 状態遷移図
 ```mermaid
 stateDiagram-v2
     [*] --> Ready
@@ -119,7 +119,7 @@ stateDiagram-v2
     Trap --> Ready: handled
 ```
 
-### 3.3 内部シーケンス
+### 4.3 内部シーケンス
 #### Interpreter 実行シーケンス
 ```mermaid
 sequenceDiagram
@@ -144,7 +144,7 @@ sequenceDiagram
 
 ## 5. インターフェイス定義
 
-### 4.1 公開API
+### 5.1 公開API
 外部から利用可能なオブジェクト指向APIを定義する。
 
 #### `initialize`
@@ -178,10 +178,10 @@ sequenceDiagram
 | エラー時の挙動 | なし。 |
 | 補足 | vSoC からの通知を仲介する役割を持つ。 |
 
-### 4.2 URI/IPCインターフェイス
+### 5.2 URI/IPCインターフェイス
 本コンポーネントは vSoC の内部ライブラリとして利用され、直接のIPCインターフェイスは持たない。
 
-### 4.3 関連コンポーネントとの連携
+### 5.3 関連コンポーネントとの連携
 | コンポーネント | 連携内容 | 参照データ構造 |
 | :--- | :--- | :--- |
 | **WASM Loader** | WASMバイナリの索引情報（関数、命令、即値）の提供 | `module_view_t` |
@@ -191,15 +191,15 @@ sequenceDiagram
 
 ## 6. 制約達成の方策
 
-### 5.1 性能制約と方策
+### 6.1 性能制約と方策
 - **目標**: WAMRインタープリタを上回る実行速度。
 - **方策**: `{ThreadedInterpreter}` による分岐削減と、ホットスポット検知による JIT 移行を組み合わせる。
 
-### 5.2 メモリ制約と方策
+### 6.2 メモリ制約と方策
 - **目標**: 64KB RAM環境で動作。
 - **方策**: `execution_context` と `call_frame` を最小化し、スタック領域を固定サイズ化する。
 
-### 5.3 安全性制約と方策
+### 6.3 安全性制約と方策
 - **目標**: ゲストの暴走を隔離。
 - **方策**: `sp_boundary` と `memory_size` による境界チェック、`interrupt_flags` による安全な割り込み処理。
 

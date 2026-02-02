@@ -71,6 +71,9 @@ stateDiagram-v2
 
 ## 5. インターフェイス設計 (Stateless Interface)
 
+### 5.1 公開API
+外部から利用可能なオブジェクト指向APIを定義する。
+
 #### `spawn`
 | 項目 | 内容 |
 | :--- | :--- |

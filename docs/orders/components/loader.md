@@ -8,17 +8,16 @@ WASMローダは、ROM上のWASM32バイナリをパースし、実行環境が�
 
 ## 3. 静的モデル
 
-### 3.1 データ構造 (Harness / Context / View)
-- **`loader_harness` (Harness)**: ローダーが依存する `bump_allocator` への参照を集約した構造体。 `{StaticDI}`
-- **`module_registry` (Context)**: ロード済みの `module_view` を名前で管理する可変なレジストリ。 `{MultiModule_Support}`
+### 3.1 データ構造 (Natural OO)
+- **`WasmLoader` (Class)**: WASMバイナリのパース、検証、およびロード済みモジュールの管理を一括して行う主要クラス。
 - **`module_view` (View)**: ROM上のバイナリデータへの参照と、構築された索引群を保持する読み取り専用の構造体。
+- **`module_registry` (Internal)**: ロード済みの `module_view` を名前で管理するための内部リスト。 `{MultiModule_Support}`
 
 ### 2.2 内部ブロック図
 ```mermaid
     subgraph Loader_Layer
-        Harness[loader_harness]
-        Loader[wasm_loader]
-        Registry[module_registry]
+        Loader[WasmLoader Engine]
+        Registry[Internal Registry]
     end
 
     subgraph Memory
@@ -26,21 +25,21 @@ WASMローダは、ROM上のWASM32バイナリをパースし、実行環境が�
         Alloc[bump_allocator]
     end
 
-    Loader -- uses --> Harness
-    Harness -- points to --> Alloc
-    Loader -- operates on --> Registry
+    Loader -- holds reference --> Alloc
+    Loader -- manages --> Registry
     Registry -- holds --> View[module_view]
     View -- refers to --> ROM
 ```
 
 ### 2.3 主要なクラス・構造体・配列・定数
 
-#### `loader_harness` (ローダーハーネス)
-外部依存関係を集約する。
+#### `WasmLoader` クラス
+依存関係（アロケータ等）と内部レジストリをカプセル化する。
 
 | 項目名 | 機能と役割 | 備考（制約、型など） |
 | :--- | :--- | :--- |
-| 作業用アロケータ | 索引構築時のメモリ割り当てに使用する。 | `bump_allocator*` |
+| 作業用アロケータ | 索引構築時のメモリ割り当てに使用する（プライベートメンバ）。 | `bump_allocator*` |
+| モジュール索引 | ロード済みモジュールを名前で引くための内部管理リスト。 | `module_registry` |
 
 #### `module_view` (モジュールビュー)
 ROM上のバイナリデータに対する「窓」として機能する。
@@ -118,29 +117,19 @@ sequenceDiagram
 ### 4.1 公開API
 外部から利用可能なオブジェクト指向APIを定義する。
 
-#### `load_module`
+#### `load`
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | ROM上のWASMバイナリをパースし、システムに登録して実行可能なビューを取得する。 |
-| 引数と役割 | `reg`: registry, `harness`: loader_harness, `binary_ptr`: バイナリ先頭, `size`: データサイズ |
-| 期待する結果 | 正常：索引構築済みの `module_view` ポインタ。異常：NULL（検証失敗時）。 |
-| 事前条件 | 与えられたメモリ範囲が有効であること。 |
-| 事後条件 | 内部のモジュールレジストリに登録され、他からの参照が可能になる。 |
-| 不変条件 | ROM上のバイナリデータが変更されないこと（読み取り専用）。 |
-| エラー時の挙動 | マジック値やバージョンが不正確な場合は即座に中断し、エラーを記録する。 |
-| 補足 | メモリ節約のため、コードセクション自体は展開せずROMを直接指し示す。 |
+| 機能概要 | ROM上のWASMバイナリをパースし、内部レジストリに登録してビューを取得する。 |
+| 引数と役割 | `binary_ptr`: バイナリ先頭, `size`: データサイズ |
+| 期待する結果 | 正常：索引構築済みの `module_view` ポインタ。異常：NULL。 |
 
-#### `lookup_module`
+#### `lookup`
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | 登録済みのモジュールを名前で検索し、そのビューを取得する。 |
-| 引数と役割 | `reg`: registry, `name`: 検索するモジュール名 |
+| 引数と役割 | `name`: 検索するモジュール名 |
 | 期待する結果 | 正常：該当するビューのポインタ。異常：NULL。 |
-| 事前条件 | なし。 |
-| 事後条件 | なし。 |
-| 不変条件 | なし。 |
-| エラー時の挙動 | 未登録の場合はNULLを返す。 |
-| 補足 | 動的リンク（Import解決）時に主に使用される。 |
 
 #### `get_section`
 | 項目 | 内容 |

@@ -8,17 +8,16 @@ Interpreter は、WASM命令をスレッドインタープリタ方式で実行�
 
 ## 3. 静的モデル
 
-### 3.1 データ構造 (Harness / Context / View)
-- **`interpreter_harness` (Harness)**: インタープリタが依存する vSoC (Environment) への参照を集約した構造体。 `{StaticDI}`
+### 3.1 データ構造 (Natural OO)
+- **`Interpreter` (Class)**: WASM命令の実行、コンテキスト管理、および外部環境（vSoC）との連携をカプセル化した主要クラス。
 - **`execution_context` (Context)**: 仮想CPUレジスタ、スタックポインタ等、JITと共用される可変な実行状態。
-- **`interp_config` (View)**: スタックサイズやyield閾値などの不変な構成情報。
+- **`interpreter_config` (View)**: スタックサイズやyield閾値などの不変な構成情報。
 
 ### 2.2 内部ブロック図
 ```mermaid
 graph TD
     subgraph Interpreter_Layer
-        Harness[interpreter_harness]
-        Interp[interpreter_engine]
+        Engine[Interpreter Engine]
         Context[execution_context]
     end
 
@@ -26,21 +25,21 @@ graph TD
         Env[vsoc_runtime]
     end
 
-    Interp -- uses --> Harness
-    Harness -- points to --> Env
-    Interp -- operates on --> Context
-    Interp -- manages --> Frame[call_frame]
-    Interp -- manages --> Control[control_frame]
+    Engine -- holds reference --> Env
+    Engine -- operates on --> Context
+    Engine -- manages --> Frame[call_frame]
+    Engine -- manages --> Control[control_frame]
 ```
 
 ### 2.3 主要なクラス・構造体・配列・定数
 
-#### `interpreter_harness` (インタープリタハーネス)
-外部依存関係を集約する。
+#### `Interpreter` クラス
+依存関係（vSoC環境等）と実行に必要なテーブルをカプセル化する。
 
 | 項目名 | 機能と役割 | 備考（制約、型など） |
 | :--- | :--- | :--- |
-| ランタイム環境 | vSoCランタイム環境（メモリ、I/O等）への参照。 | `vsoc_runtime*` |
+| ランタイム環境 | vSoCランタイム環境への参照（プライベートメンバ）。 | `vsoc_runtime*` |
+| ハンドラテーブル | 命令ハンドラへのジャンプテーブル。 | `opcode_handler_table` |
 
 #### `execution_context` (実行コンテキスト)
 WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想CPUレジスタ群として設計する。 `{PositionIndependentCode}` `{ContextPointerRegister}`
@@ -160,11 +159,11 @@ sequenceDiagram
 | エラー時の挙動 | メモリ確保失敗時は初期化を中断し、エラー値を返す。 |
 | 補足 | デバッグモードが指定された場合は `debug_handler_table` を使用するように構成する。 |
 
-#### `step`
+#### `run_step`
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | 抽象インターフェイス `executor` の実装として、WASM命令を1トレース分実行する。 |
-| 引数と役割 | `ctx`: execution_context, `harness`: interpreter_harness |
+| 機能概要 | WASM命令を1トレース分実行し、実行コンテキストを更新する。 |
+| 引数と役割 | `ctx`: 実行コンテキスト |
 | 補足 | 必要に応じて内部的に JIT コードへのジャンプを行い、JIT/Interpreter を透過的に切り替える。 |
 
 #### `sync_interrupts`

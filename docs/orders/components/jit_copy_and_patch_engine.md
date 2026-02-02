@@ -8,20 +8,28 @@ Copy-and-Patch Engine は、WASM 命令に対応する事前生成されたネ�
 
 ## 3. 静的モデル
 
-### 2.1 データ構造
-- **命令テンプレート (Instruction Template)**: constexprアセンブラによって生成された、パッチ用の「穴（Hole）」を含むネイティブ命令列。
-- **パッチ情報 (Patch Info)**: テンプレート内のどのオフセットに何を（即値、APIアドレス等）書き込むかのメタデータ。
+### 2.1 データ構造 (Natural OO)
+- **`CopyAndPatchEngine` (Class)**: テンプレートの選択、コピー、およびパッチ適用を一括して行う主要クラス。
+- **命令テンプレート (Template)**: パッチ用の「穴（Hole）」を含むネイティブ命令列の雛形。
+- **パッチ定義 (Patch Info)**: テンプレート内の修正箇所のメタデータ。
 
 ### 2.2 内部ブロック図
 ```mermaid
 graph TD
-    Queue[Compile Queue] -->|Pop PC| Resolver[Template Resolver]
-    Resolver -->|Select Template| Applicator[Patch Applicator]
-    Applicator -->|Copy & Patch| Cache[Active Code Cache]
-    Const[constexpr Assembler] -.->|Generate| Resolver
+    Queue[Compile Queue] -->|Pop PC| Engine[CopyAndPatchEngine]
+    Engine -->|Write| Cache[Active Code Cache]
+    Const[constexpr Assembler] -.->|Generate| Engine
 ```
 
 ### 2.3 主要なクラス・構造体・配列・定数
+
+#### `CopyAndPatchEngine` クラス
+テンプレートの解決とバイナリ操作をカプセル化する。
+
+| 項目名 | 機能と役割 | 備考（制約、型など） |
+| :--- | :--- | :--- |
+| テンプレート辞書 | WASM命令に対応するJITテンプレートの検索索引。 | `jit_template_map` |
+| アセンブラ参照 | 実行時に補助的な命令生成を行う場合のインターフェイス。 | `constexpr_assembler*` |
 
 #### `jit_template` (命令テンプレート)
 WASM命令に対応するネイティブバイナリの雛形。
@@ -70,15 +78,12 @@ sequenceDiagram
 
 ## 5. インターフェイス定義
 
-### 4.1 公開API
-
 #### `compile_trace`
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | 指定されたWASMトレースをネイティブコードへ変換し、キャッシュへ書き込む。 |
-| 引数と役割 | `pc`: コンパイル開始位置, `dest`: 書き込み先アドレス, `env`: 環境ポインタ |
-| 期待する結果 | 書き込まれた命令のサイズ、または失敗。 |
-| 事前条件 | 書き込み先キャッシュに十分な空き容量があること。 |
+| 機能概要 | WASM命令列をネイティブコードへ変換し、キャッシュへ書き込む。 |
+| 引数と役割 | `pc`: 開始位置, `dest`: 書き込み先, `runtime`: 実行環境ポインタ |
+| 期待する結果 | 正常：生成されたバイナリサイズ。異常：エラーID。 |
 
 ## 6. 制約達成の方策
 

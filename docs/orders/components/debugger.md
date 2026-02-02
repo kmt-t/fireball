@@ -8,18 +8,15 @@
 
 ## 3. 静的モデル
 
-### 3.1 データ構造 (Harness / Context / View)
-- **`debugger_harness` (Harness)**: デバッガが操作対象とする実行コンテキスト（`execution_context`）や、HAL層へのアクセスインターフェイスを集約した構造体。 `{StaticDI}`
-- **`debugger_context` (Context)**: ブレークポイントのリスト、現在のデバッグ状態（Stopped/Running）、および前回停止理由などの可変状態。
+### 3.1 データ構造 (Natural OO)
+- **`Debugger` (Class)**: GDB RSPプロプライエタリな制御ロジック、デバッグ状態、およびブレークポイント管理をカプセル化した主要クラス。
 - **`debug_config` (View)**: 最大ブレークポイント数やポート番号などの不変の設定。
 
 ### 2.2 内部ブロック図
 ```mermaid
 graph TD
     subgraph Debugger_Layer
-        Harness[debugger_harness]
-        Ctrl[debug_controller]
-        Context[debugger_context]
+        Engine[Debugger Engine]
     end
 
     subgraph External
@@ -27,29 +24,21 @@ graph TD
         ECtx[execution_context]
     end
 
-    Ctrl -- uses --> Harness
-    Harness -- points to --> ECtx
-    Harness -- points to --> HAL
-    Ctrl -- operates on --> Context
-    Ctrl -- manages --> BP[breakpoint]
+    Engine -- holds references --> HAL
+    Engine -- holds reference --> ECtx
+    Engine -- manages --> BP[breakpoint]
 ```
 
 ### 2.3 主要なクラス・構造体・配列・定数
 
-#### `debugger_harness` (デバッガハーネス)
-外部依存関係を集約する。
+#### `Debugger` クラス
+依存関係（実行コンテキスト、HAL）と内部状態（ブレークポイント、現在状態）をカプセル化する。
 
 | 項目名 | 機能と役割 | 備考（制約、型など） |
 | :--- | :--- | :--- |
-| 実行コンテキスト | 操作対象となるWASM実行状態への参照。 | `execution_context*` |
+| 実行コンテキスト | 操作対象となるWASM実行状態への参照（プライベートメンバ）。 | `execution_context*` |
 | HALトランスポート | RSPパケットの送受信を担うHAL抽象化レイヤへの参照。 | `hal_transport*` |
 | `cmd_queue` | HALから供給されるコマンドキュー。 | `debug_command_queue*` |
-
-#### `debugger_context` (デバッガコンテキスト)
-可変状態を保持する。
-
-| 項目名 | 機能と役割 | 備考（制約、型など） |
-| :--- | :--- | :--- |
 | デバッグ状態 | デバッガの現在の動作モード（実行中、中断中など）。 | `debug_state` |
 | ブレークポイントリスト | 設定されているブレークポイントのアドレス一覧。 | 固定長配列 `{NoStdVector}` |
 | `last_stop_reason` | 直近の停止要因。 | 信号番号等 |
@@ -108,37 +97,20 @@ sequenceDiagram
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | 実行中のWASMエンジンに対してデバッグ機能を有効化し、初期停止状態（Halt）へ移行させる。 |
-| 引数と役割 | `ctx`: debugger_context, `harness`: debugger_harness |
+| 引数と役割 | `exec_ctx`: 操作対象コンテキスト, `transport`: HAL通信路 |
 | 期待する結果 | 正常：デバッガがコンテキストを掌握し、GDB等のツールによる操作が可能になる。 |
-| 事前条件 | インタープリタが初期化されており、`execution_context` が有効であること。 |
-| 事後条件 | `harness->exec_ctx` のハンドラテーブルが `debug_handler_table` に切り替わる。 |
-| 不変条件 | JITコンパイルが一時的に停止されること。 |
-| エラー時の挙動 | すでに他のデバッガが接続されている場合は拒否する。 |
-| 補足 | 接続後は最初の `poll` で GDB への接続を待機する。 |
 
 #### `poll_commands`
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | HAL層から供給されたデバッグコマンドを一つ処理し、実行コンテキストを制御する。 |
-| 引数と役割 | `ctx`: debugger_context, `harness`: debugger_harness |
 | 期待する結果 | 正常：保留中のコマンドが処理され、必要に応じて停止/継続が切り替わる。 |
-| 事前条件 | なし。 |
-| 事後条件 | `Stopped` 状態の場合は `Running` への遷移要求があるまでループする。 |
-| 不変条件 | 処理中にゲストリニアメモリの境界を侵害しないこと。 |
-| エラー時の挙動 | 不正なコマンドや書き込み失敗時は GDB へエラーパケットを通知する。 |
-| 補足 | 非同期な割り込みやブレークポイント検出による自発的な停止もここで処理される。 |
 
 #### `step_instruction`
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | 現在の停止位置からちょうど一命令だけをゲストに進ませる。 |
-| 引数と役割 | `ctx`: debugger_context, `harness`: debugger_harness |
 | 期待する結果 | 正常：一命令実行後に再び `Stopped` 状態になる。 |
-| 事前条件 | デバッガが `Stopped` 状態であること。 |
-| 事後条件 | PC（プログラムカウンタ）が命令の長さ分だけ進んでいること。 |
-| 不変条件 | 命令実行に伴う副次的なブレークポイントも正常に検知されること。 |
-| エラー時の挙動 | 命令実行中にトラップが発生した場合はトラップ原因を通知して停止する。 |
-| 補足 | マルチタスク環境下では、他のタスクが動作しないようロックを検討する場合がある。 |
 
 ### 4.2 URI/IPCインターフェイス
 - **コマンド入力**: HAL層からの内部関数呼び出し、または共有メモリ上のキュー経由。

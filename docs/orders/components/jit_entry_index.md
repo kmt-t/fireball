@@ -9,38 +9,29 @@ JIT Entry Index は、WASM 命令オフセット（PC） とそれに対応す�
 
 ## 3. 静的モデル
 
-### 2.1 データ構造
-- **JITエントリ表 (`jit_entry` Table)**: 命令オフセット（WASMオフセット）と生成コード位置（キャッシュ内オフセット）のペアをオフセット昇順で保持する配列。
-- **カードグループ索引 (Card Group Index)**: 複数のカードをグループ化し、各グループの最初の `jit_entry` の開始インデックスを保持する。検索範囲の絞り込みに使用する。
+### 2.1 データ構造 (Natural OO)
+- **`JitEntryIndex` (Class)**: WASMオフセットとネイティブコードの対応付け、および高速な検索ロジックをカプセル化した主要クラス。
+- **JITエントリ表 (`jit_entry` Table)**: 命令オフセットと生成コード位置のペアを管理する内部配列（プライベートメンバ）。
+- **カードグループ索引 (Card Group Index)**: 二分探索の範囲を絞り込むための補助的なインデックス（プライベートメンバ）。
 
 ### 2.2 内部ブロック図
 ```mermaid
 graph TD
-    Search[Search Request] --> Mark[Card Marking check]
-    Mark --> Card[Card Group Index lookup]
-    Card --> BinSearch[Binary Search in Range]
+    Search[Search Request] --> Engine[JitEntryIndex]
+    Engine -->|Step 1| Mark[Card Marking check]
+    Engine -->|Step 2| Card[Card Group lookup]
+    Engine -->|Step 3| BinSearch[Binary Search]
     BinSearch --> Result{Hit?}
-    Result -->|Active Hit| Return[Return Address]
-    Result -->|Active Miss| OldSearch[Search Old Cache]
-    OldSearch -->|Old Hit| Promote[Promote to Active]
 ```
 
-### 2.3 主要なクラス・構造体・配列・定数
-
-#### `jit_entry`
-PCとコードアドレスの対応。
+#### `JitEntryIndex` クラス
+検索最適化のためのデータ構造とアルゴリズムをカプセル化する。
 
 | 項目名 | 機能と役割 | 備考（制約、型など） |
 | :--- | :--- | :--- |
-| バイトコードオフセット | 元のWASMバイナリにおける命令の位置。 | 32bit |
-| 生成コード相対位置 | キャッシュ先頭からのオフセット。アライメント分だけ圧縮して保持。 | 16bit値 |
-
-#### `card_group_index`
-検索範囲を絞り込むためのインデックス。
-
-| 項目名 | 機能と役割 | 備考（制約、型など） |
-| :--- | :--- | :--- |
-| グループ先頭索引 | 該当する「カードグループ」範囲内の最初の実行エントリへの番号。 | 16bit |
+| エントリ配列 | ソート済みの `jit_entry` 群を保持する。 | 固定長配列等 |
+| グループ索引 | カードグループごとの開始インデックス。 | 固定長配列等 |
+| エントリ数 | 現在登録されているエントリ数。 | |
 
 ## 4. 動的モデル
 
@@ -90,16 +81,15 @@ sequenceDiagram
 #### `lookup`
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | 指定された命令オフセット（PC）に対応するネイティブコードアドレスを返す。 |
-| 引数と役割 | `ctx`: 実行コンテキスト, `pc`: WASM 命令オフセット (PC) |
+| 機能概要 | 命令オフセット（PC）に対応するネイティブコードアドレスを返す。 |
+| 引数と役割 | `pc`: WASM 命令オフセット |
 | 期待する結果 | ネイティブアドレス、または NULL。 |
 
 #### `register_entry`
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | 新しい命令オフセットとコードアドレスのペアを登録する。 |
-| 引数と役割 | `ctx`: 実行コンテキスト, `pc`: WASM 命令オフセット (PC), `offset`: コード相対位置 |
-| 事前条件 | 命令オフセット順を維持して挿入する必要がある（または挿入後にソート）。 |
+| 引数と役割 | `pc`: WASM 命令オフセット, `offset`: コード相対位置 |
 
 ## 6. 制約達成の方策
 

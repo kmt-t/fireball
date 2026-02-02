@@ -8,39 +8,39 @@ COOSスケジューラは、C++20コルーチンを活用したスタックレ�
 
 ## 3. 静的モデル
 
-### 3.1 データ構造 (Data / View)
+### 3.1 データ構造 (Natural OO)
+- **`Scheduler` (Class)**: タスクのREADYキュー管理、実行順序制御、およびコルーチン実行をカプセル化した主要クラス。
 - **`task_context` (Context)**: 各タスクの実行状態、スタック/ヒープ境界、コルーチンハンドルを集約したデータ構造。
 - **`scheduler_config` (View)**: 最大タスク数やタイムアウト閾値などの不変の設定。
-- **`scheduler_context` (Context)**: READYキュー、BLOCKEDリストなどの可変なスケジューラ状態。
 
 ### 3.2 内部ブロック図
 ```mermaid
 graph TD
-    subgraph Harness[Scheduler Harness]
-        H_IF[handler_dispatcher]
-        I_IF[interrupt_controller]
+    subgraph Scheduler_Layer
+        Engine[Scheduler Engine]
+        TCB[task_context]
     end
 
-    Sched[scheduler] --> TCB[task_context]
-    Sched --> Int[Interrupt Dispatcher]
-    
-    Harness -. provides .-> Sched
+    subgraph Dependency
+        I_IF[interrupt_controller]
+        H_IF[handler_dispatcher]
+    end
+
+    Engine -- holds references --> Dependency
+    Engine -- manages --> TCB
 ```
 
 ### 3.3 主要なデータ定義
 
-#### `task_context` (タスク制御ブロック)
-タスクの実行コンテキストとリソース状態を管理する。
+#### `Scheduler` クラス
+依存関係（割り込み制御等）とタスクキューをカプセル化する。
 
 | 項目名 | 機能と役割 | 備考（制約、型など） |
 | :--- | :--- | :--- |
-| タスク識別子 | システム内で一意に特定するための番号。 | `task_state` |
-| デバッグ名称 | 開発時にタスクを識別するための表示用名。 | `char[16]` |
-| 動作状態 | タスクの現在の稼働状況。 | 列挙型 |
-| コルーチン制御ハンドル | C++20 コルーチンの実行を制御するハンドル。 | `std::coroutine_handle<>` |
-| メモリ区画 | タスク固有のメモリパーティション情報。 | `memory_partition` |
-| タイムアウト時刻 | タイムアウト期待時刻。 | `uint64_t` |
-| 次要素ポインタ | 侵入型リスト用ポインタ。 | `task_context*` (禁止コンテナ回避) |
+| 割り込み制御機 | 物理ハードウェア（NVIC等）の制御用。 | `interrupt_controller*` |
+| 実行可能列 | 次に実行すべきタスクの優先度付きキュー（侵入型リスト）。 | `task_context*` (ReadyQueue) |
+| 待機リスト | イベントや時間待ちを行っているタスクのリスト（侵入型）。 | `task_context*` (WaitList) |
+| 現在のタスク | 現在CPUコアを占有しているタスク。 | `task_context*` |
 
 ## 4. 動的モデル
 
@@ -71,24 +71,23 @@ stateDiagram-v2
 
 ## 5. インターフェイス設計 (Stateless Interface)
 
-### 5.1 `scheduler` (スケジューラ・インターフェイス)
-タスク操作の抽象仕様を定義する。全ての操作は `scheduler_context` を引数として受け取る。
+#### `spawn`
+| 項目 | 内容 |
+| :--- | :--- |
+| 機能概要 | 新しいコルーチンタスクを READY キューに追加する。 |
+| 引数と役割 | `handle`: コルーチンハンドル, `memory_size`: 予約メモリ領域 |
+| 期待する結果 | 新タスクIDを返却。 |
 
-| 操作名 | 機能概要 | 引数 | 期待する結果 |
-| :--- | :--- | :--- | :--- |
-| `spawn` | 新しいタスクを生成。 | ctx, config, 関数, メモリサイズ | 新タスクIDを返却 |
-| `yield` | 実行権を放棄。 | ctx | スケジューラに制御を戻す |
-| `wait` | 時間待ち。 | ctx, ティック数 | 指定時間経過後に再開 |
-| `exit` | タスク終了。 | ctx | TCB/スタックの解放 |
-| `notify_interrupt`| 割り込み通知。 | ctx, タスクID | 対象タスクを再開 |
+#### `yield`
+| 項目 | 内容 |
+| :--- | :--- |
+| 機能概要 | 現在のタスクの実行を中断し、スケジュールの再評価を行う。 |
 
-### 5.2 `scheduler_harness` (スケジューラ・ハーネス)
-スケジューラが依存する外部機能を集約する。PODとして扱うためメンバに末尾アンダースコアは付与しない。 `{StaticDI}`
-
-| 項目名 | 機能と役割 | 備考（制約、型など） |
-| :--- | :--- | :--- |
-| 割り込み振分機 | 発生した割り込みを適切なハンドラへ供給する。 | `handler_dispatcher*` |
-| 割り込み制御機 | 物理ハードウェア（NVIC等）の制御を抽象化する。 | `interrupt_controller*` |
+#### `notify_interrupt`
+| 項目 | 内容 |
+| :--- | :--- |
+| 機能概要 | ハードウェア割り込みの発生を通知し、待機中タスクを READY へ移行させる。 |
+| 引数と役割 | `task_id`: 再開対象のタスク |
 
 ## 6. 設計判断 (ADR)
 

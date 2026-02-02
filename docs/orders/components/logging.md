@@ -13,6 +13,7 @@
 
 ### 2.2 内部ブロック図
 ```mermaid
+graph TD
     subgraph Logging_Layer
         Engine[Logger Engine]
         RB[Internal Ring Buffer]

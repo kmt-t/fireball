@@ -15,6 +15,7 @@ vMMIO (Virtual Memory-Mapped I/O) は、WASMゲストアプリケーションに
 
 ### 2.2 内部ブロック図
 ```mermaid
+graph TD
     subgraph vMMIO_Layer
         Controller[VmmioController]
         Registry[Hook Registry]

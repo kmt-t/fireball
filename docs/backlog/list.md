@@ -16,8 +16,37 @@ WAMRに対する優位性を早期に証明するため、vSoCを他のコンポ
 
 「設計駆動開発」の核となるインターフェイス定義の品質を担保するための基盤を構築する。
 
+### 0.6.1 依存関係の最小インターフェイス定義 🔴
+
+vSoCが依存する他コンポーネントの「最小限のインターフェイス」を定義する。
+
+- [ ] `inc/wasm/loader.hxx` - `WasmLoader` クラスの前方宣言とコアAPI
+- [ ] `inc/exec/interpreter.hxx` - `Interpreter` クラスの前方宣言
+- [ ] `inc/exec/jit_compiler.hxx` - `JitCompiler` クラスの前方宣言
+- [ ] `inc/vmmio/controller.hxx` - `VmmioController` クラスの前方宣言
+- [ ] `inc/debug/debugger.hxx` - `Debugger` クラスの前方宣言
+
+**見積もり**: 1-2時間  
+**理由**: vSoCの `vsoc_harness` 構造体を定義するために、依存先の型定義が必要。
+
+### 0.6.2 vSoCインターフェイス定義 🔴
+
+vSoCのC++インターフェイスを定義する。
+
+- [ ] `inc/vsoc/vsoc.hxx` - vSoCの公開インターフェイス
+  - [ ] `struct vsoc_harness`
+  - [ ] `struct vsoc_context`
+  - [ ] `struct vsoc_config`
+  - [ ] 関数シグネチャ: `load_module`, `step_execution`, `notify_virtual_interrupt`, `register_vmmio_hook`
+- [ ] `vsoc_validate_ptr` 関数を追加 (`{Challenge_SyscallMemorySafety}` 対応)
+
+**見積もり**: 2-3時間  
+**理由**: 設計書の内容をC++型システムへ変換する。
+
+### 0.6.3 従来のタスク
+
 - [ ] **インターフェイス設計パターンの定義**: `docs/orders/patterns/interface.md` の作成。 `{Policy_Interface}`
-- [ ] **vSoC インターフェイスの刷新**: 新ルールに基づき `inc/vsoc/vsoc.hxx` を再構築。 `std::function` の排除。
+- [x] **vSoC インターフェイスの刷新**: 新ルールに基づき `inc/vsoc/vsoc.hxx` を再構築。 `std::function` の排除。 ← 優先度2で実施
 - [ ] **依存性注入 (DI) モデルの確定**: コンパイル時DIを実現するためのマクロ・テンプレート・アロケータの連携。
 - [ ] **エラーハンドリング体系の統合**: システム全域で一貫したエラーコードと例外代替手段の策定。
 

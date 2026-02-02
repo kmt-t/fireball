@@ -1,3 +1,5 @@
+# JIT Compiler コンポーネント設計書
+
 ## 1. コンセプト
 JIT Compiler は、WASMバイトコードを実行時にネイティブコードへ変換し、実行速度を向上させる。Execution Engine (`executor`) の一部として、インタープリタと一対の「実行エンジン」として機能する。極小リソース環境（RAM 64KB）において、コンパイルコストを極小化する「Zero Compile Cost 定理」に基づき、最適化を省いた高速な **Copy-and-Patch** 方式を採用する。 `{LowLatencyJIT}` `{JIT_CopyAndPatch}` `{JIT_ZeroCompileCostTheorem}` `{SimpleJITArchitecture}` `{PeriodicTask}` `{IdleDetection}`
 
@@ -46,32 +48,32 @@ graph TD
 #### `jit_harness` (JITハーネス)
 サブコンポーネントへのポインタを集約する。
 
-| 項目名 | 機能と役割 | 備考（制約、型など） |
-| :--- | :--- | :--- |
-| ホットスポット検知器 | 命令の実行頻度を監視するサブコンポーネント。 | `HotspotDetector*` |
-| パッチエンジン | テンプレートからコードを生成するサブコンポーネント。 | `CopyAndPatchEngine*` |
-| エントリ索引 | PCと生成コードの対応を管理する索引。 | `JitEntryIndex*` |
-| キャッシュマネージャ | 生成コードのメモリ領域を管理するサブコンポーネント。 | `jit_cache_manager*` |
+| 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
+| :--- | :--- | :--- | :--- |
+| ホットスポット検知器 | 命令の実行頻度を監視するサブコンポーネント | 構造体への参照 | [`hotspot_detector`](jit_hotspot_detector.md) (非所有) |
+| パッチエンジン | テンプレートからコードを生成するサブコンポーネント | 構造体への参照 | [`copy_and_patch_engine`](jit_copy_and_patch_engine.md) (非所有) |
+| エントリ索引 | PCと生成コードの対応を管理する索引 | 構造体への参照 | [`jit_entry_index`](jit_entry_index.md) (非所有) |
+| キャッシュマネージャ | 生成コードのメモリ領域を管理するサブコンポーネント | 構造体への参照 | 独自構造体 (非所有) |
 
 #### `jit_context` (JITコンテキスト)
 可変状態を保持する。
 
-| 項目名 | 機能と役割 | 備考（制約、型など） |
-| :--- | :--- | :--- |
-| アクティブ領域 | 現在使用中の書き込み・実行用キャッシュバンク。 | `jit_cache_partition` |
-| バックアップ領域 | 前回GC時のデータが残る退避用領域。 | `jit_cache_partition` |
-| コンパイル待ち列 | 後でコンパイルを行うPCの順番リスト。 | 固定長配列等 |
-| 実行履歴マップ | 命令の実行頻度を記録するビットマップ。 | `uint8_t[]` |
+| 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
+| :--- | :--- | :--- | :--- |
+| アクティブ領域 | 現在使用中の書き込み・実行用キャッシュバンク | データ範囲 | `std::span<uint8_t>` |
+| バックアップ領域 | 前回GC時のデータが残る退避用領域 | データ範囲 | `std::span<uint8_t>` |
+| コンパイル待ち列 | 後でコンパイルを行うPCの順番リスト | ソート済み配列 | - |
+| 実行履歴マップ | 命令の実行頻度を記録するビットマップ | データ範囲 | `std::span<uint8_t>` |
 
 #### `jit_config` (JIT構成)
 JITエンジンの挙動を制御する性能パラメータ。 `{ConfigurableSystem}`
 
-| 項目名 | 機能と役割 | 備考（制約、型など） |
-| :--- | :--- | :--- |
-| 単一バンク上限 | 各キャッシュ領域（Active/Old）の最大バイト数。 | バイト数（2のべき乗） |
-| 最大登録件数 | 1つのバンクに保持可能な最大トレース件数。 | エントリ数 |
-| カード境界シフト | カード1枚がカバーするWASMサイズ（2のべき乗）。 | シフト量 |
-| 命令境界シフト | 生成コードのアドレスアライメント。 | シフト量 |
+| 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
+| :--- | :--- | :--- | :--- |
+| 単一バンク上限 | 各キャッシュ領域（Active/Old）の最大バイト数 | バイト数 | 32bit符号なし（2のべき乗） |
+| 最大登録件数 | 1つのバンクに保持可能な最大トレース件数 | エントリ数 | 32bit符号なし |
+| カード境界シフト | カード1枚がカバーするWASMサイズ（2のべき乗） | シフト量 | 8bit符号なし |
+| 命令境界シフト | 生成コードのアドレスアライメント | シフト量 | 8bit符号なし |
 
 ## 4. 動的モデル
 
@@ -193,10 +195,10 @@ JITトレース検索時の内部状態と期待される挙動を検証する�
 ### 5.2 内部コンポーネントのデコンポジション
 JITエンジンの責務を、以下の独立したサブコンポーネントに分離して設計する。
 
-- **[JIT Hotspot Detector](file:///n:/sources/fireball/docs/orders/components/jit_hotspot_detector.md)**: 実行履歴の監視とコンパイル要否の判定。
-- **[Copy-and-Patch Engine](file:///n:/sources/fireball/docs/orders/components/jit_copy_and_patch_engine.md)**: 命令テンプレートを用いたネイティブコード生成。
-- **[JIT Entry Index](file:///n:/sources/fireball/docs/orders/components/jit_entry_index.md)**: PC-アドレス変換テーブルの管理と検索高速化。
-- **[constexpr Assembler](file:///n:/sources/fireball/docs/orders/components/constexpr_assembler.md)**: 静的な命令エンコード DSL。
+- **[JIT Hotspot Detector](jit_hotspot_detector.md)**: 実行履歴の監視とコンパイル要否の判定。
+- **[Copy-and-Patch Engine](jit_copy_and_patch_engine.md)**: 命令テンプレートを用いたネイティブコード生成。
+- **[JIT Entry Index](jit_entry_index.md)**: PC-アドレス変換テーブルの管理と検索高速化。
+- **[constexpr Assembler](constexpr_assembler.md)**: 静的な命令エンコード DSL。
 
 ## 6. インターフェイス定義
 
@@ -204,11 +206,13 @@ JITエンジンの責務を、以下の独立したサブコンポーネント�
 外部から利用可能なオブジェクト指向APIを定義する。
 
 #### `initialize`
+
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | コードキャッシュ領域、管理テーブル、およびホットスポットビットマップの初期化を行う。 |
-| 引数と役割 | `ctx`: jit_context, `config`: JIT構成。 |
-| 期待する結果 | 正常：JITコンパイラがReady状態になり、検索およびコンパイルが可能な状態になる。 |
+| シグネチャ | `initialize(ctx: 可変参照, config: const参照) -> 結果型` |
+| 引数 | `ctx`: JITコンテキスト (`jit_context`) への可変参照<br>`config`: JIT構成 (`jit_config`) への読取専用参照 |
+| 戻り値 | 結果型 (成功時は空、エラー時はエラーコード) |
 | 事前条件 | 設定パラメータが一貫しており、静的に確保されたメモリの範囲を超えていないこと。 |
 | 事後条件 | ビットマップがクリアされ、キャッシュが空の状態になる。 |
 | 不変条件 | 実行中に `config` の値を変更してはならない。 |
@@ -216,22 +220,27 @@ JITエンジンの責務を、以下の独立したサブコンポーネント�
 | 補足 | `{ConfigurableSystem}` の方針に基づき、基本的にはブート時に一度だけ呼び出される。 |
 
 #### `lookup_trace`
+
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | 指定されたWASMプログラムカウンタ(PC)に対応する、コンパイル済みのネイティブコードの実行アドレスを高速に検索する。 |
-| 引数と役割 | `ctx`: jit_context, `harness`: jit_harness, `pc`: WASM PC |
-| 期待する結果 | 正常：JITコードのアドレス。未コンパイル、あるいはJIT無効時はNULL。 |
+| シグネチャ | `lookup_trace(ctx: 可変参照, harness: 構造体への参照, pc: オフセット) -> オプショナル値` |
+| 引数 | `ctx`: JITコンテキスト への可変参照<br>`harness`: JITハーネス への参照<br>`pc`: WASM PC |
+| 戻り値 | オプショナル値 (成功時は関数ポインタ、失敗時は空) |
 | 事前条件 | JITコンパイラが初期化済みであること。 |
 | 事後条件 | なし。 |
 | 不変条件 | 検索は O(log N) またはカードインデックスによる高速な定数時間（概算）で終了すること。 |
-| エラー時の挙動 | 検索中に境界例外が発生した場合は、安全のためNULLを返しインタープリタへフォールバックさせる。 |
+| エラー時の挙動 | 検索中に境界例外が発生した場合は引数を返さず（空の値）、インタープリタへフォールバックさせる。 |
 | 補足 | インタープリタの主要なループ内で呼び出されるため、極めて高い実行効率が要求される。 |
 
 #### `process_batch_compile`
+
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | インタープリタが収集した履歴を基にコンパイルを実行する。 |
-| 引数と役割 | `ctx`: jit_context, `harness`: jit_harness |
+| シグネチャ | `process_batch_compile(ctx: 可変参照, harness: 構造体への参照) -> void` |
+| 引数 | `ctx`: JITコンテキスト への可変参照<br>`harness`: JITハーネス への参照 |
+| 戻り値 | void |
 | 補足 | `executor` 実装内で `co_yield` 発生時に呼び出され、アイドル時間等を活用して処理される。 |
 
 ### 6.2 URI/IPCインターフェイス

@@ -80,6 +80,10 @@ graph TD
 | `0x14` | `REG_SYSCALL_ARG0` | R/W | 第1引数 / 戻り値 |
 | `0x18` | `REG_SYSCALL_ARG1` | R/W | 第2引数 |
 | `0x1C` | `REG_SYSCALL_ARG2` | R/W | 第3引数 |
+| `0x20` | `REG_SYSCALL_ARG3` | R/W | 第3引数 |
+| `0x24` | `REG_SYSCALL_ARG4` | R/W | 第3引数 |
+| `0x28` | `REG_SYSCALL_ARG5` | R/W | 第3引数 |
+| `0x2C` | `REG_SYSCALL_ARG6` | R/W | 第3引数 |
 
 ### 4.4 VDMA レジスタ詳細
 | オフセット | レジスタ名 | R/W | 説明 |

@@ -66,13 +66,13 @@ RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
  && apt-get install -y --no-install-recommends nodejs \
  && rm -rf /var/lib/apt/lists/*
 
-# LLVM latest version (Clang/Clang-D/LLD/LLDB/Ninja)
+# LLVM latest version (Clang/Clang-D/LLD/LLDB/Ninja/Format/Tidy)
 RUN set -eux; \
     wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh; \
     chmod +x /tmp/llvm.sh; \
     bash /tmp/llvm.sh; \
     apt-get update; \
-    apt-get install -y --no-install-recommends clang clangd lld lldb ninja-build; \
+    apt-get install -y --no-install-recommends clang clangd lld lldb clang-format clang-tidy ninja-build; \
     rm -rf /var/lib/apt/lists/* /tmp/llvm.sh
 
 # pipx (for user-level tool installation)
@@ -116,6 +116,8 @@ RUN apt-get update \
 RUN echo "=== Tools versions ===" \
  && clang --version || true \
  && clangd --version || true \
+ && clang-format --version || true \
+ && clang-tidy --version || true \
  && lld --version || true \
  && su - ${DEVELOPER_USER} -c "${DEVELOPER_HOME}/.local/bin/meson --version" || true \
  && ninja --version || true \

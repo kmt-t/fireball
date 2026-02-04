@@ -44,7 +44,15 @@ WASMローダは、ROM上のWASM32バイナリをパースし、実行環境が�
 #### `module_view` (モジュールビュー)
 ROM上のバイナリデータに対する「窓」として機能する。
 データをRAM上に展開するのではなく、必要な時に必要な情報へアクセスするためのアクセサを提供する。
-これにより、RAM消費を最小限（オフセット配列のみ）に抑えつつ、クライアントに対しては型安全なインターフェイスを提供する。 `{ROMParsing}`
+
+| 項目名 | 機能と役割 | 型分類 | 備考 |
+| :--- | :--- | :--- | :--- |
+| バイナリ参照 | ROM上のWASMバイナリ全体への参照 | `std::span` | - |
+| セクション索引 | 各セクション（Type, Code等）の開始位置とサイズ | 配列 | 検索高速化用 |
+| スタート関数 | 起動時に自動実行される関数のインデックス | オプショナル値 | Section ID 8 |
+| データセグメント数 | Data Section に含まれるセグメントの数 | オプショナル値 | Section ID 12 (Data Count) |
+
+これらにより、RAM消費を最小限（オフセット配列のみ）に抑えつつ、クライアントに対しては型安全なインターフェイスを提供する。 `{ROMParsing}`
 
 #### `function_accessor` (関数アクセサ)
 関数の詳細情報へアクセスするための一時的なプロキシオブジェクト。
@@ -107,6 +115,7 @@ sequenceDiagram
     Loader->>ROM: read_header
     Loader->>Loader: verify_magic_and_version
     Loader->>ROM: scan_sections
+    Note over Loader: Handle Start (8) and Data Count (12)
     Loader->>Alloc: allocate(section_index)
     Loader->>Loader: build_dictionaries
     Loader-->>Client: result<module_view>

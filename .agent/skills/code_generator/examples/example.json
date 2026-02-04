@@ -1,0 +1,25 @@
+{
+  "namespace": "fireball::example",
+  "definitions": [
+    {
+      "type": "enum",
+      "name": "result_code",
+      "description": "API実行結果",
+      "items": [
+        { "name": "success", "value": 0, "description": "成功" },
+        { "name": "fail", "value": 1, "description": "失敗" },
+        { "name": "timeout", "value": 2, "description": "タイムアウト" }
+      ]
+    },
+    {
+      "type": "struct",
+      "name": "config_params",
+      "description": "システム設定パラメータ",
+      "is_class": true,
+      "members": [
+        { "name": "max_retry", "type": "uint32_t", "description": "最大再試行回数" },
+        { "name": "timeout_ms", "type": "uint32_t", "description": "タイムアウト(ms)" }
+      ]
+    }
+  ]
+}

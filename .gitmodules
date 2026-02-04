@@ -1,0 +1,9 @@
+[submodule "docs/orders/references/webassembly"]
+	path = docs/orders/references/webassembly
+	url = git@github.com:WebAssembly/spec.git
+[submodule "docs/orders/references/wasi"]
+	path = docs/orders/references/wasi
+	url = git@github.com:WebAssembly/WASI.git
+[submodule "docs/orders/references/wamr"]
+	path = docs/orders/references/wamr
+	url = https://github.com/bytecodealliance/wasm-micro-runtime.git

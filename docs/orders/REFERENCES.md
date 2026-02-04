@@ -2,8 +2,8 @@
 
 ## 言語・標準仕様
 - **C++20 Coroutines**: [ISO/IEC 14882:2020](https://www.iso.org/standard/79358.html)
-- **WebAssembly Core Specification**: [W3C WebAssembly Core Specification](https://www.w3.org/TR/wasm-core-1/)
-- **WASI (WebAssembly System Interface)**: [WASI Specification](https://wasi.dev/)
+- **WebAssembly Core Specification**: [W3C WebAssembly Core Specification](https://www.w3.org/TR/wasm-core-1/) ([local](references/webassembly))
+- **WASI (WebAssembly System Interface)**: [WASI Specification](https://wasi.dev/) ([local](references/wasi))
 
 ## RFC (Request for Comments)
 - **RFC 3986**: [Uniform Resource Identifier (URI): Generic Syntax](https://datatracker.ietf.org/doc/html/rfc3986) (IPCルータのURI形式)
@@ -16,7 +16,7 @@
 - **GDB Remote Serial Protocol (RSP)**: [GDB Documentation - Remote Protocol](https://sourceware.org/gdb/onlinedocs/gdb/Remote-Protocol.html)
 
 ## リファレンス実装
-- **WAMR (WebAssembly Micro Runtime)**: [GitHub - bytecodealliance/wasm-micro-runtime](https://github.com/bytecodealliance/wasm-micro-runtime) (組み込み向けWASMランタイムの参照)
+- **WAMR (WebAssembly Micro Runtime)**: [GitHub - bytecodealliance/wasm-micro-runtime](https://github.com/bytecodealliance/wasm-micro-runtime) (組み込み向けWASMランタイムの参照, [local](references/wamr))
 - **WasmEdge**: [GitHub - WasmEdge/WasmEdge](https://github.com/WasmEdge/WasmEdge) (高性能WASMランタイムの参照)
 - **wasi-libc**: [GitHub - WebAssembly/wasi-libc](https://github.com/WebAssembly/wasi-libc) (WASI実装の参照)
 - **dlmalloc**: [Doug Lea's Memory Allocator](https://gee.cs.oswego.edu/dl/html/malloc.html) (メモリ管理実装の参照)

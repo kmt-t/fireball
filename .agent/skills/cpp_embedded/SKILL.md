@@ -46,7 +46,23 @@ description: 組み込み環境（メモリ制約）におけるC++実装スキ�
 
 ---
 
-## L3: 判断基準 (Decision Guides)
+## 自動チェックツール
+
+L1規則（禁止ライブラリ・機能）への準拠を自動的に検証するためのスクリプトが用意されています。
+
+### 使用方法
+
+```bash
+python3 .agent/skills/cpp_embedded/scripts/checker.py <ソースファイルまたはディレクトリ>
+```
+
+### 検証対象
+- 禁止されたヘッダ（`<vector>`, `<iostream>` 等）のインクルード。
+- 禁止された型や関数（`std::vector`, `std::unique_ptr`, `malloc`, `std::function` 等）の利用。
+
+---
+
+## 3. 判断基準 (Decision Guides)
 
 ### 1. 3-Tier分離の選択
 

@@ -41,7 +41,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
 ENV DEVELOPER_USER=developer
 ENV DEVELOPER_HOME=/home/${DEVELOPER_USER}
-ENV PATH=${DEVELOPER_HOME}/.local/bin:/root/.local/bin:${PATH}
+ENV PATH=${DEVELOPER_HOME}/.local/bin:${DEVELOPER_HOME}/.cargo/bin:/root/.local/bin:${PATH}
 
 # Basic packages (build-essential, git, python3, cmake, etc.)
 RUN set -eux; \
@@ -112,6 +112,14 @@ RUN apt-get update \
     qemu-system-arm qemu-system-riscv32 \
  && rm -rf /var/lib/apt/lists/*
 
+# Rust + WIT tools
+ENV RUSTUP_HOME=${DEVELOPER_HOME}/.rustup \
+    CARGO_HOME=${DEVELOPER_HOME}/.cargo
+
+RUN set -eux; \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | runuser -u ${DEVELOPER_USER} -- sh -s -- -y --no-modify-path; \
+    runuser -u ${DEVELOPER_USER} -- ${DEVELOPER_HOME}/.cargo/bin/cargo install wit-bindgen-cli wasm-tools;
+
 # Display tool versions for build log
 RUN echo "=== Tools versions ===" \
  && clang --version || true \
@@ -122,9 +130,11 @@ RUN echo "=== Tools versions ===" \
  && su - ${DEVELOPER_USER} -c "${DEVELOPER_HOME}/.local/bin/meson --version" || true \
  && ninja --version || true \
  && pandoc --version || true \
- && node --version || true \
- && npm --version || true \
- && mmdc --version || true \
- && su - ${DEVELOPER_USER} -c "/usr/bin/pipx list" || true
+  && node --version || true \
+  && npm --version || true \
+  && mmdc --version || true \
+  && su - ${DEVELOPER_USER} -c "cargo --version" || true \
+  && su - ${DEVELOPER_USER} -c "wit-bindgen --version" || true \
+  && su - ${DEVELOPER_USER} -c "/usr/bin/pipx list" || true
 
 CMD ["/bin/bash"]

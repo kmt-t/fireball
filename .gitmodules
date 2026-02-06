@@ -6,4 +6,4 @@
 	url = git@github.com:WebAssembly/WASI.git
 [submodule "docs/orders/references/wamr"]
 	path = docs/orders/references/wamr
-	url = https://github.com/bytecodealliance/wasm-micro-runtime.git
+url=git@github.com:bytecodealliance/wasm-micro-runtime.git

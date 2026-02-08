@@ -17,7 +17,7 @@
         "ms-vscode.cpptools",
         "vadimcn.vscode-lldb",
         "mesonbuild.mesonbuild",
-        "Google.geminicodeassist",
+        "google.gemini-cli-vscode-ide-companion",
         "rooveterinaryinc.roo-code-nightly",
         "continue.continue",
         "bierner.markdown-mermaid"

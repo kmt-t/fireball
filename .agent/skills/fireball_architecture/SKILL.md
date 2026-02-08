@@ -7,68 +7,26 @@ description: Fireballプロジェクト固有のアーキテクチャパター�
 
 本プロジェクト（Fireball）の設計・実装において遵守すべき構造的ルールとパターン。
 
----
+## 1. コア原則
 
-## L1: 機械的ルール (常に自動適用)
-
-### 1. 命名規則
-
-| 対象 | 形式 | 例 |
-|:---|:---|:---|
-| Class / Struct / Enum / Function / Variable | `snake_case` | `ipc_router`, `send_message` |
-| Const / Macro | `UPPER_SNAKE_CASE` | `MAX_BUFFER_SIZE` |
-| Class Instance Member | `variable_` | `cache_size_` |
-| Class Static Member | `variable__` | `instance_count__` |
-| typedef | `type_name_t` | `size_t`, `callback_t` |
-
-**ファイル**:
-- ヘッダ: `inc/path/to/file.hxx`
-- ソース: `src/path/to/file.cxx`
-
-**禁止事項**:
-- ❌ struct/class名に `_t` postfix を使用してはならない
-- ❌ キャメルケース (`CamelCase`, `camelCase`) は使用してはならない
-
-### 2. コードフォーマット
-
-- **インデント**: スペース2つ（タブ禁止）
-- **1行の長さ**: 最大100文字
-- **波括弧**: K&R スタイル (Attach)
-- **ポインタ・参照**: 左寄せ (`int* ptr`, `const T& obj`)
-- **アクセス修飾子**: クラスの波括弧からインデントさせない
-
-### 3. 必須実装規約
-
-- **引数渡し**: クラス・構造体は `const T&` で渡す（値渡し禁止）
-- **コンパイル時計算**: `constexpr`, `consteval`, `static_assert` を積極使用
-- **型の明示**: `auto` は型が自明な場合のみ使用
-- **void* 禁止**: 型安全性のため禁止、構造化データを使用
-
----
-
-## L2: 設計原則
-
-
-### 1. コア原則
-
-#### メモリ効率最優先 `{Policy_Memory}`
+### メモリ効率最優先 `{Policy_Memory}`
 - **RAM 64KB** の制約下で動作
 - ヒープメモリの使用を最小化
 - メモリパーティション設計によるヒープの隔離
 
-#### 静的解決優先 `{Static_Resolution}`
+### 静的解決優先 `{Static_Resolution}`
 - 可能な限りコンパイル時に計算・検証を完結
 - `constexpr`, `consteval`, `static_assert` 活用
 - 動的な型消去が必要な場合は静的バッファ使用
 
-#### 型安全性 `{TypeSafety}`
+### 型安全性 `{TypeSafety}`
 - `void*` 禁止
 - DTOによる構造化データの明示
 - インターフェイス境界での型の明記
 
-### 2. アーキテクチャ原則
+## 2. アーキテクチャ原則
 
-#### 制御の反転 (IoC) `{IoC}` `{CleanArchitecture}`
+### 制御の反転 (IoC) `{IoC}` `{CleanArchitecture}`
 - インターフェイス仕様は**利用側（内側の層）**が定義する
 - 実装側への依存を逆転させ疎結合を実現する
 - URIによるサービス識別とルックアップを行う
@@ -76,7 +34,7 @@ description: Fireballプロジェクト固有のアーキテクチャパター�
 
 **詳細**: [ioc.md](../../docs/orders/patterns/ioc.md)
 
-#### 3-Tier モジュール分離 `{3TierSeparation}`
+### 3-Tier モジュール分離 `{3TierSeparation}`
 
 システム複雑度に応じた抽象化レベルの選択：
 
@@ -88,12 +46,12 @@ description: Fireballプロジェクト固有のアーキテクチャパター�
 
 **詳細**: [interface.md](../../docs/orders/patterns/interface.md)
 
-#### UNIX哲学
+### UNIX哲学
 - 単一責務の原則を徹底する
 - シンプルさとコンポーザビリティを重視する
 - グルーコード層は薄く保つ
 
-### 3. 実装原則
+## 3. 実装原則
 
 #### Harness / Stateless Interface `{ComponentHarness}` `{StaticDI}`
 
@@ -105,21 +63,21 @@ description: Fireballプロジェクト固有のアーキテクチャパター�
 
 **原則**:
 - インターフェイスは状態を持たない
-- オブジェクトは内部状態（キャッシュ等）を持つ可能がある
-- コンテキストは引数で渡す
+- オブジェクトは内部状態（キャッシュ等）を持つ可能性がある
+- コンテキストは引数で渡すこと
 
 **詳細**: [harness.md](../../docs/orders/patterns/harness.md)
 
-#### Data/View 分離 `{DataViewSeparation}`
+### Data/View 分離 `{DataViewSeparation}`
 - **View**: ROM上のバイナリは `std::span` でビュー化（コピーしない）
 - **Context**: 実行時の可変状態は `context` 構造体に集約
 
-#### RAIIによるリソース管理 `{RAII}`
+### RAIIによるリソース管理 `{RAII}`
 - すべてのリソース解放はデストラクタに任せる
 - 手動の `free()`, `unlock()` 呼び出しは禁止
 - 例外安全（本システムではアボート安全）を確保する
 
-### 4. モダンC++20の活用
+## 4. モダンC++20の活用
 
 - **Concepts**: 型制約の明示
 - **Coroutines**: 非同期処理の簡潔な記述
@@ -127,7 +85,7 @@ description: Fireballプロジェクト固有のアーキテクチャパター�
 
 ---
 
-## パターンカタログ
+# パターンカタログ
 
 設計時に参照すべきパターン一覧：
 
@@ -139,5 +97,3 @@ description: Fireballプロジェクト固有のアーキテクチャパター�
 | **経済的な関数** | ヒープレス型消去 | [economic_function.md](../../docs/orders/patterns/economic_function.md) |
 | **ソート済み配列** | `std::map`の代替 | [sorted_indexed_array.md](../../docs/orders/patterns/sorted_indexed_array.md) |
 | **標準ライブラリ** | 許可・禁止ライブラリ | [stdlib.md](../../docs/orders/patterns/stdlib.md) |
-
-**フォーマット**: [FORMAT.md](../../docs/orders/patterns/FORMAT.md)

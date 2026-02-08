@@ -1,15 +1,128 @@
 package fireball:host;
 
+interface types {
+    /// Error codes for Fireball HAL and system services.
+    enum error-code {
+        success,
+        invalid-argument,
+        timeout,
+        hardware-error,
+        access-denied,
+        not-supported,
+        unknown
+    }
+
+    /// Generic status result.
+    type status = result<_, error-code>;
+}
+
+interface poll {
+    /// A resource that can be polled for readiness.
+    resource pollable {
+        /// Returns true if the resource is ready.
+        ready: func() -> bool;
+        /// Blocks until the resource is ready.
+        block: func();
+    }
+}
+
+interface streams {
+    use poll.{pollable};
+    use types.{error-code};
+
+    /// An input byte stream.
+    resource input-stream {
+        /// Performs a non-blocking read.
+        read: func(len: u64) -> result<list<u8>, error-code>;
+        /// Performs a blocking read.
+        blocking-read: func(len: u64) -> result<list<u8>, error-code>;
+        /// Subscribes to readiness events for this stream.
+        subscribe: func() -> pollable;
+    }
+
+    /// An output byte stream.
+    resource output-stream {
+        /// Performs a non-blocking write.
+        write: func(data: list<u8>) -> result<_, error-code>;
+        /// Performs a blocking write and flush.
+        blocking-write: func(data: list<u8>) -> result<_, error-code>;
+        /// Subscribes to readiness events for this stream.
+        subscribe: func() -> pollable;
+    }
+}
+
 interface trap {
-  /// Performs a host call with a given ID and arguments.
-  ///
-  /// `id`: The identifier for the host operation.
-  /// `arg0`, `arg1`, `arg2`, `arg3`: General-purpose arguments.
-  ///
-  /// Returns a `u32` result, typically an error code or a direct return value.
-  fireball_call: func(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32, arg4: u32, arg5: u32) -> u32;
+    /// Performs a low-level host call with raw arguments.
+    /// This is used for high-performance or legacy system services.
+    fireball-call: func(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32, arg4: u32, arg5: u32) -> u32;
+}
+
+/// High-responsiveness Trigger (GPIO) interface.
+interface trigger {
+    use types.{status, error-code};
+
+    /// Sets the output value of a physical pin.
+    set-pin: func(pin: u32, value: bool) -> status;
+    /// Gets the current value of a physical pin.
+    get-pin: func(pin: u32) -> result<bool, error-code>;
+}
+
+/// Timer and sleep services.
+interface timer {
+    use poll.{pollable};
+
+    /// A timer instance.
+    resource timer-handle {
+        /// Returns the current monotonic time in nanoseconds.
+        now: func() -> u64;
+        /// Creates a pollable that resolves after the specified duration.
+        subscribe-duration: func(nanos: u64) -> pollable;
+    }
+}
+
+/// Master and Slave Bus communication (I2C, SPI, etc.)
+interface bus {
+    use types.{status, error-code};
+    use poll.{pollable};
+
+    /// A bus master device.
+    resource bus-master {
+        /// Performs a synchronous transfer (write then read or simultaneous).
+        transfer: func(tx-data: list<u8>, rx-len: u32) -> result<list<u8>, error-code>;
+    }
+
+    /// A bus slave device.
+    resource bus-slave {
+        /// Sets the response data for the next master read request.
+        set-response: func(data: list<u8>) -> status;
+        /// Gets the data received from the last master write request.
+        get-received: func() -> result<list<u8>, error-code>;
+        /// Subscribes to bus access events (e.g. addressed as slave).
+        subscribe: func() -> pollable;
+    }
+}
+
+/// One-way streaming data transfer.
+interface streaming {
+    use streams.{input-stream, output-stream};
+
+    /// A streaming data producer.
+    resource streaming-master {
+        /// Gets the output stream for sending data.
+        get-output-stream: func() -> output-stream;
+    }
+
+    /// A streaming data consumer.
+    resource streaming-slave {
+        /// Gets the input stream for receiving data.
+        get-input-stream: func() -> input-stream;
+    }
 }
 
 world fireball {
-  export trap;
+    import trap;
+    import trigger;
+    import timer;
+    import bus;
+    import streaming;
 }

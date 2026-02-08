@@ -13,17 +13,13 @@
 package fireball:host;
 
 interface trap {
-  /// Performs a host call with a given ID and arguments.
-  ///
-  /// `id`: The identifier for the host operation.
-  /// `arg0`, `arg1`, `arg2`, `arg3`: General-purpose arguments.
-  ///
-  /// Returns a `u32` result, typically an error code or a direct return value.
+  /// Performs a low-level host call with raw arguments.
   fireball-call: func(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32, arg4: u32, arg5: u32) -> u32;
 }
 
 world fireball {
-  export trap;
+  import trap;
+  // 他の高レベル・インターフェイス（timer, bus, streams等）は別途定義
 }
 ```
 
@@ -53,16 +49,17 @@ world fireball {
 // inc/fireball_syscalls.hxx (仮)
 enum class FBSyscallId : uint32_t {
     FB_SYSCALL_RESERVED = 0,
-    // WASI File System
-    FB_SYSCALL_WASI_FD_WRITE = 1,
-    FB_SYSCALL_WASI_FD_READ = 2,
-    FB_SYSCALL_WASI_FD_SEEK = 3,
-    FB_SYSCALL_WASI_FD_CLOSE = 4,
-    // ... その他WASI関数
+    
+    // High-responsiveness Trigger (GPIO)
+    FB_SYSCALL_TRIGGER_SET_PIN = 0x10,
+    FB_SYSCALL_TRIGGER_GET_PIN = 0x11,
+
+    // WASI legacy fallback (必要に応じて)
+    FB_SYSCALL_WASI_FD_WRITE = 0x20,
+    
     // vMMIO
     FB_SYSCALL_VMMIO_READ = 0x1000,
     FB_SYSCALL_VMMIO_WRITE = 0x1001,
-    // ... その他Fireball固有サービス
 };
 ```
 
@@ -71,42 +68,27 @@ enum class FBSyscallId : uint32_t {
 ### 6.1. 役割 (Role)
 ゲストのWASI互換ライブラリ（`wasi-libc`など）からの呼び出しを傍受し、`fireball_call`呼び出し規約に従ってホストの`fireball_call`へ変換する。
 
-### 6.2. WASI `fd_write` のマッピング例 (Example: WASI `fd_write` Mapping)
-WASI `fd_write` のシグネチャ:
-`fd_write(fd: fd, iovs: const_iovec_array, num_iovs: size) -> result<size, errno>`
+### 6.2. 高応答 Trigger のマッピング例 (Example: Fast-Path Trigger Mapping)
+`interface trigger` の `set_pin` は、最小レイテンシを確保するために `fireball_call` を直接使用する。
 
 `fireball_call` へのマッピング:
-*   `id`: `FB_SYSCALL_WASI_FD_WRITE`
-*   `arg0`: `fd` (ファイルディスクリプタ)
-*   `arg1`: `iovs_ptr` (ゲストメモリ内の `wasi_iovec_t` 配列のポインタ)
-*   `arg2`: `iovs_len` (配列の要素数)
-*   `arg3`: `nwritten_ptr` (書き込まれたバイト数を格納するゲストメモリ上の `size_t` のポインタ)
-*   `arg4`: `0` (未使用)
-*   `arg5`: `0` (未使用)
+*   `id`: `FB_SYSCALL_TRIGGER_SET_PIN`
+*   `arg0`: `pin` (ピン番号)
+*   `arg1`: `value` (0 または 1)
 
-`wasi_iovec_t` 構造体はゲストメモリに配置される。
 ```c
-// ゲスト側 (libfireball_shim.h)
-typedef struct {
-    uint32_t buf;  // ポインタ (ゲストメモリ内のアドレス)
-    uint32_t buf_len; // バッファ長
-} wasi_iovec_t;
-
-// ゲスト側でのfd_writeの実装例
-ssize_t __wasi_fd_write(int fd, const wasi_iovec_t* iovs, size_t iovs_len, size_t* nwritten) {
-    uint32_t result = __fireball_call(
-        (uint32_t)FBSyscallId::FB_SYSCALL_WASI_FD_WRITE,
-        (uint32_t)fd,
-        (uint32_t)iovs, // iovs配列のゲストメモリ上のポインタ
-        (uint32_t)iovs_len,
-        (uint32_t)nwritten, // nwritten変数のゲストメモリ上のポインタ
-        0, // 未使用
-        0  // 未使用
+// ゲスト側での trigger.set_pin の実装例 (Shim)
+void fireball_trigger_set_pin(uint32_t pin, bool value) {
+    __fireball_call(
+        (uint32_t)FBSyscallId::FB_SYSCALL_TRIGGER_SET_PIN,
+        pin,
+        (uint32_t)value,
+        0, 0, 0, 0
     );
-    // resultからerrnoへの変換処理
-    return (ssize_t)result; // 便宜上の変換。実際はWASIのエラーハンドリングに従う
 }
 ```
+> [!IMPORTANT]
+> WASI 0.2 標準のリソース（`output-stream` 等）は、対応する WIT インターフェイスの実装関数を通じて呼び出されるが、`trigger` のように極めて高い応答性が求められる HAL 操作には、この `fireball_call` によるバイパス（Fast-Path）を適用する。
 
 ## 7. WASIホスト側実装 (WASI Host-Side Implementation)
 
@@ -131,16 +113,16 @@ ssize_t __wasi_fd_write(int fd, const wasi_iovec_t* iovs, size_t iovs_len, size_
 ホストは、ゲストに対して**仮想割り込み**をトリガーすることで、イベントの発生を通知する。これはvSoCの`notify_virtual_interrupt`機能を利用する。
 
 #### 8.1.1. 仮想割り込みID (Virtual Interrupt IDs)
-各仮想割り込みにはユニークなIDが割り当てられる。これらのIDは、`inc/fireball_virtual_interrupts.hxx`などのヘッダファイルで定義される。
+これらのIDは、WASI 0.2 の `pollable` リソースをホスト側で ready 状態にするためのトリガーとして使用される。
 
 例:
 ```cpp
 // inc/fireball_virtual_interrupts.hxx (仮)
 enum class FBVirtualInterruptId : uint32_t {
     FB_VIRT_INT_RESERVED = 0,
-    FB_VIRT_INT_UART0_RX_READY = 1,
-    FB_VIRT_INT_TIMER0_EXPIRED = 2,
-    // ... その他割り込みイベント
+    FB_VIRT_INT_TRIGGER_EVENT = 1, // 高速トリガーイベント
+    FB_VIRT_INT_TIMER_EXPIRED = 2, // WASI Clocks 用
+    FB_VIRT_INT_STREAM_READY = 3,  // WASI I/O 用
 };
 ```
 

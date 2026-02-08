@@ -59,9 +59,15 @@ graph TD
 
 ---
 
-### Tier 1: アーキテクチャドメインモジュール (Clean Architecture / IoC)
+### Tier 1: アーキテクチャドメインモジュール (Clean Architecture / IoC / WIT-First)
 
 **設計原則**:
+- **WIT-First**: システム全体の主要境界インターフェースは、C++での実装に先立ち、WebAssembly Interface Type (WIT) で定義すること。 `{WIT_First}`
+    - これにより、メモリ管理や具体的な言語仕様から独立した「純粋な契約（Pure Contract）」を定義する。
+- **ドメインの完全な分離**: 以下の3つのドメインを混ぜることなく、明確に分離して定義すること。 `{Domain_Separation}`
+    - **HAL (Hardware Abstraction Layer)**: 物理デバイスへの抽象アクセス。
+    - **Syscall (Trap/Core)**: ゲストとホストの最小限の通信路（fireball-call等）。
+    - **System Services**: COOS（スケジューラ）や IPC Router など、アーキテクチャ上の主要サービス。
 - システム全体を疎結合なレベルで分割し、配置・移植の単位とする。 `{CleanArchitecture}`
 - インターフェイスの仕様は「利用側（内側の層）」が定義し、実装側への依存を逆転させる。 `{IoC}`
 - サービスの識別にはURIを用い、ルックアップにより動的または静的に依存関係を解決する。 `{URIAbstraction}` `{IPCDI}`

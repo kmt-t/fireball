@@ -3,14 +3,12 @@
  *
  * Copyright (c) 2025 Takuya Matsunaga.
  */
-#ifndef FIREBALL_ALLOCATOR_BUMP_ALLOCATOR_HXX
-#define FIREBALL_ALLOCATOR_BUMP_ALLOCATOR_HXX
+#pragma once
 
-#include <commons.hxx>
+#include <fireball.hxx>
 #include <memory_resource>
 
-namespace fireball {
-namespace allocator {
+namespace fireball::allocator {
 
 /**
  * bump_allocator - Monotonic buffer resource for fixed-size heap partitions.
@@ -48,7 +46,4 @@ private:
   uint8_t arena_[N];
 }; // struct bump_allocator : public std::pmr::monotonic_buffer_resource
 
-} // namespace allocator
-} // namespace fireball
-
-#endif // #ifndef FIREBALL_ALLOCATOR_BUMP_ALLOCATOR_HXX
+} // namespace fireball::allocator

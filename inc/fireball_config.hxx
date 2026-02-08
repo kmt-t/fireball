@@ -3,8 +3,7 @@
  *
  * Copyright (c) 2025 Takuya Matsunaga.
  */
-#ifndef FIREBALL_CONFIG_HXX
-#define FIREBALL_CONFIG_HXX
+#pragma once
 
 #include <cstdint>
 
@@ -36,5 +35,3 @@ static constexpr std::uint32_t FB_CONF_LOG_BUFFER_SIZE = 512U;
 // Debugger
 static constexpr std::uint32_t FB_CONF_DEBUG_MAX_BREAKPOINTS = 8U;
 static constexpr std::uint32_t FB_CONF_DEBUG_PACKET_SIZE = 1024U;
-
-#endif // #ifndef FIREBALL_CONFIG_HXX

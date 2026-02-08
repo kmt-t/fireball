@@ -1,0 +1,57 @@
+package fireball:host;
+
+interface vsoc {
+    use types.{status, error-code};
+
+    /// vSoC Instance Configuration.
+    record vsoc-config {
+        jit-enabled: bool,
+        code-cache-size: u32,
+        ram-base: u32,
+        ram-size: u32,
+        vmmio-base: u32,
+    }
+
+    /// vSoC Runtime Status.
+    enum vsoc-state {
+        idle,
+        loading,
+        ready,
+        running,
+        debugging,
+        error,
+    }
+
+    /// vSoC Controller.
+    /// Manages the lifecycle and execution of a virtual machine instance.
+    resource vsoc-controller {
+        /// Creates a new vSoC controller instance.
+        constructor(cfg: vsoc-config);
+
+        /// Loads a WASM module from binary data.
+        /// Performs validation and prepares the module for execution.
+        load-module: func(bin: list<u8>) -> status;
+
+        /// Executes the guest code until yield, trap, or interrupt.
+        step: func() -> status;
+
+        /// Stops the vSoC and releases associated resources.
+        stop: func();
+
+        /// Resets the vSoC to its initial state.
+        reset: func() -> status;
+
+        /// Injects a virtual interrupt into the guest environment.
+        notify-interrupt: func(irq-id: u32);
+
+        /// Returns the current execution state.
+        get-state: func() -> vsoc-state;
+
+        /// Gets the current guest program counter (WASM offset).
+        get-pc: func() -> u32;
+    }
+}
+
+world vsoc-world {
+    import vsoc;
+}

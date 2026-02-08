@@ -1,0 +1,17 @@
+package fireball:host;
+
+interface types {
+    /// Error codes for Fireball HAL and system services.
+    enum error-code {
+        success,
+        invalid-argument,
+        timeout,
+        hardware-error,
+        access-denied,
+        not-supported,
+        unknown
+    }
+
+    /// Generic status result.
+    type status = result<_, error-code>;
+}

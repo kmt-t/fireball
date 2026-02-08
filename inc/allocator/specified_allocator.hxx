@@ -3,11 +3,9 @@
  *
  * Copyright (c) 2025 Takuya Matsunaga.
  */
-#ifndef FIREBALL_ALLOCATOR_SPECIFIED_ALLOCATOR_HXX
-#define FIREBALL_ALLOCATOR_SPECIFIED_ALLOCATOR_HXX
+#pragma once
 
-#include <array>
-#include <commons.hxx>
+#include <fireball.hxx>
 #include <memory_resource>
 
 extern "C" {
@@ -20,8 +18,7 @@ extern void mspace_free(mspace, void*);
 
 } // extern "C" {
 
-namespace fireball {
-namespace allocator {
+namespace fireball::allocator {
 
 /**
  * specified_allocator - Flexible memory allocator using dlmalloc (mspace).
@@ -80,7 +77,4 @@ private:
 
 }; // struct specified_allocator : public std::pmr::memory_resource {
 
-} // namespace allocator
-} // namespace fireball
-
-#endif // #ifndef FIREBALL_ALLOCATOR_SPECIFIED_ALLOCATOR_HXX
+} // namespace fireball::allocator

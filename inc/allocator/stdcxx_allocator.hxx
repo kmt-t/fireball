@@ -3,15 +3,12 @@
  *
  * Copyright (c) 2025 Takuya Matsunaga.
  */
-#ifndef FIREBALL_ALLOCATOR_STDCXX_ALLOCATOR_HXX
-#define FIREBALL_ALLOCATOR_STDCXX_ALLOCATOR_HXX
+#pragma once
 
 #include <allocator/specified_allocator.hxx>
-#include <commons.hxx>
-#include <new>
+#include <fireball.hxx>
 
-namespace fireball {
-namespace allocator {
+namespace fireball::allocator {
 
 /**
  * stdcxx_allocator_tag - Type tag for C++ standard library allocator.
@@ -34,8 +31,7 @@ struct stdcxx_allocator_tag {};
  */
 using stdcxx_allocator = specified_allocator<FIREBALL_HOST_HEAP_SIZE, stdcxx_allocator_tag>;
 
-} // namespace allocator
-} // namespace fireball
+} // namespace fireball::allocator
 
 [[nodiscard]]
 extern void* operator new(std::size_t num);
@@ -60,5 +56,3 @@ extern void operator delete(void* ptr, std::size_t num, std::align_val_t align) 
 extern void operator delete(void* ptr, const std::nothrow_t&) noexcept;
 
 extern void operator delete(void* ptr, std::align_val_t align, const std::nothrow_t&) noexcept;
-
-#endif // #ifndef FIREBALL_ALLOCATOR_STDCXX_ALLOCATOR_HXX

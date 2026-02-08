@@ -3,14 +3,11 @@
  *
  * Copyright (c) 2025 Takuya Matsunaga.
  */
-#ifndef FIREBALL_UTILS_BACKTRACE_HXX
-#define FIREBALL_UTILS_BACKTRACE_HXX
+#pragma once
 
-#include <commons.hxx>
-#include <stdexcept>
+#include <fireball.hxx>
 
-namespace fireball {
-namespace utils {
+namespace fireball::utils {
 
 /**
  * Exception with backtrace.
@@ -81,7 +78,4 @@ extern void report_backtrace_and_terminate(const char* msg) noexcept;
     BACKTRACE("this is not implemented yet.");                                                     \
   } while (false);
 
-} // namespace utils
-} // namespace fireball
-
-#endif // #ifndef FIREBALL_UTILS_BACKTRACE_HXX
+} // namespace fireball::utils

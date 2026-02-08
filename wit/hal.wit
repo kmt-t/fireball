@@ -1,21 +1,5 @@
 package fireball:host;
 
-interface types {
-    /// Error codes for Fireball HAL and system services.
-    enum error-code {
-        success,
-        invalid-argument,
-        timeout,
-        hardware-error,
-        access-denied,
-        not-supported,
-        unknown
-    }
-
-    /// Generic status result.
-    type status = result<_, error-code>;
-}
-
 interface poll {
     /// A resource that can be polled for readiness.
     resource pollable {
@@ -27,8 +11,8 @@ interface poll {
 }
 
 interface streams {
-    use poll.{pollable};
     use types.{error-code};
+    use poll.{pollable};
 
     /// An input byte stream.
     resource input-stream {
@@ -49,12 +33,6 @@ interface streams {
         /// Subscribes to readiness events for this stream.
         subscribe: func() -> pollable;
     }
-}
-
-interface trap {
-    /// Performs a low-level host call with raw arguments.
-    /// This is used for high-performance or legacy system services.
-    fireball-call: func(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32, arg4: u32, arg5: u32) -> u32;
 }
 
 /// High-responsiveness Trigger (GPIO) interface.
@@ -119,8 +97,7 @@ interface streaming {
     }
 }
 
-world fireball {
-    import trap;
+world hal {
     import trigger;
     import timer;
     import bus;

@@ -9,22 +9,17 @@
 - Phase1: 4ヶ月 → 3ヶ月（-1ヶ月）
 - **総期間は変更なし**: 年内リリース目標を維持
 
-## 優先度 1: インターフェイス設計ルールの確立とvSoC設計の完成
+- [ ] **Tier 1 WITインターフェースの完全定義 (Highest)**:
+    - [x] `wit/hal.wit` のドメイン分離と精緻化
+    - [x] `wit/syscall.wit` のドメイン分離
+    - [x] `wit/services.wit` (COOS/IPC) の新規定義
+    - [ ] WITからC++へのマッピング（Harnessパターン）の定義
 
-「良いインターフェイス」を安定して生成するため、設計ルールを明文化し、vSoCのインターフェイスを抜本的に見直す。
-
-- [ ] **インターフェイス設計パターンの策定 (Highest)**:
-    - [ ] `docs/orders/patterns/interface.md` の新規作成
-    - [ ] IoC (依存性の逆転) を実現するためのクラス設計
-    - [ ] `std::function` を使わないイベント/コールバックパターンの定義
-    - [ ] ゼロコピーを実現するDTO (Data Transfer Object) の設計指針
-    - [ ] 自然言語による「Contract (契約)」の記述ルール
-
-- [ ] **vSoC C++インターフェースの再定義 (High)**:
-    - [ ] `inc/vsoc/vsoc.hxx` の全面リファクタリング
+- [ ] **vSoC C++インターフェースの実装 (High)**:
+    - [ ] WIT定義に基づく `inc/vsoc/vsoc.hxx` の再構築
+    - [ ] `struct vsoc_harness` の完全定義 (Static DI)
     - [ ] 禁止ライブラリ (`std::function`) の完全排除
     - [ ] 状態遷移とライフサイクル管理の明確化
-    - [ ] 依存性注入 (DI) シグネチャの確定
 
 - [x] **vSoC詳細設計の完成**:
     - [x] インタープリタ実行モデルの定義
@@ -44,8 +39,8 @@ vSoCの先行開発を可能にするため、Mock実装可能なレベルのイ
 - [ ] **IPC Router最小インターフェース**:
     - [ ] URI解決APIの定義
     - [ ] チャネル取得のAPI定義
-- [ ] **HAL最小インターフェース**:
-    - [ ] UART, Timerのstub定義
+- [x] **HAL最小インターフェース**:
+    - [x] UART, Timerのstub定義 (WITインターフェースとして定義済)
 
 ## 優先度 3: JIT詳細設計と技術検証
 
@@ -61,8 +56,9 @@ vSoCの先行開発を可能にするため、Mock実装可能なレベルのイ
 ## Week別アクションアイテム（Phase0: 2026/01-03）
 
 ### Week 1-2（2026/01/29 進捗会議結果）
-- [ ] **インターフェイス指針策定**: `docs/orders/patterns/interface.md`
-- [ ] **vSoCインターフェイス刷新**: `inc/vsoc/vsoc.hxx`
+- [x] **インターフェイス指針策定**: `docs/orders/patterns/interface.md` (WIT-First追記)
+- [x] **Tier 1 WIT定義完了**: HAL, Syscall, Serviceの分離化
+- [ ] **vSoCインターフェイス刷新**: `inc/vsoc/vsoc.hxx` (WITマッピング)
 - [ ] JIT技術PoC: constexprアセンブラの実現可能性検証
 
 ### Week 3-4

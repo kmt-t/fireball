@@ -41,7 +41,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
 ENV DEVELOPER_USER=developer
 ENV DEVELOPER_HOME=/home/${DEVELOPER_USER}
-ENV PATH=${DEVELOPER_HOME}/.local/bin:${DEVELOPER_HOME}/.cargo/bin:/root/.local/bin:${PATH}
+ENV PATH=${DEVELOPER_HOME}/.local/bin:${DEVELOPER_HOME}/.cargo/bin:${PATH}
 
 # Basic packages (build-essential, git, python3, cmake, etc.)
 RUN set -eux; \
@@ -103,7 +103,7 @@ RUN apt-get update \
     libxrandr2 libxss1 libxtst6 xdg-utils \
  && rm -rf /var/lib/apt/lists/*
 
-RUN npm install -g --unsafe-perm=true @mermaid-js/mermaid-cli puppeteer
+RUN npm install -g @google/gemini-cli @mermaid-js/mermaid-cli puppeteer
 
 # Valgrind + QEMU (for memory profiling and cross-target execution)
 RUN apt-get update \
@@ -133,6 +133,7 @@ RUN echo "=== Tools versions ===" \
   && node --version || true \
   && npm --version || true \
   && mmdc --version || true \
+  && gemini --version || true \
   && su - ${DEVELOPER_USER} -c "cargo --version" || true \
   && su - ${DEVELOPER_USER} -c "wit-bindgen --version" || true \
   && su - ${DEVELOPER_USER} -c "/usr/bin/pipx list" || true

@@ -6,26 +6,22 @@
   },
   "remoteUser": "developer",
   "mounts": [
-    "source=${localWorkspaceFolder}/home,target=/home/developer,type=bind,consistency=cached"
+    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.ssh,target=/home/developer/.ssh,type=bind,consistency=cached",
+    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.gitconfig,target=/home/developer/.gitconfig,type=bind,consistency=cached",
+    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.gemini,target=/home/developer/.gemini,type=bind,consistency=cached"
   ],
   "customizations": {
     "vscode": {
       "settings": {},
       "extensions": [
-        "ms-azuretools.vscode-containers",
         "ms-vscode.cpptools",
         "vadimcn.vscode-lldb",
         "mesonbuild.mesonbuild",
+        "Google.geminicodeassist",
         "rooveterinaryinc.roo-code-nightly",
         "continue.continue",
         "bierner.markdown-mermaid"
       ]
     }
-  },
-  "features": {
-    "ghcr.io/devcontainers/features/node:1": {
-      "version": "24"
-    }
   }
 }
-  

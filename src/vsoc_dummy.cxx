@@ -8,14 +8,15 @@
 int main(int argc, char** argv) {
   std::cout << "Fireball vSoC Standalone Harness starting..." << std::endl;
 
-  fireball::vsoc::instance_config config = {
+  static constexpr fireball::vsoc::instance_config dummy_config = {
       .jit_enabled = false,
       .jit_cache_size = FB_CONF_JIT_CACHE_SIZE,
       .ram_base_addr = FB_CONF_GUEST_RAM_BASE,
       .ram_size_bytes = FB_CONF_GUEST_RAM_SIZE,
       .vmmio_base_addr = FB_CONF_VMMIO_BASE,
       .vmmio_max_regions = FB_CONF_VMMIO_MAX_REGIONS};
-  fireball::vsoc::runtime runtime(config);
+  
+  fireball::vsoc::runtime<dummy_config> runtime;
 
   if (argc > 1) {
     std::string filename = argv[1];

@@ -50,11 +50,28 @@ struct execution_context {
 /**
  * @brief vSoC Controller / Manager.
  * Orchestrates the vSoC lifecycle.
+ *
+ * @tparam Config Reference to the static configuration instance.
+ *                Must be a compile-time constant or static duration object.
  */
+template <const instance_config& Config>
 class runtime {
 public:
-  explicit runtime(const instance_config& config);
-  runtime(const instance_config& config, const harness& harness);
+  // Using default constructor as config is now a template parameter
+  runtime() : context_{}, harness_{} {
+    context_.state = execution_state::IDLE;
+    context_.pc = 0;
+    context_.irq_flags = 0;
+  }
+
+  // Constructor with harness injection
+  explicit runtime(const harness& harness)
+      : context_{}, harness_(harness) {
+    context_.state = execution_state::IDLE;
+    context_.pc = 0;
+    context_.irq_flags = 0;
+  }
+
   ~runtime() = default;
 
   // Disable copy
@@ -64,34 +81,63 @@ public:
   /**
    * @brief Loads a WASM module from binary data.
    */
-  operation_result load(binary_view bin);
+  operation_result load(binary_view bin) {
+    (void)bin;
+    context_.state = execution_state::READY;
+    return {}; // Returns default success result (void)
+  }
 
   /**
    * @brief Executes the guest code until yield, trap, or interrupt.
    */
-  operation_result step();
+  operation_result step() {
+    if (context_.state != execution_state::READY &&
+        context_.state != execution_state::RUNNING) {
+      // TODO: Return actual error code when result type is fully defined
+      return {}; 
+    }
+
+    context_.state = execution_state::RUNNING;
+
+    // Direct access to Config (Compile-time constant)
+    // auto ram_base = Config.ram_base_addr; 
+
+    // TODO: Implement execution loop
+
+    context_.state = execution_state::READY;
+    return {};
+  }
 
   /**
    * @brief Stops the vSoC and releases associated resources.
    */
-  void stop();
+  void stop() { context_.state = execution_state::IDLE; }
 
   /**
    * @brief Resets the vSoC to its initial state.
    */
-  operation_result reset();
+  operation_result reset() {
+    context_.state = execution_state::IDLE;
+    context_.pc = 0;
+    context_.irq_flags = 0;
+    return {};
+  }
 
   /**
    * @brief Injects a virtual interrupt into the guest environment.
    */
-  void notify_interrupt(std::uint32_t irq_id);
+  void notify_interrupt(std::uint32_t irq_id) {
+    context_.irq_flags |= (1U << irq_id);
+  }
 
   // Getters
   execution_state get_state() const { return context_.state; }
   wasm_pc get_pc() const { return context_.pc; }
+  
+  // Accessor for the static configuration
+  static constexpr const instance_config& config() { return Config; }
 
 private:
-  instance_config config_;
   execution_context context_;
   harness harness_;
 };

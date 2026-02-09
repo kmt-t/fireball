@@ -89,11 +89,18 @@ sequenceDiagram
     - メリット：構成ミスを早期発見でき、ROM化や定数畳み込みの恩恵を受けやすい。
 - **所有権の分離**: ハーネスは「参照」を保持するものであり、所有権は保持しない。コンポーネントの実体は、より上位（Main/System）で静的またはスタック上に確保される。
 
-### 3.3 データとビューの分離 (Data/View Separation)
+### 3.3 静的コンフィギュレーション (Static Configuration Pattern)
+- **テンプレート引数によるDI**: アプリケーションライフサイクルを通じて不変な設定値（メモリマップ、バッファサイズ等）は、コンストラクタ引数ではなく**参照型のテンプレート引数**として注入する。
+    - メリット：
+        - **ROM化の強制**: 設定値をコンパイル時定数として扱うことで、RAM上のポインタ保持を排除し、Immediate値としてコード領域に埋め込むことができる。
+        - **最適化**: 条件分岐の定数畳み込みやデッドコード削除など、コンパイラによる強力な最適化を促進する。
+    - 適用例：`vSoC` のインスタンス設定、メモリコントローラのバンク構成など。
+
+### 3.4 データとビューの分離 (Data/View Separation)
 - **View**: ROM上のバイナリや定数データは、コピーせず `std::span` 等を用いた「View」として扱う。
 - **Context**: 実行に必要な変数は全て `context` 構造体に集約し、メソッド間でリレーする。
 
-### 3.4 命名とContract
+### 3.5 命名とContract
 - **名前空間とインターフェイス**: 機能のまとまりはインターフェイス（抽象クラス）で表現し、詳細な構成は名前空間で整理する。
 - **Contract**: メソッドは入力（Context, View）に対して何を行うか、事前・事後条件をコメントで明記する。
 
@@ -169,3 +176,37 @@ harness.processor.process(config, ctx)
 - [x] 状態（Data）と定義（View）が明確に分離されているか
 - [x] インターフェイスは状態定義を含まないか
 - [x] 依存関係は Harness 構造体を通じて外部から与えられているか(Static DI)
+
+## 6. C++実装例: Static Configuration Pattern
+```cpp
+// 1. Configuration (Compile-time definition)
+struct instance_config {
+    std::uint32_t buffer_size;
+    std::uint32_t timeout_ms;
+};
+
+// 2. Implementation (Template Class)
+// Config is a reference template parameter -> Enforces static storage duration
+template <const instance_config& Config>
+class driver_impl {
+public:
+    void process() {
+        // Optimized: access to Config.buffer_size is treated as immediate value
+        if (buffer_pos_ < Config.buffer_size) {
+            // ...
+        }
+    }
+private:
+    std::uint32_t buffer_pos_ = 0;
+};
+
+// 3. Usage (Static Instantiation)
+// Must be static or extern (static storage duration)
+static constexpr instance_config my_config = { 
+    .buffer_size = 1024, 
+    .timeout_ms = 100 
+};
+
+// Instantiation: The template parameter refers to the compile-time constant
+driver_impl<my_config> my_driver;
+```

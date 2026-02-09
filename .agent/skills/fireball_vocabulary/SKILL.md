@@ -237,13 +237,14 @@ using data_range = std::span<T>;
 
 | 仕様型名 | 意味 | 構造 | 実装例 |
 |:--------|:-----|:-----|:------|
-| 結果型 | 成功値またはエラーコードを返却 | 判別共用体（`Ok<T>` または `Err<E>`） | `result<T, E>` |
+| 結果型 | 成功値またはリカバリー戦略を返却 | 判別共用体（`Ok<T>` または `Err<E>`） | `result<T, E>` |
+| 操作結果 | 値を返さない操作の成功またはリカバリー戦略 | 判別共用体（`Ok` または `Err<E>`） | `operation_result` |
 | オプショナル値 | 値の有無を表現 | 判別共用体（`Some<T>` または `None`） | `optional<T>` |
 | 検証結果 | 検証の成否と失敗時の詳細情報 | 成功フラグ + エラー情報（条件付き） | `verification_result` |
 
 **使用例**:
 ```
-戻り値 | モジュールロードの成否 | 結果型 | 成功時は空、失敗時は`load_error`を返却
+戻り値 | モジュールロードの成否 | 結果型 | 成功時は空、失敗時はリカバリー戦略（`failure`等）を返却
 ```
 
 **記述規則**:
@@ -346,21 +347,22 @@ module_view load_module(binary_view wasm_binary);
 | 状況 | 推奨される戻り値型 | 例 |
 |:-----|:----------------|:---|
 | エラーが発生しない | 値型 (`T`) | `uint32_t get_pc()` |
-| エラーが発生する可能性 | 結果型 (`result<T, E>`) | `result<void, error> load()` |
+| エラーが発生する可能性 | 結果型 (`result<T, E>`) | `result<void, recovery_strategy> load()` |
 | 値が存在しない可能性 | オプショナル型 (`optional<T>`) | `optional<uint32_t> find()` |
-| 副作用のみ | `void` | `void notify()` |
+| 副作用のみ（失敗しうる） | 操作結果 (`operation_result`) | `operation_result notify()` |
+| 副作用のみ（失敗しない） | `void` | `void notify_noexcept()` |
 | 大きなデータへの参照 | ビュー型 | `binary_view get_data()` |
 
 **コード例**:
 ```cpp
-// void: 副作用のみ
+// void: 副作用のみ（失敗しない）
 void notify_interrupt(uint32_t irq_id);
 
 // 値: プリミティブ型
 uint32_t get_program_counter();
 
 // 結果型: エラーハンドリング
-result<void, load_error> load_module(binary_view binary);
+result<void, recovery_strategy> load_module(binary_view binary);
 
 // オプショナル: 値が存在しない可能性
 optional<uint32_t> lookup_symbol(const char* name);
@@ -382,7 +384,7 @@ binary_view get_code_section(uint32_t func_index);
 
 | 仕様書での表記 | C++実装例 |
 |:-------------|:---------|
-| `load(binary: バイナリビュー) -> 結果型` | `result<void, load_error> load(binary_view binary)` |
+| `load(binary: バイナリビュー) -> 結果型` | `result<void, recovery_strategy> load(binary_view binary)` |
 | `get_pc() -> オフセット` | `offset_t get_pc()` |
 | `step(ctx: 可変参照) -> void` | `void step(execution_context& ctx)` |
 | `find(name: 文字列) -> オプショナル値` | `optional<uint32_t> find(const char* name)` |
@@ -565,6 +567,7 @@ void register_vmmio_hook(vmmio_callback callback);
 | バイナリビュー | `std::span<const uint8_t>` | C++20 |
 | データ範囲 | `std::span<T>` | C++20 |
 | 結果型 | `result<T, E>` | 独自実装 |
+| 操作結果 | `operation_result` | 独自実装 |
 | オプショナル値 | `optional<T>` | 独自実装または`std::optional` |
 | ソート済み配列 | 固定長配列 | |
 | 構造体への参照 (非所有) | `const T*`, `const T&` | |
@@ -609,7 +612,8 @@ using interrupt_flags = uint32_t;
 | バイナリビュー | `binary_view` | `std::span<const uint8_t>` | ROM上のバイト列への読取専用参照 |
 | バイナリビュー（可変） | `mutable_binary_view` | `std::span<uint8_t>` | RAM上のバイト列への書込可能参照 |
 | データ範囲 | `data_range<T>` | `std::span<T>` | メモリ上の特定範囲（テンプレート） |
-| 結果型 | `result<T, E>` | 独自実装 | 成功値またはエラーコードを返却 |
+| 結果型 | `result<T, E>` | 独自実装 | 成功値またはリカバリー戦略を返却 |
+| 操作結果 | `operation_result` | 独自実装 | 値を返さない操作の成功またはリカバリー戦略 |
 | オプショナル値 | `optional<T>` | 独自実装 | 値の有無を表現 |
 | 経済的な関数 | `economic_function<Sig>` | 独自実装 | 型消去された関数オブジェクト（ヒープレス） |
 
@@ -623,6 +627,8 @@ using data_range = std::span<T>;
 
 template<typename T, typename E>
 using result = /* result型の独自実装 */;
+
+using operation_result = result<void, recovery_strategy>; // 操作結果
 
 template<typename T>
 using optional = /* optional型の独自実装 */;

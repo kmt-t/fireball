@@ -3,7 +3,7 @@
  *
  * Copyright (c) 2025 Takuya Matsunaga.
  */
-#include "commons.hxx"
+#include "../inc/fireball.hxx"
 
 /**
  * entrypont.

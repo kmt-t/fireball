@@ -28,15 +28,21 @@ std::string make_massage(const std::string& msg) {
 
 } // namespace
 
+#if defined(__cpp_exceptions)
 exception_with_backtrace::exception_with_backtrace(const std::string& msg)
     : std::runtime_error(make_massage(msg)) {}
+#endif
 
 void report_backtrace_and_terminate(const char* msg) noexcept {
+#if defined(__cpp_exceptions)
   try {
     std::cerr << make_massage(msg) << std::endl;
   } catch (...) {
     // ignore.
   }
+#else
+  std::cerr << make_massage(msg) << std::endl;
+#endif
   std::terminate();
 }
 

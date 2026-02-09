@@ -29,6 +29,7 @@
 *   **クラスの静的メンバー**: `variable__` (末尾にアンダースコア2つ)。
 *   **構造体 (POD/DTO) メンバー**: `variable` (末尾にアンダースコアなし。カプセル化されたメンバーにのみアンダースコアを使用)。
 *   **型接尾辞**: `_t` 接尾辞は `typedef` 宣言にのみ許可される。`struct` または `class` 名には使用しないこと。`using` エイリアスの場合は、接尾辞なしで `snake_case` ルールに従うこと。
+*   **単体での意図の明確化**: クラスや構造体の名前は、名前空間によって保護されている場合でも、単体でその役割と文脈が理解できる名前とすること。`Manager`、`Data`、`Info`、`Impl` などの一般的すぎる名前は避け、`service_manager`、`session_data`、`connection_info` のように具体的に記述すること。
 
 ## 4. 型語彙とエイリアス
 
@@ -55,7 +56,8 @@
 | バイナリビュー | Binary View   | `binary_view`            | `std::span<const uint8_t>` | ROM上のバイト列への読取専用参照          |
 | バイナリビュー（可変）| Mutable Binary View | `mutable_binary_view`    | `std::span<uint8_t>`       | RAM上のバイト列への書込可能参照          |
 | データ範囲    | Data Range    | `data_range<T>`          | `std::span<T>`             | 特定のメモリ範囲への参照（テンプレート） |
-| 結果型        | Result Type   | `result<T, E>`           | カスタム実装               | 成功値またはエラーコードを返す           |
+| 結果型        | Result Type   | `result<T, E>`           | カスタム実装               | 成功値またはリカバリー戦略を返す         |
+| 操作結果      | Operation Result | `operation_result`      | `result<void, recovery_strategy>` | 値を返さない操作の成功またはリカバリー戦略 |
 | オプショナル値 | Optional Value | `optional<T>`            | カスタムまたは`std::optional` | 値の有無を表す                           |
 | 経済的な関数  | Economic Function | `economic_function<Sig>` | カスタム実装               | 型消去されたヒープレスな関数オブジェクト |
 

@@ -20,7 +20,8 @@ Fireball follows a "WIT-First" approach for Tier 1 interfaces. This document def
 | `list<u8>` | `binary_view` | `std::span<const uint8_t>` |
 | `enum` | `enum class` | |
 | `record` | `struct` | POD (Plain Old Data) |
-| `result<T, error-code>` | `result<T, error_code_t>` | Fireball result type |
+| `result<T, recovery-strategy>` | `result<T, recovery_strategy>` | Fireball recovery strategy |
+| `operation-result` | `operation_result` | `result<void, recovery_strategy>` |
 
 ## 3. Interface Mapping Patterns
 
@@ -30,7 +31,7 @@ A WIT `interface` defines a group of functions.
 **WIT:**
 ```wit
 interface trigger {
-    set-pin: func(pin: u32, value: bool) -> status;
+    set-pin: func(pin: u32, value: bool) -> operation-result;
 }
 ```
 
@@ -40,7 +41,7 @@ namespace fireball::hal {
 class trigger_if {
 public:
     virtual ~trigger_if() = default;
-    virtual status_t set_pin(uint32_t pin, bool value) = 0;
+    virtual operation_result set_pin(uint32_t pin, bool value) = 0;
 };
 }
 ```
@@ -81,5 +82,5 @@ struct vsoc_harness_t {
 
 1. **Snake Case**: Convert all `kebab-case` WIT identifiers to `snake_case` in C++.
 2. **Postfix `_if`**: Append `_if` to interface classes.
-3. **Postfix `_t`**: Append `_t` to structs, enums, and aliases (Fireball style).
+3. **Postfix `_t`**: Append `_t` to structs and enums. Do NOT append `_t` to `using` aliases (Fireball style).
 4. **Member `_`**: Interface classes must NOT have data members (no `_` postfix needed). POD structs members also don't use `_`.

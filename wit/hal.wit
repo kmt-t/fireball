@@ -11,15 +11,15 @@ interface poll {
 }
 
 interface streams {
-    use types.{error-code};
+    use types.{recovery-strategy};
     use poll.{pollable};
 
     /// An input byte stream.
     resource input-stream {
         /// Performs a non-blocking read.
-        read: func(len: u64) -> result<list<u8>, error-code>;
+        read: func(len: u64) -> result<list<u8>, recovery-strategy>;
         /// Performs a blocking read.
-        blocking-read: func(len: u64) -> result<list<u8>, error-code>;
+        blocking-read: func(len: u64) -> result<list<u8>, recovery-strategy>;
         /// Subscribes to readiness events for this stream.
         subscribe: func() -> pollable;
     }
@@ -27,9 +27,9 @@ interface streams {
     /// An output byte stream.
     resource output-stream {
         /// Performs a non-blocking write.
-        write: func(data: list<u8>) -> result<_, error-code>;
+        write: func(data: list<u8>) -> result<_, recovery-strategy>;
         /// Performs a blocking write and flush.
-        blocking-write: func(data: list<u8>) -> result<_, error-code>;
+        blocking-write: func(data: list<u8>) -> result<_, recovery-strategy>;
         /// Subscribes to readiness events for this stream.
         subscribe: func() -> pollable;
     }
@@ -37,12 +37,12 @@ interface streams {
 
 /// High-responsiveness Trigger (GPIO) interface.
 interface trigger {
-    use types.{status, error-code};
+    use types.{operation-result, recovery-strategy};
 
     /// Sets the output value of a physical pin.
-    set-pin: func(pin: u32, value: bool) -> status;
+    set-pin: func(pin: u32, value: bool) -> operation-result;
     /// Gets the current value of a physical pin.
-    get-pin: func(pin: u32) -> result<bool, error-code>;
+    get-pin: func(pin: u32) -> result<bool, recovery-strategy>;
 }
 
 /// Timer and sleep services.
@@ -60,21 +60,21 @@ interface timer {
 
 /// Master and Slave Bus communication (I2C, SPI, etc.)
 interface bus {
-    use types.{status, error-code};
+    use types.{operation-result, recovery-strategy};
     use poll.{pollable};
 
     /// A bus master device.
     resource bus-master {
         /// Performs a synchronous transfer (write then read or simultaneous).
-        transfer: func(tx-data: list<u8>, rx-len: u32) -> result<list<u8>, error-code>;
+        transfer: func(tx-data: list<u8>, rx-len: u32) -> result<list<u8>, recovery-strategy>;
     }
 
     /// A bus slave device.
     resource bus-slave {
         /// Sets the response data for the next master read request.
-        set-response: func(data: list<u8>) -> status;
+        set-response: func(data: list<u8>) -> operation-result;
         /// Gets the data received from the last master write request.
-        get-received: func() -> result<list<u8>, error-code>;
+        get-received: func() -> result<list<u8>, recovery-strategy>;
         /// Subscribes to bus access events (e.g. addressed as slave).
         subscribe: func() -> pollable;
     }

@@ -6,7 +6,7 @@
 
 WAMRに対する優位性を早期に証明するため、vSoCを他のコンポーネントから切り離して最優先で開発・評価する。 `{vSoC_First}`
 
-- [ ] **vSoC スタンドアロン・ハーネスの作成**: Linux上で動作し、WASMバイナリをロードして実行できる最小限のテスト環境。
+- [x] **vSoC スタンドアロン・ハーネス of Created**: Linux上で動作し、WASMバイナリをロードして実行できる最小限のテスト環境。
 - [ ] **インタープリタ・コア実装**: 最小セットのWASM命令（i32演算、制御フロー、メモリ読み書き）の実装。
 - [ ] **Single Trap + vMMIO 実装**: `fireball_call` と vMMIO レジスタによるサービス提供基盤の実装。
 - [ ] **WASI Shim ライブラリ (libfireball_shim)**: ゲスト側で動作し、WASI呼び出しを `fireball_call` に変換するライブラリの作成。
@@ -21,12 +21,11 @@ WAMRに対する優位性を早期に証明するため、vSoCを他のコンポ
 vSoCが依存する他コンポーネントの「最小限のインターフェイス」を定義する。
 
 - [x] `wit/hal.wit` - HALのアーキテクチャ定義 (WIT)
-- [ ] `wit/syscall.wit` - 低レイヤシステムコール定義 (WIT)
-- [ ] `wit/services.wit` - システムサービス定義 (WIT)
-- [ ] `inc/vsoc/harness.hxx` - WIT定義に基づくハーネス構造体へのマッピング定義
+- [x] `wit/syscall.wit` - 低レイヤシステムコール定義 (WIT)
+- [x] `wit/services.wit` - システムサービス定義 (WIT)
+- [x] `inc/vsoc/harness.hxx` - WIT定義に基づくハーネス構造体へのマッピング定義
 
-**見積もり**: 1-2時間  
-**理由**: vSoCの `vsoc_harness` 構造体を定義するために、依存先の型定義が必要。
+**見積もり**: 完了
 
 ### 0.6.2 Tier 1 インターフェイス定義 (WIT-First) 🔴
 

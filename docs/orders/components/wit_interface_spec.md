@@ -16,18 +16,32 @@ WASI 0.2 の標準パターンに従い、以下の基礎コンポーネント�
 - `pollable`: 非同期イベントの待機用リソース。
 - `input-stream` / `output-stream`: ストリーミングデータ転送用リソース。
 
-### 3.2 結果型 (Result) とエラーコード
+### 3.2 リカバリー戦略とエラーハンドリング
+
+本プロジェクトでは、エラーコードではなくリカバリー戦略を返すことで、呼び出し側が具体的なアクション（リトライ/諦める）を取れるようにする。
+
 ```wit
-variant error-code {
-    success,
-    invalid-argument,
-    timeout,
-    hardware-error,
-    access-denied,
-    ... // WASI準拠のエラーコード
+/// Recovery strategy for operation failures.
+enum recovery-strategy {
+    /// Retry with same parameters may succeed (transient failure).
+    /// Examples: resource temporarily unavailable, timeout
+    retryable,
+    /// Operation cannot succeed with current parameters, do not retry (permanent failure).
+    /// Examples: invalid URI, service not found, already registered
+    fatal
 }
-type status = result<_, error-code>;
+
+// Domain-specific result types
+type operation-result = result<_, recovery-strategy>;
+type service-load-result = result<_, recovery-strategy>;
+type service-registration-result = result<_, recovery-strategy>;
+type message-routing-result = result<_, recovery-strategy>;
 ```
+
+#### 設計判断
+- **実装詳細の分離**: `hardware-error`や`timeout`は実装の内部状態であり、クリーンアーキテクチャの内側が知るべきではない。
+- **アクション指向**: リカバリー戦略により、呼び出し側は具体的なアクション（リトライ/エラーログ出力して諦める）を決定できる。
+- **デバッグ情報の分離**: 失敗の詳細理由はログシステムで確認する。インターフェースには含めない。
 
 ## 4. 低レベル・トラップ・インターフェイス `{Trap_Interface}`
 WASI標準には存在しない、Fireball固有の高速システムコール。
@@ -44,8 +58,8 @@ Trigger (GPIO) は、割り込み応答性およびビットバンギング等�
 ```wit
 // インターフェイスとしては定義するが、Shim層では直接トラップを叩く
 interface trigger {
-    set-pin: func(pin: u32, value: bool) -> status;
-    get-pin: func(pin: u32) -> result<bool, error-code>;
+    set-pin: func(pin: u32, value: bool) -> operation-result;
+    get-pin: func(pin: u32) -> result<bool, recovery-strategy>;
 }
 ```
 
@@ -66,12 +80,12 @@ resource timer {
 
 ```wit
 resource bus-master {
-    transfer: func(tx-data: list<u8>, rx-len: u32) -> result<list<u8>, error-code>;
+    transfer: func(tx-data: list<u8>, rx-len: u32) -> result<list<u8>, recovery-strategy>;
 }
 
 resource bus-slave {
-    set-response: func(data: list<u8>) -> status;
-    get-received: func() -> result<list<u8>, error-code>;
+    set-response: func(data: list<u8>) -> operation-result;
+    get-received: func() -> result<list<u8>, recovery-strategy>;
     subscribe: func() -> pollable; // マスタからのアクセス通知
 }
 ```

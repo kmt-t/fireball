@@ -51,6 +51,11 @@ description: Fireballプロジェクト固有のアーキテクチャパター�
 - シンプルさとコンポーザビリティを重視する
 - グルーコード層は薄く保つ
 
+### 命名の具体性
+- 名前空間に依存せず、単体で意味が通じる名前をつける
+- `Manager`, `Data` などの汎用的な名前は禁止
+- `service_manager`, `session_data` のように具体的であること
+
 ## 3. 実装原則
 
 #### Harness / Stateless Interface `{ComponentHarness}` `{StaticDI}`
@@ -94,6 +99,7 @@ description: Fireballプロジェクト固有のアーキテクチャパター�
 | **制御の反転** | システム境界での疎結合 | [ioc.md](../../docs/orders/patterns/ioc.md) |
 | **3-Tier分離** | 複雑度に応じた分離方式 | [interface.md](../../docs/orders/patterns/interface.md) |
 | **Harness設計** | Stateless IFとDI | [harness.md](../../docs/orders/patterns/harness.md) |
+| **リカバリー戦略** | エラーコードではなくアクション指向のエラーハンドリング | [recovery_strategy.md](../../docs/orders/patterns/recovery_strategy.md) |
 | **経済的な関数** | ヒープレス型消去 | [economic_function.md](../../docs/orders/patterns/economic_function.md) |
 | **ソート済み配列** | `std::map`の代替 | [sorted_indexed_array.md](../../docs/orders/patterns/sorted_indexed_array.md) |
 | **標準ライブラリ** | 許可・禁止ライブラリ | [stdlib.md](../../docs/orders/patterns/stdlib.md) |

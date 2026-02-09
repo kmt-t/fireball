@@ -45,9 +45,14 @@ incdirs = include_directories(
 srcfiles = files(
   'src/main.cxx',
   'src/utils/backtrace.cxx',
+  'src/vsoc/vsoc.cxx',
   'src/allocator/malloc.c',
   'src/allocator/stdcxx_allocator.cxx',
 )
+
+common_cpp_args = target_flags + [
+  '-D_POSIX_C_SOURCE=200809L',
+] + release_args
 
 fireball_exe = executable('fireball',
    srcfiles,
@@ -63,9 +68,15 @@ fireball_exe = executable('fireball',
      '-DNO_MALLOC_STATS=1',
      '-DMMAP_CLEARS=0',
    ] + release_args,
-   cpp_args : target_flags + [
-     '-D_POSIX_C_SOURCE=200809L',
-   ] + release_args,
+   cpp_args : common_cpp_args,
    link_args : target_flags + ['-lstdc++exp'] + release_args,
    install : true,
+)
+
+fireball_vsoc_harness_exe = executable('fireball-vsoc-harness',
+  ['src/vsoc_dummy.cxx', 'src/vsoc/vsoc.cxx'],
+  include_directories : incdirs,
+  cpp_args : common_cpp_args,
+  link_args : target_flags + ['-lstdc++exp'] + release_args,
+  install : true,
 )

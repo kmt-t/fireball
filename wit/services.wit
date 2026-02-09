@@ -1,8 +1,6 @@
 package fireball:host;
 
 interface services-types {
-    use types.{error-code};
-
     /// Key-Value pair for IPC communication.
     /// Total 64 bits: 32-bit Key (8-bit Type + 24-bit ID) + 32-bit Value.
     record kv-pair {
@@ -17,12 +15,12 @@ interface services-types {
 }
 
 interface coos {
-    use types.{error-code};
+    use types.{recovery-strategy};
 
     /// Task management and scheduling.
     resource task-manager {
         /// Spawns a new task.
-        spawn: func(entry-index: u32, memory-size: u32) -> result<u32, error-code>;
+        spawn: func(entry-index: u32, memory-size: u32) -> result<u32, recovery-strategy>;
         /// Yields execution to the next task.
         yield: func();
         /// Exits the current task.
@@ -33,29 +31,27 @@ interface coos {
 }
 
 interface ipc {
-    use types.{status, error-code};
+    use types.{service-registration-result, message-routing-result, recovery-strategy};
     use services-types.{message};
 
     /// Service discovery and message routing.
     resource ipc-router {
         /// Registers a service URI.
-        register-service: func(uri: string, role: u32, channel-id: u32) -> status;
+        register-service: func(uri: string, role: u32, channel-id: u32) -> service-registration-result;
         /// Looks up a service channel by URI.
-        lookup-service: func(uri: string) -> result<u32, error-code>;
+        lookup-service: func(uri: string) -> result<u32, recovery-strategy>;
         /// Routes a message to a channel.
-        route-message: func(channel-id: u32, msg: message) -> status;
+        route-message: func(channel-id: u32, msg: message) -> message-routing-result;
     }
 }
 
 interface manager {
-    use types.{status};
+    use types.{service-load-result};
 
     /// High-level service lifecycle management.
     resource service-manager {
         /// Loads a service by URI.
-        load-service: func(uri: string) -> status;
-        /// Unloads a service by URI.
-        unload-service: func(uri: string) -> status;
+        load-service: func(uri: string) -> service-load-result;
     }
 }
 

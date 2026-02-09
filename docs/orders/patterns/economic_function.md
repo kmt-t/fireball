@@ -5,67 +5,62 @@
 
 ## 2. 構造
 
-### 2.1 静的モデル
+### 2.1 実装モデル
 
-```mermaid
-classDiagram
-    class economic_function {
-        -char buffer_[Capacity]
-        -vtable_t* vtable_
-        +operator()()
+`std::function` をラップし、コンストラクタでキャプチャサイズを静的に検証する。
+
+```cpp
+template<typename Signature, size_t Capacity = 64> // Default SBO assumption
+class economic_function {
+    std::function<Signature> func_;
+
+public:
+    template<typename F>
+    economic_function(F f) : func_(std::move(f)) {
+        // Assert that the lambda fits within the assumed SBO capacity
+        static_assert(sizeof(F) <= Capacity, 
+            "Lambda too large for economic_function! Decrease capture size or increase Capacity.");
     }
-    class vtable_t {
-        +call_fn
-        +destroy_fn
+    
+    // Proxy operator()
+    template<typename... Args>
+    auto operator()(Args&&... args) const {
+        return func_(std::forward<Args>(args)...);
     }
-    economic_function --> vtable_t : points to static instances
+};
 ```
 
 ### 2.2 相互作用
 
-```mermaid
-sequenceDiagram
-    participant User
-    participant EcoFn as economic_function(Capacity)
-    participant Lambda as Lambda(Closure)
-
-    User->>EcoFn: assign(lambda)
-    alt sizeof(lambda) <= Capacity
-        EcoFn->>EcoFn: memcpy(buffer_, &lambda)
-        EcoFn->>EcoFn: set vtable (call/destroy)
-    else sizeof(lambda) > Capacity
-        EcoFn--xUser: Compile Error (static_assert)
-    end
-    
-    User->>EcoFn: operator()(...)
-    EcoFn->>Lambda: vtable_->call(buffer_, args...)
-    Lambda-->>User: result
-```
+ユーザーがラムダを代入しようとした時点で、そのサイズが `Capacity` を超えていればコンパイルエラーとなる。実行時のヒープ割り当ては、`std::function` のSBO実装が `Capacity` 以上あることを前提として回避される。
 
 ## 3. 適用ガイドライン
 
 - **適用対象**: 状態を持ちうる非同期コールバック（vMMIOハンドラ、COOSイベントハンドラ等）。
 - **原則**:
-    - **ヒープ使用禁止**: `new`/`delete` を一切行わず、内部の `Capacity` バイトのスタック/メンバ領域にラムダを配置する。
+    - **SBO前提**: `std::function` のSBO機構を利用し、ヒープ割り当てを回避する。
     - **静的検証**: ラムダのキャプチャサイズが `Capacity` を超えた場合、`static_assert` でビルドを停止させる。
-    - **所有権**: 現時点ではシンプルさを優先し、コピー禁止・ムーブのみを基本とする。
+    - **環境依存性の許容**: SBO容量は標準化されていないため、コンパイラや標準ライブラリの実装に依存することを許容し、必要に応じて `Capacity` を調整する。
 
 ## 4. コンセプトコード
 
 ```python
-# Concept: Economic Function (Heap-less type erasure)
+# Concept: Economic Function (std::function wrapper with static size check)
 class EconomicFunction:
-    def __init__(self, capacity):
-        self.capacity = capacity
-        self.callable = None
+    def __init__(self, capacity_limit):
+        self.capacity_limit = capacity_limit
+        self.internal_function = None
 
-    def assign(self, f, size):
-        if size > self.capacity:
-            raise Exception("Static Assert: Too large!")
-        self.callable = f
+    def assign(self, lambda_obj):
+        # Static Check phase (Compile time)
+        if sizeof(lambda_obj) > self.capacity_limit:
+            raise CompilationError(f"Lambda size {sizeof(lambda_obj)} exceeds limit {self.capacity_limit}")
+        
+        # Runtime phase
+        self.internal_function = lambda_obj
 
     def __call__(self, *args):
-        return self.callable(*args)
+        return self.internal_function(*args)
 ```
 
 ## 5. 関連パターン

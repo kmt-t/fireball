@@ -6,9 +6,11 @@
 #pragma once
 
 #include <fireball.hxx>
+#include <stdexcept>
 
 namespace fireball::utils {
 
+#if defined(__cpp_exceptions)
 /**
  * Exception with backtrace.
  */
@@ -18,6 +20,7 @@ public:
 
   virtual ~exception_with_backtrace() noexcept = default;
 };
+#endif
 
 /**
  * Report backtrace and terminate (for exception-disabled environments).
@@ -36,10 +39,10 @@ extern void report_backtrace_and_terminate(const char* msg) noexcept;
 /**
  * Throw nested exception with backtrace.
  */
-#define THROW_NESTED_BACKTRACE(meg, outer)                                                         \
+#define THROW_NESTED_BACKTRACE(msg, outer)                                                         \
   do {                                                                                             \
     try {                                                                                          \
-      throw fireball::utils::exception_with_backtrace(message);                                    \
+      throw fireball::utils::exception_with_backtrace(msg);                                        \
     } catch (...) {                                                                                \
       std::throw_with_nested(outer());                                                             \
     }                                                                                              \

@@ -51,11 +51,9 @@ graph TD
 ### 4.2 状態遷移図
 ```mermaid
 stateDiagram-v2
-    [*] --> Unloaded
-    Unloaded --> Loaded: load_service
+    [*] --> Loaded: load_service (static)
     Loaded --> Running: start_guest
     Running --> Stopped: stop_guest
-    Stopped --> Unloaded: unload_service
 ```
 
 ### 4.3 内部シーケンス
@@ -77,7 +75,18 @@ sequenceDiagram
 
 ## 5. インターフェイス定義
 
-### 5.1 公開API
+### 5.1 エラーハンドリング戦略
+
+本コンポーネントでは、エラーコードではなくリカバリー戦略を返すことで、呼び出し側が具体的なアクションを取れるようにする。 `{RecoveryStrategy}`
+
+#### リカバリー戦略の種類
+- **retryable**: 一時的な失敗。同じパラメータでリトライすることで成功する可能性がある（例: リソース一時的に使用不可、タイムアウト）
+- **fatal**: 恒久的な失敗。現在のパラメータでは成功しない（例: 不正なURI、サービスが存在しない、既に登録済み）
+
+#### 設計判断
+失敗の詳細理由（hardware-error、timeout等）は実装詳細であり、クリーンアーキテクチャの内側が知るべきではない。デバッグ情報はログシステムで確認する。
+
+### 5.2 公開API
 外部から利用可能なオブジェクト指向APIを定義する。
 
 #### `load_service`
@@ -85,23 +94,13 @@ sequenceDiagram
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | 指定されたURIに対応するサービスを初期化し、システムから利用可能な状態にする。 |
-| シグネチャ | `load_service(uri: 文字列ビュー) -> 結果型` |
+| シグネチャ | `load_service(uri: 文字列ビュー) -> service_load_result` |
 | 引数 | `uri`: サービスの識別子 |
-| 戻り値 | 結果型 (成功時は空、失敗時はエラー) |
+| 戻り値 | service_load_result (`retryable`: メモリ不足等、`fatal`: サービス未発見、既にロード済み) |
 | 期待する結果 | 正常：サービスが初期化（またはリンク）され、Ready状態になる。 |
-| 補足 | Tier 1 の場合は、バックグラウンドタスクとして spawn される。 |
+| 補足 | サービスは静的にロードされ、システムライフタイム全体で維持される。Tier 1 の場合は、バックグラウンドタスクとして spawn される。 |
 
-#### `unload_service`
-
-| 項目 | 内容 |
-| :--- | :--- |
-| 機能概要 | 指定されたサービスを停止し、割り当てられていたリソースを解放する。 |
-| シグネチャ | `unload_service(uri: 文字列ビュー) -> 結果型` |
-| 引数 | `uri`: 解放対象のサービス |
-| 戻り値 | 結果型 |
-| 補足 | システム運用中のOTA更新などで使用される。 |
-
-### 5.2 URI/IPCインターフェイス
+### 5.3 URI/IPCインターフェイス
 - **URI**: `fireball://services/<service_name>/<instance_id>`
 - **メッセージ形式**: サービス固有のKey-Valueプロトコル。詳細なDTO定義は各サービス仕様書に準ずる。
 

@@ -1,7 +1,7 @@
 package fireball:host;
 
 interface vsoc {
-    use types.{status, error-code};
+    use types.{operation-result, recovery-strategy};
 
     /// vSoC Instance Configuration.
     record vsoc-config {
@@ -30,16 +30,16 @@ interface vsoc {
 
         /// Loads a WASM module from binary data.
         /// Performs validation and prepares the module for execution.
-        load-module: func(bin: list<u8>) -> status;
+        load-module: func(bin: list<u8>) -> operation-result;
 
         /// Executes the guest code until yield, trap, or interrupt.
-        step: func() -> status;
+        step: func() -> operation-result;
 
         /// Stops the vSoC and releases associated resources.
         stop: func();
 
         /// Resets the vSoC to its initial state.
-        reset: func() -> status;
+        reset: func() -> operation-result;
 
         /// Injects a virtual interrupt into the guest environment.
         notify-interrupt: func(irq-id: u32);

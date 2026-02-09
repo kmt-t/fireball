@@ -1,17 +1,26 @@
 package fireball:host;
 
 interface types {
-    /// Error codes for Fireball HAL and system services.
-    enum error-code {
-        success,
-        invalid-argument,
-        timeout,
-        hardware-error,
-        access-denied,
-        not-supported,
-        unknown
+    /// Recovery strategy for operation failures.
+    enum recovery-strategy {
+        /// Retry with same parameters may succeed (transient failure).
+        /// Examples: resource temporarily unavailable, timeout
+        retryable,
+        /// Operation cannot succeed with current parameters, do not retry (permanent failure).
+        /// Examples: invalid URI, service not found, already registered
+        fatal
     }
 
-    /// Generic status result.
-    type status = result<_, error-code>;
+    /// Result type for operations that don't return a value.
+    type operation-result = result<_, recovery-strategy>;
+
+    /// Result type for service loading operations.
+    type service-load-result = result<_, recovery-strategy>;
+
+    /// Result type for service registration.
+    type service-registration-result = result<_, recovery-strategy>;
+
+    /// Result type for message routing.
+    type message-routing-result = result<_, recovery-strategy>;
+}
 }

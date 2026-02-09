@@ -15,12 +15,12 @@ namespace fireball::vsoc {
  * Matches wit/vsoc.wit: vsoc-state
  */
 enum class execution_state : std::uint32_t {
-  idle,
-  loading,
-  ready,
-  running,
-  debugging,
-  error,
+  IDLE,
+  LOADING,
+  READY,
+  RUNNING,
+  DEBUGGING,
+  ERROR,
 };
 
 /**
@@ -64,12 +64,12 @@ public:
   /**
    * @brief Loads a WASM module from binary data.
    */
-  status load(binary_view bin);
+  operation_result load(binary_view bin);
 
   /**
    * @brief Executes the guest code until yield, trap, or interrupt.
    */
-  status step();
+  operation_result step();
 
   /**
    * @brief Stops the vSoC and releases associated resources.
@@ -79,7 +79,7 @@ public:
   /**
    * @brief Resets the vSoC to its initial state.
    */
-  status reset();
+  operation_result reset();
 
   /**
    * @brief Injects a virtual interrupt into the guest environment.

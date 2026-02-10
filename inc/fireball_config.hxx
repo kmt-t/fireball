@@ -12,7 +12,7 @@ static constexpr std::uint32_t FB_CONF_KERNEL_HEAP_SIZE = 8192U;
 static constexpr std::uint32_t FB_CONF_RUNTIME_HEAP_SIZE = 4096U;
 static constexpr std::uint32_t FB_CONF_SUBSYSTEM_HEAP_SIZE = 4096U;
 
-// IPC Router 
+// IPC Router
 static constexpr std::uint32_t FB_CONF_ROUTER_MAX_SERVICES = 16U;
 // FB_CONF_ROUTER_ROLE_MATRIX will be defined in a specific header or as a complex structure later.
 

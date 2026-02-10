@@ -5,7 +5,6 @@
  */
 #pragma once
 
-#include <fireball.hxx>
 #include <memory_resource>
 
 namespace fireball::allocator {

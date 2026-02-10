@@ -24,10 +24,10 @@ enum class execution_state : std::uint32_t {
 };
 
 /**
- * @brief vSoC Instance Configuration.
- * Matches wit/vsoc.wit: vsoc-config and src/vsoc_dummy.cxx usage.
+ * @brief vSoC Configureation.
+ * Matches wit/vsoc.wit: vsoc-config
  */
-struct instance_config {
+struct runtime_instance_config {
   bool jit_enabled;
   std::uint32_t jit_cache_size;
   std::uint32_t ram_base_addr;
@@ -51,22 +51,17 @@ struct execution_context {
  * @brief vSoC Controller / Manager.
  * Orchestrates the vSoC lifecycle.
  *
+ * @tparam Harness Policy type that provides access to system components.
+ *                 Must be DefaultConstructible and satisfy the Harness interface.
  * @tparam Config Reference to the static configuration instance.
  *                Must be a compile-time constant or static duration object.
  */
-template <const instance_config& Config>
+template <typename Harness, const runtime_instance_config& Config>
 class runtime {
 public:
-  // Using default constructor as config is now a template parameter
+  // Using default constructor as config is a template parameter
+  // and Harness is default constructed.
   runtime() : context_{}, harness_{} {
-    context_.state = execution_state::IDLE;
-    context_.pc = 0;
-    context_.irq_flags = 0;
-  }
-
-  // Constructor with harness injection
-  explicit runtime(const harness& harness)
-      : context_{}, harness_(harness) {
     context_.state = execution_state::IDLE;
     context_.pc = 0;
     context_.irq_flags = 0;
@@ -98,6 +93,9 @@ public:
     }
 
     context_.state = execution_state::RUNNING;
+
+    // Access to dependencies via Harness Policy
+    // auto* loader = harness_.loader();
 
     // Direct access to Config (Compile-time constant)
     // auto ram_base = Config.ram_base_addr; 
@@ -135,11 +133,11 @@ public:
   wasm_pc get_pc() const { return context_.pc; }
   
   // Accessor for the static configuration
-  static constexpr const instance_config& config() { return Config; }
+  static constexpr const runtime_instance_config& config() { return Config; }
 
 private:
   execution_context context_;
-  harness harness_;
+  [[no_unique_address]] Harness harness_; // EBCO if Harness is empty
 };
 
 } // namespace fireball::vsoc

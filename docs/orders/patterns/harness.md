@@ -8,26 +8,29 @@
 
 ## 2. 構造
 
-システムを「神クラス」や「深い階層」で構築せず、**Harness (依存)**、**Data (状態)**、**View (不変定義)**、**Interface (操作)** の4要素に分解・平坦化する。
+システムを「神クラス」や「深い階層」で構築せず、**Harness (Policy)**、**Data (State)**、**View (Immutable)**、**Interface (Contract)** の4要素に分解・平坦化する。
 
 ### 2.1 クラス図 / ブロック図
 
 **4つの構成要素**:
-1.  **Harness (Dependencies)**: システム構成要素（インターフェイス）へのポインタを集約した構造体。DIコンテナとして機能する。
+1.  **Harness (Policy)**: システムの振る舞いを決定するポリシー型。テンプレート引数として注入される。依存コンポーネントへのアクセサを提供する。
 2.  **Data (Context)**: 実行時の可変状態（State）を集約した構造体。オブジェクト内部に隠蔽せず、DTOとして公開する。
 3.  **View (Immutable)**: 読み取り専用データへの構造化されたビュー。
 4.  **Interface (Contract)**: 純粋仮想関数のみを持つインターフェイス。メンバ変数（状態）を持たない。
-    - **Concrete Object (Implementation)**: インターフェイスの実装。JITキャッシュや変換テーブルなどの「内部状態」を持つことができるが、実行コンテキスト（Data）は持たない。
 
 ```mermaid
 graph TD
     Client[Client Code]
     
+    subgraph Parameter
+        Concept[Harness Policy Concept]
+    end
+
     subgraph Structure
-        Harness[Harness (Static DI)]
+        Driver[Driver<HarnessPolicy>]
+        Harness[Harness Implementation]
         Int[Interface (IExecutor)]
         Obj[Concrete Object]
-        Internal[Internal State (Cache)]
     end
 
     subgraph App_State
@@ -35,10 +38,10 @@ graph TD
         View[View (Immutable)]
     end
 
-    Client -- holds --> Harness
-    Harness -- points to --> Int
+    Client -- instantiates --> Driver
+    Driver -- uses type --> Harness
+    Harness -- provides --> Int
     Int <|.. Obj : implements
-    Obj -- owns --> Internal
     
     Client -- passes --> Data
     Client -- passes --> View
@@ -49,164 +52,128 @@ graph TD
 
 ### 2.2 相互作用
 
-ステートレスなインターフェイスに対し、データ(Context/View)を引き渡すことで処理を行う。
+ポリシーベースデザイン（Policy-Based Design）を採用し、コンパイル時に依存関係を解決する。
 
 ```mermaid
 sequenceDiagram
     participant User as Client
+    participant Driver as Driver<Harness>
+    participant Harness as Harness Policy
     participant Obj as ConcreteObject
     participant Data as Context
-    participant View as View
 
-    Note over User, Obj: Static Setup (Harness) done previously
+    Note over User, Driver: Compile-time Composition
 
-    User->>Obj: process(view, context)
+    User->>Driver: process(view, context)
     
-    Obj->>View: read config
-    View-->>Obj: config value
+    Driver->>Harness: get_executor()
+    Harness-->>Driver: executor instance
     
-    Obj->>Data: read state
-    Data-->>Obj: current state
-    
-    Note over Obj: Execute Logic (using internal cache if needed)
-    
+    Driver->>Obj: execute(context)
     Obj->>Data: update state
     Data-->>Obj: (ack)
     
-    Obj-->>User: void
+    Driver-->>User: void
 ```
 
 ## 3. 適用ガイドライン
 
 ### 3.1 インターフェイスとオブジェクトの役割分担
 - **インターフェイスは状態を持たない**: インターフェイス定義にメンバ変数を含めてはならない。純粋な「操作の型」を定義する。
-- **オブジェクトは内部状態を持つ**: 実装クラスは、その責務を果たすために必要な内部リソース（例：JITコンパイラのコードキャッシュ、インタープリタのジャンプテーブル）を保持してよい。これらは外から見えないプライベートな状態である。
-- **コンテキストは引数で渡す**: 「何を実行するか」というアプリケーションの状態（PC, レジスタ等）は、オブジェクトのメンバにせず、必ずメソッドの引数として渡す。
+- **オブジェクトは内部状態を持つ**: 実装クラスは、その責務を果たすために必要な内部リソースを保持してよい。
+- **コンテキストは引数で渡す**: 「何を実行するか」というアプリケーションの状態は、必ずメソッドの引数として渡す。
 
-### 3.2 ハーネスによる静的依存性注入 (Static DI)
-- **Harnessによる集約**: コンポーネントが依存する他のサービス（インターフェイス）は、`harness` 構造体として一括で渡す。
-- **Static DI**: 依存関係の解決（Wiring）は、実行時の動的な検索ではなく、コンパイル時または初期化時に静的に行い、`const harness` として確定させることを推奨する。 `{StaticDI}` `{ConfigurableSystem}`
-    - メリット：構成ミスを早期発見でき、ROM化や定数畳み込みの恩恵を受けやすい。
-- **所有権の分離**: ハーネスは「参照」を保持するものであり、所有権は保持しない。コンポーネントの実体は、より上位（Main/System）で静的またはスタック上に確保される。
+### 3.2 ポリシーベースデザインによる依存性注入 (Policy-Based DI)
+- **型による注入**: 依存コンポーネントはインスタンスではなく「型（Policy）」としてテンプレート引数で渡す。
+- **Harness Policy**: 渡される型は、デフォルトコンストラクタを持ち、必要なインターフェイスへのアクセサ（またはその場での生成機能）を提供しなければならない。
+    - メリット：
+        - **疎結合**: 特定のグローバルインスタンスに依存せず、型が満たすべき要件（Concept）に依存する。
+        - **最適化**: 空のポリシー型であれば、EBCO (Empty Base Class Optimization) 等によりサイズオーバーヘッドをゼロにできる。
+        - **テスト容易性**: モック用のポリシー型を渡すだけで、テスト環境を構築できる。
 
 ### 3.3 静的コンフィギュレーション (Static Configuration Pattern)
-- **テンプレート引数によるDI**: アプリケーションライフサイクルを通じて不変な設定値（メモリマップ、バッファサイズ等）は、コンストラクタ引数ではなく**参照型のテンプレート引数**として注入する。
-    - メリット：
-        - **ROM化の強制**: 設定値をコンパイル時定数として扱うことで、RAM上のポインタ保持を排除し、Immediate値としてコード領域に埋め込むことができる。
-        - **最適化**: 条件分岐の定数畳み込みやデッドコード削除など、コンパイラによる強力な最適化を促進する。
+- **テンプレート引数による設定**: 不変な設定値（メモリマップ等）は、`const` 参照のテンプレート引数として注入する。
     - 適用例：`vSoC` のインスタンス設定、メモリコントローラのバンク構成など。
 
 ### 3.4 データとビューの分離 (Data/View Separation)
 - **View**: ROM上のバイナリや定数データは、コピーせず `std::span` 等を用いた「View」として扱う。
 - **Context**: 実行に必要な変数は全て `context` 構造体に集約し、メソッド間でリレーする。
 
-### 3.5 命名とContract
-- **名前空間とインターフェイス**: 機能のまとまりはインターフェイス（抽象クラス）で表現し、詳細な構成は名前空間で整理する。
-- **Contract**: メソッドは入力（Context, View）に対して何を行うか、事前・事後条件をコメントで明記する。
-
 ## 4. コンセプトコード
 
 ```python
-# Concept: Stateless Interface matched with Stateful Object (Generic)
+# Concept: Policy-Based Design for Dependency Injection
+from typing import Protocol
 
-from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import List
+# 1. Interface (Contract)
+class ILoader(Protocol):
+    def load(self, data: bytes) -> None: ...
 
-# 1. Data & View (DTOs)
-# Context: Mutable application state (passed as argument)
-@dataclass
-class ProcessingContext:
-    counter: int = 0
-    buffer: List[int] = None
+# 2. Policy (Dependency Provision Strategy)
+class ProductionHarnessPolicy:
+    def get_loader(self) -> ILoader:
+        return RealLoader()
 
-# View: Immutable configuration/data (passed as argument)
-@dataclass(frozen=True)
-class ProcessingConfig:
-    multiplier: int = 1
-    max_limit: int = 100
+class MockHarnessPolicy:
+    def get_loader(self) -> ILoader:
+        return MockLoader()
 
-# 2. Interface (Pure Contract - Stateless)
-class IDataProcessor(ABC):
-    @abstractmethod
-    def process(self, config: ProcessingConfig, ctx: ProcessingContext) -> None:
-        """
-        Process data based on config and context.
-        Note: The interface itself holds NO state.
-        """
-        pass
+# 3. Host Class (Parameterized by Policy)
+class SystemRuntime:
+    def __init__(self, policy_type):
+        self.policy = policy_type()  # Default Construct
 
-# 3. Implementation (Object - Has Internal State)
-class BufferedProcessor(IDataProcessor):
-    def __init__(self, cache_size: int):
-        # Internal State: Specific to this implementation (Hidden)
-        self._cache = [] 
-        self._cache_size = cache_size
+    def run(self, data: bytes):
+        # Use Policy to get dependency
+        loader = self.policy.get_loader()
+        loader.load(data)
 
-    def process(self, config: ProcessingConfig, ctx: ProcessingContext) -> None:
-        # Use Internal State
-        if len(self._cache) < self._cache_size:
-            self._cache.append(ctx.counter)
-            print(f"Cached: {ctx.counter}")
-
-        # Operate on App State (Context) using Config (View)
-        ctx.counter += config.multiplier
-        if ctx.counter > config.max_limit:
-            ctx.counter = 0
-
-# 4. Harness (Static DI)
-@dataclass(frozen=True)
-class SystemHarness:
-    processor: IDataProcessor
-    
 # Usage
-# Setup (Static DI)
-harness = SystemHarness(processor=BufferedProcessor(cache_size=5))
-config = ProcessingConfig(multiplier=2)
-ctx = ProcessingContext()
+# Compile-time like composition (in Python via class passing)
+runtime = SystemRuntime(ProductionHarnessPolicy)
+runtime.run(b"data")
 
-# Runtime Loop
-harness.processor.process(config, ctx)
-harness.processor.process(config, ctx)
+test_runtime = SystemRuntime(MockHarnessPolicy)
+test_runtime.run(b"test")
 ```
 
 ## 5. 設計完了チェックリスト
 
 - [x] オブジェクト階層を作らず、フラットな関数群として定義されているか
 - [x] 状態（Data）と定義（View）が明確に分離されているか
-- [x] インターフェイスは状態定義を含まないか
-- [x] 依存関係は Harness 構造体を通じて外部から与えられているか(Static DI)
+- [x] 依存関係はテンプレート引数（Policy）を通じて渡されているか
+- [x] ポリシー型はデフォルト構築可能でステートレス（または自己完結）か
 
-## 6. C++実装例: Static Configuration Pattern
+## 6. C++実装例: Policy-Based DI & Static Config
+
 ```cpp
-// 1. Configuration (Compile-time definition)
-struct instance_config {
-    std::uint32_t buffer_size;
-    std::uint32_t timeout_ms;
+// 1. Definition (Policy Concept)
+template <typename T>
+concept HarnessPolicy = requires(T t) {
+    { t.loader() } -> std::convertible_to<loader_interface*>;
 };
 
-// 2. Implementation (Template Class)
-// Config is a reference template parameter -> Enforces static storage duration
-template <const instance_config& Config>
-class driver_impl {
+// 2. Implementation (Host Class)
+template <typename Harness, const runtime_instance_config& Config>
+class runtime {
+    // EBCO friendly member declaration if needed, or just composition
+    Harness harness_; 
 public:
-    void process() {
-        // Optimized: access to Config.buffer_size is treated as immediate value
-        if (buffer_pos_ < Config.buffer_size) {
-            // ...
-        }
+    void step() {
+        // Use Harness Policy to get dependency
+        auto* loader = harness_.loader();
+        loader->do_something(Config.buffer_size);
     }
-private:
-    std::uint32_t buffer_pos_ = 0;
 };
 
-// 3. Usage (Static Instantiation)
-// Must be static or extern (static storage duration)
-static constexpr instance_config my_config = { 
-    .buffer_size = 1024, 
-    .timeout_ms = 100 
+// 3. Usage
+struct my_harness_policy {
+    loader_impl loader_instance;
+    loader_interface* loader() { return &loader_instance; }
 };
 
-// Instantiation: The template parameter refers to the compile-time constant
-driver_impl<my_config> my_driver;
+static constexpr runtime_instance_config my_config = { .buffer_size = 1024 };
+
+// Instantiation: Injects Type, not Instance
+runtime<my_harness_policy, my_config> my_runtime;
 ```

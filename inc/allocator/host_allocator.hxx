@@ -6,21 +6,20 @@
 #pragma once
 
 #include <allocator/specified_allocator.hxx>
-#include <fireball.hxx>
 
 namespace fireball::allocator {
 
 /**
- * stdcxx_allocator_tag - Type tag for C++ standard library allocator.
+ * host_allocator_tag - Type tag for C++ standard library allocator.
  *
  * This tag distinguishes the C++ standard library allocator instance from other
  * specified_allocator instances in the system. It enables compile-time differentiation
  * of allocator instances while maintaining type safety.
  */
-struct stdcxx_allocator_tag {};
+struct host_allocator_tag {};
 
 /**
- * stdcxx_allocator - Global allocator for C++ standard library containers.
+ * host_allocator - Global allocator for C++ standard library containers.
  *
  * This is a type alias for specified_allocator configured with the host heap size
  * (FIREBALL_HOST_HEAP_SIZE). It provides flexible allocation/deallocation for
@@ -29,7 +28,7 @@ struct stdcxx_allocator_tag {};
  * library allocations share the same heap partition, preventing fragmentation
  * across multiple allocator instances.
  */
-using stdcxx_allocator = specified_allocator<FIREBALL_HOST_HEAP_SIZE, stdcxx_allocator_tag>;
+using host_allocator = specified_allocator<FIREBALL_HOST_HEAP_SIZE, host_allocator_tag>;
 
 } // namespace fireball::allocator
 

@@ -5,21 +5,21 @@
  */
 #pragma once
 
-#include <cstdint>
+#include <concepts>
+#include <coroutine>
 #include <cstddef>
-#include <version>
+#include <cstdint>
+#include <optional>
+#include <source_location>
 #include <span>
 #include <string_view>
-#include <optional>
-#include <variant>
-#include <utility>
-#include <concepts>
 #include <type_traits>
-#include <coroutine>
-#include <source_location>
+#include <utility>
+#include <variant>
+#include <version>
 
 #include <fireball_config.hxx>
-#include <types.hxx>
+#include <fireball_types.hxx>
 
 /**
  * FIREBALL_HOST_HEAP_SIZE - Total size of the host heap partition.
@@ -31,6 +31,4 @@
 #define FIREBALL_HOST_HEAP_SIZE FB_CONF_RUNTIME_HEAP_SIZE
 #endif
 
-namespace fireball {
-
-} // namespace fireball
+namespace fireball {} // namespace fireball

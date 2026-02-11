@@ -6,4 +6,10 @@
 	url = git@github.com:WebAssembly/WASI.git
 [submodule "docs/orders/references/wamr"]
 	path = docs/orders/references/wamr
-url=git@github.com:bytecodealliance/wasm-micro-runtime.git
+	url=git@github.com:bytecodealliance/wasm-micro-runtime.git
+[submodule "docs/orders/references/riscv"]
+	path = docs/orders/references/riscv
+	url = git@github.com:riscv/riscv-isa-manual.git
+[submodule "docs/orders/references/llvm"]
+	path = docs/orders/references/llvm
+	url = git@github.com:llvm/llvm-project.git

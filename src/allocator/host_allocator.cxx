@@ -25,12 +25,12 @@
  *   - All alignment-aware operator new/delete variants properly forward alignment
  *     requirements to the underlying allocator.
  */
-#include <allocator/stdcxx_allocator.hxx>
+#include <allocator/host_allocator.hxx>
 #include <utils/backtrace.hxx>
 
 [[nodiscard]]
 void* operator new(std::size_t num) {
-  auto ret = fireball::allocator::stdcxx_allocator::instance().allocate(num);
+  auto ret = fireball::allocator::host_allocator::instance().allocate(num);
   if (ret == nullptr) {
     THROW_NESTED_BACKTRACE("std::bad_alloc", std::bad_alloc);
   }
@@ -41,7 +41,7 @@ void* operator new(std::size_t num) {
 [[nodiscard]]
 void* operator new(std::size_t num, std::align_val_t align) {
   const auto a = static_cast<std::underlying_type<std::align_val_t>::type>(align);
-  auto ret = fireball::allocator::stdcxx_allocator::instance().allocate(num, a);
+  auto ret = fireball::allocator::host_allocator::instance().allocate(num, a);
   if (ret == nullptr) {
     THROW_NESTED_BACKTRACE("std::bad_alloc", std::bad_alloc);
   }
@@ -51,38 +51,38 @@ void* operator new(std::size_t num, std::align_val_t align) {
 
 [[nodiscard]]
 void* operator new(std::size_t num, const std::nothrow_t&) noexcept {
-  return fireball::allocator::stdcxx_allocator::instance().allocate(num);
+  return fireball::allocator::host_allocator::instance().allocate(num);
 }
 
 [[nodiscard]]
 void* operator new(std::size_t num, std::align_val_t align, const std::nothrow_t&) noexcept {
   const auto a = static_cast<std::underlying_type<std::align_val_t>::type>(align);
-  return fireball::allocator::stdcxx_allocator::instance().allocate(num, a);
+  return fireball::allocator::host_allocator::instance().allocate(num, a);
 }
 
 void operator delete(void* ptr) noexcept {
-  fireball::allocator::stdcxx_allocator::instance().deallocate(ptr, 0U);
+  fireball::allocator::host_allocator::instance().deallocate(ptr, 0U);
 }
 
 void operator delete(void* ptr, std::size_t num) noexcept {
-  fireball::allocator::stdcxx_allocator::instance().deallocate(ptr, num);
+  fireball::allocator::host_allocator::instance().deallocate(ptr, num);
 }
 
 void operator delete(void* ptr, std::align_val_t align) noexcept {
   const auto a = static_cast<std::underlying_type<std::align_val_t>::type>(align);
-  fireball::allocator::stdcxx_allocator::instance().deallocate(ptr, 0U, a);
+  fireball::allocator::host_allocator::instance().deallocate(ptr, 0U, a);
 }
 
 void operator delete(void* ptr, std::size_t num, std::align_val_t align) noexcept {
   const auto a = static_cast<std::underlying_type<std::align_val_t>::type>(align);
-  fireball::allocator::stdcxx_allocator::instance().deallocate(ptr, num, a);
+  fireball::allocator::host_allocator::instance().deallocate(ptr, num, a);
 }
 
 void operator delete(void* ptr, const std::nothrow_t&) noexcept {
-  fireball::allocator::stdcxx_allocator::instance().deallocate(ptr, 0U);
+  fireball::allocator::host_allocator::instance().deallocate(ptr, 0U);
 }
 
 void operator delete(void* ptr, std::align_val_t align, const std::nothrow_t&) noexcept {
   const auto a = static_cast<std::underlying_type<std::align_val_t>::type>(align);
-  fireball::allocator::stdcxx_allocator::instance().deallocate(ptr, 0U, a);
+  fireball::allocator::host_allocator::instance().deallocate(ptr, 0U, a);
 }

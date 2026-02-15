@@ -1,5 +1,0 @@
-(library
-  (name xl)
-  (libraries util zarith)
-  (modules bool num atom mixop)
-)

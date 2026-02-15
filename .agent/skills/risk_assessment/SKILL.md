@@ -1,6 +1,10 @@
 ---
 name: Risk Assessment Tiering
-description: リスクベースアプローチによる設計詳細度の決定と検証レベルの定義
+description: >-
+  実装リスクに応じた設計詳細度（Tier 1〜3）の決定基準と検証レベルの定義。
+  WHEN: 設計書の詳細度を決めるとき, 直交表・コンセプトコードの要否判断
+  SCOPE: 設計Tierの判断基準のみ。構造設計Tierはfireball_architectureの3-Tier分離とは別概念。
+  RELATED: fireball_architecture（構造設計Tier）, bonsai_design（設計ワークフロー）
 ---
 
 # リスクベース・ティアリング (Risk-Based Tiering)スキル

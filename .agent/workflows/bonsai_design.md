@@ -1,5 +1,8 @@
 ---
-description: 盆栽ワークフロー。全体から細部へ、反復的な設計プロセス。
+description: >-
+  盆栽ワークフロー。全体から細部へ、反復的な設計プロセス。
+  WHEN: 新機能の設計開始, 設計のリファインメント, /bonsai_design
+  RELATED: risk_assessment（設計詳細度判断）, progress_meeting（進捗確認）
 ---
 
 # 盆栽デザイン（設計）ワークフロー

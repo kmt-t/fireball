@@ -1,3 +1,10 @@
+---
+description: >-
+  設計→インターフェース定義→実装→検証→リファイメントの標準開発サイクル。
+  WHEN: 開発フェーズの全体像確認, フェーズ間の遷移判断
+  RELATED: bonsai_design（設計フェーズ詳細）, check_compliance（検証フェーズ詳細）
+---
+
 # General Development Cycle Workflow
 
 本ワークフローは、設計、インターフェース定義、実装、検証、およびリファイメントの標準的なサイクルを定義します。

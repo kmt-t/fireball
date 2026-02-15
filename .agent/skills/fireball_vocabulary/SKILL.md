@@ -1,6 +1,10 @@
 ---
 name: Type Vocabulary for Specifications
-description: Fireballプロジェクトの設計仕様書における型システム語彙。実装非依存な型名、ライフサイクル管理、API記述形式を定義。
+description: >-
+  設計仕様書における実装非依存な型システム語彙（プリミティブ型, 複合型, 参照型）とC++型エイリアスの対応表。
+  WHEN: 仕様書のデータ構造記述, API定義（引数・戻り値）, C++ usingエイリアス定義, 型名の選定
+  SCOPE: 型の命名と分類。エラー戦略はcpp_embedded、構造設計パターンはfireball_architectureを参照。
+  RELATED: cpp_embedded（result型, economic_function実装）, fireball_architecture（構造設計）, cpp_coding_style.md（MEMORY, 型エイリアス一覧）
 ---
 
 # 型語彙スキル (Type Vocabulary Skill)

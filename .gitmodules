@@ -6,7 +6,7 @@
 	url = git@github.com:WebAssembly/WASI.git
 [submodule "docs/references/wamr"]
 	path = docs/references/wamr
-	url=git@github.com:bytecodealliance/wasm-micro-runtime.git
+	url = git@github.com:bytecodealliance/wasm-micro-runtime.git
 [submodule "docs/references/riscv"]
 	path = docs/references/riscv
 	url = git@github.com:riscv/riscv-isa-manual.git

@@ -1,6 +1,10 @@
 ---
 name: Embedded C++ Optimization
-description: 組み込み環境（メモリ制約）におけるC++実装スキル、エラーハンドリング、およびシステム連携規約
+description: >-
+  組み込み環境（RAM 64KB）における禁止/許可ライブラリ、コンテナ代替、メモリ管理パターン、エラーハンドリング。
+  WHEN: C++実装, ライブラリ選定, コンテナ選択, メモリ戦略決定, エラー処理設計
+  SCOPE: 実装レベルの技術判断。アーキテクチャ構造はfireball_architectureを参照。
+  RELATED: fireball_architecture（構造設計）, cpp_linting（スタイル検証）, fireball_vocabulary（型エイリアス定義）
 ---
 
 # 組み込みC++最適化スキル
@@ -117,7 +121,7 @@ python3 .agent/skills/cpp_embedded/scripts/checker.py <ソースファイルま�
 ### 2. インターフェイス分離の判断
 
 **判断チェックリスト**:
-1. **差し替え**: このモジュールの実装を将来差し替える可能性はあるか？
+1. **試験性**: 将来の実装変更やテスト容易性のためにインターフェイスが必要か？ (`fireball_architecture` 参照)
    - JITとインタープリタの切り替え → **YES**
    - 固定アルゴリズムのユーティリティ → **NO**
 2. **テスト**: モック化して単体テストする必要があるか？

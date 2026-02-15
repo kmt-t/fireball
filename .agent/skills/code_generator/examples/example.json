@@ -1,24 +1,23 @@
 {
-  "namespace": "fireball::example",
+  "namespace": "fireball::vsoc",
   "definitions": [
     {
       "type": "enum",
-      "name": "result_code",
-      "description": "API実行結果",
+      "name": "interrupt_strategy",
+      "description": "Strategies for handling interrupts in vSoC",
       "items": [
-        { "name": "success", "value": 0, "description": "成功" },
-        { "name": "fail", "value": 1, "description": "失敗" },
-        { "name": "timeout", "value": 2, "description": "タイムアウト" }
+        { "name": "DIRECT", "value": 0, "description": "Direct delivery" },
+        { "name": "QUEUED", "value": 1, "description": "Queued via buffer" }
       ]
     },
     {
       "type": "struct",
-      "name": "config_params",
-      "description": "システム設定パラメータ",
-      "is_class": true,
+      "name": "device_config",
+      "description": "Configuration for a virtual device",
       "members": [
-        { "name": "max_retry", "type": "uint32_t", "description": "最大再試行回数" },
-        { "name": "timeout_ms", "type": "uint32_t", "description": "タイムアウト(ms)" }
+        { "name": "base_address", "type": "address", "description": "vMMIO base address" },
+        { "name": "region_size", "type": "byte_count", "description": "Size of MMIO region" },
+        { "name": "irq_id", "type": "uint32_t", "description": "Interrupt ID" }
       ]
     }
   ]

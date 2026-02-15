@@ -1,5 +1,8 @@
 ---
-description: コーディング標準、設計方針への適合性チェック
+description: >-
+  コーディング標準・設計方針への適合性チェック手順。
+  WHEN: コード実装完了後のレビュー, リリース前検証, /check_compliance
+  RELATED: cpp_linting（スタイル検証）, cpp_embedded（禁止ライブラリ検査）, fireball_architecture（構造チェック）
 ---
 
 1. **対象範囲の特定**

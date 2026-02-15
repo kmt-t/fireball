@@ -53,7 +53,7 @@ def generate_struct(data):
     lines.append(f"{keyword} {name} {{")
     
     for member in members:
-        m_type = member.get("type", "uint32_t")
+        m_type = member.get("type", "byte_count")
         m_name = member.get("name")
         m_desc = member.get("description", "")
         
@@ -80,16 +80,12 @@ def main():
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
 
-    header_guard = generate_header_guard(args.output)
-    
     lines = [
         "// AUTO-GENERATED FILE - DO NOT EDIT",
         "#pragma once",
         "",
-        f"#ifndef {header_guard}",
-        f"#define {header_guard}",
-        "",
         "#include <cstdint>",
+        "#include \"core/types.hxx\"",
         ""
     ]
 
@@ -108,8 +104,6 @@ def main():
 
     if namespace:
         lines.append(f"}} // namespace {namespace}")
-
-    lines.append(f"#endif // {header_guard}")
 
     with open(args.output, "w") as f:
         f.write("\n".join(lines))

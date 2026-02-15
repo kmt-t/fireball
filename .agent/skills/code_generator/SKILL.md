@@ -27,8 +27,8 @@ graph LR
         Bindgen[wit-bindgen]
     end
     subgraph Output
-        Header[.hxx (Header)]
-        Source[.cxx (Source)]
+        Header[*.hxx (Header)]
+        Source[*.cxx (Source)]
     end
 
     JSON --> Python

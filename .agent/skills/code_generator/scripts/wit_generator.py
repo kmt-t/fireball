@@ -66,7 +66,7 @@ def main():
     # 2. Generate C++ code for each interface
     for interface in ast.interfaces:
         # Assuming the namespace is the second-to-last part of the WIT file's parent directory
-        # e.g., docs/orders/components -> components
+        # e.g., docs/components -> components
         namespace = args.wit_path.parent.name
         
         # WIT interface names are kebab-case

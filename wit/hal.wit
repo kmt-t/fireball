@@ -11,15 +11,15 @@ interface poll {
 }
 
 interface streams {
-    use types.{recovery-strategy};
+    use types.{recovery-strategy, shm-handle};
     use poll.{pollable};
 
     /// An input byte stream.
     resource input-stream {
         /// Performs a non-blocking read.
-        read: func(len: u64) -> result<list<u8>, recovery-strategy>;
+        read: func(len: u64) -> result<shm-handle, recovery-strategy>;
         /// Performs a blocking read.
-        blocking-read: func(len: u64) -> result<list<u8>, recovery-strategy>;
+        blocking-read: func(len: u64) -> result<shm-handle, recovery-strategy>;
         /// Subscribes to readiness events for this stream.
         subscribe: func() -> pollable;
     }
@@ -27,9 +27,9 @@ interface streams {
     /// An output byte stream.
     resource output-stream {
         /// Performs a non-blocking write.
-        write: func(data: list<u8>) -> result<_, recovery-strategy>;
+        write: func(data: shm-handle) -> result<_, recovery-strategy>;
         /// Performs a blocking write and flush.
-        blocking-write: func(data: list<u8>) -> result<_, recovery-strategy>;
+        blocking-write: func(data: shm-handle) -> result<_, recovery-strategy>;
         /// Subscribes to readiness events for this stream.
         subscribe: func() -> pollable;
     }
@@ -62,19 +62,20 @@ interface timer {
 interface bus {
     use types.{operation-result, recovery-strategy};
     use poll.{pollable};
+    use types.{shm-handle};
 
     /// A bus master device.
     resource bus-master {
         /// Performs a synchronous transfer (write then read or simultaneous).
-        transfer: func(tx-data: list<u8>, rx-len: u32) -> result<list<u8>, recovery-strategy>;
+        transfer: func(tx-data: shm-handle, rx-len: u32) -> result<shm-handle, recovery-strategy>;
     }
 
     /// A bus slave device.
     resource bus-slave {
         /// Sets the response data for the next master read request.
-        set-response: func(data: list<u8>) -> operation-result;
+        set-response: func(data: shm-handle) -> operation-result;
         /// Gets the data received from the last master write request.
-        get-received: func() -> result<list<u8>, recovery-strategy>;
+        get-received: func() -> result<shm-handle, recovery-strategy>;
         /// Subscribes to bus access events (e.g. addressed as slave).
         subscribe: func() -> pollable;
     }

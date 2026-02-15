@@ -1,0 +1,40 @@
+name: 'Install WIT Tools'
+description: 'Installs wit-deps and wasm-tools for WIT validation'
+
+inputs:
+  wit-deps-version:
+    description: 'Version of wit-deps to install'
+    required: false
+    default: '0.5.0'
+  wasm-tools-version:
+    description: 'Version of wasm-tools to install'
+    required: false
+    default: '1.244.0'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup wasm-tools
+      uses: bytecodealliance/actions/wasm-tools/setup@d742827944dcb656569399571a8a45261b5089f6 # v1.1.0
+      with:
+        version: ${{ inputs.wasm-tools-version }}
+
+    - name: Cache wit-deps
+      id: cache-wit-deps
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: ~/.local/bin/wit-deps
+        key: wit-deps-${{ inputs.wit-deps-version }}
+
+    - name: Install wit-deps
+      if: steps.cache-wit-deps.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        mkdir -p ~/.local/bin
+        curl -Lo ~/.local/bin/wit-deps \
+          "https://github.com/bytecodealliance/wit-deps/releases/download/v${{ inputs.wit-deps-version }}/wit-deps-x86_64-unknown-linux-musl"
+        chmod +x ~/.local/bin/wit-deps
+
+    - name: Add wit-deps to PATH
+      shell: bash
+      run: echo "$HOME/.local/bin" >> $GITHUB_PATH

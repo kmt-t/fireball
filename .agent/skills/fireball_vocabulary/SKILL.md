@@ -266,7 +266,7 @@ using data_range = std::span<T>;
 
 **特性**:
 - 動的メモリ確保を避けるため、`std::map`, `std::unordered_map` は使用しない
-- [stdlib.md § 3](../stdlib.md#3-禁止コンテナ)を参照
+- [Embedded C++ Optimization](../cpp_embedded/SKILL.md)を参照
 
 ### 4.4 コールバック・関数型
 
@@ -281,7 +281,7 @@ using data_range = std::span<T>;
 コールバック | vMMIOアクセス時に呼び出される処理 | 経済的な関数 | シグネチャ: `void(uint32_t addr, uint8_t* data)`
 ```
 
-**参照**: [economic_function.md](../economic_function.md)
+**参照**: [Embedded C++ Optimization - Economic Function](../cpp_embedded/SKILL.md#経済的な関数-economic-function)
 
 ### 4.5 アロケータ型
 
@@ -864,8 +864,8 @@ using task_id = uint16_t;
 
 - **[proj_fireball.md](.agent/skills/proj_fireball.md)**: アーキテクチャ原則と設計パターン
 - **[cpp_embedded.md](.agent/skills/cpp_embedded.md)**: 組み込みC++の実装ガイドライン
-- **[stdlib.md](docs/orders/patterns/stdlib.md)**: 禁止コンテナと代替手法
-- **[harness.md](docs/orders/patterns/harness.md)**: Stateless Interface パターン
+- **[stdlib.md](docs/patterns/stdlib.md)**: 禁止コンテナと代替手法
+- **[harness.md](docs/patterns/harness.md)**: Stateless Interface パターン
 
 ---
 

@@ -9,7 +9,7 @@ description: Local WebAssembly Core Specification (.rst files) を読み解き�
 
 ## 1. 仕様書の場所
 
-- **Base Path**: `docs/orders/references/webassembly/document/core/`
+- **Base Path**: `docs/references/webassembly/document/core/`
 
 ## 2. ディレクトリ構造と主な内容
 

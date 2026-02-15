@@ -1,0 +1,29 @@
+{
+  "name": "WAMR-Dev",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "args": {
+      "VARIANT": "debian-12",
+      "WASI_SDK_VER": "25",
+      "WABT_VER": "1.0.37"
+    }
+  },
+  "runArgs": [
+    "--cap-add=SYS_PTRACE",
+    "--security-opt",
+    "seccomp=unconfined"
+  ],
+  "customizations": {
+    "vscode": {
+      "settings": {},
+      "extensions": [
+        "dtsvet.vscode-wasm",
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-vscode.cmake-tools"
+      ]
+    }
+  },
+  "postCreateCommand": "bash .devcontainer/finalize.sh",
+  "remoteUser": "vscode"
+}

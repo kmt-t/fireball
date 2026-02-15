@@ -32,7 +32,7 @@ description: Fireballプロジェクト固有のアーキテクチャパター�
 - URIによるサービス識別とルックアップを行う
 - サービスファサードによるIPC隠蔽を行う
 
-**詳細**: [ioc.md](../../docs/orders/patterns/ioc.md)
+**詳細**: [Structural Design](../structural_design/SKILL.md)
 
 ### 3-Tier モジュール分離 `{3TierSeparation}`
 
@@ -44,7 +44,7 @@ description: Fireballプロジェクト固有のアーキテクチャパター�
 | **Tier 2** | サブシステム | Harness / Stateless IF | 複雑な内部構造 |
 | **Tier 3** | 実装 | Natural OO | 単一責務・低複雑度 |
 
-**詳細**: [interface.md](../../docs/orders/patterns/interface.md)
+**詳細**: [Structural Design](../structural_design/SKILL.md)
 
 ### UNIX哲学
 - 単一責務の原則を徹底する
@@ -71,7 +71,7 @@ description: Fireballプロジェクト固有のアーキテクチャパター�
 - オブジェクトは内部状態（キャッシュ等）を持つ可能性がある
 - コンテキストは引数で渡すこと
 
-**詳細**: [harness.md](../../docs/orders/patterns/harness.md)
+**詳細**: [Structural Design](../structural_design/SKILL.md)
 
 ### Data/View 分離 `{DataViewSeparation}`
 - **View**: ROM上のバイナリは `std::span` でビュー化（コピーしない）
@@ -96,10 +96,6 @@ description: Fireballプロジェクト固有のアーキテクチャパター�
 
 | パターン | 目的 | ドキュメント |
 |:---|:---|:---|
-| **制御の反転** | システム境界での疎結合 | [ioc.md](../../docs/orders/patterns/ioc.md) |
-| **3-Tier分離** | 複雑度に応じた分離方式 | [interface.md](../../docs/orders/patterns/interface.md) |
-| **Harness設計** | Stateless IFとDI | [harness.md](../../docs/orders/patterns/harness.md) |
-| **リカバリー戦略** | エラーコードではなくアクション指向のエラーハンドリング | [recovery_strategy.md](../../docs/orders/patterns/recovery_strategy.md) |
-| **経済的な関数** | ヒープレス型消去 | [economic_function.md](../../docs/orders/patterns/economic_function.md) |
-| **ソート済み配列** | `std::map`の代替 | [sorted_indexed_array.md](../../docs/orders/patterns/sorted_indexed_array.md) |
-| **標準ライブラリ** | 許可・禁止ライブラリ | [stdlib.md](../../docs/orders/patterns/stdlib.md) |
+| **構造設計** | 3-Tier, IoC, Harness | [Structural Design](../structural_design/SKILL.md) |
+| **システム挙動** | リカバリー戦略, WITマッピング | [System Behavior](../cpp_embedded/SKILL.md) |
+| **リソース最適化** | メモリ管理, コンテナ, 標準ライブラリ | [Resource Optimization](../cpp_embedded/SKILL.md) |

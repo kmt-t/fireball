@@ -9,7 +9,7 @@ description: Local WASI (WebAssembly System Interface) Specification を読み�
 
 ## 1. 仕様書の場所
 
-- **Base Path**: `docs/orders/references/wasi/`
+- **Base Path**: `docs/references/wasi/`
 
 ## 2. ディレクトリ構造と主な内容
 

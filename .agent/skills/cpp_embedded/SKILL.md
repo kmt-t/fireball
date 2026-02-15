@@ -1,6 +1,6 @@
 ---
 name: Embedded C++ Optimization
-description: 組み込み環境（メモリ制約）におけるC++実装スキルと設計判断基準
+description: 組み込み環境（メモリ制約）におけるC++実装スキル、エラーハンドリング、およびシステム連携規約
 ---
 
 # 組み込みC++最適化スキル
@@ -43,6 +43,36 @@ description: 組み込み環境（メモリ制約）におけるC++実装スキ�
 - **構造・型**: `<array>`, `<span>`, `<string_view>`, `<optional>`, `<variant>`, `<tuple>`, `<bitset>`, `<initializer_list>`
 - **ロジック**: `<algorithm>`, `<utility>`, `<iterator>`, `<bit>`, `<compare>`, `<concepts>`, `<numbers>`
 - **言語機能**: `<coroutine>`, `<type_traits>`, `<new>` (placement new目的のみ)
+
+### ライブラリ分類図
+```mermaid
+graph TD
+    All[Standard Library]
+    subgraph Allowed[Allowed (No Heap/Light)]
+        Basic[Basic: cstdint, limits]
+        Struct[Struct: array, span, variant]
+        Logic[Logic: algorithm, utility]
+        Lang[Lang: coroutine, type_traits]
+    end
+    subgraph Forbidden[Forbidden (Hosted/Heavy)]
+        IO[IO: iostream, fstream]
+        Async[Async: future, thread]
+        Cont[Containers: vector, map, list]
+        Exc[Exception: stdexcept]
+    end
+    All --> Allowed
+    All --> Forbidden
+    style Allowed fill:#cfc,stroke:#333
+    style Forbidden fill:#fcc,stroke:#333
+```
+
+### 利用可能ライブラリ一覧
+| 分類 | ヘッダファイル | 主な用途 |
+| :--- | :--- | :--- |
+| **基本** | `<cstdint>`, `<cstddef>`, `<limits>`, `<source_location>` | 基本型、限界値、デバッグ情報 |
+| **構造・型** | `<array>`, `<span>`, `<string_view>`, `<optional>`, `<variant>`, `<tuple>`, `<bitset>` | 固定長コンテナ、ビュー、判別共用体 |
+| **ロジック** | `<algorithm>`, `<utility>`, `<iterator>`, `<bit>`, `<compare>`, `<concepts>` | アルゴリズム、ムーブ、ビット操作 |
+| **言語機能** | `<coroutine>`, `<type_traits>`, `<new>` | 非同期処理、テンプレートメタ、配置new |
 
 ---
 
@@ -172,23 +202,188 @@ python3 .agent/skills/cpp_embedded/scripts/checker.py <ソースファイルま�
 - 必要な場合はパーティション管理（`dlmalloc`, `mspace`）
 - メモリパーティションごとに隔離
 
-**詳細**: [stdlib.md](../../docs/orders/patterns/stdlib.md) § 3.1
+**メモリパーティションと隔離**:
+```mermaid
+sequenceDiagram
+    participant User
+    participant Allocator as SystemAllocator
+    participant Partition as MemoryPartition
+    User->>Allocator: new_object(partition_name, size)
+    Allocator->>Allocator: lookup(partition_name)
+    alt Partition Found
+        Allocator->>Partition: allocate(size)
+        alt Success
+            Allocator-->>User: ptr (OK)
+        else Full
+            Allocator-->>User: nullptr (Error)
+        end
+    else Not Found
+        Allocator-->>User: nullptr (Error)
+    end
+```
+
+**アロケータの定石**:
+- **バンプアロケータ**: 解放が不要な短命なオブジェクトには、ポインタをずらすだけの高速なバンプアロケータを使用する。
+- **配置new (Placement new)**: 静的に確保されたバッファ上にオブジェクトを構築する。
+
+**コンセプトコード (Python) - パーティション検索**:
+```python
+class memory_partition:
+    def __init__(self, name, size):
+        self.name, self.size, self.used = name, size, 0
+    def allocate(self, amount):
+        if self.used + amount <= self.size:
+            self.used += amount
+            return True
+        return False
+
+class system_allocator:
+    def __init__(self):
+        self.partitions = {
+            "kernel": memory_partition("Kernel", 8192),
+            "guest":  memory_partition("Guest", 24576)
+        }
+    def new_object(self, partition_name, size):
+        p = self.partitions.get(partition_name)
+        return p and p.allocate(size)
+# allocator.new_object("kernel", 1024)
+```
 
 ### 経済的な関数 (Economic Function)
 
-`std::function` 代替のヒープレス・ラムダ活用技術。
+`std::function` 代替のヒープレス・ラムダ活用技術。 `std::function` をラップし、ラムダのキャプチャサイズを静的に検証することで、ヒープ割り当てを完全に排除する。
 
-- 固定サイズバッファによる配置
-- `static_assert` によるサイズ検証
-- キャプチャサイズが制限を超えた場合はコンパイルエラー
+**実装モデル (C++)**:
+```cpp
+template<typename Signature, size_t Capacity = 64>
+class economic_function {
+    std::function<Signature> func_;
+public:
+    template<typename F>
+    economic_function(F f) : func_(std::move(f)) {
+        static_assert(sizeof(F) <= Capacity, 
+            "Lambda too large! Decrease capture size or increase Capacity.");
+    }
+    template<typename... Args>
+    auto operator()(Args&&... args) const {
+        return func_(std::forward<Args>(args)...);
+    }
+};
+```
+- **メリット**: SBO（Small Buffer Optimization）を強制し、ヒープ不使用をコンパイル時に保証する。
 
-**詳細**: [economic_function.md](../../docs/orders/patterns/economic_function.md)
+
 
 ### コンテナ最適化
 
-重いコンテナの回避と最適化された代替コンテナ。
+重いコンテナの回避と最適化された代替コンテナ。 `std::map` の代替として、ソート済み配列と二分探索を組み合わせる。ROM上の定数データに対しては、データ自体をソートするのではなく、インデックスの配列をソートして二分探索を行う。
 
-- `std::vector`, `std::map` の禁止と代替
-- `std::map` 代替のソート済み配列パターン
+**構造と検索**:
+```mermaid
+classDiagram
+    class map_interface { +get(key) value }
+    class sorted_array_map { -data: pair[] }
+    class indexed_array_map { -raw_data: pair[] -indices: int[] }
+    map_interface <|-- sorted_array_map
+    map_interface <|-- indexed_array_map
+```
 
-**詳細**: [sorted_indexed_array.md](../../docs/orders/patterns/sorted_indexed_array.md)
+**コンセプトコード (Python)**:
+```python
+import bisect
+
+class indexed_array_map:
+    def __init__(self, raw_data_list):
+        # raw_data_list is assumed to be unsorted and read-only (ROM)
+        self.raw_data = raw_data_list
+        # Sort indices based on the key of the element they point to
+        self.indices = sorted(range(len(self.raw_data)), key=lambda i: self.raw_data[i][0])
+        self.keys = [self.raw_data[i][0] for i in self.indices]
+
+    def get(self, key):
+        # Binary search on the sorted keys (which corresponds to sorted indices)
+        # In C++, this would be a custom comparator for std::lower_bound
+        low = 0
+        high = len(self.indices)
+        
+        while low < high:
+            mid = (low + high) // 2
+            # Access key via index without creating a separate key array
+            mid_key = self.raw_data[self.indices[mid]][0]
+            if mid_key < key:
+                low = mid + 1
+            else:
+                high = mid
+                
+        if low < len(self.indices) and self.raw_data[self.indices[low]][0] == key:
+            return self.raw_data[self.indices[low]][1]
+        return None
+```
+
+## エラーハンドリング・リカバリーパターン
+
+エラーの原因（Why）を詳細に伝えるのではなく、呼び出し側が取るべきアクション（How）を `Result` 型で返却する。 `{RecoveryStrategy}`
+
+### 1. リカバリー戦略 (Recovery Strategy)
+
+組み込み環境において、例外機構（`throw`）は実行時コストと非決定的な挙動のため使用を禁止する。また、単純なエラーコード（`int`）は無視されやすく、意味が実装に依存する。
+Fireballでは、Rustの `Result<T, E>` パラダイムを採用し、`E` を「リカバリー戦略」に特化させる。
+
+| 戦略 (Recovery Strategy) | 意味 | 典型的な失敗理由 | 呼び出し側のアクション |
+| :--- | :--- | :--- | :--- |
+| **`IGNORE`** | 回復不要 | ログ送信失敗、統計収集エラー | エラーを無視し、処理を続行する |
+| **`RETRY`** | リトライ | 一時的なリソース不足、タイムアウト | バックオフ後に操作を再試行する |
+| **`RESTART`** | 再起動 | 状態不整合、回復不能なモジュールエラー | モジュールまたはシステムの再初期化を行う |
+| **`PANIC`** | パニック | メモリ破壊、アサーション失敗 | システムを即座に停止し、ダンプを出力する |
+
+**相互作用図**:
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Service
+    
+    Client->>Service: operation(params)
+    
+    alt Success
+        Service-->>Client: Ok(result)
+    else Recoverable (Retry)
+        Service-->>Client: Err(RETRY)
+        Client->>Client: Retry after delay
+    else Critical (Restart)
+        Service-->>Client: Err(RESTART)
+        Client->>Client: Re-init Module
+    else Fatal (Panic)
+        Service-->>Client: Err(PANIC)
+        Client->>Client: Halt System
+    end
+```
+
+**コンセプトコード (Python)**:
+```python
+from enum import Enum
+class RecoveryStrategy(Enum):
+    IGNORE = "ignore"
+    RETRY = "retry"
+    RESTART = "restart"
+    PANIC = "panic"
+
+class OperationResult:
+    def __init__(self, value=None, error=None):
+        self.value = value
+        self.error = error
+    def is_ok(self): return self.error is None
+
+# Usage
+def client_code():
+    result = service.execute()
+    if result.is_ok():
+        process(result.value)
+    elif result.error == RecoveryStrategy.IGNORE:
+        logger.warn("Minor error")
+    elif result.error == RecoveryStrategy.RETRY:
+        schedule_retry()
+    elif result.error == RecoveryStrategy.RESTART:
+        reinitialize_module()
+    else: # PANIC
+        halt_system()
+```

@@ -3,12 +3,15 @@ package fireball:host;
 interface types {
     /// Recovery strategy for operation failures.
     enum recovery-strategy {
+        /// No specific recovery strategy needed (or do nothing).
+        none,
         /// Retry with same parameters may succeed (transient failure).
         /// Examples: resource temporarily unavailable, timeout
-        retryable,
-        /// Operation cannot succeed with current parameters, do not retry (permanent failure).
-        /// Examples: invalid URI, service not found, already registered
-        fatal
+        retry,
+        /// Component state is corrupted, requires restart.
+        component-reboot,
+        /// System state is corrupted, requires full system reset.
+        system-panic
     }
 
     /// Result type for operations that don't return a value.
@@ -22,5 +25,8 @@ interface types {
 
     /// Result type for message routing.
     type message-routing-result = result<_, recovery-strategy>;
+
+    /// Shared memory handle.
+    type shm-handle = u32;
 }
-}
+

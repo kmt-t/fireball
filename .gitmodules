@@ -1,15 +1,15 @@
-[submodule "docs/orders/references/webassembly"]
-	path = docs/orders/references/webassembly
+[submodule "docs/references/webassembly"]
+	path = docs/references/webassembly
 	url = git@github.com:WebAssembly/spec.git
-[submodule "docs/orders/references/wasi"]
-	path = docs/orders/references/wasi
+[submodule "docs/references/wasi"]
+	path = docs/references/wasi
 	url = git@github.com:WebAssembly/WASI.git
-[submodule "docs/orders/references/wamr"]
-	path = docs/orders/references/wamr
+[submodule "docs/references/wamr"]
+	path = docs/references/wamr
 	url=git@github.com:bytecodealliance/wasm-micro-runtime.git
-[submodule "docs/orders/references/riscv"]
-	path = docs/orders/references/riscv
+[submodule "docs/references/riscv"]
+	path = docs/references/riscv
 	url = git@github.com:riscv/riscv-isa-manual.git
-[submodule "docs/orders/references/llvm"]
-	path = docs/orders/references/llvm
+[submodule "docs/references/llvm"]
+	path = docs/references/llvm
 	url = git@github.com:llvm/llvm-project.git

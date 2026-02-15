@@ -86,7 +86,8 @@ RUN set -eux; \
     mkdir -p ${DEVELOPER_HOME}/.local/bin; \
     chown -R ${DEVELOPER_USER}:${DEVELOPER_USER} ${DEVELOPER_HOME}; \
     runuser -u ${DEVELOPER_USER} -- /usr/bin/pipx install meson || true; \
-    runuser -u ${DEVELOPER_USER} -- /usr/bin/pipx install lizard || true
+    runuser -u ${DEVELOPER_USER} -- /usr/bin/pipx install lizard || true; \
+    runuser -u ${DEVELOPER_USER} -- /usr/bin/pipx install gprof2dot || true
 
 # Pandoc + TeX Live (for documentation generation)
 RUN apt-get update \
@@ -112,6 +113,12 @@ RUN apt-get update \
     qemu-system-arm qemu-system-riscv32 \
  && rm -rf /var/lib/apt/lists/*
 
+# Call Graph & Documentation Tools
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+    doxygen graphviz cflow \
+ && rm -rf /var/lib/apt/lists/*
+
 # Rust + WIT tools
 ENV RUSTUP_HOME=${DEVELOPER_HOME}/.rustup \
     CARGO_HOME=${DEVELOPER_HOME}/.cargo
@@ -134,6 +141,9 @@ RUN echo "=== Tools versions ===" \
   && npm --version || true \
   && mmdc --version || true \
   && gemini --version || true \
+  && doxygen --version || true \
+  && dot -V || true \
+  && cflow --version || true \
   && su - ${DEVELOPER_USER} -c "cargo --version" || true \
   && su - ${DEVELOPER_USER} -c "wit-bindgen --version" || true \
   && su - ${DEVELOPER_USER} -c "/usr/bin/pipx list" || true

@@ -1,0 +1,9 @@
+*.wasm
+tmp/
+
+# wit-deps vendored dependencies
+proposals/*/wit/deps/
+proposals/*/wit-0.3.0-draft/deps/
+
+# Lock files
+wkg.lock

@@ -4,23 +4,26 @@
 
 ※ ファイルパスのルートディレクトリはワーススペースのルートです。
 
-1. **必読**: 開始時に @docs/order/SUMMARY.md (存在しない場合は @docs/oders/architecture/overview.md ) および @docs/oders/requires/list.md を読むこと。 @docs/gen/summary.md は更新されているとは限らないが、参考にとどめる。
-2. **参照**: 外部仕様および技術の詳細は @docs/oders/REFERENCES.md を参照すること。
-3. **規約**: `.agent/rules/coding_style.md` を厳守すること。
-4. **範囲**: `docs/oders/**/**.md`、`inc/**/*.hxx`、`src/**/*.cxx`のみ参照すること。
+1. **必読**: 開始時に **Gemini.md** を読み、現在のタスクに必要なドキュメントを特定すること。
+2. **参照**: 外部仕様および技術の詳細は @docs/REFERENCES.md を参照すること。
+3. **規約**: `.agent/rules/cpp_coding_style.md` を厳守すること。
+4. **範囲**: `docs/**/*.md`、`inc/**/*.hxx`、`src/**/*.cxx`のみ参照すること。
 
 ## ドキュメントの配置
 
-参照するドキュメントは下記の4階層とする。
+参照するドキュメントは下記の階層とする。
 
 (各フォルダに `FORMAT.md` が配置されているのでドキュメントをメンテナンスするときには参考にしてほしい)
 
-1. 要求（`docs/oders/requires/*.md`）
-2. 準拠する項目（`docs/oders/items/*.md`）
-3. アーキテクチャ（`docs/oders/architecture/*.md`）
-4. コンポーネント（`docs/oders/components/*.md`）
-5. パターン（`docs/oders/patterns/*.md`）
-6. 設計コンセプト（`docs/oders/concept/*.md`）
+1. 要求（`docs/requires/*.md`）
+2. 準拠する項目（`docs/items/*.md`）
+3. アーキテクチャ（`docs/architecture/*.md`）
+4. コンポーネント（`docs/components/*.md`）
+5. パターン（`docs/patterns/*.md`）
+   - `structural_patterns.md`: 構造設計（Tier 1/2/3, IoC, Harness）
+   - `resource_optimization_patterns.md`: 実装最適化（Memory, stdlib, Search）
+   - `system_behavior_patterns.md`: 挙動と外部連携（Recovery, WIT Mapping）
+6. 設計コンセプト（`docs/concept/*.md`）
 
 ドキュメントを参照し作業をする前に下記のリストに従いチェックし、フィードバックせよ。
 
@@ -30,12 +33,9 @@
 4. 未定義、紐づけがなされていない部分の修正案をユーザに提示する。
 5. 表記ゆれのリストをユーザに提示する。
 
-参照するドキュメントを元に生成するドキュメントは下記のフォルダに出力する。元のファイルは変更しないこと。具体的なコードではなく高レイヤーの仕様としてまとめること。
+参照するドキュメントを元に、一時的な検討資料や中間成果物を生成する場合は、下記のフォルダをフラットに使用せよ。
 
-1. バックログ（`docs/backlog/`）
-2. 要求（`docs/gen/requires/`）
-3. アーキテクチャ（`docs/gen/architecture/`）
-4. コンポーネント（`docs/gen/components/`）
-5. パターン（`docs/gen/patterns/`）
-6. コンセプトコード（`docs/gen/concept/`）
-7. 直行表・単語・キーワードトレーサビリティチェック（`docs/gen/trace/`）
+1. 作業領域（`docs/temp/`）: AIエージェントが自由にファイルを作成・編集して良い場所。
+2. バックログ（`docs/backlog/`）: 未解決の課題やTODOの記録。
+
+生成するドキュメントは、具体的なコードではなく高レイヤーの仕様や検討プロセスとしてまとめること。元のドキュメントはユーザーの指示なしに変更しないこと。

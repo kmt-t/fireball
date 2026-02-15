@@ -9,7 +9,7 @@ description: Local WAMR (WebAssembly Micro Runtime) のソースコードを調�
 
 ## 1. ソースコードの場所
 
-- **Base Path**: `docs/orders/references/wamr/`
+- **Base Path**: `docs/references/wamr/`
 
 ## 2. ディレクトリ構造と主な内容
 

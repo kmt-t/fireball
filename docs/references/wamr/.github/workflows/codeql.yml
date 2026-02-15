@@ -1,0 +1,135 @@
+# Copyright (C) 2019 Intel Corporation.  All rights reserved.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+
+name: "CodeQL"
+
+on:
+  # run on every push to the feature-development branch
+  # the main branch is covered by below cron plan
+  push:
+    branches:
+      - dev/**
+  # midnight UTC on the latest commit on the main branch
+  schedule:
+    - cron: "0 0 * * *"
+  # allow to be triggered manually
+  workflow_dispatch:
+
+jobs:
+  analyze:
+    # only run this job if the repository is not a fork
+    # if want to run this job on a fork, please remove the if condition
+    if: github.repository == 'bytecodealliance/wasm-micro-runtime'
+    name: Analyze
+    # Runner size impacts CodeQL analysis time. To learn more, please see:
+    #   - https://gh.io/recommended-hardware-resources-for-running-codeql
+    #   - https://gh.io/supported-runners-and-hardware-resources
+    #   - https://gh.io/using-larger-runners
+    # Consider using larger runners for possible analysis time improvements.
+    # But it is not free, so please be aware of the cost.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+
+    strategy:
+      fail-fast: false
+      matrix:
+        #TODO: add actions
+        language: ["cpp"]
+
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6.0.2
+        with:
+          submodules: recursive
+
+      # Initializes the CodeQL tools for scanning.
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4.32.0
+        with:
+          languages: ${{ matrix.language }}
+          # For more details on CodeQL's query packs, refer to: https://docs.github.com/en/code-security/code-scanning/automatically-scanning-your-code-for-vulnerabilities-and-errors/configuring-code-scanning#using-queries-in-ql-packs
+          # queries: security-extended,security-and-quality
+          queries: security-and-quality
+          config-file: ./.github/codeql/codeql_config.yml
+
+      - run: |
+          ./.github/scripts/codeql_buildscript.sh || exit 1
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4.32.0
+        with:
+          category: "/language:${{matrix.language}}"
+          upload: false
+        id: step1
+
+      # - cpp/alloca-in-loop is about touch_pages() which is intended to
+      # - cpp/command-line-injection is about bh_system() which is used to
+      # - cpp/path-injection is used in bh_read_file_to_buffer() to load a .wasm.
+      #   or operate a stack usage file which is not sensitive or generate a .aot
+      # - cpp/suspicious-pointer-scaling
+      #   - wasm_runtime_invoke_native() used to trivial registers
+      # - cpp/uncontrolled-process-operation is about dlopen() which is used by
+      #   native libraries registrations.
+      # - cpp/world-writable-file-creation is about fopen() a temporary file
+      #   for perf-PID.map or .aot(wamrc). The permission isn't sensitive.
+      #   file.
+      #
+      # execute customized compiler
+      - name: Filter out unwanted errors and warnings
+        uses: advanced-security/filter-sarif@v1
+        with:
+          patterns: |
+            ## Exclude files and directories
+            -**/build/**
+            -**/core/deps/**
+            -**/cmake*/Modules/**
+            -**/test*/**
+            -**/wasm-app*/**
+            ## Exclude rules 1. Related to formatting, style
+            -**:cpp/commented-out-code
+            -**:cpp/complex-condition
+            -**:cpp/empty-if
+            -**:cpp/fixme-comment
+            -**:cpp/include-non-header
+            -**:cpp/long-switch
+            -**:cpp/poorly-documented-function
+            -**:cpp/trivial-switch
+            -**:cpp/unused-local-variable
+            -**:cpp/unused-static-function
+            -**:cpp/unused-static-variable
+            -**:cpp/use-of-goto
+            ## Exclude rules 2. Related to special usage of APIs
+            -**:cpp/alloca-in-loop
+            -**:cpp/command-line-injection
+            -**:cpp/path-injection
+            -core/iwasm/common/wasm_runtime_common.c:cpp/suspicious-pointer-scaling
+            -**:cpp/uncontrolled-process-operation
+            -**:cpp/world-writable-file-creation
+          input: ${{ steps.step1.outputs.sarif-output }}/cpp.sarif
+          output: ${{ steps.step1.outputs.sarif-output }}/cpp.sarif
+
+      - name: Upload CodeQL results to code scanning
+        uses: github/codeql-action/upload-sarif@v4.32.0
+        with:
+          sarif_file: ${{ steps.step1.outputs.sarif-output }}
+          category: "/language:${{matrix.language}}"
+
+      - name: Upload CodeQL results as an artifact
+        uses: actions/upload-artifact@v6.0.0
+        with:
+          name: codeql-results
+          path: ${{ steps.step1.outputs.sarif-output }}
+          retention-days: 10
+
+      - name: Fail if an error is found
+        run: |
+          ./.github/scripts/codeql_fail_on_error.py \
+            ${{ steps.step1.outputs.sarif-output }}/cpp.sarif
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}

@@ -52,13 +52,13 @@ description: >-
 ```mermaid
 graph TD
     All[Standard Library]
-    subgraph Allowed[Allowed (No Heap/Light)]
+    subgraph Allowed[Allowed No Heap/Light]
         Basic[Basic: cstdint, limits]
         Struct[Struct: array, span, variant]
         Logic[Logic: algorithm, utility]
         Lang[Lang: coroutine, type_traits]
     end
-    subgraph Forbidden[Forbidden (Hosted/Heavy)]
+    subgraph Forbidden[Forbidden Hosted/Heavy]
         IO[IO: iostream, fstream]
         Async[Async: future, thread]
         Cont[Containers: vector, map, list]

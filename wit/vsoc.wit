@@ -1,55 +1,56 @@
 package fireball:host;
 
-interface vsoc {
-    use types.{operation-result, recovery-strategy, shm-handle};
+interface vsoc-types {
+    use types.{shm-id};
 
-    /// vSoC Instance Configuration.
-    record vsoc-config {
-        jit-enabled: bool,
-        code-cache-size: u32,
-        ram-base: u32,
+    record vm-config {
         ram-size: u32,
         vmmio-base: u32,
-        vmmio-max-regions: u32,
-        shm-base: u32,
-        shm-size: u32,
+        vmmio-size: u32,
+        jit-enabled: bool,
     }
 
-    /// vSoC Runtime Status.
-    enum vsoc-state {
-        idle,
-        ready,
+    record memory-region {
+        base: u32,
+        size: u32,
+        shm-id: shm-id,
+        readonly: bool,
+    }
+
+    enum execution-state {
+        halted,
         running,
-        error,
+        trapped,
+        suspended
+    }
+}
+
+interface vsoc {
+    use types.{operation-result, recovery-strategy, shm-id};
+    use vsoc-types.{vm-config, memory-region, execution-state};
+
+    /// Tier 2: Virtual SoC Instance Controller
+    resource vsoc-instance {
+        constructor(cfg: vm-config);
+        execute: func() -> operation-result;
+        step: func() -> operation-result;
+        get-state: func() -> execution-state;
     }
 
-    /// vSoC Controller.
-    /// Manages the lifecycle and execution of a virtual machine instance.
-    resource vsoc-controller {
-        /// Creates a new vSoC controller instance.
-        constructor(cfg: vsoc-config);
+    /// Tier 3: WASM Module Loader
+    resource wasm-loader {
+        prepare: func(wasm: shm-id) -> result<u32, recovery-strategy>;
+        get-required-memory: func(module-id: u32) -> u32;
+    }
 
-        /// Loads a WASM module from binary data.
-        /// Performs validation and prepares the module for execution.
-        load-module: func(bin: list<u8>) -> operation-result;
-
-        /// Runs the guest code until yield, trap, or interrupt.
-        run: func() -> operation-result;
-
-        /// Steps the guest code once.
-        step: func() -> operation-result;
-
-        /// Injects a virtual interrupt into the guest environment.
-        notify-interrupt: func(irq-id: u32);
-
-        /// Returns the current execution state.
-        get-state: func() -> vsoc-state;
-
-        /// Gets the current guest program counter (WASM offset).
-        get-pc: func() -> u32;
+    /// Tier 3: Virtual MMIO Dispatcher
+    resource vmmio-manager {
+        register-region: func(region: memory-region) -> operation-result;
+        access-read: func(addr: u32) -> u32;
+        access-write: func(addr: u32, value: u32);
     }
 }
 
 world vsoc-world {
-    import vsoc;
+    export vsoc;
 }

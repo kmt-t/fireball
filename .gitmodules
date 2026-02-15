@@ -13,3 +13,6 @@
 [submodule "docs/references/llvm"]
 	path = docs/references/llvm
 	url = git@github.com:llvm/llvm-project.git
+[submodule "docs/references/Cm"]
+	path = docs/references/Cm
+	url = git@github.com:shadowlink0122/Cm.git

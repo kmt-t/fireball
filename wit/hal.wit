@@ -1,106 +1,60 @@
 package fireball:host;
 
-interface poll {
-    /// A resource that can be polled for readiness.
-    resource pollable {
-        /// Returns true if the resource is ready.
-        ready: func() -> bool;
-        /// Blocks until the resource is ready.
-        block: func();
+interface hal-types {
+    use types.{device-id, shm-id, operation-result, recovery-strategy};
+
+    enum device-kind {
+        stream,
+        block,
+        trigger,
+        timer
+    }
+
+    record pool-config {
+        block-size: u32,
+        block-count: u32,
+    }
+
+    enum debug-transport {
+        uart,
+        rtt
     }
 }
 
-interface streams {
-    use types.{recovery-strategy, shm-handle};
-    use poll.{pollable};
+interface hal {
+    use types.{device-id, shm-id, operation-result, recovery-strategy};
+    use hal-types.{pool-config, debug-transport};
 
-    /// An input byte stream.
-    resource input-stream {
-        /// Performs a non-blocking read.
-        read: func(len: u64) -> result<shm-handle, recovery-strategy>;
-        /// Performs a blocking read.
-        blocking-read: func(len: u64) -> result<shm-handle, recovery-strategy>;
-        /// Subscribes to readiness events for this stream.
-        subscribe: func() -> pollable;
+    /// Tier 1: Hardware Abstraction Layer Controller
+    resource device-controller {
+        constructor(config: pool-config);
+        read: func(id: device-id, dest: shm-id) -> result<u32, recovery-strategy>;
+        write: func(id: device-id, src: shm-id) -> operation-result;
+        ioctl: func(id: device-id, cmd: u32, arg: u32) -> operation-result;
+        acquire-buffer: func(size: u32) -> result<shm-id, recovery-strategy>;
+        release-buffer: func(id: shm-id);
     }
 
-    /// An output byte stream.
-    resource output-stream {
-        /// Performs a non-blocking write.
-        write: func(data: shm-handle) -> result<_, recovery-strategy>;
-        /// Performs a blocking write and flush.
-        blocking-write: func(data: shm-handle) -> result<_, recovery-strategy>;
-        /// Subscribes to readiness events for this stream.
-        subscribe: func() -> pollable;
+    /// Tier 3: Physical GPIO / Interrupt Trigger
+    resource gpio-trigger {
+        set: func(pin: u32, value: bool) -> operation-result;
+        get: func(pin: u32) -> bool;
     }
-}
 
-/// High-responsiveness Trigger (GPIO) interface.
-interface trigger {
-    use types.{operation-result, recovery-strategy};
+    /// Tier 3: Hardware System Timer
+    resource hardware-timer {
+        now-ns: func() -> u64;
+        set-alarm: func(ns: u64) -> operation-result;
+    }
 
-    /// Sets the output value of a physical pin.
-    set-pin: func(pin: u32, value: bool) -> operation-result;
-    /// Gets the current value of a physical pin.
-    get-pin: func(pin: u32) -> result<bool, recovery-strategy>;
-}
-
-/// Timer and sleep services.
-interface timer {
-    use poll.{pollable};
-
-    /// A timer instance.
-    resource timer-handle {
-        /// Returns the current monotonic time in nanoseconds.
-        now: func() -> u64;
-        /// Creates a pollable that resolves after the specified duration.
-        subscribe-duration: func(nanos: u64) -> pollable;
+    /// Tier 3: GDB RSP Debug Server
+    resource debug-server {
+        constructor(transport: debug-transport);
+        poll-packet: func() -> operation-result;
+        get-parsed-command: func() -> result<shm-id, bool>;
     }
 }
 
-/// Master and Slave Bus communication (I2C, SPI, etc.)
-interface bus {
-    use types.{operation-result, recovery-strategy};
-    use poll.{pollable};
-    use types.{shm-handle};
-
-    /// A bus master device.
-    resource bus-master {
-        /// Performs a synchronous transfer (write then read or simultaneous).
-        transfer: func(tx-data: shm-handle, rx-len: u32) -> result<shm-handle, recovery-strategy>;
-    }
-
-    /// A bus slave device.
-    resource bus-slave {
-        /// Sets the response data for the next master read request.
-        set-response: func(data: shm-handle) -> operation-result;
-        /// Gets the data received from the last master write request.
-        get-received: func() -> result<shm-handle, recovery-strategy>;
-        /// Subscribes to bus access events (e.g. addressed as slave).
-        subscribe: func() -> pollable;
-    }
-}
-
-/// One-way streaming data transfer.
-interface streaming {
-    use streams.{input-stream, output-stream};
-
-    /// A streaming data producer.
-    resource streaming-master {
-        /// Gets the output stream for sending data.
-        get-output-stream: func() -> output-stream;
-    }
-
-    /// A streaming data consumer.
-    resource streaming-slave {
-        /// Gets the input stream for receiving data.
-        get-input-stream: func() -> input-stream;
-    }
-}
-
-world hal {
-    import trigger;
-    import timer;
-    import bus;
-    import streaming;
+world hal-world {
+    export hal;
 }

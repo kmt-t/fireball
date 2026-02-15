@@ -1,32 +1,27 @@
 package fireball:host;
 
 interface types {
-    /// Recovery strategy for operation failures.
+    type device-id = u32;
+    type shm-id = u32;
+    type channel-id = u32;
+    type task-id = u32;
+    type uri-handle = shm-id;
+
     enum recovery-strategy {
-        /// No specific recovery strategy needed (or do nothing).
         none,
-        /// Retry with same parameters may succeed (transient failure).
-        /// Examples: resource temporarily unavailable, timeout
         retry,
-        /// Component state is corrupted, requires restart.
         component-reboot,
-        /// System state is corrupted, requires full system reset.
         system-panic
     }
 
-    /// Result type for operations that don't return a value.
     type operation-result = result<_, recovery-strategy>;
 
-    /// Result type for service loading operations.
-    type service-load-result = result<_, recovery-strategy>;
-
-    /// Result type for service registration.
-    type service-registration-result = result<_, recovery-strategy>;
-
-    /// Result type for message routing.
-    type message-routing-result = result<_, recovery-strategy>;
-
-    /// Shared memory handle.
-    type shm-handle = u32;
+    enum log-level {
+        trace,
+        debug,
+        info,
+        warn,
+        error,
+        fatal
+    }
 }
-

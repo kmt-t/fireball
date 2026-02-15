@@ -1,0 +1,44 @@
+package fireball:host;
+
+interface jit-types {
+    record compilation-stats {
+        hotspot-count: u32,
+        compiled-functions: u32,
+        cache-usage: u32,
+    }
+}
+
+interface jit-modules {
+    use types.{operation-result, shm-id};
+
+    resource hotspot-detector {
+        record-execution: func(pc: u32) -> bool;
+        reset: func();
+    }
+
+    resource entry-index {
+        lookup: func(pc: u32) -> result<u32, bool>;
+        register: func(pc: u32, native-addr: u64);
+    }
+
+    resource copy-and-patch-engine {
+        /// Arguments and generated code are handled via shm-id
+        patch: func(template-id: u32, args-shm: shm-id) -> result<shm-id, bool>;
+    }
+}
+
+interface jit-core {
+    use types.{operation-result};
+    use jit-types.{compilation-stats};
+
+    resource compiler {
+        constructor();
+        request-compilation: func(wasm-pc: u32) -> operation-result;
+        get-stats: func() -> compilation-stats;
+    }
+}
+
+world jit {
+    export jit-core;
+    export jit-modules;
+}

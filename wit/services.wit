@@ -1,62 +1,32 @@
 package fireball:host;
 
-interface services-types {
-    /// Key-Value pair for IPC communication.
-    /// Total 64 bits: 32-bit Key (8-bit Type + 24-bit ID) + 32-bit Value.
-    record kv-pair {
-        /// 8-bit Type Scope + 24-bit Key ID.
-        key: u32,
-        /// 32-bit Attribute Value or Resource Handle.
-        value: u32,
-    }
+interface services {
+    use types.{uri-handle, channel-id, task-id, operation-result, recovery-strategy, log-level, shm-id};
 
-    /// IPC Message consisting of multiple KV pairs.
-    type message = list<kv-pair>;
-}
+    type message-handle = shm-id;
 
-interface coos {
-    use types.{recovery-strategy};
-
-    /// Task management and scheduling.
-    resource task-manager {
-        /// Spawns a new task.
-        spawn: func(entry-index: u32, memory-size: u32) -> result<u32, recovery-strategy>;
-        /// Yields execution to the next task.
-        yield: func();
-        /// Exits the current task.
-        exit: func(code: u32);
-        /// Notifies an interrupt arrival for a specific task.
-        notify-interrupt: func(task-id: u32);
-    }
-}
-
-interface ipc {
-    use types.{service-registration-result, message-routing-result, recovery-strategy};
-    use services-types.{message};
-
-    /// Service discovery and message routing.
+    /// Tier 1: URI-based Message Router
     resource ipc-router {
-        /// Registers a service URI.
-        register-service: func(uri: string, role: u32, channel-id: u32) -> service-registration-result;
-        /// Looks up a service channel by URI.
-        lookup-service: func(uri: string) -> result<u32, recovery-strategy>;
-        /// Routes a message to a channel.
-        route-message: func(channel-id: u32, msg: message) -> message-routing-result;
+        bind: func(address: uri-handle) -> result<channel-id, recovery-strategy>;
+        connect: func(address: uri-handle) -> result<channel-id, recovery-strategy>;
+        send: func(chan: channel-id, msg: message-handle) -> operation-result;
+        recv: func(chan: channel-id) -> result<message-handle, recovery-strategy>;
+    }
+
+    /// Tier 2: Cooperative Task Scheduler
+    resource task-scheduler {
+        spawn: func(name-shm: shm-id, entry: u32) -> result<task-id, recovery-strategy>;
+        yield: func();
+        terminate: func(id: task-id);
+    }
+
+    /// Tier 3: System-wide Logging Service
+    resource system-logger {
+        emit: func(lvl: log-level, component-shm: shm-id, msg-shm: shm-id);
+        flush: func();
     }
 }
 
-interface manager {
-    use types.{service-load-result};
-
-    /// High-level service lifecycle management.
-    resource service-manager {
-        /// Loads a service by URI.
-        load-service: func(uri: string) -> service-load-result;
-    }
-}
-
-world services {
-    import coos;
-    import ipc;
-    import manager;
+world services-world {
+    export services;
 }

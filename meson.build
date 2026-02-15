@@ -44,10 +44,6 @@ incdirs = include_directories(
 )
 srcfiles = files(
   'src/main.cxx',
-  'src/utils/backtrace.cxx',
-  'src/vsoc/vsoc.cxx',
-  'src/allocator/malloc.c',
-  'src/allocator/stdcxx_allocator.cxx',
 )
 
 common_cpp_args = target_flags + [
@@ -71,12 +67,4 @@ fireball_exe = executable('fireball',
    cpp_args : common_cpp_args,
    link_args : target_flags + ['-lstdc++exp'] + release_args,
    install : true,
-)
-
-fireball_vsoc_harness_exe = executable('fireball-vsoc-harness',
-  ['src/vsoc_dummy.cxx', 'src/vsoc/vsoc.cxx'],
-  include_directories : incdirs,
-  cpp_args : common_cpp_args,
-  link_args : target_flags + ['-lstdc++exp'] + release_args,
-  install : true,
 )

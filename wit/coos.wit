@@ -1,0 +1,74 @@
+package fireball:host;
+
+interface coos-types {
+    use types.{task-id, shm-id, address, recovery-strategy};
+
+    /// Task states in the cooperative scheduler.
+    enum task-state {
+        ready,
+        running,
+        blocked,
+        interrupted,
+        terminated
+    }
+
+    /// Task context managed by the kernel.
+    /// @inv: id > 0 && id <= FB_CONF_MAX_TASKS
+    record task-context-info {
+        id: task-id,
+        state: task-state,
+        name-handle: shm-id,
+    }
+}
+
+interface coos {
+    use types.{task-id, shm-id, address, operation-result, recovery-strategy};
+    use coos-types.{task-state, task-context-info};
+
+    /// Tier 2: Cooperative Task Scheduler
+    /// @inv: active_task_count <= FB_CONF_MAX_TASKS
+    /// @inv: ready_queue is valid intrusive list
+    resource scheduler {
+        /// Spawns a new task from a WASM entry point.
+        /// @pre: name_shm != 0 && entry != 0
+        /// @post: result.is_ok() -> active_task_count == old(active_task_count) + 1
+        spawn: func(name-shm: shm-id, entry: address) -> result<task-id, recovery-strategy>;
+        
+        /// Registers a native coroutine as a task.
+        /// @pre: coroutine_handle != 0
+        spawn-task: func(coroutine-handle: shm-id) -> result<task-id, recovery-strategy>;
+        
+        /// Yields execution to the next ready task.
+        /// @post: current_task.state == ready
+        yield: func();
+
+        /// Terminates the specified task.
+        /// @pre: id exists in active tasks
+        /// @post: active_task_count == old(active_task_count) - 1
+        terminate: func(id: task-id);
+        
+        /// Main scheduling loop.
+        /// @inv: current_task is only updated by scheduler
+        run: func();
+
+        /// Sets idle handler for background processing.
+        set-idle-handler: func(handler-id: u32);
+    }
+
+    /// Tier 2: Hoare CSP Channel
+    /// @inv: buffer_size == 1 (Unbuffered CSP)
+    resource channel {
+        /// Sends a message to the channel (blocks if no receiver).
+        /// @pre: msg_handle != 0
+        /// @post: receiver is unblocked or sender is blocked
+        send: func(msg: shm-id) -> operation-result;
+
+        /// Receives a message from the channel (blocks if empty).
+        /// @post: sender is unblocked or receiver is blocked
+        recv: func() -> result<shm-id, recovery-strategy>;
+    }
+}
+
+world coos-world {
+    export coos;
+}

@@ -1,6 +1,15 @@
 package fireball:host;
 
 interface jit-types {
+    use types.{address, shm-id, recovery-strategy};
+
+    /// JIT Entry linking WASM PC to native code offset.
+    record jit-entry {
+        wasm-pc: address,
+        native-offset: address,
+    }
+
+    /// Compilation statistics for monitoring.
     record compilation-stats {
         hotspot-count: u32,
         compiled-functions: u32,
@@ -8,37 +17,66 @@ interface jit-types {
     }
 }
 
-interface jit-modules {
-    use types.{operation-result, shm-id};
+interface jit {
+    use types.{address, shm-id, operation-result, recovery-strategy};
+    use jit-types.{jit-entry, compilation-stats};
 
+    /// Tier 3: Hotspot Detector
+    /// @inv: history_count <= FB_CONF_JIT_MAX_HISTORY
+    /// @inv: compile_queue_count <= FB_CONF_JIT_MAX_COMPILE_QUEUE
     resource hotspot-detector {
-        record-execution: func(pc: u32) -> bool;
-        reset: func();
+        /// Records an execution of a WASM PC.
+        /// @pre: pc != 0
+        record-execution: func(pc: address);
+
+        /// Processes the recorded history and identifies hotspots.
+        /// @post: history_count == 0
+        process-history: func();
+
+        /// Clears the current compile queue.
+        /// @post: compile_queue_count == 0
+        clear-compile-queue: func();
     }
 
-    resource entry-index {
-        lookup: func(pc: u32) -> result<u32, bool>;
-        register: func(pc: u32, native-addr: u64);
+    /// Tier 3: JIT Entry Index
+    /// @inv: entries is sorted by wasm_pc
+    /// @inv: entry_count <= entries.size()
+    resource jit-entry-index {
+        /// Performs a fast lookup for a native trace address.
+        lookup: func(pc: address) -> result<address, bool>;
+
+        /// Registers a new JIT entry.
+        /// @pre: native_offset < FB_CONF_JIT_CACHE_SIZE
+        register-entry: func(pc: address, native-offset: address);
     }
 
+    /// Tier 3: Copy-and-Patch Engine
+    /// @inv: templates are immutable after boot
     resource copy-and-patch-engine {
-        /// Arguments and generated code are handled via shm-id
-        patch: func(template-id: u32, args-shm: shm-id) -> result<shm-id, bool>;
+        /// Patches a WASM instruction into native code.
+        /// @pre: dest_cache != 0
+        patch-trace: func(pc: address, dest-cache: shm-id) -> result<u32, recovery-strategy>;
+    }
+
+    /// Tier 2: JIT Compiler Manager
+    /// @inv: active_bank.cache_offset <= FB_CONF_JIT_CACHE_SIZE
+    /// @inv: old_bank.cache_offset <= FB_CONF_JIT_CACHE_SIZE
+    resource jit-compiler {
+        /// Initializes the JIT engine and caches.
+        initialize: func() -> operation_result;
+
+        /// Looks up a compiled trace. 
+        lookup-trace: func(pc: address) -> result<address, bool>;
+
+        /// Executes batch compilation for all queued hotspots.
+        process-batch-compile: func();
+
+        /// Forces a swap between Active and Old cache banks (GC).
+        /// @post: active_bank.cache_offset == 0
+        swap-banks: func();
     }
 }
 
-interface jit-core {
-    use types.{operation-result};
-    use jit-types.{compilation-stats};
-
-    resource compiler {
-        constructor();
-        request-compilation: func(wasm-pc: u32) -> operation-result;
-        get-stats: func() -> compilation-stats;
-    }
-}
-
-world jit {
-    export jit-core;
-    export jit-modules;
+world jit-world {
+    export jit;
 }

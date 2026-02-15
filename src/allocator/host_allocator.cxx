@@ -27,6 +27,7 @@
  */
 #include <allocator/host_allocator.hxx>
 #include <utils/backtrace.hxx>
+#include <new>
 
 [[nodiscard]]
 void* operator new(std::size_t num) {

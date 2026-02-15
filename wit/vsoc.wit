@@ -1,22 +1,17 @@
 package fireball:host;
 
 interface vsoc-types {
-    use types.{shm-id};
+    use types.{shm-id, address, byte-count};
 
+    /// Configuration for a Virtual SoC instance.
     record vm-config {
-        ram-size: u32,
-        vmmio-base: u32,
-        vmmio-size: u32,
+        ram-size: byte-count,
+        vmmio-base: address,
+        vmmio-size: byte-count,
         jit-enabled: bool,
     }
 
-    record memory-region {
-        base: u32,
-        size: u32,
-        shm-id: shm-id,
-        readonly: bool,
-    }
-
+    /// Execution state of the WASM guest.
     enum execution-state {
         halted,
         running,
@@ -26,28 +21,53 @@ interface vsoc-types {
 }
 
 interface vsoc {
-    use types.{operation-result, recovery-strategy, shm-id};
-    use vsoc-types.{vm-config, memory-region, execution-state};
-
-    /// Tier 2: Virtual SoC Instance Controller
-    resource vsoc-instance {
-        constructor(cfg: vm-config);
-        execute: func() -> operation-result;
-        step: func() -> operation-result;
-        get-state: func() -> execution-state;
-    }
+    use types.{operation-result, recovery-strategy, shm-id, address, byte-count};
+    use vsoc-types.{vm-config, execution-state};
 
     /// Tier 3: WASM Module Loader
     resource wasm-loader {
+        /// Prepares a WASM module for execution.
+        /// @pre: wasm_shm != 0
+        /// @post: result.is_ok() -> module_id > 0
         prepare: func(wasm: shm-id) -> result<u32, recovery-strategy>;
-        get-required-memory: func(module-id: u32) -> u32;
     }
 
-    /// Tier 3: Virtual MMIO Dispatcher
+    /// Tier 3: Virtual MMIO Manager
+    /// @inv: base_addr == FB_CONF_VMMIO_BASE
     resource vmmio-manager {
-        register-region: func(region: memory-region) -> operation-result;
-        access-read: func(addr: u32) -> u32;
-        access-write: func(addr: u32, value: u32);
+        /// Reads a 32-bit value from a virtual MMIO address.
+        /// @pre: addr >= vmmio_base && addr < vmmio_base + vmmio_size
+        access-read: func(addr: address) -> u32;
+
+        /// Writes a 32-bit value to a virtual MMIO address.
+        /// @pre: addr >= vmmio_base && addr < vmmio_base + vmmio_size
+        access-write: func(addr: address, value: u32);
+    }
+
+    /// Tier 2: vSoC Runtime
+    /// @inv: ram_size == FB_CONF_GUEST_RAM_SIZE
+    /// @inv: state == running -> ram_handle != 0
+    resource vsoc-runtime {
+        /// Initializes the runtime environment.
+        initialize: func() -> operation-result;
+
+        /// Loads a WASM application into the runtime.
+        /// @pre: wasm_handle != 0
+        /// @post: state == halted
+        load-app: func(wasm-handle: shm-id) -> operation-result;
+
+        /// Background task for JIT processing.
+        /// @pre: state != terminated
+        process-jit: func();
+
+        /// Runtime API: Log message from guest.
+        /// @pre: msg_handle != 0
+        api-log: func(msg-handle: shm-id);
+
+        /// Runtime API: IPC Call from guest.
+        /// @pre: data_handle != 0
+        /// @post: result is consistent with IPC Router state
+        api-ipc-call: func(chan: u32, data-handle: shm-id) -> operation-result;
     }
 }
 

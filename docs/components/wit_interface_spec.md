@@ -23,12 +23,14 @@ WASI 0.2 の標準パターンに従い、以下の基礎コンポーネント�
 ```wit
 /// Recovery strategy for operation failures.
 enum recovery-strategy {
-    /// Retry with same parameters may succeed (transient failure).
-    /// Examples: resource temporarily unavailable, timeout
-    retryable,
-    /// Operation cannot succeed with current parameters, do not retry (permanent failure).
-    /// Examples: invalid URI, service not found, already registered
-    fatal
+    /// Error can be ignored, continue operation.
+    ignore,
+    /// Retry with same parameters may succeed.
+    retry,
+    /// Module or system needs to be re-initialized.
+    restart,
+    /// Fatal error, halt the system and dump state.
+    panic
 }
 
 // Domain-specific result types

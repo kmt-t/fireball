@@ -5,17 +5,22 @@ interface types {
     type shm-id = u32;
     type channel-id = u32;
     type task-id = u32;
+    type service-id = u32; // New: System-wide service index
     type uri-handle = shm-id;
+    type byte-count = u32;
+    type address = u32;
 
+    /// Recovery strategy for operation failures.
     enum recovery-strategy {
-        none,
+        ignore,
         retry,
-        component-reboot,
-        system-panic
+        restart,
+        panic
     }
 
     type operation-result = result<_, recovery-strategy>;
 
+    /// Severity levels for system-wide logging.
     enum log-level {
         trace,
         debug,
@@ -23,5 +28,11 @@ interface types {
         warn,
         error,
         fatal
+    }
+
+    /// Key-Value pair for structured messaging.
+    record key-value {
+        key: u32,
+        value: shm-id,
     }
 }

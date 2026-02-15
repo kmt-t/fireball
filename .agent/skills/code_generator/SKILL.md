@@ -18,40 +18,31 @@ description: >-
 
 ```mermaid
 graph LR
-    subgraph Input
-        JSON[JSON Data]
+    subgraph Source_of_Truth
         WIT[WIT IDL]
     end
     subgraph Logic
-        Python[Python Generator]
-        Bindgen[wit-bindgen]
+        Python[wit_to_cpp.py]
     end
     subgraph Output
-        Header[*.hxx Header]
-        Source[*.cxx Source]
+        Header[inc/gen/*.hxx]
     end
 
-    JSON --> Python
-    WIT --> Bindgen
+    WIT --> Python
     Python --> Header
-    Bindgen --> Source
 ```
 
 ## 原則
 
-1. **Source of Truth (情報の真実在)**: 生成対象のデータはすべてJSONファイル、または **WIT IDL** などのIDLファイルに集約し、コードはその投影（プロジェクション）として扱う。 `{SourceOfTruth}`
-2. **適切なツールの選択**: 内部データ構造や定数定義にはJSON+Python、ゲスト/ホスト間のインターフェイス（システムコール等）には相互運用性に優れた **WIT (WebAssembly Interface Type)** を使用する。
-3. **自動生成コードの純粋性**: 自動生成されたファイルは手動で編集しない。変更が必要な場合は、メタデータ（JSON/WIT）または生成ロジックを修正する。 `{Reproducibility}`
-4. **プロジェクト規約の自動適用**: 生成スクリプト内で `snake_case` や `#pragma once`、`fireball_vocabulary`（`byte_count` 等）を適用し、規約遵守を自動化する。
+1. **Source of Truth (情報の真実在)**: システムの構造定義はすべて **WIT IDL** に集約する。C++ ヘッダはその投影（プロジェクション）である。 `{SourceOfTruth}`
+2. **手動編集の禁止**: `inc/gen/` 配下のファイルを手動で編集してはならない。変更が必要な場合は WIT ファイルを修正し、再生成せよ。 `{Reproducibility}`
+3. **包括的定義**: 公開 API だけでなく、システム内部の主要クラス（JIT, Scheduler 等）も WIT で構造を定義し、議論のベースとする。
 
 ## 手順
 
-1. **メタデータの抽象化と定義形式の選定**: 
-   - 内部実装（命令セット、内部構成）: JSONスキーマを設計。
-   - **サービス・ゲスト境界**: **WIT IDL** を用いてインターフェイスを定義。
-2. **生成スクリプト/ツールの実行**: 
-   - JSON形式: Pythonスクリプトを用いてプロジェクト規約（`#pragma once` 等）に準拠したC++コードを出力。
-   - WIT形式: `wit-bindgen` または独自スクリプトを用いて生成。
+1. **WIT による構造設計**: コンポーネントやクラスのメソッド、型、契約（///）を WIT で記述する。
+2. **自動生成の実行**: `wit_to_cpp.py` を実行し、`inc/gen/` にヘッダを出力する。
+3. **実装への適用**: 生成されたインターフェイス（`_interface`）を実装クラスで継承し、ロジックを記述する。
 3. **運用ディレクトリ構成**:
    - `scripts/`: ジェネレータ本体
    - `data/`: 定義データ（JSON）

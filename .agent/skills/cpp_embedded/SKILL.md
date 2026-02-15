@@ -328,7 +328,17 @@ class indexed_array_map:
 
 エラーの原因（Why）を詳細に伝えるのではなく、呼び出し側が取るべきアクション（How）を `Result` 型で返却する。 `{RecoveryStrategy}`
 
-### 1. リカバリー戦略 (Recovery Strategy)
+### 1. 公理的意味論に基づく契約設計 (Design by Contract)
+
+実装の正当性を保証するため、すべてのインターフェースは [Axiomatic Interface Design](../axiomatic_interface_design/SKILL.md) に基づき、事前条件・事後条件・不変条件を明文化する。
+
+| 要素 | 実装への変換 | 検証への変換 |
+| :--- | :--- | :--- |
+| **Pre-condition** | `FB_ASSERT` による入力ガード | 異常系・境界値テストケース |
+| **Post-condition** | 戻り値および状態更新ロジック | 正常系テストのアサーション |
+| **Invariant** | データ構造（静的配列サイズ等）の決定 | クラス不変条件の常時検証 |
+
+### 2. リカバリー戦略 (Recovery Strategy)
 
 組み込み環境において、例外機構（`throw`）は実行時コストと非決定的な挙動のため使用を禁止する。また、単純なエラーコード（`int`）は無視されやすく、意味が実装に依存する。
 Fireballでは、Rustの `Result<T, E>` パラダイムを採用し、`E` を「リカバリー戦略」に特化させる。

@@ -1,8 +1,9 @@
 package fireball:host;
 
 interface hal-types {
-    use types.{device-id, shm-id, operation-result, recovery-strategy};
+    use types.{device-id, shm-id, operation-result, recovery-strategy, byte-count};
 
+    /// Hardware device categories.
     enum device-kind {
         stream,
         block,
@@ -10,11 +11,13 @@ interface hal-types {
         timer
     }
 
+    /// Configuration for the HAL buffer pool.
     record pool-config {
         block-size: u32,
         block-count: u32,
     }
 
+    /// Supported debug transport layers.
     enum debug-transport {
         uart,
         rtt
@@ -22,36 +25,72 @@ interface hal-types {
 }
 
 interface hal {
-    use types.{device-id, shm-id, operation-result, recovery-strategy};
+    use types.{device-id, shm-id, operation-result, recovery-strategy, address, byte-count};
     use hal-types.{pool-config, debug-transport};
 
     /// Tier 1: Hardware Abstraction Layer Controller
+    /// @inv: device_id < FB_CONF_HAL_MAX_DEVICES
+    /// @inv: active_buffers <= FB_CONF_HAL_MAX_BUFFERS
     resource device-controller {
-        constructor(config: pool-config);
+        /// Initializes the HAL.
+        initialize: func() -> operation-result;
+
+        /// Reads data from a physical device into shared memory.
+        /// @pre: id < FB_CONF_HAL_MAX_DEVICES
+        /// @pre: dest != 0
+        /// @post: result.is_ok() -> read_bytes <= dest.size
         read: func(id: device-id, dest: shm-id) -> result<u32, recovery-strategy>;
+
+        /// Writes data from shared memory to a physical device.
+        /// @pre: id < FB_CONF_HAL_MAX_DEVICES
+        /// @pre: src != 0
         write: func(id: device-id, src: shm-id) -> operation-result;
-        ioctl: func(id: device-id, cmd: u32, arg: u32) -> operation-result;
+
+        /// Hardware specific control using Key-Value parameters.
+        /// @pre: id < FB_CONF_HAL_MAX_DEVICES
+        /// @param params_shm Handle to a Key-Value message block.
+        ioctl: func(id: device-id, cmd: u32, params-shm: shm-id) -> operation-result;
+
+        /// Acquires a fixed-size buffer for I/O.
+        /// @pre: size <= FB_CONF_HAL_BUFFER_SIZE
+        /// @post: result.is_ok() -> active_buffers == old(active_buffers) + 1
         acquire-buffer: func(size: u32) -> result<shm-id, recovery-strategy>;
+
+        /// Releases an I/O buffer.
+        /// @pre: id is valid and active
+        /// @post: active_buffers == old(active_buffers) - 1
         release-buffer: func(id: shm-id);
     }
 
     /// Tier 3: Physical GPIO / Interrupt Trigger
     resource gpio-trigger {
+        /// Sets the state of a physical pin.
+        /// @pre: pin < FB_CONF_HAL_MAX_PINS
         set: func(pin: u32, value: bool) -> operation-result;
+
+        /// Gets the state of a physical pin.
+        /// @pre: pin < FB_CONF_HAL_MAX_PINS
         get: func(pin: u32) -> bool;
     }
 
     /// Tier 3: Hardware System Timer
     resource hardware-timer {
+        /// Gets current system time in nanoseconds.
+        /// @post: result >= old(time)
         now-ns: func() -> u64;
+
+        /// Sets an alarm interrupt at a specific time.
+        /// @pre: ns > now_ns()
         set-alarm: func(ns: u64) -> operation-result;
     }
 
     /// Tier 3: GDB RSP Debug Server
     resource debug-server {
-        constructor(transport: debug-transport);
         poll-packet: func() -> operation-result;
-        get-parsed-command: func() -> result<shm-id, bool>;
+
+        /// Returns the handle to the parsed command buffer.
+        /// @post: result.is_ok() -> handle != 0
+        get-parsed-command: func() -> result<shm-id, recovery-strategy>;
     }
 }
 

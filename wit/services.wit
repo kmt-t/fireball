@@ -1,27 +1,38 @@
 package fireball:host;
 
 interface services {
-    use types.{uri-handle, channel-id, task-id, operation-result, recovery-strategy, log-level, shm-id};
+    use types.{uri-handle, channel-id, task-id, service-id, key-value, operation-result, recovery-strategy, log-level, shm-id};
 
     type message-handle = shm-id;
 
     /// Tier 1: URI-based Message Router
+    /// @inv: registry_count <= FB_CONF_ROUTER_MAX_SERVICES
     resource ipc-router {
-        bind: func(address: uri-handle) -> result<channel-id, recovery-strategy>;
-        connect: func(address: uri-handle) -> result<channel-id, recovery-strategy>;
+        /// Binds a service instance by its system index.
+        /// @pre: sid < FB_CONF_ROUTER_MAX_SERVICES
+        bind: func(sid: service-id, address: uri-handle) -> result<channel-id, recovery-strategy>;
+
+        /// Connects to a service and gets its system-wide ID.
+        /// @pre: uri_handle != 0
+        connect: func(address: uri-handle) -> result<service-id, recovery-strategy>;
+
+        /// Sends a Key-Value message block.
+        /// @pre: chan >= 100
         send: func(chan: channel-id, msg: message-handle) -> operation-result;
+
+        /// Receives a Key-Value message block.
         recv: func(chan: channel-id) -> result<message-handle, recovery-strategy>;
     }
 
-    /// Tier 2: Cooperative Task Scheduler
-    resource task-scheduler {
-        spawn: func(name-shm: shm-id, entry: u32) -> result<task-id, recovery-strategy>;
-        yield: func();
-        terminate: func(id: task-id);
+    /// Tier 3: Logger Dictionary
+    resource logger-dictionary {
+        register-entry: func(id: u32, format-shm: shm-id);
+        lookup: func(id: u32) -> result<shm-id, bool>;
     }
 
     /// Tier 3: System-wide Logging Service
     resource system-logger {
+        emit-dict: func(lvl: log-level, dict-id: u32, params-shm: shm-id);
         emit: func(lvl: log-level, component-shm: shm-id, msg-shm: shm-id);
         flush: func();
     }

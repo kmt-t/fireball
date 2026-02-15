@@ -72,7 +72,7 @@ private:
   }
 
   void* mspace_;
-  uint8_t arena_[N];
+  alignas(16) uint8_t arena_[N];
 
 }; // struct specified_allocator : public std::pmr::memory_resource {
 

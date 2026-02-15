@@ -1,0 +1,41 @@
+package fireball:host;
+
+interface services {
+    use types.{uri-handle, channel-id, task-id, operation-result, recovery-strategy, log-level, shm-id};
+
+    type message-handle = shm-id;
+
+    resource ipc-router {
+        bind: func(address: uri-handle) -> result<channel-id, recovery-strategy>;
+
+        connect: func(address: uri-handle) -> result<channel-id, recovery-strategy>;
+
+        send: func(chan: channel-id, msg: message-handle) -> operation-result;
+
+        recv: func(chan: channel-id) -> result<message-handle, recovery-strategy>;
+    }
+
+    resource task-scheduler {
+        spawn: func(name-shm: shm-id, entry: u32) -> result<task-id, recovery-strategy>;
+        
+        spawn-task: func(task-handle: shm-id) -> result<task-id, recovery-strategy>;
+        
+        yield: func();
+
+        terminate: func(id: task-id);
+        
+        run: func();
+
+        set-idle-handler: func(handler-id: u32);
+    }
+
+    resource system-logger {
+        emit: func(lvl: log-level, component-shm: shm-id, msg-shm: shm-id);
+
+        flush: func();
+    }
+}
+
+world services-world {
+    export services;
+}

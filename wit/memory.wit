@@ -1,0 +1,53 @@
+package fireball:host;
+
+interface memory-types {
+    use types.{shm-id, byte-count, address, recovery-strategy};
+
+    /// Memory partition types for isolation.
+    enum partition-kind {
+        kernel,
+        task,
+        shared,
+        guest-ram
+    }
+
+    /// Information about a memory block.
+    record memory-info {
+        id: shm-id,
+        size: byte-count,
+        kind: partition-kind,
+    }
+}
+
+interface memory {
+    use types.{shm-id, byte-count, address, operation-result, recovery-strategy};
+    use memory-types.{partition-kind, memory-info};
+
+    /// Tier 2: COOS Memory Manager (co_mem)
+    /// @inv: total_allocated_bytes <= FB_CONF_MEMORY_POOL_SIZE
+    /// @inv: active_allocations_count <= FB_CONF_MAX_ALLOCATIONS
+    resource memory-manager {
+        /// Allocates a block of memory from the specified partition.
+        /// @pre: size > 0 && size <= FB_CONF_MAX_ALLOC_SIZE
+        /// @post: result.is_ok() -> total_allocated_bytes == old(total_allocated_bytes) + size
+        allocate: func(size: byte-count, kind: partition-kind) -> result<shm-id, recovery-strategy>;
+
+        /// Releases a memory block.
+        /// @pre: id is a valid active shm_id
+        /// @post: total_allocated_bytes == old(total_allocated_bytes) - size_of(id)
+        free: func(id: shm-id);
+
+        /// Translates shm_id to a host virtual address.
+        /// @note This is for internal component use only (thin glue).
+        /// @pre: id exists
+        /// @return The host memory address (pointer).
+        to-address: func(id: shm-id) -> result<address, bool>;
+
+        /// Gets information about a memory block.
+        query: func(id: shm-id) -> result<memory-info, bool>;
+    }
+}
+
+world memory-world {
+    export memory;
+}

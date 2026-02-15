@@ -6,11 +6,11 @@ Fireballハイパーバイザの動作パラメータを定義するコンパイ
 ## 2. マクロ一覧
 
 ### 2.1 メモリ管理 (Memory Management)
-| マクロ名 | 説明 | 標準 (64KB) | 最小 (32KB) | 導出元 |
-| :--- | :--- | :--- | :--- | :--- |
-| `FB_CONF_KERNEL_HEAP_SIZE` | COOSカーネルヒープのサイズ | `8192` | `4096` | `{IndependentHeap}` |
-| `FB_CONF_RUNTIME_HEAP_SIZE` | WASMランタイムヒープのサイズ | `4096` | `2048` | `{IndependentHeap}` |
-| `FB_CONF_SUBSYSTEM_HEAP_SIZE` | サブシステムヒープのサイズ | `4096` | `2048` | `{IndependentHeap}` |
+| マクロ名 | 説明 | 標準 (20KB) | 導出元 |
+| :--- | :--- | :--- | :--- |
+| `FB_CONF_TASK_HEAP_SIZE` | COOS/タスク統合ヒープのサイズ | `8192` | `{ConsolidatedHeap}` |
+| `FB_CONF_RUNTIME_HEAP_SIZE` | ホスト(WASMランタイム)ヒープのサイズ | `4096` | `{IndependentHeap}` |
+| `FB_CONF_GUEST_RAM_SIZE` | ゲストRAMのサイズ | `8192` | `{StrictMemoryLimit}` |
 
 ### 2.2 IPCルータ (IPC Router)
 | マクロ名 | 説明 | デフォルト値 (例) | 導出元 |
@@ -22,7 +22,7 @@ Fireballハイパーバイザの動作パラメータを定義するコンパイ
 | マクロ名 | 説明 | デフォルト値 (例) | 導出元 |
 | :--- | :--- | :--- | :--- |
 | `FB_CONF_HAL_MAX_DEVICES` | 管理可能な最大デバイス数 | `8` | `{ConfigurableSystem}` |
-| `FB_CONF_HAL_BUFFER_SIZE` | デバイス通信用バッファの最大サイズ | `1024` | `{ConfigurableSystem}` |
+| `FB_CONF_HAL_BUFFER_SIZE` | デバイス通信用バッファの最大サイズ | `256` | `{ConfigurableSystem}` |
 | `FB_CONF_HAL_MAX_BUFFERS` | デバイス通信用バッファの最大数 | `4` | `{ConfigurableSystem}` |
 
 ### 2.4 vSoC / vMMIO
@@ -30,7 +30,7 @@ Fireballハイパーバイザの動作パラメータを定義するコンパイ
 | :--- | :--- | :--- | :--- |
 | `FB_CONF_JIT_CACHE_SIZE` | JITキャッシュサイズ (Active/Old合計) | `4096` | `{JIT_DoubleBuffer_Cache}` |
 | `FB_CONF_GUEST_RAM_BASE` | ゲストRAMの開始アドレス | `0x00000000` | `{FastAddressCheck}` |
-| `FB_CONF_GUEST_RAM_SIZE` | ゲストRAMのサイズ | `16384` | `{StrictMemoryLimit}` |
+| `FB_CONF_GUEST_RAM_SIZE` | ゲストRAMのサイズ | `8192` | `{StrictMemoryLimit}` |
 | `FB_CONF_VMMIO_BASE` | vMMIO領域の開始アドレス | `0x40000000` | `{vMMIO_Isolation}` |
 | `FB_CONF_VMMIO_MAX_REGIONS` | 登録可能な最大vMMIO領域数 | `8` | `{ConfigurableSystem}` |
 | `FB_CONF_VMMIO_ALLOWED_ADDRS` | ゲストからのアクセスを許可する物理アドレス範囲 | `constexpr`定義 | `{RestrictedPhysicalAccess}` |

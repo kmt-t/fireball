@@ -47,7 +47,7 @@ graph TD
 ### 4.1 アルゴリズム
 - **スケジューリング**: ラウンドロビン方式。
     - スケジューラ・コンテキスト内の「実行可能タスク列」を侵入型リストで管理し、定数時間 O(1) でのタスク切り替えを実現する。
-- **アイドル状態の検知**: 全ての管理タスクが「待機状態（BLOCKED）」となった場合にアイドル・フックを実行する。 `{IdleDetection}`
+- **アイドル状態の検知**: 全ての管理タスクが「待機状態（BLOCKED）」となった場合にアイドル・ハンドラを実行する。 `{IdleDetection}`
 - **割り込み処理**: HALからの割り込み通知（`notify_interrupt`）を受信し、対象タスクを優先的に再開する。 `{InterruptWakeup}`
 
 ### 4.2 状態遷移図
@@ -58,7 +58,7 @@ stateDiagram-v2
     state "BLOCKED" as blocked
     state "INTERRUPTED" as interrupted
     
-    [*] --> ready: spawn
+    [*] --> ready: spawn / spawn_task
     ready --> running: schedule
     running --> ready: yield
     running --> blocked: wait / send / recv
@@ -77,16 +77,37 @@ stateDiagram-v2
 #### `spawn`
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | 新しいコルーチンタスクを READY キューに追加する。 |
-| シグネチャ | `spawn(handle: コルーチンハンドル, memory_size: バイト数) -> 結果型` |
-| 引数 | `handle`: コルーチンハンドル<br>`memory_size`: 予約メモリ領域のサイズ |
-| 戻り値 | 結果型 (成功時は `task_id`, 失敗時はエラー) |
+| 機能概要 | 新しいWASMタスクを生成し、READY キューに追加する。 |
+| シグネチャ | `spawn(name: shm_id, entry: アドレス値) -> 結果型` |
+| 引数 | `name`: タスク名称のハンドル<br>`entry`: WASMエントリポイント |
+| 戻り値 | 結果型 (成功時は `task_id`) |
+
+#### `spawn_task`
+| 項目 | 内容 |
+| :--- | :--- |
+| 機能概要 | 既存のコルーチンオブジェクトからネイティブタスクを生成し、READY キューに追加する。 |
+| シグネチャ | `spawn_task(task: task&&) -> 結果型` |
+| 引数 | `task`: 移動セマンティクスによるコルーチンタスク |
+| 戻り値 | 結果型 (成功時は `task_id`) |
 
 #### `yield`
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | 現在のタスクの実行を中断し、スケジュールの再評価を行う。 |
 | シグネチャ | `yield() -> void` |
+
+#### `run`
+| 項目 | 内容 |
+| :--- | :--- |
+| 機能概要 | メインスケジューリングループを開始する。 |
+| シグネチャ | `run() -> void` |
+
+#### `set_idle_handler`
+| 項目 | 内容 |
+| :--- | :--- |
+| 機能概要 | READYキューが空になった際に呼び出されるアイドル時処理を登録する。 |
+| シグネチャ | `set_idle_handler(handler: idle_handler) -> void` |
+| 引数 | `handler`: 関数ポインタ (`void(*)()`) |
 
 #### `notify_interrupt`
 | 項目 | 内容 |

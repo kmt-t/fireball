@@ -31,4 +31,18 @@
 #define FIREBALL_HOST_HEAP_SIZE FB_CONF_RUNTIME_HEAP_SIZE
 #endif
 
+/**
+ * FIREBALL_TASK_HEAP_SIZE - Total size of the task heap partition.
+ */
+#ifndef FIREBALL_TASK_HEAP_SIZE
+#define FIREBALL_TASK_HEAP_SIZE FB_CONF_TASK_HEAP_SIZE
+#endif
+
+/**
+ * FIREBALL_GUEST_RAM_SIZE - Total size of the guest RAM.
+ */
+#ifndef FIREBALL_GUEST_RAM_SIZE
+#define FIREBALL_GUEST_RAM_SIZE FB_CONF_GUEST_RAM_SIZE
+#endif
+
 namespace fireball {} // namespace fireball

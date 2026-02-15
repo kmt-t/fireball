@@ -44,6 +44,19 @@ incdirs = include_directories(
 )
 srcfiles = files(
   'src/main.cxx',
+  'src/allocator/malloc.c',
+  'src/allocator/host_allocator.cxx',
+  'src/utils/backtrace.cxx',
+  'src/hal/hal_system.cxx',
+  'src/router/ipc_router.cxx',
+  'src/kernel/coos.cxx',
+  'src/kernel/co_mem.cxx',
+  'src/services/system_logger.cxx',
+  'src/vsoc/vsoc_runtime.cxx',
+  'src/vsoc/jit_compiler.cxx',
+  'src/vsoc/hotspot_detector.cxx',
+  'src/vsoc/jit_entry_index.cxx',
+  'src/vsoc/copy_and_patch_engine.cxx',
 )
 
 common_cpp_args = target_flags + [
@@ -68,3 +81,13 @@ fireball_exe = executable('fireball',
    link_args : target_flags + ['-lstdc++exp'] + release_args,
    install : true,
 )
+
+test_allocator_exe = executable('test_allocator',
+  files('tests/test_allocator.cxx', 'src/allocator/malloc.c'),
+  include_directories : incdirs,
+  c_args : ['-DMSPACES=1', '-DHAVE_MMAP=0', '-DHAVE_MORECORE=0'],
+  cpp_args : common_cpp_args,
+  link_args : ['-lstdc++exp'],
+)
+
+test('allocator_test', test_allocator_exe)

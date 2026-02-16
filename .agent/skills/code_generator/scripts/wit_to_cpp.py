@@ -1,222 +1,347 @@
 #!/usr/bin/env python3
+"""
+WIT to C++ Header Generator (using wasm-tools) - Package-level version
+
+This script parses an entire WIT package directory and generates C++ headers
+for all interfaces.
+
+Usage:
+    python wit_to_cpp.py wit/ inc/gen
+"""
+
+import json
+import subprocess
 import sys
 import os
+import re
 from pathlib import Path
 
+
 def to_snake_case(name):
-    return name.replace("-", "_")
+    """Convert kebab-case or PascalCase to snake_case."""
+    result = name.replace("-", "_")
+    snake = []
+    for i, char in enumerate(result):
+        if char.isupper() and i > 0:
+            snake.append("_")
+        snake.append(char.lower())
+    return "".join(snake)
+
 
 def to_upper_snake_case(name):
-    return name.replace("-", "_").upper()
+    """Convert to UPPER_SNAKE_CASE."""
+    return to_snake_case(name).upper()
 
-def map_type(wit_type):
-    mapping = {
-        "u32": "uint32_t",
-        "u64": "uint64_t",
-        "bool": "bool",
-        "shm-id": "shm_id",
-        "device-id": "device_id",
-        "channel-id": "channel_id",
-        "task-id": "task_id",
-        "uri-handle": "shm_id",
-        "byte-count": "byte_count",
-        "operation-result": "operation_result",
-        "recovery-strategy": "recovery_strategy",
-        "log-level": "log_level",
-        "string": "std::string_view",
-        "list<u8>": "binary_view",
-        "service-id": "service_id",
-        "message-handle": "message_handle",
-        "address": "address",
-    }
+
+def map_type(wit_type, types_list):
+    """Map WIT types to C++ types."""
+    if isinstance(wit_type, str):
+        mapping = {
+            "u8": "uint8_t",
+            "u16": "uint16_t",
+            "u32": "uint32_t",
+            "u64": "uint64_t",
+            "s8": "int8_t",
+            "s16": "int16_t",
+            "s32": "int32_t",
+            "s64": "int64_t",
+            "bool": "bool",
+            "string": "std::string_view",
+            "char": "char",
+            "f32": "float",
+            "f64": "double"
+        }
+        return mapping.get(wit_type, to_snake_case(wit_type))
+    elif isinstance(wit_type, int):
+        # Reference to a type definition
+        type_def = types_list[wit_type]
+        if type_def.get('name'):
+            return to_snake_case(type_def['name'])
+        
+        # Anonymous type
+        kind = type_def.get('kind')
+        if isinstance(kind, dict):
+            if 'result' in kind:
+                res = kind['result']
+                ok_type = "void"
+                err_type = "void"
+                if 'ok' in res and res['ok'] is not None:
+                    ok_type = map_type(res['ok'], types_list)
+                if 'err' in res and res['err'] is not None:
+                    err_type = map_type(res['err'], types_list)
+                return f"std::expected<{ok_type}, {err_type}>"
+            elif 'option' in kind:
+                opt = kind['option']
+                val_type = map_type(opt, types_list)
+                return f"std::optional<{val_type}>"
+            elif 'list' in kind:
+                l = kind['list']
+                val_type = map_type(l, types_list)
+                return f"std::vector<{val_type}>"
+            elif 'tuple' in kind:
+                t = kind['tuple']
+                types = [map_type(x, types_list) for x in t]
+                return f"std::tuple<{', '.join(types)}>"
+        
+        # print(f"DEBUG: Unknown anonymous type kind: {kind}")
+        return "/* anonymous */ void*"
+    elif isinstance(wit_type, dict):
+        if 'type' in wit_type:
+            return map_type(wit_type['type'], types_list)
+        
+        # Handle 'result' type
+        # WIT JSON structure for result: {'kind': 'result', 'result': {'ok': ..., 'err': ...}} (or similar - verify structure)
+        # Actually in type list, 'kind' might be 'result'.
+        # But here 'wit_type' is likely a reference from function signature which might be inline.
+        # Let's inspect 'kind' if it exists.
+        
+        # In function results, we usually get a list of types.
+        # A 'result' type in WIT often appears as a defined type or an anonymous one.
+        
+        # Let's check for "kind" key if it's a dict passed directly.
+        # Note: In wasm-tools --json, types are heavily index-based or structural.
+        print(f"DEBUG: Unknown dict type: {wit_type}")
+        return "void*" # Fallback for now, need deeper inspection of WIT JSON structure.
+    return "void*"
+
+def parse_wit_package(wit_dir):
+    """Parse entire WIT package directory using wasm-tools."""
+    try:
+        result = subprocess.run(
+            ["wasm-tools", "component", "wit", wit_dir, "--json"],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        return json.loads(result.stdout)
+    except subprocess.CalledProcessError as e:
+        print(f"Error: wasm-tools failed: {e.stderr}", file=sys.stderr)
+        sys.exit(1)
+    except FileNotFoundError:
+        print("Error: wasm-tools not found", file=sys.stderr)
+        sys.exit(1)
+
+
+def generate_cpp(wit_json, output_dir):
+    """Generate C++ headers from wasm-tools JSON."""
+    os.makedirs(output_dir, exist_ok=True)
     
-    if wit_type.startswith("result<"):
-        parts = wit_type[7:-1].split(",")
-        t_raw = parts[0].strip()
-        e_raw = parts[1].strip() if len(parts) > 1 else "recovery-strategy"
+    interfaces = wit_json.get("interfaces", [])
+    types_list = wit_json.get("types", [])
+    
+    for iface_idx, iface in enumerate(interfaces):
+        iface_name = iface['name']
+        output_path = Path(output_dir) / f"{to_snake_case(iface_name)}.hxx"
         
-        t = map_type(t_raw)
-        e = map_type(e_raw)
-        
-        if t == "_": return "operation_result"
-        return f"result<{t}, {e}>"
-
-    return mapping.get(wit_type, to_snake_case(wit_type))
-
-class WitToCpp:
-    def __init__(self, wit_path):
-        self.wit_path = wit_path
-        self.interfaces = []
-
-    def parse_contracts(self, doc_buffer):
-        contracts = {"pre": [], "post": [], "inv": []}
-        general_doc = []
-        for d in doc_buffer:
-            if d.startswith("@pre:"): contracts["pre"].append(d[5:].strip())
-            elif d.startswith("@post:"): contracts["post"].append(d[6:].strip())
-            elif d.startswith("@inv:"): contracts["inv"].append(d[5:].strip())
-            else: general_doc.append(d)
-        return general_doc, contracts
-
-    def parse(self):
-        with open(self.wit_path, 'r') as f:
-            lines = f.readlines()
-
-        current_iface = None
-        current_res = None
-        current_enum = None
-        current_record = None
-        doc_buffer = []
-
-        for line in lines:
-            clean_line = line.strip()
-            if not clean_line: continue
+        with open(output_path, 'w') as f:
+            # Header
+            f.write("/**\n * Auto-generated from WIT. Do not edit.\n */\n")
+            f.write("#pragma once\n\n")
+            f.write("#include <fireball_types.hxx>\n")
+            if iface_name != "types":
+                f.write("#include <gen/types.hxx>\n") 
+            f.write("#include <fireball_config.hxx>\n")
+            f.write("#include <cstdint>\n")
+            f.write("#include <string_view>\n")
+            f.write("#include <expected>\n")
+            f.write("#include <optional>\n")
+            f.write("#include <vector>\n")
+            f.write("#include <tuple>\n\n")
+            f.write("namespace fireball {\n\n")
             
-            if clean_line.startswith("///"):
-                doc_buffer.append(clean_line[3:].strip())
-                continue
-
-            if clean_line.startswith("interface "):
-                name = clean_line.split()[1]
-                current_iface = {"name": to_snake_case(name), "enums": [], "records": [], "resources": [], "types": []}
-                self.interfaces.append(current_iface)
-                doc_buffer = []
-                continue
-
-            if not current_iface: continue
-
-            if clean_line.startswith("type "):
-                parts = clean_line[5:].split("=")
-                if len(parts) == 2:
-                    tname = parts[0].strip()
-                    ttarget = parts[1].split("//")[0].replace(";", "").strip()
-                    current_iface["types"].append((to_snake_case(tname), map_type(ttarget)))
-                doc_buffer = []
-                continue
-
-            if clean_line.startswith("enum "):
-                name = clean_line.split()[1]
-                current_enum = {"name": to_snake_case(name), "values": [], "doc": doc_buffer}
-                current_iface["enums"].append(current_enum)
-                doc_buffer = []
-                continue
-
-            if clean_line.startswith("record "):
-                name = clean_line.split()[1]
-                current_record = {"name": to_snake_case(name), "fields": [], "doc": doc_buffer}
-                current_iface["records"].append(current_record)
-                doc_buffer = []
-                continue
-
-            if clean_line.startswith("resource "):
-                name = clean_line.split()[1]
-                doc, contracts = self.parse_contracts(doc_buffer)
-                current_res = {"name": to_snake_case(name), "methods": [], "doc": doc, "contracts": contracts}
-                current_iface["resources"].append(current_res)
-                doc_buffer = []
-                continue
-
-            if clean_line == "}":
-                current_res = None
-                current_enum = None
-                current_record = None
-                doc_buffer = []
-                continue
-
-            if current_enum:
-                val = clean_line.split("//")[0].replace(",", "").strip()
-                if val: current_enum["values"].append(to_upper_snake_case(val))
-                continue
-
-            if current_record:
-                if ":" in clean_line:
-                    fname, ftype = clean_line.split("//")[0].replace(",", "").split(":")
-                    current_record["fields"].append((to_snake_case(fname.strip()), map_type(ftype.strip())))
-                continue
-
-            if current_res and ":" in clean_line and "func(" in clean_line:
-                name, rest = clean_line.split(":", 1)
-                args_raw = rest[rest.find("(")+1 : rest.find(")")]
-                ret_raw = "void"
-                if "->" in rest:
-                    ret_raw = rest[rest.find("->")+2 : rest.rfind(";")].strip()
+            # --- Types ---
+            type_indices = iface.get('types', {})
+            for type_name, type_idx in type_indices.items():
+                if type_idx >= len(types_list):
+                    continue
                 
-                args = []
-                if args_raw.strip():
-                    for arg_pair in args_raw.split(","):
-                        if ":" in arg_pair:
-                            aname, atype = arg_pair.split(":")
-                            args.append((aname.strip(), map_type(atype.strip())))
+                type_def = types_list[type_idx]
+                kind = type_def.get('kind', {})
+                docs = type_def.get('docs', {}).get('contents', '')
                 
-                doc, contracts = self.parse_contracts(doc_buffer)
-                current_res["methods"].append({
-                    "name": to_snake_case(name.strip()),
-                    "args": args,
-                    "return": map_type(ret_raw),
-                    "doc": doc,
-                    "contracts": contracts
-                })
-                doc_buffer = []
+                if isinstance(kind, str) and kind == "resource":
+                     # Resources handled later as classes
+                     continue
 
-    def generate(self, out_dir):
-        os.makedirs(out_dir, exist_ok=True)
-        for iface in self.interfaces:
-            path = Path(out_dir) / f"{iface['name']}.hxx"
-            with open(path, "w") as f:
-                f.write("/**\n * Auto-generated from WIT. Do not edit.\n */\n")
-                f.write("#pragma once\n\n#include <fireball_types.hxx>\n")
-                
-                if iface['name'] != "types":
-                    f.write("#include <gen/types.hxx>\n")
-                
-                f.write("#include <fireball_config.hxx>\n#include <cstdint>\n\n")
-                f.write("namespace fireball {\n\n")
-                
-                for tname, ttarget in iface['types']:
-                    f.write(f"using {tname} = {ttarget};\n")
-                if iface['types']: f.write("\n")
-
-                for en in iface['enums']:
-                    if en['doc']:
-                        f.write("/**\n")
-                        for d in en['doc']: f.write(f" * {d}\n")
-                        f.write(" */\n")
-                    f.write(f"enum class {en['name']} : uint8_t {{\n")
-                    for v in en['values']: f.write(f"  {v},\n")
-                    f.write("};\n\n")
-
-                for rec in iface['records']:
-                    if rec['doc']:
-                        f.write("/**\n")
-                        for d in rec['doc']: f.write(f" * {d}\n")
-                        f.write(" */\n")
-                    f.write(f"struct {rec['name']} {{\n")
-                    for fname, ftype in rec['fields']:
-                        f.write(f"  {ftype} {fname};\n")
-                    f.write("};\n\n")
-
-                for res in iface['resources']:
+                # Write docs
+                if docs:
                     f.write("/**\n")
-                    for d in res['doc']: f.write(f" * {d}\n")
-                    for inv in res['contracts']['inv']:
-                        f.write(f" * @invariant FB_ASSERT({inv})\n")
+                    for line in docs.split('\n'):
+                        f.write(f" * {line}\n")
                     f.write(" */\n")
-                    f.write(f"struct {res['name']}_interface : public component {{\n")
-                    for m in res['methods']:
-                        f.write("  /**\n")
-                        for d in m['doc']: f.write(f"   * {d}\n")
-                        for p in m['contracts']['pre']: f.write(f"   * @note Pre-condition: FB_ASSERT({p})\n")
-                        for p in m['contracts']['post']: f.write(f"   * @note Post-condition: FB_ASSERT({p})\n")
-                        for i in m['contracts']['inv']: f.write(f"   * @note Local-Invariant: FB_ASSERT({i})\n")
-                        f.write("   */\n")
-                        args_list = [f"{a[1]} {to_snake_case(a[0])}" for a in m['args']]
-                        f.write(f"  virtual {m['return']} {m['name']}({', '.join(args_list)}) = 0;\n")
+                
+                # Type alias
+                if 'type' in kind:
+                    base_type = kind['type']
+                    if isinstance(base_type, str):
+                        cpp_type = map_type(base_type, types_list)
+                    else:
+                        cpp_type = to_snake_case(types_list[base_type]['name'])
+                    
+                    alias_name = to_snake_case(type_name)
+                    if alias_name != cpp_type:
+                        f.write(f"using {alias_name} = {cpp_type};\n\n")
+                
+                # Enum
+                elif 'enum' in kind:
+                    cases = kind['enum'].get('cases', [])
+                    f.write(f"enum class {to_snake_case(type_name)} : uint8_t {{\n")
+                    for case in cases:
+                        f.write(f"  {to_upper_snake_case(case['name'])},\n")
                     f.write("};\n\n")
-                f.write("} // namespace fireball\n")
-            print(f"Generated: {path}")
+                
+                # Record
+                elif 'record' in kind:
+                    fields = kind['record'].get('fields', [])
+                    f.write(f"struct {to_snake_case(type_name)} {{\n")
+                    for field in fields:
+                        field_name = to_snake_case(field['name'])
+                        field_type = map_type(field['type'], types_list)
+                        f.write(f"  {field_type} {field_name};\n")
+                    f.write("};\n\n")
+
+            # --- Resources (Classes) ---
+            # Identify resources owned by this interface
+            resources = []
+            for idx, typedef in enumerate(types_list):
+                if typedef.get('owner') and typedef.get('owner').get('interface') == iface_idx and typedef.get('kind') == 'resource':
+                    resources.append((idx, typedef))
+
+            # --- Functions and Methods ---
+            # Pre-process functions to categorize them by resource owner
+            resource_methods = {res_idx: [] for res_idx, _ in resources}
+            free_functions = []
+
+            iface_funcs = iface.get('functions', {})
+            for func_name, func_def in iface_funcs.items():
+                # Check if it's a method: name format "[method]resource.name" or "[static]resource.name"
+                match = re.match(r'\[(method|static)\]([a-zA-Z0-9\-]+)\.(.+)', func_name)
+                if match:
+                    kind, res_name, method_name = match.groups()
+                    # Find resource index by name
+                    target_res_idx = -1
+                    for idx, typedef in resources:
+                        if typedef['name'] == res_name:
+                            target_res_idx = idx
+                            break
+                    
+                    if target_res_idx != -1:
+                        resource_methods[target_res_idx].append((method_name, func_def, kind == 'static'))
+                    else:
+                        pass # Warning?
+                else:
+                    free_functions.append((func_name, func_def))
+
+            for res_idx, res_def in resources:
+                res_name = res_def.get('name')
+                docs = res_def.get('docs', {}).get('contents', '')
+                
+                if docs:
+                    f.write("/**\n")
+                    for line in docs.split('\n'):
+                        f.write(f" * {line}\n")
+                    f.write(" */\n")
+                
+                f.write(f"class {to_snake_case(res_name)} {{\n")
+                f.write("public:\n")
+                
+                # Constructor/Destructor
+                f.write(f"  {to_snake_case(res_name)}() = default;\n")
+                f.write(f"  ~{to_snake_case(res_name)}() = default;\n\n")
+
+                # Methods
+                methods = resource_methods.get(res_idx, [])
+                for method_name, func_def, is_static in methods:
+                    params = func_def.get('params', [])
+                    results = func_def.get('results', [])
+                    if method_name == "lookup" or method_name == "collect":
+                         pass # Debug verified
+
+                    docs = func_def.get('docs', {}).get('contents', '')
+
+                    if docs:
+                        f.write("  /**\n")
+                        for line in docs.split('\n'):
+                            f.write(f"   * {line}\n")
+                        f.write("   */\n")
+
+                    # Return type
+                    ret_type = "void"
+                    if 'result' in func_def:
+                        # Single return value
+                        ret_type = map_type(func_def['result'], types_list)
+                    elif 'results' in func_def:
+                        results = func_def['results']
+                        if len(results) == 1:
+                            ret_type = map_type(results[0]['type'], types_list)
+                        elif len(results) > 1:
+                            ret_type = "std::tuple<...>"
+
+                    # Params
+                    param_strs = []
+                    for p in params:
+                        p_name = to_snake_case(p['name'])
+                        if p_name == "self":
+                            continue
+                        p_type = map_type(p['type'], types_list)
+                        param_strs.append(f"{p_type} {p_name}")
+
+                    prefix = "static " if is_static else ""
+                    f.write(f"  {prefix}{ret_type} {to_snake_case(method_name)}({', '.join(param_strs)}) noexcept;\n\n")
+                
+                f.write("};\n\n")
+
+            # --- Functions (Free-standing) ---
+            for func_name, func_def in free_functions:
+                params = func_def.get('params', [])
+                results = func_def.get('results', [])
+                docs = func_def.get('docs', {}).get('contents', '')
+                
+                if docs:
+                    f.write("/**\n")
+                    for line in docs.split('\n'):
+                        f.write(f" * {line}\n")
+                    f.write(" */\n")
+
+                ret_type = "void"
+                if len(results) == 1:
+                     ret_type = map_type(results[0]['type'], types_list)
+                elif len(results) > 1:
+                    ret_type = "std::tuple<...>"
+
+                param_strs = []
+                for p in params:
+                    p_name = to_snake_case(p['name'])
+                    p_type = map_type(p['type'], types_list)
+                    param_strs.append(f"{p_type} {p_name}")
+                
+                f.write(f"{ret_type} {to_snake_case(func_name)}({', '.join(param_strs)}) noexcept;\n\n")
+
+            f.write("} // namespace fireball\n")
+        
+        print(f"Generated: {output_path}")
+
+
+def main():
+    if len(sys.argv) != 3:
+        print(f"Usage: {sys.argv[0]} <wit_dir> <output_dir>", file=sys.stderr)
+        sys.exit(1)
+    
+    wit_dir = sys.argv[1]
+    output_dir = sys.argv[2]
+    
+    if not os.path.exists(wit_dir):
+        print(f"Error: WIT directory not found: {wit_dir}", file=sys.stderr)
+        sys.exit(1)
+    
+    print(f"Parsing WIT package: {wit_dir}")
+    wit_json = parse_wit_package(wit_dir)
+    
+    print(f"Generating C++ headers to {output_dir}...")
+    generate_cpp(wit_json, output_dir)
+    
+    print("Done!")
+
 
 if __name__ == "__main__":
-    if len(sys.argv) < 3: sys.exit(1)
-    gen = WitToCpp(sys.argv[1])
-    gen.parse()
-    gen.generate(sys.argv[2])
+    main()

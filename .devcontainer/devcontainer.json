@@ -6,9 +6,9 @@
   },
   "remoteUser": "developer",
   "mounts": [
-    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.ssh,target=/home/developer/.ssh,type=bind,consistency=cached",
-    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.gitconfig,target=/home/developer/.gitconfig,type=bind,consistency=cached",
-    "source=${localEnv:HOME}${localEnv:USERPROFILE}/.gemini,target=/home/developer/.gemini,type=bind,consistency=cached"
+    "source=${localEnv:USERPROFILE}/.ssh,target=/home/developer/.ssh,type=bind,consistency=cached",
+    "source=${localEnv:USERPROFILE}/.gitconfig,target=/home/developer/.gitconfig,type=bind,consistency=cached",
+    "source=${localEnv:USERPROFILE}/.gemini,target=/home/developer/.gemini,type=bind,consistency=cached"
   ],
   "customizations": {
     "vscode": {

@@ -5,7 +5,7 @@ interface types {
     type shm-id = u32;
     type channel-id = u32;
     type task-id = u32;
-    type service-id = u32; // New: System-wide service index
+    type service-id = u32;
     type uri-handle = shm-id;
     type byte-count = u32;
     type address = u32;
@@ -30,7 +30,7 @@ interface types {
         fatal
     }
 
-    /// Scope type for IPC messages (upper 3 bits of type_scope field).
+    /// Scope type (upper 3 bits of type_scope field).
     enum scope-type {
         functional,
         dictionary,
@@ -42,7 +42,7 @@ interface types {
         reserved-7
     }
 
-    /// Data type for IPC messages (lower 5 bits of type_scope field).
+    /// Data type (lower 5 bits of type_scope field).
     enum data-type {
         immediate,
         handle,
@@ -78,10 +78,15 @@ interface types {
         reserved-31
     }
 
-    /// IPC Key-Value pair for structured messaging.
+    /// IPC Key-Value pair with bitfield structure.
     /// Type scope field: upper 3 bits = scope type, lower 5 bits = data type
     /// @bitfield type_scope:u8:0-7, key:u24:8-31, value:u32:32-63
     record kv-pair {
         raw: u64,
+    }
+
+    /// IPC Message containing up to 8 KV pairs.
+    record message {
+        pairs: list<kv-pair>,
     }
 }

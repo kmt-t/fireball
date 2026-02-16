@@ -47,16 +47,6 @@ srcfiles = files(
   'src/allocator/malloc.c',
   'src/allocator/host_allocator.cxx',
   'src/utils/backtrace.cxx',
-  'src/hal/hal_system.cxx',
-  'src/router/ipc_router.cxx',
-  'src/kernel/coos.cxx',
-  'src/kernel/co_mem.cxx',
-  'src/services/system_logger.cxx',
-  'src/vsoc/vsoc_runtime.cxx',
-  'src/vsoc/jit_compiler.cxx',
-  'src/vsoc/hotspot_detector.cxx',
-  'src/vsoc/jit_entry_index.cxx',
-  'src/vsoc/copy_and_patch_engine.cxx',
 )
 
 common_cpp_args = target_flags + [
@@ -91,3 +81,23 @@ test_allocator_exe = executable('test_allocator',
 )
 
 test('allocator_test', test_allocator_exe)
+
+test_coos_exe = executable('test_coos',
+  files('tests/test_coos.cxx', 'src/kernel/coos.cxx'),
+  include_directories : incdirs,
+  c_args : ['-DMSPACES=1', '-DHAVE_MMAP=0', '-DHAVE_MORECORE=0'],
+  cpp_args : common_cpp_args,
+  link_args : ['-lstdc++exp'],
+)
+
+test('coos_test', test_coos_exe)
+
+test_jit_exe = executable('test_jit',
+  files('tests/test_jit.cxx', 'src/vsoc/hotspot_detector.cxx'),
+  include_directories : incdirs,
+  c_args : ['-DMSPACES=1', '-DHAVE_MMAP=0', '-DHAVE_MORECORE=0'],
+  cpp_args : common_cpp_args,
+  link_args : ['-lstdc++exp'],
+)
+
+test('jit_test', test_jit_exe)

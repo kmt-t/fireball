@@ -1,64 +1,184 @@
 ---
 name: Code Generation
-description: >-
+description: >
   JSONデータ/WIT IDLからPythonスクリプトでC++コードを自動生成するメタスキル。
   WHEN: 命令セット定義, レジスタマップ生成, WITからのスタブ生成, 規則性のあるコードの追加・変更
   SCOPE: コード生成の手順と原則。生成対象のデータ定義は各コンポーネントのdataディレクトリを参照。
   RELATED: wasm_development（WIT定義の参照元）, fireball_vocabulary（生成コードの型語彙）
 ---
 
-# Code Generation スキル
+# Code Generator スキル
+
+WIT IDLからC++ヘッダを自動生成し、品質チェックまで一貫して実行するスキル。
+
+---
 
 ## 概要
 
-このスキルは、手動作業によるミスを削減し、設計データからの再現性を担保するために、PythonスクリプトとJSONデータを用いた「コード生成ツール」を構築・運用する手順を定義します。 `{Traceability}` `{SourceOfTruth}`
-インタープリタの命令定義、JITのコード生成ロジック、レジスタマップなど、規則性があり再現性が求められるコードが対象です。
+**WIT-First開発**における自動生成ワークフローを提供します:
+- WIT IDL → C++ヘッダの自動生成（wasm-tools使用）
+- 生成コードの品質自動チェック（禁止パターン、命名規則）
+- ビルドテスト統合
 
-## 生成フロー
+---
 
-```mermaid
-graph LR
-    subgraph Source_of_Truth
-        WIT[WIT IDL]
-    end
-    subgraph Logic
-        Python[wit_to_cpp.py]
-    end
-    subgraph Output
-        Header[inc/gen/*.hxx]
-    end
+## 推奨実行環境
 
-    WIT --> Python
-    Python --> Header
+### VSCode devcontainer使用時（最優先）
+
+VSCode内でdevcontainerが正常動作している場合、VSCodeターミナルで直接実行:
+
+```bash
+cd /workspaces/fireball
+bash .agent/skills/code_generator/workflows/wit_all.sh
 ```
 
-## 原則
+### VSCode以外のエディタ使用時
 
-1. **Source of Truth (情報の真実在)**: システムの構造定義はすべて **WIT IDL** に集約する。C++ ヘッダはその投影（プロジェクション）である。 `{SourceOfTruth}`
-2. **手動編集の禁止**: `inc/gen/` 配下のファイルを手動で編集してはならない。変更が必要な場合は WIT ファイルを修正し、再生成せよ。 `{Reproducibility}`
-3. **包括的定義**: 公開 API だけでなく、システム内部の主要クラス（JIT, Scheduler 等）も WIT で構造を定義し、議論のベースとする。
+**Git Bash推奨**（Windows）:
 
-## 手順
+```bash
+cd {ワークスペースのパス}
+bash .agent/skills/code_generator/workflows/wit_all.sh
+```
 
-1. **WIT による構造設計**: コンポーネントやクラスのメソッド、型、契約（///）を WIT で記述する。
-2. **自動生成の実行**: `wit_to_cpp.py` を実行し、`inc/gen/` にヘッダを出力する。
-3. **実装への適用**: 生成されたインターフェイス（`_interface`）を実装クラスで継承し、ロジックを記述する。
-3. **運用ディレクトリ構成**:
-   - `scripts/`: ジェネレータ本体
-   - `data/`: 定義データ（JSON）
-   - `inc/`: 出力されるヘッダファイル
-4. **検証**: 
-   - 生成されたコードがプロジェクトのフォーマッタを通過し、生プリミティブ（`uint32_t` 等）ではなく `fireball_vocabulary` のエイリアスを使用しているか確認する。
+**PowerShellは非推奨** - execution policy問題があるため。
 
-## 運用上の利点
+---
 
-- **JIT/インタープリタ**: 命令の追加・変更がメタデータ一箇所で完結し、デコーダと実行部の不整合を防止できる。
-- **レジスタマップ**: ハードウェア仕様の変更を即座にソフトウェア定義に反映できる。
+## メインワークフロー
 
-## 設計完了チェックリスト
+### 統合実行（推奨）
 
-- [ ] すべての定義が JSON/WIT などの Source of Truth から生成されているか。
-- [ ] 生成コードに `#pragma once` が使用され、レガシーなインクルードガードが排除されているか。
-- [ ] 生成コードで `fireball_vocabulary`（`address`, `byte_count` 等）が適切に使用されているか。
-- [ ] クラスメンバーにおいて末尾アンダースコア `_` の命名規則が守られているか。
-- [ ] 自動生成ファイルであることを示す警告コメントが先頭に含まれているか。
+```bash
+bash .agent/skills/code_generator/workflows/wit_all.sh
+```
+
+**処理内容**:
+1. WIT→C++生成（14ファイル）
+2. 禁止パターン検出（void*, malloc等）
+3. 命名規則検証（snake_case等）
+4. ビルドテスト（オプション）
+
+### 個別実行
+
+```bash
+# 生成のみ
+bash .agent/skills/code_generator/workflows/wit_gen.sh
+
+# チェックのみ
+bash .agent/skills/code_generator/workflows/wit_check.sh
+
+# ビルドのみ
+bash .agent/skills/code_generator/workflows/wit_build.sh
+```
+
+---
+
+## 生成スクリプト
+
+### wit_to_cpp.py（公式）
+
+wasm-toolsベースのWIT→C++変換器。
+
+**特徴**:
+- パッケージ全体処理
+- 依存関係自動解決
+- ビットフィールド対応（`@bitfield`）
+- Contract抽出（`@pre/@post/@inv`）
+
+**使用例**:
+```bash
+python3 .agent/skills/code_generator/scripts/wit_to_cpp.py wit/ inc/gen
+```
+
+---
+
+## 品質チェックスクリプト
+
+### check_violations.py
+
+禁止パターン検出:
+- `void*`, `malloc/free`, `new/delete`
+- `std::vector/map/string`
+- `try/catch/throw`
+
+### check_naming.py
+
+命名規則検証:
+- Type: `snake_case`
+- Enum値: `UPPER_SNAKE_CASE`
+
+---
+
+## WIT仕様準拠
+
+### 必須ルール
+
+- **ケバブケース**: `device-id` (not `device_id`)
+- **予約語回避**: `stream-device` (not `stream`)
+- **interface分離**: `export` は world 内で使用
+
+### ビットフィールド記法
+
+```wit
+/// @bitfield type_scope:u8:0-7, key:u24:8-31, value:u32:32-63
+record kv-pair {
+    raw: u64,
+}
+```
+
+生成されるC++:
+```cpp
+struct kv_pair {
+  uint64_t type_scope : 8;
+  uint64_t key : 24;
+  uint64_t value : 32;
+};
+```
+
+---
+
+## ファイル構成
+
+```
+.agent/skills/code_generator/
+├── scripts/
+│   ├── wit_to_cpp.py          # 公式生成スクリプト
+│   ├── check_violations.py    # 禁止パターン検出
+│   ├── check_naming.py        # 命名規則検証
+│   └── deprecated/
+└── workflows/
+    ├── wit_gen.sh             # 生成
+    ├── wit_check.sh           # チェック
+    ├── wit_build.sh           # ビルド
+    ├── wit_all.sh             # 統合
+    └── README.md
+```
+
+---
+
+## トラブルシューティング
+
+### WIT構文エラー
+
+```
+error: expected kebab-case identifier
+```
+→ `device_id` を `device-id` に修正
+
+### wasm-tools not found
+
+VSCode devcontainer内で実行するか、Docker経由で実行してください。
+
+### PowerShell execution policy
+
+Git Bashを使用してください。
+
+---
+
+## Docker workaround
+
+VSCode devcontainerが使えない場合は、`docker_workaround` スキルを参照してください。
+
+詳細: [docker_workaround/SKILL.md](../docker_workaround/SKILL.md)

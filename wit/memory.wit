@@ -46,6 +46,7 @@ interface memory {
         /// Gets information about a memory block.
         query: func(id: shm-id) -> result<memory-info, bool>;
     }
+
 }
 
 world memory-world {

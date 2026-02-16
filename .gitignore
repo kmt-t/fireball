@@ -43,5 +43,5 @@
 # Directries.
 .roo
 builddir*/
+states/
 docs/temp/
-home/

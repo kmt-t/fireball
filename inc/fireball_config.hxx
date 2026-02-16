@@ -34,13 +34,15 @@ static constexpr std::uint32_t FB_CONF_HAL_MAX_BUFFERS = 4U;
 static constexpr std::uint32_t FB_CONF_JIT_CACHE_SIZE = 4096U;
 static constexpr std::uint32_t FB_CONF_JIT_MAX_HISTORY = 16U;
 static constexpr std::uint32_t FB_CONF_JIT_MAX_COMPILE_QUEUE = 8U;
+static constexpr std::uint32_t FB_CONF_JIT_HOTSPOT_THRESHOLD = 16U; // Hotness threshold
+static constexpr std::uint32_t FB_CONF_JIT_MAX_TRACKED_PCS = 32U;  // Frequency table size
 static constexpr std::uint32_t FB_CONF_GUEST_RAM_BASE = 0x00000000U;
 static constexpr std::uint32_t FB_CONF_GUEST_RAM_SIZE = 8192U;
 static constexpr std::uint32_t FB_CONF_VMMIO_BASE = 0x40000000U;
 static constexpr std::uint32_t FB_CONF_VMMIO_MAX_REGIONS = 8U;
 
 // Logging
-static constexpr std::uint32_t FB_CONF_LOG_BUFFER_SIZE = 512U;
+static constexpr std::uint32_t FB_CONF_LOG_BUFFER_SIZE = 256U;
 static constexpr std::uint32_t FB_CONF_LOG_MAX_DICT_ENTRIES = 64U;
 
 // Debugger

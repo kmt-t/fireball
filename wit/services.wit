@@ -1,7 +1,7 @@
 package fireball:host;
 
 interface services {
-    use types.{uri-handle, channel-id, task-id, service-id, key-value, operation-result, recovery-strategy, log-level, shm-id};
+    use types.{uri-handle, channel-id, task-id, service-id, kv-pair, operation-result, recovery-strategy, log-level, shm-id};
 
     type message-handle = shm-id;
 

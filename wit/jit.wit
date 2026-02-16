@@ -27,10 +27,13 @@ interface jit {
     resource hotspot-detector {
         /// Records an execution of a WASM PC.
         /// @pre: pc != 0
+        /// @pre: pc % 4 == 0 (WASM alignment)
+        /// @post: history_count == old(history_count) + 1 || history_count == old(history_count)
         record-execution: func(pc: address);
 
         /// Processes the recorded history and identifies hotspots.
         /// @post: history_count == 0
+        /// @post: compile_queue_count >= old(compile_queue_count)
         process-history: func();
 
         /// Clears the current compile queue.
@@ -41,12 +44,16 @@ interface jit {
     /// Tier 3: JIT Entry Index
     /// @inv: entries is sorted by wasm_pc
     /// @inv: entry_count <= entries.size()
+    /// @inv: entry_count <= FB_CONF_JIT_MAX_ENTRIES
     resource jit-entry-index {
         /// Performs a fast lookup for a native trace address.
+        /// @post: result.is_ok() -> result_addr != 0
         lookup: func(pc: address) -> result<address, bool>;
 
         /// Registers a new JIT entry.
-        /// @pre: native_offset < FB_CONF_JIT_CACHE_SIZE
+        /// @pre: native-offset < FB_CONF_JIT_CACHE_SIZE
+        /// @pre: pc != 0
+        /// @post: lookup(pc).is_ok()
         register-entry: func(pc: address, native-offset: address);
     }
 
@@ -55,6 +62,7 @@ interface jit {
     resource copy-and-patch-engine {
         /// Patches a WASM instruction into native code.
         /// @pre: dest_cache != 0
+        /// @pre: pc != 0
         patch-trace: func(pc: address, dest-cache: shm-id) -> result<u32, recovery-strategy>;
     }
 
@@ -63,7 +71,9 @@ interface jit {
     /// @inv: old_bank.cache_offset <= FB_CONF_JIT_CACHE_SIZE
     resource jit-compiler {
         /// Initializes the JIT engine and caches.
-        initialize: func() -> operation_result;
+        /// @pre: !initialized
+        /// @post: initialized
+        initialize: func() -> operation-result;
 
         /// Looks up a compiled trace. 
         lookup-trace: func(pc: address) -> result<address, bool>;
@@ -72,7 +82,9 @@ interface jit {
         process-batch-compile: func();
 
         /// Forces a swap between Active and Old cache banks (GC).
+        /// @pre: active_bank.cache_offset > 0
         /// @post: active_bank.cache_offset == 0
+        /// @post: old_bank.cache_offset == old(active_bank.cache_offset)
         swap-banks: func();
     }
 }

@@ -5,7 +5,7 @@ interface hal-types {
 
     /// Hardware device categories.
     enum device-kind {
-        stream,
+        stream-device,
         block,
         trigger,
         timer

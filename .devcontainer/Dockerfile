@@ -127,6 +127,17 @@ RUN set -eux; \
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | runuser -u ${DEVELOPER_USER} -- sh -s -- -y --no-modify-path; \
     runuser -u ${DEVELOPER_USER} -- ${DEVELOPER_HOME}/.cargo/bin/cargo install wit-bindgen-cli wasm-tools;
 
+# TLA+ Toolbox and TLC model checker for formal verification
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    default-jre \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install TLA+ command-line tools (tla2tools.jar)
+RUN wget https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar -O /opt/tla2tools.jar && \
+    echo '#!/bin/bash\njava -cp /opt/tla2tools.jar tlc2.TLC "$@"' > /usr/local/bin/tlc && \
+    echo '#!/bin/bash\njava -cp /opt/tla2tools.jar tla2sany.SANY "$@"' > /usr/local/bin/sany && \
+    chmod +x /usr/local/bin/tlc /usr/local/bin/sany
+
 # Display tool versions for build log
 RUN echo "=== Tools versions ===" \
  && clang --version || true \
@@ -146,6 +157,7 @@ RUN echo "=== Tools versions ===" \
   && cflow --version || true \
   && su - ${DEVELOPER_USER} -c "cargo --version" || true \
   && su - ${DEVELOPER_USER} -c "wit-bindgen --version" || true \
+  && tlc 2>&1 | head -n 1 || true \
   && su - ${DEVELOPER_USER} -c "/usr/bin/pipx list" || true
 
 CMD ["/bin/bash"]

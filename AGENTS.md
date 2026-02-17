@@ -11,7 +11,7 @@
 ### ⚠️ 実装・レビューの原則 (Rules)
 実装やコードレビューにおいて、品質と安全性を担保するための基準。
 - **[cpp_coding_style.md](/.agent/rules/cpp_coding_style.md)**: 組み込み向けの命名規則、型語彙、メモリ安全性を高めるための記述制限。
-- **[design.md](/.agent/rules/design.md)**: 設計駆動開発の原則、WIT-First、トレーサビリティ、インターフェイス設計ルール。
+- **[design.md](/.agent/rules/design.md)**: 設計駆動開発の原則、盆栽デザイン哲学、WIT-First、トレーサビリティ、インターフェイス設計ルール。
 - **[protocols.md](/.agent/rules/protocols.md)**: 情報のトレーサビリティ確保、エージェントの行動指針、ドキュメント配置ルール。
 - **[documentation.md](/.agent/rules/documentation.md)**: 設計情報の構造化、日本語/英語の使い分け、図解による論理的説明のルール。
 
@@ -46,8 +46,7 @@
 
 | ワークフロー | パス | 概要 |
 |:---|:---|:---|
-| **Development Cycle** | `.agent/workflows/development_cycle.md` | VDD（形式仕様→検証→生成→品質保証）の統合開発サイクル |
-| **Bonsai Design** | `.agent/workflows/bonsai_design.md` | 全体から細部へ、反復的な設計リファインメントを行う設計プロセス |
+| **Development Cycle** | `.agent/workflows/development_cycle.md` | VDD（形式仕様・TLA+検証→生成→品質保証）の統合開発サイクル |
 | **Check Compliance** | `.agent/workflows/check_compliance.md` | 形式仕様・生成コード・コーディング標準への適合性を自動検証する手順 |
 | **Progress Meeting** | `.agent/workflows/progress_meeting.md` | 計画と成果物の乖離分析、リスク分析、アクションプラン策定を行う進捗会議 |
 | **Summarize** | `.agent/workflows/summarize.md` | docs配下の設計ドキュメントから解像度の高い要約を生成 |

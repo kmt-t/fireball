@@ -32,8 +32,11 @@ graph TB
 2. **論理的準備 (Agentic Grounding)**:
     - `.agent/brain/project_context.atc` を読み込み、最新の不変条件（Brain）を同期する。
     - 実行タスクに応じた [Axiomatic Task Contract (ATC)](/docs/patterns/axiomatic_task_contract.md) を定義し、思考を収束させる。
-3. **仕様の形式化 (VDD Phase 1)**:
-    - 自然言語の要求を **WIT IDL** や **TLA+**（状態機械が必要な場合）に書き起こす。
+3. **仕様の形式化と検証 (VDD Phase 1)**:
+    - 自然言語の要求を **WIT IDL** や **TLA+**（状態機械や並行性が重要な場合）に書き起こす。
+    - **TLA+ 検証のフロントローディング**:
+        - 状態遷移や並行処理を含むロジックは必ず TLA+ でモデル化し、`tlc` でモデル検査を行う。
+        - 反例（Counterexample）がないことを確認し、論理的な正しさをこの段階で保証する（これが不十分だと実装生成が困難になる）。
     - 各インターフェースに `@pre`, `@post`, `@inv` 契約を付与する。
 4. **モデル構築**: 
     - 静的構造（ブロック図、クラス構成）を定義する。

@@ -8,7 +8,7 @@
       @inv ∀t ∈ TypeAliases : source_of_truth(t) == fireball_vocabulary
       @note cpp_coding_style.md §4 is a SUMMARY; fireball_vocabulary §7 is AUTHORITATIVE
   - CANON(prohibited_alternatives) := cpp_embedded/SKILL.md
-      @inv ∀p ∈ Prohibitions(cpp_coding_style.md) : ∃a ∈ Alternatives(cpp_embedded) : replaces(a, p)
+      @inv ∀p ∈ Prohibitions(embedded_cpp_rules.md) : ∃a ∈ Alternatives(cpp_embedded) : replaces(a, p)
   - CANON(structural_patterns) := fireball_architecture/SKILL.md
       @inv ∀c ∈ Components : tier(c) ∈ {1,2,3} ∧ defined_in(tier(c), fireball_architecture)
   - CANON(error_handling) := cpp_embedded/SKILL.md §エラーハンドリング
@@ -19,13 +19,13 @@
 [Task-Dispatch]
   - task(design_new_component) → READ [fireball_architecture, risk_assessment] THEN [fireball_vocabulary]
   - task(implement_interface) → READ [axiomatic_interface_design] THEN [cpp_embedded, fireball_vocabulary]
-  - task(write_code) → READ [cpp_coding_style(MEMORY)] THEN IF_NEEDED [cpp_embedded]
+  - task(write_code) → READ [embedded_cpp_rules(MEMORY)] THEN IF_NEEDED [cpp_embedded]
   - task(choose_type_name) → READ [fireball_vocabulary §7] ONLY
   - task(choose_container) → READ [cpp_embedded §4] ONLY
   - task(choose_error_pattern) → READ [cpp_embedded §6] ONLY
   - task(generate_from_wit) → READ [code_generator] THEN IF_ENV_ISSUE [docker_workaround]
   - task(check_wasm_spec) → READ [wasm_development] ONLY
-  - task(design_refinement) → READ [design.md §Bonsai] THEN WORKFLOW [development_cycle]
+  - task(design_refinement) → READ [general_design_rules.md §Bonsai] THEN WORKFLOW [development_cycle]
   - task(verify_compliance) → WORKFLOW [check_compliance]
   - task(review_progress) → WORKFLOW [progress_meeting]
 
@@ -46,18 +46,18 @@
 [Layering-Map]
   @inv ∀overlap : layer(generic) ∩ layer(project_specific) ≠ ∅ ⇒ by_design
   - LAYER(type_aliases):
-      generic := cpp_coding_style.md §4 (portable synopsis)
+      generic := embedded_cpp_rules.md §4 (portable synopsis)
       specific := fireball_vocabulary §7.2 (authoritative detail for Fireball)
   - LAYER(prohibition_and_alternatives):
-      generic := cpp_coding_style.md §10 (checklist, portable across projects)
+      generic := embedded_cpp_rules.md §1 (checklist, portable across projects)
       specific := cpp_embedded §L1 (concrete alternatives for 64KB-RAM target)
   - LAYER(tier_selection):
       generic := cpp_embedded §3.1 (implementation-level decision aid)
       specific := fireball_architecture §2.1 (Fireball 3-Tier structural design)
 [Document-Topology]
-  @inv ∀path ∈ References(AGENTS.md ∪ protocols.md) : exists(path)
+  @inv ∀path ∈ References(AGENTS.md ∪ project_protocols.md) : exists(path)
   - GATEWAY := AGENTS.md
-  - RULES := .agent/rules/{cpp_coding_style, design, documentation, protocols}.md
+  - RULES := .agent/rules/{embedded_cpp_rules, general_design_rules, project_protocols}.md
       @note MEMORY and SKILLS are authoritative. content in .agent/rules/ is kept for reference/backup.
   - SKILLS := .agent/skills/{axiomatic_interface_design, code_generator, cpp_embedded, docker_workaround, fireball_architecture, fireball_vocabulary, risk_assessment, wasm_development}/SKILL.md
   - WORKFLOWS := .agent/workflows/{check_compliance, development_cycle, friction_audit, progress_meeting, summarize, waigaya}.md

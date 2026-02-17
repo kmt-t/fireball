@@ -4,13 +4,13 @@
   □ Interface Truth := WIT (Canonical Interface Definition derived from Design Truth)
   □ ∀logic ∈ ComplexStateMachines : verified_by(logic, TLA+) (@see .agent/workflows/development_cycle.md)
   □ ∀c ∈ Components : is_tier(c, 2) ⇒ matches_contract(c, harness_pattern) ∧ is_pure_static(c) (@see docs/patterns/concept_harness.md)
-  □ ∀f ∈ funs(Tier2) : ¬virtual(f) ∧ ¬override(f) (@see .agent/rules/cpp_coding_style.md)
+  □ ∀f ∈ funs(Tier2) : ¬virtual(f) ∧ ¬override(f) (@see .agent/rules/embedded_cpp_rules.md)
   □ ∀m ∈ Allocations : ¬dynamic(m) ∧ is_heap_less(m) (@see .agent/skills/cpp_embedded/SKILL.md §メモリ管理パターン)
 
 [Design-Patterns]
   - Harness (Tier 2): composition(TemplateInjection) ∧ cost(vtable) == 0 (@see docs/patterns/concept_harness.md)
   - Recovery: ∀f ∈ API : return_type(f) == result<T, recovery_strategy> (@see .agent/skills/cpp_embedded/SKILL.md §エラーハンドリング)
-  - Layout: ThinGlueLayer(WIT, C++) ∧ FlatInterface(Components) (@see .agent/rules/design.md §ThinGlueLayer, §FlatInterface)
+  - Layout: ThinGlueLayer(WIT, C++) ∧ FlatInterface(Components) (@see .agent/rules/general_design_rules.md §ThinGlueLayer, §FlatInterface)
   - vMMIO-Model: ALL host-guest data exchange goes through vMMIO.
       Physical registers (GPIO), shared memory, syscall buffers — everything.
       @rationale ONE mechanism for everything. No IPC for data, no separate pointer validation.

@@ -15,6 +15,7 @@ Usage:
 
 import sys
 import os
+import re
 from pathlib import Path
 
 # Prohibited patterns and their error messages
@@ -45,14 +46,19 @@ def check_file(file_path):
     
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
+            full_content = f.read()
+            
+            # Remove comments to avoid false positives in documentation
+            # Remove /* ... */ comments
+            content = re.sub(r'/\*.*?\*/', '', full_content, flags=re.DOTALL)
+            # Remove // ... comments
+            content = re.sub(r'//.*', '', content)
             
             # Check for allowed exceptions first
             for allowed in ALLOWED_EXCEPTIONS:
                 content = content.replace(allowed, "")
             
             # Check each violation pattern
-            import re
             for pattern, message in VIOLATIONS.items():
                 if re.search(pattern, content):
                     violations_found.append(message)

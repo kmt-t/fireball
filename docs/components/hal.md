@@ -101,11 +101,17 @@ sequenceDiagram
 
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | 共有バッファ内のデータを指定された物理デバイスへ送信する。 |
-| シグネチャ | `write(id: ID値, buffer: バイナリビュー) -> 結果型` |
-| 引数 | `id`: 対象デバイスID<br>`buffer`: 送信データ |
-| 戻り値 | 結果型 |
-| 期待する結果 | 正常：データがデバイスへ転送完了する。 |
+| 機能概要 | 共有バッファ（`shm-id`）内のデータを指定された物理デバイスへ送信する。 |
+| シグネチャ | `write(id: device-id, src: shm-id) -> operation-result` |
+| 引数 | `id`: 対象デバイスID<br>`src`: 送信データが格納された共有メモリハンドル |
+
+#### ゼロコピー転送 (bus_master/streaming)
+
+| 項目 | 内容 |
+| :--- | :--- |
+| 機能概要 | アプリケーションの共有メモリバッファを直接DMAエンジン等へ渡し、コピーなしでの高速転送を実現する。 |
+| シグネチャ | `transfer(tx_buffer: shm_id, rx_buffer: shm_id) -> operation-result` |
+| 期待する結果 | 正常：CPUを介さずバッファ間のデータ移動が完了する。 `{PhysicalPassthrough}` |
 
 #### 非標準制御 (ioctl)
 

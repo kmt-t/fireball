@@ -1,9 +1,9 @@
 package fireball:host;
 
 interface guest-api {
-    use types.{operation-result, shm-id};
-    log: func(msg: shm-id);
-    ipc-call: func(chan: u32, data: shm-id) -> operation-result;
+    use types.{operation-result, log-level, message};
+    log: func(lvl: log-level, dict-id: u32, value: u32);
+    ipc-call: func(chan: u32, data: message) -> operation-result;
 }
 
 world fireball-system {

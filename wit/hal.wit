@@ -1,7 +1,7 @@
 package fireball:host;
 
 interface hal-types {
-    use types.{device-id, shm-id, operation-result, recovery-strategy, byte-count};
+    use types.{device-id, operation-result, recovery-strategy, byte-count};
 
     /// Hardware device categories.
     enum device-kind {
@@ -25,8 +25,25 @@ interface hal-types {
 }
 
 interface hal {
-    use types.{device-id, shm-id, operation-result, recovery-strategy, address, byte-count};
-    use hal-types.{pool-config, debug-transport};
+    use types.{device-id, shm-id, operation-result, recovery-strategy, address, byte-count, message};
+    use hal-types.{device-kind, pool-config, debug-transport};
+
+    /// Information about a physical device.
+    record device-info {
+        id: device-id,
+        kind: device-kind,
+        name: string,
+        unit-size: byte-count,
+        reserved-pages: u32,
+    }
+
+    /// Information about an I/O buffer slot.
+    record buffer-info {
+        id: shm-id,
+        size: byte-count,
+        base: address,
+        is-active: bool,
+    }
 
     /// Tier 1: Hardware Abstraction Layer Controller
     /// @inv: device_id < FB_CONF_HAL_MAX_DEVICES
@@ -48,8 +65,14 @@ interface hal {
 
         /// Hardware specific control using Key-Value parameters.
         /// @pre: id < FB_CONF_HAL_MAX_DEVICES
-        /// @param params_shm Handle to a Key-Value message block.
-        ioctl: func(id: device-id, cmd: u32, params-shm: shm-id) -> operation-result;
+        /// @param params Handle to a Key-Value message block.
+        ioctl: func(id: device-id, cmd: u32, params: message) -> operation-result;
+
+        /// Gets information about a device.
+        query-device: func(id: device-id) -> result<device-info, bool>;
+
+        /// Gets information about a buffer.
+        query-buffer: func(id: shm-id) -> result<buffer-info, bool>;
 
         /// Acquires a fixed-size buffer for I/O.
         /// @pre: size <= FB_CONF_HAL_BUFFER_SIZE
@@ -65,31 +88,54 @@ interface hal {
     /// Tier 3: Physical GPIO / Interrupt Trigger
     resource gpio-trigger {
         /// Sets the state of a physical pin.
-        /// @pre: pin < FB_CONF_HAL_MAX_PINS
-        set: func(pin: u32, value: bool) -> operation-result;
+        set-pin: func(pin: u32, value: bool) -> operation-result;
 
         /// Gets the state of a physical pin.
-        /// @pre: pin < FB_CONF_HAL_MAX_PINS
-        get: func(pin: u32) -> bool;
+        get-pin: func(pin: u32) -> result<bool, recovery-strategy>;
     }
 
     /// Tier 3: Hardware System Timer
     resource hardware-timer {
         /// Gets current system time in nanoseconds.
-        /// @post: result >= old(time)
-        now-ns: func() -> u64;
+        now: func() -> u64;
 
         /// Sets an alarm interrupt at a specific time.
-        /// @pre: ns > now_ns()
-        set-alarm: func(ns: u64) -> operation-result;
+        subscribe-duration: func(nanos: u64) -> shm-id; // Returns a pollable-like handle
+    }
+
+    /// Tier 3: Master/Slave Bus (I2C/SPI) - Zero Copy
+    resource bus-master {
+        /// Transfers data using shared memory buffers.
+        /// @pre: tx_data and rx_data are valid shm_id
+        transfer: func(tx-buffer: shm-id, rx-buffer: shm-id) -> operation-result;
+    }
+
+    resource bus-slave {
+        /// Sets the response buffer for the next master read.
+        set-response: func(buffer: shm-id) -> operation-result;
+
+        /// Gets the received buffer from the master write.
+        get-received: func() -> result<shm-id, recovery-strategy>;
+        
+        /// Subscribes to bus events.
+        subscribe: func() -> shm-id;
+    }
+
+    /// Tier 3: Streaming Data I/O - Zero Copy
+    resource streaming-master {
+        /// Writes data from a shared memory buffer.
+        write: func(buffer: shm-id) -> operation-result;
+    }
+
+    /// Tier 3: Streaming Data I/O - Zero Copy
+    resource streaming-slave {
+        /// Reads data into a shared memory buffer.
+        read: func(buffer: shm-id) -> operation-result;
     }
 
     /// Tier 3: GDB RSP Debug Server
     resource debug-server {
         poll-packet: func() -> operation-result;
-
-        /// Returns the handle to the parsed command buffer.
-        /// @post: result.is_ok() -> handle != 0
         get-parsed-command: func() -> result<shm-id, recovery-strategy>;
     }
 }

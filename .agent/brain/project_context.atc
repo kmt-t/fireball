@@ -1,0 +1,19 @@
+[Brain: Fireball-Project-Context]
+[Invariants]
+  - ∀c ∈ Components : is_tier(c, 2) ⇒ matches_contract(c, harness_pattern) ∧ is_pure_static(c) (@see docs/patterns/concept_harness.md)
+  - ∀i ∈ Interfaces : wit_defined(i) ∧ matches(i, docs/) (@see docs/patterns/system_behavior_patterns.md)
+  - ∀f ∈ funs(Tier2) : ¬virtual(f) ∧ ¬override(f) (@see .agent/rules/cpp_coding_style.md)
+  - ∀m ∈ Allocations : ¬dynamic(m) ∧ is_heap_less(m) (@see docs/patterns/resource_optimization_patterns.md)
+
+[Design-Patterns]
+  - Harness (Tier 2): composition(TemplateInjection) ∧ cost(vtable) == 0 (@see docs/patterns/concept_harness.md)
+  - Recovery: ∀f ∈ API : return_type(f) == result<T, recovery_strategy> (@see docs/patterns/system_behavior_patterns.md)
+  - Layout: ThinGlueLayer(WIT, C++) ∧ FlatInterface(Components)
+
+[Resolved-Frictions]
+  - wit-syntax: ∀id ∈ WIT_Identifiers : ¬contains(id, "_") ∧ contains(id, "-")
+  - cross-pkg: ∀r ∈ CrossPackageResources : type(r) == address (@see implementation_plan.md)
+
+[State]
+  - progress(tier2-refactoring) == 0.8
+  - brain_mode: FORMAL_PREDICATE_LOGIC

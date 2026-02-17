@@ -1,259 +1,94 @@
 ---
 description: >
-  VDD (Verification Driven Development) ワークフロー。形式仕様→検証→生成→品質保証の統合開発サイクル。
-  WHEN: 新機能開発, コンポーネント設計, /development_cycle
-  RELATED: bonsai_design（設計詳細度判断）, check_compliance（品質検証）, code_generator（自動生成）
 ---
 
-# VDD Development Cycle
-
-**Verification Driven Development** - 形式検証を中核とした開発サイクル。
-
+---
+description: >-
+  設計→インターフェース定義→実装→検証→リファイメントの標準開発サイクル。
+  WHEN: 開発フェーズの全体像確認, フェーズ間の遷移判断
+  RELATED: bonsai_design（設計フェーズ詳細）, check_compliance（検証フェーズ詳細）
 ---
 
-## 開発フロー
+# General Development Cycle Workflow
 
-```
-Phase 1: 形式化 → Phase 2: 検証 → Phase 3: 生成 → Phase 4: 統合
-    ↓              ↓              ↓              ↓
-  WIT/TLA+       TLC検証       AI生成      品質保証
-```
+本ワークフローは、設計、インターフェース定義、実装、検証、およびリファイメントの標準的なサイクルを定義します。
 
----
-
-## Phase 1: 仕様の形式化
-
-### ステップ
-
-1. **要求分析**
-   ```
-   自然言語の要求 → 原理・原則の抽出
-   ```
-
-2. **形式仕様作成** (AI支援)
-   - WIT: インターフェイス定義
-   - TLA+: 状態遷移・不変条件
-   - Contract: @pre/@post/@inv
-
-3. **仕様レビュー** (人間)
-   - 原則に合致しているか
-   - 不変条件は適切か
-   - 網羅性は十分か
-
-### 成果物
-
-- `wit/` - WIT仕様
-- `specs/` - TLA+仕様（状態機械のみ）
-- 設計ドキュメント
-
----
-
-## Phase 2: 仕様の検証
-
-### ステップ
-
-1. **TLA+モデル検査**
-   ```bash
-   tlc scheduler.tla
-   # 不変条件検証
-   # デッドロック検出
-   # 網羅性確認
-   ```
-
-2. **WIT構文検証**
-   ```bash
-   wasm-tools component wit wit/ --json > /dev/null
-   ```
-
-3. **Contract整合性確認**
-   - @pre/@post の論理的整合性
-   - @inv の実現可能性
-
-### 合格基準
-
-- ✅ TLC: No error found
-- ✅ WIT: 構文エラーなし
-- ✅ Contract: 矛盾なし
-
----
-
-## Phase 3: 実装の生成
-
-### ステップ
-
-1. **コード自動生成**
-   ```bash
-   bash .agent/skills/code_generator/workflows/wit_gen.sh
-   ```
-
-2. **品質自動チェック**
-   ```bash
-   bash .agent/skills/code_generator/workflows/wit_check.sh
-   ```
-   - 禁止パターン検出 (void*, malloc等)
-   - 命名規則検証 (snake_case等)
-
-3. **生成結果確認**
-   - 14ファイル生成完了
-   - Contract埋め込み確認
-
-### 合格基準
-
-- ✅ 生成: 全ファイル成功
-- ✅ チェック: 違反0件
-
----
-
-## Phase 4: 統合検証
-
-### ステップ
-
-1. **ビルドテスト**
-   ```bash
-   bash .agent/skills/code_generator/workflows/wit_build.sh
-   ```
-
-2. **統合テスト** (オプション)
-   - 単体テスト実行
-   - 結合テスト実行
-
-3. **最終レビュー**
-   - 生成コードのSpot Check
-   - ドキュメント整合性確認
-
-### 合格基準
-
-- ✅ ビルド成功
-- ✅ テスト通過
-
----
-
-## フェーズ遷移判断
-
-### Phase 1 → 2
-
-**条件**:
-- [ ] WIT仕様作成完了
-- [ ] TLA+仕様作成完了（状態機械の場合）
-- [ ] Contract記述完了
-- [ ] 人間レビュー完了
-
-### Phase 2 → 3
-
-**条件**:
-- [ ] TLC検証通過
-- [ ] WIT構文検証通過
-- [ ] Contract矛盾なし
-
-### Phase 3 → 4
-
-**条件**:
-- [ ] コード生成成功（14ファイル）
-- [ ] 品質チェック通過（違反0件）
-
-### Phase 4 → 完了
-
-**条件**:
-- [ ] ビルド成功
-- [ ] テスト通過
-- [ ] 最終レビュー完了
-
----
-
-## 問題発生時の対処
-
-### Phase 2で検証失敗
-
-```
-TLC: デッドロック検出
-  ↓
-Phase 1に戻る（仕様修正）
+```mermaid
+graph TB
+    Design[Design Task] --> Interface[Interface Definition]
+    Interface -->|User Approval| Implementation[Implementation Task]
+    Implementation -->|User Approval| Verification[Verification & Debug]
+    Verification -->|User Approval| Review[Review & Refinement]
+    Review -->|Issues Found| Refactor[Refactoring]
+    Refactor -->|Apply Plan| Review
+    Review -->|No Issues| Design
+    
+    style Design fill:#E1F5FF
+    style Interface fill:#F3E5F5
+    style Implementation fill:#FFF3E0
+    style Verification fill:#FCE4EC
+    style Review fill:#E8F5E9
+    style Refactor fill:#F1F8E9
 ```
 
-### Phase 3で品質チェック失敗
+## 1. 設計フェーズ (Design)
+1. **要件定義**: 上位の要求、制約条件、技術仕様を確認する。
+2. **論理的準備 (Agentic Grounding)**:
+    - `.agent/brain/project_context.atc` を読み込み、最新の不変条件（Brain）を同期する。
+    - 実行タスクに応じた [Axiomatic Task Contract (ATC)](/docs/patterns/axiomatic_task_contract.md) を定義し、思考を収束させる。
+3. **仕様の形式化 (VDD Phase 1)**:
+    - 自然言語の要求を **WIT IDL** や **TLA+**（状態機械が必要な場合）に書き起こす。
+    - 各インターフェースに `@pre`, `@post`, `@inv` 契約を付与する。
+4. **モデル構築**: 
+    - 静的構造（ブロック図、クラス構成）を定義する。
+    - 動的挙動（シーケンス図、状態遷移図）を定義する。
+5. **コンセプト検証**: 複雑なロジックについては、プロトタイプやコンセプトコードによる論理的な検証を行う。
+6. **レビュー**: 仕様の不備や矛盾をユーザーにフィードバックし、承認を得る。
 
-```
-違反検出: void*使用
-  ↓
-Phase 1に戻る（WIT仕様修正）
-```
+## 2. インターフェース定義フェーズ (Interface Definition)
+1. **WIT による記述**: アーキテクチャ原則に基づき、すべてのクラス・インターフェースを **WIT IDL** で記述する。
+2. **仕様の検証 (VDD Phase 2)**:
+    - `wasm-tools` による WIT 構文検証の実行:
+      ```bash
+      wasm-tools component wit wit/ --json > /dev/null
+      ```
+    - TLA+ モデル検査（必要時）: `tlc scheduler.tla`
+    - 契約（@pre/@post）の論理的整合性の自己監査。
+3. **検証結果のフィードバック**:
+    - 検証過程で判明した論理制約や仕様の不備を **`docs/` や `MEMORY` に反映**し、自然言語の仕様をリファインする。
+4. **契約の明文化**: `///` コメントを用いて、事前条件、事後条件、エラー時の挙動を記述する。
+5. **レビューと承認**: ユーザーは **WIT ファイルの内容** をレビューし、構造と契約に合意する。
 
-### Phase 4でビルド失敗
+## 3. 実装フェーズ (Implementation)
+1. **コード自動生成 (VDD Phase 3)**:
+    - 承認された WIT からインターフェースヘッダを生成する:
+      ```bash
+      bash .agent/skills/code_generator/workflows/wit_gen.sh
+      ```
+2. **品質自動チェック**:
+    - 禁止パターン（void*, malloc等）および命名規則の検証:
+      ```bash
+      bash .agent/skills/code_generator/workflows/wit_check.sh
+      ```
+3. **段階的実装**: 生成されたインターフェースを継承し、組み込み制約に従って機能を実装する。
 
-```
-コンパイルエラー
-  ↓
-Phase 1に戻る（Contract修正）
-```
+## 4. 統合検証フェーズ (Verification & Integration)
+1. **統合ビルド (VDD Phase 4)**:
+    - 生成コードと実装のビルドテストを実行する:
+      ```bash
+      bash .agent/skills/code_generator/workflows/wit_build.sh
+      ```
+2. **ユニットテスト**: インターフェースの境界条件を含めたテストを実行する。
+3. **一括検証 (推奨)**:
+    - Phase 3-4 を統合実行し、品質を保証する:
+      ```bash
+      bash .agent/skills/code_generator/workflows/wit_all.sh
+      ```
+4. **最終レビューとリフトアップ**:
+    - 実装が初期設計（NL）の意図を反映しているか比較検証する。
+    - 開発中に得られた知見（最適化手法や再利用可能パターン）を **`docs/` にリフトアップ**し、プロジェクトの知識ベースを更新する。
 
-**原則**: 実装を直接修正しない。仕様を修正して再生成。
-
----
-
-## ツール
-
-### 形式仕様
-
-- WIT編集: VSCode
-- TLA+編集: VSCode + TLA+ extension
-
-### 検証
-
-- `tlc` - TLA+ Model Checker
-- `wasm-tools` - WIT検証
-
-### 生成・品質チェック
-
-- `wit_gen.sh` - 生成
-- `wit_check.sh` - 品質チェック
-- `wit_build.sh` - ビルド
-- `wit_all.sh` - 統合実行 ⭐
-
----
-
-## 統合実行（推奨）
-
-```bash
-# Phase 3-4を一括実行
-bash .agent/skills/code_generator/workflows/wit_all.sh
-
-# 出力:
-# [*] Generating C++ headers...
-# [OK] Generation complete
-# [*] Running quality checks...
-# [OK] No violations found
-# [OK] All naming conventions correct
-# [*] Testing build...
-# [OK] Build successful
-```
-
----
-
-## チェックリスト
-
-### Phase 1: 形式化
-- [ ] 原理・原則の抽出完了
-- [ ] WIT仕様作成
-- [ ] TLA+仕様作成（状態機械）
-- [ ] Contract記述
-- [ ] 人間レビュー
-
-### Phase 2: 検証
-- [ ] TLC検証通過
-- [ ] WIT構文検証
-- [ ] Contract整合性確認
-
-### Phase 3: 生成
-- [ ] コード生成成功
-- [ ] 品質チェック通過
-
-### Phase 4: 統合
-- [ ] ビルド成功
-- [ ] テスト通過
-- [ ] 最終レビュー
-
----
-
-**VDD = 検証可能性を中核とした開発手法**
-
-詳細: [docs/concept/vdd_methodology.md](../../docs/concept/vdd_methodology.md)
+## 5. 振り返りとリファイメント (Review & Refinement)
+1. **設計の照合**: 最終的な実装が初期設計の意図を反映しているか比較検証する。
+2. **リフトアップ**: 個別実装から得られた知見を抽象化し、再利用可能なパターンや設計へと昇華させる。
+3. **リファクタリング**: 承認されたプランに基づき、可読性や保守性を向上させるための構造改善を行う。

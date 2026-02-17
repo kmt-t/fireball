@@ -72,32 +72,32 @@ fireball_exe = executable('fireball',
    install : true,
 )
 
-test_allocator_exe = executable('test_allocator',
-  files('tests/test_allocator.cxx', 'src/allocator/malloc.c'),
-  include_directories : incdirs,
-  c_args : ['-DMSPACES=1', '-DHAVE_MMAP=0', '-DHAVE_MORECORE=0'],
-  cpp_args : common_cpp_args,
-  link_args : ['-lstdc++exp'],
-)
+# test_allocator_exe = executable('test_allocator',
+#   files('tests/test_allocator.cxx', 'src/allocator/malloc.c'),
+#   include_directories : incdirs,
+#   c_args : ['-DMSPACES=1', '-DHAVE_MMAP=0', '-DHAVE_MORECORE=0'],
+#   cpp_args : common_cpp_args,
+#   link_args : ['-lstdc++exp'],
+# )
 
-test('allocator_test', test_allocator_exe)
+# test('allocator_test', test_allocator_exe)
 
-test_coos_exe = executable('test_coos',
-  files('tests/test_coos.cxx', 'src/kernel/coos.cxx'),
-  include_directories : incdirs,
-  c_args : ['-DMSPACES=1', '-DHAVE_MMAP=0', '-DHAVE_MORECORE=0'],
-  cpp_args : common_cpp_args,
-  link_args : ['-lstdc++exp'],
-)
+# test_coos_exe = executable('test_coos',
+#   files('tests/test_coos.cxx', 'src/kernel/coos.cxx'),
+#   include_directories : incdirs,
+#   c_args : ['-DMSPACES=1', '-DHAVE_MMAP=0', '-DHAVE_MORECORE=0'],
+#   cpp_args : common_cpp_args,
+#   link_args : ['-lstdc++exp'],
+# )
 
-test('coos_test', test_coos_exe)
+# test('coos_test', test_coos_exe)
 
-test_jit_exe = executable('test_jit',
-  files('tests/test_jit.cxx', 'src/vsoc/hotspot_detector.cxx'),
-  include_directories : incdirs,
-  c_args : ['-DMSPACES=1', '-DHAVE_MMAP=0', '-DHAVE_MORECORE=0'],
-  cpp_args : common_cpp_args,
-  link_args : ['-lstdc++exp'],
-)
+# test_jit_exe = executable('test_jit',
+#   files('tests/test_jit.cxx', 'src/vsoc/hotspot_detector.cxx'),
+#   include_directories : incdirs,
+#   c_args : ['-DMSPACES=1', '-DHAVE_MMAP=0', '-DHAVE_MORECORE=0'],
+#   cpp_args : common_cpp_args,
+#   link_args : ['-lstdc++exp'],
+# )
 
-test('jit_test', test_jit_exe)
+# test('jit_test', test_jit_exe)

@@ -4,6 +4,10 @@
 
 ## 1. 📂 開発リソースの構成と参照判断基準
 
+### 🧠 エージェントの記憶 (Agentic Brain)
+この領域はエージェント専用の補助メモリであり、自然言語仕様からの「論理的エッセンス」を形式的に保持する。**自然言語ドキュメント（docs/）が唯一の絶対的な Source of Truth (SoT) であり**、本領域は実装時の認知ドリフトを防止する「アンカー」として機能する。
+- **[.agent/brain/](/.agent/brain/)**: エージェント用形式的メモリ（ATC）。必ず上流の自然言語仕様を参照する。
+
 ### ⚠️ 実装・レビューの原則 (Rules)
 実装やコードレビューにおいて、品質と安全性を担保するための基準。
 - **[cpp_coding_style.md](/.agent/rules/cpp_coding_style.md)**: 組み込み向けの命名規則、型語彙、メモリ安全性を高めるための記述制限。
@@ -15,12 +19,14 @@
 
 | スキル名 | パス | 概要 |
 |:---|:---|:---|
-| **Code Generation** | `.agent/skills/code_generator/` | JSONデータ/WIT IDLからPythonスクリプトでC++コードを自動生成 |
-| **Embedded C++ Optimization** | `.agent/skills/cpp_embedded/` | RAM 64KB環境における禁止/許可ライブラリ、コンテナ代替、メモリ管理パターン |
-| **Fireball Architecture** | `.agent/skills/fireball_architecture/` | 3-Tier分離、IoC、Harness/Static DIの設計原則 |
-| **Type Vocabulary** | `.agent/skills/fireball_vocabulary/` | 仕様書における型システム語彙とC++型エイリアスの対応 |
-| **Risk Assessment** | `.agent/skills/risk_assessment/` | 実装リスクに応じた設計詳細度（Tier 1〜3）の決定基準 |
-| **WASM Development** | `.agent/skills/wasm_development/` | WebAssembly/WASI仕様、WAMR実装、LLVMバックエンド参照 |
+| **Axiomatic Interface Design** | `.agent/skills/axiomatic_interface_design/` | MDAの概念を応用し、公理的意味論に基づき厳密な設計・実装・テストを導出 |
+| **Code Generation** | `.agent/skills/code_generator/` | JSONデータ/WIT IDLからC++コードを自動生成し、品質チェックまで一貫して実行 |
+| **Docker Workaround** | `.agent/skills/docker_workaround/` | Docker Composeを使用して安定した開発環境を構築し、コンテナ内ツールを実行する手順 |
+| **Embedded C++ Optimization** | `.agent/skills/cpp_embedded/` | RAM 64KB環境における禁止/許可ライブラリ、コンテナ代替、メモリ管理、エラー戦略 |
+| **Fireball Architecture** | `.agent/skills/fireball_architecture/` | 3-Tier分離、IoC、Harness/Static DIなどプロジェクト固有の設計原則と構造的ルール |
+| **Risk Assessment** | `.agent/skills/risk_assessment/` | 実装リスクに応じた設計詳細度（Tier 1〜3）の決定基準と検証レベルの定義 |
+| **Type Vocabulary** | `.agent/skills/fireball_vocabulary/` | 設計仕様書における実装非依存な型システム語彙とC++型エイリアスの対応表 |
+| **WASM Development** | `.agent/skills/wasm_development/` | WebAssembly/WASI仕様、WAMR実装、LLVMバックエンド定義のリソース参照と調査 |
 
 ### 📚 設計・仕様ドキュメント (Documents)
 プロジェクトの構造や要求を理解するために参照すること。各ディレクトリ内の **`FORMAT.md`** には、そのカテゴリのドキュメントが遵守すべき標準フォーマットが定義されている。
@@ -35,12 +41,13 @@
 
 | ワークフロー | パス | 概要 |
 |:---|:---|:---|
-| **Development Cycle** | `.agent/workflows/development_cycle.md` | 設計→インターフェース定義→実装→検証のサイクル |
-| **Bonsai Design** | `.agent/workflows/bonsai_design.md` | 全体から細部へ、反復的な設計リファインメント |
-| **Check Compliance** | `.agent/workflows/check_compliance.md` | コーディング標準・設計方針への適合性チェック |
-| **Progress Meeting** | `.agent/workflows/progress_meeting.md` | 計画と成果物の乖離分析、リスク分析、アクション策定 |
-| **Summarize** | `.agent/workflows/summarize.md` | docs配下ドキュメントの情報密度の高い要約生成 |
-| **Waigaya** | `.agent/workflows/waigaya.md` | 雑談ベースで設計をリファインメントする自由議論 |
+| **Development Cycle** | `.agent/workflows/development_cycle.md` | VDD（形式仕様→検証→生成→品質保証）の統合開発サイクル |
+| **Bonsai Design** | `.agent/workflows/bonsai_design.md` | 全体から細部へ、反復的な設計リファインメントを行う設計プロセス |
+| **Check Compliance** | `.agent/workflows/check_compliance.md` | 形式仕様・生成コード・コーディング標準への適合性を自動検証する手順 |
+| **Progress Meeting** | `.agent/workflows/progress_meeting.md` | 計画と成果物の乖離分析、リスク分析、アクションプラン策定を行う進捗会議 |
+| **Summarize** | `.agent/workflows/summarize.md` | docs配下の設計ドキュメントから解像度の高い要約を生成 |
+| **Waigaya** | `.agent/workflows/waigaya.md` | 雑談ベースで設計をリファインメントする自由議論モード |
+| **Friction Audit** | `.agent/workflows/friction_audit.md` | 仕様・ワークフロー・プロンプト間の矛盾を検出し開発の「詰まり」を解消 |
 
 ## 2. 🚦 タスク別・推奨アクション
 

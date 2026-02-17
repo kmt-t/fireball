@@ -77,32 +77,24 @@ def map_type(wit_type, types_list):
             elif 'list' in kind:
                 l = kind['list']
                 val_type = map_type(l, types_list)
-                return f"std::vector<{val_type}>"
+                if val_type == "uint8_t":
+                    return "binary_view"
+                return f"std::span<{val_type}>"
             elif 'tuple' in kind:
                 t = kind['tuple']
                 types = [map_type(x, types_list) for x in t]
                 return f"std::tuple<{', '.join(types)}>"
         
-        # print(f"DEBUG: Unknown anonymous type kind: {kind}")
-        return "/* anonymous */ void*"
+        # Resource reference or other anonymous type
+        if kind == 'resource':
+            return f"{to_snake_case(type_def['name'])}*"
+            
+        return "uintptr_t" # Fallback to integer address instead of void*
     elif isinstance(wit_type, dict):
         if 'type' in wit_type:
             return map_type(wit_type['type'], types_list)
-        
-        # Handle 'result' type
-        # WIT JSON structure for result: {'kind': 'result', 'result': {'ok': ..., 'err': ...}} (or similar - verify structure)
-        # Actually in type list, 'kind' might be 'result'.
-        # But here 'wit_type' is likely a reference from function signature which might be inline.
-        # Let's inspect 'kind' if it exists.
-        
-        # In function results, we usually get a list of types.
-        # A 'result' type in WIT often appears as a defined type or an anonymous one.
-        
-        # Let's check for "kind" key if it's a dict passed directly.
-        # Note: In wasm-tools --json, types are heavily index-based or structural.
-        print(f"DEBUG: Unknown dict type: {wit_type}")
-        return "void*" # Fallback for now, need deeper inspection of WIT JSON structure.
-    return "void*"
+        return "uintptr_t"
+    return "uintptr_t"
 
 def parse_wit_package(wit_dir):
     """Parse entire WIT package directory using wasm-tools."""
@@ -192,13 +184,36 @@ def generate_cpp(wit_json, output_dir):
                 
                 # Record
                 elif 'record' in kind:
-                    fields = kind['record'].get('fields', [])
-                    f.write(f"struct {to_snake_case(type_name)} {{\n")
-                    for field in fields:
-                        field_name = to_snake_case(field['name'])
-                        field_type = map_type(field['type'], types_list)
-                        f.write(f"  {field_type} {field_name};\n")
-                    f.write("};\n\n")
+                    # Check for @bitfield annotation in docs
+                    bitfield_spec = None
+                    if docs:
+                        for line in docs.split('\n'):
+                            if '@bitfield' in line:
+                                bitfield_spec = line.split('@bitfield')[1].strip()
+                                break
+                    
+                    if bitfield_spec:
+                        # Parse bitfield: scope:u8:0-7, key:u24:8-31, value:u32:32-63
+                        f.write(f"struct {to_snake_case(type_name)} {{\n")
+                        parts = [p.strip() for p in bitfield_spec.split(',')]
+                        total_bits = 0
+                        for part in parts:
+                            # part format: name:type:range
+                            name, btype, brange = part.split(':')
+                            start, end = map(int, brange.split('-'))
+                            width = end - start + 1
+                            f.write(f"  uint64_t {to_snake_case(name)} : {width};  // Bits {brange}\n")
+                            total_bits += width
+                        f.write("};\n")
+                        f.write(f"static_assert(sizeof({to_snake_case(type_name)}) == {total_bits // 8}, \"{type_name} size mismatch\");\n\n")
+                    else:
+                        fields = kind['record'].get('fields', [])
+                        f.write(f"struct {to_snake_case(type_name)} {{\n")
+                        for field in fields:
+                            field_name = to_snake_case(field['name'])
+                            field_type = map_type(field['type'], types_list)
+                            f.write(f"  {field_type} {field_name};\n")
+                        f.write("};\n\n")
 
             # --- Resources (Classes) ---
             # Identify resources owned by this interface

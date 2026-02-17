@@ -8,12 +8,11 @@ CONSTANTS
 VARIABLES
     owner,          \* Function: Message -> Task \cup {System, Channel}
     channel_state,  \* Record: [status: {EMPTY, FULL}, data: Message \cup {None}]
-    sender_status,  \* Function: Task -> {RUNNING, BLOCKED_SEND}
-    receiver_status \* Function: Task -> {RUNNING, BLOCKED_RECV}
+    task_status     \* Function: Task -> {RUNNING, BLOCKED_SEND, BLOCKED_RECV}
 
 SYSTEM == "SYSTEM"
 CHANNEL == "CHANNEL"
-vars == <<owner, channel_state, sender_status, receiver_status>>
+vars == <<owner, channel_state, task_status>>
 
 -----------------------------------------------------------------------------
 
@@ -21,47 +20,63 @@ TypeInvariant ==
     /\ owner \in [Messages -> Tasks \cup {SYSTEM, CHANNEL}]
     /\ channel_state.status \in {"EMPTY", "FULL"}
     /\ channel_state.data \in Messages \cup {"None"}
-    /\ sender_status \in [Tasks -> {"RUNNING", "BLOCKED_SEND"}]
-    /\ receiver_status \in [Tasks -> {"RUNNING", "BLOCKED_RECV"}]
+    /\ task_status \in [Tasks -> {"RUNNING", "BLOCKED_SEND", "BLOCKED_RECV"}]
 
-\* Initial State: Give all messages to arbitrary task so it can send
 Init ==
     /\ owner = [m \in Messages |-> CHOOSE t \in Tasks : TRUE]
     /\ channel_state = [status |-> "EMPTY", data |-> "None"]
-    /\ sender_status = [t \in Tasks |-> "RUNNING"]
-    /\ receiver_status = [t \in Tasks |-> "RUNNING"]
+    /\ task_status = [t \in Tasks |-> "RUNNING"]
 
 -----------------------------------------------------------------------------
 
 \* Action: Task tries to send 'msg'.
 Send(t, msg) ==
     /\ owner[msg] = t
-    /\ sender_status[t] = "RUNNING"
+    /\ task_status[t] = "RUNNING"
     /\ IF channel_state.status = "EMPTY" THEN
-           /\ owner' = [owner EXCEPT ![msg] = CHANNEL]
-           /\ channel_state' = [status |-> "FULL", data |-> msg]
-           /\ sender_status' = [sender_status EXCEPT ![t] = "BLOCKED_SEND"]
-           /\ UNCHANGED <<receiver_status>>
+           /\ IF \E r \in Tasks : task_status[r] = "BLOCKED_RECV" THEN
+                 \* Case 3: Handoff (Direct to ready)
+                 /\ LET r == CHOOSE r \in Tasks : task_status[r] = "BLOCKED_RECV" IN
+                    /\ owner' = [owner EXCEPT ![msg] = r]
+                    /\ task_status' = [task_status EXCEPT ![t] = "RUNNING", ![r] = "RUNNING"]
+                    /\ UNCHANGED <<channel_state>>
+              ELSE
+                 \* Case 1: Send to Empty (Block)
+                 /\ owner' = [owner EXCEPT ![msg] = CHANNEL]
+                 /\ channel_state' = [status |-> "FULL", data |-> msg]
+                 /\ task_status' = [task_status EXCEPT ![t] = "BLOCKED_SEND"]
        ELSE
-           \* Block if full? Or retry?
-           \* Simplification: Unchanged (Retry loop)
-           UNCHANGED vars
+           \* Case 2: Send to Full (Wait/Retry loop - modeled as blocking here)
+           /\ task_status' = [task_status EXCEPT ![t] = "BLOCKED_SEND"]
+           /\ UNCHANGED <<owner, channel_state>>
 
-\* Action: Task tries to receive (or wakes up from block)
+\* Action: Task tries to receive
 Recv(t) ==
-    IF channel_state.status = "FULL" THEN
-       \* Channel has data: Receive it!
-       /\ receiver_status[t] \in {"RUNNING", "BLOCKED_RECV"}
-       /\ LET msg == channel_state.data IN
-          /\ owner' = [owner EXCEPT ![msg] = t]
-          /\ channel_state' = [status |-> "EMPTY", data |-> "None"]
-          /\ sender_status' = [s \in Tasks |-> IF sender_status[s] = "BLOCKED_SEND" THEN "RUNNING" ELSE sender_status[s]]
-          /\ receiver_status' = [receiver_status EXCEPT ![t] = "RUNNING"]
-    ELSE
-       \* Channel Empty: Block if running
-       /\ receiver_status[t] = "RUNNING"
-       /\ receiver_status' = [receiver_status EXCEPT ![t] = "BLOCKED_RECV"]
-       /\ UNCHANGED <<owner, channel_state, sender_status>>
+    /\ task_status[t] = "RUNNING"
+    /\ IF channel_state.status = "FULL" THEN
+           \* Case 4: Recv from Full
+           /\ LET msg == channel_state.data IN
+              /\ owner' = [owner EXCEPT ![msg] = t]
+              /\ channel_state' = [status |-> "EMPTY", data |-> "None"]
+              /\ IF \E s \in Tasks : task_status[s] = "BLOCKED_SEND" THEN
+                    \* Wake up one pending sender (Simplification)
+                    /\ LET s == CHOOSE s \in Tasks : task_status[s] = "BLOCKED_SEND" IN
+                       /\ task_status' = [task_status EXCEPT ![t] = "RUNNING", ![s] = "RUNNING"]
+                 ELSE
+                    /\ task_status' = [task_status EXCEPT ![t] = "RUNNING"]
+       ELSE
+           \* Case 5: Recv from Empty (Block)
+           /\ IF \E s \in Tasks : task_status[s] = "BLOCKED_SEND" THEN
+                 \* Case 6: Handoff (Direct from sender)
+                 /\ LET s == CHOOSE s \in Tasks : task_status[s] = "BLOCKED_SEND" IN
+                    /\ \E msg \in Messages : 
+                       /\ owner[msg] = s
+                       /\ owner' = [owner EXCEPT ![msg] = t]
+                       /\ task_status' = [task_status EXCEPT ![t] = "RUNNING", ![s] = "RUNNING"]
+                       /\ UNCHANGED <<channel_state>>
+              ELSE
+                 /\ task_status' = [task_status EXCEPT ![t] = "BLOCKED_RECV"]
+                 /\ UNCHANGED <<owner, channel_state>>
 
 -----------------------------------------------------------------------------
 
@@ -75,7 +90,8 @@ Next ==
 DataConsistency ==
     (channel_state.status = "FULL") => (owner[channel_state.data] = CHANNEL)
 
-\* Single Owner: Implied by Function Type of 'owner'
+\* Safety: Only one owner per message
+SingleOwner == \A m \in Messages : owner[m] \in Tasks \cup {SYSTEM, CHANNEL}
 
 Spec == Init /\ [][Next]_vars /\ WF_vars(Next)
 

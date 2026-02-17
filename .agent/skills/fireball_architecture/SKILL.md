@@ -81,39 +81,95 @@ sequenceDiagram
 
 ### 2.3 Tier 2: サブシステムドメイン (Harness & Static DI)
 
-内部をさらなるサブコンポーネントに分解し、実行効率を落とさずにテスト容易性を確保する。 `{ComponentHarness}` `{StaticDI}`
+内部をさらなるサブコンポーネントに分解し、**ゼロコスト** で実行効率を落とさずにテスト容易性を確保する。 `{ComponentHarness}` `{StaticDI}` `{ZeroCostAbstraction}`
 
 **4要素の分解**:
-1. **Harness (Policy)**: 依存関係を解決するポリシー型（テンプレート引数）。
+1. **Harness (Policy)**: 依存関係を解決するポリシー型（テンプレート引数）。**継承・仮想関数不要**。
 2. **Data (Context)**: 実行時の可変状態（DTO）。引数で渡す。
 3. **View (Immutable)**: 読み取り専用データのビュー（`std::span`）。
-4. **Interface (Contract)**: 純粋仮想関数のみ。**状態（メンバ変数）を持たない**。
+4. **Interface (Contract)**: WITで定義された契約。C++側はConceptで表現。
 
-**実装パターン (Policy-Based DI)**:
+#### WIT側: Method Injection Pattern
+
+依存関係を `initialize` メソッドのパラメータとして明示的に注入する。
+
+```wit
+// ✅ Method Injection (推奨)
+resource vsoc-runtime {
+    /// @pre: All resource handles are valid
+    initialize: func(
+        loader: wasm-loader,
+        vmmio: vmmio-manager,
+        memory: memory-manager
+    ) -> operation-result;
+}
+
+// ❌ Service Locator (アンチパターン)
+resource vsoc-runtime {
+    initialize: func() -> operation-result;
+    get-loader: func() -> wasm-loader;  // 依存が隠蔽、vtable必須
+}
+```
+
+#### C++側: Concept-Based Dependency Definition
+
 ```cpp
-// 1. Policy Concept
-template <typename T>
-concept HarnessPolicy = requires(T t) {
-    { t.loader() } -> std::convertible_to<loader_interface*>;
+// 1. 依存関係をConceptで定義
+template <typename Harness>
+concept vsoc_harness_policy = requires(Harness h) {
+    { h.loader() } -> std::convertible_to<wasm_loader*>;
+    { h.vmmio() } -> std::convertible_to<vmmio_manager*>;
+    { h.memory() } -> std::convertible_to<memory_manager*>;
 };
 
-// 2. Host Class
-template <typename Harness>
-class runtime {
-    Harness harness_; 
+// 2. コンポーネント実装（テンプレート引数で注入）
+template <vsoc_harness_policy Harness>
+class vsoc_runtime {
+    Harness harness_;  // コンパイル時に型確定
 public:
-    void step(context_t& ctx) {
-        harness_.loader()->do_something(ctx);
+    operation_result initialize(
+        wasm_loader* loader,
+        vmmio_manager* vmmio,
+        memory_manager* memory
+    ) {
+        harness_.set_loader(loader);
+        harness_.set_vmmio(vmmio);
+        harness_.set_memory(memory);
+        return operation_result::ok();
+    }
+
+    void step(execution_context& ctx) {
+        // ✅ 直接呼び出し（vtableなし、インライン化可能）
+        harness_.loader()->prepare(ctx.wasm_binary);
     }
 };
 
-// 3. Usage (Injects Type)
-struct my_harness {
-    loader_impl loader_;
-    loader_interface* loader() { return &loader_; }
+// 3. ハーネス実装（POD構造体、継承不要）
+struct production_harness {
+    wasm_loader* loader_;
+    vmmio_manager* vmmio_;
+    memory_manager* memory_;
+    
+    wasm_loader* loader() const { return loader_; }
+    vmmio_manager* vmmio() const { return vmmio_; }
+    memory_manager* memory() const { return memory_; }
+    
+    void set_loader(wasm_loader* l) { loader_ = l; }
+    void set_vmmio(vmmio_manager* v) { vmmio_ = v; }
+    void set_memory(memory_manager* m) { memory_ = m; }
 };
-runtime<my_harness> my_runtime;
+
+// 4. 使用（型がコンパイル時に完全解決）
+vsoc_runtime<production_harness> runtime;
 ```
+
+**ゼロコスト抽象化の実現**:
+- vtable不要（継承・仮想関数を使わない）
+- すべてのメソッド呼び出しがインライン化可能
+- メモリオーバーヘッドゼロ
+
+詳細は [Concept Harness Pattern](file:///w:/mysrc/fireball/docs/patterns/concept_harness.md) を参照。
+
 
 ---
 

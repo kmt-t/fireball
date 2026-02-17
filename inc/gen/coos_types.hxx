@@ -1,0 +1,39 @@
+/**
+ * Auto-generated from WIT. Do not edit.
+ */
+#pragma once
+
+#include <fireball_types.hxx>
+#include <gen/types.hxx>
+#include <fireball_config.hxx>
+#include <cstdint>
+#include <string_view>
+#include <expected>
+#include <optional>
+#include <vector>
+#include <tuple>
+
+namespace fireball {
+
+/**
+ * Task states in the cooperative scheduler.
+ */
+enum class task_state : uint8_t {
+  READY,
+  RUNNING,
+  BLOCKED,
+  INTERRUPTED,
+  TERMINATED,
+};
+
+/**
+ * Task context managed by the kernel.
+ * @inv: id > 0 && id <= FB_CONF_MAX_TASKS
+ */
+struct task_context_info {
+  task_id id;
+  task_state state;
+  std::string_view name;
+};
+
+} // namespace fireball

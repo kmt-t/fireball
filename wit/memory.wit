@@ -23,30 +23,55 @@ interface memory {
     use types.{shm-id, byte-count, address, operation-result, recovery-strategy};
     use memory-types.{partition-kind, memory-info};
 
+    /// Information about a memory partition.
+    record partition-info {
+        kind: partition-kind,
+        base: address,
+        size: byte-count,
+        available-size: byte-count,
+    }
+
     /// Tier 2: COOS Memory Manager (co_mem)
     /// @inv: total_allocated_bytes <= FB_CONF_MEMORY_POOL_SIZE
     /// @inv: active_allocations_count <= FB_CONF_MAX_ALLOCATIONS
     resource memory-manager {
+        /// Initializes the memory manager.
+        /// @pre: !initialized
+        /// @pre: pool-base != 0 && pool-size > 0
+        /// @post: initialized
+        initialize: func(pool-base: address, pool-size: byte-count) -> operation-result;
+
         /// Allocates a block of memory from the specified partition.
+        /// @pre: initialized
         /// @pre: size > 0 && size <= FB_CONF_MAX_ALLOC_SIZE
         /// @post: result.is_ok() -> total_allocated_bytes == old(total_allocated_bytes) + size
         allocate: func(size: byte-count, kind: partition-kind) -> result<shm-id, recovery-strategy>;
 
         /// Releases a memory block.
-        /// @pre: id is a valid active shm_id
+        /// @pre: initialized && id is a valid active shm_id
         /// @post: total_allocated_bytes == old(total_allocated_bytes) - size_of(id)
-        free: func(id: shm-id);
+        deallocate: func(id: shm-id);
 
-        /// Translates shm_id to a host virtual address.
-        /// @note This is for internal component use only (thin glue).
-        /// @pre: id exists
-        /// @return The host memory address (pointer).
+        /// Translates shm_id to a host virtual address (thin glue).
+        /// @pre: initialized && id exists
         to-address: func(id: shm-id) -> result<address, bool>;
 
-        /// Gets information about a memory block.
-        query: func(id: shm-id) -> result<memory-info, bool>;
-    }
+        /// Reverse translation: address to shm_id.
+        /// @pre: initialized && addr != 0
+        to-shm: func(addr: address) -> result<shm-id, bool>;
 
+        /// Gets information about a memory block.
+        /// @pre: initialized && id exists
+        query: func(id: shm-id) -> result<memory-info, bool>;
+
+        /// Gets information about a partition.
+        /// @pre: initialized
+        query-partition: func(kind: partition-kind) -> result<partition-info, bool>;
+        
+        /// Checks ownership of a memory block for a guest task.
+        /// @pre: initialized && id exists && task_id != 0
+        check-ownership: func(id: shm-id, task-id: u32) -> bool;
+    }
 }
 
 world memory-world {

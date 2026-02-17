@@ -21,12 +21,12 @@ graph TD
         TCB[task_context]
     end
 
-    subgraph Dependency
+    subgraph Dependency_Injection
         I_IF[interrupt_controller]
-        H_IF[handler_dispatcher]
+        T_IF[timer_driver]
     end
 
-    Engine -- holds references --> Dependency
+    Engine -- method injection --> Dependency_Injection
     Engine -- manages --> TCB
 ```
 
@@ -69,17 +69,25 @@ stateDiagram-v2
     running --> [*]: exit / error (cleanup)
 ```
 
-## 5. インターフェイス設計 (Stateless Interface)
+## 5. インターフェイス設計 (Stateless Interface / Zero-cost DI)
 
 ### 5.1 公開API
-外部から利用可能なオブジェクト指向APIを定義する。
+外部から利用可能なオブジェクト指向APIを定義する。依存関係は `initialize` メソッドで注入する。
+
+#### `initialize`
+| 項目 | 内容 |
+| :--- | :--- |
+| 機能概要 | スケジューラを動作させるための依存コンポーネントを注入する。 |
+| シグネチャ | `initialize(timer: address, memory: address) -> operation_result` |
+| 引数 | `timer`: タイマー資源のアドレス<br>`memory`: メモリ管理ユニットのアドレス |
+| 戻り値 | 操作結果 |
 
 #### `spawn`
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | 新しいWASMタスクを生成し、READY キューに追加する。 |
-| シグネチャ | `spawn(name: shm_id, entry: アドレス値) -> 結果型` |
-| 引数 | `name`: タスク名称のハンドル<br>`entry`: WASMエントリポイント |
+| シグネチャ | `spawn(name: string, entry: address, priority: u8) -> result<task_id, recovery_strategy>` |
+| 引数 | `name`: タスク名称<br>`entry`: WASMエントリポイント<br>`priority`: 実行優先度 |
 | 戻り値 | 結果型 (成功時は `task_id`) |
 
 #### `spawn_task`

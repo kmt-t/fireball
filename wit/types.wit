@@ -1,34 +1,68 @@
 package fireball:host;
 
 interface types {
+    /// Device identifier for HAL.
     type device-id = u32;
+
+    /// Shared memory identifier.
     type shm-id = u32;
+
+    /// Channel identifier for IPC.
     type channel-id = u32;
+
+    /// Task identifier for OS.
     type task-id = u32;
-    type service-id = u32; // New: System-wide service index
-    type uri-handle = shm-id;
-    type byte-count = u32;
+
+    /// System-wide service identifier.
+    type service-id = u32;
+
+    /// Memory address.
     type address = u32;
 
-    /// Recovery strategy for operation failures.
-    enum recovery-strategy {
-        ignore,
-        retry,
-        restart,
-        panic
-    }
+    /// Byte count for memory sizes.
+    type byte-count = u32;
 
-    type operation-result = result<_, recovery-strategy>;
+    /// Byte offset from a base.
+    type byte-offset = u32;
 
-    /// Severity levels for system-wide logging.
+    /// Entry count for tables or arrays.
+    type entry-count = u32;
+
+    /// Instruction count for execution.
+    type instruction-count = u32;
+
+    /// Handle to a URI string.
+    type uri-handle = u32;
+
+    /// Binary view reference (read-only span).
+    type binary-view = list<u8>;
+
+    /// Binary view reference (read-write span).
+    type mut-binary-view = list<u8>;
+
+    /// Log level for system messages.
     enum log-level {
-        trace,
         debug,
         info,
         warn,
         error,
         fatal
     }
+
+    /// Recovery strategy for operation failures.
+    enum recovery-strategy {
+        /// Error can be ignored, continue operation.
+        ignore,
+        /// Retry with same parameters may succeed.
+        retry,
+        /// Module or system needs to be re-initialized.
+        restart,
+        /// Fatal error, halt the system and dump state.
+        panic
+    }
+
+    /// Result type for operations without success value.
+    type operation-result = result<_, recovery-strategy>;
 
     /// Scope type for IPC messages (upper 3 bits of type_scope field).
     enum scope-type {
@@ -79,9 +113,14 @@ interface types {
     }
 
     /// IPC Key-Value pair for structured messaging.
-    /// Type scope field: upper 3 bits = scope type, lower 5 bits = data type
+    /// Bitfield layout: scope:8-bits (scope-type:3 + data-type:5), key:24-bits, value:32-bits
     /// @bitfield type_scope:u8:0-7, key:u24:8-31, value:u32:32-63
     record kv-pair {
         raw: u64,
+    }
+
+    /// IPC Message containing fixed maximum of 8 KV-pairs.
+    record message {
+        pairs: list<kv-pair>,
     }
 }

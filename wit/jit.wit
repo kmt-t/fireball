@@ -1,7 +1,7 @@
 package fireball:host;
 
 interface jit-types {
-    use types.{address, shm-id, recovery-strategy};
+    use types.{address, shm-id, recovery-strategy, byte-count, entry-count};
 
     /// JIT Entry linking WASM PC to native code offset.
     record jit-entry {
@@ -9,80 +9,93 @@ interface jit-types {
         native-offset: address,
     }
 
-    /// Compilation statistics for monitoring.
-    record compilation-stats {
-        hotspot-count: u32,
-        compiled-functions: u32,
-        cache-usage: u32,
+    /// JIT configuration parameters.
+    record jit-config {
+        bank-size: byte-count,
+        max-entries: entry-count,
+        card-shift: u8,
+        align-shift: u8,
     }
 }
 
 interface jit {
     use types.{address, shm-id, operation-result, recovery-strategy};
-    use jit-types.{jit-entry, compilation-stats};
+    use jit-types.{jit-entry, jit-config};
 
     /// Tier 3: Hotspot Detector
     /// @inv: history_count <= FB_CONF_JIT_MAX_HISTORY
     /// @inv: compile_queue_count <= FB_CONF_JIT_MAX_COMPILE_QUEUE
     resource hotspot-detector {
-        /// Records an execution of a WASM PC.
+        /// Records an execution of a WASM PC (Card Marking).
         /// @pre: pc != 0
-        /// @pre: pc % 4 == 0 (WASM alignment)
-        /// @post: history_count == old(history_count) + 1 || history_count == old(history_count)
         record-execution: func(pc: address);
 
-        /// Processes the recorded history and identifies hotspots.
+        /// Processes execution history to identify hotspots.
         /// @post: history_count == 0
-        /// @post: compile_queue_count >= old(compile_queue_count)
         process-history: func();
-
-        /// Clears the current compile queue.
-        /// @post: compile_queue_count == 0
-        clear-compile-queue: func();
+        
+        /// Gets the current 2-bit state of a card.
+        get-card-state: func(pc: address) -> u8;
     }
 
     /// Tier 3: JIT Entry Index
     /// @inv: entries is sorted by wasm_pc
-    /// @inv: entry_count <= entries.size()
     /// @inv: entry_count <= FB_CONF_JIT_MAX_ENTRIES
     resource jit-entry-index {
-        /// Performs a fast lookup for a native trace address.
+        /// Lookup native trace address.
         /// @post: result.is_ok() -> result_addr != 0
         lookup: func(pc: address) -> result<address, bool>;
 
         /// Registers a new JIT entry.
-        /// @pre: native-offset < FB_CONF_JIT_CACHE_SIZE
-        /// @pre: pc != 0
+        /// @pre: native_offset < FB_CONF_JIT_CACHE_SIZE
         /// @post: lookup(pc).is_ok()
         register-entry: func(pc: address, native-offset: address);
+        
+        /// Promotes an entry from Old to Active cache.
+        /// @pre: pc exists in Old bank
+        /// @post: lookup(pc).is_ok() in Active bank
+        promote: func(pc: address) -> result<address, bool>;
+
+        /// Gets the range in the entry table for a given card group.
+        get-search-range: func(pc: address) -> result<tuple<u32, u32>, bool>;
     }
 
     /// Tier 3: Copy-and-Patch Engine
     /// @inv: templates are immutable after boot
     resource copy-and-patch-engine {
-        /// Patches a WASM instruction into native code.
-        /// @pre: dest_cache != 0
+        /// Patches a WASM trace into native code.
         /// @pre: pc != 0
-        patch-trace: func(pc: address, dest-cache: shm-id) -> result<u32, recovery-strategy>;
+        patch-trace: func(pc: address, template-id: u32) -> operation-result;
+        
+        /// Resolves a template-id from a WASM opcode or pattern.
+        lookup-template: func(opcode: u8) -> result<u32, bool>;
     }
 
     /// Tier 2: JIT Compiler Manager
     /// @inv: active_bank.cache_offset <= FB_CONF_JIT_CACHE_SIZE
     /// @inv: old_bank.cache_offset <= FB_CONF_JIT_CACHE_SIZE
     resource jit-compiler {
-        /// Initializes the JIT engine and caches.
+        /// Initializes the JIT environment with injected dependencies.
         /// @pre: !initialized
-        /// @post: initialized
-        initialize: func() -> operation-result;
+        /// @pre: detector, index, engine are valid resource handles
+        /// @post: initialized && dependencies are bound
+        initialize: func(
+            config: jit-config,
+            detector: hotspot-detector,
+            index: jit-entry-index,
+            engine: copy-and-patch-engine
+        ) -> operation-result;
 
-        /// Looks up a compiled trace. 
+        /// Fast lookup for execution.
+        /// @pre: initialized
         lookup-trace: func(pc: address) -> result<address, bool>;
 
-        /// Executes batch compilation for all queued hotspots.
+        /// Batch compilation of hotspots.
+        /// @pre: initialized
         process-batch-compile: func();
 
-        /// Forces a swap between Active and Old cache banks (GC).
-        /// @pre: active_bank.cache_offset > 0
+        /// Swaps Active and Old banks.
+        /// @pre: initialized
         /// @post: active_bank.cache_offset == 0
         /// @post: old_bank.cache_offset == old(active_bank.cache_offset)
         swap-banks: func();

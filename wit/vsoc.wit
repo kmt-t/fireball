@@ -1,73 +1,182 @@
 package fireball:host;
 
 interface vsoc-types {
-    use types.{shm-id, address, byte-count};
+    use types.{address, operation-result, byte-count, recovery-strategy};
 
-    /// Configuration for a Virtual SoC instance.
+    /// Virtual machine configuration.
     record vm-config {
+        ram-base: address,
         ram-size: byte-count,
-        vmmio-base: address,
-        vmmio-size: byte-count,
-        jit-enabled: bool,
+        entry-point: address,
     }
 
-    /// Execution state of the WASM guest.
+    /// Execution states for the virtual machine.
     enum execution-state {
-        halted,
+        ready,
         running,
+        halted,
         trapped,
-        suspended
+        interrupted
+    }
+
+    /// Identifiers for Virtual MMIO hooks.
+    enum vmmio-hook-id {
+        timer,
+        uart,
+        debug,
+        reserved
     }
 }
 
 interface vsoc {
-    use types.{operation-result, recovery-strategy, shm-id, address, byte-count};
-    use vsoc-types.{vm-config, execution-state};
+    use types.{operation-result, recovery-strategy, shm-id, address, byte-count, log-level, message, binary-view};
+    use vsoc-types.{vm-config, execution-state, vmmio-hook-id};
+
+    /// WASM Section Types (standard 0.2/1.0)
+    enum wasm-section-type {
+        custom,
+        type-section,
+        import-section,
+        function-section,
+        table-section,
+        memory-section,
+        global-section,
+        export-section,
+        start-section,
+        element-section,
+        code-section,
+        data-section,
+        data-count-section
+    }
+
+    /// Resource for reading WASM binary data from ROM with cursor management.
+    resource binary-stream {
+        /// Creates a stream from a binary view.
+        from-view: static func(view: binary-view) -> binary-stream;
+
+        /// Reads primitive types.
+        read-u8: func() -> result<u8, bool>;
+        read-s8: func() -> result<s8, bool>;
+        read-u16: func() -> result<u16, bool>;
+        read-s16: func() -> result<s16, bool>;
+        read-u32: func() -> result<u32, bool>;
+        read-s32: func() -> result<s32, bool>;
+        read-u64: func() -> result<u64, bool>;
+        read-s64: func() -> result<s64, bool>;
+
+        /// Reads LEB128 encoded integers.
+        read-leb128-u32: func() -> result<u32, bool>;
+        read-leb128-s32: func() -> result<s32, bool>;
+        read-leb128-u64: func() -> result<u64, bool>;
+        read-leb128-s64: func() -> result<s64, bool>;
+        
+        /// Reads a block of data.
+        read-bytes: func(len: byte-count) -> result<binary-view, bool>;
+
+        /// Remaining bytes in the stream.
+        remaining: func() -> byte-count;
+    }
+
+    /// View for a specific WASM module's section metadata.
+    record wasm-section-view {
+        id: wasm-section-type,
+        data: binary-view,
+    }
+
+    /// Accessor for function-level metadata and instructions.
+    resource wasm-function-accessor {
+        /// Gets the function signature index.
+        get-type-index: func() -> u32;
+
+        /// Returns a stream for decoding local variables.
+        get-locals-stream: func() -> binary-stream;
+
+        /// Returns a stream for the bytecode instructions.
+        get-code-stream: func() -> binary-stream;
+    }
+
+    /// Accessor for global variable metadata.
+    resource wasm-global-accessor {
+        /// Gets the value type and mutability.
+        get-metadata: func() -> tuple<u8, bool>;
+
+        /// Returns a stream for the initialization expression.
+        get-init-expr-stream: func() -> binary-stream;
+    }
+
+    /// Tier 3: WASM Module View (Registry Entry Reference)
+    /// @inv: module_id is unique
+    resource wasm-module-view {
+        /// Gets the raw ROM metadata for a specific section.
+        get-section: func(stype: wasm-section-type) -> result<wasm-section-view, bool>;
+
+        /// Lookups an exported function index by name.
+        lookup-export-func: func(name: string) -> result<u32, bool>;
+
+        /// Gets an accessor for a specific function.
+        /// @pre: func_idx is valid
+        get-function: func(func-idx: u32) -> result<wasm-function-accessor, bool>;
+
+        /// Gets an accessor for a specific global.
+        /// @pre: global_idx is valid
+        get-global: func(global-idx: u32) -> result<wasm-global-accessor, bool>;
+    }
 
     /// Tier 3: WASM Module Loader
     resource wasm-loader {
-        /// Prepares a WASM module for execution.
-        /// @pre: wasm_shm != 0
-        /// @post: result.is_ok() -> module_id > 0
-        prepare: func(wasm: shm-id) -> result<u32, recovery-strategy>;
+        /// Prepares a WASM module for execution from ROM.
+        /// @pre: wasm is a valid binary_view in ROM
+        /// @post: result.is_ok() -> module_view is valid
+        prepare: func(wasm: binary-view) -> result<wasm-module-view, recovery-strategy>;
+        
+        /// Loads a module's linear memory into guest RAM.
+        /// @pre: module is valid
+        /// @post: initial memory pages allocated and initialized
+        load: func(module: wasm-module-view) -> operation-result;
+
+        /// Lookups a loaded module from the registry.
+        lookup: func(name: string) -> result<wasm-module-view, bool>;
     }
 
     /// Tier 3: Virtual MMIO Manager
-    /// @inv: base_addr == FB_CONF_VMMIO_BASE
+    /// @inv: vmmio_base == FB_CONF_VMMIO_BASE
     resource vmmio-manager {
-        /// Reads a 32-bit value from a virtual MMIO address.
+        /// Dispatches a trapped access to the appropriate handler.
         /// @pre: addr >= vmmio_base && addr < vmmio_base + vmmio_size
-        access-read: func(addr: address) -> u32;
+        dispatch-access: func(addr: address, buffer: list<u8>, is-write: bool) -> operation-result;
 
-        /// Writes a 32-bit value to a virtual MMIO address.
-        /// @pre: addr >= vmmio_base && addr < vmmio_base + vmmio_size
-        access-write: func(addr: address, value: u32);
+        /// Registers a host-side hook for a vMMIO region.
+        /// @pre: handler-addr != 0
+        register-hook: func(hook-id: vmmio-hook-id, handler-addr: address) -> operation-result;
+        
+        /// Reserves static regions in the DYNAMIC space.
+        /// @pre: pages-count <= FB_CONF_VMMIO_DYNAMIC_PAGES
+        reserve-static-regions: func(pages-count: u32);
     }
 
     /// Tier 2: vSoC Runtime
     /// @inv: ram_size == FB_CONF_GUEST_RAM_SIZE
-    /// @inv: state == running -> ram_handle != 0
     resource vsoc-runtime {
-        /// Initializes the runtime environment.
-        initialize: func() -> operation-result;
+        /// Initializes the runtime environment with injected dependencies.
+        /// @pre: !initialized
+        /// @pre: loader, vmmio, memory are valid resource handles
+        /// @post: initialized && dependencies are bound
+        initialize: func(
+            loader: wasm-loader,
+            vmmio: vmmio-manager,
+            memory: address
+        ) -> operation-result;
 
-        /// Loads a WASM application into the runtime.
-        /// @pre: wasm_handle != 0
-        /// @post: state == halted
-        load-app: func(wasm-handle: shm-id) -> operation-result;
+        /// Steps execution until yield or trap.
+        /// @pre: initialized
+        /// @pre: state == running || state == halted
+        /// @post: result.is_ok() -> state updated
+        step: func() -> result<execution-state, recovery-strategy>;
 
-        /// Background task for JIT processing.
-        /// @pre: state != terminated
-        process-jit: func();
-
-        /// Runtime API: Log message from guest.
-        /// @pre: msg_handle != 0
-        api-log: func(msg-handle: shm-id);
-
-        /// Runtime API: IPC Call from guest.
-        /// @pre: data_handle != 0
-        /// @post: result is consistent with IPC Router state
-        api-ipc-call: func(chan: u32, data-handle: shm-id) -> operation-result;
+        /// Notifies a virtual interrupt to the guest.
+        /// @pre: initialized
+        /// @pre: irq-id is valid
+        notify-interrupt: func(irq-id: u32);
     }
 }
 

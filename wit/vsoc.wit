@@ -214,6 +214,23 @@ interface vsoc {
         /// @pre: irq-id is valid
         notify-interrupt: func(irq-id: u32);
     }
+
+    /// Tier 3: Interpreter Engine
+    /// @inv: sp >= stack_base (Stack Underflow Protection)
+    /// @inv: sp < stack_base + stack_size (Stack Overflow Protection)
+    /// @inv: pc < code_size (Program Counter Safety)
+    resource interpreter {
+        /// Initializes the interpreter with configuration.
+        /// @pre: config.stack_size > 0
+        /// @post: initialized
+        initialize: func(config: vm-config) -> operation-result;
+
+        /// Executes a single instruction or trace.
+        /// @pre: state == ready
+        /// @post(ok): state == ready || state == trapped (Normal execution or Trap)
+        /// @post(err): recovery_strategy != ignore (System failure must be handled)
+        step: func(ctx: vsoc-runtime) -> result<execution-state, recovery-strategy>;
+    }
 }
 
 world vsoc-world {

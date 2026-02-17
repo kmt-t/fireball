@@ -7,11 +7,11 @@ description: >-
   RELATED: code_generator（WIT定義からのコード生成）, fireball_architecture（WIT-First原則）
 ---
 
-# WASM Development スキル
+# WASM Development
 
 WebAssemblyエコシステム（Spec, WASI, WAMR, LLVM）に関連するリソースを参照し、設計・実装を支援するための統合スキルです。
 
-## 1. WebAssembly Core Spec `{WasmSpec}`
+## 1. WebAssembly Core Spec
 
 プロジェクト内の `docs/references/webassembly/document/core/` を参照し、正確な仕様を確認します。
 
@@ -29,7 +29,7 @@ WebAssemblyエコシステム（Spec, WASI, WAMR, LLVM）に関連するリソ�
 
 ---
 
-## 2. WASI Spec `{WasiSpec}`
+## 2. WASI Spec
 
 プロジェクト内の `docs/references/wasi/` を参照し、システムインターフェイス（WASI）の設計を支援します。
 
@@ -42,7 +42,7 @@ WebAssemblyエコシステム（Spec, WASI, WAMR, LLVM）に関連するリソ�
 
 ---
 
-## 3. WAMR Implementation `{WAMR}`
+## 3. WAMR Implementation
 
 `docs/references/wamr/` にある WAMR (WebAssembly Micro Runtime) のソースコードを調査し、実装詳細を確認します。
 
@@ -58,7 +58,7 @@ WebAssemblyエコシステム（Spec, WASI, WAMR, LLVM）に関連するリソ�
 
 ---
 
-## 4. LLVM Backend Definition `{LLVM_Backend}`
+## 4. LLVM Backend Definition
 
 各アーキテクチャの命令エンコード規則やレジスタ定義を確認するために、LLVMのターゲット定義ファイル（`.td`）を参照します。
 

@@ -7,7 +7,7 @@ description: >
   RELATED: wasm_development（WIT定義の参照元）, fireball_vocabulary（生成コードの型語彙）
 ---
 
-# Code Generator スキル
+# Code Generator
 
 WIT IDLからC++ヘッダを自動生成し、品質チェックまで一貫して実行するスキル。
 
@@ -77,7 +77,7 @@ bash .agent/skills/code_generator/workflows/wit_build.sh
 
 ## 生成スクリプト
 
-### wit_to_cpp.py（公式）
+### wit_to_cpp.py
 
 wasm-toolsベースのWIT→C++変換器。
 

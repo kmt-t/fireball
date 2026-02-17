@@ -7,7 +7,7 @@ description: >-
   RELATED: cpp_embedded（実装パターン）, risk_assessment（設計詳細度の判断）, fireball_vocabulary（型語彙）
 ---
 
-# Fireball アーキテクチャスキル
+# Fireball アーキテクチャ
 
 本プロジェクト（Fireball）の設計・実装において遵守すべき構造的ルールとパターン。
 
@@ -28,7 +28,7 @@ description: >-
 - DTOによる構造化データの明示
 - インターフェイス境界での型の明記
 
-## 2. 構造設計 (Structural Design)
+## 2. 構造設計
 
 システムを複雑度に応じて3つの階層（Tier）に分離し、それぞれの階層に最適な抽象化手法を適用する。
 
@@ -47,13 +47,13 @@ description: >-
 
 ---
 
-### 2.2 Tier 1: アーキテクチャドメイン (IoC & URI-DI)
+### 2.2 Tier 1: アーキテクチャドメイン
 
 システム全体の柔軟性を確保し、ハードウェアや外部サービスの実装詳細からコアロジックを保護する。
 
 **設計原則**:
 - **WIT-First**: 主要境界インターフェースは、実装に先立ち **WIT** で定義する。 `{WIT_First}`
-- **IoC (Inversion of Control)**: インターフェイス仕様は「利用側（内側の層）」が定義する。 `{IoC}`
+- **IoC**: インターフェイス仕様は「利用側（内側の層）」が定義する。 `{IoC}`
 - **URI抽象化**: サービスはURI（例：`embedded://hal/uart/0`）で識別し、具象クラスを隠蔽する。 `{URIAbstraction}`
 - **サービスファサード**: IPC等のプリミティブな操作を隠蔽するため、内側の層がファサードを定義する。 `{ServiceFacade}`
 
@@ -79,17 +79,17 @@ sequenceDiagram
 
 ---
 
-### 2.3 Tier 2: サブシステムドメイン (Harness & Static DI)
+### 2.3 Tier 2: サブシステムドメイン
 
 内部をさらなるサブコンポーネントに分解し、**ゼロコスト** で実行効率を落とさずにテスト容易性を確保する。 `{ComponentHarness}` `{StaticDI}` `{ZeroCostAbstraction}`
 
 **4要素の分解**:
-1. **Harness (Policy)**: 依存関係を解決するポリシー型（テンプレート引数）。**継承・仮想関数不要**。
-2. **Data (Context)**: 実行時の可変状態（DTO）。引数で渡す。
-3. **View (Immutable)**: 読み取り専用データのビュー（`std::span`）。
-4. **Interface (Contract)**: WITで定義された契約。C++側はConceptで表現。
+1. **Harness**: 依存関係を解決するポリシー型（テンプレート引数）。**継承・仮想関数不要**。
+2. **Data**: 実行時の可変状態（DTO）。引数で渡す。
+3. **View**: 読み取り専用データのビュー（`std::span`）。
+4. **Interface**: WITで定義された契約。C++側はConceptで表現。
 
-#### WIT側: Method Injection Pattern
+#### WIT側: Method Injection
 
 依存関係を `initialize` メソッドのパラメータとして明示的に注入する。
 
@@ -111,7 +111,7 @@ resource vsoc-runtime {
 }
 ```
 
-#### C++側: Concept-Based Dependency Definition
+#### C++側: Concept-Based Dependency
 
 ```cpp
 // 1. 依存関係をConceptで定義
@@ -173,7 +173,7 @@ vsoc_runtime<production_harness> runtime;
 
 ---
 
-### 2.4 Tier 3: 実装ドメイン (Natural OO)
+### 2.4 Tier 3: 実装ドメイン
 
 単一の責務が明確なモジュール。過度な抽象化を避け、C++の直接的なカプセル化（メンバ変数、プライベートメソッド）を許容する。
 
@@ -186,7 +186,7 @@ vsoc_runtime<production_harness> runtime;
 - `Manager`, `Data` などの汎用的な名前は禁止
 - `service_manager`, `session_data` のように具体的であること
 
-### RAII & Resource Management `{RAII}`
+### RAII & Resource Management
 - すべてのリソース解放はデストラクタに任せる
 - 手動の `free()`, `unlock()` 呼び出しは禁止
 

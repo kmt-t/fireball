@@ -7,24 +7,24 @@ description: >-
   RELATED: fireball_architecture（構造設計）, cpp_linting（スタイル検証）, fireball_vocabulary（型エイリアス定義）
 ---
 
-# 組み込みC++最適化スキル
+# 組み込みC++最適化
 
 リソース制約の厳しい環境（RAM 64KB等）で要求される特殊なC++実装技術と設計判断基準。
 
 ---
 
-## L1: 禁止・許可ライブラリ（常に自動適用）
+## L1: 禁止・許可ライブラリ
 
 ### 禁止ライブラリ・機能
 
-#### コンテナ（動的メモリ確保）
+#### コンテナ
 ❌ **禁止**:
 - `std::vector`, `std::map`, `std::unordered_map`
 - `std::list`, `std::deque`
 - `std::set`, `std::unordered_set`
 - `std::string` (動的確保が必要な場合)
 
-✅ **許可** (代替):
+✅ **許可**:
 - `std::array` (固定サイズ)
 - `std::span` (ビュー)
 - `std::string_view` (読み取り専用)
@@ -39,7 +39,7 @@ description: >-
 
 #### 型消去
 ❌ **禁止**: `std::function` (ヒープ確保の可能性)  
-✅ **許可**: `economic_function<Capacity>` (静的バッファ版)
+✅ **許可**: `economic_function<Capacity>`
 
 ### 許可される標準ライブラリ
 
@@ -96,7 +96,7 @@ python3 .agent/skills/cpp_embedded/scripts/checker.py <ソースファイルま�
 
 ---
 
-## 3. 判断基準 (Decision Guides)
+## 3. 判断基準
 
 ### 1. 3-Tier分離の選択
 
@@ -228,7 +228,7 @@ sequenceDiagram
 
 **アロケータの定石**:
 - **バンプアロケータ**: 解放が不要な短命なオブジェクトには、ポインタをずらすだけの高速なバンプアロケータを使用する。
-- **配置new (Placement new)**: 静的に確保されたバッファ上にオブジェクトを構築する。
+- **配置new**: 静的に確保されたバッファ上にオブジェクトを構築する。
 
 **コンセプトコード (Python) - パーティション検索**:
 ```python
@@ -253,7 +253,7 @@ class system_allocator:
 # allocator.new_object("kernel", 1024)
 ```
 
-### 経済的な関数 (Economic Function)
+### 経済的な関数
 
 `std::function` 代替のヒープレス・ラムダ活用技術。 `std::function` をラップし、ラムダのキャプチャサイズを静的に検証することで、ヒープ割り当てを完全に排除する。
 
@@ -328,7 +328,7 @@ class indexed_array_map:
 
 エラーの原因（Why）を詳細に伝えるのではなく、呼び出し側が取るべきアクション（How）を `Result` 型で返却する。 `{RecoveryStrategy}`
 
-### 1. 公理的意味論に基づく契約設計 (Design by Contract)
+### 1. 公理的意味論に基づく契約設計
 
 実装の正当性を保証するため、すべてのインターフェースは [Axiomatic Interface Design](../axiomatic_interface_design/SKILL.md) に基づき、事前条件・事後条件・不変条件を明文化する。
 
@@ -338,12 +338,12 @@ class indexed_array_map:
 | **Post-condition** | 戻り値および状態更新ロジック | 正常系テストのアサーション |
 | **Invariant** | データ構造（静的配列サイズ等）の決定 | クラス不変条件の常時検証 |
 
-### 2. リカバリー戦略 (Recovery Strategy)
+### 2. リカバリー戦略
 
 組み込み環境において、例外機構（`throw`）は実行時コストと非決定的な挙動のため使用を禁止する。また、単純なエラーコード（`int`）は無視されやすく、意味が実装に依存する。
 Fireballでは、Rustの `Result<T, E>` パラダイムを採用し、`E` を「リカバリー戦略」に特化させる。
 
-| 戦略 (Recovery Strategy) | 意味 | 典型的な失敗理由 | 呼び出し側のアクション |
+| 戦略 | 意味 | 典型的な失敗理由 | 呼び出し側のアクション |
 | :--- | :--- | :--- | :--- |
 | **`IGNORE`** | 回復不要 | ログ送信失敗、統計収集エラー | エラーを無視し、処理を続行する |
 | **`RETRY`** | リトライ | 一時的なリソース不足、タイムアウト | バックオフ後に操作を再試行する |

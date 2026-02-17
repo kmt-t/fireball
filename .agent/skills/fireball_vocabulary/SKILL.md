@@ -7,7 +7,7 @@ description: >-
   RELATED: cpp_embedded（result型, economic_function実装）, fireball_architecture（構造設計）, cpp_coding_style.md（MEMORY, 型エイリアス一覧）
 ---
 
-# 型語彙スキル (Type Vocabulary Skill)
+# 型語彙
 
 ## スキルの目的
 
@@ -35,9 +35,9 @@ description: >-
 
 仕様書でデータ構造やAPIを記述する際、以下の型語彙から適切なものを選択する。型は3つのカテゴリに分類される：
 
-1. **プリミティブ型 (Primitive Types)**: 基本的な数値・真偽値
-2. **複合型 (Composite Types)**: 構造化データ、コンテナ
-3. **参照型 (Reference Types)**: 他のデータへのポインタ・参照
+1. **プリミティブ型**: 基本的な数値・真偽値
+2. **複合型**: 構造化データ、コンテナ
+3. **参照型**: 他のデータへのポインタ・参照
 
 ---
 
@@ -47,7 +47,7 @@ description: >-
 
 以下の型語彙を使用して、データ構造とAPIを記述する。
 
-### 1. プリミティブ型 (Primitive Types)
+### 1. プリミティブ型
 
 #### 1.1 数値型
 
@@ -85,7 +85,7 @@ description: >-
 
 ---
 
-### 2. 複合型 (Composite Types)
+### 2. 複合型
 
 #### 2.1 データビュー型
 
@@ -466,7 +466,7 @@ void register_vmmio_hook(vmmio_callback callback);
 ---
 
 
-## 5. 参照型 (Reference Types)
+## 5. 参照型
 
 ### 5.1 ポインタ・参照
 

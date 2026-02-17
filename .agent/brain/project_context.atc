@@ -1,7 +1,7 @@
 [Brain: Fireball-Project-Context]
 [Invariants]
-  □ Truth := docs/specifications (Natural Language is the specific Source of Truth)
-  □ Interface := WIT (Canonical Definition derived from Truth, MUST match Truth)
+  □ Design Truth := docs/specifications (Natural Language is the source of Design Intent)
+  □ Interface Truth := WIT (Canonical Interface Definition derived from Design Truth)
   □ ∀logic ∈ ComplexStateMachines : verified_by(logic, TLA+) (@see .agent/workflows/development_cycle.md)
   □ ∀c ∈ Components : is_tier(c, 2) ⇒ matches_contract(c, harness_pattern) ∧ is_pure_static(c) (@see docs/patterns/concept_harness.md)
   □ ∀f ∈ funs(Tier2) : ¬virtual(f) ∧ ¬override(f) (@see .agent/rules/cpp_coding_style.md)

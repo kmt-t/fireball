@@ -1,8 +1,5 @@
 ---
-description: >-
-  ドキュメントの要約生成。docs/patterns, docs/components, docs/conceptを対象に情報密度の高い要約を作成。
-  WHEN: 「サマライズしよう」, 設計前の情報収集, /summarize
-  RELATED: bonsai_design（設計時の参照用）
+description: "ドキュメント要約生成。docs/patterns, components, conceptを要約。(WHEN: 設計前の情報収集, RELATED: bonsai_design)"
 ---
 
 # サマライズのワークフロー

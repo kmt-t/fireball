@@ -1,8 +1,5 @@
 ---
-description: >-
-  ワイガヤワークフロー。雑談ベースで設計をリファインメントする自由議論モード。
-  WHEN: 「ワイガヤしよう」, 設計の方向性を探索したいとき, /waigaya
-  RELATED: bonsai_design（設計への反映先）
+description: "ワイガヤワークフロー。雑談ベースで設計をリファインメントする自由議論モード。(WHEN: 設計探索, RELATED: bonsai_design)"
 ---
 
 # ワイガヤのワークフロー

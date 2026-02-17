@@ -1,8 +1,5 @@
 ---
-description: >
-  VDD品質検証ワークフロー。形式仕様・生成コード・コーディング標準の自動検証手順。
-  WHEN: コード生成後, リリース前, /check_compliance
-  RELATED: development_cycle（開発サイクル）, code_generator（WIT生成）, cpp_coding_style.md（規約）
+description: "VDD品質検証ワークフロー。形式仕様・生成コード・コーディング標準の自動検証手順。(WHEN: コード生成後/リリース前, RELATED: development_cycle/code_generator)"
 ---
 
 # VDD Compliance Check

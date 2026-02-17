@@ -58,6 +58,7 @@
   @inv ∀path ∈ References(AGENTS.md ∪ protocols.md) : exists(path)
   - GATEWAY := AGENTS.md
   - RULES := .agent/rules/{cpp_coding_style, design, documentation, protocols}.md
+      @note MEMORY and SKILLS are authoritative. content in .agent/rules/ is kept for reference/backup.
   - SKILLS := .agent/skills/{axiomatic_interface_design, code_generator, cpp_embedded, docker_workaround, fireball_architecture, fireball_vocabulary, risk_assessment, wasm_development}/SKILL.md
   - WORKFLOWS := .agent/workflows/{check_compliance, development_cycle, friction_audit, progress_meeting, summarize, waigaya}.md
   - BRAIN := .agent/brain/{project_context, navigation_dispatch, backlog, tension_analysis}.atc

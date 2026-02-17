@@ -1,8 +1,5 @@
 ---
-description: >-
-  進捗会議ワークフロー。計画と成果物の乖離分析、リスク分析、アクションプラン策定。
-  WHEN: 「進捗会議しよう」, スケジュール確認, /progress_meeting
-  RELATED: bonsai_design（設計プロセス）
+description: "進捗会議ワークフロー。計画乖離分析・リスク分析・アクションプラン策定。(WHEN: スケジュール確認, RELATED: bonsai_design)"
 ---
 
 # 進捗会議のワークフロー

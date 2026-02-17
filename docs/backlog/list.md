@@ -3,20 +3,39 @@
 「盆栽」のように、全体のバランスを見ながら設計の密度を少しずつ上げていく。
 エージェント向けの構造化インデックスは `.agent/brain/backlog.atc` を参照。
 
-## 0. vSoC 優先開発とベンチマーク (Phase 0.5: vSoC First & Benchmark)
+## Phase 0: Foundation (ビルド基盤・検証基盤の確立)
 
-WAMRに対する優位性を早期に証明するため、vSoCを他のコンポーネントから切り離して最優先で開発・評価する。 `{vSoC_First}`
+Phase 0では実装ではなく、ビルド基盤とvSoC形式検証を完了させる。`{SpecificationFirst}`
 
-- [ ] **インタープリタ・コア実装**: 最小セットのWASM命令（i32演算、制御フロー、メモリ読み書き）の実装。
-- [ ] **Single Trap + vMMIO 実装**: `fireball_call` と vMMIO レジスタによるサービス提供基盤の実装。
-- [ ] **WASI Shim ライブラリ (libfireball_shim)**: ゲスト側で動作し、WASI呼び出しを `fireball_call` に変換するライブラリの作成。
-- [ ] **WAMR比較ベンチマークの実施**: CoreMark-PRO等の標準的なベンチマークをFireball vSoC and WAMR (Interp) で実行し、性能・メモリ消費を比較。
+**並行作業（Phase番号なし）:**
+- 全設計ドキュメント（`docs/components/*.md`）の完成
+- WIT契約（`@pre`, `@post`, `@inv`）の追加
 
-## 0.6 インターフェイス基盤の確立 (Phase 0.6: Interface Consolidation)
+### Phase 0.7: Static DI & Build System
+コンパイル時DIの確立とビルド基盤の整備。
 
-### 0.6.1 残タスク
+- [ ] **Harnessパターンの確定**: 全コンポーネントのハーネス設計
+- [ ] **静的DI機構**: テンプレート、マクロ、アロケータの連携方式
+- [ ] **WIT→C++自動生成（基本機能）**: コード生成スクリプトの基本実装
+- [ ] **Mesonビルドシステム**: 全ターゲット（ARM, RISC-V, x64 host）のビルド確認
 
-- [ ] **依存性注入 (DI) モデルの確定**: コンパイル時DIを実現するためのマクロ・テンプレート・アロケータの連携。
+### Phase 0.75: Constexpr Verification & Code Gen Enhancement
+コンパイル時計算の検証と自動生成ツールのconstexpr対応。
+
+- [ ] **コード生成ツールのconstexpr対応**: WIT→C++生成時にconstexpr属性を付与
+- [ ] **constexprメソッド特定**: どのメソッドをconstexprにすべきか分類
+- [ ] **コンパイル時計算検証**: constexpr関数が実際にコンパイル時評価されるか確認
+- [ ] **ルックアップテーブル生成**: constexprによる静的テーブル生成の実証
+
+### Phase 0.8: vSoC TLA+ Verification
+vSoCコアの形式検証。
+
+- [ ] **vSoC Interpreter**: メモリ安全性、トラップ処理の正当性
+- [ ] **vMMIO**: 許可テーブル検証、範囲チェック
+- [ ] **Loader**: モジュールライフサイクル、依存解決
+- [ ] **リソース制約**: RAM/SLOC予算の遵守検証
+
+**Note**: COOS、Memory、IPCのTLA+検証は別途Phase 0.9以降で実施するか、Phase 1の実装と並行して進める。
 
 ## 1. 周辺設計の深化 (Phase 1: Deepening Design)
 

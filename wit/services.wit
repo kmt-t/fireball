@@ -9,16 +9,22 @@ interface logger {
 
     /// Tier 3: Logging Engine
     /// @inv: buffer_size is power of 2
+    /// @inv: buffer_full_policy == OVERWRITE (oldest entry discarded)
     resource engine {
         /// Records an event using dictionary offset and arguments.
         /// @pre: dict_offset is valid within the ROM dictionary
+        /// @post: entry queued in ring buffer. If buffer full, oldest entry overwritten.
         log-event: func(level: log-level, dict-offset: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32);
 
         /// Flushes the internal ring buffer to physical transport.
-        /// @post: buffer is empty
+        /// Called by COOS idle hook when no tasks are READY.
+        /// @pre: transport is initialized
+        /// @post: all buffered entries transferred to transport. buffer is empty.
+        /// @derives: logging.md §4.1 BufferedLogging, §5.1 flush
         flush: func();
         
         /// Sets the minimum log level for physical output.
+        /// @post: only events with level >= threshold are output
         set-threshold: func(level: log-level);
     }
 }
@@ -39,16 +45,41 @@ interface services {
         connect: func(address: uri-handle) -> result<service-id, recovery-strategy>;
 
         /// Sends a Key-Value message block.
-        /// @pre: chan >= 100
+        /// Ownership of message transfers from sender to channel or receiver.
+        /// @pre: chan >= 100 && owner(msg) == caller_task
+        /// @post(empty && recv_waiting): handoff — msg transferred directly to receiver.
+        ///       Both sender and receiver become RUNNING. No channel buffering.
+        /// @post(empty && !recv_waiting): msg moved to channel. Sender becomes BLOCKED_SEND.
+        /// @post(full): Sender becomes BLOCKED_SEND. Channel unchanged.
+        /// @derives: ipc_handoff.tla Send(t, msg) Cases 1-3
         send: func(chan: channel-id, msg: message) -> operation-result;
 
         /// Receives a Key-Value message block.
+        /// Ownership of message transfers from channel or sender to receiver.
+        /// @pre: caller task is RUNNING
+        /// @post(full): msg taken from channel. Channel becomes EMPTY.
+        ///       If sender is BLOCKED_SEND, sender becomes RUNNING.
+        /// @post(empty && send_waiting): handoff — msg transferred directly from sender.
+        ///       Both sender and receiver become RUNNING.
+        /// @post(empty && !send_waiting): Receiver becomes BLOCKED_RECV.
+        /// @derives: ipc_handoff.tla Recv(t) Cases 4-6
         recv: func(chan: channel-id) -> result<message, recovery-strategy>;
     }
 
-    /// Tier 3: Logger Dictionary
+    /// Tier 3: Logger Dictionary (ROM-resident)
+    /// @inv: entries are immutable after registration (ROM placement)
+    /// @inv: entry_count <= FB_CONF_LOG_DICT_MAX_ENTRIES
+    /// @note: Dictionary is ROM-resident. Host-side tool expands dict_offset + args into readable text.
+    ///        Entry format: { id: u32, format_string: null-terminated UTF-8 }
     resource logger-dictionary {
+        /// Registers a format string entry at build time.
+        /// @pre: id is unique within dictionary
+        /// @pre: format contains valid printf-style placeholders for up to 4 u32 args
         register-entry: func(id: u32, format: string);
+
+        /// Looks up a format string by ID.
+        /// @post(ok): returns format string for the given id
+        /// @post(err): id not found
         lookup: func(id: u32) -> result<string, bool>;
     }
 

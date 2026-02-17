@@ -52,11 +52,32 @@ graph TD
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
-- **辞書参照ロギング**: 送信側はメッセージ文字列ではなく、辞書内のオフセットと引数のみをIPCで送信する。辞書はROM上に固定配置され、ホスト側がこれを用いて展開（フォーマット）を行う。 `{DictionaryBasedIPC}`
+- **辞書参照ロギング**: 送信側はメッセージ文字列ではなく、辞書内のオフセットと引数のみをIPCで送信する。 `{DictionaryBasedIPC}`
 - **遅延出力**: IPC受信時はリングバッファへの格納のみを行い、実際の物理出力はDMAや割り込みを利用してバックグラウンドで行う。 `{BufferedLogging}`
-- **バッファフル・ポリシー**: リングバッファが満杯の場合、既定では「古いログの破棄（Overwrite）」を行い、システムの状態継続を優先する。 `{FaultIsolation}`
+- **バッファフル・ポリシー**: **FINALIZED: Overwrite**。リングバッファが満杯の場合、古いログを破棄して新しいログを書き込む。システムの状態継続を優先。 `{FaultIsolation}`
 
-### 4.2 状態遷移図
+### 4.2 辞書構造 (Dictionary Structure)
+辞書はROM上に固定配置され、ホスト側ツールが `dict_offset + args` から可読テキストに展開する。 `{DictionaryBasedIPC}`
+
+| 項目 | 値 |
+| :--- | :--- |
+| 配置場所 | ROM (実行時不変) |
+| エントリフォーマット | `{ id: u32, format: null-terminated UTF-8 }` |
+| 最大エントリ数 | `FB_CONF_LOG_DICT_MAX_ENTRIES` (コンパイル時固定) |
+| フォーマット文字列 | printf形式。最大4個の `u32` 引数を参照可能 |
+| 登録時期 | ビルド時 (実行時の追加は不可) |
+
+### 4.3 COOS Idle Hook 連携 (Flush Protocol)
+COOSスケジューラの `set_idle_hook` で `logger.flush()` を登録する。 `{IdleDetection}`
+
+1. COOSスケジューラがREADYタスクがないことを検出
+2. `idle_hook()` を呼び出し → `logger.flush()` が実行
+3. リングバッファの全エントリを物理トランスポートへ転送
+4. バッファ空になったら制御を返す
+
+@see `services.wit` logger.engine.flush
+
+### 4.4 状態遷移図
 ```mermaid
 stateDiagram-v2
     [*] --> Idle
@@ -67,7 +88,7 @@ stateDiagram-v2
     Full --> Flushing: space_available
 ```
 
-### 4.3 内部シーケンス
+### 4.5 内部シーケンス
 #### ログ出力シーケンス
 ```mermaid
 sequenceDiagram

@@ -31,9 +31,9 @@ interface coos {
     resource scheduler {
         /// Initializes the scheduler with required dependencies.
         /// @pre: !initialized
-        /// @pre: timer is a valid resource handle, memory is a valid base address
+        /// @pre: memory is a valid base address
         /// @post: initialized
-        initialize: func(timer: address, memory: address) -> operation-result;
+        initialize: func(memory: address) -> operation-result;
 
         /// Spawns a new task from a WASM entry point with priority.
         /// @pre: initialized

@@ -89,3 +89,34 @@ docker compose -f .devcontainer/docker-compose.yml down
 docker system prune  # 注意: 未使用のリソースが削除されます
 docker compose -f .devcontainer/docker-compose.yml up --build -d
 ```
+## 5. トラブルシューティング
+
+### コンテナ内でマウントが空
+
+**症状**: `docker compose up -d` 後、コンテナ内の `/workspaces/fireball` が空。
+
+**原因**: N:ドライブ等のVHDX仮想ドライブの場合、**Dockerより先にVHDXをマウント**する必要がある。Docker起動時にドライブが認識されていないとマウントに失敗する。
+
+**解決策**:
+1. VHDXドライブをマウント
+2. **その後** Docker Desktopを起動
+3. `docker compose up -d` 実行
+
+既にDocker起動済みの場合：
+```bash
+# Docker Desktop再起動
+# または
+docker compose down
+docker compose up -d
+```
+
+### `.devcontainer` ディレクトリでの実行
+
+`docker-compose.yml` 内の `volumes: - ..:/workspaces/fireball` は相対パス。**必ず `.devcontainer` ディレクトリで実行**すること：
+
+```bash
+cd .devcontainer
+docker compose up -d
+```
+
+プロジェクトルートで実行すると、`..` が `n:\sources` になり誤動作する。

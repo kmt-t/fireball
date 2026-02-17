@@ -16,14 +16,14 @@
 (各フォルダに `FORMAT.md` が配置されているのでドキュメントをメンテナンスするときには参考にしてほしい)
 
 1. 要求（`docs/requires/*.md`）
-2. 準拠する項目（`docs/items/*.md`）
-3. アーキテクチャ（`docs/architecture/*.md`）
-4. コンポーネント（`docs/components/*.md`）
-5. パターン（`docs/patterns/*.md`）
+2. アーキテクチャ（`docs/architecture/*.md`）
+3. コンポーネント（`docs/components/*.md`）
+4. パターン（`docs/patterns/*.md`）
    - `structural_patterns.md`: 構造設計（Tier 1/2/3, IoC, Harness）
    - `resource_optimization_patterns.md`: 実装最適化（Memory, stdlib, Search）
    - `system_behavior_patterns.md`: 挙動と外部連携（Recovery, WIT Mapping）
-6. 設計コンセプト（`docs/concept/*.md`）
+5. 設計コンセプト（`docs/concept/*.md`）
+6. 計画（`docs/plans/*.md`）
 
 ドキュメントを参照し作業をする前に下記のリストに従いチェックし、フィードバックせよ。
 

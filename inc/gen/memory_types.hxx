@@ -27,11 +27,13 @@ enum class partition_kind : uint8_t {
 
 /**
  * Information about a memory block.
+ * @inv: owner != 0 (always associated with a task)
  */
 struct memory_info {
   shm_id id;
   byte_count size;
   partition_kind kind;
+  task_id owner;
 };
 
 } // namespace fireball

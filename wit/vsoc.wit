@@ -8,6 +8,10 @@ interface vsoc-types {
         ram-base: address,
         ram-size: byte-count,
         entry-point: address,
+        /// Base physical address for PASSTHROUGH region mapping.
+        /// physical_addr = passthrough-base + (guest_addr - passthrough_region_start)
+        /// @note ARM Cortex-M: typically 0x4000_0000 (peripheral region)
+        passthrough-base: address,
     }
 
     /// Execution states for the virtual machine.
@@ -26,11 +30,17 @@ interface vsoc-types {
         debug,
         reserved
     }
+
+    /// Static 1:1 mapping entry: physical IRQ -> virtual IRQ ID.
+    record irq-mapping-entry {
+        physical-irq: u32,
+        virtual-irq-id: u32,
+    }
 }
 
 interface vsoc {
     use types.{operation-result, recovery-strategy, shm-id, address, byte-count, log-level, message, binary-view};
-    use vsoc-types.{vm-config, execution-state, vmmio-hook-id};
+    use vsoc-types.{vm-config, execution-state, vmmio-hook-id, irq-mapping-entry};
 
     /// WASM Section Types (standard 0.2/1.0)
     enum wasm-section-type {
@@ -123,10 +133,12 @@ interface vsoc {
     }
 
     /// Tier 3: WASM Module Loader
+    /// @inv: loaded_module_count <= FB_CONF_MAX_MODULES
     resource wasm-loader {
         /// Prepares a WASM module for execution from ROM.
         /// @pre: wasm is a valid binary_view in ROM
         /// @post: result.is_ok() -> module_view is valid
+        /// @post: loaded_module_count incremented by 1
         prepare: func(wasm: binary-view) -> result<wasm-module-view, recovery-strategy>;
         
         /// Loads a module's linear memory into guest RAM.
@@ -134,15 +146,38 @@ interface vsoc {
         /// @post: initial memory pages allocated and initialized
         load: func(module: wasm-module-view) -> operation-result;
 
+        /// Resolves cross-module imports by scanning import section and linking
+        /// against exported symbols in the module_registry.
+        /// @pre: module is loaded. All imported modules are already in registry.
+        /// @post(ok): all imports resolved. Module is ready for execution.
+        /// @post(err): unresolved import found. Module remains loaded but not executable.
+        /// @derives: loader.md §4.1 Dependency Resolution
+        resolve-imports: func(module: wasm-module-view) -> operation-result;
+
+        /// Unloads a module and releases associated resources.
+        /// @pre: module is in registry
+        /// @post: module removed from registry. bump_allocator space reclaimed
+        ///        if module was the last allocated (LIFO property of bump allocator).
+        /// @note: Due to bump allocator LIFO constraint, full reclamation only
+        ///        occurs when unloading in reverse order of loading.
+        /// @derives: loader.md §4.2 state: Ready -> Idle: unload
+        unload: func(module: wasm-module-view) -> operation-result;
+
         /// Lookups a loaded module from the registry.
         lookup: func(name: string) -> result<wasm-module-view, bool>;
     }
 
     /// Tier 3: Virtual MMIO Manager
+    /// Unified access layer: ALL host-guest data exchange goes through vMMIO.
+    /// Physical registers, shared memory, syscall buffers — everything.
     /// @inv: vmmio_base == FB_CONF_VMMIO_BASE
+    /// @inv: security_gate == permission_table (single gate, no layering)
     resource vmmio-manager {
         /// Dispatches a trapped access to the appropriate handler.
+        /// Permission table is checked first; permitted addresses get direct physical access.
         /// @pre: addr >= vmmio_base && addr < vmmio_base + vmmio_size
+        /// @post: permitted(addr) => handler executed, result reflects register operation
+        /// @post: !permitted(addr) => access violation trap
         dispatch-access: func(addr: address, buffer: list<u8>, is-write: bool) -> operation-result;
 
         /// Registers a host-side hook for a vMMIO region.
@@ -164,7 +199,8 @@ interface vsoc {
         initialize: func(
             loader: wasm-loader,
             vmmio: vmmio-manager,
-            memory: address
+            memory: address,
+            irq-mappings: list<irq-mapping-entry>
         ) -> operation-result;
 
         /// Steps execution until yield or trap.

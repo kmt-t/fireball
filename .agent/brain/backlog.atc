@@ -1,0 +1,97 @@
+[Brain: Backlog]
+@purpose Unified view of open items, prioritized by Phase0-gate relevance.
+@source docs/backlog/{list.md, challenge.md, specification_gaps.md}
+@inv ∀item ∈ Backlog : source_of_truth(item) == docs/backlog/; this ATC is derived index.
+
+[Phase0-Critical]
+  @note Items that block gate_pass(Phase0). WIT/TLA+ detail + size/perf verification.
+
+  [Spec-Gaps: WIT detail_level += 2]
+    - DONE(loader_dependency_mgmt): resolve-imports API added. @see vsoc.wit, loader.md §4.1
+    - DONE(loader_lifecycle): unload API added, bump_allocator LIFO constraint. @see vsoc.wit, loader.md §4.1
+    - DONE(loader_memory_limits): FB_CONF_MAX_* constants defined. @see loader.md §4.2
+    - DONE(loader_verification_scope): V1-V5 checks formalized. @see loader.md §4.3
+    - DONE(logger_wit): @pre/@post/@inv contracts added to services.wit logger
+    - DONE(logger_dictionary): ROM-resident, entry format finalized. @see logging.md §4.2
+    - DONE(logger_buffer_policy): FINALIZED Overwrite. @see logging.md §4.1
+    - DONE(logger_flush): COOS idle hook protocol defined. @see logging.md §4.3
+    - DONE(vdma_representation): pure MMIO trap + fireball_call(VDMA_START) wrapper. @see vmmio.md §4.1
+    - DONE(virtual_interrupts): static 1:1 mapping, separate irq_mapping_config. @see vmmio.md §4.6
+    - DONE(trap_state_protocol): WASM call convention handles save/restore. @see fireball_syscall_interface.md §10
+    - DONE(memory_ownership): owner(task-id) field added to memory-info. @see memory.wit
+    - DONE(shared_memory_lifecycle): allocator-frees policy. @see memory.wit, memory_manager.md §7
+    - DONE(ipc_handoff_conditions): TLA+ 6-case contracts reflected in services.wit send/recv
+    - DONE(message_format): kv-pair bitfield FINALIZED. @see types.wit
+
+  [Spec-Gaps: TLA+ detail_level += 2]
+    - DONE(hal_coos_sequence): hal_coos_irq.tla created. Physical IRQ → HAL ISR → COOS notify → task wakeup → WASM handler. @see tla/hal_coos_irq.tla
+    - OPEN(approximate_yield_validation): 300usec threshold impact analysis
+      @see list.md §1.1
+    - OPEN(coos_scheduling_refine): BLOCKED list management formalization
+      @see list.md §1.1, challenge.md §3
+
+  [Verification: size/perf hypothesis]
+    - OPEN(interpreter_core): minimal WASM instruction set implementation
+      @see list.md §0
+    - OPEN(single_trap_vmmio): fireball_call + vMMIO register service foundation
+      @see list.md §0
+    - OPEN(wasi_shim): libfireball_shim (WASI → fireball_call translation)
+      @see list.md §0
+    - OPEN(wamr_benchmark): CoreMark-PRO comparison vs WAMR(Interp)
+      @see list.md §0
+
+[Challenges: Active Trade-offs]
+  @note Design intersections requiring deliberate decisions. Not bugs, not tasks.
+
+  - INVESTIGATING(fd_write_loop_placement): host simplicity vs trap overhead
+      host_loop: +code_size, −traps | shim_loop: −code_size, +traps
+      direction: shim-first, pivot on benchmark
+      @see challenge.md §1
+  - ABSORBED(syscall_memory_safety): unified vMMIO permission table IS the validation
+      vMMIO permission check = vsoc_validate_ptr. No separate mechanism.
+      Permitted addresses: zero-cost direct access. Unpermitted: reject.
+      @see challenge.md §2, vmmio.md §1
+  - DECIDED(csp_handoff): direct switch + approximate yield as starvation mitigation
+      formal_verified: ipc_handoff.tla ✓
+      @see challenge.md §4
+  - INVESTIGATING(blocked_list_cost): RAM cost of next_blocked pointer vs scheduling efficiency
+      direction: single linked list + INTERRUPTED flag (deferred unlink)
+      @see challenge.md §3
+
+[Backlog: Lower Priority]
+  @note Not Phase0-blocking. Track for Phase1+.
+
+  - OPEN(di_model): compile-time DI macro/template/allocator integration
+    @see list.md §0.6.3
+  - OPEN(ipc_handle_entity): co_csp_channel_t* based fast path after URI resolution
+    @see list.md §1.2
+  - OPEN(zero_copy_messaging): ownership transfer across heap partitions
+    @see list.md §1.2
+  - OPEN(vmmio_register_map): UART/GPIO/DL-model virtual register definitions
+    @see list.md §1.3
+  - OPEN(host_call_overhead): context switch cost minimization for heavy host computation
+    @see list.md §1.3
+  - OPEN(debug_peephole): non-intrusive IPC router / task state observer
+    @see list.md §1.4
+  - OPEN(error_signal_system): system-wide error code unification (partially done via recovery_strategy)
+    @see list.md §2
+  - OPEN(keyword_automation): {Keyword} collision avoidance + traceability auto-check
+    @see list.md §3
+
+[Completed]
+  - DONE(vsoc_standalone_harness) @see list.md §0
+  - DONE(hal_wit) @see list.md §0.6.1
+  - DONE(syscall_wit) @see list.md §0.6.1
+  - DONE(services_wit) @see list.md §0.6.1
+  - DONE(harness_mapping) @see list.md §0.6.1
+  - DONE(tier1_wit_all) @see list.md §0.6.2
+  - DONE(interface_design_patterns) @see list.md §0.6.3
+  - DONE(vsoc_interface_renewal) @see list.md §0.6.3
+  - DONE(error_handling_unification) @see list.md §0.6.3
+
+[State]
+  - updated: 2026-02-17T16:58:00+09:00
+  - open_items: 11
+  - phase0_critical: 5
+  - challenges_active: 1 (INVESTIGATING), 2 (DECIDED), 1 (ABSORBED)
+  - completed: 24

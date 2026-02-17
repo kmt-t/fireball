@@ -1,7 +1,7 @@
 package fireball:host;
 
 interface memory-types {
-    use types.{shm-id, byte-count, address, recovery-strategy};
+    use types.{shm-id, byte-count, address, task-id, recovery-strategy};
 
     /// Memory partition types for isolation.
     enum partition-kind {
@@ -12,15 +12,17 @@ interface memory-types {
     }
 
     /// Information about a memory block.
+    /// @inv: owner != 0 (always associated with a task)
     record memory-info {
         id: shm-id,
         size: byte-count,
         kind: partition-kind,
+        owner: task-id,
     }
 }
 
 interface memory {
-    use types.{shm-id, byte-count, address, operation-result, recovery-strategy};
+    use types.{shm-id, byte-count, address, task-id, operation-result, recovery-strategy};
     use memory-types.{partition-kind, memory-info};
 
     /// Information about a memory partition.
@@ -31,9 +33,36 @@ interface memory {
         available-size: byte-count,
     }
 
+    /// Shared memory block for IPC transfer (RAII).
+    /// Ownership is exclusive: exactly one task owns this at any time.
+    /// Drop (destructor) automatically deallocates the underlying memory.
+    resource shared-memory {
+        /// Gets the local address for direct access via binary_view/span.
+        get-address: func() -> address;
+
+        /// Gets the size of this block.
+        get-size: func() -> byte-count;
+
+        /// Gets the current owner task.
+        get-owner: func() -> task-id;
+
+        /// Releases ownership and produces an IPC-transferable ID.
+        /// After this call, the resource handle becomes INVALID on the sender side.
+        /// Receiver must call memory-manager.claim(id) to take ownership.
+        /// @pre: caller_task_id == owner
+        /// @post: resource is consumed. Sender must not access address after this.
+        /// @post: returned shm-id encodes the block for IPC kv-pair transfer.
+        release: func() -> shm-id;
+    }
+
     /// Tier 2: COOS Memory Manager (co_mem)
     /// @inv: total_allocated_bytes <= FB_CONF_MEMORY_POOL_SIZE
     /// @inv: active_allocations_count <= FB_CONF_MAX_ALLOCATIONS
+    ///
+    /// Partition usage:
+    ///   kernel/task: local-only. allocate() returns address. No shm-id.
+    ///   shared:      IPC transfer data ONLY. allocate-shared() returns shared-memory resource.
+    ///   guest-ram:   WASM linear memory managed by loader.
     resource memory-manager {
         /// Initializes the memory manager.
         /// @pre: !initialized
@@ -41,36 +70,36 @@ interface memory {
         /// @post: initialized
         initialize: func(pool-base: address, pool-size: byte-count) -> operation-result;
 
-        /// Allocates a block of memory from the specified partition.
+        /// Allocates a local memory block (kernel or task partition).
+        /// Returns a raw address for immediate use via binary_view/span.
+        /// @pre: initialized
+        /// @pre: kind == kernel || kind == task
+        /// @pre: size > 0 && size <= FB_CONF_MAX_ALLOC_SIZE
+        /// @post: result.is_ok() -> block.owner == caller_task_id
+        allocate: func(size: byte-count, kind: partition-kind) -> result<address, recovery-strategy>;
+
+        /// Allocates a shared memory block for IPC transfer.
+        /// Returns a shared-memory resource with RAII ownership semantics.
         /// @pre: initialized
         /// @pre: size > 0 && size <= FB_CONF_MAX_ALLOC_SIZE
-        /// @post: result.is_ok() -> total_allocated_bytes == old(total_allocated_bytes) + size
-        allocate: func(size: byte-count, kind: partition-kind) -> result<shm-id, recovery-strategy>;
+        /// @post: result.is_ok() -> resource.owner == caller_task_id
+        allocate-shared: func(size: byte-count) -> result<shared-memory, recovery-strategy>;
 
-        /// Releases a memory block.
-        /// @pre: initialized && id is a valid active shm_id
-        /// @post: total_allocated_bytes == old(total_allocated_bytes) - size_of(id)
-        deallocate: func(id: shm-id);
+        /// Claims ownership of a shared memory block received via IPC.
+        /// @pre: id was produced by shared-memory.release()
+        /// @post: caller becomes the new owner. Returned resource is valid.
+        claim: func(id: shm-id) -> result<shared-memory, recovery-strategy>;
 
-        /// Translates shm_id to a host virtual address (thin glue).
-        /// @pre: initialized && id exists
-        to-address: func(id: shm-id) -> result<address, bool>;
-
-        /// Reverse translation: address to shm_id.
-        /// @pre: initialized && addr != 0
-        to-shm: func(addr: address) -> result<shm-id, bool>;
-
-        /// Gets information about a memory block.
-        /// @pre: initialized && id exists
-        query: func(id: shm-id) -> result<memory-info, bool>;
+        /// Releases a local memory block (kernel/task) by address.
+        /// @pre: initialized && addr is an active allocation
+        /// @pre: block.kind != shared (use shared-memory drop instead)
+        /// @pre: caller_task_id == block.owner
+        /// @post: total_allocated_bytes decremented by block size
+        deallocate: func(addr: address);
 
         /// Gets information about a partition.
         /// @pre: initialized
         query-partition: func(kind: partition-kind) -> result<partition-info, bool>;
-        
-        /// Checks ownership of a memory block for a guest task.
-        /// @pre: initialized && id exists && task_id != 0
-        check-ownership: func(id: shm-id, task-id: u32) -> bool;
     }
 }
 

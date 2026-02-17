@@ -11,6 +11,7 @@
 ### ⚠️ 実装・レビューの原則 (Rules)
 実装やコードレビューにおいて、品質と安全性を担保するための基準。
 - **[cpp_coding_style.md](/.agent/rules/cpp_coding_style.md)**: 組み込み向けの命名規則、型語彙、メモリ安全性を高めるための記述制限。
+- **[design.md](/.agent/rules/design.md)**: 設計駆動開発の原則、WIT-First、トレーサビリティ、インターフェイス設計ルール。
 - **[protocols.md](/.agent/rules/protocols.md)**: 情報のトレーサビリティ確保、エージェントの行動指針、ドキュメント配置ルール。
 - **[documentation.md](/.agent/rules/documentation.md)**: 設計情報の構造化、日本語/英語の使い分け、図解による論理的説明のルール。
 
@@ -31,10 +32,14 @@
 ### 📚 設計・仕様ドキュメント (Documents)
 プロジェクトの構造や要求を理解するために参照すること。各ディレクトリ内の **`FORMAT.md`** には、そのカテゴリのドキュメントが遵守すべき標準フォーマットが定義されている。
 
+- **[docs/requires/](/docs/requires/)**: 満たすべき要求事項とキーワードベースのトレーサビリティ。
 - **[docs/architecture/](/docs/architecture/)**: システム全体の構造、メモリマップ、インターフェース境界。
 - **[docs/components/](/docs/components/)**: 各モジュールの責務、契約（Contracts）、データ構造。
-- **[docs/requires/](/docs/requires/)**: 満たすべき要求事項とキーワードベースのトレーサビリティ。
+- **[docs/patterns/](/docs/patterns/)**: 構造設計・実装最適化・システム挙動のパターン集。
+- **[docs/concept/](/docs/concept/)**: 設計コンセプトと方法論（VDD等）。
+- **[docs/plans/](/docs/plans/)**: 開発計画とマイルストーン。
 - **[docs/temp/](/docs/temp/)**: エージェントの自由な作業領域。検討プロセスや一時的な成果物をフラットに配置。
+- **[docs/backlog/](/docs/backlog/)**: 未解決の課題やTODOの記録。
 
 ### 🔄 開発手順 (Workflows)
 標準的な開発サイクルや、継続的な設計改善の手順を確認すること。
@@ -51,7 +56,11 @@
 
 ## 2. 🚦 タスク別・推奨アクション
 
-- **新規機能の設計**: `requires` (要求) -> `architecture` (構造) -> `components` (責務)
+詳細なディスパッチは [navigation_dispatch.atc](.agent/brain/navigation_dispatch.atc) を参照。
+
+- **新規機能の設計**: `requires` (要求) -> `architecture` (構造) -> `components` (責務) -> `patterns` (パターン適用)
 - **コードの実装/修正**: `rules` (規約) -> `skills` (最適化・パターン) -> 実装
-- **インターフェース定義**: `rules/documentation` (契約の記述) -> `code_generator` (自動生成)
+- **インターフェース定義**: `rules/design` (契約の記述) -> `code_generator` (自動生成)
 - **問題の調査**: `architecture` (依存関係) -> `temp` (原因分析・プロトタイプ)
+- **型名の選定**: `fireball_vocabulary` のみ参照
+- **コンテナ選択**: `cpp_embedded §4` のみ参照

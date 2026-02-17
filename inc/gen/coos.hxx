@@ -28,10 +28,10 @@ public:
   /**
    * Initializes the scheduler with required dependencies.
    * @pre: !initialized
-   * @pre: timer is a valid resource handle, memory is a valid base address
+   * @pre: memory is a valid base address
    * @post: initialized
    */
-  operation_result initialize(address timer, address memory) noexcept;
+  operation_result initialize(address memory) noexcept;
 
   /**
    * Spawns a new task from a WASM entry point with priority.

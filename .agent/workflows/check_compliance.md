@@ -30,8 +30,8 @@ Level 1: 形式仕様検証 → Level 2: 生成コード検証 → Level 3: 統�
 #### 1. TLA+モデル検査
 
 ```bash
-cd specs/
-tlc scheduler.tla
+cd tla/
+tlc coos.tla
 ```
 
 **チェック内容**:
@@ -204,8 +204,8 @@ bash .agent/skills/code_generator/workflows/wit_all.sh
 ### コーディング標準
 
 詳細は以下を参照:
-- [cpp_coding_style.md](../../../docs/references/MEMORY\[cpp_coding_style.md\]) - コーディング規約
-- [design.md](../../../docs/references/MEMORY\[design.md\]) - 設計ルール
+- [cpp_coding_style.md](../rules/cpp_coding_style.md) - コーディング規約
+- [design.md](../rules/design.md) - 設計ルール
 - [cpp_embedded](../skills/cpp_embedded/SKILL.md) - 組み込み最適化
 
 ---
@@ -246,7 +246,7 @@ steps:
   - name: VDD Compliance Check
     run: |
       # Level 1
-      tlc specs/*.tla
+      tlc tla/*.tla
       wasm-tools component wit wit/ --json
       
       # Level 2-3

@@ -1,0 +1,71 @@
+[Brain: Navigation-Dispatch]
+[Purpose]
+  - Reduce skill-selection cost: O(N_skills) → O(1) lookup per task category
+  - Eliminate round-trips between prohibition rules and alternative patterns
+
+[Canon-Declaration]
+  - CANON(type_vocabulary) := fireball_vocabulary/SKILL.md
+      @inv ∀t ∈ TypeAliases : source_of_truth(t) == fireball_vocabulary
+      @note cpp_coding_style.md §4 is a SUMMARY; fireball_vocabulary §7 is AUTHORITATIVE
+  - CANON(prohibited_alternatives) := cpp_embedded/SKILL.md
+      @inv ∀p ∈ Prohibitions(cpp_coding_style.md) : ∃a ∈ Alternatives(cpp_embedded) : replaces(a, p)
+  - CANON(structural_patterns) := fireball_architecture/SKILL.md
+      @inv ∀c ∈ Components : tier(c) ∈ {1,2,3} ∧ defined_in(tier(c), fireball_architecture)
+  - CANON(error_handling) := cpp_embedded/SKILL.md §エラーハンドリング
+  - CANON(wit_codegen) := code_generator/SKILL.md
+  - CANON(risk_tiering) := risk_assessment/SKILL.md
+      @note risk_assessment Tier ≠ fireball_architecture 3-Tier. Different axes.
+
+[Task-Dispatch]
+  - task(design_new_component) → READ [fireball_architecture, risk_assessment] THEN [fireball_vocabulary]
+  - task(implement_interface) → READ [axiomatic_interface_design] THEN [cpp_embedded, fireball_vocabulary]
+  - task(write_code) → READ [cpp_coding_style(MEMORY)] THEN IF_NEEDED [cpp_embedded]
+  - task(choose_type_name) → READ [fireball_vocabulary §7] ONLY
+  - task(choose_container) → READ [cpp_embedded §4] ONLY
+  - task(choose_error_pattern) → READ [cpp_embedded §6] ONLY
+  - task(generate_from_wit) → READ [code_generator] THEN IF_ENV_ISSUE [docker_workaround]
+  - task(check_wasm_spec) → READ [wasm_development] ONLY
+  - task(design_refinement) → WORKFLOW [bonsai_design] WITH [risk_assessment]
+  - task(verify_compliance) → WORKFLOW [check_compliance]
+  - task(review_progress) → WORKFLOW [progress_meeting]
+
+[Prohibition-Crossref]
+  - prohibited(std::vector)      → alternative(std::array | partition_array)      @see cpp_embedded §L1, §コンテナ最適化
+  - prohibited(std::map)         → alternative(sorted_indexed_array_map)          @see cpp_embedded §コンテナ最適化
+  - prohibited(std::string)      → alternative(std::string_view | constexpr[])   @see cpp_embedded §L1
+  - prohibited(std::function)    → alternative(economic_function<N>)              @see cpp_embedded §経済的な関数
+  - prohibited(std::unique_ptr)  → alternative(static_lifecycle | Ref)            @see cpp_embedded §L1
+  - prohibited(std::shared_ptr)  → alternative(static_lifecycle | Ref)            @see cpp_embedded §L1
+  - prohibited(void*)            → alternative(binary_view | std::span<byte>)     @see fireball_vocabulary §4.1
+  - prohibited(malloc/free)      → alternative(bump_allocator | partition)        @see cpp_embedded §メモリ管理パターン
+  - prohibited(new/delete)       → alternative(placement_new | static_buffer)     @see cpp_embedded §メモリ管理パターン
+  - prohibited(try/catch/throw)  → alternative(result<T,E> | recovery_strategy)  @see cpp_embedded §エラーハンドリング
+  - prohibited(iostream)         → alternative(platform_uart | debug_printf)      @see cpp_embedded §L1
+  - prohibited(thread/future)    → alternative(coos_task | coroutine)             @see cpp_embedded §L1
+
+[Layering-Map]
+  @inv ∀overlap : layer(generic) ∩ layer(project_specific) ≠ ∅ ⇒ by_design
+  - LAYER(type_aliases):
+      generic := cpp_coding_style.md §4 (portable synopsis)
+      specific := fireball_vocabulary §7.2 (authoritative detail for Fireball)
+  - LAYER(prohibition_and_alternatives):
+      generic := cpp_coding_style.md §10 (checklist, portable across projects)
+      specific := cpp_embedded §L1 (concrete alternatives for 64KB-RAM target)
+  - LAYER(tier_selection):
+      generic := cpp_embedded §3.1 (implementation-level decision aid)
+      specific := fireball_architecture §2.1 (Fireball 3-Tier structural design)
+[Document-Topology]
+  @inv ∀path ∈ References(AGENTS.md ∪ protocols.md) : exists(path)
+  - GATEWAY := AGENTS.md
+  - RULES := .agent/rules/{cpp_coding_style, design, documentation, protocols}.md
+  - SKILLS := .agent/skills/{axiomatic_interface_design, code_generator, cpp_embedded, docker_workaround, fireball_architecture, fireball_vocabulary, risk_assessment, wasm_development}/SKILL.md
+  - WORKFLOWS := .agent/workflows/{bonsai_design, check_compliance, development_cycle, friction_audit, progress_meeting, summarize, waigaya}.md
+  - BRAIN := .agent/brain/{project_context, navigation_dispatch, backlog, tension_analysis}.atc
+  - DOCS := docs/{requires, architecture, components, patterns, concept, plans, backlog, temp}/
+  - TLA := tla/*.tla
+  - SRC := inc/**/*.hxx, src/**/*.cxx
+
+[State]
+  - updated: 2026-02-17T14:50:00+09:00
+  - brain_mode: FORMAL_PREDICATE_LOGIC
+  - topology_verified: true

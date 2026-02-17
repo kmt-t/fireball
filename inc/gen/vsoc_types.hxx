@@ -22,6 +22,7 @@ struct vm_config {
   address ram_base;
   byte_count ram_size;
   address entry_point;
+  address passthrough_base;
 };
 
 /**
@@ -43,6 +44,14 @@ enum class vmmio_hook_id : uint8_t {
   UART,
   DEBUG,
   RESERVED,
+};
+
+/**
+ * Static 1:1 mapping entry: physical IRQ -> virtual IRQ ID.
+ */
+struct irq_mapping_entry {
+  uint32_t physical_irq;
+  uint32_t virtual_irq_id;
 };
 
 } // namespace fireball

@@ -1,0 +1,133 @@
+[Brain: Tension-Analysis]
+@purpose Classify design tensions: CONTRADICTION (zero-sum) vs ORTHOGONAL (area expansion possible).
+@date 2026-02-17
+@source challenge.md, project_context.atc, concept_harness.md, requires/list.md, cpp_embedded/SKILL.md
+
+[Legend]
+  - ORTHOGONAL: Two independent axes. Both can improve simultaneously with right design.
+                The work is "expanding the area of the rectangle."
+  - CONTRADICTION: Same axis, opposite directions. Gain on one side is loss on the other.
+                   Requires a hard decision or an acceptance of a fixed ratio.
+
+[T1: Abstraction vs. Performance]
+  axes: (code modularity / testability) vs (call overhead / memory cost)
+  verdict: ORTHOGONAL ✅ — RESOLVED by Concept Harness
+  evidence:
+    - vtable: 3-5 cycles + 8B/object → Concept Harness: 0 cycles + 0B (@see concept_harness.md §パフォーマンス比較)
+    - Full abstraction (IoC, DI, mock injection) AND zero runtime cost.
+    - The rectangle is already maximized on both axes.
+  risk: none. This tension is closed.
+
+[T2: Host Simplicity vs. Trap Overhead (fd_write)]
+  axes: (host code size → 15KLOC budget) vs (execution speed → trap count)
+  verdict: ORTHOGONAL ✅ — measurable, and latency-tolerant
+  reasoning:
+    - These are independent axes: code size and trap latency.
+    - Shim-loop: small host, more traps. Host-loop: larger host, fewer traps.
+    - CRITICAL INSIGHT: fd_write is an I/O path, not a hot loop.
+      UART @115200bps: 87µs/byte. Trap cost: ~few µs. I/O dominates.
+      Even 5 traps per scatter-gather vanish into UART latency.
+    - Question is not "how fast" but "is slow acceptable here?" — YES.
+  fast_verification:
+    - vSoC standalone harness (Phase1 artifact) + DWT->CYCCNT on Cortex-M
+    - Instrument fireball_call entry/exit with cycle counter
+    - 1 trap cost becomes a hard number in < 1 hour of measurement
+    - No need for full system integration to answer this question
+  action: measure trap cost in standalone harness → confirm I/O-dominance → shim-loop wins.
+  @see challenge.md §1
+
+[T3: Safety vs. Performance (vMMIO access validation)]
+  axes: (memory safety → validate every guest access) vs (throughput → skip checks)
+  verdict: ABSORBED ✅ — unified vMMIO model eliminates the trade-off
+  reasoning:
+    - Original framing: separate vsoc_validate_ptr on every syscall buffer = per-call cost.
+    - New reality: ALL host-guest access goes through vMMIO permission table.
+      GPIO, shared memory, syscall buffers — same path, same single check.
+    - Permission table lookup IS the validation. No separate mechanism.
+    - Permitted addresses: zero additional cost (direct physical access).
+    - Unpermitted addresses: rejected (trap). No partial check, no gradual degradation.
+    - The “trade-off” dissolves because there is no alternative path that skips the check.
+      The check IS the architecture, not an optional safety layer.
+  resolution: ABSORBED into vMMIO design. Not a tension anymore.
+  @see challenge.md §2, vmmio.md §1
+
+[T4: Latency vs. Fairness (CSP Handoff)]
+  axes: (communication latency → direct switch) vs (scheduling fairness → round-robin)
+  verdict: ORTHOGONAL ✅ — resolved by approximate yield
+  reasoning:
+    - Handoff improves latency on one axis.
+    - Approximate yield (trace-count-based forced yield) independently maintains fairness.
+    - Both mechanisms operate on different timescales and don't interfere.
+    - Formal verification (ipc_handoff.tla) confirmed no deadlock.
+  risk: low. Yield threshold tuning is needed but is a calibration task, not a design conflict.
+  @see challenge.md §4
+
+[T5: Memory Cost vs. Scheduling Efficiency (BLOCKED list)]
+  axes: (RAM usage → +pointer per task_t) vs (scheduler scan time → skip blocked tasks)
+  verdict: ORTHOGONAL ✅ — quantifiable trade
+  reasoning:
+    - Cost: 4 bytes × max_tasks. With 16 tasks = 64 bytes. Negligible vs 64KB.
+    - Benefit: O(ready) instead of O(all) per schedule tick.
+    - These are independent: memory cost is static, scheduling benefit scales with blocked ratio.
+    - The "INTERRUPTED flag + deferred unlink" avoids ISR atomicity issues.
+  risk: low. The 64-byte cost is well within budget.
+  @see challenge.md §3
+
+[T6: 15KLOC Budget vs. Feature Coverage]
+  axes: (code size constraint) vs (number of features / subsystems)
+  verdict: CONDITIONAL ORTHOGONAL ✅⚠️ — depends on design simplicity
+  reasoning:
+    - Naive view: every feature adds lines → zero-sum → CONTRADICTION.
+    - Refined view: code size = f(features × complexity_per_feature).
+      If complexity_per_feature is low (few branches, few special cases),
+      then features can grow while code stays small.
+    - Design simplicity is the THIRD VARIABLE that decouples the two axes.
+      @inv simple_design (few case-splits) ⇒ size ∧ features both improve
+    - This makes T6 orthogonal CONDITIONAL on maintaining design simplicity.
+  condition:
+    - complexity_per_feature must remain low.
+    - Indicators of violation: deeply nested if/switch, many special-case handlers,
+      growing glue code between components.
+    - If complexity creeps up, T6 reverts to CONTRADICTION.
+  mitigation:
+    - Code generation from WIT reduces boilerplate (doesn't add to authored KLOC).
+    - Shim library (guest-side) doesn't count against host 15KLOC.
+    - Concept Harness avoids vtable/wrapper code bloat.
+    - Single-trap design (fireball_call) eliminates per-syscall dispatch code.
+  risk: MEDIUM. Must be continuously monitored.
+         Phase0-Gate criterion 3 (size verification) is the checkpoint.
+  @see requires/list.md {Size_15KLOC}
+
+[T7: Static Allocation vs. Runtime Flexibility]
+  axes: (no heap / no dynamic alloc) vs (handle varying workloads / task counts)
+  verdict: ORTHOGONAL ✅ — resolved by partition pattern
+  reasoning:
+    - Partitioned memory (bump allocator, static pools) gives runtime flexibility
+      WITHOUT dynamic allocation.
+    - Task count is bounded (constexpr). Buffer sizes are bounded (constexpr).
+    - Flexibility is achieved through parameterization, not dynamism.
+  risk: low, as long as partition sizes are correctly derived from invariants.
+  @see cpp_embedded/SKILL.md §メモリ管理パターン
+
+[T8: Formal Specification Cost vs. Development Velocity]
+  axes: (WIT/TLA+ rigor → upfront time) vs (time-to-implementation → move fast)
+  verdict: ORTHOGONAL ✅ — different time horizons
+  reasoning:
+    - Short-term: formalism costs more time upfront.
+    - Long-term: formalism eliminates rework, catches design bugs before implementation.
+    - These axes are orthogonal because they operate on different timescales.
+    - The Bonsai workflow explicitly manages this: invest in design, harvest in implementation.
+  risk: the investment is FRONT-LOADED. If Phase0 runs too long, Phase1 gets compressed.
+        But this is a scheduling risk, not a design contradiction.
+  @see project_context.atc [Physical-Time-Model]
+
+[Summary]
+  ORTHOGONAL (resolved):              T1, T3, T4, T5, T7      — 5 items
+  ORTHOGONAL (measurable/verifiable): T2, T8                   — 2 items
+  CONDITIONAL ORTHOGONAL:             T6 (iff design simplicity held) — 1 item
+  CONTRADICTION:                      NONE
+
+  @inv No genuine contradictions remain in the design.
+  @inv T6 is the critical watch item: if complexity creeps, it becomes contradiction.
+  @inv T3 was absorbed by the unified vMMIO model — the check IS the architecture.
+  @note Design simplicity is not an aesthetic preference — it is a load-bearing structural constraint.

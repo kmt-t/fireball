@@ -153,18 +153,21 @@ enum class data_type : uint8_t {
 
 /**
  * IPC Key-Value pair for structured messaging.
- * Bitfield layout: scope:8-bits (scope-type:3 + data-type:5), key:24-bits, value:32-bits
- * @bitfield type_scope:u8:0-7, key:u24:8-31, value:u32:32-63
+ * FINALIZED bitfield layout:
+ *   [63:32] value  : u32 — payload or handle
+ *   [31:8]  key    : u24 — service-defined key identifier
+ *   [7:5]   scope  : u3  — scope-type (functional, dictionary, ...)
+ *   [4:0]   dtype  : u5  — data-type  (immediate, handle, resource-id, ...)
+ * @inv: sizeof(kv-pair) == 8 bytes
  */
 struct kv_pair {
-  uint64_t type_scope : 8;  // Bits 0-7
-  uint64_t key : 24;  // Bits 8-31
-  uint64_t value : 32;  // Bits 32-63
+  uint64_t raw;
 };
-static_assert(sizeof(kv_pair) == 8, "kv-pair size mismatch");
 
 /**
  * IPC Message containing fixed maximum of 8 KV-pairs.
+ * @inv: len(pairs) <= 8
+ * @note FINALIZED: 8 * 8 = 64 bytes max per message. Fits in single cache line on most architectures.
  */
 struct message {
   std::span<kv_pair> pairs;

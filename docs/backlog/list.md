@@ -1,12 +1,12 @@
 # Fireball 統合バックログ
 
 「盆栽」のように、全体のバランスを見ながら設計の密度を少しずつ上げていく。
+エージェント向けの構造化インデックスは `.agent/brain/backlog.atc` を参照。
 
 ## 0. vSoC 優先開発とベンチマーク (Phase 0.5: vSoC First & Benchmark)
 
 WAMRに対する優位性を早期に証明するため、vSoCを他のコンポーネントから切り離して最優先で開発・評価する。 `{vSoC_First}`
 
-- [x] **vSoC スタンドアロン・ハーネス of Created**: Linux上で動作し、WASMバイナリをロードして実行できる最小限のテスト環境。
 - [ ] **インタープリタ・コア実装**: 最小セットのWASM命令（i32演算、制御フロー、メモリ読み書き）の実装。
 - [ ] **Single Trap + vMMIO 実装**: `fireball_call` と vMMIO レジスタによるサービス提供基盤の実装。
 - [ ] **WASI Shim ライブラリ (libfireball_shim)**: ゲスト側で動作し、WASI呼び出しを `fireball_call` に変換するライブラリの作成。
@@ -14,36 +14,9 @@ WAMRに対する優位性を早期に証明するため、vSoCを他のコンポ
 
 ## 0.6 インターフェイス基盤の確立 (Phase 0.6: Interface Consolidation)
 
-「設計駆動開発」の核となるインターフェイス定義の品質を担保するための基盤を構築する。
+### 0.6.1 残タスク
 
-### 0.6.1 依存関係の最小インターフェイス定義 🔴
-
-vSoCが依存する他コンポーネントの「最小限のインターフェイス」を定義する。
-
-- [x] `wit/hal.wit` - HALのアーキテクチャ定義 (WIT)
-- [x] `wit/syscall.wit` - 低レイヤシステムコール定義 (WIT)
-- [x] `wit/services.wit` - システムサービス定義 (WIT)
-- [x] `inc/vsoc/harness.hxx` - WIT定義に基づくハーネス構造体へのマッピング定義
-
-**見積もり**: 完了
-
-### 0.6.2 Tier 1 インターフェイス定義 (WIT-First) ✅
-
-「論理的な契約」を早期に確定させるため、WIT定義を全Tier 1コンポーネントで完了させる。
-
-- [x] `wit/hal.wit` - HALインターフェイスの分離と確定
-- [x] `wit/syscall.wit` - システムコール基盤の分離と確定
-- [x] `wit/services.wit` - COOS/IPC Routerの論理定義の作成
-- [x] 全WITファイルのレビューと整合性確認
-
-**見積もり**: 完了
-
-### 0.6.3 従来のタスク
-
-- [x] **インターフェイス設計パターンの定義**: `docs/patterns/interface.md` の作成。 `{Policy_Interface}`
-- [x] **vSoC インインターフェイスの刷新**: 新ルールに基づき `inc/vsoc/vsoc.hxx` を再構築。 `std::function` の排除。
 - [ ] **依存性注入 (DI) モデルの確定**: コンパイル時DIを実現するためのマクロ・テンプレート・アロケータの連携。
-- [x] **エラーハンドリング体系の統合**: システム全域で一貫したエラーコードと例外代替手段の策定 (`recovery_strategy` による統一)。
 
 ## 1. 周辺設計の深化 (Phase 1: Deepening Design)
 

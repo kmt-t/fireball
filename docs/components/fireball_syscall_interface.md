@@ -4,7 +4,14 @@
 本ドキュメントは、WebAssemblyゲスト環境からホストの提供するサービスを呼び出すための汎用システムコール `fireball_call` のインターフェイス仕様を定義する。特に、WASI (WebAssembly System Interface) 呼び出しを `fireball_call` にマッピングするための規約、および関連するShimライブラリとWASIホスト側実装の役割に焦点を当てる。
 
 ## 2. 背景 (Background)
-`fireball_call` は、シングル・トラップ命令とvMMIOレジスタによる引数渡しを介して、ホスト側のグルーコードを最小化し、複雑なロジックをゲスト側のShimライブラリにオフロードすることを目的としている。
+`fireball_call` は、vMMIO機能全体の**代理実行ラッパー**である。直接vMMIOアドレスにアクセスできないゲスト言語のために、シングル・トラップ命令経由でホストがvMMIO操作を代行する。
+
+```
+アクセスパスA: guest load/store(vMMIO_addr) → 許可テーブル → 直接物理アクセス
+アクセスパスB: guest fireball_call(id, args) → host代理 → vMMIO → 許可テーブル → 直接物理アクセス
+```
+
+どちらのパスも最終的にvMMIO許可テーブルを通る。セキュリティゲートは1箇所。 `{UnifiedAccessModel}`
 
 ## 3. `fireball_call` WIT定義 (WIT Definition)
 `fireball_call`のWIT (WebAssembly Interface Type) 定義は以下の通りである。
@@ -42,24 +49,114 @@ world fireball {
 `fireball_call`は `u32` 型の値を返す。これは通常、0が成功を示し、非0の値はWASIの`errno`に準拠したエラーコードを示す。
 
 ## 5. システムコールID (System Call IDs)
-システムコールIDは、`fireball_call`が実行する特定の操作を識別するために使用される。これらのIDは `inc/fireball_syscalls.hxx` にて列挙型として定義される。
+システムコールIDは、`fireball_call`が実行する特定の操作を識別し、vMMIOの全機能をカバーする。カテゴリ別に管理される。
 
-例:
+### 5.1. カテゴリ一覧
+
+| カテゴリ | ID範囲 | 説明 |
+| :--- | :--- | :--- |
+| System | `0x00`-`0x0F` | 実行制御 |
+| vMMIO Generic | `0x10`-`0x1F` | vMMIOレジスタの汎用読み書き |
+| VDMA | `0x20`-`0x2F` | 仮想DMA操作 |
+| IRQ | `0x30`-`0x3F` | 仮想割り込み管理 |
+| IPC | `0x40`-`0x4F` | プロセス間通信 |
+| WASI | `0x80`-`0xBF` | WASI互換レイヤー |
+
+### 5.2. System (`0x00`-`0x0F`)
+
+| ID | 名前 | 引数 | 戻り値 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `0x00` | `RESERVED` | — | — | 予約済み |
+| `0x01` | `SYS_YIELD` | — | `0` | 協調的イールド要求 |
+| `0x02` | `SYS_HALT` | `exit_code` | — | 実行停止 |
+| `0x03` | `SYS_RESET` | — | `0` | ゲストリセット |
+
+### 5.3. vMMIO Generic (`0x10`-`0x1F`)
+vMMIOアドレス空間全体への汎用アクセス。SYSCTL/IPCR/VDMA/SHM/DYNAMIC/PASSTHROUGHすべての領域に対応。許可テーブルでアクセス制御される。
+
+| ID | 名前 | 引数 | 戻り値 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `0x10` | `MMIO_READ32` | `addr` | `value` | 32bit読み出し |
+| `0x11` | `MMIO_WRITE32` | `addr`, `value` | `0` | 32bit書き込み |
+| `0x12` | `MMIO_READ8` | `addr` | `value` | 8bit読み出し |
+| `0x13` | `MMIO_WRITE8` | `addr`, `value` | `0` | 8bit書き込み |
+| `0x14` | `MMIO_BULK_READ` | `addr`, `dest_ptr`, `byte_count` | `0` | バルク読み出し |
+| `0x15` | `MMIO_BULK_WRITE` | `addr`, `src_ptr`, `byte_count` | `0` | バルク書き込み |
+
+### 5.4. VDMA (`0x20`-`0x2F`)
+仮想DMA操作のセマンティックラッパー。内部的にvMMIO VDMAレジスタへの書き込みに変換される。
+
+| ID | 名前 | 引数 | 戻り値 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `0x20` | `VDMA_START` | `src`, `dst`, `byte_count` | `0` | DMA転送開始 |
+
+### 5.5. IRQ (`0x30`-`0x3F`)
+仮想割り込みフラグの管理。`REG_IRQ_FLAGS` のラッパー。
+
+| ID | 名前 | 引数 | 戻り値 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `0x30` | `IRQ_READ_FLAGS` | — | `flags` | 割り込みフラグ読み出し |
+| `0x31` | `IRQ_CLEAR` | `mask` | `0` | 指定ビットのフラグクリア |
+
+### 5.6. IPC (`0x40`-`0x4F`)
+CSPチャネル経由のプロセス間通信。
+
+| ID | 名前 | 引数 | 戻り値 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `0x40` | `IPC_SEND` | `channel_id`, `msg_ptr`, `msg_len` | `0` / errno | メッセージ送信 |
+| `0x41` | `IPC_RECV` | `channel_id`, `buf_ptr`, `buf_len` | `recv_len` / errno | メッセージ受信 |
+
+### 5.7. WASI (`0x80`-`0xBF`)
+WASI互換レイヤー。Shimライブラリが `wasi-libc` の呼び出しをこれらのIDに変換する。
+
+| ID | 名前 | 引数 | 戻り値 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `0x80` | `WASI_FD_WRITE` | `fd`, `iovs_ptr`, `iovs_len`, `nwritten_ptr` | errno | ファイル書き込み |
+| `0x81` | `WASI_FD_READ` | `fd`, `iovs_ptr`, `iovs_len`, `nread_ptr` | errno | ファイル読み出し |
+| `0x82` | `WASI_FD_CLOSE` | `fd` | errno | ファイルクローズ |
+| `0x83` | `WASI_CLOCK_TIME_GET` | `clock_id`, `precision`, `time_ptr` | errno | 時刻取得 |
+| `0x84` | `WASI_PROC_EXIT` | `exit_code` | — | プロセス終了 |
+| `0x85` | `WASI_RANDOM_GET` | `buf_ptr`, `buf_len` | errno | 乱数取得 |
+
+> [!NOTE]
+> GPIOアクセスはMMIO Generic (`MMIO_READ32`/`MMIO_WRITE32`) でPASSTHROUGH領域経由。専用syscallは不要。
+
 ```cpp
-// inc/fireball_syscalls.hxx (仮)
-enum class FBSyscallId : uint32_t {
-    FB_SYSCALL_RESERVED = 0,
-    
-    // High-responsiveness Trigger (GPIO)
-    FB_SYSCALL_TRIGGER_SET_PIN = 0x10,
-    FB_SYSCALL_TRIGGER_GET_PIN = 0x11,
+// inc/fireball_syscalls.hxx
+enum class fb_syscall_id : uint32_t {
+    RESERVED          = 0x00,
 
-    // WASI legacy fallback (必要に応じて)
-    FB_SYSCALL_WASI_FD_WRITE = 0x20,
-    
-    // vMMIO
-    FB_SYSCALL_VMMIO_READ = 0x1000,
-    FB_SYSCALL_VMMIO_WRITE = 0x1001,
+    // System
+    SYS_YIELD         = 0x01,
+    SYS_HALT          = 0x02,
+    SYS_RESET         = 0x03,
+
+    // vMMIO Generic
+    MMIO_READ32       = 0x10,
+    MMIO_WRITE32      = 0x11,
+    MMIO_READ8        = 0x12,
+    MMIO_WRITE8       = 0x13,
+    MMIO_BULK_READ    = 0x14,
+    MMIO_BULK_WRITE   = 0x15,
+
+    // VDMA
+    VDMA_START        = 0x20,
+
+    // IRQ
+    IRQ_READ_FLAGS    = 0x30,
+    IRQ_CLEAR         = 0x31,
+
+    // IPC
+    IPC_SEND          = 0x40,
+    IPC_RECV          = 0x41,
+
+    // WASI
+    WASI_FD_WRITE     = 0x80,
+    WASI_FD_READ      = 0x81,
+    WASI_FD_CLOSE     = 0x82,
+    WASI_CLOCK_TIME_GET = 0x83,
+    WASI_PROC_EXIT    = 0x84,
+    WASI_RANDOM_GET   = 0x85,
 };
 ```
 
@@ -88,7 +185,7 @@ void fireball_trigger_set_pin(uint32_t pin, bool value) {
 }
 ```
 > [!IMPORTANT]
-> WASI 0.2 標準のリソース（`output-stream` 等）は、対応する WIT インターフェイスの実装関数を通じて呼び出されるが、`trigger` のように極めて高い応答性が求められる HAL 操作には、この `fireball_call` によるバイパス（Fast-Path）を適用する。
+> WASI 0.2 標準のリソース（`output-stream` 等）は、対応する WIT インターフェイスの実装関数を通じて呼び出される。`fireball_call`はvMMIO機能全体の代理実行ラッパーであり、GPIOのような物理アクセスもMMIO Generic経由で行える。
 
 ## 7. WASIホスト側実装 (WASI Host-Side Implementation)
 
@@ -136,12 +233,17 @@ enum class FBVirtualInterruptId : uint32_t {
 `fireball_call`で開始された非同期I/O操作（例: 非ブロッキング`fd_read`）の完了は、仮想割り込みを介してゲストに通知される。通知には、完了した操作のID、結果ステータス、読み書きされたデータ長などの情報が含まれる。
 
 ## 9. メモリ安全性 (Memory Safety)
-`fireball_call`を介してゲストメモリへのポインタが渡される場合、WASIホスト側実装は以下の検証を行う必要がある。
-*   渡されたポインタがゲストのメモリ空間内に収まっていること。
-*   アクセスされるメモリ領域が、ゲストが所有し、かつ要求された操作（読み取り/書き込み）に対して適切なパーミッションを持つこと。
-*   `{Challenge_SyscallMemorySafety}` にて定義された追加のメモリ安全対策を適用する。
+`fireball_call`を介してゲストメモリへのポインタが渡される場合、統一vMMIOモデルの許可テーブルがセキュリティゲートとして機能する。別途の `vsoc_validate_ptr` は不要。 `{Challenge_SyscallMemorySafety}`
 
-## 10. 考慮事項 (Considerations)
+## 10. トラップ状態プロトコル (Trap State Protocol)
+`fireball_call` はWASMの**インポート関数呼び出し**として実行される。そのため、明示的な状態保存/復元は不要。
+
+- **保存**: WASMの呼び出し規約がスタック/ローカル変数を自動保存
+- **復元**: WASMの `return` で自動復元
+- **PC位置**: トラップ中のPCは `fireball_call` 命令内。戻り値取得後、次の命令に進む。
+- **ホスト側**: WASMの実行状態に一切触れない。`REG_SYSCALL_*` レジスタだけが引数/戻り値の受け渡しに使われる。
+
+## 11. 考慮事項 (Considerations)
 *   **同期/非同期操作の混在**: `fireball_call` は同期操作の開始を、仮想割り込みは非同期操作の完了を担うことで、異なる種類の操作を適切に処理する。
 *   **イベントキューの導入**: 多数の非同期イベントが頻繁に発生する場合、仮想割り込みとvMMIOを組み合わせたイベントキューを導入し、ゲストが効率的にイベントを処理できるようにすることも検討する。
 *   **オーバーヘッド**: 非同期通知の頻度とペイロードのサイズがパフォーマンスに与える影響を評価し、必要に応じて最適化を行う。

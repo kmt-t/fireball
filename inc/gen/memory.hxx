@@ -26,9 +26,51 @@ struct partition_info {
 };
 
 /**
+ * Shared memory block for IPC transfer (RAII).
+ * Ownership is exclusive: exactly one task owns this at any time.
+ * Drop (destructor) automatically deallocates the underlying memory.
+ */
+class shared_memory {
+public:
+  shared_memory() = default;
+  ~shared_memory() = default;
+
+  /**
+   * Gets the local address for direct access via binary_view/span.
+   */
+  address get_address() noexcept;
+
+  /**
+   * Gets the size of this block.
+   */
+  byte_count get_size() noexcept;
+
+  /**
+   * Gets the current owner task.
+   */
+  task_id get_owner() noexcept;
+
+  /**
+   * Releases ownership and produces an IPC-transferable ID.
+   * After this call, the resource handle becomes INVALID on the sender side.
+   * Receiver must call memory-manager.claim(id) to take ownership.
+   * @pre: caller_task_id == owner
+   * @post: resource is consumed. Sender must not access address after this.
+   * @post: returned shm-id encodes the block for IPC kv-pair transfer.
+   */
+  shm_id release() noexcept;
+
+};
+
+/**
  * Tier 2: COOS Memory Manager (co_mem)
  * @inv: total_allocated_bytes <= FB_CONF_MEMORY_POOL_SIZE
  * @inv: active_allocations_count <= FB_CONF_MAX_ALLOCATIONS
+ * 
+ * Partition usage:
+ *   kernel/task: local-only. allocate() returns address. No shm-id.
+ *   shared:      IPC transfer data ONLY. allocate-shared() returns shared-memory resource.
+ *   guest-ram:   WASM linear memory managed by loader.
  */
 class memory_manager {
 public:
@@ -44,49 +86,45 @@ public:
   operation_result initialize(address pool_base, byte_count pool_size) noexcept;
 
   /**
-   * Allocates a block of memory from the specified partition.
+   * Allocates a local memory block (kernel or task partition).
+   * Returns a raw address for immediate use via binary_view/span.
+   * @pre: initialized
+   * @pre: kind == kernel || kind == task
+   * @pre: size > 0 && size <= FB_CONF_MAX_ALLOC_SIZE
+   * @post: result.is_ok() -> block.owner == caller_task_id
+   */
+  std::expected<address, recovery_strategy> allocate(byte_count size, partition_kind kind) noexcept;
+
+  /**
+   * Allocates a shared memory block for IPC transfer.
+   * Returns a shared-memory resource with RAII ownership semantics.
    * @pre: initialized
    * @pre: size > 0 && size <= FB_CONF_MAX_ALLOC_SIZE
-   * @post: result.is_ok() -> total_allocated_bytes == old(total_allocated_bytes) + size
+   * @post: result.is_ok() -> resource.owner == caller_task_id
    */
-  std::expected<shm_id, recovery_strategy> allocate(byte_count size, partition_kind kind) noexcept;
+  std::expected<uintptr_t, recovery_strategy> allocate_shared(byte_count size) noexcept;
 
   /**
-   * Releases a memory block.
-   * @pre: initialized && id is a valid active shm_id
-   * @post: total_allocated_bytes == old(total_allocated_bytes) - size_of(id)
+   * Claims ownership of a shared memory block received via IPC.
+   * @pre: id was produced by shared-memory.release()
+   * @post: caller becomes the new owner. Returned resource is valid.
    */
-  void deallocate(shm_id id) noexcept;
+  std::expected<uintptr_t, recovery_strategy> claim(shm_id id) noexcept;
 
   /**
-   * Translates shm_id to a host virtual address (thin glue).
-   * @pre: initialized && id exists
+   * Releases a local memory block (kernel/task) by address.
+   * @pre: initialized && addr is an active allocation
+   * @pre: block.kind != shared (use shared-memory drop instead)
+   * @pre: caller_task_id == block.owner
+   * @post: total_allocated_bytes decremented by block size
    */
-  std::expected<address, bool> to_address(shm_id id) noexcept;
-
-  /**
-   * Reverse translation: address to shm_id.
-   * @pre: initialized && addr != 0
-   */
-  std::expected<shm_id, bool> to_shm(address addr) noexcept;
-
-  /**
-   * Gets information about a memory block.
-   * @pre: initialized && id exists
-   */
-  std::expected<memory_info, bool> query(shm_id id) noexcept;
+  void deallocate(address addr) noexcept;
 
   /**
    * Gets information about a partition.
    * @pre: initialized
    */
   std::expected<partition_info, bool> query_partition(partition_kind kind) noexcept;
-
-  /**
-   * Checks ownership of a memory block for a guest task.
-   * @pre: initialized && id exists && task_id != 0
-   */
-  bool check_ownership(shm_id id, uint32_t task_id) noexcept;
 
 };
 

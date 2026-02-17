@@ -177,6 +177,7 @@ public:
 
 /**
  * Tier 3: WASM Module Loader
+ * @inv: loaded_module_count <= FB_CONF_MAX_MODULES
  */
 class wasm_loader {
 public:
@@ -187,6 +188,7 @@ public:
    * Prepares a WASM module for execution from ROM.
    * @pre: wasm is a valid binary_view in ROM
    * @post: result.is_ok() -> module_view is valid
+   * @post: loaded_module_count incremented by 1
    */
   std::expected<uintptr_t, recovery_strategy> prepare(binary_view wasm) noexcept;
 
@@ -198,6 +200,27 @@ public:
   operation_result load(uintptr_t module) noexcept;
 
   /**
+   * Resolves cross-module imports by scanning import section and linking
+   * against exported symbols in the module_registry.
+   * @pre: module is loaded. All imported modules are already in registry.
+   * @post(ok): all imports resolved. Module is ready for execution.
+   * @post(err): unresolved import found. Module remains loaded but not executable.
+   * @derives: loader.md §4.1 Dependency Resolution
+   */
+  operation_result resolve_imports(uintptr_t module) noexcept;
+
+  /**
+   * Unloads a module and releases associated resources.
+   * @pre: module is in registry
+   * @post: module removed from registry. bump_allocator space reclaimed
+   *        if module was the last allocated (LIFO property of bump allocator).
+   * @note: Due to bump allocator LIFO constraint, full reclamation only
+   *        occurs when unloading in reverse order of loading.
+   * @derives: loader.md §4.2 state: Ready -> Idle: unload
+   */
+  operation_result unload(uintptr_t module) noexcept;
+
+  /**
    * Lookups a loaded module from the registry.
    */
   std::expected<uintptr_t, bool> lookup(std::string_view name) noexcept;
@@ -206,7 +229,10 @@ public:
 
 /**
  * Tier 3: Virtual MMIO Manager
+ * Unified access layer: ALL host-guest data exchange goes through vMMIO.
+ * Physical registers, shared memory, syscall buffers — everything.
  * @inv: vmmio_base == FB_CONF_VMMIO_BASE
+ * @inv: security_gate == permission_table (single gate, no layering)
  */
 class vmmio_manager {
 public:
@@ -215,7 +241,10 @@ public:
 
   /**
    * Dispatches a trapped access to the appropriate handler.
+   * Permission table is checked first; permitted addresses get direct physical access.
    * @pre: addr >= vmmio_base && addr < vmmio_base + vmmio_size
+   * @post: permitted(addr) => handler executed, result reflects register operation
+   * @post: !permitted(addr) => access violation trap
    */
   operation_result dispatch_access(address addr, binary_view buffer, bool is_write) noexcept;
 
@@ -248,7 +277,7 @@ public:
    * @pre: loader, vmmio, memory are valid resource handles
    * @post: initialized && dependencies are bound
    */
-  operation_result initialize(uintptr_t loader, uintptr_t vmmio, address memory) noexcept;
+  operation_result initialize(uintptr_t loader, uintptr_t vmmio, address memory, std::span<irq_mapping_entry> irq_mappings) noexcept;
 
   /**
    * Steps execution until yield or trap.

@@ -1,9 +1,9 @@
 # JIT Compiler コンポーネント設計書
 
 ## 1. コンセプト
-JIT Compiler は、WASMバイトコードを実行時にネイティブコードへ変換し、実行速度を向上させる。Execution Engine (`executor`) の一部として、インタープリタと一対の「実行エンジン」として機能する。極小リソース環境（RAM 64KB）において、コンパイルコストを極小化する「Zero Compile Cost 定理」に基づき、最適化を省いた高速な **Copy-and-Patch** 方式を採用する。 `{LowLatencyJIT}` `{JIT_CopyAndPatch}` `{JIT_ZeroCompileCostTheorem}` `{SimpleJITArchitecture}` `{PeriodicTask}` `{IdleDetection}`
+JIT Compiler は、WASMバイトコードを実行時にネイティブコードへ変換し、実行速度を向上させる。Execution Engine (`executor`) の一部として、インタープリタと一対の「実行エンジン」として機能する。極小リソース環境（RAM 64KB）において、コンパイルコストを極小化する「Zero Compile Cost 定理」に基づき、最適化を省いた高速な **Copy-and-Patch** 方式を採用する。 `{LowLatencyJIT}` `{JIT_CopyAndPatch}` `{JIT_ZeroCompileCostTheorem}` `{SimpleJITArchitecture}` `{PeriodicTask}` `{IdleDetection}` `{JIT_Encoder}`
 
-## 2. アーキテクチャ分類 (Tier 2: Subsystem Domain)
+## 2. アーキテクチャ分類
 本コンポーネントは **Tier 2 (サブシステムドメイン)** に属し、Stateless Interface と Harness パターンを用いて構造化される。 `{3TierSeparation}` `{ComponentHarness}`
 
 ## 3. 静的モデル
@@ -66,7 +66,7 @@ graph TD
 | 実行履歴マップ | 命令の実行頻度を記録するビットマップ | データ範囲 | `std::span<uint8_t>` |
 
 #### `jit_config` (JIT構成)
-JITエンジンの挙動を制御する性能パラメータ。 `{ConfigurableSystem}`
+JITエンジンの挙動を制御する性能パラメータ。 `{ConfigurableSystem}` `{StaticScalability}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
@@ -177,7 +177,7 @@ sequenceDiagram
     end
 ```
 
-## 5. 検証 (Verification)
+## 5. 検証
 
 ### 5.1 直行表: 検索・昇格・GC
 JITトレース検索時の内部状態と期待される挙動を検証する。
@@ -198,7 +198,7 @@ JITエンジンの責務を、以下の独立したサブコンポーネント�
 - **[JIT Hotspot Detector](jit_hotspot_detector.md)**: 実行履歴の監視とコンパイル要否の判定。
 - **[Copy-and-Patch Engine](jit_copy_and_patch_engine.md)**: 命令テンプレートを用いたネイティブコード生成。
 - **[JIT Entry Index](jit_entry_index.md)**: PC-アドレス変換テーブルの管理と検索高速化。
-- **[constexpr Assembler](constexpr_assembler.md)**: 静的な命令エンコード DSL。
+- **[constexpr Assembler](constexpr_assembler.md)**: 静的な命令エンコード DSL。 `{JIT_Encoder}`
 
 ## 6. インターフェイス定義
 

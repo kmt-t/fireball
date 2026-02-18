@@ -1,19 +1,19 @@
 # vMMIO コンポーネント設計書
 
 ## 1. コンセプト
-vMMIO (Virtual Memory-Mapped I/O) は、WASMゲストとホスト間の**すべてのデータ交換**を仲介する統一的なアクセス層である。物理レジスタ（GPIO等）、共有メモリ、システムコール用バッファなど、ホスト-ゲスト間境界を横切るアクセスはすべてvMMIO空間を経由する。WASMの仕様に基づき、**割り当て単位は1ページ（64KB）**とし、各デバイス領域は64KB境界に配置される。 `{RestrictedPhysicalAccess}` `{vMMIO_TrapAndEmulate}` `{PhysicalPassthrough}` `{WasmPageAlignment}`
+vMMIO (Virtual Memory-Mapped I/O) は、WASMゲストとホスト間の**すべてのデータ交換**を仲介する統一的なアクセス層である。物理レジスタ（GPIO等）、共有メモリ、システムコール用バッファなど、ホスト-ゲスト間境界を横切るアクセスはすべてvMMIO空間を経由する。WASMの仕様に基づき、**割り当て単位は1ページ（64KB）**とし、各デバイス領域は64KB境界に配置される。 `{RestrictedPhysicalAccess}` `{vMMIO_TrapAndEmulate}` `{PhysicalPassthrough}` `{WasmPageAlignment}` `{DynamicMmap}` `{UnifiedAccessModel}`
 
-セキュリティモデルは**許可テーブル（permission table）が唯一のゲート**である。ゲストのアクセスは許可テーブルで検証され、許可されたアドレスへは直接物理アクセスが行われる。許可されていないアドレスへのアクセスは拒否（トラップ）される。IPC経由のデータ交換は行わない — GPIOのようなsub-µs応答が必要な周辺機器はIPCレイテンシに耐えられないため、このダイレクトアクセスモデルが採用されている。
+セキュリティモデルは**許可テーブル（permission table）が唯一のゲート**である。ゲストのアクセスは許可テーブルで検証され、許可されたアドレスへは直接物理アクセスが行われる。許可されていないアドレスへのアクセスは拒否（トラップ）される。IPC経由のデータ交換は行わない — GPIOのようなsub-µs応答が必要な周辺機器はIPCレイテンシに耐えられないため、このダイレクトアクセスモデルが採用されている。 `{Fast_Path_GPIO}`
 
-## 2. アーキテクチャ分類 (Tier 3: Implementation Domain)
+## 2. アーキテクチャ分類
 本コンポーネントは **Tier 3 (実装ドメイン)** に属する。仮想的なレジスタアクセスとDMA転送に特化した単一責務のモジュールとして設計する。 `{3TierSeparation}`
 
 ## 3. 静的モデル
 
-### 3.1 データ構造 (Natural OO)
-- **`VmmioController` (Class)**: 仮想アドレスのデコード、ハンドラへのディスパッチ、および動的マッピングを管理する主要クラス。
-- **`vmmio_config` (View)**: 静的な領域定義 (`vmmio_static_region`) の不変なテーブル。 `{Static_Resolution}`
-- **`vmmio_dynamic_region` (Internal)**: 実行時に追加された動的マッピング情報のリスト（プライベートメンバ）。初期化時に予約された静的領域もここで管理される。
+### 3.1 データ構造
+- **`VmmioController`**: 仮想アドレスのデコード、ハンドラへのディスパッチ、および動的マッピングを管理する主要クラス。
+- **`vmmio_config`**: 静的な領域定義 (`vmmio_static_region`) の不変なテーブル。 `{Static_Resolution}`
+- **`vmmio_dynamic_region`**: 実行時に追加された動的マッピング情報のリスト（プライベートメンバ）。初期化時に予約された静的領域もここで管理される。
 
 ### 3.2 内部ブロック図
 ```mermaid
@@ -102,7 +102,7 @@ PASSTHROUGH領域のアドレス変換: `物理アドレス = passthrough_base +
 | `0x08` | `REG_VDMA_COUNT` | R/W | 転送バイト数 |
 | `0x0C` | `REG_VDMA_CTRL` | W | 制御（Bit0: START） |
 
-### 4.5 静的共有メモリマッピング (Static Shared Memory Mapping)
+### 4.5 静的共有メモリマッピング
 ゲストとホスト（または他のノード）間のデータ共有は、vMMIO空間に固定的にマッピングされた共有メモリ領域を通じて行われる。 `{Static_Resolution}`
 
 - **構成**: `vsoc_config` の `shm_base` および `shm_size` によって定義される。
@@ -123,7 +123,7 @@ graph LR
 3. **Access**: ゲストはハンドルをオフセットとして加算し、該当データを直接操作する。
 4. **Release**: 使用完了後、ハンドルを破棄（または返却）する。明示的なアンマップ操作は不要。
 
-### 4.6 仮想割り込みマッピング (Virtual Interrupt Mapping)
+### 4.6 仮想割り込みマッピング
 物理割り込みから仮想割り込みIDへのマッピングは**静的1:1**とし、別コンフィグ（`irq_mapping_config`）で定義される。 `{ConfigurableSystem}`
 
 - **マッピング方式**: 物理IRQ 1: 仮想IRQ 1。集約しない。
@@ -133,7 +133,7 @@ graph LR
 
 @see `fireball_syscall_interface.md` §8.1
 
-### 4.7 静的予約 (Static Reservation)
+### 4.7 静的予約
 `DYNAMIC` 領域の一部を、システムの初期化時に特定のデバイス用として永続的に予約する。これにより、実行時の動的確保のオーバーヘッドを排除する。 `{Static_Resolution}`
 予約された領域は、ゲストからは通常の `DYNAMIC` 領域の一部として見えるが、vSoC内部では固定されたマッピングとして扱われる。
 
@@ -184,7 +184,7 @@ graph LR
 - **目標**: マップ管理用のメモリを最小化する。
 - **方策**: `{ConfigurableSystem}` 最大登録数をコンパイル時に固定し、静的配列として確保する。
 
-## 7. 設計完了チェックリスト（網羅性確認）
+## 7. 設計完了チェックリスト
 - [x] Tier 3 (Implementation Domain) に基づき設計となっているか
 - [x] vMMIOの責務が明確に定義されているか
 - [x] コンポーネントの責務が明確に定義されているか

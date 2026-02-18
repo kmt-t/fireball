@@ -1,16 +1,16 @@
 # デバッガ コンポーネント設計書
 
 ## 1. コンセプト
-デバッガは、VSCode等の外部ツールからのデバッグを可能にするため、GDB Remote Serial Protocol (RSP) に基づく実行制御を行う。標準環境として VSCode, UART, J-Link をサポートする。RSPパケットの解析はHAL層で行われ、デバッガはHALから供給されるコマンドキューを消費して実行状態を制御する。リソース制約に対応するため、デバッグ中はJITを無効化し、インタープリタ実行にフォールバックする設計を採用する。 `{RSPMinimalSet}` `{DebuggerLabelTableSwitch}` `{MemoryIsolation}` `{Debug_Standard_Env}`
+デバッガは、VSCode等の外部ツールからのデバッグを可能にするため、GDB Remote Serial Protocol (RSP) に基づく実行制御を行う。標準環境として VSCode, UART, J-Link をサポートする。RSPパケットの解析はHAL層で行われ、デバッガはHALから供給されるコマンドキューを消費して実行状態を制御する。リソース制約に対応するため、デバッグ中はJITを無効化し、インタープリタ実行にフォールバックする設計を採用する。 `{RSPMinimalSet}` `{DebuggerLabelTableSwitch}` `{MemoryIsolation}` `{Debug_Standard_Env}` `{RSP_Transport_Selectable}` `{Debug_Integrated}`
 
-## 2. アーキテクチャ分類 (Tier 3: Implementation Domain)
+## 2. アーキテクチャ分類
 本コンポーネントは **Tier 3 (実装ドメイン)** に属する。GDB RSPコマンドの実行制御に特化した単一責務のモジュールとして設計する。 `{3TierSeparation}`
 
 ## 3. 静的モデル
 
-### 3.1 データ構造 (Natural OO)
-- **`Debugger` (Class)**: GDB RSPプロプライエタリな制御ロジック、デバッグ状態、およびブレークポイント管理をカプセル化した主要クラス。
-- **`debug_config` (View)**: 最大ブレークポイント数やポート番号などの不変の設定。
+### 3.1 データ構造
+- **`Debugger`**: GDB RSPプロプライエタリな制御ロジック、デバッグ状態、およびブレークポイント管理をカプセル化した主要クラス。
+- **`debug_config`**: 最大ブレークポイント数やポート番号などの不変の設定。
 
 ### 3.2 内部ブロック図
 ```mermaid
@@ -43,7 +43,7 @@ graph TD
 | ブレークポイントリスト | 設定されているブレークポイントのアドレス一覧。 | 固定長配列 | `{NoStdVector}` |
 | `last_stop_reason` | 直近の停止要因。 | ID値 | 信号番号等 |
 
-#### `virtual_register_set` (仮想レジスタセット)
+#### `virtual_register_set`
 GDB等の外部クライアントに提示する仮想的なCPUレジスタ群。 `{RSPMinimalSet}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
@@ -138,7 +138,7 @@ sequenceDiagram
 - **目標**: デバッガによる不正なメモリアクセスを防止する。
 - **方策**: `{MemoryBoundaryCheck}` デバッグコマンドによるメモリアクセスに対し、WASMリニアメモリの境界チェックを強制する。
 
-## 7. 設計完了チェックリスト（網羅性確認）
+## 7. 設計完了チェックリスト
 - [x] Tier 3 (Implementation Domain) に基づき設計となっているか
 - [x] デバッガの責務が明確に定義されているか
 - [x] コンポーネントの責務が明確に定義されているか

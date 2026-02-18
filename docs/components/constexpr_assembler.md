@@ -1,10 +1,10 @@
 # コンポーネント設計：constexpr Assembler
 
 ## 1. コンセプト
-constexpr Assembler は、C++のコンパイル時計算（`constexpr`）機能を活用し、ターゲットアーキテクチャの命令バイナリを型安全かつ効率的に生成するための DSL (Domain Specific Language) である。手動でのビット演算による命令生成を排除し、ビルド時に命令テンプレートを確定させることで、実行時のJITオーバーヘッドを「ゼロ」に近づけるとともに、不正なレジスタ指定や即値溢れをコンパイル時に検知する。 `{JIT_Encoder}` `{Static_Resolution}`
+constexpr Assembler は、C++のコンパイル時計算（`constexpr`）機能を活用し、ターゲットアーキテクチャの命令バイナリを型安全かつ効率的に生成するための DSL (Domain Specific Language) である。手動でのビット演算による命令生成を排除し、ビルド時に命令テンプレートを確定させることで、実行時のJITオーバーヘッドを「ゼロ」に近づけるとともに、不正なレジスタ指定や即値溢れをコンパイル時に検知する。 `{JIT_Encoder}` `{Static_Resolution}` `{CompileTimeValidation}` `{PositionIndependentCode}`
 
-## 2. アーキテクチャ分類 (Tier 3: Implementation Domain)
-本コンポーネントは **Tier 3 (実装ドメイン)** に属する。C++のコンパイル時機能に依存したスタティックなライブラリとして機能し、実行時のオーバーヘッドを持たない。 `{3TierSeparation}` `{Static_Resolution}`
+## 2. アーキテクチャ分類
+本コンポーネントは **Tier 3 (実装ドメイン)** に属する。C++のコンパイル時機能に依存したスタティックなライブラリとして機能し、実行時のオーバーヘッドを持たない。 `{3TierSeparation}` `{Static_Resolution}` `{ZeroRuntimeOverhead}`
 
 ## 3. 静的モデル
 
@@ -23,7 +23,7 @@ graph TD
 
 ### 3.3 主要なクラス・構造体・配列・定数
 
-#### `riscv::i_type` (RISC-V I-type 形式)
+#### `riscv::i_type` (RISC-V I-type)
 即値演算やロード命令に使用される形式。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
@@ -34,7 +34,7 @@ graph TD
 | 基点レジスタ | 演算またはアドレス計算の基点となるソース | ビットフィールド | 5bit |
 | 組込即値 | 12ビットの符号付き即値データ | ビットフィールド | 12bit |
 
-#### `arm::add_imm` (ARMv8M Thumb-2 算術即値形式)
+#### `arm::add_imm` (ARMv8M Thumb-2 Arithmetic Immediate)
 `ADD`, `SUB` などの即値演算（32ビット命令）で使用される形式。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
@@ -45,7 +45,7 @@ graph TD
 | 合成即値 | 複数のフィールドを組み合わせて作成される数値データ | ビットフィールド | 12bit |
 | 更新フラグ | 条件フラグ（APSR）を更新するかどうかを指定 | ブール値 | 1bit |
 
-#### `x64::mov_ri` (x64 MOV 形式)
+#### `x64::mov_ri` (x64 MOV)
 レジスタへの即値代入命令。x64では32ビット即値を直接埋め込めるため、RISC-V/ARMのようなリテラルプール（PC相対ロード）を介さずに定数をパッチ可能。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |

@@ -1,10 +1,10 @@
 # HAL コンポーネント設計書
 
 ## 1. コンセプト
-HAL (Hardware Abstraction Layer) は、ハードウェアへのアクセスを抽象化し、vSoCやサービスに対して統一されたインターフェイスを提供する。また、デバッグ用のGDB Remote Serial Protocol (RSP) のパケット解析（RSP Parser）を担い、解析済みコマンドをデバッガへ供給する。すべてのアクセスはIPCルータを経由し、割り込みはフラグ通知とタスクウェイクアップによって安全に処理される。 `{IPCRouter}` `{Challenge_InterruptSafety}` `{TaskPollInterruptFlag}` `{RSPMinimalSet}`
+HAL (Hardware Abstraction Layer) は、ハードウェアへのアクセスを抽象化し、vSoCやサービスに対して統一されたインターフェイスを提供する。また、デバッグ用のGDB Remote Serial Protocol (RSP) のパケット解析（RSP Parser）を担い、解析済みコマンドをデバッガへ供給する。すべてのアクセスはIPCルータを経由し、割り込みはフラグ通知とタスクウェイクアップによって安全に処理される。 `{IPCRouter}` `{Challenge_InterruptSafety}` `{TaskPollInterruptFlag}` `{RSPMinimalSet}` `{Fast_Path_GPIO}`
 
-## 2. アーキテクチャ分類 (Tier 1: Architecture Domain)
-本コンポーネントは **Tier 1 (アーキテクチャドメイン)** に属する。ハードウェアとハイパーバイザの境界を定義し、IoC (Inversion of Control) および URIベースのDIを用いて、上位層に対して透過的なリソースアクセスを提供する。 `{3TierSeparation}` `{IPCRouter}` `{URIAbstraction}`
+## 2. アーキテクチャ分類
+本コンポーネントは **Tier 1 (アーキテクチャドメイン)** に属する。ハードウェアとハイパーバイザの境界を定義し、IoC (Inversion of Control) および URIベースのDIを用いて、上位層に対して透過的なリソースアクセスを提供する。 `{3TierSeparation}` `{IPCRouter}` `{URIAbstraction}` `{StaticDI}`
 
 ## 3. 静的モデル
 
@@ -53,7 +53,7 @@ HAL全体の制限値を定義する。 `{ConfigurableSystem}`
 ### 4.1 アルゴリズム
 - **コマンドルーティング**: IPCで受信したコマンド（read/write等）を、デバイスIDに基づいて適切なドライバへ振り分ける。
 - **RSPパケット解析**: UARTまたはRTTから受信したRSPパケットを解析し、`debug_command` 構造体へ変換してコマンドキューへ投入する。 `{RSP_Transport_Selectable}`
-- **割り込み通知**: 物理割り込み発生時、ISR内でフラグをセットし、COOSスケジューラに対して関連タスクのウェイクアップを要求する。 `{TaskPollInterruptFlag}`
+- **割り込み通知**: 物理割り込み発生時、ISR内でフラグをセットし、COOSスケジューラに対して関連タスクのウェイクアップを要求する。 `{TaskPollInterruptFlag}` `{InterruptWakeup}`
 
 ### 4.2 状態遷移図
 ```mermaid
@@ -77,6 +77,7 @@ sequenceDiagram
     
     Host->>UART: Send "$g#67"
     UART->>RSP: Raw Data
+    RSP->>RSP: Verify Checksum
     RSP->>RSP: Verify Checksum
     RSP->>Q: Push(READ_REG)
     Note over Q: Debugger will Pop and execute

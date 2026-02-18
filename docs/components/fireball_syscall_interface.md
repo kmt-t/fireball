@@ -1,9 +1,9 @@
 # Fireball System Call Interface Specification
 
-## 1. 目的 (Purpose)
-本ドキュメントは、WebAssemblyゲスト環境からホストの提供するサービスを呼び出すための汎用システムコール `fireball_call` のインターフェイス仕様を定義する。特に、WASI (WebAssembly System Interface) 呼び出しを `fireball_call` にマッピングするための規約、および関連するShimライブラリとWASIホスト側実装の役割に焦点を当てる。
+## 1. 目的
+本ドキュメントは、WebAssemblyゲスト環境からホストの提供するサービスを呼び出すための汎用システムコール `fireball_call` のインターフェイス仕様を定義する。特に、WASI (WebAssembly System Interface) 呼び出しを `fireball_call` にマッピングするための規約、および関連するShimライブラリとWASIホスト側実装の役割に焦点を当てる。 `{NativeAPI_Export}`
 
-## 2. 背景 (Background)
+## 2. 背景
 `fireball_call` は、vMMIO機能全体の**代理実行ラッパー**である。直接vMMIOアドレスにアクセスできないゲスト言語のために、シングル・トラップ命令経由でホストがvMMIO操作を代行する。
 
 ```
@@ -13,7 +13,7 @@
 
 どちらのパスも最終的にvMMIO許可テーブルを通る。セキュリティゲートは1箇所。 `{UnifiedAccessModel}`
 
-## 3. `fireball_call` WIT定義 (WIT Definition)
+## 3. `fireball_call` WIT定義
 `fireball_call`のWIT (WebAssembly Interface Type) 定義は以下の通りである。
 
 ```wit
@@ -30,9 +30,9 @@ world fireball {
 }
 ```
 
-## 4. `fireball_call` 呼び出し規約 (Calling Convention)
+## 4. `fireball_call` 呼び出し規約
 
-### 4.1. 引数のパッキング (Argument Packing)
+### 4.1. 引数のパッキング
 `fireball_call`は `id` と5つの汎用 `u32` 引数、**合計6つの `u32` 引数**を持つ。WASI関数がこれらの引数よりも多くのパラメータを持つ場合、ゲストメモリ内の構造体へのポインタを `u32` 引数として渡す。
 
 | 引数名 | 型   | 説明                                            |
@@ -45,10 +45,10 @@ world fireball {
 | `arg4` | `u32` | 汎用引数4、またはゲストメモリ内の構造体/バッファへのポインタ |
 | `arg5` | `u32` | 汎用引数5、またはゲストメモリ内の構造体/バッファへのポインタ |
 
-### 4.2. 戻り値 (Return Value)
+### 4.2. 戻り値
 `fireball_call`は `u32` 型の値を返す。これは通常、0が成功を示し、非0の値はWASIの`errno`に準拠したエラーコードを示す。
 
-## 5. システムコールID (System Call IDs)
+## 5. システムコールID
 システムコールIDは、`fireball_call`が実行する特定の操作を識別し、vMMIOの全機能をカバーする。カテゴリ別に管理される。
 
 ### 5.1. カテゴリ一覧
@@ -72,7 +72,7 @@ world fireball {
 | `0x03` | `SYS_RESET` | — | `0` | ゲストリセット |
 
 ### 5.3. vMMIO Generic (`0x10`-`0x1F`)
-vMMIOアドレス空間全体への汎用アクセス。SYSCTL/IPCR/VDMA/SHM/DYNAMIC/PASSTHROUGHすべての領域に対応。許可テーブルでアクセス制御される。
+vMMIOアドレス空間全体への汎用アクセス。SYSCTL/IPCR/VDMA/SHM/DYNAMIC/PASSTHROUGHすべての領域に対応。許可テーブルでアクセス制御される。 `{RoleBasedAccessControl}`
 
 | ID | 名前 | 引数 | 戻り値 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
@@ -162,10 +162,10 @@ enum class fb_syscall_id : uint32_t {
 
 ## 6. Fireball Shim (`libfireball_shim`)
 
-### 6.1. 役割 (Role)
+### 6.1. 役割
 ゲストのWASI互換ライブラリ（`wasi-libc`など）からの呼び出しを傍受し、`fireball_call`呼び出し規約に従ってホストの`fireball_call`へ変換する。
 
-### 6.2. 高応答 Trigger のマッピング例 (Example: Fast-Path Trigger Mapping)
+### 6.2. 高応答 Trigger のマッピング例
 `interface trigger` の `set_pin` は、最小レイテンシを確保するために `fireball_call` を直接使用する。
 
 `fireball_call` へのマッピング:
@@ -187,12 +187,12 @@ void fireball_trigger_set_pin(uint32_t pin, bool value) {
 > [!IMPORTANT]
 > WASI 0.2 標準のリソース（`output-stream` 等）は、対応する WIT インターフェイスの実装関数を通じて呼び出される。`fireball_call`はvMMIO機能全体の代理実行ラッパーであり、GPIOのような物理アクセスもMMIO Generic経由で行える。
 
-## 7. WASIホスト側実装 (WASI Host-Side Implementation)
+## 7. WASIホスト側実装
 
-### 7.1. 役割 (Role)
+### 7.1. 役割
 `fireball_call` を捕捉し、`id` に基づいて適切なハンドラにディスパッチする。WASI関連の呼び出しに対しては、対応するサービスや下位レイヤーのハードウェアHAL（Zephyr/SoC SDKなど）の操作を実行する。
 
-### 7.2. WASI `fd_write` の処理例 (Example: WASI `fd_write` Handling)
+### 7.2. WASI `fd_write` の処理例
 ホスト側では、`fireball_call`のハンドラが以下のように動作する。
 
 1.  `id` が `FB_SYSCALL_WASI_FD_WRITE` であることを確認。
@@ -202,14 +202,14 @@ void fireball_trigger_set_pin(uint32_t pin, bool value) {
 5.  ホストOSの`writev`または同等の関数を呼び出し、実際の書き込みを行う。
 6.  書き込み結果（バイト数またはエラーコード）を `nwritten_ptr` が指すゲストメモリに書き込み、`fireball_call`の戻り値としてエラーコードを返す。
 
-## 8. ホストからゲストへの非同期通知メカニズム (Host-to-Guest Asynchronous Notification Mechanism)
+## 8. ホストからゲストへの非同期通知メカニズム
 
-ホスト側で非同期に発生したイベント（例: ハードウェア割り込みの完了、タイマーイベント、非同期I/Oの完了など）をゲストに通知するために、`fireball_call`とは独立したメカニズムを定義する。
+ホスト側で非同期に発生したイベント（例: ハードウェア割り込みの完了、タイマーイベント、非同期I/Oの完了など）をゲストに通知するために、`fireball_call`とは独立したメカニズムを定義する。 `{Asynchronous_Notification}`
 
-### 8.1. 仮想割り込み (Virtual Interrupts)
+### 8.1. 仮想割り込み
 ホストは、ゲストに対して**仮想割り込み**をトリガーすることで、イベントの発生を通知する。これはvSoCの`notify_virtual_interrupt`機能を利用する。
 
-#### 8.1.1. 仮想割り込みID (Virtual Interrupt IDs)
+#### 8.1.1. 仮想割り込みID
 これらのIDは、WASI 0.2 の `pollable` リソースをホスト側で ready 状態にするためのトリガーとして使用される。
 
 例:
@@ -223,28 +223,16 @@ enum class FBVirtualInterruptId : uint32_t {
 };
 ```
 
-#### 8.1.2. 仮想割り込みペイロード (Virtual Interrupt Payload)
-仮想割り込みに関する詳細な情報（例えば、UARTから受信したデータ、タイマーID、非同期操作の結果コードなど）は、vMMIOレジスタや共有メモリ上の事前に定義された領域を介してゲストに伝達される。ゲストは割り込みハンドラ内でこれらの情報を読み取ることができる。
+#### 8.1.2. 仮想割り込みペイロード
+仮想割り込みに関する詳細な情報（例えば、UARTから受信したデータ、タイマーID、非同期操作の結果コードなど）は、vMMIOレジスタや共有メモリ上の事前に定義された領域を介してゲストに伝達される。ゲストは割り込みハンドラ内でこれらの情報を読み取り、適切な非同期イベント処理を行う。
 
-### 8.2. ゲスト側での処理 (Guest-Side Handling)
-ゲストは、ホストからの仮想割り込みを受信した際に、対応する割り込みハンドラを実行する。このハンドラ内で、仮想割り込みIDを解析し、vMMIOレジスタや共有メモリからペイロードを読み取り、適切な非同期イベント処理を行う。
-
-### 8.3. 非同期I/Oの完了通知 (Asynchronous I/O Completion)
-`fireball_call`で開始された非同期I/O操作（例: 非ブロッキング`fd_read`）の完了は、仮想割り込みを介してゲストに通知される。通知には、完了した操作のID、結果ステータス、読み書きされたデータ長などの情報が含まれる。
-
-## 9. メモリ安全性 (Memory Safety)
+## 9. メモリ安全性
 `fireball_call`を介してゲストメモリへのポインタが渡される場合、統一vMMIOモデルの許可テーブルがセキュリティゲートとして機能する。別途の `vsoc_validate_ptr` は不要。 `{Challenge_SyscallMemorySafety}`
 
-## 10. トラップ状態プロトコル (Trap State Protocol)
+## 10. トラップ状態プロトコル
 `fireball_call` はWASMの**インポート関数呼び出し**として実行される。そのため、明示的な状態保存/復元は不要。
 
 - **保存**: WASMの呼び出し規約がスタック/ローカル変数を自動保存
 - **復元**: WASMの `return` で自動復元
 - **PC位置**: トラップ中のPCは `fireball_call` 命令内。戻り値取得後、次の命令に進む。
 - **ホスト側**: WASMの実行状態に一切触れない。`REG_SYSCALL_*` レジスタだけが引数/戻り値の受け渡しに使われる。
-
-## 11. 考慮事項 (Considerations)
-*   **同期/非同期操作の混在**: `fireball_call` は同期操作の開始を、仮想割り込みは非同期操作の完了を担うことで、異なる種類の操作を適切に処理する。
-*   **イベントキューの導入**: 多数の非同期イベントが頻繁に発生する場合、仮想割り込みとvMMIOを組み合わせたイベントキューを導入し、ゲストが効率的にイベントを処理できるようにすることも検討する。
-*   **オーバーヘッド**: 非同期通知の頻度とペイロードのサイズがパフォーマンスに与える影響を評価し、必要に応じて最適化を行う。
-*   **拡張性**: 新しい非同期イベントを追加する際には、新しい仮想割り込みIDを定義し、ホストとゲストの両方のハンドラを更新する。

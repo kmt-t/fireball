@@ -1,21 +1,21 @@
 # COOS メモリマネージャ設計書
 
 ## 1. コンセプト
-メモリマネージャ（`memory-manager`）は、物理メモリプールを複数の論理パーティション（Kernel, Task, Shared等）に分割し、隔離と効率的なメモリ利用を提供する Tier 2 コンポーネントである。 `{3TierSeparation}` `{Policy_Memory}`
+メモリマネージャ（`memory-manager`）は、物理メモリプールを複数の論理パーティション（Kernel, Task, Shared等）に分割し、隔離と効率的なメモリ利用を提供する Tier 2 コンポーネントである。 `{3TierSeparation}` `{Policy_Memory}` `{ConsolidatedHeap}`
 
-## 2. アーキテクチャ分類 (Tier 2: Service Domain)
-本コンポーネントは **Tier 2 (サービスドメイン)** に属する。動的メモリ確保を最小限に抑えつつ、固定サイズパーティション内でのアロケーションを管理する。
+## 2. アーキテクチャ分類
+本コンポーネントは **Tier 2 (サービスドメイン)** に属する。動的メモリ確保を最小限に抑えつつ、固定サイズパーティション内でのアロケーションを管理する。 `{WasmPageAlignment}`
 
 ## 3. 静的モデル
 
 ### 3.1 データ構造
-- **`MemoryManager` (Class)**: パーティション管理とアロケーションロジックをカプセル化。
-- **`partition_info` (View)**: パーティションの境界と使用状況の可視化。
+- **`MemoryManager`**: パーティション管理とアロケーションロジックをカプセル化。
+- **`partition_info`**: パーティションの境界と使用状況の可視化。
 
 ### 3.2 依存関係 (Zero-cost DI)
 - `initialize` メソッドにより、管理対象の物理メモリプールの基点アドレスとサイズを受け取る。
 
-## 4. インターフェイス設計 (Stateless Interface)
+## 4. インターフェイス設計
 
 #### `initialize`
 `initialize(pool-base: address, pool-size: byte-count) -> operation-result`
@@ -41,10 +41,10 @@ RAII所有権付きの `shared-memory` リソースを返す。
 
 ## 5. 制約と不変条件
 - `∀m ∈ Allocations : ¬dynamic(m) ∧ is_heap_less(m)`
-- `total_allocated_bytes <= FB_CONF_MEMORY_POOL_SIZE`
+- `total_allocated_bytes <= FB_CONF_MEMORY_POOL_SIZE` `{StrictMemoryLimit}`
 - `∀block ∈ allocated : block.owner != 0` (task-idと必ず紐付く)
 
-## 6. 所有権追跡 (Ownership Tracking)
+## 6. 所有権追跡
 各メモリブロックは `memory-info.owner` で割り当て元task-idを追跡する。 `{Policy_Memory}`
 
 - `allocate` / `allocate-shared` 時に呼び出し元タスクIDが自動設定
@@ -52,7 +52,7 @@ RAII所有権付きの `shared-memory` リソースを返す。
 - shared: `shared-memory` リソースのRAII / drop で自動解放
 
 ## 7. 共有メモリ (shared-memory) のライフサイクル
-`shared-memory` リソースが所有権の単位。IPC転送時に `release` → `claim` で所有権が移動する。 `{FaultIsolation}`
+`shared-memory` リソースが所有権の単位。IPC転送時に `release` → `claim` で所有権が移動する。 `{FaultIsolation}` `{OwnershipTransfer}`
 
 大きなデータを転送する場合、`shm-id` をkv-pairの `value` フィールドに `data-type = handle` で格納し、通常のIPCメッセージとして送信する。
 
@@ -95,4 +95,3 @@ RAII所有権付きの `shared-memory` リソースを返す。
 - `shared_memory.get_owner()` で所有権確認可能
 - vMMIO許可チェックはソート済み `shared_memory` リストでの二分検索で実現
 - 生ポインタを直接やり取りすることはない（すべて `shared_memory` リソース経由）
-

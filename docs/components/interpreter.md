@@ -3,15 +3,15 @@
 ## 1. コンセプト
 Interpreter は、WASM命令をスレッドインタープリタ方式で実行し、低レイテンシかつ小フットプリントでゲストを動作させる。Execution Engine (`executor`) の一部として設計され、JITと実行状態を完全に共有する。周辺コンポーネントへの参照は Environment Pointer (`vsoc_runtime* env`) を介して型安全に行う。 `{ThreadedInterpreter}` `{LowLatencyJIT}` `{InterpreterContextStackless}` `{EnvironmentPointer}`
 
-## 2. アーキテクチャ分類 (Tier 3: Implementation Domain)
+## 2. アーキテクチャ分類
 本コンポーネントは **Tier 3 (実装ドメイン)** に属する。デコンポジション（サブモジュール分割）を必要としない単一責務の実行エンジンとして、カプセル化（Natural OO）に基づき設計する。 `{3TierSeparation}`
 
 ## 3. 静的モデル
 
-### 3.1 データ構造 (Natural OO)
-- **`Interpreter` (Class)**: WASM命令の実行、コンテキスト管理、および外部環境（vSoC）との連携をカプセル化した主要クラス。
-- **`execution_context` (Context)**: 仮想CPUレジスタ、スタックポインタ等、JITと共用される可変な実行状態。
-- **`interpreter_config` (View)**: スタックサイズやyield閾値などの不変な構成情報。
+### 3.1 データ構造
+- **`Interpreter`**: WASM命令の実行、コンテキスト管理、および外部環境（vSoC）との連携をカプセル化した主要クラス。
+- **`execution_context`**: 仮想CPUレジスタ、スタックポインタ等、JITと共用される可変な実行状態。
+- **`interpreter_config`**: スタックサイズやyield閾値などの不変な構成情報。
 
 ### 3.2 内部ブロック図
 ```mermaid
@@ -50,7 +50,7 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 | スタックポインタ | オペランドスタックの現在の頂点を指すポインタ | アドレス値 | 32bit符号なし |
 | スタック基点 | オペランドスタックのメモリ領域の開始位置 | アドレス値 | 32bit符号なし |
 | リニアメモリ基点 | ゲストリニアメモリの開始アドレス | アドレス値 | 32bit符号なし (通常 0x0) |
-| リニアメモリサイズ | ゲストリニアメモリの有効サイズ。境界チェックに使用 | バイト数 | 32bit符号なし |
+| リニアメモリサイズ | ゲストリニアメモリの有効サイズ。境界チェックに使用 `{MemoryBoundaryCheck}` | バイト数 | 32bit符号なし |
 | 有効命令ハンドラ | 現在使用されているハンドラ（通常用/デバッグ用）への参照 | テーブルポインタ | `opcode_handler` の配列 |
 | フレームポインタ | 現在のコールフレームの頂点を指すポインタ | アドレス値 | 32bit符号なし |
 | 制御フレームポインタ | 現在の制御構造（loop/if等）を管理するスタックの頂点 | アドレス値 | 32bit符号なし |
@@ -78,7 +78,7 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 | 結果アリティ | このブロックが戻す値の数（スタック Pruning に使用） | 整数 | 8bit/16bit |
 | ループフラグ | 現在の構造が `loop` かどうかを示す | ブール値 | - |
 
-#### `interpreter_config` (インタープリタ構成)
+#### `interpreter_config`
 インタープリタの動作パラメータを定義する。 `{ConfigurableSystem}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
@@ -87,7 +87,7 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 | 制御スタック容量 | 制御フレームの最大ネスト可能数 | エントリ数 | 32bit符号なし |
 | Yield 閾値 | 次の yield までに実行を許可する命令（トレース）数 | 回数 | 32bit符号なし |
 
-#### `opcode_handler` / `exec_trace` (実行エントリ)
+#### `opcode_handler` / `exec_trace`
 命令ハンドラおよびJITトレースの共通実行シグネチャ。 `{JIT_RuntimeAPI_Fallback}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
@@ -170,7 +170,7 @@ sequenceDiagram
 | 機能概要 | WASM命令を1トレース分実行し、実行コンテキストを更新する。 |
 | シグネチャ | `run_step(ctx: 可変参照) -> 結果型` |
 | 引数 | `ctx`: 実行コンテキスト (`execution_context`) への可変参照 |
-| 戻り値 | 結果型 (正常終了時は空、トラップ発生時はトラップ要因) |
+| 戻り値 | 結果型 (正常終了時は空、トラップ発生時はトラップ要因 `{RecoveryStrategy}`) |
 | 補足 | 必要に応じて内部的に JIT コードへのジャンプを行い、JIT/Interpreter を透過的に切り替える。 |
 
 #### `sync_interrupts`
@@ -210,10 +210,10 @@ sequenceDiagram
 - **方策**: `execution_context` と `call_frame` を最小化し、スタック領域を固定サイズ化する。
 
 ### 6.3 安全性制約と方策
-- **目標**: ゲストの暴走を隔離。
-- **方策**: `sp_boundary` と `memory_size` による境界チェック、`interrupt_flags` による安全な割り込み処理。
+- **目標**: ゲストの暴走を隔離。 `{FaultIsolation}`
+- **方策**: `sp_boundary` と `memory_size` による境界チェック `{MemoryBoundaryCheck}`、`interrupt_flags` による安全な割り込み処理。
 
-## 7. 設計完了チェックリスト（網羅性確認）
+## 7. 設計完了チェックリスト
 - [x] Tier 3 (Implementation Domain) に基づき設計となっているか
 - [x] インタープリタの責務が明確に定義されているか
 - [x] コンポーネントの責務が明確に定義されているか

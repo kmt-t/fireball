@@ -1,19 +1,19 @@
 # 協調型OS COOS コンポーネント設計書
 
 ## 1. コンセプト
-COOSは、シングルスレッド環境向けのホーアCSPベースのグリーンスレッドOSである。C++20コルーチンを活用し、スタックレスで低オーバーヘッドなタスク切り替えを実現する。 `{CooperativeMultitasking}` `{UseCpp20Coroutine}` `{CSPCommunication}`
+COOSは、シングルスレッド環境向けのホーアCSPベースのグリーンスレッドOSである。C++20コルーチンを活用し、スタックレスで低オーバーヘッドなタスク切り替えを実現する。また、リアルタイム性よりも移植性と決定論的動作を重視する。 `{CooperativeMultitasking}` `{UseCpp20Coroutine}` `{CSPCommunication}` `{PeriodicTask}` `{IdleDetection}` `{InterruptWakeup}` `{NotRTOS}`
 
-## 2. アーキテクチャ分類 (Tier 2: Subsystem Domain)
+## 2. アーキテクチャ分類
 本コンポーネントは **Tier 2 (サブシステムドメイン)** に属し、Stateless Interface と Harness パターンを用いて構造化される。 `{3TierSeparation}` `{ComponentHarness}`
 
 ### 2.1 構成要素
-- **[`co_sched` (Scheduler)](scheduler.md)**: タスクのライフサイクルと実行順序の管理。
-- **`co_csp` (Communication Engine)**: チャネルベースの同期と所有権移譲。
-- **`co_mem` (Memory Manager)**: タスク独立ヒープの管理（メモリパーティション）。
+- **[`co_sched`](scheduler.md)**: スケジューラ。タスクのライフサイクルと実行順序の管理。
+- **`co_csp`**: 通信エンジン。チャネルベースの同期と所有権移譲。
+- **`co_mem`**: メモリマネージャ。タスク独立ヒープの管理（メモリパーティション）。
 
 ## 3. 静的モデル
 
-### 3.1 データ構造 (Data / Context)
+### 3.1 データ構造
 - **`channel`**: 1エントリのバッファを持つ同期オブジェクト。
 - **`co_value`**: 独自の所有権管理構造体。ヒープを使用せず、静的バッファまたはスタック上で動作することを基本とする。 `{Policy_Memory}`
 - **`coos_context`**: スケジューラ、CSP状態、メモリ情報を集約したグローバルコンテキスト。
@@ -52,7 +52,7 @@ graph TD
 ### 4.2 状態遷移
 スケジューラの状態遷移については **[scheduler.md](scheduler.md#32-状態遷移図)** を参照。
 
-## 5. インターフェイス設計 (Stateless Interface)
+## 5. インターフェイス設計
 各コンポーネントの公開仕様を定義する。 `{StaticDI}`
 
 ### 5.1 `coos_harness` (システムハーネス)
@@ -65,13 +65,13 @@ graph TD
 | メモリ管理 | タスク固有のメモリ領域を管理するコンポーネントへの参照 | 構造体への参照 | `co_mem` |
 
 ### 5.2 サブコンポーネント・インターフェイス
-| 型名 (Interface) | 機能概要 | 主要な操作 |
+| 型名 | 機能概要 | 主要な操作 |
 | :--- | :--- | :--- |
 | `scheduler` | タスクのライフサイクル管理。 | spawn, yield, wait, exit |
 | `csp` | タスク間通信機能へのメッセージ交換。 | send, receive |
 | `memory` | タスク独立メモリの確保と解放。 | allocate, free |
 
-## 6. 検証 (Verification)
+## 6. 検証
 
 ### 6.1 直交表: CSP通信と状態遷移
 チャネル通信時のタスク状態とスケジューラの挙動を検証する。
@@ -87,7 +87,7 @@ graph TD
 | 7 | NOTIFY_INT | - | BLOCKED/READY | (継続) | **INTERRUPTEDへ遷移** |
 
 ## 7. 設計完了チェックリスト
-- [x] Tier 2 (Subsystem Domain) に基づく設計となっているか
+- [x] Tier 2 (Subsystem Domain) に基づき設計となっているか
 - [x] Harness と Stateless Interface パターンが適用されているか
 - [x] **構造化データ（インターフェイス、ハーネス等）が表形式で記述されているか**
 - [x] 命名規則（プリフィックス/ポストフィックスなし、PODメンバの末尾アンダースコアなし）が遵守されているか

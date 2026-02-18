@@ -3,15 +3,15 @@
 ## 1. コンセプト
 vSoC (Virtual System-on-Chip) は、WASM実行環境の統合マネージャであり、Loader、Interpreter、JIT、vMMIO、Debugger を統括して実行制御を行う。各サブコンポーネントを統合する「環境」としての役割を持ち、`vsoc_runtime` を `execution_context` から参照される Environment として提供する。 `{LowLatencyJIT}` `{MemoryIsolation}` `{FaultIsolation}` `{EnvironmentPointer}`
 
-## 2. アーキテクチャ分類 (Tier 2: Subsystem Domain)
+## 2. アーキテクチャ分類
 本コンポーネントは **Tier 2 (サブシステムドメイン)** に属し、Stateless Interface と Harness パターンを用いて構造化される。 `{3TierSeparation}` `{ComponentHarness}`
 
 ## 3. 静的モデル
 
-### 3.1 データ構造 (Harness / Context / View)
-- **`vsoc_harness` (Harness)**: vSoCが依存する各種エンジン（Loader, Interpreter, JIT等）のインターフェイスを集約した構造体。 `{StaticDI}`
-- **`vsoc_context` (Context)**: 現在の実行状態、仮想割り込み、JITキャッシュの管理状態など、可変なランタイム状態。
-- **`vsoc_config` (View)**: メモリ割り当てやJIT有効化フラグなどの不変な構成情報。
+### 3.1 データ構造
+- **`vsoc_harness`**: vSoCが依存する各種エンジン（Loader, Interpreter, JIT等）のインターフェイスを集約した構造体。 `{StaticDI}`
+- **`vsoc_context`**: 現在の実行状態、仮想割り込み、JITキャッシュの管理状態など、可変なランタイム状態。
+- **`vsoc_config`**: メモリ割り当てやJIT有効化フラグなどの不変な構成情報。
 
 ### 3.2 内部ブロック図
 ```mermaid
@@ -41,7 +41,7 @@ graph TD
 
 ### 3.3 主要なクラス・構造体・配列・定数
 
-#### `vsoc_harness` (vSoCハーネス)
+#### `vsoc_harness`
 各エンジンへのインターフェイスを集約する。PODとして扱い、メンバに末尾アンダースコアは付与しない。
 
 | 項目名 | 機能と役割 | 備考（制約、型など） |
@@ -52,7 +52,7 @@ graph TD
 | デバッガ | RSPプロトコルを介したデバッグ機能を提供するコンポーネントへの参照。 | `Debugger*` |
 | vMMIO | 仮想的なメモリマップドI/Oを制御するコンポーネントへの参照。 | `VmmioController*` |
 
-#### `vsoc_context` (vSoCコンテキスト)
+#### `vsoc_context`
 可変な実行状態を保持する。
 
 | 項目名 | 機能と役割 | 備考（制約、型など） |
@@ -61,7 +61,7 @@ graph TD
 | モジュールビュー | ロード済みWASMモジュールの索引情報への参照。 | `wasm_module_view*` |
 | プログラムカウンタ | ゲストの現在のプログラム実行位置（WASMオフセット）。 | `uint32_t` |
 
-#### `vsoc_config` (vSoC構成)
+#### `vsoc_config`
 vSoCの動作パラメータを定義する。 `{ConfigurableSystem}`
 
 | 項目名 | 機能と役割 | 備考（制約、型など） |
@@ -170,7 +170,7 @@ sequenceDiagram
 | 事前条件 | 状態が Ready であること。 |
 | 事後条件 | PCやレジスタ状態が更新されていること。 |
 | 不変条件 | ゲストRAMの境界外へのアクセスが発生しないこと。 |
-| エラー時の挙動 | トラップ（例外）発生時は、トラップ要因を保持してエラーを返す。 |
+| エラー時の挙動 | トラップ（例外）発生時は、トラップ要因を保持してエラーを返す。 `{RecoveryStrategy}` |
 | 補足 | 内部的にはインタープリタとJITコードを透過的に切り替えて実行する。 |
 
 #### `notify_virtual_interrupt`
@@ -195,7 +195,7 @@ sequenceDiagram
 | 事後条件 | vMMIOレジストリにエントリが追加される。 |
 | 不変条件 | アドレスマップ定義自体は変更されない。 |
 | エラー時の挙動 | 無効なIDの場合はエラーを返す。 |
-| 補足 | デバイスドライバのエミュレーションを動的に差し替えるために使用される。 |
+| 補足 | デバイスドライバのエミュレーションを動的に差し替えるために使用される。 `{vMMIO_TrapAndEmulate}` |
 
 ### 5.2 Native API エクスポート (Single Trap 方式)
 WASMゲストからホストサービスを呼び出すための最小限のインターフェイスを提供する。 `{NativeAPI_Export}`
@@ -234,13 +234,13 @@ Fireballでは、ホスト側のコードサイズを極限まで削減するた
 ### 6.2 メモリ制約と方策
 - **目標**: 64KB RAM環境で動作させる。
 - **方策**: `{JIT_DoubleBuffer_Cache}` `{IndependentHeap}` ダブルバッファによる効率的なキャッシュ管理と、厳密なヒープ分離によりメモリ使用量を制御する。
-- **高速アドレス判定**: ゲストRAMを `0x0` から配置し、単一の比較命令でRAMアクセスを判定することで、インタープリタおよびJITのオーバーヘッドを最小化する。
+- **高速アドレス判定**: ゲストRAMを `0x0` から配置し、単一の比較命令でRAMアクセスを判定することで、インタープリタおよびJITのオーバーヘッドを最小化する。 `{WasmPageAlignment}`
 
 ### 6.3 安全性制約と方策
 - **目標**: ゲストアプリケーションの暴走を完全に隔離する。
 - **方策**: `{MemoryBoundaryCheck}` `{RestrictedPhysicalAccess}` JITコードへの境界チェック埋め込みと、vMMIOによる物理アクセスの制限を行う。
 
-## 7. 設計完了チェックリスト（網羅性確認）
+## 7. 設計完了チェックリスト
 - [x] コンポーネントの責務が明確に定義されているか
 - [x] 内部設計（データ構造、ブロック図、クラス、アルゴリズム）が適切に定義されているか
 - [x] 内部ブロック図（静的）とシーケンス/状態遷移図（動的）がセットで定義されているか

@@ -10,7 +10,7 @@
 
 ## 3. 共通データ構造 `{WIT_Common_Types}`
 
-### 3.1 基礎インターフェイス (wasi:io/poll 等の流用)
+### 3.1 基礎インターフェイス
 WASI 0.2 の標準パターンに従い、以下の基礎コンポーネントを想定する。
 
 - `pollable`: 非同期イベントの待機用リソース。
@@ -51,7 +51,7 @@ WASI標準には存在しない、Fireball固有の高速システムコール�
 ### `fireball:host/trap`
 - `fireball-call(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32, arg4: u32, arg5: u32) -> u32`
 
-### 4.2 高応答トラインターフェイス (Fast-Path Trigger) `{Fast_Path_GPIO}`
+### 4.2 高応答トラインターフェイス `{Fast_Path_GPIO}`
 Trigger (GPIO) は、割り込み応答性およびビットバンギング等の要求から、一般のリソースハンドルを介さず、`fireball-call` に直接マッピングされた ID を通じて操作することを検討する。
 
 - **理由**: ハンドルルックアップのオーバーヘッド排除、レジスタ直結に近いレイテンシの確保。
@@ -65,7 +65,7 @@ interface trigger {
 }
 ```
 
-## 5. HAL インターフェイス (WASI 準拠設計) `{HAL_Interface}`
+## 5. HAL インターフェイス `{HAL_Interface}`
 
 ### 5.1 `fireball:host/timer` (wasi:clocks 準拠)
 `wasi:clocks/monotonic-clock` のサブセットとして定義。

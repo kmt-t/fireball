@@ -31,4 +31,4 @@ fi
 # This ensures we use the correct environment and user
 echo "Running TLC on $TARGET_FILE in service $SERVICE_NAME..."
 
-docker compose -f "$COMPOSE_FILE" exec -u developer $SERVICE_NAME bash -c "cd /workspaces/fireball && tlc $TARGET_FILE"
+docker compose -f "$COMPOSE_FILE" exec -T -u developer -w //workspaces/fireball "$SERVICE_NAME" tlc "$TARGET_FILE"

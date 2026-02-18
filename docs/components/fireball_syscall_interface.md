@@ -14,7 +14,8 @@
 どちらのパスも最終的にvMMIO許可テーブルを通る。セキュリティゲートは1箇所。 `{UnifiedAccessModel}`
 
 ## 3. `fireball_call` WIT定義
-`fireball_call`のWIT (WebAssembly Interface Type) 定義は以下の通りである。
+`fireball_call`のWIT (WebAssembly Interface Type) 定義は以下の通りである。詳細は `docs/components/wit_interface_spec.md` を参照のこと。 `{WIT_Interface_Spec}`
+
 
 ```wit
 package fireball:host;
@@ -46,7 +47,7 @@ world fireball {
 | `arg5` | `u32` | 汎用引数5、またはゲストメモリ内の構造体/バッファへのポインタ |
 
 ### 4.2. 戻り値
-`fireball_call`は `u32` 型の値を返す。これは通常、0が成功を示し、非0の値はWASIの`errno`に準拠したエラーコードを示す。
+`fireball_call`は `u32` 型の値を返す。これは通常、0が成功を示し、非0の値はWASIの`errno`に準拠したエラーコードを示す。Shim層ではこのエラーコードがWITの `recovery-strategy` に変換される。 `{Syscall_Return_Value}` `{Errorcode_To_Strategy}`
 
 ## 5. システムコールID
 システムコールIDは、`fireball_call`が実行する特定の操作を識別し、vMMIOの全機能をカバーする。カテゴリ別に管理される。
@@ -67,9 +68,8 @@ world fireball {
 | ID | 名前 | 引数 | 戻り値 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
 | `0x00` | `RESERVED` | — | — | 予約済み |
-| `0x01` | `SYS_YIELD` | — | `0` | 協調的イールド要求 |
-| `0x02` | `SYS_HALT` | `exit_code` | — | 実行停止 |
 | `0x03` | `SYS_RESET` | — | `0` | ゲストリセット |
+| `0x01` | `SYS_YIELD` | — | `0` | 協調的イールド要求 `{CooperativeMultitasking}` |
 
 ### 5.3. vMMIO Generic (`0x10`-`0x1F`)
 vMMIOアドレス空間全体への汎用アクセス。SYSCTL/IPCR/VDMA/SHM/DYNAMIC/PASSTHROUGHすべての領域に対応。許可テーブルでアクセス制御される。 `{RoleBasedAccessControl}`
@@ -80,15 +80,15 @@ vMMIOアドレス空間全体への汎用アクセス。SYSCTL/IPCR/VDMA/SHM/DYN
 | `0x11` | `MMIO_WRITE32` | `addr`, `value` | `0` | 32bit書き込み |
 | `0x12` | `MMIO_READ8` | `addr` | `value` | 8bit読み出し |
 | `0x13` | `MMIO_WRITE8` | `addr`, `value` | `0` | 8bit書き込み |
-| `0x14` | `MMIO_BULK_READ` | `addr`, `dest_ptr`, `byte_count` | `0` | バルク読み出し |
-| `0x15` | `MMIO_BULK_WRITE` | `addr`, `src_ptr`, `byte_count` | `0` | バルク書き込み |
+| `0x14` | `MMIO_BULK_READ` | `addr`, `dest_ptr`, `byte_count` | `0` | バルク読み出し `{RestrictedPhysicalAccess}` |
+| `0x15` | `MMIO_BULK_WRITE` | `addr`, `src_ptr`, `byte_count` | `0` | バルク書き込み `{RestrictedPhysicalAccess}` |
 
 ### 5.4. VDMA (`0x20`-`0x2F`)
 仮想DMA操作のセマンティックラッパー。内部的にvMMIO VDMAレジスタへの書き込みに変換される。
 
 | ID | 名前 | 引数 | 戻り値 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
-| `0x20` | `VDMA_START` | `src`, `dst`, `byte_count` | `0` | DMA転送開始 |
+| `0x20` | `VDMA_START` | `src`, `dst`, `byte_count` | `0` | DMA転送開始 `{VDMA}` |
 
 ### 5.5. IRQ (`0x30`-`0x3F`)
 仮想割り込みフラグの管理。`REG_IRQ_FLAGS` のラッパー。
@@ -103,11 +103,11 @@ CSPチャネル経由のプロセス間通信。
 
 | ID | 名前 | 引数 | 戻り値 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
-| `0x40` | `IPC_SEND` | `channel_id`, `msg_ptr`, `msg_len` | `0` / errno | メッセージ送信 |
-| `0x41` | `IPC_RECV` | `channel_id`, `buf_ptr`, `buf_len` | `recv_len` / errno | メッセージ受信 |
+| `0x40` | `IPC_SEND` | `channel_id`, `msg_ptr`, `msg_len` | `0` / errno | メッセージ送信 `{CSPCommunication}` `{IPC_HandleBased}` |
+| `0x41` | `IPC_RECV` | `channel_id`, `buf_ptr`, `buf_len` | `recv_len` / errno | メッセージ受信 `{CSPCommunication}` `{IPC_HandleBased}` |
 
 ### 5.7. WASI (`0x80`-`0xBF`)
-WASI互換レイヤー。Shimライブラリが `wasi-libc` の呼び出しをこれらのIDに変換する。
+WASI互換レイヤー。Shimライブラリが `wasi-libc` の呼び出しをこれらのIDに変換する。詳細は `docs/components/wit_interface_spec.md` を参照のこと。 `{WASI_Implementation}`
 
 | ID | 名前 | 引数 | 戻り値 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
@@ -174,7 +174,7 @@ enum class fb_syscall_id : uint32_t {
 *   `arg1`: `value` (0 または 1)
 
 ```c
-// ゲスト側での trigger.set_pin の実装例 (Shim)
+// ゲスト側での trigger.set_pin の実装例 (Shim) `{Fast_Path_GPIO}`
 void fireball_trigger_set_pin(uint32_t pin, bool value) {
     __fireball_call(
         (uint32_t)FBSyscallId::FB_SYSCALL_TRIGGER_SET_PIN,
@@ -209,7 +209,7 @@ void fireball_trigger_set_pin(uint32_t pin, bool value) {
 ### 8.1. 仮想割り込み
 ホストは、ゲストに対して**仮想割り込み**をトリガーすることで、イベントの発生を通知する。これはvSoCの`notify_virtual_interrupt`機能を利用する。
 
-#### 8.1.1. 仮想割り込みID
+#### 8.1.1. 仮想割り込みID `{Asynchronous_Notification}`
 これらのIDは、WASI 0.2 の `pollable` リソースをホスト側で ready 状態にするためのトリガーとして使用される。
 
 例:

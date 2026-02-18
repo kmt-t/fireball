@@ -17,10 +17,14 @@ VSCodeのdevcontainer機能が不安定な場合や、外部からコンテナ�
 
 ## 1. 環境の起動
 
-プロジェクトルート（`n:\sources\fireball` または `/workspaces/fireball`）で実行:
+**Note for Windows Users**:
+Windows環境では、**Git Bash** (`C:\Program Files\Git\git-bash.exe` or `bin\bash.exe`) を使用して以下のコマンドを実行してください。PowerShellではパス変換の問題により動作しない場合があります。
+
+プロジェクトルートで実行:
 
 ```bash
 # コンテナをバックグラウンドで起動
+# -f オプションで .devcontainer 内のファイルを指定します
 docker compose -f .devcontainer/docker-compose.yml up -d
 
 # 状態確認
@@ -34,34 +38,71 @@ docker compose -f .devcontainer/docker-compose.yml ps
 `docker compose exec` を使用して、起動中のコンテナ内でコマンドを実行します。
 ユーザーは `developer` として実行されます。
 
-### TLA+ 検証 (TLC)
+### Explorer (Code Analysis)
+コードベースの探索や要約を行います。
 
 ```bash
-# ヘルパースクリプトを使用 (推奨)
-bash .agent/skills/docker_workaround/scripts/docker-run-tlc.sh tla/coos.tla
+# ヘルパースクリプト (推奨)
+bash .agent/skills/docker_workaround/scripts/docker-explorer.sh summary docs/references/webassembly/README.md
 
-# または直接実行
-docker compose -f .devcontainer/docker-compose.yml exec -u developer fireball-dev bash -c "cd /workspaces/fireball && tlc tla/coos.tla"
+# または汎用コマンドランナー
+bash .agent/skills/docker_workaround/scripts/docker-cmd.sh ls -la
 ```
 
-### WIT 自動生成
+### Generic Command Runner (Recommended)
+任意のコマンドをコンテナ内で実行するための汎用ラッパースクリプトです。
 
 ```bash
-docker compose -f .devcontainer/docker-compose.yml exec -u developer fireball-dev bash -c \
-  "cd /workspaces/fireball && python3 .agent/skills/code_generator/scripts/wit_to_cpp.py wit/ inc/gen"
+# 基本的な使い方
+bash .agent/skills/docker_workaround/scripts/docker-cmd.sh <command> <args>
+
+# 例: find コマンド (ソースコードのスキャン等)
+bash .agent/skills/docker_workaround/scripts/docker-cmd.sh find src -name "*.cxx"
+
+# 例: make / meson (ビルドコマンド)
+bash .agent/skills/docker_workaround/scripts/docker-cmd.sh meson test -C build
+```
+```
+
+### Code Generator (WIT to C++)
+WIT IDLからC++ヘッダを生成します。
+
+```bash
+# ヘルパースクリプト (推奨)
+bash .agent/skills/docker_workaround/scripts/docker-codegen.sh
+
+# 特定のワークフローを実行
+bash .agent/skills/docker_workaround/scripts/docker-codegen.sh wit_check.sh
+```
+
+### TLA+ 検証 (TLC)
+形式仕様のモデル検査を行います。
+
+```bash
+# ヘルパースクリプト (推奨)
+bash .agent/skills/docker_workaround/scripts/docker-tlc.sh tla/coos.tla
+```
+
+### Friction Audit (Documentation Check)
+ドキュメントの整合性をチェックします。
+
+```bash
+# ヘルパースクリプト (推奨)
+bash .agent/skills/docker_workaround/scripts/docker-friction.sh
 ```
 
 ### Meson ビルド
+プロジェクトのビルドとテストを行います。
 
 ```bash
 # セットアップ
-docker compose -f .devcontainer/docker-compose.yml exec -u developer fireball-dev bash -c "cd /workspaces/fireball && meson setup build"
+docker compose -f .devcontainer/docker-compose.yml exec -u developer fireball-dev //bin/bash -c "cd /workspaces/fireball && meson setup build"
 
 # ビルド
-docker compose -f .devcontainer/docker-compose.yml exec -u developer fireball-dev bash -c "cd /workspaces/fireball && ninja -C build"
+docker compose -f .devcontainer/docker-compose.yml exec -u developer fireball-dev //bin/bash -c "cd /workspaces/fireball && ninja -C build"
 
 # テスト
-docker compose -f .devcontainer/docker-compose.yml exec -u developer fireball-dev bash -c "cd /workspaces/fireball && meson test -C build"
+docker compose -f .devcontainer/docker-compose.yml exec -u developer fireball-dev //bin/bash -c "cd /workspaces/fireball && meson test -C build"
 ```
 
 ## 3. コンテナへのシェルアクセス
@@ -69,7 +110,7 @@ docker compose -f .devcontainer/docker-compose.yml exec -u developer fireball-de
 対話的な作業が必要な場合:
 
 ```bash
-docker compose -f .devcontainer/docker-compose.yml exec -u developer fireball-dev bash
+docker compose -f .devcontainer/docker-compose.yml exec -u developer fireball-dev //bin/bash
 ```
 
 ## 4. 環境の停止
@@ -80,7 +121,7 @@ docker compose -f .devcontainer/docker-compose.yml exec -u developer fireball-de
 docker compose -f .devcontainer/docker-compose.yml down
 ```
 
-## トラブルシューティング
+## 5. トラブルシューティング
 
 ### ポート競合等で起動しない場合
 
@@ -89,9 +130,8 @@ docker compose -f .devcontainer/docker-compose.yml down
 docker system prune  # 注意: 未使用のリソースが削除されます
 docker compose -f .devcontainer/docker-compose.yml up --build -d
 ```
-## 5. トラブルシューティング
 
-### コンテナ内でマウントが空
+### コンテナ内でマウントが空 (Windows)
 
 **症状**: `docker compose up -d` 後、コンテナ内の `/workspaces/fireball` が空。
 
@@ -102,21 +142,7 @@ docker compose -f .devcontainer/docker-compose.yml up --build -d
 2. **その後** Docker Desktopを起動
 3. `docker compose up -d` 実行
 
-既にDocker起動済みの場合：
-```bash
-# Docker Desktop再起動
-# または
-docker compose down
-docker compose up -d
-```
+### `.devcontainer` ディレクトリでの実行に関する注意
 
-### `.devcontainer` ディレクトリでの実行
-
-`docker-compose.yml` 内の `volumes: - ..:/workspaces/fireball` は相対パス。**必ず `.devcontainer` ディレクトリで実行**すること：
-
-```bash
-cd .devcontainer
-docker compose up -d
-```
-
-プロジェクトルートで実行すると、`..` が `n:\sources` になり誤動作する。
+`docker-compose.yml` 内の相対パス (`..:/workspaces/fireball`) は、YMLファイルの場所を基準に解決されます。
+そのため、プロジェクトルートから `-f .devcontainer/docker-compose.yml` を指定して実行するのが最も確実です。

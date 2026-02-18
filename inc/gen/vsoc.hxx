@@ -296,4 +296,32 @@ public:
 
 };
 
+/**
+ * Tier 3: Interpreter Engine
+ * @inv: sp >= stack_base (Stack Underflow Protection)
+ * @inv: sp < stack_base + stack_size (Stack Overflow Protection)
+ * @inv: pc < code_size (Program Counter Safety)
+ */
+class interpreter {
+public:
+  interpreter() = default;
+  ~interpreter() = default;
+
+  /**
+   * Initializes the interpreter with configuration.
+   * @pre: config.stack_size > 0
+   * @post: initialized
+   */
+  operation_result initialize(vm_config config) noexcept;
+
+  /**
+   * Executes a single instruction or trace.
+   * @pre: state == ready
+   * @post(ok): state == ready || state == trapped (Normal execution or Trap)
+   * @post(err): recovery_strategy != ignore (System failure must be handled)
+   */
+  std::expected<execution_state, recovery_strategy> step(uintptr_t ctx) noexcept;
+
+};
+
 } // namespace fireball

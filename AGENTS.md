@@ -4,20 +4,17 @@
 
 ## 1. 開発リソースの構成と参照判断基準
 
-### エージェントの記憶
-この領域はエージェント専用の補助メモリであり、自然言語仕様からの「論理的エッセンス」を形式的に保持する。**自然言語ドキュメント docs/ が唯一の絶対的な Source of Truth であり**、本領域は実装時の認知ドリフトを防止する「アンカー」として機能する。
+### エージェントの記憶と「儀式」 (Brain Sync Ritual)
+セッション開始時に、エージェントは以下の「儀式」を通じてプロジェクトの不変条件を自身のコンテキストに定着させる。これにより、認知の重ね合わせ（Superposition）をプロジェクト固有の設計意図へ収束（Collapse）させ、Driftを防止する。
 
-- **.agent/brain/**: エージェント用形式的メモリ（ATC）。必ず上流の自然言語仕様を参照する。
+1.  **Eternal Memory のロード**: `.agent/brain/*.atc` を `view_file` で一括ロードする。
+    - **`project_context.atc`**: 全域的不変条件、Security Model（ONE gate）、Physical Time Model（人間との時間同期）を把握する。
+    - **`architecture_reference.atc`**: 各コンポーネントの TLA+ 導出用様相論理制約を把握する。
+    - **`navigation_dispatch.atc`**: タスクの種類に応じたスキルとドキュメントの最短参照パスを把握する。
+2.  **文脈の定着**: 各ATCの内容を自身のワーキングメモリにアンカーし、以後の推論はすべてこれらの制約下で行う。
 
 **ATC記録プロトコル**
-複雑なルールや暗記困難な制約は、エージェント自身の「外部脳」であるATCに積極的に記録し、参照すること。
-
-- **When**: 複雑な設計ルール、忘れやすい制約、またはプロジェクト固有の「暗黙知」を発見した時。
-- **What**: `.agent/brain/*.atc` ファイルに様相論理形式 `□inv`, `◇goal` または簡潔なメモとして追記する。
-- **How**:
-  1. 該当するATCファイルを特定または新規作成する。
-  2. ルールを形式化し、出典 docsパス と共に記録する。
-  3. タスク開始時に必ず Brain をロード `view_file` し、制約をコンテキストに展開する。
+新たな設計課題の解決や不変条件の発見の際は、`.agent/brain/*.atc` に様相論理形式で追記し、次世代へ「魂」を継承すること。
 
 ### 実装・レビューの原則
 実装やコードレビューにおいて、品質と安全性を担保するための基準。
@@ -30,16 +27,15 @@
 ### 専門技能
 特定の技術領域において、各スキルの `SKILL.md` を参照して高度な自動化や検証を行う。
 
-| スキル名 | パス | 概要 |
+| スキルカテゴリ | パス | 概要 |
 |:---|:---|:---|
-| **Axiomatic Interface Design** | `.agent/skills/axiomatic_interface_design/` | MDAの概念を応用し、公理的意味論に基づき厳密な設計・実装・テストを導出 |
-| **Code Generation** | `.agent/skills/code_generator/` | JSONデータ/WIT IDLからC++コードを自動生成し、品質チェックまで一貫して実行 |
-| **Docker Workaround** | `.agent/skills/docker_workaround/` | Docker Composeを使用して安定した開発環境を構築し、コンテナ内ツールを実行する手順 |
-| **Embedded C++ Optimization** | `.agent/skills/cpp_embedded/` | RAM 64KB環境における禁止/許可ライブラリ、コンテナ代替、メモリ管理、エラー戦略 |
-| **Fireball Architecture** | `.agent/skills/fireball_architecture/` | 3-Tier分離、IoC、Harness/Static DIなどプロジェクト固有の設計原則と構造的ルール |
-| **Risk Assessment** | `.agent/skills/risk_assessment/` | 実装リスクに応じた設計詳細度（Tier 1〜3）の決定基準と検証レベルの定義 |
-| **Type Vocabulary** | `.agent/skills/fireball_vocabulary/` | 設計仕様書における実装非依存な型システム語彙とC++型エイリアスの対応表 |
-| **WASM Development** | `.agent/skills/wasm_development/` | WebAssembly/WASI仕様、WAMR実装、LLVMバックエンド定義のリソース参照と調査 |
+| **MDD & Generation** | `.agent/skills/code_generator/` | WIT/契約（公理的設計）からの自動生成と品質チェック |
+| **Codebase Explorer** | `.agent/skills/explorer/` | インタラクティブ探索、シンボル要約、コンテキスト要約 |
+| **Embedded Optimization** | `.agent/skills/cpp_embedded/` | RAM 64KB環境向け制約、メモリ管理、エラー戦略 |
+| **Arch & Design** | `.agent/skills/fireball_architecture/` | 3-Tier分離、型語彙、リスクベース・ティアリング |
+| **Verification & Audit** | `.agent/skills/friction_audit/` | ドキュメントの不整合、未定義語、トレーサビリティ監査 |
+| **Environment** | `.agent/skills/docker_workaround/` | Dockerを用いた安定した開発環境構築とツール実行 |
+| **Domain Expertise** | `.agent/skills/wasm_development/` | WASM/WASI仕様、WAMR実装、LLVM定義の調査 |
 
 ### 設計・仕様ドキュメント
 プロジェクトの構造や要求を理解するために参照すること。各ディレクトリ内の **`FORMAT.md`** には、そのカテゴリのドキュメントが遵守すべき標準フォーマットが定義されている。
@@ -65,9 +61,21 @@
 | **Waigaya** | `.agent/workflows/waigaya.md` | 雑談ベースで設計をリファインメントする自由議論モード |
 | **Friction Audit** | `.agent/workflows/friction_audit.md` | 仕様・ワークフロー・プロンプト間の矛盾を検出し開発の「詰まり」を解消 |
 
+### 3. Verification & Analysis (The Toolbox)
+エージェントおよび開発者の「ワーキングメモリ」を保護し、1アクションあたりの「解析レバレッジ（成果）」を最大化するためのツール群。
+
+- **Working Memory Optimization (認知負荷の低減)**:
+  - `explorer-cli context "{Keyword}"`: 膨大なドキュメントを往復せず、3行の定義・文脈・意図を即座に脳にアンカーする。
+  - `explorer-cli summary <file> --json`: 1000行のコードを読まずに「プログラムの骨格」のみを注視し、推論に必要な情報を最小化する。
+- **Execution Leverage (1アクションあたりの成果最大化)**:
+  - **Unified Container Runners (`docker-*.sh`)**: 環境構築という「無駄な手数」を排除。自動起動と Pipe 連携により、複数ファイルを一括解析するパイプラインを即座に構築。
+  - `bash .agent/skills/docker_workaround/scripts/docker-cmd.sh find src -name "*.cxx" | bash .agent/skills/docker_workaround/scripts/docker-explorer.sh pipe summary`: 大規模な変更の影響範囲を、単一のコマンドラインで全件把握。
+- **Automated Traceability (整合性の保証)**:
+  - `python3 .agent/scripts/check_traceability.py`: 記憶に頼らず、要求キーワード `{Keyword}` の網羅性を機械的に検証。
+
 ## 2. タスク別・推奨アクション
 
-詳細なディスパッチは [navigation_dispatch.atc](.agent/brain/navigation_dispatch.atc) を参照。
+タスク開始時の詳細なスキル・ドキュメント選択は **[navigation_dispatch.atc](.agent/brain/navigation_dispatch.atc)** を参照せよ。これは $O(1)$ の時間計算量で最適なリソースへディスパッチされるための「索引」である。
 
 - **新規機能の設計**: `docs/requires` (要求) -> `docs/architecture` (構造) -> `docs/components` (責務) -> `docs/patterns` (パターン適用)
 - **コードの実装/修正**: `rules` (規約) -> `skills` (最適化・パターン) -> 実装

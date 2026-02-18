@@ -8,7 +8,6 @@ trigger: always_on
 
 ## 1. 厳格な禁止事項
 
-
 *   **ヒープ割り当ての禁止**:
     *   **禁止**: `malloc`, `free`, `new`, `delete`.
     *   **禁止**: `std::vector`, `std::map`, `std::string`, `std::unique_ptr`, `std::shared_ptr`.

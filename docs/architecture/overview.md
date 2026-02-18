@@ -129,7 +129,7 @@ sequenceDiagram
 ### ヒープパーティション
 システムRAMを独立したヒープに分割し、障害隔離を実現する。 `{IndependentHeap}` `{FaultIsolation}` `{StrictMemoryLimit}`
 
-詳細なメモリ予算およびSLOC予算については **[budget.md](file:///n:/sources/fireball/docs/architecture/budget.md)** を参照。
+詳細なメモリ予算およびSLOC予算については **[budget.md](budget.md)** を参照。
 
 - vSoCおよびサブシステムの障害時は、COOSがリカバリ用イベントハンドラを介して対応する。
 - サービス・ゲストモジュールの障害時は、vSoCがリカバリ用イベントハンドラを介して対応する。

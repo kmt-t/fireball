@@ -75,3 +75,65 @@ WebAssemblyエコシステム（Spec, WASI, WAMR, LLVM）に関連するリソ�
 ### 調査方法
 1. `grep_search` で命令名（例: `i32.add`, `ADDI`）を検索する。
 2. `.td` ファイル内の `def` 定義を確認し、ビットパターン (`Inst{...}`) やアセンブリ文字列を確認する。
+
+---
+
+## 5. Standard Include Paths (for explorer-cli)
+
+`explorer-cli summary` を WAMR リファレンスのコードに対して実行する際、正確な AST 解析のために以下のインクルードパスの指定が推奨されます。
+
+### WAMR Core Includes
+- `-I inc` (Project local headers)
+- `-I docs/references/wamr/core/iwasm/include`
+- `-I docs/references/wamr/core/shared/utils`
+- `-I docs/references/wamr/core/shared/platform/include`
+
+### Usage Example
+```bash
+explorer-cli summary docs/references/wamr/core/iwasm/fast-jit/jit_compiler.c \
+  -I inc \
+  -I docs/references/wamr/core/iwasm/include \
+  -I docs/references/wamr/core/shared/utils
+```
+
+## 6. One-Shot Analysis Commands (Docker)
+
+WAMRのソースコードや仕様書を素早く確認するためのコマンドです。
+**実行環境についての詳細は [Docker Workaround](../docker_workaround/SKILL.md) を参照してください。**
+
+**Note**: Windows環境では **Git Bash** を使用してください。
+
+### Interpreter (Main Loop)
+```bash
+bash .agent/skills/docker_workaround/scripts/docker-explorer.sh summary docs/references/wamr/core/iwasm/interpreter/wasm_interp_fast.c -I inc -I docs/references/wamr/core/iwasm/include -I docs/references/wamr/core/shared/utils -I docs/references/wamr/core/shared/platform/include
+```
+
+### AOT/JIT Loader
+```bash
+bash .agent/skills/docker_workaround/scripts/docker-explorer.sh summary docs/references/wamr/core/iwasm/aot/aot_loader.c -I inc -I docs/references/wamr/core/iwasm/include -I docs/references/wamr/core/shared/utils -I docs/references/wamr/core/shared/platform/include
+```
+
+### WebAssembly Specs
+WASMコア仕様とWASIのドキュメントを一括要約します。
+```bash
+bash .agent/skills/docker_workaround/scripts/docker-cmd.sh find docs/references/webassembly docs/references/wasi -maxdepth 3 -name "*.md" | bash .agent/skills/docker_workaround/scripts/docker-explorer.sh pipe summary
+```
+
+### RISC-V Specs
+RISC-V関連のドキュメントを一括要約します。
+```bash
+bash .agent/skills/docker_workaround/scripts/docker-cmd.sh find docs/references/riscv -maxdepth 3 -name "*.md" | bash .agent/skills/docker_workaround/scripts/docker-explorer.sh pipe summary
+```
+
+### ARM & Others
+ARMアーキテクチャやその他の外部参照リストを確認します。
+```bash
+bash .agent/skills/docker_workaround/scripts/docker-cmd.sh find docs/references -maxdepth 1 -name "REFERENCES.md" | bash .agent/skills/docker_workaround/scripts/docker-explorer.sh pipe summary
+```
+
+## 8. 環境・前提条件
+
+本スキルの実行には **Dockerコンテナ** の使用を強く推奨します。
+
+- **Docker Workaround**: 詳細は [Docker Workaround](../docker_workaround/SKILL.md) を参照してください。
+- **Windowsユーザー**: お使いの環境で直接実行するのではなく、**Git Bash** を経由してスクリプトを実行してください。

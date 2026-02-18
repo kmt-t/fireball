@@ -10,7 +10,7 @@ IPCルータは、URIベースのサービスディスカバリとロールベ�
 
 ### 3.1 データ構造
 - **registry_entry**: 登録されたサービスのURI、ロール、チャンネルIDを保持するソート済み配列。 `{IPCRegistry}`
-- **Role Matrix**: コンパイル時に定義された、ロール間の通信許可を判定するマトリックス。 `{StaticRoleDefinition}`
+- **Role Matrix**: コンパイル時に定義された、ロール間の通信許可を判定するマトリックス。 `{RoleBasedAccessControl}`
 
 ### 3.2 内部ブロック図
 ```mermaid

@@ -133,9 +133,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install TLA+ command-line tools (tla2tools.jar)
-RUN wget https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar -O /opt/tla2tools.jar && \
-    echo '#!/bin/bash\njava -cp /opt/tla2tools.jar tlc2.TLC "$@"' > /usr/local/bin/tlc && \
-    echo '#!/bin/bash\njava -cp /opt/tla2tools.jar tla2sany.SANY "$@"' > /usr/local/bin/sany && \
+RUN wget https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar -O /opt/tla2tools.jar
+COPY <<__EOF__ /usr/local/bin/tlc
+#!/bin/bash \
+java -cp /opt/tla2tools.jar tlc2.TLC "$@"
+__EOF__
+COPY <<__EOF__ /usr/local/bin/sany
+#!/bin/bash \
+java -cp /opt/tla2tools.jar tla2sany.SANY "$@"
+__EOF__
+
+RUN sed -i 's/\r//g' /usr/local/bin/tlc /usr/local/bin/sany && \
     chmod +x /usr/local/bin/tlc /usr/local/bin/sany
 
 # Display tool versions for build log

@@ -1,0 +1,91 @@
+#!/bin/bash
+# explorer-cli: UNIX-style pipeable explorer tool
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PYTHON_EXEC="python3"
+
+usage() {
+    echo "Usage: explorer-cli <command> [args]"
+    echo ""
+    echo "Commands:"
+    echo "  summary <file>      Extract symbols and call hierarchy using clang"
+    echo "  tree <dir>         Display directory tree (ignores hidden/agent files)"
+    echo "  callers <func>     Find callers of a function (recursive)"
+    echo "  pipe summary       Read file list from stdin and summarize each"
+    echo "  context <keyword>  Get 3-line context summary for a keyword"
+    echo ""
+    echo "Examples:"
+    echo "  find src -name '*.cxx' | explorer-cli pipe summary"
+    echo "  explorer-cli tree src"
+}
+
+# Parse arguments to separate -I and --json from other args
+INCLUDES=()
+OTHER_ARGS=()
+USE_JSON=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -I)
+            INCLUDES+=("-I" "$2")
+            shift 2
+            ;;
+        -I*)
+            INCLUDES+=("$1")
+            shift
+            ;;
+        --json)
+            USE_JSON="--json"
+            shift
+            ;;
+        *)
+            OTHER_ARGS+=("$1")
+            shift
+            ;;
+    esac
+done
+
+set -- "${OTHER_ARGS[@]}"
+
+case "$1" in
+    summary)
+        if [ -z "$2" ]; then usage; exit 1; fi
+        # Check file extension to decide which script to use
+        if [[ "$2" == *.md ]]; then
+            $PYTHON_EXEC "$SCRIPT_DIR/summarize_markdown.py" "$2" $USE_JSON
+        else
+            $PYTHON_EXEC "$SCRIPT_DIR/clang_analyzer.py" "$2" "${INCLUDES[@]}"
+        fi
+        ;;
+    tree)
+        $PYTHON_EXEC "$SCRIPT_DIR/tree.py" "${2:-.}"
+        ;;
+    callers)
+        if [ -z "$2" ]; then usage; exit 1; fi
+        $PYTHON_EXEC "$SCRIPT_DIR/explorer.py" --json --callers "$2"
+        ;;
+    context)
+        if [ -z "$2" ]; then usage; exit 1; fi
+        $PYTHON_EXEC "$SCRIPT_DIR/search_context.py" "$2"
+        ;;
+    pipe)
+        if [ "$2" == "summary" ]; then
+            while read -r line; do
+                line=${line%$'\r'}
+                if [ -z "$line" ]; then continue; fi
+                 if [[ "$line" == *.md ]]; then
+                    $PYTHON_EXEC "$SCRIPT_DIR/summarize_markdown.py" "$line" $USE_JSON
+                else
+                    $PYTHON_EXEC "$SCRIPT_DIR/clang_analyzer.py" "$line" "${INCLUDES[@]}"
+                fi
+            done
+        else
+            echo "Unknown pipe command: $2"
+            usage
+            exit 1
+        fi
+        ;;
+    *)
+        usage
+        exit 1
+        ;;
+esac

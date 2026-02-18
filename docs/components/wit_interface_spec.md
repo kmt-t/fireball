@@ -13,12 +13,12 @@
 ### 3.1 基礎インターフェイス
 WASI 0.2 の標準パターンに従い、以下の基礎コンポーネントを想定する。
 
-- `pollable`: 非同期イベントの待機用リソース。
+- `pollable`: 非同期イベントの待機用リソース。 `{CooperativeMultitasking}` `{Asynchronous_Notification}`
 - `input-stream` / `output-stream`: ストリーミングデータ転送用リソース。
 
 ### 3.2 リカバリー戦略とエラーハンドリング
 
-本プロジェクトでは、エラーコードではなくリカバリー戦略を返すことで、呼び出し側が具体的なアクション（リトライ/諦める）を取れるようにする。
+本プロジェクトでは、エラーコードではなくリカバリー戦略を返すことで、呼び出し側が具体的なアクション（リトライ/諦める）を取れるようにする。低レイヤー（Syscall）の `errno` は、Shim層でこの戦略に変換される。 `{RecoveryStrategy}` `{Errorcode_To_Strategy}`
 
 ```wit
 /// Recovery strategy for operation failures.
@@ -46,7 +46,7 @@ type message-routing-result = result<_, recovery-strategy>;
 - **デバッグ情報の分離**: 失敗の詳細理由はログシステムで確認する。インターフェースには含めない。
 
 ## 4. 低レベル・トラップ・インターフェイス `{Trap_Interface}`
-WASI標準には存在しない、Fireball固有の高速システムコール。
+WASI標準には存在しない、Fireball固有の高速システムコール。実体は `docs/components/fireball_syscall_interface.md` で定義される `fireball_call` である。 `{Syscall_Mapping}`
 
 ### `fireball:host/trap`
 - `fireball-call(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32, arg4: u32, arg5: u32) -> u32`
@@ -67,7 +67,7 @@ interface trigger {
 
 ## 5. HAL インターフェイス `{HAL_Interface}`
 
-### 5.1 `fireball:host/timer` (wasi:clocks 準拠)
+### 5.1 `fireball:host/timer` (wasi:clocks 準拠) `{WASI_Implementation}`
 `wasi:clocks/monotonic-clock` のサブセットとして定義。
 
 ```wit
@@ -92,7 +92,7 @@ resource bus-slave {
 }
 ```
 
-### 5.4 `fireball:host/streaming` (wasi:io 準拠)
+### 5.4 `fireball:host/streaming` (wasi:io 準拠) `{WASI_Implementation}`
 一方的なデータ転送は標準のストリームとして扱う。
 
 ```wit

@@ -39,41 +39,48 @@ TLA+が時相論理で検証を行うため、ATCの記法も様相論理に統�
 - `contains(target, pattern)` : 特定のシンボル/パターンの包含。
 - `derives_from(spec, req_id)` : 要求キーワード `{req_id}` からの導出。
 - `permitted(addr)` : vMMIO許可テーブルでアクセスが許可されていること。
+- `searchable(concept)` : 概念 `{concept}` がキーワード検索によって要求仕様から実装まで到達可能であること。
 
 ---
 
-## 記述例：Tier 2 インターフェースのリファクタリング
+## 5. 運用プロトコル
+
+### 5.1 Brain Sync (Eternal Memory)
+エージェントはセッション開始時に、`.agent/brain/*.atc` ファイル群（Eternal Memory）をロードし、プロジェクトの「不変の魂」を自身のコンテキストに定着させる。
+
+1.  **`project_context.atc`**: システム全域の不変条件（□inv）と、エージェント・人間間の「Physical Time Model（クロック同期プロトコル）」をロードする。
+2.  **`architecture_reference.atc`**: 各コンポーネントが遵守すべき、TLA+と直結した様相論理制約をロードする。
+3.  **`navigation_dispatch.atc`**: タスクの種類に応じた「最適なスキルのルックアップテーブル」を参照し、探索コストを O(1) に収束させる。
+
+### 5.2 ワークフロー
+1.  **Declare**: タスク開始時に、そのタスク固有の ATC を記述し、認知の重ね合わせ（Superposition）を特定の設計意図へ崩壊（Collapse）させる。
+2.  **Trace**: `□(∀r ∈ requirements : searchable(r))` を満たすよう、ドキュメントにキーワードを埋め込む。
+3.  **Derive**: ATC の `□inv` と `◇goal` を、モデル検査用の TLA+ 仕様へと機械的に導出する。
+4.  **Tension Analysis**: 設計上の対立が生じた際、それが「CONTRADICTION（二者択一）」か「ORTHOGONAL（設計による両立可能）」かを分析し、`tension_analysis.atc` を更新する。
+5.  **Verify**: `walkthrough.md` において、`◇goal` が論理的に到達可能であることを記述・証明する。
+
+---
+
+## 6. 実例
 
 ```atc
 @pre:  ∃w ∈ WIT : matches(w, docs/components/scheduler.md)
-@pre:  is_tier(scheduler, 2)
+@pre:  is_tier(scheduler, 3)
 □inv:  ∀f ∈ funs(scheduler) : ¬virtual(f) ∧ ¬override(f)
-□inv:  ∀d ∈ deps(scheduler) : is_template_injected(d)
+□inv:  ∀m ∈ Allocation : is_heap_less(m)
 ◇goal: build_status == SUCCESS ∧ wit_check(scheduler) == PASS
 @post: ∀m ∈ modified_funs : derives_from(m, {StaticDI})
 ```
 
-### TLA+への導出
-```
-ATCの □inv  → TLA+の Spec => []Inv
-ATCの ◇goal → TLA+の Spec => <>Goal
-ATCの P ⊳ Q → TLA+の P ~> Q (liveness property)
-```
+### TLA+への導出例
+- ATCの `□inv`  → TLA+: `Spec => []Inv`
+- ATCの `◇goal` → TLA+: `Spec => <>Goal`
+- ATCの `P ⊳ Q` → TLA+: `P ~> Q` (Liveness)
 
 ---
 
-## 理論的背景：述語論理からの移行理由
+## 7. 理論的背景：認知スーパーポジションの崩壊
 
-1.  **TLA+との対称性**: TLA+は時相論理（LTL/CTL）で検証を行う。ATCの記法が同じ様相演算子を使うことで、仕様から検証モデルへの変換が機械的になる。
-2.  **不変条件の明示性**: `@inv` は暗黙に「すべての状態で」を意味していたが、`□` を付けることでその意味が記号的に明示される。
-3.  **活性条件の表現**: 述語論理では「いずれ達成される」を自然に表現できなかったが、`◇` によって容易に記述できる。
-4.  **認知スーパーポジションの崩壊**: 特殊記号（`□`, `◇`）はエージェントのAttentionを「論理計算モード」へと引き込み、確率的な揺らぎを抑制する。
-
----
-
-## 運用プロトコル
-
-1.  **Brain Sync**: 永続メモリ [project_context.atc](/.agent/brain/project_context.atc) から全域的な `□inv` をロードする。
-2.  **Declare**: タスク開始時に、そのタスク固有の ATC を様相論理形式で記述する。
-3.  **Derive**: `□inv` と `◇goal` から TLA+ 仕様への導出を可能にする。
-4.  **Verify**: `walkthrough.md` において、`◇goal` が論理的に到達可能であることを証明（記述）する。
+AIエージェントの推論は、デフォルトでは「インターネット上の一般的な正解」が重ね合わさった確率的な状態にある。
+ATCは、記号的な論理制約をコンテキストに叩き込むことで、この確率密度をプロジェクト固有の「唯一の正解」へと強制的に収束させるための物理的な手段である。
+特に `□`（Necessarily）記号は、エージェントの Attention を論理計算モードへと誘い、確率的な揺らぎを抑制する効果を持つ。

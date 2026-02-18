@@ -1,255 +1,34 @@
-# Code Generator - 使用方法
+# Code Generation Usage Manual
 
-WIT IDLからC++ヘッダを自動生成するワークフローの詳細ドキュメント。
+`code_generator` スキルは、WIT (WebAssembly Interface Types) を唯一の真実（Truth）とし、設計と実装の乖離という「認知負荷」を最小化するための自動化スイートです。
 
----
+## 1. なぜこのスキルを使うのか (ベネフィット)
 
-## 公式スクリプト
-
-### wit_to_cpp.py（wasm-tools版）
-
-**Source of Truth**: wasm-tools公式パーサー使用
-
-**特徴**:
-- ✅ WITパッケージ全体処理
-- ✅ 依存関係自動解決
-- ✅ ビットフィールド対応（`@bitfield`）
-- ✅ Contract抽出（`@pre/@post/@inv`）
-- ✅ 14インターフェイス一括生成
-
-**使用方法**:
-```bash
-python3 .agent/skills/code_generator/scripts/wit_to_cpp.py wit/ inc/gen
-```
-
-**内部処理**:
-1. `wasm-tools component wit wit/ --json` でJSON変換
-2. JSONから型、インターフェイス、リソースを抽出
-3. C++ヘッダ生成
+- **認知的一貫性の維持**: 「ドキュメントとコードのどちらが正しいか？」という迷いを排除します。WITを修正すれば、ヘッダと検証ルールが同期されます。
+- **レビュー負荷の外部化**: `void*` の使用や命名規則の違反を機械が指摘するため、人間は設計の本質的な論理に集中できます。
+- **手数の集約 (High Leverage)**: WIT編集、C++生成、ルールチェックという 3 ステップを 1 コマンドに短縮します。
 
 ---
 
-## 実行環境
+## 2. 実行例とレバレッジ
 
-### VSCode devcontainer（推奨）
+### docker-codegen.sh (コンテナ統合ランナー)
+ホスト環境のツール欠如（wasm-tools等）を気にせず、常に決定論的なコード生成を行います。
 
 ```bash
-cd /workspaces/fireball
-bash .agent/skills/code_generator/workflows/wit_all.sh
-```
+# 全パッケージの同期（生成 + 品質チェック）を 1 撃で実行
+# メリット: 環境に依存せず、常に「正しい」状態へプロジェクトを復元できる
+./.agent/skills/code_generator/scripts/docker-codegen.sh
 
-### Git Bash（VSCode以外）
-
-```bash
-cd {ワークスペースのパス}
-bash .agent/skills/code_generator/workflows/wit_all.sh
-```
-
----
-
-## ワークフロー
-
-### 統合実行（推奨）
-
-```bash
-bash .agent/skills/code_generator/workflows/wit_all.sh
-```
-
-**処理内容**:
-1. WIT→C++生成（14ファイル）
-2. 禁止パターン検出
-3. 命名規則検証
-4. ビルドテスト（オプション）
-
-### 個別実行
-
-```bash
-# 生成のみ
-bash .agent/skills/code_generator/workflows/wit_gen.sh
-
-# チェックのみ
-bash .agent/skills/code_generator/workflows/wit_check.sh
-
-# ビルドのみ
-bash .agent/skills/code_generator/workflows/wit_build.sh
+# 特定のインターフェースのみをパイプで検証
+# メリット: 大規模な変更から、特定の関心事のみを切り出して高速にフィードバックを得る
+ls wit/jit.wit | ./.agent/skills/code_generator/scripts/docker-codegen.sh wit_check.sh
 ```
 
 ---
 
-## 生成例
+## 3. なぜこのスキルを使うのか？
 
-### 入力（WIT）
-
-```wit
-/// IPC Router interface
-/// @inv: registry_count <= FB_CONF_ROUTER_MAX_SERVICES
-resource ipc-router {
-    /// Bind service
-    /// @pre: sid < FB_CONF_ROUTER_MAX_SERVICES
-    /// @post: result.is_ok() -> channel is valid
-    bind: func(sid: service-id, address: uri-handle) 
-        -> result<channel-id, recovery-strategy>;
-}
-```
-
-### 出力（C++）
-
-```cpp
-/**
- * Auto-generated from WIT. Do not edit.
- */
-#pragma once
-
-#include <fireball_types.hxx>
-#include <cstdint>
-
-/**
- * IPC Router interface
- * @invariant registry_count <= FB_CONF_ROUTER_MAX_SERVICES
- */
-struct ipc_router_interface {
-  /**
-   * Bind service
-   * @pre sid < FB_CONF_ROUTER_MAX_SERVICES
-   * @post result.is_ok() -> channel is valid
-   */
-  virtual result<channel_id, recovery_strategy> 
-    bind(service_id sid, uri_handle address) = 0;
-  
-  virtual ~ipc_router_interface() = default;
-};
-```
-
----
-
-## ビットフィールド対応
-
-### WIT定義
-
-```wit
-/// @bitfield type_scope:u8:0-7, key:u24:8-31, value:u32:32-63
-record kv-pair {
-    raw: u64,
-}
-```
-
-### 生成されるC++
-
-```cpp
-/**
- * IPC Key-Value pair
- */
-struct kv_pair {
-  uint64_t type_scope : 8;   // Bits 0-7
-  uint64_t key : 24;         // Bits 8-31
-  uint64_t value : 32;       // Bits 32-63
-};
-static_assert(sizeof(kv_pair) == 8, "kv_pair size mismatch");
-```
-
----
-
-## 型マッピング
-
-| WIT型 | C++型 |
-|:---|:---|
-| `u8`, `u16`, `u32`, `u64` | `uint8_t`, `uint16_t`, `uint32_t`, `uint64_t` |
-| `s8`, `s16`, `s32`, `s64` | `int8_t`, `int16_t`, `int32_t`, `int64_t` |
-| `bool` | `bool` |
-| `string` | `std::string_view` |
-| `list<u8>` | `std::span<const uint8_t>` |
-| `result<T, E>` | `result<T, E>` |
-| `option<T>` | `std::optional<T>` |
-
----
-
-## 品質チェック
-
-### check_violations.py
-
-禁止パターン検出:
-
-```bash
-python3 .agent/skills/code_generator/scripts/check_violations.py inc/gen
-```
-
-**検出項目**:
-- `void*` 使用
-- `malloc/free/new/delete`
-- `std::vector/map/string`
-- `try/catch/throw`
-- `using namespace std`
-
-### check_naming.py
-
-命名規則検証:
-
-```bash
-python3 .agent/skills/code_generator/scripts/check_naming.py inc/gen
-```
-
-**検証項目**:
-- Type: `snake_case`
-- Enum値: `UPPER_SNAKE_CASE`
-- using宣言: `snake_case`
-
----
-
-## 生成されるファイル
-
-```
-inc/gen/
-├── types.hxx          # 基本型定義
-├── services.hxx       # IPC Router, Logger
-├── hal.hxx            # HAL インターフェイス
-├── hal_types.hxx
-├── vsoc.hxx           # Virtual SoC
-├── vsoc_types.hxx
-├── jit.hxx            # JIT Compiler
-├── jit_types.hxx
-├── coos.hxx           # COOS Scheduler
-├── coos_types.hxx
-├── memory.hxx         # Memory Manager
-├── memory_types.hxx
-├── guest_api.hxx      # Guest API
-└── trap.hxx           # Trap Handlers
-```
-
-**合計14ファイル**
-
----
-
-## トラブルシューティング
-
-### WIT構文エラー
-
-```
-error: expected kebab-case identifier
-```
-
-**原因**: スネークケース使用
-**解決**: `device_id` → `device-id`
-
-### wasm-tools not found
-
-**原因**: コンテナ外で実行
-**解決**: VSCode devcontainer内またはDocker経由で実行
-
-### 生成されたコードがビルドできない
-
-```bash
-# チェック実行
-bash .agent/skills/code_generator/workflows/wit_check.sh
-```
-
----
-
-## 非推奨スクリプト
-
-以下は古いバージョンです:
-
-- ~~`wit_to_cpp_manual.py`~~ - 手動パーサー版（deprecated/に移動）
-- ~~`wit_generator.py`~~ - 削除済み
-- ~~`generator.py`~~ - 削除済み
-
-**公式版のみ使用してください**: `wit_to_cpp.py`
+- **インターフェースの強制**: 実装が設計（WIT）を裏切ることを防ぎます。
+- **認知ドリフトの防止**: スキルが「組み込みの法（Embedded Rules）」を自動執行し、コードの腐敗を食い止めます。
+- **情報の要約**: 長大なヘッダファイルを生成する手間を省き、抽象度の高い WIT のみでシステムを制御します。

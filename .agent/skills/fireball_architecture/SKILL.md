@@ -1,34 +1,37 @@
 ---
 name: Fireball Architecture
 description: >-
-  Fireballプロジェクト固有のアーキテクチャパターンと設計原則（3-Tier分離, IoC, Harness/Static DI）。
-  WHEN: 新コンポーネント設計, 依存関係の構造決定, テスト戦略の判断
-  SCOPE: システム構造設計。コーディングスタイルはcpp_coding_style.md（MEMORY）を参照。
-  RELATED: cpp_embedded（実装パターン）, risk_assessment（設計詳細度の判断）, fireball_vocabulary（型語彙）
+  Fireballプロジェクト固有のアーキテクチャパターン（3-Tier）、型語彙、およびリスクベース設計（Tiering）。
+  WHEN: 新コンポーネント設計, 依存関係の構造決定, 型名選定, 設計詳細度の判断
+  SCOPE: システム構造設計、データ構造、検証レベル
+  RELATED: cpp_embedded
 ---
 
-# Fireball アーキテクチャ
+# Fireball Architecture
 
-本プロジェクト（Fireball）の設計・実装において遵守すべき構造的ルールとパターン。
+## 1. 概要 (Overview)
 
-## 1. コア原則
+本プロジェクト（Fireball）の設計・実装において遵守すべき構造的ルールとパターンを定義します。
 
-### メモリ効率最優先 `{Policy_Memory}`
-- **RAM 64KB** の制約下で動作
-- ヒープメモリの使用を最小化
-- メモリパーティション設計によるヒープの隔離
+## 2. 環境・前提条件
 
-### 静的解決優先 `{Static_Resolution}`
-- 可能な限りコンパイル時に計算・検証を完結
-- `constexpr`, `consteval`, `static_assert` 活用
-- 動的な型消去が必要な場合は静的バッファ使用
+アーキテクチャ設計自体は環境に依存しませんが、関連するコード生成や検証ツールは **Dockerコンテナ** 内で実行されます。
 
-### 型安全性 `{TypeSafety}`
-- `void*` 禁止
-- DTOによる構造化データの明示
-- インターフェイス境界での型の明記
+- **Docker Workaround**: 詳細は [Docker Workaround](../docker_workaround/SKILL.md) を参照してください。
 
-## 2. 構造設計
+## 3. コア原則 (Core Principles)
+
+### リスクベース・ティアリング `{Risk_Tiering}`
+設計対象のリスク（複雑性、資源制約、副作用）を評価し、記述の詳細度（Tier 1〜3）を決定する。
+- **Tier 1**: 概要、Contract、主要シーケンス（低リスク）
+- **Tier 2**: Tier 1 + 構成要素、状態遷移図（中リスク）
+- **Tier 3**: Tier 2 + 直交表、コンセプトコード（高リスク）
+
+### 型語彙 `{Type_Vocabulary}`
+実装非依存な型システム（アドレス、オフセット、バイト数、結果型等）を使用し、仕様から実装への一意な導出を保証する。
+- 詳細は [fireball_vocabulary](fire:///n:/sources/fireball/.agent/skills/fireball_architecture/VOCABULARY.md) 参照。
+
+## 4. 構造設計 (Structural Design)
 
 システムを複雑度に応じて3つの階層（Tier）に分離し、それぞれの階層に最適な抽象化手法を適用する。
 

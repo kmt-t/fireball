@@ -2,102 +2,69 @@
 
 Docker CLI経由でコンテナ内のツールを実行するヘルパースクリプト集。
 
-**推奨**: [code_generator/workflows/](../../code_generator/workflows/) のメインワークフローを使用してください。
-
 ---
 
 ## スクリプト一覧
 
-### docker-gen-wit.sh
+### docker-explorer.sh
 
-WIT自動生成をコンテナで実行。
+コードベースの探索・解析ツール。
 
 ```bash
-# WIT全体生成
-bash docker-gen-wit.sh --all
+# Markdownファイルの要約
+bash docker-explorer.sh summary docs/README.md
 
-# 単一ファイル
-bash docker-gen-wit.sh wit/types.wit
+# ソースコードのパイプ解析
+bash docker-find.sh src -name "*.cxx" | bash docker-explorer.sh pipe summary
 ```
 
-**内部実行**:
+### docker-codegen.sh
+
+WIT IDLからのコード生成。
+
 ```bash
-python3 .agent/skills/code_generator/scripts/wit_to_cpp.py wit/ inc/gen
+# 全ワークフロー実行
+bash docker-codegen.sh
 ```
 
----
+### docker-friction.sh
 
-### docker-build.sh
-
-Mesonビルドをコンテナで実行。
+ドキュメント整合性チェック（Friction Audit）。
 
 ```bash
-# 通常ビルド
-bash docker-build.sh
-
-# テスト付き
-bash docker-build.sh --test
-
-# クリーンビルド
-bash docker-build.sh --clean
-
-# ビルドディレクトリ指定
-bash docker-build.sh build-arm --test
+bash docker-friction.sh
 ```
 
-**内部実行**:
+### docker-tlc.sh
+
+TLA+ モデル検査。
+
 ```bash
-meson setup build
-ninja -C build
-meson test -C build  # --test時
+bash docker-tlc.sh tla/spec.tla
+```
+
+### docker-cmd.sh
+
+任意のコマンドをコンテナ内で実行する汎用ラッパー。
+
+```bash
+# find コマンド (パイプ用)
+bash docker-cmd.sh find docs -name "*.md"
+
+# ビルドコマンド
+bash docker-cmd.sh meson test -C build
 ```
 
 ---
 
 ## 前提条件
 
-1. **Dockerコンテナが起動している**
-   ```bash
-   docker ps  # コンテナ確認
-   ```
+1. **Dockerコンテナが動作可能であること**
+   スクリプトは自動的に `fireball-dev` コンテナを起動しようと試みます。
 
 2. **Git Bash使用（Windows）**
-   - PowerShellは非推奨
+   - **PowerShellは非推奨です**。パス変換の問題を回避するため、必ず Git Bash を使用してください。
 
-3. **プロジェクトルートで実行**
-   ```bash
-   cd /n/sources/fireball
-   ```
+3. **プロジェクトルートからのパス依存**
+   スクリプトは `.agent/skills/docker_workaround/scripts/` にありますが、リポジトリ内のどこから呼び出しても動作するように設計されています（内部でルートを解決）。ただし、引数のパスはカレントディレクトリ相対で指定してください。
 
----
-
-## VSCode使用時
-
-VSCodeでdevcontainerが動作している場合、これらのスクリプトは不要です。
-VSCodeターミナルで直接実行してください:
-
-```bash
-# WIT生成
-bash .agent/skills/code_generator/workflows/wit_all.sh
-
-# ビルド
-meson setup build
-ninja -C build
-```
-
----
-
-## トラブルシューティング
-
-### コンテナが見つからない
-
-```bash
-docker ps -a           # 全コンテナ確認
-docker start <id>      # コンテナ起動
-```
-
-### パーミッションエラー
-
-```bash
-docker exec <id> bash -c "sudo chown -R developer:developer /workspaces/fireball"
-```

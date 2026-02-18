@@ -29,7 +29,10 @@ trigger: always_on
 
 ドキュメントやコードを参照・作成する前に、以下を実行せよ：
 
-1.  **トレーサビリティ**: 要求/キーワードが存在することを確認する。
-2.  **一貫性**: 命名の揺れがないか確認する（見つかった場合は「フリクション監査」で修正）。
+1.  **トレーサビリティ**: `docs/requires/list.md` で定義された`{Keyword}`を必ず使用し、要求と実装・仕様をリンクさせること。
+    - **検証**: `python3 .agent/scripts/check_traceability.py` を実行し、未検出キーワードがないことを確認せよ。
+    - **理解**: キーワードの意図が不明な場合は `python3 .agent/scripts/search_context.py "{Keyword}"` を使用し、文脈から「様相論理による3行要約」を作成して理解せよ。
+2.  **一貫性 (Friction Audit)**: 未定義キーワードや表記揺れ（Friction）がないか確認する。
+    - **検証**: `python3 .agent/scripts/friction_audit.py` を実行し、レポート (`docs/temp/friction_report.md`) を確認せよ。
 3.  **重複**: 既存の仕様を重複して作成していないか確認する。
 4.  **バックログ**: 情報が不足している場合は、勝手に仕様を作らず、一般的な解決策を提案した上で `docs/backlog/` に記録する。

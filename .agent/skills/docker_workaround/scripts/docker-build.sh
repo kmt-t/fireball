@@ -33,24 +33,21 @@ echo "[*] Using container: $CONTAINER_ID"
 # Clean if requested
 if [ "$CLEAN" = true ]; then
     echo "[*] Cleaning build directory..."
-    docker exec "$CONTAINER_ID" bash -c "cd /workspaces/fireball && rm -rf $BUILD_DIR"
+    docker exec -w //workspaces/fireball "$CONTAINER_ID" rm -rf "$BUILD_DIR"
 fi
 
 # Setup
 echo "[*] Running meson setup..."
-docker exec "$CONTAINER_ID" bash -c \
-    "cd /workspaces/fireball && meson setup $BUILD_DIR"
+docker exec -w //workspaces/fireball "$CONTAINER_ID" meson setup "$BUILD_DIR"
 
 # Build
 echo "[*] Running ninja build..."
-docker exec "$CONTAINER_ID" bash -c \
-    "cd /workspaces/fireball && ninja -C $BUILD_DIR"
+docker exec -w //workspaces/fireball "$CONTAINER_ID" ninja -C "$BUILD_DIR"
 
 # Test if requested
 if [ "$RUN_TEST" = true ]; then
     echo "[*] Running tests..."
-    docker exec "$CONTAINER_ID" bash -c \
-        "cd /workspaces/fireball && meson test -C $BUILD_DIR --verbose"
+    docker exec -w //workspaces/fireball "$CONTAINER_ID" meson test -C "$BUILD_DIR" --verbose
 fi
 
 echo "[OK] Build complete"

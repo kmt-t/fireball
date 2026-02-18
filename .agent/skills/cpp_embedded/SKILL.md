@@ -18,7 +18,7 @@ description: >-
 本スキルで定義されるチェックツールを実行するには **Dockerコンテナ** の使用を強く推奨します。
 
 - **Docker Workaround**: 詳細は [Docker Workaround](../docker_workaround/SKILL.md) を参照してください。
-- **Windowsユーザー**: お使いの環境で直接実行するのではなく、**Git Bash** を経由してスクリプトを実行してください。
+- **Windowsユーザー**: お使いの環境で直接実行するのではなく、PowerShell から `bash` と入力して **WSL2 (Ubuntu)** シェルに入り、そこからスクリプトを実行してください。
 
 ## 3. L1: 禁止・許可ライブラリ (Libraries)
 
@@ -64,7 +64,7 @@ python3 .agent/skills/cpp_embedded/scripts/checker.py <ソースファイルま�
 ```
 
 ### 環境・実行 (Environment)
-- **推奨**: VSCode DevContainer または Git Bash (Windows)。
+- **推奨**: VSCode DevContainer または WSL2 Bash (`bash`)。
 - **コンテナ実行**: 環境が整っていない場合は、**[Docker Workaround](../docker_workaround/SKILL.md)** を参照してください。
 
 ## 3. 判断基準 (Decision Criteria)

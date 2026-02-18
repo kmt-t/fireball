@@ -1,6 +1,6 @@
 [Brain: Fireball-Project-Context]
 [Invariants]
-  □ Design Truth := docs/specifications (Natural Language is the source of Design Intent)
+  □ Design Truth := docs/requires (Natural Language is the source of Design Intent)
   □ Interface Truth := WIT (Canonical Interface Definition derived from Design Truth)
   □ ∀logic ∈ ComplexStateMachines : verified_by(logic, TLA+) (@see .agent/workflows/development_cycle.md)
   □ ∀c ∈ Components : is_tier(c, 2) ⇒ matches_contract(c, harness_pattern) ∧ is_pure_static(c) (@see docs/patterns/concept_harness.md)
@@ -43,8 +43,8 @@
   - PHASE0_DEADLINE := 2026-03-31 (design phase, extended 2026/01/21)
   - PHASE1_DEADLINE := 2026-06-30 (vSoC implementation)
   - CURRENT_PHASE := Phase0 (design)
-  - CURRENT_DATE := 2026-02-17
-  - elapsed(Phase0) ≈ 37 days / 79 days total → 47% elapsed
+  - CURRENT_DATE := 2026-02-18
+  - elapsed(Phase0) ≈ 38 days / 79 days total → 48% elapsed
 
   [Clock-Asymmetry]
     @inv agent_output_rate >> human_review_rate
@@ -68,10 +68,12 @@
     - Deliver in digestible units, not in volume.
     - One well-formed question > three speculative drafts.
     - If schedule has slack, the human is using that slack to think. Do not consume it.
+    - **Memory Discovery Protocol**: ∀task : before(start) ⇒ load(Gemini.md) ∧ load(ATC) ∧ restore(local_semantics)
+    - **ATC Recording Protocol**: ∀discovery ∈ {DesignDecision, Invariant, ToolFriction} : append(brain/*.atc)
 
 [State]
-  - CURRENT_DATE := 2026-02-17
-  - calendar_elapsed(Phase0) ≈ 0.47
+  - CURRENT_DATE := 2026-02-18
+  - calendar_elapsed(Phase0) ≈ 0.48
   - maturity(vSoC_design) ≈ 0.8
 
   [Phase0-Gate-Criteria]

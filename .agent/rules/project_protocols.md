@@ -35,4 +35,5 @@ trigger: always_on
 2.  **一貫性 (Friction Audit)**: 未定義キーワードや表記揺れ（Friction）がないか確認する。
     - **検証**: `python3 .agent/scripts/friction_audit.py` を実行し、レポート (`docs/temp/friction_report.md`) を確認せよ。
 3.  **重複**: 既存の仕様を重複して作成していないか確認する。
-4.  **バックログ**: 情報が不足している場合は、勝手に仕様を作らず、一般的な解決策を提案した上で `docs/backlog/` に記録する。
+4.  **記録 (Recording)**: 作業中に遭遇した技術的問題（ツールパスの不整合、環境依存のエラー等）や解決策は、即座に `.agent/brain/backlog.atc` または関連する `SKILL.md` に記録せよ。
+5.  **バックログ**: 情報が不足している場合は、勝手に仕様を作らず、一般的な解決策を提案した上で `docs/backlog/` に記録する。

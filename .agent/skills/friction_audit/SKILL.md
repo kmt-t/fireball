@@ -18,7 +18,7 @@ RELATED: fireball_architecture, docker_workaround
 本スキルの実行には **Dockerコンテナ** の使用を強く推奨します。
 
 - **Docker Workaround**: 詳細は [Docker Workaround](../docker_workaround/SKILL.md) を参照してください。
-- **Windowsユーザー**: お使いの環境で直接実行するのではなく、**Git Bash** を経由してスクリプトを実行してください。
+- **Windowsユーザー**: お使いの環境で直接実行するのではなく、PowerShell から `bash` と入力して **WSL2 (Ubuntu)** シェルに入り、そこからスクリプトを実行してください。
 
 ## 3. 使用方法 (Usage)
 
@@ -46,7 +46,9 @@ bash .agent/skills/docker_workaround/scripts/docker-friction.sh
 ## 5. トラブルシューティング
 
 **レポートが生成されない**:
-スクリプトの実行権限を確認してください。また、Dockerコンテナが正しくマウントされているか `docker-workaround` の手順で確認してください。
+- スクリプトの実行権限を確認してください。
+- スクリプトのパスが `.agent/skills/friction_audit/scripts/` であることを確認してください（`.agent/scripts/` と間違えやすい）。
+- **Design Truth** のパスが `docs/requires/` であることを確認してください（`docs/specifications` は廃止）。
 システム内で定義された公式キーワード (`docs/requires/list.md`) と、実際のドキュメントで使用されているキーワードの差異（Friction）を検出する。
 
 ## 2. 機能 (Features)
@@ -81,5 +83,5 @@ python3 .agent/skills/friction_audit/scripts/check_traceability.py
 
 ## 5. 環境・実行 (Environment)
 
-- **推奨**: VSCode DevContainer または Git Bash (Windows)。
+- **推奨**: VSCode DevContainer または WSL2 Bash (`bash`)。
 - **コンテナ実行**: 環境が整っていない場合は、**[Docker Workaround](../docker_workaround/SKILL.md)** を参照してください。

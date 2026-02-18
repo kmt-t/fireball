@@ -62,8 +62,8 @@ bash docker-cmd.sh meson test -C build
 1. **Dockerコンテナが動作可能であること**
    スクリプトは自動的に `fireball-dev` コンテナを起動しようと試みます。
 
-2. **Git Bash使用（Windows）**
-   - **PowerShellは非推奨です**。パス変換の問題を回避するため、必ず Git Bash を使用してください。
+2. **WSL2 Bash使用（Windows）**
+   - **PowerShell上で直接実行するのは非推奨です**。パス変換の問題を回避するため、必ず PowerShell から `bash` と入力して **WSL2 (Ubuntu)** シェルに入ってから実行してください。
 
 3. **プロジェクトルートからのパス依存**
    スクリプトは `.agent/skills/docker_workaround/scripts/` にありますが、リポジトリ内のどこから呼び出しても動作するように設計されています（内部でルートを解決）。ただし、引数のパスはカレントディレクトリ相対で指定してください。

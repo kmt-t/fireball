@@ -10,7 +10,7 @@
   @tier3(Implementation)      := {Scheduler, Interpreter, Loader, Debugger, vMMIO}
 
 [Global-Invariants]
-  □ Design Truth := docs/specifications
+  □ Design Truth := docs/requires
   □ Interface Truth := WIT
   □ ∀c ∈ Tier2 : matches_contract(c, harness_pattern) ∧ is_pure_static(c)
   □ ∀m ∈ Allocations : ¬dynamic(m) ∧ is_heap_less(m)

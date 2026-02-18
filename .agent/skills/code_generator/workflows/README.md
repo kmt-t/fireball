@@ -2,7 +2,7 @@
 
 完全自動化されたWIT→C++ヘッダ生成ワークフロー。
 
-**VSCode devcontainer内でも、Git Bashでも動作します！**
+**VSCode devcontainer内でも、WSL2 Bashでも動作します！**
 
 ---
 
@@ -36,7 +36,7 @@ bash .agent/skills/code_generator/workflows/wit_gen.sh
 
 **環境自動判定**:
 - VSCode devcontainer内: 直接実行
-- Git Bash等: Docker exec経由
+- WSL2 Bash等: Docker exec経由
 
 ---
 
@@ -100,10 +100,10 @@ cd /workspaces/fireball
 bash .agent/skills/code_generator/workflows/wit_all.sh
 ```
 
-### Git Bash（外部）
+### WSL2 Bash（外部）
 
 ```bash
-# Git Bashで実行
+# WSL2 Bashで実行
 cd /n/sources/fireball
 bash .agent/skills/code_generator/workflows/wit_all.sh
 ```
@@ -157,6 +157,6 @@ bash .agent/skills/code_generator/workflows/wit_all.sh
 - ✅ ワンコマンド実行
 - ✅ エラー箇所明示
 - ✅ 目視チェック不要
-- ✅ **VSCode/Git Bash両対応**
+- ✅ **VSCode/WSL2 Bash (`bash`) 両対応**
 
 **これで明日も安心！**🌸

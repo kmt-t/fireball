@@ -78,9 +78,9 @@ WebAssemblyエコシステム（Spec, WASI, WAMR, LLVM）に関連するリソ�
 
 ---
 
-## 5. Standard Include Paths (for explorer-cli)
+## 5. Standard Include Paths (for explorer.sh)
 
-`explorer-cli summary` を WAMR リファレンスのコードに対して実行する際、正確な AST 解析のために以下のインクルードパスの指定が推奨されます。
+`explorer.sh summary` を WAMR リファレンスのコードに対して実行する際、正確な AST 解析のために以下のインクルードパスの指定が推奨されます。
 
 ### WAMR Core Includes
 - `-I inc` (Project local headers)
@@ -90,7 +90,7 @@ WebAssemblyエコシステム（Spec, WASI, WAMR, LLVM）に関連するリソ�
 
 ### Usage Example
 ```bash
-explorer-cli summary docs/references/wamr/core/iwasm/fast-jit/jit_compiler.c \
+bash .agent/skills/explorer/scripts/explorer.sh summary docs/references/wamr/core/iwasm/fast-jit/jit_compiler.c \
   -I inc \
   -I docs/references/wamr/core/iwasm/include \
   -I docs/references/wamr/core/shared/utils
@@ -101,39 +101,31 @@ explorer-cli summary docs/references/wamr/core/iwasm/fast-jit/jit_compiler.c \
 WAMRのソースコードや仕様書を素早く確認するためのコマンドです。
 **実行環境についての詳細は [Docker Workaround](../docker_workaround/SKILL.md) を参照してください。**
 
-**Note**: Windows環境では **Git Bash** を使用してください。
+**Note**: Windows環境では、まず PowerShell で `bash` と入力して **WSL2 (Ubuntu)** シェルに入ってから作業を行うことを推奨します。
 
 ### Interpreter (Main Loop)
 ```bash
-bash .agent/skills/docker_workaround/scripts/docker-explorer.sh summary docs/references/wamr/core/iwasm/interpreter/wasm_interp_fast.c -I inc -I docs/references/wamr/core/iwasm/include -I docs/references/wamr/core/shared/utils -I docs/references/wamr/core/shared/platform/include
+bash .agent/skills/explorer/explorer.sh summary docs/references/wamr/core/iwasm/interpreter/wasm_interp_fast.c -I inc -I docs/references/wamr/core/iwasm/include -I docs/references/wamr/core/shared/utils -I docs/references/wamr/core/shared/platform/include
 ```
 
-### AOT/JIT Loader
+### High-Fidelity AST Analysis Docker
+最新の `explorer` ツールスイートを使用し、コンテナ内での解析を自動化します。
+
 ```bash
-bash .agent/skills/docker_workaround/scripts/docker-explorer.sh summary docs/references/wamr/core/iwasm/aot/aot_loader.c -I inc -I docs/references/wamr/core/iwasm/include -I docs/references/wamr/core/shared/utils -I docs/references/wamr/core/shared/platform/include
+# WAMRのコアヘッダをJSON AST形式で解析
+bash .agent/skills/explorer/docker-explorer.sh ast \
+  docs/references/wamr/core/iwasm/include/wasm_export.h \
+  --json \
+  -I docs/references/wamr/core/iwasm/include \
+  -I docs/references/wamr/core/shared/utils
 ```
 
-### WebAssembly Specs
-WASMコア仕様とWASIのドキュメントを一括要約します。
+### 1-Shot Context Discovery
+キーワードに関連する定義・呼び出し・論理契約を一括で収集します。
 ```bash
-bash .agent/skills/docker_workaround/scripts/docker-cmd.sh find docs/references/webassembly docs/references/wasi -maxdepth 3 -name "*.md" | bash .agent/skills/docker_workaround/scripts/docker-explorer.sh pipe summary
-```
-
-### RISC-V Specs
-RISC-V関連のドキュメントを一括要約します。
-```bash
-bash .agent/skills/docker_workaround/scripts/docker-cmd.sh find docs/references/riscv -maxdepth 3 -name "*.md" | bash .agent/skills/docker_workaround/scripts/docker-explorer.sh pipe summary
-```
-
-### ARM & Others
-ARMアーキテクチャやその他の外部参照リストを確認します。
-```bash
-bash .agent/skills/docker_workaround/scripts/docker-cmd.sh find docs/references -maxdepth 1 -name "REFERENCES.md" | bash .agent/skills/docker_workaround/scripts/docker-explorer.sh pipe summary
+bash .agent/skills/explorer/docker-explorer.sh context "JIT_CopyAndPatch"
 ```
 
 ## 8. 環境・前提条件
-
-本スキルの実行には **Dockerコンテナ** の使用を強く推奨します。
-
-- **Docker Workaround**: 詳細は [Docker Workaround](../docker_workaround/SKILL.md) を参照してください。
-- **Windowsユーザー**: お使いの環境で直接実行するのではなく、**Git Bash** を経由してスクリプトを実行してください。
+Windows環境では、コマンドライン引数のクオーティング不備によるエラーを避けるため、必ず **WSL2 Bash** を使用し、`.agent/skills/explorer/docker-explorer.sh` 経由で実行してください。
+これにより、パス変換とコンテナ内実行が自動的にハンドリングされます。

@@ -190,6 +190,9 @@ def main():
     friction_count = 0
 
     for root, dirs, files in os.walk(docs_dir):
+        # Optimize: Skip heavy or irrelevant directories
+        dirs[:] = [d for d in dirs if d not in ['references', 'temp'] and not d.startswith('.')]
+        
         for file in files:
             if not file.endswith('.md'):
                 continue
@@ -202,10 +205,6 @@ def main():
                 
             # Normalize path
             rel_path_norm = os.path.relpath(file_path, root_dir).replace('\\', '/')
-            
-            # Skip skipped paths
-            if 'docs/references' in rel_path_norm or 'docs/temp' in rel_path_norm or '.agent' in rel_path_norm:
-                continue
 
             potentials = scan_file_for_potential_keywords(file_path)
             file_friction = []

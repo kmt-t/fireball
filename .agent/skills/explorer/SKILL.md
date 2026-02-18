@@ -1,110 +1,77 @@
 ---
 name: Codebase Explorer
-description: インタラクティブにコードベースを探索し、構造把握、シンボル要約、文脈検索（Imakita）を行う統合ツール。
-WHEN: 構造把握、関数追跡、シンボル一覧取得、キーワード文脈理解（今北産業）が必要な時
+description: インタラクティブにコードベースを探索し、構造把握、シンボル要約、文脈解析 (Context Analysis) を行う統合ツール。
+WHEN: 構造把握、関数追跡、シンボル一覧取得、キーワード文脈理解（文脈集約）が必要な時
 SCOPE: プロジェクト全域
 RELATED: friction_audit, docker_workaround
+PROTOCOL: 検索時は「自己流の単語」を避け、「設計ドキュメント内に明示されている用語」を使用すること。
 ---
 
-# Codebase Explorer スキル
+# Codebase Explorer
 
 ## 1. 概要 (Overview)
+インタラクティブにコードベースを探索し、構造把握、シンボル要約、文脈解析 (Context Analysis) を行う統合ツール。
+本スキルは、エージェントのワーキングメモリを保護し、大規模なコードベースを構造的に把握することを目的とする。
 
-`explorer.py` は、ディレクトリのナビゲーション、ファイルの要約、および関数間の依存関係（呼び出し元・呼び出し先）の探索を統合したインタラクティブなCLIツールです。
-**本スキルはコンテナ内での実行を前提としており、`clang` による高度な解析を提供します。**
+## 2. 標準的な実行手順 (Standard Invocations)
 
-詳細な使用方法は [USAGE.md](file:///n:/sources/fireball/.agent/skills/explorer/USAGE.md) を参照してください。
+Windows環境ではパス解釈やクオーティングの差異によりエラーが発生しやすいため、以下の標準エントリポイントを必ず遵守せよ。
 
-## 2. 環境・前提条件
-
-本スキルの実行には **Dockerコンテナ** の使用を強く推奨します。
-
-- **Docker Workaround**: 詳細は [Docker Workaround](../docker_workaround/SKILL.md) を参照してください。
-- **Windowsユーザー**: お使いの環境で直接実行するのではなく、**Git Bash** を経由してスクリプトを実行してください。
-
-## 3. 使用方法 (Usage)
-
-### インタラクティブモード (Recommended)
-
-`docker-explorer.sh` を引数なしで実行するとインタラクティブモードに入ります。
-
+### A. コンテナ内解析 (推奨)
+Clang AST解析やコンテナ環境ツールを使用する場合。
 ```bash
-bash .agent/skills/docker_workaround/scripts/docker-explorer.sh
+# 基本形:
+bash .agent/skills/explorer/docker-explorer.sh <command> [args...]
+
+# 例: AST解析 (JSON)
+bash .agent/skills/explorer/docker-explorer.sh ast path/to/file.hxx --json -Iinc
 ```
 
-- **番号入力**: ディレクトリへの移動、またはファイルの選択。
-- **`..`**: 上位ディレクトリへ戻る。
-- **`q`**: 終了。
-
-### CLIツール (One-Shot / Pipe)
-
-パイプライン連携や一括処理には `docker-explorer.sh` に引数を渡します。
-
+### B. ホスト解析 (WSL2 Bash)
+高速なテキスト検索やドキュメント要約に使用。
 ```bash
-# ファイル要約（JSON出力オプションあり）
-bash .agent/skills/docker_workaround/scripts/docker-explorer.sh summary docs/README.md
-
-# パイプライン連携（ソースコード一括解析）
-# パイプライン連携（ソースコード一括解析）
-bash .agent/skills/docker_workaround/scripts/docker-cmd.sh find src -name "*.cxx" | bash .agent/skills/docker_workaround/scripts/docker-explorer.sh pipe summary
+# PowerShell から bash と打って入った後、または wsl bash -c で実行:
+bash .agent/skills/explorer/scripts/explorer.sh summary docs/architecture/
 ```
 
-## 4. 機能詳細
-
-### Summarize / 項目要約
-ファイル内のヘッダやシンボル（構造体・関数・引数）を一覧表示します。
-
-### 3-line Summary / 今北産業
-キーワードの文脈を検索し、3行要約（定義・用途・設計意図）を生成します。
-
-### Search Callers/Callees / 依存関係列挙
-関数の呼び出し元・先をプロジェクト全域から再帰的に追跡します。
-
-## 5. 利点 (Benefits)
-
-- **トークン節約**: 巨大なファイルを全部読まずに、必要なシンボルやレイアウト情報だけを抽出できます。
-- **クロスプラットフォーム**: Dockerコンテナ内で実行されるため、ホストOSに依存せず `clang` 解析が可能です。
-- **トレーサビリティ連携**: ファイル内の `{Keyword}` を自動検出し、要求仕様との紐付けを可視化します。
-`explorer.py` は、ディレクトリのナビゲーション、ファイルの要約、および関数間の依存関係（呼び出し元・呼び出し先）の探索を統合したインタラクティブなCLIツールです。
-**本スキルはコンテナ内での実行を前提としており、`clang` による高度な解析を提供します。**
-
-詳細な使用方法は [USAGE.md](file:///n:/sources/fireball/.agent/skills/explorer/USAGE.md) を参照してください。
-
-## 2. 使用方法 (Usage)
-
-### インタラクティブモード (Recommended: Inside Container)
+### C. コンテナ内からの直接実行
+devcontainer 内のターミナルまたは `docker exec` で入った後は、ラッパーを介さず直接実行できます。
 
 ```bash
-python3 .agent/skills/explorer/scripts/explorer.py
+# コンテナ内蔵の python を使用:
+python3 .agent/skills/explorer/scripts/explorer.py summary src/
 ```
 
-- **番号入力**: ディレクトリへの移動、またはファイルの選択。
-- **`..`**: 上位ディレクトリへ戻る。
-- **`q`**: 終了。
+## 3. 解析サブコマンド
+- `summary <path>`: ファイルまたはディレクトリのシンボルツリーと骨格を抽出。
+- `ast <path>`: Clang AST をダンプ。`--json` フラグ併用可能。
+- `callers <symbol>`: 指定したシンボルの呼び出し元を再帰的に探索。
 
-### ファイル操作メニュー
-1.  **Summarize**: ファイル内のヘッダやシンボル（構造体・関数・引数）を一覧表示します。
-2.  **3-line Summary**: キーワードの文脈を検索し、3行要約（定義・用途・設計意図）を生成します。
-3.  **Search Callers/Callees**: 関数の呼び出し元・先をプロジェクト全域から再帰的に追跡します。
-4.  **AST Struct Dump**: 構造体の正確なメモリレイアウト（オフセット・型）を抽出します。
+## 4. 設計情報の抽出
+設計書 (`docs/*.md`) を解析する際、AIは自然言語から設計不変条件やインターフェース契約を自律的に抽出すること。
+詳細は `scripts/README.md` を参照せよ。
 
-### CLIツール（パイプ対応）
+### シンボル俯瞰 (Summary)
 
 ```bash
-# シンボル要約 (ASTベース、インクルードパス指定可能)
-./.agent/skills/explorer/scripts/explorer-cli summary <ソースファイル> [-I <パス> ...]
-
-# パイプライン連携
-ls src/*.cxx | ./.agent/skills/explorer/scripts/explorer-cli pipe summary
+bash .agent/skills/explorer/scripts/explorer.sh summary src/main.cxx
 ```
 
-## 3. 環境・実行 (Environment)
+## 6. 高度な利用方法: バッチ処理 (Batch Processing)
 
-- **推奨**: VSCode DevContainer または Git Bash (Windows)。
-- **コンテナ実行**: ホスト環境が整っていない場合（`clang`がない、Windows等）は、**[Docker Workaround](../docker_workaround/SKILL.md)** を参照してください。
-    - `explorer-cli` 用のコンテナラッパー `docker-explorer.sh` が利用可能です。
+本ツールは標準的な Unix パイプを介した一括処理が可能です。`docker-cmd.sh` でファイルを抽出し、`xargs` を介して `docker-explorer.sh` に渡すことで、大規模なコードベースを高速に要約できます。
 
-## 4. 利点 (Benefits)
-- **トークン節約**: 巨大なファイルを全部読まずに、必要なシンボルやレイアウト情報だけを抽出できます。
-- **クロスプラットフォーム**: Windows上でもPythonネイティブ検索により `grep` なしで呼び出し元特定が可能です。
-- **トレーサビリティ連携**: ファイル内の `{Keyword}` を自動検出し、要求仕様との紐付けを可視化します。
+```bash
+# 例: src ディレクトリ内のすべての .cxx ファイルを 5 つまでバッチ要約
+bash .agent/skills/docker_workaround/scripts/docker-cmd.sh find src -name "*.cxx" | head -n 5 | xargs -I {} bash .agent/skills/explorer/scripts/docker-explorer.sh summary {}
+```
+
+---
+
+## 7. トラブルシューティング & フリクション (Troubleshooting)
+
+- **Windows シェル環境の不備**: PowerShell や CMD ではクオーティング不備や `find` コマンドの挙動差異（Windows版 `find` が呼ばれる等）により、スクリプトが誤作動することがあります。
+  - **解決策**: 常に **WSL2 Bash** を使用してスクリプトを起動してください（PowerShell から `bash` と入力して入るのが最も容易です）。
+  - **解決策**: ファイル探索にはシステム標準の `find` ではなく、`grep_search` や本スキルの `summary` を優先的に使用してください。
+
+---

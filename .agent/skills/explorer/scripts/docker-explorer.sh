@@ -28,4 +28,4 @@ SERVICE_NAME="fireball-dev"
 # Run using docker compose
 # -T: Disable pseudo-tty allocation (for piping)
 # --rm: Remove container after exit
-docker compose -f "$PROJECT_ROOT/.devcontainer/docker-compose.yml" run --rm -T $SERVICE_NAME //bin/bash .agent/skills/explorer/scripts/explorer-cli "$@"
+docker compose -f "$PROJECT_ROOT/.devcontainer/docker-compose.yml" run --rm -T $SERVICE_NAME //bin/bash .agent/skills/explorer/scripts/explorer.sh "$@"

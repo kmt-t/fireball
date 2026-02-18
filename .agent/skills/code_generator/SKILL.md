@@ -23,7 +23,7 @@ WIT IDLからC++ヘッダを自動生成し、品質チェックまで一貫し�
 本スキルの実行には **Dockerコンテナ** の使用を強く推奨します。
 
 - **Docker Workaround**: 詳細は [Docker Workaround](../docker_workaround/SKILL.md) を参照してください。
-- **Windowsユーザー**: お使いの環境で直接実行するのではなく、**Git Bash** を経由してスクリプトを実行してください。
+- **Windowsユーザー**: お使いの環境で直接実行するのではなく、PowerShell から `bash` と入力して **WSL2 (Ubuntu)** シェルに入り、そこからスクリプトを実行してください。
 
 ## 3. 使用方法 (Usage)
 

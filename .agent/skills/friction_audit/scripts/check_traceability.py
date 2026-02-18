@@ -61,6 +61,9 @@ def main():
     missing_keywords = keywords.copy()
 
     for root, dirs, files in os.walk(docs_dir):
+        # Optimize: Skip heavy or irrelevant directories
+        dirs[:] = [d for d in dirs if d not in ['references', 'temp'] and not d.startswith('.')]
+        
         for file in files:
             if not file.endswith('.md'):
                 continue

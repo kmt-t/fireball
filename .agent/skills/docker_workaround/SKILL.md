@@ -2,7 +2,7 @@
 name: Docker Workaround
 description: >
   Docker Composeを使用して安定した開発環境を構築し、ツールを実行する手順。
-  WHEN: devcontainerが動かない, コンテナ内ツール必要, Git Bash使用
+  WHEN: devcontainerが動かない, コンテナ内ツール必要, WSL2 Bash使用
   SCOPE: Docker Composeによるワークフロー。
   RELATED: code_generator（WIT自動生成）, fireball_architecture（ビルドシステム）
 ---
@@ -11,14 +11,20 @@ description: >
 
 ## 概要
 
-VSCodeのdevcontainer機能が不安定な場合や、外部からコンテナ内ツールを利用したい場合に、
-`docker-compose` を使用して手動で開発環境を立ち上げ、操作する手順。
-`.devcontainer/docker-compose.yml` を使用します。
+`docker_workaround` スキルは、環境の不確実性を排除し、全ツール群を決定論的なコンテナ内で実行するための「レバレッジ・ポイント」です。
+VSCodeのdevcontainer機能が不安定な場合や、外部からコンテナ内ツールを利用したい場合に、`docker-compose` を使用して手動で開発環境を立ち上げ、操作します。
+
+### 本スキルを使用するメリット (Leverage)
+
+- **「自分の環境では動く」の排除**: ツールチェーンの違いによる微細な挙動の差という認知ノイズを消し、純粋なロジックに集中できます。
+- **手数の集約**: `tlc`, `wasm-tools`, `clang` 等の重量級ツールを個別に管理せず、1 つのランナー経由で統一的に操作します。
+- **ツールの聖域化**: ホスト環境を汚さず、隔離されたクリーンな環境で検証を実行します。
+- **環境トラブルの 0 化**: Windows/VHDX 環境特有の Docker トラブルに対する最短の解決パスを提供し、開発の「詰まり」を解消します。
 
 ## 1. 環境の起動
 
 **Note for Windows Users**:
-Windows環境では、**Git Bash** (`C:\Program Files\Git\git-bash.exe` or `bin\bash.exe`) を使用して以下のコマンドを実行してください。PowerShellではパス変換の問題により動作しない場合があります。
+Windows環境では、PowerShell から `bash` と入力して **WSL2 (Ubuntu)** シェルに入り、そこから以下のコマンドを実行してください。PowerShell上で直接実行するとパス変換の問題により動作しない場合があります。
 
 プロジェクトルートで実行:
 
@@ -37,6 +43,11 @@ docker compose -f .devcontainer/docker-compose.yml ps
 
 `docker compose exec` を使用して、起動中のコンテナ内でコマンドを実行します。
 ユーザーは `developer` として実行されます。
+
+> [!TIP]
+> **Execution Context**:
+> `.agent/skills/*/scripts/docker-*.sh` は、**ホスト側 (WSL2 Bash)** からの実行を想定したラッパーです。
+> すでにコンテナ内 (devcontainer ターミナル等) にいる場合は、これらのラッパーを使用せず、直接対象のコマンドやスクリプトを実行してください。
 
 ### Explorer (Code Analysis)
 コードベースの探索や要約を行います。
@@ -58,6 +69,9 @@ bash .agent/skills/docker_workaround/scripts/docker-cmd.sh <command> <args>
 
 # 例: find コマンド (ソースコードのスキャン等)
 bash .agent/skills/docker_workaround/scripts/docker-cmd.sh find src -name "*.cxx"
+
+# 例: パイプを使用した explorer との連携 (バッチ解析)
+bash .agent/skills/docker_workaround/scripts/docker-cmd.sh find src -name "*.hxx" | xargs -I {} bash .agent/skills/explorer/scripts/docker-explorer.sh summary {}
 
 # 例: make / meson (ビルドコマンド)
 bash .agent/skills/docker_workaround/scripts/docker-cmd.sh meson test -C build

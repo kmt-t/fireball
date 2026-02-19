@@ -114,23 +114,48 @@ sequenceDiagram
 | シグネチャ | `transfer(tx_buffer: shm_id, rx_buffer: shm_id) -> operation-result` |
 | 期待する結果 | 正常：CPUを介さずバッファ間のデータ移動が完了する。 `{PhysicalPassthrough}` |
 
-#### 非標準制御 (ioctl)
+#### 非標準制御 (control)
 
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | read/write で表現できないデバイス固有の操作（ボーレート設定、ピン制御等）を行う。 |
-| シグネチャ | `ioctl(id: ID値, cmd: ID値, args: アドレス値) -> 結果型` |
-| 引数 | `id`: デバイスID<br>`cmd`: コマンド識別子<br>`args`: コマンド固有引数(ポインタ) |
-| 戻り値 | 結果型 |
+| シグネチャ | `control(id: ID値, cmd: ID値, params: ipc-message) -> operation-result` |
+| 引数 | `id`: デバイスID<br>`cmd`: コマンド識別子<br>`params`: コマンド固有引数(Key-Valueメッセージ) |
+| 戻り値 | 操作結果 |
 
 #### バッファの確保 (acquire_buffer)
 
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | デバイス通信に使用する固定長バッファプールからスロットを一つ確保する。**確保されたバッファは vMMIO の `DYNAMIC` 領域にマッピングされる。** |
-| シグネチャ | `acquire_buffer(size: バイト数) -> ID値` |
+| シグネチャ | `acquire_buffer(size: バイト数) -> result<shm-id, recovery-strategy>` |
 | 引数 | `size`: 必要なバイト数 |
-| 戻り値 | ID値 (成功時はバッファID、失敗時は無効ID) |
+| 戻り値 | 成功時は `shm-id` |
+
+### 5.2 Tier 3 リソースインターフェイス
+
+#### `gpio-controller` (物理GPIO制御)
+| プロトタイプ | 内容 |
+| :--- | :--- |
+| `set-pin(pin, value)` | ピンの出力レベルを設定する。 |
+| `get-pin(pin)` | ピンの入力レベルを取得する。 |
+
+#### `periodic-timer` (時刻とタイマー)
+| プロトタイプ | 内容 |
+| :--- | :--- |
+| `get-now()` | システム時間（ナノ秒）を取得する。 |
+| `subscribe-timer(nanos)` | 指定時刻に割り込みを予約する。 |
+
+#### `bus-master` / `bus-slave` (I2C/SPI通信)
+| プロトタイプ | 内容 |
+| :--- | :--- |
+| `transfer(tx, rx)` | 共有メモリを用いたゼロコピー通信を行う。 |
+
+#### `debug-server` (GDB RSP サーバ)
+| プロトタイプ | 内容 |
+| :--- | :--- |
+| `poll-packet()` | RSPパケットの受信確認を行う。 |
+| `get-parsed-command()` | 解析済みコマンドの取得を行う。 |
 
 ### 5.2 URI/IPCインターフェイス
 - **URI**: `fireball://hal/<device_name>/<instance_id>`

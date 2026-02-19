@@ -138,14 +138,14 @@ sequenceDiagram
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | 送信先チャネルに対してメッセージを転送し、必要に応じてリソースの所有権を移譲する。待機中の相手には即時スイッチを行う。 `{CSP_Handoff}` |
-| シグネチャ | `route_message(channel: ID値, msg: const参照) -> 結果型` |
-| 引数 | `channel`: 送信先ID<br>`msg`: 送信メッセージ (`message`) |
-| 戻り値 | 結果型 (成功時は空、失敗時はエラー) |
+| シグネチャ | `route_message(channel: ID値, msg: ipc-message) -> operation-result` |
+| 引数 | `channel`: 送信先ID<br>`msg`: 送信メッセージ (`ipc-message`) |
+| 戻り値 | 操作結果 |
 | エラー時の挙動 | 送信失敗時はエラーを返し、所有権の移譲を中止する。 |
 
 ### 5.2 URI/IPCインターフェイス
 - **URI形式**: `fireball://<subsystem_id>/<stream>/<instance_id>`
-- **メッセージ形式**: 64ビットのKey-Value値を最大12個含むパケット。 `{TypeSafeMessaging}`
+- **メッセージ形式**: 64ビットのKey-Value値を最大8個含むパケット。 `{TypeSafeMessaging}`
 
 ### 5.3 サービスファサード
 IPCのプリミティブ性を隠蔽し、依存性の逆転 (IoC) を実現するため、サービスの利用側（内側の層）がファサードクラスを定義する。 `{ServiceFacade}` `{IoC}`

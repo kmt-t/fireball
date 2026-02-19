@@ -78,8 +78,8 @@ stateDiagram-v2
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | スケジューラを動作させるための依存コンポーネントを注入する。 |
-| シグネチャ | `initialize(timer: address, memory: address) -> operation_result` |
-| 引数 | `timer`: タイマー資源のアドレス<br>`memory`: メモリ管理ユニットのアドレス |
+| シグネチャ | `initialize(memory: address) -> operation-result` |
+| 引数 | `memory`: メモリ管理ユニットのアドレス |
 | 戻り値 | 操作結果 |
 
 #### `spawn`
@@ -123,6 +123,13 @@ stateDiagram-v2
 | 機能概要 | ハードウェア割り込みの発生を通知し、待機中タスクを READY へ移行させる。 |
 | シグネチャ | `notify_interrupt(task: task_id) -> void` |
 | 引数 | `task`: 再開対象のタスクID |
+
+#### `terminate`
+| 項目 | 内容 |
+| :--- | :--- |
+| 機能概要 | 指定したタスクを終了し、リソースを解放する。 |
+| シグネチャ | `terminate(id: task_id) -> void` |
+| 引数 | `id`: 終了対象のタスクID |
 
 ## 6. 設計判断 (ADR)
 

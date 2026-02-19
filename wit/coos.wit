@@ -57,6 +57,11 @@ interface coos {
         /// @post: task state == terminated
         terminate: func(id: os-task-id);
         
+        /// Notifies the scheduler of an interrupt to wake up a task.
+        /// @pre: initialized
+        /// @post: task transitions to ready or interrupted state
+        notify-interrupt: func(id: os-task-id);
+
         /// Gets information about a task.
         /// @pre: initialized
         get-task-info: func(id: os-task-id) -> result<task-context-record, bool>;

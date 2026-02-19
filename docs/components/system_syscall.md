@@ -22,7 +22,14 @@ package fireball:host;
 
 interface trap {
   /// Performs a low-level host call with raw arguments.
-  fireball-call: func(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32, arg4: u32, arg5: u32) -> u32;
+  /// Variants for optimization based on argument count.
+  fireball-call0: func(id: u32) -> u32;
+  fireball-call1: func(id: u32, a0: u32) -> u32;
+  fireball-call2: func(id: u32, a0: u32, a1: u32) -> u32;
+  fireball-call3: func(id: u32, a0: u32, a1: u32, a2: u32) -> u32;
+  fireball-call4: func(id: u32, a0: u32, a1: u32, a2: u32, a3: u32) -> u32;
+  fireball-call5: func(id: u32, a0: u32, a1: u32, a2: u32, a3: u32, a4: u32) -> u32;
+  fireball-call6: func(id: u32, a0: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32) -> u32;
 }
 
 world fireball {
@@ -166,12 +173,12 @@ enum class fb_syscall_id : uint32_t {
 ゲストのWASI互換ライブラリ（`wasi-libc`など）からの呼び出しを傍受し、`fireball_call`呼び出し規約に従ってホストの`fireball_call`へ変換する。
 
 ### 6.2. 高応答 Trigger のマッピング例
-`interface trigger` の `set_pin` は、最小レイテンシを確保するために `fireball_call` を直接使用する。
 
-`fireball_call` へのマッピング:
-*   `id`: `FB_SYSCALL_TRIGGER_SET_PIN`
-*   `arg0`: `pin` (ピン番号)
-*   `arg1`: `value` (0 または 1)
+| 項目 | 内容 |
+| :--- | :--- |
+| 機能概要 | 最小レイテンシ確保のため `fireball_call` を直接使用してピン出力を設定する。 |
+| シグネチャ | `fireball_trigger_set_pin(pin: u32, value: bool) -> void` |
+| マッピング | `id`: `FB_SYSCALL_TRIGGER_SET_PIN`<br>`arg0`: `pin`<br>`arg1`: `value` (0/1) |
 
 ```c
 // ゲスト側での trigger.set_pin の実装例 (Shim) `{Fast_Path_GPIO}`

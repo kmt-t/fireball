@@ -15,6 +15,7 @@ WASMローダは、ROM上のWASM32バイナリをパースし、実行環境が�
 
 ### 3.2 内部ブロック図
 ```mermaid
+graph TD
     subgraph Loader_Layer
         Loader[WasmLoader Engine]
         Registry[Internal Registry]
@@ -153,17 +154,41 @@ sequenceDiagram
 ### 5.1 公開API
 外部から利用可能なオブジェクト指向APIを定義する。
 
-#### `load`
+#### `prepare`
 
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | ROM上のWASMバイナリをパースし、内部レジストリに登録してビューを取得する。 |
-| シグネチャ | `load(binary: バイナリビュー) -> 結果型` |
-| 引数 | `binary`: WASMバイナリデータ (ROM直接参照) |
-| 戻り値 | 結果型 (成功時は `module_view` への参照、失敗時はエラー情報) |
+| シグネチャ | `prepare(wasm: binary-view) -> result<wasm-module-view, sys-recovery-strategy>` |
+| 引数 | `wasm`: WASMバイナリデータ (ROM直接参照) |
+| 戻り値 | 成功時は `wasm-module-view` リソース、失敗時はリカバリ戦略 |
 | 事前条件 | システムが初期化済みであること。 |
 | 事後条件 | 成功時、内部レジストリにモジュールが登録される。 |
-| エラー時の挙動 | 不正なバイナリの場合はロードを拒否し、エラーを返す。 |
+
+#### `load`
+
+| 項目 | 内容 |
+| :--- | :--- |
+| 機能概要 | モジュールの線形メモリをゲストRAMに展開し、初期化する。 |
+| シグネチャ | `load(module: wasm-module-view) -> operation-result` |
+| 引数 | `module`: 展開対象のモジュールビュー |
+
+#### `resolve-imports`
+
+| 項目 | 内容 |
+| :--- | :--- |
+| 機能概要 | モジュールのインポートセクションをスキャンし、レジストリ内の他モジュールとリンクする。 |
+| シグネチャ | `resolve-imports(module: wasm-module-view) -> operation-result` |
+| 事前条件 | 依存するすべてのモジュールが既にロード（リポジトリに登録）されていること。 |
+| 事後条件 | 成功時、モジュールが実行可能状態になる。 |
+
+#### `unload`
+
+| 項目 | 内容 |
+| :--- | :--- |
+| 機能概要 | モジュールをレジストリから削除し、関連リソースを解放する。 |
+| シグネチャ | `unload(module: wasm-module-view) -> operation-result` |
+| 補足 | バンプアロケータを使用しているため、完全なメモリ回収はロードの逆順で行う必要がある。 |
 
 #### `lookup`
 

@@ -149,6 +149,8 @@ sequenceDiagram
 ### 5.1 公開API
 外部から利用可能なオブジェクト指向APIを定義する。
 
+TODO(Phase 1): ATC抽出 - `execution_context` の状態遷移に関する厳格な事前/事後/不変条件をAPIごとに定義すること。
+
 #### `initialize`
 
 | 項目 | 内容 |
@@ -163,7 +165,7 @@ sequenceDiagram
 | エラー時の挙動 | メモリ確保失敗時は初期化を中断し、エラー値を返す。 |
 | 補足 | デバッグモードが指定された場合は `debug_handler_table` を使用するように構成する。 |
 
-#### `run_step`
+#### 実行ステップ (`run_step`)
 
 | 項目 | 内容 |
 | :--- | :--- |
@@ -173,7 +175,7 @@ sequenceDiagram
 | 戻り値 | 結果型 (正常終了時は空、トラップ発生時はトラップ要因 `{RecoveryStrategy}`) |
 | 補足 | 必要に応じて内部的に JIT コードへのジャンプを行い、JIT/Interpreter を透過的に切り替える。 |
 
-#### `sync_interrupts`
+#### 割り込み同期 (`sync_interrupts`)
 
 | 項目 | 内容 |
 | :--- | :--- |

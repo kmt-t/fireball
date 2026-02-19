@@ -25,6 +25,9 @@
 
 ## 3. 検索・データ構造
 
-### `indexed_array_adapter`
+### 索引配列アダプタ (`indexed_array_adapter`)
+
+TODO(Phase 1): ATCの抽出 - 二分探索アルゴリズムにおける事前条件（元のデータが一意であることや、順序定義など）を明確化すること。
+
 - **目的**: 元のデータの順序を変えず、索引配列のみをソート。 `{SortedIndexedArray}`
 - **特性**: ROM上のWASMバイナリに対する二分探索などに使用。 `{BinarySearch}` `{AccessDictionary}`

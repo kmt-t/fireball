@@ -40,6 +40,8 @@ type registration-result = result<_, recovery-strategy-category>;
 type routing-result = result<_, recovery-strategy-category>;
 ```
 
+TODO(Phase 1): ATC抽出 - 各リカバリー戦略（retry, restart等）を選択するための不変条件、およびシステム状態（panic時の状態保存など）の事後条件を明確にすること。
+
 #### 設計判断
 - **実装詳細の分離**: `hardware-error`や`timeout`は実装の内部状態であり、クリーンアーキテクチャの内側が知るべきではない。
 - **アクション指向**: リカバリー戦略により、呼び出し側は具体的なアクション（リトライ/エラーログ出力して諦める）を決定できる。
@@ -117,7 +119,7 @@ WASI仕様と HAL の乖離および考慮点は以下の通り：
 2. **リアルタイム性**: WASI 0.2 の `poll` モデルは非同期イベントの集約には優れるが、極めて高速なリアルタイム応答が必要な場合、`fireball_call` (Trap) を併用する方が効率的である可能性がある。
 3. **リソース管理のオーバーヘッド**: `resource` の生成・破棄（ハンドル管理）は、単純な `u32` ID渡しよりもホスト側のオーバーヘッドが増えるため、64KB RAM 環境ではハンドル数を制限するなどの対策が必要。
 
-## 8. 命名規則 (Naming Conventions) `{WIT_Naming_Conventions}`
+## 8. 命名規則 (Naming Conventions)
 
 WIT識別子は WASI 標準および `wasm-tools` の制約により `kebab-case` (ハイフン区切り) が必須である。プロジェクトでは以下のセマンティクス規約を適用する。
 

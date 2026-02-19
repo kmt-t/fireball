@@ -17,7 +17,10 @@
 
 ## 4. インターフェイス設計
 
-#### `init-manager`
+#### 初期化
+
+TODO(Phase 1): ATC抽出 - アライメント制約（ページ単位など）とpool-sizeの境界制約を厳密に定義すること。
+
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | メモリマネージャを初期化する。 |
@@ -59,6 +62,9 @@
 | 補足 | 共有メモリは `shared-block` のデストラクタで自動解放される。 |
 
 ## 5. 制約と不変条件
+
+TODO(Phase 1): 動的モデルの明確化 - フラグメンテーション回避のアルゴリズム（空きブロックの統合等）や、上限サイズ超過時のエラーハンドリングを定義すること。
+
 - `∀m ∈ Allocations : ¬dynamic(m) ∧ is_heap_less(m)`
 - `total_allocated_bytes <= FB_CONF_MEMORY_POOL_SIZE` `{StrictMemoryLimit}`
 - `∀block ∈ allocated : block.owner != 0` (task-idと必ず紐付く)

@@ -64,7 +64,7 @@ TLA+が時相論理で検証を行うため、ATCの記法も様相論理に統�
 ## 6. 実例
 
 ```atc
-@pre:  ∃w ∈ WIT : matches(w, docs/components/scheduler.md)
+@pre:  ∃w ∈ WIT : matches(w, docs/components/os_scheduler.md)
 @pre:  is_tier(scheduler, 3)
 □inv:  ∀f ∈ funs(scheduler) : ¬virtual(f) ∧ ¬override(f)
 □inv:  ∀m ∈ Allocation : is_heap_less(m)

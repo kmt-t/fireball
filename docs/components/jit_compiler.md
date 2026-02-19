@@ -50,9 +50,9 @@ graph TD
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| ホットスポット検知器 | 命令の実行頻度を監視するサブコンポーネント | 構造体への参照 | [`hotspot_detector`](jit_hotspot_detector.md) (非所有) |
-| パッチエンジン | テンプレートからコードを生成するサブコンポーネント | 構造体への参照 | [`copy_and_patch_engine`](jit_copy_and_patch_engine.md) (非所有) |
-| エントリ索引 | PCと生成コードの対応を管理する索引 | 構造体への参照 | [`jit_entry_index`](jit_entry_index.md) (非所有) |
+| ホットスポット検知器 | 命令の実行頻度を監視するサブコンポーネント | 構造体への参照 | [`hotspot_detector`](jit_runtime_hotspot.md) (非所有) |
+| パッチエンジン | テンプレートからコードを生成するサブコンポーネント | 構造体への参照 | [`copy_and_patch_engine`](jit_engine_copy_patch.md) (非所有) |
+| エントリ索引 | PCと生成コードの対応を管理する索引 | 構造体への参照 | [`jit_entry_index`](jit_runtime_entry.md) (非所有) |
 | キャッシュマネージャ | 生成コードのメモリ領域を管理するサブコンポーネント | 構造体への参照 | 独自構造体 (非所有) |
 
 #### `jit_context` (JITコンテキスト)
@@ -195,10 +195,10 @@ JITトレース検索時の内部状態と期待される挙動を検証する�
 ### 5.2 内部コンポーネントのデコンポジション
 JITエンジンの責務を、以下の独立したサブコンポーネントに分離して設計する。
 
-- **[JIT Hotspot Detector](jit_hotspot_detector.md)**: 実行履歴の監視とコンパイル要否の判定。
-- **[Copy-and-Patch Engine](jit_copy_and_patch_engine.md)**: 命令テンプレートを用いたネイティブコード生成。
-- **[JIT Entry Index](jit_entry_index.md)**: PC-アドレス変換テーブルの管理と検索高速化。
-- **[constexpr Assembler](constexpr_assembler.md)**: 静的な命令エンコード DSL。 `{JIT_Encoder}`
+- **[JIT Hotspot Detector](jit_runtime_hotspot.md)**: 実行履歴の監視とコンパイル要否の判定。
+- **[Copy-and-Patch Engine](jit_engine_copy_patch.md)**: 命令テンプレートを用いたネイティブコード生成。
+- **[JIT Entry Index](jit_runtime_entry.md)**: PC-アドレス変換テーブルの管理と検索高速化。
+- **[constexpr Assembler](jit_assembler_constexpr.md)**: 静的な命令エンコード DSL。 `{JIT_Encoder}`
 
 ## 6. インターフェイス定義
 

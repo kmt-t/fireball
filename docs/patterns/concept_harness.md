@@ -228,5 +228,5 @@ vsoc_runtime<bad_harness> rt;
 
 ## 関連ドキュメント
 
-- [Fireball Architecture](../architecture/overview.md): 3-Tier分離の全体像
-- [C++ Embedded Optimization](../../.agent/skills/cpp_embedded/SKILL.md): メモリ最適化技法
+- [Fireball Architecture](../architecture/architecture_overview.md): 3-Tier分離の全体像
+- [C++ Embedded Optimization](../../.agent/skills/embedded_cpp_check/SKILL.md): メモリ最適化技法

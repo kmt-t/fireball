@@ -1,0 +1,9 @@
+# Force LF for shell scripts
+*.sh text eol=lf
+*.py text eol=lf
+*.wit text eol=lf
+*.md text eol=lf
+
+# Default behavior
+* text=lf
+

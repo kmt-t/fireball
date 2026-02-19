@@ -9,7 +9,6 @@
 #include <string_view>
 #include <expected>
 #include <optional>
-#include <vector>
 #include <tuple>
 
 namespace fireball {

@@ -7,19 +7,19 @@
   @note Items that block gate_pass(Phase0). WIT/TLA+ detail + size/perf verification.
 
   [Spec-Gaps: WIT detail_level += 2]
-    - DONE(loader_dependency_mgmt): resolve-imports API added. @see vsoc.wit, loader.md §4.1
-    - DONE(loader_lifecycle): unload API added, bump_allocator LIFO constraint. @see vsoc.wit, loader.md §4.1
-    - DONE(loader_memory_limits): FB_CONF_MAX_* constants defined. @see loader.md §4.2
-    - DONE(loader_verification_scope): V1-V5 checks formalized. @see loader.md §4.3
+    - DONE(loader_dependency_mgmt): resolve-imports API added. @see vsoc.wit, runtime_loader.md §4.1
+    - DONE(loader_lifecycle): unload API added, bump_allocator LIFO constraint. @see vsoc.wit, runtime_loader.md §4.1
+    - DONE(loader_memory_limits): FB_CONF_MAX_* constants defined. @see runtime_loader.md §4.2
+    - DONE(loader_verification_scope): V1-V5 checks formalized. @see runtime_loader.md §4.3
     - DONE(logger_wit): @pre/@post/@inv contracts added to services.wit logger
-    - DONE(logger_dictionary): ROM-resident, entry format finalized. @see logging.md §4.2
-    - DONE(logger_buffer_policy): FINALIZED Overwrite. @see logging.md §4.1
-    - DONE(logger_flush): COOS idle hook protocol defined. @see logging.md §4.3
-    - DONE(vdma_representation): pure MMIO trap + fireball_call(VDMA_START) wrapper. @see vmmio.md §4.1
-    - DONE(virtual_interrupts): static 1:1 mapping, separate irq_mapping_config. @see vmmio.md §4.6
-    - DONE(trap_state_protocol): WASM call convention handles save/restore. @see fireball_syscall_interface.md §10
+    - DONE(logger_dictionary): ROM-resident, entry format finalized. @see system_logging.md §4.2
+    - DONE(logger_buffer_policy): FINALIZED Overwrite. @see system_logging.md §4.1
+    - DONE(logger_flush): COOS idle hook protocol defined. @see system_logging.md §4.3
+    - DONE(vdma_representation): pure MMIO trap + fireball_call(VDMA_START) wrapper. @see runtime_vmmio.md §4.1
+    - DONE(virtual_interrupts): static 1:1 mapping, separate irq_mapping_config. @see runtime_vmmio.md §4.6
+    - DONE(trap_state_protocol): WASM call convention handles save/restore. @see system_syscall.md §10
     - DONE(memory_ownership): owner(task-id) field added to memory-info. @see memory.wit
-    - DONE(shared_memory_lifecycle): allocator-frees policy. @see memory.wit, memory_manager.md §7
+    - DONE(shared_memory_lifecycle): allocator-frees policy. @see memory.wit, platform_memory.md §7
     - DONE(ipc_handoff_conditions): TLA+ 6-case contracts reflected in services.wit send/recv
     - DONE(message_format): kv-pair bitfield FINALIZED. @see types.wit
 
@@ -50,7 +50,7 @@
   - ABSORBED(syscall_memory_safety): unified vMMIO permission table IS the validation
       vMMIO permission check = vsoc_validate_ptr. No separate mechanism.
       Permitted addresses: zero-cost direct access. Unpermitted: reject.
-      @see challenge.md §2, vmmio.md §1
+      @see challenge.md §2, runtime_vmmio.md §1
   - DECIDED(csp_handoff): direct switch + approximate yield as starvation mitigation
       formal_verified: ipc_handoff.tla ✓
       @see challenge.md §4

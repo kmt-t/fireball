@@ -1,87 +1,72 @@
 ---
 name: Friction Auditor
-description: ドキュメント内のキーワード表記揺れ、未定義キーワード、および要求トレーサビリティを監査するツール。
-WHEN: ドキュメント品質チェック, CIでのバリデーション, トレーサビリティ検証時
-SCOPE: docs/**/*.md
-RELATED: project_arch_design, docker_workaround
+description: >-
+  ドキュメント内のキーワード表記揺れ、未定義キーワード、および要求トレーサビリティを監査するツール。
+  WHEN: ドキュメント品質チェック, CIでのバリデーション, トレーサビリティ検証時
+  SCOPE: docs/**/*.md
+  RELATED: project_arch_design, general_docker_run
 ---
 
-# Friction Auditor スキル
+# Friction Auditor
 
-## 1. 概要 (Overview)
+システム内で定義された公式キーワードと、実際のドキュメントやコードにおける使用状況の乖離（Friction）を検出し、情報の整合性を担保するスキルです。
 
-システム内で定義された公式キーワード (`docs/requires/requirement_list.md`) と、実際のドキュメントで使用されているキーワードの差異（Friction）を検出します。
-また、要求仕様と実装/設計のトレーサビリティ検証も行います。
+## 1. 概要 (Overview / Benefits)
 
-## 2. 環境・前提条件
+ドキュメントが大規模化するにつれて発生する「情報の腐敗」を防ぎ、全関係者が常に同じ語彙で意思疎通できる環境を維持します。
 
-本スキルの実行には **Dockerコンテナ** の使用を強く推奨します。
+- **トレーサビリティの保証**: 要求仕様 (`requirement_list.md`) で定義されたキーワードが、設計や実装へ正しくリンクされているかを検証します。
+- **表記揺れの排除**: 類似する綴りのキーワードを検出し、公式な用語への統一を促します。
+- **孤立情報の防止**: 参照先が存在しないキーワードや、更新が古いまま放置されたドキュメントを特定します。
 
-- **Docker Workaround**: 詳細は [Docker Workaround](../general_docker_run/SKILL.md) を参照してください。
-- **Windowsユーザー**: お使いの環境で直接実行するのではなく、PowerShell から `bash` と入力して **WSL2 (Ubuntu)** シェルに入り、そこからスクリプトを実行してください。
+## 2. 環境・前提条件 (Prerequisites)
+
+- **Docker コンテナ (推奨)**: 決定論的な監査結果を得るために、コンテナ環境での実行を強く推奨します。
+- **WSL2 Bash**: Windows 環境ではパス解釈の問題を避けるため WSL2 シェルを使用してください。
 
 ## 3. 使用方法 (Usage)
+
+### 統合実行 (推奨)
 
 `docker-audit-friction.sh` を使用して、コンテナ内で監査を一括実行します。
 
 ```bash
-# 全ドキュメントの監査を実行 (Friction + Traceability)
+# 全ドキュメントの総合監査 (Friction + Traceability)
 bash .agent/skills/general_docker_run/scripts/docker-audit-friction.sh
 ```
 
-実行後、`docs/temp/friction_report.md` にレポートが出力されます。
+### 個別実行 (WSL2 Bash)
 
-## 4. 監査内容詳細
-
-### Friction check
-`docs/concept/vocabulary.md` 等で定義された用語と異なる表記（例: `FireBall` vs `Fireball`）を検出します。
-- **Typo?**: 綴りが似ているキーワード。修正が必要。
-- **Unknown/Undefined**: 定義リストに存在しない独自キーワード。
-
-### Traceability check
-要求仕様書 (`docs/requires/requirement_list.md`) で定義された `{Keyword}` が、下流の設計書やソースコードで参照されているかを確認します。
-- **Broken Link**: リンク先のファイルが存在しない。
-- **Stale Reference?**: 参照先のファイルが、参照元より新しい（更新漏れの可能性）。
-
-## 5. トラブルシューティング
-
-**レポートが生成されない**:
-- スクリプトの実行権限を確認してください。
-- スクリプトのパスが `.agent/skills/project_friction_audit/scripts/` であることを確認してください（`.agent/scripts/` と間違えやすい）。
-- **Design Truth** のパスが `docs/requires/` であることを確認してください（`docs/specifications` は廃止）。
-システム内で定義された公式キーワード (`docs/requires/requirement_list.md`) と、実際のドキュメントで使用されているキーワードの差異（Friction）を検出する。
-
-## 2. 機能 (Features)
-- **タイポ検出**: 正規キーワードと類似した綴りの単語を検出し、修正を提案する。
-- **未定義検出**: リストに存在しない独自キーワードの使用を検出する。
-- **トレーサビリティ検証**: 要求仕様 (`docs/requires/requirement_list.md`) のキーワードが適切に参照されているかをチェックする。
-
-## 3. 使用方法 (Usage)
-
-ルートディレクトリで以下のコマンドを実行する。
+特定の監査のみを高速に実行したい場合。
 
 ```bash
-# フリクション監査（タイポ・未定義・リンク切れ）
+# 用語の表記揺れ・未定義チェック
 python3 .agent/skills/project_friction_audit/scripts/audit_friction.py
 
-# トレーサビリティ検証（キーワード網羅性）
+# 要求キーワードの網羅性チェック
 python3 .agent/skills/project_friction_audit/scripts/check_traceability.py
 ```
 
-## 4. 出力 (Output)
+## 4. 構成要素の詳細 (Component Details)
 
-`docs/temp/friction_report.md` にレポートが出力される。
+### scripts/
+- **[audit_friction.py](file:///w:/mysrc/fireball/.agent/skills/project_friction_audit/scripts/audit_friction.py)**: キーワードのタイポ検出や未定義チェックを行います。
+- **[check_traceability.py](file:///w:/mysrc/fireball/.agent/skills/project_friction_audit/scripts/check_traceability.py)**: 要求仕様書と各設計・実装ファイル間のリンクを検証します。
 
-### レポートの見方
-- **Typo?**: 綴りが似ているキーワードが見つかった場合。修正が必要。
-- **Unknown/Undefined**: 似ているものがない場合。
-    - 本当に必要なキーワードなら `list.md` に追加する。
-    - 不要なら削除する。
-- **Broken Link**: リンク先のファイルが存在しない場合。
-- **Stale Reference?**: 参照先のファイルが、参照元のファイルより**新しい**場合。
-- **Missing Syntax**: `{Keyword}` 形式ではないが強調されているキーワード候補。
+## 5. 品質・検証ルール (Quality & Validation)
 
-## 5. 環境・実行 (Environment)
+本ツールは以下の項目を品質基準として検証します。
 
-- **推奨**: VSCode DevContainer または WSL2 Bash (`bash`)。
-- **コンテナ実行**: 環境が整っていない場合は、**[Docker Workaround](../general_docker_run/SKILL.md)** を参照してください。
+- **Typo?**: 公式リストと類似度が高い単語。
+- **Unknown/Undefined**: 定義リストに存在しない独自キーワード。
+- **Broken Link**: 参照先のドキュメントが存在しない。
+- **Stale Reference?**: 参照元より参照先の方が新しく、情報の同期が漏れている可能性があるもの。
+
+## 6. トラブルシューティング (Troubleshooting)
+
+**レポートが生成されない**:
+- 出力先ディレクトリ `docs/temp/` が存在し、書き込み可能か確認してください。
+- 公式キーワードリスト `docs/requires/requirement_list.md` が存在するか確認してください。
+
+**意図しない単語が検知される**:
+誤検知である場合は、そのキーワードを公式リストに追加するか、監査対象から除外する設定をスクリプトに追加することを検討してください。

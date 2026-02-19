@@ -19,17 +19,17 @@ namespace fireball {
  * @inv: buffer_size is power of 2
  * @inv: buffer_full_policy == OVERWRITE (oldest entry discarded)
  */
-class engine {
+class log_engine {
 public:
-  engine() = default;
-  ~engine() = default;
+  log_engine() = default;
+  ~log_engine() = default;
 
   /**
    * Records an event using dictionary offset and arguments.
    * @pre: dict_offset is valid within the ROM dictionary
    * @post: entry queued in ring buffer. If buffer full, oldest entry overwritten.
    */
-  void log_event(log_level level, uint32_t dict_offset, uint32_t arg0, uint32_t arg1, uint32_t arg2, uint32_t arg3) noexcept;
+  void emit(sys_log_level level, uint32_t dict_offset, uint32_t arg0, uint32_t arg1, uint32_t arg2, uint32_t arg3) noexcept;
 
   /**
    * Flushes the internal ring buffer to physical transport.
@@ -44,7 +44,7 @@ public:
    * Sets the minimum log level for physical output.
    * @post: only events with level >= threshold are output
    */
-  void set_threshold(log_level level) noexcept;
+  void set_threshold(sys_log_level level) noexcept;
 
 };
 

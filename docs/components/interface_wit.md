@@ -22,7 +22,7 @@ WASI 0.2 の標準パターンに従い、以下の基礎コンポーネント�
 
 ```wit
 /// Recovery strategy for operation failures.
-enum recovery-strategy {
+enum recovery-strategy-category {
     /// Error can be ignored, continue operation.
     ignore,
     /// Retry with same parameters may succeed.
@@ -34,10 +34,10 @@ enum recovery-strategy {
 }
 
 // Domain-specific result types
-type operation-result = result<_, recovery-strategy>;
-type service-load-result = result<_, recovery-strategy>;
-type service-registration-result = result<_, recovery-strategy>;
-type message-routing-result = result<_, recovery-strategy>;
+type operation-result = result<_, recovery-strategy-category>;
+type load-result = result<_, recovery-strategy-category>;
+type registration-result = result<_, recovery-strategy-category>;
+type routing-result = result<_, recovery-strategy-category>;
 ```
 
 #### 設計判断
@@ -59,9 +59,9 @@ Trigger (GPIO) は、割り込み応答性およびビットバンギング等�
 
 ```wit
 // インターフェイスとしては定義するが、Shim層では直接トラップを叩く
-interface trigger {
+interface trigger-controller {
     set-pin: func(pin: u32, value: bool) -> operation-result;
-    get-pin: func(pin: u32) -> result<bool, recovery-strategy>;
+    get-pin: func(pin: u32) -> result<bool, recovery-strategy-category>;
 }
 ```
 
@@ -71,9 +71,9 @@ interface trigger {
 `wasi:clocks/monotonic-clock` のサブセットとして定義。
 
 ```wit
-resource timer {
-    now: func() -> u64; // ナノ秒単位
-    subscribe-duration: func(nanos: u64) -> pollable; // タイマー割り込み相当
+resource periodic-timer {
+    get-now: func() -> u64; // ナノ秒単位
+    subscribe-timer: func(nanos: u64) -> pollable; // タイマー割り込み相当
 }
 ```
 
@@ -82,7 +82,7 @@ resource timer {
 
 ```wit
 resource bus-master {
-    transfer: func(tx-data: list<u8>, rx-len: u32) -> result<list<u8>, recovery-strategy>;
+    transfer-data: func(tx-buffer: list<u8>, rx-len: u32) -> result<list<u8>, recovery-strategy>;
 }
 
 resource bus-slave {
@@ -116,3 +116,19 @@ WASI仕様と HAL の乖離および考慮点は以下の通り：
 1. **GPIO/Bus の不在**: WASI (CLI/Cloud) には GPIO や I2C/SPI の標準インターフェイスがない。これらは WASI リソースモデルに従った「Fireball 独自プロポーザル」として実装する必要がある。
 2. **リアルタイム性**: WASI 0.2 の `poll` モデルは非同期イベントの集約には優れるが、極めて高速なリアルタイム応答が必要な場合、`fireball_call` (Trap) を併用する方が効率的である可能性がある。
 3. **リソース管理のオーバーヘッド**: `resource` の生成・破棄（ハンドル管理）は、単純な `u32` ID渡しよりもホスト側のオーバーヘッドが増えるため、64KB RAM 環境ではハンドル数を制限するなどの対策が必要。
+
+## 8. 命名規則 (Naming Conventions) `{WIT_Naming_Conventions}`
+
+WIT識別子は WASI 標準および `wasm-tools` の制約により `kebab-case` (ハイフン区切り) が必須である。プロジェクトでは以下のセマンティクス規約を適用する。
+
+| 対象カテゴリ | 命名規則 (Semantic) | 例 |
+| :--- | :--- | :--- |
+| **Object** (Record, Resource) | `性質-責務名` | `periodic-timer`, `ipc-message` |
+| **Enum** (Type) | `性質-カテゴリ` | `sys-log-level`, `recovery-strategy-category` |
+| **Method** (Function) | `動詞` または `動詞-機能` | `set-pin`, `get-now` |
+| **Field / Enum Case** | `kebab-case` | `max-latency`, `retry` |
+
+### 8.1 設計上の留意点
+- **Kebab-Case Mandatory**: WIT定義内で `snake_case` (アンダースコア) は使用禁止。
+- **C++ へのマッピング**: 生成される C++ コードでは `embedded_cpp_rule.md` に従い、自動的に `snake_case` へ変換される。
+- **名前の衝突回避**: ドメインプレフィックスを積極的に活用し、グローバルな名前空間での衝突を避ける。

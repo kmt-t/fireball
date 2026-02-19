@@ -2,37 +2,37 @@ package fireball:host;
 
 interface types {
     /// Device identifier for HAL.
-    type device-id = u32;
+    type hal-device-id = u32;
 
     /// Shared memory identifier.
-    type shm-id = u32;
+    type mem-shm-id = u32;
 
     /// Channel identifier for IPC.
-    type channel-id = u32;
+    type ipc-channel-id = u32;
 
     /// Task identifier for OS.
-    type task-id = u32;
+    type os-task-id = u32;
 
     /// System-wide service identifier.
-    type service-id = u32;
+    type sys-service-id = u32;
 
     /// Memory address.
-    type address = u32;
+    type mem-address = u32;
 
     /// Byte count for memory sizes.
-    type byte-count = u32;
+    type mem-byte-count = u32;
 
     /// Byte offset from a base.
-    type byte-offset = u32;
+    type mem-byte-offset = u32;
 
     /// Entry count for tables or arrays.
-    type entry-count = u32;
+    type mem-entry-count = u32;
 
     /// Instruction count for execution.
-    type instruction-count = u32;
+    type wasm-instruction-count = u32;
 
     /// Handle to a URI string.
-    type uri-handle = u32;
+    type sys-uri-handle = u32;
 
     /// Binary view reference (read-only span).
     type binary-view = list<u8>;
@@ -41,7 +41,7 @@ interface types {
     type mut-binary-view = list<u8>;
 
     /// Log level for system messages.
-    enum log-level {
+    enum sys-log-level {
         debug,
         info,
         warn,
@@ -50,7 +50,7 @@ interface types {
     }
 
     /// Recovery strategy for operation failures.
-    enum recovery-strategy {
+    enum sys-recovery-strategy {
         /// Error can be ignored, continue operation.
         ignore,
         /// Retry with same parameters may succeed.
@@ -62,10 +62,10 @@ interface types {
     }
 
     /// Result type for operations without success value.
-    type operation-result = result<_, recovery-strategy>;
+    type operation-result = result<_, sys-recovery-strategy>;
 
     /// Scope type for IPC messages (upper 3 bits of type_scope field).
-    enum scope-type {
+    enum ipc-scope-category {
         functional,
         dictionary,
         reserved-2,
@@ -77,7 +77,7 @@ interface types {
     }
 
     /// Data type for IPC messages (lower 5 bits of type_scope field).
-    enum data-type {
+    enum ipc-data-category {
         immediate,
         handle,
         resource-id,
@@ -116,17 +116,17 @@ interface types {
     /// FINALIZED bitfield layout:
     ///   [63:32] value  : u32 — payload or handle
     ///   [31:8]  key    : u24 — service-defined key identifier
-    ///   [7:5]   scope  : u3  — scope-type (functional, dictionary, ...)
-    ///   [4:0]   dtype  : u5  — data-type  (immediate, handle, resource-id, ...)
-    /// @inv: sizeof(kv-pair) == 8 bytes
-    record kv-pair {
+    ///   [7:5]   scope  : u3  — ipc-scope-category (functional, dictionary, ...)
+    ///   [4:0]   dtype  : u5  — ipc-data-category  (immediate, handle, resource-id, ...)
+    /// @inv: sizeof(ipc-kv-pair) == 8 bytes
+    record ipc-kv-pair {
         raw: u64,
     }
 
     /// IPC Message containing fixed maximum of 8 KV-pairs.
     /// @inv: len(pairs) <= 8
     /// @note FINALIZED: 8 * 8 = 64 bytes max per message. Fits in single cache line on most architectures.
-    record message {
-        pairs: list<kv-pair>,
+    record ipc-message {
+        pairs: list<ipc-kv-pair>,
     }
 }

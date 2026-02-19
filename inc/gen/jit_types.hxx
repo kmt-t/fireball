@@ -18,16 +18,16 @@ namespace fireball {
  * JIT Entry linking WASM PC to native code offset.
  */
 struct jit_entry {
-  address wasm_pc;
-  address native_offset;
+  mem_address wasm_pc;
+  mem_address native_offset;
 };
 
 /**
  * JIT configuration parameters.
  */
-struct jit_config {
-  byte_count bank_size;
-  entry_count max_entries;
+struct jit_setup_record {
+  mem_byte_count bank_size;
+  mem_entry_count max_entries;
   uint8_t card_shift;
   uint8_t align_shift;
 };

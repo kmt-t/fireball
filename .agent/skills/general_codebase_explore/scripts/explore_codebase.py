@@ -123,16 +123,23 @@ class FireballExplorer:
         
         if script:
             script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), script)
-            res = subprocess.run([sys.executable, script_path, file_path], capture_output=True, text=True)
+            cmd = [sys.executable, script_path, file_path]
             if self.json_mode:
-                return res.stdout
+                cmd.append("--json")
+            res = subprocess.run(cmd, capture_output=True, text=True)
+            if self.json_mode:
+                try:
+                    return json.loads(res.stdout)
+                except:
+                    return {"error": "Failed to parse summary JSON", "raw": res.stdout}
             else:
                 print(res.stdout)
         else:
+            msg = f"No summary tool for {ext}"
             if self.json_mode:
-                return f"No summary tool for {ext}"
+                return {"error": msg}
             else:
-                print(f"No summary tool for {ext}")
+                print(msg)
 
     def pick_one(self, items, prompt):
         for i, item in enumerate(items):
@@ -256,7 +263,10 @@ class FireballExplorer:
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
-                return sorted(list(set(re.findall(r'\{([A-Z][A-Za-z0-9_]+)\}', content))))
+                # Support both {Keyword} and [Keyword] as seen in some docs
+                # Also removed extra backslash in regex that was breaking it
+                keywords = re.findall(r'\{([A-Z][A-Za-z0-9_]+)\}', content)
+                return sorted(list(set(keywords)))
         except:
             return []
 
@@ -325,6 +335,7 @@ class FireballExplorer:
         return output
 
     def batch_summary(self, path):
+        path = path.strip()
         data = {
             "path": os.path.relpath(path, self.root_dir).replace('\\', '/'),
             "type": "directory" if os.path.isdir(path) else "file",

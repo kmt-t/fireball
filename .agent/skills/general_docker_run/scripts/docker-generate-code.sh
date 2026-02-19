@@ -14,9 +14,9 @@ if ! docker compose -f "$COMPOSE_FILE" ps --services --filter "status=running" |
 fi
 
 if [ "$#" -eq 0 ]; then
-    CMD="bash .agent/skills/code_generator/workflows/run-workflow.sh"
+    CMD="bash .agent/skills/project_code_generate/workflows/run-workflow.sh"
 else
-    # Execute arbitrary command in code_generator scope
+    # Execute arbitrary command in project_code_generate scope
     # Handle renaming of known scripts for backward compatibility or direct calls
     SNAME="$1"
     if [ "$SNAME" == "wit_gen.sh" ]; then SNAME="generate-code.sh"; fi
@@ -25,10 +25,10 @@ else
 
     if [[ "$SNAME" == *.sh ]]; then
          # Check if it's a workflow script
-         if [ -f "$PROJECT_ROOT/.agent/skills/code_generator/workflows/$SNAME" ]; then
-             CMD="bash .agent/skills/code_generator/workflows/$SNAME ${@:2}"
-         elif [ -f "$PROJECT_ROOT/.agent/skills/code_generator/scripts/$SNAME" ]; then
-             CMD="bash .agent/skills/code_generator/scripts/$SNAME ${@:2}"
+         if [ -f "$PROJECT_ROOT/.agent/skills/project_code_generate/workflows/$SNAME" ]; then
+             CMD="bash .agent/skills/project_code_generate/workflows/$SNAME ${@:2}"
+         elif [ -f "$PROJECT_ROOT/.agent/skills/project_code_generate/scripts/$SNAME" ]; then
+             CMD="bash .agent/skills/project_code_generate/scripts/$SNAME ${@:2}"
          else
              # Assume direct command
              CMD="$@"

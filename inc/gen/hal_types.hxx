@@ -17,7 +17,7 @@ namespace fireball {
 /**
  * Hardware device categories.
  */
-enum class device_kind : uint8_t {
+enum class device_category : uint8_t {
   STREAM_DEVICE,
   BLOCK,
   TRIGGER,
@@ -27,7 +27,7 @@ enum class device_kind : uint8_t {
 /**
  * Configuration for the HAL buffer pool.
  */
-struct pool_config {
+struct pool_setup_record {
   uint32_t block_size;
   uint32_t block_count;
 };
@@ -35,7 +35,7 @@ struct pool_config {
 /**
  * Supported debug transport layers.
  */
-enum class debug_transport : uint8_t {
+enum class debug_transport_category : uint8_t {
   UART,
   RTT,
 };

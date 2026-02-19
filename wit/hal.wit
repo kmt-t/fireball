@@ -1,10 +1,10 @@
 package fireball:host;
 
 interface hal-types {
-    use types.{device-id, operation-result, recovery-strategy, byte-count};
+    use types.{hal-device-id, operation-result, sys-recovery-strategy, mem-byte-count};
 
     /// Hardware device categories.
-    enum device-kind {
+    enum device-category {
         stream-device,
         block,
         trigger,
@@ -12,36 +12,36 @@ interface hal-types {
     }
 
     /// Configuration for the HAL buffer pool.
-    record pool-config {
+    record pool-setup-record {
         block-size: u32,
         block-count: u32,
     }
 
     /// Supported debug transport layers.
-    enum debug-transport {
+    enum debug-transport-category {
         uart,
         rtt
     }
 }
 
 interface hal {
-    use types.{device-id, shm-id, operation-result, recovery-strategy, address, byte-count, message};
-    use hal-types.{device-kind, pool-config, debug-transport};
+    use types.{hal-device-id, mem-shm-id, operation-result, sys-recovery-strategy, mem-address, mem-byte-count, ipc-message};
+    use hal-types.{device-category, pool-setup-record, debug-transport-category};
 
     /// Information about a physical device.
-    record device-info {
-        id: device-id,
-        kind: device-kind,
+    record device-metadata-record {
+        id: hal-device-id,
+        kind: device-category,
         name: string,
-        unit-size: byte-count,
+        unit-size: mem-byte-count,
         reserved-pages: u32,
     }
 
     /// Information about an I/O buffer slot.
-    record buffer-info {
-        id: shm-id,
-        size: byte-count,
-        base: address,
+    record buffer-metadata-record {
+        id: mem-shm-id,
+        size: mem-byte-count,
+        base: mem-address,
         is-active: bool,
     }
 
@@ -50,93 +50,93 @@ interface hal {
     /// @inv: active_buffers <= FB_CONF_HAL_MAX_BUFFERS
     resource device-controller {
         /// Initializes the HAL.
-        initialize: func() -> operation-result;
+        init-hal: func() -> operation-result;
 
         /// Reads data from a physical device into shared memory.
         /// @pre: id < FB_CONF_HAL_MAX_DEVICES
         /// @pre: dest != 0
         /// @post: result.is_ok() -> read_bytes <= dest.size
-        read: func(id: device-id, dest: shm-id) -> result<u32, recovery-strategy>;
+        read: func(id: hal-device-id, dest: mem-shm-id) -> result<u32, sys-recovery-strategy>;
 
         /// Writes data from shared memory to a physical device.
         /// @pre: id < FB_CONF_HAL_MAX_DEVICES
         /// @pre: src != 0
-        write: func(id: device-id, src: shm-id) -> operation-result;
+        write: func(id: hal-device-id, src: mem-shm-id) -> operation-result;
 
         /// Hardware specific control using Key-Value parameters.
         /// @pre: id < FB_CONF_HAL_MAX_DEVICES
         /// @param params Handle to a Key-Value message block.
-        ioctl: func(id: device-id, cmd: u32, params: message) -> operation-result;
+        control: func(id: hal-device-id, cmd: u32, params: ipc-message) -> operation-result;
 
         /// Gets information about a device.
-        query-device: func(id: device-id) -> result<device-info, bool>;
+        get-device-info: func(id: hal-device-id) -> result<device-metadata-record, bool>;
 
         /// Gets information about a buffer.
-        query-buffer: func(id: shm-id) -> result<buffer-info, bool>;
+        get-buffer-info: func(id: mem-shm-id) -> result<buffer-metadata-record, bool>;
 
         /// Acquires a fixed-size buffer for I/O.
         /// @pre: size <= FB_CONF_HAL_BUFFER_SIZE
         /// @post: result.is_ok() -> active_buffers == old(active_buffers) + 1
-        acquire-buffer: func(size: u32) -> result<shm-id, recovery-strategy>;
+        acquire-buffer: func(size: u32) -> result<mem-shm-id, sys-recovery-strategy>;
 
         /// Releases an I/O buffer.
         /// @pre: id is valid and active
         /// @post: active_buffers == old(active_buffers) - 1
-        release-buffer: func(id: shm-id);
+        release-buffer: func(id: mem-shm-id);
     }
 
     /// Tier 3: Physical GPIO / Interrupt Trigger
-    resource gpio-trigger {
+    resource gpio-controller {
         /// Sets the state of a physical pin.
         set-pin: func(pin: u32, value: bool) -> operation-result;
 
         /// Gets the state of a physical pin.
-        get-pin: func(pin: u32) -> result<bool, recovery-strategy>;
+        get-pin: func(pin: u32) -> result<bool, sys-recovery-strategy>;
     }
 
     /// Tier 3: Hardware System Timer
-    resource hardware-timer {
+    resource periodic-timer {
         /// Gets current system time in nanoseconds.
-        now: func() -> u64;
+        get-now: func() -> u64;
 
         /// Sets an alarm interrupt at a specific time.
-        subscribe-duration: func(nanos: u64) -> shm-id; // Returns a pollable-like handle
+        subscribe-timer: func(nanos: u64) -> mem-shm-id; // Returns a pollable-like handle
     }
 
     /// Tier 3: Master/Slave Bus (I2C/SPI) - Zero Copy
     resource bus-master {
         /// Transfers data using shared memory buffers.
         /// @pre: tx_data and rx_data are valid shm_id
-        transfer: func(tx-buffer: shm-id, rx-buffer: shm-id) -> operation-result;
+        transfer: func(tx-buffer: mem-shm-id, rx-buffer: mem-shm-id) -> operation-result;
     }
 
     resource bus-slave {
         /// Sets the response buffer for the next master read.
-        set-response: func(buffer: shm-id) -> operation-result;
+        set-response: func(buffer: mem-shm-id) -> operation-result;
 
         /// Gets the received buffer from the master write.
-        get-received: func() -> result<shm-id, recovery-strategy>;
+        get-received: func() -> result<mem-shm-id, sys-recovery-strategy>;
         
         /// Subscribes to bus events.
-        subscribe: func() -> shm-id;
+        subscribe: func() -> mem-shm-id;
     }
 
     /// Tier 3: Streaming Data I/O - Zero Copy
     resource streaming-master {
         /// Writes data from a shared memory buffer.
-        write: func(buffer: shm-id) -> operation-result;
+        write: func(buffer: mem-shm-id) -> operation-result;
     }
 
     /// Tier 3: Streaming Data I/O - Zero Copy
     resource streaming-slave {
         /// Reads data into a shared memory buffer.
-        read: func(buffer: shm-id) -> operation-result;
+        read: func(buffer: mem-shm-id) -> operation-result;
     }
 
     /// Tier 3: GDB RSP Debug Server
     resource debug-server {
         poll-packet: func() -> operation-result;
-        get-parsed-command: func() -> result<shm-id, recovery-strategy>;
+        get-parsed-command: func() -> result<mem-shm-id, sys-recovery-strategy>;
     }
 }
 

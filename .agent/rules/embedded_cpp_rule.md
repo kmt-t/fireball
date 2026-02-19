@@ -26,10 +26,10 @@ trigger: always_on
 ### プリミティブ型
 | 仕様型名 | C++ エイリアス | 基本型 | 説明 |
 | :--- | :--- | :--- | :--- |
-| アドレス | `address` | `uint32_t` | メモリアドレス |
-| オフセット | `byte_offset` | `uint32_t` | 相対位置 |
-| バイト数 | `byte_count` | `uint32_t` | サイズ/長さ |
-| エントリ数 | `entry_count` | `uint32_t` | 要素数 |
+| アドレス | `mem_address` | `uint32_t` | メモリアドレス |
+| オフセット | `mem_byte_offset` | `uint32_t` | 相対位置 |
+| バイト数 | `mem_byte_count` | `uint32_t` | サイズ/長さ |
+| エントリ数 | `mem_entry_count` | `uint32_t` | 要素数 |
 | インデックス | `function_index` | `uint32_t` | テーブルインデックス |
 | フラグ | `interrupt_flags` | `uint32_t` | ビットセット |
 

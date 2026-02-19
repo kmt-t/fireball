@@ -1,70 +1,46 @@
 # Docker Workaround Scripts
 
-Docker CLI経由でコンテナ内のツールを実行するヘルパースクリプト集。
+Docker CLI を経由して、コンテナ内の全ツール群（wasm-tools, clang, tlc 等）を決定論的に実行するためのヘルパースクリプト集。
 
----
+## 1. 役割と数学的性質 (Role & Axioms)
+- **目的**: ホスト環境（Windows/WSL2）に依存せず、常にプロジェクト規定のビルド環境（コンテナ）内でツールを実行することを保証する。
+- **不変条件 (Invariants)**:
+    - 実行時に自動的に `fireball-dev` コンテナの状態を確認し、停止している場合は起動を試みる。
+    - コンテナ内の `/workspaces/fireball` がマウント済みであることを前提とし、環境変数や UID (1000) を透過的に管理する。
+- **影響範囲 (Side Effects)**: Docker コンテナの起動・停止、およびコンテナ内でのファイル操作。
 
-## スクリプト一覧
+## 2. インターフェース (CLI & Interface)
 
-### docker-explorer.sh
+### [docker-run-command.sh](file:///w:/mysrc/fireball/.agent/skills/general_docker_run/scripts/docker-run-command.sh)
+`bash docker-run-command.sh <command> [args...]`
+- **目的**: 任意のシェルコマンドをコンテナ内で実行。
 
-コードベースの探索・解析ツール。
+### [docker-generate-code.sh](file:///w:/mysrc/fireball/.agent/skills/general_docker_run/scripts/docker-generate-code.sh)
+`bash docker-generate-code.sh [workflow]`
+- **目的**: WIT コード生成ワークフローの実行。
 
+### [docker-explore-codebase.sh](file:///w:/mysrc/fireball/.agent/skills/general_docker_run/scripts/docker-explore-codebase.sh)
+`bash docker-explore-codebase.sh <subcommand> [args...]`
+- **目的**: AST 解析やコールグラフ生成の実行。
+
+## 3. 使用方法 (Usage) サンプル
+
+### パターンA: コンテナ内でのビルドとテスト
 ```bash
-# Markdownファイルの要約
-bash docker-explorer.sh summary docs/README.md
-
-# ソースコードのパイプ解析
-bash docker-find.sh src -name "*.cxx" | bash docker-explorer.sh pipe summary
+bash .agent/skills/general_docker_run/scripts/docker-run-command.sh meson test -C build
 ```
 
-### docker-codegen.sh
-
-WIT IDLからのコード生成。
-
+### パターンB: WIT 生成の全自動バッチ処理
 ```bash
-# 全ワークフロー実行
-bash docker-codegen.sh
+bash .agent/skills/general_docker_run/scripts/docker-generate-code.sh
 ```
 
-### docker-friction.sh
-
-ドキュメント整合性チェック（Friction Audit）。
-
+### パターンC: パイプによるバッチ解析
 ```bash
-bash docker-friction.sh
+# ホスト側の find とコンテナ内の explorer を連携
+find src -name "*.cxx" | xargs -I {} bash .agent/skills/general_docker_run/scripts/docker-explore-codebase.sh summary {}
 ```
 
-### docker-tlc.sh
-
-TLA+ モデル検査。
-
-```bash
-bash docker-tlc.sh tla/spec.tla
-```
-
-### docker-cmd.sh
-
-任意のコマンドをコンテナ内で実行する汎用ラッパー。
-
-```bash
-# find コマンド (パイプ用)
-bash docker-cmd.sh find docs -name "*.md"
-
-# ビルドコマンド
-bash docker-cmd.sh meson test -C build
-```
-
----
-
-## 前提条件
-
-1. **Dockerコンテナが動作可能であること**
-   スクリプトは自動的に `fireball-dev` コンテナを起動しようと試みます。
-
-2. **WSL2 Bash使用（Windows）**
-   - **PowerShell上で直接実行するのは非推奨です**。パス変換の問題を回避するため、必ず PowerShell から `bash` と入力して **WSL2 (Ubuntu)** シェルに入ってから実行してください。
-
-3. **プロジェクトルートからのパス依存**
-   スクリプトは `.agent/skills/docker_workaround/scripts/` にありますが、リポジトリ内のどこから呼び出しても動作するように設計されています（内部でルートを解決）。ただし、引数のパスはカレントディレクトリ相対で指定してください。
-
+## 4. エラーリカバリ (Recovery)
+- **Container not found**: `.devcontainer/docker-compose.yml` を使用して手動で `docker compose up -d` を実行してください。
+- **Volume mount empty**: Windows 環境特有のマウントタイミングの問題です。[SKILL.md](../SKILL.md) のトラブルシューティングを参照してください。

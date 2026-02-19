@@ -1,20 +1,20 @@
 package fireball:host;
 
 interface services-types {
-    use types.{uri-handle, channel-id, task-id, service-id, kv-pair, operation-result, recovery-strategy, log-level, shm-id, message};
+    use types.{sys-uri-handle, ipc-channel-id, os-task-id, sys-service-id, ipc-kv-pair, operation-result, sys-recovery-strategy, sys-log-level, mem-shm-id, ipc-message};
 }
 
 interface logger {
-    use types.{log-level, operation-result};
+    use types.{sys-log-level, operation-result};
 
     /// Tier 3: Logging Engine
     /// @inv: buffer_size is power of 2
     /// @inv: buffer_full_policy == OVERWRITE (oldest entry discarded)
-    resource engine {
+    resource log-engine {
         /// Records an event using dictionary offset and arguments.
         /// @pre: dict_offset is valid within the ROM dictionary
         /// @post: entry queued in ring buffer. If buffer full, oldest entry overwritten.
-        log-event: func(level: log-level, dict-offset: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32);
+        emit: func(level: sys-log-level, dict-offset: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32);
 
         /// Flushes the internal ring buffer to physical transport.
         /// Called by COOS idle hook when no tasks are READY.
@@ -25,24 +25,24 @@ interface logger {
         
         /// Sets the minimum log level for physical output.
         /// @post: only events with level >= threshold are output
-        set-threshold: func(level: log-level);
+        set-threshold: func(level: sys-log-level);
     }
 }
 
 interface services {
-    use types.{uri-handle, channel-id, task-id, service-id, kv-pair, operation-result, recovery-strategy, log-level, shm-id, message};
-    use logger.{engine as logger-engine};
+    use types.{sys-uri-handle, ipc-channel-id, os-task-id, sys-service-id, ipc-kv-pair, operation-result, sys-recovery-strategy, sys-log-level, mem-shm-id, ipc-message};
+    use logger.{log-engine};
 
     /// Tier 1: URI-based Message Router
     /// @inv: registry_count <= FB_CONF_ROUTER_MAX_SERVICES
-    resource ipc-router {
+    resource message-router {
         /// Binds a service instance by its system index.
         /// @pre: sid < FB_CONF_ROUTER_MAX_SERVICES
-        bind: func(sid: service-id, address: uri-handle) -> result<channel-id, recovery-strategy>;
+        bind: func(sid: sys-service-id, address: sys-uri-handle) -> result<ipc-channel-id, sys-recovery-strategy>;
 
         /// Connects to a service and gets its system-wide ID.
         /// @pre: uri_handle is not empty
-        connect: func(address: uri-handle) -> result<service-id, recovery-strategy>;
+        connect: func(address: sys-uri-handle) -> result<sys-service-id, sys-recovery-strategy>;
 
         /// Sends a Key-Value message block.
         /// Ownership of message transfers from sender to channel or receiver.
@@ -52,7 +52,7 @@ interface services {
         /// @post(empty && !recv_waiting): msg moved to channel. Sender becomes BLOCKED_SEND.
         /// @post(full): Sender becomes BLOCKED_SEND. Channel unchanged.
         /// @derives: ipc_handoff.tla Send(t, msg) Cases 1-3
-        send: func(chan: channel-id, msg: message) -> operation-result;
+        send: func(chan: ipc-channel-id, msg: ipc-message) -> operation-result;
 
         /// Receives a Key-Value message block.
         /// Ownership of message transfers from channel or sender to receiver.
@@ -63,7 +63,7 @@ interface services {
         ///       Both sender and receiver become RUNNING.
         /// @post(empty && !send_waiting): Receiver becomes BLOCKED_RECV.
         /// @derives: ipc_handoff.tla Recv(t) Cases 4-6
-        recv: func(chan: channel-id) -> result<message, recovery-strategy>;
+        receive: func(chan: ipc-channel-id) -> result<ipc-message, sys-recovery-strategy>;
     }
 
     /// Tier 3: Logger Dictionary (ROM-resident)
@@ -71,7 +71,7 @@ interface services {
     /// @inv: entry_count <= FB_CONF_LOG_DICT_MAX_ENTRIES
     /// @note: Dictionary is ROM-resident. Host-side tool expands dict_offset + args into readable text.
     ///        Entry format: { id: u32, format_string: null-terminated UTF-8 }
-    resource logger-dictionary {
+    resource format-dictionary {
         /// Registers a format string entry at build time.
         /// @pre: id is unique within dictionary
         /// @pre: format contains valid printf-style placeholders for up to 4 u32 args
@@ -84,15 +84,15 @@ interface services {
     }
 
     /// Tier 2: System-wide Logging Managed via Handle
-    resource system-logger {
+    resource system-logger-unit {
         /// Initializes logger with injected engine.
         /// @pre: engine is a valid resource handle
         /// @post: logger is ready for use
-        initialize: func(engine: logger-engine) -> operation-result;
+        init-logger: func(engine: log-engine) -> operation-result;
 
         /// Logs a message (delegates to engine).
         /// @pre: initialized
-        log: func(level: log-level, dict-offset: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32);
+        log: func(level: sys-log-level, dict-offset: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32);
     }
 }
 

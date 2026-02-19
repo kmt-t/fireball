@@ -81,9 +81,11 @@ def map_type(wit_type, types_list):
                     return "binary_view"
                 return f"std::span<{val_type}>"
             elif 'tuple' in kind:
-                t = kind['tuple']
-                types = [map_type(x, types_list) for x in t]
-                return f"std::tuple<{', '.join(types)}>"
+                t_list = kind['tuple'].get('types', [])
+                t_names = [map_type(x, types_list) for x in t_list]
+                return f"std::tuple<{', '.join(t_names)}>"
+            elif 'type' in kind:
+                return map_type(kind['type'], types_list)
         
         # Resource reference or other anonymous type
         if kind == 'resource':
@@ -125,13 +127,64 @@ def generate_cpp(wit_json, output_dir):
         iface_name = iface['name']
         output_path = Path(output_dir) / f"{to_snake_case(iface_name)}.hxx"
         
+        # Collect dependencies
+        depends_on = set()
+        if iface_name != "types":
+            depends_on.add("types")
+        
+        def collect_deps(type_val):
+             if isinstance(type_val, int):
+                 t_def = types_list[type_val]
+                 if t_def.get('owner') and t_def['owner'].get('interface') is not None:
+                     owner_iface_idx = t_def['owner']['interface']
+                     if owner_iface_idx != iface_idx:
+                         depends_on.add(interfaces[owner_iface_idx]['name'])
+                 
+                 kind = t_def.get('kind')
+                 if isinstance(kind, dict):
+                     if 'result' in kind:
+                         res = kind['result']
+                         if 'ok' in res and res['ok'] is not None: collect_deps(res['ok'])
+                         if 'err' in res and res['err'] is not None: collect_deps(res['err'])
+                     elif 'option' in kind:
+                         collect_deps(kind['option'])
+                     elif 'list' in kind:
+                         collect_deps(kind['list'])
+                     elif 'tuple' in kind:
+                         for x in kind['tuple'].get('types', []): collect_deps(x)
+                     elif 'record' in kind:
+                         for f in kind['record'].get('fields', []):
+                             collect_deps(f['type'])
+                     elif 'type' in kind:
+                         collect_deps(kind['type'])
+
+        # Scan all types in this interface for dependencies
+        type_indices = iface.get('types', {})
+        for _, t_idx in type_indices.items():
+            collect_deps(t_idx)
+        
+        # Scan all functions for dependencies
+        iface_funcs = iface.get('functions', {})
+        for _, func_def in iface_funcs.items():
+            for p in func_def.get('params', []):
+                collect_deps(p['type'])
+            if 'results' in func_def:
+                for r in func_def['results']:
+                    collect_deps(r['type'])
+            elif 'result' in func_def:
+                 collect_deps(func_def['result'])
+
+
         with open(output_path, 'w') as f:
             # Header
             f.write("/**\n * Auto-generated from WIT. Do not edit.\n */\n")
             f.write("#pragma once\n\n")
             f.write("#include <fireball_types.hxx>\n")
-            if iface_name != "types":
-                f.write("#include <gen/types.hxx>\n") 
+            
+            for dep in sorted(list(depends_on)):
+                if to_snake_case(dep) != to_snake_case(iface_name):
+                    f.write(f"#include <gen/{to_snake_case(dep)}.hxx>\n")
+            
             f.write("#include <fireball_config.hxx>\n")
             f.write("#include <cstdint>\n")
             f.write("#include <string_view>\n")
@@ -259,19 +312,28 @@ def generate_cpp(wit_json, output_dir):
                 f.write(f"class {to_snake_case(res_name)} {{\n")
                 f.write("public:\n")
                 
+                # Constexpr constants in class scope
+                if docs:
+                    for line in docs.split('\n'):
+                        if '@constexpr:' in line:
+                            val_part = line.split('@constexpr:')[1].strip()
+                            if '=' in val_part:
+                                f.write(f"  static constexpr auto {val_part};\n")
+
                 # Constructor/Destructor
                 f.write(f"  {to_snake_case(res_name)}() = default;\n")
                 f.write(f"  ~{to_snake_case(res_name)}() = default;\n\n")
 
-                # Methods
-                methods = resource_methods.get(res_idx, [])
-                for method_name, func_def, is_static in methods:
+                for method_name, func_def, is_static in resource_methods.get(res_idx, []):
                     params = func_def.get('params', [])
-                    results = func_def.get('results', [])
-                    if method_name == "lookup" or method_name == "collect":
-                         pass # Debug verified
-
                     docs = func_def.get('docs', {}).get('contents', '')
+                    
+                    constexpr_body = None
+                    if docs:
+                        for line in docs.split('\n'):
+                            if '@constexpr:' in line:
+                                constexpr_body = line.split('@constexpr:')[1].strip()
+                                break
 
                     if docs:
                         f.write("  /**\n")
@@ -281,16 +343,15 @@ def generate_cpp(wit_json, output_dir):
 
                     # Return type
                     ret_type = "void"
-                    if 'result' in func_def:
-                        # Single return value
-                        ret_type = map_type(func_def['result'], types_list)
-                    elif 'results' in func_def:
+                    if 'results' in func_def:
                         results = func_def['results']
                         if len(results) == 1:
                             ret_type = map_type(results[0]['type'], types_list)
                         elif len(results) > 1:
-                            types = [map_type(r['type'], types_list) for r in results]
-                            ret_type = f"std::tuple<{', '.join(types)}>"
+                            t_names = [map_type(r['type'], types_list) for r in results]
+                            ret_type = f"std::tuple<{', '.join(t_names)}>"
+                    elif 'result' in func_def: # Single result
+                        ret_type = map_type(func_def['result'], types_list)
 
                     # Params
                     param_strs = []
@@ -302,7 +363,10 @@ def generate_cpp(wit_json, output_dir):
                         param_strs.append(f"{p_type} {p_name}")
 
                     prefix = "static " if is_static else ""
-                    f.write(f"  {prefix}{ret_type} {to_snake_case(method_name)}({', '.join(param_strs)}) noexcept;\n\n")
+                    if constexpr_body:
+                        f.write(f"  {prefix}constexpr {ret_type} {to_snake_case(method_name)}({', '.join(param_strs)}) noexcept {{ {constexpr_body} }}\n\n")
+                    else:
+                        f.write(f"  {prefix}{ret_type} {to_snake_case(method_name)}({', '.join(param_strs)}) noexcept;\n\n")
                 
                 f.write("};\n\n")
 

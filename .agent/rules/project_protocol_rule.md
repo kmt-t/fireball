@@ -1,7 +1,3 @@
----
-trigger: always_on
----
-
 # プロジェクトプロトコル
 
 本ドキュメントは、プロジェクトの物理的構造と、エージェントが従うべきワークフローを定義する。
@@ -25,7 +21,7 @@ trigger: always_on
 *   **Shell スクリプト**: `kebab-case` を使用し、`verb-object.sh` (動詞-目的語) の形式とする。Docker ラッパーは `docker-verb-object.sh` とする。
 *   **Python スクリプト**: `snake_case` を使用し、`verb_object.py` (動詞_目的語) の形式とする。
 *   **ドキュメント**: `snake_case` を使用する。
-    *   **コンポーネント仕様**: `(ドメイン/性質)_機能.md` の形式とする（例: `runtime_vsoc.md`, `ipc_router.md`）。
+    *   **コンポーネント仕様**: `(ドメイン/性質)_機能名.md` の形式とする（例: `runtime_vsoc.md`, `ipc_router.md`）。
     *   **その他書面**: `subject_object.md` (主語_目的語) の形式とする（例: `architecture_overview.md`, `requirement_list.md`）。
 *   **.agent 構成要素**: 汎用性スコープ (general, project, embedded) に基づき、以下の規則とする。
     *   **Rules**: `汎用性スコープ_対象_rule.md`
@@ -59,3 +55,11 @@ trigger: always_on
 4.  **記録 (Recording)**: 重要な発見（DesignDecision, Invariant, ToolFriction等）は、即座に `.agent/brain/` 配下の適切なスコープの `.atc` ファイルに記録せよ。
     - 記録先は `スコープ_対象.atc` の命名規則に従うこと。
 5.  **バックログ**: 情報が不足している場合は、勝手に仕様を作らず、一般的な解決策を提案した上で `docs/backlog/` に記録する。
+
+## 4. 実行環境
+
+ホストOSが Windows である場合に限り、全てのビルド、テスト、スクリプト実行において、WSL2 (Linux) 環境の使用を **必須 (Mandatory)** とする。
+
+*   **WSL2優先**: (Windows ホスト時) コマンド実行は原則として `wsl <command>` を介して行う。
+*   **禁止**: (Windows ホスト時) Windows ホスト側での PowerShell や Git Bash による直接実行（特にファイルパスの変換や複雑なシェルスクリプトが絡むもの）を原則禁止とする。
+*   **例外**: `git` 操作やファイルの移動など、プロジェクト固有の論理に依存しない極めて単純なOS操作のみ Windows 側での実行を許可する。

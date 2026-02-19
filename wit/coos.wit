@@ -1,10 +1,10 @@
 package fireball:host;
 
 interface coos-types {
-    use types.{task-id, address, recovery-strategy};
+    use types.{os-task-id, mem-address, sys-recovery-strategy};
 
     /// Task states in the cooperative scheduler.
-    enum task-state {
+    enum task-state-category {
         ready,
         running,
         blocked,
@@ -14,32 +14,33 @@ interface coos-types {
 
     /// Task context managed by the kernel.
     /// @inv: id > 0 && id <= FB_CONF_MAX_TASKS
-    record task-context-info {
-        id: task-id,
-        state: task-state,
+    record task-context-record {
+        id: os-task-id,
+        state: task-state-category,
         name: string,
     }
 }
 
 interface coos {
-    use types.{task-id, address, operation-result, recovery-strategy, shm-id, message, byte-count};
-    use coos-types.{task-state, task-context-info};
+    use types.{os-task-id, mem-address, operation-result, sys-recovery-strategy, mem-shm-id, ipc-message, mem-byte-count};
+    use coos-types.{task-state-category, task-context-record};
 
     /// Tier 2: Cooperative Task Scheduler
     /// @inv: current_task_id != 0 -> task_status[current_task_id] == running
     /// @inv: ready_queue_count <= FB_CONF_MAX_TASKS
-    resource scheduler {
+    /// @constexpr: MAX_TASKS = FB_CONF_MAX_TASKS
+    resource task-scheduler {
         /// Initializes the scheduler with required dependencies.
         /// @pre: !initialized
         /// @pre: memory is a valid base address
         /// @post: initialized
-        initialize: func(memory: address) -> operation-result;
+        init-scheduler: func(memory: mem-address) -> operation-result;
 
         /// Spawns a new task from a WASM entry point with priority.
         /// @pre: initialized
         /// @pre: name is not empty && entry != 0
         /// @post: result.is_ok() -> task_id > 0
-        spawn: func(name: string, entry: address, priority: u8) -> result<task-id, recovery-strategy>;
+        spawn: func(name: string, entry: mem-address, priority: u8) -> result<os-task-id, sys-recovery-strategy>;
         
         /// Yields execution to the next ready task.
         /// @pre: initialized
@@ -54,11 +55,11 @@ interface coos {
         /// Terminates the specified task.
         /// @pre: initialized && id is valid and active
         /// @post: task state == terminated
-        terminate: func(id: task-id);
+        terminate: func(id: os-task-id);
         
         /// Gets information about a task.
         /// @pre: initialized
-        query-task: func(id: task-id) -> result<task-context-info, bool>;
+        get-task-info: func(id: os-task-id) -> result<task-context-record, bool>;
 
         /// Main scheduling loop.
         /// @pre: initialized
@@ -67,32 +68,32 @@ interface coos {
 
     /// Tier 2: Hoare CSP Channel
     /// @inv: buffer_size <= FB_CONF_CHANNEL_SIZE
-    resource channel {
+    resource ipc-channel {
         /// Sends a message block to the channel (blocks if no receiver).
         /// @pre: msg is valid
         /// @post: msg ownership transferred to channel or receiver
-        send: func(msg: message) -> operation-result;
+        send: func(msg: ipc-message) -> operation-result;
 
         /// Receives a message block from the channel (blocks if empty).
         /// @post: msg ownership transferred to caller
-        recv: func() -> result<message, recovery-strategy>;
+        receive: func() -> result<ipc-message, sys-recovery-strategy>;
 
         /// Gets channel usage information.
-        query: func() -> result<u32, bool>; // Returns active message count
+        get-channel-info: func() -> result<u32, bool>; // Returns active message count
     }
 
     /// Tier 2: Task-independent Memory Partition
     /// @inv: partition_size <= FB_CONF_TASK_HEAP_SIZE
-    resource memory {
+    resource partition-memory {
         /// Allocates a block from the task's partition.
         /// @pre: size > 0
         /// @post: result.is_ok() -> allocated_bytes == old(allocated_bytes) + size
-        allocate: func(size: byte-count) -> result<address, recovery-strategy>;
+        allocate-block: func(size: mem-byte-count) -> result<mem-address, sys-recovery-strategy>;
         
         /// Frees a previously allocated block.
         /// @pre: ptr != 0
         /// @post: allocated_bytes == old(allocated_bytes) - size_of(ptr)
-        deallocate: func(ptr: address);
+        deallocate-block: func(ptr: mem-address);
     }
 }
 

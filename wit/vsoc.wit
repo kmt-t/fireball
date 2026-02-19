@@ -1,21 +1,21 @@
 package fireball:host;
 
 interface vsoc-types {
-    use types.{address, operation-result, byte-count, recovery-strategy};
+    use types.{mem-address, operation-result, mem-byte-count, sys-recovery-strategy};
 
-    /// Virtual machine configuration.
-    record vm-config {
-        ram-base: address,
-        ram-size: byte-count,
-        entry-point: address,
+    /// Configuration for VM setup.
+    record vm-setup-config {
+        ram-base: mem-address,
+        ram-size: mem-byte-count,
+        entry-point: mem-address,
         /// Base physical address for PASSTHROUGH region mapping.
         /// physical_addr = passthrough-base + (guest_addr - passthrough_region_start)
         /// @note ARM Cortex-M: typically 0x4000_0000 (peripheral region)
-        passthrough-base: address,
+        passthrough-base: mem-address,
     }
 
     /// Execution states for the virtual machine.
-    enum execution-state {
+    enum execution-state-category {
         ready,
         running,
         halted,
@@ -24,7 +24,7 @@ interface vsoc-types {
     }
 
     /// Identifiers for Virtual MMIO hooks.
-    enum vmmio-hook-id {
+    enum hook-category {
         timer,
         uart,
         debug,
@@ -39,11 +39,11 @@ interface vsoc-types {
 }
 
 interface vsoc {
-    use types.{operation-result, recovery-strategy, shm-id, address, byte-count, log-level, message, binary-view};
-    use vsoc-types.{vm-config, execution-state, vmmio-hook-id, irq-mapping-entry};
+    use types.{operation-result, sys-recovery-strategy, mem-shm-id, mem-address, mem-byte-count, sys-log-level, ipc-message, binary-view};
+    use vsoc-types.{vm-setup-config, execution-state-category, hook-category, irq-mapping-entry};
 
-    /// WASM Section Types (standard 0.2/1.0)
-    enum wasm-section-type {
+    /// WASM Section Categories (standard 0.2/1.0)
+    enum section-category {
         custom,
         type-section,
         import-section,
@@ -81,20 +81,20 @@ interface vsoc {
         read-leb128-s64: func() -> result<s64, bool>;
         
         /// Reads a block of data.
-        read-bytes: func(len: byte-count) -> result<binary-view, bool>;
+        read-bytes: func(len: mem-byte-count) -> result<binary-view, bool>;
 
         /// Remaining bytes in the stream.
-        remaining: func() -> byte-count;
+        remaining: func() -> mem-byte-count;
     }
 
     /// View for a specific WASM module's section metadata.
     record wasm-section-view {
-        id: wasm-section-type,
+        category: section-category,
         data: binary-view,
     }
 
     /// Accessor for function-level metadata and instructions.
-    resource wasm-function-accessor {
+    resource function-accessor {
         /// Gets the function signature index.
         get-type-index: func() -> u32;
 
@@ -106,7 +106,7 @@ interface vsoc {
     }
 
     /// Accessor for global variable metadata.
-    resource wasm-global-accessor {
+    resource global-accessor {
         /// Gets the value type and mutability.
         get-metadata: func() -> tuple<u8, bool>;
 
@@ -118,28 +118,28 @@ interface vsoc {
     /// @inv: module_id is unique
     resource wasm-module-view {
         /// Gets the raw ROM metadata for a specific section.
-        get-section: func(stype: wasm-section-type) -> result<wasm-section-view, bool>;
+        get-section: func(stype: section-category) -> result<wasm-section-view, bool>;
 
         /// Lookups an exported function index by name.
         lookup-export-func: func(name: string) -> result<u32, bool>;
 
         /// Gets an accessor for a specific function.
         /// @pre: func_idx is valid
-        get-function: func(func-idx: u32) -> result<wasm-function-accessor, bool>;
+        get-function: func(func-idx: u32) -> result<function-accessor, bool>;
 
         /// Gets an accessor for a specific global.
         /// @pre: global_idx is valid
-        get-global: func(global-idx: u32) -> result<wasm-global-accessor, bool>;
+        get-global: func(global-idx: u32) -> result<global-accessor, bool>;
     }
 
     /// Tier 3: WASM Module Loader
     /// @inv: loaded_module_count <= FB_CONF_MAX_MODULES
-    resource wasm-loader {
+    resource module-loader {
         /// Prepares a WASM module for execution from ROM.
         /// @pre: wasm is a valid binary_view in ROM
         /// @post: result.is_ok() -> module_view is valid
         /// @post: loaded_module_count incremented by 1
-        prepare: func(wasm: binary-view) -> result<wasm-module-view, recovery-strategy>;
+        prepare: func(wasm: binary-view) -> result<wasm-module-view, sys-recovery-strategy>;
         
         /// Loads a module's linear memory into guest RAM.
         /// @pre: module is valid
@@ -172,17 +172,18 @@ interface vsoc {
     /// Physical registers, shared memory, syscall buffers — everything.
     /// @inv: vmmio_base == FB_CONF_VMMIO_BASE
     /// @inv: security_gate == permission_table (single gate, no layering)
+    /// @constexpr: BASE_ADDR = FB_CONF_VMMIO_BASE
     resource vmmio-manager {
         /// Dispatches a trapped access to the appropriate handler.
         /// Permission table is checked first; permitted addresses get direct physical access.
         /// @pre: addr >= vmmio_base && addr < vmmio_base + vmmio_size
         /// @post: permitted(addr) => handler executed, result reflects register operation
         /// @post: !permitted(addr) => access violation trap
-        dispatch-access: func(addr: address, buffer: list<u8>, is-write: bool) -> operation-result;
+        dispatch-access: func(addr: mem-address, buffer: list<u8>, is-write: bool) -> operation-result;
 
         /// Registers a host-side hook for a vMMIO region.
         /// @pre: handler-addr != 0
-        register-hook: func(hook-id: vmmio-hook-id, handler-addr: address) -> operation-result;
+        register-hook: func(hook-id: hook-category, handler-addr: mem-address) -> operation-result;
         
         /// Reserves static regions in the DYNAMIC space.
         /// @pre: pages-count <= FB_CONF_VMMIO_DYNAMIC_PAGES
@@ -191,15 +192,15 @@ interface vsoc {
 
     /// Tier 2: vSoC Runtime
     /// @inv: ram_size == FB_CONF_GUEST_RAM_SIZE
-    resource vsoc-runtime {
+    resource system-runtime {
         /// Initializes the runtime environment with injected dependencies.
         /// @pre: !initialized
         /// @pre: loader, vmmio, memory are valid resource handles
         /// @post: initialized && dependencies are bound
         initialize: func(
-            loader: wasm-loader,
+            loader: module-loader,
             vmmio: vmmio-manager,
-            memory: address,
+            memory: mem-address,
             irq-mappings: list<irq-mapping-entry>
         ) -> operation-result;
 
@@ -207,7 +208,7 @@ interface vsoc {
         /// @pre: initialized
         /// @pre: state == running || state == halted
         /// @post: result.is_ok() -> state updated
-        step: func() -> result<execution-state, recovery-strategy>;
+        step: func() -> result<execution-state-category, sys-recovery-strategy>;
 
         /// Notifies a virtual interrupt to the guest.
         /// @pre: initialized
@@ -219,17 +220,17 @@ interface vsoc {
     /// @inv: sp >= stack_base (Stack Underflow Protection)
     /// @inv: sp < stack_base + stack_size (Stack Overflow Protection)
     /// @inv: pc < code_size (Program Counter Safety)
-    resource interpreter {
+    resource instruction-interpreter {
         /// Initializes the interpreter with configuration.
         /// @pre: config.stack_size > 0
         /// @post: initialized
-        initialize: func(config: vm-config) -> operation-result;
+        initialize: func(config: vm-setup-config) -> operation-result;
 
         /// Executes a single instruction or trace.
         /// @pre: state == ready
         /// @post(ok): state == ready || state == trapped (Normal execution or Trap)
         /// @post(err): recovery_strategy != ignore (System failure must be handled)
-        step: func(ctx: vsoc-runtime) -> result<execution-state, recovery-strategy>;
+        step: func(ctx: system-runtime) -> result<execution-state-category, sys-recovery-strategy>;
     }
 }
 

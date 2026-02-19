@@ -1,41 +1,41 @@
 package fireball:host;
 
 interface jit-types {
-    use types.{address, shm-id, recovery-strategy, byte-count, entry-count};
+    use types.{mem-address, mem-shm-id, sys-recovery-strategy, mem-byte-count, mem-entry-count};
 
     /// JIT Entry linking WASM PC to native code offset.
     record jit-entry {
-        wasm-pc: address,
-        native-offset: address,
+        wasm-pc: mem-address,
+        native-offset: mem-address,
     }
 
     /// JIT configuration parameters.
-    record jit-config {
-        bank-size: byte-count,
-        max-entries: entry-count,
+    record jit-setup-record {
+        bank-size: mem-byte-count,
+        max-entries: mem-entry-count,
         card-shift: u8,
         align-shift: u8,
     }
 }
 
 interface jit {
-    use types.{address, shm-id, operation-result, recovery-strategy};
-    use jit-types.{jit-entry, jit-config};
+    use types.{mem-address, mem-shm-id, operation-result, sys-recovery-strategy};
+    use jit-types.{jit-entry, jit-setup-record};
 
     /// Tier 3: Hotspot Detector
     /// @inv: history_count <= FB_CONF_JIT_MAX_HISTORY
     /// @inv: compile_queue_count <= FB_CONF_JIT_MAX_COMPILE_QUEUE
-    resource hotspot-detector {
+    resource hotspot-detector-unit {
         /// Records an execution of a WASM PC (Card Marking).
         /// @pre: pc != 0
-        record-execution: func(pc: address);
+        mark: func(pc: mem-address);
 
         /// Processes execution history to identify hotspots.
         /// @post: history_count == 0
         process-history: func();
         
         /// Gets the current 2-bit state of a card.
-        get-card-state: func(pc: address) -> u8;
+        get-card-state: func(pc: mem-address) -> u8;
     }
 
     /// Tier 3: JIT Entry Index
@@ -44,28 +44,28 @@ interface jit {
     resource jit-entry-index {
         /// Lookup native trace address.
         /// @post: result.is_ok() -> result_addr != 0
-        lookup: func(pc: address) -> result<address, bool>;
+        get-trace-address: func(pc: mem-address) -> result<mem-address, bool>;
 
         /// Registers a new JIT entry.
         /// @pre: native_offset < FB_CONF_JIT_CACHE_SIZE
         /// @post: lookup(pc).is_ok()
-        register-entry: func(pc: address, native-offset: address);
+        register: func(pc: mem-address, native-offset: mem-address);
         
         /// Promotes an entry from Old to Active cache.
         /// @pre: pc exists in Old bank
         /// @post: lookup(pc).is_ok() in Active bank
-        promote: func(pc: address) -> result<address, bool>;
+        promote: func(pc: mem-address) -> result<mem-address, bool>;
 
         /// Gets the range in the entry table for a given card group.
-        get-search-range: func(pc: address) -> result<tuple<u32, u32>, bool>;
+        get-search-range: func(pc: mem-address) -> result<tuple<u32, u32>, bool>;
     }
 
     /// Tier 3: Copy-and-Patch Engine
     /// @inv: templates are immutable after boot
-    resource copy-and-patch-engine {
+    resource patch-engine-unit {
         /// Patches a WASM trace into native code.
         /// @pre: pc != 0
-        patch-trace: func(pc: address, template-id: u32) -> operation-result;
+        patch: func(pc: mem-address, template-id: u32) -> operation-result;
         
         /// Resolves a template-id from a WASM opcode or pattern.
         lookup-template: func(opcode: u8) -> result<u32, bool>;
@@ -74,21 +74,21 @@ interface jit {
     /// Tier 2: JIT Compiler Manager
     /// @inv: active_bank.cache_offset <= FB_CONF_JIT_CACHE_SIZE
     /// @inv: old_bank.cache_offset <= FB_CONF_JIT_CACHE_SIZE
-    resource jit-compiler {
+    resource compiler-unit {
         /// Initializes the JIT environment with injected dependencies.
         /// @pre: !initialized
         /// @pre: detector, index, engine are valid resource handles
         /// @post: initialized && dependencies are bound
-        initialize: func(
-            config: jit-config,
-            detector: hotspot-detector,
+        init-compiler: func(
+            config: jit-setup-record,
+            detector: hotspot-detector-unit,
             index: jit-entry-index,
-            engine: copy-and-patch-engine
+            engine: patch-engine-unit
         ) -> operation-result;
 
         /// Fast lookup for execution.
         /// @pre: initialized
-        lookup-trace: func(pc: address) -> result<address, bool>;
+        get-trace-address: func(pc: mem-address) -> result<mem-address, bool>;
 
         /// Batch compilation of hotspots.
         /// @pre: initialized

@@ -7,12 +7,16 @@ COMMAND=$1
 shift
 
 case "$COMMAND" in
-    context)
-        python3 "$SCRIPT_DIR/search_context.py" "$@"
-        ;;
+    # context subcommand was removed per 3c2b8d32-13ac-4bcf-a57c-5d78bc9ec866 protocol
     summary)
-        # Use explore_codebase.py's summary mode
+        # Pass all arguments to support --json
         python3 "$SCRIPT_DIR/explore_codebase.py" --summary "$@"
+        ;;
+    ast)
+        python3 "$SCRIPT_DIR/explore_codebase.py" --ast "$@"
+        ;;
+    callers)
+        python3 "$SCRIPT_DIR/explore_codebase.py" --callers "$@"
         ;;
     graph)
         python3 "$SCRIPT_DIR/explore_codebase.py" --graph "$@"
@@ -29,7 +33,7 @@ case "$COMMAND" in
         if [ "$SUBCOMMAND" == "summary" ]; then
             while read -r path; do
                 if [ -n "$path" ]; then
-                    python3 "$SCRIPT_DIR/explore_codebase.py" --summary "$path"
+                    python3 "$SCRIPT_DIR/explore_codebase.py" --summary "$path" --json
                 fi
             done
         else
@@ -38,7 +42,6 @@ case "$COMMAND" in
         ;;
     *)
         # Default to explore_codebase.py (interactive or other flags)
-        # Shift back to include COMMAND if it's actually an argument (like --help or --ast)
         python3 "$SCRIPT_DIR/explore_codebase.py" "$COMMAND" "$@"
         ;;
 esac

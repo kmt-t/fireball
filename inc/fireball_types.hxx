@@ -21,11 +21,11 @@ using u64 = uint64_t;
 // ========================================
 // Primitive Type Aliases (fireball_vocabulary)
 // ========================================
-using address = uint32_t;
-using offset = uint32_t;
-using byte_count = uint32_t;
-using entry_count = uint32_t;
-using instruction_count = uint32_t;
+using mem_address = uint32_t;
+using mem_byte_offset = uint32_t;
+using mem_byte_count = uint32_t;
+using mem_entry_count = uint32_t;
+using wasm_instruction_count = uint32_t;
 using function_index = uint32_t;
 using shift_amount = uint8_t;
 using interrupt_flags = uint32_t;
@@ -44,13 +44,13 @@ using data_range = std::span<T>;
 // ========================================
 
 // These forward declarations will be resolved by including gen/types.hxx later
-enum class recovery_strategy : uint8_t;
-enum class log_level : uint8_t;
+enum class sys_recovery_strategy : uint8_t;
+enum class sys_log_level : uint8_t;
 
-template <typename T, typename E = recovery_strategy>
+template <typename T, typename E = sys_recovery_strategy>
 using result = std::expected<T, E>;
 
-using operation_result = result<void, recovery_strategy>;
+using operation_result = result<void, sys_recovery_strategy>;
 
 /**
  * @brief Base interface for all system components.
@@ -63,12 +63,12 @@ struct component {
 // ========================================
 // Component Specific Aliases (Common)
 // ========================================
-using shm_id = uint32_t;
-using device_id = uint32_t;
-using channel_id = uint32_t;
-using task_id = uint32_t;
-using service_id = uint32_t;
-using wasm_pc = offset;
-using message_handle = shm_id;
+using mem_shm_id = uint32_t;
+using hal_device_id = uint32_t;
+using ipc_channel_id = uint32_t;
+using os_task_id = uint32_t;
+using sys_service_id = uint32_t;
+using wasm_pc = mem_byte_offset;
+using ipc_message_handle = mem_shm_id;
 
 } // namespace fireball

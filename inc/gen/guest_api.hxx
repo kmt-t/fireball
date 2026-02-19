@@ -14,8 +14,8 @@
 
 namespace fireball {
 
-void log(log_level lvl, uint32_t dict_id, uint32_t value) noexcept;
+void log(sys_log_level lvl, uint32_t dict_id, uint32_t value) noexcept;
 
-void ipc_call(uint32_t chan, message data) noexcept;
+void call(uint32_t chan, ipc_message data) noexcept;
 
 } // namespace fireball

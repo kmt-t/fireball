@@ -16,57 +16,57 @@ namespace fireball {
 /**
  * Device identifier for HAL.
  */
-using device_id = uint32_t;
+using hal_device_id = uint32_t;
 
 /**
  * Shared memory identifier.
  */
-using shm_id = uint32_t;
+using mem_shm_id = uint32_t;
 
 /**
  * Channel identifier for IPC.
  */
-using channel_id = uint32_t;
+using ipc_channel_id = uint32_t;
 
 /**
  * Task identifier for OS.
  */
-using task_id = uint32_t;
+using os_task_id = uint32_t;
 
 /**
  * System-wide service identifier.
  */
-using service_id = uint32_t;
+using sys_service_id = uint32_t;
 
 /**
  * Memory address.
  */
-using address = uint32_t;
+using mem_address = uint32_t;
 
 /**
  * Byte count for memory sizes.
  */
-using byte_count = uint32_t;
+using mem_byte_count = uint32_t;
 
 /**
  * Byte offset from a base.
  */
-using byte_offset = uint32_t;
+using mem_byte_offset = uint32_t;
 
 /**
  * Entry count for tables or arrays.
  */
-using entry_count = uint32_t;
+using mem_entry_count = uint32_t;
 
 /**
  * Instruction count for execution.
  */
-using instruction_count = uint32_t;
+using wasm_instruction_count = uint32_t;
 
 /**
  * Handle to a URI string.
  */
-using uri_handle = uint32_t;
+using sys_uri_handle = uint32_t;
 
 /**
  * Binary view reference (read-only span).
@@ -77,7 +77,7 @@ using uri_handle = uint32_t;
 /**
  * Log level for system messages.
  */
-enum class log_level : uint8_t {
+enum class sys_log_level : uint8_t {
   DEBUG,
   INFO,
   WARN,
@@ -88,7 +88,7 @@ enum class log_level : uint8_t {
 /**
  * Recovery strategy for operation failures.
  */
-enum class recovery_strategy : uint8_t {
+enum class sys_recovery_strategy : uint8_t {
   IGNORE,
   RETRY,
   RESTART,
@@ -101,7 +101,7 @@ enum class recovery_strategy : uint8_t {
 /**
  * Scope type for IPC messages (upper 3 bits of type_scope field).
  */
-enum class scope_type : uint8_t {
+enum class ipc_scope_category : uint8_t {
   FUNCTIONAL,
   DICTIONARY,
   RESERVED_2,
@@ -115,7 +115,7 @@ enum class scope_type : uint8_t {
 /**
  * Data type for IPC messages (lower 5 bits of type_scope field).
  */
-enum class data_type : uint8_t {
+enum class ipc_data_category : uint8_t {
   IMMEDIATE,
   HANDLE,
   RESOURCE_ID,
@@ -155,11 +155,11 @@ enum class data_type : uint8_t {
  * FINALIZED bitfield layout:
  *   [63:32] value  : u32 — payload or handle
  *   [31:8]  key    : u24 — service-defined key identifier
- *   [7:5]   scope  : u3  — scope-type (functional, dictionary, ...)
- *   [4:0]   dtype  : u5  — data-type  (immediate, handle, resource-id, ...)
- * @inv: sizeof(kv-pair) == 8 bytes
+ *   [7:5]   scope  : u3  — ipc-scope-category (functional, dictionary, ...)
+ *   [4:0]   dtype  : u5  — ipc-data-category  (immediate, handle, resource-id, ...)
+ * @inv: sizeof(ipc-kv-pair) == 8 bytes
  */
-struct kv_pair {
+struct ipc_kv_pair {
   uint64_t raw;
 };
 
@@ -168,8 +168,8 @@ struct kv_pair {
  * @inv: len(pairs) <= 8
  * @note FINALIZED: 8 * 8 = 64 bytes max per message. Fits in single cache line on most architectures.
  */
-struct message {
-  std::span<kv_pair> pairs;
+struct ipc_message {
+  std::span<ipc_kv_pair> pairs;
 };
 
 } // namespace fireball

@@ -1,71 +1,65 @@
-# Codebase Explorer
+# Codebase Explorer Scripts
 
-## 1. 概要 Overview
+コードベースを構造的に把握し、シンボルの要約や AST 解析を行うためのツール群。
 
-> [!CAUTION]
-> **Self-Correction & Memory Discovery Protocol**:
-> あなた（エージェント）は、このセッションより前に行われたアドホックな設計判断を「確実に忘れている」ことを前提に行動せよ。
-> 自分の推論や直感に頼らず、まず本ドキュメントと `.agent/brain/*.atc` を読み込み、既にある論理的制約を「再発見」すること。
-> 本ドキュメントは、記憶の揮発を前提とした「外付けの真実 (External Truth)」である。
+## 1. 役割と数学的性質 (Role & Axioms)
+- **目的**: 大規模なコードベースから、関数、クラス、型定義などの重要な構造（物理層）を抽出し、設計ドキュメントの論理的な制約と照らし合わせるための情報を提供する。
+- **不変条件 (Invariants)**:
+    - `summary`: 常に出力は相対パスで正規化され、シンボルの一意な所在（$\exists$ Existence）を証明可能な形式で提供する。
+    - `ast`: Clang AST に基づき、マクロ展開後やテンプレート解決済みの「真の型」情報を抽出する。
+- **影響範囲 (Side Effects)**: なし（読み取り専用スキャン）。
 
-## 2. 論理学的基盤 (Logical Foundation)
+## 2. インターフェース (CLI & Interface)
 
-情報を要約 Abstraction し、述語論理の拡張としての**時相様相論理 Temporal Modal Logic** へ写像する。
+### [explore-codebase.sh](file:///w:/mysrc/fireball/.agent/skills/general_codebase_explore/scripts/explore-codebase.sh)
+`bash explore-codebase.sh <command> [args...]`
 
-- **$\exists$ Existence**: 定義の一意性と所在の証明。
-- **$\Diamond$ Reachability/Liveness**: 外部からの可達性 結合・利用 。
-- **$\square$ (Necessity)**: システムが常に満たすべき論理契約 (ATC/Safety)。
+- **コマンド (Commands)**:
+    - `summary <path> [--json]`: ファイル/ディレクトリの概要を抽出。
+    - `ast <path> [--json] [compiler_flags...]`: Clang AST を出力。
+    - `callers <function_name> [--depth N] [--search-dir DIR]`: 指定した関数の呼び出し元を検索。
+    - `graph <path> [--source FILE] [--search-dir DIR]`: コールグラフの生成。`--source` は `cflow` に渡す追加ソース。
+    - `symbols <path> [compiler_flags...]`: ファイル内で実際に使用されているシンボルリストの抽出。
+    - `report <path> [-I INC] [--search-dir DIR]`: `graph` と `symbols` を統合したレポート生成。
+    - `pipe summary`: 標準入力から渡されたパス（1行1件）を順次 `summary --json` で処理。
 
-## 3. 推奨される実行方法 (Zero-Error Patterns)
+- **共通フラグ (Common Flags)**:
+    - `--json`: 出力をパース可能な JSON 形式にする（一部のコマンドのみ）。
+    - `--depth <int>`: 再帰検索の深さ（デフォルト: 1）。
+    - `--search-dir <dir>`: 追加のスキャン対象ディレクトリ。
+    - `--source <file>`: 依存解析に含める追加のソースファイル。
+    - `--pipe-sources`: `cflow` 実行時に標準入力からファイルリストを読み込む。
 
-Windows環境では、PowerShellのクオーティング問題を避けるため、必ず PowerShell から `bash` と入力して **WSL2 (Ubuntu)** シェルに入ってから作業を行え。
 
-### A. Dockerコンテナ内での実行 (推奨)
-コンテナ内の `clang` を利用して高精度なAST解析を行う場合に最適。
+## 3. 使用方法 (Usage) サンプル
+
+### パターンA: ディレクトリ全体の俯瞰 (Summary)
 ```bash
-# 準備: コンテナの起動
-bash .agent/skills/docker_workaround/scripts/docker-cmd.sh hostname
-
-# 実行例: WAMRのAST解析 (JSON)
-bash .agent/skills/explorer/docker-explorer.sh ast references/wamr/core/iwasm/include/wasm_export.h --json \
-  -I references/wamr/core/iwasm/include \
-  -I references/wamr/core/shared/utils
-
-# 実行例: コンテキスト検索
-bash .agent/skills/explorer/docker-explorer.sh context "StaticDI"
+bash .agent/skills/general_codebase_explore/scripts/explore-codebase.sh summary src/
 ```
 
-### B. ホスト（Git Bash）での実行
-ドキュメントの検索や、ホスト側のPythonでの高速な解析に利用。
+### パターンB: 単一ファイルの Clang AST 解析 (JSON)
 ```bash
-# Git Bash の絶対パス指定が必要な場合
-"C:\Program Files\Git\bin\bash.exe" .agent/skills/explorer/scripts/explorer.sh summary docs/architecture/memory_map.md
+bash .agent/skills/general_codebase_explore/scripts/explore-codebase.sh ast inc/fireball.hxx --json -Iinc
 ```
 
-## 4. Modal logic framework (Usage)
-解析結果を以下の形式で出力・記録することを標準とする。これを転写 (Transcribe) するのはエージェント（AI）の責務である。
+### パターンC: 特定のキーワードに関する呼び出し元の特定 (Callers)
+```bash
+bash .agent/skills/general_codebase_explore/scripts/explore-codebase.sh callers "init_hal"
+```
 
-| 様相 | 意味 | 抽出方法 |
-| :--- | :--- | :--- |
-| **$\exists$ (Existence)** | 定義・所在 | `explorer.sh summary <path>` |
-| **$\Diamond$ (Reachability)** | 利用・依存 | `explorer.sh callers <symbol>` |
-| **$\square$ (Necessity)** | 不変条件/契約 | `explorer.sh context <Keyword>` および設計書解析 |
+## 4. データ構造 (Schema)
+`--json` 出力は以下の構造を持ちます（簡略化）:
+```json
+{
+  "file": "src/main.cxx",
+  "symbols": [
+    { "name": "main", "kind": "Function", "line": 10 },
+    { "name": "vmmio_manager", "kind": "Class", "line": 20 }
+  ]
+}
+```
 
-## 5. 時相論理への転写規則 Logic Transcription
-
-`docs/*.md` 内の自然言語命題を以下の TLA+ 形式の論理式へ変換する。
-
-| 自然言語パターン Intent | 時相論理式表現 | 意味論的分類 |
-| :--- | :--- | :--- |
-| 「常に〜である」「不変」 | `□inv: P` | 不変条件 Safety |
-| 「〜が必要」「前提」 | `□(@pre: P)` | 必然的前置条件 Necessity |
-| 「〜を返す」「〜を更新」 | `Input ⇒ ◊Output` | 活性・事後条件 Liveness |
-| 「一意に定まる」 | `∃!x : P(x)` | 存在と一意性 |
-
-## 6. 解析・生成プロセス
-
-1.  **物理層 ($\exists, \Diamond$)**: `grep` による静的解析。
-2.  **論理層 ($\square$)**:
-    - `docs/components/` 内のキーワードをタイトルに含むセクション（Header）を特定。
-    - セクション内容をトークナイズし、助動詞および量化子を解析。
-    - 自然言語から LTL/ATC 形式への写像を行い、論理式を構成する。
+## 5. エラーリカバリ (Recovery)
+- **Parse Error**: `clang` がヘッダを見つけられません。`-I` オプションでインクルードパスを明示してください。
+- **Memory Error**: 巨大なファイルを解析する場合、メモリが不足することがあります。`summary` で対象を絞り込んでから詳細解析を行ってください。

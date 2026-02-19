@@ -15,9 +15,9 @@
 namespace fireball {
 
 /**
- * Memory partition types for isolation.
+ * Memory partition categories for isolation.
  */
-enum class partition_kind : uint8_t {
+enum class partition_category : uint8_t {
   KERNEL,
   TASK,
   SHARED,
@@ -28,11 +28,11 @@ enum class partition_kind : uint8_t {
  * Information about a memory block.
  * @inv: owner != 0 (always associated with a task)
  */
-struct memory_info {
-  shm_id id;
-  byte_count size;
-  partition_kind kind;
-  task_id owner;
+struct block_metadata_record {
+  mem_shm_id id;
+  mem_byte_count size;
+  partition_category category;
+  os_task_id owner;
 };
 
 } // namespace fireball

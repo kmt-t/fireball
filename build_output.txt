@@ -1,0 +1,51 @@
+Traceback (most recent call last):
+  File "/home/developer/.local/share/pipx/venvs/meson/lib/python3.12/site-packages/mesonbuild/msetup.py", line 104, in __init__
+    mesonlib.windows_proof_rm(l)
+  File "/home/developer/.local/share/pipx/venvs/meson/lib/python3.12/site-packages/mesonbuild/utils/universal.py", line 2031, in windows_proof_rm
+    os.chmod(fpath, os.stat(fpath).st_mode | stat.S_IWRITE | stat.S_IREAD)
+PermissionError: [Errno 1] Operation not permitted: '/workspaces/fireball/build/.gitignore'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/shutil.py", line 886, in move
+    os.rename(src, real_dst)
+OSError: [Errno 18] Invalid cross-device link: '/tmp/tmpf2a6yf91/cmd_line.txt' -> '/workspaces/fireball/build/meson-private/cmd_line.txt'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/developer/.local/share/pipx/venvs/meson/lib/python3.12/site-packages/mesonbuild/mesonmain.py", line 193, in run
+    return options.run_func(options)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/developer/.local/share/pipx/venvs/meson/lib/python3.12/site-packages/mesonbuild/msetup.py", line 403, in run
+    app = MesonApp(options)
+          ^^^^^^^^^^^^^^^^^
+  File "/home/developer/.local/share/pipx/venvs/meson/lib/python3.12/site-packages/mesonbuild/msetup.py", line 109, in __init__
+    shutil.move(b, f)
+  File "/usr/lib/python3.12/shutil.py", line 906, in move
+    copy_function(src, real_dst)
+  File "/usr/lib/python3.12/shutil.py", line 476, in copy2
+    copystat(src, dst, follow_symlinks=follow_symlinks)
+  File "/usr/lib/python3.12/shutil.py", line 384, in copystat
+    lookup("utime")(dst, ns=(st.st_atime_ns, st.st_mtime_ns),
+PermissionError: [Errno 1] Operation not permitted
+
+ERROR: Unhandled python OSError. This is probably not a Meson bug, but an issue with your build environment.
+The Meson build system
+Version: 1.10.1
+Source dir: /workspaces/fireball
+Build dir: /workspaces/fireball/build
+Build type: native build
+Project name: fireball
+Project version: 0.1.0
+C compiler for the host machine: cc (gcc 13.3.0 "cc (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0")
+C linker for the host machine: cc ld.bfd 2.42
+C++ compiler for the host machine: c++ (gcc 13.3.0 "c++ (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0")
+C++ linker for the host machine: c++ ld.bfd 2.42
+Host machine cpu family: x86_64
+Host machine cpu: x86_64
+
+meson.build:11:9: ERROR: Option target_machine does not exist.
+
+A full log can be found at /workspaces/fireball/build/meson-logs/meson-log.txt

@@ -142,35 +142,39 @@ graph LR
 ### 5.1 公開API
 外部から利用可能なオブジェクト指向APIを定義する。
 
-#### `register_hook`
+#### `register-hook`
 
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | 既に定義（ROM）されている領域に対して、ホスト側の `vmmio_handler` 実装を紐づける。 |
-| シグネチャ | `register_hook(hook_id: ID値, handler: 関数ポインタ) -> 結果型` |
-| 引数 | `hook_id`: 対象の領域識別子<br>`handler`: ハンドラ実装 |
-| 戻り値 | 結果型 |
+| 機能概要 | 既に定義（ROM）されている領域に対して、ホスト側のハンドラの実装アドレスを紐づける。 |
+| シグネチャ | `register-hook(hook-id: hook-category, handler-addr: mem-address) -> operation-result` |
+| 引数 | `hook-id`: 対象の領域カテゴリ<br>`handler-addr`: ハンドラ関数の物理アドレス |
+| 事前条件 | `hook-id` が `vsoc.wit` で定義された有効なIDであること。未登録であること。 |
+| 事後条件 | フックレジストリにエントリが追加される。 |
+| 戻り値 | 操作結果 |
 | 期待する結果 | 正常：フックが登録され、以降のアクセスで呼び出される。 |
 
-#### `reserve_static_regions`
+#### `reserve-static-regions`
 
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | `DYNAMIC` 領域の先頭から指定されたページ数を静的に予約する。システム初期化時に一度だけ呼び出されることを想定する。 |
-| シグネチャ | `reserve_static_regions(pages_count: ページ数) -> void` |
-| 引数 | `pages_count`: 予約する総ページ数 |
+| シグネチャ | `reserve-static-regions(pages-count: u32) -> void` |
+| 引数 | `pages-count`: 予約する総ページ数 |
+| 事前条件 | システム初期化フェーズであること。動的領域に十分な空きがあること。 |
+| 事後条件 | `DYNAMIC` 領域の管理情報が更新され、領域が確保される。 |
 | 戻り値 | なし (失敗時はアボート) |
 | 期待する結果 | 正常：`DYNAMIC` 領域の管理情報が更新され、予約済み領域としてマークされる。 |
 
-#### `dispatch_access`
+#### `dispatch-access`
 
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | vSoC 実行エンジンからトラップされたメモリアクセスを**許可テーブルで検証**し、適切なハンドラへ振り分ける。 |
-| シグネチャ | `dispatch_access(addr: アドレス値, buffer: 可変バイナリビュー, is_write: ブール値) -> 結果型` |
-| 引数 | `addr`: 基点アドレス<br>`buffer`: データビュー (read時はout, write時はin)<br>`is_write`: 書き込みフラグ |
-| 戻り値 | 結果型 |
-| 事前条件 | `addr >= vmmio_base` |
+| シグネチャ | `dispatch-access(addr: mem-address, buffer: list<u8>, is-write: bool) -> operation-result` |
+| 引数 | `addr`: アクセス先アドレス<br>`buffer`: データバッファ (read時out, write時in)<br>`is-write`: 書き込みフラグ |
+| 戻り値 | 操作結果 |
+| 事前条件 | `addr >= vmmio_base && addr < vmmio_base + vmmio_size` |
 | 事後条件 | 許可アドレス：ハンドラ実行完了。非許可アドレス：アクセス違反トラップ。 |
 | 期待する結果 | 正常：許可テーブルを通過し、登録されたハンドラが実行され、レジスタ操作の結果がゲストに反映される。 |
 

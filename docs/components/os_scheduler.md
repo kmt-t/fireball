@@ -63,8 +63,8 @@ stateDiagram-v2
     running --> ready: yield
     running --> blocked: wait / send / recv
     blocked --> ready: timeout
-    blocked --> interrupted: notify_interrupt
-    ready --> interrupted: notify_interrupt
+    blocked --> interrupted: notify-interrupt
+    ready --> interrupted: notify-interrupt
     interrupted --> running: schedule (priority)
     running --> [*]: exit / error (cleanup)
 ```
@@ -74,21 +74,27 @@ stateDiagram-v2
 ### 5.1 公開API
 外部から利用可能なオブジェクト指向APIを定義する。依存関係は `initialize` メソッドで注入する。
 
-#### `initialize`
+#### `init-scheduler`
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | スケジューラを動作させるための依存コンポーネントを注入する。 |
-| シグネチャ | `initialize(memory: address) -> operation-result` |
+| シグネチャ | `init-scheduler(memory: mem-address) -> operation-result` |
 | 引数 | `memory`: メモリ管理ユニットのアドレス |
 | 戻り値 | 操作結果 |
+| 事前条件 | システムのメモリ管理ユニット(MMU)が初期化済みであること。 |
+| 事後条件 | スケジューラがアイドル状態（タスクなし）で起動する。 |
+| 不変条件 | シングルトンであり、再初期化は不可。 |
 
 #### `spawn`
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | 新しいWASMタスクを生成し、READY キューに追加する。 |
-| シグネチャ | `spawn(name: string, entry: address, priority: u8) -> result<task_id, recovery_strategy>` |
+| シグネチャ | `spawn(name: string, entry: mem-address, priority: u8) -> result<os-task-id, sys-recovery-strategy>` |
 | 引数 | `name`: タスク名称<br>`entry`: WASMエントリポイント<br>`priority`: 実行優先度 |
-| 戻り値 | 結果型 (成功時は `task_id`) |
+| 戻り値 | 結果型 (成功時は `os-task-id`) |
+| 事前条件 | スケジューラが初期化済みであること。メモリに空きがあること。 |
+| 事後条件 | 新しいタスクが READY キューの末尾に追加される。 |
+| 不変条件 | 生成された `os-task-id` はシステム内で一意であること。 |
 
 #### `spawn_task`
 | 項目 | 内容 |
@@ -97,18 +103,24 @@ stateDiagram-v2
 | シグネチャ | `spawn_task(task: task&&) -> 結果型` |
 | 引数 | `task`: 移動セマンティクスによるコルーチンタスク |
 | 戻り値 | 結果型 (成功時は `task_id`) |
+| 事前条件 | `task` が有効なコルーチンハンドルを保持していること。 |
+| 事後条件 | タスクが READY キューに追加される。 |
 
 #### `yield`
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | 現在のタスクの実行を中断し、スケジュールの再評価を行う。 |
 | シグネチャ | `yield() -> void` |
+| 事前条件 | タスク実行コンテキスト内から呼び出されること（ISRからの呼び出し不可）。 |
+| 事後条件 | 現在のタスクが READY キューの末尾に移動し、次タスクに切り替わる。 |
 
 #### `run`
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | メインスケジューリングループを開始する。 |
 | シグネチャ | `run() -> void` |
+| 事前条件 | `init-scheduler` が完了していること。 |
+| 事後条件 | 通常、この関数は戻らない（電源断または致命的エラー時のみ）。 |
 
 #### `set_idle_handler`
 | 項目 | 内容 |
@@ -117,19 +129,23 @@ stateDiagram-v2
 | シグネチャ | `set_idle_handler(handler: idle_handler) -> void` |
 | 引数 | `handler`: 関数ポインタ (`void(*)()`) |
 
-#### `notify_interrupt`
+#### `notify-interrupt`
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | ハードウェア割り込みの発生を通知し、待機中タスクを READY へ移行させる。 |
-| シグネチャ | `notify_interrupt(task: task_id) -> void` |
-| 引数 | `task`: 再開対象のタスクID |
+| シグネチャ | `notify-interrupt(id: os-task-id) -> void` |
+| 引数 | `id`: 再開対象のタスクID |
+| 事前条件 | `id` が有効なタスクを指していること。 |
+| 事後条件 | 対象タスクが BLOCKED 状態であれば READY 状態へ遷移する。 |
 
 #### `terminate`
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | 指定したタスクを終了し、リソースを解放する。 |
-| シグネチャ | `terminate(id: task_id) -> void` |
+| シグネチャ | `terminate(id: os-task-id) -> void` |
 | 引数 | `id`: 終了対象のタスクID |
+| 事前条件 | `id` が有効なタスクを指していること。 |
+| 事後条件 | タスクに関連するメモリリソース（TCB等）が解放され、全キューから除外される。 |
 
 ## 6. 設計判断 (ADR)
 

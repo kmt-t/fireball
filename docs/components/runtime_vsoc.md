@@ -84,7 +84,7 @@ vSoCの動作パラメータを定義する。 `{ConfigurableSystem}`
 ```mermaid
 stateDiagram-v2
     [*] --> Idle
-    Idle --> Loading: load
+    Idle --> Loading: prepare
     Loading --> Ready: load_ok
     Ready --> Running: step
     Running --> Ready: yield
@@ -132,7 +132,7 @@ sequenceDiagram
     participant R as Module Registry
     participant M as Target Module
     
-    V->>L: load_module(binary)
+    V->>L: prepare(binary)
     L->>L: parse_import_section()
     loop for each import
         L->>R: resolve_symbol(module_name, func_name)
@@ -149,11 +149,12 @@ sequenceDiagram
 ### 5.1 公開API
 外部から利用可能なオブジェクト指向APIを定義する。
 
-#### `load_module`
+#### `prepare`
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | 指定されたWASMバイナリデータを読み込み、実行準備を完了させる。 |
-| 引数と役割 | `ctx`: vsoc_context, `bin`: バイナリデータとサイズ。 |
+| シグネチャ | `prepare(wasm: binary-view) -> result<wasm-module-view, sys-recovery-strategy>` |
+| 引数 | `ctx`: vsoc_context, `wasm`: バイナリデータとサイズ |
 | 期待する結果 | 正常：モジュールがロードされ、内部状態がReadyになる。異常：検証失敗時等のエラー。 |
 | 事前条件 | システムが初期化済みであること。 |
 | 事後条件 | `ctx->module_view` が構築され、実行可能状態になる。 |
@@ -161,11 +162,12 @@ sequenceDiagram
 | エラー時の挙動 | 不正なバイナリの場合はロードを中断し、エラー値を返す。 |
 | 補足 | ROM上のデータを直接参照するため、RAMへのコピーは発生しない。 |
 
-#### `step_execution`
+#### `step`
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | ゲストのプログラム実行を再開し、コルーチンの `yield` またはトラップが発生するまで継続する。 |
-| 引数と役割 | `ctx`: vsoc_context, `harness`: vsoc_harness |
+| シグネチャ | `step() -> result<execution-state-category, sys-recovery-strategy>` |
+| 引数 | `ctx`: vsoc_context, `harness`: vsoc_harness |
 | 期待する結果 | 正常：一定期間の実行後に制御が戻る。異常：トラップ発生。 |
 | 事前条件 | 状態が Ready であること。 |
 | 事後条件 | PCやレジスタ状態が更新されていること。 |
@@ -173,11 +175,12 @@ sequenceDiagram
 | エラー時の挙動 | トラップ（例外）発生時は、トラップ要因を保持してエラーを返す。 `{RecoveryStrategy}` |
 | 補足 | 内部的にはインタープリタとJITコードを透過的に切り替えて実行する。 |
 
-#### `notify_virtual_interrupt`
+#### `notify-interrupt`
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | 物理割り込み等の外部イベントをゲストOS/アプリに通知するための仮想フラグを設定する。 |
-| 引数と役割 | `ctx`: vsoc_context, `irq_id`: 識別子。 |
+| シグネチャ | `notify-interrupt(irq-id: u32) -> void` |
+| 引数 | `ctx`: vsoc_context, `irq-id`: 識別子 |
 | 期待する結果 | 特定位のアドレス（SYSCTLレジスタ）にフラグが反映される。 |
 | 事前条件 | なし。 |
 | 事後条件 | `ctx->interrupt_flags` が更新される。 |
@@ -185,13 +188,14 @@ sequenceDiagram
 | エラー時の挙動 | 無効なIDの場合は無視される。 |
 | 補足 | ISRから呼び出されることを想定し、排他制御を考慮する。 |
 
-#### `register_vmmio_hook`
+#### `register-hook`
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | ゲストの特定のメモリ範囲（hook_idで識別）へのアクセスに対し、ホスト側の関数をプラガブルに登録する。 |
-| 引数と役割 | `harness`: vsoc_harness, `hook_id`: 領域識別子, `cb`: コールバック。 |
+| シグネチャ | `register-hook(hook-id: hook-category, handler-addr: mem-address) -> operation-result` |
+| 引数 | `harness`: vsoc_harness, `hook-id`: 領域識別子, `handler-addr`: ハンドラアドレス |
 | 期待する結果 | 指定範囲へのアクセス時に登録したコールバックが実行されるようになる。 |
-| 事前条件 | 指定された `hook_id` が定義済みであること。 |
+| 事前条件 | 指定された `hook-id` が定義済みであること。 |
 | 事後条件 | vMMIOレジストリにエントリが追加される。 |
 | 不変条件 | アドレスマップ定義自体は変更されない。 |
 | エラー時の挙動 | 無効なIDの場合はエラーを返す。 |

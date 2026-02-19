@@ -122,7 +122,7 @@ ROM上のデータストリームを管理し、LEB128可変長整数やプリ�
 ```mermaid
 stateDiagram-v2
     [*] --> Idle
-    Idle --> Parsing: load_module
+    Idle --> Parsing: prepare
     Parsing --> Verifying: header_ok
     Verifying --> Ready: verify_ok
     Verifying --> Error: verify_fail
@@ -139,7 +139,7 @@ sequenceDiagram
     participant Alloc as BumpAllocator
     participant ROM as WasmBinary
     
-    Client->>Loader: load_module(binary)
+    Client->>Loader: prepare(binary)
     Loader->>Alloc: allocate(module_view)
     Loader->>ROM: read_header
     Loader->>Loader: verify_magic_and_version
@@ -172,6 +172,8 @@ sequenceDiagram
 | 機能概要 | モジュールの線形メモリをゲストRAMに展開し、初期化する。 |
 | シグネチャ | `load(module: wasm-module-view) -> operation-result` |
 | 引数 | `module`: 展開対象のモジュールビュー |
+| 事前条件 | モジュールが `prepare` によりハースネスに登録済みであること。 |
+| 事後条件 | モジュールのリニアメモリおよびテーブル領域がゲストRAMに確保・初期化される。 |
 
 #### `resolve-imports`
 
@@ -188,6 +190,8 @@ sequenceDiagram
 | :--- | :--- |
 | 機能概要 | モジュールをレジストリから削除し、関連リソースを解放する。 |
 | シグネチャ | `unload(module: wasm-module-view) -> operation-result` |
+| 事前条件 | 対象モジュールがロード済みであること。 |
+| 事後条件 | モジュールに関連するすべての管理リソースが解放される。 |
 | 補足 | バンプアロケータを使用しているため、完全なメモリ回収はロードの逆順で行う必要がある。 |
 
 #### `lookup`
@@ -199,46 +203,43 @@ sequenceDiagram
 | 引数 | `name`: 検索するモジュール名 |
 | 戻り値 | オプショナル値 (成功時は `module_view` への参照、失敗時は空) |
 
-#### `get_section`
+#### `get-section`
 
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | 指定されたモジュール内の特定のWASMセクションのオフセットとサイズ（`wasm-section-view`）を取得する。 |
-| シグネチャ | `get_section(stype: wasm-section-type) -> result<wasm-section-view, bool>` |
+| シグネチャ | `get-section(stype: section-category) -> result<wasm-section-view, bool>` |
 | 引数 | `stype`: 取得対象のセクション定数 |
 | 戻り値 | `wasm-section-view` (オフセットとサイズ) |
 | 事前条件 | モジュールが `prepare` 済みであること。 |
 
-#### `get_function_body`
 
-| 項目 | 内容 |
-| :--- | :--- |
-| 機能概要 | 指定された関数インデックスに対応するコードボディの範囲（オフセットとサイズ）を取得する。 |
-| シグネチャ | `get_function_body(func_idx: u32) -> result<wasm-section-view, bool>` |
-| 補足 | インタープリタやJITが命令をデコードする際のシークに使用する。 |
-
-#### `lookup_export_func`
+#### `lookup-export-func`
 
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | モジュールが公開している関数を名前で検索し、そのインデックスを取得する。 |
-| シグネチャ | `lookup_export_func(name: string) -> result<u32, bool>` |
+| シグネチャ | `lookup-export-func(name: string) -> result<u32, bool>` |
 | 戻り値 | 成功時はWASM関数インデックス、失敗時は `false` |
 | 不変条件 | 検索は二分探索により O(log N) で行われること。 |
 
-#### `get_function`
+#### `get-function`
 
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | 指定されたインデックスの関数アクセサ（`wasm-function-accessor`）を生成する。 |
-| シグネチャ | `get_function(func_idx: u32) -> result<wasm-function-accessor, bool>` |
+| シグネチャ | `get-function(func-idx: u32) -> result<function-accessor, bool>` |
+| 事前条件 | `func-idx` がモジュールの定義範囲内であること。 |
+| 事後条件 | 有効なアクセサ、または範囲外エラーを返す。 |
 
-#### `get_global`
+#### `get-global`
 
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | 指定されたインデックスのグローバルアクセサ（`wasm-global-accessor`）を生成する。 |
-| シグネチャ | `get_global(global_idx: u32) -> result<wasm-global-accessor, bool>` |
+| シグネチャ | `get-global(global-idx: u32) -> result<global-accessor, bool>` |
+| 事前条件 | `global-idx` がモジュールの定義範囲内であること。 |
+| 事後条件 | 有効なアクセサ、または範囲外エラーを返す。 |
 
 ### 5.2 URI/IPCインターフェイス
 本コンポーネントは vSoC 内部で使用されるライブラリであり、直接のIPCインターフェイスは持たない。

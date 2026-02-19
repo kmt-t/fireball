@@ -27,13 +27,23 @@ Phase 0では実装ではなく、ビルド基盤とvSoC形式検証を完了さ
 - [ ] **コンパイル時計算検証**: constexpr関数が実際にコンパイル時評価されるか確認
 - [ ] **ルックアップテーブル生成**: constexprによる静的テーブル生成の実証
 
-### Phase 0.8: vSoC TLA+ Verification
-vSoCコアの形式検証。
+### Phase 0.8: vSoC TLA+ Verification & Core Component Modeling
+vSoCコアおよび基盤コンポーネントの形式検証（TLA+モデリング等）。ワイガヤ（2026-02-20）で抽出されたヤバい制約を中心に検証する。
 
-- [ ] **vSoC Interpreter**: メモリ安全性、トラップ処理の正当性
-- [ ] **vMMIO**: 許可テーブル検証、範囲チェック
-- [ ] **Loader**: モジュールライフサイクル、依存解決
-- [ ] **リソース制約**: RAM/SLOC予算の遵守検証
+- [ ] **vSoC Interpreter / JIT / Debugger 協調モデル**:
+  - JIT実行中（Fast Path）の非同期ブレークポイント割り込み（Safepointフォールバック）。
+  - デバッガによるメモリ書き換え時のJITキャッシュ（Active/Old）一貫性（Flush要求）。
+- [ ] **vMMIO セキュリティゲート (TLB化)**:
+  - 階層化（Tier 1~3）とソフトウェアTLBのキャッシュ整合性、ミス時のSlow Pathフォールバック権限チェック。
+- [ ] **IPC Router (ゼロコピー・ハンドオフ)**:
+  - 所有権移譲（Revoke -> Grant）中に発生するIn-flightパニック時のメモリリーク防止（Dropハンドラ）。
+  - キュー満杯によるデッドロック回避（厳格なノンブロッキング送信と所有権巻き戻し）。
+  - 所有権移動に伴う送信側TLBのフラッシュ一貫性。
+- [ ] **Loader (Zero-Copy Parsing)**:
+  - バンプアロケータのアロケーション順序と、パース失敗時の安全なロールバック（巻き戻し）制約。
+- [ ] **WASI Wrapper (同期/非同期変換)**:
+  - `wait_for_ipc_response` 内部での `co_yield` 時における、インタプリタ/JIT側へのタスクサスペンド状態の無矛盾な伝播。
+- [ ] **リソース制約検証**: RAM/SLOC予算の遵守検証
 
 **Note**: COOS、Memory、IPCのTLA+検証は別途Phase 0.9以降で実施するか、Phase 1の実装と並行して進める。
 

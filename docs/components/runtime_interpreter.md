@@ -141,7 +141,71 @@ sequenceDiagram
     Note over I: control instruction -> stop tailcall
     I->>D: post_check(exec_ctx)
     D-->>I: continue
-    I-->>V: return (trace end)
+### 4.4 インタープリタ・JIT・デバッガの協調実行モデル (コンセプトコード)
+
+システムの中で最も複雑な状態遷移を持つ実行エンジン（Executor）のコア・ループ構造。
+TLA+等の形式仕様検証や、実装フェーズのベースとなる。
+
+```python
+# executor_loop: タスク（WASMスレッド）のメインループ
+def execute_wasm_task(task_context, module_view):
+    while True:
+        # --- 1. Debugger Interception ---
+        # ブレークポイントヒットやステップ実行要求の確認
+        if debugger.is_active():
+            if debugger.check_breakpoint(task_context.pc):
+                task_context.state = HALTED_BY_DEBUGGER
+                debugger.notify_hit(task_context)
+                co_yield() # デバッガ(GDB等)からの再開命令を待つ
+                continue
+                
+            if debugger.is_step_mode(task_context):
+                # ステップ実行時は「強制的にインタープリタ」で1命令だけ実行し、すぐ停止させる
+                execute_single_instruction_interpreter(task_context, module_view)
+                debugger.notify_step_done(task_context)
+                co_yield()
+                continue
+        
+        # --- 2. JIT Translation & Execution ---
+        # ホットスポットとしてコンパイル済みのネイティブコードがあるか検索
+        jit_address = jit_engine.lookup_trace(task_context.pc)
+        
+        if jit_address != NULL:
+            # JITエントリが存在する場合: ネイティブ実行に切り替え（Fast Path）
+            # JITコード側で「インタープリタへのフォールバック」や「trap」が発生するまで一気に実行される
+            exit_reason = execute_native_trace(jit_address, task_context)
+            
+            # ネイティブコード内でフック（yield, trap, または JITチェーン外への分岐）された
+            if exit_reason == YIELD_REQUESTED:
+                co_yield()
+            elif exit_reason == TRAP:
+                handle_trap(task_context)
+            
+            # 実行が進んだ分だけPCが更新されて戻ってくる。ループ継続。
+            continue
+            
+        # --- 3. Interpreter Fallback (Slow Path) ---
+        # JITコードがない、またはデバッガ制約などでインタープリタ実行する
+        instruction = fetch_instruction(module_view, task_context.pc)
+        
+        # 実行前のホットスポット記録（JITコンパイル候補の選定）
+        # ※ デバッガ稼働中はノイズを防ぐため記録を一時停止するなどの考慮が必要
+        if not debugger.is_active():
+            jit_engine.hotspot_detector.record_execution(task_context.pc)
+            
+        # 1命令インタプリタ実行
+        execute_single_instruction_interpreter(task_context, module_view)
+        
+        # --- 4. Preemption & Lifecycle ---
+        # インタープリタ実行サイクルで規定命令数（Fuel）を消費したらコルーチンとしてyield
+        if task_context.fuel_consumed >= QUANTA_LIMIT:
+            task_context.fuel_consumed = 0
+            
+            # yield時のダウンタイムを利用して、ホットスポットのバッチコンパイルを実行
+            if not debugger.is_active():
+                jit_engine.process_batch_compile(task_context)
+                
+            co_yield() # 他タスクへCPUを譲る
 ```
 
 ## 5. インターフェイス定義

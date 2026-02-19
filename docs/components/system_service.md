@@ -73,6 +73,75 @@ sequenceDiagram
     S-->>G: result
 ```
 
+### 4.4 WASI API から HAL への変換ラッパー (コンセプトコード)
+
+WASMゲストが呼び出す同期的な標準インターフェース (WASI) を、非同期でロールベースな基盤である「HAL（IPCコマンド）」へ変換・中継する Tier 0 ラッパーのコア構造。
+この擬似コードは、同期I/O要求と非同期実行基盤のインピーダンスミスマッチを解消するプロトコルを示す。
+
+```cpp
+// wasi_service.cpp (Tier 0: 直接リンクされるシステム関数)
+
+// WASI fd_write のシグネチャ (WASMから直接呼ばれるネイティブ関数)
+wasi_errno_t wasi_fd_write(
+    wasi_fd_t fd,                   // 書き込み先のファイルディスクリプタ (0=stdin, 1=stdout, etc)
+    const wasi_iovs_t* iovs,        // I/Oベクタの配列 (WASMゲストのメモリアドレス)
+    size_t iovs_len,                // I/Oベクタの数
+    size_t* nwritten                // 実際に書き込まれたバイト数を書き戻すポインタ
+) {
+    // 1. 環境ポインタ（Context）の取得
+    auto ctx = get_current_execution_context();
+    
+    // 2. FDからIPCチャネルへの解決 (Virtual File System Lookup)
+    channel_id target_channel = resolve_wasi_fd_to_channel(ctx, fd);
+    if (target_channel == INVALID_CHANNEL) return WASI_ERRNO_BADF;
+    
+    // 3. メモリ境界チェック (Tier 1 セキュリティゲートへの事前検証)
+    if (!ctx.memory_bounds_check(iovs, sizeof(wasi_iovs_t) * iovs_len)) {
+        return WASI_ERRNO_FAULT;
+    }
+
+    size_t total_written = 0;
+
+    // 4. I/O処理ループ (Scatter/Gather をシリアルなIPCメッセージに変換)
+    for (size_t i = 0; i < iovs_len; ++i) {
+        wasi_iovs_t current_iov = iovs[i];
+        if (!ctx.memory_bounds_check(current_iov.buf, current_iov.buf_len)) {
+            return WASI_ERRNO_FAULT;
+        }
+
+        // --- IPC Handoff (所有権転送) ---
+        ipc_message msg;
+        msg.pairs[0] = make_kv(SCOPE_FUNCTIONAL, KEY_COMMAND, CMD_HAL_WRITE);
+        msg.pairs[1] = make_kv(SCOPE_VALUE, KEY_SIZE, current_iov.buf_len);
+        // データのポインタを共有メモリハンドルとして付与 (Zero-copy)
+        msg.pairs[2] = make_kv(SCOPE_GUEST_MEM_PTR, KEY_BUFFER_ADDR, current_iov.buf);
+
+        // 5. IPCルータを経由してHAL（または上位レイヤ）へ送信 (ノンブロッキング)
+        operation_result res = ipc_router.route_message(ctx.task, target_channel, msg);
+        if (res == ERROR_QUEUE_FULL || res == ERROR_PERMISSION_DENIED) {
+            return WASI_ERRNO_IO; // 中断
+        }
+        
+        // 6. 完了待機 (COOS yield)
+        // 実質的な同期I/Oの模倣。HALが完了通知を返すまでタスクをサスペンドする。
+        wait_for_ipc_response(ctx.task, target_channel);
+        
+        total_written += ctx.task.last_response_message.get_value(KEY_WRITTEN_SIZE);
+    }
+
+    // 7. 書き戻しと終了
+    if (ctx.memory_bounds_check(nwritten, sizeof(size_t))) {
+        *nwritten = total_written;
+    }
+    return WASI_ERRNO_SUCCESS;
+}
+```
+
+#### 検証対象となる制約事項 (TLA+ モデリングポイント)
+- **非同期サスペンドの整合性**: `wait_for_ipc_response` 内部で `co_yield()` した場合、実行エンジン（Interpreter/JIT）側がそのタスクのサスペンド状態を正しく認識し、別タスクへスイッチできること。
+- **共有メモリアクセスのセキュリティ境界**: `SCOPE_GUEST_MEM_PTR` で送ったゲストメモリ上のポインタを、HAL側（UARTドライバ等）が読み書きする際の境界チェック責任（ラッパー側での事前検証への依存性）。
+- **仮想FDテーブルの所有権**: WebAssembly仕様の `wasi_fd_t` から内部チャネルへのマッピング状態（VFS）に、タスク間で競合が発生しないこと。
+
 ## 5. インターフェイス定義
 
 ### 5.1 エラーハンドリング戦略

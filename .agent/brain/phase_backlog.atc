@@ -29,6 +29,16 @@
       @see list.md §1.1
     - OPEN(coos_scheduling_refine): BLOCKED list management formalization
       @see list.md §1.1, challenge.md §3
+    - OPEN(executor_coordination_model): JIT Safepoints & Debugger Cache Flush (Waigaya 02-20)
+      @see list.md §Phase 0.8
+    - OPEN(vmmio_tlb_tiering): 3-Tier security gate & Software TLB consistency (Waigaya 02-20)
+      @see list.md §Phase 0.8
+    - OPEN(ipc_handoff_panic_deadlock): Drop handlers & non-blocking queue limits (Waigaya 02-20)
+      @see list.md §Phase 0.8
+    - OPEN(loader_zero_copy_rollback): BumpAllocator rollback on parse failure (Waigaya 02-20)
+      @see list.md §Phase 0.8
+    - OPEN(wasi_wrapper_yield_sync): Executor suspension sync via wait_for_ipc_response (Waigaya 02-20)
+      @see list.md §Phase 0.8
 
   [Verification: size/perf hypothesis]
     - OPEN(interpreter_core): minimal WASM instruction set implementation

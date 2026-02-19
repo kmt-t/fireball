@@ -1,0 +1,73 @@
+[Memory: universal_navigation]
+[Purpose]
+  - Reduce skill-selection cost: O(N_skills) → O(1) lookup per task category
+  - Eliminate round-trips between prohibition rules and alternative patterns
+
+[Canon-Declaration]
+  - CANON(type_vocabulary) := project_arch_design/SKILL.md
+      @inv ∀t ∈ TypeAliases : source_of_truth(t) == project_arch_design
+  - CANON(prohibited_alternatives) := embedded_cpp_check/SKILL.md
+      @inv ∀p ∈ Prohibitions(embedded_cpp_rule.md) : ∃a ∈ Alternatives(embedded_cpp_check) : replaces(a, p)
+  - CANON(structural_patterns) := project_arch_design/SKILL.md
+      @inv ∀c ∈ Components : tier(c) ∈ {1,2,3} ∧ defined_in(tier(c), project_arch_design)
+  - CANON(error_handling) := embedded_cpp_check/SKILL.md §エラーハンドリング
+  - CANON(wit_codegen) := project_code_generate/SKILL.md
+      @note Includes Axiomatic Interface Design and Hoare Logic contracts.
+  - CANON(risk_tiering) := project_arch_design/SKILL.md §リスクベース・ティアリング
+      @note risk_assessment Tier ≠ project_arch_design 3-Tier. Different axes.
+
+[Task-Dispatch]
+  - task(design_new_component) → READ [project_arch_design]
+  - task(implement_interface) → READ [project_code_generate] THEN [embedded_cpp_check, project_arch_design]
+  - task(write_code) → READ [embedded_cpp_rule.md(MEMORY)] THEN IF_NEEDED [embedded_cpp_check]
+  - task(choose_type_name) → READ [project_arch_design/SKILL.md] ONLY
+  - task(choose_container) → READ [embedded_cpp_check §4] ONLY
+  - task(choose_error_pattern) → READ [embedded_cpp_check §6] ONLY
+  - task(generate_from_wit) → READ [project_code_generate] THEN IF_ENV_ISSUE [general_docker_run]
+  - task(check_wasm_spec) → READ [embedded_wasm_research] ONLY
+  - task(design_refinement) → READ [general_design_rule.md §Bonsai] THEN WORKFLOW [dev_cycle_run]
+  - task(verify_compliance) → WORKFLOW [compliance_check]
+  - task(verify_friction) → RUN python3 .agent/skills/project_friction_audit/scripts/audit_friction.py
+  - task(verify_traceability) → RUN python3 .agent/skills/project_friction_audit/scripts/check_traceability.py
+  - task(review_progress) → WORKFLOW [progress_meet]
+
+[Prohibition-Crossref]
+  - prohibited(std::vector)      → alternative(std::array | partition_array)      @see embedded_cpp_check §L1, §コンテナ最適化
+  - prohibited(std::map)         → alternative(sorted_indexed_array_map)          @see embedded_cpp_check §コンテナ最適化
+  - prohibited(std::string)      → alternative(std::string_view | constexpr[])   @see embedded_cpp_check §L1
+  - prohibited(std::function)    → alternative(economic_function<N>)              @see embedded_cpp_check §経済的な関数
+  - prohibited(std::unique_ptr)  → alternative(static_lifecycle | Ref)            @see embedded_cpp_check §L1
+  - prohibited(std::shared_ptr)  → alternative(static_lifecycle | Ref)            @see embedded_cpp_check §L1
+  - prohibited(void*)            → alternative(binary_view | std::span<byte>)     @see project_arch_design §4.1
+  - prohibited(malloc/free)      → alternative(bump_allocator | partition)        @see embedded_cpp_check §メモリ管理パターン
+  - prohibited(new/delete)       → alternative(placement_new | static_buffer)     @see embedded_cpp_check §メモリ管理パターン
+  - prohibited(try/catch/throw)  → alternative(result<T,E> | recovery_strategy)  @see embedded_cpp_check §エラーハンドリング
+  - prohibited(iostream)         → alternative(platform_uart | debug_printf)      @see embedded_cpp_check §L1
+  - prohibited(thread/future)    → alternative(coos_task | coroutine)             @see embedded_cpp_check §L1
+
+[Layering-Map]
+  @inv ∀overlap : layer(generic) ∩ layer(project_specific) ≠ ∅ ⇒ by_design
+  - LAYER(type_aliases):
+      generic := embedded_cpp_rule.md §4 (portable synopsis)
+      specific := embedded_cpp_rule.md §2 (authoritative detail for Fireball)
+  - LAYER(prohibition_and_alternatives):
+      generic := embedded_cpp_rule.md §1 (checklist, portable across projects)
+      specific := embedded_cpp_check §L1 (concrete alternatives for 64KB-RAM target)
+  - LAYER(tier_selection):
+      generic := embedded_cpp_check §3.1 (implementation-level decision aid)
+      specific := project_arch_design §2.1 (Fireball 3-Tier structural design)
+[Document-Topology]
+  @inv ∀path ∈ References(AGENTS.md ∪ project_protocol_rule.md) : exists(path)
+  - GATEWAY := AGENTS.md
+  - RULES := .agent/rules/{embedded_cpp_rule, general_design_rule, project_protocol_rule}.md
+  - SKILLS := .agent/skills/{project_code_generate, embedded_cpp_check, general_docker_run, general_codebase_explore, project_arch_design, project_friction_audit, embedded_wasm_research}/SKILL.md
+  - WORKFLOWS := .agent/workflows/{compliance_check, design_waigaya, dev_cycle_run, doc_summarize, friction_audit, progress_meet}.md
+  - BRAIN := .agent/brain/{phase_backlog, product_context, universal_navigation, owner_tension, product_architecture}.atc
+  - DOCS := docs/{requires, architecture, components, patterns, concept, plans, backlog, temp}/
+  - TLA := tla/*.tla
+  - SRC := inc/**/*.hxx, src/**/*.cxx
+
+[State]
+  - updated: 2026-02-18T23:30:00+09:00
+  - brain_mode: FORMAL_PREDICATE_LOGIC
+  - topology_verified: true

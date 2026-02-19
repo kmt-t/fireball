@@ -11,7 +11,7 @@
 ```
 WIT編集 → 生成 → 品質チェック → (ビルド) → 完了
           ↓        ↓              ↓
-     wit_gen.sh  wit_check.sh  wit_build.sh
+     generate-code.sh  check-quality.sh  build-project.sh
                     ↓
             自動品質チェック:
             - 禁止パターン検出
@@ -22,12 +22,12 @@ WIT編集 → 生成 → 品質チェック → (ビルド) → 完了
 
 ## スクリプト
 
-### 1. wit_gen.sh - C++ヘッダ生成
+### 1. generate-code.sh - C++ヘッダ生成
 
 WITパッケージからC++ヘッダを自動生成。
 
 ```bash
-bash .agent/skills/code_generator/workflows/wit_gen.sh
+bash .agent/skills/project_code_generate/workflows/generate-code.sh
 ```
 
 **処理内容**:
@@ -40,12 +40,12 @@ bash .agent/skills/code_generator/workflows/wit_gen.sh
 
 ---
 
-### 2. wit_check.sh - 品質チェック ⭐
+### 2. check-quality.sh - 品質チェック ⭐
 
 生成されたC++コードを自動チェック。**パワハラ回避の要**。
 
 ```bash
-bash .agent/skills/code_generator/workflows/wit_check.sh
+bash .agent/skills/project_code_generate/workflows/check-quality.sh
 ```
 
 **チェック項目**:
@@ -62,17 +62,17 @@ bash .agent/skills/code_generator/workflows/wit_check.sh
 
 ---
 
-### 3. wit_build.sh - ビルドテスト
+### 3. build-project.sh - ビルドテスト
 
 生成されたヘッダでビルドテスト。
 
 ```bash
-bash .agent/skills/code_generator/workflows/wit_build.sh
+bash .agent/skills/project_code_generate/workflows/build-project.sh
 ```
 
 ---
 
-### 4. wit_all.sh - 統合ワークフロー ⭐⭐
+### 4. run-workflow.sh - 統合ワークフロー ⭐⭐
 
 生成→チェック→ビルドを一発実行。
 
@@ -81,9 +81,9 @@ bash .agent/skills/code_generator/workflows/wit_all.sh
 ```
 
 **処理フロー**:
-1. `wit_gen.sh` - 生成
-2. `wit_check.sh` - チェック
-3. `wit_build.sh` - ビルド（オプション）
+1. `generate-code.sh` - 生成
+2. `check-quality.sh` - チェック
+3. `build-project.sh` - ビルド（オプション）
 
 **オプション**:
 - `--no-build`: ビルドスキップ
@@ -97,7 +97,7 @@ bash .agent/skills/code_generator/workflows/wit_all.sh
 ```bash
 # VSCodeターミナルで直接実行
 cd /workspaces/fireball
-bash .agent/skills/code_generator/workflows/wit_all.sh
+bash .agent/skills/project_code_generate/workflows/run-workflow.sh
 ```
 
 ### WSL2 Bash（外部）
@@ -135,17 +135,17 @@ bash .agent/skills/code_generator/workflows/wit_all.sh
 ## ディレクトリ構成
 
 ```
-.agent/skills/code_generator/
+.agent/skills/project_code_generate/
 ├── scripts/
-│   ├── wit_to_cpp.py          # メイン生成スクリプト
+│   ├── generate_cpp.py          # メイン生成スクリプト
 │   ├── check_violations.py    # 禁止パターン検出 ⭐
 │   ├── check_naming.py        # 命名規則検証 ⭐
 │   └── deprecated/
 └── workflows/
-    ├── wit_gen.sh             # 生成
-    ├── wit_check.sh           # チェック ⭐⭐
-    ├── wit_build.sh           # ビルド
-    └── wit_all.sh             # 統合 ⭐⭐⭐
+    ├── generate-code.sh       # 生成
+    ├── check-quality.sh       # チェック ⭐⭐
+    ├── build-project.sh       # ビルド
+    └── run-workflow.sh        # 統合 ⭐⭐⭐
 ```
 
 ---

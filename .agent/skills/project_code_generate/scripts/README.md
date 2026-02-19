@@ -6,7 +6,7 @@
 
 ## 推奨スクリプト
 
-### wit_to_cpp.py (公式)
+### generate_cpp.py (公式)
 
 **wasm-tools**ベースのパッケージ全体パーサー。
 
@@ -21,10 +21,10 @@
 
 ```bash
 # Docker内で実行（推奨）
-docker exec <container-id> bash -c "cd /workspaces/fireball && python3 .agent/skills/code_generator/scripts/wit_to_cpp.py wit/ inc/gen"
+docker exec <container-id> bash -c "cd /workspaces/fireball && python3 .agent/skills/project_code_generate/scripts/generate_cpp.py wit/ inc/gen"
 
 # または簡略版
-python3 .agent/skills/code_generator/scripts/wit_to_cpp.py wit/ inc/gen
+python3 .agent/skills/project_code_generate/scripts/generate_cpp.py wit/ inc/gen
 ```
 
 **生成例**:
@@ -45,7 +45,7 @@ Done!
 
 ```
 scripts/
-├── wit_to_cpp.py          # 公式スクリプト（wasm-tools版）
+├── generate_cpp.py          # 公式スクリプト（wasm-tools版）
 ├── deprecated/            # 非推奨スクリプト（参考用）
 │   ├── wit_to_cpp_manual.py    # 旧手動パーサー
 │   ├── wit_to_cpp_v2.py        # プレースホルダー
@@ -58,7 +58,7 @@ scripts/
 
 ## 生成ファイル
 
-`wit_to_cpp.py`は以下を生成します:
+`generate_cpp.py`は以下を生成します:
 
 | WIT Interface | 生成ファイル | 内容 |
 |:---|:---|:---|

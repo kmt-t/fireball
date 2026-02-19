@@ -32,9 +32,9 @@ fi
 echo "  [1/2] Checking prohibited patterns..."
 if [ ! -t 0 ]; then
     # stdin is a pipe
-    cat - | $PYTHON_CMD .agent/skills/code_generator/scripts/check_violations.py "${TARGETS[@]}"
+    cat - | $PYTHON_CMD .agent/skills/project_code_generate/scripts/check_violations.py "${TARGETS[@]}"
 else
-    $PYTHON_CMD .agent/skills/code_generator/scripts/check_violations.py "${TARGETS[@]}"
+    $PYTHON_CMD .agent/skills/project_code_generate/scripts/check_violations.py "${TARGETS[@]}"
 fi
 VIOLATIONS_RESULT=$?
 
@@ -44,9 +44,9 @@ echo ""
 echo "  [2/2] Checking naming conventions..."
 if [ ! -t 0 ]; then
     # stdin is a pipe
-    cat - | $PYTHON_CMD .agent/skills/code_generator/scripts/check_naming.py "${TARGETS[@]}"
+    cat - | $PYTHON_CMD .agent/skills/project_code_generate/scripts/check_naming.py "${TARGETS[@]}"
 else
-    $PYTHON_CMD .agent/skills/code_generator/scripts/check_naming.py "${TARGETS[@]}"
+    $PYTHON_CMD .agent/skills/project_code_generate/scripts/check_naming.py "${TARGETS[@]}"
 fi
 NAMING_RESULT=$?
 

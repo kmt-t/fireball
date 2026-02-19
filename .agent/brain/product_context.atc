@@ -1,16 +1,16 @@
-[Brain: Fireball-Project-Context]
+[Memory: product_context]
 [Invariants]
   □ Design Truth := docs/requires (Natural Language is the source of Design Intent)
   □ Interface Truth := WIT (Canonical Interface Definition derived from Design Truth)
-  □ ∀logic ∈ ComplexStateMachines : verified_by(logic, TLA+) (@see .agent/workflows/development_cycle.md)
+  □ ∀logic ∈ ComplexStateMachines : verified_by(logic, TLA+) (@see .agent/workflows/dev_cycle_run.md)
   □ ∀c ∈ Components : is_tier(c, 2) ⇒ matches_contract(c, harness_pattern) ∧ is_pure_static(c) (@see docs/patterns/concept_harness.md)
-  □ ∀f ∈ funs(Tier2) : ¬virtual(f) ∧ ¬override(f) (@see .agent/rules/embedded_cpp_rules.md)
-  □ ∀m ∈ Allocations : ¬dynamic(m) ∧ is_heap_less(m) (@see .agent/skills/cpp_embedded/SKILL.md §メモリ管理パターン)
+  □ ∀f ∈ funs(Tier2) : ¬virtual(f) ∧ ¬override(f) (@see .agent/rules/embedded_cpp_rule.md)
+  □ ∀m ∈ Allocations : ¬dynamic(m) ∧ is_heap_less(m) (@see .agent/skills/embedded_cpp_check/SKILL.md §メモリ管理パターン)
 
 [Design-Patterns]
   - Harness (Tier 2): composition(TemplateInjection) ∧ cost(vtable) == 0 (@see docs/patterns/concept_harness.md)
-  - Recovery: ∀f ∈ API : return_type(f) == result<T, recovery_strategy> (@see .agent/skills/cpp_embedded/SKILL.md §エラーハンドリング)
-  - Layout: ThinGlueLayer(WIT, C++) ∧ FlatInterface(Components) (@see .agent/rules/general_design_rules.md §ThinGlueLayer, §FlatInterface)
+  - Recovery: ∀f ∈ API : return_type(f) == result<T, recovery_strategy> (@see .agent/skills/embedded_cpp_check/SKILL.md §エラーハンドリング)
+  - Layout: ThinGlueLayer(WIT, C++) ∧ FlatInterface(Components) (@see .agent/rules/general_design_rule.md §ThinGlueLayer, §FlatInterface)
   - vMMIO-Model: ALL host-guest data exchange goes through vMMIO.
       Physical registers (GPIO), shared memory, syscall buffers — everything.
       @rationale ONE mechanism for everything. No IPC for data, no separate pointer validation.
@@ -69,7 +69,7 @@
     - One well-formed question > three speculative drafts.
     - If schedule has slack, the human is using that slack to think. Do not consume it.
     - **Memory Discovery Protocol**: ∀task : before(start) ⇒ load(Gemini.md) ∧ load(ATC) ∧ restore(local_semantics)
-    - **ATC Recording Protocol**: ∀discovery ∈ {DesignDecision, Invariant, ToolFriction} : append(brain/*.atc)
+    - **ATC Recording Protocol**: ∀discovery ∈ {DesignDecision, Invariant, ToolFriction} : append(brain/scope_subject.atc)
 
 [State]
   - CURRENT_DATE := 2026-02-18

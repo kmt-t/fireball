@@ -1,5 +1,5 @@
 ---
-description: "VDD品質検証ワークフロー。形式仕様・生成コード・コーディング標準の自動検証手順。(WHEN: コード生成後/リリース前, RELATED: development_cycle/code_generator)"
+description: "VDD品質検証ワークフロー。形式仕様・生成コード・コーディング標準の自動検証手順。(WHEN: コード生成後/リリース前, RELATED: dev_cycle_run/project_code_generate)"
 ---
 
 # VDD Compliance Check
@@ -71,7 +71,7 @@ WITから生成されたC++コードの品質保証。
 ### 自動検証スクリプト
 
 ```bash
-bash .agent/skills/code_generator/workflows/wit_check.sh
+bash .agent/skills/project_code_generate/workflows/check-quality.sh
 ```
 
 ### 検証項目
@@ -81,7 +81,7 @@ bash .agent/skills/code_generator/workflows/wit_check.sh
 **スクリプト**: `check_violations.py`
 
 ```bash
-python .agent/skills/code_generator/scripts/check_violations.py inc/gen
+python .agent/skills/project_code_generate/scripts/check_violations.py inc/gen
 ```
 
 **チェック内容**:
@@ -98,7 +98,7 @@ python .agent/skills/code_generator/scripts/check_violations.py inc/gen
 **スクリプト**: `check_naming.py`
 
 ```bash
-python .agent/skills/code_generator/scripts/check_naming.py inc/gen
+python .agent/skills/project_code_generate/scripts/check_naming.py inc/gen
 ```
 
 **チェック内容**:
@@ -128,7 +128,7 @@ python .agent/skills/code_generator/scripts/check_naming.py inc/gen
 #### 1. ビルドテスト
 
 ```bash
-bash .agent/skills/code_generator/workflows/wit_build.sh
+bash .agent/skills/project_code_generate/workflows/build-project.sh
 ```
 
 **チェック内容**:
@@ -156,7 +156,7 @@ meson test -C build
 ### ワンコマンド実行
 
 ```bash
-bash .agent/skills/code_generator/workflows/wit_all.sh
+bash .agent/skills/project_code_generate/workflows/run-workflow.sh
 ```
 
 **実行内容**:
@@ -247,7 +247,7 @@ steps:
       wasm-tools component wit wit/ --json
       
       # Level 2-3
-      bash .agent/skills/code_generator/workflows/wit_all.sh
+      bash .agent/skills/project_code_generate/workflows/run-workflow.sh
 ```
 
 ---

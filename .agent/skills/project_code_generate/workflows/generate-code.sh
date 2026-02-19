@@ -3,7 +3,7 @@
 #
 # Generates C++ headers from WIT package using wasm-tools.
 # Works in both devcontainer and external environments.
-# Usage: bash wit_gen.sh
+# Usage: bash generate-code.sh
 
 set -e
 
@@ -17,7 +17,7 @@ OUT_DIR="${2:-inc/gen}"
 if [ -f "/.dockerenv" ] || grep -q docker /proc/1/cgroup 2>/dev/null; then
     # Inside container - run directly
     echo "[*] Running inside container"
-    python3 .agent/skills/code_generator/scripts/generate_cpp.py "$WIT_DIR" "$OUT_DIR"
+    python3 .agent/skills/project_code_generate/scripts/generate_cpp.py "$WIT_DIR" "$OUT_DIR"
 else
     # Outside container - use docker exec
     echo "[*] Running from host, using Docker exec"
@@ -33,7 +33,7 @@ else
     
     # Run generator in container
     docker exec "$CONTAINER_ID" bash -c \
-        "cd /workspaces/fireball && python3 .agent/skills/code_generator/scripts/generate_cpp.py $WIT_DIR $OUT_DIR"
+        "cd /workspaces/fireball && python3 .agent/skills/project_code_generate/scripts/generate_cpp.py $WIT_DIR $OUT_DIR"
 fi
 
 echo "[OK] Generation complete"

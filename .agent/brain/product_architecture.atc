@@ -1,4 +1,4 @@
-[Brain: Fireball-Architecture-Reference]
+[Memory: product_architecture]
 [Purpose]
   - Serve as the Authoritative Source of Architectural Constraints (ASAC)
   - Collapse cognitive superposition by providing definitive modal logic constraints
@@ -67,7 +67,7 @@
     @access: guest_access(addr) ∧ ¬is_permitted(addr) ⇒ trap(ACCESS_VIOLATION)
 
 [Prohibition-Crossref]
-  @ref: .agent/brain/navigation_dispatch.atc
+  @ref: .agent/brain/universal_navigation.atc
   - std::vector, std::map, std::string, std::function, std::unique_ptr
   - void*, malloc/free, new/delete, try/catch, iostream, thread/future
 

@@ -9,16 +9,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 echo "=== WIT Workflow Test ==="
 echo ""
 
-echo "[1/3] Testing wit_gen.sh..."
-bash "$SCRIPT_DIR/wit_gen.sh"
+echo "[1/3] Testing generate-code.sh..."
+bash "$SCRIPT_DIR/generate-code.sh"
 echo ""
 
-echo "[2/3] Testing wit_check.sh..."
-bash "$SCRIPT_DIR/wit_check.sh"
+echo "[2/3] Testing check-quality.sh..."
+bash "$SCRIPT_DIR/check-quality.sh"
 echo ""
 
 echo "[3/3] Complete workflow test..."
-bash "$SCRIPT_DIR/wit_all.sh"
+bash "$SCRIPT_DIR/run-workflow.sh"
 echo ""
 
 echo "=== All tests passed ==="

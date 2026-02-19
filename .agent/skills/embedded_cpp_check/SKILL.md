@@ -3,8 +3,8 @@ name: Embedded C++ Optimization
 description: >-
   組み込み環境（RAM 64KB）における禁止/許可ライブラリ、コンテナ代替、メモリ管理パターン、エラーハンドリング。
   WHEN: C++実装, ライブラリ選定, コンテナ選択, メモリ戦略決定, エラー処理設計
-  SCOPE: 実装レベルの技術判断。アーキテクチャ構造はfireball_architectureを参照。
-  RELATED: project_arch_design（構造設計）, cpp_linting（スタイル検証）, fireball_vocabulary（型エイリアス定義）
+  SCOPE: 実装レベルの技術判断。アーキテクチャ構造はproject_arch_designを参照。
+  RELATED: project_arch_design（構造設計）, cpp_linting（スタイル検証）, embedded_cpp_rule（型エイリアス定義）
 ---
 
 # Embedded C++ Optimization
@@ -12,6 +12,11 @@ description: >-
 ## 1. 概要 (Overview)
 
 リソース制約の厳しい環境（RAM 64KB等）で要求される特殊なC++実装技術と設計判断基準を定義します。
+
+### ベネフィット (Benefits)
+- **ランタイム・セーフティのガードレール**: 禁止API（`vector`等）を機械的にチェックし、人間がすべての規約を記憶する負担を軽減します。
+- **ヒープ破壊リスクの最小化**: 動的確保を禁止するだけでなく、安全な代替手段（`economic_function`等）を提示します。
+- **早期フィードバック**: 実行不可能なコードが混入するのを未然に防ぎ、設計パターンの再確認を促します。
 
 ## 2. 環境・前提条件
 
@@ -60,7 +65,19 @@ description: >-
 L1規則（禁止ライブラリ・機能）への準拠を自動的に検証するためのスクリプトが用意されている。
 
 ```bash
+# ローカル環境での検証
 python3 .agent/skills/embedded_cpp_check/scripts/check_embedded_rules.py <ソースファイルまたはディレクトリ>
+```
+
+### Dockerコンテナでの実行 (Recommended)
+開発環境のライブラリに依存せず、常に最新の基準でチェックを実行できます。
+
+```bash
+# 特定のファイルを検証
+./.agent/skills/embedded_cpp_check/scripts/docker-cppcheck.sh src/main.cxx
+
+# 修正の影響範囲（src以下すべて）を一括検証
+find src -name "*.cxx" | ./.agent/skills/embedded_cpp_check/scripts/docker-cppcheck.sh
 ```
 
 ### 環境・実行 (Environment)

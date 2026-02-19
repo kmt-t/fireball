@@ -4,7 +4,7 @@ import sys
 import os
 import argparse
 
-# Rules based on cpp_embedded/SKILL.md
+# Rules based on embedded_cpp_check/SKILL.md
 FORBIDDEN_INCLUDES = [
     r'#include\s+<vector>',
     r'#include\s+<map>',

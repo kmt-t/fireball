@@ -31,6 +31,11 @@ trigger: always_on
     *   **Rules**: `汎用性スコープ_対象_rule.md`
     *   **Skills**: `汎用性スコープ_名詞_動詞`
     *   **Workflows**: `名詞_動詞`
+    *   **Memory (ATC Memory)**: `.agent/brain/` 配下に配置し、`スコープ_対象.atc` の形式とする。
+        *   `phase`: 直近の開発フェーズ（例：Phase0）に関連。
+        *   `product`: プロダクト全体（Fireball）の普遍的な設計や文脈に関連。
+        *   `owner`: プロダクトオーナーの意図、価値観、テンションに関連。
+        *   `universal`: ソフトウェア開発全般で普遍的な知見に関連。
 *   **TLA+ モデル**: `モジュール名_検証内容.tla`
 *   **一貫性**: 同じ目的のドキュメント、ツールは、言語や形式が異なっても「主体」と「目的」の概念を揃えること。
 
@@ -51,5 +56,6 @@ trigger: always_on
 2.  **一貫性 (Friction Audit)**: 未定義キーワードや表記揺れ（Friction）がないか確認する。
     - **検証**: `python3 .agent/skills/project_friction_audit/scripts/audit_friction.py` を実行し、レポート (`docs/temp/friction_report.md`) を確認せよ。
 3.  **重複**: 既存の仕様を重複して作成していないか確認する。
-4.  **記録 (Recording)**: 作業中に遭遇した技術的問題（ツールパスの不整合、環境依存のエラー等）や解決策は、即座に `.agent/brain/backlog.atc` または関連する `SKILL.md` に記録せよ。
+4.  **記録 (Recording)**: 重要な発見（DesignDecision, Invariant, ToolFriction等）は、即座に `.agent/brain/` 配下の適切なスコープの `.atc` ファイルに記録せよ。
+    - 記録先は `スコープ_対象.atc` の命名規則に従うこと。
 5.  **バックログ**: 情報が不足している場合は、勝手に仕様を作らず、一般的な解決策を提案した上で `docs/backlog/` に記録する。

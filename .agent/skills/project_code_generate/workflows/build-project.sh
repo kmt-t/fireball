@@ -3,13 +3,13 @@
 #
 # Tests generated C++ headers by building the project.
 # Works in both devcontainer and external environments.
-# Usage: bash wit_build.sh
+# Usage: bash build-project.sh
 
 set -e
 
 echo "[*] Testing generated headers with build..."
 
-# Detect if running inside containe
+# Detect if running inside container
 if [ -f "/.dockerenv" ] || grep -q docker /proc/1/cgroup 2>/dev/null; then
     # Inside container - run directly
     echo "[*] Running inside container"

@@ -1,5 +1,5 @@
 ---
-description: "フリクション監査ワークフロー。仕様・ワークフロー・プロンプト間の矛盾解消。(WHEN: エージェント迷走時/仕様変更時, RELATED: development_cycle/waigaya)"
+description: "フリクション監査ワークフロー。仕様・ワークフロー・プロンプト間の矛盾解消。(WHEN: エージェント迷走時/仕様変更時, RELATED: dev_cycle_run/design_waigaya)"
 ---
 
 # エージェント開発フリクション監査

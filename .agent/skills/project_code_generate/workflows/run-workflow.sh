@@ -6,7 +6,7 @@
 # 2. Run quality checks
 # 3. (Optional) Build test
 #
-# Usage: ./wit_all.sh [--no-build]
+# Usage: ./run-workflow.sh [--no-build]
 
 set -e  # Exit on erro
 

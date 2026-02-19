@@ -1,4 +1,4 @@
-[Brain: Backlog]
+[Memory: phase_backlog]
 @purpose Unified view of open items, prioritized by Phase0-gate relevance.
 @source docs/backlog/{list.md, challenge.md, specification_gaps.md}
 @inv ∀item ∈ Backlog : source_of_truth(item) == docs/backlog/; this ATC is derived index.

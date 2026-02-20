@@ -63,7 +63,7 @@ PrematureFinish  := 完了条件未定義で終了する
 SilentProgress   := 不確実でも進行する
 NoEscalation     := 不明点を質問しない
 NoLog            := 記録を残さない
-LocalOptimize    := 局所적成功で停止する
+LocalOptimize    := 局所的成功で停止する
 
 ## 制御述語
 
@@ -110,7 +110,11 @@ G (¬human_approved → ¬executing)
 4.  **情報探索の深層化 (Skill-First Mandate)**: 関連情報は必ず `general_codebase_explore` スキル等の検索ツールを用い、`docs/requires/requirement_list.md` の `{Keyword}` またはドキュメント内の既存用語をベースに文脈を収集せよ。
     - **警告**: `grep_search` 等の汎用ツールは「安易な探索 (Path of Least Resistance)」を誘発する。スキルを用いた高精度な解析を優先せよ。ツールに不備がある場合はバイパスせず、**スキル自体を修正して再利用可能にすること**。
 5.  **WSL2 Mandate (Windows Host Only)**: ホストOSが Windows の場合、全てのビルド、テスト、スクリプト実行においてWSL2環境の使用を必須とする。コマンド実行時は原則として `wsl <command>` を使用せよ。Windowsホスト側での直接実行は原則禁止である。
-6.  **人間への相談 (Human-in-the-Loop)**: 人間は「永続的なコンテキスト」「開発環境」「物理的な状態」を把握している。エージェント自身が情報を得られない、あるいはトラブルが発生した場合は、独断で解決しようとせず、速やかに人間に相談すること。
+6.  **人間への相談 (Human-in-the-Loop)**: 人間のコンテキスト、環境、物理的状態はエージェントよりも広範である。情報不足やトラブル時は独断せず速やかに相談せよ。
+7.  **Local Ollama Coagent Protocol (Co-Agent Mandate)**: 広範なソースコードの横断的要約、巨大なログの解析、および大量のファイルを対象とした事実の一次抽出において、クラウドトークンの浪費とレイテンシを抑制するため、ローカルの Ollama (`phi3:mini`) を「部下」エージェントとして活用せよ。
+    - **Axiomatic Output**: 部下の出力は常に述語論理のリスト形式（Logic Fact List）とし、`.agent/brain/co_agent/` 配下に隔離保存せよ。
+    - **Tiered Inference**: 部下が「事実の抽出（論理要約・構造化）」を担い、メインエージェントがその抽象化されたデータを元に深い推論を行う。この構造分離（Isolation）によりメインエージェントの記憶汚染を防止せよ。
+    - **実行例**: `find src -name "*.cxx" | wsl python3 .agent/skills/project_ollama_query/scripts/query_ollama.py <SCOPE> "主要な依存関係をリストアップせよ"`
 
 **ドキュメントの配置ルール**
 新たな規約や永続化すべき知識を記述する場合、エージェントが作業の流れで**必ず読む場所** 本ファイル、`GEMINI.md`、または該当する `SKILL.md` の冒頭 に記述せよ。孤立したファイルに記述するだけでは、記憶の揮発により「存在自体を忘れる」リスクがある。

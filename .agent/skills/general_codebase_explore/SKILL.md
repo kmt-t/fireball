@@ -1,79 +1,67 @@
 ---
 name: Codebase Explorer
 description: >
-  インタラクティブにコードベースを探索し、構造把握、シンボル要約、文脈解析を行う統合ツール。
+  インタラクティブな探索を廃し、AST解析やシンボル抽出といった「構造データの抽出」に特化したツール。
   WHEN: 構造把握、関数追跡、シンボル一覧取得、キーワード文脈理解が必要な時
   SCOPE: プロジェクト全域
-  RELATED: project_friction_audit, general_docker_run
+  RELATED: project_ollama_query, project_friction_audit
 ---
 
 # Codebase Explorer
 
-大規模なコードベースを構造化・視覚化し、エージェントのワーキングメモリを保護しながら効率的な探索を可能にするスキルです。
+大規模なコードベースを構造的に解析し、エージェントやコエージェントに対して高密度な「事実データ」を供給するスキルです。
 
 ## 1. 概要 (Overview / Benefits)
 
-「木を見て森を見ず」という状態を回避し、システムの全体像と詳細な実装を自在に行き来できるようにします。
+「森（全体構造）」を機械的に抽出し、「木（詳細ロジック）」の解析を LLM に効率的に渡すためのブリッジとして機能します。
 
-- **構造把握の高速化**: 巨大なディレクトリやソースファイルから、重要なシンボル（クラス、関数）のみを抽出して要約します。
-- **正確な文脈理解**: Clang AST 解析に基づき、マクロ展開後や型解決済みのシンボル情報をプログラム的に取得します。
-- **ノイズの除去**: コールグラフ生成時、標準ライブラリなどの外部依存をフィルタリングし、純粋なプロジェクトロジックのみを可視化します。
+- **高密度な構造抽出**: クラス定義、関数シグネチャ、メンバ変数のみを AST ベースで抽出します。
+- **データ供給の専門化**: 冗長なテキスト出力を廃止し、JSON やシンボルリストといった「純粋な事実」のみを出力することに特化しています。
+- **Tiered Inference の基盤**: 本スキルが抽出した事実を `project_ollama_query` に渡すことで、クラウドトークンの消費を抑えつつ深い理解を実現します。
 
 ## 2. 環境・前提条件 (Prerequisites)
 
-- **Docker コンテナ (推奨)**: Clang AST 解析、`cflow` によるグラフ生成にはコンテナ環境が必須です。
-- **WSL2 Bash**: Windows ホスト環境で実行する場合は、PowerShell から `bash` と入力して WSL2 シェルを使用してください。
+- **WSL2 Bash / Python**: Python 3.x が動作する環境。
+- **Clang (Optional)**: `--ast` オプションを使用する場合に必要。
 
 ## 3. 使用方法 (Usage)
 
-### 統合実行 (推奨: コンテナ経由)
+### 統合実行
 
 ```bash
-# ファイルまたはディレクトリのシンボル要約 (Summary)
-bash .agent/skills/general_docker_run/scripts/docker-explore-codebase.sh summary src/
+# シンボルリストの取得
+python .agent/skills/general_codebase_explore/scripts/explore_codebase.py src/main.cxx --symbols
 
-# Clang AST 解析 (JSON 出力)
-# -Iinc など、ホスト側の相対パスをそのまま渡せます。
-bash .agent/skills/general_docker_run/scripts/docker-explore-codebase.sh ast src/main.cxx --json -Iinc
+# AST 構造のダンプ
+python .agent/skills/general_codebase_explore/scripts/explore_codebase.py src/main.cxx --ast
 
 # 関数の呼び出し元検索 (Callers)
-bash .agent/skills/general_docker_run/scripts/docker-explore-codebase.sh callers "vmmio_read" --depth 2 --search-dir src/
+python .agent/skills/general_codebase_explore/scripts/explore_codebase.py src/ --callers "vmmio_read"
 
-# ノイズ除去済みコールグラフの生成 (Graph)
-bash .agent/skills/general_docker_run/scripts/docker-explore-codebase.sh graph src/main.cxx --search-dir src/
-
-# 統合レポートの生成
-bash .agent/skills/general_docker_run/scripts/docker-explore-codebase.sh report src/main.cxx -Iinc --search-dir src/
+# トレーサビリティキーワード {Keyword} の抽出
+python .agent/skills/general_codebase_explore/scripts/explore_codebase.py docs/requires/ --keywords
 ```
 
-### パイプ連携 (Batch Processing)
+### パイプ利用
 
 ```bash
-# src 内の全ファイルを 5 件まで要約表示
-find src -name "*.cxx" | head -n 5 | xargs -I {} bash .agent/skills/general_docker_run/scripts/docker-explore-codebase.sh summary {}
+# src 内の全ファイルのシンボルを JSON 形式で抽出
+find src -name "*.cxx" | xargs -I {} python .agent/skills/general_codebase_explore/scripts/explore_codebase.py {} --symbols --json
 ```
 
 ## 4. 構成要素の詳細 (Component Details)
 
 ### scripts/
-- **[explorer.py](file:///w:/mysrc/fireball/.agent/skills/general_codebase_explore/scripts/explorer.py)**: 解析エンジンのコア。Clang Python Bindings を使用して AST を処理。
-- **[explore-codebase.sh](file:///w:/mysrc/fireball/.agent/skills/general_codebase_explore/scripts/explore-codebase.sh)**: ホスト（WSL2）側から呼び出すためのメインエントリポイント。
-
-### サブコマンド
-- `summary`: ファイル/ディレクトリの概要抽出。
-- `ast`: AST 情報のダンプ。
-- `graph`: `cflow` 連携によるコールグラフ。
-- `symbols`: ユニークなシンボルリストの取得。
+- **[explore_codebase.py](file:///.agent/skills/general_codebase_explore/scripts/explore_codebase.py)**: AST 解析、シンボル抽出、キーワード検索などを一括して行うコアスクリプト。
+- **[graph_tool.py](file:///.agent/skills/general_codebase_explore/scripts/graph_tool.py)**: `cflow` 出力をフィルタリングするための補助ツール。
 
 ## 5. 品質・検証ルール (Quality & Validation)
 
-- **情報の密度**: 解析結果から自明なコメントや標準ライブラリ由来のシンボルを極力排除し、情報の密度を高めて出力します。
-- **絶対パスの禁止**: 出力されるレポートやパスリストは常にプロジェクトルートからの相対パスとして正規化されます。
+- **事実性の維持**: 要約や解釈を行わず、コード上の定義事実（AST/シンボル）のみを忠実に出力すること。
+- **相対パスの正規化**: 出力に含まれるファイルパスは常にプロジェクトルートからの相対パスとして出力すること。
+- **パイプ指向**: すべての出力は後続のツール（`jq`, `xargs`, `query_ollama` 等）で処理可能な形式を維持すること。
 
 ## 6. トラブルシューティング (Troubleshooting)
 
-**Windows シェルでの誤作動**:
-コマンドプロンプトや PowerShell では、`find` の挙動差異やクオーティング問題が発生します。必ず **WSL2 Bash** を使用してください。
-
-**AST 解析でエラーが発生する**:
-インクルードパスが不足しています。`-I` オプション（例: `-Iinc`）を使用して、正しいパスをツールに渡してください。
+**AST 解析でエラーが出る**:
+- インクルードパスが足りない可能性があります。`-- extra_args -Iinc` のようにコンパイラフラグを渡してください。

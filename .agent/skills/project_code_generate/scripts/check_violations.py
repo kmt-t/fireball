@@ -104,8 +104,17 @@ def check_paths(paths):
 def main():
     targets = []
     
+    import stat
+    def has_piped_input():
+        if sys.stdin.isatty(): return False
+        try:
+            mode = os.fstat(0).st_mode
+            return stat.S_ISFIFO(mode) or stat.S_ISREG(mode) or stat.S_ISSOCK(mode)
+        except:
+            return False
+
     # Support stdin (pipe)
-    if not sys.stdin.isatty():
+    if has_piped_input():
         for line in sys.stdin:
             path = line.strip()
             if path:

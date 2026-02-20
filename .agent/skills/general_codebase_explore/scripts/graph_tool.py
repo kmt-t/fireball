@@ -40,11 +40,24 @@ def filter_cflow(input_lines):
     return filtered
 
 def main():
+    import stat
+    import os
+    def has_piped_input():
+        if sys.stdin.isatty(): return False
+        try:
+            mode = os.fstat(0).st_mode
+            return stat.S_ISFIFO(mode) or stat.S_ISREG(mode) or stat.S_ISSOCK(mode)
+        except:
+            return False
+
     if len(sys.argv) > 1:
         with open(sys.argv[1], 'r') as f:
             lines = f.readlines()
-    else:
+    elif has_piped_input():
         lines = sys.stdin.readlines()
+    else:
+        print("Usage: graph_tool.py [file] (or pipe via stdin)")
+        sys.exit(1)
         
     filtered_lines = filter_cflow(lines)
     for line in filtered_lines:

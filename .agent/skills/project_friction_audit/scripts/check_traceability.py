@@ -58,7 +58,17 @@ def main():
     print(f"Loaded {len(keywords)} keywords.")
 
     targets = []
-    if not sys.stdin.isatty():
+    
+    import stat
+    def has_piped_input():
+        if sys.stdin.isatty(): return False
+        try:
+            mode = os.fstat(0).st_mode
+            return stat.S_ISFIFO(mode) or stat.S_ISREG(mode) or stat.S_ISSOCK(mode)
+        except:
+            return False
+
+    if has_piped_input():
         for line in sys.stdin:
             p = line.strip()
             if p: targets.append(p)

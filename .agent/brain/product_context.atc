@@ -3,12 +3,12 @@
   □ Design Truth := docs/requires (Natural Language is the source of Design Intent)
   □ Interface Truth := WIT (Canonical Interface Definition derived from Design Truth)
   □ ∀logic ∈ ComplexStateMachines : verified_by(logic, TLA+) (@see .agent/workflows/dev_cycle_run.md)
-  □ ∀c ∈ Components : is_tier(c, 2) ⇒ matches_contract(c, harness_pattern) ∧ is_pure_static(c) (@see docs/patterns/concept_harness.md)
+  □ ∀c ∈ Components : is_tier(c, 2) ⇒ matches_contract(c, harness_pattern) ∧ is_pure_static(c) (@see docs/architecture/concept_harness.md)
   □ ∀f ∈ funs(Tier2) : ¬virtual(f) ∧ ¬override(f) (@see .agent/rules/embedded_cpp_rule.md)
   □ ∀m ∈ Allocations : ¬dynamic(m) ∧ is_heap_less(m) (@see .agent/skills/embedded_cpp_check/SKILL.md §メモリ管理パターン)
 
 [Design-Patterns]
-  - Harness (Tier 2): composition(TemplateInjection) ∧ cost(vtable) == 0 (@see docs/patterns/concept_harness.md)
+  - Harness (Tier 2): composition(TemplateInjection) ∧ cost(vtable) == 0 (@see docs/architecture/concept_harness.md)
   - Recovery: ∀f ∈ API : return_type(f) == result<T, recovery_strategy> (@see .agent/skills/embedded_cpp_check/SKILL.md §エラーハンドリング)
   - Layout: ThinGlueLayer(WIT, C++) ∧ FlatInterface(Components) (@see .agent/rules/general_design_rule.md §ThinGlueLayer, §FlatInterface)
   - vMMIO-Model: ALL host-guest data exchange goes through vMMIO.

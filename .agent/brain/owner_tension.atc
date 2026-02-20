@@ -1,7 +1,7 @@
 [Memory: owner_tension]
 @purpose Classify design tensions: CONTRADICTION (zero-sum) vs ORTHOGONAL (area expansion possible).
 @date 2026-02-17
-@source challenge.md, product_context.atc, concept_harness.md, requires/list.md, embedded_cpp_check/SKILL.md
+@source challenge.md, product_context.atc, docs/architecture/concept_harness.md, requires/list.md, embedded_cpp_check/SKILL.md
 
 [Legend]
   - ORTHOGONAL: Two independent axes. Both can improve simultaneously with right design.
@@ -13,7 +13,7 @@
   axes: (code modularity / testability) vs (call overhead / memory cost)
   verdict: ORTHOGONAL ✅ — RESOLVED by Concept Harness
   evidence:
-    - vtable: 3-5 cycles + 8B/object → Concept Harness: 0 cycles + 0B (@see concept_harness.md §パフォーマンス比較)
+    - vtable: 3-5 cycles + 8B/object → Concept Harness: 0 cycles + 0B (@see docs/architecture/concept_harness.md §パフォーマンス比較)
     - Full abstraction (IoC, DI, mock injection) AND zero runtime cost.
     - The rectangle is already maximized on both axes.
   risk: none. This tension is closed.

@@ -1,4 +1,4 @@
-# コンポーネント設計：JIT Hotspot Detector
+# JIT Hotspot Detector コンポーネント設計書
 
 ## 1. コンセプト
 JIT Hotspot Detector は、インタープリタが実行したWASM命令の頻度を監視し、ネイティブコードへの転送（コンパイル）が必要な「ホットスポット」を特定する役割を担う。リソース制約の厳しい環境において、JITコンパイル対象を絞り込むことで、キャッシュ効率とコンパイルオーバーヘッドのバランスを最適化する。 `{LowLatencyJIT}` `{SimpleJITArchitecture}` `{HistoryBuffer}` `{PeriodicTask}`

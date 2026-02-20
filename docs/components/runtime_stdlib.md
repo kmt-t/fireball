@@ -1,4 +1,4 @@
-# Standard Library & Utilities
+# 標準ライブラリ・ユーティリティ コンポーネント設計書
 
 本ドキュメントは、組み込み環境において `std::` ライブラリの代わりに使用される、Fireball独自のユーティリティおよびパターンを定義する。 `{NoStdVector}` `{Policy_Memory}`
 

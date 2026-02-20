@@ -1,4 +1,4 @@
-# VDD: Verification Driven Development
+# VDD: 検証駆動開発
 
 ## 概要
 

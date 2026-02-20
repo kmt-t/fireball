@@ -2,7 +2,7 @@
 description: "ドキュメント要約生成。docs/patterns, components, conceptを要約。(WHEN: 設計前の情報収集, RELATED: bonsai_design)"
 ---
 
-# サマライズのワークフロー
+# ドキュメント要約 ワークフロー
 
 ※ サマライズしたドキュメントは `docs/temp/summary.md` に保存すること。
 

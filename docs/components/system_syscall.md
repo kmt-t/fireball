@@ -1,4 +1,4 @@
-# Fireball System Call Interface Specification
+# システムコール仕様 コンポーネント設計書
 
 ## 1. 目的
 本ドキュメントは、WebAssemblyゲスト環境からホストの提供するサービスを呼び出すための汎用システムコール `fireball_call` のインターフェイス仕様を定義する。特に、WASI (WebAssembly System Interface) 呼び出しを `fireball_call` にマッピングするための規約、および関連するShimライブラリとWASIホスト側実装の役割に焦点を当てる。 `{NativeAPI_Export}`

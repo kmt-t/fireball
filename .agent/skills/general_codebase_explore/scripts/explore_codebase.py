@@ -112,7 +112,7 @@ class FireballExplorer:
         cmd = f"cflow {file_path} {sources} 2>/dev/null"
         res = subprocess.run(cmd, shell=True, capture_output=True, text=True)
         
-        filter_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "graph_tool.py")
+        filter_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "filter_graph.py")
         filter_res = subprocess.run([sys.executable, filter_script], input=res.stdout, capture_output=True, text=True)
         return filter_res.stdout
 
@@ -137,6 +137,9 @@ class FireballExplorer:
                 continue
             if l in src_content:
                 filtered.append(l)
+        
+        if self.json_mode:
+            return filtered
         return "\n".join(filtered)
 
     def extract_traceability_keywords(self, file_path):
@@ -151,9 +154,9 @@ class FireballExplorer:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Fireball Explorer CLI")
     parser.add_argument("path", nargs="?", default=".", help="Starting path")
-    parser.add_argument("--json", action="store_true", help="Output JSON and exit")
+    parser.add_argument("--json", "-j", action="store_true", help="Output JSON and exit")
     parser.add_argument("--callers", help="Find callers of specified function")
-    parser.add_argument("--depth", type=int, default=1, help="Depth for recursive search")
+    parser.add_argument("--depth", "-d", type=int, default=1, help="Depth for recursive search")
     parser.add_argument("--ast", action="store_true", help="Run AST dump on file")
     parser.add_argument("--graph", action="store_true", help="Generate filtered call graph")
     parser.add_argument("--symbols", action="store_true", help="List filtered symbols using clang-check")
@@ -161,7 +164,8 @@ if __name__ == "__main__":
     parser.add_argument("--ls", action="store_true", help="List directory items")
     parser.add_argument("--search-dir", action="append", help="Directories to search for callers/sources")
     parser.add_argument("--source", action="append", help="Explicit source files for cflow")
-    parser.add_argument("--pipe-sources", action="store_true", help="Read source files from stdin (one per line)")
+    parser.add_argument("--stdin-paths", "-p", action="store_true", help="Read target paths or source files from STDIN")
+    parser.add_argument("--include", "-I", action="append", dest="extra_args", help="Add include directory")
     parser.add_argument("extra_args", nargs="*", help="Extra flags for compilers (e.g. -I/path)")
     args, extra_args = parser.parse_known_args()
     args.extra_args = args.extra_args + extra_args
@@ -183,19 +187,15 @@ if __name__ == "__main__":
     elif args.graph:
         sources = args.source or []
         import stat
-        def has_piped_input():
-            if sys.stdin.isatty(): return False
-            try:
-                mode = os.fstat(0).st_mode
-                return stat.S_ISFIFO(mode) or stat.S_ISREG(mode) or stat.S_ISSOCK(mode)
-            except:
-                return False
-                
-        if args.pipe_sources and has_piped_input():
+        if args.stdin_paths:
             sources.extend([line.strip() for line in sys.stdin if line.strip()])
         print(explorer.generate_call_graph(target, search_dirs=args.search_dir, extra_sources=sources))
     elif args.symbols:
-        print(explorer.symbol_list(target, extra_flags=args.extra_args))
+        syms = explorer.symbol_list(target, extra_flags=args.extra_args)
+        if args.json:
+            print(json.dumps(syms, indent=2))
+        else:
+            print(syms)
     elif args.keywords:
         kw = explorer.extract_traceability_keywords(target)
         if args.json:

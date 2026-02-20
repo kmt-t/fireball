@@ -65,6 +65,13 @@ public:
   void terminate(os_task_id id) noexcept;
 
   /**
+   * Notifies the scheduler of an interrupt to wake up a task.
+   * @pre: initialized
+   * @post: task transitions to ready or interrupted state
+   */
+  void notify_interrupt(os_task_id id) noexcept;
+
+  /**
    * Gets information about a task.
    * @pre: initialized
    */

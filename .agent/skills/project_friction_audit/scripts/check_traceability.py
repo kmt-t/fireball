@@ -45,17 +45,20 @@ def main():
     parser = argparse.ArgumentParser(description="Traceability Check Tool")
     parser.add_argument("paths", nargs="*", help="Files or directories to scan")
     parser.add_argument("--requirements", help="Path to requirements list.md")
+    parser.add_argument("--stdin-paths", action="store_true", help="Read paths from stdin instead of content")
+    parser.add_argument("--json", "-j", action="store_true", help="Output results in JSON format")
     args = parser.parse_args()
 
     root_dir = os.getcwd()
     req_list_path = args.requirements or os.path.join(root_dir, 'docs', 'requires', 'requirement_list.md')
     
     if not os.path.exists(req_list_path):
-        print(f"Requirements list not found at {req_list_path}")
+        if not args.json: print(f"Requirements list not found at {req_list_path}")
         sys.exit(1)
 
     keywords = load_keywords(req_list_path)
-    print(f"Loaded {len(keywords)} keywords.")
+    if not args.json:
+        print(f"Loaded {len(keywords)} keywords.")
 
     targets = []
     
@@ -68,23 +71,24 @@ def main():
         except:
             return False
 
-    if has_piped_input():
+    if has_piped_input() and (args.stdin_paths or not args.paths):
         for line in sys.stdin:
             p = line.strip()
             if p: targets.append(p)
+
     if args.paths:
         targets.extend(args.paths)
     if not targets:
         # Default to docs directory
         targets = [os.path.join(root_dir, 'docs')]
 
-    report = "# Traceability Report\n\n"
+    report_data = {"files": [], "missing_keywords": []}
     found_count = 0
     missing_keywords = keywords.copy()
 
-    def process_targets(targets_list):
+    def scan_targets(targets_list):
         nonlocal found_count
-        local_report = ""
+        results_by_file = []
         for target_str in targets_list:
             target = os.path.abspath(target_str)
             if not os.path.exists(target):
@@ -93,35 +97,49 @@ def main():
                 if not target.endswith('.md'): continue
                 if os.path.abspath(target) == os.path.abspath(req_list_path): continue
                 
-                results = scan_file(target, keywords)
-                if results:
-                    local_report += f"## {os.path.relpath(target, root_dir)}\n\n"
-                    for res in results:
+                file_results = scan_file(target, keywords)
+                if file_results:
+                    rel_path = os.path.relpath(target, root_dir).replace('\\', '/')
+                    results_by_file.append({
+                        "file": rel_path,
+                        "occurrences": file_results
+                    })
+                    for res in file_results:
                         found_count += 1
                         if res['keyword'] in missing_keywords:
                             missing_keywords.remove(res['keyword'])
-                        local_report += f"### `{{{res['keyword']}}}` (Line {res['line_num']})\n"
-                        local_report += "```markdown\n" + res['context'] + "```\n\n"
             else:
                 for root, dirs, files in os.walk(target):
                     dirs[:] = [d for d in dirs if d not in ['references', 'temp'] and not d.startswith('.')]
                     for file in files:
-                        local_report += process_targets([os.path.join(root, file)])
-        return local_report
+                        results_by_file.extend(scan_targets([os.path.join(root, file)]))
+        return results_by_file
 
-    report += process_targets(targets)
+    report_data["files"] = scan_targets(targets)
+    report_data["missing_keywords"] = sorted(list(missing_keywords))
 
-    report += "## Missing Keywords\n"
-    for kw in sorted(missing_keywords):
-        report += f"- `{{{kw}}}`\n"
+    if args.json:
+        import json
+        print(json.dumps(report_data, indent=2))
+    else:
+        report = "# Traceability Report\n\n"
+        for f_data in report_data["files"]:
+            report += f"## {f_data['file']}\n\n"
+            for occ in f_data['occurrences']:
+                report += f"### `{{{occ['keyword']}}}` (Line {occ['line_num']})\n"
+                report += "```markdown\n" + occ['context'] + "```\n\n"
 
-    output_path = os.path.join(root_dir, 'docs', 'temp', 'traceability_report.md')
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    with open(output_path, 'w', encoding='utf-8') as f:
-        f.write(report)
-    
-    print(f"Scan complete. Found {found_count} occurrences.")
-    print(f"Report saved to {output_path}")
+        report += "## Missing Keywords\n"
+        for kw in report_data["missing_keywords"]:
+            report += f"- `{{{kw}}}`\n"
+
+        output_path = os.path.join(root_dir, 'docs', 'temp', 'traceability_report.md')
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(report)
+        
+        print(f"Scan complete. Found {found_count} occurrences.")
+        print(f"Report saved to {output_path}")
 
 if __name__ == "__main__":
     main()

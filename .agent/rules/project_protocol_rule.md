@@ -1,3 +1,7 @@
+---
+trigger: always_on
+---
+
 # プロジェクトプロトコル
 
 本ドキュメントは、プロジェクトの物理的構造と、エージェントが従うべきワークフローを定義する。
@@ -8,7 +12,7 @@
 *   `inc/`: C++ ヘッダファイル (`.hxx`)。 **`#pragma once` は必須。**
 *   `docs/`: ドキュメント。
     *   `docs/requires/`: 要求仕様。
-    *   `docs/architecture/`: アーキテクチャ定義。
+    *   `docs/architecture/`: アーキテクチャ構成図や詳細設計。
     *   `docs/components/`: コンポーネント仕様。
     *   `docs/patterns/`: 設計パターン。
     *   `docs/temp/`: エージェント作業領域。
@@ -24,7 +28,7 @@
     *   **コンポーネント仕様**: `(ドメイン/性質)_機能名.md` の形式とする（例: `runtime_vsoc.md`, `ipc_router.md`）。
     *   **その他書面**: `subject_object.md` (主語_目的語) の形式とする（例: `architecture_overview.md`, `requirement_list.md`）。
 *   **.agent 構成要素**: 汎用性スコープ (general, project, embedded) に基づき、以下の規則とする。
-    *   **Rules**: `汎用性スコープ_対象_rule.md`
+    *   **Rules**: `.agent/rules/` に配置し、`汎用性スコープ_対象_rule.md` の形式とする。
     *   **Skills**: `汎用性スコープ_名詞_動詞`
     *   **Workflows**: `名詞_動詞`
     *   **Memory (ATC Memory)**: `.agent/brain/` 配下に配置し、`スコープ_対象.atc` の形式とする。
@@ -37,7 +41,9 @@
 
 ## 2. ナビゲーションと情報検索
 
-*   **ルート**: すべてのパスはワークスペースルートからの相対パスとする。
+*   **ルート**: すべてのパスはワークスペースルートからの相対パスとする（例: `.agent/rules/file.md`）。
+*   **リンク**: ドキュメント内のリンクはすべてプロジェクトルートからの相対パスで記述すること。スラッシュ `/` から始めてはならない。
+*   **絶対パスの禁止**: 特定の PC 環境に依存する絶対パスは、リポジトリにコミットするドキュメントでは絶対に使用してはならない。
 *   **開始**: コンテキスト把握のため、最初に `GEMINI.md` (存在する場合) を読むこと。
 *   **参照**: 外部仕様については `@docs/REFERENCES.md` を確認すること。
 *   **範囲制限**: 検索範囲は `docs/`, `inc/`, `src/` に限定すること。
@@ -47,8 +53,8 @@
 ドキュメントやコードを参照・作成する前に、以下を実行せよ：
 
 1.  **トレーサビリティ**: `docs/requires/requirement_list.md` で定義された`{Keyword}`を必ず使用し、要求と実装・仕様をリンクさせること。
-    - **検証**: `python3 .agent/scripts/check_traceability.py` を実行し、未検出キーワードがないことを確認せよ。
-    - **理解**: キーワードの意図が不明な場合は `python3 .agent/scripts/search_context.py "{Keyword}"` を使用し、文脈から「様相論理による3行要約」を作成して理解せよ。
+    - **検証**: `python3 .agent/skills/project_friction_audit/scripts/check_traceability.py` を実行し、未検出キーワードがないことを確認せよ。
+    - **理解**: キーワードの意図が不明な場合は、関連する設計ドキュメントや要求仕様を確認して理解せよ。
 2.  **一貫性 (Friction Audit)**: 未定義キーワードや表記揺れ（Friction）がないか確認する。
     - **検証**: `python3 .agent/skills/project_friction_audit/scripts/audit_friction.py` を実行し、レポート (`docs/temp/friction_report.md`) を確認せよ。
 3.  **重複**: 既存の仕様を重複して作成していないか確認する。

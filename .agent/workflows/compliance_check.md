@@ -2,7 +2,7 @@
 description: "VDD品質検証ワークフロー。形式仕様・生成コード・コーディング標準の自動検証手順。(WHEN: コード生成後/リリース前, RELATED: dev_cycle_run/project_code_generate)"
 ---
 
-# VDD Compliance Check
+# VDD 品質検証 ワークフロー
 
 **Verification Driven Development** における品質検証手順。
 
@@ -201,9 +201,9 @@ bash .agent/skills/project_code_generate/workflows/run-workflow.sh
 ### コーディング標準
 
 詳細は以下を参照:
-- [embedded_cpp_rule.md](../rules/embedded_cpp_rule.md) - コーディング規約
-- [general_design_rule.md](../rules/general_design_rule.md) - 設計ルール
-- [embedded_cpp_check](../skills/embedded_cpp_check/SKILL.md) - 組み込み最適化
+- [embedded_cpp_rule.md](.agent/rules/embedded_cpp_rule.md) - コーディング規約
+- [general_design_rule.md](.agent/rules/general_design_rule.md) - 設計ルール
+- [embedded_cpp_check](.agent/skills/embedded_cpp_check/SKILL.md) - 組み込み最適化
 
 ---
 
@@ -295,4 +295,4 @@ error: undefined reference to `foo`
 
 **VDD Compliance = 形式仕様から品質を保証**
 
-詳細: [docs/concept/vdd_methodology.md](../../docs/concept/vdd_methodology.md)
+詳細: [vdd_methodology.md](vdd_methodology.md)

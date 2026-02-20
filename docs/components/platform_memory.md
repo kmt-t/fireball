@@ -1,4 +1,4 @@
-# COOS メモリマネージャ設計書
+# COOS メモリマネージャ コンポーネント設計書
 
 ## 1. コンセプト
 メモリマネージャ（`memory-manager`）は、物理メモリプールを複数の論理パーティション（Kernel, Task, Shared等）に分割し、隔離と効率的なメモリ利用を提供する Tier 2 コンポーネントである。 `{3TierSeparation}` `{Policy_Memory}` `{ConsolidatedHeap}`

@@ -403,12 +403,19 @@ def generate_cpp(wit_json, output_dir):
 
 
 def main():
-    if len(sys.argv) != 3:
-        print(f"Usage: {sys.argv[0]} <wit_dir> <output_dir>", file=sys.stderr)
-        sys.exit(1)
+    import argparse
+    parser = argparse.ArgumentParser(description="WIT to C++ Header Generator")
+    parser.add_argument("wit_dir", help="Directory containing WIT package")
+    parser.add_argument("output_dir", nargs="?", help="Output directory for generated headers")
+    parser.add_argument("-o", "--output", help="Explicit output directory (overrides positional)")
+    args = parser.parse_args()
     
-    wit_dir = sys.argv[1]
-    output_dir = sys.argv[2]
+    wit_dir = args.wit_dir
+    output_dir = args.output or args.output_dir
+    
+    if not output_dir:
+        print("Error: Output directory must be specified (either as positional argument or via -o/--output)", file=sys.stderr)
+        sys.exit(1)
     
     if not os.path.exists(wit_dir):
         print(f"Error: WIT directory not found: {wit_dir}", file=sys.stderr)

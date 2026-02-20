@@ -175,14 +175,13 @@ def scan_file_for_decorated_words(file_path, valid_keywords):
     return issues
 
 def scan_paths(paths, root_dir, official_keywords):
-    """Scan multiple paths for friction points."""
-    report = ""
-    friction_count = 0
+    """Scan multiple paths for friction points. Returns structured results."""
+    all_results = []
+    total_friction_count = 0
     
     for path_str in paths:
         path = os.path.abspath(path_str)
         if not os.path.exists(path):
-            print(f"Warning: Path not found: {path}", file=sys.stderr)
             continue
             
         if os.path.isfile(path):
@@ -198,13 +197,8 @@ def scan_paths(paths, root_dir, official_keywords):
             issues.extend(scan_file_for_decorated_words(path, official_keywords))
             
             if issues:
-                friction_count += len(issues)
-                report += f"## {rel_path}\n"
-                for i in issues:
-                    st = i.get('status', i.get('type', 'Unknown'))
-                    report += f"- **Line {i['line']}**: `{{{i['keyword']}}}` -> {st}\n"
-                    report += f"  - Context: `{i['context']}`\n"
-                report += "\n"
+                total_friction_count += len(issues)
+                all_results.append({"file": rel_path, "issues": issues})
         else:
             # Recursive scan for directory
             for root, dirs, files in os.walk(path):
@@ -212,65 +206,69 @@ def scan_paths(paths, root_dir, official_keywords):
                 for file in files:
                     if not file.endswith('.md'): continue
                     file_path = os.path.join(root, file)
-                    sub_report, sub_count = scan_paths([file_path], root_dir, official_keywords)
-                    report += sub_report
-                    friction_count += sub_count
+                    results, count = scan_paths([file_path], root_dir, official_keywords)
+                    all_results.extend(results)
+                    total_friction_count += count
                     
-    return report, friction_count
+    return all_results, total_friction_count
 
 def main():
     parser = argparse.ArgumentParser(description="Friction Audit Tool")
     parser.add_argument("paths", nargs="*", help="Files or directories to audit")
     parser.add_argument("--requirements", help="Path to requirements list.md")
+    parser.add_argument("--stdin-paths", "-p", action="store_true", help="Read paths from STDIN")
+    parser.add_argument("--json", "-j", action="store_true", help="Output results in JSON format")
     args = parser.parse_args()
 
     root_dir = os.getcwd()
     req_list_path = args.requirements or os.path.join(root_dir, 'docs', 'requires', 'requirement_list.md')
     
     if not os.path.exists(req_list_path):
-        print(f"Requirements list not found at {req_list_path}")
+        if not args.json: print(f"Requirements list not found at {req_list_path}")
         sys.exit(1)
     
     official_keywords = load_official_keywords(req_list_path)
     
     targets = []
-    import stat
-    def has_piped_input():
-        if sys.stdin.isatty(): return False
-        try:
-            mode = os.fstat(0).st_mode
-            return stat.S_ISFIFO(mode) or stat.S_ISREG(mode) or stat.S_ISSOCK(mode)
-        except:
-            return False
-
-    # Support stdin (pipe)
-    if has_piped_input():
+    if args.stdin_paths:
         for line in sys.stdin:
             p = line.strip()
             if p: targets.append(p)
-            
+    
     if args.paths:
         targets.extend(args.paths)
-        
-    if not targets:
+            
+    if not targets and not args.stdin_paths:
         # Default to docs directory if no paths provided
         targets = [os.path.join(root_dir, 'docs')]
 
-    print(f"[*] Auditing friction points in {len(targets)} targets...")
+    if not args.json:
+        print(f"[*] Auditing friction points in {len(targets)} targets...")
     
-    report_body, count = scan_paths(targets, root_dir, official_keywords)
+    all_results, count = scan_paths(targets, root_dir, official_keywords)
     
-    report = "# Friction Audit Report\n\n"
-    report += f"Audit conducted on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-    report += report_body
+    if args.json:
+        import json
+        print(json.dumps({"count": count, "results": all_results}, indent=2))
+    else:
+        report = "# Friction Audit Report\n\n"
+        report += f"Audit conducted on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+        
+        for res in all_results:
+            report += f"## {res['file']}\n"
+            for i in res['issues']:
+                st = i.get('status', i.get('type', 'Unknown'))
+                report += f"- **Line {i['line']}**: `{{{i['keyword']}}}` -> {st}\n"
+                report += f"  - Context: `{i['context']}`\n"
+            report += "\n"
 
-    output_path = os.path.join(root_dir, 'docs', 'temp', 'friction_report.md')
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    with open(output_path, 'w', encoding='utf-8') as f:
-        f.write(report)
-    
-    print(f"Audit complete. Found {count} friction points.")
-    print(f"Report saved to {output_path}")
+        output_path = os.path.join(root_dir, 'docs', 'temp', 'friction_report.md')
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(report)
+        
+        print(f"Audit complete. Found {count} friction points.")
+        print(f"Report saved to {output_path}")
 
 if __name__ == "__main__":
     main()

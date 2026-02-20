@@ -2,7 +2,7 @@
 description: "進捗会議ワークフロー。計画乖離分析・リスク分析・アクションプラン策定。(WHEN: スケジュール確認, RELATED: bonsai_design)"
 ---
 
-# 進捗会議のワークフロー
+# 進捗会議 ワークフロー
 
 ※ アクションプランは @docs/actions/list.md に保存すること。
 

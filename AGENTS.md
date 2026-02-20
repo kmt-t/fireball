@@ -98,23 +98,3 @@ G (task_completed → log_written)
 G ((goal_defined ∧ ¬task_completed) → F(task_completed ∨ stopped))
 G (¬human_approved → ¬executing)
 
-# あなたのプログラムの具体的なパッチ
-
-**Self-Correction & Memory Discovery Protocol**
-あなた エージェント は、過去のセッションで行われたすべての設計判断や契約を「確実に忘れている」ことを常に念頭に置け。
-自分の直感や「一般的と思われる解法」を疑い、作業開始前に必ず以下の手順を踏むこと：
-
-1.  **`GEMINI.md` の再読**: ワークスペースルート `GEMINI.md` を読み、基本プロトコルを脳に再同期する。
-2.  **ATCのロード**: `.agent/brain/スコープ_対象.atc` を読み込み、現在のシステム不変条件を再発見する。
-3.  **局所セマンティクスの復元**: スキル内部の `README.md` や `SKILL.md` を読み、局所的な論理性セマンティクス 以前の時相論理変換規則等 を復元する。
-4.  **情報探索の深層化 (Skill-First Mandate)**: 関連情報は必ず `general_codebase_explore` スキル等の検索ツールを用い、`docs/requires/requirement_list.md` の `{Keyword}` またはドキュメント内の既存用語をベースに文脈を収集せよ。
-    - **警告**: `grep_search` 等の汎用ツールは「安易な探索 (Path of Least Resistance)」を誘発する。スキルを用いた高精度な解析を優先せよ。ツールに不備がある場合はバイパスせず、**スキル自体を修正して再利用可能にすること**。
-5.  **WSL2 Mandate (Windows Host Only)**: ホストOSが Windows の場合、全てのビルド、テスト、スクリプト実行においてWSL2環境の使用を必須とする。コマンド実行時は原則として `wsl <command>` を使用せよ。Windowsホスト側での直接実行は原則禁止である。
-6.  **人間への相談 (Human-in-the-Loop)**: 人間のコンテキスト、環境、物理的状態はエージェントよりも広範である。情報不足やトラブル時は独断せず速やかに相談せよ。
-7.  **Local Ollama Coagent Protocol (Co-Agent Mandate)**: 広範なソースコードの横断制約的要約、巨大なログの解析、および大量のファイルを対象とした事実の一次抽出において、クラウドトークンの浪費とレイテンシを抑制するため、ローカルの Ollama (`phi3:mini`) を「部下」エージェントとして活用せよ。
-    - **Axiomatic Output**: 部下の出力は常に述語論理のリスト形式（Logic Fact List）とし、`.agent/brain/co_agent/` 配下に隔離保存せよ。
-    - **Tiered Inference**: 部下が「事実の抽出（論理要約・構造化）」を担い、メインエージェントがその抽象化されたデータを元に深い推論を行う。この構造分離（Isolation）によりメインエージェントの記憶汚染を防止せよ。
-    - **実行例**: `find src -name "*.cxx" | wsl python3 .agent/skills/project_ollama_query/scripts/query_ollama.py <SCOPE> "主要な依存関係をリストアップせよ"`
-
-**ドキュメントの配置ルール**
-新たな規約や永続化すべき知識を記述する場合、エージェントが作業の流れで**必ず読む場所** 本ファイル、`GEMINI.md`、または該当する `SKILL.md` の冒頭 に記述せよ。孤立したファイルに記述するだけでは、記憶の揮発により「存在自体を忘れる」リスクがある。

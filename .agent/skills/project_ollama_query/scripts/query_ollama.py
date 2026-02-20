@@ -106,23 +106,35 @@ def main():
         if args.files:
             f.write(f"# Source Files: {', '.join(args.files)}\n\n")
             
-        for idx, chunk in enumerate(chunks):
-            print(f"Sending request to Ollama ({args.model}) for scope '{args.scope}' (Chunk {idx+1}/{len(chunks)})...", file=sys.stderr)
-            prompt = prompt_template.format(text=chunk)
-            response = query_ollama(args.model, prompt)
+    success_count = 0
+    failure_count = 0
+    for idx, chunk in enumerate(chunks):
+        print(f"Sending request to Ollama ({args.model}) for scope '{args.scope}' (Chunk {idx+1}/{len(chunks)})...", file=sys.stderr)
+        prompt = prompt_template.format(text=chunk)
+        response = query_ollama(args.model, prompt)
+        
+        if not response:
+            print(f"Failed to get response from Ollama for chunk {idx+1}. Skipping...", file=sys.stderr)
+            failure_count += 1
+            continue
             
-            if not response:
-                print(f"Failed to get response from Ollama for chunk {idx+1}. Skipping...", file=sys.stderr)
-                continue
-                
+        with open(output_path, "a", encoding='utf-8', newline='\n') as f:
             f.write(response.strip())
             f.write("\n\n---\n\n")
-            
-            if idx == 0:
-                print(f"--- Logic Preview (Chunk 1) ---", file=sys.stderr)
-                print(response.strip()[:500] + "...", file=sys.stderr)
         
-    print(f"Result saved to {output_path}")
+        success_count += 1
+        if idx == 0:
+            print(f"--- Logic Preview (Chunk 1) ---", file=sys.stderr)
+            print(response.strip()[:500] + "...", file=sys.stderr)
+    
+    if success_count > 0:
+        print(f"Result saved to {output_path}")
+        if failure_count > 0:
+            print(f"Warning: {failure_count} chunks failed.", file=sys.stderr)
+        sys.exit(0)
+    else:
+        print("Error: No successful responses received from Ollama.", file=sys.stderr)
+        sys.exit(1)
     
 if __name__ == "__main__":
     main()

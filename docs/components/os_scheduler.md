@@ -1,4 +1,4 @@
-# 協調型OS COOS スケジューラ設計書
+# COOS スケジューラ コンポーネント設計書
 
 ## 1. コンセプト
 COOSスケジューラは、C++20コルーチンを活用したスタックレスな協調型マルチタスクの核となるコンポーネントである。タスクの実行、一時停止(yield)、および割り込みによる再開を管理し、極小リソース環境での決定論的な実行を提供する。 `{CooperativeMultitasking}` `{UseCpp20Coroutine}` `{COOS_Deterministic}` `{CSPCommunication}`

@@ -2,7 +2,7 @@
 name: Concept-Based Harness Pattern
 ---
 
-# Conceptベースハーネスパターン
+# Conceptベースハーネス パターン設計書
 
 Tier 2コンポーネントにおける依存性注入をゼロコストで実現するC++20 Conceptsベースの設計パターン。
 
@@ -228,5 +228,5 @@ vsoc_runtime<bad_harness> rt;
 
 ## 関連ドキュメント
 
-- [Fireball Architecture](../architecture/architecture_overview.md): 3-Tier分離の全体像
-- [C++ Embedded Optimization](../../.agent/skills/embedded_cpp_check/SKILL.md): メモリ最適化技法
+- [architecture_overview.md](architecture_overview.md): 3-Tier分離の全体像
+- [SKILL.md](.agent/skills/embedded_cpp_check/SKILL.md): メモリ最適化技法

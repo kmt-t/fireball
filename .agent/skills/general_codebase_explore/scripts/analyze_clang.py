@@ -62,27 +62,50 @@ class ClangAnalyzer:
 
 def main():
     parser = argparse.ArgumentParser(description="Clang-based AST Analyzer")
-    parser.add_argument("file", help="Source file to analyze")
-    parser.add_argument("-I", "--include", action="append", help="Include directory")
+    parser.add_argument("files", nargs="*", help="Source files to analyze")
+    parser.add_argument("-I", "--include", action="append", dest="includes", help="Include directory")
+    parser.add_argument("--stdin-paths", "-p", action="store_true", help="Read target paths from STDIN")
+    parser.add_argument("--json", "-j", action="store_true", help="Output results in JSON format")
     args = parser.parse_args()
 
-    # No defaults - rely on command-line arguments
-    includes = (args.include or [])
+    targets = []
+    if args.stdin_paths:
+        for line in sys.stdin:
+            path = line.strip()
+            if path:
+                targets.append(path)
+    if args.files:
+        targets.extend(args.files)
 
-    analyzer = ClangAnalyzer(includes)
-    results = analyzer.analyze(args.file)
+    if not targets:
+        if not args.stdin_paths:
+            parser.print_help()
+            sys.exit(1)
 
-    if results:
-        print(f"\n# Symbols in {args.file}:")
-        for sym in results:
-            if sym["kind"] == "type":
-                print(f"  [type] {sym['name']} (Line {sym['line']})")
-            elif sym["kind"] == "func":
-                print(f"  [func] {sym['name']} (Line {sym['line']})")
-                if sym["calls"]:
-                    print(f"    -> calls: {', '.join(sym['calls'])}")
+    analyzer = ClangAnalyzer(args.includes or [])
+    
+    all_results = {}
+    for target in targets:
+        results = analyzer.analyze(target)
+        if results:
+            all_results[target] = results
+
+    if args.json:
+        import json
+        print(json.dumps(all_results, indent=2))
     else:
-        print("Analysis failed or no symbols found.")
+        if not all_results:
+            print("No symbols found or analysis failed.")
+            sys.exit(1)
+        for target, results in all_results.items():
+            print(f"\n# Symbols in {target}:")
+            for sym in results:
+                if sym["kind"] == "type":
+                    print(f"  [type] {sym['name']} (Line {sym['line']})")
+                elif sym["kind"] == "func":
+                    print(f"  [func] {sym['name']} (Line {sym['line']})")
+                    if sym["calls"]:
+                        print(f"    -> calls: {', '.join(sym['calls'])}")
 
 if __name__ == "__main__":
     main()

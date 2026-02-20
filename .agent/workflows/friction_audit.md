@@ -2,7 +2,7 @@
 description: "フリクション監査ワークフロー。仕様・ワークフロー・プロンプト間の矛盾解消。(WHEN: エージェント迷走時/仕様変更時, RELATED: dev_cycle_run/design_waigaya)"
 ---
 
-# エージェント開発フリクション監査
+# エージェント開発フリクション監査 ワークフロー
 
 ※ 監査のドキュメントは `docs/temp/friction.md` に保存すること。(注: `IsArtifact: false` を使用するか、`.agent/brain` 以下に保存すること)
 
@@ -14,7 +14,7 @@ description: "フリクション監査ワークフロー。仕様・ワークフ
 最近のログやタスク履歴から、以下の「フリクションの兆候」を特定せよ。
 
 ### 2. タスクアサーションの宣言
-特定された症状を分析し、作業のベースラインを固定するため、[Axiomatic Task Contract](/docs/patterns/axiomatic_task_contract.md) を宣言せよ。
+特定された症状を分析し、作業のベースラインを固定するため、[Axiomatic Task Contract](.agent/rules/project_agent_behavior_rule.md) を宣言せよ。
 - 初期状態（@pre）には、現在発生しているフリクションの状態を記述すること。
 
 ### 3. 三層の矛盾チェック

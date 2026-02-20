@@ -1,20 +1,30 @@
 #!/bin/bash
-# docker-cmd.sh: Run arbitrary command inside devcontaine
-# Usage: ./docker-cmd.sh [command] [args...]
-# Example: ./docker-cmd.sh find src -name "*.cxx"
-# Example: ./docker-cmd.sh make test
+# docker-run-command.sh: Run arbitrary command inside devcontainer
+# Usage: ./docker-run-command.sh [command] [args...]
+# Example: ./docker-run-command.sh find src -name "*.cxx"
+
+set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../../../" && pwd)"
-COMPOSE_FILE="$PROJECT_ROOT/.devcontainer/docker-compose.yml"
-SERVICE_NAME="fireball-dev"
+DOCKERFILE="$PROJECT_ROOT/.devcontainer/Dockerfile"
+IMAGE_NAME="fireball-dev"
+CONTAINER_NAME="fireball-dev-container"
 
-# Ensure container is running
-if ! docker compose -f "$COMPOSE_FILE" ps --services --filter "status=running" | grep -q "$SERVICE_NAME"; then
-    echo "Starting $SERVICE_NAME..." >&2
-    docker compose -f "$COMPOSE_FILE" up -d
+# Build image if not exists
+if [[ "$(docker images -q $IMAGE_NAME 2> /dev/null)" == "" ]]; then
+    echo "Building $IMAGE_NAME..." >&2
+    docker build -t "$IMAGE_NAME" -f "$DOCKERFILE" "$PROJECT_ROOT"
 fi
 
-# Use //workspaces/fireball to prevent Git Bash path conversion for the container path
-# -w sets the working directory inside the containe
-docker compose -f "$COMPOSE_FILE" exec -T -u developer -w //workspaces/fireball "$SERVICE_NAME" "$@"
+# Ensure container is running
+if ! docker ps --filter "name=$CONTAINER_NAME" --filter "status=running" | grep -q "$CONTAINER_NAME"; then
+    echo "Starting $CONTAINER_NAME..." >&2
+    # Remove existing container if it exists but is not running
+    docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
+    # Standardize mount point and working directory to //workspace
+    docker run -d --name "$CONTAINER_NAME" -v "$PROJECT_ROOT://workspace" -w //workspace "$IMAGE_NAME" tail -f /dev/null
+fi
+
+# Execute command
+docker exec -i -u developer -w //workspace "$CONTAINER_NAME" "$@"

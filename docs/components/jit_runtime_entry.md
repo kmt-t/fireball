@@ -1,4 +1,4 @@
-# コンポーネント設計：JIT Entry Index
+# JIT Entry Index コンポーネント設計書
 
 ## 1. コンセプト
 JIT Entry Index は、WASM 命令オフセット とそれに対応するネイティブコードのアドレスの紐付けを管理する。

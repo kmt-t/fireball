@@ -40,28 +40,35 @@ def filter_cflow(input_lines):
     return filtered
 
 def main():
-    import stat
-    import os
-    def has_piped_input():
-        if sys.stdin.isatty(): return False
-        try:
-            mode = os.fstat(0).st_mode
-            return stat.S_ISFIFO(mode) or stat.S_ISREG(mode) or stat.S_ISSOCK(mode)
-        except:
-            return False
+    import argparse
+    parser = argparse.ArgumentParser(description="Filter and clean cflow output for graph visualization.")
+    parser.add_argument("file", nargs="?", help="Input cflow file")
+    parser.add_argument("--stdin-paths", "-p", action="store_true", help="Read input from STDIN")
+    parser.add_argument("--json", "-j", action="store_true", help="Output results in JSON format")
+    args = parser.parse_args()
 
-    if len(sys.argv) > 1:
-        with open(sys.argv[1], 'r') as f:
-            lines = f.readlines()
-    elif has_piped_input():
+    lines = []
+    if args.stdin_paths or (not args.file and not sys.stdin.isatty()):
         lines = sys.stdin.readlines()
+    elif args.file:
+        try:
+            with open(args.file, 'r') as f:
+                lines = f.readlines()
+        except Exception as e:
+            print(f"Error reading {args.file}: {e}", file=sys.stderr)
+            sys.exit(1)
     else:
-        print("Usage: graph_tool.py [file] (or pipe via stdin)")
+        parser.print_help()
         sys.exit(1)
         
     filtered_lines = filter_cflow(lines)
-    for line in filtered_lines:
-        print(line)
+    
+    if args.json:
+        import json
+        print(json.dumps({"lines": filtered_lines}, indent=2))
+    else:
+        for line in filtered_lines:
+            print(line)
 
 if __name__ == "__main__":
     main()

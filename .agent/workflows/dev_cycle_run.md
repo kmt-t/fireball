@@ -2,7 +2,7 @@
 description: "設計→インターフェース定義→実装→検証→リファイメントの標準開発サイクル。(WHEN: フェーズ確認, RELATED: bonsai_design/compliance_check)"
 ---
 
-# General Development Cycle Workflow
+# 標準開発サイクル ワークフロー
 
 本ワークフローは、設計、インターフェース定義、実装、検証、およびリファイメントの標準的なサイクルを定義します。
 
@@ -28,7 +28,7 @@ graph TB
 1. **要件定義**: 上位の要求、制約条件、技術仕様を確認する。
 2. **論理的準備**:
     - `.agent/brain/product_context.atc` を読み込み、最新の不変条件（Brain）を同期する。
-    - 実行タスクに応じた [Axiomatic Task Contract (ATC)](/docs/patterns/axiomatic_task_contract.md) を定義し、思考を収束させる。
+    - 実行タスクに応じた [Axiomatic Task Contract (ATC)](.agent/rules/project_agent_behavior_rule.md) を定義し、思考を収束させる。
 3. **仕様の形式化と検証**:
     - 自然言語の要求を **WIT IDL** や **TLA+**（状態機械や並行性が重要な場合）に書き起こす。
     - **TLA+ 検証のフロントローディング**:

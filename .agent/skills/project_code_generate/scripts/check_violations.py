@@ -41,7 +41,7 @@ ALLOWED_EXCEPTIONS = [
 
 
 def check_file(file_path):
-    """Check a single C++ file for violations. Returns True if no violations found."""
+    """Check a single C++ file for violations. Returns list of violations."""
     violations_found = []
     
     try:
@@ -49,93 +49,125 @@ def check_file(file_path):
             full_content = f.read()
             
             # Remove comments to avoid false positives in documentation
-            # Remove /* ... */ comments
             content = re.sub(r'/\*.*?\*/', '', full_content, flags=re.DOTALL)
-            # Remove // ... comments
             content = re.sub(r'//.*', '', content)
             
-            # Check for allowed exceptions first
             for allowed in ALLOWED_EXCEPTIONS:
                 content = content.replace(allowed, "")
             
-            # Check each violation pattern
             for pattern, message in VIOLATIONS.items():
                 if re.search(pattern, content):
                     violations_found.append(message)
     
     except Exception as e:
         print(f"Error reading {file_path}: {e}", file=sys.stderr)
-        return False
+        return [f"Error reading file: {e}"]
     
-    if violations_found:
-        print(f"[ERROR] {file_path}:")
-        for msg in violations_found:
-            print(f"   - {msg}")
-        return False
-    
-    return True
-
-
-def check_paths(paths):
-    """Check multiple files or directories. Returns True if all pass."""
-    all_passed = True
-    for path_str in paths:
-        path = Path(path_str)
-        if not path.exists():
-            print(f"Error: Path not found: {path}", file=sys.stderr)
-            all_passed = False
-            continue
-            
-        if path.is_file():
-            if not check_file(path):
-                all_passed = False
-        else:
-            # For directories, find all .hxx and .cxx files
-            cpp_files = list(path.glob("*.hxx")) + list(path.glob("*.cxx"))
-            if not cpp_files:
-                print(f"Warning: No C++ files found in {path}")
-            else:
-                for file_path in sorted(cpp_files):
-                    if not check_file(file_path):
-                        all_passed = False
-    return all_passed
+    return violations_found
 
 
 def main():
-    targets = []
-    
-    import stat
-    def has_piped_input():
-        if sys.stdin.isatty(): return False
-        try:
-            mode = os.fstat(0).st_mode
-            return stat.S_ISFIFO(mode) or stat.S_ISREG(mode) or stat.S_ISSOCK(mode)
-        except:
-            return False
+    import argparse
+    import json
+    parser = argparse.ArgumentParser(description="Check coding violations in C++ files.")
+    parser.add_argument("paths", nargs="*", help="Files or directories to scan")
+    parser.add_argument("--stdin-paths", "-p", action="store_true", help="Read paths from STDIN")
+    parser.add_argument("--json", "-j", action="store_true", help="Output results in JSON format")
+    args = parser.parse_args()
 
-    # Support stdin (pipe)
-    if has_piped_input():
+    targets = []
+    if args.stdin_paths:
         for line in sys.stdin:
             path = line.strip()
             if path:
                 targets.append(path)
-                
-    # Support command line arguments
-    if len(sys.argv) > 1:
-        targets.extend(sys.argv[1:])
-        
+    
+    if args.paths:
+        targets.extend(args.paths)
+    
     if not targets:
-        print(f"Usage: {sys.argv[0]} <directory_or_file...> (or via pipe)", file=sys.stderr)
-        sys.exit(1)
+        if not args.stdin_paths and not sys.stdin.isatty():
+            # Treat stdin as content
+            if not args.json: print("[*] Checking content from stdin...")
+            content = sys.stdin.read()
+            violations = get_content_violations(content)
+            passed = len(violations) == 0
+            if args.json:
+                print(json.dumps({"passed": passed, "violations": violations}, indent=2))
+            else:
+                if passed:
+                    print("[OK] No violations found")
+                else:
+                    print("[ERROR] Violations detected")
+                    for v in violations:
+                        print(f"   - {v}")
+            sys.exit(0 if passed else 1)
+        else:
+            parser.print_help()
+            sys.exit(1)
     
-    print(f"[*] Checking coding violations...")
+    if not args.json: print(f"[*] Checking coding violations...")
     
-    if check_paths(targets):
+    all_results = []
+    total_passed = True
+    
+    for t in targets:
+        path = Path(t)
+        if not path.exists():
+            if not args.json: print(f"Error: Path not found: {t}", file=sys.stderr)
+            continue
+            
+        files_to_check = []
+        if path.is_file():
+            files_to_check = [path]
+        else:
+            files_to_check = list(path.glob("*.hxx")) + list(path.glob("*.cxx"))
+            
+        for f in sorted(files_to_check):
+            violations = check_file(f)
+            if violations:
+                total_passed = False
+                all_results.append({"file": str(f), "violations": violations})
+                if not args.json:
+                    print(f"[ERROR] {f}:")
+                    for v in violations:
+                        print(f"   - {v}")
+
+    if args.json:
+        print(json.dumps({"passed": total_passed, "results": all_results}, indent=2))
+    elif total_passed:
         print("[OK] No violations found")
-        sys.exit(0)
-    else:
-        print("[ERROR] Violations detected")
-        sys.exit(1)
+    
+    sys.exit(0 if total_passed else 1)
+
+def get_content_violations(content):
+    """Helper to check content directly"""
+    violations_found = []
+    content = re.sub(r'/\*.*?\*/', '', content, flags=re.DOTALL)
+    content = re.sub(r'//.*', '', content)
+    for allowed in ALLOWED_EXCEPTIONS:
+        content = content.replace(allowed, "")
+    for pattern, message in VIOLATIONS.items():
+        if re.search(pattern, content):
+            violations_found.append(message)
+    return violations_found
+
+def check_content(content):
+    """Helper to check content directly (extracted from check_file logic)"""
+    violations_found = []
+    # Remove comments
+    content = re.sub(r'/\*.*?\*/', '', content, flags=re.DOTALL)
+    content = re.sub(r'//.*', '', content)
+    for allowed in ALLOWED_EXCEPTIONS:
+        content = content.replace(allowed, "")
+    for pattern, message in VIOLATIONS.items():
+        if re.search(pattern, content):
+            violations_found.append(message)
+    if violations_found:
+        for msg in violations_found:
+            print(f"   - {msg}")
+        return False
+    return True
 
 
 if __name__ == "__main__":

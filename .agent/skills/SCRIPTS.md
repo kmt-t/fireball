@@ -1,38 +1,54 @@
-# Script Documentation Format (SCRIPTS.md)
+# スクリプトドキュメント フォーマット定義
 
-本ドキュメントは、各スキルの `scripts/` ディレクトリ内に配置する `README.md` の標準的な構成を定義します。
+本ドキュメントは、各スキルの `scripts/` ディレクトリ内に配置する `README.md` の標準的な構成と、スクリプトの設計原則を定義します。
 
-## 1. 必須セクション構成
+## 0. 設計原則
 
-各プログラム/スクリプトのドキュメントは、以下の項目を網羅しなければなりません。
+**「標準入力で受け取り、標準出力で返す」**
 
-### 1.1 役割と数学的性質 (Role & Axioms)
-- **目的**: 何を解決するツールか。
-- **不変条件 (Invariants)**: 実行中および実行後に維持される論理性（例: 「常に有効な C++ シンボル名のみを出力する」）。
-- **影響範囲 (Side Effects)**: ファイル生成、環境変数の変更、外部通信など。
+エージェントが使用するツールは、プロジェクト内の既存資産（find, xargs, cat, grep 等）とシームレスに連携できなければなりません。
+原則として、処理対象のデータやファイルパスのリストは **標準入力 STDIN** から受け取り、結果は **標準出力 STDOUT** に構造化された形式 テキストまたは JSON で出力するように設計してください。これにより、複雑なパイプラインの構築が可能になります。
 
-### 1.2 インターフェース (Full-Spec CLI & Interface)
+### 1.2 インターフェース
 - **フルスペック宣言**: 全ての引数、フラグ、オプションを網羅すること。デバッグ用の「隠しフラグ」であっても、副作用や挙動が定義されているものは記述せよ。
-- **使用法 (Usage)**: `python3 example.py [options] <args>`。
-- **引数 (Arguments)**: 各引数の意味、必須/任意、および期待されるデータ型（型語彙に準拠）。
-- **オプション (Options)**: 各フラグの効果。特に、他のフラグとの排他制御や依存関係がある場合は「制約条件」として明記せよ。
+- **標準フラグ Recommended Standards**:
+    - `-h, --help`: ヘルプを表示。
+    - `-p, --stdin-paths`: 標準入力から対象ファイル/ディレクトリのパス読み込み。
+    - `-j, --json`: 構造化データ JSON を出力。
+    - `-r, --recursive`: ディレクトリを再帰的に処理。
+    - `-I, --include <dir>`: C/C++ 等のインクルードパス指定。
+- **使用法 Usage**: `python3 example.py [options] <args>`。
+- **引数 Arguments**: 各引数の意味、必須/任意、および期待されるデータ型。
+- **オプション Options**: 各フラグの効果。
 
+### 1.3 パイプ・合成可能性
+[設計原則](#0-設計原則) に基づき、以下の挙動を記述・保証してください。
+- **標準入力 STDIN**: パイプ経由で渡せるデータ 例: ファイルパスのリスト、ソースコードの内容など。
+- **標準出力 STDOUT**: 次のツールに渡せる形式 JSON, Plain text, File list等。
+- **xargs対応**: `find ... | xargs python3 script.py` という形式での動作可否（引数としてリストを受け取れるか）。
 
-### 1.3 パイプ・合成可能性 (Composition & Pipe)
-[全体設計ルール](file:///w:/mysrc/fireball/docs/architecture/general_design_rule.md) の「汎用性と合成可能性」に基づき、以下の挙動を明記します。
-- **標準入力 (STDIN)**: パイプ経由で渡せるデータ（例: ファイルパスのリスト）。
-- **標準出力 (STDOUT)**: 次のツールに渡せる形式（JSON, Plain text, File list等）。
-- **xargs対応**: `find ... | xargs python3 script.py` という形式での動作可否。
+## 2. 自動テスト
 
-### 1.4 入出力データ構造 (Data Schema)
+### なぜ自動テストが必要なのか
+エージェントが利用するツール群は、その「インターフェース（引数やパイプ挙動）」こそが情報の生命線です。
+手動テストでは、環境の変化 WSL2/Docker や微細なパス仕様変更による「情報の不連続性」を察知できません。
+自動テストにより、エージェントが常に正しい「事実」を受け取れることを保証します。
+
+### 検証項目
+1. **CLI Arguments**: `--help` の正常応答、必須引数の欠落チェック。
+2. **Standard Input (Pipe)**: パイプ経由でのデータ流し込みが正しく解析・処理されること。
+3. **Standard Output**: 期待されるフォーマット Markdown/JSON で出力され、壊れた文字や不要なログが混入していないこと。
+4. **Exit Codes**: 成功時 0、失敗時 非0 が厳守されていること。
+
+### 1.4 入出力データ構造
 - **入力形式**: JSON スキーマ、WIT 定義、または期待されるテキスト形式。
 - **出力形式**: 生成されるファイル構造や、返される JSON の構造。
 
-### 1.5 エラーコードとリカバリ (Errors & Recovery)
-- **終了コード (Exit Codes)**: 0 (Success), 1 (Logic Error), 2 (IO Error) 等の意味。
+### 1.5 エラーコードとリカバリ
+- **終了コード Exit Codes**: 0 Success, 1 Logic Error, 2 IO Error 等の意味。
 - **エラー出力**: stderr に出力されるメッセージの様式。
 
-### 1.6 実行例 (Examples)
+### 1.6 実行例
 - **基本操作**: 最も一般的なユースケース。
 - **パイプ連携**: 前後のツールと組み合わせた高度な例。
 
@@ -66,10 +82,10 @@ python3 scripts/audit_file.py src/inc/
 
 ```bash
 # git で変更された C++ ファイルのみを抽出して監査
-git ls-files -m | grep "\.cxx$" | python3 scripts/audit_file.py
+git ls-files -m | grep "\.cxx$" | python3 scripts/audit_file.py --stdin-paths
 
 # 特定のキーワードを含むファイルのみを抽出して監査
-grep -l "TODO" src/*.cxx | python3 scripts/audit_file.py
+grep -l "TODO" src/*.cxx | python3 scripts/audit_file.py -p
 ```
 
 ### パターンC: xargs を用いた並列・バッチ処理
@@ -85,10 +101,10 @@ find inc -name "*.hxx" | xargs python3 scripts/audit_file.py --strict
 
 ```bash
 # JSON 形式で出力し、jq でエラー数のみをカウント
-python3 scripts/audit_file.py src/ --format json | jq '.summary.errors'
+python3 scripts/audit_file.py src/ --json | jq '.summary.errors'
 
 # エラーがあるファイルのみを抽出して自動修正スクリプトに渡す
-python3 scripts/audit_file.py src/ --format json | jq -r '.violations[].file' | sort -u | xargs python3 scripts/fix_code.py
+python3 scripts/audit_file.py src/ -j | jq -r '.violations[].file' | sort -u | xargs python3 scripts/fix_code.py
 ```
 
 ---

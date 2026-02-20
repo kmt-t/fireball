@@ -7,11 +7,11 @@ description: >-
   RELATED: project_arch_design, general_docker_run
 ---
 
-# Friction Auditor
+# フリクション監査 スキル設計書
 
 システム内で定義された公式キーワードと、実際のドキュメントやコードにおける使用状況の乖離（Friction）を検出し、情報の整合性を担保するスキルです。
 
-## 1. 概要 (Overview / Benefits)
+## 1. 概要
 
 ドキュメントが大規模化するにつれて発生する「情報の腐敗」を防ぎ、全関係者が常に同じ語彙で意思疎通できる環境を維持します。
 
@@ -19,14 +19,14 @@ description: >-
 - **表記揺れの排除**: 類似する綴りのキーワードを検出し、公式な用語への統一を促します。
 - **孤立情報の防止**: 参照先が存在しないキーワードや、更新が古いまま放置されたドキュメントを特定します。
 
-## 2. 環境・前提条件 (Prerequisites)
+## 2. 環境・前提条件
 
-- **Docker コンテナ (推奨)**: 決定論的な監査結果を得るために、コンテナ環境での実行を強く推奨します。
+- **Docker コンテナ 推奨**: 決定論的な監査結果を得るために、コンテナ環境での実行を強く推奨します。
 - **WSL2 Bash**: Windows 環境ではパス解釈の問題を避けるため WSL2 シェルを使用してください。
 
-## 3. 使用方法 (Usage)
+## 3. 使用方法
 
-### 統合実行 (推奨)
+### 統合実行 推奨
 
 `docker-audit-friction.sh` を使用して、コンテナ内で監査を一括実行します。
 
@@ -35,7 +35,7 @@ description: >-
 bash .agent/skills/general_docker_run/scripts/docker-audit-friction.sh
 ```
 
-### 個別実行 (WSL2 Bash)
+### 個別実行 WSL2 Bash
 
 特定の監査のみを高速に実行したい場合。
 
@@ -47,13 +47,13 @@ python3 .agent/skills/project_friction_audit/scripts/audit_friction.py
 python3 .agent/skills/project_friction_audit/scripts/check_traceability.py
 ```
 
-## 4. 構成要素の詳細 (Component Details)
+## 4. 構成要素の詳細
 
 ### scripts/
-- **[audit_friction.py](file:///w:/mysrc/fireball/.agent/skills/project_friction_audit/scripts/audit_friction.py)**: キーワードのタイポ検出や未定義チェックを行います。
-- **[check_traceability.py](file:///w:/mysrc/fireball/.agent/skills/project_friction_audit/scripts/check_traceability.py)**: 要求仕様書と各設計・実装ファイル間のリンクを検証します。
+- **[audit_friction.py](.agent/skills/project_friction_audit/scripts/audit_friction.py)**: キーワードのタイポ検出や未定義チェックを行います。
+- **[check_traceability.py](.agent/skills/project_friction_audit/scripts/check_traceability.py)**: 要求仕様書と各設計・実装ファイル間のリンクを検証します。
 
-## 5. 品質・検証ルール (Quality & Validation)
+## 5. 品質・検証ルール
 
 本ツールは以下の項目を品質基準として検証します。
 
@@ -62,7 +62,7 @@ python3 .agent/skills/project_friction_audit/scripts/check_traceability.py
 - **Broken Link**: 参照先のドキュメントが存在しない。
 - **Stale Reference?**: 参照元より参照先の方が新しく、情報の同期が漏れている可能性があるもの。
 
-## 6. トラブルシューティング (Troubleshooting)
+## 6. トラブルシューティング
 
 **レポートが生成されない**:
 - 出力先ディレクトリ `docs/temp/` が存在し、書き込み可能か確認してください。

@@ -62,21 +62,14 @@ def main():
     parser = argparse.ArgumentParser(description="Check C++ code for embedded rule violations")
     parser.add_argument("paths", nargs="*", help="Files or directories to check")
     parser.add_argument("--recursive", "-r", action="store_true", help="Search directories recursively")
+    parser.add_argument("--stdin-paths", "-p", action="store_true", help="Read target paths from STDIN")
+    parser.add_argument("--json", "-j", action="store_true", help="Output results in JSON format")
     args = parser.parse_args()
 
     targets = []
     
-    import stat
-    def has_piped_input():
-        if sys.stdin.isatty(): return False
-        try:
-            mode = os.fstat(0).st_mode
-            return stat.S_ISFIFO(mode) or stat.S_ISREG(mode) or stat.S_ISSOCK(mode)
-        except:
-            return False
-
-    # Support stdin (pipe)
-    if has_piped_input():
+    # Support stdin paths
+    if args.stdin_paths:
         for line in sys.stdin:
             path = line.strip()
             if path:
@@ -87,21 +80,24 @@ def main():
         targets.extend(args.paths)
         
     if not targets:
-        parser.print_help()
-        sys.exit(1)
+        # If no paths and not explicitly reading from STDIN, print help
+        if not args.stdin_paths:
+            parser.print_help()
+            sys.exit(1)
 
-    all_violations = 0
-    for path in targets:
+    results = []
+    total_violations = 0
+
+    def process_path(path):
+        nonlocal total_violations
         if os.path.isfile(path):
             if path.endswith(('.hxx', '.cxx', '.cpp', '.h')):
                 v = check_file(path)
                 if v:
-                    print(f"--- {path} ---")
-                    for line, msg in v:
-                        print(f"Line {line}: {msg}")
-                    all_violations += len(v)
+                    results.append({"file": path, "violations": [{"line": ln, "message": m} for ln, m in v]})
+                    total_violations += len(v)
         elif os.path.isdir(path):
-            for root, dirs, files in os.walk(path):
+            for root, _, files in os.walk(path):
                 if not args.recursive and root != path:
                     continue
                 for file in files:
@@ -109,19 +105,30 @@ def main():
                         file_path = os.path.join(root, file)
                         v = check_file(file_path)
                         if v:
-                            print(f"--- {file_path} ---")
-                            for line, msg in v:
-                                print(f"Line {line}: {msg}")
-                            all_violations += len(v)
+                            results.append({"file": file_path, "violations": [{"line": ln, "message": m} for ln, m in v]})
+                            total_violations += len(v)
         else:
-            print(f"Warning: Path not found or not accessible: {path}", file=sys.stderr)
+            if not args.json:
+                print(f"Warning: Path not found or not accessible: {path}", file=sys.stderr)
+
+    for path in targets:
+        process_path(path)
     
-    if all_violations == 0:
-        print("No violations found.")
-        sys.exit(0)
+    if args.json:
+        import json
+        print(json.dumps({"total_violations": total_violations, "files": results}, indent=2))
     else:
-        print(f"\nTotal violations: {all_violations}")
-        sys.exit(1)
+        if total_violations == 0:
+            print("No violations found.")
+            sys.exit(0)
+        else:
+            for item in results:
+                print(f"--- {item['file']} ---")
+                for v in item['violations']:
+                    print(f"Line {v['line']}: {v['message']}")
+            print(f"\nTotal violations: {total_violations}")
+    
+    sys.exit(1 if total_violations > 0 else 0)
 
 if __name__ == "__main__":
     main()

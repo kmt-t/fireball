@@ -105,40 +105,111 @@ def check_paths(paths):
 
 
 def main():
-    targets = []
-    
-    import stat
-    def has_piped_input():
-        if sys.stdin.isatty(): return False
-        try:
-            mode = os.fstat(0).st_mode
-            return stat.S_ISFIFO(mode) or stat.S_ISREG(mode) or stat.S_ISSOCK(mode)
-        except:
-            return False
+    import argparse
+    import json
+    parser = argparse.ArgumentParser(description="Check naming conventions in C++ files.")
+    parser.add_argument("paths", nargs="*", help="Files or directories to scan")
+    parser.add_argument("--stdin-paths", "-p", action="store_true", help="Read paths from STDIN")
+    parser.add_argument("--json", "-j", action="store_true", help="Output results in JSON format")
+    args = parser.parse_args()
 
-    # Support stdin (pipe)
-    if has_piped_input():
+    targets = []
+    if args.stdin_paths:
         for line in sys.stdin:
             path = line.strip()
             if path:
                 targets.append(path)
-                
-    # Support command line arguments
-    if len(sys.argv) > 1:
-        targets.extend(sys.argv[1:])
-        
+    
+    if args.paths:
+        targets.extend(args.paths)
+    
     if not targets:
-        print(f"Usage: {sys.argv[0]} <directory_or_file...> (or via pipe)", file=sys.stderr)
-        sys.exit(1)
+        if not args.stdin_paths and not sys.stdin.isatty():
+            # Treat stdin as content
+            if not args.json: print("[*] Checking content from stdin...")
+            content = sys.stdin.read()
+            passed, errors = check_naming_conventions_content(content)
+            if args.json:
+                print(json.dumps({"passed": passed, "errors": errors}, indent=2))
+            else:
+                if passed:
+                    print("[OK] All naming conventions correct")
+                else:
+                    print("[ERROR] Naming violations detected")
+                    for error in errors:
+                        print(f"   - {error}")
+            sys.exit(0 if passed else 1)
+        else:
+            parser.print_help()
+            sys.exit(1)
     
-    print(f"[*] Checking naming conventions...")
+    if not args.json: print(f"[*] Checking naming conventions...")
     
-    if check_paths(targets):
+    results = []
+    all_passed = True
+    for t in targets:
+        path = Path(t)
+        if not path.exists():
+            if not args.json: print(f"Error: Path not found: {t}", file=sys.stderr)
+            continue
+        
+        files_to_check = []
+        if path.is_file():
+            files_to_check = [path]
+        else:
+            files_to_check = list(path.glob("*.hxx")) + list(path.glob("*.cxx"))
+            
+        for f in sorted(files_to_check):
+            passed, errors = check_naming_conventions(f)
+            if not passed:
+                all_passed = False
+                results.append({"file": str(f), "errors": errors})
+                if not args.json:
+                    print(f"[ERROR] {f.name}:")
+                    for error in errors:
+                        print(f"   - {error}")
+
+    if args.json:
+        print(json.dumps({"passed": all_passed, "violations": results}, indent=2))
+    elif all_passed:
         print("[OK] All naming conventions correct")
-        sys.exit(0)
-    else:
-        print("[ERROR] Naming violations detected")
-        sys.exit(1)
+    
+    sys.exit(0 if all_passed else 1)
+
+def check_naming_conventions_content(content):
+    """Helper to check content directly (extracted from check_naming_conventions logic)"""
+    errors = []
+    
+    # Check struct/class names (should be snake_case)
+    struct_pattern = re.compile(r'(?:struct|class)\s+([a-zA-Z_][a-zA-Z0-9_]*)')
+    for match in struct_pattern.finditer(content):
+        name = match.group(1)
+        if not re.match(r'^[a-z][a-z0-9_]*$', name):
+            errors.append(f"Type name must be snake_case: '{name}'")
+    
+    # Check enum class names (should be snake_case)
+    enum_pattern = re.compile(r'enum\s+class\s+([a-zA-Z_][a-zA-Z0-9_]*)')
+    for match in enum_pattern.finditer(content):
+        name = match.group(1)
+        if not re.match(r'^[a-z][a-z0-9_]*$', name):
+            errors.append(f"Enum name must be snake_case: '{name}'")
+    
+    # Check enum values (should be UPPER_SNAKE_CASE)
+    enum_bodies = re.findall(r'enum\s+class\s+\w+[^{]*\{([^}]+)\}', content, re.DOTALL)
+    for enum_body in enum_bodies:
+        values = re.findall(r'^\s*([A-Za-z_][A-Za-z0-9_]*)\s*[,}]', enum_body, re.MULTILINE)
+        for value in values:
+            if not re.match(r'^[A-Z][A-Z0-9_]*$', value):
+                errors.append(f"Enum value must be UPPER_SNAKE_CASE: '{value}'")
+    
+    # Check using aliases (should be snake_case)
+    using_pattern = re.compile(r'using\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*=')
+    for match in using_pattern.finditer(content):
+        name = match.group(1)
+        if not re.match(r'^[a-z][a-z0-9_]*$', name):
+            errors.append(f"Type alias must be snake_case: '{name}'")
+    
+    return len(errors) == 0, errors
 
 
 if __name__ == "__main__":

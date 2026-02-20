@@ -7,11 +7,11 @@ description: >-
   RELATED: embedded_cpp_check
 ---
 
-# Fireball Architecture
+# Fireball アーキテクチャ設計 スキル設計書
 
 本プロジェクト（Fireball）の設計・実装において遵守すべき構造的ルール、パターン、および設計哲学を定義します。
 
-## 1. 概要 (Overview / Benefits)
+## 1. 概要
 
 統一されたアーキテクチャ原則を適用することで、リソース制約と拡張性の両立を実現し、長期的な保守を可能にします。
 
@@ -19,11 +19,11 @@ description: >-
 - **ゼロコスト抽象化**: `{StaticDI}` と `{ComponentHarness}` により、メモリとCPUのオーバーヘッドを発生させずにテスト容易性を確保します。
 - **実装への一意なマッピング**: `{Type_Vocabulary}` により、自然言語の曖昧さを排除し、WIT から C++ への正確な導出を保証します。
 
-## 2. 環境・前提条件 (Prerequisites)
+## 2. 環境・前提条件
 
-アーキテクチャ設計自体は環境に依存しませんが、関連するコード生成や検証ツールは **Dockerコンテナ** 内で実行されます。詳細は [Docker Workaround](../general_docker_run/SKILL.md) を参照してください。
+アーキテクチャ設計自体は環境に依存しませんが、関連するコード生成や検証ツールは **Dockerコンテナ** 内で実行されます。詳細は [Docker Workaround](.agent/skills/general_docker_run/SKILL.md) を参照してください。
 
-## 3. 使用方法 (Usage)
+## 3. 使用方法
 
 具体的な指示やコマンドではなく、設計時の「思考のガイドライン」として活用します。
 
@@ -37,7 +37,7 @@ description: >-
 - **Tier 2**: Tier 1 + 構成要素、状態遷移図（中リスク）
 - **Tier 3**: Tier 2 + 直交表、コンセプトコード（高リスク）
 
-## 4. 構成要素の詳細 (Component Details)
+## 4. 構成要素の詳細
 
 ### 設計原則 (Core Axioms)
 - **WIT-First**: 主要境界のインターフェースは WIT で定義する。
@@ -45,17 +45,17 @@ description: >-
 - **Concept-Based Dependency**: C++ 側では仮想関数を使わず、テンプレートと Concept による静的 DI を行う。
 
 ### 関連ドキュメント
-- **[general_design_rule.md](file:///w:/mysrc/fireball/docs/architecture/general_design_rule.md)**: 全体設計の核心哲学。
-- **[embedded_cpp_rule.md](file:///w:/mysrc/fireball/.agent/rules/embedded_cpp_rule.md)**: 組み込み特化の C++ コーディング規約。
+- **[general_design_rule.md](general_design_rule.md)**: 全体設計の核心哲学。
+- **[embedded_cpp_rule.md](.agent/rules/embedded_cpp_rule.md)**: 組み込み特化の C++ コーディング規約。
 
-## 5. 品質・検証ルール (Quality & Validation)
+## 5. 品質・検証ルール
 
 - **設計完了チェックリスト**:
     - [ ] 境界が URI で抽象化されているか。
     - [ ] ハーネスによって依存関係が完全に注入可能か（モック可能か）。
     - [ ] 可変状態 (Data) と不変のロジック (Logic) が分離されているか。
 
-## 6. トラブルシューティング (Troubleshooting)
+## 6. トラブルシューティング
 
 **コード生成で依存関係が解決しない**:
 WIT 定義におけるインターフェース間の依存が循環していないか確認してください。循環依存は Fireball の 3-Tier 原則に反します。

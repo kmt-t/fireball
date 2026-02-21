@@ -14,18 +14,18 @@ Phase 0では実装ではなく、ビルド基盤とvSoC形式検証を完了さ
 ### Phase 0.7: Static DI & Build System
 コンパイル時DIの確立とビルド基盤の整備。
 
-- [ ] **Harnessパターンの確定**: 全コンポーネントのハーネス設計
-- [ ] **静的DI機構**: テンプレート、マクロ、アロケータの連携方式
-- [ ] **WIT→C++自動生成（基本機能）**: コード生成スクリプトの基本実装
-- [ ] **Mesonビルドシステム**: 全ターゲット（ARM, RISC-V, x64 host）のビルド確認
+- [x] **Harnessパターンの確定**: 全コンポーネントのハーネス設計
+- [x] **静的DI機構**: テンプレート、マクロ、アロケータの連携方式
+- [x] **WIT→C++自動生成（基本機能）**: コード生成スクリプトの基本実装
+- [x] **Mesonビルドシステム**: 全ターゲット（ARM, RISC-V, x64 host）のビルド確認
 
 ### Phase 0.75: Constexpr Verification & Code Gen Enhancement
 コンパイル時計算の検証と自動生成ツールのconstexpr対応。
 
-- [ ] **コード生成ツールのconstexpr対応**: WIT→C++生成時にconstexpr属性を付与
-- [ ] **constexprメソッド特定**: どのメソッドをconstexprにすべきか分類
-- [ ] **コンパイル時計算検証**: constexpr関数が実際にコンパイル時評価されるか確認
-- [ ] **ルックアップテーブル生成**: constexprによる静的テーブル生成の実証
+- [x] **コード生成ツールのconstexpr対応**: WIT→C++生成時にconstexpr属性を付与
+- [x] **constexprメソッド特定**: どのメソッドをconstexprにすべきか分類
+- [x] **コンパイル時計算検証**: constexpr関数が実際にコンパイル時評価されるか確認
+- [x] **ルックアップテーブル生成**: constexprによる静的テーブル生成の実証
 
 ### Phase 0.8: vSoC TLA+ Verification & Core Component Modeling
 vSoCコアおよび基盤コンポーネントの形式検証（TLA+モデリング等）。ワイガヤ（2026-02-20）で抽出されたヤバい制約を中心に検証する。

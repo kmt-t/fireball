@@ -2,13 +2,13 @@ project('fireball', 'c', 'cpp',
   version : '0.1.0',
   default_options : [
     'c_std=c99',
-    'cpp_std=c++23',
+    'cpp_std=c++20',
     'warning_level=3',
     'buildtype=debug',
   ]
 )
 
-target = get_option('target_machine')
+target = get_option('fireball_target')
 if target == 'cortex-m33'
   target_flags = [
     '-target', 'arm-none-eabi',
@@ -17,6 +17,8 @@ if target == 'cortex-m33'
     '-fno-rtti',
     '-fno-exceptions',
   ]
+  qemu_extra_src = files('tools/qemu_startup.s')
+  target_link_flags = ['-T', meson.project_source_root() / 'tools/qemu_arm.ld']
 elif target == 'riscv32'
   target_flags = [
     '-target', 'riscv32-unknown-elf',
@@ -25,11 +27,15 @@ elif target == 'riscv32'
     '-fno-rtti',
     '-fno-exceptions',
   ]
+  qemu_extra_src = []
+  target_link_flags = []
 else
   target_flags = [
     '-fno-rtti',
     '-fno-exceptions',
   ]
+  qemu_extra_src = []
+  target_link_flags = []
 endif
 
 build_type = get_option('buildtype')
@@ -54,7 +60,7 @@ common_cpp_args = target_flags + [
 ] + release_args
 
 fireball_exe = executable('fireball',
-   srcfiles,
+   srcfiles + qemu_extra_src,
    include_directories : incdirs,
    c_args : target_flags + [
      '-D_POSIX_C_SOURCE=200809L',
@@ -67,37 +73,16 @@ fireball_exe = executable('fireball',
      '-DNO_MALLOC_STATS=1',
      '-DMMAP_CLEARS=0',
    ] + release_args,
-   cpp_args : common_cpp_args,
-   link_args : target_flags + ['-lstdc++exp'] + release_args,
+    cpp_args : common_cpp_args,
+   link_args : target_flags + ['-lstdc++exp'] + release_args + target_link_flags,
    install : true,
 )
 
-# test_allocator_exe = executable('test_allocator',
-#   files('tests/test_allocator.cxx', 'src/allocator/malloc.c'),
-#   include_directories : incdirs,
-#   c_args : ['-DMSPACES=1', '-DHAVE_MMAP=0', '-DHAVE_MORECORE=0'],
-#   cpp_args : common_cpp_args,
-#   link_args : ['-lstdc++exp'],
-# )
+test_constexpr_exe = executable('test_constexpr',
+  files('tests/test_constexpr.cxx') + qemu_extra_src,
+  include_directories : incdirs,
+  cpp_args : common_cpp_args,
+  link_args : target_flags + ['-lstdc++exp'] + release_args + target_link_flags,
+)
 
-# test('allocator_test', test_allocator_exe)
-
-# test_coos_exe = executable('test_coos',
-#   files('tests/test_coos.cxx', 'src/kernel/coos.cxx'),
-#   include_directories : incdirs,
-#   c_args : ['-DMSPACES=1', '-DHAVE_MMAP=0', '-DHAVE_MORECORE=0'],
-#   cpp_args : common_cpp_args,
-#   link_args : ['-lstdc++exp'],
-# )
-
-# test('coos_test', test_coos_exe)
-
-# test_jit_exe = executable('test_jit',
-#   files('tests/test_jit.cxx', 'src/vsoc/hotspot_detector.cxx'),
-#   include_directories : incdirs,
-#   c_args : ['-DMSPACES=1', '-DHAVE_MMAP=0', '-DHAVE_MORECORE=0'],
-#   cpp_args : common_cpp_args,
-#   link_args : ['-lstdc++exp'],
-# )
-
-# test('jit_test', test_jit_exe)
+test('constexpr_test', test_constexpr_exe)

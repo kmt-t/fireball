@@ -9,9 +9,9 @@
 #include <fireball_config.hxx>
 #include <cstdint>
 #include <string_view>
-#include <expected>
 #include <optional>
 #include <tuple>
+#include <concepts>
 
 namespace fireball {
 
@@ -41,7 +41,7 @@ public:
    * @pre: name is not empty && entry != 0
    * @post: result.is_ok() -> task_id > 0
    */
-  std::expected<os_task_id, sys_recovery_strategy> spawn(std::string_view name, mem_address entry, uint8_t priority) noexcept;
+  result<os_task_id, sys_recovery_strategy> spawn(std::string_view name, mem_address entry, uint8_t priority) noexcept;
 
   /**
    * Yields execution to the next ready task.
@@ -75,7 +75,7 @@ public:
    * Gets information about a task.
    * @pre: initialized
    */
-  std::expected<task_context_record, bool> get_task_info(os_task_id id) noexcept;
+  result<task_context_record, bool> get_task_info(os_task_id id) noexcept;
 
   /**
    * Main scheduling loop.
@@ -105,12 +105,12 @@ public:
    * Receives a message block from the channel (blocks if empty).
    * @post: msg ownership transferred to caller
    */
-  std::expected<ipc_message, sys_recovery_strategy> receive() noexcept;
+  result<ipc_message, sys_recovery_strategy> receive() noexcept;
 
   /**
    * Gets channel usage information.
    */
-  std::expected<uint32_t, bool> get_channel_info() noexcept;
+  result<uint32_t, bool> get_channel_info() noexcept;
 
 };
 
@@ -128,7 +128,7 @@ public:
    * @pre: size > 0
    * @post: result.is_ok() -> allocated_bytes == old(allocated_bytes) + size
    */
-  std::expected<mem_address, sys_recovery_strategy> allocate_block(mem_byte_count size) noexcept;
+  result<mem_address, sys_recovery_strategy> allocate_block(mem_byte_count size) noexcept;
 
   /**
    * Frees a previously allocated block.

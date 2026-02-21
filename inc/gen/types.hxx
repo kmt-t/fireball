@@ -7,9 +7,9 @@
 #include <fireball_config.hxx>
 #include <cstdint>
 #include <string_view>
-#include <expected>
 #include <optional>
 #include <tuple>
+#include <concepts>
 
 namespace fireball {
 
@@ -169,7 +169,7 @@ struct ipc_kv_pair {
  * @note FINALIZED: 8 * 8 = 64 bytes max per message. Fits in single cache line on most architectures.
  */
 struct ipc_message {
-  std::span<ipc_kv_pair> pairs;
+  data_range<ipc_kv_pair> pairs;
 };
 
 } // namespace fireball

@@ -40,7 +40,8 @@
 # debug information files
 *.dwo
 
-# Directries.
+# Misc.
+*.log
 .roo
 builddir*/
 states/

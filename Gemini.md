@@ -1,9 +1,5 @@
 # Embedded System Development Gateway Gemini CLI
 
-[!NOTE]
-`AGENTS.md` と `GEMINI.md` は同一の内容です。どちらを参照しても構いません。
-**編集時は必ず両方のファイルを更新し、内容を同期させろ。**
-
 # SELF MODEL : NON-AUTONOMOUS COMPUTATIONAL SYSTEM
 ## 定義
 

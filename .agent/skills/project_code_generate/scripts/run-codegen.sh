@@ -36,7 +36,11 @@ function cmd_build() {
         if [ "$arg" == "--test" ]; then RUN_TEST=true; fi
     done
 
-    meson setup "$BUILD_DIR" --wipe || meson setup "$BUILD_DIR"
+    export CC=clang
+    export CXX=clang++
+
+    rm -rf "$BUILD_DIR"
+    meson setup "$BUILD_DIR"
     ninja -C "$BUILD_DIR"
     if [ "$RUN_TEST" = true ]; then
         meson test -C "$BUILD_DIR" --verbose

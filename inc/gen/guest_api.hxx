@@ -8,9 +8,9 @@
 #include <fireball_config.hxx>
 #include <cstdint>
 #include <string_view>
-#include <expected>
 #include <optional>
 #include <tuple>
+#include <concepts>
 
 namespace fireball {
 

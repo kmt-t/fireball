@@ -56,7 +56,11 @@ def map_type(wit_type, types_list):
         # Reference to a type definition
         type_def = types_list[wit_type]
         if type_def.get('name'):
-            return to_snake_case(type_def['name'])
+            name_str = to_snake_case(type_def['name'])
+            docs = type_def.get('docs', {}).get('contents', '')
+            if type_def.get('kind') == 'resource' and '@concept' in docs:
+                return f"{name_str} auto&"
+            return name_str
         
         # Anonymous type
         kind = type_def.get('kind')
@@ -69,7 +73,7 @@ def map_type(wit_type, types_list):
                     ok_type = map_type(res['ok'], types_list)
                 if 'err' in res and res['err'] is not None:
                     err_type = map_type(res['err'], types_list)
-                return f"std::expected<{ok_type}, {err_type}>"
+                return f"result<{ok_type}, {err_type}>"
             elif 'option' in kind:
                 opt = kind['option']
                 val_type = map_type(opt, types_list)
@@ -79,16 +83,29 @@ def map_type(wit_type, types_list):
                 val_type = map_type(l, types_list)
                 if val_type == "uint8_t":
                     return "binary_view"
-                return f"std::span<{val_type}>"
+                return f"data_range<{val_type}>"
             elif 'tuple' in kind:
                 t_list = kind['tuple'].get('types', [])
                 t_names = [map_type(x, types_list) for x in t_list]
                 return f"std::tuple<{', '.join(t_names)}>"
             elif 'type' in kind:
                 return map_type(kind['type'], types_list)
-        
+            elif 'handle' in kind:
+                handle = kind['handle']
+                if 'borrow' in handle:
+                    inner = map_type(handle['borrow'], types_list)
+                    if "auto&" in inner: return inner
+                    return f"{inner}*"
+                elif 'own' in handle:
+                    inner = map_type(handle['own'], types_list)
+                    if "auto&" in inner: return inner
+                    return f"{inner}*"
+
         # Resource reference or other anonymous type
         if kind == 'resource':
+            docs = type_def.get('docs', {}).get('contents', '')
+            if type_def.get('name') and '@concept' in docs:
+                return f"{to_snake_case(type_def['name'])} auto&"
             return f"{to_snake_case(type_def['name'])}*"
             
         return "uintptr_t" # Fallback to integer address instead of void*
@@ -188,9 +205,10 @@ def generate_cpp(wit_json, output_dir):
             f.write("#include <fireball_config.hxx>\n")
             f.write("#include <cstdint>\n")
             f.write("#include <string_view>\n")
-            f.write("#include <expected>\n")
+            # f.write("#include <expected>\n") # Removed for C++20 compliance
             f.write("#include <optional>\n")
-            f.write("#include <tuple>\n\n")
+            f.write("#include <tuple>\n")
+            f.write("#include <concepts>\n\n")
             f.write("namespace fireball {\n\n")
             
             # --- Types ---
@@ -303,17 +321,28 @@ def generate_cpp(wit_json, output_dir):
                 res_name = res_def.get('name')
                 docs = res_def.get('docs', {}).get('contents', '')
                 
+                is_concept = False
+                if docs:
+                    for line in docs.split('\n'):
+                        if '@concept' in line:
+                            is_concept = True
+                            break
+
                 if docs:
                     f.write("/**\n")
                     for line in docs.split('\n'):
                         f.write(f" * {line}\n")
                     f.write(" */\n")
                 
-                f.write(f"class {to_snake_case(res_name)} {{\n")
-                f.write("public:\n")
+                if is_concept:
+                    f.write(f"template <typename T>\n")
+                    f.write(f"concept {to_snake_case(res_name)} = requires(T& t) {{\n")
+                else:
+                    f.write(f"class {to_snake_case(res_name)} {{\n")
+                    f.write("public:\n")
                 
                 # Constexpr constants in class scope
-                if docs:
+                if docs and not is_concept:
                     for line in docs.split('\n'):
                         if '@constexpr:' in line:
                             val_part = line.split('@constexpr:')[1].strip()
@@ -321,8 +350,9 @@ def generate_cpp(wit_json, output_dir):
                                 f.write(f"  static constexpr auto {val_part};\n")
 
                 # Constructor/Destructor
-                f.write(f"  {to_snake_case(res_name)}() = default;\n")
-                f.write(f"  ~{to_snake_case(res_name)}() = default;\n\n")
+                if not is_concept:
+                    f.write(f"  {to_snake_case(res_name)}() = default;\n")
+                    f.write(f"  ~{to_snake_case(res_name)}() = default;\n\n")
 
                 for method_name, func_def, is_static in resource_methods.get(res_idx, []):
                     params = func_def.get('params', [])
@@ -335,7 +365,7 @@ def generate_cpp(wit_json, output_dir):
                                 constexpr_body = line.split('@constexpr:')[1].strip()
                                 break
 
-                    if docs:
+                    if docs and not is_concept:
                         f.write("  /**\n")
                         for line in docs.split('\n'):
                             f.write(f"   * {line}\n")
@@ -355,20 +385,30 @@ def generate_cpp(wit_json, output_dir):
 
                     # Params
                     param_strs = []
+                    concept_args = []
                     for p in params:
                         p_name = to_snake_case(p['name'])
                         if p_name == "self":
                             continue
                         p_type = map_type(p['type'], types_list)
                         param_strs.append(f"{p_type} {p_name}")
+                        concept_args.append(f"std::declval<{p_type}>()")
 
                     prefix = "static " if is_static else ""
-                    if constexpr_body:
+                    
+                    if is_concept:
+                        args_str = ", ".join(concept_args)
+                        f.write(f"  {{ t.{to_snake_case(method_name)}({args_str}) }} -> std::convertible_to<{ret_type}>;\n")
+                    elif constexpr_body:
+                        # Convert to constexpr function
                         f.write(f"  {prefix}constexpr {ret_type} {to_snake_case(method_name)}({', '.join(param_strs)}) noexcept {{ {constexpr_body} }}\n\n")
                     else:
                         f.write(f"  {prefix}{ret_type} {to_snake_case(method_name)}({', '.join(param_strs)}) noexcept;\n\n")
-                
-                f.write("};\n\n")
+
+                if is_concept:
+                    f.write("};\n\n")
+                else:
+                    f.write("};\n\n")
 
             # --- Functions (Free-standing) ---
             for func_name, func_def in free_functions:

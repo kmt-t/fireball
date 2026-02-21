@@ -190,19 +190,23 @@ interface vsoc {
         reserve-static-regions: func(pages-count: u32);
     }
 
+    /// Tier 2: vSoC Harness Concept
+    /// @concept
+    resource vsoc-harness {
+        loader: func() -> module-loader;
+        vmmio: func() -> vmmio-manager;
+        memory: func() -> mem-address;
+        irq-mappings: func() -> list<irq-mapping-entry>;
+    }
+
     /// Tier 2: vSoC Runtime
     /// @inv: ram_size == FB_CONF_GUEST_RAM_SIZE
     resource system-runtime {
         /// Initializes the runtime environment with injected dependencies.
         /// @pre: !initialized
-        /// @pre: loader, vmmio, memory are valid resource handles
+        /// @pre: harness is valid
         /// @post: initialized && dependencies are bound
-        initialize: func(
-            loader: module-loader,
-            vmmio: vmmio-manager,
-            memory: mem-address,
-            irq-mappings: list<irq-mapping-entry>
-        ) -> operation-result;
+        initialize: func(harness: vsoc-harness) -> operation-result;
 
         /// Steps execution until yield or trap.
         /// @pre: initialized

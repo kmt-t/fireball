@@ -5,7 +5,6 @@
  */
 #include <iostream>
 #include <sstream>
-#include <stacktrace>
 #include <utils/backtrace.hxx>
 
 namespace fireball::utils {
@@ -15,13 +14,8 @@ namespace {
 std::string make_massage(const std::string& msg) {
   std::ostringstream oss;
   oss << "message: " << msg << "\n";
-  auto trace = std::stacktrace::current();
-  if (!trace.empty()) {
-    oss << "trace:\n";
-    for (const auto& frame : trace) {
-      oss << "  " << frame << std::endl;
-    }
-  }
+  // stacktrace is C++23, stubbing out for C++20 compliance
+  oss << "[stacktrace not available in C++20]\n";
   return oss.str();
 }
 

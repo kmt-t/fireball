@@ -19,46 +19,57 @@ description: >-
 - **ゼロコスト抽象化**: `{StaticDI}` と `{ComponentHarness}` により、メモリとCPUのオーバーヘッドを発生させずにテスト容易性を確保します。
 - **実装への一意なマッピング**: `{Type_Vocabulary}` により、自然言語の曖昧さを排除し、WIT から C++ への正確な導出を保証します。
 
-## 2. 環境・前提条件
-
-アーキテクチャ設計自体は環境に依存しませんが、関連するコード生成や検証ツールは **Dockerコンテナ** 内で実行されます。詳細は [Docker Workaround](.agent/skills/general_docker_run/SKILL.md) を参照してください。
-
-## 3. 使用方法
+## 2. 思考のガイドライン (使用方法)
 
 具体的な指示やコマンドではなく、設計時の「思考のガイドライン」として活用します。
 
-### 3.1 階層分離の判断 (3-Tier Decision)
-1. **Cross System Boundary?** → Yes: **Tier 1** (IoC / URI-DI)
-2. **High Complexity / Testing Needed?** → Yes: **Tier 2** (Harness / Stateless Interface)
-3. **Otherwise** → **Tier 3** (Natural OO)
+### 2.1 階層分離の判断 (3-Tier Decision)
 
-### 3.2 設計の詳細度 (Risk-based Tiering)
-- **Tier 1**: 概要、Contract、主要シーケンス（低リスク）
-- **Tier 2**: Tier 1 + 構成要素、状態遷移図（中リスク）
-- **Tier 3**: Tier 2 + 直交表、コンセプトコード（高リスク）
+| 条件 | 判定結果 | 対象コンポーネントの例・性質 |
+| :--- | :--- | :--- |
+| **Cross System Boundary?** | **Tier 1** | IoC / URI-DI, 外部システムとの境界 |
+| **High Complexity / Testing Needed?** | **Tier 2** | Stateless Interface, 複雑なビジネスロジック (複雑な場合はHarnessでデコンポジション) |
+| **Otherwise** | **Tier 3** | 一般的なオブジェクト指向 (カプセル化された内部状態) |
 
-## 4. 構成要素の詳細
+### 2.2 設計の詳細度 (Risk-based Tiering)
 
-### 設計原則 (Core Axioms)
+各階層ごとに要求される設計の「深さ」を定義します。
+
+- **Tier 1 (低リスク)**: 概要、Contract (契約)、主要シーケンス
+- **Tier 2 (中リスク)**: Tier 1 の成果物 ＋ 構成要素、状態遷移図
+- **Tier 3 (高リスク)**: Tier 2 の成果物 ＋ 直交表、コンセプトコード
+
+## 3. 構成要素と設計原則
+
+### 3.1 設計原則 (Core Axioms)
+
 - **WIT-First**: 主要境界のインターフェースは WIT で定義する。
 - **IoC (Inversion of Control)**: インターフェイス仕様は利用側が定義する。
 - **Concept-Based Dependency**: C++ 側では仮想関数を使わず、テンプレートと Concept による静的 DI を行う。
 
-### 関連ドキュメント
-- **[general_design_rule.md](general_design_rule.md)**: 全体設計の核心哲学。
+### 3.2 関連ドキュメント
+
+- **[general_design_rule.md](.agent/rules/general_design_rule.md)**: 全体設計の核心哲学。
 - **[embedded_cpp_rule.md](.agent/rules/embedded_cpp_rule.md)**: 組み込み特化の C++ コーディング規約。
 
-## 5. 品質・検証ルール
+## 4. 品質・検証ルール
 
-- **設計完了チェックリスト**:
-    - [ ] 境界が URI で抽象化されているか。
-    - [ ] ハーネスによって依存関係が完全に注入可能か（モック可能か）。
-    - [ ] 可変状態 (Data) と不変のロジック (Logic) が分離されているか。
+設計完了時のチェックポイントです。
+
+- [ ] 境界が URI で抽象化されているか。
+- [ ] (Tier 2で複雑な場合) ハーネスによってデコンポジションされ、依存関係が完全に注入可能か（モック可能か）。
+- [ ] 可変状態 (Data) と不変のロジック (Logic) が分離されているか。
+
+## 5. 環境・前提条件
+
+アーキテクチャ設計自体は環境に依存しませんが、関連するコード生成や検証ツールは **Dockerコンテナ** 内で実行されます。詳細は [Docker Workaround](.agent/skills/general_docker_run/SKILL.md) を参照してください。
 
 ## 6. トラブルシューティング
 
-**コード生成で依存関係が解決しない**:
-WIT 定義におけるインターフェース間の依存が循環していないか確認してください。循環依存は Fireball の 3-Tier 原則に反します。
+> [!WARNING]
+> **コード生成で依存関係が解決しない場合**
+> WIT 定義におけるインターフェース間の依存が循環していないか確認してください。循環依存は Fireball の 3-Tier 原則に反します。
 
-**実行時のオーバーヘッドが大きい**:
-仮想関数 (vtable) を多用していないか確認してください。特に Tier 2 内部での依存解決には Concept による静的 DI を優先してください。
+> [!WARNING]
+> **実行時のオーバーヘッドが大きい場合**
+> 仮想関数 (vtable) を多用していないか確認してください。特に Tier 2 内部での依存解決には Concept による静的 DI を優先してください。

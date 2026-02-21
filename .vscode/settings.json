@@ -12,4 +12,8 @@
     "editor.formatOnSave": true,
     "editor.formatOnPaste": true,
     "mesonbuild.configureOnOpen": false,
+    "context": {
+      "fileName": ["AGENTS.md", "GEMINI.md"]
+    }
 }
+

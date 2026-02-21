@@ -9,9 +9,9 @@
 #include <fireball_config.hxx>
 #include <cstdint>
 #include <string_view>
-#include <expected>
 #include <optional>
 #include <tuple>
+#include <concepts>
 
 namespace fireball {
 
@@ -57,7 +57,7 @@ public:
    * @pre: dest != 0
    * @post: result.is_ok() -> read_bytes <= dest.size
    */
-  std::expected<uint32_t, sys_recovery_strategy> read(hal_device_id id, mem_shm_id dest) noexcept;
+  result<uint32_t, sys_recovery_strategy> read(hal_device_id id, mem_shm_id dest) noexcept;
 
   /**
    * Writes data from shared memory to a physical device.
@@ -76,19 +76,19 @@ public:
   /**
    * Gets information about a device.
    */
-  std::expected<device_metadata_record, bool> get_device_info(hal_device_id id) noexcept;
+  result<device_metadata_record, bool> get_device_info(hal_device_id id) noexcept;
 
   /**
    * Gets information about a buffer.
    */
-  std::expected<buffer_metadata_record, bool> get_buffer_info(mem_shm_id id) noexcept;
+  result<buffer_metadata_record, bool> get_buffer_info(mem_shm_id id) noexcept;
 
   /**
    * Acquires a fixed-size buffer for I/O.
    * @pre: size <= FB_CONF_HAL_BUFFER_SIZE
    * @post: result.is_ok() -> active_buffers == old(active_buffers) + 1
    */
-  std::expected<mem_shm_id, sys_recovery_strategy> acquire_buffer(uint32_t size) noexcept;
+  result<mem_shm_id, sys_recovery_strategy> acquire_buffer(uint32_t size) noexcept;
 
   /**
    * Releases an I/O buffer.
@@ -115,7 +115,7 @@ public:
   /**
    * Gets the state of a physical pin.
    */
-  std::expected<bool, sys_recovery_strategy> get_pin(uint32_t pin) noexcept;
+  result<bool, sys_recovery_strategy> get_pin(uint32_t pin) noexcept;
 
 };
 
@@ -168,7 +168,7 @@ public:
   /**
    * Gets the received buffer from the master write.
    */
-  std::expected<mem_shm_id, sys_recovery_strategy> get_received() noexcept;
+  result<mem_shm_id, sys_recovery_strategy> get_received() noexcept;
 
   /**
    * Subscribes to bus events.
@@ -217,7 +217,7 @@ public:
 
   operation_result poll_packet() noexcept;
 
-  std::expected<mem_shm_id, sys_recovery_strategy> get_parsed_command() noexcept;
+  result<mem_shm_id, sys_recovery_strategy> get_parsed_command() noexcept;
 
 };
 

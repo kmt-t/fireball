@@ -9,9 +9,9 @@
 #include <fireball_config.hxx>
 #include <cstdint>
 #include <string_view>
-#include <expected>
 #include <optional>
 #include <tuple>
+#include <concepts>
 
 namespace fireball {
 
@@ -97,7 +97,7 @@ public:
    * @pre: size > 0 && size <= FB_CONF_MAX_ALLOC_SIZE
    * @post: result.is_ok() -> block.owner == caller_task_id
    */
-  std::expected<mem_address, sys_recovery_strategy> allocate(mem_byte_count size, partition_category category) noexcept;
+  result<mem_address, sys_recovery_strategy> allocate(mem_byte_count size, partition_category category) noexcept;
 
   /**
    * Allocates a shared memory block for IPC transfer.
@@ -106,14 +106,14 @@ public:
    * @pre: size > 0 && size <= FB_CONF_MAX_ALLOC_SIZE
    * @post: result.is_ok() -> resource.owner == caller_task_id
    */
-  std::expected<uintptr_t, sys_recovery_strategy> allocate_shared(mem_byte_count size) noexcept;
+  result<shared_block*, sys_recovery_strategy> allocate_shared(mem_byte_count size) noexcept;
 
   /**
    * Claims ownership of a shared memory block received via IPC.
    * @pre: id was produced by shared-memory.release()
    * @post: caller becomes the new owner. Returned resource is valid.
    */
-  std::expected<uintptr_t, sys_recovery_strategy> claim(mem_shm_id id) noexcept;
+  result<shared_block*, sys_recovery_strategy> claim(mem_shm_id id) noexcept;
 
   /**
    * Releases a local memory block (kernel/task) by address.
@@ -128,7 +128,7 @@ public:
    * Gets information about a partition.
    * @pre: initialized
    */
-  std::expected<partition_metadata_record, bool> get_partition_info(partition_category category) noexcept;
+  result<partition_metadata_record, bool> get_partition_info(partition_category category) noexcept;
 
 };
 

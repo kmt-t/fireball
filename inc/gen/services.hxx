@@ -9,9 +9,9 @@
 #include <fireball_config.hxx>
 #include <cstdint>
 #include <string_view>
-#include <expected>
 #include <optional>
 #include <tuple>
+#include <concepts>
 
 namespace fireball {
 
@@ -28,13 +28,13 @@ public:
    * Binds a service instance by its system index.
    * @pre: sid < FB_CONF_ROUTER_MAX_SERVICES
    */
-  std::expected<ipc_channel_id, sys_recovery_strategy> bind(sys_service_id sid, sys_uri_handle address) noexcept;
+  result<ipc_channel_id, sys_recovery_strategy> bind(sys_service_id sid, sys_uri_handle address) noexcept;
 
   /**
    * Connects to a service and gets its system-wide ID.
    * @pre: uri_handle is not empty
    */
-  std::expected<sys_service_id, sys_recovery_strategy> connect(sys_uri_handle address) noexcept;
+  result<sys_service_id, sys_recovery_strategy> connect(sys_uri_handle address) noexcept;
 
   /**
    * Sends a Key-Value message block.
@@ -59,7 +59,7 @@ public:
    * @post(empty && !send_waiting): Receiver becomes BLOCKED_RECV.
    * @derives: ipc_handoff.tla Recv(t) Cases 4-6
    */
-  std::expected<ipc_message, sys_recovery_strategy> receive(ipc_channel_id chan) noexcept;
+  result<ipc_message, sys_recovery_strategy> receive(ipc_channel_id chan) noexcept;
 
 };
 
@@ -87,7 +87,7 @@ public:
    * @post(ok): returns format string for the given id
    * @post(err): id not found
    */
-  std::expected<std::string_view, bool> lookup(uint32_t id) noexcept;
+  result<std::string_view, bool> lookup(uint32_t id) noexcept;
 
 };
 
@@ -104,7 +104,7 @@ public:
    * @pre: engine is a valid resource handle
    * @post: logger is ready for use
    */
-  operation_result init_logger(uintptr_t engine) noexcept;
+  operation_result init_logger(log_engine* engine) noexcept;
 
   /**
    * Logs a message (delegates to engine).

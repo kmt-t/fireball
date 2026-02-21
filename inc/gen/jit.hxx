@@ -9,9 +9,9 @@
 #include <fireball_config.hxx>
 #include <cstdint>
 #include <string_view>
-#include <expected>
 #include <optional>
 #include <tuple>
+#include <concepts>
 
 namespace fireball {
 
@@ -39,8 +39,9 @@ public:
 
   /**
    * Gets the current 2-bit state of a card.
+   * @constexpr: return 0;
    */
-  uint8_t get_card_state(mem_address pc) noexcept;
+  constexpr uint8_t get_card_state(mem_address pc) noexcept { return 0; }
 
 };
 
@@ -58,26 +59,26 @@ public:
    * Lookup native trace address.
    * @post: result.is_ok() -> result_addr != 0
    */
-  std::expected<mem_address, bool> get_trace_address(mem_address pc) noexcept;
+  result<mem_address, bool> get_trace_address(mem_address pc) noexcept;
 
   /**
    * Registers a new JIT entry.
    * @pre: native_offset < FB_CONF_JIT_CACHE_SIZE
    * @post: lookup(pc).is_ok()
    */
-  void register(mem_address pc, mem_address native_offset) noexcept;
+  void register_entry(mem_address pc, mem_address native_offset) noexcept;
 
   /**
    * Promotes an entry from Old to Active cache.
    * @pre: pc exists in Old bank
    * @post: lookup(pc).is_ok() in Active bank
    */
-  std::expected<mem_address, bool> promote(mem_address pc) noexcept;
+  result<mem_address, bool> promote(mem_address pc) noexcept;
 
   /**
    * Gets the range in the entry table for a given card group.
    */
-  std::expected<std::tuple<uint32_t, uint32_t>, bool> get_search_range(mem_address pc) noexcept;
+  result<std::tuple<uint32_t, uint32_t>, bool> get_search_range(mem_address pc) noexcept;
 
 };
 
@@ -99,8 +100,20 @@ public:
   /**
    * Resolves a template-id from a WASM opcode or pattern.
    */
-  std::expected<uint32_t, bool> lookup_template(uint8_t opcode) noexcept;
+  result<uint32_t, bool> lookup_template(uint8_t opcode) noexcept;
 
+};
+
+/**
+ * Tier 2: JIT Harness Concept
+ * @concept
+ */
+template <typename T>
+concept jit_harness = requires(T& t) {
+  { t.config() } -> std::convertible_to<jit_setup_record>;
+  { t.detector() } -> std::convertible_to<hotspot_detector_unit*>;
+  { t.index() } -> std::convertible_to<jit_entry_index*>;
+  { t.engine() } -> std::convertible_to<patch_engine_unit*>;
 };
 
 /**
@@ -116,16 +129,16 @@ public:
   /**
    * Initializes the JIT environment with injected dependencies.
    * @pre: !initialized
-   * @pre: detector, index, engine are valid resource handles
+   * @pre: harness is valid
    * @post: initialized && dependencies are bound
    */
-  operation_result init_compiler(jit_setup_record config, uintptr_t detector, uintptr_t index, uintptr_t engine) noexcept;
+  operation_result init_compiler(jit_harness auto& harness) noexcept;
 
   /**
    * Fast lookup for execution.
    * @pre: initialized
    */
-  std::expected<mem_address, bool> get_trace_address(mem_address pc) noexcept;
+  result<mem_address, bool> get_trace_address(mem_address pc) noexcept;
 
   /**
    * Batch compilation of hotspots.

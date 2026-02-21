@@ -9,9 +9,9 @@
 #include <fireball_config.hxx>
 #include <cstdint>
 #include <string_view>
-#include <expected>
 #include <optional>
 #include <tuple>
+#include <concepts>
 
 namespace fireball {
 
@@ -53,42 +53,42 @@ public:
   /**
    * Creates a stream from a binary view.
    */
-  static uintptr_t from_view(binary_view view) noexcept;
+  static binary_stream* from_view(binary_view view) noexcept;
 
   /**
    * Reads primitive types.
    */
-  std::expected<uint8_t, bool> read_u8() noexcept;
+  result<uint8_t, bool> read_u8() noexcept;
 
-  std::expected<int8_t, bool> read_s8() noexcept;
+  result<int8_t, bool> read_s8() noexcept;
 
-  std::expected<uint16_t, bool> read_u16() noexcept;
+  result<uint16_t, bool> read_u16() noexcept;
 
-  std::expected<int16_t, bool> read_s16() noexcept;
+  result<int16_t, bool> read_s16() noexcept;
 
-  std::expected<uint32_t, bool> read_u32() noexcept;
+  result<uint32_t, bool> read_u32() noexcept;
 
-  std::expected<int32_t, bool> read_s32() noexcept;
+  result<int32_t, bool> read_s32() noexcept;
 
-  std::expected<uint64_t, bool> read_u64() noexcept;
+  result<uint64_t, bool> read_u64() noexcept;
 
-  std::expected<int64_t, bool> read_s64() noexcept;
+  result<int64_t, bool> read_s64() noexcept;
 
   /**
    * Reads LEB128 encoded integers.
    */
-  std::expected<uint32_t, bool> read_leb128_u32() noexcept;
+  result<uint32_t, bool> read_leb128_u32() noexcept;
 
-  std::expected<int32_t, bool> read_leb128_s32() noexcept;
+  result<int32_t, bool> read_leb128_s32() noexcept;
 
-  std::expected<uint64_t, bool> read_leb128_u64() noexcept;
+  result<uint64_t, bool> read_leb128_u64() noexcept;
 
-  std::expected<int64_t, bool> read_leb128_s64() noexcept;
+  result<int64_t, bool> read_leb128_s64() noexcept;
 
   /**
    * Reads a block of data.
    */
-  std::expected<binary_view, bool> read_bytes(mem_byte_count len) noexcept;
+  result<binary_view, bool> read_bytes(mem_byte_count len) noexcept;
 
   /**
    * Remaining bytes in the stream.
@@ -113,12 +113,12 @@ public:
   /**
    * Returns a stream for decoding local variables.
    */
-  uintptr_t get_locals_stream() noexcept;
+  binary_stream* get_locals_stream() noexcept;
 
   /**
    * Returns a stream for the bytecode instructions.
    */
-  uintptr_t get_code_stream() noexcept;
+  binary_stream* get_code_stream() noexcept;
 
 };
 
@@ -138,7 +138,7 @@ public:
   /**
    * Returns a stream for the initialization expression.
    */
-  uintptr_t get_init_expr_stream() noexcept;
+  binary_stream* get_init_expr_stream() noexcept;
 
 };
 
@@ -154,24 +154,24 @@ public:
   /**
    * Gets the raw ROM metadata for a specific section.
    */
-  std::expected<wasm_section_view, bool> get_section(section_category stype) noexcept;
+  result<wasm_section_view, bool> get_section(section_category stype) noexcept;
 
   /**
    * Lookups an exported function index by name.
    */
-  std::expected<uint32_t, bool> lookup_export_func(std::string_view name) noexcept;
+  result<uint32_t, bool> lookup_export_func(std::string_view name) noexcept;
 
   /**
    * Gets an accessor for a specific function.
    * @pre: func_idx is valid
    */
-  std::expected<uintptr_t, bool> get_function(uint32_t func_idx) noexcept;
+  result<function_accessor*, bool> get_function(uint32_t func_idx) noexcept;
 
   /**
    * Gets an accessor for a specific global.
    * @pre: global_idx is valid
    */
-  std::expected<uintptr_t, bool> get_global(uint32_t global_idx) noexcept;
+  result<global_accessor*, bool> get_global(uint32_t global_idx) noexcept;
 
 };
 
@@ -190,14 +190,14 @@ public:
    * @post: result.is_ok() -> module_view is valid
    * @post: loaded_module_count incremented by 1
    */
-  std::expected<uintptr_t, sys_recovery_strategy> prepare(binary_view wasm) noexcept;
+  result<wasm_module_view*, sys_recovery_strategy> prepare(binary_view wasm) noexcept;
 
   /**
    * Loads a module's linear memory into guest RAM.
    * @pre: module is valid
    * @post: initial memory pages allocated and initialized
    */
-  operation_result load(uintptr_t module) noexcept;
+  operation_result load(wasm_module_view* module) noexcept;
 
   /**
    * Resolves cross-module imports by scanning import section and linking
@@ -207,7 +207,7 @@ public:
    * @post(err): unresolved import found. Module remains loaded but not executable.
    * @derives: loader.md §4.1 Dependency Resolution
    */
-  operation_result resolve_imports(uintptr_t module) noexcept;
+  operation_result resolve_imports(wasm_module_view* module) noexcept;
 
   /**
    * Unloads a module and releases associated resources.
@@ -218,12 +218,12 @@ public:
    *        occurs when unloading in reverse order of loading.
    * @derives: loader.md §4.2 state: Ready -> Idle: unload
    */
-  operation_result unload(uintptr_t module) noexcept;
+  operation_result unload(wasm_module_view* module) noexcept;
 
   /**
    * Lookups a loaded module from the registry.
    */
-  std::expected<uintptr_t, bool> lookup(std::string_view name) noexcept;
+  result<wasm_module_view*, bool> lookup(std::string_view name) noexcept;
 
 };
 
@@ -265,6 +265,18 @@ public:
 };
 
 /**
+ * Tier 2: vSoC Harness Concept
+ * @concept
+ */
+template <typename T>
+concept vsoc_harness = requires(T& t) {
+  { t.loader() } -> std::convertible_to<module_loader*>;
+  { t.vmmio() } -> std::convertible_to<vmmio_manager*>;
+  { t.memory() } -> std::convertible_to<mem_address>;
+  { t.irq_mappings() } -> std::convertible_to<data_range<irq_mapping_entry>>;
+};
+
+/**
  * Tier 2: vSoC Runtime
  * @inv: ram_size == FB_CONF_GUEST_RAM_SIZE
  */
@@ -276,10 +288,10 @@ public:
   /**
    * Initializes the runtime environment with injected dependencies.
    * @pre: !initialized
-   * @pre: loader, vmmio, memory are valid resource handles
+   * @pre: harness is valid
    * @post: initialized && dependencies are bound
    */
-  operation_result initialize(uintptr_t loader, uintptr_t vmmio, mem_address memory, std::span<irq_mapping_entry> irq_mappings) noexcept;
+  operation_result initialize(vsoc_harness auto& harness) noexcept;
 
   /**
    * Steps execution until yield or trap.
@@ -287,7 +299,7 @@ public:
    * @pre: state == running || state == halted
    * @post: result.is_ok() -> state updated
    */
-  std::expected<execution_state_category, sys_recovery_strategy> step() noexcept;
+  result<execution_state_category, sys_recovery_strategy> step() noexcept;
 
   /**
    * Notifies a virtual interrupt to the guest.
@@ -322,7 +334,7 @@ public:
    * @post(ok): state == ready || state == trapped (Normal execution or Trap)
    * @post(err): recovery_strategy != ignore (System failure must be handled)
    */
-  std::expected<execution_state_category, sys_recovery_strategy> step(uintptr_t ctx) noexcept;
+  result<execution_state_category, sys_recovery_strategy> step(system_runtime* ctx) noexcept;
 
 };
 

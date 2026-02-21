@@ -1,1 +1,1 @@
-option('target_machine', type : 'combo', choices : ['native', 'cortex-m33', 'riscv32'], value : 'native', description : 'Target architecture for building')
+option('fireball_target', type : 'combo', choices : ['native', 'cortex-m33', 'riscv32'], value : 'native', description : 'Target architecture for building')

@@ -35,6 +35,7 @@ interface jit {
         process-history: func();
         
         /// Gets the current 2-bit state of a card.
+        /// @constexpr: return 0;
         get-card-state: func(pc: mem-address) -> u8;
     }
 
@@ -49,7 +50,7 @@ interface jit {
         /// Registers a new JIT entry.
         /// @pre: native_offset < FB_CONF_JIT_CACHE_SIZE
         /// @post: lookup(pc).is_ok()
-        register: func(pc: mem-address, native-offset: mem-address);
+        register-entry: func(pc: mem-address, native-offset: mem-address);
         
         /// Promotes an entry from Old to Active cache.
         /// @pre: pc exists in Old bank
@@ -71,20 +72,24 @@ interface jit {
         lookup-template: func(opcode: u8) -> result<u32, bool>;
     }
 
+    /// Tier 2: JIT Harness Concept
+    /// @concept
+    resource jit-harness {
+        config: func() -> jit-setup-record;
+        detector: func() -> hotspot-detector-unit;
+        index: func() -> jit-entry-index;
+        engine: func() -> patch-engine-unit;
+    }
+
     /// Tier 2: JIT Compiler Manager
     /// @inv: active_bank.cache_offset <= FB_CONF_JIT_CACHE_SIZE
     /// @inv: old_bank.cache_offset <= FB_CONF_JIT_CACHE_SIZE
     resource compiler-unit {
         /// Initializes the JIT environment with injected dependencies.
         /// @pre: !initialized
-        /// @pre: detector, index, engine are valid resource handles
+        /// @pre: harness is valid
         /// @post: initialized && dependencies are bound
-        init-compiler: func(
-            config: jit-setup-record,
-            detector: hotspot-detector-unit,
-            index: jit-entry-index,
-            engine: patch-engine-unit
-        ) -> operation-result;
+        init-compiler: func(harness: jit-harness) -> operation-result;
 
         /// Fast lookup for execution.
         /// @pre: initialized

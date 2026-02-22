@@ -73,7 +73,15 @@ Key-Valueペアを複数集約した通信の基本単位。 `{TypeSafeMessaging
 ### 4.1 アルゴリズム
 - **サービス検索**: `constexpr` でソートされたURI文字列配列に対し、二分探索を用いることで O(log N) でチャンネルIDを取得する。 `{LowLatencyLookup}`
 - **インデックス付き検索**: `indexed_array_adapter` は、元のデータの順序を変えずに、インデックス配列をソートすることで高速な二分探索を実現する。 `{AccessDictionary}`
-- **所有権移譲**: メッセージ内の `kv_pair` に共有メモリIDが含まれる場合、送信側タスクから受信側タスクへ `co_value` の所有権を自動的に移譲し、ゼロコピー転送を実現する。 `{OwnershipTransfer}` `{IPC_ZeroCopy}`
+- **所有権移譲 (Zero-Copy Handoff)**: `{OwnershipTransfer}` `{IPC_ZeroCopy}`
+    1. **Revoke**: 送信側タスクの権限を無効化し、リソースを `In-flight` 状態にする。
+    2. **Enqueue**: 受信側チャネルのキューへ Push。
+        - **Rollback**: キュー満杯時は送信失敗とし、所有権を直ちに送信側に返却（Restore）する。 `{Challenge_CspHandoffStarvation}`
+    3. **Grant**: 受信側タスクがメッセージをデキューした瞬間に権限を付与。
+- **異常時リカバリ (Drop Handler)**: `{IPC_DropHandler}`
+    - メッセージがキュー内で滞留中に送信先が Kill された場合、キューのデストラクタ（Dropハンドラ）が In-flight リソースを強制回収し、リークを防止する。
+
+TODO(Phase 0.8): IPC Router Deadlock Verification - 厳格なノンブロッキング送信と、所有権巻き戻しロジックによるデッドロック不在を TLA+ で検証する。
 
 ### 4.2 状態遷移図
 ```mermaid

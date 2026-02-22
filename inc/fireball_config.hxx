@@ -39,7 +39,7 @@ static constexpr std::uint32_t FB_CONF_JIT_MAX_TRACKED_PCS = 32U;  // Frequency 
 static constexpr std::uint32_t FB_CONF_GUEST_RAM_BASE = 0x00000000U;
 static constexpr std::uint32_t FB_CONF_GUEST_RAM_SIZE = 8192U;
 static constexpr std::uint32_t FB_CONF_VMMIO_BASE = 0x40000000U;
-static constexpr std::uint32_t FB_CONF_VMMIO_MAX_REGIONS = 8U;
+static constexpr std::uint32_t FB_CONF_VMMIO_MAX_REGIONS = 16U;
 
 // Logging
 static constexpr std::uint32_t FB_CONF_LOG_BUFFER_SIZE = 256U;

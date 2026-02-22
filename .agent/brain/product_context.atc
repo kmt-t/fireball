@@ -1,97 +1,50 @@
 [Memory: product_context]
 [Invariants]
   □ Design Truth := docs/requires (Natural Language is the source of Design Intent)
-  □ Interface Truth := WIT (Canonical Interface Definition derived from Design Truth)
+  □ Architectural Logic := Step 0 (SysML Static/Dynamic/Parametric)
+  □ Formal Truth := Step 1-2 (WIT/TLA+ Canonical Specification)
+  □ Implemented Truth := Step 3-4 (Codegen/Test derived from spec)
   □ ∀logic ∈ ComplexStateMachines : verified_by(logic, TLA+) (@see .agent/workflows/dev_cycle_run.md)
   □ ∀c ∈ Components : is_tier(c, 2) ⇒ matches_contract(c, harness_pattern) ∧ is_pure_static(c) (@see docs/architecture/concept_harness.md)
   □ ∀f ∈ funs(Tier2) : ¬virtual(f) ∧ ¬override(f) (@see .agent/rules/embedded_cpp_rule.md)
   □ ∀m ∈ Allocations : ¬dynamic(m) ∧ is_heap_less(m) (@see .agent/skills/embedded_cpp_check/SKILL.md §メモリ管理パターン)
 
+[Design-Workflow: VDD]
+  - Step 0 (Bonsai Design): Requirements → NL → SysML (BDD/SD/PAR). Mandatory Friction Audit.
+  - Step 1-2 (Formal Verification): WIT Contract + TLA+ Invariants. Gate 2 Approval.
+  - Step 3-4 (Derivation & Verification): Codegen implementation and Unit Tests derived from spec.
+  - DoD Evidence Path: /inc/core/*.hxx (Generated from WIT). @source docs/backlog/wbs_tier2.md
+
 [Design-Patterns]
   - Harness (Tier 2): composition(TemplateInjection) ∧ cost(vtable) == 0 (@see docs/architecture/concept_harness.md)
-  - Recovery: ∀f ∈ API : return_type(f) == result<T, recovery_strategy> (@see .agent/skills/embedded_cpp_check/SKILL.md §エラーハンドリング)
-  - Layout: ThinGlueLayer(WIT, C++) ∧ FlatInterface(Components) (@see .agent/rules/general_design_rule.md §ThinGlueLayer, §FlatInterface)
   - vMMIO-Model: ALL host-guest data exchange goes through vMMIO.
-      Physical registers (GPIO), shared memory, syscall buffers — everything.
-      @rationale ONE mechanism for everything. No IPC for data, no separate pointer validation.
       @mechanism guest_access(addr) → permission_check(addr) → direct_physical_access(addr)
       @inv ∀access ∈ HostGuestBoundary : mediated_by(access) == vMMIO_permission_table
-      @inv ∀addr : permitted(addr) ⇒ direct_access(addr); ¬permitted(addr) ⇒ reject(addr)
-      @note vsoc_validate_ptr IS the permission check, not a separate mechanism.
-            Security model has exactly ONE gate. No layering, no special cases.
-      @paths PathA: guest load/store(vMMIO_addr) → permission_table → direct_access
-             PathB: guest fireball_call(id, args) → host proxy → vMMIO → permission_table → direct_access
-      @note fireball_call = vMMIO proxy for languages that cannot access physical addresses.
-            It wraps ALL vMMIO functionality, not just specific operations.
-      @layout PASSTHROUGH region: page 12288, 4096 pages = 256MB for physical address mapping
-              physical_addr = passthrough_base + (guest_addr - passthrough_region_start)
-              passthrough_base is in vm-config (ARM Cortex-M default: 0x4000_0000)
-              Total vMMIO usage: ~1GB / 4GB wasm32 space → 3GB headroom
-      @note 256MB > any realistic 32-bit MCU physical memory (Cortex-M7+SDRAM ≈ 32MB max).
-            No new 32-bit processor will ship with 256MB+. This is effectively full coverage.
-      @fallback wasm64 exists as theoretical escape hatch; not expected to be needed.
-
-[Resolved-Frictions]
-  - wit-syntax: ∀id ∈ WIT_Identifiers : ¬contains(id, "_") ∧ contains(id, "-")
-  - cross-pkg: ∀r ∈ CrossPackageResources : type(r) == address
 
 [Physical-Time-Model]
-  @purpose Agent must understand: it operates in minutes, the human operates in days.
-           The asymmetry is not a bottleneck — it is the architecture of this collaboration.
-
   - PROJECT_START := 2026-01-11
-  - PHASE0_DEADLINE := 2026-03-31 (design phase, extended 2026/01/21)
-  - PHASE1_DEADLINE := 2026-06-30 (vSoC implementation)
-  - CURRENT_PHASE := Phase0 (design)
-  - CURRENT_DATE := 2026-02-18
-  - elapsed(Phase0) ≈ 38 days / 79 days total → 48% elapsed
+  - PHASE0_DEADLINE := 2026-03-31
+  - CURRENT_PHASE := Phase 0.76 (SysML Alignment)
+  - CURRENT_DATE := 2026-02-23
+  - elapsed(Phase0) ≈ 43 days / 79 days total → 54% elapsed
 
-  [Clock-Asymmetry]
+  [Agent-Protocol: VDD Mandate]
     @inv agent_output_rate >> human_review_rate
-    @inv approval_gate ≠ quality_ritual; approval_gate == rate_limiter(human_clock)
-    - t(agent_draft) ≈ 5 min; t(human_judgment) ≈ 1-3 days
-    - The human must cross-reference: physical constraints, team context, past failures, future risk.
-      This cannot be parallelized. This cannot be accelerated. This is the most valuable processing.
-    - Bonsai workflow is not just design philosophy — it is clock synchronization protocol
-      between a MHz agent and a Hz human.
-
-  [Observed-Cadence]
-    - commit_interval: 1-3 days (not continuous; clustered work sessions)
-    - active_hours: ~05:00-10:00 JST, ~14:00-18:00 JST (two daily windows)
-    - burst_pattern: 3-5 commits/day when in refinement mode, then multi-day pause for thinking
-    - The pauses are not idle time. The pauses are where design decisions crystallize.
-
-  [Agent-Protocol]
-    @pre before_pushing_output: estimate human_review_cost(output)
-    @inv ¬rush_approval; wait is productive
-    @inv when_blocked_on_human: do NOT pre-generate speculative alternatives to "fill time"
-    - Deliver in digestible units, not in volume.
-    - One well-formed question > three speculative drafts.
-    - If schedule has slack, the human is using that slack to think. Do not consume it.
+    @inv approval_gate == rate_limiter(human_clock). Mandatory HITL Gates (Gate 0, 2, 4).
+    - Step 0 Approval (Gate 0): Logic & Budget validated.
+    - Test Derivation: Tests must be generated from @pre/@post, not hand-coded.
     - **Memory Discovery Protocol**: ∀task : before(start) ⇒ load(Gemini.md) ∧ load(ATC) ∧ restore(local_semantics)
-    - **ATC Recording Protocol**: ∀discovery ∈ {DesignDecision, Invariant, ToolFriction} : append(brain/scope_subject.atc)
 
 [State]
-  - CURRENT_DATE := 2026-02-18
-  - calendar_elapsed(Phase0) ≈ 0.48
-  - maturity(vSoC_design) ≈ 0.8
+  - CURRENT_DATE := 2026-02-23
+  - calendar_elapsed(Phase0) ≈ 0.54
+  - maturity(vSoC_workflow) ≈ 1.0 (VDD + SysML Integrated)
+  - maturity(SysML_Alignment) ≈ 0.2 (Phase 0.76 Started)
 
   [Phase0-Gate-Criteria]
-    @pre gate_pass(Phase0) requires ALL:
-      1. detail_level(WIT) >= current + 2
-         (interfaces need 2 more refinement passes toward implementation-ready granularity)
-      2. detail_level(TLA+) >= current + 2
-         (state machines need 2 more refinement passes toward verifiable completeness)
-      3. verified(hypothesis(code_size, <= 15KLOC))
-         (the size budget must be validated against the detailed WIT, not assumed)
-      4. verified(hypothesis(performance, meets_target))
-         (execution speed on target hardware must be credibly projected, not hoped)
-    @inv maturity(0.8) means "shape is right"; gate requires "numbers are right"
-    @note The remaining 0.2 is not polish — it is the hard evidence that the design works.
-
-  @inv maturity(design) ≠ linear(calendar)
-    - 0.0→0.8: divergent (rapid exploration, many options collapse fast)
-    - 0.8→1.0: convergent (edge cases, integration points, the last 20% is the hardest 80%)
-    - These two numbers do NOT imply "on schedule". Nobody said that.
-  - brain_mode: MODAL_LOGIC
-  - physical_time_awareness: calibrated
+    @pre gate_pass(Phase0) requires:
+      1. sysml_alignment(All_Tier2_Components) == DONE
+      2. formal_verification(Critical_State_Machines) == PASS (Gate 2 approved)
+      3. test_derivation_harness == READY
+      4. RAM_budget_verified(Parametric_SysML) == PASS (Hypothesis <= 32KB)
+    @note The design must prove its own implementation-readiness via derived tests.

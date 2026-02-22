@@ -79,6 +79,12 @@ vSoCの動作パラメータを定義する。 `{ConfigurableSystem}`
 - **実行エンジン委譲 (exec_trace)**: vSoCは `step()` で現在のPCに対応する `exec_trace` を呼び出す。 `exec_trace` はインタープリタのディスパッチャまたはJITコードを指し、呼び出し側は実行エンジンを意識する必要がない。 `{ThreadedInterpreter}` `{JIT_CopyAndPatch}`
 - **概算Yield**: 監視対象の `yield_threshold` を基準に `co_yield` を発行する。 `{Challenge_ApproximateYield}`
 - **デバッグ連携**: `step()` 前後で Debugger を呼び出し、HAL層からのコマンドを処理する。
+- **JIT Safepoint (非同期割込対応)**: `{JIT_Safepoint}`
+    - JIT生成されるネイティブコードのループバック点（バックエッジ）に、ソフトウェアフラグ（またはタイマ割込状況）をチェックし、必要に応じて `executor_loop` へ強制フォールバックするフック（Safepoint）を埋め込む。これにより、JIT実行中の非同期ブレークポイント（Ctrl+C等）への応答性を担保する。
+- **デバッガ介入時キャッシュ一貫性 (Cache Flush)**: `{Debugger_Jit_Flush}`
+    - デバッガがメモリ上の変数を書き換えた場合、該当タスクに関連するJITキャッシュ（Active/Old）をすべて無効化（Flush）し、インタープリタ実行からやり直すことで整合性を維持する。
+
+TODO(Phase 0.8): vSoC Interpreter / JIT / Debugger TLA+ Verification - JIT実行中の Safepoint フォールバックと、デバッガ介入時の状態整合性を形式検証する。
 
 ### 4.2 状態遷移図
 ```mermaid

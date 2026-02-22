@@ -202,15 +202,14 @@ void fireball_trigger_set_pin(uint32_t pin, bool value) {
 ### 7.1. 役割
 `fireball_call` を捕捉し、`id` に基づいて適切なハンドラにディスパッチする。WASI関連の呼び出しに対しては、対応するサービスや下位レイヤーのハードウェアHAL（Zephyr/SoC SDKなど）の操作を実行する。
 
-### 7.2. WASI `fd_write` の処理例
-ホスト側では、`fireball_call`のハンドラが以下のように動作する。
+- **WASI `fd_write` の処理例 (Scatter/Gather)**: `{Challenge_WasiFdWriteLoop}`
+    - WASI の `fd_write` は `ciovec` 配列による一括書き込みを要求する。
+    - **Shim側ループ設計**: ホストを極小に保つため、原則としてShim（ゲスト側ライブラリ）でベクタをループし、1ベクタごとに `fireball_call` を発行する構成を基本とする。ただし、ベンチマーク結果によりオーバーヘッドが過大な場合はホスト側ループへの移行を検討する。
+- **同期WASI と 非同期IPC のブリッジ**: `{WASI_Async_Bridge}`
+    - 同期的な WASI 呼び出しを Fireball の非同期 IPC へマッピングする際、ラッパー内の `wait_for_ipc_response` が内部で `co_yield()` を発行する。
+    - この `co_yield` を VSoC / COOS が適切にハンドリングし、I/O 完了までタスクをサスペンド状態にする密結合な連携が必要。
 
-1.  `id` が `FB_SYSCALL_WASI_FD_WRITE` であることを確認。
-2.  `arg0` から `fd` を抽出。
-3.  `arg1` (`iovs_ptr`) と `arg2` (`iovs_len`) からゲストメモリ内の `wasi_iovec_t` 配列を読み取る。この際、ゲストメモリのアドレスをホストメモリのアドレスに変換する必要がある。
-4.  `arg3` (`nwritten_ptr`) から書き込まれたバイト数を格納するゲストメモリ上のポインタを取得。
-5.  ホストOSの`writev`または同等の関数を呼び出し、実際の書き込みを行う。
-6.  書き込み結果（バイト数またはエラーコード）を `nwritten_ptr` が指すゲストメモリに書き込み、`fireball_call`の戻り値としてエラーコードを返す。
+TODO(Phase 0.8): WASI Wrapper TLA+ Verification - 同期/非同期変換（co_yield 伝播）時の実行状態の無矛盾性を検証する。
 
 ## 8. ホストからゲストへの非同期通知メカニズム
 

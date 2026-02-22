@@ -5,7 +5,7 @@ project(fireball_test)
 target_sources(app PRIVATE src/main.cxx)
 target_include_directories(app PRIVATE 
     ${CMAKE_CURRENT_SOURCE_DIR}/../../inc
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../inc/gen
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../inc/core
 )
 
 # Fireball uses C++20 features

@@ -25,44 +25,49 @@ Fireballは、極小リソース環境での柔軟性と高性能を両立させ
 | **デバイスドライバ** | 各種ドライバ | 物理デバイス制御（UART, GPIO等）。 |
 | **ハードウェア** | CPU, 周辺機器 | 物理基盤（ARM Cortex-M, RISC-V等）。 |
 
-### 2.2 コンポーネント俯瞰図
+### 2.2 コンポーネント定義図 (BDD)
 
-矢印は**仕様の依存関係 (Dependency)** を示す。`{CleanArchitecture}` `{IoC}`
+本図は SysML ブロック定義図 (BDD) に準拠し、システムの静的構造と依存関係を定義する。
+矢印は**接続および依存関係 (Dependency)** を示す。`{CleanArchitecture}` `{IoC}`
 
 ```mermaid
 graph TD
+    classDef subsystem fill:#f9f,stroke:#333,stroke-width:2px;
+    classDef kernel fill:#bbf,stroke:#333,stroke-width:2px;
+    classDef hardware fill:#ddd,stroke:#333,stroke-width:1px,stroke-dasharray: 5 5;
+
     subgraph Guest_Layer [Guest Layer]
-        App[Guest Application]
-        Svc[WASM Services]
+        App["block: Guest Application"]
+        Svc["block: WASM Services"]
     end
 
     subgraph Runtime_Layer [Runtime Layer]
-        vSoC[vSoC / WASM Runtime]
+        vSoC["block: vSoC / WASM Runtime"]
     end
 
     subgraph Kernel_Layer [Kernel Layer]
-        COOS[COOS Kernel]
-        IPCR[IPC Router]
+        COOS["block: COOS Kernel"]
+        IPCR["block: IPC Router"]
     end
 
     subgraph Subsystem_Layer [Subsystem Layer]
-        HAL[HAL Implementation]
-        Log[Logging Implementation]
+        HAL["block: HAL Implementation"]
+        Log["block: Logging Implementation"]
     end
 
     subgraph Hardware_Layer [Hardware Layer]
-        HW[Hardware]
+        HW["block: Hardware"]:::hardware
     end
 
-    %% 依存性の方向 (Implementation -> Interface/Specification)
-    App --> vSoC
-    Svc --> vSoC
-    vSoC --> IPCR
-    vSoC --> COOS
-    HAL --> IPCR
-    Log --> IPCR
-    IPCR --> COOS
-    HAL --> HW
+    %% 依存性・接続
+    App -- "calls" --> vSoC
+    Svc -- "calls" --> vSoC
+    vSoC -- "lookup / send" --> IPCR
+    vSoC -- "yield / interrupt" --> COOS
+    IPCR -- "manages" --> COOS
+    HAL -- "implements" --> IPCR
+    Log -- "logs to" --> IPCR
+    HAL -- "registers" --> HW
 ```
 
 #### 依存性ルール
@@ -71,36 +76,57 @@ graph TD
 
 ## 3. 動的構造
 
-### 3.1 主要シーケンス
+### 3.1 主要シーケンス図 (SD)
 
-#### 起動およびタスク登録
+#### [SD] 起動およびタスク登録
 ```mermaid
 sequenceDiagram
-    participant Boot as Bootloader
-    participant IPCR as IPC Router
-    participant HAL as HAL
-    participant COOS as COOS Kernel
+    participant Boot as <<block>> Bootloader
+    participant HAL as <<block>> HAL
+    participant IPCR as <<block>> IPC Router
+    participant COOS as <<block>> COOS Kernel
     
-    Boot->>HAL: Initialize Hardware
+    activate Boot
+    Boot->>HAL: Init Hardware
+    activate HAL
+    HAL-->>Boot: Success
+    deactivate HAL
+    
     Boot->>IPCR: Register System Services (URI)
+    activate IPCR
+    IPCR-->>Boot: Registered
+    deactivate IPCR
+    
     Boot->>COOS: Initialize Scheduler
+    activate COOS
     COOS->>COOS: Start Idle Task
+    deactivate Boot
 ```
 
-#### IPC通信 (URIベース)
+#### [SD] IPC通信 (URIベース)
 ```mermaid
 sequenceDiagram
-    participant App as Guest App
-    participant vSoC as vSoC
-    participant IPCR as IPC Router
-    participant Svc as Target Service
+    participant App as <<block>> Guest App
+    participant vSoC as <<block>> vSoC
+    participant IPCR as <<block>> IPC Router
+    participant Svc as <<block>> Target Service
     
-    App->>vSoC: System Call (URI)
+    activate App
+    App->>vSoC: System Call(URI)
+    activate vSoC
     vSoC->>IPCR: Lookup(URI)
+    activate IPCR
     IPCR-->>vSoC: Handle (Pointer)
-    vSoC->>Svc: Send Message (Zero-copy)
+    deactivate IPCR
+    
+    vSoC->>Svc: Send Message(Zero-copy)
+    activate Svc
     Svc-->>vSoC: Reply
+    deactivate Svc
+    
     vSoC-->>App: Return
+    deactivate vSoC
+    deactivate App
 ```
 
 ## 4. 設計判断 (ADR)
@@ -140,7 +166,7 @@ sequenceDiagram
 | vSoCヒープ | JITメタデータ, WASMコンテキスト等 | 2.0KB | ハイパーバイザ終了 |
 | サブシステムヒープ | IPCルータ, HAL等 | 4.0KB | ハイパーバイザ終了 |
 | JITコードキャッシュ | 生成済みネイティブコード (2KB x 2) | 4.0KB | 古いキャッシュの破棄 |
-| WASMリニアメモリ | ゲストアプリ・サービス作業領域 | 16.0KB | ゲストのみ終了 |
+| WASMリニアメモリ | ゲストアプリ・サービス作業領域 | 8.0KB | ゲストのみ終了 |
 
 ### スケーラビリティ
 本システムは、ゲストリニアメモリのサイズや各種バッファの調整により、**32KBから64KB以上**のRAM環境に柔軟に対応する。

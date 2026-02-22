@@ -14,14 +14,14 @@ PYTHON_CMD=python3
 
 function cmd_generate() {
     local WIT_DIR="${1:-wit}"
-    local OUT_DIR="${2:-inc/gen}"
+    local OUT_DIR="${2:-inc/core}"
     $PYTHON_CMD "$SCRIPT_DIR/generate_cpp.py" "$WIT_DIR" "$OUT_DIR"
 }
 
 function cmd_check() {
     local TARGETS=("$@")
     if [ ${#TARGETS[@]} -eq 0 ]; then
-        TARGETS=("inc/gen")
+        TARGETS=("inc/core")
     fi
     
     $PYTHON_CMD "$SCRIPT_DIR/check_violations.py" "${TARGETS[@]}"
@@ -63,7 +63,7 @@ case "$1" in
     all)
         shift
         cmd_generate "$@"
-        cmd_check "${2:-inc/gen}"
+        cmd_check "${2:-inc/core}"
         cmd_build build --test
         ;;
     *)

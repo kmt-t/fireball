@@ -7,68 +7,81 @@
 
 Phase 0では実装ではなく、ビルド基盤とvSoC形式検証を完了させる。`{SpecificationFirst}`
 
-**並行作業（Phase番号なし）:**
-- 全設計ドキュメント（`docs/components/*.md`）の完成
-- WIT契約（`@pre`, `@post`, `@inv`）の追加
-
-### Phase 0.7: Static DI & Build System
-コンパイル時DIの確立とビルド基盤の整備。
-
+### Phase 0.7: Static DI & Build System [DONE]
 - [x] **Harnessパターンの確定**: 全コンポーネントのハーネス設計
 - [x] **静的DI機構**: テンプレート、マクロ、アロケータの連携方式
 - [x] **WIT→C++自動生成（基本機能）**: コード生成スクリプトの基本実装
 - [x] **Mesonビルドシステム**: 全ターゲット（ARM, RISC-V, x64 host）のビルド確認
 
-### Phase 0.75: Constexpr Verification & Code Gen Enhancement
-コンパイル時計算の検証と自動生成ツールのconstexpr対応。
-
+### Phase 0.75: Constexpr Verification & Code Gen Enhancement [DONE]
 - [x] **コード生成ツールのconstexpr対応**: WIT→C++生成時にconstexpr属性を付与
 - [x] **constexprメソッド特定**: どのメソッドをconstexprにすべきか分類
 - [x] **コンパイル時計算検証**: constexpr関数が実際にコンパイル時評価されるか確認
 - [x] **ルックアップテーブル生成**: constexprによる静的テーブル生成の実証
 
-### Phase 0.8: vSoC TLA+ Verification & Core Component Modeling
-vSoCコアおよび基盤コンポーネントの形式検証（TLA+モデリング等）。ワイガヤ（2026-02-20）で抽出されたヤバい制約を中心に検証する。
+### Phase 0.76: SysML Alignment & Model Refinement
+既存の設計図を SysML 準拠（静的・動的・パラメトリック）に修正し、論理的一貫性を高める。
 
-- [ ] **vSoC Interpreter / JIT / Debugger 協調モデル**:
-  - JIT実行中（Fast Path）の非同期ブレークポイント割り込み（Safepointフォールバック）。
-  - デバッガによるメモリ書き換え時のJITキャッシュ（Active/Old）一貫性（Flush要求）。
-- [ ] **vMMIO セキュリティゲート (TLB化)**:
-  - 階層化（Tier 1~3）とソフトウェアTLBのキャッシュ整合性、ミス時のSlow Pathフォールバック権限チェック。
-- [ ] **IPC Router (ゼロコピー・ハンドオフ)**:
-  - 所有権移譲（Revoke -> Grant）中に発生するIn-flightパニック時のメモリリーク防止（Dropハンドラ）。
-  - キュー満杯によるデッドロック回避（厳格なノンブロッキング送信と所有権巻き戻し）。
-  - 所有権移動に伴う送信側TLBのフラッシュ一貫性。
-- [ ] **Loader (Zero-Copy Parsing)**:
-  - バンプアロケータのアロケーション順序と、パース失敗時の安全なロールバック（巻き戻し）制約。
-- [ ] **WASI Wrapper (同期/非同期変換)**:
-  - `wait_for_ipc_response` 内部での `co_yield` 時における、インタプリタ/JIT側へのタスクサスペンド状態の無矛盾な伝播。
-- [ ] **リソース制約検証**: RAM/SLOC予算の遵守検証
+- [ ] **既存コンポーネントの図解修正**:
+  - [ ] **静的モデル (BDD)**: `architecture_overview.md` 等の構造図を SysML ブロック定義図形式に統一。
+  - [ ] **動的モデル (SD/SMD)**: 主要シーケンスを SysML シーケンス図/状態遷移図形式に修正。
+- [ ] **パラメトリック図 (PAR) の導入**:
+  - [ ] 32KB RAM 予算、および 15KLOC 制約を Constraint Block として定義し、パラメトリック図でモデル化。
+- [ ] **フリクション監査の再実行**: 図とドキュメント間の整合性を `audit_friction.py` で最終確認。
 
-**Note**: COOS、Memory、IPCのTLA+検証は別途Phase 0.9以降で実施するか、Phase 1の実装と並行して進める。
+### Phase 0.8: vSoC VDD Verification & Design Formalization
+WBS の [Step 0] 盆栽デザイン（SysML）および [Step 1-2] 形式検証（WIT/TLA+）を中心とした、設計の「不変条件」の確立。
 
-## 1. 周辺設計の深化 (Phase 1: Deepening Design)
+#### [Tier 1] Core Logic Verification
+- [ ] **COOS / IPC 協調モデル**:
+  - [ ] [Step 1-2] タスク状態遷移、割り込み通知、Handoff の形式検証 `{UseCpp20Coroutine}` `{CSP_Handoff}`
+  - [ ] [Step 0] IPC ルータの名前解決・所有権移譲の SysML モデル化
+- [ ] **IPC パニック・デッドロック回避**:
+  - [ ] [Step 1-2] In-flight パニック時の Drop ハンドラとメモリリーク防止の整合検証
 
-### 1.1. 割り込み・スケジューリング連携の精緻化
-- [ ] **HAL-COOS 連携シーケンス**: 物理割り込みからタスクウェイクアップ、そしてWASM内の割り込みハンドラ実行に至るまでの、コンテキスト遷移の完全な可視化。
-- [ ] **概算Yieldの妥当性検証**: 300usecというしきい値が、実際のHAL操作やIPC通信においてどのような影響を与えるかの分析。
-- [ ] **COOS スケジューリングアルゴリズムのリファイン**: `READY` キューとは別に `BLOCKED` タスクをリスト管理する仕組みの導入。 `{COOS_Scheduling_Refine}`
+#### [Tier 2] vSoC Subsystem Verification
+- [ ] **vSoC Engine (JIT/Intp) 一貫性**:
+  - [ ] [Step 0-2] JIT キャッシュ (Active/Old) とデバッガ割り込み (Safepoint) の協調モデル
+- [ ] **vMMIO セキュリティゲート (TLB)**:
+  - [ ] [Step 0-2] 3-Tier 安全性、ソフトウェア TLB キャッシュ整合性の形式検証 `{UnifiedAccessModel}`
+- [ ] **Loader ロールバック機構**:
+  - [ ] [Step 0-2] バンプアロケータの順序とパース失敗時の安全な巻き戻しの形式検証 `{ROMParsing}`
+- [ ] **リソース制約検証**:
+  - [ ] [Step 0] SysML パラメトリック図による RAM/SLOC 予算の遵守検証
 
-### 1.2. IPC・メモリ共有モデルの深化
-- [ ] **IPCハンドルの実体定義**: `co_csp_channel_t*` をベースとした、URI解決後の高速通信パスの設計。
-- [ ] **ゼロコピー・メッセージングの詳細**: `co_value` がヒープパーティションをまたぐ際の、所有権移譲とメモリ保護の仕組み。
+---
 
-### 1.3. vMMIO・アクセラレータ連携の設計
-- [ ] **vMMIO レジスタマップ案**: 標準的な周辺機器（UART, GPIO）および、将来のDLモデル連携を見据えた仮想レジスタの定義。
-- [ ] **ホスト関数呼び出しのオーバーヘッド分析**: WASMからvMMIO経由でホスト側の重い計算を叩く際の、コンテキストスイッチコストの最小化案。
+## 1. 周辺設計の深化 (Phase 1: Deepening Design via Value Stories)
+WBS の [Step 3-4] 自律導出（Codegen/Impl）および 実装検証（Test/Integration）を中心とした、価値の具現化。
 
-### 1.4. デバッグ・可視化基盤の設計
-- [ ] **「覗き窓」の設計**: 実行を妨げずに、IPCルータのルーティングテーブルやタスクの待機状態を外部から安全に読み出すためのインターフェイス。
+### Story: [Low-Latency physical I/O]
+**Value**: WASM ゲストから最小限のオーバーヘッドで物理ハードウェアを操作し、リアルタイム制御を可能にする。
 
-## 2. インターフェイス定義への橋渡し (Phase 2: Interface Bridging)
+- [ ] **[vMMIO] 物理デバイス透過アクセス**:
+  - [ ] [Step 3] 物理メモリパススルー、vDMA プロキシの実装生成
+  - [ ] [Step 4] 物理 GPIO/UART 透過アクセス整合テストの実行
+- [ ] **[COOS] HAL-COOS 連携の実装**:
+  - [ ] [Step 4] 物理割り込みから WASM ハンドラ実行までのレイテンシ測定
 
-- [ ] **共通エラー・シグナル体系の策定**: システム全域で一貫したエラーハンドリングを行うための体系。
+### Story: [Secure & Zero-Copy Inter-Service Communication]
+**Value**: 異なる信頼レベルのモジュール間で、ゼロコピーかつ安全にデータを交換できるようにする。
 
-## 3. 開発プロセス・ツールの改善 (Phase 3: Process Improvement)
+- [ ] **[IPC] ゼロコピー・通信基盤の実装**:
+  - [ ] [Step 3] 静的 DI によるサービス注入、ゼロコピー・メッセージングの生成 `{IPC_ZeroCopy}`
+  - [ ] [Step 4] セキュリティドメイン隔離・所有権遷移テストの実行
+- [ ] **[COOS] スケジューリングのリファイン**:
+  - [ ] [Step 3] BLOCKED リスト管理、効率的な通信待機の実装 `{COOS_Scheduling_Refine}`
 
-- [ ] **キーワード管理の自動化検討**: プロジェクト規模拡大に伴う `{Keyword}` の衝突回避と、トレーサビリティ自動チェックの仕組み。
+### Story: [Observability & Non-Intrusive Debugging]
+**Value**: システム実行に悪影響を与えずに、内部ステートを可視化・分析できるようにする。
+
+- [ ] **[Debug] 非介入型デバッグの実装**:
+  - [ ] [Step 3] ログ辞書生成、非介入型「覗き窓」インターフェイスの実装 `{COOS_Transparent}`
+  - [ ] [Step 4] GDB RSP による実機デバッグ・ロギングの検証
+
+---
+
+## ステータス管理
+- **Step 0**: 盆栽デザイン・SysML 完了
+- **Step 1-2**: 形式検証（TLC）パス
+- **Step 3-4**: 実装生成・テスト通過・ターゲット統合完了

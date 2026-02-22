@@ -92,9 +92,14 @@ ROM上のデータストリームを管理し、LEB128可変長整数やプリ�
 
 ### 4.1 アルゴリズム
 - **バイナリパース**: ROM上のデータを `BinaryStream` でラップし、`read_leb128` 等を用いて境界チェックを行いながら順次読み取る。
-- **module_view 構築**: 関数ボディやエクスポート名を抽出し、ソート済みインデックス付き配列として構築する。検索には二分探索を用いる。 `{AccessDictionary}`
+- **module_view 構築 (Zero-Copy Indexing)**: `{ZeroCopyIndexing}`
+    - セクションスキャン時に内容をRAMにコピーせず、ROM上の開始オフセットとサイズを索引化する。
+    - エクスポートエントリをパースし、名前でソートして `module_view.exports_dict` に格納する。
+- **シンボル検索**: `exports_dict` を二分探索することで O(log N) で関数IDを取得する。 `{AccessDictionary}`
 - **依存関係解決**: インポートセクションをスキャンし、必要なモジュール名とエクスポート名（関数ID/グローバルID等）を抽出し、`module_registry` を介して他モジュールの `lookup_export` とリンクする。未解決のインポートがある場合、モジュールはロード済みだが実行不可状態となる。
 - **アンロード**: `unload` はmodule_registryからモジュールを削除する。bump_allocatorのLIFO制約により、メモリの完全な回収はロード逆順のアンロード時のみ。
+
+TODO(Phase 0.8): Loader TLA+ Verification - モジュールのライフサイクル（Prepare -> Load -> Resolve -> Unload）と、依存関係解決の正当性を検証する。
 
 ### 4.2 メモリ制約
 `module_view` と関連構造の最大サイズ。すべてコンパイル時固定。 `{ConfigurableSystem}`

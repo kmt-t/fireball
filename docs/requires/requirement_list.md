@@ -132,6 +132,14 @@ graph LR
 | `{SpecificationFirst}` | 実装に先立ち、形式仕様や契約を定義する開発スタンス。 | 高 | プロセス監査 |
 | `{COOS_Scheduling_Refine}` | スケジューリングアルゴリズムの継続的な改善と最適化。 | 中 | レビュー |
 | `{CompileTimeValidation}` | 静的な型チェックやconstexprにより、コンパイル時に不正を検知する。 | 高 | レビュー |
+| `{vMMIO_TLB}` | ソフトウェアTLBによるvMMIOアクセスの高速化。 | 中 | レビュー |
+| `{ZeroCopyIndexing}` | LoaderによるWASMセクションのゼロコピー索引化。 | 高 | テスト |
+| `{IPC_DropHandler}` | In-flightリソース回収用のDropハンドラ。 | 高 | テスト |
+| `{JIT_Safepoint}` | JITコード内の非同期割込チェックポイント。 | 中 | レビュー |
+| `{Debugger_Jit_Flush}` | 介入時のJITキャッシュフラッシュ。 | 高 | レビュー |
+| `{WASI_Async_Bridge}` | 同期WASIと非同期IPCの連携ブリッジ。 | 高 | テスト |
+| `{ZeroOverhead}` | ゼロコスト抽象化。高性能組み込み向けC++デザイン。 | 高 | レビュー |
+| `{ConceptHarnessDI}` | C++20 Conceptsを用いた静的依存性注入。 | 高 | レビュー |
 
 ### 3.2 非機能要求
 

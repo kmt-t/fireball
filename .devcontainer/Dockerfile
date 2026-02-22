@@ -113,8 +113,7 @@ RUN apt-get update \
     qemu-system-arm qemu-system-riscv32 \
     # ARM Cortex-M/R toolchain
     gcc-arm-none-eabi \
-    libnewlib-arm-none-eabi \
-    libstdc++-arm-none-eabi-newlib \
+    libstdc++-arm-none-eabi-dev \
     picolibc-arm-none-eabi \
     # RISC-V toolchain
     gcc-riscv64-unknown-elf \

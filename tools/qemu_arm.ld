@@ -9,6 +9,7 @@ STACK_SIZE = 0x4000;
 
 SECTIONS
 {
+  PROVIDE(_start = 0);
   .vector_table ORIGIN(ROM) :
   {
     LONG(_stack_top);

@@ -5,7 +5,7 @@
  */
 #pragma once
 
-#include <cstdint>
+#include <stdint.h>
 #include <variant>
 #include <optional>
 #include <span>

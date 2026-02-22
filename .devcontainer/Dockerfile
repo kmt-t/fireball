@@ -106,11 +106,22 @@ RUN apt-get update \
 
 RUN npm install -g @google/gemini-cli @mermaid-js/mermaid-cli puppeteer
 
-# Valgrind + QEMU (for memory profiling and cross-target execution)
+# Valgrind + QEMU + Cross-compilation toolchains (ARM & RISC-V)
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
     valgrind \
     qemu-system-arm qemu-system-riscv32 \
+    # ARM Cortex-M/R toolchain
+    gcc-arm-none-eabi \
+    libnewlib-arm-none-eabi \
+    libstdc++-arm-none-eabi-newlib \
+    picolibc-arm-none-eabi \
+    # RISC-V toolchain
+    gcc-riscv64-unknown-elf \
+    picolibc-riscv64-unknown-elf \
+    libstdc++-13-dev-riscv64-cross \
+    # LLVM base
+    llvm \
  && rm -rf /var/lib/apt/lists/*
 
 # Call Graph & Documentation Tools

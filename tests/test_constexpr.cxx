@@ -19,7 +19,10 @@ constexpr auto generate_config(T& harness) {
     return harness.config();
 }
 
+#include <stdio.h>
+
 int main() {
+    printf("ARM Cortex-M33 Booted via Semihosting\n");
     MockHarness harness;
     [[maybe_unused]] constexpr auto config = generate_config(harness);
     

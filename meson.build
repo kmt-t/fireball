@@ -11,17 +11,15 @@ project('fireball', 'c', 'cpp',
 target = get_option('fireball_target')
 if target == 'cortex-m33'
   target_flags = [
-    '-target', 'arm-none-eabi',
     '-mcpu=cortex-m33',
     '-mthumb',
     '-fno-rtti',
     '-fno-exceptions',
   ]
   qemu_extra_src = files('tools/qemu_startup.s')
-  target_link_flags = ['-T', meson.project_source_root() / 'tools/qemu_arm.ld']
+  target_link_flags = []
 elif target == 'riscv32'
   target_flags = [
-    '-target', 'riscv32-unknown-elf',
     '-march=rv32i',
     '-mabi=ilp32',
     '-fno-rtti',
@@ -59,30 +57,43 @@ common_cpp_args = target_flags + [
   '-D_POSIX_C_SOURCE=200809L',
 ] + release_args
 
-fireball_exe = executable('fireball',
-   srcfiles + qemu_extra_src,
-   include_directories : incdirs,
-   c_args : target_flags + [
-     '-D_POSIX_C_SOURCE=200809L',
-     '-DHAVE_MMAP=0',
-     '-DHAVE_MORECORE=0',
-     '-DUSE_LOCKS=0',
-     '-DMSPACES=1',
-     '-DFOOTERS=0',
-     '-DINSECURE=0',
-     '-DNO_MALLOC_STATS=1',
-     '-DMMAP_CLEARS=0',
-   ] + release_args,
+if target != 'riscv32'
+  fireball_exe = executable('fireball',
+     srcfiles + qemu_extra_src,
+     include_directories : incdirs,
+     c_args : target_flags + [
+       '-D_POSIX_C_SOURCE=200809L',
+       '-DHAVE_MMAP=0',
+       '-DHAVE_MORECORE=0',
+       '-DUSE_LOCKS=0',
+       '-DMSPACES=1',
+       '-DFOOTERS=0',
+       '-DINSECURE=0',
+       '-DNO_MALLOC_STATS=1',
+       '-DMMAP_CLEARS=0',
+     ] + release_args,
+      cpp_args : common_cpp_args,
+     link_args : target_flags + release_args + target_link_flags,
+     install : true,
+  )
+endif
+
+if target == 'riscv32'
+  test_riscv_basic_exe = executable('test_riscv_basic',
+    files('tests/test_riscv_basic.c'),
+    include_directories : incdirs,
+    c_args : target_flags + release_args,
+    link_args : target_flags + release_args,
+  )
+  test('riscv_basic_test', test_riscv_basic_exe)
+endif
+
+if target != 'riscv32'
+  test_constexpr_exe = executable('test_constexpr',
+    files('tests/test_constexpr.cxx') + qemu_extra_src,
+    include_directories : incdirs,
     cpp_args : common_cpp_args,
-   link_args : target_flags + ['-lstdc++exp'] + release_args + target_link_flags,
-   install : true,
-)
-
-test_constexpr_exe = executable('test_constexpr',
-  files('tests/test_constexpr.cxx') + qemu_extra_src,
-  include_directories : incdirs,
-  cpp_args : common_cpp_args,
-  link_args : target_flags + ['-lstdc++exp'] + release_args + target_link_flags,
-)
-
-test('constexpr_test', test_constexpr_exe)
+    link_args : target_flags + release_args + target_link_flags,
+  )
+  test('constexpr_test', test_constexpr_exe)
+endif

@@ -27,8 +27,10 @@ case "$TARGET" in
     qemu-system-riscv32 \
       -machine virt \
       -cpu rv32 \
+      -m 128M \
       -kernel "$BINARY" \
       -nographic \
+      -bios none \
       -semihosting \
       -semihosting-config target=native
     ;;

@@ -118,10 +118,22 @@ RUN apt-get update \
     # RISC-V toolchain
     gcc-riscv64-unknown-elf \
     picolibc-riscv64-unknown-elf \
-    libstdc++-13-dev-riscv64-cross \
     # LLVM base
     llvm \
  && rm -rf /var/lib/apt/lists/*
+
+# Zephyr SDK (for advanced C++ support and testing)
+RUN set -eux; \
+    SDK_VERSION=0.16.8; \
+    SDK_FILE=zephyr-sdk-${SDK_VERSION}_linux-x86_64.tar.xz; \
+    wget -q https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v${SDK_VERSION}/${SDK_FILE}; \
+    tar xf ${SDK_FILE} -C /opt; \
+    rm ${SDK_FILE}; \
+    cd /opt/zephyr-sdk-${SDK_VERSION}; \
+    ./setup.sh -t arm-zephyr-eabi -t riscv64-zephyr-elf -c
+
+# west tool (installed in developer user's ~/.local/bin)
+RUN runuser -u ${DEVELOPER_USER} -- /usr/bin/pipx install west
 
 # Call Graph & Documentation Tools
 RUN apt-get update \

@@ -242,10 +242,12 @@ SECTIONS
 	 * Create special section here just to make room.
 	 */
         
-        .tbss_space (NOLOAD) : {
+	/*
+	.tbss_space (NOLOAD) : {
 		. = ADDR(.tbss);
 		. = . + SIZEOF(.tbss);
 	} >ram AT>ram :ram
+	*/
 	
 	.bss (NOLOAD) : {
 		*(.sbss*)

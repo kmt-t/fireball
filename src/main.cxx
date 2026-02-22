@@ -4,7 +4,7 @@
  * Copyright (c) 2025 Takuya Matsunaga.
  */
 #include <fireball.hxx>
-#include <iostream>
+#include <cstdio>
 
 using namespace fireball;
 
@@ -12,7 +12,7 @@ using namespace fireball;
  * entrypont.
  */
 int main([[maybe_unused]] int argc, [[maybe_unused]] char const** argv) {
-  std::cout << "--- Fireball WASM Hypervisor Booting ---" << std::endl;
+  printf("--- Fireball WASM Hypervisor Booting ---\n");
 
   return 0;
 }

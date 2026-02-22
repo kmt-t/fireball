@@ -43,6 +43,7 @@
 # Misc.
 *.log
 .roo
-builddir*/
+build*/
+tests/zephyr_app/build*
 states/
 docs/temp/

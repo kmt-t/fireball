@@ -10,9 +10,6 @@
 [submodule "references/riscv"]
 	path = references/riscv
 	url = git@github.com:riscv/riscv-isa-manual.git
-[submodule "references/Cm"]
-	path = references/Cm
-	url = git@github.com:shadowlink0122/Cm.git
 [submodule "references/llvm"]
 	path = references/llvm
 	url = git@github.com:llvm/llvm-project.git

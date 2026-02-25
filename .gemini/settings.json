@@ -1,0 +1,12 @@
+{
+  "context": {
+    "fileName": [
+      "GEMINI.md",
+      ".agents/rules/project_agent_behavior_rule.md",
+      ".agents/rules/project_protocol_rule.md",
+      ".agents/rules/general_design_rule.md",
+      ".agents/rules/embedded_cpp_rule.md",
+      "docs/requires/requirement_list.md"
+    ]
+  }
+}

@@ -1,0 +1,143 @@
+# Product Keywords ATC
+
+@description: システム要求仕様書 {requirement_list.md} に定義されたキーワードのインデックス。
+□inv: ∀k ∈ Keywords : searchable(k)
+
+## 1. WASM Execution (vSoC)
+- {JIT_CopyAndPatch} : Copy-and-Patch JIT方式
+- {JIT_DoubleBuffer_Cache} : ダブルバッファキャッシュ管理
+- {PositionIndependentCode} : 位置独立コード (PIC)
+- {NativeAPI_Export} : ホストサービスのエクスポート
+- {JIT_Encoder} : constexpr 命令エンコーダ
+- {MultiModule_Support} : 複数モジュール実行
+- {ThreadedInterpreter} : スレッドインタープリタ
+- {JIT_LazyChaining} : 遅延チェイニング
+- {Interpreter_LazyJITSwitch} : インタープリタからの動的JIT移行
+- {vMMIO_TrapAndEmulate} : vMMIOトラップ＆エミュレーション
+- {VDMA} : 仮想DMA
+- {JIT_ReverseCompilationOrder} : 逆順コンパイル（LIFO）
+- {DynamicMmap} : 動的メモリマッピング
+- {EnvironmentPointer} : 環境ポインタによる型安全アクセス
+- {ROMParsing} : Zero Copy Loading (ROM直接解析)
+- {MemoryBoundaryCheck} : 境界チェックによる隔離
+- {WasmPageAlignment} : 64KBページアライメント
+- {RestrictedPhysicalAccess} : 許可テーブルによる物理制限
+- {UnifiedAccessModel} : vMMIOへのアクセス一本化
+- {Wasm32Only} : MVP命令セット限定
+- {RecoveryStrategy} : リカバリー動作の返却
+- {FastAddressCheck} : ビット演算による高速境界チェック
+- {vMMIO_Isolation} : デバイスI/Oの隔離
+- {JIT_RuntimeAPI_Fallback} : 複雑な命令のフォールバック
+- {InterpreterContextStackless} : スタックレスインタープリタ
+- {SinglePassCompilation} : 1パスバイナリ生成
+
+## 2. Task Management & Communication (COOS)
+- {CooperativeMultitasking} : 協調型OS
+- {UseCpp20Coroutine} : C++20 コルーチン
+- {LowOverheadSwitch} : 低オーバーヘッド・コンテキストスイッチ
+- {COOS_Deterministic} : 確定的実行
+- {CSPCommunication} : ホーアCSP
+- {IPC_ZeroCopy} : ゼロコピー通信
+- {InterruptWakeup} : 割り込みウェイクアップ
+- {CSP_Handoff} : スケジューラを介さない即時スイッチ
+- {PeriodicTask} : 定期実行タスク
+- {IdleDetection} : アイドル検知・バックグラウンド処理
+- {DirectContextSwitch} : 超低レイテンシ・スイッチ
+- {TaskPollInterruptFlag} : ポーリング通知モデル
+
+## 3. System Interconnect (IPC/HAL/WIT)
+- {IPCRouter} : IPCルーティング
+- {IPC_HandleBased} : ハンドルベース通信
+- {StaticDI} : 静的依存性注入
+- {URIAbstraction} : URIによる疎結合
+- {IPCDI} : IPC経由の依存性解決
+- {RoleBasedAccessControl} : ロールベースアクセス制御
+- {OwnershipTransfer} : 所有権移譲
+- {DictionaryBasedIPC} : 静的辞書による転送量削減
+- {LowLatencyLookup} : O(log N) サービス検索
+- {Fast_Path_GPIO} : 高速パスGPIO
+- {Asynchronous_Notification} : pollable による非同期通知
+- {IPCRegistry} : URIサービス登録テーブル
+- {ServiceFacade} : 型安全サービスラッパー
+- {WIT_Interface_Spec} : WITインターフェース定義
+- {WIT_Common_Types} : 共有型定義
+- {WIT_Interface_Purpose} : インターフェース設計意図
+- {Trap_Interface} : 同期トラップインターフェース
+- {Syscall_Mapping} : システムコール静的紐付け
+- {HAL_Interface} : HAL抽象化インターフェース
+- {Syscall_Return_Value} : システムコール戻り値標準
+- {Errorcode_To_Strategy} : エラーコード戦略変換
+- {WASI_Implementation} : WASI実装
+- {TypeSafeMessaging} : 型安全メッセージ構造
+- {PhysicalPassthrough} : 物理リソース直接アクセス
+
+## 4. Debug & Operation
+- {COOS_Transparent} : タスク状態の可視化
+- {Debug_Integrated} : 統合デバッグツール
+- {Debug_Standard_Env} : 標準デバッグ環境
+- {RSPMinimalSet} : 最小限のGDB RSP
+- {BufferedLogging} : リングバッファログ
+- {RSP_Transport_Selectable} : RSPトランスポート選択
+- {DebuggerLabelTableSwitch} : デバッグ用テーブル切り替え
+
+## 5. Patterns & Infrastructure
+- {BumpAllocator} : バンプアロケータ
+- {SortedIndexedArray} : ソート済みインデックス配列
+- {BinarySearch} : 二分探索
+- {AccessDictionary} : アクセス辞書
+- {HistoryBuffer} : 実行履歴バッファ
+- {LightweightVerifier} : 高速検証器
+- {NoStdVector} : std::vector 禁止
+- {SpecificationFirst} : 仕様第一主義
+- {COOS_Scheduling_Refine} : スケジューリング最適化
+- {CompileTimeValidation} : コンパイル時検証
+- {vMMIO_TLB} : ソフトウェアTLB
+- {ZeroCopyIndexing} : ゼロコピー索引化
+- {IPC_DropHandler} : リソース回収ハンドラ
+- {JIT_Safepoint} : 非同期割込チェックポイント
+- {Debugger_Jit_Flush} : JITキャッシュフラッシュ
+- {WASI_Async_Bridge} : 同期/非同期ブリッジ
+- {ZeroOverhead} : ゼロコスト抽象化
+- {ConceptHarnessDI} : C++20 Concepts DI
+
+## 6. Non-Functional Requirements
+- {Static_Resolution} : 静的解決
+- {LowLatencyJIT} : 低レイテンシJIT
+- {JIT_ZeroCompileCostTheorem} : コンパイルコストゼロ定理
+- {SimpleJITArchitecture} : シンプルJIT構造
+- {JIT_RegisterMapping} : 物理レジスタマッピング
+- {ContextPointerRegister} : コンテキストポインタレジスタ固定
+- {Resource_Estimation_Model} : リソース見積もりモデル
+- {ConsolidatedHeap} : 統合ヒープ
+- {StrictMemoryLimit} : 厳格なメモリ制限
+- {IndependentHeap} : 独立ヒープ
+- {Policy_Memory} : 静的割り当て優先ポリシー
+- {MemoryIsolation} : メモリ隔離
+- {ZeroRuntimeOverhead} : 実行時オーバーヘッドゼロ
+- {Size_15KLOC} : 15KLOC制限
+- {AI_Native_Dev} : AI Native開発
+- {EliminateDataRace} : データ競合排除
+- {ConfigurableSystem} : マクロによるシステム設定
+- {CleanArchitecture} : クリーンアーキテクチャ
+- {IoC} : 制御の反転
+- {FaultIsolation} : 障害隔離
+- {3TierSeparation} : 3層分離
+- {ComponentHarness} : コンポーネントハーネス
+- {StaticScalability} : 静的スケーラビリティ
+- {WIT_First} : WIT-First設計
+- {Risk_Tiering} : リスクベース階層化
+- {Type_Vocabulary} : 厳格な型語彙
+- {ZeroCostAbstraction} : ゼロコスト抽象化
+- {NotRTOS} : 移植性・効率優先
+
+## 7. Challenges & ADRs
+- {Challenge_ApproximateYield} : 概算Yieldの精度
+- {Challenge_InterruptSafety} : 割り込み安全
+- {Challenge_JitCacheEfficiency} : JITキャッシュ効率
+- {Challenge_WasiFdWriteLoop} : WASI書き込みループ
+- {Challenge_SyscallMemorySafety} : システムコールメモリ安全
+- {Challenge_CoosBlockedList} : ブロックリスト管理コスト
+- {Challenge_CspHandoffStarvation} : CSPスターベーション
+- {Challenge_DebuggerResource} : デバッガリソース制約
+- {ADR_ScalableCodeOffset} : コードオフセット形式
+- {ADR_SafeQueuingOnHotMiss} : ホットスポット二重登録防止

@@ -16,11 +16,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Requirements (Linux/WSL)
 
 ```bash
-# Core dependencies (via apt)
+# Core C/C++ build tools
 sudo apt install clang meson ninja-build clang-format clang-tidy
 
-# Optional (Phase 2: Zephyr integration)
-pip install west zephyr-sdk  # install when embedding Cortex-M33/RISC-V
+# TLA+ formal verification (optional, for `tla/` specs)
+sudo apt install default-jre openjdk-21-jdk
+# Download TLA+ Toolbox or tla2tools.jar:
+# https://github.com/tlaplus/tlaplus/releases
+# Place tla2tools.jar in PATH or tools/ directory
+
+# WIT interface definition (optional, for `wit/` definitions)
+# Requires Rust toolchain
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+cargo install wit-bindgen-cli wasm-tools
+
+# Phase 2: Zephyr integration (later)
+pip install west zephyr-sdk
 ```
 
 ### Verify Installation
@@ -28,6 +39,11 @@ pip install west zephyr-sdk  # install when embedding Cortex-M33/RISC-V
 clang --version
 meson --version
 ninja --version
+
+# Optional
+java -version              # TLA+
+wit --version              # WIT (if installed)
+wasm-tools --version       # WASM tools (if installed)
 ```
 
 ## Build System (Phase 1: Native)

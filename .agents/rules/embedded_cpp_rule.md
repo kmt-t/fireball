@@ -6,7 +6,7 @@ trigger: always_on
 
 本ドキュメントは、組み込み環境（制限されたRAM、OSへの非依存）に特化した、C++実装のための厳格な制約とコーディングスタイルを定義する。
 
-**適用範囲**: Phase 1（native 開発）から適用。要求仕様 `{StrictMemoryLimit}`, `{Policy_Memory}` により、RAM 64KB 以下の制約を遵守する必要がある。
+要求仕様 `{StrictMemoryLimit}` (64KB), `{Policy_Memory}` により、メモリ効率を最優先する。
 
 ## 1. 厳格な禁止事項
 

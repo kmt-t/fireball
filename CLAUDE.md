@@ -28,7 +28,7 @@ G (¬self_validated_completion)          // No self-declared "done"
 
 ## Overview
 
-**Fireball** is a lightweight WebAssembly (WASM) hypervisor with a custom cooperative scheduler (COOS). Currently in **Phase 1: native (x64/Linux) development** for COOS kernel verification. Phase 2 will integrate embedded targets (Cortex-M33, RISC-V/32) via Zephyr RTOS.
+**Fireball** is a lightweight WebAssembly (WASM) hypervisor with a custom cooperative scheduler (COOS). Currently in **Phase 1: native (x64/Linux) development** for COOS kernel verification and validation.
 
 ### Core Design Pillars
 - **Cooperative Scheduler (COOS)**: Task switching using C++20 coroutines with CSP-based communication to eliminate data races
@@ -53,9 +53,6 @@ sudo apt install default-jre openjdk-21-jdk
 # Requires Rust toolchain
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 cargo install wit-bindgen-cli wasm-tools
-
-# Phase 2: Zephyr integration (later)
-pip install west zephyr-sdk
 ```
 
 ### Verify Installation
@@ -171,17 +168,6 @@ clang-tidy -p build <file>
 - Service URIs, heap sizes, task counts defined at compile-time
 - Header-based configuration for testability
 
----
-
-## Phase 2: Embedded Integration (Future)
-
-When integrating Cortex-M33 and RISC-V targets via Zephyr RTOS:
-- COOS becomes a kernel module/driver within Zephyr
-- `west build -b cortex_m33_board` workflow
-- Zephyr's board definitions (DTS, Kconfig) manage cross-compilation
-- `west flash`, `west debug` for deployment
-
-Current native COOS API is intentionally Zephyr-agnostic to facilitate this transition.
 
 ## Directory Structure
 

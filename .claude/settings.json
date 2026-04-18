@@ -1,0 +1,62 @@
+{
+  "model": "haiku",
+  "description": "Fireball Hypervisor: Phase 1 native (x64/Linux) COOS development",
+
+  "rules": {
+    "operating_principle": "Non-autonomous: always require user confirmation before significant decisions",
+    "document_reference": {
+      "first_read": "docs/requires/requirement_list.md — find {Keyword}",
+      "trace_back": "All design decisions must trace to {Keyword} in requirement_list.md",
+      "reading_order": {
+        "new_feature": ["docs/requires/requirement_list.md", "docs/architecture/architecture_overview.md", "docs/components/{component}.md", "docs/backlog/"],
+        "bug_fix": ["docs/components/{component}.md", "docs/requires/requirement_list.md"],
+        "uncertainty": ["docs/backlog/backlog_list.md", "ask user — do not guess"]
+      }
+    },
+    "code_style": {
+      "language": "C99, C++20 (no RTTI, no exceptions)",
+      "indent": "2 spaces (no tabs)",
+      "line_length": "100 columns",
+      "naming": "snake_case for functions/variables, UPPER_SNAKE_CASE for macros",
+      "member_variables": "trailing underscore (_), static members double (__)",
+      "memory": "RAM 64KB limit {StrictMemoryLimit}, no dynamic allocation {Policy_Memory}",
+      "constexpr": "maximize compile-time evaluation for embedded constraints"
+    },
+    "before_implementation": [
+      "Check CLAUDE.md Operating Principle section",
+      "Read Document Reference Guide",
+      "Trace {Keyword} back to requirement_list.md",
+      "Ask user before design decisions (do not assume)",
+      "Record uncertainty as TODO(Phase X) in backlog, not code"
+    ]
+  },
+
+  "hooks": {
+    "on_claude_load": {
+      "description": "Remind Claude of non-autonomous principle",
+      "output": "⚠️  Non-Autonomous Mode: Always ask user before significant decisions. See CLAUDE.md Operating Principle."
+    },
+    "on_file_edit": {
+      "description": "Confirm destructive changes (delete/overwrite)",
+      "warn_patterns": ["delete", "remove", "overwrite"],
+      "message": "Confirm impact before proceeding. Trace to {Keyword} if modifying requirements-tied code."
+    }
+  },
+
+  "permissions": {
+    "allow_by_default": [
+      "git status",
+      "git log",
+      "git diff",
+      "file read",
+      "grep/search"
+    ],
+    "require_confirmation": [
+      "git commit",
+      "git push",
+      "file delete",
+      "file write (non-test)",
+      "bash commands (general)"
+    ]
+  }
+}

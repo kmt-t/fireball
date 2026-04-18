@@ -239,11 +239,42 @@ fireball/
 - `.agents/` — AI workflows (not core project)
 - Cross-compile `.ini` files and `tools/` scripts used in Phase 2
 
+## Document Reference Guide
+
+**All design decisions must be traceable to keywords `{Keyword}` in requirement_list.md.**
+
+### Reading Order (by task type)
+
+**New feature or design question:**
+1. `docs/requires/requirement_list.md` — Find relevant `{Keyword}`
+2. `docs/architecture/architecture_overview.md` — Understand system-level tradeoffs (ADR)
+3. `docs/components/{component}.md` — Detailed spec for affected component
+4. `docs/backlog/backlog_list.md` — Check for open decisions (TODO)
+
+**Bug fix or component modification:**
+1. `docs/components/{component}.md` — Understand current design
+2. `docs/requires/requirement_list.md` — Trace back to `{Keyword}` requirements
+
+**Implementation uncertainty:**
+1. `docs/backlog/backlog_list.md` — Record as TODO(Phase X)
+2. Consult user (do not guess)
+
+**Phase/schedule question:**
+- `docs/plans/roadmap_phase.md` — Phase milestones and dependencies
+
+### Critical Rule
+
+Do NOT proceed with design or implementation without understanding the source `{Keyword}` in requirement_list.md. If unclear, ask user or record as TODO.
+
+---
+
 ## Quick References
 
 - **Entry point**: `src/main.cxx`
 - **Build system**: `meson.build`, `meson_options.txt`
 - **Code style**: `.clang-format`, `.clang-tidy` (run `clang-format -i <file>`)
-- **Architecture**: `docs/architecture/architecture_overview.md` (Japanese)
+- **Requirements**: `docs/requires/requirement_list.md` (start here)
+- **Architecture**: `docs/architecture/architecture_overview.md` (Japanese, ADR-driven)
+- **Components**: `docs/components/` (detailed specs, WIT-aligned)
 - **Allocator**: `src/allocator/malloc.c` (dlmalloc-derived)
 - **COOS API**: `inc/coos/` (header files are the contract)

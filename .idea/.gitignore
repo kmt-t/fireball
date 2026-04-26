@@ -1,10 +1,10 @@
-# デフォルトの無視対象ファイル
+# Default ignored files
 /shelf/
 /workspace.xml
-# 無視されたデフォルトフォルダー (クエリファイルを含む)
+# Editor-based HTTP Client requests
+/httpRequests/
+# Ignored default folder with query files
 /queries/
 # Datasource local storage ignored files
 /dataSources/
 /dataSources.local.xml
-# エディターベースの HTTP クライアントリクエスト
-/httpRequests/

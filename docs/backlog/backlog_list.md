@@ -30,7 +30,7 @@ Phase 0では実装ではなく、ビルド基盤とvSoC形式検証を完了さ
 - [ ] **フリクション監査の再実行**: 図とドキュメント間の整合性を `audit_friction.py` で最終確認。
 
 ### Phase 0.8: vSoC VDD Verification & Design Formalization
-WBS の [Step 0] 盆栽デザイン（SysML）および [Step 1-2] 形式検証（WIT/Alloy）を中心とした、設計の「不変条件」の確立。
+WBS の [Step 0] 盆栽デザイン（SysML）および [Step 1-2] 形式検証（WIT/TLA+）を中心とした、設計の「不変条件」の確立。
 
 #### [Tier 1] Core Logic Verification
 - [ ] **COOS / IPC 協調モデル**:
@@ -83,5 +83,5 @@ WBS の [Step 3-4] 自律導出（Codegen/Impl）および 実装検証（Test/I
 
 ## ステータス管理
 - **Step 0**: 盆栽デザイン・SysML 完了
-- **Step 1-2**: 形式検証（Alloy）パス
+- **Step 1-2**: 形式検証（Apalache）パス
 - **Step 3-4**: 実装生成・テスト通過・ターゲット統合完了

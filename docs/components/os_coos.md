@@ -1,7 +1,7 @@
 # 協調型OS COOS コンポーネント設計書
 
 ## 1. コンセプト
-COOSは、シングルスレッド環境向けのホーアCSPベースのグリーンスレッドOSである。C++20コルーチンを活用し、スタックレスで低オーバーヘッドなタスク切り替えを実現する。また、ホーアCSPに基づき、所有権移譲によるゼロコピーメッセージパッシングを行うことで、データ競合を原理的に排除する。 `{CooperativeMultitasking}` `{UseCpp20Coroutine}` `{CSPCommunication}` `{EliminateDataRace}` `{PeriodicTask}` `{IdleDetection}` `{InterruptWakeup}` `{NotRTOS}`
+COOSは、シングルスレッド環境向けのホーアCSPベースのグリーンスレッドOSである。C++23コルーチン（および std::flat_map 等の標準コンテナ）を活用し、スタックレスで低オーバーヘッドなタスク切り替えを実現する。また、ホーアCSPに基づき、所有権移譲によるゼロコピーメッセージパッシングを行うことで、データ競合を原理的に排除する。 `{CooperativeMultitasking}` `{UseCpp23Library}` `{UseCpp20Coroutine}` `{CSPCommunication}` `{EliminateDataRace}` `{PeriodicTask}` `{IdleDetection}` `{InterruptWakeup}` `{NotRTOS}`
 
 ## 2. アーキテクチャ分類
 本コンポーネントは **Tier 2 (サブシステムドメイン)** に属し、Stateless Interface と Harness パターンを用いて構造化される。 `{3TierSeparation}` `{ComponentHarness}`

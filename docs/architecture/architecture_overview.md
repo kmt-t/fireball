@@ -5,7 +5,7 @@
 Fireballは、極小リソース環境での柔軟性と高性能を両立させるため、以下の設計思想を採用する。
 
 - **クリーンアーキテクチャとDI**: URIベースの抽象化とIPCルータによる依存性の注入により、コンポーネント間の結合度を下げ、移植性を向上させる。 `{CleanArchitecture}` `{URIAbstraction}` `{IPCDI}`
-- **協調型マルチタスク (COOS)**: C++20コルーチンを活用し、スタックレスで低オーバーヘッドなタスク切り替えを実現する。また、通信時の「直接スイッチ（CSP Handoff）」によりレイテンシを理論限界まで低下させる。 `{UseCpp20Coroutine}` `{LowOverheadSwitch}` `{CSP_Handoff}`
+- **協調型マルチタスク (COOS)**: C++23コルーチン（および std::flat_map）を活用し、スタックレスで低オーバーヘッドなタスク切り替えを実現する。また、通信時の「直接スイッチ（CSP Handoff）」によりレイテンシを理論限界まで低下させる。 `{UseCpp23Library}` `{UseCpp20Coroutine}` `{LowOverheadSwitch}` `{CSP_Handoff}`
 - **高速JIT (Copy-and-Patch)**: コンパイルレイテンシを最小化し、小規模なコードキャッシュ（2KB x 2）を「移動する窓（Moving Window）」として活用する。
 - **動的代謝 (Metabolism-First)**: インタープリタはブートストラップおよびフォールバックとして機能し、実行の主力は JIT による動的なコード変換とキャッシュアウト（代謝）のサイクルが担う。
 - **コンポーネント・ハーネス**: vSoCを独立したサブコンポーネント（Loader, Engine, MMIO, Debugger）の集合体として定義し、ハーネスを介して差し替え可能なプラグイン構造とする。 `{ComponentHarness}`

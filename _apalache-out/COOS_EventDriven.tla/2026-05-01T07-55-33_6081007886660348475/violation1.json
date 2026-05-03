@@ -1,0 +1,592 @@
+{
+  "name": "ApalacheIR",
+  "version": "1.0",
+  "description": "https://apalache-mc.org/docs/adr/005adr-json.html",
+  "modules": [
+    {
+      "kind": "TlaModule",
+      "name": "counterexample",
+      "declarations": [
+        {
+          "type": "(() => Bool)",
+          "kind": "TlaOperDecl",
+          "name": "ConstInit",
+          "formalParams": [],
+          "isRecursive": false,
+          "body": {
+            "type": "Bool",
+            "kind": "OperEx",
+            "oper": "AND",
+            "args": [
+              {
+                "type": "Bool",
+                "kind": "OperEx",
+                "oper": "EQ",
+                "args": [
+                  {
+                    "type": "Int",
+                    "kind": "NameEx",
+                    "name": "MaxQueueSize"
+                  },
+                  {
+                    "type": "Int",
+                    "kind": "ValEx",
+                    "value": {
+                      "kind": "TlaInt",
+                      "value": 3
+                    }
+                  }
+                ]
+              },
+              {
+                "type": "Bool",
+                "kind": "OperEx",
+                "oper": "EQ",
+                "args": [
+                  {
+                    "type": "Set(Str)",
+                    "kind": "NameEx",
+                    "name": "Messages"
+                  },
+                  {
+                    "type": "Set(Str)",
+                    "kind": "OperEx",
+                    "oper": "SET_ENUM",
+                    "args": [
+                      {
+                        "type": "Str",
+                        "kind": "ValEx",
+                        "value": {
+                          "kind": "TlaStr",
+                          "value": "ModelValue_m1"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "Bool",
+                "kind": "OperEx",
+                "oper": "EQ",
+                "args": [
+                  {
+                    "type": "Set(Str)",
+                    "kind": "NameEx",
+                    "name": "Tasks"
+                  },
+                  {
+                    "type": "Set(Str)",
+                    "kind": "OperEx",
+                    "oper": "SET_ENUM",
+                    "args": [
+                      {
+                        "type": "Str",
+                        "kind": "ValEx",
+                        "value": {
+                          "kind": "TlaStr",
+                          "value": "ModelValue_t1"
+                        }
+                      },
+                      {
+                        "type": "Str",
+                        "kind": "ValEx",
+                        "value": {
+                          "kind": "TlaStr",
+                          "value": "ModelValue_t2"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "(() => Bool)",
+          "kind": "TlaOperDecl",
+          "name": "State0",
+          "formalParams": [],
+          "isRecursive": false,
+          "body": {
+            "type": "Bool",
+            "kind": "OperEx",
+            "oper": "AND",
+            "args": [
+              {
+                "type": "Bool",
+                "kind": "OperEx",
+                "oper": "EQ",
+                "args": [
+                  {
+                    "type": "Int",
+                    "kind": "NameEx",
+                    "name": "MaxQueueSize"
+                  },
+                  {
+                    "type": "Int",
+                    "kind": "ValEx",
+                    "value": {
+                      "kind": "TlaInt",
+                      "value": 3
+                    }
+                  }
+                ]
+              },
+              {
+                "type": "Bool",
+                "kind": "OperEx",
+                "oper": "EQ",
+                "args": [
+                  {
+                    "type": "Set(Str)",
+                    "kind": "NameEx",
+                    "name": "Messages"
+                  },
+                  {
+                    "type": "Set(Str)",
+                    "kind": "OperEx",
+                    "oper": "SET_ENUM",
+                    "args": [
+                      {
+                        "type": "Str",
+                        "kind": "ValEx",
+                        "value": {
+                          "kind": "TlaStr",
+                          "value": "ModelValue_m1"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "Bool",
+                "kind": "OperEx",
+                "oper": "EQ",
+                "args": [
+                  {
+                    "type": "Set(Str)",
+                    "kind": "NameEx",
+                    "name": "Tasks"
+                  },
+                  {
+                    "type": "Set(Str)",
+                    "kind": "OperEx",
+                    "oper": "SET_ENUM",
+                    "args": [
+                      {
+                        "type": "Str",
+                        "kind": "ValEx",
+                        "value": {
+                          "kind": "TlaStr",
+                          "value": "ModelValue_t1"
+                        }
+                      },
+                      {
+                        "type": "Str",
+                        "kind": "ValEx",
+                        "value": {
+                          "kind": "TlaStr",
+                          "value": "ModelValue_t2"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "Bool",
+                "kind": "OperEx",
+                "oper": "EQ",
+                "args": [
+                  {
+                    "type": "Seq([msg: Str, sender: Str, target: Str, type: Str])",
+                    "kind": "NameEx",
+                    "name": "eventQueue"
+                  },
+                  {
+                    "type": "Seq([msg: Str, sender: Str, target: Str, type: Str])",
+                    "kind": "OperEx",
+                    "oper": "TUPLE",
+                    "args": []
+                  }
+                ]
+              },
+              {
+                "type": "Bool",
+                "kind": "OperEx",
+                "oper": "EQ",
+                "args": [
+                  {
+                    "type": "(Str -> Str)",
+                    "kind": "NameEx",
+                    "name": "ownership"
+                  },
+                  {
+                    "type": "(Str -> Str)",
+                    "kind": "OperEx",
+                    "oper": "Apalache!SetAsFun",
+                    "args": [
+                      {
+                        "type": "Set(<<Str, Str>>)",
+                        "kind": "OperEx",
+                        "oper": "SET_ENUM",
+                        "args": [
+                          {
+                            "type": "<<Str, Str>>",
+                            "kind": "OperEx",
+                            "oper": "TUPLE",
+                            "args": [
+                              {
+                                "type": "Str",
+                                "kind": "ValEx",
+                                "value": {
+                                  "kind": "TlaStr",
+                                  "value": "ModelValue_m1"
+                                }
+                              },
+                              {
+                                "type": "Str",
+                                "kind": "ValEx",
+                                "value": {
+                                  "kind": "TlaStr",
+                                  "value": "t1"
+                                }
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "Bool",
+                "kind": "OperEx",
+                "oper": "EQ",
+                "args": [
+                  {
+                    "type": "(Str -> Str)",
+                    "kind": "NameEx",
+                    "name": "taskState"
+                  },
+                  {
+                    "type": "(Str -> Str)",
+                    "kind": "OperEx",
+                    "oper": "Apalache!SetAsFun",
+                    "args": [
+                      {
+                        "type": "Set(<<Str, Str>>)",
+                        "kind": "OperEx",
+                        "oper": "SET_ENUM",
+                        "args": [
+                          {
+                            "type": "<<Str, Str>>",
+                            "kind": "OperEx",
+                            "oper": "TUPLE",
+                            "args": [
+                              {
+                                "type": "Str",
+                                "kind": "ValEx",
+                                "value": {
+                                  "kind": "TlaStr",
+                                  "value": "ModelValue_t1"
+                                }
+                              },
+                              {
+                                "type": "Str",
+                                "kind": "ValEx",
+                                "value": {
+                                  "kind": "TlaStr",
+                                  "value": "IDLE"
+                                }
+                              }
+                            ]
+                          },
+                          {
+                            "type": "<<Str, Str>>",
+                            "kind": "OperEx",
+                            "oper": "TUPLE",
+                            "args": [
+                              {
+                                "type": "Str",
+                                "kind": "ValEx",
+                                "value": {
+                                  "kind": "TlaStr",
+                                  "value": "ModelValue_t2"
+                                }
+                              },
+                              {
+                                "type": "Str",
+                                "kind": "ValEx",
+                                "value": {
+                                  "kind": "TlaStr",
+                                  "value": "IDLE"
+                                }
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "Bool",
+                "kind": "OperEx",
+                "oper": "EQ",
+                "args": [
+                  {
+                    "type": "(Str -> Str)",
+                    "kind": "NameEx",
+                    "name": "waitingFor"
+                  },
+                  {
+                    "type": "(Str -> Str)",
+                    "kind": "OperEx",
+                    "oper": "Apalache!SetAsFun",
+                    "args": [
+                      {
+                        "type": "Set(<<Str, Str>>)",
+                        "kind": "OperEx",
+                        "oper": "SET_ENUM",
+                        "args": [
+                          {
+                            "type": "<<Str, Str>>",
+                            "kind": "OperEx",
+                            "oper": "TUPLE",
+                            "args": [
+                              {
+                                "type": "Str",
+                                "kind": "ValEx",
+                                "value": {
+                                  "kind": "TlaStr",
+                                  "value": "ModelValue_t1"
+                                }
+                              },
+                              {
+                                "type": "Str",
+                                "kind": "ValEx",
+                                "value": {
+                                  "kind": "TlaStr",
+                                  "value": "NONE"
+                                }
+                              }
+                            ]
+                          },
+                          {
+                            "type": "<<Str, Str>>",
+                            "kind": "OperEx",
+                            "oper": "TUPLE",
+                            "args": [
+                              {
+                                "type": "Str",
+                                "kind": "ValEx",
+                                "value": {
+                                  "kind": "TlaStr",
+                                  "value": "ModelValue_t2"
+                                }
+                              },
+                              {
+                                "type": "Str",
+                                "kind": "ValEx",
+                                "value": {
+                                  "kind": "TlaStr",
+                                  "value": "NONE"
+                                }
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "type": "(() => Bool)",
+          "kind": "TlaOperDecl",
+          "name": "InvariantViolation",
+          "formalParams": [],
+          "isRecursive": false,
+          "body": {
+            "type": "Bool",
+            "kind": "OperEx",
+            "oper": "Apalache!Skolem",
+            "args": [
+              {
+                "type": "Bool",
+                "kind": "OperEx",
+                "oper": "EXISTS3",
+                "args": [
+                  {
+                    "type": "Str",
+                    "kind": "NameEx",
+                    "name": "m$5"
+                  },
+                  {
+                    "type": "Set(Str)",
+                    "kind": "NameEx",
+                    "name": "Messages"
+                  },
+                  {
+                    "type": "Bool",
+                    "kind": "OperEx",
+                    "oper": "AND",
+                    "args": [
+                      {
+                        "type": "Bool",
+                        "kind": "OperEx",
+                        "oper": "NOT",
+                        "args": [
+                          {
+                            "type": "Bool",
+                            "kind": "OperEx",
+                            "oper": "EQ",
+                            "args": [
+                              {
+                                "type": "Str",
+                                "kind": "OperEx",
+                                "oper": "FUN_APP",
+                                "args": [
+                                  {
+                                    "type": "(Str -> Str)",
+                                    "kind": "NameEx",
+                                    "name": "ownership"
+                                  },
+                                  {
+                                    "type": "Str",
+                                    "kind": "NameEx",
+                                    "name": "m$5"
+                                  }
+                                ]
+                              },
+                              {
+                                "type": "Str",
+                                "kind": "ValEx",
+                                "value": {
+                                  "kind": "TlaStr",
+                                  "value": "NONE"
+                                }
+                              }
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "type": "Bool",
+                        "kind": "OperEx",
+                        "oper": "AND",
+                        "args": [
+                          {
+                            "type": "Bool",
+                            "kind": "OperEx",
+                            "oper": "FORALL3",
+                            "args": [
+                              {
+                                "type": "Str",
+                                "kind": "NameEx",
+                                "name": "t$7"
+                              },
+                              {
+                                "type": "Set(Str)",
+                                "kind": "NameEx",
+                                "name": "Tasks"
+                              },
+                              {
+                                "type": "Bool",
+                                "kind": "OperEx",
+                                "oper": "NOT",
+                                "args": [
+                                  {
+                                    "type": "Bool",
+                                    "kind": "OperEx",
+                                    "oper": "EQ",
+                                    "args": [
+                                      {
+                                        "type": "Str",
+                                        "kind": "OperEx",
+                                        "oper": "FUN_APP",
+                                        "args": [
+                                          {
+                                            "type": "(Str -> Str)",
+                                            "kind": "NameEx",
+                                            "name": "ownership"
+                                          },
+                                          {
+                                            "type": "Str",
+                                            "kind": "NameEx",
+                                            "name": "m$5"
+                                          }
+                                        ]
+                                      },
+                                      {
+                                        "type": "Str",
+                                        "kind": "NameEx",
+                                        "name": "t$7"
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "type": "Bool",
+                            "kind": "OperEx",
+                            "oper": "NOT",
+                            "args": [
+                              {
+                                "type": "Bool",
+                                "kind": "OperEx",
+                                "oper": "EQ",
+                                "args": [
+                                  {
+                                    "type": "Str",
+                                    "kind": "OperEx",
+                                    "oper": "FUN_APP",
+                                    "args": [
+                                      {
+                                        "type": "(Str -> Str)",
+                                        "kind": "NameEx",
+                                        "name": "ownership"
+                                      },
+                                      {
+                                        "type": "Str",
+                                        "kind": "NameEx",
+                                        "name": "m$5"
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "type": "Str",
+                                    "kind": "ValEx",
+                                    "value": {
+                                      "kind": "TlaStr",
+                                      "value": "IN_FLIGHT"
+                                    }
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,1 +1,0 @@
- check --config=tla/COOS_EventDriven.cfg --length=10 --features=no-rows tla/COOS_EventDriven.tla

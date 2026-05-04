@@ -47,3 +47,21 @@ TODO(Phase 1): ATC抽出 - 各コンフィグ値の有効範囲、メモリサ�
 | :--- | :--- | :--- | :--- |
 | `FB_CONF_DEBUG_MAX_BREAKPOINTS` | 最大ブレークポイント数 | `8` | `{ConfigurableSystem}` |
 | `FB_CONF_DEBUG_PACKET_SIZE` | RSPパケットバッファサイズ | `1024` | `{Challenge_DebuggerResource}` |
+
+### 2.7 型定義・予約値
+
+タスク識別子 `task_id` はシステム全体（COOS・IPCルータ・vMMIO）で共通して使用される識別子型である。値域を明示することで、予約値との重複や型キャストミスをコンパイル時に検出できる。
+
+#### task_id 型
+
+| マクロ名 | 説明 | 値 | 備考 |
+| :--- | :--- | :--- | :--- |
+| `FB_TASK_ID_T` | タスクIDの基底型 | `uint8_t` | 有効値域 `1`〜`FB_CONF_MAX_TASKS`。0 と 0xFF は予約済み |
+| `FB_TASK_ID_INVALID` | 未割り当て・無効を示す予約値 | `0` | `vmmio_perm_table` の `owner_id` 初期値。「誰も所有していない」を表す |
+| `FB_TASK_ID_FLIGHT` | 所有権移譲中（飛行中）を示す予約値 (FLIGHT_SENTINEL) | `0xFF` | IPCルータが Revoke→Grant シーケンス中にセットする。この値の間は vMMIO がアクセスを拒否する。`FB_CONF_MAX_TASKS` は必ず `0xFE` 以下でなければならない |
+
+#### 最大タスク数制約
+
+| マクロ名 | 説明 | デフォルト値 (例) | 導出元 |
+| :--- | :--- | :--- | :--- |
+| `FB_CONF_MAX_TASKS` | 同時実行可能な最大タスク数 | `16` | `{StaticScalability}`。`FB_TASK_ID_FLIGHT (0xFF)` との衝突を防ぐため `≤ 254` を静的アサートで保証すること |

@@ -27,9 +27,10 @@ graph TD
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| 最大管理タスク数 | システムが同時に保持可能なタスク制御ブロックの最大数 | エントリ数 | `FB_CONF_MAX_TASKS` |
+| 最大管理タスク数 | システムが同時に保持可能なタスク制御ブロックの最大数 | エントリ数 | `FB_CONF_MAX_TASKS`（≤ 254。`FB_TASK_ID_FLIGHT=0xFF` との衝突を静的アサートで保証） |
 | 共有メモリ容量 | 動的確保に使用される共通ヒープの総バイト数 | バイト数 | `FB_CONF_HEAP_SIZE` |
 | JITキャッシュ容量 | 生成されたネイティブコードを保存するためのメモリサイズ | バイト数 | `FB_CONF_JIT_CACHE_SIZE` |
+| タスクID型・予約値 | `task_id` の型定義と無効値・FLIGHT_SENTINEL 定義 | 型／定数 | `FB_TASK_ID_T`, `FB_TASK_ID_INVALID=0`, `FB_TASK_ID_FLIGHT=0xFF` |
 
 ## 4. 動的モデル
 

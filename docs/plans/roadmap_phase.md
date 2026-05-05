@@ -37,7 +37,7 @@
 - Harnessパターンの確定
 - 静的DI機構（テンプレート、マクロ、アロケータ）
 - WIT→C++自動生成（基本機能）
-- Mesonビルドシステム
+- CMakeビルドシステム
 
 **Phase 0.75: Constexpr Verification & Code Gen Enhancement**
 - コード生成ツールのconstexpr対応

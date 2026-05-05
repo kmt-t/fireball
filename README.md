@@ -1,40 +1,46 @@
-# Fireball - WASM Hypervisor for Embedded Systems
+# Fireball Hypervisor
 
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+Fireball is a lightweight WebAssembly (WASM) hypervisor designed for embedded systems. It targets Cortex-M33, RISC-V/32, and Linux platforms, aiming to provide virtualization with a minimal footprint using only standard C/C++ runtimes.
 
-Fireballは、極小リソース環境（RAM 64KB以下）で動作する高性能WASM JITランタイムです。ARM Cortex-MやRISC-Vなどの組み込みマイコンをターゲットとし、スタックレス設計および静的メモリ管理により低オーバーヘッドな実行環境を提供します。
+## Concepts and Features
 
-## 概要
+The design of Fireball is built on three core pillars: a "Cooperative Scheduler" that operates safely on a single thread, "Ownership-based IPC" that clarifies data responsibility, and "Flexible Static Configuration."
 
-Fireballは `docs/architecture/` に定義された設計思想に基づき、以下の特徴を持ちます：
+- **Safe Multitasking**: Data races are prevented through scheduling by COOS (Cooperative OS) and CSP-based communication. Interrupts and event coordination are handled smoothly as tasks voluntarily yield control.
+- **Ownership-Aware Communication**: By combining explicit ownership transfer with shared memory management by the IPC Router, memory can be safely passed between subsystems.
+- **Predictable Behavior**: Heap and buffer sizes are fixed upfront through header-based static configurations. This allows for precise control over system behavior, even in memory-constrained environments.
 
-- **vSoCアーキテクチャ**: ハーネスパターンによるプラグイン形式のシステム構成
-- **低オーバーヘッド**: 協調型マルチタスク (COOS) による軽量コンテキストスイッチ
-- **動的代謝**: インタプリタとJITエンジンの切り替え実行
-ato- **厳格なリソース管理**: 動的メモリ確保（ヒープ）の原則禁止と15KLOC制約
+## Key Components
 
-詳細は [アーキテクチャ概要](docs/architecture/architecture_overview.md) を参照してください。
+- **COOS Kernel**: Manages task switching, communication, interrupt handling, and memory isolation to achieve efficient multitasking.
+- **IPC Router**: Handles URI-based service discovery, access control, and message forwarding. Its efficient communication protocol balances low latency with memory efficiency.
+- **vSoC Runtime**: Includes the WASM execution runtime, debugger, and JIT compiler. It also mediates hardware access through communication with the host.
+- **HAL and Services**: Provides hardware operations for UART, GPIO, and other peripherals via IPC. WASI and Libc wrappers are also available as services.
 
-## セットアップ
+## Development Environment and Build
 
-ビルドには Clang, CMake, Ninja が必要です。
+Fireball uses the Meson build system. C99 and C++20 code is compiled with clang, supporting builds for various environments including Cortex-M33, RISC-V/32, and x86.
 
-1. **前提ツール**
-   - Clang (13+)
-   - CMake (4.2+)
-   - Ninja
-   - Python 3.14+ (pyenv推奨)
-   - wit-bindgen
-   - TLA+ (TLC)
+## Setup
 
-2. **依存環境のインストール**
-   ```bash
-   pip install -r requirements.txt
-   ```
+You need Clang, CMake, and Ninja to build the project.
 
-## ビルド方法
+### 1. Prerequisites
+- Clang (13+)
+- CMake (4.2+)
+- Ninja
+- Python 3.14+ (pyenv recommended)
+- wit-bindgen
+- TLA+ (TLC)
 
-### ホスト環境 (x64) 向け
+### 2. Install Dependencies
+```bash
+pip install -r requirements.txt
+```
+
+## How to Build
+
+### For Host Environment (x64)
 ```bash
 mkdir cmake-build
 cd cmake-build
@@ -42,14 +48,14 @@ cmake -G Ninja ..
 ninja
 ```
 
-## ドキュメントと開発プロセス
+## Documentation and Development Process
 
-Fireballの開発は `docs/` に格納された仕様書に基づきます。実装や変更を行う際は、必ず該当するドキュメントを確認し、 `.claude/rules/` に定義された開発ポリシーを遵守してください。
+All Fireball development is based on the specifications stored in `docs/`. Before implementing changes, please check the relevant documentation and adhere to the development policies defined in `.claude/rules/`.
 
-- **設計ドキュメント**: `docs/components/`
-- **開発ガイドライン**: `.claude/rules/development-policy.md`
-- **リソース予算**: `docs/architecture/resource_budget.md`
+- **Design Documents**: `docs/components/`
+- **Development Guidelines**: `.claude/rules/development-policy.md`
+- **Resource Budget**: `docs/architecture/resource_budget.md`
 
-## ライセンス
+## License
 
-MIT License - 詳細は [LICENSE](LICENSE) ファイルを参照。
+Simplified BSD License - See the [LICENSE](LICENSE) file for details.

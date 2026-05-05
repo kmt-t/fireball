@@ -141,79 +141,12 @@ sequenceDiagram
     Note over I: control instruction -> stop tailcall
     I->>D: post_check(exec_ctx)
     D-->>I: continue
-### 4.4 インタープリタ・JIT・デバッガの協調実行モデル (コンセプトコード)
-
-システムの中で最も複雑な状態遷移を持つ実行エンジン（Executor）のコア・ループ構造。
-TLA+等の形式仕様検証や、実装フェーズのベースとなる。
-
-```python
-# executor_loop: タスク（WASMスレッド）のメインループ
-def execute_wasm_task(task_context, module_view):
-    while True:
-        # --- 1. Debugger Interception ---
-        # ブレークポイントヒットやステップ実行要求の確認
-        if debugger.is_active():
-            if debugger.check_breakpoint(task_context.pc):
-                task_context.state = HALTED_BY_DEBUGGER
-                debugger.notify_hit(task_context)
-                co_yield() # デバッガ(GDB等)からの再開命令を待つ
-                continue
-                
-            if debugger.is_step_mode(task_context):
-                # ステップ実行時は「強制的にインタープリタ」で1命令だけ実行し、すぐ停止させる
-                execute_single_instruction_interpreter(task_context, module_view)
-                debugger.notify_step_done(task_context)
-                co_yield()
-                continue
-        
-        # --- 2. JIT Translation & Execution ---
-        # ホットスポットとしてコンパイル済みのネイティブコードがあるか検索
-        jit_address = jit_engine.lookup_trace(task_context.pc)
-        
-        if jit_address != NULL:
-            # JITエントリが存在する場合: ネイティブ実行に切り替え（Fast Path）
-            # JITコード側で「インタープリタへのフォールバック」や「trap」が発生するまで一気に実行される
-            exit_reason = execute_native_trace(jit_address, task_context)
-            
-            # ネイティブコード内でフック（yield, trap, または JITチェーン外への分岐）された
-            if exit_reason == YIELD_REQUESTED:
-                co_yield()
-            elif exit_reason == TRAP:
-                handle_trap(task_context)
-            
-            # 実行が進んだ分だけPCが更新されて戻ってくる。ループ継続。
-            continue
-            
-        # --- 3. Interpreter Fallback (Slow Path) ---
-        # JITコードがない、またはデバッガ制約などでインタープリタ実行する
-        instruction = fetch_instruction(module_view, task_context.pc)
-        
-        # 実行前のホットスポット記録（JITコンパイル候補の選定）
-        # ※ デバッガ稼働中はノイズを防ぐため記録を一時停止するなどの考慮が必要
-        if not debugger.is_active():
-            jit_engine.hotspot_detector.record_execution(task_context.pc)
-            
-        # 1命令インタプリタ実行
-        execute_single_instruction_interpreter(task_context, module_view)
-        
-        # --- 4. Preemption & Lifecycle ---
-        # インタープリタ実行サイクルで規定命令数（Fuel）を消費したらコルーチンとしてyield
-        if task_context.fuel_consumed >= QUANTA_LIMIT:
-            task_context.fuel_consumed = 0
-            
-            # yield時のダウンタイムを利用して、ホットスポットのバッチコンパイルを実行
-            if not debugger.is_active():
-                jit_engine.process_batch_compile(task_context)
-                
-            co_yield() # 他タスクへCPUを譲る
 ```
 
 ## 5. インターフェイス定義
 
 ### 5.1 公開API
 外部から利用可能なオブジェクト指向APIを定義する。
-
-TODO(Phase 1): ATC抽出 - `execution_context` の状態遷移に関する厳格な事前/事後/不変条件をAPIごとに定義すること。
 
 #### `initialize`
 
@@ -279,14 +212,20 @@ TODO(Phase 1): ATC抽出 - `execution_context` の状態遷移に関する厳格
 - **目標**: ゲストの暴走を隔離。 `{FaultIsolation}`
 - **方策**: `sp_boundary` と `memory_size` による境界チェック `{MemoryBoundaryCheck}`、`interrupt_flags` による安全な割り込み処理。
 
-## 7. 設計完了チェックリスト
-- [x] Tier 3 (Implementation Domain) に基づき設計となっているか
-- [x] インタープリタの責務が明確に定義されているか
+## 7. 参考実装リスト
+
+| 名称 | 参照先URL/文献名 | 採用/考慮する理由 |
+| :--- | :--- | :--- |
+| WAMR Fast Interpreter | github.com/bytecodealliance/wasm-micro-runtime | ロード時ルックアップによる直接ジャンプの定石として |
+| WASM3 Interpreter | github.com/wasm3/wasm3 | 最適化されたバイトコードディスパッチャの参考 |
+
+## 8. 設計完了チェックリスト（網羅性確認）
 - [x] コンポーネントの責務が明確に定義されているか
-- [x] **設計が実装詳細（言語仕様）に依存せず、目的・意図と課題を解消するコンセプトが定義されているか**
+- [x] 設計が実装詳細（言語仕様）に依存せず、目的・意図と課題を解消するコンセプトが定義されているか
 - [x] 内部設計（データ構造、ブロック図、クラス、アルゴリズム）が適切に定義されているか
 - [x] 内部ブロック図（静的）とシーケンス/状態遷移図（動的）がセットで定義されているか
 - [x] 公開APIのメソッド名が英語で記述され、事前/事後条件が明確か
 - [x] 非機能制約（性能、メモリ、安全性）に対する具体的な方策が明示されているか
 - [x] 設計の交差点（トレードオフ）が解消されているか
 - [x] 上位の要求 `{Keyword}` とのトレーサビリティが確保されているか
+- [x] 直交表を用いて公開APIの各パラメータや内部状態の組み合わせ網羅性が検討されているか

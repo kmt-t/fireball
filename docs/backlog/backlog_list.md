@@ -34,7 +34,7 @@ WBS の [Step 0] 盆栽デザイン（SysML）および [Step 1-2] 形式検証�
 
 #### [Tier 1] Core Logic Verification
 - [ ] **COOS / IPC 協調モデル**:
-  - [ ] [Step 1-2] タスク状態遷移、割り込み通知、Handoff の形式検証 `{UseCpp20Coroutine}` `{CSP_Handoff}`
+  - [x] [Step 1-2] タスク状態遷移、割り込み通知、Handoff の形式検証 `{UseCpp20Coroutine}` `{CSP_Handoff}`
   - [ ] [Step 0] IPC ルータの名前解決・所有権移譲の SysML モデル化
 - [ ] **IPC パニック・デッドロック回避**:
   - [ ] [Step 1-2] In-flight パニック時の Drop ハンドラとメモリリーク防止の整合検証
@@ -49,35 +49,24 @@ WBS の [Step 0] 盆栽デザイン（SysML）および [Step 1-2] 形式検証�
 - [ ] **リソース制約検証**:
   - [ ] [Step 0] SysML パラメトリック図による RAM/SLOC 予算の遵守検証
 
+### Phase 0.9: Component Reference Implementation Survey
+主要コンポーネントの参考実装を調査し、設計の定石との整合性を確認する。
+
+- [ ] **[Interpreter]** 参考調査: WAMR, WASM3 (命令ハンドラ最適化)
+- [ ] **[JIT Compiler]** 参考調査: Cranelift, DynASM (JITアセンブラ)
+- [ ] **[COOS Scheduler]** 参考調査: Zephyr Scheduler, FreeRTOS
+- [ ] **[IPC Router]** 参考調査: Fiasco.OC, seL4 (Capability IPC)
+- [ ] **[Memory Manager]** 参考調査: Bare-metal bump allocators
+- [ ] **[Platform HAL]** 参考調査: CMSIS-HAL, libopencm3
+
 ---
 
 ## 1. 周辺設計の深化 (Phase 1: Deepening Design via Value Stories)
 WBS の [Step 3-4] 自律導出（Codegen/Impl）および 実装検証（Test/Integration）を中心とした、価値の具現化。
 
-### Story: [Low-Latency physical I/O]
-**Value**: WASM ゲストから最小限のオーバーヘッドで物理ハードウェアを操作し、リアルタイム制御を可能にする。
-
-- [ ] **[vMMIO] 物理デバイス透過アクセス**:
-  - [ ] [Step 3] 物理メモリパススルー、vDMA プロキシの実装生成
-  - [ ] [Step 4] 物理 GPIO/UART 透過アクセス整合テストの実行
-- [ ] **[COOS] HAL-COOS 連携の実装**:
-  - [ ] [Step 4] 物理割り込みから WASM ハンドラ実行までのレイテンシ測定
-
-### Story: [Secure & Zero-Copy Inter-Service Communication]
-**Value**: 異なる信頼レベルのモジュール間で、ゼロコピーかつ安全にデータを交換できるようにする。
-
-- [ ] **[IPC] ゼロコピー・通信基盤の実装**:
-  - [ ] [Step 3] 静的 DI によるサービス注入、ゼロコピー・メッセージングの生成 `{IPC_ZeroCopy}`
-  - [ ] [Step 4] セキュリティドメイン隔離・所有権遷移テストの実行
-- [ ] **[COOS] スケジューリングのリファイン**:
-  - [ ] [Step 3] BLOCKED リスト管理、効率的な通信待機の実装 `{COOS_Scheduling_Refine}`
-
-### Story: [Observability & Non-Intrusive Debugging]
-**Value**: システム実行に悪影響を与えずに、内部ステートを可視化・分析できるようにする。
-
-- [ ] **[Debug] 非介入型デバッグの実装**:
-  - [ ] [Step 3] ログ辞書生成、非介入型「覗き窓」インターフェイスの実装 `{COOS_Transparent}`
-  - [ ] [Step 4] GDB RSP による実機デバッグ・ロギングの検証
+- Story: [Low-Latency physical I/O]
+- Story: [Secure & Zero-Copy Inter-Service Communication]
+- Story: [Observability & Non-Intrusive Debugging]
 
 ---
 

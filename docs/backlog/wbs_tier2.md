@@ -7,7 +7,7 @@
 各コンポーネントの開発は以下のフェーズを経て完了とする。
 
 1. **[Step 0] 盆栽デザイン (Req / NL / SysML)**: 要件の抽出、自然言語による設計、および SysML（静的・動的・パラメトリック）モデル化。
-2. **[Step 1-2] 形式検証 (Formal Verification)**: WIT によるインターフェイス定義、および TLA+/Apalache による論理不変条件の証明。
+2. **[Step 1-2] 形式検証 (Formal Verification)**: WIT によるインターフェイス定義、および TLA+/TLC による論理不変条件の証明。
 3. **[Step 3-4] 実装検証 (Test & Integration)**: 形式仕様からのテスト導出と実行、およびターゲット環境での統合。
 
 ---
@@ -59,5 +59,5 @@
 
 各コンポーネントの [Step 4] 完了には以下のエビデンスを必須とする。
 - **Formal Spec**: `/inc/core/*.hxx` (WIT からの自動生成ヘッダ)
-- **Proof**: `apalache_report.md` (Apalache 検証結果の要約)
+- **Proof**: `tlc_report.md` (TLC 検証結果の要約)
 - **Compliance**: `compliance_report.md` (命名規則、禁止パターン、SLOC 予算の遵守証明)

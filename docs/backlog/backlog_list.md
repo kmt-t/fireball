@@ -83,5 +83,5 @@ WBS の [Step 3-4] 自律導出（Codegen/Impl）および 実装検証（Test/I
 
 ## ステータス管理
 - **Step 0**: 盆栽デザイン・SysML 完了
-- **Step 1-2**: 形式検証（Apalache）パス
+- **Step 1-2**: 形式検証（TLC）パス
 - **Step 3-4**: 実装生成・テスト通過・ターゲット統合完了

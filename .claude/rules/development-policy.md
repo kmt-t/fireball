@@ -22,9 +22,9 @@ Fireballプロジェクトにおける開発方針、プロセス、および各
 - Mermaid を使用して SysML 形式（BDD/SD/SMD/PAR）で設計を可視化する。
 - `docs/components/CHECKLIST.md` に基づき、エージェントがセルフレビューを行う。
 
-### Step 1-2: Formal Verification (TLA+/Apalache)
+### Step 1-2: Formal Verification (TLA+/TLC)
 - インターフェースを WIT で定義する。
-- **TLA+** を用いてモデルを記述し、**Apalache** で不変条件 (ATC: @pre, @post, @inv) や動的振る舞いの論理的な一貫性を検証する。
+- **TLA+** を用いてモデルを記述し、**TLC** で不変条件 (ATC: @pre, @post, @inv) や動的振る舞いの論理的な一貫性を検証する。
 
 ### Step 3: Implementation Generation (実装生成)
 - WIT から C++ コード（Harness, Interface）を自動生成する。
@@ -40,4 +40,4 @@ Fireballプロジェクトにおける開発方針、プロセス、および各
 - **TODO管理**: 未決定事項は `TODO(Phase X): [課題] - [アクション]` の形式で明示する。
 - **トレーサビリティ**: 要求仕様（`docs/requires/requirement_list.md`）のキーワード `{Keyword}` をドキュメント内に記述し、紐付けを維持する。
 - **質問の推奨**: 仕様の不確実性は憶測で埋めず、積極的にユーザーへ質問すること。
-- **TLA+/Apalacheの活用**: 複雑な状態遷移や所有権の移譲については、TLA+によるモデル化とApalacheによる検証を提案または実施すること。
+- **TLA+/TLCの活用**: 複雑な状態遷移や所有権の移譲については、TLA+によるモデル化とTLCによる検証を提案または実施すること。

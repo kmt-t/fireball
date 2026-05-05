@@ -8,7 +8,7 @@ Fireballプロジェクトにおける開発方針、プロセス、および各
 
 - **Specification-First (仕様第一)**: 実装に先立ち、`docs/components/` 以下に詳細な仕様書を作成する。
 - **WIT as Single Source of Truth (WIT真実在)**: コンポーネント間のインターフェースは WIT (WebAssembly Interface Types) を唯一の正解とし、ここから設計を開始する。
-- **Zero-Cost Abstraction (ゼロコスト抽象化)**: C++23 (flat_map等), C++20 Concepts, constexpr を活用し、実行時のオーバーヘッドを排除する。
+- **Zero-Cost Abstraction (ゼロコスト抽象化)**: C++23 (flat_map等), C++23 Concepts, constexpr を活用し、実行時のオーバーヘッドを排除する。
 - **Strict Memory Policy (厳格なメモリ管理)**: 動的メモリ確保（ヒープ）を原則禁止し、静的またはスタック割り当てを優先する。 `{Policy_Memory}`
 - **Code Size Constraint (15KLOC制約)**: 全体のコード規模を 15,000行 (SLOC) 以内に収める。
 - **Bonsai Design (盆栽デザイン)**: 全体のバランスを見ながら、設計の密度を段階的に（Phase/Stepごとに）上げていく。

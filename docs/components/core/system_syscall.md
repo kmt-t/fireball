@@ -14,7 +14,7 @@
 どちらのパスも最終的にvMMIO許可テーブルを通る。セキュリティゲートは1箇所。 `{UnifiedAccessModel}`
 
 ## 3. `fireball_call` WIT定義
-`fireball_call`のWIT (WebAssembly Interface Type) 定義は以下の通りである。詳細は `docs/components/interface_wit.md` を参照のこと。 `{WIT_Interface_Spec}`
+`fireball_call`のWIT (WebAssembly Interface Type) 定義は以下の通りである。詳細は `docs/components/interface/interface_wit.md` を参照のこと。 `{WIT_Interface_Spec}`
 
 
 ```wit

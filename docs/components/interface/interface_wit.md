@@ -48,7 +48,7 @@ TODO(Phase 1): ATC抽出 - 各リカバリー戦略（retry, restart等）を選
 - **デバッグ情報の分離**: 失敗の詳細理由はログシステムで確認する。インターフェースには含めない。
 
 ## 4. 低レベル・トラップ・インターフェイス `{Trap_Interface}`
-WASI標準には存在しない、Fireball固有の高速システムコール。実体は `docs/components/system_syscall.md` で定義される `fireball_call` である。 `{Syscall_Mapping}`
+WASI標準には存在しない、Fireball固有の高速システムコール。実体は `docs/components/core/system_syscall.md` で定義される `fireball_call` である。 `{Syscall_Mapping}`
 
 ### `fireball:host/trap`
 - `fireball-call(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32, arg4: u32, arg5: u32) -> u32`

@@ -42,6 +42,7 @@
 
 # Misc.
 *.log
-cmake-build-*/
+cmake-build*/
+build*/
 temp/
 docs/temp/

@@ -42,8 +42,6 @@
 
 # Misc.
 *.log
-.roo
-build*/
-tests/zephyr_app/build*
-states/
+cmake-build-*/
+temp/
 docs/temp/

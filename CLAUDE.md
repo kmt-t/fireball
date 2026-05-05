@@ -21,7 +21,7 @@ Adhere strictly to the rules in `.claude/rules/subrules/`:
     - Architectural changes must be reflected in the design specs.
     - Component design must follow the format defined in `docs/components/FORMAT.md`.
     - Consistency with `docs/components/CHECKLIST.md` is required for self-review.
-/
+
 ## Common Tasks & Validation
 - **Build**: Use `ninja` within `cmake-build-*/` directories.
 - **Validation**: Before committing, run the cross-sectional validation script to check keyword annotations and tier compliance.

@@ -19,7 +19,7 @@ The design of Fireball is built on three core pillars: a "Cooperative Scheduler"
 
 ## Development Environment and Build
 
-Fireball uses the Meson build system. C99 and C++20 code is compiled with clang, supporting builds for various environments including Cortex-M33, RISC-V/32, and x86.
+Fireball uses the CMake build system. C99 and C++20 code is compiled with clang, supporting builds for various environments including Cortex-M33, RISC-V/32, and x86.
 
 ## Setup
 

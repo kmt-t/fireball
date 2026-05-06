@@ -9,10 +9,14 @@ Fireball is a WASM hypervisor for embedded systems (RAM < 64KB, target Cortex-M/
 - **Interfaces**: **WIT (WebAssembly Interface Types)** is the single source of truth for all interfaces. Implementation code (C++) is derived from WIT.
 
 ## Development Constraints & Standards
-Adhere strictly to the rules in `.claude/rules/subrules/`:
+Adhere strictly to the rules in `.claude/rules/`:
 1. **embedded_cpp.md**: Strict memory management (no heap/dynamic containers), RAII, and type-safety (no `void*`).
 2. **design_philosophy.md**: Contract-first design, clean architecture, and strict traceability.
-3. **documentation.md**: Documentation is authoritative.
+3. **documentation.md**: Documentation is authoritative; keyword validation and tier compliance.
+4. **documentation_format.md**: Mermaid for diagrams, Python for verification scripts, table-based API definitions.
+5. **stdlib_policy.md**: C++23 STL usage policy for extreme resource constraints (32-64KB RAM).
+6. **development-policy.md**: Specification-first development; WIT as single source of truth.
+7. **process_control.md**: Backlog-first; design completion before implementation (Step 0-2 before Step 3).
 
 ## Tracing & Reference Rules
 - **Traceability**: All architectural decisions must trace to requirements (marked with `{Keyword}`) in `docs/requires/`. References to these keywords must be maintained in all design documents (`docs/components/`).

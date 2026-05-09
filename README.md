@@ -33,7 +33,8 @@ You need Clang, CMake, and Ninja to build the project.
 - wit-bindgen
 - TLA+ (TLC)
 
-### 2. Install Dependencies
+### 2. Install Python Dependencies
+
 ```bash
 pip install -r requirements.txt
 ```

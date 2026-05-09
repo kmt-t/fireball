@@ -2,7 +2,7 @@
 """
 Fireball 仕様整合性チェッカー
 
-機械的チェック (F/T/A/R グループ) と LLM意味チェック (CSV駆動) を組み合わせて
+機械的チェック (F/T/A グループ) と LLM意味チェック (CSV駆動) を組み合わせて
 コンポーネント仕様書間の整合性を検証する。
 
 各フラグは独立して動作する。組み合わせても干渉しない。
@@ -36,8 +36,7 @@ LLM バックエンド（優先順位順）:
     T1: コンポーネント仕様書が requirement_list.md に未定義のキーワードを参照していないか
     T2: requirement_list.md のキーワードがいずれかの仕様書から引用されているか（警告のみ）
   A: アーキテクチャ整合性
-    A1: Tier 3 仕様書が Tier 1/2 の型を実装依存文脈で参照していないか（バッククォート識別子から機械的抽出）
-    A2: Tier 1 公開 API が他の仕様書で表記ゆれ（camelCase / kebab-case）していないか
+    A1: Tier 1 公開 API が他の仕様書で表記ゆれ（camelCase / kebab-case）していないか
 
 ハードコードなし設計:
     TEMPLATE_KW  : requirement_list.md の [Template & Meta] セクションから自動抽出
@@ -620,7 +619,7 @@ def _load_api_aliases() -> tuple[dict[str, list[str]], set[str]]:
     return aliases, skip
 
 
-def check_a2(all_files: list[Path]) -> list[tuple[Path, str, str]]:
+def check_a1(all_files: list[Path]) -> list[tuple[Path, str, str]]:
     ipc_aliases, api_skip = _load_api_aliases()
     violations = []
     for path in all_files:
@@ -932,7 +931,7 @@ def run_mechanical_checks():
     report_mechanical("T2 孤立キーワード", sorted(check_t2(defined_kw, all_files)), lambda kw: f"{{{kw}}} は引用なし", warn=True)
 
     print(f"\n{'─'*60}\n{BOLD}■ A: アーキテクチャ整合性{RESET}\n{'─'*60}")
-    total_errors += report_mechanical("A2 API名の表記ゆれ", check_a2(all_files), lambda e: f"{e[0].relative_to(REPO_ROOT)}  →  '{e[2]}' (正式名: {e[1]})")
+    total_errors += report_mechanical("A1 API名の表記ゆれ", check_a1(all_files), lambda e: f"{e[0].relative_to(REPO_ROOT)}  →  '{e[2]}' (正式名: {e[1]})")
 
     return total_errors
 

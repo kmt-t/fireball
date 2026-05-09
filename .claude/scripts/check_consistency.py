@@ -19,10 +19,9 @@ Fireball 仕様整合性チェッカー
     --debug      デバッグログ（LLM 生レスポンス等）を表示
 
 LLM バックエンド（優先順位順）:
-    1. ANTHROPIC_API_KEY が設定されていれば Anthropic Claude を使用
-    2. SAKURA_AI_API_KEY が設定されていれば Sakura AI を使用
-    3. OPEN_ROUTER_API_KEY が設定されていれば OpenRouter を使用
-    4. どちらもなければ ollama を使用（ローカル）
+    1. SAKURA_AI_API_KEY が設定されていれば Sakura AI を使用
+    2. OPEN_ROUTER_API_KEY が設定されていれば OpenRouter を使用
+    3. どちらもなければ ollama を使用（ローカル）
 
 生成ファイル:
     docs/components/spec_matrix.csv           コンポーネント × 要求キーワード 2D マトリクス
@@ -106,19 +105,16 @@ def _read_api_key(name: str) -> str:
 
 SAKURA_AI_API_KEY = _read_api_key("SAKURA_AI_API_KEY")
 OPEN_ROUTER_API_KEY = _read_api_key("OPEN_ROUTER_API_KEY")
-ANTHROPIC_API_KEY = _read_api_key("ANTHROPIC_API_KEY")
 
-USE_ANTHROPIC = bool(ANTHROPIC_API_KEY)
 USE_SAKURA = bool(SAKURA_AI_API_KEY)
-USE_OPENROUTER = bool(OPEN_ROUTER_API_KEY) and not USE_ANTHROPIC and not USE_SAKURA
+USE_OPENROUTER = bool(OPEN_ROUTER_API_KEY) and not USE_SAKURA
 
 SAKURA_MODEL = "gpt-oss-120b"
-ANTHROPIC_MODEL = "claude-opus-4-7"
-GENTABLE_MODEL = "google/gemini-3.1-pro-preview"
+OPEN_ROUTER_MODEL = "google/gemini-3.1-pro-preview"
 CHECK_MODEL = "qwen2.5-coder:3b"
 
 if ARGS.model:
-    SAKURA_MODEL = GENTABLE_MODEL = CHECK_MODEL = ARGS.model
+    SAKURA_MODEL = OPEN_ROUTER_MODEL = ARGS.model
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
@@ -250,53 +246,11 @@ def extract_sections(text: str, headers: list[str], max_chars: int = 2000) -> st
 
 def call_llm(prompt: str, max_tokens: int = 768, openrouter: bool | None = None) -> str:
     """LLMにプロンプトを送り、レスポンス文字列を返す。"""
-    if USE_ANTHROPIC:
-        return call_anthropic(prompt, max_tokens)
     if USE_SAKURA:
         return call_sakura(prompt, max_tokens)
     if USE_OPENROUTER:
         return call_openrouter(prompt, max_tokens)
     return call_ollama(prompt, max_tokens)
-
-
-def call_ollama(prompt: str, max_tokens: int = 768) -> str:
-    payload = {
-        "model": CHECK_MODEL,
-        "prompt": prompt,
-        "stream": False,
-        "options": {"temperature": 0.0, "num_predict": max_tokens},
-    }
-    data = json.dumps(payload).encode("utf-8")
-    debug(f"[Ollama] POST {OLLAMA_URL}")
-    debug(f"[Ollama] model={CHECK_MODEL}, payload={len(data)} bytes")
-    req = urllib.request.Request(OLLAMA_URL, data=data, method="POST",
-                                  headers={"Content-Type": "application/json"})
-    try:
-        with urllib.request.urlopen(req, timeout=180) as resp:
-            raw_body = resp.read()
-            debug(f"[Ollama] response: {raw_body.decode('utf-8', errors='replace')}")
-            body = json.loads(raw_body)
-            return body.get("response", "").strip()
-    except Exception as e:
-        debug(f"[Ollama] エラー: {type(e).__name__}: {e}")
-        return f'{{"error": "{e}"}}'
-
-def call_anthropic(prompt: str, max_tokens: int = 768) -> str:
-    try:
-        import anthropic
-    except ImportError:
-        return '{"error": "anthropic パッケージが未インストール (pip install anthropic)"}'
-
-    try:
-        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-        message = client.messages.create(
-            model=ANTHROPIC_MODEL,
-            max_tokens=max_tokens,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return (message.content[0].text if message.content else "").strip()
-    except Exception as e:
-        return f'{{"error": "{type(e).__name__}: {e}"}}'
 
 
 def call_sakura(prompt: str, max_tokens: int = 768) -> str:
@@ -366,7 +320,7 @@ def call_ollama(prompt: str, max_tokens: int = 768) -> str:
 
 def call_openrouter(prompt: str, max_tokens: int = 768) -> str:
     payload = {
-        "model": GENTABLE_MODEL,
+        "model": OPEN_ROUTER_MODEL,
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.0,
         "max_tokens": max_tokens,
@@ -378,7 +332,7 @@ def call_openrouter(prompt: str, max_tokens: int = 768) -> str:
     }
 
     debug(f"[OpenRouter] POST {OPENROUTER_URL}")
-    debug(f"[OpenRouter] model={GENTABLE_MODEL}, payload={len(data)} bytes")
+    debug(f"[OpenRouter] model={OPEN_ROUTER_MODEL}, payload={len(data)} bytes")
     debug(f"[OpenRouter] request:\n{json.dumps(payload, ensure_ascii=False, indent=2)}")
 
     req = urllib.request.Request(OPENROUTER_URL, data=data, method="POST", headers=headers)
@@ -959,9 +913,8 @@ def report_llm(pair_id: str, label: str, result: dict) -> int:
 
 
 def get_model_info():
-    if USE_ANTHROPIC: return "Anthropic Claude", ANTHROPIC_MODEL
     if USE_SAKURA: return "Sakura AI", SAKURA_MODEL
-    if USE_OPENROUTER: return "OpenRouter", GENTABLE_MODEL
+    if USE_OPENROUTER: return "OpenRouter", OPEN_ROUTER_MODEL
     return "ollama", CHECK_MODEL
 
 

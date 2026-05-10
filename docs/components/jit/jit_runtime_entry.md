@@ -109,10 +109,3 @@ TODO(Phase 1): ATCの抽出 - `lookup` と `register_entry` の事前・事後�
 
 ### 6.2 メモリ制約
 - **方策**: `{JIT_DoubleBuffer_Cache}` による Copy-GC 方式により、断片化を防ぎつつ、実行頻度の低いコードを自然に破棄（代謝）させる。
-
-## 7. 設計完了チェックリスト
-- [x] Tier 3 (Implementation Domain) に基づき設計となっているか
-- [x] 検索アルゴリズムが記述されているか
-- [x] カードインデックスの役割が明確か
-- [x] 要求キーワード `{JIT_DoubleBuffer_Cache}` と紐づいているか
-- [x] `code_offset` のスケーラビリティ（ビットシフト）が明記されているか

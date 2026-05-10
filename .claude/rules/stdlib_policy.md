@@ -1,3 +1,6 @@
+name: stdlib-policy
+globs: ["src/**", "inc/**"]
+---
 # C++標準ライブラリ利用規約 & ユーティリティ設計書
 
 本ドキュメントは、極小リソース環境（RAM 32KB - 64KB）における C++23 標準ライブラリ (STL) の利用制限、および不足機能を補う独自のユーティリティについて定義する。 `{NoStdVector}` `{Policy_Memory}` `{ZeroOverhead}`

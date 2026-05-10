@@ -35,6 +35,7 @@ LLM バックエンド（優先順位順）:
   T: トレーサビリティ
     T1: コンポーネント仕様書が requirement_list.md に未定義のキーワードを参照していないか
     T2: requirement_list.md のキーワードがいずれかの仕様書から引用されているか（警告のみ）
+    T3: requirement_list.md のキーワードがコンポーネント仕様書から引用されているか（警告のみ）
   A: アーキテクチャ整合性
     A1: Tier 1 公開 API が他の仕様書で表記ゆれ（camelCase / kebab-case）していないか
 
@@ -563,6 +564,13 @@ def check_t2(defined: set[str], all_files: list[Path]) -> set[str]:
     return defined - referenced - TEMPLATE_KW
 
 
+def check_t3(defined: set[str], component_files: list[Path]) -> set[str]:
+    referenced: set[str] = set()
+    for path in component_files:
+        referenced |= extract_keywords(path.read_text(encoding="utf-8"))
+    return defined - referenced - TEMPLATE_KW
+
+
 # ---------------------------------------------------------------------------
 # A: アーキテクチャ整合性
 # ---------------------------------------------------------------------------
@@ -653,7 +661,7 @@ def generate_spec_matrix() -> tuple[list[str], list[str], dict[str, set[str]]]:
         rel = str(f.relative_to(REPO_ROOT))
         file_kw_map[rel] = kws
 
-    all_kw = sorted(set().union(*file_kw_map.values())) if file_kw_map else []
+    all_kw = sorted(defined_kw - TEMPLATE_KW)
     all_files = sorted(file_kw_map.keys())
 
     return all_kw, all_files, file_kw_map
@@ -929,6 +937,7 @@ def run_mechanical_checks():
     print(f"\n{'─'*60}\n{BOLD}■ T: トレーサビリティ{RESET}\n{'─'*60}")
     total_errors += report_mechanical("T1 未定義キーワード参照", check_t1(defined_kw, comp_files), lambda e: f"{e[0].relative_to(REPO_ROOT)}  →  {{{e[1]}}} が未定義")
     report_mechanical("T2 孤立キーワード", sorted(check_t2(defined_kw, all_files)), lambda kw: f"{{{kw}}} は引用なし", warn=True)
+    report_mechanical("T3 コンポーネント未カバーキーワード", sorted(check_t3(defined_kw, comp_files)), lambda kw: f"{{{kw}}} はコンポーネント仕様書で未引用", warn=True)
 
     print(f"\n{'─'*60}\n{BOLD}■ A: アーキテクチャ整合性{RESET}\n{'─'*60}")
     total_errors += report_mechanical("A1 API名の表記ゆれ", check_a1(all_files), lambda e: f"{e[0].relative_to(REPO_ROOT)}  →  '{e[2]}' (正式名: {e[1]})")

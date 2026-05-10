@@ -1,4 +1,5 @@
 name: documentation-validation
+globs: ["docs/**"]
 instructions: |
   1. 自動検証: コードをコミットする前に、交差検証スクリプトを実行し、新規または修正されたコードがすべて `docs/components/` 内のエントリに裏付けられていることを確認すること。
   2. キーワード検証: 実装されたロジックに、設計文書で指定された必須のキーワード・アノテーション（例：`{CooperativeMultitasking}`）が含まれていることを確認すること。

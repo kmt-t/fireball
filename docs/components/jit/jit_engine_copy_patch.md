@@ -100,9 +100,3 @@ TODO(Phase 1): ATCの抽出 - `compile_trace` における `dest` バッファ�
 ### 6.1 性能制約
 - **方策**: `{JIT_CopyAndPatch}` により、コンパイル時間を最適化理論の限界まで短縮する。
 - **方策**: ランタイムAPIフォールバック `{JIT_RuntimeAPI_Fallback}` により、複雑なエッジケースを簡素化する。
-
-## 7. 設計完了チェックリスト
-- [x] Tier 3 (Implementation Domain) に基づき設計となっているか
-- [x] Copy-and-Patch の原理が記述されているか
-- [x] パッチ適用のプロセスが明確か
-- [x] 要求キーワード `{JIT_CopyAndPatch}` に紐づいているか

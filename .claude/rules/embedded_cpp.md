@@ -1,4 +1,5 @@
 name: coding-standards-embedded
+globs: ["src/**", "inc/**"]
 instructions: |
   1. メモリ管理: ヒープ禁止(malloc/new禁止)。静的/スタック領域を使用すること。動的コンテナ禁止（std::vector等）。
   2. RAII: リソース管理はRAIIを厳守すること。

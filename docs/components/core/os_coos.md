@@ -88,10 +88,3 @@ TODO(Phase 1): サブコンポーネントのAPIに関する完全なATC定義 -
 | 5 | RECV | Empty | - | BLOCKEDへ遷移 | (なし) |
 | 6 | RECV | (待機TXあり) | BLOCKED | **READYへ遷移(直接)** | **READYへ遷移(直接)** |
 | 7 | NOTIFY_INT | - | BLOCKED/READY | (継続) | **INTERRUPTEDへ遷移** |
-
-## 7. 設計完了チェックリスト
-- [x] Tier 2 (Subsystem Domain) に基づき設計となっているか
-- [x] Harness と Stateless Interface パターンが適用されているか
-- [x] **構造化データ（インターフェイス、ハーネス等）が表形式で記述されているか**
-- [x] 命名規則（プリフィックス/ポストフィックスなし、PODメンバの末尾アンダースコアなし）が遵守されているか
-- [x] 上位の要求 `{Keyword}` とのトレーサビリティが確保されているか

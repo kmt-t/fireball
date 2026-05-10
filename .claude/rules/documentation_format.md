@@ -1,4 +1,5 @@
 name: documentation-format-standards
+globs: ["docs/**"]
 instructions: |
   1. 図表の表記規約: すべてのドキュメント内の図（ブロック定義図、シーケンス図、状態遷移図など）は Mermaid 記法で記述する。Markdown コードブロック内に埋め込み、`mermaid` 言語指定で囲むこと。
   2. 検証コードの言語: 形式検証モデル（TLA+）、動作検証、シミュレーションのコードは Python で実装する。TLA+ は検証仕様定義のための DSL であり、実行・検証ロジック自体は Python で記述。

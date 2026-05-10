@@ -47,6 +47,7 @@ graph TD
 
 ### 4.1 アルゴリズム
 - **CSP Handoff (直接スイッチ)**: `send`/`recv` 時に相手タスクが既に待機状態であった場合、スケジューラを介さず即座に相手タスクへ実行権を移譲する。 `{CSP_Handoff}` `{DirectContextSwitch}`
+- **Idle Detection**: 全ての実行中タスクがブロック状態にあり、かつイベントキューが空（割り込みや外部イベントによる起床待ちのみ）の場合にアイドル状態と判定する。この条件を `idle_hook` のトリガーとし、バックグラウンド処理（ログフラッシュ等）を呼び出す。 `{IdleDetection}`
 - **Memory Management**: タスク生成時に独立したメモリパーティションを割り当てる。 `{StrictMemoryLimit}` `{IndependentHeap}`
 
 ### 4.2 状態遷移
@@ -70,21 +71,23 @@ TODO(Phase 1): サブコンポーネントのAPIに関する完全なATC定義 -
 
 | 型名 | 機能概要 | 主要な操作 |
 | :--- | :--- | :--- |
-| `scheduler` | タスクのライフサイクル管理。 | spawn, yield, wait, exit |
+| `scheduler` | タスクのライフサイクル管理。 | spawn, yield, wait, exit, set_idle_hook |
 | `csp` | タスク間通信機能へのメッセージ交換。 | send, receive |
 | `memory` | タスク独立メモリの確保と解放。 | allocate, free |
 
 ## 6. 検証
 
 ### 6.1 直交表: CSP通信と状態遷移
-チャネル通信時のタスク状態とスケジューラの挙動を検証する。
+チャネル通信時のタスク状態とスケジューラの挙動を検証する。割り込み通知はイベント駆動型として扱われる。
 
 | ケース | 自タスク要求 | チャネル状態 | 相手状態 | 期待される動作 (自) | 期待される動作 (他) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| 1 | SEND | Empty | - | BLOCKEDへ遷移 | (なし) |
-| 2 | SEND | Full | - | BLOCKEDへ遷移 | (なし) |
+| 1 | SEND | Empty | - | BLOCKEDへ遷移、IPC_REQUEST イベント投入 | (なし) |
+| 2 | SEND | Full | - | BLOCKEDへ遷移、IPC_REQUEST イベント投入 | (なし) |
 | 3 | SEND | (待機RXあり) | BLOCKED | **READYへ遷移(直接)** | **READYへ遷移(直接)** |
-| 4 | RECV | Full | - | **READYへ遷移** | (チャネル空へ) |
+| 4 | RECV | Full | - | **READYへ遷移、IPC_REPLY イベント投入** | (チャネル空へ) |
 | 5 | RECV | Empty | - | BLOCKEDへ遷移 | (なし) |
 | 6 | RECV | (待機TXあり) | BLOCKED | **READYへ遷移(直接)** | **READYへ遷移(直接)** |
-| 7 | NOTIFY_INT | - | BLOCKED/READY | (継続) | **INTERRUPTEDへ遷移** |
+| 7 | ISR通知 | - | BLOCKED/READY | (継続) | **INT イベント投入 → EventLoop で処理 → BLOCKED なら READY へ遷移** |
+
+**注**: ケース7では、割り込みハンドラ（ISR）がタスク状態を直接変更せず、代わりに INT イベントをイベントキューに投入する（`docs/components/os_event_driven.md` 参照）。イベントループが INT イベントを取り出し、対象タスクを BLOCKED から READY へ遷移させる。

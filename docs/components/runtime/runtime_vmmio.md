@@ -1,15 +1,15 @@
 # vMMIO コンポーネント設計書 (改訂版)
 
 ## 1. コンセプト
-vMMIO (Virtual Memory-Mapped I/O) は、WASMゲストとホスト間の**すべてのデータ交換**を仲介する統一的なアクセス層である。物理レジスタ（GPIO等）、共有メモリ、システムコール用バッファなど、ホスト-ゲスト間境界を横切るアクセスはすべてvMMIO空間を経由する。WASMの仕様に基づき、**割り当て単位は1ページ（64KB）**とし、各デバイス領域は64KB境界に配置される。 `{RestrictedPhysicalAccess}` `{vMMIO_TrapAndEmulate}` `{PhysicalPassthrough}` `{WasmPageAlignment}` `{DynamicMmap}` `{UnifiedAccessModel}`
+vMMIO (Virtual Memory-Mapped I/O) は、WASMゲストとホスト間の**すべてのデータ交換**を仲介する統一的なアクセス層である。物理レジスタ（GPIO等）、共有メモリ、システムコール用バッファなど、ホスト-ゲスト間境界を横切るアクセスはすべてvMMIO空間を経由する。**割り当て単位は1ページ（4KB）**とし、各デバイス領域は4KB境界に配置される。WASMページサイズとは独立した設計。 `{RestrictedPhysicalAccess}` `{vMMIO_TrapAndEmulate}` `{PhysicalPassthrough}` `{DynamicMmap}` `{UnifiedAccessModel}`
 
-32ビットアドレスを **Function Code / L1 Index / L2 Index / Offset** の4フィールドに分割する**階層型アドレスデコード**を採用する。これにより、Function Code によるサブシステム単位の即時ルーティングと、L1/L2 による高速なデバイス解決を両立する。 `{HierarchicalAddressDecode}`
+32ビットアドレスを **Function Code / Device Key / Offset** の3フィールドに分割する。FC でルートテーブルを選択し、Device Key で PTE を直接ルックアップする。`std::flat_map` による binary search で O(log N) ルックアップを実現。 `{HierarchicalAddressDecode}`
 
-セキュリティモデルは**エントリに埋め込まれた権限フィールドが唯一のゲート**である。アクセス権限は flatmap エントリ（L2_FLATMAP）または L1 テーブルエントリ（L2_DIRECT_CALC）に保持され、ルックアップと権限チェックを1パスで完結させる。動的な性能向上のため、セキュリティゲートを以下の3層に階層化する。 `{RoleBasedAccessControl}`
+セキュリティモデルは**エントリに埋め込まれた権限フィールドが唯一のゲート**である。アクセス権限は PTE に保持され、ルックアップと権限チェックを1パスで完結させる。動的な性能向上のため、セキュリティゲートを以下の3層に階層化する。 `{RoleBasedAccessControl}`
 
 1. **Tier 1 (ゲストRAM)**: ゲスト専用RAM領域。コンパイル時または実行時の単純な境界チェック（加算/比較）のみで処理。
-2. **Tier 2 (静的vMMIO, FC=4)**: コンパイル時にアドレスが確定するコアデバイス（SYSCTL, IPCR, VDMA等）。JIT生成時に許可チェックを行い、許可済みならネイティブコードに直接物理アドレスを埋め込む。
-3. **Tier 3 (動的vMMIO, FC=5-7 / Syscall)**: DYNAMIC・SHM・PASSTHROUGH領域や `fireball_call` 経由のアクセス。実行時にL1/L2テーブルを経由して解決し、エントリの権限フィールドで可否を判定する。
+2. **Tier 2 (静的vMMIO, FC=4)**: コンパイル時にアドレスが確定するコアデバイス（SYSCTL, IPCR, VDMA等）。Rom の flat_map[4] に固定値で格納。JIT生成時に許可チェックを行い、許可済みならネイティブコードに直接デバイスキー（Syscall ID を含む）を埋め込む。
+3. **Tier 3 (動的vMMIO, FC=6-7)**: SHM・PASSTHROUGH領域のアクセス。実行時に flat_map[6/7] を経由して PTE を解決し、エントリの権限フィールドで可否を判定する。
 
 IPC経由のデータ交換は行わない — GPIOのようなsub-µs応答が必要な周辺機器はIPCレイテンシに耐えられないため、このダイレクトアクセスモデルが採用されている。 `{Fast_Path_GPIO}`
 
@@ -25,12 +25,10 @@ IPC経由のデータ交換は行わない — GPIOのようなsub-µs応答が�
 | 配置 | 構造体 | 概要 |
 | :--- | :--- | :--- |
 | ROM | `vmmio_address` | アドレスビットフィールド定義（コード上の型のみ、実体なし） |
-| ROM | FC ディスパッチテーブル | FC → L1テーブル参照の定数配列 |
-| ROM | `vmmio_l1_dispatch_table` | L2_mode・phys_base・L2 flatmap 参照（init後不変） |
-| ROM | `vmmio_l2_static_table` | FC=4/7 向け L2→ハンドラ の定数 flatmap（ハンドラポインタは init後不変） |
-| RAM | `vmmio_perm_table` | L2 flatmap エントリごとの perm フラグと FC=6 の owner_id（実行時に変化） |
-| RAM | `vmmio_dynamic_region` | FC=5 DYNAMIC の実行時エントリ（全体が可変） |
-| RAM | TLB valid ビット列 | TLB スロットの有効フラグのみ（ルーティングデータは ROM 参照） |
+| ROM | `vmmio_flatmap[4]` | FC=4 (Static Device) — Device Key → Static Device PTE の定数 flat_map |
+| RAM | `vmmio_flatmap[6]` | FC=6 (SHM) — Device Key → Tier 3 PTE の動的 flat_map |
+| RAM | `vmmio_flatmap[7]` | FC=7 (PASSTHROUGH) — Device Key → Tier 3 PTE の動的 flat_map |
+| RAM | TLB キャッシュ | TLB スロット（16エントリ）。ホットパス高速化用。 |
 
 - **`VmmioController`**: アドレスデコード、L1ディスパッチ、ハンドラ解決、動的マッピング管理を担う主要クラス。
 - **`vmmio_config`**: 静的な領域定義 (`vmmio_static_region`) の不変なテーブル。 `{Static_Resolution}`
@@ -39,19 +37,18 @@ IPC経由のデータ交換は行わない — GPIOのようなsub-µs応答が�
 ```mermaid
 graph TD
     subgraph vMMIO_Layer
-        Decoder[Address Decoder\nvmmio_address]
-        L1Table[L1 Dispatch Table\nvmmio_l1_dispatch_table]
-        L2Map[L2 Handler Map\nflat_map / Direct Calc]
+        Decoder[Address Decoder\nFC + Device Key + Offset]
+        FCRoute[FC Router]
+        FlatMaps["FC-Indexed flat_map[16]<br/>flatmap[4], flatmap[6], flatmap[7]"]
+        TLB[Software TLB Cache]
         Controller[VmmioController]
-        Registry[Hook Registry]
-        TLB[Software TLB]
     end
 
     Controller -- decodes addr --> Decoder
-    Decoder -- FC + L1 --> L1Table
-    L1Table -- L2 key / mode --> L2Map
-    L2Map -- handler or phys_addr --> Handler[Registered Hook]
-    Controller -- manages --> Registry
+    Decoder -- FC --> FCRoute
+    Decoder -- Device Key --> FCRoute
+    FCRoute -- select by FC --> FlatMaps
+    FlatMaps -- PTE lookup --> Handler["PTE Handler<br/>(Syscall or Phys)"]
     Controller -- caches hot entries --> TLB
     TLB -- hit --> Handler
 ```
@@ -59,67 +56,139 @@ graph TD
 ### 3.3 主要なクラス・構造体・配列・定数
 
 #### `vmmio_address` (アドレスフィールド定義)
-32ビットゲストアドレスを4つのフィールドに分割するビットフィールド構造体。`VmmioController` はアドレスを本構造体にキャストしてデコードする。
+32ビットゲストアドレスを3つのフィールドに分割する。`VmmioController` は FC でルートテーブルを選択し、Device ID で PTE を直接ルックアップする。
 
 | 項目名 | 機能と役割 | 備考（制約、型など） |
 | :--- | :--- | :--- |
-| Function Code | デバイス分類やサブシステム種別を示す最上位ルーティングキー。FC単位で即時にディスパッチ先が決定される。 | ビット31:28（4 bits）、16種別 |
-| L1 Index | Function Code内でプライマリハンドラテーブルを選択するインデックス。 | ビット27:24（4 bits）、16エントリ |
-| L2 Index | ハンドラの詳細解決に使用するセカンダリキー。`flat_map` によるルックアップか、物理アドレス計算への直接連結かを Function Code の要件に応じて切り替える。 | ビット23:16（8 bits）、256エントリ |
-| ページ内オフセット | 64KBページ内でのバイトオフセット。各ハンドラに渡される。 | ビット15:0（16 bits）、64KB |
+| Function Code | vMMIO リージョン分類。FC ごとの flat_map を選択。 | ビット[31:28]（4 bits）、16種別 |
+| Device ID | PTE ルックアップキー。FC=4 では Syscall ID を含む。 | ビット[27:12]（16 bits）、最大65536エントリ（FC毎） |
+|  | **FC=4 Static Device 用**: [27:20] Device Type (8 bits), [19:12] Syscall ID (8 bits) | - |
+|  | **FC=6/7 Tier 3 用**: 任意の 16-bit デバイスインデックス | - |
+| Offset | 4KBページ内でのバイトオフセット。PTE ルックアップ後に相対アドレスとして使用。 | ビット[11:0]（12 bits）、4KB |
 
-**アドレス分解の対応関係（vMMIO_BASE = `0x4000_0000`）**
+**C++ アドレスデコード + PTE アクセス例**:
+```cpp
+struct vmmio_address {
+    uint32_t raw;
+    
+    uint8_t fc() const { return (raw >> 28) & 0xF; }       // [31:28]
+    uint16_t device_id() const { return (raw >> 12) & 0xFFFF; }  // [27:12]
+    uint16_t offset() const { return raw & 0xFFF; }        // [11:0]
+    
+    uint8_t syscall_id() const { return (raw >> 12) & 0xFF; }    // [19:12] (Device ID [7:0])
+};
+
+// PTE ルックアップ（FC ごとのテーブルを選択）
+void access_vmmio(vmmio_address addr, bool is_write) {
+    auto device_id = addr.device_id();
+    auto fc = addr.fc();
+    
+    switch (fc) {
+        case 4: {
+            // FC=4 (Static Device) — Device ID に Syscall ID が含まれる
+            // [27:20] Device Type, [19:12] Syscall ID
+            uint8_t syscall_id = addr.syscall_id();  // アドレス [19:12]
+            auto pte = vmmio_flatmap[4].find(device_id)->second;
+            dispatch_syscall(syscall_id, addr.offset(), is_write);
+            break;
+        }
+        case 6:
+        case 7: {
+            // FC=6/7 (Tier 3) — 物理メモリ直結
+            auto pte = vmmio_flatmap[fc].find(device_id)->second;
+            uint32_t phys_page = (pte >> 12) & 0xFFFFF;
+            uint32_t phys_addr = (phys_page << 12) | addr.offset();
+            access_memory(phys_addr, is_write);
+            break;
+        }
+    }
+}
+```
+
+**アドレス分解の対応関係（vMMIO_BASE = `0xC000_0000`）**
 
 | アドレス範囲 | FC | 割り当て用途 |
 | :--- | :--- | :--- |
-| `0x4000_0000` – `0x4FFF_FFFF` | 4 | コアデバイス（SYSCTL, IPCR, VDMA）および予約固定デバイス |
-| `0x5000_0000` – `0x5FFF_FFFF` | 5 | DYNAMIC（動的マッピング領域） |
-| `0x6000_0000` – `0x6FFF_FFFF` | 6 | SHM（共有メモリ領域） |
-| `0x7000_0000` – `0x7FFF_FFFF` | 7 | PASSTHROUGH（物理アドレス直結領域） |
+| `0x0000_0000` – `0xBFFF_FFFF` | - | ゲスト RAM（WASM線形メモリ）— Tier 1 |
+| `0xC000_0000` – `0xCFFF_FFFF` | 4 | Static Devices（SYSCTL, IPCR, VDMA）— Tier 2 |
+| `0xD000_0000` – `0xDFFF_FFFF` | - | （予約） |
+| `0xE000_0000` – `0xEFFF_FFFF` | 6 | SHM（共有メモリ）— Tier 3 |
+| `0xF000_0000` – `0xFFFF_FFFF` | 7 | PASSTHROUGH（物理アドレス直結）— Tier 3 |
 
 #### `VmmioController` クラス
-アドレスデコード・L1/L2ディスパッチ・フック管理をカプセル化する。
+アドレスデコード・FC ごとの flat_map 選択・PTE ルックアップ・キャッシュ管理をカプセル化する。
 
 | 項目名 | 機能と役割 | 備考（制約、型など） |
 | :--- | :--- | :--- |
-| L1ディスパッチテーブル群 | FC毎の `vmmio_l1_dispatch_table` への参照。FCを添字として O(1) でアクセスする。 | `vmmio_l1_dispatch_table[16]`（FC数分） |
-| フックレジストリ | 実行時に登録されたハンドラ群の保持。`hook_id` で引く。 | `vmmio_hook_registry` |
-| ソフトウェアTLB | 直近にヒットしたL1+L2エントリをキャッシュする小テーブル。Tier 3 アクセスの高速化に使用する。 | `vmmio_tlb_entry[N]`（定数N はコンパイル時固定） |
-| 動的領域数 | 現在使用中の DYNAMIC 領域のスロット数 | エントリ数 |
+| FC ルートテーブル | FC（4 bits）から該当する flat_map への参照。O(1) アクセス。 | `vmmio_flatmap[16]`（FC数分） |
+| ソフトウェアTLB | 直近に解決した FC + Device Key → PTE マッピングをキャッシュ。Tier 3 (FC=6/7) アクセスの高速化に使用。 | `vmmio_tlb_entry[16]`（固定16エントリ） |
 
-#### `vmmio_l1_dispatch_table` (ROM — L1ディスパッチテーブル)
-Function Codeひとつに対応するL1テーブル。init 後は不変のため ROM 配置。各エントリはL2の解決方式と、L2_DIRECT_CALC時のベースアドレスを保持する。権限フラグは RAM 側の `vmmio_perm_table` が担うため本テーブルには含まない。
 
-| 項目名 | 機能と役割 | 備考（制約、型など） |
-| :--- | :--- | :--- |
-| L2静的テーブル参照 | L2_FLATMAPモード時に参照する `vmmio_l2_static_table` へのポインタ。 | `const vmmio_l2_static_table*` |
-| L2解決モード | `flat_map` ルックアップか物理アドレス直接計算かを示すフラグ。 | 列挙値（`L2_FLATMAP` / `L2_DIRECT_CALC`） |
-| パススルーベースアドレス | `L2_DIRECT_CALC` モード時、当該リージョンの物理ベースアドレス。L1がリージョン選択に対応する。 | `uint32_t`（`vsoc_config` から注入） |
+#### `vmmio_pte_static` (FC=4 Static Device PTE — 32bit)
+Static Devices (Tier 2) 向け。Syscall ID はアドレス [19:12] から直接抽出するため、PTE には Device Type やフラグのみを保持。Static Devices は常にシステムコール経由であり、Type フラグは FC に応じた値を持つ（FC=4 では 0）。
 
-#### `vmmio_l2_static_table` (ROM — L2静的ディスパッチテーブル)
-FC=4/7 向けの L2 → ルーティング情報の定数テーブル。init 後は不変。FC=5/6 はこのテーブルを持たない（DYNAMIC は全体 RAM、SHM の物理ベースは後述 `vmmio_perm_table` に含む）。
+```
+32-bit Static Device PTE:
+[31:24] Reserved
+[23:20] Flags (4 bits):
+        [3] Type (FC に対応した値 — FC=4 では 0 = Syscall)
+        [2] CACHEABLE (JIT キャッシュ可能)
+        [1] WRITE_ENABLED
+        [0] READ_ENABLED
+[19:16] Device Type (4 bits) — {SYSCTL=0, IPCR=1, VDMA=2, ...}
+[15:0]  Reserved
+```
 
-| 項目名 | 機能と役割 | 備考（制約、型など） |
-| :--- | :--- | :--- |
-| L2 キー | flatmap のキー。L2 Index 値。 | `uint8_t` |
-| ハンドラ | アクセス時に呼び出す関数へのポインタ。FC=4 向け。 | `const vmmio_handler*` |
+**フラグ定義**:
 
-#### `vmmio_perm_table` (RAM — 実行時権限テーブル)
-L2 flatmap エントリごとの可変状態。ROM のルーティングテーブルとは分離して保持する。FC=6 のみ `owner_id` と `phys_page_base` を使用する。**FC=6 エントリへの書き込みは IPCルータのみが行う。vMMIO は読み取り・執行のみ。**
+| Bit | 名前 | 値 | 説明 |
+|---|---|---|---|
+| [3] | Type | FC依存 | FC=4 では 0（Syscall モード）。Syscall ID はアドレス [19:12] から取得。 |
+| [2] | CACHEABLE | 0/1 | JIT コンパイル時にコード埋め込み可能か |
+| [1] | WRITE | 0/1 | 書き込み許可 |
+| [0] | READ | 0/1 | 読み取り許可 |
 
-`owner_id` の状態定義（型・予約値の正規定義は [system_config_details.md §2.7](system_config_details.md#27-型定義予約値) 参照）：
+#### `vmmio_pte_tier3` (FC=6/7 Tier 3 PTE — 32bit)
+Tier 3 (共有メモリ・パススルー) 向け。物理ページアドレスと所有権を管理。`std::flat_map<key, pte>` で O(log N) ルックアップ。フラグは Static Device PTE と共通。
+
+```
+32-bit Tier 3 PTE Structure:
+[31:12] Physical Page Number (20 bits)     — 4GB アドレス空間対応 (4KB × 2^20)
+[23:20] Flags (4 bits — Static Device PTE と共通):
+        [3] Type (FC に対応した値 — FC=6/7 では 1 = Physical Address)
+        [2] CACHEABLE (JIT キャッシュ可能)
+        [1] WRITE_ENABLED
+        [0] READ_ENABLED
+[9:8]   Reserved (2 bits)
+[7:0]   Owner ID (8 bits)                  — 256 タスク対応
+```
+
+**Owner ID の状態定義**（型・予約値の正規定義は [`system_config_details.md`](system_config_details.md#27-型定義予約値) 参照）:
 
 | 値 | 状態 | 意味 |
 | :--- | :--- | :--- |
-| `FB_TASK_ID_INVALID` (= `0`) | 未割り当て | アクセス不可 |
-| `FB_TASK_ID_FLIGHT` (= `0xFF`, FLIGHT_SENTINEL) | In-flight | 所有権移譲中。送受信タスク双方アクセス不可 |
-| `task_id` (`1`〜`FB_CONF_MAX_TASKS`) | 所有 | 当該タスクのみアクセス可 |
+| `0` | 未割り当て | アクセス不可（FC=6 でのみ有効） |
+| `0xFF` (FLIGHT_SENTINEL) | In-flight | 所有権移譲中。送受信タスク双方アクセス不可（FC=6 のみ） |
+| `1` 〜 `254` | 所有タスク | 当該タスク ID がアクセス権を持つ |
 
-| 項目名 | 機能と役割 | 備考（制約、型など） |
-| :--- | :--- | :--- |
-| 権限フラグ | 読み取り・書き込みの可否。アクセスごとにチェックする。 | R/W ビット |
-| 所有者ID | FC=6 (SHM) 専用。IPCルータが所有権遷移に合わせて更新する。 | `task_id`（FC≠6では未使用） |
-| 物理ページ基底アドレス | FC=6 (SHM) 専用。ハンドラを経由せず直接アクセスに使用する。 | `uint32_t`（FC≠6では未使用） |
+**FC=6 (SHM) エントリへの書き込みは IPCルータのみが行う。vMMIO は読み取り・チェック・実行のみ。**
+
+#### FC ごとの flat_map テーブル
+アドレスビット [27:12] (Device Key) で PTE を直接検索。FC ごとに異なるテーブルを保持。
+
+```cpp
+// FC=4 (Static Device — Tier 2) — ROM配置、Init時固定値
+std::flat_map<uint16_t, vmmio_pte_static> vmmio_flatmap[4];
+
+// FC=6 (SHM — Tier 3) — RAM配置、実行時動的
+std::flat_map<uint16_t, vmmio_pte_tier3> vmmio_flatmap[6];
+
+// FC=7 (PASSTHROUGH — Tier 3) — RAM配置、実行時動的
+std::flat_map<uint16_t, vmmio_pte_tier3> vmmio_flatmap[7];
+
+// キー: Device Key (16 bits)
+// 値: vmmio_pte_static (FC=4) または vmmio_pte_tier3 (FC=6/7)
+```
 
 #### `vmmio_handler` (ハンドラ定義)
 読み書きアクセス発生時に呼び出される関数の共通インターフェイス。
@@ -136,35 +205,79 @@ L2 flatmap エントリごとの可変状態。ROM のルーティングテー�
 
 ```
 1. [アドレスデコード]
-   vmmio_address フィールドへキャストし、FC / L1 / L2 / Offset を抽出する。
+   vmmio_address フィールドへキャストし、FC / Device Key / Offset を抽出する。
 
 2. [Tier 判定]
    - アドレスが vmmio_base 未満 → Tier 1 (ゲストRAM): 境界チェックのみ。
-   - FC が定義済み範囲（{4,5,6,7}）外 → 即時トラップ（未定義FC）。
-   - FC=4（コアデバイス）→ Tier 2: JIT実行パスでは許可済みネイティブコードへ直接進む。
+   - FC が定義済み範囲（{4,6,7}）外 → 即時トラップ（未定義FC）。
+   - FC=4（Static Devices）→ Tier 2: JIT実行パスでは許可済みネイティブコードへ直接進む。
      インタプリタ実行パスでは Tier 3 と同一フロー（手順3以降）を経る。
-   - FC=5/6/7 → Tier 3: 手順3へ進む。
+   - FC=6/7 → Tier 3: 手順3へ進む（flat_map ルックアップ）。
 
-3. [TLB ルックアップ]
-   - TLB ヒット → キャッシュ済みエントリを取得し、手順5へ。
-   - TLB ミス → 手順4（テーブルウォーク）へ進み、TLBを更新。
+3. [TLB ルックアップ（ホットパス）]
+   - TLB キー = FC + Device Key の 16-bit 複合キー
+   - TLB ヒット → キャッシュ済み PTE を取得し、手順5へ。
+   - TLB ミス → 手順4（flat_map ルックアップ）へ進み、TLBを更新（Tier 3のみ）。
 
-4. [テーブルウォーク (TLBミス時のみ)]
-   a. FC を添字に L1 テーブルを O(1) 参照し、L1 Index でエントリを選択する。
-   b. L2解決モード が L2_FLATMAP の場合: `flat_map.find(L2)` で `vmmio_entry` を取得する。
-      エントリが存在しない（未登録L2）場合は即時トラップ（アクセス違反）。
-      L2解決モード が L2_DIRECT_CALC の場合: L1 エントリの権限・ベースアドレスをそのまま使用。
-   c. 取得したエントリを TLB に登録する。
+4. [flat_map ルックアップ (TLBミス時のみ) — O(log N) binary search]
+   Key = Device Key (16 bits) で検索。
+   
+   **FC=4 (Static Devices)**:
+   - `vmmio_flatmap[4].lower_bound(key)` で検索（ROM, init時充填、以降不変）。
+   - エントリが存在しない → 即時トラップ。
+   - 取得: `vmmio_pte_static`。
+   
+   **FC=6/7 (Tier 3)**:
+   - `vmmio_flatmap[fc].lower_bound(key)` で検索（RAM, 動的）。
+   - エントリが存在しない → 即時トラップ。
+   - 取得: `vmmio_pte_tier3`。
+   - TLB に登録。
 
 5. [権限チェック]
-   エントリの権限フラグを is_write と照合する。
-   - FC=6 (SHM) かつ所有者IDフィールドが有効な場合: entry.owner_id == current_task_id も検証する。
-   - 権限なし → メモリアクセス違反トラップ。
+   
+   全 FC 共通フラグ [23:20] を確認:
+   - PTE[1] (WRITE_ENABLED) と is_write を照合。不一致 → アクセス違反。
+   - PTE[0] (READ_ENABLED) を確認。
+   
+   **FC=6 (SHM) 追加チェック**:
+   - PTE[7:0] (Owner ID) == current_task_id を検証。
 
 6. [アクセス実行]
-   a. L2_FLATMAP: エントリのハンドラに Offset と span を渡して呼び出す。
-   b. L2_DIRECT_CALC: L1テーブルエントリの `phys_base` を取得し、`phys_base + ((L2 << 16) | Offset)` に対して直接ロード/ストアを実行する。L1はオフセットには含めず、リージョン選択のみに使用する。
+   
+   **FC=4 Static Devices（Type フラグ=0 固定）**:
+   - Syscall ID = アドレス [19:12] から抽出 → syscall dispatch。
+   
+   **FC=6/7 Tier 3（Type フラグ=1 固定）**:
+   - PTE[31:12] (物理ページ番号) から物理アドレスを計算。
+   - `phys_addr = (pte >> 12) << 12 | offset` でメモリアクセス実行。
 ```
+
+### 4.2 性能分析（Tier別）
+
+| アクセス | パス | 計算量 | 説明 |
+|---|---|---|---|
+| **ゲスト RAM (Tier 1)** | 直接 | O(1) | 範囲チェック → メモリアクセス。最速。 |
+| **Static Devices (FC=4)** | JIT embed | O(0) | ネイティブコード直接埋め込み。最速。 |
+| **Static Devices (FC=4)** | Interp | O(log N) | ROM flat_map ルックアップ（~8 cycle）。 |
+| **Tier 3 TLB Hit** | キャッシュ | O(1) | 16エントリ TLB 直接アクセス。 |
+| **Tier 3 TLB Miss** | flat_map | O(log N) | binary search。N = RAM内エントリ数。 |
+| **期待ヒット率** | - | 95%+ | ワーキングセット局所性で高い。 |
+
+**TLB キャッシュ設計（FC=6/7 Tier 3専用）**:
+
+```cpp
+struct vmmio_tlb_entry {
+    uint16_t device_key;     // Device Key (16 bits) — FC ごとの flat_map 内で一意
+    vmmio_pte_tier3 pte;     // キャッシュ済み Tier 3 PTE
+};
+
+std::array<vmmio_tlb_entry, 16> vmmio_tlb_tier3;  // 16 エントリ固定
+size_t tlb_pos = 0;                               // ラウンドロビン置換ポインタ
+```
+
+**キャッシュ置換戦略**: ラウンドロビン（FIFO）— RAM < 64KB 環境では LRU ハードウェア不要。
+
+**注**: FC=4 (Static Devices) は ROM配置でマップサイズ小さく、TLB不要（または専用キャッシュ）。
 
 **ディスパッチシーケンス**
 ```mermaid
@@ -229,16 +342,15 @@ sequenceDiagram
 TODO(Phase 0.8): vMMIO TLA+ Verification - ソフトウェアTLBのキャッシュ整合性と、階層化されたアドレスデコードの正当性を検証する。
 
 ### 4.3 仮想デバイスマップ
-各領域は 64KB (WASM 1 page) 単位で割り当てられる。`vMMIO_BASE = 0x4000_0000`。Function Code が領域種別を決定し、L1/L2 がページを識別する。
+各領域は 4KB 単位で割り当てられる。`vMMIO_BASE = 0xC000_0000`。Function Code が領域種別を決定し、L1/L2 がページを識別する。
 
-| アドレス範囲 | FC | L2_mode | L1 | L2 | デバイス名 | 説明 |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| `0x4000_0000` | `4` | FLATMAP | `0` | `0` | **SYSCTL** | システム制御（Yield, Halt, Syscall等） |
-| `0x4001_0000` | `4` | FLATMAP | `0` | `1` | **IPCR** | IPCルータ連携レジスタ |
-| `0x4002_0000` | `4` | FLATMAP | `0` | `2` | **VDMA** `{VDMA}` | 仮想DMA（バルク転送） |
-| `0x5000_0000` – `0x5FFF_FFFF` | `5` | FLATMAP | `0x0`–`0xF` | `0x00`–`0xFF` | **DYNAMIC** | 動的マッピング領域 |
-| `0x6000_0000` – `0x6FFF_FFFF` | `6` | FLATMAP | `0x0`–`0xF` | `0x00`–`0xFF` | **SHM** | 共有メモリ（1領域=1ページ） |
-| `0x7000_0000` – `0x7FFF_FFFF` | `7` | DIRECT_CALC | `0x0`–`0xF` | `0x00`–`0xFF` | **PASSTHROUGH** | 物理アドレス直結 |
+| アドレス範囲                        | FC | L2_mode | L1 | L2 | デバイス名 | 説明 |
+|:------------------------------| :--- | :--- | :--- | :--- | :--- | :--- |
+| `0xC000_0000`                 | `4` | FLATMAP | `0` | `0` | **SYSCTL** | システム制御（Yield, Halt, Syscall等） |
+| `0xC000_1000`                 | `4` | FLATMAP | `0` | `1` | **IPCR** | IPCルータ連携レジスタ |
+| `0xC000_2000`                 | `4` | FLATMAP | `0` | `2` | **VDMA** `{VDMA}` | 仮想DMA（バルク転送） |
+| `0xE000_0000` – `0xEFFF_FFFF` | `6` | FLATMAP | `0x0`–`0xF` | `0x00`–`0xFF` | **SHM** | 共有メモリ（1領域=1ページ） |
+| `0xF000_0000` – `0xFFFF_FFFF` | `7` | DIRECT_CALC | `0x0`–`0xF` | `0x00`–`0xFF` | **PASSTHROUGH** | 物理アドレス直結 |
 
 PASSTHROUGH アドレス変換（`L2_DIRECT_CALC` モード）:
 `物理アドレス = l1_table[L1].phys_base + ((L2 << 16) | Offset)`
@@ -267,7 +379,7 @@ L1 はリージョン選択のみに使用し、オフセット計算には含�
 | `0x08` | `REG_VDMA_COUNT` | R/W | 転送バイト数 |
 | `0x0C` | `REG_VDMA_CTRL` | W | 制御（Bit0: START） |
 
-`REG_VDMA_SRC` / `REG_VDMA_DST` に指定できるアドレスはゲストRAM（Tier 1）および vMMIO空間（FC=5/6/7）。SHMアドレス（FC=6）を転送先/元に指定した場合、VDMAハンドラが `dispatch-access` と同一の権限チェック（`owner_id` 検証を含む）を実施する。
+`REG_VDMA_SRC` / `REG_VDMA_DST` に指定できるアドレスはゲストRAM（Tier 1）および vMMIO空間（FC=6/7）。SHMアドレス（FC=6）を転送先/元に指定した場合、VDMAハンドラが `dispatch-access` と同一の権限チェック（`owner_id` 検証を含む）を実施する。
 
 ### 4.6 共有メモリマッピング (FC=6)
 SHM へのアクセスは **IPCルータ経由でのみ許可される**。ゲストは IPCルータからハンドルを受け取ることによってのみ FC=6 アドレス空間にアクセスできる。SHM の所有権状態は IPCルータが一元管理し（`ipc_router.md` §4.1 所有権移譲モデル準拠）、vMMIO はその状態を執行するのみ。 `{OwnershipTransfer}`
@@ -301,18 +413,16 @@ graph LR
 
 @see `system_syscall.md` §8.1
 
-### 4.8 静的予約
-DYNAMIC 領域（FC=5）の一部を、システムの初期化時に特定のデバイス用として永続的に予約する。これにより、実行時の動的確保のオーバーヘッドを排除する。 `{Static_Resolution}`
-予約された領域は、ゲストからは通常の DYNAMIC 領域の一部として見えるが、vSoC内部では固定されたマッピングとして扱われる。
+### 4.8 ソフトウェアTLB `{vMMIO_TLB}`
+Tier 3 アクセス（FC=6/7）において、毎回 flat_map による O(log N) ルックアップをするのは低速であるため、直近に解決した (FC, L1, L2) → PTE のマッピングを 16エントリの小型TLBにキャッシュする。
 
-### 4.9 ソフトウェアTLB `{vMMIO_TLB}`
-Tier 3 アクセスにおいて、毎回テーブルウォークするのは低速であるため、直近に解決した (FC, L1, L2) → `vmmio_entry` のマッピングをキャッシュする静的配列TLBを導入する。
+- **キャッシュ構造**: ラウンドロビン置換（FIFO）
+  - キー: `(FC << 12) | (L1 << 8) | L2`（16-bit）
+  - 値: PTE（32-bit）
+  - エントリ数: 16（RAM上、可変）
 
-- **配置の分離**: TLB は ROM 部と RAM 部に分離する。
-  - **ROM**: スロット配列本体。ルーティング結果（ハンドラポインタ・phys_base・L2_mode）を保持する定数配列。エントリ数 `N` はコンパイル時定数。init 時に静的デバイス（FC=4/7）のエントリを事前充填し、以降不変とする。
-  - **RAM**: valid ビット列のみ（`uint8_t valid[N]` 相当）。FC=6 の `owner_id` 変更時に対象スロットの valid ビットをクリアして無効化する。
-- **構造**: direct-mapped。スロットインデックス = `(FC ^ L1 ^ L2) % N`。衝突時は ROM エントリを上書きできないため、ミスとして扱いテーブルウォークへフォールバックする。
-- **権限チェック**: TLB はルーティングのみをキャッシュする。perm フラグと owner_id は毎回 `vmmio_perm_table`（RAM）から読み取る。TLB ヒットが権限チェックをバイパスすることはない。
+- **キャッシュ更新**: TLB ミス時に flat_map ルックアップ結果を TLB に登録。ラウンドロビン位置へ上書き。
+- **権限チェック**: TLB はルーティング（PTE 取得）のみをキャッシュする。権限チェック（PTE[11:10], PTE[7:0]など）は毎回実行し、TLB ヒットが権限チェックをバイパスすることはない。
 
 ## 5. インターフェイス定義
 
@@ -333,19 +443,6 @@ TODO(Phase 1): ATCの抽出 - フック登録や静的予約が可能なライ�
 | 不変条件 | アドレスマップ定義（L1テーブル構造）自体は変更されない。 |
 | エラー時の挙動 | 無効なIDの場合はエラーを返す。二重登録は拒否する。 |
 | 期待する結果 | 正常：フックが登録され、以降のアクセスで呼び出される。 |
-
-#### 静的領域の予約 (`reserve-static-regions`)
-
-| 項目 | 内容 |
-| :--- | :--- |
-| 機能概要 | DYNAMIC 領域（FC=5）の先頭から指定されたページ数を静的に予約する。システム初期化時に一度だけ呼び出されることを想定する。 |
-| シグネチャ | `reserve-static-regions(pages-count: u32) -> void` |
-| 引数と役割 | `pages-count`: 予約する総ページ数 |
-| 事前条件 | システム初期化フェーズであること。動的領域に十分な空きがあること。 |
-| 事後条件 | FC=5 空間の管理情報が更新され、領域が確保される。 |
-| 不変条件 | 予約済みページは実行中に再割り当てされない。 |
-| エラー時の挙動 | 空きページ不足の場合はアボート。 |
-| 期待する結果 | 正常：FC=5 の管理情報が更新され、予約済み領域としてマークされる。 |
 
 #### アクセスディスパッチ (`dispatch-access`)
 

@@ -248,9 +248,9 @@ Fireballでは、ホスト側のコードサイズを極限まで削減するた
 
 ### 6.2 メモリ制約と方策
 - **目標**: 64KB RAM環境で動作させる。
-- **方策**: `{JIT_DoubleBuffer_Cache}` `{IndependentHeap}` ダブルバッファによる効率的なキャッシュ管理と、厳密なヒープ分離によりメモリ使用量を制御する。
+- **方策**: `{JIT_DoubleBuffer_Cache}` `{IndependentHeap}` ダブルバッファによる効率的なキャッシュ管理と、厳密なヒープ分離によりメモリ使用量を制御する。JITキャッシュは `FB_CONF_JIT_CACHE_SIZE`（デフォルト4096バイト、`docs/components/core/system_config_details.md`）を Active/Old の2領域に均等分割して使用し、各領域の容量は `code_cache_size / 2`（デフォルト2048バイト）となる。
 - **高速アドレス判定**: ゲストRAMを `0x0` から配置し、単一の比較命令でRAMアクセスを判定することで、インタープリタおよびJITのオーバーヘッドを最小化する。 `{WasmPageAlignment}`
 
 ### 6.3 安全性制約と方策
 - **目標**: ゲストアプリケーションの暴走を完全に隔離する。
-- **方策**: `{MemoryBoundaryCheck}` `{RestrictedPhysicalAccess}` JITコードへの境界チェック埋め込みと、vMMIOによる物理アクセスの制限を行う。
+- **方策**: `{MemoryBoundaryCheck}` `{RestrictedPhysicalAccess}` JITコードへの境界チェック埋め込みと、vMMIOによる物理アクセスの制限を行う。物理アドレスアクセスの許可範囲は `FB_CONF_VMMIO_ALLOWED_ADDRS`（`docs/components/core/system_config_details.md`）に `constexpr` 定義されたテーブルに基づき、vMMIOが検証する。

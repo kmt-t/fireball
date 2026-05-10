@@ -174,7 +174,7 @@ TODO(Phase 1): ATC抽出 - サービスの初期化順序依存性や、`load_se
 | 補足 | サービスは静的にロードされ、システムライフタイム全体で維持される。Tier 1 の場合は、バックグラウンドタスクとして spawn される。 |
 
 ### 5.3 URI/IPCインターフェイス
-- **URI**: `fireball://services/<service_name>/<instance_id>`
+- **URI**: `fireball://<subsystem_id>/<service_name>/<instance_id>` （`ipc_router.md` の正規形式に準拠。例: `fireball://services/wasi/0`）
 - **メッセージ形式**: サービス固有のKey-Valueプロトコル。詳細なDTO定義は各サービス仕様書に準ずる。
 
 ## 6. 制約達成の方策

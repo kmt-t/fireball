@@ -56,18 +56,16 @@ stateDiagram-v2
     state "READY" as ready
     state "RUNNING" as running
     state "BLOCKED" as blocked
-    state "INTERRUPTED" as interrupted
     
     [*] --> ready: spawn / spawn_task
     ready --> running: schedule
     running --> ready: yield
     running --> blocked: wait / send / recv
-    blocked --> ready: timeout
-    blocked --> interrupted: notify-interrupt
-    ready --> interrupted: notify-interrupt
-    interrupted --> running: schedule (priority)
+    blocked --> ready: event dispatch (IPC_REPLY / INT / timeout)
     running --> [*]: exit / error (cleanup)
 ```
+
+**注**: 割り込みハンドラは `notify-interrupt` ではなく、イベントキューに Interrupt イベントを投入する。イベントループが Interrupt イベントを取り出し、対象タスクを BLOCKED から READY へ遷移させる。詳細は `docs/components/os_event_driven.md` を参照。
 
 ## 5. インターフェイス設計
 
@@ -135,14 +133,15 @@ TODO(Phase 1): ATC抽出 - タスク生成時のスタックサイズやタス�
 | シグネチャ | `set_idle_handler(handler: idle_handler) -> void` |
 | 引数 | `handler`: 関数ポインタ (`void(*)()`) |
 
-#### `notify-interrupt`
+#### `notify-interrupt` (内部 API)
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | ハードウェア割り込みの発生を通知し、待機中タスクを READY へ移行させる。 |
-| シグネチャ | `notify-interrupt(id: os-task-id) -> void` |
+| 機能概要 | ハードウェア割り込みハンドラ（ISR）から呼び出され、Interrupt イベントをイベントキューに投入する。 |
+| シグネチャ | `notify_interrupt(id: os-task-id) -> void` |
 | 引数 | `id`: 再開対象のタスクID |
-| 事前条件 | `id` が有効なタスクを指していること。 |
-| 事後条件 | 対象タスクが BLOCKED 状態であれば READY 状態へ遷移する。 |
+| 事前条件 | ISR コンテキスト内からのみ呼び出されること。`id` が有効なタスクを指していること。 |
+| 事後条件 | Interrupt イベントがイベントキューに投入される。キュー満杯の場合はドロップされ、ドロップカウントがインクリメントされる。イベントループが Interrupt イベントを処理する際、対象タスク（BLOCKED 状態であれば）が READY 状態へ遷移する。 |
+| 設計注記 | イベント駆動型設計（`docs/components/os_event_driven.md` 参照）により、割り込み通知はイベント化され、スケジューラのメインループで処理される。ISR は軽量に、イベント投入とログ用カウンタの更新のみを行う。 |
 
 #### `terminate`
 | 項目 | 内容 |

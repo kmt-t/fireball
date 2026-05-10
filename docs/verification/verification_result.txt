@@ -1,0 +1,25 @@
+TLC2 Version 2.19 of 08 August 2024 (rev: 5a47802)
+Running breadth-first search Model-Checking with fp 47 and seed -6740035726795215690 with 1 worker on 12 cores with 6974MB heap and 64MB offheap memory [pid: 95362] (Linux 7.0.3-1-default amd64, N/A 25.0.3 x86_64, MSBDiskFPSet, DiskStateQueue).
+Parsing file /home/t-matsu/workspace/mysrc/fireball/docs/verification/EventDrivenCOOS_ThreeState.tla
+Parsing file /tmp/Naturals.tla
+Parsing file /tmp/Sequences.tla
+Parsing file /tmp/FiniteSets.tla
+Parsing file /tmp/TLC.tla
+Semantic processing of module Naturals
+Semantic processing of module Sequences
+Semantic processing of module FiniteSets
+Semantic processing of module TLC
+Semantic processing of module EventDrivenCOOS_ThreeState
+Semantic errors:
+
+*** Errors: 1
+
+line 20, col 14 to line 20, col 17 of module EventDrivenCOOS_ThreeState
+
+Unknown operator: `msg1'.
+
+
+
+Starting... (2026-05-11 06:41:10)
+Error: Parsing or semantic analysis failed.
+Finished in 00s at (2026-05-11 06:41:10)

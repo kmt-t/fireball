@@ -202,6 +202,10 @@ JITエンジンの責務を、以下の独立したサブコンポーネント�
 - **[JIT Entry Index](jit_runtime_entry.md)**: PC-アドレス変換テーブルの管理と検索高速化。
 - **[constexpr Assembler](jit_assembler_constexpr.md)**: 静的な命令エンコード DSL。 `{JIT_Encoder}`
 
+**責務の境界**:
+- **jit_manager**: ホットスポット判定、コンパイルキュー管理、Active/Oldキャッシュ領域の選択、エントリテーブルへの登録を担う調整役。`compile_trace` を介してエンジンに処理を委譲する。
+- **Copy-and-Patch Engine** (`docs/components/jit/jit_engine_copy_patch.md`): WASM命令のフェッチ、テンプレート選択、バイナリコピー、プレースホルダへのパッチ適用というバイナリ生成操作に特化。書き込んだバイト数を返すのみで、エントリ管理には関与しない。
+
 ## 6. インターフェイス定義
 
 ### 6.1 公開API

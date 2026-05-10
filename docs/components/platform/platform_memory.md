@@ -68,6 +68,7 @@ TODO(Phase 1): 動的モデルの明確化 - フラグメンテーション回�
 - `∀m ∈ Allocations : ¬dynamic(m) ∧ is_heap_less(m)`
 - `total_allocated_bytes <= FB_CONF_MEMORY_POOL_SIZE` `{StrictMemoryLimit}`
 - `∀block ∈ allocated : block.owner != 0` (task-idと必ず紐付く)
+- ゲストRAMに使用する `pool-base` アドレスはWASMページ境界（64KBアライメント）に配置すること。vMMIOおよびインタープリタはこのアライメントを前提として単一比較命令での高速RAMアクセス判定を行う。 `{WasmPageAlignment}`
 
 ## 6. 所有権追跡
 各メモリブロックは `memory-info.owner` で割り当て元task-idを追跡する。 `{Policy_Memory}`

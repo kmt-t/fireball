@@ -32,7 +32,7 @@ Fireballプロジェクトにおける開発方針、プロセス、および各
 
 ### Step 4: Testing & Integration (テスト・統合)
 - ホスト環境およびターゲット環境（Cortex-M等）でのテストを実行する。
-- `docs/backlog/backlog_list.md` のストーリーに基づき、価値の提供を確認する。
+- `docs/plans/backlog_list.md` のストーリーに基づき、価値の提供を確認する。
 
 ## 3. エージェント向け運用ルール
 

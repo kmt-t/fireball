@@ -121,7 +121,7 @@ void access_vmmio(vmmio_address addr, bool is_write) {
 | 項目名 | 機能と役割 | 備考（制約、型など） |
 | :--- | :--- | :--- |
 | FC ルートテーブル | FC（4 bits）から該当する flat_map への参照。O(1) アクセス。 | `vmmio_flatmap[16]`（FC数分） |
-| ソフトウェアTLB | 直近に解決した FC + Device Key → PTE マッピングをキャッシュ。Tier 3 (FC=6/7) アクセスの高速化に使用。 | `vmmio_tlb_entry[16]`（固定16エントリ） |
+| ソフトウェアTLB（グローバル） | 直近に解決した FC + Device Key → PTE マッピングをキャッシュ。hot path 高速化に使用。vMMIO インスタンスごとに統一される。 | `vmmio_tlb_cache[4]`（固定4エントリ、線形検索） |
 
 
 #### `vmmio_pte_static` (FC=4 Static Device PTE — 32bit)
@@ -215,9 +215,9 @@ std::flat_map<uint16_t, vmmio_pte_tier3> vmmio_flatmap[7];
    - FC=6/7 → Tier 3: 手順3へ進む（flat_map ルックアップ）。
 
 3. [TLB ルックアップ（ホットパス）]
-   - TLB キー = FC + Device Key の 16-bit 複合キー
+   - TLB キー = FC + Device Key の複合キー
    - TLB ヒット → キャッシュ済み PTE を取得し、手順5へ。
-   - TLB ミス → 手順4（flat_map ルックアップ）へ進み、TLBを更新（Tier 3のみ）。
+   - TLB ミス → 手順4（flat_map ルックアップ）へ進み、TLBを更新。
 
 4. [flat_map ルックアップ (TLBミス時のみ) — O(log N) binary search]
    Key = Device Key (16 bits) で検索。
@@ -231,7 +231,7 @@ std::flat_map<uint16_t, vmmio_pte_tier3> vmmio_flatmap[7];
    - `vmmio_flatmap[fc].lower_bound(key)` で検索（RAM, 動的）。
    - エントリが存在しない → 即時トラップ。
    - 取得: `vmmio_pte_tier3`。
-   - TLB に登録。
+   - TLB に登録（vMMIO インスタンスグローバルキャッシュ）。
 
 5. [権限チェック]
    
@@ -259,25 +259,28 @@ std::flat_map<uint16_t, vmmio_pte_tier3> vmmio_flatmap[7];
 | **ゲスト RAM (Tier 1)** | 直接 | O(1) | 範囲チェック → メモリアクセス。最速。 |
 | **Static Devices (FC=4)** | JIT embed | O(0) | ネイティブコード直接埋め込み。最速。 |
 | **Static Devices (FC=4)** | Interp | O(log N) | ROM flat_map ルックアップ（~8 cycle）。 |
-| **Tier 3 TLB Hit** | キャッシュ | O(1) | 16エントリ TLB 直接アクセス。 |
+| **Tier 3 TLB Hit** | キャッシュ | O(1) | 4エントリ TLB 線形検索。 |
 | **Tier 3 TLB Miss** | flat_map | O(log N) | binary search。N = RAM内エントリ数。 |
 | **期待ヒット率** | - | 95%+ | ワーキングセット局所性で高い。 |
 
-**TLB キャッシュ設計（FC=6/7 Tier 3専用）**:
+**ソフトウェア TLB キャッシュ（vMMIO インスタンスグローバル）**:
 
 ```cpp
 struct vmmio_tlb_entry {
+    uint8_t fc;              // Function Code (4 bits) — キャッシュ内での一意識別に必要
     uint16_t device_key;     // Device Key (16 bits) — FC ごとの flat_map 内で一意
     vmmio_pte_tier3 pte;     // キャッシュ済み Tier 3 PTE
 };
 
-std::array<vmmio_tlb_entry, 16> vmmio_tlb_tier3;  // 16 エントリ固定
-size_t tlb_pos = 0;                               // ラウンドロビン置換ポインタ
+std::array<vmmio_tlb_entry, 4> vmmio_tlb_cache;  // 4 エントリ固定（vMMIO インスタンスグローバル、線形検索）
+size_t tlb_pos = 0;                                // ラウンドロビン置換ポインタ
 ```
 
-**キャッシュ置換戦略**: ラウンドロビン（FIFO）— RAM < 64KB 環境では LRU ハードウェア不要。
+**目的**: PT（Page Table）は FC ごとに分離（静的 PT と動的 PT を混ぜない）だが、ルックアップメカニズムは同一なため、PTE キャッシュは vMMIO インスタンスごとに統一される。
 
-**注**: FC=4 (Static Devices) は ROM配置でマップサイズ小さく、TLB不要（または専用キャッシュ）。
+**キャッシュ置換戦略**: ラウンドロビン（FIFO）による線形検索。RAM < 64KB 環境では軽量な実装が必須。
+
+**注**: FC=4 (Static Devices) は ROM配置でマップサイズ小さく、通常 TLB に記録されない。主に FC=6/7 の hot path を高速化。
 
 **ディスパッチシーケンス**
 ```mermaid

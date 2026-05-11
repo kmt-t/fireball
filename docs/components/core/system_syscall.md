@@ -1,9 +1,9 @@
 # システムコール仕様 コンポーネント設計書
 
-## 1. 目的
+## 1. 目的 `{NativeAPI_Export}`
 本ドキュメントは、WebAssemblyゲスト環境からホストの提供するサービスを呼び出すための汎用システムコール `fireball_call` のインターフェイス仕様を定義する。特に、WASI (WebAssembly System Interface) 呼び出しを `fireball_call` にマッピングするための規約、および関連するShimライブラリとWASIホスト側実装の役割に焦点を当てる。 `{NativeAPI_Export}`
 
-## 2. 背景
+## 2. 背景 `{UnifiedAccessModel}`
 `fireball_call` は、vMMIO機能全体の**代理実行ラッパー**である。直接vMMIOアドレスにアクセスできないゲスト言語のために、シングル・トラップ命令経由でホストがvMMIO操作を代行する。
 
 ```
@@ -13,7 +13,7 @@
 
 どちらのパスも最終的にvMMIO許可テーブルを通る。セキュリティゲートは1箇所。 `{UnifiedAccessModel}`
 
-## 3. `fireball_call` WIT定義
+## 3. `fireball_call` WIT定義 `{WIT_Interface_Spec}`
 `fireball_call`のWIT (WebAssembly Interface Type) 定義は以下の通りである。詳細は `docs/components/interface/interface_wit.md` を参照のこと。 `{WIT_Interface_Spec}`
 
 
@@ -56,7 +56,7 @@ TODO(Phase 1): ATC抽出 - fireball_callの各引数に渡されるポインタ�
 | `arg4` | `u32` | 汎用引数4、またはゲストメモリ内の構造体/バッファへのポインタ |
 | `arg5` | `u32` | 汎用引数5、またはゲストメモリ内の構造体/バッファへのポインタ |
 
-### 4.2. 戻り値
+### 4.2. 戻り値 `{Syscall_Return_Value}` `{Errorcode_To_Strategy}`
 `fireball_call`は `u32` 型の値を返す。これは通常、0が成功を示し、非0の値はWASIの`errno`に準拠したエラーコードを示す。Shim層ではこのエラーコードがWITの `recovery-strategy` に変換される。 `{Syscall_Return_Value}` `{Errorcode_To_Strategy}`
 
 ## 5. システムコールID
@@ -73,7 +73,7 @@ TODO(Phase 1): ATC抽出 - fireball_callの各引数に渡されるポインタ�
 | IPC | `0x40`-`0x4F` | プロセス間通信 |
 | WASI | `0x80`-`0xBF` | WASI互換レイヤー |
 
-### 5.2. System (`0x00`-`0x0F`)
+### 5.2. System (`0x00`-`0x0F`) `{CooperativeMultitasking}`
 
 | ID | 名前 | 引数 | 戻り値 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
@@ -81,7 +81,7 @@ TODO(Phase 1): ATC抽出 - fireball_callの各引数に渡されるポインタ�
 | `0x03` | `SYS_RESET` | — | `0` | ゲストリセット |
 | `0x01` | `SYS_YIELD` | — | `0` | 協調的イールド要求 `{CooperativeMultitasking}` |
 
-### 5.3. vMMIO Generic (`0x10`-`0x1F`)
+### 5.3. vMMIO Generic (`0x10`-`0x1F`) `{RoleBasedAccessControl}` `{RestrictedPhysicalAccess}`
 vMMIOアドレス空間全体への汎用アクセス。SYSCTL/IPCR/VDMA/SHM/DYNAMIC/PASSTHROUGHすべての領域に対応。許可テーブルでアクセス制御される。 `{RoleBasedAccessControl}`
 
 | ID | 名前 | 引数 | 戻り値 | 説明 |
@@ -93,14 +93,14 @@ vMMIOアドレス空間全体への汎用アクセス。SYSCTL/IPCR/VDMA/SHM/DYN
 | `0x14` | `MMIO_BULK_READ` | `addr`, `dest_ptr`, `byte_count` | `0` | バルク読み出し `{RestrictedPhysicalAccess}` |
 | `0x15` | `MMIO_BULK_WRITE` | `addr`, `src_ptr`, `byte_count` | `0` | バルク書き込み `{RestrictedPhysicalAccess}` |
 
-### 5.4. VDMA (`0x20`-`0x2F`)
+### 5.4. VDMA (`0x20`-`0x2F`) `{VDMA}`
 仮想DMA操作のセマンティックラッパー。内部的にvMMIO VDMAレジスタへの書き込みに変換される。
 
 | ID | 名前 | 引数 | 戻り値 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
 | `0x20` | `VDMA_START` | `src`, `dst`, `byte_count` | `0` | DMA転送開始 `{VDMA}` |
 
-### 5.5. IRQ (`0x30`-`0x3F`)
+### 5.5. IRQ (`0x30`-`0x3F`) `{CooperativeMultitasking}` `{RoleBasedAccessControl}` `{RestrictedPhysicalAccess}` `{VDMA}`
 仮想割り込みフラグの管理。`REG_IRQ_FLAGS` のラッパー。
 
 | ID | 名前 | 引数 | 戻り値 | 説明 |
@@ -108,7 +108,7 @@ vMMIOアドレス空間全体への汎用アクセス。SYSCTL/IPCR/VDMA/SHM/DYN
 | `0x30` | `IRQ_READ_FLAGS` | — | `flags` | 割り込みフラグ読み出し |
 | `0x31` | `IRQ_CLEAR` | `mask` | `0` | 指定ビットのフラグクリア |
 
-### 5.6. IPC (`0x40`-`0x4F`)
+### 5.6. IPC (`0x40`-`0x4F`) `{CSPCommunication}` `{IPC_HandleBased}`
 CSPチャネル経由のプロセス間通信。
 
 | ID | 名前 | 引数 | 戻り値 | 説明 |
@@ -116,7 +116,7 @@ CSPチャネル経由のプロセス間通信。
 | `0x40` | `IPC_SEND` | `channel_id`, `msg_ptr`, `msg_len` | `0` / errno | メッセージ送信 `{CSPCommunication}` `{IPC_HandleBased}` |
 | `0x41` | `IPC_RECV` | `channel_id`, `buf_ptr`, `buf_len` | `recv_len` / errno | メッセージ受信 `{CSPCommunication}` `{IPC_HandleBased}` |
 
-### 5.7. WASI (`0x80`-`0xBF`)
+### 5.7. WASI (`0x80`-`0xBF`) `{WASI_Implementation}`
 WASI互換レイヤー。Shimライブラリが `wasi-libc` の呼び出しをこれらのIDに変換する。詳細は `docs/components/interface_wit.md` を参照のこと。 `{WASI_Implementation}`
 
 | ID | 名前 | 引数 | 戻り値 | 説明 |
@@ -175,7 +175,7 @@ enum class fb_syscall_id : uint32_t {
 ### 6.1. 役割
 ゲストのWASI互換ライブラリ（`wasi-libc`など）からの呼び出しを傍受し、`fireball_call`呼び出し規約に従ってホストの`fireball_call`へ変換する。
 
-### 6.2. 高応答 Trigger のマッピング例
+### 6.2. 高応答 Trigger のマッピング例 `{Fast_Path_GPIO}`
 
 | 項目 | 内容 |
 | :--- | :--- |
@@ -199,7 +199,7 @@ void fireball_trigger_set_pin(uint32_t pin, bool value) {
 
 ## 7. WASIホスト側実装
 
-### 7.1. 役割
+### 7.1. 役割 `{Challenge_WasiFdWriteLoop}` `{WASI_Async_Bridge}`
 `fireball_call` を捕捉し、`id` に基づいて適切なハンドラにディスパッチする。WASI関連の呼び出しに対しては、対応するサービスや下位レイヤーのハードウェアHAL（Zephyr/SoC SDKなど）の操作を実行する。
 
 - **WASI `fd_write` の処理例 (Scatter/Gather)**: `{Challenge_WasiFdWriteLoop}`
@@ -211,14 +211,14 @@ void fireball_trigger_set_pin(uint32_t pin, bool value) {
 
 TODO(Phase 0.8): WASI Wrapper TLA+ Verification - 同期/非同期変換（co_yield 伝播）時の実行状態の無矛盾性を検証する。
 
-## 8. ホストからゲストへの非同期通知メカニズム
+## 8. ホストからゲストへの非同期通知メカニズム `{Asynchronous_Notification}`
 
 ホスト側で非同期に発生したイベント（例: ハードウェア割り込みの完了、タイマーイベント、非同期I/Oの完了など）をゲストに通知するために、`fireball_call`とは独立したメカニズムを定義する。 `{Asynchronous_Notification}`
 
-### 8.1. 仮想割り込み
+### 8.1. 仮想割り込み `{Asynchronous_Notification}`
 ホストは、ゲストに対して**仮想割り込み**をトリガーすることで、イベントの発生を通知する。これはvSoCの`notify_virtual_interrupt`機能を利用する。
 
-#### 8.1.1. 仮想割り込みID `{Asynchronous_Notification}`
+#### 8.1.1. 仮想割り込みID
 これらのIDは、WASI 0.2 の `pollable` リソースをホスト側で ready 状態にするためのトリガーとして使用される。
 
 例:
@@ -232,10 +232,10 @@ enum class FBVirtualInterruptId : uint32_t {
 };
 ```
 
-#### 8.1.2. 仮想割り込みペイロード
+#### 8.1.2. 仮想割り込みペイロード `{Asynchronous_Notification}`
 仮想割り込みに関する詳細な情報（例えば、UARTから受信したデータ、タイマーID、非同期操作の結果コードなど）は、vMMIOレジスタや共有メモリ上の事前に定義された領域を介してゲストに伝達される。ゲストは割り込みハンドラ内でこれらの情報を読み取り、適切な非同期イベント処理を行う。
 
-## 9. メモリ安全性
+## 9. メモリ安全性 `{Challenge_SyscallMemorySafety}`
 `fireball_call`を介してゲストメモリへのポインタが渡される場合、統一vMMIOモデルの許可テーブルがセキュリティゲートとして機能する。別途の `vsoc_validate_ptr` は不要。 `{Challenge_SyscallMemorySafety}`
 
 ## 10. トラップ状態プロトコル

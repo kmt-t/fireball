@@ -1,19 +1,19 @@
 # COOS スケジューラ コンポーネント設計書
 
-## 1. コンセプト
+## 1. コンセプト `{CooperativeMultitasking}` `{UseCpp23Library}` `{UseCpp20Coroutine}` `{COOS_Deterministic}` `{CSPCommunication}`
 COOSスケジューラは、C++23コルーチン（および std::flat_map 等の標準コンテナ）を活用したスタックレスな協調型マルチタスクの核となるコンポーネントである。タスクの実行、一時停止(yield)、および割り込みによる再開を管理し、極小リソース環境での決定論的な実行を提供する。 `{CooperativeMultitasking}` `{UseCpp23Library}` `{UseCpp20Coroutine}` `{COOS_Deterministic}` `{CSPCommunication}`
 
-## 2. アーキテクチャ分類
+## 2. アーキテクチャ分類 `{3TierSeparation}`
 本コンポーネントは **Tier 3 (実装ドメイン)** に属する。コルーチンハンドルの管理とタスク実行順序の制御に特化した単一責務のモジュールとして設計する。 `{3TierSeparation}`
 
 ## 3. 静的モデル
 
-### 3.1 データ構造
+### 3.1 データ構造 `{COOS_Transparent}`
 - **`Scheduler`**: タスクのREADYキュー管理、実行順序制御、およびコルーチン実行をカプセル化した主要クラス。
 - **`task_context`**: 各タスクの実行状態、スタック/ヒープ境界、コルーチンハンドルを集約したデータ構造。
 - **`scheduler_config`**: 最大タスク数やタイムアウト閾値などの不変の設定。 `{COOS_Transparent}`
 
-### 3.2 内部ブロック図
+### 3.2 内部ブロック図 `{COOS_Transparent}`
 ```mermaid
 graph TD
     subgraph Scheduler_Layer
@@ -30,7 +30,7 @@ graph TD
     Engine -- manages --> TCB
 ```
 
-### 3.3 主要なデータ定義
+### 3.3 主要なデータ定義 `{COOS_Transparent}`
 
 #### `Scheduler` クラス
 依存関係（割り込み制御等）とタスクキューをカプセル化する。
@@ -44,13 +44,13 @@ graph TD
 
 ## 4. 動的モデル
 
-### 4.1 アルゴリズム
+### 4.1 アルゴリズム `{IdleDetection}` `{PeriodicTask}` `{InterruptWakeup}`
 - **スケジューリング**: ラウンドロビン方式。
     - スケジューラ・コンテキスト内の「実行可能タスク列」を侵入型リストで管理し、定数時間 O(1) でのタスク切り替えを実現する。
 - **アイドル状態の検知**: 全ての管理タスクが「待機状態（BLOCKED）」となった場合にアイドル・ハンドラ（Periodic Task等）を実行する。 `{IdleDetection}` `{PeriodicTask}`
 - **割り込み処理**: HALからの割り込み通知（`notify_interrupt`）を受信し、対象タスクを優先的に再開する。 `{InterruptWakeup}`
 
-### 4.2 状態遷移図
+### 4.2 状態遷移図 `{IdleDetection}` `{PeriodicTask}` `{InterruptWakeup}`
 ```mermaid
 stateDiagram-v2
     state "READY" as ready
@@ -154,6 +154,6 @@ TODO(Phase 1): ATC抽出 - タスク生成時のスタックサイズやタス�
 
 ## 6. 設計判断 (ADR)
 
-### ADR-SCHED-001: 侵入型リストによる管理
+### ADR-SCHED-001: 侵入型リストによる管理 `{Policy_Memory}`
 - **決定事項**: TCBの連結には `std::list` 等を避け、TCB自体に `next` ポインタを持たせる侵入型リストを採用する。
 - **理由**: 動的メモリ確保を排除し、RAM 64KB環境での生存を確実にするため. `{Policy_Memory}`

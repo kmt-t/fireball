@@ -1,24 +1,24 @@
 # 協調型OS COOS コンポーネント設計書
 
-## 1. コンセプト
+## 1. コンセプト `{CooperativeMultitasking}` `{UseCpp23Library}` `{UseCpp20Coroutine}` `{CSPCommunication}` `{EliminateDataRace}` `{PeriodicTask}` `{IdleDetection}` `{InterruptWakeup}` `{NotRTOS}`
 COOSは、シングルスレッド環境向けのホーアCSPベースのグリーンスレッドOSである。C++23コルーチン（および std::flat_map 等の標準コンテナ）を活用し、スタックレスで低オーバーヘッドなタスク切り替えを実現する。また、ホーアCSPに基づき、所有権移譲によるゼロコピーメッセージパッシングを行うことで、データ競合を原理的に排除する。 `{CooperativeMultitasking}` `{UseCpp23Library}` `{UseCpp20Coroutine}` `{CSPCommunication}` `{EliminateDataRace}` `{PeriodicTask}` `{IdleDetection}` `{InterruptWakeup}` `{NotRTOS}`
 
-## 2. アーキテクチャ分類
+## 2. アーキテクチャ分類 `{3TierSeparation}` `{ComponentHarness}`
 本コンポーネントは **Tier 2 (サブシステムドメイン)** に属し、Stateless Interface と Harness パターンを用いて構造化される。 `{3TierSeparation}` `{ComponentHarness}`
 
-### 2.1 構成要素
+### 2.1 構成要素 `{3TierSeparation}` `{ComponentHarness}`
 - **[`co_sched`](os_scheduler.md)**: スケジューラ。タスクのライフサイクルと実行順序の管理。
 - **`co_csp`**: 通信エンジン。チャネルベースの同期と所有権移譲。
 - **`co_mem`**: メモリマネージャ。タスク独立ヒープの管理（メモリパーティション）。
 
 ## 3. 静的モデル
 
-### 3.1 データ構造
+### 3.1 データ構造 `{Policy_Memory}`
 - **`channel`**: 1エントリのバッファを持つ同期オブジェクト。
 - **`co_value`**: 独自の所有権管理構造体。ヒープを使用せず、静的バッファまたはスタック上で動作することを基本とする。 `{Policy_Memory}`
 - **`coos_context`**: スケジューラ、CSP状態、メモリ情報を集約したグローバルコンテキスト。
 
-### 3.2 内部ブロック図
+### 3.2 内部ブロック図 `{Policy_Memory}`
 ```mermaid
 graph TD
     subgraph Harness[COOS Harness]
@@ -32,7 +32,7 @@ graph TD
     M_IF --> PRE[Memory Partition]
 ```
 
-### 3.3 主要なデータ定義
+### 3.3 主要なデータ定義 `{Policy_Memory}`
 
 #### `channel` (CSPチャネル)
 タスク間の同期と通信を仲介するデータ構造。
@@ -45,18 +45,18 @@ graph TD
 
 ## 4. 動的モデル
 
-### 4.1 アルゴリズム
+### 4.1 アルゴリズム `{CSP_Handoff}` `{DirectContextSwitch}` `{IdleDetection}` `{StrictMemoryLimit}` `{IndependentHeap}`
 - **CSP Handoff (直接スイッチ)**: `send`/`recv` 時に相手タスクが既に待機状態であった場合、スケジューラを介さず即座に相手タスクへ実行権を移譲する。 `{CSP_Handoff}` `{DirectContextSwitch}`
 - **Idle Detection**: 全ての実行中タスクがブロック状態にあり、かつイベントキューが空（割り込みや外部イベントによる起床待ちのみ）の場合にアイドル状態と判定する。この条件を `idle_hook` のトリガーとし、バックグラウンド処理（ログフラッシュ等）を呼び出す。 `{IdleDetection}`
 - **Memory Management**: タスク生成時に独立したメモリパーティションを割り当てる。 `{StrictMemoryLimit}` `{IndependentHeap}`
 
-### 4.2 状態遷移
+### 4.2 状態遷移 `{CSP_Handoff}` `{DirectContextSwitch}` `{IdleDetection}` `{StrictMemoryLimit}` `{IndependentHeap}`
 スケジューラの状態遷移については **[os_scheduler.md](os_scheduler.md#32-状態遷移図)** を参照。
 
-## 5. インターフェイス設計
+## 5. インターフェイス設計 `{StaticDI}`
 各コンポーネントの公開仕様を定義する。 `{StaticDI}`
 
-### 5.1 `coos_harness` (システムハーネス)
+### 5.1 `coos_harness` (システムハーネス) `{StaticDI}`
 コンポーネント間の依存関係を集約する構造体。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
@@ -65,7 +65,7 @@ graph TD
 | 通信エンジン | タスク間のCSP通信を制御するコンポーネントへの参照 | 構造体への参照 | `co_csp` |
 | メモリ管理 | タスク固有のメモリ領域を管理するコンポーネントへの参照 | 構造体への参照 | `co_mem` |
 
-### 5.2 サブコンポーネント・インターフェイス
+### 5.2 サブコンポーネント・インターフェイス `{StaticDI}`
 
 TODO(Phase 1): サブコンポーネントのAPIに関する完全なATC定義 - spawn, yield, send, receive, allocate 等の各操作に対する厳密な事前・事後・不変条件を（別ドキュメントまたは本ドキュメント内で）完全に定義すること。
 

@@ -1,6 +1,6 @@
 # vMMIO コンポーネント設計書 (改訂版)
 
-## 1. コンセプト
+## 1. コンセプト `{RestrictedPhysicalAccess}` `{vMMIO_TrapAndEmulate}` `{PhysicalPassthrough}` `{DynamicMmap}` `{UnifiedAccessModel}` `{HierarchicalAddressDecode}` `{RoleBasedAccessControl}` `{Fast_Path_GPIO}`
 vMMIO (Virtual Memory-Mapped I/O) は、WASMゲストとホスト間の**すべてのデータ交換**を仲介する統一的なアクセス層である。物理レジスタ（GPIO等）、共有メモリ、システムコール用バッファなど、ホスト-ゲスト間境界を横切るアクセスはすべてvMMIO空間を経由する。**割り当て単位は1ページ（4KB）**とし、各デバイス領域は4KB境界に配置される。WASMページサイズとは独立した設計。 `{RestrictedPhysicalAccess}` `{vMMIO_TrapAndEmulate}` `{PhysicalPassthrough}` `{DynamicMmap}` `{UnifiedAccessModel}`
 
 32ビットアドレスを **Function Code / Device Key / Offset** の3フィールドに分割する。FC でルートテーブルを選択し、Device Key で PTE を直接ルックアップする。`std::flat_map` による binary search で O(log N) ルックアップを実現。 `{HierarchicalAddressDecode}`
@@ -13,12 +13,12 @@ vMMIO (Virtual Memory-Mapped I/O) は、WASMゲストとホスト間の**すべ�
 
 IPC経由のデータ交換は行わない — GPIOのようなsub-µs応答が必要な周辺機器はIPCレイテンシに耐えられないため、このダイレクトアクセスモデルが採用されている。 `{Fast_Path_GPIO}`
 
-## 2. アーキテクチャ分類
+## 2. アーキテクチャ分類 `{3TierSeparation}`
 本コンポーネントは **Tier 3 (実装ドメイン)** に属する。仮想的なレジスタアクセスとDMA転送に特化した単一責務のモジュールとして設計する。 `{3TierSeparation}`
 
 ## 3. 静的モデル
 
-### 3.1 データ構造
+### 3.1 データ構造 `{Static_Resolution}`
 
 リソース制約上、構造体は **ROM（不変）** と **RAM（可変）** に明確に分離する。
 
@@ -33,7 +33,7 @@ IPC経由のデータ交換は行わない — GPIOのようなsub-µs応答が�
 - **`VmmioController`**: アドレスデコード、L1ディスパッチ、ハンドラ解決、動的マッピング管理を担う主要クラス。
 - **`vmmio_config`**: 静的な領域定義 (`vmmio_static_region`) の不変なテーブル。 `{Static_Resolution}`
 
-### 3.2 内部ブロック図
+### 3.2 内部ブロック図 `{Static_Resolution}`
 ```mermaid
 graph TD
     subgraph vMMIO_Layer
@@ -53,7 +53,7 @@ graph TD
     TLB -- hit --> Handler
 ```
 
-### 3.3 主要なクラス・構造体・配列・定数
+### 3.3 主要なクラス・構造体・配列・定数 `{Static_Resolution}`
 
 #### `vmmio_address` (アドレスフィールド定義)
 32ビットゲストアドレスを3つのフィールドに分割する。`VmmioController` は FC でルートテーブルを選択し、Device ID で PTE を直接ルックアップする。
@@ -330,7 +330,7 @@ sequenceDiagram
     C-->>G: operation-result
 ```
 
-### 4.2 アルゴリズム: 仮想DMA (VDMA)
+### 4.2 アルゴリズム: 仮想DMA (VDMA) `{VDMA}`
 ゲストリニアメモリと vMMIO 空間（または他のメモリ領域）間の高速転送を実現する。 `{VDMA}`
 
 **アクセス方式**: 純粋MMIOトラップ。直接vMMIOアドレスにアクセス可能なゲストはVDMAレジスタへ直接書き込み、アクセス不可なゲスト言語は `fireball_call(VDMA_START)` 経由でホストが代理実行。
@@ -344,7 +344,7 @@ sequenceDiagram
 
 TODO(Phase 0.8): vMMIO TLA+ Verification - ソフトウェアTLBのキャッシュ整合性と、階層化されたアドレスデコードの正当性を検証する。
 
-### 4.3 仮想デバイスマップ
+### 4.3 仮想デバイスマップ `{VDMA}`
 各領域は 4KB 単位で割り当てられる。`vMMIO_BASE = 0xC000_0000`。Function Code が領域種別を決定し、L1/L2 がページを識別する。
 
 | アドレス範囲                        | FC | L2_mode | L1 | L2 | デバイス名 | 説明 |
@@ -359,7 +359,7 @@ PASSTHROUGH アドレス変換（`L2_DIRECT_CALC` モード）:
 `物理アドレス = l1_table[L1].phys_base + ((L2 << 16) | Offset)`
 L1 はリージョン選択のみに使用し、オフセット計算には含めない。これにより L1 ごとに異なる物理ベースアドレスを持つ複数のパススルー領域（異なるペリフェラルバス等）を独立して定義できる。各エントリの `phys_base` は `vsoc_config` から注入される。
 
-### 4.4 SYSCTL レジスタ詳細 (FC=4, L1=0, L2=0)
+### 4.4 SYSCTL レジスタ詳細 (FC=4, L1=0, L2=0) `{VDMA}`
 | オフセット | レジスタ名 | R/W | 説明 |
 | :--- | :--- | :--- | :--- |
 | `0x00` | `REG_SYS_CONTROL` | W | `1`: Reset, `2`: Yield, `3`: Halt, `4`: Syscall |
@@ -374,7 +374,7 @@ L1 はリージョン選択のみに使用し、オフセット計算には含�
 | `0x28` | `REG_SYSCALL_ARG4` | R/W | 第5引数 |
 | `0x2C` | `REG_SYSCALL_ARG5` | R/W | 第6引数 |
 
-### 4.5 VDMA レジスタ詳細 (FC=4, L1=0, L2=2)
+### 4.5 VDMA レジスタ詳細 (FC=4, L1=0, L2=2) `{VDMA}`
 | オフセット | レジスタ名 | R/W | 説明 |
 | :--- | :--- | :--- | :--- |
 | `0x00` | `REG_VDMA_SRC` | R/W | 転送元アドレス |
@@ -384,7 +384,7 @@ L1 はリージョン選択のみに使用し、オフセット計算には含�
 
 `REG_VDMA_SRC` / `REG_VDMA_DST` に指定できるアドレスはゲストRAM（Tier 1）および vMMIO空間（FC=6/7）。SHMアドレス（FC=6）を転送先/元に指定した場合、VDMAハンドラが `dispatch-access` と同一の権限チェック（`owner_id` 検証を含む）を実施する。
 
-### 4.6 共有メモリマッピング (FC=6)
+### 4.6 共有メモリマッピング (FC=6) `{OwnershipTransfer}`
 SHM へのアクセスは **IPCルータ経由でのみ許可される**。ゲストは IPCルータからハンドルを受け取ることによってのみ FC=6 アドレス空間にアクセスできる。SHM の所有権状態は IPCルータが一元管理し（`ipc_router.md` §4.1 所有権移譲モデル準拠）、vMMIO はその状態を執行するのみ。 `{OwnershipTransfer}`
 
 - **SHMハンドル**: `(L1 << 8) | L2` の 12bit 値。L1 ≤ 15、L2 ≤ 255 を IPCルータが生成時に保証する。
@@ -398,7 +398,7 @@ graph LR
     Entry -- FLIGHT_SENTINEL or mismatch --> Trap[Trap/Exception]
 ```
 
-#### ライフサイクル（ipc_router.md §4.1 に従属）
+#### ライフサイクル（ipc_router.md §4.1 に従属） `{OwnershipTransfer}`
 
 1. **Alloc**: COOS が SHM 物理ページを確保し、IPCルータに登録する。`owner_id` = 送信タスクID。
 2. **Revoke**: IPCルータが送信タスクの権限を無効化する。`owner_id` を `FLIGHT_SENTINEL` にセットし、TLB の該当エントリを無効化する。
@@ -406,7 +406,7 @@ graph LR
 4. **Grant**: 受信タスクがデキューした瞬間、IPCルータが `owner_id` を受信タスクIDにセットする。
 5. **Drop**: 受信先が Kill された場合、Drop Handler が IPCルータに通知し、`owner_id` をクリアしてリソースを回収する。
 
-### 4.7 仮想割り込みマッピング
+### 4.7 仮想割り込みマッピング `{ConfigurableSystem}`
 物理割り込みから仮想割り込みIDへのマッピングは**静的1:1**とし、別コンフィグ（`irq_mapping_config`）で定義される。 `{ConfigurableSystem}`
 
 - **マッピング方式**: 物理IRQ 1: 仮想IRQ 1。集約しない。
@@ -416,7 +416,7 @@ graph LR
 
 @see `system_syscall.md` §8.1
 
-### 4.8 ソフトウェアTLB `{vMMIO_TLB}`
+### 4.8 ソフトウェアTLB `{VDMA}` `{OwnershipTransfer}` `{ConfigurableSystem}`
 Tier 3 アクセス（FC=6/7）において、毎回 flat_map による O(log N) ルックアップをするのは低速であるため、直近に解決した (FC, L1, L2) → PTE のマッピングを 16エントリの小型TLBにキャッシュする。
 
 - **キャッシュ構造**: ラウンドロビン置換（FIFO）
@@ -463,16 +463,16 @@ TODO(Phase 1): ATCの抽出 - フック登録や静的予約が可能なライ�
 
 ## 6. 制約達成の方策
 
-### 6.1 性能制約と方策
+### 6.1 性能制約と方策 `{ConfigurableSystem}` `{HierarchicalAddressDecode}` `{vMMIO_TLB}`
 - **目標**: MMIOアクセスのオーバーヘッドを最小化する。
 - **方策1**: `{ConfigurableSystem}` コアデバイス（SYSCTL等）をFC=4/L1=0/L2=0に配置し、L1テーブルの先頭エントリで即時解決できるようにする。
 - **方策2**: `{HierarchicalAddressDecode}` Function Code による最上位ルーティングで、ディスパッチの探索空間をFC単位に分割し、ホットパスでのルックアップコストを削減する。
 - **方策3**: `{vMMIO_TLB}` Software TLB により Tier 3 の繰り返しアクセスを高速化する。
 
-### 6.2 メモリ制約と方策
+### 6.2 メモリ制約と方策 `{ConfigurableSystem}`
 - **目標**: マップ管理用のメモリを最小化する。
 - **方策**: `{ConfigurableSystem}` L1テーブルのエントリ数・Software TLBのエントリ数・最大登録フック数をコンパイル時に固定し、静的配列として確保する。
 
-### 6.3 安全性制約と方策
+### 6.3 安全性制約と方策 `{RoleBasedAccessControl}` `{OwnershipTransfer}`
 - **目標**: ゲストが許可されていない物理アドレスにアクセスできないことを保証する。
 - **方策**: `{RoleBasedAccessControl}` `{OwnershipTransfer}` 権限チェックを `vmmio_perm_table` に集約し、TLBヒット時も含むすべてのアクセスパスで必ず実行する。TLBはテーブルウォークのスキップのみを担い、権限チェックをバイパスしない。FC=6 (SHM) の所有権は IPCルータが唯一の書き込み権限を持ち、Revoke 時に TLB エントリを即時無効化する。vMMIO は執行のみ行い、所有権の判断を行わない。

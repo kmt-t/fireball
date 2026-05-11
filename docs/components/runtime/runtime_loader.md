@@ -1,19 +1,19 @@
 # WASMローダ コンポーネント設計書
 
-## 1. コンセプト
+## 1. コンセプト `{ROMParsing}` `{AccessDictionary}` `{BumpAllocator}`
 WASMローダは、ROM上のWASM32バイナリをパースし、実行環境が参照しやすい索引構造（ModuleView）を生成する。RAMへの全展開を避け、ROM上のデータを直接参照することでメモリ消費を極小化する。 `{ROMParsing}` `{AccessDictionary}` `{BumpAllocator}`
 
-## 2. アーキテクチャ分類
+## 2. アーキテクチャ分類 `{3TierSeparation}`
 本コンポーネントは **Tier 3 (実装ドメイン)** に属する。WASMバイナリの解析と索引構築に特化した単一責務のモジュールとして設計する。 `{3TierSeparation}`
 
 ## 3. 静的モデル
 
-### 3.1 データ構造
+### 3.1 データ構造 `{MultiModule_Support}`
 - **`WasmLoader`**: WASMバイナリのパース、検証、およびロード済みモジュールの管理を一括して行う主要クラス。
 - **`module_view`**: ROM上のバイナリデータへの参照と、構築された索引群を保持する読み取り専用の構造体。
 - **`module_registry`**: ロード済みの `module_view` を名前で管理するための内部リスト。 `{MultiModule_Support}`
 
-### 3.2 内部ブロック図
+### 3.2 内部ブロック図 `{MultiModule_Support}`
 ```mermaid
 graph TD
     subgraph Loader_Layer
@@ -32,7 +32,7 @@ graph TD
     View -- refers to --> ROM
 ```
 
-### 3.3 主要なクラス・構造体・配列・定数
+### 3.3 主要なクラス・構造体・配列・定数 `{MultiModule_Support}`
 
 #### `WasmLoader` クラス
 依存関係（アロケータ等）と内部レジストリをカプセル化する。
@@ -42,7 +42,7 @@ graph TD
 | 作業用アロケータ | 索引構築時のメモリ割り当てに使用する（プライベートメンバ） | 構造体への参照 | [`bump_allocator`](runtime_stdlib.md) (非所有) |
 | モジュール索引 | ロード済みモジュールを名前で引くための内部管理リスト | アクセス辞書 | `module_registry` |
 
-#### `module_view` (モジュールビュー)
+#### `module_view` (モジュールビュー) `{ROMParsing}`
 ROM上のバイナリデータに対する「窓」として機能し、WIT上では `wasm-module-view` リソースとして定義される。
 データをRAM上に展開するのではなく、必要な時に必要な情報（セクション、関数ボディ、グローバル）へアクセスするためのアクセサを提供する。
 これにより、RAM消費を最小限に抑えつつ、クライアントに対しては型安全なインターフェイスを提供する。 `{ROMParsing}`
@@ -50,7 +50,7 @@ ROM上のバイナリデータに対する「窓」として機能し、WIT上�
 - **セクション索引**: WASM標準セクション（Type, Import, Code等）のオフセットとサイズをキャッシュする。
 - **シンボル検索**: エクスポート名からインデックスへの高速な引き当てを提供する。
 
-#### `BinaryStream`
+#### `BinaryStream` `{ROMParsing}`
 ROM上のデータストリームを管理し、LEB128可変長整数やプリミティブ型の読み出しを提供するユーティリティクラス。
 `std::span` をラップし、カレントポインタ（カーソル）管理と境界チェックを行う。
 
@@ -62,7 +62,7 @@ ROM上のデータストリームを管理し、LEB128可変長整数やプリ�
 | `read_bytes` | 指定バイト数の参照（`std::span`）を返す |
 | `remaining` | ストリームの残量チェック |
 
-#### `function_accessor` (関数アクセサ)
+#### `function_accessor` (関数アクセサ) `{ROMParsing}`
 関数の詳細情報へアクセスするための一時的なプロキシオブジェクト。WIT上では `wasm-function-accessor` リソースとして定義される。
 メソッド呼び出し時にROM上のデータをデコードして値を返す。
 
@@ -72,7 +72,7 @@ ROM上のデータストリームを管理し、LEB128可変長整数やプリ�
 | `get_locals_stream` | 関数のローカル変数定義のイテレータ（ストリーム） | デコードメソッド |
 | `get_code_stream` | 関数の実行本体（バイトコード）のストリーム | デコードメソッド |
 
-#### `global_accessor` (グローバルアクセサ)
+#### `global_accessor` (グローバルアクセサ) `{ROMParsing}`
 グローバル変数の定義情報へアクセスするための一時的なプロキシオブジェクト。WIT上では `wasm-global-accessor` リソースとして定義される。
 
 | 項目名（プロパティ） | 機能と役割 | 型分類 |
@@ -80,7 +80,7 @@ ROM上のデータストリームを管理し、LEB128可変長整数やプリ�
 | `get_metadata` | グローバル変数の値の種類（i32/i64等）と書き込み可否 | デコードメソッド |
 | `get_init_expr_stream` | 初期化定数式のバイトコードストリーム | デコードメソッド |
 
-#### `verification_result`
+#### `verification_result` `{LightweightVerifier}`
 バイナリ検証の結果と、不備があった場合の情報を保持する。 `{LightweightVerifier}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
@@ -90,7 +90,7 @@ ROM上のデータストリームを管理し、LEB128可変長整数やプリ�
 
 ## 4. 動的モデル
 
-### 4.1 アルゴリズム
+### 4.1 アルゴリズム `{ZeroCopyIndexing}` `{AccessDictionary}`
 - **バイナリパース**: ROM上のデータを `BinaryStream` でラップし、`read_leb128` 等を用いて境界チェックを行いながら順次読み取る。
 - **module_view 構築 (Zero-Copy Indexing)**: `{ZeroCopyIndexing}`
     - セクションスキャン時に内容をRAMにコピーせず、ROM上の開始オフセットとサイズを索引化する。
@@ -101,7 +101,7 @@ ROM上のデータストリームを管理し、LEB128可変長整数やプリ�
 
 TODO(Phase 0.8): Loader TLA+ Verification - モジュールのライフサイクル（Prepare -> Load -> Resolve -> Unload）と、依存関係解決の正当性を検証する。
 
-### 4.2 メモリ制約
+### 4.2 メモリ制約 `{ConfigurableSystem}`
 `module_view` と関連構造の最大サイズ。すべてコンパイル時固定。 `{ConfigurableSystem}`
 
 | 項目 | 定数名 | 既定値 | 根拠 |
@@ -112,7 +112,7 @@ TODO(Phase 0.8): Loader TLA+ Verification - モジュールのライフサイク
 | 最大グローバル数/モジュール | `FB_CONF_MAX_GLOBALS` | 32 | グローバルアクセサ配列 |
 | 最大インポート数/モジュール | `FB_CONF_MAX_IMPORTS` | 32 | インポート解決テーブル |
 
-### 4.3 軽量検証スコープ `{LightweightVerifier}`
+### 4.3 軽量検証スコープ `{ZeroCopyIndexing}` `{AccessDictionary}` `{ConfigurableSystem}`
 以下の項目をロード時に検証する。これ以上の検証（型システムの完全検証、命令の妥当性検証等）はPhase1+で検討。
 
 | # | 検証項目 | 判定基準 | 失敗時 |
@@ -123,7 +123,7 @@ TODO(Phase 0.8): Loader TLA+ Verification - モジュールのライフサイク
 | V4 | セクション順 | Customセクション以外はID昇順 | reject |
 | V5 | インポート/エクスポート型整合 | 型インデックスがTypeセクション範囲内 | reject |
 
-### 4.4 状態遷移図
+### 4.4 状態遷移図 `{ZeroCopyIndexing}` `{AccessDictionary}` `{ConfigurableSystem}` `{LightweightVerifier}`
 ```mermaid
 stateDiagram-v2
     [*] --> Idle
@@ -135,7 +135,7 @@ stateDiagram-v2
     Ready --> Idle: unload
 ```
 
-### 4.5 内部シーケンス
+### 4.5 内部シーケンス `{ZeroCopyIndexing}` `{AccessDictionary}` `{ConfigurableSystem}` `{LightweightVerifier}`
 #### モジュールロードシーケンス
 ```mermaid
 sequenceDiagram
@@ -253,14 +253,14 @@ TODO(Phase 1): ATC抽出 - BumpAllocator使用時のメモリ解放や順序依�
 
 ## 6. 制約達成の方策
 
-### 6.1 性能制約と方策
+### 6.1 性能制約と方策 `{ROMParsing}` `{AccessDictionary}`
 - **目標**: モジュールロード時間を最小化する。
 - **方策**: `{ROMParsing}` `{AccessDictionary}` RAMへのコピーを排除し、主要な要素を索引化することで、実行時の探索コストを抑える。
 
-### 6.2 メモリ制約と方策
+### 6.2 メモリ制約と方策 `{BumpAllocator}` `{NoStdVector}`
 - **目標**: ロード時のRAM消費を極小化する。
 - **方策**: `{BumpAllocator}` `{NoStdVector}` バンプアロケータを使用し、断片化を防止しつつ、固定長配列による索引管理を行う。
 
-### 6.3 安全性制約と方策
+### 6.3 安全性制約と方策 `{LightweightVerifier}` `{Wasm32Only}`
 - **目標**: 不正なWASMバイナリによるクラッシュを防止する。
 - **方策**: `{LightweightVerifier}` `{Wasm32Only}` ロード時にマジック値、バージョン、セクション境界の整合性を検証し、不正なバイナリを拒否する。

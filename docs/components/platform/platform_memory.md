@@ -1,9 +1,9 @@
 # COOS メモリマネージャ コンポーネント設計書
 
-## 1. コンセプト
+## 1. コンセプト `{3TierSeparation}` `{Policy_Memory}` `{ConsolidatedHeap}`
 メモリマネージャ（`memory-manager`）は、物理メモリプールを複数の論理パーティション（Kernel, Task, Shared等）に分割し、隔離と効率的なメモリ利用を提供する Tier 2 コンポーネントである。 `{3TierSeparation}` `{Policy_Memory}` `{ConsolidatedHeap}`
 
-## 2. アーキテクチャ分類
+## 2. アーキテクチャ分類 `{WasmPageAlignment}`
 本コンポーネントは **Tier 2 (サービスドメイン)** に属する。動的メモリ確保を最小限に抑えつつ、固定サイズパーティション内でのアロケーションを管理する。 `{WasmPageAlignment}`
 
 ## 3. 静的モデル
@@ -61,7 +61,7 @@ TODO(Phase 1): ATC抽出 - アライメント制約（ページ単位など）�
 | 引数 | `addr`: 解放するメモリアドレス |
 | 補足 | 共有メモリは `shared-block` のデストラクタで自動解放される。 |
 
-## 5. 制約と不変条件
+## 5. 制約と不変条件 `{StrictMemoryLimit}` `{WasmPageAlignment}`
 
 TODO(Phase 1): 動的モデルの明確化 - フラグメンテーション回避のアルゴリズム（空きブロックの統合等）や、上限サイズ超過時のエラーハンドリングを定義すること。
 
@@ -70,14 +70,14 @@ TODO(Phase 1): 動的モデルの明確化 - フラグメンテーション回�
 - `∀block ∈ allocated : block.owner != 0` (task-idと必ず紐付く)
 - ゲストRAMに使用する `pool-base` アドレスはWASMページ境界（64KBアライメント）に配置すること。vMMIOおよびインタープリタはこのアライメントを前提として単一比較命令での高速RAMアクセス判定を行う。 `{WasmPageAlignment}`
 
-## 6. 所有権追跡
+## 6. 所有権追跡 `{Policy_Memory}`
 各メモリブロックは `memory-info.owner` で割り当て元task-idを追跡する。 `{Policy_Memory}`
 
 - `allocate` / `allocate-shared` 時に呼び出し元タスクIDが自動設定
 - kernel/task: `deallocate` は所有者タスクのみが実行可能
 - shared: `shared-memory` リソースのRAII / drop で自動解放
 
-## 7. 共有メモリ (shared-block) のライフサイクル
+## 7. 共有メモリ (shared-block) のライフサイクル `{FaultIsolation}` `{OwnershipTransfer}`
 `shared-block` リソースが所有権の単位。IPC転送時に `release` → `claim` で所有権が移動する。 `{FaultIsolation}` `{OwnershipTransfer}`
 
 大きなデータを転送する場合、`shm-id` をkv-pairの `value` フィールドに `data-type = handle` で格納し、通常のIPCメッセージとして送信する。

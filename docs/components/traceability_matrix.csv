@@ -1,0 +1,503 @@
+file,section_depth,heading,keywords,has_keyword,line_start,body_snippet
+docs/components/core/os_coos.md,2,1. コンセプト `{CooperativeMultitasking}` `{UseCpp23Library}` `{UseCpp20Coroutine}` `{CSPCommunication}` `{EliminateDataRace}` `{PeriodicTask}` `{IdleDetection}` `{InterruptWakeup}` `{NotRTOS}`,CooperativeMultitasking|UseCpp23Library|UseCpp20Coroutine|CSPCommunication|EliminateDataRace|PeriodicTask|IdleDetection|InterruptWakeup|NotRTOS|3TierSeparation|ComponentHarness,YES,3,COOSは、シングルスレッド環境向けのホーアCSPベースのグリーンスレッドOSである。C++23コルーチン（および std::flat_map 等の標準コンテナ）を活用し、スタックレスで低オーバーヘッ
+docs/components/core/os_coos.md,3,2.1 構成要素 `{3TierSeparation}` `{ComponentHarness}`,3TierSeparation|ComponentHarness,YES,9,
+docs/components/core/os_coos.md,2,2. アーキテクチャ分類 `{3TierSeparation}` `{ComponentHarness}`,3TierSeparation|ComponentHarness,YES,6,本コンポーネントは **Tier 2 (サブシステムドメイン)** に属し、Stateless Interface と Harness パターンを用いて構造化される。 `{3TierSeparatio
+docs/components/core/os_coos.md,3,3.1 データ構造 `{Policy_Memory}`,Policy_Memory,YES,16,- **`channel`**: 1エントリのバッファを持つ同期オブジェクト。 - **`co_value`**: 独自の所有権管理構造体。ヒープを使用せず、静的バッファまたはスタック上で動作すること
+docs/components/core/os_coos.md,3,3.2 内部ブロック図 `{Policy_Memory}`,Policy_Memory,YES,21,```mermaid graph TD     subgraph Harness[COOS Harness]         S_IF[scheduler]         C_IF[csp]    
+docs/components/core/os_coos.md,4,`channel` (CSPチャネル),,NO,37,
+docs/components/core/os_coos.md,3,3.3 主要なデータ定義 `{Policy_Memory}`,Policy_Memory,YES,35,
+docs/components/core/os_coos.md,2,3. 静的モデル,Policy_Memory,YES,14, ### 3.1 データ構造 `{Policy_Memory}` - **`channel`**: 1エントリのバッファを持つ同期オブジェクト。 - **`co_value`**: 独自の所有権管理構
+docs/components/core/os_coos.md,3,4.1 アルゴリズム `{CSP_Handoff}` `{DirectContextSwitch}` `{IdleDetection}` `{StrictMemoryLimit}` `{IndependentHeap}`,CSP_Handoff|DirectContextSwitch|IdleDetection|StrictMemoryLimit|IndependentHeap,YES,48,- **CSP Handoff (直接スイッチ)**: `send`/`recv` 時に相手タスクが既に待機状態であった場合、スケジューラを介さず即座に相手タスクへ実行権を移譲する。 `{CSP_Ha
+docs/components/core/os_coos.md,3,4.2 状態遷移 `{CSP_Handoff}` `{DirectContextSwitch}` `{IdleDetection}` `{StrictMemoryLimit}` `{IndependentHeap}`,CSP_Handoff|DirectContextSwitch|IdleDetection|StrictMemoryLimit|IndependentHeap,YES,53,
+docs/components/core/os_coos.md,2,4. 動的モデル,CSP_Handoff|DirectContextSwitch|IdleDetection|StrictMemoryLimit|IndependentHeap|StaticDI,YES,46, ### 4.1 アルゴリズム `{CSP_Handoff}` `{DirectContextSwitch}` `{IdleDetection}` `{StrictMemoryLimit}` `{In
+docs/components/core/os_coos.md,3,5.1 `coos_harness` (システムハーネス) `{StaticDI}`,StaticDI,YES,59,コンポーネント間の依存関係を集約する構造体。  | 項目名 | 機能と役割 | 型分類 | サイズ・制約 | | :--- | :--- | :--- | :--- | | スケジューラ | タスクの
+docs/components/core/os_coos.md,3,5.2 サブコンポーネント・インターフェイス `{StaticDI}`,StaticDI,YES,68,
+docs/components/core/os_coos.md,2,5. インターフェイス設計 `{StaticDI}`,StaticDI,YES,56,各コンポーネントの公開仕様を定義する。 `{StaticDI}`  ### 5.1 `coos_harness` (システムハーネス) `{StaticDI}` コンポーネント間の依存関係を集約する構
+docs/components/core/os_coos.md,2,6. 検証,,NO,78,
+docs/components/core/os_coos.md,3,6.1 直交表: CSP通信と状態遷移,,NO,80,チャネル通信時のタスク状態とスケジューラの挙動を検証する。割り込み通知はイベント駆動型として扱われる。  | ケース | 自タスク要求 | チャネル状態 | 相手状態 | 期待される動作 (自) | 
+docs/components/core/os_scheduler.md,2,1. コンセプト `{CooperativeMultitasking}` `{UseCpp23Library}` `{UseCpp20Coroutine}` `{COOS_Deterministic}` `{CSPCommunication}`,CooperativeMultitasking|UseCpp23Library|UseCpp20Coroutine|COOS_Deterministic|CSPCommunication,YES,3,COOSスケジューラは、C++23コルーチン（および std::flat_map 等の標準コンテナ）を活用したスタックレスな協調型マルチタスクの核となるコンポーネントである。タスクの実行、一時停止(y
+docs/components/core/os_scheduler.md,2,2. アーキテクチャ分類 `{3TierSeparation}`,3TierSeparation,YES,6,本コンポーネントは **Tier 3 (実装ドメイン)** に属する。コルーチンハンドルの管理とタスク実行順序の制御に特化した単一責務のモジュールとして設計する。 `{3TierSeparation}
+docs/components/core/os_scheduler.md,3,3.1 データ構造 `{COOS_Transparent}`,COOS_Transparent,YES,11,- **`Scheduler`**: タスクのREADYキュー管理、実行順序制御、およびコルーチン実行をカプセル化した主要クラス。 - **`task_context`**: 各タスクの実行状態、スタ
+docs/components/core/os_scheduler.md,3,3.2 内部ブロック図 `{COOS_Transparent}`,COOS_Transparent,YES,16,```mermaid graph TD     subgraph Scheduler_Layer         Engine[Scheduler Engine]         TCB[task_c
+docs/components/core/os_scheduler.md,4,`Scheduler` クラス,,NO,35,
+docs/components/core/os_scheduler.md,3,3.3 主要なデータ定義 `{COOS_Transparent}`,COOS_Transparent,YES,33,
+docs/components/core/os_scheduler.md,2,3. 静的モデル,COOS_Transparent,YES,9, ### 3.1 データ構造 `{COOS_Transparent}` - **`Scheduler`**: タスクのREADYキュー管理、実行順序制御、およびコルーチン実行をカプセル化した主要クラス
+docs/components/core/os_scheduler.md,3,4.1 アルゴリズム `{IdleDetection}` `{PeriodicTask}` `{InterruptWakeup}`,IdleDetection|PeriodicTask|InterruptWakeup,YES,47,- **スケジューリング**: ラウンドロビン方式。     - スケジューラ・コンテキスト内の「実行可能タスク列」を侵入型リストで管理し、定数時間 O(1) でのタスク切り替えを実現する。 - **
+docs/components/core/os_scheduler.md,3,4.2 状態遷移図 `{IdleDetection}` `{PeriodicTask}` `{InterruptWakeup}`,IdleDetection|PeriodicTask|InterruptWakeup,YES,53,
+docs/components/core/os_scheduler.md,2,4. 動的モデル,IdleDetection|PeriodicTask|InterruptWakeup,YES,45, ### 4.1 アルゴリズム `{IdleDetection}` `{PeriodicTask}` `{InterruptWakeup}` - **スケジューリング**: ラウンドロビン方式。   
+docs/components/core/os_scheduler.md,4,初期化 (`init-scheduler`),,NO,75, TODO(Phase 1): ATC抽出 - 初期化におけるメモリサイズの限界や配置アラインメントなどの暗黙の事前条件を定義すること。  | 項目 | 内容 | | :--- | :--- | | 
+docs/components/core/os_scheduler.md,4,タスク生成 (`spawn`),,NO,89, TODO(Phase 1): ATC抽出 - タスク生成時のスタックサイズやタスク名長の制約を事前条件として定義すること。  | 項目 | 内容 | | :--- | :--- | | 機能概要 |
+docs/components/core/os_scheduler.md,4,`spawn_task`,,NO,103,| 項目 | 内容 | | :--- | :--- | | 機能概要 | 既存のコルーチンオブジェクトからネイティブタスクを生成し、READY キューに追加する。 | | シグネチャ | `spawn
+docs/components/core/os_scheduler.md,4,`yield`,,NO,113,| 項目 | 内容 | | :--- | :--- | | 機能概要 | 現在のタスクの実行を中断し、スケジュールの再評価を行う。 | | シグネチャ | `yield() -> void` | | 
+docs/components/core/os_scheduler.md,4,`run`,,NO,121,| 項目 | 内容 | | :--- | :--- | | 機能概要 | メインスケジューリングループを開始する。 | | シグネチャ | `run() -> void` | | 事前条件 | `in
+docs/components/core/os_scheduler.md,4,`set_idle_handler`,,NO,129,| 項目 | 内容 | | :--- | :--- | | 機能概要 | READYキューが空になった際に呼び出されるアイドル時処理を登録する。 | | シグネチャ | `set_idle_handl
+docs/components/core/os_scheduler.md,4,`notify-interrupt` (内部 API),,NO,136,| 項目 | 内容 | | :--- | :--- | | 機能概要 | ハードウェア割り込みハンドラ（ISR）から呼び出され、Interrupt イベントをイベントキューに投入する。 | | シグネ
+docs/components/core/os_scheduler.md,4,`terminate`,,NO,146,
+docs/components/core/os_scheduler.md,3,5.1 公開API,,NO,72,
+docs/components/core/os_scheduler.md,2,5. インターフェイス設計,,NO,70, ### 5.1 公開API 外部から利用可能なオブジェクト指向APIを定義する。依存関係は `initialize` メソッドで注入する。  #### 初期化 (`init-scheduler`) 
+docs/components/core/os_scheduler.md,2,6. 設計判断 (ADR),,NO,155,
+docs/components/core/os_scheduler.md,3,ADR-SCHED-001: 侵入型リストによる管理 `{Policy_Memory}`,Policy_Memory,YES,157,- **決定事項**: TCBの連結には `std::list` 等を避け、TCB自体に `next` ポインタを持たせる侵入型リストを採用する。 - **理由**: 動的メモリ確保を排除し、RAM 
+docs/components/core/system_config.md,2,1. コンセプト `{ConfigurableSystem}` `{Static_Resolution}`,ConfigurableSystem|Static_Resolution,YES,3,Fireballハイパーバイザは、リソース制約の厳しい組み込み環境で動作するため、メモリサイズや最大リソース数をコンパイル時に固定する設計を採用する。設定はヘッダファイル形式のコンフィグファイル（`i
+docs/components/core/system_config.md,2,2. アーキテクチャ分類 `{3TierSeparation}` `{Static_Resolution}`,3TierSeparation|Static_Resolution,YES,6,本コンポーネントは **Tier 3 (実装ドメイン)** に属する。静的な定数定義のみを提供し、コードベース全体で参照されるグローバルなビューとして機能する。 `{3TierSeparation}`
+docs/components/core/system_config.md,3,3.1 データ構造 `{Resource_Estimation_Model}`,Resource_Estimation_Model,YES,11,コンフィグ項目は、実行時のオーバーヘッドを排除するため、主にプリプロセッサマクロおよび C++ `constexpr` 定数として定義される。設計段階でリソース使用量を概算し、制約適合性を検証するため
+docs/components/core/system_config.md,3,3.2 内部ブロック図 `{Resource_Estimation_Model}`,Resource_Estimation_Model,YES,14,```mermaid graph TD     Config[fireball_config.hxx] --> Memory[Memory Management]     Config --> IPC
+docs/components/core/system_config.md,3,3.3 主要な構造体・クラス・定数 `{Resource_Estimation_Model}`,Resource_Estimation_Model,YES,25,
+docs/components/core/system_config.md,2,3. 静的モデル,Resource_Estimation_Model,YES,9, ### 3.1 データ構造 `{Resource_Estimation_Model}` コンフィグ項目は、実行時のオーバーヘッドを排除するため、主にプリプロセッサマクロおよび C++ `conste
+docs/components/core/system_config.md,3,4.1 アルゴリズム `{Static_Resolution}`,Static_Resolution,YES,37,本コンポーネントは静的な定義のみを提供し、動的なアルゴリズムは持たない。すべての値はコンパイル時に確定する。 `{Static_Resolution}` 
+docs/components/core/system_config.md,3,4.2 状態遷移図 `{Static_Resolution}`,Static_Resolution,YES,40,静的構成のため、状態遷移は存在しない。 
+docs/components/core/system_config.md,3,4.3 内部シーケンス `{Static_Resolution}`,Static_Resolution,YES,43,
+docs/components/core/system_config.md,2,4. 動的モデル,Static_Resolution,YES,35, ### 4.1 アルゴリズム `{Static_Resolution}` 本コンポーネントは静的な定義のみを提供し、動的なアルゴリズムは持たない。すべての値はコンパイル時に確定する。 `{Stati
+docs/components/core/system_config.md,4,コンフィグ定数の参照,,NO,53,
+docs/components/core/system_config.md,3,5.1 公開API,,NO,48,本コンポーネントは C++ ヘッダファイルとして不変な定数のみを提供する。振る舞いの契約 (Contract) としては以下の通り。  TODO(Phase 1): ATCの抽出 - マクロ間の依存関
+docs/components/core/system_config.md,3,5.2 URI/IPCインターフェイス,,NO,62,
+docs/components/core/system_config.md,2,5. インターフェイス定義,,NO,46, ### 5.1 公開API 本コンポーネントは C++ ヘッダファイルとして不変な定数のみを提供する。振る舞いの契約 (Contract) としては以下の通り。  TODO(Phase 1): AT
+docs/components/core/system_config.md,3,6.1 性能制約と方策 `{Static_Resolution}`,Static_Resolution,YES,67,- **目標**: 実行時のコンフィグ参照コストをゼロにする。 - **方策**: `{Static_Resolution}` すべての値をコンパイル時定数とし、実行時の探索や計算を排除する。 
+docs/components/core/system_config.md,3,6.2 メモリ制約と方策 `{ConfigurableSystem}` `{StaticScalability}`,ConfigurableSystem|StaticScalability,YES,71,
+docs/components/core/system_config.md,2,6. 制約達成の方策,Static_Resolution|ConfigurableSystem|StaticScalability,YES,65, ### 6.1 性能制約と方策 `{Static_Resolution}` - **目標**: 実行時のコンフィグ参照コストをゼロにする。 - **方策**: `{Static_Resolution
+docs/components/core/system_config.md,3,6.3 安全性制約と方策 `{ConfigurableSystem}`,ConfigurableSystem,YES,75,- **目標**: 実行時の不正な設定変更を防止する。 - **方策**: `{ConfigurableSystem}` 設定を読み取り専用領域（ROM/Flash）に配置し、実行時の改ざんを不可能に
+docs/components/core/system_config_details.md,2,1. 概要 `{ConfigurableSystem}`,ConfigurableSystem,YES,3,Fireballハイパーバイザの動作パラメータを定義するコンパイル時設定マクロの一覧である。これらのマクロは `inc/fireball_config.hxx` で定義される。 `{Configura
+docs/components/core/system_config_details.md,3,2.1 メモリ管理 `{ConsolidatedHeap}` `{IndependentHeap}` `{StrictMemoryLimit}`,ConsolidatedHeap|IndependentHeap|StrictMemoryLimit,YES,10,| マクロ名 | 説明 | 標準 (20KB) | 導出元 | | :--- | :--- | :--- | :--- | | `FB_CONF_TASK_HEAP_SIZE` | COOS/タスク統
+docs/components/core/system_config_details.md,3,2.2 IPCルータ `{StaticScalability}` `{RoleBasedAccessControl}`,StaticScalability|RoleBasedAccessControl,YES,17,| マクロ名 | 説明 | デフォルト値 (例) | 導出元 | | :--- | :--- | :--- | :--- | | `FB_CONF_ROUTER_MAX_SERVICES` | 登録可
+docs/components/core/system_config_details.md,3,2.3 HAL `{ConfigurableSystem}`,ConfigurableSystem,YES,23,| マクロ名 | 説明 | デフォルト値 (例) | 導出元 | | :--- | :--- | :--- | :--- | | `FB_CONF_HAL_MAX_DEVICES` | 管理可能な最大
+docs/components/core/system_config_details.md,3,2.4 vSoC / vMMIO `{JIT_DoubleBuffer_Cache}` `{FastAddressCheck}` `{StrictMemoryLimit}` `{vMMIO_Isolation}` `{ConfigurableSystem}` `{RestrictedPhysicalAccess}`,JIT_DoubleBuffer_Cache|FastAddressCheck|StrictMemoryLimit|vMMIO_Isolation|ConfigurableSystem|RestrictedPhysicalAccess,YES,30,| マクロ名 | 説明 | デフォルト値 (例) | 導出元 | | :--- | :--- | :--- | :--- | | `FB_CONF_JIT_CACHE_SIZE` | JITキャッシュ
+docs/components/core/system_config_details.md,3,2.5 ロギング `{BufferedLogging}`,BufferedLogging,YES,40,| マクロ名 | 説明 | デフォルト値 (例) | 導出元 | | :--- | :--- | :--- | :--- | | `FB_CONF_LOG_BUFFER_SIZE` | ログメッセージ
+docs/components/core/system_config_details.md,3,2.6 デバッガ `{ConfigurableSystem}` `{Challenge_DebuggerResource}`,ConfigurableSystem|Challenge_DebuggerResource|ConsolidatedHeap|IndependentHeap|StrictMemoryLimit|StaticScalability|RoleBasedAccessControl|JIT_DoubleBuffer_Cache|FastAddressCheck|vMMIO_Isolation|RestrictedPhysicalAccess|BufferedLogging,YES,45,| マクロ名 | 説明 | デフォルト値 (例) | 導出元 | | :--- | :--- | :--- | :--- | | `FB_CONF_DEBUG_MAX_BREAKPOINTS` | 最
+docs/components/core/system_config_details.md,4,task_id 型,,NO,55,
+docs/components/core/system_config_details.md,2,2. マクロ一覧,ConsolidatedHeap|IndependentHeap|StrictMemoryLimit|StaticScalability|RoleBasedAccessControl|ConfigurableSystem|JIT_DoubleBuffer_Cache|FastAddressCheck|vMMIO_Isolation|RestrictedPhysicalAccess|BufferedLogging|Challenge_DebuggerResource,YES,6, TODO(Phase 1): ATC抽出 - 各コンフィグ値の有効範囲、メモリサイズ上限との整合に関する静的アサーション条件を明確に定義すること。  ### 2.1 メモリ管理 `{Consolid
+docs/components/core/system_config_details.md,3,2.7 型定義・予約値 `{ConsolidatedHeap}` `{IndependentHeap}` `{StrictMemoryLimit}` `{StaticScalability}` `{RoleBasedAccessControl}` `{ConfigurableSystem}` `{JIT_DoubleBuffer_Cache}` `{FastAddressCheck}` `{vMMIO_Isolation}` `{RestrictedPhysicalAccess}` `{BufferedLogging}` `{Challenge_DebuggerResource}`,ConsolidatedHeap|IndependentHeap|StrictMemoryLimit|StaticScalability|RoleBasedAccessControl|ConfigurableSystem|JIT_DoubleBuffer_Cache|FastAddressCheck|vMMIO_Isolation|RestrictedPhysicalAccess|BufferedLogging|Challenge_DebuggerResource,YES,51, タスク識別子 `task_id` はシステム全体（COOS・IPCルータ・vMMIO）で共通して使用される識別子型である。値域を明示することで、予約値との重複や型キャストミスをコンパイル時に検出でき
+docs/components/core/system_config_details.md,4,最大タスク数制約 `{StaticScalability}`,StaticScalability,YES,63, | マクロ名 | 説明 | デフォルト値 (例) | 導出元 | | :--- | :--- | :--- | :--- | | `FB_CONF_MAX_TASKS` | 同時実行可能な最大タスク
+docs/components/core/system_logging.md,2,1. コンセプト `{IPCRouter}` `{DictionaryBasedIPC}` `{BufferedLogging}` `{IdleDetection}`,IPCRouter|DictionaryBasedIPC|BufferedLogging|IdleDetection,YES,3,ロギングコンポーネントは、ハイパーバイザ内部の状態を記録し、外部（UART/ITM等）へ出力する。メモリ消費と通信負荷を抑えるため、辞書参照IPCと内部リングバッファによる遅延出力を採用する。また、C
+docs/components/core/system_logging.md,2,2. アーキテクチャ分類 `{3TierSeparation}`,3TierSeparation,YES,6,本コンポーネントは **Tier 3 (実装ドメイン)** に属する。ログの収集、バッファリング、およびバックグラウンド出力に特化した単一責務のモジュールとして設計する。 `{3TierSeparat
+docs/components/core/system_logging.md,3,3.1 データ構造,,NO,11,- **`Logger`**: ログの収集、バッファリング、および物理出力への転送を一括して管理する主要クラス。 - **`logging_config`**: バッファサイズやデフォルトログレベルな
+docs/components/core/system_logging.md,3,3.2 内部ブロック図,,NO,16,```mermaid graph TD     subgraph Logging_Layer         Engine[Logger Engine]         RB[Internal Rin
+docs/components/core/system_logging.md,4,`Logger` クラス,,NO,34,依存関係（HALトランスポート）とバッファ状態をカプセル化する。  | 項目名 | 機能と役割 | 型分類 | サイズ・制約 | | :--- | :--- | :--- | :--- | | 出力ト
+docs/components/core/system_logging.md,4,`logging_config` `{ConfigurableSystem}`,ConfigurableSystem,YES,44,
+docs/components/core/system_logging.md,3,3.3 主要なクラス・構造体・配列・定数,,NO,32,
+docs/components/core/system_logging.md,2,3. 静的モデル,ConfigurableSystem,YES,9, ### 3.1 データ構造 - **`Logger`**: ログの収集、バッファリング、および物理出力への転送を一括して管理する主要クラス。 - **`logging_config`**: バッファ
+docs/components/core/system_logging.md,3,4.1 アルゴリズム `{DictionaryBasedIPC}` `{BufferedLogging}`,DictionaryBasedIPC|BufferedLogging,YES,54,- **辞書参照ロギング**: 送信側はメッセージ文字列ではなく、辞書内のオフセットと引数のみをIPCで送信する。 `{DictionaryBasedIPC}` - **遅延出力**: IPC受信時は
+docs/components/core/system_logging.md,3,4.2 辞書構造 `{DictionaryBasedIPC}`,DictionaryBasedIPC,YES,59,辞書はROM上に固定配置され、ホスト側ツールが `dict_offset + args` から可読テキストに展開する。 `{DictionaryBasedIPC}`  | 項目 | 値 | | :--
+docs/components/core/system_logging.md,3,4.3 COOS Idle Hook 連携 (Flush Protocol) `{IdleDetection}`,IdleDetection,YES,70,COOSスケジューラの `set_idle_hook` で `logger.flush()` を登録する。 `{IdleDetection}`  1. COOSスケジューラがREADYタスクがないこと
+docs/components/core/system_logging.md,3,4.4 状態遷移図 `{DictionaryBasedIPC}` `{BufferedLogging}` `{IdleDetection}`,DictionaryBasedIPC|BufferedLogging|IdleDetection,YES,80,```mermaid stateDiagram-v2     [*] --> Idle     Idle --> Buffering: log_received     Buffering --> F
+docs/components/core/system_logging.md,4,ログ出力シーケンス,,NO,92,
+docs/components/core/system_logging.md,3,4.5 内部シーケンス `{DictionaryBasedIPC}` `{BufferedLogging}` `{IdleDetection}`,DictionaryBasedIPC|BufferedLogging|IdleDetection,YES,91,
+docs/components/core/system_logging.md,2,4. 動的モデル,DictionaryBasedIPC|BufferedLogging|IdleDetection,YES,52, ### 4.1 アルゴリズム `{DictionaryBasedIPC}` `{BufferedLogging}` - **辞書参照ロギング**: 送信側はメッセージ文字列ではなく、辞書内のオフセッ
+docs/components/core/system_logging.md,4,ログイベント記録 (`log_event`),,NO,117, | 項目 | 内容 | | :--- | :--- | | 機能概要 | 発生したイベントを、レベルと辞書オフセット形式で記録する。 | | シグネチャ | `log_event(level: ui
+docs/components/core/system_logging.md,4,バッファリング出力 (`flush`),,NO,127,
+docs/components/core/system_logging.md,3,5.1 公開API,,NO,112,外部から利用可能なオブジェクト指向APIを定義する。  TODO(Phase 1): ATCの抽出 - ログイベント発生時のバッファ飽和による上書きや、リングバッファのポインタ一貫性（複数タスクからの
+docs/components/core/system_logging.md,3,5.2 URI/IPCインターフェイス `{DictionaryBasedIPC}`,DictionaryBasedIPC,YES,136,
+docs/components/core/system_logging.md,2,5. インターフェイス定義,DictionaryBasedIPC,YES,110, ### 5.1 公開API 外部から利用可能なオブジェクト指向APIを定義する。  TODO(Phase 1): ATCの抽出 - ログイベント発生時のバッファ飽和による上書きや、リングバッファのポ
+docs/components/core/system_logging.md,3,6.1 性能制約と方策 `{BufferedLogging}`,BufferedLogging,YES,143,- **目標**: ログ出力による呼び出し側のブロッキングを最小化する。 - **方策**: `{BufferedLogging}` 内部バッファリングと非同期出力により、IPCハンドラを即座に解放す
+docs/components/core/system_logging.md,3,6.2 メモリ制約と方策 `{MemoryIsolation}` `{ConfigurableSystem}`,MemoryIsolation|ConfigurableSystem,YES,147,
+docs/components/core/system_logging.md,2,6. 制約達成の方策,BufferedLogging|MemoryIsolation|ConfigurableSystem,YES,141, ### 6.1 性能制約と方策 `{BufferedLogging}` - **目標**: ログ出力による呼び出し側のブロッキングを最小化する。 - **方策**: `{BufferedLoggin
+docs/components/core/system_logging.md,3,6.3 安全性制約と方策 `{BufferedLogging}` `{MemoryIsolation}` `{ConfigurableSystem}`,BufferedLogging|MemoryIsolation|ConfigurableSystem,YES,151,- **目標**: ログ出力の失敗がシステム全体に波及しないようにする。 - **方策**: バッファフル時は古いログを破棄するか、新しいログを無視することで、システムの継続実行を優先する。ログ出力の
+docs/components/core/system_syscall.md,2,1. 目的 `{NativeAPI_Export}`,NativeAPI_Export,YES,3,本ドキュメントは、WebAssemblyゲスト環境からホストの提供するサービスを呼び出すための汎用システムコール `fireball_call` のインターフェイス仕様を定義する。特に、WASI (W
+docs/components/core/system_syscall.md,2,2. 背景 `{UnifiedAccessModel}`,UnifiedAccessModel,YES,6,`fireball_call` は、vMMIO機能全体の**代理実行ラッパー**である。直接vMMIOアドレスにアクセスできないゲスト言語のために、シングル・トラップ命令経由でホストがvMMIO操作を
+docs/components/core/system_syscall.md,2,3. `fireball_call` WIT定義 `{WIT_Interface_Spec}`,WIT_Interface_Spec,YES,16,`fireball_call`のWIT (WebAssembly Interface Type) 定義は以下の通りである。詳細は `docs/components/interface/interfac
+docs/components/core/system_syscall.md,3,4.1. 引数のパッキング,,NO,43, TODO(Phase 1): ATC抽出 - fireball_callの各引数に渡されるポインタが、ゲストメモリの正当な境界内にあることの事前条件（および違反時のパニック/エラーモデル）を厳密化す
+docs/components/core/system_syscall.md,3,4.2. 戻り値 `{Syscall_Return_Value}` `{Errorcode_To_Strategy}`,Syscall_Return_Value|Errorcode_To_Strategy,YES,59,
+docs/components/core/system_syscall.md,2,4. `fireball_call` 呼び出し規約,Syscall_Return_Value|Errorcode_To_Strategy,YES,41, ### 4.1. 引数のパッキング  TODO(Phase 1): ATC抽出 - fireball_callの各引数に渡されるポインタが、ゲストメモリの正当な境界内にあることの事前条件（および違反
+docs/components/core/system_syscall.md,3,5.1. カテゴリ一覧,,NO,65, | カテゴリ | ID範囲 | 説明 | | :--- | :--- | :--- | | System | `0x00`-`0x0F` | 実行制御 | | vMMIO Generic | `0x
+docs/components/core/system_syscall.md,3,5.2. System (`0x00`-`0x0F`) `{CooperativeMultitasking}`,CooperativeMultitasking,YES,76, | ID | 名前 | 引数 | 戻り値 | 説明 | | :--- | :--- | :--- | :--- | :--- | | `0x00` | `RESERVED` | — | — | 予約
+docs/components/core/system_syscall.md,3,5.3. vMMIO Generic (`0x10`-`0x1F`) `{RoleBasedAccessControl}` `{RestrictedPhysicalAccess}`,RoleBasedAccessControl|RestrictedPhysicalAccess,YES,84,vMMIOアドレス空間全体への汎用アクセス。SYSCTL/IPCR/VDMA/SHM/DYNAMIC/PASSTHROUGHすべての領域に対応。許可テーブルでアクセス制御される。 `{RoleBase
+docs/components/core/system_syscall.md,3,5.4. VDMA (`0x20`-`0x2F`) `{VDMA}`,VDMA,YES,96,仮想DMA操作のセマンティックラッパー。内部的にvMMIO VDMAレジスタへの書き込みに変換される。  | ID | 名前 | 引数 | 戻り値 | 説明 | | :--- | :--- | :--
+docs/components/core/system_syscall.md,3,5.5. IRQ (`0x30`-`0x3F`) `{CooperativeMultitasking}` `{RoleBasedAccessControl}` `{RestrictedPhysicalAccess}` `{VDMA}`,CooperativeMultitasking|RoleBasedAccessControl|RestrictedPhysicalAccess|VDMA,YES,103,仮想割り込みフラグの管理。`REG_IRQ_FLAGS` のラッパー。  | ID | 名前 | 引数 | 戻り値 | 説明 | | :--- | :--- | :--- | :--- | :--- 
+docs/components/core/system_syscall.md,3,5.6. IPC (`0x40`-`0x4F`) `{CSPCommunication}` `{IPC_HandleBased}`,CSPCommunication|IPC_HandleBased,YES,111,CSPチャネル経由のプロセス間通信。  | ID | 名前 | 引数 | 戻り値 | 説明 | | :--- | :--- | :--- | :--- | :--- | | `0x40` | `IPC
+docs/components/core/system_syscall.md,3,5.7. WASI (`0x80`-`0xBF`) `{WASI_Implementation}`,WASI_Implementation,YES,119,
+docs/components/core/system_syscall.md,2,5. システムコールID,CooperativeMultitasking|RoleBasedAccessControl|RestrictedPhysicalAccess|VDMA|CSPCommunication|IPC_HandleBased|WASI_Implementation,YES,62,システムコールIDは、`fireball_call`が実行する特定の操作を識別し、vMMIOの全機能をカバーする。カテゴリ別に管理される。  ### 5.1. カテゴリ一覧  | カテゴリ | ID範
+docs/components/core/system_syscall.md,3,6.1. 役割,,NO,175,ゲストのWASI互換ライブラリ（`wasi-libc`など）からの呼び出しを傍受し、`fireball_call`呼び出し規約に従ってホストの`fireball_call`へ変換する。 
+docs/components/core/system_syscall.md,3,6.2. 高応答 Trigger のマッピング例 `{Fast_Path_GPIO}`,Fast_Path_GPIO,YES,178,
+docs/components/core/system_syscall.md,2,6. Fireball Shim (`libfireball_shim`),Fast_Path_GPIO,YES,173, ### 6.1. 役割 ゲストのWASI互換ライブラリ（`wasi-libc`など）からの呼び出しを傍受し、`fireball_call`呼び出し規約に従ってホストの`fireball_call`へ
+docs/components/core/system_syscall.md,3,7.1. 役割 `{Challenge_WasiFdWriteLoop}` `{WASI_Async_Bridge}`,Challenge_WasiFdWriteLoop|WASI_Async_Bridge,YES,202,
+docs/components/core/system_syscall.md,2,7. WASIホスト側実装,Challenge_WasiFdWriteLoop|WASI_Async_Bridge|Asynchronous_Notification,YES,200, ### 7.1. 役割 `{Challenge_WasiFdWriteLoop}` `{WASI_Async_Bridge}` `fireball_call` を捕捉し、`id` に基づいて適切なハ
+docs/components/core/system_syscall.md,4,8.1.1. 仮想割り込みID,,NO,221,これらのIDは、WASI 0.2 の `pollable` リソースをホスト側で ready 状態にするためのトリガーとして使用される。  例: ```cpp // inc/fireball_virt
+docs/components/core/system_syscall.md,4,8.1.2. 仮想割り込みペイロード `{Asynchronous_Notification}`,Asynchronous_Notification,YES,235,
+docs/components/core/system_syscall.md,3,8.1. 仮想割り込み `{Asynchronous_Notification}`,Asynchronous_Notification,YES,218,
+docs/components/core/system_syscall.md,2,8. ホストからゲストへの非同期通知メカニズム `{Asynchronous_Notification}`,Asynchronous_Notification,YES,214, ホスト側で非同期に発生したイベント（例: ハードウェア割り込みの完了、タイマーイベント、非同期I/Oの完了など）をゲストに通知するために、`fireball_call`とは独立したメカニズムを定義す
+docs/components/core/system_syscall.md,2,9. メモリ安全性 `{Challenge_SyscallMemorySafety}`,Challenge_SyscallMemorySafety,YES,238,`fireball_call`を介してゲストメモリへのポインタが渡される場合、統一vMMIOモデルの許可テーブルがセキュリティゲートとして機能する。別途の `vsoc_validate_ptr` は不
+docs/components/core/system_syscall.md,2,10. トラップ状態プロトコル,,NO,241,`fireball_call` はWASMの**インポート関数呼び出し**として実行される。そのため、明示的な状態保存/復元は不要。  - **保存**: WASMの呼び出し規約がスタック/ローカル変
+docs/components/interface/interface_wit.md,2,1. 目的,,NO,3,本ドキュメントは、Fireballプロジェクトにおいてゲスト（WASM）環境に公開されるシステムコールおよびHAL（Hardware Abstraction Layer）のインターフェイス仕様を、WA
+docs/components/interface/interface_wit.md,2,2. アーキテクチャ原則,,NO,6,- **WASI 0.2 パターン採用**: ハンドル管理に `resource`、非同期処理に `pollable`、I/Oに `stream` を使用する。 - **Tier 1 分離**: シス
+docs/components/interface/interface_wit.md,3,3.1 基礎インターフェイス `{CooperativeMultitasking}` `{Asynchronous_Notification}`,CooperativeMultitasking|Asynchronous_Notification|RecoveryStrategy|Errorcode_To_Strategy,YES,13,WASI 0.2 の標準パターンに従い、以下の基礎コンポーネントを想定する。  - `pollable`: 非同期イベントの待機用リソース。 `{CooperativeMultitasking}` `
+docs/components/interface/interface_wit.md,4,設計判断 `{RecoveryStrategy}` `{Errorcode_To_Strategy}`,RecoveryStrategy|Errorcode_To_Strategy,YES,45,
+docs/components/interface/interface_wit.md,3,3.2 リカバリー戦略とエラーハンドリング `{RecoveryStrategy}` `{Errorcode_To_Strategy}`,RecoveryStrategy|Errorcode_To_Strategy,YES,19,
+docs/components/interface/interface_wit.md,2,3. 共通データ構造,CooperativeMultitasking|Asynchronous_Notification|RecoveryStrategy|Errorcode_To_Strategy|Syscall_Mapping,YES,11, ### 3.1 基礎インターフェイス `{CooperativeMultitasking}` `{Asynchronous_Notification}` WASI 0.2 の標準パターンに従い、以下
+docs/components/interface/interface_wit.md,3,`fireball:host/trap` `{Syscall_Mapping}`,Syscall_Mapping,YES,53,"- `fireball-call(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32, arg4: u32, arg5: u32) -> u32` "
+docs/components/interface/interface_wit.md,3,4.2 高応答トラインターフェイス `{Syscall_Mapping}`,Syscall_Mapping,YES,56,
+docs/components/interface/interface_wit.md,2,4. 低レベル・トラップ・インターフェイス `{Syscall_Mapping}`,Syscall_Mapping,YES,50,WASI標準には存在しない、Fireball固有の高速システムコール。実体は `docs/components/core/system_syscall.md` で定義される `fireball_cal
+docs/components/interface/interface_wit.md,3,5.1 `fireball:host/timer` (wasi:clocks 準拠),,NO,72,`wasi:clocks/monotonic-clock` のサブセットとして定義。  ```wit resource periodic-timer {     get-now: func() -> 
+docs/components/interface/interface_wit.md,3,5.3 `fireball:host/bus` (Master/Slave Bus) `{WASI_Implementation}`,WASI_Implementation,YES,82,バス通信も標準WASIにはないため、リソースパターンを適用。  ```wit resource bus-master {     transfer-data: func(tx-buffer: list
+docs/components/interface/interface_wit.md,3,5.4 `fireball:host/streaming` (wasi:io 準拠) `{WASI_Implementation}`,WASI_Implementation,YES,97,
+docs/components/interface/interface_wit.md,2,5. HAL インターフェイス,WASI_Implementation,YES,70, ### 5.1 `fireball:host/timer` (wasi:clocks 準拠) `wasi:clocks/monotonic-clock` のサブセットとして定義。  ```wit r
+docs/components/interface/interface_wit.md,2,6. 非同期通知メカニズム,,NO,110,WASIでは割り込みを直接扱うのではなく、`pollable` を通じたイベント待機（`poll`）としてモデル化する。  - **Virtual Interrupts**: 物理割り込みはホストで処
+docs/components/interface/interface_wit.md,2,7. フィードバック：WASI 準拠における制約事項,,NO,115,WASI仕様と HAL の乖離および考慮点は以下の通り：  1. **GPIO/Bus の不在**: WASI (CLI/Cloud) には GPIO や I2C/SPI の標準インターフェイスがない
+docs/components/interface/interface_wit.md,2,8. 命名規則 (Naming Conventions),,NO,122, WIT識別子は WASI 標準および `wasm-tools` の制約により `kebab-case` (ハイフン区切り) が必須である。プロジェクトでは以下のセマンティクス規約を適用する。  | 
+docs/components/interface/interface_wit.md,3,8.1 設計上の留意点,,NO,133,- **Kebab-Case Mandatory**: WIT定義内で `snake_case` (アンダースコア) は使用禁止。 - **C++ へのマッピング**: 生成される C++ コードでは
+docs/components/interface/ipc_router.md,2,1. コンセプト `{IPCRouter}` `{URIAbstraction}` `{RoleBasedAccessControl}` `{OwnershipTransfer}` `{IPCDI}`,IPCRouter|URIAbstraction|RoleBasedAccessControl|OwnershipTransfer|IPCDI,YES,3,IPCルータは、URIベースのサービスディスカバリとロールベースのアクセス制御を備えたメッセージルーティング層である。コンポーネント間の依存性をURIで抽象化し、所有権移譲を伴う安全なデータ移動を実現
+docs/components/interface/ipc_router.md,2,2. アーキテクチャ分類 `{3TierSeparation}` `{IPCRouter}` `{URIAbstraction}`,3TierSeparation|IPCRouter|URIAbstraction,YES,6,本コンポーネントは **Tier 1 (アーキテクチャドメイン)** に属する。システム全体の通信基盤として機能し、IoC (Inversion of Control) と URIベースのDIを用いて
+docs/components/interface/ipc_router.md,3,3.1 データ構造 `{IPCRegistry}` `{FlatMapIndexed}` `{RoleBasedAccessControl}`,IPCRegistry|FlatMapIndexed|RoleBasedAccessControl,YES,11,"- **レジストリエントリ**: 登録されたサービスのURI、ロール、チャンネルIDを保持する。内部的には C++23 `std::flat_map<string_view, registry_ent"
+docs/components/interface/ipc_router.md,3,3.2 内部ブロック図 `{IPCRegistry}` `{FlatMapIndexed}` `{RoleBasedAccessControl}`,IPCRegistry|FlatMapIndexed|RoleBasedAccessControl,YES,15,"```mermaid graph TB     subgraph ""IPC Router""         Reg[Registry<br/>Service Registration]        "
+docs/components/interface/ipc_router.md,4,`kv_pair` (Key-Valueペア) `{DictionaryBasedIPC}`,DictionaryBasedIPC,YES,34,IPC通信の最小単位。1つのメッセージで8個のペアを送信できる。  | 項目名 | 機能と役割 | 型分類 | サイズ・制約 | | :--- | :--- | :--- | :--- | | 型スコ
+docs/components/interface/ipc_router.md,4,`message` (IPCメッセージ) `{TypeSafeMessaging}` `{FlatMapIndexed}`,TypeSafeMessaging|FlatMapIndexed,YES,47,Key-Valueペアを複数集約した通信の基本単位。内部的に C++23 `std::flat_map` 相当の構造を採用し、メッセージ内のキー検索を $O(\log N)$ で行う。 `{TypeS
+docs/components/interface/ipc_router.md,4,`registry_entry` `{DictionaryBasedIPC}` `{TypeSafeMessaging}` `{FlatMapIndexed}`,DictionaryBasedIPC|TypeSafeMessaging|FlatMapIndexed,YES,54,
+docs/components/interface/ipc_router.md,3,3.3 主要なクラス・構造体・配列・定数 `{IPCRegistry}` `{FlatMapIndexed}` `{RoleBasedAccessControl}`,IPCRegistry|FlatMapIndexed|RoleBasedAccessControl,YES,32,
+docs/components/interface/ipc_router.md,2,3. 静的モデル,IPCRegistry|FlatMapIndexed|RoleBasedAccessControl|DictionaryBasedIPC|TypeSafeMessaging,YES,9, ### 3.1 データ構造 `{IPCRegistry}` `{FlatMapIndexed}` `{RoleBasedAccessControl}` - **レジストリエントリ**: 登録されたサ
+docs/components/interface/ipc_router.md,3,4.1 アルゴリズム `{LowLatencyLookup}` `{AccessDictionary}` `{FlatMapIndexed}` `{OwnershipTransfer}` `{IPC_ZeroCopy}` `{Challenge_CspHandoffStarvation}` `{IPC_DropHandler}`,LowLatencyLookup|AccessDictionary|FlatMapIndexed|OwnershipTransfer|IPC_ZeroCopy|Challenge_CspHandoffStarvation|IPC_DropHandler,YES,65,- **サービス検索**: `std::flat_map` を用いて、URI文字列からチャンネルIDを $O(\log N)$ で取得する。 `{LowLatencyLookup}` - **メッセー
+docs/components/interface/ipc_router.md,3,4.2 状態遷移図 `{LowLatencyLookup}` `{AccessDictionary}` `{FlatMapIndexed}` `{OwnershipTransfer}` `{IPC_ZeroCopy}` `{Challenge_CspHandoffStarvation}` `{IPC_DropHandler}`,LowLatencyLookup|AccessDictionary|FlatMapIndexed|OwnershipTransfer|IPC_ZeroCopy|Challenge_CspHandoffStarvation|IPC_DropHandler,YES,78,```mermaid stateDiagram-v2     [*] --> Idle     Idle --> Routing: lookup / send     Routing --> Idle
+docs/components/interface/ipc_router.md,4,サービス検索と接続フロー,,NO,89,
+docs/components/interface/ipc_router.md,3,4.3 内部シーケンス `{LowLatencyLookup}` `{AccessDictionary}` `{FlatMapIndexed}` `{OwnershipTransfer}` `{IPC_ZeroCopy}` `{Challenge_CspHandoffStarvation}` `{IPC_DropHandler}`,LowLatencyLookup|AccessDictionary|FlatMapIndexed|OwnershipTransfer|IPC_ZeroCopy|Challenge_CspHandoffStarvation|IPC_DropHandler,YES,88,
+docs/components/interface/ipc_router.md,2,4. 動的モデル,LowLatencyLookup|AccessDictionary|FlatMapIndexed|OwnershipTransfer|IPC_ZeroCopy|Challenge_CspHandoffStarvation|IPC_DropHandler,YES,63, ### 4.1 アルゴリズム `{LowLatencyLookup}` `{AccessDictionary}` `{FlatMapIndexed}` `{OwnershipTransfer}` `
+docs/components/interface/ipc_router.md,4,`register_service`,,NO,116, | 項目 | 内容 | | :--- | :--- | | 機能概要 | サービス固有のURIと、それを処理するチャネルおよびロールを関連付けて登録する。 | | シグネチャ | `register
+docs/components/interface/ipc_router.md,4,`lookup_service` `{IPC_HandleBased}`,IPC_HandleBased,YES,127, | 項目 | 内容 | | :--- | :--- | | 機能概要 | 指定されたURIに対応する通信用チャネルIDを取得する。同時に送信側の権限チェックを行う。 | | シグネチャ | `loo
+docs/components/interface/ipc_router.md,4,`route_message` `{CSP_Handoff}`,CSP_Handoff,YES,138,
+docs/components/interface/ipc_router.md,3,5.1 公開API,IPC_HandleBased|CSP_Handoff,YES,111,外部から利用可能なオブジェクト指向APIを定義する。  TODO(Phase 1): ATC抽出 - サービス登録時のチャネル初期化や送信メッセージのライフサイクル（所有権移動におけるダングリング参照
+docs/components/interface/ipc_router.md,3,5.2 URI/IPCインターフェイス `{TypeSafeMessaging}`,TypeSafeMessaging,YES,148,- **URI形式**: `fireball://<subsystem_id>/<stream>/<instance_id>` - **メッセージ形式**: 64ビットのKey-Value値を最大8個
+docs/components/interface/ipc_router.md,3,5.3 サービスファサード `{ServiceFacade}` `{IoC}`,ServiceFacade|IoC,YES,152,
+docs/components/interface/ipc_router.md,2,5. インターフェイス定義,IPC_HandleBased|CSP_Handoff|TypeSafeMessaging|ServiceFacade|IoC,YES,109, ### 5.1 公開API 外部から利用可能なオブジェクト指向APIを定義する。  TODO(Phase 1): ATC抽出 - サービス登録時のチャネル初期化や送信メッセージのライフサイクル（所有
+docs/components/interface/ipc_router.md,3,6.1 性能制約と方策 `{LowLatencyLookup}`,LowLatencyLookup,YES,157,- **目標**: サービス検索のレイテンシを最小化する。 - **方策**: `{LowLatencyLookup}` ソート済み配列の二分探索を採用する。 
+docs/components/interface/ipc_router.md,3,6.2 メモリ制約と方策 `{BumpAllocator}` `{StaticScalability}`,BumpAllocator|StaticScalability,YES,161,
+docs/components/interface/ipc_router.md,2,6. 制約達成の方策,LowLatencyLookup|BumpAllocator|StaticScalability,YES,155, ### 6.1 性能制約と方策 `{LowLatencyLookup}` - **目標**: サービス検索のレイテンシを最小化する。 - **方策**: `{LowLatencyLookup}` ソ
+docs/components/interface/ipc_router.md,3,6.3 安全性制約と方策 `{RoleBasedAccessControl}` `{OwnershipTransfer}`,RoleBasedAccessControl|OwnershipTransfer,YES,165,- **目標**: 不正なタスク間通信を防止する。 - **方策**: `{RoleBasedAccessControl}` `{OwnershipTransfer}` ロールベースの認可と、厳密な所
+docs/components/interface/system_service.md,2,1. コンセプト `{FaultIsolation}` `{MemoryIsolation}` `{IPCRouter}`,FaultIsolation|MemoryIsolation|IPCRouter,YES,3,"サービスは、WASMゲストに対して共有ライブラリ機能（WASI, libc, GC等）を提供するコンポーネントである。信頼度と通信方式に応じてTierで分離し、障害隔離とメモリ安全性を確保する。 `{"
+docs/components/interface/system_service.md,2,2. アーキテクチャ分類 `{3TierSeparation}` `{IPCRouter}` `{URIAbstraction}`,3TierSeparation|IPCRouter|URIAbstraction,YES,6,本コンポーネントは **Tier 1 (アーキテクチャドメイン)** に属する。ゲストWASMに対する抽象化されたサービスレイヤを提供し、IoC (Inversion of Control) と UR
+docs/components/interface/system_service.md,3,3.1 データ構造,,NO,11,- **サービスレジストリ**: ロードされているサービスの情報（URI、Tier、エントリポイント）を管理する。 
+docs/components/interface/system_service.md,3,3.2 内部ブロック図,,NO,14,```mermaid graph TD     Guest[WASM Guest] --> T0[Tier 0: Direct Link]     Guest --> T1[Tier 1: IPC] 
+docs/components/interface/system_service.md,4,`service` (サービス定義),,NO,28,システムが管理する個別のサービスの属性。  | 項目名 | 機能と役割 | 型分類 | サイズ・制約 | | :--- | :--- | :--- | :--- | | サービス名称 | サービスを識
+docs/components/interface/system_service.md,4,`service_config` (サービス構成) `{ConfigurableSystem}`,ConfigurableSystem,YES,37,
+docs/components/interface/system_service.md,3,3.3 主要なクラス・構造体・配列・定数,,NO,26,
+docs/components/interface/system_service.md,2,3. 静的モデル,ConfigurableSystem,YES,9, ### 3.1 データ構造 - **サービスレジストリ**: ロードされているサービスの情報（URI、Tier、エントリポイント）を管理する。  ### 3.2 内部ブロック図 ```mermaid
+docs/components/interface/system_service.md,3,4.1 アルゴリズム `{FaultIsolation}` `{IPCRouter}`,FaultIsolation|IPCRouter,YES,47,- **サービス分離**: Tier 0 サービスはゲストのWASMモジュールとして直接リンクされ、Tier 1 サービスは独立したタスクとして動作し、IPCルータを介して通信する。 `{FaultI
+docs/components/interface/system_service.md,3,4.2 状態遷移図 `{FaultIsolation}` `{IPCRouter}`,FaultIsolation|IPCRouter,YES,51,```mermaid stateDiagram-v2     [*] --> Loaded: load_service (static)     Loaded --> Running: start_g
+docs/components/interface/system_service.md,4,WASI呼び出しシーケンス,,NO,60,
+docs/components/interface/system_service.md,3,4.3 内部シーケンス `{FaultIsolation}` `{IPCRouter}`,FaultIsolation|IPCRouter,YES,59,#### WASI呼び出しシーケンス ```mermaid sequenceDiagram     participant G as WASM Guest     participant S as W
+docs/components/interface/system_service.md,4,検証対象となる制約事項 (TLA+ モデリングポイント),,NO,140,
+docs/components/interface/system_service.md,3,4.4 WASI API から HAL への変換ラッパー (コンセプトコード) `{FaultIsolation}` `{IPCRouter}`,FaultIsolation|IPCRouter,YES,76,
+docs/components/interface/system_service.md,2,4. 動的モデル,FaultIsolation|IPCRouter|RecoveryStrategy,YES,45, ### 4.1 アルゴリズム `{FaultIsolation}` `{IPCRouter}` - **サービス分離**: Tier 0 サービスはゲストのWASMモジュールとして直接リンクされ、T
+docs/components/interface/system_service.md,4,リカバリー戦略の種類 `{RecoveryStrategy}`,RecoveryStrategy,YES,151,- **ignore**: エラーを無視し、処理を継続する。 - **retry**: 一時的な失敗。再試行により成功する可能性がある。 - **restart**: モジュールまたはシステムの再初期
+docs/components/interface/system_service.md,4,設計判断 `{RecoveryStrategy}`,RecoveryStrategy,YES,157,
+docs/components/interface/system_service.md,3,5.1 エラーハンドリング戦略 `{RecoveryStrategy}`,RecoveryStrategy,YES,147, 本コンポーネントでは、エラーコードではなくリカバリー戦略を返すことで、呼び出し側が具体的なアクションを取れるようにする。 `{RecoveryStrategy}`  #### リカバリー戦略の種類 
+docs/components/interface/system_service.md,4,`load_service`,,NO,165,
+docs/components/interface/system_service.md,3,5.2 公開API `{RecoveryStrategy}`,RecoveryStrategy,YES,160,外部から利用可能なオブジェクト指向APIを定義する。  TODO(Phase 1): ATC抽出 - サービスの初期化順序依存性や、`load_service`実行時の静的確保領域への割り当てに関する
+docs/components/interface/system_service.md,3,5.3 URI/IPCインターフェイス `{RecoveryStrategy}`,RecoveryStrategy,YES,176,
+docs/components/interface/system_service.md,2,5. インターフェイス定義,RecoveryStrategy,YES,145, ### 5.1 エラーハンドリング戦略 `{RecoveryStrategy}`  本コンポーネントでは、エラーコードではなくリカバリー戦略を返すことで、呼び出し側が具体的なアクションを取れるように
+docs/components/interface/system_service.md,3,6.1 性能制約と方策 `{IPCRouter}`,IPCRouter,YES,182,- **目標**: システムコールのオーバーヘッドを最小化する。 - **方策**: `{IPCRouter}` 高頻度な呼び出し（libc等）は Tier 0 として直接リンクし、IPCオーバーヘッ
+docs/components/interface/system_service.md,3,6.2 メモリ制約と方策 `{IndependentHeap}` `{MemoryIsolation}`,IndependentHeap|MemoryIsolation,YES,186,
+docs/components/interface/system_service.md,2,6. 制約達成の方策,IPCRouter|IndependentHeap|MemoryIsolation,YES,180, ### 6.1 性能制約と方策 `{IPCRouter}` - **目標**: システムコールのオーバーヘッドを最小化する。 - **方策**: `{IPCRouter}` 高頻度な呼び出し（lib
+docs/components/interface/system_service.md,3,6.3 安全性制約と方策 `{FaultIsolation}`,FaultIsolation,YES,190,- **目標**: サービスの障害が他へ波及するのを防止する。 - **方策**: `{FaultIsolation}` サービスを独立した実行コンテキスト（タスク）で実行し、不正アクセスやクラッシュ
+docs/components/jit/jit_assembler_constexpr.md,2,1. コンセプト `{JIT_Encoder}` `{Static_Resolution}` `{CompileTimeValidation}` `{PositionIndependentCode}`,JIT_Encoder|Static_Resolution|CompileTimeValidation|PositionIndependentCode,YES,3,constexpr Assembler は、C++のコンパイル時計算（`constexpr`）機能を活用し、ターゲットアーキテクチャの命令バイナリを型安全かつ効率的に生成するための DSL (Doma
+docs/components/jit/jit_assembler_constexpr.md,2,2. アーキテクチャ分類 `{3TierSeparation}` `{Static_Resolution}` `{ZeroRuntimeOverhead}`,3TierSeparation|Static_Resolution|ZeroRuntimeOverhead,YES,6,本コンポーネントは **Tier 3 (実装ドメイン)** に属する。C++のコンパイル時機能に依存したスタティックなライブラリとして機能し、実行時のオーバーヘッドを持たない。 `{3TierSepa
+docs/components/jit/jit_assembler_constexpr.md,3,3.1 データ構造,,NO,11,- **Instruction Format Structs**: R/I/S/B/U/J などの命令形式ごとにビットフィールドを定義した構造体。 - **Type-safe Enums**: 物理レ
+docs/components/jit/jit_assembler_constexpr.md,3,3.2 内部ブロック図,,NO,15,```mermaid graph TD     Source[C++ Code] -->|constexpr| DSL[Assembler DSL]     DSL -->|Static Analys
+docs/components/jit/jit_assembler_constexpr.md,4,`riscv::i_type`,,NO,28,即値演算やロード命令に使用される形式。  | 項目名 | 機能と役割 | 型分類 | サイズ・制約 | | :--- | :--- | :--- | :--- | | 命令階層 | RISC-Vの基本
+docs/components/jit/jit_assembler_constexpr.md,4,`arm::add_imm`,,NO,39,"`ADD`, `SUB` などの即値演算（32ビット命令）で使用される形式。  | 項目名 | 機能と役割 | 型分類 | サイズ・制約 | | :--- | :--- | :--- | :--- |"
+docs/components/jit/jit_assembler_constexpr.md,4,`x64::mov_ri`,,NO,50,
+docs/components/jit/jit_assembler_constexpr.md,3,3.3 主要なクラス・構造体・配列・定数,,NO,24,
+docs/components/jit/jit_assembler_constexpr.md,2,3. 静的モデル,,NO,9, ### 3.1 データ構造 - **Instruction Format Structs**: R/I/S/B/U/J などの命令形式ごとにビットフィールドを定義した構造体。 - **Type-sa
+docs/components/jit/jit_assembler_constexpr.md,4,コンパイル時エンコード,,NO,63,
+docs/components/jit/jit_assembler_constexpr.md,3,4.1 アルゴリズム,,NO,61, #### コンパイル時エンコード 1. プログラマが `constexpr` 関数や構造体として命令を記述する。 2. C++コンパイラがビットフィールドの詰め込み（Pack）を処理する。 3. `
+docs/components/jit/jit_assembler_constexpr.md,3,4.2 状態遷移図,,NO,69,
+docs/components/jit/jit_assembler_constexpr.md,2,4. 動的モデル,,NO,59, ### 4.1 アルゴリズム  #### コンパイル時エンコード 1. プログラマが `constexpr` 関数や構造体として命令を記述する。 2. C++コンパイラがビットフィールドの詰め込み（
+docs/components/jit/jit_assembler_constexpr.md,4,Instruction Constructor,,NO,78,
+docs/components/jit/jit_assembler_constexpr.md,3,5.1 公開API (C++ DSL),,NO,74,
+docs/components/jit/jit_assembler_constexpr.md,2,5. インターフェイス定義,,NO,72, ### 5.1 公開API (C++ DSL)  TODO(Phase 0.75): ATCの抽出 - `make_instruction` に対する事前条件（即値の範囲チェック等）と、不正入力時の
+docs/components/jit/jit_assembler_constexpr.md,3,6.1 性能制約 `{Static_Resolution}`,Static_Resolution,YES,90,
+docs/components/jit/jit_assembler_constexpr.md,2,6. 制約達成の方策,Static_Resolution,YES,88, ### 6.1 性能制約 `{Static_Resolution}` - **方策**: `{Static_Resolution}` により、実行時のデコード・エンコード時間を完全に排除し、Copy
+docs/components/jit/jit_assembler_constexpr.md,3,6.2 安全性制約 `{Static_Resolution}`,Static_Resolution,YES,93,- **方策**: C++の型システムと `static_assert` を利用し、アセンブラレベルのバグ（誤ったレジスタ使用等）を開発段階で完全に排除する。
+docs/components/jit/jit_compiler.md,2,1. コンセプト `{LowLatencyJIT}` `{JIT_CopyAndPatch}` `{JIT_ZeroCompileCostTheorem}` `{SimpleJITArchitecture}` `{PeriodicTask}` `{IdleDetection}` `{JIT_Encoder}`,LowLatencyJIT|JIT_CopyAndPatch|JIT_ZeroCompileCostTheorem|SimpleJITArchitecture|PeriodicTask|IdleDetection|JIT_Encoder,YES,3,JIT Compiler は、WASMバイトコードを実行時にネイティブコードへ変換し、実行速度を向上させる。Execution Engine (`executor`) の一部として、インタープリタと一
+docs/components/jit/jit_compiler.md,2,2. アーキテクチャ分類 `{3TierSeparation}` `{ComponentHarness}`,3TierSeparation|ComponentHarness,YES,6,本コンポーネントは **Tier 2 (サブシステムドメイン)** に属し、Stateless Interface と Harness パターンを用いて構造化される。 `{3TierSeparatio
+docs/components/jit/jit_compiler.md,3,3.1 データ構造 `{JIT_DoubleBuffer_Cache}` `{SimpleJITArchitecture}`,JIT_DoubleBuffer_Cache|SimpleJITArchitecture,YES,11,- **JITキャッシュ**: ネイティブコードを保持するダブルバッファ。Copy-GC方式により、フラグメンテーションを回避しつつ効率的にメモリを再利用する。 `{JIT_DoubleBuffer_
+docs/components/jit/jit_compiler.md,3,3.2 内部ブロック図 `{JIT_DoubleBuffer_Cache}` `{SimpleJITArchitecture}`,JIT_DoubleBuffer_Cache|SimpleJITArchitecture,YES,22,```mermaid graph TD     subgraph JIT_Layer         Harness[jit_harness]         Manager[jit_manager]
+docs/components/jit/jit_compiler.md,4,`jit_harness`,,NO,50,サブコンポーネントへのポインタを集約する。  | 項目名 | 機能と役割 | 型分類 | サイズ・制約 | | :--- | :--- | :--- | :--- | | ホットスポット検知器 | 命
+docs/components/jit/jit_compiler.md,4,`jit_context`,,NO,60,可変状態を保持する。  | 項目名 | 機能と役割 | 型分類 | サイズ・制約 | | :--- | :--- | :--- | :--- | | アクティブ領域 | 現在使用中の書き込み・実行用キ
+docs/components/jit/jit_compiler.md,4,`jit_config` (JIT構成) `{ConfigurableSystem}` `{StaticScalability}`,ConfigurableSystem|StaticScalability,YES,70,
+docs/components/jit/jit_compiler.md,3,3.3 主要なクラス・構造体・配列・定数 `{JIT_DoubleBuffer_Cache}` `{SimpleJITArchitecture}`,JIT_DoubleBuffer_Cache|SimpleJITArchitecture,YES,46,
+docs/components/jit/jit_compiler.md,2,3. 静的モデル,JIT_DoubleBuffer_Cache|SimpleJITArchitecture|ConfigurableSystem|StaticScalability,YES,9, ### 3.1 データ構造 `{JIT_DoubleBuffer_Cache}` `{SimpleJITArchitecture}` - **JITキャッシュ**: ネイティブコードを保持するダブル
+docs/components/jit/jit_compiler.md,4,Copy-and-Patch コンパイル手順,,NO,84,1. **テンプレート選択**: WASM命令に対応する事前定義済みのネイティブコードテンプレートを選択する。 2. **コードコピー**: テンプレートをアクティブ・キャッシュ領域の「ベースアドレス
+docs/components/jit/jit_compiler.md,4,JITトレース検索アルゴリズム,,NO,93,1. **事前フィルタ (カード・マーキング)**: 命令オフセット（PC）をカードインデックスに変換し、実行履歴マップ（ホットスポットビットマップ）を確認する。該当カードの状態が「コンパイル完了」で
+docs/components/jit/jit_compiler.md,4,トレース・チェイニング（連鎖実行） `{JIT_LazyChaining}`,JIT_LazyChaining,YES,109,検索オーバーヘッドを排除するため、ネイティブコード同士を直接接続（チェイニング）する。 1. **トレース構造**: 各トレースの末尾に、次に実行すべきネイティブアドレスを保持する「チェイニング・スロ
+docs/components/jit/jit_compiler.md,4,ホットスポット判定 (yield 時) `{JIT_LazyChaining}`,JIT_LazyChaining,YES,118,1. **履歴走査**: インタープリタの実行サイクル中に記録、蓄積された「実行履歴バッファ」を走査する。 2. **状態更新**: 実行履歴マップ（ビットマップ）の状態が「頻出」に達した命令オフセッ
+docs/components/jit/jit_compiler.md,4,バッチコンパイル (周期実行またはアイドル時) `{JIT_ReverseCompilationOrder}` `{PeriodicTask}` `{IdleDetection}`,JIT_ReverseCompilationOrder|PeriodicTask|IdleDetection,YES,122,
+docs/components/jit/jit_compiler.md,3,4.1 アルゴリズム,JIT_LazyChaining|JIT_ReverseCompilationOrder|PeriodicTask|IdleDetection,YES,82, #### Copy-and-Patch コンパイル手順 1. **テンプレート選択**: WASM命令に対応する事前定義済みのネイティブコードテンプレートを選択する。 2. **コードコピー**: 
+docs/components/jit/jit_compiler.md,3,4.2 状態遷移図 `{JIT_LazyChaining}` `{JIT_ReverseCompilationOrder}` `{PeriodicTask}` `{IdleDetection}`,JIT_LazyChaining|JIT_ReverseCompilationOrder|PeriodicTask|IdleDetection,YES,127,"```mermaid stateDiagram-v2     state ""Interpreting"" as Interp     state ""Detecting (at yield)"" as De"
+docs/components/jit/jit_compiler.md,4,JITコンパイルおよび検索シーケンス,,NO,145,
+docs/components/jit/jit_compiler.md,3,4.3 内部シーケンス `{JIT_LazyChaining}` `{JIT_ReverseCompilationOrder}` `{PeriodicTask}` `{IdleDetection}`,JIT_LazyChaining|JIT_ReverseCompilationOrder|PeriodicTask|IdleDetection,YES,144,
+docs/components/jit/jit_compiler.md,2,4. 動的モデル,JIT_LazyChaining|JIT_ReverseCompilationOrder|PeriodicTask|IdleDetection,YES,80, ### 4.1 アルゴリズム  #### Copy-and-Patch コンパイル手順 1. **テンプレート選択**: WASM命令に対応する事前定義済みのネイティブコードテンプレートを選択する。
+docs/components/jit/jit_compiler.md,3,5.1 直行表: 検索・昇格・GC,,NO,184,JITトレース検索時の内部状態と期待される挙動を検証する。  | ケース | ホットスポットBitmap | Active Cache | Old Cache | 期待される動作 | | :--- |
+docs/components/jit/jit_compiler.md,3,5.2 内部コンポーネントのデコンポジション `{JIT_Encoder}`,JIT_Encoder,YES,197,
+docs/components/jit/jit_compiler.md,2,5. 検証,JIT_Encoder,YES,182, ### 5.1 直行表: 検索・昇格・GC JITトレース検索時の内部状態と期待される挙動を検証する。  | ケース | ホットスポットBitmap | Active Cache | Old Cac
+docs/components/jit/jit_compiler.md,4,`initialize` `{ConfigurableSystem}`,ConfigurableSystem,YES,216, | 項目 | 内容 | | :--- | :--- | | 機能概要 | コードキャッシュ領域、管理テーブル、およびホットスポットビットマップの初期化を行う。 | | シグネチャ | `initia
+docs/components/jit/jit_compiler.md,4,`lookup_trace` `{ConfigurableSystem}`,ConfigurableSystem,YES,230, | 項目 | 内容 | | :--- | :--- | | 機能概要 | 指定されたWASMプログラムカウンタ(PC)に対応する、コンパイル済みのネイティブコードの実行アドレスを高速に検索する。 |
+docs/components/jit/jit_compiler.md,4,`get_card_state` `{ConfigurableSystem}`,ConfigurableSystem,YES,238, | 項目 | 内容 | | :--- | :--- | | 機能概要 | 指定したPCが属するカードの状態（2-bit）を取得する。 | | シグネチャ | `get_card_state(pc: 
+docs/components/jit/jit_compiler.md,4,`get_search_range` `{ConfigurableSystem}`,ConfigurableSystem,YES,245, | 項目 | 内容 | | :--- | :--- | | 機能概要 | カーソマーキング索引（カードグループ）を用いて、二分探索の範囲を絞り込む。 | | シグネチャ | `get_search_
+docs/components/jit/jit_compiler.md,4,`process_batch_compile` `{ConfigurableSystem}`,ConfigurableSystem,YES,252,
+docs/components/jit/jit_compiler.md,3,6.1 公開API,ConfigurableSystem,YES,211,外部から利用可能なオブジェクト指向APIを定義する。  TODO(Phase 1): ATCの抽出 - `lookup_trace` 等の各APIについて、事前条件・事後条件・不変条件（ATC）やエラ
+docs/components/jit/jit_compiler.md,3,6.2 URI/IPCインターフェイス `{ConfigurableSystem}`,ConfigurableSystem,YES,262,
+docs/components/jit/jit_compiler.md,2,6. インターフェイス定義,ConfigurableSystem,YES,209, ### 6.1 公開API 外部から利用可能なオブジェクト指向APIを定義する。  TODO(Phase 1): ATCの抽出 - `lookup_trace` 等の各APIについて、事前条件・事後
+docs/components/jit/jit_compiler.md,3,7.1 性能制約と方策 `{JIT_CopyAndPatch}` `{JIT_RegisterMapping}`,JIT_CopyAndPatch|JIT_RegisterMapping,YES,267,- **目標**: コンパイルレイテンシを最小化し、WAMRインタープリタを上回る実行速度を実現。 - **方策**:      - `{JIT_CopyAndPatch}`: 複雑な最適化を省き、テ
+docs/components/jit/jit_compiler.md,3,7.2 安全性制約と方策 `{PositionIndependentCode}` `{MemoryBoundaryCheck}`,PositionIndependentCode|MemoryBoundaryCheck,YES,274,
+docs/components/jit/jit_compiler.md,2,7. 制約達成の方策,JIT_CopyAndPatch|JIT_RegisterMapping|PositionIndependentCode|MemoryBoundaryCheck,YES,265, ### 7.1 性能制約と方策 `{JIT_CopyAndPatch}` `{JIT_RegisterMapping}` - **目標**: コンパイルレイテンシを最小化し、WAMRインタープリタを
+docs/components/jit/jit_compiler.md,2,8. 設計判断 (ADR) `{ADR_ScalableCodeOffset}` `{ADR_SafeQueuingOnHotMiss}`,ADR_ScalableCodeOffset|ADR_SafeQueuingOnHotMiss,YES,280, - **決定事項**: `{ADR_ScalableCodeOffset}`   - **背景**: 16ビットの `code_offset` をそのまま使用すると、コードキャッシュが64KBに制限
+docs/components/jit/jit_engine_copy_patch.md,2,1. コンセプト `{JIT_CopyAndPatch}` `{JIT_ZeroCompileCostTheorem}` `{LowLatencyJIT}` `{SinglePassCompilation}`,JIT_CopyAndPatch|JIT_ZeroCompileCostTheorem|LowLatencyJIT|SinglePassCompilation,YES,3,Copy-and-Patch Engine は、WASM 命令に対応する事前生成されたネイティブコードテンプレートを結合・修正することで、ネイティブ実行バイナリを高速に生成する JIT コンパイラの核
+docs/components/jit/jit_engine_copy_patch.md,2,2. アーキテクチャ分類 `{3TierSeparation}` `{JIT_CopyAndPatch}`,3TierSeparation|JIT_CopyAndPatch,YES,6,本コンポーネントは **Tier 3 (実装ドメイン)** に属する。JITコンパイラの内部アルゴリズムとして機能し、特定のアーキテクチャに依存したコード生成に特化したモジュールである。 `{3Tie
+docs/components/jit/jit_engine_copy_patch.md,3,3.1 データ構造,,NO,11,- **`CopyAndPatchEngine`**: テンプレートの選択、コピー、およびパッチ適用を一括して行う主要クラス。 - **命令テンプレート**: パッチ用の「穴」を含むネイティブ命令列の
+docs/components/jit/jit_engine_copy_patch.md,3,3.2 内部ブロック図,,NO,16,```mermaid graph TD     Queue[Compile Queue] -->|Pop PC| Engine[CopyAndPatchEngine]     Engine -->|W
+docs/components/jit/jit_engine_copy_patch.md,4,`CopyAndPatchEngine` クラス,,NO,28,テンプレートの解決とバイナリ操作をカプセル化する。  | 項目名 | 機能と役割 | 型分類 | サイズ・制約 | | :--- | :--- | :--- | :--- | | テンプレート辞書 |
+docs/components/jit/jit_engine_copy_patch.md,4,`jit_template` (命令テンプレート),,NO,36,
+docs/components/jit/jit_engine_copy_patch.md,3,3.3 主要なクラス・構造体・配列・定数,,NO,24,
+docs/components/jit/jit_engine_copy_patch.md,2,3. 静的モデル,,NO,9, ### 3.1 データ構造 - **`CopyAndPatchEngine`**: テンプレートの選択、コピー、およびパッチ適用を一括して行う主要クラス。 - **命令テンプレート**: パッチ用の
+docs/components/jit/jit_engine_copy_patch.md,4,トレースコンパイル手順,,NO,51,
+docs/components/jit/jit_engine_copy_patch.md,3,4.1 アルゴリズム,,NO,47, TODO(Phase 1): 動的振る舞いのエッジケース定義 - キャッシュ枯渇時の破棄アルゴリズムや、パッチ適用中のアラインメント例外時の振る舞いを明確にすること。  #### トレースコンパイル
+docs/components/jit/jit_engine_copy_patch.md,3,4.2 状態遷移図,,NO,61,本コンポーネントはステートレスなプロセッサとして動作するため、状態遷移は省略する。 
+docs/components/jit/jit_engine_copy_patch.md,3,4.3 内部シーケンス,,NO,64,
+docs/components/jit/jit_engine_copy_patch.md,2,4. 動的モデル,,NO,45, ### 4.1 アルゴリズム  TODO(Phase 1): 動的振る舞いのエッジケース定義 - キャッシュ枯渇時の破棄アルゴリズムや、パッチ適用中のアラインメント例外時の振る舞いを明確にすること。
+docs/components/jit/jit_engine_copy_patch.md,4,`compile_trace`,,NO,89,
+docs/components/jit/jit_engine_copy_patch.md,3,5.1 公開API,,NO,85,
+docs/components/jit/jit_engine_copy_patch.md,2,5. インターフェイス定義,,NO,83, ### 5.1 公開API  TODO(Phase 1): ATCの抽出 - `compile_trace` における `dest` バッファのサイズ要件（事前条件）など、暗黙の前提を明文化すること
+docs/components/jit/jit_engine_copy_patch.md,2,6. 制約達成の方策,,NO,98,
+docs/components/jit/jit_engine_copy_patch.md,3,6.1 性能制約 `{JIT_CopyAndPatch}` `{JIT_RuntimeAPI_Fallback}`,JIT_CopyAndPatch|JIT_RuntimeAPI_Fallback,YES,100,- **方策**: `{JIT_CopyAndPatch}` により、コンパイル時間を最適化理論の限界まで短縮する。 - **方策**: ランタイムAPIフォールバック `{JIT_RuntimeAP
+docs/components/jit/jit_runtime_entry.md,2,1. コンセプト `{SimpleJITArchitecture}` `{JIT_DoubleBuffer_Cache}` `{FlatMapIndexed}` `{BinarySearch}`,SimpleJITArchitecture|JIT_DoubleBuffer_Cache|FlatMapIndexed|BinarySearch,YES,3,JIT Entry Index は、WASM 命令オフセット とそれに対応するネイティブコードのアドレスの紐付けを管理する。 インタープリタの実行ループ内という極めてクリティカルなパスで呼び出されるた
+docs/components/jit/jit_runtime_entry.md,2,2. アーキテクチャ分類 `{3TierSeparation}` `{SimpleJITArchitecture}`,3TierSeparation|SimpleJITArchitecture,YES,7,本コンポーネントは **Tier 3 (実装ドメイン)** に属する。JITコンパイラの内部データ構造管理に特化したモジュールであり、特定アルゴリズム（二分探索+Card Marking）の実装を担う
+docs/components/jit/jit_runtime_entry.md,3,3.1 データ構造,,NO,12,- **`JitEntryIndex`**: WASMオフセットとネイティブコードの対応付け、および高速な検索ロジックをカプセル化した主要クラス。 - **JITエントリ表**: 命令オフセットと生成
+docs/components/jit/jit_runtime_entry.md,4,`JitEntryIndex` クラス,,NO,27,
+docs/components/jit/jit_runtime_entry.md,3,3.2 内部ブロック図,,NO,17,
+docs/components/jit/jit_runtime_entry.md,2,3. 静的モデル,,NO,10, ### 3.1 データ構造 - **`JitEntryIndex`**: WASMオフセットとネイティブコードの対応付け、および高速な検索ロジックをカプセル化した主要クラス。 - **JITエントリ
+docs/components/jit/jit_runtime_entry.md,4,高速検索,,NO,44,
+docs/components/jit/jit_runtime_entry.md,3,4.1 アルゴリズム,,NO,40, TODO(Phase 1): 状態の一貫性モデル定義 - 割り込み発生やコンテキストスイッチ時におけるカードマーキング状態の一貫性・アトミック性を定義すること。  #### 高速検索 1. **カー
+docs/components/jit/jit_runtime_entry.md,3,4.2 状態遷移図,,NO,51,本コンポーネントは管理情報の更新と検索を行うため、明確な内部状態（ステートマシン）は持たないが、エントリの `Valid/Invalid` を管理する。 
+docs/components/jit/jit_runtime_entry.md,3,4.3 内部シーケンス,,NO,54,
+docs/components/jit/jit_runtime_entry.md,2,4. 動的モデル,,NO,38, ### 4.1 アルゴリズム  TODO(Phase 1): 状態の一貫性モデル定義 - 割り込み発生やコンテキストスイッチ時におけるカードマーキング状態の一貫性・アトミック性を定義すること。  #
+docs/components/jit/jit_runtime_entry.md,4,`lookup`,,NO,87, | 項目 | 内容 | | :--- | :--- | | 機能概要 | 命令オフセットに対応するネイティブコードアドレスを返す。 | | シグネチャ | `lookup(pc: オフセット) ->
+docs/components/jit/jit_runtime_entry.md,4,`register_entry`,,NO,96,
+docs/components/jit/jit_runtime_entry.md,3,5.1 公開API,,NO,83,
+docs/components/jit/jit_runtime_entry.md,2,5. インターフェイス定義,,NO,81, ### 5.1 公開API  TODO(Phase 1): ATCの抽出 - `lookup` と `register_entry` の事前・事後・不変条件（エントリ配列のソート状態維持など）を厳密
+docs/components/jit/jit_runtime_entry.md,3,6.1 性能制約,,NO,107,
+docs/components/jit/jit_runtime_entry.md,2,6. 制約達成の方策,,NO,105, ### 6.1 性能制約 - **方策**: カードグループインデックスによる範囲絞り込みと、二分探索の組み合わせにより、多数のトレースが存在しても高速な検索を維持する。 
+docs/components/jit/jit_runtime_entry.md,3,6.2 メモリ制約 `{JIT_DoubleBuffer_Cache}`,JIT_DoubleBuffer_Cache,YES,110,- **方策**: `{JIT_DoubleBuffer_Cache}` による Copy-GC 方式により、断片化を防ぎつつ、実行頻度の低いコードを自然に破棄（代謝）させる。
+docs/components/jit/jit_runtime_hotspot.md,2,1. コンセプト `{LowLatencyJIT}` `{SimpleJITArchitecture}` `{HistoryBuffer}` `{PeriodicTask}`,LowLatencyJIT|SimpleJITArchitecture|HistoryBuffer|PeriodicTask,YES,3,JIT Hotspot Detector は、インタープリタが実行したWASM命令の頻度を監視し、ネイティブコードへの転送（コンパイル）が必要な「ホットスポット」を特定する役割を担う。リソース制約の厳
+docs/components/jit/jit_runtime_hotspot.md,2,2. アーキテクチャ分類 `{3TierSeparation}` `{SimpleJITArchitecture}`,3TierSeparation|SimpleJITArchitecture,YES,6,本コンポーネントは **Tier 3 (実装ドメイン)** に属する。JITコンパイラの内部コンポーネントであり、統計情報の管理とコンパイル要否の判定に特化したアルゴリズムを実装する。 `{3Tier
+docs/components/jit/jit_runtime_hotspot.md,3,3.1 データ構造,,NO,11,- **`HotspotDetector`**: 実行頻度の監視、状態管理、およびコンパイル対象の特定を一括して行う主要クラス。 - **ホットスポット・ビットマップ**: WASMコード領域を分割管
+docs/components/jit/jit_runtime_hotspot.md,4,`HotspotDetector` クラス,,NO,24,
+docs/components/jit/jit_runtime_hotspot.md,3,3.2 内部ブロック図,,NO,16,
+docs/components/jit/jit_runtime_hotspot.md,2,3. 静的モデル,,NO,9, ### 3.1 データ構造 - **`HotspotDetector`**: 実行頻度の監視、状態管理、およびコンパイル対象の特定を一括して行う主要クラス。 - **ホットスポット・ビットマップ**
+docs/components/jit/jit_runtime_hotspot.md,4,ホットスポット判定,,NO,40,
+docs/components/jit/jit_runtime_hotspot.md,3,4.1 アルゴリズム,,NO,36, TODO(Phase 1): 代謝アルゴリズムの詳細化 - 「頻出」と判定されるしきい値や、キャッシュ枯渇時に状態を `EXECUTED` に戻すトリガー条件を定義すること。  #### ホットスポ
+docs/components/jit/jit_runtime_hotspot.md,3,4.2 状態遷移図,,NO,49,
+docs/components/jit/jit_runtime_hotspot.md,2,4. 動的モデル,,NO,34, ### 4.1 アルゴリズム  TODO(Phase 1): 代謝アルゴリズムの詳細化 - 「頻出」と判定されるしきい値や、キャッシュ枯渇時に状態を `EXECUTED` に戻すトリガー条件を定義す
+docs/components/jit/jit_runtime_hotspot.md,4,`record_execution`,,NO,65, | 項目 | 内容 | | :--- | :--- | | 機能概要 | 命令オフセット（PC）を履歴バッファに追記する。 | | シグネチャ | `record_execution(pc: オフセ
+docs/components/jit/jit_runtime_hotspot.md,4,`process_history`,,NO,74,
+docs/components/jit/jit_runtime_hotspot.md,3,5.1 公開API,,NO,61,
+docs/components/jit/jit_runtime_hotspot.md,2,5. インターフェイス定義,,NO,59, ### 5.1 公開API  TODO(Phase 1): ATCの抽出 - `record_execution` におけるバッファ溢れ時の振る舞い（リングバッファ上書き等）、`process_hi
+docs/components/jit/jit_runtime_hotspot.md,2,6. 制約達成の方策,,NO,82,
+docs/components/jit/jit_runtime_hotspot.md,3,6.1 性能制約,,NO,84,- **方策**: 2-bitビットマップにより、高速な状態遷移とメモリ節約を両立する。
+docs/components/platform/platform_hal.md,2,1. コンセプト `{IPCRouter}` `{Challenge_InterruptSafety}` `{TaskPollInterruptFlag}` `{RSPMinimalSet}` `{Fast_Path_GPIO}`,IPCRouter|Challenge_InterruptSafety|TaskPollInterruptFlag|RSPMinimalSet|Fast_Path_GPIO,YES,3,HAL (Hardware Abstraction Layer) は、ハードウェアへのアクセスを抽象化し、vSoCやサービスに対して統一されたインターフェイスを提供する。また、デバッグ用のGDB Re
+docs/components/platform/platform_hal.md,2,2. アーキテクチャ分類 `{3TierSeparation}` `{IPCRouter}` `{URIAbstraction}` `{StaticDI}`,3TierSeparation|IPCRouter|URIAbstraction|StaticDI,YES,6,本コンポーネントは **Tier 1 (アーキテクチャドメイン)** に属する。ハードウェアとハイパーバイザの境界を定義し、IoC (Inversion of Control) および URIベースの
+docs/components/platform/platform_hal.md,3,3.1 データ構造,,NO,11,- **デバイスレジストリ**: 管理対象のデバイス情報を保持する静的配列。 - **HALバッファプール**: デバイス通信用に使用する、ドライバ側で管理されるバッファプール。**vMMIOの動的領
+docs/components/platform/platform_hal.md,3,3.2 内部ブロック図,,NO,16,```mermaid graph TD     IPCR[IPC Router] --> HAL[HAL Subsystem]     HAL --> UART[UART Driver]     HA
+docs/components/platform/platform_hal.md,4,`device` (デバイス情報),,NO,31,個別のデバイスの属性と状態を管理する。  | 項目名 | 機能と役割 | 型分類 | サイズ・制約 | | :--- | :--- | :--- | :--- | | デバイス識別子 | システム全体
+docs/components/platform/platform_hal.md,4,`hal_config` (HAL構成) `{ConfigurableSystem}`,ConfigurableSystem,YES,42,
+docs/components/platform/platform_hal.md,3,3.3 主要なクラス・構造体・配列・定数,,NO,29,
+docs/components/platform/platform_hal.md,2,3. 静的モデル,ConfigurableSystem,YES,9, ### 3.1 データ構造 - **デバイスレジストリ**: 管理対象のデバイス情報を保持する静的配列。 - **HALバッファプール**: デバイス通信用に使用する、ドライバ側で管理されるバッファ
+docs/components/platform/platform_hal.md,3,4.1 アルゴリズム `{RSP_Transport_Selectable}` `{TaskPollInterruptFlag}` `{InterruptWakeup}`,RSP_Transport_Selectable|TaskPollInterruptFlag|InterruptWakeup,YES,53,- **コマンドルーティング**: IPCで受信したコマンド（read/write等）を、デバイスIDに基づいて適切なドライバへ振り分ける。 - **RSPパケット解析**: UARTまたはRTTから
+docs/components/platform/platform_hal.md,3,4.2 状態遷移図 `{RSP_Transport_Selectable}` `{TaskPollInterruptFlag}` `{InterruptWakeup}`,RSP_Transport_Selectable|TaskPollInterruptFlag|InterruptWakeup,YES,58,```mermaid stateDiagram-v2     [*] --> Uninitialized     Uninitialized --> Ready: init     Ready -->
+docs/components/platform/platform_hal.md,4,RSPパケット受信とコマンド供給シーケンス,,NO,70,
+docs/components/platform/platform_hal.md,3,4.3 内部シーケンス `{RSP_Transport_Selectable}` `{TaskPollInterruptFlag}` `{InterruptWakeup}`,RSP_Transport_Selectable|TaskPollInterruptFlag|InterruptWakeup,YES,69,
+docs/components/platform/platform_hal.md,2,4. 動的モデル,RSP_Transport_Selectable|TaskPollInterruptFlag|InterruptWakeup,YES,51, ### 4.1 アルゴリズム `{RSP_Transport_Selectable}` `{TaskPollInterruptFlag}` `{InterruptWakeup}` - **コマンドル
+docs/components/platform/platform_hal.md,4,データの読み出し,,NO,93," | 項目 | 内容 | | :--- | :--- | | 機能概要 | 指定された物理デバイスからデータを取得し、共有バッファへ格納する。 | | シグネチャ | `read(id: ID値, b"
+docs/components/platform/platform_hal.md,4,データの書き込み (write),,NO,103, | 項目 | 内容 | | :--- | :--- | | 機能概要 | 共有バッファ（`shm-id`）内のデータを指定された物理デバイスへ送信する。 | | シグネチャ | `write(id:
+docs/components/platform/platform_hal.md,4,ゼロコピー転送 (bus_master/streaming) `{PhysicalPassthrough}`,PhysicalPassthrough,YES,111, | 項目 | 内容 | | :--- | :--- | | 機能概要 | アプリケーションの共有メモリバッファを直接DMAエンジン等へ渡し、コピーなしでの高速転送を実現する。 | | シグネチャ |
+docs/components/platform/platform_hal.md,4,非標準制御 (control) `{PhysicalPassthrough}`,PhysicalPassthrough,YES,119, | 項目 | 内容 | | :--- | :--- | | 機能概要 | read/write で表現できないデバイス固有の操作（ボーレート設定、ピン制御等）を行う。 | | シグネチャ | `co
+docs/components/platform/platform_hal.md,4,バッファの確保 `{PhysicalPassthrough}`,PhysicalPassthrough,YES,128,
+docs/components/platform/platform_hal.md,3,5.1 公開API,PhysicalPassthrough,YES,88,外部から利用可能なオブジェクト指向APIを定義する。  TODO(Phase 1): ATCの抽出 - 各APIの呼び出しにおいて、共有メモリハンドルの有効性やバッファサイズのアライメント要件などの事
+docs/components/platform/platform_hal.md,4,`gpio-controller` (物理GPIO制御),,NO,139,"| プロトタイプ | 内容 | | :--- | :--- | | `set-pin(pin, value)` | ピンの出力レベルを設定する。 | | `get-pin(pin)` | ピンの入力レ"
+docs/components/platform/platform_hal.md,4,`periodic-timer` (時刻とタイマー),,NO,145,| プロトタイプ | 内容 | | :--- | :--- | | `get-now()` | システム時間（ナノ秒）を取得する。 | | `subscribe-timer(nanos)` | 指定時
+docs/components/platform/platform_hal.md,4,`bus-master` / `bus-slave` (I2C/SPI通信),,NO,151,"| プロトタイプ | 内容 | | :--- | :--- | | `transfer(tx, rx)` | 共有メモリを用いたゼロコピー通信を行う。 | "
+docs/components/platform/platform_hal.md,4,`debug-server` (GDB RSP サーバ),,NO,156,
+docs/components/platform/platform_hal.md,3,5.2 Tier 3 リソースインターフェイス `{PhysicalPassthrough}`,PhysicalPassthrough,YES,137," #### `gpio-controller` (物理GPIO制御) | プロトタイプ | 内容 | | :--- | :--- | | `set-pin(pin, value)` | ピンの出力レベ"
+docs/components/platform/platform_hal.md,3,5.2 URI/IPCインターフェイス `{PhysicalPassthrough}`,PhysicalPassthrough,YES,162,- **URI**: `fireball://hal/<device_name>/<instance_id>` 
+docs/components/platform/platform_hal.md,3,5.3 RSPトランスポート構成 `{RSP_Transport_Selectable}`,RSP_Transport_Selectable,YES,165,RSPパケットの送受信に使用する物理層を選択可能とする。 `{RSP_Transport_Selectable}`  | 項目名 | 機能と役割 | 備考（制約、型など） | | :--- | :--
+docs/components/platform/platform_hal.md,3,5.4 メッセージ形式 `{TypeSafeMessaging}`,TypeSafeMessaging,YES,173,
+docs/components/platform/platform_hal.md,2,5. インターフェイス定義,PhysicalPassthrough|RSP_Transport_Selectable|TypeSafeMessaging,YES,86, ### 5.1 公開API 外部から利用可能なオブジェクト指向APIを定義する。  TODO(Phase 1): ATCの抽出 - 各APIの呼び出しにおいて、共有メモリハンドルの有効性やバッファサ
+docs/components/platform/platform_hal.md,3,6.1 性能制約と方策 `{ConfigurableSystem}`,ConfigurableSystem,YES,178,- **目標**: ハードウェアアクセスのレイテンシを最小化する。 - **方策**: `{ConfigurableSystem}` デバイス構成をコンパイル時に固定し、実行時の動的な探索オーバーヘッ
+docs/components/platform/platform_hal.md,3,6.2 メモリ制約と方策 `{ConfigurableSystem}`,ConfigurableSystem,YES,182,
+docs/components/platform/platform_hal.md,2,6. 制約達成の方策,ConfigurableSystem,YES,176, ### 6.1 性能制約と方策 `{ConfigurableSystem}` - **目標**: ハードウェアアクセスのレイテンシを最小化する。 - **方策**: `{ConfigurableSy
+docs/components/platform/platform_hal.md,3,6.3 安全性制約と方策 `{Challenge_InterruptSafety}`,Challenge_InterruptSafety,YES,186,- **目標**: 割り込みによる実行コンテキストの破壊を防止する。 - **方策**: `{Challenge_InterruptSafety}` 割り込みハンドラ内ではフラグセットのみを行い、実際
+docs/components/platform/platform_memory.md,2,1. コンセプト `{3TierSeparation}` `{Policy_Memory}` `{ConsolidatedHeap}`,3TierSeparation|Policy_Memory|ConsolidatedHeap,YES,3,"メモリマネージャ（`memory-manager`）は、物理メモリプールを複数の論理パーティション（Kernel, Task, Shared等）に分割し、隔離と効率的なメモリ利用を提供する Tier "
+docs/components/platform/platform_memory.md,2,2. アーキテクチャ分類 `{WasmPageAlignment}`,WasmPageAlignment,YES,6,本コンポーネントは **Tier 2 (サービスドメイン)** に属する。動的メモリ確保を最小限に抑えつつ、固定サイズパーティション内でのアロケーションを管理する。 `{WasmPageAlignme
+docs/components/platform/platform_memory.md,3,3.1 データ構造,,NO,11,- **`MemoryManager`**: パーティション管理とアロケーションロジックをカプセル化。 - **`partition_info`**: パーティションの境界と使用状況の可視化。 
+docs/components/platform/platform_memory.md,3,3.2 依存関係 (Zero-cost DI),,NO,15,
+docs/components/platform/platform_memory.md,2,3. 静的モデル,,NO,9, ### 3.1 データ構造 - **`MemoryManager`**: パーティション管理とアロケーションロジックをカプセル化。 - **`partition_info`**: パーティションの境
+docs/components/platform/platform_memory.md,4,初期化,,NO,20, TODO(Phase 1): ATC抽出 - アライメント制約（ページ単位など）とpool-sizeの境界制約を厳密に定義すること。  | 項目 | 内容 | | :--- | :--- | | 機
+docs/components/platform/platform_memory.md,4,`allocate` (kernel/task専用),,NO,31,| 項目 | 内容 | | :--- | :--- | | 機能概要 | 指定されたカテゴリ（kernel/task）からローカルメモリを割り当て、アドレスを返す。 | | シグネチャ | `allo
+docs/components/platform/platform_memory.md,4,`allocate-shared` (IPC転送データ専用),,NO,40,| 項目 | 内容 | | :--- | :--- | | 機能概要 | IPC転送用の共有メモリブロックを割り当て、RAII所有権を持つリソースを返す。 | | シグネチャ | `allocate-
+docs/components/platform/platform_memory.md,4,`claim` (IPC受信側),,NO,48,| 項目 | 内容 | | :--- | :--- | | 機能概要 | IPC経由で受け取った共有メモリIDから、所有権を持つリソースを取得する。 | | シグネチャ | `claim(id: sh
+docs/components/platform/platform_memory.md,4,`deallocate` (kernel/task専用),,NO,56,
+docs/components/platform/platform_memory.md,2,4. インターフェイス設計,,NO,18, #### 初期化  TODO(Phase 1): ATC抽出 - アライメント制約（ページ単位など）とpool-sizeの境界制約を厳密に定義すること。  | 項目 | 内容 | | :--- | 
+docs/components/platform/platform_memory.md,2,5. 制約と不変条件 `{StrictMemoryLimit}` `{WasmPageAlignment}`,StrictMemoryLimit|WasmPageAlignment,YES,64, TODO(Phase 1): 動的モデルの明確化 - フラグメンテーション回避のアルゴリズム（空きブロックの統合等）や、上限サイズ超過時のエラーハンドリングを定義すること。  - `∀m ∈ All
+docs/components/platform/platform_memory.md,2,6. 所有権追跡 `{Policy_Memory}`,Policy_Memory,YES,73,各メモリブロックは `memory-info.owner` で割り当て元task-idを追跡する。 `{Policy_Memory}`  - `allocate` / `allocate-shared
+docs/components/platform/platform_memory.md,2,7. 共有メモリ (shared-block) のライフサイクル `{FaultIsolation}` `{OwnershipTransfer}`,FaultIsolation|OwnershipTransfer,YES,80,`shared-block` リソースが所有権の単位。IPC転送時に `release` → `claim` で所有権が移動する。 `{FaultIsolation}` `{OwnershipTran
+docs/components/platform/platform_memory.md,3,8.1 shared-block のリソース化 (2026-02-17),,NO,99, **判断**: `shm-id` を単なるIDではなく、RAII所有権を持つ `shared-block` リソースとして設計。  **理由**: - **所有権の明確化**: `release()
+docs/components/platform/platform_memory.md,3,8.2 query() の削除 (2026-02-17),,NO,108,
+docs/components/platform/platform_memory.md,2,8. 設計判断の記録,,NO,97, ### 8.1 shared-block のリソース化 (2026-02-17)  **判断**: `shm-id` を単なるIDではなく、RAII所有権を持つ `shared-block` リソー
+docs/components/platform/platform_memory.md,3,8.3 check_ownership() の削除 (2026-02-17),,NO,116," **判断**: `check-ownership(addr, task-id) -> bool` を削除。  **理由**: - `shared_block.get_owner()` で所有権確認可"
+docs/components/runtime/debug/debug_gdb_rsp.md,2,1. 概要 `{RSPMinimalSet}`,RSPMinimalSet,YES,3,VSCodeのC/C++拡張機能が必要とするGDB Remote Serial Protocol (RSP) コマンドの最小セットを定義する。 `{RSPMinimalSet}`  ## 2. コマン
+docs/components/runtime/debug/debug_gdb_rsp.md,3,2.1 セッション管理,,NO,8,| コマンド | 形式 | 説明 | | :--- | :--- | :--- | | `?` | `?` | 停止理由を問い合わせ | | `c` | `c[addr]` | 実行を継続 | | `
+docs/components/runtime/debug/debug_gdb_rsp.md,3,2.2 メモリアクセス,,NO,18,"| コマンド | 形式 | 説明 | | :--- | :--- | :--- | | `m` | `m addr,length` | メモリを読み出す | | `M` | `M addr,lengt"
+docs/components/runtime/debug/debug_gdb_rsp.md,3,2.3 レジスタアクセス,,NO,25,| コマンド | 形式 | 説明 | | :--- | :--- | :--- | | `g` | `g` | すべてのレジスタを読み出す | | `G` | `G XX...` | すべてのレジスタ
+docs/components/runtime/debug/debug_gdb_rsp.md,3,2.4 ブレークポイント,,NO,33,"| コマンド | 形式 | 説明 | | :--- | :--- | :--- | | `z` | `z type,addr,kind` | ブレークポイント/ウォッチポイントを削除 | | `Z` "
+docs/components/runtime/debug/debug_gdb_rsp.md,3,2.5 スレッド・情報取得,,NO,43,
+docs/components/runtime/debug/debug_gdb_rsp.md,2,2. コマンドリスト,,NO,6, ### 2.1 セッション管理 | コマンド | 形式 | 説明 | | :--- | :--- | :--- | | `?` | `?` | 停止理由を問い合わせ | | `c` | `c[add
+docs/components/runtime/debug/debug_gdb_rsp.md,2,3. 応答形式,,NO,52,| 応答 | 説明 | | :--- | :--- | | `OK` | コマンド成功 | | `ENN` | エラー（NNはエラーコード） | | `S AA` | シグナルAAで停止 | | `T
+docs/components/runtime/debug/debug_manager.md,2,1. コンセプト `{RSPMinimalSet}` `{DebuggerLabelTableSwitch}` `{MemoryIsolation}` `{Debug_Standard_Env}` `{RSP_Transport_Selectable}` `{Debug_Integrated}`,RSPMinimalSet|DebuggerLabelTableSwitch|MemoryIsolation|Debug_Standard_Env|RSP_Transport_Selectable|Debug_Integrated,YES,3,"デバッガは、VSCode等の外部ツールからのデバッグを可能にするため、GDB Remote Serial Protocol (RSP) に基づく実行制御を行う。標準環境として VSCode, UART"
+docs/components/runtime/debug/debug_manager.md,2,2. アーキテクチャ分類 `{3TierSeparation}`,3TierSeparation,YES,6,本コンポーネントは **Tier 3 (実装ドメイン)** に属する。GDB RSPコマンドの実行制御に特化した単一責務のモジュールとして設計する。 `{3TierSeparation}`  ## 3
+docs/components/runtime/debug/debug_manager.md,3,3.1 データ構造,,NO,11,- **`Debugger`**: GDB RSPプロプライエタリな制御ロジック、デバッグ状態、およびブレークポイント管理をカプセル化した主要クラス。 - **`debug_config`**: 最大
+docs/components/runtime/debug/debug_manager.md,3,3.2 内部ブロック図,,NO,15,```mermaid graph TD     subgraph Debugger_Layer         Engine[Debugger Engine]     end      subgrap
+docs/components/runtime/debug/debug_manager.md,4,`Debugger` クラス `{NoStdVector}`,NoStdVector,YES,34,依存関係（実行コンテキスト、HAL）と内部状態（ブレークポイント、現在状態）をカプセル化する。  | 項目名 | 機能と役割 | 型分類 | サイズ・制約 | | :--- | :--- | :---
+docs/components/runtime/debug/debug_manager.md,4,`virtual_register_set` `{RSPMinimalSet}`,RSPMinimalSet,YES,46,
+docs/components/runtime/debug/debug_manager.md,3,3.3 主要なクラス・構造体・配列・定数,,NO,32,
+docs/components/runtime/debug/debug_manager.md,2,3. 静的モデル,NoStdVector|RSPMinimalSet,YES,9, ### 3.1 データ構造 - **`Debugger`**: GDB RSPプロプライエタリな制御ロジック、デバッグ状態、およびブレークポイント管理をカプセル化した主要クラス。 - **`debu
+docs/components/runtime/debug/debug_manager.md,3,4.1 アルゴリズム,,NO,58,- **コマンド消費**: `poll()` によりコマンドキューから解析済みコマンドを取り出し、実行コンテキストに対して操作を行う。 - **ステップ実行**: インタープリタを「1命令実行」モード
+docs/components/runtime/debug/debug_manager.md,3,4.2 状態遷移図,,NO,62,```mermaid stateDiagram-v2     [*] --> Disabled     Disabled --> Stopped: init+attach     Stopped --
+docs/components/runtime/debug/debug_manager.md,4,デバッグコマンド処理シーケンス,,NO,76,
+docs/components/runtime/debug/debug_manager.md,3,4.3 内部シーケンス,,NO,75,
+docs/components/runtime/debug/debug_manager.md,2,4. 動的モデル,,NO,56, ### 4.1 アルゴリズム - **コマンド消費**: `poll()` によりコマンドキューから解析済みコマンドを取り出し、実行コンテキストに対して操作を行う。 - **ステップ実行**: イン
+docs/components/runtime/debug/debug_manager.md,4,デバッガ接続 (`attach`),,NO,98, | 項目 | 内容 | | :--- | :--- | | 機能概要 | 実行中のWASMエンジンに対してデバッグ機能を有効化し、初期停止状態（Halt）へ移行させる。 | | シグネチャ | `a
+docs/components/runtime/debug/debug_manager.md,4,コマンド処理 (`poll_commands`),,NO,108, | 項目 | 内容 | | :--- | :--- | | 機能概要 | HAL層から供給されたデバッグコマンドを一つ処理し、実行コンテキストを制御する。 | | シグネチャ | `poll_com
+docs/components/runtime/debug/debug_manager.md,4,命令ステップ実行 (`step_instruction`),,NO,117,
+docs/components/runtime/debug/debug_manager.md,3,5.1 公開API,,NO,93,外部から利用可能なオブジェクト指向APIを定義する。  TODO(Phase 1): ATC抽出 - アタッチ時やステップ実行時に、実行コンテキストが安全な停止点にあること（不変条件）、およびデバッガ
+docs/components/runtime/debug/debug_manager.md,3,5.2 URI/IPCインターフェイス,,NO,125,
+docs/components/runtime/debug/debug_manager.md,2,5. インターフェイス定義,,NO,91, ### 5.1 公開API 外部から利用可能なオブジェクト指向APIを定義する。  TODO(Phase 1): ATC抽出 - アタッチ時やステップ実行時に、実行コンテキストが安全な停止点にあるこ
+docs/components/runtime/debug/debug_manager.md,3,6.1 性能制約と方策 `{DebuggerLabelTableSwitch}`,DebuggerLabelTableSwitch,YES,131,- **目標**: デバッグ無効時のオーバーヘッドをゼロにする。 - **方策**: `{DebuggerLabelTableSwitch}` デバッガ無効時はインタープリタのハンドラテーブルを切り替
+docs/components/runtime/debug/debug_manager.md,3,6.2 メモリ制約と方策 `{MemoryIsolation}` `{NoStdVector}`,MemoryIsolation|NoStdVector,YES,135,
+docs/components/runtime/debug/debug_manager.md,2,6. 制約達成の方策,DebuggerLabelTableSwitch|MemoryIsolation|NoStdVector,YES,129, ### 6.1 性能制約と方策 `{DebuggerLabelTableSwitch}` - **目標**: デバッグ無効時のオーバーヘッドをゼロにする。 - **方策**: `{DebuggerL
+docs/components/runtime/debug/debug_manager.md,3,6.3 安全性制約と方策 `{MemoryBoundaryCheck}`,MemoryBoundaryCheck,YES,139,- **目標**: デバッガによる不正なメモリアクセスを防止する。 - **方策**: `{MemoryBoundaryCheck}` デバッグコマンドによるメモリアクセスに対し、WASMリニアメモリ
+docs/components/runtime/runtime_interpreter.md,2,1. コンセプト `{ThreadedInterpreter}` `{LowLatencyJIT}` `{InterpreterContextStackless}` `{EnvironmentPointer}`,ThreadedInterpreter|LowLatencyJIT|InterpreterContextStackless|EnvironmentPointer,YES,3,Interpreter は、WASM命令をスレッドインタープリタ方式で実行し、低レイテンシかつ小フットプリントでゲストを動作させる。Execution Engine (`executor`) の一部と
+docs/components/runtime/runtime_interpreter.md,2,2. アーキテクチャ分類 `{3TierSeparation}`,3TierSeparation,YES,6,本コンポーネントは **Tier 3 (実装ドメイン)** に属する。デコンポジション（サブモジュール分割）を必要としない単一責務の実行エンジンとして、カプセル化（Natural OO）に基づき設計す
+docs/components/runtime/runtime_interpreter.md,3,3.1 データ構造,,NO,11,- **`Interpreter`**: WASM命令の実行、コンテキスト管理、および外部環境（vSoC）との連携をカプセル化した主要クラス。 - **`execution_context`**: 仮
+docs/components/runtime/runtime_interpreter.md,3,3.2 内部ブロック図,,NO,16,```mermaid graph TD     subgraph Interpreter_Layer         Engine[Interpreter Engine]         Contex
+docs/components/runtime/runtime_interpreter.md,4,`Interpreter` クラス,,NO,36,依存関係（vSoC環境等）と実行に必要なテーブルをカプセル化する。  | 項目名 | 機能と役割 | 型分類 | サイズ・制約 | | :--- | :--- | :--- | :--- | | ラン
+docs/components/runtime/runtime_interpreter.md,4,`execution_context` (実行コンテキスト) `{PositionIndependentCode}` `{ContextPointerRegister}` `{MemoryBoundaryCheck}` `{EnvironmentPointer}`,PositionIndependentCode|ContextPointerRegister|MemoryBoundaryCheck|EnvironmentPointer,YES,44,WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想CPUレジスタ群として設計する。 `{PositionIndependentCode}` `{ContextPointe
+docs/components/runtime/runtime_interpreter.md,4,`call_frame` (コールフレーム) `{PositionIndependentCode}` `{ContextPointerRegister}` `{MemoryBoundaryCheck}` `{EnvironmentPointer}`,PositionIndependentCode|ContextPointerRegister|MemoryBoundaryCheck|EnvironmentPointer,YES,59,関数呼び出しごとのローカル変数や戻り先情報を保持する。  | 項目名 | 機能と役割 | 型分類 | サイズ・制約 | | :--- | :--- | :--- | :--- | | 親フレームポイン
+docs/components/runtime/runtime_interpreter.md,4,`control_frame` (制御フレーム) `{PositionIndependentCode}` `{ContextPointerRegister}` `{MemoryBoundaryCheck}` `{EnvironmentPointer}`,PositionIndependentCode|ContextPointerRegister|MemoryBoundaryCheck|EnvironmentPointer,YES,70,`block/loop/if` 命令によるネスト構造とジャンプ先を管理する。  | 項目名 | 機能と役割 | 型分類 | サイズ・制約 | | :--- | :--- | :--- | :--- |
+docs/components/runtime/runtime_interpreter.md,4,`interpreter_config` `{ConfigurableSystem}`,ConfigurableSystem,YES,81,インタープリタの動作パラメータを定義する。 `{ConfigurableSystem}`  | 項目名 | 機能と役割 | 型分類 | サイズ・制約 | | :--- | :--- | :--- | 
+docs/components/runtime/runtime_interpreter.md,4,`opcode_handler` / `exec_trace` `{JIT_RuntimeAPI_Fallback}`,JIT_RuntimeAPI_Fallback,YES,90,
+docs/components/runtime/runtime_interpreter.md,3,3.3 主要なクラス・構造体・配列・定数,,NO,34,
+docs/components/runtime/runtime_interpreter.md,2,3. 静的モデル,PositionIndependentCode|ContextPointerRegister|MemoryBoundaryCheck|EnvironmentPointer|ConfigurableSystem|JIT_RuntimeAPI_Fallback,YES,9, ### 3.1 データ構造 - **`Interpreter`**: WASM命令の実行、コンテキスト管理、および外部環境（vSoC）との連携をカプセル化した主要クラス。 - **`executio
+docs/components/runtime/runtime_interpreter.md,3,4.1 アルゴリズム `{ThreadedInterpreter}` `{JIT_RuntimeAPI_Fallback}` `{Interpreter_LazyJITSwitch}` `{LowLatencyJIT}` `{SimpleJITArchitecture}` `{Challenge_ApproximateYield}` `{Debug_Integrated}`,ThreadedInterpreter|JIT_RuntimeAPI_Fallback|Interpreter_LazyJITSwitch|LowLatencyJIT|SimpleJITArchitecture|Challenge_ApproximateYield|Debug_Integrated,YES,99,- **Threaded Dispatch**: 命令ハンドラを連鎖させるテーブルディスパッチ方式で分岐コストを削減する。 `{ThreadedInterpreter}` - **WASM命令とRun
+docs/components/runtime/runtime_interpreter.md,3,4.2 状態遷移図 `{ThreadedInterpreter}` `{JIT_RuntimeAPI_Fallback}` `{Interpreter_LazyJITSwitch}` `{LowLatencyJIT}` `{SimpleJITArchitecture}` `{Challenge_ApproximateYield}` `{Debug_Integrated}`,ThreadedInterpreter|JIT_RuntimeAPI_Fallback|Interpreter_LazyJITSwitch|LowLatencyJIT|SimpleJITArchitecture|Challenge_ApproximateYield|Debug_Integrated,YES,112,```mermaid stateDiagram-v2     [*] --> Ready     Ready --> Running: step     Running --> Ready: yiel
+docs/components/runtime/runtime_interpreter.md,4,Interpreter 実行シーケンス,,NO,125,
+docs/components/runtime/runtime_interpreter.md,3,4.3 内部シーケンス `{ThreadedInterpreter}` `{JIT_RuntimeAPI_Fallback}` `{Interpreter_LazyJITSwitch}` `{LowLatencyJIT}` `{SimpleJITArchitecture}` `{Challenge_ApproximateYield}` `{Debug_Integrated}`,ThreadedInterpreter|JIT_RuntimeAPI_Fallback|Interpreter_LazyJITSwitch|LowLatencyJIT|SimpleJITArchitecture|Challenge_ApproximateYield|Debug_Integrated,YES,124,
+docs/components/runtime/runtime_interpreter.md,2,4. 動的モデル,ThreadedInterpreter|JIT_RuntimeAPI_Fallback|Interpreter_LazyJITSwitch|LowLatencyJIT|SimpleJITArchitecture|Challenge_ApproximateYield|Debug_Integrated,YES,97, ### 4.1 アルゴリズム `{ThreadedInterpreter}` `{JIT_RuntimeAPI_Fallback}` `{Interpreter_LazyJITSwitch}` `{
+docs/components/runtime/runtime_interpreter.md,4,`initialize`,,NO,151, | 項目 | 内容 | | :--- | :--- | | 機能概要 | 命令ハンドラテーブルのセットアップやスタック領域の確保等、実行エンジンの初期状態を構築する。 | | シグネチャ | `in
+docs/components/runtime/runtime_interpreter.md,4,実行ステップ (`run_step`) `{RecoveryStrategy}`,RecoveryStrategy,YES,165, | 項目 | 内容 | | :--- | :--- | | 機能概要 | WASM命令を1トレース分実行し、実行コンテキストを更新する。 | | シグネチャ | `run_step(ctx: 可変参
+docs/components/runtime/runtime_interpreter.md,4,割り込み同期 (`sync_interrupts`) `{RecoveryStrategy}`,RecoveryStrategy,YES,175,
+docs/components/runtime/runtime_interpreter.md,3,5.1 公開API,RecoveryStrategy,YES,148,外部から利用可能なオブジェクト指向APIを定義する。  #### `initialize`  | 項目 | 内容 | | :--- | :--- | | 機能概要 | 命令ハンドラテーブルのセットアッ
+docs/components/runtime/runtime_interpreter.md,3,5.2 URI/IPCインターフェイス `{RecoveryStrategy}`,RecoveryStrategy,YES,190,本コンポーネントは vSoC の内部ライブラリとして利用され、直接のIPCインターフェイスは持たない。 
+docs/components/runtime/runtime_interpreter.md,3,5.3 関連コンポーネントとの連携 `{RecoveryStrategy}`,RecoveryStrategy,YES,193,
+docs/components/runtime/runtime_interpreter.md,2,5. インターフェイス定義,RecoveryStrategy,YES,146, ### 5.1 公開API 外部から利用可能なオブジェクト指向APIを定義する。  #### `initialize`  | 項目 | 内容 | | :--- | :--- | | 機能概要 | 命
+docs/components/runtime/runtime_interpreter.md,3,6.1 性能制約と方策 `{ThreadedInterpreter}`,ThreadedInterpreter,YES,203,- **目標**: WAMRインタープリタを上回る実行速度。 - **方策**: `{ThreadedInterpreter}` による分岐削減と、ホットスポット検知による JIT 移行を組み合わせる
+docs/components/runtime/runtime_interpreter.md,3,6.2 メモリ制約と方策 `{ThreadedInterpreter}`,ThreadedInterpreter,YES,207,- **目標**: 64KB RAM環境で動作。 - **方策**: `execution_context` と `call_frame` を最小化し、スタック領域を固定サイズ化する。 
+docs/components/runtime/runtime_interpreter.md,3,6.3 安全性制約と方策 `{FaultIsolation}` `{MemoryBoundaryCheck}`,FaultIsolation|MemoryBoundaryCheck,YES,211,
+docs/components/runtime/runtime_interpreter.md,2,6. 制約達成の方策,ThreadedInterpreter|FaultIsolation|MemoryBoundaryCheck,YES,201, ### 6.1 性能制約と方策 `{ThreadedInterpreter}` - **目標**: WAMRインタープリタを上回る実行速度。 - **方策**: `{ThreadedInterpre
+docs/components/runtime/runtime_interpreter.md,2,7. 参考実装リスト,,NO,215, | 名称 | 参照先URL/文献名 | 採用/考慮する理由 | | :--- | :--- | :--- | | WAMR Fast Interpreter | github.com/bytecod
+docs/components/runtime/runtime_loader.md,2,1. コンセプト `{ROMParsing}` `{AccessDictionary}` `{BumpAllocator}`,ROMParsing|AccessDictionary|BumpAllocator,YES,3,WASMローダは、ROM上のWASM32バイナリをパースし、実行環境が参照しやすい索引構造（ModuleView）を生成する。RAMへの全展開を避け、ROM上のデータを直接参照することでメモリ消費を極
+docs/components/runtime/runtime_loader.md,2,2. アーキテクチャ分類 `{3TierSeparation}`,3TierSeparation,YES,6,本コンポーネントは **Tier 3 (実装ドメイン)** に属する。WASMバイナリの解析と索引構築に特化した単一責務のモジュールとして設計する。 `{3TierSeparation}`  ## 3
+docs/components/runtime/runtime_loader.md,3,3.1 データ構造 `{MultiModule_Support}`,MultiModule_Support,YES,11,- **`WasmLoader`**: WASMバイナリのパース、検証、およびロード済みモジュールの管理を一括して行う主要クラス。 - **`module_view`**: ROM上のバイナリデータへ
+docs/components/runtime/runtime_loader.md,3,3.2 内部ブロック図 `{MultiModule_Support}`,MultiModule_Support,YES,16,```mermaid graph TD     subgraph Loader_Layer         Loader[WasmLoader Engine]         Registry[Int
+docs/components/runtime/runtime_loader.md,4,`WasmLoader` クラス,,NO,37,依存関係（アロケータ等）と内部レジストリをカプセル化する。  | 項目名 | 機能と役割 | 型分類 | サイズ・制約 | | :--- | :--- | :--- | :--- | | 作業用アロケ
+docs/components/runtime/runtime_loader.md,4,`module_view` (モジュールビュー) `{ROMParsing}`,ROMParsing,YES,45,ROM上のバイナリデータに対する「窓」として機能し、WIT上では `wasm-module-view` リソースとして定義される。 データをRAM上に展開するのではなく、必要な時に必要な情報（セクショ
+docs/components/runtime/runtime_loader.md,4,`BinaryStream` `{ROMParsing}`,ROMParsing,YES,53,ROM上のデータストリームを管理し、LEB128可変長整数やプリミティブ型の読み出しを提供するユーティリティクラス。 `std::span` をラップし、カレントポインタ（カーソル）管理と境界チェック
+docs/components/runtime/runtime_loader.md,4,`function_accessor` (関数アクセサ) `{ROMParsing}`,ROMParsing,YES,65,関数の詳細情報へアクセスするための一時的なプロキシオブジェクト。WIT上では `wasm-function-accessor` リソースとして定義される。 メソッド呼び出し時にROM上のデータをデコー
+docs/components/runtime/runtime_loader.md,4,`global_accessor` (グローバルアクセサ) `{ROMParsing}`,ROMParsing,YES,75,グローバル変数の定義情報へアクセスするための一時的なプロキシオブジェクト。WIT上では `wasm-global-accessor` リソースとして定義される。  | 項目名（プロパティ） | 機能と
+docs/components/runtime/runtime_loader.md,4,`verification_result` `{LightweightVerifier}`,LightweightVerifier,YES,83,
+docs/components/runtime/runtime_loader.md,3,3.3 主要なクラス・構造体・配列・定数 `{MultiModule_Support}`,MultiModule_Support,YES,35,
+docs/components/runtime/runtime_loader.md,2,3. 静的モデル,MultiModule_Support|ROMParsing|LightweightVerifier,YES,9, ### 3.1 データ構造 `{MultiModule_Support}` - **`WasmLoader`**: WASMバイナリのパース、検証、およびロード済みモジュールの管理を一括して行う主要
+docs/components/runtime/runtime_loader.md,3,4.1 アルゴリズム `{ZeroCopyIndexing}` `{AccessDictionary}`,ZeroCopyIndexing|AccessDictionary,YES,93,- **バイナリパース**: ROM上のデータを `BinaryStream` でラップし、`read_leb128` 等を用いて境界チェックを行いながら順次読み取る。 - **module_view
+docs/components/runtime/runtime_loader.md,3,4.2 メモリ制約 `{ConfigurableSystem}`,ConfigurableSystem,YES,104,`module_view` と関連構造の最大サイズ。すべてコンパイル時固定。 `{ConfigurableSystem}`  | 項目 | 定数名 | 既定値 | 根拠 | | :--- | :---
+docs/components/runtime/runtime_loader.md,3,4.3 軽量検証スコープ `{ZeroCopyIndexing}` `{AccessDictionary}` `{ConfigurableSystem}`,ZeroCopyIndexing|AccessDictionary|ConfigurableSystem,YES,115,以下の項目をロード時に検証する。これ以上の検証（型システムの完全検証、命令の妥当性検証等）はPhase1+で検討。  | # | 検証項目 | 判定基準 | 失敗時 | | :--- | :--- |
+docs/components/runtime/runtime_loader.md,3,4.4 状態遷移図 `{ZeroCopyIndexing}` `{AccessDictionary}` `{ConfigurableSystem}` `{LightweightVerifier}`,ZeroCopyIndexing|AccessDictionary|ConfigurableSystem|LightweightVerifier,YES,126,```mermaid stateDiagram-v2     [*] --> Idle     Idle --> Parsing: prepare     Parsing --> Verifying:
+docs/components/runtime/runtime_loader.md,4,モジュールロードシーケンス,,NO,139,
+docs/components/runtime/runtime_loader.md,3,4.5 内部シーケンス `{ZeroCopyIndexing}` `{AccessDictionary}` `{ConfigurableSystem}` `{LightweightVerifier}`,ZeroCopyIndexing|AccessDictionary|ConfigurableSystem|LightweightVerifier,YES,138,
+docs/components/runtime/runtime_loader.md,2,4. 動的モデル,ZeroCopyIndexing|AccessDictionary|ConfigurableSystem|LightweightVerifier,YES,91, ### 4.1 アルゴリズム `{ZeroCopyIndexing}` `{AccessDictionary}` - **バイナリパース**: ROM上のデータを `BinaryStream` でラ
+docs/components/runtime/runtime_loader.md,4,`prepare`,,NO,164, | 項目 | 内容 | | :--- | :--- | | 機能概要 | ROM上のWASMバイナリをパースし、内部レジストリに登録してビューを取得する。 | | シグネチャ | `prepare(
+docs/components/runtime/runtime_loader.md,4,`load`,,NO,175, | 項目 | 内容 | | :--- | :--- | | 機能概要 | モジュールの線形メモリをゲストRAMに展開し、初期化する。 | | シグネチャ | `load(module: wasm-m
+docs/components/runtime/runtime_loader.md,4,`resolve-imports`,,NO,185, | 項目 | 内容 | | :--- | :--- | | 機能概要 | モジュールのインポートセクションをスキャンし、レジストリ内の他モジュールとリンクする。 | | シグネチャ | `resol
+docs/components/runtime/runtime_loader.md,4,`unload`,,NO,194, | 項目 | 内容 | | :--- | :--- | | 機能概要 | モジュールをレジストリから削除し、関連リソースを解放する。 | | シグネチャ | `unload(module: wasm
+docs/components/runtime/runtime_loader.md,4,`lookup`,,NO,204, | 項目 | 内容 | | :--- | :--- | | 機能概要 | 登録済みのモジュールを名前で検索し、そのビューを取得する。 | | シグネチャ | `lookup(name: 文字列ビュー
+docs/components/runtime/runtime_loader.md,4,`get-section`,,NO,213, | 項目 | 内容 | | :--- | :--- | | 機能概要 | 指定されたモジュール内の特定のWASMセクションのオフセットとサイズ（`wasm-section-view`）を取得する。 
+docs/components/runtime/runtime_loader.md,4,`lookup-export-func`,,NO,224, | 項目 | 内容 | | :--- | :--- | | 機能概要 | モジュールが公開している関数を名前で検索し、そのインデックスを取得する。 | | シグネチャ | `lookup-expor
+docs/components/runtime/runtime_loader.md,4,`get-function`,,NO,233, | 項目 | 内容 | | :--- | :--- | | 機能概要 | 指定されたインデックスの関数アクセサ（`wasm-function-accessor`）を生成する。 | | シグネチャ |
+docs/components/runtime/runtime_loader.md,4,`get-global`,,NO,242,
+docs/components/runtime/runtime_loader.md,3,5.1 公開API,,NO,159,外部から利用可能なオブジェクト指向APIを定義する。  TODO(Phase 1): ATC抽出 - BumpAllocator使用時のメモリ解放や順序依存性、異常バイナリ時のロールバック処理に関する
+docs/components/runtime/runtime_loader.md,3,5.2 URI/IPCインターフェイス,,NO,251,
+docs/components/runtime/runtime_loader.md,2,5. インターフェイス定義,,NO,157, ### 5.1 公開API 外部から利用可能なオブジェクト指向APIを定義する。  TODO(Phase 1): ATC抽出 - BumpAllocator使用時のメモリ解放や順序依存性、異常バイナ
+docs/components/runtime/runtime_loader.md,3,6.1 性能制約と方策 `{ROMParsing}` `{AccessDictionary}`,ROMParsing|AccessDictionary,YES,256,- **目標**: モジュールロード時間を最小化する。 - **方策**: `{ROMParsing}` `{AccessDictionary}` RAMへのコピーを排除し、主要な要素を索引化すること
+docs/components/runtime/runtime_loader.md,3,6.2 メモリ制約と方策 `{BumpAllocator}` `{NoStdVector}`,BumpAllocator|NoStdVector,YES,260,
+docs/components/runtime/runtime_loader.md,2,6. 制約達成の方策,ROMParsing|AccessDictionary|BumpAllocator|NoStdVector,YES,254, ### 6.1 性能制約と方策 `{ROMParsing}` `{AccessDictionary}` - **目標**: モジュールロード時間を最小化する。 - **方策**: `{ROMPars
+docs/components/runtime/runtime_loader.md,3,6.3 安全性制約と方策 `{LightweightVerifier}` `{Wasm32Only}`,LightweightVerifier|Wasm32Only,YES,264,- **目標**: 不正なWASMバイナリによるクラッシュを防止する。 - **方策**: `{LightweightVerifier}` `{Wasm32Only}` ロード時にマジック値、バージョ
+docs/components/runtime/runtime_vmmio.md,2,1. コンセプト `{RestrictedPhysicalAccess}` `{vMMIO_TrapAndEmulate}` `{PhysicalPassthrough}` `{DynamicMmap}` `{UnifiedAccessModel}` `{HierarchicalAddressDecode}` `{RoleBasedAccessControl}` `{Fast_Path_GPIO}`,RestrictedPhysicalAccess|vMMIO_TrapAndEmulate|PhysicalPassthrough|DynamicMmap|UnifiedAccessModel|HierarchicalAddressDecode|RoleBasedAccessControl|Fast_Path_GPIO,YES,3,vMMIO (Virtual Memory-Mapped I/O) は、WASMゲストとホスト間の**すべてのデータ交換**を仲介する統一的なアクセス層である。物理レジスタ（GPIO等）、共有メモリ、
+docs/components/runtime/runtime_vmmio.md,2,2. アーキテクチャ分類 `{3TierSeparation}`,3TierSeparation,YES,16,本コンポーネントは **Tier 3 (実装ドメイン)** に属する。仮想的なレジスタアクセスとDMA転送に特化した単一責務のモジュールとして設計する。 `{3TierSeparation}`  ##
+docs/components/runtime/runtime_vmmio.md,3,3.1 データ構造 `{Static_Resolution}`,Static_Resolution,YES,21, リソース制約上、構造体は **ROM（不変）** と **RAM（可変）** に明確に分離する。  | 配置 | 構造体 | 概要 | | :--- | :--- | :--- | | ROM | 
+docs/components/runtime/runtime_vmmio.md,3,3.2 内部ブロック図 `{Static_Resolution}`,Static_Resolution,YES,36,```mermaid graph TD     subgraph vMMIO_Layer         Decoder[Address Decoder\nFC + Device Key + Offs
+docs/components/runtime/runtime_vmmio.md,4,`vmmio_address` (アドレスフィールド定義),,NO,58,32ビットゲストアドレスを3つのフィールドに分割する。`VmmioController` は FC でルートテーブルを選択し、Device ID で PTE を直接ルックアップする。  | 項目名 |
+docs/components/runtime/runtime_vmmio.md,4,`VmmioController` クラス,,NO,118,アドレスデコード・FC ごとの flat_map 選択・PTE ルックアップ・キャッシュ管理をカプセル化する。  | 項目名 | 機能と役割 | 備考（制約、型など） | | :--- | :--- 
+docs/components/runtime/runtime_vmmio.md,4,`vmmio_pte_static` (FC=4 Static Device PTE — 32bit),,NO,127,Static Devices (Tier 2) 向け。Syscall ID はアドレス [19:12] から直接抽出するため、PTE には Device Type やフラグのみを保持。Static D
+docs/components/runtime/runtime_vmmio.md,4,`vmmio_pte_tier3` (FC=6/7 Tier 3 PTE — 32bit),,NO,151,"Tier 3 (共有メモリ・パススルー) 向け。物理ページアドレスと所有権を管理。`std::flat_map<key, pte>` で O(log N) ルックアップ。フラグは Static Dev"
+docs/components/runtime/runtime_vmmio.md,4,FC ごとの flat_map テーブル,,NO,176,アドレスビット [27:12] (Device Key) で PTE を直接検索。FC ごとに異なるテーブルを保持。  ```cpp // FC=4 (Static Device — Tier 2) 
+docs/components/runtime/runtime_vmmio.md,4,`vmmio_handler` (ハンドラ定義),,NO,193,
+docs/components/runtime/runtime_vmmio.md,3,3.3 主要なクラス・構造体・配列・定数 `{Static_Resolution}`,Static_Resolution,YES,56,
+docs/components/runtime/runtime_vmmio.md,2,3. 静的モデル,Static_Resolution,YES,19, ### 3.1 データ構造 `{Static_Resolution}`  リソース制約上、構造体は **ROM（不変）** と **RAM（可変）** に明確に分離する。  | 配置 | 構造体 |
+docs/components/runtime/runtime_vmmio.md,3,4.1 アルゴリズム: アクセスディスパッチ,,NO,202, ゲストのアドレスアクセスは以下のロジックで解決される。  ``` 1. [アドレスデコード]    vmmio_address フィールドへキャストし、FC / Device Key / Offse
+docs/components/runtime/runtime_vmmio.md,3,4.2 性能分析（Tier別）,,NO,255, | アクセス | パス | 計算量 | 説明 | |---|---|---|---| | **ゲスト RAM (Tier 1)** | 直接 | O(1) | 範囲チェック → メモリアクセス。最速
+docs/components/runtime/runtime_vmmio.md,3,4.2 アルゴリズム: 仮想DMA (VDMA) `{VDMA}`,VDMA,YES,333,ゲストリニアメモリと vMMIO 空間（または他のメモリ領域）間の高速転送を実現する。 `{VDMA}`  **アクセス方式**: 純粋MMIOトラップ。直接vMMIOアドレスにアクセス可能なゲストは
+docs/components/runtime/runtime_vmmio.md,3,4.3 仮想デバイスマップ `{VDMA}`,VDMA,YES,347,各領域は 4KB 単位で割り当てられる。`vMMIO_BASE = 0xC000_0000`。Function Code が領域種別を決定し、L1/L2 がページを識別する。  | アドレス範囲   
+docs/components/runtime/runtime_vmmio.md,3,"4.4 SYSCTL レジスタ詳細 (FC=4, L1=0, L2=0) `{VDMA}`",VDMA,YES,362,| オフセット | レジスタ名 | R/W | 説明 | | :--- | :--- | :--- | :--- | | `0x00` | `REG_SYS_CONTROL` | W | `1`: R
+docs/components/runtime/runtime_vmmio.md,3,"4.5 VDMA レジスタ詳細 (FC=4, L1=0, L2=2) `{VDMA}`",VDMA|OwnershipTransfer,YES,377,| オフセット | レジスタ名 | R/W | 説明 | | :--- | :--- | :--- | :--- | | `0x00` | `REG_VDMA_SRC` | R/W | 転送元アドレス
+docs/components/runtime/runtime_vmmio.md,4,ライフサイクル（ipc_router.md §4.1 に従属） `{OwnershipTransfer}`,OwnershipTransfer,YES,401,
+docs/components/runtime/runtime_vmmio.md,3,4.6 共有メモリマッピング (FC=6) `{OwnershipTransfer}`,OwnershipTransfer,YES,387,SHM へのアクセスは **IPCルータ経由でのみ許可される**。ゲストは IPCルータからハンドルを受け取ることによってのみ FC=6 アドレス空間にアクセスできる。SHM の所有権状態は IPCル
+docs/components/runtime/runtime_vmmio.md,3,4.7 仮想割り込みマッピング `{ConfigurableSystem}`,ConfigurableSystem,YES,409,物理割り込みから仮想割り込みIDへのマッピングは**静的1:1**とし、別コンフィグ（`irq_mapping_config`）で定義される。 `{ConfigurableSystem}`  - **
+docs/components/runtime/runtime_vmmio.md,3,4.8 ソフトウェアTLB `{VDMA}` `{OwnershipTransfer}` `{ConfigurableSystem}`,VDMA|OwnershipTransfer|ConfigurableSystem,YES,419,
+docs/components/runtime/runtime_vmmio.md,2,4. 動的モデル,VDMA|OwnershipTransfer|ConfigurableSystem,YES,200, ### 4.1 アルゴリズム: アクセスディスパッチ  ゲストのアドレスアクセスは以下のロジックで解決される。  ``` 1. [アドレスデコード]    vmmio_address フィールドへキ
+docs/components/runtime/runtime_vmmio.md,4,フック登録 (`register-hook`),,NO,437, | 項目 | 内容 | | :--- | :--- | | 機能概要 | 既に定義（ROM）されている領域に対して、ホスト側のハンドラの実装アドレスを紐づける。 | | シグネチャ | `regis
+docs/components/runtime/runtime_vmmio.md,4,アクセスディスパッチ (`dispatch-access`),,NO,450,
+docs/components/runtime/runtime_vmmio.md,3,5.1 公開API,,NO,432,
+docs/components/runtime/runtime_vmmio.md,2,5. インターフェイス定義,,NO,430, ### 5.1 公開API 外部から利用可能なオブジェクト指向APIを定義する。  TODO(Phase 1): ATCの抽出 - フック登録や静的予約が可能なライフサイクルの制約（初期化フェーズ中
+docs/components/runtime/runtime_vmmio.md,3,6.1 性能制約と方策 `{ConfigurableSystem}` `{HierarchicalAddressDecode}` `{vMMIO_TLB}`,ConfigurableSystem|HierarchicalAddressDecode|vMMIO_TLB,YES,466,- **目標**: MMIOアクセスのオーバーヘッドを最小化する。 - **方策1**: `{ConfigurableSystem}` コアデバイス（SYSCTL等）をFC=4/L1=0/L2=0に配
+docs/components/runtime/runtime_vmmio.md,3,6.2 メモリ制約と方策 `{ConfigurableSystem}`,ConfigurableSystem,YES,472,
+docs/components/runtime/runtime_vmmio.md,2,6. 制約達成の方策,ConfigurableSystem|HierarchicalAddressDecode|vMMIO_TLB,YES,464, ### 6.1 性能制約と方策 `{ConfigurableSystem}` `{HierarchicalAddressDecode}` `{vMMIO_TLB}` - **目標**: MMIOアク
+docs/components/runtime/runtime_vmmio.md,3,6.3 安全性制約と方策 `{RoleBasedAccessControl}` `{OwnershipTransfer}`,RoleBasedAccessControl|OwnershipTransfer,YES,476,- **目標**: ゲストが許可されていない物理アドレスにアクセスできないことを保証する。 - **方策**: `{RoleBasedAccessControl}` `{OwnershipTransf
+docs/components/runtime/runtime_vsoc.md,2,1. コンセプト `{LowLatencyJIT}` `{MemoryIsolation}` `{FaultIsolation}` `{EnvironmentPointer}`,LowLatencyJIT|MemoryIsolation|FaultIsolation|EnvironmentPointer,YES,3,vSoC (Virtual System-on-Chip) は、WASM実行環境の統合マネージャであり、Loader、Interpreter、JIT、vMMIO、Debugger を統括して実行制御を
+docs/components/runtime/runtime_vsoc.md,2,2. アーキテクチャ分類 `{3TierSeparation}` `{ComponentHarness}`,3TierSeparation|ComponentHarness,YES,6,本コンポーネントは **Tier 2 (サブシステムドメイン)** に属し、Stateless Interface と Harness パターンを用いて構造化される。 `{3TierSeparatio
+docs/components/runtime/runtime_vsoc.md,3,3.1 データ構造 `{StaticDI}`,StaticDI,YES,11,"- **`vsoc_harness`**: vSoCが依存する各種エンジン（Loader, Interpreter, JIT等）のインターフェイスを集約した構造体。 `{StaticDI}` - **"
+docs/components/runtime/runtime_vsoc.md,3,3.2 内部ブロック図 `{StaticDI}`,StaticDI,YES,16,```mermaid graph TD     subgraph vSoC_Layer         Harness[vsoc_harness]         Manager[vsoc_manag
+docs/components/runtime/runtime_vsoc.md,4,`vsoc_harness`,,NO,44,各エンジンへのインターフェイスを集約する。PODとして扱い、メンバに末尾アンダースコアは付与しない。  | 項目名 | 機能と役割 | 備考（制約、型など） | | :--- | :--- | :--
+docs/components/runtime/runtime_vsoc.md,4,`vsoc_context`,,NO,55,可変な実行状態を保持する。  | 項目名 | 機能と役割 | 備考（制約、型など） | | :--- | :--- | :--- | | 割り込みフラグ | ゲストに通知された仮想割り込みの状態を保持
+docs/components/runtime/runtime_vsoc.md,4,`vsoc_config` `{ConfigurableSystem}`,ConfigurableSystem,YES,64,
+docs/components/runtime/runtime_vsoc.md,3,3.3 主要なクラス・構造体・配列・定数 `{StaticDI}`,StaticDI,YES,42,
+docs/components/runtime/runtime_vsoc.md,2,3. 静的モデル,StaticDI|ConfigurableSystem,YES,9," ### 3.1 データ構造 `{StaticDI}` - **`vsoc_harness`**: vSoCが依存する各種エンジン（Loader, Interpreter, JIT等）のインターフェイ"
+docs/components/runtime/runtime_vsoc.md,3,4.1 アルゴリズム `{ThreadedInterpreter}` `{JIT_CopyAndPatch}` `{Challenge_ApproximateYield}` `{JIT_Safepoint}` `{Debugger_Jit_Flush}`,ThreadedInterpreter|JIT_CopyAndPatch|Challenge_ApproximateYield|JIT_Safepoint|Debugger_Jit_Flush,YES,78,- **実行エンジン委譲 (exec_trace)**: vSoCは `step()` で現在のPCに対応する `exec_trace` を呼び出す。 `exec_trace` はインタープリタのディ
+docs/components/runtime/runtime_vsoc.md,3,4.2 状態遷移図 `{ThreadedInterpreter}` `{JIT_CopyAndPatch}` `{Challenge_ApproximateYield}` `{JIT_Safepoint}` `{Debugger_Jit_Flush}`,ThreadedInterpreter|JIT_CopyAndPatch|Challenge_ApproximateYield|JIT_Safepoint|Debugger_Jit_Flush,YES,89,```mermaid stateDiagram-v2     [*] --> Idle     Idle --> Loading: prepare     Loading --> Ready: loa
+docs/components/runtime/runtime_vsoc.md,4,WASM実行およびJIT遷移シーケンス,,NO,104,```mermaid sequenceDiagram     participant S as Scheduler     participant V as vSoC     participant 
+docs/components/runtime/runtime_vsoc.md,4,マルチモジュール動的リンクシーケンス `{MultiModule_Support}`,MultiModule_Support,YES,131,
+docs/components/runtime/runtime_vsoc.md,3,4.3 内部シーケンス `{ThreadedInterpreter}` `{JIT_CopyAndPatch}` `{Challenge_ApproximateYield}` `{JIT_Safepoint}` `{Debugger_Jit_Flush}`,ThreadedInterpreter|JIT_CopyAndPatch|Challenge_ApproximateYield|JIT_Safepoint|Debugger_Jit_Flush,YES,103,
+docs/components/runtime/runtime_vsoc.md,2,4. 動的モデル,ThreadedInterpreter|JIT_CopyAndPatch|Challenge_ApproximateYield|JIT_Safepoint|Debugger_Jit_Flush|MultiModule_Support,YES,76, ### 4.1 アルゴリズム `{ThreadedInterpreter}` `{JIT_CopyAndPatch}` `{Challenge_ApproximateYield}` `{JIT_Sa
+docs/components/runtime/runtime_vsoc.md,4,`prepare`,,NO,160,| 項目 | 内容 | | :--- | :--- | | 機能概要 | 指定されたWASMバイナリデータを読み込み、実行準備を完了させる。 | | シグネチャ | `prepare(wasm: bi
+docs/components/runtime/runtime_vsoc.md,4,`step` `{RecoveryStrategy}`,RecoveryStrategy,YES,173,| 項目 | 内容 | | :--- | :--- | | 機能概要 | ゲストのプログラム実行を再開し、コルーチンの `yield` またはトラップが発生するまで継続する。 | | シグネチャ | 
+docs/components/runtime/runtime_vsoc.md,4,`notify-interrupt` `{RecoveryStrategy}`,RecoveryStrategy,YES,186,| 項目 | 内容 | | :--- | :--- | | 機能概要 | 物理割り込み等の外部イベントをゲストOS/アプリに通知するための仮想フラグを設定する。 | | シグネチャ | `notify
+docs/components/runtime/runtime_vsoc.md,4,`register-hook` `{vMMIO_TrapAndEmulate}`,vMMIO_TrapAndEmulate,YES,199,
+docs/components/runtime/runtime_vsoc.md,3,5.1 公開API,RecoveryStrategy|vMMIO_TrapAndEmulate,YES,155,外部から利用可能なオブジェクト指向APIを定義する。  TODO(Phase 1): ATC抽出 - JITキャッシュ有効時やエラー時の実行リカバリ戦略を含む、厳格な事前/事後/不変条件を各APIに定
+docs/components/runtime/runtime_vsoc.md,3,5.2 ネイティブAPI エクスポート `{NativeAPI_Export}`,NativeAPI_Export,YES,212, TODO(Phase 1): シングル・トラップ方式における sys-call 引数定義（サービスIDとコマンドIDの一覧、及び引数の型）の厳密な仕様化を行うこと。  WASMゲストからホストサービ
+docs/components/runtime/runtime_vsoc.md,3,5.3 マルチモジュール対応 `{MultiModule_Support}`,MultiModule_Support,YES,225,複数のWASMモジュール間の依存関係を解決し、動的にリンクする。 `{MultiModule_Support}`  - **Module Registry**: ロード済みのモジュールを名前で管理する
+docs/components/runtime/runtime_vsoc.md,3,5.4 URI/IPCインターフェイス `{RecoveryStrategy}` `{vMMIO_TrapAndEmulate}` `{NativeAPI_Export}` `{MultiModule_Support}`,RecoveryStrategy|vMMIO_TrapAndEmulate|NativeAPI_Export|MultiModule_Support,YES,231,- **URI**: `fireball://vsoc/control/<instance_id>` - **メッセージ形式**: 実行制御、状態取得用のKey-Valueプロトコル。詳細定義は IP
+docs/components/runtime/runtime_vsoc.md,3,5.5 関連コンポーネントとの連携 `{RecoveryStrategy}` `{vMMIO_TrapAndEmulate}` `{NativeAPI_Export}` `{MultiModule_Support}`,RecoveryStrategy|vMMIO_TrapAndEmulate|NativeAPI_Export|MultiModule_Support,YES,235,
+docs/components/runtime/runtime_vsoc.md,2,5. インターフェイス定義,RecoveryStrategy|vMMIO_TrapAndEmulate|NativeAPI_Export|MultiModule_Support,YES,153, ### 5.1 公開API 外部から利用可能なオブジェクト指向APIを定義する。  TODO(Phase 1): ATC抽出 - JITキャッシュ有効時やエラー時の実行リカバリ戦略を含む、厳格な事前
+docs/components/runtime/runtime_vsoc.md,3,6.1 性能制約と方策 `{LowLatencyJIT}` `{ThreadedInterpreter}`,LowLatencyJIT|ThreadedInterpreter,YES,245,- **目標**: WAMRインタープリタを上回る実行速度を実現する。 - **方策**: `{LowLatencyJIT}` `{ThreadedInterpreter}` コピーアンドパッチJIT
+docs/components/runtime/runtime_vsoc.md,3,6.2 メモリ制約と方策 `{JIT_DoubleBuffer_Cache}` `{IndependentHeap}` `{WasmPageAlignment}`,JIT_DoubleBuffer_Cache|IndependentHeap|WasmPageAlignment,YES,249,
+docs/components/runtime/runtime_vsoc.md,2,6. 制約達成の方策,LowLatencyJIT|ThreadedInterpreter|JIT_DoubleBuffer_Cache|IndependentHeap|WasmPageAlignment,YES,243, ### 6.1 性能制約と方策 `{LowLatencyJIT}` `{ThreadedInterpreter}` - **目標**: WAMRインタープリタを上回る実行速度を実現する。 - **方
+docs/components/runtime/runtime_vsoc.md,3,6.3 安全性制約と方策 `{MemoryBoundaryCheck}` `{RestrictedPhysicalAccess}`,MemoryBoundaryCheck|RestrictedPhysicalAccess,YES,254,- **目標**: ゲストアプリケーションの暴走を完全に隔離する。 - **方策**: `{MemoryBoundaryCheck}` `{RestrictedPhysicalAccess}` JIT
+docs/components/runtime/wasm_instruction.md,2,1. 概要 `{Wasm32Only}`,Wasm32Only,YES,3,Fireball vSoCがサポートするwasm32命令の最小セットを定義する。浮動小数点演算はリソース削減のため除外されている。 `{Wasm32Only}`  ## 2. 命令リスト  TODO(
+docs/components/runtime/wasm_instruction.md,3,2.1 制御フロー命令,,NO,10,| 命令 | オペランド | 説明 | | :--- | :--- | :--- | | `block` | blocktype | ブロック開始 | | `loop` | blocktype | ル
+docs/components/runtime/wasm_instruction.md,3,2.2 メモリ命令,,NO,25,| 命令 | オペランド | 説明 | | :--- | :--- | :--- | | `i32.load` | memarg | メモリからi32をロード | | `i32.load8_s` | 
+docs/components/runtime/wasm_instruction.md,3,2.3 算術演算命令 (i32),,NO,39,| 命令 | オペランド | 説明 | | :--- | :--- | :--- | | `i32.const` | i32 | 定数をプッシュ | | `i32.add` | - | 加算 | | 
+docs/components/runtime/wasm_instruction.md,3,2.4 比較命令 (i32),,NO,59,| 命令 | オペランド | 説明 | | :--- | :--- | :--- | | `i32.eqz` | - | ゼロ比較 | | `i32.eq` | - | 等値比較 | | `i32.n
+docs/components/runtime/wasm_instruction.md,3,2.5 スタック操作・変数命令,,NO,74,
+docs/components/runtime/wasm_instruction.md,2,2. 命令リスト,,NO,6, TODO(Phase 1): ATC抽出 - 演算命令、メモリ命令など各操作において、スタックのアンダーフロー/オーバーフロー検証、メモリ境界チェックなどの事前条件・事後条件を付記すること。  ##
+docs/components/runtime/wasm_instruction.md,3,2.6 その他,,NO,85,| 命令 | オペランド | 説明 | | :--- | :--- | :--- | | `unreachable` | - | 到達不可能 | | `nop` | - | 何もしない |

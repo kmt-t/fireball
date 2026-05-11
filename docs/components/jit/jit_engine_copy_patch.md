@@ -1,9 +1,9 @@
 # Copy-and-Patch Engine コンポーネント設計書
 
-## 1. コンセプト
+## 1. コンセプト `{JIT_CopyAndPatch}` `{JIT_ZeroCompileCostTheorem}` `{LowLatencyJIT}` `{SinglePassCompilation}`
 Copy-and-Patch Engine は、WASM 命令に対応する事前生成されたネイティブコードテンプレートを結合・修正することで、ネイティブ実行バイナリを高速に生成する JIT コンパイラの核心部である。レジスタ割り当てや命令選択などの計算コストの高い最適化をビルド時にオフロードし、実行時は単純なメモリコピーと特定箇所への定数書き込み（パッチ）のみを行うことで、「Zero Compile Cost」を目指す。 `{JIT_CopyAndPatch}` `{JIT_ZeroCompileCostTheorem}` `{LowLatencyJIT}` `{SinglePassCompilation}`
 
-## 2. アーキテクチャ分類
+## 2. アーキテクチャ分類 `{3TierSeparation}` `{JIT_CopyAndPatch}`
 本コンポーネントは **Tier 3 (実装ドメイン)** に属する。JITコンパイラの内部アルゴリズムとして機能し、特定のアーキテクチャに依存したコード生成に特化したモジュールである。 `{3TierSeparation}` `{JIT_CopyAndPatch}`
 
 ## 3. 静的モデル
@@ -97,6 +97,6 @@ TODO(Phase 1): ATCの抽出 - `compile_trace` における `dest` バッファ�
 
 ## 6. 制約達成の方策
 
-### 6.1 性能制約
+### 6.1 性能制約 `{JIT_CopyAndPatch}` `{JIT_RuntimeAPI_Fallback}`
 - **方策**: `{JIT_CopyAndPatch}` により、コンパイル時間を最適化理論の限界まで短縮する。
 - **方策**: ランタイムAPIフォールバック `{JIT_RuntimeAPI_Fallback}` により、複雑なエッジケースを簡素化する。

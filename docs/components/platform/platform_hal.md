@@ -1,9 +1,9 @@
 # HAL コンポーネント設計書
 
-## 1. コンセプト
+## 1. コンセプト `{IPCRouter}` `{Challenge_InterruptSafety}` `{TaskPollInterruptFlag}` `{RSPMinimalSet}` `{Fast_Path_GPIO}`
 HAL (Hardware Abstraction Layer) は、ハードウェアへのアクセスを抽象化し、vSoCやサービスに対して統一されたインターフェイスを提供する。また、デバッグ用のGDB Remote Serial Protocol (RSP) のパケット解析（RSP Parser）を担い、解析済みコマンドをデバッガへ供給する。すべてのアクセスはIPCルータを経由し、割り込みはフラグ通知とタスクウェイクアップによって安全に処理される。 `{IPCRouter}` `{Challenge_InterruptSafety}` `{TaskPollInterruptFlag}` `{RSPMinimalSet}` `{Fast_Path_GPIO}`
 
-## 2. アーキテクチャ分類
+## 2. アーキテクチャ分類 `{3TierSeparation}` `{IPCRouter}` `{URIAbstraction}` `{StaticDI}`
 本コンポーネントは **Tier 1 (アーキテクチャドメイン)** に属する。ハードウェアとハイパーバイザの境界を定義し、IoC (Inversion of Control) および URIベースのDIを用いて、上位層に対して透過的なリソースアクセスを提供する。 `{3TierSeparation}` `{IPCRouter}` `{URIAbstraction}` `{StaticDI}`
 
 ## 3. 静的モデル
@@ -39,7 +39,7 @@ graph TD
 | 転送単位 | デバイスが扱う最小のデータブロックサイズ | バイト数 | - |
 | 予約ページ数 | vMMIO DYNAMIC領域に確保するページ数 (`reserved_pages`) | ページ数 | デフォルト0 |
 
-#### `hal_config` (HAL構成)
+#### `hal_config` (HAL構成) `{ConfigurableSystem}`
 HAL全体の制限値を定義する。 `{ConfigurableSystem}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
@@ -50,12 +50,12 @@ HAL全体の制限値を定義する。 `{ConfigurableSystem}`
 
 ## 4. 動的モデル
 
-### 4.1 アルゴリズム
+### 4.1 アルゴリズム `{RSP_Transport_Selectable}` `{TaskPollInterruptFlag}` `{InterruptWakeup}`
 - **コマンドルーティング**: IPCで受信したコマンド（read/write等）を、デバイスIDに基づいて適切なドライバへ振り分ける。
 - **RSPパケット解析**: UARTまたはRTTから受信したRSPパケットを解析し、`debug_command` 構造体へ変換してコマンドキューへ投入する。 `{RSP_Transport_Selectable}`
 - **割り込み通知**: 物理割り込み発生時、ISR内でフラグをセットし、COOSスケジューラに対して関連タスクのウェイクアップを要求する。 `{TaskPollInterruptFlag}` `{InterruptWakeup}`
 
-### 4.2 状態遷移図
+### 4.2 状態遷移図 `{RSP_Transport_Selectable}` `{TaskPollInterruptFlag}` `{InterruptWakeup}`
 ```mermaid
 stateDiagram-v2
     [*] --> Uninitialized
@@ -66,7 +66,7 @@ stateDiagram-v2
     Error --> Ready: reset
 ```
 
-### 4.3 内部シーケンス
+### 4.3 内部シーケンス `{RSP_Transport_Selectable}` `{TaskPollInterruptFlag}` `{InterruptWakeup}`
 #### RSPパケット受信とコマンド供給シーケンス
 ```mermaid
 sequenceDiagram
@@ -108,7 +108,7 @@ TODO(Phase 1): ATCの抽出 - 各APIの呼び出しにおいて、共有メモ�
 | シグネチャ | `write(id: device-id, src: shm-id) -> operation-result` |
 | 引数 | `id`: 対象デバイスID<br>`src`: 送信データが格納された共有メモリハンドル |
 
-#### ゼロコピー転送 (bus_master/streaming)
+#### ゼロコピー転送 (bus_master/streaming) `{PhysicalPassthrough}`
 
 | 項目 | 内容 |
 | :--- | :--- |
@@ -116,7 +116,7 @@ TODO(Phase 1): ATCの抽出 - 各APIの呼び出しにおいて、共有メモ�
 | シグネチャ | `transfer(tx_buffer: shm_id, rx_buffer: shm_id) -> operation-result` |
 | 期待する結果 | 正常：CPUを介さずバッファ間のデータ移動が完了する。 `{PhysicalPassthrough}` |
 
-#### 非標準制御 (control)
+#### 非標準制御 (control) `{PhysicalPassthrough}`
 
 | 項目 | 内容 |
 | :--- | :--- |
@@ -125,7 +125,7 @@ TODO(Phase 1): ATCの抽出 - 各APIの呼び出しにおいて、共有メモ�
 | 引数 | `id`: デバイスID<br>`cmd`: コマンド識別子<br>`params`: コマンド固有引数(Key-Valueメッセージ) |
 | 戻り値 | 操作結果 |
 
-#### バッファの確保
+#### バッファの確保 `{PhysicalPassthrough}`
 
 | 項目 | 内容 |
 | :--- | :--- |
@@ -134,7 +134,7 @@ TODO(Phase 1): ATCの抽出 - 各APIの呼び出しにおいて、共有メモ�
 | 引数 | `size`: 必要なバイト数 |
 | 戻り値 | 成功時は共有メモリアイデンティファイア |
 
-### 5.2 Tier 3 リソースインターフェイス
+### 5.2 Tier 3 リソースインターフェイス `{PhysicalPassthrough}`
 
 #### `gpio-controller` (物理GPIO制御)
 | プロトタイプ | 内容 |
@@ -159,10 +159,10 @@ TODO(Phase 1): ATCの抽出 - 各APIの呼び出しにおいて、共有メモ�
 | `poll-packet()` | RSPパケットの受信確認を行う。 |
 | `get-parsed-command()` | 解析済みコマンドの取得を行う。 |
 
-### 5.2 URI/IPCインターフェイス
+### 5.2 URI/IPCインターフェイス `{PhysicalPassthrough}`
 - **URI**: `fireball://hal/<device_name>/<instance_id>`
 
-### 5.3 RSPトランスポート構成
+### 5.3 RSPトランスポート構成 `{RSP_Transport_Selectable}`
 RSPパケットの送受信に使用する物理層を選択可能とする。 `{RSP_Transport_Selectable}`
 
 | 項目名 | 機能と役割 | 備考（制約、型など） |
@@ -170,19 +170,19 @@ RSPパケットの送受信に使用する物理層を選択可能とする。 `
 | **UART** | 標準的な非同期シリアル通信によるRSPパケット伝送 | 汎用性が高く、安価なアダプタで利用可能 |
 | **RTT** | J-Link の RTT 技術を用いた高速なパケット伝送 | ピンを専有せず、J-Link 経由でデバッグ中に併用可能 |
 
-### 5.4 メッセージ形式
+### 5.4 メッセージ形式 `{TypeSafeMessaging}`
 Key-Valueプロトコル。 `device_id`, `command`, `shared_mem_id` 等を含む。 `{TypeSafeMessaging}`
 
 ## 6. 制約達成の方策
 
-### 6.1 性能制約と方策
+### 6.1 性能制約と方策 `{ConfigurableSystem}`
 - **目標**: ハードウェアアクセスのレイテンシを最小化する。
 - **方策**: `{ConfigurableSystem}` デバイス構成をコンパイル時に固定し、実行時の動的な探索オーバーヘッドを排除する。
 
-### 6.2 メモリ制約と方策
+### 6.2 メモリ制約と方策 `{ConfigurableSystem}`
 - **目標**: 通信バッファによるメモリ圧迫を防止する。
 - **方策**: `{ConfigurableSystem}` バッファ数とサイズをコンパイル時に固定し、**vMMIOの動的領域 (`DYNAMIC`)** に配置する。
 
-### 6.3 安全性制約と方策
+### 6.3 安全性制約と方策 `{Challenge_InterruptSafety}`
 - **目標**: 割り込みによる実行コンテキストの破壊を防止する。
 - **方策**: `{Challenge_InterruptSafety}` 割り込みハンドラ内ではフラグセットのみを行い、実際のデータ処理はタスクのコンテキストで実行する。

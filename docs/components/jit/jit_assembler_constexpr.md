@@ -1,9 +1,9 @@
 # コンポーネント設計：constexpr Assembler
 
-## 1. コンセプト
+## 1. コンセプト `{JIT_Encoder}` `{Static_Resolution}` `{CompileTimeValidation}` `{PositionIndependentCode}`
 constexpr Assembler は、C++のコンパイル時計算（`constexpr`）機能を活用し、ターゲットアーキテクチャの命令バイナリを型安全かつ効率的に生成するための DSL (Domain Specific Language) である。手動でのビット演算による命令生成を排除し、ビルド時に命令テンプレートを確定させることで、実行時のJITオーバーヘッドを「ゼロ」に近づけるとともに、不正なレジスタ指定や即値溢れをコンパイル時に検知する。 `{JIT_Encoder}` `{Static_Resolution}` `{CompileTimeValidation}` `{PositionIndependentCode}`
 
-## 2. アーキテクチャ分類
+## 2. アーキテクチャ分類 `{3TierSeparation}` `{Static_Resolution}` `{ZeroRuntimeOverhead}`
 本コンポーネントは **Tier 3 (実装ドメイン)** に属する。C++のコンパイル時機能に依存したスタティックなライブラリとして機能し、実行時のオーバーヘッドを持たない。 `{3TierSeparation}` `{Static_Resolution}` `{ZeroRuntimeOverhead}`
 
 ## 3. 静的モデル
@@ -87,8 +87,8 @@ TODO(Phase 0.75): ATCの抽出 - `make_instruction` に対する事前条件（�
 
 ## 6. 制約達成の方策
 
-### 6.1 性能制約
+### 6.1 性能制約 `{Static_Resolution}`
 - **方策**: `{Static_Resolution}` により、実行時のデコード・エンコード時間を完全に排除し、Copy-and-Patch 時は単なる `memcpy` 相当の処理を実現する。
 
-### 6.2 安全性制約
+### 6.2 安全性制約 `{Static_Resolution}`
 - **方策**: C++の型システムと `static_assert` を利用し、アセンブラレベルのバグ（誤ったレジスタ使用等）を開発段階で完全に排除する。

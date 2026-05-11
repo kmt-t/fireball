@@ -1,14 +1,14 @@
 # JIT Compiler コンポーネント設計書
 
-## 1. コンセプト
+## 1. コンセプト `{LowLatencyJIT}` `{JIT_CopyAndPatch}` `{JIT_ZeroCompileCostTheorem}` `{SimpleJITArchitecture}` `{PeriodicTask}` `{IdleDetection}` `{JIT_Encoder}`
 JIT Compiler は、WASMバイトコードを実行時にネイティブコードへ変換し、実行速度を向上させる。Execution Engine (`executor`) の一部として、インタープリタと一対の「実行エンジン」として機能する。極小リソース環境（RAM 64KB）において、コンパイルコストを極小化する「Zero Compile Cost 定理」に基づき、最適化を省いた高速な **Copy-and-Patch** 方式を採用する。 `{LowLatencyJIT}` `{JIT_CopyAndPatch}` `{JIT_ZeroCompileCostTheorem}` `{SimpleJITArchitecture}` `{PeriodicTask}` `{IdleDetection}` `{JIT_Encoder}`
 
-## 2. アーキテクチャ分類
+## 2. アーキテクチャ分類 `{3TierSeparation}` `{ComponentHarness}`
 本コンポーネントは **Tier 2 (サブシステムドメイン)** に属し、Stateless Interface と Harness パターンを用いて構造化される。 `{3TierSeparation}` `{ComponentHarness}`
 
 ## 3. 静的モデル
 
-### 3.1 データ構造
+### 3.1 データ構造 `{JIT_DoubleBuffer_Cache}` `{SimpleJITArchitecture}`
 - **JITキャッシュ**: ネイティブコードを保持するダブルバッファ。Copy-GC方式により、フラグメンテーションを回避しつつ効率的にメモリを再利用する。 `{JIT_DoubleBuffer_Cache}`
 - **JITエントリテーブル**: WASM PCとキャッシュ内のコードオフセットを紐付ける管理テーブル。**カードマーキング**と二分探索を組み合わせ、高速な検索を実現する。 `{SimpleJITArchitecture}`
 - **カードグループインデックス**: 複数のカードをグループ化して管理するインデックステーブル。検索範囲の絞り込みに使用する。高速化のため、カード数およびグループサイズは2のべき乗（シフト量）で管理される。
@@ -19,7 +19,7 @@ JIT Compiler は、WASMバイトコードを実行時にネイティブコード
     - `3: COMPILED` (Hotカード。いずれかのPCがコンパイル済み、またはオンデマンド・コンパイルが許可された状態)
 - **コンパイルキュー**: コンパイル待ちのWASM PCを保持する。即時チェイニングを最大化するため、**後入れ先出し (LIFO)** または **履歴の逆順** で処理される。
 
-### 3.2 内部ブロック図
+### 3.2 内部ブロック図 `{JIT_DoubleBuffer_Cache}` `{SimpleJITArchitecture}`
 ```mermaid
 graph TD
     subgraph JIT_Layer
@@ -43,7 +43,7 @@ graph TD
     Manager -- operates on --> Context
 ```
 
-### 3.3 主要なクラス・構造体・配列・定数
+### 3.3 主要なクラス・構造体・配列・定数 `{JIT_DoubleBuffer_Cache}` `{SimpleJITArchitecture}`
 
 TODO(Phase 1): メモリレイアウトの厳密化 - `jit_context` および `jit_config` に含まれるスパンや配列の具体的なアライメント要求、最大サイズ制約（RAM 64KB環境下でのアロケーション方針）を確定させること。
 
@@ -67,7 +67,7 @@ TODO(Phase 1): メモリレイアウトの厳密化 - `jit_context` および `j
 | コンパイル待ち列 | 後でコンパイルを行うPCの順番リスト | ソート済み配列 | - |
 | 実行履歴マップ | 命令の実行頻度を記録するビットマップ | データ範囲 | `std::span<uint8_t>` |
 
-#### `jit_config` (JIT構成)
+#### `jit_config` (JIT構成) `{ConfigurableSystem}` `{StaticScalability}`
 JITエンジンの挙動を制御する性能パラメータ。 `{ConfigurableSystem}` `{StaticScalability}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
@@ -106,7 +106,7 @@ JITエンジンの挙動を制御する性能パラメータ。 `{ConfigurableSy
     - ヒット（または昇格成功）時はネイティブコードのアドレスを返す。
     - いずれの領域でもミスした場合は（たとえ「コンパイル完了」カードであっても） NULL を返し、インタープリタ実行を継続する。
 
-#### トレース・チェイニング（連鎖実行）
+#### トレース・チェイニング（連鎖実行） `{JIT_LazyChaining}`
 検索オーバーヘッドを排除するため、ネイティブコード同士を直接接続（チェイニング）する。
 1. **トレース構造**: 各トレースの末尾に、次に実行すべきネイティブアドレスを保持する「チェイニング・スロット（`chain_next`）」を設ける。
 2. **既定状態**: スロットは初期状態で **インタープリタへの復帰** を指す。これにより、不必要な動的検索（ディスパッチャ・スタブ経由）を排除する。 `{JIT_LazyChaining}`
@@ -115,16 +115,16 @@ JITエンジンの挙動を制御する性能パラメータ。 `{ConfigurableSy
     - **昇格時**: バックアップ領域からアクティブ領域へコピーされる際、リンクを再評価する。常に **アクティブ領域内のアドレス**、または **スタブ** へのリンクを行う。
 4. **再配置の安全性**: 昇格（コピー）時に必ず新しいアクティブ領域のアドレスでリンク情報を書き換えるため、バックアップ領域の古いアドレスへ飛ぶ（Dangling Pointer）ことはない。
 
-#### ホットスポット判定 (yield 時)
+#### ホットスポット判定 (yield 時) `{JIT_LazyChaining}`
 1. **履歴走査**: インタープリタの実行サイクル中に記録、蓄積された「実行履歴バッファ」を走査する。
 2. **状態更新**: 実行履歴マップ（ビットマップ）の状態が「頻出」に達した命令オフセットを「コンパイル待ち列」に投入する。
 
-#### バッチコンパイル (周期実行またはアイドル時)
+#### バッチコンパイル (周期実行またはアイドル時) `{JIT_ReverseCompilationOrder}` `{PeriodicTask}` `{IdleDetection}`
 1. **キューの取得**: 「コンパイル待ち列」から対象の命令オフセットを**逆順（LIFO）**で取り出す。 `{JIT_ReverseCompilationOrder}`
 2. **コンパイル実行**: 後続のトレースを先にコンパイルすることで、先行するトレースのリンク時（Patching 時）にターゲットが既にキャッシュ内に存在する確率を上げ、即時チェイニングを実現する。
 3. **補足**: COOSの `register_periodic_callback` または `set_idle_hook` により実行される。これにより、実行スレッドのブロッキング時間を抑える。 `{PeriodicTask}` `{IdleDetection}`
 
-### 4.2 状態遷移図
+### 4.2 状態遷移図 `{JIT_LazyChaining}` `{JIT_ReverseCompilationOrder}` `{PeriodicTask}` `{IdleDetection}`
 ```mermaid
 stateDiagram-v2
     state "Interpreting" as Interp
@@ -141,7 +141,7 @@ stateDiagram-v2
     Background --> Interp: Task Wakeup
 ```
 
-### 4.3 内部シーケンス
+### 4.3 内部シーケンス `{JIT_LazyChaining}` `{JIT_ReverseCompilationOrder}` `{PeriodicTask}` `{IdleDetection}`
 #### JITコンパイルおよび検索シーケンス
 ```mermaid
 sequenceDiagram
@@ -194,7 +194,7 @@ JITトレース検索時の内部状態と期待される挙動を検証する�
 | 6 | COMPILED (3) | miss | miss | BitmapをHOT(2)へ戻す + インタープリタ |
 | 7 | (昇格時) | Active満杯 | Old hit | **Old破棄 -> ActiveをOldへ -> 新Active** |
 
-### 5.2 内部コンポーネントのデコンポジション
+### 5.2 内部コンポーネントのデコンポジション `{JIT_Encoder}`
 JITエンジンの責務を、以下の独立したサブコンポーネントに分離して設計する。
 
 - **[JIT Hotspot Detector](jit_runtime_hotspot.md)**: 実行履歴の監視とコンパイル要否の判定。
@@ -213,7 +213,7 @@ JITエンジンの責務を、以下の独立したサブコンポーネント�
 
 TODO(Phase 1): ATCの抽出 - `lookup_trace` 等の各APIについて、事前条件・事後条件・不変条件（ATC）やエラー時の挙動を包括的に定義し、厳格な契約を策定すること。
 
-#### `initialize`
+#### `initialize` `{ConfigurableSystem}`
 
 | 項目 | 内容 |
 | :--- | :--- |
@@ -227,7 +227,7 @@ TODO(Phase 1): ATCの抽出 - `lookup_trace` 等の各APIについて、事前�
 | エラー時の挙動 | メモリ割り当ての不備がある場合はエラーを返す。 |
 | 補足 | `{ConfigurableSystem}` の方針に基づき、基本的にはブート時に一度だけ呼び出される。 |
 
-#### `lookup_trace`
+#### `lookup_trace` `{ConfigurableSystem}`
 
 | 項目 | 内容 |
 | :--- | :--- |
@@ -235,21 +235,21 @@ TODO(Phase 1): ATCの抽出 - `lookup_trace` 等の各APIについて、事前�
 | シグネチャ | `lookup_trace(pc: address) -> result<address, bool>` |
 | 補足 | ビットマップが `COMPILED` でない場合は即座に失敗を返す。その後、`harness` 経由でエントリ索引を検索する。 |
 
-#### `get_card_state`
+#### `get_card_state` `{ConfigurableSystem}`
 
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | 指定したPCが属するカードの状態（2-bit）を取得する。 |
 | シグネチャ | `get_card_state(pc: address) -> u8` |
 
-#### `get_search_range`
+#### `get_search_range` `{ConfigurableSystem}`
 
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | カーソマーキング索引（カードグループ）を用いて、二分探索の範囲を絞り込む。 |
 | シグネチャ | `get_search_range(pc: address) -> result<tuple<u32, u32>, bool>` |
 
-#### `process_batch_compile`
+#### `process_batch_compile` `{ConfigurableSystem}`
 
 | 項目 | 内容 |
 | :--- | :--- |
@@ -259,25 +259,25 @@ TODO(Phase 1): ATCの抽出 - `lookup_trace` 等の各APIについて、事前�
 | 戻り値 | void |
 | 補足 | `executor` 実装内で `co_yield` 発生時に呼び出され、アイドル時間等を活用して処理される。 |
 
-### 6.2 URI/IPCインターフェイス
+### 6.2 URI/IPCインターフェイス `{ConfigurableSystem}`
 本コンポーネントは vSoC の内部ライブラリであり、直接のIPCインターフェイスは持たない。
 
 ## 7. 制約達成の方策
 
-### 7.1 性能制約と方策
+### 7.1 性能制約と方策 `{JIT_CopyAndPatch}` `{JIT_RegisterMapping}`
 - **目標**: コンパイルレイテンシを最小化し、WAMRインタープリタを上回る実行速度を実現。
 - **方策**: 
     - `{JIT_CopyAndPatch}`: 複雑な最適化を省き、テンプレートコピーのみでコンパイルを完了。
     - `{JIT_RegisterMapping}`: `Context`, `StackTop`, `WASM_PC` を物理レジスタに固定し、メモリアクセスを削減。
     - `Card Marking + Card Group Index + Binary Search`: 検索範囲を限定し、高速な検索を実現。
 
-### 7.2 安全性制約と方策
+### 7.2 安全性制約と方策 `{PositionIndependentCode}` `{MemoryBoundaryCheck}`
 - **目標**: 不正なコード実行の防止。
 - **方策**: 
     - `{PositionIndependentCode}`: 生成コードを位置独立とし、配置場所の自由度を確保。
     - `Boundary Check`: コンパイル時にキャッシュ溢れを厳密にチェックし、溢れた場合は Old 領域を破棄して再利用。 `{MemoryBoundaryCheck}`
 
-## 8. 設計判断 (ADR)
+## 8. 設計判断 (ADR) `{ADR_ScalableCodeOffset}` `{ADR_SafeQueuingOnHotMiss}`
 
 - **決定事項**: `{ADR_ScalableCodeOffset}`
   - **背景**: 16ビットの `code_offset` をそのまま使用すると、コードキャッシュが64KBに制限される。将来的に外部メモリ等を活用してキャッシュを拡張（例：512KB）する場合、このビット幅がボトルネックとなる。

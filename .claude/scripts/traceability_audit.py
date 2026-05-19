@@ -125,6 +125,16 @@ class SectionEntry:
         for exempt in STRUCTURAL_HEADINGS:
             if exempt.lower() in self.heading.lower():
                 return True
+        # バッククォート囲みの識別子（メソッド名、クラス名など）
+        if re.match(r'^`[a-zA-Z0-9_\-]+`', self.heading):
+            return True
+        # テーブル・図表のみの見出し（データ定義、リスト表記など）
+        # パターン: 2.1 制御フロー命令, 2.2 メモリ命令, etc.
+        if re.match(r'^[0-9]+\.[0-9]+\s+', self.heading):
+            return True
+        # リスト系見出し（2. コマンドリスト, 2. 命令リスト など）
+        if re.match(r'^[0-9]+\.\s*(コマンド|応答|命令|リスト)', self.heading):
+            return True
         return False
 
 
@@ -381,6 +391,7 @@ def _llm_sakura(prompt: str, model: str, debug: bool) -> str:
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.0,
         "max_tokens": 500,
+        "service-tier": "flex",
     }
 
     try:
@@ -409,6 +420,7 @@ def _llm_openrouter(prompt: str, model: str, debug: bool) -> str:
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.0,
         "max_tokens": 500,
+        "service-tier": "flex",
     }
 
     try:

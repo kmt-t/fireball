@@ -37,8 +37,8 @@ WBSの [Step 0] 盆栽デザイン（SysML）および [Step 1-2] 形式検証�
   - [ ] [Step 0-2] JITキャッシュ (Active/Old) とデバッガ割り込み (Safepoint) の協調モデル
 - [x] **vMMIOセキュリティゲート (TLB)**:
   - [x] [Step 0-2] 3-Tier安全性、ソフトウェアTLBキャッシュ整合性の形式検証完了 `{UnifiedAccessModel}` `{RoleBasedAccessControl}` `{FastAddressCheck}`
-- [ ] **Loaderロールバック機構**:
-  - [ ] [Step 0-2] バンプアロケータの順序とパース失敗時の安全な巻き戻しの形式検証 `{ROMParsing}`
+- [x] **Loaderロールバック機構**:
+  - [x] [Step 0-2] バンプアロケータの順序とパース失敗時の安全な巻き戻しの形式検証完了 `{ROMParsing}` `{BumpAllocator}` `{MultiModule_Support}`
 - [ ] **リソース制約検証**:
   - [ ] [Step 0] SysMLパラメトリック図によるRAM/SLOC予算の遵守検証
 

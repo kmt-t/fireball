@@ -28,15 +28,15 @@ WBSの [Step 0] 盆栽デザイン（SysML）および [Step 1-2] 形式検証�
 - [ ] **COOS / IPC 協調モデル**:
   - [x] [Step 1-2] タスク状態遷移、割り込み通知、Handoffの形式検証 `{UseCpp20Coroutine}` `{CSP_Handoff}`
   - [ ] [Step 0] IPCルータの名前解決・所有権移譲のSysMLモデル化
-- [ ] **IPCパニック・デッドロック回避**:
-  - [ ] [Step 1-2] In-flightパニック時のDropハンドラとメモリリーク防止の整合検証
+- [x] **IPCパニック・デッドロック回避**:
+  - [x] [Step 1-2] In-flightパニック時のDropハンドラとメモリリーク防止の整合検証完了 `{IPC_ZeroCopy}` `{Challenge_CspHandoffStarvation}` `{IPC_DropHandler}`
 
 ### [Tier 2] vSoC Subsystem Verification
 
 - [ ] **vSoC Engine (JIT/Intp) 一貫性**:
   - [ ] [Step 0-2] JITキャッシュ (Active/Old) とデバッガ割り込み (Safepoint) の協調モデル
-- [ ] **vMMIOセキュリティゲート (TLB)**:
-  - [ ] [Step 0-2] 3-Tier安全性、ソフトウェアTLBキャッシュ整合性の形式検証 `{UnifiedAccessModel}`
+- [x] **vMMIOセキュリティゲート (TLB)**:
+  - [x] [Step 0-2] 3-Tier安全性、ソフトウェアTLBキャッシュ整合性の形式検証完了 `{UnifiedAccessModel}` `{RoleBasedAccessControl}` `{FastAddressCheck}`
 - [ ] **Loaderロールバック機構**:
   - [ ] [Step 0-2] バンプアロケータの順序とパース失敗時の安全な巻き戻しの形式検証 `{ROMParsing}`
 - [ ] **リソース制約検証**:

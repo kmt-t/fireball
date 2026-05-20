@@ -1,22 +1,28 @@
 # WIT インターフェイス仕様書 (WASI 準拠版)
 
 ## 1. 目的
+
+<!-- traceability: {WIT_Interface_Purpose} {WIT_First} {WIT_Common_Types} -->
 本ドキュメントは、Fireballプロジェクトにおいてゲスト（WASM）環境に公開されるシステムコールおよびHAL（Hardware Abstraction Layer）のインターフェイス仕様を、WASI (WebAssembly System Interface) 0.2 以降の設計パターン（Component Model, Resources, Streams）に準拠して定義する。
 
 ## 2. アーキテクチャ原則
+
+<!-- traceability: {CleanArchitecture} {SpecificationFirst} {Risk_Tiering} -->
 - **WASI 0.2 パターン採用**: ハンドル管理に `resource`、非同期処理に `pollable`、I/Oに `stream` を使用する。
 - **Tier 1 分離**: システム境界は WASI 標準および Fireball 固有のインターフェイスとして定義される。
 - **Stateless Interface**: リソースハンドルを通じた操作を行い、ホスト側で状態を管理する。
 
 ## 3. 共通データ構造
 
-### 3.1 基礎インターフェイス `{CooperativeMultitasking}` `{Asynchronous_Notification}`
+### 3.1 基礎インターフェイス
+<!-- traceability: {CooperativeMultitasking} {Asynchronous_Notification} -->
 WASI 0.2 の標準パターンに従い、以下の基礎コンポーネントを想定する。
 
 - `pollable`: 非同期イベントの待機用リソース。 `{CooperativeMultitasking}` `{Asynchronous_Notification}`
 - `input-stream` / `output-stream`: ストリーミングデータ転送用リソース。
 
-### 3.2 リカバリー戦略とエラーハンドリング `{RecoveryStrategy}` `{Errorcode_To_Strategy}`
+### 3.2 リカバリー戦略とエラーハンドリング
+<!-- traceability: {RecoveryStrategy} {Errorcode_To_Strategy} -->
 
 本プロジェクトでは、エラーコードではなくリカバリー戦略を返すことで、呼び出し側が具体的なアクション（リトライ/諦める）を取れるようにする。低レイヤー（Syscall）の `errno` は、Shim層でこの戦略に変換される。 `{RecoveryStrategy}` `{Errorcode_To_Strategy}`
 
@@ -42,18 +48,22 @@ type routing-result = result<_, recovery-strategy-category>;
 
 TODO(Phase 1): ATC抽出 - 各リカバリー戦略（retry, restart等）を選択するための不変条件、およびシステム状態（panic時の状態保存など）の事後条件を明確にすること。
 
-#### 設計判断 `{RecoveryStrategy}` `{Errorcode_To_Strategy}`
+#### 設計判断
+<!-- traceability: {RecoveryStrategy} {Errorcode_To_Strategy} -->
 - **実装詳細の分離**: `hardware-error`や`timeout`は実装の内部状態であり、クリーンアーキテクチャの内側が知るべきではない。
 - **アクション指向**: リカバリー戦略により、呼び出し側は具体的なアクション（リトライ/エラーログ出力して諦める）を決定できる。
 - **デバッグ情報の分離**: 失敗の詳細理由はログシステムで確認する。インターフェースには含めない。
 
-## 4. 低レベル・トラップ・インターフェイス `{Syscall_Mapping}`
+## 4. 低レベル・トラップ・インターフェイス
+<!-- traceability: {Syscall_Mapping} -->
 WASI標準には存在しない、Fireball固有の高速システムコール。実体は `docs/components/core/system_syscall.md` で定義される `fireball_call` である。 `{Syscall_Mapping}`
 
-### `fireball:host/trap` `{Syscall_Mapping}`
+### `fireball:host/trap`
+<!-- traceability: {Syscall_Mapping} -->
 - `fireball-call(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32, arg4: u32, arg5: u32) -> u32`
 
-### 4.2 高応答トラインターフェイス `{Syscall_Mapping}`
+### 4.2 高応答トラインターフェイス
+<!-- traceability: {Syscall_Mapping} -->
 Trigger (GPIO) は、割り込み応答性およびビットバンギング等の要求から、一般のリソースハンドルを介さず、`fireball-call` に直接マッピングされた ID を通じて操作することを検討する。
 
 - **理由**: ハンドルルックアップのオーバーヘッド排除、レジスタ直結に近いレイテンシの確保。
@@ -79,7 +89,8 @@ resource periodic-timer {
 }
 ```
 
-### 5.3 `fireball:host/bus` (Master/Slave Bus) `{WASI_Implementation}`
+### 5.3 `fireball:host/bus` (Master/Slave Bus)
+<!-- traceability: {WASI_Implementation} -->
 バス通信も標準WASIにはないため、リソースパターンを適用。
 
 ```wit
@@ -94,7 +105,8 @@ resource bus-slave {
 }
 ```
 
-### 5.4 `fireball:host/streaming` (wasi:io 準拠) `{WASI_Implementation}`
+### 5.4 `fireball:host/streaming` (wasi:io 準拠)
+<!-- traceability: {WASI_Implementation} -->
 一方的なデータ転送は標準のストリームとして扱う。
 
 ```wit
@@ -108,6 +120,8 @@ resource streaming-slave {
 ```
 
 ## 6. 非同期通知メカニズム
+
+<!-- traceability: {Asynchronous_Notification} {WASI_Async_Bridge} -->
 WASIでは割り込みを直接扱うのではなく、`pollable` を通じたイベント待機（`poll`）としてモデル化する。
 
 - **Virtual Interrupts**: 物理割り込みはホストで処理され、対応するリソース（`trigger`, `timer`, `bus-slave` 等）の `pollable` が ready になることでゲストに通知される。

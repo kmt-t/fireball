@@ -1,17 +1,21 @@
 # システムコンフィグ コンポーネント設計書
 
-## 1. コンセプト `{ConfigurableSystem}` `{Static_Resolution}`
+## 1. コンセプト
+<!-- traceability: {ConfigurableSystem} {Static_Resolution} -->
 Fireballハイパーバイザは、リソース制約の厳しい組み込み環境で動作するため、メモリサイズや最大リソース数をコンパイル時に固定する設計を採用する。設定はヘッダファイル形式のコンフィグファイル（`inc/fireball_config.hxx`）内のマクロ定義および `constexpr` 定数によって行われる。 `{ConfigurableSystem}` `{Static_Resolution}`
 
-## 2. アーキテクチャ分類 `{3TierSeparation}` `{Static_Resolution}`
+## 2. アーキテクチャ分類
+<!-- traceability: {3TierSeparation} {Static_Resolution} -->
 本コンポーネントは **Tier 3 (実装ドメイン)** に属する。静的な定数定義のみを提供し、コードベース全体で参照されるグローバルなビューとして機能する。 `{3TierSeparation}` `{Static_Resolution}`
 
 ## 3. 静的モデル
 
-### 3.1 データ構造 `{Resource_Estimation_Model}`
+### 3.1 データ構造
+<!-- traceability: {Resource_Estimation_Model} -->
 コンフィグ項目は、実行時のオーバーヘッドを排除するため、主にプリプロセッサマクロおよび C++ `constexpr` 定数として定義される。設計段階でリソース使用量を概算し、制約適合性を検証するためのモデルを提供する。 `{Resource_Estimation_Model}`
 
-### 3.2 内部ブロック図 `{Resource_Estimation_Model}`
+### 3.2 内部ブロック図
+<!-- traceability: {Resource_Estimation_Model} -->
 ```mermaid
 graph TD
     Config[fireball_config.hxx] --> Memory[Memory Management]
@@ -22,7 +26,8 @@ graph TD
     Config --> Svc[Services]
 ```
 
-### 3.3 主要な構造体・クラス・定数 `{Resource_Estimation_Model}`
+### 3.3 主要な構造体・クラス・定数
+<!-- traceability: {Resource_Estimation_Model} -->
 具体的なコンフィグマクロおよび定数の一覧については、[システムコンフィグマクロ一覧](system_config_details.md) を参照すること。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
@@ -34,13 +39,16 @@ graph TD
 
 ## 4. 動的モデル
 
-### 4.1 アルゴリズム `{Static_Resolution}`
+### 4.1 アルゴリズム
+<!-- traceability: {Static_Resolution} -->
 本コンポーネントは静的な定義のみを提供し、動的なアルゴリズムは持たない。すべての値はコンパイル時に確定する。 `{Static_Resolution}`
 
-### 4.2 状態遷移図 `{Static_Resolution}`
+### 4.2 状態遷移図
+<!-- traceability: {Static_Resolution} -->
 静的構成のため、状態遷移は存在しない。
 
-### 4.3 内部シーケンス `{Static_Resolution}`
+### 4.3 内部シーケンス
+<!-- traceability: {Static_Resolution} -->
 静的構成のため、内部シーケンスは存在しない。
 
 ## 5. インターフェイス定義
@@ -64,14 +72,17 @@ TODO(Phase 1): ATCの抽出 - マクロ間の依存関係や、許容される�
 
 ## 6. 制約達成の方策
 
-### 6.1 性能制約と方策 `{Static_Resolution}`
+### 6.1 性能制約と方策
+<!-- traceability: {Static_Resolution} -->
 - **目標**: 実行時のコンフィグ参照コストをゼロにする。
 - **方策**: `{Static_Resolution}` すべての値をコンパイル時定数とし、実行時の探索や計算を排除する。
 
-### 6.2 メモリ制約と方策 `{ConfigurableSystem}` `{StaticScalability}`
+### 6.2 メモリ制約と方策
+<!-- traceability: {ConfigurableSystem} {StaticScalability} -->
 - **目標**: コンフィグ保持のための動的メモリ消費をゼロにする。
 - **方策**: `{ConfigurableSystem}` `{StaticScalability}` 静的配列のサイズをコンパイル時に決定し、ヒープ消費を最小化する。
 
-### 6.3 安全性制約と方策 `{ConfigurableSystem}`
+### 6.3 安全性制約と方策
+<!-- traceability: {ConfigurableSystem} -->
 - **目標**: 実行時の不正な設定変更を防止する。
 - **方策**: `{ConfigurableSystem}` 設定を読み取り専用領域（ROM/Flash）に配置し、実行時の改ざんを不可能にする。

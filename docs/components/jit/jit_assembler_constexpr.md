@@ -1,9 +1,11 @@
 # コンポーネント設計：constexpr Assembler
 
-## 1. コンセプト `{JIT_Encoder}` `{Static_Resolution}` `{CompileTimeValidation}` `{PositionIndependentCode}`
+## 1. コンセプト
+<!-- traceability: {JIT_Encoder} {Static_Resolution} {CompileTimeValidation} {PositionIndependentCode} -->
 constexpr Assembler は、C++のコンパイル時計算（`constexpr`）機能を活用し、ターゲットアーキテクチャの命令バイナリを型安全かつ効率的に生成するための DSL (Domain Specific Language) である。手動でのビット演算による命令生成を排除し、ビルド時に命令テンプレートを確定させることで、実行時のJITオーバーヘッドを「ゼロ」に近づけるとともに、不正なレジスタ指定や即値溢れをコンパイル時に検知する。 `{JIT_Encoder}` `{Static_Resolution}` `{CompileTimeValidation}` `{PositionIndependentCode}`
 
-## 2. アーキテクチャ分類 `{3TierSeparation}` `{Static_Resolution}` `{ZeroRuntimeOverhead}`
+## 2. アーキテクチャ分類
+<!-- traceability: {3TierSeparation} {Static_Resolution} {ZeroRuntimeOverhead} -->
 本コンポーネントは **Tier 3 (実装ドメイン)** に属する。C++のコンパイル時機能に依存したスタティックなライブラリとして機能し、実行時のオーバーヘッドを持たない。 `{3TierSeparation}` `{Static_Resolution}` `{ZeroRuntimeOverhead}`
 
 ## 3. 静的モデル
@@ -26,6 +28,8 @@ graph TD
 TODO(Phase 0.75): データ構造の厳密化 - `riscv::i_type` 等の基底となるビットフィールドのメモリレイアウト、エンディアン制約、およびconstexpr生成時のアライメント要件を明確化すること。
 
 #### `riscv::i_type`
+
+<!-- traceability: {JIT_Encoder} {ZeroCostAbstraction} -->
 即値演算やロード命令に使用される形式。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
@@ -37,6 +41,8 @@ TODO(Phase 0.75): データ構造の厳密化 - `riscv::i_type` 等の基底と�
 | 組込即値 | 12ビットの符号付き即値データ | ビットフィールド | 12bit |
 
 #### `arm::add_imm`
+
+<!-- traceability: {JIT_Encoder} {ZeroOverhead} -->
 `ADD`, `SUB` などの即値演算（32ビット命令）で使用される形式。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
@@ -87,8 +93,10 @@ TODO(Phase 0.75): ATCの抽出 - `make_instruction` に対する事前条件（�
 
 ## 6. 制約達成の方策
 
-### 6.1 性能制約 `{Static_Resolution}`
+### 6.1 性能制約
+<!-- traceability: {Static_Resolution} -->
 - **方策**: `{Static_Resolution}` により、実行時のデコード・エンコード時間を完全に排除し、Copy-and-Patch 時は単なる `memcpy` 相当の処理を実現する。
 
-### 6.2 安全性制約 `{Static_Resolution}`
+### 6.2 安全性制約
+<!-- traceability: {Static_Resolution} -->
 - **方策**: C++の型システムと `static_assert` を利用し、アセンブラレベルのバグ（誤ったレジスタ使用等）を開発段階で完全に排除する。

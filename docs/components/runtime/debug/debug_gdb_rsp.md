@@ -1,6 +1,7 @@
 # サポートGDB RSPコマンドセット
 
-## 1. 概要 `{RSPMinimalSet}`
+## 1. 概要
+<!-- traceability: {RSPMinimalSet} -->
 VSCodeのC/C++拡張機能が必要とするGDB Remote Serial Protocol (RSP) コマンドの最小セットを定義する。 `{RSPMinimalSet}`
 
 ## 2. コマンドリスト

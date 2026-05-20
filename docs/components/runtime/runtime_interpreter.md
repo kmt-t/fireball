@@ -1,9 +1,11 @@
 # Interpreter コンポーネント設計書
 
-## 1. コンセプト `{ThreadedInterpreter}` `{LowLatencyJIT}` `{InterpreterContextStackless}` `{EnvironmentPointer}`
+## 1. コンセプト
+<!-- traceability: {ThreadedInterpreter} {LowLatencyJIT} {InterpreterContextStackless} {EnvironmentPointer} -->
 Interpreter は、WASM命令をスレッドインタープリタ方式で実行し、低レイテンシかつ小フットプリントでゲストを動作させる。Execution Engine (`executor`) の一部として設計され、JITと実行状態を完全に共有する。周辺コンポーネントへの参照は Environment Pointer (`vsoc_runtime* env`) を介して型安全に行う。 `{ThreadedInterpreter}` `{LowLatencyJIT}` `{InterpreterContextStackless}` `{EnvironmentPointer}`
 
-## 2. アーキテクチャ分類 `{3TierSeparation}`
+## 2. アーキテクチャ分類
+<!-- traceability: {3TierSeparation} -->
 本コンポーネントは **Tier 3 (実装ドメイン)** に属する。デコンポジション（サブモジュール分割）を必要としない単一責務の実行エンジンとして、カプセル化（Natural OO）に基づき設計する。 `{3TierSeparation}`
 
 ## 3. 静的モデル
@@ -41,7 +43,8 @@ graph TD
 | ランタイム環境 | vSoCランタイム環境への参照（プライベートメンバ） | 構造体への参照 | [`vsoc_runtime`](runtime_vsoc.md) (非所有) |
 | ハンドラテーブル | 命令ハンドラへのジャンプテーブル | テーブルポインタ | 関数ポインタの配列 |
 
-#### `execution_context` (実行コンテキスト) `{PositionIndependentCode}` `{ContextPointerRegister}` `{MemoryBoundaryCheck}` `{EnvironmentPointer}`
+#### `execution_context` (実行コンテキスト)
+<!-- traceability: {PositionIndependentCode} {ContextPointerRegister} {MemoryBoundaryCheck} {EnvironmentPointer} -->
 WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想CPUレジスタ群として設計する。 `{PositionIndependentCode}` `{ContextPointerRegister}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
@@ -56,7 +59,8 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 | 制御フレームポインタ | 現在の制御構造（loop/if等）を管理するスタックの頂点 | アドレス値 | 32bit符号なし |
 | 環境ポインタ | 実行に必要な環境（vSoC等）への参照 `{EnvironmentPointer}` | 構造体への参照 | [`vsoc_runtime`](runtime_vsoc.md) |
 
-#### `call_frame` (コールフレーム) `{PositionIndependentCode}` `{ContextPointerRegister}` `{MemoryBoundaryCheck}` `{EnvironmentPointer}`
+#### `call_frame` (コールフレーム)
+<!-- traceability: {PositionIndependentCode} {ContextPointerRegister} {MemoryBoundaryCheck} {EnvironmentPointer} -->
 関数呼び出しごとのローカル変数や戻り先情報を保持する。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
@@ -67,7 +71,8 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 | 関数インデックス | 現在実行中の関数の管理番号 | 関数インデックス | 32bit符号なし |
 | スタック境界 | 呼び出し時に許可されたスタックの最大許容レベル | アドレス値 | 32bit符号なし |
 
-#### `control_frame` (制御フレーム) `{PositionIndependentCode}` `{ContextPointerRegister}` `{MemoryBoundaryCheck}` `{EnvironmentPointer}`
+#### `control_frame` (制御フレーム)
+<!-- traceability: {PositionIndependentCode} {ContextPointerRegister} {MemoryBoundaryCheck} {EnvironmentPointer} -->
 `block/loop/if` 命令によるネスト構造とジャンプ先を管理する。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
@@ -78,7 +83,8 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 | 結果アリティ | このブロックが戻す値の数（スタック Pruning に使用） | 整数 | 8bit/16bit |
 | ループフラグ | 現在の構造が `loop` かどうかを示す | ブール値 | - |
 
-#### `interpreter_config` `{ConfigurableSystem}`
+#### `interpreter_config`
+<!-- traceability: {ConfigurableSystem} -->
 インタープリタの動作パラメータを定義する。 `{ConfigurableSystem}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
@@ -87,7 +93,8 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 | 制御スタック容量 | 制御フレームの最大ネスト可能数 | エントリ数 | 32bit符号なし |
 | Yield 閾値 | 次の yield までに実行を許可する命令（トレース）数 | 回数 | 32bit符号なし |
 
-#### `opcode_handler` / `exec_trace` `{JIT_RuntimeAPI_Fallback}`
+#### `opcode_handler` / `exec_trace`
+<!-- traceability: {JIT_RuntimeAPI_Fallback} -->
 命令ハンドラおよびJITトレースの共通実行シグネチャ。 `{JIT_RuntimeAPI_Fallback}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
@@ -96,7 +103,8 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 
 ## 4. 動的モデル
 
-### 4.1 アルゴリズム `{ThreadedInterpreter}` `{JIT_RuntimeAPI_Fallback}` `{Interpreter_LazyJITSwitch}` `{LowLatencyJIT}` `{SimpleJITArchitecture}` `{Challenge_ApproximateYield}` `{Debug_Integrated}`
+### 4.1 アルゴリズム
+<!-- traceability: {ThreadedInterpreter} {JIT_RuntimeAPI_Fallback} {Interpreter_LazyJITSwitch} {LowLatencyJIT} {SimpleJITArchitecture} {Challenge_ApproximateYield} {Debug_Integrated} -->
 - **Threaded Dispatch**: 命令ハンドラを連鎖させるテーブルディスパッチ方式で分岐コストを削減する。 `{ThreadedInterpreter}`
 - **WASM命令とRuntime APIの1対1対応**: 各命令ハンドラは対応する `void __fastcall (PC, StackTop, Context)` ランタイムAPIを呼び出し、結果は `Context` に書き込まれる。 `{JIT_RuntimeAPI_Fallback}`
 - **継続渡しトレース実行**: 命令ハンドラは継続渡しで次ハンドラへ遷移する。clang前提の `[[clang::musttail]]` を使用し、**非制御命令のみ**末尾呼び出しを行う。
@@ -109,7 +117,8 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 - **概算Yield**: トレース実行数ベースで `co_yield` を発行し、協調型マルチタスクに整合させる。 `{Challenge_ApproximateYield}`
 - **デバッグフック**: 命令実行前後でブレークポイント判定を行い、Debugger に制御を委譲する。 `{Debug_Integrated}`
 
-### 4.2 状態遷移図 `{ThreadedInterpreter}` `{JIT_RuntimeAPI_Fallback}` `{Interpreter_LazyJITSwitch}` `{LowLatencyJIT}` `{SimpleJITArchitecture}` `{Challenge_ApproximateYield}` `{Debug_Integrated}`
+### 4.2 状態遷移図
+<!-- traceability: {ThreadedInterpreter} {JIT_RuntimeAPI_Fallback} {Interpreter_LazyJITSwitch} {LowLatencyJIT} {SimpleJITArchitecture} {Challenge_ApproximateYield} {Debug_Integrated} -->
 ```mermaid
 stateDiagram-v2
     [*] --> Ready
@@ -121,7 +130,8 @@ stateDiagram-v2
     Trap --> Ready: handled
 ```
 
-### 4.3 内部シーケンス `{ThreadedInterpreter}` `{JIT_RuntimeAPI_Fallback}` `{Interpreter_LazyJITSwitch}` `{LowLatencyJIT}` `{SimpleJITArchitecture}` `{Challenge_ApproximateYield}` `{Debug_Integrated}`
+### 4.3 内部シーケンス
+<!-- traceability: {ThreadedInterpreter} {JIT_RuntimeAPI_Fallback} {Interpreter_LazyJITSwitch} {LowLatencyJIT} {SimpleJITArchitecture} {Challenge_ApproximateYield} {Debug_Integrated} -->
 #### Interpreter 実行シーケンス
 ```mermaid
 sequenceDiagram
@@ -162,7 +172,8 @@ sequenceDiagram
 | エラー時の挙動 | メモリ確保失敗時は初期化を中断し、エラー値を返す。 |
 | 補足 | デバッグモードが指定された場合は `debug_handler_table` を使用するように構成する。 |
 
-#### 実行ステップ (`run_step`) `{RecoveryStrategy}`
+#### 実行ステップ (`run_step`)
+<!-- traceability: {RecoveryStrategy} -->
 
 | 項目 | 内容 |
 | :--- | :--- |
@@ -172,7 +183,8 @@ sequenceDiagram
 | 戻り値 | 結果型 (正常終了時は空、トラップ発生時はトラップ要因 `{RecoveryStrategy}`) |
 | 補足 | 必要に応じて内部的に JIT コードへのジャンプを行い、JIT/Interpreter を透過的に切り替える。 |
 
-#### 割り込み同期 (`sync_interrupts`) `{RecoveryStrategy}`
+#### 割り込み同期 (`sync_interrupts`)
+<!-- traceability: {RecoveryStrategy} -->
 
 | 項目 | 内容 |
 | :--- | :--- |
@@ -187,10 +199,12 @@ sequenceDiagram
 | エラー時の挙動 | なし。 |
 | 補足 | vSoC からの通知を仲介する役割を持つ。 |
 
-### 5.2 URI/IPCインターフェイス `{RecoveryStrategy}`
+### 5.2 URI/IPCインターフェイス
+<!-- traceability: {RecoveryStrategy} -->
 本コンポーネントは vSoC の内部ライブラリとして利用され、直接のIPCインターフェイスは持たない。
 
-### 5.3 関連コンポーネントとの連携 `{RecoveryStrategy}`
+### 5.3 関連コンポーネントとの連携
+<!-- traceability: {RecoveryStrategy} -->
 | コンポーネント | 連携内容 | 参照データ構造 |
 | :--- | :--- | :--- |
 | **WASM Loader** | WASMバイナリの索引情報（関数、命令、即値）の提供 | [`module_view`](runtime_loader.md#module_view) |
@@ -200,15 +214,18 @@ sequenceDiagram
 
 ## 6. 制約達成の方策
 
-### 6.1 性能制約と方策 `{ThreadedInterpreter}`
+### 6.1 性能制約と方策
+<!-- traceability: {ThreadedInterpreter} -->
 - **目標**: WAMRインタープリタを上回る実行速度。
 - **方策**: `{ThreadedInterpreter}` による分岐削減と、ホットスポット検知による JIT 移行を組み合わせる。
 
-### 6.2 メモリ制約と方策 `{ThreadedInterpreter}`
+### 6.2 メモリ制約と方策
+<!-- traceability: {ThreadedInterpreter} -->
 - **目標**: 64KB RAM環境で動作。
 - **方策**: `execution_context` と `call_frame` を最小化し、スタック領域を固定サイズ化する。
 
-### 6.3 安全性制約と方策 `{FaultIsolation}` `{MemoryBoundaryCheck}`
+### 6.3 安全性制約と方策
+<!-- traceability: {FaultIsolation} {MemoryBoundaryCheck} -->
 - **目標**: ゲストの暴走を隔離。 `{FaultIsolation}`
 - **方策**: `sp_boundary` と `memory_size` による境界チェック `{MemoryBoundaryCheck}`、`interrupt_flags` による安全な割り込み処理。
 

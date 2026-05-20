@@ -1,6 +1,7 @@
 # サポートWASM命令セット 仕様書
 
-## 1. 概要 `{Wasm32Only}`
+## 1. 概要
+<!-- traceability: {Wasm32Only} -->
 Fireball vSoCがサポートするwasm32命令の最小セットを定義する。浮動小数点演算はリソース削減のため除外されている。 `{Wasm32Only}`
 
 ## 2. 命令リスト

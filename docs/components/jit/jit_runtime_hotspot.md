@@ -1,9 +1,11 @@
 # JIT Hotspot Detector コンポーネント設計書
 
-## 1. コンセプト `{LowLatencyJIT}` `{SimpleJITArchitecture}` `{HistoryBuffer}` `{PeriodicTask}`
+## 1. コンセプト
+<!-- traceability: {LowLatencyJIT} {SimpleJITArchitecture} {HistoryBuffer} {PeriodicTask} -->
 JIT Hotspot Detector は、インタープリタが実行したWASM命令の頻度を監視し、ネイティブコードへの転送（コンパイル）が必要な「ホットスポット」を特定する役割を担う。リソース制約の厳しい環境において、JITコンパイル対象を絞り込むことで、キャッシュ効率とコンパイルオーバーヘッドのバランスを最適化する。 `{LowLatencyJIT}` `{SimpleJITArchitecture}` `{HistoryBuffer}` `{PeriodicTask}`
 
-## 2. アーキテクチャ分類 `{3TierSeparation}` `{SimpleJITArchitecture}`
+## 2. アーキテクチャ分類
+<!-- traceability: {3TierSeparation} {SimpleJITArchitecture} -->
 本コンポーネントは **Tier 3 (実装ドメイン)** に属する。JITコンパイラの内部コンポーネントであり、統計情報の管理とコンパイル要否の判定に特化したアルゴリズムを実装する。 `{3TierSeparation}` `{SimpleJITArchitecture}`
 
 ## 3. 静的モデル

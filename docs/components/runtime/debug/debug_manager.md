@@ -1,9 +1,11 @@
 # デバッガ コンポーネント設計書
 
-## 1. コンセプト `{RSPMinimalSet}` `{DebuggerLabelTableSwitch}` `{MemoryIsolation}` `{Debug_Standard_Env}` `{RSP_Transport_Selectable}` `{Debug_Integrated}`
+## 1. コンセプト
+<!-- traceability: {RSPMinimalSet} {DebuggerLabelTableSwitch} {MemoryIsolation} {Debug_Standard_Env} {RSP_Transport_Selectable} {Debug_Integrated} -->
 デバッガは、VSCode等の外部ツールからのデバッグを可能にするため、GDB Remote Serial Protocol (RSP) に基づく実行制御を行う。標準環境として VSCode, UART, J-Link をサポートする。RSPパケットの解析はHAL層で行われ、デバッガはHALから供給されるコマンドキューを消費して実行状態を制御する。リソース制約に対応するため、デバッグ中はJITを無効化し、インタープリタ実行にフォールバックする設計を採用する。 `{RSPMinimalSet}` `{DebuggerLabelTableSwitch}` `{MemoryIsolation}` `{Debug_Standard_Env}` `{RSP_Transport_Selectable}` `{Debug_Integrated}`
 
-## 2. アーキテクチャ分類 `{3TierSeparation}`
+## 2. アーキテクチャ分類
+<!-- traceability: {3TierSeparation} -->
 本コンポーネントは **Tier 3 (実装ドメイン)** に属する。GDB RSPコマンドの実行制御に特化した単一責務のモジュールとして設計する。 `{3TierSeparation}`
 
 ## 3. 静的モデル
@@ -31,7 +33,8 @@ graph TD
 
 ### 3.3 主要なクラス・構造体・配列・定数
 
-#### `Debugger` クラス `{NoStdVector}`
+#### `Debugger` クラス
+<!-- traceability: {NoStdVector} -->
 依存関係（実行コンテキスト、HAL）と内部状態（ブレークポイント、現在状態）をカプセル化する。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
@@ -43,7 +46,8 @@ graph TD
 | ブレークポイントリスト | 設定されているブレークポイントのアドレス一覧。 | 固定長配列 | `{NoStdVector}` |
 | `last_stop_reason` | 直近の停止要因。 | ID値 | 信号番号等 |
 
-#### `virtual_register_set` `{RSPMinimalSet}`
+#### `virtual_register_set`
+<!-- traceability: {RSPMinimalSet} -->
 GDB等の外部クライアントに提示する仮想的なCPUレジスタ群。 `{RSPMinimalSet}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
@@ -97,6 +101,8 @@ TODO(Phase 1): ATC抽出 - アタッチ時やステップ実行時に、実行�
 
 #### デバッガ接続 (`attach`)
 
+<!-- traceability: {Debug_Standard_Env} -->
+
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | 実行中のWASMエンジンに対してデバッグ機能を有効化し、初期停止状態（Halt）へ移行させる。 |
@@ -106,6 +112,8 @@ TODO(Phase 1): ATC抽出 - アタッチ時やステップ実行時に、実行�
 | 期待する結果 | 正常：デバッガがコンテキストを掌握し、GDB等のツールによる操作が可能になる。 |
 
 #### コマンド処理 (`poll_commands`)
+
+<!-- traceability: {RSPMinimalSet} -->
 
 | 項目 | 内容 |
 | :--- | :--- |
@@ -128,14 +136,17 @@ TODO(Phase 1): ATC抽出 - アタッチ時やステップ実行時に、実行�
 
 ## 6. 制約達成の方策
 
-### 6.1 性能制約と方策 `{DebuggerLabelTableSwitch}`
+### 6.1 性能制約と方策
+<!-- traceability: {DebuggerLabelTableSwitch} -->
 - **目標**: デバッグ無効時のオーバーヘッドをゼロにする。
 - **方策**: `{DebuggerLabelTableSwitch}` デバッガ無効時はインタープリタのハンドラテーブルを切り替えず、通常の高速実行を維持する。
 
-### 6.2 メモリ制約と方策 `{MemoryIsolation}` `{NoStdVector}`
+### 6.2 メモリ制約と方策
+<!-- traceability: {MemoryIsolation} {NoStdVector} -->
 - **目標**: 最小限のRAMでデバッグ機能を提供する。
 - **方策**: `{MemoryIsolation}` `{NoStdVector}` デバッガ専用の固定長バッファと配列を使用し、動的メモリ確保を排除する。
 
-### 6.3 安全性制約と方策 `{MemoryBoundaryCheck}`
+### 6.3 安全性制約と方策
+<!-- traceability: {MemoryBoundaryCheck} -->
 - **目標**: デバッガによる不正なメモリアクセスを防止する。
 - **方策**: `{MemoryBoundaryCheck}` デバッグコマンドによるメモリアクセスに対し、WASMリニアメモリの境界チェックを強制する。

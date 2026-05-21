@@ -94,9 +94,11 @@ TODO(Phase 0.75): ATCの抽出 - `make_instruction` に対する事前条件（�
 ## 6. 制約達成の方策
 
 ### 6.1 性能制約
-<!-- traceability: {Static_Resolution} -->
-- **方策**: `{Static_Resolution}` により、実行時のデコード・エンコード時間を完全に排除し、Copy-and-Patch 時は単なる `memcpy` 相当の処理を実現する。
+<!-- traceability: {Static_Resolution} {ZeroRuntimeOverhead} -->
+- **静的解像 (Static Resolution)**: `{Static_Resolution}` により、命令生成に関わるあらゆるビットシフトや論理和（OR）の演算を実行時から排除し、ビルド時に完全に定数へと評価（解像）しておく。
+- **実行時オーバーヘッドの完全排除 (Zero Runtime Overhead)**: constexpr関数内で事前評価された命令バイト列は実行時に直接メモリアライメントされた命令バッファに転記されるため、実行時のアセンブル処理オーバーヘッドは単なる `memcpy` と同等の超高速なメモリ転送のみとなる。これにより、抽象化のための余分な実行時オーバーヘッドを完全にゼロにする。 `{ZeroRuntimeOverhead}`
 
 ### 6.2 安全性制約
 <!-- traceability: {Static_Resolution} -->
 - **方策**: C++の型システムと `static_assert` を利用し、アセンブラレベルのバグ（誤ったレジスタ使用等）を開発段階で完全に排除する。
+

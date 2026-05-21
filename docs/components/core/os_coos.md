@@ -41,7 +41,7 @@ graph TD
 <!-- traceability: {Policy_Memory} -->
 
 #### `channel` (CSPチャネル)
-タスク間の同期と通信を仲介するデータ構造。
+タスク間の同期と通信を仲介するデータ構造。 `{CSPCommunication}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
@@ -49,11 +49,41 @@ graph TD
 | 送信待機列 | 受信側が準備できるまで送信を待機しているタスクのリスト | リスト構造 | `task_context` のリスト |
 | 受信待機列 | データが到着するまで受信を待機しているタスクのリスト | リスト構造 | `task_context` のリスト |
 
+##### チャネル送受信動作の挙動定義
+チャネルを通じたCSPメッセージ通信の基本的な制御ロジックを以下に示す。 `{CSPCommunication}`
+
+```python
+# CSPチャネルの送受信処理 (概念コード)
+def channel_send(channel: Channel, sender_task: Task, value: CoValue):
+    # 受信待機中のタスクが存在する場合、直接値を渡して実行権を移譲する
+    if channel.receive_queue:
+        receiver = channel.receive_queue.pop(0)
+        receiver.value = value
+        scheduler.wake_up_direct(receiver) # CSP Handoff (直接コンテキストスイッチ)
+    else:
+        # 待機タスクがいなければ、送信キューにデータを積んでブロックする
+        channel.send_queue.append((sender_task, value))
+        scheduler.block_current_task()
+
+def channel_recv(channel: Channel, receiver_task: Task) -> CoValue:
+    # 送信待機中のタスクが存在する場合、データを受け取り送信タスクを起床する
+    if channel.send_queue:
+        sender, value = channel.send_queue.pop(0)
+        scheduler.wake_up(sender)
+        return value
+    else:
+        # 送信タスクがいなければ、受信キューに入ってブロックする
+        channel.receive_queue.append(receiver_task)
+        scheduler.block_current_task()
+```
+
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
-<!-- traceability: {CSP_Handoff} {DirectContextSwitch} {IdleDetection} {StrictMemoryLimit} {IndependentHeap} -->
-- **CSP Handoff (直接スイッチ)**: `send`/`recv` 時に相手タスクが既に待機状態であった場合、スケジューラを介さず即座に相手タスクへ実行権を移譲する。 `{CSP_Handoff}` `{DirectContextSwitch}`
+<!-- traceability: {CSP_Handoff} {DirectContextSwitch} {IdleDetection} {StrictMemoryLimit} {IndependentHeap} {InterruptWakeup} -->
+- **CSP Handoff (直接スイッチ)**: `send`/`recv` 時に相手タスクが既に待機状態であった場合、スケジューラを介さず即座に相手タスクへ実行権を移譲する。 `{CSP_Handoff}`
+- **直接コンテキストスイッチ (Direct Context Switch)**: コルーチンの `handle.resume()` を直接呼び出すことで、OSスケジューラのキュー処理やディスパッチ判断などのオーバーヘッドを介さず、超低レイテンシで実行権を宛先タスクにスイッチする。 `{DirectContextSwitch}`
+- **割り込みウェイクアップ (Interrupt Wakeup)**: 外部割り込みが発生した際、割り込みサービスルーチン（ISR）から `notify_interrupt` が呼び出され、関連する待機中タスクを即座に起床させる（READY状態に遷移して実行可能キューに投入する）。 `{InterruptWakeup}`
 - **Idle Detection**: 全ての実行中タスクがブロック状態にあり、かつイベントキューが空（割り込みや外部イベントによる起床待ちのみ）の場合にアイドル状態と判定する。この条件を `idle_hook` のトリガーとし、バックグラウンド処理（ログフラッシュ等）を呼び出す。 `{IdleDetection}`
 - **Memory Management**: タスク生成時に独立したメモリパーティションを割り当てる。 `{StrictMemoryLimit}` `{IndependentHeap}`
 
@@ -66,14 +96,27 @@ graph TD
 各コンポーネントの公開仕様を定義する。 `{StaticDI}`
 
 ### 5.1 `coos_harness` (システムハーネス)
-<!-- traceability: {StaticDI} -->
-コンポーネント間の依存関係を集約する構造体。
+<!-- traceability: {StaticDI} {ComponentHarness} -->
+コンポーネント間の依存関係を集約する構造体。テストの容易性と依存性の分離を実現する。 `{ComponentHarness}` `{StaticDI}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
 | スケジューラ | タスクの実行順序を管理するコンポーネントへの参照 | 構造体への参照 | [`scheduler`](os_scheduler.md) |
 | 通信エンジン | タスク間のCSP通信を制御するコンポーネントへの参照 | 構造体への参照 | `co_csp` |
 | メモリ管理 | タスク固有のメモリ領域を管理するコンポーネントへの参照 | 構造体への参照 | `co_mem` |
+
+##### ハーネスによる依存性注入パターン
+システムハーネスは以下のようにコンポーネントへの参照を集約し、静的に注入される。 `{ComponentHarness}`
+
+```python
+# システムハーネスによる依存性注入パターン
+class CoosHarness:
+    def __init__(self, scheduler: "Scheduler", csp: "CspEngine", memory: "MemoryManager"):
+        # 各サブコンポーネントへの参照を保持し、結合テストやモックの差し替えを容易にする
+        self.scheduler = scheduler
+        self.csp = csp
+        self.memory = memory
+```
 
 ### 5.2 サブコンポーネント・インターフェイス
 <!-- traceability: {StaticDI} -->

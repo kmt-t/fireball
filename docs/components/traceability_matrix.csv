@@ -6,15 +6,15 @@ docs/components/core/os_coos.md,3,3.1 データ構造,Policy_Memory,YES,19,<!-- 
 docs/components/core/os_coos.md,3,3.2 内部ブロック図,Policy_Memory,YES,25,<!-- traceability: {Policy_Memory} --> ```mermaid graph TD     subgraph Harness[COOS Harness]       
 docs/components/core/os_coos.md,4,`channel` (CSPチャネル),,NO,43,
 docs/components/core/os_coos.md,3,3.3 主要なデータ定義,,NO,40,
-docs/components/core/os_coos.md,2,3. 静的モデル,Policy_Memory,YES,17, ### 3.1 データ構造 <!-- traceability: {Policy_Memory} --> - **`channel`**: 1エントリのバッファを持つ同期オブジェクト。 - **`c
-docs/components/core/os_coos.md,3,4.1 アルゴリズム,CSP_Handoff|DirectContextSwitch|IdleDetection|StrictMemoryLimit|IndependentHeap,YES,54,<!-- traceability: {CSP_Handoff} {DirectContextSwitch} {IdleDetection} {StrictMemoryLimit} {Independ
-docs/components/core/os_coos.md,3,4.2 状態遷移,,NO,60,
-docs/components/core/os_coos.md,2,4. 動的モデル,CSP_Handoff|DirectContextSwitch|IdleDetection|StrictMemoryLimit|IndependentHeap|StaticDI,YES,52, ### 4.1 アルゴリズム <!-- traceability: {CSP_Handoff} {DirectContextSwitch} {IdleDetection} {StrictMemory
-docs/components/core/os_coos.md,3,5.1 `coos_harness` (システムハーネス),StaticDI,YES,68,<!-- traceability: {StaticDI} --> コンポーネント間の依存関係を集約する構造体。  | 項目名 | 機能と役割 | 型分類 | サイズ・制約 | | :--- | :-
-docs/components/core/os_coos.md,3,5.2 サブコンポーネント・インターフェイス,,NO,78,
-docs/components/core/os_coos.md,2,5. インターフェイス設計,StaticDI,YES,64,<!-- traceability: {StaticDI} --> 各コンポーネントの公開仕様を定義する。 `{StaticDI}`  ### 5.1 `coos_harness` (システムハーネス
-docs/components/core/os_coos.md,2,6. 検証,,NO,89,
-docs/components/core/os_coos.md,3,6.1 直交表: CSP通信と状態遷移,,NO,91,チャネル通信時のタスク状態とスケジューラの挙動を検証する。割り込み通知はイベント駆動型として扱われる。  | ケース | 自タスク要求 | チャネル状態 | 相手状態 | 期待される動作 (自) | 
+docs/components/core/os_coos.md,2,3. 静的モデル,Policy_Memory|CSPCommunication,YES,17, ### 3.1 データ構造 <!-- traceability: {Policy_Memory} --> - **`channel`**: 1エントリのバッファを持つ同期オブジェクト。 - **`c
+docs/components/core/os_coos.md,3,4.1 アルゴリズム,CSP_Handoff|DirectContextSwitch|IdleDetection|StrictMemoryLimit|IndependentHeap|InterruptWakeup,YES,82,<!-- traceability: {CSP_Handoff} {DirectContextSwitch} {IdleDetection} {StrictMemoryLimit} {Independ
+docs/components/core/os_coos.md,3,4.2 状態遷移,,NO,90,
+docs/components/core/os_coos.md,2,4. 動的モデル,CSP_Handoff|DirectContextSwitch|IdleDetection|StrictMemoryLimit|IndependentHeap|InterruptWakeup|StaticDI,YES,80, ### 4.1 アルゴリズム <!-- traceability: {CSP_Handoff} {DirectContextSwitch} {IdleDetection} {StrictMemory
+docs/components/core/os_coos.md,3,5.1 `coos_harness` (システムハーネス),StaticDI|ComponentHarness,YES,98,<!-- traceability: {StaticDI} {ComponentHarness} --> コンポーネント間の依存関係を集約する構造体。テストの容易性と依存性の分離を実現する。 `{Co
+docs/components/core/os_coos.md,3,5.2 サブコンポーネント・インターフェイス,,NO,121,
+docs/components/core/os_coos.md,2,5. インターフェイス設計,StaticDI|ComponentHarness,YES,94,<!-- traceability: {StaticDI} --> 各コンポーネントの公開仕様を定義する。 `{StaticDI}`  ### 5.1 `coos_harness` (システムハーネス
+docs/components/core/os_coos.md,2,6. 検証,,NO,132,
+docs/components/core/os_coos.md,3,6.1 直交表: CSP通信と状態遷移,,NO,134,チャネル通信時のタスク状態とスケジューラの挙動を検証する。割り込み通知はイベント駆動型として扱われる。  | ケース | 自タスク要求 | チャネル状態 | 相手状態 | 期待される動作 (自) | 
 docs/components/core/os_scheduler.md,2,1. コンセプト,CooperativeMultitasking|UseCpp23Library|UseCpp20Coroutine|COOS_Deterministic|CSPCommunication,YES,3,<!-- traceability: {CooperativeMultitasking} {UseCpp23Library} {UseCpp20Coroutine} {COOS_Determinist
 docs/components/core/os_scheduler.md,2,2. アーキテクチャ分類,3TierSeparation,YES,7,<!-- traceability: {3TierSeparation} --> 本コンポーネントは **Tier 3 (実装ドメイン)** に属する。コルーチンハンドルの管理とタスク実行順序の制御に
 docs/components/core/os_scheduler.md,3,3.1 データ構造,COOS_Transparent,YES,13,<!-- traceability: {COOS_Transparent} --> - **`Scheduler`**: タスクのREADYキュー管理、実行順序制御、およびコルーチン実行をカプセル化し
@@ -35,8 +35,10 @@ docs/components/core/os_scheduler.md,4,`notify-interrupt` (内部 API),,NO,147,|
 docs/components/core/os_scheduler.md,4,`terminate`,,NO,157,
 docs/components/core/os_scheduler.md,3,5.1 公開API,,NO,79,
 docs/components/core/os_scheduler.md,2,5. インターフェイス設計,ConceptHarnessDI|COOS_Scheduling_Refine|LowOverheadSwitch|Challenge_CoosBlockedList,YES,77, ### 5.1 公開API 外部から利用可能なオブジェクト指向APIを定義する。依存関係は `initialize` メソッドで注入する。  #### 初期化 (`init-scheduler`) 
-docs/components/core/os_scheduler.md,2,6. 設計判断 (ADR),,NO,166,
 docs/components/core/os_scheduler.md,3,ADR-SCHED-001: 侵入型リストによる管理,Policy_Memory,YES,168,<!-- traceability: {Policy_Memory} --> - **決定事項**: TCBの連結には `std::list` 等を避け、TCB自体に `next` ポインタを持たせる
+docs/components/core/os_scheduler.md,3,ADR-SCHED-002: アルゴリズムの継続的改善と最適化,,NO,173,
+docs/components/core/os_scheduler.md,2,6. 設計判断 (ADR),Policy_Memory|COOS_Scheduling_Refine,YES,166, ### ADR-SCHED-001: 侵入型リストによる管理 <!-- traceability: {Policy_Memory} --> - **決定事項**: TCBの連結には `std::li
+docs/components/core/os_scheduler.md,3,ADR-SCHED-003: BLOCKEDタスクリストの管理コストとリアルタイム性,Challenge_CoosBlockedList,YES,178,<!-- traceability: {Challenge_CoosBlockedList} --> - **決定事項**: `BLOCKED` タスクリストの管理において、起床待ちタスクを線形スキャ
 docs/components/core/system_config.md,2,1. コンセプト,ConfigurableSystem|Static_Resolution,YES,3,<!-- traceability: {ConfigurableSystem} {Static_Resolution} --> Fireballハイパーバイザは、リソース制約の厳しい組み込み環境で動作
 docs/components/core/system_config.md,2,2. アーキテクチャ分類,3TierSeparation|Static_Resolution,YES,7,<!-- traceability: {3TierSeparation} {Static_Resolution} --> 本コンポーネントは **Tier 3 (実装ドメイン)** に属する。静的な定
 docs/components/core/system_config.md,3,3.1 データ構造,Resource_Estimation_Model,YES,13,<!-- traceability: {Resource_Estimation_Model} --> コンフィグ項目は、実行時のオーバーヘッドを排除するため、主にプリプロセッサマクロおよび C++ `
@@ -58,14 +60,14 @@ docs/components/core/system_config.md,3,6.3 安全性制約と方策,Configurabl
 docs/components/core/system_config_details.md,2,1. 概要,ConfigurableSystem,YES,3,<!-- traceability: {ConfigurableSystem} --> Fireballハイパーバイザの動作パラメータを定義するコンパイル時設定マクロの一覧である。これらのマクロは `
 docs/components/core/system_config_details.md,3,2.1 メモリ管理,ConsolidatedHeap|IndependentHeap|StrictMemoryLimit,YES,11,<!-- traceability: {ConsolidatedHeap} {IndependentHeap} {StrictMemoryLimit} --> | マクロ名 | 説明 | 標準 (20
 docs/components/core/system_config_details.md,3,2.2 IPCルータ,StaticScalability|RoleBasedAccessControl,YES,19,<!-- traceability: {StaticScalability} {RoleBasedAccessControl} --> | マクロ名 | 説明 | デフォルト値 (例) | 導出元 |
-docs/components/core/system_config_details.md,3,2.3 HAL,ConfigurableSystem,YES,26,<!-- traceability: {ConfigurableSystem} --> | マクロ名 | 説明 | デフォルト値 (例) | 導出元 | | :--- | :--- | :--- | 
-docs/components/core/system_config_details.md,3,2.4 vSoC / vMMIO,JIT_DoubleBuffer_Cache|FastAddressCheck|StrictMemoryLimit|vMMIO_Isolation|ConfigurableSystem|RestrictedPhysicalAccess,YES,34,<!-- traceability: {JIT_DoubleBuffer_Cache} {FastAddressCheck} {StrictMemoryLimit} {vMMIO_Isolation}
-docs/components/core/system_config_details.md,3,2.5 ロギング,BufferedLogging,YES,45,<!-- traceability: {BufferedLogging} --> | マクロ名 | 説明 | デフォルト値 (例) | 導出元 | | :--- | :--- | :--- | :--
-docs/components/core/system_config_details.md,3,2.6 デバッガ,ConfigurableSystem|Challenge_DebuggerResource|ConsolidatedHeap|IndependentHeap|StrictMemoryLimit|StaticScalability|RoleBasedAccessControl|JIT_DoubleBuffer_Cache|FastAddressCheck|vMMIO_Isolation|RestrictedPhysicalAccess|BufferedLogging,YES,51,<!-- traceability: {ConfigurableSystem} {Challenge_DebuggerResource} --> | マクロ名 | 説明 | デフォルト値 (例) | 
-docs/components/core/system_config_details.md,4,task_id 型,,NO,63,
+docs/components/core/system_config_details.md,3,2.3 HAL,ConfigurableSystem,YES,39,<!-- traceability: {ConfigurableSystem} --> | マクロ名 | 説明 | デフォルト値 (例) | 導出元 | | :--- | :--- | :--- | 
+docs/components/core/system_config_details.md,3,2.4 vSoC / vMMIO,JIT_DoubleBuffer_Cache|FastAddressCheck|StrictMemoryLimit|vMMIO_Isolation|ConfigurableSystem|RestrictedPhysicalAccess,YES,47,<!-- traceability: {JIT_DoubleBuffer_Cache} {FastAddressCheck} {StrictMemoryLimit} {vMMIO_Isolation}
+docs/components/core/system_config_details.md,3,2.5 ロギング,BufferedLogging,YES,71,<!-- traceability: {BufferedLogging} --> | マクロ名 | 説明 | デフォルト値 (例) | 導出元 | | :--- | :--- | :--- | :--
+docs/components/core/system_config_details.md,3,2.6 デバッガ,ConfigurableSystem|Challenge_DebuggerResource|ConsolidatedHeap|IndependentHeap|StrictMemoryLimit|StaticScalability|RoleBasedAccessControl|JIT_DoubleBuffer_Cache|FastAddressCheck|vMMIO_Isolation|RestrictedPhysicalAccess|BufferedLogging,YES,77,<!-- traceability: {ConfigurableSystem} {Challenge_DebuggerResource} --> | マクロ名 | 説明 | デフォルト値 (例) | 
+docs/components/core/system_config_details.md,4,task_id 型,,NO,89,
 docs/components/core/system_config_details.md,2,2. マクロ一覧,ConsolidatedHeap|IndependentHeap|StrictMemoryLimit|StaticScalability|RoleBasedAccessControl|ConfigurableSystem|JIT_DoubleBuffer_Cache|FastAddressCheck|vMMIO_Isolation|RestrictedPhysicalAccess|BufferedLogging|Challenge_DebuggerResource,YES,7, TODO(Phase 1): ATC抽出 - 各コンフィグ値の有効範囲、メモリサイズ上限との整合に関する静的アサーション条件を明確に定義すること。  ### 2.1 メモリ管理 <!-- trace
-docs/components/core/system_config_details.md,3,2.7 型定義・予約値,ConsolidatedHeap|IndependentHeap|StrictMemoryLimit|StaticScalability|RoleBasedAccessControl|ConfigurableSystem|JIT_DoubleBuffer_Cache|FastAddressCheck|vMMIO_Isolation|RestrictedPhysicalAccess|BufferedLogging|Challenge_DebuggerResource,YES,58,<!-- traceability: {ConsolidatedHeap} {IndependentHeap} {StrictMemoryLimit} {StaticScalability} {Rol
-docs/components/core/system_config_details.md,4,最大タスク数制約,StaticScalability,YES,71,<!-- traceability: {StaticScalability} -->  | マクロ名 | 説明 | デフォルト値 (例) | 導出元 | | :--- | :--- | :--- | 
+docs/components/core/system_config_details.md,3,2.7 型定義・予約値,ConsolidatedHeap|IndependentHeap|StrictMemoryLimit|StaticScalability|RoleBasedAccessControl|ConfigurableSystem|JIT_DoubleBuffer_Cache|FastAddressCheck|vMMIO_Isolation|RestrictedPhysicalAccess|BufferedLogging|Challenge_DebuggerResource,YES,84,<!-- traceability: {ConsolidatedHeap} {IndependentHeap} {StrictMemoryLimit} {StaticScalability} {Rol
+docs/components/core/system_config_details.md,4,最大タスク数制約,StaticScalability,YES,97,<!-- traceability: {StaticScalability} -->  | マクロ名 | 説明 | デフォルト値 (例) | 導出元 | | :--- | :--- | :--- | 
 docs/components/core/system_logging.md,2,1. コンセプト,IPCRouter|DictionaryBasedIPC|BufferedLogging|IdleDetection,YES,3,<!-- traceability: {IPCRouter} {DictionaryBasedIPC} {BufferedLogging} {IdleDetection} --> ロギングコンポーネン
 docs/components/core/system_logging.md,2,2. アーキテクチャ分類,3TierSeparation,YES,7,<!-- traceability: {3TierSeparation} --> 本コンポーネントは **Tier 3 (実装ドメイン)** に属する。ログの収集、バッファリング、およびバックグラウン
 docs/components/core/system_logging.md,3,3.1 データ構造,,NO,13,- **`Logger`**: ログの収集、バッファリング、および物理出力への転送を一括して管理する主要クラス。 - **`logging_config`**: バッファサイズやデフォルトログレベルな
@@ -126,12 +128,13 @@ docs/components/interface/interface_wit.md,3,4.2 高応答トラインターフ�
 docs/components/interface/interface_wit.md,2,4. 低レベル・トラップ・インターフェイス,Syscall_Mapping,YES,57,<!-- traceability: {Syscall_Mapping} --> WASI標準には存在しない、Fireball固有の高速システムコール。実体は `docs/components/cor
 docs/components/interface/interface_wit.md,3,5.1 `fireball:host/timer` (wasi:clocks 準拠),,NO,82,`wasi:clocks/monotonic-clock` のサブセットとして定義。  ```wit resource periodic-timer {     get-now: func() -> 
 docs/components/interface/interface_wit.md,3,5.3 `fireball:host/bus` (Master/Slave Bus),WASI_Implementation,YES,92,<!-- traceability: {WASI_Implementation} --> バス通信も標準WASIにはないため、リソースパターンを適用。  ```wit resource bus-mas
-docs/components/interface/interface_wit.md,3,5.4 `fireball:host/streaming` (wasi:io 準拠),,NO,108,
+docs/components/interface/interface_wit.md,3,5.4 `fireball:host/streaming` (wasi:io 準拠),WASI_Implementation,YES,108,<!-- traceability: {WASI_Implementation} --> 一方的なデータ転送は標準のストリームとして扱う。  ```wit resource streaming-mas
+docs/components/interface/interface_wit.md,3,5.5 WASI標準APIの実装仕様 (WASI Standard API Implementation Specification),,NO,122,
 docs/components/interface/interface_wit.md,2,5. HAL インターフェイス,WASI_Implementation,YES,80, ### 5.1 `fireball:host/timer` (wasi:clocks 準拠) `wasi:clocks/monotonic-clock` のサブセットとして定義。  ```wit r
-docs/components/interface/interface_wit.md,2,6. 非同期通知メカニズム,Asynchronous_Notification|WASI_Async_Bridge,YES,122, <!-- traceability: {Asynchronous_Notification} {WASI_Async_Bridge} --> WASIでは割り込みを直接扱うのではなく、`pollab
-docs/components/interface/interface_wit.md,2,7. フィードバック：WASI 準拠における制約事項,,NO,129,WASI仕様と HAL の乖離および考慮点は以下の通り：  1. **GPIO/Bus の不在**: WASI (CLI/Cloud) には GPIO や I2C/SPI の標準インターフェイスがない
-docs/components/interface/interface_wit.md,2,8. 命名規則 (Naming Conventions),,NO,136, WIT識別子は WASI 標準および `wasm-tools` の制約により `kebab-case` (ハイフン区切り) が必須である。プロジェクトでは以下のセマンティクス規約を適用する。  | 
-docs/components/interface/interface_wit.md,3,8.1 設計上の留意点,,NO,147,- **Kebab-Case Mandatory**: WIT定義内で `snake_case` (アンダースコア) は使用禁止。 - **C++ へのマッピング**: 生成される C++ コードでは
+docs/components/interface/interface_wit.md,2,6. 非同期通知メカニズム,Asynchronous_Notification|WASI_Async_Bridge,YES,139, <!-- traceability: {Asynchronous_Notification} {WASI_Async_Bridge} --> WASIでは割り込みを直接扱うのではなく、`pollab
+docs/components/interface/interface_wit.md,2,7. フィードバック：WASI 準拠における制約事項,,NO,146,WASI仕様と HAL の乖離および考慮点は以下の通り：  1. **GPIO/Bus の不在**: WASI (CLI/Cloud) には GPIO や I2C/SPI の標準インターフェイスがない
+docs/components/interface/interface_wit.md,2,8. 命名規則 (Naming Conventions),,NO,153, WIT識別子は WASI 標準および `wasm-tools` の制約により `kebab-case` (ハイフン区切り) が必須である。プロジェクトでは以下のセマンティクス規約を適用する。  | 
+docs/components/interface/interface_wit.md,3,8.1 設計上の留意点,,NO,164,- **Kebab-Case Mandatory**: WIT定義内で `snake_case` (アンダースコア) は使用禁止。 - **C++ へのマッピング**: 生成される C++ コードでは
 docs/components/interface/ipc_router.md,2,1. コンセプト,IPCRouter|URIAbstraction|RoleBasedAccessControl|OwnershipTransfer|IPCDI,YES,3,<!-- traceability: {IPCRouter} {URIAbstraction} {RoleBasedAccessControl} {OwnershipTransfer} {IPCDI}
 docs/components/interface/ipc_router.md,2,2. アーキテクチャ分類,3TierSeparation|IPCRouter|URIAbstraction,YES,7,<!-- traceability: {3TierSeparation} {IPCRouter} {URIAbstraction} --> 本コンポーネントは **Tier 1 (アーキテクチャドメイ
 docs/components/interface/ipc_router.md,3,3.1 データ構造,IPCRegistry|FlatMapIndexed|RoleBasedAccessControl,YES,13,<!-- traceability: {IPCRegistry} {FlatMapIndexed} {RoleBasedAccessControl} --> - **レジストリエントリ**: 登録され
@@ -200,8 +203,8 @@ docs/components/jit/jit_assembler_constexpr.md,4,Instruction Constructor,,NO,84,
 docs/components/jit/jit_assembler_constexpr.md,3,5.1 公開API (C++ DSL),,NO,80,
 docs/components/jit/jit_assembler_constexpr.md,2,5. インターフェイス定義,,NO,78, ### 5.1 公開API (C++ DSL)  TODO(Phase 0.75): ATCの抽出 - `make_instruction` に対する事前条件（即値の範囲チェック等）と、不正入力時の
 docs/components/jit/jit_assembler_constexpr.md,3,6.1 性能制約,,NO,96,
-docs/components/jit/jit_assembler_constexpr.md,2,6. 制約達成の方策,Static_Resolution,YES,94, ### 6.1 性能制約 <!-- traceability: {Static_Resolution} --> - **方策**: `{Static_Resolution}` により、実行時のデコー
-docs/components/jit/jit_assembler_constexpr.md,3,6.2 安全性制約,Static_Resolution,YES,100,<!-- traceability: {Static_Resolution} --> - **方策**: C++の型システムと `static_assert` を利用し、アセンブラレベルのバグ（誤った
+docs/components/jit/jit_assembler_constexpr.md,2,6. 制約達成の方策,Static_Resolution|ZeroRuntimeOverhead,YES,94, ### 6.1 性能制約 <!-- traceability: {Static_Resolution} {ZeroRuntimeOverhead} --> - **静的解像 (Static Reso
+docs/components/jit/jit_assembler_constexpr.md,3,6.2 安全性制約,Static_Resolution,YES,101,<!-- traceability: {Static_Resolution} --> - **方策**: C++の型システムと `static_assert` を利用し、アセンブラレベルのバグ（誤った
 docs/components/jit/jit_compiler.md,2,1. コンセプト,LowLatencyJIT|JIT_CopyAndPatch|JIT_ZeroCompileCostTheorem|SimpleJITArchitecture|PeriodicTask|IdleDetection|JIT_Encoder,YES,3,<!-- traceability: {LowLatencyJIT} {JIT_CopyAndPatch} {JIT_ZeroCompileCostTheorem} {SimpleJITArchite
 docs/components/jit/jit_compiler.md,2,2. アーキテクチャ分類,3TierSeparation|ComponentHarness,YES,7,<!-- traceability: {3TierSeparation} {ComponentHarness} --> 本コンポーネントは **Tier 2 (サブシステムドメイン)** に属し、St
 docs/components/jit/jit_compiler.md,3,3.1 データ構造,JIT_DoubleBuffer_Cache|SimpleJITArchitecture,YES,13,<!-- traceability: {JIT_DoubleBuffer_Cache} {SimpleJITArchitecture} --> - **JITキャッシュ**: ネイティブコードを保持す
@@ -252,8 +255,9 @@ docs/components/jit/jit_engine_copy_patch.md,2,4. 動的モデル,,NO,47, ### 4.
 docs/components/jit/jit_engine_copy_patch.md,4,`compile_trace`,,NO,91,
 docs/components/jit/jit_engine_copy_patch.md,3,5.1 公開API,,NO,87,
 docs/components/jit/jit_engine_copy_patch.md,2,5. インターフェイス定義,,NO,85, ### 5.1 公開API  TODO(Phase 1): ATCの抽出 - `compile_trace` における `dest` バッファのサイズ要件（事前条件）など、暗黙の前提を明文化すること
-docs/components/jit/jit_engine_copy_patch.md,2,6. 制約達成の方策,,NO,100,
-docs/components/jit/jit_engine_copy_patch.md,3,6.1 性能制約,JIT_CopyAndPatch|JIT_RuntimeAPI_Fallback,YES,102,<!-- traceability: {JIT_CopyAndPatch} {JIT_RuntimeAPI_Fallback} --> - **方策**: `{JIT_CopyAndPatch}` に
+docs/components/jit/jit_engine_copy_patch.md,3,6.1 性能制約と最優先設計方針,,NO,102,
+docs/components/jit/jit_engine_copy_patch.md,2,6. 制約達成の方策,LowLatencyJIT|JIT_CopyAndPatch|JIT_RuntimeAPI_Fallback,YES,100, ### 6.1 性能制約と最優先設計方針 <!-- traceability: {LowLatencyJIT} {JIT_CopyAndPatch} {JIT_RuntimeAPI_Fallback
+docs/components/jit/jit_engine_copy_patch.md,3,6.2 3層分離設計 (3-Tier Separation),3TierSeparation,YES,108,<!-- traceability: {3TierSeparation} --> - **3層構造における役割**: 本コンポーネントは、システムアーキテクチャにおける「Tier 3 (実装ドメイン)
 docs/components/jit/jit_runtime_entry.md,2,1. コンセプト,SimpleJITArchitecture|JIT_DoubleBuffer_Cache|FlatMapIndexed|BinarySearch,YES,3,<!-- traceability: {SimpleJITArchitecture} {JIT_DoubleBuffer_Cache} {FlatMapIndexed} {BinarySearch} 
 docs/components/jit/jit_runtime_entry.md,2,2. アーキテクチャ分類,3TierSeparation|SimpleJITArchitecture,YES,8,<!-- traceability: {3TierSeparation} {SimpleJITArchitecture} --> 本コンポーネントは **Tier 3 (実装ドメイン)** に属する。
 docs/components/jit/jit_runtime_entry.md,3,3.1 データ構造,,NO,14,- **`JitEntryIndex`**: WASMオフセットとネイティブコードの対応付け、および高速な検索ロジックをカプセル化した主要クラス。 - **JITエントリ表**: 命令オフセットと生成
@@ -287,7 +291,7 @@ docs/components/jit/jit_runtime_hotspot.md,4,`process_history`,,NO,76,
 docs/components/jit/jit_runtime_hotspot.md,3,5.1 公開API,,NO,63,
 docs/components/jit/jit_runtime_hotspot.md,2,5. インターフェイス定義,,NO,61, ### 5.1 公開API  TODO(Phase 1): ATCの抽出 - `record_execution` におけるバッファ溢れ時の振る舞い（リングバッファ上書き等）、`process_hi
 docs/components/jit/jit_runtime_hotspot.md,2,6. 制約達成の方策,,NO,84,
-docs/components/jit/jit_runtime_hotspot.md,3,6.1 性能制約,,NO,86,- **方策**: 2-bitビットマップにより、高速な状態遷移とメモリ節約を両立する。
+docs/components/jit/jit_runtime_hotspot.md,3,6.1 性能制約,LowLatencyJIT|SimpleJITArchitecture,YES,86,<!-- traceability: {LowLatencyJIT} {SimpleJITArchitecture} --> - **コンパイルレイテンシの最小化 (Low Latency JIT)*
 docs/components/platform/platform_hal.md,2,1. コンセプト,IPCRouter|Challenge_InterruptSafety|TaskPollInterruptFlag|RSPMinimalSet|Fast_Path_GPIO,YES,3,<!-- traceability: {IPCRouter} {Challenge_InterruptSafety} {TaskPollInterruptFlag} {RSPMinimalSet} {
 docs/components/platform/platform_hal.md,2,2. アーキテクチャ分類,3TierSeparation|IPCRouter|URIAbstraction|StaticDI,YES,7,<!-- traceability: {3TierSeparation} {IPCRouter} {URIAbstraction} {StaticDI} --> 本コンポーネントは **Tier 1 
 docs/components/platform/platform_hal.md,3,3.1 データ構造,,NO,13,- **デバイスレジストリ**: 管理対象のデバイス情報を保持する静的配列。 - **HALバッファプール**: デバイス通信用に使用する、ドライバ側で管理されるバッファプール。**vMMIOの動的領

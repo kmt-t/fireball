@@ -105,20 +105,24 @@ def _read_api_key(name: str) -> str:
 
 SAKURA_AI_API_KEY = _read_api_key("SAKURA_AI_API_KEY")
 OPEN_ROUTER_API_KEY = _read_api_key("OPEN_ROUTER_API_KEY")
+GEMINI_API_KEY = _read_api_key("GEMINI_API_KEY") or _read_api_key("GOOGLE_API_KEY")
 
 USE_SAKURA = bool(SAKURA_AI_API_KEY)
 USE_OPENROUTER = bool(OPEN_ROUTER_API_KEY) and not USE_SAKURA
+USE_GEMINI = bool(GEMINI_API_KEY) and not USE_SAKURA and not USE_OPENROUTER
 
 SAKURA_MODEL = "gpt-oss-120b"
 OPEN_ROUTER_MODEL = "google/gemini-3.1-pro-preview"
+GEMINI_MODEL = "gemini-2.5-flash"
 CHECK_MODEL = "qwen2.5-coder:3b"
 
 if ARGS.model:
-    SAKURA_MODEL = OPEN_ROUTER_MODEL = ARGS.model
+    SAKURA_MODEL = OPEN_ROUTER_MODEL = GEMINI_MODEL = ARGS.model
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 SAKURA_URL = "https://api.ai.sakura.ad.jp/v1/chat/completions"
+GEMINI_URL_TEMPLATE = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
 
 RESET = "\033[0m"
 RED = "\033[31m"
@@ -250,6 +254,8 @@ def call_llm(prompt: str, max_tokens: int = 768, openrouter: bool | None = None)
         return call_sakura(prompt, max_tokens)
     if USE_OPENROUTER:
         return call_openrouter(prompt, max_tokens)
+    if USE_GEMINI:
+        return call_gemini(prompt)
     return call_ollama(prompt, max_tokens)
 
 
@@ -259,6 +265,7 @@ def call_sakura(prompt: str, max_tokens: int = 768) -> str:
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.0,
         "max_tokens": max_tokens,
+        "service_tier": "flex",
     }
     data = json.dumps(payload).encode("utf-8")
     headers = {
@@ -324,6 +331,7 @@ def call_openrouter(prompt: str, max_tokens: int = 768) -> str:
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.0,
         "max_tokens": max_tokens,
+        "service_tier": "flex",
     }
     data = json.dumps(payload).encode("utf-8")
     headers = {
@@ -358,6 +366,56 @@ def call_openrouter(prompt: str, max_tokens: int = 768) -> str:
         return json.dumps({"error": f"URLError: {e.reason}"})
     except Exception as e:
         debug(f"[OpenRouter] エラー: {type(e).__name__}: {e}")
+        return json.dumps({"error": f"{type(e).__name__}: {e}"})
+
+
+def call_gemini(prompt: str) -> str:
+    url = GEMINI_URL_TEMPLATE.format(model=GEMINI_MODEL, key=GEMINI_API_KEY)
+    payload = {
+        "contents": [
+            {
+                "parts": [
+                    {"text": prompt}
+                ]
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0.0
+        },
+        "service_tier": "flex"
+    }
+    data = json.dumps(payload).encode("utf-8")
+    headers = {"Content-Type": "application/json"}
+
+    debug(f"[Gemini] POST {url.split('?')[0]}")
+    debug(f"[Gemini] model={GEMINI_MODEL}, payload={len(data)} bytes")
+    debug(f"[Gemini] request:\n{json.dumps(payload, ensure_ascii=False, indent=2)}")
+
+    req = urllib.request.Request(url, data=data, method="POST", headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            raw_body = resp.read()
+            debug(f"[Gemini] response JSON: {raw_body.decode('utf-8', errors='replace')}")
+            body = json.loads(raw_body)
+            candidates = body.get("candidates", [])
+            if candidates:
+                parts = candidates[0].get("content", {}).get("parts", [])
+                if parts:
+                    return parts[0].get("text", "").strip()
+            return json.dumps({"error": "No candidates", "full_response": body})
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode("utf-8", errors='replace')
+        debug(f"[Gemini] HTTP {e.code} {e.reason}")
+        debug(f"[Gemini] ERROR BODY: {error_body}")
+        try:
+            return json.dumps({"error": f"HTTP {e.code}", "detail": json.loads(error_body)})
+        except json.JSONDecodeError:
+            return json.dumps({"error": f"HTTP {e.code}", "body": error_body})
+    except urllib.error.URLError as e:
+        debug(f"[Gemini] 接続エラー: {e.reason}")
+        return json.dumps({"error": f"URLError: {e.reason}"})
+    except Exception as e:
+        debug(f"[Gemini] エラー: {type(e).__name__}: {e}")
         return json.dumps({"error": f"{type(e).__name__}: {e}"})
 
 
@@ -542,8 +600,13 @@ def extract_keywords(text: str) -> set[str]:
 
 
 def load_defined_keywords() -> set[str]:
-    text = REQUIREMENT_FILE.read_text(encoding="utf-8")
-    return extract_keywords(text)
+    kws = set()
+    if REQUIREMENT_FILE.exists():
+        kws |= extract_keywords(REQUIREMENT_FILE.read_text(encoding="utf-8"))
+    doc_struct = DOCS / "architecture" / "document_structure.md"
+    if doc_struct.exists():
+        kws |= extract_keywords(doc_struct.read_text(encoding="utf-8"))
+    return kws
 
 
 def check_t1(defined: set[str], component_files: list[Path]) -> list[tuple[Path, str]]:
@@ -557,8 +620,9 @@ def check_t1(defined: set[str], component_files: list[Path]) -> list[tuple[Path,
 
 def check_t2(defined: set[str], all_files: list[Path]) -> set[str]:
     referenced: set[str] = set()
+    doc_struct = DOCS / "architecture" / "document_structure.md"
     for path in all_files:
-        if path == REQUIREMENT_FILE:
+        if path in (REQUIREMENT_FILE, doc_struct):
             continue
         referenced |= extract_keywords(path.read_text(encoding="utf-8"))
     return defined - referenced - TEMPLATE_KW
@@ -747,8 +811,12 @@ def generate_checklist_from_matrix(
             matrix_path.read_text(encoding="utf-8"), ["観点"], max_chars=1200
         )
 
-    req_text = REQUIREMENT_FILE.read_text(encoding="utf-8")
-    kw_definitions = extract_keyword_definitions(req_text)
+    kw_definitions = {}
+    if REQUIREMENT_FILE.exists():
+        kw_definitions.update(extract_keyword_definitions(REQUIREMENT_FILE.read_text(encoding="utf-8")))
+    doc_struct = DOCS / "architecture" / "document_structure.md"
+    if doc_struct.exists():
+        kw_definitions.update(extract_keyword_definitions(doc_struct.read_text(encoding="utf-8")))
 
     kw_section_map = build_keyword_section_map(all_files, file_kw_map)
     name_to_path: dict[str, str] = {Path(fp).name: fp for fp in all_files}

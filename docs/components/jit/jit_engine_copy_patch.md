@@ -99,7 +99,13 @@ TODO(Phase 1): ATCの抽出 - `compile_trace` における `dest` バッファ�
 
 ## 6. 制約達成の方策
 
-### 6.1 性能制約
-<!-- traceability: {JIT_CopyAndPatch} {JIT_RuntimeAPI_Fallback} -->
-- **方策**: `{JIT_CopyAndPatch}` により、コンパイル時間を最適化理論の限界まで短縮する。
-- **方策**: ランタイムAPIフォールバック `{JIT_RuntimeAPI_Fallback}` により、複雑なエッジケースを簡素化する。
+### 6.1 性能制約と最優先設計方針
+<!-- traceability: {LowLatencyJIT} {JIT_CopyAndPatch} {JIT_RuntimeAPI_Fallback} -->
+- **最優先設計方針**: 本コンパイラは、コンパイルレイテンシの最小化を最優先の設計目標とする。最適化のほとんどはビルド時に事前に行われており、実行時のオーバーヘッドを極限まで低減させる。 `{LowLatencyJIT}`
+- **Copy-and-Patchによる時間短縮**: `{JIT_CopyAndPatch}` により、コンパイル時にレジスタ割り当てやアセンブル処理を実行せず、事前アセンブルされた命令テンプレートを単純コピー・穴埋め（パッチ）するだけにすることで、コンパイル時間を理論上の最速値まで圧縮する。 `{JIT_CopyAndPatch}`
+- **複雑なエッジケースのオフロード**: ランタイムAPIフォールバック `{JIT_RuntimeAPI_Fallback}` により、JITエンジン自体のロジックを肥大化させず、複雑な浮動小数点演算や例外エミュレーションなどをヘルパー関数呼び出しに落とし込み、コンパイルパスを単一（Single-Pass）で超高速に完結させる。 `{JIT_RuntimeAPI_Fallback}`
+
+### 6.2 3層分離設計 (3-Tier Separation)
+<!-- traceability: {3TierSeparation} -->
+- **3層構造における役割**: 本コンポーネントは、システムアーキテクチャにおける「Tier 3 (実装ドメイン)」として位置付けられる。上位の「Tier 2 (サブシステムドメイン)」である `jit_compiler` が定義する抽象インターフェイスと、「Tier 1」に属する全体的なシステムコンフィグから、完全に独立した具体的なマシンコード生成・バイナリ操作の実装に特化する。 `{3TierSeparation}`
+- **依存性管理**: 上位レイヤー（スケジューラやランタイム）の構造体や内部状態に直接依存することはせず、依存関係はすべて引数ポインタやシステムハーネスなどのインターフェイス層を経由して疎結合に管理される。 `{3TierSeparation}`

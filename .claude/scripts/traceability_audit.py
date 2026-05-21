@@ -94,12 +94,15 @@ TEMPLATE_KW_PATTERN = {
 # LLM 設定
 SAKURA_AI_API_KEY = os.getenv("SAKURA_AI_API_KEY", "")
 OPEN_ROUTER_API_KEY = os.getenv("OPEN_ROUTER_API_KEY", "")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", os.getenv("GOOGLE_API_KEY", ""))
 
 USE_SAKURA = bool(SAKURA_AI_API_KEY)
 USE_OPENROUTER = bool(OPEN_ROUTER_API_KEY) and not USE_SAKURA
+USE_GEMINI = bool(GEMINI_API_KEY) and not USE_SAKURA and not USE_OPENROUTER
 
 SAKURA_MODEL = "gpt-oss-120b"
-OPEN_ROUTER_MODEL = "google/gemini-3.1-pro-preview"
+OPEN_ROUTER_MODEL = "google/gemma-4-31b-it:free"
+GEMINI_MODEL = "gemini-3.1-flash-lite"
 CHECK_MODEL = "qwen2.5-coder:3b"
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -189,30 +192,50 @@ class Tee:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def load_requirement_keywords() -> dict[str, RequirementEntry]:
-    """requirement_list.md からキーワード定義を抽出"""
-    req_file = REQUIRES_DIR / "requirement_list.md"
-    if not req_file.exists():
-        print(f"[WARN] {req_file} が見つかりません", file=sys.stderr)
-        return {}
-
+    """requirement_list.md および document_structure.md からキーワード定義を抽出"""
     keywords = {}
-    content = req_file.read_text(encoding='utf-8')
 
-    # | `{Keyword}` | description | ... の形式を抽出
-    pattern = r'\|\s*`\{([A-Za-z0-9_]+)\}`\s*\|\s*([^|]+?)\s*\|'
-    for match in re.finditer(pattern, content):
-        kw_name = match.group(1)
-        description = match.group(2).strip()
+    # 1. requirement_list.md から抽出
+    req_file = REQUIRES_DIR / "requirement_list.md"
+    if req_file.exists():
+        content = req_file.read_text(encoding='utf-8')
+        pattern = r'\|\s*`\{([A-Za-z0-9_]+)\}`\s*\|\s*([^|]+?)\s*\|'
+        for match in re.finditer(pattern, content):
+            kw_name = match.group(1)
+            description = match.group(2).strip()
 
-        # Template キーワードはスキップ
-        if any(kw_name.startswith(prefix) for prefix in TEMPLATE_KW_PATTERN):
-            continue
+            # Template キーワードはスキップ
+            if any(kw_name.startswith(prefix) for prefix in TEMPLATE_KW_PATTERN):
+                continue
 
-        keywords[kw_name] = RequirementEntry(
-            keyword=kw_name,
-            description=description,
-            category="unknown"
-        )
+            keywords[kw_name] = RequirementEntry(
+                keyword=kw_name,
+                description=description,
+                category="requirement"
+            )
+    else:
+        print(f"[WARN] {req_file} が見つかりません", file=sys.stderr)
+
+    # 2. document_structure.md からメタキーワードを抽出
+    doc_struct = PROJECT_ROOT / "docs" / "architecture" / "document_structure.md"
+    if doc_struct.exists():
+        content = doc_struct.read_text(encoding='utf-8')
+        pattern = r'\|\s*`\{([A-Za-z0-9_]+)\}`\s*\|\s*([^|]+?)\s*\|'
+        for match in re.finditer(pattern, content):
+            kw_name = match.group(1)
+            description = match.group(2).strip()
+
+            # Template キーワードはスキップ
+            if any(kw_name.startswith(prefix) for prefix in TEMPLATE_KW_PATTERN):
+                continue
+
+            keywords[kw_name] = RequirementEntry(
+                keyword=kw_name,
+                description=description,
+                category="meta"
+            )
+    else:
+        print(f"[WARN] {doc_struct} が見つかりません", file=sys.stderr)
 
     return keywords
 
@@ -372,6 +395,8 @@ def llm_call(prompt: str, model: Optional[str] = None, debug: bool = False) -> s
         return _llm_sakura(prompt, model or SAKURA_MODEL, debug)
     elif USE_OPENROUTER:
         return _llm_openrouter(prompt, model or OPEN_ROUTER_MODEL, debug)
+    elif USE_GEMINI:
+        return _llm_gemini(prompt, model or GEMINI_MODEL, debug)
     else:
         return _llm_ollama(prompt, model or CHECK_MODEL, debug)
 
@@ -391,7 +416,7 @@ def _llm_sakura(prompt: str, model: str, debug: bool) -> str:
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.0,
         "max_tokens": 500,
-        "service-tier": "flex",
+        "service_tier": "flex",
     }
 
     try:
@@ -420,7 +445,7 @@ def _llm_openrouter(prompt: str, model: str, debug: bool) -> str:
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.0,
         "max_tokens": 500,
-        "service-tier": "flex",
+        "service_tier": "flex",
     }
 
     try:
@@ -430,6 +455,46 @@ def _llm_openrouter(prompt: str, model: str, debug: bool) -> str:
         if debug:
             print(f"[DEBUG LLM] {result}", file=sys.stderr)
         return result
+    except Exception as e:
+        return f"[LLM呼び出し失敗: {e}]"
+
+
+def _llm_gemini(prompt: str, model: str, debug: bool) -> str:
+    """Gemini API を直接使用"""
+    if not requests:
+        return "[LLM不可: requests未インストール]"
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={GEMINI_API_KEY}"
+    headers = {
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "contents": [
+            {
+                "parts": [
+                    {"text": prompt}
+                ]
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0.0
+        },
+        "service_tier": "flex"
+    }
+
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=30)
+        response.raise_for_status()
+        body = response.json()
+        candidates = body.get("candidates", [])
+        if candidates:
+            parts = candidates[0].get("content", {}).get("parts", [])
+            if parts:
+                result = parts[0].get("text", "").strip()
+                if debug:
+                    print(f"[DEBUG LLM] {result}", file=sys.stderr)
+                return result
+        return "[LLM呼び出し失敗: No candidates]"
     except Exception as e:
         return f"[LLM呼び出し失敗: {e}]"
 

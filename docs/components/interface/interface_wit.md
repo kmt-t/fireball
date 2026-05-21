@@ -119,6 +119,23 @@ resource streaming-slave {
 }
 ```
 
+### 5.5 WASI標準APIの実装仕様 (WASI Standard API Implementation Specification)
+<!-- traceability: {WASI_Implementation} -->
+FireballにおけるWASI 0.2標準APIの具体的なマッピングと実装方針は以下の通りである。 `{WASI_Implementation}`
+
+1. **`wasi:clocks/monotonic-clock`**:
+   - モノトニックタイマー要求は、HALの物理タイマー割り込みおよびカウンタレジスタに直結して処理される。
+   - タイマーの周期呼び出しやタイムアウト機能は、`periodic-timer` リソースおよび `pollable` オブジェクトを通じて実装される。
+2. **`wasi:io/streams` (input-stream / output-stream)**:
+   - ストリームI/O操作（データの順次読み書き）は、COOSのIPCチャネルを用いたメッセージ通信として実装される。
+   - ホスト側のメモリバッファとゲスト（WASM）側のリニアメモリ間で、ゼロコピーまたは最小限のオーバーヘッドでデータ転送を行う。
+3. **`wasi:cli/stdout` / `wasi:cli/stderr`**:
+   - コンソール出力（標準出力・標準エラー出力）は、ホスト環境のシステムログサービス（`system_logging.md`）へ転送される。
+   - ゲスト内での `print` や `eprint` は、自動的にシステムコール経由でロガーにルーティングされる。
+4. **`wasi:filesystem/types` / `wasi:filesystem/preopens`**:
+   - Fireballは組み込み向け極小ハイパーバイザであるため、一般的な物理ディスク上のファイルシステムはサポートしない。
+   - ただし、特定のメモリマップドI/O（VMMIO）領域や共有メモリ領域を「事前オープンされた仮想ファイル記述子」としてエミュレートする仕組みを提供する。
+
 ## 6. 非同期通知メカニズム
 
 <!-- traceability: {Asynchronous_Notification} {WASI_Async_Bridge} -->

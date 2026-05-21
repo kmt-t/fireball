@@ -23,6 +23,19 @@ TODO(Phase 1): ATC抽出 - 各コンフィグ値の有効範囲、メモリサ�
 | `FB_CONF_ROUTER_MAX_SERVICES` | 登録可能な最大サービス数 | `16` | `{StaticScalability}` |
 | `FB_CONF_ROUTER_ROLE_MATRIX` | ロールベースのアクセス制御マトリックス | `constexpr`定義 | `{RoleBasedAccessControl}` |
 
+##### ロールベースアクセス制御の定義
+サービス要求元のタスクロールとURIの対応関係を以下のように静的なロールマトリックスとして定義する。 `{RoleBasedAccessControl}`
+
+```python
+# ロールマトリックスの定義例 (Python表現)
+FB_CONF_ROUTER_ROLE_MATRIX = {
+    # "サービスURI": [アクセスを許可するロール名のリスト]
+    "fireball://system/log": ["Kernel", "Driver", "App"],
+    "fireball://system/power": ["Kernel"],
+    "fireball://driver/gpio": ["Kernel", "Driver"],
+}
+```
+
 ### 2.3 HAL
 <!-- traceability: {ConfigurableSystem} -->
 | マクロ名 | 説明 | デフォルト値 (例) | 導出元 |
@@ -41,6 +54,19 @@ TODO(Phase 1): ATC抽出 - 各コンフィグ値の有効範囲、メモリサ�
 | `FB_CONF_VMMIO_BASE` | vMMIO領域の開始アドレス | `0x40000000` | `{vMMIO_Isolation}` |
 | `FB_CONF_VMMIO_MAX_REGIONS` | 登録可能な最大vMMIO領域数 | `8` | `{ConfigurableSystem}` |
 | `FB_CONF_VMMIO_ALLOWED_ADDRS` | ゲストからのアクセスを許可する物理アドレス範囲 | `constexpr`定義 | `{RestrictedPhysicalAccess}` |
+
+##### 物理アクセス許可範囲の定義
+ゲストからのアクセスが許可される物理アドレス範囲は以下のように構造化して静的に定義される。 `{RestrictedPhysicalAccess}`
+
+```python
+# 物理アクセス制限用の定義例 (Python表現)
+FB_CONF_VMMIO_ALLOWED_ADDRS = [
+    # (開始物理アドレス, 終了物理アドレス) のペアで定義する
+    (0x40000000, 0x4000FFFF),  # GPIO領域
+    (0x40010000, 0x4001FFFF),  # UART領域
+    (0x80000000, 0x807FFFFF),  # ゲスト物理RAM
+]
+```
 
 ### 2.5 ロギング
 <!-- traceability: {BufferedLogging} -->
@@ -74,3 +100,12 @@ TODO(Phase 1): ATC抽出 - 各コンフィグ値の有効範囲、メモリサ�
 | マクロ名 | 説明 | デフォルト値 (例) | 導出元 |
 | :--- | :--- | :--- | :--- |
 | `FB_CONF_MAX_TASKS` | 同時実行可能な最大タスク数 | `16` | `{StaticScalability}`。`FB_TASK_ID_FLIGHT (0xFF)` との衝突を防ぐため `≤ 254` を静的アサートで保証すること |
+
+##### 最大タスク数のコンパイル時検証
+同時実行タスクの上限を定義し、予約値との競合を防ぐためのコンパイル時制約条件。 `{StaticScalability}`
+
+```python
+# コンパイル時の検証ルール (Python表現)
+assert FB_CONF_MAX_TASKS <= 254, "FB_CONF_MAX_TASKS must be <= 254 to prevent collision with FB_TASK_ID_FLIGHT (0xFF)"
+```
+

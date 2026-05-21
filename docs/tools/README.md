@@ -13,7 +13,7 @@ Fireball プロジェクトの検証・監査・テストツール群の仕様�
   - Module: 単一ドキュメントの策定準拠性・品質
   - Hierarchy: Tier 間（要求 → コア → ランタイム → プラットフォーム）の階層的整合性
   
-- **詳細仕様:** [`doc_test_llm.md`](doc_test_llm.md)
+- **詳細仕様:** [`doc_test_llm.md`](doc_test.md)
 
 ```bash
 # ワンストップ実行（Module + Tier 1-3）
@@ -26,7 +26,7 @@ Fireball プロジェクトの検証・監査・テストツール群の仕様�
 ---
 
 ### 2. Check Consistency (仕様整合性チェッカー)
-**パス:** `tools/scripts/check_consistency/`
+**パス:** `tools/check_consistency/` / `tools/run_check_consistency.sh`
 
 コンポーネント仕様書間の形式的・意味的一貫性を機械的に検証。
 
@@ -40,19 +40,19 @@ Fireball プロジェクトの検証・監査・テストツール群の仕様�
 
 ```bash
 # 機械的チェック（F/T/A）
-./tools/scripts/check_consistency/run.sh
+./tools/run_check_consistency.sh
 
 # LLM チェック追加
-./tools/scripts/check_consistency/run.sh --llm
+./tools/run_check_consistency.sh --llm
 
 # テーブル再生成
-./tools/scripts/check_consistency/run.sh --gentable
+./tools/run_check_consistency.sh --gentable
 ```
 
 ---
 
 ### 3. Traceability Audit (トレーサビリティ監査)
-**パス:** `tools/scripts/traceability_audit/`
+**パス:** `tools/traceability_audit/` / `tools/run_traceability_audit.sh`
 
 セクション × キーワード マッピングを検証し、設計漏れと矛盾を検出。
 
@@ -65,34 +65,36 @@ Fireball プロジェクトの検証・監査・テストツール群の仕様�
 
 ```bash
 # 機械的チェック（S2/S3）
-./tools/scripts/traceability_audit/run.sh
+./tools/run_traceability_audit.sh
 
 # LLM チェック追加（L1）
-./tools/scripts/traceability_audit/run.sh --llm
+./tools/run_traceability_audit.sh --llm
 
 # 詳細ログ
-./tools/scripts/traceability_audit/run.sh --verbose
+./tools/run_traceability_audit.sh --verbose
 ```
 
 ---
 
-## ワンストップ実行
+## 実行方法
 
-すべての検証を一括実行：
+各ツールを個別に実行：
 
 ```bash
-./tools/scripts/run_all.sh
+# 一貫性チェック
+./tools/run_check_consistency.sh
+
+# トレーサビリティ監査
+./tools/run_traceability_audit.sh
+
+# ドキュメント LLM 監査
+./tools/run_doc_tests.sh
 ```
 
-**実行順序:**
+**推奨順序:**
 1. Check Consistency (FORMAT/Traceability/Architecture)
 2. Traceability Audit (S2/S3 detection)
 3. Document Test (Module + Tier 1-3)
-
-**オプション:**
-- `--llm`: LLM チェック含める
-- `--model MODEL`: LLM モデル指定
-- `--quick`: Document Test を Tier 1 のみに限定
 
 ---
 
@@ -132,8 +134,8 @@ export OPEN_ROUTER_API_KEY="your-key"
 ### パターン 1: 日常的な検証（軽量）
 
 ```bash
-./tools/scripts/check_consistency/run.sh
-./tools/scripts/traceability_audit/run.sh
+./tools/run_check_consistency.sh
+./tools/run_traceability_audit.sh
 ./tools/run_doc_tests.sh --quick
 ```
 
@@ -142,7 +144,9 @@ export OPEN_ROUTER_API_KEY="your-key"
 ### パターン 2: コミット前検証（中程度）
 
 ```bash
-./tools/scripts/run_all.sh --quick
+./tools/run_check_consistency.sh
+./tools/run_traceability_audit.sh
+./tools/run_doc_tests.sh --quick
 ```
 
 実行時間: ~5 分
@@ -150,7 +154,9 @@ export OPEN_ROUTER_API_KEY="your-key"
 ### パターン 3: リリース前検証（完全）
 
 ```bash
-./tools/scripts/run_all.sh --llm
+./tools/run_check_consistency.sh --llm
+./tools/run_traceability_audit.sh --llm
+./tools/run_doc_tests.sh
 ```
 
 実行時間: ~15-20 分（LLM バックエンド依存）
@@ -179,7 +185,7 @@ Error: consistency_checklist.csv not found
 
 → テーブル再生成:
 ```bash
-./tools/scripts/check_consistency/run.sh --gentable
+./tools/run_check_consistency.sh --gentable
 ```
 
 ### Ollama 接続エラー
@@ -197,6 +203,6 @@ ollama serve
 
 ## 各ツールの詳細
 
-- [Document Test (LLM Auto-Tester)](doc_test_llm.md)
+- [Document Test (LLM Auto-Tester)](doc_test.md)
 - [Check Consistency](check_consistency.md)
 - [Traceability Audit](traceability_audit.md)

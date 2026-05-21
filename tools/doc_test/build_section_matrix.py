@@ -15,6 +15,7 @@ from pathlib import Path
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from extract_sections import extract_sections_from_file, Section
 
 REPO_ROOT = Path(__file__).resolve().parent.parent

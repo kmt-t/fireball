@@ -47,3 +47,10 @@ build*/
 temp/
 docs/temp/
 tmp/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python

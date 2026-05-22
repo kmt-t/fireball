@@ -22,4 +22,4 @@ REPO_ROOT="$SCRIPT_DIR"
 cd "$REPO_ROOT"
 
 # Run the traceability auditor
-python3 tools/traceability_audit/traceability_audit.py $ARGS
+python3 tools/audit_traceability/audit_traceability.py $ARGS

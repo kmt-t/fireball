@@ -24,10 +24,10 @@ This file provides guidance to Antigravity / Gemini Code when working with code 
   # 詳細な説明 (Markdown)
   ```
 
-### 1.3 `.claude/scripts/` (検証スクリプト群)
+### 1.3 `tools/` (検証スクリプト群)
 - **役割**: 仕様書の整合性と、要求定義と設計のトレーサビリティを機械的に担保するための Python スクリプト群。
-  - **`check_consistency.py`**: 見出しの命名規則、Mermaidの記述、API名表記ゆれ、C++コードブロックの誤用等を機械的にチェックする。
-  - **`traceability_audit.py`**: `docs/requires/` の要求キーワード `{Keyword}` が、`docs/components/` の仕様書に正しく紐付けられているかを監査する。
+  - **`tools/check_consistency/check_consistency.py`**: 見出しの命名規則、Mermaidの記述、API名表記ゆれ、C++コードブロックの誤用等を機械的にチェックする。
+  - **`tools/audit_traceability/audit_traceability.py`**: `docs/requires/` の要求キーワード `{Keyword}` が、`docs/components/` の仕様書に正しく紐付けられているかを監査する。
 
 ### 1.4 `.claude/settings.local.json` (権限設定)
 - **役割**: Claude Code 上での外部コマンド実行（例: `tlc -version`）に対する権限許可設定。
@@ -51,28 +51,28 @@ Gemini にはファイルパスに応じたルールの自動インジェクシ�
 
 ```bash
 # 整合性検証 (記述規約、未定義キーワード参照、API表記ゆれ等の機械的チェック)
-python3 .claude/scripts/check_consistency.py
+python3 tools/check_consistency/check_consistency.py
 
 # トレーサビリティ監査 (要求キーワードの紐付けチェック)
-python3 .claude/scripts/traceability_audit.py
+python3 tools/audit_traceability/audit_traceability.py
 
 # LLM を用いたセマンティック仕様書検証 (開発方針、トレーサビリティ充足性、品質/プレースホルダーのチェック)
 # 1. 単一の仕様書モジュールの検証:
-python3 tools/doc_test_llm.py --module docs/components/core/system_config.md
+python3 tools/test_doc/test_doc_llm.py --module docs/components/core/system_config.md
 
 # 2. docs/components/ 配下の全ファイルの一括モジュール検証:
-python3 tools/doc_test_llm.py --all
+python3 tools/test_doc/test_doc_llm.py --all
 
 # 3. 2つの仕様書間の境界・組み合わせ整合性の検証 (例: os_coos.md と os_scheduler.md):
-python3 tools/doc_test_llm.py --pair docs/components/core/os_coos.md docs/components/core/os_scheduler.md
+python3 tools/test_doc/test_doc_llm.py --pair docs/components/core/os_coos.md docs/components/core/os_scheduler.md
 
 # 4. 指定したシステム階層(Tier 1〜3)の階層一貫性検証:
 # Tier 1 (要求仕様 vs Core/Interface)
-python3 tools/doc_test_llm.py --hierarchy --tier 1
+python3 tools/test_doc/test_doc_llm.py --hierarchy --tier 1
 # Tier 2 (Core/Interface vs Runtime/JIT)
-python3 tools/doc_test_llm.py --hierarchy --tier 2
+python3 tools/test_doc/test_doc_llm.py --hierarchy --tier 2
 # Tier 3 (Runtime/JIT vs Platform/HAL)
-python3 tools/doc_test_llm.py --hierarchy --tier 3
+python3 tools/test_doc/test_doc_llm.py --hierarchy --tier 3
 ```
 
 > [!NOTE]
@@ -80,7 +80,7 @@ python3 tools/doc_test_llm.py --hierarchy --tier 3
 
 # 全てのLLM自動テストを一括実行するシェルスクリプト:
 # (デフォルトではローカルのOllamaを使用。--backend や --model オプションで他のLLMサービスやモデルを指定可能)
-./tools/run_doc_tests.sh --backend gemini --model gemini-2.5-pro
+./tools/run_doc_test.sh --backend gemini --model gemini-2.5-pro
 
 ### 2.3 記述ルールの踏襲
 - **要求キーワードのトレーサビリティ**: 新たなセクションを追加する場合は、行末に `` `{Keyword}` `` を付与し、`docs/requires/` との紐付けを維持する。

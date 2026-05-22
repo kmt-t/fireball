@@ -40,7 +40,7 @@ except ImportError:
     SECTION_MATRIX_AVAILABLE = False
 
 # Default configurations
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent  # tools/doc_test/doc_test_llm.py -> repo root
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent  # tools/test_doc/test_doc_llm.py -> repo root
 DOCS_DIR = REPO_ROOT / "docs"
 COMPONENTS_DIR = DOCS_DIR / "components"
 REQUIREMENT_FILE = DOCS_DIR / "requires" / "requirement_list.md"

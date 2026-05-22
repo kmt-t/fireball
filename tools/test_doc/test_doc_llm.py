@@ -448,13 +448,19 @@ def run_checks_on_file(doc_path: Path, policies: dict[str, str], kw_defs: dict[s
     results = {}
     try:
         # Check 1: Policies & C++ Constraints
+        print(f"    ├─ チェック1/3: 開発方針・メモリ制限適合性...", end="", flush=True)
         results["policy"] = perform_policy_check(doc_path, content, policies, args)
+        print(" ✓", flush=True)
 
         # Check 2: Requirements Traceability
+        print(f"    ├─ チェック2/3: 要求トレーサビリティ充足性...", end="", flush=True)
         results["traceability"] = perform_traceability_check(doc_path, content, trace_kws, kw_defs, args)
+        print(" ✓", flush=True)
 
         # Check 3: Quality & Completeness
+        print(f"    └─ チェック3/3: ドキュメント品質・曖昧さ検証...", end="", flush=True)
         results["quality"] = perform_quality_check(doc_path, content, args)
+        print(" ✓", flush=True)
     except Exception as e:
         results["error"] = f"LLM Execution error: {e}"
 

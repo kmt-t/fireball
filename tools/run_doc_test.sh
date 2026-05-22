@@ -1,6 +1,6 @@
 #!/bin/bash
 # Fireball LLM Documentation Audit Runner (Section-Matrix Enhanced)
-# Usage: ./tools/run_doc_tests.sh [--backend SAKURA|gemini|openrouter|ollama] [--model MODEL_NAME] [--quick]
+# Usage: ./tools/run_doc_test.sh [--backend SAKURA|gemini|openrouter|ollama] [--model MODEL_NAME] [--quick]
 
 set -e
 
@@ -57,7 +57,8 @@ START_TIME=$(date +%s)
 
 # 1. Module Audit (All Files)
 echo -e "\n>>> [1/4] Running Module Audit (All component files)..."
-if python3 tools/doc_test/doc_test_llm.py --all $ARGS > "$REPORT_DIR/audit_module_$(date +%Y%m%d_%H%M%S).log" 2>&1; then
+REPORT_FILE="$REPORT_DIR/audit_module_$(date +%Y%m%d_%H%M%S).log"
+if python3 tools/test_doc/test_doc_llm.py --all $ARGS 2>&1 | tee "$REPORT_FILE"; then
     echo "✔ Module Audit PASSED"
 else
     echo "✖ Module Audit FAILED"
@@ -67,7 +68,8 @@ fi
 # 2. Hierarchy Audit - Tier 1
 echo -e "\n>>> [2/4] Running Hierarchy Audit - Tier 1 (Requirements → Core/Interface)..."
 echo "    Note: Section-by-section analysis (may take longer due to multiple LLM calls)"
-if python3 tools/doc_test/doc_test_llm.py --hierarchy --tier 1 $ARGS > "$REPORT_DIR/audit_tier1_$(date +%Y%m%d_%H%M%S).log" 2>&1; then
+REPORT_FILE="$REPORT_DIR/audit_tier1_$(date +%Y%m%d_%H%M%S).log"
+if python3 tools/test_doc/test_doc_llm.py --hierarchy --tier 1 $ARGS 2>&1 | tee "$REPORT_FILE"; then
     echo "✔ Tier 1 Hierarchy Audit PASSED"
 else
     echo "✖ Tier 1 Hierarchy Audit FAILED"
@@ -80,7 +82,8 @@ if [ "$QUICK_MODE" -eq 1 ]; then
 else
     # 3. Hierarchy Audit - Tier 2
     echo -e "\n>>> [3/4] Running Hierarchy Audit - Tier 2 (Core/Interface → Runtime/JIT)..."
-    if python3 tools/doc_test/doc_test_llm.py --hierarchy --tier 2 $ARGS > "$REPORT_DIR/audit_tier2_$(date +%Y%m%d_%H%M%S).log" 2>&1; then
+    REPORT_FILE="$REPORT_DIR/audit_tier2_$(date +%Y%m%d_%H%M%S).log"
+    if python3 tools/test_doc/test_doc_llm.py --hierarchy --tier 2 $ARGS 2>&1 | tee "$REPORT_FILE"; then
         echo "✔ Tier 2 Hierarchy Audit PASSED"
     else
         echo "✖ Tier 2 Hierarchy Audit FAILED"
@@ -89,7 +92,8 @@ else
 
     # 4. Hierarchy Audit - Tier 3
     echo -e "\n>>> [4/4] Running Hierarchy Audit - Tier 3 (Runtime/JIT → Platform/HAL)..."
-    if python3 tools/doc_test/doc_test_llm.py --hierarchy --tier 3 $ARGS > "$REPORT_DIR/audit_tier3_$(date +%Y%m%d_%H%M%S).log" 2>&1; then
+    REPORT_FILE="$REPORT_DIR/audit_tier3_$(date +%Y%m%d_%H%M%S).log"
+    if python3 tools/test_doc/test_doc_llm.py --hierarchy --tier 3 $ARGS 2>&1 | tee "$REPORT_FILE"; then
         echo "✔ Tier 3 Hierarchy Audit PASSED"
     else
         echo "✖ Tier 3 Hierarchy Audit FAILED"

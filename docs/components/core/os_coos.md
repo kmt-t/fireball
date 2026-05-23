@@ -40,7 +40,7 @@ graph TD
 ### 3.3 主要なデータ定義
 <!-- traceability: {Policy_Memory} -->
 
-#### `channel` (CSPチャネル)
+#### CSPチャネル（channel）
 タスク間の同期と通信を仲介するデータ構造。 `{CSPCommunication}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |

@@ -145,7 +145,7 @@ WASI互換レイヤー。Shimライブラリが `wasi-libc` の呼び出しを�
 > [!NOTE]
 > GPIOアクセスはMMIO Generic (`MMIO_READ32`/`MMIO_WRITE32`) でPASSTHROUGH領域経由。専用syscallは不要。
 
-```cpp
+```text
 // inc/fireball_syscalls.hxx
 enum class fb_syscall_id : uint32_t {
     RESERVED          = 0x00,
@@ -200,16 +200,15 @@ enum class fb_syscall_id : uint32_t {
 | シグネチャ | `fireball_trigger_set_pin(pin: u32, value: bool) -> void` |
 | マッピング | `id`: `FB_SYSCALL_TRIGGER_SET_PIN`<br>`arg0`: `pin`<br>`arg1`: `value` (0/1) |
 
-```c
-// ゲスト側での trigger.set_pin の実装例 (Shim) `{Fast_Path_GPIO}`
-void fireball_trigger_set_pin(uint32_t pin, bool value) {
+```python
+# ゲスト側での trigger.set_pin の実装例 (Shim) `{Fast_Path_GPIO}`
+def fireball_trigger_set_pin(pin: int, value: bool):
     __fireball_call(
-        (uint32_t)FBSyscallId::FB_SYSCALL_TRIGGER_SET_PIN,
+        fb_syscall_id.FB_SYSCALL_TRIGGER_SET_PIN,
         pin,
-        (uint32_t)value,
+        int(value),
         0, 0, 0, 0
-    );
-}
+    )
 ```
 > [!IMPORTANT]
 > WASI 0.2 標準のリソース（`output-stream` 等）は、対応する WIT インターフェイスの実装関数を通じて呼び出される。`fireball_call`はvMMIO機能全体の代理実行ラッパーであり、GPIOのような物理アクセスもMMIO Generic経由で行える。
@@ -244,7 +243,7 @@ TODO(Phase 0.8): WASI Wrapper TLA+ Verification - 同期/非同期変換（co_yi
 これらのIDは、WASI 0.2 の `pollable` リソースをホスト側で ready 状態にするためのトリガーとして使用される。
 
 例:
-```cpp
+```text
 // inc/fireball_virtual_interrupts.hxx (仮)
 enum class FBVirtualInterruptId : uint32_t {
     FB_VIRT_INT_RESERVED = 0,

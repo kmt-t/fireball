@@ -46,7 +46,7 @@ graph TD
 ### 3.3 主要なクラス・構造体・配列・定数
 <!-- traceability: {StaticDI} -->
 
-#### `vsoc_harness`
+#### vSoCハーネス（vsoc_harness）
 各エンジンへのインターフェイスを集約する。PODとして扱い、メンバに末尾アンダースコアは付与しない。
 
 | 項目名 | 機能と役割 | 備考（制約、型など） |
@@ -57,7 +57,7 @@ graph TD
 | デバッガ | RSPプロトコルを介したデバッグ機能を提供するコンポーネントへの参照。 | `Debugger*` |
 | vMMIO | 仮想的なメモリマップドI/Oを制御するコンポーネントへの参照。 | `VmmioController*` |
 
-#### `vsoc_context`
+#### vSoCコンテキスト（vsoc_context）
 可変な実行状態を保持する。
 
 | 項目名 | 機能と役割 | 備考（制約、型など） |
@@ -66,7 +66,7 @@ graph TD
 | モジュールビュー | ロード済みWASMモジュールの索引情報への参照。 | `wasm_module_view*` |
 | プログラムカウンタ | ゲストの現在のプログラム実行位置（WASMオフセット）。 | `uint32_t` |
 
-#### `vsoc_config`
+#### vSoC構成（vsoc_config）
 <!-- traceability: {ConfigurableSystem} -->
 vSoCの動作パラメータを定義する。 `{ConfigurableSystem}`
 
@@ -169,7 +169,7 @@ sequenceDiagram
 
 TODO(Phase 1): ATC抽出 - JITキャッシュ有効時やエラー時の実行リカバリ戦略を含む、厳格な事前/事後/不変条件を各APIに定義すること。
 
-#### `prepare`
+#### 準備（prepare）
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | 指定されたWASMバイナリデータを読み込み、実行準備を完了させる。 |
@@ -182,7 +182,7 @@ TODO(Phase 1): ATC抽出 - JITキャッシュ有効時やエラー時の実行�
 | エラー時の挙動 | 不正なバイナリの場合はロードを中断し、エラー値を返す。 |
 | 補足 | ROM上のデータを直接参照するため、RAMへのコピーは発生しない。 |
 
-#### `step`
+#### ステップ実行（step）
 <!-- traceability: {RecoveryStrategy} -->
 | 項目 | 内容 |
 | :--- | :--- |

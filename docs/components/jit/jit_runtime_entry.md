@@ -26,7 +26,7 @@ graph TD
     BinSearch --> Result{Hit?}
 ```
 
-#### `JitEntryIndex` クラス
+#### JITエントリインデックス（JitEntryIndex）クラス
 検索最適化のためのデータ構造とアルゴリズムをカプセル化する。
 
 TODO(Phase 1): テーブル設計の詳細化 - `jit_entry` の構造サイズ（ROM最適化）、カードグループ索引のマッピング方式（シフト量とテーブルサイズ）を仕様化すること。
@@ -86,7 +86,7 @@ sequenceDiagram
 
 TODO(Phase 1): ATCの抽出 - `lookup` と `register_entry` の事前・事後・不変条件（エントリ配列のソート状態維持など）を厳密に定義すること。
 
-#### `lookup`
+#### 検索（lookup）
 
 | 項目 | 内容 |
 | :--- | :--- |
@@ -95,7 +95,7 @@ TODO(Phase 1): ATCの抽出 - `lookup` と `register_entry` の事前・事後�
 | 引数 | `pc`: WASM 命令オフセット |
 | 戻り値 | オプショナル値 (成功時はネイティブアドレス、失敗時は空) |
 
-#### `register_entry`
+#### エントリ登録（register_entry）
 
 | 項目 | 内容 |
 | :--- | :--- |

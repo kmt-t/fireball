@@ -27,7 +27,7 @@ graph TD
 
 ### 3.3 主要なクラス・構造体・配列・定数
 
-#### `service` (サービス定義)
+#### サービス定義（service）
 システムが管理する個別のサービスの属性。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
@@ -36,7 +36,7 @@ graph TD
 | 隔離階層 | サービスが実行されるドメイン（0: ゲスト内、1: 独立プロセス） | uint8_t | Tier |
 | 識別URI | ルータを介して公開される、サービスを指し示す唯一の正規名称 | 文字列ビュー | - |
 
-#### `service_config` (サービス構成)
+#### サービス構成（service_config）
 <!-- traceability: {ConfigurableSystem} -->
 特定のゲストインスタンスに適用されるサービスのロード設定。 `{ConfigurableSystem}`
 
@@ -85,63 +85,54 @@ sequenceDiagram
 WASMゲストが呼び出す同期的な標準インターフェース (WASI) を、非同期でロールベースな基盤である「HAL（IPCコマンド）」へ変換・中継する Tier 0 ラッパーのコア構造。
 この擬似コードは、同期I/O要求と非同期実行基盤のインピーダンスミスマッチを解消するプロトコルを示す。
 
-```cpp
-// wasi_service.cpp (Tier 0: 直接リンクされるシステム関数)
+```python
+# wasi_service.py (Tier 0: 直接リンクされるシステム関数)
 
-// WASI fd_write のシグネチャ (WASMから直接呼ばれるネイティブ関数)
-wasi_errno_t wasi_fd_write(
-    wasi_fd_t fd,                   // 書き込み先のファイルディスクリプタ (0=stdin, 1=stdout, etc)
-    const wasi_iovs_t* iovs,        // I/Oベクタの配列 (WASMゲストのメモリアドレス)
-    size_t iovs_len,                // I/Oベクタの数
-    size_t* nwritten                // 実際に書き込まれたバイト数を書き戻すポインタ
-) {
-    // 1. 環境ポインタ（Context）の取得
-    auto ctx = get_current_execution_context();
+# WASI fd_write のシグネチャ (WASMから直接呼ばれるネイティブ関数)
+def wasi_fd_write(fd: int, iovs: list[WasiIov], iovs_len: int, nwritten_ptr: int) -> int:
+    # 1. 環境ポインタ（Context）の取得
+    ctx = get_current_execution_context()
     
-    // 2. FDからIPCチャネルへの解決 (Virtual File System Lookup)
-    channel_id target_channel = resolve_wasi_fd_to_channel(ctx, fd);
-    if (target_channel == INVALID_CHANNEL) return WASI_ERRNO_BADF;
+    # 2. FDからIPCチャネルへの解決 (Virtual File System Lookup)
+    target_channel = resolve_wasi_fd_to_channel(ctx, fd)
+    if target_channel == INVALID_CHANNEL:
+        return WASI_ERRNO_BADF
     
-    // 3. メモリ境界チェック (Tier 1 セキュリティゲートへの事前検証)
-    if (!ctx.memory_bounds_check(iovs, sizeof(wasi_iovs_t) * iovs_len)) {
-        return WASI_ERRNO_FAULT;
-    }
+    # 3. メモリ境界チェック (Tier 1 セキュリティゲートへの事前検証)
+    if not ctx.memory_bounds_check(iovs, sizeof(WasiIov) * iovs_len):
+        return WASI_ERRNO_FAULT
 
-    size_t total_written = 0;
+    total_written = 0
 
-    // 4. I/O処理ループ (Scatter/Gather をシリアルなIPCメッセージに変換)
-    for (size_t i = 0; i < iovs_len; ++i) {
-        wasi_iovs_t current_iov = iovs[i];
-        if (!ctx.memory_bounds_check(current_iov.buf, current_iov.buf_len)) {
-            return WASI_ERRNO_FAULT;
-        }
+    # 4. I/O処理ループ (Scatter/Gather をシリアルなIPCメッセージに変換)
+    for i in range(iovs_len):
+        current_iov = iovs[i]
+        if not ctx.memory_bounds_check(current_iov.buf, current_iov.buf_len):
+            return WASI_ERRNO_FAULT
 
-        // --- IPC Handoff (所有権転送) ---
-        ipc_message msg;
-        msg.pairs[0] = make_kv(SCOPE_FUNCTIONAL, KEY_COMMAND, CMD_HAL_WRITE);
-        msg.pairs[1] = make_kv(SCOPE_VALUE, KEY_SIZE, current_iov.buf_len);
-        // データのポインタを共有メモリハンドルとして付与 (Zero-copy)
-        msg.pairs[2] = make_kv(SCOPE_GUEST_MEM_PTR, KEY_BUFFER_ADDR, current_iov.buf);
+        # --- IPC Handoff (所有権転送) ---
+        msg = ipc_message()
+        msg.pairs[0] = make_kv(SCOPE_FUNCTIONAL, KEY_COMMAND, CMD_HAL_WRITE)
+        msg.pairs[1] = make_kv(SCOPE_VALUE, KEY_SIZE, current_iov.buf_len)
+        # データのポインタを共有メモリハンドルとして付与 (Zero-copy)
+        msg.pairs[2] = make_kv(SCOPE_GUEST_MEM_PTR, KEY_BUFFER_ADDR, current_iov.buf)
 
-        // 5. IPCルータを経由してHAL（または上位レイヤ）へ送信 (ノンブロッキング)
-        operation_result res = ipc_router.route_message(ctx.task, target_channel, msg);
-        if (res == ERROR_QUEUE_FULL || res == ERROR_PERMISSION_DENIED) {
-            return WASI_ERRNO_IO; // 中断
-        }
+        # 5. IPCルータを経由してHAL（または上位レイヤ）へ送信 (ノンブロッキング)
+        res = ipc_router.route_message(ctx.task, target_channel, msg)
+        if res == ERROR_QUEUE_FULL || res == ERROR_PERMISSION_DENIED:
+            return WASI_ERRNO_IO # 中断
         
-        // 6. 完了待機 (COOS yield)
-        // 実質的な同期I/Oの模倣。HALが完了通知を返すまでタスクをサスペンドする。
-        wait_for_ipc_response(ctx.task, target_channel);
+        # 6. 完了待機 (COOS yield)
+        # 実質的な同期I/Oの模倣。HALが完了通知を返すまでタスクをサスペンドする。
+        wait_for_ipc_response(ctx.task, target_channel)
         
-        total_written += ctx.task.last_response_message.get_value(KEY_WRITTEN_SIZE);
-    }
+        total_written += ctx.task.last_response_message.get_value(KEY_WRITTEN_SIZE)
 
-    // 7. 書き戻しと終了
-    if (ctx.memory_bounds_check(nwritten, sizeof(size_t))) {
-        *nwritten = total_written;
-    }
-    return WASI_ERRNO_SUCCESS;
-}
+    # 7. 書き戻しと終了
+    if ctx.memory_bounds_check(nwritten_ptr, sizeof(int)):
+        write_guest_memory(nwritten_ptr, total_written)
+        
+    return WASI_ERRNO_SUCCESS
 ```
 
 #### 検証対象となる制約事項 (TLA+ モデリングポイント)
@@ -173,7 +164,7 @@ wasi_errno_t wasi_fd_write(
 
 TODO(Phase 1): ATC抽出 - サービスの初期化順序依存性や、`load_service`実行時の静的確保領域への割り当てに関する事前・事後条件を明確にすること。
 
-#### `load_service`
+#### サービスロード（load_service）
 
 | 項目 | 内容 |
 | :--- | :--- |

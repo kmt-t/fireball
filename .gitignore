@@ -46,7 +46,7 @@ cmake-build*/
 build*/
 temp/
 docs/temp/
-tmp/
+states/
 
 # Python
 __pycache__/

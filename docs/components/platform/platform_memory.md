@@ -32,7 +32,7 @@ TODO(Phase 1): ATC抽出 - アライメント制約（ページ単位など）�
 | 引数 | `pool-base`: 物理メモリプールの基点アドレス<br>`pool-size`: プールのバイトサイズ |
 | 戻り値 | 操作結果 |
 
-#### `allocate` (kernel/task専用)
+#### 割り当て（allocate）
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | 指定されたカテゴリ（kernel/task）からローカルメモリを割り当て、アドレスを返す。 |
@@ -49,7 +49,7 @@ TODO(Phase 1): ATC抽出 - アライメント制約（ページ単位など）�
 | 引数 | `size`: 割り当てサイズ |
 | 戻り値 | 成功時は `shared-block` リソース |
 
-#### `claim` (IPC受信側)
+#### 所有権要求（claim）
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | IPC経由で受け取った共有メモリIDから、所有権を持つリソースを取得する。 |
@@ -57,7 +57,7 @@ TODO(Phase 1): ATC抽出 - アライメント制約（ページ単位など）�
 | 引数 | `id`: 共有メモリID |
 | 戻り値 | 成功時は `shared-block` リソース |
 
-#### `deallocate` (kernel/task専用)
+#### 解放（deallocate）
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | `allocate` で確保したローカルメモリを解放する。 |
@@ -87,19 +87,19 @@ TODO(Phase 1): 動的モデルの明確化 - フラグメンテーション回�
 <!-- traceability: {FaultIsolation} {OwnershipTransfer} -->
 `shared-block` リソースが所有権の単位。IPC転送時に `release` → `claim` で所有権が移動する。 `{FaultIsolation}` `{OwnershipTransfer}`
 
-大きなデータを転送する場合、`shm-id` をkv-pairの `value` フィールドに `data-type = handle` で格納し、通常のIPCメッセージとして送信する。
+大きなデータを転送する場合、`shm-id` をkv_pairの `value` フィールドに `data-type = handle` で格納し、通常のIPCメッセージとして送信する。
 
 1. タスクAが `allocate-shared(size)` → `shared-block` リソースを取得
 2. `shm.get-address()` でローカルアドレスを取得、データを書き込み
 3. `shm.release()` → `shm-id` を取得。リソースはA側で無効化
-4. `shm-id` を kv-pair (`dtype=handle, key=任意, value=shm-id`) に格納
-5. `ipc.send(chan, message{kv-pairs})` で送信
-6. タスクBが `ipc.recv(chan)` → kv-pair から `shm-id` を取り出す
+4. `shm-id` を kv_pair (`dtype=handle, key=任意, value=shm-id`) に格納
+5. `ipc.send(chan, message(kv_pairs))` で送信
+6. タスクBが `ipc.recv(chan)` → kv_pair から `shm-id` を取り出す
 7. `claim(shm-id)` → 新 `shared-block` リソースを取得（所有権移動）
 8. `shm.get-address()` でデータを読み取り
 9. B側の `shared-block` が drop されるとメモリ自動解放
 
-@see `memory.wit` shared-block, `types.wit` kv-pair data-type
+@see `memory.wit` shared-block, `types.wit` kv_pair data-type
 
 ## 8. 設計判断の記録
 

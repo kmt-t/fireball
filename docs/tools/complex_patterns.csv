@@ -1,0 +1,2 @@
+pattern,replacement
+"####\s+`opcode_handler`\s*/\s*`exec_trace`","#### オプコードハンドラ / トレース実行（opcode_handler / exec_trace）"

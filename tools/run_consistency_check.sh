@@ -22,5 +22,5 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$SCRIPT_DIR"
 cd "$REPO_ROOT"
 
-# Run the consistency checker
-python3 tools/check_consistency/check_consistency.py $ARGS
+# Run the consistency checker (via unified run_audit.py)
+python3 tools/run_audit.py $ARGS

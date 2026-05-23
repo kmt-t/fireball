@@ -35,7 +35,7 @@ graph TD
 
 ### 3.3 主要なクラス・構造体・配列・定数
 
-#### `Interpreter` クラス
+#### インタプリタ（Interpreter）クラス
 依存関係（vSoC環境等）と実行に必要なテーブルをカプセル化する。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
@@ -43,7 +43,7 @@ graph TD
 | ランタイム環境 | vSoCランタイム環境への参照（プライベートメンバ） | 構造体への参照 | [`vsoc_runtime`](runtime_vsoc.md) (非所有) |
 | ハンドラテーブル | 命令ハンドラへのジャンプテーブル | テーブルポインタ | 関数ポインタの配列 |
 
-#### `execution_context` (実行コンテキスト)
+#### 実行コンテキスト（execution_context）
 <!-- traceability: {PositionIndependentCode} {ContextPointerRegister} {MemoryBoundaryCheck} {EnvironmentPointer} -->
 WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想CPUレジスタ群として設計する。 `{PositionIndependentCode}` `{ContextPointerRegister}`
 
@@ -59,7 +59,7 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 | 制御フレームポインタ | 現在の制御構造（loop/if等）を管理するスタックの頂点 | アドレス値 | 32bit符号なし |
 | 環境ポインタ | 実行に必要な環境（vSoC等）への参照 `{EnvironmentPointer}` | 構造体への参照 | [`vsoc_runtime`](runtime_vsoc.md) |
 
-#### `call_frame` (コールフレーム)
+#### コールフレーム（call_frame）
 <!-- traceability: {PositionIndependentCode} {ContextPointerRegister} {MemoryBoundaryCheck} {EnvironmentPointer} -->
 関数呼び出しごとのローカル変数や戻り先情報を保持する。
 
@@ -71,7 +71,7 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 | 関数インデックス | 現在実行中の関数の管理番号 | 関数インデックス | 32bit符号なし |
 | スタック境界 | 呼び出し時に許可されたスタックの最大許容レベル | アドレス値 | 32bit符号なし |
 
-#### `control_frame` (制御フレーム)
+#### 制御フレーム（control_frame）
 <!-- traceability: {PositionIndependentCode} {ContextPointerRegister} {MemoryBoundaryCheck} {EnvironmentPointer} -->
 `block/loop/if` 命令によるネスト構造とジャンプ先を管理する。
 
@@ -83,7 +83,7 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 | 結果アリティ | このブロックが戻す値の数（スタック Pruning に使用） | 整数 | 8bit/16bit |
 | ループフラグ | 現在の構造が `loop` かどうかを示す | ブール値 | - |
 
-#### `interpreter_config`
+#### インタプリタ構成（interpreter_config）
 <!-- traceability: {ConfigurableSystem} -->
 インタープリタの動作パラメータを定義する。 `{ConfigurableSystem}`
 
@@ -93,7 +93,7 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 | 制御スタック容量 | 制御フレームの最大ネスト可能数 | エントリ数 | 32bit符号なし |
 | Yield 閾値 | 次の yield までに実行を許可する命令（トレース）数 | 回数 | 32bit符号なし |
 
-#### `opcode_handler` / `exec_trace`
+#### オプコードハンドラ / トレース実行（opcode_handler / exec_trace）
 <!-- traceability: {JIT_RuntimeAPI_Fallback} -->
 命令ハンドラおよびJITトレースの共通実行シグネチャ。 `{JIT_RuntimeAPI_Fallback}`
 
@@ -158,7 +158,7 @@ sequenceDiagram
 ### 5.1 公開API
 外部から利用可能なオブジェクト指向APIを定義する。
 
-#### `initialize`
+#### 初期化（initialize）
 
 | 項目 | 内容 |
 | :--- | :--- |

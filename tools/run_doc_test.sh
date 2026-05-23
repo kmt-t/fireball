@@ -58,7 +58,7 @@ START_TIME=$(date +%s)
 # 1. Module Audit (All Files)
 echo -e "\n>>> [1/4] Running Module Audit (All component files)..."
 REPORT_FILE="$REPORT_DIR/audit_module_$(date +%Y%m%d_%H%M%S).log"
-if python3 tools/test_doc/test_doc_llm.py --all $ARGS 2>&1 | tee "$REPORT_FILE"; then
+if python3 tools/run_audit.py --all $ARGS 2>&1 | tee "$REPORT_FILE"; then
     echo "✔ Module Audit PASSED"
 else
     echo "✖ Module Audit FAILED"
@@ -69,7 +69,7 @@ fi
 echo -e "\n>>> [2/4] Running Hierarchy Audit - Tier 1 (Requirements → Core/Interface)..."
 echo "    Note: Section-by-section analysis (may take longer due to multiple LLM calls)"
 REPORT_FILE="$REPORT_DIR/audit_tier1_$(date +%Y%m%d_%H%M%S).log"
-if python3 tools/test_doc/test_doc_llm.py --hierarchy --tier 1 $ARGS 2>&1 | tee "$REPORT_FILE"; then
+if python3 tools/run_audit.py --hierarchy --tier 1 $ARGS 2>&1 | tee "$REPORT_FILE"; then
     echo "✔ Tier 1 Hierarchy Audit PASSED"
 else
     echo "✖ Tier 1 Hierarchy Audit FAILED"
@@ -83,7 +83,7 @@ else
     # 3. Hierarchy Audit - Tier 2
     echo -e "\n>>> [3/4] Running Hierarchy Audit - Tier 2 (Core/Interface → Runtime/JIT)..."
     REPORT_FILE="$REPORT_DIR/audit_tier2_$(date +%Y%m%d_%H%M%S).log"
-    if python3 tools/test_doc/test_doc_llm.py --hierarchy --tier 2 $ARGS 2>&1 | tee "$REPORT_FILE"; then
+    if python3 tools/run_audit.py --hierarchy --tier 2 $ARGS 2>&1 | tee "$REPORT_FILE"; then
         echo "✔ Tier 2 Hierarchy Audit PASSED"
     else
         echo "✖ Tier 2 Hierarchy Audit FAILED"
@@ -93,7 +93,7 @@ else
     # 4. Hierarchy Audit - Tier 3
     echo -e "\n>>> [4/4] Running Hierarchy Audit - Tier 3 (Runtime/JIT → Platform/HAL)..."
     REPORT_FILE="$REPORT_DIR/audit_tier3_$(date +%Y%m%d_%H%M%S).log"
-    if python3 tools/test_doc/test_doc_llm.py --hierarchy --tier 3 $ARGS 2>&1 | tee "$REPORT_FILE"; then
+    if python3 tools/run_audit.py --hierarchy --tier 3 $ARGS 2>&1 | tee "$REPORT_FILE"; then
         echo "✔ Tier 3 Hierarchy Audit PASSED"
     else
         echo "✖ Tier 3 Hierarchy Audit FAILED"

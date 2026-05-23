@@ -33,7 +33,7 @@ graph TD
 
 ### 3.3 主要なクラス・構造体・配列・定数
 
-#### `Logger` クラス
+#### ロガー（Logger）クラス
 依存関係（HALトランスポート）とバッファ状態をカプセル化する。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
@@ -43,7 +43,7 @@ graph TD
 | 書き込み/読み出し索引 | バッファの現在の状態を示すポインタ | アトミック値 | 32bit |
 | 出力閾値 | 現在出力対象としている最小のログレベル | uint8_t | `log_level` |
 
-#### `logging_config`
+#### ログ構成（logging_config）
 <!-- traceability: {ConfigurableSystem} -->
 ロギングシステムの動作パラメータを定義する。 `{ConfigurableSystem}`
 

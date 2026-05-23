@@ -27,7 +27,7 @@ graph TD
 
 TODO(Phase 1): メモリレイアウトの詳細設計 - `jit_template` におけるパッチ情報の具体的なバイナリ構造（オフセット型、パッチ種別のエンコード方法）を確定させること。
 
-#### `CopyAndPatchEngine` クラス
+#### コピーアンドパッチエンジン（CopyAndPatchEngine）クラス
 テンプレートの解決とバイナリ操作をカプセル化する。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
@@ -35,7 +35,7 @@ TODO(Phase 1): メモリレイアウトの詳細設計 - `jit_template` にお�
 | テンプレート辞書 | WASM命令に対応するJITテンプレートの検索索引 | アクセス辞書 | `jit_template_map` |
 | アセンブラ参照 | 実行時に補助的な命令生成を行う場合のインターフェイス | 構造体への参照 | [`constexpr_assembler`](jit_assembler_constexpr.md) (非所有) |
 
-#### `jit_template` (命令テンプレート)
+#### 命令テンプレート（jit_template）
 WASM命令に対応するネイティブバイナリの雛形。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
@@ -88,7 +88,7 @@ sequenceDiagram
 
 TODO(Phase 1): ATCの抽出 - `compile_trace` における `dest` バッファのサイズ要件（事前条件）など、暗黙の前提を明文化すること。
 
-#### `compile_trace`
+#### トレースコンパイル（compile_trace）
 
 | 項目 | 内容 |
 | :--- | :--- |

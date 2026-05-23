@@ -30,7 +30,7 @@ graph TD
 
 ### 3.3 主要なクラス・構造体・配列・定数
 
-#### `device` (デバイス情報)
+#### デバイス情報（device）
 個別のデバイスの属性と状態を管理する。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
@@ -41,7 +41,7 @@ graph TD
 | 転送単位 | デバイスが扱う最小のデータブロックサイズ | バイト数 | - |
 | 予約ページ数 | vMMIO DYNAMIC領域に確保するページ数 (`reserved_pages`) | ページ数 | デフォルト0 |
 
-#### `hal_config` (HAL構成)
+#### HAL構成（hal_config）
 <!-- traceability: {ConfigurableSystem} -->
 HAL全体の制限値を定義する。 `{ConfigurableSystem}`
 

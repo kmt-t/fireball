@@ -52,7 +52,7 @@ graph TD
 
 TODO(Phase 1): メモリレイアウトの厳密化 - `jit_context` および `jit_config` に含まれるスパンや配列の具体的なアライメント要求、最大サイズ制約（RAM 64KB環境下でのアロケーション方針）を確定させること。
 
-#### `jit_harness`
+#### JITハーネス（jit_harness）
 サブコンポーネントへのポインタを集約する。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
@@ -62,7 +62,7 @@ TODO(Phase 1): メモリレイアウトの厳密化 - `jit_context` および `j
 | エントリ索引 | PCと生成コードの対応を管理する索引 | 構造体への参照 | [`jit_entry_index`](jit_runtime_entry.md) (非所有) |
 | キャッシュマネージャ | 生成コードのメモリ領域を管理するサブコンポーネント | 構造体への参照 | 独自構造体 (非所有) |
 
-#### `jit_context`
+#### JITコンテキスト（jit_context）
 可変状態を保持する。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
@@ -72,7 +72,7 @@ TODO(Phase 1): メモリレイアウトの厳密化 - `jit_context` および `j
 | コンパイル待ち列 | 後でコンパイルを行うPCの順番リスト | ソート済み配列 | - |
 | 実行履歴マップ | 命令の実行頻度を記録するビットマップ | データ範囲 | `std::span<uint8_t>` |
 
-#### `jit_config` (JIT構成)
+#### JIT構成（jit_config）
 <!-- traceability: {ConfigurableSystem} {StaticScalability} -->
 JITエンジンの挙動を制御する性能パラメータ。 `{ConfigurableSystem}` `{StaticScalability}`
 
@@ -227,7 +227,7 @@ JITエンジンの責務を、以下の独立したサブコンポーネント�
 
 TODO(Phase 1): ATCの抽出 - `lookup_trace` 等の各APIについて、事前条件・事後条件・不変条件（ATC）やエラー時の挙動を包括的に定義し、厳格な契約を策定すること。
 
-#### `initialize`
+#### 初期化（initialize）
 <!-- traceability: {ConfigurableSystem} -->
 
 | 項目 | 内容 |
@@ -242,7 +242,7 @@ TODO(Phase 1): ATCの抽出 - `lookup_trace` 等の各APIについて、事前�
 | エラー時の挙動 | メモリ割り当ての不備がある場合はエラーを返す。 |
 | 補足 | `{ConfigurableSystem}` の方針に基づき、基本的にはブート時に一度だけ呼び出される。 |
 
-#### `lookup_trace`
+#### トレース検索（lookup_trace）
 <!-- traceability: {ConfigurableSystem} -->
 
 | 項目 | 内容 |
@@ -251,7 +251,7 @@ TODO(Phase 1): ATCの抽出 - `lookup_trace` 等の各APIについて、事前�
 | シグネチャ | `lookup_trace(pc: address) -> result<address, bool>` |
 | 補足 | ビットマップが `COMPILED` でない場合は即座に失敗を返す。その後、`harness` 経由でエントリ索引を検索する。 |
 
-#### `get_card_state`
+#### カード状態取得（get_card_state）
 <!-- traceability: {ConfigurableSystem} -->
 
 | 項目 | 内容 |
@@ -259,7 +259,7 @@ TODO(Phase 1): ATCの抽出 - `lookup_trace` 等の各APIについて、事前�
 | 機能概要 | 指定したPCが属するカードの状態（2-bit）を取得する。 |
 | シグネチャ | `get_card_state(pc: address) -> u8` |
 
-#### `get_search_range`
+#### 検索範囲取得（get_search_range）
 <!-- traceability: {ConfigurableSystem} -->
 
 | 項目 | 内容 |
@@ -267,7 +267,7 @@ TODO(Phase 1): ATCの抽出 - `lookup_trace` 等の各APIについて、事前�
 | 機能概要 | カーソマーキング索引（カードグループ）を用いて、二分探索の範囲を絞り込む。 |
 | シグネチャ | `get_search_range(pc: address) -> result<tuple<u32, u32>, bool>` |
 
-#### `process_batch_compile`
+#### バッチコンパイル処理（process_batch_compile）
 <!-- traceability: {ConfigurableSystem} -->
 
 | 項目 | 内容 |

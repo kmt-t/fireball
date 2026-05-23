@@ -36,7 +36,7 @@ graph TB
 ### 3.3 主要なクラス・構造体・配列・定数
 <!-- traceability: {IPCRegistry} {FlatMapIndexed} {RoleBasedAccessControl} -->
 
-#### `kv_pair` (Key-Valueペア)
+#### Key-Valueペア（kv_pair）
 <!-- traceability: {DictionaryBasedIPC} -->
 IPC通信の最小単位。1つのメッセージで8個のペアを送信できる。
 
@@ -50,7 +50,7 @@ IPC通信の最小単位。1つのメッセージで8個のペアを送信でき
 - **機能的IPC**: キーを、受信側が定義する関数やリクエスト種類を特定する識別子として使用する。
 - **辞書参照IPC**: キーを、受信側が保持する静的な辞書内の文字列オフセットとして解釈する。 `{DictionaryBasedIPC}`
 
-#### `message` (IPCメッセージ)
+#### IPCメッセージ（message）
 <!-- traceability: {TypeSafeMessaging} {FlatMapIndexed} -->
 Key-Valueペアを複数集約した通信の基本単位。内部的に C++23 `std::flat_map` 相当の構造を採用し、メッセージ内のキー検索を $O(\log N)$ で行う。 `{TypeSafeMessaging}` `{FlatMapIndexed}`
 
@@ -58,7 +58,7 @@ Key-Valueペアを複数集約した通信の基本単位。内部的に C++23 `
 22	| :--- | :--- | :--- | :--- |
 52	| KVマップ | メッセージ内容を構成するKey-Valueペアの集合 | `std::flat_map` | 8個固定（静的バッファ） |
 
-#### `registry_entry`
+#### レジストリエントリ（registry_entry）
 <!-- traceability: {DictionaryBasedIPC} {TypeSafeMessaging} {FlatMapIndexed} -->
 システム内で公開されているサービスの情報を管理する。
 
@@ -124,7 +124,7 @@ sequenceDiagram
 
 TODO(Phase 1): ATC抽出 - サービス登録時のチャネル初期化や送信メッセージのライフサイクル（所有権移動におけるダングリング参照の防止）に関する事前/事後/不変条件を厳格に定義すること。
 
-#### `register_service`
+#### サービス登録（register_service）
 
 | 項目 | 内容 |
 | :--- | :--- |
@@ -135,7 +135,7 @@ TODO(Phase 1): ATC抽出 - サービス登録時のチャネル初期化や送�
 | 事前条件 | レジストリに空きがあること。URIが重複していないこと。 |
 | 事後条件 | レジストリがURI順に維持され、高速検索が保証される。 |
 
-#### `lookup_service`
+#### サービス検索（lookup_service）
 <!-- traceability: {IPC_HandleBased} -->
 
 | 項目 | 内容 |
@@ -147,7 +147,7 @@ TODO(Phase 1): ATC抽出 - サービス登録時のチャネル初期化や送�
 | エラー時の挙動 | 見つからない場合はエラーを、権限がない場合は拒否を通知する。 |
 | 補足 | `{IPC_HandleBased}` のため、クライアントはこのIDをキャッシュして利用することが推奨される。 |
 
-#### `route_message`
+#### メッセージルーティング（route_message）
 <!-- traceability: {CSP_Handoff} -->
 
 | 項目 | 内容 |

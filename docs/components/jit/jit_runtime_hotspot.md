@@ -23,7 +23,7 @@ graph TD
     Detector -->|Push| Queue[Compile Queue]
 ```
 
-#### `HotspotDetector` クラス
+#### ホットスポット検出器（HotspotDetector）クラス
 統計情報の管理と判定ロジックをカプセル化する。
 
 TODO(Phase 1): 容量制約の明文化 - ホットスポット・ビットマップの総サイズ（RAM上限）、および履歴バッファの最大深さを具体的な数値で確定させること。
@@ -64,7 +64,7 @@ stateDiagram-v2
 
 TODO(Phase 1): ATCの抽出 - `record_execution` におけるバッファ溢れ時の振る舞い（リングバッファ上書き等）、`process_history` の事前条件を定義すること。
 
-#### `record_execution`
+#### 実行記録（record_execution）
 
 | 項目 | 内容 |
 | :--- | :--- |
@@ -73,7 +73,7 @@ TODO(Phase 1): ATCの抽出 - `record_execution` におけるバッファ溢れ�
 | 引数 | `pc`: WASM 命令オフセット |
 | 戻り値 | void |
 
-#### `process_history`
+#### 履歴処理（process_history）
 
 | 項目 | 内容 |
 | :--- | :--- |

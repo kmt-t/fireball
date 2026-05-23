@@ -33,7 +33,7 @@ graph TD
 
 ### 3.3 主要なクラス・構造体・配列・定数
 
-#### `Debugger` クラス
+#### デバッガ（Debugger）クラス
 <!-- traceability: {NoStdVector} -->
 依存関係（実行コンテキスト、HAL）と内部状態（ブレークポイント、現在状態）をカプセル化する。
 
@@ -46,7 +46,7 @@ graph TD
 | ブレークポイントリスト | 設定されているブレークポイントのアドレス一覧。 | 固定長配列 | `{NoStdVector}` |
 | `last_stop_reason` | 直近の停止要因。 | ID値 | 信号番号等 |
 
-#### `virtual_register_set`
+#### 仮想レジスタセット（virtual_register_set）
 <!-- traceability: {RSPMinimalSet} -->
 GDB等の外部クライアントに提示する仮想的なCPUレジスタ群。 `{RSPMinimalSet}`
 

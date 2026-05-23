@@ -167,7 +167,7 @@ sequenceDiagram
     participant T as テストツール (doc_test_llm)
     participant L as LLM (Gemini / Sakura等)
     
-    U->>T: tools/doc_test_llm.py --pair A.md B.md
+    U->>T: tools/test_doc/test_doc_llm.py --pair A.md B.md
     T->>T: ファイル A と B を読込
     T->>T: 二者の関連（キーワード・API）を抽出
     T->>T: 組み合わせ検証プロンプトを構築

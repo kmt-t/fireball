@@ -43,6 +43,7 @@
 # Misc.
 *.log
 .antigravitycli/
+.idea
 cmake-build*/
 build*/
 temp/

@@ -32,42 +32,44 @@ Fireballは、極小リソース環境での柔軟性と高性能を両立させ
 
 ```mermaid
 graph TD
-    classDef subsystem fill:#f9f,stroke:#333,stroke-width:2px;
-    classDef kernel fill:#bbf,stroke:#333,stroke-width:2px;
-    classDef hardware fill:#ddd,stroke:#333,stroke-width:1px,stroke-dasharray: 5 5;
+    classDef blockStyle fill:#e1f5ff,stroke:#01579b,stroke-width:2px,color:#000;
+    classDef hwStyle fill:#f3e5f5,stroke:#4a148c,stroke-width:1px,stroke-dasharray: 5 5,color:#000;
 
-    subgraph Guest_Layer [Guest Layer]
-        App["block: Guest Application"]
-        Svc["block: WASM Services"]
+    subgraph Guest["Guest Layer"]
+        App["<b>block: Guest Application</b><br/>─ 入力: WASM binary<br/>─ 出力: execution result<br/>─ ポート: execute()"]:::blockStyle
+        Svc["<b>block: WASM Service</b><br/>─ 入力: IPC request<br/>─ 出力: response<br/>─ ポート: handle_request()"]:::blockStyle
     end
 
-    subgraph Runtime_Layer [Runtime Layer]
-        vSoC["block: vSoC / WASM Runtime"]
+    subgraph Runtime["Runtime Layer"]
+        vSoC["<b>block: vSoC Runtime</b><br/>─ プロパティ:<br/>  · JIT cache (4KB)<br/>  · WASM linear memory<br/>─ ポート:<br/>  · execute(): code execution<br/>  · syscall(): IPC dispatch"]:::blockStyle
     end
 
-    subgraph Kernel_Layer [Kernel Layer]
-        COOS["block: COOS Kernel"]
-        IPCR["block: IPC Router"]
+    subgraph Kernel["Kernel Layer"]
+        COOS["<b>block: COOS Kernel</b><br/>─ プロパティ:<br/>  · task scheduler<br/>  · context manager<br/>─ ポート:<br/>  · spawn(): task creation<br/>  · yield(): execution yield"]:::blockStyle
+        IPCR["<b>block: IPC Router</b><br/>─ プロパティ:<br/>  · service registry<br/>  · message queue<br/>─ ポート:<br/>  · lookup(uri): resolve<br/>  · route(msg): forward"]:::blockStyle
     end
 
-    subgraph Subsystem_Layer [Subsystem Layer]
-        HAL["block: HAL Implementation"]
-        Log["block: Logging Implementation"]
+    subgraph Subsystem["Subsystem Layer"]
+        HAL["<b>block: HAL Layer</b><br/>─ 入力: device commands<br/>─ 出力: device status<br/>─ ポート: device I/O"]:::blockStyle
+        Log["<b>block: Logging</b><br/>─ 入力: log message<br/>─ 出力: persistent log<br/>─ ポート: log_write()"]:::blockStyle
     end
 
-    subgraph Hardware_Layer [Hardware Layer]
-        HW["block: Hardware"]:::hardware
+    subgraph Hardware["Hardware Layer"]
+        HW["<b>block: Hardware Platform</b><br/>─ CPU, Memory, Peripherals<br/>─ Cortex-M / RISC-V"]:::hwStyle
     end
 
-    %% 依存性・接続
-    App -- "calls" --> vSoC
-    Svc -- "calls" --> vSoC
-    vSoC -- "lookup / send" --> IPCR
-    vSoC -- "yield / interrupt" --> COOS
-    IPCR -- "manages" --> COOS
-    HAL -- "implements" --> IPCR
-    Log -- "logs to" --> IPCR
-    HAL -- "registers" --> HW
+    %% 依存関係 (上から下へ)
+    App -->|"execute()"| vSoC
+    Svc -->|"syscall(uri)"| vSoC
+    
+    vSoC -->|"yield()"| COOS
+    vSoC -->|"lookup(uri) / route(msg)"| IPCR
+    
+    IPCR -->|"manage: task lifecycle"| COOS
+    HAL -->|"provide: device API"| IPCR
+    Log -->|"send log events"| IPCR
+    
+    HAL -.-|"register / read"| HW
 ```
 
 #### 依存性ルール
@@ -100,6 +102,7 @@ sequenceDiagram
     Boot->>COOS: Initialize Scheduler
     activate COOS
     COOS->>COOS: Start Idle Task
+    deactivate COOS
     deactivate Boot
 ```
 

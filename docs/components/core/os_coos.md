@@ -87,9 +87,79 @@ def channel_recv(channel: Channel, receiver_task: Task) -> CoValue:
 - **Idle Detection**: 全ての実行中タスクがブロック状態にあり、かつイベントキューが空（割り込みや外部イベントによる起床待ちのみ）の場合にアイドル状態と判定する。この条件を `idle_hook` のトリガーとし、バックグラウンド処理（ログフラッシュ等）を呼び出す。 `{IdleDetection}`
 - **Memory Management**: タスク生成時に独立したメモリパーティションを割り当てる。 `{StrictMemoryLimit}` `{IndependentHeap}`
 
-### 4.2 状態遷移
+### 4.2 状態遷移図 (SMD: COOS システムレベル)
 <!-- traceability: {CSP_Handoff} {DirectContextSwitch} {IdleDetection} {StrictMemoryLimit} {IndependentHeap} -->
-スケジューラの状態遷移については **[os_scheduler.md](os_scheduler.md#32-状態遷移図)** を参照。
+
+COOS 全体のシステムレベル状態遷移を以下に示す。各タスクの状態遷移については **[os_scheduler.md](os_scheduler.md#42-状態遷移図)** を参照。
+
+```mermaid
+stateDiagram-v2
+    [*] --> Uninitialized
+    
+    Uninitialized --> Ready: init-scheduler() success
+    
+    Ready --> RunningTask: spawn() / task enqueued
+    RunningTask --> RunningTask: yield() / next task scheduled
+    RunningTask --> Idle: all tasks BLOCKED / idle_hook triggered
+    
+    Idle --> RunningTask: event / interrupt / timeout
+    
+    RunningTask --> Recovery: task panic / error detected
+    Idle --> Recovery: system-level fault
+    
+    Recovery --> Ready: recovery complete / reset task queue
+    Recovery --> Shutdown: unrecoverable error
+    
+    Ready --> Shutdown: shutdown() / cleanup
+    Shutdown --> [*]: system halt
+```
+
+**システム状態の説明:**
+- **Uninitialized**: COOS 初期化前
+- **Ready**: 正常稼働。RUNNING または IDLE の どちらかの状態
+  - **Running Task**: 1つ以上のタスクが実行中
+  - **Idle**: 全タスクが BLOCKED で、イベント待ちの状態
+- **Recovery**: タスク障害（panic、エラー）が発生し、回復処理中
+- **Shutdown**: システム終了処理中
+
+### 4.3 タスク状態遷移図 (SMD: Task ライフサイクル)
+
+個別タスクの詳細な状態遷移を以下に示す。
+
+```mermaid
+stateDiagram-v2
+    [*] --> NotCreated
+    
+    NotCreated --> Ready: spawn() / allocate memory & enqueue
+    
+    Ready --> Running: scheduler dispatch / resume coroutine
+    Running --> Ready: yield() / push to ready queue tail
+    
+    Running --> WaitCSP: send()/recv() to empty / block
+    Running --> WaitEvent: wait_event() / pending
+    Running --> WaitInterrupt: wait_interrupt() / pending
+    
+    WaitCSP --> Ready: CSP Handoff [opposite ready]
+    WaitEvent --> Ready: event dispatch / received
+    WaitInterrupt --> Ready: interrupt / ISR notify
+    
+    Running --> Terminated: exit() / cleanup & free
+    WaitCSP --> Terminated: error / panic cleanup
+    WaitEvent --> Terminated: error / panic cleanup
+    WaitInterrupt --> Terminated: error / panic cleanup
+    
+    Terminated --> [*]: destroyed
+```
+
+**タスク状態の説明:**
+- **Not Created**: タスク未生成
+- **Ready**: 実行可能。次のスケジュール対象候補
+- **Running**: CPU実行中
+- **Blocked**: 実行待機中
+  - **Wait CSP**: チャネル通信を待機（相手タスク待機中）
+  - **Wait Event**: イベント（IPC_REPLY等）を待機
+  - **Wait Interrupt**: 割り込み通知を待機
+- **Terminated**: タスク終了・メモリ解放済み
 
 ## 5. インターフェイス設計
 <!-- traceability: {StaticDI} -->

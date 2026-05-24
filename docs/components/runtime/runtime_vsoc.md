@@ -93,20 +93,79 @@ vSoCの動作パラメータを定義する。 `{ConfigurableSystem}`
 
 TODO(Phase 0.8): vSoC Interpreter / JIT / Debugger TLA+ Verification - JIT実行中の Safepoint フォールバックと、デバッガ介入時の状態整合性を形式検証する。
 
-### 4.2 状態遷移図
+### 4.2 状態遷移図 (SysML SMD: vSoC Engine ライフサイクル)
 <!-- traceability: {ThreadedInterpreter} {JIT_CopyAndPatch} {Challenge_ApproximateYield} {JIT_Safepoint} {Debugger_Jit_Flush} -->
+
+vSoC Engine の実行制御と JIT/Interpreter 切り替えの状態遷移を以下に示す。
+
 ```mermaid
 stateDiagram-v2
-    [*] --> Idle
-    Idle --> Loading: prepare
-    Loading --> Ready: load_ok
-    Ready --> Running: step
-    Running --> Ready: yield
-    Running --> Debugging: breakpoint
-    Debugging --> Running: resume
-    Running --> Error: trap
-    Ready --> Idle: stop
+    [*] --> Uninitialized
+    
+    Uninitialized --> Loading: prepare(module) / allocate context
+    
+    Loading --> Ready: load_ok() / module linked
+    Loading --> Error: load_fail() / invalid WASM
+    
+    Ready --> InterpreterRun: step(pc=interp) / trace is interpreter
+    Ready --> JitRun: step(pc=jit) / trace is compiled code
+    Ready --> Idle: stop() / cleanup
+    
+    InterpreterRun --> Ready: yield() / threshold reached
+    InterpreterRun --> Debugging: breakpoint [debugger] / halt execution
+    InterpreterRun --> Error: trap() / page fault / invalid opcode
+    
+    JitRun --> SafepointCheck: [JIT loop backslash] / check interrupt flag
+    SafepointCheck --> JitRun: [no interrupt] / continue JIT
+    SafepointCheck --> Ready: [interrupt pending] / fallback to interpreter
+    SafepointCheck --> Debugging: [breakpoint] / halt execution
+    SafepointCheck --> Error: [safepoint trap] / exception in native code
+    
+    Debugging --> InterpreterRun: resume() / continue with interpreter
+    Debugging --> JitRun: resume(jit_enabled) / continue with JIT
+    Debugging --> Ready: continue() / return to scheduler
+    
+    Error --> Ready: recover() / reset context
+    Error --> [*]: fatal() / shutdown
+    
+    Idle --> [*]: destroyed
 ```
+
+**vSoC Engine 状態の説明:**
+
+| 状態 | 説明 | 主要アクション |
+| :--- | :--- | :--- |
+| **Uninitialized** | 初期化前 | - |
+| **Loading** | WASM モジュール読み込み・リンク中 | パーサ実行、セクション検証 |
+| **Ready** | 実行準備完了 | `step()` で Interpreter または JIT へ遷移 |
+| **InterpreterRun** | インタープリタによるバイトコード逐次実行 | オペコード実行、ホットスポット検出 |
+| **JitRun** | JIT生成ネイティブコード実行 | ネイティブコード直接実行、Safepoint チェック |
+| **SafepointCheck** | JIT 実行中の割り込み確認ポイント | フラグチェック、中断判定 |
+| **Debugging** | デバッガによる停止中 | メモリ検査、変数書き換え、キャッシュ flush |
+| **Error** | エラー発生（復帰可能） | トラップハンドラ実行、状態リセット |
+| **Idle** | 停止・待機状態 | スケジューラに制御戻す |
+
+**遷移の詳細:**
+
+| 遷移 | トリガー | 条件 | アクション | 次状態 |
+| :--- | :--- | :--- | :--- | :--- |
+| Load → Ready | load_ok() | モジュール有効 | リンク完了、コンテキスト初期化 | Ready |
+| Ready → InterpreterRun | step(pc) | exec_trace = interpreter | PC 登録、実行開始 | InterpreterRun |
+| Ready → JitRun | step(pc) | exec_trace = compiled code | ネイティブコード実行開始 | JitRun |
+| InterpreterRun → Ready | yield() [threshold] | 実行トレース数超過 | ホットスポット検出、JIT キュー投入 | Ready |
+| JitRun → SafepointCheck | [loop backslash] | JIT ループバックエッジ | インタラプト フラグ確認 | SafepointCheck |
+| SafepointCheck → JitRun | [no interrupt] | フラグなし | JIT 実行継続 | JitRun |
+| SafepointCheck → Ready | [interrupt pending] | 割り込みフラグ有り | インタープリタ フォールバック | Ready |
+| (any) → Debugging | breakpoint [debugger] | RSP ブレークポイント | デバッガコマンド待ち | Debugging |
+| Debugging → Ready | resume(interp) | 再開要求（インタープリタ） | JIT キャッシュ flush、PC リセット | Ready |
+| (any) → Error | trap() | ページフォルト / 不正オペコード | トラップハンドラ実行 | Error |
+| Error → Ready | recover() | リカバリ可能 | コンテキストリセット | Ready |
+
+**重要な設計ポイント:**
+
+- **JIT Safepoint**: ネイティブコード実行中も、ループバックエッジでソフトウェアフラグをチェックし、非同期割り込みに応答できる仕組み
+- **Debugger Flush**: デバッガがメモリを変更した場合、関連するすべての JIT キャッシュを無効化して整合性を保証
+- **Approximate Yield**: exec_trace のトレース数をカウントして概算的にタスク切り替えを判定
 
 ### 4.3 内部シーケンス
 <!-- traceability: {ThreadedInterpreter} {JIT_CopyAndPatch} {Challenge_ApproximateYield} {JIT_Safepoint} {Debugger_Jit_Flush} -->

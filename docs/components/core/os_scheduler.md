@@ -56,23 +56,53 @@ graph TD
 - **アイドル状態の検知**: 全ての管理タスクが「待機状態（BLOCKED）」となった場合にアイドル・ハンドラ（Periodic Task等）を実行する。 `{IdleDetection}` `{PeriodicTask}`
 - **割り込み処理**: HALからの割り込み通知（`notify_interrupt`）を受信し、対象タスクを優先的に再開する。 `{InterruptWakeup}`
 
-### 4.2 状態遷移図
+### 4.2 状態遷移図 (SysML SMD: Scheduler 視点)
 <!-- traceability: {IdleDetection} {PeriodicTask} {InterruptWakeup} -->
+
+スケジューラが管理するタスク状態とイベント駆動の遷移ロジックを以下に示す。
+
 ```mermaid
 stateDiagram-v2
-    state "READY" as ready
-    state "RUNNING" as running
-    state "BLOCKED" as blocked
+    [*] --> Ready: spawn(task) / allocate TCB, insert at tail
     
-    [*] --> ready: spawn / spawn_task
-    ready --> running: schedule
-    running --> ready: yield
-    running --> blocked: wait / send / recv
-    blocked --> ready: event dispatch (IPC_REPLY / INT / timeout)
-    running --> [*]: exit / error (cleanup)
+    Ready --> Running: [schedule] ready queue not empty / resume at head
+    Running --> Ready: yield() / push to ready queue tail
+    
+    Running --> CSPWait: send() to empty / push sender to wait
+    Running --> CSPWait: recv() no data / push receiver to wait
+    Running --> EventWait: wait_event(id) / push to event queue
+    Running --> InterruptWait: [interrupt occurs] / ISR posts INT event
+    
+    CSPWait --> Running: **CSP Handoff** [opposite ready]
+    CSPWait --> Ready: [opposite not ready] / wake partner
+    EventWait --> Ready: event dispatch / dequeue from wait
+    InterruptWait --> Ready: ISR INT event / event loop process
+    
+    Running --> [*]: exit() / cleanup TCB
+    Running --> [*]: error / panic cleanup
 ```
 
-**注**: 割り込みハンドラは `notify-interrupt` ではなく、イベントキューに Interrupt イベントを投入する。イベントループが Interrupt イベントを取り出し、対象タスクを BLOCKED から READY へ遷移させる。詳細は `docs/components/os_event_driven.md` を参照。
+**状態遷移の詳細:**
+
+| 遷移 | トリガー | 条件 | アクション | 次状態 |
+| :--- | :--- | :--- | :--- | :--- |
+| init → READY | spawn(task) | メモリ確保成功 | TCB生成、タスクコンテキスト初期化 | READY |
+| READY → RUNNING | schedule() | READYキュー非空 | `head_task.resume()` 直接呼び出し | RUNNING |
+| RUNNING → READY | yield() | (常に可) | 現在タスクをREADYキュー末尾に追加 | READY |
+| RUNNING → CSP_WAIT | send(empty) | チャネル空 | 送信タスクを待機キューに追加、実行権をスケジューラに戻す | CSP_WAIT |
+| RUNNING → CSP_WAIT | recv(empty) | データなし | 受信タスクを待機キューに追加、実行権をスケジューラに戻す | CSP_WAIT |
+| CSP_WAIT → RUNNING | **CSP Handoff** | 相手タスク準備完了 | **直接コンテキストスイッチ: `opposite_task.resume()` 直呼出** | RUNNING |
+| CSP_WAIT → READY | [相手未準備] | 相手タスク待機中 | 相手をREADY、自タスクをREADY末尾に追加 | READY |
+| RUNNING → EVT_WAIT | wait_event(id) | (常に可) | イベントID登録、スケジューラに制御戻す | EVT_WAIT |
+| EVT_WAIT → READY | event dispatch | イベント受信 | イベントループがタスクをREADYへ遷移 | READY |
+| RUNNING → INT_WAIT | [ISR発生] | 割り込みハードウェア | ISRが INT イベントをキューに投入 | INT_WAIT |
+| INT_WAIT → READY | event dispatch | INT イベント処理 | イベントループが対象タスクをREADYへ遷移 | READY |
+| RUNNING → [*] | exit() / error | (常に可) | TCB解放、メモリパーティション回収 | [*] |
+
+**注記:**
+- 割り込みハンドラ（ISR）は直接タスク状態を変更しない。代わりに INT イベントをイベントキューに投入する。
+- 詳細なイベント駆動ロジックは `docs/components/os_event_driven.md` を参照。
+- **CSP Handoff の特徴**: スケジューラを介さず、`opposite_task.resume()` を直接呼び出すことで超低レイテンシを実現。
 
 ## 5. インターフェイス設計
 

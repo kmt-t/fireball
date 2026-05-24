@@ -84,20 +84,87 @@ Key-Valueペアを複数集約した通信の基本単位。内部的に C++23 `
 
 TODO(Phase 0.8): IPC Router Deadlock Verification - 厳格なノンブロッキング送信と、所有権巻き戻しロジックによるデッドロック不在を TLA+ で検証する。
 
-### 4.2 状態遷移図
+### 4.2 状態遷移図 (SysML SMD: IPC Router ルーティングフロー)
 <!-- traceability: {LowLatencyLookup} {AccessDictionary} {FlatMapIndexed} {OwnershipTransfer} {IPC_ZeroCopy} {Challenge_CspHandoffStarvation} {IPC_DropHandler} -->
+
+IPC ルータの各ルーティング操作における状態遷移を以下に示す。
+
 ```mermaid
 stateDiagram-v2
     [*] --> Idle
-    Idle --> Routing: lookup / send
-    Routing --> Idle: complete
-    Routing --> Error: permission_denied / not_found
-    Error --> Idle: reset
+    
+    %% Main service flow
+    Idle --> ServiceLookup: lookup(uri) / flat_map search
+    Idle --> MessageRouting: route_message(channel, msg)
+    
+    %% Service Lookup branch
+    ServiceLookup --> PermissionCheck: [uri found]
+    ServiceLookup --> ServiceNotFound: [uri not found]
+    
+    %% Permission Check branch
+    PermissionCheck --> MessageRouting: [access allowed]
+    PermissionCheck --> PermissionDenied: [access denied]
+    
+    %% Message Routing → Ownership Transfer Pipeline
+    MessageRouting --> Revoke: begin send
+    Revoke --> Enqueue: mark In-flight
+    
+    %% Enqueue branch: success or failure
+    Enqueue --> Grant: [queue has space]
+    Enqueue --> QueueFull: [queue full]
+    
+    %% Success path
+    Grant --> Complete: grant to receiver
+    Complete --> Idle: done
+    
+    %% Error paths → Rollback
+    QueueFull --> Rollback: restore ownership
+    Rollback --> Idle: recovery complete
+    
+    %% Error handling → Idle
+    ServiceNotFound --> Idle: error reported
+    PermissionDenied --> Idle: error reported
 ```
 
-### 4.3 内部シーケンス
+**ルーティング状態の説明:**
+
+| 状態 | 説明 | 主要アクション |
+| :--- | :--- | :--- |
+| **Idle** | 初期待機状態 | - |
+| **Service Lookup** | URI文字列をレジストリで検索 | `std::flat_map` による $O(\log N)$ 二分探索 |
+| **Permission Check** | 送信側ロールと受信側ロールのマトリックスで許可判定 | ロールマトリックス参照 |
+| **Message Routing** | 送信メッセージの転送処理 | チャネルへの Enqueue |
+| **Ownership Transfer** | ゼロコピーハンドオフの所有権移譲フロー | 3段階：Revoke → Enqueue → Grant |
+| **Revoke** | 送信側の権限を無効化、In-flight 状態へ遷移 | リソースロック設定 |
+| **Enqueue** | メッセージをキューに追加 | キュー容量チェック |
+| **Grant** | 受信側にリソースの権限を付与 | 所有権ハンドシェイク完了 |
+| **Complete** | ルーティング完了 | メッセージ処理の次ステップへ |
+| **Service Not Found** | 指定 URI が未登録 | エラー応答を呼び出し側に返却 |
+| **Permission Denied** | アクセス権限不足 | エラー応答を呼び出し側に返却 |
+| **Queue Full** | 受信側のメッセージキューが満杯 | **Rollback**: 送信側に所有権を返却、再試行 |
+| **Rollback & Recovery** | キュー満杯からの復帰処理 | 送信側へ所有権を復元、Idle へ戻す |
+
+### 4.3 メッセージライフサイクルと所有権管理 (SysML Parametric Diagram 相当)
+
+メッセージが IPC ルータを通じて送信されてから受信されるまでの各段階と、所有権の状態遷移を以下の表で定義する。
+
+| フェーズ | メッセージ状態 | 所有権 | 送信側 | 受信側 | リソース保護 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **初期** | 送信側で生成 | 送信側が所有 | RUNNING | BLOCKED/READY | なし |
+| **Revoke** | ルータへ到達 | In-flight に昇格 | **ロック（アクセス禁止）** | 待機中 | リソースロック |
+| **Enqueue** | キューに追加 | In-flight 継続 | **ロック継続** | 待機中 | キュー管理 |
+| **Grant（成功）** | キューから取得 | 受信側へ移譲 | リリース | **所有権取得** | ハンドシェイク完了 |
+| **Rollback（失敗）** | キュー削除 | 送信側へ復帰 | リリース → **復帰** | 戻す | 復帰メカニズム |
+
+**注記:**
+- **In-flight 状態**: メッセージがルータで処理中で、送信側は操作できない状態。ダングリング参照を防止。
+- **Drop Handler**: メッセージ受信側が Kill された場合、キューのデストラクタが In-flight リソースを強制回収し、メモリリークを防止。
+
+### 4.4 内部シーケンス図
 <!-- traceability: {LowLatencyLookup} {AccessDictionary} {FlatMapIndexed} {OwnershipTransfer} {IPC_ZeroCopy} {Challenge_CspHandoffStarvation} {IPC_DropHandler} -->
+
 #### サービス検索と接続フロー
+<!-- traceability: {LowLatencyLookup} {AccessDictionary} {RoleBasedAccessControl} {IPCRouter} -->
 ```mermaid
 sequenceDiagram
     participant C as Client
@@ -116,6 +183,57 @@ sequenceDiagram
         R-->>C: ERROR_PERMISSION_DENIED
     end
 ```
+
+#### 所有権移譲フロー (Zero-Copy Handoff)
+```mermaid
+sequenceDiagram
+    participant Tx as <<block>> Sender Task
+    participant R as <<block>> IPC Router
+    participant Q as <<block>> Receiver Queue
+    participant Rx as <<block>> Receiver Task
+    
+    activate Tx
+    Tx->>R: send(channel_id, msg) with resource ownership
+    activate R
+    
+    Note over R: [Revoke Phase]
+    R->>R: Mark message "In-flight"
+    R->>R: Lock sender's resource access
+    
+    Note over R: [Enqueue Phase]
+    alt Queue has space
+        R->>Q: enqueue(msg)
+        activate Q
+        Note over Q: Message buffered<br/>(ownership in escrow)
+    else Queue full (Rollback)
+        R->>R: Restore sender ownership
+        R-->>Tx: ERROR_QUEUE_FULL
+        deactivate Q
+    end
+    
+    deactivate R
+    deactivate Tx
+    
+    Note over Rx: [Receiver dequeues]
+    activate Rx
+    Rx->>Q: dequeue()
+    activate Q
+    dequeue Q: return msg
+    
+    Note over R: [Grant Phase]
+    R->>Rx: Grant ownership to receiver
+    R->>Tx: Release sender lock
+    
+    deactivate Q
+    Rx-->>Rx: Use resource (now owned)
+    deactivate Rx
+```
+
+**フロー説明:**
+1. **Revoke**: メッセージをルータが接収し、送信側をロック
+2. **Enqueue**: メッセージがキューに追加（所有権は仲介状態）
+   - キューが満杯の場合は **Rollback**: 送信側に所有権を返却
+3. **Grant**: 受信側がメッセージを取得した瞬間に所有権を移譲
 
 ## 5. インターフェイス定義
 

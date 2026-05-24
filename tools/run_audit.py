@@ -14,6 +14,7 @@ from tools.common.db import db
 from tools.mechanical.check_format import check_format
 from tools.mechanical.check_traceability import check_traceability
 from tools.mechanical.check_api import check_api
+from tools.mechanical.check_mermaid import check_mermaid
 from tools.llm.audit_module import audit_policy, audit_quality, audit_trace_alignment
 from tools.llm.audit_consistency import audit_pair_files, generate_checklist, read_csv_checklist, run_checklist_audit, save_csv_checklist
 from tools.llm.audit_hierarchy import audit_hierarchy_tier
@@ -329,6 +330,21 @@ def main():
             for w in warnings_trace:
                 total_warnings += 1
                 print(f"  {YELLOW}⚠ WARN{RESET} {w['rule_code']} - {w['message']}")
+
+    # Mermaid diagram syntax check
+    if not target_rules or any(r.startswith("M-MERMAID") for r in target_rules):
+        violations_mermaid = check_mermaid(files_to_test)
+        if target_rules:
+            violations_mermaid = [v for v in violations_mermaid if v["rule_code"] in target_rules]
+
+        print_result_header("M-MERMAID: Mermaid Diagram Syntax")
+        if not violations_mermaid:
+            print(f"  {GREEN}✓ PASS{RESET}")
+        else:
+            for v in violations_mermaid:
+                total_violations += 1
+                rel_p = v["file_path"].relative_to(REPO_ROOT)
+                print(f"  {RED}✗ FAIL{RESET} {v['rule_code']} ({rel_p}:{v['line_number']}) - {v['message']}")
 
     # api naming check
     if not target_rules or "M-ARCH-NAMING" in target_rules:

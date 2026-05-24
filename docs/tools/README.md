@@ -76,6 +76,37 @@ Fireball プロジェクトの検証・監査・テストツール群の仕様�
 
 ---
 
+### 4. Mermaid Validator (Mermaid 図文法チェッカー)
+**パス:** `tools/validate_mermaid.py`
+
+ドキュメント内のすべての Mermaid 図の文法を検証し、レンダリングエラーを防止。
+
+- **検証対象:**
+  - **stateDiagram**: 括弧バランス、activate/deactivate マッチング
+  - **sequenceDiagram**: 参加者定義、メッセージ構文、activate/deactivate スタック
+  - **graph/flowchart**: ノード定義、括弧バランス
+
+- **実行方法:**
+
+```bash
+# すべての Mermaid 図を検証
+python3 tools/validate_mermaid.py
+
+# 出力例
+# ✅ 42/42 files passed validation.
+# ✅ All Mermaid diagrams are valid.
+```
+
+- **エラー時:**
+```bash
+# エラーファイル、行番号、問題内容を表示
+# ❌ Found 2 Mermaid validation error(s):
+#   /docs/architecture/overview.md:102
+#     Sequence diagram: Mismatched deactivate "Boot"
+```
+
+---
+
 ## 実行方法
 
 各ツールを個別に実行：

@@ -63,14 +63,14 @@ def fix_file(filepath: Path, heading_map: dict[str, str], complex_patterns: dict
 
 def main():
     components_dir = REPO_ROOT / "docs" / "components"
-    tools_dir = REPO_ROOT / "docs" / "tools"
+    config_dir = REPO_ROOT / "tools" / "config"
     
     # Load heading dictionary from DB
     heading_map = db.load_heading_dictionary()
     if not heading_map:
         print("Warning: Heading dictionary not found in DB. Attempting to sync directly from CSV...")
         import csv
-        dict_file = tools_dir / "heading_dictionary.csv"
+        dict_file = config_dir / "heading_dictionary.csv"
         if dict_file.exists():
             dict_data = []
             try:
@@ -92,7 +92,7 @@ def main():
     if not complex_patterns:
         print("Warning: Complex patterns not found in DB. Attempting to sync directly from CSV...")
         import csv
-        patterns_file = tools_dir / "complex_patterns.csv"
+        patterns_file = config_dir / "complex_patterns.csv"
         if patterns_file.exists():
             patterns_data = []
             try:

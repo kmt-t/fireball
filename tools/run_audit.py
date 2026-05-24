@@ -107,7 +107,7 @@ def sync_keywords_and_glossary():
     db.sync_keywords(keywords_data)
 
     # 3. Parse heading_dictionary.csv and sync it
-    dict_file = REPO_ROOT / "docs" / "tools" / "heading_dictionary.csv"
+    dict_file = REPO_ROOT / "tools" / "config" / "heading_dictionary.csv"
     if dict_file.exists():
         dict_data = []
         try:
@@ -124,7 +124,7 @@ def sync_keywords_and_glossary():
             print(f"Warning: Failed to sync heading dictionary: {e}")
 
     # 4. Parse complex_patterns.csv and sync it
-    patterns_file = REPO_ROOT / "docs" / "tools" / "complex_patterns.csv"
+    patterns_file = REPO_ROOT / "tools" / "config" / "complex_patterns.csv"
     if patterns_file.exists():
         patterns_data = []
         try:

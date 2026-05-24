@@ -45,7 +45,7 @@ def check_mermaid(component_files: List[Path]) -> List[Dict]:
 def _load_rules() -> Dict[str, List[Dict]]:
     """Load validation rules from mermaid_config.csv."""
     rules = {}
-    config_path = Path(__file__).parent / 'mermaid_config.csv'
+    config_path = Path(__file__).parent.parent / 'config' / 'mermaid_config.csv'
 
     if not config_path.exists():
         return rules

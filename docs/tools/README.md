@@ -76,75 +76,64 @@ Fireball プロジェクトの検証・監査・テストツール群の仕様�
 
 ---
 
-### 4. Mermaid Validator (Mermaid 図文法チェッカー)
-**パス:** `tools/validate_mermaid.py`
+### 4. Audit Tool (統合監査ツール)
+**パス:** `tools/run_audit.py`
 
-ドキュメント内のすべての Mermaid 図の文法を検証し、レンダリングエラーを防止。
+ドキュメント・コード・設定を統合的に監査。機械的チェック（FORMAT/TRACE/MERMAID）と LLM チェック、予算検証。
 
-- **検証対象:**
-  - **stateDiagram**: 括弧バランス、activate/deactivate マッチング
-  - **sequenceDiagram**: 参加者定義、メッセージ構文、activate/deactivate スタック
-  - **graph/flowchart**: ノード定義、括弧バランス
+- **検証グループ:**
+  - **M-FORMAT**: 仕様書フォーマット準拠
+  - **M-TRACE**: トレーサビリティ（キーワード整合性）
+  - **M-MERMAID**: Mermaid 図文法チェック（mermaid_config.csv で設定）
+  - **M-ARCH**: アーキテクチャ命名規約
+
+- **Mermaid 検証ルール：**
+  - 設定: `tools/mechanical/mermaid_config.csv`
+  - ルール定義: diagram_type（state/sequence/graph）× rule_name（brace_balance/activate_balance など）
+  - 実装: `tools/mechanical/check_mermaid.py`
 
 - **実行方法:**
 
 ```bash
-# すべての Mermaid 図を検証
-python3 tools/validate_mermaid.py
+# 全監査を実行
+python tools/run_audit.py
 
 # 出力例
-# ✅ 42/42 files passed validation.
-# ✅ All Mermaid diagrams are valid.
-```
-
-- **エラー時:**
-```bash
-# エラーファイル、行番号、問題内容を表示
-# ❌ Found 2 Mermaid validation error(s):
-#   /docs/architecture/overview.md:102
-#     Sequence diagram: Mismatched deactivate "Boot"
+# ✅ spec_matrix.csv を生成
+# ✅ traceability_matrix.csv を生成
+# ✅ All checks passed!
 ```
 
 ---
 
 ## 実行方法
 
-各ツールを個別に実行：
+統合監査ツール（推奨）：
 
 ```bash
-# 一貫性チェック
-./tools/run_consistency_check.sh
+# 全監査を実行（機械的チェック）
+python tools/run_audit.py
 
-# トレーサビリティ監査
-./tools/run_traceability_audit.sh
-
-# ドキュメント LLM 監査
-./tools/run_doc_test.sh
+# 出力: spec_matrix.csv, traceability_matrix.csv → temp/ に生成
 ```
 
-**推奨順序:**
-1. Check Consistency (FORMAT/Traceability/Architecture)
-2. Traceability Audit (S2/S3 detection)
-3. Document Test (Module + Tier 1-3)
+**チェック順序:**
+1. M-FORMAT: ドキュメントフォーマット準拠
+2. M-TRACE: トレーサビリティ（キーワード整合性）
+3. M-MERMAID: Mermaid 図文法（mermaid_config.csv 基準）
+4. M-ARCH: アーキテクチャ命名規約
 
 ---
 
-## 環境設定
+## 設定ファイル
 
-### LLM バックエンド
+すべての設定ファイルは `tools/config/` に集約：
 
-3つのバックエンド対応（優先順位順）：
-
-```bash
-# Option 1: Sakura AI
-export SAKURA_AI_API_KEY="your-key"
-
-# Option 2: OpenRouter
-export OPEN_ROUTER_API_KEY="your-key"
-
-# Option 3: Ollama (ローカル、キー不要)
-# http://localhost:11434
-```
+| ファイル | 用途 |
+| :--- | :--- |
+| `tools/config/mermaid_config.csv` | Mermaid 検証ルール定義（diagram_type × rule_name） |
+| `tools/config/complex_patterns.csv` | 複雑な設計パターン定義 |
+| `tools/config/heading_dictionary.csv` | ドキュメント見出し用語辞書 |
 
 ---
 
@@ -152,88 +141,32 @@ export OPEN_ROUTER_API_KEY="your-key"
 
 | ファイル | 説明 |
 | :--- | :--- |
-| `docs/components/spec_matrix.csv` | コンポーネント仕様書 × 要求キーワード 行列 |
-| `docs/components/consistency_checklist.csv` | LLM 用チェックリスト（仕様書ペアの検証項目） |
-| `docs/components/traceability_matrix.csv` | セクション × キーワード マッピング行列 |
-| `docs/tools/audit_reports/audit_*.log` | Document Test の詳細ログ（時系列） |
-| `tmp/traceability_YYYYMMDD_HHMMSS.txt` | Traceability Audit のコンソール出力ログ |
-
----
-
-## 推奨実行パターン
-
-### パターン 1: 日常的な検証（軽量）
-
-```bash
-./tools/run_consistency_check.sh
-./tools/run_traceability_audit.sh
-./tools/run_doc_test.sh --quick
-```
-
-実行時間: ~2-3 分
-
-### パターン 2: コミット前検証（中程度）
-
-```bash
-./tools/run_consistency_check.sh
-./tools/run_traceability_audit.sh
-./tools/run_doc_test.sh --quick
-```
-
-実行時間: ~5 分
-
-### パターン 3: リリース前検証（完全）
-
-```bash
-./tools/run_consistency_check.sh --llm
-./tools/run_traceability_audit.sh --llm
-./tools/run_doc_test.sh
-```
-
-実行時間: ~15-20 分（LLM バックエンド依存）
+| `temp/spec_matrix.csv` | コンポーネント仕様書 × 要求キーワード 行列 |
+| `temp/traceability_matrix.csv` | セクション × キーワード マッピング行列 |
+| `temp/doc_audit.db` | LLM 監査結果 SQLite データベース |
+| `temp/consistency_YYYYMMDD_HHMMSS.txt` | 一貫性チェックログ |
+| `temp/verification_result.txt` | 検証結果サマリー |
 
 ---
 
 ## トラブルシューティング
 
-### LLM API エラー
-
-```
-Error: LLM API Error (HTTP 401)
-```
-
-→ 環境変数確認：
-```bash
-echo $SAKURA_AI_API_KEY
-echo $OPEN_ROUTER_API_KEY
-```
-
 ### CSV ファイルが見つからない
 
 ```
-Error: consistency_checklist.csv not found
+KeyError: spec_matrix.csv not found
 ```
 
-→ テーブル再生成:
+→ 監査を再実行してテーブルを生成：
 ```bash
-./tools/run_consistency_check.sh --gentable
+python tools/run_audit.py
 ```
 
-### Ollama 接続エラー
+### Mermaid 検証ルールが反映されない
 
-```
-Error: Cannot connect to Ollama (http://localhost:11434)
-```
-
-→ Ollama サーバーを起動:
+→ `mermaid_config.csv` を確認：
 ```bash
-ollama serve
+cat tools/mechanical/mermaid_config.csv
 ```
 
----
-
-## 各ツールの詳細
-
-- [Document Test (LLM Auto-Tester)](test_doc.md)
-- [Check Consistency](check_consistency.md)
-- [Traceability Audit](audit_traceability.md)
+CSV に定義されたルール（diagram_type × rule_name）が `check_mermaid.py` に動的にロードされます。

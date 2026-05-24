@@ -106,7 +106,7 @@ graph TD
     
     Lookup["<b>Stage 1: URI Lookup</b><br/>─ Input: URI string view<br/>─ Query: std::flat_map<br/>─ Output: registry_entry"]
     
-    ACCheck["<b>Stage 2: Access Control</b><br/>─ Input: sender_role, receiver_role<br/>─ Query: role_matrix[sender][receiver]<br/>─ Output: permission allow/deny"]
+    ACCheck["<b>Stage 2: Access Control</b><br/>─ Input: sender_role, receiver_role<br/>─ Query: role_matrix[sender][receiver]<br/>─ Output: permission (allow or deny)"]
     
     ChGrant["<b>Stage 3: Channel Grant</b><br/>─ Input: channel_id + permission<br/>─ Output: channel handle"]
     
@@ -168,8 +168,8 @@ stateDiagram-v2
     Revoke --> Enqueue: mark In-flight
     
     %% Enqueue branch: success or failure
-    Enqueue --> Grant: [queue has space]
-    Enqueue --> QueueFull: [queue full]
+    Enqueue --> Grant: queue_has_space
+    Enqueue --> QueueFull: queue_full
     
     %% Success path
     Grant --> Complete: grant to receiver
@@ -215,22 +215,22 @@ stateDiagram-v2
     
     SenderOwned --> RevokePhase: send(msg) / initiate transfer
     
-    RevokePhase --> InFlight: revoke_sender_access() / mark in-flight
-    InFlight --> InFlight: [message in transit]
+    RevokePhase --> InFlight: revoke_sender_access / mark in-flight
+    InFlight --> InFlight: in_transit
     
-    InFlight --> EnqueuePhase: queue_has_space() / ready to enqueue
-    EnqueuePhase --> ReceiverQueued: enqueue_success() / message buffered
+    InFlight --> EnqueuePhase: queue_has_space / ready to enqueue
+    EnqueuePhase --> ReceiverQueued: enqueue_success / message buffered
     
-    InFlight --> RollbackPhase: [queue full] / restore ownership
-    RollbackPhase --> SenderOwned: restore_sender_access() / recovery complete
+    InFlight --> RollbackPhase: queue_full / restore ownership
+    RollbackPhase --> SenderOwned: restore_sender_access / recovery complete
     
-    ReceiverQueued --> GrantPhase: receiver_dequeue() / begin handoff
-    GrantPhase --> ReceiverOwned: grant_receiver_access() / ownership transfer complete
+    ReceiverQueued --> GrantPhase: receiver_dequeue / begin handoff
+    GrantPhase --> ReceiverOwned: grant_receiver_access / ownership transfer complete
     
-    ReceiverOwned --> [*]: receiver_drop() / cleanup
+    ReceiverOwned --> [*]: receiver_drop / cleanup
     
-    ReceiverQueued --> DropHandlerPhase: [receiver killed] / emergency cleanup
-    DropHandlerPhase --> [*]: force_cleanup() / in-flight resource freed
+    ReceiverQueued --> DropHandlerPhase: receiver_killed / emergency cleanup
+    DropHandlerPhase --> [*]: force_cleanup / in-flight resource freed
 ```
 
 **所有権状態の説明:**

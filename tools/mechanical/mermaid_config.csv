@@ -1,0 +1,6 @@
+diagram_type,rule_name,rule_code,description
+state,brace_balance,M-MERMAID-BRACE,"Check for balanced curly braces in composite states"
+state,transition_syntax,M-MERMAID-TRANSITION,"Check state transition syntax (-->) validity"
+sequence,activate_balance,M-MERMAID-ACTIVATE,"Check for balanced activate/deactivate pairs"
+graph,bracket_balance,M-MERMAID-BRACKET,"Check for balanced square brackets"
+graph,parenthesis_balance,M-MERMAID-PAREN,"Check for balanced parentheses"

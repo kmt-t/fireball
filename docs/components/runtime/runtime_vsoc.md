@@ -112,14 +112,14 @@ stateDiagram-v2
     Ready --> Idle: stop() / cleanup
     
     InterpreterRun --> Ready: yield() / threshold reached
-    InterpreterRun --> Debugging: breakpoint [debugger] / halt execution
-    InterpreterRun --> Error: trap() / page fault / invalid opcode
+    InterpreterRun --> Debugging: breakpoint_debugger / halt execution
+    InterpreterRun --> Error: trap / page fault / invalid opcode
     
-    JitRun --> SafepointCheck: [JIT loop backslash] / check interrupt flag
-    SafepointCheck --> JitRun: [no interrupt] / continue JIT
-    SafepointCheck --> Ready: [interrupt pending] / fallback to interpreter
-    SafepointCheck --> Debugging: [breakpoint] / halt execution
-    SafepointCheck --> Error: [safepoint trap] / exception in native code
+    JitRun --> SafepointCheck: loop_backslash / check interrupt flag
+    SafepointCheck --> JitRun: no_interrupt / continue JIT
+    SafepointCheck --> Ready: interrupt_pending / fallback to interpreter
+    SafepointCheck --> Debugging: breakpoint_hit / halt execution
+    SafepointCheck --> Error: safepoint_trap / exception in native code
     
     Debugging --> InterpreterRun: resume() / continue with interpreter
     Debugging --> JitRun: resume(jit_enabled) / continue with JIT

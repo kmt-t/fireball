@@ -27,7 +27,7 @@ WBSの [Step 0] 盆栽デザイン（SysML）および [Step 1-2] 形式検証�
 
 - [ ] **COOS / IPC 協調モデル**:
   - [x] [Step 1-2] タスク状態遷移、割り込み通知、Handoffの形式検証 `{UseCpp20Coroutine}` `{CSP_Handoff}`
-  - [ ] [Step 0] IPCルータの名前解決・所有権移譲のSysMLモデル化
+  - [x] [Step 0] IPCルータの名前解決・所有権移譲のSysMLモデル化 → Complete (ipc_router.md 4.1.1, 4.2.1)
 - [x] **IPCパニック・デッドロック回避**:
   - [x] [Step 1-2] In-flightパニック時のDropハンドラとメモリリーク防止の整合検証完了 `{IPC_ZeroCopy}` `{Challenge_CspHandoffStarvation}` `{IPC_DropHandler}`
 

@@ -167,6 +167,85 @@ stateDiagram-v2
 - **Debugger Flush**: デバッガがメモリを変更した場合、関連するすべての JIT キャッシュを無効化して整合性を保証
 - **Approximate Yield**: exec_trace のトレース数をカウントして概算的にタスク切り替えを判定
 
+### 4.2.1 Safepoint と JIT キャッシュ協調モデル
+<!-- traceability: {JIT_Safepoint} {Challenge_JITCacheEfficiency} {Debugger_Jit_Flush} -->
+
+JIT実行中の非同期割り込み対応とキャッシュ一貫性を保証するため、以下の協調メカニズムを採用する。
+
+#### Safepoint の動作メカニズム
+<!-- traceability: {JIT_Safepoint} {Challenge_InterruptSafety} -->
+
+JIT生成ネイティブコードには、以下のポイントで割り込みチェック（Safepoint）を埋め込む：
+
+| Safepoint位置 | 目的 | 実装 | オーバーヘッド |
+| :--- | :--- | :--- | :--- |
+| **ループバックエッジ** | 無限ループ検出と割り込み確認 | フラグ確認 + 条件分岐 | ~2-3 機械語命令 |
+| **関数呼び出し前** | 外部サービス呼び出し時の割り込み確認 | 割り込みフラグチェック | ~1-2 命令 |
+| **メモリアクセス後** | キャッシュ無効化（debugger flush）の確認 | 世代番号（generation cookie）検証 | ~1 命令 |
+
+**フラグの構造:**
+```
+┌─────────────────────────────────────────┐
+│ vsoc_context.interrupt_flags (32-bit)   │
+├────────────────────────────────────────┤
+│ [0]: Async Break Request (Ctrl+C等)    │
+│ [1]: Debugger Intervention              │
+│ [2]: JIT Cache Invalid (Flush)          │
+│ [3]: Yield Request (Task Switch)        │
+│ [4-31]: Reserved                        │
+└────────────────────────────────────────┘
+```
+
+#### Active/Old ダブルバッファとキャッシュローテーション
+<!-- traceability: {Challenge_JITCacheEfficiency} {LowLatencyJIT} -->
+
+JIT コードキャッシュ（合計 4KB）を 2KB x 2 のバッファに分割し、「移動する窓」パターンを採用：
+
+| フェーズ | 状態 | 説明 | アクション |
+| :--- | :--- | :--- | :--- |
+| **Normal (JitRun)** | Active が使用中、Old が待機 | 新規 JIT コンパイルが Active へ追加 | 既存コードは保持 |
+| **co_yield (Hotspot Scan)** | ホットスポット検出 | 最近のトレース履歴を分析 | Active → Old への昇格判定 |
+| **Cache Rotation** | Old が不要に | 新規コンパイル要求を Old へ開始 | Old は次のローテーションで破棄 |
+| **Debugger Flush** | Interrupt Flag[2] 検出 | デバッガメモリ変更を検知 | Active/Old 両方を無効化 |
+
+**メモリレイアウト:**
+```
+JIT Code Cache (4 KB total)
+┌──────────────────────┐
+│  Active Buffer       │  2 KB (current execution)
+│  (PC in [0x0, 2K))   │  - Hot code paths
+│  - Generation[0]     │  - Updated on co_yield
+│  - Entries: up to 64 │
+├──────────────────────┤
+│  Old Buffer          │  2 KB (previously active)
+│  (PC in [2K, 4K))    │  - Fallback code
+│  - Generation[1]     │  - Rotated on refresh
+│  - Entries: up to 64 │
+└──────────────────────┘
+```
+
+#### Debugger 介入時のキャッシュ一貫性
+<!-- traceability: {Debugger_Jit_Flush} {Debug_Integrated} -->
+
+デバッガがゲストメモリを変更した場合の処理フロー：
+
+1. **Debugger Writes Memory**: `gdb_write_memory(addr, data)` → `vsoc_context.interrupt_flags |= (1 << 2)`
+2. **Safepoint Detection**: JIT実行の SafepointCheck で `(flags >> 2) & 1` を検査
+3. **Cache Flush Trigger**: フラグ検出時、即座に以下を実行：
+   - Active/Old のメタデータを破棄（generation cookie インクリメント）
+   - 登録済みの exec_trace ポインタを無効化
+   - 次回 `step()` で Interpreter モードへフォールバック
+4. **Resume**: デバッガが再開コマンドを発行 → `InterpreterRun` 状態に遷移 → 新規JITコンパイルの準備開始
+
+#### TLA+ 検証対象
+
+以下の不変条件を形式検証する（Phase 0.8）：
+
+- **キャッシュ整合性**: どの時点でも、Active/Old 両バッファの generation が単調増加し、矛盾が生じないこと
+- **Safepoint応答性**: 割り込みフラグが設定されてから最大 N サイクル以内に Safepoint で検出されること
+- **Debugger安全性**: デバッガがメモリを変更してから、キャッシュが flush されるまでの間に、旧コードが実行されないこと
+- **リソース有界性**: キャッシュローテーション時に、メモリリークが発生しないこと
+
 ### 4.3 内部シーケンス
 <!-- traceability: {ThreadedInterpreter} {JIT_CopyAndPatch} {Challenge_ApproximateYield} {JIT_Safepoint} {Debugger_Jit_Flush} -->
 #### WASM実行およびJIT遷移シーケンス

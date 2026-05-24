@@ -45,6 +45,47 @@
 | **BootTime** | Startup Latency | ≤ 100 ms | `Boot(HAL) + Init(COOS) + Load(WASM) ≤ 100ms` | ホスト環境ベンチマーク |
 | **ContextSwitchLatency** | Task Switch Time | ≤ 10 μs | `Resume(coroutine) + Dispatch ≤ 10μs` | CPU サイクル計測 |
 
+### 4.1.1 制約関係図 (Constraint Relationship Diagram)
+
+SysML パラメトリック図として、制約ブロック間の関係と各パラメータの依存性を視覚化する。
+
+```mermaid
+graph TD
+    SystemRAM["<b>SystemMemoryLimit</b><br/>Total RAM ≤ 64 KB<br/>─────"]
+    ComponentRAM["<b>Component-level RAM</b><br/>COOS + vSoC + Subsys<br/>+ Cache + WASM"]
+    JITCL["<b>JITCacheLimit</b><br/>4 KB (2KB x 2)<br/>─────"]
+    
+    CodeSizeL["<b>CodeSizeLimit</b><br/>Total SLOC ≤ 15K<br/>─────"]
+    ComponentSLOC["<b>Component-level SLOC</b><br/>COOS + vSoC + Subsys<br/>+ HAL + Logging + WASM"]
+    
+    BootTimeL["<b>BootTime</b><br/>≤ 100 ms<br/>─────"]
+    CtxSwitchL["<b>ContextSwitchLatency</b><br/>≤ 10 μs<br/>─────"]
+    
+    SafetyMargin["<b>Safety Margin</b><br/>42 KB (余裕)<br/>─────"]
+    
+    SystemRAM --> ComponentRAM
+    ComponentRAM --> JITCL
+    ComponentRAM --> SafetyMargin
+    
+    CodeSizeL --> ComponentSLOC
+    ComponentSLOC -.->|density| JITCL
+    
+    BootTimeL --> |"Init latency"| ComponentRAM
+    CtxSwitchL --> |"Scheduler overhead"| ComponentRAM
+    
+    style SystemRAM fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
+    style CodeSizeL fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    style BootTimeL fill:#e8f5e9,stroke:#388e3c,stroke-width:2px
+    style CtxSwitchL fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+```
+
+**制約の相互関係:**
+- **SystemMemoryLimit** は全コンポーネントの RAM 合計を規制し、個別コンポーネント予算に分配される。
+- **JITCacheLimit** は SystemMemoryLimit 内で固定割り当てされ、Active/Old のダブルバッファを規制する。
+- **CodeSizeLimit** は全コンポーネント SLOC を規制し、密度目標 (100 SLOC/KB 以下) を通じて ROM 予算と相互作用。
+- **BootTime** と **ContextSwitchLatency** は、各コンポーネントの処理速度と複雑さに影響し、上記の予算配分を間接的に制約する。
+- **Safety Margin** (42 KB) は、将来の機能拡張やバッファオーバーラン対策に予約される。
+
 ### 4.2 コンポーネント予算配分
 
 | コンポーネント | RAM予算 | ROM予算 | SLOC予算 | 密度 | 用途 |

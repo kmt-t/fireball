@@ -388,7 +388,56 @@ TODO(Phase 1): ATC抽出 - サービス登録時のチャネル初期化や送�
 <!-- traceability: {ServiceFacade} {IoC} -->
 IPCのプリミティブ性を隠蔽し、依存性の逆転 (IoC) を実現するため、サービスの利用側（内側の層）がファサードクラスを定義する。 `{ServiceFacade}` `{IoC}`
 
-## 6. 制約達成の方策
+## 6. 形式検証（TLA+ / 直交表）
+
+### 6.1 検証対象の不変条件
+
+<!-- traceability: {IPC_ZeroCopy} {Challenge_CspHandoffStarvation} {IPC_DropHandler} -->
+
+| 不変条件 | 説明 | 検証方法 |
+| :--- | :--- | :--- |
+| **所有権単調性** | リソース所有権が Sender → In-flight → Receiver と一方向に移譲され、二重所有が発生しないこと。`{OwnershipTransfer}` `{IPC_ZeroCopy}` | TLA+ 状態不変式 |
+| **デッドロック不在** | 送信側がブロックされた状態で受信側もブロックされるサイクルが存在しないこと。`{Challenge_CspHandoffStarvation}` | TLA+ リーチャビリティ分析 |
+| **In-flight リソース一貫性** | In-flight 状態のリソースは、キュー内で正確に1つだけ存在し、かつ任意の時点で回収可能であること。`{IPC_DropHandler}` | TLA+ アクションガード検証 |
+| **メッセージ順序** | 同一チャネル上のメッセージは FIFO 順で処理されること。 | TLA+ 順序付け不変式 |
+
+### 6.2 検証対象のプロパティ
+
+- **Safety**: 
+  - デッドロック不在 `{Challenge_CspHandoffStarvation}`
+  - 所有権競合不在 `{IPC_ZeroCopy}`
+  - メモリリーク不在（Drop Handler動作確認）`{IPC_DropHandler}`
+
+- **Liveness**: 
+  - 応答は有限時間内に返される（キューイング遅延を除く）
+  - Revoke/Enqueue/Grant フェーズが必ず完了する
+
+### 6.3 検証モデル概要
+
+**状態変数:**
+```
+sender_ownership: {OWNED, REVOKED, IN_FLIGHT}
+receiver_ownership: {NOTOWNED, IN_FLIGHT, OWNED}
+channel_queue: sequence[message]
+interrupt_flags: bitmask
+```
+
+**初期状態:** sender_ownership=OWNED, receiver_ownership=NOTOWNED, channel_queue=<>, interrupt_flags=0
+
+**遷移:** Send → Revoke → Enqueue → Grant または Rollback
+
+**不変式:** 
+- `sender_ownership != OWNED ∨ receiver_ownership != OWNED` (二重所有不在)
+- `len(channel_queue) ≤ QUEUE_SIZE` (キュー有界性)
+
+TODO: IPC Router Deadlock Verification - TLA+ 仕様を形式化し、TLC で完全性検証を実施する。
+
+### 6.4 既知の制限
+
+- **マルチプロセッサ同期**: 現在、シングルプロセッサを仮定。マルチコア環境ではメモリバリア追加が必要。
+- **タイムアウト機構**: キューイング時のタイムアウトは非形式検証（手動テスト）に依存。
+
+## 7. 制約達成の方策
 
 ### 6.1 性能制約と方策
 <!-- traceability: {LowLatencyLookup} -->

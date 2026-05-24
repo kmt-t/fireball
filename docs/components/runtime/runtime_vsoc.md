@@ -397,7 +397,60 @@ Fireballでは、ホスト側のコードサイズを極限まで削減するた
 | **Wasm Loader** | モジュールロードと `module_view` の管理 | `loader`, `module_view` |
 | **Debugger** | デバッグコマンドの処理と実行状態の同期 | `debugger`, `debug_command_queue` |
 
-## 6. 制約達成の方策
+## 6. 形式検証（TLA+ / 直交表）
+
+### 6.1 検証対象の不変条件
+
+<!-- traceability: {JIT_Safepoint} {Challenge_JITCacheEfficiency} {Debugger_Jit_Flush} -->
+
+| 不変条件 | 説明 | 検証方法 |
+| :--- | :--- | :--- |
+| **キャッシュ整合性** | Active/Old 両バッファの generation が単調増加し、矛盾が生じないこと。`{Challenge_JITCacheEfficiency}` | TLA+ 状態不変式 |
+| **Safepoint応答性** | 割り込みフラグが設定されてから最大 N サイクル以内に Safepoint で検出されること。`{JIT_Safepoint}` | TLA+ 有界応答性 |
+| **Debugger安全性** | デバッガがメモリを変更した後、キャッシュ flush が完了するまで旧コードが実行されないこと。`{Debugger_Jit_Flush}` | TLA+ 因果的順序付け |
+| **リソース有界性** | キャッシュローテーション時にメモリリークが発生しないこと。 | TLA+ リソース追跡 |
+
+### 6.2 検証対象のプロパティ
+
+- **Safety**:
+  - Safepoint 検出漏れ不在 `{JIT_Safepoint}`
+  - デバッガ後の整合性維持 `{Debugger_Jit_Flush}`
+  - キャッシュローテーション時のメモリ安全性 `{Challenge_JITCacheEfficiency}`
+
+- **Liveness**:
+  - 割り込み要求は有限時間内に Safepoint で処理される
+  - デバッガ flush 要求は完了する
+
+### 6.3 検証モデル概要
+
+**状態変数:**
+```
+jit_cache_state: {ACTIVE, OLD, ROTATING}
+generation: {ACTIVE_GEN, OLD_GEN}
+interrupt_flags: bitmask
+jit_pc: address
+```
+
+**初期状態:** jit_cache_state=ACTIVE, generation={0, 0}, interrupt_flags=0
+
+**遷移:** 
+- Step (JIT実行)
+- SafepointCheck (フラグ確認)
+- CacheFlush (debugger 介入)
+- RotateCache (co_yield で回転)
+
+**不変式:**
+- `generation.ACTIVE ≥ generation.OLD` (単調性)
+- `generation.ACTIVE - generation.OLD ≤ 1` (両世代の差は最大1)
+
+TODO: vSoC Safepoint/JIT Cache TLA+ Verification - 上記 state machine を TLA+ で形式化し、TLC で不変条件と活性プロパティを検証する。
+
+### 6.4 既知の制限
+
+- **ハードウェアタイマ精度**: Safepoint チェック周期が CPU クロック精度に依存（キャリブレーション必要）。
+- **複数コアでのメモリ可視性**: シングルコア仮定。マルチコアではメモリバリア追加が必要。
+
+## 7. 制約達成の方策
 
 ### 6.1 性能制約と方策
 <!-- traceability: {LowLatencyJIT} {ThreadedInterpreter} -->

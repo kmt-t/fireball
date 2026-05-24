@@ -19,18 +19,29 @@ IPCルータは、URIベースのサービスディスカバリとロールベ�
 <!-- traceability: {IPCRegistry} {FlatMapIndexed} {RoleBasedAccessControl} -->
 ```mermaid
 graph TB
-    subgraph "IPC Router"
-        Reg[Registry<br/>Service Registration]
-        AC[AccessControl<br/>Permission Check]
-        R[Router<br/>Request Handling]
-        MH[MessageHandler<br/>Message Processing]
-        OM[OwnershipManager<br/>Ownership Transfer]
+    subgraph "IPC Router Layer"
+        subgraph "Lookup Pipeline"
+            Reg[Registry<br/>URI → channel_id map<br/>FlatMap O(log N)]
+            AC[AccessControl<br/>Role matrix check<br/>sender_role ⊗ receiver_role]
+        end
+        
+        subgraph "Routing & Ownership"
+            R[Router<br/>Request routing<br/>Channel dispatch]
+            OM[OwnershipManager<br/>Revoke/Enqueue/Grant<br/>Zero-copy handoff]
+            DH[DropHandler<br/>In-flight cleanup<br/>on receiver kill]
+        end
+        
+        subgraph "Message Processing"
+            MH[MessageHandler<br/>KV-pair processing<br/>FlatMap search]
+        end
     end
     
     R --> Reg
-    R --> AC
+    Reg --> AC
+    AC --> R
     R --> MH
     MH --> OM
+    OM --> DH
 ```
 
 ### 3.3 主要なクラス・構造体・配列・定数
@@ -83,6 +94,53 @@ Key-Valueペアを複数集約した通信の基本単位。内部的に C++23 `
     - メッセージがキュー内で滞留中に送信先が Kill された場合、キューのデストラクタ（Dropハンドラ）が In-flight リソースを強制回収し、リークを防止する。
 
 TODO(Phase 0.8): IPC Router Deadlock Verification - 厳格なノンブロッキング送信と、所有権巻き戻しロジックによるデッドロック不在を TLA+ で検証する。
+
+### 4.1.1 名前解決パイプラインとアクセス制御フロー
+<!-- traceability: {LowLatencyLookup} {AccessDictionary} {FlatMapIndexed} {RoleBasedAccessControl} -->
+
+IPC ルータの名前解決は、URI からサービスディスクリプタ（チャネルIDと権限情報）を導出するクリティカルパスである。以下の 3 段階パイプラインで実現される。
+
+```mermaid
+graph TD
+    Client["<<block>> Client Task<br/>─ Request: URI + Payload"]
+    
+    Lookup["<b>Stage 1: URI Lookup</b><br/>─ Input: URI string view<br/>─ Query: std::flat_map<br/>─ Output: registry_entry"]
+    
+    ACCheck["<b>Stage 2: Access Control</b><br/>─ Input: sender_role, receiver_role<br/>─ Query: role_matrix[sender][receiver]<br/>─ Output: permission allow/deny"]
+    
+    ChGrant["<b>Stage 3: Channel Grant</b><br/>─ Input: channel_id + permission<br/>─ Output: channel handle"]
+    
+    Router["<<block>> Router<br/>─ Route message to channel"]
+    
+    Error1["<b>Error: Not Found</b><br/>─ URI unregistered<br/>─ Return ERROR_NOT_FOUND"]
+    
+    Error2["<b>Error: Access Denied</b><br/>─ Insufficient privilege<br/>─ Return ERROR_PERMISSION_DENIED"]
+    
+    Success["<b>Success</b><br/>─ Ownership transfer starts<br/>─ Revoke/Enqueue/Grant"]
+    
+    Client --> Lookup
+    Lookup -->|found| ACCheck
+    Lookup -->|not found| Error1
+    ACCheck -->|allow| ChGrant
+    ACCheck -->|deny| Error2
+    ChGrant --> Router
+    Router --> Success
+    
+    style Lookup fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
+    style ACCheck fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    style ChGrant fill:#e8f5e9,stroke:#388e3c,stroke-width:2px
+    style Success fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+    style Error1 fill:#ffebee,stroke:#c62828,stroke-width:2px
+    style Error2 fill:#ffebee,stroke:#c62828,stroke-width:2px
+```
+
+**各ステージの詳細:**
+
+| ステージ | 処理 | 複雑度 | 制約 |
+| :--- | :--- | :--- | :--- |
+| **URI Lookup** | `std::flat_map<string_view, registry_entry>` による二分探索 | O(log N) | N = サービス数（通常 ≤ 16） |
+| **Access Control** | ロールマトリックス参照 `role_matrix[sender][receiver]` | O(1) | 事前計算済みの 2次元配列 |
+| **Channel Grant** | サービスの待受チャネル ID を取得、準備完了判定 | O(1) | チャネル状態確認 |
 
 ### 4.2 状態遷移図 (SysML SMD: IPC Router ルーティングフロー)
 <!-- traceability: {LowLatencyLookup} {AccessDictionary} {FlatMapIndexed} {OwnershipTransfer} {IPC_ZeroCopy} {Challenge_CspHandoffStarvation} {IPC_DropHandler} -->
@@ -143,6 +201,51 @@ stateDiagram-v2
 | **Permission Denied** | アクセス権限不足 | エラー応答を呼び出し側に返却 |
 | **Queue Full** | 受信側のメッセージキューが満杯 | **Rollback**: 送信側に所有権を返却、再試行 |
 | **Rollback & Recovery** | キュー満杯からの復帰処理 | 送信側へ所有権を復元、Idle へ戻す |
+
+### 4.2.1 所有権移譲状態機械 (Ownership Transfer State Machine)
+<!-- traceability: {OwnershipTransfer} {IPC_ZeroCopy} {Challenge_CspHandoffStarvation} {IPC_DropHandler} -->
+
+メッセージの所有権は、送信側 → ルータ → 受信側という 3 段階で遷移する。以下の状態機械は、所有権の状態を形式的に定義する。
+
+```mermaid
+stateDiagram-v2
+    [*] --> Uninitialized
+    
+    Uninitialized --> SenderOwned: create_message() / sender allocates
+    
+    SenderOwned --> RevokePhase: send(msg) / initiate transfer
+    
+    RevokePhase --> InFlight: revoke_sender_access() / mark in-flight
+    InFlight --> InFlight: [message in transit]
+    
+    InFlight --> EnqueuePhase: queue_has_space() / ready to enqueue
+    EnqueuePhase --> ReceiverQueued: enqueue_success() / message buffered
+    
+    InFlight --> RollbackPhase: [queue full] / restore ownership
+    RollbackPhase --> SenderOwned: restore_sender_access() / recovery complete
+    
+    ReceiverQueued --> GrantPhase: receiver_dequeue() / begin handoff
+    GrantPhase --> ReceiverOwned: grant_receiver_access() / ownership transfer complete
+    
+    ReceiverOwned --> [*]: receiver_drop() / cleanup
+    
+    ReceiverQueued --> DropHandlerPhase: [receiver killed] / emergency cleanup
+    DropHandlerPhase --> [*]: force_cleanup() / in-flight resource freed
+```
+
+**所有権状態の説明:**
+
+| 状態 | 所有者 | アクセス権 | リソース状態 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| **SenderOwned** | Sender | Full (R/W) | 安定 | 送信側が完全な制御を持つ |
+| **RevokePhase** | (移譲中) | Sender ロック中 | 遷移中 | 所有権を剥奪（Revoke）中 |
+| **InFlight** | Router | Read-Only | 仲介中 | ルータが一時保管、送受信側いずれもアクセス禁止 |
+| **EnqueuePhase** | (移譲中) | In-flight 継続 | 遷移中 | キュー追加準備、成功/失敗の分岐点 |
+| **RollbackPhase** | (復帰中) | Sender リリース中 | 遷移中 | キュー満杯時に所有権を送信側へ返却 |
+| **ReceiverQueued** | Router | Read-Only | キュー中 | メッセージがキューで待機、受信側未処理 |
+| **GrantPhase** | (移譲中) | Receiver 取得中 | 遷移中 | 受信側にアクセス権を付与 |
+| **ReceiverOwned** | Receiver | Full (R/W) | 安定 | 受信側が完全な制御を持つ |
+| **DropHandlerPhase** | (緊急処理) | Router 強制管理 | リカバリ | 受信側キル時に In-flight リソース強制回収 |
 
 ### 4.3 メッセージライフサイクルと所有権管理 (SysML Parametric Diagram 相当)
 

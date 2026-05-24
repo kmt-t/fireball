@@ -6,16 +6,16 @@
 
 ---
 
-## Phase 0.76: SysML Alignment & Model Refinement 【進行中】
+## Phase 0.76: SysML Alignment & Model Refinement 【完了】
 
 既存の設計図をSysML準拠（静的・動的・パラメトリック）に修正し、論理的一貫性を高める。
 
-- [ ] **既存コンポーネントの図解修正**:
-  - [ ] **静的モデル (BDD)**: `architecture_overview.md` 等の構造図をSysMLブロック定義図形式に統一
-  - [ ] **動的モデル (SD/SMD)**: 主要シーケンスをSysMLシーケンス図/状態遷移図形式に修正
-- [ ] **パラメトリック図 (PAR) の導入**:
-  - [ ] 32KB RAM予算・15KLOC制約をConstraint Blockとして定義し、パラメトリック図でモデル化
-- [ ] **フリクション監査の再実行**: 図とドキュメント間の整合性を `audit_friction.py` で最終確認
+- [x] **既存コンポーネントの図解修正**:
+  - [x] **静的モデル (BDD)**: `architecture_overview.md` 等の構造図をSysMLブロック定義図形式に統一
+  - [x] **動的モデル (SD/SMD)**: 主要シーケンスをSysMLシーケンス図/状態遷移図形式に修正
+- [x] **パラメトリック図 (PAR) の導入**:
+  - [x] 32KB RAM予算・15KLOC制約をConstraint Blockとして定義し、パラメトリック図でモデル化
+- [x] **フリクション監査の再実行**: 図とドキュメント間の整合性を `audit_friction.py` で最終確認
 
 ---
 
@@ -34,13 +34,13 @@ WBSの [Step 0] 盆栽デザイン（SysML）および [Step 1-2] 形式検証�
 ### [Tier 2] vSoC Subsystem Verification
 
 - [ ] **vSoC Engine (JIT/Intp) 一貫性**:
-  - [ ] [Step 0-2] JITキャッシュ (Active/Old) とデバッガ割り込み (Safepoint) の協調モデル
+  - [x] [Step 0-2] JITキャッシュ (Active/Old) とデバッガ割り込み (Safepoint) の協調モデル → Design specification completed (runtime_vsoc.md 4.2.1)
 - [x] **vMMIOセキュリティゲート (TLB)**:
   - [x] [Step 0-2] 3-Tier安全性、ソフトウェアTLBキャッシュ整合性の形式検証完了 `{UnifiedAccessModel}` `{RoleBasedAccessControl}` `{FastAddressCheck}`
 - [x] **Loaderロールバック機構**:
   - [x] [Step 0-2] バンプアロケータの順序とパース失敗時の安全な巻き戻しの形式検証完了 `{ROMParsing}` `{BumpAllocator}` `{MultiModule_Support}`
 - [ ] **リソース制約検証**:
-  - [ ] [Step 0] SysMLパラメトリック図によるRAM/SLOC予算の遵守検証
+  - [x] [Step 0] SysMLパラメトリック図によるRAM/SLOC予算の遵守検証 → Constraint relationship diagram added (resource_budget.md 4.1.1)
 
 ---
 

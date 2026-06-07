@@ -23,4 +23,4 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
 # Run the consistency checker (via unified run_audit.py)
-python3 tools/run_audit.py $ARGS
+python3 tools/scripts/run_audit.py $ARGS

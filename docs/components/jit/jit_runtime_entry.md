@@ -1,13 +1,13 @@
 # JIT Entry Index コンポーネント設計書
 
 ## 1. コンセプト
-<!-- traceability: {SimpleJITArchitecture} {JIT_DoubleBuffer_Cache} {FlatMapIndexed} {BinarySearch} -->
+<!-- traceability: {SimpleJITArchitecture} {JIT_DoubleBuffer_Cache} {META_FlatMapIndexed} {META_BinarySearch} -->
 JIT Entry Index は、WASM 命令オフセット とそれに対応するネイティブコードのアドレスの紐付けを管理する。
-インタープリタの実行ループ内という極めてクリティカルなパスで呼び出されるため、**カードマーキング**（コンパイル状態の高速判定）と**カードグループ索引**（二分探索の範囲絞り込み）を組み合わせた高速な検索アルゴリズムを提供する。内部的には C++23 `std::flat_map` 相当の構造を用い、限られたメモリ内での動的キャッシュ代謝を実現する。 `{SimpleJITArchitecture}` `{JIT_DoubleBuffer_Cache}` `{FlatMapIndexed}` `{BinarySearch}`
+インタープリタの実行ループ内という極めてクリティカルなパスで呼び出されるため、**カードマーキング**（コンパイル状態の高速判定）と**カードグループ索引**（二分探索の範囲絞り込み）を組み合わせた高速な検索アルゴリズムを提供する。内部的には C++23 `std::flat_map` 相当の構造を用い、限られたメモリ内での動的キャッシュ代謝を実現する。 `{SimpleJITArchitecture}` `{JIT_DoubleBuffer_Cache}` `{META_FlatMapIndexed}` `{META_BinarySearch}`
 
 ## 2. アーキテクチャ分類
-<!-- traceability: {3TierSeparation} {SimpleJITArchitecture} -->
-本コンポーネントは **Tier 3 (実装ドメイン)** に属する。JITコンパイラの内部データ構造管理に特化したモジュールであり、特定アルゴリズム（二分探索+Card Marking）の実装を担う。 `{3TierSeparation}` `{SimpleJITArchitecture}`
+<!-- traceability: {META_3TierSeparation} {SimpleJITArchitecture} -->
+本コンポーネントは **Tier 3 (実装ドメイン)** に属する。JITコンパイラの内部データ構造管理に特化したモジュールであり、特定アルゴリズム（二分探索+Card Marking）の実装を担う。 `{META_3TierSeparation}` `{SimpleJITArchitecture}`
 
 ## 3. 静的モデル
 

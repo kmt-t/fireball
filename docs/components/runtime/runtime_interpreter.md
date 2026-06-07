@@ -5,8 +5,8 @@
 Interpreter は、WASM命令をスレッドインタープリタ方式で実行し、低レイテンシかつ小フットプリントでゲストを動作させる。Execution Engine (`executor`) の一部として設計され、JITと実行状態を完全に共有する。周辺コンポーネントへの参照は Environment Pointer (`vsoc_runtime* env`) を介して型安全に行う。 `{ThreadedInterpreter}` `{LowLatencyJIT}` `{InterpreterContextStackless}` `{EnvironmentPointer}`
 
 ## 2. アーキテクチャ分類
-<!-- traceability: {3TierSeparation} -->
-本コンポーネントは **Tier 3 (実装ドメイン)** に属する。デコンポジション（サブモジュール分割）を必要としない単一責務の実行エンジンとして、カプセル化（Natural OO）に基づき設計する。 `{3TierSeparation}`
+<!-- traceability: {META_3TierSeparation} -->
+本コンポーネントは **Tier 3 (実装ドメイン)** に属する。デコンポジション（サブモジュール分割）を必要としない単一責務の実行エンジンとして、カプセル化（Natural OO）に基づき設計する。 `{META_3TierSeparation}`
 
 ## 3. 静的モデル
 
@@ -84,8 +84,8 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 | ループフラグ | 現在の構造が `loop` かどうかを示す | ブール値 | - |
 
 #### インタプリタ構成（interpreter_config）
-<!-- traceability: {ConfigurableSystem} -->
-インタープリタの動作パラメータを定義する。 `{ConfigurableSystem}`
+<!-- traceability: {META_ConfigurableSystem} -->
+インタープリタの動作パラメータを定義する。 `{META_ConfigurableSystem}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
@@ -173,18 +173,18 @@ sequenceDiagram
 | 補足 | デバッグモードが指定された場合は `debug_handler_table` を使用するように構成する。 |
 
 #### 実行ステップ (`run_step`)
-<!-- traceability: {RecoveryStrategy} -->
+<!-- traceability: {META_RecoveryStrategy} -->
 
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | WASM命令を1トレース分実行し、実行コンテキストを更新する。 |
 | シグネチャ | `run_step(ctx: 可変参照) -> 結果型` |
 | 引数 | `ctx`: 実行コンテキスト (`execution_context`) への可変参照 |
-| 戻り値 | 結果型 (正常終了時は空、トラップ発生時はトラップ要因 `{RecoveryStrategy}`) |
+| 戻り値 | 結果型 (正常終了時は空、トラップ発生時はトラップ要因 `{META_RecoveryStrategy}`) |
 | 補足 | 必要に応じて内部的に JIT コードへのジャンプを行い、JIT/Interpreter を透過的に切り替える。 |
 
 #### 割り込み同期 (`sync_interrupts`)
-<!-- traceability: {RecoveryStrategy} -->
+<!-- traceability: {META_RecoveryStrategy} -->
 
 | 項目 | 内容 |
 | :--- | :--- |
@@ -200,11 +200,11 @@ sequenceDiagram
 | 補足 | vSoC からの通知を仲介する役割を持つ。 |
 
 ### 5.2 URI/IPCインターフェイス
-<!-- traceability: {RecoveryStrategy} -->
+<!-- traceability: {META_RecoveryStrategy} -->
 本コンポーネントは vSoC の内部ライブラリとして利用され、直接のIPCインターフェイスは持たない。
 
 ### 5.3 関連コンポーネントとの連携
-<!-- traceability: {RecoveryStrategy} -->
+<!-- traceability: {META_RecoveryStrategy} -->
 | コンポーネント | 連携内容 | 参照データ構造 |
 | :--- | :--- | :--- |
 | **WASM Loader** | WASMバイナリの索引情報（関数、命令、即値）の提供 | [`module_view`](runtime_loader.md#module_view) |
@@ -225,8 +225,8 @@ sequenceDiagram
 - **方策**: `execution_context` と `call_frame` を最小化し、スタック領域を固定サイズ化する。
 
 ### 6.3 安全性制約と方策
-<!-- traceability: {FaultIsolation} {MemoryBoundaryCheck} -->
-- **目標**: ゲストの暴走を隔離。 `{FaultIsolation}`
+<!-- traceability: {META_FaultIsolation} {MemoryBoundaryCheck} -->
+- **目標**: ゲストの暴走を隔離。 `{META_FaultIsolation}`
 - **方策**: `sp_boundary` と `memory_size` による境界チェック `{MemoryBoundaryCheck}`、`interrupt_flags` による安全な割り込み処理。
 
 ## 7. 参考実装リスト

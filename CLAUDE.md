@@ -1,32 +1,38 @@
-# CLAUDE.md
+# Fireball 共有ガイド
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+## 正本
 
-## Project Vision & Architecture
-Fireball is a WASM hypervisor for embedded systems (RAM < 64KB, target Cortex-M/RISC-V).
-- **Core Philosophy**: Zero-cost abstraction, static memory management, and deterministic, stackless execution.
-- **Architectural Pattern**: vSoC utilizing the **Harness Pattern** for dependency injection.
-- **Interfaces**: **WIT (WebAssembly Interface Types)** is the single source of truth for all interfaces. Implementation code (C++) is derived from WIT.
+- `docs/requires/requirement_list.md`: 要求仕様の正本
+- `docs/architecture/document_structure.md`: 文書階層、メタキーワード、traceability の正本
+- `docs/plans/backlog_list.md`: 現在の作業単位
+- `docs/plans/roadmap_phase.md`: 全体フェーズ
+- `docs/components/**`: コンポーネント設計
+- `.claude/rules/**`: 開発ルール
+- `tools/README.md` / `verify/README.md`: 検証入口
 
-## Development Constraints & Standards
-Adhere strictly to the rules in `.claude/rules/`:
-1. **embedded_cpp.md**: Strict memory management (no heap/dynamic containers), RAII, and type-safety (no `void*`).
-2. **design_philosophy.md**: Contract-first design, clean architecture, and strict traceability.
-3. **documentation.md**: Documentation is authoritative; keyword validation and tier compliance.
-4. **documentation_format.md**: Mermaid for diagrams, Python for verification scripts, table-based API definitions.
-5. **stdlib_policy.md**: C++23 STL usage policy for extreme resource constraints (32-64KB RAM).
-6. **development-policy.md**: Specification-first development; WIT as single source of truth.
-7. **process_control.md**: Backlog-first; design completion before implementation (Step 0-2 before Step 3).
+## 作業前に読むもの
 
-## Tracing & Reference Rules
-- **Traceability**: All architectural decisions must trace to requirements (marked with `{Keyword}`) in `docs/requires/`. References to these keywords must be maintained in all design documents (`docs/components/`).
-- **Documentation Policy**: 
-    - Before implementation/refactoring, read the component spec in `docs/components/`. 
-    - Architectural changes must be reflected in the design specs.
-    - Component design must follow the format defined in `docs/components/FORMAT.md`.
-    - Consistency with `docs/components/CHECKLIST.md` is required for self-review.
+- 変更前に関連する既存ルールを読む。
+- 迷ったら `docs/plans/backlog_list.md` と `docs/plans/roadmap_phase.md` を確認する。
+- 仕様変更時は `docs/components/`、`docs/requires/`、`verify/` を必要に応じて更新する。
+- 仕様、計画、検証に触れる変更では、`docs/architecture/document_structure.md` に従って `{Keyword}` の紐付けを保つ。
+- ルールの再掲は `GLOBAL` / `LOCAL` のスコープ差がある場合のみ意図的とみなす。
 
-## Common Tasks & Validation
-- **Build**: Use `ninja` within `cmake-build-*/` directories.
-- **Validation**: Before committing, run the cross-sectional validation script to check keyword annotations and tier compliance.
-- **Naming**: No prefixes/postfixes. POD members use `snake_case`.
+## 主要ルール
+
+- C++ は 2 スペース、100 桁、snake_case を基本にする。
+- 公開 API は `fireball` 名前空間に置く。
+- ヘッダは `.hxx`、C++ は `.cxx`、C は `.c` を使う。
+- 組み込みコードは静的/スタック主体とし、`malloc` / `new` / `void*` / 例外 / RTTI を避ける。
+- ドキュメント本文は日本語、コード名・API 名・キーワード・URI は英語。
+- 図は Mermaid、表は Markdown を優先する。
+
+## 検証
+
+- 具体的な検証コマンドは `tools/README.md` と `verify/README.md` を正本とする。
+
+## エージェント入口
+
+- Claude Code 用の入口は `CLAUDE.md`。
+- Codex 用の入口は `AGENTS.md`。
+- Antigravity 用の入口は `.agents/rules/fireball.md`。

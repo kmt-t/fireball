@@ -91,7 +91,7 @@ TODO(Phase 1): ATC抽出 - fireball_callの各引数に渡されるポインタ�
 | `0x01` | `SYS_YIELD` | — | `0` | 協調的イールド要求 `{CooperativeMultitasking}` |
 
 ### 5.3. vMMIO Generic (`0x10`-`0x1F`)
-<!-- traceability: {RoleBasedAccessControl} {RestrictedPhysicalAccess} -->
+<!-- traceability: {RoleBasedAccessControl} {META_RestrictedPhysicalAccess} -->
 vMMIOアドレス空間全体への汎用アクセス。SYSCTL/IPCR/VDMA/SHM/DYNAMIC/PASSTHROUGHすべての領域に対応。許可テーブルでアクセス制御される。 `{RoleBasedAccessControl}`
 
 | ID | 名前 | 引数 | 戻り値 | 説明 |
@@ -100,8 +100,8 @@ vMMIOアドレス空間全体への汎用アクセス。SYSCTL/IPCR/VDMA/SHM/DYN
 | `0x11` | `MMIO_WRITE32` | `addr`, `value` | `0` | 32bit書き込み |
 | `0x12` | `MMIO_READ8` | `addr` | `value` | 8bit読み出し |
 | `0x13` | `MMIO_WRITE8` | `addr`, `value` | `0` | 8bit書き込み |
-| `0x14` | `MMIO_BULK_READ` | `addr`, `dest_ptr`, `byte_count` | `0` | バルク読み出し `{RestrictedPhysicalAccess}` |
-| `0x15` | `MMIO_BULK_WRITE` | `addr`, `src_ptr`, `byte_count` | `0` | バルク書き込み `{RestrictedPhysicalAccess}` |
+| `0x14` | `MMIO_BULK_READ` | `addr`, `dest_ptr`, `byte_count` | `0` | バルク読み出し `{META_RestrictedPhysicalAccess}` |
+| `0x15` | `MMIO_BULK_WRITE` | `addr`, `src_ptr`, `byte_count` | `0` | バルク書き込み `{META_RestrictedPhysicalAccess}` |
 
 ### 5.4. VDMA (`0x20`-`0x2F`)
 <!-- traceability: {VDMA} -->
@@ -112,7 +112,7 @@ vMMIOアドレス空間全体への汎用アクセス。SYSCTL/IPCR/VDMA/SHM/DYN
 | `0x20` | `VDMA_START` | `src`, `dst`, `byte_count` | `0` | DMA転送開始 `{VDMA}` |
 
 ### 5.5. IRQ (`0x30`-`0x3F`)
-<!-- traceability: {CooperativeMultitasking} {RoleBasedAccessControl} {RestrictedPhysicalAccess} {VDMA} -->
+<!-- traceability: {CooperativeMultitasking} {RoleBasedAccessControl} {META_RestrictedPhysicalAccess} {VDMA} -->
 仮想割り込みフラグの管理。`REG_IRQ_FLAGS` のラッパー。
 
 | ID | 名前 | 引数 | 戻り値 | 説明 |

@@ -1,7 +1,8 @@
 name: format-architecture
 globs: ["docs/architecture/**"]
+scope: LOCAL
 instructions: |
-  アーキテクチャ設計ドキュメントの作成・編集時は docs/architecture/FORMAT.md のフォーマットに従い、
+  アーキテクチャ設計ドキュメントの作成・編集時は、該当領域の形式定義に従い、
   完了前に以下のチェックリストを全項目確認すること。
   1. システムレイヤー構成が定義され、各レイヤーの責務が明確か
   2. コンポーネント間の依存方向がアーキテクチャ原則（例：クリーンアーキテクチャ）に従っているか

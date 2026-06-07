@@ -80,8 +80,8 @@ ISR → INT イベントをキューに投入 → Dispatch が INT イベント�
 ### 5.1 実行方法
 
 ```bash
-cd docs/verification
-python verify_three_state.py
+cd verify
+./run_eventdriven_coos.sh
 ```
 
 ### 5.2 検証パラメータ
@@ -126,7 +126,7 @@ python verify_three_state.py
 |---|---|
 | `{CooperativeMultitasking}` | os_scheduler.md, os_coos.md |
 | `{COOS_Deterministic}` | models/EventDrivenCOOS_ThreeState.tla |
-| `{Policy_Memory}` | EventQueue サイズ固定 |
+| `{GLOBAL_Policy_Memory}` | EventQueue サイズ固定 |
 
 ---
 

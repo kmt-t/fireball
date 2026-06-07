@@ -5,8 +5,8 @@
 HAL (Hardware Abstraction Layer) は、ハードウェアへのアクセスを抽象化し、vSoCやサービスに対して統一されたインターフェイスを提供する。また、デバッグ用のGDB Remote Serial Protocol (RSP) のパケット解析（RSP Parser）を担い、解析済みコマンドをデバッガへ供給する。すべてのアクセスはIPCルータを経由し、割り込みはフラグ通知とタスクウェイクアップによって安全に処理される。 `{IPCRouter}` `{Challenge_InterruptSafety}` `{TaskPollInterruptFlag}` `{RSPMinimalSet}` `{Fast_Path_GPIO}`
 
 ## 2. アーキテクチャ分類
-<!-- traceability: {3TierSeparation} {IPCRouter} {URIAbstraction} {StaticDI} -->
-本コンポーネントは **Tier 1 (アーキテクチャドメイン)** に属する。ハードウェアとハイパーバイザの境界を定義し、IoC (Inversion of Control) および URIベースのDIを用いて、上位層に対して透過的なリソースアクセスを提供する。 `{3TierSeparation}` `{IPCRouter}` `{URIAbstraction}` `{StaticDI}`
+<!-- traceability: {META_3TierSeparation} {IPCRouter} {URIAbstraction} {META_StaticDI} -->
+本コンポーネントは **Tier 1 (アーキテクチャドメイン)** に属する。ハードウェアとハイパーバイザの境界を定義し、IoC (Inversion of Control) および URIベースのDIを用いて、上位層に対して透過的なリソースアクセスを提供する。 `{META_3TierSeparation}` `{IPCRouter}` `{URIAbstraction}` `{META_StaticDI}`
 
 ## 3. 静的モデル
 
@@ -42,8 +42,8 @@ graph TD
 | 予約ページ数 | vMMIO DYNAMIC領域に確保するページ数 (`reserved_pages`) | ページ数 | デフォルト0 |
 
 #### HAL構成（hal_config）
-<!-- traceability: {ConfigurableSystem} -->
-HAL全体の制限値を定義する。 `{ConfigurableSystem}`
+<!-- traceability: {META_ConfigurableSystem} -->
+HAL全体の制限値を定義する。 `{META_ConfigurableSystem}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
@@ -54,13 +54,13 @@ HAL全体の制限値を定義する。 `{ConfigurableSystem}`
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
-<!-- traceability: {RSP_Transport_Selectable} {TaskPollInterruptFlag} {InterruptWakeup} -->
+<!-- traceability: {RSP_Transport_Selectable} {TaskPollInterruptFlag} {GLOBAL_InterruptWakeup} -->
 - **コマンドルーティング**: IPCで受信したコマンド（read/write等）を、デバイスIDに基づいて適切なドライバへ振り分ける。
 - **RSPパケット解析**: UARTまたはRTTから受信したRSPパケットを解析し、`debug_command` 構造体へ変換してコマンドキューへ投入する。 `{RSP_Transport_Selectable}`
-- **割り込み通知**: 物理割り込み発生時、ISR内でフラグをセットし、COOSスケジューラに対して関連タスクのウェイクアップを要求する。 `{TaskPollInterruptFlag}` `{InterruptWakeup}`
+- **割り込み通知**: 物理割り込み発生時、ISR内でフラグをセットし、COOSスケジューラに対して関連タスクのウェイクアップを要求する。 `{TaskPollInterruptFlag}` `{GLOBAL_InterruptWakeup}`
 
 ### 4.2 状態遷移図
-<!-- traceability: {RSP_Transport_Selectable} {TaskPollInterruptFlag} {InterruptWakeup} -->
+<!-- traceability: {RSP_Transport_Selectable} {TaskPollInterruptFlag} {GLOBAL_InterruptWakeup} -->
 ```mermaid
 stateDiagram-v2
     [*] --> Uninitialized
@@ -72,7 +72,7 @@ stateDiagram-v2
 ```
 
 ### 4.3 内部シーケンス
-<!-- traceability: {RSP_Transport_Selectable} {TaskPollInterruptFlag} {InterruptWakeup} -->
+<!-- traceability: {RSP_Transport_Selectable} {TaskPollInterruptFlag} {GLOBAL_InterruptWakeup} -->
 #### RSPパケット受信とコマンド供給シーケンス
 ```mermaid
 sequenceDiagram
@@ -193,14 +193,14 @@ Key-Valueプロトコル。 `device_id`, `command`, `shared_mem_id` 等を含む
 ## 6. 制約達成の方策
 
 ### 6.1 性能制約と方策
-<!-- traceability: {ConfigurableSystem} -->
+<!-- traceability: {META_ConfigurableSystem} -->
 - **目標**: ハードウェアアクセスのレイテンシを最小化する。
-- **方策**: `{ConfigurableSystem}` デバイス構成をコンパイル時に固定し、実行時の動的な探索オーバーヘッドを排除する。
+- **方策**: `{META_ConfigurableSystem}` デバイス構成をコンパイル時に固定し、実行時の動的な探索オーバーヘッドを排除する。
 
 ### 6.2 メモリ制約と方策
-<!-- traceability: {ConfigurableSystem} -->
+<!-- traceability: {META_ConfigurableSystem} -->
 - **目標**: 通信バッファによるメモリ圧迫を防止する。
-- **方策**: `{ConfigurableSystem}` バッファ数とサイズをコンパイル時に固定し、**vMMIOの動的領域 (`DYNAMIC`)** に配置する。
+- **方策**: `{META_ConfigurableSystem}` バッファ数とサイズをコンパイル時に固定し、**vMMIOの動的領域 (`DYNAMIC`)** に配置する。
 
 ### 6.3 安全性制約と方策
 <!-- traceability: {Challenge_InterruptSafety} -->

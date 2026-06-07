@@ -5,18 +5,18 @@
 IPCルータは、URIベースのサービスディスカバリとロールベースのアクセス制御を備えたメッセージルーティング層である。コンポーネント間の依存性をURIで抽象化し、所有権移譲を伴う安全なデータ移動を実現する。 `{IPCRouter}` `{URIAbstraction}` `{RoleBasedAccessControl}` `{OwnershipTransfer}` `{IPCDI}`
 
 ## 2. アーキテクチャ分類
-<!-- traceability: {3TierSeparation} {IPCRouter} {URIAbstraction} -->
-本コンポーネントは **Tier 1 (アーキテクチャドメイン)** に属する。システム全体の通信基盤として機能し、IoC (Inversion of Control) と URIベースのDIを用いて、コンポーネント間の疎結合性を担保する。 `{3TierSeparation}` `{IPCRouter}` `{URIAbstraction}`
+<!-- traceability: {META_3TierSeparation} {IPCRouter} {URIAbstraction} -->
+本コンポーネントは **Tier 1 (アーキテクチャドメイン)** に属する。システム全体の通信基盤として機能し、IoC (Inversion of Control) と URIベースのDIを用いて、コンポーネント間の疎結合性を担保する。 `{META_3TierSeparation}` `{IPCRouter}` `{URIAbstraction}`
 
 ## 3. 静的モデル
 
 ### 3.1 データ構造
-<!-- traceability: {IPCRegistry} {FlatMapIndexed} {RoleBasedAccessControl} -->
-- **レジストリエントリ**: 登録されたサービスのURI、ロール、チャンネルIDを保持する。内部的には C++23 `std::flat_map<string_view, registry_entry>` を用い、高速なディスパッチを実現する。 `{IPCRegistry}` `{FlatMapIndexed}`
+<!-- traceability: {IPCRegistry} {META_FlatMapIndexed} {RoleBasedAccessControl} -->
+- **レジストリエントリ**: 登録されたサービスのURI、ロール、チャンネルIDを保持する。内部的には C++23 `std::flat_map<string_view, registry_entry>` を用い、高速なディスパッチを実現する。 `{IPCRegistry}` `{META_FlatMapIndexed}`
 - **ロールマトリックス**: コンパイル時に定義された、ロール間の通信許可を判定するマトリックス。 `{RoleBasedAccessControl}`
 
 ### 3.2 内部ブロック図
-<!-- traceability: {IPCRegistry} {FlatMapIndexed} {RoleBasedAccessControl} -->
+<!-- traceability: {IPCRegistry} {META_FlatMapIndexed} {RoleBasedAccessControl} -->
 ```mermaid
 graph TB
     subgraph "IPC Router Layer"
@@ -45,7 +45,7 @@ graph TB
 ```
 
 ### 3.3 主要なクラス・構造体・配列・定数
-<!-- traceability: {IPCRegistry} {FlatMapIndexed} {RoleBasedAccessControl} -->
+<!-- traceability: {IPCRegistry} {META_FlatMapIndexed} {RoleBasedAccessControl} -->
 
 #### Key-Valueペア（kv_pair）
 <!-- traceability: {DictionaryBasedIPC} -->
@@ -62,15 +62,15 @@ IPC通信の最小単位。1つのメッセージで8個のペアを送信でき
 - **辞書参照IPC**: キーを、受信側が保持する静的な辞書内の文字列オフセットとして解釈する。 `{DictionaryBasedIPC}`
 
 #### IPCメッセージ（message）
-<!-- traceability: {TypeSafeMessaging} {FlatMapIndexed} -->
-Key-Valueペアを複数集約した通信の基本単位。内部的に C++23 `std::flat_map` 相当の構造を採用し、メッセージ内のキー検索を $O(\log N)$ で行う。 `{TypeSafeMessaging}` `{FlatMapIndexed}`
+<!-- traceability: {TypeSafeMessaging} {META_FlatMapIndexed} -->
+Key-Valueペアを複数集約した通信の基本単位。内部的に C++23 `std::flat_map` 相当の構造を採用し、メッセージ内のキー検索を $O(\log N)$ で行う。 `{TypeSafeMessaging}` `{META_FlatMapIndexed}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 22	| :--- | :--- | :--- | :--- |
 52	| KVマップ | メッセージ内容を構成するKey-Valueペアの集合 | `std::flat_map` | 8個固定（静的バッファ） |
 
 #### レジストリエントリ（registry_entry）
-<!-- traceability: {DictionaryBasedIPC} {TypeSafeMessaging} {FlatMapIndexed} -->
+<!-- traceability: {DictionaryBasedIPC} {TypeSafeMessaging} {META_FlatMapIndexed} -->
 システム内で公開されているサービスの情報を管理する。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
@@ -82,9 +82,9 @@ Key-Valueペアを複数集約した通信の基本単位。内部的に C++23 `
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
-<!-- traceability: {LowLatencyLookup} {AccessDictionary} {FlatMapIndexed} {OwnershipTransfer} {IPC_ZeroCopy} {Challenge_CspHandoffStarvation} {IPC_DropHandler} -->
+<!-- traceability: {LowLatencyLookup} {META_AccessDictionary} {META_FlatMapIndexed} {OwnershipTransfer} {IPC_ZeroCopy} {Challenge_CspHandoffStarvation} {IPC_DropHandler} -->
 - **サービス検索**: `std::flat_map` を用いて、URI文字列からチャンネルIDを $O(\log N)$ で取得する。 `{LowLatencyLookup}`
-- **メッセージ内検索**: メッセージ本体を `std::flat_map` 構造とすることで、受信側でのパラメータ検索を高速化する。 `{AccessDictionary}` `{FlatMapIndexed}`
+- **メッセージ内検索**: メッセージ本体を `std::flat_map` 構造とすることで、受信側でのパラメータ検索を高速化する。 `{META_AccessDictionary}` `{META_FlatMapIndexed}`
 - **所有権移譲 (Zero-Copy Handoff)**: `{OwnershipTransfer}` `{IPC_ZeroCopy}`
     1. **Revoke**: 送信側タスクの権限を無効化し、リソースを `In-flight` 状態にする。
     2. **Enqueue**: 受信側チャネルのキューへ Push。
@@ -96,7 +96,7 @@ Key-Valueペアを複数集約した通信の基本単位。内部的に C++23 `
 TODO(Phase 0.8): IPC Router Deadlock Verification - 厳格なノンブロッキング送信と、所有権巻き戻しロジックによるデッドロック不在を TLA+ で検証する。
 
 ### 4.1.1 名前解決パイプラインとアクセス制御フロー
-<!-- traceability: {LowLatencyLookup} {AccessDictionary} {FlatMapIndexed} {RoleBasedAccessControl} -->
+<!-- traceability: {LowLatencyLookup} {META_AccessDictionary} {META_FlatMapIndexed} {RoleBasedAccessControl} -->
 
 IPC ルータの名前解決は、URI からサービスディスクリプタ（チャネルIDと権限情報）を導出するクリティカルパスである。以下の 3 段階パイプラインで実現される。
 
@@ -143,7 +143,7 @@ graph TD
 | **Channel Grant** | サービスの待受チャネル ID を取得、準備完了判定 | O(1) | チャネル状態確認 |
 
 ### 4.2 状態遷移図 (SysML SMD: IPC Router ルーティングフロー)
-<!-- traceability: {LowLatencyLookup} {AccessDictionary} {FlatMapIndexed} {OwnershipTransfer} {IPC_ZeroCopy} {Challenge_CspHandoffStarvation} {IPC_DropHandler} -->
+<!-- traceability: {LowLatencyLookup} {META_AccessDictionary} {META_FlatMapIndexed} {OwnershipTransfer} {IPC_ZeroCopy} {Challenge_CspHandoffStarvation} {IPC_DropHandler} -->
 
 IPC ルータの各ルーティング操作における状態遷移を以下に示す。
 
@@ -264,10 +264,10 @@ stateDiagram-v2
 - **Drop Handler**: メッセージ受信側が Kill された場合、キューのデストラクタが In-flight リソースを強制回収し、メモリリークを防止。
 
 ### 4.4 内部シーケンス図
-<!-- traceability: {LowLatencyLookup} {AccessDictionary} {FlatMapIndexed} {OwnershipTransfer} {IPC_ZeroCopy} {Challenge_CspHandoffStarvation} {IPC_DropHandler} -->
+<!-- traceability: {LowLatencyLookup} {META_AccessDictionary} {META_FlatMapIndexed} {OwnershipTransfer} {IPC_ZeroCopy} {Challenge_CspHandoffStarvation} {IPC_DropHandler} -->
 
 #### サービス検索と接続フロー
-<!-- traceability: {LowLatencyLookup} {AccessDictionary} {RoleBasedAccessControl} {IPCRouter} -->
+<!-- traceability: {LowLatencyLookup} {META_AccessDictionary} {RoleBasedAccessControl} {IPCRouter} -->
 ```mermaid
 sequenceDiagram
     participant C as Client
@@ -445,9 +445,9 @@ TODO: IPC Router Deadlock Verification - TLA+ 仕様を形式化し、TLC で完
 - **方策**: `{LowLatencyLookup}` ソート済み配列の二分探索を採用する。
 
 ### 6.2 メモリ制約と方策
-<!-- traceability: {BumpAllocator} {StaticScalability} -->
+<!-- traceability: {META_BumpAllocator} {GLOBAL_StaticScalability} -->
 - **目標**: レジストリ管理によるメモリ断片化を防止する。
-- **方策**: `{BumpAllocator}` `{StaticScalability}` バンプアロケータを使用し、最大サービス数をコンパイル時に固定する。
+- **方策**: `{META_BumpAllocator}` `{GLOBAL_StaticScalability}` バンプアロケータを使用し、最大サービス数をコンパイル時に固定する。
 
 ### 6.3 安全性制約と方策
 <!-- traceability: {RoleBasedAccessControl} {OwnershipTransfer} -->

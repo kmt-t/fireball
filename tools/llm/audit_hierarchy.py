@@ -2,12 +2,15 @@ import re
 from pathlib import Path
 from difflib import SequenceMatcher
 from tools.common.db import db
-from tools.common.llm import call_llm, parse_llm_json_response
+from tools.common.llm import OLLAMA_NUM_CTX, call_llm, parse_llm_markdown_response
 from tools.common.parser import parse_sections
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 DOCS_DIR = REPO_ROOT / "docs"
 COMPONENTS_DIR = DOCS_DIR / "components"
+
+def generation_cache_key(model_name: str, backend_name: str, max_tokens: int) -> str:
+    return f"{backend_name}:{model_name}:ctx={OLLAMA_NUM_CTX}:tokens={max_tokens}:fmt=md1"
 
 def resolve_hierarchy_docs(tier: int) -> list[tuple[Path, Path]]:
     pairs = []
@@ -143,9 +146,10 @@ def perform_section_hierarchy_check(
     
     model_name = model or "default"
     backend_name = backend or "auto"
+    generation_key = generation_cache_key(model_name, backend_name, max_tokens)
     input_hash = db.make_hash_key(parent_heading, parent_body, str(parent_keywords),
                                   child_heading, child_body, str(child_keywords),
-                                  confidence, model_name, backend_name)
+                                  confidence, generation_key)
     
     hash_key = db.make_hash_key("S-ARCH-HIERARCHY", parent_heading, child_heading, input_hash)
     cached = db.get_cache(hash_key)
@@ -181,22 +185,19 @@ def perform_section_hierarchy_check(
 5. メモリ制約・パフォーマンス非機能要求
 
 【出力フォーマット】
-以下のJSONのみで回答してください。JSON以外は出力しないでください。
-{{
-  "status": "PASS" または "FAIL",
-  "reason": "PASSの場合は『セクション間の整合性が確保されている』旨、FAILの場合は具体的な不整合箇所と理由",
-  "review_points": [
-    "レビューポイント1: 具体的な検証項目...",
-    "レビューポイント2: ...",
-    ...
-  ],
-  "risk_level": "高" | "中" | "低",
-  "suggestions": "改善提案（Markdown形式）"
-}}
+以下のMarkdown形式のみで回答してください。JSON、コードブロック、前置きは出力しないでください。
+
+STATUS: PASS または FAIL
+REASON: PASSの場合は「セクション間の整合性が確保されている」旨、FAILの場合は具体的な不整合箇所と理由
+REVIEW_POINTS:
+- レビューポイント1: 具体的な検証項目
+- レビューポイント2: 具体的な検証項目
+RISK_LEVEL: 高 または 中 または 低
+SUGGESTIONS: 改善提案
 """
     try:
         raw_response = call_llm(prompt, backend=backend, model=model, max_tokens=max_tokens)
-        result = parse_llm_json_response(raw_response)
+        result = parse_llm_markdown_response(raw_response)
         if "status" not in result:
             result["status"] = "ERROR"
         if "risk_level" not in result:

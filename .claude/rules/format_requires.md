@@ -1,7 +1,8 @@
 name: format-requires
 globs: ["docs/requires/**"]
+scope: LOCAL
 instructions: |
-  要求仕様ドキュメントの作成・編集時は docs/requires/FORMAT.md のフォーマットに従い、
+  要求仕様ドキュメントの作成・編集時は、該当領域の形式定義に従い、
   完了前に以下のチェックリストを全項目確認すること。
   1. すべての主要なアクターが特定されているか
   2. 正常系・異常系の主要なユースケースが網羅されているか

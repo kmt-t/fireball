@@ -8,8 +8,8 @@ Fireballは、極小リソース環境での柔軟性と高性能を両立させ
 - **協調型マルチタスク (COOS)**: C++23ベースのスタックレス・タスク構造を採用し、低オーバーヘッドな切り替えを実現する。各サービスのリブート（自己修復）を前提としたフォールトトレラント設計をとる。 `{LowOverhead}` `{ServiceSelfReboot}` `{FaultTolerant}`
 - **高速JIT (Copy-and-Patch)**: コンパイルレイテンシを最小化し、小規模なコードキャッシュ（2KB x 2）を「移動する窓（Moving Window）」として活用する。
 - **動的代謝 (Metabolism-First)**: インタープリタはブートストラップおよびフォールバックとして機能し、実行の主力は JIT による動的なコード変換とキャッシュアウト（代謝）のサイクルが担う。
-- **コンポーネント・ハーネス**: vSoCを独立したサブコンポーネント（Loader, Engine, MMIO, Debugger）の集合体として定義し、ハーネスを介して差し替え可能なプラグイン構造とする。 `{ComponentHarness}`
-- **静的構成**: システムパラメータや依存関係の多くをコンパイル時に決定し、実行時の動的メモリ確保や探索コストを排除する。 `{StaticDI}` `{ConfigurableSystem}` `{Static_Resolution}`
+- **コンポーネント・ハーネス**: vSoCを独立したサブコンポーネント（Loader, Engine, MMIO, Debugger）の集合体として定義し、ハーネスを介して差し替え可能なプラグイン構造とする。 `{GLOBAL_ComponentHarness}`
+- **静的構成**: システムパラメータや依存関係の多くをコンパイル時に決定し、実行時の動的メモリ確保や探索コストを排除する。 `{META_StaticDI}` `{META_ConfigurableSystem}` `{META_Static_Resolution}`
 
 ## 2. 静的構造
 
@@ -178,7 +178,7 @@ Fireball が準拠するアーキテクチャスタイルと設計定石を明�
 ## 6. 共通ポリシー
 
 ### ヒープパーティション
-システムRAMを独立したヒープに分割し、障害隔離を実現する。 `{IndependentHeap}` `{FaultIsolation}` `{StrictMemoryLimit}`
+システムRAMを独立したヒープに分割し、障害隔離を実現する。 `{GLOBAL_IndependentHeap}` `{META_FaultIsolation}` `{GLOBAL_StrictMemoryLimit}`
 
 詳細なメモリ予算およびSLOC予算については **[resource_budget.md](resource_budget.md)** を参照。
 
@@ -198,4 +198,4 @@ Fireball が準拠するアーキテクチャスタイルと設計定石を明�
 本システムは、ゲストリニアメモリのサイズや各種バッファの調整により、**32KBから64KB以上**のRAM環境に柔軟に対応する。
 
 ### 設定方式
-ヘッダファイル形式のコンフィグファイルでシステムパラメータを定義し、コンパイル時に固定する。 `{ConfigurableSystem}`
+ヘッダファイル形式のコンフィグファイルでシステムパラメータを定義し、コンパイル時に固定する。 `{META_ConfigurableSystem}`

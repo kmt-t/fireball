@@ -1,12 +1,12 @@
 # サービス コンポーネント設計書
 
 ## 1. コンセプト
-<!-- traceability: {FaultIsolation} {MemoryIsolation} {IPCRouter} -->
-サービスは、WASMゲストに対して共有ライブラリ機能（WASI, libc, GC等）を提供するコンポーネントである。信頼度と通信方式に応じてTierで分離し、障害隔離とメモリ安全性を確保する。 `{FaultIsolation}` `{MemoryIsolation}` `{IPCRouter}`
+<!-- traceability: {META_FaultIsolation} {MemoryIsolation} {IPCRouter} -->
+サービスは、WASMゲストに対して共有ライブラリ機能（WASI, libc, GC等）を提供するコンポーネントである。信頼度と通信方式に応じてTierで分離し、障害隔離とメモリ安全性を確保する。 `{META_FaultIsolation}` `{MemoryIsolation}` `{IPCRouter}`
 
 ## 2. アーキテクチャ分類
-<!-- traceability: {3TierSeparation} {IPCRouter} {URIAbstraction} -->
-本コンポーネントは **Tier 1 (アーキテクチャドメイン)** に属する。ゲストWASMに対する抽象化されたサービスレイヤを提供し、IoC (Inversion of Control) と URIベースのDIを用いて、機能拡張性と隔離性を担保する。 `{3TierSeparation}` `{IPCRouter}` `{URIAbstraction}`
+<!-- traceability: {META_3TierSeparation} {IPCRouter} {URIAbstraction} -->
+本コンポーネントは **Tier 1 (アーキテクチャドメイン)** に属する。ゲストWASMに対する抽象化されたサービスレイヤを提供し、IoC (Inversion of Control) と URIベースのDIを用いて、機能拡張性と隔離性を担保する。 `{META_3TierSeparation}` `{IPCRouter}` `{URIAbstraction}`
 
 ## 3. 静的モデル
 
@@ -37,8 +37,8 @@ graph TD
 | 識別URI | ルータを介して公開される、サービスを指し示す唯一の正規名称 | 文字列ビュー | - |
 
 #### サービス構成（service_config）
-<!-- traceability: {ConfigurableSystem} -->
-特定のゲストインスタンスに適用されるサービスのロード設定。 `{ConfigurableSystem}`
+<!-- traceability: {META_ConfigurableSystem} -->
+特定のゲストインスタンスに適用されるサービスのロード設定。 `{META_ConfigurableSystem}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
@@ -48,12 +48,12 @@ graph TD
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
-<!-- traceability: {FaultIsolation} {IPCRouter} -->
-- **サービス分離**: Tier 0 サービスはゲストのWASMモジュールとして直接リンクされ、Tier 1 サービスは独立したタスクとして動作し、IPCルータを介して通信する。 `{FaultIsolation}`
+<!-- traceability: {META_FaultIsolation} {IPCRouter} -->
+- **サービス分離**: Tier 0 サービスはゲストのWASMモジュールとして直接リンクされ、Tier 1 サービスは独立したタスクとして動作し、IPCルータを介して通信する。 `{META_FaultIsolation}`
 - **WASI呼び出し**: ゲストからのWASIシステムコールを、HALのIPCコマンドへ変換して転送する。 `{IPCRouter}`
 
 ### 4.2 状態遷移図
-<!-- traceability: {FaultIsolation} {IPCRouter} -->
+<!-- traceability: {META_FaultIsolation} {IPCRouter} -->
 ```mermaid
 stateDiagram-v2
     [*] --> Loaded: load_service (static)
@@ -62,7 +62,7 @@ stateDiagram-v2
 ```
 
 ### 4.3 内部シーケンス
-<!-- traceability: {FaultIsolation} {IPCRouter} -->
+<!-- traceability: {META_FaultIsolation} {IPCRouter} -->
 #### WASI呼び出しシーケンス
 ```mermaid
 sequenceDiagram
@@ -80,7 +80,7 @@ sequenceDiagram
 ```
 
 ### 4.4 WASI API から HAL への変換ラッパー (コンセプトコード)
-<!-- traceability: {FaultIsolation} {IPCRouter} -->
+<!-- traceability: {META_FaultIsolation} {IPCRouter} -->
 
 WASMゲストが呼び出す同期的な標準インターフェース (WASI) を、非同期でロールベースな基盤である「HAL（IPCコマンド）」へ変換・中継する Tier 0 ラッパーのコア構造。
 この擬似コードは、同期I/O要求と非同期実行基盤のインピーダンスミスマッチを解消するプロトコルを示す。
@@ -143,23 +143,23 @@ def wasi_fd_write(fd: int, iovs: list[WasiIov], iovs_len: int, nwritten_ptr: int
 ## 5. インターフェイス定義
 
 ### 5.1 エラーハンドリング戦略
-<!-- traceability: {RecoveryStrategy} -->
+<!-- traceability: {META_RecoveryStrategy} -->
 
-本コンポーネントでは、エラーコードではなくリカバリー戦略を返すことで、呼び出し側が具体的なアクションを取れるようにする。 `{RecoveryStrategy}`
+本コンポーネントでは、エラーコードではなくリカバリー戦略を返すことで、呼び出し側が具体的なアクションを取れるようにする。 `{META_RecoveryStrategy}`
 
 #### リカバリー戦略の種類
-<!-- traceability: {RecoveryStrategy} -->
+<!-- traceability: {META_RecoveryStrategy} -->
 - **ignore**: エラーを無視し、処理を継続する。
 - **retry**: 一時的な失敗。再試行により成功する可能性がある。
 - **restart**: モジュールまたはシステムの再初期化が必要な失敗。
 - **panic**: システムを即座に停止し、ダンプを出力する。
 
 #### 設計判断
-<!-- traceability: {RecoveryStrategy} -->
+<!-- traceability: {META_RecoveryStrategy} -->
 失敗の詳細理由は実装詳細であり、クリーンアーキテクチャの内側が知るべきではない。デバッグ情報はログシステムで確認する。
 
 ### 5.2 公開API
-<!-- traceability: {RecoveryStrategy} -->
+<!-- traceability: {META_RecoveryStrategy} -->
 外部から利用可能なオブジェクト指向APIを定義する。
 
 TODO(Phase 1): ATC抽出 - サービスの初期化順序依存性や、`load_service`実行時の静的確保領域への割り当てに関する事前・事後条件を明確にすること。
@@ -176,7 +176,7 @@ TODO(Phase 1): ATC抽出 - サービスの初期化順序依存性や、`load_se
 | 補足 | サービスは静的にロードされ、システムライフタイム全体で維持される。Tier 1 の場合は、バックグラウンドタスクとして spawn される。 |
 
 ### 5.3 URI/IPCインターフェイス
-<!-- traceability: {RecoveryStrategy} -->
+<!-- traceability: {META_RecoveryStrategy} -->
 - **URI**: `fireball://<subsystem_id>/<service_name>/<instance_id>` （`ipc_router.md` の正規形式に準拠。例: `fireball://services/wasi/0`）
 - **メッセージ形式**: サービス固有のKey-Valueプロトコル。詳細なDTO定義は各サービス仕様書に準ずる。
 
@@ -188,11 +188,11 @@ TODO(Phase 1): ATC抽出 - サービスの初期化順序依存性や、`load_se
 - **方策**: `{IPCRouter}` 高頻度な呼び出し（libc等）は Tier 0 として直接リンクし、IPCオーバーヘッドを回避する。
 
 ### 6.2 メモリ制約と方策
-<!-- traceability: {IndependentHeap} {MemoryIsolation} -->
+<!-- traceability: {GLOBAL_IndependentHeap} {MemoryIsolation} -->
 - **目標**: サービスによるメモリ消費を隔離する。
-- **方策**: `{IndependentHeap}` `{MemoryIsolation}` Tier 1 サービスに対して独立したヒープパーティションを割り当てる。
+- **方策**: `{GLOBAL_IndependentHeap}` `{MemoryIsolation}` Tier 1 サービスに対して独立したヒープパーティションを割り当てる。
 
 ### 6.3 安全性制約と方策
-<!-- traceability: {FaultIsolation} -->
+<!-- traceability: {META_FaultIsolation} -->
 - **目標**: サービスの障害が他へ波及するのを防止する。
-- **方策**: `{FaultIsolation}` サービスを独立した実行コンテキスト（タスク）で実行し、不正アクセスやクラッシュを隔離する。
+- **方策**: `{META_FaultIsolation}` サービスを独立した実行コンテキスト（タスク）で実行し、不正アクセスやクラッシュを隔離する。

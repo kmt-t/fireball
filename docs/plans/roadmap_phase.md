@@ -21,7 +21,7 @@
 
 ## Phase 0: Foundation（約6ヶ月）
 
-設計ドキュメント・WIT契約・ビルド基盤・形式検証を完成させる。**vSoCの設計を完璧に固める**ことを最優先とする。`{SpecificationFirst}`
+設計ドキュメント・WIT契約・ビルド基盤・形式検証を完成させる。**vSoCの設計を完璧に固める**ことを最優先とする。`{META_SpecificationFirst}`
 
 | サブフェーズ | 目的 | 状態 |
 |---|---|---|
@@ -42,7 +42,7 @@
 
 ## Phase 1: vSoC First（約3ヶ月）
 
-スタンドアロンvSoCを実装し、WAMR比較評価を実施する。`{AI_Native_Dev}`
+スタンドアロンvSoCを実装し、WAMR比較評価を実施する。`{META_AI_Native_Dev}`
 
 - WASMローダ
 - インタープリタ（算術・制御・メモリ）

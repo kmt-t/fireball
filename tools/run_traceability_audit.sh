@@ -18,15 +18,15 @@ done
 
 # Resolve script directory and change to repo root
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$SCRIPT_DIR"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
 # Run the traceability auditor (via unified run_audit.py)
 if [[ "$ARGS" == *"--llm"* ]]; then
     # Strip --llm and run semantic trace alignment
     CLEAN_ARGS=$(echo "$ARGS" | sed 's/--llm//g')
-    python3 tools/run_audit.py --rule S-TRACE-ALIGN --all $CLEAN_ARGS
+    python3 tools/scripts/run_audit.py --rule S-TRACE-ALIGN --all $CLEAN_ARGS
 else
     # Run only mechanical trace rules
-    python3 tools/run_audit.py --rule M-TRACE-UNDEFINED --rule M-TRACE-ORPHAN-SEC --rule M-TRACE-UNCOVERED $ARGS
+    python3 tools/scripts/run_audit.py --rule M-TRACE-UNDEFINED --rule M-TRACE-ORPHAN-SEC --rule M-TRACE-UNCOVERED $ARGS
 fi

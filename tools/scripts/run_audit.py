@@ -7,7 +7,7 @@ import argparse
 from pathlib import Path
 
 # Setup path
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from tools.common.db import db
@@ -16,7 +16,8 @@ from tools.mechanical.check_traceability import check_traceability
 from tools.mechanical.check_api import check_api
 from tools.mechanical.check_mermaid import check_mermaid
 from tools.llm.audit_module import audit_policy, audit_quality, audit_trace_alignment
-from tools.llm.audit_consistency import audit_pair_files, generate_checklist, read_csv_checklist, run_checklist_audit, save_csv_checklist
+from tools.llm.audit_consistency import audit_pair_files, run_checklist_audit
+from tools.mechanical.check_consistency import generate_checklist, read_csv_checklist, save_csv_checklist
 from tools.llm.audit_hierarchy import audit_hierarchy_tier
 
 # Terminal Colors
@@ -60,7 +61,8 @@ def sync_keywords_and_glossary():
                     "priority": priority,
                     "verification_method": method,
                     "category": category,
-                    "is_meta": 0
+                    "is_meta": 0,
+                    "is_global": 0
                 })
         
         # Parse glossary definitions
@@ -84,24 +86,42 @@ def sync_keywords_and_glossary():
         
         db.sync_glossary(glossary_data)
 
-    # 2. Parse document_structure.md for meta-keywords
+    # 2. Parse document_structure.md for meta-keywords and global-keywords
     doc_struct = REPO_ROOT / "docs" / "architecture" / "document_structure.md"
     if doc_struct.exists():
         content = doc_struct.read_text(encoding="utf-8")
+        
+        in_meta = False
+        in_global = False
         pattern = re.compile(r"\|\s*`\{([A-Za-z0-9_]+)\}`\s*\|\s*([^|]+?)\s*\|")
+        
         for line in content.splitlines():
+            # Section detection
+            if "## 4. メタキーワード" in line:
+                in_meta = True
+                in_global = False
+                continue
+            if "## 5. グローバルキーワード" in line:
+                in_meta = False
+                in_global = True
+                continue
+            if line.startswith("##") and not ("メタキーワード" in line or "グローバルキーワード" in line):
+                in_meta = False
+                in_global = False
+                
             m = pattern.match(line.strip())
             if m:
                 kw, desc = m.groups()
-                if kw == "キーワード":
+                if kw in ["キーワード", "META_キーワード", "GLOBAL_キーワード"]:
                     continue
                 keywords_data.append({
                     "keyword": kw.strip(),
                     "description": desc.strip(),
                     "priority": "N/A",
                     "verification_method": "N/A",
-                    "category": "Meta",
-                    "is_meta": 1
+                    "category": "Meta" if in_meta else "Global",
+                    "is_meta": 1 if in_meta else 0,
+                    "is_global": 1 if in_global else 0
                 })
 
     db.sync_keywords(keywords_data)
@@ -166,7 +186,7 @@ def main():
     parser.add_argument("--tier", type=int, choices=[1, 2, 3], help="Tier to audit when using --hierarchy")
     parser.add_argument("--backend", choices=["sakura", "openrouter", "gemini", "ollama"], help="Force LLM backend")
     parser.add_argument("--model", type=str, help="Override LLM model name")
-    parser.add_argument("--max-tokens", type=int, default=1024, help="Max tokens in LLM generation")
+    parser.add_argument("--max-tokens", type=int, default=2048, help="Max tokens in LLM generation")
     parser.add_argument("--quick", action="store_true", help="Quick mode (Tier 1 only)")
 
     # Unused arguments kept for backward compatibility with check_consistency/audit_traceability

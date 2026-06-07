@@ -1,12 +1,12 @@
 # JIT Compiler コンポーネント設計書
 
 ## 1. コンセプト
-<!-- traceability: {LowLatencyJIT} {JIT_CopyAndPatch} {JIT_ZeroCompileCostTheorem} {SimpleJITArchitecture} {PeriodicTask} {IdleDetection} {JIT_Encoder} -->
-JIT Compiler は、WASMバイトコードを実行時にネイティブコードへ変換し、実行速度を向上させる。Execution Engine (`executor`) の一部として、インタープリタと一対の「実行エンジン」として機能する。極小リソース環境（RAM 64KB）において、コンパイルコストを極小化する「Zero Compile Cost 定理」に基づき、最適化を省いた高速な **Copy-and-Patch** 方式を採用する。 `{LowLatencyJIT}` `{JIT_CopyAndPatch}` `{JIT_ZeroCompileCostTheorem}` `{SimpleJITArchitecture}` `{PeriodicTask}` `{IdleDetection}` `{JIT_Encoder}`
+<!-- traceability: {LowLatencyJIT} {JIT_CopyAndPatch} {JIT_ZeroCompileCostTheorem} {SimpleJITArchitecture} {GLOBAL_PeriodicTask} {GLOBAL_IdleDetection} {JIT_Encoder} -->
+JIT Compiler は、WASMバイトコードを実行時にネイティブコードへ変換し、実行速度を向上させる。Execution Engine (`executor`) の一部として、インタープリタと一対の「実行エンジン」として機能する。極小リソース環境（RAM 64KB）において、コンパイルコストを極小化する「Zero Compile Cost 定理」に基づき、最適化を省いた高速な **Copy-and-Patch** 方式を採用する。 `{LowLatencyJIT}` `{JIT_CopyAndPatch}` `{JIT_ZeroCompileCostTheorem}` `{SimpleJITArchitecture}` `{GLOBAL_PeriodicTask}` `{GLOBAL_IdleDetection}` `{JIT_Encoder}`
 
 ## 2. アーキテクチャ分類
-<!-- traceability: {3TierSeparation} {ComponentHarness} -->
-本コンポーネントは **Tier 2 (サブシステムドメイン)** に属し、Stateless Interface と Harness パターンを用いて構造化される。 `{3TierSeparation}` `{ComponentHarness}`
+<!-- traceability: {META_3TierSeparation} {GLOBAL_ComponentHarness} -->
+本コンポーネントは **Tier 2 (サブシステムドメイン)** に属し、Stateless Interface と Harness パターンを用いて構造化される。 `{META_3TierSeparation}` `{GLOBAL_ComponentHarness}`
 
 ## 3. 静的モデル
 
@@ -73,8 +73,8 @@ TODO(Phase 1): メモリレイアウトの厳密化 - `jit_context` および `j
 | 実行履歴マップ | 命令の実行頻度を記録するビットマップ | データ範囲 | `std::span<uint8_t>` |
 
 #### JIT構成（jit_config）
-<!-- traceability: {ConfigurableSystem} {StaticScalability} -->
-JITエンジンの挙動を制御する性能パラメータ。 `{ConfigurableSystem}` `{StaticScalability}`
+<!-- traceability: {META_ConfigurableSystem} {GLOBAL_StaticScalability} -->
+JITエンジンの挙動を制御する性能パラメータ。 `{META_ConfigurableSystem}` `{GLOBAL_StaticScalability}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
@@ -89,7 +89,7 @@ JITエンジンの挙動を制御する性能パラメータ。 `{ConfigurableSy
 
 #### Copy-and-Patch コンパイル手順
 
-<!-- traceability: {JIT_CopyAndPatch} {AI_Native_Dev} -->
+<!-- traceability: {JIT_CopyAndPatch} {META_AI_Native_Dev} -->
 1. **テンプレート選択**: WASM命令に対応する事前定義済みのネイティブコードテンプレートを選択する。
 2. **コードコピー**: テンプレートをアクティブ・キャッシュ領域の「ベースアドレス + 使用済みサイズ」の位置へコピーする。
 3. **パッチ適用 (プレースホルダ埋め)**:
@@ -130,13 +130,13 @@ JITエンジンの挙動を制御する性能パラメータ。 `{ConfigurableSy
 2. **状態更新**: 実行履歴マップ（ビットマップ）の状態が「頻出」に達した命令オフセットを「コンパイル待ち列」に投入する。
 
 #### バッチコンパイル (周期実行またはアイドル時)
-<!-- traceability: {JIT_ReverseCompilationOrder} {PeriodicTask} {IdleDetection} -->
+<!-- traceability: {JIT_ReverseCompilationOrder} {GLOBAL_PeriodicTask} {GLOBAL_IdleDetection} -->
 1. **キューの取得**: 「コンパイル待ち列」から対象の命令オフセットを**逆順（LIFO）**で取り出す。 `{JIT_ReverseCompilationOrder}`
 2. **コンパイル実行**: 後続のトレースを先にコンパイルすることで、先行するトレースのリンク時（Patching 時）にターゲットが既にキャッシュ内に存在する確率を上げ、即時チェイニングを実現する。
-3. **補足**: COOSの `register_periodic_callback` または `set_idle_hook` により実行される。これにより、実行スレッドのブロッキング時間を抑える。 `{PeriodicTask}` `{IdleDetection}`
+3. **補足**: COOSの `register_periodic_callback` または `set_idle_hook` により実行される。これにより、実行スレッドのブロッキング時間を抑える。 `{GLOBAL_PeriodicTask}` `{GLOBAL_IdleDetection}`
 
 ### 4.2 状態遷移図
-<!-- traceability: {JIT_LazyChaining} {JIT_ReverseCompilationOrder} {PeriodicTask} {IdleDetection} -->
+<!-- traceability: {JIT_LazyChaining} {JIT_ReverseCompilationOrder} {GLOBAL_PeriodicTask} {GLOBAL_IdleDetection} -->
 ```mermaid
 stateDiagram-v2
     state "Interpreting" as Interp
@@ -154,7 +154,7 @@ stateDiagram-v2
 ```
 
 ### 4.3 内部シーケンス
-<!-- traceability: {JIT_LazyChaining} {JIT_ReverseCompilationOrder} {PeriodicTask} {IdleDetection} -->
+<!-- traceability: {JIT_LazyChaining} {JIT_ReverseCompilationOrder} {GLOBAL_PeriodicTask} {GLOBAL_IdleDetection} -->
 #### JITコンパイルおよび検索シーケンス
 ```mermaid
 sequenceDiagram
@@ -225,10 +225,10 @@ JITエンジンの責務を、以下の独立したサブコンポーネント�
 ### 6.1 公開API
 外部から利用可能なオブジェクト指向APIを定義する。
 
-TODO(Phase 1): ATCの抽出 - `lookup_trace` 等の各APIについて、事前条件・事後条件・不変条件（ATC）やエラー時の挙動を包括的に定義し、厳格な契約を策定すること。
+TODO(Phase 1): Hoare Triple の抽出 - `lookup_trace` 等の各APIについて、事前条件・事後条件・不変条件（Hoare Triple）やエラー時の挙動を包括的に定義し、厳格な契約を策定すること。
 
 #### 初期化（initialize）
-<!-- traceability: {ConfigurableSystem} -->
+<!-- traceability: {META_ConfigurableSystem} -->
 
 | 項目 | 内容 |
 | :--- | :--- |
@@ -240,10 +240,10 @@ TODO(Phase 1): ATCの抽出 - `lookup_trace` 等の各APIについて、事前�
 | 事後条件 | ビットマップがクリアされ、キャッシュが空の状態になる。 |
 | 不変条件 | 実行中に `config` の値を変更してはならない。 |
 | エラー時の挙動 | メモリ割り当ての不備がある場合はエラーを返す。 |
-| 補足 | `{ConfigurableSystem}` の方針に基づき、基本的にはブート時に一度だけ呼び出される。 |
+| 補足 | `{META_ConfigurableSystem}` の方針に基づき、基本的にはブート時に一度だけ呼び出される。 |
 
 #### トレース検索（lookup_trace）
-<!-- traceability: {ConfigurableSystem} -->
+<!-- traceability: {META_ConfigurableSystem} -->
 
 | 項目 | 内容 |
 | :--- | :--- |
@@ -252,7 +252,7 @@ TODO(Phase 1): ATCの抽出 - `lookup_trace` 等の各APIについて、事前�
 | 補足 | ビットマップが `COMPILED` でない場合は即座に失敗を返す。その後、`harness` 経由でエントリ索引を検索する。 |
 
 #### カード状態取得（get_card_state）
-<!-- traceability: {ConfigurableSystem} -->
+<!-- traceability: {META_ConfigurableSystem} -->
 
 | 項目 | 内容 |
 | :--- | :--- |
@@ -260,7 +260,7 @@ TODO(Phase 1): ATCの抽出 - `lookup_trace` 等の各APIについて、事前�
 | シグネチャ | `get_card_state(pc: address) -> u8` |
 
 #### 検索範囲取得（get_search_range）
-<!-- traceability: {ConfigurableSystem} -->
+<!-- traceability: {META_ConfigurableSystem} -->
 
 | 項目 | 内容 |
 | :--- | :--- |
@@ -268,7 +268,7 @@ TODO(Phase 1): ATCの抽出 - `lookup_trace` 等の各APIについて、事前�
 | シグネチャ | `get_search_range(pc: address) -> result<tuple<u32, u32>, bool>` |
 
 #### バッチコンパイル処理（process_batch_compile）
-<!-- traceability: {ConfigurableSystem} -->
+<!-- traceability: {META_ConfigurableSystem} -->
 
 | 項目 | 内容 |
 | :--- | :--- |
@@ -279,7 +279,7 @@ TODO(Phase 1): ATCの抽出 - `lookup_trace` 等の各APIについて、事前�
 | 補足 | `executor` 実装内で `co_yield` 発生時に呼び出され、アイドル時間等を活用して処理される。 |
 
 ### 6.2 URI/IPCインターフェイス
-<!-- traceability: {ConfigurableSystem} -->
+<!-- traceability: {META_ConfigurableSystem} -->
 本コンポーネントは vSoC の内部ライブラリであり、直接のIPCインターフェイスは持たない。
 
 ## 7. 制約達成の方策

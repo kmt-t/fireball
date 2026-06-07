@@ -1,15 +1,15 @@
 # 協調型OS COOS コンポーネント設計書
 
 ## 1. コンセプト
-<!-- traceability: {CooperativeMultitasking} {UseCpp23Library} {UseCpp20Coroutine} {CSPCommunication} {EliminateDataRace} {PeriodicTask} {IdleDetection} {InterruptWakeup} {NotRTOS} -->
-COOSは、シングルスレッド環境向けのホーアCSPベースのグリーンスレッドOSである。C++23コルーチン（および std::flat_map 等の標準コンテナ）を活用し、スタックレスで低オーバーヘッドなタスク切り替えを実現する。また、ホーアCSPに基づき、所有権移譲によるゼロコピーメッセージパッシングを行うことで、データ競合を原理的に排除する。 `{CooperativeMultitasking}` `{UseCpp23Library}` `{UseCpp20Coroutine}` `{CSPCommunication}` `{EliminateDataRace}` `{PeriodicTask}` `{IdleDetection}` `{InterruptWakeup}` `{NotRTOS}`
+<!-- traceability: {CooperativeMultitasking} {GLOBAL_UseCpp23Library} {GLOBAL_UseCpp20Coroutine} {CSPCommunication} {EliminateDataRace} {GLOBAL_PeriodicTask} {GLOBAL_IdleDetection} {GLOBAL_InterruptWakeup} {NotRTOS} -->
+COOSは、シングルスレッド環境向けのホーアCSPベースのグリーンスレッドOSである。C++23コルーチン（および std::flat_map 等の標準コンテナ）を活用し、スタックレスで低オーバーヘッドなタスク切り替えを実現する。また、ホーアCSPに基づき、所有権移譲によるゼロコピーメッセージパッシングを行うことで、データ競合を原理的に排除する。 `{CooperativeMultitasking}` `{GLOBAL_UseCpp23Library}` `{GLOBAL_UseCpp20Coroutine}` `{CSPCommunication}` `{EliminateDataRace}` `{GLOBAL_PeriodicTask}` `{GLOBAL_IdleDetection}` `{GLOBAL_InterruptWakeup}` `{NotRTOS}`
 
 ## 2. アーキテクチャ分類
-<!-- traceability: {3TierSeparation} {ComponentHarness} -->
-本コンポーネントは **Tier 2 (サブシステムドメイン)** に属し、Stateless Interface と Harness パターンを用いて構造化される。 `{3TierSeparation}` `{ComponentHarness}`
+<!-- traceability: {META_3TierSeparation} {GLOBAL_ComponentHarness} -->
+本コンポーネントは **Tier 2 (サブシステムドメイン)** に属し、Stateless Interface と Harness パターンを用いて構造化される。 `{META_3TierSeparation}` `{GLOBAL_ComponentHarness}`
 
 ### 2.1 構成要素
-<!-- traceability: {3TierSeparation} {ComponentHarness} -->
+<!-- traceability: {META_3TierSeparation} {GLOBAL_ComponentHarness} -->
 - **[`co_sched`](os_scheduler.md)**: スケジューラ。タスクのライフサイクルと実行順序の管理。
 - **`co_csp`**: 通信エンジン。チャネルベースの同期と所有権移譲。
 - **`co_mem`**: メモリマネージャ。タスク独立ヒープの管理（メモリパーティション）。
@@ -17,13 +17,13 @@ COOSは、シングルスレッド環境向けのホーアCSPベースのグリ�
 ## 3. 静的モデル
 
 ### 3.1 データ構造
-<!-- traceability: {Policy_Memory} -->
+<!-- traceability: {GLOBAL_Policy_Memory} -->
 - **`channel`**: 1エントリのバッファを持つ同期オブジェクト。
-- **`co_value`**: 独自の所有権管理構造体。ヒープを使用せず、静的バッファまたはスタック上で動作することを基本とする。 `{Policy_Memory}`
+- **`co_value`**: 独自の所有権管理構造体。ヒープを使用せず、静的バッファまたはスタック上で動作することを基本とする。 `{GLOBAL_Policy_Memory}`
 - **`coos_context`**: スケジューラ、CSP状態、メモリ情報を集約したグローバルコンテキスト。
 
 ### 3.2 内部ブロック図
-<!-- traceability: {Policy_Memory} -->
+<!-- traceability: {GLOBAL_Policy_Memory} -->
 ```mermaid
 graph TD
     subgraph Harness[COOS Harness]
@@ -38,7 +38,7 @@ graph TD
 ```
 
 ### 3.3 主要なデータ定義
-<!-- traceability: {Policy_Memory} -->
+<!-- traceability: {GLOBAL_Policy_Memory} -->
 
 #### CSPチャネル（channel）
 タスク間の同期と通信を仲介するデータ構造。 `{CSPCommunication}`
@@ -80,15 +80,15 @@ def channel_recv(channel: Channel, receiver_task: Task) -> CoValue:
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
-<!-- traceability: {CSP_Handoff} {DirectContextSwitch} {IdleDetection} {StrictMemoryLimit} {IndependentHeap} {InterruptWakeup} -->
+<!-- traceability: {CSP_Handoff} {DirectContextSwitch} {GLOBAL_IdleDetection} {GLOBAL_StrictMemoryLimit} {GLOBAL_IndependentHeap} {GLOBAL_InterruptWakeup} -->
 - **CSP Handoff (直接スイッチ)**: `send`/`recv` 時に相手タスクが既に待機状態であった場合、スケジューラを介さず即座に相手タスクへ実行権を移譲する。 `{CSP_Handoff}`
 - **直接コンテキストスイッチ (Direct Context Switch)**: コルーチンの `handle.resume()` を直接呼び出すことで、OSスケジューラのキュー処理やディスパッチ判断などのオーバーヘッドを介さず、超低レイテンシで実行権を宛先タスクにスイッチする。 `{DirectContextSwitch}`
-- **割り込みウェイクアップ (Interrupt Wakeup)**: 外部割り込みが発生した際、割り込みサービスルーチン（ISR）から `notify_interrupt` が呼び出され、関連する待機中タスクを即座に起床させる（READY状態に遷移して実行可能キューに投入する）。 `{InterruptWakeup}`
-- **Idle Detection**: 全ての実行中タスクがブロック状態にあり、かつイベントキューが空（割り込みや外部イベントによる起床待ちのみ）の場合にアイドル状態と判定する。この条件を `idle_hook` のトリガーとし、バックグラウンド処理（ログフラッシュ等）を呼び出す。 `{IdleDetection}`
-- **Memory Management**: タスク生成時に独立したメモリパーティションを割り当てる。 `{StrictMemoryLimit}` `{IndependentHeap}`
+- **割り込みウェイクアップ (Interrupt Wakeup)**: 外部割り込みが発生した際、割り込みサービスルーチン（ISR）から `notify_interrupt` が呼び出され、関連する待機中タスクを即座に起床させる（READY状態に遷移して実行可能キューに投入する）。 `{GLOBAL_InterruptWakeup}`
+- **Idle Detection**: 全ての実行中タスクがブロック状態にあり、かつイベントキューが空（割り込みや外部イベントによる起床待ちのみ）の場合にアイドル状態と判定する。この条件を `idle_hook` のトリガーとし、バックグラウンド処理（ログフラッシュ等）を呼び出す。 `{GLOBAL_IdleDetection}`
+- **Memory Management**: タスク生成時に独立したメモリパーティションを割り当てる。 `{GLOBAL_StrictMemoryLimit}` `{GLOBAL_IndependentHeap}`
 
 ### 4.2 状態遷移図 (SMD: COOS システムレベル)
-<!-- traceability: {CSP_Handoff} {DirectContextSwitch} {IdleDetection} {StrictMemoryLimit} {IndependentHeap} -->
+<!-- traceability: {CSP_Handoff} {DirectContextSwitch} {GLOBAL_IdleDetection} {GLOBAL_StrictMemoryLimit} {GLOBAL_IndependentHeap} -->
 
 COOS 全体のシステムレベル状態遷移を以下に示す。各タスクの状態遷移については **[os_scheduler.md](os_scheduler.md#42-状態遷移図)** を参照。
 
@@ -162,12 +162,12 @@ stateDiagram-v2
 - **Terminated**: タスク終了・メモリ解放済み
 
 ## 5. インターフェイス設計
-<!-- traceability: {StaticDI} -->
-各コンポーネントの公開仕様を定義する。 `{StaticDI}`
+<!-- traceability: {META_StaticDI} -->
+各コンポーネントの公開仕様を定義する。 `{META_StaticDI}`
 
 ### 5.1 `coos_harness` (システムハーネス)
-<!-- traceability: {StaticDI} {ComponentHarness} -->
-コンポーネント間の依存関係を集約する構造体。テストの容易性と依存性の分離を実現する。 `{ComponentHarness}` `{StaticDI}`
+<!-- traceability: {META_StaticDI} {GLOBAL_ComponentHarness} -->
+コンポーネント間の依存関係を集約する構造体。テストの容易性と依存性の分離を実現する。 `{GLOBAL_ComponentHarness}` `{META_StaticDI}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
@@ -176,7 +176,7 @@ stateDiagram-v2
 | メモリ管理 | タスク固有のメモリ領域を管理するコンポーネントへの参照 | 構造体への参照 | `co_mem` |
 
 ##### ハーネスによる依存性注入パターン
-システムハーネスは以下のようにコンポーネントへの参照を集約し、静的に注入される。 `{ComponentHarness}`
+システムハーネスは以下のようにコンポーネントへの参照を集約し、静的に注入される。 `{GLOBAL_ComponentHarness}`
 
 ```python
 # システムハーネスによる依存性注入パターン
@@ -189,7 +189,7 @@ class CoosHarness:
 ```
 
 ### 5.2 サブコンポーネント・インターフェイス
-<!-- traceability: {StaticDI} -->
+<!-- traceability: {META_StaticDI} -->
 
 TODO(Phase 1): サブコンポーネントのAPIに関する完全なATC定義 - spawn, yield, send, receive, allocate 等の各操作に対する厳密な事前・事後・不変条件を（別ドキュメントまたは本ドキュメント内で）完全に定義すること。
 
@@ -203,14 +203,14 @@ TODO(Phase 1): サブコンポーネントのAPIに関する完全なATC定義 -
 
 ### 6.1 検証対象の不変条件
 
-<!-- traceability: {CSP_Handoff} {UseCpp20Coroutine} {Challenge_CspHandoffStarvation} -->
+<!-- traceability: {CSP_Handoff} {GLOBAL_UseCpp20Coroutine} {Challenge_CspHandoffStarvation} -->
 
 | 不変条件 | 説明 | 検証方法 |
 | :--- | :--- | :--- |
 | **デッドロック不在** | Send と Recv がブロックされた状態で互いに待つサイクルが存在しないこと。`{Challenge_CspHandoffStarvation}` | 直交表 + TLA+ リーチャビリティ |
 | **状態一貫性** | タスク状態 (READY/BLOCKED/SUSPENDED) が各操作後も整合していること。 | 直交表（ケース1-7） |
 | **チャネルFIFO** | 同一チャネル上のメッセージ/通知は FIFO 順で処理されること。 | TLA+ 順序付け不変式 |
-| **co_yield 有界性** | co_yield は有限時間内に達成されるか、または明示的に中断することが保証されること。`{UseCpp20Coroutine}` | TLA+ 活性検証 |
+| **co_yield 有界性** | co_yield は有限時間内に達成されるか、または明示的に中断することが保証されること。`{GLOBAL_UseCpp20Coroutine}` | TLA+ 活性検証 |
 
 ### 6.2 直交表: CSP通信と状態遷移
 

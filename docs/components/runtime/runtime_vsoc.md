@@ -1,23 +1,23 @@
 # vSoC コンポーネント設計書
 
 ## 1. コンセプト
-<!-- traceability: {LowLatencyJIT} {MemoryIsolation} {FaultIsolation} {EnvironmentPointer} -->
-vSoC (Virtual System-on-Chip) は、WASM実行環境の統合マネージャであり、Loader、Interpreter、JIT、vMMIO、Debugger を統括して実行制御を行う。各サブコンポーネントを統合する「環境」としての役割を持ち、`vsoc_runtime` を `execution_context` から参照される Environment として提供する。 `{LowLatencyJIT}` `{MemoryIsolation}` `{FaultIsolation}` `{EnvironmentPointer}`
+<!-- traceability: {LowLatencyJIT} {MemoryIsolation} {META_FaultIsolation} {EnvironmentPointer} -->
+vSoC (Virtual System-on-Chip) は、WASM実行環境の統合マネージャであり、Loader、Interpreter、JIT、vMMIO、Debugger を統括して実行制御を行う。各サブコンポーネントを統合する「環境」としての役割を持ち、`vsoc_runtime` を `execution_context` から参照される Environment として提供する。 `{LowLatencyJIT}` `{MemoryIsolation}` `{META_FaultIsolation}` `{EnvironmentPointer}`
 
 ## 2. アーキテクチャ分類
-<!-- traceability: {3TierSeparation} {ComponentHarness} -->
-本コンポーネントは **Tier 2 (サブシステムドメイン)** に属し、Stateless Interface と Harness パターンを用いて構造化される。 `{3TierSeparation}` `{ComponentHarness}`
+<!-- traceability: {META_3TierSeparation} {GLOBAL_ComponentHarness} -->
+本コンポーネントは **Tier 2 (サブシステムドメイン)** に属し、Stateless Interface と Harness パターンを用いて構造化される。 `{META_3TierSeparation}` `{GLOBAL_ComponentHarness}`
 
 ## 3. 静的モデル
 
 ### 3.1 データ構造
-<!-- traceability: {StaticDI} -->
-- **`vsoc_harness`**: vSoCが依存する各種エンジン（Loader, Interpreter, JIT等）のインターフェイスを集約した構造体。 `{StaticDI}`
+<!-- traceability: {META_StaticDI} -->
+- **`vsoc_harness`**: vSoCが依存する各種エンジン（Loader, Interpreter, JIT等）のインターフェイスを集約した構造体。 `{META_StaticDI}`
 - **`vsoc_context`**: 現在の実行状態、仮想割り込み、JITキャッシュの管理状態など、可変なランタイム状態。
 - **`vsoc_config`**: メモリ割り当てやJIT有効化フラグなどの不変な構成情報。
 
 ### 3.2 内部ブロック図
-<!-- traceability: {StaticDI} -->
+<!-- traceability: {META_StaticDI} -->
 ```mermaid
 graph TD
     subgraph vSoC_Layer
@@ -44,7 +44,7 @@ graph TD
 ```
 
 ### 3.3 主要なクラス・構造体・配列・定数
-<!-- traceability: {StaticDI} -->
+<!-- traceability: {META_StaticDI} -->
 
 #### vSoCハーネス（vsoc_harness）
 各エンジンへのインターフェイスを集約する。PODとして扱い、メンバに末尾アンダースコアは付与しない。
@@ -67,8 +67,8 @@ graph TD
 | プログラムカウンタ | ゲストの現在のプログラム実行位置（WASMオフセット）。 | `uint32_t` |
 
 #### vSoC構成（vsoc_config）
-<!-- traceability: {ConfigurableSystem} -->
-vSoCの動作パラメータを定義する。 `{ConfigurableSystem}`
+<!-- traceability: {META_ConfigurableSystem} -->
+vSoCの動作パラメータを定義する。 `{META_ConfigurableSystem}`
 
 | 項目名 | 機能と役割 | 備考（制約、型など） |
 | :--- | :--- | :--- |
@@ -321,7 +321,7 @@ TODO(Phase 1): ATC抽出 - JITキャッシュ有効時やエラー時の実行�
 | 補足 | ROM上のデータを直接参照するため、RAMへのコピーは発生しない。 |
 
 #### ステップ実行（step）
-<!-- traceability: {RecoveryStrategy} -->
+<!-- traceability: {META_RecoveryStrategy} -->
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | ゲストのプログラム実行を再開し、コルーチンの `yield` またはトラップが発生するまで継続する。 |
@@ -331,11 +331,11 @@ TODO(Phase 1): ATC抽出 - JITキャッシュ有効時やエラー時の実行�
 | 事前条件 | 状態が Ready であること。 |
 | 事後条件 | PCやレジスタ状態が更新されていること。 |
 | 不変条件 | ゲストRAMの境界外へのアクセスが発生しないこと。 |
-| エラー時の挙動 | トラップ（例外）発生時は、トラップ要因を保持してエラーを返す。 `{RecoveryStrategy}` |
+| エラー時の挙動 | トラップ（例外）発生時は、トラップ要因を保持してエラーを返す。 `{META_RecoveryStrategy}` |
 | 補足 | 内部的にはインタープリタとJITコードを透過的に切り替えて実行する。 |
 
 #### `notify-interrupt`
-<!-- traceability: {RecoveryStrategy} -->
+<!-- traceability: {META_RecoveryStrategy} -->
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | 物理割り込み等の外部イベントをゲストOS/アプリに通知するための仮想フラグを設定する。 |
@@ -384,12 +384,12 @@ Fireballでは、ホスト側のコードサイズを極限まで削減するた
 - **Dynamic Linking**: インポートセクションに基づき、他モジュールのエクスポートを解決する。
 
 ### 5.4 URI/IPCインターフェイス
-<!-- traceability: {RecoveryStrategy} {vMMIO_TrapAndEmulate} {NativeAPI_Export} {MultiModule_Support} -->
+<!-- traceability: {META_RecoveryStrategy} {vMMIO_TrapAndEmulate} {NativeAPI_Export} {MultiModule_Support} -->
 - **URI**: `fireball://vsoc/control/<instance_id>`
 - **メッセージ形式**: 実行制御、状態取得用のKey-Valueプロトコル。詳細定義は IPCルータの仕様に準ずる。
 
 ### 5.5 関連コンポーネントとの連携
-<!-- traceability: {RecoveryStrategy} {vMMIO_TrapAndEmulate} {NativeAPI_Export} {MultiModule_Support} -->
+<!-- traceability: {META_RecoveryStrategy} {vMMIO_TrapAndEmulate} {NativeAPI_Export} {MultiModule_Support} -->
 | コンポーネント | 連携内容 | 参照データ構造 |
 | :--- | :--- | :--- |
 | **Interpreter** | インタープリタ実行の委譲とホットスポット履歴の取得 | `interpreter`, 履歴バッファ |
@@ -458,12 +458,12 @@ TODO: vSoC Safepoint/JIT Cache TLA+ Verification - 上記 state machine を TLA+
 - **方策**: `{LowLatencyJIT}` `{ThreadedInterpreter}` コピーアンドパッチJITによるネイティブ実行と、スレッドインタープリタによる高速フォールバックを組み合わせる。
 
 ### 6.2 メモリ制約と方策
-<!-- traceability: {JIT_DoubleBuffer_Cache} {IndependentHeap} {WasmPageAlignment} -->
+<!-- traceability: {JIT_DoubleBuffer_Cache} {GLOBAL_IndependentHeap} {WasmPageAlignment} -->
 - **目標**: 64KB RAM環境で動作させる。
-- **方策**: `{JIT_DoubleBuffer_Cache}` `{IndependentHeap}` ダブルバッファによる効率的なキャッシュ管理と、厳密なヒープ分離によりメモリ使用量を制御する。JITキャッシュは `FB_CONF_JIT_CACHE_SIZE`（デフォルト4096バイト、`docs/components/core/system_config_details.md`）を Active/Old の2領域に均等分割して使用し、各領域の容量は `code_cache_size / 2`（デフォルト2048バイト）となる。
+- **方策**: `{JIT_DoubleBuffer_Cache}` `{GLOBAL_IndependentHeap}` ダブルバッファによる効率的なキャッシュ管理と、厳密なヒープ分離によりメモリ使用量を制御する。JITキャッシュは `FB_CONF_JIT_CACHE_SIZE`（デフォルト4096バイト、`docs/components/core/system_config_details.md`）を Active/Old の2領域に均等分割して使用し、各領域の容量は `code_cache_size / 2`（デフォルト2048バイト）となる。
 - **高速アドレス判定**: ゲストRAMを `0x0` から配置し、単一の比較命令でRAMアクセスを判定することで、インタープリタおよびJITのオーバーヘッドを最小化する。 `{WasmPageAlignment}`
 
 ### 6.3 安全性制約と方策
-<!-- traceability: {MemoryBoundaryCheck} {RestrictedPhysicalAccess} -->
+<!-- traceability: {MemoryBoundaryCheck} {META_RestrictedPhysicalAccess} -->
 - **目標**: ゲストアプリケーションの暴走を完全に隔離する。
-- **方策**: `{MemoryBoundaryCheck}` `{RestrictedPhysicalAccess}` JITコードへの境界チェック埋め込みと、vMMIOによる物理アクセスの制限を行う。物理アドレスアクセスの許可範囲は `FB_CONF_VMMIO_ALLOWED_ADDRS`（`docs/components/core/system_config_details.md`）に `constexpr` 定義されたテーブルに基づき、vMMIOが検証する。
+- **方策**: `{MemoryBoundaryCheck}` `{META_RestrictedPhysicalAccess}` JITコードへの境界チェック埋め込みと、vMMIOによる物理アクセスの制限を行う。物理アドレスアクセスの許可範囲は `FB_CONF_VMMIO_ALLOWED_ADDRS`（`docs/components/core/system_config_details.md`）に `constexpr` 定義されたテーブルに基づき、vMMIOが検証する。

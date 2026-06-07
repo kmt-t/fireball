@@ -1,43 +1,48 @@
 # Fireball 開発ガイド (Development Guide)
 
-Fireballプロジェクトにおける開発方針、プロセス、および各種ルールをここに集約する。
+Fireball プロジェクトにおける開発方針、プロセス、および各種ルールをここに集約する。
+文書階層、メタキーワード、traceability の正本は `docs/architecture/document_structure.md`、要求仕様の正本は `docs/requires/requirement_list.md` とする。
+scope: GLOBAL
 
 ## 1. 開発方針 (Development Policy)
 
-極限環境（RAM 32KB - 64KB）で動作する高性能WASM JITランタイムを実現するため、以下の原則を遵守する。
+極限環境（RAM 32KB - 64KB）で動作する高性能 WASM JIT ランタイムを実現するため、以下の原則を遵守する。
 
-- **Specification-First (仕様第一)**: 実装に先立ち、`docs/components/` 以下に詳細な仕様書を作成する。
-- **WIT as Single Source of Truth (WIT真実在)**: コンポーネント間のインターフェースは WIT (WebAssembly Interface Types) を唯一の正解とし、ここから設計を開始する。
-- **Zero-Cost Abstraction (ゼロコスト抽象化)**: C++23 (flat_map等), C++23 Concepts, constexpr を活用し、実行時のオーバーヘッドを排除する。
-- **Strict Memory Policy (厳格なメモリ管理)**: 動的メモリ確保（ヒープ）を原則禁止し、静的またはスタック割り当てを優先する。 `{Policy_Memory}`
-- **Code Size Constraint (15KLOC制約)**: 全体のコード規模を 15,000行 (SLOC) 以内に収める。
-- **Bonsai Design (盆栽デザイン)**: 全体のバランスを見ながら、設計の密度を段階的に（Phase/Stepごとに）上げていく。
+- **Specification-First**: 実装に先立ち、対象領域の仕様を `docs/components/**` や `docs/requires/**` に記述する。
+- **WIT as Single Source of Truth**: コンポーネント間のインターフェースは WIT を唯一の正解とし、設計と実装の起点にする。
+- **Zero-Cost Abstraction (ゼロコスト抽象化)**: C++23、`constexpr`、C++23 Concepts を活用し、実行時のオーバーヘッドを排除する。
+- **Strict Memory Policy `{Policy_Memory}`**: 動的メモリ確保（ヒープ）を原則禁止し、静的またはスタック割り当てを優先する。
+- **Code Size Constraint (15KLOC制約)**: 全体のコード規模を 15,000 行 (SLOC) 以内に収める。
+- **Bonsai Design (盆栽デザイン)**: 設計の密度は Phase/Step ごとに段階的に上げる。
+- **Rule Independence**: ルール本文は個別ドキュメント名や本文例に依存させず、役割と分類を参照して記述する。
 
 ## 2. 開発プロセス (Development Process)
 
 開発は以下の 4 ステップを 1 サイクルとして進める。
 
 ### Step 0: Bonsai Design (盆栽デザイン)
-- `docs/components/*.md` に仕様書を記述する。
+- 対象領域の仕様書群に仕様を記述する。
 - Mermaid を使用して SysML 形式（BDD/SD/SMD/PAR）で設計を可視化する。
-- `docs/components/CHECKLIST.md` に基づき、エージェントがセルフレビューを行う。
 
 ### Step 1-2: Formal Verification (TLA+/TLC)
 - インターフェースを WIT で定義する。
-- **TLA+** を用いてモデルを記述し、**TLC** で不変条件 (ATC: @pre, @post, @inv) や動的振る舞いの論理的な一貫性を検証する。
+- **TLA+** を用いてモデルを記述し、**TLC** で不変条件（Hoare Triple: `@pre`, `@post`, `@inv`）や動的振る舞いの論理的一貫性を検証する。
 
 ### Step 3: Implementation Generation (実装生成)
 - WIT から C++ コード（Harness, Interface）を自動生成する。
-- コンポーネントのロジックを実装する。LLMを積極的に活用し、定型コードの生成を自動化する。 `{AI_Native_Dev}`
+- コンポーネントのロジックを実装する。LLM を積極的に活用し、定型コードの生成を自動化する。 `{AI_Native_Dev}`
 
 ### Step 4: Testing & Integration (テスト・統合)
-- ホスト環境およびターゲット環境（Cortex-M等）でのテストを実行する。
+- ホスト環境およびターゲット環境（Cortex-M 等）でのテストを実行する。
+- `tools/README.md` にある整合性・トレーサビリティ監査の入口を使って、機械チェックを実行する。
 - `docs/plans/backlog_list.md` のストーリーに基づき、価値の提供を確認する。
 
 ## 3. エージェント向け運用ルール
 
-- **セルフレビュー**: ドキュメントの修正後は必ず `docs/components/CHECKLIST.md` を確認すること。
-- **TODO管理**: 未決定事項は `TODO(Phase X): [課題] - [アクション]` の形式で明示する。
-- **トレーサビリティ**: 要求仕様（`docs/requires/requirement_list.md`）のキーワード `{Keyword}` をドキュメント内に記述し、紐付けを維持する。
-- **質問の推奨**: 仕様の不確実性は憶測で埋めず、積極的にユーザーへ質問すること。
-- **TLA+/TLCの活用**: 複雑な状態遷移や所有権の移譲については、TLA+によるモデル化とTLCによる検証を提案または実施すること。
+- いかなる操作（実装、形式検証、ドキュメント修正）を開始する前にも、必ず `docs/plans/backlog_list.md` を読み、現在選択中のタスクがどのフェーズ・バックログアイテムに属するかを確認すること。
+- `Step 3`（実装生成）を開始する前に、必ず前段の `Step 0-2`（設計・形式検証）がすべてのチェックリスト要件を満たしているかユーザーに明示的に確認すること。エージェント判断での自己完結的な実装開始を禁止する。
+- 仕様・計画・検証に触れる変更では、`docs/architecture/document_structure.md` の定義に従って `{Keyword}` の traceability を維持すること。
+- 変更した仕様は `docs/components/`、`docs/requires/`、`verify/` の対応箇所に反映すること。
+- 不確実な仕様は憶測で埋めず、必要ならユーザーに質問すること。
+- `TODO(Phase X): [課題] [アクション]` を TODO 管理の基本形式とする。
+- 複雑な状態遷移や所有権の移譲については、TLA+ によるモデル化と TLC による検証を提案または実施すること。

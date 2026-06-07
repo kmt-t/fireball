@@ -1,12 +1,12 @@
 # コンポーネント設計：constexpr Assembler
 
 ## 1. コンセプト
-<!-- traceability: {JIT_Encoder} {Static_Resolution} {CompileTimeValidation} {PositionIndependentCode} -->
-constexpr Assembler は、C++のコンパイル時計算（`constexpr`）機能を活用し、ターゲットアーキテクチャの命令バイナリを型安全かつ効率的に生成するための DSL (Domain Specific Language) である。手動でのビット演算による命令生成を排除し、ビルド時に命令テンプレートを確定させることで、実行時のJITオーバーヘッドを「ゼロ」に近づけるとともに、不正なレジスタ指定や即値溢れをコンパイル時に検知する。 `{JIT_Encoder}` `{Static_Resolution}` `{CompileTimeValidation}` `{PositionIndependentCode}`
+<!-- traceability: {JIT_Encoder} {META_Static_Resolution} {META_CompileTimeValidation} {PositionIndependentCode} -->
+constexpr Assembler は、C++のコンパイル時計算（`constexpr`）機能を活用し、ターゲットアーキテクチャの命令バイナリを型安全かつ効率的に生成するための DSL (Domain Specific Language) である。手動でのビット演算による命令生成を排除し、ビルド時に命令テンプレートを確定させることで、実行時のJITオーバーヘッドを「ゼロ」に近づけるとともに、不正なレジスタ指定や即値溢れをコンパイル時に検知する。 `{JIT_Encoder}` `{META_Static_Resolution}` `{META_CompileTimeValidation}` `{PositionIndependentCode}`
 
 ## 2. アーキテクチャ分類
-<!-- traceability: {3TierSeparation} {Static_Resolution} {ZeroRuntimeOverhead} -->
-本コンポーネントは **Tier 3 (実装ドメイン)** に属する。C++のコンパイル時機能に依存したスタティックなライブラリとして機能し、実行時のオーバーヘッドを持たない。 `{3TierSeparation}` `{Static_Resolution}` `{ZeroRuntimeOverhead}`
+<!-- traceability: {META_3TierSeparation} {META_Static_Resolution} {ZeroRuntimeOverhead} -->
+本コンポーネントは **Tier 3 (実装ドメイン)** に属する。C++のコンパイル時機能に依存したスタティックなライブラリとして機能し、実行時のオーバーヘッドを持たない。 `{META_3TierSeparation}` `{META_Static_Resolution}` `{ZeroRuntimeOverhead}`
 
 ## 3. 静的モデル
 
@@ -29,7 +29,7 @@ TODO(Phase 0.75): データ構造の厳密化 - `riscv::i_type` 等の基底と�
 
 #### `riscv::i_type`
 
-<!-- traceability: {JIT_Encoder} {ZeroCostAbstraction} -->
+<!-- traceability: {JIT_Encoder} {META_ZeroCostAbstraction} -->
 即値演算やロード命令に使用される形式。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
@@ -42,7 +42,7 @@ TODO(Phase 0.75): データ構造の厳密化 - `riscv::i_type` 等の基底と�
 
 #### `arm::add_imm`
 
-<!-- traceability: {JIT_Encoder} {ZeroOverhead} -->
+<!-- traceability: {JIT_Encoder} {META_ZeroOverhead} -->
 `ADD`, `SUB` などの即値演算（32ビット命令）で使用される形式。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
@@ -94,11 +94,11 @@ TODO(Phase 0.75): ATCの抽出 - `make_instruction` に対する事前条件（�
 ## 6. 制約達成の方策
 
 ### 6.1 性能制約
-<!-- traceability: {Static_Resolution} {ZeroRuntimeOverhead} -->
-- **静的解像 (Static Resolution)**: `{Static_Resolution}` により、命令生成に関わるあらゆるビットシフトや論理和（OR）の演算を実行時から排除し、ビルド時に完全に定数へと評価（解像）しておく。
+<!-- traceability: {META_Static_Resolution} {ZeroRuntimeOverhead} -->
+- **静的解像 (Static Resolution)**: `{META_Static_Resolution}` により、命令生成に関わるあらゆるビットシフトや論理和（OR）の演算を実行時から排除し、ビルド時に完全に定数へと評価（解像）しておく。
 - **実行時オーバーヘッドの完全排除 (Zero Runtime Overhead)**: constexpr関数内で事前評価された命令バイト列は実行時に直接メモリアライメントされた命令バッファに転記されるため、実行時のアセンブル処理オーバーヘッドは単なる `memcpy` と同等の超高速なメモリ転送のみとなる。これにより、抽象化のための余分な実行時オーバーヘッドを完全にゼロにする。 `{ZeroRuntimeOverhead}`
 
 ### 6.2 安全性制約
-<!-- traceability: {Static_Resolution} -->
+<!-- traceability: {META_Static_Resolution} -->
 - **方策**: C++の型システムと `static_assert` を利用し、アセンブラレベルのバグ（誤ったレジスタ使用等）を開発段階で完全に排除する。
 

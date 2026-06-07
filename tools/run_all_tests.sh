@@ -64,13 +64,13 @@ print_section() {
 # ------------------------------------------------------------------------------
 # Phase 1: Initialize DB with Keywords and Glossary
 # ------------------------------------------------------------------------------
-print_section "[Phase 1/4] Synchronizing Keywords and Glossary into SQLite Database..."
-python3 tools/run_audit.py --sync
+print_section "[Phase 1/5] Synchronizing Keywords and Glossary into SQLite Database..."
+python3 tools/scripts/run_audit.py --sync
 
 # ------------------------------------------------------------------------------
 # Phase 2: Mechanical Consistency and Format Checks
 # ------------------------------------------------------------------------------
-print_section "[Phase 2/4] Running Mechanical Formatting, Traceability, and Naming Checks (run_audit.py)..."
+print_section "[Phase 2/5] Running Mechanical Formatting, Traceability, and Naming Checks (run_audit.py)..."
 AUDIT_ARGS=""
 if [ -n "$MODEL" ]; then
     AUDIT_ARGS="$AUDIT_ARGS --model $MODEL"
@@ -79,7 +79,7 @@ if [ -n "$BACKEND" ]; then
     AUDIT_ARGS="$AUDIT_ARGS --backend $BACKEND"
 fi
 
-if python3 tools/run_audit.py $AUDIT_ARGS; then
+if python3 tools/scripts/run_audit.py $AUDIT_ARGS; then
     echo "✔ Mechanical Checks: PASSED"
 else
     echo "✖ Mechanical Checks: FAILED"
@@ -90,7 +90,7 @@ fi
 # Phase 3: Semantic LLM Audits (Optional)
 # ------------------------------------------------------------------------------
 if [ "$RUN_LLM" -eq 1 ]; then
-    print_section "[Phase 3/4] Running Semantic Module Audits (run_audit.py --all)..."
+    print_section "[Phase 3/5] Running Semantic Module Audits (run_audit.py --all)..."
     SEMANTIC_ARGS="--all"
     if [ -n "$BACKEND" ]; then
         SEMANTIC_ARGS="$SEMANTIC_ARGS --backend $BACKEND"
@@ -98,16 +98,16 @@ if [ "$RUN_LLM" -eq 1 ]; then
     if [ -n "$MODEL" ]; then
         SEMANTIC_ARGS="$SEMANTIC_ARGS --model $MODEL"
     fi
-    SEMANTIC_ARGS="$SEMANTIC_ARGS --max-tokens 2048"
+    SEMANTIC_ARGS="$SEMANTIC_ARGS --max-tokens ${LLM_MAX_TOKENS:-2048}"
 
-    if python3 tools/run_audit.py $SEMANTIC_ARGS; then
+if python3 tools/scripts/run_audit.py $SEMANTIC_ARGS; then
         echo "✔ Semantic Module Audits: PASSED"
     else
         echo "✖ Semantic Module Audits: FAILED"
         FAILED=1
     fi
 
-    print_section "[Phase 4/4] Running Hierarchy Audits (run_audit.py --hierarchy)..."
+    print_section "[Phase 4/5] Running Hierarchy Audits (run_audit.py --hierarchy)..."
     HIER_ARGS="--hierarchy"
     if [ -n "$BACKEND" ]; then
         HIER_ARGS="$HIER_ARGS --backend $BACKEND"
@@ -115,11 +115,11 @@ if [ "$RUN_LLM" -eq 1 ]; then
     if [ -n "$MODEL" ]; then
         HIER_ARGS="$HIER_ARGS --model $MODEL"
     fi
-    HIER_ARGS="$HIER_ARGS --max-tokens 2048"
+    HIER_ARGS="$HIER_ARGS --max-tokens ${LLM_MAX_TOKENS:-2048}"
 
     # Tier 1
     echo ">>> Tier 1 (Requirements → Core/Interface)..."
-    if python3 tools/run_audit.py $HIER_ARGS --tier 1; then
+if python3 tools/scripts/run_audit.py $HIER_ARGS --tier 1; then
         echo "✔ Tier 1 Hierarchy Audit: PASSED"
     else
         echo "✖ Tier 1 Hierarchy Audit: FAILED"
@@ -131,7 +131,7 @@ if [ "$RUN_LLM" -eq 1 ]; then
     else
         # Tier 2
         echo ">>> Tier 2 (Core/Interface → Runtime/JIT)..."
-        if python3 tools/run_audit.py $HIER_ARGS --tier 2; then
+if python3 tools/scripts/run_audit.py $HIER_ARGS --tier 2; then
             echo "✔ Tier 2 Hierarchy Audit: PASSED"
         else
             echo "✖ Tier 2 Hierarchy Audit: FAILED"
@@ -140,15 +140,48 @@ if [ "$RUN_LLM" -eq 1 ]; then
 
         # Tier 3
         echo ">>> Tier 3 (Runtime/JIT → Platform/HAL)..."
-        if python3 tools/run_audit.py $HIER_ARGS --tier 3; then
+if python3 tools/scripts/run_audit.py $HIER_ARGS --tier 3; then
             echo "✔ Tier 3 Hierarchy Audit: PASSED"
         else
             echo "✖ Tier 3 Hierarchy Audit: FAILED"
             FAILED=1
         fi
+
+        # Phase 5: Consistency Checklist Audit
+        if [ "$QUICK_MODE" -eq 1 ]; then
+            echo "[Quick Mode] Skipping Phase 5 consistency checklist audit"
+        else
+            print_section "[Phase 5/5] Running Consistency Checklist Audit (run_audit.py --gentable & --llm)..."
+            echo ">>> Generating consistency checklist..."
+            GENTABLE_ARGS=""
+            if [ -n "$BACKEND" ]; then
+                GENTABLE_ARGS="$GENTABLE_ARGS --backend $BACKEND"
+            fi
+            if [ -n "$MODEL" ]; then
+                GENTABLE_ARGS="$GENTABLE_ARGS --model $MODEL"
+            fi
+            GENTABLE_ARGS="$GENTABLE_ARGS --max-tokens ${LLM_MAX_TOKENS:-2048}"
+            python3 tools/scripts/run_audit.py --gentable $GENTABLE_ARGS
+
+            echo ">>> Running consistency checklist audit..."
+            LLM_ARGS=""
+            if [ -n "$BACKEND" ]; then
+                LLM_ARGS="$LLM_ARGS --backend $BACKEND"
+            fi
+            if [ -n "$MODEL" ]; then
+                LLM_ARGS="$LLM_ARGS --model $MODEL"
+            fi
+            LLM_ARGS="$LLM_ARGS --max-tokens ${LLM_MAX_TOKENS:-2048}"
+if python3 tools/scripts/run_audit.py --llm $LLM_ARGS; then
+                echo "✔ Consistency Checklist Audit: PASSED"
+            else
+                echo "✖ Consistency Checklist Audit: FAILED"
+                FAILED=1
+            fi
+        fi
     fi
 else
-    print_section "[Phase 3/4] Skipping Semantic LLM Audits (Use --llm to enable)"
+    print_section "[Phase 3-5/5] Skipping Semantic LLM Audits (Use --llm to enable)"
 fi
 
 END_TIME=$(date +%s)

@@ -7,7 +7,7 @@
 
 ## 2. アーキテクチャ原則
 
-<!-- traceability: {CleanArchitecture} {SpecificationFirst} {Risk_Tiering} -->
+<!-- traceability: {CleanArchitecture} {META_SpecificationFirst} {META_Risk_Tiering} -->
 - **WASI 0.2 パターン採用**: ハンドル管理に `resource`、非同期処理に `pollable`、I/Oに `stream` を使用する。
 - **Tier 1 分離**: システム境界は WASI 標準および Fireball 固有のインターフェイスとして定義される。
 - **Stateless Interface**: リソースハンドルを通じた操作を行い、ホスト側で状態を管理する。
@@ -22,9 +22,9 @@ WASI 0.2 の標準パターンに従い、以下の基礎コンポーネント�
 - `input-stream` / `output-stream`: ストリーミングデータ転送用リソース。
 
 ### 3.2 リカバリー戦略とエラーハンドリング
-<!-- traceability: {RecoveryStrategy} {Errorcode_To_Strategy} -->
+<!-- traceability: {META_RecoveryStrategy} {Errorcode_To_Strategy} -->
 
-本プロジェクトでは、エラーコードではなくリカバリー戦略を返すことで、呼び出し側が具体的なアクション（リトライ/諦める）を取れるようにする。低レイヤー（Syscall）の `errno` は、Shim層でこの戦略に変換される。 `{RecoveryStrategy}` `{Errorcode_To_Strategy}`
+本プロジェクトでは、エラーコードではなくリカバリー戦略を返すことで、呼び出し側が具体的なアクション（リトライ/諦める）を取れるようにする。低レイヤー（Syscall）の `errno` は、Shim層でこの戦略に変換される。 `{META_RecoveryStrategy}` `{Errorcode_To_Strategy}`
 
 ```wit
 /// Recovery strategy for operation failures.
@@ -49,7 +49,7 @@ type routing-result = result<_, recovery-strategy-category>;
 TODO(Phase 1): ATC抽出 - 各リカバリー戦略（retry, restart等）を選択するための不変条件、およびシステム状態（panic時の状態保存など）の事後条件を明確にすること。
 
 #### 設計判断
-<!-- traceability: {RecoveryStrategy} {Errorcode_To_Strategy} -->
+<!-- traceability: {META_RecoveryStrategy} {Errorcode_To_Strategy} -->
 - **実装詳細の分離**: `hardware-error`や`timeout`は実装の内部状態であり、クリーンアーキテクチャの内側が知るべきではない。
 - **アクション指向**: リカバリー戦略により、呼び出し側は具体的なアクション（リトライ/エラーログ出力して諦める）を決定できる。
 - **デバッグ情報の分離**: 失敗の詳細理由はログシステムで確認する。インターフェースには含めない。

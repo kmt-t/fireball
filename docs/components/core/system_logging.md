@@ -1,12 +1,12 @@
 # ロギング コンポーネント設計書
 
 ## 1. コンセプト
-<!-- traceability: {IPCRouter} {DictionaryBasedIPC} {BufferedLogging} {IdleDetection} -->
-ロギングコンポーネントは、ハイパーバイザ内部の状態を記録し、外部（UART/ITM等）へ出力する。メモリ消費と通信負荷を抑えるため、辞書参照IPCと内部リングバッファによる遅延出力を採用する。また、COOSの **Idle Hook** を利用してシステム負荷が低い時に集中的に出力を行うことで、実行性能への影響を抑える。 `{IPCRouter}` `{DictionaryBasedIPC}` `{BufferedLogging}` `{IdleDetection}`
+<!-- traceability: {IPCRouter} {DictionaryBasedIPC} {BufferedLogging} {GLOBAL_IdleDetection} -->
+ロギングコンポーネントは、ハイパーバイザ内部の状態を記録し、外部（UART/ITM等）へ出力する。メモリ消費と通信負荷を抑えるため、辞書参照IPCと内部リングバッファによる遅延出力を採用する。また、COOSの **Idle Hook** を利用してシステム負荷が低い時に集中的に出力を行うことで、実行性能への影響を抑える。 `{IPCRouter}` `{DictionaryBasedIPC}` `{BufferedLogging}` `{GLOBAL_IdleDetection}`
 
 ## 2. アーキテクチャ分類
-<!-- traceability: {3TierSeparation} -->
-本コンポーネントは **Tier 3 (実装ドメイン)** に属する。ログの収集、バッファリング、およびバックグラウンド出力に特化した単一責務のモジュールとして設計する。 `{3TierSeparation}`
+<!-- traceability: {META_3TierSeparation} -->
+本コンポーネントは **Tier 3 (実装ドメイン)** に属する。ログの収集、バッファリング、およびバックグラウンド出力に特化した単一責務のモジュールとして設計する。 `{META_3TierSeparation}`
 
 ## 3. 静的モデル
 
@@ -44,8 +44,8 @@ graph TD
 | 出力閾値 | 現在出力対象としている最小のログレベル | uint8_t | `log_level` |
 
 #### ログ構成（logging_config）
-<!-- traceability: {ConfigurableSystem} -->
-ロギングシステムの動作パラメータを定義する。 `{ConfigurableSystem}`
+<!-- traceability: {META_ConfigurableSystem} -->
+ロギングシステムの動作パラメータを定義する。 `{META_ConfigurableSystem}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
@@ -73,8 +73,8 @@ graph TD
 | 登録時期 | ビルド時 (実行時の追加は不可) |
 
 ### 4.3 COOS Idle Hook 連携 (Flush Protocol)
-<!-- traceability: {IdleDetection} -->
-COOSスケジューラの `set_idle_hook` で `logger.flush()` を登録する。 `{IdleDetection}`
+<!-- traceability: {GLOBAL_IdleDetection} -->
+COOSスケジューラの `set_idle_hook` で `logger.flush()` を登録する。 `{GLOBAL_IdleDetection}`
 
 1. COOSスケジューラがREADYタスクがないことを検出
 2. `idle_hook()` を呼び出し → `logger.flush()` が実行
@@ -84,7 +84,7 @@ COOSスケジューラの `set_idle_hook` で `logger.flush()` を登録する�
 @see `services.wit` logger.engine.flush
 
 ### 4.4 状態遷移図
-<!-- traceability: {DictionaryBasedIPC} {BufferedLogging} {IdleDetection} -->
+<!-- traceability: {DictionaryBasedIPC} {BufferedLogging} {GLOBAL_IdleDetection} -->
 ```mermaid
 stateDiagram-v2
     [*] --> Idle
@@ -96,7 +96,7 @@ stateDiagram-v2
 ```
 
 ### 4.5 内部シーケンス
-<!-- traceability: {DictionaryBasedIPC} {BufferedLogging} {IdleDetection} -->
+<!-- traceability: {DictionaryBasedIPC} {BufferedLogging} {GLOBAL_IdleDetection} -->
 #### ログ出力シーケンス
 ```mermaid
 sequenceDiagram
@@ -124,7 +124,7 @@ TODO(Phase 1): ATCの抽出 - ログイベント発生時のバッファ飽和�
 
 #### ログイベント記録 (`log_event`)
 
-<!-- traceability: {BufferedLogging} {ZeroOverhead} -->
+<!-- traceability: {BufferedLogging} {META_ZeroOverhead} -->
 
 | 項目 | 内容 |
 | :--- | :--- |
@@ -157,11 +157,11 @@ TODO(Phase 1): ATCの抽出 - ログイベント発生時のバッファ飽和�
 - **方策**: `{BufferedLogging}` 内部バッファリングと非同期出力により、IPCハンドラを即座に解放する。
 
 ### 6.2 メモリ制約と方策
-<!-- traceability: {MemoryIsolation} {ConfigurableSystem} -->
+<!-- traceability: {MemoryIsolation} {META_ConfigurableSystem} -->
 - **目標**: ログ機能によるメモリ圧迫を防止する。
-- **方策**: `{MemoryIsolation}` `{ConfigurableSystem}` 独立したヒープパーティションを使用し、バッファサイズをコンパイル時に固定する。
+- **方策**: `{MemoryIsolation}` `{META_ConfigurableSystem}` 独立したヒープパーティションを使用し、バッファサイズをコンパイル時に固定する。
 
 ### 6.3 安全性制約と方策
-<!-- traceability: {BufferedLogging} {MemoryIsolation} {ConfigurableSystem} -->
+<!-- traceability: {BufferedLogging} {MemoryIsolation} {META_ConfigurableSystem} -->
 - **目標**: ログ出力の失敗がシステム全体に波及しないようにする。
 - **方策**: バッファフル時は古いログを破棄するか、新しいログを無視することで、システムの継続実行を優先する。ログ出力のエラーはシステムの実行を停止させない例外条件として扱う。

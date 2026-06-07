@@ -1,5 +1,6 @@
 name: stdlib-policy
 globs: ["src/**", "inc/**"]
+scope: GLOBAL
 ---
 # C++標準ライブラリ利用規約 & ユーティリティ設計書
 

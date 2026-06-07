@@ -1,12 +1,12 @@
 # WASMローダ コンポーネント設計書
 
 ## 1. コンセプト
-<!-- traceability: {ROMParsing} {AccessDictionary} {BumpAllocator} -->
-WASMローダは、ROM上のWASM32バイナリをパースし、実行環境が参照しやすい索引構造（ModuleView）を生成する。RAMへの全展開を避け、ROM上のデータを直接参照することでメモリ消費を極小化する。 `{ROMParsing}` `{AccessDictionary}` `{BumpAllocator}`
+<!-- traceability: {ROMParsing} {META_AccessDictionary} {META_BumpAllocator} -->
+WASMローダは、ROM上のWASM32バイナリをパースし、実行環境が参照しやすい索引構造（ModuleView）を生成する。RAMへの全展開を避け、ROM上のデータを直接参照することでメモリ消費を極小化する。 `{ROMParsing}` `{META_AccessDictionary}` `{META_BumpAllocator}`
 
 ## 2. アーキテクチャ分類
-<!-- traceability: {3TierSeparation} -->
-本コンポーネントは **Tier 3 (実装ドメイン)** に属する。WASMバイナリの解析と索引構築に特化した単一責務のモジュールとして設計する。 `{3TierSeparation}`
+<!-- traceability: {META_3TierSeparation} -->
+本コンポーネントは **Tier 3 (実装ドメイン)** に属する。WASMバイナリの解析と索引構築に特化した単一責務のモジュールとして設計する。 `{META_3TierSeparation}`
 
 ## 3. 静的モデル
 
@@ -101,20 +101,20 @@ ROM上のデータストリームを管理し、LEB128可変長整数やプリ�
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
-<!-- traceability: {ZeroCopyIndexing} {AccessDictionary} -->
+<!-- traceability: {ZeroCopyIndexing} {META_AccessDictionary} -->
 - **バイナリパース**: ROM上のデータを `BinaryStream` でラップし、`read_leb128` 等を用いて境界チェックを行いながら順次読み取る。
 - **module_view 構築 (Zero-Copy Indexing)**: `{ZeroCopyIndexing}`
     - セクションスキャン時に内容をRAMにコピーせず、ROM上の開始オフセットとサイズを索引化する。
     - エクスポートエントリをパースし、名前でソートして `module_view.exports_dict` に格納する。
-- **シンボル検索**: `exports_dict` を二分探索することで O(log N) で関数IDを取得する。 `{AccessDictionary}`
+- **シンボル検索**: `exports_dict` を二分探索することで O(log N) で関数IDを取得する。 `{META_AccessDictionary}`
 - **依存関係解決**: インポートセクションをスキャンし、必要なモジュール名とエクスポート名（関数ID/グローバルID等）を抽出し、`module_registry` を介して他モジュールの `lookup_export` とリンクする。未解決のインポートがある場合、モジュールはロード済みだが実行不可状態となる。
 - **アンロード**: `unload` はmodule_registryからモジュールを削除する。bump_allocatorのLIFO制約により、メモリの完全な回収はロード逆順のアンロード時のみ。
 
 TODO(Phase 0.8): Loader TLA+ Verification - モジュールのライフサイクル（Prepare -> Load -> Resolve -> Unload）と、依存関係解決の正当性を検証する。
 
 ### 4.2 メモリ制約
-<!-- traceability: {ConfigurableSystem} -->
-`module_view` と関連構造の最大サイズ。すべてコンパイル時固定。 `{ConfigurableSystem}`
+<!-- traceability: {META_ConfigurableSystem} -->
+`module_view` と関連構造の最大サイズ。すべてコンパイル時固定。 `{META_ConfigurableSystem}`
 
 | 項目 | 定数名 | 既定値 | 根拠 |
 | :--- | :--- | :--- | :--- |
@@ -125,7 +125,7 @@ TODO(Phase 0.8): Loader TLA+ Verification - モジュールのライフサイク
 | 最大インポート数/モジュール | `FB_CONF_MAX_IMPORTS` | 32 | インポート解決テーブル |
 
 ### 4.3 軽量検証スコープ
-<!-- traceability: {ZeroCopyIndexing} {AccessDictionary} {ConfigurableSystem} -->
+<!-- traceability: {ZeroCopyIndexing} {META_AccessDictionary} {META_ConfigurableSystem} -->
 以下の項目をロード時に検証する。これ以上の検証（型システムの完全検証、命令の妥当性検証等）はPhase1+で検討。
 
 | # | 検証項目 | 判定基準 | 失敗時 |
@@ -137,7 +137,7 @@ TODO(Phase 0.8): Loader TLA+ Verification - モジュールのライフサイク
 | V5 | インポート/エクスポート型整合 | 型インデックスがTypeセクション範囲内 | reject |
 
 ### 4.4 状態遷移図
-<!-- traceability: {ZeroCopyIndexing} {AccessDictionary} {ConfigurableSystem} {LightweightVerifier} -->
+<!-- traceability: {ZeroCopyIndexing} {META_AccessDictionary} {META_ConfigurableSystem} {LightweightVerifier} -->
 ```mermaid
 stateDiagram-v2
     [*] --> Idle
@@ -150,13 +150,13 @@ stateDiagram-v2
 ```
 
 ### 4.5 内部シーケンス
-<!-- traceability: {ZeroCopyIndexing} {AccessDictionary} {ConfigurableSystem} {LightweightVerifier} -->
+<!-- traceability: {ZeroCopyIndexing} {META_AccessDictionary} {META_ConfigurableSystem} {LightweightVerifier} -->
 #### モジュールロードシーケンス
 ```mermaid
 sequenceDiagram
     participant Client as LoaderClient
     participant Loader as WasmLoader
-    participant Alloc as BumpAllocator
+    participant Alloc as META_BumpAllocator
     participant ROM as WasmBinary
     
     Client->>Loader: prepare(binary)
@@ -269,14 +269,14 @@ TODO(Phase 1): ATC抽出 - BumpAllocator使用時のメモリ解放や順序依�
 ## 6. 制約達成の方策
 
 ### 6.1 性能制約と方策
-<!-- traceability: {ROMParsing} {AccessDictionary} -->
+<!-- traceability: {ROMParsing} {META_AccessDictionary} -->
 - **目標**: モジュールロード時間を最小化する。
-- **方策**: `{ROMParsing}` `{AccessDictionary}` RAMへのコピーを排除し、主要な要素を索引化することで、実行時の探索コストを抑える。
+- **方策**: `{ROMParsing}` `{META_AccessDictionary}` RAMへのコピーを排除し、主要な要素を索引化することで、実行時の探索コストを抑える。
 
 ### 6.2 メモリ制約と方策
-<!-- traceability: {BumpAllocator} {NoStdVector} -->
+<!-- traceability: {META_BumpAllocator} {META_NoStdVector} -->
 - **目標**: ロード時のRAM消費を極小化する。
-- **方策**: `{BumpAllocator}` `{NoStdVector}` バンプアロケータを使用し、断片化を防止しつつ、固定長配列による索引管理を行う。
+- **方策**: `{META_BumpAllocator}` `{META_NoStdVector}` バンプアロケータを使用し、断片化を防止しつつ、固定長配列による索引管理を行う。
 
 ### 6.3 安全性制約と方策
 <!-- traceability: {LightweightVerifier} {Wasm32Only} -->

@@ -5,8 +5,8 @@
 デバッガは、VSCode等の外部ツールからのデバッグを可能にするため、GDB Remote Serial Protocol (RSP) に基づく実行制御を行う。標準環境として VSCode, UART, J-Link をサポートする。RSPパケットの解析はHAL層で行われ、デバッガはHALから供給されるコマンドキューを消費して実行状態を制御する。リソース制約に対応するため、デバッグ中はJITを無効化し、インタープリタ実行にフォールバックする設計を採用する。 `{RSPMinimalSet}` `{DebuggerLabelTableSwitch}` `{MemoryIsolation}` `{Debug_Standard_Env}` `{RSP_Transport_Selectable}` `{Debug_Integrated}`
 
 ## 2. アーキテクチャ分類
-<!-- traceability: {3TierSeparation} -->
-本コンポーネントは **Tier 3 (実装ドメイン)** に属する。GDB RSPコマンドの実行制御に特化した単一責務のモジュールとして設計する。 `{3TierSeparation}`
+<!-- traceability: {META_3TierSeparation} -->
+本コンポーネントは **Tier 3 (実装ドメイン)** に属する。GDB RSPコマンドの実行制御に特化した単一責務のモジュールとして設計する。 `{META_3TierSeparation}`
 
 ## 3. 静的モデル
 
@@ -34,7 +34,7 @@ graph TD
 ### 3.3 主要なクラス・構造体・配列・定数
 
 #### デバッガ（Debugger）クラス
-<!-- traceability: {NoStdVector} -->
+<!-- traceability: {META_NoStdVector} -->
 依存関係（実行コンテキスト、HAL）と内部状態（ブレークポイント、現在状態）をカプセル化する。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
@@ -43,7 +43,7 @@ graph TD
 | HALトランスポート | RSPパケットの送受信を担うHAL抽象化レイヤへの参照。 | 構造体への参照 | `hal_transport` (非所有) |
 | `cmd_queue` | HALから供給されるコマンドキュー。 | 構造体への参照 | `debug_command_queue` |
 | デバッグ状態 | デバッガの現在の動作モード（実行中、中断中など）。 | 列挙型 | `debug_state` |
-| ブレークポイントリスト | 設定されているブレークポイントのアドレス一覧。 | 固定長配列 | `{NoStdVector}` |
+| ブレークポイントリスト | 設定されているブレークポイントのアドレス一覧。 | 固定長配列 | `{META_NoStdVector}` |
 | `last_stop_reason` | 直近の停止要因。 | ID値 | 信号番号等 |
 
 #### 仮想レジスタセット（virtual_register_set）
@@ -142,9 +142,9 @@ TODO(Phase 1): ATC抽出 - アタッチ時やステップ実行時に、実行�
 - **方策**: `{DebuggerLabelTableSwitch}` デバッガ無効時はインタープリタのハンドラテーブルを切り替えず、通常の高速実行を維持する。
 
 ### 6.2 メモリ制約と方策
-<!-- traceability: {MemoryIsolation} {NoStdVector} -->
+<!-- traceability: {MemoryIsolation} {META_NoStdVector} -->
 - **目標**: 最小限のRAMでデバッグ機能を提供する。
-- **方策**: `{MemoryIsolation}` `{NoStdVector}` デバッガ専用の固定長バッファと配列を使用し、動的メモリ確保を排除する。
+- **方策**: `{MemoryIsolation}` `{META_NoStdVector}` デバッガ専用の固定長バッファと配列を使用し、動的メモリ確保を排除する。
 
 ### 6.3 安全性制約と方策
 <!-- traceability: {MemoryBoundaryCheck} -->

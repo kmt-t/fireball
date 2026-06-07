@@ -25,6 +25,15 @@ class DocAuditDB:
         except Exception:
             pass
 
+        try:
+            cursor.execute("PRAGMA table_info(keywords)")
+            columns = [row[1] for row in cursor.fetchall()]
+            if columns and "is_global" not in columns:
+                with self.conn:
+                    self.conn.execute("DROP TABLE keywords")
+        except Exception:
+            pass
+
         with self.conn:
             # 1. keywords table
             self.conn.execute("""
@@ -34,7 +43,8 @@ class DocAuditDB:
                     priority TEXT,
                     verification_method TEXT,
                     category TEXT,
-                    is_meta INTEGER DEFAULT 0
+                    is_meta INTEGER DEFAULT 0,
+                    is_global INTEGER DEFAULT 0
                 )
             """)
             # 2. glossary table
@@ -176,9 +186,17 @@ class DocAuditDB:
         with self.conn:
             for kw in keywords_data:
                 self.conn.execute("""
-                    INSERT OR REPLACE INTO keywords (keyword, description, priority, verification_method, category, is_meta)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """, (kw["keyword"], kw["description"], kw.get("priority", ""), kw.get("verification_method", ""), kw.get("category", ""), kw.get("is_meta", 0)))
+                    INSERT OR REPLACE INTO keywords (keyword, description, priority, verification_method, category, is_meta, is_global)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (kw["keyword"], kw["description"], kw.get("priority", ""), kw.get("verification_method", ""), kw.get("category", ""), kw.get("is_meta", 0), kw.get("is_global", 0)))
+
+    def load_global_keywords(self) -> set[str]:
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute("SELECT keyword FROM keywords WHERE is_global = 1")
+            return {row[0] for row in cursor.fetchall()}
+        except Exception:
+            return set()
 
     def sync_glossary(self, glossary_data: list[dict]):
         with self.conn:
@@ -197,7 +215,7 @@ class DocAuditDB:
             return set()
 
     def load_requirement_keywords_dict(self) -> dict[str, str]:
-        """Loads non-meta keywords: keyword -> description"""
+        """Loads non-meta keywords (including global): keyword -> description"""
         cursor = self.conn.cursor()
         try:
             cursor.execute("SELECT keyword, description FROM keywords WHERE is_meta = 0")

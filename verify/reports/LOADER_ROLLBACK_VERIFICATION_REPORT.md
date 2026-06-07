@@ -2,7 +2,7 @@
 
 **日付**: 2026-05-21  
 **ステータス**: ✓ VERIFIED  
-**キーワード**: `{ROMParsing}` `{BumpAllocator}` `{MultiModule_Support}`
+**キーワード**: `{ROMParsing}` `{META_BumpAllocator}` `{MultiModule_Support}`
 
 ---
 
@@ -25,15 +25,15 @@ WASMLoaderの以下の要件を形式検証する：
 ## 2. 検証フレームワーク
 
 ### 2.1 TLA+ 形式モデル
-ファイル: `docs/verification/models/LoaderRollbackVerification.tla`
+ファイル: `verify/models/LoaderRollbackVerification.tla`
 
 **モデル要素:**
 - **Module State**: Idle, Parsing, Verifying, Ready, Error
 - **Allocator**: LIFO スタック、モジュール単位のメモリ割り当て
 - **Load Order**: ロード順序の追跡（Unload 逆順の検証用）
 
-### 2.2 Python検証スクリプト
-ファイル: `.claude/scripts/verify_loader_rollback.py`
+### 2.2 Shell検証スクリプト
+ファイル: `verify/run_loader_rollback.sh`
 
 **検証対象:**
 - LIFO メモリ制約（ロード/アンロード順序）
@@ -83,7 +83,7 @@ WASMLoaderの以下の要件を形式検証する：
 
 ---
 
-### 不変条件2: LIFO メモリ制約 `{BumpAllocator}`
+### 不変条件2: LIFO メモリ制約 `{META_BumpAllocator}`
 **条件**: アロケータに割り当てられているメモリは、モジュールの `parsed_bytes` と正確に一致する。
 
 ```
@@ -99,7 +99,7 @@ WASMLoaderの以下の要件を形式検証する：
 
 ---
 
-### 不変条件3: LIFO アンロード順序 `{BumpAllocator}`
+### 不変条件3: LIFO アンロード順序 `{META_BumpAllocator}`
 **条件**: ロード順序の逆順でのみアンロード可能。後にロードしたモジュールを先にアンロードできない。
 
 ```
@@ -301,4 +301,4 @@ Loader の ロールバック機構・バンプアロケータ整合性は以下
 
 **検証担当**: Claude Code Agent  
 **検証ツール**: TLA+ / Python / Loader Verification Suite  
-**キーワード**: `{ROMParsing}` `{BumpAllocator}` `{MultiModule_Support}`
+**キーワード**: `{ROMParsing}` `{META_BumpAllocator}` `{MultiModule_Support}`

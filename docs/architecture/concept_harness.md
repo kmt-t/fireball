@@ -1,6 +1,6 @@
 # Conceptベースハーネス アーキテクチャ設計書
 
-Tier 2コンポーネントにおける依存性注入をゼロコストで実現するC++20/23 Conceptsベースの設計基盤を定義する。 `{ComponentHarness}` `{StaticDI}` `{ZeroOverhead}`
+Tier 2コンポーネントにおける依存性注入をゼロコストで実現するC++20/23 Conceptsベースの設計基盤を定義する。 `{GLOBAL_ComponentHarness}` `{META_StaticDI}` `{META_ZeroOverhead}`
 
 ## 1. アーキテクチャコンセプト
 
@@ -11,7 +11,7 @@ Fireballは「極小リソース環境での完全なモジュール化」を追
 
 ### 2.1 適用範囲と分類
 
-本パターンは、**内部デコンポジション（分解）が必要な複雑度を持つコンポーネント**にのみ適用される。 `{ComponentHarness}`
+本パターンは、**内部デコンポジション（分解）が必要な複雑度を持つコンポーネント**にのみ適用される。 `{GLOBAL_ComponentHarness}`
 
 | 分類 | ハーネスの要否 | 説明 |
 | :--- | :--- | :--- |

@@ -1,5 +1,6 @@
 name: coding-standards-general
 globs: ["src/**", "inc/**"]
+scope: GLOBAL
 instructions: |
   1. 命名規則: プロジェクト全体で一貫した命名規則(snake_case等)を採用し、意図が明快な名前をつけること。
   2. コーディング規約: Clang-Format（スペース2つ、行幅100文字）に準拠すること。

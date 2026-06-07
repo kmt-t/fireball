@@ -1,12 +1,12 @@
 # COOS スケジューラ コンポーネント設計書
 
 ## 1. コンセプト
-<!-- traceability: {CooperativeMultitasking} {UseCpp23Library} {UseCpp20Coroutine} {COOS_Deterministic} {CSPCommunication} -->
-COOSスケジューラは、C++23コルーチン（および std::flat_map 等の標準コンテナ）を活用したスタックレスな協調型マルチタスクの核となるコンポーネントである。タスクの実行、一時停止(yield)、および割り込みによる再開を管理し、極小リソース環境での決定論的な実行を提供する。 `{CooperativeMultitasking}` `{UseCpp23Library}` `{UseCpp20Coroutine}` `{COOS_Deterministic}` `{CSPCommunication}`
+<!-- traceability: {CooperativeMultitasking} {GLOBAL_UseCpp23Library} {GLOBAL_UseCpp20Coroutine} {COOS_Deterministic} {CSPCommunication} -->
+COOSスケジューラは、C++23コルーチン（および std::flat_map 等の標準コンテナ）を活用したスタックレスな協調型マルチタスクの核となるコンポーネントである。タスクの実行、一時停止(yield)、および割り込みによる再開を管理し、極小リソース環境での決定論的な実行を提供する。 `{CooperativeMultitasking}` `{GLOBAL_UseCpp23Library}` `{GLOBAL_UseCpp20Coroutine}` `{COOS_Deterministic}` `{CSPCommunication}`
 
 ## 2. アーキテクチャ分類
-<!-- traceability: {3TierSeparation} -->
-本コンポーネントは **Tier 3 (実装ドメイン)** に属する。コルーチンハンドルの管理とタスク実行順序の制御に特化した単一責務のモジュールとして設計する。 `{3TierSeparation}`
+<!-- traceability: {META_3TierSeparation} -->
+本コンポーネントは **Tier 3 (実装ドメイン)** に属する。コルーチンハンドルの管理とタスク実行順序の制御に特化した単一責務のモジュールとして設計する。 `{META_3TierSeparation}`
 
 ## 3. 静的モデル
 
@@ -50,14 +50,14 @@ graph TD
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
-<!-- traceability: {IdleDetection} {PeriodicTask} {InterruptWakeup} -->
+<!-- traceability: {GLOBAL_IdleDetection} {GLOBAL_PeriodicTask} {GLOBAL_InterruptWakeup} -->
 - **スケジューリング**: ラウンドロビン方式。
     - スケジューラ・コンテキスト内の「実行可能タスク列」を侵入型リストで管理し、定数時間 O(1) でのタスク切り替えを実現する。
-- **アイドル状態の検知**: 全ての管理タスクが「待機状態（BLOCKED）」となった場合にアイドル・ハンドラ（Periodic Task等）を実行する。 `{IdleDetection}` `{PeriodicTask}`
-- **割り込み処理**: HALからの割り込み通知（`notify_interrupt`）を受信し、対象タスクを優先的に再開する。 `{InterruptWakeup}`
+- **アイドル状態の検知**: 全ての管理タスクが「待機状態（BLOCKED）」となった場合にアイドル・ハンドラ（Periodic Task等）を実行する。 `{GLOBAL_IdleDetection}` `{GLOBAL_PeriodicTask}`
+- **割り込み処理**: HALからの割り込み通知（`notify_interrupt`）を受信し、対象タスクを優先的に再開する。 `{GLOBAL_InterruptWakeup}`
 
 ### 4.2 状態遷移図 (SysML SMD: Scheduler 視点)
-<!-- traceability: {IdleDetection} {PeriodicTask} {InterruptWakeup} -->
+<!-- traceability: {GLOBAL_IdleDetection} {GLOBAL_PeriodicTask} {GLOBAL_InterruptWakeup} -->
 
 スケジューラが管理するタスク状態とイベント駆動の遷移ロジックを以下に示す。
 
@@ -196,9 +196,9 @@ TODO(Phase 1): ATC抽出 - タスク生成時のスタックサイズやタス�
 ## 6. 設計判断 (ADR)
 
 ### ADR-SCHED-001: 侵入型リストによる管理
-<!-- traceability: {Policy_Memory} -->
+<!-- traceability: {GLOBAL_Policy_Memory} -->
 - **決定事項**: TCBの連結には `std::list` 等を避け、TCB自体に `next` ポインタを持たせる侵入型リストを採用する。
-- **理由**: 動的メモリ確保を排除し、RAM 64KB環境での生存を確実にするため. `{Policy_Memory}`
+- **理由**: 動的メモリ確保を排除し、RAM 64KB環境での生存を確実にするため. `{GLOBAL_Policy_Memory}`
 
 ### ADR-SCHED-002: アルゴリズムの継続的改善と最適化
 <!-- traceability: {COOS_Scheduling_Refine} -->

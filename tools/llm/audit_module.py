@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 from tools.common.db import db
-from tools.common.llm import call_llm, parse_llm_json_response
+from tools.common.llm import OLLAMA_NUM_CTX, call_llm, parse_llm_markdown_response
 from tools.common.parser import parse_sections, extract_keywords
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -23,6 +23,9 @@ def load_project_policies() -> dict[str, str]:
             policies[pf] = ""
     return policies
 
+def generation_cache_key(model_name: str, backend_name: str, max_tokens: int) -> str:
+    return f"{backend_name}:{model_name}:ctx={OLLAMA_NUM_CTX}:tokens={max_tokens}:fmt=md1"
+
 def audit_policy(file_path: Path, backend: str = None, model: str = None, max_tokens: int = 1024) -> dict:
     try:
         content = file_path.read_text(encoding="utf-8")
@@ -36,7 +39,8 @@ def audit_policy(file_path: Path, backend: str = None, model: str = None, max_to
 
     model_name = model or "default"
     backend_name = backend or "auto"
-    input_hash = db.make_hash_key(content, str(policies), model_name, backend_name)
+    generation_key = generation_cache_key(model_name, backend_name, max_tokens)
+    input_hash = db.make_hash_key(content, str(policies), generation_key)
     rel_path = str(file_path.relative_to(REPO_ROOT))
     hash_key = db.make_hash_key("S-POLICY-MEM", rel_path, input_hash)
 
@@ -73,15 +77,14 @@ def audit_policy(file_path: Path, backend: str = None, model: str = None, max_to
 3. C++のモダンな設計方針（constexpr, flat_map, Conceptsなど）の活用について、ポリシーに違反していないか。
 
 【出力フォーマット】
-以下のJSONフォーマットのみで回答してください。JSON以外のテキストは一切出力しないでください。
-{{
-  "status": "PASS" または "FAIL",
-  "reason": "PASSの場合は『開発ポリシーおよびメモリ制約に適合している』旨、FAILの場合は具体的な違反箇所（セクション名や行）と理由",
-  "suggestions": "改善のための具体的な修正案（Markdownコードブロック等）"
-}}
+以下のMarkdown形式のみで回答してください。JSON、コードブロック、前置きは出力しないでください。
+
+STATUS: PASS または FAIL
+REASON: PASSの場合は「開発ポリシーおよびメモリ制約に適合している」旨、FAILの場合は具体的な違反箇所（セクション名や行）と理由
+SUGGESTIONS: 改善のための具体的な修正案
 """
     raw_response = call_llm(prompt, backend=backend, model=model, max_tokens=max_tokens)
-    res = parse_llm_json_response(raw_response)
+    res = parse_llm_markdown_response(raw_response)
 
     if res.get("status") in ["PASS", "FAIL", "UNCERTAIN"]:
         db.set_cache(
@@ -105,7 +108,8 @@ def audit_quality(file_path: Path, backend: str = None, model: str = None, max_t
 
     model_name = model or "default"
     backend_name = backend or "auto"
-    input_hash = db.make_hash_key(content, model_name, backend_name)
+    generation_key = generation_cache_key(model_name, backend_name, max_tokens)
+    input_hash = db.make_hash_key(content, generation_key)
     rel_path = str(file_path.relative_to(REPO_ROOT))
 
     cache_placeholder = db.get_cache(db.make_hash_key("S-QUALITY-PLACEHOLDER", rel_path, input_hash))
@@ -138,27 +142,25 @@ def audit_quality(file_path: Path, backend: str = None, model: str = None, max_t
    公開API、URI/IPCインターフェイス等の関数定義において、引数・戻り値の型・説明、エラーコードの説明が不足・欠落していないか。
 
 【出力フォーマット】
-以下のJSONフォーマットのみで回答してください。JSON以外のテキストは一切出力しないでください。
-{{
-  "S-QUALITY-PLACEHOLDER": {{
-    "status": "PASS" または "FAIL",
-    "reason": "合格・不合格の根拠",
-    "suggestions": "具体的な修正箇所と修正案"
-  }},
-  "S-QUALITY-AMBIGUITY": {{
-    "status": "PASS" または "FAIL",
-    "reason": "合格・不合格の根拠",
-    "suggestions": "具体的な修正箇所と修正案"
-  }},
-  "S-QUALITY-API": {{
-    "status": "PASS" または "FAIL",
-    "reason": "合格・不合格の根拠",
-    "suggestions": "具体的な修正箇所と修正案"
-  }}
-}}
+以下のMarkdown形式のみで回答してください。JSON、コードブロック、前置きは出力しないでください。
+
+## S-QUALITY-PLACEHOLDER
+STATUS: PASS または FAIL
+REASON: 合格・不合格の根拠
+SUGGESTIONS: 具体的な修正箇所と修正案
+
+## S-QUALITY-AMBIGUITY
+STATUS: PASS または FAIL
+REASON: 合格・不合格の根拠
+SUGGESTIONS: 具体的な修正箇所と修正案
+
+## S-QUALITY-API
+STATUS: PASS または FAIL
+REASON: 合格・不合格の根拠
+SUGGESTIONS: 具体的な修正箇所と修正案
 """
     raw_response = call_llm(prompt, backend=backend, model=model, max_tokens=max_tokens)
-    res = parse_llm_json_response(raw_response)
+    res = parse_llm_markdown_response(raw_response)
 
     final_res = {}
     for code in ["S-QUALITY-PLACEHOLDER", "S-QUALITY-AMBIGUITY", "S-QUALITY-API"]:
@@ -223,7 +225,8 @@ def audit_trace_alignment(file_path: Path, backend: str = None, model: str = Non
 
         req_context = "\n".join(req_descriptions)
 
-        input_hash = db.make_hash_key(sec.heading, sec.body[:1000], req_context, model_name, backend_name)
+        generation_key = generation_cache_key(model_name, backend_name, max_tokens)
+        input_hash = db.make_hash_key(sec.heading, sec.body[:1000], req_context, generation_key)
         hash_key = db.make_hash_key("S-TRACE-ALIGN", rel_path, sec.heading, input_hash)
 
         cached = db.get_cache(hash_key)
@@ -245,16 +248,15 @@ def audit_trace_alignment(file_path: Path, backend: str = None, model: str = Non
 {sec.body[:1500]}
 
 【出力フォーマット】
-以下のJSONフォーマットのみで回答してください。JSON以外のテキストは一切出力しないでください。
-{{
-  "status": "PASS" または "FAIL",
-  "reason": "PASSの場合は『要求事項が正しく充足されている』旨、FAILの場合はどのキーワードが不足・矛盾しているかその具体的な理由（日本語、1〜2行程度）",
-  "suggestions": "不整合を解消するための具体的なドキュメント修正案（Markdown形式）"
-}}
+以下のMarkdown形式のみで回答してください。JSON、コードブロック、前置きは出力しないでください。
+
+STATUS: PASS または FAIL
+REASON: PASSの場合は「要求事項が正しく充足されている」旨、FAILの場合はどのキーワードが不足・矛盾しているかその具体的な理由（日本語、1〜2行程度）
+SUGGESTIONS: 不整合を解消するための具体的なドキュメント修正案
 """
             try:
                 raw_response = call_llm(prompt, backend=backend, model=model, max_tokens=max_tokens)
-                res = parse_llm_json_response(raw_response)
+                res = parse_llm_markdown_response(raw_response)
                 status = res.get("status", "FAIL")
                 reason = res.get("reason", "Parse failed")
                 suggestions = res.get("suggestions", "")

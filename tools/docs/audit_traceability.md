@@ -1,6 +1,8 @@
 # Traceability Audit - トレーサビリティ監査スクリプト
 
-セクション × 要求キーワード の紐付けを検証し、設計漏れと矛盾を検出する。 `{AI_Native_Dev}` `{Risk_Tiering}`
+セクション × 要求キーワード の紐付けを検証し、設計漏れと矛盾を検出する。 `{META_AI_Native_Dev}` `{META_Risk_Tiering}`
+
+判定基準の正本は `.claude/rules/development-policy.md` と `.claude/rules/documentation.md` に置く。
 
 ---
 
@@ -273,7 +275,7 @@ L1: 意味的不整合（--llm 実行時）
 ### 8.2 Traceability Matrix CSV フォーマット
 
 ```csv
-Section ID,Component,Heading,Level,{CooperativeMultitasking},{CSPCommunication},{BumpAllocator},...
+Section ID,Component,Heading,Level,{CooperativeMultitasking},{CSPCommunication},{META_BumpAllocator},...
 core_os_coos_1,os_coos,"1. コンセプト",2,1,0,0,...
 core_os_coos_2,os_coos,"2. 静的モデル",2,0,1,1,...
 core_os_coos_3,os_coos,"2.1 データ構造",3,1,1,0,...

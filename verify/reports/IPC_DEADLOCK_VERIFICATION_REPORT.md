@@ -24,7 +24,7 @@ IPCルータの以下の要件を形式検証する：
 ## 2. 検証フレームワーク
 
 ### 2.1 TLA+ 形式モデル
-ファイル: `docs/verification/models/IPCDeadlockVerification.tla`
+ファイル: `verify/models/IPCDeadlockVerification.tla`
 
 **モデル要素:**
 - **Task State**: Idle, Sending, Revoking, Enqueuing, Rolling Back, Granted, Killed
@@ -32,8 +32,8 @@ IPCルータの以下の要件を形式検証する：
 - **Message State**: Valid, Enqueued, Revoked
 - **Queue**: 最大4要素（MAX_QUEUE_SIZE=4）
 
-### 2.2 Python検証スクリプト
-ファイル: `.claude/scripts/verify_ipc_deadlock.py`
+### 2.2 Shell検証スクリプト
+ファイル: `verify/run_ipc_deadlock.sh`
 
 **検証対象:**
 - 所有権ライフサイクル（Revoke→Enqueue→Grant）

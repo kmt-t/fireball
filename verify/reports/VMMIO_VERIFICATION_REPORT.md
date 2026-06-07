@@ -20,7 +20,7 @@ vMMIO（Virtual Memory-Mapped I/O）コンポーネントの以下の要件を�
 ## 2. 検証フレームワーク
 
 ### 2.1 TLA+ 形式モデル
-ファイル: `docs/verification/models/VmmioVerification.tla`
+ファイル: `verify/models/VmmioVerification.tla`
 
 **モデル要素:**
 - **L1 Page Directory**: FC (Function Code) [31:28] により16個のL2テーブルをインデックス
@@ -28,8 +28,8 @@ vMMIO（Virtual Memory-Mapped I/O）コンポーネントの以下の要件を�
 - **Software TLB Cache**: ダイレクトマップ式（`tlb_idx = vpn & 15`）16エントリ
 - **Address Space**: Tier1（ゲストRAM）/ Tier2（静的デバイス）/ Tier3（動的vMMIO）
 
-### 2.2 Python検証スクリプト
-ファイル: `.claude/scripts/verify_vmmio.py`
+### 2.2 Shell検証スクリプト
+ファイル: `verify/run_vmmio.sh`
 
 **検証対象:**
 - アドレスフィールド抽出（Bits[31:28], [15:12], [11:0]）
@@ -38,7 +38,7 @@ vMMIO（Virtual Memory-Mapped I/O）コンポーネントの以下の要件を�
 - 権限チェック（read, write, execute）
 
 ### 2.3 シナリオテスト
-ファイル: `.claude/scripts/vmmio_scenario_test.py`
+ファイル: `verify/run_vmmio.sh`
 
 **テスト項目:**
 - TLB コリジョン（同一TLBスロットへの複数VPN詰め替え）

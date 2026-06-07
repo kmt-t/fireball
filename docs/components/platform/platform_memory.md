@@ -1,8 +1,8 @@
 # COOS メモリマネージャ コンポーネント設計書
 
 ## 1. コンセプト
-<!-- traceability: {3TierSeparation} {Policy_Memory} {ConsolidatedHeap} -->
-メモリマネージャ（`memory-manager`）は、物理メモリプールを複数の論理パーティション（Kernel, Task, Shared等）に分割し、隔離と効率的なメモリ利用を提供する Tier 2 コンポーネントである。 `{3TierSeparation}` `{Policy_Memory}` `{ConsolidatedHeap}`
+<!-- traceability: {META_3TierSeparation} {GLOBAL_Policy_Memory} {ConsolidatedHeap} -->
+メモリマネージャ（`memory-manager`）は、物理メモリプールを複数の論理パーティション（Kernel, Task, Shared等）に分割し、隔離と効率的なメモリ利用を提供する Tier 2 コンポーネントである。 `{META_3TierSeparation}` `{GLOBAL_Policy_Memory}` `{ConsolidatedHeap}`
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {WasmPageAlignment} -->
@@ -21,7 +21,7 @@
 
 #### 初期化
 
-<!-- traceability: {Policy_Memory} {StrictMemoryLimit} {Size_15KLOC} -->
+<!-- traceability: {GLOBAL_Policy_Memory} {GLOBAL_StrictMemoryLimit} {Size_15KLOC} -->
 
 TODO(Phase 1): ATC抽出 - アライメント制約（ページ単位など）とpool-sizeの境界制約を厳密に定義すること。
 
@@ -66,26 +66,26 @@ TODO(Phase 1): ATC抽出 - アライメント制約（ページ単位など）�
 | 補足 | 共有メモリは `shared-block` のデストラクタで自動解放される。 |
 
 ## 5. 制約と不変条件
-<!-- traceability: {StrictMemoryLimit} {WasmPageAlignment} -->
+<!-- traceability: {GLOBAL_StrictMemoryLimit} {WasmPageAlignment} -->
 
 TODO(Phase 1): 動的モデルの明確化 - フラグメンテーション回避のアルゴリズム（空きブロックの統合等）や、上限サイズ超過時のエラーハンドリングを定義すること。
 
 - `∀m ∈ Allocations : ¬dynamic(m) ∧ is_heap_less(m)`
-- `total_allocated_bytes <= FB_CONF_MEMORY_POOL_SIZE` `{StrictMemoryLimit}`
+- `total_allocated_bytes <= FB_CONF_MEMORY_POOL_SIZE` `{GLOBAL_StrictMemoryLimit}`
 - `∀block ∈ allocated : block.owner != 0` (task-idと必ず紐付く)
 - ゲストRAMに使用する `pool-base` アドレスはWASMページ境界（64KBアライメント）に配置すること。vMMIOおよびインタープリタはこのアライメントを前提として単一比較命令での高速RAMアクセス判定を行う。 `{WasmPageAlignment}`
 
 ## 6. 所有権追跡
-<!-- traceability: {Policy_Memory} -->
-各メモリブロックは `memory-info.owner` で割り当て元task-idを追跡する。 `{Policy_Memory}`
+<!-- traceability: {GLOBAL_Policy_Memory} -->
+各メモリブロックは `memory-info.owner` で割り当て元task-idを追跡する。 `{GLOBAL_Policy_Memory}`
 
 - `allocate` / `allocate-shared` 時に呼び出し元タスクIDが自動設定
 - kernel/task: `deallocate` は所有者タスクのみが実行可能
 - shared: `shared-memory` リソースのRAII / drop で自動解放
 
 ## 7. 共有メモリ (shared-block) のライフサイクル
-<!-- traceability: {FaultIsolation} {OwnershipTransfer} -->
-`shared-block` リソースが所有権の単位。IPC転送時に `release` → `claim` で所有権が移動する。 `{FaultIsolation}` `{OwnershipTransfer}`
+<!-- traceability: {META_FaultIsolation} {OwnershipTransfer} -->
+`shared-block` リソースが所有権の単位。IPC転送時に `release` → `claim` で所有権が移動する。 `{META_FaultIsolation}` `{OwnershipTransfer}`
 
 大きなデータを転送する場合、`shm-id` をkv_pairの `value` フィールドに `data-type = handle` で格納し、通常のIPCメッセージとして送信する。
 

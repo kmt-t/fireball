@@ -1,8 +1,8 @@
 # vMMIO コンポーネント設計書 (改訂版)
 
 ## 1. コンセプト
-<!-- traceability: {RestrictedPhysicalAccess} {vMMIO_TrapAndEmulate} {PhysicalPassthrough} {DynamicMmap} {UnifiedAccessModel} {FastAddressCheck} {RoleBasedAccessControl} {Fast_Path_GPIO} -->
-vMMIO (Virtual Memory-Mapped I/O) は、WASMゲストとホスト間の**すべてのデータ交換**を仲介する統一的なアクセス層である。物理レジスタ（GPIO等）、共有メモリ、システムコール用バッファなど、ホスト-ゲスト間境界を横切るアクセスはすべてvMMIO空間を経由する。**割り当て単位は1ページ（4KB）**とし、各デバイス領域は4KB境界に配置される。WASMページサイズとは独立した設計。 `{RestrictedPhysicalAccess}` `{vMMIO_TrapAndEmulate}` `{PhysicalPassthrough}` `{DynamicMmap}` `{UnifiedAccessModel}`
+<!-- traceability: {META_RestrictedPhysicalAccess} {vMMIO_TrapAndEmulate} {PhysicalPassthrough} {DynamicMmap} {UnifiedAccessModel} {FastAddressCheck} {RoleBasedAccessControl} {Fast_Path_GPIO} -->
+vMMIO (Virtual Memory-Mapped I/O) は、WASMゲストとホスト間の**すべてのデータ交換**を仲介する統一的なアクセス層である。物理レジスタ（GPIO等）、共有メモリ、システムコール用バッファなど、ホスト-ゲスト間境界を横切るアクセスはすべてvMMIO空間を経由する。**割り当て単位は1ページ（4KB）**とし、各デバイス領域は4KB境界に配置される。WASMページサイズとは独立した設計。 `{META_RestrictedPhysicalAccess}` `{vMMIO_TrapAndEmulate}` `{PhysicalPassthrough}` `{DynamicMmap}` `{UnifiedAccessModel}`
 
 本アーキテクチャでは、JIT実行などの極めてクリティカルなパスにおいて、探索コストを完全に一定（O(1)）に抑え込むため、従来の `std::flat_map` を用いた $O(\log N)$ 二分探索および線形探索TLBを全面的に廃止し、OS/MMUハードウェアの基本原則に忠実な**「2段階ダイレクトインデックス式ページテーブル（L1/L2）」**および**「ダイレクトマップ方式のソフトウェアTLB」**を採用する。
 
@@ -30,13 +30,13 @@ RAM < 64KB の極小資源に適合するため、本設計ではL2ページテ�
 IPC経由のデータ交換は行わない — GPIOのようなsub-µs応答が必要な周辺機器はIPCレイテンシに耐えられないため、このダイレクトアクセスモデルが採用されている。 `{Fast_Path_GPIO}`
 
 ## 2. アーキテクチャ分類
-<!-- traceability: {3TierSeparation} -->
-本コンポーネントは **Tier 3 (実装ドメイン)** に属する。仮想的なレジスタアクセスとDMA転送に特化した単一責務のモジュールとして設計する。 `{3TierSeparation}`
+<!-- traceability: {META_3TierSeparation} -->
+本コンポーネントは **Tier 3 (実装ドメイン)** に属する。仮想的なレジスタアクセスとDMA転送に特化した単一責務のモジュールとして設計する。 `{META_3TierSeparation}`
 
 ## 3. 静的モデル
 
 ### 3.1 データ構造
-<!-- traceability: {Static_Resolution} -->
+<!-- traceability: {META_Static_Resolution} -->
 
 リソース制約上、構造体は **ROM（不変）** と **RAM（可変）** に明確に分離する。L2テーブルサイズを16エントリに抑えることでRAM浪費を根本排除する。
 
@@ -50,10 +50,10 @@ IPC経由のデータ交換は行わない — GPIOのようなsub-µs応答が�
 | RAM | ソフトウェアTLB配列 | `vmmio_tlb_cache[16]` 16エントリのダイレクトマップ型高速TLBキャッシュ配列 |
 
 - **`VmmioController`**: アドレス境界デコード、L1/L2テーブルウォーク、TLBキャッシュ管理、動的マッピング管理を担う主要クラス。
-- **`vmmio_config`**: 静的な領域定義 (`vmmio_static_region`) の不変なテーブル。 `{Static_Resolution}`
+- **`vmmio_config`**: 静的な領域定義 (`vmmio_static_region`) の不変なテーブル。 `{META_Static_Resolution}`
 
 ### 3.2 内部ブロック図
-<!-- traceability: {Static_Resolution} -->
+<!-- traceability: {META_Static_Resolution} -->
 ```mermaid
 graph TD
     subgraph vMMIO_Layer
@@ -79,11 +79,11 @@ graph TD
 ```
 
 ### 3.3 主要なクラス・構造体・配列・定数
-<!-- traceability: {Static_Resolution} -->
+<!-- traceability: {META_Static_Resolution} -->
 vMMIO
 
 #### アドレスフィールド定義 (vmmio_address)
-<!-- traceability: {Static_Resolution} -->
+<!-- traceability: {META_Static_Resolution} -->
 32ビットゲストアドレスを5つのフィールドに分割する。1ページ(4KB)ごとの連続アドレスが L2 ページテーブルの各スロットにダイレクト展開される。
 
 | 項目名 | 機能と役割 | 備考（制約、型など） |
@@ -197,7 +197,7 @@ def access_vmmio(addr: VmmioAddress, is_write: bool):
 | `0xF000_0000` – `0xF000_FFFF` | 1 | 15 (`0xF`) | PASSTHROUGH（物理アドレス直結、16ページ）— Tier 3 |
 
 #### コントローラ群 (VmmioController)
-<!-- traceability: {Static_Resolution} -->
+<!-- traceability: {META_Static_Resolution} -->
 アドレスデコード・L1/L2 ページテーブルインデックス選択・PTE ルックアップ・TLBキャッシュ管理をカプセル化する。
 
 | 項目名 | 機能と役割 | 備考（制約、型など） |
@@ -206,7 +206,7 @@ def access_vmmio(addr: VmmioAddress, is_write: bool):
 | ソフトウェアTLB（グローバル） | 仮想ページ番号 (VPN) → PTE マッピングをダイレクトマップハッシュでキャッシュ。ホットパスを完全 O(1) に高速化する。 | `vmmio_tlb_cache[16]`（固定16エントリ、ハッシュ結合） |
 
 #### 静的デバイスページテーブルエントリ (vmmio_pte_static)
-<!-- traceability: {Static_Resolution} -->
+<!-- traceability: {META_Static_Resolution} -->
 Static Devices (Tier 2) 向け。Syscall ID はアドレス [19:12] から抽出するため、PTE には Device Type やフラグのみを保持。Static Devices は常にシステムコール経由であり、Type フラグは FC に応じた値を持つ（FC=12 では 0）。
 
 ```
@@ -257,7 +257,7 @@ Tier 3 (共有メモリ・パススルー) 向け。物理ページアドレス�
 **FC=14 (SHM) エントリへの書き込みは IPCルータのみが行う。vMMIO は読み取り・チェック・実行のみ。**
 
 #### L1/L2 ページテーブル定義
-<!-- traceability: {FlatMapIndexed} {vMMIO_Isolation} -->
+<!-- traceability: {META_FlatMapIndexed} {vMMIO_Isolation} -->
 アドレスの各パートでダイレクトにインデックス参照する。従来の `std::flat_map` による O(log N) 探索は完全に排除される。
 
 ```python
@@ -479,8 +479,8 @@ graph LR
 5. **Drop**: 受信先が Kill された場合、Drop Handler が IPCルータに通知し、`owner_id` をクリアしてリソースを回収する。
 
 ### 4.7 仮想割り込みマッピング
-<!-- traceability: {ConfigurableSystem} -->
-物理割り込みから仮想割り込みIDへのマッピングは**静的1:1**とし、別コンフィグ（`irq_mapping_config`）で定義される。 `{ConfigurableSystem}`
+<!-- traceability: {META_ConfigurableSystem} -->
+物理割り込みから仮想割り込みIDへのマッピングは**静的1:1**とし、別コンフィグ（`irq_mapping_config`）で定義される。 `{META_ConfigurableSystem}`
 
 - **マッピング方式**: 物理IRQ 1: 仮想IRQ 1。集約しない。
 - **ゲスト側確認方式**: ポーリング。ゲストがstep再開時に `REG_IRQ_FLAGS` をチェック。
@@ -490,7 +490,7 @@ graph LR
 @see `system_syscall.md` §8.1
 
 ### 4.8 ソフトウェアTLB
-<!-- traceability: {VDMA} {OwnershipTransfer} {ConfigurableSystem} -->
+<!-- traceability: {VDMA} {OwnershipTransfer} {META_ConfigurableSystem} -->
 Tier 3 アクセス（FC=14/15）において毎回2段階ページテーブルのウォークを走らせる遅延を排除するため、仮想ページ番号（VPN = `raw >> 12`）に基づくマッピングを16エントリのダイレクトマップキャッシュに保持する。
 
 - **キャッシュ構造**: ダイレクトマップ構造（Direct-Mapped Hashed Structure）
@@ -543,16 +543,16 @@ TODO(Phase 1): ATCの抽出 - フック登録や静的予約が可能なライ�
 ## 6. 制約達成の方策
 
 ### 6.1 性能制約と方策
-<!-- traceability: {ConfigurableSystem} {FastAddressCheck} {vMMIO_TLB} -->
+<!-- traceability: {META_ConfigurableSystem} {FastAddressCheck} {vMMIO_TLB} -->
 - **目標**: MMIOアクセスのオーバーヘッドを最小化する。
-- **方策1**: `{ConfigurableSystem}` コアデバイス（SYSCTL等）をFC=12/L2=0に配置し、配列参照のみで即時解決できるようにする。
+- **方策1**: `{META_ConfigurableSystem}` コアデバイス（SYSCTL等）をFC=12/L2=0に配置し、配列参照のみで即時解決できるようにする。
 - **方策2**: `{FastAddressCheck}` アドレス空間を RAM Bypass（最上位ビット=0）と vMMIO領域（最上位ビット=1）に分割し、探索とデコードのホットパス探索コストを削減する。
 - **方策3**: `{vMMIO_TLB}` ダイレクトマップ型 Software TLB により、Tier 3 の繰り返しアクセスを完全 O(1) で超高速キャッシュ解決する。
 
 ### 6.2 メモリ制約と方策
-<!-- traceability: {ConfigurableSystem} -->
+<!-- traceability: {META_ConfigurableSystem} -->
 - **目標**: マップ管理用のメモリを最小化する。
-- **方策**: `{ConfigurableSystem}` L1ページディレクトリ（16エントリポインタ）および L2ページテーブル（16エントリ配列、必要なFCにのみ静的または動的割り当て）を固定サイズとし、動的ツリーや `flat_map` などの余分なメタループレベルを排除する。
+- **方策**: `{META_ConfigurableSystem}` L1ページディレクトリ（16エントリポインタ）および L2ページテーブル（16エントリ配列、必要なFCにのみ静的または動的割り当て）を固定サイズとし、動的ツリーや `flat_map` などの余分なメタループレベルを排除する。
 
 ### 6.3 安全性制約と方策
 <!-- traceability: {RoleBasedAccessControl} {OwnershipTransfer} -->

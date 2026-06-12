@@ -22,8 +22,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        # audit_traceability.py relies on requests
-        pip install requests
+        pip install -r requirements.txt
 
     - name: Run Mechanical Audits
       run: |

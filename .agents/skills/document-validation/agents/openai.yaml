@@ -1,0 +1,4 @@
+interface:
+  display_name: "Fireball Validation"
+  short_description: "Canonical Fireball audit and verification entry points"
+  default_prompt: "Use $document-validation to choose the right Fireball audit or verification entry point."

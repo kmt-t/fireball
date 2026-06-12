@@ -24,15 +24,15 @@ scope: GLOBAL
 - 対象領域の仕様書群に仕様を記述する。
 - Mermaid を使用して SysML 形式（BDD/SD/SMD/PAR）で設計を可視化する。
 
-### Step 1-2: Formal Verification (TLA+/TLC)
+### Step 1: Formal Verification (TLA+/TLC)
 - インターフェースを WIT で定義する。
 - **TLA+** を用いてモデルを記述し、**TLC** で不変条件（Hoare Triple: `@pre`, `@post`, `@inv`）や動的振る舞いの論理的一貫性を検証する。
 
-### Step 3: Implementation Generation (実装生成)
+### Step 2: Implementation Generation (実装生成)
 - WIT から C++ コード（Harness, Interface）を自動生成する。
 - コンポーネントのロジックを実装する。LLM を積極的に活用し、定型コードの生成を自動化する。 `{AI_Native_Dev}`
 
-### Step 4: Testing & Integration (テスト・統合)
+### Step 3: Testing & Integration (テスト・統合)
 - ホスト環境およびターゲット環境（Cortex-M 等）でのテストを実行する。
 - `tools/README.md` にある整合性・トレーサビリティ監査の入口を使って、機械チェックを実行する。
 - `docs/plans/backlog_list.md` のストーリーに基づき、価値の提供を確認する。
@@ -40,7 +40,7 @@ scope: GLOBAL
 ## 3. エージェント向け運用ルール
 
 - いかなる操作（実装、形式検証、ドキュメント修正）を開始する前にも、必ず `docs/plans/backlog_list.md` を読み、現在選択中のタスクがどのフェーズ・バックログアイテムに属するかを確認すること。
-- `Step 3`（実装生成）を開始する前に、必ず前段の `Step 0-2`（設計・形式検証）がすべてのチェックリスト要件を満たしているかユーザーに明示的に確認すること。エージェント判断での自己完結的な実装開始を禁止する。
+- `Step 2`（実装生成）を開始する前に、必ず前段の `Step 0-1`（設計・形式検証）がすべてのチェックリスト要件を満たしているかユーザーに明示的に確認すること。エージェント判断での自己完結的な実装開始を禁止する。
 - 仕様・計画・検証に触れる変更では、`docs/architecture/document_structure.md` の定義に従って `{Keyword}` の traceability を維持すること。
 - 変更した仕様は `docs/components/`、`docs/requires/`、`verify/` の対応箇所に反映すること。
 - 不確実な仕様は憶測で埋めず、必要ならユーザーに質問すること。

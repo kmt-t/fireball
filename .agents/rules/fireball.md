@@ -1,3 +1,0 @@
-# Fireball ワークスペースルール
-
-@/CLAUDE.md

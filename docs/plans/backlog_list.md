@@ -21,24 +21,24 @@
 
 ## Phase 0.8: vSoC VDD Verification & Design Formalization 【進行中】
 
-WBSの [Step 0] 盆栽デザイン（SysML）および [Step 1-2] 形式検証（WIT/TLA+）を中心とした、設計の「不変条件」の確立。
+WBSの [Step 0] 盆栽デザイン（SysML）および [Step 1] 形式検証（WIT/TLA+）を中心とした、設計の「不変条件」の確立。
 
 ### [Tier 1] Core Logic Verification
 
 - [ ] **COOS / IPC 協調モデル**:
-  - [x] [Step 1-2] タスク状態遷移、割り込み通知、Handoffの形式検証 `{GLOBAL_UseCpp20Coroutine}` `{CSP_Handoff}`
+  - [x] [Step 1] タスク状態遷移、割り込み通知、Handoffの形式検証 `{GLOBAL_UseCpp20Coroutine}` `{CSP_Handoff}`
   - [x] [Step 0] IPCルータの名前解決・所有権移譲のSysMLモデル化 → Complete (ipc_router.md 4.1.1, 4.2.1)
 - [x] **IPCパニック・デッドロック回避**:
-  - [x] [Step 1-2] In-flightパニック時のDropハンドラとメモリリーク防止の整合検証完了 `{IPC_ZeroCopy}` `{Challenge_CspHandoffStarvation}` `{IPC_DropHandler}`
+  - [x] [Step 1] In-flightパニック時のDropハンドラとメモリリーク防止の整合検証完了 `{IPC_ZeroCopy}` `{Challenge_CspHandoffStarvation}` `{IPC_DropHandler}`
 
 ### [Tier 2] vSoC Subsystem Verification
 
 - [ ] **vSoC Engine (JIT/Intp) 一貫性**:
-  - [x] [Step 0-2] JITキャッシュ (Active/Old) とデバッガ割り込み (Safepoint) の協調モデル → Design specification completed (runtime_vsoc.md 4.2.1)
+  - [x] [Step 0-1] JITキャッシュ (Active/Old) とデバッガ割り込み (Safepoint) の協調モデル → Design specification completed (runtime_vsoc.md 4.2.1)
 - [x] **vMMIOセキュリティゲート (TLB)**:
-  - [x] [Step 0-2] 3-Tier安全性、ソフトウェアTLBキャッシュ整合性の形式検証完了 `{UnifiedAccessModel}` `{RoleBasedAccessControl}` `{FastAddressCheck}`
+  - [x] [Step 0-1] 3-Tier安全性、ソフトウェアTLBキャッシュ整合性の形式検証完了 `{UnifiedAccessModel}` `{RoleBasedAccessControl}` `{FastAddressCheck}`
 - [x] **Loaderロールバック機構**:
-  - [x] [Step 0-2] バンプアロケータの順序とパース失敗時の安全な巻き戻しの形式検証完了 `{ROMParsing}` `{META_BumpAllocator}` `{MultiModule_Support}`
+  - [x] [Step 0-1] バンプアロケータの順序とパース失敗時の安全な巻き戻しの形式検証完了 `{ROMParsing}` `{META_BumpAllocator}` `{MultiModule_Support}`
 - [ ] **リソース制約検証**:
   - [x] [Step 0] SysMLパラメトリック図によるRAM/SLOC予算の遵守検証 → Constraint relationship diagram added (resource_budget.md 4.1.1)
 
@@ -70,5 +70,5 @@ Phase 1（～2026年6月末）でスタンドアロンvSoCを実装する。詳�
 ## ステータス管理
 
 - **Step 0**: 盆栽デザイン・SysML 完了
-- **Step 1-2**: 形式検証（TLC）パス
-- **Step 3-4**: 実装生成・テスト通過・ターゲット統合完了
+- **Step 1**: 形式検証（TLC）パス
+- **Step 2-3**: 実装生成・テスト通過・ターゲット統合完了

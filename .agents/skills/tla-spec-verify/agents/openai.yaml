@@ -1,0 +1,4 @@
+interface:
+  display_name: "TLA+ Spec Verify"
+  short_description: "TLA+ spec modeling and TLC verification"
+  default_prompt: "Use $tla-spec-verify to model a TLA+ spec, check invariants, and run TLC."

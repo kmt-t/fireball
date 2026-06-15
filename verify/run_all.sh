@@ -2,34 +2,28 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+source "$SCRIPT_DIR/components.sh"
 
 run_one() {
-  local script_path="$1"
-  echo "[verify] running $(basename "$script_path")"
-  "$script_path"
+  "$SCRIPT_DIR/run_component.sh" "$@"
 }
 
 case "${1:-all}" in
   all)
-    run_one "$SCRIPT_DIR/run_eventdriven_coos.sh"
-    run_one "$SCRIPT_DIR/run_ipc_deadlock.sh"
-    run_one "$SCRIPT_DIR/run_loader_rollback.sh"
-    run_one "$SCRIPT_DIR/run_vmmio.sh"
+    for component_id in "${VERIFY_COMPONENT_IDS[@]}"; do
+      run_one "$component_id"
+    done
     ;;
-  coos)
-    run_one "$SCRIPT_DIR/run_eventdriven_coos.sh"
-    ;;
-  ipc-deadlock)
-    run_one "$SCRIPT_DIR/run_ipc_deadlock.sh"
-    ;;
-  loader-rollback)
-    run_one "$SCRIPT_DIR/run_loader_rollback.sh"
-    ;;
-  vmmio)
-    run_one "$SCRIPT_DIR/run_vmmio.sh"
+  list)
+    printf '%-18s %s\n' "component" "model"
+    for component_id in "${VERIFY_COMPONENT_IDS[@]}"; do
+      model="$(verify_find_artifact verify/models .tla "$component_id")"
+      printf '%-18s %s\n' "$component_id" "${model##*/}"
+    done
     ;;
   *)
-    echo "Usage: $0 [all|coos|ipc-deadlock|loader-rollback|vmmio]"
-    exit 1
+    run_one "$@"
     ;;
 esac

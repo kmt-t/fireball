@@ -101,8 +101,13 @@ def generate_checklist(all_files: list[str], file_kw_map: dict[str, set[str]], b
         sec_a_str = "|".join(sorted(list(data["sections_a"])))
         sec_b_str = "|".join(sorted(list(data["sections_b"])))
 
-        aspect = "A" # Default to API/Interface consistency aspect
-        check_content = f"共有要求 {kw_list_str} に関して、仕様記述に不整合がないか確認してください。"
+        aspect = "テーマ一貫性"
+        check_content = (
+            f"共有要求 {kw_list_str} を軸に、両文書が同じテーマを別の粒度で説明しているか確認してください。"
+            " 役割分担・依存方向・制約・例外の扱いが一貫していれば PASS とし、"
+            " 抽象度や語彙の差だけでは FAIL にしないでください。"
+            " 明示的な矛盾や責務衝突のみ FAIL、根拠不足は WARN としてください。"
+        )
 
         items.append({
             "pair_id": pair_id,

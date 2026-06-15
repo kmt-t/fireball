@@ -13,7 +13,7 @@ Fireball プロジェクトでは、複数の仕様書（`docs/components/` 配�
 - **F (FORMAT)**: 仕様書フォーマット規約準拠
 - **T (TRACEABILITY)**: 要求キーワード整合性
 - **A (ARCHITECTURE)**: API 表記ゆれ検出
-- **LLM**: 意味的整合性（オプション）
+- **LLM**: テーマ一貫性と明示的な矛盾の確認（オプション）
 
 ---
 
@@ -45,11 +45,11 @@ Fireball プロジェクトでは、複数の仕様書（`docs/components/` 配�
 
 ### 2.2 LLM チェック（オプション）
 
-`consistency_checklist.csv` を用いた意味的整合性検証。
+`consistency_checklist.csv` を用いた意味的一貫性検証。
 
-- **仕様書ペア間の API/インターフェース整合性**
+- **仕様書ペア間のテーマ・責務の一貫性**
 - **状態遷移・ライフサイクルの齟齬**
-- **エラーハンドリング方針の矛盾**
+- **エラーハンドリング方針の明示的な矛盾**
 
 ---
 
@@ -238,7 +238,7 @@ docs/components/core/system_config.md,0,2,0,...
 
 ```csv
 pair_id,file_a,file_b,shared_keywords,check_num,aspect,check_content,llm_result,llm_reason
-1,os_coos.md,runtime_interpreter.md,"{CooperativeMultitasking}",1,API整合性,"...",PASS/FAIL,"..."
+1,os_coos.md,runtime_interpreter.md,"{CooperativeMultitasking}",1,テーマ一貫性,"...",PASS/FAIL,"..."
 ...
 ```
 

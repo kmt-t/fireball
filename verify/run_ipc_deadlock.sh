@@ -2,8 +2,5 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-cd "$REPO_ROOT"
 
-tlc -config verify/configs/IPCDeadlockVerification.cfg \
-  verify/models/IPCDeadlockVerification.tla "$@"
+exec "$SCRIPT_DIR/run_component.sh" ipc_deadlock "$@"

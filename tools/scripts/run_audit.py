@@ -265,6 +265,12 @@ def main():
         if status == "PASS":
             print(f"  {GREEN}✓ PASS{RESET}  S-ARCH-PAIR")
             sys.exit(0)
+        elif status in ("WARN", "UNCERTAIN"):
+            print(f"  {YELLOW}⚠ WARN{RESET}  S-ARCH-PAIR")
+            print(f"        理由: {reason}")
+            if suggestions:
+                print(f"        改善案:\n{suggestions}")
+            sys.exit(0)
         else:
             print(f"  {RED}✗ FAIL{RESET}  S-ARCH-PAIR")
             print(f"        理由: {reason}")

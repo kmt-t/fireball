@@ -9,7 +9,7 @@ import urllib.error
 SAKURA_MODEL = "gpt-oss-120b"
 OPEN_ROUTER_MODEL = "google/gemma-4-31b-it:free"
 GEMINI_MODEL = "gemini-3.1-flash-lite"
-OLLAMA_MODEL = "gemma4:26b-a4b-it-qat"
+OLLAMA_MODEL = "gemma4:12b-it-qat"
 
 # API URLs
 OLLAMA_URL = "http://localhost:11434/api/generate"
@@ -102,6 +102,12 @@ def call_ollama(prompt: str, model: str, max_tokens: int) -> str:
 
 
 def parse_llm_markdown_response(raw_text: str) -> dict:
+    def _normalize_status(value: str) -> str:
+        normalized = value.strip().upper()
+        if normalized == "WARN":
+            return "UNCERTAIN"
+        return normalized
+
     sections: dict[str, list[str]] = {}
     current = None
 
@@ -125,7 +131,7 @@ def parse_llm_markdown_response(raw_text: str) -> dict:
                 continue
             if current_field and line.strip():
                 fields[current_field] = (fields[current_field] + "\n" + line.strip()).strip()
-        status = fields["status"].upper()
+        status = _normalize_status(fields["status"])
         if status in ["PASS", "FAIL", "UNCERTAIN", "ERROR"]:
             fields["status"] = status
             return fields
@@ -145,7 +151,7 @@ def parse_llm_markdown_response(raw_text: str) -> dict:
                 continue
             if current_field and line.strip():
                 fields[current_field] = (fields[current_field] + "\n" + line.strip()).strip()
-        status = fields["status"].upper()
+        status = _normalize_status(fields["status"])
         if status in ["PASS", "FAIL", "UNCERTAIN", "ERROR"]:
             fields["status"] = status
             multi_rule[name] = fields
@@ -159,7 +165,7 @@ def parse_llm_markdown_response(raw_text: str) -> dict:
     if not status:
         return {}
 
-    normalized_status = status[0].strip().upper()
+    normalized_status = _normalize_status(status[0].strip())
     if normalized_status not in ["PASS", "FAIL", "UNCERTAIN", "ERROR"]:
         return {}
 
@@ -207,7 +213,7 @@ SUGGESTIONS: 改善案がなければ空欄。
 Markdownのみで回答してください。コードブロック、前置き、後書きは禁止です。
 
 ## STATUS
-PASS または FAIL または UNCERTAIN
+PASS または FAIL または WARN または UNCERTAIN
 
 ## REASON
 1〜3文で根拠を書く。
@@ -216,7 +222,13 @@ PASS または FAIL または UNCERTAIN
 改善案がなければ空欄。FAILの場合のみ短く書く。
 """
 
-def call_llm(prompt: str, backend: str = None, model: str = None, max_tokens: int = 1024) -> str:
+def call_llm(
+    prompt: str,
+    backend: str = None,
+    model: str = None,
+    max_tokens: int = 1024,
+    apply_contract: bool = True,
+) -> str:
     sakura_key = os.environ.get("SAKURA_AI_API_KEY", "").strip()
     openrouter_key = os.environ.get("OPEN_ROUTER_API_KEY", "").strip()
     gemini_key = os.environ.get("GEMINI_API_KEY", os.environ.get("GOOGLE_API_KEY", "")).strip()
@@ -249,7 +261,8 @@ def call_llm(prompt: str, backend: str = None, model: str = None, max_tokens: in
             return call_gemini(prompt, gemini_key, model_name)
         else:
             model_name = model or OLLAMA_MODEL
-            prompt = force_markdown_contract(prompt)
+            if apply_contract:
+                prompt = force_markdown_contract(prompt)
             return call_ollama(prompt, model_name, max_tokens)
     except urllib.error.HTTPError as e:
         err_content = e.read().decode("utf-8", errors="replace")

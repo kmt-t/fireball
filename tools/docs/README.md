@@ -19,7 +19,7 @@
 
 ## Related Entry Points
 
-- `./tools/run_all_tests.sh`
+- `./tools/run_all_tests.sh`（`--llm` で semantic、`--quick` で Tier 1 まで）
 - `./tools/run_consistency_check.sh`
 - `./tools/run_traceability_audit.sh`
 - `./verify/run_all.sh`

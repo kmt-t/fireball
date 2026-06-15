@@ -6,6 +6,15 @@
 - List the assumptions that may be abstracted away.
 - Keep the property narrow enough that TLC can finish on a finite model.
 
+## 1.1 Name Resolution
+
+- Treat the component name as the stable input.
+- Normalize the input by lowercasing and removing `_` and `-`.
+- Resolve the normalized name against the basenames in `verify/models/`, `verify/configs/`, and `verify/reports/`.
+- Prefer one canonical component id per verification target.
+- Keep `verify/run_component.sh` as the single-target runner and `verify/run_all.sh` as the batch/list entry point.
+- If two artifacts could plausibly match the same name, stop and rename the artifact instead of extending the matching logic.
+
 ## 2. Build the model
 
 - Model only the state relevant to the property.
@@ -16,7 +25,8 @@
 
 ## 3. Run TLC
 
-- Use the matching `verify/run_*.sh` script.
+- Use the matching `verify/run_component.sh <component-name>` script or the compatibility `verify/run_*.sh` wrapper.
+- Use `verify/run_all.sh list` to confirm what the runner can resolve before checking a new target.
 - Keep constants and bounds as tight as possible while still covering the scenario.
 - Prefer one minimal run that reproduces the concern, then widen only if needed.
 
@@ -31,6 +41,7 @@
 - Tie each invariant and assumption back to a requirement or design keyword.
 - Record any deliberate abstraction gap in the report.
 - Keep model, config, and report changes aligned with the source docs.
+- Keep report and filename naming aligned with the canonical component name.
 
 ## Minimal skeleton
 

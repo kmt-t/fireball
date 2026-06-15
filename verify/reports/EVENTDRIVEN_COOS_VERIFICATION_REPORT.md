@@ -14,7 +14,6 @@
 
 - `docs/components/core/os_scheduler.md` (修正版)
 - `docs/components/core/os_coos.md` (修正版)
-- `docs/components/os_event_driven.md` (仕様参照)
 
 ### 1.2 検証ツール
 

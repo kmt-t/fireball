@@ -24,7 +24,7 @@ Use this skill to choose and run the repository's canonical validation entry poi
 - `./verify/run_all.sh`: run the model verification suite.
 
 ## Low-level runner
-- `python3 tools/scripts/run_audit.py` for fine-grained control over module, pair, hierarchy, checklist, and LLM-backed audits.
+- `python3 .agents/skills/document-validation/scripts/run_audit.py` for fine-grained control over module, pair, hierarchy, checklist, and LLM-backed audits.
 - Prefer the wrappers above unless the task needs a specific mode or a narrow rule set.
 
 ## Operational notes

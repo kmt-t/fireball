@@ -7,7 +7,14 @@ import argparse
 from pathlib import Path
 
 # Setup path
-REPO_ROOT = Path(__file__).resolve().parents[2]
+SCRIPT_PATH = Path(__file__).resolve()
+for candidate in SCRIPT_PATH.parents:
+    if (candidate / "tools").is_dir() and (candidate / "verify").is_dir() and (candidate / "docs").is_dir():
+        REPO_ROOT = candidate
+        break
+else:
+    raise RuntimeError("Could not locate repository root from run_audit.py")
+
 sys.path.insert(0, str(REPO_ROOT))
 
 from tools.common.db import db

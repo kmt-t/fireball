@@ -47,7 +47,7 @@ run_python_audit() {
     local label="$1"
     shift
 
-    if python3 tools/scripts/run_audit.py "$@"; then
+    if python3 .agents/skills/document-validation/scripts/run_audit.py "$@"; then
         printf "✔ %s: PASSED\n" "$label"
     else
         printf "✖ %s: FAILED\n" "$label"

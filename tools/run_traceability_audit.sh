@@ -25,8 +25,8 @@ cd "$REPO_ROOT"
 if [[ "$ARGS" == *"--llm"* ]]; then
     # Strip --llm and run semantic trace alignment
     CLEAN_ARGS=$(echo "$ARGS" | sed 's/--llm//g')
-    python3 tools/scripts/run_audit.py --rule S-TRACE-ALIGN --all $CLEAN_ARGS
+    python3 .agents/skills/document-validation/scripts/run_audit.py --rule S-TRACE-ALIGN --all $CLEAN_ARGS
 else
     # Run only mechanical trace rules
-    python3 tools/scripts/run_audit.py --rule M-TRACE-UNDEFINED --rule M-TRACE-ORPHAN-SEC --rule M-TRACE-UNCOVERED $ARGS
+    python3 .agents/skills/document-validation/scripts/run_audit.py --rule M-TRACE-UNDEFINED --rule M-TRACE-ORPHAN-SEC --rule M-TRACE-UNCOVERED $ARGS
 fi

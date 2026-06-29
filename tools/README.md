@@ -18,7 +18,7 @@
 ## Layout
 
 - `tools/common/`: 監査処理の共通モジュール
-- `tools/scripts/`: Python 入口スクリプト
+- `.agents/skills/document-validation/scripts/`: document-validation 用の Python 入口スクリプト
 - `tools/mechanical/`: 機械的チェック
 - `tools/llm/`: LLM 監査
 - `tools/config/`: 監査用設定データ

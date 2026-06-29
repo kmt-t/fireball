@@ -1,6 +1,6 @@
 ---
 name: tla-spec-verify
-description: Model and verify TLA+ specs, invariants, liveness, deadlocks, ownership, refinement, and Fireball verify/ runner naming resolution. Use when working on .tla/.cfg files, TLC runs, counterexamples, verification reports, verify/run_*.sh, or when resolving a component name to the matching model/config/report.
+description: Model and verify TLA+ specs, invariants, liveness, deadlocks, ownership, refinement, and runner naming resolution. Use when working on .tla/.cfg files, TLC runs, counterexamples, verification reports, verify/run_*.sh, or when resolving a component name to the matching model/config/report.
 ---
 
 # TLA+ Spec Verify
@@ -15,6 +15,7 @@ Use this skill to turn an informal requirement into a finite TLA+ model, run TLC
 - Normalize names by lowercasing and removing `_` and `-`.
 - Resolve the normalized name against `verify/models/`, `verify/configs/`, and `verify/reports/` basenames.
 - Use `verify/run_component.sh <component-name>` for one target and `verify/run_all.sh [all|list|<component-name>]` for batch or discovery.
+- Run `verify/run_all.sh list` before checking a new target when you need to confirm what the runner can resolve.
 - Keep compatibility wrappers thin; do not add per-component TLC command fragments when a shared runner can cover the case.
 
 ## Workflow
@@ -43,13 +44,34 @@ Use this skill to turn an informal requirement into a finite TLA+ model, run TLC
 - Keep the naming rule deterministic; if multiple artifacts could match the same component name, rename the artifact rather than adding more special cases.
 - Treat counterexamples as evidence of one of three cases: a real bug, a missing assumption, or an overly coarse abstraction.
 
-## Fireball Integration
+## Repository Integration
 
 - Use `verify/README.md` as the canonical map of runners and directories.
 - Treat `verify/components.sh` and `verify/run_component.sh` as the canonical name-resolution and execution contract.
 - Align any doc keywords or assumptions with `docs/requires/` and `docs/components/`.
 - Keep model, config, and report changes together when the verification intent changes.
 
-## Reference
+## Minimal Skeleton
 
-See [workflow.md](references/workflow.md) for a compact checklist and a minimal TLA+ skeleton.
+```tla
+---- MODULE Example ----
+EXTENDS Naturals, TLC
+
+CONSTANTS ...
+VARIABLES ...
+
+TypeOK == ...
+Init == ...
+Next == ...
+Spec == Init /\ [][Next]_vars
+
+THEOREM Spec => []TypeOK
+====
+```
+
+## Paths
+
+- `verify/models/`: `.tla` specs
+- `verify/configs/`: `.cfg` files
+- `verify/reports/`: result summaries
+- `verify/run_*.sh`: canonical runners

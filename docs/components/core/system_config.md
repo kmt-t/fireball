@@ -26,15 +26,35 @@ graph TD
     Config --> Svc[Services]
 ```
 
+##### 静的リソース消費の概算モデル
+<!-- traceability: {Resource_Estimation_Model} -->
+コンパイル時に各マクロ定数から全体のメモリ（ROM/RAM）フットプリントが決定論的に算出され、ビルド時に以下の概算モデルに従って制約適合性が検証される。
+* **RAM消費量 (概算値)**: `(FB_CONF_MAX_TASKS * sizeof(task_context_t)) + (FB_CONF_MAX_TASKS * FB_CONF_TASK_HEAP_SIZE) + FB_CONF_RUNTIME_HEAP_SIZE + FB_CONF_JIT_CACHE_SIZE + FB_CONF_LOG_BUFFER_SIZE`
+* **適合性の静的アサート**: 上記総RAM消費量が、プラットフォームのターゲット物理SRAMサイズ（例：64KB）以下であることを、コンパイル時に `static_assert` により検証しビルドを保護する。 `{META_ConfigurableSystem}` `{Resource_Estimation_Model}`
+
 ### 3.3 主要な構造体・クラス・定数
 <!-- traceability: {Resource_Estimation_Model} -->
-具体的なコンフィグマクロおよび定数の一覧については、[システムコンフィグマクロ一覧](system_config_details.md) を参照すること。
+具体的なコンフィグマクロおよび定数の詳細一覧とアライメント要件については、[システムコンフィグマクロ一覧](system_config_details.md) を参照すること。主要パラメータは以下の制約・相互依存関係を持つ：
+- **最大タスク数とID予約値の制約**: `FB_CONF_MAX_TASKS` の値は、予約済みの制御用Sentinel値である `FB_TASK_ID_FLIGHT=0xFF` や無効値 `FB_TASK_ID_INVALID=0` と重複しないよう、254 以下でなければならない。
+- **メモリ総量と個別プールの依存関係**: 各タスク個別の静的プール `FB_CONF_TASK_HEAP_SIZE` の増加は、システム全体の `FB_CONF_MAX_TASKS` との積算でRAM消費量を急激に増大させる。そのため、これらのパラメータ変更時は、ターゲットプラットフォームの SRAM 物理限界（64KB）を突破しない範囲で調整される必要があり、ビルド時に静的アサートにより自動検証される。
+
+
+
+##### 代表的な主要構成パラメータ
+* **`FB_CONF_MAX_TASKS`**: 静的に管理されるタスクの最大数（デフォルト値: 8、最大許容値: 254）。
+* **`FB_CONF_TASK_HEAP_SIZE`**: 各VM/タスクに個別に割り当てられる（共有されない）独立した静的メモリプールの容量（デフォルト値: 8192バイト、動的ヒープではない）。
+* **`FB_CONF_RUNTIME_HEAP_SIZE`**: WASMホストランタイム用に割り当てられる静的メモリプールの容量（デフォルト値: 4096バイト、動的ヒープではない）。
+* **`FB_CONF_LOG_BUFFER_SIZE`**: ログメッセージ保持用の循環バッファのサイズ（デフォルト値: 512バイト、動的メモリ確保を回避する固定バッファ）。
+* **`FB_CONF_JIT_CACHE_SIZE`**: 生成されたネイティブコードを保存するための Active/Old バンクのキャッシュサイズ合計（デフォルト値: 4096バイト）。
+* **`FB_CONF_SHM_SIZE`**: ゼロコピーIPCデータ転送で使用される静的共有メモリの総バイト数（デフォルト値: 16384バイト）。
+* **`FB_CONF_VMMIO_MAX_REGIONS`**: 登録可能な最大仮想MMIO（vMMIO）領域数（デフォルト値: 8）。
+
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
 | 最大管理タスク数 | システムが同時に保持可能なタスク制御ブロックの最大数 | エントリ数 | `FB_CONF_MAX_TASKS`（≤ 254。`FB_TASK_ID_FLIGHT=0xFF` との衝突を静的アサートで保証） |
-| 共有メモリ容量 | 動的確保に使用される共通ヒープの総バイト数 | バイト数 | `FB_CONF_HEAP_SIZE` |
-| JITキャッシュ容量 | 生成されたネイティブコードを保存するためのメモリサイズ | バイト数 | `FB_CONF_JIT_CACHE_SIZE` |
+| 共有メモリ容量 | タスク間共有やゼロコピー通信のために静的配置される共有領域の総バイト数 | バイト数 | `FB_CONF_SHM_SIZE` |
+| JITキャッシュ容量 | 生成されたネイティブコードを保存するための静的メモリバッファサイズ | バイト数 | `FB_CONF_JIT_CACHE_SIZE` |
 | タスクID型・予約値 | `task_id` の型定義と無効値・FLIGHT_SENTINEL 定義 | 型／定数 | `FB_TASK_ID_T`, `FB_TASK_ID_INVALID=0`, `FB_TASK_ID_FLIGHT=0xFF` |
 
 ## 4. 動的モデル
@@ -56,7 +76,6 @@ graph TD
 ### 5.1 公開API
 本コンポーネントは C++ ヘッダファイルとして不変な定数のみを提供する。振る舞いの契約 (Contract) としては以下の通り。
 
-TODO(Phase 1): ATCの抽出 - マクロ間の依存関係や、許容される最小/最大値の制約（アサーションによるコンパイル時チェック等）を事前・不変条件として定義すること。
 
 #### コンフィグ定数の参照
 

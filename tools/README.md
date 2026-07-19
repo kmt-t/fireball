@@ -5,10 +5,8 @@
 
 ## Entry Points
 
-- `./tools/run_all_tests.sh`: ドキュメント監査の統合実行（`--llm` で semantic、`--quick` で Tier 1 まで）
+- `./tools/run_all_tests.sh`: ドキュメント監査の統合実行（`--llm` でマトリクスベースの LLM 監査を実行）
 - `./verify/run_all.sh`: 形式検証の一括実行
-- `./tools/run_consistency_check.sh`: 仕様整合性監査
-- `./tools/run_traceability_audit.sh`: トレーサビリティ監査
 
 ## Documentation
 

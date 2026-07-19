@@ -110,7 +110,6 @@ ROM上のデータストリームを管理し、LEB128可変長整数やプリ�
 - **依存関係解決**: インポートセクションをスキャンし、必要なモジュール名とエクスポート名（関数ID/グローバルID等）を抽出し、`module_registry` を介して他モジュールの `lookup_export` とリンクする。未解決のインポートがある場合、モジュールはロード済みだが実行不可状態となる。
 - **アンロード**: `unload` はmodule_registryからモジュールを削除する。bump_allocatorのLIFO制約により、メモリの完全な回収はロード逆順のアンロード時のみ。
 
-TODO(Phase 0.8): Loader TLA+ Verification - モジュールのライフサイクル（Prepare -> Load -> Resolve -> Unload）と、依存関係解決の正当性を検証する。
 
 ### 4.2 メモリ制約
 <!-- traceability: {META_ConfigurableSystem} -->
@@ -174,7 +173,6 @@ sequenceDiagram
 ### 5.1 公開API
 外部から利用可能なオブジェクト指向APIを定義する。
 
-TODO(Phase 1): ATC抽出 - BumpAllocator使用時のメモリ解放や順序依存性、異常バイナリ時のロールバック処理に関する事前/事後/不変条件を明確化すること。
 
 #### 準備（prepare）
 

@@ -37,40 +37,56 @@ interface trap {
 
 world fireball {
   import trap;
-  // 他の高レベル・インターフェイス（timer, bus, streams等）は別途定義
+  // 他の高レベル・インターフェイス（timer, bus, streams等）は、[interface_wit.md](../interface/interface_wit.md) においてリソース型として定義され、WASIバインディング経由で接続される。
 }
 ```
+
+##### トラップ高速パスとレジスタ直接マッピング
+<!-- traceability: {Trap_Interface} -->
+`fireball_call` は、実行環境のJIT/Interpreterが提供するインポート関数呼び出しをインターセプトし、ホスト側の仮想レジスタ `REG_SYSCALL_*` に引数を直接複写（レジスタマッピング）することで、トラップ（`ecall` / `svc` 等）の処理オーバヘッドを極限まで削減する高速パスを提供する。 `{Trap_Interface}`
 
 ## 4. `fireball_call` 呼び出し規約
 
 ### 4.1. 引数のパッキング
+<!-- traceability: {Type_Vocabulary} -->
 
-<!-- traceability: {Trap_Interface} -->
+`fireball_call` は、後述の「型のエイリアス定義」で定義された型エイリアス（`fb_id_t`, `fb_val_t`, `fb_offset_t`）および規定の語彙セットに従って引数をパッキングする。物理的にはシステムコールID（`id`）と、6つの汎用引数（`arg0`〜`arg5`）の合計7つの `u32` 表現で構成され、インターフェイスの型安全性を担保する。WASI関数がこれらの引数よりも多くのパラメータを持つ場合、ゲストメモリの物理ベースアドレスからの相対オフセット（`fb_offset_t`）を渡す。絶対アドレスではなく相対オフセットに制限することで、ゲスト境界チェックを瞬時に行う。
 
-TODO(Phase 1): ATC抽出 - fireball_callの各引数に渡されるポインタが、ゲストメモリの正当な境界内にあることの事前条件（および違反時のパニック/エラーモデル）を厳密化すること。
-
-`fireball_call`は `id` と5つの汎用 `u32` 引数、**合計6つの `u32` 引数**を持つ。WASI関数がこれらの引数よりも多くのパラメータを持つ場合、ゲストメモリ内の構造体へのポインタを `u32` 引数として渡す。
+##### 型のエイリアス定義 (Type Vocabulary) `{Type_Vocabulary}`
+本インターフェースで受け渡される引数はすべて物理的には `u32` であるが、その意味論的な解釈を定義するため、以下の型語彙（エイリアス）を使用する。
+* **`fb_id_t`**: システムコールIDまたはリソースIDを表す `u32`。
+* **`fb_val_t`**: 即値のレジスタ値または即値パラメータを表す `u32`。
+* **`fb_offset_t`**: ゲストメモリの物理ベースアドレスからの相対オフセット（バイト単位）を表す `u32`。
 
 | 引数名 | 型   | 説明                                            |
 | :----- | :--- | :---------------------------------------------- |
-| `id`   | `u32` | システムコールID (`FB_SYSCALL_*` で定義)       |
-| `arg0` | `u32` | 汎用引数0、またはゲストメモリ内の構造体/バッファへのポインタ |
-| `arg1` | `u32` | 汎用引数1、またはゲストメモリ内の構造体/バッファへのポインタ |
-| `arg2` | `u32` | 汎用引数2、またはゲストメモリ内の構造体/バッファへのポインタ |
-| `arg3` | `u32` | 汎用引数3、またはゲストメモリ内の構造体/バッファへのポインタ |
-| `arg4` | `u32` | 汎用引数4、またはゲストメモリ内の構造体/バッファへのポインタ |
-| `arg5` | `u32` | 汎用引数5、またはゲストメモリ内の構造体/バッファへのポインタ |
+| `id`   | `fb_id_t` | システムコールID (`FB_SYSCALL_*` で定義)       |
+| `arg0` | `fb_offset_t \| fb_val_t` | 汎用引数0、またはゲストメモリ内構造体の相対オフセット |
+| `arg1` | `fb_offset_t \| fb_val_t` | 汎用引数1、またはゲストメモリ内構造体の相対オフセット |
+| `arg2` | `fb_offset_t \| fb_val_t` | 汎用引数2、またはゲストメモリ内構造体の相対オフセット |
+| `arg3` | `fb_offset_t \| fb_val_t` | 汎用引数3、またはゲストメモリ内構造体の相対オフセット |
+| `arg4` | `fb_offset_t \| fb_val_t` | 汎用引数4、またはゲストメモリ内構造体の相対オフセット |
+| `arg5` | `fb_offset_t \| fb_val_t` | 汎用引数5、またはゲストメモリ内構造体の相対オフセット |
+
+#### 4.1.1. ゲストメモリ内構造体のレイアウト規則
+`arg0`〜`arg5` にゲストメモリ上のポインタ（`iovs_ptr` 等）を渡す場合、データ構造は以下の制約に従って配置されなければならない。
+
+* **アライメント**: すべての構造体およびそのメンバは **4バイトアライメント** に配置されなければならない。
+* **パッキング**: 暗黙のパディングが発生しないよう、メンバはサイズ順に並べるか、パッキングを明示する。
+* **WasiIov (`wasi_ciovec_t`) 構造体のレイアウト**:
+  * `buf`: データの開始アドレスを示すポインタ（`uint32_t` / 4バイト）
+  * `buf_len`: データのバイト長（`uint32_t` / 4バイト）
 
 ### 4.2. 戻り値
 <!-- traceability: {Syscall_Return_Value} {Errorcode_To_Strategy} -->
-`fireball_call`は `u32` 型の値を返す。これは通常、0が成功を示し、非0の値はWASIの`errno`に準拠したエラーコードを示す。Shim層ではこのエラーコードがWITの `recovery-strategy` に変換される。 `{Syscall_Return_Value}` `{Errorcode_To_Strategy}`
+`fireball_call`は `u32` 型の値を返す。成功時は `0` を返し、失敗時は非0の定義されたエラーコード（WASIの `errno_t` に準拠）を返す。エラーコードの詳細は 5.7節 および別紙参照。Shim層ではこのエラーコードがWITの `recovery-strategy` に変換されて上位に伝播する。 `{Syscall_Return_Value}` `{Errorcode_To_Strategy}`
 
 ## 5. システムコールID
 システムコールIDは、`fireball_call`が実行する特定の操作を識別し、vMMIOの全機能をカバーする。カテゴリ別に管理される。
 
 ### 5.1. カテゴリ一覧
 
-<!-- traceability: {Type_Vocabulary} -->
+<!-- traceability: {Type_Vocabulary} {IPC_HandleBased} {CSPCommunication} -->
 
 | カテゴリ | ID範囲 | 説明 |
 | :--- | :--- | :--- |
@@ -78,7 +94,7 @@ TODO(Phase 1): ATC抽出 - fireball_callの各引数に渡されるポインタ�
 | vMMIO Generic | `0x10`-`0x1F` | vMMIOレジスタの汎用読み書き |
 | VDMA | `0x20`-`0x2F` | 仮想DMA操作 |
 | IRQ | `0x30`-`0x3F` | 仮想割り込み管理 |
-| IPC | `0x40`-`0x4F` | プロセス間通信 |
+| IPC | `0x40`-`0x4F` | ハンドル解決およびCSPメッセージ通信 `{IPC_HandleBased}` `{CSPCommunication}` |
 | WASI | `0x80`-`0xBF` | WASI互換レイヤー |
 
 ### 5.2. System (`0x00`-`0x0F`)
@@ -87,21 +103,21 @@ TODO(Phase 1): ATC抽出 - fireball_callの各引数に渡されるポインタ�
 | ID | 名前 | 引数 | 戻り値 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
 | `0x00` | `RESERVED` | — | — | 予約済み |
-| `0x03` | `SYS_RESET` | — | `0` | ゲストリセット |
 | `0x01` | `SYS_YIELD` | — | `0` | 協調的イールド要求 `{CooperativeMultitasking}` |
+| `0x02` | `SYS_HALT` | — | — | システム停止 |
+| `0x03` | `SYS_RESET` | — | `0` | ゲストリセット |
 
 ### 5.3. vMMIO Generic (`0x10`-`0x1F`)
-<!-- traceability: {RoleBasedAccessControl} {META_RestrictedPhysicalAccess} -->
-vMMIOアドレス空間全体への汎用アクセス。SYSCTL/IPCR/VDMA/SHM/DYNAMIC/PASSTHROUGHすべての領域に対応。許可テーブルでアクセス制御される。 `{RoleBasedAccessControl}`
+vMMIOアドレス空間全体への汎用アクセス。SYSCTL/IPCR/VDMA/SHM/DYNAMIC/PASSTHROUGHすべての領域に対応。アクセス可否は、コンフィグで定義された静的なデバイス割り当て許可テーブル（vMMIOアクセス許可テーブル）に基づいて、タスクIDと対象物理アドレス範囲が合致するか検証される。 `{RoleBasedAccessControl}`
 
 | ID | 名前 | 引数 | 戻り値 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
-| `0x10` | `MMIO_READ32` | `addr` | `value` | 32bit読み出し |
-| `0x11` | `MMIO_WRITE32` | `addr`, `value` | `0` | 32bit書き込み |
-| `0x12` | `MMIO_READ8` | `addr` | `value` | 8bit読み出し |
-| `0x13` | `MMIO_WRITE8` | `addr`, `value` | `0` | 8bit書き込み |
-| `0x14` | `MMIO_BULK_READ` | `addr`, `dest_ptr`, `byte_count` | `0` | バルク読み出し `{META_RestrictedPhysicalAccess}` |
-| `0x15` | `MMIO_BULK_WRITE` | `addr`, `src_ptr`, `byte_count` | `0` | バルク書き込み `{META_RestrictedPhysicalAccess}` |
+| `0x10` | `MMIO_READ32` | `addr` (`fb_val_t`: 物理アドレス) | `value` (`fb_val_t`: 32bit値、エラー時は `ERR_OUT_OF_BOUNDS`) | 32bit読み出し |
+| `0x11` | `MMIO_WRITE32` | `addr` (`fb_val_t`: 物理アドレス), `value` (`fb_val_t`: 32bit値) | `0` (エラー時は `ERR_OUT_OF_BOUNDS` または `ERR_ACCESS_DENIED`) | 32bit書き込み |
+| `0x12` | `MMIO_READ8` | `addr` (`fb_val_t`: 物理アドレス) | `value` (`fb_val_t`: 8bit値、エラー時は `ERR_OUT_OF_BOUNDS`) | 8bit読み出し |
+| `0x13` | `MMIO_WRITE8` | `addr` (`fb_val_t`: 物理アドレス), `value` (`fb_val_t`: 8bit値) | `0` (エラー時は `ERR_OUT_OF_BOUNDS` または `ERR_ACCESS_DENIED`) | 8bit書き込み |
+| `0x14` | `MMIO_BULK_READ` | `addr` (`fb_val_t`: 物理アドレス), `dest_offset` (`fb_offset_t`: ゲスト物理ベース相対), `byte_count` (`fb_val_t`: 転送バイト数) | `0` (エラー時は `ERR_OUT_OF_BOUNDS`, `ERR_ACCESS_DENIED` または `ERR_INVALID_SIZE`) | バルク読み出し（ゲストメモリへコピー） `{META_RestrictedPhysicalAccess}` |
+| `0x15` | `MMIO_BULK_WRITE` | `addr` (`fb_val_t`: 物理アドレス), `src_offset` (`fb_offset_t`: ゲスト物理ベース相対), `byte_count` (`fb_val_t`: 転送バイト数) | `0` (エラー時は `ERR_OUT_OF_BOUNDS`, `ERR_ACCESS_DENIED` または `ERR_INVALID_SIZE`) | バルク書き込み（ゲストメモリから書込） `{META_RestrictedPhysicalAccess}` |
 
 ### 5.4. VDMA (`0x20`-`0x2F`)
 <!-- traceability: {VDMA} -->
@@ -114,24 +130,29 @@ vMMIOアドレス空間全体への汎用アクセス。SYSCTL/IPCR/VDMA/SHM/DYN
 ### 5.5. IRQ (`0x30`-`0x3F`)
 <!-- traceability: {CooperativeMultitasking} {RoleBasedAccessControl} {META_RestrictedPhysicalAccess} {VDMA} -->
 仮想割り込みフラグの管理。`REG_IRQ_FLAGS` のラッパー。
+割り込み処理とコルーチンベースの協調型マルチタスク（`{CooperativeMultitasking}`）が連動し、ISRによるフラグ操作時にREADYキューへの投入が行われる。これらのID呼び出しはロールマトリックス（`{RoleBasedAccessControl}`）および `{META_RestrictedPhysicalAccess}` に基づき、権限のないゲストからのアクセスは遮断される。また、仮想DMA（`{VDMA}`）完了時の割り込みクリアなどにも使用される。
 
 | ID | 名前 | 引数 | 戻り値 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
 | `0x30` | `IRQ_READ_FLAGS` | — | `flags` | 割り込みフラグ読み出し |
 | `0x31` | `IRQ_CLEAR` | `mask` | `0` | 指定ビットのフラグクリア |
+| `0x32`〜`0x3F` | `IRQ_RESERVED` | — | — | 将来の割り込みベクタ拡張用（予約スロット） |
 
 ### 5.6. IPC (`0x40`-`0x4F`)
 <!-- traceability: {CSPCommunication} {IPC_HandleBased} -->
-CSPチャネル経由のプロセス間通信。
+CSPチャネルおよびハンドルベースのプロセス間通信。
+URIによる名前解決後の接続確立（`lookup`）によって取得した `handle_id` を用いて、以降は直接メッセージパッシングを行う（`{IPC_HandleBased}`）。メッセージの送受信は、ホーアのCSPモデルに基づくゼロコピー所有権移譲を伴う同期通信として処理される（`{CSPCommunication}`）。
 
 | ID | 名前 | 引数 | 戻り値 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
-| `0x40` | `IPC_SEND` | `channel_id`, `msg_ptr`, `msg_len` | `0` / errno | メッセージ送信 `{CSPCommunication}` `{IPC_HandleBased}` |
-| `0x41` | `IPC_RECV` | `channel_id`, `buf_ptr`, `buf_len` | `recv_len` / errno | メッセージ受信 `{CSPCommunication}` `{IPC_HandleBased}` |
+| `0x40` | `IPC_SEND` | `handle_id`, `msg_offset`, `msg_len` | `0` / errno | メッセージ送信（msg_offset: 送信メッセージ構造体の相対オフセット）。指定したハンドルを介してムーブセマンティクスによる送信を行う。 |
+| `0x41` | `IPC_RECV` | `handle_id`, `buf_offset`, `buf_len` | `recv_len` / errno | メッセージ受信（buf_offset: 受信バッファの相対オフセット）。指定したハンドルからメッセージを受け取る（バッファが空の場合はコルーチンがサスペンドされる）。 |
+| `0x42` | `IPC_LOOKUP` | `uri_offset`, `uri_len` | `handle_id` / errno | 名前解決とハンドル取得（uri_offset: URI文字列の相対オフセット）。URI文字列の相対オフセットから通信ハンドルを返却する。 `{IPC_HandleBased}` |
 
 ### 5.7. WASI (`0x80`-`0xBF`)
 <!-- traceability: {WASI_Implementation} -->
-WASI互換レイヤー。Shimライブラリが `wasi-libc` の呼び出しをこれらのIDに変換する。詳細は `docs/components/interface_wit.md` を参照のこと。 `{WASI_Implementation}`
+WASI互換レイヤー。Shimライブラリが `wasi-libc` の呼び出しをこれらのIDに変換する。本ドキュメントは物理的なシステムコールのマッピング仕様に特化し、高レベルのWITインターフェース定義（ファイル構成や型バインディングポリシー等）については [interface_wit.md](../interface/interface_wit.md) にて分離して定義されている。
+WASI 0.2標準仕様に適合するように、各システムコールはShimによって `wasi_ciovec_t` レイアウトへ自動パッキングされ、ホスト側で `wasi:clocks` や `wasi:io` のリソース操作へと同期マッピングされる。 `{WASI_Implementation}`
 
 | ID | 名前 | 引数 | 戻り値 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
@@ -142,46 +163,51 @@ WASI互換レイヤー。Shimライブラリが `wasi-libc` の呼び出しを�
 | `0x84` | `WASI_PROC_EXIT` | `exit_code` | — | プロセス終了 |
 | `0x85` | `WASI_RANDOM_GET` | `buf_ptr`, `buf_len` | errno | 乱数取得 |
 
+本カテゴリのIDはすべてWASI 0.2標準仕様に適合するように Shim 側で適切に仲介・処理される。 `{WASI_Implementation}`
+
 > [!NOTE]
 > GPIOアクセスはMMIO Generic (`MMIO_READ32`/`MMIO_WRITE32`) でPASSTHROUGH領域経由。専用syscallは不要。
 
-```text
+```cpp
 // inc/fireball_syscalls.hxx
-enum class fb_syscall_id : uint32_t {
-    RESERVED          = 0x00,
+namespace fireball {
+    enum class fb_syscall_id : uint32_t {
+        reserved          = 0x00,
 
-    // System
-    SYS_YIELD         = 0x01,
-    SYS_HALT          = 0x02,
-    SYS_RESET         = 0x03,
+        // System
+        sys_yield         = 0x01,
+        sys_halt          = 0x02,
+        sys_reset         = 0x03,
 
-    // vMMIO Generic
-    MMIO_READ32       = 0x10,
-    MMIO_WRITE32      = 0x11,
-    MMIO_READ8        = 0x12,
-    MMIO_WRITE8       = 0x13,
-    MMIO_BULK_READ    = 0x14,
-    MMIO_BULK_WRITE   = 0x15,
+        // vMMIO Generic
+        mmio_read32       = 0x10,
+        mmio_write32      = 0x11,
+        mmio_read8        = 0x12,
+        mmio_write8       = 0x13,
+        mmio_bulk_read    = 0x14,
+        mmio_bulk_write   = 0x15,
 
-    // VDMA
-    VDMA_START        = 0x20,
+        // VDMA
+        vdma_start        = 0x20,
 
-    // IRQ
-    IRQ_READ_FLAGS    = 0x30,
-    IRQ_CLEAR         = 0x31,
+        // IRQ
+        irq_read_flags    = 0x30,
+        irq_clear         = 0x31,
 
-    // IPC
-    IPC_SEND          = 0x40,
-    IPC_RECV          = 0x41,
+        // IPC
+        ipc_send          = 0x40,
+        ipc_recv          = 0x41,
+        ipc_lookup        = 0x42,
 
-    // WASI
-    WASI_FD_WRITE     = 0x80,
-    WASI_FD_READ      = 0x81,
-    WASI_FD_CLOSE     = 0x82,
-    WASI_CLOCK_TIME_GET = 0x83,
-    WASI_PROC_EXIT    = 0x84,
-    WASI_RANDOM_GET   = 0x85,
-};
+        // WASI
+        wasi_fd_write     = 0x80,
+        wasi_fd_read      = 0x81,
+        wasi_fd_close     = 0x82,
+        wasi_clock_time_get = 0x83,
+        wasi_proc_exit    = 0x84,
+        wasi_random_get   = 0x85,
+    };
+}
 ```
 
 ## 6. Fireball Shim (`libfireball_shim`)
@@ -221,12 +247,11 @@ def fireball_trigger_set_pin(pin: int, value: bool):
 
 - **WASI `fd_write` の処理例 (Scatter/Gather)**: `{Challenge_WasiFdWriteLoop}`
     - WASI の `fd_write` は `ciovec` 配列による一括書き込みを要求する。
-    - **Shim側ループ設計**: ホストを極小に保つため、原則としてShim（ゲスト側ライブラリ）でベクタをループし、1ベクタごとに `fireball_call` を発行する構成を基本とする。ただし、ベンチマーク結果によりオーバーヘッドが過大な場合はホスト側ループへの移行を検討する。
+    - **Shim側ループ設計**: ホストを極小に保つため、Shim（ゲスト側ライブラリ）でベクタをループし、1ベクタごとに `fireball_call` を発行する設計を基本方針とする。ホスト側はシンプルなディスパッチに徹し、無駄な状態を持たない。
 - **同期WASI と 非同期IPC のブリッジ**: `{WASI_Async_Bridge}`
     - 同期的な WASI 呼び出しを Fireball の非同期 IPC へマッピングする際、ラッパー内の `wait_for_ipc_response` が内部で `co_yield()` を発行する。
     - この `co_yield` を VSoC / COOS が適切にハンドリングし、I/O 完了までタスクをサスペンド状態にする密結合な連携が必要。
 
-TODO(Phase 0.8): WASI Wrapper TLA+ Verification - 同期/非同期変換（co_yield 伝播）時の実行状態の無矛盾性を検証する。
 
 ## 8. ホストからゲストへの非同期通知メカニズム
 <!-- traceability: {Asynchronous_Notification} -->
@@ -243,14 +268,16 @@ TODO(Phase 0.8): WASI Wrapper TLA+ Verification - 同期/非同期変換（co_yi
 これらのIDは、WASI 0.2 の `pollable` リソースをホスト側で ready 状態にするためのトリガーとして使用される。
 
 例:
-```text
-// inc/fireball_virtual_interrupts.hxx (仮)
-enum class FBVirtualInterruptId : uint32_t {
-    FB_VIRT_INT_RESERVED = 0,
-    FB_VIRT_INT_TRIGGER_EVENT = 1, // 高速トリガーイベント
-    FB_VIRT_INT_TIMER_EXPIRED = 2, // WASI Clocks 用
-    FB_VIRT_INT_STREAM_READY = 3,  // WASI I/O 用
-};
+```cpp
+// inc/fireball_virtual_interrupts.hxx
+namespace fireball {
+    enum class fb_virtual_interrupt_id : uint32_t {
+        reserved          = 0,
+        trigger_event     = 1, // 高速トリガーイベント
+        timer_expired     = 2, // WASI Clocks 用
+        stream_ready      = 3,  // WASI I/O 用
+    };
+}
 ```
 
 #### 8.1.2. 仮想割り込みペイロード
@@ -262,11 +289,15 @@ enum class FBVirtualInterruptId : uint32_t {
 `fireball_call`を介してゲストメモリへのポインタが渡される場合、統一vMMIOモデルの許可テーブルがセキュリティゲートとして機能する。別途の `vsoc_validate_ptr` は不要。 `{Challenge_SyscallMemorySafety}`
 
 ## 10. トラップ状態プロトコル
-
 <!-- traceability: {Trap_Interface} -->
-`fireball_call` はWASMの**インポート関数呼び出し**として実行される。そのため、明示的な状態保存/復元は不要。
 
-- **保存**: WASMの呼び出し規約がスタック/ローカル変数を自動保存
-- **復元**: WASMの `return` で自動復元
-- **PC位置**: トラップ中のPCは `fireball_call` 命令内。戻り値取得後、次の命令に進む。
-- **ホスト側**: WASMの実行状態に一切触れない。`REG_SYSCALL_*` レジスタだけが引数/戻り値の受け渡しに使われる。
+`fireball_call` は、トラップ命令（RISC-Vの `ecall` や ARMの `svc` 等）をベースにした同期通信インターフェースである。ゲストWASM実行環境においてインポート関数呼び出し（`call`）が行われると、実行エンジン（Interpreter/JIT）がこれをトラップし、ホスト側の対応するC++ハンドラに制御を同期的に移譲する（トラップ状態プロトコル）。
+
+##### トラップ実行の制御フロー
+トラップ命令ベースの同期通信インターフェース（`{Trap_Interface}`）における、具体的な実行制御フローは以下の通りである。
+
+1. **ゲスト実行**: ゲストが `fireball_call(id, a0, ...)` を呼び出す。
+2. **トラップ検知**: 実行エンジンがインポート関数のトラップ（トラップ命令に相当）を検知。
+3. **レジスタマッピング**: 引数 `id` および `a0`〜`a5` が仮想レジスタ `REG_SYSCALL_*` にコピーされる。
+4. **ホストディスパッチ**: ホスト側ハンドラが呼び出され、処理が同期的に実行される。この間、ゲストタスクのPC（Program Counter）はトラップ命令位置で静止し、スタックおよびローカル変数は自動的に保存される。
+5. **完了と復帰**: ホストが `REG_SYSCALL_RET` に戻り値を設定すると、実行エンジンがゲストタスクのPCを次の命令に進め、実行を自動的に復元・再開する。

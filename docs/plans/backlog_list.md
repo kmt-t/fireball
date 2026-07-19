@@ -1,6 +1,7 @@
 # Fireball バックログ
 
 現在進行中フェーズ（**Phase 0**）の具体的なタスクを管理する。完了済みタスクは `docs/plans/backlog_archive.md` を参照。全体の開発プロセスは `docs/plans/roadmap_phase.md` を参照。
+品質課題の一覧は `docs/plans/quality_issues.md` を参照。
 
 「盆栽」のように、全体のバランスを見ながら設計の密度を少しずつ上げていく。
 
@@ -19,9 +20,9 @@
 
 ---
 
-## Phase 0.8: vSoC VDD Verification & Design Formalization 【進行中】
+## Phase 0.8: Spec Quality Gate & Design Formalization 【進行中】
 
-WBSの [Step 0] 盆栽デザイン（SysML）および [Step 1] 形式検証（WIT/TLA+）を中心とした、設計の「不変条件」の確立。
+WBSの [Step 0] 盆栽デザイン（SysML）および [Step 1] 形式検証（WIT/TLA+）を中心とした、GO判定に必要な品質基準の確立。
 
 ### [Tier 1] Core Logic Verification
 
@@ -30,6 +31,14 @@ WBSの [Step 0] 盆栽デザイン（SysML）および [Step 1] 形式検証（W
   - [x] [Step 0] IPCルータの名前解決・所有権移譲のSysMLモデル化 → Complete (ipc_router.md 4.1.1, 4.2.1)
 - [x] **IPCパニック・デッドロック回避**:
   - [x] [Step 1] In-flightパニック時のDropハンドラとメモリリーク防止の整合検証完了 `{IPC_ZeroCopy}` `{Challenge_CspHandoffStarvation}` `{IPC_DropHandler}`
+- [ ] **品質課題の棚卸し**:
+  - [ ] 仕様の矛盾点、未確定点、用語揺れを一覧化し、GO判定の阻害要因を明確化する `{META_Risk_Tiering}` `{WIT_First}`
+- [ ] **ドキュメント整合性・トレーサビリティのバグ修正 (LLM Audit 反映)**:
+  - [ ] 横串グループ監査によって検出された43件の論理矛盾（ヒープ統合/独立ヒープの定義衝突、IPCハンドオフのReady状態遷移矛盾、std::flat_map vs static_flat_mapの乖離、リカバリー戦略の適用漏れ等）の修正を行う。
+- [ ] **GO/NO-GO 判定基準**:
+  - [ ] `Resource_Estimation_Model` と `GLOBAL_StaticScalability` に基づく制約適合の判定条件を定義する `{Resource_Estimation_Model}` `{GLOBAL_StaticScalability}`
+- [ ] **残件の閉じ込め**:
+  - [ ] すぐに確定できない論点は ADR または残件一覧に退避し、Phase 1 への持ち込み条件を明文化する `{META_SpecificationFirst}`
 
 ### [Tier 2] vSoC Subsystem Verification
 
@@ -46,7 +55,7 @@ WBSの [Step 0] 盆栽デザイン（SysML）および [Step 1] 形式検証（W
 
 ## Phase 0.9: Component Reference Implementation Survey 【待機中】
 
-主要コンポーネントの参考実装を調査し、設計の定石との整合性を確認する。
+主要コンポーネントの参考実装を調査し、GO判定で残った品質リスクの解消に必要な場合のみ実施する。
 
 - [ ] **[Interpreter]** 参考調査: WAMR, WASM3（命令ハンドラ最適化）
 - [ ] **[JIT Compiler]** 参考調査: Cranelift, DynASM（JITアセンブラ）
@@ -59,7 +68,7 @@ WBSの [Step 0] 盆栽デザイン（SysML）および [Step 1] 形式検証（W
 
 ## 次フェーズの方向性（Phase 1 予告）
 
-Phase 1（～2026年6月末）でスタンドアロンvSoCを実装する。詳細は `docs/plans/roadmap_phase.md` を参照。
+Phase 1 は Phase 0 の GO 判定後に着手し、約3ヶ月でスタンドアロンvSoCを実装する想定。詳細は `docs/plans/roadmap_phase.md` を参照。
 
 - Story: [Low-Latency physical I/O]
 - Story: [Secure & Zero-Copy Inter-Service Communication]

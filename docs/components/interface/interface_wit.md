@@ -56,15 +56,17 @@ TODO(Phase 1): ATC抽出 - 各リカバリー戦略（retry, restart等）を選
 
 ## 4. 低レベル・トラップ・インターフェイス
 <!-- traceability: {Syscall_Mapping} -->
-WASI標準には存在しない、Fireball固有の高速システムコール。実体は `docs/components/core/system_syscall.md` で定義される `fireball_call` である。 `{Syscall_Mapping}`
+WASI標準には存在しない、Fireball固有の高速システムコール。実体は `docs/components/core/system_syscall.md` で定義される `fireball::fireball_call` である。このインターフェース設計を通じて、低レベルなシステムコールがWITの世界とマッピングされる（`{Syscall_Mapping}`）。
 
-### `fireball:host/trap`
+### 4.1. `fireball:host/trap` の定義
 <!-- traceability: {Syscall_Mapping} -->
+WIT内では `fireball-call` という kebab-case 名で定義されるが、C++バインディングおよび公開APIとしては名前空間 `fireball` 内に `fireball_call`（snake_case）としてマッピングされ公開される。
+
 - `fireball-call(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32, arg4: u32, arg5: u32) -> u32`
 
-### 4.2 高応答トラインターフェイス
+### 4.2. 高応答トラインターフェイス
 <!-- traceability: {Syscall_Mapping} -->
-Trigger (GPIO) は、割り込み応答性およびビットバンギング等の要求から、一般のリソースハンドルを介さず、`fireball-call` に直接マッピングされた ID を通じて操作することを検討する。
+Trigger (GPIO) は、割り込み応答性およびビットバンギング等の要求から、一般のリソースハンドルを介さず、`fireball-call` に直接マッピングされた ID を通じて操作するものとする。
 
 - **理由**: ハンドルルックアップのオーバーヘッド排除、レジスタ直結に近いレイテンシの確保。
 - **実装例**: `FB_SYSCALL_TRIGGER_WRITE` ID を直接指定。
@@ -94,13 +96,21 @@ resource periodic-timer {
 バス通信も標準WASIにはないため、リソースパターンを適用。
 
 ```wit
+record buffer-slice {
+    offset: u32,
+    len: u32,
+}
+
 resource bus-master {
-    transfer-data: func(tx-buffer: list<u8>, rx-len: u32) -> result<list<u8>, recovery-strategy>;
+    // tx-bufのオフセット/サイズを渡し、受信データはrx-buf（事前に確保したバッファ）に直接書き込ませ、実際に転送したバイト数を返す
+    transfer-data: func(tx-buf: buffer-slice, rx-buf: buffer-slice) -> result<u32, recovery-strategy>;
 }
 
 resource bus-slave {
-    set-response: func(data: list<u8>) -> operation-result;
-    get-received: func() -> result<list<u8>, recovery-strategy>;
+    // 送信応答データを設定
+    set-response: func(data: buffer-slice) -> operation-result;
+    // 受信データを指定した静的バッファに読み出し、実際に取得したバイト数を返す
+    get-received: func(dest-buf: buffer-slice) -> result<u32, recovery-strategy>;
     subscribe: func() -> pollable; // マスタからのアクセス通知
 }
 ```
@@ -119,9 +129,9 @@ resource streaming-slave {
 }
 ```
 
-### 5.5 WASI標準APIの実装仕様 (WASI Standard API Implementation Specification)
+### 5.5. WASI標準APIの実装仕様 (WASI Standard API Implementation Specification)
 <!-- traceability: {WASI_Implementation} -->
-FireballにおけるWASI 0.2標準APIの具体的なマッピングと実装方針は以下の通りである。 `{WASI_Implementation}`
+FireballにおけるWASI 0.2標準APIの具体的なマッピングと実装方針（`{WASI_Implementation}`）は以下の通りである。
 
 1. **`wasi:clocks/monotonic-clock`**:
    - モノトニックタイマー要求は、HALの物理タイマー割り込みおよびカウンタレジスタに直結して処理される。

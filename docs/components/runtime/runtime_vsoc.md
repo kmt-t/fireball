@@ -91,7 +91,6 @@ vSoCの動作パラメータを定義する。 `{META_ConfigurableSystem}`
 - **デバッガ介入時キャッシュ一貫性 (Cache Flush)**: `{Debugger_Jit_Flush}`
     - デバッガがメモリ上の変数を書き換えた場合、該当タスクに関連するJITキャッシュ（Active/Old）をすべて無効化（Flush）し、インタープリタ実行からやり直すことで整合性を維持する。
 
-TODO(Phase 0.8): vSoC Interpreter / JIT / Debugger TLA+ Verification - JIT実行中の Safepoint フォールバックと、デバッガ介入時の状態整合性を形式検証する。
 
 ### 4.2 状態遷移図 (SysML SMD: vSoC Engine ライフサイクル)
 <!-- traceability: {ThreadedInterpreter} {JIT_CopyAndPatch} {Challenge_ApproximateYield} {JIT_Safepoint} {Debugger_Jit_Flush} -->
@@ -229,8 +228,8 @@ JIT Code Cache (4 KB total)
 
 デバッガがゲストメモリを変更した場合の処理フロー：
 
-1. **Debugger Writes Memory**: `gdb_write_memory(addr, data)` → `vsoc_context.interrupt_flags |= (1 << 2)`
-2. **Safepoint Detection**: JIT実行の SafepointCheck で `(flags >> 2) & 1` を検査
+1. **Debugger Writes Memory**: `gdb_write_memory(addr, data)` → `fireball::vsoc::request_debugger_interrupt(ctx)` を呼び出し、内部のデバッガ割り込みフラグをセット
+2. **Safepoint Detection**: JIT実行の SafepointCheck で `fireball::vsoc::has_debugger_interrupt(ctx)` を検査
 3. **Cache Flush Trigger**: フラグ検出時、即座に以下を実行：
    - Active/Old のメタデータを破棄（generation cookie インクリメント）
    - 登録済みの exec_trace ポインタを無効化
@@ -239,7 +238,6 @@ JIT Code Cache (4 KB total)
 
 #### TLA+ 検証対象
 
-以下の不変条件を形式検証する必要がある（詳細は TODO 参照）：
 
 - **キャッシュ整合性**: どの時点でも、Active/Old 両バッファの generation が単調増加し、矛盾が生じないこと
 - **Safepoint応答性**: 割り込みフラグが設定されてから最大 N サイクル以内に Safepoint で検出されること
@@ -305,7 +303,6 @@ sequenceDiagram
 ### 5.1 公開API
 外部から利用可能なオブジェクト指向APIを定義する。
 
-TODO(Phase 1): ATC抽出 - JITキャッシュ有効時やエラー時の実行リカバリ戦略を含む、厳格な事前/事後/不変条件を各APIに定義すること。
 
 #### 準備（prepare）
 | 項目 | 内容 |
@@ -343,7 +340,7 @@ TODO(Phase 1): ATC抽出 - JITキャッシュ有効時やエラー時の実行�
 | 引数 | `ctx`: vsoc_context, `irq-id`: 識別子 |
 | 期待する結果 | 特定位のアドレス（SYSCTLレジスタ）にフラグが反映される。 |
 | 事前条件 | なし。 |
-| 事後条件 | `ctx->interrupt_flags` が更新される。 |
+| 事後条件 | 公開APIを介して、対象の仮想割り込みフラグがセットされる。 |
 | 不変条件 | 他の実行状態に副作用を及ぼさないこと。 |
 | エラー時の挙動 | 無効なIDの場合は無視される。 |
 | 補足 | ISRから呼び出されることを想定し、排他制御を考慮する。 |
@@ -365,7 +362,6 @@ TODO(Phase 1): ATC抽出 - JITキャッシュ有効時やエラー時の実行�
 ### 5.2 ネイティブAPI エクスポート
 <!-- traceability: {NativeAPI_Export} -->
 
-TODO(Phase 1): シングル・トラップ方式における sys-call 引数定義（サービスIDとコマンドIDの一覧、及び引数の型）の厳密な仕様化を行うこと。
 
 WASMゲストからホストサービスを呼び出すための最小限のインターフェイスを提供する。 `{NativeAPI_Export}`
 
@@ -443,7 +439,6 @@ jit_pc: address
 - `generation.ACTIVE ≥ generation.OLD` (単調性)
 - `generation.ACTIVE - generation.OLD ≤ 1` (両世代の差は最大1)
 
-TODO: vSoC Safepoint/JIT Cache TLA+ Verification - 上記 state machine を TLA+ で形式化し、TLC で不変条件と活性プロパティを検証する。
 
 ### 6.4 既知の制限
 

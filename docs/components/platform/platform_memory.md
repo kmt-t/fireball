@@ -1,12 +1,12 @@
 # COOS メモリマネージャ コンポーネント設計書
 
 ## 1. コンセプト
-<!-- traceability: {META_3TierSeparation} {GLOBAL_Policy_Memory} {ConsolidatedHeap} -->
-メモリマネージャ（`memory-manager`）は、物理メモリプールを複数の論理パーティション（Kernel, Task, Shared等）に分割し、隔離と効率的なメモリ利用を提供する Tier 2 コンポーネントである。 `{META_3TierSeparation}` `{GLOBAL_Policy_Memory}` `{ConsolidatedHeap}`
+<!-- traceability: {META_3TierSeparation} {GLOBAL_Policy_Memory} {ConsolidatedHeap} {GLOBAL_IndependentHeap} -->
+メモリマネージャ（`memory-manager`）は、システム全体の統合物理メモリプール（`ConsolidatedHeap`）を基礎とし、そこからホスト（WASMランタイム）用のヒープ、および各VM/タスク用のヒープを、それぞれ物理的・領域的に完全に独立した別個のヒープ（`GLOBAL_IndependentHeap`）として切り出して管理する。これにより、特定のVMでのメモリ不足が他のVMやホストランタイムを道連れにしてクラッシュすることを防止する。 `{META_3TierSeparation}` `{GLOBAL_Policy_Memory}` `{ConsolidatedHeap}` `{GLOBAL_IndependentHeap}`
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {WasmPageAlignment} -->
-本コンポーネントは **Tier 2 (サービスドメイン)** に属する。動的メモリ確保を最小限に抑えつつ、固定サイズパーティション内でのアロケーションを管理する。 `{WasmPageAlignment}`
+本コンポーネントは **Tier 2 (サービスドメイン)** に属する。動的メモリ確保（ヒープアロケーション）は一切行わず、コンパイル時に固定された静的パーティション内でのアロケーションのみを管理する。 `{WasmPageAlignment}`
 
 ## 3. 静的モデル
 
@@ -18,17 +18,17 @@
 - `initialize` メソッドにより、管理対象の物理メモリプールの基点アドレスとサイズを受け取る。
 
 ## 4. インターフェイス設計
+WITインターフェース名は kebab-case で定義されるが、C++の公開APIバインディングにおいては、`fireball` 名前空間の下に `snake_case`（例: `fireball::init_manager`）として実装・公開される。
 
 #### 初期化
 
 <!-- traceability: {GLOBAL_Policy_Memory} {GLOBAL_StrictMemoryLimit} {Size_15KLOC} -->
 
-TODO(Phase 1): ATC抽出 - アライメント制約（ページ単位など）とpool-sizeの境界制約を厳密に定義すること。
 
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | メモリマネージャを初期化する。 |
-| シグネチャ | `init-manager(pool-base: address, pool-size: byte-count) -> operation-result` |
+| シグネチャ | `init-manager(pool-base: address, pool-size: byte-count) -> operation-result`<br>(C++マッピング: `fireball::init_manager`) |
 | 引数 | `pool-base`: 物理メモリプールの基点アドレス<br>`pool-size`: プールのバイトサイズ |
 | 戻り値 | 操作結果 |
 
@@ -68,7 +68,6 @@ TODO(Phase 1): ATC抽出 - アライメント制約（ページ単位など）�
 ## 5. 制約と不変条件
 <!-- traceability: {GLOBAL_StrictMemoryLimit} {WasmPageAlignment} -->
 
-TODO(Phase 1): 動的モデルの明確化 - フラグメンテーション回避のアルゴリズム（空きブロックの統合等）や、上限サイズ超過時のエラーハンドリングを定義すること。
 
 - `∀m ∈ Allocations : ¬dynamic(m) ∧ is_heap_less(m)`
 - `total_allocated_bytes <= FB_CONF_MEMORY_POOL_SIZE` `{GLOBAL_StrictMemoryLimit}`
@@ -77,11 +76,11 @@ TODO(Phase 1): 動的モデルの明確化 - フラグメンテーション回�
 
 ## 6. 所有権追跡
 <!-- traceability: {GLOBAL_Policy_Memory} -->
-各メモリブロックは `memory-info.owner` で割り当て元task-idを追跡する。 `{GLOBAL_Policy_Memory}`
+各メモリブロックは `memory-info.owner` で割り当て元task-idを追跡する。本コンポーネントが提供する `allocate`/`deallocate` や `RAII`/`drop` による解放は、実行時の動的ヒープ確保・解放を意味するものではなく、コンパイル時に固定確保された静的メモリプールから領域を論理的に切り出して貸し出し、使用後にプールへ返却（Placement new およびデストラクタ明示的呼び出しによるバッファ再利用）する「静的パーティショニング」を指す。 `{GLOBAL_Policy_Memory}`
 
 - `allocate` / `allocate-shared` 時に呼び出し元タスクIDが自動設定
 - kernel/task: `deallocate` は所有者タスクのみが実行可能
-- shared: `shared-memory` リソースのRAII / drop で自動解放
+- shared: `shared-memory` リソースのRAII / drop による自動返却（プールへの返却）
 
 ## 7. 共有メモリ (shared-block) のライフサイクル
 <!-- traceability: {META_FaultIsolation} {OwnershipTransfer} -->

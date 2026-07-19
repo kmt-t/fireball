@@ -6,9 +6,9 @@ import urllib.request
 import urllib.error
 
 # Default models
-SAKURA_MODEL = "gpt-oss-120b"
+SAKURA_MODEL = "preview/gemma-4-31B-it"
 OPEN_ROUTER_MODEL = "google/gemma-4-31b-it:free"
-GEMINI_MODEL = "gemini-3.1-flash-lite"
+GEMINI_MODEL = "gemma-4-31b-it"
 OLLAMA_MODEL = "gemma4:12b-it-qat"
 
 # API URLs
@@ -34,18 +34,32 @@ def call_sakura(prompt: str, api_key: str, model: str, max_tokens: int) -> str:
         "Content-Type": "application/json",
         "Authorization": f"Bearer {api_key}",
     }
-    req = urllib.request.Request(SAKURA_URL, data=data, method="POST", headers=headers)
-    with urllib.request.urlopen(req, timeout=120) as resp:
-        body = json.loads(resp.read())
-        return body["choices"][0]["message"]["content"].strip()
+    import time
+    max_retries = 8
+    base_delay = 5.0
+    for attempt in range(max_retries):
+        try:
+            req = urllib.request.Request(SAKURA_URL, data=data, method="POST", headers=headers)
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                body = json.loads(resp.read())
+                return body["choices"][0]["message"]["content"].strip()
+        except urllib.error.HTTPError as e:
+            if e.code == 429:
+                delay = base_delay * (2 ** attempt)
+                import sys
+                sys.stderr.write(f"\n[Sakura API 429] Rate limit hit. Waiting {delay}s before retry... (Attempt {attempt+1}/{max_retries})\n")
+                time.sleep(delay)
+                continue
+            else:
+                raise
+    raise RuntimeError("LLM API Error (HTTP 429): Quota exceeded after maximum retries on Sakura backend.")
 
 def call_openrouter(prompt: str, api_key: str, model: str, max_tokens: int) -> str:
     payload = {
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.0,
-        "max_tokens": max_tokens,
-        "service_tier": "flex"
+        "max_tokens": max_tokens
     }
     data = json.dumps(payload).encode("utf-8")
     headers = {
@@ -59,6 +73,74 @@ def call_openrouter(prompt: str, api_key: str, model: str, max_tokens: int) -> s
 
 def call_gemini(prompt: str, api_key: str, model: str) -> str:
     url = GEMINI_URL_TEMPLATE.format(model=model, key=api_key)
+
+    # Determine responseSchema based on prompt structure
+    if "S-QUALITY-PLACEHOLDER" in prompt and "S-QUALITY-AMBIGUITY" in prompt:
+        schema = {
+            "type": "object",
+            "properties": {
+                "S-QUALITY-PLACEHOLDER": {
+                    "type": "object",
+                    "properties": {
+                        "status": {"type": "string"},
+                        "reason": {"type": "string"},
+                        "suggestions": {"type": "string"}
+                    },
+                    "required": ["status", "reason", "suggestions"]
+                },
+                "S-QUALITY-AMBIGUITY": {
+                    "type": "object",
+                    "properties": {
+                        "status": {"type": "string"},
+                        "reason": {"type": "string"},
+                        "suggestions": {"type": "string"}
+                    },
+                    "required": ["status", "reason", "suggestions"]
+                },
+                "S-QUALITY-API": {
+                    "type": "object",
+                    "properties": {
+                        "status": {"type": "string"},
+                        "reason": {"type": "string"},
+                        "suggestions": {"type": "string"}
+                    },
+                    "required": ["status", "reason", "suggestions"]
+                }
+            },
+            "required": ["S-QUALITY-PLACEHOLDER", "S-QUALITY-AMBIGUITY", "S-QUALITY-API"]
+        }
+    elif "SUMMARY" in prompt and "ITEMS" in prompt:
+        schema = {
+            "type": "object",
+            "properties": {
+                "summary": {"type": "string"},
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "string"},
+                            "status": {"type": "string"},
+                            "reason": {"type": "string"},
+                            "suggestions": {"type": "string"}
+                        },
+                        "required": ["id", "status", "reason"]
+                    }
+                }
+            },
+            "required": ["summary", "items"]
+        }
+    else:
+        schema = {
+            "type": "object",
+            "properties": {
+                "status": {"type": "string"},
+                "reason": {"type": "string"},
+                "suggestions": {"type": "string"}
+            },
+            "required": ["status", "reason", "suggestions"]
+        }
+
     payload = {
         "contents": [
             {
@@ -68,16 +150,34 @@ def call_gemini(prompt: str, api_key: str, model: str) -> str:
             }
         ],
         "generationConfig": {
-            "temperature": 0.0
-        },
-        "service_tier": "flex"
+            "temperature": 0.0,
+            "responseMimeType": "application/json",
+            "responseSchema": schema
+        }
     }
+    import time
     data = json.dumps(payload).encode("utf-8")
     headers = {"Content-Type": "application/json"}
-    req = urllib.request.Request(url, data=data, method="POST", headers=headers)
-    with urllib.request.urlopen(req, timeout=120) as resp:
-        body = json.loads(resp.read())
-        return body["candidates"][0]["content"]["parts"][0]["text"].strip()
+
+    max_retries = 8
+    base_delay = 5.0
+
+    for attempt in range(max_retries):
+        try:
+            req = urllib.request.Request(url, data=data, method="POST", headers=headers)
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                body = json.loads(resp.read())
+                return body["candidates"][0]["content"]["parts"][0]["text"].strip()
+        except urllib.error.HTTPError as e:
+            if e.code == 429:
+                delay = base_delay * (2 ** attempt)
+                import sys
+                sys.stderr.write(f"\n[Gemini API 429] Rate limit hit. Waiting {delay}s before retry... (Attempt {attempt+1}/{max_retries})\n")
+                time.sleep(delay)
+                continue
+            else:
+                raise
+    raise RuntimeError("LLM API Error (HTTP 429): Quota exceeded after maximum retries.")
 
 def call_ollama(prompt: str, model: str, max_tokens: int) -> str:
     options = {
@@ -107,6 +207,45 @@ def parse_llm_markdown_response(raw_text: str) -> dict:
         if normalized == "WARN":
             return "UNCERTAIN"
         return normalized
+
+    # Try parsing as JSON first (Structured Outputs / JSON mode)
+    try:
+        data = json.loads(raw_text.strip())
+        if isinstance(data, dict):
+            # Check if it is single-rule schema or multi-rule schema
+            has_status = False
+            for k in data.keys():
+                if k.lower() == "status":
+                    has_status = True
+                    break
+            
+            if has_status:
+                normalized_data = {}
+                for k, v in data.items():
+                    k_lower = k.lower()
+                    if k_lower in ["status", "reason", "suggestions"]:
+                        if k_lower == "status":
+                            normalized_data["status"] = _normalize_status(str(v))
+                        else:
+                            normalized_data[k_lower] = str(v)
+                return normalized_data
+            else:
+                normalized_multi = {}
+                for rule_name, rule_data in data.items():
+                    if isinstance(rule_data, dict):
+                        normalized_rule = {}
+                        for k, v in rule_data.items():
+                            k_lower = k.lower()
+                            if k_lower in ["status", "reason", "suggestions"]:
+                                if k_lower == "status":
+                                    normalized_rule["status"] = _normalize_status(str(v))
+                                else:
+                                    normalized_rule[k_lower] = str(v)
+                        normalized_multi[rule_name] = normalized_rule
+                if normalized_multi:
+                    return normalized_multi
+    except Exception:
+        pass
 
     sections: dict[str, list[str]] = {}
     current = None
@@ -243,6 +382,9 @@ def call_llm(
         else:
             backend = "ollama"
 
+    if apply_contract:
+        prompt = force_markdown_contract(prompt)
+
     try:
         if backend == "sakura":
             if not sakura_key:
@@ -261,8 +403,6 @@ def call_llm(
             return call_gemini(prompt, gemini_key, model_name)
         else:
             model_name = model or OLLAMA_MODEL
-            if apply_contract:
-                prompt = force_markdown_contract(prompt)
             return call_ollama(prompt, model_name, max_tokens)
     except urllib.error.HTTPError as e:
         err_content = e.read().decode("utf-8", errors="replace")

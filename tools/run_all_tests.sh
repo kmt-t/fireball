@@ -3,11 +3,10 @@
 # Usage: ./tools/run_all_tests.sh [OPTIONS]
 #
 # Options:
-#   --quick          Limit LLM mode to module audits + Tier 1 hierarchy checks.
 #   --llm            Run LLM semantic checks in addition to mechanical checks.
 #   --backend B      LLM backend (gemini, sakura, openrouter, ollama)
 #   --model M        LLM model name
-#   -h, --help       Show this help
+#/   -h, --help       Show this help
 #
 
 set -e
@@ -17,7 +16,6 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
 RUN_LLM=0
-QUICK_MODE=0
 BACKEND=""
 MODEL=""
 LLM_MAX_TOKENS_VALUE="${LLM_MAX_TOKENS:-2048}"
@@ -31,7 +29,6 @@ Usage:
   ./tools/run_all_tests.sh [OPTIONS]
 
 Options:
-  --quick          Limit LLM mode to module audits + Tier 1 hierarchy checks.
   --llm            Run LLM semantic checks in addition to mechanical checks.
   --backend B      LLM backend (gemini, sakura, openrouter, ollama)
   --model M        LLM model name
@@ -47,7 +44,7 @@ run_python_audit() {
     local label="$1"
     shift
 
-    if python3 .agents/skills/document-validation/scripts/run_audit.py "$@"; then
+    if uv run python3 .agents/skills/document-validation/scripts/run_audit.py "$@"; then
         printf "✔ %s: PASSED\n" "$label"
     else
         printf "✖ %s: FAILED\n" "$label"
@@ -57,9 +54,6 @@ run_python_audit() {
 
 while [[ "$#" -gt 0 ]]; do
     case "$1" in
-        --quick)
-            QUICK_MODE=1
-            ;;
         --llm)
             RUN_LLM=1
             ;;
@@ -97,16 +91,8 @@ echo "==========================================================================
 if [ "$RUN_LLM" -eq 1 ]; then
     echo " Mode: Mechanical + LLM Semantic Checks"
     echo " Backend: ${BACKEND:-auto}"
-    if [ "$QUICK_MODE" -eq 1 ]; then
-        echo " LLM Mode: Quick (Module + Tier 1 only)"
-    else
-        echo " LLM Mode: Full (Module + Tier 1-3)"
-    fi
 else
     echo " Mode: Mechanical Checks Only (use --llm to enable LLM audits)"
-    if [ "$QUICK_MODE" -eq 1 ]; then
-        echo " Note: --quick only affects runs with --llm."
-    fi
 fi
 echo "================================================================================"
 
@@ -131,35 +117,15 @@ if [ "$RUN_LLM" -eq 1 ]; then
         SEMANTIC_ARGS+=(--model "$MODEL")
     fi
 
-    # Phase 3: semantic module audits.
-    print_section "[Phase 3/5] Running Semantic Module Audits (run_audit.py --all)..."
-    run_python_audit "Semantic Module Audits" --all "${SEMANTIC_ARGS[@]}"
+    # Run Consistency Checklist Audit (LLM Check on shared keywords and policies)
+    print_section "[LLM Audit] Running Consistency & Policy Checklist Audit..."
+    echo ">>> Generating consistency and policy checklist..."
+    run_python_audit "Consistency Checklist Generation" --gentable "${SEMANTIC_ARGS[@]}"
 
-    # Phase 4: hierarchy audits.
-    print_section "[Phase 4/5] Running Hierarchy Audits (run_audit.py --hierarchy)..."
-    echo ">>> Tier 1 (Requirements → Core/Interface)..."
-    run_python_audit "Tier 1 Hierarchy Audit" --hierarchy --tier 1 "${SEMANTIC_ARGS[@]}"
-
-    if [ "$QUICK_MODE" -eq 1 ]; then
-        echo "[Quick Mode] Skipping Tier 2 & 3 hierarchy audits"
-        echo "[Quick Mode] Skipping Phase 5 consistency checklist audit"
-    else
-        echo ">>> Tier 2 (Core/Interface → Runtime/JIT)..."
-        run_python_audit "Tier 2 Hierarchy Audit" --hierarchy --tier 2 "${SEMANTIC_ARGS[@]}"
-
-        echo ">>> Tier 3 (Runtime/JIT → Platform/HAL)..."
-        run_python_audit "Tier 3 Hierarchy Audit" --hierarchy --tier 3 "${SEMANTIC_ARGS[@]}"
-
-        # Phase 5: consistency checklist audit.
-        print_section "[Phase 5/5] Running Consistency Checklist Audit (run_audit.py --gentable & --llm)..."
-        echo ">>> Generating consistency checklist..."
-        run_python_audit "Consistency Checklist Generation" --gentable "${SEMANTIC_ARGS[@]}"
-
-        echo ">>> Running consistency checklist audit..."
-        run_python_audit "Consistency Checklist Audit" --llm "${SEMANTIC_ARGS[@]}"
-    fi
+    echo ">>> Running consistency and policy checklist audit..."
+    run_python_audit "Consistency Checklist Audit" --llm "${SEMANTIC_ARGS[@]}"
 else
-    print_section "[Phase 3-5/5] Skipping Semantic LLM Audits (Use --llm to enable)"
+    print_section "[LLM Audit] Skipping LLM Consistency Checks (Use --llm to enable)"
 fi
 
 END_TIME=$(date +%s)

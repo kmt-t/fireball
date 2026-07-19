@@ -1,359 +1,339 @@
+import csv
 import json
 import re
 import textwrap
 from pathlib import Path
 from tools.common.db import db
-from tools.common.llm import OLLAMA_NUM_CTX, call_llm, parse_llm_markdown_response
-from tools.common.parser import extract_sections_by_headers
-from tools.mechanical.check_consistency import (
-    CHECKLIST_CSV,
-    CHECKLIST_FIELDS,
-    read_csv_checklist,
-    save_csv_checklist,
-)
+from tools.common.llm import call_llm, parse_llm_markdown_response
+from tools.common.parser import parse_sections
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-COMPONENTS_DIR = REPO_ROOT / "docs" / "components"
 REQUIREMENT_FILE = REPO_ROOT / "docs" / "requires" / "requirement_list.md"
+CONFIG_DIR = REPO_ROOT / "tools" / "config"
+MATRIX_CSV = CONFIG_DIR / "review_matrix.csv"
 
-def generation_cache_key(model_name: str, backend_name: str, max_tokens: int) -> str:
-    return f"{backend_name}:{model_name}:ctx={OLLAMA_NUM_CTX}:tokens={max_tokens}:fmt=md2"
-
-def audit_pair_files(file_a: Path, file_b: Path, backend: str = None, model: str = None, max_tokens: int = 2048) -> dict:
-    """Directly audit pairwise consistency (S-ARCH-PAIR) between two files."""
-    try:
-        content_a = file_a.read_text(encoding="utf-8")
-        content_b = file_b.read_text(encoding="utf-8")
-    except Exception as e:
-        return {"status": "ERROR", "reason": f"Failed to read files: {e}"}
-
-    model_name = model or "default"
-    backend_name = backend or "auto"
-    generation_key = generation_cache_key(model_name, backend_name, max_tokens)
-    input_hash = db.make_hash_key(content_a, content_b, generation_key)
+def get_section_content(file_path_str: str, heading_str: str, file_cache: dict) -> str:
+    """Helper to parse files and extract target section body content."""
+    if file_path_str not in file_cache:
+        file_path = REPO_ROOT / file_path_str
+        if not file_path.exists():
+            return ""
+        try:
+            file_cache[file_path_str] = {sec.heading: sec for sec in parse_sections(file_path)}
+        except Exception:
+            return ""
     
-    file_a_rel = str(file_a.relative_to(REPO_ROOT))
-    file_b_rel = str(file_b.relative_to(REPO_ROOT))
-    hash_key = db.make_hash_key("S-ARCH-PAIR", file_a_rel, file_b_rel, input_hash)
+    sections_map = file_cache[file_path_str]
+    if heading_str in sections_map:
+        return sections_map[heading_str].body
+    return ""
 
-    cached = db.get_cache(hash_key)
-    if cached is not None:
-        return cached
+def audit_cell(aspect: str, file_path: str, heading: str, content: str, keywords: list[str], 
+               req_dict: dict, backend: str, model: str, max_tokens: int) -> dict:
+    """Runs LLM audit for a specific aspect of a section."""
+    
+    # 1. Build prompt based on aspect
+    if aspect == "policy_P01":
+        prompt = textwrap.dedent(f"""\
+        あなたはFireballプロジェクトのリードアーキテクトです。
+        以下の設計書セクションが、プロジェクトのメモリ制約ポリシー「動的メモリ確保（malloc/new/std::vector等の動的コンテナ）の禁止、静的アロケーションのみの使用」に適合しているか検証してください。
+        
+        【検証対象セクション】
+        ファイル: {file_path}
+        見出し: {heading}
+        本文:
+        ---
+        {content}
+        ---
+        
+        【判定基準】
+        - 明示的または暗示的に動的メモリ確保（malloc, new, delete, heap等）を使用・推奨している記述がある場合は FAIL。
+        - C++ 標準ライブラリの動的コンテナ（std::vector, std::list, std::stringなど）を静的確保以外の用途で使おうとしている記述がある場合は FAIL。
+        - 静的メモリ確保（static配列、配置newによる事前確保領域など）を正しく推奨・使用している場合は PASS。
+        - 判断の記述が薄い、または判断に迷う箇所（例：「メモリを確保する」とだけ書かれており静的か動的か不明な場合）は WARN。
+        - メモリ確保に関連する記述そのものが本質的にない場合は PASS（例外的な扱いをする必要はありません）。
+        """)
+        
+    elif aspect == "policy_P02":
+        prompt = textwrap.dedent(f"""\
+        あなたはFireballプロジェクトのリードアーキテクトです。
+        以下の設計書セクションが、プロジェクトの例外制限ポリシー「例外処理（try/catch/throw）の禁止、RTTI（dynamic_cast/typeid）の禁止、および std::expected 等の値返しによるエラーハンドリング推奨」に適合しているか検証してください。
+        
+        【検証対象セクション】
+        ファイル: {file_path}
+        見出し: {heading}
+        本文:
+        ---
+        {content}
+        ---
+        
+        【判定基準】
+        - try/catch/throw や例外オブジェクトの使用・言及がある場合は FAIL。
+        - RTTI（dynamic_cast, typeid）の使用・言及がある場合は FAIL。
+        - エラー処理を例外ではなく、値返し（std::expected, std::optional, エラーコード等）で実装・規定している記述がある場合は PASS。
+        - どちらとも言えない記述（例：「エラーをスローする」という記述があるが、文脈上例外なのか単なるエラー返却なのか曖昧な場合）は WARN。
+        """)
+        
+    elif aspect == "review_traceability":
+        # Look up corresponding requirements and other sections sharing the same keywords (Cross-Cutting & Group Audit)
+        req_texts = []
+        shared_sections_text = []
+        cursor = db.conn.cursor()
+        
+        for kw in keywords:
+            if kw in req_dict:
+                req_texts.append(f"- {{{kw}}}: {req_dict[kw]}")
+            
+            # Query other sections sharing the same keyword to audit mutual consistency
+            cursor.execute("""
+                SELECT s.file_path, s.heading, s.body_content
+                FROM keyword_sections k
+                JOIN sections s ON s.file_path = k.file_path AND s.heading = k.heading
+                WHERE k.keyword = ?
+            """, (kw,))
+            
+            shared = cursor.fetchall()
+            if shared:
+                has_others = False
+                temp_texts = []
+                for s_file, s_heading, s_body in shared:
+                    if s_file == file_path and s_heading == heading:
+                        continue
+                    has_others = True
+                    snippet = s_body
+                    if len(snippet) > 800:
+                        snippet = snippet[:800] + "\n...(以下省略)"
+                    temp_texts.append(f"  - 【ファイル】: {s_file} | 【見出し】: {s_heading}\n  - 【本文】:\n{textwrap.indent(snippet, '    ')}\n")
+                
+                if has_others:
+                    shared_sections_text.append(f"■ キーワード {{{kw}}} を共有する他の設計セクション群:")
+                    shared_sections_text.extend(temp_texts)
+        
+        req_context = "\n".join(req_texts)
+        group_context = "\n".join(shared_sections_text) if shared_sections_text else "（他に関連する下位セクションはありません）"
+        
+        prompt = textwrap.dedent(f"""\
+        あなたはFireballプロジェクトの整合性検証チェッカーです。
+        以下の設計書セクション（下位仕様）と、そこに紐付く最上位の要求仕様（要求キーワード定義）、および同じキーワードを共有する他の下位セクションの設計記述を比較し、システム全体での論理的な整合性（横串の一貫性・グループ内の一貫性）を検証してください。
+        
+        【最上位要求（キーワード定義）】
+        {req_context}
+        
+        【検証対象の下位仕様セクション】
+        ファイル: {file_path}
+        見出し: {heading}
+        本文:
+        ---
+        {content}
+        ---
+        
+        【同一キーワードを共有する他の設計セクション群（相互一貫性検証対象）】
+        {group_context}
+        
+        【判定基準】
+        1. **最上位要求との整合性**:
+           - 最上位要求の定義（制約や前提）と、検証対象セクションの間で論理的な矛盾や直接の衝突がある場合は FAIL。
+        2. **他コンポーネントとの相互整合性 (横串一貫性)**:
+           - 「同一キーワードを共有する他の設計セクション」と「検証対象セクション」を比較し、論理的な矛盾や相反する設計（例：片方ではメモリを静的に切り出すと言いながら、もう片方では動的バッファに追記する等、ポリシーが分裂しているケース）がないか確認してください。
+           - 明確なポリシー分裂や設計上の衝突が検出された場合は FAIL と判定してください。
+        3. **その他**:
+           - 単に詳細度の差、実装バリアントの違い、または追加の設計詳細があるだけの場合は PASS としてください。
+           - 記述が薄く、一貫性や矛盾の有無が判断しづらい場合は WARN と判定してください（出力フォーマットに従い status は WARN または UNCERTAIN にしてください）。
+        """)
+        
+    elif aspect == "review_quality":
+        prompt = textwrap.dedent(f"""\
+        あなたは設計書の記述品質をチェックするシニア査読者です。
+        以下の設計書セクションについて、意味の曖昧さ、自己矛盾、Todoなどのプレースホルダーの放置、カプセル化の破綻などの記述品質リスクを監査してください。
+        
+        【検証対象セクション】
+        ファイル: {file_path}
+        見出し: {heading}
+        本文:
+        ---
+        {content}
+        ---
+        
+        【判定基準】
+        - セクション内に明らかな自己矛盾（前後の説明の食い違い）や、未決事項（TBD, TODO, ［要検討］等の表記）が放置されている場合は FAIL。
+        - 実装詳細がインターフェース境界を超えて漏れ出している（カプセル化の破綻）場合は FAIL。
+        - 表現が著しく曖昧で、開発者が誤解するリスクが高い記述は WARN。
+        - 整理されており、論理的に破綻がない場合は PASS。
+        """)
+        
+    elif aspect == "review_api":
+        prompt = textwrap.dedent(f"""\
+        あなたはAPIコーディネーターです。
+        以下の設計書セクションに記述されているAPI定義（関数、クラス、構造体等）が、プロジェクトの命名・設計規則「公開APIは fireball 名前空間に配置し、C++ APIは 2スペースインデント、snake_case 基本」に適合しているか検証してください。
+        ※ただし、C++のマクロ定義（#define）や定数（constexpr等）は SCREAMING_SNAKE_CASE で記述されることが正しく、例外として適合（PASS）と判定してください。
+        
+        【検証対象セクション】
+        ファイル: {file_path}
+        見出し: {heading}
+        本文:
+        ---
+        {content}
+        ---
+        
+        【判定基準】
+        - 公開API名が camelCase であったり、`fireball` 名前空間の外に定義されている場合は FAIL（ただし、マクロや定数が SCREAMING_SNAKE_CASE である場合は適合とみなし、FAIL判定にしてはなりません）。
+        - インデントが著しく崩れている、または命名規則に矛盾がある場合は FAIL。
+        - コードスニペットがない、またはAPI定義そのものに言及がない場合は PASS。
+        - 規則に適合している場合は PASS。
+        """)
+    else:
+        return {"status": "PASS", "reason": "Unknown aspect"}
 
-    prompt = f"""\
-    あなたは2つの仕様書の整合性を監査するリードアーキテクトです。
-
-    【入力】
-    仕様書A: {file_a.name}
-    ---
-    {content_a[:6000]}
-    ---
-
-    仕様書B: {file_b.name}
-    ---
-    {content_b[:6000]}
-    ---
-
-    【判定方針】
-    これは「同一性の確認」ではなく、「一つのテーマについて、異なる粒度の説明が一貫した物語になっているか」の監査です。
-    - 役割分担、依存方向、制約、例外処理の流れが整っていれば PASS。
-    - 階層ラベル、語彙の違い、説明粒度の差だけでは FAIL にしない。
-    - 同じ対象について、数値、型、所有権、タイミング、禁止事項、責務が食い違う場合のみ FAIL。
-    - 片方の文書だけでは十分な根拠がなく断定しづらい場合は WARN。
-
-    【検証項目 (S-ARCH-PAIR)】
-    1. テーマ一貫性: 両文書が同じ設計テーマを別の抽象度で説明しているか
-    2. 責務と境界: 役割分担や責務の線引きに矛盾がないか
-    3. 具体仕様の衝突: 型、数値、タイミング、所有権、禁止事項に直接の衝突がないか
-    4. 記述不足: 片方の記述が薄く、関係性を判断しづらいだけのケースを FAIL にしていないか
-
-    【出力フォーマット】
-    以下のMarkdown形式のみで回答してください。JSON、コードブロック、前置きは出力しないでください。
-
-    STATUS: PASS または FAIL または WARN
-    REASON: 判定の具体的な根拠。FAILの場合はどのテーマ/責務/仕様が衝突しているかを書く。WARNの場合は判断不能の理由を書く。
-    SUGGESTIONS: 不整合または記述不足を解消するための具体的なドキュメント修正案
-    """
+    # 2. Call LLM
     raw_response = call_llm(prompt, backend=backend, model=model, max_tokens=max_tokens)
     res = parse_llm_markdown_response(raw_response)
-
-    if res.get("status") in ["PASS", "FAIL", "UNCERTAIN"]:
-        db.set_cache(
-            hash_key,
-            rule_code="S-ARCH-PAIR",
-            target_type="pair",
-            file_path=file_a_rel,
-            heading=file_b_rel,
-            status=res["status"],
-            reason=res.get("reason", ""),
-            suggestions=res.get("suggestions", ""),
-            input_hash=input_hash
-        )
+    
+    if not res or "status" not in res:
+        # Fallback parsing
+        status = "FAIL"
+        if "STATUS: PASS" in raw_response: status = "PASS"
+        elif "STATUS: WARN" in raw_response or "STATUS: UNCERTAIN" in raw_response: status = "UNCERTAIN"
+        res = {"status": status, "reason": "Failed to parse standard response layout."}
+        
     return res
 
-def _parse_checklist_markdown(raw: str) -> dict:
-    def _normalize_status(value: str) -> str:
-        normalized = value.strip().upper()
-        if normalized == "WARN":
-            return "UNCERTAIN"
-        if normalized in {"PASS", "FAIL", "UNCERTAIN"}:
-            return normalized
-        return ""
+def run_matrix_audit(backend: str = None, model: str = None, max_tokens: int = 1024) -> int:
+    """Main runner for review-matrix-based LLM checks."""
+    print("Loading review matrix from Database...")
+    matrix = db.load_review_matrix()
+    if not matrix:
+        print("Warning: Review matrix is empty in database.")
+        return 0
 
-    def _is_structural_line(text: str) -> bool:
-        return bool(re.match(
-            r"^(?:#{1,6}\s*)?(?:SUMMARY|ITEMS|ID|STATUS|REASON|SUGGESTIONS)\b",
-            text,
-            re.IGNORECASE,
-        ))
-
-    summary = "FAIL"
-    summary_pending = False
-    items = []
-    current = None
-    current_field = None
-
-    for line in raw.splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("```"):
+    req_dict = db.load_requirement_keywords_dict()
+    file_cache = {}
+    
+    # Identify target fields to audit
+    aspect_fields = ["policy_P01", "policy_P02", "review_traceability", "review_quality", "review_api"]
+    
+    total_audits = 0
+    failures = 0
+    updates_count = 0
+    
+    # Gather all PENDING cells
+    pending_tasks = []
+    for row in matrix:
+        for aspect in aspect_fields:
+            if row.get(aspect) == "PENDING":
+                pending_tasks.append((row, aspect))
+                
+    total_tasks = len(pending_tasks)
+    print(f"Found {total_tasks} pending audit tasks in review matrix.")
+    if total_tasks == 0:
+        print("All checks are up-to-date.")
+        return 0
+        
+    for idx, (row, aspect) in enumerate(pending_tasks, 1):
+        file_path = row["file_path"]
+        heading = row["heading"]
+        kws_str = row.get("keywords", "")
+        keywords = [k.strip() for k in kws_str.split(",") if k.strip()]
+        
+        print(f"[{idx}/{total_tasks}] Auditing {aspect} for {file_path} #{heading}...")
+        
+        # Get section content
+        content = get_section_content(file_path, heading, file_cache)
+        if not content.strip():
+            print("  -> Skipped: Section body is empty.")
+            row[aspect] = "N/A"
+            updates_count += 1
             continue
-
-        m_summary = re.match(r"^(?:#{1,6}\s*)?SUMMARY(?:\s*[:：]\s*(.*))?$", stripped, re.IGNORECASE)
-        if m_summary:
-            if current is not None:
-                items.append(current)
-            current = None
-            current_field = None
-            summary_pending = True
-            inline = m_summary.group(1)
-            if inline:
-                normalized = _normalize_status(inline)
-                if normalized:
-                    summary = normalized
-                    summary_pending = False
-            continue
-
-        if summary_pending:
-            normalized = _normalize_status(stripped)
-            if normalized:
-                summary = normalized
-                summary_pending = False
-                continue
-
-        if re.match(r"^(?:#{1,6}\s*)?ITEMS(?:\s*[:：].*)?$", stripped, re.IGNORECASE):
-            continue
-
-        m_id = re.match(
-            r"^(?:[-*+]\s*|\d+[.)]\s*)?(?:#{1,6}\s*)?ID\s*[:：]\s*(.+)$",
-            stripped,
-            re.IGNORECASE,
-        )
-        if m_id:
-            if current is not None:
-                items.append(current)
-            current = {"id": m_id.group(1).strip(), "status": "FAIL", "reason": ""}
-            current_field = None
-            continue
-
-        m_field = re.match(
-            r"^(?:#{1,6}\s*)?(STATUS|REASON|SUGGESTIONS)\s*[:：]?\s*(.*)$",
-            stripped,
-            re.IGNORECASE,
-        )
-        if m_field:
-            field = m_field.group(1).lower()
-            value = m_field.group(2).strip()
-
-            # Top-level STATUS is accepted as a summary fallback.
-            if current is None:
-                if field == "status":
-                    if value:
-                        normalized = _normalize_status(value)
-                        if normalized:
-                            summary = normalized
-                            summary_pending = False
-                    else:
-                        summary_pending = True
-                continue
-
-            current_field = field if field in {"reason", "suggestions"} else None
-            if field == "status":
-                if value:
-                    normalized = _normalize_status(value)
-                    if normalized:
-                        current["status"] = normalized
-                else:
-                    current_field = "status"
-                continue
-
-            if value:
-                current[field] = value
-            continue
-
-        if current is not None and current_field == "status":
-            normalized = _normalize_status(stripped)
-            if normalized:
-                current["status"] = normalized
-                current_field = None
-                continue
-
-        if current is not None and current_field in {"reason", "suggestions"} and not _is_structural_line(stripped):
-            current[current_field] = (current[current_field] + "\n" + stripped).strip()
-
-    if current is not None:
-        items.append(current)
-
-    return {"items": items, "summary": summary}
-
-
-def _llm_check(pair_id: str, label: str, excerpt_a: str, excerpt_b: str,
-               items: list[tuple[str, str, str]], backend: str = None, model: str = None) -> dict:
-    items_text = "\n".join(f"- [{item_id}] ({aspect}) {desc}" for item_id, aspect, desc in items)
-    prompt = textwrap.dedent("""\
-    あなたはFireballプロジェクトの仕様書整合性チェッカーです。
-    2つの仕様書の抜粋を比較し、指定された観点で「同一性」ではなく「テーマと責務の一貫性」を判定してください。
-    階層や役割が異なること自体は失敗条件ではありません。役割分担・依存方向・制約・例外の扱いが一貫しているかを見てください。
-
-【出力ルール】
-    - 以下のMarkdown形式のみで回答すること。JSON、コードブロック、前置きは出力しないでください。
-    - statusは PASS（整合）, FAIL（矛盾あり）, WARN（記述不足/判断不能）のいずれか。
-    - 余計な見出しや補足文は追加しないでください。`SUMMARY` / `ITEMS` / `ID` / `STATUS` / `REASON` / `SUGGESTIONS` だけを使ってください。
-    - `FAIL` は明示的な衝突がある場合のみ。単なる詳細不足や抽象度差は `WARN` にしてください。
-
-    SUMMARY: PASS または FAIL または WARN
-    ITEMS:
-    - ID: 1
-      STATUS: PASS
-      REASON: 両方の文書で同じテーマを別粒度で説明しており、役割分担に矛盾がない
-    - ID: 2
-      STATUS: FAIL
-      REASON: Aは5KB、Bは8KBとし、同じ対象の制約値が衝突している
-
-    """) + textwrap.dedent(f"""\
-        ## チェック対象: {pair_id} - {label}
-
-        ### 仕様書 A の抜粋
-        {excerpt_a}
-
-        ### 仕様書 B の抜粋
-        {excerpt_b}
-
-        ### チェック項目（各項目を判定してください）
-        {items_text}
-
-        上記を根拠として、各チェック項目のID、STATUS、REASON、必要に応じてSUGGESTIONSを含むMarkdownのみを出力してください。
-    """)
-
-    raw = call_llm(prompt, backend=backend, model=model, max_tokens=2048, apply_contract=False)
-    parsed = _parse_checklist_markdown(raw)
-    if parsed.get("items"):
-        return parsed
-    return {"items": [], "summary": "FAIL", "summary_reason": "Failed to parse LLM Markdown response."}
-
-def run_checklist_audit(items: list[dict], backend: str = None, model: str = None) -> int:
-    pairs = {}
-    for item in items:
-        pairs.setdefault(item["pair_id"], []).append(item)
-
-    total_failures = 0
-    for pid, pitems in pairs.items():
-        file_a_rel = pitems[0].get("file_a", "")
-        file_b_rel = pitems[0].get("file_b", "")
-
-        file_a_path = REPO_ROOT / file_a_rel
-        file_b_path = REPO_ROOT / file_b_rel
-
-        if not file_a_path.exists() or not file_b_path.exists():
-            print(f"  [ERROR] File not found: {file_a_rel} or {file_b_rel}")
-            total_failures += 1
-            continue
-
-        text_a = file_a_path.read_text(encoding="utf-8")
-        text_b = file_b_path.read_text(encoding="utf-8")
-
-        def _get_hints(items_list: list[dict], key: str) -> list[str]:
-            hints = []
-            for it in items_list:
-                h = it.get(key)
-                if h:
-                    parts = h.split("|")
-                    for part in parts:
-                        clean = part.lstrip("#").strip()
-                        if clean:
-                            hints.append(clean)
-            return list(dict.fromkeys(hints))
-
-        a_hints = _get_hints(pitems, "file_a_section")
-        b_hints = _get_hints(pitems, "file_b_section")
-        excerpt_a = extract_sections_by_headers(text_a, a_hints, max_chars=3000)
-        excerpt_b = extract_sections_by_headers(text_b, b_hints, max_chars=3000)
-
-        label = f"{Path(file_a_rel).name} × {Path(file_b_rel).name}"
-
-        model_name = model or "default"
-        backend_name = backend or "auto"
-        pitems_json = json.dumps(
-            [(i["check_num"], i["aspect"], i["check_content"], i["file_a_section"], i["file_b_section"]) for i in pitems],
-            sort_keys=True
-        )
-        generation_key = generation_cache_key(model_name, backend_name, 2048)
-        input_hash = db.make_hash_key(excerpt_a, excerpt_b, pitems_json, generation_key)
-        hash_key = db.make_hash_key("S-ARCH-CHECKLIST", file_a_rel, file_b_rel, input_hash)
-
+            
+        # Calculate cache hash key
+        content_hash = db.make_hash_key(content, kws_str)
+        hash_key = db.make_hash_key("MATRIX-AUDIT", file_path, heading, aspect, content_hash)
+        
+        # Cache check
         cached = db.get_cache(hash_key)
         if cached is not None:
-            print(f"  [{pid}: {label}] -> Cached ({cached['status']})")
-            try:
-                cached_items = json.loads(cached["suggestions"])
-                rmap = {r.get("id", ""): r for r in cached_items.get("items", [])}
-                for item in pitems:
-                    r = rmap.get(item["check_num"])
-                    if r:
-                        item["llm_result"] = r.get("status", "FAIL")
-                        item["llm_reason"] = r.get("reason", "No reason provided")
-                        print(f"    - [{item['check_num']}] {item['llm_result']} {item['llm_reason']}")
-                if cached["status"] == "FAIL":
-                    total_failures += 1
-                continue
-            except Exception as e:
-                print(f"  [Warning] Failed to parse cache for {pid}: {e}. Re-running audit...")
-
-        result = _llm_check(
-            pid,
-            label,
-            excerpt_a,
-            excerpt_b,
-            [(i["check_num"], i["aspect"], i["check_content"]) for i in pitems],
-            backend=backend,
-            model=model,
-        )
+            status = cached["status"]
+            print(f"  -> Cached ({status})")
+            row[aspect] = status
+            if status == "FAIL":
+                failures += 1
+            updates_count += 1
+            continue
+            
+        # Perform LLM call
+        try:
+            res = audit_cell(
+                aspect=aspect,
+                file_path=file_path,
+                heading=heading,
+                content=content,
+                keywords=keywords,
+                req_dict=req_dict,
+                backend=backend,
+                model=model,
+                max_tokens=max_tokens
+            )
+            status = res.get("status", "FAIL")
+            if status not in ["PASS", "FAIL", "UNCERTAIN"]:
+                status = "FAIL"
+                
+            reason = res.get("reason", "")
+            suggestions = res.get("suggestions", "")
+            
+            print(f"  -> {status}: {reason[:100]}...")
+            
+            row[aspect] = status
+            if status == "FAIL":
+                failures += 1
+                
+            # Set cache
+            db.set_cache(
+                hash_key=hash_key,
+                rule_code=aspect.upper(),
+                target_type="matrix_cell",
+                file_path=file_path,
+                heading=heading,
+                status=status,
+                reason=reason,
+                suggestions=suggestions,
+                input_hash=content_hash
+            )
+            updates_count += 1
+            total_audits += 1
+            
+        except Exception as e:
+            print(f"  -> ERROR during audit: {e}")
+            row[aspect] = "ERROR"
+            
+    # Sync matrix back to DB & CSV
+    if updates_count > 0:
+        print("Synchronizing updated review matrix back to Database...")
         
-        summary = result.get("summary", "FAIL")
-        if summary == "FAIL":
-            total_failures += 1
-
-        print(f"  [{pid}: {label}] -> {summary}")
-        rmap = {r.get("id", ""): r for r in result.get("items", [])}
-        for item in pitems:
-            r = rmap.get(item["check_num"])
-            if r:
-                item["llm_result"] = r.get("status", "FAIL")
-                item["llm_reason"] = r.get("reason", "No reason provided")
-                print(f"    - [{item['check_num']}] {item['llm_result']} {item['llm_reason']}")
-
-        # Cache the result
-        suggestions_json = json.dumps({"items": result.get("items", [])})
-        db.set_cache(
-            hash_key,
-            rule_code="S-ARCH-CHECKLIST",
-            target_type="checklist_pair",
-            file_path=file_a_rel,
-            heading=file_b_rel,
-            status=summary,
-            reason=result.get("summary_reason", f"Summary status: {summary}"),
-            suggestions=suggestions_json,
-            input_hash=input_hash
-        )
-
-    save_csv_checklist(items)
-    return total_failures
+        # Mark row as llm_checked if all aspect columns are non-PENDING
+        for row in matrix:
+            is_checked = 1
+            for aspect in aspect_fields:
+                if row.get(aspect) == "PENDING":
+                    is_checked = 0
+                    break
+            row["llm_checked"] = is_checked
+            
+        db.sync_review_matrix(matrix)
+        
+        # Rewrite CSV
+        try:
+            MATRIX_CSV.parent.mkdir(parents=True, exist_ok=True)
+            with open(MATRIX_CSV, "w", encoding="utf-8", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=[
+                    "file_path", "heading", "keywords", 
+                    "policy_P01", "policy_P02", 
+                    "review_traceability", "review_quality", "review_api", 
+                    "llm_checked"
+                ])
+                writer.writeheader()
+                writer.writerows(matrix)
+            print(f"Updated CSV: {MATRIX_CSV}")
+        except Exception as e:
+            print(f"Warning: Failed to rewrite review_matrix.csv: {e}")
+            
+    print(f"Audit completed: {total_audits} API calls, {failures} failures detected.")
+    return failures

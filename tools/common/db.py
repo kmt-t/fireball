@@ -85,21 +85,7 @@ class DocAuditDB:
                     PRIMARY KEY (file_path, heading, keyword)
                 )
             """)
-            # 6. consistency_checklist table
-            self.conn.execute("""
-                CREATE TABLE IF NOT EXISTS consistency_checklist (
-                    pair_id TEXT PRIMARY KEY,
-                    file_a TEXT,
-                    file_b TEXT,
-                    shared_keywords TEXT,
-                    file_a_section TEXT,
-                    file_b_section TEXT,
-                    aspect TEXT,
-                    check_content TEXT,
-                    llm_result TEXT,
-                    llm_reason TEXT
-                )
-            """)
+
             # 7. audit_results cache table (New schema with rule_code)
             self.conn.execute("""
                 CREATE TABLE IF NOT EXISTS audit_results (
@@ -129,6 +115,41 @@ class DocAuditDB:
                     replacement TEXT
                 )
             """)
+
+            # 11. document_tiers table
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS document_tiers (
+                    file_path TEXT PRIMARY KEY,
+                    tier INTEGER,
+                    parent_file TEXT
+                )
+            """)
+            # 12. keyword_sections table
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS keyword_sections (
+                    keyword TEXT,
+                    file_path TEXT,
+                    heading TEXT,
+                    line_start INTEGER,
+                    PRIMARY KEY (keyword, file_path, heading)
+                )
+            """)
+            # 13. review_matrix table
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS review_matrix (
+                    file_path TEXT,
+                    heading TEXT,
+                    keywords TEXT,
+                    policy_P01 TEXT DEFAULT 'PENDING',
+                    policy_P02 TEXT DEFAULT 'PENDING',
+                    review_traceability TEXT DEFAULT 'PENDING',
+                    review_quality TEXT DEFAULT 'PENDING',
+                    review_api TEXT DEFAULT 'PENDING',
+                    llm_checked INTEGER DEFAULT 0,
+                    PRIMARY KEY (file_path, heading)
+                )
+            """)
+
 
     def get_cache(self, hash_key: str) -> dict | None:
         cursor = self.conn.cursor()
@@ -279,26 +300,7 @@ class DocAuditDB:
         except Exception:
             return {}
 
-    def update_consistency_checklist(self, items: list[dict]):
-        with self.conn:
-            self.conn.execute("DELETE FROM consistency_checklist")
-            for item in items:
-                self.conn.execute("""
-                    INSERT OR REPLACE INTO consistency_checklist
-                    (pair_id, file_a, file_b, shared_keywords, file_a_section, file_b_section, aspect, check_content, llm_result, llm_reason)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    item.get("pair_id", ""),
-                    item.get("file_a", ""),
-                    item.get("file_b", ""),
-                    item.get("shared_keywords", ""),
-                    item.get("file_a_section", ""),
-                    item.get("file_b_section", ""),
-                    item.get("aspect", ""),
-                    item.get("check_content", ""),
-                    item.get("llm_result", ""),
-                    item.get("llm_reason", "")
-                ))
+
 
     def sync_heading_dictionary(self, dictionary_data: list[dict]):
         with self.conn:
@@ -333,6 +335,69 @@ class DocAuditDB:
             return {row[0]: row[1] for row in cursor.fetchall()}
         except Exception:
             return {}
+
+
+
+    def sync_document_tiers(self, tiers_data: list[dict]):
+        with self.conn:
+            self.conn.execute("DELETE FROM document_tiers")
+            for t in tiers_data:
+                self.conn.execute("""
+                    INSERT OR REPLACE INTO document_tiers (file_path, tier, parent_file)
+                    VALUES (?, ?, ?)
+                """, (t["file_path"], t["tier"], t.get("parent_file", "")))
+
+    def sync_keyword_sections(self, kw_sec_data: list[dict]):
+        with self.conn:
+            self.conn.execute("DELETE FROM keyword_sections")
+            for ks in kw_sec_data:
+                self.conn.execute("""
+                    INSERT OR REPLACE INTO keyword_sections (keyword, file_path, heading, line_start)
+                    VALUES (?, ?, ?, ?)
+                """, (ks["keyword"], ks["file_path"], ks["heading"], ks.get("line_start", 0)))
+
+    def sync_review_matrix(self, matrix_data: list[dict]):
+        with self.conn:
+            self.conn.execute("DELETE FROM review_matrix")
+            for m in matrix_data:
+                self.conn.execute("""
+                    INSERT OR REPLACE INTO review_matrix 
+                    (file_path, heading, keywords, policy_P01, policy_P02, review_traceability, review_quality, review_api, llm_checked)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    m["file_path"],
+                    m["heading"],
+                    m.get("keywords", ""),
+                    m.get("policy_P01", "PENDING"),
+                    m.get("policy_P02", "PENDING"),
+                    m.get("review_traceability", "PENDING"),
+                    m.get("review_quality", "PENDING"),
+                    m.get("review_api", "PENDING"),
+                    m.get("llm_checked", 0)
+                ))
+
+    def load_review_matrix(self) -> list[dict]:
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute("SELECT file_path, heading, keywords, policy_P01, policy_P02, review_traceability, review_quality, review_api, llm_checked FROM review_matrix")
+            rows = cursor.fetchall()
+            return [
+                {
+                    "file_path": r[0],
+                    "heading": r[1],
+                    "keywords": r[2],
+                    "policy_P01": r[3],
+                    "policy_P02": r[4],
+                    "review_traceability": r[5],
+                    "review_quality": r[6],
+                    "review_api": r[7],
+                    "llm_checked": r[8]
+                } for r in rows
+            ]
+        except Exception:
+            return []
+
+
 
     def close(self):
         self.conn.close()

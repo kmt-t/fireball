@@ -12,14 +12,15 @@ COOSは、シングルスレッド環境向けのホーアCSPベースのグリ�
 <!-- traceability: {META_3TierSeparation} {GLOBAL_ComponentHarness} -->
 - **[`co_sched`](os_scheduler.md)**: スケジューラ。タスクのライフサイクルと実行順序の管理。
 - **`co_csp`**: 通信エンジン。チャネルベースの同期と所有権移譲。
-- **`co_mem`**: メモリマネージャ。タスク独立ヒープの管理（メモリパーティション）。
+- **`co_mem`**: メモリマネージャ。タスク独立な静的メモリバッファプール（メモリパーティション）の管理。
+- **`co_log`**: ロギングマネージャ。 `{BufferedLogging}`
 
 ## 3. 静的モデル
 
 ### 3.1 データ構造
 <!-- traceability: {GLOBAL_Policy_Memory} -->
 - **`channel`**: 1エントリのバッファを持つ同期オブジェクト。
-- **`co_value`**: 独自の所有権管理構造体。ヒープを使用せず、静的バッファまたはスタック上で動作することを基本とする。 `{GLOBAL_Policy_Memory}`
+- **`co_value`**: 独自の所有権管理構造体。`{GLOBAL_Policy_Memory}` に基づき、コンパイル時に固定サイズで確保された静的メモリ領域またはスタック上のみで動作する。
 - **`coos_context`**: スケジューラ、CSP状態、メモリ情報を集約したグローバルコンテキスト。
 
 ### 3.2 内部ブロック図
@@ -37,17 +38,20 @@ graph TD
     M_IF --> PRE[Memory Partition]
 ```
 
+各サブコンポーネントおよび通信バッファ（VAL）は、動的メモリ確保（`malloc`/`new`）を排除するため、静的アロケータによって領域制限されたメモリ領域（MPUパーティション）に完全に配置される。 `{GLOBAL_Policy_Memory}`
+
 ### 3.3 主要なデータ定義
 <!-- traceability: {GLOBAL_Policy_Memory} -->
 
 #### CSPチャネル（channel）
-タスク間の同期と通信を仲介するデータ構造。 `{CSPCommunication}`
+タスク間の同期と通信を仲介するデータ構造。
+通信バッファのやり取りは、動的メモリ確保を排除した `{GLOBAL_Policy_Memory}` に従い、静的プールから事前割り当てされた `CoValue` 構造体の参照またはインデックスの受け渡しのみで実現される（ゼロコピー所有権移譲）。 `{CSPCommunication}` `{GLOBAL_Policy_Memory}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| 通信バッファ | 通信データを一時的に保持する領域。所有権移譲を伴う | 構造体 (CoValue) | - |
-| 送信待機列 | 受信側が準備できるまで送信を待機しているタスクのリスト | リスト構造 | `task_context` のリスト |
-| 受信待機列 | データが到着するまで受信を待機しているタスクのリスト | リスト構造 | `task_context` のリスト |
+| 通信バッファ | 通信データを一時的に保持する領域。所有権移譲を伴う。動的確保は行わず、静的固定領域として配置 | 構造体 (CoValue) | 固定サイズ |
+| 送信待機列 | 受信側が準備できるまで送信を待機しているタスクのキュー | 静的固定長キュー | `std::array` 基盤の固定長タスク参照キュー |
+| 受信待機列 | データが到着するまで受信を待機しているタスクのキュー | 静的固定長キュー | `std::array` 基盤の固定長タスク参照キュー |
 
 ##### チャネル送受信動作の挙動定義
 チャネルを通じたCSPメッセージ通信の基本的な制御ロジックを以下に示す。 `{CSPCommunication}`
@@ -83,9 +87,22 @@ def channel_recv(channel: Channel, receiver_task: Task) -> CoValue:
 <!-- traceability: {CSP_Handoff} {DirectContextSwitch} {GLOBAL_IdleDetection} {GLOBAL_StrictMemoryLimit} {GLOBAL_IndependentHeap} {GLOBAL_InterruptWakeup} -->
 - **CSP Handoff (直接スイッチ)**: `send`/`recv` 時に相手タスクが既に待機状態であった場合、スケジューラを介さず即座に相手タスクへ実行権を移譲する。 `{CSP_Handoff}`
 - **直接コンテキストスイッチ (Direct Context Switch)**: コルーチンの `handle.resume()` を直接呼び出すことで、OSスケジューラのキュー処理やディスパッチ判断などのオーバーヘッドを介さず、超低レイテンシで実行権を宛先タスクにスイッチする。 `{DirectContextSwitch}`
-- **割り込みウェイクアップ (Interrupt Wakeup)**: 外部割り込みが発生した際、割り込みサービスルーチン（ISR）から `notify_interrupt` が呼び出され、関連する待機中タスクを即座に起床させる（READY状態に遷移して実行可能キューに投入する）。 `{GLOBAL_InterruptWakeup}`
-- **Idle Detection**: 全ての実行中タスクがブロック状態にあり、かつイベントキューが空（割り込みや外部イベントによる起床待ちのみ）の場合にアイドル状態と判定する。この条件を `idle_hook` のトリガーとし、バックグラウンド処理（ログフラッシュ等）を呼び出す。 `{GLOBAL_IdleDetection}`
+- **割り込みウェイクアップ (Interrupt Wakeup)**: 外部割り込みが発生した際、割り込みサービスルーチン（ISR）から `notify_interrupt` が呼び出され、特定のチャネルIDまたは割り込みベクトル（`irq_id`）に登録されて待機しているタスク（待機中タスク）を即座に起床させる（READY状態に遷移して実行可能キューに投入する）。 `{GLOBAL_InterruptWakeup}`
+- **Idle Detection**: 全ての実行中タスクがブロック状態にあり、かつイベントキューが空（割り込みや外部イベントによる起床待ちのみ）の場合にアイドル状態と判定する。この条件を `idle_hook` のトリガーとし、イベントキューが空かつ全タスクがブロック状態の時のみ、リングバッファ内の未出力ログが1件以上存在する、あるいはイベント待機開始から10ミリ秒以上経過した際に、バックグラウンド処理（リングバッファからロガーを介した物理ストレージや非揮発性メモリへのログ書き出し・フラッシュ処理）を最低優先度のバックグラウンドタスク（Idle優先度）として呼び出す。 `{GLOBAL_IdleDetection}`
 - **Memory Management**: タスク生成時に独立したメモリパーティションを割り当てる。 `{GLOBAL_StrictMemoryLimit}` `{GLOBAL_IndependentHeap}`
+
+#### COOS 内部 API シグネチャ
+```python
+# 外部割り込みハンドラ（ISR）から呼び出され、特定の割り込みIDにバインドされたタスクを起床する。
+# - irq_id: 0〜255の範囲を持つシステム定義の物理割り込みベクトル番号。
+# - 割り込みコンテキスト（ISR）内からアトミックかつノンブロッキングで直接実行される。
+def notify_interrupt(irq_id: uint32) -> void
+
+# システムがアイドル状態（全タスクがブロックかつ起床イベント待ち）の時に呼び出されるコールバック。
+# - 最低優先度の専用Idleタスクの実行コンテキスト内でのみ実行される。
+# - リングバッファからロガーへの物理フラッシュ処理のみを行い、他のタスク実行をブロックしない。
+def idle_hook() -> void
+```
 
 ### 4.2 状態遷移図 (SMD: COOS システムレベル)
 <!-- traceability: {CSP_Handoff} {DirectContextSwitch} {GLOBAL_IdleDetection} {GLOBAL_StrictMemoryLimit} {GLOBAL_IndependentHeap} -->
@@ -97,15 +114,15 @@ stateDiagram-v2
     [*] --> Uninitialized
     
     Uninitialized --> Ready: init-scheduler() success
-    
     Ready --> RunningTask: spawn() / task enqueued
     RunningTask --> RunningTask: yield() / next task scheduled
+    RunningTask --> RunningTask: CSP Handoff / Direct Context Switch (Direct Switch)
     RunningTask --> Idle: all tasks BLOCKED / idle_hook triggered
     
     Idle --> RunningTask: event / interrupt / timeout
     
     RunningTask --> Recovery: task panic / error detected
-    Idle --> Recovery: system-level fault
+    Idle --> Recovery: hardware exception / memory fault / resource exhaustion
     
     Recovery --> Ready: recovery complete / reset task queue
     Recovery --> Shutdown: unrecoverable error
@@ -117,10 +134,10 @@ stateDiagram-v2
 **システム状態の説明:**
 - **Uninitialized**: COOS 初期化前
 - **Ready**: 正常稼働。RUNNING または IDLE の どちらかの状態
-  - **Running Task**: 1つ以上のタスクが実行中
-  - **Idle**: 全タスクが BLOCKED で、イベント待ちの状態
-- **Recovery**: タスク障害（panic、エラー）が発生し、回復処理中
-- **Shutdown**: システム終了処理中
+  - **Running Task**: 1つ以上のタスクが実行中。各タスクは独立メモリプール（`GLOBAL_IndependentHeap`）から論理的に切り出された固定サイズメモリ内に完全に隔離され、実行が保護される。 `{GLOBAL_StrictMemoryLimit}` `{GLOBAL_IndependentHeap}`
+  - **Idle**: 全タスクが BLOCKED で、イベント待ちの状態。アイドルフック実行時は追加のメモリ消費は発生しない。
+- **Recovery**: タスク障害（panic、メモリ保護例外等）が発生し、安全な状態への復旧処理中
+- **Shutdown**: システム終了処理中。リソースの静的解放。
 
 ### 4.3 タスク状態遷移図 (SMD: Task ライフサイクル)
 
@@ -130,36 +147,36 @@ stateDiagram-v2
 stateDiagram-v2
     [*] --> NotCreated
     
-    NotCreated --> Ready: spawn() / allocate memory & enqueue
+    NotCreated --> Ready : spawn_and_enqueue
     
-    Ready --> Running: scheduler dispatch / resume coroutine
-    Running --> Ready: yield() / push to ready queue tail
+    Ready --> Running : scheduler_dispatch
+    Running --> Ready : yield_to_tail
     
-    Running --> WaitCSP: send()/recv() to empty / block
-    Running --> WaitEvent: wait_event() / pending
-    Running --> WaitInterrupt: wait_interrupt() / pending
+    Running --> WaitCSP : block_on_ipc
+    Running --> WaitEvent : block_on_event
+    Running --> WaitInterrupt : block_on_interrupt
     
-    WaitCSP --> Ready: CSP Handoff [opposite ready]
-    WaitEvent --> Ready: event dispatch / received
-    WaitInterrupt --> Ready: interrupt / ISR notify
+    WaitCSP --> Ready : csp_handoff
+    WaitEvent --> Ready : event_dispatched
+    WaitInterrupt --> Ready : interrupt_notified
     
-    Running --> Terminated: exit() / cleanup & free
-    WaitCSP --> Terminated: error / panic cleanup
-    WaitEvent --> Terminated: error / panic cleanup
-    WaitInterrupt --> Terminated: error / panic cleanup
+    Running --> Terminated : task_exit
+    WaitCSP --> Terminated : task_killed
+    WaitEvent --> Terminated : task_killed
+    WaitInterrupt --> Terminated : task_killed
     
-    Terminated --> [*]: destroyed
+    Terminated --> [*] : destroyed
 ```
 
 **タスク状態の説明:**
-- **Not Created**: タスク未生成
-- **Ready**: 実行可能。次のスケジュール対象候補
-- **Running**: CPU実行中
-- **Blocked**: 実行待機中
-  - **Wait CSP**: チャネル通信を待機（相手タスク待機中）
-  - **Wait Event**: イベント（IPC_REPLY等）を待機
-  - **Wait Interrupt**: 割り込み通知を待機
-- **Terminated**: タスク終了・メモリ解放済み
+- **Not Created**: タスク未生成の状態。
+- **Ready**: 実行可能であり、スケジューラのREADYキューに登録されている状態。
+- **Running**: 現在CPUを占有して実行中のコルーチンタスク。
+- **Blocked**: 以下のいずれかの要因により実行を中断し、待機中キューに登録されている状態。
+  - **Wait CSP**: チャネル通信（Send/Recv）の相手タスクが到着するのを待機。
+  - **Wait Event**: 非同期イベント（システムコールやIPC応答）の到着を待機。
+  - **Wait Interrupt**: ハードウェアからの仮想割り込み（ISRによる `notify_interrupt`）を待機。
+- **Terminated**: タスクの実行が終了し、静的に確保されたTCBスロットおよびパーティションメモリが再利用可能（解放）となった状態。
 
 ## 5. インターフェイス設計
 <!-- traceability: {META_StaticDI} -->
@@ -188,16 +205,36 @@ class CoosHarness:
         self.memory = memory
 ```
 
-### 5.2 サブコンポーネント・インターフェイス
+### 5.2 サブコンポーネント・インターフェイス (C++23)
 <!-- traceability: {META_StaticDI} -->
 
-TODO(Phase 1): サブコンポーネントのAPIに関する完全なATC定義 - spawn, yield, send, receive, allocate 等の各操作に対する厳密な事前・事後・不変条件を（別ドキュメントまたは本ドキュメント内で）完全に定義すること。
+C++23/20 コルーチンおよび静的アロケーションを前提とした、サブコンポーネントのC++ API定義を示す。
 
-| 型名 | 機能概要 | 主要な操作 |
+#### 1. 所有権管理 `CoValue`
+`CoValue` は、動的ヒープを使用せず、ムーブ専用（Move-only）の所有権移譲を保証する構造体である。コピーコンストラクタは削除され、データ競合を防止する。
+
+```text
+struct CoValue {
+  // ムーブセマンティクスのみを許可
+  CoValue() = default;
+  CoValue(const CoValue&) = delete;
+  CoValue& operator=(const CoValue&) = delete;
+  CoValue(CoValue&&) noexcept = default;
+  CoValue& operator=(CoValue&&) noexcept = default;
+
+  uint64_t key;
+  uint64_t value;
+  uint32_t type_id;
+};
+```
+
+#### 2. 公開 API インターフェイス
+
+| コンポーネント | C++ API プロトタイプ定義 | 説明 |
 | :--- | :--- | :--- |
-| `scheduler` | タスクのライフサイクル管理。 | spawn, yield, wait, exit, set_idle_hook |
-| `csp` | タスク間通信機能へのメッセージ交換。 | send, receive |
-| `memory` | タスク独立メモリの確保と解放。 | allocate, free |
+| `scheduler` | `auto spawn(void(*task_entry)(void*), void* arg) -> result<task_id_t, scheduler_error>;`<br>`auto yield() -> void;`<br>`auto exit() -> void;`<br>`auto set_idle_hook(void(*hook)()) -> void;`<br>`auto wake_up_direct(task_id_t task) -> void;`<br>`auto notify_interrupt(task_id_t task) -> void;` | タスクの生成・一時譲渡・終了およびアイドル時コールバックの設定。`wake_up_direct` はCSP Handoffによる即時起床用、`notify_interrupt` はISRコンテキストからタスクを起床する用。動的確保は行わず、静的プールからTCBスロットを割り当てる。 |
+| `csp` | `auto send(channel_id_t chan, CoValue&& val) -> coos::task_coroutine;`<br>`auto receive(channel_id_t chan) -> coos::task_coroutine_recv;` | チャネル経由の同期メッセージ送受信。ムーブセマンティクスによるゼロコピー所有権移譲を行う。 |
+| `memory` | `auto allocate(size_t size) -> result<void*, memory_error>;`<br>`auto free(void* ptr) -> void;` | タスク固有の静的メモリパーティション内でのメモリ管理。 |
 
 ## 6. 形式検証（TLA+ / 直交表）
 

@@ -39,18 +39,23 @@ graph TD
         Cache[cache_manager]
     end
 
+    subgraph Memory_Buffers ["JIT Cache: JIT_DoubleBuffer_Cache"]
+        ActiveBuffer[Active Buffer Bank]
+        OldBuffer[Old/Backup Buffer Bank]
+    end
+
     Manager -- uses --> Harness
     Harness -- points to --> Detector
     Harness -- points to --> Engine
     Harness -- points to --> Index
     Harness -- points to --> Cache
+    Cache -- manages double buffer swap --> Memory_Buffers
     Manager -- operates on --> Context
 ```
 
 ### 3.3 主要なクラス・構造体・配列・定数
 <!-- traceability: {JIT_DoubleBuffer_Cache} {SimpleJITArchitecture} -->
 
-TODO(Phase 1): メモリレイアウトの厳密化 - `jit_context` および `jit_config` に含まれるスパンや配列の具体的なアライメント要求、最大サイズ制約（RAM 64KB環境下でのアロケーション方針）を確定させること。
 
 #### JITハーネス（jit_harness）
 サブコンポーネントへのポインタを集約する。
@@ -69,7 +74,7 @@ TODO(Phase 1): メモリレイアウトの厳密化 - `jit_context` および `j
 | :--- | :--- | :--- | :--- |
 | アクティブ領域 | 現在使用中の書き込み・実行用キャッシュバンク | データ範囲 | `std::span<uint8_t>` |
 | バックアップ領域 | 前回GC時のデータが残る退避用領域 | データ範囲 | `std::span<uint8_t>` |
-| コンパイル待ち列 | 後でコンパイルを行うPCの順番リスト | ソート済み配列 | - |
+| コンパイル待ち列 | 後でコンパイルを行うWASM PC (uint32_t) の格納キュー | 固定長LIFOキュー | `std::array<uint32_t, FB_CONF_JIT_QUEUE_SIZE>` |
 | 実行履歴マップ | 命令の実行頻度を記録するビットマップ | データ範囲 | `std::span<uint8_t>` |
 
 #### JIT構成（jit_config）
@@ -82,6 +87,25 @@ JITエンジンの挙動を制御する性能パラメータ。 `{META_Configura
 | 最大登録件数 | 1つのバンクに保持可能な最大トレース件数 | エントリ数 | 32bit符号なし |
 | カード境界シフト | カード1枚がカバーするWASMサイズ（2のべき乗） | シフト量 | 8bit符号なし |
 | 命令境界シフト | 生成コードのアドレスアライメント | シフト量 | 8bit符号なし |
+
+### 3.4 公開API
+外部コンポーネント（Executor等）からJITコンパイル機能を利用するためのAPI。
+
+#### JITコンパイル実行 (`jit_compile`)
+| 項目 | 内容 |
+| :--- | :--- |
+| 機能概要 | 指定されたWASM PCから始まる命令トレースをネイティブコードへJITコンパイルし、アクティブ領域へ書き込む。 |
+| シグネチャ | `auto jit_compile(jit_context& ctx, const jit_harness& harness, uint32_t pc) noexcept -> jit_compile_result_t` |
+| 引数 | `ctx`: JIT可変コンテキスト構造体<br>`harness`: 各種モジュールへの参照を保持するハーネス<br>`pc`: コンパイル開始位置の WASM PC |
+| 戻り値 | `jit_compile_result_t` (成功時は `SUCCESS`、キャッシュフル時は `ERR_CACHE_FULL` などのエラーコード列挙型) |
+
+#### JITコード検索 (`jit_lookup`)
+| 項目 | 内容 |
+| :--- | :--- |
+| 機能概要 | 指定されたWASM PCに対するネイティブコードが既にコンパイル済みであるか検索し、ヒットした場合はその実行開始アドレスを返す。 |
+| シグネチャ | `auto jit_lookup(jit_context& ctx, const jit_harness& harness, uint32_t pc) noexcept -> result<uintptr_t, jit_lookup_result_t>` |
+| 引数 | `ctx`: JIT可変コンテキスト構造体<br>`harness`: ハーネス参照<br>`pc`: 検索対象の WASM PC |
+| 戻り値 | 成功時はネイティブ実行開始アドレス（`uintptr_t`）を返し、未コンパイル時は `ERR_NOT_COMPILED` などのステータスコードを返す `result` 型。 |
 
 ## 4. 動的モデル
 
@@ -108,6 +132,8 @@ JITエンジンの挙動を制御する性能パラメータ。 `{META_Configura
     - アクティブ領域でミスした場合、同様にバックアップ領域を検索する。
     - バックアップ領域でヒットした場合、そのトレースをアクティブ領域へコピー（昇格）し、アクティブ領域のエントリテーブルとカードグループ索引を更新する。
     - 昇格時にアクティブ領域が溢れた場合は、ダブルバッファの入れ替え（Swap/Eviction）が発生する。
+      * **アクティブ領域の溢れ判定基準**: アクティブ領域の残り容量が、コピー対象のトレースサイズを下回った場合、またはエントリ登録数が `最大登録件数` に達した場合を「溢れ」と判定する。
+      * **ダブルバッファ入れ替え（Swap/Eviction）の挙動**: アクティブ領域が溢れた場合、現在のバックアップ領域（Oldバッファ）をクリアし、現在の「アクティブ領域」を新たな「バックアップ領域」へと役割を反転（Swap）させ、新しい「アクティブ領域」は完全にクリアされた状態から開始する。この際、頻出トレースのみが次回のアクセス時にバックアップ領域から新しいアクティブ領域へ再度昇格され、アクセス頻度の低いコードは自然に破棄（Eviction）される。
 4. **オンデマンド・キューイング (頻出カード・フォールバック)**:
     - 両方の領域でミスし、かつ状態が「コンパイル完了」の場合、対象の命令オフセットをコンパイル待ち列へ登録する。実際のコンパイルは次回のバッチ処理（アイドル時等）で行われる。
 5. **結果の返却**:
@@ -127,7 +153,8 @@ JITエンジンの挙動を制御する性能パラメータ。 `{META_Configura
 #### ホットスポット判定 (yield 時)
 <!-- traceability: {JIT_LazyChaining} -->
 1. **履歴走査**: インタープリタの実行サイクル中に記録、蓄積された「実行履歴バッファ」を走査する。
-2. **状態更新**: 実行履歴マップ（ビットマップ）の状態が「頻出」に達した命令オフセットを「コンパイル待ち列」に投入する。
+2. **状態更新**: 実行履歴マップ（ビットマップ）の状態が「頻出」に達した命令オフセットを「コンパイル待ち列」（LIFOキュー）に投入する。
+3. **遅延チェイニング制御**: ホットスポットと判定されてコンパイルキューへ投入されたトレースは、JITコードの末尾においてインタープリタ実行環境へ正しく復帰（遷移制御）するためのディスパッチャ・スタブが初期値としてチェイニング（連結）され、遅延チェイニングを実現する。 `{JIT_LazyChaining}`
 
 #### バッチコンパイル (周期実行またはアイドル時)
 <!-- traceability: {JIT_ReverseCompilationOrder} {GLOBAL_PeriodicTask} {GLOBAL_IdleDetection} -->
@@ -225,7 +252,6 @@ JITエンジンの責務を、以下の独立したサブコンポーネント�
 ### 6.1 公開API
 外部から利用可能なオブジェクト指向APIを定義する。
 
-TODO(Phase 1): Hoare Triple の抽出 - `lookup_trace` 等の各APIについて、事前条件・事後条件・不変条件（Hoare Triple）やエラー時の挙動を包括的に定義し、厳格な契約を策定すること。
 
 #### 初期化（initialize）
 <!-- traceability: {META_ConfigurableSystem} -->
@@ -249,7 +275,7 @@ TODO(Phase 1): Hoare Triple の抽出 - `lookup_trace` 等の各APIについて�
 | :--- | :--- |
 | 機能概要 | 指定されたWASMプログラムカウンタ(PC)に対応する、コンパイル済みのネイティブコードの実行アドレスを高速に検索する。 |
 | シグネチャ | `lookup_trace(pc: address) -> result<address, bool>` |
-| 補足 | ビットマップが `COMPILED` でない場合は即座に失敗を返す。その後、`harness` 経由でエントリ索引を検索する。 |
+| 補足 | ビットマップが `COMPILED` でない場合は即座に失敗を返す。その後、`harness` 経由でエントリ索引を検索する。本機能は、ヘッダファイルで定義されたマクロ（`FB_CONF_JIT_CACHE_SIZE`等）に基づき、システムのメモリマップや検索範囲等のパラメータが固定された状態で動作する。 `{META_ConfigurableSystem}` |
 
 #### カード状態取得（get_card_state）
 <!-- traceability: {META_ConfigurableSystem} -->
@@ -258,6 +284,7 @@ TODO(Phase 1): Hoare Triple の抽出 - `lookup_trace` 等の各APIについて�
 | :--- | :--- |
 | 機能概要 | 指定したPCが属するカードの状態（2-bit）を取得する。 |
 | シグネチャ | `get_card_state(pc: address) -> u8` |
+| 補足 | 本機能は、コンパイル時に固定されたカード境界シフト値（`FB_CONF_JIT_CARD_SHIFT`等）のマクロ定義に基づき、PC値からカードインデックスへの変換を高速に行う。 `{META_ConfigurableSystem}` |
 
 #### 検索範囲取得（get_search_range）
 <!-- traceability: {META_ConfigurableSystem} -->
@@ -266,6 +293,7 @@ TODO(Phase 1): Hoare Triple の抽出 - `lookup_trace` 等の各APIについて�
 | :--- | :--- |
 | 機能概要 | カーソマーキング索引（カードグループ）を用いて、二分探索の範囲を絞り込む。 |
 | シグネチャ | `get_search_range(pc: address) -> result<tuple<u32, u32>, bool>` |
+| 補足 | 本機能は、ヘッダファイルで定義されたカードグループサイズおよび最大登録件数のマクロ定数に基づき、インデックスの二分探索範囲をコンパイル時に静的に制限して計算する。 `{META_ConfigurableSystem}` |
 
 #### バッチコンパイル処理（process_batch_compile）
 <!-- traceability: {META_ConfigurableSystem} -->

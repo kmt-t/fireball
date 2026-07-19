@@ -258,7 +258,7 @@ Tier 3 (共有メモリ・パススルー) 向け。物理ページアドレス�
 
 #### L1/L2 ページテーブル定義
 <!-- traceability: {META_FlatMapIndexed} {vMMIO_Isolation} -->
-アドレスの各パートでダイレクトにインデックス参照する。従来の `std::flat_map` による O(log N) 探索は完全に排除される。
+アドレスの各パートでダイレクトにインデックス参照する。システム全体の共通ポリシー（`{META_FlatMapIndexed}`）では `std::flat_map` による $O(\log N)$ 探索が採用されるが、vMMIOは極めて高いパフォーマンス（$O(1)$）を要求されるため、例外的に `std::flat_map` を排除し、2段階ページテーブルによるダイレクトインデックス参照で最適化する。 `{vMMIO_Isolation}`
 
 ```python
 # L1 ページディレクトリ配列 (ROM/RAM)
@@ -267,10 +267,10 @@ Tier 3 (共有メモリ・パススルー) 向け。物理ページアドレス�
 # FC=12 (Static Device — Tier 2) — L2 固定テーブル (16 entries, 64 bytes)
 # vmmio_l2_pt_static = [0] * 16
 
-# FC=14 (SHM — Tier 3) — L2 動的テーブル (16 entries, 64 bytes)
+# FC=14 (SHM — Tier 3) — L2 静的ページテーブル (16 entries, 64 bytes - 静的確保)
 # vmmio_l2_pt_shm = [0] * 16
 
-# FC=15 (PASSTHROUGH — Tier 3) — L2 動的テーブル (16 entries, 64 bytes)
+# FC=15 (PASSTHROUGH — Tier 3) — L2 静的ページテーブル (16 entries, 64 bytes - 静的確保)
 # vmmio_l2_pt_passthrough = [0] * 16
 ```
 
@@ -409,7 +409,6 @@ sequenceDiagram
    - `std::memcpy` または HAL経由のDMAを用いて一括転送を実行。
 4. **完了**: 転送完了後、必要に応じてゲストに仮想割り込み（`IRQ_VDMA_DONE`）を通知する。
 
-TODO(Phase 0.8): vMMIO TLA+ Verification - ソフトウェアTLB的キャッシュ整合性と、階層化されたアドレスデコードの正当性を検証する。
 
 ### 4.3 仮想デバイスマップ
 <!-- traceability: {VDMA} -->
@@ -509,7 +508,6 @@ Tier 3 アクセス（FC=14/15）において毎回2段階ページテーブル�
 ### 5.1 公開API
 外部から利用可能なオブジェクト指向APIを定義する。
 
-TODO(Phase 1): ATCの抽出 - フック登録や静的予約が可能なライフサイクルの制約（初期化フェーズ中のみ等）を事前・不変条件として定義すること。
 
 #### フック登録 (`register-hook`)
 
@@ -552,7 +550,7 @@ TODO(Phase 1): ATCの抽出 - フック登録や静的予約が可能なライ�
 ### 6.2 メモリ制約と方策
 <!-- traceability: {META_ConfigurableSystem} -->
 - **目標**: マップ管理用のメモリを最小化する。
-- **方策**: `{META_ConfigurableSystem}` L1ページディレクトリ（16エントリポインタ）および L2ページテーブル（16エントリ配列、必要なFCにのみ静的または動的割り当て）を固定サイズとし、動的ツリーや `flat_map` などの余分なメタループレベルを排除する。
+- **方策**: `{META_ConfigurableSystem}` L1ページディレクトリ（16エントリポインタ）および L2ページテーブル（16エントリ配列、必要なFCにのみ静的または初期設定時の固定バッファから切り出し割り当て）を固定サイズとし、動的ツリーや `flat_map` などの余分なメタループレベルを排除する。
 
 ### 6.3 安全性制約と方策
 <!-- traceability: {RoleBasedAccessControl} {OwnershipTransfer} -->

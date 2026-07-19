@@ -2,7 +2,7 @@
 
 ## 1. コンセプト
 <!-- traceability: {IPCRouter} {DictionaryBasedIPC} {BufferedLogging} {GLOBAL_IdleDetection} -->
-ロギングコンポーネントは、ハイパーバイザ内部の状態を記録し、外部（UART/ITM等）へ出力する。メモリ消費と通信負荷を抑えるため、辞書参照IPCと内部リングバッファによる遅延出力を採用する。また、COOSの **Idle Hook** を利用してシステム負荷が低い時に集中的に出力を行うことで、実行性能への影響を抑える。 `{IPCRouter}` `{DictionaryBasedIPC}` `{BufferedLogging}` `{GLOBAL_IdleDetection}`
+ロギングコンポーネントは、ハイパーバイザ内部の状態を記録し、外部（UART/ITM等）へ出力する。システムコールはすべてIPCルータを経由して行われ、ログデータの転送もIPCルータを通過する。メモリ消費と通信負荷を抑えるため、辞書参照IPCと内部リングバッファによる遅延出力を採用する。また、COOSの **Idle Hook** を利用してシステム負荷が低い時に集中的に出力を行うことで、実行性能への影響を抑える。 `{IPCRouter}` `{DictionaryBasedIPC}` `{BufferedLogging}` `{GLOBAL_IdleDetection}`
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->
@@ -38,7 +38,7 @@ graph TD
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| 出力トランスポート | 物理的なログ出力（UART等）を担うHALへの参照 | 構造体への参照 | `hal_transport` (非所有) |
+| 出力トランスポート | HAL_Transport で定義された物理デバイス（UART等）への参照 | 構造体への参照 | `hal_transport` (非所有) |
 | 循環バッファ | ログデータを一時的に保持する領域 | リングバッファ | 固定長配列 |
 | 書き込み/読み出し索引 | バッファの現在の状態を示すポインタ | アトミック値 | 32bit |
 | 出力閾値 | 現在出力対象としている最小のログレベル | uint8_t | `log_level` |
@@ -57,7 +57,7 @@ graph TD
 ### 4.1 アルゴリズム
 <!-- traceability: {DictionaryBasedIPC} {BufferedLogging} -->
 - **辞書参照ロギング**: 送信側はメッセージ文字列ではなく、辞書内のオフセットと引数のみをIPCで送信する。 `{DictionaryBasedIPC}`
-- **遅延出力**: IPC受信時はリングバッファへの格納のみを行い、実際の物理出力はDMAや割り込みを利用してバックグラウンドで行う。 `{BufferedLogging}`
+- **遅延出力**: IPC受信時はリングバッファへの格納のみを行い、実際の物理出力は `HAL_Transport` を介した抽象化された通信路によりバックグラウンドで行われる。具体的なトランスポート実装（UARTやITMなど）はシステム構成定義ファイル（`inc/fireball_config.hxx`）で指定される。出力完了割り込みやDMA完了割り込みをトリガーとし、DMA転送時は転送開始後はCPUを解放して低システム負荷で動作し、コンテキストスイッチや他タスクの処理（中断処理）を優先する。 `{BufferedLogging}`
 - **バッファフル・ポリシー**: **FINALIZED: Overwrite**。リングバッファが満杯の場合、古いログを破棄して新しいログを書き込む。システムの状態継続を優先。
 
 ### 4.2 辞書構造
@@ -89,6 +89,8 @@ COOSスケジューラの `set_idle_hook` で `logger.flush()` を登録する�
 stateDiagram-v2
     [*] --> Idle
     Idle --> Buffering: log_received
+    Buffering --> DictTranslation: check dictionary offset
+    DictTranslation --> Buffering: translation completed / enqueue
     Buffering --> Flushing: buffer_not_empty
     Flushing --> Idle: buffer_empty
     Buffering --> Full: buffer_overflow
@@ -120,7 +122,6 @@ sequenceDiagram
 ### 5.1 公開API
 外部から利用可能なオブジェクト指向APIを定義する。
 
-TODO(Phase 1): ATCの抽出 - ログイベント発生時のバッファ飽和による上書きや、リングバッファのポインタ一貫性（複数タスクからの同時呼び出し時の排他制御要件など）の事前・事後・不変条件を詳細化すること。
 
 #### ログイベント記録 (`log_event`)
 
@@ -129,9 +130,9 @@ TODO(Phase 1): ATCの抽出 - ログイベント発生時のバッファ飽和�
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | 発生したイベントを、レベルと辞書オフセット形式で記録する。 |
-| シグネチャ | `log_event(level: uint8_t, offset: オフセット, args: 可変長) -> void` |
-| 引数 | `level`: 重要度<br>`offset`: 辞書位置<br>`args`: 数値パラメータ |
-| 戻り値 | void |
+| シグネチャ | `auto log_event(level: uint8_t, offset: uint32_t, args: std::span<const uint32_t, 4>) -> log_result_t` |
+| 引数 | `level`: ログレベル重要度<br>`offset`: 辞書オフセット（32bit）<br>`args`: ログパラメータとなる数値配列（最大4要素の `std::span`） |
+| 戻り値 | `log_result_t` (成功時は `SUCCESS`、バッファフル時は `ERR_BUFFER_FULL` を返す。ただし、バッファフル時でもポリシーに基づき古いログを上書きし、例外は投げずにシステムの実行を継続する) |
 | 期待する結果 | 正常：ログ情報がリングバッファにキューイングされる。 |
 
 #### バッファリング出力 (`flush`)
@@ -139,9 +140,9 @@ TODO(Phase 1): ATCの抽出 - ログイベント発生時のバッファ飽和�
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | リングバッファに蓄積されたログを物理トランスポートへ一括出力する。 |
-| シグネチャ | `flush() -> void` |
-| 戻り値 | void |
-| 補足 | COOS の `set_idle_hook` により、システムアイドル時に呼び出される。 |
+| シグネチャ | `auto flush() -> log_result_t` |
+| 戻り値 | `log_result_t` (成功時は `SUCCESS`、物理トランスポートがDMA転送中かつ出力バッファが空でないといったハードウェアビジー状態の失敗時には `ERR_TRANSPORTER_BUSY` を返す) |
+| 補足 | COOS の `set_idle_hook` により、システムアイドル時に呼び出される。物理転送中に高優先度の割り込み（例：WASIタイマー等）が発生した場合は、現在のDMA転送の完了待機を中止してバックグラウンドDMAに任せ、次のログバッファのフラッシュ処理をスキップして速やかに制御をスケジューラに戻す。 |
 
 ### 5.2 URI/IPCインターフェイス
 <!-- traceability: {DictionaryBasedIPC} -->
@@ -159,9 +160,9 @@ TODO(Phase 1): ATCの抽出 - ログイベント発生時のバッファ飽和�
 ### 6.2 メモリ制約と方策
 <!-- traceability: {MemoryIsolation} {META_ConfigurableSystem} -->
 - **目標**: ログ機能によるメモリ圧迫を防止する。
-- **方策**: `{MemoryIsolation}` `{META_ConfigurableSystem}` 独立したヒープパーティションを使用し、バッファサイズをコンパイル時に固定する。
+- **方策**: `{MemoryIsolation}` `{META_ConfigurableSystem}` 独立した静的メモリプールを使用し、バッファサイズをコンパイル時に固定する。動的メモリ確保（ヒープ）は一切使用しない。
 
 ### 6.3 安全性制約と方策
 <!-- traceability: {BufferedLogging} {MemoryIsolation} {META_ConfigurableSystem} -->
 - **目標**: ログ出力の失敗がシステム全体に波及しないようにする。
-- **方策**: バッファフル時は古いログを破棄するか、新しいログを無視することで、システムの継続実行を優先する。ログ出力のエラーはシステムの実行を停止させない例外条件として扱う。
+- **方策**: `{BufferedLogging}` `{MemoryIsolation}` `{META_ConfigurableSystem}` ログの蓄積はリングバッファでバッファリングを行い、メモリパーティションによってログ領域のクラッシュを他のコンポーネントから隔離する。また、バッファサイズ等の制限はコンパイル時マクロ定義で設定される。バッファフル時は古いログを破棄し、システムの継続実行を優先する。

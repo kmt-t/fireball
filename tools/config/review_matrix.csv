@@ -1,0 +1,569 @@
+file_path,heading,keywords,policy_P01,policy_P02,review_traceability,review_quality,review_api,llm_checked
+docs/requires/requirement_list.md,1. 概要,,N/A,N/A,N/A,N/A,N/A,0
+docs/requires/requirement_list.md,2.1 ユースケース図,,N/A,N/A,N/A,N/A,N/A,0
+docs/requires/requirement_list.md,2.2 主要シナリオ,,N/A,N/A,N/A,N/A,N/A,0
+docs/requires/requirement_list.md,2. ユースケース,,N/A,N/A,N/A,N/A,N/A,0
+docs/requires/requirement_list.md,3.1.1 WASM実行 (vSoC),"JIT_CopyAndPatch,JIT_DoubleBuffer_Cache,PositionIndependentCode,NativeAPI_Export,JIT_Encoder,MultiModule_Support,ThreadedInterpreter,JIT_LazyChaining,Interpreter_LazyJITSwitch,vMMIO_TrapAndEmulate,VDMA,JIT_ReverseCompilationOrder,DynamicMmap,EnvironmentPointer,ROMParsing,MemoryBoundaryCheck,WasmPageAlignment,UnifiedAccessModel,Wasm32Only,FastAddressCheck,vMMIO_Isolation,JIT_RuntimeAPI_Fallback,InterpreterContextStackless,SinglePassCompilation",N/A,N/A,N/A,N/A,N/A,0
+docs/requires/requirement_list.md,3.1.2 タスク管理・通信 (COOS),"CooperativeMultitasking,GLOBAL_UseCpp23Library,GLOBAL_UseCpp20Coroutine,LowOverheadSwitch,COOS_Deterministic,CSPCommunication,IPC_ZeroCopy,GLOBAL_InterruptWakeup,CSP_Handoff,GLOBAL_PeriodicTask,GLOBAL_IdleDetection,DirectContextSwitch,TaskPollInterruptFlag",N/A,N/A,N/A,N/A,N/A,0
+docs/requires/requirement_list.md,3.1.3 システム連携 (IPC/HAL/WIT),"IPCRouter,IPC_HandleBased,URIAbstraction,IPCDI,RoleBasedAccessControl,OwnershipTransfer,DictionaryBasedIPC,LowLatencyLookup,Fast_Path_GPIO,Asynchronous_Notification,IPCRegistry,ServiceFacade,WIT_Interface_Spec,WIT_Common_Types,WIT_Interface_Purpose,Trap_Interface,Syscall_Mapping,HAL_Interface,Syscall_Return_Value,Errorcode_To_Strategy,WASI_Implementation,TypeSafeMessaging,PhysicalPassthrough",N/A,N/A,N/A,N/A,N/A,0
+docs/requires/requirement_list.md,3.1.4 デバッグ・運用,"COOS_Transparent,Debug_Integrated,Debug_Standard_Env,RSPMinimalSet,BufferedLogging,RSP_Transport_Selectable,DebuggerLabelTableSwitch",N/A,N/A,N/A,N/A,N/A,0
+docs/requires/requirement_list.md,3.1.5 共通基盤・実装パターン,,N/A,N/A,N/A,N/A,N/A,0
+docs/requires/requirement_list.md,3.1 機能要求,"JIT_CopyAndPatch,JIT_DoubleBuffer_Cache,PositionIndependentCode,NativeAPI_Export,JIT_Encoder,MultiModule_Support,ThreadedInterpreter,JIT_LazyChaining,Interpreter_LazyJITSwitch,vMMIO_TrapAndEmulate,VDMA,JIT_ReverseCompilationOrder,DynamicMmap,EnvironmentPointer,ROMParsing,MemoryBoundaryCheck,WasmPageAlignment,UnifiedAccessModel,Wasm32Only,FastAddressCheck,vMMIO_Isolation,JIT_RuntimeAPI_Fallback,InterpreterContextStackless,SinglePassCompilation,CooperativeMultitasking,GLOBAL_UseCpp23Library,GLOBAL_UseCpp20Coroutine,LowOverheadSwitch,COOS_Deterministic,CSPCommunication,IPC_ZeroCopy,GLOBAL_InterruptWakeup,CSP_Handoff,GLOBAL_PeriodicTask,GLOBAL_IdleDetection,DirectContextSwitch,TaskPollInterruptFlag,IPCRouter,IPC_HandleBased,URIAbstraction,IPCDI,RoleBasedAccessControl,OwnershipTransfer,DictionaryBasedIPC,LowLatencyLookup,Fast_Path_GPIO,Asynchronous_Notification,IPCRegistry,ServiceFacade,WIT_Interface_Spec,WIT_Common_Types,WIT_Interface_Purpose,Trap_Interface,Syscall_Mapping,HAL_Interface,Syscall_Return_Value,Errorcode_To_Strategy,WASI_Implementation,TypeSafeMessaging,PhysicalPassthrough,COOS_Transparent,Debug_Integrated,Debug_Standard_Env,RSPMinimalSet,BufferedLogging,RSP_Transport_Selectable,DebuggerLabelTableSwitch,HistoryBuffer,LightweightVerifier,COOS_Scheduling_Refine,vMMIO_TLB,ZeroCopyIndexing,IPC_DropHandler,JIT_Safepoint,Debugger_Jit_Flush,WASI_Async_Bridge,ConceptHarnessDI",N/A,N/A,N/A,N/A,N/A,0
+docs/requires/requirement_list.md,3.2.1 パフォーマンス・効率,"LowLatencyJIT,JIT_ZeroCompileCostTheorem,SimpleJITArchitecture,JIT_RegisterMapping,ContextPointerRegister,Resource_Estimation_Model,ConsolidatedHeap,GLOBAL_StrictMemoryLimit,GLOBAL_IndependentHeap,GLOBAL_Policy_Memory,MemoryIsolation,ZeroRuntimeOverhead,Size_15KLOC,EliminateDataRace,CleanArchitecture,IoC,GLOBAL_ComponentHarness,GLOBAL_StaticScalability,WIT_First,Type_Vocabulary",N/A,N/A,N/A,N/A,N/A,0
+docs/requires/requirement_list.md,[Template & Meta],,N/A,N/A,N/A,N/A,N/A,0
+docs/requires/requirement_list.md,3.2.2 開発方針・品質,"Size_15KLOC,EliminateDataRace,CleanArchitecture,IoC,GLOBAL_ComponentHarness,GLOBAL_StaticScalability,WIT_First,Type_Vocabulary",N/A,N/A,N/A,N/A,N/A,0
+docs/requires/requirement_list.md,3.2.3 移植性・互換性,,N/A,N/A,N/A,N/A,N/A,0
+docs/requires/requirement_list.md,3.2 非機能要求,,N/A,N/A,N/A,N/A,N/A,0
+docs/requires/requirement_list.md,3. 命題リスト,"JIT_CopyAndPatch,JIT_DoubleBuffer_Cache,PositionIndependentCode,NativeAPI_Export,JIT_Encoder,MultiModule_Support,ThreadedInterpreter,JIT_LazyChaining,Interpreter_LazyJITSwitch,vMMIO_TrapAndEmulate,VDMA,JIT_ReverseCompilationOrder,DynamicMmap,EnvironmentPointer,ROMParsing,MemoryBoundaryCheck,WasmPageAlignment,UnifiedAccessModel,Wasm32Only,FastAddressCheck,vMMIO_Isolation,JIT_RuntimeAPI_Fallback,InterpreterContextStackless,SinglePassCompilation,CooperativeMultitasking,GLOBAL_UseCpp23Library,GLOBAL_UseCpp20Coroutine,LowOverheadSwitch,COOS_Deterministic,CSPCommunication,IPC_ZeroCopy,GLOBAL_InterruptWakeup,CSP_Handoff,GLOBAL_PeriodicTask,GLOBAL_IdleDetection,DirectContextSwitch,TaskPollInterruptFlag,IPCRouter,IPC_HandleBased,URIAbstraction,IPCDI,RoleBasedAccessControl,OwnershipTransfer,DictionaryBasedIPC,LowLatencyLookup,Fast_Path_GPIO,Asynchronous_Notification,IPCRegistry,ServiceFacade,WIT_Interface_Spec,WIT_Common_Types,WIT_Interface_Purpose,Trap_Interface,Syscall_Mapping,HAL_Interface,Syscall_Return_Value,Errorcode_To_Strategy,WASI_Implementation,TypeSafeMessaging,PhysicalPassthrough,COOS_Transparent,Debug_Integrated,Debug_Standard_Env,RSPMinimalSet,BufferedLogging,RSP_Transport_Selectable,DebuggerLabelTableSwitch,HistoryBuffer,LightweightVerifier,COOS_Scheduling_Refine,vMMIO_TLB,ZeroCopyIndexing,IPC_DropHandler,JIT_Safepoint,Debugger_Jit_Flush,WASI_Async_Bridge,ConceptHarnessDI,LowLatencyJIT,JIT_ZeroCompileCostTheorem,SimpleJITArchitecture,JIT_RegisterMapping,ContextPointerRegister,Resource_Estimation_Model,ConsolidatedHeap,GLOBAL_StrictMemoryLimit,GLOBAL_IndependentHeap,GLOBAL_Policy_Memory,MemoryIsolation,ZeroRuntimeOverhead,Size_15KLOC,EliminateDataRace,CleanArchitecture,IoC,GLOBAL_ComponentHarness,GLOBAL_StaticScalability,WIT_First,Type_Vocabulary,NotRTOS",N/A,N/A,N/A,N/A,N/A,0
+docs/requires/requirement_list.md,4. 設計課題・制約追跡 (Design Challenges & ADRs),"Challenge_ApproximateYield,Challenge_InterruptSafety,Challenge_JITCacheEfficiency,Challenge_WasiFdWriteLoop,Challenge_SyscallMemorySafety,Challenge_CoosBlockedList,Challenge_CspHandoffStarvation,Challenge_DebuggerResource,ADR_ScalableCodeOffset,ADR_SafeQueuingOnHotMiss",N/A,N/A,N/A,N/A,N/A,0
+docs/requires/requirement_list.md,5. 制約事項,,N/A,N/A,N/A,N/A,N/A,0
+docs/requires/requirement_list.md,6. 用語定義,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_coos.md,1. コンセプト,"CooperativeMultitasking,GLOBAL_UseCpp23Library,GLOBAL_UseCpp20Coroutine,CSPCommunication,EliminateDataRace,GLOBAL_PeriodicTask,GLOBAL_IdleDetection,GLOBAL_InterruptWakeup,NotRTOS,META_3TierSeparation,GLOBAL_ComponentHarness",N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_coos.md,2.1 構成要素,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_coos.md,2. アーキテクチャ分類,"META_3TierSeparation,GLOBAL_ComponentHarness,BufferedLogging",PASS,N/A,N/A,N/A,N/A,1
+docs/components/core/os_coos.md,3.1 データ構造,GLOBAL_Policy_Memory,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_coos.md,3.2 内部ブロック図,"GLOBAL_Policy_Memory,CSPCommunication",N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_coos.md,チャネル送受信動作の挙動定義,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_coos.md,CSPチャネル（channel）,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_coos.md,3.3 主要なデータ定義,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_coos.md,3. 静的モデル,"GLOBAL_Policy_Memory,CSPCommunication,CSP_Handoff,DirectContextSwitch,GLOBAL_IdleDetection,GLOBAL_StrictMemoryLimit,GLOBAL_IndependentHeap,GLOBAL_InterruptWakeup",N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_coos.md,COOS 内部 API シグネチャ,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_coos.md,4.1 アルゴリズム,"CSP_Handoff,DirectContextSwitch,GLOBAL_IdleDetection,GLOBAL_StrictMemoryLimit,GLOBAL_IndependentHeap,GLOBAL_InterruptWakeup",N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_coos.md,4.2 状態遷移図 (SMD: COOS システムレベル),"CSP_Handoff,DirectContextSwitch,GLOBAL_IdleDetection,GLOBAL_StrictMemoryLimit,GLOBAL_IndependentHeap",N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_coos.md,4.3 タスク状態遷移図 (SMD: Task ライフサイクル),,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_coos.md,4. 動的モデル,"CSP_Handoff,DirectContextSwitch,GLOBAL_IdleDetection,GLOBAL_StrictMemoryLimit,GLOBAL_IndependentHeap,GLOBAL_InterruptWakeup,META_StaticDI,GLOBAL_ComponentHarness",N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_coos.md,ハーネスによる依存性注入パターン,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_coos.md,5.1 `coos_harness` (システムハーネス),"META_StaticDI,GLOBAL_ComponentHarness",N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_coos.md,1. 所有権管理 `CoValue`,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_coos.md,2. 公開 API インターフェイス,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_coos.md,5.2 サブコンポーネント・インターフェイス (C++23),,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_coos.md,5. インターフェイス設計,"META_StaticDI,GLOBAL_ComponentHarness",N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_coos.md,6.1 検証対象の不変条件,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_coos.md,6. 形式検証（TLA+ / 直交表）,"CSP_Handoff,GLOBAL_UseCpp20Coroutine,Challenge_CspHandoffStarvation",N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_coos.md,6.2 直交表: CSP通信と状態遷移,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_scheduler.md,1. コンセプト,"CooperativeMultitasking,GLOBAL_UseCpp23Library,GLOBAL_UseCpp20Coroutine,COOS_Deterministic,CSPCommunication",N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_scheduler.md,2. アーキテクチャ分類,META_3TierSeparation,N/A,N/A,PASS,N/A,N/A,1
+docs/components/core/os_scheduler.md,3.1 データ構造,COOS_Transparent,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_scheduler.md,3.2 内部ブロック図,COOS_Transparent,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_scheduler.md,スケジューラクラス（Scheduler）,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_scheduler.md,3.3 主要なデータ定義,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_scheduler.md,3. 静的モデル,COOS_Transparent,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_scheduler.md,4.1 アルゴリズム,"GLOBAL_IdleDetection,GLOBAL_PeriodicTask,GLOBAL_InterruptWakeup",N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_scheduler.md,4.2 状態遷移図 (SysML SMD: Scheduler 視点),,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_scheduler.md,4. 動的モデル,"GLOBAL_IdleDetection,GLOBAL_PeriodicTask,GLOBAL_InterruptWakeup",N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_scheduler.md,初期化 (`init-scheduler`),ConceptHarnessDI,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_scheduler.md,タスク生成 (`spawn`),"COOS_Scheduling_Refine,LowOverheadSwitch,Challenge_CoosBlockedList",N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_scheduler.md,タスク生成（spawn_task - ネイティブタスク用）,"CooperativeMultitasking,GLOBAL_UseCpp20Coroutine",PASS,PASS,PASS,UNCERTAIN,PASS,1
+docs/components/core/os_scheduler.md,実行譲渡（yield）,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_scheduler.md,実行（run）,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_scheduler.md,アイドルハンドラ設定（set_idle_handler）,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_scheduler.md,`notify-interrupt` (内部 API),,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_scheduler.md,タスク終了（terminate）,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_scheduler.md,5.1 公開API,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_scheduler.md,5. インターフェイス設計,"ConceptHarnessDI,COOS_Scheduling_Refine,LowOverheadSwitch,Challenge_CoosBlockedList,CooperativeMultitasking,GLOBAL_UseCpp20Coroutine",N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_scheduler.md,ADR-SCHED-001: 侵入型リストによる管理,GLOBAL_Policy_Memory,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_scheduler.md,ADR-SCHED-002: アルゴリズムの継続的改善と最適化,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_scheduler.md,6. 設計判断 (ADR),"GLOBAL_Policy_Memory,COOS_Scheduling_Refine",N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/os_scheduler.md,ADR-SCHED-003: BLOCKEDタスクリストの管理コストとリアルタイム性,Challenge_CoosBlockedList,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_config.md,1. コンセプト,"META_ConfigurableSystem,META_Static_Resolution",N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_config.md,2. アーキテクチャ分類,"META_3TierSeparation,META_Static_Resolution",N/A,N/A,N/A,N/A,N/A,1
+docs/components/core/system_config.md,3.1 データ構造,Resource_Estimation_Model,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_config.md,静的リソース消費の概算モデル,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_config.md,3.2 内部ブロック図,"Resource_Estimation_Model,META_ConfigurableSystem",N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_config.md,代表的な主要構成パラメータ,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_config.md,3.3 主要な構造体・クラス・定数,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_config.md,3. 静的モデル,"Resource_Estimation_Model,META_ConfigurableSystem",N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_config.md,4.1 アルゴリズム,META_Static_Resolution,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_config.md,4.2 状態遷移図,META_Static_Resolution,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_config.md,4.3 内部シーケンス,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_config.md,4. 動的モデル,META_Static_Resolution,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_config.md,コンフィグ定数の参照,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_config.md,5.1 公開API,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_config.md,5.2 URI/IPCインターフェイス,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_config.md,5. インターフェイス定義,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_config.md,6.1 性能制約と方策,META_Static_Resolution,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_config.md,6.2 メモリ制約と方策,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_config.md,6. 制約達成の方策,"META_Static_Resolution,META_ConfigurableSystem,GLOBAL_StaticScalability",N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_config.md,6.3 安全性制約と方策,META_ConfigurableSystem,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_config_details.md,1. 概要,"META_ConfigurableSystem,GLOBAL_IndependentHeap,GLOBAL_StrictMemoryLimit",N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_config_details.md,メモリプールの分離設計,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_config_details.md,2.1 メモリ管理,"GLOBAL_IndependentHeap,GLOBAL_StrictMemoryLimit,GLOBAL_StaticScalability,RoleBasedAccessControl",N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_config_details.md,ロールベースアクセス制御の定義,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_config_details.md,2.2 IPCルータ,"GLOBAL_StaticScalability,RoleBasedAccessControl",N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_config_details.md,2.3 HAL,"META_ConfigurableSystem,JIT_DoubleBuffer_Cache,FastAddressCheck,GLOBAL_StrictMemoryLimit,vMMIO_Isolation,META_RestrictedPhysicalAccess",N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_config_details.md,物理アクセス許可範囲の定義,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_config_details.md,2.4 vSoC / vMMIO,"JIT_DoubleBuffer_Cache,FastAddressCheck,GLOBAL_StrictMemoryLimit,vMMIO_Isolation,META_ConfigurableSystem,META_RestrictedPhysicalAccess",N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_config_details.md,2.5 ロギング,BufferedLogging,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_config_details.md,2.6 デバッガ,"META_ConfigurableSystem,Challenge_DebuggerResource,GLOBAL_IndependentHeap,GLOBAL_StrictMemoryLimit,GLOBAL_StaticScalability,RoleBasedAccessControl,JIT_DoubleBuffer_Cache,FastAddressCheck,vMMIO_Isolation,META_RestrictedPhysicalAccess,BufferedLogging",N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_config_details.md,task_id 型,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_config_details.md,2. マクロ一覧,"GLOBAL_IndependentHeap,GLOBAL_StrictMemoryLimit,GLOBAL_StaticScalability,RoleBasedAccessControl,META_ConfigurableSystem,JIT_DoubleBuffer_Cache,FastAddressCheck,vMMIO_Isolation,META_RestrictedPhysicalAccess,BufferedLogging,Challenge_DebuggerResource",PASS,N/A,PASS,UNCERTAIN,PASS,1
+docs/components/core/system_config_details.md,2.7 型定義・予約値,"GLOBAL_IndependentHeap,GLOBAL_StrictMemoryLimit,GLOBAL_StaticScalability,RoleBasedAccessControl,META_ConfigurableSystem,JIT_DoubleBuffer_Cache,FastAddressCheck,vMMIO_Isolation,META_RestrictedPhysicalAccess,BufferedLogging,Challenge_DebuggerResource",N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_config_details.md,最大タスク数制約,GLOBAL_StaticScalability,PASS,N/A,PASS,UNCERTAIN,N/A,1
+docs/components/core/system_config_details.md,最大タスク数のコンパイル時検証,GLOBAL_StaticScalability,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_logging.md,1. コンセプト,"IPCRouter,DictionaryBasedIPC,BufferedLogging,GLOBAL_IdleDetection",N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_logging.md,2. アーキテクチャ分類,META_3TierSeparation,N/A,N/A,N/A,N/A,N/A,1
+docs/components/core/system_logging.md,3.1 データ構造,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_logging.md,3.2 内部ブロック図,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_logging.md,ロガー（Logger）クラス,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_logging.md,ログ構成（logging_config）,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_logging.md,3.3 主要なクラス・構造体・配列・定数,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_logging.md,3. 静的モデル,META_ConfigurableSystem,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_logging.md,4.1 アルゴリズム,"DictionaryBasedIPC,BufferedLogging",N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_logging.md,4.2 辞書構造,DictionaryBasedIPC,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_logging.md,4.3 COOS Idle Hook 連携 (Flush Protocol),GLOBAL_IdleDetection,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_logging.md,4.4 状態遷移図,"DictionaryBasedIPC,BufferedLogging,GLOBAL_IdleDetection",N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_logging.md,ログ出力シーケンス,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_logging.md,4.5 内部シーケンス,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_logging.md,4. 動的モデル,"DictionaryBasedIPC,BufferedLogging,GLOBAL_IdleDetection",N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_logging.md,ログイベント記録 (`log_event`),"BufferedLogging,META_ZeroOverhead",N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_logging.md,バッファリング出力 (`flush`),,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_logging.md,5.1 公開API,"BufferedLogging,META_ZeroOverhead",N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_logging.md,5.2 URI/IPCインターフェイス,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_logging.md,5. インターフェイス定義,"BufferedLogging,META_ZeroOverhead,DictionaryBasedIPC",N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_logging.md,6.1 性能制約と方策,BufferedLogging,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_logging.md,6.2 メモリ制約と方策,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_logging.md,6. 制約達成の方策,"BufferedLogging,MemoryIsolation,META_ConfigurableSystem",N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_logging.md,6.3 安全性制約と方策,"BufferedLogging,MemoryIsolation,META_ConfigurableSystem",N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_syscall.md,1. 目的,NativeAPI_Export,N/A,N/A,N/A,N/A,N/A,1
+docs/components/core/system_syscall.md,2. 背景,"UnifiedAccessModel,WIT_Interface_Spec",N/A,N/A,PASS,UNCERTAIN,PASS,1
+docs/components/core/system_syscall.md,トラップ高速パスとレジスタ直接マッピング,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_syscall.md,3. `fireball_call` WIT定義,"WIT_Interface_Spec,Trap_Interface,Type_Vocabulary",N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_syscall.md,型のエイリアス定義 (Type Vocabulary) `{Type_Vocabulary}`,Type_Vocabulary,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_syscall.md,4.1.1. ゲストメモリ内構造体のレイアウト規則,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_syscall.md,4.1. 引数のパッキング,Type_Vocabulary,PASS,N/A,PASS,UNCERTAIN,PASS,1
+docs/components/core/system_syscall.md,4.2. 戻り値,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_syscall.md,4. `fireball_call` 呼び出し規約,"Type_Vocabulary,Syscall_Return_Value,Errorcode_To_Strategy",N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_syscall.md,5.1. カテゴリ一覧,"Type_Vocabulary,IPC_HandleBased,CSPCommunication",N/A,N/A,PASS,N/A,N/A,1
+docs/components/core/system_syscall.md,5.2. System (`0x00`-`0x0F`),CooperativeMultitasking,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_syscall.md,5.3. vMMIO Generic (`0x10`-`0x1F`),"RoleBasedAccessControl,META_RestrictedPhysicalAccess",N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_syscall.md,5.4. VDMA (`0x20`-`0x2F`),VDMA,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_syscall.md,5.5. IRQ (`0x30`-`0x3F`),"CooperativeMultitasking,RoleBasedAccessControl,META_RestrictedPhysicalAccess,VDMA",N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_syscall.md,5.6. IPC (`0x40`-`0x4F`),"CSPCommunication,IPC_HandleBased",N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_syscall.md,5.7. WASI (`0x80`-`0xBF`),,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_syscall.md,5. システムコールID,"Type_Vocabulary,IPC_HandleBased,CSPCommunication,CooperativeMultitasking,RoleBasedAccessControl,META_RestrictedPhysicalAccess,VDMA,WASI_Implementation",PASS,PASS,PASS,UNCERTAIN,PASS,1
+docs/components/core/system_syscall.md,6.1. 役割,WIT_Interface_Purpose,N/A,N/A,UNCERTAIN,N/A,N/A,1
+docs/components/core/system_syscall.md,6.2. 高応答 Trigger のマッピング例,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_syscall.md,6. Fireball Shim (`libfireball_shim`),"WIT_Interface_Purpose,Fast_Path_GPIO",N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_syscall.md,7.1. 役割,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_syscall.md,7. WASIホスト側実装,"Challenge_WasiFdWriteLoop,WASI_Async_Bridge,Asynchronous_Notification",N/A,N/A,PASS,UNCERTAIN,N/A,1
+docs/components/core/system_syscall.md,8.1.1. 仮想割り込みID,Asynchronous_Notification,N/A,N/A,PASS,N/A,PASS,1
+docs/components/core/system_syscall.md,8.1.2. 仮想割り込みペイロード,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_syscall.md,8.1. 仮想割り込み,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/core/system_syscall.md,8. ホストからゲストへの非同期通知メカニズム,Asynchronous_Notification,PASS,N/A,PASS,UNCERTAIN,PASS,1
+docs/components/core/system_syscall.md,9. メモリ安全性,Challenge_SyscallMemorySafety,PASS,N/A,PASS,UNCERTAIN,PASS,1
+docs/components/core/system_syscall.md,10. トラップ状態プロトコル,Trap_Interface,N/A,N/A,PASS,N/A,N/A,1
+docs/components/core/system_syscall.md,トラップ実行の制御フロー,Trap_Interface,N/A,N/A,PASS,UNCERTAIN,PASS,1
+docs/components/interface/interface_wit.md,1. 目的,"WIT_Interface_Purpose,WIT_First,WIT_Common_Types",N/A,N/A,N/A,N/A,N/A,1
+docs/components/interface/interface_wit.md,2. アーキテクチャ原則,"CleanArchitecture,META_SpecificationFirst,META_Risk_Tiering",PASS,N/A,PASS,N/A,PASS,1
+docs/components/interface/interface_wit.md,3.1 基礎インターフェイス,"CooperativeMultitasking,Asynchronous_Notification,META_RecoveryStrategy,Errorcode_To_Strategy",N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/interface_wit.md,設計判断,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/interface_wit.md,3.2 リカバリー戦略とエラーハンドリング,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/interface_wit.md,3. 共通データ構造,"CooperativeMultitasking,Asynchronous_Notification,META_RecoveryStrategy,Errorcode_To_Strategy,Syscall_Mapping",N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/interface_wit.md,4.1. `fireball:host/trap` の定義,Syscall_Mapping,N/A,N/A,UNCERTAIN,N/A,PASS,1
+docs/components/interface/interface_wit.md,4.2. 高応答トラインターフェイス,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/interface_wit.md,4. 低レベル・トラップ・インターフェイス,Syscall_Mapping,N/A,PASS,PASS,FAIL,PASS,1
+docs/components/interface/interface_wit.md,5.1 `fireball:host/timer` (wasi:clocks 準拠),,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/interface_wit.md,5.3 `fireball:host/bus` (Master/Slave Bus),WASI_Implementation,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/interface_wit.md,5.4 `fireball:host/streaming` (wasi:io 準拠),WASI_Implementation,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/interface_wit.md,5.5. WASI標準APIの実装仕様 (WASI Standard API Implementation Specification),,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/interface_wit.md,5. HAL インターフェイス,WASI_Implementation,PASS,PASS,PASS,UNCERTAIN,PASS,1
+docs/components/interface/interface_wit.md,6. 非同期通知メカニズム,"Asynchronous_Notification,WASI_Async_Bridge",N/A,N/A,PASS,N/A,N/A,1
+docs/components/interface/interface_wit.md,7. フィードバック：WASI 準拠における制約事項,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/interface_wit.md,8. 命名規則 (Naming Conventions),,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/interface_wit.md,8.1 設計上の留意点,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/ipc_router.md,1. コンセプト,"IPCRouter,URIAbstraction,RoleBasedAccessControl,OwnershipTransfer,IPCDI",N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/ipc_router.md,2. アーキテクチャ分類,"META_3TierSeparation,IPCRouter,URIAbstraction",N/A,N/A,PASS,N/A,N/A,1
+docs/components/interface/ipc_router.md,3.1 データ構造,"IPCRegistry,META_FlatMapIndexed,RoleBasedAccessControl",N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/ipc_router.md,3.2 内部ブロック図,"IPCRegistry,META_FlatMapIndexed,RoleBasedAccessControl,DictionaryBasedIPC",N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/ipc_router.md,スコープ定義,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/ipc_router.md,Key-Valueペア（kv_pair）,DictionaryBasedIPC,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/ipc_router.md,IPCメッセージ（message）,"TypeSafeMessaging,META_FlatMapIndexed",N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/ipc_router.md,レジストリエントリ（registry_entry）,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/ipc_router.md,3.3 主要なクラス・構造体・配列・定数,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/ipc_router.md,3. 静的モデル,"IPCRegistry,META_FlatMapIndexed,RoleBasedAccessControl,DictionaryBasedIPC,TypeSafeMessaging",N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/ipc_router.md,4.1 アルゴリズム,"LowLatencyLookup,META_AccessDictionary,META_FlatMapIndexed,OwnershipTransfer,IPC_ZeroCopy,Challenge_CspHandoffStarvation,IPC_DropHandler",N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/ipc_router.md,4.1.1 名前解決パイプラインとアクセス制御フロー,"LowLatencyLookup,META_AccessDictionary,META_FlatMapIndexed,RoleBasedAccessControl",PASS,PASS,PASS,UNCERTAIN,PASS,1
+docs/components/interface/ipc_router.md,4.2 状態遷移図 (SysML SMD: IPC Router ルーティングフロー),"LowLatencyLookup,META_AccessDictionary,META_FlatMapIndexed,OwnershipTransfer,IPC_ZeroCopy,Challenge_CspHandoffStarvation,IPC_DropHandler",N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/ipc_router.md,4.2.1 所有権移譲状態機械 (Ownership Transfer State Machine),"OwnershipTransfer,IPC_ZeroCopy,Challenge_CspHandoffStarvation,IPC_DropHandler",N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/ipc_router.md,4.3 メッセージライフサイクルと所有権管理 (SysML Parametric Diagram 相当),"IPC_ZeroCopy,IPC_DropHandler",N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/ipc_router.md,4.3.1 二分探索による O(log N) 低遅延ルックアップ,"LowLatencyLookup,META_AccessDictionary,META_FlatMapIndexed",N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/ipc_router.md,4.3.2 CSP Handoff スターベーション防止対策,"Challenge_CspHandoffStarvation,LowLatencyLookup,META_AccessDictionary,META_FlatMapIndexed,OwnershipTransfer,IPC_ZeroCopy,IPC_DropHandler",N/A,N/A,PASS,UNCERTAIN,N/A,1
+docs/components/interface/ipc_router.md,サービス検索と接続フロー,"LowLatencyLookup,META_AccessDictionary,RoleBasedAccessControl,IPCRouter",N/A,PASS,PASS,N/A,PASS,1
+docs/components/interface/ipc_router.md,所有権移譲フロー (Zero-Copy Handoff),,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/ipc_router.md,4.4 内部シーケンス図,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/ipc_router.md,4. 動的モデル,"LowLatencyLookup,META_AccessDictionary,META_FlatMapIndexed,OwnershipTransfer,IPC_ZeroCopy,Challenge_CspHandoffStarvation,IPC_DropHandler,RoleBasedAccessControl,IPCRouter",N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/ipc_router.md,サービス登録（register_service）,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/ipc_router.md,サービス検索（lookup_service）,IPC_HandleBased,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/ipc_router.md,メッセージルーティング（route_message）,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/ipc_router.md,5.1 公開API,"IPC_HandleBased,CSP_Handoff",N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/ipc_router.md,5.2 URI/IPCインターフェイス,TypeSafeMessaging,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/ipc_router.md,5.3 サービスファサード,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/ipc_router.md,5. インターフェイス定義,"IPC_HandleBased,CSP_Handoff,TypeSafeMessaging,ServiceFacade,IoC",N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/ipc_router.md,6.1 検証対象の不変条件,"IPC_ZeroCopy,Challenge_CspHandoffStarvation,IPC_DropHandler,OwnershipTransfer",N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/ipc_router.md,6.2 検証対象のプロパティ,"Challenge_CspHandoffStarvation,IPC_ZeroCopy,IPC_DropHandler",N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/ipc_router.md,6.3 検証モデル概要,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/ipc_router.md,6.4 既知の制限,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/ipc_router.md,6. 形式検証（TLA+ / 直交表）,"IPC_ZeroCopy,Challenge_CspHandoffStarvation,IPC_DropHandler,OwnershipTransfer",N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/ipc_router.md,6.1 性能制約と方策,LowLatencyLookup,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/ipc_router.md,6.2 メモリ制約と方策,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/ipc_router.md,7. 制約達成の方策,"LowLatencyLookup,META_BumpAllocator,GLOBAL_StaticScalability",N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/ipc_router.md,6.3 安全性制約と方策,"RoleBasedAccessControl,OwnershipTransfer",N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/system_service.md,1. コンセプト,"META_FaultIsolation,MemoryIsolation,IPCRouter",N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/system_service.md,2. アーキテクチャ分類,"META_3TierSeparation,IPCRouter,URIAbstraction",N/A,N/A,PASS,N/A,N/A,1
+docs/components/interface/system_service.md,3.1 データ構造,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/system_service.md,3.2 内部ブロック図,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/system_service.md,サービス定義（service）,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/system_service.md,サービス構成（service_config）,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/system_service.md,3.3 主要なクラス・構造体・配列・定数,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/system_service.md,3. 静的モデル,META_ConfigurableSystem,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/system_service.md,4.1 アルゴリズム,"META_FaultIsolation,IPCRouter",N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/system_service.md,4.2 状態遷移図,"META_FaultIsolation,IPCRouter",N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/system_service.md,WASI呼び出しシーケンス,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/system_service.md,4.3 内部シーケンス,"META_FaultIsolation,IPCRouter",N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/system_service.md,検証対象となる制約事項 (TLA+ モデリングポイント),,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/system_service.md,4.4 WASI API から HAL への変換ラッパー (コンセプトコード),,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/system_service.md,4. 動的モデル,"META_FaultIsolation,IPCRouter,META_RecoveryStrategy",N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/system_service.md,リカバリー戦略の種類と具体的ポリシー,META_RecoveryStrategy,N/A,PASS,PASS,UNCERTAIN,N/A,1
+docs/components/interface/system_service.md,設計判断,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/system_service.md,5.1 エラーハンドリング戦略,META_RecoveryStrategy,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/system_service.md,service_load_result_t の定義,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/system_service.md,サービスロード（load_service）,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/system_service.md,5.2 公開API,META_RecoveryStrategy,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/system_service.md,5.3 URI/IPCインターフェイス,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/system_service.md,5. インターフェイス定義,META_RecoveryStrategy,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/system_service.md,6.1 性能制約と方策,IPCRouter,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/system_service.md,6.2 メモリ制約と方策,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/system_service.md,6. 制約達成の方策,"IPCRouter,ConsolidatedHeap,MemoryIsolation",N/A,N/A,N/A,N/A,N/A,0
+docs/components/interface/system_service.md,6.3 安全性制約と方策,META_FaultIsolation,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_assembler_constexpr.md,1. コンセプト,"JIT_Encoder,META_Static_Resolution,META_CompileTimeValidation,PositionIndependentCode",N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_assembler_constexpr.md,2. アーキテクチャ分類,"META_3TierSeparation,META_Static_Resolution,ZeroRuntimeOverhead",N/A,N/A,N/A,N/A,N/A,1
+docs/components/jit/jit_assembler_constexpr.md,3.1 データ構造,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_assembler_constexpr.md,3.2 内部ブロック図,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_assembler_constexpr.md,`fireball::riscv::i_type`,"JIT_Encoder,META_ZeroCostAbstraction",PASS,N/A,PASS,UNCERTAIN,PASS,1
+docs/components/jit/jit_assembler_constexpr.md,`fireball::arm::add_imm`,"JIT_Encoder,META_ZeroOverhead",PASS,N/A,PASS,UNCERTAIN,PASS,1
+docs/components/jit/jit_assembler_constexpr.md,`x64::mov_ri`,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_assembler_constexpr.md,3.3 主要なクラス・構造体・配列・定数,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_assembler_constexpr.md,3. 静的モデル,"JIT_Encoder,META_ZeroCostAbstraction,META_ZeroOverhead",N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_assembler_constexpr.md,コンパイル時エンコード,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_assembler_constexpr.md,4.1 アルゴリズム,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_assembler_constexpr.md,4.2 状態遷移図,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_assembler_constexpr.md,4. 動的モデル,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_assembler_constexpr.md,Instruction Constructor,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_assembler_constexpr.md,5.1 公開API (C++ DSL),,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_assembler_constexpr.md,5. インターフェイス定義,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_assembler_constexpr.md,6.1 性能制約,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_assembler_constexpr.md,6. 制約達成の方策,"META_Static_Resolution,ZeroRuntimeOverhead",N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_assembler_constexpr.md,6.2 安全性制約,META_Static_Resolution,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_compiler.md,1. コンセプト,"LowLatencyJIT,JIT_CopyAndPatch,JIT_ZeroCompileCostTheorem,SimpleJITArchitecture,GLOBAL_PeriodicTask,GLOBAL_IdleDetection,JIT_Encoder",N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_compiler.md,2. アーキテクチャ分類,"META_3TierSeparation,GLOBAL_ComponentHarness",N/A,N/A,N/A,N/A,N/A,1
+docs/components/jit/jit_compiler.md,3.1 データ構造,"JIT_DoubleBuffer_Cache,SimpleJITArchitecture",N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_compiler.md,3.2 内部ブロック図,"JIT_DoubleBuffer_Cache,SimpleJITArchitecture",N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_compiler.md,JITハーネス（jit_harness）,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_compiler.md,JITコンテキスト（jit_context）,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_compiler.md,JIT構成（jit_config）,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_compiler.md,3.3 主要なクラス・構造体・配列・定数,"JIT_DoubleBuffer_Cache,SimpleJITArchitecture,META_ConfigurableSystem,GLOBAL_StaticScalability",N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_compiler.md,JITコンパイル実行 (`jit_compile`),,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_compiler.md,JITコード検索 (`jit_lookup`),,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_compiler.md,3.4 公開API,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_compiler.md,3. 静的モデル,"JIT_DoubleBuffer_Cache,SimpleJITArchitecture,META_ConfigurableSystem,GLOBAL_StaticScalability",N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_compiler.md,Copy-and-Patch コンパイル手順,"JIT_CopyAndPatch,META_AI_Native_Dev",UNCERTAIN,N/A,PASS,UNCERTAIN,N/A,1
+docs/components/jit/jit_compiler.md,JITトレース検索アルゴリズム,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_compiler.md,トレース・チェイニング（連鎖実行）,JIT_LazyChaining,PASS,N/A,PASS,UNCERTAIN,N/A,1
+docs/components/jit/jit_compiler.md,ホットスポット判定 (yield 時),JIT_LazyChaining,UNCERTAIN,N/A,PASS,UNCERTAIN,N/A,1
+docs/components/jit/jit_compiler.md,バッチコンパイル (周期実行またはアイドル時),,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_compiler.md,4.1 アルゴリズム,"JIT_CopyAndPatch,META_AI_Native_Dev,JIT_LazyChaining,JIT_ReverseCompilationOrder,GLOBAL_PeriodicTask,GLOBAL_IdleDetection",N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_compiler.md,4.2 状態遷移図,"JIT_LazyChaining,JIT_ReverseCompilationOrder,GLOBAL_PeriodicTask,GLOBAL_IdleDetection",N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_compiler.md,JITコンパイルおよび検索シーケンス,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_compiler.md,4.3 内部シーケンス,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_compiler.md,4. 動的モデル,"JIT_CopyAndPatch,META_AI_Native_Dev,JIT_LazyChaining,JIT_ReverseCompilationOrder,GLOBAL_PeriodicTask,GLOBAL_IdleDetection",N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_compiler.md,5.1 直行表: 検索・昇格・GC,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_compiler.md,5.2 内部コンポーネントのデコンポジション,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_compiler.md,5. 検証,JIT_Encoder,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_compiler.md,初期化（initialize）,META_ConfigurableSystem,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_compiler.md,トレース検索（lookup_trace）,META_ConfigurableSystem,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_compiler.md,カード状態取得（get_card_state）,META_ConfigurableSystem,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_compiler.md,検索範囲取得（get_search_range）,META_ConfigurableSystem,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_compiler.md,バッチコンパイル処理（process_batch_compile）,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_compiler.md,6.1 公開API,META_ConfigurableSystem,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_compiler.md,6.2 URI/IPCインターフェイス,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_compiler.md,6. インターフェイス定義,META_ConfigurableSystem,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_compiler.md,7.1 性能制約と方策,"JIT_CopyAndPatch,JIT_RegisterMapping",N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_compiler.md,7.2 安全性制約と方策,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_compiler.md,7. 制約達成の方策,"JIT_CopyAndPatch,JIT_RegisterMapping,PositionIndependentCode,MemoryBoundaryCheck",N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_compiler.md,8. 設計判断 (ADR),"ADR_ScalableCodeOffset,ADR_SafeQueuingOnHotMiss",N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_engine_copy_patch.md,1. コンセプト,"JIT_CopyAndPatch,JIT_ZeroCompileCostTheorem,LowLatencyJIT,SinglePassCompilation",N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_engine_copy_patch.md,2. アーキテクチャ分類,"META_3TierSeparation,JIT_CopyAndPatch",N/A,N/A,PASS,N/A,N/A,1
+docs/components/jit/jit_engine_copy_patch.md,3.1 データ構造,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_engine_copy_patch.md,3.2 内部ブロック図,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_engine_copy_patch.md,コピーアンドパッチエンジン（CopyAndPatchEngine）クラス,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_engine_copy_patch.md,命令テンプレート（jit_template）,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_engine_copy_patch.md,3.3 主要なクラス・構造体・配列・定数,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_engine_copy_patch.md,3. 静的モデル,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_engine_copy_patch.md,トレースコンパイル手順,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_engine_copy_patch.md,4.1 アルゴリズム,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_engine_copy_patch.md,4.2 状態遷移図,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_engine_copy_patch.md,4.3 内部シーケンス,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_engine_copy_patch.md,4. 動的モデル,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_engine_copy_patch.md,トレースコンパイル（compile_trace）,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_engine_copy_patch.md,5.1 公開API,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_engine_copy_patch.md,5. インターフェイス定義,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_engine_copy_patch.md,6.1 性能制約と最優先設計方針,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_engine_copy_patch.md,6. 制約達成の方策,"LowLatencyJIT,JIT_CopyAndPatch,JIT_RuntimeAPI_Fallback",N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_engine_copy_patch.md,6.2 3層分離設計 (3-Tier Separation),META_3TierSeparation,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_runtime_entry.md,1. コンセプト,"SimpleJITArchitecture,JIT_DoubleBuffer_Cache,META_FlatMapIndexed,META_BinarySearch",N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_runtime_entry.md,2. アーキテクチャ分類,"META_3TierSeparation,SimpleJITArchitecture",PASS,N/A,PASS,N/A,N/A,1
+docs/components/jit/jit_runtime_entry.md,3.1 データ構造,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_runtime_entry.md,JITエントリインデックス（JitEntryIndex）クラス,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_runtime_entry.md,3.2 内部ブロック図,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_runtime_entry.md,3. 静的モデル,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_runtime_entry.md,高速検索,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_runtime_entry.md,4.1 アルゴリズム,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_runtime_entry.md,4.2 状態遷移図,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_runtime_entry.md,4.3 内部シーケンス,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_runtime_entry.md,4. 動的モデル,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_runtime_entry.md,検索（lookup）,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_runtime_entry.md,エントリ登録（register_entry）,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_runtime_entry.md,5.1 公開API,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_runtime_entry.md,5. インターフェイス定義,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_runtime_entry.md,6.1 性能制約,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_runtime_entry.md,6. 制約達成の方策,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_runtime_entry.md,6.2 メモリ制約,JIT_DoubleBuffer_Cache,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_runtime_hotspot.md,1. コンセプト,"LowLatencyJIT,SimpleJITArchitecture,HistoryBuffer,GLOBAL_PeriodicTask",N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_runtime_hotspot.md,2. アーキテクチャ分類,"META_3TierSeparation,SimpleJITArchitecture",N/A,N/A,PASS,N/A,N/A,1
+docs/components/jit/jit_runtime_hotspot.md,3.1 データ構造,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_runtime_hotspot.md,ホットスポット検出器（HotspotDetector）クラス,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_runtime_hotspot.md,3.2 内部ブロック図,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_runtime_hotspot.md,3. 静的モデル,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_runtime_hotspot.md,ホットスポット判定,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_runtime_hotspot.md,4.1 アルゴリズム,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_runtime_hotspot.md,4.2 状態遷移図,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_runtime_hotspot.md,4. 動的モデル,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_runtime_hotspot.md,実行記録（record_execution）,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_runtime_hotspot.md,履歴処理（process_history）,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_runtime_hotspot.md,5.1 公開API,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_runtime_hotspot.md,5. インターフェイス定義,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_runtime_hotspot.md,6. 制約達成の方策,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/jit/jit_runtime_hotspot.md,6.1 性能制約,"LowLatencyJIT,SimpleJITArchitecture",N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_hal.md,1. コンセプト,"IPCRouter,Challenge_InterruptSafety,TaskPollInterruptFlag,RSPMinimalSet,Fast_Path_GPIO",N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_hal.md,2. アーキテクチャ分類,"META_3TierSeparation,IPCRouter,URIAbstraction,META_StaticDI",N/A,N/A,N/A,N/A,N/A,1
+docs/components/platform/platform_hal.md,3.1 データ構造,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_hal.md,3.2 内部ブロック図,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_hal.md,デバイス情報（device）,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_hal.md,HAL構成（hal_config）,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_hal.md,3.3 主要なクラス・構造体・配列・定数,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_hal.md,3. 静的モデル,META_ConfigurableSystem,N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_hal.md,4.1 アルゴリズム,"RSP_Transport_Selectable,TaskPollInterruptFlag,GLOBAL_InterruptWakeup",N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_hal.md,4.2 状態遷移図,"RSP_Transport_Selectable,TaskPollInterruptFlag,GLOBAL_InterruptWakeup",N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_hal.md,RSPパケット受信とコマンド供給シーケンス,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_hal.md,4.3 内部シーケンス,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_hal.md,4. 動的モデル,"RSP_Transport_Selectable,TaskPollInterruptFlag,GLOBAL_InterruptWakeup",N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_hal.md,データの読み出し,HAL_Interface,PASS,PASS,PASS,N/A,PASS,1
+docs/components/platform/platform_hal.md,データの書き込み (write),HAL_Interface,N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_hal.md,ゼロコピー転送 (bus_master/streaming),PhysicalPassthrough,N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_hal.md,非標準制御 (control),PhysicalPassthrough,N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_hal.md,バッファの確保,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_hal.md,5.1 公開API,"HAL_Interface,PhysicalPassthrough",N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_hal.md,`gpio-controller` (物理GPIO制御),,N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_hal.md,`periodic-timer` (時刻とタイマー),,N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_hal.md,`bus-master` / `bus-slave` (I2C/SPI通信),,N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_hal.md,`debug-server` (GDB RSP サーバ),,N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_hal.md,5.2 Tier 3 リソースインターフェイス,PhysicalPassthrough,N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_hal.md,5.2 URI/IPCインターフェイス,PhysicalPassthrough,N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_hal.md,5.3 RSPトランスポート構成,RSP_Transport_Selectable,N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_hal.md,5.4 メッセージ形式,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_hal.md,5. インターフェイス定義,"HAL_Interface,PhysicalPassthrough,RSP_Transport_Selectable,TypeSafeMessaging",N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_hal.md,6.1 性能制約と方策,META_ConfigurableSystem,N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_hal.md,6.2 メモリ制約と方策,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_hal.md,6. 制約達成の方策,META_ConfigurableSystem,N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_hal.md,6.3 安全性制約と方策,Challenge_InterruptSafety,N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_memory.md,1. コンセプト,"META_3TierSeparation,GLOBAL_Policy_Memory,ConsolidatedHeap,GLOBAL_IndependentHeap",N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_memory.md,2. アーキテクチャ分類,WasmPageAlignment,PASS,N/A,UNCERTAIN,N/A,N/A,1
+docs/components/platform/platform_memory.md,3.1 データ構造,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_memory.md,3.2 依存関係 (Zero-cost DI),,N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_memory.md,3. 静的モデル,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_memory.md,初期化,"GLOBAL_Policy_Memory,GLOBAL_StrictMemoryLimit,Size_15KLOC",PASS,N/A,N/A,N/A,PASS,1
+docs/components/platform/platform_memory.md,割り当て（allocate）,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_memory.md,`allocate-shared` (IPC転送データ専用),,N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_memory.md,所有権要求（claim）,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_memory.md,解放（deallocate）,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_memory.md,4. インターフェイス設計,"GLOBAL_Policy_Memory,GLOBAL_StrictMemoryLimit,Size_15KLOC",N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_memory.md,5. 制約と不変条件,"GLOBAL_StrictMemoryLimit,WasmPageAlignment",PASS,N/A,PASS,UNCERTAIN,N/A,1
+docs/components/platform/platform_memory.md,6. 所有権追跡,GLOBAL_Policy_Memory,PASS,N/A,PASS,UNCERTAIN,PASS,1
+docs/components/platform/platform_memory.md,7. 共有メモリ (shared-block) のライフサイクル,"META_FaultIsolation,OwnershipTransfer",N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_memory.md,8.1 shared-block のリソース化 (2026-02-17),,N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_memory.md,8.2 query() の削除 (2026-02-17),,N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_memory.md,8. 設計判断の記録,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/platform/platform_memory.md,8.3 check_ownership() の削除 (2026-02-17),,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/debug/debug_gdb_rsp.md,1. 概要,RSPMinimalSet,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/debug/debug_gdb_rsp.md,2.1 セッション管理,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/debug/debug_gdb_rsp.md,2.2 メモリアクセス,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/debug/debug_gdb_rsp.md,2.3 レジスタアクセス,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/debug/debug_gdb_rsp.md,2.4 ブレークポイント,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/debug/debug_gdb_rsp.md,2.5 スレッド・情報取得,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/debug/debug_gdb_rsp.md,2. コマンドリスト,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/debug/debug_gdb_rsp.md,3. 応答形式,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/debug/debug_manager.md,1. コンセプト,"RSPMinimalSet,DebuggerLabelTableSwitch,MemoryIsolation,Debug_Standard_Env,RSP_Transport_Selectable,Debug_Integrated",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/debug/debug_manager.md,2. アーキテクチャ分類,META_3TierSeparation,N/A,N/A,PASS,N/A,N/A,1
+docs/components/runtime/debug/debug_manager.md,3.1 データ構造,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/debug/debug_manager.md,3.2 内部ブロック図,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/debug/debug_manager.md,デバッガ（Debugger）クラス,META_NoStdVector,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/debug/debug_manager.md,仮想レジスタセット（virtual_register_set）,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/debug/debug_manager.md,3.3 主要なクラス・構造体・配列・定数,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/debug/debug_manager.md,3. 静的モデル,"META_NoStdVector,RSPMinimalSet",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/debug/debug_manager.md,4.1 アルゴリズム,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/debug/debug_manager.md,4.2 状態遷移図,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/debug/debug_manager.md,デバッグコマンド処理シーケンス,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/debug/debug_manager.md,4.3 内部シーケンス,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/debug/debug_manager.md,4. 動的モデル,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/debug/debug_manager.md,デバッガ接続 (`attach`),Debug_Standard_Env,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/debug/debug_manager.md,コマンド処理 (`poll_commands`),RSPMinimalSet,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/debug/debug_manager.md,命令ステップ実行 (`step_instruction`),,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/debug/debug_manager.md,5.1 公開API,"Debug_Standard_Env,RSPMinimalSet",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/debug/debug_manager.md,5.2 URI/IPCインターフェイス,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/debug/debug_manager.md,5. インターフェイス定義,"Debug_Standard_Env,RSPMinimalSet",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/debug/debug_manager.md,6.1 性能制約と方策,DebuggerLabelTableSwitch,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/debug/debug_manager.md,6.2 メモリ制約と方策,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/debug/debug_manager.md,6. 制約達成の方策,"DebuggerLabelTableSwitch,MemoryIsolation,META_NoStdVector",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/debug/debug_manager.md,6.3 安全性制約と方策,MemoryBoundaryCheck,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_interpreter.md,1. コンセプト,"ThreadedInterpreter,LowLatencyJIT,InterpreterContextStackless,EnvironmentPointer",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_interpreter.md,2. アーキテクチャ分類,META_3TierSeparation,N/A,N/A,PASS,N/A,N/A,1
+docs/components/runtime/runtime_interpreter.md,3.1 データ構造,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_interpreter.md,3.2 内部ブロック図,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_interpreter.md,インタプリタ（Interpreter）クラス,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_interpreter.md,実行コンテキスト（execution_context）,"PositionIndependentCode,ContextPointerRegister,MemoryBoundaryCheck,EnvironmentPointer",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_interpreter.md,コールフレーム（call_frame）,"PositionIndependentCode,ContextPointerRegister,MemoryBoundaryCheck,EnvironmentPointer",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_interpreter.md,制御フレーム（control_frame）,"PositionIndependentCode,ContextPointerRegister,MemoryBoundaryCheck,EnvironmentPointer",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_interpreter.md,インタプリタ構成（interpreter_config）,META_ConfigurableSystem,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_interpreter.md,オプコードハンドラ / トレース実行（opcode_handler / exec_trace）,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_interpreter.md,3.3 主要なクラス・構造体・配列・定数,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_interpreter.md,3. 静的モデル,"PositionIndependentCode,ContextPointerRegister,MemoryBoundaryCheck,EnvironmentPointer,META_ConfigurableSystem,JIT_RuntimeAPI_Fallback",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_interpreter.md,4.1 アルゴリズム,"ThreadedInterpreter,JIT_RuntimeAPI_Fallback,Interpreter_LazyJITSwitch,LowLatencyJIT,SimpleJITArchitecture,Challenge_ApproximateYield,Debug_Integrated",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_interpreter.md,4.2 状態遷移図,"ThreadedInterpreter,JIT_RuntimeAPI_Fallback,Interpreter_LazyJITSwitch,LowLatencyJIT,SimpleJITArchitecture,Challenge_ApproximateYield,Debug_Integrated",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_interpreter.md,Interpreter 実行シーケンス,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_interpreter.md,4.3 内部シーケンス,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_interpreter.md,4. 動的モデル,"ThreadedInterpreter,JIT_RuntimeAPI_Fallback,Interpreter_LazyJITSwitch,LowLatencyJIT,SimpleJITArchitecture,Challenge_ApproximateYield,Debug_Integrated",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_interpreter.md,初期化（initialize）,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_interpreter.md,実行ステップ (`run_step`),META_RecoveryStrategy,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_interpreter.md,割り込み同期 (`sync_interrupts`),,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_interpreter.md,5.1 公開API,META_RecoveryStrategy,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_interpreter.md,5.2 URI/IPCインターフェイス,META_RecoveryStrategy,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_interpreter.md,5.3 関連コンポーネントとの連携,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_interpreter.md,5. インターフェイス定義,META_RecoveryStrategy,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_interpreter.md,6.1 性能制約と方策,ThreadedInterpreter,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_interpreter.md,6.2 メモリ制約と方策,ThreadedInterpreter,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_interpreter.md,6.3 安全性制約と方策,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_interpreter.md,6. 制約達成の方策,"ThreadedInterpreter,META_FaultIsolation,MemoryBoundaryCheck",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_interpreter.md,7. 参考実装リスト,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_loader.md,1. コンセプト,"ROMParsing,META_AccessDictionary,META_BumpAllocator",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_loader.md,2. アーキテクチャ分類,META_3TierSeparation,N/A,N/A,PASS,N/A,N/A,1
+docs/components/runtime/runtime_loader.md,3.1 データ構造,MultiModule_Support,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_loader.md,3.2 内部ブロック図,MultiModule_Support,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_loader.md,WASMローダ（WasmLoader）クラス,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_loader.md,モジュールビュー（module_view）,ROMParsing,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_loader.md,バイナリストリーム（BinaryStream）,ROMParsing,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_loader.md,関数アクセサ（function_accessor）,ROMParsing,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_loader.md,グローバルアクセサ（global_accessor）,ROMParsing,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_loader.md,検証結果（verification_result）,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_loader.md,3.3 主要なクラス・構造体・配列・定数,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_loader.md,3. 静的モデル,"MultiModule_Support,ROMParsing,LightweightVerifier",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_loader.md,4.1 アルゴリズム,"ZeroCopyIndexing,META_AccessDictionary",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_loader.md,4.2 メモリ制約,META_ConfigurableSystem,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_loader.md,4.3 軽量検証スコープ,"ZeroCopyIndexing,META_AccessDictionary,META_ConfigurableSystem",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_loader.md,4.4 状態遷移図,"ZeroCopyIndexing,META_AccessDictionary,META_ConfigurableSystem,LightweightVerifier",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_loader.md,モジュールロードシーケンス,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_loader.md,4.5 内部シーケンス,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_loader.md,4. 動的モデル,"ZeroCopyIndexing,META_AccessDictionary,META_ConfigurableSystem,LightweightVerifier",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_loader.md,準備（prepare）,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_loader.md,ロード（load）,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_loader.md,`resolve-imports`,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_loader.md,アンロード（unload）,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_loader.md,検索（lookup）,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_loader.md,`get-section`,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_loader.md,`lookup-export-func`,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_loader.md,`get-function`,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_loader.md,`get-global`,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_loader.md,5.1 公開API,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_loader.md,5.2 URI/IPCインターフェイス,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_loader.md,5. インターフェイス定義,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_loader.md,6.1 性能制約と方策,"ROMParsing,META_AccessDictionary",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_loader.md,6.2 メモリ制約と方策,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_loader.md,6. 制約達成の方策,"ROMParsing,META_AccessDictionary,META_BumpAllocator,META_NoStdVector",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_loader.md,6.3 安全性制約と方策,"LightweightVerifier,Wasm32Only",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vmmio.md,1. コンセプト,"META_RestrictedPhysicalAccess,vMMIO_TrapAndEmulate,PhysicalPassthrough,DynamicMmap,UnifiedAccessModel,FastAddressCheck,RoleBasedAccessControl,Fast_Path_GPIO",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vmmio.md,2. アーキテクチャ分類,META_3TierSeparation,N/A,N/A,PASS,N/A,N/A,1
+docs/components/runtime/runtime_vmmio.md,3.1 データ構造,META_Static_Resolution,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vmmio.md,3.2 内部ブロック図,META_Static_Resolution,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vmmio.md,アドレスフィールド定義 (vmmio_address),META_Static_Resolution,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vmmio.md,コントローラ群 (VmmioController),META_Static_Resolution,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vmmio.md,静的デバイスページテーブルエントリ (vmmio_pte_static),META_Static_Resolution,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vmmio.md,動的デバイスページテーブルエントリ (vmmio_pte_tier3),vMMIO_Isolation,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vmmio.md,L1/L2 ページテーブル定義,"META_FlatMapIndexed,vMMIO_Isolation",PASS,N/A,PASS,FAIL,N/A,1
+docs/components/runtime/runtime_vmmio.md,ハンドラ定義 (vmmio_handler),,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vmmio.md,3.3 主要なクラス・構造体・配列・定数,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vmmio.md,3. 静的モデル,"META_Static_Resolution,vMMIO_Isolation,META_FlatMapIndexed",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vmmio.md,4.1 アルゴリズム: アクセスディスパッチ,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vmmio.md,4.2 性能分析（Tier別）,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vmmio.md,4.2 アルゴリズム: 仮想DMA (VDMA),VDMA,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vmmio.md,4.3 仮想デバイスマップ,VDMA,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vmmio.md,"4.4 SYSCTL レジスタ詳細 (FC=12, L2=0)",VDMA,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vmmio.md,"4.5 VDMA レジスタ詳細 (FC=12, L2=2)","VDMA,OwnershipTransfer",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vmmio.md,ライフサイクル（ipc_router.md §4.1 に従属）,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vmmio.md,4.6 共有メモリマッピング (FC=14),OwnershipTransfer,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vmmio.md,4.7 仮想割り込みマッピング,META_ConfigurableSystem,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vmmio.md,4.8 ソフトウェアTLB,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vmmio.md,4. 動的モデル,"VDMA,OwnershipTransfer,META_ConfigurableSystem",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vmmio.md,フック登録 (`register-hook`),vMMIO_TrapAndEmulate,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vmmio.md,アクセスディスパッチ (`dispatch-access`),,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vmmio.md,5.1 公開API,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vmmio.md,5. インターフェイス定義,vMMIO_TrapAndEmulate,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vmmio.md,6.1 性能制約と方策,"META_ConfigurableSystem,FastAddressCheck,vMMIO_TLB",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vmmio.md,6.2 メモリ制約と方策,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vmmio.md,6. 制約達成の方策,"META_ConfigurableSystem,FastAddressCheck,vMMIO_TLB",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vmmio.md,6.3 安全性制約と方策,"RoleBasedAccessControl,OwnershipTransfer",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vsoc.md,1. コンセプト,"LowLatencyJIT,MemoryIsolation,META_FaultIsolation,EnvironmentPointer",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vsoc.md,2. アーキテクチャ分類,"META_3TierSeparation,GLOBAL_ComponentHarness",N/A,N/A,N/A,N/A,N/A,1
+docs/components/runtime/runtime_vsoc.md,3.1 データ構造,META_StaticDI,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vsoc.md,3.2 内部ブロック図,META_StaticDI,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vsoc.md,vSoCハーネス（vsoc_harness）,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vsoc.md,vSoCコンテキスト（vsoc_context）,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vsoc.md,vSoC構成（vsoc_config）,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vsoc.md,3.3 主要なクラス・構造体・配列・定数,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vsoc.md,3. 静的モデル,"META_StaticDI,META_ConfigurableSystem",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vsoc.md,4.1 アルゴリズム,"ThreadedInterpreter,JIT_CopyAndPatch,Challenge_ApproximateYield,JIT_Safepoint,Debugger_Jit_Flush",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vsoc.md,4.2 状態遷移図 (SysML SMD: vSoC Engine ライフサイクル),"ThreadedInterpreter,JIT_CopyAndPatch,Challenge_ApproximateYield,JIT_Safepoint,Debugger_Jit_Flush,Challenge_JITCacheEfficiency",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vsoc.md,Safepoint の動作メカニズム,"JIT_Safepoint,Challenge_InterruptSafety",PASS,N/A,PASS,UNCERTAIN,PASS,1
+docs/components/runtime/runtime_vsoc.md,Active/Old ダブルバッファとキャッシュローテーション,"Challenge_JITCacheEfficiency,LowLatencyJIT",PASS,N/A,PASS,UNCERTAIN,N/A,1
+docs/components/runtime/runtime_vsoc.md,Debugger 介入時のキャッシュ一貫性,"Debugger_Jit_Flush,Debug_Integrated",N/A,N/A,PASS,UNCERTAIN,PASS,1
+docs/components/runtime/runtime_vsoc.md,TLA+ 検証対象,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vsoc.md,4.2.1 Safepoint と JIT キャッシュ協調モデル,"JIT_Safepoint,Challenge_JITCacheEfficiency,Debugger_Jit_Flush,Challenge_InterruptSafety,LowLatencyJIT,Debug_Integrated,ThreadedInterpreter,JIT_CopyAndPatch,Challenge_ApproximateYield",PASS,N/A,PASS,UNCERTAIN,PASS,1
+docs/components/runtime/runtime_vsoc.md,WASM実行およびJIT遷移シーケンス,"JIT_CopyAndPatch,Interpreter_LazyJITSwitch,Challenge_JITCacheEfficiency",UNCERTAIN,N/A,PASS,UNCERTAIN,PASS,1
+docs/components/runtime/runtime_vsoc.md,マルチモジュール動的リンクシーケンス,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vsoc.md,4.3 内部シーケンス,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vsoc.md,4. 動的モデル,"ThreadedInterpreter,JIT_CopyAndPatch,Challenge_ApproximateYield,JIT_Safepoint,Debugger_Jit_Flush,Challenge_JITCacheEfficiency,Challenge_InterruptSafety,LowLatencyJIT,Debug_Integrated,Interpreter_LazyJITSwitch,MultiModule_Support",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vsoc.md,準備（prepare）,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vsoc.md,ステップ実行（step）,META_RecoveryStrategy,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vsoc.md,`notify-interrupt`,META_RecoveryStrategy,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vsoc.md,`register-hook`,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vsoc.md,5.1 公開API,"META_RecoveryStrategy,vMMIO_TrapAndEmulate",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vsoc.md,5.2 ネイティブAPI エクスポート,NativeAPI_Export,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vsoc.md,5.3 マルチモジュール対応,MultiModule_Support,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vsoc.md,5.4 URI/IPCインターフェイス,"META_RecoveryStrategy,vMMIO_TrapAndEmulate,NativeAPI_Export,MultiModule_Support",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vsoc.md,5.5 関連コンポーネントとの連携,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vsoc.md,5. インターフェイス定義,"META_RecoveryStrategy,vMMIO_TrapAndEmulate,NativeAPI_Export,MultiModule_Support",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vsoc.md,6.1 検証対象の不変条件,"JIT_Safepoint,Challenge_JITCacheEfficiency,Debugger_Jit_Flush",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vsoc.md,6.2 検証対象のプロパティ,"JIT_Safepoint,Debugger_Jit_Flush,Challenge_JITCacheEfficiency",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vsoc.md,6.3 検証モデル概要,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vsoc.md,6.4 既知の制限,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vsoc.md,6. 形式検証（TLA+ / 直交表）,"JIT_Safepoint,Challenge_JITCacheEfficiency,Debugger_Jit_Flush",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vsoc.md,6.1 性能制約と方策,"LowLatencyJIT,ThreadedInterpreter",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vsoc.md,6.2 メモリ制約と方策,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vsoc.md,7. 制約達成の方策,"LowLatencyJIT,ThreadedInterpreter,JIT_DoubleBuffer_Cache,GLOBAL_IndependentHeap,WasmPageAlignment",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/runtime_vsoc.md,6.3 安全性制約と方策,"MemoryBoundaryCheck,META_RestrictedPhysicalAccess",N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/wasm_instruction.md,1. 概要,Wasm32Only,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/wasm_instruction.md,2.1 制御フロー命令,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/wasm_instruction.md,2.2 メモリ命令,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/wasm_instruction.md,2.3 算術演算命令 (i32),,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/wasm_instruction.md,2.4 比較命令 (i32),,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/wasm_instruction.md,2.5 スタック操作・変数命令,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/wasm_instruction.md,2. 命令リスト,,N/A,N/A,N/A,N/A,N/A,0
+docs/components/runtime/wasm_instruction.md,2.6 その他,,N/A,N/A,N/A,N/A,N/A,0

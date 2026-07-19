@@ -2,19 +2,19 @@
 
 ## 1. コンセプト
 <!-- traceability: {CooperativeMultitasking} {GLOBAL_UseCpp23Library} {GLOBAL_UseCpp20Coroutine} {COOS_Deterministic} {CSPCommunication} -->
-COOSスケジューラは、C++23コルーチン（および std::flat_map 等の標準コンテナ）を活用したスタックレスな協調型マルチタスクの核となるコンポーネントである。タスクの実行、一時停止(yield)、および割り込みによる再開を管理し、極小リソース環境での決定論的な実行を提供する。 `{CooperativeMultitasking}` `{GLOBAL_UseCpp23Library}` `{GLOBAL_UseCpp20Coroutine}` `{COOS_Deterministic}` `{CSPCommunication}`
+COOSスケジューラは、C++23コルーチン（および静的アロケーションを前提とした std::flat_map）を活用したスタックレスな協調型マルチタスクの核となるコンポーネントである。タスクの実行、一時停止(yield)、および割り込みによる再開を管理し、極小リソース環境での決定論的な実行を提供する。タスク間のメッセージパッシング（ゼロコピー）とスケジューラの連動によるコルーチンサスペンドにより、ホーアのCSPモデルを具現化する。 `{CooperativeMultitasking}` `{GLOBAL_UseCpp23Library}` `{GLOBAL_UseCpp20Coroutine}` `{COOS_Deterministic}` `{CSPCommunication}`
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->
-本コンポーネントは **Tier 3 (実装ドメイン)** に属する。コルーチンハンドルの管理とタスク実行順序の制御に特化した単一責務のモジュールとして設計する。 `{META_3TierSeparation}`
+本コンポーネントは **Tier 1 (アーキテクチャドメイン)** に属する。コルーチンハンドルの管理とタスク実行順序の制御に特化した単一責務のモジュールとして設計する。 `{META_3TierSeparation}`
 
 ## 3. 静的モデル
 
 ### 3.1 データ構造
 <!-- traceability: {COOS_Transparent} -->
-- **`Scheduler`**: タスクのREADYキュー管理、実行順序制御、およびコルーチン実行をカプセル化した主要クラス。
-- **`task_context`**: 各タスクの実行状態、スタック/ヒープ境界、コルーチンハンドルを集約したデータ構造。
-- **`scheduler_config`**: 最大タスク数やタイムアウト閾値などの不変の設定。 `{COOS_Transparent}`
+- **`Scheduler`**: タスクのREADYキュー管理、実行順序制御、およびコルーチン実行をカプセル化した主要クラス。各タスクの実行状態を外部から可視化・検査するための監査用インターフェイスを提供する。 `{COOS_Transparent}`
+- **`task_context`**: 各タスクの実行状態（READY/BLOCKED/RUNNING等の待機状態）、スタック境界、コルーチンハンドルを集約したデータ構造。
+- **`scheduler_config`**: 最大タスク数、タイムアウト閾値、および各タスクの割り当てリソース制限からなる不変の静的設定。 `{COOS_Transparent}`
 
 ### 3.2 内部ブロック図
 <!-- traceability: {COOS_Transparent} -->
@@ -23,6 +23,7 @@ graph TD
     subgraph Scheduler_Layer
         Engine[Scheduler Engine]
         TCB[task_context]
+        Vis[State Visualizer Interface]
     end
 
     subgraph Dependency_Injection
@@ -30,8 +31,9 @@ graph TD
         T_IF[timer_driver]
     end
 
-    Engine -- method injection --> Dependency_Injection
+    Engine -- static injection --> Dependency_Injection
     Engine -- manages --> TCB
+    Vis -- reads state --> TCB
 ```
 
 ### 3.3 主要なデータ定義
@@ -42,10 +44,11 @@ graph TD
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| 割り込み制御機 | 物理ハードウェア（NVIC等）の制御用 | 構造体への参照 | `interrupt_controller` |
+| 割り込み制御機 | 物理ハードウェア（NVIC）の制御用 | 構造体への参照 | `interrupt_controller` |
 | 実行可能列 | 次に実行すべきタスクの優先度付きキュー（侵入型リスト） | リスト構造 | `task_context` のリスト |
 | 待機リスト | イベントや時間待ちを行っているタスクのリスト（侵入型） | リスト構造 | `task_context` のリスト |
 | 現在のタスク | 現在CPUコアを占有しているタスク | 構造体への参照 | `task_context` (NULL許容) |
+| 状態可視化API | 外部から全タスクの待機・実行状態を安全に監視するためのメソッド群。ロックフリーな読み取り専用構造（Double Buffering）を採用し、実行中タスクをブロックせずに O(1) で状態を即座に取得可能。 | 関数オブジェクト | `Scheduler::get_task_states` (読み取り専用) |
 
 ## 4. 動的モデル
 
@@ -86,7 +89,7 @@ stateDiagram-v2
 
 | 遷移 | トリガー | 条件 | アクション | 次状態 |
 | :--- | :--- | :--- | :--- | :--- |
-| init → READY | spawn(task) | メモリ確保成功 | TCB生成、タスクコンテキスト初期化 | READY |
+| init → READY | spawn(task) | 静的TCBスロットの空きあり | 静的プールからTCBを割り当て、タスクコンテキスト初期化 | READY |
 | READY → RUNNING | schedule() | READYキュー非空 | `head_task.resume()` 直接呼び出し | RUNNING |
 | RUNNING → READY | yield() | (常に可) | 現在タスクをREADYキュー末尾に追加 | READY |
 | RUNNING → CSP_WAIT | send(empty) | チャネル空 | 送信タスクを待機キューに追加、実行権をスケジューラに戻す | CSP_WAIT |
@@ -97,7 +100,7 @@ stateDiagram-v2
 | EVT_WAIT → READY | event dispatch | イベント受信 | イベントループがタスクをREADYへ遷移 | READY |
 | RUNNING → INT_WAIT | [ISR発生] | 割り込みハードウェア | ISRが INT イベントをキューに投入 | INT_WAIT |
 | INT_WAIT → READY | event dispatch | INT イベント処理 | イベントループが対象タスクをREADYへ遷移 | READY |
-| RUNNING → [*] | exit() / error | (常に可) | TCB解放、メモリパーティション回収 | [*] |
+| RUNNING → [*] | exit() / error | (常に可) | TCBスロットの返却（再利用化）、静的メモリパーティション回収 | [*] |
 
 **注記:**
 - 割り込みハンドラ（ISR）は直接タスク状態を変更しない。代わりに INT イベントをイベントキューに投入する。
@@ -113,48 +116,45 @@ stateDiagram-v2
 
 <!-- traceability: {ConceptHarnessDI} -->
 
-TODO(Phase 1): ATC抽出 - 初期化におけるメモリサイズの限界や配置アラインメントなどの暗黙の事前条件を定義すること。
 
-| 項目 | 内容 |
-| :--- | :--- |
-| 機能概要 | スケジューラを動作させるための依存コンポーネントを注入する。 |
-| シグネチャ | `init-scheduler(memory: mem-address) -> operation-result` |
-| 引数 | `memory`: メモリ管理ユニットのアドレス |
-| 戻り値 | 操作結果 |
-| 事前条件 | システムのメモリ管理ユニットが初期化済みであること。 |
-| 事後条件 | スケジューラがアイドル状態で起動する。 |
-| 不変条件 | シングルトンであり、再初期化は不可。 |
+| 項目 | 内容 | 型分類 |
+| :--- | :--- | :--- |
+| 機能概要 | C++20/23 Conceptsを用いたコンパイル時テンプレート解決により、スケジューラに必要な依存コンポーネント（メモリプール等）を静的に注入する。 | 操作定義 |
+| シグネチャ | `template<coos::memory_manager M> void init_scheduler() noexcept` | 関数プロトタイプ |
+| 戻り値 | なし (コンパイル時に依存型と解決が検証され、失敗時はビルドエラーとなる) | 結果型 |
+| 事前条件 | 静的メモリ管理ユニット（M）が初期化済みであること。 | 条件 |
+| 事後条件 | スケジューラがアイドル状態で起動する。 | 状態変化 |
+| 不変条件 | シングルトンであり、実行時の再初期化は不可。 | 制約 |
 
 #### タスク生成 (`spawn`)
 
 <!-- traceability: {COOS_Scheduling_Refine} {LowOverheadSwitch} {Challenge_CoosBlockedList} -->
 
-TODO(Phase 1): ATC抽出 - タスク生成時のスタックサイズやタスク名長の制約を事前条件として定義すること。
 
-| 項目 | 内容 |
-| :--- | :--- |
-| 機能概要 | 新しいWASMタスクを生成し、実行可能キューに追加する。 |
-| シグネチャ | `spawn(name: string, entry: mem-address, priority: u8) -> result<os-task-id, sys-recovery-strategy>` |
-| 引数 | `name`: タスク名称<br>`entry`: WASMエントリポイント<br>`priority`: 実行優先度 |
-| 戻り値 | 結果型 (成功時は システムタスクID) |
-| 事前条件 | スケジューラが初期化済みであること。メモリに空きがあること。 |
-| 事後条件 | 新しいタスクが実行可能キューの末尾に追加される。 |
-| 不変条件 | 生成されたシステムタスクIDはシステム内で一意であること。 |
+| 項目 | 内容 | 型分類 |
+| :--- | :--- | :--- |
+| 機能概要 | 新しいWASMタスクを生成し、実行可能キューの末尾に追加する。 | 操作定義 |
+| シグネチャ | `auto spawn(const char* name, wasm_entry_t entry, u8 priority) -> result&lt;os_task_id_t, os_result_t&gt;` | 関数プロトタイプ |
+| 引数 | - `name`: タスク名称。生存期間がプログラム起動から終了まで静的に保証されたヌル終端文字列（`const char*`）。動的ヒープ確保を避けるため、内部でのコピーは行わず、ポインタ参照のみを保持する。 \n - `entry`: WASMエントリポイントとなる関数ポインタ型 `wasm_entry_t`（C++での型エイリアス定義は `using wasm_entry_t = void(*)(void*);`。コルーチン生成時に初期コルーチンフレームの起動先として紐付けられる）。 \n - `priority`: 実行優先度（0〜255の範囲。値が小さいほど絶対優先度が高くなる。最大値は 255）。 | 引数定義 |
+| 戻り値 | 成功時は静的に割り当てられたタスクIDである `os_task_id_t` を返し、失敗時はエラーコードを示す `os_result_t` （例：`ERR_NO_MEMORY` = TCBプール領域満杯でメモリ確保不可、`ERR_MAX_TASKS_REACHED` = 登録タスク数がシステム上限に到達、`ERR_INVALID_ARG` = 引数不正）を返す `result&lt;os_task_id_t, os_result_t&gt;` 型。動的ヒープ確保は一切行われず、静的メモリ内の固定長配列（`std::array&lt;TCB, FB_CONF_MAX_TASKS&gt;`）から空きスロットが割り当てられる。 | 結果型 |
+| 事前条件 | スケジューラが初期化済みであること。管理タスク数上限（scheduler_config）に達していないこと。 | 条件 |
+| 事後条件 | 新しいタスクが実行可能キューの末尾に追加される。 | 状態変化 |
+| 不変条件 | 生成されたシステムタスクIDはシステム内で一意であること。 | 制約 |
 
-#### タスク生成（spawn_task）
-| 項目 | 内容 |
-| :--- | :--- |
-| 機能概要 | 既存のコルーチンオブジェクトからネイティブタスクを生成し、READY キューに追加する。 |
-| シグネチャ | `spawn_task(task: task&&) -> 結果型` |
-| 引数 | `task`: 移動セマンティクスによるコルーチンタスク |
-| 戻り値 | 結果型 (成功時は `task_id`) |
-| 事前条件 | `task` が有効なコルーチンハンドルを保持していること。 |
-| 事後条件 | タスクが READY キューに追加される。 |
+#### タスク生成（spawn_task - ネイティブタスク用）
+<!-- traceability: {CooperativeMultitasking} {GLOBAL_UseCpp20Coroutine} -->
+既存のコルーチンオブジェクトを移動セマンティクスによって登録し、協調型マルチタスクとして動作させる。本APIは公開APIであり、`fireball` 名前空間の下に配置される。 `{CooperativeMultitasking}` `{GLOBAL_UseCpp20Coroutine}`
+
+| 項目 | 内容 | 型分類 |
+| :--- | :--- | :--- |
+| 機能概要 | 既存のコルーチンオブジェクトからネイティブタスクを生成し、READY キューに追加する。 | 操作定義 |
+| シグネチャ | `auto fireball::spawn_task(task&& t) -> result&lt;os_task_id_t, os_result_t&gt;` | 関数プロトタイプ |
+| 引数 | `t`: 移動セマンティクスによるムーブ専用のコルーチンタスクオブジェクト。<br>※ 動的メモリ確保を完全に排除するため、`t` はコンパイル時コンセプト `is_heap_less<task>` を満たし、コルーチンフレームが静的領域（事前割り当てプール）に配置可能な静的レイアウトを持つ型でなければならない（`std::is_trivially_copyable` またはカスタムアロケータ要件に基づく）。 | 引数定義 |
+| 戻り値 | 成功時は割り当てられたタスクID `os_task_id_t` を返し、失敗時はエラーコードを示す `os_result_t` （例：`ERR_MEM_FULL`, `ERR_INVALID_ARG`）を返す `result&lt;os_task_id_t, os_result_t&gt;` 型。 | 結果型 |
+| 事前条件 | `t` が有効なコルーチンハンドルを保持していること。 | 条件 |
+| 事後条件 | タスクが READY キューに追加される。 | 状態変化 |
 
 #### 実行譲渡（yield）
-| 項目 | 内容 |
-| :--- | :--- |
-| 機能概要 | 現在のタスクの実行を中断し、スケジュールの再評価を行う。 |
 | シグネチャ | `yield() -> void` |
 | 事前条件 | タスク実行コンテキスト内から呼び出されること（ISRからの呼び出し不可）。 |
 | 事後条件 | 現在のタスクが READY キューの末尾に移動し、次タスクに切り替わる。 |
@@ -181,7 +181,7 @@ TODO(Phase 1): ATC抽出 - タスク生成時のスタックサイズやタス�
 | シグネチャ | `notify_interrupt(id: os-task-id) -> void` |
 | 引数 | `id`: 再開対象のタスクID |
 | 事前条件 | ISR コンテキスト内からのみ呼び出されること。`id` が有効なタスクを指していること。 |
-| 事後条件 | Interrupt イベントがイベントキューに投入される。キュー満杯の場合はドロップされ、ドロップカウントがインクリメントされる。イベントループが Interrupt イベントを処理する際、対象タスク（BLOCKED 状態であれば）が READY 状態へ遷移する。 |
+| 事後条件 | Interrupt イベントがイベントキューに投入される。キュー満杯の場合はドロップされ、ドロップカウントがインクリメントされる。イベントループが Interrupt イベントを処理する際、対象タスクは BLOCKED 状態から READY 状態へと遷移し、READYキュー内の **同じ優先度のタスクの先頭** に挿入される。スケジューラは各タスクに設定された 0〜255 の「絶対優先度」（値が小さいほど最優先）に基づいて実行タスクを選択し、同一優先度のタスク間では FIFO 順でスケジュールする。協調型マルチタスクを採用しているため、割り込み発生時に実行中のタスクを強制中断（プリエンプション）することはなく、現在のタスクが自発的に `yield` した次回のスケジューリングサイクルにおいて、最高優先度 READY タスクが速やかに実行を開始する。 |
 | 設計注記 | イベント駆動型設計（`docs/components/os_event_driven.md` 参照）により、割り込み通知はイベント化され、スケジューラのメインループで処理される。ISR は軽量に、イベント投入とログ用カウンタの更新のみを行う。 |
 
 #### タスク終了（terminate）

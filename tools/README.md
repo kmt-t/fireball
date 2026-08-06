@@ -6,6 +6,7 @@
 ## Entry Points
 
 - `./tools/run_all_tests.sh`: ドキュメント監査の統合実行（`--llm` でマトリクスベースの LLM 監査を実行）
+- `uv run python tools/test/run_tests.py`: `tools` 配下モジュールのユニットテスト一括実行
 - `./verify/run_all.sh`: 形式検証の一括実行
 
 ## Documentation
@@ -15,6 +16,8 @@
 
 ## Layout
 
+- `tools/test/`: `tools` 配下モジュール・ツールの自動テスト群
+- `tools/verifier/`: 汎用形式検証ツールキット (明示的モデルチェッカー & Python DSL ➔ TLA+ コンパイラ・TLC バックエンド・リスク抽出・ログ評価)
 - `tools/common/`: 監査処理の共通モジュール
 - `.agents/skills/document-validation/scripts/`: document-validation 用の Python 入口スクリプト
 - `tools/mechanical/`: 機械的チェック

@@ -58,7 +58,8 @@ namespace fireball {
 <!-- traceability: {JIT_DoubleBuffer_Cache} {FastAddressCheck} {GLOBAL_StrictMemoryLimit} {vMMIO_Isolation} {META_ConfigurableSystem} {META_RestrictedPhysicalAccess} -->
 | マクロ名 | 説明 | デフォルト値 | 導出元 |
 | :--- | :--- | :--- | :--- |
-| `FB_CONF_JIT_CACHE_SIZE` | JITキャッシュサイズ (Active/Old合計) | `4096` | `{JIT_DoubleBuffer_Cache}` |
+| `FB_CONF_JIT_CACHE_SIZE` | JITキャッシュサイズ (合計バイト数: 2KB x 3面) | `6144` | `{JIT_DoubleBuffer_Cache}` `{JIT_MultiBuffer_Cache}` |
+| `FB_CONF_JIT_NUM_BUFFERS` | JITキャッシュバッファ面数 (3: トリプルバッファ推奨) | `3` | `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}` |
 | `FB_CONF_GUEST_RAM_BASE` | ゲストRAMの開始アドレス（アライメント検証と高速境界チェックのため、必ず64KB境界に配置） | `0x00000000` | `{FastAddressCheck}` |
 | `FB_CONF_GUEST_RAM_SIZE` | ゲストRAMのサイズ | `8192` | `{GLOBAL_StrictMemoryLimit}` |
 | `FB_CONF_VMMIO_BASE` | vMMIO領域の開始アドレス | `0x40000000` | `{vMMIO_Isolation}` |

@@ -69,8 +69,32 @@ THEOREM Spec => []TypeOK
 ====
 ```
 
+## Python DSL ➔ TLA+ Code Generation
+
+TLA+ 仕様および `.cfg` 設定を Python 宣言的 DSL から自動生成・検証したい場合は、`tools/verifier` ツールキットを利用します：
+
+```python
+from tools.verifier import StateMachine, ModelChecker, TLAGenerator
+
+sm = StateMachine("MyModel", allow_deadlock=False)
+sm.variable("state", "init")
+sm.transition("Step", src={"state": "init"}, dst={"state": "done"})
+sm.invariant("Safety", lambda s: s['state'] != "invalid")
+
+# TLA+ コードの生成
+gen = TLAGenerator(sm.to_model())
+print(gen.generate_tla())
+
+# TLC バックエンド実行
+checker = ModelChecker(sm.to_model(), backend="tlc")
+result = checker.verify()
+```
+
 ## Paths
 
+- `tools/verifier/`: 汎用形式検証ツールキット & Python DSL ➔ TLA+ コンパイラ
+- `tools/verifier/risk_extractor.py`: ドキュメントからの検証テーマ自動抽出器
+- `tools/verifier/evaluate_logs.py`: TLC 実行結果・ログ自動評価器
 - `verify/models/`: `.tla` specs
 - `verify/configs/`: `.cfg` files
 - `verify/reports/`: result summaries

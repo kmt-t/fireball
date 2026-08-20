@@ -1,0 +1,3 @@
+[submodule "tools/spec-integrator"]
+	path = tools/spec-integrator
+	url = https://github.com/kmt-t/spec-integrator.git

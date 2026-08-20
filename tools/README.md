@@ -1,31 +1,46 @@
-# Fireball Tools
+# Fireball Verification & Specification Tools
 
-`tools/` は Fireball の文書監査と補助スクリプトの入口です。
-細かいコマンドは覚えず、ここから各 shell スクリプトに入ります。
+Fireball Hypervisor のドキュメント品質、静的トレーサビリティ、形式検証（pyModelChecking）、WIT インターフェース検証、および LLM as a Judge を実行する統合ツール環境です。
 
-## Entry Points
+コア検証エンジンとして [spec-integrator](spec-integrator/)（submodule）を採用しています。
 
-- `./tools/run_all_tests.sh`: ドキュメント監査の統合実行（`--llm` でマトリクスベースの LLM 監査を実行）
-- `uv run python tools/test/run_tests.py`: `tools` 配下モジュールのユニットテスト一括実行
-- `./verify/run_all.sh`: 形式検証の一括実行
+---
 
-## Documentation
+## 1. クイックスタート
 
-- `tools/docs/README.md`: tools 配下の説明書き索引
-- `verify/README.md`: 形式検証ワークスペースの索引
+### PowerShell (Windows)
+```powershell
+# 静的・形式・WIT 検証パイプラインの実行
+powershell tools/run_all_tests.ps1 -clean
 
-## Layout
+# LLM as a Judge を有効化して実行
+powershell tools/run_all_tests.ps1 -llm -backend sakura
+```
 
-- `tools/test/`: `tools` 配下モジュール・ツールの自動テスト群
-- `tools/verifier/`: 汎用形式検証ツールキット (明示的モデルチェッカー & Python DSL ➔ TLA+ コンパイラ・TLC バックエンド・リスク抽出・ログ評価)
-- `tools/common/`: 監査処理の共通モジュール
-- `.agents/skills/document-validation/scripts/`: document-validation 用の Python 入口スクリプト
-- `tools/mechanical/`: 機械的チェック
-- `tools/llm/`: LLM 監査
-- `tools/config/`: 監査用設定データ
-- `tools/docs/`: 各監査の説明文
+### Bash (Linux / macOS / WSL)
+```bash
+# 静的・形式・WIT 検証パイプラインの実行
+./tools/run_all_tests.sh --clean
 
-## Policy
+# LLM as a Judge を有効化して実行
+./tools/run_all_tests.sh --llm --backend sakura
+```
 
-- 実行は shell スクリプトを使う。
-- 細かい `python3` や `tlc` の引数は、ここではなく各スクリプトに閉じ込める。
+---
+
+## 2. 品質ゲート (Quality Gates)
+
+`spec-integrator check` コマンドにより、以下の 5 つのゲートを厳格に監査します（エラー検知時は終了コード 1 で CI が失敗）。
+
+1. **Format Gate**: Markdown リンク切れ、アンカー切れの検知
+2. **Traceability Gate**: 未定義キーワードの参照、未参照要件の検知
+3. **Hierarchy Gate**: Tier（0〜3）間の逆流依存・カプセル化違反の検知
+4. **Formal Gate**: 各コンポーネント配下 `docs/components/<tier>/formal/*.py` の pyModelChecking モデル実行
+5. **WIT Gate**: 各コンポーネント配下 `docs/components/<tier>/wit/*.wit` の構文・構造検証
+
+---
+
+## 3. 設定ファイル
+
+設定はルートの [`spec-integrator.yaml`](../spec-integrator.yaml) で管理されます。
+Tier パスマッピング、キーワード規則、形式検証タグ（`{VERIFY_FORMAL}`）、WIT 検証タグ（`{VERIFY_WIT}`）、LLM バックエンドが定義されています。

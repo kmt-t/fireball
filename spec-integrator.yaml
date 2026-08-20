@@ -1,0 +1,63 @@
+version: "1.0"
+
+project:
+  name: "Fireball Hypervisor"
+  docs_root: "docs"
+  cache_db: ".spec-integrator/doc_cache.db"
+
+tiers:
+  - tier: 0
+    name: "Requirements"
+    path_pattern: "requires/**/*.md"
+    description: "システム要求仕様書（正本）"
+
+  - tier: 1
+    name: "Core & Interface"
+    path_pattern: "components/tier1_*/**/*.md"
+    description: "システムコア・共通インターフェース仕様書"
+
+  - tier: 2
+    name: "Runtime & Engine"
+    path_pattern: "components/tier2_*/**/*.md"
+    description: "実行エンジン・JIT仕様書"
+
+  - tier: 3
+    name: "Platform & HAL"
+    path_pattern: "components/tier3_*/**/*.md"
+    description: "ハードウェア・プラットフォーム抽象化仕様書"
+
+  - tier: "meta"
+    name: "Architecture & Plans"
+    path_pattern: "{architecture,plans}/**/*.md"
+    description: "全体アーキテクチャ・開発計画"
+
+keywords:
+  meta:
+    pattern: "^META_[A-Za-z0-9_]+$"
+    defined_in: "architecture/document_structure.md"
+  global:
+    pattern: "^GLOBAL_[A-Za-z0-9_]+$"
+    defined_in: "architecture/document_structure.md"
+  local:
+    pattern: "^[A-Za-z0-9_]+$"
+    defined_in: "requires/**/*.md"
+
+formal_verification:
+  model_dir_name: "formal"
+  tag: "{VERIFY_FORMAL}"
+  timeout_seconds: 30
+
+wit_verification:
+  wit_dir_name: "wit"
+  tag: "{VERIFY_WIT}"
+
+llm_judge:
+  tag: "{VERIFY_LLM}"
+  default_backend: "sakura"
+  backends:
+    sakura:
+      api_key_env: "SAKURA_API_KEY"
+      model: "sakura-ai-model"
+    ollama:
+      endpoint: "http://localhost:11434"
+      model: "llama3"

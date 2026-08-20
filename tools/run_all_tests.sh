@@ -1,13 +1,14 @@
 #!/bin/bash
-# Fireball Unified Document Audit & Test Runner (Graph & LLM Judge Architecture)
+# Fireball Unified Document Verification Pipeline (Powered by spec-integrator)
 # Usage: ./tools/run_all_tests.sh [OPTIONS]
 #
 # Options:
-#   --llm            Run Graph-based LLM as a Judge semantic audits.
-#   --backend B      LLM backend (gemini, sakura, openrouter, ollama, mock)
-#   --model M        LLM model name
-#   --max-subgraphs  Number of subgraphs to evaluate with LLM (default: 10)
-#   -h, --help       Show this help
+#   --llm              Run LLM as a Judge semantic audits.
+#   --backend B        LLM backend (sakura, ollama, mock)
+#   --model M          LLM model name
+#   --max-subgraphs N  Number of subgraphs to evaluate with LLM (default: 10)
+#   --clean            Run clean audit without cache DB
+#   -h, --help         Show this help
 
 set -e
 
@@ -16,29 +17,28 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
 RUN_LLM=0
-BACKEND="auto"
+BACKEND="sakura"
 MODEL=""
 MAX_SUBGRAPHS=10
-FAILED=0
+CLEAN_FLAG=""
+REPORT_PATH="doc_report.md"
+GRAPH_JSON_PATH="doc_graph.json"
 
 usage() {
     cat <<'EOF'
-Fireball Unified Document Verification Pipeline (DocGraph & LLM Judge)
+Fireball Document Quality & Verification Pipeline (spec-integrator)
 
 Usage:
   ./tools/run_all_tests.sh [OPTIONS]
 
 Options:
-  --llm              Run Graph-based LLM as a Judge semantic audits.
-  --backend B        LLM backend (gemini, sakura, openrouter, ollama, mock)
+  --llm              Run LLM as a Judge semantic audits.
+  --backend B        LLM backend (sakura, ollama, mock - default: sakura)
   --model M          LLM model name
   --max-subgraphs N  Number of subgraphs to evaluate with LLM (default: 10)
+  --clean            Clear cache DB and run clean verification
   -h, --help         Show this help
 EOF
-}
-
-print_section() {
-    printf '\n>>> %s\n' "$1"
 }
 
 while [[ "$#" -gt 0 ]]; do
@@ -70,6 +70,9 @@ while [[ "$#" -gt 0 ]]; do
             MAX_SUBGRAPHS="$2"
             shift
             ;;
+        --clean)
+            CLEAN_FLAG="--clean"
+            ;;
         -h|--help)
             usage
             exit 0
@@ -83,67 +86,43 @@ while [[ "$#" -gt 0 ]]; do
 done
 
 echo "================================================================================"
-echo " Fireball Unified Document Verification Pipeline (DocGraph Architecture)"
-echo "================================================================================"
-if [ "$RUN_LLM" -eq 1 ]; then
-    echo " Mode: Mechanical Graph Verification + LLM Subgraph Judge Audits"
-    echo " Backend: ${BACKEND}"
-    echo " Max Subgraphs: ${MAX_SUBGRAPHS}"
-else
-    echo " Mode: Static Graph Verification Only (Use --llm to enable LLM Judge)"
-fi
+echo " Fireball Document Verification Pipeline [spec-integrator]"
 echo "================================================================================"
 
 START_TIME=$(date +%s)
-mkdir -p temp
 
-# Phase 1: Build DocGraph & Run Static Graph Analysis
-print_section "[Phase 1/3] Building DocGraph and Verifying Graph Topology..."
-if uv run python tools/doc_graph.py docs --connected-only; then
-    printf "✔ DocGraph Construction & Topology Check: PASSED\n"
+# Phase 1: Static & Formal Verification (Format, Traceability, Hierarchy, Formal)
+echo ">>> [Phase 1/2] Running Static & Formal Model Verification..."
+CHECK_CMD=(uv run --system-certs --project "tools/spec-integrator" python -m spec_integrator.cli check --config spec-integrator.yaml --report "$REPORT_PATH" --graph-json "$GRAPH_JSON_PATH" $CLEAN_FLAG)
+if "${CHECK_CMD[@]}"; then
+    echo "✔ Quality Gates & Formal Verification: PASSED"
 else
-    printf "✖ DocGraph Topology Check: FAILED\n"
-    FAILED=1
+    echo "✖ Quality Gates or Formal Verification: FAILED"
+    exit 1
 fi
 
-# Phase 2: Extract Candidate Evaluation Subgraphs
-print_section "[Phase 2/3] Extracting Requirement-centric Evaluation Subgraphs..."
-if uv run python tools/doc_graph.py docs --subgraphs --out temp/subgraphs.json; then
-    printf "✔ Subgraph Extraction: PASSED (Saved to temp/subgraphs.json)\n"
-else
-    printf "✖ Subgraph Extraction: FAILED\n"
-    FAILED=1
-fi
-
-# Phase 3: LLM as a Judge Semantic Subgraph Audit
+# Phase 2: LLM as a Judge (Optional)
 if [ "$RUN_LLM" -eq 1 ]; then
-    print_section "[Phase 3/3] Running Graph-based LLM as a Judge Audit..."
-    JUDGE_ARGS=(--backend "$BACKEND" --max-subgraphs "$MAX_SUBGRAPHS" --out temp/judge_report.json)
+    echo -e "\n>>> [Phase 2/2] Running LLM as a Judge Semantic Audits..."
+    JUDGE_CMD=(uv run --system-certs --project "tools/spec-integrator" python -m spec_integrator.cli judge --config spec-integrator.yaml --backend "$BACKEND" --max-subgraphs "$MAX_SUBGRAPHS" -o doc_judge_report.json)
     if [ -n "$MODEL" ]; then
-        JUDGE_ARGS+=(--model "$MODEL")
+        JUDGE_CMD+=(--model "$MODEL")
     fi
-
-    if uv run python tools/doc_judge.py docs "${JUDGE_ARGS[@]}"; then
-        printf "✔ LLM Subgraph Judge Audit: PASSED\n"
+    if "${JUDGE_CMD[@]}"; then
+        echo "✔ LLM as a Judge: PASSED"
     else
-        printf "✖ LLM Subgraph Judge Audit: FAILED\n"
-        FAILED=1
+        echo "✖ LLM as a Judge: FAILED"
+        exit 1
     fi
 else
-    print_section "[Phase 3/3] Skipping LLM Subgraph Judge Audits (Use --llm to enable)"
+    echo -e "\n>>> [Phase 2/2] Skipping LLM as a Judge (Use --llm to enable)"
 fi
 
 END_TIME=$(date +%s)
 ELAPSED=$((END_TIME - START_TIME))
 
-echo -e "\n================================================================================"
-echo " Verification Pipeline Summary"
 echo "================================================================================"
-echo " Elapsed Time: ${ELAPSED}s"
-if [ "$FAILED" -eq 0 ]; then
-    echo " Result: SUCCESS (All enabled checks passed)"
-    exit 0
-fi
-
-echo " Result: FAILURE (Some checks failed)"
-exit 1
+echo " Verification Pipeline Summary: SUCCESS (${ELAPSED}s)"
+echo " Report saved to: $REPORT_PATH"
+echo "================================================================================"
+exit 0

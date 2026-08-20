@@ -1,1 +1,0 @@
-# tools/mechanical module initialization

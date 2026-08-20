@@ -246,7 +246,7 @@ Tier 3 (共有メモリ・パススルー) 向け。物理ページアドレス�
 [7:0]   Owner ID (8 bits)                  — 256 タスク対応
 ```
 
-**Owner ID の状態定義**（型・予約値の正規定義は [`system_config_details.md`](system_config_details.md#27-型定義予約値) 参照）:
+**Owner ID の状態定義**（型・予約値の正規定義は [`system_config_details.md`](../tier1_core/system_config_details.md#27-型定義予約値) 参照）:
 
 | 値 | 状態 | 意味 |
 | :--- | :--- | :--- |

@@ -207,7 +207,7 @@ sequenceDiagram
 <!-- traceability: {META_RecoveryStrategy} -->
 | コンポーネント | 連携内容 | 参照データ構造 |
 | :--- | :--- | :--- |
-| **WASM Loader** | WASMバイナリの索引情報（関数、命令、即値）の提供 | [`module_view`](runtime_loader.md#module_view) |
+| **WASM Loader** | WASMバイナリの索引情報（関数、命令、即値）の提供 | [`module_view`](runtime_loader.md#モジュールビューmodule_view) |
 | **JIT Compiler** | ホットスポット情報の共有と実行エンジンの切り替え | `execution_context`, 履歴バッファ |
 | **Debugger** | ブレークポイント判定と実行状態の可視化 | `debug_handler_table`, `execution_context` |
 | **vSoC** | 実行制御（step）と協調型マルチタスク（yield）の管理 | `execution_context` |

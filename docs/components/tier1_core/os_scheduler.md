@@ -1,4 +1,4 @@
-# COOS スケジューラ コンポーネント設計書
+# COOS スケジューラ コンポーネント設計書 {VERIFY_FORMAL}
 
 ## 1. コンセプト
 <!-- traceability: {CooperativeMultitasking} {GLOBAL_UseCpp23Library} {GLOBAL_UseCpp20Coroutine} {COOS_Deterministic} {CSPCommunication} -->

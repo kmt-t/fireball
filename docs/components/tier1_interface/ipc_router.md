@@ -1,4 +1,4 @@
-# IPCルータ コンポーネント設計書
+# IPCルータ コンポーネント設計書 {VERIFY_FORMAL}
 
 ## 1. コンセプト
 <!-- traceability: {IPCRouter} {URIAbstraction} {RoleBasedAccessControl} {OwnershipTransfer} {IPCDI} -->

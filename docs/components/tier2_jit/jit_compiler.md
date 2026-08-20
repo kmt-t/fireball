@@ -1,4 +1,4 @@
-# JIT Compiler コンポーネント設計書
+# JIT コンパイラ コンポーネント設計書 {VERIFY_FORMAL}
 
 ## 1. コンセプト
 <!-- traceability: {LowLatencyJIT} {JIT_CopyAndPatch} {JIT_ZeroCompileCostTheorem} {SimpleJITArchitecture} {GLOBAL_PeriodicTask} {GLOBAL_IdleDetection} {JIT_Encoder} {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} -->

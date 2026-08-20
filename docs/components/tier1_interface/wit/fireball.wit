@@ -1,0 +1,92 @@
+package fireball:host@0.1.0;
+
+/// 共通リカバリー戦略とエラー型定義
+interface types {
+    /// 障害時のリカバリー戦略カテゴリ
+    enum recovery-strategy-category {
+        /// エラーを無視して処理を継続
+        ignore,
+        /// 同一パラメータによる再試行
+        retry,
+        /// モジュールまたはシステムの再初期化が必要
+        restart,
+        /// 致命的エラー（システム停止・ダンプ）
+        panic,
+    }
+
+    /// 基本操作結果型
+    type operation-result = result<_, recovery-strategy-category>;
+    /// モジュールロード結果型
+    type load-result = result<_, recovery-strategy-category>;
+    /// サービス登録結果型
+    type registration-result = result<_, recovery-strategy-category>;
+    /// IPCルーティング結果型
+    type routing-result = result<_, recovery-strategy-category>;
+
+    /// バッファスライス定義
+    record buffer-slice {
+        offset: u32,
+        len: u32,
+    }
+}
+
+/// 高速トリガ (GPIO) インターフェイス
+interface trigger {
+    use types.{operation-result, recovery-strategy-category};
+
+    set-pin: func(pin: u32, value: bool) -> operation-result;
+    get-pin: func(pin: u32) -> result<bool, recovery-strategy-category>;
+}
+
+/// タイマー (wasi:clocks/monotonic-clock 準拠) インターフェイス
+interface timer {
+    resource periodic-timer {
+        get-now: func() -> u64;
+        subscribe-timer: func(nanos: u64) -> u32;
+    }
+}
+
+/// バス通信 (I2C/SPI マスタ・スレーブ) インターフェイス
+interface bus {
+    use types.{buffer-slice, operation-result, recovery-strategy-category};
+
+    resource bus-master {
+        transfer-data: func(tx-buf: buffer-slice, rx-buf: buffer-slice) -> result<u32, recovery-strategy-category>;
+    }
+
+    resource bus-slave {
+        set-response: func(data: buffer-slice) -> operation-result;
+        get-received: func(dest-buf: buffer-slice) -> result<u32, recovery-strategy-category>;
+        subscribe: func() -> u32;
+    }
+}
+
+/// ストリーミング I/O インターフェイス
+interface streaming {
+    resource streaming-master {
+        write-stream: func(data: list<u8>) -> u32;
+    }
+
+    resource streaming-slave {
+        read-stream: func(max-bytes: u32) -> list<u8>;
+    }
+}
+
+/// 低レベル・トラップ・インターフェイス
+interface trap {
+    fireball-call: func(id: u32, a0: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32) -> u32;
+}
+
+/// Fireball ハイパーバイザ Host World
+world fireball {
+    import types;
+    import trigger;
+    import timer;
+    import bus;
+    import streaming;
+    import trap;
+
+    export trigger;
+    export timer;
+    export bus;
+}

@@ -13,16 +13,16 @@
 | レイヤー | ディレクトリ | 定義される設計書 | 抽象度 |
 | :--- | :--- | :--- | :--- |
 | **Tier 0** | `docs/requires/` | システム要求仕様書 (`requirement_list.md`) | 最高（要件定義） |
-| **Tier 1** | `docs/components/core/`<br>`docs/components/interface/` | スケジューラ、チャネル通信、システムサービス、IPCルータ等のコア仕様書 | 高（システムインターフェース・コアポリシー） |
-| **Tier 2** | `docs/components/runtime/`<br>`docs/components/jit/` | WASMインタープリタ、WASMローダー、JITエンジン等の実行エンジン仕様書 | 中（エンジン内部設計・メモリ管理） |
-| **Tier 3** | `docs/components/platform/` | HAL実装、プラットフォーム依存メモリ、ハードウェアドライバ等の物理・プラットフォーム抽象化仕様書 | 低（ハードウェア/プラットフォーム依存） |
-| **Meta** | `docs/tools/` | `doc_test_llm.md` などの開発支援ツール仕様書（Hypervisorそのものの仕様には含まれないメタ設計） | 適用外（メタ仕様） |
+| **Tier 1** | `docs/components/tier1_core/`<br>`docs/components/tier1_interface/` | スケジューラ、チャネル通信、システムサービス、IPCルータ等のコア仕様書 | 高（システムインターフェース・コアポリシー） |
+| **Tier 2** | `docs/components/tier2_runtime/`<br>`docs/components/tier2_jit/` | WASMインタープリタ、WASMローダー、JITエンジン等の実行エンジン仕様書 | 中（エンジン内部設計・メモリ管理） |
+| **Tier 3** | `docs/components/tier3_platform/` | HAL実装、プラットフォーム依存メモリ、ハードウェアドライバ等の物理・プラットフォーム抽象化仕様書 | 低（ハードウェア/プラットフォーム依存） |
+| **Meta** | `docs/architecture/`<br>`docs/plans/` | 全体アーキテクチャ、設計方針、開発計画（Hypervisorそのものの仕様には含まれないメタ設計） | 適用外（メタ仕様） |
 
 ---
 
 ## 2. 階層間依存性（トレーサビリティ）ルール
 
-自動テストツール `doc_test_llm` は、本ドキュメントに定義されたTierマッピングに基づいて、各ドキュメントの階層一貫性を検証する。
+自動テストツール `spec-integrator` は、本ドキュメントに定義されたTierマッピングに基づいて、各ドキュメントの階層一貫性を検証する。
 
 ### 2.1 依存方向のルール
 1. **下り方向の依存（詳細化）**:
@@ -33,17 +33,17 @@
    - 上位 Tier が下位の機能を利用する場合、必ず Tier 1 または Tier 2 で定義された抽象インターフェースを介し、静的DI（コンパイル時解決）の原則に従うこと。
 
 ### 2.2 階層検証における親子関係（ペア）の対応
-階層検証（`--hierarchy --tier <N>`）では、以下のレイヤー間での一貫性とカプセル化違反を監査する。
+階層検証では、以下のレイヤー間での一貫性とカプセル化違反を監査する。
 
-* **Tier 1 検証 (`--tier 1`)**:
+* **Tier 1 検証**:
   - 親ドキュメント: `docs/requires/requirement_list.md` (Tier 0)
-  - 子ドキュメント: `docs/components/core/*`, `docs/components/interface/*`
-* **Tier 2 検証 (`--tier 2`)**:
-  - 親ドキュメント: `docs/components/core/*`, `docs/components/interface/*`
-  - 子ドキュメント: `docs/components/runtime/*`, `docs/components/jit/*`
-* **Tier 3 検証 (`--tier 3`)**:
-  - 親ドキュメント: `docs/components/runtime/*`, `docs/components/jit/*`
-  - 子ドキュメント: `docs/components/platform/*`
+  - 子ドキュメント: `docs/components/tier1_core/*`, `docs/components/tier1_interface/*`
+* **Tier 2 検証**:
+  - 親ドキュメント: `docs/components/tier1_core/*`, `docs/components/tier1_interface/*`
+  - 子ドキュメント: `docs/components/tier2_runtime/*`, `docs/components/tier2_jit/*`
+* **Tier 3 検証**:
+  - 親ドキュメント: `docs/components/tier2_runtime/*`, `docs/components/tier2_jit/*`
+  - 子ドキュメント: `docs/components/tier3_platform/*`
 
 ---
 

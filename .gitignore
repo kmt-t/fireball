@@ -11,6 +11,18 @@ build.ninja
 .ninja_log
 Testing/
 
+# IDE and Editor
+.idea/
+.vscode/
+*.swp
+*~
+
+# spec-integrator cache & reports
+.spec-integrator/
+doc_report.md
+doc_graph.json
+doc_judge_report.json
+
 # Compiled objects and binaries
 *.d
 *.slo

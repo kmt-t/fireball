@@ -19,24 +19,30 @@ The design of Fireball is built on three core pillars: a "Cooperative Scheduler"
 
 ## Development Environment and Build
 
-Fireball uses the CMake build system. C99 and C++20 code is compiled with clang, supporting builds for various environments including Cortex-M33, RISC-V/32, and x86.
+Fireball uses the CMake build system. C23 and C++23 code is compiled with clang, supporting builds for various environments including Cortex-M33, RISC-V/32, and x86.
 
 ## Setup
 
 You need Clang, CMake, and Ninja to build the project.
 
 ### 1. Prerequisites
-- Clang (13+)
-- CMake (4.2+)
+- Clang (17+)
+- CMake (3.25+)
 - Ninja
-- Python 3.14+ (pyenv recommended)
-- wit-bindgen
-- TLA+ (TLC)
+- Python 3.11+ / 3.14+ (`uv` recommended)
+- `pyModelChecking` (Formal verification via CTL/LTL)
+- `wit-bindgen`
 
-### 2. Install Python Dependencies
+### 2. Verification & Quality Gates
 
-```bash
-pip install -r requirements.txt
+Run the integrated verification pipeline (Static format, traceability, formal model checking, WIT interface check, LLM judge):
+
+```powershell
+# Windows PowerShell
+powershell tools/run_all_tests.ps1 -clean
+
+# Linux / macOS / WSL
+./tools/run_all_tests.sh --clean
 ```
 
 ## How to Build
@@ -51,11 +57,12 @@ ninja
 
 ## Documentation and Development Process
 
-All Fireball development is based on the specifications stored in `docs/`. Before implementing changes, please check the relevant documentation and adhere to the development policies defined in `.claude/rules/`.
+All Fireball development is based on the specifications stored in `docs/`. Before implementing changes, please check the relevant documentation and adhere to the development policies defined in `.agents/rules/`.
 
 - **Design Documents**: `docs/components/`
-- **Development Guidelines**: `.claude/rules/development-policy.md`
+- **Development Guidelines**: `.agents/rules/development-policy.md`
 - **Resource Budget**: `docs/architecture/resource_budget.md`
+- **Verification Reports**: `reports/`
 
 ## License
 

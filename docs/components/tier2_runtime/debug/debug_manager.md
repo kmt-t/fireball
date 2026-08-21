@@ -1,4 +1,5 @@
-# デバッガ コンポーネント設計書
+# Debug Manager コンポーネント設計書
+<!-- traceability: {VERIFY_FORMAL} -->
 
 ## 1. コンセプト
 <!-- traceability: {RSPMinimalSet} {DebuggerLabelTableSwitch} {MemoryIsolation} {Debug_Standard_Env} {RSP_Transport_Selectable} {Debug_Integrated} -->

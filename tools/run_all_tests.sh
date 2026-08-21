@@ -19,6 +19,10 @@ BACKEND="sakura"
 MODEL=""
 MAX_SUBGRAPHS=10
 MAX_SECTIONS=15
+MIN_REFERENCES=1
+MIN_LENGTH=50
+TARGET_TIER=""
+EXHAUSTIVE=0
 MAX_SECTIONS_SET=0
 MAX_SUBGRAPHS_SET=0
 NO_STRICT=0
@@ -43,10 +47,14 @@ Options:
   --assess           Run the Complexity & Risk Assessment (establishes obligations).
   --llm              Run the LLM as a Judge semantic audit.
   --full             Run everything with full coverage (implies --assess --llm).
+  --exhaustive       Run exhaustive assessment & semantic audit (checks all sections/subgraphs).
   --backend B        LLM backend (sakura, ollama, mock - default: sakura)
   --model M          LLM model name
-  --max-subgraphs N  Subgraphs to evaluate with the LLM judge (default: 10)
-  --max-sections N   Sections to risk-assess (default: 15)
+  --max-subgraphs N  Subgraphs to evaluate with the LLM judge (default: 10, 0 for unlimited)
+  --max-sections N   Sections to risk-assess (default: 15, 0 for unlimited)
+  --min-references N Minimum referencing sections required to audit a subgraph (default: 1)
+  --min-length N     Minimum body character length to evaluate (default: 50)
+  --tier T           Comma-separated tiers to assess (e.g. '0,1,2')
   --no-strict        Accept a partial risk assessment instead of failing.
   --sync             Record the current spec state as the propagation baseline, then exit.
   --clean            Run a clean audit without the cache DB.
@@ -62,25 +70,24 @@ EOF
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --llm)           RUN_LLM=1; shift ;;
-        --assess)        RUN_ASSESS=1; shift ;;
-        --full)          RUN_ASSESS=1; RUN_LLM=1; shift ;;
-        --backend)       BACKEND="$2"; shift 2 ;;
-        --model)         MODEL="$2"; shift 2 ;;
-        --max-subgraphs) MAX_SUBGRAPHS="$2"; MAX_SUBGRAPHS_SET=1; shift 2 ;;
-        --max-sections)  MAX_SECTIONS="$2"; MAX_SECTIONS_SET=1; shift 2 ;;
-        --no-strict)     NO_STRICT=1; shift ;;
-        --sync)          RUN_SYNC=1; shift ;;
-        --clean)         CLEAN_FLAG="--clean"; shift ;;
-        -h|--help)       usage ;;
+        --llm)              RUN_LLM=1; shift ;;
+        --assess)           RUN_ASSESS=1; shift ;;
+        --full)             RUN_ASSESS=1; RUN_LLM=1; MAX_SECTIONS=0; MAX_SUBGRAPHS=0; shift ;;
+        --exhaustive)       RUN_ASSESS=1; RUN_LLM=1; EXHAUSTIVE=1; MAX_SECTIONS=0; MAX_SUBGRAPHS=0; shift ;;
+        --backend)          BACKEND="$2"; shift 2 ;;
+        --model)            MODEL="$2"; shift 2 ;;
+        --max-subgraphs)    MAX_SUBGRAPHS="$2"; MAX_SUBGRAPHS_SET=1; shift 2 ;;
+        --max-sections)     MAX_SECTIONS="$2"; MAX_SECTIONS_SET=1; shift 2 ;;
+        --min-references)   MIN_REFERENCES="$2"; shift 2 ;;
+        --min-length)       MIN_LENGTH="$2"; shift 2 ;;
+        --tier)             TARGET_TIER="$2"; shift 2 ;;
+        --no-strict)        NO_STRICT=1; shift ;;
+        --sync)             RUN_SYNC=1; shift ;;
+        --clean)            CLEAN_FLAG="--clean"; shift ;;
+        -h|--help)          usage ;;
         *) echo "Unknown argument: $1"; usage ;;
     esac
 done
-
-if [ "$RUN_ASSESS" -eq 1 ] && [ "$RUN_LLM" -eq 1 ]; then
-    [ "$MAX_SECTIONS_SET" -eq 0 ] && MAX_SECTIONS=1000
-    [ "$MAX_SUBGRAPHS_SET" -eq 0 ] && MAX_SUBGRAPHS=200
-fi
 
 SPEC_INT=("run" "--system-certs" "--project" "tools/spec-integrator"
           "python" "-m" "spec_integrator.cli")
@@ -113,8 +120,11 @@ if [ "$RUN_ASSESS" -eq 1 ]; then
     echo ">>> [Phase 1/3] Risk Assessment (deciding what must be verified)..."
     ASSESS_ARGS=("${SPEC_INT[@]}" "assess" "--config" "spec-integrator.yaml"
                  "--backend" "$BACKEND" "--max-sections" "$MAX_SECTIONS"
+                 "--min-length" "$MIN_LENGTH"
                  "-o" "$RISK_REPORT" "-r" "reports/doc_risk_report.md")
     [ -n "$MODEL" ] && ASSESS_ARGS+=("--model" "$MODEL")
+    [ -n "$TARGET_TIER" ] && ASSESS_ARGS+=("--tier" "$TARGET_TIER")
+    [ "$EXHAUSTIVE" -eq 1 ] && ASSESS_ARGS+=("--exhaustive")
     [ "$NO_STRICT" -eq 1 ] && ASSESS_ARGS+=("--no-strict")
 
     if ! uv "${ASSESS_ARGS[@]}"; then
@@ -141,14 +151,15 @@ if [ "$RUN_LLM" -eq 1 ]; then
     echo ">>> [Phase 2/3] LLM as a Judge (semantic audit)..."
     JUDGE_ARGS=("${SPEC_INT[@]}" "judge" "--config" "spec-integrator.yaml"
                 "--backend" "$BACKEND" "--max-subgraphs" "$MAX_SUBGRAPHS"
-                "-o" "$JUDGE_REPORT")
+                "--min-references" "$MIN_REFERENCES"
+                "-o" "$JUDGE_REPORT" "-r" "reports/doc_judge_report.md")
     [ -n "$MODEL" ] && JUDGE_ARGS+=("--model" "$MODEL")
+    [ "$EXHAUSTIVE" -eq 1 ] && JUDGE_ARGS+=("--exhaustive")
 
-    # A FAIL verdict is data for the gate, not a reason to abort the pipeline.
-    if uv "${JUDGE_ARGS[@]}"; then
-        echo "✔ LLM as a Judge: no semantic failures"
+    if ! uv "${JUDGE_ARGS[@]}"; then
+        echo "! LLM as a Judge reported findings — see reports/doc_judge_report.md"
     else
-        echo "! LLM as a Judge reported findings — see $JUDGE_REPORT"
+        echo "✔ LLM as a Judge: no semantic failures"
     fi
 else
     echo ""

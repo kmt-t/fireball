@@ -1,4 +1,5 @@
-# vMMIO コンポーネント設計書 (改訂版)
+# vMMIO コンポーネント設計書
+<!-- traceability: {VERIFY_FORMAL} -->
 
 ## 1. コンセプト
 <!-- traceability: {META_RestrictedPhysicalAccess} {vMMIO_TrapAndEmulate} {PhysicalPassthrough} {DynamicMmap} {UnifiedAccessModel} {FastAddressCheck} {Fast_Path_GPIO} -->

@@ -1,4 +1,5 @@
 # Interpreter コンポーネント設計書
+<!-- traceability: {VERIFY_FORMAL} -->
 
 ## 1. コンセプト
 <!-- traceability: {ThreadedInterpreter} {LowLatencyJIT} {InterpreterContextStackless} {EnvironmentPointer} -->

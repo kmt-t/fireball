@@ -9,10 +9,14 @@ param(
     [switch]$llm,
     [switch]$assess,
     [switch]$full,
+    [switch]$exhaustive,
     [string]$backend = "sakura",
     [string]$model = "",
     [int]$maxSubgraphs = 10,
     [int]$maxSections = 15,
+    [int]$minReferences = 1,
+    [int]$minLength = 50,
+    [string]$tier = "",
     [switch]$noStrict,
     [switch]$sync,
     [switch]$clean
@@ -29,11 +33,11 @@ if (-not (Test-Path $reportsDir)) {
     New-Item -ItemType Directory -Path $reportsDir | Out-Null
 }
 
-if ($full) {
+if ($full -or $exhaustive) {
     $assess = $true
     $llm = $true
-    if (-not $PSBoundParameters.ContainsKey('maxSections')) { $maxSections = 1000 }
-    if (-not $PSBoundParameters.ContainsKey('maxSubgraphs')) { $maxSubgraphs = 200 }
+    if (-not $PSBoundParameters.ContainsKey('maxSections')) { $maxSections = 0 }
+    if (-not $PSBoundParameters.ContainsKey('maxSubgraphs')) { $maxSubgraphs = 0 }
 }
 
 $specInt = @("run", "--system-certs", "--project", "tools/spec-integrator",
@@ -69,8 +73,11 @@ if ($assess) {
     Write-Host "`n>>> [Phase 1/3] Risk Assessment (deciding what must be verified)..." -ForegroundColor Yellow
     $assessArgs = $specInt + @("assess", "--config", "spec-integrator.yaml",
                                "--backend", $backend, "--max-sections", "$maxSections",
+                               "--min-length", "$minLength",
                                "-o", $riskReport, "-r", "reports/doc_risk_report.md")
     if ($model) { $assessArgs += @("--model", $model) }
+    if ($tier) { $assessArgs += @("--tier", $tier) }
+    if ($exhaustive) { $assessArgs += "--exhaustive" }
     if ($noStrict) { $assessArgs += "--no-strict" }
 
     & uv @assessArgs
@@ -96,14 +103,16 @@ if ($llm) {
     Write-Host "`n>>> [Phase 2/3] LLM as a Judge (semantic audit)..." -ForegroundColor Yellow
     $judgeArgs = $specInt + @("judge", "--config", "spec-integrator.yaml",
                               "--backend", $backend, "--max-subgraphs", "$maxSubgraphs",
-                              "-o", $judgeReport)
+                              "--min-references", "$minReferences",
+                              "-o", $judgeReport, "-r", "reports/doc_judge_report.md")
     if ($model) { $judgeArgs += @("--model", $model) }
+    if ($exhaustive) { $judgeArgs += "--exhaustive" }
 
     & uv @judgeArgs
     $judgeExit = $LASTEXITCODE
     if ($judgeExit -ne 0) {
         # A FAIL verdict is data for the gate, not a reason to abort the pipeline.
-        Write-Host "! LLM as a Judge reported findings — see $judgeReport" -ForegroundColor DarkYellow
+        Write-Host "! LLM as a Judge reported findings — see reports/doc_judge_report.md" -ForegroundColor DarkYellow
     } else {
         Write-Host "✔ LLM as a Judge: no semantic failures" -ForegroundColor Green
     }

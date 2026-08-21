@@ -195,31 +195,30 @@ JIT生成ネイティブコードには、以下のポイントで割り込み�
 └────────────────────────────────────────┘
 ```
 
-#### Active/Old ダブルバッファとキャッシュローテーション
+#### Active/Warm/Oldest 3面マルチバッファとキャッシュローテーション
 <!-- traceability: {Challenge_JITCacheEfficiency} {LowLatencyJIT} -->
 
-JIT コードキャッシュ（合計 4KB）を 2KB x 2 のバッファに分割し、「移動する窓」パターンを採用：
+JIT コードキャッシュ（合計 6KB `FB_CONF_JIT_CACHE_SIZE`）を 2KB x 3 のバッファ（Active / Warm / Oldest）に分割し、Oldest-Only Promotion パターンを採用：
 
 | フェーズ | 状態 | 説明 | アクション |
 | :--- | :--- | :--- | :--- |
-| **Normal (JitRun)** | Active が使用中、Old が待機 | 新規 JIT コンパイルが Active へ追加 | 既存コードは保持 |
-| **co_yield (Hotspot Scan)** | ホットスポット検出 | 最近のトレース履歴を分析 | Active → Old への昇格判定 |
-| **Cache Rotation** | Old が不要に | 新規コンパイル要求を Old へ開始 | Old は次のローテーションで破棄 |
-| **Debugger Flush** | Interrupt Flag[2] 検出 | デバッガメモリ変更を検知 | Active/Old 両方を無効化 |
+| **Normal (JitRun)** | Active が書込・実行中、Warm/Oldest が観測 | 新規 JIT コンパイルが Active へ追加 | 既存コードは保持 |
+| **co_yield (Rotation)** | 世代ローテーション | Active → Warm → Oldest へスライド | 中間 Warm では無償観測 |
+| **Oldest Evaluation** | 最古バッファ到達判定 | 破棄直前の Oldest で Hot コードのみ新 Active へ昇格 | Cold コードは Purge 破棄 |
+| **Debugger Flush** | Interrupt Flag[2] 検出 | デバッガメモリ変更を検知 | 全バッファ（Active/Warm/Oldest）を無効化 |
 
 **メモリレイアウト:**
 ```
-JIT Code Cache (4 KB total)
+JIT Code Cache (6 KB total: FB_CONF_JIT_CACHE_SIZE)
 ┌──────────────────────┐
-│  Active Buffer       │  2 KB (current execution)
-│  (PC in [0x0, 2K))   │  - Hot code paths
-│  - Generation[0]     │  - Updated on co_yield
-│  - Entries: up to 64 │
+│  Active Buffer Bank  │  2 KB (Bank 0: current compiling & execution)
+│  - Generation[0]     │  - New hot traces
 ├──────────────────────┤
-│  Old Buffer          │  2 KB (previously active)
-│  (PC in [2K, 4K))    │  - Fallback code
-│  - Generation[1]     │  - Rotated on refresh
-│  - Entries: up to 64 │
+│  Warm Buffer Bank    │  2 KB (Bank 1: observation window)
+│  - Generation[1]     │  - Retained without copying
+├──────────────────────┤
+│  Oldest Buffer Bank  │  2 KB (Bank 2: oldest buffer)
+│  - Generation[2]     │  - Promoted if hot, else purged
 └──────────────────────┘
 ```
 
@@ -231,7 +230,7 @@ JIT Code Cache (4 KB total)
 1. **Debugger Writes Memory**: `gdb_write_memory(addr, data)` → `fireball::vsoc::request_debugger_interrupt(ctx)` を呼び出し、内部のデバッガ割り込みフラグをセット
 2. **Safepoint Detection**: JIT実行の SafepointCheck で `fireball::vsoc::has_debugger_interrupt(ctx)` を検査
 3. **Cache Flush Trigger**: フラグ検出時、即座に以下を実行：
-   - Active/Old のメタデータを破棄（generation cookie インクリメント）
+   - 全バッファ（Active/Warm/Oldest）のメタデータを破棄（generation cookie インクリメント）
    - 登録済みの exec_trace ポインタを無効化
    - 次回 `step()` で Interpreter モードへフォールバック
 4. **Resume**: デバッガが再開コマンドを発行 → `InterpreterRun` 状態に遷移 → 新規JITコンパイルの準備開始
@@ -453,9 +452,9 @@ jit_pc: address
 - **方策**: `{LowLatencyJIT}` `{ThreadedInterpreter}` コピーアンドパッチJITによるネイティブ実行と、スレッドインタープリタによる高速フォールバックを組み合わせる。
 
 ### 6.2 メモリ制約と方策
-<!-- traceability: {JIT_DoubleBuffer_Cache} {GLOBAL_IndependentHeap} {WasmPageAlignment} -->
+<!-- traceability: {JIT_MultiBuffer_Cache} {GLOBAL_IndependentHeap} {WasmPageAlignment} -->
 - **目標**: 64KB RAM環境で動作させる。
-- **方策**: `{JIT_DoubleBuffer_Cache}` `{GLOBAL_IndependentHeap}` 3面マルチバッファ（Active/Warm/Oldest）による効率的なキャッシュ代謝と、厳密なヒープ分離によりメモリ使用量を制御する。JITキャッシュは `FB_CONF_JIT_CACHE_SIZE`（デフォルト6144バイト、`docs/components/tier1_core/system_config_details.md`）を 3領域に均等分割して使用し、各領域の容量は `code_cache_size / 3`（各2048バイト）となる。
+- **方策**: `{JIT_MultiBuffer_Cache}` `{GLOBAL_IndependentHeap}` 3面マルチバッファ（Active/Warm/Oldest）による効率的なキャッシュ代謝と、厳密なヒープ分離によりメモリ使用量を制御する。JITキャッシュは `FB_CONF_JIT_CACHE_SIZE`（デフォルト6144バイト、`docs/components/tier1_core/system_config_details.md`）を 3領域に均等分割して使用し、各領域の容量は `code_cache_size / 3`（各2048バイト）となる。
 - **高速アドレス判定**: ゲストRAMを `0x0` から配置し、単一の比較命令でRAMアクセスを判定することで、インタープリタおよびJITのオーバーヘッドを最小化する。 `{WasmPageAlignment}`
 
 ### 6.3 安全性制約と方策

@@ -1,15 +1,15 @@
 # JIT Entry Index コンポーネント設計書
 
 ## 1. コンセプト
-<!-- traceability: {SimpleJITArchitecture} {JIT_DoubleBuffer_Cache} {META_FlatMapIndexed} {META_BinarySearch} -->
+<!-- traceability: {SimpleJITArchitecture} {JIT_MultiBuffer_Cache} {META_FlatMapIndexed} {META_BinarySearch} -->
 JIT Entry Index は、WASM 命令オフセット とそれに対応するネイティブコードのアドレスの紐付けを管理する。
-インタープリタの実行ループ内という極めてクリティカルなパスで呼び出されるため、**カードマーキング**（コンパイル状態の高速判定）と**カードグループ索引**（二分探索の範囲絞り込み）を組み合わせた高速な検索アルゴリズムを提供する。内部的には C++23 `std::flat_map` 相当の構造を用い、限られたメモリ内での動的キャッシュ代謝を実現する。 `{SimpleJITArchitecture}` `{JIT_DoubleBuffer_Cache}` `{META_FlatMapIndexed}` `{META_BinarySearch}`
+インタープリタの実行ループ内という極めてクリティカルなパスで呼び出されるため、**カードマーキング**（コンパイル状態の高速判定）と**カードグループ索引**（二分探索の範囲絞り込み）を組み合わせた高速な検索アルゴリズムを提供する。内部的には C++23 `std::flat_map` 相当の構造を用い、限られたメモリ内での動的キャッシュ代謝を実現する。 `{SimpleJITArchitecture}` `{JIT_MultiBuffer_Cache}` `{META_FlatMapIndexed}` `{META_BinarySearch}`
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {SimpleJITArchitecture} -->
 本コンポーネントは **Tier 3 (詳細リーフコンポーネント: Leaf Component)** に属し、JIT コンパイラ (`jit_compiler.md`) から分解された JIT エントリインデックス管理およびカードマーキング二分探索を担当する。 `{META_3TierSeparation}` `{SimpleJITArchitecture}`
 
-## 3. 静的モデル
+### 3. 静的モデル
 
 ### 3.1 データ構造
 - **`JitEntryIndex`**: WASMオフセットとネイティブコードの対応付け、および高速な検索ロジックをカプセル化した主要クラス。
@@ -107,5 +107,5 @@ sequenceDiagram
 - **方策**: カードグループインデックスによる範囲絞り込みと、二分探索の組み合わせにより、多数のトレースが存在しても高速な検索を維持する。
 
 ### 6.2 メモリ制約
-<!-- traceability: {JIT_DoubleBuffer_Cache} -->
-- **方策**: `{JIT_DoubleBuffer_Cache}` による Copy-GC 方式により、断片化を防ぎつつ、実行頻度の低いコードを自然に破棄（代謝）させる。
+<!-- traceability: {JIT_MultiBuffer_Cache} -->
+- **方策**: `{JIT_MultiBuffer_Cache}` による Copy-GC 方式により、断片化を防ぎつつ、実行頻度の低いコードを自然に破棄（代謝）させる。

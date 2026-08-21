@@ -88,8 +88,8 @@ def channel_recv(channel: Channel, receiver_task: Task) -> CoroutineHandle:
 <!-- traceability: {CSP_Handoff} {DirectContextSwitch} {GLOBAL_IdleDetection} {GLOBAL_StrictMemoryLimit} {GLOBAL_IndependentHeap} {GLOBAL_InterruptWakeup} -->
 - **CSP Handoff (直接スイッチ)**: `send`/`recv` 時に相手タスクが既に待機状態であった場合、スケジューラを介さず即座に相手タスクへ実行権を移譲する。 `{CSP_Handoff}`
 - **直接コンテキストスイッチ (Direct Context Switch)**: コルーチンの対称遷移（Symmetric Transfer）により、コールスタックを消費せずに相手タスクのコルーチンハンドルへ直接ジャンプする。OSスケジューラのキュー処理オーバーヘッドを完全にバイパスし、極小スタック（2KB）環境下でもスタックオーバーフローを起こさない決定論的 $O(1)$ スイッチを実現する。 `{DirectContextSwitch}`
-- **割り込みウェイクアップ (Interrupt Wakeup)**: 外部割り込みが発生した際、割り込みサービスルーチン（ISR）から `notify_interrupt` が呼び出され、特定のチャネルIDまたは割り込みベクトル（`irq_id`）に登録されて待機しているタスク（待機中タスク）を即座に起床させる（READY状態に遷移して実行可能キューに投入する）。 `{GLOBAL_InterruptWakeup}`
-- **Idle Detection**: 全ての実行中タスクがブロック状態にあり、かつイベントキューが空（割り込みや外部イベントによる起床待ちのみ）の場合にアイドル状態と判定する。この条件を `idle_hook` のトリガーとし、イベントキューが空かつ全タスクがブロック状態の時のみ、リングバッファ内の未出力ログが1件以上存在する、あるいはイベント待機開始から10ミリ秒以上経過した際に、バックグラウンド処理（リングバッファからロガーを介した物理ストレージや非揮発性メモリへのログ書き出し・フラッシュ処理）を最低優先度のバックグラウンドタスク（Idle優先度）として呼び出す。 `{GLOBAL_IdleDetection}`
+- **割り込みウェイクアップ (Interrupt Wakeup)**: 外部割り込みが発生した際、割り込みサービスルーチン（ISR）から `notify_interrupt` が呼び出され、INT イベントを有界キューに投函する。スケジューラが yield 点でこれをドレインし、特定の割り込みベクトル（`irq_id`）に登録されて待機しているタスクを READY 状態に遷移させて実行可能キュー末尾に投入する。 `{GLOBAL_InterruptWakeup}`
+- **Idle Detection**: 全ての実行中タスクがブロック状態にあり、かつイベントキューが空（割り込みや外部イベントによる起床待ちのみ）の場合にアイドル状態と判定する。この条件を `idle_hook` のトリガーとし、イベントキューが空かつ全タスクがブロック状態の時のみ、リングバッファ内の未出力ログが1件以上存在する、あるいはイベント待機開始から10ミリ秒以上経過した際に、バックグラウンド処理（リングバッファからロガーを介した物理ストレージや非揮発性メモリへのログ書き出し・フラッシュ処理）をREADYリング外の専用Idleタスクとして呼び出す。 `{GLOBAL_IdleDetection}`
 - **Memory Management**: タスク生成時に独立したメモリパーティションを割り当てる。 `{GLOBAL_StrictMemoryLimit}` `{GLOBAL_IndependentHeap}`
 
 #### COOS 内部 API シグネチャ
@@ -100,7 +100,7 @@ def channel_recv(channel: Channel, receiver_task: Task) -> CoroutineHandle:
 def notify_interrupt(irq_id: uint32) -> void
 
 # システムがアイドル状態（全タスクがブロックかつ起床イベント待ち）の時に呼び出されるコールバック。
-# - 最低優先度の専用Idleタスクの実行コンテキスト内でのみ実行される。
+# - READYリング外の専用Idleタスクの実行コンテキスト内でのみ実行される。
 # - リングバッファからロガーへの物理フラッシュ処理のみを行い、他のタスク実行をブロックしない。
 def idle_hook() -> void
 ```
@@ -233,7 +233,7 @@ struct CoValue {
 
 | コンポーネント | C++ API プロトタイプ定義 | 説明 |
 | :--- | :--- | :--- |
-| `scheduler` | `auto spawn(void(*task_entry)(void*), void* arg) -> result<task_id_t, scheduler_error>;`<br>`auto yield() -> void;`<br>`auto exit() -> void;`<br>`auto set_idle_hook(void(*hook)()) -> void;`<br>`auto wake_up_direct(task_id_t task) -> void;`<br>`auto notify_interrupt(task_id_t task) -> void;` | タスクの生成・一時譲渡・終了およびアイドル時コールバックの設定。`wake_up_direct` はCSP Handoffによる即時起床用、`notify_interrupt` はISRコンテキストからタスクを起床する用。動的確保は行わず、静的プールからTCBスロットを割り当てる。 |
+| `scheduler` | `auto spawn(void(*task_entry)(void*), void* arg) -> result<task_id_t, scheduler_error>;`<br>`auto yield() -> void;`<br>`auto exit() -> void;`<br>`auto set_idle_hook(void(*hook)()) -> void;`<br>`auto wake_up_direct(task_id_t task) -> void;`<br>`auto notify_interrupt(uint32_t irq_id) -> void;` | タスクの生成・一時譲渡・終了およびアイドル時コールバックの設定。`wake_up_direct` はCSP Handoffによる即時起床用、`notify_interrupt` はISRコンテキストから割り込み通知をイベントキューに投函する用。動的確保は行わず、静的プールからTCBスロットを割り当てる。 |
 | `csp` | `auto send(channel_id_t chan, CoValue&& val) -> coos::task_coroutine;`<br>`auto receive(channel_id_t chan) -> coos::task_coroutine_recv;` | チャネル経由の同期メッセージ送受信。ムーブセマンティクスによるゼロコピー所有権移譲を行う。 |
 | `memory` | `auto allocate(size_t size) -> result<void*, memory_error>;`<br>`auto free(void* ptr) -> void;` | タスク固有の静的メモリパーティション内でのメモリ管理。 |
 

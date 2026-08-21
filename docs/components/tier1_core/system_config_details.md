@@ -57,11 +57,11 @@ namespace fireball {
 | `FB_CONF_HAL_MAX_BUFFERS` | デバイス通信用バッファの最大数 | `4` | `{META_ConfigurableSystem}` |
 
 ### 2.4 vSoC / vMMIO {VERIFY_FORMAL}
-<!-- traceability: {JIT_DoubleBuffer_Cache} {FastAddressCheck} {GLOBAL_StrictMemoryLimit} {vMMIO_Isolation} {META_ConfigurableSystem} {META_RestrictedPhysicalAccess} -->
+<!-- traceability: {JIT_MultiBuffer_Cache} {FastAddressCheck} {GLOBAL_StrictMemoryLimit} {vMMIO_Isolation} {META_ConfigurableSystem} {META_RestrictedPhysicalAccess} -->
 | マクロ名 | 説明 | デフォルト値 | 導出元 |
 | :--- | :--- | :--- | :--- |
 | `FB_CONF_WASM_PAGE_SIZE` | WASM標準論理ページサイズ (64KB, 65,536 Bytes) | `65536` | `{FastAddressCheck}` |
-| `FB_CONF_JIT_CACHE_SIZE` | JITキャッシュサイズ (合計バイト数: 2KB x 3面) | `6144` | `{JIT_DoubleBuffer_Cache}` `{JIT_MultiBuffer_Cache}` |
+| `FB_CONF_JIT_CACHE_SIZE` | JITキャッシュサイズ (合計バイト数: 2KB x 3面) | `6144` | `{JIT_MultiBuffer_Cache}` |
 | `FB_CONF_JIT_NUM_BUFFERS` | JITキャッシュバッファ面数 (3: トリプルバッファ推奨) | `3` | `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}` |
 | `FB_CONF_GUEST_RAM_BASE` | ゲストRAMの開始アドレス（アライメント検証と高速境界チェックのため、必ず64KB境界に配置） | `0x00000000` | `{FastAddressCheck}` |
 | `FB_CONF_GUEST_RAM_SIZE` | ゲストRAMの物理割り当てサイズ（RAM<64KB環境向け部分ページ。デフォルト: 8KB = 8192 Bytes） | `8192` | `{GLOBAL_StrictMemoryLimit}` `{FastAddressCheck}` |
@@ -102,7 +102,7 @@ namespace fireball {
 | `FB_CONF_DEBUG_PACKET_SIZE` | RSPパケットバッファサイズ | `1024` | `{Challenge_DebuggerResource}` |
 
 ### 2.7 型定義・予約値
-<!-- traceability: {GLOBAL_IndependentHeap} {GLOBAL_StrictMemoryLimit} {GLOBAL_StaticScalability} {RoleBasedAccessControl} {META_ConfigurableSystem} {JIT_DoubleBuffer_Cache} {FastAddressCheck} {vMMIO_Isolation} {META_RestrictedPhysicalAccess} {BufferedLogging} {Challenge_DebuggerResource} -->
+<!-- traceability: {GLOBAL_IndependentHeap} {GLOBAL_StrictMemoryLimit} {GLOBAL_StaticScalability} {RoleBasedAccessControl} {META_ConfigurableSystem} {JIT_MultiBuffer_Cache} {FastAddressCheck} {vMMIO_Isolation} {META_RestrictedPhysicalAccess} {BufferedLogging} {Challenge_DebuggerResource} -->
 
 タスク識別子 `task_id` はシステム全体（COOS・IPCルータ・vMMIO）で共通して使用される識別子型である。値域を明示することで、予約値との重複や型キャストミスをコンパイル時に検出できる。
 

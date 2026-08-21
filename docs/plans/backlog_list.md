@@ -54,7 +54,7 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
 - [ ] **ARM Thumb-2 ネイティブパッチテンプレート**:
   - 事前コンパイル済みネイティブバイト列（RO-Data）とリロケーションテーブル `{JIT_CopyAndPatch}`
 - [ ] **トリプルバッファ キャッシュマネージャ**:
-  - 2KB × 3面 の代謝（`JIT_OldestOnly_Promote` / 最古破棄）制御 `{JIT_DoubleBuffer_Cache}` `{JIT_MultiBuffer_Cache}`
+  - 2KB × 3面 の代謝（`JIT_OldestOnly_Promote` / 最古破棄）制御 `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}`
 - [ ] **Safepoint 協調 & 透過的インタープリタ切り替え**:
   - ホットスポット検知カウンタとデバッグ/割り込み時の Safepoint イールド `{JIT_LazyChaining}` `{Interpreter_LazyJITSwitch}`
 

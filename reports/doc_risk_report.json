@@ -1,42 +1,42 @@
 {
-  "generated_at": "2026-08-21T07:25:11.309740+00:00",
+  "generated_at": "2026-08-21T07:40:52.784196+00:00",
   "total_evaluated": 15,
   "formal_candidates_count": 12,
   "llm_candidates_count": 1,
   "sections_scanned": 663,
   "max_sections": 15,
   "doc_hashes": {
-    "architecture/architecture_overview.md": "f37a79af98fc459693cad809b6911fa0cc688c81d61345a52a3d294df264d6d9",
+    "architecture/architecture_overview.md": "30be52ed847f1fa7ff9f50980552e989dab9727751748a3e5874505214cc81d7",
     "architecture/concept_harness.md": "cb235e55b001fcd339276a30377527cda6359377d105f7ed67271eb76acfb196",
     "architecture/document_structure.md": "3659e600d8ba7465316d0b131e5b6375fec0930fefe44134fccf76e755b8c3bb",
     "architecture/resource_budget.md": "f243c833676289a80c9a7610fc4cb4c11a6d0a6de9622f713fa01e5e3caea0dc",
-    "components/tier1_core/os_coos.md": "7002e5ba59eee09fd91e9368e66ef99001f2a9433e0906b363b33d9832a82663",
-    "components/tier1_core/os_scheduler.md": "9718ac2683324a919e67b1b33e83bdce4143fefd2d367f0155ca5bf24ef96fb0",
-    "components/tier1_core/system_config.md": "ddf119aa1c359a00eeb9747284c690e0902f5280509438a54b4480c6066c2be7",
-    "components/tier1_core/system_config_details.md": "46e57f8f3f910a3d1c98524c79f335af5933107de10027f40f55115552ecd972",
-    "components/tier1_core/system_logging.md": "901d64375ed8e22aa1d506a9e28e1bc9eb5afb69beba8783b3829261d4c49842",
+    "components/tier1_core/os_coos.md": "dcc522aff0ea2a1e5bc186c5df4fce917b245f9af80604c55f7083cc2a791074",
+    "components/tier1_core/os_scheduler.md": "4f81412568dec72adebf10122ade313720fc9fd645d9060c50f669da8fac0697",
+    "components/tier1_core/system_config.md": "242d8748cbf63ae10afe480615981c055b47b7c636293ca51fa9e8235596a9dc",
+    "components/tier1_core/system_config_details.md": "502bf7a744f1682b8f13d6ba0215028d630c7db7277d3be879142d7a3e1922b9",
+    "components/tier1_core/system_logging.md": "7ec474b1ad605d7e56d14c9eb01f763fb2cd93553a8c7d91e4a4c71f4072cb4d",
     "components/tier1_core/system_syscall.md": "b086a7e5f35f2717438de890ec7e3bff8a6965444be24d1e178e1e243a2a1220",
     "components/tier1_interface/interface_wit.md": "c2591b654808d067f8880707e5507884f2744c7a18b1af8b93b548288a77f848",
-    "components/tier1_interface/ipc_router.md": "2c61709010b8d58062baeb4d16dbec8734edc7ab93c92223474f99f75f5896be",
+    "components/tier1_interface/ipc_router.md": "583fdd5ac2b08c797f38c9895e91e1b935fbe601a2559e006d232bd1e18ecf49",
     "components/tier1_interface/system_service.md": "7c98009196d56c50c4d1d27269f38eb51d4fe1fa654aedb51dba7c496cd5fe62",
     "components/tier2_jit/jit_assembler_constexpr.md": "4798eb6d2692ae574c45917a0597feb16e1ffa3ec9d9771566a6523607f7c7d5",
-    "components/tier2_jit/jit_compiler.md": "27bb2c0fd60aca8d6f05ee3389dee7a98703ba1d5f2f867a279db7aaaa9b3bd0",
+    "components/tier2_jit/jit_compiler.md": "20e62bf81844e2a34388c6012e247d351bf2120b152f1c096f1badf1daba5c1a",
     "components/tier2_jit/jit_engine_copy_patch.md": "51ed2d845d29357e2088614d9298764adf2c58746e6996e6b20a5788f532daf5",
-    "components/tier2_jit/jit_runtime_entry.md": "709c572e546749bdd5637b06dd9811abf6be30db2cb4808db1ede6a2bc36d31f",
+    "components/tier2_jit/jit_runtime_entry.md": "ac17ee532a11b108521ece54ac63fdfd956484e534ed5f607993764c6bae2718",
     "components/tier2_jit/jit_runtime_hotspot.md": "56a3a5466ea0ab7752210b2b8a58f8ed577a67b58c20e49dd8ff936bb9951c51",
     "components/tier2_runtime/debug/debug_gdb_rsp.md": "f07fbc1fbe307552ce65dbe964361442c7df855ac18cce53dc59684373c6befc",
     "components/tier2_runtime/debug/debug_manager.md": "1afe320f79632d954147e3171bc5209480141027531f9b847505fcc8953df5e6",
     "components/tier2_runtime/runtime_interpreter.md": "be2482f26b8ad73955ff7f55a9b2aa3713c6b4315f1ed5e99b00c86588a3f66b",
     "components/tier2_runtime/runtime_loader.md": "591c6d491434e54f39eed5c48ae3216fc1b0ca1e2299044161cccac48f93dca5",
     "components/tier2_runtime/runtime_vmmio.md": "35dcb95e454907d8a0249e3f3bdd5f7436d82b27445ce5b7893b43584b266190",
-    "components/tier2_runtime/runtime_vsoc.md": "44ec8d650c66f90e82774ca0ca5d8f65bde001f3226f32e8bdf581c639562ca3",
+    "components/tier2_runtime/runtime_vsoc.md": "8fe2030e2f0ba7156ece2db7ba29ed44e1011625f52a9f3f755d20ff260f9623",
     "components/tier2_runtime/wasm_instruction.md": "640483f8a25bca7885110ce37e499c4ba3622fdc2ba3507e3a78b2bc1fcf8b5f",
     "components/tier3_platform/platform_hal.md": "22bccdb21d47a3758ed1be9254d2d2ef725e2e11c177c76843806b6670ab1a55",
     "components/tier3_platform/platform_memory.md": "9bbdecb03719ad884d423bc4e65164d674e287769ec29082ee38347ef2d135e1",
     "plans/backlog_archive.md": "3e09371810730853a39b09fec40e83409690786e1d27caae96ab6af054191716",
-    "plans/backlog_list.md": "0e6ab67400772e6a8e4febe3efaa3ad10294746df09f83f42e743a2aebbeac7d",
+    "plans/backlog_list.md": "4776a52e470742a8290db00441cf3a9b8a2c28a8421068a819856f94c8d55a1f",
     "plans/roadmap_phase.md": "6fce4cfc69f7f2ebd7071d06e63de13ac8a4f6f995c5bff8e81bd719c045f39e",
-    "requires/requirement_list.md": "09cf9bbfbca2835af5aca04e816c1c27b026716b738f5e9dddc7d557f298e8a5"
+    "requires/requirement_list.md": "48399ac3b1184c901221f6c91accba42bd459082c76dd0657a87068e4ddd1b61"
   },
   "assessments": [
     {
@@ -72,11 +72,11 @@
         "{VERIFY_FORMAL}"
       ],
       "risk_factors": [
-        "Potential for deadlocks in the 1-entry synchronous channel buffer during producer-consumer handoffs.",
-        "Ownership transfer risks in `co_value` that could lead to use-after-free or double-free if not strictly managed.",
-        "Global state corruption risks within `coos_context` due to concurrent access by the scheduler and CSP processes."
+        "Potential for deadlocks in the 1-entry synchronous 'channel' buffer during producer-consumer handoffs.",
+        "Ownership transfer risks in 'co_value' that could lead to use-after-free or double-free if not strictly managed.",
+        "Global state corruption risks within 'coos_context' due to concurrent access by the scheduler and CSP processes."
       ],
-      "summary": "The specification describes a CSP-based concurrency model with strict memory ownership. The combination of synchronous channels and custom ownership management creates a high-risk state space prone to deadlocks and race conditions, necessitating formal verification of liveness and safety properties via LTL/CTL."
+      "summary": "The specification describes a CSP-based concurrency model with strict memory ownership. The combination of synchronous channels and ownership transfer creates a high-risk state space prone to deadlocks and race conditions, necessitating formal verification of liveness and safety properties via LTL/CTL."
     },
     {
       "section_id": "sec:components/tier1_core/os_coos.md#4.1 アルゴリズム",
@@ -91,12 +91,12 @@
         "{VERIFY_FORMAL}"
       ],
       "risk_factors": [
-        "CSP Handoff bypasses the scheduler, creating a non-standard state transition that could lead to priority inversion or scheduler inconsistency.",
-        "Direct Context Switching via symmetric transfer in a 2KB stack environment is highly sensitive to stack corruption if the handoff logic is not mathematically proven to be $O(1)$ and non-recursive.",
-        "Race conditions between Interrupt Wakeup (ISR) and the Direct Context Switch mechanism may lead to lost wakeups or corrupted task states.",
-        "Idle Detection logic depends on a global state (all tasks blocked AND queue empty), which is prone to race conditions in a multi-tasking environment."
+        "CSP Handoff bypasses the scheduler, creating a non-standard state transition that could lead to priority inversion or scheduler state inconsistency.",
+        "Symmetric Transfer (Direct Context Switch) with extremely small stacks (2KB) risks corruption if the handoff logic does not strictly maintain stack invariants.",
+        "Race conditions between ISR-driven 'notify_interrupt' and the scheduler's yield-point drain mechanism.",
+        "Potential for deadlock or starvation if the Idle Detection logic incorrectly evaluates the 'all tasks blocked' state during high-frequency interrupt bursts."
       ],
-      "summary": "The implementation of a CSP-based direct handoff mechanism that bypasses the OS scheduler introduces significant concurrency risks. The combination of symmetric coroutine transfers and ISR-driven wakeups creates a complex state space where deadlocks and race conditions are likely. Formal verification via LTL/CTL is required to prove the safety and liveness of the task transition invariants."
+      "summary": "The implementation of a CSP-based direct handoff mechanism that bypasses the scheduler introduces significant concurrency complexity. The combination of symmetric coroutine transfers and ISR-driven wakeups creates a state space where deadlock and race conditions are non-trivial to detect via testing. Mathematical verification of LTL/CTL properties is required to ensure liveness and safety of the task transition matrix."
     },
     {
       "section_id": "sec:components/tier1_core/os_coos.md#4.2 状態遷移図 (SMD: COOS システムレベル)",
@@ -134,9 +134,9 @@
         "High risk of deadlock and starvation in CSP handoff mechanisms during asynchronous state transitions.",
         "C++20 coroutine suspension/resumption introduces non-trivial state space complexity regarding liveness (AF properties).",
         "Potential for priority inversion or starvation in the FIFO channel implementation under heavy load.",
-        "Complex state transitions between READY, BLOCKED, and SUSPENDED requiring strict invariant enforcement."
+        "Complex interaction between task states (READY/BLOCKED/SUSPENDED) and coroutine yield points."
       ],
-      "summary": "The specification describes a core OS synchronization primitive using CSP handoffs and C++20 coroutines. The combination of asynchronous suspension and blocking communication creates a high-dimensional state space where deadlocks and starvation are critical risks. Mathematical proof via CTL/LTL model checking is mandatory to guarantee liveness and safety invariants."
+      "summary": "The specification describes a core OS synchronization primitive using CSP handoffs and C++20 coroutines. The combination of asynchronous state transitions and liveness requirements (deadlock absence and bounded yield) creates a high-dimensional state space that cannot be validated by testing alone. Mathematical formal verification via CTL/LTL is mandatory to ensure the system is free from starvation and deadlock."
     },
     {
       "section_id": "sec:components/tier1_core/os_scheduler.md#1. コンセプト",
@@ -154,7 +154,7 @@
         "Potential for deadlocks in CSP-based message passing if circular dependencies occur between coroutines.",
         "Risk of starvation or priority inversion in a cooperative multitasking environment without a preemptive fallback.",
         "Memory safety and ownership transfer risks associated with zero-copy message passing across coroutine suspension points.",
-        "Deterministic execution guarantees depend on the strict bounding of coroutine execution time (yield frequency)."
+        "Deterministic execution guarantees must be proven against the state space of the C++20 coroutine promise/handle lifecycle."
       ],
       "summary": "The design implements a high-complexity stackless scheduler using C++20 coroutines and CSP. The combination of cooperative multitasking and zero-copy communication introduces significant risks regarding liveness (deadlock/starvation) and state consistency, necessitating formal verification of the state transition model via LTL/CTL."
     },
@@ -210,11 +210,11 @@
         "{VERIFY_FORMAL}"
       ],
       "risk_factors": [
-        "Race conditions between the Round-Robin scheduler and asynchronous interrupt-driven task wakeups (InterruptWakeup).",
-        "Potential for priority inversion or starvation if the 'priority resumption' logic for interrupts overrides the Round-Robin fairness without a defined preemption policy.",
-        "State transition ambiguity: The transition from BLOCKED to READY during an interrupt must be atomic to prevent the scheduler from entering the Idle handler while a task is being awakened."
+        "Race conditions between the interrupt handler (adding to READY queue) and the scheduler (context switching/idle detection).",
+        "Potential for priority inversion or starvation if the Round Robin implementation does not strictly handle the transition from BLOCKED to READY during an interrupt.",
+        "Liveness risk: The transition to the Idle Handler must be atomic relative to the arrival of a new interrupt to prevent the system from entering an idle state while a task is ready."
       ],
-      "summary": "While the Round-Robin logic is simple (O(1)), the interaction between the idle detection state and asynchronous interrupt wakeups introduces critical concurrency risks. Formal verification via LTL/CTL is required to prove liveness (no deadlock) and safety (no missed wakeups) during state transitions."
+      "summary": "The scheduler involves asynchronous state transitions (BLOCKED -> READY) triggered by interrupts. The interaction between the O(1) intrusive list management and the interrupt-driven wakeup mechanism creates a critical concurrency surface that requires formal verification of safety and liveness properties (e.g., no deadlock, no missed wakeups)."
     },
     {
       "section_id": "sec:components/tier1_core/os_scheduler.md#4.2 状態遷移図 (SysML SMD: Scheduler 視点)",
@@ -229,12 +229,12 @@
         "{VERIFY_FORMAL}"
       ],
       "risk_factors": [
-        "CSP Handoff via C++20 Symmetric Transfer bypasses the central scheduler, creating a non-trivial state transition that could lead to orphaned tasks or inconsistent scheduler state if not atomically managed.",
-        "Potential for deadlock in CSPWait transitions where both sender and receiver might enter a wait state if the 'opposite ready' condition is not strictly defined and synchronized.",
-        "Race conditions between ISR-driven INT events and the event loop dispatch mechanism, specifically regarding the transition from InterruptWait to Ready.",
-        "Liveness risk: The 'opposite not ready' transition from CSPWait to Ready could potentially lead to priority inversion or starvation if the ready queue tail insertion is not paired with a priority-aware scheduler."
+        "CSP Handoff via C++20 Symmetric Transfer bypasses the central scheduler, creating a potential for 'hidden' state transitions that may bypass global invariants.",
+        "Potential for deadlocks in the CSPWait <-> Running cycle if the 'opposite ready' condition is not atomically managed.",
+        "Race conditions between ISR event posting and the event loop dispatching tasks from InterruptWait to Ready.",
+        "Risk of priority inversion or starvation if the Ready queue tail-insertion logic does not account for task priority during CSP handoffs."
       ],
-      "summary": "The design implements a high-performance scheduler utilizing C++20 coroutines for O(1) stack depth. The 'CSP Handoff' mechanism introduces a direct task-to-task transition that bypasses standard scheduling logic, significantly increasing the risk of deadlocks and state inconsistency. Formal verification via Kripke structures/LTL is required to prove the absence of deadlocks and ensure that all tasks eventually reach the Running state (liveness)."
+      "summary": "The design implements a high-performance scheduler using C++20 coroutines with a non-standard 'Symmetric Transfer' (CSP Handoff). This introduces significant concurrency complexity and bypasses traditional scheduler oversight, making it highly susceptible to deadlocks and race conditions. Formal verification via Kripke structures/LTL is required to prove liveness and safety properties of the handoff mechanism."
     },
     {
       "section_id": "sec:components/tier1_core/os_scheduler.md#ADR-SCHED-002: アルゴリズムの継続的改善と最適化",
@@ -291,7 +291,7 @@
       "file_path": "components/tier1_core/system_config_details.md",
       "heading": "2.4 vSoC / vMMIO {VERIFY_FORMAL}",
       "tier": 1,
-      "complexity_score": 4,
+      "complexity_score": 3,
       "risk_score": 4,
       "formal_needed": true,
       "recommended_verification": "pyModelChecking",
@@ -299,12 +299,12 @@
         "{VERIFY_FORMAL}"
       ],
       "risk_factors": [
-        "Potential for memory corruption if the JIT Multi-Buffer Cache promotion logic (JIT_OldestOnly_Promote) fails to maintain strict ownership during buffer swaps.",
-        "Risk of out-of-bounds access if the FastAddressCheck logic does not mathematically align with the 64KB page boundary and the restricted physical access array.",
-        "Potential for race conditions or stale data access in the triple-buffering mechanism during JIT cache updates.",
-        "Critical dependency on the Bit 31 direct decode for vMMIO isolation; any overlap between Guest RAM and vMMIO regions would lead to catastrophic system failure."
+        "Potential for memory aliasing or overlap between Guest RAM and vMMIO regions if boundary checks are not mathematically proven.",
+        "Race conditions in the JIT Multi-Buffer Cache promotion logic (JIT_OldestOnly_Promote) during concurrent access/update cycles.",
+        "Risk of out-of-bounds memory access if the partial page allocation (8KB) is not strictly enforced against the WASM page size (64KB) logic.",
+        "Security vulnerability if vMMIO isolation is bypassed due to incorrect bit-masking or address decoding logic."
       ],
-      "summary": "The section defines a low-level memory architecture involving a multi-buffered JIT cache and vMMIO isolation. The combination of triple-buffering (state transitions) and strict memory boundary enforcement (invariants) creates a high-risk state space. Formal verification via Kripke structures is required to prove that buffer promotion never leads to data corruption and that address decoding is mutually exclusive and exhaustive."
+      "summary": "While the section appears as a constant table, the underlying algorithms (Triple Buffering, FastAddressCheck, and vMMIO Isolation) involve critical state transitions and memory safety invariants. The interaction between a small physical RAM (8KB) and a larger logical page size (64KB) creates a high risk of buffer overflows or invalid memory mapping that requires formal LTL/CTL verification of the address decoding state machine."
     },
     {
       "section_id": "sec:components/tier1_core/system_config_details.md#2.7 型定義・予約値",

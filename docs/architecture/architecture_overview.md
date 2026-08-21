@@ -169,7 +169,7 @@ Fireball が準拠するアーキテクチャスタイルと設計定石を明�
 
 - **決定事項**: `{Challenge_JITCacheEfficiency}`
   - **背景**: RAM 64KB制約下での効率的なキャッシュ管理。
-  - **結論**: Active/Oldダブルバッファを採用し、`co_yield` 時に一括してホットスポット判定を行う。
+  - **結論**: 3面マルチバッファ（Active/Warm/Oldest、2KB x 3 = 6KB）を採用し、Oldest-Only Promotion による効率的な代謝を行う。
 
 - **決定事項**: `{NativeAPI_Export}`
   - **背景**: WASIなどの標準ホストサービスの実装コストとコード規模の削減。

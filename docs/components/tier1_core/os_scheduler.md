@@ -94,7 +94,7 @@ stateDiagram-v2
 | RUNNING → READY | yield() | (常に可) | 現在タスクをREADYキュー末尾に追加 | READY |
 | RUNNING → CSP_WAIT | send(empty) | チャネル空 | 送信タスクを待機キューに追加、実行権をスケジューラに戻す | CSP_WAIT |
 | RUNNING → CSP_WAIT | recv(empty) | データなし | 受信タスクを待機キューに追加、実行権をスケジューラに戻す | CSP_WAIT |
-| CSP_WAIT → RUNNING | **CSP Handoff** | 相手タスク準備完了 | **直接コンテキストスイッチ: `opposite_task.resume()` 直呼出** | RUNNING |
+| CSP_WAIT → RUNNING | **CSP Handoff** | 相手タスク準備完了 | **対称遷移スイッチ: `await_suspend` から `opposite_task.coroutine_handle` 返却（スタックレス）** | RUNNING |
 | CSP_WAIT → READY | [相手未準備] | 相手タスク待機中 | 相手をREADY、自タスクをREADY末尾に追加 | READY |
 | RUNNING → EVT_WAIT | wait_event(id) | (常に可) | イベントID登録、スケジューラに制御戻す | EVT_WAIT |
 | EVT_WAIT → READY | event dispatch | イベント受信 | イベントループがタスクをREADYへ遷移 | READY |
@@ -105,7 +105,7 @@ stateDiagram-v2
 **注記:**
 - 割り込みハンドラ（ISR）は直接タスク状態を変更しない。代わりに INT イベントをイベントキューに投入する。
 - 詳細なイベント駆動ロジックは `docs/components/os_event_driven.md` を参照。
-- **CSP Handoff の特徴**: スケジューラを介さず、`opposite_task.resume()` を直接呼び出すことで超低レイテンシを実現。
+- **CSP Handoff の特徴**: スケジューラを介さず、C++20 コルーチンの対称遷移（Symmetric Transfer）によりコールスタックを消費せずに相手タスクへ直接ジャンプする。超低レイテンシかつスタック深度 $O(1)$ を保証。
 
 ## 5. インターフェイス設計
 

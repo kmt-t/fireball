@@ -127,9 +127,9 @@ graph TD
     
     Router["<<block>> Router<br/>─ Route message to channel"]
     
-    Error1["<b>Error: Not Found</b><br/>─ URI unregistered<br/>─ Return ERROR_NOT_FOUND"]
+    Error1["<b>Error: Not Found</b><br/>─ URI unregistered<br/>─ Return recovery-strategy: restart"]
     
-    Error2["<b>Error: Access Denied</b><br/>─ Insufficient privilege<br/>─ Return ERR_ACCESS_DENIED"]
+    Error2["<b>Error: Access Denied</b><br/>─ Insufficient privilege<br/>─ Return recovery-strategy: panic"]
     
     Success["<b>Success</b><br/>─ Ownership transfer starts<br/>─ Revoke/Enqueue/Grant"]
     

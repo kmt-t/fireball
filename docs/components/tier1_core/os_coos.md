@@ -55,30 +55,31 @@ graph TD
 
 ##### チャネル送受信動作の挙動定義
 チャネルを通じたCSPメッセージ通信の基本的な制御ロジックを以下に示す。 `{CSPCommunication}`
+直接コンテキストスイッチ（CSP Handoff）は、呼び出しスタックの再帰的な蓄積を防ぐため、C++20 コルーチンの**対称遷移（Symmetric Transfer: `await_suspend` から `coroutine_handle` を返却）** を採用し、スタック深度を定数 $O(1)$ に保つ。
 
 ```python
-# CSPチャネルの送受信処理 (概念コード)
-def channel_send(channel: Channel, sender_task: Task, value: CoValue):
-    # 受信待機中のタスクが存在する場合、直接値を渡して実行権を移譲する
+# CSPチャネルの送受信処理 (概念コード: Symmetric Transfer 規約)
+def channel_send(channel: Channel, sender_task: Task, value: CoValue) -> CoroutineHandle:
+    # 受信待機中のタスクが存在する場合、直接値を渡して対称遷移（Symmetric Transfer）で実行権を移譲する
     if channel.receive_queue:
         receiver = channel.receive_queue.pop(0)
         receiver.value = value
-        scheduler.wake_up_direct(receiver) # CSP Handoff (直接コンテキストスイッチ)
+        return receiver.coroutine_handle # CSP Handoff (スタックレス対称遷移)
     else:
-        # 待機タスクがいなければ、送信キューにデータを積んでブロックする
+        # 待機タスクがいなければ、送信キューにデータを積んでサスペンドし、スケジューラへ戻る
         channel.send_queue.append((sender_task, value))
-        scheduler.block_current_task()
+        return scheduler_handle
 
-def channel_recv(channel: Channel, receiver_task: Task) -> CoValue:
-    # 送信待機中のタスクが存在する場合、データを受け取り送信タスクを起床する
+def channel_recv(channel: Channel, receiver_task: Task) -> CoroutineHandle:
+    # 送信待機中のタスクが存在する場合、データを受け取り送信タスクへ対称遷移または起床
     if channel.send_queue:
         sender, value = channel.send_queue.pop(0)
-        scheduler.wake_up(sender)
-        return value
+        receiver_task.value = value
+        return sender.coroutine_handle # 送信側を起床して切り替え
     else:
-        # 送信タスクがいなければ、受信キューに入ってブロックする
+        # 送信タスクがいなければ、受信キューに入ってサスペンド
         channel.receive_queue.append(receiver_task)
-        scheduler.block_current_task()
+        return scheduler_handle
 ```
 
 ## 4. 動的モデル
@@ -86,7 +87,7 @@ def channel_recv(channel: Channel, receiver_task: Task) -> CoValue:
 ### 4.1 アルゴリズム
 <!-- traceability: {CSP_Handoff} {DirectContextSwitch} {GLOBAL_IdleDetection} {GLOBAL_StrictMemoryLimit} {GLOBAL_IndependentHeap} {GLOBAL_InterruptWakeup} -->
 - **CSP Handoff (直接スイッチ)**: `send`/`recv` 時に相手タスクが既に待機状態であった場合、スケジューラを介さず即座に相手タスクへ実行権を移譲する。 `{CSP_Handoff}`
-- **直接コンテキストスイッチ (Direct Context Switch)**: コルーチンの `handle.resume()` を直接呼び出すことで、OSスケジューラのキュー処理やディスパッチ判断などのオーバーヘッドを介さず、超低レイテンシで実行権を宛先タスクにスイッチする。 `{DirectContextSwitch}`
+- **直接コンテキストスイッチ (Direct Context Switch)**: コルーチンの対称遷移（Symmetric Transfer）により、コールスタックを消費せずに相手タスクのコルーチンハンドルへ直接ジャンプする。OSスケジューラのキュー処理オーバーヘッドを完全にバイパスし、極小スタック（2KB）環境下でもスタックオーバーフローを起こさない決定論的 $O(1)$ スイッチを実現する。 `{DirectContextSwitch}`
 - **割り込みウェイクアップ (Interrupt Wakeup)**: 外部割り込みが発生した際、割り込みサービスルーチン（ISR）から `notify_interrupt` が呼び出され、特定のチャネルIDまたは割り込みベクトル（`irq_id`）に登録されて待機しているタスク（待機中タスク）を即座に起床させる（READY状態に遷移して実行可能キューに投入する）。 `{GLOBAL_InterruptWakeup}`
 - **Idle Detection**: 全ての実行中タスクがブロック状態にあり、かつイベントキューが空（割り込みや外部イベントによる起床待ちのみ）の場合にアイドル状態と判定する。この条件を `idle_hook` のトリガーとし、イベントキューが空かつ全タスクがブロック状態の時のみ、リングバッファ内の未出力ログが1件以上存在する、あるいはイベント待機開始から10ミリ秒以上経過した際に、バックグラウンド処理（リングバッファからロガーを介した物理ストレージや非揮発性メモリへのログ書き出し・フラッシュ処理）を最低優先度のバックグラウンドタスク（Idle優先度）として呼び出す。 `{GLOBAL_IdleDetection}`
 - **Memory Management**: タスク生成時に独立したメモリパーティションを割り当てる。 `{GLOBAL_StrictMemoryLimit}` `{GLOBAL_IndependentHeap}`

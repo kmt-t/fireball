@@ -84,7 +84,6 @@ sequenceDiagram
     Host->>UART: Send "$g#67"
     UART->>RSP: Raw Data
     RSP->>RSP: Verify Checksum
-    RSP->>RSP: Verify Checksum
     RSP->>Q: Push(READ_REG)
     Note over Q: Debugger will Pop and execute
 ```

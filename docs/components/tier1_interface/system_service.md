@@ -16,12 +16,12 @@
 ### 3.2 内部ブロック図
 ```mermaid
 graph TD
-    Guest[WASM Guest] --> T0[Tier 0: Direct Link]
-    Guest --> T1[Tier 1: IPC]
-    T0 --> libc[wasi-libc]
-    T0 --> GC[Garbage Collection]
-    T0 --> WASI[WASI Wrapper]
-    T1 --> Something[Console Logging Service]
+    Guest[WASM Guest] --> Direct[Direct-Linked Library]
+    Guest --> IPCService[Isolated IPC Service]
+    Direct --> libc[wasi-libc]
+    Direct --> GC[Garbage Collection]
+    Direct --> WASI[WASI Wrapper]
+    IPCService --> Console[Console Logging Service]
     WASI --> HAL[HAL Subsystem]
 ```
 
@@ -33,7 +33,7 @@ graph TD
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
 | サービス名称 | サービスを識別するための共通のシステム名 | 文字列ビュー | - |
-| 隔離階層 | サービスが実行されるドメイン（0: ゲスト内、1: 独立プロセス） | uint8_t | Tier |
+| 隔離モード | サービスの実行形態（Direct-Linked: ゲスト内リンク、Isolated: 独立IPCタスク） | 列挙型 | `service_isolation_mode` |
 | 識別URI | ルータを介して公開される、サービスを指し示す唯一の正規名称 | 文字列ビュー | - |
 
 #### サービス構成（service_config）
@@ -49,7 +49,7 @@ graph TD
 
 ### 4.1 アルゴリズム
 <!-- traceability: {META_FaultIsolation} {IPCRouter} -->
-- **サービス分離**: Tier 0 サービスはゲストのWASMモジュールとして直接リンクされ、Tier 1 サービスは独立したタスクとして動作し、IPCルータを介して通信する。 `{META_FaultIsolation}`
+- **サービス分離**: インプロセス・ライブラリ（wasi-libc/GC等）はゲストのWASMモジュールとして直接リンクされ、独立アイソレーション・サービスは独立したタスクとして動作し、IPCルータを介して通信する。 `{META_FaultIsolation}`
 - **WASI呼び出し**: ゲストからのWASIシステムコールを、HALのIPCコマンドへ変換して転送する。 `{IPCRouter}`
 
 ### 4.2 状態遷移図
@@ -61,7 +61,7 @@ stateDiagram-v2
     Running --> Stopped: stop_guest
 ```
 
-WASIおよびハイパーバイザサービス（Tier 1）は、起動時にそれぞれ独立した物理メモリパーティションを割り当てられ、メモリのハードウェア境界が確立される（障害伝播防止）。すべてのサービスへのアクセスおよびシステムコール呼び出しは、必ずIPCルータ（`IPCRouter`）のルックアップおよびアクセス制御チェックを経由してのみ開始される。 `{META_FaultIsolation}` `{IPCRouter}`
+WASIおよび独立アイソレーション・サービスは、起動時にそれぞれ独立した物理メモリパーティションを割り当てられ、メモリのハードウェア境界が確立される（障害伝播防止）。すべてのサービスへのアクセスおよびシステムコール呼び出しは、必ずIPCルータ（`IPCRouter`）のルックアップおよびアクセス制御チェックを経由してのみ開始される。 `{META_FaultIsolation}` `{IPCRouter}`
 
 ※ `load_service (static)` における `static` とは、システムビルド時にコンフィグによって登録されたサービス一覧に基づき、実行時の動的なURI追加を行わずに、起動時に固定配列からサービスをロードする静的ロード処理を意味する。
 

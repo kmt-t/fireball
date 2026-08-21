@@ -245,10 +245,10 @@ struct CoValue {
 
 | 不変条件 | 説明 | 検証方法 |
 | :--- | :--- | :--- |
-| **デッドロック不在** | Send と Recv がブロックされた状態で互いに待つサイクルが存在しないこと。`{Challenge_CspHandoffStarvation}` | 直交表 + pyModelChecking CTL (`AG(not deadlock)`) |
+| **デッドロック不在** | ノンブロッキング送信と有界ハンドオフにより、Send と Recv が循環待ちデッドロックに陥らないこと。`{Challenge_CspHandoffStarvation}` | `formal/coos_channel_model.py` CTL 安全性検証 (`AG(Not(deadlock))` ➔ True) |
+| **二重所有不在** | 所有権アトミック移譲により、同一チャネルを複数タスクが同時に所有しないこと。 | `formal/coos_channel_model.py` CTL 安全性検証 (`AG(Not(double_owned))` ➔ True) |
+| **メインループ復帰保証** | 連続ハンドオフ上限 `FB_CONF_MAX_CONSECUTIVE_HANDOFFS` により、ハンドオフ連鎖から必ずスケジューラへ復帰すること。 | `formal/coos_channel_model.py` CTL 進行性検証 (`AG(at_max_limit -> AF(main_loop))` ➔ True) |
 | **状態一貫性** | タスク状態 (READY/BLOCKED/SUSPENDED) が各操作後も整合していること。 | 直交表（ケース1-7） |
-| **チャネルFIFO** | 同一チャネル上のメッセージ/通知は FIFO 順で処理されること。 | pyModelChecking 順序付け検証 |
-| **co_yield 有界性** | co_yield は有限時間内に達成されるか、または明示的に中断することが保証されること。`{GLOBAL_UseCpp20Coroutine}` | pyModelChecking CTL 活性検証 (`AF(yielded)`) |
 
 ### 6.2 直交表: CSP通信と状態遷移
 

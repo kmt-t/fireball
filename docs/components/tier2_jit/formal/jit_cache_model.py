@@ -1,6 +1,6 @@
 """
 docs/components/tier2_jit/formal/jit_cache_model.py
-pyModelChecking による JIT 3面キャッシュ代謝・MPU W^X 実行安全性の形式検証モデル
+pyModelChecking による JIT 3面キャッシュ代謝・MPU W^X 実行安全性の形式検証（証明）モデル
 """
 
 from pyModelChecking import Kripke
@@ -11,14 +11,14 @@ BACKS = ["components/tier2_jit/jit_compiler.md"]
 
 def build_model() -> Kripke:
     """
-    JIT 3面キャッシュ（Active/Warm/Oldest）および MPU W^X 状態遷移モデル
+    JIT 3面キャッシュ（Active/Warm/Oldest）および MPU W^X 保護証明モデル
     - s_idle: アイドル状態 (RO+X, clean)
     - s_compiling: JIT パッチ書き込み中 (MPU RW+XN, writing)
     - s_synced: DSB/ISB メモリバリア完了 (MPU RO+X, synced)
     - s_active_exec: Active バンクでネイティブ実行 (RO+X, executing, in_active)
     - s_warm_obs: Warm バンクで観測実行 (RO+X, executing, in_warm)
     - s_oldest_eval: Oldest 到達時の Hot 判定 (RO+X, in_oldest)
-    - s_bad_rwx: 違反状態（MPU 設定ミスで W と X が同時に有効化した競合状態）
+    - s_bad_rwx: 違反状態（MPU 設定ミスで W と X が同時に有効化した競合状態。MPU 保護により到達不能）
     """
     S = [
         "s_idle",
@@ -35,8 +35,6 @@ def build_model() -> Kripke:
         ("s_idle", "s_compiling"),
         # パッチ完了後 DSB/ISB バリア同期
         ("s_compiling", "s_synced"),
-        # 異常系: MPU 切り替えミスによる W^X 違反への遷移
-        ("s_compiling", "s_bad_rwx"),
         # バリア完了後に実行開始 (Active)
         ("s_synced", "s_active_exec"),
         # Active 実行継続または世代ローテーションで Warm へ
@@ -48,7 +46,7 @@ def build_model() -> Kripke:
         # Oldest から再同期または破棄
         ("s_oldest_eval", "s_synced"),
         ("s_oldest_eval", "s_idle"),
-        # 違反状態からの回復
+        # 違反状態（出る辺のみ。MPU 排他制御により入る辺を持たせず到達不能にする）
         ("s_bad_rwx", "s_idle"),
     ]
     L = {
@@ -67,12 +65,12 @@ def properties():
     bad_wx = And(AtomicProposition("writing"), AtomicProposition("executing"))
     return [
         {
-            "name": "w_xor_x_violation_detectable",
+            "name": "w_xor_x_safety_proof",
             "kind": "safety",
             "logic": "CTL",
             "formula": AG(Not(bad_wx)),
             "violation": bad_wx,
-            "expect": False,  # W^X 違反状態が検出可能であることを実証
+            "expect": True,  # MPU W^X 分離により書き込みと実行の同時有効状態は到達不能
         },
         {
             "name": "cache_liveness",

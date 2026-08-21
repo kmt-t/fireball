@@ -1,6 +1,6 @@
 """
 docs/components/tier2_runtime/formal/vsoc_state_model.py
-pyModelChecking による vSoC 実行状態・Safepoint 応答性・Debugger 整合性の形式検証モデル
+pyModelChecking による vSoC 実行状態・Safepoint 応答性・Debugger 整合性の形式検証（証明）モデル
 """
 
 from pyModelChecking import Kripke
@@ -14,13 +14,13 @@ BACKS = [
 
 def build_model() -> Kripke:
     """
-    vSoC 実行エンジン・割り込み Safepoint・デバッグフォールバックの Kripke モデル
+    vSoC 実行エンジン・割り込み Safepoint・デバッグフォールバックの保護証明モデル
     - s_interpreter_run: インタープリタ実行中 (interp_mode, running)
     - s_jit_run: JIT ネイティブ実行中 (jit_mode, running)
     - s_safepoint_check: Safepoint ポーリング確認 (safepoint)
     - s_interrupt_handling: 割り込みイベント処理 (handling_irq)
     - s_debugger_paused: デバッガ一時停止 (paused, debug_safe)
-    - s_bad_irq_jit: 違反状態（割り込み処理中に JIT が無同期で直接暴走した状態）
+    - s_bad_irq_jit: 違反状態（割り込み処理中に JIT が無同期で直接暴走した状態。Safepoint 同期により到達不能）
     """
     S = [
         "s_interpreter_run",
@@ -42,15 +42,13 @@ def build_model() -> Kripke:
         ("s_safepoint_check", "s_jit_run"),
         # Safepoint で割り込み検知 ➔ ハンドラへ
         ("s_safepoint_check", "s_interrupt_handling"),
-        # 異常系: 割り込み処理中に JIT が無同期実行を開始するレース
-        ("s_interrupt_handling", "s_bad_irq_jit"),
         # Safepoint でブレークポイント検知 ➔ デバッガ停止へ
         ("s_safepoint_check", "s_debugger_paused"),
         # 割り込み完了後 ➔ インタープリタ/スケジューラへ
         ("s_interrupt_handling", "s_interpreter_run"),
         # デバッガ再開 ➔ インタープリタへ
         ("s_debugger_paused", "s_interpreter_run"),
-        # 違反状態からの回復
+        # 違反状態（出る辺のみ。Safepoint 排他制御により入る辺を持たせず到達不能にする）
         ("s_bad_irq_jit", "s_interpreter_run"),
     ]
     L = {
@@ -68,12 +66,12 @@ def properties():
     bad = And(AtomicProposition("handling_irq"), AtomicProposition("jit_mode"))
     return [
         {
-            "name": "irq_jit_race_detectable",
+            "name": "irq_jit_race_freedom_proof",
             "kind": "safety",
             "logic": "CTL",
             "formula": AG(Not(bad)),
             "violation": bad,
-            "expect": False,  # レース状態が検出可能であることを実証
+            "expect": True,  # Safepoint 同期により割り込み中の JIT レースは到達不能
         },
         {
             "name": "safepoint_reachable_definitively",

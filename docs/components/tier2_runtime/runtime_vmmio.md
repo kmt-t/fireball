@@ -162,30 +162,37 @@ def access_vmmio(addr: VmmioAddress, is_write: bool):
     # 2. TLB / ページテーブルルックアップ
     pte = lookup_tlb(addr)
     
-    # 3. 権限チェック (共通)
-    read_allowed = pte & 0x1
-    write_allowed = pte & 0x2
+    # 2.5 エイリアシング防止マスク検査 (FastAddressCheck)
+    if (addr.raw & 0x0FFF0000) != 0:
+        raise Exception("UNMAPPED_REGION")
+
+    # 3. 権限チェック (PTE [11:8])
+    is_valid = (pte >> 11) & 1
+    if not is_valid:
+        raise Exception("PAGE_FAULT_INVALID")
+
+    read_allowed = (pte >> 10) & 1
+    write_allowed = (pte >> 9) & 1
     if is_write and not write_allowed:
-         raise Exception("ACCESS_VIOLATION")
+        raise Exception("ACCESS_VIOLATION_WRITE")
     if not is_write and not read_allowed:
-         raise Exception("ACCESS_VIOLATION")
+        raise Exception("ACCESS_VIOLATION_READ")
     
-    # 4. タイプ別アクセス実行
-    type_flag = (pte >> 23) & 1  # [23] Type: 0 = Syscall, 1 = Physical
-    if type_flag == 0:
+    # 4. タイプ別アクセス実行 (PTE [8]: 0 = Syscall/Virtual, 1 = Physical Passthrough/SHM)
+    is_passthrough = (pte >> 8) & 1
+    if is_passthrough == 0:
         # Tier 2 (Static Device) - Syscall モード
-        # L3 Metadata [27:16] や詳細ビットから Syscall ID / コマンド情報を抽出可能
-        syscall_id = (addr.raw >> 12) & 0xFF  # 歴史的整合：アドレス[19:12]から抽出
+        syscall_id = (addr.raw >> 16) & 0xFFF  # L3 Metadata [27:16] から抽出
         dispatch_syscall(syscall_id, addr.offset(), is_write)
     else:
         # Tier 3 (SHM / PASSTHROUGH) - 物理アクセスモード
-        # SHMの場合はさらに所有者チェックを走らせる
-        if addr.fc() == 14:  # SHM
+        # SHM (FC=14) の場合は所有権チェックを実行
+        if addr.fc() == 14:
             owner_id = pte & 0xFF  # [7:0] Owner ID
             if owner_id != current_task_id:
-                raise Exception("ACCESS_VIOLATION")
+                raise Exception("ACCESS_VIOLATION_NOT_OWNED")
                 
-        phys_page = (pte >> 12) & 0xFFFFF  # [31:12]
+        phys_page = (pte >> 12) & 0xFFFFF  # [31:12] PPN
         phys_addr = (phys_page << 12) | addr.offset()
         access_memory(phys_addr, is_write)
 ```
@@ -239,15 +246,13 @@ Static Devices (Tier 2) 向け。Syscall ID はアドレス [19:12] から抽出
 Tier 3 (共有メモリ・パススルー) 向け。物理ページアドレスと所有権を管理。配列によるインデックス参照で O(1) ルックアップ。フラグは Static Device PTE と共通。
 
 ```
-32-bit Tier 3 PTE Structure:
-[31:12] Physical Page Number (20 bits)     — 4GB アドレス空間対応 (4KB × 2^20)
-[23:20] Flags (4 bits — Static Device PTE と共通):
-        [3] Type (FC に対応した値 — FC=14/15 では 1 = Physical Address)
-        [2] CACHEABLE (JIT キャッシュ可能)
-        [1] WRITE_ENABLED
-        [0] READ_ENABLED
-[9:8]   Reserved (2 bits)
-[7:0]   Owner ID (8 bits)                  — 256 タスク対応
+32-bit Tier 3 PTE Structure (32 bits, 重複・ビット衝突なし):
+[31:12] Physical Page Number (20 bits)     — 4GB アドレス空間対応 (4KB アライメント PPN)
+[11]    VALID (1 bit)                      — 1 = 有効, 0 = 無効 (トラップ)
+[10]    READ (1 bit)                       — 1 = 読出許可, 0 = 不許可
+[9]     WRITE (1 bit)                      — 1 = 書込許可, 0 = 不許可
+[8]     EXEC / PASSTHROUGH (1 bit)         — 1 = 物理パススルー / 実行, 0 = 不許可
+[7:0]   Owner ID (8 bits)                  — 256 タスク対応 (0=Shared, 1..254=Task, 0xFF=FLIGHT)
 ```
 
 **Owner ID の状態定義**（型・予約値の正規定義は [`system_config_details.md`](../tier1_core/system_config_details.md#27-型定義予約値) 参照）:

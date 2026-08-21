@@ -4,7 +4,7 @@ pyModelChecking による vSoC 実行状態・Safepoint 応答性・Debugger 整
 """
 
 from pyModelChecking import Kripke
-from pyModelChecking.CTL import AG, EF, And, Not, Imply, AtomicProposition
+from pyModelChecking.CTL import AG, AF, And, Not, Imply, AtomicProposition
 
 BACKS = [
     "components/tier2_runtime/runtime_vsoc.md",
@@ -76,11 +76,16 @@ def properties():
             "expect": False,  # レース状態が検出可能であることを実証
         },
         {
-            "name": "safepoint_reachable",
+            "name": "safepoint_reachable_definitively",
             "kind": "liveness",
             "logic": "CTL",
-            "formula": AG(EF(AtomicProposition("safepoint"))),
-            "expect": True,
+            "formula": AG(
+                Imply(
+                    AtomicProposition("running"),
+                    AF(AtomicProposition("safepoint")),
+                )
+            ),
+            "expect": True,  # 実行中タスクは必ず Safepoint に到達する (AF)
         },
     ]
 

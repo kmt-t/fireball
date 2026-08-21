@@ -4,7 +4,7 @@ pyModelChecking による JIT 3面キャッシュ代謝・MPU W^X 実行安全�
 """
 
 from pyModelChecking import Kripke
-from pyModelChecking.CTL import AG, EF, And, Not, Imply, AtomicProposition
+from pyModelChecking.CTL import AG, AF, And, Not, Imply, AtomicProposition
 
 BACKS = ["components/tier2_jit/jit_compiler.md"]
 
@@ -81,10 +81,10 @@ def properties():
             "formula": AG(
                 Imply(
                     AtomicProposition("synced"),
-                    EF(AtomicProposition("executing")),
+                    AF(AtomicProposition("executing")),
                 )
             ),
-            "expect": True,
+            "expect": True,  # バリア同期完了後は必ず実行状態へ進む (AF)
         },
     ]
 

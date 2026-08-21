@@ -4,7 +4,7 @@ pyModelChecking による IPC CSP チャネル所有権移譲とバッファ安�
 """
 
 from pyModelChecking import Kripke
-from pyModelChecking.CTL import AG, AF, EF, And, Not, Imply, AtomicProposition
+from pyModelChecking.CTL import AG, AF, And, Not, Imply, AtomicProposition
 
 BACKS = ["components/tier1_interface/ipc_router.md"]
 
@@ -64,16 +64,16 @@ def properties():
             "expect": False,  # 二重所有レースが検出可能であることを実証
         },
         {
-            "name": "in_flight_progress",
+            "name": "in_flight_resolves_definitively",
             "kind": "liveness",
             "logic": "CTL",
             "formula": AG(
                 Imply(
                     AtomicProposition("in_flight"),
-                    EF(AtomicProposition("receiver_owns")),
+                    AF(Not(AtomicProposition("in_flight"))),
                 )
             ),
-            "expect": True,
+            "expect": True,  # どの経路を通っても必ず in_flight 状態から離脱して解決する (AF)
         },
     ]
 

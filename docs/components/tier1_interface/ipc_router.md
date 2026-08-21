@@ -348,13 +348,13 @@ sequenceDiagram
     activate Rx
     Rx->>Q: dequeue()
     activate Q
-    dequeue Q: return msg
+    Q-->>Rx: return msg
+    deactivate Q
     
     Note over R: [Grant Phase]
     R->>Rx: Grant ownership to receiver
     R->>Tx: Release sender lock
     
-    deactivate Q
     Rx-->>Rx: Use resource (now owned)
     deactivate Rx
 ```

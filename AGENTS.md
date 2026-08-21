@@ -6,15 +6,16 @@
 - `docs/architecture/document_structure.md`: 文書階層、メタキーワード、traceability の正本
 - `docs/plans/backlog_list.md`: 現在の作業単位
 - `docs/plans/roadmap_phase.md`: 全体フェーズ
-- `docs/components/**`: コンポーネント設計
-- `.claude/rules/**`: 開発ルール
-- `tools/README.md` / `verify/README.md`: 検証入口
+- `docs/components/**`: コンポーネント設計書（Tier 1〜3）
+- `docs/components/<tier>/formal/**`: 形式検証モデル（pyModelChecking）
+- `.agents/rules/**`: 開発・設計ルール
+- `tools/README.md`: 検証入口（spec-integrator パイプライン）
 
 ## 作業前に読むもの
 
-- 変更前に関連する既存ルールを読む。
+- 変更前に関連する既存ルール（`.agents/rules/**`）を読む。
 - 迷ったら `docs/plans/backlog_list.md` と `docs/plans/roadmap_phase.md` を確認する。
-- 仕様変更時は `docs/components/`、`docs/requires/`、`verify/` を必要に応じて更新する。
+- 仕様変更時は `docs/components/`、`docs/requires/` を必要に応じて更新し、形式検証モデル（`docs/components/<tier>/formal/`）を整合させる。
 - 仕様、計画、検証に触れる変更では、`docs/architecture/document_structure.md` に従って `{Keyword}` の紐付けを保つ。
 - ルールの再掲は `GLOBAL` / `LOCAL` のスコープ差がある場合のみ意図的とみなす。
 
@@ -26,16 +27,20 @@
 - 組み込みコードは静的/スタック主体とし、`malloc` / `new` / `void*` / 例外 / RTTI を避ける。
 - ドキュメント本文は日本語、コード名・API 名・キーワード・URI は英語。
 - 図は Mermaid、表は Markdown を優先する。
+- 形式検証は Python `pyModelChecking`（Kripke 構造・CTL/LTL）で記述・実行する。
 
 ## 検証
 
-- 具体的な検証コマンドは `tools/README.md` と `verify/README.md` を正本とする。
+- 具体的な検証コマンドは `tools/README.md` を正本とする。
+  - Windows: `powershell tools/run_all_tests.ps1 -clean`
+  - Linux/WSL: `./tools/run_all_tests.sh --clean`
+  - 複雑度・リスク評価: `powershell tools/run_all_tests.ps1 -assess -backend sakura`
+  - LLM 意味監査: `powershell tools/run_all_tests.ps1 -llm -backend sakura`
 
 ## エージェント入口
 
-- Claude Code 用の入口は `CLAUDE.md`。
-- Codex 用の入口は `AGENTS.md`。
-- Antigravity 用の入口は `.agents/rules/fireball.md`。
+- エージェント共通のルール正本は `AGENTS.md` および `.agents/rules/**`。
+- 品質検証スキルは `.agents/skills/document-validation/` を参照。
 
 <!-- headroom:rtk-instructions -->
 # RTK (Rust Token Killer) - Token-Optimized Commands

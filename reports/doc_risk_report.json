@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-21T08:37:34.685520+00:00",
+  "generated_at": "2026-08-21T11:07:54.086815+00:00",
   "total_evaluated": 15,
   "formal_candidates_count": 12,
   "llm_candidates_count": 1,
@@ -17,10 +17,10 @@
     "components/tier1_core/system_logging.md": "7ec474b1ad605d7e56d14c9eb01f763fb2cd93553a8c7d91e4a4c71f4072cb4d",
     "components/tier1_core/system_syscall.md": "b086a7e5f35f2717438de890ec7e3bff8a6965444be24d1e178e1e243a2a1220",
     "components/tier1_interface/interface_wit.md": "c2591b654808d067f8880707e5507884f2744c7a18b1af8b93b548288a77f848",
-    "components/tier1_interface/ipc_router.md": "583fdd5ac2b08c797f38c9895e91e1b935fbe601a2559e006d232bd1e18ecf49",
+    "components/tier1_interface/ipc_router.md": "9429aadd167bbeb51a2eca8b020df9b24f5b57aad3bc8b5cc1acd1f554752bec",
     "components/tier1_interface/system_service.md": "7c98009196d56c50c4d1d27269f38eb51d4fe1fa654aedb51dba7c496cd5fe62",
     "components/tier2_jit/jit_assembler_constexpr.md": "4798eb6d2692ae574c45917a0597feb16e1ffa3ec9d9771566a6523607f7c7d5",
-    "components/tier2_jit/jit_compiler.md": "20e62bf81844e2a34388c6012e247d351bf2120b152f1c096f1badf1daba5c1a",
+    "components/tier2_jit/jit_compiler.md": "18b9c1f7c58a7adee18be43570116e46e8f8d69f164052e228837422bcedf027",
     "components/tier2_jit/jit_engine_copy_patch.md": "51ed2d845d29357e2088614d9298764adf2c58746e6996e6b20a5788f532daf5",
     "components/tier2_jit/jit_runtime_entry.md": "ac17ee532a11b108521ece54ac63fdfd956484e534ed5f607993764c6bae2718",
     "components/tier2_jit/jit_runtime_hotspot.md": "56a3a5466ea0ab7752210b2b8a58f8ed577a67b58c20e49dd8ff936bb9951c51",
@@ -28,7 +28,7 @@
     "components/tier2_runtime/debug/debug_manager.md": "1afe320f79632d954147e3171bc5209480141027531f9b847505fcc8953df5e6",
     "components/tier2_runtime/runtime_interpreter.md": "be2482f26b8ad73955ff7f55a9b2aa3713c6b4315f1ed5e99b00c86588a3f66b",
     "components/tier2_runtime/runtime_loader.md": "591c6d491434e54f39eed5c48ae3216fc1b0ca1e2299044161cccac48f93dca5",
-    "components/tier2_runtime/runtime_vmmio.md": "91f9addabc3a90fb9575970605a5391859687ab6a9e0255e0c05e9f54a96b19f",
+    "components/tier2_runtime/runtime_vmmio.md": "92cfe1e6274dce5dbb5b280726a30a4b909ec3a9164287c9169319e755c8b513",
     "components/tier2_runtime/runtime_vsoc.md": "8fe2030e2f0ba7156ece2db7ba29ed44e1011625f52a9f3f755d20ff260f9623",
     "components/tier2_runtime/wasm_instruction.md": "640483f8a25bca7885110ce37e499c4ba3622fdc2ba3507e3a78b2bc1fcf8b5f",
     "components/tier3_platform/platform_hal.md": "22bccdb21d47a3758ed1be9254d2d2ef725e2e11c177c76843806b6670ab1a55",
@@ -72,11 +72,11 @@
         "{VERIFY_FORMAL}"
       ],
       "risk_factors": [
-        "Potential for deadlocks in the 1-entry synchronous 'channel' buffer during producer-consumer handoffs.",
-        "Ownership transfer risks in 'co_value' that could lead to use-after-free or double-free if not strictly managed.",
-        "Global state corruption risks within 'coos_context' due to concurrent access by the scheduler and CSP processes."
+        "Potential for deadlocks in the 1-entry synchronous channel buffer during producer-consumer handoffs.",
+        "Ownership transfer risks in `co_value` that could lead to use-after-free or double-free if not strictly managed.",
+        "Global state corruption risks within `coos_context` due to concurrent access by the scheduler and CSP processes."
       ],
-      "summary": "The specification describes a CSP-based concurrency model with strict memory ownership. The combination of synchronous channels and ownership transfer creates a high-risk state space prone to deadlocks and race conditions, necessitating formal verification of liveness and safety properties via Kripke structures/LTL."
+      "summary": "The specification describes a CSP-based concurrency model with strict memory ownership. The combination of synchronous channels and custom ownership management creates a high-risk state space prone to deadlocks and race conditions, necessitating formal verification of liveness and safety properties via LTL/CTL."
     },
     {
       "section_id": "sec:components/tier1_core/os_coos.md#4.1 アルゴリズム",
@@ -111,12 +111,12 @@
         "{VERIFY_FORMAL}"
       ],
       "risk_factors": [
-        "CSP Handoff and Direct Context Switch introduce non-standard scheduling paths that can bypass the scheduler's invariant checks, risking race conditions.",
-        "The transition from Idle/RunningTask to Recovery via memory faults requires strict proof that the Recovery state cannot be entered recursively or lead to a deadlock during resource reclamation.",
+        "Direct Context Switch (CSP Handoff) bypasses standard scheduler queues, creating potential for priority inversion or deadlock if ownership transfer is not atomic.",
+        "The transition from Idle/RunningTask to Recovery via memory faults requires strict invariant checking to ensure the Recovery state cannot be entered recursively or lead to a hang.",
         "Strict Memory Limit and Independent Heap constraints must be verified as invariants across all state transitions to prevent heap fragmentation or overflow during task spawning/recovery.",
-        "Potential for 'Livelock' between Recovery and Ready states if the root cause of the panic is not cleared during the recovery process."
+        "Potential for race conditions between asynchronous interrupts (Idle -> RunningTask) and the Recovery sequence."
       ],
-      "summary": "The system implements high-complexity concurrency patterns (CSP Handoff/Direct Switch) and strict memory isolation. The interaction between the scheduler, memory protection faults, and the recovery mechanism creates a state space where deadlock and invariant violations (memory leaks/corruption) are possible. Mathematical verification via LTL/CTL is required to ensure liveness and safety properties."
+      "summary": "The system implements a high-risk concurrency model featuring direct context switching (CSP Handoff) and strict memory isolation. The non-deterministic nature of hardware exceptions leading to a Recovery state, combined with the bypass of the standard scheduler, necessitates formal verification (LTL/CTL) to prove liveness and the absence of deadlocks."
     },
     {
       "section_id": "sec:components/tier1_core/os_coos.md#6.1 検証対象の不変条件",
@@ -156,7 +156,7 @@
         "Memory safety and ownership transfer risks associated with zero-copy message passing across coroutine suspension points.",
         "Deterministic execution guarantees must be proven against the state space of the C++20 coroutine promise/handle lifecycle."
       ],
-      "summary": "The design implements a high-complexity stackless scheduler using C++20 coroutines and CSP. The combination of cooperative multitasking and zero-copy communication introduces significant risks regarding liveness (deadlock/starvation) and state consistency, necessitating formal verification of the state transition model via LTL/CTL."
+      "summary": "The design implements a high-complexity stackless cooperative scheduler based on C++20 coroutines and CSP. The combination of zero-copy communication and deterministic scheduling requirements introduces significant risks regarding deadlocks and liveness properties, necessitating formal verification via Kripke structures/LTL to ensure the system is deadlock-free and deterministic."
     },
     {
       "section_id": "sec:components/tier1_core/os_scheduler.md#3.1 データ構造",
@@ -250,9 +250,9 @@
       ],
       "risk_factors": [
         "Potential for task starvation if a single cooperative task fails to yield (infinite loop)",
-        "Risk of pointer corruption during intrusive circular list manipulation (insertion/deletion)"
+        "Risk of pointer corruption in the intrusive circular list during task insertion/removal"
       ],
-      "summary": "The design is a simple, deterministic O(1) cooperative round-robin scheduler. Since it is stateless and avoids preemptive concurrency, the state space is minimal and deadlock-free by design. The primary risks are semantic (task yielding behavior) and basic memory safety, which do not require formal LTL/CTL model checking but benefit from LLM-based API contract auditing."
+      "summary": "The design is a simple, deterministic O(1) cooperative round-robin scheduler. Because it is cooperative and stateless, it avoids complex race conditions and priority inversion. The primary risks are semantic (task yielding behavior) and basic memory safety of the intrusive list, which can be audited via LLM and static analysis rather than formal model checking."
     },
     {
       "section_id": "sec:components/tier1_core/os_scheduler.md#ADR-SCHED-003: BLOCKEDタスクリストの管理コストとリアルタイム性",

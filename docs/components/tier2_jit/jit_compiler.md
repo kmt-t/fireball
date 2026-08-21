@@ -41,9 +41,9 @@ graph TD
     end
 
     subgraph Memory_Buffers ["JIT Cache: JIT_MultiBuffer_Cache"]
-        ActiveBuffer[Bank 0: Active Buffer Bank]
-        WarmBuffer[Bank 1: Warm Buffer Bank]
-        OldBuffer[Bank 2: Oldest Buffer Bank]
+        ActiveBuffer["Bank 0: Active Buffer Bank"]
+        WarmBuffer["Bank 1: Warm Buffer Bank"]
+        OldBuffer["Bank 2: Oldest Buffer Bank"]
     end
 
     Manager -- uses --> Harness

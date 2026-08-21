@@ -21,18 +21,18 @@ IPCルータは、URIベースのサービスディスカバリとロールベ�
 graph TB
     subgraph "IPC Router Layer"
         subgraph "Lookup Pipeline"
-            Reg[Registry<br/>URI → channel_id map<br/>FlatMap O(log N)]
-            AC[AccessControl<br/>Role matrix check<br/>sender_role ⊗ receiver_role]
+            Reg["Registry<br/>URI → channel_id map<br/>FlatMap O(log N)"]
+            AC["AccessControl<br/>Role matrix check<br/>sender_role ⊗ receiver_role"]
         end
         
         subgraph "Routing & Ownership"
-            R[Router<br/>Request routing<br/>Channel dispatch]
-            OM[OwnershipManager<br/>Revoke/Enqueue/Grant<br/>Zero-copy handoff]
-            DH[DropHandler<br/>In-flight cleanup<br/>on receiver kill]
+            R["Router<br/>Request routing<br/>Channel dispatch"]
+            OM["OwnershipManager<br/>Revoke/Enqueue/Grant<br/>Zero-copy handoff"]
+            DH["DropHandler<br/>In-flight cleanup<br/>on receiver kill"]
         end
         
         subgraph "Message Processing"
-            MH[MessageHandler<br/>KV-pair processing<br/>FlatMap search]
+            MH["MessageHandler<br/>KV-pair processing<br/>FlatMap search"]
         end
     end
     

@@ -61,12 +61,12 @@ IPC経由のデータ交換は行わない — GPIOのようなsub-µs応答が�
 ```mermaid
 graph TD
     subgraph vMMIO_Layer
-        Filter[MSB Address Filter\nBit 31 == 0 vs 1]
-        Decoder[Address Decoder\nFC[31:28] + L2[15:12] + L3/Sys[27:16] + Offset[11:0]]
-        L1Dir["vmmio_l1_dir [16]\nIndexed by FC"]
-        L2Table["vmmio_l2_pt [16]\nIndexed by L2 Index"]
-        TLB["Direct-Mapped TLB [16]\nIndex = (vpn) & 15"]
-        Controller[VmmioController]
+        Filter["MSB Address Filter<br/>Bit 31 == 0 vs 1"]
+        Decoder["Address Decoder<br/>FC(31:28) + L2(15:12) + L3/Sys(27:16) + Offset(11:0)"]
+        L1Dir["vmmio_l1_dir (16)<br/>Indexed by FC"]
+        L2Table["vmmio_l2_pt (16)<br/>Indexed by L2 Index"]
+        TLB["Direct-Mapped TLB (16)<br/>Index = (vpn) & 15"]
+        Controller["VmmioController"]
     end
 
     Controller -- checks addr --> Filter

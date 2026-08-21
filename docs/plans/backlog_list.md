@@ -1,83 +1,82 @@
-# Fireball バックログ
+# Fireball アクティブバックログ
 
-現在進行中フェーズ（**Phase 0**）の具体的なタスクを管理する。完了済みタスクは `docs/plans/backlog_archive.md` を参照。全体の開発プロセスは `docs/plans/roadmap_phase.md` を参照。
-品質課題の一覧は `docs/plans/quality_issues.md` を参照。
-
-「盆栽」のように、全体のバランスを見ながら設計の密度を少しずつ上げていく。
-
----
-
-## Phase 0.76: SysML Alignment & Model Refinement 【完了】
-
-既存の設計図をSysML準拠（静的・動的・パラメトリック）に修正し、論理的一貫性を高める。
-
-- [x] **既存コンポーネントの図解修正**:
-  - [x] **静的モデル (BDD)**: `architecture_overview.md` 等の構造図をSysMLブロック定義図形式に統一
-  - [x] **動的モデル (SD/SMD)**: 主要シーケンスをSysMLシーケンス図/状態遷移図形式に修正
-- [x] **パラメトリック図 (PAR) の導入**:
-  - [x] 32KB RAM予算・15KLOC制約をConstraint Blockとして定義し、パラメトリック図でモデル化
-- [x] **フリクション監査の再実行**: 図とドキュメント間の整合性を `audit_friction.py` で最終確認
+Fireball Hypervisor の現行作業および次期フェーズのタスク一覧。
+全体の開発ロードマップは `docs/plans/roadmap_phase.md` を参照。
+品質ゲートおよび形式検証の最新結果は `reports/doc_report.md` を参照。
 
 ---
 
-## Phase 0.8: Spec Quality Gate & Design Formalization 【進行中】
+## Phase 0.8: 仕様最終レビュー & GO 判定 【進行中 / レビュー中】
+<!-- traceability: {META_SpecificationFirst} {META_Risk_Tiering} {Resource_Estimation_Model} -->
 
-WBSの [Step 0] 盆栽デザイン（SysML）および [Step 1] 形式検証（WIT/pyModelChecking）を中心とした、GO判定に必要な品質基準の確立。
+機械的な品質ゲート（静的解析・pyModelChecking 形式検証・WIT契約・LLM意味監査）はすべて合格（0 Errors, 0 Warnings）。
+現在、**オーナー（アーキテクト）による最終仕様精読および GO 判定** を実施中。
 
-### [Tier 1] Core Logic Verification
+### オーナーレビュー観点 & チェックリスト
 
-- [ ] **COOS / IPC 協調モデル**:
-  - [x] [Step 1] タスク状態遷移、割り込み通知、Handoffの形式検証 `{GLOBAL_UseCpp20Coroutine}` `{CSP_Handoff}`
-  - [x] [Step 0] IPCルータの名前解決・所有権移譲のSysMLモデル化 → Complete (ipc_router.md 4.1.1, 4.2.1)
-- [x] **IPCパニック・デッドロック回避**:
-  - [x] [Step 1] In-flightパニック時のDropハンドラとメモリリーク防止の整合検証完了 `{IPC_ZeroCopy}` `{Challenge_CspHandoffStarvation}` `{IPC_DropHandler}`
-- [ ] **品質課題の棚卸し**:
-  - [ ] 仕様の矛盾点、未確定点、用語揺れを一覧化し、GO判定の阻害要因を明確化する `{META_Risk_Tiering}` `{WIT_First}`
-- [ ] **ドキュメント整合性・トレーサビリティのバグ修正 (LLM Audit 反映)**:
-  - [ ] 横串グループ監査によって検出された43件の論理矛盾（ヒープ統合/独立ヒープの定義衝突、IPCハンドオフのReady状態遷移矛盾、std::flat_map vs static_flat_mapの乖離、リカバリー戦略の適用漏れ等）の修正を行う。
-- [ ] **GO/NO-GO 判定基準**:
-  - [ ] `Resource_Estimation_Model` と `GLOBAL_StaticScalability` に基づく制約適合の判定条件を定義する `{Resource_Estimation_Model}` `{GLOBAL_StaticScalability}`
-- [ ] **残件の閉じ込め**:
-  - [ ] すぐに確定できない論点は ADR または残件一覧に退避し、Phase 1 への持ち込み条件を明文化する `{META_SpecificationFirst}`
-
-### [Tier 2] vSoC Subsystem Verification
-
-- [ ] **vSoC Engine (JIT/Intp) 一貫性**:
-  - [x] [Step 0-1] JITキャッシュ (Active/Old) とデバッガ割り込み (Safepoint) の協調モデル → Design specification completed (runtime_vsoc.md 4.2.1)
-- [x] **vMMIOセキュリティゲート (TLB)**:
-  - [x] [Step 0-1] 3-Tier安全性、ソフトウェアTLBキャッシュ整合性の形式検証完了 `{UnifiedAccessModel}` `{RoleBasedAccessControl}` `{FastAddressCheck}`
-- [x] **Loaderロールバック機構**:
-  - [x] [Step 0-1] バンプアロケータの順序とパース失敗時の安全な巻き戻しの形式検証完了 `{ROMParsing}` `{META_BumpAllocator}` `{MultiModule_Support}`
-- [ ] **リソース制約検証**:
-  - [x] [Step 0] SysMLパラメトリック図によるRAM/SLOC予算の遵守検証 → Constraint relationship diagram added (resource_budget.md 4.1.1)
+- [ ] **1. アーキテクチャ構成 & リソース予算**:
+  - RAM < 64KB 制約に対し、静的メモリ合計 24.0KB（残余 40KB）のメモリ予算設計の妥当性確認 (`architecture_overview.md`, `resource_budget.md`) `{Resource_Estimation_Model}`
+- [ ] **2. WASM 64KB ページング & 8KB 部分ページ境界モデル**:
+  - WebAssembly 標準 64KB ページングと、極小環境向け 8KB/16KB 部分ページの `FastAddressCheck` 境界トラップ仕様の確認 (`runtime_vmmio.md`, `system_config_details.md`) `{FastAddressCheck}`
+- [ ] **3. 形式検証（pyModelChecking: 5モデル）の数学的証明**:
+  - Mutex 相互排他性、CSP デッドロックフリー、Scheduler 公平性、JIT 3面キャッシュ代謝、vSoC Safepoint 応答性の証明内容の確認 (`docs/components/*/formal/*.py`) `{GLOBAL_UseCpp20Coroutine}` `{CSP_Handoff}` `{JIT_DoubleBuffer_Cache}`
+- [ ] **4. WIT インターフェース契約 & リカバリー戦略**:
+  - エラーコード廃止と 4 つのリカバリー戦略（`ignore`, `retry`, `restart`, `panic`）パターンの確認 (`interface_wit.md`) `{META_RecoveryStrategy}`
+- [ ] **5. Phase 1 (vSoC First) への最終 GO / NO-GO 判定**:
+  - 仕様を固定（Freeze）し、C++23 実装フェーズへの移行を承認 `{META_SpecificationFirst}`
 
 ---
 
-## Phase 0.9: Component Reference Implementation Survey 【待機中】
+## Phase 1: vSoC First 実装（約3ヶ月） 【GO 判定後に着手】
+<!-- traceability: {META_AI_Native_Dev} {PositionIndependentCode} {JIT_CopyAndPatch} {ROMParsing} -->
 
-主要コンポーネントの参考実装を調査し、GO判定で残った品質リスクの解消に必要な場合のみ実施する。
+スタンドアロン vSoC コア（Loader, Interpreter, JIT）を C++23 で実装し、ホストハーネス上で WAMR 比較ベンチマークを実施する。
 
-- [ ] **[Interpreter]** 参考調査: WAMR, WASM3（命令ハンドラ最適化）
-- [ ] **[JIT Compiler]** 参考調査: Cranelift, DynASM（JITアセンブラ）
-- [ ] **[COOS Scheduler]** 参考調査: Zephyr Scheduler, FreeRTOS
-- [ ] **[IPC Router]** 参考調査: Fiasco.OC, seL4（Capability IPC）
-- [ ] **[Memory Manager]** 参考調査: Bare-metal bump allocators
-- [ ] **[Platform HAL]** 参考調査: CMSIS-HAL, libopencm3
+### Phase 1.1: WASM 32-bit Binary Loader (`runtime_loader`)
+- [ ] **`BinaryStream` 実装**:
+  - ROM バイト列に対するゼロコピー LEB128 デコーダ・文字列リーダー `{ROMParsing}`
+- [ ] **`module_view` 索引生成**:
+  - ROM 上のセクション（Type, Import, Memory, Export, Code）直接参照構造体の構築 `{META_AccessDictionary}`
+- [ ] **WASM バリデータ (V1〜V6)**:
+  - マジックナンバー、バージョン、セクション順、Memory Section（64KB ページ / 8KB 部分ページ）の検証 `{LightweightVerifier}`
+
+### Phase 1.2: WASM Stackless Fast Interpreter (`runtime_interpreter`)
+- [ ] **`execution_context` 実装**:
+  - 仮想 CPU レジスタ群（PC, SP, FP, Linear Memory Pointer, Memory Size） `{ContextPointerRegister}`
+- [ ] **コア命令ハンドラ群 (`opcode_handler`)**:
+  - 算術演算 (i32/i64 add, sub, mul, clz, ctz 等)
+  - 制御フロー (block, loop, br, br_if, br_table, return, call)
+  - メモリ操作 (i32.load, i32.store 等) と `MemoryBoundaryCheck` トラップ `{MemoryBoundaryCheck}`
+- [ ] **スレッド化ディスパッチャ**:
+  - ダイレクトスレッド実行による分岐オーバーヘッドの極小化 `{ThreadedInterpreter}`
+
+### Phase 1.3: Copy-and-Patch JIT Compiler (`jit_compiler`)
+- [ ] **ARM Thumb-2 ネイティブパッチテンプレート**:
+  - 事前コンパイル済みネイティブバイト列（RO-Data）とリロケーションテーブル `{JIT_CopyAndPatch}`
+- [ ] **トリプルバッファ キャッシュマネージャ**:
+  - 2KB × 3面 の代謝（`JIT_OldestOnly_Promote` / 最古破棄）制御 `{JIT_DoubleBuffer_Cache}` `{JIT_MultiBuffer_Cache}`
+- [ ] **Safepoint 協調 & 透過的インタープリタ切り替え**:
+  - ホットスポット検知カウンタとデバッグ/割り込み時の Safepoint イールド `{JIT_LazyChaining}` `{Interpreter_LazyJITSwitch}`
+
+### Phase 1.4: Standalone vSoC Harness & WAMR Benchmark (`runtime_vsoc`)
+- [ ] **ホスト実行ハーネス (x86_64 / Linux / macOS)**:
+  - WASM バイナリのロードから実行完了までの単体テストスイート
+- [ ] **WAMR (Fast Interpreter) 比較ベンチマーク**:
+  - CoreMark-PRO / Wasm-Bench による実行速度、RAM 消費量、起動レイテンシの測定・比較評価
 
 ---
 
-## 次フェーズの方向性（Phase 1 予告）
+## Phase 2: Integration（周辺コンポーネント統合 / 将来予定）
+<!-- traceability: {META_3TierSeparation} {GLOBAL_UseCpp20Coroutine} {UnifiedAccessModel} -->
 
-Phase 1 は Phase 0 の GO 判定後に着手し、約3ヶ月でスタンドアロンvSoCを実装する想定。詳細は `docs/plans/roadmap_phase.md` を参照。
-
-- Story: [Low-Latency physical I/O]
-- Story: [Secure & Zero-Copy Inter-Service Communication]
-- Story: [Observability & Non-Intrusive Debugging]
+- [ ] **COOS カーネル**: スタックレス C++20 コルーチンスケジューラ (`os_scheduler.md`, `os_coos.md`)
+- [ ] **IPC ルータ**: ゼロコピー CSP チャネル & 所有権移譲 (`ipc_router.md`)
+- [ ] **vMMIO コントローラ**: 2段階ダイレクトデコードページテーブル & ソフトウェア TLB (`runtime_vmmio.md`)
+- [ ] **HAL & システムサービス**: タイマー、割り込みコントローラ、仮想 UART/GPIO (`system_hal.md`, `system_service.md`)
 
 ---
 
-## ステータス管理
+## Phase 3: PoC（ターゲットボード移植 / 将来予定）
 
-- **Step 0**: 盆栽デザイン・SysML 完了
-- **Step 1**: 形式検証（TLC）パス
-- **Step 2-3**: 実装生成・テスト通過・ターゲット統合完了
+- [ ] **Cortex-M33 実機移植**: BBC micro:bit v2 / nRF52840 / Zephyr OS 環境への移植
+- [ ] **実機性能・リアルタイム性評価**: sub-µs GPIO 応答および 64KB RAM 適合検証

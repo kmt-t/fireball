@@ -1,3 +1,1 @@
-# Fireball プロジェクトガイド
-
 @AGENTS.md

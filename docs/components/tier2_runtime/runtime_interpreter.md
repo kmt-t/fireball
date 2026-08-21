@@ -193,10 +193,10 @@ sequenceDiagram
 | 引数 | `ctx`: 実行コンテキスト (`execution_context`) への可変参照<br>`irq_id`: 割り込み識別子 (32bit) |
 | 戻り値 | void (なし) |
 | 期待する結果 | `ctx` 内の `interrupt_flags` が更新され、次回のyield機会で反映される。 |
-| 事前条件 | なし。 |
+| 事前条件 | `ctx` が有効な `execution_context` を指していること。 |
 | 事後条件 | フラグがアトミックに書き込まれる。 |
 | 不変条件 | 実行中の命令ハンドラから安全に参照可能であること。 |
-| エラー時の挙動 | なし。 |
+| エラー時の挙動 | 未登録の `irq_id` やキュー満杯時は `recovery-strategy: ignore`（またはログ出力してドロップ）とし、ゲスト実行コンテキストの破壊を防ぐ。 `{META_RecoveryStrategy}` |
 | 補足 | vSoC からの通知を仲介する役割を持つ。 |
 
 ### 5.2 URI/IPCインターフェイス

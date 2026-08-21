@@ -108,7 +108,7 @@ world fireball {
 | `0x03` | `SYS_RESET` | — | `0` | ゲストリセット |
 
 ### 5.3. vMMIO Generic (`0x10`-`0x1F`)
-vMMIOアドレス空間全体への汎用アクセス。SYSCTL/IPCR/VDMA/SHM/DYNAMIC/PASSTHROUGHすべての領域に対応。アクセス可否は、コンフィグで定義された静的なデバイス割り当て許可テーブル（vMMIOアクセス許可テーブル）に基づいて、タスクIDと対象物理アドレス範囲が合致するか検証される。 `{RoleBasedAccessControl}`
+vMMIOアドレス空間全体への汎用アクセス。SYSCTL/IPCR/VDMA/SHM/DYNAMIC/PASSTHROUGHすべての領域に対応。アクセス可否は、コンフィグで定義された静的なデバイス割り当て許可テーブル（vMMIOアクセス許可テーブル）に基づいて、タスクIDと対象物理アドレス範囲が合致するか検証される。 `{META_RestrictedPhysicalAccess}`
 
 | ID | 名前 | 引数 | 戻り値 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
@@ -128,9 +128,9 @@ vMMIOアドレス空間全体への汎用アクセス。SYSCTL/IPCR/VDMA/SHM/DYN
 | `0x20` | `VDMA_START` | `src`, `dst`, `byte_count` | `0` | DMA転送開始 `{VDMA}` |
 
 ### 5.5. IRQ (`0x30`-`0x3F`)
-<!-- traceability: {CooperativeMultitasking} {RoleBasedAccessControl} {META_RestrictedPhysicalAccess} {VDMA} -->
+<!-- traceability: {CooperativeMultitasking} {META_RestrictedPhysicalAccess} {VDMA} -->
 仮想割り込みフラグの管理。`REG_IRQ_FLAGS` のラッパー。
-割り込み処理とコルーチンベースの協調型マルチタスク（`{CooperativeMultitasking}`）が連動し、ISRによるフラグ操作時にREADYキューへの投入が行われる。これらのID呼び出しはロールマトリックス（`{RoleBasedAccessControl}`）および `{META_RestrictedPhysicalAccess}` に基づき、権限のないゲストからのアクセスは遮断される。また、仮想DMA（`{VDMA}`）完了時の割り込みクリアなどにも使用される。
+割り込み処理とコルーチンベースの協調型マルチタスク（`{CooperativeMultitasking}`）が連動し、ISRによるフラグ操作時にREADYキューへの投入が行われる。これらのID呼び出しは `{META_RestrictedPhysicalAccess}` に基づき、権限のないゲストからのアクセスは遮断される。また、仮想DMA（`{VDMA}`）完了時の割り込みクリアなどにも使用される。
 
 | ID | 名前 | 引数 | 戻り値 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |

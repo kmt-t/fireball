@@ -10,9 +10,9 @@
 | ネイティブヒープ | 4.0 | COOSカーネル, 共有メモリ管理, タスク制御 (TCB) |
 | vSoCメタデータ | 2.0 | WASMモジュール索引, コンテキスト情報 |
 | サブシステム | 4.0 | IPCルータ, HAL, ログバッファ |
-| JITコードキャッシュ | 4.0 | 生成済みネイティブコード (2KB x 2: Active/Old) |
+| JITコードキャッシュ | 6.0 | 生成済みネイティブコード (2KB x 3面: Active/Old/Cold) |
 | WASMリニアメモリ | 8.0 | ゲストアプリ・サービス作業領域 (初期値) |
-| **合計** | **22.0** | 残余 42KB を動的拡張またはセーフティマージンとして保持 |
+| **合計** | **24.0** | 残余 40KB を動的拡張またはセーフティマージンとして保持 |
 
 ## 2. ストレージ予算 (ROM/Flash)
 ターゲット環境：ROM 128KB
@@ -41,7 +41,7 @@
 | :--- | :--- | :--- | :--- | :--- |
 | **SystemMemoryLimit** | Total RAM Usage | ≤ 64 KB | `sum(kernelRAM, vSoCRAM, subsysRAM, cacheRAM, guestRAM) ≤ 64KB` | 自動計測（リンカスクリプト） |
 | **CodeSizeLimit** | Total SLOC | ≤ 15,000 行 | `Architecture + Components ≤ 15K` | cloc でカウント（テスト除外） |
-| **JITCacheLimit** | JIT Code Cache | 4 KB (2KB x 2) | `Active + Old ≤ 4KB` | 実行時メモリレイアウト確認 |
+| **JITCacheLimit** | JIT Code Cache | 6 KB (2KB x 3) | `Active + Old + Cold ≤ 6KB` | 実行時メモリレイアウト確認 |
 | **BootTime** | Startup Latency | ≤ 100 ms | `Boot(HAL) + Init(COOS) + Load(WASM) ≤ 100ms` | ホスト環境ベンチマーク |
 | **ContextSwitchLatency** | Task Switch Time | ≤ 10 μs | `Resume(coroutine) + Dispatch ≤ 10μs` | CPU サイクル計測 |
 
@@ -53,7 +53,7 @@ SysML パラメトリック図として、制約ブロック間の関係と各�
 graph TD
     SystemRAM["<b>SystemMemoryLimit</b><br/>Total RAM ≤ 64 KB<br/>─────"]
     ComponentRAM["<b>Component-level RAM</b><br/>COOS + vSoC + Subsys<br/>+ Cache + WASM"]
-    JITCL["<b>JITCacheLimit</b><br/>4 KB (2KB x 2)<br/>─────"]
+    JITCL["<b>JITCacheLimit</b><br/>6 KB (2KB x 3)<br/>─────"]
     
     CodeSizeL["<b>CodeSizeLimit</b><br/>Total SLOC ≤ 15K<br/>─────"]
     ComponentSLOC["<b>Component-level SLOC</b><br/>COOS + vSoC + Subsys<br/>+ HAL + Logging + WASM"]

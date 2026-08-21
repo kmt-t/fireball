@@ -129,7 +129,7 @@ graph TD
     
     Error1["<b>Error: Not Found</b><br/>─ URI unregistered<br/>─ Return ERROR_NOT_FOUND"]
     
-    Error2["<b>Error: Access Denied</b><br/>─ Insufficient privilege<br/>─ Return ERROR_PERMISSION_DENIED"]
+    Error2["<b>Error: Access Denied</b><br/>─ Insufficient privilege<br/>─ Return ERR_ACCESS_DENIED"]
     
     Success["<b>Success</b><br/>─ Ownership transfer starts<br/>─ Revoke/Enqueue/Grant"]
     
@@ -310,7 +310,7 @@ sequenceDiagram
         R-->>C: channel_id
         C->>S: co_csp::send(channel_id, msg)
     else Denied
-        R-->>C: ERROR_PERMISSION_DENIED
+        R-->>C: ERR_ACCESS_DENIED
     end
 ```
 

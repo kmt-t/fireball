@@ -131,7 +131,7 @@ def wasi_fd_write(fd: int, iovs: std.span[WasiIov], iovs_len: int, nwritten_ptr:
 
         # 5. IPCルータを経由してHAL（または上位レイヤ）へ送信 (ノンブロッキング)
         res = ipc_router.route_message(ctx.task, target_channel, msg)
-        if res == ERROR_QUEUE_FULL || res == ERROR_PERMISSION_DENIED:
+        if res == ERROR_QUEUE_FULL || res == ERR_ACCESS_DENIED:
             return WASI_ERRNO_IO # 中断
         
         # 6. 完了待機 (COOS yield)

@@ -46,7 +46,15 @@ type registration-result = result<_, recovery-strategy-category>;
 type routing-result = result<_, recovery-strategy-category>;
 ```
 
-TODO(Phase 1): ATC抽出 - 各リカバリー戦略（retry, restart等）を選択するための不変条件、およびシステム状態（panic時の状態保存など）の事後条件を明確にすること。
+#### リカバリー戦略の事前・事後条件と不変条件
+<!-- traceability: {META_RecoveryStrategy} {Errorcode_To_Strategy} -->
+
+| 戦略カテゴリ | 選択基準（事前条件） | 事後条件 / システム状態 | 不変条件 |
+| :--- | :--- | :--- | :--- |
+| `ignore` | 一時的なバッファ空/満杯通知など、データ喪失を伴わず無視可能な事象 | 状態変化なし。呼び出し元は継続実行 | システム整合性は完全に維持される |
+| `retry` | 一時的なリソース競合やタイムアウト。再試行により回復可能な場合 | 引数状態は維持。バックオフ後に再実行 | 再試行上限回数（3回）を超えないこと |
+| `restart` | サービスコンテキストやメモリ破損の疑い。モジュール単体の自己修復が必要な場合 | 該当タスク/サービスのTCB・ヒープを初期化し再起動 | 他サービスおよびカーネルのメモリ空間は隔離され保護される |
+| `panic` | MPU違反、二重解放、デッドロック検知など、安全な継続が不可能な致命的障害 | 全タスク停止、クラッシュダンプを出力しフェイルセーフ停止 | ハードウェアおよび不揮発性領域への不正書き込みを即時遮断 |
 
 #### 設計判断
 <!-- traceability: {META_RecoveryStrategy} {Errorcode_To_Strategy} -->

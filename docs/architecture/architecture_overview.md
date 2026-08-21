@@ -6,7 +6,7 @@ Fireballは、極小リソース環境での柔軟性と高性能を両立させ
 
 - **クリーンアーキテクチャとDI**: URIベースの抽象化とIPCルータによる依存性の注入により、コンポーネント間の結合度を下げ、移植性を向上させる。 `{CleanArchitecture}` `{URIAbstraction}` `{IPCDI}`
 - **協調型マルチタスク (COOS)**: C++23ベースのスタックレス・タスク構造を採用し、低オーバーヘッドな切り替えを実現する。各サービスのリブート（自己修復）を前提としたフォールトトレラント設計をとる。 `{LowOverhead}` `{ServiceSelfReboot}` `{FaultTolerant}`
-- **高速JIT (Copy-and-Patch)**: コンパイルレイテンシを最小化し、小規模なコードキャッシュ（2KB x 2）を「移動する窓（Moving Window）」として活用する。
+- **高速JIT (Copy-and-Patch)**: コンパイルレイテンシを最小化し、小規模なコードキャッシュ（2KB x 3面 = 6KB）を「移動する窓（Moving Window）」として活用する。
 - **動的代謝 (Metabolism-First)**: インタープリタはブートストラップおよびフォールバックとして機能し、実行の主力は JIT による動的なコード変換とキャッシュアウト（代謝）のサイクルが担う。
 - **コンポーネント・ハーネス**: vSoCを独立したサブコンポーネント（Loader, Engine, MMIO, Debugger）の集合体として定義し、ハーネスを介して差し替え可能なプラグイン構造とする。 `{GLOBAL_ComponentHarness}`
 - **静的構成**: システムパラメータや依存関係の多くをコンパイル時に決定し、実行時の動的メモリ確保や探索コストを排除する。 `{META_StaticDI}` `{META_ConfigurableSystem}` `{META_Static_Resolution}`
@@ -41,7 +41,7 @@ graph TD
     end
 
     subgraph Runtime["Runtime Layer"]
-        vSoC["<b>block: vSoC Runtime</b><br/>─ プロパティ:<br/>  · JIT cache (4KB)<br/>  · WASM linear memory<br/>─ ポート:<br/>  · execute(): code execution<br/>  · syscall(): IPC dispatch"]:::blockStyle
+        vSoC["<b>block: vSoC Runtime</b><br/>─ プロパティ:<br/>  · JIT cache (6KB)<br/>  · WASM linear memory<br/>─ ポート:<br/>  · execute(): code execution<br/>  · syscall(): IPC dispatch"]:::blockStyle
     end
 
     subgraph Kernel["Kernel Layer"]
@@ -191,7 +191,7 @@ Fireball が準拠するアーキテクチャスタイルと設計定石を明�
 | ネイティブヒープ | スケジューラ, CSP, 共有メモリ等 | 4.0KB | アボート |
 | vSoCヒープ | JITメタデータ, WASMコンテキスト等 | 2.0KB | ハイパーバイザ終了 |
 | サブシステムヒープ | IPCルータ, HAL等 | 4.0KB | ハイパーバイザ終了 |
-| JITコードキャッシュ | 生成済みネイティブコード (2KB x 2) | 4.0KB | 古いキャッシュの破棄 |
+| JITコードキャッシュ | 生成済みネイティブコード (2KB x 3面) | 6.0KB | 古いキャッシュの破棄 |
 | WASMリニアメモリ | ゲストアプリ・サービス作業領域 | 8.0KB | ゲストのみ終了 |
 
 ### スケーラビリティ

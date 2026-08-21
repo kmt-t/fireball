@@ -4,6 +4,9 @@ project:
   name: "Fireball Hypervisor"
   docs_root: "docs"
   cache_db: ".spec-integrator/doc_cache.db"
+  exclude_patterns:
+    - "**/FORMAT.md"
+    - "FORMAT.md"
 
 tiers:
   - tier: 0

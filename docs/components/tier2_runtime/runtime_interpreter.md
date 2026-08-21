@@ -50,8 +50,8 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
 | プログラムカウンタ | 現在実行中の命令を指し示すプログラムカウンタ（WASMバイトコードオフセット） | オフセット | 32bit符号なし |
-| スタックポインタ | オペランドスタックの現在の頂点を指すポインタ | アドレス値 | 32bit符号なし |
-| スタック基点 | オペランドスタックのメモリ領域の開始位置 | アドレス値 | 32bit符号なし |
+| スタックポインタ | オペランドスタックの現在の頂点を指すインデックス/ポインタ | インデックス/ポインタ | 32bit符号なし |
+| スタック基点 | オペランドスタックのメモリ領域（32bitワード配列 `uint32_t[FB_CONF_STACK_SIZE]`。i64/f64 は 2 スロット消費） | 配列ポインタ | `uint32_t*` (4byteアライン) |
 | リニアメモリ基点 | ゲストリニアメモリの開始アドレス | アドレス値 | 32bit符号なし (64KB境界アライメント) |
 | リニアメモリサイズ | ゲストリニアメモリの有効バイト数（WASM 64KBページまたは8KB/16KB等の部分ページ物理サイズ）。境界チェックに使用 `{MemoryBoundaryCheck}` | バイト数 | 32bit符号なし |
 | 有効命令ハンドラ | 現在使用されているハンドラ（通常用/デバッグ用）への参照 | テーブルポインタ | `opcode_handler` の配列 |
@@ -89,8 +89,8 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| スタック容量 | オペランドスタックとして確保する総バイト数 | バイト数 | 32bit符号なし |
-| 制御スタック容量 | 制御フレームの最大ネスト可能数 | エントリ数 | 32bit符号なし |
+| スタック容量 | オペランドスタックとして確保する総バイト数（32bitワード数換算） | バイト数 | 32bit符号なし (例: 512 words = 2KB) |
+| 制御スタック容量 | 制御フレームの最大ネスト可能数 | エントリ数 | 32bit符号なし (例: 32 frames) |
 | Yield 閾値 | 次の yield までに実行を許可する命令（トレース）数 | 回数 | 32bit符号なし |
 
 #### オプコードハンドラ / トレース実行（opcode_handler / exec_trace）
@@ -99,15 +99,14 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| 実行シグネチャ | PC, スタック頂点, 環境をレジスタで受け取る関数の形式 | 関数ポインタ | `void __fastcall(PC, SP, Context)` |
+| 実行シグネチャ | 実行コンテキストのみを単一ポインタで受け取る統一シグネチャ | 関数ポインタ | `void (*)(execution_context* __restrict__ ctx) noexcept` |
 
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
 <!-- traceability: {ThreadedInterpreter} {JIT_RuntimeAPI_Fallback} {Interpreter_LazyJITSwitch} {LowLatencyJIT} {SimpleJITArchitecture} {Challenge_ApproximateYield} {Debug_Integrated} -->
-- **Threaded Dispatch**: 命令ハンドラを連鎖させるテーブルディスパッチ方式で分岐コストを削減する。 `{ThreadedInterpreter}`
-- **WASM命令とRuntime APIの1対1対応**: 各命令ハンドラは対応する `void __fastcall (PC, StackTop, Context)` ランタイムAPIを呼び出し、結果は `Context` に書き込まれる。 `{JIT_RuntimeAPI_Fallback}`
-- **継続渡しトレース実行**: 命令ハンドラは継続渡しで次ハンドラへ遷移する。clang前提の `[[clang::musttail]]` を使用し、**非制御命令のみ**末尾呼び出しを行う。
+- **Threaded Dispatch**: 命令ハンドラを連鎖させるテーブルディスパッチ方式で分岐コストを削減する。ハンドラ関数型を `void(execution_context* __restrict__ ctx) noexcept` に完全統一し、非制御命令では `[[clang::musttail]]` による直接末尾ジャンプ（Direct-Threaded Code）を実現する。 `{ThreadedInterpreter}`
+- **WASM命令とRuntime APIの1対1対応**: 各命令ハンドラはコンテキスト上の SP/PC を更新し、必要に応じてランタイムAPIを呼び出す。 `{JIT_RuntimeAPI_Fallback}`
 - **ジャンプの高速化 (exec_trace)**: 制御命令（`br`, `br_if` 等）によるジャンプ先を `control_frame` 内の `exec_trace` に保持する。
 - **スタック Pruning (Label Arity対応)**: `br` 命令等の実行時、ジャンプ先の `control_frame` に記録された `結果アリティ` に基づき、スタック上のオペランドを残してそれ以外を `保存済みSP` まで巻き戻す。これにより、Wasm 規定のスタック整合性を保証する。
 - **JIT更新戦略**: 

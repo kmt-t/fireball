@@ -59,14 +59,15 @@ ROM上のバイナリデータに対する「窓」として機能し、WIT上�
 #### バイナリストリーム（BinaryStream）
 <!-- traceability: {ROMParsing} -->
 ROM上のデータストリームを管理し、LEB128可変長整数やプリミティブ型の読み出しを提供するユーティリティクラス。
-`std::span` をラップし、カレントポインタ（カーソル）管理と境界チェックを行う。
+`std::span<const uint8_t>` をラップし、カレントポインタ（カーソル）管理と厳格な境界チェックを行う。
 
 | 機能 | 説明 |
 | :--- | :--- |
 | `read_u8/u16/u32/u64` | 固定長符号なし整数の読み出し（カーソルが進む） |
 | `read_s8/s16/s32/s64` | 固定長符号あり整数の読み出し |
-| `read_leb128_u32/s32/u64/s64` | 可変長整数 (LEB128) のデコード |
-| `read_bytes` | 指定バイト数の参照（`std::span`）を返す |
+| `read_leb128_u32/s32` | 可変長整数 (LEB128) のデコード（最大 5 バイト制限。超過時またはストリーム終端時は即時パースエラー） |
+| `read_leb128_u64/s64` | 64bit 可変長整数 (LEB128) のデコード（最大 10 バイト制限。超過時は即時パースエラー） |
+| `read_bytes` | 指定バイト数の参照（`std::span<const uint8_t>`）を返す |
 | `remaining` | ストリームの残量チェック |
 
 #### 関数アクセサ（function_accessor）
@@ -101,11 +102,11 @@ ROM上のデータストリームを管理し、LEB128可変長整数やプリ�
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
-<!-- traceability: {ZeroCopyIndexing} {META_AccessDictionary} -->
-- **バイナリパース**: ROM上のデータを `BinaryStream` でラップし、`read_leb128` 等を用いて境界チェックを行いながら順次読み取る。
+<!-- traceability: {ZeroCopyIndexing} {META_AccessDictionary} {META_BumpAllocator} -->
+- **バイナリパース & トランザクション保護**: ROM上のデータを `BinaryStream` でラップし、`read_leb128`（最大 5/10 バイトガード）等を用いて境界チェックを行いながら順次読み取る。パース開始前に `bump_allocator::save()` でアロケータ位置を記憶し、パースや検証が失敗した場合は `bump_allocator::restore()` により確保途中の RAM 領域を完全にロールバックする。 `{META_BumpAllocator}`
 - **module_view 構築 (Zero-Copy Indexing)**: `{ZeroCopyIndexing}`
     - セクションスキャン時に内容をRAMにコピーせず、ROM上の開始オフセットとサイズを索引化する。
-    - エクスポートエントリをパースし、名前でソートして `module_view.exports_dict` に格納する。
+    - エクスポートエントリをパースし、名前文字列は ROM 上のポインタ（`std::string_view`）として RAM コピーゼロで参照し、固定長配列 `exports_dict` 上で名前順にソート（`std::sort`）して格納する。
 - **シンボル検索**: `exports_dict` を二分探索することで O(log N) で関数IDを取得する。 `{META_AccessDictionary}`
 - **依存関係解決**: インポートセクションをスキャンし、必要なモジュール名とエクスポート名（関数ID/グローバルID等）を抽出し、`module_registry` を介して他モジュールの `lookup_export` とリンクする。未解決のインポートがある場合、モジュールはロード済みだが実行不可状態となる。
 - **メモリセクション検証**: Memory Section をパースし、論理ページサイズ（64KB単位）および初期要求ページ数を取得。物理割当が部分ページ（例: 8KB）の場合でも、モジュール初期ページ要求（1 page = 64KB）と整合させ、実行時境界判定へ引き渡す。

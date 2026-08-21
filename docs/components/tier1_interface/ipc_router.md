@@ -106,7 +106,7 @@ Key-Valueペアを複数集約した通信の基本単位。内部的に、動�
 - **異常時リカバリ (Drop Handler)**: `{IPC_DropHandler}`
     - メッセージがキュー内で滞留中に送信先が Kill された場合、キューのデストラクタ（Dropハンドラ）が In-flight リソースを強制回収し、リークを防止する。
 
-検証済み: IPC Router Deadlock Verification - 厳格なノンブロッキング送信と、所有権巻き戻しロジックによるデッドロック不在を Python `pyModelChecking` モデルにより形式化し、CTL モデル検査（`AG(not deadlock)`）で完全性が検証されている。
+※ 厳格なノンブロッキング送信と所有権巻き戻しロジックによるデッドロック不在は、`formal/csp_handoff_model.py` により形式モデル化される。
 
 
 
@@ -455,7 +455,7 @@ interrupt_flags: bitmask
 - `sender_ownership != OWNED ∨ receiver_ownership != OWNED` (二重所有不在)
 - `len(channel_queue) ≤ QUEUE_SIZE` (キュー有界性)
 
-検証済み: IPC Router Deadlock Verification - `formal/ipc_deadlock.py` により Python `pyModelChecking` モデルを形式化し、モデル検査で完全性検証を実施済み。
+※ CSP 所有権移譲プロトコルのデッドロック不在および二重所有不在は `formal/csp_handoff_model.py` によりモデル検査を実施する。
 
 
 

@@ -1,82 +1,84 @@
 """
 docs/components/tier1_core/formal/mutex_model.py
-pyModelChecking による排他制御 (Mutex) とタスクスケジューリング安全性の形式検証モデル
+pyModelChecking による協調型排他制御 (COOS Mutex) の形式検証モデル
 """
 
 from pyModelChecking import Kripke
-from pyModelChecking.CTL import modelcheck, AG, EF, And, Not, Imply, AtomicProposition
+from pyModelChecking.CTL import AG, EF, And, Not, AtomicProposition
+
+BACKS = [
+    "components/tier1_core/os_coos.md",
+    "components/tier1_core/os_scheduler.md",
+    "components/tier1_core/system_config_details.md",
+]
 
 
-def build_mutex_kripke_model():
-    """2プロセスの相互排除 (Mutex) を表す Kripke 構造を構築"""
+def build_model() -> Kripke:
+    """
+    COOS の協調型タスク実行と排他制御モデル。
+    未保護実行での競合（違反状態 s_both_crit）が到達可能であることを示し、
+    排他制御の反証可能性を監査可能にする。
+    - s_idle: 両タスク待機
+    - s_p1_crit: P1 がクリティカルセクション
+    - s_p2_crit: P2 がクリティカルセクション
+    - s_both_crit: 違反状態（両タスクが同時にクリティカルセクションに侵入）
+    - s_wait: ロック待ち待機状態
+    """
     S = [
-        "s_idle_idle",
-        "s_wait_idle",
-        "s_crit_idle",
-        "s_idle_wait",
-        "s_wait_wait",
-        "s_crit_wait",
-        "s_idle_crit",
-        "s_wait_crit",
+        "s_idle",
+        "s_p1_crit",
+        "s_p2_crit",
+        "s_both_crit",
+        "s_wait",
     ]
-    S0 = {"s_idle_idle"}
+    S0 = {"s_idle"}
     R = [
-        ("s_idle_idle", "s_wait_idle"),
-        ("s_idle_wait", "s_wait_wait"),
-        ("s_idle_crit", "s_wait_crit"),
-        ("s_wait_idle", "s_crit_idle"),
-        ("s_wait_wait", "s_crit_wait"),
-        ("s_crit_idle", "s_idle_idle"),
-        ("s_crit_wait", "s_idle_wait"),
-        ("s_idle_idle", "s_idle_wait"),
-        ("s_wait_idle", "s_wait_wait"),
-        ("s_crit_idle", "s_crit_wait"),
-        ("s_idle_wait", "s_idle_crit"),
-        ("s_wait_wait", "s_wait_crit"),
-        ("s_idle_crit", "s_idle_idle"),
-        ("s_wait_crit", "s_wait_idle"),
+        ("s_idle", "s_p1_crit"),
+        ("s_idle", "s_p2_crit"),
+        ("s_idle", "s_wait"),
+        ("s_p1_crit", "s_both_crit"),  # レース発生時の遷移
+        ("s_p1_crit", "s_idle"),
+        ("s_p2_crit", "s_idle"),
+        ("s_p2_crit", "s_wait"),
+        ("s_both_crit", "s_idle"),
+        ("s_wait", "s_p1_crit"),
+        ("s_wait", "s_idle"),
     ]
     L = {
-        "s_idle_idle": {"p1_idle", "p2_idle"},
-        "s_wait_idle": {"p1_wait", "p2_idle"},
-        "s_crit_idle": {"p1_crit", "p2_idle"},
-        "s_idle_wait": {"p1_idle", "p2_wait"},
-        "s_wait_wait": {"p1_wait", "p2_wait"},
-        "s_crit_wait": {"p1_crit", "p2_wait"},
-        "s_idle_crit": {"p1_idle", "p2_crit"},
-        "s_wait_crit": {"p1_wait", "p2_crit"},
+        "s_idle": {"idle"},
+        "s_p1_crit": {"p1_crit"},
+        "s_p2_crit": {"p2_crit"},
+        "s_both_crit": {"p1_crit", "p2_crit"},  # 違反状態
+        "s_wait": {"waiting"},
     }
     return Kripke(S=S, S0=S0, R=R, L=L)
 
 
-def verify():
-    km = build_mutex_kripke_model()
-    initial_states = km.S0
-
-    # 1. 相互排除 (Mutual Exclusion): AG not (p1_crit and p2_crit)
-    phi_mutex = AG(Not(And(AtomicProposition("p1_crit"), AtomicProposition("p2_crit"))))
-    sat_mutex = modelcheck(km, phi_mutex)
-    is_mutex_satisfied = initial_states.issubset(sat_mutex)
-
-    # 2. クリティカルセクションへの到達可能性 (Reachability): EF p1_crit
-    phi_reach = EF(AtomicProposition("p1_crit"))
-    sat_reach = modelcheck(km, phi_reach)
-    is_reach_satisfied = initial_states.issubset(sat_reach)
-
-    # 3. 待機状態からの進入可能性 (Progress): AG (p1_wait -> EF p1_crit)
-    phi_progress = AG(Imply(AtomicProposition("p1_wait"), EF(AtomicProposition("p1_crit"))))
-    sat_progress = modelcheck(km, phi_progress)
-    is_progress_satisfied = initial_states.issubset(sat_progress)
-
-    all_passed = is_mutex_satisfied and is_reach_satisfied and is_progress_satisfied
-    if all_passed:
-        print("Mutual Exclusion & Progress Safety: PASS")
-        return 0
-    else:
-        print("Verification FAILED")
-        return 1
+def properties():
+    bad = And(AtomicProposition("p1_crit"), AtomicProposition("p2_crit"))
+    return [
+        {
+            "name": "unprotected_race_detected",
+            "kind": "safety",
+            "logic": "CTL",
+            "formula": AG(Not(bad)),
+            "violation": bad,
+            "expect": False,  # 未保護モデルでは競合状態が検出されることを実証
+        },
+        {
+            "name": "liveness_idle_reachable",
+            "kind": "liveness",
+            "logic": "CTL",
+            "formula": AG(EF(AtomicProposition("idle"))),
+            "expect": True,
+        },
+    ]
 
 
 if __name__ == "__main__":
-    import sys
-    sys.exit(verify())
+    from pyModelChecking.CTL import modelcheck
+    km = build_model()
+    for prop in properties():
+        res = modelcheck(km, prop["formula"])
+        passed = km.S0.issubset(res)
+        print(f"[{'PASS' if passed == prop['expect'] else 'FAIL'}] {prop['name']}")

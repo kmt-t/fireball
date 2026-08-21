@@ -18,8 +18,8 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
   - RAM < 64KB 制約に対し、静的メモリ合計 24.0KB（残余 40KB）のメモリ予算設計の妥当性確認 (`architecture_overview.md`, `resource_budget.md`) `{Resource_Estimation_Model}`
 - [ ] **2. WASM 64KB ページング & 8KB 部分ページ境界モデル**:
   - WebAssembly 標準 64KB ページングと、極小環境向け 8KB/16KB 部分ページの `FastAddressCheck` 境界トラップ仕様の確認 (`runtime_vmmio.md`, `system_config_details.md`) `{FastAddressCheck}`
-- [ ] **3. 形式検証（pyModelChecking: 5モデル）の数学的証明**:
-  - Mutex 相互排他性、CSP デッドロックフリー、Scheduler 公平性、JIT 3面キャッシュ代謝、vSoC Safepoint 応答性の証明内容の確認 (`docs/components/*/formal/*.py`) `{GLOBAL_UseCpp20Coroutine}` `{CSP_Handoff}` `{JIT_DoubleBuffer_Cache}`
+- [ ] **3. 形式検証（pyModelChecking: 4モデル）の検証**:
+  - Mutex 相互排他性、CSP デッドロックフリー、JIT 3面キャッシュ代謝、vSoC Safepoint 応答性のモデル検査確認 (`docs/components/*/formal/*.py`) `{GLOBAL_UseCpp20Coroutine}` `{CSP_Handoff}` `{JIT_MultiBuffer_Cache}`
 - [ ] **4. WIT インターフェース契約 & リカバリー戦略**:
   - エラーコード廃止と 4 つのリカバリー戦略（`ignore`, `retry`, `restart`, `panic`）パターンの確認 (`interface_wit.md`) `{META_RecoveryStrategy}`
 - [ ] **5. Phase 1 (vSoC First) への最終 GO / NO-GO 判定**:
@@ -72,7 +72,7 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
 - [ ] **COOS カーネル**: スタックレス C++20 コルーチンスケジューラ (`os_scheduler.md`, `os_coos.md`)
 - [ ] **IPC ルータ**: ゼロコピー CSP チャネル & 所有権移譲 (`ipc_router.md`)
 - [ ] **vMMIO コントローラ**: 2段階ダイレクトデコードページテーブル & ソフトウェア TLB (`runtime_vmmio.md`)
-- [ ] **HAL & システムサービス**: タイマー、割り込みコントローラ、仮想 UART/GPIO (`system_hal.md`, `system_service.md`)
+- [ ] **HAL & システムサービス**: タイマー、割り込みコントローラ、仮想 UART/GPIO (`platform_hal.md`, `system_service.md`)
 
 ---
 

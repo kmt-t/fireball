@@ -98,7 +98,7 @@ WITインターフェース名は kebab-case で定義されるが、C++の公�
 8. `shm.get-address()` でデータを読み取り
 9. B側の `shared-block` が drop されるとメモリ自動解放
 
-@see `memory.wit` shared-block, `types.wit` kv_pair data-type
+@see `../tier1_interface/wit/fireball.wit`
 
 ## 8. 設計判断の記録
 

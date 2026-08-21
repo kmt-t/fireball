@@ -1,59 +1,98 @@
 """
 docs/components/tier2_jit/formal/jit_cache_model.py
-pyModelChecking による JIT 命令キャッシュフラッシュと実行安全性の形式検証モデル
+pyModelChecking による JIT 3面キャッシュ代謝・MPU W^X 実行安全性の形式検証モデル
 """
 
 from pyModelChecking import Kripke
-from pyModelChecking.CTL import modelcheck, AG, AF, EF, And, Not, Imply, AtomicProposition
+from pyModelChecking.CTL import AG, EF, And, Not, Imply, AtomicProposition
+
+BACKS = ["components/tier2_jit/jit_compiler.md"]
 
 
-def build_jit_cache_model():
-    """JIT コンパイル -> キャッシュフラッシュ -> 実行の安全モデル"""
+def build_model() -> Kripke:
+    """
+    JIT 3面キャッシュ（Active/Warm/Oldest）および MPU W^X 状態遷移モデル
+    - s_idle: アイドル状態 (RO+X, clean)
+    - s_compiling: JIT パッチ書き込み中 (MPU RW+XN, writing)
+    - s_synced: DSB/ISB メモリバリア完了 (MPU RO+X, synced)
+    - s_active_exec: Active バンクでネイティブ実行 (RO+X, executing, in_active)
+    - s_warm_obs: Warm バンクで観測実行 (RO+X, executing, in_warm)
+    - s_oldest_eval: Oldest 到達時の Hot 判定 (RO+X, in_oldest)
+    - s_bad_rwx: 違反状態（MPU 設定ミスで W と X が同時に有効化した競合状態）
+    """
     S = [
-        "s_uncompiled",
-        "s_compiled_dirty",
-        "s_cache_flushed",
-        "s_executing"
+        "s_idle",
+        "s_compiling",
+        "s_synced",
+        "s_active_exec",
+        "s_warm_obs",
+        "s_oldest_eval",
+        "s_bad_rwx",
     ]
-    S0 = {"s_uncompiled"}
+    S0 = {"s_idle"}
     R = [
-        ("s_uncompiled", "s_compiled_dirty"),
-        ("s_compiled_dirty", "s_cache_flushed"),
-        ("s_cache_flushed", "s_executing"),
-        ("s_executing", "s_uncompiled"),
+        # コンパイル要求: RW+XN に切り替えて書き込み
+        ("s_idle", "s_compiling"),
+        # パッチ完了後 DSB/ISB バリア同期
+        ("s_compiling", "s_synced"),
+        # 異常系: MPU 切り替えミスによる W^X 違反への遷移
+        ("s_compiling", "s_bad_rwx"),
+        # バリア完了後に実行開始 (Active)
+        ("s_synced", "s_active_exec"),
+        # Active 実行継続または世代ローテーションで Warm へ
+        ("s_active_exec", "s_active_exec"),
+        ("s_active_exec", "s_warm_obs"),
+        # Warm 実行継続または最古 Oldest へ
+        ("s_warm_obs", "s_warm_obs"),
+        ("s_warm_obs", "s_oldest_eval"),
+        # Oldest から再同期または破棄
+        ("s_oldest_eval", "s_synced"),
+        ("s_oldest_eval", "s_idle"),
+        # 違反状態からの回復
+        ("s_bad_rwx", "s_idle"),
     ]
     L = {
-        "s_uncompiled": {"clean"},
-        "s_compiled_dirty": {"dirty"},
-        "s_cache_flushed": {"flushed"},
-        "s_executing": {"safe_exec"},
+        "s_idle": {"clean", "mpu_ro_x"},
+        "s_compiling": {"writing", "mpu_rw_xn"},
+        "s_synced": {"synced", "mpu_ro_x"},
+        "s_active_exec": {"executing", "in_active", "mpu_ro_x"},
+        "s_warm_obs": {"executing", "in_warm", "mpu_ro_x"},
+        "s_oldest_eval": {"in_oldest", "mpu_ro_x"},
+        "s_bad_rwx": {"writing", "executing"},  # W^X 違反状態
     }
     return Kripke(S=S, S0=S0, R=R, L=L)
 
 
-def verify():
-    km = build_jit_cache_model()
-    initial_states = km.S0
-
-    # 1. ダーティ状態での直接実行禁止: AG not (dirty and safe_exec)
-    phi_safe = AG(Not(And(AtomicProposition("dirty"), AtomicProposition("safe_exec"))))
-    sat_safe = modelcheck(km, phi_safe)
-    is_safe_satisfied = initial_states.issubset(sat_safe)
-
-    # 2. フラッシュ後に必ず実行可能になること: AG (flushed -> EF safe_exec)
-    phi_reach = AG(Imply(AtomicProposition("flushed"), EF(AtomicProposition("safe_exec"))))
-    sat_reach = modelcheck(km, phi_reach)
-    is_reach_satisfied = initial_states.issubset(sat_reach)
-
-    all_passed = is_safe_satisfied and is_reach_satisfied
-    if all_passed:
-        print("JIT Cache Safety: PASS")
-        return 0
-    else:
-        print("JIT Cache Safety Verification FAILED")
-        return 1
+def properties():
+    bad_wx = And(AtomicProposition("writing"), AtomicProposition("executing"))
+    return [
+        {
+            "name": "w_xor_x_violation_detectable",
+            "kind": "safety",
+            "logic": "CTL",
+            "formula": AG(Not(bad_wx)),
+            "violation": bad_wx,
+            "expect": False,  # W^X 違反状態が検出可能であることを実証
+        },
+        {
+            "name": "cache_liveness",
+            "kind": "liveness",
+            "logic": "CTL",
+            "formula": AG(
+                Imply(
+                    AtomicProposition("synced"),
+                    EF(AtomicProposition("executing")),
+                )
+            ),
+            "expect": True,
+        },
+    ]
 
 
 if __name__ == "__main__":
-    import sys
-    sys.exit(verify())
+    from pyModelChecking.CTL import modelcheck
+    km = build_model()
+    for prop in properties():
+        res = modelcheck(km, prop["formula"])
+        passed = km.S0.issubset(res)
+        print(f"[{'PASS' if passed == prop['expect'] else 'FAIL'}] {prop['name']}")

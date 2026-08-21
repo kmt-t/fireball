@@ -461,4 +461,4 @@ jit_pc: address
 ### 6.3 安全性制約と方策
 <!-- traceability: {MemoryBoundaryCheck} {META_RestrictedPhysicalAccess} -->
 - **目標**: ゲストアプリケーションの暴走を完全に隔離する。
-- **方策**: `{MemoryBoundaryCheck}` `{META_RestrictedPhysicalAccess}` JITコードへの境界チェック埋め込みと、vMMIOによる物理アクセスの制限を行う。物理アドレスアクセスの許可範囲は `FB_CONF_VMMIO_ALLOWED_ADDRS`（`docs/components/core/system_config_details.md`）に `constexpr` 定義されたテーブルに基づき、vMMIOが検証する。
+- **方策**: `{MemoryBoundaryCheck}` `{META_RestrictedPhysicalAccess}` JITコードへの境界チェック埋め込みと、vMMIOによる物理アクセスの制限を行う。物理アドレスアクセスの許可範囲は `FB_CONF_VMMIO_ALLOWED_ADDRS`（`docs/components/tier1_core/system_config_details.md`）に `constexpr` 定義されたテーブルに基づき、vMMIOが検証する。

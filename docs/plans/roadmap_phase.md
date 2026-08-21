@@ -32,12 +32,12 @@
 | Phase 0.8: Spec Quality Gate | 仕様の矛盾解消・形式検証（pyModelChecking 5モデル）・WIT契約・LLM監査合格 ➔ **オーナー最終GO判定** | **進行中 (レビュー中)** |
 
 **Phase 0 達成状況 & GO判定基準:**
-- [x] 全設計ドキュメント（31ドキュメント）の整合性確認（0 Errors, 0 Warnings）
-- [x] 全WITファイルへの契約（リカバリー戦略パターン、リソース・ストリーム）定義
-- [x] コア形式検証（pyModelChecking 5モデル: Mutex, CSP, Scheduler, JIT, vSoC）の数学的証明完了
-- [x] トレーサビリティマトリクス（100+キーワード）の一方向追従確立
-- [x] LLM as a Judge（Sakura AI Engine）による意味監査合格（0 Failures）
-- [x] `Resource_Estimation_Model` による制約適合（RAM 64KB に対し静的合計 24.0KB、残余 40KB）
+- [ ] 全設計ドキュメントの整合性確認（0 Errors, 0 Warnings）
+- [ ] 全WITファイルへの契約（リカバリー戦略パターン、リソース・ストリーム）定義
+- [ ] コア形式検証（pyModelChecking 4モデル: Mutex, CSP, JIT, vSoC）のモデル検査合格
+- [ ] トレーサビリティマトリクス（100+キーワード）の一方向追従確立
+- [ ] LLM as a Judge（Sakura AI Engine）による意味監査合格（0 Failures）
+- [ ] `Resource_Estimation_Model` による制約適合（RAM 64KB に対し静的合計 24.0KB、残余 40KB）
 - [ ] **オーナー（アーキテクト）による最終仕様精読 & GO 判定**
 
 ---

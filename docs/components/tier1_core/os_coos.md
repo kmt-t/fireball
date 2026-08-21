@@ -248,7 +248,7 @@ struct CoValue {
 | **デッドロック不在** | Send と Recv がブロックされた状態で互いに待つサイクルが存在しないこと。`{Challenge_CspHandoffStarvation}` | 直交表 + pyModelChecking CTL (`AG(not deadlock)`) |
 | **状態一貫性** | タスク状態 (READY/BLOCKED/SUSPENDED) が各操作後も整合していること。 | 直交表（ケース1-7） |
 | **チャネルFIFO** | 同一チャネル上のメッセージ/通知は FIFO 順で処理されること。 | pyModelChecking 順序付け検証 |
-| **co_yield 有界性** | co_yield は有限時間内に達成されるか、または明示的に中断することが保証されること。`{GLOBAL_UseCpp20Coroutine}` | pyModelChecking LTL 活性検証 (`AF(yielded)`) |
+| **co_yield 有界性** | co_yield は有限時間内に達成されるか、または明示的に中断することが保証されること。`{GLOBAL_UseCpp20Coroutine}` | pyModelChecking CTL 活性検証 (`AF(yielded)`) |
 
 ### 6.2 直交表: CSP通信と状態遷移
 
@@ -264,4 +264,4 @@ struct CoValue {
 | 6 | RECV | (待機TXあり) | BLOCKED | **READYへ遷移(直接)** | **READYへ遷移(直接)** |
 | 7 | ISR通知 | - | BLOCKED/READY | (継続) | **INT イベント投入 → EventLoop で処理 → BLOCKED なら READY へ遷移** |
 
-**注**: ケース7では、割り込みハンドラ（ISR）がタスク状態を直接変更せず、代わりに INT イベントをイベントキューに投入する（`docs/components/os_event_driven.md` 参照）。イベントループが INT イベントを取り出し、対象タスクを BLOCKED から READY へ遷移させる。
+**注**: ケース7では、割り込みハンドラ（ISR）がタスク状態を直接変更せず、代わりに INT イベントをイベントキューに投入する。スケジューラ/イベントループが INT イベントを取り出し、対象タスクを BLOCKED から READY へ遷移させる。

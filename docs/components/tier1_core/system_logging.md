@@ -81,8 +81,6 @@ COOSスケジューラの `set_idle_hook` で `logger.flush()` を登録する�
 3. リングバッファの全エントリを物理トランスポートへ転送
 4. バッファ空になったら制御を返す
 
-@see `services.wit` logger.engine.flush
-
 ### 4.4 状態遷移図
 <!-- traceability: {DictionaryBasedIPC} {BufferedLogging} {GLOBAL_IdleDetection} -->
 ```mermaid

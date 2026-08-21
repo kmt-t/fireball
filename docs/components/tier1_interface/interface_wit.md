@@ -64,7 +64,7 @@ type routing-result = result<_, recovery-strategy-category>;
 
 ## 4. 低レベル・トラップ・インターフェイス
 <!-- traceability: {Syscall_Mapping} -->
-WASI標準には存在しない、Fireball固有の高速システムコール。実体は `docs/components/core/system_syscall.md` で定義される `fireball::fireball_call` である。このインターフェース設計を通じて、低レベルなシステムコールがWITの世界とマッピングされる（`{Syscall_Mapping}`）。
+WASI標準には存在しない、Fireball固有の高速システムコール。実体は `../tier1_core/system_syscall.md` で定義される `fireball::fireball_call` である。このインターフェース設計を通じて、低レベルなシステムコールがWITの世界とマッピングされる（`{Syscall_Mapping}`）。
 
 ### 4.1. `fireball:host/trap` の定義
 <!-- traceability: {Syscall_Mapping} -->
@@ -181,5 +181,5 @@ WIT識別子は WASI 標準および `wasm-tools` の制約により `kebab-case
 
 ### 8.1 設計上の留意点
 - **Kebab-Case Mandatory**: WIT定義内で `snake_case` (アンダースコア) は使用禁止。
-- **C++ へのマッピング**: 生成される C++ コードでは `embedded_cpp_rule.md` に従い、自動的に `snake_case` へ変換される。
+- **C++ へのマッピング**: 生成される C++ コードではプロジェクト標準規約に従い、自動的に `snake_case` へ変換される。
 - **名前の衝突回避**: ドメインプレフィックスを積極的に活用し、グローバルな名前空間での衝突を避ける。

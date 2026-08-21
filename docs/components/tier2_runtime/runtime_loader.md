@@ -108,6 +108,7 @@ ROM上のデータストリームを管理し、LEB128可変長整数やプリ�
     - エクスポートエントリをパースし、名前でソートして `module_view.exports_dict` に格納する。
 - **シンボル検索**: `exports_dict` を二分探索することで O(log N) で関数IDを取得する。 `{META_AccessDictionary}`
 - **依存関係解決**: インポートセクションをスキャンし、必要なモジュール名とエクスポート名（関数ID/グローバルID等）を抽出し、`module_registry` を介して他モジュールの `lookup_export` とリンクする。未解決のインポートがある場合、モジュールはロード済みだが実行不可状態となる。
+- **メモリセクション検証**: Memory Section をパースし、論理ページサイズ（64KB単位）および初期要求ページ数を取得。物理割当が部分ページ（例: 8KB）の場合でも、モジュール初期ページ要求（1 page = 64KB）と整合させ、実行時境界判定へ引き渡す。
 - **アンロード**: `unload` はmodule_registryからモジュールを削除する。bump_allocatorのLIFO制約により、メモリの完全な回収はロード逆順のアンロード時のみ。
 
 
@@ -134,6 +135,7 @@ ROM上のデータストリームを管理し、LEB128可変長整数やプリ�
 | V3 | セクション境界 | 各セクションのsizeがバイナリ末尾を超えない | reject |
 | V4 | セクション順 | Customセクション以外はID昇順 | reject |
 | V5 | インポート/エクスポート型整合 | 型インデックスがTypeセクション範囲内 | reject |
+| V6 | メモリセクション境界 | 初期ページ数が 1（64KB単位）以下であること（RAM制約超過時は reject） | reject |
 
 ### 4.4 状態遷移図
 <!-- traceability: {ZeroCopyIndexing} {META_AccessDictionary} {META_ConfigurableSystem} {LightweightVerifier} -->

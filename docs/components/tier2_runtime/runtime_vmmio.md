@@ -2,14 +2,18 @@
 
 ## 1. コンセプト
 <!-- traceability: {META_RestrictedPhysicalAccess} {vMMIO_TrapAndEmulate} {PhysicalPassthrough} {DynamicMmap} {UnifiedAccessModel} {FastAddressCheck} {Fast_Path_GPIO} -->
-vMMIO (Virtual Memory-Mapped I/O) は、WASMゲストとホスト間の**すべてのデータ交換**を仲介する統一的なアクセス層である。物理レジスタ（GPIO等）、共有メモリ、システムコール用バッファなど、ホスト-ゲスト間境界を横切るアクセスはすべてvMMIO空間を経由する。**割り当て単位は1ページ（4KB）**とし、各デバイス領域は4KB境界に配置される。WASMページサイズとは独立した設計。 `{META_RestrictedPhysicalAccess}` `{vMMIO_TrapAndEmulate}` `{PhysicalPassthrough}` `{DynamicMmap}` `{UnifiedAccessModel}`
+vMMIO (Virtual Memory-Mapped I/O) は、WASMゲストとホスト間の**すべてのデータ交換**を仲介する統一的なアクセス層である。物理レジスタ（GPIO等）、共有メモリ、システムコール用バッファなど、ホスト-ゲスト間境界を横切るアクセスはすべてvMMIO空間を経由する。
+
+WASM ゲストのリニアメモリは、WebAssembly 標準仕様に準拠して **64KB ページ単位 ($2^{16} = 65,536\text{ bytes}$)** を基本とする。ただし、RAM < 64KB の極小組込み環境（Cortex-M 等）に適合するため、物理実装としては **64KB に満たない部分ページ（Sub-64KB / Partial Page: 例 8KB, 16KB）** の割り当てを許容し、境界超過アクセスを即座にトラップする設計をとる。一方、ホスト/デバイス側の vMMIO 領域は **1ページ（4KB）** 単位の 2段階ページテーブルで管理される。 `{META_RestrictedPhysicalAccess}` `{vMMIO_TrapAndEmulate}` `{PhysicalPassthrough}` `{DynamicMmap}` `{UnifiedAccessModel}`
 
 本アーキテクチャでは、JIT実行などの極めてクリティカルなパスにおいて、探索コストを完全に一定（O(1)）に抑え込むため、従来の `std::flat_map` を用いた $O(\log N)$ 二分探索および線形探索TLBを全面的に廃止し、OS/MMUハードウェアの基本原則に忠実な**「2段階ダイレクトインデックス式ページテーブル（L1/L2）」**および**「ダイレクトマップ方式のソフトウェアTLB」**を採用する。
 
 RAM < 64KB の極小資源に適合するため、本設計ではL2ページテーブルサイズを標準の256エントリから**16エントリ**にスケールダウンし、1テーブルあたりのメモリフットプリントをわずか 64 バイト（$16 \times 4 \text{ bytes} = 64 \text{ bytes}$）に抑え込む。これにより、システム全体で必要な定数・動的テーブル群の総メモリを 192 バイト（3テーブル分）以内に圧縮する。
 
-1. **リニアアドレス空間フィルタ（高速バイパス）**:
-   32ビットゲストアドレスの最上位ビット（Bit 31）が `0` の場合、そのアドレスは vMMIO 管理対象外として、Tier 1（ゲストRAM）への直接アクセスとして高速バイパス（境界チェックのみの O(1) 処理）を実行する。 `{FastAddressCheck}`
+1. **リニアアドレス空間フィルタ（高速バイパス & 64KB/部分ページ境界チェック）**:
+   32ビットゲストアドレスの最上位ビット（Bit 31）が `0` の場合、そのアドレスは vMMIO 管理対象外として、Tier 1（ゲストRAM）への直接アクセスとして高速バイパス（O(1) 処理）を実行する。 `{FastAddressCheck}`
+   - **完全 64KB ページ時**: ゲストアドレスが 64KB 境界内にあるかを `(addr & ~0xFFFF) == 0` のビットマスク 1 命令で超高速判定。
+   - **部分ページ時（例: 8KB）**: 実際の割り当てサイズに対して `addr < guest_ram_size`（または $2^N$ アライメントマスク `(addr & ~0x1FFF) == 0`）で O(1) 判定。境界外アクセスは即座に `ERR_OUT_OF_BOUNDS` トラップを発生させる。
 2. **2段階ダイレクトデコード（O(1) テーブルウォーク）**:
    最上位ビット（Bit 31）が `1` のアドレス空間を vMMIO 領域（`0x8000_0000` – `0xFFFF_FFFF`）とする。
    - **L1 ページディレクトリ (Page Directory)**:
@@ -23,7 +27,7 @@ RAM < 64KB の極小資源に適合するため、本設計ではL2ページテ�
 
 セキュリティモデルは**PTEに埋め込まれた権限フィールドが唯一のゲート**である。アクセス権限は PTE に保持され、ルックアップと権限チェックを1パスで完結させる。アクセス特性に応じてセキュリティゲートを以下の3層に階層化する。 `{META_RestrictedPhysicalAccess}`
 
-1. **Tier 1 (ゲストRAM)**: ゲスト専用RAM領域（Bit 31 == 0）。コンパイル時または実行時の単純な境界チェック（加算/比較）のみで処理。
+1. **Tier 1 (ゲストRAM)**: ゲスト専用RAM領域（Bit 31 == 0）。コンパイル時または実行時の 64KB マスクおよび部分ページ境界チェック（`FastAddressCheck`）のみで高速処理。
 2. **Tier 2 (静的vMMIO, FC=12)**: コンパイル時にアドレスが確定するコアデバイス（SYSCTL, IPCR, VDMA等）。アドレス `0xC000_0000` は FC=12 に位置する。JIT生成時に許可チェックを行い、許可済みならネイティブコードに直接デバイスキー（Syscall ID を含む）を埋め込む。
 3. **Tier 3 (動的vMMIO, FC=14-15)**: SHM（FC=14, `0xE000_0000`）、PASSTHROUGH（FC=15, `0xF000_0000`）領域のアクセス。実行時に 2段階ページテーブルを経由して PTE を解決し、エントリの権限フィールドで可否を判定する。
 

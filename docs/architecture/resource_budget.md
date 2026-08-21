@@ -61,7 +61,7 @@ graph TD
     BootTimeL["<b>BootTime</b><br/>≤ 100 ms<br/>─────"]
     CtxSwitchL["<b>ContextSwitchLatency</b><br/>≤ 10 μs<br/>─────"]
     
-    SafetyMargin["<b>Safety Margin</b><br/>42 KB (余裕)<br/>─────"]
+    SafetyMargin["<b>Safety Margin</b><br/>40 KB (余裕)<br/>─────"]
     
     SystemRAM --> ComponentRAM
     ComponentRAM --> JITCL
@@ -81,10 +81,10 @@ graph TD
 
 **制約の相互関係:**
 - **SystemMemoryLimit** は全コンポーネントの RAM 合計を規制し、個別コンポーネント予算に分配される。
-- **JITCacheLimit** は SystemMemoryLimit 内で固定割り当てされ、Active/Old のダブルバッファを規制する。
+- **JITCacheLimit** は SystemMemoryLimit 内で固定割り当てされ、3面マルチバッファ（Active/Warm/Oldest）を規制する。
 - **CodeSizeLimit** は全コンポーネント SLOC を規制し、密度目標 (100 SLOC/KB 以下) を通じて ROM 予算と相互作用。
 - **BootTime** と **ContextSwitchLatency** は、各コンポーネントの処理速度と複雑さに影響し、上記の予算配分を間接的に制約する。
-- **Safety Margin** (42 KB) は、将来の機能拡張やバッファオーバーラン対策に予約される。
+- **Safety Margin** (40 KB) は、将来の機能拡張やバッファオーバーラン対策に予約される。
 
 ### 4.2 コンポーネント予算配分
 
@@ -95,10 +95,10 @@ graph TD
 | **IPC Router** | 1.5 KB | 8 KB | 2,000 行 | 250 SLOC/KB | サービス登録、ルーティング |
 | **HAL / Drivers** | 1.5 KB | 16 KB | 1,500 行 | 94 SLOC/KB | デバイス抽象化 |
 | **Logging** | 1.0 KB | 4 KB | 500 行 | 125 SLOC/KB | ログ出力バッファ |
-| **JIT Code Cache** | 4.0 KB | - | - | - | 生成ネイティブコード |
+| **JIT Code Cache** | 6.0 KB | - | - | - | 生成ネイティブコード (2KB x 3面) |
 | **WASM Linear Memory** | 8.0 KB | 32 KB | 1,500 行 | 47 SLOC/KB | ゲストアプリ・サービス |
 | **Metadata / Config** | 2.0 KB | 20 KB | - | - | インデックス、構成情報 |
-| **Safety Margin** | 42.0 KB | 32 KB | - | - | 拡張用予備領域 |
+| **Safety Margin** | 40.0 KB | 32 KB | - | - | 拡張用予備領域 |
 | **合計** | **64 KB** | **128 KB** | **~15K 行** | **~100** | - |
 
 ### 4.3 予算追跡テーブル (実績値)

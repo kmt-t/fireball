@@ -94,7 +94,7 @@ Fireball はシングルコア協調型ハイパーバイザであり、メッ�
 ### `spec-integrator check` 実行結果
 
 - **実行コマンド**: `spec-integrator check --config spec-integrator.yaml -o reports/doc_report.md`
-- **検査結果**: **0 Errors, 2 Warnings (ALL GATES PASSED)**
+- **検査結果**: **0 Errors, 0 Warnings (ALL GATES PASSED)**
 - **内訳**:
   - **Format Gate**: 🟢 PASS
   - **Traceability Gate**: 🟢 PASS

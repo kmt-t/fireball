@@ -106,7 +106,7 @@ Key-Valueペアを複数集約した通信の基本単位。内部的に、動�
 - **異常時リカバリ (Drop Handler)**: `{IPC_DropHandler}`
     - メッセージがキュー内で滞留中に送信先が Kill された場合、キューのデストラクタ（Dropハンドラ）が In-flight リソースを強制回収し、リークを防止する。
 
-検証済み: IPC Router Deadlock Verification - 厳格なノンブロッキング送信と、所有権巻き戻しロジックによるデッドロック不在を TLA+ 仕様によりモデル化し、TLC による形式検証で完全性が検証されている。
+検証済み: IPC Router Deadlock Verification - 厳格なノンブロッキング送信と、所有権巻き戻しロジックによるデッドロック不在を Python `pyModelChecking` モデルにより形式化し、CTL モデル検査（`AG(not deadlock)`）で完全性が検証されている。
 
 
 
@@ -413,7 +413,7 @@ sequenceDiagram
 <!-- traceability: {ServiceFacade} {IoC} -->
 IPCのプリミティブ性を隠蔽し、依存性の逆転 (IoC) を実現するため、サービスの利用側（内側の層）がファサードクラスを定義する。 `{ServiceFacade}` `{IoC}`
 
-## 6. 形式検証（TLA+ / 直交表）
+## 6. 形式検証（pyModelChecking / 直交表）
 
 ### 6.1 検証対象の不変条件
 
@@ -421,10 +421,10 @@ IPCのプリミティブ性を隠蔽し、依存性の逆転 (IoC) を実現す�
 
 | 不変条件 | 説明 | 検証方法 |
 | :--- | :--- | :--- |
-| **所有権単調性** | リソース所有権が Sender → In-flight → Receiver と一方向に移譲され、二重所有が発生しないこと。`{OwnershipTransfer}` `{IPC_ZeroCopy}` | TLA+ 状態不変式 |
-| **デッドロック不在** | 送信側がブロックされた状態で受信側もブロックされるサイクルが存在しないこと。`{Challenge_CspHandoffStarvation}` | TLA+ リーチャビリティ分析 |
-| **In-flight リソース一貫性** | In-flight 状態のリソースは、キュー内で正確に1つだけ存在し、かつ任意の時点で回収可能であること。`{IPC_DropHandler}` | TLA+ アクションガード検証 |
-| **メッセージ順序** | 同一チャネル上のメッセージは FIFO 順で処理されること。 | TLA+ 順序付け不変式 |
+| **所有権単調性** | リソース所有権が Sender → In-flight → Receiver と一方向に移譲され、二重所有が発生しないこと。`{OwnershipTransfer}` `{IPC_ZeroCopy}` | pyModelChecking 状態不変式 (`AG(...)`) |
+| **デッドロック不在** | 送信側がブロックされた状態で受信側もブロックされるサイクルが存在しないこと。`{Challenge_CspHandoffStarvation}` | pyModelChecking CTL モデル検査 |
+| **In-flight リソース一貫性** | In-flight 状態のリソースは、キュー内で正確に1つだけ存在し、かつ任意の時点で回収可能であること。`{IPC_DropHandler}` | pyModelChecking アクションガード検証 |
+| **メッセージ順序** | 同一チャネル上のメッセージは FIFO 順で処理されること。 | pyModelChecking 順序付け不変式 |
 
 ### 6.2 検証対象のプロパティ
 
@@ -455,7 +455,7 @@ interrupt_flags: bitmask
 - `sender_ownership != OWNED ∨ receiver_ownership != OWNED` (二重所有不在)
 - `len(channel_queue) ≤ QUEUE_SIZE` (キュー有界性)
 
-検証済み: IPC Router Deadlock Verification - TLA+ 仕様を形式化し、TLC で完全性検証を実施済み。
+検証済み: IPC Router Deadlock Verification - `formal/ipc_deadlock.py` により Python `pyModelChecking` モデルを形式化し、モデル検査で完全性検証を実施済み。
 
 
 

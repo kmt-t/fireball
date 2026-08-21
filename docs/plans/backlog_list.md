@@ -22,7 +22,7 @@
 
 ## Phase 0.8: Spec Quality Gate & Design Formalization 【進行中】
 
-WBSの [Step 0] 盆栽デザイン（SysML）および [Step 1] 形式検証（WIT/TLA+）を中心とした、GO判定に必要な品質基準の確立。
+WBSの [Step 0] 盆栽デザイン（SysML）および [Step 1] 形式検証（WIT/pyModelChecking）を中心とした、GO判定に必要な品質基準の確立。
 
 ### [Tier 1] Core Logic Verification
 

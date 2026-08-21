@@ -29,14 +29,14 @@
 | Phase 0.7: Static DI & Build System | Harnessパターン・静的DI・WIT→C++自動生成・CMakeビルド | DONE |
 | Phase 0.75: Constexpr Verification | コード生成のconstexpr対応・コンパイル時計算の実証 | DONE |
 | Phase 0.76: SysML Alignment | 既存設計図のSysML準拠化・パラメトリック図導入 | 完了 |
-| Phase 0.8: Spec Quality Gate | 仕様の矛盾解消・GO判定・コアロジック/サブシステムの形式検証（TLA+） | 進行中 |
+| Phase 0.8: Spec Quality Gate | 仕様の矛盾解消・GO判定・コアロジック/サブシステムの形式検証（pyModelChecking） | 進行中 |
 | Phase 0.9: Reference Survey | 主要コンポーネントの参考実装調査（品質課題の解消に必要な場合のみ実施） | 待機中 |
 
 **Phase 0 完了条件（概要）:**
 - 全設計ドキュメント（`docs/components/*.md`）の完成
 - 全WITファイルへの契約（`@pre`, `@post`, `@inv`）追加
 - ビルド基盤（CMakeビルド・WIT→C++生成）の完成
-- コア形式検証（TLA+）の完了
+- コア形式検証（pyModelChecking）の完了
 - トレーサビリティマトリクスの完成
 - 主要な品質課題が `GO` / `NO-GO` 判定可能な形で整理されていること
 - 仕様の未確定点が、残件一覧または ADR に閉じ込められていること

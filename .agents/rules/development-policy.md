@@ -24,9 +24,9 @@ scope: GLOBAL
 - 対象領域の仕様書群に仕様を記述する。
 - Mermaid を使用して SysML 形式（BDD/SD/SMD/PAR）で設計を可視化する。
 
-### Step 1: Formal Verification (TLA+/TLC)
+### Step 1: Formal Verification (pyModelChecking)
 - インターフェースを WIT で定義する。
-- **TLA+** を用いてモデルを記述し、**TLC** で不変条件（Hoare Triple: `@pre`, `@post`, `@inv`）や動的振る舞いの論理的一貫性を検証する。
+- Python **pyModelChecking** を用いてモデルを記述し、不変条件（Hoare Triple: `@pre`, `@post`, `@inv`）や動的振る舞いの論理的一貫性（CTL/LTL）を検証する。
 
 ### Step 2: Implementation Generation (実装生成)
 - WIT から C++ コード（Harness, Interface）を自動生成する。
@@ -45,4 +45,4 @@ scope: GLOBAL
 - 変更した仕様は `docs/components/`、`docs/requires/`、`verify/` の対応箇所に反映すること。
 - 不確実な仕様は憶測で埋めず、必要ならユーザーに質問すること。
 - `TODO(Phase X): [課題] [アクション]` を TODO 管理の基本形式とする。
-- 複雑な状態遷移や所有権の移譲については、TLA+ によるモデル化と TLC による検証を提案または実施すること。
+- 複雑な状態遷移や所有権の移譲については、pyModelChecking によるモデル化と検証を提案または実施すること。

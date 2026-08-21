@@ -236,7 +236,7 @@ JIT Code Cache (4 KB total)
    - 次回 `step()` で Interpreter モードへフォールバック
 4. **Resume**: デバッガが再開コマンドを発行 → `InterpreterRun` 状態に遷移 → 新規JITコンパイルの準備開始
 
-#### TLA+ 検証対象
+#### 形式検証 (pyModelChecking) 検証対象
 
 
 - **キャッシュ整合性**: どの時点でも、Active/Old 両バッファの generation が単調増加し、矛盾が生じないこと
@@ -393,7 +393,7 @@ Fireballでは、ホスト側のコードサイズを極限まで削減するた
 | **Wasm Loader** | モジュールロードと `module_view` の管理 | `loader`, `module_view` |
 | **Debugger** | デバッグコマンドの処理と実行状態の同期 | `debugger`, `debug_command_queue` |
 
-## 6. 形式検証（TLA+ / 直交表）
+## 6. 形式検証（pyModelChecking / 直交表）
 
 ### 6.1 検証対象の不変条件
 
@@ -401,10 +401,10 @@ Fireballでは、ホスト側のコードサイズを極限まで削減するた
 
 | 不変条件 | 説明 | 検証方法 |
 | :--- | :--- | :--- |
-| **キャッシュ整合性** | Active/Old 両バッファの generation が単調増加し、矛盾が生じないこと。`{Challenge_JITCacheEfficiency}` | TLA+ 状態不変式 |
-| **Safepoint応答性** | 割り込みフラグが設定されてから最大 N サイクル以内に Safepoint で検出されること。`{JIT_Safepoint}` | TLA+ 有界応答性 |
-| **Debugger安全性** | デバッガがメモリを変更した後、キャッシュ flush が完了するまで旧コードが実行されないこと。`{Debugger_Jit_Flush}` | TLA+ 因果的順序付け |
-| **リソース有界性** | キャッシュローテーション時にメモリリークが発生しないこと。 | TLA+ リソース追跡 |
+| **キャッシュ整合性** | Active/Old 両バッファの generation が単調増加し、矛盾が生じないこと。`{Challenge_JITCacheEfficiency}` | pyModelChecking 状態不変式 (`AG(...)`) |
+| **Safepoint応答性** | 割り込みフラグが設定されてから最大 N サイクル以内に Safepoint で検出されること。`{JIT_Safepoint}` | pyModelChecking 有界応答性 (CTL) |
+| **Debugger安全性** | デバッガがメモリを変更した後、キャッシュ flush が完了するまで旧コードが実行されないこと。`{Debugger_Jit_Flush}` | pyModelChecking 因果的順序付け |
+| **リソース有界性** | キャッシュローテーション時にメモリリークが発生しないこと。 | pyModelChecking リソース追跡 |
 
 ### 6.2 検証対象のプロパティ
 

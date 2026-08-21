@@ -57,7 +57,7 @@ llm_judge:
   backends:
     sakura:
       api_key_env: "SAKURA_API_KEY"
-      model: "gpt-oss-120b"
+      model: "preview/gemma-4-31B-it"
     ollama:
       endpoint: "http://localhost:11434"
       model: "llama3"

@@ -236,7 +236,7 @@ struct CoValue {
 | `csp` | `auto send(channel_id_t chan, CoValue&& val) -> coos::task_coroutine;`<br>`auto receive(channel_id_t chan) -> coos::task_coroutine_recv;` | チャネル経由の同期メッセージ送受信。ムーブセマンティクスによるゼロコピー所有権移譲を行う。 |
 | `memory` | `auto allocate(size_t size) -> result<void*, memory_error>;`<br>`auto free(void* ptr) -> void;` | タスク固有の静的メモリパーティション内でのメモリ管理。 |
 
-## 6. 形式検証（TLA+ / 直交表）
+## 6. 形式検証（pyModelChecking / 直交表）
 
 ### 6.1 検証対象の不変条件
 
@@ -244,10 +244,10 @@ struct CoValue {
 
 | 不変条件 | 説明 | 検証方法 |
 | :--- | :--- | :--- |
-| **デッドロック不在** | Send と Recv がブロックされた状態で互いに待つサイクルが存在しないこと。`{Challenge_CspHandoffStarvation}` | 直交表 + TLA+ リーチャビリティ |
+| **デッドロック不在** | Send と Recv がブロックされた状態で互いに待つサイクルが存在しないこと。`{Challenge_CspHandoffStarvation}` | 直交表 + pyModelChecking CTL (`AG(not deadlock)`) |
 | **状態一貫性** | タスク状態 (READY/BLOCKED/SUSPENDED) が各操作後も整合していること。 | 直交表（ケース1-7） |
-| **チャネルFIFO** | 同一チャネル上のメッセージ/通知は FIFO 順で処理されること。 | TLA+ 順序付け不変式 |
-| **co_yield 有界性** | co_yield は有限時間内に達成されるか、または明示的に中断することが保証されること。`{GLOBAL_UseCpp20Coroutine}` | TLA+ 活性検証 |
+| **チャネルFIFO** | 同一チャネル上のメッセージ/通知は FIFO 順で処理されること。 | pyModelChecking 順序付け検証 |
+| **co_yield 有界性** | co_yield は有限時間内に達成されるか、または明示的に中断することが保証されること。`{GLOBAL_UseCpp20Coroutine}` | pyModelChecking LTL 活性検証 (`AF(yielded)`) |
 
 ### 6.2 直交表: CSP通信と状態遷移
 

@@ -54,7 +54,7 @@ namespace fireball {
 | `FB_CONF_HAL_BUFFER_SIZE` | デバイス通信用バッファの最大サイズ (Bytes) | `256` | `{META_ConfigurableSystem}` |
 | `FB_CONF_HAL_MAX_BUFFERS` | デバイス通信用バッファの最大数 | `4` | `{META_ConfigurableSystem}` |
 
-### 2.4 vSoC / vMMIO
+### 2.4 vSoC / vMMIO {VERIFY_LLM}
 <!-- traceability: {JIT_DoubleBuffer_Cache} {FastAddressCheck} {GLOBAL_StrictMemoryLimit} {vMMIO_Isolation} {META_ConfigurableSystem} {META_RestrictedPhysicalAccess} -->
 | マクロ名 | 説明 | デフォルト値 | 導出元 |
 | :--- | :--- | :--- | :--- |

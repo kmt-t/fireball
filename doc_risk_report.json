@@ -1,0 +1,294 @@
+{
+  "total_evaluated": 15,
+  "formal_candidates_count": 13,
+  "llm_candidates_count": 1,
+  "assessments": [
+    {
+      "section_id": "sec:components/FORMAT.md#6.2 検証対象のプロパティ",
+      "file_path": "components/FORMAT.md",
+      "heading": "6.2 検証対象のプロパティ",
+      "tier": null,
+      "complexity_score": 5,
+      "risk_score": 5,
+      "formal_needed": true,
+      "recommended_verification": "pyModelChecking",
+      "suggested_tags": [
+        "{VERIFY_FORMAL}"
+      ],
+      "risk_factors": [
+        "CSP handoff mechanisms are prone to complex deadlock scenarios and starvation (Challenge_CspHandoffStarvation).",
+        "Liveness properties ('eventually happens') cannot be proven via testing or static analysis and require LTL/CTL model checking.",
+        "Asynchronous IPC state transitions often involve hidden race conditions during ownership transfer."
+      ],
+      "summary": "The specification explicitly targets deadlock absence and liveness in CSP handoffs. These are classic concurrency problems with high state-space complexity that necessitate formal mathematical verification (Kripke structures/LTL) to ensure system stability."
+    },
+    {
+      "section_id": "sec:components/tier1_core/os_coos.md#1. コンセプト",
+      "file_path": "components/tier1_core/os_coos.md",
+      "heading": "1. コンセプト",
+      "tier": 1,
+      "complexity_score": 4,
+      "risk_score": 4,
+      "formal_needed": true,
+      "recommended_verification": "pyModelChecking",
+      "suggested_tags": [
+        "{VERIFY_FORMAL}"
+      ],
+      "risk_factors": [
+        "Potential for deadlocks inherent in CSP-based synchronous communication (rendezvous).",
+        "Complexity of ensuring zero-copy ownership transfer invariants across coroutine suspension points.",
+        "Risk of starvation or priority inversion in a cooperative multitasking environment without a preemptive scheduler.",
+        "State space explosion when combining C++20 coroutine suspension states with CSP channel synchronization."
+      ],
+      "summary": "The system implements a Hoare CSP-based green thread OS using C++20 coroutines. While it aims to eliminate data races via ownership transfer, the synchronization logic (CSP) and the cooperative scheduling mechanism introduce significant risks of deadlock and liveness violations. Mathematical verification of the state transitions and channel invariants via LTL/CTL is required."
+    },
+    {
+      "section_id": "sec:components/tier1_core/os_coos.md#3.1 データ構造",
+      "file_path": "components/tier1_core/os_coos.md",
+      "heading": "3.1 データ構造",
+      "tier": 1,
+      "complexity_score": 4,
+      "risk_score": 4,
+      "formal_needed": true,
+      "recommended_verification": "pyModelChecking",
+      "suggested_tags": [
+        "{VERIFY_FORMAL}"
+      ],
+      "risk_factors": [
+        "Potential for deadlock in 1-entry synchronous channel buffers during CSP state transitions.",
+        "Ownership transfer risks in `co_value` leading to use-after-free or double-free if ownership logic is flawed.",
+        "Global state corruption risk within `coos_context` during concurrent scheduler access."
+      ],
+      "summary": "The use of CSP-style synchronous channels and custom ownership management (`co_value`) introduces significant concurrency risks. The state space for synchronization and ownership handoffs requires formal verification (LTL/CTL) to ensure deadlock-freedom and memory safety invariants."
+    },
+    {
+      "section_id": "sec:components/tier1_core/os_coos.md#4.1 アルゴリズム",
+      "file_path": "components/tier1_core/os_coos.md",
+      "heading": "4.1 アルゴリズム",
+      "tier": 1,
+      "complexity_score": 5,
+      "risk_score": 4,
+      "formal_needed": true,
+      "recommended_verification": "pyModelChecking",
+      "suggested_tags": [
+        "{VERIFY_FORMAL}"
+      ],
+      "risk_factors": [
+        "CSP Handoff and Direct Context Switch bypass the scheduler, creating non-standard state transitions that can lead to priority inversion or stack corruption if not atomically managed.",
+        "Race conditions between Interrupt Wakeup (ISR context) and the Direct Context Switch mechanism during task state transitions (Blocked -> Ready -> Running).",
+        "Potential for deadlocks in the CSP Handoff logic if circular dependencies occur during immediate execution transfer.",
+        "Idle Detection logic depends on a global state (all tasks blocked AND queue empty), which is susceptible to race conditions during high-frequency interrupt bursts."
+      ],
+      "summary": "The implementation of CSP Handoff and Direct Context Switching introduces high complexity by bypassing the central scheduler. This creates a non-trivial state space where task ownership and execution rights are transferred asynchronously. Mathematical verification via LTL/CTL is required to prove the absence of deadlocks and ensure that the system always returns to a schedulable state."
+    },
+    {
+      "section_id": "sec:components/tier1_core/os_coos.md#4.2 状態遷移図 (SMD: COOS システムレベル)",
+      "file_path": "components/tier1_core/os_coos.md",
+      "heading": "4.2 状態遷移図 (SMD: COOS システムレベル)",
+      "tier": 1,
+      "complexity_score": 4,
+      "risk_score": 4,
+      "formal_needed": true,
+      "recommended_verification": "pyModelChecking",
+      "suggested_tags": [
+        "{VERIFY_FORMAL}"
+      ],
+      "risk_factors": [
+        "CSP Handoff / Direct Context Switch introduces non-standard scheduling paths that can bypass the scheduler's invariant checks, risking race conditions.",
+        "The transition from Idle/RunningTask to Recovery via memory faults requires strict proof that the Recovery state cannot be re-entered recursively (infinite loop of panics).",
+        "Interaction between GLOBAL_StrictMemoryLimit and Direct Context Switch may lead to memory leaks or ownership ambiguity during zero-copy handoffs.",
+        "Liveness risk: Potential for deadlock if a CSP Handoff occurs while the system is transitioning to a Recovery or Shutdown state."
+      ],
+      "summary": "The system introduces high-risk concurrency patterns (CSP Handoff/Direct Switch) and strict memory isolation. The state space involves critical transitions between normal operation and recovery modes. Mathematical verification via LTL/CTL is required to ensure deadlock-freedom and that memory invariants are maintained during direct context switches."
+    },
+    {
+      "section_id": "sec:components/tier1_core/os_coos.md#6.1 検証対象の不変条件",
+      "file_path": "components/tier1_core/os_coos.md",
+      "heading": "6.1 検証対象の不変条件",
+      "tier": 1,
+      "complexity_score": 5,
+      "risk_score": 5,
+      "formal_needed": true,
+      "recommended_verification": "pyModelChecking",
+      "suggested_tags": [
+        "{VERIFY_FORMAL}"
+      ],
+      "risk_factors": [
+        "C++20 Coroutine state machine complexity increases the state space for reachability analysis.",
+        "CSP Handoff mechanisms are prone to subtle deadlock cycles and starvation (Challenge_CspHandoffStarvation).",
+        "Liveness properties (AF(yielded)) cannot be guaranteed by static analysis or testing alone.",
+        "FIFO ordering in asynchronous handoffs requires strict temporal logic verification to prevent race conditions."
+      ],
+      "summary": "本セクションはC++20コルーチンを用いたCSP（Communicating Sequential Processes）ハンドオフという、極めて複雑な並行制御を扱っています。デッドロック不在および活性（Liveness）の保証は、状態空間の爆発を伴うため、CTL/LTLを用いた形式検証（pyModelChecking）が不可欠です。"
+    },
+    {
+      "section_id": "sec:components/tier1_core/os_scheduler.md#1. コンセプト",
+      "file_path": "components/tier1_core/os_scheduler.md",
+      "heading": "1. コンセプト",
+      "tier": 1,
+      "complexity_score": 4,
+      "risk_score": 4,
+      "formal_needed": true,
+      "recommended_verification": "pyModelChecking",
+      "suggested_tags": [
+        "{VERIFY_FORMAL}"
+      ],
+      "risk_factors": [
+        "Potential for deadlocks in CSP-based synchronous message passing (rendezvous points).",
+        "State space explosion due to the interaction between C++20 coroutine suspension points and interrupt-driven resumption.",
+        "Memory safety and ownership validity during zero-copy transfers in a stackless environment.",
+        "Determinism guarantees (COOS_Deterministic) requiring proof of bounded execution and absence of starvation."
+      ],
+      "summary": "The implementation of a CSP-based cooperative scheduler using C++20 coroutines introduces significant concurrency complexity. The reliance on zero-copy message passing and deterministic execution requires formal verification of liveness and safety properties (deadlock freedom) via LTL/CTL model checking to ensure system stability in resource-constrained environments."
+    },
+    {
+      "section_id": "sec:components/tier1_core/os_scheduler.md#3.1 データ構造",
+      "file_path": "components/tier1_core/os_scheduler.md",
+      "heading": "3.1 データ構造",
+      "tier": 1,
+      "complexity_score": 4,
+      "risk_score": 4,
+      "formal_needed": true,
+      "recommended_verification": "pyModelChecking",
+      "suggested_tags": [
+        "{VERIFY_FORMAL}"
+      ],
+      "risk_factors": [
+        "State transition complexity between READY, BLOCKED, and RUNNING states in a coroutine-based environment.",
+        "Potential for priority inversion or task starvation during execution order control.",
+        "Risk of stack overflow or memory corruption due to manual stack boundary management in task_context.",
+        "Concurrency hazards during the transition of coroutine handles within the Scheduler."
+      ],
+      "summary": "This section defines the core state management for the OS scheduler. While the data structures appear simple, the underlying behavior (coroutine scheduling and state transitions) involves a high-dimensional state space where deadlocks and race conditions are critical risks. Formal verification via LTL/CTL is required to prove liveness and safety invariants."
+    },
+    {
+      "section_id": "sec:components/tier1_core/os_scheduler.md#3.2 内部ブロック図",
+      "file_path": "components/tier1_core/os_scheduler.md",
+      "heading": "3.2 内部ブロック図",
+      "tier": 1,
+      "complexity_score": 4,
+      "risk_score": 5,
+      "formal_needed": true,
+      "recommended_verification": "pyModelChecking",
+      "suggested_tags": [
+        "{VERIFY_FORMAL}"
+      ],
+      "risk_factors": [
+        "Race conditions between the Scheduler Engine and Interrupt Controller during context switching",
+        "Potential for priority inversion or deadlock during TCB state transitions",
+        "Non-deterministic timing behavior introduced by the Timer Driver dependency",
+        "Concurrency risks regarding the State Visualizer reading TCB data while the Engine modifies it"
+      ],
+      "summary": "The section describes a core OS scheduler. While the diagram is simple, the underlying logic involves high-concurrency state transitions and hardware interrupts, making it a critical failure point. Formal verification of the state machine (LTL/CTL) is required to ensure liveness and safety."
+    },
+    {
+      "section_id": "sec:components/tier1_core/os_scheduler.md#4.1 アルゴリズム",
+      "file_path": "components/tier1_core/os_scheduler.md",
+      "heading": "4.1 アルゴリズム",
+      "tier": 1,
+      "complexity_score": 3,
+      "risk_score": 4,
+      "formal_needed": true,
+      "recommended_verification": "pyModelChecking",
+      "suggested_tags": [
+        "{VERIFY_FORMAL}"
+      ],
+      "risk_factors": [
+        "Race conditions between the Round-Robin scheduler and asynchronous interrupt-driven task wakeups (InterruptWakeup).",
+        "Potential for priority inversion or starvation if the 'priority resumption' logic for interrupts overrides the Round-Robin queue without a defined preemption policy.",
+        "Liveness risk: Potential for the system to hang if the transition to the Idle Handler (GLOBAL_IdleDetection) fails to account for pending interrupts."
+      ],
+      "summary": "The scheduler involves asynchronous state transitions between BLOCKED, READY, and RUNNING states triggered by both timer ticks and external interrupts. The interaction between the O(1) intrusive list and the priority-based wakeup mechanism creates a non-trivial state space where deadlocks or race conditions could occur, necessitating LTL/CTL verification of liveness and safety properties."
+    },
+    {
+      "section_id": "sec:components/tier1_core/os_scheduler.md#4.2 状態遷移図 (SysML SMD: Scheduler 視点)",
+      "file_path": "components/tier1_core/os_scheduler.md",
+      "heading": "4.2 状態遷移図 (SysML SMD: Scheduler 視点)",
+      "tier": 1,
+      "complexity_score": 4,
+      "risk_score": 5,
+      "formal_needed": true,
+      "recommended_verification": "pyModelChecking",
+      "suggested_tags": [
+        "{VERIFY_FORMAL}"
+      ],
+      "risk_factors": [
+        "CSP Handoff bypasses the standard scheduler loop via direct resume(), creating a high risk of stack corruption or inconsistent scheduler state if not atomically handled.",
+        "Potential for deadlock in CSPWait transitions where both sender and receiver might enter a wait state if the 'opposite ready' condition is not strictly defined.",
+        "Race conditions between ISR-posted INT events and the event loop processing, specifically regarding the transition from InterruptWait to Ready.",
+        "Liveness risk: The 'opposite not ready' transition from CSPWait to Ready could lead to priority inversion or starvation if the ready queue tail insertion is not priority-aware."
+      ],
+      "summary": "The design implements a high-performance CSP-style scheduler with a 'Direct Handoff' mechanism. While efficient, bypassing the scheduler for context switches introduces significant risks regarding state invariants and deadlock. Formal verification via LTL/CTL is required to prove that no state exists where two tasks are mutually waiting (deadlock) and that the direct resume() does not violate TCB ownership invariants."
+    },
+    {
+      "section_id": "sec:components/tier1_core/os_scheduler.md#ADR-SCHED-002: アルゴリズムの継続的改善と最適化",
+      "file_path": "components/tier1_core/os_scheduler.md",
+      "heading": "ADR-SCHED-002: アルゴリズムの継続的改善と最適化",
+      "tier": 1,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "LLM_Judge",
+      "suggested_tags": [
+        "{VERIFY_LLM}"
+      ],
+      "risk_factors": [
+        "Potential for interface mismatch during future transitions from cooperative to preemptive/time-sliced scheduling",
+        "Ambiguity in the definition of 'stateless interface' regarding the persistence of the task ready-list"
+      ],
+      "summary": "This section is a high-level architectural decision (ADR) focusing on modularity and extensibility rather than a concrete implementation of a state machine. The primary risk is semantic alignment between the interface and future algorithm implementations. Formal verification is not required at this stage, but LLM auditing is recommended to ensure the interface contract remains consistent across Tier 1 components."
+    },
+    {
+      "section_id": "sec:components/tier1_core/os_scheduler.md#ADR-SCHED-003: BLOCKEDタスクリストの管理コストとリアルタイム性",
+      "file_path": "components/tier1_core/os_scheduler.md",
+      "heading": "ADR-SCHED-003: BLOCKEDタスクリストの管理コストとリアルタイム性",
+      "tier": 1,
+      "complexity_score": 3,
+      "risk_score": 4,
+      "formal_needed": true,
+      "recommended_verification": "pyModelChecking",
+      "suggested_tags": [
+        "{VERIFY_FORMAL}"
+      ],
+      "risk_factors": [
+        "Race conditions between the event-driven notification (interrupt context) and the scheduler's task state transitions.",
+        "Potential for priority inversion or starvation if the wake-up queue does not strictly adhere to priority-based scheduling.",
+        "Deadlock risk during the atomic transition of a task from BLOCKED to READY state within the scheduler lock."
+      ],
+      "summary": "The transition from O(N) linear scanning to an O(1) event-driven queue introduces critical concurrency challenges. Since this is a Tier 1 OS scheduler component, the correctness of state transitions (BLOCKED -> READY) and the absence of deadlocks during interrupt-driven wake-ups must be mathematically proven using LTL/CTL to ensure real-time guarantees."
+    },
+    {
+      "section_id": "sec:components/tier1_core/system_config.md#4.1 アルゴリズム",
+      "file_path": "components/tier1_core/system_config.md",
+      "heading": "4.1 アルゴリズム",
+      "tier": 1,
+      "complexity_score": 1,
+      "risk_score": 1,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "本セクションは静的な定義のみを提供し、動的なロジックや状態遷移を含まないため、計算複雑性および設計リスクは極めて低い。形式検証は不要であり、静的解析による整合性確認で十分である。"
+    },
+    {
+      "section_id": "sec:components/tier1_core/system_config_details.md#2.4 vSoC / vMMIO",
+      "file_path": "components/tier1_core/system_config_details.md",
+      "heading": "2.4 vSoC / vMMIO",
+      "tier": 1,
+      "complexity_score": 3,
+      "risk_score": 4,
+      "formal_needed": true,
+      "recommended_verification": "pyModelChecking",
+      "suggested_tags": [
+        "{VERIFY_FORMAL}"
+      ],
+      "risk_factors": [
+        "Race conditions in JIT Multi-Buffer cache promotion logic (JIT_OldestOnly_Promote) during concurrent access.",
+        "Potential for memory corruption if FastAddressCheck fails to strictly enforce the 64KB alignment/boundary invariants.",
+        "vMMIO isolation breach if the constexpr structure array for allowed addresses is incorrectly indexed or overlapped.",
+        "Cache coherence and synchronization issues between the 3 buffer planes during JIT execution."
+      ],
+      "summary": "While the table appears declarative, the underlying algorithms (Triple Buffering, Oldest-Only Promotion, and Fast Address Checking) involve critical state transitions and memory safety invariants. The interaction between the JIT cache lifecycle and vMMIO isolation requires formal verification (LTL/CTL) to ensure no invalid memory access or deadlock occurs during buffer rotation."
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-# 協調型OS COOS コンポーネント設計書
+# 協調型OS COOS コンポーネント設計書 {VERIFY_FORMAL}
 
 ## 1. コンセプト
 <!-- traceability: {CooperativeMultitasking} {GLOBAL_UseCpp23Library} {GLOBAL_UseCpp20Coroutine} {CSPCommunication} {EliminateDataRace} {GLOBAL_PeriodicTask} {GLOBAL_IdleDetection} {GLOBAL_InterruptWakeup} {NotRTOS} -->

@@ -17,7 +17,7 @@
 
 ## 3. `fireball_call` WIT定義
 <!-- traceability: {WIT_Interface_Spec} -->
-`fireball_call`のWIT (WebAssembly Interface Type) 定義は以下の通りである。詳細は `docs/components/interface/interface_wit.md` を参照のこと。 `{WIT_Interface_Spec}`
+`fireball_call`のWIT (WebAssembly Interface Type) 定義は以下の通りである。詳細は `docs/components/tier1_interface/interface_wit.md` を参照のこと。 `{WIT_Interface_Spec}`
 
 
 ```wit

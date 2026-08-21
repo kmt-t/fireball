@@ -6,7 +6,7 @@ Fireballハイパーバイザは、リソース制約の厳しい組み込み環
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {META_Static_Resolution} -->
-本コンポーネントは **Tier 3 (実装ドメイン)** に属する。静的な定数定義のみを提供し、コードベース全体で参照されるグローバルなビューとして機能する。 `{META_3TierSeparation}` `{META_Static_Resolution}`
+本コンポーネントは **Tier 1 (主要システムコンポーネント: Primary Component)** に属し、システム全体の静的構成方針およびリソース概算モデルを統括する。具体的な定数・マクロパラメータの詳細は Tier 2 の `system_config_details.md` にデコンポジションされる。 `{META_3TierSeparation}` `{META_Static_Resolution}`
 
 ## 3. 静的モデル
 

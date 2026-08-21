@@ -7,7 +7,7 @@ JIT Entry Index は、WASM 命令オフセット とそれに対応するネイ�
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {SimpleJITArchitecture} -->
-本コンポーネントは **Tier 3 (実装ドメイン)** に属する。JITコンパイラの内部データ構造管理に特化したモジュールであり、特定アルゴリズム（二分探索+Card Marking）の実装を担う。 `{META_3TierSeparation}` `{SimpleJITArchitecture}`
+本コンポーネントは **Tier 3 (詳細リーフコンポーネント: Leaf Component)** に属し、JIT コンパイラ (`jit_compiler.md`) から分解された JIT エントリインデックス管理およびカードマーキング二分探索を担当する。 `{META_3TierSeparation}` `{SimpleJITArchitecture}`
 
 ## 3. 静的モデル
 

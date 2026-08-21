@@ -6,7 +6,7 @@ Interpreter は、WASM命令をスレッドインタープリタ方式で実行�
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->
-本コンポーネントは **Tier 3 (実装ドメイン)** に属する。デコンポジション（サブモジュール分割）を必要としない単一責務の実行エンジンとして、カプセル化（Natural OO）に基づき設計する。 `{META_3TierSeparation}`
+本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属し、vSoC (`runtime_vsoc.md`) から分解された WASM バイトコードの逐次実行および JIT との共用実行コンテキスト管理を担当する。 `{META_3TierSeparation}`
 
 ## 3. 静的モデル
 

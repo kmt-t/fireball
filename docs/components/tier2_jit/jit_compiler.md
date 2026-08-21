@@ -6,7 +6,7 @@ JIT Compiler は、WASMバイトコードを実行時にネイティブコード
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {GLOBAL_ComponentHarness} -->
-本コンポーネントは **Tier 2 (サブシステムドメイン)** に属し、Stateless Interface と Harness パターンを用いて構造化される。 `{META_3TierSeparation}` `{GLOBAL_ComponentHarness}`
+本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属し、JIT コンパイルパイプラインおよびマルチバッファキャッシュローテーションを統括する。Copy-and-Patchコード生成、Constexprアセンブラ、エントリスタブ、ホットスポット検出の深層責務は Tier 3 の各リーフコンポーネントへデコンポジションされる。 `{META_3TierSeparation}` `{GLOBAL_ComponentHarness}`
 
 ## 3. 静的モデル
 

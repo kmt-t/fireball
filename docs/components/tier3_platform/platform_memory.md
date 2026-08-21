@@ -5,8 +5,8 @@
 メモリマネージャ（`memory-manager`）は、システム全体の統合物理メモリプール（`ConsolidatedHeap`）を基礎とし、そこからホスト（WASMランタイム）用のヒープ、および各VM/タスク用のヒープを、それぞれ物理的・領域的に完全に独立した別個のヒープ（`GLOBAL_IndependentHeap`）として切り出して管理する。これにより、特定のVMでのメモリ不足が他のVMやホストランタイムを道連れにしてクラッシュすることを防止する。 `{META_3TierSeparation}` `{GLOBAL_Policy_Memory}` `{ConsolidatedHeap}` `{GLOBAL_IndependentHeap}`
 
 ## 2. アーキテクチャ分類
-<!-- traceability: {WasmPageAlignment} -->
-本コンポーネントは **Tier 2 (サービスドメイン)** に属する。動的メモリ確保（ヒープアロケーション）は一切行わず、コンパイル時に固定された静的パーティション内でのアロケーションのみを管理する。 `{WasmPageAlignment}`
+<!-- traceability: {META_3TierSeparation} {WasmPageAlignment} -->
+本コンポーネントは **Tier 3 (プラットフォーム / リーフコンポーネント: Leaf Component)** に属し、システム統合物理メモリプールおよび独立ヒープパーティションの静的アロケーション管理を担当する。 `{META_3TierSeparation}` `{WasmPageAlignment}`
 
 ## 3. 静的モデル
 

@@ -6,7 +6,7 @@ constexpr Assembler は、C++のコンパイル時計算（`constexpr`）機能�
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {META_Static_Resolution} {ZeroRuntimeOverhead} -->
-本コンポーネントは **Tier 3 (実装ドメイン)** に属する。C++のコンパイル時機能に依存したスタティックなライブラリとして機能し、実行時のオーバーヘッドを持たない。 `{META_3TierSeparation}` `{META_Static_Resolution}` `{ZeroRuntimeOverhead}`
+本コンポーネントは **Tier 3 (詳細リーフコンポーネント: Leaf Component)** に属し、JIT コンパイラ (`jit_compiler.md`) から分解された C++ コンパイル時命令エンコード（`constexpr` DSL）を担当する。 `{META_3TierSeparation}` `{META_Static_Resolution}` `{ZeroRuntimeOverhead}`
 
 ## 3. 静的モデル
 

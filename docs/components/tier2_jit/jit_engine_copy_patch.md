@@ -6,7 +6,7 @@ Copy-and-Patch Engine は、WASM 命令に対応する事前生成されたネ�
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {JIT_CopyAndPatch} -->
-本コンポーネントは **Tier 3 (実装ドメイン)** に属する。JITコンパイラの内部アルゴリズムとして機能し、特定のアーキテクチャに依存したコード生成に特化したモジュールである。 `{META_3TierSeparation}` `{JIT_CopyAndPatch}`
+本コンポーネントは **Tier 3 (詳細リーフコンポーネント: Leaf Component)** に属し、JIT コンパイラ (`jit_compiler.md`) から分解された事前生成ネイティブ命令テンプレートのコピー＆パッチ結合エンジンを担当する。 `{META_3TierSeparation}` `{JIT_CopyAndPatch}`
 
 ## 3. 静的モデル
 

@@ -1,49 +1,75 @@
 # Fireball ドキュメント体系定義書 (Document Structure & Metadata)
 
-この文書は `docs/**` における階層、メタキーワード、traceability の正本である。下位文書で表記が揺れた場合はこの文書を優先する。
+この文書は `docs/**` における階層構造（Tier）、メタキーワード、トレーサビリティの正本である。下位文書で表記が揺れた場合はこの文書を優先する。
 
-本ドキュメントは、Fireballプロジェクトにおける設計書（仕様書）の配置ルール、システム階層（Tier）との対応関係、およびドキュメント間の一貫性検証のための「依存性ルール（メタ定義）」を定義する。 `{META_AI_Native_Dev}`
+本ドキュメントは、Fireball プロジェクトにおける設計書の配置ルール、**設計複雑度（Complexity）に基づくシステム分解階層（Decomposition Tiers）**の定義、およびドキュメント間の一貫性検証のための依存性ルールを定義する。 `{META_AI_Native_Dev}`
 
 ---
 
-## 1. ドキュメント階層とフォルダ構成の定義
+## 1. 設計複雑度に基づく Tier（分解階層）の定義
 
-システムは機能の抽象度に応じて4つのTier（0〜3）に分割され、各設計書は対応するディレクトリに厳格に配置されなければならない。
+Fireball では、システム全体の認知負荷、形式検証（モデル検査）の状態空間爆発、および仕様変更の影響を局所化・制御するため、**「設計複雑度に応じた階層的デコンポジション（分解）」**を採用する。
 
-| レイヤー | ディレクトリ | 定義される設計書 | 抽象度 |
+Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、**「複雑すぎるコンポーネントを扱いやすい粒度のサブコンポーネントへブレークダウンした深さ（Decomposition Depth）」**を表す。
+
+```
+[ Tier 0: システム要求仕様 (Requirements) ] ─ (最上位要求: Why)
+           │
+           │  システム主要責務への分解
+           ▼
+[ Tier 1: 主要システムコンポーネント (Primary Components) ] ─ (What)
+  · COOS (os_coos, os_scheduler)
+  · Interface (ipc_router, system_service, interface_wit)
+  · System Core (system_config, system_logging, system_syscall)
+           │
+           │  複雑な状態空間・機能のサブシステム分解
+           ▼
+[ Tier 2: 分解されたサブコンポーネント (Decomposed Subcomponents) ] ─ (How - Subsystem)
+  · vSoC Subsystem (runtime_vsoc, runtime_loader, runtime_interpreter, runtime_vmmio, wasm_instruction)
+  · JIT Subsystem (jit_compiler)
+  · Debug Subsystem (debug_manager)
+  · Configuration Details (system_config_details)
+           │
+           │  深層コンポーネント・プラットフォーム具象化への分解
+           ▼
+[ Tier 3: リーフ / プラットフォームコンポーネント (Leaf & Platform Components) ] ─ (How - Leaf / Physical)
+  · JIT Internals (jit_engine_copy_patch, jit_assembler_constexpr, jit_runtime_entry, jit_runtime_hotspot)
+  · Debug Internals (debug_gdb_rsp)
+  · Platform (platform_hal, platform_memory)
+
+[ Meta: 横断的メタ設計・開発計画 (Cross-cutting / Meta) ] ─ (全Tier横断)
+  · Architecture (architecture_overview, concept_harness, document_structure, resource_budget)
+  · Plans (roadmap_phase, backlog_list, backlog_archive)
+```
+
+### 1.1 各 Tier の定義と配置ディレクトリ
+
+| レイヤー | ディレクトリ | 定義される設計書 | 複雑度・責務の範囲 |
 | :--- | :--- | :--- | :--- |
-| **Tier 0** | `docs/requires/` | システム要求仕様書 (`requirement_list.md`) | 最高（要件定義） |
-| **Tier 1** | `docs/components/tier1_core/`<br>`docs/components/tier1_interface/` | スケジューラ、チャネル通信、システムサービス、IPCルータ等のコア仕様書 | 高（システムインターフェース・コアポリシー） |
-| **Tier 2** | `docs/components/tier2_runtime/`<br>`docs/components/tier2_jit/` | WASMインタープリタ、WASMローダー、JITエンジン等の実行エンジン仕様書 | 中（エンジン内部設計・メモリ管理） |
-| **Tier 3** | `docs/components/tier3_platform/` | HAL実装、プラットフォーム依存メモリ、ハードウェアドライバ等の物理・プラットフォーム抽象化仕様書 | 低（ハードウェア/プラットフォーム依存） |
-| **Meta** | `docs/architecture/`<br>`docs/plans/` | 全体アーキテクチャ、設計方針、開発計画（Hypervisorそのものの仕様には含まれないメタ設計） | 適用外（メタ仕様） |
+| **Tier 0** | `docs/requires/` | システム要求仕様書 (`requirement_list.md`) | **最上位要求 (Why)**<br>システム全体が満たすべき受入基準・機能要求。 |
+| **Tier 1** | `docs/components/tier1_core/`<br>`docs/components/tier1_interface/` | スケジューラ、チャネル通信、システムサービス、IPCルータ等のコア仕様書 | **粗粒度主要コンポーネント (What)**<br>要求（Tier 0）を直接受け取る。単一仕様書で状態遷移・ポリシーを自己完結して記述可能なシステム要素。 |
+| **Tier 2** | `docs/components/tier2_runtime/`<br>`docs/components/tier2_jit/` | WASMインタープリタ、WASMローダー、vMMIO、JITコンパイラ等のサブコンポーネント仕様書 | **分解されたサブコンポーネント (How - Subsystem)**<br>Tier 1 で扱うには状態空間やアルゴリズムが複雑化するため、独立した責務としてブレークダウンされた要素。 |
+| **Tier 3** | `docs/components/tier3_platform/` (および JIT/Debug の深層仕様) | HAL実装、物理メモリ管理、Copy-and-Patchコード生成器、Constexprアセンブラ、GDB RSP等 | **詳細リーフ / 物理コンポーネント (How - Leaf)**<br>Tier 2 からさらに責務が切り出された具象コンポーネント、またはハードウェア抽象化層。 |
+| **Meta** | `docs/architecture/`<br>`docs/plans/` | 全体アーキテクチャ、設計方針、開発計画 | **全Tier横断メタ設計**<br>Hypervisor の機能コンポーネント自体には属さない共通ポリシー・計画。 |
 
 ---
 
-## 2. 階層間依存性（トレーサビリティ）ルール
+## 2. 階層間デコンポジションと依存性ルール
 
-自動テストツール `spec-integrator` は、本ドキュメントに定義されたTierマッピングに基づいて、各ドキュメントの階層一貫性を検証する。
+自動検証ツール `spec-integrator` は、本ルールに基づいてコンポーネント間の階層一貫性（Hierarchy Gate）およびトレーサビリティ（Traceability Gate）を検証する。
 
-### 2.1 依存方向のルール
-1. **下り方向の依存（詳細化）**:
+### 2.1 デコンポジション基準（いつ下位 Tier へ分解するか）
+1. **単一責務・複雑度制御の原則**: コンポーネントが複数の独立した状態機械・アルゴリズムを持つ場合、単一仕様書に肥大化させず、サブコンポーネントとして分解して Tier を 1 つ下げる。
+2. **検証可能性（Verification Tractability）の維持**: 形式検証（pyModelChecking等）において状態空間が爆発しない単位に状態遷移モデルを区切る。
+3. **親コンポーネントのカプセル化**: 分解元（上位Tier）は、分解先（下位Tier）の内部実装パラメータに依存せず、抽象インターフェースのみで統合する。
+
+### 2.2 依存方向のルール
+1. **下り方向の依存（詳細化・具体化）**:
    - 上位 Tier (N) の定義や要求は、下位 Tier (N+1) において具体化（詳細化）される。
-   - 下位 Tier は上位 Tier のインターフェースや定数定義を明示的に参照して実装しなければならない。
-2. **上り方向の依存禁止（カプセル化）**:
-   - 上位 Tier (N) が、より下位の Tier (N+1, N+2) の具象ハードウェアや具体的な実装詳細に直接依存してはならない（抽象化漏れの禁止）。
-   - 上位 Tier が下位の機能を利用する場合、必ず Tier 1 または Tier 2 で定義された抽象インターフェースを介し、静的DI（コンパイル時解決）の原則に従うこと。
-
-### 2.2 階層検証における親子関係（ペア）の対応
-階層検証では、以下のレイヤー間での一貫性とカプセル化違反を監査する。
-
-* **Tier 1 検証**:
-  - 親ドキュメント: `docs/requires/requirement_list.md` (Tier 0)
-  - 子ドキュメント: `docs/components/tier1_core/*`, `docs/components/tier1_interface/*`
-* **Tier 2 検証**:
-  - 親ドキュメント: `docs/components/tier1_core/*`, `docs/components/tier1_interface/*`
-  - 子ドキュメント: `docs/components/tier2_runtime/*`, `docs/components/tier2_jit/*`
-* **Tier 3 検証**:
-  - 親ドキュメント: `docs/components/tier2_runtime/*`, `docs/components/tier2_jit/*`
-  - 子ドキュメント: `docs/components/tier3_platform/*`
+   - 下位 Tier は上位 Tier のインターフェースや定数定義を明示的に参照（Refine）して実装する。
+2. **上り方向の依存禁止（カプセル化・逆流禁止）**:
+   - 上位 Tier (N) が、より下位の Tier (N+1, N+2) の内部具象構造や下位パラメータに直接依存してはならない。
+   - 上位コンポーネントが下位の機能を束ねる場合（例: vSoC ハーネス）、必ず定義されたインターフェース（Stateless Interface / Harness）を介して統合すること。
 
 ---
 
@@ -58,30 +84,26 @@
 
 ## 4. 特殊キーワードの分類と検証仕様
 
-Fireball プロジェクトでは、一貫性・トレーサビリティ検証をノイズなく高速に実行するため、キーワードを以下の3つに分類して管理する。
-
 ### 4.1 分類基準と検証時の挙動
 
-| 分類 | 命名規則 | 定義対象 | 検証時（tools）の挙動 |
+| 分類 | 命名規則 | 定義対象 | 検証時（spec-integrator）の挙動 |
 | :--- | :--- | :--- | :--- |
-| **メタキーワード** | `{META_[Name]}` | 検証ツール（doc_test_llm）の制御、およびLLMに適用する横断的な開発・コーディング規約。 | - 階層検証 (`--hierarchy`) の親子関係マッチングから除外される。<br>- 仕様書ペア整合性 (`S-ARCH-CHECKLIST`) の生成・検証から除外される。<br>- LLMのシステムポリシーとして読み込まれる。 |
-| **グローバルキーワード** | `{GLOBAL_[Name]}` | システム全体（5つ以上の多数の仕様書）に適用される広域ポリシー、またはプラットフォーム要件。 | - 各仕様書の単体要求適合性 (`S-TRACE-ALIGN`) では**検証される**。<br>- 仕様書ペア整合性 (`S-ARCH-CHECKLIST`) では、重複・ノイズ削減のため**除外される**。 |
-| **ローカルキーワード** | `{[Name]}` (プレフィックスなし) | 個別の機能、コンポーネント（スケジューラ、チャネル通信など）に閉じた具体的な要求。 | - すべての単体検証 (`S-TRACE-ALIGN`) およびペア整合性検証 (`S-ARCH-CHECKLIST`) の対象となる。 |
+| **メタキーワード** | `{META_[Name]}` | システム横断的な非機能要求、アーキテクチャ設計方針、共通パターン。 | - 階層検証 (`Hierarchy Gate`) の逆流判定から除外される。<br>- LLM as a Judge の意味的監査基準として読み込まれる。 |
+| **グローバルキーワード** | `{GLOBAL_[Name]}` | システム全体（多数の仕様書）に適用される広域ポリシー、プラットフォーム要件。 | - 各仕様書の単体要求適合性 (`Traceability Gate`) で検証される。 |
+| **ローカルキーワード** | `{[Name]}` (プレフィックスなし) | 個別の機能、コンポーネント（スケジューラ、チャネル通信など）に閉じた具体的な要求。 | - Traceability Gate および DocGraph 上のすべての追跡対象となる。 |
 
 ---
 
 ### 4.2 メタキーワード（共通非機能要件・設計方針）の定義
 
-メタキーワードは、特定のコンポーネントや個別の機能に閉じない、システム横断的な非機能要求、アーキテクチャ設計方針、および共通の実装パターンを表す。
-
 | キーワード | 説明 |
 | :--- | :--- |
-| `{META_3TierSeparation}` | アーキテクチャ、サブシステム、実装の3層に厳密に分離し、依存関係を管理する。 |
-| `{META_ConfigurableSystem}` | ヘッダファイルのマクロ定義によりシステムパラメータを固定する。 |
+| `{META_3TierSeparation}` | 設計複雑度に応じた3階層のデコンポジション（分解）とカプセル化された依存関係管理。 |
+| `{META_ConfigurableSystem}` | ヘッダマクロ定義および `constexpr` 定数により、システムパラメータをコンパイル時に静的確定する。 |
 | `{META_FaultIsolation}` | メモリパーティションにより、コンポーネント間の障害伝播を防止する。 |
-| `{META_RecoveryStrategy}` | エラーコードの代わりに推奨されるリカバリー動作（Retry/Panic等）を返す。 |
+| `{META_RecoveryStrategy}` | エラーコードの代わりに推奨されるリカバリー動作（Retry/Panic等）を返し、自己修復を促進する。 |
 | `{META_RestrictedPhysicalAccess}` | 物理リソースへのアクセスを許可テーブルで厳格に制限する。 |
-| `{META_StaticDI}` | コンパイル時の設定により依存性を注入する。 |
+| `{META_StaticDI}` | コンパイル時の設定・静的バインディングにより依存性を注入する。 |
 | `{META_AI_Native_Dev}` | 定型的な実装はLLMを活用し、設計と検証の品質を重視する。 |
 | `{META_Risk_Tiering}` | リスクベースの設計階層化。重要度や不確実性に応じて検証レベルを調整する。 |
 | `{META_SpecificationFirst}` | 実装に先立ち、形式仕様や契約を定義する開発スタンス。 |
@@ -91,39 +113,23 @@ Fireball プロジェクトでは、一貫性・トレーサビリティ検証�
 | `{META_CompileTimeValidation}` | 静的な型チェックやconstexprにより、コンパイル時に不正を検知する。 |
 | `{META_NoStdVector}` | 動的な `std::vector` の使用を禁止し、固定長またはカスタムコンテナを使用する。 |
 | `{META_BumpAllocator}` | メモリの断片化を防ぎ、コンパイル時または実行時に高速なメモリ割り当てを行うアロケータ。 |
-| `{META_FlatMapIndexed}` | C++23 std::flat_map を用いて、データの順序維持と高速検索を最小限のメモリで実現する。 |
-| `{META_BinarySearch}` | ソート済み配列に対する $O(\log N)$ の高速検索。flat_map の利用を推奨。 |
+| `{META_FlatMapIndexed}` | ソート済み配列や `static_flat_map`、二段テーブル等を用いて、順序維持と高速検索を省メモリで実現する。 |
+| `{META_BinarySearch}` | ソート済み配列に対する $O(\log N)$ の高速検索。 |
 | `{META_AccessDictionary}` | データの索引化と、それを用いたランタイムアクセスの最適化。 |
 
 ---
 
 ### 4.3 グローバルキーワード（広域仕様・横断ポリシー）の定義
 
-グローバルキーワードは、多数のコンポーネント仕様書（仕様書間の境界）で共有される広域的なポリシーやプラットフォーム要件を表す。
-
 | キーワード | 説明 |
 | :--- | :--- |
 | `{GLOBAL_Policy_Memory}` | メモリ管理や割り当てに関する共通ポリシー。 |
 | `{GLOBAL_StrictMemoryLimit}` | メモリの上限が厳格に制限された動作。 |
 | `{GLOBAL_IndependentHeap}` | 各コンポーネントが互いに独立したヒープメモリ領域を確保する設計。 |
-| `{GLOBAL_IdleDetection}` | アイドル状態の検出とパワーマネジメント制御。 |
+| `{GLOBAL_IdleDetection}` | アイドル状態の検出とログフラッシュ・バックグラウンド処理制御。 |
 | `{GLOBAL_PeriodicTask}` | 周期的に実行されるタスクスケジュール。 |
-| `{GLOBAL_ComponentHarness}` | テストや検証を容易にするためのテストハーネス。 |
+| `{GLOBAL_ComponentHarness}` | テストや検証、サブコンポーネント統合のためのハーネスパターン。 |
 | `{GLOBAL_InterruptWakeup}` | 割り込み契機による待機解除・復帰処理。 |
 | `{GLOBAL_UseCpp20Coroutine}` | C++20 コルーチンの使用方針。 |
 | `{GLOBAL_UseCpp23Library}` | C++23 標準ライブラリ機能の使用方針。 |
 | `{GLOBAL_StaticScalability}` | 静的にパラメータ化されたスケーラビリティ。 |
-
----
-
-### 4.4 ルールスコープ（文書規約の適用範囲）
-
-ルール本文の重複は、スコープが異なる場合に限り意図的とみなす。  
-基本は `GLOBAL` と `LOCAL` に分け、必要に応じて `OVERRIDE` と `REFERENCE` を補助的に使う。
-
-| スコープ | 定義 | 典型的な置き場所 | 重複の扱い |
-| :--- | :--- | :--- | :--- |
-| `GLOBAL` | リポジトリ横断の不変条件や共通方針。 | `CLAUDE.md`、`.claude/rules/development-policy.md`、コード系の共通規約。 | ローカル文書では要約または参照に留める。 |
-| `LOCAL` | 特定のディレクトリや文書群に閉じる規約。 | `.claude/rules/documentation*.md`、`.claude/rules/format_*.md`、`docs/components/**`。 | 対象範囲内では直接記述してよい。 |
-| `OVERRIDE` | `GLOBAL` を明示的に上書きする例外。 | 例外を定義する個別文書。 | 何を上書きするかを明記する。 |
-| `REFERENCE` | 実体は別文書にあり、入口だけを示す。 | `README`、入口ガイド。 | 本文を繰り返さずリンクだけ置く。 |

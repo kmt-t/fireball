@@ -6,7 +6,7 @@ vSoC (Virtual System-on-Chip) は、WASM実行環境の統合マネージャで�
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {GLOBAL_ComponentHarness} -->
-本コンポーネントは **Tier 2 (サブシステムドメイン)** に属し、Stateless Interface と Harness パターンを用いて構造化される。 `{META_3TierSeparation}` `{GLOBAL_ComponentHarness}`
+本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属し、WASM仮想実行環境として Loader, Interpreter, JIT, vMMIO, Debugger などのサブコンポーネント群をハーネスパターンによって統合する。 `{META_3TierSeparation}` `{GLOBAL_ComponentHarness}`
 
 ## 3. 静的モデル
 

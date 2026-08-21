@@ -6,7 +6,7 @@ WASMローダは、ROM上のWASM32バイナリをパースし、実行環境が�
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->
-本コンポーネントは **Tier 3 (実装ドメイン)** に属する。WASMバイナリの解析と索引構築に特化した単一責務のモジュールとして設計する。 `{META_3TierSeparation}`
+本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属し、vSoC (`runtime_vsoc.md`) から分解された WASM バイナリのパース・検証および ROM 上の索引構築（ModuleView）を担当する。 `{META_3TierSeparation}`
 
 ## 3. 静的モデル
 

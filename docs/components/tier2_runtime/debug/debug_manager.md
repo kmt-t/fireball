@@ -6,7 +6,7 @@
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->
-本コンポーネントは **Tier 3 (実装ドメイン)** に属する。GDB RSPコマンドの実行制御に特化した単一責務のモジュールとして設計する。 `{META_3TierSeparation}`
+本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属し、vSoC (`runtime_vsoc.md`) から分解されたデバッグ状態制御およびブレークポイント管理を担当する。プロトコル解析の詳細は Tier 3 (`debug_gdb_rsp.md`) にデコンポジションされる。 `{META_3TierSeparation}`
 
 ## 3. 静的モデル
 

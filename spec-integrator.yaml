@@ -9,27 +9,27 @@ tiers:
   - tier: 0
     name: "Requirements"
     path_pattern: 'requires/.*\.md'
-    description: "システム要求仕様書（正本）"
+    description: "システム最上位要求仕様書（Why）"
 
   - tier: 1
-    name: "Core & Interface"
+    name: "Primary Components"
     path_pattern: 'components/tier1_.*\.md'
-    description: "システムコア・共通インターフェース仕様書"
+    description: "粗粒度主要システムコンポーネント（What）"
 
   - tier: 2
-    name: "Runtime & Engine"
+    name: "Decomposed Subcomponents"
     path_pattern: 'components/tier2_.*\.md'
-    description: "実行エンジン・JIT仕様書"
+    description: "分解されたサブコンポーネント群（How - Subsystem）"
 
   - tier: 3
-    name: "Platform & HAL"
+    name: "Leaf & Platform Components"
     path_pattern: 'components/tier3_.*\.md'
-    description: "ハードウェア・プラットフォーム抽象化仕様書"
+    description: "詳細リーフおよびプラットフォームコンポーネント（How - Leaf）"
 
   - tier: "meta"
     name: "Architecture & Plans"
     path_pattern: '(architecture|plans)/.*\.md'
-    description: "全体アーキテクチャ・開発計画"
+    description: "全Tier横断メタ設計・開発計画"
 
 keywords:
   meta:
@@ -57,7 +57,7 @@ llm_judge:
   backends:
     sakura:
       api_key_env: "SAKURA_API_KEY"
-      model: "sakura-ai-model"
+      model: "gpt-oss-120b"
     ollama:
       endpoint: "http://localhost:11434"
       model: "llama3"

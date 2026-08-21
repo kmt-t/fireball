@@ -6,7 +6,7 @@ COOSは、シングルスレッド環境向けのホーアCSPベースのグリ�
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {GLOBAL_ComponentHarness} -->
-本コンポーネントは **Tier 2 (サブシステムドメイン)** に属し、Stateless Interface と Harness パターンを用いて構造化される。 `{META_3TierSeparation}` `{GLOBAL_ComponentHarness}`
+本コンポーネントは **Tier 1 (主要システムコンポーネント: Primary Component)** に属し、システム要求 (Tier 0) を受けて協調型タスク実行基盤およびCSPチャネル通信を提供する。 `{META_3TierSeparation}` `{GLOBAL_ComponentHarness}`
 
 ### 2.1 構成要素
 <!-- traceability: {META_3TierSeparation} {GLOBAL_ComponentHarness} -->

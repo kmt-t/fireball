@@ -106,7 +106,7 @@ Key-Valueペアを複数集約した通信の基本単位。内部的に、動�
 - **異常時リカバリ (Drop Handler)**: `{IPC_DropHandler}`
     - メッセージがキュー内で滞留中に送信先が Kill された場合、キューのデストラクタ（Dropハンドラ）が In-flight リソースを強制回収し、リークを防止する。
 
-※ 厳格なノンブロッキング送信と所有権巻き戻しロジックによるデッドロック不在は、`formal/csp_handoff_model.py` により形式モデル化される。
+※ 所有権移譲プロトコルの二重所有不在および有限解決性は、`formal/csp_handoff_model.py` により変異検査付き形式モデルとして検証される。トポロジレベルのデッドロック不在は、非循環チャネル依存規律（クライアント・サーバ規律）に基づき静的に担保される。
 
 
 
@@ -421,21 +421,19 @@ IPCのプリミティブ性を隠蔽し、依存性の逆転 (IoC) を実現す�
 
 | 不変条件 | 説明 | 検証方法 |
 | :--- | :--- | :--- |
-| **所有権単調性** | リソース所有権が Sender → In-flight → Receiver と一方向に移譲され、二重所有が発生しないこと。`{OwnershipTransfer}` `{IPC_ZeroCopy}` | pyModelChecking 状態不変式 (`AG(...)`) |
-| **デッドロック不在** | 送信側がブロックされた状態で受信側もブロックされるサイクルが存在しないこと。`{Challenge_CspHandoffStarvation}` | pyModelChecking CTL モデル検査 |
-| **In-flight リソース一貫性** | In-flight 状態のリソースは、キュー内で正確に1つだけ存在し、かつ任意の時点で回収可能であること。`{IPC_DropHandler}` | pyModelChecking アクションガード検証 |
-| **メッセージ順序** | 同一チャネル上のメッセージは FIFO 順で処理されること。 | pyModelChecking 順序付け不変式 |
+| **所有権単調性** | リソース所有権が Sender → In-flight → Receiver と一方向に移譲され、二重所有が発生しないこと。`{OwnershipTransfer}` `{IPC_ZeroCopy}` | `formal/csp_handoff_model.py` CTL 安全性検証 (`AG(Not(sender_owns & receiver_owns))` ➔ True) |
+| **デッドロック不在** | クライアント・サーバ規律（非循環チャネル依存）により、Send/Recv の循環待ちデッドロックが発生しないこと。`{Challenge_CspHandoffStarvation}` | 静的トポロジ非循環性検査（CI/ビルド時） |
+| **In-flight 有限解決性** | In-flight 状態のリソースは、Grant / Drop回収 / Rollback のいずれかにより必ず有限ステップで解決すること。`{IPC_DropHandler}` | `formal/csp_handoff_model.py` CTL 進行性検証 (`AG(in_flight -> AF(not in_flight))` ➔ True) |
+| **メッセージ順序** | 同一チャネル上のメッセージは FIFO 順で処理されること。 | 静的 FIFO SPSC キュー構造 |
 
 ### 6.2 検証対象のプロパティ
 
 - **Safety**: 
-  - デッドロック不在 `{Challenge_CspHandoffStarvation}`
-  - 所有権競合不在 `{IPC_ZeroCopy}`
-  - メモリリーク不在（Drop Handler動作確認）`{IPC_DropHandler}`
+  - 二重所有不在（所有権競合不在）`{IPC_ZeroCopy}`
+  - メモリリーク不在（Drop Handler による In-flight 回収）`{IPC_DropHandler}`
 
 - **Liveness**: 
-  - 応答は有限時間内に返される（キューイング遅延を除く）
-  - Revoke/Enqueue/Grant フェーズが必ず完了する
+  - In-flight 状態の有限解決性（Revoke/Enqueue/Grant または Drop/Rollback）
 
 ### 6.3 検証モデル概要
 
@@ -449,13 +447,13 @@ interrupt_flags: bitmask
 
 **初期状態:** sender_ownership=OWNED, receiver_ownership=NOTOWNED, channel_queue=<>, interrupt_flags=0
 
-**遷移:** Send → Revoke → Enqueue → Grant または Rollback
+**遷移:** Send → Revoke → Enqueue → Grant または Drop / Rollback
 
 **不変式:** 
 - `sender_ownership != OWNED ∨ receiver_ownership != OWNED` (二重所有不在)
 - `len(channel_queue) ≤ QUEUE_SIZE` (キュー有界性)
 
-※ CSP 所有権移譲プロトコルのデッドロック不在および二重所有不在は `formal/csp_handoff_model.py` によりモデル検査を実施する。
+※ CSP 所有権移譲プロトコルの二重所有不在および有限解決性は `formal/csp_handoff_model.py` により変異検査付きモデル検査を実施する。
 
 
 

@@ -1,6 +1,6 @@
 """
 docs/components/tier2_runtime/formal/vsoc_state_model.py
-pyModelChecking による vSoC 実行状態・Safepoint 応答性・Debugger 整合性の形式検証（証明）モデル
+pyModelChecking による vSoC 実行状態・Safepoint 応答性・Debugger 整合性の形式検証（証明・変異検査対応）モデル
 """
 
 from pyModelChecking import Kripke
@@ -12,15 +12,15 @@ BACKS = [
 ]
 
 
-def build_model() -> Kripke:
+def build_model(*, guards: bool = True) -> Kripke:
     """
-    vSoC 実行エンジン・割り込み Safepoint・デバッグフォールバックの保護証明モデル
+    vSoC 実行エンジン・割り込み Safepoint・デバッグフォールバックの保護証明・変異検査対応モデル
     - s_interpreter_run: インタープリタ実行中 (interp_mode, running)
     - s_jit_run: JIT ネイティブ実行中 (jit_mode, running)
     - s_safepoint_check: Safepoint ポーリング確認 (safepoint)
     - s_interrupt_handling: 割り込みイベント処理 (handling_irq)
     - s_debugger_paused: デバッガ一時停止 (paused, debug_safe)
-    - s_bad_irq_jit: 違反状態（割り込み処理中に JIT が無同期で直接暴走した状態。Safepoint 同期により到達不能）
+    - s_bad_irq_jit: 違反状態（割り込み処理中に JIT が無同期で直接暴走した状態）
     """
     S = [
         "s_interpreter_run",
@@ -48,9 +48,15 @@ def build_model() -> Kripke:
         ("s_interrupt_handling", "s_interpreter_run"),
         # デバッガ再開 ➔ インタープリタへ
         ("s_debugger_paused", "s_interpreter_run"),
-        # 違反状態（出る辺のみ。Safepoint 排他制御により入る辺を持たせず到達不能にする）
-        ("s_bad_irq_jit", "s_interpreter_run"),
+        # 違反状態の自己ループ
+        ("s_bad_irq_jit", "s_bad_irq_jit"),
     ]
+
+    if not guards:
+        # ガード無効時（変異検査）:
+        # Safepoint 同期を介さず JIT 実行中に直接割り込みを処理すると IRQ/JIT レース違反へ突入
+        R = R + [("s_jit_run", "s_bad_irq_jit")]
+
     L = {
         "s_interpreter_run": {"running", "interp_mode"},
         "s_jit_run": {"running", "jit_mode"},
@@ -90,7 +96,7 @@ def properties():
 
 if __name__ == "__main__":
     from pyModelChecking.CTL import modelcheck
-    km = build_model()
+    km = build_model(guards=True)
     for prop in properties():
         res = modelcheck(km, prop["formula"])
         passed = km.S0.issubset(res)

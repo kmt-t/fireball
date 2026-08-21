@@ -1,6 +1,6 @@
 """
 docs/components/tier2_jit/formal/jit_cache_model.py
-pyModelChecking による JIT 3面キャッシュ代謝・MPU W^X 実行安全性の形式検証（証明）モデル
+pyModelChecking による JIT 3面キャッシュ代謝・MPU W^X 実行安全性の形式検証（証明・変異検査対応）モデル
 """
 
 from pyModelChecking import Kripke
@@ -9,16 +9,16 @@ from pyModelChecking.CTL import AG, AF, And, Not, Imply, AtomicProposition
 BACKS = ["components/tier2_jit/jit_compiler.md"]
 
 
-def build_model() -> Kripke:
+def build_model(*, guards: bool = True) -> Kripke:
     """
-    JIT 3面キャッシュ（Active/Warm/Oldest）および MPU W^X 保護証明モデル
+    JIT 3面キャッシュ（Active/Warm/Oldest）および MPU W^X 保護証明・変異検査対応モデル
     - s_idle: アイドル状態 (RO+X, clean)
     - s_compiling: JIT パッチ書き込み中 (MPU RW+XN, writing)
     - s_synced: DSB/ISB メモリバリア完了 (MPU RO+X, synced)
     - s_active_exec: Active バンクでネイティブ実行 (RO+X, executing, in_active)
     - s_warm_obs: Warm バンクで観測実行 (RO+X, executing, in_warm)
     - s_oldest_eval: Oldest 到達時の Hot 判定 (RO+X, in_oldest)
-    - s_bad_rwx: 違反状態（MPU 設定ミスで W と X が同時に有効化した競合状態。MPU 保護により到達不能）
+    - s_bad_rwx: 違反状態（MPU 設定ミスで W と X が同時に有効化した競合状態）
     """
     S = [
         "s_idle",
@@ -46,9 +46,15 @@ def build_model() -> Kripke:
         # Oldest から再同期または破棄
         ("s_oldest_eval", "s_synced"),
         ("s_oldest_eval", "s_idle"),
-        # 違反状態（出る辺のみ。MPU 排他制御により入る辺を持たせず到達不能にする）
-        ("s_bad_rwx", "s_idle"),
+        # 違反状態の自己ループ
+        ("s_bad_rwx", "s_bad_rwx"),
     ]
+
+    if not guards:
+        # ガード無効時（変異検査）:
+        # MPU W^X 切替やメモリバリアを怠ると、書き込み中に実行権限が残存して W^X 違反へ突入
+        R = R + [("s_compiling", "s_bad_rwx")]
+
     L = {
         "s_idle": {"clean", "mpu_ro_x"},
         "s_compiling": {"writing", "mpu_rw_xn"},
@@ -89,7 +95,7 @@ def properties():
 
 if __name__ == "__main__":
     from pyModelChecking.CTL import modelcheck
-    km = build_model()
+    km = build_model(guards=True)
     for prop in properties():
         res = modelcheck(km, prop["formula"])
         passed = km.S0.issubset(res)

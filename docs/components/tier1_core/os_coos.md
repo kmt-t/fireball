@@ -245,7 +245,7 @@ struct CoValue {
 
 | 不変条件 | 説明 | 検証方法 |
 | :--- | :--- | :--- |
-| **デッドロック不在** | ノンブロッキング送信と有界ハンドオフにより、Send と Recv が循環待ちデッドロックに陥らないこと。`{Challenge_CspHandoffStarvation}` | `formal/coos_channel_model.py` CTL 安全性検証 (`AG(Not(deadlock))` ➔ True) |
+| **デッドロック不在** | 同期ランデブー通信において、クライアント・サーバ規律（非循環チャネル依存）および有界ハンドオフにより循環待ちデッドロックに陥らないこと。`{Challenge_CspHandoffStarvation}` | `formal/coos_channel_model.py` CTL 安全性検証 (`AG(Not(deadlock))` ➔ True) |
 | **二重所有不在** | 所有権アトミック移譲により、同一チャネルを複数タスクが同時に所有しないこと。 | `formal/coos_channel_model.py` CTL 安全性検証 (`AG(Not(double_owned))` ➔ True) |
 | **メインループ復帰保証** | 連続ハンドオフ上限 `FB_CONF_MAX_CONSECUTIVE_HANDOFFS` により、ハンドオフ連鎖から必ずスケジューラへ復帰すること。 | `formal/coos_channel_model.py` CTL 進行性検証 (`AG(at_max_limit -> AF(main_loop))` ➔ True) |
 | **状態一貫性** | タスク状態 (READY/BLOCKED/SUSPENDED) が各操作後も整合していること。 | 直交表（ケース1-7） |

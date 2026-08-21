@@ -330,10 +330,11 @@ JITエンジンの責務を、以下の独立したサブコンポーネント�
 
 ### 7.2 安全性制約と方策
 <!-- traceability: {PositionIndependentCode} {MemoryBoundaryCheck} -->
-- **目標**: 不正なコード実行の防止。
+- **目標**: 不正なコード実行および W^X 違反の防止。
 - **方策**: 
     - `{PositionIndependentCode}`: 生成コードを位置独立とし、配置場所の自由度を確保。
     - `Boundary Check`: コンパイル時にキャッシュ溢れを厳密にチェックし、溢れた場合は Old 領域を破棄して再利用。 `{MemoryBoundaryCheck}`
+    - `MPU W^X 保護`: Cortex-M33 PMSAv8 MPU を用い、JIT パッチ書き込み時は `RW+XN`、ネイティブ実行時は `RO+X` に切り替え、`__DSB(); __ISB();` メモリ・命令同期バリアを発行する。書き込みと実行の同時許可（RWX）を物理的に排除する。`formal/jit_cache_model.py` により変異検査付き形式モデルとして検証。
 
 ## 8. 設計判断 (ADR)
 <!-- traceability: {ADR_ScalableCodeOffset} {ADR_SafeQueuingOnHotMiss} -->

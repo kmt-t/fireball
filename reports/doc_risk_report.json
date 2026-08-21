@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-21T12:00:26.572479+00:00",
+  "generated_at": "2026-08-21T21:42:18.714810+00:00",
   "total_evaluated": 15,
   "formal_candidates_count": 12,
   "llm_candidates_count": 1,
@@ -72,18 +72,18 @@
         "{VERIFY_FORMAL}"
       ],
       "risk_factors": [
-        "Potential for deadlocks in the 1-entry synchronous 'channel' buffer during producer-consumer handoffs.",
-        "Ownership transfer risks in 'co_value' that could lead to use-after-free or double-free if not strictly managed.",
-        "Global state corruption risks within 'coos_context' due to concurrent access by the scheduler and CSP processes."
+        "Potential for deadlocks in the 1-entry synchronous channel buffer during producer-consumer handoffs.",
+        "Ownership transfer risks in `co_value` that could lead to use-after-free or double-free if not strictly managed.",
+        "Global state corruption risks within `coos_context` due to concurrent access by the scheduler and CSP processes."
       ],
-      "summary": "The specification describes a CSP-based concurrency model with synchronous channels and custom ownership management. The combination of single-entry buffers and ownership transfers creates a high risk of deadlocks and memory safety violations, necessitating formal verification of state transitions via LTL/CTL."
+      "summary": "The specification describes a CSP-based concurrency model with strict memory ownership. The combination of synchronous channels and custom ownership management creates a high-risk state space prone to deadlocks and race conditions, necessitating formal verification of liveness and safety properties via LTL/CTL."
     },
     {
       "section_id": "sec:components/tier1_core/os_coos.md#4.1 アルゴリズム",
       "file_path": "components/tier1_core/os_coos.md",
       "heading": "4.1 アルゴリズム",
       "tier": 1,
-      "complexity_score": 4,
+      "complexity_score": 5,
       "risk_score": 4,
       "formal_needed": true,
       "recommended_verification": "pyModelChecking",
@@ -91,12 +91,12 @@
         "{VERIFY_FORMAL}"
       ],
       "risk_factors": [
-        "CSP Handoff bypasses the scheduler, creating a non-standard state transition that could lead to priority inversion or scheduler state inconsistency.",
-        "Symmetric Transfer (Direct Context Switch) with extremely small stacks (2KB) risks corruption if the handoff logic does not strictly maintain stack invariants.",
-        "Race conditions between ISR-driven 'notify_interrupt' and the scheduler's yield-point drain mechanism.",
-        "Potential for deadlock or starvation if the Idle Detection logic incorrectly evaluates the 'all tasks blocked' state during high-frequency interrupt bursts."
+        "CSP Handoff bypasses the scheduler, creating a high risk of priority inversion or starvation if not strictly governed by a formal state machine.",
+        "Direct Context Switching via symmetric transfer in a 2KB stack environment is highly sensitive to stack corruption if the handoff sequence is not atomically verified.",
+        "Race conditions between ISR-driven 'notify_interrupt' and the scheduler's yield-point drain mechanism could lead to lost wakeups or deadlocks.",
+        "The Idle Detection logic depends on a complex conjunction of global states (all tasks blocked AND queue empty AND (logs present OR timeout)), which is prone to edge-case failures in liveness."
       ],
-      "summary": "The implementation of a CSP-style direct handoff and symmetric coroutine switching introduces high concurrency complexity. Bypassing the scheduler for O(1) transitions creates critical state-space risks regarding task ownership and liveness. Formal verification via LTL/CTL is required to prove the absence of deadlocks and ensure that the system always returns to a schedulable state."
+      "summary": "The implementation of a scheduler-bypass mechanism (CSP Handoff) combined with symmetric coroutine transfers and ISR-driven wakeups introduces significant concurrency complexity. The state space for task transitions is non-trivial and requires LTL/CTL verification to ensure deadlock-freedom and liveness, especially regarding the Idle task trigger conditions."
     },
     {
       "section_id": "sec:components/tier1_core/os_coos.md#4.2 状態遷移図 (SMD: COOS システムレベル)",
@@ -229,12 +229,12 @@
         "{VERIFY_FORMAL}"
       ],
       "risk_factors": [
-        "CSP Handoff via C++20 Symmetric Transfer bypasses the central scheduler, creating a potential for 'hidden' state transitions that may bypass global invariants.",
-        "Potential for deadlocks in the CSPWait <-> Running cycle if the 'opposite ready' condition is not atomically managed.",
-        "Race conditions between ISR event posting and the event loop dispatching tasks from InterruptWait to Ready.",
-        "Risk of priority inversion or starvation if the Ready queue tail-insertion logic does not account for task priority during CSP handoffs."
+        "CSP Handoff via C++20 Symmetric Transfer bypasses the central scheduler, creating a non-trivial state transition that could lead to orphaned tasks or inconsistent scheduler state if not atomically managed.",
+        "Potential for deadlocks in the CSPWait <-> Running cycle, especially when multiple tasks are contending for the same channel (Symmetric Transfer race conditions).",
+        "Liveness risk: The transition from CSP_WAIT to READY (opposite not ready) vs CSP_WAIT to RUNNING (handoff) requires strict invariant checking to prevent task starvation.",
+        "Interrupt-to-Event loop latency and potential priority inversion when ISRs post events that must be processed by the event loop before a task returns to READY."
       ],
-      "summary": "The design implements a high-performance scheduler using C++20 coroutines with a non-standard 'Symmetric Transfer' (CSP Handoff). This introduces significant concurrency complexity and bypasses traditional scheduler oversight, making it highly susceptible to deadlocks and race conditions. Formal verification via Kripke structures/LTL is required to prove liveness and safety properties of the handoff mechanism."
+      "summary": "The design implements a high-performance hybrid scheduler combining a standard ready-queue with C++20 coroutine symmetric transfers (CSP Handoff). The bypass of the scheduler during handoffs significantly increases the state space complexity and introduces risks of deadlocks and race conditions. Mathematical verification via Kripke structures/LTL is required to prove that no task remains permanently trapped in CSP_WAIT and that the TCB lifecycle remains consistent during direct jumps."
     },
     {
       "section_id": "sec:components/tier1_core/os_scheduler.md#ADR-SCHED-002: アルゴリズムの継続的改善と最適化",
@@ -302,9 +302,9 @@
         "Potential for memory aliasing or overlap between Guest RAM and vMMIO regions if boundary checks are not mathematically proven.",
         "Race conditions in the JIT Multi-Buffer Cache promotion logic (JIT_OldestOnly_Promote) during concurrent access/update cycles.",
         "Risk of out-of-bounds memory access if the partial page allocation (8KB) is not strictly enforced against the WASM page size (64KB) logic.",
-        "Security vulnerability if vMMIO isolation is bypassed via incorrect bit-masking of the 0x80000000 base address."
+        "Security vulnerability if vMMIO isolation is bypassed due to incorrect bit-masking in the 2-stage direct decode process."
       ],
-      "summary": "While the section appears as a constant table, the underlying algorithms (Triple Buffering, FastAddressCheck, and vMMIO Isolation) involve critical state transitions and memory safety invariants. The discrepancy between the WASM page size (64KB) and the actual allocated RAM (8KB) creates a high-risk boundary condition that requires formal LTL/CTL verification to ensure no illegal memory access occurs."
+      "summary": "While the section appears as a constant table, the underlying algorithms (Triple Buffering, FastAddressCheck, and vMMIO Isolation) involve critical state transitions and memory safety invariants. The discrepancy between WASM page size (64KB) and actual RAM size (8KB) creates a high-risk boundary condition that requires formal LTL/CTL verification to ensure no illegal memory access occurs."
     },
     {
       "section_id": "sec:components/tier1_core/system_config_details.md#2.7 型定義・予約値",

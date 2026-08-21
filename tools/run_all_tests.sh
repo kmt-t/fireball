@@ -25,8 +25,11 @@ MODEL=""
 MAX_SUBGRAPHS=10
 MAX_SECTIONS=15
 CLEAN_FLAG=""
-REPORT_PATH="doc_report.md"
-GRAPH_JSON_PATH="doc_graph.json"
+REPORTS_DIR="reports"
+REPORT_PATH="reports/doc_report.md"
+GRAPH_JSON_PATH="reports/doc_graph.json"
+
+mkdir -p "$REPORTS_DIR"
 
 usage() {
     cat <<'EOF'
@@ -105,7 +108,7 @@ echo "✔ Quality Gates & Formal Verification: PASSED"
 if [ "$RUN_ASSESS" -eq 1 ]; then
     echo ""
     echo ">>> [Phase 2/3] Running Content Complexity & Risk Assessment..."
-    ASSESS_ARGS=("run" "--system-certs" "--project" "tools/spec-integrator" "python" "-m" "spec_integrator.cli" "assess" "--config" "spec-integrator.yaml" "--backend" "$BACKEND" "--max-sections" "$MAX_SECTIONS" "-o" "doc_risk_report.json" "-r" "doc_risk_report.md")
+    ASSESS_ARGS=("run" "--system-certs" "--project" "tools/spec-integrator" "python" "-m" "spec_integrator.cli" "assess" "--config" "spec-integrator.yaml" "--backend" "$BACKEND" "--max-sections" "$MAX_SECTIONS" "-o" "reports/doc_risk_report.json" "-r" "reports/doc_risk_report.md")
     if [ -n "$MODEL" ]; then
         ASSESS_ARGS+=("--model" "$MODEL")
     fi
@@ -119,7 +122,7 @@ fi
 if [ "$RUN_LLM" -eq 1 ]; then
     echo ""
     echo ">>> [Phase 3/3] Running LLM as a Judge Semantic Audits..."
-    JUDGE_ARGS=("run" "--system-certs" "--project" "tools/spec-integrator" "python" "-m" "spec_integrator.cli" "judge" "--config" "spec-integrator.yaml" "--backend" "$BACKEND" "--max-subgraphs" "$MAX_SUBGRAPHS" "-o" "doc_judge_report.json")
+    JUDGE_ARGS=("run" "--system-certs" "--project" "tools/spec-integrator" "python" "-m" "spec_integrator.cli" "judge" "--config" "spec-integrator.yaml" "--backend" "$BACKEND" "--max-subgraphs" "$MAX_SUBGRAPHS" "-o" "reports/doc_judge_report.json")
     if [ -n "$MODEL" ]; then
         JUDGE_ARGS+=("--model" "$MODEL")
     fi

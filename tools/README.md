@@ -49,3 +49,15 @@ powershell tools/run_all_tests.ps1 -llm -backend sakura
 ## 3. 設定ファイル
 
 リポジトリルートの `spec-integrator.yaml` にて、Tier の正規表現パス、LLM バックエンド、モデル名、品質ゲートの有効/無効を設定できます。
+
+---
+
+## 4. レポート成果物 (reports/)
+
+検証実行時に以下の成果物が `reports/` ディレクトリ配下に自動出力されます：
+
+- `reports/doc_report.md`: 品質ゲート（Format, Traceability, Hierarchy, Formal, WIT）の監査レポート
+- `reports/doc_graph.json`: ドキュメント全体のトポロジー・依存関係グラフ
+- `reports/doc_risk_report.md`: コンテンツ複雑度・設計リスク・形式検証トリアージレポート
+- `reports/doc_risk_report.json`: リスク評価の構造化 JSON
+- `reports/doc_judge_report.json`: LLM as a Judge による意味的一貫性監査レポート

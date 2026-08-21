@@ -15,6 +15,11 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Split-Path -Parent $scriptDir
 Set-Location $repoRoot
 
+$reportsDir = Join-Path $repoRoot "reports"
+if (-not (Test-Path $reportsDir)) {
+    New-Item -ItemType Directory -Path $reportsDir | Out-Null
+}
+
 $cleanFlag = if ($clean) { "--clean" } else { "" }
 
 Write-Host "================================================================================" -ForegroundColor Cyan
@@ -23,7 +28,7 @@ Write-Host "====================================================================
 
 # Phase 1: Check
 Write-Host ">>> [Phase 1/3] Running Static & Formal Model Verification..." -ForegroundColor Yellow
-$checkArgs = @("run", "--system-certs", "--project", "tools/spec-integrator", "python", "-m", "spec_integrator.cli", "check", "--config", "spec-integrator.yaml", "--report", "doc_report.md", "--graph-json", "doc_graph.json")
+$checkArgs = @("run", "--system-certs", "--project", "tools/spec-integrator", "python", "-m", "spec_integrator.cli", "check", "--config", "spec-integrator.yaml", "--report", "reports/doc_report.md", "--graph-json", "reports/doc_graph.json")
 if ($clean) { $checkArgs += "--clean" }
 
 & uv @checkArgs
@@ -36,7 +41,7 @@ Write-Host "✔ Quality Gates & Formal Verification: PASSED" -ForegroundColor Gr
 # Phase 2: Assess (Complexity & Risk Assessment)
 if ($assess) {
     Write-Host "`n>>> [Phase 2/3] Running Content Complexity & Risk Assessment..." -ForegroundColor Yellow
-    $assessArgs = @("run", "--system-certs", "--project", "tools/spec-integrator", "python", "-m", "spec_integrator.cli", "assess", "--config", "spec-integrator.yaml", "--backend", $backend, "--max-sections", "$maxSections", "-o", "doc_risk_report.json", "-r", "doc_risk_report.md")
+    $assessArgs = @("run", "--system-certs", "--project", "tools/spec-integrator", "python", "-m", "spec_integrator.cli", "assess", "--config", "spec-integrator.yaml", "--backend", $backend, "--max-sections", "$maxSections", "-o", "reports/doc_risk_report.json", "-r", "reports/doc_risk_report.md")
     if ($model) { $assessArgs += @("--model", $model) }
     & uv @assessArgs
     if ($LASTEXITCODE -ne 0) {
@@ -51,7 +56,7 @@ if ($assess) {
 # Phase 3: Judge
 if ($llm) {
     Write-Host "`n>>> [Phase 3/3] Running LLM as a Judge Semantic Audits..." -ForegroundColor Yellow
-    $judgeArgs = @("run", "--system-certs", "--project", "tools/spec-integrator", "python", "-m", "spec_integrator.cli", "judge", "--config", "spec-integrator.yaml", "--backend", $backend, "--max-subgraphs", "$maxSubgraphs", "-o", "doc_judge_report.json")
+    $judgeArgs = @("run", "--system-certs", "--project", "tools/spec-integrator", "python", "-m", "spec_integrator.cli", "judge", "--config", "spec-integrator.yaml", "--backend", $backend, "--max-subgraphs", "$maxSubgraphs", "-o", "reports/doc_judge_report.json")
     if ($model) { $judgeArgs += @("--model", $model) }
     & uv @judgeArgs
     if ($LASTEXITCODE -ne 0) {
@@ -65,6 +70,6 @@ if ($llm) {
 
 Write-Host "`n================================================================================" -ForegroundColor Cyan
 Write-Host " Verification Pipeline Summary: SUCCESS" -ForegroundColor Green
-Write-Host " Report saved to: doc_report.md" -ForegroundColor Cyan
+Write-Host " Reports saved to: reports/" -ForegroundColor Cyan
 Write-Host "================================================================================" -ForegroundColor Cyan
 exit 0

@@ -13,6 +13,9 @@ Fireball Hypervisor のドキュメント品質、静的トレーサビリティ
 # 静的・形式・WIT 検証パイプラインの実行
 powershell tools/run_all_tests.ps1 -clean
 
+# 複雑度・設計リスク・形式検証トリアージ評価の実行
+powershell tools/run_all_tests.ps1 -assess -backend sakura
+
 # LLM as a Judge を有効化して実行
 powershell tools/run_all_tests.ps1 -llm -backend sakura
 ```
@@ -21,6 +24,9 @@ powershell tools/run_all_tests.ps1 -llm -backend sakura
 ```bash
 # 静的・形式・WIT 検証パイプラインの実行
 ./tools/run_all_tests.sh --clean
+
+# 複雑度・設計リスク・形式検証トリアージ評価の実行
+./tools/run_all_tests.sh --assess --backend sakura
 
 # LLM as a Judge を有効化して実行
 ./tools/run_all_tests.sh --llm --backend sakura
@@ -42,5 +48,4 @@ powershell tools/run_all_tests.ps1 -llm -backend sakura
 
 ## 3. 設定ファイル
 
-設定はルートの [`spec-integrator.yaml`](../spec-integrator.yaml) で管理されます。
-Tier パスマッピング、キーワード規則、形式検証タグ（`{VERIFY_FORMAL}`）、WIT 検証タグ（`{VERIFY_WIT}`）、LLM バックエンドが定義されています。
+リポジトリルートの `spec-integrator.yaml` にて、Tier の正規表現パス、LLM バックエンド、モデル名、品質ゲートの有効/無効を設定できます。

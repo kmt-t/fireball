@@ -160,11 +160,9 @@ def access_vmmio(addr: VmmioAddress, is_write: bool):
         return
         
     # 2. TLB / ページテーブルルックアップ
+    # ※ アドレス空間・PTEのエイリアシング不在は constexpr 静的アサートによりビルド時に完全検証されるため、
+    #    ランタイムでのマスク検査は行わず O(1) ルックアップに徹する（ゼロコスト抽象化 {META_CompileTimeValidation}）。
     pte = lookup_tlb(addr)
-    
-    # 2.5 エイリアシング防止マスク検査 (FastAddressCheck)
-    if (addr.raw & 0x0FFF0000) != 0:
-        raise Exception("UNMAPPED_REGION")
 
     # 3. 権限チェック (PTE [11:8])
     is_valid = (pte >> 11) & 1

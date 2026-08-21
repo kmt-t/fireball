@@ -82,33 +82,48 @@ Model Script: vsoc_state_model.py
 
 ---
 
-## 4. 検査器の進展: `mermaidx`（本物の Mermaid.js JS エンジン）の内蔵
+## 4. 検査器の進展: `mermaidx` 内蔵、ハードコード撤廃、網羅的しらみつぶし監査
 
-静的検証（Format Gate）における正規表現チェックを全廃し、組み込み JavaScript エンジン（QuickJS-ng / Mermaid.js）を内包する **`mermaidx`** を `spec-integrator` 内蔵バリデータとして統合した。
+### (a) `mermaidx`（本物の Mermaid.js JS エンジン）の内蔵
+静的検証（Format Gate）における正規表現チェックを全廃し、組み込み JavaScript エンジン（QuickJS-ng / Mermaid.js）を内包する **`mermaidx`** を `spec-integrator` 内蔵バリデータとして統合した。全 31 文書・60 個の Mermaid ダイアグラムが本物の Mermaid.js でレンダリング検証を通過した。
 
-- **効果**: 全 31 文書・60 個の Mermaid ダイアグラムを本物の AST/JS レンダリングエンジンで走査。
-- **発見された真の構文エラー**:
-  - `ipc_router.md:351`: `dequeue Q: return msg`（シーケンス図に存在しない不正構文）
-  - `runtime_vmmio.md:65`: 角括弧の不正ネスト
-  - `jit_compiler.md:44`: クォートなしコロン
-  これらをすべて是正し、全 60 ダイアグラムが本物の Mermaid.js でレンダリング検証を通過した。
+### (b) ツールからのドメイン単語・キーワードのハードコード完全撤廃
+`spec-integrator` が汎用ツールとして機能するよう、コード内に存在していた日本語・ドメイン特定単語（`"アルゴリズム"`, `"状態遷移"`, `"目次"` 等）のハードコードをすべて撤廃した。
+言語・ドメインに依存しない純粋なドキュメント構造特徴量（文字数 `len(body_text)`、タグ・キーワード参照数 `len(keywords)`、コードブロックや表の有無）に基づく汎用スコアリングに刷新した。
+
+### (c) LLM 意味監査 & リスク評価のしらみつぶし（網羅的）実行オプション
+- **`judge` (矛盾監査)**: `--exhaustive` / `--all`（全要件サブグラフ網羅）、`--min-references <N>`（参照しきい値設定）、Markdown レポート出力。
+- **`assess` (リスク評価)**: `--exhaustive` / `--all`（Requirements / Meta を含む全セクション網羅）、`--min-length <N>`（文字数しきい値設定）、`--tier <T>`（対象 Tier 絞り込み）。
+- パイプラインスクリプト（`run_all_tests.ps1` / `run_all_tests.sh`）にフラグを完全統合。
+
+### (d) `BACKS` 宣言に基づく形式検証モデルの直接解決
+モデルスクリプト内の `BACKS = [...]` 宣言をリポジトリ全体から事前インデックス化し、クロスコンポーネント連携（例: Tier 3 の HAL 割り込みセーフティと Tier 2 の Safepoint / 状態遷移モデルの連携）を正当に解決・裏付けできるように拡張した。
 
 ---
 
-## 5. R7 準拠の検証報告
+## 5. 設計仕様・README の不整合是正
+
+- **言語仕様の是正**: Fireball の設計仕様を `C++23` ➔ **`C23 and C++20`**（コルーチン `co_yield`、`constexpr`、Concept）に是正。
+- **主要ターゲット**: ARM Cortex-M33（PMSAv8 MPU, TrustZone 対応）。
+- `fireball/README.md` および `spec-integrator/README.md` の記述を最新の実装・8 ゲートパイプラインに同期。
+
+---
+
+## 6. R7 準拠の検証報告
 
 ### `spec-integrator check` 実行結果
 
-- **検査器リビジョン (R9)**: `spec-integrator @ 597733b`（未コミット変更なし、追試可能）
+- **検査器リビジョン (R9)**: `spec-integrator @ 0c4a305`（追試可能）
+- **メインリポジトリ**: `fireball @ edff7e8`
 - **検査結果**: **0 Errors, 0 Warnings (ALL GATES PASSED)**
 - **内訳**:
   - **Format Gate**: 🟢 PASS（全 60 Mermaid ダイアグラムが `mermaidx` JS エンジンで合格）
   - **Traceability Gate**: 🟢 PASS
   - **Hierarchy Gate**: 🟢 PASS
-  - **Formal Gate**: 🟢 PASS（4 モデル・5 安全性プロパティすべてが変異検査に合格）
+  - **Formal Gate**: 🟢 PASS（4 モデル・5 安全性プロパティすべてが変異検査に合格、BACKS 解決）
   - **WIT Gate**: 🟢 PASS
   - **Evidence Gate**: 🟢 PASS
-  - **Obligation Gate**: 🟢 PASS (12/12 義務完全履行)
+  - **Obligation Gate**: 🟢 PASS (**13/13 義務完全履行**)
   - **Consistency Gate**: 🟢 PASS
 
 > **注記**: 本報告は自動検査器（8 つの機械的品質ゲートおよび変異検査）の実行結果を示すものであり、仕様全体の妥当性および Phase 1 への移行判断は、オーナー（アーキテクト）の精読・レビューに委ねられる。
@@ -118,3 +133,4 @@ Model Script: vsoc_state_model.py
 以上。
 
 — Gemini
+

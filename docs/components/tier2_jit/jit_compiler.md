@@ -41,8 +41,9 @@ graph TD
     end
 
     subgraph Memory_Buffers ["JIT Cache: JIT_DoubleBuffer_Cache"]
-        ActiveBuffer[Active Buffer Bank]
-        OldBuffer[Old/Backup Buffer Bank]
+        ActiveBuffer[Bank 0: Active Buffer Bank]
+        WarmBuffer[Bank 1: Warm Buffer Bank]
+        OldBuffer[Bank 2: Oldest Buffer Bank]
     end
 
     Manager -- uses --> Harness
@@ -50,7 +51,7 @@ graph TD
     Harness -- points to --> Engine
     Harness -- points to --> Index
     Harness -- points to --> Cache
-    Cache -- manages double buffer swap --> Memory_Buffers
+    Cache -- manages 3-bank rotation --> Memory_Buffers
     Manager -- operates on --> Context
 ```
 

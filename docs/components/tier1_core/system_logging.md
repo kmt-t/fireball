@@ -90,11 +90,9 @@ stateDiagram-v2
     [*] --> Idle
     Idle --> Buffering: log_received
     Buffering --> DictTranslation: check dictionary offset
-    DictTranslation --> Buffering: translation completed / enqueue
-    Buffering --> Flushing: buffer_not_empty
+    DictTranslation --> Buffering: translation completed / enqueue (overwrite oldest on full)
+    Buffering --> Flushing: buffer_not_empty / idle_hook
     Flushing --> Idle: buffer_empty
-    Buffering --> Full: buffer_overflow
-    Full --> Flushing: space_available
 ```
 
 ### 4.5 内部シーケンス
@@ -108,7 +106,7 @@ sequenceDiagram
     participant HW as UART/DMA
     
     C->>L: IPC(dict_offset, args)
-    L->>RB: push(entry)
+    L->>RB: push(entry) / overwrite if full
     L-->>C: reply(OK)
     Note over L,HW: Background Process
     RB->>L: pop(entry)
@@ -132,7 +130,7 @@ sequenceDiagram
 | 機能概要 | 発生したイベントを、レベルと辞書オフセット形式で記録する。 |
 | シグネチャ | `auto log_event(level: uint8_t, offset: uint32_t, args: std::span<const uint32_t, 4>) -> log_result_t` |
 | 引数 | `level`: ログレベル重要度<br>`offset`: 辞書オフセット（32bit）<br>`args`: ログパラメータとなる数値配列（最大4要素の `std::span`） |
-| 戻り値 | `log_result_t` (成功時は `SUCCESS`、バッファフル時は `ERR_BUFFER_FULL` を返す。ただし、バッファフル時でもポリシーに基づき古いログを上書きし、例外は投げずにシステムの実行を継続する) |
+| 戻り値 | `log_result_t` (常に `SUCCESS` を返し、バッファ満杯時は最古ログを自動上書きしてシステムの実行継続性を最優先する) |
 | 期待する結果 | 正常：ログ情報がリングバッファにキューイングされる。 |
 
 #### バッファリング出力 (`flush`)

@@ -21,7 +21,7 @@
         "Risk of starvation or priority inversion in a non-preemptive cooperative multitasking environment",
         "State space explosion when integrating interrupt-driven wakeups with coroutine resumption"
       ],
-      "summary": "The system implements a Hoare CSP-based green thread OS using C++20 coroutines. While it aims to eliminate data races via ownership transfer, the reliance on synchronous message passing and cooperative scheduling introduces significant risks of deadlock and liveness failures. Mathematical verification of the state transitions and channel invariants via LTL/CTL is required."
+      "summary": "The system implements a Hoare CSP-based green-thread OS using C++20 coroutines. While it aims to eliminate data races via ownership transfer, the reliance on synchronous message passing and cooperative scheduling introduces significant risks of deadlock and liveness failures. Mathematical verification of the state transition system (Kripke structure) is required to prove the absence of deadlocks and ensure correct task synchronization."
     },
     {
       "section_id": "sec:components/tier1_core/os_coos.md#3.1 データ構造",
@@ -47,20 +47,20 @@
       "file_path": "components/tier1_core/os_coos.md",
       "heading": "4.1 アルゴリズム",
       "tier": 1,
-      "complexity_score": 4,
-      "risk_score": 5,
+      "complexity_score": 5,
+      "risk_score": 4,
       "formal_needed": true,
       "recommended_verification": "pyModelChecking",
       "suggested_tags": [
         "{VERIFY_FORMAL}"
       ],
       "risk_factors": [
-        "CSP Handoff and Direct Context Switch bypass the scheduler, creating non-standard state transitions that can lead to priority inversion or stack corruption if not atomically managed.",
-        "Race conditions between Interrupt Wakeup (ISR context) and Direct Context Switch (Task context) regarding the ownership of the task state (READY vs RUNNING).",
-        "Potential for deadlocks in the CSP Handoff mechanism if circular dependencies occur during immediate execution transfer.",
-        "Idle Detection logic depends on a global state (all tasks blocked AND queue empty), which is susceptible to race conditions during high-frequency interrupt bursts."
+        "CSP Handoff bypasses the scheduler, creating a non-standard state transition that could lead to priority inversion or orphaned tasks if not atomically managed.",
+        "Direct Context Switching via symmetric transfer in a 2KB stack environment is highly sensitive to register corruption and stack pointer misalignment.",
+        "Race conditions between Interrupt Wakeup (ISR) and the Direct Context Switch mechanism may lead to lost wake-up signals or corrupted task queues.",
+        "The Idle Detection logic depends on a global state (all tasks blocked AND queue empty), which is prone to race conditions in a multi-interrupt environment."
       ],
-      "summary": "The specification describes a high-performance OS core with non-standard scheduling bypasses (Direct Context Switch/CSP Handoff). The bypass of the central scheduler significantly increases the state space complexity and introduces critical risks regarding concurrency, atomicity, and liveness. Mathematical verification via Kripke structures/LTL is required to prove the absence of deadlocks and ensure that the system always returns to a schedulable state."
+      "summary": "The implementation of a scheduler-bypass mechanism (CSP Handoff) combined with symmetric coroutine transfers and ISR-driven wakeups introduces significant concurrency complexity. The state space for task transitions is non-trivial and requires formal LTL/CTL verification to ensure deadlock-freedom and liveness, especially given the strict 2KB memory constraint."
     },
     {
       "section_id": "sec:components/tier1_core/os_coos.md#4.2 状態遷移図 (SMD: COOS システムレベル)",
@@ -75,12 +75,12 @@
         "{VERIFY_FORMAL}"
       ],
       "risk_factors": [
-        "Direct Context Switch (CSP Handoff) bypasses standard scheduler queues, creating potential for priority inversion or deadlock if ownership transfer fails.",
-        "The transition from Idle/RunningTask to Recovery via memory faults requires strict invariant checking to ensure the Recovery state cannot be corrupted by the same fault that triggered it.",
-        "Potential for 'Livelock' between Recovery and Ready states if the root cause of the panic is not cleared during the recovery process.",
-        "Strict memory limits (GLOBAL_StrictMemoryLimit) combined with independent heaps may lead to resource exhaustion during context switches or handoffs."
+        "CSP Handoff and Direct Context Switch introduce non-standard scheduling paths that can bypass the scheduler's invariant checks, risking race conditions.",
+        "The transition from Idle/RunningTask to Recovery via memory faults requires strict proof that the Recovery state cannot be entered recursively or lead to a deadlock during resource reclamation.",
+        "Strict Memory Limit and Independent Heap constraints must be verified as invariants across all state transitions to prevent heap fragmentation or overflow during task spawning/recovery.",
+        "Potential for 'Livelock' between Recovery and Ready states if the root cause of the panic is not cleared during the recovery process."
       ],
-      "summary": "The system introduces high-risk concurrency patterns, specifically 'Direct Context Switching' and 'CSP Handoff', which bypass traditional scheduling. These mechanisms, combined with strict memory isolation and a recovery state machine, create a state space where race conditions and deadlocks are non-trivial to detect via testing. Mathematical verification of LTL/CTL properties is required to ensure liveness and safety during task handoffs and fault recovery."
+      "summary": "The system implements high-complexity concurrency patterns (CSP Handoff/Direct Switch) and strict memory isolation. The interaction between the scheduler, memory protection faults, and the recovery mechanism creates a state space where deadlock and invariant violations (memory leaks/corruption) are possible. Mathematical verification via LTL/CTL is required to ensure liveness and safety properties."
     },
     {
       "section_id": "sec:components/tier1_core/os_coos.md#6.1 検証対象の不変条件",
@@ -118,9 +118,9 @@
         "Potential for deadlocks in CSP-based message passing if circular dependencies occur between coroutines.",
         "Risk of starvation or priority inversion in a cooperative multitasking environment without a preemptive fallback.",
         "Memory safety and ownership transfer risks associated with zero-copy message passing across coroutine suspension points.",
-        "Deterministic execution guarantees depend on the strict bounding of coroutine execution time before yielding."
+        "Deterministic execution guarantees must be proven against the state space of the C++20 coroutine promise/handle lifecycle."
       ],
-      "summary": "The design implements a high-complexity stackless scheduler using C++20 coroutines and CSP. The combination of cooperative multitasking and zero-copy communication introduces significant risks regarding liveness (deadlock/starvation) and state consistency, necessitating formal verification of the state transition model via LTL/CTL."
+      "summary": "The design implements a high-complexity stackless cooperative scheduler based on C++20 coroutines and CSP. The combination of zero-copy communication and deterministic scheduling requirements introduces significant risks regarding deadlocks and liveness properties, necessitating formal verification via Kripke structures/LTL to ensure the system cannot enter an invalid state."
     },
     {
       "section_id": "sec:components/tier1_core/os_scheduler.md#3.1 データ構造",
@@ -138,9 +138,9 @@
         "State transition complexity between READY, BLOCKED, and RUNNING states in a coroutine-based scheduler.",
         "Potential for priority inversion or task starvation during execution order control.",
         "Risk of stack overflow or memory corruption due to manual stack boundary management in task_context.",
-        "Concurrency risks associated with the audit interface accessing internal scheduler states while tasks are executing."
+        "Concurrency hazards during the transition of coroutine handles within the Scheduler class."
       ],
-      "summary": "While the section describes data structures, these structures govern the core state machine of the OS scheduler. The use of coroutines and explicit state management (READY/BLOCKED/RUNNING) introduces a significant state space where deadlocks and illegal state transitions are possible, necessitating formal LTL/CTL verification of the scheduler's liveness and safety properties."
+      "summary": "While the section describes data structures, these structures govern the core state machine of the OS scheduler. The interaction between coroutine handles and task states introduces a significant state space that is prone to deadlocks and race conditions, necessitating formal verification of LTL/CTL properties to ensure liveness and safety."
     },
     {
       "section_id": "sec:components/tier1_core/os_scheduler.md#3.2 内部ブロック図",
@@ -193,12 +193,12 @@
         "{VERIFY_FORMAL}"
       ],
       "risk_factors": [
-        "CSP Handoff bypasses the standard scheduler loop via direct resume(), creating a high risk of stack corruption or inconsistent scheduler state if not atomically managed.",
-        "Potential for deadlock in CSPWait transitions where both sender and receiver might enter wait states due to race conditions during the 'opposite ready' check.",
-        "Liveness risk: The transition from CSP_WAIT to READY (opposite not ready) requires precise synchronization to avoid task starvation or lost wake-up signals.",
-        "Interrupt-to-Ready transition depends on an external event loop, introducing asynchronous latency and potential priority inversion."
+        "CSP Handoff via C++20 Symmetric Transfer bypasses the central scheduler, creating a direct state transition that could bypass global invariants or priority logic.",
+        "Potential for deadlock in CSPWait transitions if the 'opposite ready' condition and 'wake partner' logic are not atomically synchronized.",
+        "Race conditions between ISR-driven INT events and the event loop dispatching tasks from InterruptWait to Ready.",
+        "Risk of TCB leakage or double-allocation if the exit() cleanup and spawn() allocation are not strictly synchronized in a multi-core or preemptive context."
       ],
-      "summary": "The design implements a complex CSP-style concurrency model with a high-risk 'Direct Handoff' optimization. The bypass of the central scheduler for low-latency switching introduces non-trivial state space transitions that are prone to race conditions and deadlocks, necessitating formal verification via LTL/CTL to prove safety and liveness invariants."
+      "summary": "The design implements a high-performance scheduler using C++20 coroutines with a non-standard 'Symmetric Transfer' (CSP Handoff). This introduces significant concurrency complexity and potential for deadlocks or priority inversion that cannot be caught by static analysis. Formal verification via LTL/CTL is required to prove liveness (no deadlock) and safety (TCB invariant) properties."
     },
     {
       "section_id": "sec:components/tier1_core/os_scheduler.md#ADR-SCHED-002: アルゴリズムの継続的改善と最適化 {VERIFY_LLM}",
@@ -216,7 +216,7 @@
         "Potential for interface mismatch during the transition from current logic to O(1) priority queues",
         "Ambiguity in the definition of 'stateless interface' regarding the persistence of scheduler state"
       ],
-      "summary": "This section defines a structural architectural decision (separation of concerns) rather than a concrete implementation of a scheduling algorithm. The complexity is low as it focuses on API decoupling. The primary risk is semantic alignment between the interface and future implementations, making LLM-based semantic auditing the appropriate verification method."
+      "summary": "This section defines a structural architectural decision (separation of concerns) rather than a concrete algorithm. The complexity is low as it focuses on API decoupling. The primary risk is semantic alignment between the interface and future implementations, making LLM-based contract auditing more appropriate than formal state-space verification."
     },
     {
       "section_id": "sec:components/tier1_core/os_scheduler.md#ADR-SCHED-003: BLOCKEDタスクリストの管理コストとリアルタイム性",

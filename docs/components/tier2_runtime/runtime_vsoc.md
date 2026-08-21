@@ -455,7 +455,7 @@ jit_pc: address
 ### 6.2 メモリ制約と方策
 <!-- traceability: {JIT_DoubleBuffer_Cache} {GLOBAL_IndependentHeap} {WasmPageAlignment} -->
 - **目標**: 64KB RAM環境で動作させる。
-- **方策**: `{JIT_DoubleBuffer_Cache}` `{GLOBAL_IndependentHeap}` ダブルバッファによる効率的なキャッシュ管理と、厳密なヒープ分離によりメモリ使用量を制御する。JITキャッシュは `FB_CONF_JIT_CACHE_SIZE`（デフォルト4096バイト、`docs/components/core/system_config_details.md`）を Active/Old の2領域に均等分割して使用し、各領域の容量は `code_cache_size / 2`（デフォルト2048バイト）となる。
+- **方策**: `{JIT_DoubleBuffer_Cache}` `{GLOBAL_IndependentHeap}` 3面マルチバッファ（Active/Warm/Oldest）による効率的なキャッシュ代謝と、厳密なヒープ分離によりメモリ使用量を制御する。JITキャッシュは `FB_CONF_JIT_CACHE_SIZE`（デフォルト6144バイト、`docs/components/tier1_core/system_config_details.md`）を 3領域に均等分割して使用し、各領域の容量は `code_cache_size / 3`（各2048バイト）となる。
 - **高速アドレス判定**: ゲストRAMを `0x0` から配置し、単一の比較命令でRAMアクセスを判定することで、インタープリタおよびJITのオーバーヘッドを最小化する。 `{WasmPageAlignment}`
 
 ### 6.3 安全性制約と方策

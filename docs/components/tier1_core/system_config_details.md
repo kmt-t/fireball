@@ -25,20 +25,22 @@ VM（ゲストタスク）ごとのプール領域（`FB_CONF_TASK_HEAP_SIZE`）
 | `FB_CONF_ROUTER_ROLE_MATRIX` | ロールベースのアクセス制御マトリックス | `constexpr`構造体配列 | `{RoleBasedAccessControl}` |
 
 ##### ロールベースアクセス制御の定義
-サービス要求元のタスクロールとURIの対応関係を以下のように静的なロールマトリックス構造体として定義し、C++コンパイル時に固定する。 `{RoleBasedAccessControl}`
+サービス要求元のタスクロールとURIの対応関係を以下のように静的なアクセス制御エントリ（またはロールマトリックス）として定義し、C++コンパイル時に固定する。 `{RoleBasedAccessControl}`
 
 ```text
 // inc/fireball_config.hxx での定義形式 (C++23)
 namespace fireball {
+    inline constexpr size_t FB_CONF_MAX_ROLES_PER_SERVICE = 4;
+
     struct role_access_entry {
         std::string_view service_uri;
-        std::array<std::string_view, 3> allowed_roles;
+        std::array<std::string_view, FB_CONF_MAX_ROLES_PER_SERVICE> allowed_roles;
     };
 
     inline constexpr std::array<role_access_entry, 3> FB_CONF_ROUTER_ROLE_MATRIX {{
-        {"fireball://system/log",   {"Kernel", "Driver", "App"}},
-        {"fireball://system/power", {"Kernel", "", ""}},
-        {"fireball://driver/gpio",  {"Kernel", "Driver", ""}}
+        {"fireball://system/log",   {"Kernel", "Driver", "App", ""}},
+        {"fireball://system/power", {"Kernel", "", "", ""}},
+        {"fireball://driver/gpio",  {"Kernel", "Driver", "", ""}}
     }};
 }
 ```
@@ -63,7 +65,7 @@ namespace fireball {
 | `FB_CONF_JIT_NUM_BUFFERS` | JITキャッシュバッファ面数 (3: トリプルバッファ推奨) | `3` | `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}` |
 | `FB_CONF_GUEST_RAM_BASE` | ゲストRAMの開始アドレス（アライメント検証と高速境界チェックのため、必ず64KB境界に配置） | `0x00000000` | `{FastAddressCheck}` |
 | `FB_CONF_GUEST_RAM_SIZE` | ゲストRAMの物理割り当てサイズ（RAM<64KB環境向け部分ページ。デフォルト: 8KB = 8192 Bytes） | `8192` | `{GLOBAL_StrictMemoryLimit}` `{FastAddressCheck}` |
-| `FB_CONF_VMMIO_BASE` | vMMIO領域の開始アドレス | `0x40000000` | `{vMMIO_Isolation}` |
+| `FB_CONF_VMMIO_BASE` | vMMIO領域の開始アドレス (Bit 31 == 1, 2段階ダイレクトデコード) | `0x80000000` | `{vMMIO_Isolation}` |
 | `FB_CONF_VMMIO_MAX_REGIONS` | 登録可能な最大vMMIO領域数 | `8` | `{META_ConfigurableSystem}` |
 | `FB_CONF_VMMIO_ALLOWED_ADDRS` | ゲストからのアクセスを許可する物理アドレス範囲 | `constexpr`構造体配列 | `{META_RestrictedPhysicalAccess}` |
 

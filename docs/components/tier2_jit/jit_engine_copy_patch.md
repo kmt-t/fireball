@@ -47,16 +47,91 @@ WASM命令に対応するネイティブバイナリの雛形。
 
 ### 4.1 アルゴリズム
 
-
 #### トレースコンパイル手順
 1. **フェッチ**: WASM命令オフセットから命令を取得（フェッチ）する。
-2. **テンプレート選択**: 命令に対応する `jit_template` を取得する。
+2. **テンプレート選択**: 命令に対応する `jit_template`（Stencil）を取得する。
 3. **コピー**: キャッシュの空き領域にテンプレートの命令列をコピーする。
 4. **パッチ適用**:
     - 命令内に含まれる即値（定数）をテンプレートの指定位置に書き込む。
     - 実行コンテキストポインタやランタイムAPIのアドレスをパッチする。
     - 分岐命令の相対オフセットを計算してパッチする。
 5. **ポインタ更新**: キャッシュの使用済みサイズを更新する。
+
+#### Copy-and-Patch JIT フルセット・コンセプトコード (`concepts/jit_copy_patch_concept.py`)
+```python
+class MPUAttribute:
+    RO_X = "RO_X"      # Read-Only + Executable (Native Execution)
+    RW_XN = "RW_XN"    # Read-Write + Non-Executable (Patching)
+
+
+class MPUFault(Exception):
+    pass
+
+
+class CopyPatchJITEngine:
+    def __init__(self, cache_size: int = 1024):
+        self.code_cache = ["NOP"] * cache_size
+        self.mpu_attr = MPUAttribute.RO_X
+        self.barrier_flushes = 0
+        self.current_write_pos = 0
+
+        self.stencils = {
+            "prologue": ["PUSH {R4, LR}", "SUB SP, SP, #16"],
+            "i32_const": ["MOVW R0, #__IMM_LO__", "MOVT R0, #__IMM_HI__", "STR R0, [SP, #0]"],
+            "i32_add": ["LDR R0, [SP, #0]", "LDR R1, [SP, #4]", "ADD R0, R0, R1", "STR R0, [SP, #0]"],
+            "epilogue": ["ADD SP, SP, #16", "POP {R4, PC}"],
+        }
+
+    def begin_jit_patch(self):
+        """Switches JIT Code Cache MPU attribute to RW + XN (W^X Protection)."""
+        self.mpu_attr = MPUAttribute.RW_XN
+
+    def commit_jit_patch(self):
+        """Restores MPU attribute to RO + X and issues __DSB(); __ISB(); barriers."""
+        assert self.mpu_attr == MPUAttribute.RW_XN
+        self.mpu_attr = MPUAttribute.RO_X
+        self.barrier_flushes += 1  # Hardware barrier sync
+
+    def write_instruction(self, offset: int, instruction: str):
+        if self.mpu_attr != MPUAttribute.RW_XN:
+            raise MPUFault("W^X VIOLATION: Attempted write to non-writable code memory")
+        self.code_cache[offset] = instruction
+
+    def compile_basic_block(self, wasm_ops: list[tuple[str, object]]) -> tuple[int, int]:
+        """Batches Stencil copy & relocation patching inside a single W^X transaction."""
+        start_offset = self.current_write_pos
+
+        # 1. Begin W^X Transaction (RW + XN)
+        self.begin_jit_patch()
+
+        # 2. Emit Prologue
+        for inst in self.stencils["prologue"]:
+            self.write_instruction(self.current_write_pos, inst)
+            self.current_write_pos += 1
+
+        # 3. Emit WASM Ops with Relocation Patching
+        for op, arg in wasm_ops:
+            if op == "i32.const":
+                imm = int(arg)
+                self.write_instruction(self.current_write_pos, f"MOVW R0, #{imm & 0xFFFF}")
+                self.write_instruction(self.current_write_pos + 1, f"MOVT R0, #{(imm >> 16) & 0xFFFF}")
+                self.write_instruction(self.current_write_pos + 2, "STR R0, [SP, #0]")
+                self.current_write_pos += 3
+            elif op == "i32.add":
+                for inst in self.stencils["i32_add"]:
+                    self.write_instruction(self.current_write_pos, inst)
+                    self.current_write_pos += 1
+
+        # 4. Emit Epilogue
+        for inst in self.stencils["epilogue"]:
+            self.write_instruction(self.current_write_pos, inst)
+            self.current_write_pos += 1
+
+        # 5. Commit W^X Transaction (RO + X + Barriers)
+        self.commit_jit_patch()
+
+        return (start_offset, self.current_write_pos - start_offset)
+```
 
 ### 4.2 状態遷移図
 本コンポーネントはステートレスなプロセッサとして動作するため、状態遷移は省略する。

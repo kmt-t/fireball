@@ -55,9 +55,101 @@ graph TD
 ### 4.1 アルゴリズム
 <!-- traceability: {GLOBAL_IdleDetection} {GLOBAL_PeriodicTask} {GLOBAL_InterruptWakeup} -->
 - **スケジューリング**: ラウンドロビン方式。
-    - スケジューラ・コンテキスト内の「実行可能タスク列」を侵入型リストで管理し、定数時間 O(1) でのタスク切り替えを実現する。
+    - スケジューラ・コンテキスト内の「実行可能タスク列」を固定長リングキューで管理し、定数時間 $O(1)$ でのタスク切り替えを実現する。
 - **アイドル状態の検知**: 全ての管理タスクが「待機状態（BLOCKED）」となった場合にアイドル・ハンドラ（Periodic Task等）を実行する。 `{GLOBAL_IdleDetection}` `{GLOBAL_PeriodicTask}`
 - **割り込み処理**: HALからの割り込み通知（`notify_interrupt(irq_id)`）を受信し、INTイベントキューから回収して対象タスクを READY キュー末尾に追加する。 `{GLOBAL_InterruptWakeup}`
+
+#### スケジューラ フルセット・コンセプトコード (`concepts/scheduler_concept.py`)
+```python
+class TaskState:
+    READY = "READY"
+    RUNNING = "RUNNING"
+    BLOCKED = "BLOCKED"
+    TERMINATED = "TERMINATED"
+
+
+class RoundRobinScheduler:
+    def __init__(self, max_tasks: int = 16):
+        self.max_tasks = max_tasks
+        self.tasks = {}
+        self.ready_ring = []
+        self.current_task = None
+        self.total_dispatches = 0
+
+    def spawn(self, task_id: str, coroutine, priority: int = 0) -> bool:
+        """Register a new task into the fixed task table and ready ring."""
+        assert len(self.tasks) < self.max_tasks, "Max task capacity exceeded"
+        assert task_id not in self.tasks, f"Task {task_id} already exists"
+
+        self.tasks[task_id] = {
+            "id": task_id,
+            "coro": coroutine,
+            "state": TaskState.READY,
+            "priority": priority,
+            "dispatches": 0,
+        }
+        self.ready_ring.append(task_id)
+        return True
+
+    def schedule_next(self) -> str | None:
+        """Selects the next task in O(1) from the ready ring."""
+        if not self.ready_ring:
+            return None
+
+        task_id = self.ready_ring.pop(0)
+        self.current_task = task_id
+        task_entry = self.tasks[task_id]
+        task_entry["state"] = TaskState.RUNNING
+        task_entry["dispatches"] += 1
+        self.total_dispatches += 1
+        return task_id
+
+    def yield_current(self):
+        """Cooperative yield: move current task to the tail of the ready ring."""
+        assert self.current_task is not None, "No active task to yield"
+        task_id = self.current_task
+        task_entry = self.tasks[task_id]
+        task_entry["state"] = TaskState.READY
+        self.ready_ring.append(task_id)
+        self.current_task = None
+
+    def block_current(self, reason: str = "WAIT"):
+        """Block current task on event/IPC: removed from ready ring."""
+        assert self.current_task is not None, "No active task to block"
+        task_id = self.current_task
+        task_entry = self.tasks[task_id]
+        task_entry["state"] = TaskState.BLOCKED
+        task_entry["block_reason"] = reason
+        self.current_task = None
+
+    def unblock_task(self, task_id: str):
+        """Unblock task on event arrival: append to ready ring."""
+        assert task_id in self.tasks, f"Unknown task {task_id}"
+        task_entry = self.tasks[task_id]
+        if task_entry["state"] == TaskState.BLOCKED:
+            task_entry["state"] = TaskState.READY
+            task_entry["block_reason"] = None
+            self.ready_ring.append(task_id)
+
+    def run_cycle(self) -> bool:
+        """Dispatches and advances one active task in deterministic O(1)."""
+        task_id = self.schedule_next()
+        if task_id is None:
+            return False  # All tasks blocked or completed
+
+        task_entry = self.tasks[task_id]
+        try:
+            action = task_entry["coro"].send(None)
+            if action == "YIELD":
+                self.yield_current()
+            elif action == "BLOCK":
+                self.block_current()
+        except StopIteration:
+            self.tasks[task_id]["state"] = TaskState.TERMINATED
+            self.current_task = None
+
+        return True
+```
 
 ### 4.2 状態遷移図 (SysML SMD: Scheduler 視点)
 <!-- traceability: {GLOBAL_IdleDetection} {GLOBAL_PeriodicTask} {GLOBAL_InterruptWakeup} -->

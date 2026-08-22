@@ -329,6 +329,55 @@ Tier 3 (共有メモリ・パススルー) 向け。物理ページアドレス�
      物理アドレス = (PTE[31:12] << 12) | offset を算出し、アクセス対象の物理メモリを操作。
 ```
 
+#### vMMIO フルセット・コンセプトコード (`concepts/vmmio_concept.py`)
+```python
+class TrapCode:
+    MEMORY_OUT_OF_BOUNDS = "TRAP_MEMORY_OUT_OF_BOUNDS"
+    UNALIGNED_ACCESS = "TRAP_UNALIGNED_ACCESS"
+    UNAUTHORIZED_ACCESS = "TRAP_UNAUTHORIZED_ACCESS"
+
+
+class VMMIOBus:
+    MMIO_BASE = 0x4000_0000
+    MMIO_LIMIT = 0x6000_0000
+
+    def __init__(self):
+        self.devices = []
+
+    def register_device(self, base_addr: int, size: int, read_fn, write_fn, name: str = ""):
+        assert self.is_mmio_range(base_addr)
+        self.devices.append({"base": base_addr, "size": size, "read": read_fn, "write": write_fn, "name": name})
+
+    @classmethod
+    def is_mmio_range(cls, addr: int) -> bool:
+        return cls.MMIO_BASE <= addr < cls.MMIO_LIMIT
+
+    def read(self, addr: int, size: int) -> tuple[str, int]:
+        """Fast address check and MMIO read dispatch."""
+        if addr % size != 0:
+            return (TrapCode.UNALIGNED_ACCESS, 0)
+        if not self.is_mmio_range(addr):
+            return (TrapCode.MEMORY_OUT_OF_BOUNDS, 0)
+
+        for dev in self.devices:
+            if dev["base"] <= addr < (dev["base"] + dev["size"]):
+                return ("OK", dev["read"](addr - dev["base"], size))
+        return (TrapCode.MEMORY_OUT_OF_BOUNDS, 0)
+
+    def write(self, addr: int, val: int, size: int) -> tuple[str, str]:
+        """Fast address check and MMIO write dispatch."""
+        if addr % size != 0:
+            return (TrapCode.UNALIGNED_ACCESS, "Unaligned write")
+        if not self.is_mmio_range(addr):
+            return (TrapCode.MEMORY_OUT_OF_BOUNDS, "Outside MMIO range")
+
+        for dev in self.devices:
+            if dev["base"] <= addr < (dev["base"] + dev["size"]):
+                dev["write"](addr - dev["base"], val, size)
+                return ("OK", "Write dispatched")
+        return (TrapCode.MEMORY_OUT_OF_BOUNDS, "Unmapped MMIO write")
+```
+
 ### 4.2 性能分析（Tier別）
 
 | アクセス | パス | 計算量 | 説明 |

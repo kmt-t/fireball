@@ -1,34 +1,34 @@
 {
-  "generated_at": "2026-08-22T03:14:11.297148+00:00",
-  "total_evaluated": 669,
-  "formal_candidates_count": 300,
+  "generated_at": "2026-08-22T04:29:32.235247+00:00",
+  "total_evaluated": 674,
+  "formal_candidates_count": 304,
   "llm_candidates_count": 120,
-  "sections_scanned": 669,
+  "sections_scanned": 674,
   "max_sections": 0,
   "doc_hashes": {
     "architecture/architecture_overview.md": "30be52ed847f1fa7ff9f50980552e989dab9727751748a3e5874505214cc81d7",
     "architecture/concept_harness.md": "42e39e100eb0e1ef0f8c2fa68d60b8b4d004657741a0a437ff418f55f5848a34",
     "architecture/document_structure.md": "3659e600d8ba7465316d0b131e5b6375fec0930fefe44134fccf76e755b8c3bb",
     "architecture/resource_budget.md": "f243c833676289a80c9a7610fc4cb4c11a6d0a6de9622f713fa01e5e3caea0dc",
-    "components/tier1_core/os_coos.md": "7a31ccfc0686eabf82012fc306d3577e1a67206c89b581a8e9e650b41311e0f8",
-    "components/tier1_core/os_scheduler.md": "4f81412568dec72adebf10122ade313720fc9fd645d9060c50f669da8fac0697",
+    "components/tier1_core/os_coos.md": "e080c35bcd04d4ebf91156d37b22072a94159a03baa06cc766e92736ee77ced1",
+    "components/tier1_core/os_scheduler.md": "e45096cf5f7481f0d114010adf47c348a81750fdcd6659bf51e6f9f025642d89",
     "components/tier1_core/system_config.md": "242d8748cbf63ae10afe480615981c055b47b7c636293ca51fa9e8235596a9dc",
     "components/tier1_core/system_config_details.md": "502bf7a744f1682b8f13d6ba0215028d630c7db7277d3be879142d7a3e1922b9",
     "components/tier1_core/system_logging.md": "7ec474b1ad605d7e56d14c9eb01f763fb2cd93553a8c7d91e4a4c71f4072cb4d",
     "components/tier1_core/system_syscall.md": "b086a7e5f35f2717438de890ec7e3bff8a6965444be24d1e178e1e243a2a1220",
     "components/tier1_interface/interface_wit.md": "c2591b654808d067f8880707e5507884f2744c7a18b1af8b93b548288a77f848",
-    "components/tier1_interface/ipc_router.md": "e785bdfaa8bffac5806eaf32f011cb2f5c7997c1a63bbb636435c732034b36ef",
+    "components/tier1_interface/ipc_router.md": "db29892cd6a29cacd37b5d73f6dbeb805acfabd65b194e831609bcc9a682d3cf",
     "components/tier1_interface/system_service.md": "7c98009196d56c50c4d1d27269f38eb51d4fe1fa654aedb51dba7c496cd5fe62",
     "components/tier2_jit/jit_assembler_constexpr.md": "4798eb6d2692ae574c45917a0597feb16e1ffa3ec9d9771566a6523607f7c7d5",
     "components/tier2_jit/jit_compiler.md": "3e700b180aeeaaf823afc23519f1330619bc0cd838aedbf9f2717d34fa602198",
-    "components/tier2_jit/jit_engine_copy_patch.md": "51ed2d845d29357e2088614d9298764adf2c58746e6996e6b20a5788f532daf5",
+    "components/tier2_jit/jit_engine_copy_patch.md": "527079100555eec9f6e00c50bc52ede3ce10b38fc1709da6ed0ab4f430dfd8da",
     "components/tier2_jit/jit_runtime_entry.md": "ac17ee532a11b108521ece54ac63fdfd956484e534ed5f607993764c6bae2718",
     "components/tier2_jit/jit_runtime_hotspot.md": "56a3a5466ea0ab7752210b2b8a58f8ed577a67b58c20e49dd8ff936bb9951c51",
     "components/tier2_runtime/debug/debug_gdb_rsp.md": "f07fbc1fbe307552ce65dbe964361442c7df855ac18cce53dc59684373c6befc",
     "components/tier2_runtime/debug/debug_manager.md": "50a709835b11ea4d6e477d5a957bc4242c950bb81f41899ee6d31baca25b0197",
-    "components/tier2_runtime/runtime_interpreter.md": "5d9ce9cbc91da0a179f47843f2aeec0e67e9d81cbb1e9456d3bf35b0e4f2a811",
+    "components/tier2_runtime/runtime_interpreter.md": "dea069a3643a6e1160770cf1351b85fa62306da7983d60569db81c58a5cb36b9",
     "components/tier2_runtime/runtime_loader.md": "591c6d491434e54f39eed5c48ae3216fc1b0ca1e2299044161cccac48f93dca5",
-    "components/tier2_runtime/runtime_vmmio.md": "4b3339a058216507cde9941dd22e443561d53a07da89d5058730ff1993fc10c8",
+    "components/tier2_runtime/runtime_vmmio.md": "2cb60f38d2a0ca9766671e4b05d0c9aefee00893e1fb11fd36f41631c9123715",
     "components/tier2_runtime/runtime_vsoc.md": "8fe2030e2f0ba7156ece2db7ba29ed44e1011625f52a9f3f755d20ff260f9623",
     "components/tier2_runtime/wasm_instruction.md": "640483f8a25bca7885110ce37e499c4ba3622fdc2ba3507e3a78b2bc1fcf8b5f",
     "components/tier3_platform/platform_hal.md": "e539743f731215038cedecafa34e48a4d75d35871cfd97b0113c2791574dcb7d",
@@ -618,6 +618,23 @@
       "summary": "Structural risk evaluation for 2. アーキテクチャ分類."
     },
     {
+      "section_id": "sec:components/tier1_interface/ipc_router.md#IPC ルータ フルセット・コンセプトコード (`concepts/ipc_router_concept.py`)",
+      "file_path": "components/tier1_interface/ipc_router.md",
+      "heading": "IPC ルータ フルセット・コンセプトコード (`concepts/ipc_router_concept.py`)",
+      "tier": 1,
+      "complexity_score": 4,
+      "risk_score": 4,
+      "formal_needed": true,
+      "recommended_verification": "pyModelChecking",
+      "suggested_tags": [
+        "{VERIFY_FORMAL}"
+      ],
+      "risk_factors": [
+        "Mock structural assessment"
+      ],
+      "summary": "Structural risk evaluation for IPC ルータ フルセット・コンセプトコード (`concepts/ipc_router_concept.py`)."
+    },
+    {
       "section_id": "sec:components/tier1_interface/ipc_router.md#4.1.1 名前解決パイプラインとアクセス制御フロー",
       "file_path": "components/tier1_interface/ipc_router.md",
       "heading": "4.1.1 名前解決パイプラインとアクセス制御フロー",
@@ -1147,6 +1164,23 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Structural risk evaluation for 2.2 コンポーネント定義図 (BDD)."
+    },
+    {
+      "section_id": "sec:components/tier1_core/os_scheduler.md#スケジューラ フルセット・コンセプトコード (`concepts/scheduler_concept.py`)",
+      "file_path": "components/tier1_core/os_scheduler.md",
+      "heading": "スケジューラ フルセット・コンセプトコード (`concepts/scheduler_concept.py`)",
+      "tier": 1,
+      "complexity_score": 4,
+      "risk_score": 4,
+      "formal_needed": true,
+      "recommended_verification": "pyModelChecking",
+      "suggested_tags": [
+        "{VERIFY_FORMAL}"
+      ],
+      "risk_factors": [
+        "Mock structural assessment"
+      ],
+      "summary": "Structural risk evaluation for スケジューラ フルセット・コンセプトコード (`concepts/scheduler_concept.py`)."
     },
     {
       "section_id": "sec:components/tier1_interface/system_service.md#4.4 WASI API から HAL への変換ラッパー (コンセプトコード)",
@@ -2262,6 +2296,23 @@
       "summary": "Structural risk evaluation for 協調型OS COOS コンポーネント設計書 {VERIFY_FORMAL}."
     },
     {
+      "section_id": "sec:components/tier1_core/os_coos.md#COOS フルセット・コンセプトコード (`concepts/coos_concept.py`)",
+      "file_path": "components/tier1_core/os_coos.md",
+      "heading": "COOS フルセット・コンセプトコード (`concepts/coos_concept.py`)",
+      "tier": 1,
+      "complexity_score": 4,
+      "risk_score": 4,
+      "formal_needed": true,
+      "recommended_verification": "pyModelChecking",
+      "suggested_tags": [
+        "{VERIFY_FORMAL}"
+      ],
+      "risk_factors": [
+        "Mock structural assessment"
+      ],
+      "summary": "Structural risk evaluation for COOS フルセット・コンセプトコード (`concepts/coos_concept.py`)."
+    },
+    {
       "section_id": "sec:components/tier1_core/os_scheduler.md#COOS スケジューラ コンポーネント設計書 {VERIFY_FORMAL}",
       "file_path": "components/tier1_core/os_scheduler.md",
       "heading": "COOS スケジューラ コンポーネント設計書 {VERIFY_FORMAL}",
@@ -2377,6 +2428,19 @@
       "summary": "Structural risk evaluation for 4.3 内部シーケンス."
     },
     {
+      "section_id": "sec:components/tier2_jit/jit_engine_copy_patch.md#Copy-and-Patch JIT フルセット・コンセプトコード (`concepts/jit_copy_patch_concept.py`)",
+      "file_path": "components/tier2_jit/jit_engine_copy_patch.md",
+      "heading": "Copy-and-Patch JIT フルセット・コンセプトコード (`concepts/jit_copy_patch_concept.py`)",
+      "tier": 2,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Structural risk evaluation for Copy-and-Patch JIT フルセット・コンセプトコード (`concepts/jit_copy_patch_concept.py`)."
+    },
+    {
       "section_id": "sec:components/tier2_runtime/debug/debug_manager.md#Debug Manager コンポーネント設計書",
       "file_path": "components/tier2_runtime/debug/debug_manager.md",
       "heading": "Debug Manager コンポーネント設計書",
@@ -2426,6 +2490,23 @@
         "Mock structural assessment"
       ],
       "summary": "Structural risk evaluation for Interpreter コンポーネント設計書."
+    },
+    {
+      "section_id": "sec:components/tier2_runtime/runtime_interpreter.md#WASM インタプリタ フルセット・コンセプトコード (`concepts/interpreter_concept.py`)",
+      "file_path": "components/tier2_runtime/runtime_interpreter.md",
+      "heading": "WASM インタプリタ フルセット・コンセプトコード (`concepts/interpreter_concept.py`)",
+      "tier": 2,
+      "complexity_score": 4,
+      "risk_score": 4,
+      "formal_needed": true,
+      "recommended_verification": "pyModelChecking",
+      "suggested_tags": [
+        "{VERIFY_FORMAL}"
+      ],
+      "risk_factors": [
+        "Mock structural assessment"
+      ],
+      "summary": "Structural risk evaluation for WASM インタプリタ フルセット・コンセプトコード (`concepts/interpreter_concept.py`)."
     },
     {
       "section_id": "sec:components/tier2_runtime/runtime_loader.md#4.5 内部シーケンス",
@@ -2554,6 +2635,23 @@
         "Mock structural assessment"
       ],
       "summary": "Structural risk evaluation for 3.2 内部ブロック図."
+    },
+    {
+      "section_id": "sec:components/tier2_runtime/runtime_vmmio.md#vMMIO フルセット・コンセプトコード (`concepts/vmmio_concept.py`)",
+      "file_path": "components/tier2_runtime/runtime_vmmio.md",
+      "heading": "vMMIO フルセット・コンセプトコード (`concepts/vmmio_concept.py`)",
+      "tier": 2,
+      "complexity_score": 4,
+      "risk_score": 4,
+      "formal_needed": true,
+      "recommended_verification": "pyModelChecking",
+      "suggested_tags": [
+        "{VERIFY_FORMAL}"
+      ],
+      "risk_factors": [
+        "Mock structural assessment"
+      ],
+      "summary": "Structural risk evaluation for vMMIO フルセット・コンセプトコード (`concepts/vmmio_concept.py`)."
     },
     {
       "section_id": "sec:plans/roadmap_phase.md#Phase 0: Foundation（約6ヶ月）",
@@ -3783,23 +3881,6 @@
         "Mock structural assessment"
       ],
       "summary": "Structural risk evaluation for 3.1 データ構造."
-    },
-    {
-      "section_id": "sec:components/tier1_core/os_coos.md#COOS 内部 API シグネチャ",
-      "file_path": "components/tier1_core/os_coos.md",
-      "heading": "COOS 内部 API シグネチャ",
-      "tier": 1,
-      "complexity_score": 4,
-      "risk_score": 4,
-      "formal_needed": true,
-      "recommended_verification": "pyModelChecking",
-      "suggested_tags": [
-        "{VERIFY_FORMAL}"
-      ],
-      "risk_factors": [
-        "Mock structural assessment"
-      ],
-      "summary": "Structural risk evaluation for COOS 内部 API シグネチャ."
     },
     {
       "section_id": "sec:components/tier1_core/os_scheduler.md#ADR-SCHED-001: 侵入型リストによる管理",

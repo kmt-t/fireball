@@ -1,7 +1,7 @@
 # Fireball 設計複雑度 & リスク評価レポート (Risk Assessment Report)
 
-- **評価セクション総数**: 669
-- **形式検証 (pyModelChecking) 推奨セクション**: 300
+- **評価セクション総数**: 674
+- **形式検証 (pyModelChecking) 推奨セクション**: 304
 - **LLM 意味監査 推奨セクション**: 120
 
 ---
@@ -31,6 +31,7 @@
 | `components/tier2_runtime/runtime_interpreter.md` | **1. コンセプト** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Mock structural assessment |
 | `components/tier2_runtime/runtime_vsoc.md` | **1. コンセプト** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Mock structural assessment |
 | `components/tier3_platform/platform_hal.md` | **2. アーキテクチャ分類** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Mock structural assessment |
+| `components/tier1_interface/ipc_router.md` | **IPC ルータ フルセット・コンセプトコード (`concepts/ipc_router_concept.py`)** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Mock structural assessment |
 | `components/tier1_interface/ipc_router.md` | **4.1.1 名前解決パイプラインとアクセス制御フロー** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Mock structural assessment |
 | `components/tier1_interface/ipc_router.md` | **4.2.1 所有権移譲状態機械 (Ownership Transfer State Machine)** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Mock structural assessment |
 | `components/tier1_interface/ipc_router.md` | **6.1 検証対象の不変条件** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Mock structural assessment |
@@ -50,6 +51,7 @@
 | `components/tier3_platform/platform_hal.md` | **4.1 アルゴリズム** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Mock structural assessment |
 | `components/tier1_interface/ipc_router.md` | **2. アーキテクチャ分類** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Mock structural assessment |
 | `components/tier1_interface/ipc_router.md` | **3.1 データ構造** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Mock structural assessment |
+| `components/tier1_core/os_scheduler.md` | **スケジューラ フルセット・コンセプトコード (`concepts/scheduler_concept.py`)** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Mock structural assessment |
 | `components/tier2_runtime/runtime_vmmio.md` | **アドレスフィールド定義 (vmmio_address)** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Mock structural assessment |
 | `components/tier1_interface/ipc_router.md` | **3.2 内部ブロック図** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Mock structural assessment |
 | `components/tier2_runtime/runtime_vsoc.md` | **WASM実行およびJIT遷移シーケンス** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Mock structural assessment |
@@ -91,6 +93,7 @@
 | `components/tier2_runtime/runtime_vsoc.md` | **6.1 性能制約と方策** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Mock structural assessment |
 | `components/tier2_runtime/runtime_vsoc.md` | **6.3 安全性制約と方策** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Mock structural assessment |
 | `components/tier1_core/os_coos.md` | **協調型OS COOS コンポーネント設計書 {VERIFY_FORMAL}** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Mock structural assessment |
+| `components/tier1_core/os_coos.md` | **COOS フルセット・コンセプトコード (`concepts/coos_concept.py`)** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Mock structural assessment |
 | `components/tier1_core/os_scheduler.md` | **COOS スケジューラ コンポーネント設計書 {VERIFY_FORMAL}** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Mock structural assessment |
 | `components/tier1_core/os_scheduler.md` | **タスク生成 (`spawn`)** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Mock structural assessment |
 | `components/tier1_interface/ipc_router.md` | **IPCルータ コンポーネント設計書 {VERIFY_FORMAL}** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Mock structural assessment |
@@ -100,12 +103,14 @@
 | `components/tier2_runtime/debug/debug_manager.md` | **Debug Manager コンポーネント設計書** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Mock structural assessment |
 | `components/tier2_runtime/debug/debug_manager.md` | **6.2 メモリ制約と方策** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Mock structural assessment |
 | `components/tier2_runtime/runtime_interpreter.md` | **Interpreter コンポーネント設計書** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Mock structural assessment |
+| `components/tier2_runtime/runtime_interpreter.md` | **WASM インタプリタ フルセット・コンセプトコード (`concepts/interpreter_concept.py`)** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Mock structural assessment |
 | `components/tier2_runtime/runtime_vmmio.md` | **vMMIO コンポーネント設計書** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Mock structural assessment |
 | `components/tier2_runtime/runtime_vmmio.md` | **動的デバイスページテーブルエントリ (vmmio_pte_tier3)** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Mock structural assessment |
 | `components/tier2_runtime/runtime_vsoc.md` | **vSoC コンポーネント設計書 {VERIFY_FORMAL}** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Mock structural assessment |
 | `components/tier3_platform/platform_hal.md` | **HAL コンポーネント設計書** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Mock structural assessment |
 | `components/tier1_core/system_config_details.md` | **ロールベースアクセス制御の定義** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Mock structural assessment |
 | `components/tier2_runtime/runtime_vmmio.md` | **3.2 内部ブロック図** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Mock structural assessment |
+| `components/tier2_runtime/runtime_vmmio.md` | **vMMIO フルセット・コンセプトコード (`concepts/vmmio_concept.py`)** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Mock structural assessment |
 | `components/tier2_runtime/runtime_vmmio.md` | **4.8 ソフトウェアTLB** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Mock structural assessment |
 | `components/tier2_runtime/runtime_vsoc.md` | **3.2 内部ブロック図** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Mock structural assessment |
 | `components/tier1_core/os_coos.md` | **CSPチャネル（channel）** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Mock structural assessment |
@@ -150,7 +155,6 @@
 | `components/tier2_runtime/runtime_vsoc.md` | **5.2 ネイティブAPI エクスポート** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Mock structural assessment |
 | `components/tier2_runtime/runtime_vsoc.md` | **6.3 検証モデル概要** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Mock structural assessment |
 | `components/tier1_core/os_coos.md` | **3.1 データ構造** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Mock structural assessment |
-| `components/tier1_core/os_coos.md` | **COOS 内部 API シグネチャ** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Mock structural assessment |
 | `components/tier1_core/os_scheduler.md` | **ADR-SCHED-001: 侵入型リストによる管理** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Mock structural assessment |
 | `components/tier1_core/os_scheduler.md` | **ADR-SCHED-002: アルゴリズムの継続的改善と最適化** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Mock structural assessment |
 | `components/tier1_core/system_config_details.md` | **2.5 ロギング** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Mock structural assessment |
@@ -338,6 +342,7 @@
 | `components/tier2_runtime/runtime_interpreter.md` | 1. コンセプト | 2 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Structural risk evaluation for 1. コンセプト. |
 | `components/tier2_runtime/runtime_vsoc.md` | 1. コンセプト | 2 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Structural risk evaluation for 1. コンセプト. |
 | `components/tier3_platform/platform_hal.md` | 2. アーキテクチャ分類 | 3 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Structural risk evaluation for 2. アーキテクチャ分類. |
+| `components/tier1_interface/ipc_router.md` | IPC ルータ フルセット・コンセプトコード (`concepts/ipc_router_concept.py`) | 1 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Structural risk evaluation for IPC ルータ フルセット・コンセプトコード (`concepts/ipc_router_concept.py`). |
 | `components/tier1_interface/ipc_router.md` | 4.1.1 名前解決パイプラインとアクセス制御フロー | 1 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Structural risk evaluation for 4.1.1 名前解決パイプラインとアクセス制御フロー. |
 | `components/tier1_interface/ipc_router.md` | 4.2.1 所有権移譲状態機械 (Ownership Transfer State Machine) | 1 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Structural risk evaluation for 4.2.1 所有権移譲状態機械 (Ownership Transfer State Machine). |
 | `components/tier1_interface/ipc_router.md` | 6.1 検証対象の不変条件 | 1 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Structural risk evaluation for 6.1 検証対象の不変条件. |
@@ -357,6 +362,7 @@
 | `components/tier3_platform/platform_hal.md` | 4.1 アルゴリズム | 3 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Structural risk evaluation for 4.1 アルゴリズム. |
 | `components/tier1_interface/ipc_router.md` | 2. アーキテクチャ分類 | 1 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Structural risk evaluation for 2. アーキテクチャ分類. |
 | `components/tier1_interface/ipc_router.md` | 3.1 データ構造 | 1 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Structural risk evaluation for 3.1 データ構造. |
+| `components/tier1_core/os_scheduler.md` | スケジューラ フルセット・コンセプトコード (`concepts/scheduler_concept.py`) | 1 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Structural risk evaluation for スケジューラ フルセット・コンセプトコード (`concepts/scheduler_concept.py`). |
 | `components/tier2_runtime/runtime_vmmio.md` | アドレスフィールド定義 (vmmio_address) | 2 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Structural risk evaluation for アドレスフィールド定義 (vmmio_address). |
 | `components/tier1_interface/ipc_router.md` | 3.2 内部ブロック図 | 1 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Structural risk evaluation for 3.2 内部ブロック図. |
 | `components/tier2_runtime/runtime_vsoc.md` | WASM実行およびJIT遷移シーケンス | 2 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Structural risk evaluation for WASM実行およびJIT遷移シーケンス. |
@@ -398,6 +404,7 @@
 | `components/tier2_runtime/runtime_vsoc.md` | 6.1 性能制約と方策 | 2 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Structural risk evaluation for 6.1 性能制約と方策. |
 | `components/tier2_runtime/runtime_vsoc.md` | 6.3 安全性制約と方策 | 2 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Structural risk evaluation for 6.3 安全性制約と方策. |
 | `components/tier1_core/os_coos.md` | 協調型OS COOS コンポーネント設計書 {VERIFY_FORMAL} | 1 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Structural risk evaluation for 協調型OS COOS コンポーネント設計書 {VERIFY_FORMAL}. |
+| `components/tier1_core/os_coos.md` | COOS フルセット・コンセプトコード (`concepts/coos_concept.py`) | 1 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Structural risk evaluation for COOS フルセット・コンセプトコード (`concepts/coos_concept.py`). |
 | `components/tier1_core/os_scheduler.md` | COOS スケジューラ コンポーネント設計書 {VERIFY_FORMAL} | 1 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Structural risk evaluation for COOS スケジューラ コンポーネント設計書 {VERIFY_FORMAL}. |
 | `components/tier1_core/os_scheduler.md` | タスク生成 (`spawn`) | 1 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Structural risk evaluation for タスク生成 (`spawn`). |
 | `components/tier1_interface/ipc_router.md` | IPCルータ コンポーネント設計書 {VERIFY_FORMAL} | 1 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Structural risk evaluation for IPCルータ コンポーネント設計書 {VERIFY_FORMAL}. |
@@ -407,12 +414,14 @@
 | `components/tier2_runtime/debug/debug_manager.md` | Debug Manager コンポーネント設計書 | 2 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Structural risk evaluation for Debug Manager コンポーネント設計書. |
 | `components/tier2_runtime/debug/debug_manager.md` | 6.2 メモリ制約と方策 | 2 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Structural risk evaluation for 6.2 メモリ制約と方策. |
 | `components/tier2_runtime/runtime_interpreter.md` | Interpreter コンポーネント設計書 | 2 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Structural risk evaluation for Interpreter コンポーネント設計書. |
+| `components/tier2_runtime/runtime_interpreter.md` | WASM インタプリタ フルセット・コンセプトコード (`concepts/interpreter_concept.py`) | 2 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Structural risk evaluation for WASM インタプリタ フルセット・コンセプトコード (`concepts/interpreter_concept.py`). |
 | `components/tier2_runtime/runtime_vmmio.md` | vMMIO コンポーネント設計書 | 2 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Structural risk evaluation for vMMIO コンポーネント設計書. |
 | `components/tier2_runtime/runtime_vmmio.md` | 動的デバイスページテーブルエントリ (vmmio_pte_tier3) | 2 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Structural risk evaluation for 動的デバイスページテーブルエントリ (vmmio_pte_tier3). |
 | `components/tier2_runtime/runtime_vsoc.md` | vSoC コンポーネント設計書 {VERIFY_FORMAL} | 2 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Structural risk evaluation for vSoC コンポーネント設計書 {VERIFY_FORMAL}. |
 | `components/tier3_platform/platform_hal.md` | HAL コンポーネント設計書 | 3 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Structural risk evaluation for HAL コンポーネント設計書. |
 | `components/tier1_core/system_config_details.md` | ロールベースアクセス制御の定義 | 1 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Structural risk evaluation for ロールベースアクセス制御の定義. |
 | `components/tier2_runtime/runtime_vmmio.md` | 3.2 内部ブロック図 | 2 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Structural risk evaluation for 3.2 内部ブロック図. |
+| `components/tier2_runtime/runtime_vmmio.md` | vMMIO フルセット・コンセプトコード (`concepts/vmmio_concept.py`) | 2 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Structural risk evaluation for vMMIO フルセット・コンセプトコード (`concepts/vmmio_concept.py`). |
 | `components/tier2_runtime/runtime_vmmio.md` | 4.8 ソフトウェアTLB | 2 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Structural risk evaluation for 4.8 ソフトウェアTLB. |
 | `components/tier2_runtime/runtime_vsoc.md` | 3.2 内部ブロック図 | 2 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Structural risk evaluation for 3.2 内部ブロック図. |
 | `components/tier1_core/os_coos.md` | CSPチャネル（channel） | 1 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Structural risk evaluation for CSPチャネル（channel）. |
@@ -457,7 +466,6 @@
 | `components/tier2_runtime/runtime_vsoc.md` | 5.2 ネイティブAPI エクスポート | 2 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Structural risk evaluation for 5.2 ネイティブAPI エクスポート. |
 | `components/tier2_runtime/runtime_vsoc.md` | 6.3 検証モデル概要 | 2 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Structural risk evaluation for 6.3 検証モデル概要. |
 | `components/tier1_core/os_coos.md` | 3.1 データ構造 | 1 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Structural risk evaluation for 3.1 データ構造. |
-| `components/tier1_core/os_coos.md` | COOS 内部 API シグネチャ | 1 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Structural risk evaluation for COOS 内部 API シグネチャ. |
 | `components/tier1_core/os_scheduler.md` | ADR-SCHED-001: 侵入型リストによる管理 | 1 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Structural risk evaluation for ADR-SCHED-001: 侵入型リストによる管理. |
 | `components/tier1_core/os_scheduler.md` | ADR-SCHED-002: アルゴリズムの継続的改善と最適化 | 1 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Structural risk evaluation for ADR-SCHED-002: アルゴリズムの継続的改善と最適化. |
 | `components/tier1_core/system_config_details.md` | 2.5 ロギング | 1 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Structural risk evaluation for 2.5 ロギング. |
@@ -774,6 +782,7 @@
 | `plans/roadmap_phase.md` | Phase 1: vSoC First（GO後に約3ヶ月） | meta | 3/5 | 2/5 | `Static` | - | Structural risk evaluation for Phase 1: vSoC First（GO後に約3ヶ月）. |
 | `requires/requirement_list.md` | 3.2.3 移植性・互換性 | 0 | 3/5 | 2/5 | `Static` | - | Structural risk evaluation for 3.2.3 移植性・互換性. |
 | `components/tier1_interface/interface_wit.md` | WIT インターフェイス仕様書 (WASI 準拠版) {VERIFY_WIT} | 1 | 2/5 | 2/5 | `Static` | - | Structural risk evaluation for WIT インターフェイス仕様書 (WASI 準拠版) {VERIFY_WIT}. |
+| `components/tier2_jit/jit_engine_copy_patch.md` | Copy-and-Patch JIT フルセット・コンセプトコード (`concepts/jit_copy_patch_concept.py`) | 2 | 2/5 | 2/5 | `Static` | - | Structural risk evaluation for Copy-and-Patch JIT フルセット・コンセプトコード (`concepts/jit_copy_patch_concept.py`). |
 | `architecture/resource_budget.md` | 4.1.1 制約関係図 (Constraint Relationship Diagram) | meta | 2/5 | 2/5 | `Static` | - | Structural risk evaluation for 4.1.1 制約関係図 (Constraint Relationship Diagram). |
 | `architecture/document_structure.md` | 1. 設計複雑度に基づく Tier（分解階層）の定義 | meta | 2/5 | 2/5 | `Static` | - | Structural risk evaluation for 1. 設計複雑度に基づく Tier（分解階層）の定義. |
 | `architecture/architecture_overview.md` | [SD] 起動およびタスク登録 | meta | 2/5 | 2/5 | `Static` | - | Structural risk evaluation for [SD] 起動およびタスク登録. |

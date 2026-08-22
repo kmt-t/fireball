@@ -117,6 +117,71 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 - **概算Yield**: トレース実行数ベースで `co_yield` を発行し、協調型マルチタスクに整合させる。 `{Challenge_ApproximateYield}`
 - **デバッグフック**: 命令実行前後でブレークポイント判定を行い、Debugger に制御を委譲する。 `{Debug_Integrated}`
 
+#### WASM インタプリタ フルセット・コンセプトコード (`concepts/interpreter_concept.py`)
+```python
+class WASMTrap(Exception):
+    pass
+
+
+class WASMInterpreter:
+    MAX_STACK_DEPTH = 64
+
+    def __init__(self, memory_size: int = 65536):
+        self.stack = []
+        self.locals = []
+        self.memory = bytearray(memory_size)
+        self.safepoint_pending = False
+        self.safepoints_hit = 0
+
+    def push(self, val: int):
+        if len(self.stack) >= self.MAX_STACK_DEPTH:
+            raise WASMTrap("STACK_OVERFLOW")
+        self.stack.append(val & 0xFFFF_FFFF)
+
+    def pop(self) -> int:
+        if not self.stack:
+            raise WASMTrap("STACK_UNDERFLOW")
+        return self.stack.pop()
+
+    def check_safepoint(self) -> bool:
+        """Cooperative safepoint polling at loop headers."""
+        if self.safepoint_pending:
+            self.safepoints_hit += 1
+            return True
+        return False
+
+    def execute_block(self, instructions: list[tuple[str, object]]) -> str:
+        """Executes WASM bytecode with stack bounds & safepoint checking."""
+        pc = 0
+        while pc < len(instructions):
+            op, arg = instructions[pc]
+            if op == "i32.const":
+                self.push(arg)
+            elif op == "i32.add":
+                b, a = self.pop(), self.pop()
+                self.push(a + b)
+            elif op == "i32.sub":
+                b, a = self.pop(), self.pop()
+                self.push(a - b)
+            elif op == "i32.mul":
+                b, a = self.pop(), self.pop()
+                self.push(a * b)
+            elif op == "local.get":
+                self.push(self.locals[arg])
+            elif op == "local.set":
+                self.locals[arg] = self.pop()
+            elif op == "br_if_loop_header":
+                if self.pop() != 0:
+                    if self.check_safepoint():
+                        return "SAFEPOINT_YIELD"
+                    pc = arg
+                    continue
+            elif op == "return":
+                return "COMPLETED"
+            pc += 1
+        return "COMPLETED"
+```
+
 ### 4.2 状態遷移図
 <!-- traceability: {ThreadedInterpreter} {JIT_RuntimeAPI_Fallback} {Interpreter_LazyJITSwitch} {LowLatencyJIT} {SimpleJITArchitecture} {Challenge_ApproximateYield} {Debug_Integrated} -->
 ```mermaid

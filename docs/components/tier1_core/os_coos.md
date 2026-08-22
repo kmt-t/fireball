@@ -92,17 +92,148 @@ def channel_recv(channel: Channel, receiver_task: Task) -> CoroutineHandle:
 - **Idle Detection**: 全ての実行中タスクがブロック状態にあり、かつイベントキューが空（割り込みや外部イベントによる起床待ちのみ）の場合にアイドル状態と判定する。この条件を `idle_hook` のトリガーとし、イベントキューが空かつ全タスクがブロック状態の時のみ、リングバッファ内の未出力ログが1件以上存在する、あるいはイベント待機開始から10ミリ秒以上経過した際に、バックグラウンド処理（リングバッファからロガーを介した物理ストレージや非揮発性メモリへのログ書き出し・フラッシュ処理）をREADYリング外の専用Idleタスクとして呼び出す。 `{GLOBAL_IdleDetection}`
 - **Memory Management**: タスク生成時に独立したメモリパーティションを割り当てる。 `{GLOBAL_StrictMemoryLimit}` `{GLOBAL_IndependentHeap}`
 
-#### COOS 内部 API シグネチャ
+#### COOS フルセット・コンセプトコード (`concepts/coos_concept.py`)
 ```python
-# 外部割り込みハンドラ（ISR）から呼び出され、特定の割り込みIDにバインドされたタスクを起床する。
-# - irq_id: 0〜255の範囲を持つシステム定義の物理割り込みベクトル番号。
-# - 割り込みコンテキスト（ISR）内からアトミックかつノンブロッキングで直接実行される。
-def notify_interrupt(irq_id: uint32) -> void
+class TaskState:
+    READY = "READY"
+    RUNNING = "RUNNING"
+    BLOCKED = "BLOCKED"
+    SUSPENDED_CSP = "SUSPENDED_CSP"
+    TERMINATED = "TERMINATED"
 
-# システムがアイドル状態（全タスクがブロックかつ起床イベント待ち）の時に呼び出されるコールバック。
-# - READYリング外の専用Idleタスクの実行コンテキスト内でのみ実行される。
-# - リングバッファからロガーへの物理フラッシュ処理のみを行い、他のタスク実行をブロックしない。
-def idle_hook() -> void
+
+class Channel:
+    """1-entry synchronous CSP rendezvous channel."""
+    def __init__(self, channel_id: str):
+        self.channel_id = channel_id
+        self.buffer = None
+        self.has_data = False
+        self.sender_task = None
+        self.receiver_task = None
+
+
+class COOSKernel:
+    def __init__(self, max_consecutive_handoffs: int = 4):
+        self.tasks = {}
+        self.ready_queue = []
+        self.current_task = None
+        self.channels = {}
+        self.interrupt_event_queue = []
+        self.irq_waiters = {}
+        self.max_consecutive_handoffs = max_consecutive_handoffs
+        self.consecutive_handoffs = 0
+        self.idle_hook_called = False
+
+    def channel_send(self, channel_id: str, data) -> tuple[str, str | None]:
+        """Synchronous CSP send with direct symmetric context switch."""
+        ch = self.channels[channel_id]
+        sender = self.current_task
+        assert sender is not None
+
+        if ch.receiver_task is not None:
+            # Rendezvous matched: wake receiver immediately
+            receiver = ch.receiver_task
+            ch.receiver_task = None
+            ch.buffer = None
+            ch.has_data = False
+
+            self.tasks[receiver]["received_val"] = data
+            self.tasks[receiver]["state"] = TaskState.READY
+            self.tasks[sender]["state"] = TaskState.READY
+
+            if self.consecutive_handoffs < self.max_consecutive_handoffs:
+                self.consecutive_handoffs += 1
+                return ("DIRECT_SWITCH", receiver)
+            else:
+                self.consecutive_handoffs = 0
+                self.ready_queue.append(receiver)
+                return ("YIELD", None)
+        else:
+            # Buffer data and suspend sender
+            assert not ch.has_data, "Channel overflow"
+            ch.buffer = data
+            ch.has_data = True
+            ch.sender_task = sender
+            self.tasks[sender]["state"] = TaskState.SUSPENDED_CSP
+            return ("BLOCK", None)
+
+    def channel_recv(self, channel_id: str) -> tuple[str, str | None]:
+        """Synchronous CSP recv with direct symmetric context switch."""
+        ch = self.channels[channel_id]
+        receiver = self.current_task
+        assert receiver is not None
+
+        if ch.sender_task is not None:
+            # Rendezvous matched: sender has buffered data
+            sender = ch.sender_task
+            data = ch.buffer
+            ch.buffer = None
+            ch.has_data = False
+            ch.sender_task = None
+
+            self.tasks[receiver]["received_val"] = data
+            self.tasks[sender]["state"] = TaskState.READY
+            self.tasks[receiver]["state"] = TaskState.READY
+
+            if self.consecutive_handoffs < self.max_consecutive_handoffs:
+                self.consecutive_handoffs += 1
+                return ("DIRECT_SWITCH", sender)
+            else:
+                self.consecutive_handoffs = 0
+                self.ready_queue.append(sender)
+                return ("YIELD", None)
+        else:
+            # Suspend receiver until sender arrives
+            ch.receiver_task = receiver
+            self.tasks[receiver]["state"] = TaskState.SUSPENDED_CSP
+            return ("BLOCK", None)
+
+    def notify_interrupt(self, irq_id: int):
+        """Non-blocking ISR notification into bounded event queue."""
+        self.interrupt_event_queue.append(irq_id)
+
+    def drain_interrupts(self):
+        """Wake tasks waiting on received IRQs."""
+        while self.interrupt_event_queue:
+            irq_id = self.interrupt_event_queue.pop(0)
+            waiters = self.irq_waiters.pop(irq_id, [])
+            for t_id in waiters:
+                if self.tasks[t_id]["state"] in (TaskState.BLOCKED, TaskState.SUSPENDED_CSP):
+                    self.tasks[t_id]["state"] = TaskState.READY
+                    self.ready_queue.append(t_id)
+
+    def run_step(self) -> bool:
+        """Executes one cooperative dispatch step with idle detection."""
+        self.drain_interrupts()
+        active = [t for t in self.tasks.values() if t["state"] != TaskState.TERMINATED]
+        if not active:
+            return False
+
+        if not self.ready_queue:
+            self.idle_hook_called = True
+            return True
+
+        task_id = self.ready_queue.pop(0)
+        self.current_task = task_id
+        task_entry = self.tasks[task_id]
+        task_entry["state"] = TaskState.RUNNING
+
+        try:
+            action, target = task_entry["coro"].send(None)
+            if action == "YIELD":
+                task_entry["state"] = TaskState.READY
+                self.ready_queue.append(task_id)
+            elif action == "DIRECT_SWITCH":
+                task_entry["state"] = TaskState.READY
+                self.ready_queue.append(task_id)
+                if target in self.ready_queue:
+                    self.ready_queue.remove(target)
+                self.ready_queue.insert(0, target)
+        except StopIteration:
+            task_entry["state"] = TaskState.TERMINATED
+
+        self.current_task = None
+        return True
 ```
 
 ### 4.2 状態遷移図 (SMD: COOS システムレベル)

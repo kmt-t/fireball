@@ -106,6 +106,96 @@ Key-Valueペアを複数集約した通信の基本単位。内部的に、動�
 - **異常時リカバリ (Drop Handler)**: `{IPC_DropHandler}`
     - メッセージがキュー内で滞留中に送信先が Kill された場合、キューのデストラクタ（Dropハンドラ）が In-flight リソースを強制回収し、リークを防止する。
 
+#### IPC ルータ フルセット・コンセプトコード (`concepts/ipc_router_concept.py`)
+```python
+class OwnershipState:
+    SENDER_OWNS = "SENDER_OWNS"
+    IN_FLIGHT = "IN_FLIGHT"
+    RECEIVER_OWNS = "RECEIVER_OWNS"
+    RECLAIMED_BY_DROP = "RECLAIMED_BY_DROP"
+
+
+class IPCMessage:
+    def __init__(self, resource_id: str, payload: dict):
+        self.resource_id = resource_id
+        self.payload = payload
+        self.ownership = OwnershipState.SENDER_OWNS
+
+
+class IPCRouter:
+    def __init__(self):
+        # Stage 1: Static Flat Map registry (URI -> Service Descriptor)
+        self.registry = {
+            "ipc://core/coos": {"role": "CORE_SERVICE", "channel_id": "ch_coos", "max_queue": 2},
+            "ipc://hal/gpio": {"role": "PLATFORM_HAL", "channel_id": "ch_gpio", "max_queue": 2},
+            "ipc://dbg/manager": {"role": "DEBUGGER", "channel_id": "ch_dbg", "max_queue": 1},
+        }
+
+        # Stage 2: Role-based Access Control Matrix (sender_role, target_role) -> bool
+        self.role_matrix = {
+            ("CLIENT_APP", "CORE_SERVICE"): True,
+            ("CLIENT_APP", "PLATFORM_HAL"): True,
+            ("CLIENT_APP", "DEBUGGER"): False,
+            ("CORE_SERVICE", "PLATFORM_HAL"): True,
+            ("DEBUGGER", "CORE_SERVICE"): True,
+            ("DEBUGGER", "PLATFORM_HAL"): True,
+        }
+
+        self.queues = {"ch_coos": [], "ch_gpio": [], "ch_dbg": []}
+
+    def route_message(self, sender_role: str, uri: str, message: IPCMessage) -> tuple[str, str]:
+        """3-stage IPC routing pipeline with Zero-Copy Handoff & Rollback."""
+        assert message.ownership == OwnershipState.SENDER_OWNS
+
+        # Stage 1: URI Lookup
+        entry = self.registry.get(uri)
+        if not entry:
+            return ("ERR_NOT_FOUND", f"URI not registered: {uri}")
+
+        target_role = entry["role"]
+        channel_id = entry["channel_id"]
+        max_queue = entry["max_queue"]
+
+        # Stage 2: Access Control
+        if not self.role_matrix.get((sender_role, target_role), False):
+            return ("ERR_PERMISSION_DENIED", f"Forbidden: {sender_role} -> {target_role}")
+
+        # Stage 3: Zero-Copy Handoff
+        target_queue = self.queues[channel_id]
+        if len(target_queue) >= max_queue:
+            # Rollback: restore ownership to sender immediately
+            message.ownership = OwnershipState.SENDER_OWNS
+            return ("ERR_QUEUE_FULL", "Queue full, rolled back to sender")
+
+        # 1. Revoke sender ownership -> IN_FLIGHT
+        message.ownership = OwnershipState.IN_FLIGHT
+        # 2. Enqueue into target queue
+        target_queue.append(message)
+        return ("OK_ENQUEUED", f"Message in-flight on {channel_id}")
+
+    def receive_message(self, channel_id: str) -> IPCMessage | None:
+        """Target service dequeues message and acquires ownership (Grant)."""
+        queue = self.queues.get(channel_id, [])
+        if not queue:
+            return None
+        message = queue.pop(0)
+        assert message.ownership == OwnershipState.IN_FLIGHT
+        # 3. Grant receiver ownership
+        message.ownership = OwnershipState.RECEIVER_OWNS
+        return message
+
+    def trigger_drop_handler(self, channel_id: str) -> list[str]:
+        """Drop handler forcibly reclaims all in-flight resources upon target fault."""
+        queue = self.queues.get(channel_id, [])
+        reclaimed_ids = []
+        while queue:
+            msg = queue.pop(0)
+            assert msg.ownership == OwnershipState.IN_FLIGHT
+            msg.ownership = OwnershipState.RECLAIMED_BY_DROP
+            reclaimed_ids.append(msg.resource_id)
+        return reclaimed_ids
+```
+
 ※ 所有権移譲プロトコルの二重所有不在および有限解決性は、`formal/csp_handoff_model.py` により変異検査付き形式モデルとして検証される。トポロジレベルのデッドロック不在は、非循環チャネル依存規律（クライアント・サーバ規律）に基づき `spec-integrator` Topology Gate (`TopologyVerifier`) により静的閉路検出検証される。
 
 

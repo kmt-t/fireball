@@ -46,6 +46,7 @@ WASM命令に対応するネイティブバイナリの雛形。
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
+<!-- traceability: {LowLatencyJIT} {JIT_CopyAndPatch} {JIT_RuntimeAPI_Fallback} {VERIFY_FORMAL} -->
 
 #### トレースコンパイル手順
 1. **フェッチ**: WASM命令オフセットから命令を取得（フェッチ）する。

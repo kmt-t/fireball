@@ -130,7 +130,7 @@ WITインターフェース名は kebab-case で定義されるが、C++の公�
 
 ## 9. ハードウェアメモリ保護 (MPU) & W^X 設計
 
-<!-- traceability: {META_FaultIsolation} {WasmPageAlignment} {LowLatencyJIT} -->
+<!-- traceability: {META_FaultIsolation} {WasmPageAlignment} {LowLatencyJIT} {VERIFY_FORMAL} -->
 
 ### 9.1 Cortex-M33 PMSAv8 MPU リージョン配分
 

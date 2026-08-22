@@ -6,7 +6,11 @@ pyModelChecking による JIT 3面キャッシュ代謝・MPU W^X 実行安全�
 from pyModelChecking import Kripke
 from pyModelChecking.CTL import AG, AF, And, Not, Imply, AtomicProposition
 
-BACKS = ["components/tier2_jit/jit_compiler.md"]
+BACKS = [
+    "components/tier2_jit/jit_compiler.md",
+    "components/tier2_jit/jit_engine_copy_patch.md",
+    "components/tier3_platform/platform_memory.md",
+]
 
 
 def build_model(*, guards: bool = True) -> Kripke:

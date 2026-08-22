@@ -247,6 +247,17 @@ graph TD
 | **Access Control** | ロールマトリックス参照 `role_matrix[sender][receiver]` | O(1) | 事前計算済みの2次元配列による静的検査。 |
 | **Channel Grant** | サービスの待受チャネル ID を取得、準備完了判定 | O(1) | チャネル状態確認および送信権限の確定。 |
 
+#### ロール間通信許可マトリクス (FB_CONF_ROUTER_ROLE_MATRIX)
+<!-- traceability: {RoleBasedAccessControl} -->
+
+| 送信元ロール (Sender) \ 送信先ロール (Target) | CORE_SERVICE | PLATFORM_HAL | DEBUGGER |
+| :--- | :---: | :---: | :---: |
+| **CLIENT_APP** | ALLOW | ALLOW | DENY |
+| **CORE_SERVICE** | - | ALLOW | DENY |
+| **DEBUGGER** | ALLOW | ALLOW | - |
+
+※ 送信許可（ALLOW）の関係から構築される通信有向グラフ（`CLIENT_APP -> CORE_SERVICE`, `CLIENT_APP -> PLATFORM_HAL`, `CORE_SERVICE -> PLATFORM_HAL`, `DEBUGGER -> CORE_SERVICE`, `DEBUGGER -> PLATFORM_HAL`）は非循環（DAG）であり、循環通信待機（Circular Wait）によるデッドロックがトポロジ層で原理的に排除される。
+
 ### 4.2 状態遷移図 (SysML SMD: IPC Router ルーティングフロー)
 <!-- traceability: {LowLatencyLookup} {META_AccessDictionary} {META_FlatMapIndexed} {OwnershipTransfer} {IPC_ZeroCopy} {Challenge_CspHandoffStarvation} {IPC_DropHandler} -->
 

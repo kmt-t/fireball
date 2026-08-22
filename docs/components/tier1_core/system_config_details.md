@@ -30,22 +30,27 @@ VM（ゲストタスク）ごとのプール領域（`FB_CONF_TASK_HEAP_SIZE`）
 ```text
 // inc/fireball_config.hxx での定義形式 (C++23)
 namespace fireball {
-    inline constexpr size_t FB_CONF_MAX_ROLES_PER_SERVICE = 4;
-
-    struct role_access_entry {
-        std::string_view service_uri;
-        std::array<std::string_view, FB_CONF_MAX_ROLES_PER_SERVICE> allowed_roles;
+    enum class role_t : uint8_t {
+        CLIENT_APP = 0,
+        CORE_SERVICE = 1,
+        PLATFORM_HAL = 2,
+        DEBUGGER = 3,
+        COUNT = 4
     };
 
-    inline constexpr std::array<role_access_entry, 3> FB_CONF_ROUTER_ROLE_MATRIX {{
-        {"fireball://system/log",   {"Kernel", "Driver", "App", ""}},
-        {"fireball://system/power", {"Kernel", "", "", ""}},
-        {"fireball://driver/gpio",  {"Kernel", "Driver", "", ""}}
+    // ロール間通信許可マトリクス (4x4 static bool table)
+    // 行: 送信元ロール (Sender), 列: 送信先ロール (Target)
+    inline constexpr std::array<std::array<bool, 4>, 4> FB_CONF_ROUTER_ROLE_MATRIX {{
+        // Target:  CLIENT_APP, CORE_SERVICE, PLATFORM_HAL, DEBUGGER
+        /* CLIENT_APP   */ {false, true,  true,  false},
+        /* CORE_SERVICE */ {false, false, true,  false},
+        /* PLATFORM_HAL */ {false, false, false, false},
+        /* DEBUGGER     */ {false, true,  true,  false},
     }};
 }
 ```
 
-※ **空文字列 `""` のセマンティクス**: `allowed_roles` の配列内に記述された空文字列 `""` は、割り当てられた権限ロールが存在しないこと（アクセス権限なし / None）を意味する。このスロットに対するマッチングは常に不合格となり、明示的にアクセスが拒否される。アクセス拒否時には、IPCルータは `ERR_ACCESS_DENIED` を返し、メッセージ送信要求を破棄して所有権の移譲を Rollback する。
+※ **通信制御セマンティクス**: `FB_CONF_ROUTER_ROLE_MATRIX[sender][target]` が `true` の場合のみ IPC 通信および所有権移譲（Handoff）が許可される。`false`（DENY）の場合は `ERR_ACCESS_DENIED` を返し、メッセージ送信要求を破棄して所有権の移譲を Rollback する。この 4 ロール隣接行列から導出される有向グラフは非循環（DAG）であり、通信循環待機デッドロックをトポロジ層で原理的に排除する。
 
 
 ### 2.3 HAL

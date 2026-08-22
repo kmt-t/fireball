@@ -18,6 +18,7 @@ IPCルータは、URIベースのサービスディスカバリとロールベ�
 ### 3.2 内部ブロック図
 <!-- traceability: {IPCRegistry} {META_FlatMapIndexed} {RoleBasedAccessControl} -->
 ```mermaid
+%% not-a-topology: Internal component block diagram and lookup pipeline within IPC router subsystem
 graph TB
     subgraph "IPC Router Layer"
         subgraph "Lookup Pipeline"

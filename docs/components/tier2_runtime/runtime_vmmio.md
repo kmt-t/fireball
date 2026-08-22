@@ -163,7 +163,7 @@ def access_vmmio(addr: VmmioAddress, is_write: bool):
     # 2. TLB / ページテーブルルックアップ
     # ※ エイリアシングアドレスは同一PTE・同一TLBスロットに解決されるため権限・所有権チェックは回避されず、
     #    受容可能リスクとしてランタイム検査を省き O(1) ルックアップに徹する（ゼロコスト抽象化 {META_CompileTimeValidation}）。
-    #    TODO(Phase 2): アドレス [27:16] に Generation Cookie 等の意味を付与する拡張時は、マスク検査を導入すること。
+    #    TODO(未決): アドレス [27:16] に Generation Cookie 等の意味を付与する拡張時は、マスク検査を導入すること。
     pte = lookup_tlb(addr)
 
     # 3. 権限チェック (PTE [11:8])

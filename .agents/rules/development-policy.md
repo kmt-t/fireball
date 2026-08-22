@@ -44,5 +44,5 @@ scope: GLOBAL
 - 仕様・計画・検証に触れる変更では、`docs/architecture/document_structure.md` の定義に従って `{Keyword}` の traceability を維持すること。
 - 変更した仕様は `docs/components/`、`docs/requires/`、`verify/` の対応箇所に反映すること。
 - 不確実な仕様は憶測で埋めず、必要ならユーザーに質問すること。
-- `TODO(Phase X): [課題] [アクション]` を TODO 管理の基本形式とする。
+- `TODO(未決): [課題] [アクション]` を TODO 管理の基本形式とする。フェーズ番号（Phase 1 等）は `docs/plans/**` にのみ記述し、他の文書やコードには書かない。
 - 複雑な状態遷移や所有権の移譲については、pyModelChecking によるモデル化と検証を提案または実施すること。

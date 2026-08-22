@@ -158,7 +158,7 @@ JITエンジンの挙動を制御する性能パラメータ。 `{META_Configura
     - **昇格時**: Oldest 領域からアクティブ領域へコピーされる際、リンクを再評価する。常に **アクティブ領域内のアドレス**、または **スタブ** へのリンクを行う。
 4. **再配置の安全性**: 昇格（コピー）時に必ず新しいアクティブ領域のアドレスでリンク情報を書き換えるため、Oldest 領域の古いアドレスへ飛ぶ（Dangling Pointer）ことはない。
 
-#### 統合 Tiered ランタイムエンジン・コンセプトコード (`concepts/runtime_engine_concept.py`)
+#### 統合 Tiered ランタイムエンジン・コンセプトコード (`../tier2_runtime/concepts/runtime_engine_concept.py`)
 インタープリタ実行、2-bit Hotspot 検出、Copy-and-Patch JIT コンパイル、3面マルチバッファキャッシュ（Active/Warm/Oldest）、および MPU W^X 保護プロトコルを統合した自己完結実行シミュレーションは [`../tier2_runtime/concepts/runtime_engine_concept.py`](../tier2_runtime/concepts/runtime_engine_concept.py) を参照。
 
 #### ホットスポット判定 (yield 時)

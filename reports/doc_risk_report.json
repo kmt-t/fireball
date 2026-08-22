@@ -1,27 +1,27 @@
 {
-  "generated_at": "2026-08-22T07:10:46.163037+00:00",
+  "generated_at": "2026-08-22T23:26:44.059705+00:00",
   "backend": "heuristic",
   "total_evaluated": 677,
   "formal_candidates_count": 43,
-  "llm_candidates_count": 23,
+  "llm_candidates_count": 45,
   "sections_scanned": 677,
   "max_sections": 0,
   "doc_hashes": {
     "architecture/architecture_overview.md": "30be52ed847f1fa7ff9f50980552e989dab9727751748a3e5874505214cc81d7",
     "architecture/concept_harness.md": "42e39e100eb0e1ef0f8c2fa68d60b8b4d004657741a0a437ff418f55f5848a34",
     "architecture/document_structure.md": "3659e600d8ba7465316d0b131e5b6375fec0930fefe44134fccf76e755b8c3bb",
-    "architecture/resource_budget.md": "f243c833676289a80c9a7610fc4cb4c11a6d0a6de9622f713fa01e5e3caea0dc",
+    "architecture/resource_budget.md": "f7ae92a2e5532e681450ede4eb20a0f3f363e5682d9ba0bb401434126dd34614",
     "components/tier1_core/os_coos.md": "e080c35bcd04d4ebf91156d37b22072a94159a03baa06cc766e92736ee77ced1",
     "components/tier1_core/os_scheduler.md": "e45096cf5f7481f0d114010adf47c348a81750fdcd6659bf51e6f9f025642d89",
     "components/tier1_core/system_config.md": "242d8748cbf63ae10afe480615981c055b47b7c636293ca51fa9e8235596a9dc",
-    "components/tier1_core/system_config_details.md": "502bf7a744f1682b8f13d6ba0215028d630c7db7277d3be879142d7a3e1922b9",
+    "components/tier1_core/system_config_details.md": "3b0b08b4493cd3ebb31371b87d441a5858059907115c1c82e013e90e73e1d614",
     "components/tier1_core/system_logging.md": "7ec474b1ad605d7e56d14c9eb01f763fb2cd93553a8c7d91e4a4c71f4072cb4d",
     "components/tier1_core/system_syscall.md": "b086a7e5f35f2717438de890ec7e3bff8a6965444be24d1e178e1e243a2a1220",
     "components/tier1_interface/interface_wit.md": "c2591b654808d067f8880707e5507884f2744c7a18b1af8b93b548288a77f848",
-    "components/tier1_interface/ipc_router.md": "3304dc77b24353dd070557a7315f43cc756d815445457f4e2ec205c29fa20207",
+    "components/tier1_interface/ipc_router.md": "150398eeeec0cb9d84ede18690f2d6b7c64f87281f48a09c6ee3fe81fcbfc3f2",
     "components/tier1_interface/system_service.md": "7c98009196d56c50c4d1d27269f38eb51d4fe1fa654aedb51dba7c496cd5fe62",
     "components/tier2_jit/jit_assembler_constexpr.md": "4798eb6d2692ae574c45917a0597feb16e1ffa3ec9d9771566a6523607f7c7d5",
-    "components/tier2_jit/jit_compiler.md": "6fdaeeaa2253bc0c37d273ca67693b14d90db9bf3b57982ebe300163a03a262c",
+    "components/tier2_jit/jit_compiler.md": "26712eb95a0232e3e91d0509ec323777c9e1ea60f65669f0baf0de3ccd4f43f1",
     "components/tier2_jit/jit_engine_copy_patch.md": "a6c7d874f991562322257600b358494d1bd0e604e0f2da52b63a8b9a2ef17d85",
     "components/tier2_jit/jit_runtime_entry.md": "ac17ee532a11b108521ece54ac63fdfd956484e534ed5f607993764c6bae2718",
     "components/tier2_jit/jit_runtime_hotspot.md": "56a3a5466ea0ab7752210b2b8a58f8ed577a67b58c20e49dd8ff936bb9951c51",
@@ -29,7 +29,7 @@
     "components/tier2_runtime/debug/debug_manager.md": "50a709835b11ea4d6e477d5a957bc4242c950bb81f41899ee6d31baca25b0197",
     "components/tier2_runtime/runtime_interpreter.md": "0806dbfca3ef5ed0267b0034bee496a7361a4556b1a202614e3dc248942792c7",
     "components/tier2_runtime/runtime_loader.md": "591c6d491434e54f39eed5c48ae3216fc1b0ca1e2299044161cccac48f93dca5",
-    "components/tier2_runtime/runtime_vmmio.md": "2cb60f38d2a0ca9766671e4b05d0c9aefee00893e1fb11fd36f41631c9123715",
+    "components/tier2_runtime/runtime_vmmio.md": "88bad4a0ad9e466bec9f8e16ba26fe6fa97814950c5a7535e11eefc21955d749",
     "components/tier2_runtime/runtime_vsoc.md": "8fe2030e2f0ba7156ece2db7ba29ed44e1011625f52a9f3f755d20ff260f9623",
     "components/tier2_runtime/wasm_instruction.md": "640483f8a25bca7885110ce37e499c4ba3622fdc2ba3507e3a78b2bc1fcf8b5f",
     "components/tier3_platform/platform_hal.md": "e539743f731215038cedecafa34e48a4d75d35871cfd97b0113c2791574dcb7d",
@@ -84,12 +84,16 @@
       "file_path": "architecture/document_structure.md",
       "heading": "4.2 メタキーワード（共通非機能要件・設計方針）の定義",
       "tier": "meta",
-      "complexity_score": 2,
-      "risk_score": 2,
+      "complexity_score": 3,
+      "risk_score": 3,
       "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
+      "recommended_verification": "LLM_Judge",
+      "suggested_tags": [
+        "{VERIFY_LLM}"
+      ],
+      "risk_factors": [
+        "Architectural trade-off or natural language design decision"
+      ],
       "summary": "Independent heuristic evaluation for '4.2 メタキーワード（共通非機能要件・設計方針）の定義'."
     },
     {
@@ -476,12 +480,16 @@
       "file_path": "components/tier2_jit/jit_engine_copy_patch.md",
       "heading": "6.1 性能制約と最優先設計方針",
       "tier": 2,
-      "complexity_score": 2,
-      "risk_score": 2,
+      "complexity_score": 3,
+      "risk_score": 3,
       "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
+      "recommended_verification": "LLM_Judge",
+      "suggested_tags": [
+        "{VERIFY_LLM}"
+      ],
+      "risk_factors": [
+        "Architectural trade-off or natural language design decision"
+      ],
       "summary": "Independent heuristic evaluation for '6.1 性能制約と最優先設計方針'."
     },
     {
@@ -1205,16 +1213,12 @@
       "file_path": "components/tier2_runtime/runtime_vmmio.md",
       "heading": "アドレスフィールド定義 (vmmio_address)",
       "tier": 2,
-      "complexity_score": 3,
-      "risk_score": 3,
+      "complexity_score": 2,
+      "risk_score": 2,
       "formal_needed": false,
-      "recommended_verification": "LLM_Judge",
-      "suggested_tags": [
-        "{VERIFY_LLM}"
-      ],
-      "risk_factors": [
-        "Architectural trade-off or natural language design decision"
-      ],
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
       "summary": "Independent heuristic evaluation for 'アドレスフィールド定義 (vmmio_address)'."
     },
     {
@@ -2120,6 +2124,23 @@
       "summary": "Independent heuristic evaluation for 'タスク生成 (`spawn`)'."
     },
     {
+      "section_id": "sec:components/tier1_core/system_config_details.md#ロールベースアクセス制御の定義",
+      "file_path": "components/tier1_core/system_config_details.md",
+      "heading": "ロールベースアクセス制御の定義",
+      "tier": 1,
+      "complexity_score": 4,
+      "risk_score": 4,
+      "formal_needed": true,
+      "recommended_verification": "pyModelChecking",
+      "suggested_tags": [
+        "{VERIFY_FORMAL}"
+      ],
+      "risk_factors": [
+        "Stateful concurrent protocol or hardware safety invariant identified"
+      ],
+      "summary": "Independent heuristic evaluation for 'ロールベースアクセス制御の定義'."
+    },
+    {
       "section_id": "sec:components/tier1_interface/interface_wit.md#WIT インターフェイス仕様書 (WASI 準拠版) {VERIFY_WIT}",
       "file_path": "components/tier1_interface/interface_wit.md",
       "heading": "WIT インターフェイス仕様書 (WASI 準拠版) {VERIFY_WIT}",
@@ -2347,23 +2368,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for 'HAL コンポーネント設計書'."
-    },
-    {
-      "section_id": "sec:components/tier1_core/system_config_details.md#ロールベースアクセス制御の定義",
-      "file_path": "components/tier1_core/system_config_details.md",
-      "heading": "ロールベースアクセス制御の定義",
-      "tier": 1,
-      "complexity_score": 4,
-      "risk_score": 4,
-      "formal_needed": true,
-      "recommended_verification": "pyModelChecking",
-      "suggested_tags": [
-        "{VERIFY_FORMAL}"
-      ],
-      "risk_factors": [
-        "Stateful concurrent protocol or hardware safety invariant identified"
-      ],
-      "summary": "Independent heuristic evaluation for 'ロールベースアクセス制御の定義'."
     },
     {
       "section_id": "sec:components/tier2_runtime/runtime_vmmio.md#3.2 内部ブロック図",
@@ -3380,12 +3384,16 @@
       "file_path": "components/tier2_runtime/runtime_loader.md",
       "heading": "4.2 メモリ制約",
       "tier": 2,
-      "complexity_score": 2,
-      "risk_score": 2,
+      "complexity_score": 3,
+      "risk_score": 3,
       "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
+      "recommended_verification": "LLM_Judge",
+      "suggested_tags": [
+        "{VERIFY_LLM}"
+      ],
+      "risk_factors": [
+        "Architectural trade-off or natural language design decision"
+      ],
       "summary": "Independent heuristic evaluation for '4.2 メモリ制約'."
     },
     {
@@ -3717,12 +3725,16 @@
       "file_path": "components/tier1_interface/interface_wit.md",
       "heading": "設計判断",
       "tier": 1,
-      "complexity_score": 2,
-      "risk_score": 2,
+      "complexity_score": 3,
+      "risk_score": 3,
       "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
+      "recommended_verification": "LLM_Judge",
+      "suggested_tags": [
+        "{VERIFY_LLM}"
+      ],
+      "risk_factors": [
+        "Architectural trade-off or natural language design decision"
+      ],
       "summary": "Independent heuristic evaluation for '設計判断'."
     },
     {
@@ -4410,12 +4422,16 @@
       "file_path": "components/tier1_interface/system_service.md",
       "heading": "設計判断",
       "tier": 1,
-      "complexity_score": 2,
-      "risk_score": 2,
+      "complexity_score": 3,
+      "risk_score": 3,
       "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
+      "recommended_verification": "LLM_Judge",
+      "suggested_tags": [
+        "{VERIFY_LLM}"
+      ],
+      "risk_factors": [
+        "Architectural trade-off or natural language design decision"
+      ],
       "summary": "Independent heuristic evaluation for '設計判断'."
     },
     {
@@ -5067,12 +5083,16 @@
       "file_path": "architecture/architecture_overview.md",
       "heading": "4. アーキテクチャスタイルと設計定石",
       "tier": "meta",
-      "complexity_score": 2,
-      "risk_score": 2,
+      "complexity_score": 3,
+      "risk_score": 3,
       "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
+      "recommended_verification": "LLM_Judge",
+      "suggested_tags": [
+        "{VERIFY_LLM}"
+      ],
+      "risk_factors": [
+        "Architectural trade-off or natural language design decision"
+      ],
       "summary": "Independent heuristic evaluation for '4. アーキテクチャスタイルと設計定石'."
     },
     {
@@ -5093,12 +5113,16 @@
       "file_path": "architecture/document_structure.md",
       "heading": "1.1 各 Tier の定義と配置ディレクトリ",
       "tier": "meta",
-      "complexity_score": 2,
-      "risk_score": 2,
+      "complexity_score": 3,
+      "risk_score": 3,
       "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
+      "recommended_verification": "LLM_Judge",
+      "suggested_tags": [
+        "{VERIFY_LLM}"
+      ],
+      "risk_factors": [
+        "Architectural trade-off or natural language design decision"
+      ],
       "summary": "Independent heuristic evaluation for '1.1 各 Tier の定義と配置ディレクトリ'."
     },
     {
@@ -5516,12 +5540,16 @@
       "file_path": "architecture/document_structure.md",
       "heading": "4.1 分類基準と検証時の挙動",
       "tier": "meta",
-      "complexity_score": 2,
-      "risk_score": 2,
+      "complexity_score": 3,
+      "risk_score": 3,
       "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
+      "recommended_verification": "LLM_Judge",
+      "suggested_tags": [
+        "{VERIFY_LLM}"
+      ],
+      "risk_factors": [
+        "Architectural trade-off or natural language design decision"
+      ],
       "summary": "Independent heuristic evaluation for '4.1 分類基準と検証時の挙動'."
     },
     {
@@ -6032,9 +6060,9 @@
       "summary": "Independent heuristic evaluation for 'コンパイル時エンコード'."
     },
     {
-      "section_id": "sec:components/tier2_jit/jit_compiler.md#統合 Tiered ランタイムエンジン・コンセプトコード (`concepts/runtime_engine_concept.py`)",
+      "section_id": "sec:components/tier2_jit/jit_compiler.md#統合 Tiered ランタイムエンジン・コンセプトコード (`../tier2_runtime/concepts/runtime_engine_concept.py`)",
       "file_path": "components/tier2_jit/jit_compiler.md",
-      "heading": "統合 Tiered ランタイムエンジン・コンセプトコード (`concepts/runtime_engine_concept.py`)",
+      "heading": "統合 Tiered ランタイムエンジン・コンセプトコード (`../tier2_runtime/concepts/runtime_engine_concept.py`)",
       "tier": 2,
       "complexity_score": 4,
       "risk_score": 4,
@@ -6046,7 +6074,7 @@
       "risk_factors": [
         "Stateful concurrent protocol or hardware safety invariant identified"
       ],
-      "summary": "Independent heuristic evaluation for '統合 Tiered ランタイムエンジン・コンセプトコード (`concepts/runtime_engine_concept.py`)'."
+      "summary": "Independent heuristic evaluation for '統合 Tiered ランタイムエンジン・コンセプトコード (`../tier2_runtime/concepts/runtime_engine_concept.py`)'."
     },
     {
       "section_id": "sec:components/tier2_jit/jit_engine_copy_patch.md#コピーアンドパッチエンジン（CopyAndPatchEngine）クラス",
@@ -6802,21 +6830,17 @@
       "summary": "Independent heuristic evaluation for '4. リソース制約モデル (SysML Parametric Diagram)'."
     },
     {
-      "section_id": "sec:architecture/resource_budget.md#4.3 予算追跡（Phase 1 開始後に記録予定）",
+      "section_id": "sec:architecture/resource_budget.md#4.3 予算追跡（実装開始後に記録予定）",
       "file_path": "architecture/resource_budget.md",
-      "heading": "4.3 予算追跡（Phase 1 開始後に記録予定）",
+      "heading": "4.3 予算追跡（実装開始後に記録予定）",
       "tier": "meta",
-      "complexity_score": 3,
-      "risk_score": 3,
+      "complexity_score": 2,
+      "risk_score": 2,
       "formal_needed": false,
-      "recommended_verification": "LLM_Judge",
-      "suggested_tags": [
-        "{VERIFY_LLM}"
-      ],
-      "risk_factors": [
-        "Architectural trade-off or natural language design decision"
-      ],
-      "summary": "Independent heuristic evaluation for '4.3 予算追跡（Phase 1 開始後に記録予定）'."
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '4.3 予算追跡（実装開始後に記録予定）'."
     },
     {
       "section_id": "sec:architecture/resource_budget.md#5. 履歴",
@@ -7061,12 +7085,16 @@
       "file_path": "components/tier1_core/system_config.md",
       "heading": "6. 制約達成の方策",
       "tier": 1,
-      "complexity_score": 2,
-      "risk_score": 2,
+      "complexity_score": 3,
+      "risk_score": 3,
       "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
+      "recommended_verification": "LLM_Judge",
+      "suggested_tags": [
+        "{VERIFY_LLM}"
+      ],
+      "risk_factors": [
+        "Architectural trade-off or natural language design decision"
+      ],
       "summary": "Independent heuristic evaluation for '6. 制約達成の方策'."
     },
     {
@@ -7191,12 +7219,16 @@
       "file_path": "components/tier1_core/system_logging.md",
       "heading": "6. 制約達成の方策",
       "tier": 1,
-      "complexity_score": 2,
-      "risk_score": 2,
+      "complexity_score": 3,
+      "risk_score": 3,
       "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
+      "recommended_verification": "LLM_Judge",
+      "suggested_tags": [
+        "{VERIFY_LLM}"
+      ],
+      "risk_factors": [
+        "Architectural trade-off or natural language design decision"
+      ],
       "summary": "Independent heuristic evaluation for '6. 制約達成の方策'."
     },
     {
@@ -7373,12 +7405,16 @@
       "file_path": "components/tier1_interface/ipc_router.md",
       "heading": "7. 制約達成の方策",
       "tier": 1,
-      "complexity_score": 2,
-      "risk_score": 2,
+      "complexity_score": 3,
+      "risk_score": 3,
       "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
+      "recommended_verification": "LLM_Judge",
+      "suggested_tags": [
+        "{VERIFY_LLM}"
+      ],
+      "risk_factors": [
+        "Architectural trade-off or natural language design decision"
+      ],
       "summary": "Independent heuristic evaluation for '7. 制約達成の方策'."
     },
     {
@@ -7477,12 +7513,16 @@
       "file_path": "components/tier1_interface/system_service.md",
       "heading": "6. 制約達成の方策",
       "tier": 1,
-      "complexity_score": 2,
-      "risk_score": 2,
+      "complexity_score": 3,
+      "risk_score": 3,
       "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
+      "recommended_verification": "LLM_Judge",
+      "suggested_tags": [
+        "{VERIFY_LLM}"
+      ],
+      "risk_factors": [
+        "Architectural trade-off or natural language design decision"
+      ],
       "summary": "Independent heuristic evaluation for '6. 制約達成の方策'."
     },
     {
@@ -7607,12 +7647,16 @@
       "file_path": "components/tier2_jit/jit_assembler_constexpr.md",
       "heading": "6. 制約達成の方策",
       "tier": 2,
-      "complexity_score": 2,
-      "risk_score": 2,
+      "complexity_score": 3,
+      "risk_score": 3,
       "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
+      "recommended_verification": "LLM_Judge",
+      "suggested_tags": [
+        "{VERIFY_LLM}"
+      ],
+      "risk_factors": [
+        "Architectural trade-off or natural language design decision"
+      ],
       "summary": "Independent heuristic evaluation for '6. 制約達成の方策'."
     },
     {
@@ -7711,12 +7755,16 @@
       "file_path": "components/tier2_jit/jit_compiler.md",
       "heading": "7. 制約達成の方策",
       "tier": 2,
-      "complexity_score": 2,
-      "risk_score": 2,
+      "complexity_score": 3,
+      "risk_score": 3,
       "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
+      "recommended_verification": "LLM_Judge",
+      "suggested_tags": [
+        "{VERIFY_LLM}"
+      ],
+      "risk_factors": [
+        "Architectural trade-off or natural language design decision"
+      ],
       "summary": "Independent heuristic evaluation for '7. 制約達成の方策'."
     },
     {
@@ -7828,12 +7876,16 @@
       "file_path": "components/tier2_jit/jit_engine_copy_patch.md",
       "heading": "6. 制約達成の方策",
       "tier": 2,
-      "complexity_score": 2,
-      "risk_score": 2,
+      "complexity_score": 3,
+      "risk_score": 3,
       "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
+      "recommended_verification": "LLM_Judge",
+      "suggested_tags": [
+        "{VERIFY_LLM}"
+      ],
+      "risk_factors": [
+        "Architectural trade-off or natural language design decision"
+      ],
       "summary": "Independent heuristic evaluation for '6. 制約達成の方策'."
     },
     {
@@ -7958,12 +8010,16 @@
       "file_path": "components/tier2_jit/jit_runtime_entry.md",
       "heading": "6. 制約達成の方策",
       "tier": 2,
-      "complexity_score": 2,
-      "risk_score": 2,
+      "complexity_score": 3,
+      "risk_score": 3,
       "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
+      "recommended_verification": "LLM_Judge",
+      "suggested_tags": [
+        "{VERIFY_LLM}"
+      ],
+      "risk_factors": [
+        "Architectural trade-off or natural language design decision"
+      ],
       "summary": "Independent heuristic evaluation for '6. 制約達成の方策'."
     },
     {
@@ -8101,12 +8157,16 @@
       "file_path": "components/tier2_jit/jit_runtime_hotspot.md",
       "heading": "6. 制約達成の方策",
       "tier": 2,
-      "complexity_score": 2,
-      "risk_score": 2,
+      "complexity_score": 3,
+      "risk_score": 3,
       "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
+      "recommended_verification": "LLM_Judge",
+      "suggested_tags": [
+        "{VERIFY_LLM}"
+      ],
+      "risk_factors": [
+        "Architectural trade-off or natural language design decision"
+      ],
       "summary": "Independent heuristic evaluation for '6. 制約達成の方策'."
     },
     {
@@ -8309,12 +8369,16 @@
       "file_path": "components/tier2_runtime/debug/debug_manager.md",
       "heading": "6. 制約達成の方策",
       "tier": 2,
-      "complexity_score": 2,
-      "risk_score": 2,
+      "complexity_score": 3,
+      "risk_score": 3,
       "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
+      "recommended_verification": "LLM_Judge",
+      "suggested_tags": [
+        "{VERIFY_LLM}"
+      ],
+      "risk_factors": [
+        "Architectural trade-off or natural language design decision"
+      ],
       "summary": "Independent heuristic evaluation for '6. 制約達成の方策'."
     },
     {
@@ -8387,12 +8451,16 @@
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
       "heading": "6. 制約達成の方策",
       "tier": 2,
-      "complexity_score": 2,
-      "risk_score": 2,
+      "complexity_score": 3,
+      "risk_score": 3,
       "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
+      "recommended_verification": "LLM_Judge",
+      "suggested_tags": [
+        "{VERIFY_LLM}"
+      ],
+      "risk_factors": [
+        "Architectural trade-off or natural language design decision"
+      ],
       "summary": "Independent heuristic evaluation for '6. 制約達成の方策'."
     },
     {
@@ -8478,12 +8546,16 @@
       "file_path": "components/tier2_runtime/runtime_loader.md",
       "heading": "6. 制約達成の方策",
       "tier": 2,
-      "complexity_score": 2,
-      "risk_score": 2,
+      "complexity_score": 3,
+      "risk_score": 3,
       "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
+      "recommended_verification": "LLM_Judge",
+      "suggested_tags": [
+        "{VERIFY_LLM}"
+      ],
+      "risk_factors": [
+        "Architectural trade-off or natural language design decision"
+      ],
       "summary": "Independent heuristic evaluation for '6. 制約達成の方策'."
     },
     {
@@ -8556,12 +8628,16 @@
       "file_path": "components/tier2_runtime/runtime_vmmio.md",
       "heading": "6. 制約達成の方策",
       "tier": 2,
-      "complexity_score": 2,
-      "risk_score": 2,
+      "complexity_score": 3,
+      "risk_score": 3,
       "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
+      "recommended_verification": "LLM_Judge",
+      "suggested_tags": [
+        "{VERIFY_LLM}"
+      ],
+      "risk_factors": [
+        "Architectural trade-off or natural language design decision"
+      ],
       "summary": "Independent heuristic evaluation for '6. 制約達成の方策'."
     },
     {
@@ -8647,12 +8723,16 @@
       "file_path": "components/tier2_runtime/runtime_vsoc.md",
       "heading": "7. 制約達成の方策",
       "tier": 2,
-      "complexity_score": 2,
-      "risk_score": 2,
+      "complexity_score": 3,
+      "risk_score": 3,
       "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
+      "recommended_verification": "LLM_Judge",
+      "suggested_tags": [
+        "{VERIFY_LLM}"
+      ],
+      "risk_factors": [
+        "Architectural trade-off or natural language design decision"
+      ],
       "summary": "Independent heuristic evaluation for '7. 制約達成の方策'."
     },
     {
@@ -8829,12 +8909,16 @@
       "file_path": "components/tier3_platform/platform_hal.md",
       "heading": "6. 制約達成の方策",
       "tier": 3,
-      "complexity_score": 2,
-      "risk_score": 2,
+      "complexity_score": 3,
+      "risk_score": 3,
       "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
+      "recommended_verification": "LLM_Judge",
+      "suggested_tags": [
+        "{VERIFY_LLM}"
+      ],
+      "risk_factors": [
+        "Architectural trade-off or natural language design decision"
+      ],
       "summary": "Independent heuristic evaluation for '6. 制約達成の方策'."
     },
     {
@@ -8907,12 +8991,16 @@
       "file_path": "components/tier3_platform/platform_memory.md",
       "heading": "8. 設計判断の記録",
       "tier": 3,
-      "complexity_score": 2,
-      "risk_score": 2,
+      "complexity_score": 3,
+      "risk_score": 3,
       "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
+      "recommended_verification": "LLM_Judge",
+      "suggested_tags": [
+        "{VERIFY_LLM}"
+      ],
+      "risk_factors": [
+        "Architectural trade-off or natural language design decision"
+      ],
       "summary": "Independent heuristic evaluation for '8. 設計判断の記録'."
     },
     {

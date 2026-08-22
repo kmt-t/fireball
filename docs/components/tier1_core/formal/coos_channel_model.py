@@ -87,7 +87,7 @@ def properties():
     bad_double = AtomicProposition("double_owned")
     return [
         {
-            "name": "deadlock_freedom_proof",
+            "name": "deadlock_freedom_under_acyclic_topology",
             "kind": "safety",
             "logic": "CTL",
             "formula": AG(Not(bad_deadlock)),

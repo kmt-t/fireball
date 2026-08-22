@@ -127,3 +127,51 @@ WITインターフェース名は kebab-case で定義されるが、C++の公�
 - `shared_block.get_owner()` で所有権確認可能
 - vMMIO許可チェックはソート済み `shared_block` リストでの二分検索で実現
 - 生ポインタを直接やり取りすることはない（すべて `shared_block` リソース経由）
+
+## 9. ハードウェアメモリ保護 (MPU) & W^X 設計
+
+<!-- traceability: {META_FaultIsolation} {WasmPageAlignment} {LowLatencyJIT} -->
+
+### 9.1 Cortex-M33 PMSAv8 MPU リージョン配分
+
+Cortex-M33 (ARMv8-M Mainline) の PMSAv8 (Protected Memory System Architecture) に準拠し、ハードウェア MPU の 8 リージョン（最小標準構成）を以下のように静的に配分・構成する。 `{META_FaultIsolation}`
+
+| Region # | 対象領域 | 物理メモリ種別 | デフォルト属性 | 特権アクセス | ユーザーアクセス | 役割と保護目的 |
+| :---: | :--- | :--- | :---: | :---: | :---: | :--- |
+| **0** | Flash / Kernel Code | Flash (ROM) | `RO + X` | RO, Exec | なし | カーネルテキスト・不変定数の改ざん防止 |
+| **1** | Kernel Data & BSS | SRAM (Internal) | `RW + XN` | RW, NoExec | なし | カーネル静的変数・スタック領域 |
+| **2** | Kernel Pool / Heap | SRAM (Internal) | `RW + XN` | RW, NoExec | なし | タスク管理・IPC 内部制御構造体 |
+| **3** | Guest WASM RAM | SRAM (Internal) | `RW + XN` | RW, NoExec | RW, NoExec | ゲスト WASM リニアメモリ（64KB 境界配置） |
+| **4** | **JIT Code Cache** | SRAM (Internal) | **`RO + X`** | **RO, Exec** (パッチ時 `RW+XN`) | なし | JIT 生成ネイティブコード（W^X 保護対象） |
+| **5** | Peripheral MMIO | Device Memory | `RW + XN` | RW, NoExec | なし | ペリフェラルレジスタ（Device 属性） |
+| **6** | Shared Memory Buffers | SRAM (Internal) | `RW + XN` | RW, NoExec | RW, NoExec | IPC ゼロコピー共有バッファ領域 |
+| **7** | Stack Guard Band | - | `No Access` | 不可 | 不可 | スタックオーバーフロー検出用ガードバンド |
+
+### 9.2 JIT W^X (Write XOR Execute) 切替プロトコル
+
+JIT コードキャッシュ（Region 4）は、実行可能（Execute）と書き込み可能（Write）が同時に有効化される状態（`RWX`）をハードウェアレベルで恒常的に排除する。 `{LowLatencyJIT}`
+
+#### 属性切替シーケンス
+1. **パッチ生成開始 (`begin_jit_patch`)**:
+   - `MPU->RNR = 4;` (JIT Cache リージョン選択)
+   - `MPU->RLAR &= ~MPU_RLAR_EN_Msk;` (リージョン一時無効化)
+   - `MPU->RBAR = (cache_base & MPU_RBAR_BASE_Msk) | MPU_RBAR_AP_RW | MPU_RBAR_XN;` (`RW + XN` 属性設定)
+   - `MPU->RLAR |= MPU_RLAR_EN_Msk;` (リージョン有効化)
+   - `__DSB(); __ISB();` (メモリ・命令パイプライン同期バリア発行)
+2. **Copy-and-Patch 生成**:
+   - テンプレートコードのコピーおよび即値リロケーションパッチ書き込み（`RW+XN` のため安全に書き込み可能、実行は禁止）。
+3. **パッチ生成完了 (`commit_jit_patch`)**:
+   - `MPU->RNR = 4;`
+   - `MPU->RLAR &= ~MPU_RLAR_EN_Msk;`
+   - `MPU->RBAR = (cache_base & MPU_RBAR_BASE_Msk) | MPU_RBAR_AP_RO;` (`RO + X` 属性復元、`XN=0`)
+   - `MPU->RLAR |= MPU_RLAR_EN_Msk;`
+   - `__DSB(); __ISB();` (命令キャッシュ・プリフェッチフラッシュ)
+
+#### トランザクションバッチ化によるレイテンシ両立
+Copy-and-Patch の各命令パッチごとに個別 MPU 切替を行うとバリアオーバーヘッドが増大するため、JIT コンパイル単位（WASM 関数または基本ブロック単位）で `begin_jit_patch()` と `commit_jit_patch()` を 1 回ずつ発行する**トランザクションバッチ化**を適用する。これにより、属性切替コストをコンパイルあたり 1 回のバリアに抑え、`{LowLatencyJIT}` のリアルタイム制約を達成する。
+
+### 9.3 アライメントおよび境界制約 (PMSAv8)
+
+- **PMSAv8 アライメント**: PMSAv7 と異なり、$2^n$ 乗サイズ境界制約は存在しない。Base アドレス（`RBAR`）および Limit アドレス（`RLAR`）は **32 バイトアライメント**（下位 5 ビットが `0`）を満たせば任意サイズで設定可能。
+- **WASM ページ境界**: ゲスト RAM (Region 3) は WASM ページサイズである **64KB アライメント**（`0x10000` 境界）に配置し、vMMIO 高速アドレス判定 (`FastAddressCheck`) と PMSAv8 リージョン境界を完全一致させる。 `{WasmPageAlignment}`
+

@@ -25,8 +25,12 @@ class RoundRobinScheduler:
         self.current_task: str | None = None
         self.total_dispatches = 0
 
-    def spawn(self, task_id: str, coroutine: Generator, priority: int = 0) -> bool:
-        """Register a new task into the fixed task table and ready ring."""
+    def spawn(self, task_id: str, coroutine: Generator) -> bool:
+        """Register a new task into the fixed task table and ready ring.
+
+        No priority parameter: scheduling is pure FIFO round-robin (D1). Priority
+        levels were considered and rejected — see os_scheduler.md ADR-SCHED-002.
+        """
         assert len(self.tasks) < self.max_tasks, "Max task capacity exceeded"
         assert task_id not in self.tasks, f"Task {task_id} already exists"
 
@@ -34,7 +38,6 @@ class RoundRobinScheduler:
             "id": task_id,
             "coro": coroutine,
             "state": TaskState.READY,
-            "priority": priority,
             "dispatches": 0,
         }
         self.ready_ring.append(task_id)

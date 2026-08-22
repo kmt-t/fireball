@@ -64,3 +64,63 @@ llm_judge:
     ollama:
       endpoint: "http://localhost:11434"
       model: "llama3"
+
+risk_assessment:
+  heuristic:
+    # 形式検証 (pyModelChecking) 義務を導出するキーワード
+    formal_triggers:
+      - "rendezvous"
+      - "deadlock"
+      - "csp"
+      - "handoff"
+      - "zero-copy"
+      - "ownership transfer"
+      - "w^x"
+      - "mpu"
+      - "consecutive_handoffs"
+      - "access control matrix"
+      - "role_matrix"
+      - "page table walk"
+    # LLM 意味監査 義務を導出するキーワード
+    llm_triggers:
+      - "adr"
+      - "trade-off"
+      - "rationale"
+      - "design decision"
+      - "usecase"
+      - "ユースケース"
+      - "トレードオフ"
+      - "phase 1"
+      - "phase 2"
+    # 形式検証の対象外とする Tier
+    non_formal_tiers:
+      - 0
+      - "meta"
+    # 形式検証の対象外とするパス（計画・予算・アーキテクチャ俯瞰等）
+    non_formal_path_patterns:
+      - 'plans/.*\.md'
+      - 'requires/.*\.md'
+      - 'architecture/.*\.md'
+      - 'resource_budget\.md'
+    # 宣言的表・非実行定義セクションの明示的免除ルール（Waivers）
+    waivers:
+      - section_pattern: 'components/tier1_core/system_syscall\.md'
+        heading_pattern: '^5\.(1|6)\.'
+        rationale: "システムコール番号およびカテゴリの静的テーブル定義であり、状態遷移を含まないため"
+        authorized_at: "2026-08-22"
+      - section_pattern: 'components/tier1_interface/system_service\.md'
+        heading_pattern: '^(WASI呼び出しシーケンス|4\.4 WASI API から HAL への変換ラッパー|6\.1 性能制約と方策)'
+        rationale: "WASI APIからHALへの1対1同期委譲ラッパーおよびシーケンス記述であり、状態並行性モデルの対象外"
+        authorized_at: "2026-08-22"
+      - section_pattern: 'components/tier2_runtime/runtime_loader\.md'
+        heading_pattern: '^4\.1 アルゴリズム'
+        rationale: "WASMバイナリヘッダの直列パース手順であり、並行通信を含まないため"
+        authorized_at: "2026-08-22"
+      - section_pattern: 'components/tier1_interface/interface_wit\.md'
+        heading_pattern: '^リカバリー戦略の事前・事後条件と不変条件'
+        rationale: "WITインターフェイスにおける静的エラー回復契約の記述であり、pyModelChecking の対象外"
+        authorized_at: "2026-08-22"
+      - section_pattern: '.*'
+        heading_pattern: '^(用語定義|変更履歴|カテゴリ一覧|性能制約|設計判断)'
+        rationale: "非実行・静的テーブル・宣言的インターフェイス定義"
+        authorized_at: "2026-08-22"

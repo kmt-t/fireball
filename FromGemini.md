@@ -55,15 +55,73 @@
 
 ---
 
-## 2. 除外を「名簿」から「性質」および「設定（Waivers）」へ（§53(1) への回答）
+## 2. 除外を「名簿」から「設定（spec-integrator.yaml）」へ（§53(1) への回答・実装完了）
 
-**対応方針: コード内のハードコード名簿を全廃し、セクションの「性質」による判定と `spec-integrator.yaml` の明示的 Waiver に移行する。**
+**対応完了: ツールコード内のハードコード名簿（ファイル名・見出しリテラル）を全廃し、`config.py` / `risk_assessor.py` を改修して、キーワードトリガー・除外スコープ・明示的 Waiver のすべてを [`spec-integrator.yaml`](spec-integrator.yaml) で管理する設定駆動型（Configuration-Driven）アーキテクチャへ完全移行した。**
 
-1. **性質による自動トリアージ（Rule Engine）**:
-   - 本文の大部分が Markdown 表（定数表、システムコール番号一覧、メモリ配分表）で構成され、アルゴリズム・状態機械を含まないセクションは、キーワードに関わらず `Static` として分類する。
-2. **設定ファイルによる明示的免除（Waivers in `spec-integrator.yaml`）**:
-   - 性質判定でカバーできない文書（例: `architecture_overview.md` の俯瞰的記述）については、コードに隠すのではなく、`spec-integrator.yaml` の `waivers` セクションに**セクション ID・理由（Rationale）・監査日**を明記して除外する。
-   - これにより、免除の根拠がすべて Git 履歴に残る可視な設定となり、レビュー可能になる。
+### 2.1 ツールコードの汎用化 (`config.py` & `risk_assessor.py`)
+- `HeuristicConfig`, `WaiverRule`, `RiskAssessmentConfig` を新設し、YAML から設定を注入。
+- `risk_assessor.py` の `_call_heuristic` からハードコード定数を**完全に撤廃**し、`self.config.risk_assessment.heuristic` のみを参照して判定するように改修。
+
+### 2.2 [`spec-integrator.yaml`](spec-integrator.yaml) への明示的切り出し
+すべてのトリガー語、除外 Tier/パス、および免除理由（Rationale）・監査日を Git 管理された設定ファイルに集約：
+
+```yaml
+risk_assessment:
+  heuristic:
+    formal_triggers:
+      - "rendezvous"
+      - "deadlock"
+      - "csp"
+      - "handoff"
+      - "zero-copy"
+      - "ownership transfer"
+      - "w^x"
+      - "mpu"
+      - "consecutive_handoffs"
+      - "access control matrix"
+      - "role_matrix"
+      - "page table walk"
+    llm_triggers:
+      - "adr"
+      - "trade-off"
+      - "rationale"
+      - "design decision"
+      - "usecase"
+      - "ユースケース"
+      - "トレードオフ"
+      - "phase 1"
+      - "phase 2"
+    non_formal_tiers: [0, "meta"]
+    non_formal_path_patterns:
+      - 'plans/.*\.md'
+      - 'requires/.*\.md'
+      - 'architecture/.*\.md'
+      - 'resource_budget\.md'
+    waivers:
+      - section_pattern: 'components/tier1_core/system_syscall\.md'
+        heading_pattern: '^5\.(1|6)\.'
+        rationale: "システムコール番号およびカテゴリの静的テーブル定義であり、状態遷移を含まないため"
+        authorized_at: "2026-08-22"
+      - section_pattern: 'components/tier1_interface/system_service\.md'
+        heading_pattern: '^(WASI呼び出しシーケンス|4\.4 WASI API から HAL への変換ラッパー|6\.1 性能制約と方策)'
+        rationale: "WASI APIからHALへの1対1同期委譲ラッパーおよびシーケンス記述であり、状態並行性モデルの対象外"
+        authorized_at: "2026-08-22"
+      - section_pattern: 'components/tier2_runtime/runtime_loader\.md'
+        heading_pattern: '^4\.1 アルゴリズム'
+        rationale: "WASMバイナリヘッダの直列パース手順であり、並行通信を含まないため"
+        authorized_at: "2026-08-22"
+      - section_pattern: 'components/tier1_interface/interface_wit\.md'
+        heading_pattern: '^リカバリー戦略の事前・事後条件と不変条件'
+        rationale: "WITインターフェイスにおける静的エラー回復契約の記述であり、pyModelChecking の対象外"
+        authorized_at: "2026-08-22"
+      - section_pattern: '.*'
+        heading_pattern: '^(用語定義|変更履歴|カテゴリ一覧|性能制約|設計判断)'
+        rationale: "非実行・静的テーブル・宣言的インターフェイス定義"
+        authorized_at: "2026-08-22"
+```
+
+これにより、何がなぜ免除されているかの根拠がすべて可視化され、レビュー可能になった。
 
 ---
 

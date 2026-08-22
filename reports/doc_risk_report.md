@@ -1,7 +1,7 @@
 # Fireball 設計複雑度 & リスク評価レポート (Risk Assessment Report)
 
-- **評価セクション総数**: 675
-- **形式検証 (pyModelChecking) 推奨セクション**: 41
+- **評価セクション総数**: 677
+- **形式検証 (pyModelChecking) 推奨セクション**: 43
 - **LLM 意味監査 推奨セクション**: 23
 
 ---
@@ -51,6 +51,8 @@
 | `components/tier1_core/os_coos.md` | **2. 公開 API インターフェイス** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Stateful concurrent protocol or hardware safety invariant identified |
 | `components/tier1_core/os_coos.md` | **6.2 直交表: CSP通信と状態遷移** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Stateful concurrent protocol or hardware safety invariant identified |
 | `components/tier3_platform/platform_memory.md` | **属性切替シーケンス** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Stateful concurrent protocol or hardware safety invariant identified |
+| `components/tier2_jit/jit_compiler.md` | **統合 Tiered ランタイムエンジン・コンセプトコード (`concepts/runtime_engine_concept.py`)** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Stateful concurrent protocol or hardware safety invariant identified |
+| `components/tier2_runtime/runtime_interpreter.md` | **統合 Tiered ランタイムエンジン・コンセプトコード (`concepts/runtime_engine_concept.py`)** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Stateful concurrent protocol or hardware safety invariant identified |
 
 ---
 
@@ -99,6 +101,8 @@
 | `components/tier1_core/os_coos.md` | 2. 公開 API インターフェイス | 1 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Independent heuristic evaluation for '2. 公開 API インターフェイス'. |
 | `components/tier1_core/os_coos.md` | 6.2 直交表: CSP通信と状態遷移 | 1 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Independent heuristic evaluation for '6.2 直交表: CSP通信と状態遷移'. |
 | `components/tier3_platform/platform_memory.md` | 属性切替シーケンス | 3 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Independent heuristic evaluation for '属性切替シーケンス'. |
+| `components/tier2_jit/jit_compiler.md` | 統合 Tiered ランタイムエンジン・コンセプトコード (`concepts/runtime_engine_concept.py`) | 2 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Independent heuristic evaluation for '統合 Tiered ランタイムエンジン・コンセプトコード (`concepts/runtime_engine_concept.py`)'. |
+| `components/tier2_runtime/runtime_interpreter.md` | 統合 Tiered ランタイムエンジン・コンセプトコード (`concepts/runtime_engine_concept.py`) | 2 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Independent heuristic evaluation for '統合 Tiered ランタイムエンジン・コンセプトコード (`concepts/runtime_engine_concept.py`)'. |
 | `requires/requirement_list.md` | 4. 設計課題・制約追跡 (Design Challenges & ADRs) | 0 | 3/5 | 3/5 | `LLM_Judge` | `{VERIFY_LLM}` | Independent heuristic evaluation for '4. 設計課題・制約追跡 (Design Challenges & ADRs)'. |
 | `plans/backlog_list.md` | オーナーレビュー観点 & チェックリスト | meta | 3/5 | 3/5 | `LLM_Judge` | `{VERIFY_LLM}` | Independent heuristic evaluation for 'オーナーレビュー観点 & チェックリスト'. |
 | `plans/backlog_list.md` | Phase 1.3: Copy-and-Patch JIT Compiler (`jit_compiler`) | meta | 3/5 | 3/5 | `LLM_Judge` | `{VERIFY_LLM}` | Independent heuristic evaluation for 'Phase 1.3: Copy-and-Patch JIT Compiler (`jit_compiler`)'. |

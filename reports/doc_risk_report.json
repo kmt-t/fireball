@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-08-22T05:21:04.947355+00:00",
+  "generated_at": "2026-08-22T06:55:55.144094+00:00",
   "backend": "heuristic",
-  "total_evaluated": 675,
-  "formal_candidates_count": 41,
+  "total_evaluated": 677,
+  "formal_candidates_count": 43,
   "llm_candidates_count": 23,
-  "sections_scanned": 675,
+  "sections_scanned": 677,
   "max_sections": 0,
   "doc_hashes": {
     "architecture/architecture_overview.md": "30be52ed847f1fa7ff9f50980552e989dab9727751748a3e5874505214cc81d7",
@@ -21,13 +21,13 @@
     "components/tier1_interface/ipc_router.md": "3304dc77b24353dd070557a7315f43cc756d815445457f4e2ec205c29fa20207",
     "components/tier1_interface/system_service.md": "7c98009196d56c50c4d1d27269f38eb51d4fe1fa654aedb51dba7c496cd5fe62",
     "components/tier2_jit/jit_assembler_constexpr.md": "4798eb6d2692ae574c45917a0597feb16e1ffa3ec9d9771566a6523607f7c7d5",
-    "components/tier2_jit/jit_compiler.md": "3e700b180aeeaaf823afc23519f1330619bc0cd838aedbf9f2717d34fa602198",
+    "components/tier2_jit/jit_compiler.md": "6fdaeeaa2253bc0c37d273ca67693b14d90db9bf3b57982ebe300163a03a262c",
     "components/tier2_jit/jit_engine_copy_patch.md": "a6c7d874f991562322257600b358494d1bd0e604e0f2da52b63a8b9a2ef17d85",
     "components/tier2_jit/jit_runtime_entry.md": "ac17ee532a11b108521ece54ac63fdfd956484e534ed5f607993764c6bae2718",
     "components/tier2_jit/jit_runtime_hotspot.md": "56a3a5466ea0ab7752210b2b8a58f8ed577a67b58c20e49dd8ff936bb9951c51",
     "components/tier2_runtime/debug/debug_gdb_rsp.md": "f07fbc1fbe307552ce65dbe964361442c7df855ac18cce53dc59684373c6befc",
     "components/tier2_runtime/debug/debug_manager.md": "50a709835b11ea4d6e477d5a957bc4242c950bb81f41899ee6d31baca25b0197",
-    "components/tier2_runtime/runtime_interpreter.md": "dea069a3643a6e1160770cf1351b85fa62306da7983d60569db81c58a5cb36b9",
+    "components/tier2_runtime/runtime_interpreter.md": "0806dbfca3ef5ed0267b0034bee496a7361a4556b1a202614e3dc248942792c7",
     "components/tier2_runtime/runtime_loader.md": "591c6d491434e54f39eed5c48ae3216fc1b0ca1e2299044161cccac48f93dca5",
     "components/tier2_runtime/runtime_vmmio.md": "2cb60f38d2a0ca9766671e4b05d0c9aefee00893e1fb11fd36f41631c9123715",
     "components/tier2_runtime/runtime_vsoc.md": "8fe2030e2f0ba7156ece2db7ba29ed44e1011625f52a9f3f755d20ff260f9623",
@@ -6032,6 +6032,23 @@
       "summary": "Independent heuristic evaluation for 'コンパイル時エンコード'."
     },
     {
+      "section_id": "sec:components/tier2_jit/jit_compiler.md#統合 Tiered ランタイムエンジン・コンセプトコード (`concepts/runtime_engine_concept.py`)",
+      "file_path": "components/tier2_jit/jit_compiler.md",
+      "heading": "統合 Tiered ランタイムエンジン・コンセプトコード (`concepts/runtime_engine_concept.py`)",
+      "tier": 2,
+      "complexity_score": 4,
+      "risk_score": 4,
+      "formal_needed": true,
+      "recommended_verification": "pyModelChecking",
+      "suggested_tags": [
+        "{VERIFY_FORMAL}"
+      ],
+      "risk_factors": [
+        "Stateful concurrent protocol or hardware safety invariant identified"
+      ],
+      "summary": "Independent heuristic evaluation for '統合 Tiered ランタイムエンジン・コンセプトコード (`concepts/runtime_engine_concept.py`)'."
+    },
+    {
       "section_id": "sec:components/tier2_jit/jit_engine_copy_patch.md#コピーアンドパッチエンジン（CopyAndPatchEngine）クラス",
       "file_path": "components/tier2_jit/jit_engine_copy_patch.md",
       "heading": "コピーアンドパッチエンジン（CopyAndPatchEngine）クラス",
@@ -6186,6 +6203,23 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for 'インタプリタ（Interpreter）クラス'."
+    },
+    {
+      "section_id": "sec:components/tier2_runtime/runtime_interpreter.md#統合 Tiered ランタイムエンジン・コンセプトコード (`concepts/runtime_engine_concept.py`)",
+      "file_path": "components/tier2_runtime/runtime_interpreter.md",
+      "heading": "統合 Tiered ランタイムエンジン・コンセプトコード (`concepts/runtime_engine_concept.py`)",
+      "tier": 2,
+      "complexity_score": 4,
+      "risk_score": 4,
+      "formal_needed": true,
+      "recommended_verification": "pyModelChecking",
+      "suggested_tags": [
+        "{VERIFY_FORMAL}"
+      ],
+      "risk_factors": [
+        "Stateful concurrent protocol or hardware safety invariant identified"
+      ],
+      "summary": "Independent heuristic evaluation for '統合 Tiered ランタイムエンジン・コンセプトコード (`concepts/runtime_engine_concept.py`)'."
     },
     {
       "section_id": "sec:components/tier2_runtime/runtime_interpreter.md#7. 参考実装リスト",

@@ -37,7 +37,7 @@ graph LR
 | キーワード | 内容 | 優先度 | 検証方法 |
 | :--- | :--- | :--- | :--- |
 | `{JIT_CopyAndPatch}` | 命令テンプレートを連結しパッチを当てる方式を採用する。 | 高 | レビュー |
-| `{JIT_MultiBuffer_Cache}` | Active/Warm/Oldest 等のマルチバッファ（デフォルト 3面: 2KB x 3）による循環キャッシュ管理を行う。 | 中 | テスト |
+| `{JIT_MultiBuffer_Cache}` | Active/Warm/Oldest 等のマルチバッファ（デフォルト 3面: 2KB x 3）による循環キャッシュ管理を行い、キャッシュ置換の局所性を高める。 | 高 | テスト |
 | `{PositionIndependentCode}` | 出力バイナリはPIC（位置独立コード）とする。 | 高 | テスト |
 | `{NativeAPI_Export}` | 最小限のトラップ命令とvMMIOによるホストサービス提供をサポートする。 | 高 | テスト |
 | `{JIT_Encoder}` | C++の constexpr 機能を活用し、ビルド時に命令テンプレートを生成する。 | 高 | レビュー |
@@ -60,7 +60,6 @@ graph LR
 | `{JIT_RuntimeAPI_Fallback}` | 複雑な命令をランタイムAPI呼び出しにフォールバックさせ、JITエンジンの複雑さを抑える。 | 高 | レビュー |
 | `{InterpreterContextStackless}` | Cスループを使わないスタックレスなインタープリタ実行。 | 高 | レビュー |
 | `{SinglePassCompilation}` | 中間表現を介さず、1パスでバイナリを生成する。 | 高 | レビュー |
-| `{JIT_MultiBuffer_Cache}` | 複数バッファによるJITキャッシュ管理を行い、キャッシュ置換の局所性を高める。 | 高 | テスト |
 | `{JIT_OldestOnly_Promote}` | 最も古いエントリのみを上位バッファへ昇格させるキャッシュ追い出しポリシー。 | 高 | レビュー |
 
 #### 3.1.2 タスク管理・通信 (COOS)

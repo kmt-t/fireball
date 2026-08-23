@@ -89,7 +89,7 @@ vSoCの動作パラメータを定義する。 `{META_ConfigurableSystem}`
 - **JIT Safepoint (非同期割込対応)**: `{JIT_Safepoint}`
     - JIT生成されるネイティブコードのループバック点（バックエッジ）に、ソフトウェアフラグ（またはタイマ割込状況）をチェックし、必要に応じて `executor_loop` へ強制フォールバックするフック（Safepoint）を埋め込む。これにより、JIT実行中の非同期ブレークポイント（Ctrl+C等）への応答性を担保する。
 - **デバッガ介入時キャッシュ一貫性 (Cache Flush)**: `{Debugger_Jit_Flush}`
-    - デバッガがメモリ上の変数を書き換えた場合、該当タスクに関連するJITキャッシュ（Active/Old）をすべて無効化（Flush）し、インタープリタ実行からやり直すことで整合性を維持する。
+    - デバッガがメモリ上の変数を書き換えた場合、該当タスクに関連するJITキャッシュ（Active/Warm/Oldest 全バンク）をすべて無効化（Flush）し、インタープリタ実行からやり直すことで整合性を維持する。
 
 
 ### 4.2 状態遷移図 (SysML SMD: vSoC Engine ライフサイクル)
@@ -238,7 +238,7 @@ JIT Code Cache (6 KB total: FB_CONF_JIT_CACHE_SIZE)
 #### 形式検証 (pyModelChecking) 検証対象
 
 
-- **キャッシュ整合性**: どの時点でも、Active/Old 両バッファの generation が単調増加し、矛盾が生じないこと
+- **キャッシュ整合性**: どの時点でも、Active/Warm/Oldest 全バンクの generation が単調増加し、矛盾が生じないこと
 - **Safepoint応答性**: 割り込みフラグが設定されてから最大 N サイクル以内に Safepoint で検出されること
 - **Debugger安全性**: デバッガがメモリを変更してから、キャッシュが flush されるまでの間に、旧コードが実行されないこと
 - **リソース有界性**: キャッシュローテーション時に、メモリリークが発生しないこと
@@ -400,7 +400,7 @@ Fireballでは、ホスト側のコードサイズを極限まで削減するた
 
 | 不変条件 | 説明 | 検証方法 |
 | :--- | :--- | :--- |
-| **キャッシュ整合性** | Active/Old 両バッファの generation が単調増加し、矛盾が生じないこと。`{Challenge_JITCacheEfficiency}` | pyModelChecking 状態不変式 (`AG(...)`) |
+| **キャッシュ整合性** | Active/Warm/Oldest 全バンクの generation が単調増加し、矛盾が生じないこと。`{Challenge_JITCacheEfficiency}` | pyModelChecking 状態不変式 (`AG(...)`) |
 | **Safepoint応答性** | 割り込みフラグが設定されてから最大 N サイクル以内に Safepoint で検出されること。`{JIT_Safepoint}` | pyModelChecking 有界応答性 (CTL) |
 | **Debugger安全性** | デバッガがメモリを変更した後、キャッシュ flush が完了するまで旧コードが実行されないこと。`{Debugger_Jit_Flush}` | pyModelChecking 因果的順序付け |
 | **リソース有界性** | キャッシュローテーション時にメモリリークが発生しないこと。 | pyModelChecking リソース追跡 |

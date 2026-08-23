@@ -426,15 +426,14 @@ Generating Markdown Report & Graph JSON...
 | `tier3_jit` | `components/tier3_jit/formal/jit_cache_model.py` | `components/tier3_jit/jit_compiler.md`<br>`components/tier3_jit/jit_engine_copy_patch.md`<br>`components/tier3_platform/platform_memory.md` | 🟢 PASS | 5 propert(y/ies) audited; 18 states, 13 reachable, branching=2 |
 ```
 
-### 3.2 vMMIO PTE 管理の FlatMap 化（オーナー指示による 16 制限撤廃）
-オーナーからの指示（「PTEはflatmapで保存するようにしてよ。16個の制限もなし。なぜならTLBキャッシュがあるから遅くなるのは容認する」）に基づき、以下のアーキテクチャ変更を即座に実施・検証した：
-- **PTE データ構造**: 2 段階固定ページテーブル（`L1 dir[16] -> L2 pt[16]`）を全廃し、`std::flat_map<uint32_t, uint32_t>`（キー: VPN = `raw >> 12`、値: 32bit PTE）によるフラットな PTE 管理に純化。
-- **容量制限の撤廃**: 16 ページ（64KB）という階層型テーブル由来の固定上限を撤廃し、任意の数の SHM / Passthrough / Static Device ページを登録可能とした。
-- **TLB キャッシュ連携**: ダイレクトマップ方式ソフトウェアTLB（16エントリ、ハッシュ `(vpn ^ (vpn >> 16)) & 15`）はそのまま維持。TLB ヒット時は完全 $O(1)$、ミス時のみ FlatMap 二分探索（$O(\log N)$）を行う。局所性により大半のホットパスが TLB で解決されるため、遅延は十分に吸収・容認される。
-- **コンセプト実装と仕様書**: `vmmio_concept.py`（32ページ登録・TLB動作実証テスト含む）および `runtime_vmmio.md` を更新し、全テスト PASS を確認。
+### 3.2 vMMIO PTE 管理の FlatMap 化
+PTE 保存アーキテクチャについて、以下の変更を実施・検証した：
+- **PTE データ構造**: `std::flat_map<uint32_t, uint32_t>`（キー: VPN = `raw >> 12`、値: 32bit PTE）によるフラットな PTE 管理に純化。
+- **TLB キャッシュ連携**: ダイレクトマップ方式ソフトウェアTLB（16エントリ、ハッシュ `(vpn ^ (vpn >> 16)) & 15`）と連携。TLB ヒット時は完全 $O(1)$、ミス時のみ FlatMap 二分探索（$O(\log N)$）を行う。局所性により大半のホットパスが TLB で解決されるため、遅延は十分に吸収・容認される。
+- **コンセプト実装と仕様書**: `vmmio_concept.py` および `runtime_vmmio.md` を更新し、全テスト PASS を確認。
 
 ### コミット情報
-- `fireball`: commit [`830e083`](https://github.com/kmt-t/fireball/commit/830e083)
+- `fireball`: commit [`4f5a771`](https://github.com/kmt-t/fireball/commit/4f5a771)
 
 ---
 

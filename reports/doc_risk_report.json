@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-08-23T20:30:22.225463+00:00",
+  "generated_at": "2026-08-23T20:38:36.860233+00:00",
   "backend": "heuristic",
-  "total_evaluated": 674,
+  "total_evaluated": 676,
   "formal_candidates_count": 43,
   "llm_candidates_count": 45,
-  "sections_scanned": 674,
+  "sections_scanned": 676,
   "max_sections": 0,
   "doc_hashes": {
     "architecture/architecture_overview.md": "30be52ed847f1fa7ff9f50980552e989dab9727751748a3e5874505214cc81d7",
@@ -24,7 +24,7 @@
     "components/tier2_runtime/debug/debug_manager.md": "50a709835b11ea4d6e477d5a957bc4242c950bb81f41899ee6d31baca25b0197",
     "components/tier2_runtime/runtime_interpreter.md": "0806dbfca3ef5ed0267b0034bee496a7361a4556b1a202614e3dc248942792c7",
     "components/tier2_runtime/runtime_loader.md": "591c6d491434e54f39eed5c48ae3216fc1b0ca1e2299044161cccac48f93dca5",
-    "components/tier2_runtime/runtime_vmmio.md": "c12df6b1a0a1fd3dd36ce62c6a2d5e15227b1e9824ecee0eded41d77c1377c0c",
+    "components/tier2_runtime/runtime_vmmio.md": "f625d4b58b18cc6a0e40f6fb6ac1bfa3577dfcbbe216cf7524061a60e76e3d7c",
     "components/tier2_runtime/runtime_vsoc.md": "8fe2030e2f0ba7156ece2db7ba29ed44e1011625f52a9f3f755d20ff260f9623",
     "components/tier2_runtime/wasm_instruction.md": "640483f8a25bca7885110ce37e499c4ba3622fdc2ba3507e3a78b2bc1fcf8b5f",
     "components/tier3_jit/concepts/README.md": "a39c8c192999a792243e697e008fcad02c701d14b9559d492d668208122b6ebc",
@@ -212,19 +212,6 @@
         "Stateful concurrent protocol or hardware safety invariant identified"
       ],
       "summary": "Independent heuristic evaluation for '4.1 アルゴリズム'."
-    },
-    {
-      "section_id": "sec:components/tier2_runtime/runtime_vmmio.md#コントローラ群 (VmmioController)",
-      "file_path": "components/tier2_runtime/runtime_vmmio.md",
-      "heading": "コントローラ群 (VmmioController)",
-      "tier": 2,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for 'コントローラ群 (VmmioController)'."
     },
     {
       "section_id": "sec:components/tier2_runtime/debug/debug_manager.md#1. コンセプト",
@@ -1059,6 +1046,19 @@
       "summary": "Independent heuristic evaluation for '4.4 状態遷移図'."
     },
     {
+      "section_id": "sec:components/tier2_runtime/runtime_vmmio.md#FlatMap ページテーブル定義",
+      "file_path": "components/tier2_runtime/runtime_vmmio.md",
+      "heading": "FlatMap ページテーブル定義",
+      "tier": 2,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for 'FlatMap ページテーブル定義'."
+    },
+    {
       "section_id": "sec:components/tier3_jit/jit_assembler_constexpr.md#2. アーキテクチャ分類",
       "file_path": "components/tier3_jit/jit_assembler_constexpr.md",
       "heading": "2. アーキテクチャ分類",
@@ -1096,19 +1096,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '4.4 WASI API から HAL への変換ラッパー (コンセプトコード)'."
-    },
-    {
-      "section_id": "sec:components/tier2_runtime/runtime_vmmio.md#アドレスフィールド定義 (vmmio_address)",
-      "file_path": "components/tier2_runtime/runtime_vmmio.md",
-      "heading": "アドレスフィールド定義 (vmmio_address)",
-      "tier": 2,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for 'アドレスフィールド定義 (vmmio_address)'."
     },
     {
       "section_id": "sec:components/tier1_core/system_syscall.md#5.6. IPC (`0x40`-`0x4F`)",
@@ -1223,9 +1210,9 @@
       "summary": "Independent heuristic evaluation for '3. `fireball_call` WIT定義'."
     },
     {
-      "section_id": "sec:components/tier2_runtime/runtime_vmmio.md#4.2 性能分析（Tier別）",
+      "section_id": "sec:components/tier2_runtime/runtime_vmmio.md#アドレスフィールド定義 (vmmio_address)",
       "file_path": "components/tier2_runtime/runtime_vmmio.md",
-      "heading": "4.2 性能分析（Tier別）",
+      "heading": "アドレスフィールド定義 (vmmio_address)",
       "tier": 2,
       "complexity_score": 2,
       "risk_score": 2,
@@ -1233,7 +1220,7 @@
       "recommended_verification": "Static",
       "suggested_tags": [],
       "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '4.2 性能分析（Tier別）'."
+      "summary": "Independent heuristic evaluation for 'アドレスフィールド定義 (vmmio_address)'."
     },
     {
       "section_id": "sec:components/tier2_runtime/runtime_vsoc.md#Active/Warm/Oldest 3面マルチバッファとキャッシュローテーション",
@@ -2436,6 +2423,19 @@
       "summary": "Independent heuristic evaluation for '3.1 データ構造'."
     },
     {
+      "section_id": "sec:components/tier2_runtime/runtime_vmmio.md#静的デバイスページテーブルエントリ (vmmio_pte_static)",
+      "file_path": "components/tier2_runtime/runtime_vmmio.md",
+      "heading": "静的デバイスページテーブルエントリ (vmmio_pte_static)",
+      "tier": 2,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '静的デバイスページテーブルエントリ (vmmio_pte_static)'."
+    },
+    {
       "section_id": "sec:components/tier2_runtime/runtime_vmmio.md#4.8 ソフトウェアTLB",
       "file_path": "components/tier2_runtime/runtime_vmmio.md",
       "heading": "4.8 ソフトウェアTLB",
@@ -3001,19 +3001,6 @@
       "summary": "Independent heuristic evaluation for '5.5. WASI標準APIの実装仕様 (WASI Standard API Implementation Specification)'."
     },
     {
-      "section_id": "sec:components/tier2_runtime/runtime_vmmio.md#4.3 仮想デバイスマップ",
-      "file_path": "components/tier2_runtime/runtime_vmmio.md",
-      "heading": "4.3 仮想デバイスマップ",
-      "tier": 2,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '4.3 仮想デバイスマップ'."
-    },
-    {
       "section_id": "sec:components/tier2_runtime/runtime_interpreter.md#割り込み同期 (`sync_interrupts`)",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
       "heading": "割り込み同期 (`sync_interrupts`)",
@@ -3320,6 +3307,19 @@
       "summary": "Independent heuristic evaluation for 'モジュールロードシーケンス'."
     },
     {
+      "section_id": "sec:components/tier2_runtime/runtime_vmmio.md#コントローラ群 (VmmioController)",
+      "file_path": "components/tier2_runtime/runtime_vmmio.md",
+      "heading": "コントローラ群 (VmmioController)",
+      "tier": 2,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for 'コントローラ群 (VmmioController)'."
+    },
+    {
       "section_id": "sec:components/tier2_runtime/runtime_vmmio.md#4.2 アルゴリズム: 仮想DMA (VDMA)",
       "file_path": "components/tier2_runtime/runtime_vmmio.md",
       "heading": "4.2 アルゴリズム: 仮想DMA (VDMA)",
@@ -3331,6 +3331,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '4.2 アルゴリズム: 仮想DMA (VDMA)'."
+    },
+    {
+      "section_id": "sec:components/tier2_runtime/runtime_vmmio.md#4.3 仮想デバイスマップ",
+      "file_path": "components/tier2_runtime/runtime_vmmio.md",
+      "heading": "4.3 仮想デバイスマップ",
+      "tier": 2,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '4.3 仮想デバイスマップ'."
     },
     {
       "section_id": "sec:components/tier2_runtime/runtime_vsoc.md#ステップ実行（step）",
@@ -4596,9 +4609,9 @@
       "summary": "Independent heuristic evaluation for 'Key-Valueペア（kv_pair）'."
     },
     {
-      "section_id": "sec:components/tier2_runtime/runtime_vmmio.md#4.4 SYSCTL レジスタ詳細 (FC=12, L2=0)",
+      "section_id": "sec:components/tier2_runtime/runtime_vmmio.md#4.4 SYSCTL レジスタ詳細 (FC=12)",
       "file_path": "components/tier2_runtime/runtime_vmmio.md",
-      "heading": "4.4 SYSCTL レジスタ詳細 (FC=12, L2=0)",
+      "heading": "4.4 SYSCTL レジスタ詳細 (FC=12)",
       "tier": 2,
       "complexity_score": 2,
       "risk_score": 2,
@@ -4606,7 +4619,7 @@
       "recommended_verification": "Static",
       "suggested_tags": [],
       "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '4.4 SYSCTL レジスタ詳細 (FC=12, L2=0)'."
+      "summary": "Independent heuristic evaluation for '4.4 SYSCTL レジスタ詳細 (FC=12)'."
     },
     {
       "section_id": "sec:architecture/concept_harness.md#2.1 適用範囲と分類",
@@ -4730,9 +4743,9 @@
       "summary": "Independent heuristic evaluation for 'バイナリストリーム（BinaryStream）'."
     },
     {
-      "section_id": "sec:components/tier2_runtime/runtime_vmmio.md#4.5 VDMA レジスタ詳細 (FC=12, L2=2)",
+      "section_id": "sec:components/tier2_runtime/runtime_vmmio.md#4.5 VDMA レジスタ詳細 (FC=12)",
       "file_path": "components/tier2_runtime/runtime_vmmio.md",
-      "heading": "4.5 VDMA レジスタ詳細 (FC=12, L2=2)",
+      "heading": "4.5 VDMA レジスタ詳細 (FC=12)",
       "tier": 2,
       "complexity_score": 2,
       "risk_score": 2,
@@ -4740,7 +4753,7 @@
       "recommended_verification": "Static",
       "suggested_tags": [],
       "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '4.5 VDMA レジスタ詳細 (FC=12, L2=2)'."
+      "summary": "Independent heuristic evaluation for '4.5 VDMA レジスタ詳細 (FC=12)'."
     },
     {
       "section_id": "sec:components/tier2_runtime/runtime_vmmio.md#ライフサイクル（ipc_router.md §4.1 に従属）",
@@ -7888,6 +7901,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '3. 静的モデル'."
+    },
+    {
+      "section_id": "sec:components/tier2_runtime/runtime_vmmio.md#ハンドラ定義 (vmmio_handler)",
+      "file_path": "components/tier2_runtime/runtime_vmmio.md",
+      "heading": "ハンドラ定義 (vmmio_handler)",
+      "tier": 2,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for 'ハンドラ定義 (vmmio_handler)'."
     },
     {
       "section_id": "sec:components/tier2_runtime/runtime_vmmio.md#4. 動的モデル",

@@ -1,14 +1,13 @@
 """
 docs/components/tier2_runtime/concepts/vmmio_concept.py
-Reference Concept Implementation: vMMIO 2-Level Page Table & Direct-Mapped TLB
-- RAM Bypass Flag (Bit 31): O(1) linear-RAM fast path, no table walk at all
-- Function Code (FC, bits[31:28]): 16-entry L1 directory selects the L2 table
-- 2-level page table walk (L1 dir[16] -> L2 pt[16]) on TLB miss
+Reference Concept Implementation: vMMIO FlatMap Page Table & Direct-Mapped TLB
+- RAM Bypass Flag (Bit 31): O(1) linear-RAM fast path, no table lookup
+- FlatMap PTE storage: maps VPN -> PTE
 - Direct-mapped Software TLB[16] keyed by ((VPN ^ VPN>>16) & 15): the FC is
-  folded in, otherwise FC=12 page N and FC=14 page N collide in one slot
+  folded in to avoid slot collision across different Function Codes
 - Tier 1 linear RAM: Bit31 bypass PLUS a power-of-two mask bound check
 - PTE permission check (VALID/READ/WRITE/EXEC + Owner ID) on every access,
-  including on TLB hit — the TLB only skips the table walk, never the check
+  including on TLB hit — the TLB only skips the table lookup, never the check
 """
 
 from typing import Callable
@@ -24,15 +23,15 @@ class TrapCode:
 
 # Function Codes (bits[31:28]) — see runtime_vmmio.md "アドレス分解の対応関係"
 FC_STATIC_DEVICE = 0xC   # 0xC000_0000: SYSCTL / IPCR / VDMA (Tier 2, syscall dispatch)
-FC_SHM = 0xE              # 0xE000_0000: Shared Memory, 16 slots (Tier 3, owner-checked)
-FC_PASSTHROUGH = 0xF      # 0xF000_0000: Physical passthrough, 16 pages (Tier 3)
+FC_SHM = 0xE              # 0xE000_0000: Shared Memory (Tier 3, owner-checked)
+FC_PASSTHROUGH = 0xF      # 0xF000_0000: Physical passthrough (Tier 3)
 
 FB_TASK_ID_INVALID = 0x00
 FB_TASK_ID_FLIGHT = 0xFF
 
 
 class VmmioAddress:
-    """Decodes a 32-bit guest address into its 5 fields. See runtime_vmmio.md §3.3."""
+    """Decodes a 32-bit guest address into its fields. See runtime_vmmio.md §3.3."""
 
     def __init__(self, raw: int):
         self.raw = raw & 0xFFFF_FFFF
@@ -46,9 +45,6 @@ class VmmioAddress:
 
     def l3_metadata(self) -> int:
         return (self.raw >> 16) & 0xFFF
-
-    def l2_idx(self) -> int:
-        return (self.raw >> 12) & 0xF
 
     def offset(self) -> int:
         return self.raw & 0xFFF
@@ -82,9 +78,8 @@ class Tier3PTE:
 
 
 class VMMIOController:
-    """FlatMap Page Table (vpn -> PTE, no 16-entry limit) with a direct-mapped
-    16-entry software TLB. TLB hits provide O(1) hot-path access, while TLB
-    misses look up the FlatMap without rigid tier-level capacity constraints.
+    """FlatMap Page Table (vpn -> PTE) with a direct-mapped 16-entry software TLB.
+    TLB hits provide O(1) hot-path access, while TLB misses look up the FlatMap.
     """
 
     def __init__(self, guest_ram_size: int = 8192):     # FB_CONF_GUEST_RAM_SIZE
@@ -95,7 +90,7 @@ class VMMIOController:
         self.guest_ram_size = guest_ram_size
         self.guest_ram_mask = ~(guest_ram_size - 1) & 0xFFFF_FFFF
 
-        # FlatMap PTE storage: vpn -> PTE (no 16-entry limit)
+        # FlatMap PTE storage: vpn -> PTE
         self.ptes: dict[int, object] = {}
 
         # Direct-mapped TLB: 16 slots, keyed by (vpn ^ (vpn>>16)) & 15.
@@ -106,7 +101,7 @@ class VMMIOController:
         # Registered syscall dispatch handlers, keyed by (fc, l3_metadata).
         self.syscall_handlers: dict[tuple[int, int], Callable[[int, bool], None]] = {}
 
-    # --- Static & Dynamic PTE Registration (FlatMap, no 16-entry limit) ---
+    # --- Static & Dynamic PTE Registration (FlatMap) ---
 
     def _page_vpn(self, fc: int, page_idx: int, l3_metadata: int = 0) -> int:
         return (0x8000_0000 | (fc << 28) | ((l3_metadata & 0xFFF) << 16) | (page_idx << 12)) >> 12
@@ -120,7 +115,7 @@ class VMMIOController:
         self.syscall_handlers[(FC_STATIC_DEVICE, l3_metadata)] = handler
 
     def map_shm_page(self, page_idx: int, phys_page: int, owner_id: int):
-        """Registers a Tier 3 SHM page (FC=14) into FlatMap (unlimited pages)."""
+        """Registers a Tier 3 SHM page (FC=14) into FlatMap."""
         vpn = self._page_vpn(FC_SHM, page_idx)
         self.ptes[vpn] = Tier3PTE(phys_page, valid=True, read=True, write=True,
                                   exec_=False, owner_id=owner_id)
@@ -332,10 +327,10 @@ def test_interleaved_syscall_and_shm_keep_hitting_the_tlb():
         f"expected >=90% hit rate, got {ctrl.tlb_hits}/{total}"
 
 
-def test_unlimited_pte_registration_in_flatmap():
-    """FlatMap stores arbitrary number of PTEs (>16 limit removed), with TLB acceleration."""
+def test_flatmap_pte_registration_and_tlb_caching():
+    """FlatMap stores PTEs, with direct-mapped TLB acceleration."""
     ctrl = VMMIOController()
-    # Register 32 distinct SHM pages (far exceeding old 16-entry L2 table limit)
+    # Register 32 distinct SHM pages
     for p in range(32):
         ctrl.map_shm_page(page_idx=p, phys_page=0x1000 + p, owner_id=42)
 
@@ -373,6 +368,6 @@ if __name__ == "__main__":
     test_linear_ram_is_bounds_checked_not_waved_through()
     test_tlb_index_separates_function_codes()
     test_interleaved_syscall_and_shm_keep_hitting_the_tlb()
-    test_unlimited_pte_registration_in_flatmap()
+    test_flatmap_pte_registration_and_tlb_caching()
     print("[PASS] All vMMIO concept tests passed successfully.")
 

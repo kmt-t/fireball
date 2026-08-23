@@ -2,36 +2,33 @@
 <!-- traceability: {VERIFY_FORMAL} -->
 
 ## 1. コンセプト
-<!-- traceability: {META_RestrictedPhysicalAccess} {vMMIO_TrapAndEmulate} {PhysicalPassthrough} {DynamicMmap} {UnifiedAccessModel} {FastAddressCheck} {Fast_Path_GPIO} -->
+<!-- traceability: {META_RestrictedPhysicalAccess} {vMMIO_TrapAndEmulate} {PhysicalPassthrough} {DynamicMmap} {UnifiedAccessModel} {FastAddressCheck} {Fast_Path_GPIO} {META_FlatMapIndexed} -->
 vMMIO (Virtual Memory-Mapped I/O) は、WASMゲストとホスト間の**すべてのデータ交換**を仲介する統一的なアクセス層である。物理レジスタ（GPIO等）、共有メモリ、システムコール用バッファなど、ホスト-ゲスト間境界を横切るアクセスはすべてvMMIO空間を経由する。
 
-WASM ゲストのリニアメモリは、WebAssembly 標準仕様に準拠して **64KB ページ単位 (65,536 bytes)** を基本とする。ただし、RAM < 64KB の極小組込み環境（Cortex-M 等）に適合するため、物理実装としては **64KB に満たない部分ページ（Sub-64KB / Partial Page: 例 8KB, 16KB）** の割り当てを許容し、境界超過アクセスを即座にトラップする設計をとる。一方、ホスト/デバイス側の vMMIO 領域は **1ページ（4KB）** 単位の 2段階ページテーブルで管理される。 `{META_RestrictedPhysicalAccess}` `{vMMIO_TrapAndEmulate}` `{PhysicalPassthrough}` `{DynamicMmap}` `{UnifiedAccessModel}`
+WASM ゲストのリニアメモリは、WebAssembly 標準仕様に準拠して **64KB ページ単位 (65,536 bytes)** を基本とする。ただし、RAM < 64KB の極小組込み環境（Cortex-M 等）に適合するため、物理実装としては **64KB に満たない部分ページ（Sub-64KB / Partial Page: 例 8KB, 16KB）** の割り当てを許容し、境界超過アクセスを即座にトラップする設計をとる。一方、ホスト/デバイス側の vMMIO 領域は **1ページ（4KB）** 単位で管理される。 `{META_RestrictedPhysicalAccess}` `{vMMIO_TrapAndEmulate}` `{PhysicalPassthrough}` `{DynamicMmap}` `{UnifiedAccessModel}`
 
-本アーキテクチャでは、JIT実行などの極めてクリティカルなパスにおいて、探索コストを完全に一定（O(1)）に抑え込むため、従来の `std::flat_map` を用いた $O(\log N)$ 二分探索および線形探索TLBを全面的に廃止し、OS/MMUハードウェアの基本原則に忠実な**「2段階ダイレクトインデックス式ページテーブル（L1/L2）」**および**「ダイレクトマップ方式のソフトウェアTLB」**を採用する。
+本アーキテクチャでは、PTE（Page Table Entry）の保存にシステム全体の設計規約（`{META_FlatMapIndexed}`）に準拠した **FlatMap（`std::flat_map` / 静的ソート済み配列 / フラットマップ構造）** を採用する。階層型ページテーブルに存在した「16エントリ（64KB空間）」などの固定的なページ数制限を完全に撤廃し、任意の数の PTE（SHM、PASSTHROUGH、静的デバイス）を柔軟に登録・管理可能とする。
 
-RAM < 64KB の極小資源に適合するため、本設計ではL2ページテーブルサイズを標準の256エントリから**16エントリ**にスケールダウンし、1テーブルあたりのメモリフットプリントをわずか 64 バイト（$16 \times 4 \text{ bytes} = 64 \text{ bytes}$）に抑え込む。これにより、システム全体で必要な定数・動的テーブル群の総メモリを 192 バイト（3テーブル分）以内に圧縮する。
+FlatMap 単体での探索は $O(\log N)$（またはハッシュ探索）となるが、本アーキテクチャでは手前に **「ダイレクトマップ方式のソフトウェアTLB（16エントリ、完全 $O(1)$ キャッシュ）」** を配置する。JIT 実行やホットな共有メモリ操作などのクリティカルパスでは、大半のアクセス（目標 90% 以上）が TLB キャッシュヒット（$O(1)$）で高速解決されるため、FlatMap 化に伴うテーブル探索の遅延は十分に吸収・容認される。
 
 1. **リニアアドレス空間フィルタ（高速バイパス & 64KB/部分ページ境界チェック）**:
    32ビットゲストアドレスの最上位ビット（Bit 31）が `0` の場合、そのアドレスは vMMIO 管理対象外として、Tier 1（ゲストRAM）への直接アクセスとして高速バイパス（O(1) 処理）を実行する。 `{FastAddressCheck}`
    - **完全 64KB ページ時**: ゲストアドレスが 64KB 境界内にあるかを `(addr & ~0xFFFF) == 0` のビットマスク 1 命令で超高速判定。
    - **部分ページ時（例: 8KB）**: 実際の割り当てサイズに対して `addr < guest_ram_size`（または $2^N$ アライメントマスク `(addr & ~0x1FFF) == 0`）で O(1) 判定。境界外アクセスは即座に `ERR_OUT_OF_BOUNDS` トラップを発生させる。
-2. **2段階ダイレクトデコード（O(1) テーブルウォーク）**:
+2. **FlatMap PTE 管理（ページ数制限なし）**:
    最上位ビット（Bit 31）が `1` のアドレス空間を vMMIO 領域（`0x8000_0000` – `0xFFFF_FFFF`）とする。
-   - **L1 ページディレクトリ (Page Directory)**:
-     アドレス最上位 4 ビット（ビット[31:28]）を **Function Code (FC)** とし、16エントリのポインタ配列 `vmmio_l1_dir`（$16 \times 4 \text{ bytes} = 64 \text{ bytes}$）を直接インデックス参照する。これによりルートテーブルの O(1) 選択を行う。未マッピングの FC の場合は `nullptr` であり、アクセス時に即時トラップを発生させる。 `{FastAddressCheck}`
-   - **L2 ページテーブル (Page Table)**:
-     ビット[15:12]（4 bits）を **L2 インデックス**とし、L1 エントリが指す 16 エントリの固定長 PTE 配列 `vmmio_l2_pt` をインデックス参照する。これにより 64KB のアドレス領域（4KB × 16ページ）を O(1) にマッピングする。
-   - インデックスとして使用されないビット[27:16]（12 bits）は、FC=12 (静的デバイス) では Device Type や Syscall ID などのデバイス情報やサービスIDの特定に利用する。
+   - 仮想ページ番号（VPN = `raw >> 12`）をキーとして、FlatMap（`vmmio_ptes`）に PTE を格納する。
+   - 16エントリなどの階層型テーブルの制限がなく、システム構成に応じた任意の数の動的 SHM ページや物理パススルーページを登録できる。
 3. **ダイレクトマップ方式ソフトウェアTLB（完全O(1)キャッシュ）**:
-   ホットパス高速化のため、線形検索を行う TLB キャッシュを廃止し、一発でインデックスが決まるダイレクトマッピング（ハッシュ方式、16エントリ固定サイズ）を採用する。
+   ホットパス高速化のため、一発でインデックスが決まるダイレクトマッピング（ハッシュ方式、16エントリ固定サイズ）を採用する。
    - 仮想ページ番号 (VPN = `raw >> 12`) から、ハッシュ値 `tlb_idx = (vpn ^ (vpn >> 16)) & 15` を算出し、TLBに一撃でアクセスする。ヒット時は権限チェックを通過した後に即時実行する。 `{META_RestrictedPhysicalAccess}`
-   - **FC の折り込み**: VPN の下位 4 ビットは L2 インデックス[15:12]そのものであり、そのまま用いると FC の異なる同一ページ番号（例: FC=12 の page 3 と FC=14 の page 3）が同一スロットに衝突する。`vpn >> 16` の下位 4 ビットが FC[31:28] であるため、XOR で折り込むことで 1 命令追加のみで FC を分離する。
+   - **FC の折り込み**: VPN の下位 4 ビットはページインデックス[15:12]であり、そのまま用いると FC の異なる同一ページ番号（例: FC=12 の page 3 と FC=14 の page 3）が同一スロットに衝突する。`vpn >> 16` の下位 4 ビットが FC[31:28] であるため、XOR で折り込むことで 1 命令追加のみで FC を分離する。
 
 セキュリティモデルは**PTEに埋め込まれた権限フィールドが唯一のゲート**である。アクセス権限は PTE に保持され、ルックアップと権限チェックを1パスで完結させる。アクセス特性に応じてセキュリティゲートを以下の3層に階層化する。 `{META_RestrictedPhysicalAccess}`
 
 1. **Tier 1 (ゲストRAM)**: ゲスト専用RAM領域（Bit 31 == 0）。コンパイル時または実行時の 64KB マスクおよび部分ページ境界チェック（`FastAddressCheck`）のみで高速処理。
 2. **Tier 2 (静的vMMIO, FC=12)**: コンパイル時にアドレスが確定するコアデバイス（SYSCTL, IPCR, VDMA等）。アドレス `0xC000_0000` は FC=12 に位置する。JIT生成時に許可チェックを行い、許可済みならネイティブコードに直接デバイスキー（Syscall ID を含む）を埋め込む。
-3. **Tier 3 (動的vMMIO, FC=14-15)**: SHM（FC=14, `0xE000_0000`）、PASSTHROUGH（FC=15, `0xF000_0000`）領域のアクセス。実行時に 2段階ページテーブルを経由して PTE を解決し、エントリの権限フィールドで可否を判定する。
+3. **Tier 3 (動的vMMIO, FC=14-15)**: SHM（FC=14, `0xE000_0000`）、PASSTHROUGH（FC=15, `0xF000_0000`）領域のアクセス。TLB または FlatMap を経由して PTE を解決し、エントリの権限フィールドで可否を判定する。
 
 IPC経由のデータ交換は行わない — GPIOのようなsub-µs応答が必要な周辺機器はIPCレイテンシに耐えられないため、このダイレクトアクセスモデルが採用されている。 `{Fast_Path_GPIO}`
 
@@ -42,20 +39,17 @@ IPC経由のデータ交換は行わない — GPIOのようなsub-µs応答が�
 ## 3. 静的モデル
 
 ### 3.1 データ構造
-<!-- traceability: {META_Static_Resolution} -->
+<!-- traceability: {META_Static_Resolution} {META_FlatMapIndexed} -->
 
-リソース制約上、構造体は **ROM（不変）** と **RAM（可変）** に明確に分離する。L2テーブルサイズを16エントリに抑えることでRAM浪費を根本排除する。
+リソース制約上、構造体は **ROM（不変）** と **RAM（可変）** に明確に分離する。PTE は FlatMap（ソート済みキー・バリュー配列）で管理し、手前の TLB キャッシュにより高速アクセスを担保する。
 
 | 配置 | 構造体 | 概要 |
 | :--- | :--- | :--- |
 | ROM | `vmmio_address` | アドレスビットフィールド定義（C++23 ヘルパー構造体、実体なし） |
-| ROM | `vmmio_l1_dir[16]` | FC (4 bits) → L2 ページテーブルポインタへの O(1) 定数/静的ディレクトリ |
-| RAM/ROM | `vmmio_l2_pt_static[16]` | FC=12 (Static Device) 用。L2 Index (4 bits) → 32bit Static Device PTE 配列 (64 bytes) |
-| RAM | `vmmio_l2_pt_shm[16]` | FC=14 (SHM) 用。L2 Index (4 bits) → 32bit Tier 3 PTE 配列（動的、64 bytes） |
-| RAM/ROM | `vmmio_l2_pt_pass[16]` | FC=15 (PASSTHROUGH) 用。L2 Index (4 bits) → 32bit Tier 3 PTE 配列 (64 bytes) |
+| ROM/RAM | `vmmio_ptes` | 仮想ページ番号 (VPN) → 32bit PTE の FlatMap（`std::flat_map<uint32_t, uint32_t>`、制限なし） |
 | RAM | ソフトウェアTLB配列 | `vmmio_tlb_cache[16]` 16エントリのダイレクトマップ型高速TLBキャッシュ配列 |
 
-- **`VmmioController`**: アドレス境界デコード、L1/L2テーブルウォーク、TLBキャッシュ管理、動的マッピング管理を担う主要クラス。
+- **`VmmioController`**: アドレス境界デコード、FlatMap PTE ルックアップ、TLBキャッシュ管理、動的マッピング管理を担う主要クラス。
 - **`vmmio_config`**: 静的な領域定義 (`vmmio_static_region`) の不変なテーブル。 `{META_Static_Resolution}`
 
 ### 3.2 内部ブロック図
@@ -64,9 +58,8 @@ IPC経由のデータ交換は行わない — GPIOのようなsub-µs応答が�
 graph TD
     subgraph vMMIO_Layer
         Filter["MSB Address Filter<br/>Bit 31 == 0 vs 1"]
-        Decoder["Address Decoder<br/>FC(31:28) + L2(15:12) + L3/Sys(27:16) + Offset(11:0)"]
-        L1Dir["vmmio_l1_dir (16)<br/>Indexed by FC"]
-        L2Table["vmmio_l2_pt (16)<br/>Indexed by L2 Index"]
+        Decoder["Address Decoder<br/>FC(31:28) + L3/Sys(27:16) + Page(15:12) + Offset(11:0)"]
+        FlatMap["vmmio_ptes (FlatMap)<br/>Key: VPN -> Value: PTE (No limit)"]
         TLB["Direct-Mapped TLB (16)<br/>Index = (vpn ^ (vpn>>16)) & 15"]
         Controller["VmmioController"]
     end
@@ -75,11 +68,10 @@ graph TD
     Filter -- Bit 31 == 0 --> Bypass[Linear RAM Bypass\nTier 1 RAM Access]
     Filter -- Bit 31 == 1 --> Decoder
     Controller -- checks Cache --> TLB
-    TLB -- Host Hit (O(1)) --> Handler["PTE Handler\n(Syscall or Phys)"]
-    TLB -- Cache Miss --> Walk[L1/L2 Table Walk]
-    Walk -- index FC --> L1Dir
-    L1Dir -- points to --> L2Table
-    L2Table -- lookup L2_idx --> WalkResult[Resolved PTE]
+    TLB -- TLB Hit (O(1)) --> Handler["PTE Handler\n(Syscall or Phys)"]
+    TLB -- TLB Miss --> Walk[FlatMap Lookup]
+    Walk -- lookup VPN --> FlatMap
+    FlatMap -- returns --> WalkResult[Resolved PTE]
     WalkResult -- refills --> TLB
     WalkResult --> Handler
 ```
@@ -90,15 +82,15 @@ vMMIO
 
 #### アドレスフィールド定義 (vmmio_address)
 <!-- traceability: {META_Static_Resolution} -->
-32ビットゲストアドレスを5つのフィールドに分割する。1ページ(4KB)ごとの連続アドレスが L2 ページテーブルの各スロットにダイレクト展開される。
+32ビットゲストアドレスをフィールドに分割する。
 
 | 項目名 | 機能と役割 | 備考（制約、型など） |
 | :--- | :--- | :--- |
 | RAM Bypass Flag | Bit 31 が 0 のときはゲストRAMアクセス（Tier 1）とし、vMMIOを高速バイパス。 | ビット[31]（1 bit） |
-| Function Code | vMMIO 領域時の配列インデックス。L1 ページディレクトリで使用。 | ビット[31:28]（4 bits）、16種別 |
+| Function Code | vMMIO 領域時の機能種別（FC）。 | ビット[31:28]（4 bits）、16種別 |
 | L3 Sub / Metadata | 静的デバイスでは Syscall ID や Device Type などの付加情報を、それ以外では共有メモリ等の補足キーを保持。 | ビット[27:16]（12 bits） |
-| L2 Page Index | L2 ページテーブル（16エントリ）へのダイレクトインデックス。連続ページで連続増分。 | ビット[15:12]（4 bits）、最大16ページ（64KB空間） |
-| Offset | 4KBページ内でのバイトオフセット。L1/L2 解決後に相対アドレスとして使用。 | ビット[11:0]（12 bits）、4KB |
+| Page Index | ページインデックス（4KB単位）。FlatMap 内で VPN の一部として識別。 | ビット[15:12]（4 bits 以上） |
+| Offset | 4KBページ内でのバイトオフセット。PTE 解決後に相対アドレスとして使用。 | ビット[11:0]（12 bits）、4KB |
 
 **アドレスデコード + PTE アクセス擬似コード例**:
 ```python
@@ -118,20 +110,16 @@ class VmmioAddress:
         # L3 Sub / Metadata: [27:16]
         return (self.raw >> 16) & 0xFFF
         
-    def l2_idx(self) -> int:
-        # L2 Index: [15:12] (4 bits, 16ページ空間に直結)
-        return (self.raw >> 12) & 0xF
-        
     def offset(self) -> int:
         # Offset: [11:0]
         return self.raw & 0xFFF
         
     def vpn(self) -> int:
-        # Virtual Page Number (VPN) for TLB Key
+        # Virtual Page Number (VPN) for TLB and FlatMap Key
         return self.raw >> 12
 
-# 2段階ページテーブルの定義
-# vmmio_l1_dir = [None] * 16  # L1 ページディレクトリ
+# FlatMap および TLB キャッシュの定義
+# vmmio_ptes = {}  # FlatMap: vpn -> 32bit PTE (制限なし)
 # vmmio_tlb_cache = [{'vpn': 0xFFFFFFFF, 'pte': 0} for _ in range(16)]  # ダイレクトマップ方式TLB
 
 def lookup_tlb(addr: VmmioAddress) -> int:
@@ -141,13 +129,15 @@ def lookup_tlb(addr: VmmioAddress) -> int:
     if vmmio_tlb_cache[tlb_idx]['vpn'] == vpn:
         return vmmio_tlb_cache[tlb_idx]['pte']  # TLB Hit!
         
-    # TLB Miss: 2段階テーブルウォークを実行
-    fc = addr.fc()
-    l2_table = vmmio_l1_dir[fc]
-    if l2_table is None:
-        raise Exception("UNDEFINED_FC")
+    # TLB Miss: FlatMap ルックアップを実行 (16エントリ制限なし)
+    pte = vmmio_ptes.get(vpn)
+    if pte is None:
+        raise Exception("UNREGISTERED_PAGE")
         
-    l2_idx = addr.l2_idx()
+    # TLB をリフィル
+    vmmio_tlb_cache[tlb_idx] = {'vpn': vpn, 'pte': pte}
+    return pte
+```
     pte = l2_table[l2_idx]
     
     # TLB をリフィル
@@ -205,16 +195,16 @@ def access_vmmio(addr: VmmioAddress, is_write: bool):
 | `0x0000_0000` – `0x7FFF_FFFF` | 0 | - | ゲスト RAM（WASM線形メモリ）— Tier 1 |
 | `0xC000_0000` – `0xC000_FFFF` | 1 | 12 (`0xC`) | Static Devices（SYSCTL, IPCR, VDMA）— Tier 2 |
 | `0xD000_0000` – `0xD000_FFFF` | 1 | 13 (`0xD`) | （予約） |
-| `0xE000_0000` – `0xE000_FFFF` | 1 | 14 (`0xE`) | SHM（共有メモリ、16スロット）— Tier 3 |
-| `0xF000_0000` – `0xF000_FFFF` | 1 | 15 (`0xF`) | PASSTHROUGH（物理アドレス直結、16ページ）— Tier 3 |
+| `0xE000_0000` – `0xEFFF_FFFF` | 1 | 14 (`0xE`) | SHM（共有メモリ、ページ数制限なし）— Tier 3 |
+| `0xF000_0000` – `0xFFFF_FFFF` | 1 | 15 (`0xF`) | PASSTHROUGH（物理アドレス直結、ページ数制限なし）— Tier 3 |
 
 #### コントローラ群 (VmmioController)
-<!-- traceability: {META_Static_Resolution} -->
-アドレスデコード・L1/L2 ページテーブルインデックス選択・PTE ルックアップ・TLBキャッシュ管理をカプセル化する。
+<!-- traceability: {META_Static_Resolution} {META_FlatMapIndexed} -->
+アドレスデコード・FlatMap PTE ルックアップ・TLBキャッシュ管理をカプセル化する。
 
 | 項目名 | 機能と役割 | 備考（制約、型など） |
 | :--- | :--- | :--- |
-| L1 ページディレクトリ | FC（4 bits）から該当する L2 ページテーブルヘの参照ポインタ。O(1) アクセス。 | `vmmio_l1_dir[16]`（FC数分、不変ROM） |
+| FlatMap ページテーブル | 仮想ページ番号 (VPN) → 32bit PTE のマッピング。16エントリ等の固定制限なし。 | `vmmio_ptes`（`std::flat_map<uint32_t, uint32_t>`） |
 | ソフトウェアTLB（グローバル） | 仮想ページ番号 (VPN) → PTE マッピングをダイレクトマップハッシュでキャッシュ。ホットパスを完全 O(1) に高速化する。 | `vmmio_tlb_cache[16]`（固定16エントリ、ハッシュ結合） |
 
 #### 静的デバイスページテーブルエントリ (vmmio_pte_static)
@@ -244,7 +234,7 @@ Static Devices (Tier 2) 向け。Syscall ID はアドレス [27:16] (L3 Metadata
 
 #### 動的デバイスページテーブルエントリ (vmmio_pte_tier3)
 <!-- traceability: {vMMIO_Isolation} -->
-Tier 3 (共有メモリ・パススルー) 向け。物理ページアドレスと所有権を管理。配列によるインデックス参照で O(1) ルックアップ。フラグは Static Device PTE と共通。
+Tier 3 (共有メモリ・パススルー) 向け。物理ページアドレスと所有権を管理。FlatMap / TLB から取得。フラグは Static Device PTE と共通。
 
 ```
 32-bit Tier 3 PTE Structure (32 bits, 重複・ビット衝突なし):
@@ -266,22 +256,14 @@ Tier 3 (共有メモリ・パススルー) 向け。物理ページアドレス�
 
 **FC=14 (SHM) エントリへの書き込みは IPCルータのみが行う。vMMIO は読み取り・チェック・実行のみ。**
 
-#### L1/L2 ページテーブル定義
+#### FlatMap ページテーブル定義
 <!-- traceability: {META_FlatMapIndexed} {vMMIO_Isolation} -->
-アドレスの各パートでダイレクトにインデックス参照する。システム全体の共通ポリシー（`{META_FlatMapIndexed}`）では `std::flat_map` による $O(\log N)$ 探索が採用されるが、vMMIOは極めて高いパフォーマンス（$O(1)$）を要求されるため、例外的に `std::flat_map` を排除し、2段階ページテーブルによるダイレクトインデックス参照で最適化する。 `{vMMIO_Isolation}`
+システム全体の共通ポリシー（`{META_FlatMapIndexed}`）に完全準拠し、PTE の保存には `std::flat_map<uint32_t, uint32_t>`（キー: VPN = `raw >> 12`、値: 32bit PTE）を採用する。階層型ページテーブルの 16 エントリ制限を撤廃し、任意の数のページを登録可能とする。 `{vMMIO_Isolation}`
 
-```python
-# L1 ページディレクトリ配列 (ROM/RAM)
-# vmmio_l1_dir = [None] * 16
-
-# FC=12 (Static Device — Tier 2) — L2 固定テーブル (16 entries, 64 bytes)
-# vmmio_l2_pt_static = [0] * 16
-
-# FC=14 (SHM — Tier 3) — L2 静的ページテーブル (16 entries, 64 bytes - 静的確保)
-# vmmio_l2_pt_shm = [0] * 16
-
-# FC=15 (PASSTHROUGH — Tier 3) — L2 静的ページテーブル (16 entries, 64 bytes - 静的確保)
-# vmmio_l2_pt_passthrough = [0] * 16
+```cpp
+// FlatMap ページテーブル定義 (C++23)
+using VmmioPteMap = std::flat_map<uint32_t, uint32_t>;
+VmmioPteMap vmmio_ptes; // VPN -> PTE (ページ数制限なし)
 ```
 
 #### ハンドラ定義 (vmmio_handler)
@@ -302,18 +284,18 @@ Tier 3 (共有メモリ・パススルー) 向け。物理ページアドレス�
    アドレスの最上位ビット（Bit 31）が 0 であれば、即座に Tier 1 ゲストRAMアクセスとしてバイパスし、境界チェックのみで O(1) に処理。
 
 2. [アドレスデコード]
-   Bit 31 == 1 の場合、アドレスフィールドから FC (ビット[31:28])、L2インデックス (ビット[15:12])、L3/メタデータ[27:16]、Offset (ビット[11:0]) を抽出する。
+   Bit 31 == 1 の場合、アドレスフィールドから FC (ビット[31:28])、VPN (ビット[31:12])、L3/メタデータ[27:16]、Offset (ビット[11:0]) を抽出する。
 
 3. [TLB ルックアップ（最速ホットパス）]
-   - VPN = upper 20 bits of address
+   - VPN = upper 20 bits of address (`raw >> 12`)
    - TLB Index = (vpn ^ (vpn >> 16)) & 15 (16エントリのダイレクトマップ、FC 折り込み済み)
    - vmmio_tlb_cache[tlb_idx].vpn == vpn でヒット判定。
-   - ヒットした場合、PTEを即時抽出し、デシリアライズやマルチレベル探索を全数スキップして手順5（権限チェック）へ直接進む。
+   - ヒットした場合、PTEを即時抽出し、FlatMap 探索を全数スキップして手順5（権限チェック）へ直接進む。
 
-4. [L1/L2 ページテーブルウォーク（TLBミス時）]
-   - vmmio_l1_dir[FC] をインデックス参照し、L2ページテーブル l2_pt ポインタを取得。nullptr の場合は即時トラップ（未定義FC）。
-   - l2_pt[L2_idx] をインデックス参照し、32ビットの PTE を取得。存在しない場合は即時トラップ（未登録デバイスページ）。
-   - 取得した PTE と vpn を用いて、Software TLB エントリ vmmio_tlb_cache[tlb_idx] に登録（ダイレクトマップ更新、ハッシュが重複した場合は押し出し方式で上書き）。
+4. [FlatMap ルックアップ（TLBミス時）]
+   - vmmio_ptes から VPN をキーとして二分探索（O(log N)）で 32ビット PTE を取得。
+   - 存在しない場合は即時トラップ（未登録デバイスページ / 未定義FC）。
+   - 取得した PTE と vpn を用いて、Software TLB エントリ vmmio_tlb_cache[tlb_idx] に登録（ダイレクトマップ更新、上書きリフィル）。
 
 5. [権限チェック]
    全 FC 共通フラグ (PTE[23:20]) を確認：
@@ -332,7 +314,7 @@ Tier 3 (共有メモリ・パススルー) 向け。物理ページアドレス�
 
 #### vMMIO フルセット・コンセプトコード
 
-2段階ページテーブル（L1 ディレクトリ → L2 ページテーブル）、ダイレクトマップ
+FlatMap ページテーブル（制限なし）、ダイレクトマップ
 ソフトウェアTLB、および PTE 権限・所有権検査を含む実行可能なリファレンス実装は
 [`concepts/vmmio_concept.py`](concepts/vmmio_concept.py) を正本とする。
 仕様書側に複製は置かない（二重管理を避けるため）。
@@ -344,7 +326,7 @@ Tier 3 (共有メモリ・パススルー) 向け。物理ページアドレス�
 | **ゲスト RAM (Tier 1)** | 直接 | O(1) | 最上位ビット判定による即時バイパス、範囲境界チェック。最速。 |
 | **Static Devices (FC=12)** | JIT embed | O(0) | ネイティブコード直接埋め込み。JITコンパイル時に確定しているためディスパッチ自体不要。 |
 | **Tier 3 TLB Hit** | キャッシュ | O(1) | ダイレクトマップ方式TLB（ハッシュ演算1回、配列参照1回、比較1回）。極めて低遅延。 |
-| **Tier 3 TLB Miss** | L1/L2 ウォーク | O(1) | 2段階ダイレクトインデクス参照のみの定数時間テーブルウォーク。 |
+| **Tier 3 TLB Miss** | FlatMap 探索 | O(log N) | FlatMap 二分探索。TLB キャッシュ（目標 90% 以上ヒット）により遅延は十分に吸収・容認される。 |
 | **期待ヒット率** | - | [目標値: 90%以上] | 局所性に基づき大半のホットパスがTLBキャッシュにヒット。 |
 
 **ソフトウェア TLB キャッシュ（vMMIO インスタンスグローバル）**:
@@ -360,7 +342,7 @@ Tier 3 (共有メモリ・パススルー) 向け。物理ページアドレス�
 # vmmio_tlb_cache = [{"vpn": 0xFFFFFFFF, "pte": 0} for _ in range(16)]
 ```
 
-**目的**: 各 FC ごとに L2 ページテーブルは完全に独立しているが、高速なルックアップを実現する TLB エントリは VmmioController 内の単一配列にキャッシュされる。
+**目的**: 各 PTE は FlatMap に一元管理されるが、高速なルックアップを実現する TLB エントリは VmmioController 内の単一配列にキャッシュされる。
 
 **キャッシュ置換戦略**: ダイレクトマッピング（ハッシュ競合時の自動上書き）。線形探索ループを伴わない、最も低レイテンシかつ RAM < 64KB 環境に最適な仕組み。
 
@@ -372,8 +354,7 @@ sequenceDiagram
     participant G as Guest (JIT/Interp)
     participant C as VmmioController
     participant T as Software TLB (Hash)
-    participant L1 as L1 Page Directory
-    participant L2 as L2 Page Table
+    participant F as FlatMap (vmmio_ptes)
     participant H as Handler / PhysMem
 
     G->>C: dispatch_access(addr, buf, is_write)
@@ -383,18 +364,16 @@ sequenceDiagram
         H-->>C: data
         C-->>G: ok
     else Bit 31 == 1 (vMMIO Range)
-        C->>C: Decode FC, L2_idx, Offset
+        C->>C: Decode FC, VPN, Offset
         C->>T: hash_lookup(vpn)
         alt TLB Hit
             T-->>C: cached PTE
         else TLB Miss
-            C->>L1: l1_dir[FC]
-            L1-->>C: l2_pt pointer
-            alt nullptr
-                C-->>G: Trap (Undefined FC)
+            C->>F: ptes.find(vpn)
+            alt Not Found
+                C-->>G: Trap (Unregistered Page / Undefined FC)
             end
-            C->>L2: l2_pt[L2_idx]
-            L2-->>C: resolved PTE
+            F-->>C: resolved PTE
             C->>T: Refill entry at (vpn XOR vpn>>16) AND 15
         end
 
@@ -474,13 +453,13 @@ PASSTHROUGH アドレス変換（O(1) ダイレクト変換）:
 <!-- traceability: {OwnershipTransfer} -->
 SHM へのアクセスは **IPCルータ経由でのみ許可される**。ゲストは IPCルータからハンドルを受け取ることによってのみ FC=14 アドレス空間にアクセスできる。SHM の所有権状態は IPCルータが一元管理し（`ipc_router.md` §4.1 所有権移譲モデル準拠）、vMMIO はその状態を執行するのみ。 `{OwnershipTransfer}`
 
-- **SHMハンドル**: `(L2_idx << 8) | L3_idx` の 16bit 値。L2_idx ≤ 15、L3_idx ≤ 255 を IPCルータが生成時に保証する。
-- **アクセスアドレス**: `0xE000_0000 | (L2_idx << 12) | offset_in_page`。
+- **SHMハンドル**: `(page_idx << 8) | slot_idx` の識別値（FlatMap 管理のため 16 制限なし）。
+- **アクセスアドレス**: `0xE000_0000 | (page_idx << 12) | offset_in_page`。
 
 ```mermaid
 graph LR
     Guest[Guest App] -- Load/Store addr=0xExxx_xxxx --> vMMIO
-    vMMIO -- perm_table (L1/L2) lookup --> Entry[vmmio_pte_tier3\nowner_id]
+    vMMIO -- FlatMap / TLB lookup --> Entry[vmmio_pte_tier3\nowner_id]
     Entry -- owner_id == current_task_id --> Phys[Physical Shared Memory]
     Entry -- FLIGHT_SENTINEL or mismatch --> Trap[Trap/Exception]
 ```
@@ -507,7 +486,7 @@ graph LR
 
 ### 4.8 ソフトウェアTLB
 <!-- traceability: {VDMA} {OwnershipTransfer} {META_ConfigurableSystem} -->
-Tier 3 アクセス（FC=14/15）において毎回2段階ページテーブルのウォークを走らせる遅延を排除するため、仮想ページ番号（VPN = `raw >> 12`）に基づくマッピングを16エントリのダイレクトマップキャッシュに保持する。
+Tier 3 アクセス（FC=14/15）において毎回 FlatMap の二分探索を走らせる遅延を排除するため、仮想ページ番号（VPN = `raw >> 12`）に基づくマッピングを16エントリのダイレクトマップキャッシュに保持する。
 
 - **キャッシュ構造**: ダイレクトマップ構造（Direct-Mapped Hashed Structure）
   - キー（VPN）: `raw >> 12`（20-bit）
@@ -515,10 +494,10 @@ Tier 3 アクセス（FC=14/15）において毎回2段階ページテーブル�
   - 値 (Value): 32-bit PTE エントリ
   
 - **キャッシュ更新 & 押し出し (Eviction & Refill)**:
-  TLBミス時にダイレクトウォークして取得した PTEを `vmmio_tlb_cache[tlb_idx]` に上書き（同一ハッシュに別のアドレスが割り当てられた場合は以前のエントリを自動無効化・上書きする完全O(1)方式）。
+  TLBミス時に FlatMap から取得した PTE を `vmmio_tlb_cache[tlb_idx]` に上書き（同一ハッシュに別のアドレスが割り当てられた場合は以前のエントリを自動無効化・上書きする完全O(1)方式）。
   
 - **権限チェック**:
-  TLBは2段階探索ルートのスキップのみをキャッシュする。権限の検証（PTEの読み書きパーミッション、Owner IDなど）は、TLBヒット時も含めて毎回インラインで実施され、TLBヒットが安全性の検査をバイパスすることはない。
+  TLBは探索ルートのスキップのみをキャッシュする。権限の検証（PTEの読み書きパーミッション、Owner IDなど）は、TLBヒット時も含めて毎回インラインで実施され、TLBヒットが安全性の検査をバイパスすることはない。
 
 ## 5. インターフェイス定義
 
@@ -534,10 +513,10 @@ Tier 3 アクセス（FC=14/15）において毎回2段階ページテーブル�
 | :--- | :--- |
 | 機能概要 | 既に定義（ROM）されている領域に対して、ホスト側のハンドラの実装アドレスを紐づける。 |
 | シグネチャ | `register-hook(hook-id: hook-category, handler-addr: mem-address) -> operation-result` |
-| 引数と役割 | `hook-id`: 対象の領域カテゴリ（FC/L2インデックス等の組み合わせを識別）<br>`handler-addr`: ハンドラ関数の物理アドレス |
+| 引数と役割 | `hook-id`: 対象の領域カテゴリ（FC/ページ番号等の組み合わせを識別）<br>`handler-addr`: ハンドラ関数の物理アドレス |
 | 事前条件 | `hook-id` が `fireball.wit` で定義された有効なIDであること。未登録であること。 |
 | 事後条件 | フックレジストリにエントリが追加される。 |
-| 不変条件 | アドレスマップ定義（L1テーブル構造）自体は変更されない。 |
+| 不変条件 | アドレスマップ定義自体は変更されない。 |
 | エラー時の挙動 | 無効なIDの場合はエラーを返す。二重登録は拒否する。 |
 | 期待する結果 | 正常：フックが登録され、以降のアクセスで呼び出される。 |
 
@@ -545,7 +524,7 @@ Tier 3 アクセス（FC=14/15）において毎回2段階ページテーブル�
 
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | vSoC 実行エンジンからトラップされたメモリアクセスを高速RAMバイパス判定し、vMMIOアドレスの場合はL1/L2及びTLBでPTEを解決しつつ権限検証の上でハンドラや物理レイヤへディスパッチする。 |
+| 機能概要 | vSoC 実行エンジンからトラップされたメモリアクセスを高速RAMバイパス判定し、vMMIOアドレスの場合はTLB及びFlatMapでPTEを解決しつつ権限検証の上でハンドラや物理レイヤへディスパッチする。 |
 | シグネチャ | `dispatch-access(addr: mem-address, buffer: list<u8>, is-write: bool) -> operation-result` |
 | 引数と役割 | `addr`: アクセス先アドレス（vmmio_address として分解）<br>`buffer`: データバッファ (read時out, write時in)<br>`is-write`: 書き込みフラグ |
 | 事前条件 | リニアRAMまたは vMMIO領域（制限空間内）への正常な境界内アクセスであること。 |
@@ -553,23 +532,23 @@ Tier 3 アクセス（FC=14/15）において毎回2段階ページテーブル�
 | 不変条件 | アドレスデコードおよびルックアップの結果は決定論的である。 |
 | エラー時の挙動 | 非許可アドレス、未登録ハンドラへのアクセスはトラップを発生させる。 |
 | 期待する結果 | 正常：エントリの権限チェックを通過し、登録された物理マッピングまたはハンドラが実行され、結果がゲストに反映される。 |
-| 補足 | Software TLB ヒット時はL1/L2のダイレクトデコードを省略する。 |
+| 補足 | Software TLB ヒット時は FlatMap の二分探索を省略する。 |
 
 ## 6. 制約達成の方策
 
 ### 6.1 性能制約と方策
 <!-- traceability: {META_ConfigurableSystem} {FastAddressCheck} {vMMIO_TLB} -->
 - **目標**: MMIOアクセスのオーバーヘッドを最小化する。
-- **方策1**: `{META_ConfigurableSystem}` コアデバイス（SYSCTL等）をFC=12/L2=0に配置し、配列参照のみで即時解決できるようにする。
+- **方策1**: `{META_ConfigurableSystem}` コアデバイス（SYSCTL等）をFC=12に配置し、配列/ハッシュ参照のみで即時解決できるようにする。
 - **方策2**: `{FastAddressCheck}` アドレス空間を RAM Bypass（最上位ビット=0）と vMMIO領域（最上位ビット=1）に分割し、探索とデコードのホットパス探索コストを削減する。
 - **方策3**: `{vMMIO_TLB}` ダイレクトマップ型 Software TLB により、Tier 3 の繰り返しアクセスを完全 O(1) で超高速キャッシュ解決する。
 
 ### 6.2 メモリ制約と方策
-<!-- traceability: {META_ConfigurableSystem} -->
+<!-- traceability: {META_ConfigurableSystem} {META_FlatMapIndexed} -->
 - **目標**: マップ管理用のメモリを最小化する。
-- **方策**: `{META_ConfigurableSystem}` L1ページディレクトリ（16エントリポインタ）および L2ページテーブル（16エントリ配列、必要なFCにのみ静的または初期設定時の固定バッファから切り出し割り当て）を固定サイズとし、動的ツリーや `flat_map` などの余分なメタループレベルを排除する。
+- **方策**: `{META_ConfigurableSystem}` `{META_FlatMapIndexed}` 階層型ページテーブルのポインタ配列を全廃し、`std::flat_map<uint32_t, uint32_t>`（または静的ソート済み配列）によるフラットな PTE 管理に集約することで、階層管理のオーバーヘッドや固定エントリ制限を排除し、登録されたページ数に応じた最小限のメモリフットプリントを実現する。
 
 ### 6.3 安全性制約と方策
 <!-- traceability: {META_RestrictedPhysicalAccess} {OwnershipTransfer} -->
 - **目標**: ゲストが許可されていない物理アドレスにアクセスできないことを保証する。
-- **方策**: `{META_RestrictedPhysicalAccess}` `{OwnershipTransfer}` 権限チェックを解決された PTE フラグで行い、TLBヒット時も含めてすべてのアクセスパスで必ず実行する。TLBはページテーブルウォークのスキップのみを担い、権限チェックをバイパスしない。FC=14 (SHM) の所有権は IPCルータが唯一の書き込み権限を持ち、Revoke 時に該当マッピングの TLB エントリを即時無効化する。
+- **方策**: `{META_RestrictedPhysicalAccess}` `{OwnershipTransfer}` 権限チェックを解決された PTE フラグで行い、TLBヒット時も含めてすべてのアクセスパスで必ず実行する。TLBはページテーブル探索のスキップのみを担い、権限チェックをバイパスしない。FC=14 (SHM) の所有権は IPCルータが唯一の書き込み権限を持ち、Revoke 時に該当マッピングの TLB エントリを即時無効化する。

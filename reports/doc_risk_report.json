@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-23T21:45:30.455141+00:00",
+  "generated_at": "2026-08-23T22:06:26.164777+00:00",
   "backend": "heuristic",
   "total_evaluated": 676,
   "formal_candidates_count": 29,
@@ -10,7 +10,7 @@
     "architecture/architecture_overview.md": "30be52ed847f1fa7ff9f50980552e989dab9727751748a3e5874505214cc81d7",
     "architecture/concept_harness.md": "42e39e100eb0e1ef0f8c2fa68d60b8b4d004657741a0a437ff418f55f5848a34",
     "architecture/document_structure.md": "a3c71e72a0dbd580b5dcc6c1ff34f5e6705c23c9c78a287b6b3bba9f4992fff7",
-    "architecture/resource_budget.md": "f7ae92a2e5532e681450ede4eb20a0f3f363e5682d9ba0bb401434126dd34614",
+    "architecture/resource_budget.md": "900ea538c4b1c28086398be63d17601c8e59f148ef7afbdf4f5332a2e0d9ad42",
     "components/tier1_core/os_coos.md": "e080c35bcd04d4ebf91156d37b22072a94159a03baa06cc766e92736ee77ced1",
     "components/tier1_core/os_scheduler.md": "e45096cf5f7481f0d114010adf47c348a81750fdcd6659bf51e6f9f025642d89",
     "components/tier1_core/system_config.md": "242d8748cbf63ae10afe480615981c055b47b7c636293ca51fa9e8235596a9dc",
@@ -25,11 +25,11 @@
     "components/tier2_runtime/runtime_interpreter.md": "0806dbfca3ef5ed0267b0034bee496a7361a4556b1a202614e3dc248942792c7",
     "components/tier2_runtime/runtime_loader.md": "591c6d491434e54f39eed5c48ae3216fc1b0ca1e2299044161cccac48f93dca5",
     "components/tier2_runtime/runtime_vmmio.md": "59e2fd0c2e7fd96b1f88bc46756757a20671f61696ff9210db998ea5168848a3",
-    "components/tier2_runtime/runtime_vsoc.md": "8fe2030e2f0ba7156ece2db7ba29ed44e1011625f52a9f3f755d20ff260f9623",
+    "components/tier2_runtime/runtime_vsoc.md": "8b330d02cd70f21cedeaedfda9c82ced458e46a2e4960ba8e6ed5590d2ddcbb6",
     "components/tier2_runtime/wasm_instruction.md": "640483f8a25bca7885110ce37e499c4ba3622fdc2ba3507e3a78b2bc1fcf8b5f",
     "components/tier3_jit/concepts/README.md": "a39c8c192999a792243e697e008fcad02c701d14b9559d492d668208122b6ebc",
     "components/tier3_jit/jit_assembler_constexpr.md": "4798eb6d2692ae574c45917a0597feb16e1ffa3ec9d9771566a6523607f7c7d5",
-    "components/tier3_jit/jit_compiler.md": "0def3b543a61466e7cc53047a5f021f3845d26aef2b31af2bb54dca6c9bb6b2e",
+    "components/tier3_jit/jit_compiler.md": "042c05f4775cd8f4270799c4e4a678d85a1be7476d0cb65e051018af9cf9e5b0",
     "components/tier3_jit/jit_engine_copy_patch.md": "a6c7d874f991562322257600b358494d1bd0e604e0f2da52b63a8b9a2ef17d85",
     "components/tier3_jit/jit_runtime_entry.md": "ac17ee532a11b108521ece54ac63fdfd956484e534ed5f607993764c6bae2718",
     "components/tier3_jit/jit_runtime_hotspot.md": "56a3a5466ea0ab7752210b2b8a58f8ed577a67b58c20e49dd8ff936bb9951c51",
@@ -38,7 +38,7 @@
     "plans/backlog_archive.md": "3e09371810730853a39b09fec40e83409690786e1d27caae96ab6af054191716",
     "plans/backlog_list.md": "4776a52e470742a8290db00441cf3a9b8a2c28a8421068a819856f94c8d55a1f",
     "plans/roadmap_phase.md": "6fce4cfc69f7f2ebd7071d06e63de13ac8a4f6f995c5bff8e81bd719c045f39e",
-    "requires/requirement_list.md": "48399ac3b1184c901221f6c91accba42bd459082c76dd0657a87068e4ddd1b61"
+    "requires/requirement_list.md": "abe25c7a9c94676370c0907a3a4a98ac5ffbd63551c4a345cc311eaa78c56018"
   },
   "assessments": [
     {
@@ -792,6 +792,19 @@
       "summary": "Independent heuristic evaluation for '5.5. IRQ (`0x30`-`0x3F`)'."
     },
     {
+      "section_id": "sec:components/tier2_runtime/runtime_vsoc.md#6.1 検証対象の不変条件",
+      "file_path": "components/tier2_runtime/runtime_vsoc.md",
+      "heading": "6.1 検証対象の不変条件",
+      "tier": 2,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '6.1 検証対象の不変条件'."
+    },
+    {
       "section_id": "sec:components/tier1_core/os_scheduler.md#4.1 アルゴリズム",
       "file_path": "components/tier1_core/os_scheduler.md",
       "heading": "4.1 アルゴリズム",
@@ -855,19 +868,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '6.1 性能制約と方策'."
-    },
-    {
-      "section_id": "sec:components/tier2_runtime/runtime_vsoc.md#6.1 検証対象の不変条件",
-      "file_path": "components/tier2_runtime/runtime_vsoc.md",
-      "heading": "6.1 検証対象の不変条件",
-      "tier": 2,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '6.1 検証対象の不変条件'."
     },
     {
       "section_id": "sec:components/tier2_runtime/runtime_vsoc.md#6.2 メモリ制約と方策",
@@ -5485,6 +5485,19 @@
       "summary": "Independent heuristic evaluation for '4.1 分類基準と検証時の挙動'."
     },
     {
+      "section_id": "sec:architecture/resource_budget.md#1. メモリ予算 (RAM)",
+      "file_path": "architecture/resource_budget.md",
+      "heading": "1. メモリ予算 (RAM)",
+      "tier": "meta",
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '1. メモリ予算 (RAM)'."
+    },
+    {
       "section_id": "sec:components/tier1_core/os_scheduler.md#スケジューラクラス（Scheduler）",
       "file_path": "components/tier1_core/os_scheduler.md",
       "heading": "スケジューラクラス（Scheduler）",
@@ -5821,19 +5834,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '3. ドキュメントの静的チェックルール'."
-    },
-    {
-      "section_id": "sec:architecture/resource_budget.md#1. メモリ予算 (RAM)",
-      "file_path": "architecture/resource_budget.md",
-      "heading": "1. メモリ予算 (RAM)",
-      "tier": "meta",
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '1. メモリ予算 (RAM)'."
     },
     {
       "section_id": "sec:architecture/resource_budget.md#2. ストレージ予算 (ROM/Flash)",

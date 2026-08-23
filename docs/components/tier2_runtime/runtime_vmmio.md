@@ -24,7 +24,8 @@ RAM < 64KB の極小資源に適合するため、本設計ではL2ページテ�
    - インデックスとして使用されないビット[27:16]（12 bits）は、FC=12 (静的デバイス) では Device Type や Syscall ID などのデバイス情報やサービスIDの特定に利用する。
 3. **ダイレクトマップ方式ソフトウェアTLB（完全O(1)キャッシュ）**:
    ホットパス高速化のため、線形検索を行う TLB キャッシュを廃止し、一発でインデックスが決まるダイレクトマッピング（ハッシュ方式、16エントリ固定サイズ）を採用する。
-   - 仮想ページ番号 (VPN = `raw >> 12`) から、ハッシュ値 `tlb_idx = vpn & 15` を算出し、TLBに一撃でアクセスする。ヒット時は権限チェックを通過した後に即時実行する。 `{META_RestrictedPhysicalAccess}`
+   - 仮想ページ番号 (VPN = `raw >> 12`) から、ハッシュ値 `tlb_idx = (vpn ^ (vpn >> 16)) & 15` を算出し、TLBに一撃でアクセスする。ヒット時は権限チェックを通過した後に即時実行する。 `{META_RestrictedPhysicalAccess}`
+   - **FC の折り込み**: VPN の下位 4 ビットは L2 インデックス[15:12]そのものであり、そのまま用いると FC の異なる同一ページ番号（例: FC=12 の page 3 と FC=14 の page 3）が同一スロットに衝突する。`vpn >> 16` の下位 4 ビットが FC[31:28] であるため、XOR で折り込むことで 1 命令追加のみで FC を分離する。
 
 セキュリティモデルは**PTEに埋め込まれた権限フィールドが唯一のゲート**である。アクセス権限は PTE に保持され、ルックアップと権限チェックを1パスで完結させる。アクセス特性に応じてセキュリティゲートを以下の3層に階層化する。 `{META_RestrictedPhysicalAccess}`
 
@@ -66,7 +67,7 @@ graph TD
         Decoder["Address Decoder<br/>FC(31:28) + L2(15:12) + L3/Sys(27:16) + Offset(11:0)"]
         L1Dir["vmmio_l1_dir (16)<br/>Indexed by FC"]
         L2Table["vmmio_l2_pt (16)<br/>Indexed by L2 Index"]
-        TLB["Direct-Mapped TLB (16)<br/>Index = (vpn) & 15"]
+        TLB["Direct-Mapped TLB (16)<br/>Index = (vpn ^ (vpn>>16)) & 15"]
         Controller["VmmioController"]
     end
 
@@ -135,7 +136,7 @@ class VmmioAddress:
 
 def lookup_tlb(addr: VmmioAddress) -> int:
     vpn = addr.vpn()
-    tlb_idx = vpn & 15  # ダイレクトマップハッシュ: vpn % 16
+    tlb_idx = (vpn ^ (vpn >> 16)) & 15  # FC[31:28] を折り込み、FC 間衝突を回避
     
     if vmmio_tlb_cache[tlb_idx]['vpn'] == vpn:
         return vmmio_tlb_cache[tlb_idx]['pte']  # TLB Hit!
@@ -218,7 +219,7 @@ def access_vmmio(addr: VmmioAddress, is_write: bool):
 
 #### 静的デバイスページテーブルエントリ (vmmio_pte_static)
 <!-- traceability: {META_Static_Resolution} -->
-Static Devices (Tier 2) 向け。Syscall ID はアドレス [19:12] から抽出するため、PTE には Device Type やフラグのみを保持。Static Devices は常にシステムコール経由であり、Type フラグは FC に応じた値を持つ（FC=12 では 0）。
+Static Devices (Tier 2) 向け。Syscall ID はアドレス [27:16] (L3 Metadata) から抽出するため、PTE には Device Type やフラグのみを保持。Static Devices は常にシステムコール経由であり、Type フラグは FC に応じた値を持つ（FC=12 では 0）。
 
 ```
 32-bit Static Device PTE:
@@ -236,7 +237,7 @@ Static Devices (Tier 2) 向け。Syscall ID はアドレス [19:12] から抽出
 
 | Bit | 名前 | 値 | 説明 |
 |---|---|---|---|
-| [3] | Type | FC依存 | FC=12 では 0（Syscall モード）。Syscall ID はアドレス [19:12] から取得。 |
+| [3] | Type | FC依存 | FC=12 では 0（Syscall モード）。Syscall ID はアドレス [27:16] (L3 Metadata) から取得。 |
 | [2] | CACHEABLE | 0/1 | JIT コンパイル時にコード埋め込み可能か |
 | [1] | WRITE | 0/1 | 書き込み許可 |
 | [0] | READ | 0/1 | 読み取り許可 |
@@ -305,7 +306,7 @@ Tier 3 (共有メモリ・パススルー) 向け。物理ページアドレス�
 
 3. [TLB ルックアップ（最速ホットパス）]
    - VPN = upper 20 bits of address
-   - TLB Index = vpn & 15 (16エントリのダイレクトマップ)
+   - TLB Index = (vpn ^ (vpn >> 16)) & 15 (16エントリのダイレクトマップ、FC 折り込み済み)
    - vmmio_tlb_cache[tlb_idx].vpn == vpn でヒット判定。
    - ヒットした場合、PTEを即時抽出し、デシリアライズやマルチレベル探索を全数スキップして手順5（権限チェック）へ直接進む。
 
@@ -324,59 +325,17 @@ Tier 3 (共有メモリ・パススルー) 向け。物理ページアドレス�
 
 6. [アクセス実行]
    - PTE[23] (Type フラグ) == 0 (Syscallモード、FC=12):
-     Syscall ID = アドレス[19:12] から抽出 → dispatch_syscall(syscall_id, offset, is_write)
+     Syscall ID = アドレス[27:16] (L3 Metadata) から抽出 → dispatch_syscall(syscall_id, offset, is_write)
    - PTE[23] (Type フラグ) == 1 (物理アクセスモード、FC=14/15)：
      物理アドレス = (PTE[31:12] << 12) | offset を算出し、アクセス対象の物理メモリを操作。
 ```
 
-#### vMMIO フルセット・コンセプトコード (`concepts/vmmio_concept.py`)
-```python
-class TrapCode:
-    MEMORY_OUT_OF_BOUNDS = "TRAP_MEMORY_OUT_OF_BOUNDS"
-    UNALIGNED_ACCESS = "TRAP_UNALIGNED_ACCESS"
-    UNAUTHORIZED_ACCESS = "TRAP_UNAUTHORIZED_ACCESS"
+#### vMMIO フルセット・コンセプトコード
 
-
-class VMMIOBus:
-    MMIO_BASE = 0x4000_0000
-    MMIO_LIMIT = 0x6000_0000
-
-    def __init__(self):
-        self.devices = []
-
-    def register_device(self, base_addr: int, size: int, read_fn, write_fn, name: str = ""):
-        assert self.is_mmio_range(base_addr)
-        self.devices.append({"base": base_addr, "size": size, "read": read_fn, "write": write_fn, "name": name})
-
-    @classmethod
-    def is_mmio_range(cls, addr: int) -> bool:
-        return cls.MMIO_BASE <= addr < cls.MMIO_LIMIT
-
-    def read(self, addr: int, size: int) -> tuple[str, int]:
-        """Fast address check and MMIO read dispatch."""
-        if addr % size != 0:
-            return (TrapCode.UNALIGNED_ACCESS, 0)
-        if not self.is_mmio_range(addr):
-            return (TrapCode.MEMORY_OUT_OF_BOUNDS, 0)
-
-        for dev in self.devices:
-            if dev["base"] <= addr < (dev["base"] + dev["size"]):
-                return ("OK", dev["read"](addr - dev["base"], size))
-        return (TrapCode.MEMORY_OUT_OF_BOUNDS, 0)
-
-    def write(self, addr: int, val: int, size: int) -> tuple[str, str]:
-        """Fast address check and MMIO write dispatch."""
-        if addr % size != 0:
-            return (TrapCode.UNALIGNED_ACCESS, "Unaligned write")
-        if not self.is_mmio_range(addr):
-            return (TrapCode.MEMORY_OUT_OF_BOUNDS, "Outside MMIO range")
-
-        for dev in self.devices:
-            if dev["base"] <= addr < (dev["base"] + dev["size"]):
-                dev["write"](addr - dev["base"], val, size)
-                return ("OK", "Write dispatched")
-        return (TrapCode.MEMORY_OUT_OF_BOUNDS, "Unmapped MMIO write")
-```
+2段階ページテーブル（L1 ディレクトリ → L2 ページテーブル）、ダイレクトマップ
+ソフトウェアTLB、および PTE 権限・所有権検査を含む実行可能なリファレンス実装は
+[`concepts/vmmio_concept.py`](concepts/vmmio_concept.py) を正本とする。
+仕様書側に複製は置かない（二重管理を避けるため）。
 
 ### 4.2 性能分析（Tier別）
 
@@ -436,7 +395,7 @@ sequenceDiagram
             end
             C->>L2: l2_pt[L2_idx]
             L2-->>C: resolved PTE
-            C->>T: Refill entry at (vpn & 15)
+            C->>T: Refill entry at (vpn XOR vpn>>16) AND 15
         end
 
         C->>C: perm_check(PTE, is_write)
@@ -552,7 +511,7 @@ Tier 3 アクセス（FC=14/15）において毎回2段階ページテーブル�
 
 - **キャッシュ構造**: ダイレクトマップ構造（Direct-Mapped Hashed Structure）
   - キー（VPN）: `raw >> 12`（20-bit）
-  - HASH / インデックス計算: `tlb_idx = VPN & 15` (16エントリサイズ)
+  - HASH / インデックス計算: `tlb_idx = (VPN ^ (VPN >> 16)) & 15` (16エントリサイズ、FC[31:28] を折り込み FC 間衝突を回避)
   - 値 (Value): 32-bit PTE エントリ
   
 - **キャッシュ更新 & 押し出し (Eviction & Refill)**:

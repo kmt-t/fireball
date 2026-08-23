@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-08-22T23:26:44.059705+00:00",
+  "generated_at": "2026-08-23T09:16:40.573750+00:00",
   "backend": "heuristic",
-  "total_evaluated": 677,
+  "total_evaluated": 678,
   "formal_candidates_count": 43,
   "llm_candidates_count": 45,
-  "sections_scanned": 677,
+  "sections_scanned": 678,
   "max_sections": 0,
   "doc_hashes": {
     "architecture/architecture_overview.md": "30be52ed847f1fa7ff9f50980552e989dab9727751748a3e5874505214cc81d7",
@@ -20,8 +20,9 @@
     "components/tier1_interface/interface_wit.md": "c2591b654808d067f8880707e5507884f2744c7a18b1af8b93b548288a77f848",
     "components/tier1_interface/ipc_router.md": "150398eeeec0cb9d84ede18690f2d6b7c64f87281f48a09c6ee3fe81fcbfc3f2",
     "components/tier1_interface/system_service.md": "7c98009196d56c50c4d1d27269f38eb51d4fe1fa654aedb51dba7c496cd5fe62",
+    "components/tier2_jit/concepts/README.md": "a920cd8efeee0bef6ef33cab88074c61a30e57fdf2df9c7d3ad4d7e356272660",
     "components/tier2_jit/jit_assembler_constexpr.md": "4798eb6d2692ae574c45917a0597feb16e1ffa3ec9d9771566a6523607f7c7d5",
-    "components/tier2_jit/jit_compiler.md": "26712eb95a0232e3e91d0509ec323777c9e1ea60f65669f0baf0de3ccd4f43f1",
+    "components/tier2_jit/jit_compiler.md": "e286c1f2d0905963cf1bb585da4d9969fba2c3bffbb46df7c88d15477a316942",
     "components/tier2_jit/jit_engine_copy_patch.md": "a6c7d874f991562322257600b358494d1bd0e604e0f2da52b63a8b9a2ef17d85",
     "components/tier2_jit/jit_runtime_entry.md": "ac17ee532a11b108521ece54ac63fdfd956484e534ed5f607993764c6bae2718",
     "components/tier2_jit/jit_runtime_hotspot.md": "56a3a5466ea0ab7752210b2b8a58f8ed577a67b58c20e49dd8ff936bb9951c51",
@@ -29,7 +30,7 @@
     "components/tier2_runtime/debug/debug_manager.md": "50a709835b11ea4d6e477d5a957bc4242c950bb81f41899ee6d31baca25b0197",
     "components/tier2_runtime/runtime_interpreter.md": "0806dbfca3ef5ed0267b0034bee496a7361a4556b1a202614e3dc248942792c7",
     "components/tier2_runtime/runtime_loader.md": "591c6d491434e54f39eed5c48ae3216fc1b0ca1e2299044161cccac48f93dca5",
-    "components/tier2_runtime/runtime_vmmio.md": "88bad4a0ad9e466bec9f8e16ba26fe6fa97814950c5a7535e11eefc21955d749",
+    "components/tier2_runtime/runtime_vmmio.md": "1beb053b2ec4528e5e341dd55683f84bcd761073d857565f929cdad48b3dc648",
     "components/tier2_runtime/runtime_vsoc.md": "8fe2030e2f0ba7156ece2db7ba29ed44e1011625f52a9f3f755d20ff260f9623",
     "components/tier2_runtime/wasm_instruction.md": "640483f8a25bca7885110ce37e499c4ba3622fdc2ba3507e3a78b2bc1fcf8b5f",
     "components/tier3_platform/platform_hal.md": "e539743f731215038cedecafa34e48a4d75d35871cfd97b0113c2791574dcb7d",
@@ -1287,6 +1288,19 @@
       "summary": "Independent heuristic evaluation for '3.2 内部ブロック図'."
     },
     {
+      "section_id": "sec:components/tier2_runtime/runtime_vmmio.md#静的デバイスページテーブルエントリ (vmmio_pte_static)",
+      "file_path": "components/tier2_runtime/runtime_vmmio.md",
+      "heading": "静的デバイスページテーブルエントリ (vmmio_pte_static)",
+      "tier": 2,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '静的デバイスページテーブルエントリ (vmmio_pte_static)'."
+    },
+    {
       "section_id": "sec:components/tier2_runtime/runtime_vsoc.md#Safepoint の動作メカニズム",
       "file_path": "components/tier2_runtime/runtime_vsoc.md",
       "heading": "Safepoint の動作メカニズム",
@@ -1388,19 +1402,6 @@
         "Architectural trade-off or natural language design decision"
       ],
       "summary": "Independent heuristic evaluation for '8. 設計判断 (ADR)'."
-    },
-    {
-      "section_id": "sec:components/tier2_runtime/runtime_vmmio.md#静的デバイスページテーブルエントリ (vmmio_pte_static)",
-      "file_path": "components/tier2_runtime/runtime_vmmio.md",
-      "heading": "静的デバイスページテーブルエントリ (vmmio_pte_static)",
-      "tier": 2,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '静的デバイスページテーブルエントリ (vmmio_pte_static)'."
     },
     {
       "section_id": "sec:components/tier2_runtime/runtime_vmmio.md#4.6 共有メモリマッピング (FC=14)",
@@ -2383,19 +2384,6 @@
       "summary": "Independent heuristic evaluation for '3.2 内部ブロック図'."
     },
     {
-      "section_id": "sec:components/tier2_runtime/runtime_vmmio.md#vMMIO フルセット・コンセプトコード (`concepts/vmmio_concept.py`)",
-      "file_path": "components/tier2_runtime/runtime_vmmio.md",
-      "heading": "vMMIO フルセット・コンセプトコード (`concepts/vmmio_concept.py`)",
-      "tier": 2,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for 'vMMIO フルセット・コンセプトコード (`concepts/vmmio_concept.py`)'."
-    },
-    {
       "section_id": "sec:plans/roadmap_phase.md#Phase 0: Foundation（約6ヶ月）",
       "file_path": "plans/roadmap_phase.md",
       "heading": "Phase 0: Foundation（約6ヶ月）",
@@ -2948,6 +2936,19 @@
       "summary": "Independent heuristic evaluation for '4.3 メッセージライフサイクルと所有権管理 (SysML Parametric Diagram 相当)'."
     },
     {
+      "section_id": "sec:components/tier2_jit/jit_compiler.md#トレース・チェイニング（連鎖実行）",
+      "file_path": "components/tier2_jit/jit_compiler.md",
+      "heading": "トレース・チェイニング（連鎖実行）",
+      "tier": 2,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for 'トレース・チェイニング（連鎖実行）'."
+    },
+    {
       "section_id": "sec:components/tier2_jit/jit_compiler.md#JITコンパイルおよび検索シーケンス",
       "file_path": "components/tier2_jit/jit_compiler.md",
       "heading": "JITコンパイルおよび検索シーケンス",
@@ -3261,19 +3262,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for 'Copy-and-Patch コンパイル手順'."
-    },
-    {
-      "section_id": "sec:components/tier2_jit/jit_compiler.md#トレース・チェイニング（連鎖実行）",
-      "file_path": "components/tier2_jit/jit_compiler.md",
-      "heading": "トレース・チェイニング（連鎖実行）",
-      "tier": 2,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for 'トレース・チェイニング（連鎖実行）'."
     },
     {
       "section_id": "sec:components/tier2_jit/jit_compiler.md#初期化（initialize）",
@@ -4740,6 +4728,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for 'リカバリー戦略の種類と具体的ポリシー'."
+    },
+    {
+      "section_id": "sec:components/tier2_jit/concepts/README.md#Tier 2 JIT — コンセプトコード",
+      "file_path": "components/tier2_jit/concepts/README.md",
+      "heading": "Tier 2 JIT — コンセプトコード",
+      "tier": 2,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for 'Tier 2 JIT — コンセプトコード'."
     },
     {
       "section_id": "sec:components/tier2_runtime/runtime_interpreter.md#5.3 関連コンポーネントとの連携",
@@ -6391,6 +6392,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '`get-global`'."
+    },
+    {
+      "section_id": "sec:components/tier2_runtime/runtime_vmmio.md#vMMIO フルセット・コンセプトコード",
+      "file_path": "components/tier2_runtime/runtime_vmmio.md",
+      "heading": "vMMIO フルセット・コンセプトコード",
+      "tier": 2,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for 'vMMIO フルセット・コンセプトコード'."
     },
     {
       "section_id": "sec:components/tier2_runtime/runtime_vsoc.md#vSoCコンテキスト（vsoc_context）",

@@ -131,3 +131,7 @@ risk_assessment:
         heading_pattern: '^(用語定義|変更履歴|カテゴリ一覧|性能制約|設計判断)'
         rationale: "非実行・静的テーブル・宣言的インターフェイス定義"
         authorized_at: "2026-08-22"
+      - section_pattern: 'components/.*/concepts/README\.md'
+        heading_pattern: '.*'
+        rationale: "コンセプトコードの所在を示す索引ページであり、仕様記述も状態遷移も含まない。検証対象は参照先の *.py 本体"
+        authorized_at: "2026-08-22"

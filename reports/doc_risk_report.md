@@ -1,6 +1,6 @@
 # Fireball 設計複雑度 & リスク評価レポート (Risk Assessment Report)
 
-- **評価セクション総数**: 677
+- **評価セクション総数**: 678
 - **形式検証 (pyModelChecking) 推奨セクション**: 43
 - **LLM 意味監査 推奨セクション**: 45
 
@@ -219,11 +219,11 @@
 | `components/tier2_runtime/runtime_vsoc.md` | 4.3 内部シーケンス | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.3 内部シーケンス'. |
 | `components/tier1_core/os_scheduler.md` | タスク生成（spawn_task - ネイティブタスク用） | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'タスク生成（spawn_task - ネイティブタスク用）'. |
 | `components/tier2_jit/jit_compiler.md` | 3.2 内部ブロック図 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.2 内部ブロック図'. |
+| `components/tier2_runtime/runtime_vmmio.md` | 静的デバイスページテーブルエントリ (vmmio_pte_static) | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '静的デバイスページテーブルエントリ (vmmio_pte_static)'. |
 | `components/tier2_runtime/runtime_vsoc.md` | Safepoint の動作メカニズム | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'Safepoint の動作メカニズム'. |
 | `components/tier1_core/system_syscall.md` | 7.1. 役割 | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '7.1. 役割'. |
 | `components/tier1_interface/system_service.md` | WASI呼び出しシーケンス | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'WASI呼び出しシーケンス'. |
 | `components/tier2_jit/jit_assembler_constexpr.md` | `fireball::riscv::i_type` | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`fireball::riscv::i_type`'. |
-| `components/tier2_runtime/runtime_vmmio.md` | 静的デバイスページテーブルエントリ (vmmio_pte_static) | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '静的デバイスページテーブルエントリ (vmmio_pte_static)'. |
 | `components/tier2_runtime/runtime_vmmio.md` | 4.6 共有メモリマッピング (FC=14) | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.6 共有メモリマッピング (FC=14)'. |
 | `components/tier2_runtime/runtime_vsoc.md` | マルチモジュール動的リンクシーケンス | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'マルチモジュール動的リンクシーケンス'. |
 | `components/tier3_platform/platform_memory.md` | 7. 共有メモリ (shared-block) のライフサイクル | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '7. 共有メモリ (shared-block) のライフサイクル'. |
@@ -285,7 +285,6 @@
 | `components/tier2_runtime/runtime_vsoc.md` | vSoC コンポーネント設計書 {VERIFY_FORMAL} | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'vSoC コンポーネント設計書 {VERIFY_FORMAL}'. |
 | `components/tier3_platform/platform_hal.md` | HAL コンポーネント設計書 | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'HAL コンポーネント設計書'. |
 | `components/tier2_runtime/runtime_vmmio.md` | 3.2 内部ブロック図 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.2 内部ブロック図'. |
-| `components/tier2_runtime/runtime_vmmio.md` | vMMIO フルセット・コンセプトコード (`concepts/vmmio_concept.py`) | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'vMMIO フルセット・コンセプトコード (`concepts/vmmio_concept.py`)'. |
 | `plans/roadmap_phase.md` | Phase 0: Foundation（約6ヶ月） | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'Phase 0: Foundation（約6ヶ月）'. |
 | `architecture/resource_budget.md` | 4.1.1 制約関係図 (Constraint Relationship Diagram) | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.1.1 制約関係図 (Constraint Relationship Diagram)'. |
 | `components/tier1_core/system_syscall.md` | 6.2. 高応答 Trigger のマッピング例 | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '6.2. 高応答 Trigger のマッピング例'. |
@@ -318,6 +317,7 @@
 | `components/tier1_core/system_logging.md` | 4.5 内部シーケンス | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.5 内部シーケンス'. |
 | `components/tier1_interface/ipc_router.md` | 3.3 主要なクラス・構造体・配列・定数 | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.3 主要なクラス・構造体・配列・定数'. |
 | `components/tier1_interface/ipc_router.md` | 4.3 メッセージライフサイクルと所有権管理 (SysML Parametric Diagram 相当) | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.3 メッセージライフサイクルと所有権管理 (SysML Parametric Diagram 相当)'. |
+| `components/tier2_jit/jit_compiler.md` | トレース・チェイニング（連鎖実行） | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'トレース・チェイニング（連鎖実行）'. |
 | `components/tier2_jit/jit_compiler.md` | JITコンパイルおよび検索シーケンス | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'JITコンパイルおよび検索シーケンス'. |
 | `components/tier2_runtime/runtime_vsoc.md` | 4.2.1 Safepoint と JIT キャッシュ協調モデル | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.2.1 Safepoint と JIT キャッシュ協調モデル'. |
 | `components/tier3_platform/platform_hal.md` | 4.3 内部シーケンス | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.3 内部シーケンス'. |
@@ -337,7 +337,6 @@
 | `components/tier1_core/system_logging.md` | ログイベント記録 (`log_event`) | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'ログイベント記録 (`log_event`)'. |
 | `components/tier1_interface/interface_wit.md` | リカバリー戦略の事前・事後条件と不変条件 | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'リカバリー戦略の事前・事後条件と不変条件'. |
 | `components/tier2_jit/jit_compiler.md` | Copy-and-Patch コンパイル手順 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'Copy-and-Patch コンパイル手順'. |
-| `components/tier2_jit/jit_compiler.md` | トレース・チェイニング（連鎖実行） | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'トレース・チェイニング（連鎖実行）'. |
 | `components/tier2_jit/jit_compiler.md` | 初期化（initialize） | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '初期化（initialize）'. |
 | `components/tier2_jit/jit_compiler.md` | トレース検索（lookup_trace） | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'トレース検索（lookup_trace）'. |
 | `components/tier2_jit/jit_engine_copy_patch.md` | 4.3 内部シーケンス | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.3 内部シーケンス'. |
@@ -439,6 +438,7 @@
 | `components/tier1_core/system_config_details.md` | メモリプールの分離設計 | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'メモリプールの分離設計'. |
 | `components/tier1_core/system_syscall.md` | トラップ実行の制御フロー | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'トラップ実行の制御フロー'. |
 | `components/tier1_interface/system_service.md` | リカバリー戦略の種類と具体的ポリシー | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'リカバリー戦略の種類と具体的ポリシー'. |
+| `components/tier2_jit/concepts/README.md` | Tier 2 JIT — コンセプトコード | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'Tier 2 JIT — コンセプトコード'. |
 | `components/tier2_runtime/runtime_interpreter.md` | 5.3 関連コンポーネントとの連携 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '5.3 関連コンポーネントとの連携'. |
 | `components/tier2_runtime/runtime_loader.md` | バイナリストリーム（BinaryStream） | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'バイナリストリーム（BinaryStream）'. |
 | `components/tier2_runtime/runtime_vmmio.md` | コントローラ群 (VmmioController) | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'コントローラ群 (VmmioController)'. |
@@ -549,6 +549,7 @@
 | `components/tier2_runtime/runtime_loader.md` | `lookup-export-func` | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`lookup-export-func`'. |
 | `components/tier2_runtime/runtime_loader.md` | `get-function` | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`get-function`'. |
 | `components/tier2_runtime/runtime_loader.md` | `get-global` | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`get-global`'. |
+| `components/tier2_runtime/runtime_vmmio.md` | vMMIO フルセット・コンセプトコード | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'vMMIO フルセット・コンセプトコード'. |
 | `components/tier2_runtime/runtime_vsoc.md` | vSoCコンテキスト（vsoc_context） | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'vSoCコンテキスト（vsoc_context）'. |
 | `components/tier2_runtime/runtime_vsoc.md` | 形式検証 (pyModelChecking) 検証対象 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '形式検証 (pyModelChecking) 検証対象'. |
 | `components/tier2_runtime/wasm_instruction.md` | 2.4 比較命令 (i32) | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '2.4 比較命令 (i32)'. |

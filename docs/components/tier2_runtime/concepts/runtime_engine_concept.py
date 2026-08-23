@@ -1,326 +1,437 @@
 """
 docs/components/tier2_runtime/concepts/runtime_engine_concept.py
-Reference Concept Implementation: Integrated WASM Tiered Runtime Engine
-Integrates:
-1. WASM Stack Interpreter & Execution Context
-2. 2-bit Hotspot Detection (UNEXECUTED -> EXECUTED -> HOT -> COMPILED)
-3. Copy-and-Patch JIT Compiler with Stencils & Relocation Patching
-4. 3-Bank Multi-Buffer JIT Code Cache (Active / Warm / Oldest) with Oldest-Only Promotion
-5. Hardware MPU W^X Transaction Protocol (RW_XN <-> RO_X + DSB/ISB Barriers)
-6. Cooperative Safepoint Polling in both Interpreter and JIT execution paths
+Reference Concept Implementation: Integrated WASM Tiered Tracing Runtime Engine
+
+Execution model (per jit_compiler.md §4.1 / runtime_interpreter.md §4.1):
+
+  Interpreter loop
+    -> at each BASIC BLOCK HEAD only: record card index into the history ring
+       (there is no branch inside a basic block, so intermediate PCs carry
+        no scheduling information and are not recorded)
+    -> trace counter reaches `yield_threshold` -> co_yield
+         -> at yield: scan history ring, promote cards to HOT,
+            push their trace-head PCs onto the LIFO compile queue
+    -> at idle / periodic: drain the LIFO queue and batch-compile
+       (compilation never blocks the executing task)
+
+  JIT trace execution
+    -> trace tail holds `chain_next`, defaulting to the interpreter-return stub
+    -> backward edges inside a JIT trace carry a Safepoint (async interrupt only,
+       distinct from the cooperative yield of the interpreter)
+
+The compilation unit is a TRACE identified by its head WASM PC. This is a
+tracing JIT: there is no function/method-level unit anywhere in the design.
 """
 
 from typing import Any, Callable
 
 
 # ==============================================================================
-# 1. Hardware Protection & Exception Types
+# 1. Hardware protection & traps
 # ==============================================================================
 
 class MPUAttribute:
-    RO_X = "RO_X"        # Read-Only + Executable (Native code execution)
-    RW_XN = "RW_XN"      # Read-Write + Non-Executable (JIT Patching / Promotion)
-    NO_ACCESS = "NO_ACCESS"
+    RO_X = "RO_X"        # Read-Only + Executable (native trace execution)
+    RW_XN = "RW_XN"      # Read-Write + Non-Executable (patching / promotion)
 
 
 class MPUFault(Exception):
-    """Hardware Memory Protection Unit access violation."""
-    pass
+    """Cortex-M33 PMSAv8 MPU access violation."""
 
 
 class WASMTrap(Exception):
-    """WASM runtime trap (stack overflow, divide by zero, unaligned memory, etc.)."""
-    pass
+    """WASM runtime trap (stack overflow/underflow, unsupported opcode, ...)."""
 
 
 # ==============================================================================
-# 2. 3-Bank JIT Code Cache & MPU W^X Manager
+# 2. Card-granular hotspot bitmap  [jit_compiler.md §3.1]
 # ==============================================================================
 
-class JITCodeEntry:
-    """Compiled native code trace descriptor inside the JIT cache."""
-    def __init__(self, func_id: str, wasm_pc: int, native_fn: Callable, size_bytes: int):
-        self.func_id = func_id
-        self.wasm_pc = wasm_pc
+class CardState:
+    UNEXECUTED = 0
+    EXECUTED = 1
+    HOT = 2          # queued for compilation
+    COMPILED = 3
+
+
+class HotspotBitmap:
+    """2-bit state per CARD, where card = pc >> card_shift.
+
+    Only basic-block head PCs are ever recorded. Inside a basic block control
+    flow is straight-line, so intermediate PCs add no information and cost
+    ring-buffer bandwidth we do not have.
+    """
+
+    def __init__(self, card_shift: int = 6, hot_threshold: int = 3):
+        self.card_shift = card_shift
+        self.hot_threshold = hot_threshold
+        self.state: dict[int, int] = {}      # card_index -> CardState
+        self.counter: dict[int, int] = {}    # card_index -> execution count
+
+    def card_of(self, pc: int) -> int:
+        return pc >> self.card_shift
+
+    def get_state(self, pc: int) -> int:
+        return self.state.get(self.card_of(pc), CardState.UNEXECUTED)
+
+    def touch(self, pc: int) -> int:
+        """Records one execution of the basic block starting at `pc`."""
+        card = self.card_of(pc)
+        state = self.state.get(card, CardState.UNEXECUTED)
+        if state == CardState.COMPILED:
+            return state
+        count = self.counter.get(card, 0) + 1
+        self.counter[card] = count
+        if state == CardState.UNEXECUTED:
+            state = CardState.EXECUTED
+        if state == CardState.EXECUTED and count >= self.hot_threshold:
+            state = CardState.HOT
+        self.state[card] = state
+        return state
+
+    def mark_compiled(self, pc: int):
+        self.state[self.card_of(pc)] = CardState.COMPILED
+
+    def mark_evicted(self, pc: int):
+        """Trace was purged from the cache: the card must become re-compilable."""
+        card = self.card_of(pc)
+        self.state[card] = CardState.EXECUTED
+        self.counter[card] = 0
+
+
+class HistoryRing:
+    """Fixed-size ring of recently executed basic-block head PCs. `{HistoryBuffer}`
+
+    The interpreter only appends here; no scanning happens on the hot path.
+    Scanning is deferred to the yield handler.
+    """
+
+    def __init__(self, capacity: int = 32):
+        self.capacity = capacity
+        self.buf: list[int] = []
+        self.dropped = 0
+
+    def record(self, pc: int):
+        if len(self.buf) >= self.capacity:
+            self.buf.pop(0)
+            self.dropped += 1
+        self.buf.append(pc)
+
+    def drain(self) -> list[int]:
+        out = self.buf
+        self.buf = []
+        return out
+
+
+# ==============================================================================
+# 3. 3-bank JIT code cache with MPU W^X  [jit_compiler.md §3.1 / §4.1-5]
+# ==============================================================================
+
+class JITTrace:
+    """A compiled trace, keyed by its head WASM PC.
+
+    `chain_next` defaults to None, meaning "return to the interpreter"
+    (the dispatcher stub). `{JIT_LazyChaining}`
+    """
+
+    def __init__(self, head_pc: int, native_fn: Callable, size_bytes: int):
+        self.head_pc = head_pc
         self.native_fn = native_fn
         self.size_bytes = size_bytes
-        self.access_counter = 0
+        self.chain_next: int | None = None   # head_pc of the next trace, or None
 
 
 class JITCacheBank:
-    """Single 2KB cache bank."""
     def __init__(self, bank_id: int, capacity_bytes: int = 2048):
         self.bank_id = bank_id
         self.capacity_bytes = capacity_bytes
         self.used_bytes = 0
-        self.entries: dict[int, JITCodeEntry] = {}  # wasm_pc -> JITCodeEntry
+        self.traces: dict[int, JITTrace] = {}   # head_pc -> JITTrace
 
-    def clear(self):
+    def clear(self) -> list[int]:
+        """Purges the bank and returns the head PCs that were discarded."""
+        purged = list(self.traces.keys())
+        self.traces.clear()
         self.used_bytes = 0
-        self.entries.clear()
+        return purged
 
-    def allocate(self, entry: JITCodeEntry) -> bool:
-        if self.used_bytes + entry.size_bytes > self.capacity_bytes:
+    def allocate(self, trace: JITTrace) -> bool:
+        prev = self.traces.get(trace.head_pc)
+        delta = trace.size_bytes - (prev.size_bytes if prev else 0)
+        if self.used_bytes + delta > self.capacity_bytes:
             return False
-        self.entries[entry.wasm_pc] = entry
-        self.used_bytes += entry.size_bytes
+        self.traces[trace.head_pc] = trace
+        self.used_bytes += delta
         return True
 
 
 class JITMultiBufferCache:
-    """
-    3-Bank JIT Multi-Buffer Cache (Active / Warm / Oldest) with MPU W^X control.
-    Total size: 6KB (2KB x 3) [FB_CONF_JIT_CACHE_SIZE].
-    Implements Oldest-Only Promotion policy to prevent GC copy explosion.
-    """
-    HOT_PROMOTION_THRESHOLD = 5
+    """Active / Warm / Oldest, 2KB each = 6KB [FB_CONF_JIT_CACHE_SIZE].
 
-    def __init__(self, bank_capacity: int = 2048):
-        self.banks = [
-            JITCacheBank(0, bank_capacity),  # Active
-            JITCacheBank(1, bank_capacity),  # Warm (Observation window)
-            JITCacheBank(2, bank_capacity),  # Oldest (Eviction / Promotion window)
-        ]
-        self.active_idx = 0
-        self.warm_idx = 1
-        self.oldest_idx = 2
+    Promotion happens ON AN OLDEST-BANK HIT, not at rotation time
+    (jit_compiler.md §4.1-4: "Oldest バンクでヒットし、かつ実行カウンタが
+    閾値に達している真の Hot コードのみを新 Active バンクへ Promote").
+    The Warm bank is a free observation window: a hit there copies nothing.
+    """
 
-        self.mpu_attr: str = MPUAttribute.RO_X  # Default: RO_X
-        self.barrier_flushes: int = 0
-        self.promotions_count: int = 0
-        self.evictions_count: int = 0
+    def __init__(self, bank_capacity: int = 2048, promotion_threshold: int = 2):
+        self.banks = [JITCacheBank(i, bank_capacity) for i in range(3)]
+        self.active_idx, self.warm_idx, self.oldest_idx = 0, 1, 2
+        self.promotion_threshold = promotion_threshold
+
+        # Execution counters live OUTSIDE the code banks: they are written on
+        # every lookup, and the banks are RO_X while traces execute.
+        self.exec_counter: dict[int, int] = {}   # head_pc -> hits since last promotion
+
+        self.mpu_attr = MPUAttribute.RO_X
+        self.barrier_flushes = 0
+        self.promotions = 0
+        self.evictions = 0
+        self.on_evict: Callable[[list[int]], None] | None = None
 
     @property
-    def active_bank(self) -> JITCacheBank:
+    def active(self) -> JITCacheBank:
         return self.banks[self.active_idx]
 
     @property
-    def warm_bank(self) -> JITCacheBank:
+    def warm(self) -> JITCacheBank:
         return self.banks[self.warm_idx]
 
     @property
-    def oldest_bank(self) -> JITCacheBank:
+    def oldest(self) -> JITCacheBank:
         return self.banks[self.oldest_idx]
 
-    # --- MPU W^X Transaction Protocol ---
+    # --- MPU W^X transaction ---
 
     def begin_patch(self):
-        """Switches JIT Code Cache MPU attribute to RW + XN before compilation/copy."""
         self.mpu_attr = MPUAttribute.RW_XN
 
     def commit_patch(self):
-        """Restores JIT Code Cache MPU attribute to RO + X and issues DSB/ISB barriers."""
-        assert self.mpu_attr == MPUAttribute.RW_XN, "Must be in patching mode before commit"
+        assert self.mpu_attr == MPUAttribute.RW_XN, "commit without begin"
         self.mpu_attr = MPUAttribute.RO_X
-        self.barrier_flushes += 1  # Hardware: __DSB(); __ISB();
+        self.barrier_flushes += 1        # __DSB(); __ISB();
 
-    def check_execute_permission(self):
-        if self.mpu_attr != MPUAttribute.RO_X:
-            raise MPUFault("W^X VIOLATION: Execution attempted on non-executable JIT memory (RW_XN)")
-
-    def check_write_permission(self):
+    def _require_writable(self):
         if self.mpu_attr != MPUAttribute.RW_XN:
-            raise MPUFault("W^X VIOLATION: Write attempted on write-protected JIT memory (RO_X)")
+            raise MPUFault("W^X VIOLATION: write to RO_X JIT cache")
 
-    # --- Cache Lookup & Rotation ---
+    def require_executable(self):
+        if self.mpu_attr != MPUAttribute.RO_X:
+            raise MPUFault("W^X VIOLATION: execute on RW_XN JIT cache")
 
-    def lookup(self, wasm_pc: int) -> JITCodeEntry | None:
-        """Looks up compiled JIT entry across Active -> Warm -> Oldest banks."""
-        # 1. Search Active
-        if wasm_pc in self.active_bank.entries:
-            entry = self.active_bank.entries[wasm_pc]
-            entry.access_counter += 1
-            return entry
-        # 2. Search Warm
-        if wasm_pc in self.warm_bank.entries:
-            entry = self.warm_bank.entries[wasm_pc]
-            entry.access_counter += 1
-            return entry
-        # 3. Search Oldest
-        if wasm_pc in self.oldest_bank.entries:
-            entry = self.oldest_bank.entries[wasm_pc]
-            entry.access_counter += 1
-            return entry
-        return None
+    # --- Lookup with Oldest-Only Promotion ---
 
-    def insert(self, entry: JITCodeEntry) -> bool:
-        """Inserts a newly compiled entry into the Active bank under W^X protection."""
-        self.check_write_permission()
-        if self.active_bank.allocate(entry):
+    def lookup(self, head_pc: int) -> JITTrace | None:
+        self.exec_counter[head_pc] = self.exec_counter.get(head_pc, 0) + 1
+
+        if head_pc in self.active.traces:
+            return self.active.traces[head_pc]
+
+        if head_pc in self.warm.traces:
+            # Free observation window: execute in place, copy nothing.
+            return self.warm.traces[head_pc]
+
+        trace = self.oldest.traces.get(head_pc)
+        if trace is None:
+            return None
+
+        if self.exec_counter[head_pc] >= self.promotion_threshold:
+            self.begin_patch()
+            try:
+                if self.active.allocate(trace):
+                    del self.oldest.traces[head_pc]
+                    self.oldest.used_bytes -= trace.size_bytes
+                    self.exec_counter[head_pc] = 0
+                    self.promotions += 1
+                    # No re-link needed here: promotion only ever ADDS a pc to
+                    # the Active bank, so it can never invalidate a link that
+                    # `_sweep_dangling_chains()` already verified valid as of
+                    # the last rotate(). `{JIT_LazyChaining}`
+            finally:
+                self.commit_patch()
+        return trace
+
+    # --- Insertion & rotation ---
+
+    def insert(self, trace: JITTrace) -> bool:
+        self._require_writable()
+        if self.active.allocate(trace):
             return True
-        # Active bank full: trigger generation rotation
-        self.rotate_generation()
-        return self.active_bank.allocate(entry)
+        self.rotate()
+        return self.active.allocate(trace)
 
-    def rotate_generation(self):
-        """
-        Rotates cache generations:
-        - Oldest bank is evaluated for promotion of HOT entries.
-        - Cold entries in Oldest bank are evicted.
-        - Oldest bank is cleared and becomes the new Active bank.
-        """
-        self.check_write_permission()
+    def rotate(self):
+        """Oldest is purged and becomes the new Active; Active->Warm, Warm->Oldest."""
+        self._require_writable()
+        purged = self.banks[self.oldest_idx].clear()
+        self.evictions += len(purged)
 
-        # 1. Evaluate Oldest-Only Promotion
-        candidates_to_promote = []
-        for pc, entry in self.oldest_bank.entries.items():
-            if entry.access_counter >= self.HOT_PROMOTION_THRESHOLD:
-                candidates_to_promote.append(entry)
-            else:
-                self.evictions_count += 1
+        self.active_idx, self.warm_idx, self.oldest_idx = (
+            self.oldest_idx, self.active_idx, self.warm_idx,
+        )
+        for pc in purged:
+            self.exec_counter.pop(pc, None)
+        if purged and self.on_evict:
+            self.on_evict(purged)        # let the bitmap mark the cards re-compilable
 
-        # 2. Rotate indices: Oldest becomes new Active, Warm becomes Oldest, Active becomes Warm
-        new_active = self.oldest_idx
-        new_warm = self.active_idx
-        new_oldest = self.warm_idx
+        # A trace chained into what was Warm survives this rotation (it is
+        # merely relabelled Oldest), but it will be cleared by the NEXT
+        # rotate(). Since a chain source can outlive its target by exactly
+        # one rotation (Active always has more remaining lifetime than
+        # Warm), sweep every live trace now and drop any chain_next that no
+        # longer resolves inside {Active, Warm} before it goes dangling.
+        self._sweep_dangling_chains()
 
-        self.banks[new_active].clear()  # Clear new active bank
-
-        self.active_idx = new_active
-        self.warm_idx = new_warm
-        self.oldest_idx = new_oldest
-
-        # 3. Copy promoted entries into the new Active bank
-        for entry in candidates_to_promote:
-            entry.access_counter = 0  # Reset counter for new lifecycle
-            if self.active_bank.allocate(entry):
-                self.promotions_count += 1
-            else:
-                self.evictions_count += 1
+    def _sweep_dangling_chains(self):
+        live_active = self.active.traces
+        live_warm = self.warm.traces
+        for bank in self.banks:
+            for trace in bank.traces.values():
+                if trace.chain_next is not None and \
+                   trace.chain_next not in live_active and \
+                   trace.chain_next not in live_warm:
+                    trace.chain_next = None
 
 
 # ==============================================================================
-# 3. Copy-and-Patch JIT Compiler Engine
+# 4. Copy-and-Patch compiler  [jit_compiler.md §4.1]
 # ==============================================================================
 
 class Stencil:
-    def __init__(self, name: str, code_template: list[str], relocs: dict[str, int]):
+    """Pre-compiled native byte template with relocation holes."""
+
+    def __init__(self, name: str, code: list[str], holes: tuple[str, ...] = ()):
         self.name = name
-        self.code_template = code_template
-        self.relocs = relocs
+        self.code = code
+        self.holes = holes
+
+    def emit(self, **patch: Any) -> list[str]:
+        for h in self.holes:
+            if h not in patch:
+                raise KeyError(f"stencil '{self.name}' requires relocation '{h}'")
+        return [ln.format(**patch) for ln in self.code]
 
 
 class CopyPatchCompiler:
+    """Concatenates stencils and patches relocation holes. No IR, single pass.
+    `{JIT_CopyAndPatch}` `{SinglePassCompilation}`
     """
-    Zero-Compile-Cost Copy-and-Patch JIT Compiler.
-    Emits native execution closures from bytecode sequences using pre-compiled Stencils.
-    """
+
+    BYTES_PER_INSTRUCTION = 4        # Thumb-2 wide instruction
+
     def __init__(self):
-        # Stencil template catalog
         self.stencils = {
-            "const": Stencil("const", ["MOVW R0, #{imm}", "PUSH R0"], {"imm": 0}),
-            "add": Stencil("add", ["POP R1", "POP R0", "ADD R0, R0, R1", "PUSH R0"], {}),
-            "sub": Stencil("sub", ["POP R1", "POP R0", "SUB R0, R0, R1", "PUSH R0"], {}),
-            "mul": Stencil("mul", ["POP R1", "POP R0", "MUL R0, R0, R1", "PUSH R0"], {}),
+            "i32.const": Stencil("i32.const",
+                                 ["MOVW R0, #{imm_lo}", "MOVT R0, #{imm_hi}", "PUSH R0"],
+                                 ("imm_lo", "imm_hi")),
+            "i32.add":   Stencil("i32.add", ["POP R1", "POP R0", "ADD R0, R0, R1", "PUSH R0"]),
+            "i32.sub":   Stencil("i32.sub", ["POP R1", "POP R0", "SUB R0, R0, R1", "PUSH R0"]),
+            "i32.mul":   Stencil("i32.mul", ["POP R1", "POP R0", "MUL R0, R0, R1", "PUSH R0"]),
+            "local.get": Stencil("local.get", ["LDR R0, [R7, #{slot}]", "PUSH R0"], ("slot",)),
+            "local.set": Stencil("local.set", ["POP R0", "STR R0, [R7, #{slot}]"], ("slot",)),
+            "backedge":  Stencil("backedge",
+                                 ["LDR R1, [R6, #SAFEPOINT]", "CBNZ R1, __safepoint",
+                                  "B #{target}"],
+                                 ("target",)),
+            "chain":     Stencil("chain", ["B #{chain_next}"], ("chain_next",)),
         }
 
-    def compile(self, func_id: str, wasm_pc: int, instructions: list[tuple[str, Any]]) -> JITCodeEntry:
-        """
-        Compiles WASM instruction block into a high-performance native closure.
-        """
-        estimated_size = len(instructions) * 16  # Approx 16 bytes per stencil
+    def compile_trace(self, head_pc: int, block: "BasicBlock") -> JITTrace:
+        """Emits one straight-line trace starting at `block.head_pc`.
 
-        def native_trace_executor(ctx: "WASMContext") -> str:
-            # Native JIT fast-path execution loop
-            pc = 0
-            while pc < len(instructions):
-                op, arg = instructions[pc]
-                if op == "i32.const":
-                    ctx.push(arg)
-                elif op == "i32.add":
-                    b, a = ctx.pop(), ctx.pop()
-                    ctx.push((a + b) & 0xFFFF_FFFF)
-                elif op == "i32.sub":
-                    b, a = ctx.pop(), ctx.pop()
-                    ctx.push((a - b) & 0xFFFF_FFFF)
-                elif op == "i32.mul":
-                    b, a = ctx.pop(), ctx.pop()
-                    ctx.push((a * b) & 0xFFFF_FFFF)
-                elif op == "local.get":
-                    ctx.push(ctx.locals[arg])
-                elif op == "local.set":
-                    ctx.locals[arg] = ctx.pop()
-                elif op == "local.tee":
-                    val = ctx.stack[-1] if ctx.stack else 0
-                    ctx.locals[arg] = val
-                elif op == "br_if_loop_header":
-                    cond = ctx.pop()
-                    if cond != 0:
-                        # Cooperative Safepoint check in JIT loop header
-                        if ctx.check_safepoint():
-                            return "SAFEPOINT_YIELD"
-                        # Native loop backward branch
-                        pc = arg
-                        continue
-                elif op == "return":
-                    return "COMPLETED"
+        Returns a JITTrace whose native_fn REPLAYS THE EMITTED NATIVE LISTING,
+        not the WASM operand list — so a stencil bug shows up as a wrong result
+        rather than being masked by re-interpreting the source.
+        """
+        listing: list[str] = []
+        for op, arg in block.ops:
+            st = self.stencils.get(op)
+            if st is None:
+                raise WASMTrap(f"NO_STENCIL_FOR: {op}")
+            if op == "i32.const":
+                listing += st.emit(imm_lo=arg & 0xFFFF, imm_hi=(arg >> 16) & 0xFFFF)
+            elif op in ("local.get", "local.set"):
+                listing += st.emit(slot=arg * 4)
+            else:
+                listing += st.emit()
+
+        # A Safepoint is emitted at the backward edge only. `{JIT_Safepoint}`
+        if block.loops_to is not None:
+            listing += self.stencils["backedge"].emit(target=block.loops_to)
+
+        size = len(listing) * self.BYTES_PER_INSTRUCTION
+        return JITTrace(head_pc, native_fn=make_native_executor(listing), size_bytes=size)
+
+
+def make_native_executor(listing: list[str]) -> Callable:
+    """Simulates the CPU executing the emitted instruction listing.
+
+    Deliberately a machine over the NATIVE listing (R0/R1/R7/stack), so this is
+    a genuinely different execution path from the interpreter. If a stencil is
+    wrong, the result diverges.
+    """
+
+    def run(ctx: "WASMContext") -> str:
+        R = {"R0": 0, "R1": 0}
+        i = 0
+        while i < len(listing):
+            ins = listing[i]
+            head = ins.split()[0]
+            if head == "MOVW":
+                R["R0"] = int(ins.split("#")[1])
+            elif head == "MOVT":
+                R["R0"] = (R["R0"] & 0xFFFF) | (int(ins.split("#")[1]) << 16)
+            elif head == "PUSH":
+                ctx.push(R[ins.split()[1]])
+            elif head == "POP":
+                R[ins.split()[1]] = ctx.pop()
+            elif head == "ADD":
+                R["R0"] = (R["R0"] + R["R1"]) & 0xFFFF_FFFF
+            elif head == "SUB":
+                R["R0"] = (R["R0"] - R["R1"]) & 0xFFFF_FFFF
+            elif head == "MUL":
+                R["R0"] = (R["R0"] * R["R1"]) & 0xFFFF_FFFF
+            elif head == "LDR":
+                if "SAFEPOINT" in ins:
+                    R["R1"] = 1 if ctx.interrupt_flag else 0
                 else:
-                    raise WASMTrap(f"JIT_UNSUPPORTED_OPCODE: {op}")
-                pc += 1
-            return "COMPLETED"
+                    slot = int(ins.split("#")[1].rstrip("]")) // 4
+                    if not 0 <= slot < len(ctx.locals):
+                        raise WASMTrap("LOCAL_INDEX_OUT_OF_RANGE")
+                    R["R0"] = ctx.locals[slot]
+            elif head == "STR":
+                slot = int(ins.split("#")[1].rstrip("]")) // 4
+                if not 0 <= slot < len(ctx.locals):
+                    raise WASMTrap("LOCAL_INDEX_OUT_OF_RANGE")
+                ctx.locals[slot] = R["R0"]
+            elif head == "CBNZ":
+                # Safepoint check emitted at every backward edge. `{JIT_Safepoint}`
+                if ctx.poll_safepoint():
+                    return "SAFEPOINT_YIELD"
+            elif head in ("B", "LDR_SAFEPOINT"):
+                pass          # backward branch target handled by the caller loop
+            i += 1
+        return "COMPLETED"
 
-        return JITCodeEntry(func_id, wasm_pc, native_trace_executor, estimated_size)
-
-
-# ==============================================================================
-# 4. 2-Bit Hotspot Detector
-# ==============================================================================
-
-class HotspotState:
-    UNEXECUTED = 0
-    EXECUTED = 1
-    HOT = 2
-    COMPILED = 3
-
-
-class HotspotDetector:
-    """
-    Monitors execution frequency per function/card.
-    Transitions: UNEXECUTED -> EXECUTED -> HOT (Threshold reached) -> COMPILED
-    """
-    HOT_THRESHOLD = 3
-
-    def __init__(self):
-        self.invocation_counts: dict[str, int] = {}
-        self.state_bitmap: dict[str, int] = {}
-
-    def record_invocation(self, func_id: str) -> int:
-        count = self.invocation_counts.get(func_id, 0) + 1
-        self.invocation_counts[func_id] = count
-
-        current_state = self.state_bitmap.get(func_id, HotspotState.UNEXECUTED)
-        if current_state == HotspotState.UNEXECUTED:
-            self.state_bitmap[func_id] = HotspotState.EXECUTED
-        elif current_state == HotspotState.EXECUTED and count >= self.HOT_THRESHOLD:
-            self.state_bitmap[func_id] = HotspotState.HOT
-
-        return self.state_bitmap[func_id]
-
-    def mark_compiled(self, func_id: str):
-        self.state_bitmap[func_id] = HotspotState.COMPILED
-
-    def mark_evicted(self, func_id: str):
-        self.state_bitmap[func_id] = HotspotState.EXECUTED
-        self.invocation_counts[func_id] = 0
+    return run
 
 
 # ==============================================================================
-# 5. WASM Context & Integrated Runtime Engine
+# 5. Execution context  [runtime_interpreter.md §3.3]
 # ==============================================================================
 
 class WASMContext:
-    """Execution state and operand stack."""
-    MAX_STACK_DEPTH = 64
+    MAX_STACK_SLOTS = 64
 
-    def __init__(self, memory_size: int = 65536):
+    def __init__(self, memory_size: int = 8192):     # FB_CONF_GUEST_RAM_SIZE
         self.stack: list[int] = []
         self.locals: list[int] = []
-        self.memory: bytearray = bytearray(memory_size)
-        self.safepoint_pending: bool = False
-        self.safepoints_hit: int = 0
+        self.memory = bytearray(memory_size)
+        self.interrupt_flag = False       # set by an ISR; polled at Safepoints
+        self.safepoints_hit = 0
 
     def push(self, val: int):
-        if len(self.stack) >= self.MAX_STACK_DEPTH:
+        if len(self.stack) >= self.MAX_STACK_SLOTS:
             raise WASMTrap("STACK_OVERFLOW")
         self.stack.append(val & 0xFFFF_FFFF)
 
@@ -329,69 +440,159 @@ class WASMContext:
             raise WASMTrap("STACK_UNDERFLOW")
         return self.stack.pop()
 
-    def set_safepoint_flag(self, flag: bool = True):
-        self.safepoint_pending = flag
+    def raise_interrupt(self):
+        self.interrupt_flag = True
 
-    def check_safepoint(self) -> bool:
-        if self.safepoint_pending:
+    def poll_safepoint(self) -> bool:
+        if self.interrupt_flag:
             self.safepoints_hit += 1
             return True
         return False
 
 
+# ==============================================================================
+# 6. Tiered tracing runtime engine
+# ==============================================================================
+
+class BasicBlock:
+    """Straight-line WASM code starting at `head_pc`.
+
+    `next_pc` is the fallthrough / backward-branch target head PC, or None to
+    end execution. No branches occur inside `ops`, which is exactly why only
+    `head_pc` is recorded in the history ring.
+    """
+
+    def __init__(self, head_pc: int, ops: list[tuple[str, Any]],
+                 next_pc: int | None = None, loops_to: int | None = None):
+        self.head_pc = head_pc
+        self.ops = ops
+        self.next_pc = next_pc
+        self.loops_to = loops_to      # backward edge target, if this block ends a loop
+
+
 class IntegratedRuntimeEngine:
-    """
-    Complete Tiered WASM Runtime Engine:
-    Interpreter ➔ Hotspot Profiling ➔ Copy-and-Patch JIT ➔ 3-Bank Cache ➔ MPU W^X
-    """
-    def __init__(self):
-        self.cache = JITMultiBufferCache(bank_capacity=2048)
+    """Interpreter -> card history -> yield-time triage -> LIFO batch compile -> JIT."""
+
+    def __init__(self, yield_threshold: int = 8, card_shift: int = 6,
+                 hot_threshold: int = 3):
+        self.bitmap = HotspotBitmap(card_shift=card_shift, hot_threshold=hot_threshold)
+        self.history = HistoryRing(capacity=32)
+        self.cache = JITMultiBufferCache()
         self.compiler = CopyPatchCompiler()
-        self.detector = HotspotDetector()
 
-        # Metrics
-        self.interpreter_executions = 0
-        self.jit_executions = 0
-        self.jit_compilations = 0
+        self.compile_queue: list[int] = []      # LIFO of trace head PCs
+        self.yield_threshold = yield_threshold
+        self.trace_counter = 0
 
-    def execute_function(self, func_id: str, instructions: list[tuple[str, Any]], ctx: WASMContext) -> str:
+        self.blocks: dict[int, BasicBlock] = {}
+        self.interp_blocks = 0
+        self.jit_traces = 0
+        self.compilations = 0
+        self.yields = 0
+
+        # Purged traces must make their cards re-compilable again.
+        self.cache.on_evict = lambda pcs: [self.bitmap.mark_evicted(pc) for pc in pcs]
+
+    def register_block(self, block: BasicBlock):
+        self.blocks[block.head_pc] = block
+
+    # --- Cooperative yield  [runtime_interpreter.md §4.1 概算Yield] ---
+
+    def _tick_and_maybe_yield(self) -> bool:
+        self.trace_counter += 1
+        if self.trace_counter < self.yield_threshold:
+            return False
+        self.trace_counter = 0
+        self.yields += 1
+        self.on_yield()
+        return True
+
+    def on_yield(self):
+        """Scan the history ring, promote HOT cards, enqueue their head PCs (LIFO)."""
+        for pc in self.history.drain():
+            if self.bitmap.get_state(pc) == CardState.HOT and pc not in self.compile_queue:
+                self.compile_queue.append(pc)
+
+    # --- Batch compilation  [set_idle_hook / register_periodic_callback] ---
+
+    def idle_hook(self, budget: int = 4) -> int:
+        """Drains the compile queue LIFO. `{JIT_ReverseCompilationOrder}`
+
+        Compiling later traces first raises the chance that a preceding trace
+        can be chained directly at patch time.
         """
-        Executes a WASM function with dynamic Tier 1 / Tier 2 tiered dispatch.
-        """
-        wasm_pc = 0
+        compiled = 0
+        self.cache.begin_patch()
+        try:
+            while self.compile_queue and compiled < budget:
+                head_pc = self.compile_queue.pop()      # LIFO
+                block = self.blocks.get(head_pc)
+                if block is None:
+                    continue
+                trace = self.compiler.compile_trace(head_pc, block)
+                self.cache.insert(trace)
+                # Immediate chaining only for the unconditional fallthrough
+                # (`next_pc`). `loops_to` is a CONDITIONAL backward branch --
+                # the compiled backedge only emits a Safepoint poll, never a
+                # compare-and-branch, so the taken/not-taken decision still
+                # belongs to `_next_pc()` (which pops the WASM stack). Chaining
+                # straight into loops_to would skip that pop and that test,
+                # turning every loop into an unconditional infinite one.
+                # Checked AFTER insert(): insert() may itself rotate the
+                # banks, which would stale-date a pre-insert membership check.
+                succ = block.next_pc
+                if succ is not None and \
+                   (succ in self.cache.active.traces or succ in self.cache.warm.traces):
+                    trace.chain_next = succ
+                self.bitmap.mark_compiled(head_pc)
+                self.compilations += 1
+                compiled += 1
+        finally:
+            self.cache.commit_patch()
+        return compiled
 
-        # 1. Check JIT Cache (Fast Path)
-        jit_entry = self.cache.lookup(wasm_pc)
-        if jit_entry is not None:
-            # Native JIT Execution under MPU RO_X verification
-            self.cache.check_execute_permission()
-            self.jit_executions += 1
-            return jit_entry.native_fn(ctx)
+    # --- Main execution loop ---
 
-        # 2. Interpreter Path (Slow Path / Profiling)
-        self.interpreter_executions += 1
-        hotspot_state = self.detector.record_invocation(func_id)
+    def run(self, entry_pc: int, ctx: WASMContext, max_blocks: int = 1000) -> str:
+        pc: int | None = entry_pc
+        executed = 0
 
-        # 3. Check for JIT Tiering Trigger
-        if hotspot_state == HotspotState.HOT:
-            # Trigger Copy-and-Patch JIT under MPU W^X Transaction Protocol
-            self.cache.begin_patch()
-            try:
-                new_jit_entry = self.compiler.compile(func_id, wasm_pc, instructions)
-                self.cache.insert(new_jit_entry)
-                self.detector.mark_compiled(func_id)
-                self.jit_compilations += 1
-            finally:
-                self.cache.commit_patch()
+        while pc is not None and executed < max_blocks:
+            executed += 1
+            block = self.blocks.get(pc)
+            if block is None:
+                raise WASMTrap(f"NO_BLOCK_AT_PC: {pc}")
 
-        # 4. Execute via Interpreter
-        return self._interpret_block(instructions, ctx)
+            trace = self.cache.lookup(pc)
+            if trace is not None:
+                self.cache.require_executable()
+                self.jit_traces += 1
+                status = trace.native_fn(ctx)
+                if status == "SAFEPOINT_YIELD":
+                    return "SAFEPOINT_YIELD"
+                # chain_next is None -> return to the interpreter (dispatcher stub)
+                pc = trace.chain_next if trace.chain_next is not None else self._next_pc(block, ctx)
+            else:
+                # Record ONLY the basic-block head. `{HistoryBuffer}`
+                self.bitmap.touch(pc)
+                self.history.record(pc)
+                self.interp_blocks += 1
+                self._interpret(block, ctx)
+                pc = self._next_pc(block, ctx)
 
-    def _interpret_block(self, instructions: list[tuple[str, Any]], ctx: WASMContext) -> str:
-        pc = 0
-        while pc < len(instructions):
-            op, arg = instructions[pc]
+            if self._tick_and_maybe_yield():
+                self.idle_hook()
 
+        return "COMPLETED"
+
+    @staticmethod
+    def _next_pc(block: BasicBlock, ctx: WASMContext) -> int | None:
+        if block.loops_to is not None:
+            return block.loops_to if ctx.pop() != 0 else block.next_pc
+        return block.next_pc
+
+    def _interpret(self, block: BasicBlock, ctx: WASMContext):
+        for op, arg in block.ops:
             if op == "i32.const":
                 ctx.push(arg)
             elif op == "i32.add":
@@ -404,241 +605,272 @@ class IntegratedRuntimeEngine:
                 b, a = ctx.pop(), ctx.pop()
                 ctx.push((a * b) & 0xFFFF_FFFF)
             elif op == "local.get":
-                assert 0 <= arg < len(ctx.locals), "Local index out of range"
+                if not 0 <= arg < len(ctx.locals):
+                    raise WASMTrap("LOCAL_INDEX_OUT_OF_RANGE")
                 ctx.push(ctx.locals[arg])
             elif op == "local.set":
-                assert 0 <= arg < len(ctx.locals), "Local index out of range"
+                if not 0 <= arg < len(ctx.locals):
+                    raise WASMTrap("LOCAL_INDEX_OUT_OF_RANGE")
                 ctx.locals[arg] = ctx.pop()
-            elif op == "local.tee":
-                val = ctx.stack[-1] if ctx.stack else 0
-                ctx.locals[arg] = val
-            elif op == "br_if_loop_header":
-                cond = ctx.pop()
-                if cond != 0:
-                    if ctx.check_safepoint():
-                        return "SAFEPOINT_YIELD"
-                    pc = arg
-                    continue
-            elif op == "return":
-                return "COMPLETED"
             else:
                 raise WASMTrap(f"UNSUPPORTED_OPCODE: {op}")
 
-            pc += 1
-
-        return "COMPLETED"
-
 
 # ==============================================================================
-# 6. Verification Tests & Invariant Assertions
+# 7. Verification tests
 # ==============================================================================
 
-def test_tiering_cold_to_hot_and_jit_switch():
-    """Verifies that Cold functions run on Interpreter and automatically tier-up to JIT."""
-    engine = IntegratedRuntimeEngine()
+def _countdown_engine(**kw) -> tuple[IntegratedRuntimeEngine, WASMContext]:
+    """loop: acc *= n; n -= 1; branch back while n != 0."""
+    eng = IntegratedRuntimeEngine(**kw)
+    eng.register_block(BasicBlock(
+        head_pc=0x100,
+        ops=[("local.get", 1), ("local.get", 0), ("i32.mul", None), ("local.set", 1),
+             ("local.get", 0), ("i32.const", 1), ("i32.sub", None), ("local.set", 0),
+             ("local.get", 0)],
+        next_pc=None, loops_to=0x100,
+    ))
     ctx = WASMContext()
-
-    # Simple function: (a + b)
-    instructions = [
-        ("local.get", 0),
-        ("local.get", 1),
-        ("i32.add", None),
-        ("return", None),
-    ]
-
-    # Invocations 1, 2: Executed on Interpreter
-    ctx.locals = [10, 20]
-    res1 = engine.execute_function("func_add", instructions, ctx)
-    assert res1 == "COMPLETED"
-    assert ctx.pop() == 30
-    assert engine.interpreter_executions == 1
-    assert engine.jit_executions == 0
-
-    ctx.locals = [30, 40]
-    res2 = engine.execute_function("func_add", instructions, ctx)
-    assert res2 == "COMPLETED"
-    assert ctx.pop() == 70
-    assert engine.interpreter_executions == 2
-    assert engine.jit_executions == 0
-
-    # Invocation 3: Hits HOT threshold -> JIT Compiled during execution
-    ctx.locals = [50, 60]
-    res3 = engine.execute_function("func_add", instructions, ctx)
-    assert res3 == "COMPLETED"
-    assert ctx.pop() == 110
-    assert engine.interpreter_executions == 3
-    assert engine.jit_compilations == 1
-    assert engine.cache.lookup(0) is not None
-
-    # Invocation 4: Fast-path execution directly via JIT!
-    ctx.locals = [100, 200]
-    res4 = engine.execute_function("func_add", instructions, ctx)
-    assert res4 == "COMPLETED"
-    assert ctx.pop() == 300
-    assert engine.jit_executions == 1
-    assert engine.interpreter_executions == 3  # Unchanged!
+    return eng, ctx
 
 
-def test_three_bank_cache_rotation_and_oldest_promotion():
-    """Verifies Active/Warm/Oldest bank rotation and Oldest-Only promotion."""
-    engine = IntegratedRuntimeEngine()
-    ctx = WASMContext()
-
-    # Compile a hot function
-    instructions = [("i32.const", 42), ("return", None)]
-    ctx.locals = []
-    for _ in range(3):
-        engine.execute_function("hot_fn", instructions, ctx)
-        ctx.pop()
-
-    assert engine.jit_compilations == 1
-    assert 0 in engine.cache.active_bank.entries
-
-    # Warm up access counter in Oldest bank
-    jit_entry = engine.cache.lookup(0)
-    for _ in range(10):
-        engine.cache.lookup(0)  # Increment access_counter
-
-    # Rotate 1: Active -> Warm
-    engine.cache.begin_patch()
-    engine.cache.rotate_generation()
-    engine.cache.commit_patch()
-    assert 0 in engine.cache.warm_bank.entries
-
-    # Rotate 2: Warm -> Oldest
-    engine.cache.begin_patch()
-    engine.cache.rotate_generation()
-    engine.cache.commit_patch()
-    assert 0 in engine.cache.oldest_bank.entries
-
-    # Rotate 3: Oldest -> Promoted back to Active (access_counter >= 5)
-    engine.cache.begin_patch()
-    engine.cache.rotate_generation()
-    engine.cache.commit_patch()
-    assert 0 in engine.cache.active_bank.entries
-    assert engine.cache.promotions_count == 1
+def test_only_basic_block_heads_are_recorded():
+    """A block with 9 instructions must contribute exactly one history entry."""
+    eng, ctx = _countdown_engine(yield_threshold=1000)
+    ctx.locals = [3, 1]
+    eng.run(0x100, ctx)
+    assert all(pc == 0x100 for pc in eng.history.buf), eng.history.buf
+    assert len(eng.history.buf) == eng.interp_blocks
 
 
-def test_mpu_wx_hardware_protection():
-    """Verifies that MPU W^X invariants are strictly enforced during runtime execution."""
+def test_card_granularity_not_function_granularity():
+    """Two distinct head PCs inside one card share a single bitmap slot."""
+    bm = HotspotBitmap(card_shift=6, hot_threshold=2)
+    assert bm.card_of(0x100) == bm.card_of(0x120), "same 64-byte card"
+    bm.touch(0x100)
+    assert bm.get_state(0x120) == CardState.EXECUTED
+    bm.touch(0x120)
+    assert bm.get_state(0x100) == CardState.HOT, "counts accumulate per card"
+
+
+def test_compilation_is_deferred_to_the_yield_and_idle_hook():
+    """Detection must not compile inline: the executing task is never blocked."""
+    eng, ctx = _countdown_engine(yield_threshold=1000, hot_threshold=2)
+    ctx.locals = [6, 1]
+    eng.run(0x100, ctx)
+    assert eng.bitmap.get_state(0x100) == CardState.HOT
+    assert eng.compilations == 0, "no compilation may happen during execution"
+    assert eng.compile_queue == [], "queue is only filled at yield time"
+
+    eng.on_yield()                       # yield handler scans the ring
+    assert eng.compile_queue == [0x100]
+    assert eng.compilations == 0
+
+    eng.idle_hook()                      # batch compile
+    assert eng.compilations == 1
+    assert eng.bitmap.get_state(0x100) == CardState.COMPILED
+
+
+def test_lifo_compile_queue_order():
+    eng = IntegratedRuntimeEngine()
+    for pc in (0x100, 0x200, 0x300):
+        eng.register_block(BasicBlock(pc, [("i32.const", 1)], next_pc=None))
+    eng.compile_queue = [0x100, 0x200, 0x300]
+    order: list[int] = []
+    real = eng.compiler.compile_trace
+
+    def spy(head_pc, block):
+        order.append(head_pc)
+        return real(head_pc, block)
+
+    eng.compiler.compile_trace = spy
+    eng.idle_hook(budget=3)
+    assert order == [0x300, 0x200, 0x100], f"LIFO expected, got {order}"
+
+
+def test_jit_result_matches_interpreter_via_native_listing():
+    """The JIT path executes the emitted native listing, not the WASM ops."""
+    eng, ctx = _countdown_engine(yield_threshold=4, hot_threshold=2)
+    ctx.locals = [5, 1]
+    eng.run(0x100, ctx)
+    assert ctx.locals[1] == 120, f"5! expected, got {ctx.locals[1]}"
+    assert eng.compilations >= 1, "the loop must have been compiled"
+    assert eng.jit_traces >= 1, "the compiled trace must have been executed"
+
+
+def test_chain_next_defaults_to_interpreter_return():
+    eng = IntegratedRuntimeEngine()
+    eng.register_block(BasicBlock(0x100, [("i32.const", 7)], next_pc=None))
+    eng.compile_queue = [0x100]
+    eng.idle_hook()
+    trace = eng.cache.active.traces[0x100]
+    assert trace.chain_next is None, "unlinked trace must fall back to the stub"
+
+
+def test_idle_hook_chains_into_a_warm_resident_successor():
+    """Warm is still resident code (only Oldest gets cleared by rotate()),
+    so a freshly compiled trace may chain directly into a Warm successor."""
+    eng = IntegratedRuntimeEngine()
+    eng.register_block(BasicBlock(0x200, [("i32.const", 1)], next_pc=None))
+    eng.register_block(BasicBlock(0x100, [("i32.const", 2)], next_pc=0x200))
+
+    eng.compile_queue = [0x200]
+    eng.idle_hook()
+    assert 0x200 in eng.cache.active.traces
+
+    eng.cache.begin_patch(); eng.cache.rotate(); eng.cache.commit_patch()   # 0x200: Active -> Warm
+    assert 0x200 in eng.cache.warm.traces
+
+    eng.compile_queue = [0x100]
+    eng.idle_hook()
+    trace = eng.cache.active.traces[0x100]
+    assert trace.chain_next == 0x200, "a Warm-resident successor must still be a valid chain target"
+
+
+def test_idle_hook_never_chains_into_the_oldest_bank():
+    """Oldest can be purged by the very next rotate(); a raw chain into it
+    would also skip the promotion bookkeeping in `lookup()`."""
+    eng = IntegratedRuntimeEngine()
+    eng.register_block(BasicBlock(0x200, [("i32.const", 1)], next_pc=None))
+    eng.register_block(BasicBlock(0x100, [("i32.const", 2)], next_pc=0x200))
+
+    eng.compile_queue = [0x200]
+    eng.idle_hook()
+    eng.cache.begin_patch(); eng.cache.rotate(); eng.cache.rotate(); eng.cache.commit_patch()
+    assert 0x200 in eng.cache.oldest.traces
+
+    eng.compile_queue = [0x100]
+    eng.idle_hook()
+    trace = eng.cache.active.traces[0x100]
+    assert trace.chain_next is None, "Oldest is never a valid chain target"
+
+
+def test_rotate_sweeps_a_chain_target_that_is_about_to_leave_warm():
+    """A source that outlives its Warm-resident target (Active always has
+    more remaining lifetime than Warm) must not keep a dangling chain_next
+    once the target ages into Oldest -- one rotate away from being purged."""
     cache = JITMultiBufferCache()
-    dummy_entry = JITCodeEntry("test", 0, lambda ctx: "OK", 64)
-
-    # 1. Writing outside patch mode must raise MPUFault (RO_X violation)
-    try:
-        cache.insert(dummy_entry)
-        assert False, "Should have raised MPUFault"
-    except MPUFault as e:
-        assert "W^X VIOLATION" in str(e)
-
-    # 2. Execution during patch mode must raise MPUFault (RW_XN violation)
     cache.begin_patch()
-    cache.insert(dummy_entry)
+    target = JITTrace(0x200, lambda ctx: "COMPLETED", 64)
+    cache.insert(target)
+    cache.rotate()                       # target: Active -> Warm
+    source = JITTrace(0x100, lambda ctx: "COMPLETED", 64)
+    source.chain_next = 0x200            # simulate idle_hook having chained into Warm
+    cache.insert(source)
+    cache.commit_patch()
+    assert source.chain_next == 0x200, "sanity: link established while target is in Warm"
+
+    cache.begin_patch(); cache.rotate(); cache.commit_patch()   # target: Warm -> Oldest
+    assert source.chain_next is None, \
+        "the sweep must drop the link before the next rotate() purges the target"
+
+
+def test_eviction_makes_the_card_recompilable():
+    """Purging a trace must reset its card, or the code is permanently deoptimised."""
+    eng = IntegratedRuntimeEngine()
+    eng.register_block(BasicBlock(0x100, [("i32.const", 1)], next_pc=None))
+    eng.compile_queue = [0x100]
+    eng.idle_hook()
+    assert eng.bitmap.get_state(0x100) == CardState.COMPILED
+
+    eng.cache.begin_patch()
+    eng.cache.rotate()          # Active -> Warm
+    eng.cache.rotate()          # Warm  -> Oldest
+    eng.cache.rotate()          # Oldest purged
+    eng.cache.commit_patch()
+
+    assert 0x100 not in eng.cache.active.traces
+    assert eng.bitmap.get_state(0x100) == CardState.EXECUTED, \
+        "card must be re-compilable after its trace was purged"
+
+
+def test_used_bytes_does_not_leak_on_overwrite():
+    bank = JITCacheBank(0, capacity_bytes=2048)
+    for _ in range(5):
+        bank.allocate(JITTrace(0x100, lambda ctx: "COMPLETED", 100))
+    assert len(bank.traces) == 1
+    assert bank.used_bytes == 100, f"overwrite must not accumulate: {bank.used_bytes}"
+
+
+def test_warm_hit_does_not_promote_but_oldest_hit_does():
+    cache = JITMultiBufferCache(promotion_threshold=1)
+    cache.begin_patch()
+    cache.insert(JITTrace(0x100, lambda ctx: "COMPLETED", 64))
+    cache.commit_patch()
+
+    cache.begin_patch(); cache.rotate(); cache.commit_patch()      # Active -> Warm
+    assert 0x100 in cache.warm.traces
+    before = cache.promotions
+    cache.lookup(0x100)
+    assert cache.promotions == before, "a Warm hit is a free observation window"
+
+    cache.begin_patch(); cache.rotate(); cache.commit_patch()      # Warm -> Oldest
+    assert 0x100 in cache.oldest.traces
+    cache.lookup(0x100)
+    assert cache.promotions == before + 1, "an Oldest hit above threshold promotes"
+    assert 0x100 in cache.active.traces
+
+
+def test_exec_counters_live_outside_the_code_banks():
+    """Counters are written on every lookup, while the banks are RO_X."""
+    cache = JITMultiBufferCache()
+    cache.begin_patch()
+    cache.insert(JITTrace(0x100, lambda ctx: "COMPLETED", 64))
+    cache.commit_patch()
+    assert cache.mpu_attr == MPUAttribute.RO_X
+    cache.lookup(0x100)
+    assert cache.exec_counter[0x100] >= 1
+    trace = cache.active.traces[0x100]
+    assert not hasattr(trace, "access_counter"), \
+        "a per-trace counter inside the bank would fault under RO_X"
+
+
+def test_mpu_wx_is_enforced_in_both_directions():
+    cache = JITMultiBufferCache()
     try:
-        cache.check_execute_permission()
-        assert False, "Should have raised MPUFault"
+        cache.insert(JITTrace(0x100, lambda ctx: "COMPLETED", 64))
+        assert False, "write under RO_X must fault"
     except MPUFault as e:
         assert "W^X VIOLATION" in str(e)
-    finally:
-        cache.commit_patch()
 
-    # 3. After commit, execution permission is restored
-    cache.check_execute_permission()
-    assert cache.barrier_flushes == 1
+    cache.begin_patch()
+    try:
+        cache.require_executable()
+        assert False, "execute under RW_XN must fault"
+    except MPUFault as e:
+        assert "W^X VIOLATION" in str(e)
 
 
-def test_safepoint_interruption_in_interpreter_and_jit():
-    """Verifies cooperative safepoint polling yields execution safely."""
-    engine = IntegratedRuntimeEngine()
-    ctx = WASMContext()
+def test_safepoint_is_distinct_from_cooperative_yield():
+    """A yield is trace-count driven; a Safepoint is interrupt driven."""
+    eng, ctx = _countdown_engine(yield_threshold=2, hot_threshold=1)
+    ctx.locals = [50, 1]
+    eng.run(0x100, ctx, max_blocks=10)
+    assert eng.yields >= 1, "cooperative yields fire on the trace counter alone"
+    assert ctx.safepoints_hit == 0, "no interrupt was raised, so no Safepoint fired"
 
-    # Loop countdown: local 0 = n; while (n > 0) { n = n - 1; }
-    loop_instructions = [
-        ("local.get", 0),
-        ("i32.const", 1),
-        ("i32.sub", None),
-        ("local.tee", 0),
-        ("br_if_loop_header", 0),
-        ("return", None),
-    ]
-
-    # Test Interpreter Safepoint
-    ctx.locals = [10]
-    ctx.set_safepoint_flag(True)
-    status = engine.execute_function("loop_fn", loop_instructions, ctx)
+    eng2, ctx2 = _countdown_engine(yield_threshold=2, hot_threshold=1)
+    ctx2.locals = [50, 1]
+    eng2.run(0x100, ctx2, max_blocks=6)
+    eng2.on_yield()
+    eng2.idle_hook()
+    ctx2.raise_interrupt()
+    status = eng2.run(0x100, ctx2, max_blocks=10)
     assert status == "SAFEPOINT_YIELD"
-    assert ctx.safepoints_hit == 1
-
-    # Tier-up to JIT
-    ctx.set_safepoint_flag(False)
-    for _ in range(3):
-        ctx.locals = [10]
-        engine.execute_function("loop_fn", loop_instructions, ctx)
-
-    assert engine.cache.lookup(0) is not None
-
-    # Test JIT Safepoint
-    ctx.locals = [10]
-    ctx.set_safepoint_flag(True)
-    jit_status = engine.execute_function("loop_fn", loop_instructions, ctx)
-    assert jit_status == "SAFEPOINT_YIELD"
-    assert ctx.safepoints_hit >= 2
+    assert ctx2.safepoints_hit == 1
 
 
-def test_factorial_computation_equivalence():
-    """Verifies that Interpreter and JIT produce bit-exact identical arithmetic results."""
-    engine = IntegratedRuntimeEngine()
-
-    # Factorial bytecode: local 0: n, local 1: acc
-    # while (n > 1) { acc = acc * n; n = n - 1; } return acc;
-    factorial_ops = [
-        ("local.get", 1),
-        ("local.get", 0),
-        ("i32.mul", None),
-        ("local.set", 1),
-        ("local.get", 0),
-        ("i32.const", 1),
-        ("i32.sub", None),
-        ("local.tee", 0),
-        ("i32.const", 1),
-        ("i32.sub", None),  # cond = (n - 1)
-        ("br_if_loop_header", 0),
-        ("local.get", 1),
-        ("return", None),
-    ]
-
-    # 1. Calculate 5! with Interpreter (Cold)
-    ctx1 = WASMContext()
-    ctx1.locals = [5, 1]
-    engine.execute_function("fact_fn", factorial_ops, ctx1)
-    res_interp = ctx1.pop()
-    assert res_interp == 120
-
-    # 2. Warm up to JIT
-    for _ in range(3):
-        ctx_warm = WASMContext()
-        ctx_warm.locals = [5, 1]
-        engine.execute_function("fact_fn", factorial_ops, ctx_warm)
-
-    # 3. Calculate 5! and 10! with JIT (Hot)
-    ctx2 = WASMContext()
-    ctx2.locals = [5, 1]
-    engine.execute_function("fact_fn", factorial_ops, ctx2)
-    res_jit5 = ctx2.pop()
-    assert res_jit5 == 120
-    assert res_jit5 == res_interp
-
-    ctx3 = WASMContext()
-    ctx3.locals = [10, 1]
-    engine.execute_function("fact_fn", factorial_ops, ctx3)
-    res_jit10 = ctx3.pop()
-    assert res_jit10 == 3628800
+def test_stencil_requires_its_relocation_holes():
+    c = CopyPatchCompiler()
+    try:
+        c.stencils["i32.const"].emit(imm_lo=1)
+        assert False, "missing relocation must be rejected"
+    except KeyError as e:
+        assert "imm_hi" in str(e)
 
 
 if __name__ == "__main__":
-    test_tiering_cold_to_hot_and_jit_switch()
-    test_three_bank_cache_rotation_and_oldest_promotion()
-    test_mpu_wx_hardware_protection()
-    test_safepoint_interruption_in_interpreter_and_jit()
-    test_factorial_computation_equivalence()
-    print("OK  runtime_engine_concept.py (All 5 integrated tiered runtime tests passed!)")
+    for name, fn in sorted(globals().items()):
+        if name.startswith("test_") and callable(fn):
+            fn()
+    print("[PASS] All integrated tracing runtime concept tests passed.")

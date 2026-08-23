@@ -4,7 +4,9 @@ Reference Concept Implementation: vMMIO 2-Level Page Table & Direct-Mapped TLB
 - RAM Bypass Flag (Bit 31): O(1) linear-RAM fast path, no table walk at all
 - Function Code (FC, bits[31:28]): 16-entry L1 directory selects the L2 table
 - 2-level page table walk (L1 dir[16] -> L2 pt[16]) on TLB miss
-- Direct-mapped Software TLB[16] keyed by (VPN & 15): O(1) hot-path lookup
+- Direct-mapped Software TLB[16] keyed by ((VPN ^ VPN>>16) & 15): the FC is
+  folded in, otherwise FC=12 page N and FC=14 page N collide in one slot
+- Tier 1 linear RAM: Bit31 bypass PLUS a power-of-two mask bound check
 - PTE permission check (VALID/READ/WRITE/EXEC + Owner ID) on every access,
   including on TLB hit — the TLB only skips the table walk, never the check
 """
@@ -13,6 +15,7 @@ from typing import Callable
 
 
 class TrapCode:
+    OUT_OF_BOUNDS = "TRAP_MEMORY_OUT_OF_BOUNDS"
     UNDEFINED_FC = "TRAP_UNDEFINED_FC"
     UNREGISTERED_PAGE = "TRAP_UNREGISTERED_PAGE"
     ACCESS_VIOLATION = "TRAP_ACCESS_VIOLATION"
@@ -83,7 +86,14 @@ class VMMIOController:
     16-entry software TLB. All dispatch paths are O(1): no linear scans.
     """
 
-    def __init__(self):
+    def __init__(self, guest_ram_size: int = 8192):     # FB_CONF_GUEST_RAM_SIZE
+        # `{FastAddressCheck}`: for a power-of-two allocation the bound check is a
+        # single mask, so the Tier 1 path stays O(1) and branch-predictable.
+        if guest_ram_size <= 0 or (guest_ram_size & (guest_ram_size - 1)):
+            raise ValueError("guest RAM size must be a power of two for the mask-based bound check")
+        self.guest_ram_size = guest_ram_size
+        self.guest_ram_mask = ~(guest_ram_size - 1) & 0xFFFF_FFFF
+
         # L1 directory: FC -> L2 table (dict of l2_idx -> PTE), or None if FC unmapped.
         self.l1_dir: list[dict[int, object] | None] = [None] * 16
 
@@ -122,16 +132,27 @@ class VMMIOController:
         pte = self.l1_dir[FC_SHM][l2_idx]
         pte.owner_id = FB_TASK_ID_FLIGHT
         vpn = (0x8000_0000 | (FC_SHM << 28) | (l2_idx << 12)) >> 12
-        tlb_idx = vpn & 15
+        tlb_idx = self.tlb_index(vpn)
         if self.tlb[tlb_idx]["vpn"] == vpn:
             self.tlb[tlb_idx] = {"vpn": 0xFFFF_FFFF, "pte": None}
 
     # --- Hot path: TLB lookup + page table walk ---
 
+    @staticmethod
+    def tlb_index(vpn: int) -> int:
+        """Direct-mapped TLB hash with the Function Code folded in.
+
+        The low 4 bits of a VPN are the L2 index [15:12], so `vpn & 15` alone
+        makes FC=12 page 3 and FC=14 page 3 collide in the same slot — exactly
+        the syscall/SHM interleave that IPC performs. `vpn >> 16` carries
+        FC[31:28], so one XOR separates them. [runtime_vmmio.md §1-3]
+        """
+        return (vpn ^ (vpn >> 16)) & 15
+
     def _lookup_pte(self, addr: VmmioAddress):
-        """Returns (pte, is_static) or raises via return of (None, None) with trap set."""
+        """Returns the PTE, or None when the FC or the page is unmapped."""
         vpn = addr.vpn()
-        tlb_idx = vpn & 15
+        tlb_idx = self.tlb_index(vpn)
         slot = self.tlb[tlb_idx]
 
         if slot["vpn"] == vpn:
@@ -160,7 +181,12 @@ class VMMIOController:
         addr = VmmioAddress(raw_addr)
 
         # 1. Fast RAM bypass (Tier 1) — O(1), never touches the page table.
+        #    The bypass is NOT a free pass: `{MemoryBoundaryCheck}` still applies.
         if addr.is_linear():
+            if addr.raw & self.guest_ram_mask:
+                return (TrapCode.OUT_OF_BOUNDS,
+                        f"guest address {addr.raw:#010x} exceeds "
+                        f"FB_CONF_GUEST_RAM_SIZE ({self.guest_ram_size})")
             return ("OK_GUEST_RAM", "bypassed to linear guest RAM")
 
         # 2. TLB / L1-L2 walk.
@@ -276,6 +302,44 @@ def test_revoke_invalidates_tlb_and_blocks_access_during_flight():
     assert ctrl.tlb_misses == 2
 
 
+def test_linear_ram_is_bounds_checked_not_waved_through():
+    """The Bit31 bypass must still enforce `{MemoryBoundaryCheck}`."""
+    ctrl = VMMIOController(guest_ram_size=8192)
+    ok, _ = ctrl.access(0x0000_1FFF, is_write=True)
+    assert ok == "OK_GUEST_RAM", "last in-range byte must be accepted"
+
+    for bad in (0x0000_2000, 0x0001_0000, 0x7FFF_FFFF):
+        st, _ = ctrl.access(bad, is_write=True)
+        assert st == TrapCode.OUT_OF_BOUNDS, f"{bad:#x} is past the 8KB allocation"
+
+    assert ctrl.tlb_hits == 0 and ctrl.tlb_misses == 0,         "the Tier 1 path must never touch the page table"
+
+
+def test_tlb_index_separates_function_codes():
+    """FC=12 page 3 and FC=14 page 3 must not share a TLB slot."""
+    idx = VMMIOController.tlb_index
+    a = idx((0x8000_0000 | (FC_STATIC_DEVICE << 28) | (3 << 12)) >> 12)
+    b = idx((0x8000_0000 | (FC_SHM << 28) | (3 << 12)) >> 12)
+    c = idx((0x8000_0000 | (FC_PASSTHROUGH << 28) | (3 << 12)) >> 12)
+    assert len({a, b, c}) == 3, f"FCs collide: {a}, {b}, {c}"
+
+
+def test_interleaved_syscall_and_shm_keep_hitting_the_tlb():
+    """The IPC pattern (syscall to IPCR, then touch SHM) must not thrash."""
+    ctrl = VMMIOController()
+    ctrl.map_static_device(l2_idx=3, l3_metadata=0x003, handler=lambda o, w: None)
+    ctrl.map_shm_page(l2_idx=3, phys_page=0x900, owner_id=1)
+
+    sysc = 0x8000_0000 | (FC_STATIC_DEVICE << 28) | (0x003 << 16) | (3 << 12)
+    shm = 0x8000_0000 | (FC_SHM << 28) | (3 << 12)
+    for _ in range(10):
+        ctrl.access(sysc, is_write=True)
+        ctrl.access(shm, is_write=True, current_task_id=1)
+
+    total = ctrl.tlb_hits + ctrl.tlb_misses
+    assert ctrl.tlb_hits / total >= 0.9,         f"expected >=90% hit rate, got {ctrl.tlb_hits}/{total}"
+
+
 if __name__ == "__main__":
     test_ram_bypass_never_touches_page_table()
     test_static_device_syscall_dispatch()
@@ -283,4 +347,7 @@ if __name__ == "__main__":
     test_undefined_fc_traps()
     test_shm_owner_isolation()
     test_revoke_invalidates_tlb_and_blocks_access_during_flight()
+    test_linear_ram_is_bounds_checked_not_waved_through()
+    test_tlb_index_separates_function_codes()
+    test_interleaved_syscall_and_shm_keep_hitting_the_tlb()
     print("[PASS] All vMMIO concept tests passed successfully.")

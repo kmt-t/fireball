@@ -1,5 +1,5 @@
 """
-docs/components/tier2_jit/concepts/jit_copy_patch_concept.py
+docs/components/tier3_jit/concepts/jit_copy_patch_concept.py
 Reference Concept Implementation: Copy-and-Patch JIT Engine & MPU W^X Transaction Protocol
 - Fast binary code generation via pre-compiled Stencil templates
 - Direct relocation patching (immediate constants, branch offsets)

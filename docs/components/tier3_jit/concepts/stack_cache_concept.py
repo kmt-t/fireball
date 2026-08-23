@@ -1,5 +1,5 @@
 """
-docs/components/tier2_jit/concepts/stack_cache_concept.py
+docs/components/tier3_jit/concepts/stack_cache_concept.py
 Reference Concept Implementation: Stack-Top Caching for Copy-and-Patch stencils
 `{JIT_RegisterMapping}` `{ContextPointerRegister}` `{JIT_CopyAndPatch}`
 

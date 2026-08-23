@@ -1,4 +1,4 @@
-# Tier 2 JIT — コンセプトコード
+# Tier 3 JIT — コンセプトコード
 
 - [`jit_copy_patch_concept.py`](jit_copy_patch_concept.py): Copy-and-Patch エンジンと MPU W^X トランザクション単体。
 - 統合ランタイム（インタプリタ + トレーシング JIT + 3面キャッシュ + MPU W^X）の正本は

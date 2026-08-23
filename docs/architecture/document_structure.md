@@ -26,14 +26,13 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
            ▼
 [ Tier 2: 分解されたサブコンポーネント (Decomposed Subcomponents) ] ─ (How - Subsystem)
   · vSoC Subsystem (runtime_vsoc, runtime_loader, runtime_interpreter, runtime_vmmio, wasm_instruction)
-  · JIT Subsystem (jit_compiler)
   · Debug Subsystem (debug_manager)
   · Configuration Details (system_config_details)
            │
            │  深層コンポーネント・プラットフォーム具象化への分解
            ▼
 [ Tier 3: リーフ / プラットフォームコンポーネント (Leaf & Platform Components) ] ─ (How - Leaf / Physical)
-  · JIT Internals (jit_engine_copy_patch, jit_assembler_constexpr, jit_runtime_entry, jit_runtime_hotspot)
+  · JIT Subsystem (jit_compiler, jit_engine_copy_patch, jit_assembler_constexpr, jit_runtime_entry, jit_runtime_hotspot) — vSoC の実行エンジンから分解された JIT 一式
   · Debug Internals (debug_gdb_rsp)
   · Platform (platform_hal, platform_memory)
 
@@ -48,8 +47,8 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 | :--- | :--- | :--- | :--- |
 | **Tier 0** | `docs/requires/` | システム要求仕様書 (`requirement_list.md`) | **最上位要求 (Why)**<br>システム全体が満たすべき受入基準・機能要求。 |
 | **Tier 1** | `docs/components/tier1_core/`<br>`docs/components/tier1_interface/` | スケジューラ、チャネル通信、システムサービス、IPCルータ等のコア仕様書 | **粗粒度主要コンポーネント (What)**<br>要求（Tier 0）を直接受け取る。単一仕様書で状態遷移・ポリシーを自己完結して記述可能なシステム要素。 |
-| **Tier 2** | `docs/components/tier2_runtime/`<br>`docs/components/tier2_jit/` | WASMインタープリタ、WASMローダー、vMMIO、JITコンパイラ等のサブコンポーネント仕様書 | **分解されたサブコンポーネント (How - Subsystem)**<br>Tier 1 で扱うには状態空間やアルゴリズムが複雑化するため、独立した責務としてブレークダウンされた要素。 |
-| **Tier 3** | `docs/components/tier3_platform/` (および JIT/Debug の深層仕様) | HAL実装、物理メモリ管理、Copy-and-Patchコード生成器、Constexprアセンブラ、GDB RSP等 | **詳細リーフ / 物理コンポーネント (How - Leaf)**<br>Tier 2 からさらに責務が切り出された具象コンポーネント、またはハードウェア抽象化層。 |
+| **Tier 2** | `docs/components/tier2_runtime/` | WASMインタープリタ、WASMローダー、vMMIO等のサブコンポーネント仕様書 | **分解されたサブコンポーネント (How - Subsystem)**<br>Tier 1 で扱うには状態空間やアルゴリズムが複雑化するため、独立した責務としてブレークダウンされた要素。 |
+| **Tier 3** | `docs/components/tier3_platform/`<br>`docs/components/tier3_jit/` | HAL実装、物理メモリ管理、JITコンパイラ一式（Copy-and-Patchコード生成器、Constexprアセンブラ等）| **詳細リーフ / 物理コンポーネント (How - Leaf)**<br>Tier 2 からさらに責務が切り出された具象コンポーネント、またはハードウェア抽象化層。JIT は vSoC (Tier 2) の実行エンジンから分解された一式として、内部を jit_compiler.md がオーケストレーションする。 |
 | **Meta** | `docs/architecture/`<br>`docs/plans/` | 全体アーキテクチャ、設計方針、開発計画 | **全Tier横断メタ設計**<br>Hypervisor の機能コンポーネント自体には属さない共通ポリシー・計画。 |
 
 ---
@@ -60,6 +59,7 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 
 ### 2.1 デコンポジション基準（いつ下位 Tier へ分解するか）
 1. **単一責務・複雑度制御の原則**: コンポーネントが複数の独立した状態機械・アルゴリズムを持つ場合、単一仕様書に肥大化させず、サブコンポーネントとして分解して Tier を 1 つ下げる。
+   - 判定基準は「単一仕様書に自己完結して書けるか」であり、「親から分解された」という記述の有無ではない。vSoC の Interpreter/vMMIO/Loader は vSoC から分解されたと書きつつも各々 1 ファイルに自己完結するため Tier 2 のまま（vSoC の Tier 2 サブコンポーネント群の一員）。JIT だけは複雑度が突出しており、`jit_compiler.md` を親に 4 本のリーフ仕様書へさらに分割する必要があったため、JIT 一式は Tier 3 に位置する。
 2. **検証可能性（Verification Tractability）の維持**: 形式検証（pyModelChecking等）において状態空間が爆発しない単位に状態遷移モデルを区切る。
 3. **親コンポーネントのカプセル化**: 分解元（上位Tier）は、分解先（下位Tier）の内部実装パラメータに依存せず、抽象インターフェースのみで統合する。
 

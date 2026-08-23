@@ -1,5 +1,5 @@
 """
-docs/components/tier2_jit/formal/jit_cache_model.py
+docs/components/tier3_jit/formal/jit_cache_model.py
 pyModelChecking による JIT 3面キャッシュ代謝・MPU W^X 実行安全性の形式検証（証明・変異検査対応）モデル
 """
 
@@ -7,8 +7,8 @@ from pyModelChecking import Kripke
 from pyModelChecking.CTL import AG, AF, And, Not, Imply, AtomicProposition
 
 BACKS = [
-    "components/tier2_jit/jit_compiler.md",
-    "components/tier2_jit/jit_engine_copy_patch.md",
+    "components/tier3_jit/jit_compiler.md",
+    "components/tier3_jit/jit_engine_copy_patch.md",
     "components/tier3_platform/platform_memory.md",
 ]
 

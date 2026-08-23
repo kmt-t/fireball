@@ -52,6 +52,10 @@ class VmmioAddress:
     def vpn(self) -> int:
         return self.raw >> 12
 
+    def page_bits_30_12(self) -> int:
+        """Extracts bits [30:12] (19 bits) used for TLB hashing."""
+        return (self.raw >> 12) & 0x7FFFF
+
 
 class StaticDevicePTE:
     """FC=12 (Static Device). Syscall ID is carried in the address itself
@@ -93,7 +97,7 @@ class VMMIOController:
         # FlatMap PTE storage: vpn -> PTE
         self.ptes: dict[int, object] = {}
 
-        # Direct-mapped TLB: 16 slots, keyed by (vpn ^ (vpn>>16)) & 15.
+        # Direct-mapped TLB: 16 slots, keyed by hash of address bits [30:12].
         self.tlb: list[dict] = [{"vpn": 0xFFFF_FFFF, "pte": None} for _ in range(16)]
         self.tlb_hits = 0
         self.tlb_misses = 0
@@ -134,8 +138,9 @@ class VMMIOController:
 
     @staticmethod
     def tlb_index(vpn: int) -> int:
-        """Direct-mapped TLB hash with the Function Code folded in."""
-        return (vpn ^ (vpn >> 16)) & 15
+        """Direct-mapped TLB hash over address bits [30:12] (19 bits)."""
+        page_bits = vpn & 0x7FFFF  # Address bits [30:12]
+        return (page_bits ^ (page_bits >> 16)) & 15
 
     def _lookup_pte(self, addr: VmmioAddress):
         """Returns the PTE from TLB (O(1)) or falls back to FlatMap."""

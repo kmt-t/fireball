@@ -21,8 +21,8 @@ FlatMap 単体での探索は $O(\log N)$（またはハッシュ探索）とな
    - 動的 SHM ページや物理パススルーページをフラットに登録・管理できる。
 3. **ダイレクトマップ方式ソフトウェアTLB（完全O(1)キャッシュ）**:
    ホットパス高速化のため、一発でインデックスが決まるダイレクトマッピング（ハッシュ方式、16エントリ固定サイズ）を採用する。
-   - 仮想ページ番号 (VPN = `raw >> 12`) から、ハッシュ値 `tlb_idx = (vpn ^ (vpn >> 16)) & 15` を算出し、TLBに一撃でアクセスする。ヒット時は権限チェックを通過した後に即時実行する。 `{META_RestrictedPhysicalAccess}`
-   - **FC の折り込み**: VPN の下位 4 ビットはページインデックス[15:12]であり、そのまま用いると FC の異なる同一ページ番号（例: FC=12 の page 3 と FC=14 の page 3）が同一スロットに衝突する。`vpn >> 16` の下位 4 ビットが FC[31:28] であるため、XOR で折り込むことで 1 命令追加のみで FC を分離する。
+   - アドレスの 30-12 ビット（19-bit: `page_bits = (raw >> 12) & 0x7FFFF`）から、ハッシュ値 `tlb_idx = (page_bits ^ (page_bits >> 16)) & 15` を算出し、TLBに一撃でアクセスする。ヒット時は権限チェックを通過した後に即時実行する。 `{META_RestrictedPhysicalAccess}`
+   - **FC の折り込み**: `page_bits` の下位 4 ビットはページインデックス[15:12]であり、`page_bits >> 16` の下位 3 ビットが FC[30:28] であるため、XOR で折り込むことで同一ページ番号を持つ異なる FC 間（FC=12 と FC=14 など）のスロット衝突を回避する。
 
 セキュリティモデルは**PTEに埋め込まれた権限フィールドが唯一のゲート**である。アクセス権限は PTE に保持され、ルックアップと権限チェックを1パスで完結させる。アクセス特性に応じてセキュリティゲートを以下の3層に階層化する。 `{META_RestrictedPhysicalAccess}`
 
@@ -60,7 +60,7 @@ graph TD
         Filter["MSB Address Filter<br/>Bit 31 == 0 vs 1"]
         Decoder["Address Decoder<br/>FC(31:28) + L3/Sys(27:16) + Page(15:12) + Offset(11:0)"]
         FlatMap["vmmio_ptes (FlatMap)<br/>Key: VPN -> Value: PTE"]
-        TLB["Direct-Mapped TLB (16)<br/>Index = (vpn ^ (vpn>>16)) & 15"]
+        TLB["Direct-Mapped TLB (16)<br/>Index = (Addr[30:12] ^ (Addr[30:12]>>16)) & 15"]
         Controller["VmmioController"]
     end
 
@@ -118,9 +118,14 @@ class VmmioAddress:
         # Virtual Page Number (VPN) for TLB and FlatMap Key
         return self.raw >> 12
 
+    def page_bits_30_12(self) -> int:
+        # アドレス 30-12 ビット (19 bits)
+        return (self.raw >> 12) & 0x7FFFF
+
 def lookup_tlb(addr: VmmioAddress) -> int:
     vpn = addr.vpn()
-    tlb_idx = (vpn ^ (vpn >> 16)) & 15  # FC[31:28] を折り込み、FC 間衝突を回避
+    page_bits = addr.page_bits_30_12()
+    tlb_idx = (page_bits ^ (page_bits >> 16)) & 15  # アドレス[30:12]のハッシュ (FC折り込み)
     
     if vmmio_tlb_cache[tlb_idx]['vpn'] == vpn:
         return vmmio_tlb_cache[tlb_idx]['pte']  # TLB Hit!
@@ -258,7 +263,7 @@ sequenceDiagram
                 C-->>G: Trap (Unregistered Page / Undefined FC)
             end
             F-->>C: resolved PTE
-            C->>T: Refill entry at (vpn XOR vpn>>16) AND 15
+            C->>T: Refill entry at ((vpn & 0x7FFFF) XOR ((vpn & 0x7FFFF)>>16)) AND 15
         end
 
         C->>C: perm_check(PTE, is_write)
@@ -380,7 +385,7 @@ Tier 3 アクセス（FC=14/15）において毎回 FlatMap の二分探索を�
 
 - **キャッシュ構造**: ダイレクトマップ構造（Direct-Mapped Hashed Structure）
   - キー（VPN）: `raw >> 12`（20-bit）
-  - HASH / インデックス計算: `tlb_idx = (VPN ^ (VPN >> 16)) & 15` (16エントリサイズ、FC[31:28] を折り込み FC 間衝突を回避)
+  - HASH / インデックス計算: アドレスの 30-12 ビット（19-bit: `page_bits = (raw >> 12) & 0x7FFFF`）のハッシュ `tlb_idx = (page_bits ^ (page_bits >> 16)) & 15` (16エントリサイズ、FC[30:28] を折り込み FC 間衝突を回避)
   - 値 (Value): 32-bit PTE エントリ
   
 - **キャッシュ更新 & 押し出し (Eviction & Refill)**:

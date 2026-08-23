@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-23T20:38:36.860233+00:00",
+  "generated_at": "2026-08-23T20:43:52.029175+00:00",
   "backend": "heuristic",
   "total_evaluated": 676,
   "formal_candidates_count": 43,
@@ -24,7 +24,7 @@
     "components/tier2_runtime/debug/debug_manager.md": "50a709835b11ea4d6e477d5a957bc4242c950bb81f41899ee6d31baca25b0197",
     "components/tier2_runtime/runtime_interpreter.md": "0806dbfca3ef5ed0267b0034bee496a7361a4556b1a202614e3dc248942792c7",
     "components/tier2_runtime/runtime_loader.md": "591c6d491434e54f39eed5c48ae3216fc1b0ca1e2299044161cccac48f93dca5",
-    "components/tier2_runtime/runtime_vmmio.md": "f625d4b58b18cc6a0e40f6fb6ac1bfa3577dfcbbe216cf7524061a60e76e3d7c",
+    "components/tier2_runtime/runtime_vmmio.md": "5bc7d5ae24e10ea650774c415dbe222c839d7daf08f71e53a2832a3b31d78586",
     "components/tier2_runtime/runtime_vsoc.md": "8fe2030e2f0ba7156ece2db7ba29ed44e1011625f52a9f3f755d20ff260f9623",
     "components/tier2_runtime/wasm_instruction.md": "640483f8a25bca7885110ce37e499c4ba3622fdc2ba3507e3a78b2bc1fcf8b5f",
     "components/tier3_jit/concepts/README.md": "a39c8c192999a792243e697e008fcad02c701d14b9559d492d668208122b6ebc",
@@ -2358,6 +2358,19 @@
       "summary": "Independent heuristic evaluation for '3.2 内部ブロック図'."
     },
     {
+      "section_id": "sec:components/tier2_runtime/runtime_vmmio.md#4.8 ソフトウェアTLB",
+      "file_path": "components/tier2_runtime/runtime_vmmio.md",
+      "heading": "4.8 ソフトウェアTLB",
+      "tier": 2,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '4.8 ソフトウェアTLB'."
+    },
+    {
       "section_id": "sec:plans/roadmap_phase.md#Phase 0: Foundation（約6ヶ月）",
       "file_path": "plans/roadmap_phase.md",
       "heading": "Phase 0: Foundation（約6ヶ月）",
@@ -2434,19 +2447,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '静的デバイスページテーブルエントリ (vmmio_pte_static)'."
-    },
-    {
-      "section_id": "sec:components/tier2_runtime/runtime_vmmio.md#4.8 ソフトウェアTLB",
-      "file_path": "components/tier2_runtime/runtime_vmmio.md",
-      "heading": "4.8 ソフトウェアTLB",
-      "tier": 2,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '4.8 ソフトウェアTLB'."
     },
     {
       "section_id": "sec:components/tier2_runtime/runtime_vsoc.md#3.2 内部ブロック図",

@@ -429,11 +429,11 @@ Generating Markdown Report & Graph JSON...
 ### 3.2 vMMIO PTE 管理の FlatMap 化
 PTE 保存アーキテクチャについて、以下の変更を実施・検証した：
 - **PTE データ構造**: `std::flat_map<uint32_t, uint32_t>`（キー: VPN = `raw >> 12`、値: 32bit PTE）によるフラットな PTE 管理に純化。
-- **TLB キャッシュ連携**: ダイレクトマップ方式ソフトウェアTLB（16エントリ、ハッシュ `(vpn ^ (vpn >> 16)) & 15`）と連携。TLB ヒット時は完全 $O(1)$、ミス時のみ FlatMap 二分探索（$O(\log N)$）を行う。局所性により大半のホットパスが TLB で解決されるため、遅延は十分に吸収・容認される。
+- **TLB キャッシュ連携**: ダイレクトマップ方式ソフトウェアTLB（16エントリ、アドレス[30:12] のハッシュ `(page_bits ^ (page_bits >> 16)) & 15`）と連携。TLB ヒット時は完全 $O(1)$、ミス時のみ FlatMap 二分探索（$O(\log N)$）を行う。局所性により大半のホットパスが TLB で解決されるため、遅延は十分に吸収・容認される。
 - **コンセプト実装と仕様書**: `vmmio_concept.py` および `runtime_vmmio.md` を更新し、全テスト PASS を確認。
 
 ### コミット情報
-- `fireball`: commit [`4f5a771`](https://github.com/kmt-t/fireball/commit/4f5a771)
+- `fireball`: commit [`c9df22d`](https://github.com/kmt-t/fireball/commit/c9df22d)
 
 ---
 

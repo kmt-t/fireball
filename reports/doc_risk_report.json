@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-23T20:49:33.420866+00:00",
+  "generated_at": "2026-08-23T20:54:00.000192+00:00",
   "backend": "heuristic",
   "total_evaluated": 676,
   "formal_candidates_count": 43,
@@ -24,7 +24,7 @@
     "components/tier2_runtime/debug/debug_manager.md": "50a709835b11ea4d6e477d5a957bc4242c950bb81f41899ee6d31baca25b0197",
     "components/tier2_runtime/runtime_interpreter.md": "0806dbfca3ef5ed0267b0034bee496a7361a4556b1a202614e3dc248942792c7",
     "components/tier2_runtime/runtime_loader.md": "591c6d491434e54f39eed5c48ae3216fc1b0ca1e2299044161cccac48f93dca5",
-    "components/tier2_runtime/runtime_vmmio.md": "d6fa00b583b9a5d35ca69165ca215e77dd528181c9db93864ee2b72e0d6d679d",
+    "components/tier2_runtime/runtime_vmmio.md": "59e2fd0c2e7fd96b1f88bc46756757a20671f61696ff9210db998ea5168848a3",
     "components/tier2_runtime/runtime_vsoc.md": "8fe2030e2f0ba7156ece2db7ba29ed44e1011625f52a9f3f755d20ff260f9623",
     "components/tier2_runtime/wasm_instruction.md": "640483f8a25bca7885110ce37e499c4ba3622fdc2ba3507e3a78b2bc1fcf8b5f",
     "components/tier3_jit/concepts/README.md": "a39c8c192999a792243e697e008fcad02c701d14b9559d492d668208122b6ebc",

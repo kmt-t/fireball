@@ -43,6 +43,10 @@ class VmmioAddress:
     def fc(self) -> int:
         return (self.raw >> 28) & 0xF
 
+    def syscall_metadata(self) -> int:
+        # Syscall Metadata / Syscall ID: bits [27:16] (12 bits)
+        return (self.raw >> 16) & 0xFFF
+
     def vpn(self) -> int:
         # 20-bit Virtual Page Number (VPN)
         return self.raw >> 12
@@ -53,7 +57,7 @@ class VmmioAddress:
 
 class StaticDevicePTE:
     """FC=12 (Static Device). Holds permission flags and optional handler."""
-    def __init__(self, handler: Callable[[int, bool], None] | None = None,
+    def __init__(self, handler: Callable[[int, int, bool], None] | None = None,
                  read: bool = True, write: bool = True, cacheable: bool = False):
         self.handler = handler
         self.read = read
@@ -99,7 +103,7 @@ class VMMIOController:
     # --- Static & Dynamic PTE Registration (FlatMap) ---
 
     def map_static_device(self, vpn: int,
-                          handler: Callable[[int, bool], None] | None = None,
+                          handler: Callable[[int, int, bool], None] | None = None,
                           read: bool = True, write: bool = True):
         """Registers a Tier 2 static device page (FC=12) into FlatMap."""
         self.ptes[vpn] = StaticDevicePTE(handler=handler, read=read, write=write)
@@ -184,7 +188,7 @@ class VMMIOController:
             if not is_write and not pte.read:
                 return (TrapCode.ACCESS_VIOLATION, "static device: read not permitted")
             if pte.handler is not None:
-                pte.handler(addr.offset(), is_write)
+                pte.handler(addr.syscall_metadata(), addr.offset(), is_write)
             return ("OK_SYSCALL", "dispatched to static device handler")
 
         # Tier3PTE (SHM / PASSTHROUGH)
@@ -220,18 +224,19 @@ def test_ram_bypass_never_touches_page_table():
 def test_static_device_syscall_dispatch():
     ctrl = VMMIOController()
     dispatched = []
-    ctrl.map_static_device(vpn=0xC0000,
-                           handler=lambda off, w: dispatched.append((off, w)))
+    vpn = (0xC000_0000 | (0x042 << 16)) >> 12
+    ctrl.map_static_device(vpn=vpn,
+                           handler=lambda sys_id, off, w: dispatched.append((sys_id, off, w)))
 
-    addr = 0xC000_0004
+    addr = 0xC042_0004
     status, _ = ctrl.access(addr, is_write=True)
     assert status == "OK_SYSCALL"
-    assert dispatched == [(0x004, True)]
+    assert dispatched == [(0x042, 0x004, True)]
 
 
 def test_tlb_hit_after_first_walk():
     ctrl = VMMIOController()
-    ctrl.map_static_device(vpn=0xC0001, handler=lambda o, w: None)
+    ctrl.map_static_device(vpn=0xC0001, handler=lambda sys_id, o, w: None)
     addr = 0xC000_1000
 
     status1, _ = ctrl.access(addr, is_write=False)
@@ -306,7 +311,7 @@ def test_tlb_index_separates_function_codes():
 def test_interleaved_syscall_and_shm_keep_hitting_the_tlb():
     """The IPC pattern (syscall to IPCR, then touch SHM) must not thrash."""
     ctrl = VMMIOController()
-    ctrl.map_static_device(vpn=0xC0003, handler=lambda o, w: None)
+    ctrl.map_static_device(vpn=0xC0003, handler=lambda sys_id, o, w: None)
     ctrl.map_shm_page(vpn=0xE0003, phys_page=0x900, owner_id=1)
 
     sysc = 0xC000_3000

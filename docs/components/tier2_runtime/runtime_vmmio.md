@@ -88,7 +88,8 @@ vMMIO
 | :--- | :--- | :--- |
 | RAM Bypass Flag | Bit 31 が 0 のときはゲストRAMアクセス（Tier 1）とし、vMMIOを高速バイパス。 | ビット[31]（1 bit） |
 | Function Code | vMMIO 領域時の機能種別（FC）。`vpn >> 16` でも抽出可能。 | ビット[31:28]（4 bits）、16種別 |
-| VPN (Virtual Page Number) | 仮想ページ番号。FlatMap のキーおよび TLB のマッチタグ。 | ビット[31:12]（20 bits: `raw >> 12`） |
+| Syscall Metadata / ID | 静的デバイス・Syscall 領域（FC=12）における Syscall ID / サービス識別メタデータ。 | ビット[27:16]（12 bits: `0..4095`） |
+| VPN (Virtual Page Number) | 仮想ページ番号（FC + Syscall Metadata + Page Index を包含）。FlatMap のキーおよび TLB のマッチタグ。 | ビット[31:12]（20 bits: `raw >> 12`） |
 | Offset | 4KBページ内でのバイトオフセット。PTE 解決後に相対アドレスとして使用。 | ビット[11:0]（12 bits）、4KB |
 
 **アドレスデコード + PTE アクセス擬似コード例**:
@@ -104,6 +105,10 @@ class VmmioAddress:
     def fc(self) -> int:
         # Function Code: [31:28]
         return (self.raw >> 28) & 0xF
+
+    def syscall_metadata(self) -> int:
+        # Syscall Metadata / Syscall ID: [27:16]
+        return (self.raw >> 16) & 0xFFF
         
     def offset(self) -> int:
         # Offset: [11:0]

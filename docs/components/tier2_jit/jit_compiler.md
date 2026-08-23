@@ -135,7 +135,7 @@ JITエンジンの挙動を制御する性能パラメータ。 `{META_Configura
     - ヒットした場合、無償観測期間（Observation Window）として**昇格コピーを行わず**、そのままネイティブコードのアドレスを返して実行する（無駄な昇格オーバーヘッドを排除）。
 4. **最古領域（Bank 2: Oldest）検索と限定昇格 (Oldest-Only Promotion)**: `{JIT_OldestOnly_Promote}`
     - Warm バンクでもミスした場合、破棄直前の Oldest バンクを検索する。
-    - Oldest バンクでヒットし、かつ実行カウンタが閾値に達している真の Hot コードのみを新 Active バンクへ Promote（昇格コピー）する。
+    - Oldest バンクでヒットしたコード（現在も実行され続けている Hot コード）を新 Active バンクへ Promote（昇格コピー）する。昇格しないまま次回のローテーションを迎えた Cold コードはそのまま Eviction（破棄）される。
 5. **3面リングバッファローテーション（Swap/Eviction）**:
     - Active バンク（2KB）の残り容量が不足した場合、3面リングローテーションを実行する：
       * `Bank 2 (Oldest)` の全エントリを完全に破棄・クリア（Purge）し、新たな `Bank 0 (Active)` とする。

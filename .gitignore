@@ -18,10 +18,15 @@ Testing/
 *~
 
 # spec-integrator cache & reports
+# doc_judge_report.json is committed (like doc_risk_report.json): it's the
+# actual LLM-audit evidence the Obligation Gate reads, not a derived report
+# like doc_report.md/doc_graph.json. Ignoring it meant a fresh checkout (or
+# CI, which never passes -llm) could never see a real judge verdict, so any
+# {VERIFY_LLM}-tagged document would fail OBLIG-JUDGE-MISSING regardless of
+# whether the audit had ever actually run.
 .spec-integrator/
 doc_report.md
 doc_graph.json
-doc_judge_report.json
 
 # Compiled objects and binaries
 *.d

@@ -1,8 +1,8 @@
 {
-  "generated_at": "2026-08-23T20:54:00.000192+00:00",
+  "generated_at": "2026-08-23T21:45:30.455141+00:00",
   "backend": "heuristic",
   "total_evaluated": 676,
-  "formal_candidates_count": 43,
+  "formal_candidates_count": 29,
   "llm_candidates_count": 45,
   "sections_scanned": 676,
   "max_sections": 0,
@@ -115,16 +115,12 @@
       "file_path": "components/tier1_core/os_coos.md",
       "heading": "1. コンセプト",
       "tier": 1,
-      "complexity_score": 4,
-      "risk_score": 4,
-      "formal_needed": true,
-      "recommended_verification": "pyModelChecking",
-      "suggested_tags": [
-        "{VERIFY_FORMAL}"
-      ],
-      "risk_factors": [
-        "Stateful concurrent protocol or hardware safety invariant identified"
-      ],
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
       "summary": "Independent heuristic evaluation for '1. コンセプト'."
     },
     {
@@ -347,16 +343,12 @@
       "file_path": "components/tier1_core/os_scheduler.md",
       "heading": "1. コンセプト",
       "tier": 1,
-      "complexity_score": 4,
-      "risk_score": 4,
-      "formal_needed": true,
-      "recommended_verification": "pyModelChecking",
-      "suggested_tags": [
-        "{VERIFY_FORMAL}"
-      ],
-      "risk_factors": [
-        "Stateful concurrent protocol or hardware safety invariant identified"
-      ],
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
       "summary": "Independent heuristic evaluation for '1. コンセプト'."
     },
     {
@@ -610,16 +602,12 @@
       "file_path": "components/tier1_interface/ipc_router.md",
       "heading": "6.1 検証対象の不変条件",
       "tier": 1,
-      "complexity_score": 4,
-      "risk_score": 4,
-      "formal_needed": true,
-      "recommended_verification": "pyModelChecking",
-      "suggested_tags": [
-        "{VERIFY_FORMAL}"
-      ],
-      "risk_factors": [
-        "Stateful concurrent protocol or hardware safety invariant identified"
-      ],
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
       "summary": "Independent heuristic evaluation for '6.1 検証対象の不変条件'."
     },
     {
@@ -700,16 +688,12 @@
       "file_path": "components/tier1_interface/ipc_router.md",
       "heading": "4.4 内部シーケンス図",
       "tier": 1,
-      "complexity_score": 4,
-      "risk_score": 4,
-      "formal_needed": true,
-      "recommended_verification": "pyModelChecking",
-      "suggested_tags": [
-        "{VERIFY_FORMAL}"
-      ],
-      "risk_factors": [
-        "Stateful concurrent protocol or hardware safety invariant identified"
-      ],
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
       "summary": "Independent heuristic evaluation for '4.4 内部シーケンス図'."
     },
     {
@@ -838,16 +822,12 @@
       "file_path": "components/tier1_interface/ipc_router.md",
       "heading": "サービス検索と接続フロー",
       "tier": 1,
-      "complexity_score": 4,
-      "risk_score": 4,
-      "formal_needed": true,
-      "recommended_verification": "pyModelChecking",
-      "suggested_tags": [
-        "{VERIFY_FORMAL}"
-      ],
-      "risk_factors": [
-        "Stateful concurrent protocol or hardware safety invariant identified"
-      ],
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
       "summary": "Independent heuristic evaluation for 'サービス検索と接続フロー'."
     },
     {
@@ -1438,16 +1418,12 @@
       "file_path": "components/tier1_core/os_coos.md",
       "heading": "5.1 `coos_harness` (システムハーネス)",
       "tier": 1,
-      "complexity_score": 4,
-      "risk_score": 4,
-      "formal_needed": true,
-      "recommended_verification": "pyModelChecking",
-      "suggested_tags": [
-        "{VERIFY_FORMAL}"
-      ],
-      "risk_factors": [
-        "Stateful concurrent protocol or hardware safety invariant identified"
-      ],
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
       "summary": "Independent heuristic evaluation for '5.1 `coos_harness` (システムハーネス)'."
     },
     {
@@ -1615,16 +1591,12 @@
       "file_path": "components/tier1_core/os_coos.md",
       "heading": "2. アーキテクチャ分類",
       "tier": 1,
-      "complexity_score": 4,
-      "risk_score": 4,
-      "formal_needed": true,
-      "recommended_verification": "pyModelChecking",
-      "suggested_tags": [
-        "{VERIFY_FORMAL}"
-      ],
-      "risk_factors": [
-        "Stateful concurrent protocol or hardware safety invariant identified"
-      ],
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
       "summary": "Independent heuristic evaluation for '2. アーキテクチャ分類'."
     },
     {
@@ -1688,16 +1660,12 @@
       "file_path": "components/tier1_core/system_config_details.md",
       "heading": "2.2 IPCルータ",
       "tier": 1,
-      "complexity_score": 4,
-      "risk_score": 4,
-      "formal_needed": true,
-      "recommended_verification": "pyModelChecking",
-      "suggested_tags": [
-        "{VERIFY_FORMAL}"
-      ],
-      "risk_factors": [
-        "Stateful concurrent protocol or hardware safety invariant identified"
-      ],
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
       "summary": "Independent heuristic evaluation for '2.2 IPCルータ'."
     },
     {
@@ -2466,16 +2434,12 @@
       "file_path": "components/tier1_core/os_coos.md",
       "heading": "CSPチャネル（channel）",
       "tier": 1,
-      "complexity_score": 4,
-      "risk_score": 4,
-      "formal_needed": true,
-      "recommended_verification": "pyModelChecking",
-      "suggested_tags": [
-        "{VERIFY_FORMAL}"
-      ],
-      "risk_factors": [
-        "Stateful concurrent protocol or hardware safety invariant identified"
-      ],
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
       "summary": "Independent heuristic evaluation for 'CSPチャネル（channel）'."
     },
     {
@@ -2664,16 +2628,12 @@
       "file_path": "components/tier1_core/os_coos.md",
       "heading": "2.1 構成要素",
       "tier": 1,
-      "complexity_score": 4,
-      "risk_score": 4,
-      "formal_needed": true,
-      "recommended_verification": "pyModelChecking",
-      "suggested_tags": [
-        "{VERIFY_FORMAL}"
-      ],
-      "risk_factors": [
-        "Stateful concurrent protocol or hardware safety invariant identified"
-      ],
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
       "summary": "Independent heuristic evaluation for '2.1 構成要素'."
     },
     {
@@ -3195,16 +3155,12 @@
       "file_path": "components/tier1_interface/ipc_router.md",
       "heading": "メッセージルーティング（route_message）",
       "tier": 1,
-      "complexity_score": 4,
-      "risk_score": 4,
-      "formal_needed": true,
-      "recommended_verification": "pyModelChecking",
-      "suggested_tags": [
-        "{VERIFY_FORMAL}"
-      ],
-      "risk_factors": [
-        "Stateful concurrent protocol or hardware safety invariant identified"
-      ],
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
       "summary": "Independent heuristic evaluation for 'メッセージルーティング（route_message）'."
     },
     {
@@ -3480,16 +3436,12 @@
       "file_path": "components/tier1_core/os_coos.md",
       "heading": "3.1 データ構造",
       "tier": 1,
-      "complexity_score": 4,
-      "risk_score": 4,
-      "formal_needed": true,
-      "recommended_verification": "pyModelChecking",
-      "suggested_tags": [
-        "{VERIFY_FORMAL}"
-      ],
-      "risk_factors": [
-        "Stateful concurrent protocol or hardware safety invariant identified"
-      ],
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
       "summary": "Independent heuristic evaluation for '3.1 データ構造'."
     },
     {
@@ -4691,16 +4643,12 @@
       "file_path": "components/tier1_interface/ipc_router.md",
       "heading": "ロール間通信許可マトリクス (FB_CONF_ROUTER_ROLE_MATRIX)",
       "tier": 1,
-      "complexity_score": 4,
-      "risk_score": 4,
-      "formal_needed": true,
-      "recommended_verification": "pyModelChecking",
-      "suggested_tags": [
-        "{VERIFY_FORMAL}"
-      ],
-      "risk_factors": [
-        "Stateful concurrent protocol or hardware safety invariant identified"
-      ],
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
       "summary": "Independent heuristic evaluation for 'ロール間通信許可マトリクス (FB_CONF_ROUTER_ROLE_MATRIX)'."
     },
     {
@@ -5455,16 +5403,12 @@
       "file_path": "components/tier1_core/os_coos.md",
       "heading": "6.2 直交表: CSP通信と状態遷移",
       "tier": 1,
-      "complexity_score": 4,
-      "risk_score": 4,
-      "formal_needed": true,
-      "recommended_verification": "pyModelChecking",
-      "suggested_tags": [
-        "{VERIFY_FORMAL}"
-      ],
-      "risk_factors": [
-        "Stateful concurrent protocol or hardware safety invariant identified"
-      ],
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
       "summary": "Independent heuristic evaluation for '6.2 直交表: CSP通信と状態遷移'."
     },
     {

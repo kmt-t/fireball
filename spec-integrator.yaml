@@ -54,6 +54,14 @@ wit_verification:
   wit_dir_name: "wit"
   tag: "{VERIFY_WIT}"
 
+evidence:
+  # reports/doc_report.md is gitignored: the pipeline generates it as its own
+  # LAST step, so on a fresh checkout it legitimately does not exist yet.
+  # backlog_list.md / roadmap_phase.md point readers at it as "where the
+  # latest results will be", not as a claim that it already exists.
+  ignore_artifact_refs:
+    - "reports/doc_report.md"
+
 llm_judge:
   tag: "{VERIFY_LLM}"
   default_backend: "sakura"

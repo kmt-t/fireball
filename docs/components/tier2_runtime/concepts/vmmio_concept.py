@@ -2,9 +2,9 @@
 docs/components/tier2_runtime/concepts/vmmio_concept.py
 Reference Concept Implementation: vMMIO FlatMap Page Table & Direct-Mapped TLB
 - RAM Bypass Flag (Bit 31): O(1) linear-RAM fast path, no table lookup
-- FlatMap PTE storage: maps VPN -> PTE
-- Direct-mapped Software TLB[16] keyed by ((VPN ^ VPN>>16) & 15): the FC is
-  folded in to avoid slot collision across different Function Codes
+- FlatMap PTE storage: maps 20-bit VPN -> PTE
+- Direct-mapped Software TLB[16] keyed by Folding XOR Hash over 20-bit VPN:
+  diffuses all 20 bits (including Function Code) into a 4-bit slot index (0..15)
 - Tier 1 linear RAM: Bit31 bypass PLUS a power-of-two mask bound check
 - PTE permission check (VALID/READ/WRITE/EXEC + Owner ID) on every access,
   including on TLB hit — the TLB only skips the table lookup, never the check
@@ -31,7 +31,7 @@ FB_TASK_ID_FLIGHT = 0xFF
 
 
 class VmmioAddress:
-    """Decodes a 32-bit guest address into its fields. See runtime_vmmio.md §3.3."""
+    """Decodes a 32-bit guest address into fields. See runtime_vmmio.md §3.3."""
 
     def __init__(self, raw: int):
         self.raw = raw & 0xFFFF_FFFF
@@ -43,25 +43,19 @@ class VmmioAddress:
     def fc(self) -> int:
         return (self.raw >> 28) & 0xF
 
-    def l3_metadata(self) -> int:
-        return (self.raw >> 16) & 0xFFF
+    def vpn(self) -> int:
+        # 20-bit Virtual Page Number (VPN)
+        return self.raw >> 12
 
     def offset(self) -> int:
         return self.raw & 0xFFF
 
-    def vpn(self) -> int:
-        return self.raw >> 12
-
-    def page_bits_30_12(self) -> int:
-        """Extracts bits [30:12] (19 bits) used for TLB hashing."""
-        return (self.raw >> 12) & 0x7FFFF
-
 
 class StaticDevicePTE:
-    """FC=12 (Static Device). Syscall ID is carried in the address itself
-    (l3_metadata), not the PTE — the PTE only holds the permission/type flags.
-    """
-    def __init__(self, read: bool = True, write: bool = True, cacheable: bool = False):
+    """FC=12 (Static Device). Holds permission flags and optional handler."""
+    def __init__(self, handler: Callable[[int, bool], None] | None = None,
+                 read: bool = True, write: bool = True, cacheable: bool = False):
+        self.handler = handler
         self.read = read
         self.write = write
         self.cacheable = cacheable
@@ -71,8 +65,8 @@ class Tier3PTE:
     """FC=14/15 (SHM / PASSTHROUGH). 32-bit layout, no bit overlap:
     [31:12] PPN(20) | [11] VALID | [10] READ | [9] WRITE | [8] EXEC | [7:0] Owner ID
     """
-    def __init__(self, phys_page: int, valid: bool, read: bool, write: bool,
-                 exec_: bool, owner_id: int = FB_TASK_ID_INVALID):
+    def __init__(self, phys_page: int, valid: bool = True, read: bool = True,
+                 write: bool = True, exec_: bool = False, owner_id: int = FB_TASK_ID_INVALID):
         self.phys_page = phys_page
         self.valid = valid
         self.read = read
@@ -94,39 +88,34 @@ class VMMIOController:
         self.guest_ram_size = guest_ram_size
         self.guest_ram_mask = ~(guest_ram_size - 1) & 0xFFFF_FFFF
 
-        # FlatMap PTE storage: vpn -> PTE
+        # FlatMap PTE storage: vpn (20-bit) -> PTE
         self.ptes: dict[int, object] = {}
 
-        # Direct-mapped TLB: 16 slots, keyed by hash of address bits [30:12].
+        # Direct-mapped TLB: 16 slots, keyed by 4-bit Folding XOR Hash over 20-bit VPN.
         self.tlb: list[dict] = [{"vpn": 0xFFFF_FFFF, "pte": None} for _ in range(16)]
         self.tlb_hits = 0
         self.tlb_misses = 0
 
-        # Registered syscall dispatch handlers, keyed by (fc, l3_metadata).
-        self.syscall_handlers: dict[tuple[int, int], Callable[[int, bool], None]] = {}
-
     # --- Static & Dynamic PTE Registration (FlatMap) ---
 
-    def _page_vpn(self, fc: int, page_idx: int, l3_metadata: int = 0) -> int:
-        return (0x8000_0000 | (fc << 28) | ((l3_metadata & 0xFFF) << 16) | (page_idx << 12)) >> 12
-
-    def map_static_device(self, page_idx: int, l3_metadata: int,
-                          handler: Callable[[int, bool], None],
+    def map_static_device(self, vpn: int,
+                          handler: Callable[[int, bool], None] | None = None,
                           read: bool = True, write: bool = True):
         """Registers a Tier 2 static device page (FC=12) into FlatMap."""
-        vpn = self._page_vpn(FC_STATIC_DEVICE, page_idx, l3_metadata=l3_metadata)
-        self.ptes[vpn] = StaticDevicePTE(read=read, write=write)
-        self.syscall_handlers[(FC_STATIC_DEVICE, l3_metadata)] = handler
+        self.ptes[vpn] = StaticDevicePTE(handler=handler, read=read, write=write)
 
-    def map_shm_page(self, page_idx: int, phys_page: int, owner_id: int):
+    def map_shm_page(self, vpn: int, phys_page: int, owner_id: int):
         """Registers a Tier 3 SHM page (FC=14) into FlatMap."""
-        vpn = self._page_vpn(FC_SHM, page_idx)
-        self.ptes[vpn] = Tier3PTE(phys_page, valid=True, read=True, write=True,
-                                  exec_=False, owner_id=owner_id)
+        self.ptes[vpn] = Tier3PTE(phys_page=phys_page, valid=True, read=True,
+                                  write=True, exec_=False, owner_id=owner_id)
 
-    def revoke_shm_owner(self, page_idx: int):
+    def map_passthrough_page(self, vpn: int, phys_page: int, read: bool = True, write: bool = True):
+        """Registers a Tier 3 Passthrough page (FC=15) into FlatMap."""
+        self.ptes[vpn] = Tier3PTE(phys_page=phys_page, valid=True, read=read,
+                                  write=write, exec_=True, owner_id=0)
+
+    def revoke_shm_owner(self, vpn: int):
         """IPC Router Revoke phase: mark the page in-flight and invalidate its TLB entry."""
-        vpn = self._page_vpn(FC_SHM, page_idx)
         pte = self.ptes.get(vpn)
         if pte is not None and isinstance(pte, Tier3PTE):
             pte.owner_id = FB_TASK_ID_FLIGHT
@@ -138,9 +127,10 @@ class VMMIOController:
 
     @staticmethod
     def tlb_index(vpn: int) -> int:
-        """Direct-mapped TLB hash over address bits [30:12] (19 bits)."""
-        page_bits = vpn & 0x7FFFF  # Address bits [30:12]
-        return (page_bits ^ (page_bits >> 16)) & 15
+        """4-bit Folding XOR Hash over 20-bit VPN.
+        Diffuses all 20 bits of the VPN (FC, Page, Subfields) into a 4-bit TLB slot (0..15).
+        """
+        return (vpn ^ (vpn >> 4) ^ (vpn >> 8) ^ (vpn >> 12) ^ (vpn >> 16)) & 15
 
     def _lookup_pte(self, addr: VmmioAddress):
         """Returns the PTE from TLB (O(1)) or falls back to FlatMap."""
@@ -153,7 +143,7 @@ class VMMIOController:
             return slot["pte"]
 
         self.tlb_misses += 1
-        # FlatMap lookup (no 16-entry limit)
+        # FlatMap lookup
         pte = self.ptes.get(vpn)
         if pte is None:
             return None  # UNREGISTERED_PAGE or UNDEFINED_FC
@@ -193,10 +183,8 @@ class VMMIOController:
                 return (TrapCode.ACCESS_VIOLATION, "static device: write not permitted")
             if not is_write and not pte.read:
                 return (TrapCode.ACCESS_VIOLATION, "static device: read not permitted")
-            handler = self.syscall_handlers.get((addr.fc(), addr.l3_metadata()))
-            if handler is None:
-                return (TrapCode.UNREGISTERED_PAGE, "no syscall handler for this metadata")
-            handler(addr.offset(), is_write)
+            if pte.handler is not None:
+                pte.handler(addr.offset(), is_write)
             return ("OK_SYSCALL", "dispatched to static device handler")
 
         # Tier3PTE (SHM / PASSTHROUGH)
@@ -232,10 +220,10 @@ def test_ram_bypass_never_touches_page_table():
 def test_static_device_syscall_dispatch():
     ctrl = VMMIOController()
     dispatched = []
-    ctrl.map_static_device(page_idx=0, l3_metadata=0x000,
+    ctrl.map_static_device(vpn=0xC0000,
                            handler=lambda off, w: dispatched.append((off, w)))
 
-    addr = 0x8000_0000 | (FC_STATIC_DEVICE << 28) | (0 << 12) | 0x004
+    addr = 0xC000_0004
     status, _ = ctrl.access(addr, is_write=True)
     assert status == "OK_SYSCALL"
     assert dispatched == [(0x004, True)]
@@ -243,8 +231,8 @@ def test_static_device_syscall_dispatch():
 
 def test_tlb_hit_after_first_walk():
     ctrl = VMMIOController()
-    ctrl.map_static_device(page_idx=1, l3_metadata=0x001, handler=lambda o, w: None)
-    addr = 0x8000_0000 | (FC_STATIC_DEVICE << 28) | (0x001 << 16) | (1 << 12)
+    ctrl.map_static_device(vpn=0xC0001, handler=lambda o, w: None)
+    addr = 0xC000_1000
 
     status1, _ = ctrl.access(addr, is_write=False)
     assert status1 == "OK_SYSCALL"
@@ -263,8 +251,8 @@ def test_undefined_fc_traps():
 
 def test_shm_owner_isolation():
     ctrl = VMMIOController()
-    ctrl.map_shm_page(page_idx=2, phys_page=0x1234, owner_id=7)
-    addr = 0x8000_0000 | (FC_SHM << 28) | (2 << 12)
+    ctrl.map_shm_page(vpn=0xE0002, phys_page=0x1234, owner_id=7)
+    addr = 0xE000_2000
 
     # Owning task may access.
     status, _ = ctrl.access(addr, is_write=True, current_task_id=7)
@@ -277,13 +265,13 @@ def test_shm_owner_isolation():
 
 def test_revoke_invalidates_tlb_and_blocks_access_during_flight():
     ctrl = VMMIOController()
-    ctrl.map_shm_page(page_idx=3, phys_page=0x5678, owner_id=1)
-    addr = 0x8000_0000 | (FC_SHM << 28) | (3 << 12)
+    ctrl.map_shm_page(vpn=0xE0003, phys_page=0x5678, owner_id=1)
+    addr = 0xE000_3000
 
     ctrl.access(addr, is_write=False, current_task_id=1)  # warms the TLB
     assert ctrl.tlb_hits == 0 and ctrl.tlb_misses == 1
 
-    ctrl.revoke_shm_owner(page_idx=3)
+    ctrl.revoke_shm_owner(vpn=0xE0003)
 
     # In-flight: neither the old owner nor anyone else may access it.
     status, _ = ctrl.access(addr, is_write=False, current_task_id=1)
@@ -309,20 +297,20 @@ def test_linear_ram_is_bounds_checked_not_waved_through():
 def test_tlb_index_separates_function_codes():
     """FC=12 page 3 and FC=14 page 3 must not share a TLB slot."""
     idx = VMMIOController.tlb_index
-    a = idx((0x8000_0000 | (FC_STATIC_DEVICE << 28) | (3 << 12)) >> 12)
-    b = idx((0x8000_0000 | (FC_SHM << 28) | (3 << 12)) >> 12)
-    c = idx((0x8000_0000 | (FC_PASSTHROUGH << 28) | (3 << 12)) >> 12)
+    a = idx(0xC0003)
+    b = idx(0xE0003)
+    c = idx(0xF0003)
     assert len({a, b, c}) == 3, f"FCs collide: {a}, {b}, {c}"
 
 
 def test_interleaved_syscall_and_shm_keep_hitting_the_tlb():
     """The IPC pattern (syscall to IPCR, then touch SHM) must not thrash."""
     ctrl = VMMIOController()
-    ctrl.map_static_device(page_idx=3, l3_metadata=0x003, handler=lambda o, w: None)
-    ctrl.map_shm_page(page_idx=3, phys_page=0x900, owner_id=1)
+    ctrl.map_static_device(vpn=0xC0003, handler=lambda o, w: None)
+    ctrl.map_shm_page(vpn=0xE0003, phys_page=0x900, owner_id=1)
 
-    sysc = 0x8000_0000 | (FC_STATIC_DEVICE << 28) | (0x003 << 16) | (3 << 12)
-    shm = 0x8000_0000 | (FC_SHM << 28) | (3 << 12)
+    sysc = 0xC000_3000
+    shm = 0xE000_3000
     for _ in range(10):
         ctrl.access(sysc, is_write=True)
         ctrl.access(shm, is_write=True, current_task_id=1)
@@ -337,26 +325,26 @@ def test_flatmap_pte_registration_and_tlb_caching():
     ctrl = VMMIOController()
     # Register 32 distinct SHM pages
     for p in range(32):
-        ctrl.map_shm_page(page_idx=p, phys_page=0x1000 + p, owner_id=42)
+        ctrl.map_shm_page(vpn=0xE0000 + p, phys_page=0x1000 + p, owner_id=42)
 
     assert len(ctrl.ptes) == 32, "all 32 pages must be stored in FlatMap"
 
     # Access all 32 pages
     for p in range(32):
-        addr = 0x8000_0000 | (FC_SHM << 28) | (p << 12) | 0x10
+        addr = 0xE000_0000 | (p << 12) | 0x10
         st, msg = ctrl.access(addr, is_write=False, current_task_id=42)
         assert st == "OK_PHYSICAL"
         assert f"0x{0x1000010 + (p << 12):08x}" in msg or f"0x{(0x1000 + p) << 12 | 0x10:08x}" in msg
 
     # Repeated access to a hot working set of 8 pages achieves 100% TLB hits
     for p in range(8):
-        addr = 0x8000_0000 | (FC_SHM << 28) | (p << 12)
+        addr = 0xE000_0000 | (p << 12)
         ctrl.access(addr, is_write=False, current_task_id=42)
 
     before_hits = ctrl.tlb_hits
     for _ in range(10):
         for p in range(8):
-            addr = 0x8000_0000 | (FC_SHM << 28) | (p << 12)
+            addr = 0xE000_0000 | (p << 12)
             st, _ = ctrl.access(addr, is_write=False, current_task_id=42)
             assert st == "OK_PHYSICAL"
 

@@ -21,13 +21,13 @@ FlatMap 単体での探索は $O(\log N)$（またはハッシュ探索）とな
    - 動的 SHM ページや物理パススルーページをフラットに登録・管理できる。
 3. **ダイレクトマップ方式ソフトウェアTLB（完全O(1)キャッシュ）**:
    ホットパス高速化のため、一発でインデックスが決まるダイレクトマッピング（ハッシュ方式、16エントリ固定サイズ）を採用する。
-   - アドレスの 30-12 ビット（19-bit: `page_bits = (raw >> 12) & 0x7FFFF`）から、ハッシュ値 `tlb_idx = (page_bits ^ (page_bits >> 16)) & 15` を算出し、TLBに一撃でアクセスする。ヒット時は権限チェックを通過した後に即時実行する。 `{META_RestrictedPhysicalAccess}`
-   - **FC の折り込み**: `page_bits` の下位 4 ビットはページインデックス[15:12]であり、`page_bits >> 16` の下位 3 ビットが FC[30:28] であるため、XOR で折り込むことで同一ページ番号を持つ異なる FC 間（FC=12 と FC=14 など）のスロット衝突を回避する。
+   - 仮想ページ番号（20-bit: `vpn = raw >> 12`）の全ビットを 4-bit（16スロット）に均等拡散する Folding XOR Hash `tlb_idx = (vpn ^ (vpn >> 4) ^ (vpn >> 8) ^ (vpn >> 12) ^ (vpn >> 16)) & 15` を算出し、TLBに一撃でアクセスする。ヒット時は権限チェックを通過した後に即時実行する。 `{META_RestrictedPhysicalAccess}`
+   - **全ビット拡散**: FC[31:28] や中間ページ番号ビット、下位ページ番号ビットのすべてが 4-bit 幅で折り畳まれるため、FC 間やページ番号の変動に対して TLB スロットが均等に分散する。
 
 セキュリティモデルは**PTEに埋め込まれた権限フィールドが唯一のゲート**である。アクセス権限は PTE に保持され、ルックアップと権限チェックを1パスで完結させる。アクセス特性に応じてセキュリティゲートを以下の3層に階層化する。 `{META_RestrictedPhysicalAccess}`
 
 1. **Tier 1 (ゲストRAM)**: ゲスト専用RAM領域（Bit 31 == 0）。コンパイル時または実行時の 64KB マスクおよび部分ページ境界チェック（`FastAddressCheck`）のみで高速処理。
-2. **Tier 2 (静的vMMIO, FC=12)**: コンパイル時にアドレスが確定するコアデバイス（SYSCTL, IPCR, VDMA等）。アドレス `0xC000_0000` は FC=12 に位置する。JIT生成時に許可チェックを行い、許可済みならネイティブコードに直接デバイスキー（Syscall ID を含む）を埋め込む。
+2. **Tier 2 (静的vMMIO, FC=12)**: コンパイル時にアドレスが確定するコアデバイス（SYSCTL, IPCR, VDMA等）。アドレス `0xC000_0000` は FC=12 に位置する。JIT生成時に許可チェックを行い、許可済みならネイティブコードに直接デバイスキーを埋め込む。
 3. **Tier 3 (動的vMMIO, FC=14-15)**: SHM（FC=14, `0xE000_0000`）、PASSTHROUGH（FC=15, `0xF000_0000`）領域のアクセス。TLB または FlatMap を経由して PTE を解決し、エントリの権限フィールドで可否を判定する。
 
 IPC経由のデータ交換は行わない — GPIOのようなsub-µs応答が必要な周辺機器はIPCレイテンシに耐えられないため、このダイレクトアクセスモデルが採用されている。 `{Fast_Path_GPIO}`
@@ -58,9 +58,9 @@ IPC経由のデータ交換は行わない — GPIOのようなsub-µs応答が�
 graph TD
     subgraph vMMIO_Layer
         Filter["MSB Address Filter<br/>Bit 31 == 0 vs 1"]
-        Decoder["Address Decoder<br/>FC(31:28) + L3/Sys(27:16) + Page(15:12) + Offset(11:0)"]
+        Decoder["Address Decoder<br/>FC(31:28) + VPN(31:12) + Offset(11:0)"]
         FlatMap["vmmio_ptes (FlatMap)<br/>Key: VPN -> Value: PTE"]
-        TLB["Direct-Mapped TLB (16)<br/>Index = (Addr[30:12] ^ (Addr[30:12]>>16)) & 15"]
+        TLB["Direct-Mapped TLB (16)<br/>Index = Hash(VPN) & 15"]
         Controller["VmmioController"]
     end
 
@@ -87,16 +87,15 @@ vMMIO
 | 項目名 | 機能と役割 | 備考（制約、型など） |
 | :--- | :--- | :--- |
 | RAM Bypass Flag | Bit 31 が 0 のときはゲストRAMアクセス（Tier 1）とし、vMMIOを高速バイパス。 | ビット[31]（1 bit） |
-| Function Code | vMMIO 領域時の機能種別（FC）。 | ビット[31:28]（4 bits）、16種別 |
-| L3 Sub / Metadata | 静的デバイスでは Syscall ID やデバイスタイプ、それ以外では共有メモリ等の補足キーを保持。 | ビット[27:16]（12 bits） |
-| Page Index | ページインデックス（4KB単位）。FlatMap 内で VPN の一部として識別。 | ビット[15:12] |
+| Function Code | vMMIO 領域時の機能種別（FC）。`vpn >> 16` でも抽出可能。 | ビット[31:28]（4 bits）、16種別 |
+| VPN (Virtual Page Number) | 仮想ページ番号。FlatMap のキーおよび TLB のマッチタグ。 | ビット[31:12]（20 bits: `raw >> 12`） |
 | Offset | 4KBページ内でのバイトオフセット。PTE 解決後に相対アドレスとして使用。 | ビット[11:0]（12 bits）、4KB |
 
 **アドレスデコード + PTE アクセス擬似コード例**:
 ```python
 class VmmioAddress:
     def __init__(self, raw: int):
-        self.raw = raw
+        self.raw = raw & 0xFFFFFFFF
         
     def is_linear(self) -> bool:
         # 最上位ビット(Bit 31)が0ならゲストRAM
@@ -106,26 +105,18 @@ class VmmioAddress:
         # Function Code: [31:28]
         return (self.raw >> 28) & 0xF
         
-    def l3_metadata(self) -> int:
-        # L3 Sub / Metadata: [27:16]
-        return (self.raw >> 16) & 0xFFF
-        
     def offset(self) -> int:
         # Offset: [11:0]
         return self.raw & 0xFFF
         
     def vpn(self) -> int:
-        # Virtual Page Number (VPN) for TLB and FlatMap Key
+        # 20-bit Virtual Page Number (VPN) for TLB and FlatMap Key
         return self.raw >> 12
-
-    def page_bits_30_12(self) -> int:
-        # アドレス 30-12 ビット (19 bits)
-        return (self.raw >> 12) & 0x7FFFF
 
 def lookup_tlb(addr: VmmioAddress) -> int:
     vpn = addr.vpn()
-    page_bits = addr.page_bits_30_12()
-    tlb_idx = (page_bits ^ (page_bits >> 16)) & 15  # アドレス[30:12]のハッシュ (FC折り込み)
+    # 20-bit VPN の Folding XOR Hash（全ビットを4ビット幅に拡散）
+    tlb_idx = (vpn ^ (vpn >> 4) ^ (vpn >> 8) ^ (vpn >> 12) ^ (vpn >> 16)) & 15
     
     if vmmio_tlb_cache[tlb_idx]['vpn'] == vpn:
         return vmmio_tlb_cache[tlb_idx]['pte']  # TLB Hit!
@@ -199,7 +190,7 @@ def access_vmmio(addr: VmmioAddress, is_write: bool):
 
 #### 静的デバイスページテーブルエントリ (vmmio_pte_static)
 <!-- traceability: {META_Static_Resolution} -->
-Static Devices (Tier 2) 向け。Syscall ID はアドレス [27:16] (L3 Metadata) から抽出するため、PTE には Device Type やフラグのみを保持。Static Devices は常にシステムコール経由であり、Type フラグは FC に応じた値を持つ（FC=12 では 0）。
+Static Devices (Tier 2) 向け。PTE には Device Type やパーミッションフラグ、ハンドラ情報を保持する。
 
 ```
 32-bit Static Device PTE:
@@ -263,7 +254,7 @@ sequenceDiagram
                 C-->>G: Trap (Unregistered Page / Undefined FC)
             end
             F-->>C: resolved PTE
-            C->>T: Refill entry at ((vpn & 0x7FFFF) XOR ((vpn & 0x7FFFF)>>16)) AND 15
+            C->>T: Refill entry at Hash(vpn) & 15
         end
 
         C->>C: perm_check(PTE, is_write)
@@ -385,7 +376,7 @@ Tier 3 アクセス（FC=14/15）において毎回 FlatMap の二分探索を�
 
 - **キャッシュ構造**: ダイレクトマップ構造（Direct-Mapped Hashed Structure）
   - キー（VPN）: `raw >> 12`（20-bit）
-  - HASH / インデックス計算: アドレスの 30-12 ビット（19-bit: `page_bits = (raw >> 12) & 0x7FFFF`）のハッシュ `tlb_idx = (page_bits ^ (page_bits >> 16)) & 15` (16エントリサイズ、FC[30:28] を折り込み FC 間衝突を回避)
+  - HASH / インデックス計算: 20-bit VPN の Folding XOR Hash `tlb_idx = (vpn ^ (vpn >> 4) ^ (vpn >> 8) ^ (vpn >> 12) ^ (vpn >> 16)) & 15` (16エントリサイズ、全20ビットを拡散)
   - 値 (Value): 32-bit PTE エントリ
   
 - **キャッシュ更新 & 押し出し (Eviction & Refill)**:

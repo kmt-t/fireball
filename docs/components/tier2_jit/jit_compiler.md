@@ -13,7 +13,7 @@ JIT Compiler は、WASMバイトコードを実行時にネイティブコード
 ### 3.1 データ構造
 <!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} {SimpleJITArchitecture} -->
 - **JITキャッシュ**: ネイティブコードを保持するマルチバッファ (デフォルト 3面: 2KB x 3 = 6144 Bytes `FB_CONF_JIT_CACHE_SIZE`)。Copy-GC方式により、フラグメンテーションを回避しつつ効率的にメモリを再利用する。 `{JIT_MultiBuffer_Cache}`
-- **最古バッファ限定 Promote ポリシー (Oldest-Only Promotion)**: 中間バッファでは無償観測期間 (Observation Window) としてコードをコピーせず保持し、破棄直前の**最古バッファ (Oldest Buffer)** に到達した時点で実行カウンタが閾値に達している Hot コードのみを新 Active バッファへ Promote 昇格させる。これにより無駄な昇格コピーを排除し、高いJITヒット率の維持を目指す [目標値: 95%以上]。 `{JIT_OldestOnly_Promote}`
+- **最古バッファ限定 Promote ポリシー (Oldest-Only Promotion)**: 中間バッファでは無償観測期間 (Observation Window) としてコードをコピーせず保持し、破棄直前の**最古バッファ (Oldest Buffer)** に到達した時点でなおヒットし続けている Hot コードのみを新 Active バッファへ Promote 昇格させる（純粋な 2-bit 状態機械であり、実行カウンタや閾値は持たない）。これにより無駄な昇格コピーを排除し、高いJITヒット率の維持を目指す [目標値: 95%以上]。 `{JIT_OldestOnly_Promote}`
 - **JITエントリテーブル**: WASM PCとキャッシュ内のコードオフセットを紐付ける管理テーブル。**カードマーキング**と二分探索を組み合わせ、高速な検索を実現する。 `{SimpleJITArchitecture}`
 - **カードグループインデックス**: 複数のカードをグループ化して管理するインデックステーブル。検索範囲の絞り込みに使用する。高速化のため、カード数およびグループサイズは2のべき乗（シフト量）で管理される。
 - **ホットスポット・ビットマップ**: **カード単位**で実行頻度とコンパイル状態を管理する。

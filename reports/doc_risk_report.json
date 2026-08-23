@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-23T14:42:51.210467+00:00",
+  "generated_at": "2026-08-23T15:17:28.650786+00:00",
   "backend": "heuristic",
   "total_evaluated": 678,
   "formal_candidates_count": 43,
@@ -22,7 +22,7 @@
     "components/tier1_interface/system_service.md": "7c98009196d56c50c4d1d27269f38eb51d4fe1fa654aedb51dba7c496cd5fe62",
     "components/tier2_jit/concepts/README.md": "a920cd8efeee0bef6ef33cab88074c61a30e57fdf2df9c7d3ad4d7e356272660",
     "components/tier2_jit/jit_assembler_constexpr.md": "4798eb6d2692ae574c45917a0597feb16e1ffa3ec9d9771566a6523607f7c7d5",
-    "components/tier2_jit/jit_compiler.md": "c66331f51f672d9dec1cb34655be1eb7b314393fb424e428836fa2f8ac5b1172",
+    "components/tier2_jit/jit_compiler.md": "a70e946f804f8b357aa8bedb702a912311dfd872f6df316a033267f3ea16c368",
     "components/tier2_jit/jit_engine_copy_patch.md": "a6c7d874f991562322257600b358494d1bd0e604e0f2da52b63a8b9a2ef17d85",
     "components/tier2_jit/jit_runtime_entry.md": "ac17ee532a11b108521ece54ac63fdfd956484e534ed5f607993764c6bae2718",
     "components/tier2_jit/jit_runtime_hotspot.md": "56a3a5466ea0ab7752210b2b8a58f8ed577a67b58c20e49dd8ff936bb9951c51",

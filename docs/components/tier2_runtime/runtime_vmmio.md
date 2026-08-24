@@ -6,7 +6,9 @@ vMMIO (Virtual Memory-Mapped I/O) は、WASMゲストとホスト間の**すべ�
 
 WASM ゲストのリニアメモリは、WebAssembly 標準仕様に準拠して **64KB ページ単位 (65,536 bytes)** を基本とする。ただし、RAM < 64KB の極小組込み環境（Cortex-M 等）に適合するため、物理実装としては **64KB に満たない部分ページ（Sub-64KB / Partial Page: 例 8KB, 16KB）** の割り当てを許容し、境界超過アクセスを即座にトラップする設計をとる。一方、ホスト/デバイス側の vMMIO 領域は **1ページ（4KB）** 単位で管理される。 `{META_RestrictedPhysicalAccess}` `{vMMIO_TrapAndEmulate}` `{PhysicalPassthrough}` `{DynamicMmap}` `{UnifiedAccessModel}`
 
-本アーキテクチャでは、PTE（Page Table Entry）の保存にシステム全体の設計規約（`{META_FlatMapIndexed}`）に準拠した **FlatMap（`std::flat_map` / 静的ソート済み配列）** を採用し、仮想ページ番号（VPN）から PTE へのマッピングをフラットに保持・管理する。
+本アーキテクチャでは、PTE（Page Table Entry）の保存にシステム全体の設計規約（`{META_FlatMapIndexed}`）に準拠した **静的ソート済み配列と、それを引く `fireball::flat_map_view`** を採用し、仮想ページ番号（VPN）から PTE へのマッピングをフラットに保持・管理する。
+
+標準の `std::flat_map` を素のまま用いない理由: C++23 の `std::flat_map` はコンテナアダプタであり、既定の下位コンテナが `std::vector` であるため、そのままでは `{META_NoStdVector}` および `{GLOBAL_Policy_Memory}`（`malloc`/`new` の使用禁止）に抵触する。本プロジェクトは表の実体を静的配列として各コンポーネントが所有し、`fireball::flat_map_view` で引く（[静的コンテナ語彙](../tier1_core/system_containers.md) を正本とする）。 `{META_NoStdVector}` `{GLOBAL_Policy_Memory}`
 
 FlatMap 単体での探索は $O(\log N)$（またはハッシュ探索）となるが、本アーキテクチャでは手前に **「ダイレクトマップ方式のソフトウェアTLB（16エントリ、完全 $O(1)$ キャッシュ）」** を配置する。JIT 実行やホットな共有メモリ操作などのクリティカルパスでは、大半のアクセス（目標 90% 以上）が TLB キャッシュヒット（$O(1)$）で高速解決されるため、FlatMap 化に伴うテーブル探索の遅延は十分に吸収・容認される。
 
@@ -45,7 +47,7 @@ IPC経由のデータ交換は行わない — GPIOのようなsub-µs応答が�
 | 配置 | 構造体 | 概要 |
 | :--- | :--- | :--- |
 | ROM | `vmmio_address` | アドレスビットフィールド定義（C++23 ヘルパー構造体、実体なし） |
-| ROM/RAM | `vmmio_ptes` | 仮想ページ番号 (VPN) → 32bit PTE の FlatMap（`std::flat_map<uint32_t, uint32_t>`） |
+| ROM/RAM | `vmmio_ptes` | 仮想ページ番号 (VPN) → 32bit PTE の FlatMap（`fireball::flat_map_view<uint32_t, uint32_t>`） |
 | RAM | ソフトウェアTLB配列 | `vmmio_tlb_cache[16]` 16エントリのダイレクトマップ型高速TLBキャッシュ配列 |
 
 - **`VmmioController`**: アドレス境界デコード、FlatMap PTE ルックアップ、TLBキャッシュ管理、動的マッピング管理を担う主要クラス。
@@ -189,7 +191,7 @@ def access_vmmio(addr: VmmioAddress, is_write: bool):
 
 | 項目名 | 機能と役割 | 備考（制約、型など） |
 | :--- | :--- | :--- |
-| FlatMap ページテーブル | 仮想ページ番号 (VPN) → 32bit PTE のマッピング。 | `vmmio_ptes`（`std::flat_map<uint32_t, uint32_t>`） |
+| FlatMap ページテーブル | 仮想ページ番号 (VPN) → 32bit PTE のマッピング。 | `vmmio_ptes`（`fireball::flat_map_view<uint32_t, uint32_t>`） |
 | ソフトウェアTLB（グローバル） | 仮想ページ番号 (VPN) → PTE マッピングをダイレクトマップハッシュでキャッシュ。ホットパスを完全 O(1) に高速化する。 | `vmmio_tlb_cache[16]`（固定16エントリ、ハッシュ結合） |
 
 #### 静的デバイスページテーブルエントリ (vmmio_pte_static)
@@ -212,11 +214,12 @@ Static Devices (Tier 2) 向け。PTE には Device Type やパーミッション
 
 #### FlatMap ページテーブル定義
 <!-- traceability: {META_FlatMapIndexed} {vMMIO_Isolation} -->
-システム全体の共通ポリシー（`{META_FlatMapIndexed}`）に準拠し、PTE の保存には `std::flat_map<uint32_t, uint32_t>`（キー: VPN = `raw >> 12`、値: 32bit PTE）を採用する。 `{vMMIO_Isolation}`
+システム全体の共通ポリシー（`{META_FlatMapIndexed}`）に準拠し、PTE の保存には `fireball::flat_map_view<uint32_t, uint32_t>`（キー: VPN = `raw >> 12`、値: 32bit PTE）を採用する。 `{vMMIO_Isolation}`
 
 ```cpp
 // FlatMap ページテーブル定義 (C++23)
-using VmmioPteMap = std::flat_map<uint32_t, uint32_t>;
+using VmmioPteStore = std::array<uint32_t, FB_CONF_VMMIO_MAX_PTES>;  // 実体 (静的確保)
+using VmmioPteView  = fireball::flat_map_view<uint32_t, uint32_t>;        // 参照用ビュー
 VmmioPteMap vmmio_ptes; // VPN -> PTE
 ```
 
@@ -436,7 +439,7 @@ Tier 3 アクセス（FC=14/15）において毎回 FlatMap の二分探索を�
 ### 6.2 メモリ制約と方策
 <!-- traceability: {META_ConfigurableSystem} {META_FlatMapIndexed} -->
 - **目標**: マップ管理用のメモリを最小化する。
-- **方策**: `{META_ConfigurableSystem}` `{META_FlatMapIndexed}` `std::flat_map<uint32_t, uint32_t>`（または静的ソート済み配列）によるフラットな PTE 管理に集約し、登録されたページ数に応じた最小限のメモリフットプリントを実現する。
+- **方策**: `{META_ConfigurableSystem}` `{META_FlatMapIndexed}` `fireball::flat_map_view<uint32_t, uint32_t>`（静的ソート済み配列）によるフラットな PTE 管理に集約し、登録されたページ数に応じた最小限のメモリフットプリントを実現する。
 
 ### 6.3 安全性制約と方策
 <!-- traceability: {META_RestrictedPhysicalAccess} {OwnershipTransfer} -->

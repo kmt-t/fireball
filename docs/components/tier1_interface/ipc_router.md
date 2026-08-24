@@ -12,7 +12,7 @@ IPCルータは、URIベースのサービスディスカバリとロールベ�
 
 ### 3.1 データ構造
 <!-- traceability: {IPCRegistry} {META_FlatMapIndexed} {RoleBasedAccessControl} -->
-- **レジストリエントリ**: 登録されたサービスのURI、ロール、チャンネルIDを保持する。内部的には、動的メモリ確保を排除した静的バッファ上の二分探索による固定長コンテナである `fireball::static_flat_map<std::string_view, registry_entry, 16>` を用い、高速なディスパッチを実現する。 `{IPCRegistry}` `{META_FlatMapIndexed}`
+- **レジストリエントリ**: 登録されたサービスのURI、ロール、チャンネルIDを保持する。内部的には、ROM 上の `constexpr` ソート済み配列（`FB_CONF_ROUTER_MAX_SERVICES` 件）に対する `fireball::flat_map_view<std::string_view, registry_entry>` を用い、高速なディスパッチを実現する。 `{IPCRegistry}` `{META_FlatMapIndexed}`
 - **ロールマトリックス**: コンパイル時に定義された、ロール間の通信許可を判定するマトリックス。 `{RoleBasedAccessControl}`
 
 ### 3.2 内部ブロック図
@@ -77,11 +77,11 @@ IPC通信の最小単位。1つのメッセージで8個のペアを送信でき
 
 #### IPCメッセージ（message）
 <!-- traceability: {TypeSafeMessaging} {META_FlatMapIndexed} -->
-Key-Valueペアを複数集約した通信の基本単位。内部的に、動的メモリ確保を一切伴わない静的バッファ上の二分探索による固定長辞書構造（`fireball::static_flat_map` 相当）を採用し、メッセージ内のキー検索を $O(\log N)$ で行う。 `{TypeSafeMessaging}` `{META_FlatMapIndexed}`
+Key-Valueペアを複数集約した通信の基本単位。内部的に、動的メモリ確保を一切伴わない静的バッファ上のソート済み配列と `fireball::flat_map_view` による二分探索を採用し、メッセージ内のキー検索を $O(\log N)$ で行う。 `{TypeSafeMessaging}` `{META_FlatMapIndexed}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| KVマップ | メッセージ内容を構成するKey-Valueペアの集合 | `fireball::static_flat_map` | 8個固定（静的バッファ） |
+| KVマップ | メッセージ内容を構成するKey-Valueペアの集合 | ソート済み固定長配列 + `fireball::flat_map_view` | 8個固定（静的バッファ） |
 
 #### レジストリエントリ（registry_entry）
 <!-- traceability: {DictionaryBasedIPC} {TypeSafeMessaging} {META_FlatMapIndexed} -->
@@ -96,13 +96,13 @@ Key-Valueペアを複数集約した通信の基本単位。内部的に、動�
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
-<!-- traceability: {LowLatencyLookup} {META_AccessDictionary} {META_FlatMapIndexed} {OwnershipTransfer} {IPC_ZeroCopy} {Challenge_CspHandoffStarvation} {IPC_DropHandler} -->
-- **サービス検索**: `fireball::static_flat_map` を用いて、URI文字列からチャンネルIDを $O(\log N)$ で取得する。 `{LowLatencyLookup}`
-- **メッセージ内検索**: メッセージ本体を `fireball::static_flat_map` 構造とすることで、受信側でのパラメータ検索を高速化する。 `{META_AccessDictionary}` `{META_FlatMapIndexed}`
+<!-- traceability: {LowLatencyLookup} {META_AccessDictionary} {META_FlatMapIndexed} {OwnershipTransfer} {IPC_ZeroCopy} {Challenge_IpcQueueStarvation} {IPC_DropHandler} -->
+- **サービス検索**: `fireball::flat_map_view` を用いて、URI文字列からチャンネルIDを $O(\log N)$ で取得する。 `{LowLatencyLookup}`
+- **メッセージ内検索**: メッセージ本体をソート済み配列とし `fireball::flat_map_view` で引くことで、受信側でのパラメータ検索を高速化する。 `{META_AccessDictionary}` `{META_FlatMapIndexed}`
 - **所有権移譲 (Zero-Copy Handoff)**: `{OwnershipTransfer}` `{IPC_ZeroCopy}`
     1. **Revoke**: 送信側タスクの権限を無効化し、リソースを `In-flight` 状態にする。
     2. **Enqueue**: 受信側チャネルのキューへ Push。
-        - **Rollback**: キュー満杯時は送信失敗とし、所有権を直ちに送信側に返却（Restore）する。 `{Challenge_CspHandoffStarvation}`
+        - **Rollback**: キュー満杯時は送信失敗とし、所有権を直ちに送信側に返却（Restore）する。 `{Challenge_IpcQueueStarvation}`
     3. **Grant**: 受信側タスクがメッセージをデキューした瞬間に権限を付与。
 - **異常時リカバリ (Drop Handler)**: `{IPC_DropHandler}`
     - メッセージがキュー内で滞留中に送信先が Kill された場合、キューのデストラクタ（Dropハンドラ）が In-flight リソースを強制回収し、リークを防止する。
@@ -210,7 +210,7 @@ IPC ルータの名前解決は、URI からサービスディスクリプタ（
 graph TD
     Client["<<block>> Client Task<br/>─ Request: URI + Payload"]
     
-    Lookup["<b>Stage 1: URI Lookup</b><br/>─ Input: URI string view<br/>─ Query: static_flat_map<br/>─ Output: registry_entry"]
+    Lookup["<b>Stage 1: URI Lookup</b><br/>─ Input: URI string view<br/>─ Query: flat_map_view<br/>─ Output: registry_entry"]
     
     ACCheck["<b>Stage 2: Access Control</b><br/>─ Input: sender_role, receiver_role<br/>─ Query: role_matrix[sender][receiver]<br/>─ Output: permission (allow or deny)"]
     
@@ -244,23 +244,30 @@ graph TD
 
 | ステージ | 処理 | 複雑度 | 制約 |
 | :--- | :--- | :--- | :--- |
-| **URI Lookup** | `fireball::static_flat_map<string_view, registry_entry, 16>` による二分探索 | O(log N) | N = サービス数（通常 ≤ 16）。動的確保なし。 |
+| **URI Lookup** | `fireball::flat_map_view` による二分探索 | O(log N) | N = サービス数（通常 ≤ 16）。動的確保なし。 |
 | **Access Control** | ロールマトリックス参照 `role_matrix[sender][receiver]` | O(1) | 事前計算済みの2次元配列による静的検査。 |
 | **Channel Grant** | サービスの待受チャネル ID を取得、準備完了判定 | O(1) | チャネル状態確認および送信権限の確定。 |
 
 #### ロール間通信許可マトリクス (FB_CONF_ROUTER_ROLE_MATRIX)
 <!-- traceability: {RoleBasedAccessControl} -->
 
-| 送信元ロール (Sender) \ 送信先ロール (Target) | CORE_SERVICE | PLATFORM_HAL | DEBUGGER |
-| :--- | :---: | :---: | :---: |
-| **CLIENT_APP** | ALLOW | ALLOW | DENY |
-| **CORE_SERVICE** | - | ALLOW | DENY |
-| **DEBUGGER** | ALLOW | ALLOW | - |
+本表は `system_config_details.md` 2.2 の `FB_CONF_ROUTER_ROLE_MATRIX` (4x4 `constexpr` 配列) を**そのまま**表現したものであり、全 DENY の行・列も省略しない。省略すると「そのロールの権限が未定義」と読めてしまい、C++ 定義との差分が生じるためである。
+
+| 送信元ロール (Sender) \ 送信先ロール (Target) | CLIENT_APP | CORE_SERVICE | PLATFORM_HAL | DEBUGGER |
+| :--- | :---: | :---: | :---: | :---: |
+| **CLIENT_APP** | DENY | ALLOW | ALLOW | DENY |
+| **CORE_SERVICE** | DENY | DENY | ALLOW | DENY |
+| **PLATFORM_HAL** | DENY | DENY | DENY | DENY |
+| **DEBUGGER** | DENY | ALLOW | ALLOW | DENY |
+
+**全 DENY 行・列の意味**:
+- **PLATFORM_HAL 行が全 DENY**: HAL は通信グラフの葉であり、自発的な送信を一切行わない。デバイス側の事象は ISR による割り込み通知（`{GLOBAL_InterruptWakeup}`）として上位へ伝わり、IPC の送信としては表現されない。
+- **CLIENT_APP 列が全 DENY**: ゲストアプリを宛先とする IPC は存在しない。ゲストへの応答は、ゲスト自身が発した要求に対する返信としてのみ返る。
 
 ※ 送信許可（ALLOW）の関係から構築される通信有向グラフ（`CLIENT_APP -> CORE_SERVICE`, `CLIENT_APP -> PLATFORM_HAL`, `CORE_SERVICE -> PLATFORM_HAL`, `DEBUGGER -> CORE_SERVICE`, `DEBUGGER -> PLATFORM_HAL`）は非循環（DAG）であり、循環通信待機（Circular Wait）によるデッドロックがトポロジ層で原理的に排除される。
 
 ### 4.2 状態遷移図 (SysML SMD: IPC Router ルーティングフロー)
-<!-- traceability: {LowLatencyLookup} {META_AccessDictionary} {META_FlatMapIndexed} {OwnershipTransfer} {IPC_ZeroCopy} {Challenge_CspHandoffStarvation} {IPC_DropHandler} -->
+<!-- traceability: {LowLatencyLookup} {META_AccessDictionary} {META_FlatMapIndexed} {OwnershipTransfer} {IPC_ZeroCopy} {Challenge_IpcQueueStarvation} {IPC_DropHandler} -->
 
 IPC ルータの各ルーティング操作における状態遷移を以下に示す。
 
@@ -306,7 +313,7 @@ stateDiagram-v2
 | 状態 | 説明 | 主要アクション |
 | :--- | :--- | :--- |
 | **Idle** | 初期待機状態 | - |
-| **Service Lookup** | URI文字列をレジストリで検索 | `fireball::static_flat_map` による $O(\log N)$ 二分探索 |
+| **Service Lookup** | URI文字列をレジストリで検索 | `fireball::`fireball::flat_map_view` による $O(\log N)$ 二分探索 |
 | **Permission Check** | 送信側ロールと受信側ロールのマトリックスで許可判定 | ロールマトリックス参照 |
 | **Message Routing** | 送信メッセージの転送処理 | チャネルへの Enqueue |
 | **Ownership Transfer** | ゼロコピーハンドオフの所有権移譲フロー | 3段階：Revoke → Enqueue → Grant |
@@ -320,7 +327,7 @@ stateDiagram-v2
 | **Rollback & Recovery** | キュー満杯からの復帰処理 | 送信側へ所有権を復元、Idle へ戻す |
 
 ### 4.2.1 所有権移譲状態機械 (Ownership Transfer State Machine)
-<!-- traceability: {OwnershipTransfer} {IPC_ZeroCopy} {Challenge_CspHandoffStarvation} {IPC_DropHandler} -->
+<!-- traceability: {OwnershipTransfer} {IPC_ZeroCopy} {Challenge_IpcQueueStarvation} {IPC_DropHandler} -->
 
 メッセージの所有権は、送信側 → ルータ → 受信側という 3 段階で遷移する。以下の状態機械は、所有権の状態を形式的に定義する。
 
@@ -393,7 +400,7 @@ CSP Handoff による直接のコンテキストスイッチを伴うメッセ�
 2. **タイムスライス閾値監視**: タイマードライバの Tick カウントに基づき、前回のスケジュールから一定時間（例: 10ms）以上経過している場合は、直接スイッチを拒否し通常のキューイング転送へとフォールバックする。 `{Challenge_CspHandoffStarvation}`
 
 ### 4.4 内部シーケンス図
-<!-- traceability: {LowLatencyLookup} {META_AccessDictionary} {META_FlatMapIndexed} {OwnershipTransfer} {IPC_ZeroCopy} {Challenge_CspHandoffStarvation} {IPC_DropHandler} -->
+<!-- traceability: {LowLatencyLookup} {META_AccessDictionary} {META_FlatMapIndexed} {OwnershipTransfer} {IPC_ZeroCopy} {Challenge_IpcQueueStarvation} {IPC_DropHandler} -->
 
 #### サービス検索と接続フロー
 <!-- traceability: {LowLatencyLookup} {META_AccessDictionary} {RoleBasedAccessControl} {IPCRouter} -->
@@ -496,11 +503,13 @@ sequenceDiagram
 | 補足 | `{IPC_HandleBased}` のため、クライアントはこのIDをキャッシュして利用することが推奨される。 |
 
 #### メッセージルーティング（route_message）
-<!-- traceability: {CSP_Handoff} -->
+<!-- traceability: {OwnershipTransfer} {IPC_ZeroCopy} {Challenge_IpcQueueStarvation} -->
+
+**COOS の CSP チャネルとの区別**: 本 API が扱うのはサービス単位の**有界メッセージキュー**（メールボックス）であり、`{ADR_RendezvousChannel}` が定めるバッファなし同期ランデブー（[`os_coos.md`](../tier1_core/os_coos.md) 3.3）とは別の機構である。前者はキュー満杯 (`ERR_QUEUE_FULL`) が起こりうるため Rollback を持ち、後者は値を保持しないため満杯状態が原理的に存在しない。両者を混同しないよう、本 API は `{CSP_Handoff}` を主張しない。
 
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | 送信先チャネルに対してメッセージを転送し、必要に応じてリソースの所有権を移譲する。待機中の相手には即時スイッチを行う。 `{CSP_Handoff}` |
+| 機能概要 | 送信先サービスの有界キューへメッセージを転送し、リソースの所有権を Revoke/Enqueue/Grant の順で移譲する。キュー満杯時は Rollback する。 `{OwnershipTransfer}` `{IPC_ZeroCopy}` `{Challenge_IpcQueueStarvation}` |
 | シグネチャ | `route_message(channel: ID値, msg: ipc-message) -> operation-result` |
 | 引数 | `channel`: 送信先ID<br>`msg`: 送信メッセージ (`ipc-message`) |
 | 戻り値 | 操作結果を示す `operation-result`（成功時は `SUCCESS` を返し、メッセージのKey-Valueペア数が8個の静的制限を超えている場合は `ERR_MSG_TOO_LARGE`、送信先チャネルが存在しない場合は `ERR_INVALID_CHANNEL`、キュー満杯時は `ERR_QUEUE_FULL` を返す） |
@@ -509,7 +518,7 @@ sequenceDiagram
 ### 5.2 URI/IPCインターフェイス
 <!-- traceability: {TypeSafeMessaging} -->
 - **URI形式**: `fireball://<subsystem_id>/<stream>/<instance_id>`
-- **メッセージ形式**: `fireball::static_flat_map<uint64_t, uint64_t, 8>` を用いた、最大8要素の型安全なKey-Value構造。定数や識別キーの型安全なパッキングをサポートし、動的なアロケーションを行うことなく動作する。 `{TypeSafeMessaging}`
+- **メッセージ形式**: `fireball::flat_map_view` を用いた、最大8要素の型安全なKey-Value構造。定数や識別キーの型安全なパッキングをサポートし、動的なアロケーションを行うことなく動作する。 `{TypeSafeMessaging}`
 
 ### 5.3 サービスファサード
 <!-- traceability: {ServiceFacade} {IoC} -->
@@ -519,12 +528,12 @@ IPCのプリミティブ性を隠蔽し、依存性の逆転 (IoC) を実現す�
 
 ### 6.1 検証対象の不変条件
 
-<!-- traceability: {IPC_ZeroCopy} {Challenge_CspHandoffStarvation} {IPC_DropHandler} -->
+<!-- traceability: {IPC_ZeroCopy} {Challenge_IpcQueueStarvation} {IPC_DropHandler} -->
 
 | 不変条件 | 説明 | 検証方法 |
 | :--- | :--- | :--- |
 | **所有権単調性** | リソース所有権が Sender → In-flight → Receiver と一方向に移譲され、二重所有が発生しないこと。`{OwnershipTransfer}` `{IPC_ZeroCopy}` | `formal/csp_handoff_model.py` CTL 安全性検証 (`AG(Not(sender_owns & receiver_owns))` ➔ True) |
-| **デッドロック不在** | クライアント・サーバ規律（非循環チャネル依存）により、Send/Recv の循環待ちデッドロックが発生しないこと。`{Challenge_CspHandoffStarvation}` | `spec-integrator` Topology Gate (`TopologyVerifier` 閉路検査) |
+| **デッドロック不在** | クライアント・サーバ規律（非循環チャネル依存）により、Send/Recv の循環待ちデッドロックが発生しないこと。`{RoleBasedAccessControl}` | `spec-integrator` Topology Gate (`TopologyVerifier` 閉路検査) |
 | **In-flight 有限解決性** | In-flight 状態のリソースは、Grant / Drop回収 / Rollback のいずれかにより必ず有限ステップで解決すること。`{IPC_DropHandler}` | `formal/csp_handoff_model.py` CTL 進行性検証 (`AG(in_flight -> AF(not in_flight))` ➔ True) |
 | **メッセージ順序** | 同一チャネル上のメッセージは FIFO 順で処理されること。 | 静的 FIFO SPSC キュー構造 |
 

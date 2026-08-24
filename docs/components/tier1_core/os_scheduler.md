@@ -2,7 +2,7 @@
 
 ## 1. コンセプト
 <!-- traceability: {CooperativeMultitasking} {GLOBAL_UseCpp23Library} {GLOBAL_UseCpp20Coroutine} {COOS_Deterministic} {CSPCommunication} {LowOverheadSwitch} -->
-COOSスケジューラは、C++23コルーチン（および静的アロケーションを前提とした std::flat_map）を活用したスタックレスな協調型マルチタスクの核となるコンポーネントである。タスクの実行、一時停止(yield)、および割り込みによる再開を管理し、極小リソース環境での決定論的な実行を提供する。タスク間のメッセージパッシング（ゼロコピー）とスケジューラの連動によるコルーチンサスペンドにより、ホーアのCSPモデルを具現化する。コンテキストスイッチには C++20 コルーチンの**対称遷移（Symmetric Transfer）** を採用し、全汎用レジスタのメモリスタック退避・復帰を排除してフレームポインタとPCのみの交換に最小化することで、数サイクルでの極低オーバーヘッドなタスク遷移を達成する。 `{CooperativeMultitasking}` `{GLOBAL_UseCpp23Library}` `{GLOBAL_UseCpp20Coroutine}` `{COOS_Deterministic}` `{CSPCommunication}` `{LowOverheadSwitch}`
+COOSスケジューラは、C++23コルーチン（および静的アロケーションを前提とした `fireball::flat_map_view`）を活用したスタックレスな協調型マルチタスクの核となるコンポーネントである。タスクの実行、一時停止(yield)、および割り込みによる再開を管理し、極小リソース環境での決定論的な実行を提供する。タスク間のメッセージパッシング（ゼロコピー）とスケジューラの連動によるコルーチンサスペンドにより、ホーアのCSPモデルを具現化する。コンテキストスイッチには C++20 コルーチンの**対称遷移（Symmetric Transfer）** を採用し、全汎用レジスタのメモリスタック退避・復帰を排除してフレームポインタとPCのみの交換に最小化することで、数サイクルでの極低オーバーヘッドなタスク遷移を達成する。 `{CooperativeMultitasking}` `{GLOBAL_UseCpp23Library}` `{GLOBAL_UseCpp20Coroutine}` `{COOS_Deterministic}` `{CSPCommunication}` `{LowOverheadSwitch}`
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->

@@ -16,7 +16,7 @@ JIT Compiler は、WASMバイトコードを実行時にネイティブコード
 - **最古バッファ限定 Promote ポリシー (Oldest-Only Promotion)**: 中間バッファでは無償観測期間 (Observation Window) としてコードをコピーせず保持し、破棄直前の**最古バッファ (Oldest Buffer)** に到達した時点でなおヒットし続けている Hot コードのみを新 Active バッファへ Promote 昇格させる（純粋な 2-bit 状態機械であり、実行カウンタや閾値は持たない）。これにより無駄な昇格コピーを排除し、高いJITヒット率の維持を目指す [目標値: 95%以上]。 `{JIT_OldestOnly_Promote}`
 - **JITエントリテーブル**: WASM PCとキャッシュ内のコードオフセットを紐付ける管理テーブル。**カードマーキング**と二分探索を組み合わせ、高速な検索を実現する。 `{SimpleJITArchitecture}`
 - **カードグループインデックス**: 複数のカードをグループ化して管理するインデックステーブル。検索範囲の絞り込みに使用する。高速化のため、カード数およびグループサイズは2のべき乗（シフト量）で管理される。
-- **ホットスポット・ビットマップ**: **カード単位**で実行頻度とコンパイル状態を管理する。
+- **カードマーキング表 (Card Marking Table)**: **カード単位**で実行頻度とコンパイル状態を管理する2ビット状態表。密ビュー `fireball::bit_view<2>` として参照し、1バイトあたり4カードを保持する（[静的コンテナ語彙](../tier1_core/system_containers.md)）。「ホットスポット・ビットマップ」は本表の旧称であり、以後は本名称に統一する。
     - `0: UNEXECUTED` (未実行)
     - `1: EXECUTED` (実行済み)
     - `2: HOT` (コンパイル要求中)
@@ -81,7 +81,7 @@ graph TD
 | バンク配列 | 3面のキャッシュバンク実体。役割は `active_index` からの相対で決まる | データ範囲の配列 | `std::array<std::span<uint8_t>, 3>` |
 | アクティブバンク索引 | 現在の Active バンク番号。`(active_index + 1) % 3` が Warm、`(active_index + 2) % 3` が Oldest | 索引 | 8bit符号なし（rotate() で加算） |
 | コンパイル待ち列 | 後でコンパイルを行うWASM PC (uint32_t) の格納キュー | 固定長LIFOキュー | `std::array<uint32_t, FB_CONF_JIT_QUEUE_SIZE>` |
-| 実行履歴マップ | 命令の実行頻度を記録するビットマップ | データ範囲 | `std::span<uint8_t>` |
+| カードマーキング表 | カード単位の 2-bit 実行状態 | 密ビュー | `fireball::bit_view<2>` |
 
 #### JIT構成（jit_config）
 <!-- traceability: {META_ConfigurableSystem} {GLOBAL_StaticScalability} -->
@@ -142,7 +142,7 @@ JIT コンパイル済みネイティブトレースの実行エントリポイ�
 
 #### JITトレース検索 & 3面キャッシュ代謝アルゴリズム
 <!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} -->
-1. **事前フィルタ (カード・マーキング)**: 命令オフセット（PC）をカードインデックスに変換し、実行履歴マップ（ホットスポットビットマップ）を確認する。該当カードの状態が「コンパイル完了」でない場合は即座に終了。
+1. **事前フィルタ (カードマーキング)**: 命令オフセット（PC）をカードインデックスに変換し、実行履歴マップ（ホットスポットビットマップ）を確認する。該当カードの状態が「コンパイル完了」でない場合は即座に終了。
 2. **アクティブ領域（Bank 0: Active）検索**:
     - カードグループ索引を用いて探索範囲を絞り込み、命令オフセットで二分探索を行う。
     - ヒットした場合は、そのネイティブコードのアドレスを返して終了。
@@ -179,7 +179,7 @@ JIT コンパイル済みネイティブトレースの実行エントリポイ�
 #### ホットスポット判定 (yield 時)
 <!-- traceability: {JIT_LazyChaining} -->
 1. **履歴走査**: インタープリタの実行サイクル中に記録、蓄積された「実行履歴バッファ」を走査する。
-2. **状態更新**: 実行履歴マップ（ビットマップ）の状態が「頻出」に達した命令オフセットを「コンパイル待ち列」（LIFOキュー）に投入する。
+2. **状態更新**: カードマーキング表の状態が「頻出」に達した命令オフセットを「コンパイル待ち列」（LIFOキュー）に投入する。
 3. **遅延チェイニング制御**: ホットスポットと判定されてコンパイルキューへ投入されたトレースは、JITコードの末尾においてインタープリタ実行環境へ正しく復帰（遷移制御）するためのディスパッチャ・スタブが初期値としてチェイニング（連結）され、遅延チェイニングを実現する。 `{JIT_LazyChaining}`
 
 #### バッチコンパイル (周期実行またはアイドル時)
@@ -219,16 +219,16 @@ sequenceDiagram
 
     Note over I, S: co_yield 時のバッチ処理
     I->>D: Process History Buffer
-    D->>D: Update 2-bit Bitmap
+    D->>D: Update card marking table
     D->>E: Push HOT PC to Queue
     E->>C: Copy Template & Patch
     E->>S: Register Entry (PC, Offset)
     
     Note over I, S: 実行時の検索
     I->>S: Lookup(PC)
-    alt Bitmap != COMPILED
+    alt Card state != COMPILED
         S-->>I: Fallback to Interpreter (Fast Exit)
-    else Bitmap == COMPILED
+    else Card state == COMPILED
         S->>S: Search Bank 0 (Active)
         alt Active Hit
             S-->>I: Native Code Address
@@ -243,7 +243,7 @@ sequenceDiagram
                     S->>S: Promote to new Active (Copy)
                     S-->>I: Native Code Address
                 else Oldest Miss
-                    S->>S: Enqueue PC in LIFO queue, Bitmap stays COMPILED
+                    S->>S: Enqueue PC in LIFO queue, card stays COMPILED
                     S-->>I: Fallback to Interpreter (Return NULL)
                 end
             end
@@ -257,7 +257,7 @@ sequenceDiagram
 <!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} {ADR_SafeQueuingOnHotMiss} -->
 JITトレース検索時の内部状態と期待される挙動を検証する。3面バンク（Active / Warm / Oldest）を独立した列として扱う。
 
-| ケース | ホットスポットBitmap | Active | Warm | Oldest | 期待される動作 |
+| ケース | カードマーキング状態 | Active | Warm | Oldest | 期待される動作 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | 1 | UNEXECUTED (0) | - | - | - | 事前フィルタで即時終了、インタープリタ実行継続 |
 | 2 | EXECUTED (1) | - | - | - | 事前フィルタで即時終了、インタープリタ実行継続 |
@@ -265,7 +265,7 @@ JITトレース検索時の内部状態と期待される挙動を検証する�
 | 4 | COMPILED (3) | **hit** | - | - | **JITコード実行**（昇格なし） |
 | 5 | COMPILED (3) | miss | **hit** | - | **昇格せず** Warm 上のコードをそのまま実行（無償観測期間） `{JIT_OldestOnly_Promote}` |
 | 6 | COMPILED (3) | miss | miss | **hit** | **新 Active へ昇格 (Copy)** してから JIT 実行 `{JIT_OldestOnly_Promote}` |
-| 7 | COMPILED (3) | miss | miss | miss | NULL 返却 + コンパイル待ち列へ投入。**Bitmap は COMPILED のまま変更しない** `{ADR_SafeQueuingOnHotMiss}` |
+| 7 | COMPILED (3) | miss | miss | miss | NULL 返却 + コンパイル待ち列へ投入。**カード状態は COMPILED のまま変更しない** `{ADR_SafeQueuingOnHotMiss}` |
 | 8 | (書き込み時) | **満杯** | - | - | 3面リングローテーション: Oldest を Purge して新 Active に、Active→Warm、Warm→Oldest。同時に `chain_next` のダングリング掃引を行う |
 
 ### 5.2 内部コンポーネントのデコンポジション
@@ -292,7 +292,7 @@ JITエンジンの責務を、以下の独立したサブコンポーネント�
 
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | コードキャッシュ領域、管理テーブル、およびホットスポットビットマップの初期化を行う。 |
+| 機能概要 | コードキャッシュ領域、管理テーブル、およびカードマーキング表の初期化を行う。 |
 | シグネチャ | `initialize(ctx: 可変参照, config: const参照) -> 結果型` |
 | 引数 | `ctx`: JITコンテキスト (`jit_context`) への可変参照<br>`config`: JIT構成 (`jit_config`) への読取専用参照 |
 | 戻り値 | 結果型 (成功時は空、エラー時はエラーコード) |
@@ -321,12 +321,12 @@ JITエンジンの責務を、以下の独立したサブコンポーネント�
 | 補足 | 本機能は、コンパイル時に固定されたカード境界シフト値（`FB_CONF_JIT_CARD_SHIFT`等）のマクロ定義に基づき、PC値からカードインデックスへの変換を高速に行う。 `{META_ConfigurableSystem}` |
 
 #### 検索範囲取得（get_search_range）
-<!-- traceability: {META_ConfigurableSystem} -->
+<!-- traceability: {META_ConfigurableSystem} {FlatViewNarrowing} {META_BinarySearch} -->
 
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | カードマーキング索引（カードグループ）を用いて、二分探索の範囲を絞り込む。 |
-| シグネチャ | `get_search_range(pc: address) -> result<tuple<u32, u32>, bool>` |
+| 機能概要 | カードマーキング索引（カードグループ）を用いて、エントリ索引の探索区間を `fireball::flat_map_view` へ絞り込む。生の添字対ではなくビューを返すことで、呼び出し側が区間を誤った配列と組み合わせる余地をなくす（[静的コンテナ語彙](../tier1_core/system_containers.md) を参照）。該当カードグループが存在しない場合は空ビューを返す。 `{FlatViewNarrowing}` |
+| シグネチャ | `get_search_range(pc: address) -> flat_map_view<u32, code_offset>` |
 | 補足 | 本機能は、ヘッダファイルで定義されたカードグループサイズおよび最大登録件数のマクロ定数に基づき、インデックスの二分探索範囲をコンパイル時に静的に制限して計算する。 `{META_ConfigurableSystem}` |
 
 #### バッチコンパイル処理（process_batch_compile）
@@ -355,11 +355,12 @@ JITエンジンの責務を、以下の独立したサブコンポーネント�
     - `Card Marking + Card Group Index + Binary Search`: 検索範囲を限定し、高速な検索を実現。
 
 ### 7.2 安全性制約と方策
-<!-- traceability: {PositionIndependentCode} {MemoryBoundaryCheck} -->
+<!-- traceability: {PositionIndependentCode} {MemoryBoundaryCheck} {FastAddressCheck} {SimpleJITArchitecture} -->
 - **目標**: 不正なコード実行および W^X 違反の防止。
 - **方策**: 
     - `{PositionIndependentCode}`: 生成コードを位置独立とし、配置場所の自由度を確保。
-    - `Boundary Check`: コンパイル時にキャッシュ溢れを厳密にチェックし、溢れた場合は 3面リングローテーションにより Oldest バンクを破棄して再利用。 `{MemoryBoundaryCheck}`
+    - `Cache Capacity Check`: コード生成時にキャッシュ溢れを厳密にチェックし、溢れた場合は 3面リングローテーションにより Oldest バンクを破棄して再利用する。これはキャッシュ容量管理であり、`{MemoryBoundaryCheck}`（ゲストメモリアクセスの隔離）とは別の関心事である。 `{SimpleJITArchitecture}`
+    - `{MemoryBoundaryCheck}`: 生成コードに埋め込むゲストメモリアクセスの境界チェック。`FastAddressCheck` のマスク演算により、ゲストリニアメモリ範囲外へのロード/ストアをトラップする。 `{MemoryBoundaryCheck}` `{FastAddressCheck}`
     - `MPU W^X 保護`: Cortex-M33 PMSAv8 MPU を用い、JIT パッチ書き込み時は `RW+XN`、ネイティブ実行時は `RO+X` に切り替え、`__DSB(); __ISB();` メモリ・命令同期バリアを発行する。書き込みと実行の同時許可（RWX）を物理的に排除する。`formal/jit_cache_model.py` により変異検査付き形式モデルとして検証。
 
 ## 8. 設計判断 (ADR)

@@ -57,7 +57,7 @@ HAL全体の制限値を定義する。 `{META_ConfigurableSystem}`
 <!-- traceability: {RSP_Transport_Selectable} {TaskPollInterruptFlag} {GLOBAL_InterruptWakeup} -->
 - **コマンドルーティング**: IPCで受信したコマンド（read/write等）を、デバイスIDに基づいて適切なドライバへ振り分ける。
 - **RSPパケット解析**: UARTまたはRTTから受信したRSPパケットを解析し、`debug_command` 構造体へ変換してコマンドキューへ投入する。 `{RSP_Transport_Selectable}`
-- **割り込み通知**: 物理割り込み発生時、ISR内でフラグをセットし、COOSスケジューラに対して関連タスクのウェイクアップを要求する。 `{TaskPollInterruptFlag}` `{GLOBAL_InterruptWakeup}`
+- **割り込み通知**: 物理割り込み発生時、ISR は COOS の `notify_interrupt(irq_id)` を呼び、INT イベントを有界キューへ投函するのみとする。**ISR がタスク状態を直接書き換えることはない。**実際の READY 遷移は、スケジューラが yield 点でキューをドレインする際に行われる（[`os_coos.md`](../tier1_core/os_coos.md) 4.1「割り込みウェイクアップ」を正本とする）。この非同期境界の分離が vSoC 実行状態モデルの `irq_jit_race_freedom_proof` が証明している性質である。 `{TaskPollInterruptFlag}` `{GLOBAL_InterruptWakeup}`
 
 ### 4.2 状態遷移図
 <!-- traceability: {RSP_Transport_Selectable} {TaskPollInterruptFlag} {GLOBAL_InterruptWakeup} -->
@@ -100,10 +100,10 @@ sequenceDiagram
 
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | 指定された物理デバイスからデータを取得し、共有バッファへ格納する。 |
-| シグネチャ | `read(id: ID値, buffer: 可変バイナリビュー) -> 結果型` |
-| 引数 | `id`: 対象デバイスID<br>`buffer`: 読み出し先バッファ |
-| 戻り値 | 結果型 (成功時は読み出しバイト数、失敗時はエラー) |
+| 機能概要 | 指定された物理デバイスからデータを取得し、共有バッファ（`shm-id`）へ格納する。`write` と同一のバッファ機構を用い、生ポインタ渡しは行わない。 |
+| シグネチャ | `read(id: device-id, dst: shm-id) -> operation-result` |
+| 引数 | `id`: 対象デバイスID<br>`dst`: 読み出し先の共有メモリハンドル（`acquire_buffer` で確保） |
+| 戻り値 | 操作結果（成功時は読み出しバイト数、失敗時は `recovery-strategy`） |
 | 期待する結果 | 正常系：バッファに要求したデータが書き込まれる。 |
 
 #### データの書き込み (write)
@@ -126,24 +126,25 @@ sequenceDiagram
 | 期待する結果 | 正常：CPUを介さずバッファ間のデータ移動が完了する。 `{PhysicalPassthrough}` |
 
 #### 非標準制御 (control)
-<!-- traceability: {PhysicalPassthrough} -->
+<!-- traceability: {HAL_Interface} {TypeSafeMessaging} -->
 
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | read/write で表現できないデバイス固有の操作（ボーレート設定、ピン制御等）を行う。 |
-| シグネチャ | `control(id: ID値, cmd: ID値, params: ipc-message) -> operation-result` |
+| シグネチャ | `control(id: device-id, cmd: command-id, params: ipc-message) -> operation-result` |
 | 引数 | `id`: デバイスID<br>`cmd`: コマンド識別子<br>`params`: コマンド固有引数(Key-Valueメッセージ) |
 | 戻り値 | 操作結果 |
+| 補足 | 本APIは `ipc-message` を経由するため IPC のオーバーヘッドを伴い、`{PhysicalPassthrough}` の高速パスではない。レイテンシに敏感なピン操作は `{Fast_Path_GPIO}` の経路を用いること。 `{HAL_Interface}` |
 
 #### バッファの確保
-<!-- traceability: {PhysicalPassthrough} -->
+<!-- traceability: {HAL_Interface} {IPC_ZeroCopy} -->
 
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | デバイス通信に使用する固定長バッファプールからスロットを一つ確保する。**確保されたバッファは vMMIO の動的領域にマッピングされる。** |
 | シグネチャ | `acquire_buffer(size: バイト数) -> result<shm-id, recovery-strategy>` |
 | 引数 | `size`: 必要なバイト数 |
-| 戻り値 | 成功時は共有メモリアイデンティファイア |
+| 戻り値 | 成功時は共有メモリアイデンティファイア (`shm-id`) `{IPC_ZeroCopy}` |
 
 ### 5.2 Tier 3 リソースインターフェイス
 <!-- traceability: {PhysicalPassthrough} -->
@@ -171,11 +172,11 @@ sequenceDiagram
 | `poll-packet()` | RSPパケットの受信確認を行う。 |
 | `get-parsed-command()` | 解析済みコマンドの取得を行う。 |
 
-### 5.2 URI/IPCインターフェイス
-<!-- traceability: {PhysicalPassthrough} -->
+### 5.3 URI/IPCインターフェイス
+<!-- traceability: {HAL_Interface} {URIAbstraction} -->
 - **URI**: `fireball://hal/<device_name>/<instance_id>`
 
-### 5.3 RSPトランスポート構成
+### 5.4 RSPトランスポート構成
 <!-- traceability: {RSP_Transport_Selectable} -->
 RSPパケットの送受信に使用する物理層を選択可能とする。 `{RSP_Transport_Selectable}`
 
@@ -184,7 +185,7 @@ RSPパケットの送受信に使用する物理層を選択可能とする。 `
 | **UART** | 標準的な非同期シリアル通信によるRSPパケット伝送 | 汎用性が高く、安価なアダプタで利用可能 |
 | **RTT** | J-Link の RTT 技術を用いた高速なパケット伝送 | ピンを専有せず、J-Link 経由でデバッグ中に併用可能 |
 
-### 5.4 メッセージ形式
+### 5.5 メッセージ形式
 <!-- traceability: {TypeSafeMessaging} -->
 Key-Valueプロトコル。 `device_id`, `command`, `shared_mem_id` 等を含む。 `{TypeSafeMessaging}`
 

@@ -29,8 +29,8 @@ graph TD
 ##### 静的リソース消費の概算モデル
 <!-- traceability: {Resource_Estimation_Model} -->
 コンパイル時に各マクロ定数から全体のメモリ（ROM/RAM）フットプリントが決定論的に算出され、ビルド時に以下の概算モデルに従って制約適合性が検証される。
-* **RAM消費量 (概算値)**: `(FB_CONF_MAX_TASKS * sizeof(task_context_t)) + (FB_CONF_MAX_TASKS * FB_CONF_TASK_HEAP_SIZE) + FB_CONF_RUNTIME_HEAP_SIZE + FB_CONF_JIT_CACHE_SIZE + FB_CONF_LOG_BUFFER_SIZE`
-* **適合性の静的アサート**: 上記総RAM消費量が、プラットフォームのターゲット物理SRAMサイズ（例：64KB）以下であることを、コンパイル時に `static_assert` により検証しビルドを保護する。 `{META_ConfigurableSystem}` `{Resource_Estimation_Model}`
+* **RAM消費量 (概算値)**: `FB_CONF_MEMORY_POOL_SIZE`。その内訳は「メモリ総量と個別プールの依存関係」に示す `static_assert` を正本とする。ゲスト用プールに乗じるのは `FB_CONF_MAX_GUEST_VMS` であり `FB_CONF_MAX_TASKS` ではない（後者は TCB スロット数）。`FB_CONF_LOG_BUFFER_SIZE` と `FB_CONF_SHM_SIZE` はそれぞれサブシステム用・カーネル用プールの内数であり、別途加算しない。
+* **適合性の静的アサート**: 上記総RAM消費量が、評価ターゲットである最小構成の物理SRAMサイズ `FB_CONF_PHYSICAL_RAM_SIZE`（32KB）以下であることを、コンパイル時に `static_assert` により検証しビルドを保護する。 `{META_ConfigurableSystem}` `{Resource_Estimation_Model}`
 
 ### 3.3 主要な構造体・クラス・定数
 <!-- traceability: {Resource_Estimation_Model} -->

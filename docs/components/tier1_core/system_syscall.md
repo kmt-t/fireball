@@ -218,11 +218,13 @@ namespace fireball {
 ゲストのWASI互換ライブラリ（`wasi-libc`など）からの呼び出しを傍受し、`fireball_call`呼び出し規約に従ってホストの`fireball_call`へ変換する。
 
 ### 6.2. 高応答 Trigger のマッピング例
-<!-- traceability: {Fast_Path_GPIO} -->
+<!-- traceability: {Trap_Interface} {Syscall_Mapping} {Fast_Path_GPIO} -->
+
+**本経路は `{Fast_Path_GPIO}` の高速パスそのものではない。** `{Fast_Path_GPIO}` の実体は vMMIO コンポーネントが定義する vMMIO 空間への直接ストアであり、トラップ命令もシステムコール ID のディスパッチも介さない（JIT は境界チェック付きストアとしてインライン展開できる）。以下に示す `fireball_call` 経由の Shim は、WASI 互換ライブラリから呼び出すための**移植性のある代替経路**であり、トラップ 1 回分のディスパッチコストを伴う。sub-µs 応答が要求される用途では vMMIO 直接ストアを用いること。
 
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | 最小レイテンシ確保のため `fireball_call` を直接使用してピン出力を設定する。 |
+| 機能概要 | WASI 互換ライブラリからの呼び出しを `fireball_call` へ変換してピン出力を設定する（移植性優先の経路。最小レイテンシが必要な場合は vMMIO 直接ストアを用いる）。 |
 | シグネチャ | `fireball_trigger_set_pin(pin: u32, value: bool) -> void` |
 | マッピング | `id`: `FB_SYSCALL_TRIGGER_SET_PIN`<br>`arg0`: `pin`<br>`arg1`: `value` (0/1) |
 

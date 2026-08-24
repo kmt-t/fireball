@@ -73,11 +73,11 @@ graph LR
 | `{CSPCommunication}` | ホーアCSPに基づき、所有権移譲によるゼロコピーメッセージパッシングを行う。 | 高 | テスト |
 | `{IPC_ZeroCopy}` | 通信時のデータコピーを排除する。 | 高 | テスト |
 | `{GLOBAL_InterruptWakeup}` | 割り込み発生時、関連タスクの割り込みハンドラをウェイクアップする。 | 高 | テスト |
-| `{CSP_Handoff}` | 送受信時に相手が待機状態であれば、相手タスクをReady状態に遷移させ、スケジューラを介して迅速にコンテキストをスイッチする。 | 高 | テスト |
+| `{CSP_Handoff}` | 送受信時に相手が待機状態であれば、相手タスクを READY へ遷移させ、スケジューラの READY キュー処理を**経由せずに**対称遷移で実行権を直接移譲する。連続移譲は `FB_CONF_MAX_CONSECUTIVE_HANDOFFS` で有界化し、上限到達時のみスケジューラへ復帰する。 | 高 | テスト |
 | `{GLOBAL_PeriodicTask}` | システムティックまたはアイドルループを利用した定期実行タスクをサポートする。 | 中 | テスト |
 | `{GLOBAL_IdleDetection}` | システムのアイドル状態を検知し、バックグラウンド処理（GC/ログ出力）を実行する. | 中 | テスト |
-| `{DirectContextSwitch}` | コルーチンとスケジューラのReady管理下を経由する、超低レイテンシなタスク切り替え。 | 高 | ベンチマーク |
-| `{TaskPollInterruptFlag}` | タスクがポーリングにより割り込みフラグをチェックする安全な通知モデル。 | 高 | レビュー |
+| `{DirectContextSwitch}` | コルーチンの対称遷移により、スケジューラの READY キュー処理を**経由せずに**相手タスクのコルーチンハンドルへ直接ジャンプする超低レイテンシなタスク切り替え。 | 高 | ベンチマーク |
+| `{TaskPollInterruptFlag}` | ISR がタスク状態を直接書き換えない安全な通知モデル。ISR は有界キューへイベントを投函するのみとし、状態遷移は協調的な観測点でのみ発生する: COOS タスクはスケジューラが yield 点でキューをドレインした際に READY へ遷移し（push）、ゲスト実行エンジンは Safepoint で `vsoc_context.interrupt_flags` を自ら確認する（pull）。いずれも非同期な割り込み文脈から実行状態を破壊しないことを保証する。 | 高 | レビュー |
 
 #### 3.1.3 システム連携 (IPC/HAL/WIT)
 | キーワード | 内容 | 優先度 | 検証方法 |
@@ -130,6 +130,8 @@ graph LR
 | `{Debugger_Jit_Flush}` | 介入時のJITキャッシュフラッシュ。 | 高 | レビュー |
 | `{WASI_Async_Bridge}` | 同期WASIと非同期IPCの連携ブリッジ。 | 高 | テスト |
 | `{ConceptHarnessDI}` | C++20/23 Conceptsを用いた静的依存性注入。 | 高 | レビュー |
+| `{FlatViewNarrowing}` | ソート済み静的コンテナに対し、粗索引で探索区間を非所有ビュー(`fireball::flat_map_view` / `fireball::flat_set_view`) へ狭めてから二分探索することで、比較回数と参照範囲を削減する。絞り込みは単調縮小であり多段に合成できる。 | 高 | レビュー |
+| `{PackedBitView}` | 1要素が1バイト未満（1/2/4ビット）の密な状態表を、非所有ビュー `fireball::bit_view` により単一ロードとシフト・マスクで参照する。カードマーキング表等のメモリ密度を 1/8〜1/4 に抑える。 | 高 | レビュー |
 
 ### 3.2 非機能要求
 
@@ -190,7 +192,8 @@ graph LR
 | `{Challenge_WasiFdWriteLoop}` | WASI `fd_write` の実装レイヤー分離とバッファ管理。 | 検討中 |
 | `{Challenge_SyscallMemorySafety}` | ゲストメモリアクセス時のセキュリティゲート（vMMIO許可テーブル）の有効性。 | 検討中 |
 | `{Challenge_CoosBlockedList}` | `BLOCKED` タスクリストの管理コストとリアルタイム性のトレードオフ。 | 検討中 |
-| `{Challenge_CspHandoffStarvation}` | CSP Handoff による特定のタスクセットのスターベーションリスク。 | 検討中 |
+| `{Challenge_CspHandoffStarvation}` | COOS の CSP Handoff 連鎖が特定のタスクセット間で閉じ、他タスクが実行機会を失うスターベーションリスク。緩和策は `FB_CONF_MAX_CONSECUTIVE_HANDOFFS` による連鎖の有界化。 | 検討中 |
+| `{Challenge_IpcQueueStarvation}` | IPCルータの有界メールボックスにおいて、特定の送信側がスロット獲得競争に繰り返し敗れて Rollback を受け続けるスターベーションリスク。CSP Handoffとは別機構の課題であり、緩和策はキュー長・再送方針の調整。 | 検討中 |
 | `{Challenge_DebuggerResource}` | 極小メモリ環境でのデバッグ用バッファ確保とJIT併用の制約。 | 検討中 |
 | `{ADR_ScalableCodeOffset}` | 32/64ビット境界を越えるJITコードオフセットの表現形式決定。 | 決定済 |
 | `{ADR_SafeQueuingOnHotMiss}` | ホットスポット検出時の二重コンパイル要求防止策。 | 決定済 |

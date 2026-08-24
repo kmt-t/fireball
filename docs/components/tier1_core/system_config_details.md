@@ -1,4 +1,4 @@
-/# システムコンフィグマクロ一覧
+# システムコンフィグマクロ一覧
 
 ## 1. 概要
 <!-- traceability: {META_ConfigurableSystem} -->
@@ -18,7 +18,6 @@ Fireballハイパーバイザの動作パラメータを定義するコンパイ
 | `FB_CONF_KERNEL_HEAP_SIZE` | COOSカーネル（スケジューラ、CSP、TCB、共有メモリ管理）用の静的プールサイズ。`resource_budget.md` の「ネイティブヒープ」に対応 | `4096` | `{GLOBAL_IndependentHeap}` `{GLOBAL_StrictMemoryLimit}` |
 | `FB_CONF_SUBSYS_HEAP_SIZE` | IPCルータ・HAL・ログバッファ用の静的プールサイズ。`resource_budget.md` の「サブシステム」に対応 | `3072` | `{GLOBAL_IndependentHeap}` `{GLOBAL_StrictMemoryLimit}` |
 | `FB_CONF_INTERP_STACK_SIZE` | インタープリタ統合スタック（`execution_context` + CallFrame/ControlFrame/ローカル/オペランド）の総容量。`resource_budget.md` の「統合スタック」に対応 | `2048` | `{ContextPointerRegister}` `{GLOBAL_StrictMemoryLimit}` |
-
 | `FB_CONF_MAX_GUEST_VMS` | 同時にロード可能なゲストVMの最大数。`FB_CONF_TASK_HEAP_SIZE` はVM単位で消費されるため、RAM消費量を決めるのはこの値である（`FB_CONF_MAX_TASKS` はTCBスロット数であり寄与しない） | `1` | `{GLOBAL_IndependentHeap}` `{GLOBAL_StaticScalability}` |
 | `FB_CONF_SHM_SIZE` | ゼロコピーIPCで使用する静的共有メモリの総バイト数。カーネル用プールの**内数**として配置される | `1024` | `{IPC_ZeroCopy}` `{GLOBAL_StrictMemoryLimit}` |
 | `FB_CONF_MEMORY_POOL_SIZE` | 上記パーティションすべてを切り出す統合物理プールの総サイズ。各パーティションはこのプールから静的に切り出される `{ConsolidatedHeap}` | `21504` | `{ConsolidatedHeap}` `{GLOBAL_StrictMemoryLimit}` |
@@ -35,6 +34,12 @@ FB_CONF_MEMORY_POOL_SIZE
   + FB_CONF_INTERP_STACK_SIZE (2048)  // 統合スタック
   + FB_CONF_TASK_HEAP_SIZE (4096) * FB_CONF_MAX_GUEST_VMS (1)  // WASMリニアメモリ
   = 21504 Bytes = 21.0 KB   <= FB_CONF_PHYSICAL_RAM_SIZE (32768)
+```
+
+`FB_CONF_GUEST_RAM_SIZE`（2.4）はこの `FB_CONF_TASK_HEAP_SIZE` と同一の領域に対するゲスト側の呼称であり、片方だけが更新されることを防ぐため等値を静的に固定する:
+
+```text
+static_assert(FB_CONF_GUEST_RAM_SIZE == FB_CONF_TASK_HEAP_SIZE);
 ```
 
 これは `resource_budget.md` 1章の静的合計（最小構成 21.0KB）と一致する。残り 11.0KB は `.bss`・割り込みスタック・安全余裕である。この等式が崩れた場合、`resource_budget.md` とマクロ定義のどちらかが更新漏れを起こしている。
@@ -87,20 +92,23 @@ namespace fireball {
 | `FB_CONF_HAL_MAX_BUFFERS` | デバイス通信用バッファの最大数 | `4` | `{META_ConfigurableSystem}` |
 
 ### 2.4 vSoC / vMMIO {VERIFY_FORMAL}
-<!-- traceability: {JIT_MultiBuffer_Cache} {FastAddressCheck} {GLOBAL_StrictMemoryLimit} {vMMIO_Isolation} {META_ConfigurableSystem} {META_RestrictedPhysicalAccess} -->
+<!-- traceability: {JIT_MultiBuffer_Cache} {FastAddressCheck} {GLOBAL_StrictMemoryLimit} {vMMIO_Isolation} {META_ConfigurableSystem} {META_RestrictedPhysicalAccess} {META_FlatMapIndexed} {GLOBAL_StaticScalability} -->
 | マクロ名 | 説明 | デフォルト値 | 導出元 |
 | :--- | :--- | :--- | :--- |
 | `FB_CONF_WASM_PAGE_SIZE` | WASM標準論理ページサイズ (64KB, 65,536 Bytes) | `65536` | `{FastAddressCheck}` |
 | `FB_CONF_JIT_CACHE_SIZE` | JITキャッシュサイズ (合計バイト数: 2KB x 3面) | `6144` | `{JIT_MultiBuffer_Cache}` |
 | `FB_CONF_JIT_NUM_BUFFERS` | JITキャッシュバッファ面数 (3: トリプルバッファ推奨) | `3` | `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}` |
 | `FB_CONF_GUEST_RAM_BASE` | ゲストRAMの開始アドレス（アライメント検証と高速境界チェックのため、必ず64KB境界に配置） | `0x00000000` | `{FastAddressCheck}` |
-| `FB_CONF_GUEST_RAM_SIZE` | ゲストRAMの物理割り当てサイズ（RAM<64KB環境向け部分ページ。デフォルト: 8KB = 8192 Bytes） | `8192` | `{GLOBAL_StrictMemoryLimit}` `{FastAddressCheck}` |
+| `FB_CONF_GUEST_RAM_SIZE` | ゲストRAMの物理割り当てサイズ（WASM 64KB論理ページに対する部分ページ）。**`FB_CONF_TASK_HEAP_SIZE` と同一の領域を指すゲスト側の呼称**であり、両者の等値は `static_assert` で保証される（2.1 参照） | `4096` | `{GLOBAL_StrictMemoryLimit}` `{FastAddressCheck}` |
 | `FB_CONF_VMMIO_BASE` | vMMIO領域の開始アドレス (Bit 31 == 1, 2段階ダイレクトデコード) | `0x80000000` | `{vMMIO_Isolation}` |
 | `FB_CONF_VMMIO_MAX_REGIONS` | 登録可能な最大vMMIO領域数 | `8` | `{META_ConfigurableSystem}` |
+| `FB_CONF_VMMIO_MAX_PTES` | FlatMap ページテーブルに保持可能な PTE の最大件数。PTE 表の静的配列容量を決定する | `32` | `{META_FlatMapIndexed}` `{GLOBAL_StaticScalability}` |
 | `FB_CONF_VMMIO_ALLOWED_ADDRS` | ゲストからのアクセスを許可する物理アドレス範囲 | `constexpr`構造体配列 | `{META_RestrictedPhysicalAccess}` |
 
 ##### 物理アクセス許可範囲の定義
 ゲストからのアクセスが許可される物理アドレス範囲は以下のように構造化してコンパイル時定数として定義される。 `{META_RestrictedPhysicalAccess}`
+
+実行時の判定は「そのアドレスが許可集合に属するか」であって値の取得ではないため、`fireball::flat_set_view<uintptr_t>` の `contains()` を用いる（[静的コンテナ語彙](system_containers.md)）。値列を持たないため、判定表はキー列のみで足りる。 `{FlatViewNarrowing}` `{META_RestrictedPhysicalAccess}`
 
 ```text
 // inc/fireball_config.hxx での定義形式 (C++23)

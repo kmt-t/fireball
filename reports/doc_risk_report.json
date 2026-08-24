@@ -1,44 +1,45 @@
 {
-  "generated_at": "2026-08-24T02:37:39.843695+00:00",
+  "generated_at": "2026-08-24T04:48:07.497036+00:00",
   "backend": "heuristic",
-  "total_evaluated": 679,
-  "formal_candidates_count": 30,
+  "total_evaluated": 708,
+  "formal_candidates_count": 31,
   "llm_candidates_count": 5,
-  "sections_scanned": 679,
+  "sections_scanned": 708,
   "max_sections": 0,
   "doc_hashes": {
     "architecture/architecture_overview.md": "e09b1f2e1da6367f29f3138e9117344fc8c2b37f84b7b8aa0e1dd697fac4b217",
     "architecture/concept_harness.md": "2160b8e29a617ecefbf46165542544705de7ebb0f6d5b7df4bbeb1c084f9cd3c",
-    "architecture/document_structure.md": "a3c71e72a0dbd580b5dcc6c1ff34f5e6705c23c9c78a287b6b3bba9f4992fff7",
+    "architecture/document_structure.md": "8882e25d3b07bd6fdabf69739827f3dfb1c3c5d992fce688407d7d13e1727fee",
     "architecture/resource_budget.md": "dad188910b60c25b7fc537e40e4fa58888d64a2295ea2848514373d1df29248c",
-    "components/tier1_core/os_coos.md": "41de5712c852a6a43db08e64229f782a07d4b47cfe944b3096b376f2c28079d2",
-    "components/tier1_core/os_scheduler.md": "4d5076e862360ee0df02b8515d78de9c17147ea0721459d74ae4f1bcaaaf1b3a",
-    "components/tier1_core/system_config.md": "8455c7b59c0a7078ba646937fa50a79c3b0b519041f5511cffc8ba93bc5ec549",
-    "components/tier1_core/system_config_details.md": "3c99c5ce9634ace62842ccbd09e912e1ae89e2cd58953fd78d2c09c900e622f3",
+    "components/tier1_core/os_coos.md": "7f2041f9ed21e99a75448b8112629ed0a4e95605e70425807cdb8a431db531bf",
+    "components/tier1_core/os_scheduler.md": "891a6639ebc7c8122cf48e1558dacab63772d56e2454e663903425ea0e403751",
+    "components/tier1_core/system_config.md": "18d6e2eeb837773f55bb1d285809d64d86bdf94dc0bff012116caf908b9177a0",
+    "components/tier1_core/system_config_details.md": "d01b76be672dc64e340304989cd087ebc46edef5f75c2a0b633bf2c927af019b",
+    "components/tier1_core/system_containers.md": "82dda7625a9c40f070347564629df99079691c63a20dda7c95bd6183d761ccf6",
     "components/tier1_core/system_logging.md": "7ec474b1ad605d7e56d14c9eb01f763fb2cd93553a8c7d91e4a4c71f4072cb4d",
-    "components/tier1_core/system_syscall.md": "b086a7e5f35f2717438de890ec7e3bff8a6965444be24d1e178e1e243a2a1220",
+    "components/tier1_core/system_syscall.md": "b530b38838d03e6c21d11c1192c59016d87ec800b2016b0b711fbf43e557cf36",
     "components/tier1_interface/interface_wit.md": "fa5efd334b7585a4260546c32e64a18af9e89c3660c314001e7f84e4979bd755",
-    "components/tier1_interface/ipc_router.md": "46bd674d22ee54a6c6a75823515858b04851d12f6808d534a62291e6f330c262",
+    "components/tier1_interface/ipc_router.md": "31fea15446204d7627b2cb6a0843b2f20dd7388915b86c31a20bd55bd79c74e7",
     "components/tier1_interface/system_service.md": "7c98009196d56c50c4d1d27269f38eb51d4fe1fa654aedb51dba7c496cd5fe62",
     "components/tier2_runtime/debug/debug_gdb_rsp.md": "f07fbc1fbe307552ce65dbe964361442c7df855ac18cce53dc59684373c6befc",
-    "components/tier2_runtime/debug/debug_manager.md": "1535441dabc84134258d4c4d5a6a851a9d19ebe8b2cbd1ec20d1a3e2ba2c4e2c",
+    "components/tier2_runtime/debug/debug_manager.md": "6f62ba245c1b68577bccd8d7f104f286aa33820e12dd68d45ededb65ea99f5e2",
     "components/tier2_runtime/runtime_interpreter.md": "cb70cfcbe67e532df563e029f9ae455db52102805f69dc9a640976a626075c62",
     "components/tier2_runtime/runtime_loader.md": "591c6d491434e54f39eed5c48ae3216fc1b0ca1e2299044161cccac48f93dca5",
-    "components/tier2_runtime/runtime_vmmio.md": "8edb9d58ad84209d782e87754f2ed0ae4d04a1dfe833dd507afd5fc386cd5de2",
-    "components/tier2_runtime/runtime_vsoc.md": "9c0e710582098a164ec7edfdf5c81c57e883b8c95b5537bade73b9a4ca216e2b",
+    "components/tier2_runtime/runtime_vmmio.md": "7065082544587129ca3b63ad6ebcfdc3c449069d0e2abb6d67c49067aa7faa82",
+    "components/tier2_runtime/runtime_vsoc.md": "320427d3d33df306268d57be72f07060c5d724f7afb693877a02d8234ae4f1ad",
     "components/tier2_runtime/wasm_instruction.md": "640483f8a25bca7885110ce37e499c4ba3622fdc2ba3507e3a78b2bc1fcf8b5f",
     "components/tier3_jit/concepts/README.md": "a39c8c192999a792243e697e008fcad02c701d14b9559d492d668208122b6ebc",
     "components/tier3_jit/jit_assembler_constexpr.md": "4798eb6d2692ae574c45917a0597feb16e1ffa3ec9d9771566a6523607f7c7d5",
-    "components/tier3_jit/jit_compiler.md": "79fd4c1ef76079034188b9970deaa5457a84612701c5a3c5eb9163ee4f7cb9c9",
+    "components/tier3_jit/jit_compiler.md": "ec09bd4d4dc578ecf7b30934cf6dd1d6b02742ffd7627518e3af6f333dfe1900",
     "components/tier3_jit/jit_engine_copy_patch.md": "4fa983d73c4f184a6ffdf59ad08a8e4218a818e065102d39a36ec55e2a3bc11e",
     "components/tier3_jit/jit_runtime_entry.md": "ea6c4d6a6cc7d48381921d7c3d437aaf8f411bbd87c36d3cedd38dbbae94552c",
-    "components/tier3_jit/jit_runtime_hotspot.md": "b594e75ced58d3430ae33afcc798ed97b0615199f58435490c2f5cbdcd0f2a8e",
-    "components/tier3_platform/platform_hal.md": "725dc60e618aa842c46eeac285835c2f3ddac0a8b1c74d22d3acf3cfdf60089a",
+    "components/tier3_jit/jit_runtime_hotspot.md": "81ca31ea509cb672492778106f9ac308f8014c6e671488020dfb7b5efe46f33c",
+    "components/tier3_platform/platform_hal.md": "b7e90323ad0269f78e10e3f59dc1e373d3b8818d02ecf4bcf03e5970096842e2",
     "components/tier3_platform/platform_memory.md": "7269a7df0573b9753da79472f7aaa4970a47f4ab9e7ef5a8406b70cceff05e1b",
     "plans/backlog_archive.md": "3e09371810730853a39b09fec40e83409690786e1d27caae96ab6af054191716",
     "plans/backlog_list.md": "25b451c306c223b25c40f050ee6a4c41f818dff84dad96da46e563193b460455",
     "plans/roadmap_phase.md": "92ad637d4e9baed7d2083ae53145a3416cd1df7e1266339c6cabe1c969b4fe2c",
-    "requires/requirement_list.md": "b6f21fb95e082093a125c7f6e467f8e7369a01f26fa38a519afe5bc777560be5"
+    "requires/requirement_list.md": "4f67dd9972dd42e623b8fbff2f685c444b2a5eed43604b34f1b90a2723837537"
   },
   "assessments": [
     {
@@ -72,6 +73,19 @@
       "summary": "Independent heuristic evaluation for '3.1.1 WASM実行 (vSoC)'."
     },
     {
+      "section_id": "sec:components/tier1_core/system_config_details.md#2.4 vSoC / vMMIO {VERIFY_FORMAL}",
+      "file_path": "components/tier1_core/system_config_details.md",
+      "heading": "2.4 vSoC / vMMIO {VERIFY_FORMAL}",
+      "tier": 1,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '2.4 vSoC / vMMIO {VERIFY_FORMAL}'."
+    },
+    {
       "section_id": "sec:components/tier2_runtime/runtime_interpreter.md#4.1 アルゴリズム",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
       "heading": "4.1 アルゴリズム",
@@ -98,23 +112,23 @@
       "summary": "Independent heuristic evaluation for '3.1.3 システム連携 (IPC/HAL/WIT)'."
     },
     {
-      "section_id": "sec:components/tier1_core/system_config_details.md#2.4 vSoC / vMMIO {VERIFY_FORMAL}",
-      "file_path": "components/tier1_core/system_config_details.md",
-      "heading": "2.4 vSoC / vMMIO {VERIFY_FORMAL}",
-      "tier": 1,
+      "section_id": "sec:components/tier2_runtime/runtime_vmmio.md#1. コンセプト",
+      "file_path": "components/tier2_runtime/runtime_vmmio.md",
+      "heading": "1. コンセプト",
+      "tier": 2,
       "complexity_score": 2,
       "risk_score": 2,
       "formal_needed": false,
       "recommended_verification": "Static",
       "suggested_tags": [],
       "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '2.4 vSoC / vMMIO {VERIFY_FORMAL}'."
+      "summary": "Independent heuristic evaluation for '1. コンセプト'."
     },
     {
-      "section_id": "sec:components/tier2_runtime/runtime_vmmio.md#1. コンセプト",
-      "file_path": "components/tier2_runtime/runtime_vmmio.md",
+      "section_id": "sec:components/tier1_core/system_containers.md#1. コンセプト",
+      "file_path": "components/tier1_core/system_containers.md",
       "heading": "1. コンセプト",
-      "tier": 2,
+      "tier": 1,
       "complexity_score": 2,
       "risk_score": 2,
       "formal_needed": false,
@@ -219,6 +233,19 @@
       "summary": "Independent heuristic evaluation for '3.1.2 タスク管理・通信 (COOS)'."
     },
     {
+      "section_id": "sec:requires/requirement_list.md#4. 設計課題・制約追跡 (Design Challenges & ADRs)",
+      "file_path": "requires/requirement_list.md",
+      "heading": "4. 設計課題・制約追跡 (Design Challenges & ADRs)",
+      "tier": 0,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '4. 設計課題・制約追跡 (Design Challenges & ADRs)'."
+    },
+    {
       "section_id": "sec:components/tier2_runtime/debug/debug_manager.md#1. コンセプト",
       "file_path": "components/tier2_runtime/debug/debug_manager.md",
       "heading": "1. コンセプト",
@@ -249,6 +276,19 @@
       "summary": "Independent heuristic evaluation for '4.1 アルゴリズム'."
     },
     {
+      "section_id": "sec:components/tier1_core/system_containers.md#ビット詰めビュー（bit_view）",
+      "file_path": "components/tier1_core/system_containers.md",
+      "heading": "ビット詰めビュー（bit_view）",
+      "tier": 1,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for 'ビット詰めビュー（bit_view）'."
+    },
+    {
       "section_id": "sec:components/tier2_runtime/runtime_vsoc.md#4.1 アルゴリズム",
       "file_path": "components/tier2_runtime/runtime_vsoc.md",
       "heading": "4.1 アルゴリズム",
@@ -262,9 +302,9 @@
       "summary": "Independent heuristic evaluation for '4.1 アルゴリズム'."
     },
     {
-      "section_id": "sec:requires/requirement_list.md#4. 設計課題・制約追跡 (Design Challenges & ADRs)",
+      "section_id": "sec:requires/requirement_list.md#3.1.5 共通基盤・実装パターン",
       "file_path": "requires/requirement_list.md",
-      "heading": "4. 設計課題・制約追跡 (Design Challenges & ADRs)",
+      "heading": "3.1.5 共通基盤・実装パターン",
       "tier": 0,
       "complexity_score": 2,
       "risk_score": 2,
@@ -272,7 +312,7 @@
       "recommended_verification": "Static",
       "suggested_tags": [],
       "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '4. 設計課題・制約追跡 (Design Challenges & ADRs)'."
+      "summary": "Independent heuristic evaluation for '3.1.5 共通基盤・実装パターン'."
     },
     {
       "section_id": "sec:components/tier1_core/os_scheduler.md#1. コンセプト",
@@ -383,6 +423,19 @@
       "summary": "Independent heuristic evaluation for '4.3 グローバルキーワード（広域仕様・横断ポリシー）の定義'."
     },
     {
+      "section_id": "sec:components/tier1_core/system_containers.md#4.1 アルゴリズム",
+      "file_path": "components/tier1_core/system_containers.md",
+      "heading": "4.1 アルゴリズム",
+      "tier": 1,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '4.1 アルゴリズム'."
+    },
+    {
       "section_id": "sec:components/tier2_runtime/runtime_vsoc.md#6.1 検証対象の不変条件",
       "file_path": "components/tier2_runtime/runtime_vsoc.md",
       "heading": "6.1 検証対象の不変条件",
@@ -396,17 +449,21 @@
       "summary": "Independent heuristic evaluation for '6.1 検証対象の不変条件'."
     },
     {
-      "section_id": "sec:requires/requirement_list.md#3.1.5 共通基盤・実装パターン",
-      "file_path": "requires/requirement_list.md",
-      "heading": "3.1.5 共通基盤・実装パターン",
-      "tier": 0,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '3.1.5 共通基盤・実装パターン'."
+      "section_id": "sec:components/tier3_jit/jit_compiler.md#7.2 安全性制約と方策",
+      "file_path": "components/tier3_jit/jit_compiler.md",
+      "heading": "7.2 安全性制約と方策",
+      "tier": 3,
+      "complexity_score": 4,
+      "risk_score": 4,
+      "formal_needed": true,
+      "recommended_verification": "pyModelChecking",
+      "suggested_tags": [
+        "{VERIFY_FORMAL}"
+      ],
+      "risk_factors": [
+        "Stateful concurrent protocol or hardware safety invariant identified"
+      ],
+      "summary": "Independent heuristic evaluation for '7.2 安全性制約と方策'."
     },
     {
       "section_id": "sec:components/tier1_core/os_coos.md#4.2 状態遷移図 (SMD: COOS システムレベル)",
@@ -424,6 +481,19 @@
         "Stateful concurrent protocol or hardware safety invariant identified"
       ],
       "summary": "Independent heuristic evaluation for '4.2 状態遷移図 (SMD: COOS システムレベル)'."
+    },
+    {
+      "section_id": "sec:components/tier1_core/system_containers.md#3.1 データ構造",
+      "file_path": "components/tier1_core/system_containers.md",
+      "heading": "3.1 データ構造",
+      "tier": 1,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '3.1 データ構造'."
     },
     {
       "section_id": "sec:components/tier3_platform/platform_hal.md#1. コンセプト",
@@ -469,6 +539,19 @@
       "summary": "Independent heuristic evaluation for '8. 設計判断 (ADR)'."
     },
     {
+      "section_id": "sec:components/tier1_core/system_containers.md#6.2 メモリ制約と方策",
+      "file_path": "components/tier1_core/system_containers.md",
+      "heading": "6.2 メモリ制約と方策",
+      "tier": 1,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '6.2 メモリ制約と方策'."
+    },
+    {
       "section_id": "sec:components/tier2_runtime/runtime_interpreter.md#4.2 状態遷移図",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
       "heading": "4.2 状態遷移図",
@@ -480,6 +563,23 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '4.2 状態遷移図'."
+    },
+    {
+      "section_id": "sec:components/tier1_interface/ipc_router.md#メッセージルーティング（route_message）",
+      "file_path": "components/tier1_interface/ipc_router.md",
+      "heading": "メッセージルーティング（route_message）",
+      "tier": 1,
+      "complexity_score": 4,
+      "risk_score": 4,
+      "formal_needed": true,
+      "recommended_verification": "pyModelChecking",
+      "suggested_tags": [
+        "{VERIFY_FORMAL}"
+      ],
+      "risk_factors": [
+        "Stateful concurrent protocol or hardware safety invariant identified"
+      ],
+      "summary": "Independent heuristic evaluation for 'メッセージルーティング（route_message）'."
     },
     {
       "section_id": "sec:components/tier2_runtime/runtime_vsoc.md#4.2 状態遷移図 (SysML SMD: vSoC Engine ライフサイクル)",
@@ -545,6 +645,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '3.2.2 開発方針・品質'."
+    },
+    {
+      "section_id": "sec:components/tier1_core/system_containers.md#6.1 性能制約と方策",
+      "file_path": "components/tier1_core/system_containers.md",
+      "heading": "6.1 性能制約と方策",
+      "tier": 1,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '6.1 性能制約と方策'."
     },
     {
       "section_id": "sec:components/tier1_core/system_logging.md#1. コンセプト",
@@ -677,6 +790,19 @@
       "summary": "Independent heuristic evaluation for '2. アーキテクチャ分類'."
     },
     {
+      "section_id": "sec:components/tier1_core/system_syscall.md#6.2. 高応答 Trigger のマッピング例",
+      "file_path": "components/tier1_core/system_syscall.md",
+      "heading": "6.2. 高応答 Trigger のマッピング例",
+      "tier": 1,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '6.2. 高応答 Trigger のマッピング例'."
+    },
+    {
       "section_id": "sec:components/tier1_interface/ipc_router.md#4.1.1 名前解決パイプラインとアクセス制御フロー",
       "file_path": "components/tier1_interface/ipc_router.md",
       "heading": "4.1.1 名前解決パイプラインとアクセス制御フロー",
@@ -776,6 +902,19 @@
       "summary": "Independent heuristic evaluation for '4.3 内部シーケンス'."
     },
     {
+      "section_id": "sec:components/tier3_jit/jit_compiler.md#3.1 データ構造",
+      "file_path": "components/tier3_jit/jit_compiler.md",
+      "heading": "3.1 データ構造",
+      "tier": 3,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '3.1 データ構造'."
+    },
+    {
       "section_id": "sec:components/tier1_core/os_scheduler.md#4.2 状態遷移図 (SysML SMD: Scheduler 視点)",
       "file_path": "components/tier1_core/os_scheduler.md",
       "heading": "4.2 状態遷移図 (SysML SMD: Scheduler 視点)",
@@ -832,32 +971,6 @@
       "summary": "Independent heuristic evaluation for '4.1 アルゴリズム'."
     },
     {
-      "section_id": "sec:components/tier3_jit/jit_compiler.md#3.1 データ構造",
-      "file_path": "components/tier3_jit/jit_compiler.md",
-      "heading": "3.1 データ構造",
-      "tier": 3,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '3.1 データ構造'."
-    },
-    {
-      "section_id": "sec:components/tier3_jit/jit_compiler.md#5.1 直交表: 検索・昇格・代謝",
-      "file_path": "components/tier3_jit/jit_compiler.md",
-      "heading": "5.1 直交表: 検索・昇格・代謝",
-      "tier": 3,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '5.1 直交表: 検索・昇格・代謝'."
-    },
-    {
       "section_id": "sec:components/tier3_platform/platform_memory.md#9. ハードウェアメモリ保護 (MPU) & W^X 設計",
       "file_path": "components/tier3_platform/platform_memory.md",
       "heading": "9. ハードウェアメモリ保護 (MPU) & W^X 設計",
@@ -888,6 +1001,19 @@
       "summary": "Independent heuristic evaluation for 'ヒープパーティション'."
     },
     {
+      "section_id": "sec:components/tier1_core/system_containers.md#3.2 内部ブロック図",
+      "file_path": "components/tier1_core/system_containers.md",
+      "heading": "3.2 内部ブロック図",
+      "tier": 1,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '3.2 内部ブロック図'."
+    },
+    {
       "section_id": "sec:components/tier1_interface/interface_wit.md#3.2 リカバリー戦略とエラーハンドリング",
       "file_path": "components/tier1_interface/interface_wit.md",
       "heading": "3.2 リカバリー戦略とエラーハンドリング",
@@ -899,6 +1025,45 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '3.2 リカバリー戦略とエラーハンドリング'."
+    },
+    {
+      "section_id": "sec:components/tier2_runtime/debug/debug_manager.md#デバッガ（Debugger）クラス",
+      "file_path": "components/tier2_runtime/debug/debug_manager.md",
+      "heading": "デバッガ（Debugger）クラス",
+      "tier": 2,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for 'デバッガ（Debugger）クラス'."
+    },
+    {
+      "section_id": "sec:components/tier3_jit/jit_compiler.md#5.1 直交表: 検索・昇格・代謝",
+      "file_path": "components/tier3_jit/jit_compiler.md",
+      "heading": "5.1 直交表: 検索・昇格・代謝",
+      "tier": 3,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '5.1 直交表: 検索・昇格・代謝'."
+    },
+    {
+      "section_id": "sec:components/tier1_core/system_containers.md#疎集合ビュー（flat_set_view）",
+      "file_path": "components/tier1_core/system_containers.md",
+      "heading": "疎集合ビュー（flat_set_view）",
+      "tier": 1,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '疎集合ビュー（flat_set_view）'."
     },
     {
       "section_id": "sec:components/tier1_core/system_syscall.md#5.5. IRQ (`0x30`-`0x3F`)",
@@ -914,6 +1079,19 @@
       "summary": "Independent heuristic evaluation for '5.5. IRQ (`0x30`-`0x3F`)'."
     },
     {
+      "section_id": "sec:components/tier3_platform/platform_hal.md#4.1 アルゴリズム",
+      "file_path": "components/tier3_platform/platform_hal.md",
+      "heading": "4.1 アルゴリズム",
+      "tier": 3,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '4.1 アルゴリズム'."
+    },
+    {
       "section_id": "sec:components/tier1_core/os_scheduler.md#4.1 アルゴリズム",
       "file_path": "components/tier1_core/os_scheduler.md",
       "heading": "4.1 アルゴリズム",
@@ -925,6 +1103,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '4.1 アルゴリズム'."
+    },
+    {
+      "section_id": "sec:components/tier1_interface/ipc_router.md#3.1 データ構造",
+      "file_path": "components/tier1_interface/ipc_router.md",
+      "heading": "3.1 データ構造",
+      "tier": 1,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '3.1 データ構造'."
     },
     {
       "section_id": "sec:components/tier1_interface/ipc_router.md#4.3.1 二分探索による O(log N) 低遅延ルックアップ",
@@ -977,6 +1168,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '4.1 アルゴリズム'."
+    },
+    {
+      "section_id": "sec:components/tier2_runtime/runtime_vmmio.md#FlatMap ページテーブル定義",
+      "file_path": "components/tier2_runtime/runtime_vmmio.md",
+      "heading": "FlatMap ページテーブル定義",
+      "tier": 2,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for 'FlatMap ページテーブル定義'."
     },
     {
       "section_id": "sec:components/tier2_runtime/runtime_vmmio.md#6.1 性能制約と方策",
@@ -1044,19 +1248,6 @@
       "summary": "Independent heuristic evaluation for '4.2 状態遷移図'."
     },
     {
-      "section_id": "sec:components/tier3_platform/platform_hal.md#4.1 アルゴリズム",
-      "file_path": "components/tier3_platform/platform_hal.md",
-      "heading": "4.1 アルゴリズム",
-      "tier": 3,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '4.1 アルゴリズム'."
-    },
-    {
       "section_id": "sec:components/tier1_core/os_coos.md#6.2 直交表: CSP通信と状態遷移",
       "file_path": "components/tier1_core/os_coos.md",
       "heading": "6.2 直交表: CSP通信と状態遷移",
@@ -1094,19 +1285,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '2. アーキテクチャ分類'."
-    },
-    {
-      "section_id": "sec:components/tier1_interface/ipc_router.md#3.1 データ構造",
-      "file_path": "components/tier1_interface/ipc_router.md",
-      "heading": "3.1 データ構造",
-      "tier": 1,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '3.1 データ構造'."
     },
     {
       "section_id": "sec:components/tier1_interface/system_service.md#1. コンセプト",
@@ -1172,19 +1350,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '4.4 状態遷移図'."
-    },
-    {
-      "section_id": "sec:components/tier2_runtime/runtime_vmmio.md#FlatMap ページテーブル定義",
-      "file_path": "components/tier2_runtime/runtime_vmmio.md",
-      "heading": "FlatMap ページテーブル定義",
-      "tier": 2,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for 'FlatMap ページテーブル定義'."
     },
     {
       "section_id": "sec:components/tier3_jit/jit_assembler_constexpr.md#2. アーキテクチャ分類",
@@ -1269,17 +1434,30 @@
       "summary": "Independent heuristic evaluation for 'WASM実行およびJIT遷移シーケンス'."
     },
     {
-      "section_id": "sec:components/tier2_runtime/debug/debug_manager.md#デバッガ（Debugger）クラス",
-      "file_path": "components/tier2_runtime/debug/debug_manager.md",
-      "heading": "デバッガ（Debugger）クラス",
-      "tier": 2,
+      "section_id": "sec:components/tier1_core/system_config_details.md#物理アクセス許可範囲の定義",
+      "file_path": "components/tier1_core/system_config_details.md",
+      "heading": "物理アクセス許可範囲の定義",
+      "tier": 1,
       "complexity_score": 2,
       "risk_score": 2,
       "formal_needed": false,
       "recommended_verification": "Static",
       "suggested_tags": [],
       "risk_factors": [],
-      "summary": "Independent heuristic evaluation for 'デバッガ（Debugger）クラス'."
+      "summary": "Independent heuristic evaluation for '物理アクセス許可範囲の定義'."
+    },
+    {
+      "section_id": "sec:components/tier1_core/system_containers.md#疎マップビュー（flat_map_view）",
+      "file_path": "components/tier1_core/system_containers.md",
+      "heading": "疎マップビュー（flat_map_view）",
+      "tier": 1,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '疎マップビュー（flat_map_view）'."
     },
     {
       "section_id": "sec:components/tier1_core/system_logging.md#4.4 状態遷移図",
@@ -1306,6 +1484,32 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '5.1. カテゴリ一覧'."
+    },
+    {
+      "section_id": "sec:components/tier3_jit/jit_compiler.md#検索範囲取得（get_search_range）",
+      "file_path": "components/tier3_jit/jit_compiler.md",
+      "heading": "検索範囲取得（get_search_range）",
+      "tier": 3,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '検索範囲取得（get_search_range）'."
+    },
+    {
+      "section_id": "sec:components/tier3_platform/platform_hal.md#非標準制御 (control)",
+      "file_path": "components/tier3_platform/platform_hal.md",
+      "heading": "非標準制御 (control)",
+      "tier": 3,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '非標準制御 (control)'."
     },
     {
       "section_id": "sec:components/tier3_platform/platform_hal.md#4.2 状態遷移図",
@@ -1401,6 +1605,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for 'タスク生成（spawn_task - ネイティブタスク用）'."
+    },
+    {
+      "section_id": "sec:components/tier1_core/system_containers.md#5.3 利用箇所",
+      "file_path": "components/tier1_core/system_containers.md",
+      "heading": "5.3 利用箇所",
+      "tier": 1,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '5.3 利用箇所'."
     },
     {
       "section_id": "sec:components/tier2_runtime/runtime_vsoc.md#Safepoint の動作メカニズム",
@@ -1606,6 +1823,32 @@
       "summary": "Independent heuristic evaluation for '5.1 `coos_harness` (システムハーネス)'."
     },
     {
+      "section_id": "sec:components/tier1_core/system_containers.md#4.3 内部シーケンス",
+      "file_path": "components/tier1_core/system_containers.md",
+      "heading": "4.3 内部シーケンス",
+      "tier": 1,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '4.3 内部シーケンス'."
+    },
+    {
+      "section_id": "sec:components/tier1_core/system_containers.md#6.3 安全性制約と方策",
+      "file_path": "components/tier1_core/system_containers.md",
+      "heading": "6.3 安全性制約と方策",
+      "tier": 1,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '6.3 安全性制約と方策'."
+    },
+    {
       "section_id": "sec:components/tier1_core/system_logging.md#4.1 アルゴリズム",
       "file_path": "components/tier1_core/system_logging.md",
       "heading": "4.1 アルゴリズム",
@@ -1708,23 +1951,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for 'JIT構成（jit_config）'."
-    },
-    {
-      "section_id": "sec:components/tier3_jit/jit_compiler.md#7.2 安全性制約と方策",
-      "file_path": "components/tier3_jit/jit_compiler.md",
-      "heading": "7.2 安全性制約と方策",
-      "tier": 3,
-      "complexity_score": 4,
-      "risk_score": 4,
-      "formal_needed": true,
-      "recommended_verification": "pyModelChecking",
-      "suggested_tags": [
-        "{VERIFY_FORMAL}"
-      ],
-      "risk_factors": [
-        "Stateful concurrent protocol or hardware safety invariant identified"
-      ],
-      "summary": "Independent heuristic evaluation for '7.2 安全性制約と方策'."
     },
     {
       "section_id": "sec:components/tier3_jit/jit_runtime_hotspot.md#6.1 性能制約",
@@ -1855,6 +2081,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '2.6 デバッガ'."
+    },
+    {
+      "section_id": "sec:components/tier1_core/system_containers.md#2. アーキテクチャ分類",
+      "file_path": "components/tier1_core/system_containers.md",
+      "heading": "2. アーキテクチャ分類",
+      "tier": 1,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '2. アーキテクチャ分類'."
     },
     {
       "section_id": "sec:components/tier1_core/system_logging.md#6.2 メモリ制約と方策",
@@ -2216,6 +2455,32 @@
       "summary": "Independent heuristic evaluation for 'ロールベースアクセス制御の定義'."
     },
     {
+      "section_id": "sec:components/tier1_core/system_containers.md#静的コンテナ語彙 コンポーネント設計書 {VERIFY_LLM}",
+      "file_path": "components/tier1_core/system_containers.md",
+      "heading": "静的コンテナ語彙 コンポーネント設計書 {VERIFY_LLM}",
+      "tier": 1,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '静的コンテナ語彙 コンポーネント設計書 {VERIFY_LLM}'."
+    },
+    {
+      "section_id": "sec:components/tier1_core/system_containers.md#コンテナ語彙 コンセプトコード (`concepts/flat_view_concept.py`)",
+      "file_path": "components/tier1_core/system_containers.md",
+      "heading": "コンテナ語彙 コンセプトコード (`concepts/flat_view_concept.py`)",
+      "tier": 1,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for 'コンテナ語彙 コンセプトコード (`concepts/flat_view_concept.py`)'."
+    },
+    {
       "section_id": "sec:components/tier1_interface/interface_wit.md#WIT インターフェイス仕様書 (WASI 準拠版) {VERIFY_WIT} {VERIFY_LLM}",
       "file_path": "components/tier1_interface/interface_wit.md",
       "heading": "WIT インターフェイス仕様書 (WASI 準拠版) {VERIFY_WIT} {VERIFY_LLM}",
@@ -2484,9 +2749,9 @@
       "summary": "Independent heuristic evaluation for '4.1.1 制約関係図 (Constraint Relationship Diagram)'."
     },
     {
-      "section_id": "sec:components/tier1_core/system_syscall.md#6.2. 高応答 Trigger のマッピング例",
-      "file_path": "components/tier1_core/system_syscall.md",
-      "heading": "6.2. 高応答 Trigger のマッピング例",
+      "section_id": "sec:components/tier1_core/system_config.md#静的リソース消費の概算モデル",
+      "file_path": "components/tier1_core/system_config.md",
+      "heading": "静的リソース消費の概算モデル",
       "tier": 1,
       "complexity_score": 2,
       "risk_score": 2,
@@ -2494,7 +2759,7 @@
       "recommended_verification": "Static",
       "suggested_tags": [],
       "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '6.2. 高応答 Trigger のマッピング例'."
+      "summary": "Independent heuristic evaluation for '静的リソース消費の概算モデル'."
     },
     {
       "section_id": "sec:components/tier1_interface/interface_wit.md#5.3 `fireball:host/bus` (Master/Slave Bus)",
@@ -2588,9 +2853,9 @@
       "summary": "Independent heuristic evaluation for '3.2 内部ブロック図'."
     },
     {
-      "section_id": "sec:components/tier1_core/system_config.md#静的リソース消費の概算モデル",
-      "file_path": "components/tier1_core/system_config.md",
-      "heading": "静的リソース消費の概算モデル",
+      "section_id": "sec:components/tier1_core/system_containers.md#添字による状態参照（at / put）",
+      "file_path": "components/tier1_core/system_containers.md",
+      "heading": "添字による状態参照（at / put）",
       "tier": 1,
       "complexity_score": 2,
       "risk_score": 2,
@@ -2598,20 +2863,7 @@
       "recommended_verification": "Static",
       "suggested_tags": [],
       "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '静的リソース消費の概算モデル'."
-    },
-    {
-      "section_id": "sec:components/tier1_core/system_config_details.md#物理アクセス許可範囲の定義",
-      "file_path": "components/tier1_core/system_config_details.md",
-      "heading": "物理アクセス許可範囲の定義",
-      "tier": 1,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '物理アクセス許可範囲の定義'."
+      "summary": "Independent heuristic evaluation for '添字による状態参照（at / put）'."
     },
     {
       "section_id": "sec:components/tier1_core/system_syscall.md#8.1.1. 仮想割り込みID",
@@ -2899,6 +3151,19 @@
       "summary": "Independent heuristic evaluation for 'JITコンパイルおよび検索シーケンス'."
     },
     {
+      "section_id": "sec:components/tier3_platform/platform_hal.md#バッファの確保",
+      "file_path": "components/tier3_platform/platform_hal.md",
+      "heading": "バッファの確保",
+      "tier": 3,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for 'バッファの確保'."
+    },
+    {
       "section_id": "sec:components/tier3_platform/platform_memory.md#初期化",
       "file_path": "components/tier3_platform/platform_memory.md",
       "heading": "初期化",
@@ -3005,6 +3270,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '3.3 主要なクラス・構造体・配列・定数'."
+    },
+    {
+      "section_id": "sec:components/tier1_interface/ipc_router.md#ロール間通信許可マトリクス (FB_CONF_ROUTER_ROLE_MATRIX)",
+      "file_path": "components/tier1_interface/ipc_router.md",
+      "heading": "ロール間通信許可マトリクス (FB_CONF_ROUTER_ROLE_MATRIX)",
+      "tier": 1,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for 'ロール間通信許可マトリクス (FB_CONF_ROUTER_ROLE_MATRIX)'."
     },
     {
       "section_id": "sec:components/tier1_interface/ipc_router.md#4.3 メッセージライフサイクルと所有権管理 (SysML Parametric Diagram 相当)",
@@ -3137,6 +3415,19 @@
       "summary": "Independent heuristic evaluation for 'Debugger 介入時のキャッシュ一貫性'."
     },
     {
+      "section_id": "sec:components/tier2_runtime/runtime_vsoc.md#5.2 ネイティブAPI エクスポート",
+      "file_path": "components/tier2_runtime/runtime_vsoc.md",
+      "heading": "5.2 ネイティブAPI エクスポート",
+      "tier": 2,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '5.2 ネイティブAPI エクスポート'."
+    },
+    {
       "section_id": "sec:components/tier3_jit/jit_compiler.md#5.2 内部コンポーネントのデコンポジション",
       "file_path": "components/tier3_jit/jit_compiler.md",
       "heading": "5.2 内部コンポーネントのデコンポジション",
@@ -3258,6 +3549,19 @@
       "summary": "Independent heuristic evaluation for 'ADR-SCHED-003: BLOCKEDタスクリストの管理コストとリアルタイム性'."
     },
     {
+      "section_id": "sec:components/tier1_core/system_containers.md#添字区間による絞り込み（slice）",
+      "file_path": "components/tier1_core/system_containers.md",
+      "heading": "添字区間による絞り込み（slice）",
+      "tier": 1,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '添字区間による絞り込み（slice）'."
+    },
+    {
       "section_id": "sec:components/tier1_core/system_logging.md#ログ出力シーケンス",
       "file_path": "components/tier1_core/system_logging.md",
       "heading": "ログ出力シーケンス",
@@ -3312,19 +3616,6 @@
         "Stateful concurrent protocol or hardware safety invariant identified"
       ],
       "summary": "Independent heuristic evaluation for '4.3.2 CSP Handoff スターベーション防止対策'."
-    },
-    {
-      "section_id": "sec:components/tier1_interface/ipc_router.md#メッセージルーティング（route_message）",
-      "file_path": "components/tier1_interface/ipc_router.md",
-      "heading": "メッセージルーティング（route_message）",
-      "tier": 1,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for 'メッセージルーティング（route_message）'."
     },
     {
       "section_id": "sec:components/tier1_interface/ipc_router.md#6.3 検証モデル概要",
@@ -3472,19 +3763,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '`register-hook`'."
-    },
-    {
-      "section_id": "sec:components/tier2_runtime/runtime_vsoc.md#5.2 ネイティブAPI エクスポート",
-      "file_path": "components/tier2_runtime/runtime_vsoc.md",
-      "heading": "5.2 ネイティブAPI エクスポート",
-      "tier": 2,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '5.2 ネイティブAPI エクスポート'."
     },
     {
       "section_id": "sec:components/tier3_jit/jit_compiler.md#初期化（initialize）",
@@ -3636,6 +3914,45 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '最大タスク数制約'."
+    },
+    {
+      "section_id": "sec:components/tier1_core/system_containers.md#キー範囲による絞り込み（narrow）",
+      "file_path": "components/tier1_core/system_containers.md",
+      "heading": "キー範囲による絞り込み（narrow）",
+      "tier": 1,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for 'キー範囲による絞り込み（narrow）'."
+    },
+    {
+      "section_id": "sec:components/tier1_core/system_containers.md#区間内探索（find）",
+      "file_path": "components/tier1_core/system_containers.md",
+      "heading": "区間内探索（find）",
+      "tier": 1,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '区間内探索（find）'."
+    },
+    {
+      "section_id": "sec:components/tier1_core/system_containers.md#所属判定（contains）",
+      "file_path": "components/tier1_core/system_containers.md",
+      "heading": "所属判定（contains）",
+      "tier": 1,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '所属判定（contains）'."
     },
     {
       "section_id": "sec:components/tier1_core/system_logging.md#3.2 内部ブロック図",
@@ -4171,19 +4488,6 @@
       "summary": "Independent heuristic evaluation for 'カード状態取得（get_card_state）'."
     },
     {
-      "section_id": "sec:components/tier3_jit/jit_compiler.md#検索範囲取得（get_search_range）",
-      "file_path": "components/tier3_jit/jit_compiler.md",
-      "heading": "検索範囲取得（get_search_range）",
-      "tier": 3,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '検索範囲取得（get_search_range）'."
-    },
-    {
       "section_id": "sec:components/tier3_jit/jit_engine_copy_patch.md#3.2 内部ブロック図",
       "file_path": "components/tier3_jit/jit_engine_copy_patch.md",
       "heading": "3.2 内部ブロック図",
@@ -4288,9 +4592,9 @@
       "summary": "Independent heuristic evaluation for 'ゼロコピー転送 (bus_master/streaming)'."
     },
     {
-      "section_id": "sec:components/tier3_platform/platform_hal.md#5.3 RSPトランスポート構成",
+      "section_id": "sec:components/tier3_platform/platform_hal.md#5.4 RSPトランスポート構成",
       "file_path": "components/tier3_platform/platform_hal.md",
-      "heading": "5.3 RSPトランスポート構成",
+      "heading": "5.4 RSPトランスポート構成",
       "tier": 3,
       "complexity_score": 2,
       "risk_score": 2,
@@ -4298,7 +4602,7 @@
       "recommended_verification": "Static",
       "suggested_tags": [],
       "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '5.3 RSPトランスポート構成'."
+      "summary": "Independent heuristic evaluation for '5.4 RSPトランスポート構成'."
     },
     {
       "section_id": "sec:requires/requirement_list.md#2.1 ユースケース図",
@@ -4574,9 +4878,9 @@
       "summary": "Independent heuristic evaluation for '6.2 メモリ制約'."
     },
     {
-      "section_id": "sec:components/tier3_platform/platform_hal.md#5.4 メッセージ形式",
+      "section_id": "sec:components/tier3_platform/platform_hal.md#5.3 URI/IPCインターフェイス",
       "file_path": "components/tier3_platform/platform_hal.md",
-      "heading": "5.4 メッセージ形式",
+      "heading": "5.3 URI/IPCインターフェイス",
       "tier": 3,
       "complexity_score": 2,
       "risk_score": 2,
@@ -4584,7 +4888,20 @@
       "recommended_verification": "Static",
       "suggested_tags": [],
       "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '5.4 メッセージ形式'."
+      "summary": "Independent heuristic evaluation for '5.3 URI/IPCインターフェイス'."
+    },
+    {
+      "section_id": "sec:components/tier3_platform/platform_hal.md#5.5 メッセージ形式",
+      "file_path": "components/tier3_platform/platform_hal.md",
+      "heading": "5.5 メッセージ形式",
+      "tier": 3,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '5.5 メッセージ形式'."
     },
     {
       "section_id": "sec:components/tier3_platform/platform_hal.md#6.1 性能制約と方策",
@@ -4773,19 +5090,6 @@
       "summary": "Independent heuristic evaluation for 'トラップ実行の制御フロー'."
     },
     {
-      "section_id": "sec:components/tier1_interface/ipc_router.md#ロール間通信許可マトリクス (FB_CONF_ROUTER_ROLE_MATRIX)",
-      "file_path": "components/tier1_interface/ipc_router.md",
-      "heading": "ロール間通信許可マトリクス (FB_CONF_ROUTER_ROLE_MATRIX)",
-      "tier": 1,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for 'ロール間通信許可マトリクス (FB_CONF_ROUTER_ROLE_MATRIX)'."
-    },
-    {
       "section_id": "sec:components/tier1_interface/system_service.md#リカバリー戦略の種類と具体的ポリシー",
       "file_path": "components/tier1_interface/system_service.md",
       "heading": "リカバリー戦略の種類と具体的ポリシー",
@@ -4888,6 +5192,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for 'Tier 3 JIT — コンセプトコード'."
+    },
+    {
+      "section_id": "sec:components/tier3_platform/platform_hal.md#データの読み出し",
+      "file_path": "components/tier3_platform/platform_hal.md",
+      "heading": "データの読み出し",
+      "tier": 3,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for 'データの読み出し'."
     },
     {
       "section_id": "sec:plans/roadmap_phase.md#フェーズ概要",
@@ -5059,19 +5376,6 @@
       "summary": "Independent heuristic evaluation for 'バッチコンパイル処理（process_batch_compile）'."
     },
     {
-      "section_id": "sec:components/tier3_platform/platform_hal.md#データの読み出し",
-      "file_path": "components/tier3_platform/platform_hal.md",
-      "heading": "データの読み出し",
-      "tier": 3,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for 'データの読み出し'."
-    },
-    {
       "section_id": "sec:components/tier3_platform/platform_hal.md#データの書き込み (write)",
       "file_path": "components/tier3_platform/platform_hal.md",
       "heading": "データの書き込み (write)",
@@ -5083,32 +5387,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for 'データの書き込み (write)'."
-    },
-    {
-      "section_id": "sec:components/tier3_platform/platform_hal.md#非標準制御 (control)",
-      "file_path": "components/tier3_platform/platform_hal.md",
-      "heading": "非標準制御 (control)",
-      "tier": 3,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '非標準制御 (control)'."
-    },
-    {
-      "section_id": "sec:components/tier3_platform/platform_hal.md#バッファの確保",
-      "file_path": "components/tier3_platform/platform_hal.md",
-      "heading": "バッファの確保",
-      "tier": 3,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for 'バッファの確保'."
     },
     {
       "section_id": "sec:components/tier3_platform/platform_memory.md#トランザクションバッチ化によるレイテンシ両立",
@@ -5284,6 +5562,32 @@
       "summary": "Independent heuristic evaluation for '4.3 内部シーケンス'."
     },
     {
+      "section_id": "sec:components/tier1_core/system_containers.md#4.2 状態遷移図",
+      "file_path": "components/tier1_core/system_containers.md",
+      "heading": "4.2 状態遷移図",
+      "tier": 1,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '4.2 状態遷移図'."
+    },
+    {
+      "section_id": "sec:components/tier1_core/system_containers.md#5.2 URI/IPCインターフェイス",
+      "file_path": "components/tier1_core/system_containers.md",
+      "heading": "5.2 URI/IPCインターフェイス",
+      "tier": 1,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '5.2 URI/IPCインターフェイス'."
+    },
+    {
       "section_id": "sec:components/tier1_core/system_syscall.md#6.1. 役割",
       "file_path": "components/tier1_core/system_syscall.md",
       "heading": "6.1. 役割",
@@ -5425,19 +5729,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '5.2 Tier 3 リソースインターフェイス'."
-    },
-    {
-      "section_id": "sec:components/tier3_platform/platform_hal.md#5.2 URI/IPCインターフェイス",
-      "file_path": "components/tier3_platform/platform_hal.md",
-      "heading": "5.2 URI/IPCインターフェイス",
-      "tier": 3,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '5.2 URI/IPCインターフェイス'."
     },
     {
       "section_id": "sec:components/tier3_platform/platform_memory.md#9.2 JIT W^X (Write XOR Execute) 切替プロトコル",
@@ -5929,6 +6220,19 @@
       "summary": "Independent heuristic evaluation for 'タスク終了（terminate）'."
     },
     {
+      "section_id": "sec:components/tier1_core/system_containers.md#7. 参考実装リスト",
+      "file_path": "components/tier1_core/system_containers.md",
+      "heading": "7. 参考実装リスト",
+      "tier": 1,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '7. 参考実装リスト'."
+    },
+    {
       "section_id": "sec:components/tier1_core/system_logging.md#ロガー（Logger）クラス",
       "file_path": "components/tier1_core/system_logging.md",
       "heading": "ロガー（Logger）クラス",
@@ -6364,6 +6668,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for 'エントリ登録（register_entry）'."
+    },
+    {
+      "section_id": "sec:components/tier3_jit/jit_runtime_hotspot.md#3.1 データ構造",
+      "file_path": "components/tier3_jit/jit_runtime_hotspot.md",
+      "heading": "3.1 データ構造",
+      "tier": 3,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '3.1 データ構造'."
     },
     {
       "section_id": "sec:components/tier3_jit/jit_runtime_hotspot.md#ホットスポット検出器（HotspotDetector）クラス",
@@ -6994,9 +7311,9 @@
       "summary": "Independent heuristic evaluation for '6. 制約達成の方策'."
     },
     {
-      "section_id": "sec:components/tier1_core/system_config_details.md#(Overview)",
+      "section_id": "sec:components/tier1_core/system_config_details.md#システムコンフィグマクロ一覧",
       "file_path": "components/tier1_core/system_config_details.md",
-      "heading": "(Overview)",
+      "heading": "システムコンフィグマクロ一覧",
       "tier": 1,
       "complexity_score": 2,
       "risk_score": 2,
@@ -7004,7 +7321,7 @@
       "recommended_verification": "Static",
       "suggested_tags": [],
       "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '(Overview)'."
+      "summary": "Independent heuristic evaluation for 'システムコンフィグマクロ一覧'."
     },
     {
       "section_id": "sec:components/tier1_core/system_config_details.md#2. マクロ一覧",
@@ -7018,6 +7335,84 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '2. マクロ一覧'."
+    },
+    {
+      "section_id": "sec:components/tier1_core/system_containers.md#3. 静的モデル",
+      "file_path": "components/tier1_core/system_containers.md",
+      "heading": "3. 静的モデル",
+      "tier": 1,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '3. 静的モデル'."
+    },
+    {
+      "section_id": "sec:components/tier1_core/system_containers.md#3.3 主要なクラス・構造体・配列・定数",
+      "file_path": "components/tier1_core/system_containers.md",
+      "heading": "3.3 主要なクラス・構造体・配列・定数",
+      "tier": 1,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '3.3 主要なクラス・構造体・配列・定数'."
+    },
+    {
+      "section_id": "sec:components/tier1_core/system_containers.md#4. 動的モデル",
+      "file_path": "components/tier1_core/system_containers.md",
+      "heading": "4. 動的モデル",
+      "tier": 1,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '4. 動的モデル'."
+    },
+    {
+      "section_id": "sec:components/tier1_core/system_containers.md#5. インターフェイス定義",
+      "file_path": "components/tier1_core/system_containers.md",
+      "heading": "5. インターフェイス定義",
+      "tier": 1,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '5. インターフェイス定義'."
+    },
+    {
+      "section_id": "sec:components/tier1_core/system_containers.md#5.1 公開API",
+      "file_path": "components/tier1_core/system_containers.md",
+      "heading": "5.1 公開API",
+      "tier": 1,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '5.1 公開API'."
+    },
+    {
+      "section_id": "sec:components/tier1_core/system_containers.md#6. 制約達成の方策",
+      "file_path": "components/tier1_core/system_containers.md",
+      "heading": "6. 制約達成の方策",
+      "tier": 1,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '6. 制約達成の方策'."
     },
     {
       "section_id": "sec:components/tier1_core/system_logging.md#ロギング コンポーネント設計書",
@@ -8500,19 +8895,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '3. 静的モデル'."
-    },
-    {
-      "section_id": "sec:components/tier3_jit/jit_runtime_hotspot.md#3.1 データ構造",
-      "file_path": "components/tier3_jit/jit_runtime_hotspot.md",
-      "heading": "3.1 データ構造",
-      "tier": 3,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '3.1 データ構造'."
     },
     {
       "section_id": "sec:components/tier3_jit/jit_runtime_hotspot.md#4. 動的モデル",

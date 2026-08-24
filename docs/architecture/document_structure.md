@@ -20,7 +20,7 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 [ Tier 1: 主要システムコンポーネント (Primary Components) ] ─ (What)
   · COOS (os_coos, os_scheduler)
   · Interface (ipc_router, system_service, interface_wit)
-  · System Core (system_config, system_logging, system_syscall)
+  · System Core (system_config, system_logging, system_syscall, system_containers)
            │
            │  複雑な状態空間・機能のサブシステム分解
            ▼
@@ -46,7 +46,7 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 | レイヤー | ディレクトリ | 定義される設計書 | 複雑度・責務の範囲 |
 | :--- | :--- | :--- | :--- |
 | **Tier 0** | `docs/requires/` | システム要求仕様書 (`requirement_list.md`) | **最上位要求 (Why)**<br>システム全体が満たすべき受入基準・機能要求。 |
-| **Tier 1** | `docs/components/tier1_core/`<br>`docs/components/tier1_interface/` | スケジューラ、チャネル通信、システムサービス、IPCルータ等のコア仕様書 | **粗粒度主要コンポーネント (What)**<br>要求（Tier 0）を直接受け取る。単一仕様書で状態遷移・ポリシーを自己完結して記述可能なシステム要素。 |
+| **Tier 1** | `docs/components/tier1_core/`<br>`docs/components/tier1_interface/` | スケジューラ、チャネル通信、システムサービス、IPCルータ、共有静的コンテナ語彙等のコア仕様書 | **粗粒度主要コンポーネント (What)**<br>要求（Tier 0）を直接受け取る。単一仕様書で状態遷移・ポリシーを自己完結して記述可能なシステム要素。 |
 | **Tier 2** | `docs/components/tier2_runtime/` | WASMインタープリタ、WASMローダー、vMMIO等のサブコンポーネント仕様書 | **分解されたサブコンポーネント (How - Subsystem)**<br>Tier 1 で扱うには状態空間やアルゴリズムが複雑化するため、独立した責務としてブレークダウンされた要素。 |
 | **Tier 3** | `docs/components/tier3_platform/`<br>`docs/components/tier3_jit/` | HAL実装、物理メモリ管理、JITコンパイラ一式（Copy-and-Patchコード生成器、Constexprアセンブラ等）| **詳細リーフ / 物理コンポーネント (How - Leaf)**<br>Tier 2 からさらに責務が切り出された具象コンポーネント、またはハードウェア抽象化層。JIT は vSoC (Tier 2) の実行エンジンから分解された一式として、内部を jit_compiler.md がオーケストレーションする。 |
 | **Meta** | `docs/architecture/`<br>`docs/plans/` | 全体アーキテクチャ、設計方針、開発計画 | **全Tier横断メタ設計**<br>Hypervisor の機能コンポーネント自体には属さない共通ポリシー・計画。 |
@@ -113,7 +113,7 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 | `{META_CompileTimeValidation}` | 静的な型チェックやconstexprにより、コンパイル時に不正を検知する。 |
 | `{META_NoStdVector}` | 動的な `std::vector` の使用を禁止し、固定長またはカスタムコンテナを使用する。 |
 | `{META_BumpAllocator}` | メモリの断片化を防ぎ、コンパイル時または実行時に高速なメモリ割り当てを行うアロケータ。 |
-| `{META_FlatMapIndexed}` | ソート済み配列や `static_flat_map`、二段テーブル等を用いて、順序維持と高速検索を省メモリで実現する。 |
+| `{META_FlatMapIndexed}` | ソート済み配列や `fireball::flat_map_view`、二段テーブル等を用いて、順序維持と高速検索を省メモリで実現する。 |
 | `{META_BinarySearch}` | ソート済み配列に対する $O(\log N)$ の高速検索。 |
 | `{META_AccessDictionary}` | データの索引化と、それを用いたランタイムアクセスの最適化。 |
 

@@ -1,0 +1,266 @@
+"""
+docs/components/tier1_core/concepts/flat_view_concept.py
+Reference Concept Implementation: the fireball container vocabulary
+- Non-owning views over storage the owning component already holds
+- flat_map_view : sorted keys -> value, coarse narrowing then binary search
+- flat_set_view : sorted keys, membership only, carries no value span
+- bit_view      : dense sub-byte state table, index-addressed, never searched
+"""
+
+# コンテナ語彙の概念コード (FlatViewNarrowing / PackedBitView)
+
+import bisect
+
+ALLOWED_BITS = (1, 2, 4)
+
+
+class BitView:
+    """bit_view<Bits>: a dense, index-addressed table of sub-byte states.
+
+    Deliberately offers no search: this is the card marking shape, where the
+    index *is* the question. Bits must divide 8 so one element never straddles a
+    byte, which keeps a read down to a single load plus a shift and a mask.
+    """
+
+    def __init__(self, storage: bytearray, bits: int, origin: int = 0, count: int = 0):
+        assert bits in ALLOWED_BITS, "Bits must be 1, 2 or 4"
+        self.storage = storage
+        self.bits = bits
+        self.origin = origin          # bit offset of logical element 0
+        self.count = count
+
+    def size(self):
+        return self.count
+
+    def _bit_pos(self, i):
+        assert 0 <= i < self.count, "index outside the view"
+        return self.origin + i * self.bits
+
+    def at(self, i):
+        bit = self._bit_pos(i)
+        mask = (1 << self.bits) - 1
+        return (self.storage[bit >> 3] >> (bit & 7)) & mask
+
+    def put(self, i, value):
+        mask = (1 << self.bits) - 1
+        assert 0 <= value <= mask, "value does not fit in Bits"
+        bit = self._bit_pos(i)
+        byte, shift = bit >> 3, bit & 7
+        cleared = self.storage[byte] & ~(mask << shift) & 0xFF
+        self.storage[byte] = cleared | (value << shift)
+
+    def slice(self, first, last):
+        """Narrow by index. The bit origin absorbs the remainder, so `first`
+        does not have to land on a byte boundary."""
+        assert 0 <= first <= last <= self.count, "a view may only ever shrink"
+        return BitView(self.storage, self.bits,
+                       self.origin + first * self.bits, last - first)
+
+
+class _SortedWindow:
+    """Shared narrowing behaviour of the two sparse views."""
+
+    def __init__(self, keys, first=0, last=None):
+        self.keys = keys
+        self.first = first
+        self.last = len(keys) if last is None else last
+
+    def size(self):
+        return self.last - self.first
+
+    def empty(self):
+        return self.size() == 0
+
+    def _bounds(self, lo, hi):
+        return (bisect.bisect_left(self.keys, lo, self.first, self.last),
+                bisect.bisect_right(self.keys, hi, self.first, self.last))
+
+    def _locate(self, key):
+        i = bisect.bisect_left(self.keys, key, self.first, self.last)
+        return i if i < self.last and self.keys[i] == key else None
+
+
+class FlatMapView(_SortedWindow):
+    """flat_map_view<Key, Value>: sorted keys, narrow-then-search, returns a value."""
+
+    def __init__(self, keys, values, first=0, last=None):
+        super().__init__(keys, first, last)
+        self.values = values
+
+    def slice(self, first, last):
+        assert self.first <= first <= last <= self.last, "a view may only ever shrink"
+        return FlatMapView(self.keys, self.values, first, last)
+
+    def narrow(self, lo, hi):
+        return FlatMapView(self.keys, self.values, *self._bounds(lo, hi))
+
+    def find(self, key):
+        """Binary search inside the current window only."""
+        i = self._locate(key)
+        return None if i is None else self.values[i]
+
+
+class FlatSetView(_SortedWindow):
+    """flat_set_view<Key>: sorted keys only, answers membership.
+
+    Carries no value span at all -- the question is whether the key is present,
+    not what is stored against it.
+    """
+
+    def slice(self, first, last):
+        assert self.first <= first <= last <= self.last, "a view may only ever shrink"
+        return FlatSetView(self.keys, first, last)
+
+    def narrow(self, lo, hi):
+        return FlatSetView(self.keys, *self._bounds(lo, hi))
+
+    def contains(self, key):
+        return self._locate(key) is not None
+
+
+# --- 本プロジェクトでの用途 ---
+
+def lookup_jit_entry(view, card_group_bounds, pc, card_group_shift):
+    """JIT entry lookup: coarse card-group narrowing, then binary search.
+
+    The card group index knows which contiguous slice of entries can possibly
+    contain this PC, so the binary search never walks the whole table.
+    """
+    bounds = card_group_bounds.get(pc >> card_group_shift)
+    if bounds is None:
+        return None
+    return view.slice(*bounds).find(pc)
+
+
+def card_marking_table(storage: bytearray, card_count: int) -> BitView:
+    """The 2-bit per-card state table: 4 cards per byte instead of one.
+
+    Note this returns a BitView, not a FlatMapView -- card marking is answered
+    by the index, never searched for.
+    """
+    return BitView(storage, bits=2, origin=0, count=card_count)
+
+
+def breakpoint_set(sorted_pcs) -> FlatSetView:
+    """Debugger breakpoints: the interpreter asks 'is this PC a breakpoint?',
+    which is membership, not a lookup."""
+    return FlatSetView(sorted_pcs)
+
+
+# ==============================================================================
+# Simulation / Verification Tests
+# ==============================================================================
+
+def test_two_bit_card_marking_packs_four_cards_per_byte():
+    """A 2-bit card state table must cost 2 bits per card, not 8. This is the
+    whole reason bit_view exists: at RAM 32KB a byte-per-card table is waste."""
+    store = bytearray(4)                      # 4 bytes -> 16 cards at 2 bits each
+    cards = card_marking_table(store, card_count=16)
+
+    assert cards.size() == 16
+    for i in range(16):
+        cards.put(i, i % 4)
+    assert [cards.at(i) for i in range(16)] == [i % 4 for i in range(16)]
+    assert len(store) == 4, "16 two-bit cards must fit in 4 bytes"
+
+
+def test_packed_write_does_not_disturb_neighbours():
+    """Four cards share a byte, so a write has to read-modify-write within it."""
+    cards = card_marking_table(bytearray(4), card_count=16)
+    for i in range(16):
+        cards.put(i, i % 4)
+
+    cards.put(5, 3)
+    assert cards.at(4) == 0 and cards.at(5) == 3 and cards.at(6) == 2,         "writing one element corrupted an adjacent one in the same byte"
+
+
+def test_slice_does_not_require_byte_alignment():
+    """The bit origin absorbs the remainder, so a caller may slice at any index
+    rather than having to round to a byte boundary."""
+    cards = card_marking_table(bytearray(4), card_count=16)
+    for i in range(16):
+        cards.put(i, i % 4)
+
+    window = cards.slice(5, 9)                # starts mid-byte
+    assert window.size() == 4
+    assert [window.at(i) for i in range(4)] == [1, 2, 3, 0]
+    assert window.slice(1, 3).at(0) == 2, "a nested slice lost its bit origin"
+
+
+def test_bit_view_offers_no_search():
+    """Card marking is answered by the index. Exposing find/contains here would
+    invite treating a dense state table as something to search."""
+    cards = card_marking_table(bytearray(4), card_count=16)
+    assert not hasattr(cards, "find"), "bit_view must not offer a map lookup"
+    assert not hasattr(cards, "contains"), "bit_view must not offer membership"
+
+
+def _map_fixture():
+    return FlatMapView([10, 20, 30, 40, 50, 60], [1, 2, 3, 4, 5, 6])
+
+
+def test_narrowing_only_ever_shrinks_and_composes():
+    """Monotonic shrinking is what makes multi-stage coarse indexes safe to
+    compose: no stage can reintroduce an element an earlier stage excluded."""
+    view = _map_fixture()
+
+    narrowed = view.narrow(20, 40)
+    assert narrowed.size() == 3
+    assert narrowed.find(30) == 3
+    assert narrowed.find(60) is None, "a key outside the window must not be found"
+    assert narrowed.narrow(30, 30).size() == 1
+
+    try:
+        narrowed.slice(0, 6)
+        raise AssertionError("slice widened the view beyond its parent")
+    except AssertionError as e:
+        assert "shrink" in str(e), e
+
+
+def test_set_view_answers_membership_without_any_value_storage():
+    """flat_set_view exists so a membership table need not allocate a value
+    array at all -- the breakpoint list is keys and nothing else."""
+    bps = breakpoint_set([0x100, 0x180, 0x240, 0x300])
+
+    assert not hasattr(bps, "values"), "a set view must carry no value span"
+    assert not hasattr(bps, "find"), "a set answers membership, not lookup"
+    assert bps.contains(0x180) is True
+    assert bps.contains(0x1C0) is False
+
+    # Narrowing works the same way it does for the map view.
+    window = bps.narrow(0x180, 0x240)
+    assert window.size() == 2
+    assert window.contains(0x300) is False, "a key outside the window must not be found"
+
+
+def test_card_group_narrowing_is_the_jit_lookup_path():
+    """The card group index knows which contiguous slice can hold this PC, so
+    the binary search never walks the whole entry table."""
+    view = _map_fixture()
+    bounds = {0: (0, 3), 1: (3, 6)}
+
+    assert lookup_jit_entry(view, bounds, pc=30, card_group_shift=5) == 3
+    assert lookup_jit_entry(view, bounds, pc=60, card_group_shift=5) == 6
+    assert lookup_jit_entry(view, bounds, pc=99, card_group_shift=5) is None
+
+
+def test_bits_must_divide_a_byte():
+    """3-bit elements would straddle bytes and force a two-load read, which the
+    design deliberately excludes."""
+    try:
+        BitView(bytearray(4), bits=3, count=4)
+        raise AssertionError("a non-divisor Bits was accepted")
+    except AssertionError as e:
+        assert "1, 2 or 4" in str(e), e
+
+
+if __name__ == "__main__":
+    test_two_bit_card_marking_packs_four_cards_per_byte()
+    test_packed_write_does_not_disturb_neighbours()
+    test_slice_does_not_require_byte_alignment()
+    test_bit_view_offers_no_search()
+    test_narrowing_only_ever_shrinks_and_composes()
+    test_set_view_answers_membership_without_any_value_storage()
+    test_card_group_narrowing_is_the_jit_lookup_path()
+    test_bits_must_divide_a_byte()
+    print("[PASS] All container vocabulary concept tests passed successfully.")

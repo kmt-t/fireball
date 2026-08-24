@@ -46,7 +46,7 @@ graph TD
 | HALトランスポート | RSPパケットの送受信を担うHAL抽象化レイヤへの参照。 | 構造体への参照 | `hal_transport` (非所有) |
 | `cmd_queue` | HALから供給されるコマンドキュー。 | 構造体への参照 | `debug_command_queue` |
 | デバッグ状態 | デバッガの現在の動作モード（実行中、中断中など）。 | 列挙型 | `debug_state` |
-| ブレークポイントリスト | 設定されているブレークポイントのアドレス一覧。 | 固定長配列 | `{META_NoStdVector}` |
+| ブレークポイントリスト | 設定されているブレークポイントのアドレス一覧。昇順ソート済みの固定長配列（`FB_CONF_DEBUG_MAX_BREAKPOINTS` 件）として保持し、実行時の判定は `fireball::flat_set_view<address>` の `contains()` で行う。判定は「そのPCが含まれるか」であって値の取得ではないため、値列を持たない集合ビューを用いる（[静的コンテナ語彙](../../tier1_core/system_containers.md)）。 | 固定長配列 + 集合ビュー | `{META_NoStdVector}` `{FlatViewNarrowing}` |
 | プロファイラバッファ | サンプリングされたPC頻度とホットスポット統計。 | 固定長配列 | `{Debug_Integrated}` `{META_NoStdVector}` |
 | `last_stop_reason` | 直近の停止要因。 | ID値 | 信号番号等 |
 

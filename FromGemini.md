@@ -512,8 +512,8 @@ Sakura バックエンドの実監査で検出された **4 件の FAIL** につ
 2. **`{Debug_Integrated}` の解消**:
    - `docs/components/tier2_runtime/debug/debug_manager.md` および `docs/components/tier2_runtime/runtime_interpreter.md` に、GDB RSP 制御に加えて **実行時プロファイラ（PC サンプリング・ホットスポット集計）** および **動的テストツール機能（トレースログ・メモリ動的アサーション）** の統合仕様を明記。
 3. **`{ContextPointerRegister}` の解消**:
-   - `docs/components/tier2_runtime/runtime_interpreter.md` の `execution_context` テーブルに、ARM Cortex-M ターゲットにおける **物理レジスタ `R7` 固定マッピング仕様（`LDR R0, [R7, #offset]`）** を明記。
-   - `docs/plans/backlog_list.md` に `ContextPointerRegister (R7固定)` の実装タスクを追記。
+   - `docs/components/tier2_runtime/runtime_interpreter.md` の `execution_context` テーブルに、ARM Cortex-M ターゲットにおける **物理レジスタ `R2`（`__fastcall` 第3引数）保持仕様（`LDR R0, [R2, #offset]`）** を明記。
+   - `docs/plans/backlog_list.md` に `ContextPointerRegister (R2保持)` の実装タスクを追記。
 4. **`{LowOverheadSwitch}` の解消**:
    - `docs/components/tier1_core/os_scheduler.md` の `spawn` 節から誤ったタグを削除し、`yield` / `run` / コンセプト節へ移動。**C++20 コルーチンの対称遷移（Symmetric Transfer）によるレジスタ退避最小化（数サイクルでのタスク遷移）** を明記。
 
@@ -535,7 +535,7 @@ Sakura バックエンドの実監査で検出された **4 件の FAIL** につ
   - 物理レジスタ割り当て（ARM Cortex-M33 / AAPCS）:
     - `R0`: `const uint8_t* ip` (WASM PC / Bytecode Pointer)
     - `R1`: `uint32_t* sp` (WASM Operand Stack Pointer)
-    - `R2` / `R7`: `execution_context* ctx` (実行コンテキスト基底ポインタ `{ContextPointerRegister}`)
+    - `R2`: `execution_context* ctx` (実行コンテキスト基底ポインタ `{ContextPointerRegister}`)
     - `R3`: `vsoc_runtime* env` (環境ポインタ `{EnvironmentPointer}`)
     - `R4`, `R5`: JIT 内スタックトップキャッシュ (TOS, NOS)
 - **インタープリタの CPS ダイレクトスレッディング**:

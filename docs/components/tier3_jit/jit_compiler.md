@@ -97,7 +97,7 @@ JIT コンパイル済みネイティブトレースの実行エントリポイ�
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
 | トレースシグネチャ | `__fastcall` によるネイティブトレース実行関数 | 関数ポインタ | `void (__fastcall *)(const uint8_t* __restrict__ ip, uint32_t* __restrict__ sp, execution_context* __restrict__ ctx, vsoc_runtime* __restrict__ env) noexcept` |
-| レジスタ割り当て | ARM AAPCS / `__fastcall` 引数レジスタマッピング | 物理レジスタ | `R0`: `ip` (WASM PC)<br>`R1`: `sp` (オペランドスタック頂点)<br>`R2` / `R7`: `ctx` (実行コンテキスト `{ContextPointerRegister}`)<br>`R3`: `env` (環境ポインタ `{EnvironmentPointer}`)<br>`R4`/`R5`: スタックトップキャッシュ (TOS, NOS) |
+| レジスタ割り当て | ARM AAPCS / `__fastcall` 引数レジスタマッピング | 物理レジスタ | `R0`: `ip` (WASM PC)<br>`R1`: `sp` (オペランドスタック頂点)<br>`R2`: `ctx` (実行コンテキスト `{ContextPointerRegister}`)<br>`R3`: `env` (環境ポインタ `{EnvironmentPointer}`)<br>`R4`/`R5`: スタックトップキャッシュ (TOS, NOS) |
 
 ### 3.4 公開API
 外部コンポーネント（Executor等）からJITコンパイル機能を利用するためのAPI。
@@ -125,7 +125,7 @@ JIT コンパイル済みネイティブトレースの実行エントリポイ�
 #### Copy-and-Patch コンパイル手順
 
 <!-- traceability: {JIT_CopyAndPatch} {META_AI_Native_Dev} {JIT_RuntimeAPI_Fallback} {ContextPointerRegister} -->
-1. **テンプレート選択**: WASM命令に対応する事前定義済みのネイティブコードテンプレートを選択する。すべてのテンプレートは `__fastcall` CPS レジスタ割り当て（R0=IP, R1=SP, R2/R7=CTX, R3=ENV）に完全準拠して設計される。
+1. **テンプレート選択**: WASM命令に対応する事前定義済みのネイティブコードテンプレートを選択する。すべてのテンプレートは `__fastcall` CPS レジスタ割り当て（R0=IP, R1=SP, R2=CTX, R3=ENV）に完全準拠して設計される。
 2. **コードコピー**: テンプレートをアクティブ・キャッシュ領域の「ベースアドレス + 使用済みサイズ」の位置へコピーする。
 3. **パッチ適用 (プレースホルダ埋め)**:
     - 即値（定数）をプレースホルダに書き込む。

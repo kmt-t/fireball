@@ -36,14 +36,14 @@ graph TD
 
 #### 命令テンプレート（jit_template）
 <!-- traceability: {JIT_RegisterMapping} {ContextPointerRegister} {EnvironmentPointer} -->
-WASM命令に対応するネイティブバイナリの雛形。インタープリタの `opcode_handler` と完全整合する `__fastcall` CPS 呼び出し規約（`R0`: `ip`, `R1`: `sp`, `R2`/`R7`: `ctx`, `R3`: `env`）およびスタックトップレジスタ（`R4`: TOS, `R5`: NOS）に基づいて設計される。 `{JIT_RegisterMapping}` `{ContextPointerRegister}` `{EnvironmentPointer}`
+WASM命令に対応するネイティブバイナリの雛形。インタープリタの `opcode_handler` と完全整合する `__fastcall` CPS 呼び出し規約（`R0`: `ip`, `R1`: `sp`, `R2`: `ctx`, `R3`: `env`）およびスタックトップレジスタ（`R4`: TOS, `R5`: NOS）に基づいて設計される。 `{JIT_RegisterMapping}` `{ContextPointerRegister}` `{EnvironmentPointer}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
 | 命令バイナリ | ネイティブ命令列の実体 | バイナリビュー | ROM参照 |
 | パッチ箇所数 | テンプレート内で修正（パッチ）が必要なスロットの数 | エントリ数 | 8/16bit |
 | パッチ情報 | 各パッチ位置のオフセットと修正方法（「絶対アドレスへの書き込み」「相対オフセットの加算」「レジスタ番号の置換」等の具体的なパッチ適用方法）を定義する情報の配列 | バイナリビュー | - |
-| レジスタ規約 | JIT トレースとインタープリタ間で共有される物理レジスタ規約 | 規約定義 | `R0`: `ip`<br>`R1`: `sp`<br>`R2`/`R7`: `ctx`<br>`R3`: `env`<br>`R4`/`R5`: TOS/NOS |
+| レジスタ規約 | JIT トレースとインタープリタ間で共有される物理レジスタ規約 | 規約定義 | `R0`: `ip`<br>`R1`: `sp`<br>`R2`: `ctx`<br>`R3`: `env`<br>`R4`/`R5`: TOS/NOS |
 
 ## 4. 動的モデル
 

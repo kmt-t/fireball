@@ -42,9 +42,9 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
 
 ### Phase 1.2: WASM Stackless Fast Interpreter (`runtime_interpreter`)
 - [ ] **`execution_context` 実装**:
-  - 仮想 CPU レジスタ群（PC, SP, FP, Linear Memory Pointer, Memory Size）の物理レジスタ固定マッピング（Cortex-M: R7） `{ContextPointerRegister}`
+  - 仮想 CPU レジスタ群（PC, SP, FP, Linear Memory Pointer, Memory Size）の物理レジスタ保持マッピング（Cortex-M: R2） `{ContextPointerRegister}`
 - [ ] **コア命令ハンドラ群 (`opcode_handler`)**:
-  - `__fastcall` 継続渡し（CPS）シグネチャによる引数レジスタ渡し（R0=IP, R1=SP, R2/R7=CTX, R3=ENV） `{ThreadedInterpreter}`
+  - `__fastcall` 継続渡し（CPS）シグネチャによる引数レジスタ渡し（R0=IP, R1=SP, R2=CTX, R3=ENV） `{ThreadedInterpreter}`
   - 算術演算 (i32/i64 add, sub, mul, clz, ctz 等)
   - 制御フロー (block, loop, br, br_if, br_table, return, call)
   - メモリ操作 (i32.load, i32.store 等) と `MemoryBoundaryCheck` トラップ `{MemoryBoundaryCheck}`
@@ -53,7 +53,7 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
 
 ### Phase 1.3: Copy-and-Patch JIT Compiler (`jit_compiler`)
 - [ ] **ARM Thumb-2 ネイティブパッチテンプレート**:
-  - `__fastcall` CPS レジスタ規約（R0=IP, R1=SP, R2/R7=CTX, R3=ENV, R4=TOS, R5=NOS）準拠の事前コンパイル済みネイティブバイト列（RO-Data）とリロケーションテーブル `{JIT_CopyAndPatch}`
+  - `__fastcall` CPS レジスタ規約（R0=IP, R1=SP, R2=CTX, R3=ENV, R4=TOS, R5=NOS）準拠の事前コンパイル済みネイティブバイト列（RO-Data）とリロケーションテーブル `{JIT_CopyAndPatch}`
 - [ ] **トリプルバッファ キャッシュマネージャ**:
   - 2KB × 3面 の代謝（`JIT_OldestOnly_Promote` / 最古破棄）制御 `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}`
 - [ ] **Safepoint 協調 & 透過的インタープリタ切り替え**:

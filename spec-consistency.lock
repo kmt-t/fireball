@@ -1544,10 +1544,10 @@
     ]
   },
   "sections": {
-    "sec:architecture/architecture_overview.md#1. アーキテクチャコンセプト": "fd79c195a6af8bb42688b5cb43c76cc97a7deab8f3f0d88d7849b7211a502c6c",
+    "sec:architecture/architecture_overview.md#1. アーキテクチャコンセプト": "7b545fc45c66c96a1a9f607894969031bffb304841df77e8040d9e27781bb1ce",
     "sec:architecture/architecture_overview.md#2. 静的構造": "a50f8c16593c90f5dc8db365e5a6bf6e440ce8b18fc4dfb6cda44c8fce385f84",
     "sec:architecture/architecture_overview.md#2.1 レイヤー構成": "323fc23009d444a70f30fed91883114ae29130ac621e16e592b346ab6e0038a6",
-    "sec:architecture/architecture_overview.md#2.2 コンポーネント定義図 (BDD)": "dc562389c915cd979c2d3d8658a902a19f4f3974087c2e4319b5f72cf8c8e817",
+    "sec:architecture/architecture_overview.md#2.2 コンポーネント定義図 (BDD)": "082f02625e2cc29ef25c5234406217597dd4686b7e9ee2b95a5e57c0987cb1a5",
     "sec:architecture/architecture_overview.md#3. 動的構造": "118dbacd80e84d3522d02585c7606fb375484e82bad352236e17abe2b7c8aef6",
     "sec:architecture/architecture_overview.md#3.1 主要シーケンス図 (SD)": "5d30f512379800b97d4973200e844fa3b04862d88adb7ed7e9fc1945b2ab6b63",
     "sec:architecture/architecture_overview.md#4. アーキテクチャスタイルと設計定石": "e66d986d96b55eb6d15ba9b0139043a58f6daf6808d59ffae9f7c12ca1783b48",
@@ -1558,7 +1558,7 @@
     "sec:architecture/architecture_overview.md#アーキテクチャ設計書：Fireball システム概要": "4caf7dd38ad182755cfade7748877753500719a432c0baf47717c7bd7f473e9b",
     "sec:architecture/architecture_overview.md#スケーラビリティ": "95b0d89befedde9dd7d2bcae45564598ffe054c58c5084412e9fa6296d3edd31",
     "sec:architecture/architecture_overview.md#ヒープパーティション": "1f9c5d567278652080f251a8c1288a65c05020bddc5de68380e3614b50f0f167",
-    "sec:architecture/architecture_overview.md#依存性ルール": "4490fd343d9ee2e3dff1f19d88361fc1a803241e94158ae436d953325109fb04",
+    "sec:architecture/architecture_overview.md#依存性ルール": "32d4b78efcb924f12e460084bc9ac34ea8185901243bd710fc84fe8efcdfabf3",
     "sec:architecture/architecture_overview.md#設定方式": "0f630fe0c0464021442d4b48d7c9b0039c566506fb340f4e4a0a45d2bb962f06",
     "sec:architecture/concept_harness.md#1. アーキテクチャコンセプト": "c7cbd378d40740560a4042e63b6f043f4f7d6f05deb5d4c63992b4ffeb771056",
     "sec:architecture/concept_harness.md#2. 静的構造": "a50f8c16593c90f5dc8db365e5a6bf6e440ce8b18fc4dfb6cda44c8fce385f84",

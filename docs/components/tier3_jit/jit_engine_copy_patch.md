@@ -35,15 +35,16 @@ graph TD
 | アセンブラ参照 | 実行時に補助的な命令生成を行う場合のインターフェイス | 構造体への参照 | [`constexpr_assembler`](jit_assembler_constexpr.md) (非所有) |
 
 #### 命令テンプレート（jit_template）
-<!-- traceability: {JIT_RegisterMapping} {ContextPointerRegister} {EnvironmentPointer} -->
-WASM命令に対応するネイティブバイナリの雛形。インタープリタの `opcode_handler` と完全整合する `__fastcall` CPS 3引数呼び出し規約（`R0`: `ip`, `R1`: `stack_bot`, `R2`: `env`）およびスタックトップレジスタ（`R4`: TOS, `R5`: NOS）に基づいて設計される。スタックボトム渡しにより `R3` はスクラッチレジスタとして自由に使用できる。 `{JIT_RegisterMapping}` `{ContextPointerRegister}` `{EnvironmentPointer}`
+<!-- traceability: {JIT_RegisterMapping} {ContextPointerRegister} {EnvironmentPointer} {ADR_TosCacheAsymmetry} -->
+WASM命令に対応するネイティブバイナリの雛形。インタープリタの `opcode_handler` と完全整合する `__fastcall` CPS 3引数呼び出し規約（`R0`: `ip`, `R1`: `stack_bot`, `R2`: `env`）に基づいて設計される。スタックボトム渡しにより `R3` はスクラッチレジスタとして自由に使用できる。加えて、**トレース内部に限り** `R4`: TOS, `R5`: NOS をスタックトップキャッシュとして占有する（インタープリタはこの規約を共有しない。`{ADR_TosCacheAsymmetry}`）。 `{JIT_RegisterMapping}` `{ContextPointerRegister}` `{EnvironmentPointer}` `{ADR_TosCacheAsymmetry}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
 | 命令バイナリ | ネイティブ命令列の実体 | バイナリビュー | ROM参照 |
 | パッチ箇所数 | テンプレート内で修正（パッチ）が必要なスロットの数 | エントリ数 | 8/16bit |
 | パッチ情報 | 各パッチ位置のオフセットと修正方法（「絶対アドレスへの書き込み」「相対オフセットの加算」「レジスタ番号の置換」等の具体的なパッチ適用方法）を定義する情報の配列 | バイナリビュー | - |
-| レジスタ規約 | JIT トレースとインタープリタ間で共有される物理レジスタ規約 | 規約定義 | `R0`: `ip`<br>`R1`: `stack_bot`<br>`R2`: `env`<br>`R3`: スクラッチレジスタ（一時計算用）<br>`R4`/`R5`: TOS/NOS |
+| レジスタ規約 | JIT トレースとインタープリタ間で**共有される**物理レジスタ規約 | 規約定義 | `R0`: `ip`<br>`R1`: `stack_bot`<br>`R2`: `env`<br>`R3`: スクラッチレジスタ（一時計算用） |
+| トレース内レジスタ | JIT トレース内部に**閉じた**スタックトップキャッシュ。インタープリタは保持しない | 規約定義 | `R4`: TOS<br>`R5`: NOS<br>（入口で `LDR` × 2、脱出時にダーティなら `STR` × 2） `{ADR_TosCacheAsymmetry}` |
 
 ## 4. 動的モデル
 
@@ -59,8 +60,9 @@ WASM命令に対応するネイティブバイナリの雛形。インタープ�
     - ランタイムAPIのアドレスをパッチする。
     - 分岐命令の相対オフセットを計算してパッチする。
 5. **インタープリタ継続渡し整合 (CPS / __fastcall Tail Call)**:
-    - JIT トレースの出口やフォールバック箇所では、レジスタ R0〜R2 に最新の `(ip, stack_bot, env)` を載せたままインタープリタの次命令ハンドラを直接末尾ジャンプ（`BX`）する。
-    - スタックトップキャッシュ（R4/R5）のダーティな値をスタックメモリへフラッシュした上で、インタープリタと完全に整合したレジスタ状態で制御を渡す。 `{JIT_RuntimeAPI_Fallback}`
+    - JIT トレースの出口やフォールバック箇所では、レジスタ R0〜R2 に最新の `(ip, stack_bot, env)` を載せたままインタープリタの次命令ハンドラを直接末尾ジャンプ（`BX`）する。コンテキストの再構築は発生しない。
+    - スタックトップキャッシュ（R4/R5）はインタープリタ側の規約に存在しないため、ダーティな値を統合スタックへ `STR` × 2 でフラッシュした上で制御を渡す。この 2 命令が遷移の唯一のコストである。 `{JIT_RuntimeAPI_Fallback}` `{ADR_TosCacheAsymmetry}`
+    - **トレース入口**では逆に、統合スタック上の TOS/NOS を `LDR` × 2 で `R4`/`R5` へロードしてからトレース本体に入る。`R4`/`R5` の生存区間は単一トレース内部に閉じており、トレース境界を越えて生存しない。 `{ADR_TosCacheAsymmetry}`
 6. **ポインタ更新**: キャッシュの使用済みサイズを更新する。
 
 #### Copy-and-Patch JIT フルセット・コンセプトコード (`concepts/jit_copy_patch_concept.py`)
@@ -81,11 +83,16 @@ class CopyPatchJITEngine:
         self.barrier_flushes = 0
         self.current_write_pos = 0
 
+        # R0=ip, R1=stack_bot, R2=env are shared with the interpreter and are never
+        # written by a trace. R3=scratch. R4=TOS / R5=NOS are trace-local: the prologue
+        # fills them from the unified stack, the epilogue flushes them back.
+        # SP is never touched (no C stack frame).
         self.stencils = {
-            "prologue": ["PUSH {R4, LR}", "SUB SP, SP, #16"],
-            "i32_const": ["MOVW R0, #__IMM_LO__", "MOVT R0, #__IMM_HI__", "STR R0, [SP, #0]"],
-            "i32_add": ["LDR R0, [SP, #0]", "LDR R1, [SP, #4]", "ADD R0, R0, R1", "STR R0, [SP, #0]"],
-            "epilogue": ["ADD SP, SP, #16", "POP {R4, PC}"],
+            "prologue": ["LDR R4, [R1, #__TOS_OFF__]", "LDR R5, [R1, #__NOS_OFF__]"],
+            "i32_const": ["STR R5, [R1, #__SPILL_OFF__]", "MOV R5, R4",
+                          "MOVW R4, #__IMM_LO__", "MOVT R4, #__IMM_HI__"],
+            "i32_add": ["ADD R4, R5, R4", "LDR R5, [R1, #__FILL_OFF__]"],
+            "epilogue": ["STR R4, [R1, #__TOS_OFF__]", "STR R5, [R1, #__NOS_OFF__]", "BX R3"],
         }
 
     def begin_jit_patch(self):

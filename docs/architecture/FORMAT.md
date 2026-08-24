@@ -161,9 +161,9 @@ stateDiagram-v2
 
 | 制約項目 | ブロック/コンポーネント | 目標値 | 制約式 | 備考 |
 | :--- | :--- | :--- | :--- | :--- |
-| **メモリ予算 (RAM)** | システム全体 | ≤ 64 KB | `sum(COOS + vSoC + HAL + payload) ≤ 64KB` | スケーラブル: 32KB以上対応 |
+| **メモリ予算 (RAM)** | システム全体 | ≤ 32 KB（最小構成） | `sum(COOS + vSoC + HAL + payload) ≤ 32KB` | 想定構成は 64KB。正本は `resource_budget.md` |
 | **コード規模 (SLOC)** | システム全体 | ≤ 15,000 SLOC | `Architecture + Components ≤ 15K` | コメント・テスト除外 |
-| **JIT キャッシュ** | vSoC Engine | 4 KB (2KB x 2) | `Active + Old ≤ 4KB` | ダブルバッファ |
+| **JIT キャッシュ** | vSoC Engine | 6 KB (2KB x 3) | `Active + Warm + Oldest ≤ 6KB` | 3面マルチバッファ |
 | **起動時間** | COOS + vSoC | ≤ 100 ms | `Boot latency ≤ 100ms` | ホスト環境 (x64) |
 | **タスク切り替え** | COOS Scheduler | ≤ 10 μs | `Context switch ≤ 10μs` | 実測値で検証 |
 

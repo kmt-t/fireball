@@ -31,13 +31,23 @@
 | Phase 0.76: SysML Alignment | 既存設計図のSysML準拠化・パラメトリック図導入 | **DONE** |
 | Phase 0.8: Spec Quality Gate | 仕様の矛盾解消・形式検証（pyModelChecking 5モデル）・WIT契約・LLM監査合格 ➔ **オーナー最終GO判定** | **進行中 (レビュー中)** |
 
+**形式検証モデル一覧（5モデル）** — この一覧を `docs/components/*/formal/*.py` の正本とする:
+
+| モデル | 対象 | 主要プロパティ |
+| :--- | :--- | :--- |
+| `components/tier1_core/formal/coos_channel_model.py` | COOS CSP ランデブーとハンドオフ有界性 | デッドロック不在 / 二重所有不在 / メインループ復帰保証 |
+| `components/tier1_interface/formal/csp_handoff_model.py` | IPC 所有権移譲と Drop ハンドラ | 二重所有不在 / in-flight 解決保証 |
+| `components/tier2_runtime/formal/vsoc_state_model.py` | vSoC 実行状態と Safepoint 応答性 | IRQ/JIT レース不在 / Safepoint 到達保証 |
+| `components/tier2_runtime/formal/vsoc_cache_coherency_model.py` | JIT キャッシュ世代とデバッガ介入 | 旧コード実行不在 / 世代単調性 / バンク回収 / flush 完了 |
+| `components/tier3_jit/formal/jit_cache_model.py` | JIT 3面代謝・MPU W^X・遅延チェイニング | W^X 分離 / ダングリングチェイン不在 / 2-bit FSM 健全性 |
+
 **Phase 0 達成状況 & GO判定基準:**
 - [ ] 全設計ドキュメントの整合性確認（0 Errors, 0 Warnings）
 - [ ] 全WITファイルへの契約（リカバリー戦略パターン、リソース・ストリーム）定義
-- [ ] コア形式検証（pyModelChecking 4モデル: Mutex, CSP, JIT, vSoC）のモデル検査合格
+- [ ] コア形式検証（pyModelChecking 5モデル、上表参照）のモデル検査合格。全プロパティが `build_model(guards=False)` による変異検査を伴うこと
 - [ ] トレーサビリティマトリクス（100+キーワード）の一方向追従確立
 - [ ] LLM as a Judge（Sakura AI Engine）による意味監査合格（0 Failures）
-- [ ] `Resource_Estimation_Model` による制約適合（RAM 64KB に対し静的合計 24.0KB、残余 40KB）
+- [ ] `Resource_Estimation_Model` による制約適合（評価ターゲットの最小構成 RAM 32KB / ROM 96KB に対し、静的合計 21.0KB / 84KB）
 - [ ] **オーナー（アーキテクト）による最終仕様精読 & GO 判定**
 
 ---

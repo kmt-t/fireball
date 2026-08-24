@@ -28,9 +28,9 @@ class IPCRouter:
     def __init__(self):
         # Stage 1: Static Flat Map registry (URI -> Service Descriptor)
         self.registry: dict[str, dict[str, Any]] = {
-            "ipc://core/coos": {"role": "CORE_SERVICE", "channel_id": "ch_coos", "max_queue": 2},
-            "ipc://hal/gpio": {"role": "PLATFORM_HAL", "channel_id": "ch_gpio", "max_queue": 2},
-            "ipc://dbg/manager": {"role": "DEBUGGER", "channel_id": "ch_dbg", "max_queue": 1},
+            "fireball://core/coos/0": {"role": "CORE_SERVICE", "channel_id": "ch_coos", "max_queue": 2},
+            "fireball://hal/gpio/0": {"role": "PLATFORM_HAL", "channel_id": "ch_gpio", "max_queue": 2},
+            "fireball://dbg/manager/0": {"role": "DEBUGGER", "channel_id": "ch_dbg", "max_queue": 1},
         }
 
         # Stage 2: Role-based Access Control Matrix (sender_role, target_role) -> bool
@@ -127,7 +127,7 @@ def test_successful_zero_copy_handoff():
     msg = IPCMessage("shm_buf_1", {"cmd": "SET_GPIO", "pin": 5, "val": 1})
 
     # Step 1: ClientApp routes message to HAL GPIO
-    status, _ = router.route_message("CLIENT_APP", "ipc://hal/gpio", msg)
+    status, _ = router.route_message("CLIENT_APP", "fireball://hal/gpio/0", msg)
     assert status == "OK_ENQUEUED"
     assert msg.ownership == OwnershipState.IN_FLIGHT
 
@@ -143,7 +143,7 @@ def test_permission_denied():
     msg = IPCMessage("shm_buf_2", {"cmd": "READ_MEM"})
 
     # ClientApp trying to access Debugger directly (Forbidden)
-    status, _ = router.route_message("CLIENT_APP", "ipc://dbg/manager", msg)
+    status, _ = router.route_message("CLIENT_APP", "fireball://dbg/manager/0", msg)
     assert status == "ERR_PERMISSION_DENIED"
     assert msg.ownership == OwnershipState.SENDER_OWNS  # Ownership not modified
 
@@ -154,11 +154,11 @@ def test_queue_full_rollback():
     msg2 = IPCMessage("buf_2", {"d": 2})
     msg3 = IPCMessage("buf_3", {"d": 3})
 
-    assert router.route_message("CLIENT_APP", "ipc://hal/gpio", msg1)[0] == "OK_ENQUEUED"
-    assert router.route_message("CLIENT_APP", "ipc://hal/gpio", msg2)[0] == "OK_ENQUEUED"
+    assert router.route_message("CLIENT_APP", "fireball://hal/gpio/0", msg1)[0] == "OK_ENQUEUED"
+    assert router.route_message("CLIENT_APP", "fireball://hal/gpio/0", msg2)[0] == "OK_ENQUEUED"
 
     # 3rd message exceeds max_queue=2 -> Rollback
-    status, _ = router.route_message("CLIENT_APP", "ipc://hal/gpio", msg3)
+    status, _ = router.route_message("CLIENT_APP", "fireball://hal/gpio/0", msg3)
     assert status == "ERR_QUEUE_FULL"
     assert msg3.ownership == OwnershipState.SENDER_OWNS
 
@@ -166,7 +166,7 @@ def test_queue_full_rollback():
 def test_drop_handler_recovery():
     router = IPCRouter()
     msg = IPCMessage("shm_buf_leak_prevent", {"data": 999})
-    router.route_message("CLIENT_APP", "ipc://hal/gpio", msg)
+    router.route_message("CLIENT_APP", "fireball://hal/gpio/0", msg)
     assert msg.ownership == OwnershipState.IN_FLIGHT
 
     # Target service faults before dequeue -> Drop handler cleans up

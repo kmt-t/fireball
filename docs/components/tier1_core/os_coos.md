@@ -13,13 +13,14 @@ COOSは、シングルスレッド環境向けのホーアCSPベースのグリ�
 - **[`co_sched`](os_scheduler.md)**: スケジューラ。タスクのライフサイクルと実行順序の管理。
 - **`co_csp`**: 通信エンジン。チャネルベースの同期と所有権移譲。
 - **`co_mem`**: メモリマネージャ。タスク独立な静的メモリバッファプール（メモリパーティション）の管理。
-- **`co_log`**: ロギングマネージャ。 `{BufferedLogging}`
+
+ロギングは COOS の構成要素ではなく、独立した Tier 1 コンポーネント [`system_logging`](system_logging.md) が担う。COOS は `set_idle_hook` によりアイドル時のフラッシュ契機のみを提供する。 `{BufferedLogging}` `{GLOBAL_IdleDetection}`
 
 ## 3. 静的モデル
 
 ### 3.1 データ構造
-<!-- traceability: {GLOBAL_Policy_Memory} -->
-- **`channel`**: 1エントリのバッファを持つ同期オブジェクト。
+<!-- traceability: {GLOBAL_Policy_Memory} {ADR_RendezvousChannel} -->
+- **`channel`**: **バッファを持たない**純粋同期ランデブーオブジェクト。値はチャネルに滞留せず、送信側タスクから受信側タスクへランデブー成立の瞬間に直接移譲される。 `{ADR_RendezvousChannel}`
 - **`co_value`**: 独自の所有権管理構造体。`{GLOBAL_Policy_Memory}` に基づき、コンパイル時に固定サイズで確保された静的メモリ領域またはスタック上のみで動作する。
 - **`coos_context`**: スケジューラ、CSP状態、メモリ情報を集約したグローバルコンテキスト。
 
@@ -44,42 +45,67 @@ graph TD
 <!-- traceability: {GLOBAL_Policy_Memory} -->
 
 #### CSPチャネル（channel）
-タスク間の同期と通信を仲介するデータ構造。
-通信バッファのやり取りは、動的メモリ確保を排除した `{GLOBAL_Policy_Memory}` に従い、静的プールから事前割り当てされた `CoValue` 構造体の参照またはインデックスの受け渡しのみで実現される（ゼロコピー所有権移譲）。 `{CSPCommunication}` `{GLOBAL_Policy_Memory}`
+<!-- traceability: {CSPCommunication} {GLOBAL_Policy_Memory} {ADR_RendezvousChannel} -->
+タスク間の同期と通信を仲介するデータ構造。ホーアCSPの定義どおり **チャネル自身は値を保持しない**（`{ADR_RendezvousChannel}`）。送信側は相手が現れるまで自身のフレーム上で `CoValue` を保持したまま待機し、ランデブー成立の瞬間に所有権が受信側へ移る。動的メモリ確保を排除した `{GLOBAL_Policy_Memory}` に従い、`CoValue` は静的プールから事前割り当てされた実体の参照またはインデックスの受け渡しのみで移譲される（ゼロコピー所有権移譲）。 `{CSPCommunication}` `{GLOBAL_Policy_Memory}` `{ADR_RendezvousChannel}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| 通信バッファ | 通信データを一時的に保持する領域。所有権移譲を伴う。動的確保は行わず、静的固定領域として配置 | 構造体 (CoValue) | 固定サイズ |
-| 送信待機列 | 受信側が準備できるまで送信を待機しているタスクのキュー | 静的固定長キュー | `std::array` 基盤の固定長タスク参照キュー |
-| 受信待機列 | データが到着するまで受信を待機しているタスクのキュー | 静的固定長キュー | `std::array` 基盤の固定長タスク参照キュー |
+| 待機タスク参照 | このチャネルで待機している単一タスクへの参照。空・送信待機・受信待機の3状態を取る | タスク参照 | `task_id`（無効値で「待機なし」を表す） |
+| 待機方向 | 待機タスクが送信側か受信側かの区別 | 列挙 | `NONE` / `SEND` / `RECV` |
+
+**チャネルがバッファも待機列も持たない理由 (`{ADR_RendezvousChannel}`)**:
+値を保持しないため、チャネル満杯（overflow）という状態が原理的に存在せず、送信失敗時のロールバック処理も、チャネルが所有権を握っている期間に発生する二重所有の検討も不要になる。待機タスクを単一参照に限定するのは、同一チャネルに複数タスクが群がる設計を `{URIAbstraction}` によるサービス単位のチャネル分割で回避しているためであり、固定長待機列分の RAM を全チャネルに払う必要をなくす。複数の待機者が必要な場合はチャネルを分割する。
 
 ##### チャネル送受信動作の挙動定義
 チャネルを通じたCSPメッセージ通信の基本的な制御ロジックを以下に示す。 `{CSPCommunication}`
 直接コンテキストスイッチ（CSP Handoff）は、呼び出しスタックの再帰的な蓄積を防ぐため、C++20 コルーチンの**対称遷移（Symmetric Transfer: `await_suspend` から `coroutine_handle` を返却）** を採用し、スタック深度を定数 $O(1)$ に保つ。
 
+連続ハンドオフは `FB_CONF_MAX_CONSECUTIVE_HANDOFFS` で有界化する。この上限は §6.1「メインループ復帰保証」の形式証明が依拠する前提であり、実装は必ずこのカウンタを備えなければならない。
+
 ```python
-# CSPチャネルの送受信処理 (概念コード: Symmetric Transfer 規約)
+# CSPチャネルの送受信処理 (概念コード: 純粋同期ランデブー + Symmetric Transfer 規約)
+# チャネルは値を保持しない。待機者は最大1タスク（ADR_RendezvousChannel）。
+
 def channel_send(channel: Channel, sender_task: Task, value: CoValue) -> CoroutineHandle:
-    # 受信待機中のタスクが存在する場合、直接値を渡して対称遷移（Symmetric Transfer）で実行権を移譲する
-    if channel.receive_queue:
-        receiver = channel.receive_queue.pop(0)
-        receiver.value = value
-        return receiver.coroutine_handle # CSP Handoff (スタックレス対称遷移)
+    if channel.waiter_dir == RECV:
+        # 受信側が待機中: 値を直接移譲してランデブー成立
+        receiver = channel.take_waiter()
+        receiver.value = value              # 所有権はここで sender -> receiver へ移る
+        sender_task.state = READY
+        receiver.state = READY
+        return handoff_or_yield(receiver)   # CSP Handoff (スタックレス対称遷移)
     else:
-        # 待機タスクがいなければ、送信キューにデータを積んでサスペンドし、スケジューラへ戻る
-        channel.send_queue.append((sender_task, value))
+        # 相手不在: 値は sender_task のフレーム上に留めたまま待機する。
+        # チャネルはバッファを持たないため overflow もロールバックも存在しない。
+        assert channel.waiter_dir != SEND, "1チャネル1待機者: 送信待機の重複はチャネル分割で回避する"
+        channel.set_waiter(sender_task, SEND)
+        sender_task.state = SUSPENDED_CSP
         return scheduler_handle
 
 def channel_recv(channel: Channel, receiver_task: Task) -> CoroutineHandle:
-    # 送信待機中のタスクが存在する場合、データを受け取り送信タスクへ対称遷移または起床
-    if channel.send_queue:
-        sender, value = channel.send_queue.pop(0)
-        receiver_task.value = value
-        return sender.coroutine_handle # 送信側を起床して切り替え
+    if channel.waiter_dir == SEND:
+        # 送信側が待機中: 送信側フレームから値を引き取ってランデブー成立
+        sender = channel.take_waiter()
+        receiver_task.value = sender.value  # 所有権はここで sender -> receiver へ移る
+        sender.value = None                 # 二重所有を作らない
+        sender.state = READY
+        receiver_task.state = READY
+        return handoff_or_yield(sender)
     else:
-        # 送信タスクがいなければ、受信キューに入ってサスペンド
-        channel.receive_queue.append(receiver_task)
+        assert channel.waiter_dir != RECV, "1チャネル1待機者: 受信待機の重複はチャネル分割で回避する"
+        channel.set_waiter(receiver_task, RECV)
+        receiver_task.state = SUSPENDED_CSP
         return scheduler_handle
+
+def handoff_or_yield(target: Task) -> CoroutineHandle:
+    """連続ハンドオフを有界化し、必ずスケジューラへ復帰する経路を残す。
+    この上限が §6.1 のメインループ復帰保証（AF(main_loop)）の根拠である。"""
+    if sched.consecutive_handoffs < FB_CONF_MAX_CONSECUTIVE_HANDOFFS:
+        sched.consecutive_handoffs += 1
+        return target.coroutine_handle      # 直接対称遷移
+    sched.consecutive_handoffs = 0
+    sched.ready_queue.append(target)        # 上限到達: スケジューラへ返す
+    return scheduler_handle
 ```
 
 ## 4. 動的モデル
@@ -102,14 +128,23 @@ class TaskState:
     TERMINATED = "TERMINATED"
 
 
+class WaitDir:
+    NONE = "NONE"
+    SEND = "SEND"
+    RECV = "RECV"
+
+
 class Channel:
-    """1-entry synchronous CSP rendezvous channel."""
+    """Bufferless synchronous CSP rendezvous channel (ADR_RendezvousChannel).
+
+    The channel never holds a value: a sender that arrives first keeps it in its
+    own frame, so overflow and rollback cannot occur and the value always has
+    exactly one owner. At most one waiter per channel.
+    """
     def __init__(self, channel_id: str):
         self.channel_id = channel_id
-        self.buffer = None
-        self.has_data = False
-        self.sender_task = None
-        self.receiver_task = None
+        self.waiter_task = None
+        self.waiter_dir = WaitDir.NONE
 
 
 class COOSKernel:
@@ -130,32 +165,24 @@ class COOSKernel:
         sender = self.current_task
         assert sender is not None
 
-        if ch.receiver_task is not None:
-            # Rendezvous matched: wake receiver immediately
-            receiver = ch.receiver_task
-            ch.receiver_task = None
-            ch.buffer = None
-            ch.has_data = False
+        if ch.waiter_dir == WaitDir.RECV:
+            # Rendezvous matched: ownership moves sender -> receiver right here
+            receiver = ch.waiter_task
+            ch.waiter_task, ch.waiter_dir = None, WaitDir.NONE
 
             self.tasks[receiver]["received_val"] = data
             self.tasks[receiver]["state"] = TaskState.READY
             self.tasks[sender]["state"] = TaskState.READY
+            return self._handoff_or_yield(receiver)
 
-            if self.consecutive_handoffs < self.max_consecutive_handoffs:
-                self.consecutive_handoffs += 1
-                return ("DIRECT_SWITCH", receiver)
-            else:
-                self.consecutive_handoffs = 0
-                self.ready_queue.append(receiver)
-                return ("YIELD", None)
-        else:
-            # Buffer data and suspend sender
-            assert not ch.has_data, "Channel overflow"
-            ch.buffer = data
-            ch.has_data = True
-            ch.sender_task = sender
-            self.tasks[sender]["state"] = TaskState.SUSPENDED_CSP
-            return ("BLOCK", None)
+        # No peer yet: the value stays in the sender's own frame. The channel holds
+        # nothing, so there is no buffer to overflow and no send to roll back.
+        assert ch.waiter_dir != WaitDir.SEND, \
+            "one waiter per channel: concurrent senders must use separate channels"
+        ch.waiter_task, ch.waiter_dir = sender, WaitDir.SEND
+        self.tasks[sender]["pending_val"] = data
+        self.tasks[sender]["state"] = TaskState.SUSPENDED_CSP
+        return ("BLOCK", None)
 
     def channel_recv(self, channel_id: str) -> tuple[str, str | None]:
         """Synchronous CSP recv with direct symmetric context switch."""
@@ -163,30 +190,32 @@ class COOSKernel:
         receiver = self.current_task
         assert receiver is not None
 
-        if ch.sender_task is not None:
-            # Rendezvous matched: sender has buffered data
-            sender = ch.sender_task
-            data = ch.buffer
-            ch.buffer = None
-            ch.has_data = False
-            ch.sender_task = None
+        if ch.waiter_dir == WaitDir.SEND:
+            # Take the value out of the sender's frame: never two owners at once
+            sender = ch.waiter_task
+            ch.waiter_task, ch.waiter_dir = None, WaitDir.NONE
+            data = self.tasks[sender].pop("pending_val")
 
             self.tasks[receiver]["received_val"] = data
             self.tasks[sender]["state"] = TaskState.READY
             self.tasks[receiver]["state"] = TaskState.READY
+            return self._handoff_or_yield(sender)
 
-            if self.consecutive_handoffs < self.max_consecutive_handoffs:
-                self.consecutive_handoffs += 1
-                return ("DIRECT_SWITCH", sender)
-            else:
-                self.consecutive_handoffs = 0
-                self.ready_queue.append(sender)
-                return ("YIELD", None)
-        else:
-            # Suspend receiver until sender arrives
-            ch.receiver_task = receiver
-            self.tasks[receiver]["state"] = TaskState.SUSPENDED_CSP
-            return ("BLOCK", None)
+        assert ch.waiter_dir != WaitDir.RECV, \
+            "one waiter per channel: concurrent receivers must use separate channels"
+        ch.waiter_task, ch.waiter_dir = receiver, WaitDir.RECV
+        self.tasks[receiver]["state"] = TaskState.SUSPENDED_CSP
+        return ("BLOCK", None)
+
+    def _handoff_or_yield(self, target: str) -> tuple[str, str | None]:
+        """Bounds the handoff chain so the scheduler main loop stays reachable.
+        This bound is what 6.1 'main loop return guarantee' formally proves."""
+        if self.consecutive_handoffs < self.max_consecutive_handoffs:
+            self.consecutive_handoffs += 1
+            return ("DIRECT_SWITCH", target)
+        self.consecutive_handoffs = 0
+        self.ready_queue.append(target)
+        return ("YIELD", None)
 
     def notify_interrupt(self, irq_id: int):
         """Non-blocking ISR notification into bounded event queue."""
@@ -322,7 +351,7 @@ stateDiagram-v2
 | :--- | :--- | :--- | :--- |
 | スケジューラ | タスクの実行順序を管理するコンポーネントへの参照 | 構造体への参照 | [`scheduler`](os_scheduler.md) |
 | 通信エンジン | タスク間のCSP通信を制御するコンポーネントへの参照 | 構造体への参照 | `co_csp` |
-| メモリ管理 | タスク固有のメモリ領域を管理するコンポーネントへの参照 | 構造体への参照 | `co_mem` |
+| メモリ管理 | タスク固有の静的パーティションを貸与・返却するコンポーネントへの参照 | 構造体への参照 | `co_mem` |
 
 ##### ハーネスによる依存性注入パターン
 システムハーネスは以下のようにコンポーネントへの参照を集約し、静的に注入される。 `{GLOBAL_ComponentHarness}`
@@ -366,7 +395,7 @@ struct CoValue {
 | :--- | :--- | :--- |
 | `scheduler` | `auto spawn(void(*task_entry)(void*), void* arg) -> result<task_id_t, scheduler_error>;`<br>`auto yield() -> void;`<br>`auto exit() -> void;`<br>`auto set_idle_hook(void(*hook)()) -> void;`<br>`auto wake_up_direct(task_id_t task) -> void;`<br>`auto notify_interrupt(uint32_t irq_id) -> void;` | タスクの生成・一時譲渡・終了およびアイドル時コールバックの設定。`wake_up_direct` はCSP Handoffによる即時起床用、`notify_interrupt` はISRコンテキストから割り込み通知をイベントキューに投函する用。動的確保は行わず、静的プールからTCBスロットを割り当てる。 |
 | `csp` | `auto send(channel_id_t chan, CoValue&& val) -> coos::task_coroutine;`<br>`auto receive(channel_id_t chan) -> coos::task_coroutine_recv;` | チャネル経由の同期メッセージ送受信。ムーブセマンティクスによるゼロコピー所有権移譲を行う。 |
-| `memory` | `auto allocate(size_t size) -> result<void*, memory_error>;`<br>`auto free(void* ptr) -> void;` | タスク固有の静的メモリパーティション内でのメモリ管理。 |
+| `memory` | `auto acquire_partition(task_id_t owner) -> result<partition_view, memory_error>;`<br>`auto release_partition(task_id_t owner) noexcept -> void;`<br>`template <class T> auto acquire_slot() -> result<pool_ref<T>, memory_error>;`<br>`template <class T> auto release_slot(pool_ref<T> ref) noexcept -> void;` | タスク固有の静的メモリパーティションの貸与・返却。**汎用ヒープ API ではない**: `size_t` 指定の任意サイズ確保も `void*` も提供せず、コンパイル時に確定した固定長パーティションと型付きプールスロットのみを扱う。`partition_view` は `std::span<std::byte>` 相当、`pool_ref<T>` は静的プール内スロットへの型付きハンドルである。 `{GLOBAL_Policy_Memory}` `{META_NoStdVector}` |
 
 ## 6. 形式検証（pyModelChecking / 直交表）
 
@@ -382,17 +411,23 @@ struct CoValue {
 | **状態一貫性** | タスク状態 (READY/BLOCKED/SUSPENDED) が各操作後も整合していること。 | 直交表（ケース1-7） |
 
 ### 6.2 直交表: CSP通信と状態遷移
+<!-- traceability: {CSP_Handoff} {ADR_RendezvousChannel} {GLOBAL_InterruptWakeup} -->
 
-チャネル通信時のタスク状態とスケジューラの挙動を検証する。割り込み通知はイベント駆動型として扱われる。
+チャネル通信時のタスク状態とスケジューラの挙動を検証する。チャネルは値を保持しないため（`{ADR_RendezvousChannel}`）、状態は「待機者なし / 送信待機 / 受信待機」の3値のみを取り、バッファ満杯（Full）ケースは存在しない。割り込み通知はイベント駆動型として扱われる。
 
-| ケース | 自タスク要求 | チャネル状態 | 相手状態 | 期待される動作 (自) | 期待される動作 (他) |
+| ケース | 自タスク要求 | チャネル待機者 | 相手状態 | 期待される動作 (自) | 期待される動作 (他) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| 1 | SEND | Empty | - | BLOCKEDへ遷移、IPC_REQUEST イベント投入 | (なし) |
-| 2 | SEND | Full | - | BLOCKEDへ遷移、IPC_REQUEST イベント投入 | (なし) |
-| 3 | SEND | (待機RXあり) | BLOCKED | **READYへ遷移(直接)** | **READYへ遷移(直接)** |
-| 4 | RECV | Full | - | **READYへ遷移、IPC_REPLY イベント投入** | (チャネル空へ) |
-| 5 | RECV | Empty | - | BLOCKEDへ遷移 | (なし) |
-| 6 | RECV | (待機TXあり) | BLOCKED | **READYへ遷移(直接)** | **READYへ遷移(直接)** |
-| 7 | ISR通知 | - | BLOCKED/READY | (継続) | **INT イベント投入 → EventLoop で処理 → BLOCKED なら READY へ遷移** |
+| 1 | SEND | なし | - | `SUSPENDED_CSP` へ遷移。値は自フレームに保持したまま | (なし) |
+| 2 | SEND | 受信待機 (RECV) | `SUSPENDED_CSP` | **READY へ遷移** | **READY へ遷移し、値の所有権を取得** |
+| 3 | RECV | なし | - | `SUSPENDED_CSP` へ遷移 | (なし) |
+| 4 | RECV | 送信待機 (SEND) | `SUSPENDED_CSP` | **READY へ遷移し、値の所有権を取得** | **READY へ遷移。自フレームの値は無効化** |
+| 5 | SEND | 送信待機 (SEND) | `SUSPENDED_CSP` | **設計上到達不能**（1チャネル1待機者。複数送信者はチャネル分割で表現する） | - |
+| 6 | RECV | 受信待機 (RECV) | `SUSPENDED_CSP` | **設計上到達不能**（同上） | - |
+| 7 | ハンドオフ上限到達 | 受信/送信待機 | `SUSPENDED_CSP` | **READY へ遷移し、対称遷移せずスケジューラへ復帰** | **READY へ遷移し READY キュー末尾へ** |
+| 8 | ISR通知 | - | `SUSPENDED_CSP`/`READY` | (継続) | **INT イベント投入 → EventLoop で処理 → 待機中なら READY へ遷移** |
 
-**注**: ケース7では、割り込みハンドラ（ISR）がタスク状態を直接変更せず、代わりに INT イベントをイベントキューに投入する。スケジューラ/イベントループが INT イベントを取り出し、対象タスクを BLOCKED から READY へ遷移させる。
+**注1**: ケース5・6は仕様上の不可能ケースであり、実装では `assert` により検出する。到達した場合は「1チャネルに複数の同方向待機者を作った」という設計違反を意味する。
+
+**注2**: ケース7は `FB_CONF_MAX_CONSECUTIVE_HANDOFFS` 到達時の挙動であり、§6.1「メインループ復帰保証」が形式検証している性質そのものに対応する。
+
+**注3**: ケース8では、割り込みハンドラ（ISR）がタスク状態を直接変更せず、代わりに INT イベントをイベントキューに投入する。スケジューラ/イベントループが INT イベントを取り出し、対象タスクを READY へ遷移させる。 `{GLOBAL_InterruptWakeup}`

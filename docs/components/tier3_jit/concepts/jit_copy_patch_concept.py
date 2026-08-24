@@ -36,27 +36,39 @@ class CopyPatchJITEngine:
         self.barrier_flushes: int = 0
         self.current_write_pos: int = 0
 
-        # Stencil Library
+        # Stencil Library.
+        #
+        # Register convention (ADR_TosCacheAsymmetry / ContextPointerRegister):
+        #   R0 = ip         (WASM PC)          -- shared with the interpreter, never clobbered
+        #   R1 = stack_bot  (unified stack)    -- shared with the interpreter, never clobbered
+        #   R2 = env        (vsoc_runtime*)    -- shared with the interpreter, never clobbered
+        #   R3 = scratch                       -- free for the trace to use
+        #   R4 = TOS, R5 = NOS                 -- JIT-trace-local operand cache. The interpreter
+        #                                         does NOT share this, so the prologue fills it
+        #                                         from the unified stack and the epilogue flushes
+        #                                         it back before tail-jumping into a handler.
+        # No C stack frame is created: the trace never touches SP (InterpreterContextStackless).
         self.stencils: dict[str, Stencil] = {
             "prologue": Stencil(
                 "prologue",
-                ["PUSH {R4, LR}", "SUB SP, SP, #16"],
-                {}
+                ["LDR R4, [R1, #__TOS_OFF__]", "LDR R5, [R1, #__NOS_OFF__]"],
+                {"tos_off": 0, "nos_off": 1}
             ),
             "i32_const": Stencil(
                 "i32_const",
-                ["MOVW R0, #__IMM16_LO__", "MOVT R0, #__IMM16_HI__", "STR R0, [SP, #__STACK_OFF__]"],
-                {"imm": 0, "stack_off": 2}
+                ["STR R5, [R1, #__SPILL_OFF__]", "MOV R5, R4",
+                 "MOVW R4, #__IMM16_LO__", "MOVT R4, #__IMM16_HI__"],
+                {"spill_off": 0, "imm": 2}
             ),
             "i32_add": Stencil(
                 "i32_add",
-                ["LDR R0, [SP, #0]", "LDR R1, [SP, #4]", "ADD R0, R0, R1", "STR R0, [SP, #0]"],
-                {}
+                ["ADD R4, R5, R4", "LDR R5, [R1, #__FILL_OFF__]"],
+                {"fill_off": 1}
             ),
             "epilogue": Stencil(
                 "epilogue",
-                ["ADD SP, SP, #16", "POP {R4, PC}"],
-                {}
+                ["STR R4, [R1, #__TOS_OFF__]", "STR R5, [R1, #__NOS_OFF__]", "BX R3"],
+                {"tos_off": 0, "nos_off": 1}
             ),
         }
 
@@ -113,14 +125,16 @@ class CopyPatchJITEngine:
             if op == "i32.const":
                 st = self.stencils["i32_const"]
                 imm = arg
-                # Relocation patch: IMM and stack offset
-                i0 = f"MOVW R0, #{imm & 0xFFFF}"
-                i1 = f"MOVT R0, #{(imm >> 16) & 0xFFFF}"
-                i2 = "STR R0, [SP, #0]"
-                self.write_instruction(self.current_write_pos, i0)
-                self.write_instruction(self.current_write_pos + 1, i1)
-                self.write_instruction(self.current_write_pos + 2, i2)
-                self.current_write_pos += 3
+                # Relocation patch: spill displaced NOS, shift TOS -> NOS, load immediate into TOS
+                patched = [
+                    "STR R5, [R1, #0]",
+                    st.code[1],
+                    f"MOVW R4, #{imm & 0xFFFF}",
+                    f"MOVT R4, #{(imm >> 16) & 0xFFFF}",
+                ]
+                for inst in patched:
+                    self.write_instruction(self.current_write_pos, inst)
+                    self.current_write_pos += 1
             elif op == "i32.add":
                 st = self.stencils["i32_add"]
                 for inst in st.code:
@@ -154,15 +168,35 @@ def test_copy_patch_compilation_and_execution():
 
     # Compile basic block
     start_pos, count = engine.compile_basic_block(wasm_ops)
-    assert count == 11  # Prologue(2) + Const(3) + Add(4) + Epilogue(2)
+    assert count == 11  # Prologue(2) + Const(4) + Add(2) + Epilogue(3)
     assert engine.mpu_attr == MPUAttribute.RO_X
     assert engine.barrier_flushes == 1
 
     # Execute generated native instructions
     emitted_code = engine.execute_native(start_pos, count)
-    assert emitted_code[0] == "PUSH {R4, LR}"
-    assert "MOVW R0, #42" in emitted_code[2]
-    assert emitted_code[-1] == "POP {R4, PC}"
+    # Trace entry fills the JIT-local TOS/NOS cache from the unified stack.
+    assert emitted_code[0] == "LDR R4, [R1, #__TOS_OFF__]"
+    assert "MOVW R4, #42" in emitted_code[4]
+    # Trace exit flushes the cache back and tail-jumps via the scratch register.
+    assert emitted_code[-3] == "STR R4, [R1, #__TOS_OFF__]"
+    assert emitted_code[-1] == "BX R3"
+
+
+def test_cps_registers_are_never_clobbered_by_a_trace():
+    """ADR_TosCacheAsymmetry: R0/R1/R2 carry (ip, stack_bot, env) across the whole
+    JIT <-> interpreter boundary, so no emitted instruction may write to them. A
+    trace that clobbered one would corrupt the continuation it tail-jumps into."""
+    engine = CopyPatchJITEngine()
+    start_pos, count = engine.compile_basic_block([("i32.const", 42), ("i32.add", None)])
+    emitted_code = engine.execute_native(start_pos, count)
+
+    for inst in emitted_code:
+        mnemonic, _, operands = inst.partition(" ")
+        if mnemonic in ("STR", "BX"):
+            continue  # these read their first operand, they do not write it
+        dest = operands.split(",")[0].strip()
+        assert dest not in ("R0", "R1", "R2"), \
+            f"trace instruction '{inst}' writes to a shared CPS register"
 
 
 def test_mpu_wx_protection_violation():
@@ -186,5 +220,6 @@ def test_mpu_wx_protection_violation():
 
 if __name__ == "__main__":
     test_copy_patch_compilation_and_execution()
+    test_cps_registers_are_never_clobbered_by_a_trace()
     test_mpu_wx_protection_violation()
     print("[PASS] All JIT Copy-and-Patch concept tests passed successfully.")

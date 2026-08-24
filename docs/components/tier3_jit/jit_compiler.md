@@ -46,6 +46,10 @@ graph TD
         OldBuffer["Bank 2: Oldest Buffer Bank"]
     end
 
+    subgraph Harness_Layer
+        Harness[jit_harness]
+    end
+
     Manager -- uses --> Harness
     Harness -- points to --> Detector
     Harness -- points to --> Engine
@@ -74,8 +78,8 @@ graph TD
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| アクティブ領域 | 現在使用中の書き込み・実行用キャッシュバンク | データ範囲 | `std::span<uint8_t>` |
-| バックアップ領域 | 前回GC時のデータが残る退避用領域 | データ範囲 | `std::span<uint8_t>` |
+| バンク配列 | 3面のキャッシュバンク実体。役割は `active_index` からの相対で決まる | データ範囲の配列 | `std::array<std::span<uint8_t>, 3>` |
+| アクティブバンク索引 | 現在の Active バンク番号。`(active_index + 1) % 3` が Warm、`(active_index + 2) % 3` が Oldest | 索引 | 8bit符号なし（rotate() で加算） |
 | コンパイル待ち列 | 後でコンパイルを行うWASM PC (uint32_t) の格納キュー | 固定長LIFOキュー | `std::array<uint32_t, FB_CONF_JIT_QUEUE_SIZE>` |
 | 実行履歴マップ | 命令の実行頻度を記録するビットマップ | データ範囲 | `std::span<uint8_t>` |
 
@@ -124,16 +128,16 @@ JIT コンパイル済みネイティブトレースの実行エントリポイ�
 
 #### Copy-and-Patch コンパイル手順
 
-<!-- traceability: {JIT_CopyAndPatch} {META_AI_Native_Dev} {JIT_RuntimeAPI_Fallback} {ContextPointerRegister} -->
-1. **テンプレート選択**: WASM命令に対応する事前定義済みのネイティブコードテンプレートを選択する。すべてのテンプレートは `__fastcall` CPS 3引数レジスタ割り当て（R0=IP, R1=stack_bot, R2=ENV, R3=スクラッチ）に完全準拠して設計される。
+<!-- traceability: {JIT_CopyAndPatch} {META_AI_Native_Dev} {JIT_RuntimeAPI_Fallback} {ContextPointerRegister} {ADR_TosCacheAsymmetry} -->
+1. **テンプレート選択**: WASM命令に対応する事前定義済みのネイティブコードテンプレートを選択する。すべてのテンプレートは `__fastcall` CPS 3引数レジスタ割り当て（R0=IP, R1=stack_bot, R2=ENV, R3=スクラッチ）に完全準拠して設計される。トレース内部に限り `R4`/`R5` を TOS/NOS キャッシュとして占有してよい。 `{ADR_TosCacheAsymmetry}`
 2. **コードコピー**: テンプレートをアクティブ・キャッシュ領域の「ベースアドレス + 使用済みサイズ」の位置へコピーする。
 3. **パッチ適用 (プレースホルダ埋め)**:
     - 即値（定数）をプレースホルダに書き込む。
     - ランタイムAPIのアドレスを書き込む。
     - 相対ジャンプ先を計算して書き込む。
-4. **インタープリタ連携とフォールバック (Zero-Overhead Interop)**:
+4. **インタープリタ連携とフォールバック (Zero-Reconstruction Interop)**:
     - JIT トレース末尾、未コンパイル命令、またはトラップ発生時、JIT コードはレジスタ R0〜R2 に最新の `(ip, stack_bot, env)` を保持したまま、インタープリタのオプコードハンドラ（またはディスパッチャ）へ直接末尾ジャンプ（`BX`）する。
-    - レジスタの再配置や構造体への退避/復元オーバーヘッドなしに、即座にインタープリタ実行へ復帰する。 `{JIT_RuntimeAPI_Fallback}`
+    - **コンテキストの再構築（構造体への退避/復元、レジスタ再配置）は発生しない**。ただしスタックトップキャッシュ `R4`/`R5` はインタープリタ側の規約に存在しないため、ダーティであれば統合スタックへ `STR` × 2 で書き戻してから制御を渡す。この 2 命令が JIT ↔ インタープリタ遷移の唯一のコストであり、トレース長で償却される。 `{JIT_RuntimeAPI_Fallback}` `{ADR_TosCacheAsymmetry}`
 5. **エントリ登録 & 命令キャッシュ同期**: JITエントリを作成し、命令オフセット（PC）順を維持するようにエントリ配列に挿入する。同時にカードグループ索引を更新する。パッチ適用完了後、Cortex-M33 向けにデータキャッシュをクリーンし、`__DSB()`（データ同期バリア）および `__ISB()`（命令同期バリア）を発行して命令キャッシュ（I-Cache）のコヒーレンシを保証する。
 
 #### JITトレース検索 & 3面キャッシュ代謝アルゴリズム
@@ -156,9 +160,7 @@ JIT コンパイル済みネイティブトレースの実行エントリポイ�
     - 全 3 バンクでミスし、かつ状態が「コンパイル完了」の場合、対象の命令オフセットをコンパイル待ち列（LIFO）へ登録する。実際のコンパイルは次回のバッチ処理（アイドル時等）で行われる。
 7. **結果の返却**:
     - ヒット（または昇格成功）時はネイティブコードのアドレスを返す。
-    - 全面でミスした場合は NULL を返し、インタープリタ実行を継続する。
-    - ヒット（または昇格成功）時はネイティブコードのアドレスを返す。
-    - いずれの領域でもミスした場合は（たとえ「コンパイル完了」カードであっても） NULL を返し、インタープリタ実行を継続する。
+    - いずれのバンクでもミスした場合は（たとえ「コンパイル完了」カードであっても） NULL を返し、インタープリタ実行を継続する。カード状態は `COMPILED` のまま変更しない（`{ADR_SafeQueuingOnHotMiss}` に従い、再コンパイル要求はステップ 6 のキュー投入のみで表現する）。 `{ADR_SafeQueuingOnHotMiss}`
 
 #### トレース・チェイニング（連鎖実行）
 <!-- traceability: {JIT_LazyChaining} -->
@@ -227,17 +229,23 @@ sequenceDiagram
     alt Bitmap != COMPILED
         S-->>I: Fallback to Interpreter (Fast Exit)
     else Bitmap == COMPILED
-        S->>S: Search Active Cache
+        S->>S: Search Bank 0 (Active)
         alt Active Hit
             S-->>I: Native Code Address
         else Active Miss
-            S->>S: Search Old Cache
-            alt Old Hit
-                S->>S: Promote to Active (Copy & Patch Next Trace)
+            S->>S: Search Bank 1 (Warm)
+            alt Warm Hit
+                Note over S: Observation window - no promotion copy
                 S-->>I: Native Code Address
-            else Old Miss
-                S->>S: Set Bitmap to EXECUTED
-                S-->>I: Fallback to Interpreter (Return)
+            else Warm Miss
+                S->>S: Search Bank 2 (Oldest)
+                alt Oldest Hit
+                    S->>S: Promote to new Active (Copy)
+                    S-->>I: Native Code Address
+                else Oldest Miss
+                    S->>S: Enqueue PC in LIFO queue, Bitmap stays COMPILED
+                    S-->>I: Fallback to Interpreter (Return NULL)
+                end
             end
         end
     end
@@ -245,18 +253,20 @@ sequenceDiagram
 
 ## 5. 検証
 
-### 5.1 直行表: 検索・昇格・GC
-JITトレース検索時の内部状態と期待される挙動を検証する。
+### 5.1 直交表: 検索・昇格・代謝
+<!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} {ADR_SafeQueuingOnHotMiss} -->
+JITトレース検索時の内部状態と期待される挙動を検証する。3面バンク（Active / Warm / Oldest）を独立した列として扱う。
 
-| ケース | ホットスポットBitmap | Active Cache | Old Cache | 期待される動作 |
-| :--- | :--- | :--- | :--- | :--- |
-| 1 | UNEXECUTED (0) | miss | miss | インタープリタ実行継続 |
-| 2 | EXECUTED (1) | miss | miss | インタープリタ実行継続 |
-| 3 | HOT (2) | miss | miss | インタープリタ継続 + キュー投入検討 |
-| 4 | COMPILED (3) | **hit** | - | **JITコード実行** |
-| 5 | COMPILED (3) | miss | **hit** | **Activeへ昇格(Copy)** + JIT実行 |
-| 6 | COMPILED (3) | miss | miss | BitmapをHOT(2)へ戻す + インタープリタ |
-| 7 | (昇格時) | Active満杯 | Old hit | **Old破棄 -> ActiveをOldへ -> 新Active** |
+| ケース | ホットスポットBitmap | Active | Warm | Oldest | 期待される動作 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| 1 | UNEXECUTED (0) | - | - | - | 事前フィルタで即時終了、インタープリタ実行継続 |
+| 2 | EXECUTED (1) | - | - | - | 事前フィルタで即時終了、インタープリタ実行継続 |
+| 3 | HOT (2) | - | - | - | インタープリタ継続（コンパイル待ち列に投入済み） |
+| 4 | COMPILED (3) | **hit** | - | - | **JITコード実行**（昇格なし） |
+| 5 | COMPILED (3) | miss | **hit** | - | **昇格せず** Warm 上のコードをそのまま実行（無償観測期間） `{JIT_OldestOnly_Promote}` |
+| 6 | COMPILED (3) | miss | miss | **hit** | **新 Active へ昇格 (Copy)** してから JIT 実行 `{JIT_OldestOnly_Promote}` |
+| 7 | COMPILED (3) | miss | miss | miss | NULL 返却 + コンパイル待ち列へ投入。**Bitmap は COMPILED のまま変更しない** `{ADR_SafeQueuingOnHotMiss}` |
+| 8 | (書き込み時) | **満杯** | - | - | 3面リングローテーション: Oldest を Purge して新 Active に、Active→Warm、Warm→Oldest。同時に `chain_next` のダングリング掃引を行う |
 
 ### 5.2 内部コンポーネントのデコンポジション
 <!-- traceability: {JIT_Encoder} -->
@@ -315,7 +325,7 @@ JITエンジンの責務を、以下の独立したサブコンポーネント�
 
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | カーソマーキング索引（カードグループ）を用いて、二分探索の範囲を絞り込む。 |
+| 機能概要 | カードマーキング索引（カードグループ）を用いて、二分探索の範囲を絞り込む。 |
 | シグネチャ | `get_search_range(pc: address) -> result<tuple<u32, u32>, bool>` |
 | 補足 | 本機能は、ヘッダファイルで定義されたカードグループサイズおよび最大登録件数のマクロ定数に基づき、インデックスの二分探索範囲をコンパイル時に静的に制限して計算する。 `{META_ConfigurableSystem}` |
 
@@ -349,11 +359,20 @@ JITエンジンの責務を、以下の独立したサブコンポーネント�
 - **目標**: 不正なコード実行および W^X 違反の防止。
 - **方策**: 
     - `{PositionIndependentCode}`: 生成コードを位置独立とし、配置場所の自由度を確保。
-    - `Boundary Check`: コンパイル時にキャッシュ溢れを厳密にチェックし、溢れた場合は Old 領域を破棄して再利用。 `{MemoryBoundaryCheck}`
+    - `Boundary Check`: コンパイル時にキャッシュ溢れを厳密にチェックし、溢れた場合は 3面リングローテーションにより Oldest バンクを破棄して再利用。 `{MemoryBoundaryCheck}`
     - `MPU W^X 保護`: Cortex-M33 PMSAv8 MPU を用い、JIT パッチ書き込み時は `RW+XN`、ネイティブ実行時は `RO+X` に切り替え、`__DSB(); __ISB();` メモリ・命令同期バリアを発行する。書き込みと実行の同時許可（RWX）を物理的に排除する。`formal/jit_cache_model.py` により変異検査付き形式モデルとして検証。
 
 ## 8. 設計判断 (ADR)
-<!-- traceability: {ADR_ScalableCodeOffset} {ADR_SafeQueuingOnHotMiss} -->
+<!-- traceability: {ADR_ScalableCodeOffset} {ADR_SafeQueuingOnHotMiss} {ADR_TosCacheAsymmetry} -->
+
+- **決定事項**: `{ADR_TosCacheAsymmetry}`
+  - **背景**: JIT トレースはスタックマシンである WASM のオペランドを `R4`/`R5` に TOS/NOS としてキャッシュすると大きく速くなるが、インタープリタのオプコードハンドラは AAPCS 引数レジスタ `R0`〜`R3` を `(ip, stack_bot, env, scratch)` で使い切っており、TOS を保持する余地がない。両者は `__fastcall` CPS シグネチャを共有するため、この差をどう扱うかを決める必要がある。
+  - **選択肢と評価**:
+    - 案1: CPS を 4 引数化（`ip, stack_bot, env, tos`）し、インタープリタ側も TOS をレジスタ保持する。遷移コストは真にゼロになるが、`{ContextPointerRegister}` の統合スタック化でせっかく解放した `R3` スクラッチを再び失い、全ハンドラが TOS 不変条件の維持義務を負う。
+    - 案2: JIT からも `R4`/`R5` を廃し、両者ともオペランドを統合スタックのメモリ上でのみ扱う。記述は最も単純になるが、スタックマシンに対する唯一かつ最大の最適化余地を捨てることになり、`{LowLatencyJIT}`（WAMR 超え）の達成が困難になる。
+    - 案3: 非対称を許容し、JIT トレース内部でのみ `R4`/`R5` を TOS/NOS として使用する。トレース脱出時にダーティ値を統合スタックへ書き戻す。
+  - **結論**: 案3を採用する。
+  - **評価**: 「ゼロオーバーヘッド」の主張範囲を **コンテキスト再構築がゼロであること** に限定し、トレース脱出時の `STR` × 2 を明示的な有界コストとして仕様に記載する。JIT トレースは複数 WASM 命令にまたがるため、この 2 命令はトレース長で償却され、トレース内部で得られる TOS/NOS キャッシュの利得を下回る。インタープリタは `R4`/`R5` について何の不変条件も負わない（callee-saved として通常どおり扱う）ため、ハンドラ実装の複雑度も増えない。
 
 - **決定事項**: `{ADR_ScalableCodeOffset}`
   - **背景**: 16ビットの `code_offset` をそのまま使用すると、コードキャッシュが64KBに制限される。将来的に外部メモリ等を活用してキャッシュを拡張（例：512KB）する場合、このビット幅がボトルネックとなる。

@@ -55,21 +55,21 @@ IPC通信の最小単位。1つのメッセージで8個のペアを送信でき
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
 | 型スコープ | 上位3ビットで種別、下位5ビットでデータの型（定数、ID等）を定義する | ビットフラグ | 8bit |
-
-* **型スコープビット構成**:
-  * **上位3ビット (種別)**:
-    * `0b000`: 機能的 (Functional) - メソッド呼び出しやコマンド指示
-    * `0b001`: 辞書参照 (Dictionary) - 静的オフセットによるログメッセージ参照
-    * `0b010`: リソース (Resource) - vDMA や GPIO などの物理・仮想ハードウェア記述子
-  * **下位5ビット (型)**:
-    * `0b00000`: `void` / 未定義
-    * `0b00001`: `uint32_t` / 32ビット即値
-    * `0b00010`: `int32_t` / 32ビット符号付き整数
-    * `0b00011`: `uint16_t` / 16ビット即値
-    * `0b00100`: `fb_offset_t` / ゲストメモリ相対オフセット
-
 | 識別キー | スコープ（Functional/Dictionary）内でデータの意味を一意に識別する | ID値 | 24bit |
 | 属性値 | 実際のデータ本体、あるいはリソースを指すハンドルや即値。「型スコープ」のビットフラグに基づき、静的および動的に解釈される | 値 | 32bit |
+
+**型スコープのビット構成:**
+
+| ビット範囲 | 値 | 意味 |
+| :--- | :--- | :--- |
+| 上位3ビット（種別） | `0b000` | 機能的 (Functional) — メソッド呼び出しやコマンド指示 |
+| | `0b001` | 辞書参照 (Dictionary) — 静的オフセットによるログメッセージ参照 |
+| | `0b010` | リソース (Resource) — vDMA や GPIO などの物理・仮想ハードウェア記述子 |
+| 下位5ビット（型） | `0b00000` | `void` / 未定義 |
+| | `0b00001` | `uint32_t` / 32ビット即値 |
+| | `0b00010` | `int32_t` / 32ビット符号付き整数 |
+| | `0b00011` | `uint16_t` / 16ビット即値 |
+| | `0b00100` | `fb_offset_t` / ゲストメモリ相対オフセット |
 
 ##### スコープ定義
 - **機能的IPC**: キーを、受信側が定義する関数やリクエスト種類を特定する識別子として使用する。
@@ -127,9 +127,9 @@ class IPCRouter:
     def __init__(self):
         # Stage 1: Static Flat Map registry (URI -> Service Descriptor)
         self.registry = {
-            "ipc://core/coos": {"role": "CORE_SERVICE", "channel_id": "ch_coos", "max_queue": 2},
-            "ipc://hal/gpio": {"role": "PLATFORM_HAL", "channel_id": "ch_gpio", "max_queue": 2},
-            "ipc://dbg/manager": {"role": "DEBUGGER", "channel_id": "ch_dbg", "max_queue": 1},
+            "fireball://core/coos/0": {"role": "CORE_SERVICE", "channel_id": "ch_coos", "max_queue": 2},
+            "fireball://hal/gpio/0": {"role": "PLATFORM_HAL", "channel_id": "ch_gpio", "max_queue": 2},
+            "fireball://dbg/manager/0": {"role": "DEBUGGER", "channel_id": "ch_dbg", "max_queue": 1},
         }
 
         # Stage 2: Role-based Access Control Matrix (sender_role, target_role) -> bool
@@ -566,17 +566,17 @@ interrupt_flags: bitmask
 
 ## 7. 制約達成の方策
 
-### 6.1 性能制約と方策
+### 7.1 性能制約と方策
 <!-- traceability: {LowLatencyLookup} -->
 - **目標**: サービス検索のレイテンシを最小化する。
 - **方策**: `{LowLatencyLookup}` ソート済み配列の二分探索を採用する。
 
-### 6.2 メモリ制約と方策
+### 7.2 メモリ制約と方策
 <!-- traceability: {META_BumpAllocator} {GLOBAL_StaticScalability} -->
 - **目標**: レジストリ管理によるメモリ断片化を防止する。
 - **方策**: `{META_BumpAllocator}` `{GLOBAL_StaticScalability}` バンプアロケータを使用し、最大サービス数をコンパイル時に固定する。
 
-### 6.3 安全性制約と方策
+### 7.3 安全性制約と方策
 <!-- traceability: {RoleBasedAccessControl} {OwnershipTransfer} -->
 - **目標**: 不正なタスク間通信を防止する。
 - **方策**: `{RoleBasedAccessControl}` `{OwnershipTransfer}` ロールベースの認可と、厳密な所有権管理により、データ競合と不正アクセスを排除する。

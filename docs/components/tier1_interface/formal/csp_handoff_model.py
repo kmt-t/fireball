@@ -17,6 +17,8 @@ def build_model(*, guards: bool = True) -> Kripke:
     - s_receiver_holds: 受信者が所有権取得 (receiver_owns)
     - s_both_owns: 違反状態（二重所有の競合状態）
     - s_dropped: ドロップハンドラによる安全回収 (idle, dropped)
+    - s_in_flight_leaked: 違反状態（受信者消滅時に Drop ハンドラが回収せず、
+      in-flight リソースがキュー内に永久滞留したリーク状態）
     """
     S = [
         "s_sender_holds",
@@ -24,6 +26,7 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_receiver_holds",
         "s_both_owns",
         "s_dropped",
+        "s_in_flight_leaked",
     ]
     S0 = {"s_sender_holds"}
     R = [
@@ -39,12 +42,16 @@ def build_model(*, guards: bool = True) -> Kripke:
         ("s_dropped", "s_sender_holds"),
         # 違反状態の自己ループ
         ("s_both_owns", "s_both_owns"),
+        ("s_in_flight_leaked", "s_in_flight_leaked"),
     ]
 
     if not guards:
         # ガード無効時（変異検査）:
-        # 送信時に Revoke によるアトミック剥奪を行わず、受信者に直接 Grant すると二重所有が発生
+        # 1. 送信時に Revoke によるアトミック剥奪を行わず、受信者に直接 Grant すると二重所有が発生
         R = R + [("s_sender_holds", "s_both_owns")]
+        # 2. IPC_DropHandler を外すと、受信者が Kill された in-flight メッセージは
+        #    誰にも回収されずキュー内に滞留し続ける（リソースリーク）
+        R = R + [("s_in_flight", "s_in_flight_leaked")]
 
     L = {
         "s_sender_holds": {"sender_owns"},
@@ -52,6 +59,8 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_receiver_holds": {"receiver_owns"},
         "s_both_owns": {"sender_owns", "receiver_owns"},  # 違反状態
         "s_dropped": {"idle", "dropped"},
+        # 違反状態: in_flight のまま永久に解決しない
+        "s_in_flight_leaked": {"in_flight", "leaked"},
     }
     return Kripke(S=S, S0=S0, R=R, L=L)
 
@@ -77,6 +86,9 @@ def properties():
                     AF(Not(AtomicProposition("in_flight"))),
                 )
             ),
+            # in-flight のまま永久に解決しないリーク状態が違反。
+            # guards=False（Drop ハンドラ撤去）でのみ到達可能になることを変異検査で示す。
+            "violation": AtomicProposition("leaked"),
             "expect": True,  # どの経路を通っても必ず in_flight 状態から離脱して解決する (AF)
         },
     ]

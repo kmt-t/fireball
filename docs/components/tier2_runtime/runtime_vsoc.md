@@ -114,7 +114,7 @@ stateDiagram-v2
     InterpreterRun --> Debugging: breakpoint_debugger / halt execution
     InterpreterRun --> Error: trap / page fault / invalid opcode
     
-    JitRun --> SafepointCheck: loop_backslash / check interrupt flag
+    JitRun --> SafepointCheck: loop_back_edge / check interrupt flag
     SafepointCheck --> JitRun: no_interrupt / continue JIT
     SafepointCheck --> Ready: interrupt_pending / fallback to interpreter
     SafepointCheck --> Debugging: breakpoint_hit / halt execution
@@ -152,7 +152,7 @@ stateDiagram-v2
 | Ready → InterpreterRun | step(pc) | exec_trace = interpreter | PC 登録、実行開始 | InterpreterRun |
 | Ready → JitRun | step(pc) | exec_trace = compiled code | ネイティブコード実行開始 | JitRun |
 | InterpreterRun → Ready | yield() [threshold] | 実行トレース数超過 | ホットスポット検出、JIT キュー投入 | Ready |
-| JitRun → SafepointCheck | [loop backslash] | JIT ループバックエッジ | インタラプト フラグ確認 | SafepointCheck |
+| JitRun → SafepointCheck | [loop back edge] | JIT ループバックエッジ | 割り込みフラグ確認 | SafepointCheck |
 | SafepointCheck → JitRun | [no interrupt] | フラグなし | JIT 実行継続 | JitRun |
 | SafepointCheck → Ready | [interrupt pending] | 割り込みフラグ有り | インタープリタ フォールバック | Ready |
 | (any) → Debugging | breakpoint [debugger] | RSP ブレークポイント | デバッガコマンド待ち | Debugging |
@@ -237,11 +237,7 @@ JIT Code Cache (6 KB total: FB_CONF_JIT_CACHE_SIZE)
 
 #### 形式検証 (pyModelChecking) 検証対象
 
-
-- **キャッシュ整合性**: どの時点でも、Active/Warm/Oldest 全バンクの generation が単調増加し、矛盾が生じないこと
-- **Safepoint応答性**: 割り込みフラグが設定されてから最大 N サイクル以内に Safepoint で検出されること
-- **Debugger安全性**: デバッガがメモリを変更してから、キャッシュが flush されるまでの間に、旧コードが実行されないこと
-- **リソース有界性**: キャッシュローテーション時に、メモリリークが発生しないこと
+本節で述べた Safepoint 協調とキャッシュ一貫性の性質は、6.1 の表に列挙したプロパティとして形式検証されている。個々のモデルファイルとプロパティ名の対応は **[6.1 検証対象の不変条件](#61-検証対象の不変条件)** を正本とする。
 
 ### 4.3 内部シーケンス
 <!-- traceability: {ThreadedInterpreter} {JIT_CopyAndPatch} {Challenge_ApproximateYield} {JIT_Safepoint} {Debugger_Jit_Flush} -->
@@ -259,7 +255,7 @@ sequenceDiagram
     S->>V: step()
     loop until yield
         V->>V: get_exec_trace(pc)
-        V->>C: call exec_trace(pc, sp, ctx)
+        V->>C: call exec_trace(ip, stack_bot, env)
         Note over C: JIT Code or Interpreter
         C-->>V: return (trace end)
     end
@@ -276,7 +272,7 @@ sequenceDiagram
 
 #### マルチモジュール動的リンクシーケンス
 <!-- traceability: {MultiModule_Support} -->
-複数学のWASMモジュール間の依存関係を解決し、関数ポインタを接続する。 `{MultiModule_Support}`
+複数のWASMモジュール間の依存関係を解決し、関数ポインタを接続する。 `{MultiModule_Support}`
 
 ```mermaid
 sequenceDiagram
@@ -337,7 +333,7 @@ sequenceDiagram
 | 機能概要 | 物理割り込み等の外部イベントをゲストOS/アプリに通知するための仮想フラグを設定する。 |
 | シグネチャ | `notify-interrupt(irq-id: u32) -> void` |
 | 引数 | `ctx`: vsoc_context, `irq-id`: 識別子 |
-| 期待する結果 | 特定位のアドレス（SYSCTLレジスタ）にフラグが反映される。 |
+| 期待する結果 | 所定のアドレス（SYSCTLレジスタ）にフラグが反映される。 |
 | 事前条件 | なし。 |
 | 事後条件 | 公開APIを介して、対象の仮想割り込みフラグがセットされる。 |
 | 不変条件 | 他の実行状態に副作用を及ぼさないこと。 |
@@ -396,48 +392,48 @@ Fireballでは、ホスト側のコードサイズを極限まで削減するた
 
 ### 6.1 検証対象の不変条件
 
-<!-- traceability: {JIT_Safepoint} {Challenge_JITCacheEfficiency} {Debugger_Jit_Flush} -->
+<!-- traceability: {JIT_Safepoint} {Challenge_JITCacheEfficiency} {Debugger_Jit_Flush} {GLOBAL_InterruptWakeup} -->
 
-| 不変条件 | 説明 | 検証方法 |
+各不変条件は、下表のモデルファイル内の**プロパティ名で特定できる形**で証明されている。すべてのプロパティは `build_model(guards=False)` による変異検査を伴い、「ガードを外すと違反状態が到達可能になる」ことを示すことで、空虚な真（vacuous truth）でないことを保証する。
+
+| 不変条件 | 説明 | 検証モデル / プロパティ名 |
 | :--- | :--- | :--- |
-| **キャッシュ整合性** | Active/Warm/Oldest 全バンクの generation が単調増加し、矛盾が生じないこと。`{Challenge_JITCacheEfficiency}` | pyModelChecking 状態不変式 (`AG(...)`) |
-| **Safepoint応答性** | 割り込みフラグが設定されてから最大 N サイクル以内に Safepoint で検出されること。`{JIT_Safepoint}` | pyModelChecking 有界応答性 (CTL) |
-| **Debugger安全性** | デバッガがメモリを変更した後、キャッシュ flush が完了するまで旧コードが実行されないこと。`{Debugger_Jit_Flush}` | pyModelChecking 因果的順序付け |
-| **リソース有界性** | キャッシュローテーション時にメモリリークが発生しないこと。 | pyModelChecking リソース追跡 |
+| **Safepoint応答性** | 実行中のタスクは必ず Safepoint に到達し、割り込みフラグが検出されること。`{JIT_Safepoint}` | [`formal/vsoc_state_model.py`](formal/vsoc_state_model.py) `safepoint_reachable_definitively` |
+| **IRQ/JIT レース不在** | Safepoint 同期を経ずに JIT ネイティブ実行中の割り込み処理が始まらないこと。`{GLOBAL_InterruptWakeup}` | [`formal/vsoc_state_model.py`](formal/vsoc_state_model.py) `irq_jit_race_freedom_proof` |
+| **Debugger安全性** | デバッガがメモリを変更した後、キャッシュ flush が完了するまで旧世代コードが実行されないこと。`{Debugger_Jit_Flush}` | [`formal/vsoc_cache_coherency_model.py`](formal/vsoc_cache_coherency_model.py) `no_stale_code_after_debugger_write` |
+| **キャッシュ整合性** | generation cookie が全バンク一括で更新され、バンク間で世代が逆行・不一致にならないこと。`{Challenge_JITCacheEfficiency}` | [`formal/vsoc_cache_coherency_model.py`](formal/vsoc_cache_coherency_model.py) `cache_generation_never_regresses` |
+| **リソース有界性** | 3面ローテーション時、Purge とエントリ表スロット回収が不可分に行われ、未回収スロットが蓄積しないこと。 | [`formal/vsoc_cache_coherency_model.py`](formal/vsoc_cache_coherency_model.py) `rotation_reclaims_every_bank` |
+| **flush 完了性** | デバッガ介入で dirty になったキャッシュの flush は必ず完了すること。`{Debugger_Jit_Flush}` | [`formal/vsoc_cache_coherency_model.py`](formal/vsoc_cache_coherency_model.py) `debugger_flush_completes` |
+| **状態一貫性** | vSoC Engine ライフサイクル（4.2）の各遷移後に状態が整合していること。 | 直交表 / レビュー（形式検証対象外） |
 
-### 6.2 検証対象のプロパティ
+### 6.2 モデル分割の理由
 
-- **Safety**:
-  - Safepoint 検出漏れ不在 `{JIT_Safepoint}`
-  - デバッガ後の整合性維持 `{Debugger_Jit_Flush}`
-  - キャッシュローテーション時のメモリ安全性 `{Challenge_JITCacheEfficiency}`
+実行エンジンの状態機械（`vsoc_state_model.py`）と、キャッシュ寿命の関心事（`vsoc_cache_coherency_model.py`）は**別モデルに分割している**。世代スタンプとリソース回収を実行状態機械に合成すると状態空間が積になって爆発し、`document_structure.md` 2.1「検証可能性 (Verification Tractability) の維持」に反するためである。両モデルは `s_safepoint` / `s_dbg_write` という同一の観測点を共有しており、この点で接続される。
 
-- **Liveness**:
-  - 割り込み要求は有限時間内に Safepoint で処理される
-  - デバッガ flush 要求は完了する
+### 6.3 検証モデル概要（vsoc_cache_coherency_model.py）
 
-### 6.3 検証モデル概要
-
-**状態変数:**
+**状態変数（抽象化）:**
 ```
-jit_cache_state: {ACTIVE, OLD, ROTATING}
-generation: {ACTIVE_GEN, OLD_GEN}
-interrupt_flags: bitmask
-jit_pc: address
+phase       : {interp, exec_fresh, rotate, reclaimed, dbg_write, safepoint, flushing, flushed}
+gen_status  : {gen_consistent, gen_regressed}          -- 全バンク一括更新か否か
+bank_status : {all_banks_accounted, leaked}            -- Purge と回収の不可分性
+code_status : {fresh, stale_code}                      -- 実行中コードの世代妥当性
 ```
 
-**初期状態:** jit_cache_state=ACTIVE, generation={0, 0}, interrupt_flags=0
+**初期状態:** `phase = interp`（キャッシュ参照のみ、世代一致、全バンク回収済み）
 
-**遷移:** 
-- Step (JIT実行)
-- SafepointCheck (フラグ確認)
-- CacheFlush (debugger 介入)
-- RotateCache (co_yield で回転)
+**遷移:**
+- 通常実行: `interp → exec_fresh → interp`
+- ローテーション: `interp → rotate → reclaimed → interp`（Purge と回収は不可分）
+- デバッガ介入: `(interp | exec_fresh) → dbg_write → safepoint → flushing → flushed → interp`
 
-**不変式:**
-- `generation.ACTIVE ≥ generation.OLD` (単調性)
-- `generation.ACTIVE - generation.OLD ≤ 1` (両世代の差は最大1)
+**証明される不変式:**
+- `AG(¬stale_code)`   — flush 完了前の旧世代コード実行は到達不能
+- `AG(¬gen_regressed)` — 世代の逆行・バンク間不一致は到達不能
+- `AG(¬leaked)`       — 未回収スロットの蓄積は到達不能
+- `AG(dirty → AF(flushed))` — dirty になった flush は必ず完了する
 
+**変異検査（`guards=False`）で到達可能になる違反:** `s_exec_stale`（Safepoint の世代照合を撤去）、`s_gen_regressed`（世代の個別更新化）、`s_leaked_bank`（Purge のみ実行し回収を省略）、`s_flush_stalled`（flush の遅延を許容）。
 
 ### 6.4 既知の制限
 
@@ -446,18 +442,18 @@ jit_pc: address
 
 ## 7. 制約達成の方策
 
-### 6.1 性能制約と方策
+### 7.1 性能制約と方策
 <!-- traceability: {LowLatencyJIT} {ThreadedInterpreter} -->
 - **目標**: WAMRインタープリタを上回る実行速度を実現する。
 - **方策**: `{LowLatencyJIT}` `{ThreadedInterpreter}` コピーアンドパッチJITによるネイティブ実行と、スレッドインタープリタによる高速フォールバックを組み合わせる。
 
-### 6.2 メモリ制約と方策
+### 7.2 メモリ制約と方策
 <!-- traceability: {JIT_MultiBuffer_Cache} {GLOBAL_IndependentHeap} {WasmPageAlignment} -->
 - **目標**: 64KB RAM環境で動作させる。
 - **方策**: `{JIT_MultiBuffer_Cache}` `{GLOBAL_IndependentHeap}` 3面マルチバッファ（Active/Warm/Oldest）による効率的なキャッシュ代謝と、厳密なヒープ分離によりメモリ使用量を制御する。JITキャッシュは `FB_CONF_JIT_CACHE_SIZE`（デフォルト6144バイト、`docs/components/tier1_core/system_config_details.md`）を 3領域に均等分割して使用し、各領域の容量は `code_cache_size / 3`（各2048バイト）となる。
 - **高速アドレス判定**: ゲストRAMを `0x0` から配置し、単一の比較命令でRAMアクセスを判定することで、インタープリタおよびJITのオーバーヘッドを最小化する。 `{WasmPageAlignment}`
 
-### 6.3 安全性制約と方策
+### 7.3 安全性制約と方策
 <!-- traceability: {MemoryBoundaryCheck} {META_RestrictedPhysicalAccess} -->
 - **目標**: ゲストアプリケーションの暴走を完全に隔離する。
 - **方策**: `{MemoryBoundaryCheck}` `{META_RestrictedPhysicalAccess}` JITコードへの境界チェック埋め込みと、vMMIOによる物理アクセスの制限を行う。物理アドレスアクセスの許可範囲は `FB_CONF_VMMIO_ALLOWED_ADDRS`（`docs/components/tier1_core/system_config_details.md`）に `constexpr` 定義されたテーブルに基づき、vMMIOが検証する。

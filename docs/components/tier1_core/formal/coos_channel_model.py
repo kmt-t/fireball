@@ -25,6 +25,8 @@ def build_model(*, guards: bool = True) -> Kripke:
     - s_forced_yield: 上限到達による強制 yield (yielding)
     - s_deadlock: 違反状態（タスク A と B が互いに待ち合ってサスペンドした循環待ちデッドロック）
     - s_double_owned: 違反状態（同一チャネルの二重所有競合）
+    - s_handoff_livelock: 違反状態（上限到達後も強制 yield されず、ハンドオフ連鎖から
+      メインループへ復帰しないライブロック）
     """
     S = [
         "s_main_loop",
@@ -36,6 +38,7 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_forced_yield",
         "s_deadlock",
         "s_double_owned",
+        "s_handoff_livelock",
     ]
     S0 = {"s_main_loop"}
     R = [
@@ -59,6 +62,7 @@ def build_model(*, guards: bool = True) -> Kripke:
         # 違反状態の自己ループ
         ("s_deadlock", "s_deadlock"),
         ("s_double_owned", "s_double_owned"),
+        ("s_handoff_livelock", "s_handoff_livelock"),
     ]
 
     if not guards:
@@ -67,6 +71,9 @@ def build_model(*, guards: bool = True) -> Kripke:
         R = R + [("s_blocked_tx_a", "s_deadlock")]
         # 2. 所有権アトミック剥奪を怠ると、ハンドオフ中に二重所有が発生
         R = R + [("s_handoff_1", "s_double_owned")]
+        # 3. FB_CONF_MAX_CONSECUTIVE_HANDOFFS の強制 yield を外すと、上限到達後も
+        #    ハンドオフ連鎖を続けられてしまい、メインループへ復帰しないライブロックに陥る
+        R = R + [("s_handoff_max", "s_handoff_livelock")]
 
     L = {
         "s_main_loop": {"main_loop"},
@@ -78,6 +85,8 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_forced_yield": {"yielding"},
         "s_deadlock": {"deadlock"},      # 違反状態
         "s_double_owned": {"double_owned"},  # 違反状態
+        # 違反状態: 上限到達済み (at_max_limit) のままメインループへ到達しない
+        "s_handoff_livelock": {"in_handoff_chain", "at_max_limit", "handoff_livelock"},
     }
     return Kripke(S=S, S0=S0, R=R, L=L)
 
@@ -112,6 +121,9 @@ def properties():
                     AF(AtomicProposition("main_loop")),
                 )
             ),
+            # 上限到達済みのままメインループへ到達しないライブロック状態が違反。
+            # guards=False（強制 yield 撤去）でのみ到達可能になることを変異検査で示す。
+            "violation": AtomicProposition("handoff_livelock"),
             "expect": True,  # 上限到達時は必ずメインループに復帰する (AF)
         },
     ]

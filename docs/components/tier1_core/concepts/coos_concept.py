@@ -18,14 +18,25 @@ class TaskState:
     TERMINATED = "TERMINATED"
 
 
+class WaitDir:
+    NONE = "NONE"
+    SEND = "SEND"
+    RECV = "RECV"
+
+
 class Channel:
-    """1-entry synchronous CSP rendezvous channel."""
+    """Bufferless synchronous CSP rendezvous channel (ADR_RendezvousChannel).
+
+    The channel never holds a value. A sender that arrives first keeps the value
+    in its own task frame until a receiver shows up, so channel overflow and
+    send-rollback cannot occur, and the value has exactly one owner at all times.
+    At most one task may wait on a channel; concurrent peers are expressed by
+    splitting the channel per service URI rather than by a waiting queue.
+    """
     def __init__(self, channel_id: str):
         self.channel_id = channel_id
-        self.buffer: Any = None
-        self.has_data: bool = False
-        self.sender_task: str | None = None
-        self.receiver_task: str | None = None
+        self.waiter_task: str | None = None
+        self.waiter_dir: str = WaitDir.NONE
 
 
 class COOSKernel:
@@ -63,33 +74,24 @@ class COOSKernel:
         sender = self.current_task
         assert sender is not None
 
-        if ch.receiver_task is not None:
-            # Rendezvous matched: receiver is already waiting
-            receiver = ch.receiver_task
-            ch.receiver_task = None
-            ch.buffer = None
-            ch.has_data = False
+        if ch.waiter_dir == WaitDir.RECV:
+            # Rendezvous matched: ownership moves sender -> receiver right here
+            receiver = ch.waiter_task
+            ch.waiter_task, ch.waiter_dir = None, WaitDir.NONE
 
-            # Transfer data directly to receiver and wake up
             self.tasks[receiver]["received_val"] = data
             self.tasks[receiver]["state"] = TaskState.READY
             self.tasks[sender]["state"] = TaskState.READY
+            return self._handoff_or_yield(receiver)
 
-            if self.consecutive_handoffs < self.max_consecutive_handoffs:
-                self.consecutive_handoffs += 1
-                return ("DIRECT_SWITCH", receiver)
-            else:
-                self.consecutive_handoffs = 0
-                self.ready_queue.append(receiver)
-                return ("YIELD", None)
-        else:
-            # Rendezvous wait: buffer data and suspend sender
-            assert not ch.has_data, "Channel buffer overflow in 1-entry CSP channel"
-            ch.buffer = data
-            ch.has_data = True
-            ch.sender_task = sender
-            self.tasks[sender]["state"] = TaskState.SUSPENDED_CSP
-            return ("BLOCK", None)
+        # No peer yet: the value stays in the sender's own frame. The channel holds
+        # nothing, so there is no buffer to overflow and no send to roll back.
+        assert ch.waiter_dir != WaitDir.SEND, \
+            "one waiter per channel: concurrent senders must use separate channels"
+        ch.waiter_task, ch.waiter_dir = sender, WaitDir.SEND
+        self.tasks[sender]["pending_val"] = data
+        self.tasks[sender]["state"] = TaskState.SUSPENDED_CSP
+        return ("BLOCK", None)
 
     def channel_recv(self, channel_id: str) -> tuple[str, Any]:
         """Receive value from CSP channel."""
@@ -97,30 +99,34 @@ class COOSKernel:
         receiver = self.current_task
         assert receiver is not None
 
-        if ch.sender_task is not None:
-            # Rendezvous matched: sender has already buffered data
-            sender = ch.sender_task
-            data = ch.buffer
-            ch.buffer = None
-            ch.has_data = False
-            ch.sender_task = None
+        if ch.waiter_dir == WaitDir.SEND:
+            # Rendezvous matched: take the value out of the sender's frame, so that
+            # it is never reachable from two owners at once.
+            sender = ch.waiter_task
+            ch.waiter_task, ch.waiter_dir = None, WaitDir.NONE
+            data = self.tasks[sender].pop("pending_val")
 
             self.tasks[receiver]["received_val"] = data
             self.tasks[sender]["state"] = TaskState.READY
             self.tasks[receiver]["state"] = TaskState.READY
+            return self._handoff_or_yield(sender)
 
-            if self.consecutive_handoffs < self.max_consecutive_handoffs:
-                self.consecutive_handoffs += 1
-                return ("DIRECT_SWITCH", sender)
-            else:
-                self.consecutive_handoffs = 0
-                self.ready_queue.append(sender)
-                return ("YIELD", None)
-        else:
-            # Rendezvous wait: suspend receiver until sender arrives
-            ch.receiver_task = receiver
-            self.tasks[receiver]["state"] = TaskState.SUSPENDED_CSP
-            return ("BLOCK", None)
+        assert ch.waiter_dir != WaitDir.RECV, \
+            "one waiter per channel: concurrent receivers must use separate channels"
+        ch.waiter_task, ch.waiter_dir = receiver, WaitDir.RECV
+        self.tasks[receiver]["state"] = TaskState.SUSPENDED_CSP
+        return ("BLOCK", None)
+
+    def _handoff_or_yield(self, target: str) -> tuple[str, Any]:
+        """Bounds the handoff chain so the scheduler main loop stays reachable.
+        This bound is exactly what os_coos.md 6.1 'main loop return guarantee'
+        proves via AG(at_max_limit -> AF(main_loop))."""
+        if self.consecutive_handoffs < self.max_consecutive_handoffs:
+            self.consecutive_handoffs += 1
+            return ("DIRECT_SWITCH", target)
+        self.consecutive_handoffs = 0
+        self.ready_queue.append(target)
+        return ("YIELD", None)
 
     def get_received_value(self) -> Any:
         task_id = self.current_task
@@ -242,6 +248,54 @@ def test_coos_synchronous_rendezvous():
     assert kernel.tasks["receiver"]["state"] == TaskState.TERMINATED
 
 
+def test_value_has_exactly_one_owner_across_a_rendezvous():
+    """ADR_RendezvousChannel: while a sender waits, the value lives only in the
+    sender's frame; after the rendezvous it lives only in the receiver's. It is
+    never reachable from the channel, and never from both tasks at once."""
+    kernel = COOSKernel()
+    ch = kernel.create_channel("ch_data")
+
+    def sender():
+        yield kernel.channel_send("ch_data", 42)
+
+    def receiver():
+        yield kernel.channel_recv("ch_data")
+
+    kernel.register_task("sender", sender())
+    kernel.register_task("receiver", receiver())
+
+    # Sender runs first and blocks: value is in its own frame, not in the channel.
+    kernel.run_step()
+    assert kernel.tasks["sender"]["state"] == TaskState.SUSPENDED_CSP
+    assert kernel.tasks["sender"]["pending_val"] == 42
+    assert not hasattr(ch, "buffer"), "a rendezvous channel must not carry a value slot"
+
+    # Receiver arrives: ownership transfers, and the sender's copy is gone.
+    kernel.run_step()
+    assert kernel.tasks["receiver"]["received_val"] == 42
+    assert "pending_val" not in kernel.tasks["sender"], \
+        "sender must not retain the value after the rendezvous (double ownership)"
+
+
+def test_one_waiter_per_channel_is_enforced():
+    """Two senders on one channel is a design violation, not a runtime condition
+    to be queued -- the orthogonal table marks it unreachable by construction."""
+    kernel = COOSKernel()
+    kernel.create_channel("ch_data")
+    kernel.tasks["a"] = {"id": "a", "coro": None, "state": TaskState.RUNNING}
+    kernel.tasks["b"] = {"id": "b", "coro": None, "state": TaskState.RUNNING}
+
+    kernel.current_task = "a"
+    kernel.channel_send("ch_data", 1)
+
+    kernel.current_task = "b"
+    try:
+        kernel.channel_send("ch_data", 2)
+        assert False, "second sender on the same channel must assert"
+    except AssertionError as e:
+        assert "separate channels" in str(e)
+
+
 def test_coos_interrupt_wakeup():
     kernel = COOSKernel()
     irq_received = []
@@ -272,5 +326,7 @@ def test_coos_interrupt_wakeup():
 
 if __name__ == "__main__":
     test_coos_synchronous_rendezvous()
+    test_value_has_exactly_one_owner_across_a_rendezvous()
+    test_one_waiter_per_channel_is_enforced()
     test_coos_interrupt_wakeup()
     print("[PASS] All COOS concept tests passed successfully.")

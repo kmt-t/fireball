@@ -8,11 +8,36 @@ Fireballハイパーバイザの動作パラメータを定義するコンパイ
 
 
 ### 2.1 メモリ管理
-<!-- traceability: {GLOBAL_IndependentHeap} {GLOBAL_StrictMemoryLimit} -->
+<!-- traceability: {GLOBAL_IndependentHeap} {GLOBAL_StrictMemoryLimit} {ConsolidatedHeap} {ContextPointerRegister} {GLOBAL_StaticScalability} {IPC_ZeroCopy} -->
+デフォルト値は **評価ターゲットである最小構成（RAM 32KB）** の予算配分に対応する。想定構成（64KB）向けの値および各領域の縮退方針は [`resource_budget.md`](../../architecture/resource_budget.md) を正本とする。 `{GLOBAL_StrictMemoryLimit}`
+
 | マクロ名 | 説明 | デフォルト値 | 導出元 |
 | :--- | :--- | :--- | :--- |
-| `FB_CONF_TASK_HEAP_SIZE` | 各VM/タスクに対してコンパイル時に固定された、個別に静的割り当てされる独立メモリプールのサイズ（動的ヒープアロケーションは一切行わない） | `8192` | `{GLOBAL_IndependentHeap}` |
-| `FB_CONF_RUNTIME_HEAP_SIZE` | ホスト(WASMランタイム)実行専用 of 独立メモリプールのサイズ（動的ヒープアロケーションは一切行わない） | `4096` | `{GLOBAL_IndependentHeap}` |
+| `FB_CONF_TASK_HEAP_SIZE` | 各VM/タスクに対してコンパイル時に固定された、個別に静的割り当てされる独立メモリプールのサイズ（動的ヒープアロケーションは一切行わない）。`resource_budget.md` の「WASMリニアメモリ」に対応 | `4096` | `{GLOBAL_IndependentHeap}` `{GLOBAL_StrictMemoryLimit}` |
+| `FB_CONF_RUNTIME_HEAP_SIZE` | ホスト（WASMランタイム）実行専用の独立メモリプールのサイズ（動的ヒープアロケーションは一切行わない）。`resource_budget.md` の「vSoCメタデータ」に対応 | `2048` | `{GLOBAL_IndependentHeap}` `{GLOBAL_StrictMemoryLimit}` |
+| `FB_CONF_KERNEL_HEAP_SIZE` | COOSカーネル（スケジューラ、CSP、TCB、共有メモリ管理）用の静的プールサイズ。`resource_budget.md` の「ネイティブヒープ」に対応 | `4096` | `{GLOBAL_IndependentHeap}` `{GLOBAL_StrictMemoryLimit}` |
+| `FB_CONF_SUBSYS_HEAP_SIZE` | IPCルータ・HAL・ログバッファ用の静的プールサイズ。`resource_budget.md` の「サブシステム」に対応 | `3072` | `{GLOBAL_IndependentHeap}` `{GLOBAL_StrictMemoryLimit}` |
+| `FB_CONF_INTERP_STACK_SIZE` | インタープリタ統合スタック（`execution_context` + CallFrame/ControlFrame/ローカル/オペランド）の総容量。`resource_budget.md` の「統合スタック」に対応 | `2048` | `{ContextPointerRegister}` `{GLOBAL_StrictMemoryLimit}` |
+
+| `FB_CONF_MAX_GUEST_VMS` | 同時にロード可能なゲストVMの最大数。`FB_CONF_TASK_HEAP_SIZE` はVM単位で消費されるため、RAM消費量を決めるのはこの値である（`FB_CONF_MAX_TASKS` はTCBスロット数であり寄与しない） | `1` | `{GLOBAL_IndependentHeap}` `{GLOBAL_StaticScalability}` |
+| `FB_CONF_SHM_SIZE` | ゼロコピーIPCで使用する静的共有メモリの総バイト数。カーネル用プールの**内数**として配置される | `1024` | `{IPC_ZeroCopy}` `{GLOBAL_StrictMemoryLimit}` |
+| `FB_CONF_MEMORY_POOL_SIZE` | 上記パーティションすべてを切り出す統合物理プールの総サイズ。各パーティションはこのプールから静的に切り出される `{ConsolidatedHeap}` | `21504` | `{ConsolidatedHeap}` `{GLOBAL_StrictMemoryLimit}` |
+| `FB_CONF_PHYSICAL_RAM_SIZE` | ターゲットの物理SRAM容量。最小構成 32KB / 想定構成 64KB | `32768` | `{GLOBAL_StrictMemoryLimit}` |
+
+**予算との対応（最小構成 RAM 32KB）**: `FB_CONF_MEMORY_POOL_SIZE` は各パーティションの総和として定義される。
+
+```
+FB_CONF_MEMORY_POOL_SIZE
+  = FB_CONF_KERNEL_HEAP_SIZE (4096)   // ネイティブヒープ
+  + FB_CONF_RUNTIME_HEAP_SIZE (2048)  // vSoCメタデータ
+  + FB_CONF_SUBSYS_HEAP_SIZE (3072)   // サブシステム
+  + FB_CONF_JIT_CACHE_SIZE (6144)     // JITコードキャッシュ (2KB x 3面)
+  + FB_CONF_INTERP_STACK_SIZE (2048)  // 統合スタック
+  + FB_CONF_TASK_HEAP_SIZE (4096) * FB_CONF_MAX_GUEST_VMS (1)  // WASMリニアメモリ
+  = 21504 Bytes = 21.0 KB   <= FB_CONF_PHYSICAL_RAM_SIZE (32768)
+```
+
+これは `resource_budget.md` 1章の静的合計（最小構成 21.0KB）と一致する。残り 11.0KB は `.bss`・割り込みスタック・安全余裕である。この等式が崩れた場合、`resource_budget.md` とマクロ定義のどちらかが更新漏れを起こしている。
 
 ##### メモリプールの分離設計
 VM（ゲストタスク）ごとのプール領域（`FB_CONF_TASK_HEAP_SIZE`）およびホスト用のプール領域（`FB_CONF_RUNTIME_HEAP_SIZE`）は、それぞれが物理的・領域的に完全に別個の静的メモリプールとして分離されて管理される。これらはコンパイル時に固定サイズ領域として確保され、実行時の動的なヒープアロケーション（`malloc` / `new`）は一切行われない。これにより、あるVMのメモリ不足や暴走がホストランタイムや他のVMを道連れにしてクラッシュすることを防ぐ。システム全体の物理メモリ総領域は物理的に一括配置（Consolidated Memory Allocation）されるが、その内部はコンパイル時に各VMおよびホスト用の固定サイズプールに厳密にパーティショニング（分離）される。これにより、物理メモリ資源の静的一括管理と各実行コンテキスト間の強固なメモリ分離（`GLOBAL_IndependentHeap`）を両立させる。 `{GLOBAL_IndependentHeap}`

@@ -15,11 +15,11 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
 ### オーナーレビュー観点 & チェックリスト
 
 - [ ] **1. アーキテクチャ構成 & リソース予算**:
-  - RAM < 64KB 制約に対し、静的メモリ合計 24.0KB（残余 40KB）のメモリ予算設計の妥当性確認 (`architecture_overview.md`, `resource_budget.md`) `{Resource_Estimation_Model}`
+  - 評価ターゲットである最小構成（RAM 32KB / ROM 96KB）に対し、静的合計 21.0KB / 84KB とする予算設計、および縮退方針（JITキャッシュ3面と統合スタックを縮退対象外とする判断）の妥当性確認 (`architecture_overview.md`, `resource_budget.md`) `{Resource_Estimation_Model}`
 - [ ] **2. WASM 64KB ページング & 8KB 部分ページ境界モデル**:
   - WebAssembly 標準 64KB ページングと、極小環境向け 8KB/16KB 部分ページの `FastAddressCheck` 境界トラップ仕様の確認 (`runtime_vmmio.md`, `system_config_details.md`) `{FastAddressCheck}`
-- [ ] **3. 形式検証（pyModelChecking: 4モデル）の検証**:
-  - Mutex 相互排他性、CSP デッドロックフリー、JIT 3面キャッシュ代謝、vSoC Safepoint 応答性のモデル検査確認 (`docs/components/*/formal/*.py`) `{GLOBAL_UseCpp20Coroutine}` `{CSP_Handoff}` `{JIT_MultiBuffer_Cache}`
+- [ ] **3. 形式検証（pyModelChecking: 5モデル）の検証**:
+  - CSP デッドロックフリー・二重所有不在、IPC 所有権移譲と Drop ハンドラ、vSoC Safepoint 応答性、JIT キャッシュ世代整合性とデバッガ介入安全性、JIT 3面代謝・MPU W^X のモデル検査確認 (`docs/components/*/formal/*.py`、一覧は `roadmap_phase.md` を正本とする) `{GLOBAL_UseCpp20Coroutine}` `{CSP_Handoff}` `{JIT_MultiBuffer_Cache}` `{Debugger_Jit_Flush}`
 - [ ] **4. WIT インターフェース契約 & リカバリー戦略**:
   - エラーコード廃止と 4 つのリカバリー戦略（`ignore`, `retry`, `restart`, `panic`）パターンの確認 (`interface_wit.md`) `{META_RecoveryStrategy}`
 - [ ] **5. Phase 1 (vSoC First) への最終 GO / NO-GO 判定**:
@@ -53,7 +53,7 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
 
 ### Phase 1.3: Copy-and-Patch JIT Compiler (`jit_compiler`)
 - [ ] **ARM Thumb-2 ネイティブパッチテンプレート**:
-  - `__fastcall` CPS 3引数レジスタ規約（R0=IP, R1=stack_bot, R2=ENV, R3=スクラッチ, R4=TOS, R5=NOS）準拠の事前コンパイル済みネイティブバイト列（RO-Data）とリロケーションテーブル `{JIT_CopyAndPatch}`
+  - `__fastcall` CPS 3引数レジスタ規約（R0=IP, R1=stack_bot, R2=ENV, R3=スクラッチ）準拠の事前コンパイル済みネイティブバイト列（RO-Data）とリロケーションテーブル。R4=TOS / R5=NOS はトレース内部に閉じたキャッシュとし、入口で `LDR`×2、脱出時に `STR`×2 で統合スタックと同期する `{JIT_CopyAndPatch}` `{ADR_TosCacheAsymmetry}`
 - [ ] **トリプルバッファ キャッシュマネージャ**:
   - 2KB × 3面 の代謝（`JIT_OldestOnly_Promote` / 最古破棄）制御 `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}`
 - [ ] **Safepoint 協調 & 透過的インタープリタ切り替え**:

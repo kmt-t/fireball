@@ -25,6 +25,8 @@ def build_model(*, guards: bool = True) -> Kripke:
     - s_interrupt_handling: 割り込みイベント処理 (handling_irq)
     - s_debugger_paused: デバッガ一時停止 (paused, debug_safe)
     - s_bad_irq_jit: 違反状態（割り込み処理中に JIT が無同期で直接暴走した状態）
+    - s_safepoint_starved: 違反状態（バックエッジに Safepoint が埋め込まれず、JIT ネイティブ
+      ループが Safepoint に到達しないまま実行を続ける状態）
     """
     S = [
         "s_interpreter_run",
@@ -33,6 +35,7 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_interrupt_handling",
         "s_debugger_paused",
         "s_bad_irq_jit",
+        "s_safepoint_starved",
     ]
     S0 = {"s_interpreter_run"}
     R = [
@@ -54,12 +57,16 @@ def build_model(*, guards: bool = True) -> Kripke:
         ("s_debugger_paused", "s_interpreter_run"),
         # 違反状態の自己ループ
         ("s_bad_irq_jit", "s_bad_irq_jit"),
+        ("s_safepoint_starved", "s_safepoint_starved"),
     ]
 
     if not guards:
         # ガード無効時（変異検査）:
-        # Safepoint 同期を介さず JIT 実行中に直接割り込みを処理すると IRQ/JIT レース違反へ突入
+        # 1. Safepoint 同期を介さず JIT 実行中に直接割り込みを処理すると IRQ/JIT レース違反へ突入
         R = R + [("s_jit_run", "s_bad_irq_jit")]
+        # 2. バックエッジへの Safepoint 埋め込みを省くと、JIT ネイティブループは
+        #    Safepoint へ到達しないまま実行を続け、割り込みに永久に応答しなくなる
+        R = R + [("s_jit_run", "s_safepoint_starved")]
 
     L = {
         "s_interpreter_run": {"running", "interp_mode"},
@@ -68,6 +75,8 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_interrupt_handling": {"handling_irq"},
         "s_debugger_paused": {"paused", "debug_safe"},
         "s_bad_irq_jit": {"handling_irq", "jit_mode"},  # 違反状態
+        # 違反状態: running のまま safepoint に永久に到達しない
+        "s_safepoint_starved": {"running", "jit_mode", "safepoint_starved"},
     }
     return Kripke(S=S, S0=S0, R=R, L=L)
 
@@ -93,6 +102,9 @@ def properties():
                     AF(AtomicProposition("safepoint")),
                 )
             ),
+            # 実行中のまま Safepoint へ永久に到達しない状態が違反。
+            # guards=False（バックエッジ Safepoint 撤去）でのみ到達可能になることを変異検査で示す。
+            "violation": AtomicProposition("safepoint_starved"),
             "expect": True,  # 実行中タスクは必ず Safepoint に到達する (AF)
         },
     ]

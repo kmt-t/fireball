@@ -36,18 +36,35 @@ graph TD
 <!-- traceability: {Resource_Estimation_Model} -->
 具体的なコンフィグマクロおよび定数の詳細一覧とアライメント要件については、[システムコンフィグマクロ一覧](system_config_details.md) を参照すること。主要パラメータは以下の制約・相互依存関係を持つ：
 - **最大タスク数とID予約値の制約**: `FB_CONF_MAX_TASKS` の値は、予約済みの制御用Sentinel値である `FB_TASK_ID_FLIGHT=0xFF` や無効値 `FB_TASK_ID_INVALID=0` と重複しないよう、254 以下でなければならない。
-- **メモリ総量と個別プールの依存関係**: 各タスク個別の静的プール `FB_CONF_TASK_HEAP_SIZE` の増加は、システム全体の `FB_CONF_MAX_TASKS` との積算でRAM消費量を急激に増大させる。そのため、これらのパラメータ変更時は、ターゲットプラットフォームの SRAM 物理限界（64KB）を突破しない範囲で調整される必要があり、ビルド時に静的アサートにより自動検証される。
+- **メモリ総量と個別プールの依存関係**: ゲストVM個別の静的プール `FB_CONF_TASK_HEAP_SIZE` は `FB_CONF_MAX_GUEST_VMS` との積でRAM消費量を決める（`FB_CONF_MAX_TASKS` はTCBスロット数であり、この積には寄与しない）。これらのパラメータ変更時は、評価ターゲットである最小構成の SRAM 物理限界（32KB）を突破しない範囲で調整される必要があり、ビルド時に静的アサートにより自動検証される。検証される不等式は次のとおり:
+
+```text
+static_assert(FB_CONF_KERNEL_HEAP_SIZE
+            + FB_CONF_RUNTIME_HEAP_SIZE
+            + FB_CONF_SUBSYS_HEAP_SIZE
+            + FB_CONF_JIT_CACHE_SIZE
+            + FB_CONF_INTERP_STACK_SIZE
+            + FB_CONF_TASK_HEAP_SIZE * FB_CONF_MAX_GUEST_VMS
+            == FB_CONF_MEMORY_POOL_SIZE);
+static_assert(FB_CONF_MEMORY_POOL_SIZE <= FB_CONF_PHYSICAL_RAM_SIZE);
+```
 
 
 
 ##### 代表的な主要構成パラメータ
-* **`FB_CONF_MAX_TASKS`**: 静的に管理されるタスクの最大数（デフォルト値: 16、最大許容値: 254）。
-* **`FB_CONF_TASK_HEAP_SIZE`**: 各VM/タスクに個別に割り当てられる（共有されない）独立した静的メモリプールの容量（デフォルト値: 8192バイト、動的ヒープではない）。
-* **`FB_CONF_RUNTIME_HEAP_SIZE`**: WASMホストランタイム用に割り当てられる静的メモリプールの容量（デフォルト値: 4096バイト、動的ヒープではない）。
-* **`FB_CONF_LOG_BUFFER_SIZE`**: ログメッセージ保持用の循環バッファのサイズ（デフォルト値: 512バイト、動的メモリ確保を回避する固定バッファ）。
+
+デフォルト値は評価ターゲットである最小構成（RAM 32KB）に対応する。**全マクロの網羅的な定義とデフォルト値は [`system_config_details.md`](system_config_details.md) を正本とし、本節はその抜粋である。**
+
+* **`FB_CONF_MAX_TASKS`**: 静的に管理されるCOOSタスクの最大数（デフォルト値: 16、最大許容値: 254）。TCB スロットのみを消費し、ゲストリニアメモリは消費しない。
+* **`FB_CONF_MAX_GUEST_VMS`**: 同時にロード可能なゲストVMの最大数（最小構成のデフォルト値: 1）。ゲスト用プールはVM単位で消費されるため、RAM消費量を決めるのはこの値である。
+* **`FB_CONF_TASK_HEAP_SIZE`**: 各VMに個別に割り当てられる（共有されない）独立した静的メモリプールの容量（デフォルト値: 4096バイト、動的ヒープではない）。
+* **`FB_CONF_RUNTIME_HEAP_SIZE`**: WASMホストランタイム用に割り当てられる静的メモリプールの容量（デフォルト値: 2048バイト、動的ヒープではない）。
+* **`FB_CONF_LOG_BUFFER_SIZE`**: ログメッセージ保持用の循環バッファのサイズ（デフォルト値: 512バイト、動的メモリ確保を回避する固定バッファ）。サブシステム用プールの内数として配置される。
 * **`FB_CONF_JIT_CACHE_SIZE`**: 生成されたネイティブコードを保存するための 3面キャッシュサイズ合計（デフォルト値: 6144バイト = 2KB x 3面）。
-* **`FB_CONF_SHM_SIZE`**: ゼロコピーIPCデータ転送で使用される静的共有メモリの総バイト数（デフォルト値: 16384バイト）。
+* **`FB_CONF_SHM_SIZE`**: ゼロコピーIPCデータ転送で使用される静的共有メモリの総バイト数（デフォルト値: 1024バイト）。カーネル用プールの内数として配置される。
 * **`FB_CONF_VMMIO_MAX_REGIONS`**: 登録可能な最大仮想MMIO（vMMIO）領域数（デフォルト値: 8）。
+
+各プールの容量マクロ（`FB_CONF_KERNEL_HEAP_SIZE`、`FB_CONF_SUBSYS_HEAP_SIZE`、`FB_CONF_INTERP_STACK_SIZE`、`FB_CONF_MEMORY_POOL_SIZE`）の値は [`system_config_details.md`](system_config_details.md) 2.1 を正本とし、本節では重複定義しない。
 
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |

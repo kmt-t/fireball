@@ -108,7 +108,7 @@ world fireball {
 | `0x03` | `SYS_RESET` | — | `0` | ゲストリセット |
 
 ### 5.3. vMMIO Generic (`0x10`-`0x1F`)
-vMMIOアドレス空間全体への汎用アクセス。SYSCTL/IPCR/VDMA/SHM/DYNAMIC/PASSTHROUGHすべての領域に対応。アクセス可否は、コンフィグで定義された静的なデバイス割り当て許可テーブル（vMMIOアクセス許可テーブル）に基づいて、タスクIDと対象物理アドレス範囲が合致するか検証される。 `{META_RestrictedPhysicalAccess}`
+vMMIOアドレス空間全体への汎用アクセス。SYSCTL/IPCR/VDMA/SHM/DYNAMIC/PASSTHROUGHすべての領域に対応。アクセス可否は、対象物理アドレスが `FB_CONF_VMMIO_ALLOWED_ADDRS`（`system_config_details.md`）の許可範囲に属するかで判定される。この許可判定はタスク単位ではなく物理アドレス単位のグローバルなゲートであり、PTEに埋め込まれた権限フィールドが唯一の検証点となる（`runtime_vmmio.md` を正本とする）。SHM領域（FC=14）等、タスク間で所有権が移動するリソースの排他制御は `{RoleBasedAccessControl}` と IPCルータの所有権移譲によって別途行われ、vMMIOの物理アクセス許可判定とは独立している。 `{META_RestrictedPhysicalAccess}`
 
 | ID | 名前 | 引数 | 戻り値 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |

@@ -402,11 +402,13 @@ Tier 3 アクセス（FC=14/15）において毎回 FlatMap の二分探索を�
 
 <!-- traceability: {vMMIO_TrapAndEmulate} -->
 
+本節が正本の実装。[`runtime_vsoc.md`](../tier2_runtime/runtime_vsoc.md) の同名APIは `harness.vmmio` 越しにここへ転送する薄いラッパーであり、`vsoc_context`/`vsoc_harness` は本APIの引数ではない。
+
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | 既に定義（ROM）されている領域に対して、ホスト側のハンドラの実装アドレスを紐づける。 |
 | シグネチャ | `register-hook(hook-id: hook-category, handler-addr: mem-address) -> operation-result` |
-| 引数と役割 | `hook-id`: 対象の領域カテゴリ（FC/ページ番号等の組み合わせを識別）<br>`handler-addr`: ハンドラ関数の物理アドレス |
+| 引数と役割 | `ctx`: vmmio_context<br>`hook-id`: 対象の領域カテゴリ（FC/ページ番号等の組み合わせを識別）<br>`handler-addr`: ハンドラ関数の物理アドレス |
 | 事前条件 | `hook-id` が `fireball.wit` で定義された有効なIDであること。未登録であること。 |
 | 事後条件 | フックレジストリにエントリが追加される。 |
 | 不変条件 | アドレスマップ定義自体は変更されない。 |
@@ -419,7 +421,7 @@ Tier 3 アクセス（FC=14/15）において毎回 FlatMap の二分探索を�
 | :--- | :--- |
 | 機能概要 | vSoC 実行エンジンからトラップされたメモリアクセスを高速RAMバイパス判定し、vMMIOアドレスの場合はTLB及びFlatMapでPTEを解決しつつ権限検証の上でハンドラや物理レイヤへディスパッチする。 |
 | シグネチャ | `dispatch-access(addr: mem-address, buffer: list<u8>, is-write: bool) -> operation-result` |
-| 引数と役割 | `addr`: アクセス先アドレス（vmmio_address として分解）<br>`buffer`: データバッファ (read時out, write時in)<br>`is-write`: 書き込みフラグ |
+| 引数と役割 | `ctx`: vmmio_context<br>`addr`: アクセス先アドレス（vmmio_address として分解）<br>`buffer`: データバッファ (read時out, write時in)<br>`is-write`: 書き込みフラグ |
 | 事前条件 | リニアRAMまたは vMMIO領域（制限空間内）への正常な境界内アクセスであること。 |
 | 事後条件 | 許可アドレス：ハンドラ実行完了 / メモリアクセス完了。非許可アドレス：アクセス違反トラップ。 |
 | 不変条件 | アドレスデコードおよびルックアップの結果は決定論的である。 |

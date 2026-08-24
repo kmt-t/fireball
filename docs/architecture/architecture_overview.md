@@ -4,7 +4,7 @@
 
 Fireballは、極小リソース環境での柔軟性と高性能を両立させるため、以下の設計思想を採用する。
 
-- **クリーンアーキテクチャとDI**: URIベースの抽象化とIPCルータによる依存性の注入により、コンポーネント間の結合度を下げ、移植性を向上させる。 `{CleanArchitecture}` `{URIAbstraction}` `{IPCDI}`
+- **クリーンアーキテクチャとDI**: URIベースの抽象化とIPCルータによる依存性の注入により、コンポーネント間の結合度を下げ、移植性を向上させる。「内側 (Inner)」= Kernel Layer（COOS, IPC Router）、「外側 (Outer)」= Subsystem/Driver/Hardware Layer（HAL, Logging, 物理デバイス）と定義し、内側は外側の具象実装を一切 `#include` しない。外側が内側の定義するインターフェイスを実装（`register-hook` 等）することで依存性の逆転を実現する（詳細は 2.2 節 BDD 図の依存性ルールを参照）。 `{CleanArchitecture}` `{URIAbstraction}` `{IPCDI}`
 - **協調型マルチタスク (COOS)**: C++23ベースのスタックレス・タスク構造を採用し、低オーバーヘッドな切り替えを実現する。各サービスのリブート（自己修復）を前提としたフォールトトレラント設計をとる。 `{LowOverhead}` `{ServiceSelfReboot}` `{FaultTolerant}`
 - **高速JIT (Copy-and-Patch)**: コンパイルレイテンシを最小化し、小規模なコードキャッシュ（2KB x 3面 = 6KB）を「移動する窓（Moving Window）」として活用する。
 - **動的代謝 (Metabolism-First)**: インタープリタはブートストラップおよびフォールバックとして機能し、実行の主力は JIT による動的なコード変換とキャッシュアウト（代謝）のサイクルが担う。
@@ -58,22 +58,25 @@ graph TD
         HW["<b>block: Hardware Platform</b><br/>─ CPU, Memory, Peripherals<br/>─ Cortex-M / RISC-V"]:::hwStyle
     end
 
-    %% 依存関係 (上から下へ)
-    App -->|"execute()"| vSoC
-    Svc -->|"syscall(uri)"| vSoC
+    %% 実線 = 直接依存 (uses: 呼び出し側が相手の型/シグネチャを知る)
+    %% 破線 = インターフェイス実装 (realizes: 下位が上位定義のインターフェイスを実装)
+    App -->|"uses: execute()"| vSoC
+    Svc -->|"uses: syscall(uri)"| vSoC
     
-    vSoC -->|"yield()"| COOS
-    vSoC -->|"lookup(uri) / route(msg)"| IPCR
+    vSoC -->|"uses: yield()"| COOS
+    vSoC -->|"uses: lookup(uri) / route(msg)"| IPCR
     
-    IPCR -->|"manage: task lifecycle"| COOS
-    HAL -->|"provide: device API"| IPCR
-    Log -->|"send log events"| IPCR
+    IPCR -->|"uses: manage task lifecycle"| COOS
+    HAL -.->|"realizes: device-handler interface"| IPCR
+    Log -.->|"realizes: log-sink interface"| IPCR
     
     HAL -.-|"register / read"| HW
 ```
 
 #### 依存性ルール
-- **内側への依存**: 上位レイヤー（Kernel, IPCR）は下位レイヤー（HAL, Driver）の実装に依存してはならない。下位レイヤーが上位レイヤーの定義したインターフェイスを実装することで、依存性の逆転 (IoC) を実現する。
+- **Inner / Outer の定義**: 「内側 (Inner)」= Kernel Layer（COOS, IPCR）。「外側 (Outer)」= Guest/Runtime/Subsystem/Driver/Hardware Layer（App, Svc, vSoC, HAL, Log, HW）。内側は外側の具象実装に一切依存してはならない。
+- **2種類の矢印**: **実線 (uses)** はソース側が対象の型・シグネチャを直接知って呼び出す通常の依存。**破線 (realizes)** はソース側（下位/外側）が対象（上位/内側）の定義したインターフェイスを実装する関係——UMLの実現 (Realization) 関係に相当し、内側は破線の相手の具象型を一切知らない。図中で内側（COOS, IPCR）へ向かう矢印はすべて破線か、内側自身が発した実線（IPCR→COOS）のみであり、外側（HAL, Log）から内側（IPCR）への唯一の関係は破線（インターフェイス実装）である。
+- **具体例**: HAL/Log は IPCR が定義するハンドラ登録インターフェイス（`register-hook` 等）を実装・登録する（破線）。実行時には IPCR がそのインターフェイス越しに HAL/Log 側の登録済みハンドラを能動的に呼び出すが、コンパイル時の型依存としては逆に HAL/Log が IPCR のインターフェイス定義を `#include` する。IPCR のソースは HAL/Log の具象ヘッダを一切 `#include` しない。
 - **URIベースの疎結合**: コンポーネント間の具体的な依存は `fireball://` URI を介したルックアップにより解決され、コンパイル時の静的DIによって結合される。
 
 ## 3. 動的構造

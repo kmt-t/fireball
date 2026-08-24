@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-24T04:48:07.497036+00:00",
+  "generated_at": "2026-08-24T10:55:51.758031+00:00",
   "backend": "heuristic",
   "total_evaluated": 708,
   "formal_candidates_count": 31,
@@ -7,26 +7,26 @@
   "sections_scanned": 708,
   "max_sections": 0,
   "doc_hashes": {
-    "architecture/architecture_overview.md": "e09b1f2e1da6367f29f3138e9117344fc8c2b37f84b7b8aa0e1dd697fac4b217",
+    "architecture/architecture_overview.md": "019aea4f717286caa9ef81aaccc453e67a28a358300d5db20d908a23281e5e94",
     "architecture/concept_harness.md": "2160b8e29a617ecefbf46165542544705de7ebb0f6d5b7df4bbeb1c084f9cd3c",
     "architecture/document_structure.md": "8882e25d3b07bd6fdabf69739827f3dfb1c3c5d992fce688407d7d13e1727fee",
-    "architecture/resource_budget.md": "dad188910b60c25b7fc537e40e4fa58888d64a2295ea2848514373d1df29248c",
+    "architecture/resource_budget.md": "ac4928f5ad7fcc1a360b6539ec3d44d072a67c6b7d4aa7d76bdac014971def00",
     "components/tier1_core/os_coos.md": "7f2041f9ed21e99a75448b8112629ed0a4e95605e70425807cdb8a431db531bf",
     "components/tier1_core/os_scheduler.md": "891a6639ebc7c8122cf48e1558dacab63772d56e2454e663903425ea0e403751",
     "components/tier1_core/system_config.md": "18d6e2eeb837773f55bb1d285809d64d86bdf94dc0bff012116caf908b9177a0",
     "components/tier1_core/system_config_details.md": "d01b76be672dc64e340304989cd087ebc46edef5f75c2a0b633bf2c927af019b",
     "components/tier1_core/system_containers.md": "82dda7625a9c40f070347564629df99079691c63a20dda7c95bd6183d761ccf6",
     "components/tier1_core/system_logging.md": "7ec474b1ad605d7e56d14c9eb01f763fb2cd93553a8c7d91e4a4c71f4072cb4d",
-    "components/tier1_core/system_syscall.md": "b530b38838d03e6c21d11c1192c59016d87ec800b2016b0b711fbf43e557cf36",
-    "components/tier1_interface/interface_wit.md": "fa5efd334b7585a4260546c32e64a18af9e89c3660c314001e7f84e4979bd755",
+    "components/tier1_core/system_syscall.md": "7fddb15242b1858522120553eebdf76354802bffe4bfdffe648f50f6e788a234",
+    "components/tier1_interface/interface_wit.md": "889909501181705efbeff8ca5d96f1ae036ab6c756e478acc6c7418907bb2d1f",
     "components/tier1_interface/ipc_router.md": "31fea15446204d7627b2cb6a0843b2f20dd7388915b86c31a20bd55bd79c74e7",
     "components/tier1_interface/system_service.md": "7c98009196d56c50c4d1d27269f38eb51d4fe1fa654aedb51dba7c496cd5fe62",
     "components/tier2_runtime/debug/debug_gdb_rsp.md": "f07fbc1fbe307552ce65dbe964361442c7df855ac18cce53dc59684373c6befc",
     "components/tier2_runtime/debug/debug_manager.md": "6f62ba245c1b68577bccd8d7f104f286aa33820e12dd68d45ededb65ea99f5e2",
     "components/tier2_runtime/runtime_interpreter.md": "cb70cfcbe67e532df563e029f9ae455db52102805f69dc9a640976a626075c62",
     "components/tier2_runtime/runtime_loader.md": "591c6d491434e54f39eed5c48ae3216fc1b0ca1e2299044161cccac48f93dca5",
-    "components/tier2_runtime/runtime_vmmio.md": "7065082544587129ca3b63ad6ebcfdc3c449069d0e2abb6d67c49067aa7faa82",
-    "components/tier2_runtime/runtime_vsoc.md": "320427d3d33df306268d57be72f07060c5d724f7afb693877a02d8234ae4f1ad",
+    "components/tier2_runtime/runtime_vmmio.md": "5b1afbf97ab169fe86f4081b63d5b5ffefb043abd22b571d132e4379809b3968",
+    "components/tier2_runtime/runtime_vsoc.md": "2c2f025fb53b9adaf73f9f554415335dd25d4de37f94dd71025aa0eb12ce6cd3",
     "components/tier2_runtime/wasm_instruction.md": "640483f8a25bca7885110ce37e499c4ba3622fdc2ba3507e3a78b2bc1fcf8b5f",
     "components/tier3_jit/concepts/README.md": "a39c8c192999a792243e697e008fcad02c701d14b9559d492d668208122b6ebc",
     "components/tier3_jit/jit_assembler_constexpr.md": "4798eb6d2692ae574c45917a0597feb16e1ffa3ec9d9771566a6523607f7c7d5",
@@ -39,7 +39,7 @@
     "plans/backlog_archive.md": "3e09371810730853a39b09fec40e83409690786e1d27caae96ab6af054191716",
     "plans/backlog_list.md": "25b451c306c223b25c40f050ee6a4c41f818dff84dad96da46e563193b460455",
     "plans/roadmap_phase.md": "92ad637d4e9baed7d2083ae53145a3416cd1df7e1266339c6cabe1c969b4fe2c",
-    "requires/requirement_list.md": "4f67dd9972dd42e623b8fbff2f685c444b2a5eed43604b34f1b90a2723837537"
+    "requires/requirement_list.md": "35a59e542a9ee036904a2c2de7949d8332e61e571ef2e2f6ab801ace63f28f8b"
   },
   "assessments": [
     {
@@ -190,6 +190,19 @@
       "summary": "Independent heuristic evaluation for '3.2.1 パフォーマンス・効率'."
     },
     {
+      "section_id": "sec:requires/requirement_list.md#3.1.2 タスク管理・通信 (COOS)",
+      "file_path": "requires/requirement_list.md",
+      "heading": "3.1.2 タスク管理・通信 (COOS)",
+      "tier": 0,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '3.1.2 タスク管理・通信 (COOS)'."
+    },
+    {
       "section_id": "sec:components/tier2_runtime/runtime_interpreter.md#オプコードハンドラ / トレース実行（opcode_handler / exec_trace）",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
       "heading": "オプコードハンドラ / トレース実行（opcode_handler / exec_trace）",
@@ -218,19 +231,6 @@
         "Stateful concurrent protocol or hardware safety invariant identified"
       ],
       "summary": "Independent heuristic evaluation for '4.1 アルゴリズム'."
-    },
-    {
-      "section_id": "sec:requires/requirement_list.md#3.1.2 タスク管理・通信 (COOS)",
-      "file_path": "requires/requirement_list.md",
-      "heading": "3.1.2 タスク管理・通信 (COOS)",
-      "tier": 0,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '3.1.2 タスク管理・通信 (COOS)'."
     },
     {
       "section_id": "sec:requires/requirement_list.md#4. 設計課題・制約追跡 (Design Challenges & ADRs)",
@@ -354,6 +354,19 @@
       "summary": "Independent heuristic evaluation for '2.7 型定義・予約値'."
     },
     {
+      "section_id": "sec:architecture/architecture_overview.md#1. アーキテクチャコンセプト",
+      "file_path": "architecture/architecture_overview.md",
+      "heading": "1. アーキテクチャコンセプト",
+      "tier": "meta",
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '1. アーキテクチャコンセプト'."
+    },
+    {
       "section_id": "sec:components/tier1_interface/ipc_router.md#4.2 状態遷移図 (SysML SMD: IPC Router ルーティングフロー)",
       "file_path": "components/tier1_interface/ipc_router.md",
       "heading": "4.2 状態遷移図 (SysML SMD: IPC Router ルーティングフロー)",
@@ -382,19 +395,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '命令テンプレート（jit_template）'."
-    },
-    {
-      "section_id": "sec:architecture/architecture_overview.md#1. アーキテクチャコンセプト",
-      "file_path": "architecture/architecture_overview.md",
-      "heading": "1. アーキテクチャコンセプト",
-      "tier": "meta",
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '1. アーキテクチャコンセプト'."
     },
     {
       "section_id": "sec:components/tier1_core/os_coos.md#CSPチャネル（channel）",
@@ -1447,6 +1447,19 @@
       "summary": "Independent heuristic evaluation for '物理アクセス許可範囲の定義'."
     },
     {
+      "section_id": "sec:components/tier1_core/system_syscall.md#5.3. vMMIO Generic (`0x10`-`0x1F`)",
+      "file_path": "components/tier1_core/system_syscall.md",
+      "heading": "5.3. vMMIO Generic (`0x10`-`0x1F`)",
+      "tier": 1,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '5.3. vMMIO Generic (`0x10`-`0x1F`)'."
+    },
+    {
       "section_id": "sec:components/tier1_core/system_containers.md#疎マップビュー（flat_map_view）",
       "file_path": "components/tier1_core/system_containers.md",
       "heading": "疎マップビュー（flat_map_view）",
@@ -1860,19 +1873,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '4.1 アルゴリズム'."
-    },
-    {
-      "section_id": "sec:components/tier1_core/system_syscall.md#5.3. vMMIO Generic (`0x10`-`0x1F`)",
-      "file_path": "components/tier1_core/system_syscall.md",
-      "heading": "5.3. vMMIO Generic (`0x10`-`0x1F`)",
-      "tier": 1,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '5.3. vMMIO Generic (`0x10`-`0x1F`)'."
     },
     {
       "section_id": "sec:components/tier1_interface/ipc_router.md#IPCメッセージ（message）",
@@ -2987,6 +2987,19 @@
       "summary": "Independent heuristic evaluation for 'Phase 2: Integration（周辺コンポーネント統合 / 将来予定）'."
     },
     {
+      "section_id": "sec:architecture/resource_budget.md#4.2 コンポーネント予算配分",
+      "file_path": "architecture/resource_budget.md",
+      "heading": "4.2 コンポーネント予算配分",
+      "tier": "meta",
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '4.2 コンポーネント予算配分'."
+    },
+    {
       "section_id": "sec:components/tier1_core/os_coos.md#ハーネスによる依存性注入パターン",
       "file_path": "components/tier1_core/os_coos.md",
       "heading": "ハーネスによる依存性注入パターン",
@@ -3415,6 +3428,19 @@
       "summary": "Independent heuristic evaluation for 'Debugger 介入時のキャッシュ一貫性'."
     },
     {
+      "section_id": "sec:components/tier2_runtime/runtime_vsoc.md#`register-hook`",
+      "file_path": "components/tier2_runtime/runtime_vsoc.md",
+      "heading": "`register-hook`",
+      "tier": 2,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '`register-hook`'."
+    },
+    {
       "section_id": "sec:components/tier2_runtime/runtime_vsoc.md#5.2 ネイティブAPI エクスポート",
       "file_path": "components/tier2_runtime/runtime_vsoc.md",
       "heading": "5.2 ネイティブAPI エクスポート",
@@ -3752,19 +3778,6 @@
       "summary": "Independent heuristic evaluation for 'ステップ実行（step）'."
     },
     {
-      "section_id": "sec:components/tier2_runtime/runtime_vsoc.md#`register-hook`",
-      "file_path": "components/tier2_runtime/runtime_vsoc.md",
-      "heading": "`register-hook`",
-      "tier": 2,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '`register-hook`'."
-    },
-    {
       "section_id": "sec:components/tier3_jit/jit_compiler.md#初期化（initialize）",
       "file_path": "components/tier3_jit/jit_compiler.md",
       "heading": "初期化（initialize）",
@@ -3815,19 +3828,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '6. 所有権追跡'."
-    },
-    {
-      "section_id": "sec:architecture/resource_budget.md#4.2 コンポーネント予算配分",
-      "file_path": "architecture/resource_budget.md",
-      "heading": "4.2 コンポーネント予算配分",
-      "tier": "meta",
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '4.2 コンポーネント予算配分'."
     },
     {
       "section_id": "sec:components/tier1_core/os_scheduler.md#実行（run）",
@@ -5038,6 +5038,19 @@
       "summary": "Independent heuristic evaluation for '4.4 SYSCTL レジスタ詳細 (FC=12)'."
     },
     {
+      "section_id": "sec:components/tier2_runtime/runtime_vmmio.md#フック登録 (`register-hook`)",
+      "file_path": "components/tier2_runtime/runtime_vmmio.md",
+      "heading": "フック登録 (`register-hook`)",
+      "tier": 2,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for 'フック登録 (`register-hook`)'."
+    },
+    {
       "section_id": "sec:architecture/concept_harness.md#2.1 適用範囲と分類",
       "file_path": "architecture/concept_harness.md",
       "heading": "2.1 適用範囲と分類",
@@ -5153,19 +5166,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for 'ライフサイクル（ipc_router.md §4.1 に従属）'."
-    },
-    {
-      "section_id": "sec:components/tier2_runtime/runtime_vmmio.md#フック登録 (`register-hook`)",
-      "file_path": "components/tier2_runtime/runtime_vmmio.md",
-      "heading": "フック登録 (`register-hook`)",
-      "tier": 2,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for 'フック登録 (`register-hook`)'."
     },
     {
       "section_id": "sec:components/tier2_runtime/runtime_vsoc.md#`notify-interrupt`",
@@ -5774,6 +5774,19 @@
       "summary": "Independent heuristic evaluation for '3.2.3 移植性・互換性'."
     },
     {
+      "section_id": "sec:architecture/architecture_overview.md#依存性ルール",
+      "file_path": "architecture/architecture_overview.md",
+      "heading": "依存性ルール",
+      "tier": "meta",
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '依存性ルール'."
+    },
+    {
       "section_id": "sec:architecture/resource_budget.md#4.1 制約ブロック定義",
       "file_path": "architecture/resource_budget.md",
       "heading": "4.1 制約ブロック定義",
@@ -6127,19 +6140,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '高速検索'."
-    },
-    {
-      "section_id": "sec:architecture/architecture_overview.md#依存性ルール",
-      "file_path": "architecture/architecture_overview.md",
-      "heading": "依存性ルール",
-      "tier": "meta",
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '依存性ルール'."
     },
     {
       "section_id": "sec:architecture/concept_harness.md#1. アーキテクチャコンセプト",

@@ -342,17 +342,15 @@ sequenceDiagram
 
 #### `register-hook`
 <!-- traceability: {vMMIO_TrapAndEmulate} -->
+本APIは vSoC 層の公開ラッパーであり、`harness.vmmio`（vMMIOコントローラへの参照）越しに [`runtime_vmmio.md`](runtime_vmmio.md) の同名APIへそのまま転送する。実際のレジストリ登録・不変条件・エラー処理は vmmio 層の `register-hook`（`vmmio_context` を引数に取る）が正本であり、本節はその薄いラッパーの引数のみを記述する。
+
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | ゲストの特定のメモリ範囲（hook_idで識別）へのアクセスに対し、ホスト側の関数をプラガブルに登録する。 |
+| 機能概要 | ゲストの特定のメモリ範囲（hook_idで識別）へのアクセスに対し、ホスト側の関数をプラガブルに登録する。`harness.vmmio` へ転送するのみ。 |
 | シグネチャ | `register-hook(hook-id: hook-category, handler-addr: mem-address) -> operation-result` |
-| 引数 | `harness`: vsoc_harness, `hook-id`: 領域識別子, `handler-addr`: ハンドラアドレス |
+| 引数 | `harness`: vsoc_harness（`harness.vmmio` を通じて転送先を解決）、`hook-id`: 領域識別子, `handler-addr`: ハンドラアドレス |
 | 期待する結果 | 指定範囲へのアクセス時に登録したコールバックが実行されるようになる。 |
-| 事前条件 | 指定された `hook-id` が定義済みであること。 |
-| 事後条件 | vMMIOレジストリにエントリが追加される。 |
-| 不変条件 | アドレスマップ定義自体は変更されない。 |
-| エラー時の挙動 | 無効なIDの場合はエラーを返す。 |
-| 補足 | デバイスドライバのエミュレーションを動的に差し替えるために使用される。 `{vMMIO_TrapAndEmulate}` |
+| 補足 | 転送先の事前条件・事後条件・不変条件・エラー処理は [`runtime_vmmio.md`](runtime_vmmio.md) の `register-hook` を正本とする。 `{vMMIO_TrapAndEmulate}` |
 
 ### 5.2 ネイティブAPI エクスポート
 <!-- traceability: {NativeAPI_Export} -->

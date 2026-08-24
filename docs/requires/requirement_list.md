@@ -54,7 +54,7 @@ graph LR
 | `{MemoryBoundaryCheck}` | メモリアクセス時の境界チェックを強制し、隔離性を保証する。 | 高 | テスト |
 | `{WasmPageAlignment}` | メモリ割り当てをWASMページ単位（64KB）で行い、アドレス変換を効率化する。 | 中 | レビュー |
 | `{UnifiedAccessModel}` | 物理、論理、共有メモリの全アクセスをvMMIO層に一本化し、セキュリティを一律化する。 | 高 | レビュー |
-| `{Wasm32Only}` | MVP命令セットのみをサポートし、浮動小数点演算をオプション化してリソースを削減する。 | 高 | テスト |
+| `{Wasm32Only}` | MVP命令セットのみをサポートし、浮動小数点演算を除外してリソースを削減する。 | 高 | テスト |
 | `{FastAddressCheck}` | ゲストアドレスの境界チェックをビット演算（マスク）で高速化する。 | 中 | レビュー |
 | `{vMMIO_Isolation}` | vMMIO空間へのアクセスのみをデバイスI/Oとして許可し、メモリ安全性を確保する。 | 高 | テスト |
 | `{JIT_RuntimeAPI_Fallback}` | 複雑な命令をランタイムAPI呼び出しにフォールバックさせ、JITエンジンの複雑さを抑える。 | 高 | レビュー |
@@ -66,7 +66,7 @@ graph LR
 | キーワード | 内容 | 優先度 | 検証方法 |
 | :--- | :--- | :--- | :--- |
 | `{CooperativeMultitasking}` | コルーチンを用いた協調型OSを独自設計する。 | 高 | テスト |
-| `{GLOBAL_UseCpp23Library}` | C++23 std::flat_map 等の標準コンテナを活用し、メモリ効率と検索速度を両立する。 | 高 | レビュー |
+| `{GLOBAL_UseCpp23Library}` | C++23 の型・アルゴリズム語彙（`std::span`、二分探索等）を活用し、本プロジェクトの静的コンテナ語彙（`fireball::flat_map_view` 等、`system_containers.md` を正本とする）によってメモリ効率と検索速度を両立する。下位コンテナに `std::vector` を要求する `std::flat_map` はそのままでは `{META_NoStdVector}` に抵触するため採用しない。 | 高 | レビュー |
 | `{GLOBAL_UseCpp20Coroutine}` | C++20/23 コルーチンを活用し、標準的な言語機能によるコンテキストスイッチを実現する。 | 高 | レビュー |
 | `{LowOverheadSwitch}` | コンテキスト切り替え時のレジスタ退避・復帰を最小化し、数サイクルでのタスク遷移を目指す。 | 高 | 計測 |
 | `{COOS_Deterministic}` | コンテキストスイッチを明示的なポイントに限定し、確定的な実行を確保する。 | 高 | テスト |
@@ -92,7 +92,7 @@ graph LR
 | `{LowLatencyLookup}` | ソート済み配列と二分探索により、サービス検索の計算量を O(log N) に抑える。 | 高 | ベンチマーク |
 | `{Fast_Path_GPIO}` | 遅延に敏感なI/O操作（GPIO等）のために、抽象化層をバイパスする高速パスを提供する。 | 高 | 計測 |
 | `{Asynchronous_Notification}` | WASIのポーリングリソース (`pollable`) を介してホストからの非同期イベントを通知する。 | 中 | テスト |
-| `{IPCRegistry}` | URIベースのサービス情報を保持する std::flat_map ベースの静的テーブル。 | 高 | レビュー |
+| `{IPCRegistry}` | URIベースのサービス情報を保持する `fireball::flat_map_view` ベースの静的テーブル。 | 高 | レビュー |
 | `{ServiceFacade}` | 低レイヤーのIPC通信を隠蔽し、型安全なメソッドとして提供する薄いラッパー。 | 高 | レビュー |
 | `{WIT_Interface_Spec}` | WebAssembly Interface Types (WIT) を用いた、言語非依存のインターフェース定義手法。 | 高 | レビュー |
 | `{WIT_Common_Types}` | 複数のWIT定義間で共有される基本型定義。 | 高 | レビュー |
@@ -103,7 +103,7 @@ graph LR
 | `{Syscall_Return_Value}` | システムコールの戻り値型とエラー伝播の標準。 | 高 | レビュー |
 | `{Errorcode_To_Strategy}` | errno 等を具体的なリカバリ戦略へ変換する仕組み。 | 高 | レビュー |
 | `{WASI_Implementation}` | WASI標準APIのFireball上での実装。 | 高 | テスト |
-| `{TypeSafeMessaging}` | std::flat_map を用いた、IPCメッセージの型安全かつ検索効率の高い構造定義。 | 高 | レビュー |
+| `{TypeSafeMessaging}` | `fireball::flat_map_view` を用いた、IPCメッセージの型安全かつ検索効率の高い構造定義。 | 高 | レビュー |
 | `{PhysicalPassthrough}` | メモリコピーを介さず、物理リソースへ直接アクセスする高速パス。 | 高 | 計測 |
 
 #### 3.1.4 デバッグ・運用

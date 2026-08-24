@@ -77,7 +77,7 @@ WIT内では `fireball-call` という kebab-case 名で定義されるが、C++
 Trigger (GPIO) は、割り込み応答性およびビットバンギング等の要求から、一般のリソースハンドルを介さず、`fireball-call` に直接マッピングされた ID を通じて操作するものとする。
 
 - **理由**: ハンドルルックアップのオーバーヘッド排除、レジスタ直結に近いレイテンシの確保。
-- **実装例**: `FB_SYSCALL_TRIGGER_WRITE` ID を直接指定。
+- **実装例**: `FB_SYSCALL_TRIGGER_SET_PIN` ID を直接指定（ID一覧の正本は [`system_syscall.md`](../tier1_core/system_syscall.md) 6.2）。
 
 ```wit
 // インターフェイスとしては定義するが、Shim層では直接トラップを叩く

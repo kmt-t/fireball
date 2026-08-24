@@ -141,7 +141,7 @@ graph LR
 | `{JIT_ZeroCompileCostTheorem}` | 最適化不要なほど高速なコンパイルを実現する。 | 中 | ベンチマーク |
 | `{SimpleJITArchitecture}` | 小規模なJITキャッシュ領域で効率的に運用する。 | 高 | 計測 |
 | `{JIT_RegisterMapping}` | 重要変数を物理レジスタに固定する。 | 高 | レビュー |
-| `{ContextPointerRegister}` | コンテキストポインタを物理レジスタに保持する。 | 高 | レビュー |
+| `{ContextPointerRegister}` | スタックボトム配置とSPマスクによりコンテキストポインタを即座に導出し、引数レジスタを節約・スクラッチ解放する。 | 高 | レビュー |
 | `{Resource_Estimation_Model}` | 設計段階でROM/RAMフットプリントを概算し、制約適合性を検証する。 | 高 | 概算レポート |
 | `{ConsolidatedHeap}` | 【全体管理】物理メモリ全体から各パーティションを切り出す際、単一の物理プール（統合物理プール）として一括管理し、メモリ効率を最大化する。 | 高 | 計測 |
 | `{GLOBAL_StrictMemoryLimit}` | 厳格なメモリ割り当て制限（例：20KB/64KB）を適用する。 | 高 | テスト |

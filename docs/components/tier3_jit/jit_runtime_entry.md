@@ -97,7 +97,7 @@ sequenceDiagram
 | 機能概要 | 命令オフセットに対応するネイティブコードアドレス（`exec_trace` 型）を返す。 |
 | シグネチャ | `lookup(pc: オフセット) -> result<exec_trace, jit_lookup_result_t>` |
 | 引数 | `pc`: WASM 命令オフセット |
-| 戻り値 | 成功時はネイティブ実行エントリ（`void (__fastcall *)(const uint8_t* ip, uint32_t* sp, execution_context* ctx, vsoc_runtime* env) noexcept` 型）、失敗時は `ERR_NOT_COMPILED` などのステータス |
+| 戻り値 | 成功時はネイティブ実行エントリ（`void (__fastcall *)(const uint8_t* ip, uint32_t* sp, vsoc_runtime* env) noexcept` 型）、失敗時は `ERR_NOT_COMPILED` などのステータス |
 
 #### エントリ登録（register_entry）
 

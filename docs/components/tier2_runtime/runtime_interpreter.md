@@ -47,21 +47,21 @@ graph TD
 <!-- traceability: {PositionIndependentCode} {ContextPointerRegister} {MemoryBoundaryCheck} {EnvironmentPointer} -->
 WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想CPUレジスタ群として設計する。 `{PositionIndependentCode}` `{ContextPointerRegister}`
 
-**物理レジスタ保持 (`{ContextPointerRegister}`)**:
-ARM Cortex-M ターゲットにおいて、`execution_context` へのポインタは `__fastcall`（AAPCS 第3引数）物理レジスタ **`R2`** に保持される。これにより、コンテキストメンバへのアクセスがベースポインタ相対ロード（`LDR R0, [R2, #offset]`）の 1 命令・1 サイクルで実行され、メモリアクセスオーバーヘッドを最小化する。
+**スタックボトム配置と暗黙のコンテキスト参照 (`{ContextPointerRegister}`)**:
+ARM Cortex-M ターゲットにおいて、`execution_context` は **WASM オペランドスタックバッファ（2KB 境界アライン）の最下部（Bottom: offset 0）にインライン配置** される。現在のオペランドスタック頂点を指す `sp`（R1）に対し、ビットマスク（`sp & ~0x7FF`、Thumb-2: `BIC Rx, R1, #0x7FF`）を適用するだけで即座に `execution_context` のベースアドレスを 1 命令で導出できる。これにより、ハンドラ引数として `ctx` ポインタを常時レジスタ伝播する必要を排除し、貴重な引数物理レジスタ **`R3` をゼロコストなスクラッチレジスタとして解放** する。 `{ContextPointerRegister}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| コンテキストポインタレジスタ | `execution_context` へのポインタを保持する物理レジスタ | 物理レジスタ | ARM Cortex-M: `R2`（`__fastcall` 第3引数） `{ContextPointerRegister}` |
-| プログラムカウンタ | 現在実行中の命令を指し示すプログラムカウンタ（WASMバイトコードオフセット） | オフセット | 32bit符号なし (`[R2, #0]`) |
-| スタックポインタ | オペランドスタックの現在の頂点を指すインデックス/ポインタ | インデックス/ポインタ | 32bit符号なし (`[R2, #4]`) |
+| スタックボトムコンテキスト | スタックバッファ最下部に配置された `execution_context` 基底 | アドレス | `sp & ~0x7FF` で導出 `{ContextPointerRegister}` |
+| プログラムカウンタ | 現在実行中の命令を指し示すプログラムカウンタ（WASMバイトコードオフセット） | オフセット | 32bit符号なし (`ip`: R0) |
+| スタックポインタ | オペランドスタックの現在の頂点を指すインデックス/ポインタ | インデックス/ポインタ | 32bit符号なし (`sp`: R1) |
 | スタック基点 | オペランドスタックのメモリ領域（32bitワード配列 `uint32_t[FB_CONF_STACK_SIZE]`。i64/f64 は 2 スロット消費） | 配列ポインタ | `uint32_t*` (4byteアライン) |
 | リニアメモリ基点 | ゲストリニアメモリの開始アドレス | アドレス値 | 32bit符号なし (64KB境界アライメント) |
 | リニアメモリサイズ | ゲストリニアメモリの有効バイト数（WASM 64KBページまたは8KB/16KB等の部分ページ物理サイズ）。境界チェックに使用 `{MemoryBoundaryCheck}` | バイト数 | 32bit符号なし |
 | 有効命令ハンドラ | 現在使用されているハンドラ（通常用/デバッグ用）への参照 | テーブルポインタ | `opcode_handler` の配列 |
 | フレームポインタ | 現在のコールフレームの頂点を指すポインタ | アドレス値 | 32bit符号なし |
 | 制御フレームポインタ | 現在の制御構造（loop/if等）を管理するスタックの頂点 | アドレス値 | 32bit符号なし |
-| 環境ポインタ | 実行に必要な環境（vSoC等）への参照 `{EnvironmentPointer}` | 構造体への参照 | [`vsoc_runtime`](runtime_vsoc.md) |
+| 環境ポインタ | 実行に必要な環境（vSoC等）への参照 `{EnvironmentPointer}` | 構造体への参照 | [`vsoc_runtime`](runtime_vsoc.md) (`env`: R2) |
 
 #### コールフレーム（call_frame）
 <!-- traceability: {PositionIndependentCode} {ContextPointerRegister} {MemoryBoundaryCheck} {EnvironmentPointer} -->
@@ -99,25 +99,26 @@ ARM Cortex-M ターゲットにおいて、`execution_context` へのポイン�
 
 #### オプコードハンドラ / トレース実行（opcode_handler / exec_trace）
 <!-- traceability: {JIT_RuntimeAPI_Fallback} {ContextPointerRegister} {EnvironmentPointer} -->
-命令ハンドラおよびJITトレースの共通実行シグネチャ。継続渡し（Continuation Passing Style: CPS）と `__fastcall` 呼び出し規約により、ホットな実行変数を物理レジスタに直接載せてハンドラ間で引き継ぐ。 `{JIT_RuntimeAPI_Fallback}` `{ContextPointerRegister}` `{EnvironmentPointer}`
+命令ハンドラおよびJITトレースの共通実行シグネチャ。継続渡し（Continuation Passing Style: CPS）と `__fastcall` 呼び出し規約により、ホットな実行変数を物理レジスタに直接載せてハンドラ間で引き継ぐ。スタックボトム配置により `ctx` 引数を排除し、3引数シグネチャにスリム化している。 `{JIT_RuntimeAPI_Fallback}` `{ContextPointerRegister}` `{EnvironmentPointer}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| 実行シグネチャ | `__fastcall` による継続渡し（CPS）シグネチャ | 関数ポインタ | `void (__fastcall *)(const uint8_t* __restrict__ ip, uint32_t* __restrict__ sp, execution_context* __restrict__ ctx, vsoc_runtime* __restrict__ env) noexcept` |
-| レジスタ割り当て | ARM AAPCS / `__fastcall` 引数レジスタマッピング | 物理レジスタ | `R0`: `ip` (WASM PC)<br>`R1`: `sp` (オペランドスタック頂点)<br>`R2`: `ctx` (実行コンテキスト `{ContextPointerRegister}`)<br>`R3`: `env` (環境ポインタ `{EnvironmentPointer}`) |
+| 実行シグネチャ | `__fastcall` による継続渡し（CPS）3引数シグネチャ | 関数ポインタ | `void (__fastcall *)(const uint8_t* __restrict__ ip, uint32_t* __restrict__ sp, vsoc_runtime* __restrict__ env) noexcept` |
+| レジスタ割り当て | ARM AAPCS / `__fastcall` 引数レジスタマッピング | 物理レジスタ | `R0`: `ip` (WASM PC)<br>`R1`: `sp` (オペランドスタック頂点)<br>`R2`: `env` (環境ポインタ `{EnvironmentPointer}`)<br>`R3`: **スクラッチレジスタ（解放・演算用）**<br>`ctx`: `sp & ~0x7FF` により必要時のみ導出 `{ContextPointerRegister}` |
 
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
 <!-- traceability: {ThreadedInterpreter} {JIT_RuntimeAPI_Fallback} {Interpreter_LazyJITSwitch} {LowLatencyJIT} {SimpleJITArchitecture} {Challenge_ApproximateYield} {Debug_Integrated} {ContextPointerRegister} -->
 - **Threaded Dispatch with Continuation Passing Style (CPS)**: 命令ハンドラを連鎖させるテーブルディスパッチ方式で分岐コストを極小化する。
-  - ハンドラ関数型を `void __fastcall(const uint8_t* ip, uint32_t* sp, execution_context* ctx, vsoc_runtime* env) noexcept` に統一。
-  - `ip` (R0), `sp` (R1), `ctx` (R2 `{ContextPointerRegister}`), `env` (R3 `{EnvironmentPointer}`) のホットな変数を `__fastcall` により物理レジスタ上で保持・更新し、メモリへの無駄なロード/ストア（`ctx->sp` 等の退避）を排除する。
+  - ハンドラ関数型を `void __fastcall(const uint8_t* ip, uint32_t* sp, vsoc_runtime* env) noexcept` に統一。
+  - `ip` (R0), `sp` (R1), `env` (R2 `{EnvironmentPointer}`) のホットな変数を `__fastcall` 引数レジスタ上で保持・更新。
+  - `execution_context` をオペランドスタックの最下部（Bottom）に配置することで `ctx` 引数を排除し、Caller-saved な **`R3` を一時計算用スクラッチレジスタとして解放**。 `{ContextPointerRegister}`
   - 非制御命令では `[[clang::musttail]]` による直接末尾ジャンプ（Direct-Threaded Code）を行い、レジスタ上の引数をそのまま次のハンドラへ継続渡し（CPS）する。 `{ThreadedInterpreter}`
 - **JIT コードとの完全な呼び出し規約整合 (Zero-Overhead Interop)**:
-  - JIT コンパイラが生成するネイティブトレース（`exec_trace`）も、インタープリタと全く同一の `__fastcall` CPS シグネチャ（R0=IP, R1=SP, R2=CTX, R3=ENV）に従う。
-  - **インタープリタ $\to$ JIT 遷移**: インタープリタから JIT コードへ移行する際、レジスタ上の `(ip, sp, ctx, env)` をそのまま渡して `exec_trace` へ直接ジャンプする。
-  - **JIT $\to$ インタープリタ フォールバック (OSR / Exit)**: JIT トレース内で未サポート命令、トラップ、またはトレース終端に達した場合、レジスタ上の `(ip, sp, ctx, env)` をそのまま次のオプコードハンドラに渡して末尾ジャンプ（`BX`）する。メモリ書き戻しやレジスタ再配置のオーバーヘッドは一切発生しない。 `{JIT_RuntimeAPI_Fallback}` `{LowLatencyJIT}`
+  - JIT コンパイラが生成するネイティブトレース（`exec_trace`）も、インタープリタと全く同一の `__fastcall` CPS 3引数シグネチャ（R0=IP, R1=SP, R2=ENV）に従う。
+  - **インタープリタ $\to$ JIT 遷移**: インタープリタから JIT コードへ移行する際、レジスタ上の `(ip, sp, env)` をそのまま渡して `exec_trace` へ直接ジャンプする。
+  - **JIT $\to$ インタープリタ フォールバック (OSR / Exit)**: JIT トレース内で未サポート命令、トラップ、またはトレース終端に達した場合、レジスタ上の `(ip, sp, env)` をそのまま次のオプコードハンドラに渡して末尾ジャンプ（`BX`）する。メモリ書き戻しやレジスタ再配置のオーバーヘッドは一切発生しない。 `{JIT_RuntimeAPI_Fallback}` `{LowLatencyJIT}`
 - **WASM命令とRuntime APIの1対1対応**: 各命令ハンドラはレジスタ上の `sp`/`ip` を更新し、必要に応じてランタイムAPIを呼び出す。 `{JIT_RuntimeAPI_Fallback}`
 - **ジャンプの高速化 (exec_trace)**: 制御命令（`br`, `br_if` 等）によるジャンプ先を `control_frame` 内の `exec_trace` に保持する。
 - **スタック Pruning (Label Arity対応)**: `br` 命令等の実行時、ジャンプ先の `control_frame` に記録された `結果アリティ` に基づき、スタック上のオペランドを残してそれ以外を `保存済みSP` まで巻き戻す。これにより、Wasm 規定のスタック整合性を保証する。

@@ -4208,7 +4208,7 @@
       "label": "WASM インタプリタ フルセット・コンセプトコード (`concepts/interpreter_concept.py`)",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 131,
+      "line": 132,
       "tier": 2,
       "metadata": {}
     },
@@ -4217,7 +4217,7 @@
       "label": "統合 Tiered ランタイムエンジン・コンセプトコード (`concepts/runtime_engine_concept.py`)",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 196,
+      "line": 197,
       "tier": 2,
       "metadata": {}
     },
@@ -4226,7 +4226,7 @@
       "label": "4.2 状態遷移図",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 199,
+      "line": 200,
       "tier": 2,
       "metadata": {}
     },
@@ -4235,7 +4235,7 @@
       "label": "4.3 内部シーケンス",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 212,
+      "line": 213,
       "tier": 2,
       "metadata": {}
     },
@@ -4244,7 +4244,7 @@
       "label": "Interpreter 実行シーケンス",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 214,
+      "line": 215,
       "tier": 2,
       "metadata": {}
     },
@@ -4253,7 +4253,7 @@
       "label": "5. インターフェイス定義",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 235,
+      "line": 236,
       "tier": 2,
       "metadata": {}
     },
@@ -4262,7 +4262,7 @@
       "label": "5.1 公開API",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 237,
+      "line": 238,
       "tier": 2,
       "metadata": {}
     },
@@ -4271,7 +4271,7 @@
       "label": "初期化（initialize）",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 240,
+      "line": 241,
       "tier": 2,
       "metadata": {}
     },
@@ -4280,7 +4280,7 @@
       "label": "実行ステップ (`run_step`)",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 254,
+      "line": 255,
       "tier": 2,
       "metadata": {}
     },
@@ -4289,7 +4289,7 @@
       "label": "割り込み同期 (`sync_interrupts`)",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 265,
+      "line": 266,
       "tier": 2,
       "metadata": {}
     },
@@ -4298,7 +4298,7 @@
       "label": "5.2 URI/IPCインターフェイス",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 281,
+      "line": 282,
       "tier": 2,
       "metadata": {}
     },
@@ -4307,7 +4307,7 @@
       "label": "5.3 関連コンポーネントとの連携",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 285,
+      "line": 286,
       "tier": 2,
       "metadata": {}
     },
@@ -4316,7 +4316,7 @@
       "label": "6. 制約達成の方策",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 294,
+      "line": 295,
       "tier": 2,
       "metadata": {}
     },
@@ -4325,7 +4325,7 @@
       "label": "6.1 性能制約と方策",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 296,
+      "line": 297,
       "tier": 2,
       "metadata": {}
     },
@@ -4334,7 +4334,7 @@
       "label": "6.2 メモリ制約と方策",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 301,
+      "line": 302,
       "tier": 2,
       "metadata": {}
     },
@@ -4343,7 +4343,7 @@
       "label": "6.3 安全性制約と方策",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 306,
+      "line": 307,
       "tier": 2,
       "metadata": {}
     },
@@ -4352,7 +4352,7 @@
       "label": "7. 参考実装リスト",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 311,
+      "line": 312,
       "tier": 2,
       "metadata": {}
     },
@@ -16882,7 +16882,7 @@
       "target": "file:components/tier2_runtime/runtime_loader.md",
       "relation": "links_to",
       "metadata": {
-        "line": 289,
+        "line": 290,
         "text": "module_view"
       }
     },

@@ -42,7 +42,7 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
 
 ### Phase 1.2: WASM Stackless Fast Interpreter (`runtime_interpreter`)
 - [ ] **`execution_context` 実装**:
-  - 仮想 CPU レジスタ群（PC, SP, FP, Linear Memory Pointer, Memory Size） `{ContextPointerRegister}`
+  - 仮想 CPU レジスタ群（PC, SP, FP, Linear Memory Pointer, Memory Size）の物理レジスタ固定マッピング（Cortex-M: R7） `{ContextPointerRegister}`
 - [ ] **コア命令ハンドラ群 (`opcode_handler`)**:
   - 算術演算 (i32/i64 add, sub, mul, clz, ctz 等)
   - 制御フロー (block, loop, br, br_if, br_table, return, call)

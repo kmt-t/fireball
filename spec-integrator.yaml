@@ -95,18 +95,12 @@ risk_assessment:
       - "trade-off"
       - "rationale"
       - "design decision"
-      - "usecase"
-      - "ユースケース"
       - "トレードオフ"
-      - "phase 1"
-      - "phase 2"
       - "設計判断"
       - "選択理由"
       - "設計課題"
       - "採用理由"
-      - "設計方針"
       - "根拠"
-      - "制約達成の方策"
     # 形式検証の対象外とする Tier
     non_formal_tiers:
       - 0
@@ -143,3 +137,27 @@ risk_assessment:
         heading_pattern: '.*'
         rationale: "コンセプトコードの所在を示す索引ページであり、仕様記述も状態遷移も含まない。検証対象は参照先の *.py 本体"
         authorized_at: "2026-08-22"
+      - section_pattern: 'requires/.*\.md'
+        heading_pattern: '.*'
+        rationale: "Tier 0 最上位要求仕様書（命題一覧・ユースケース定義）であり、コンポーネント設計書の意味監査対象外"
+        authorized_at: "2026-08-24"
+      - section_pattern: 'plans/.*\.md'
+        heading_pattern: '.*'
+        rationale: "開発計画・バックログ・ロードマップであり、設計仕様書の意味監査対象外"
+        authorized_at: "2026-08-24"
+      - section_pattern: 'architecture/.*\.md'
+        heading_pattern: '.*'
+        rationale: "Tier meta アーキテクチャ俯瞰設計書であり、個別コンポーネントのLLM意味監査対象外"
+        authorized_at: "2026-08-24"
+      - section_pattern: 'components/tier3_platform/platform_memory\.md'
+        heading_pattern: '^8\.'
+        rationale: "メモリマネージャの設計変更・判断の静的記録"
+        authorized_at: "2026-08-24"
+      - section_pattern: 'components/tier1_interface/system_service\.md'
+        heading_pattern: '^(設計判断|6\.)'
+        rationale: "サービス層の静的設計判断"
+        authorized_at: "2026-08-24"
+      - section_pattern: 'components/tier2_runtime/runtime_loader\.md'
+        heading_pattern: '^4\.2'
+        rationale: "ローダの静的メモリ制約定義"
+        authorized_at: "2026-08-24"

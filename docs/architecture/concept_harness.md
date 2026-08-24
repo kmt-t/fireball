@@ -15,8 +15,9 @@ Fireballは「極小リソース環境での完全なモジュール化」を追
 
 | 分類 | ハーネスの要否 | 説明 |
 | :--- | :--- | :--- |
-| **Tier 1** | ❌ 不要 | URIベースの動的DI（Service Discovery）を使用。 |
-| **Tier 2 (Subsystem)** | ✅ 必要 | vSoC 等、内部に複数の Tier 3 を持ち、それらを結合・管理する必要がある場合。 |
+| **Tier 1 (COOS)** | ✅ 必要 | COOS コア内部で scheduler / csp / memory を静的 DI 結合（`coos_harness`）。 |
+| **Tier 1 (その他)** | ❌ 不要 | URIベースの動的DI（Service Discovery）を使用。 |
+| **Tier 2 (Subsystem)** | ✅ 必要 | vSoC 等、内部に複数のサブモジュールを持ち、それらを静的結合・管理する場合（`vsoc_harness`）。 |
 | **Tier 2 (Service)** | ⚠️ 原則不要 | 単純な責務（Memory Manager 等）であれば、初期化時の引数渡しで十分。 |
 | **Tier 3** | ❌ 不要 | 単一責務の実装ドメイン。デコンポジションが不要なため、ハーネスは過剰。 |
 

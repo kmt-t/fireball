@@ -1,4 +1,4 @@
-# vSoC コンポーネント設計書 {VERIFY_FORMAL}
+# vSoC コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}
 
 ## 1. コンセプト
 <!-- traceability: {LowLatencyJIT} {MemoryIsolation} {META_FaultIsolation} {EnvironmentPointer} -->

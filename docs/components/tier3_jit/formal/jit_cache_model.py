@@ -19,65 +19,59 @@ def build_model(*, guards: bool = True) -> Kripke:
     """
     JIT 3面キャッシュ代謝・遅延チェイニング安全性・2-bit Hotspot FSM・MPU W^X 統合形式検証モデル
 
-    状態定義:
-    - s_idle: アイドル状態 (RO+X, clean)
-    - s_compiling: JIT パッチ書き込み中 (MPU RW+XN, writing)
-    - s_synced: DSB/ISB メモリバリア完了 (MPU RO+X, synced)
-    - s_active_exec: Active バンクでネイティブ実行 (RO+X, executing, in_active)
-    - s_warm_obs: Warm バンクで観測実行 (RO+X, executing, in_warm)
-    - s_oldest_eval: Oldest 到達時の Hot 判定 (RO+X, in_oldest)
-    - s_chained_active_warm: 新規 Active トレースが Warm 常駐ターゲットへチェイン結合 (RO+X, executing, chained)
-    - s_swept_to_stub: rotate() 時にダングリング掃引が働き、スタブ復帰へ安全に無効化 (RO+X, swept, stub_return)
-    - c_unexecuted: カード 00: UNEXECUTED (未実行)
-    - c_executed: カード 01: EXECUTED (実行済み・再コンパイル可能)
-    - c_hot: カード 10: HOT (頻度検出・コンパイル待ち)
-    - c_compiled: カード 11: COMPILED (JIT コンパイル完了)
-    - c_evicted: キャッシュ Eviction 発生状態
-    - s_bad_rwx: W^X 違反状態（MPU 設定ミスで W と X が同時に有効化）
-    - s_deadlock: バリア同期後に実行へ進めないデッドロック状態
-    - s_dangling_chain: ターゲットが消去されたのにリンクが残存したダングリングチェイン違反状態
-    - s_bad_skip_hot: HOT を経由せずに COMPILED へ飛んだ単調性違反状態
-    - s_bad_permanent_deopt: Evict されたのに再コンパイル不能なまま取り残された永続デオプト違反状態
+    遅延チェイニング安全性モデル (第13信 §89 準拠):
+    - 状態は 3つ組 (age_source, age_target, linked) で表現
+      - age_source ∈ {0(Active), 1(Warm), 2(Oldest), 3(dead)}
+      - age_target ∈ {0(Active), 1(Warm), 2(Oldest), 3(dead)}
+      - linked ∈ {1(yes), 0(no)}
+    - 初期状態: ch_s0_t0_l1 (Active内チェイン), ch_s0_t1_l1 (ActiveからWarmへチェイン)
+    - rotate() 遷移規則:
+      1. 掃引 (_sweep_dangling_chains): guards=True 時、linked=1 かつ age_target >= 2 なら linked <- 0
+      2. 加齢 (rotate): age_source, age_target をそれぞれ min(3, age + 1)
+    - 違反状態 (dangling_chain): linked=1 ∧ age_source != 3 ∧ age_target == 3
     """
     S = [
+        # --- 正常状態 ---
         "s_idle",
         "s_compiling",
         "s_synced",
         "s_active_exec",
         "s_warm_obs",
         "s_oldest_eval",
-        "s_chained_active_warm",
-        "s_swept_to_stub",
         "c_unexecuted",
         "c_executed",
         "c_hot",
         "c_compiled",
         "c_evicted",
+        # --- 遅延チェイニング世代状態 ---
+        "ch_s0_t0_l1",  # Active内チェイン (src=0, tgt=0, linked=1)
+        "ch_s0_t1_l1",  # Active->Warmチェイン (src=0, tgt=1, linked=1)
+        "ch_s1_t1_l1",  # 1世代経過 (src=1, tgt=1, linked=1)
+        "ch_s1_t2_l0",  # guards=True: Warm->Oldestで掃引され unlinked=0 に無効化
+        "ch_s2_t2_l0",  # 2世代経過 (src=2, tgt=2, linked=0)
+        "ch_s2_t3_l0",  # 掃引済み安全状態 (src=2, tgt=3(dead), linked=0)
+        "ch_s3_t3_l0",  # 終端安全状態 (src=3(dead), tgt=3(dead), linked=0)
+        # --- 違反状態（ガード有効時は到達不能、無効時に到達可能） ---
         "s_bad_rwx",
         "s_deadlock",
-        "s_dangling_chain",
         "s_bad_skip_hot",
         "s_bad_permanent_deopt",
+        "s_dangling_chain",  # guards=False で ch_s0_t1_l1 から到達するダングリング違反状態 (src=2, tgt=3, linked=1)
     ]
-    S0 = {"s_idle"}
+    S0 = {"s_idle", "ch_s0_t0_l1", "ch_s0_t1_l1"}
+
     R = [
         # --- MPU W^X & 3面キャッシュ代謝サイクル ---
         ("s_idle", "s_compiling"),
         ("s_idle", "c_unexecuted"),
         ("s_compiling", "s_synced"),
         ("s_synced", "s_active_exec"),
-        ("s_synced", "s_chained_active_warm"),
         ("s_active_exec", "s_active_exec"),
         ("s_active_exec", "s_warm_obs"),
         ("s_warm_obs", "s_warm_obs"),
         ("s_warm_obs", "s_oldest_eval"),
         ("s_oldest_eval", "s_synced"),
         ("s_oldest_eval", "s_idle"),
-        # --- 遅延チェイニング & ダングリング掃引サイクル ---
-        ("s_chained_active_warm", "s_chained_active_warm"),
-        ("s_chained_active_warm", "s_swept_to_stub"),
-        ("s_swept_to_stub", "s_active_exec"),
-        ("s_swept_to_stub", "s_idle"),
         # --- 2-bit Hotspot FSM サイクル ---
         ("c_unexecuted", "c_executed"),
         ("c_executed", "c_hot"),
@@ -85,25 +79,35 @@ def build_model(*, guards: bool = True) -> Kripke:
         ("c_compiled", "s_active_exec"),
         ("c_compiled", "c_evicted"),
         ("c_evicted", "c_executed"),
+        # --- 遅延チェイニング共通遷移 ---
+        ("ch_s0_t0_l1", "ch_s1_t1_l1"),
+        ("ch_s1_t1_l1", "ch_s2_t2_l0"),
+        ("ch_s1_t2_l0", "ch_s2_t3_l0"),
+        ("ch_s2_t2_l0", "ch_s3_t3_l0"),
+        ("ch_s2_t3_l0", "ch_s3_t3_l0"),
+        ("ch_s3_t3_l0", "ch_s3_t3_l0"),
         # --- 違反状態の自己ループ ---
         ("s_bad_rwx", "s_bad_rwx"),
         ("s_deadlock", "s_deadlock"),
-        ("s_dangling_chain", "s_dangling_chain"),
         ("s_bad_skip_hot", "s_bad_skip_hot"),
         ("s_bad_permanent_deopt", "s_bad_permanent_deopt"),
+        ("s_dangling_chain", "s_dangling_chain"),
     ]
 
-    if not guards:
+    if guards:
+        # ガード有効時: ch_s0_t1_l1 は掃引により ch_s1_t2_l0 (unlinked) へ安全遷移
+        R.append(("ch_s0_t1_l1", "ch_s1_t2_l0"))
+    else:
         # ガード無効時（変異検査）:
-        # 1. MPU W^X ガード無効 -> 書き込み中に実行権限が残存
+        # 1. ダングリング掃引無効: ch_s0_t1_l1 が linked=1 のまま s_dangling_chain へ到達
+        R.append(("ch_s0_t1_l1", "s_dangling_chain"))
+        # 2. MPU W^X ガード無効
         R.append(("s_compiling", "s_bad_rwx"))
-        # 2. Liveness ガード無効 -> 同期完了後にデッドロック
+        # 3. Liveness ガード無効
         R.append(("s_synced", "s_deadlock"))
-        # 3. ダングリング掃引無効 (_sweep_dangling_chains 無効) -> ターゲット喪失後もリンク残存
-        R.append(("s_chained_active_warm", "s_dangling_chain"))
-        # 4. Hotspot FSM 単調性ガード無効 -> HOT を経由せず直接 COMPILED
+        # 4. Hotspot FSM 単調性ガード無効
         R.append(("c_executed", "s_bad_skip_hot"))
-        # 5. Eviction 復帰ガード無効 (mark_evicted 無効) -> 再コンパイル不能で永続デオプト
+        # 5. Eviction 復帰ガード無効
         R.append(("c_evicted", "s_bad_permanent_deopt"))
 
     L = {
@@ -113,18 +117,23 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_active_exec": {"executing", "in_active", "mpu_ro_x"},
         "s_warm_obs": {"executing", "in_warm", "mpu_ro_x"},
         "s_oldest_eval": {"in_oldest", "mpu_ro_x"},
-        "s_chained_active_warm": {"executing", "chained", "target_in_warm", "mpu_ro_x"},
-        "s_swept_to_stub": {"executing", "swept", "stub_return", "mpu_ro_x"},
         "c_unexecuted": {"unexecuted", "mpu_ro_x"},
         "c_executed": {"executed", "recompilable", "mpu_ro_x"},
         "c_hot": {"hot", "recompilable", "mpu_ro_x"},
         "c_compiled": {"compiled", "mpu_ro_x"},
         "c_evicted": {"evicted", "mpu_ro_x"},
+        "ch_s0_t0_l1": {"linked", "mpu_ro_x"},
+        "ch_s0_t1_l1": {"linked", "mpu_ro_x"},
+        "ch_s1_t1_l1": {"linked", "mpu_ro_x"},
+        "ch_s1_t2_l0": {"unlinked", "mpu_ro_x"},
+        "ch_s2_t2_l0": {"unlinked", "mpu_ro_x"},
+        "ch_s2_t3_l0": {"unlinked", "mpu_ro_x"},
+        "ch_s3_t3_l0": {"unlinked", "mpu_ro_x"},
         "s_bad_rwx": {"writing", "executing", "bad_rwx"},
         "s_deadlock": {"deadlock"},
-        "s_dangling_chain": {"dangling_chain", "bad_chain"},
         "s_bad_skip_hot": {"bad_skip_hot", "compiled"},
         "s_bad_permanent_deopt": {"bad_permanent_deopt", "evicted"},
+        "s_dangling_chain": {"dangling_chain", "bad_chain", "linked"},
     }
     return Kripke(S=S, S0=S0, R=R, L=L)
 

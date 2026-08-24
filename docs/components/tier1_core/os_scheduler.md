@@ -1,8 +1,8 @@
-# COOS スケジューラ コンポーネント設計書 {VERIFY_FORMAL}
+# COOS スケジューラ コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}
 
 ## 1. コンセプト
-<!-- traceability: {CooperativeMultitasking} {GLOBAL_UseCpp23Library} {GLOBAL_UseCpp20Coroutine} {COOS_Deterministic} {CSPCommunication} -->
-COOSスケジューラは、C++23コルーチン（および静的アロケーションを前提とした std::flat_map）を活用したスタックレスな協調型マルチタスクの核となるコンポーネントである。タスクの実行、一時停止(yield)、および割り込みによる再開を管理し、極小リソース環境での決定論的な実行を提供する。タスク間のメッセージパッシング（ゼロコピー）とスケジューラの連動によるコルーチンサスペンドにより、ホーアのCSPモデルを具現化する。 `{CooperativeMultitasking}` `{GLOBAL_UseCpp23Library}` `{GLOBAL_UseCpp20Coroutine}` `{COOS_Deterministic}` `{CSPCommunication}`
+<!-- traceability: {CooperativeMultitasking} {GLOBAL_UseCpp23Library} {GLOBAL_UseCpp20Coroutine} {COOS_Deterministic} {CSPCommunication} {LowOverheadSwitch} -->
+COOSスケジューラは、C++23コルーチン（および静的アロケーションを前提とした std::flat_map）を活用したスタックレスな協調型マルチタスクの核となるコンポーネントである。タスクの実行、一時停止(yield)、および割り込みによる再開を管理し、極小リソース環境での決定論的な実行を提供する。タスク間のメッセージパッシング（ゼロコピー）とスケジューラの連動によるコルーチンサスペンドにより、ホーアのCSPモデルを具現化する。コンテキストスイッチには C++20 コルーチンの**対称遷移（Symmetric Transfer）** を採用し、全汎用レジスタのメモリスタック退避・復帰を排除してフレームポインタとPCのみの交換に最小化することで、数サイクルでの極低オーバーヘッドなタスク遷移を達成する。 `{CooperativeMultitasking}` `{GLOBAL_UseCpp23Library}` `{GLOBAL_UseCpp20Coroutine}` `{COOS_Deterministic}` `{CSPCommunication}` `{LowOverheadSwitch}`
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->
@@ -219,7 +219,7 @@ stateDiagram-v2
 
 #### タスク生成 (`spawn`)
 
-<!-- traceability: {COOS_Scheduling_Refine} {LowOverheadSwitch} {Challenge_CoosBlockedList} -->
+<!-- traceability: {COOS_Scheduling_Refine} {Challenge_CoosBlockedList} -->
 
 
 | 項目 | 内容 | 型分類 |
@@ -246,15 +246,19 @@ stateDiagram-v2
 | 事後条件 | タスクが READY キューに追加される。 | 状態変化 |
 
 #### 実行譲渡（yield）
+<!-- traceability: {LowOverheadSwitch} -->
+現在実行中のタスクを中断し、次のタスクへコンテキストを切り替える。C++20 コルーチンの対称遷移（Symmetric Transfer）により、全汎用レジスタ退避を伴わず数サイクルで高速遷移する。 `{LowOverheadSwitch}`
+
+| 項目 | 内容 |
+| :--- | :--- |
+| 機能概要 | 現在のタスクを実行可能キュー末尾に移動し、READY 先頭のタスクへ極低オーバーヘッドでコンテキストを切り替える。 |
 | シグネチャ | `yield() -> void` |
 | 事前条件 | タスク実行コンテキスト内から呼び出されること（ISRからの呼び出し不可）。 |
 | 事後条件 | 現在のタスクが READY キューの末尾に移動し、次タスクに切り替わる。 |
 
 #### 実行（run）
-| 項目 | 内容 |
-| :--- | :--- |
-| 機能概要 | メインスケジューリングループを開始する。 |
-| シグネチャ | `run() -> void` |
+<!-- traceability: {LowOverheadSwitch} -->
+メインスケジューリングループを開始し、READY キューのタスクを順次ディスパッチする。 `{LowOverheadSwitch}`
 | 事前条件 | `init-scheduler` が完了していること。 |
 | 事後条件 | 通常、この関数は戻らない（電源断または致命的エラー時のみ）。 |
 

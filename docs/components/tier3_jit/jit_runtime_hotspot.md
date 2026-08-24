@@ -1,4 +1,4 @@
-# JIT Hotspot Detector コンポーネント設計書
+# JIT Hotspot Detector コンポーネント設計書 {VERIFY_LLM}
 
 ## 1. コンセプト
 <!-- traceability: {LowLatencyJIT} {SimpleJITArchitecture} {HistoryBuffer} {GLOBAL_PeriodicTask} -->

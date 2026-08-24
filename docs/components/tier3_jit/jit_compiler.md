@@ -1,12 +1,12 @@
-# JIT コンパイラ コンポーネント設計書 {VERIFY_FORMAL}
+# JIT コンパイラ コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}
 
 ## 1. コンセプト
 <!-- traceability: {LowLatencyJIT} {JIT_CopyAndPatch} {JIT_ZeroCompileCostTheorem} {SimpleJITArchitecture} {GLOBAL_PeriodicTask} {GLOBAL_IdleDetection} {JIT_Encoder} {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} -->
 JIT Compiler は、WASMバイトコードを実行時にネイティブコードへ変換し、実行速度を向上させる。Execution Engine (`executor`) の一部として、インタープリタと一対の「実行エンジン」として機能する。極小リソース環境（RAM 64KB）において、コンパイルコストを極小化する「Zero Compile Cost 定理」に基づき、最適化を省いた高速な **Copy-and-Patch** 方式を採用する。 `{LowLatencyJIT}` `{JIT_CopyAndPatch}` `{JIT_ZeroCompileCostTheorem}` `{SimpleJITArchitecture}` `{GLOBAL_PeriodicTask}` `{GLOBAL_IdleDetection}` `{JIT_Encoder}` `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}`
 
 ## 2. アーキテクチャ分類
-<!-- traceability: {META_3TierSeparation} {GLOBAL_ComponentHarness} -->
-本コンポーネントは **Tier 3 (詳細リーフコンポーネント: Leaf Component)** に属し、vSoC (`runtime_vsoc.md`) から分解された JIT コンパイルパイプラインおよびマルチバッファキャッシュローテーションを統括する。Copy-and-Patchコード生成、Constexprアセンブラ、エントリスタブ、ホットスポット検出の深層責務は、同じく Tier 3 の各リーフコンポーネントへさらに分割して記述する。 `{META_3TierSeparation}` `{GLOBAL_ComponentHarness}`
+<!-- traceability: {META_3TierSeparation} -->
+本コンポーネントは **Tier 3 (詳細リーフコンポーネント: Leaf Component)** に属し、vSoC (`runtime_vsoc.md`) から分解された JIT コンパイルパイプラインおよびマルチバッファキャッシュローテーションを統括する。Copy-and-Patchコード生成、Constexprアセンブラ、エントリスタブ、ホットスポット検出の深層責務は、同じく Tier 3 の各リーフコンポーネントへさらに分割して記述する。 `{META_3TierSeparation}`
 
 ## 3. 静的モデル
 
@@ -28,7 +28,7 @@ JIT Compiler は、WASMバイトコードを実行時にネイティブコード
 ```mermaid
 graph TD
     subgraph JIT_Layer
-        Harness[jit_harness]
+        Pipeline[jit_pipeline]
         Manager[jit_manager]
         Context[jit_context]
     end

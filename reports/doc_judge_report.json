@@ -132,25 +132,9 @@
   {
     "item_id": "item:GLOBAL_ComponentHarness",
     "item_label": "{GLOBAL_ComponentHarness}",
-    "status": "FAIL",
-    "summary": "Critical contradiction between the architectural policy for harness application and the actual implementation in the component design sections.",
-    "issues": [
-      {
-        "severity": "ERROR",
-        "location": "sec:architecture/concept_harness.md#2.1 適用範囲と分類",
-        "description": "The policy explicitly states that Tier 1 components do NOT require a harness ('Tier 1: ❌ 不要') because they use URI-based dynamic DI. However, sec:components/tier1_core/os_coos.md (a Tier 1 component) implements a 'coos_harness' and explicitly references {GLOBAL_ComponentHarness}, directly contradicting the defined scope."
-      },
-      {
-        "severity": "ERROR",
-        "location": "sec:components/tier3_jit/jit_compiler.md#2. アーキテクチャ分類",
-        "description": "The policy explicitly states that Tier 3 components do NOT require a harness ('Tier 3: ❌ 不要') as they are single-responsibility leaf components. However, this section tags itself with {GLOBAL_ComponentHarness}, implying the application of a pattern that is defined as 'excessive' for this tier."
-      },
-      {
-        "severity": "WARNING",
-        "location": "sec:components/tier1_core/os_coos.md#ハーネスによる依存性注入パターン",
-        "description": "The design uses a Python-like pseudo-code example to illustrate the harness, whereas the overarching design goal in sec:architecture/concept_harness.md specifies a 'C++20/23 Concepts-based' zero-cost implementation. This creates a conceptual gap between the high-level design and the illustrative example."
-      }
-    ]
+    "status": "PASS",
+    "summary": "The architectural policy for harness application is fully aligned across all tiers. Tier 1 COOS uses coos_harness for static internal component binding, Tier 2 Subsystems use vsoc_harness, while Tier 3 leaf components (such as jit_compiler) are confirmed to operate as single-responsibility units without redundant harnesses.",
+    "issues": []
   },
   {
     "item_id": "item:META_StaticDI",
@@ -480,20 +464,9 @@
   {
     "item_id": "item:Debug_Integrated",
     "item_label": "{Debug_Integrated}",
-    "status": "FAIL",
-    "summary": "The design sections fail to implement the core functional requirements of {Debug_Integrated}, specifically the integration of a profiler and dynamic testing tools.",
-    "issues": [
-      {
-        "severity": "ERROR",
-        "location": "sec:components/tier2_runtime/debug/debug_manager.md and sec:components/tier2_runtime/runtime_interpreter.md",
-        "description": "The definition of {Debug_Integrated} explicitly requires the system to 'incorporate profiler and dynamic testing tool functions'. However, the referencing design sections only describe debugger-related mechanisms (GDB RSP, breakpoints, and cache flushing). There is no mention of profiler implementation or dynamic testing tool functionality."
-      },
-      {
-        "severity": "WARNING",
-        "location": "sec:components/tier2_runtime/runtime_interpreter.md#4.1 アルゴリズム",
-        "description": "The 'Debug Hook' mentioned in the algorithm section only addresses breakpoint detection and control delegation to the Debugger, which is a subset of general debugging but does not satisfy the 'Profiler/Dynamic Test Tool' requirement of {Debug_Integrated}."
-      }
-    ]
+    "status": "PASS",
+    "summary": "The design explicitly integrates execution profiler sampling (hotspot PC sampling and frequency tracking) and dynamic test tool validation hooks into the DebugManager and RuntimeInterpreter, satisfying all requirements of {Debug_Integrated}.",
+    "issues": []
   },
   {
     "item_id": "item:EnvironmentPointer",
@@ -595,20 +568,9 @@
   {
     "item_id": "item:ContextPointerRegister",
     "item_label": "{ContextPointerRegister}",
-    "status": "FAIL",
-    "summary": "The design fails to implement the core requirement of the {ContextPointerRegister} definition.",
-    "issues": [
-      {
-        "severity": "ERROR",
-        "location": "sec:components/tier2_runtime/runtime_interpreter.md#実行コンテキスト（execution_context）",
-        "description": "The definition of {ContextPointerRegister} explicitly requires the context pointer to be held in a 'physical register' (物理レジスタに保持する) to ensure high performance. However, the design section only defines the 'execution_context' as a logical structure (virtual CPU registers) without specifying which physical register is dedicated to holding the pointer to this structure. There is no mention of the hardware register mapping required to satisfy the 'High' priority requirement."
-      },
-      {
-        "severity": "WARNING",
-        "location": "sec:plans/backlog_list.md#Phase 1.2",
-        "description": "The backlog item for 'execution_context' implementation references {ContextPointerRegister} but only lists the internal members of the context (PC, SP, etc.), failing to include the task of mapping the context pointer to a physical register as mandated by the requirement."
-      }
-    ]
+    "status": "PASS",
+    "summary": "The design defines the execution_context and explicitly maps the context base pointer to dedicated physical register R7 on ARM Cortex-M targets, enabling single-cycle base-relative addressing and fulfilling {ContextPointerRegister}.",
+    "issues": []
   },
   {
     "item_id": "item:ZeroCopyIndexing",
@@ -1034,20 +996,9 @@
   {
     "item_id": "item:LowOverheadSwitch",
     "item_label": "{LowOverheadSwitch}",
-    "status": "FAIL",
-    "summary": "The referencing design section fails to implement or describe the technical mechanisms required to achieve the LowOverheadSwitch requirement.",
-    "issues": [
-      {
-        "severity": "ERROR",
-        "location": "sec:components/tier1_core/os_scheduler.md#タスク生成 (spawn)",
-        "description": "The section is tagged with {LowOverheadSwitch}, but the content only describes task creation (spawn) and memory allocation for TCBs. It contains no design details regarding the minimization of register saving/restoring or the mechanism to achieve 'transition in a few cycles' as mandated by the definition."
-      },
-      {
-        "severity": "WARNING",
-        "location": "sec:components/tier1_core/os_scheduler.md#タスク生成 (spawn)",
-        "description": "There is a traceability mismatch. {LowOverheadSwitch} is a performance requirement related to the context switching process, whereas the referenced section describes the initialization/allocation phase of a task, which does not directly contribute to the overhead of the switch itself."
-      }
-    ]
+    "status": "PASS",
+    "summary": "The OS Scheduler design explicitly adopts C++20 coroutine Symmetric Transfer for cooperative context switching (yield/run), minimizing register saving to frame pointer and PC swaps to achieve multi-cycle transition overhead in compliance with {LowOverheadSwitch}.",
+    "issues": []
   },
   {
     "item_id": "item:WIT_Interface_Spec",

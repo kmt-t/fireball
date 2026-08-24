@@ -1,5 +1,4 @@
-# HAL コンポーネント設計書
-<!-- traceability: {VERIFY_FORMAL} -->
+# HAL コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}
 
 ## 1. コンセプト
 <!-- traceability: {IPCRouter} {Challenge_InterruptSafety} {TaskPollInterruptFlag} {RSPMinimalSet} {Fast_Path_GPIO} -->

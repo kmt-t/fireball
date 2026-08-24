@@ -1,5 +1,4 @@
-# Interpreter コンポーネント設計書
-<!-- traceability: {VERIFY_FORMAL} -->
+# Interpreter コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}
 
 ## 1. コンセプト
 <!-- traceability: {ThreadedInterpreter} {LowLatencyJIT} {InterpreterContextStackless} {EnvironmentPointer} -->
@@ -48,10 +47,14 @@ graph TD
 <!-- traceability: {PositionIndependentCode} {ContextPointerRegister} {MemoryBoundaryCheck} {EnvironmentPointer} -->
 WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想CPUレジスタ群として設計する。 `{PositionIndependentCode}` `{ContextPointerRegister}`
 
+**物理レジスタ固定 (`{ContextPointerRegister}`)**:
+ARM Cortex-M ターゲットにおいて、`execution_context` へのポインタは物理レジスタ **`R7`** に常駐固定される。これにより、コンテキストメンバへのアクセスがベースポインタ相対ロード（`LDR R0, [R7, #offset]`）の 1 命令・1 サイクルで実行され、メモリアクセスオーバーヘッドを最小化する。
+
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| プログラムカウンタ | 現在実行中の命令を指し示すプログラムカウンタ（WASMバイトコードオフセット） | オフセット | 32bit符号なし |
-| スタックポインタ | オペランドスタックの現在の頂点を指すインデックス/ポインタ | インデックス/ポインタ | 32bit符号なし |
+| コンテキストポインタレジスタ | `execution_context` へのポインタを常時保持する物理レジスタ | 物理レジスタ | ARM Cortex-M: `R7` 固定 `{ContextPointerRegister}` |
+| プログラムカウンタ | 現在実行中の命令を指し示すプログラムカウンタ（WASMバイトコードオフセット） | オフセット | 32bit符号なし (`[R7, #0]`) |
+| スタックポインタ | オペランドスタックの現在の頂点を指すインデックス/ポインタ | インデックス/ポインタ | 32bit符号なし (`[R7, #4]`) |
 | スタック基点 | オペランドスタックのメモリ領域（32bitワード配列 `uint32_t[FB_CONF_STACK_SIZE]`。i64/f64 は 2 スロット消費） | 配列ポインタ | `uint32_t*` (4byteアライン) |
 | リニアメモリ基点 | ゲストリニアメモリの開始アドレス | アドレス値 | 32bit符号なし (64KB境界アライメント) |
 | リニアメモリサイズ | ゲストリニアメモリの有効バイト数（WASM 64KBページまたは8KB/16KB等の部分ページ物理サイズ）。境界チェックに使用 `{MemoryBoundaryCheck}` | バイト数 | 32bit符号なし |
@@ -115,7 +118,7 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
   - ループの先頭に戻る（`br` 等の）ジャンプ時、現在の `exec_trace` がインタープリタを指している場合は JIT キャッシュを再確認する。最新の JIT トレースが存在すれば、`control_frame` を更新し、ネイティブ実行へ切り替える。 `{Interpreter_LazyJITSwitch}`
 - **Hotspot検知**: トレース開始時のPCを履歴バッファに記録する。このバッファは `step` 実行中にのみスタック等に一時保持される揮発的なデータであり、判定終了とともに自動的に破棄される。 `{LowLatencyJIT}` `{SimpleJITArchitecture}`
 - **概算Yield**: トレース実行数ベースで `co_yield` を発行し、協調型マルチタスクに整合させる。 `{Challenge_ApproximateYield}`
-- **デバッグフック**: 命令実行前後でブレークポイント判定を行い、Debugger に制御を委譲する。 `{Debug_Integrated}`
+- **デバッグ・プロファイラフック**: 命令実行前後でブレークポイント判定、実行時PC頻度サンプリング（プロファイラ統合）、およびメモリ/レジスタの動的アサーション検証を行い、Debugger/Profiler に制御を委譲する。 `{Debug_Integrated}`
 
 #### WASM インタプリタ フルセット・コンセプトコード (`concepts/interpreter_concept.py`)
 ```python

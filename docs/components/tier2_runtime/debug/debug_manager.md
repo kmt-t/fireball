@@ -58,15 +58,21 @@ GDB等の外部クライアントに提示する仮想的なCPUレジスタ群�
 | :--- | :--- | :--- | :--- |
 | `PC (Reg 0)` | 現在の実行オフセット。 | オフセット | `context.pc` に連動 |
 | `LR (Reg 1)` | 呼び出し元の戻り先アドレス。 | オフセット | `frame.return_pc` に連動 |
-| `SP (Reg 2)` | オペランドスタックの頂点位置。 | オフセット | `context.stack_ptr` に連動 |
-| `FP (Reg 3)` | 現在のフレームの基点位置。 | オフセット | `frame.frame_base` に連動 |
+| `SP (Reg 2)` | オペランドスタックの頂点位置。 | オフセット | `context.sp_offset` に連動 |
+| `FP (Reg 3)` | 現在のフレームの基点位置。 | オフセット | `frame.local_base` に連動 |
 
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
+<!-- traceability: {DebuggerLabelTableSwitch} {RSPMinimalSet} {Debug_Integrated} -->
 - **コマンド消費**: `poll()` によりコマンドキューから解析済みコマンドを取り出し、実行コンテキストに対して操作を行う。
-- **ステップ実行**: インタープリタを「1命令実行」モードで呼び出し、実行後に `Stopped` 状態へ遷移し、HAL層へ停止理由を通知する。
+- **インタープリタ・フォールバック実行**: デバッガアタッチ中は JIT キャッシュを無効化し、インタープリタのハンドラテーブルをデバッグ用テーブル（`debug_handler_table`）へ切り替えて 1 命令ずつステップ実行またはブレークポイントまで連続実行する。 `{DebuggerLabelTableSwitch}`
+- **ステップ実行**: インタープリタを「1命令実行」モードで呼び出し、実行後に `Stopped` 状態へ遷移し、HAL層へ停止理由（SIGTRAP）を通知する。 `{RSPMinimalSet}`
 - **プロファイリング & 動的テスト**: 各ステップまたはタイマー割り込み契機で実行中 PC をサンプリング記録し、外部ツール（GDB monitor コマンド等）からプロファイルサマリを出力する。また特定メモリアドレスへの動的アサーションを検証する。 `{Debug_Integrated}`
+
+#### デバッガ・インタープリタ結合コンセプトコード (`../concepts/debugger_concept.py`)
+デバッガとインタープリタの結合、GDB RSP パケット処理、統一スタック検査、プロファイラサンプリングの参照実装：
+[`../concepts/debugger_concept.py`](../concepts/debugger_concept.py)
 
 ### 4.2 状態遷移図
 ```mermaid

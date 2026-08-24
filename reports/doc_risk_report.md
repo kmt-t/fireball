@@ -1,6 +1,6 @@
 # Fireball 設計複雑度 & リスク評価レポート (Risk Assessment Report)
 
-- **評価セクション総数**: 677
+- **評価セクション総数**: 678
 - **形式検証 (pyModelChecking) 推奨セクション**: 29
 - **LLM 意味監査 推奨セクション**: 5
 
@@ -134,6 +134,7 @@
 | `components/tier1_interface/ipc_router.md` | 4.3.1 二分探索による O(log N) 低遅延ルックアップ | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.3.1 二分探索による O(log N) 低遅延ルックアップ'. |
 | `components/tier1_interface/ipc_router.md` | サービス検索と接続フロー | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'サービス検索と接続フロー'. |
 | `components/tier1_interface/system_service.md` | 4.2 状態遷移図 | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.2 状態遷移図'. |
+| `components/tier2_runtime/debug/debug_manager.md` | 4.1 アルゴリズム | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.1 アルゴリズム'. |
 | `components/tier2_runtime/runtime_vmmio.md` | 6.1 性能制約と方策 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '6.1 性能制約と方策'. |
 | `components/tier2_runtime/runtime_vsoc.md` | 6.2 メモリ制約と方策 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '6.2 メモリ制約と方策'. |
 | `components/tier3_jit/jit_compiler.md` | バッチコンパイル (周期実行またはアイドル時) | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'バッチコンパイル (周期実行またはアイドル時)'. |
@@ -417,7 +418,6 @@
 | `components/tier1_core/system_syscall.md` | 10. トラップ状態プロトコル | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '10. トラップ状態プロトコル'. |
 | `components/tier1_interface/interface_wit.md` | 4.1. `fireball:host/trap` の定義 | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.1. `fireball:host/trap` の定義'. |
 | `components/tier2_runtime/debug/debug_manager.md` | 3.1 データ構造 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.1 データ構造'. |
-| `components/tier2_runtime/debug/debug_manager.md` | 4.1 アルゴリズム | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.1 アルゴリズム'. |
 | `components/tier2_runtime/debug/debug_manager.md` | デバッガ接続 (`attach`) | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'デバッガ接続 (`attach`)'. |
 | `components/tier2_runtime/debug/debug_manager.md` | コマンド処理 (`poll_commands`) | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'コマンド処理 (`poll_commands`)'. |
 | `components/tier2_runtime/runtime_loader.md` | 関数アクセサ（function_accessor） | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '関数アクセサ（function_accessor）'. |
@@ -610,6 +610,7 @@
 | `components/tier2_runtime/debug/debug_manager.md` | 3. 静的モデル | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3. 静的モデル'. |
 | `components/tier2_runtime/debug/debug_manager.md` | 3.3 主要なクラス・構造体・配列・定数 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.3 主要なクラス・構造体・配列・定数'. |
 | `components/tier2_runtime/debug/debug_manager.md` | 4. 動的モデル | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4. 動的モデル'. |
+| `components/tier2_runtime/debug/debug_manager.md` | デバッガ・インタープリタ結合コンセプトコード (`../concepts/debugger_concept.py`) | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'デバッガ・インタープリタ結合コンセプトコード (`../concepts/debugger_concept.py`)'. |
 | `components/tier2_runtime/debug/debug_manager.md` | 4.3 内部シーケンス | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.3 内部シーケンス'. |
 | `components/tier2_runtime/debug/debug_manager.md` | 5. インターフェイス定義 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '5. インターフェイス定義'. |
 | `components/tier2_runtime/debug/debug_manager.md` | 5.1 公開API | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '5.1 公開API'. |

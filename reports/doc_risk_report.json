@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-08-24T01:30:49.615689+00:00",
+  "generated_at": "2026-08-24T01:53:52.096935+00:00",
   "backend": "heuristic",
-  "total_evaluated": 677,
+  "total_evaluated": 678,
   "formal_candidates_count": 29,
   "llm_candidates_count": 5,
-  "sections_scanned": 677,
+  "sections_scanned": 678,
   "max_sections": 0,
   "doc_hashes": {
     "architecture/architecture_overview.md": "30be52ed847f1fa7ff9f50980552e989dab9727751748a3e5874505214cc81d7",
@@ -21,7 +21,7 @@
     "components/tier1_interface/ipc_router.md": "4938ac847d45aa0bdd253b3f39929cdeb768e8c2fbee3c233eab954f9b621ae6",
     "components/tier1_interface/system_service.md": "7c98009196d56c50c4d1d27269f38eb51d4fe1fa654aedb51dba7c496cd5fe62",
     "components/tier2_runtime/debug/debug_gdb_rsp.md": "f07fbc1fbe307552ce65dbe964361442c7df855ac18cce53dc59684373c6befc",
-    "components/tier2_runtime/debug/debug_manager.md": "14d98e8ec8d1ed0a1dfb253077d8f580234075811cbff5e216d09e02e4271c54",
+    "components/tier2_runtime/debug/debug_manager.md": "1535441dabc84134258d4c4d5a6a851a9d19ebe8b2cbd1ec20d1a3e2ba2c4e2c",
     "components/tier2_runtime/runtime_interpreter.md": "0706a2f4ed671d208cffcc5d570bacd3bb08dcc3c8e27d29bd6dad2fad1b19c7",
     "components/tier2_runtime/runtime_loader.md": "591c6d491434e54f39eed5c48ae3216fc1b0ca1e2299044161cccac48f93dca5",
     "components/tier2_runtime/runtime_vmmio.md": "8edb9d58ad84209d782e87754f2ed0ae4d04a1dfe833dd507afd5fc386cd5de2",
@@ -878,6 +878,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '4.2 状態遷移図'."
+    },
+    {
+      "section_id": "sec:components/tier2_runtime/debug/debug_manager.md#4.1 アルゴリズム",
+      "file_path": "components/tier2_runtime/debug/debug_manager.md",
+      "heading": "4.1 アルゴリズム",
+      "tier": 2,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '4.1 アルゴリズム'."
     },
     {
       "section_id": "sec:components/tier2_runtime/runtime_vmmio.md#6.1 性能制約と方策",
@@ -4882,19 +4895,6 @@
       "summary": "Independent heuristic evaluation for '3.1 データ構造'."
     },
     {
-      "section_id": "sec:components/tier2_runtime/debug/debug_manager.md#4.1 アルゴリズム",
-      "file_path": "components/tier2_runtime/debug/debug_manager.md",
-      "heading": "4.1 アルゴリズム",
-      "tier": 2,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '4.1 アルゴリズム'."
-    },
-    {
       "section_id": "sec:components/tier2_runtime/debug/debug_manager.md#デバッガ接続 (`attach`)",
       "file_path": "components/tier2_runtime/debug/debug_manager.md",
       "heading": "デバッガ接続 (`attach`)",
@@ -7508,6 +7508,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '4. 動的モデル'."
+    },
+    {
+      "section_id": "sec:components/tier2_runtime/debug/debug_manager.md#デバッガ・インタープリタ結合コンセプトコード (`../concepts/debugger_concept.py`)",
+      "file_path": "components/tier2_runtime/debug/debug_manager.md",
+      "heading": "デバッガ・インタープリタ結合コンセプトコード (`../concepts/debugger_concept.py`)",
+      "tier": 2,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for 'デバッガ・インタープリタ結合コンセプトコード (`../concepts/debugger_concept.py`)'."
     },
     {
       "section_id": "sec:components/tier2_runtime/debug/debug_manager.md#4.3 内部シーケンス",

@@ -558,6 +558,7 @@
     ],
     "DebuggerLabelTableSwitch": [
       "sec:components/tier2_runtime/debug/debug_manager.md#1. コンセプト",
+      "sec:components/tier2_runtime/debug/debug_manager.md#4.1 アルゴリズム",
       "sec:components/tier2_runtime/debug/debug_manager.md#6.1 性能制約と方策"
     ],
     "Debugger_Jit_Flush": [
@@ -1206,6 +1207,7 @@
     "RSPMinimalSet": [
       "sec:components/tier2_runtime/debug/debug_gdb_rsp.md#1. 概要",
       "sec:components/tier2_runtime/debug/debug_manager.md#1. コンセプト",
+      "sec:components/tier2_runtime/debug/debug_manager.md#4.1 アルゴリズム",
       "sec:components/tier2_runtime/debug/debug_manager.md#コマンド処理 (`poll_commands`)",
       "sec:components/tier2_runtime/debug/debug_manager.md#仮想レジスタセット（virtual_register_set）",
       "sec:components/tier3_platform/platform_hal.md#1. コンセプト"
@@ -1690,7 +1692,7 @@
     "sec:components/tier2_runtime/debug/debug_manager.md#3.2 内部ブロック図": "a3790205be80ff36346bc1261b2ec4a76891a294f1e7e51b35141c63cd4622d5",
     "sec:components/tier2_runtime/debug/debug_manager.md#3.3 主要なクラス・構造体・配列・定数": "343760f0b594de0591386397610b0f816a7706c6df4f44c8f027a01d6c1e01a0",
     "sec:components/tier2_runtime/debug/debug_manager.md#4. 動的モデル": "341dff8c7275b6011b54ff1bbf2ddf06f6c8faa457638ff164c4b2df64ef68f0",
-    "sec:components/tier2_runtime/debug/debug_manager.md#4.1 アルゴリズム": "e7c206969ad1ff9a06215ae18d2f2c924e57095a7b76bb3a16c75ccb26ed2bcf",
+    "sec:components/tier2_runtime/debug/debug_manager.md#4.1 アルゴリズム": "715391d29d38b375f9704e66e9f889722e72ac89e782bc042b61a738b848620b",
     "sec:components/tier2_runtime/debug/debug_manager.md#4.2 状態遷移図": "f85a44d9543e353cb9f9fe772650d1b18635d29249477d1585ae41f19ff00f5d",
     "sec:components/tier2_runtime/debug/debug_manager.md#4.3 内部シーケンス": "1df70aeea133c6038792b9fa860fc7888ca87db6464c2a7ef98caf8fa63d29b1",
     "sec:components/tier2_runtime/debug/debug_manager.md#5. インターフェイス定義": "7fb2c3f821c8108eaeee550240364da2e99fa84646a9aedec1b6dc4e18c54849",
@@ -1702,10 +1704,11 @@
     "sec:components/tier2_runtime/debug/debug_manager.md#6.3 安全性制約と方策": "ff43c9f9ff6268c05a3c43b2e9a7ca7ddfa02f69739e43b71318c2acd14e46a1",
     "sec:components/tier2_runtime/debug/debug_manager.md#Debug Manager コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}": "69bb784c22a968fbbf463e9d789d9847ac8eb89e3c46be8f6bff1b6e98546605",
     "sec:components/tier2_runtime/debug/debug_manager.md#コマンド処理 (`poll_commands`)": "cb0c5adc28c97ec0d65fdf7097338145b02757d26ad42de307b95186a7f45a3d",
+    "sec:components/tier2_runtime/debug/debug_manager.md#デバッガ・インタープリタ結合コンセプトコード (`../concepts/debugger_concept.py`)": "e9d47fea763617e68495bfe8cb7aad37c6d3c52b5d676b915c9875388b2cf5da",
     "sec:components/tier2_runtime/debug/debug_manager.md#デバッガ接続 (`attach`)": "97b6e10e774668737419684f1609d93696062e2dffd88831ad674952e173e844",
     "sec:components/tier2_runtime/debug/debug_manager.md#デバッガ（Debugger）クラス": "c5659bf3f7bf9a830728f02566456754114de099b4d483eea268a884a6c74e53",
     "sec:components/tier2_runtime/debug/debug_manager.md#デバッグコマンド処理シーケンス": "303d3d3498615e3dca772af40d3a2a80b990d0f1383b1c9e40f51a1865c23716",
-    "sec:components/tier2_runtime/debug/debug_manager.md#仮想レジスタセット（virtual_register_set）": "5239231984cd9cd973fa4420b6065632179c1a52dc9f0dc5b3e590773903b3cb",
+    "sec:components/tier2_runtime/debug/debug_manager.md#仮想レジスタセット（virtual_register_set）": "da32c17e7e257190b1c7fc9de6de5c3d289ca7627a2a00a0a5e8b458494109cb",
     "sec:components/tier2_runtime/debug/debug_manager.md#命令ステップ実行 (`step_instruction`)": "907e7b20caa605995d9a8c209ffb6acd47968dc336186beef0a06c748d6e64ec",
     "sec:components/tier2_runtime/runtime_interpreter.md#1. コンセプト": "b645ae1fc5d76eab78587c9c0930248010c5425276e43c26395834e3b866944e",
     "sec:components/tier2_runtime/runtime_interpreter.md#2. アーキテクチャ分類": "e7025e54f5c21ad66c17ee1035685fd15b531a392fc56a287fe660392c1507ad",

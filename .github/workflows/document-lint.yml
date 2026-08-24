@@ -15,6 +15,9 @@ jobs:
       uses: actions/checkout@v4
       with:
         submodules: true
+        # Full history so `origin/<base>` is resolvable below — a PR checkout
+        # otherwise only fetches the merge commit, not the base branch's ref.
+        fetch-depth: 0
 
     - name: Install uv
       uses: astral-sh/setup-uv@v7
@@ -24,3 +27,27 @@ jobs:
     - name: Run Mechanical Audits
       run: |
         ./tools/run_all_tests.sh
+
+    - name: LLM Semantic Audit (changed sections only)
+      # PR-only: the comparison needs a base-branch lockfile to diff against.
+      # This is a fast, independent smoke check on the sections this PR
+      # actually touches — it does not read or write reports/doc_judge_report.json,
+      # which stays the full committed audit maintained by `spec-integrator sync`
+      # + `judge --exhaustive` run locally, per tools/README.md.
+      if: github.event_name == 'pull_request'
+      env:
+        SAKURA_API_KEY: ${{ secrets.SAKURA_API_KEY }}
+      run: |
+        git show "origin/${{ github.base_ref }}:spec-consistency.lock" > /tmp/base.lock
+        uv run --project tools/spec-integrator python -m spec_integrator.cli judge \
+          --config spec-integrator.yaml --backend sakura \
+          --changed-only --baseline /tmp/base.lock --min-references 0 \
+          -o /tmp/pr_changed_audit.json -r /tmp/pr_changed_audit.md
+
+    - name: Upload changed-section audit report
+      if: always() && github.event_name == 'pull_request'
+      uses: actions/upload-artifact@v4
+      with:
+        name: pr-changed-audit
+        path: /tmp/pr_changed_audit.md
+        if-no-files-found: ignore

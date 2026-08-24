@@ -12,10 +12,10 @@ The design of Fireball is built on three core pillars: a "Cooperative Scheduler"
 
 ## Key Components
 
-- **COOS Kernel (Tier 1)**: Single-threaded cooperative OS running a pure FIFO Round-Robin scheduler with an isolated Idle slot, managing coroutines (`co_yield`), interrupt flags, and memory isolation.
-- **IPC Router (Tier 1)**: Handles URI-based service discovery, role-based access control, and zero-copy channel ownership handoffs following strict acyclic client-server topologies.
-- **vSoC Runtime & JIT Compiler (Tier 2)**: Includes the WASM execution engine, debugger, and 3-bank rotation JIT compiler (Active / Warm / Oldest) with MPU-enforced W^X protection.
-- **Platform & HAL (Tier 3)**: Provides hardware abstraction and drivers (UART, GPIO, Timers) via IPC and WIT (WebAssembly Interface Types) specifications.
+- **COOS Kernel & IPC Router (Tier 1)**: Single-threaded cooperative OS running a pure FIFO Round-Robin scheduler with an isolated Idle slot, managing coroutines (`co_yield`), interrupt flags, role-based IPC routing, and zero-copy rendezvous channel handoffs (`docs/components/tier1_core/`, `docs/components/tier1_interface/`).
+- **vSoC Subsystem & Interpreter (Tier 2)**: WASM execution engine featuring a stackless fast interpreter with a unified stack layout (inlining context, CallFrames, locals, and operands), vMMIO virtual address router with TLB cache, and GDB RSP debug controller (`docs/components/tier2_runtime/`).
+- **Copy-and-Patch JIT Subsystem (Tier 3)**: Near-zero compilation cost JIT engine decomposed from vSoC, utilizing precompiled Thumb-2 stencil templates, constexpr assembler, and a 3-bank rotating code cache (Active / Warm / Oldest) with MPU-enforced W^X protection (`docs/components/tier3_jit/`).
+- **Platform & Hardware Abstraction Layer (Tier 3)**: Low-level hardware drivers (UART, GPIO, Timers) and physical memory manager exposed via IPC and WIT (WebAssembly Interface Types) specifications (`docs/components/tier3_platform/`).
 
 ## Development Environment and Build
 
@@ -67,7 +67,7 @@ All Fireball development is strictly governed by the specifications in `docs/` a
 
 - **Top-Level Requirements**: `docs/requires/`
 - **Architecture & Metamodels**: `docs/architecture/`
-- **Component Specifications**: `docs/components/` (Tier 1 Core/Interface, Tier 2 Runtime/JIT, Tier 3 Platform)
+- **Component Specifications**: `docs/components/` (Tier 1 Core/Interface, Tier 2 Runtime, Tier 3 Platform/JIT)
 - **Development Guidelines**: `.agents/rules/development-policy.md`
 - **Verification Reports**: `reports/doc_report.md`, `reports/doc_risk_report.md`
 

@@ -4172,7 +4172,7 @@
       "label": "4. 動的モデル",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 108,
+      "line": 109,
       "tier": 2,
       "metadata": {}
     },
@@ -4181,7 +4181,7 @@
       "label": "4.1 アルゴリズム",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 110,
+      "line": 111,
       "tier": 2,
       "metadata": {}
     },
@@ -4190,7 +4190,7 @@
       "label": "{Interpreter_LazyJITSwitch}",
       "type": "item",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 110,
+      "line": 111,
       "tier": null,
       "metadata": {}
     },
@@ -4199,7 +4199,7 @@
       "label": "{SimpleJITArchitecture}",
       "type": "item",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 110,
+      "line": 111,
       "tier": null,
       "metadata": {}
     },
@@ -4208,7 +4208,7 @@
       "label": "WASM インタプリタ フルセット・コンセプトコード (`concepts/interpreter_concept.py`)",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 123,
+      "line": 131,
       "tier": 2,
       "metadata": {}
     },
@@ -4217,7 +4217,7 @@
       "label": "統合 Tiered ランタイムエンジン・コンセプトコード (`concepts/runtime_engine_concept.py`)",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 188,
+      "line": 196,
       "tier": 2,
       "metadata": {}
     },
@@ -4226,7 +4226,7 @@
       "label": "4.2 状態遷移図",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 191,
+      "line": 199,
       "tier": 2,
       "metadata": {}
     },
@@ -4235,7 +4235,7 @@
       "label": "4.3 内部シーケンス",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 204,
+      "line": 212,
       "tier": 2,
       "metadata": {}
     },
@@ -4244,7 +4244,7 @@
       "label": "Interpreter 実行シーケンス",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 206,
+      "line": 214,
       "tier": 2,
       "metadata": {}
     },
@@ -4253,7 +4253,7 @@
       "label": "5. インターフェイス定義",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 227,
+      "line": 235,
       "tier": 2,
       "metadata": {}
     },
@@ -4262,7 +4262,7 @@
       "label": "5.1 公開API",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 229,
+      "line": 237,
       "tier": 2,
       "metadata": {}
     },
@@ -4271,7 +4271,7 @@
       "label": "初期化（initialize）",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 232,
+      "line": 240,
       "tier": 2,
       "metadata": {}
     },
@@ -4280,7 +4280,7 @@
       "label": "実行ステップ (`run_step`)",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 246,
+      "line": 254,
       "tier": 2,
       "metadata": {}
     },
@@ -4289,7 +4289,7 @@
       "label": "割り込み同期 (`sync_interrupts`)",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 257,
+      "line": 265,
       "tier": 2,
       "metadata": {}
     },
@@ -4298,7 +4298,7 @@
       "label": "5.2 URI/IPCインターフェイス",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 273,
+      "line": 281,
       "tier": 2,
       "metadata": {}
     },
@@ -4307,7 +4307,7 @@
       "label": "5.3 関連コンポーネントとの連携",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 277,
+      "line": 285,
       "tier": 2,
       "metadata": {}
     },
@@ -4316,7 +4316,7 @@
       "label": "6. 制約達成の方策",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 286,
+      "line": 294,
       "tier": 2,
       "metadata": {}
     },
@@ -4325,7 +4325,7 @@
       "label": "6.1 性能制約と方策",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 288,
+      "line": 296,
       "tier": 2,
       "metadata": {}
     },
@@ -4334,7 +4334,7 @@
       "label": "6.2 メモリ制約と方策",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 293,
+      "line": 301,
       "tier": 2,
       "metadata": {}
     },
@@ -4343,7 +4343,7 @@
       "label": "6.3 安全性制約と方策",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 298,
+      "line": 306,
       "tier": 2,
       "metadata": {}
     },
@@ -4352,7 +4352,7 @@
       "label": "7. 参考実装リスト",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 303,
+      "line": 311,
       "tier": 2,
       "metadata": {}
     },
@@ -5833,11 +5833,20 @@
       "metadata": {}
     },
     {
+      "id": "sec:components/tier3_jit/jit_compiler.md#JIT トレース実行シグネチャ (`exec_trace`)",
+      "label": "JIT トレース実行シグネチャ (`exec_trace`)",
+      "type": "section",
+      "file_path": "components/tier3_jit/jit_compiler.md",
+      "line": 93,
+      "tier": 3,
+      "metadata": {}
+    },
+    {
       "id": "sec:components/tier3_jit/jit_compiler.md#3.4 公開API",
       "label": "3.4 公開API",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 93,
+      "line": 102,
       "tier": 3,
       "metadata": {}
     },
@@ -5846,7 +5855,7 @@
       "label": "JITコンパイル実行 (`jit_compile`)",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 96,
+      "line": 105,
       "tier": 3,
       "metadata": {}
     },
@@ -5855,7 +5864,7 @@
       "label": "JITコード検索 (`jit_lookup`)",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 104,
+      "line": 113,
       "tier": 3,
       "metadata": {}
     },
@@ -5864,7 +5873,7 @@
       "label": "4. 動的モデル",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 112,
+      "line": 121,
       "tier": 3,
       "metadata": {}
     },
@@ -5873,7 +5882,7 @@
       "label": "4.1 アルゴリズム",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 114,
+      "line": 123,
       "tier": 3,
       "metadata": {}
     },
@@ -5882,7 +5891,7 @@
       "label": "Copy-and-Patch コンパイル手順",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 116,
+      "line": 125,
       "tier": 3,
       "metadata": {}
     },
@@ -5891,7 +5900,7 @@
       "label": "JITトレース検索 & 3面キャッシュ代謝アルゴリズム",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 127,
+      "line": 139,
       "tier": 3,
       "metadata": {}
     },
@@ -5900,7 +5909,7 @@
       "label": "トレース・チェイニング（連鎖実行）",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 151,
+      "line": 163,
       "tier": 3,
       "metadata": {}
     },
@@ -5909,7 +5918,7 @@
       "label": "{JIT_LazyChaining}",
       "type": "item",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 151,
+      "line": 163,
       "tier": null,
       "metadata": {}
     },
@@ -5918,7 +5927,7 @@
       "label": "統合 Tiered ランタイムエンジン・コンセプトコード (`../tier2_runtime/concepts/runtime_engine_concept.py`)",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 162,
+      "line": 174,
       "tier": 3,
       "metadata": {}
     },
@@ -5927,7 +5936,7 @@
       "label": "ホットスポット判定 (yield 時)",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 165,
+      "line": 177,
       "tier": 3,
       "metadata": {}
     },
@@ -5936,7 +5945,7 @@
       "label": "バッチコンパイル (周期実行またはアイドル時)",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 171,
+      "line": 183,
       "tier": 3,
       "metadata": {}
     },
@@ -5945,7 +5954,7 @@
       "label": "{JIT_ReverseCompilationOrder}",
       "type": "item",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 171,
+      "line": 183,
       "tier": null,
       "metadata": {}
     },
@@ -5954,7 +5963,7 @@
       "label": "4.2 状態遷移図",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 177,
+      "line": 189,
       "tier": 3,
       "metadata": {}
     },
@@ -5963,7 +5972,7 @@
       "label": "4.3 内部シーケンス",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 195,
+      "line": 207,
       "tier": 3,
       "metadata": {}
     },
@@ -5972,7 +5981,7 @@
       "label": "JITコンパイルおよび検索シーケンス",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 197,
+      "line": 209,
       "tier": 3,
       "metadata": {}
     },
@@ -5981,7 +5990,7 @@
       "label": "5. 検証",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 234,
+      "line": 246,
       "tier": 3,
       "metadata": {}
     },
@@ -5990,7 +5999,7 @@
       "label": "5.1 直行表: 検索・昇格・GC",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 236,
+      "line": 248,
       "tier": 3,
       "metadata": {}
     },
@@ -5999,7 +6008,7 @@
       "label": "5.2 内部コンポーネントのデコンポジション",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 249,
+      "line": 261,
       "tier": 3,
       "metadata": {}
     },
@@ -6008,7 +6017,7 @@
       "label": "6. インターフェイス定義",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 262,
+      "line": 274,
       "tier": 3,
       "metadata": {}
     },
@@ -6017,7 +6026,7 @@
       "label": "6.1 公開API",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 264,
+      "line": 276,
       "tier": 3,
       "metadata": {}
     },
@@ -6026,7 +6035,7 @@
       "label": "初期化（initialize）",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 268,
+      "line": 280,
       "tier": 3,
       "metadata": {}
     },
@@ -6035,7 +6044,7 @@
       "label": "トレース検索（lookup_trace）",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 283,
+      "line": 295,
       "tier": 3,
       "metadata": {}
     },
@@ -6044,7 +6053,7 @@
       "label": "カード状態取得（get_card_state）",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 292,
+      "line": 304,
       "tier": 3,
       "metadata": {}
     },
@@ -6053,7 +6062,7 @@
       "label": "検索範囲取得（get_search_range）",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 301,
+      "line": 313,
       "tier": 3,
       "metadata": {}
     },
@@ -6062,7 +6071,7 @@
       "label": "バッチコンパイル処理（process_batch_compile）",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 310,
+      "line": 322,
       "tier": 3,
       "metadata": {}
     },
@@ -6071,7 +6080,7 @@
       "label": "6.2 URI/IPCインターフェイス",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 321,
+      "line": 333,
       "tier": 3,
       "metadata": {}
     },
@@ -6080,7 +6089,7 @@
       "label": "7. 制約達成の方策",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 325,
+      "line": 337,
       "tier": 3,
       "metadata": {}
     },
@@ -6089,7 +6098,7 @@
       "label": "7.1 性能制約と方策",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 327,
+      "line": 339,
       "tier": 3,
       "metadata": {}
     },
@@ -6098,7 +6107,7 @@
       "label": "7.2 安全性制約と方策",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 335,
+      "line": 347,
       "tier": 3,
       "metadata": {}
     },
@@ -6107,7 +6116,7 @@
       "label": "8. 設計判断 (ADR)",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 343,
+      "line": 355,
       "tier": 3,
       "metadata": {}
     },
@@ -6116,7 +6125,7 @@
       "label": "{ADR_ScalableCodeOffset}",
       "type": "item",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 343,
+      "line": 355,
       "tier": null,
       "metadata": {}
     },
@@ -6125,7 +6134,7 @@
       "label": "{ADR_SafeQueuingOnHotMiss}",
       "type": "item",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 343,
+      "line": 355,
       "tier": null,
       "metadata": {}
     },
@@ -6224,7 +6233,7 @@
       "label": "4. 動的モデル",
       "type": "section",
       "file_path": "components/tier3_jit/jit_engine_copy_patch.md",
-      "line": 46,
+      "line": 48,
       "tier": 3,
       "metadata": {}
     },
@@ -6233,7 +6242,7 @@
       "label": "4.1 アルゴリズム",
       "type": "section",
       "file_path": "components/tier3_jit/jit_engine_copy_patch.md",
-      "line": 48,
+      "line": 50,
       "tier": 3,
       "metadata": {}
     },
@@ -6242,7 +6251,7 @@
       "label": "トレースコンパイル手順",
       "type": "section",
       "file_path": "components/tier3_jit/jit_engine_copy_patch.md",
-      "line": 51,
+      "line": 53,
       "tier": 3,
       "metadata": {}
     },
@@ -6251,7 +6260,7 @@
       "label": "Copy-and-Patch JIT フルセット・コンセプトコード (`concepts/jit_copy_patch_concept.py`)",
       "type": "section",
       "file_path": "components/tier3_jit/jit_engine_copy_patch.md",
-      "line": 61,
+      "line": 66,
       "tier": 3,
       "metadata": {}
     },
@@ -6260,7 +6269,7 @@
       "label": "4.2 状態遷移図",
       "type": "section",
       "file_path": "components/tier3_jit/jit_engine_copy_patch.md",
-      "line": 137,
+      "line": 142,
       "tier": 3,
       "metadata": {}
     },
@@ -6269,7 +6278,7 @@
       "label": "4.3 内部シーケンス",
       "type": "section",
       "file_path": "components/tier3_jit/jit_engine_copy_patch.md",
-      "line": 140,
+      "line": 145,
       "tier": 3,
       "metadata": {}
     },
@@ -6278,7 +6287,7 @@
       "label": "5. インターフェイス定義",
       "type": "section",
       "file_path": "components/tier3_jit/jit_engine_copy_patch.md",
-      "line": 159,
+      "line": 164,
       "tier": 3,
       "metadata": {}
     },
@@ -6287,7 +6296,7 @@
       "label": "5.1 公開API",
       "type": "section",
       "file_path": "components/tier3_jit/jit_engine_copy_patch.md",
-      "line": 161,
+      "line": 166,
       "tier": 3,
       "metadata": {}
     },
@@ -6296,7 +6305,7 @@
       "label": "トレースコンパイル（compile_trace）",
       "type": "section",
       "file_path": "components/tier3_jit/jit_engine_copy_patch.md",
-      "line": 164,
+      "line": 169,
       "tier": 3,
       "metadata": {}
     },
@@ -6305,7 +6314,7 @@
       "label": "6. 制約達成の方策",
       "type": "section",
       "file_path": "components/tier3_jit/jit_engine_copy_patch.md",
-      "line": 173,
+      "line": 178,
       "tier": 3,
       "metadata": {}
     },
@@ -6314,7 +6323,7 @@
       "label": "6.1 性能制約と最優先設計方針",
       "type": "section",
       "file_path": "components/tier3_jit/jit_engine_copy_patch.md",
-      "line": 175,
+      "line": 180,
       "tier": 3,
       "metadata": {}
     },
@@ -6323,7 +6332,7 @@
       "label": "6.2 3層分離設計 (3-Tier Separation)",
       "type": "section",
       "file_path": "components/tier3_jit/jit_engine_copy_patch.md",
-      "line": 181,
+      "line": 186,
       "tier": 3,
       "metadata": {}
     },
@@ -6440,7 +6449,7 @@
       "label": "5. インターフェイス定義",
       "type": "section",
       "file_path": "components/tier3_jit/jit_runtime_entry.md",
-      "line": 81,
+      "line": 88,
       "tier": 3,
       "metadata": {}
     },
@@ -6449,7 +6458,7 @@
       "label": "5.1 公開API",
       "type": "section",
       "file_path": "components/tier3_jit/jit_runtime_entry.md",
-      "line": 83,
+      "line": 90,
       "tier": 3,
       "metadata": {}
     },
@@ -6458,7 +6467,7 @@
       "label": "検索（lookup）",
       "type": "section",
       "file_path": "components/tier3_jit/jit_runtime_entry.md",
-      "line": 86,
+      "line": 93,
       "tier": 3,
       "metadata": {}
     },
@@ -6467,7 +6476,7 @@
       "label": "エントリ登録（register_entry）",
       "type": "section",
       "file_path": "components/tier3_jit/jit_runtime_entry.md",
-      "line": 95,
+      "line": 102,
       "tier": 3,
       "metadata": {}
     },
@@ -6476,7 +6485,7 @@
       "label": "6. 制約達成の方策",
       "type": "section",
       "file_path": "components/tier3_jit/jit_runtime_entry.md",
-      "line": 104,
+      "line": 111,
       "tier": 3,
       "metadata": {}
     },
@@ -6485,7 +6494,7 @@
       "label": "6.1 性能制約",
       "type": "section",
       "file_path": "components/tier3_jit/jit_runtime_entry.md",
-      "line": 106,
+      "line": 113,
       "tier": 3,
       "metadata": {}
     },
@@ -6494,7 +6503,7 @@
       "label": "6.2 メモリ制約",
       "type": "section",
       "file_path": "components/tier3_jit/jit_runtime_entry.md",
-      "line": 109,
+      "line": 116,
       "tier": 3,
       "metadata": {}
     },
@@ -7286,7 +7295,7 @@
       "label": "Phase 1.3: Copy-and-Patch JIT Compiler (`jit_compiler`)",
       "type": "section",
       "file_path": "plans/backlog_list.md",
-      "line": 53,
+      "line": 54,
       "tier": "meta",
       "metadata": {}
     },
@@ -7295,7 +7304,7 @@
       "label": "Phase 1.4: Standalone vSoC Harness & WAMR Benchmark (`runtime_vsoc`)",
       "type": "section",
       "file_path": "plans/backlog_list.md",
-      "line": 61,
+      "line": 62,
       "tier": "meta",
       "metadata": {}
     },
@@ -7304,7 +7313,7 @@
       "label": "Phase 2: Integration（周辺コンポーネント統合 / 将来予定）",
       "type": "section",
       "file_path": "plans/backlog_list.md",
-      "line": 69,
+      "line": 70,
       "tier": "meta",
       "metadata": {}
     },
@@ -7313,7 +7322,7 @@
       "label": "Phase 3: PoC（ターゲットボード移植 / 将来予定）",
       "type": "section",
       "file_path": "plans/backlog_list.md",
-      "line": 79,
+      "line": 80,
       "tier": "meta",
       "metadata": {}
     },
@@ -11877,6 +11886,18 @@
       "metadata": {}
     },
     {
+      "source": "sec:components/tier2_runtime/runtime_interpreter.md#オプコードハンドラ / トレース実行（opcode_handler / exec_trace）",
+      "target": "item:ContextPointerRegister",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier2_runtime/runtime_interpreter.md#オプコードハンドラ / トレース実行（opcode_handler / exec_trace）",
+      "target": "item:EnvironmentPointer",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
       "source": "sec:components/tier2_runtime/runtime_interpreter.md#Interpreter コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}",
       "target": "sec:components/tier2_runtime/runtime_interpreter.md#4. 動的モデル",
       "relation": "contains",
@@ -11927,6 +11948,18 @@
     {
       "source": "sec:components/tier2_runtime/runtime_interpreter.md#4.1 アルゴリズム",
       "target": "item:Debug_Integrated",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier2_runtime/runtime_interpreter.md#4.1 アルゴリズム",
+      "target": "item:ContextPointerRegister",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier2_runtime/runtime_interpreter.md#4.1 アルゴリズム",
+      "target": "item:EnvironmentPointer",
       "relation": "refers_to",
       "metadata": {}
     },
@@ -13149,6 +13182,12 @@
       "metadata": {}
     },
     {
+      "source": "sec:components/tier2_runtime/runtime_vsoc.md#4.1 アルゴリズム",
+      "target": "item:ContextPointerRegister",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
       "source": "sec:components/tier2_runtime/runtime_vsoc.md#4. 動的モデル",
       "target": "sec:components/tier2_runtime/runtime_vsoc.md#4.2 状態遷移図 (SysML SMD: vSoC Engine ライフサイクル)",
       "relation": "contains",
@@ -14061,6 +14100,30 @@
       "metadata": {}
     },
     {
+      "source": "sec:components/tier3_jit/jit_compiler.md#3.3 主要なクラス・構造体・配列・定数",
+      "target": "sec:components/tier3_jit/jit_compiler.md#JIT トレース実行シグネチャ (`exec_trace`)",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier3_jit/jit_compiler.md#JIT トレース実行シグネチャ (`exec_trace`)",
+      "target": "item:JIT_RuntimeAPI_Fallback",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier3_jit/jit_compiler.md#JIT トレース実行シグネチャ (`exec_trace`)",
+      "target": "item:ContextPointerRegister",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier3_jit/jit_compiler.md#JIT トレース実行シグネチャ (`exec_trace`)",
+      "target": "item:EnvironmentPointer",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
       "source": "sec:components/tier3_jit/jit_compiler.md#3. 静的モデル",
       "target": "sec:components/tier3_jit/jit_compiler.md#3.4 公開API",
       "relation": "contains",
@@ -14105,6 +14168,18 @@
     {
       "source": "sec:components/tier3_jit/jit_compiler.md#Copy-and-Patch コンパイル手順",
       "target": "item:META_AI_Native_Dev",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier3_jit/jit_compiler.md#Copy-and-Patch コンパイル手順",
+      "target": "item:JIT_RuntimeAPI_Fallback",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier3_jit/jit_compiler.md#Copy-and-Patch コンパイル手順",
+      "target": "item:ContextPointerRegister",
       "relation": "refers_to",
       "metadata": {}
     },
@@ -14505,6 +14580,24 @@
       "metadata": {}
     },
     {
+      "source": "sec:components/tier3_jit/jit_engine_copy_patch.md#命令テンプレート（jit_template）",
+      "target": "item:JIT_RegisterMapping",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier3_jit/jit_engine_copy_patch.md#命令テンプレート（jit_template）",
+      "target": "item:ContextPointerRegister",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier3_jit/jit_engine_copy_patch.md#命令テンプレート（jit_template）",
+      "target": "item:EnvironmentPointer",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
       "source": "sec:components/tier3_jit/jit_engine_copy_patch.md#Copy-and-Patch Engine コンポーネント設計書",
       "target": "sec:components/tier3_jit/jit_engine_copy_patch.md#4. 動的モデル",
       "relation": "contains",
@@ -14536,8 +14629,20 @@
     },
     {
       "source": "sec:components/tier3_jit/jit_engine_copy_patch.md#4.1 アルゴリズム",
+      "target": "item:ContextPointerRegister",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier3_jit/jit_engine_copy_patch.md#4.1 アルゴリズム",
       "target": "sec:components/tier3_jit/jit_engine_copy_patch.md#トレースコンパイル手順",
       "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier3_jit/jit_engine_copy_patch.md#トレースコンパイル手順",
+      "target": "item:JIT_RuntimeAPI_Fallback",
+      "relation": "refers_to",
       "metadata": {}
     },
     {
@@ -15748,13 +15853,13 @@
     },
     {
       "source": "sec:plans/backlog_list.md#Phase 1.2: WASM Stackless Fast Interpreter (`runtime_interpreter`)",
-      "target": "item:MemoryBoundaryCheck",
+      "target": "item:ThreadedInterpreter",
       "relation": "refers_to",
       "metadata": {}
     },
     {
       "source": "sec:plans/backlog_list.md#Phase 1.2: WASM Stackless Fast Interpreter (`runtime_interpreter`)",
-      "target": "item:ThreadedInterpreter",
+      "target": "item:MemoryBoundaryCheck",
       "relation": "refers_to",
       "metadata": {}
     },
@@ -15791,6 +15896,12 @@
     {
       "source": "sec:plans/backlog_list.md#Phase 1.3: Copy-and-Patch JIT Compiler (`jit_compiler`)",
       "target": "item:Interpreter_LazyJITSwitch",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:plans/backlog_list.md#Phase 1.3: Copy-and-Patch JIT Compiler (`jit_compiler`)",
+      "target": "item:JIT_RuntimeAPI_Fallback",
       "relation": "refers_to",
       "metadata": {}
     },
@@ -16771,7 +16882,7 @@
       "target": "file:components/tier2_runtime/runtime_loader.md",
       "relation": "links_to",
       "metadata": {
-        "line": 281,
+        "line": 289,
         "text": "module_view"
       }
     },
@@ -16807,7 +16918,7 @@
       "target": "file:components/tier3_jit/jit_runtime_hotspot.md",
       "relation": "links_to",
       "metadata": {
-        "line": 253,
+        "line": 265,
         "text": "JIT Hotspot Detector"
       }
     },
@@ -16816,7 +16927,7 @@
       "target": "file:components/tier3_jit/jit_engine_copy_patch.md",
       "relation": "links_to",
       "metadata": {
-        "line": 254,
+        "line": 266,
         "text": "Copy-and-Patch Engine"
       }
     },
@@ -16825,7 +16936,7 @@
       "target": "file:components/tier3_jit/jit_runtime_entry.md",
       "relation": "links_to",
       "metadata": {
-        "line": 255,
+        "line": 267,
         "text": "JIT Entry Index"
       }
     },
@@ -16834,7 +16945,7 @@
       "target": "file:components/tier3_jit/jit_assembler_constexpr.md",
       "relation": "links_to",
       "metadata": {
-        "line": 256,
+        "line": 268,
         "text": "constexpr Assembler"
       }
     },

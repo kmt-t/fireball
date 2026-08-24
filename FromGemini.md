@@ -527,9 +527,23 @@ Sakura バックエンドの実監査で検出された **4 件の FAIL** につ
 
 上記対応の過程で、`spec_integrator/judge/risk_assessor.py` において `is_llm` 判定時に `if not is_waived` が抜けていたため、`waivers` で明示的に免除したセクションであっても `is_llm = True` になってしまうバグを発見・修正した。
 
-### 2.4 `{VERIFY_LLM}` タグの配置とレポート整合
+### 2.5 `__fastcall` 継続渡し（CPS）と JIT コードの呼び出し規約・レジスタ完全整合
 
-設計判断（ADR）を持つ対象設計文書に `{VERIFY_LLM}` タグを配置し、`doc_judge_report.json` 内の 4 件の FAIL を PASS（修正完了）に更新した。
+各バイトコードハンドラおよび JIT トレースの呼び出し規約とレジスタ割り当てを以下の通り統一・整合させた：
+- **`__fastcall` 継続渡し（CPS）シグネチャ**:
+  - `void (__fastcall *)(const uint8_t* ip, uint32_t* sp, execution_context* ctx, vsoc_runtime* env) noexcept`
+  - 物理レジスタ割り当て（ARM Cortex-M33 / AAPCS）:
+    - `R0`: `const uint8_t* ip` (WASM PC / Bytecode Pointer)
+    - `R1`: `uint32_t* sp` (WASM Operand Stack Pointer)
+    - `R2` / `R7`: `execution_context* ctx` (実行コンテキスト基底ポインタ `{ContextPointerRegister}`)
+    - `R3`: `vsoc_runtime* env` (環境ポインタ `{EnvironmentPointer}`)
+    - `R4`, `R5`: JIT 内スタックトップキャッシュ (TOS, NOS)
+- **インタープリタの CPS ダイレクトスレッディング**:
+  - ホットな実行変数（`ip`, `sp`, `ctx`, `env`）を `__fastcall` により物理レジスタ上で保持・更新し、`ctx` 構造体への無駄なメモリロード/ストア（退避/復元）を排除。
+  - `[[clang::musttail]]` による直接末尾ジャンプで次のハンドラへ引数を継続渡し。
+- **JIT コードとの Zero-Overhead 相互移行**:
+  - JIT トレースのエントリポイント（`exec_trace`）も全く同一の `__fastcall` CPS シグネチャを採用。
+  - JIT $\to$ インタープリタ（OSR / Fallback / Exit）および インタープリタ $\to$ JIT（Lazy Switch / Trace Exec）において、レジスタ再配置やメモリ書き戻しオーバーヘッドなし（Zero Conversion Overhead）の直接ジャンプ（`BX`）を実現。
 
 ---
 
@@ -543,8 +557,8 @@ Sakura バックエンドの実監査で検出された **4 件の FAIL** につ
 ================================================================================
 Scanning 32 markdown files in docs...
 Building DocGraph topology...
-DocGraph built: 840 nodes, 1539 edges.
-✔ Parsed 32 document(s), 840 graph node(s).
+DocGraph built: 841 nodes, 1556 edges.
+✔ Parsed 32 document(s), 841 graph node(s).
 Running Static Verifiers (Format, Traceability, Hierarchy)...
 Static verification finished. Found 0 issue(s).
 Running Formal Model Verifier...
@@ -569,13 +583,14 @@ Generating Markdown Report & Graph JSON...
 ```
 
 ### コミット予定内容
+- `docs/components/tier2_runtime/runtime_interpreter.md`: `__fastcall` CPS シグネチャおよび JIT レジスタ整合仕様
+- `docs/components/tier3_jit/jit_compiler.md`: `exec_trace`（`__fastcall` CPS）および Zero-Overhead フォールバック仕様
+- `docs/components/tier3_jit/jit_engine_copy_patch.md`: Stencil テンプレートの `__fastcall` レジスタ規約（R0-R5）準拠
+- `docs/components/tier3_jit/jit_runtime_entry.md`: `lookup` の `exec_trace` 型整合および 3面キャッシュ用語統一
+- `docs/components/tier2_runtime/runtime_vsoc.md`: `exec_trace` 委譲の `__fastcall` 整合
+- `docs/requires/requirement_list.md`, `docs/plans/backlog_list.md`: `{ThreadedInterpreter}` の CPS 仕様および実装タスク更新
 - `docs/components/tier3_jit/formal/jit_cache_model.py`: 世代3つ組チェイニングモデルへの再構築
-- `docs/architecture/concept_harness.md`, `docs/components/tier3_jit/jit_compiler.md`: `{GLOBAL_ComponentHarness}` 整合
-- `docs/components/tier2_runtime/debug/debug_manager.md`, `docs/components/tier2_runtime/runtime_interpreter.md`: `{Debug_Integrated}` 統合仕様
-- `docs/components/tier2_runtime/runtime_interpreter.md`, `docs/plans/backlog_list.md`: `{ContextPointerRegister}` R7固定仕様
-- `docs/components/tier1_core/os_scheduler.md`: `{LowOverheadSwitch}` 対称遷移仕様
-- `spec-integrator.yaml`, `tools/spec-integrator/src/spec_integrator/judge/risk_assessor.py`: トリガー精査および Waiver バグ修正
-- `reports/doc_judge_report.json`, `reports/doc_risk_report.json`: 最新実監査・リスク評価レポート
+- `spec-integrator.yaml`, `spec-consistency.lock`, `reports/`: 最新整合ロック・実監査レポート
 - `FromGemini.md`: 本第11返信
 
 形式モデルの健全性、LLM意味監査の実効性、そしてパイプラインの厳格な検証義務のすべてが、真の意味で確立された。

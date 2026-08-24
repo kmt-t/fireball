@@ -44,19 +44,20 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
 - [ ] **`execution_context` 実装**:
   - 仮想 CPU レジスタ群（PC, SP, FP, Linear Memory Pointer, Memory Size）の物理レジスタ固定マッピング（Cortex-M: R7） `{ContextPointerRegister}`
 - [ ] **コア命令ハンドラ群 (`opcode_handler`)**:
+  - `__fastcall` 継続渡し（CPS）シグネチャによる引数レジスタ渡し（R0=IP, R1=SP, R2/R7=CTX, R3=ENV） `{ThreadedInterpreter}`
   - 算術演算 (i32/i64 add, sub, mul, clz, ctz 等)
   - 制御フロー (block, loop, br, br_if, br_table, return, call)
   - メモリ操作 (i32.load, i32.store 等) と `MemoryBoundaryCheck` トラップ `{MemoryBoundaryCheck}`
 - [ ] **スレッド化ディスパッチャ**:
-  - ダイレクトスレッド実行による分岐オーバーヘッドの極小化 `{ThreadedInterpreter}`
+  - `[[clang::musttail]]` によるダイレクトスレッド実行と JIT レジスタ整合 `{ThreadedInterpreter}`
 
 ### Phase 1.3: Copy-and-Patch JIT Compiler (`jit_compiler`)
 - [ ] **ARM Thumb-2 ネイティブパッチテンプレート**:
-  - 事前コンパイル済みネイティブバイト列（RO-Data）とリロケーションテーブル `{JIT_CopyAndPatch}`
+  - `__fastcall` CPS レジスタ規約（R0=IP, R1=SP, R2/R7=CTX, R3=ENV, R4=TOS, R5=NOS）準拠の事前コンパイル済みネイティブバイト列（RO-Data）とリロケーションテーブル `{JIT_CopyAndPatch}`
 - [ ] **トリプルバッファ キャッシュマネージャ**:
   - 2KB × 3面 の代謝（`JIT_OldestOnly_Promote` / 最古破棄）制御 `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}`
 - [ ] **Safepoint 協調 & 透過的インタープリタ切り替え**:
-  - ホットスポット検知カウンタとデバッグ/割り込み時の Safepoint イールド `{JIT_LazyChaining}` `{Interpreter_LazyJITSwitch}`
+  - JIT $\leftrightarrow$ インタープリタ間の Zero-Overhead フォールバックおよびホットスポット検知 `{JIT_LazyChaining}` `{Interpreter_LazyJITSwitch}` `{JIT_RuntimeAPI_Fallback}`
 
 ### Phase 1.4: Standalone vSoC Harness & WAMR Benchmark (`runtime_vsoc`)
 - [ ] **ホスト実行ハーネス (x86_64 / Linux / macOS)**:

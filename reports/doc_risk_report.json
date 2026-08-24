@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-08-24T00:44:13.752202+00:00",
+  "generated_at": "2026-08-24T01:09:04.038574+00:00",
   "backend": "heuristic",
-  "total_evaluated": 676,
+  "total_evaluated": 677,
   "formal_candidates_count": 29,
   "llm_candidates_count": 5,
-  "sections_scanned": 676,
+  "sections_scanned": 677,
   "max_sections": 0,
   "doc_hashes": {
     "architecture/architecture_overview.md": "30be52ed847f1fa7ff9f50980552e989dab9727751748a3e5874505214cc81d7",
@@ -22,23 +22,23 @@
     "components/tier1_interface/system_service.md": "7c98009196d56c50c4d1d27269f38eb51d4fe1fa654aedb51dba7c496cd5fe62",
     "components/tier2_runtime/debug/debug_gdb_rsp.md": "f07fbc1fbe307552ce65dbe964361442c7df855ac18cce53dc59684373c6befc",
     "components/tier2_runtime/debug/debug_manager.md": "14d98e8ec8d1ed0a1dfb253077d8f580234075811cbff5e216d09e02e4271c54",
-    "components/tier2_runtime/runtime_interpreter.md": "2a9ac3b37c4d5dd2b5d3cbf9bd90ac77d1b37ecf2d0de9cf470bfc2a608901fe",
+    "components/tier2_runtime/runtime_interpreter.md": "d8a71ee649b339ed90d70ed22073772b0944f1664f5b38779c6efd72dac4d2e8",
     "components/tier2_runtime/runtime_loader.md": "591c6d491434e54f39eed5c48ae3216fc1b0ca1e2299044161cccac48f93dca5",
     "components/tier2_runtime/runtime_vmmio.md": "8edb9d58ad84209d782e87754f2ed0ae4d04a1dfe833dd507afd5fc386cd5de2",
-    "components/tier2_runtime/runtime_vsoc.md": "776b9a6762634bb07580c38726200ae1bb0a418b71ec290f4c512409a249e55a",
+    "components/tier2_runtime/runtime_vsoc.md": "4c7bb9d8f1bd2a40580564cadd8e77a0bfc1c078e3573ff4a391883f4634e5a0",
     "components/tier2_runtime/wasm_instruction.md": "640483f8a25bca7885110ce37e499c4ba3622fdc2ba3507e3a78b2bc1fcf8b5f",
     "components/tier3_jit/concepts/README.md": "a39c8c192999a792243e697e008fcad02c701d14b9559d492d668208122b6ebc",
     "components/tier3_jit/jit_assembler_constexpr.md": "4798eb6d2692ae574c45917a0597feb16e1ffa3ec9d9771566a6523607f7c7d5",
-    "components/tier3_jit/jit_compiler.md": "fb91290cf6aff06f1378d12d1c4b8eec24e221b26665e24c77a10c6400d05c65",
-    "components/tier3_jit/jit_engine_copy_patch.md": "a6c7d874f991562322257600b358494d1bd0e604e0f2da52b63a8b9a2ef17d85",
-    "components/tier3_jit/jit_runtime_entry.md": "ac17ee532a11b108521ece54ac63fdfd956484e534ed5f607993764c6bae2718",
+    "components/tier3_jit/jit_compiler.md": "08b4366ec001d9d172b49d0a58fa14a48501d75a50d54e7d2d839ea9a927f665",
+    "components/tier3_jit/jit_engine_copy_patch.md": "bbfc3ee3907976bfc004519e3d19077806e8eb6e2c32d83d10aecccbf94f7a4d",
+    "components/tier3_jit/jit_runtime_entry.md": "968cef3101e0c338d084a6c8dfa38f01e20e3cfcd9562150e903386ec742cd3f",
     "components/tier3_jit/jit_runtime_hotspot.md": "b594e75ced58d3430ae33afcc798ed97b0615199f58435490c2f5cbdcd0f2a8e",
     "components/tier3_platform/platform_hal.md": "725dc60e618aa842c46eeac285835c2f3ddac0a8b1c74d22d3acf3cfdf60089a",
     "components/tier3_platform/platform_memory.md": "7269a7df0573b9753da79472f7aaa4970a47f4ab9e7ef5a8406b70cceff05e1b",
     "plans/backlog_archive.md": "3e09371810730853a39b09fec40e83409690786e1d27caae96ab6af054191716",
-    "plans/backlog_list.md": "13523c01cba76facc8a8e28c89302bcfc4527041e4af25beb76841c3b6102522",
+    "plans/backlog_list.md": "c993dce034f632061c93d13db03f059f8ee8a65d3bb2ec197e95f3920e3f22fe",
     "plans/roadmap_phase.md": "6fce4cfc69f7f2ebd7071d06e63de13ac8a4f6f995c5bff8e81bd719c045f39e",
-    "requires/requirement_list.md": "abe25c7a9c94676370c0907a3a4a98ac5ffbd63551c4a345cc311eaa78c56018"
+    "requires/requirement_list.md": "57b6473be66141424fa3e91b4f5f241454a9b7347d927f301af903bd718f9536"
   },
   "assessments": [
     {
@@ -79,6 +79,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '2.4 vSoC / vMMIO {VERIFY_FORMAL}'."
+    },
+    {
+      "section_id": "sec:components/tier2_runtime/runtime_interpreter.md#4.1 アルゴリズム",
+      "file_path": "components/tier2_runtime/runtime_interpreter.md",
+      "heading": "4.1 アルゴリズム",
+      "tier": 2,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '4.1 アルゴリズム'."
     },
     {
       "section_id": "sec:components/tier2_runtime/runtime_vmmio.md#1. コンセプト",
@@ -146,19 +159,6 @@
       "summary": "Independent heuristic evaluation for '3.2.1 パフォーマンス・効率'."
     },
     {
-      "section_id": "sec:components/tier2_runtime/runtime_interpreter.md#4.1 アルゴリズム",
-      "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "heading": "4.1 アルゴリズム",
-      "tier": 2,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '4.1 アルゴリズム'."
-    },
-    {
       "section_id": "sec:components/tier1_interface/ipc_router.md#4.1 アルゴリズム",
       "file_path": "components/tier1_interface/ipc_router.md",
       "heading": "4.1 アルゴリズム",
@@ -216,6 +216,19 @@
       "risk_factors": [
         "Stateful concurrent protocol or hardware safety invariant identified"
       ],
+      "summary": "Independent heuristic evaluation for '4.1 アルゴリズム'."
+    },
+    {
+      "section_id": "sec:components/tier2_runtime/runtime_vsoc.md#4.1 アルゴリズム",
+      "file_path": "components/tier2_runtime/runtime_vsoc.md",
+      "heading": "4.1 アルゴリズム",
+      "tier": 2,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
       "summary": "Independent heuristic evaluation for '4.1 アルゴリズム'."
     },
     {
@@ -286,19 +299,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '1. アーキテクチャコンセプト'."
-    },
-    {
-      "section_id": "sec:components/tier2_runtime/runtime_vsoc.md#4.1 アルゴリズム",
-      "file_path": "components/tier2_runtime/runtime_vsoc.md",
-      "heading": "4.1 アルゴリズム",
-      "tier": 2,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '4.1 アルゴリズム'."
     },
     {
       "section_id": "sec:requires/requirement_list.md#4. 設計課題・制約追跡 (Design Challenges & ADRs)",
@@ -407,6 +407,32 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '4.2 状態遷移図 (SysML SMD: vSoC Engine ライフサイクル)'."
+    },
+    {
+      "section_id": "sec:components/tier2_runtime/runtime_interpreter.md#オプコードハンドラ / トレース実行（opcode_handler / exec_trace）",
+      "file_path": "components/tier2_runtime/runtime_interpreter.md",
+      "heading": "オプコードハンドラ / トレース実行（opcode_handler / exec_trace）",
+      "tier": 2,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for 'オプコードハンドラ / トレース実行（opcode_handler / exec_trace）'."
+    },
+    {
+      "section_id": "sec:components/tier3_jit/jit_compiler.md#JIT トレース実行シグネチャ (`exec_trace`)",
+      "file_path": "components/tier3_jit/jit_compiler.md",
+      "heading": "JIT トレース実行シグネチャ (`exec_trace`)",
+      "tier": 3,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for 'JIT トレース実行シグネチャ (`exec_trace`)'."
     },
     {
       "section_id": "sec:requires/requirement_list.md#3.2.2 開発方針・品質",
@@ -569,6 +595,19 @@
       "summary": "Independent heuristic evaluation for '4.1.1 名前解決パイプラインとアクセス制御フロー'."
     },
     {
+      "section_id": "sec:components/tier3_jit/jit_engine_copy_patch.md#4.1 アルゴリズム",
+      "file_path": "components/tier3_jit/jit_engine_copy_patch.md",
+      "heading": "4.1 アルゴリズム",
+      "tier": 3,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '4.1 アルゴリズム'."
+    },
+    {
       "section_id": "sec:components/tier1_interface/ipc_router.md#4.2.1 所有権移譲状態機械 (Ownership Transfer State Machine)",
       "file_path": "components/tier1_interface/ipc_router.md",
       "heading": "4.2.1 所有権移譲状態機械 (Ownership Transfer State Machine)",
@@ -707,19 +746,6 @@
       "summary": "Independent heuristic evaluation for '3.1 データ構造'."
     },
     {
-      "section_id": "sec:components/tier3_jit/jit_engine_copy_patch.md#4.1 アルゴリズム",
-      "file_path": "components/tier3_jit/jit_engine_copy_patch.md",
-      "heading": "4.1 アルゴリズム",
-      "tier": 3,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '4.1 アルゴリズム'."
-    },
-    {
       "section_id": "sec:components/tier3_platform/platform_memory.md#9. ハードウェアメモリ保護 (MPU) & W^X 設計",
       "file_path": "components/tier3_platform/platform_memory.md",
       "heading": "9. ハードウェアメモリ保護 (MPU) & W^X 設計",
@@ -787,6 +813,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '6.1 検証対象の不変条件'."
+    },
+    {
+      "section_id": "sec:components/tier3_jit/jit_engine_copy_patch.md#命令テンプレート（jit_template）",
+      "file_path": "components/tier3_jit/jit_engine_copy_patch.md",
+      "heading": "命令テンプレート（jit_template）",
+      "tier": 3,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '命令テンプレート（jit_template）'."
     },
     {
       "section_id": "sec:components/tier1_core/os_scheduler.md#4.1 アルゴリズム",
@@ -904,6 +943,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '4.1 アルゴリズム'."
+    },
+    {
+      "section_id": "sec:plans/backlog_list.md#Phase 1.3: Copy-and-Patch JIT Compiler (`jit_compiler`)",
+      "file_path": "plans/backlog_list.md",
+      "heading": "Phase 1.3: Copy-and-Patch JIT Compiler (`jit_compiler`)",
+      "tier": "meta",
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for 'Phase 1.3: Copy-and-Patch JIT Compiler (`jit_compiler`)'."
     },
     {
       "section_id": "sec:components/tier1_core/system_logging.md#6.3 安全性制約と方策",
@@ -1105,6 +1157,19 @@
       "summary": "Independent heuristic evaluation for 'WASM実行およびJIT遷移シーケンス'."
     },
     {
+      "section_id": "sec:components/tier3_jit/jit_compiler.md#Copy-and-Patch コンパイル手順",
+      "file_path": "components/tier3_jit/jit_compiler.md",
+      "heading": "Copy-and-Patch コンパイル手順",
+      "tier": 3,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for 'Copy-and-Patch コンパイル手順'."
+    },
+    {
       "section_id": "sec:components/tier2_runtime/debug/debug_manager.md#デバッガ（Debugger）クラス",
       "file_path": "components/tier2_runtime/debug/debug_manager.md",
       "heading": "デバッガ（Debugger）クラス",
@@ -1142,19 +1207,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '5.1. カテゴリ一覧'."
-    },
-    {
-      "section_id": "sec:plans/backlog_list.md#Phase 1.3: Copy-and-Patch JIT Compiler (`jit_compiler`)",
-      "file_path": "plans/backlog_list.md",
-      "heading": "Phase 1.3: Copy-and-Patch JIT Compiler (`jit_compiler`)",
-      "tier": "meta",
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for 'Phase 1.3: Copy-and-Patch JIT Compiler (`jit_compiler`)'."
     },
     {
       "section_id": "sec:components/tier3_platform/platform_hal.md#4.2 状態遷移図",
@@ -1384,6 +1436,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '7. 共有メモリ (shared-block) のライフサイクル'."
+    },
+    {
+      "section_id": "sec:plans/backlog_list.md#Phase 1.2: WASM Stackless Fast Interpreter (`runtime_interpreter`)",
+      "file_path": "plans/backlog_list.md",
+      "heading": "Phase 1.2: WASM Stackless Fast Interpreter (`runtime_interpreter`)",
+      "tier": "meta",
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for 'Phase 1.2: WASM Stackless Fast Interpreter (`runtime_interpreter`)'."
     },
     {
       "section_id": "sec:components/tier1_core/os_coos.md#3.2 内部ブロック図",
@@ -2562,19 +2627,6 @@
       "summary": "Independent heuristic evaluation for '6.2 3層分離設計 (3-Tier Separation)'."
     },
     {
-      "section_id": "sec:plans/backlog_list.md#Phase 1.2: WASM Stackless Fast Interpreter (`runtime_interpreter`)",
-      "file_path": "plans/backlog_list.md",
-      "heading": "Phase 1.2: WASM Stackless Fast Interpreter (`runtime_interpreter`)",
-      "tier": "meta",
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for 'Phase 1.2: WASM Stackless Fast Interpreter (`runtime_interpreter`)'."
-    },
-    {
       "section_id": "sec:plans/backlog_list.md#Phase 2: Integration（周辺コンポーネント統合 / 将来予定）",
       "file_path": "plans/backlog_list.md",
       "heading": "Phase 2: Integration（周辺コンポーネント統合 / 将来予定）",
@@ -2932,6 +2984,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '5.5. WASI標準APIの実装仕様 (WASI Standard API Implementation Specification)'."
+    },
+    {
+      "section_id": "sec:components/tier3_jit/jit_runtime_entry.md#4.3 内部シーケンス",
+      "file_path": "components/tier3_jit/jit_runtime_entry.md",
+      "heading": "4.3 内部シーケンス",
+      "tier": 3,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '4.3 内部シーケンス'."
     },
     {
       "section_id": "sec:components/tier2_runtime/runtime_interpreter.md#割り込み同期 (`sync_interrupts`)",
@@ -3323,19 +3388,6 @@
       "summary": "Independent heuristic evaluation for '6.3 検証モデル概要'."
     },
     {
-      "section_id": "sec:components/tier3_jit/jit_compiler.md#Copy-and-Patch コンパイル手順",
-      "file_path": "components/tier3_jit/jit_compiler.md",
-      "heading": "Copy-and-Patch コンパイル手順",
-      "tier": 3,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for 'Copy-and-Patch コンパイル手順'."
-    },
-    {
       "section_id": "sec:components/tier3_jit/jit_compiler.md#初期化（initialize）",
       "file_path": "components/tier3_jit/jit_compiler.md",
       "heading": "初期化（initialize）",
@@ -3364,19 +3416,6 @@
     {
       "section_id": "sec:components/tier3_jit/jit_engine_copy_patch.md#4.3 内部シーケンス",
       "file_path": "components/tier3_jit/jit_engine_copy_patch.md",
-      "heading": "4.3 内部シーケンス",
-      "tier": 3,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '4.3 内部シーケンス'."
-    },
-    {
-      "section_id": "sec:components/tier3_jit/jit_runtime_entry.md#4.3 内部シーケンス",
-      "file_path": "components/tier3_jit/jit_runtime_entry.md",
       "heading": "4.3 内部シーケンス",
       "tier": 3,
       "complexity_score": 2,
@@ -3862,19 +3901,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '3.2 内部ブロック図'."
-    },
-    {
-      "section_id": "sec:components/tier2_runtime/runtime_interpreter.md#オプコードハンドラ / トレース実行（opcode_handler / exec_trace）",
-      "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "heading": "オプコードハンドラ / トレース実行（opcode_handler / exec_trace）",
-      "tier": 2,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for 'オプコードハンドラ / トレース実行（opcode_handler / exec_trace）'."
     },
     {
       "section_id": "sec:components/tier2_runtime/runtime_interpreter.md#実行ステップ (`run_step`)",
@@ -4737,6 +4763,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for 'Tier 3 JIT — コンセプトコード'."
+    },
+    {
+      "section_id": "sec:components/tier3_jit/jit_engine_copy_patch.md#トレースコンパイル手順",
+      "file_path": "components/tier3_jit/jit_engine_copy_patch.md",
+      "heading": "トレースコンパイル手順",
+      "tier": 3,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for 'トレースコンパイル手順'."
     },
     {
       "section_id": "sec:plans/roadmap_phase.md#フェーズ概要",
@@ -6271,32 +6310,6 @@
       "summary": "Independent heuristic evaluation for 'コピーアンドパッチエンジン（CopyAndPatchEngine）クラス'."
     },
     {
-      "section_id": "sec:components/tier3_jit/jit_engine_copy_patch.md#命令テンプレート（jit_template）",
-      "file_path": "components/tier3_jit/jit_engine_copy_patch.md",
-      "heading": "命令テンプレート（jit_template）",
-      "tier": 3,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '命令テンプレート（jit_template）'."
-    },
-    {
-      "section_id": "sec:components/tier3_jit/jit_engine_copy_patch.md#トレースコンパイル手順",
-      "file_path": "components/tier3_jit/jit_engine_copy_patch.md",
-      "heading": "トレースコンパイル手順",
-      "tier": 3,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for 'トレースコンパイル手順'."
-    },
-    {
       "section_id": "sec:components/tier3_jit/jit_runtime_entry.md#JITエントリインデックス（JitEntryIndex）クラス",
       "file_path": "components/tier3_jit/jit_runtime_entry.md",
       "heading": "JITエントリインデックス（JitEntryIndex）クラス",
@@ -6308,6 +6321,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for 'JITエントリインデックス（JitEntryIndex）クラス'."
+    },
+    {
+      "section_id": "sec:components/tier3_jit/jit_runtime_entry.md#検索（lookup）",
+      "file_path": "components/tier3_jit/jit_runtime_entry.md",
+      "heading": "検索（lookup）",
+      "tier": 3,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '検索（lookup）'."
     },
     {
       "section_id": "sec:components/tier3_jit/jit_runtime_entry.md#エントリ登録（register_entry）",
@@ -8405,19 +8431,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '5.1 公開API'."
-    },
-    {
-      "section_id": "sec:components/tier3_jit/jit_runtime_entry.md#検索（lookup）",
-      "file_path": "components/tier3_jit/jit_runtime_entry.md",
-      "heading": "検索（lookup）",
-      "tier": 3,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '検索（lookup）'."
     },
     {
       "section_id": "sec:components/tier3_jit/jit_runtime_entry.md#6. 制約達成の方策",

@@ -46,7 +46,7 @@ graph TD
     - ※ カード単位の管理であるため、コンパイルされていないオフセットでも同じカード内の他オフセットの影響でパスする場合がある（後に二分探索で厳密にチェックされる）。
 2. **カードグループ検索**: 検索対象の命令オフセットを右シフトし、対応するカードグループ索引を取得する。これにより二分探索の範囲 `[low, high]` を限定する。
 3. **二分探索**: `jit_entry` 配列の限定された範囲から対象の命令オフセットを検索する。
-4. **オンデマンド・キューイング**: アクティブ・バックアップ領域の両キャッシュでミスし、かつ実行履歴マップの状態が「コンパイル完了」である場合は、対象の命令オフセットを「コンパイル待ち列」へ登録し、インタープリタ実行を継続する。
+4. **オンデマンド・キューイング**: Active / Warm / Oldest の全3バンクでミスし、かつ実行履歴マップの状態が「コンパイル完了」である場合は、対象の命令オフセットを「コンパイル待ち列」へ登録し、インタープリタ実行を継続する。
 
 ### 4.2 状態遷移図
 本コンポーネントは管理情報の更新と検索を行うため、明確な内部状態（ステートマシン）は持たないが、エントリの `Valid/Invalid` を管理する。
@@ -57,25 +57,32 @@ sequenceDiagram
     participant I as Interpreter
     participant M as JIT Index
     participant A as Active Index
-    participant O as Old Index
+    participant W as Warm Index
+    participant O as Oldest Index
+    participant Q as Compile Queue
 
-    I->>M: Lookup(PC)
-    M->>A: Search(PC)
+    I->>M: lookup(PC)
+    M->>A: search(PC)
     alt Active Hit
-        A-->>M: code_addr
+        A-->>M: code_addr (exec_trace)
     else Active Miss
-        M->>O: Search(PC)
-        alt Old Hit
-            O-->>M: code_addr
-            M->>M: Promote to Active
-        else Old Miss
-            alt Bitmap == COMPILED
-                M->>Q: Push(PC)
+        M->>W: search(PC)
+        alt Warm Hit
+            W-->>M: code_addr (exec_trace)
+        else Warm Miss
+            M->>O: search(PC)
+            alt Oldest Hit
+                O-->>M: code_addr (exec_trace)
+                M->>M: Promote to Active
+            else Oldest Miss
+                alt Bitmap == COMPILED
+                    M->>Q: Push(PC)
+                end
+                M-->>I: NULL (Fallback)
             end
-            M-->>I: NULL (Fallback)
         end
     end
-    M-->>I: code_addr
+    M-->>I: code_addr (exec_trace)
 ```
 
 ## 5. インターフェイス定義
@@ -87,10 +94,10 @@ sequenceDiagram
 
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | 命令オフセットに対応するネイティブコードアドレスを返す。 |
-| シグネチャ | `lookup(pc: オフセット) -> オプショナル値` |
+| 機能概要 | 命令オフセットに対応するネイティブコードアドレス（`exec_trace` 型）を返す。 |
+| シグネチャ | `lookup(pc: オフセット) -> result<exec_trace, jit_lookup_result_t>` |
 | 引数 | `pc`: WASM 命令オフセット |
-| 戻り値 | オプショナル値 (成功時はネイティブアドレス、失敗時は空) |
+| 戻り値 | 成功時はネイティブ実行エントリ（`void (__fastcall *)(const uint8_t* ip, uint32_t* sp, execution_context* ctx, vsoc_runtime* env) noexcept` 型）、失敗時は `ERR_NOT_COMPILED` などのステータス |
 
 #### エントリ登録（register_entry）
 

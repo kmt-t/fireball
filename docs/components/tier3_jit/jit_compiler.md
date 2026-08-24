@@ -90,6 +90,15 @@ JITエンジンの挙動を制御する性能パラメータ。 `{META_Configura
 | カード境界シフト | カード1枚がカバーするWASMサイズ（2のべき乗） | シフト量 | 8bit符号なし |
 | 命令境界シフト | 生成コードのアドレスアライメント | シフト量 | 8bit符号なし |
 
+#### JIT トレース実行シグネチャ (`exec_trace`)
+<!-- traceability: {JIT_RuntimeAPI_Fallback} {ContextPointerRegister} {EnvironmentPointer} -->
+JIT コンパイル済みネイティブトレースの実行エントリポイント。インタープリタの `opcode_handler` と完全同一の `__fastcall` 継続渡し（CPS）シグネチャを持ち、レジスタ再配置オーバーヘッドなしに相互遷移する。 `{JIT_RuntimeAPI_Fallback}` `{ContextPointerRegister}` `{EnvironmentPointer}`
+
+| 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
+| :--- | :--- | :--- | :--- |
+| トレースシグネチャ | `__fastcall` によるネイティブトレース実行関数 | 関数ポインタ | `void (__fastcall *)(const uint8_t* __restrict__ ip, uint32_t* __restrict__ sp, execution_context* __restrict__ ctx, vsoc_runtime* __restrict__ env) noexcept` |
+| レジスタ割り当て | ARM AAPCS / `__fastcall` 引数レジスタマッピング | 物理レジスタ | `R0`: `ip` (WASM PC)<br>`R1`: `sp` (オペランドスタック頂点)<br>`R2` / `R7`: `ctx` (実行コンテキスト `{ContextPointerRegister}`)<br>`R3`: `env` (環境ポインタ `{EnvironmentPointer}`)<br>`R4`/`R5`: スタックトップキャッシュ (TOS, NOS) |
+
 ### 3.4 公開API
 外部コンポーネント（Executor等）からJITコンパイル機能を利用するためのAPI。
 
@@ -107,7 +116,7 @@ JITエンジンの挙動を制御する性能パラメータ。 `{META_Configura
 | 機能概要 | 指定されたWASM PCに対するネイティブコードが既にコンパイル済みであるか検索し、ヒットした場合はその実行開始アドレスを返す。 |
 | シグネチャ | `auto jit_lookup(jit_context& ctx, const jit_harness& harness, uint32_t pc) noexcept -> result<uintptr_t, jit_lookup_result_t>` |
 | 引数 | `ctx`: JIT可変コンテキスト構造体<br>`harness`: ハーネス参照<br>`pc`: 検索対象の WASM PC |
-| 戻り値 | 成功時はネイティブ実行開始アドレス（`uintptr_t`）を返し、未コンパイル時は `ERR_NOT_COMPILED` などのステータスコードを返す `result` 型。 |
+| 戻り値 | 成功時はネイティブ実行開始アドレス（`uintptr_t`、`exec_trace` 型）を返し、未コンパイル時は `ERR_NOT_COMPILED` などのステータスコードを返す `result` 型。 |
 
 ## 4. 動的モデル
 
@@ -115,14 +124,17 @@ JITエンジンの挙動を制御する性能パラメータ。 `{META_Configura
 
 #### Copy-and-Patch コンパイル手順
 
-<!-- traceability: {JIT_CopyAndPatch} {META_AI_Native_Dev} -->
-1. **テンプレート選択**: WASM命令に対応する事前定義済みのネイティブコードテンプレートを選択する。
+<!-- traceability: {JIT_CopyAndPatch} {META_AI_Native_Dev} {JIT_RuntimeAPI_Fallback} {ContextPointerRegister} -->
+1. **テンプレート選択**: WASM命令に対応する事前定義済みのネイティブコードテンプレートを選択する。すべてのテンプレートは `__fastcall` CPS レジスタ割り当て（R0=IP, R1=SP, R2/R7=CTX, R3=ENV）に完全準拠して設計される。
 2. **コードコピー**: テンプレートをアクティブ・キャッシュ領域の「ベースアドレス + 使用済みサイズ」の位置へコピーする。
 3. **パッチ適用 (プレースホルダ埋め)**:
     - 即値（定数）をプレースホルダに書き込む。
     - ランタイムAPIのアドレスを書き込む。
     - 相対ジャンプ先を計算して書き込む。
-4. **エントリ登録 & 命令キャッシュ同期**: JITエントリを作成し、命令オフセット（PC）順を維持するようにエントリ配列に挿入する。同時にカードグループ索引を更新する。パッチ適用完了後、Cortex-M33 向けにデータキャッシュをクリーンし、`__DSB()`（データ同期バリア）および `__ISB()`（命令同期バリア）を発行して命令キャッシュ（I-Cache）のコヒーレンシを保証する。
+4. **インタープリタ連携とフォールバック (Zero-Overhead Interop)**:
+    - JIT トレース末尾、未コンパイル命令、またはトラップ発生時、JIT コードはレジスタ R0〜R3 に最新の `(ip, sp, ctx, env)` を保持したまま、インタープリタのオプコードハンドラ（またはディスパッチャ）へ直接末尾ジャンプ（`BX`）する。
+    - レジスタの再配置や構造体への退避/復元オーバーヘッドなしに、即座にインタープリタ実行へ復帰する。 `{JIT_RuntimeAPI_Fallback}`
+5. **エントリ登録 & 命令キャッシュ同期**: JITエントリを作成し、命令オフセット（PC）順を維持するようにエントリ配列に挿入する。同時にカードグループ索引を更新する。パッチ適用完了後、Cortex-M33 向けにデータキャッシュをクリーンし、`__DSB()`（データ同期バリア）および `__ISB()`（命令同期バリア）を発行して命令キャッシュ（I-Cache）のコヒーレンシを保証する。
 
 #### JITトレース検索 & 3面キャッシュ代謝アルゴリズム
 <!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} -->

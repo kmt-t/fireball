@@ -1,6 +1,6 @@
 # Fireball 設計複雑度 & リスク評価レポート (Risk Assessment Report)
 
-- **評価セクション総数**: 676
+- **評価セクション総数**: 677
 - **形式検証 (pyModelChecking) 推奨セクション**: 29
 - **LLM 意味監査 推奨セクション**: 5
 
@@ -83,19 +83,19 @@
 | `requires/requirement_list.md` | 3.1.1 WASM実行 (vSoC) | 0 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.1.1 WASM実行 (vSoC)'. |
 | `requires/requirement_list.md` | 3.1.3 システム連携 (IPC/HAL/WIT) | 0 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.1.3 システム連携 (IPC/HAL/WIT)'. |
 | `components/tier1_core/system_config_details.md` | 2.4 vSoC / vMMIO {VERIFY_FORMAL} | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '2.4 vSoC / vMMIO {VERIFY_FORMAL}'. |
+| `components/tier2_runtime/runtime_interpreter.md` | 4.1 アルゴリズム | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.1 アルゴリズム'. |
 | `components/tier2_runtime/runtime_vmmio.md` | 1. コンセプト | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '1. コンセプト'. |
 | `architecture/document_structure.md` | 4.2 メタキーワード（共通非機能要件・設計方針）の定義 | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.2 メタキーワード（共通非機能要件・設計方針）の定義'. |
 | `components/tier1_core/os_coos.md` | 1. コンセプト | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '1. コンセプト'. |
 | `components/tier3_jit/jit_compiler.md` | 1. コンセプト | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '1. コンセプト'. |
 | `requires/requirement_list.md` | 3.2.1 パフォーマンス・効率 | 0 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.2.1 パフォーマンス・効率'. |
-| `components/tier2_runtime/runtime_interpreter.md` | 4.1 アルゴリズム | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.1 アルゴリズム'. |
 | `requires/requirement_list.md` | 3.1.2 タスク管理・通信 (COOS) | 0 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.1.2 タスク管理・通信 (COOS)'. |
 | `components/tier2_runtime/debug/debug_manager.md` | 1. コンセプト | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '1. コンセプト'. |
+| `components/tier2_runtime/runtime_vsoc.md` | 4.1 アルゴリズム | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.1 アルゴリズム'. |
 | `components/tier1_core/os_scheduler.md` | 1. コンセプト | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '1. コンセプト'. |
 | `components/tier1_core/system_config_details.md` | 2.7 型定義・予約値 | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '2.7 型定義・予約値'. |
 | `components/tier2_runtime/runtime_interpreter.md` | 実行コンテキスト（execution_context） | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '実行コンテキスト（execution_context）'. |
 | `architecture/architecture_overview.md` | 1. アーキテクチャコンセプト | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '1. アーキテクチャコンセプト'. |
-| `components/tier2_runtime/runtime_vsoc.md` | 4.1 アルゴリズム | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.1 アルゴリズム'. |
 | `requires/requirement_list.md` | 4. 設計課題・制約追跡 (Design Challenges & ADRs) | 0 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4. 設計課題・制約追跡 (Design Challenges & ADRs)'. |
 | `architecture/document_structure.md` | 4.3 グローバルキーワード（広域仕様・横断ポリシー）の定義 | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.3 グローバルキーワード（広域仕様・横断ポリシー）の定義'. |
 | `requires/requirement_list.md` | 3.1.5 共通基盤・実装パターン | 0 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.1.5 共通基盤・実装パターン'. |
@@ -103,6 +103,8 @@
 | `components/tier1_interface/ipc_router.md` | 1. コンセプト | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '1. コンセプト'. |
 | `components/tier2_runtime/runtime_interpreter.md` | 4.2 状態遷移図 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.2 状態遷移図'. |
 | `components/tier2_runtime/runtime_vsoc.md` | 4.2 状態遷移図 (SysML SMD: vSoC Engine ライフサイクル) | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.2 状態遷移図 (SysML SMD: vSoC Engine ライフサイクル)'. |
+| `components/tier2_runtime/runtime_interpreter.md` | オプコードハンドラ / トレース実行（opcode_handler / exec_trace） | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'オプコードハンドラ / トレース実行（opcode_handler / exec_trace）'. |
+| `components/tier3_jit/jit_compiler.md` | JIT トレース実行シグネチャ (`exec_trace`) | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'JIT トレース実行シグネチャ (`exec_trace`)'. |
 | `requires/requirement_list.md` | 3.2.2 開発方針・品質 | 0 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.2.2 開発方針・品質'. |
 | `components/tier1_core/system_logging.md` | 1. コンセプト | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '1. コンセプト'. |
 | `components/tier2_runtime/runtime_interpreter.md` | 1. コンセプト | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '1. コンセプト'. |
@@ -114,6 +116,7 @@
 | `components/tier2_runtime/runtime_vsoc.md` | 1. コンセプト | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '1. コンセプト'. |
 | `components/tier3_jit/jit_runtime_hotspot.md` | 1. コンセプト | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '1. コンセプト'. |
 | `components/tier3_platform/platform_hal.md` | 2. アーキテクチャ分類 | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '2. アーキテクチャ分類'. |
+| `components/tier3_jit/jit_engine_copy_patch.md` | 4.1 アルゴリズム | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.1 アルゴリズム'. |
 | `components/tier1_interface/ipc_router.md` | 6.1 検証対象の不変条件 | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '6.1 検証対象の不変条件'. |
 | `plans/backlog_list.md` | オーナーレビュー観点 & チェックリスト | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'オーナーレビュー観点 & チェックリスト'. |
 | `requires/requirement_list.md` | 3.1.4 デバッグ・運用 | 0 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.1.4 デバッグ・運用'. |
@@ -122,11 +125,11 @@
 | `components/tier1_interface/ipc_router.md` | 4.4 内部シーケンス図 | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.4 内部シーケンス図'. |
 | `components/tier2_runtime/runtime_loader.md` | 4.1 アルゴリズム | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.1 アルゴリズム'. |
 | `components/tier3_jit/jit_compiler.md` | 3.1 データ構造 | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.1 データ構造'. |
-| `components/tier3_jit/jit_engine_copy_patch.md` | 4.1 アルゴリズム | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.1 アルゴリズム'. |
 | `components/tier1_interface/interface_wit.md` | 3.2 リカバリー戦略とエラーハンドリング | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.2 リカバリー戦略とエラーハンドリング'. |
 | `architecture/architecture_overview.md` | ヒープパーティション | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'ヒープパーティション'. |
 | `components/tier1_core/system_syscall.md` | 5.5. IRQ (`0x30`-`0x3F`) | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '5.5. IRQ (`0x30`-`0x3F`)'. |
 | `components/tier2_runtime/runtime_vsoc.md` | 6.1 検証対象の不変条件 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '6.1 検証対象の不変条件'. |
+| `components/tier3_jit/jit_engine_copy_patch.md` | 命令テンプレート（jit_template） | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '命令テンプレート（jit_template）'. |
 | `components/tier1_core/os_scheduler.md` | 4.1 アルゴリズム | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.1 アルゴリズム'. |
 | `components/tier1_interface/ipc_router.md` | 4.3.1 二分探索による O(log N) 低遅延ルックアップ | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.3.1 二分探索による O(log N) 低遅延ルックアップ'. |
 | `components/tier1_interface/ipc_router.md` | サービス検索と接続フロー | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'サービス検索と接続フロー'. |
@@ -136,6 +139,7 @@
 | `components/tier3_jit/jit_compiler.md` | バッチコンパイル (周期実行またはアイドル時) | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'バッチコンパイル (周期実行またはアイドル時)'. |
 | `components/tier3_jit/jit_compiler.md` | 4.2 状態遷移図 | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.2 状態遷移図'. |
 | `components/tier3_platform/platform_hal.md` | 4.1 アルゴリズム | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.1 アルゴリズム'. |
+| `plans/backlog_list.md` | Phase 1.3: Copy-and-Patch JIT Compiler (`jit_compiler`) | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'Phase 1.3: Copy-and-Patch JIT Compiler (`jit_compiler`)'. |
 | `components/tier1_core/system_logging.md` | 6.3 安全性制約と方策 | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '6.3 安全性制約と方策'. |
 | `components/tier1_interface/ipc_router.md` | 2. アーキテクチャ分類 | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '2. アーキテクチャ分類'. |
 | `components/tier1_interface/ipc_router.md` | 3.1 データ構造 | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.1 データ構造'. |
@@ -150,10 +154,10 @@
 | `components/tier1_interface/system_service.md` | 4.4 WASI API から HAL への変換ラッパー (コンセプトコード) | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.4 WASI API から HAL への変換ラッパー (コンセプトコード)'. |
 | `components/tier1_core/system_syscall.md` | 5.6. IPC (`0x40`-`0x4F`) | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '5.6. IPC (`0x40`-`0x4F`)'. |
 | `components/tier2_runtime/runtime_vsoc.md` | WASM実行およびJIT遷移シーケンス | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'WASM実行およびJIT遷移シーケンス'. |
+| `components/tier3_jit/jit_compiler.md` | Copy-and-Patch コンパイル手順 | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'Copy-and-Patch コンパイル手順'. |
 | `components/tier2_runtime/debug/debug_manager.md` | デバッガ（Debugger）クラス | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'デバッガ（Debugger）クラス'. |
 | `components/tier1_core/system_logging.md` | 4.4 状態遷移図 | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.4 状態遷移図'. |
 | `components/tier1_core/system_syscall.md` | 5.1. カテゴリ一覧 | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '5.1. カテゴリ一覧'. |
-| `plans/backlog_list.md` | Phase 1.3: Copy-and-Patch JIT Compiler (`jit_compiler`) | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'Phase 1.3: Copy-and-Patch JIT Compiler (`jit_compiler`)'. |
 | `components/tier3_platform/platform_hal.md` | 4.2 状態遷移図 | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.2 状態遷移図'. |
 | `components/tier1_core/system_syscall.md` | 3. `fireball_call` WIT定義 | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3. `fireball_call` WIT定義'. |
 | `components/tier2_runtime/runtime_vmmio.md` | アドレスフィールド定義 (vmmio_address) | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'アドレスフィールド定義 (vmmio_address)'. |
@@ -169,6 +173,7 @@
 | `components/tier2_runtime/runtime_vsoc.md` | マルチモジュール動的リンクシーケンス | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'マルチモジュール動的リンクシーケンス'. |
 | `components/tier3_jit/jit_assembler_constexpr.md` | `fireball::riscv::i_type` | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`fireball::riscv::i_type`'. |
 | `components/tier3_platform/platform_memory.md` | 7. 共有メモリ (shared-block) のライフサイクル | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '7. 共有メモリ (shared-block) のライフサイクル'. |
+| `plans/backlog_list.md` | Phase 1.2: WASM Stackless Fast Interpreter (`runtime_interpreter`) | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'Phase 1.2: WASM Stackless Fast Interpreter (`runtime_interpreter`)'. |
 | `components/tier1_core/os_coos.md` | 5.1 `coos_harness` (システムハーネス) | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '5.1 `coos_harness` (システムハーネス)'. |
 | `components/tier1_core/system_config_details.md` | 2.1 メモリ管理 | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '2.1 メモリ管理'. |
 | `components/tier1_core/system_logging.md` | 4.1 アルゴリズム | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.1 アルゴリズム'. |
@@ -249,7 +254,6 @@
 | `components/tier2_runtime/runtime_vmmio.md` | 静的デバイスページテーブルエントリ (vmmio_pte_static) | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '静的デバイスページテーブルエントリ (vmmio_pte_static)'. |
 | `components/tier3_jit/jit_assembler_constexpr.md` | `fireball::arm::add_imm` | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`fireball::arm::add_imm`'. |
 | `components/tier3_jit/jit_engine_copy_patch.md` | 6.2 3層分離設計 (3-Tier Separation) | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '6.2 3層分離設計 (3-Tier Separation)'. |
-| `plans/backlog_list.md` | Phase 1.2: WASM Stackless Fast Interpreter (`runtime_interpreter`) | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'Phase 1.2: WASM Stackless Fast Interpreter (`runtime_interpreter`)'. |
 | `plans/backlog_list.md` | Phase 2: Integration（周辺コンポーネント統合 / 将来予定） | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'Phase 2: Integration（周辺コンポーネント統合 / 将来予定）'. |
 | `components/tier1_core/os_coos.md` | 2.1 構成要素 | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '2.1 構成要素'. |
 | `components/tier1_core/os_scheduler.md` | 3.1 データ構造 | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.1 データ構造'. |
@@ -275,6 +279,7 @@
 | `components/tier3_jit/jit_compiler.md` | JITコンパイルおよび検索シーケンス | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'JITコンパイルおよび検索シーケンス'. |
 | `components/tier3_platform/platform_hal.md` | 4.3 内部シーケンス | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.3 内部シーケンス'. |
 | `components/tier1_interface/interface_wit.md` | 5.5. WASI標準APIの実装仕様 (WASI Standard API Implementation Specification) | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '5.5. WASI標準APIの実装仕様 (WASI Standard API Implementation Specification)'. |
+| `components/tier3_jit/jit_runtime_entry.md` | 4.3 内部シーケンス | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.3 内部シーケンス'. |
 | `components/tier2_runtime/runtime_interpreter.md` | 割り込み同期 (`sync_interrupts`) | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '割り込み同期 (`sync_interrupts`)'. |
 | `components/tier2_runtime/runtime_vsoc.md` | vSoC構成（vsoc_config） | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'vSoC構成（vsoc_config）'. |
 | `components/tier2_runtime/runtime_vsoc.md` | Debugger 介入時のキャッシュ一貫性 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'Debugger 介入時のキャッシュ一貫性'. |
@@ -301,11 +306,9 @@
 | `components/tier2_runtime/runtime_vsoc.md` | `register-hook` | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`register-hook`'. |
 | `components/tier2_runtime/runtime_vsoc.md` | 5.2 ネイティブAPI エクスポート | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '5.2 ネイティブAPI エクスポート'. |
 | `components/tier2_runtime/runtime_vsoc.md` | 6.3 検証モデル概要 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '6.3 検証モデル概要'. |
-| `components/tier3_jit/jit_compiler.md` | Copy-and-Patch コンパイル手順 | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'Copy-and-Patch コンパイル手順'. |
 | `components/tier3_jit/jit_compiler.md` | 初期化（initialize） | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '初期化（initialize）'. |
 | `components/tier3_jit/jit_compiler.md` | トレース検索（lookup_trace） | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'トレース検索（lookup_trace）'. |
 | `components/tier3_jit/jit_engine_copy_patch.md` | 4.3 内部シーケンス | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.3 内部シーケンス'. |
-| `components/tier3_jit/jit_runtime_entry.md` | 4.3 内部シーケンス | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.3 内部シーケンス'. |
 | `components/tier3_platform/platform_memory.md` | 6. 所有権追跡 | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '6. 所有権追跡'. |
 | `components/tier1_core/os_coos.md` | 3.1 データ構造 | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.1 データ構造'. |
 | `components/tier1_core/os_scheduler.md` | 実行（run） | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '実行（run）'. |
@@ -340,7 +343,6 @@
 | `components/tier2_runtime/debug/debug_manager.md` | デバッグコマンド処理シーケンス | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'デバッグコマンド処理シーケンス'. |
 | `components/tier2_runtime/runtime_interpreter.md` | 2. アーキテクチャ分類 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '2. アーキテクチャ分類'. |
 | `components/tier2_runtime/runtime_interpreter.md` | 3.2 内部ブロック図 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.2 内部ブロック図'. |
-| `components/tier2_runtime/runtime_interpreter.md` | オプコードハンドラ / トレース実行（opcode_handler / exec_trace） | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'オプコードハンドラ / トレース実行（opcode_handler / exec_trace）'. |
 | `components/tier2_runtime/runtime_interpreter.md` | 実行ステップ (`run_step`) | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '実行ステップ (`run_step`)'. |
 | `components/tier2_runtime/runtime_loader.md` | 2. アーキテクチャ分類 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '2. アーキテクチャ分類'. |
 | `components/tier2_runtime/runtime_loader.md` | 3.1 データ構造 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.1 データ構造'. |
@@ -406,6 +408,7 @@
 | `components/tier2_runtime/runtime_vmmio.md` | フック登録 (`register-hook`) | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'フック登録 (`register-hook`)'. |
 | `components/tier2_runtime/runtime_vsoc.md` | `notify-interrupt` | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`notify-interrupt`'. |
 | `components/tier3_jit/concepts/README.md` | Tier 3 JIT — コンセプトコード | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'Tier 3 JIT — コンセプトコード'. |
+| `components/tier3_jit/jit_engine_copy_patch.md` | トレースコンパイル手順 | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'トレースコンパイル手順'. |
 | `plans/roadmap_phase.md` | フェーズ概要 | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'フェーズ概要'. |
 | `architecture/concept_harness.md` | 4. 設計判断 (ADR) | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4. 設計判断 (ADR)'. |
 | `architecture/document_structure.md` | Fireball ドキュメント体系定義書 (Document Structure & Metadata) | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'Fireball ドキュメント体系定義書 (Document Structure & Metadata)'. |
@@ -516,9 +519,8 @@
 | `components/tier3_jit/jit_assembler_constexpr.md` | `x64::mov_ri` | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`x64::mov_ri`'. |
 | `components/tier3_jit/jit_assembler_constexpr.md` | コンパイル時エンコード | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'コンパイル時エンコード'. |
 | `components/tier3_jit/jit_engine_copy_patch.md` | コピーアンドパッチエンジン（CopyAndPatchEngine）クラス | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'コピーアンドパッチエンジン（CopyAndPatchEngine）クラス'. |
-| `components/tier3_jit/jit_engine_copy_patch.md` | 命令テンプレート（jit_template） | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '命令テンプレート（jit_template）'. |
-| `components/tier3_jit/jit_engine_copy_patch.md` | トレースコンパイル手順 | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'トレースコンパイル手順'. |
 | `components/tier3_jit/jit_runtime_entry.md` | JITエントリインデックス（JitEntryIndex）クラス | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'JITエントリインデックス（JitEntryIndex）クラス'. |
+| `components/tier3_jit/jit_runtime_entry.md` | 検索（lookup） | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '検索（lookup）'. |
 | `components/tier3_jit/jit_runtime_entry.md` | エントリ登録（register_entry） | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'エントリ登録（register_entry）'. |
 | `components/tier3_jit/jit_runtime_hotspot.md` | ホットスポット検出器（HotspotDetector）クラス | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'ホットスポット検出器（HotspotDetector）クラス'. |
 | `components/tier3_jit/jit_runtime_hotspot.md` | ホットスポット判定 | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'ホットスポット判定'. |
@@ -679,7 +681,6 @@
 | `components/tier3_jit/jit_runtime_entry.md` | 4.2 状態遷移図 | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.2 状態遷移図'. |
 | `components/tier3_jit/jit_runtime_entry.md` | 5. インターフェイス定義 | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '5. インターフェイス定義'. |
 | `components/tier3_jit/jit_runtime_entry.md` | 5.1 公開API | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '5.1 公開API'. |
-| `components/tier3_jit/jit_runtime_entry.md` | 検索（lookup） | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '検索（lookup）'. |
 | `components/tier3_jit/jit_runtime_entry.md` | 6. 制約達成の方策 | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '6. 制約達成の方策'. |
 | `components/tier3_jit/jit_runtime_entry.md` | 6.1 性能制約 | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '6.1 性能制約'. |
 | `components/tier3_jit/jit_runtime_hotspot.md` | 3. 静的モデル | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3. 静的モデル'. |

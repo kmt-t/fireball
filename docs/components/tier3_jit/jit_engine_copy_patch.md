@@ -35,28 +35,33 @@ graph TD
 | アセンブラ参照 | 実行時に補助的な命令生成を行う場合のインターフェイス | 構造体への参照 | [`constexpr_assembler`](jit_assembler_constexpr.md) (非所有) |
 
 #### 命令テンプレート（jit_template）
-WASM命令に対応するネイティブバイナリの雛形。
+<!-- traceability: {JIT_RegisterMapping} {ContextPointerRegister} {EnvironmentPointer} -->
+WASM命令に対応するネイティブバイナリの雛形。インタープリタの `opcode_handler` と完全整合する `__fastcall` CPS 呼び出し規約（`R0`: `ip`, `R1`: `sp`, `R2`/`R7`: `ctx`, `R3`: `env`）およびスタックトップレジスタ（`R4`: TOS, `R5`: NOS）に基づいて設計される。 `{JIT_RegisterMapping}` `{ContextPointerRegister}` `{EnvironmentPointer}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
 | 命令バイナリ | ネイティブ命令列の実体 | バイナリビュー | ROM参照 |
 | パッチ箇所数 | テンプレート内で修正（パッチ）が必要なスロットの数 | エントリ数 | 8/16bit |
 | パッチ情報 | 各パッチ位置のオフセットと修正方法（「絶対アドレスへの書き込み」「相対オフセットの加算」「レジスタ番号の置換」等の具体的なパッチ適用方法）を定義する情報の配列 | バイナリビュー | - |
+| レジスタ規約 | JIT トレースとインタープリタ間で共有される物理レジスタ規約 | 規約定義 | `R0`: `ip`<br>`R1`: `sp`<br>`R2`/`R7`: `ctx`<br>`R3`: `env`<br>`R4`/`R5`: TOS/NOS |
 
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
-<!-- traceability: {LowLatencyJIT} {JIT_CopyAndPatch} {JIT_RuntimeAPI_Fallback} {VERIFY_FORMAL} -->
+<!-- traceability: {LowLatencyJIT} {JIT_CopyAndPatch} {JIT_RuntimeAPI_Fallback} {ContextPointerRegister} {VERIFY_FORMAL} -->
 
 #### トレースコンパイル手順
 1. **フェッチ**: WASM命令オフセットから命令を取得（フェッチ）する。
 2. **テンプレート選択**: 命令に対応する `jit_template`（Stencil）を取得する。
-3. **コピー**: キャッシュの空き領域にテンプレートの命令列をコピーする。
+3. **コードコピー**: キャッシュの空き領域にテンプレートの命令列をコピーする。
 4. **パッチ適用**:
     - 命令内に含まれる即値（定数）をテンプレートの指定位置に書き込む。
     - 実行コンテキストポインタやランタイムAPIのアドレスをパッチする。
     - 分岐命令の相対オフセットを計算してパッチする。
-5. **ポインタ更新**: キャッシュの使用済みサイズを更新する。
+5. **インタープリタ継続渡し整合 (CPS / __fastcall Tail Call)**:
+    - JIT トレースの出口やフォールバック箇所では、レジスタ R0〜R3 に最新の `(ip, sp, ctx, env)` を載せたままインタープリタの次命令ハンドラを直接末尾ジャンプ（`BX`）する。
+    - スタックトップキャッシュ（R4/R5）のダーティな値を `sp`（R1）が指すメモリへフラッシュした上で、インタープリタと完全に整合したレジスタ状態で制御を渡す。 `{JIT_RuntimeAPI_Fallback}`
+6. **ポインタ更新**: キャッシュの使用済みサイズを更新する。
 
 #### Copy-and-Patch JIT フルセット・コンセプトコード (`concepts/jit_copy_patch_concept.py`)
 ```python

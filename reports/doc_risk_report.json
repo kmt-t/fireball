@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-24T01:23:33.241347+00:00",
+  "generated_at": "2026-08-24T01:30:49.615689+00:00",
   "backend": "heuristic",
   "total_evaluated": 677,
   "formal_candidates_count": 29,
@@ -22,23 +22,23 @@
     "components/tier1_interface/system_service.md": "7c98009196d56c50c4d1d27269f38eb51d4fe1fa654aedb51dba7c496cd5fe62",
     "components/tier2_runtime/debug/debug_gdb_rsp.md": "f07fbc1fbe307552ce65dbe964361442c7df855ac18cce53dc59684373c6befc",
     "components/tier2_runtime/debug/debug_manager.md": "14d98e8ec8d1ed0a1dfb253077d8f580234075811cbff5e216d09e02e4271c54",
-    "components/tier2_runtime/runtime_interpreter.md": "5599434d77b2809c99e8e12f710ab78d30f227d2298f3c91d3620beb571ed898",
+    "components/tier2_runtime/runtime_interpreter.md": "0706a2f4ed671d208cffcc5d570bacd3bb08dcc3c8e27d29bd6dad2fad1b19c7",
     "components/tier2_runtime/runtime_loader.md": "591c6d491434e54f39eed5c48ae3216fc1b0ca1e2299044161cccac48f93dca5",
     "components/tier2_runtime/runtime_vmmio.md": "8edb9d58ad84209d782e87754f2ed0ae4d04a1dfe833dd507afd5fc386cd5de2",
-    "components/tier2_runtime/runtime_vsoc.md": "1612eff71fef52d553a599fd76f67135ca020de06fbd5e3011e192959d3486e5",
+    "components/tier2_runtime/runtime_vsoc.md": "9cdcb0f01a685c3410805978d44137a241b7bbe88e642a1f2d2dd24c222168a2",
     "components/tier2_runtime/wasm_instruction.md": "640483f8a25bca7885110ce37e499c4ba3622fdc2ba3507e3a78b2bc1fcf8b5f",
     "components/tier3_jit/concepts/README.md": "a39c8c192999a792243e697e008fcad02c701d14b9559d492d668208122b6ebc",
     "components/tier3_jit/jit_assembler_constexpr.md": "4798eb6d2692ae574c45917a0597feb16e1ffa3ec9d9771566a6523607f7c7d5",
-    "components/tier3_jit/jit_compiler.md": "70effe67878998ae9808cf612e60d046bf91dfee5962cb3d8ada52cf4f7b7573",
-    "components/tier3_jit/jit_engine_copy_patch.md": "daa0e5819ad03f6d6286294f8e307c83aa3681ac33f669ef5af2d9f21f1366e0",
-    "components/tier3_jit/jit_runtime_entry.md": "08d4ea8906071a638190b2e66bb224b44b137c73dc0d360839ce361d06e7501a",
+    "components/tier3_jit/jit_compiler.md": "2ebb0af9cca280b2733f82025b2092265e0b7e301c881e0cb247394f54a0879d",
+    "components/tier3_jit/jit_engine_copy_patch.md": "ed7ee747c10086ec07a4398cd6cc3b68bad566557bce738a565c85144b29d322",
+    "components/tier3_jit/jit_runtime_entry.md": "16dd71f537d8575ffa9ea10af75ba3bd543015298451b91c938dba43b7103c47",
     "components/tier3_jit/jit_runtime_hotspot.md": "b594e75ced58d3430ae33afcc798ed97b0615199f58435490c2f5cbdcd0f2a8e",
     "components/tier3_platform/platform_hal.md": "725dc60e618aa842c46eeac285835c2f3ddac0a8b1c74d22d3acf3cfdf60089a",
     "components/tier3_platform/platform_memory.md": "7269a7df0573b9753da79472f7aaa4970a47f4ab9e7ef5a8406b70cceff05e1b",
     "plans/backlog_archive.md": "3e09371810730853a39b09fec40e83409690786e1d27caae96ab6af054191716",
-    "plans/backlog_list.md": "988184e58900ed4e49d860c7d139b8ca5bb8aca56e3ef5638673f27b5e0f7913",
+    "plans/backlog_list.md": "6143fa53f76d68aa8ad224a839d451cc71d715462e6de5d5df6adaa5fabd76a9",
     "plans/roadmap_phase.md": "6fce4cfc69f7f2ebd7071d06e63de13ac8a4f6f995c5bff8e81bd719c045f39e",
-    "requires/requirement_list.md": "dee5b084d9e758243d67330583dab6fdc36486ce5d573e17fc34cc4bdc42862d"
+    "requires/requirement_list.md": "d3c071df2f4cbf19b06511fa50eea651e78d5173911dcf10fc36acbc8ba1071d"
   },
   "assessments": [
     {
@@ -68,19 +68,6 @@
       "summary": "Independent heuristic evaluation for '3.1.3 システム連携 (IPC/HAL/WIT)'."
     },
     {
-      "section_id": "sec:components/tier1_core/system_config_details.md#2.4 vSoC / vMMIO {VERIFY_FORMAL}",
-      "file_path": "components/tier1_core/system_config_details.md",
-      "heading": "2.4 vSoC / vMMIO {VERIFY_FORMAL}",
-      "tier": 1,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '2.4 vSoC / vMMIO {VERIFY_FORMAL}'."
-    },
-    {
       "section_id": "sec:components/tier2_runtime/runtime_interpreter.md#4.1 アルゴリズム",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
       "heading": "4.1 アルゴリズム",
@@ -92,6 +79,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '4.1 アルゴリズム'."
+    },
+    {
+      "section_id": "sec:components/tier1_core/system_config_details.md#2.4 vSoC / vMMIO {VERIFY_FORMAL}",
+      "file_path": "components/tier1_core/system_config_details.md",
+      "heading": "2.4 vSoC / vMMIO {VERIFY_FORMAL}",
+      "tier": 1,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '2.4 vSoC / vMMIO {VERIFY_FORMAL}'."
     },
     {
       "section_id": "sec:components/tier2_runtime/runtime_vmmio.md#1. コンセプト",
@@ -245,9 +245,9 @@
       "summary": "Independent heuristic evaluation for '1. コンセプト'."
     },
     {
-      "section_id": "sec:components/tier2_runtime/runtime_interpreter.md#実行コンテキスト（execution_context）",
+      "section_id": "sec:components/tier2_runtime/runtime_interpreter.md#実行コンテキスト（execution_context @ スタックボトム）",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "heading": "実行コンテキスト（execution_context）",
+      "heading": "実行コンテキスト（execution_context @ スタックボトム）",
       "tier": 2,
       "complexity_score": 2,
       "risk_score": 2,
@@ -255,7 +255,7 @@
       "recommended_verification": "Static",
       "suggested_tags": [],
       "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '実行コンテキスト（execution_context）'."
+      "summary": "Independent heuristic evaluation for '実行コンテキスト（execution_context @ スタックボトム）'."
     },
     {
       "section_id": "sec:components/tier1_core/system_config_details.md#2.7 型定義・予約値",
@@ -638,19 +638,6 @@
       "summary": "Independent heuristic evaluation for '6.1 検証対象の不変条件'."
     },
     {
-      "section_id": "sec:components/tier3_jit/jit_engine_copy_patch.md#命令テンプレート（jit_template）",
-      "file_path": "components/tier3_jit/jit_engine_copy_patch.md",
-      "heading": "命令テンプレート（jit_template）",
-      "tier": 3,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '命令テンプレート（jit_template）'."
-    },
-    {
       "section_id": "sec:plans/backlog_list.md#オーナーレビュー観点 & チェックリスト",
       "file_path": "plans/backlog_list.md",
       "heading": "オーナーレビュー観点 & チェックリスト",
@@ -787,6 +774,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '3.2 リカバリー戦略とエラーハンドリング'."
+    },
+    {
+      "section_id": "sec:components/tier3_jit/jit_engine_copy_patch.md#命令テンプレート（jit_template）",
+      "file_path": "components/tier3_jit/jit_engine_copy_patch.md",
+      "heading": "命令テンプレート（jit_template）",
+      "tier": 3,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '命令テンプレート（jit_template）'."
     },
     {
       "section_id": "sec:architecture/architecture_overview.md#ヒープパーティション",
@@ -1533,9 +1533,9 @@
       "summary": "Independent heuristic evaluation for 'IPCメッセージ（message）'."
     },
     {
-      "section_id": "sec:components/tier2_runtime/runtime_interpreter.md#コールフレーム（call_frame）",
+      "section_id": "sec:components/tier2_runtime/runtime_interpreter.md#コールフレーム（call_frame @ 統合スタックインライン）",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "heading": "コールフレーム（call_frame）",
+      "heading": "コールフレーム（call_frame @ 統合スタックインライン）",
       "tier": 2,
       "complexity_score": 2,
       "risk_score": 2,
@@ -1543,12 +1543,12 @@
       "recommended_verification": "Static",
       "suggested_tags": [],
       "risk_factors": [],
-      "summary": "Independent heuristic evaluation for 'コールフレーム（call_frame）'."
+      "summary": "Independent heuristic evaluation for 'コールフレーム（call_frame @ 統合スタックインライン）'."
     },
     {
-      "section_id": "sec:components/tier2_runtime/runtime_interpreter.md#制御フレーム（control_frame）",
+      "section_id": "sec:components/tier2_runtime/runtime_interpreter.md#制御フレーム（control_frame @ 統合スタックインライン）",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "heading": "制御フレーム（control_frame）",
+      "heading": "制御フレーム（control_frame @ 統合スタックインライン）",
       "tier": 2,
       "complexity_score": 2,
       "risk_score": 2,
@@ -1556,7 +1556,7 @@
       "recommended_verification": "Static",
       "suggested_tags": [],
       "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '制御フレーム（control_frame）'."
+      "summary": "Independent heuristic evaluation for '制御フレーム（control_frame @ 統合スタックインライン）'."
     },
     {
       "section_id": "sec:components/tier2_runtime/runtime_vsoc.md#5.5 関連コンポーネントとの連携",
@@ -3245,9 +3245,9 @@
       "summary": "Independent heuristic evaluation for '仮想レジスタセット（virtual_register_set）'."
     },
     {
-      "section_id": "sec:components/tier2_runtime/runtime_interpreter.md#インタプリタ構成（interpreter_config）",
+      "section_id": "sec:components/tier2_runtime/runtime_interpreter.md#3.2 内部ブロック図",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "heading": "インタプリタ構成（interpreter_config）",
+      "heading": "3.2 内部ブロック図",
       "tier": 2,
       "complexity_score": 2,
       "risk_score": 2,
@@ -3255,7 +3255,7 @@
       "recommended_verification": "Static",
       "suggested_tags": [],
       "risk_factors": [],
-      "summary": "Independent heuristic evaluation for 'インタプリタ構成（interpreter_config）'."
+      "summary": "Independent heuristic evaluation for '3.2 内部ブロック図'."
     },
     {
       "section_id": "sec:components/tier2_runtime/runtime_interpreter.md#Interpreter 実行シーケンス",
@@ -3890,9 +3890,9 @@
       "summary": "Independent heuristic evaluation for '2. アーキテクチャ分類'."
     },
     {
-      "section_id": "sec:components/tier2_runtime/runtime_interpreter.md#3.2 内部ブロック図",
+      "section_id": "sec:components/tier2_runtime/runtime_interpreter.md#インタプリタ構成（interpreter_config）",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "heading": "3.2 内部ブロック図",
+      "heading": "インタプリタ構成（interpreter_config）",
       "tier": 2,
       "complexity_score": 2,
       "risk_score": 2,
@@ -3900,7 +3900,7 @@
       "recommended_verification": "Static",
       "suggested_tags": [],
       "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '3.2 内部ブロック図'."
+      "summary": "Independent heuristic evaluation for 'インタプリタ構成（interpreter_config）'."
     },
     {
       "section_id": "sec:components/tier2_runtime/runtime_interpreter.md#実行ステップ (`run_step`)",
@@ -5613,6 +5613,19 @@
       "summary": "Independent heuristic evaluation for 'サービスロード（load_service）'."
     },
     {
+      "section_id": "sec:components/tier2_runtime/runtime_interpreter.md#3.1 データ構造",
+      "file_path": "components/tier2_runtime/runtime_interpreter.md",
+      "heading": "3.1 データ構造",
+      "tier": 2,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '3.1 データ構造'."
+    },
+    {
       "section_id": "sec:components/tier2_runtime/runtime_interpreter.md#初期化（initialize）",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
       "heading": "初期化（initialize）",
@@ -6014,19 +6027,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '2.5 スレッド・情報取得'."
-    },
-    {
-      "section_id": "sec:components/tier2_runtime/runtime_interpreter.md#3.1 データ構造",
-      "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "heading": "3.1 データ構造",
-      "tier": 2,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '3.1 データ構造'."
     },
     {
       "section_id": "sec:components/tier2_runtime/runtime_interpreter.md#インタプリタ（Interpreter）クラス",

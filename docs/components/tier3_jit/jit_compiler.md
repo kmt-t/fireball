@@ -96,8 +96,8 @@ JIT コンパイル済みネイティブトレースの実行エントリポイ�
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| トレースシグネチャ | `__fastcall` によるネイティブトレース実行関数 | 関数ポインタ | `void (__fastcall *)(const uint8_t* __restrict__ ip, uint32_t* __restrict__ sp, vsoc_runtime* __restrict__ env) noexcept` |
-| レジスタ割り当て | ARM AAPCS / `__fastcall` 引数レジスタマッピング | 物理レジスタ | `R0`: `ip` (WASM PC)<br>`R1`: `sp` (オペランドスタック頂点)<br>`R2`: `env` (環境ポインタ `{EnvironmentPointer}`)<br>`R3`: **スクラッチレジスタ（解放・演算用）**<br>`R4`/`R5`: スタックトップキャッシュ (TOS, NOS)<br>`ctx`: `sp & ~0x7FF` により必要時のみ導出 `{ContextPointerRegister}` |
+| トレースシグネチャ | `__fastcall` によるネイティブトレース実行関数 | 関数ポインタ | `void (__fastcall *)(const uint8_t* __restrict__ ip, execution_context* __restrict__ stack_bot, vsoc_runtime* __restrict__ env) noexcept` |
+| レジスタ割り当て | ARM AAPCS / `__fastcall` 引数レジスタマッピング | 物理レジスタ | `R0`: `ip` (WASM PC)<br>`R1`: `stack_bot` (スタックボトム基底ポインタ `{ContextPointerRegister}`)<br>`R2`: `env` (環境ポインタ `{EnvironmentPointer}`)<br>`R3`: **スクラッチレジスタ（解放・演算用）**<br>`R4`/`R5`: スタックトップキャッシュ (TOS, NOS) |
 
 ### 3.4 公開API
 外部コンポーネント（Executor等）からJITコンパイル機能を利用するためのAPI。
@@ -125,14 +125,14 @@ JIT コンパイル済みネイティブトレースの実行エントリポイ�
 #### Copy-and-Patch コンパイル手順
 
 <!-- traceability: {JIT_CopyAndPatch} {META_AI_Native_Dev} {JIT_RuntimeAPI_Fallback} {ContextPointerRegister} -->
-1. **テンプレート選択**: WASM命令に対応する事前定義済みのネイティブコードテンプレートを選択する。すべてのテンプレートは `__fastcall` CPS 3引数レジスタ割り当て（R0=IP, R1=SP, R2=ENV, R3=スクラッチ）に完全準拠して設計される。
+1. **テンプレート選択**: WASM命令に対応する事前定義済みのネイティブコードテンプレートを選択する。すべてのテンプレートは `__fastcall` CPS 3引数レジスタ割り当て（R0=IP, R1=stack_bot, R2=ENV, R3=スクラッチ）に完全準拠して設計される。
 2. **コードコピー**: テンプレートをアクティブ・キャッシュ領域の「ベースアドレス + 使用済みサイズ」の位置へコピーする。
 3. **パッチ適用 (プレースホルダ埋め)**:
     - 即値（定数）をプレースホルダに書き込む。
     - ランタイムAPIのアドレスを書き込む。
     - 相対ジャンプ先を計算して書き込む。
 4. **インタープリタ連携とフォールバック (Zero-Overhead Interop)**:
-    - JIT トレース末尾、未コンパイル命令、またはトラップ発生時、JIT コードはレジスタ R0〜R2 に最新の `(ip, sp, env)` を保持したまま、インタープリタのオプコードハンドラ（またはディスパッチャ）へ直接末尾ジャンプ（`BX`）する。
+    - JIT トレース末尾、未コンパイル命令、またはトラップ発生時、JIT コードはレジスタ R0〜R2 に最新の `(ip, stack_bot, env)` を保持したまま、インタープリタのオプコードハンドラ（またはディスパッチャ）へ直接末尾ジャンプ（`BX`）する。
     - レジスタの再配置や構造体への退避/復元オーバーヘッドなしに、即座にインタープリタ実行へ復帰する。 `{JIT_RuntimeAPI_Fallback}`
 5. **エントリ登録 & 命令キャッシュ同期**: JITエントリを作成し、命令オフセット（PC）順を維持するようにエントリ配列に挿入する。同時にカードグループ索引を更新する。パッチ適用完了後、Cortex-M33 向けにデータキャッシュをクリーンし、`__DSB()`（データ同期バリア）および `__ISB()`（命令同期バリア）を発行して命令キャッシュ（I-Cache）のコヒーレンシを保証する。
 

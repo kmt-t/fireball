@@ -527,26 +527,26 @@ Sakura バックエンドの実監査で検出された **4 件の FAIL** につ
 
 上記対応の過程で、`spec_integrator/judge/risk_assessor.py` において `is_llm` 判定時に `if not is_waived` が抜けていたため、`waivers` で明示的に免除したセクションであっても `is_llm = True` になってしまうバグを発見・修正した。
 
-### 2.5 `__fastcall` 継続渡し（CPS）とスタックボトム配置によるレジスタ最適化・JIT完全整合
+### 2.5 `__fastcall` 継続渡し（CPS）とスタックボトム配置・統合スタックによるレジスタ最適化
 
 各バイトコードハンドラおよび JIT トレースの呼び出し規約とレジスタ割り当てを以下の通り最適化・整合させた：
-- **スタックボトム・コンテキスト配置（`{ContextPointerRegister}`）**:
-  - `execution_context` を WASM オペランドスタックバッファ（2KB 境界アライン）の最下部（Bottom: offset 0）に配置。
-  - 現在のスタックポインタ `sp`（R1）に対し、`sp & ~0x7FF`（Thumb-2: `BIC Rx, R1, #0x7FF` などの 1 命令）を適用することで、必要な場合のみ `ctx` を即座に導出。
-  - これによりハンドラ引数から `ctx` を排除し、**3引数シグネチャ** へスリム化。
+- **スタックボトム・コンテキスト配置と統合スタックモデル（Android ART スタイル `{ContextPointerRegister}`）**:
+  - `execution_context` を WASM スタックバッファ（2KB 境界アライン）の最下部（Bottom: offset 0）に配置。
+  - スタックの成長した長さ（`stack_depth` / `sp_offset`）をコンテキスト内で管理し、`call_frame` や `control_frame`、ローカル変数、オペランドスタックをすべて単一スタック上にインラインで積む。
+  - ハンドラ呼び出しの第2引数として `sp` ではなく固定のスタックボトム基底（`R1: stack_bot`）を渡すことで、ベース相対ロード（`LDR R0, [R1, #offset]`）による 1 サイクルアクセスを維持しつつ、**3引数シグネチャ** へスリム化。
 - **`__fastcall` 継続渡し（CPS）3引数シグネチャ**:
-  - `void (__fastcall *)(const uint8_t* ip, uint32_t* sp, vsoc_runtime* env) noexcept`
+  - `void (__fastcall *)(const uint8_t* ip, execution_context* stack_bot, vsoc_runtime* env) noexcept`
   - 物理レジスタ割り当て（ARM Cortex-M33 / AAPCS）:
     - `R0`: `const uint8_t* ip` (第1引数: WASM PC / Bytecode Pointer)
-    - `R1`: `uint32_t* sp` (第2引数: WASM Operand Stack Pointer)
+    - `R1`: `execution_context* stack_bot` (第2引数: スタックボトム基底ポインタ `{ContextPointerRegister}`)
     - `R2`: `vsoc_runtime* env` (第3引数: 環境ポインタ `{EnvironmentPointer}`)
     - **`R3`**: **【スクラッチレジスタとして解放】**（AAPCS Caller-saved スクラッチとしてハンドラや JIT Stencil 内の即値ロード・一時演算にゼロコストで使用可能）
     - `R4`, `R5`: JIT 内スタックトップキャッシュ (TOS, NOS)
 - **インタープリタの CPS ダイレクトスレッディング**:
-  - ホットな実行変数（`ip`, `sp`, `env`）を `__fastcall` 引数レジスタ上で保持・更新し、`ctx` 構造体への無駄なメモリロード/ストアを排除。
+  - ホットな実行変数（`ip`, `stack_bot`, `env`）を `__fastcall` 引数レジスタ上で保持・更新。
   - `[[clang::musttail]]` による直接末尾ジャンプで次のハンドラへ引数を継続渡し。
 - **JIT コードとの Zero-Overhead 相互移行**:
-  - JIT トレースのエントリポイント（`exec_trace`）も全く同一の `__fastcall` CPS 3引数シグネチャを採用。
+  - JIT トレースのエントリポイント（`exec_trace`）も全く同一の `__fastcall` CPS 3引数シグネチャ（R0=IP, R1=stack_bot, R2=ENV）を採用。
   - JIT $\to$ インタープリタ（OSR / Fallback / Exit）および インタープリタ $\to$ JIT（Lazy Switch / Trace Exec）において、レジスタ再配置やメモリ書き戻しオーバーヘッドなし（Zero Conversion Overhead）の直接ジャンプ（`BX`）を実現。
 
 ---

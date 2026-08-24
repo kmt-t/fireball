@@ -36,14 +36,14 @@ graph TD
 
 #### 命令テンプレート（jit_template）
 <!-- traceability: {JIT_RegisterMapping} {ContextPointerRegister} {EnvironmentPointer} -->
-WASM命令に対応するネイティブバイナリの雛形。インタープリタの `opcode_handler` と完全整合する `__fastcall` CPS 3引数呼び出し規約（`R0`: `ip`, `R1`: `sp`, `R2`: `env`）およびスタックトップレジスタ（`R4`: TOS, `R5`: NOS）に基づいて設計される。スタックボトム配置により `R3` はスクラッチレジスタとして自由に使用できる。 `{JIT_RegisterMapping}` `{ContextPointerRegister}` `{EnvironmentPointer}`
+WASM命令に対応するネイティブバイナリの雛形。インタープリタの `opcode_handler` と完全整合する `__fastcall` CPS 3引数呼び出し規約（`R0`: `ip`, `R1`: `stack_bot`, `R2`: `env`）およびスタックトップレジスタ（`R4`: TOS, `R5`: NOS）に基づいて設計される。スタックボトム渡しにより `R3` はスクラッチレジスタとして自由に使用できる。 `{JIT_RegisterMapping}` `{ContextPointerRegister}` `{EnvironmentPointer}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
 | 命令バイナリ | ネイティブ命令列の実体 | バイナリビュー | ROM参照 |
 | パッチ箇所数 | テンプレート内で修正（パッチ）が必要なスロットの数 | エントリ数 | 8/16bit |
 | パッチ情報 | 各パッチ位置のオフセットと修正方法（「絶対アドレスへの書き込み」「相対オフセットの加算」「レジスタ番号の置換」等の具体的なパッチ適用方法）を定義する情報の配列 | バイナリビュー | - |
-| レジスタ規約 | JIT トレースとインタープリタ間で共有される物理レジスタ規約 | 規約定義 | `R0`: `ip`<br>`R1`: `sp`<br>`R2`: `env`<br>`R3`: スクラッチレジスタ（一時計算用）<br>`R4`/`R5`: TOS/NOS<br>`ctx`: `sp & ~0x7FF` で導出 `{ContextPointerRegister}` |
+| レジスタ規約 | JIT トレースとインタープリタ間で共有される物理レジスタ規約 | 規約定義 | `R0`: `ip`<br>`R1`: `stack_bot`<br>`R2`: `env`<br>`R3`: スクラッチレジスタ（一時計算用）<br>`R4`/`R5`: TOS/NOS |
 
 ## 4. 動的モデル
 
@@ -59,8 +59,8 @@ WASM命令に対応するネイティブバイナリの雛形。インタープ�
     - ランタイムAPIのアドレスをパッチする。
     - 分岐命令の相対オフセットを計算してパッチする。
 5. **インタープリタ継続渡し整合 (CPS / __fastcall Tail Call)**:
-    - JIT トレースの出口やフォールバック箇所では、レジスタ R0〜R2 に最新の `(ip, sp, env)` を載せたままインタープリタの次命令ハンドラを直接末尾ジャンプ（`BX`）する。
-    - スタックトップキャッシュ（R4/R5）のダーティな値を `sp`（R1）が指すメモリへフラッシュした上で、インタープリタと完全に整合したレジスタ状態で制御を渡す。 `{JIT_RuntimeAPI_Fallback}`
+    - JIT トレースの出口やフォールバック箇所では、レジスタ R0〜R2 に最新の `(ip, stack_bot, env)` を載せたままインタープリタの次命令ハンドラを直接末尾ジャンプ（`BX`）する。
+    - スタックトップキャッシュ（R4/R5）のダーティな値をスタックメモリへフラッシュした上で、インタープリタと完全に整合したレジスタ状態で制御を渡す。 `{JIT_RuntimeAPI_Fallback}`
 6. **ポインタ更新**: キャッシュの使用済みサイズを更新する。
 
 #### Copy-and-Patch JIT フルセット・コンセプトコード (`concepts/jit_copy_patch_concept.py`)

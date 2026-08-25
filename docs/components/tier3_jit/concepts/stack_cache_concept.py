@@ -13,11 +13,14 @@ select a stencil VARIANT according to how many operands are currently cached.
 Copy-and-Patch pays nothing for this at compile time: the variants are all
 pre-compiled byte sequences, so the extra table costs ROM, not cycles.
 
-Register assignment (Cortex-M33, AAPCS-compatible callee-saved range):
-    R4  = TOS   (top of operand stack)
-    R5  = NOS   (next on stack)
-    R7  = locals base pointer   `{ContextPointerRegister}`
-    R6  = runtime context (safepoint flag lives here)
+Register assignment (Cortex-M33 / AAPCS __fastcall convention):
+    R0  = ip        (WASM PC / bytecode pointer)
+    R1  = stack_bot (stack bottom context pointer `{ContextPointerRegister}`)
+    R2  = env       (runtime environment pointer `{EnvironmentPointer}`)
+    R3  = scratch   (caller-saved scratch register for immediate load & temporary arithmetic)
+    R4  = TOS       (top of operand stack, JIT callee-saved cache)
+    R5  = NOS       (next on stack, JIT callee-saved cache)
+    R7  = FP        (AAPCS standard frame pointer - preserved)
 
 Cache state is the number of operands currently held in registers: 0, 1 or 2.
 A stencil declares what it consumes and produces, so the compiler tracks the

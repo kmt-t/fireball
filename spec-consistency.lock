@@ -429,6 +429,7 @@
       "sec:components/tier1_core/os_coos.md#3.1 データ構造",
       "sec:components/tier1_core/os_coos.md#6.2 直交表: CSP通信と状態遷移",
       "sec:components/tier1_core/os_coos.md#CSPチャネル（channel）",
+      "sec:components/tier1_core/os_scheduler.md#4.2 状態遷移図 (SysML SMD: Scheduler 視点)",
       "sec:components/tier1_interface/ipc_router.md#メッセージルーティング（route_message）"
     ],
     "ADR_SafeQueuingOnHotMiss": [
@@ -493,6 +494,7 @@
       "sec:components/tier1_core/os_coos.md#4.2 状態遷移図 (SMD: COOS システムレベル)",
       "sec:components/tier1_core/os_coos.md#6.1 検証対象の不変条件",
       "sec:components/tier1_core/os_coos.md#6.2 直交表: CSP通信と状態遷移",
+      "sec:components/tier1_core/os_scheduler.md#4.2 状態遷移図 (SysML SMD: Scheduler 視点)",
       "sec:components/tier1_interface/ipc_router.md#メッセージルーティング（route_message）",
       "sec:plans/backlog_list.md#オーナーレビュー観点 & チェックリスト"
     ],
@@ -1627,7 +1629,7 @@
     "sec:components/tier1_core/os_scheduler.md#3.3 主要なデータ定義": "97a227748f66b48524d4287664ef77e5a13c16fa4b7e9aa9b897f2dfb2b2ff23",
     "sec:components/tier1_core/os_scheduler.md#4. 動的モデル": "341dff8c7275b6011b54ff1bbf2ddf06f6c8faa457638ff164c4b2df64ef68f0",
     "sec:components/tier1_core/os_scheduler.md#4.1 アルゴリズム": "fc3946bd5f458cfd81833ae845de810ae1940495a939c94f2b1f8c01304710d6",
-    "sec:components/tier1_core/os_scheduler.md#4.2 状態遷移図 (SysML SMD: Scheduler 視点)": "5ea67489b0f07f9aa351bb0903186b0ae053774d2a765813d4af374281b3c76f",
+    "sec:components/tier1_core/os_scheduler.md#4.2 状態遷移図 (SysML SMD: Scheduler 視点)": "d2479e769209f035876fbd54293aa3cc3636de51a9b16df03eab6dcccadb1ed1",
     "sec:components/tier1_core/os_scheduler.md#5. インターフェイス設計": "febc7f82f26aaead507efb81f1fe2d25c483024f746dc318c277eb9eb3bfb682",
     "sec:components/tier1_core/os_scheduler.md#5.1 公開API": "b70ae71940e3555c41f5cca496ccbd8a2ef90d2e584fc21fb7c465b803ac3b06",
     "sec:components/tier1_core/os_scheduler.md#6. 設計判断 (ADR)": "a332ce8684b7d2587d36c2c97e9c902c421bc109841bc9fd1c29388fe94ceb70",

@@ -16,10 +16,10 @@
 | `components/tier1_interface/ipc_router.md` | **4.2 状態遷移図 (SysML SMD: IPC Router ルーティングフロー)** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Stateful concurrent protocol or hardware safety invariant identified |
 | `components/tier3_jit/jit_compiler.md` | **7.2 安全性制約と方策** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Stateful concurrent protocol or hardware safety invariant identified |
 | `components/tier1_core/os_coos.md` | **4.2 状態遷移図 (SMD: COOS システムレベル)** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Stateful concurrent protocol or hardware safety invariant identified |
+| `components/tier1_core/os_scheduler.md` | **4.2 状態遷移図 (SysML SMD: Scheduler 視点)** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Stateful concurrent protocol or hardware safety invariant identified |
 | `components/tier1_interface/ipc_router.md` | **メッセージルーティング（route_message）** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Stateful concurrent protocol or hardware safety invariant identified |
 | `components/tier1_interface/ipc_router.md` | **4.1.1 名前解決パイプラインとアクセス制御フロー** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Stateful concurrent protocol or hardware safety invariant identified |
 | `components/tier1_interface/ipc_router.md` | **4.2.1 所有権移譲状態機械 (Ownership Transfer State Machine)** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Stateful concurrent protocol or hardware safety invariant identified |
-| `components/tier1_core/os_scheduler.md` | **4.2 状態遷移図 (SysML SMD: Scheduler 視点)** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Stateful concurrent protocol or hardware safety invariant identified |
 | `components/tier3_platform/platform_memory.md` | **9. ハードウェアメモリ保護 (MPU) & W^X 設計** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Stateful concurrent protocol or hardware safety invariant identified |
 | `components/tier1_interface/ipc_router.md` | **3.2 内部ブロック図** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Stateful concurrent protocol or hardware safety invariant identified |
 | `components/tier1_core/os_coos.md` | **チャネル送受信動作の挙動定義** | 4/5 | **4/5** | `pyModelChecking` | `{VERIFY_FORMAL}` | Stateful concurrent protocol or hardware safety invariant identified |
@@ -54,10 +54,10 @@
 | `components/tier1_interface/ipc_router.md` | 4.2 状態遷移図 (SysML SMD: IPC Router ルーティングフロー) | 1 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Independent heuristic evaluation for '4.2 状態遷移図 (SysML SMD: IPC Router ルーティングフロー)'. |
 | `components/tier3_jit/jit_compiler.md` | 7.2 安全性制約と方策 | 3 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Independent heuristic evaluation for '7.2 安全性制約と方策'. |
 | `components/tier1_core/os_coos.md` | 4.2 状態遷移図 (SMD: COOS システムレベル) | 1 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Independent heuristic evaluation for '4.2 状態遷移図 (SMD: COOS システムレベル)'. |
+| `components/tier1_core/os_scheduler.md` | 4.2 状態遷移図 (SysML SMD: Scheduler 視点) | 1 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Independent heuristic evaluation for '4.2 状態遷移図 (SysML SMD: Scheduler 視点)'. |
 | `components/tier1_interface/ipc_router.md` | メッセージルーティング（route_message） | 1 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Independent heuristic evaluation for 'メッセージルーティング（route_message）'. |
 | `components/tier1_interface/ipc_router.md` | 4.1.1 名前解決パイプラインとアクセス制御フロー | 1 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Independent heuristic evaluation for '4.1.1 名前解決パイプラインとアクセス制御フロー'. |
 | `components/tier1_interface/ipc_router.md` | 4.2.1 所有権移譲状態機械 (Ownership Transfer State Machine) | 1 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Independent heuristic evaluation for '4.2.1 所有権移譲状態機械 (Ownership Transfer State Machine)'. |
-| `components/tier1_core/os_scheduler.md` | 4.2 状態遷移図 (SysML SMD: Scheduler 視点) | 1 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Independent heuristic evaluation for '4.2 状態遷移図 (SysML SMD: Scheduler 視点)'. |
 | `components/tier3_platform/platform_memory.md` | 9. ハードウェアメモリ保護 (MPU) & W^X 設計 | 3 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Independent heuristic evaluation for '9. ハードウェアメモリ保護 (MPU) & W^X 設計'. |
 | `components/tier1_interface/ipc_router.md` | 3.2 内部ブロック図 | 1 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Independent heuristic evaluation for '3.2 内部ブロック図'. |
 | `components/tier1_core/os_coos.md` | チャネル送受信動作の挙動定義 | 1 | 4/5 | 4/5 | `pyModelChecking` | `{VERIFY_FORMAL}` | Independent heuristic evaluation for 'チャネル送受信動作の挙動定義'. |

@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-24T10:55:51.758031+00:00",
+  "generated_at": "2026-08-24T23:53:16.048634+00:00",
   "backend": "heuristic",
   "total_evaluated": 708,
   "formal_candidates_count": 31,
@@ -12,7 +12,7 @@
     "architecture/document_structure.md": "8882e25d3b07bd6fdabf69739827f3dfb1c3c5d992fce688407d7d13e1727fee",
     "architecture/resource_budget.md": "ac4928f5ad7fcc1a360b6539ec3d44d072a67c6b7d4aa7d76bdac014971def00",
     "components/tier1_core/os_coos.md": "7f2041f9ed21e99a75448b8112629ed0a4e95605e70425807cdb8a431db531bf",
-    "components/tier1_core/os_scheduler.md": "891a6639ebc7c8122cf48e1558dacab63772d56e2454e663903425ea0e403751",
+    "components/tier1_core/os_scheduler.md": "bb8d0e129d9ce8c153fb4d7f0297d095eb2f1bdcff24de9fa345d39e67013a83",
     "components/tier1_core/system_config.md": "18d6e2eeb837773f55bb1d285809d64d86bdf94dc0bff012116caf908b9177a0",
     "components/tier1_core/system_config_details.md": "d01b76be672dc64e340304989cd087ebc46edef5f75c2a0b633bf2c927af019b",
     "components/tier1_core/system_containers.md": "82dda7625a9c40f070347564629df99079691c63a20dda7c95bd6183d761ccf6",
@@ -522,6 +522,23 @@
       "summary": "Independent heuristic evaluation for '1. コンセプト'."
     },
     {
+      "section_id": "sec:components/tier1_core/os_scheduler.md#4.2 状態遷移図 (SysML SMD: Scheduler 視点)",
+      "file_path": "components/tier1_core/os_scheduler.md",
+      "heading": "4.2 状態遷移図 (SysML SMD: Scheduler 視点)",
+      "tier": 1,
+      "complexity_score": 4,
+      "risk_score": 4,
+      "formal_needed": true,
+      "recommended_verification": "pyModelChecking",
+      "suggested_tags": [
+        "{VERIFY_FORMAL}"
+      ],
+      "risk_factors": [
+        "Stateful concurrent protocol or hardware safety invariant identified"
+      ],
+      "summary": "Independent heuristic evaluation for '4.2 状態遷移図 (SysML SMD: Scheduler 視点)'."
+    },
+    {
       "section_id": "sec:components/tier3_jit/jit_compiler.md#8. 設計判断 (ADR)",
       "file_path": "components/tier3_jit/jit_compiler.md",
       "heading": "8. 設計判断 (ADR)",
@@ -913,23 +930,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '3.1 データ構造'."
-    },
-    {
-      "section_id": "sec:components/tier1_core/os_scheduler.md#4.2 状態遷移図 (SysML SMD: Scheduler 視点)",
-      "file_path": "components/tier1_core/os_scheduler.md",
-      "heading": "4.2 状態遷移図 (SysML SMD: Scheduler 視点)",
-      "tier": 1,
-      "complexity_score": 4,
-      "risk_score": 4,
-      "formal_needed": true,
-      "recommended_verification": "pyModelChecking",
-      "suggested_tags": [
-        "{VERIFY_FORMAL}"
-      ],
-      "risk_factors": [
-        "Stateful concurrent protocol or hardware safety invariant identified"
-      ],
-      "summary": "Independent heuristic evaluation for '4.2 状態遷移図 (SysML SMD: Scheduler 視点)'."
     },
     {
       "section_id": "sec:components/tier1_core/system_syscall.md#5.7. WASI (`0x80`-`0xBF`)",

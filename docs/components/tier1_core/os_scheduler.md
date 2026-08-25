@@ -183,11 +183,9 @@ stateDiagram-v2
 | :--- | :--- | :--- | :--- | :--- |
 | init → READY | spawn(task) | 静的TCBスロットの空きあり | 静的プールからTCBを割り当て、タスクコンテキスト初期化 | READY |
 | READY → RUNNING | schedule() | READYキュー非空 | `head_task.resume()` 直接呼び出し | RUNNING |
-| RUNNING → READY | yield() | (常に可) | 現在タスクをREADYキュー末尾に追加 | READY |
-| RUNNING → CSP_WAIT | send(empty) | チャネル空 | 送信タスクを待機キューに追加、実行権をスケジューラに戻す | CSP_WAIT |
-| RUNNING → CSP_WAIT | recv(empty) | データなし | 受信タスクを待機キューに追加、実行権をスケジューラに戻す | CSP_WAIT |
-| CSP_WAIT → RUNNING | **CSP Handoff** | 相手タスク準備完了 | **対称遷移スイッチ: `await_suspend` から `opposite_task.coroutine_handle` 返却（スタックレス）** | RUNNING |
-| CSP_WAIT → READY | [相手未準備] | 相手タスク待機中 | 相手をREADY、自タスクをREADY末尾に追加 | READY |
+| RUNNING → CSP_WAIT | send(ch) | 受信側未待機 (`{ADR_RendezvousChannel}`) | 送信側としてチャネルスロットに登録しサスペンド、実行権をスケジューラに戻す | CSP_WAIT |
+| RUNNING → CSP_WAIT | recv(ch) | 送信側未待機 (`{ADR_RendezvousChannel}`) | 受信側としてチャネルスロットに登録しサスペンド、実行権をスケジューラに戻す | CSP_WAIT |
+| CSP_WAIT → RUNNING | **CSP Handoff** | 相手タスク待機中 (Rendezvous成立) | **対称遷移スイッチ: `await_suspend` から `opposite_task.coroutine_handle` 返却（スケジューラ迂回 $O(1)$ スイッチ）** `{CSP_Handoff}` | RUNNING |
 | RUNNING → EVT_WAIT | wait_event(id) | (常に可) | イベントID登録、スケジューラに制御戻す | EVT_WAIT |
 | EVT_WAIT → READY | event dispatch | イベント受信 | イベントループがタスクをREADYへ遷移 | READY |
 | RUNNING → INT_WAIT | [ISR発生] | 割り込みハードウェア | ISRが INT イベントをキューに投入 | INT_WAIT |

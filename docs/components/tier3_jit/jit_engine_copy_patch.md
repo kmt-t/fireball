@@ -36,15 +36,15 @@ graph TD
 
 #### 命令テンプレート（jit_template）
 <!-- traceability: {JIT_RegisterMapping} {ContextPointerRegister} {EnvironmentPointer} {ADR_TosCacheAsymmetry} -->
-WASM命令に対応するネイティブバイナリの雛形。インタープリタの `opcode_handler` と完全整合する `__fastcall` CPS 3引数呼び出し規約（`R0`: `ip`, `R1`: `stack_bot`, `R2`: `env`）に基づいて設計される。スタックボトム渡しにより `R3` はコンテキストスピル（`mem_base`, `local_base`, `sp_offset`, `scratch` 等の任意ピン留め）として使用され、JIT コンパイラはトレース解析結果に応じて最適なテンプレートバリアントを選択する。加えて、**トレース内部に限り** `R4`: TOS, `R5`: NOS をスタックトップキャッシュとして占有する（インタープリタはこの規約を共有しない。`{ADR_TosCacheAsymmetry}`）。 `{JIT_RegisterMapping}` `{ContextPointerRegister}` `{EnvironmentPointer}` `{ADR_TosCacheAsymmetry}`
+WASM命令に対応するネイティブバイナリの雛形。インタープリタの `opcode_handler` と完全整合する `__fastcall` CPS 3引数呼び出し規約（`R0`: `ip`, `R1`: `stack_bot`, `R2`: `env`）に基づいて設計される。スタックボトム渡しにより `R3`（Caller-saved）および `R4-R6, R8-R11`（Callee-saved 計7本）をトレース単位の任意割当プール（スタックトップキャッシュ TOS/NOS/NNOS、コンテキストスピル mem_base/local_base/sp_offset、ローカル変数スロット、ループカウンタ）として活用できる。JIT コンパイラはトレース解析結果に応じて最適なテンプレートバリアントを選択・結合する。 `{JIT_RegisterMapping}` `{ContextPointerRegister}` `{EnvironmentPointer}` `{ADR_TosCacheAsymmetry}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
 | 命令バイナリ | ネイティブ命令列の実体 | バイナリビュー | ROM参照 |
 | パッチ箇所数 | テンプレート内で修正（パッチ）が必要なスロットの数 | エントリ数 | 8/16bit |
 | パッチ情報 | 各パッチ位置のオフセットと修正方法（「絶対アドレスへの書き込み」「相対オフセットの加算」「レジスタ番号の置換」等の具体的なパッチ適用方法）を定義する情報の配列 | バイナリビュー | - |
-| レジスタ規約 | JIT トレースとインタープリタ間で**共有される**物理レジスタ規約 | 規約定義 | `R0`: `ip`<br>`R1`: `stack_bot`<br>`R2`: `env`<br>`R3`: **`Context Spill`（任意ピン留め / スクラッチ）** |
-| トレース内レジスタ | JIT トレース内部に**閉じた**スタックトップキャッシュ。インタープリタは保持しない | 規約定義 | `R4`: TOS<br>`R5`: NOS<br>（入口で `LDR` × 2、脱出時にダーティなら `STR` × 2） `{ADR_TosCacheAsymmetry}` |
+| レジスタ規約 | JIT トレースとインタープリタ間で**共有される**物理レジスタ規約 | 規約定義 | `R0`: `ip`<br>`R1`: `stack_bot`<br>`R2`: `env`<br>`R3`: **`Spill / Scratch`（任意ピン留め / スクラッチ）** |
+| トレース内レジスタ | JIT トレース内部に**閉じた** Callee-saved 任意割当プール | 規約定義 | `R4-R6, R8-R11` (計7本): TOS/NOS/NNOS、mem_base、local_base、local変数、ループカウンタ<br>（トレース先頭で `PUSH`、脱出時にダーティ書き戻し＋ `POP`） `{ADR_TosCacheAsymmetry}` |
 
 ## 4. 動的モデル
 
@@ -52,9 +52,9 @@ WASM命令に対応するネイティブバイナリの雛形。インタープ�
 <!-- traceability: {LowLatencyJIT} {JIT_CopyAndPatch} {JIT_RuntimeAPI_Fallback} {ContextPointerRegister} {VERIFY_FORMAL} -->
 
 #### トレースコンパイル手順
-1. **トレース解析と R3 スピル決定**: トレース内の命令構成（メモリ/ローカル/演算）に基づき、`R3` にピン留めするコンテキスト変数（`mem_base`, `local_base`, `scratch` 等）を決定する。
-2. **テンプレート・バリアント選択**: 命令および `R3` スピル状態に対応する `jit_template`（Stencil Variant）を取得する。
-3. **コードコピー**: キャッシュの空き領域にテンプレートの命令列をコピーする。トレース先頭では必要に応じて `LDR R3, [R1, #offset]` を配置する。
+1. **トレース解析とレジスタ役割バインディング決定**: トレース内の命令構成（メモリ/ローカル/スタック/ループ）に基づき、`R3` および Callee-saved レジスタ群（`R4-R6, R8-R11`）への最適な役割バインディング（TOS/NOS/NNOS, mem_base, local_base, local変数, ループカウンタ）を決定する。
+2. **テンプレート・バリアント選択**: 命令およびレジスタバインディング状態に対応する `jit_template`（Stencil Variant）を取得する。
+3. **コードコピー & プロローグ生成**: キャッシュの空き領域に使用する Callee-saved レジスタの `PUSH` および初期値ロード（`LDR`）を配置し、テンプレートの命令列をコピーする。
 4. **パッチ適用**:
     - 命令内に含まれる即値（定数）をテンプレートの指定位置に書き込む。
     - ランタイムAPIのアドレスをパッチする。

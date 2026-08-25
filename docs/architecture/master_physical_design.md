@@ -120,21 +120,28 @@ Fireball の実行コアは、以下の 6 つの明確に命名された物理�
 
 ARM Cortex-M33 (ARMv8-M Mainline) における物理レジスタの厳格な役割分担：
 
-| 物理レジスタ | AAPCS 規約 | Fireball インタープリタ | Fireball JIT トレース | 役割と不変条件 |
+| 物理レジスタ | AAPCS 規約 | Fireball インタープリタ | Fireball JIT トレース (トレース単位任意割当) | 役割と不変条件 |
 | :--- | :--- | :--- | :--- | :--- |
 | **`R0`** | Argument 1 / Scratch | `ip` (WASM PC) | `ip` (WASM PC) | 継続渡し（CPS）第1引数。現在実行中のバイトコード位置。 |
 | **`R1`** | Argument 2 / Scratch | `stack_bot` | `stack_bot` | 継続渡し（CPS）第2引数。統合スタックボトム基底ポインタ `{ContextPointerRegister}`。 |
 | **`R2`** | Argument 3 / Scratch | `env` | `env` | 継続渡し（CPS）第3引数。ランタイム環境ポインタ `{EnvironmentPointer}`。 |
-| **`R3`** | Argument 4 / Scratch | `scratch` (解放) | **`Context Spill` (任意)** | **コンテキスト・スピル / スクラッチ**。JITトレースの翻訳単位ごとにコンテキスト内の任意変数（`mem_base`, `local_base`, `sp_offset`, `scratch`等）をピン留め。コンパイラはスピル変数に応じてステンシルバリアントを選択。 |
-| **`R4`** | Callee-saved | (未使用 / 保全) | **`TOS` (Stack Top)** | JIT 内スタックトップキャッシュ。JIT 脱出時に `STR` で統合スタックへ書き戻し。 |
-| **`R5`** | Callee-saved | (未使用 / 保全) | **`NOS` (Next on Stack)** | JIT 内スタックネクストキャッシュ。JIT 脱出時に `STR` で統合スタックへ書き戻し。 |
-| **`R6`** | Callee-saved | (保全) | (保全) | 将来拡張用・コンテキスト補助ポインタ。 |
+| **`R3`** | Argument 4 / Scratch | `scratch` (解放) | **`Spill / Scratch` (任意)** | **Caller-saved スクラッチ / スピル**。トレース単位でコンテキスト変数（`mem_base`, `local_base` 等）をピン留め、または一時演算スクラッチ。 |
+| **`R4`** | Callee-saved | (保全) | **`Assignable Pool 0` (TOS等)** | **役割任意割当レジスタ 0**。スタックトップキャッシュ (TOS)、コンテキストスピル、ローカル変数等からトレース単位でバインド。 |
+| **`R5`** | Callee-saved | (保全) | **`Assignable Pool 1` (NOS等)** | **役割任意割当レジスタ 1**。スタック次段キャッシュ (NOS)、リニアメモリ基底 (`mem_base`) 等。 |
+| **`R6`** | Callee-saved | (保全) | **`Assignable Pool 2`** | **役割任意割当レジスタ 2**。メモリマスク (`mem_mask`)、ローカル変数基底 (`local_base`) 等。 |
 | **`R7`** | **Frame Pointer (FP)** | **FP (不可侵)** | **FP (不可侵)** | **AAPCS 標準フレームポインタ**。デバッガ・スタックアンワインドのため不変。 |
-| **`R8-R11`**| Callee-saved | (保全) | (保全) | AAPCS 準拠。 |
+| **`R8`** | Callee-saved | (保全) | **`Assignable Pool 3`** | **役割任意割当レジスタ 3**。高頻度ローカル変数 (`local[0]`)、ループカウンタ等。 |
+| **`R9`** | Callee-saved | (保全) | **`Assignable Pool 4`** | **役割任意割当レジスタ 4**。高頻度ローカル変数 (`local[1]`)、補助ポインタ等。 |
+| **`R10`** | Callee-saved | (保全) | **`Assignable Pool 5`** | **役割任意割当レジスタ 5**。セーフポイント監視フラグ (`safepoint_flag`) 等。 |
+| **`R11`** | Callee-saved | (保全) | **`Assignable Pool 6`** | **役割任意割当レジスタ 6**。拡張レジスタキャッシュ。 |
 | **`R12 (IP)`**| Intra-Call Scratch | scratch | scratch | リンカ・スタブ用スクラッチ。 |
 | **`R13 (SP)`**| Stack Pointer | C++ Core SP | C++ Core SP | C++ コア実行用スタックポインタ。 |
 | **`R14 (LR)`**| Link Register | Return Address | Return Address | 関数呼び出し戻り先アドレス。 |
 | **`R15 (PC)`**| Program Counter | CPU PC | CPU PC | 命令ポインタ。 |
+
+> [!NOTE]
+> **トレース単位のレジスタバインディングとステンシル・バリアント選択**:
+> JIT コンパイラはトレース解析時に、`R3`（Caller-saved）および `R4-R6, R8-R11`（Callee-saved 計7本）に対する最適な役割マップ（TOS/NOS、mem_base/mask、local変数、ループカウンタ）を決定する。トレース突入時に使用する Callee-saved レジスタを `PUSH`（必要に応じて初期ロード）、脱出時にダーティ書き戻し＋ `POP` することで、インタープリタとゼロ再構築で相互遷移しつつ、トレース内部を純粋なレジスタマシンとして超高速実行する。ステンシルはレジスタ割当バインディングに応じた事前コンパイル済みバリアントを選択して結合される。
 
 ---
 

@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-25T01:02:00.842863+00:00",
+  "generated_at": "2026-08-25T01:09:55.326987+00:00",
   "backend": "heuristic",
   "total_evaluated": 718,
   "formal_candidates_count": 31,
@@ -10,7 +10,7 @@
     "architecture/architecture_overview.md": "019aea4f717286caa9ef81aaccc453e67a28a358300d5db20d908a23281e5e94",
     "architecture/concept_harness.md": "2160b8e29a617ecefbf46165542544705de7ebb0f6d5b7df4bbeb1c084f9cd3c",
     "architecture/document_structure.md": "533b951c9adfc5bf8b23931b7bd6497f9cc5234b9a4d91bb624391b4b850b324",
-    "architecture/master_physical_design.md": "fdfe025bbdbdf2acd38e918532ca3d3820e1aeab50a28c0154e127a93af038c2",
+    "architecture/master_physical_design.md": "7c4e210bd11f2c1dd833b2bdfb40b6af35ae8a20efab815689707d749839b7b4",
     "architecture/resource_budget.md": "ac4928f5ad7fcc1a360b6539ec3d44d072a67c6b7d4aa7d76bdac014971def00",
     "components/tier1_core/os_coos.md": "7f2041f9ed21e99a75448b8112629ed0a4e95605e70425807cdb8a431db531bf",
     "components/tier1_core/os_scheduler.md": "bb8d0e129d9ce8c153fb4d7f0297d095eb2f1bdcff24de9fa345d39e67013a83",
@@ -31,8 +31,8 @@
     "components/tier2_runtime/wasm_instruction.md": "640483f8a25bca7885110ce37e499c4ba3622fdc2ba3507e3a78b2bc1fcf8b5f",
     "components/tier3_jit/concepts/README.md": "a39c8c192999a792243e697e008fcad02c701d14b9559d492d668208122b6ebc",
     "components/tier3_jit/jit_assembler_constexpr.md": "4798eb6d2692ae574c45917a0597feb16e1ffa3ec9d9771566a6523607f7c7d5",
-    "components/tier3_jit/jit_compiler.md": "f4a502c10c0b3bed9b88656ca3d8bbc491fecc7b460ce34c2a76ed92969fb261",
-    "components/tier3_jit/jit_engine_copy_patch.md": "a829b579f4e033a206b696c1f61db662a16121c1676b3665b94dc386fa3b1685",
+    "components/tier3_jit/jit_compiler.md": "784a34fbb35c8b4cfcad032e77fd5e3b4d9352b3f0eae9cd9180e4669bbcc0d8",
+    "components/tier3_jit/jit_engine_copy_patch.md": "cc24e7c6bdb4877e604c9d41923bd26d23432b8fda77479e19126e2abefa96e4",
     "components/tier3_jit/jit_runtime_entry.md": "f605d7ff040f12ecdcbb9b8d145a92d421d819cfdc949b427ed43ca5e4a8175a",
     "components/tier3_jit/jit_runtime_hotspot.md": "bf4ced6b78c1978a08624c8fe9f430ee307c068780cd0c314d6f527ea698603f",
     "components/tier3_platform/platform_hal.md": "b7e90323ad0269f78e10e3f59dc1e373d3b8818d02ecf4bcf03e5970096842e2",
@@ -368,19 +368,6 @@
       "summary": "Independent heuristic evaluation for '2.7 型定義・予約値'."
     },
     {
-      "section_id": "sec:components/tier3_jit/jit_engine_copy_patch.md#命令テンプレート（jit_template）",
-      "file_path": "components/tier3_jit/jit_engine_copy_patch.md",
-      "heading": "命令テンプレート（jit_template）",
-      "tier": 3,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '命令テンプレート（jit_template）'."
-    },
-    {
       "section_id": "sec:architecture/architecture_overview.md#1. アーキテクチャコンセプト",
       "file_path": "architecture/architecture_overview.md",
       "heading": "1. アーキテクチャコンセプト",
@@ -521,6 +508,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '1. コンセプト'."
+    },
+    {
+      "section_id": "sec:components/tier3_jit/jit_engine_copy_patch.md#命令テンプレート（jit_template）",
+      "file_path": "components/tier3_jit/jit_engine_copy_patch.md",
+      "heading": "命令テンプレート（jit_template）",
+      "tier": 3,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '命令テンプレート（jit_template）'."
     },
     {
       "section_id": "sec:components/tier1_core/os_scheduler.md#4.2 状態遷移図 (SysML SMD: Scheduler 視点)",
@@ -808,6 +808,19 @@
       "summary": "Independent heuristic evaluation for '2. アーキテクチャ分類'."
     },
     {
+      "section_id": "sec:architecture/master_physical_design.md#3. 物理レジスタ＆ABI規約 (Physical Register & ABI Map)",
+      "file_path": "architecture/master_physical_design.md",
+      "heading": "3. 物理レジスタ＆ABI規約 (Physical Register & ABI Map)",
+      "tier": "meta",
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '3. 物理レジスタ＆ABI規約 (Physical Register & ABI Map)'."
+    },
+    {
       "section_id": "sec:components/tier1_core/system_syscall.md#6.2. 高応答 Trigger のマッピング例",
       "file_path": "components/tier1_core/system_syscall.md",
       "heading": "6.2. 高応答 Trigger のマッピング例",
@@ -879,19 +892,6 @@
         "Stateful concurrent protocol or hardware safety invariant identified"
       ],
       "summary": "Independent heuristic evaluation for '4.2.1 所有権移譲状態機械 (Ownership Transfer State Machine)'."
-    },
-    {
-      "section_id": "sec:architecture/master_physical_design.md#3. 物理レジスタ＆ABI規約 (Physical Register & ABI Map)",
-      "file_path": "architecture/master_physical_design.md",
-      "heading": "3. 物理レジスタ＆ABI規約 (Physical Register & ABI Map)",
-      "tier": "meta",
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '3. 物理レジスタ＆ABI規約 (Physical Register & ABI Map)'."
     },
     {
       "section_id": "sec:components/tier1_interface/ipc_router.md#6.1 検証対象の不変条件",
@@ -2772,6 +2772,19 @@
       "summary": "Independent heuristic evaluation for '4.3 内部シーケンス'."
     },
     {
+      "section_id": "sec:components/tier3_jit/jit_engine_copy_patch.md#トレースコンパイル手順",
+      "file_path": "components/tier3_jit/jit_engine_copy_patch.md",
+      "heading": "トレースコンパイル手順",
+      "tier": 3,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for 'トレースコンパイル手順'."
+    },
+    {
       "section_id": "sec:components/tier3_jit/jit_engine_copy_patch.md#Copy-and-Patch JIT フルセット・コンセプトコード (`concepts/jit_copy_patch_concept.py`)",
       "file_path": "components/tier3_jit/jit_engine_copy_patch.md",
       "heading": "Copy-and-Patch JIT フルセット・コンセプトコード (`concepts/jit_copy_patch_concept.py`)",
@@ -2839,19 +2852,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '3.2 内部ブロック図'."
-    },
-    {
-      "section_id": "sec:components/tier3_jit/jit_engine_copy_patch.md#トレースコンパイル手順",
-      "file_path": "components/tier3_jit/jit_engine_copy_patch.md",
-      "heading": "トレースコンパイル手順",
-      "tier": 3,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for 'トレースコンパイル手順'."
     },
     {
       "section_id": "sec:architecture/resource_budget.md#4.1.1 制約関係図 (Constraint Relationship Diagram)",

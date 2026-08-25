@@ -17,9 +17,8 @@ Register assignment (Cortex-M33 / AAPCS __fastcall convention):
     R0  = ip        (WASM PC / bytecode pointer)
     R1  = stack_bot (stack bottom context pointer `{ContextPointerRegister}`)
     R2  = env       (runtime environment pointer `{EnvironmentPointer}`)
-    R3  = spill/scr (context spill: pinned mem_base/local_base or scratch, per-trace variant)
-    R4  = TOS       (top of operand stack, JIT callee-saved cache)
-    R5  = NOS       (next on stack, JIT callee-saved cache)
+    R3  = spill/scr (caller-saved context spill: pinned mem_base/local_base or scratch)
+    R4-R6, R8-R11 = callee-saved assignable pool (TOS/NOS/NNOS, mem_base, local_base, local vars)
     R7  = FP        (AAPCS standard frame pointer - preserved)
 
 Cache state is the number of operands currently held in registers: 0, 1 or 2.

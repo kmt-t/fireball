@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-25T04:20:41.798946+00:00",
+  "generated_at": "2026-08-25T04:43:41.294092+00:00",
   "backend": "heuristic",
   "total_evaluated": 719,
   "formal_candidates_count": 31,
@@ -31,7 +31,7 @@
     "components/tier2_runtime/wasm_instruction.md": "640483f8a25bca7885110ce37e499c4ba3622fdc2ba3507e3a78b2bc1fcf8b5f",
     "components/tier3_jit/concepts/README.md": "a39c8c192999a792243e697e008fcad02c701d14b9559d492d668208122b6ebc",
     "components/tier3_jit/jit_assembler_constexpr.md": "4798eb6d2692ae574c45917a0597feb16e1ffa3ec9d9771566a6523607f7c7d5",
-    "components/tier3_jit/jit_compiler.md": "832d7b71d69f2ccff657c2057b27f5f545e08538f783e6606f09d5137a83d4a5",
+    "components/tier3_jit/jit_compiler.md": "cd5bcfebbd6e3d13232214ab501dee7ac2376c1b6d7d9b5bef0b2ee50e179152",
     "components/tier3_jit/jit_engine_copy_patch.md": "90bd034b03771cb1f5853fd30ee96cef0df40f7be435648e9a48c6c713fa0f11",
     "components/tier3_jit/jit_runtime_entry.md": "f605d7ff040f12ecdcbb9b8d145a92d421d819cfdc949b427ed43ca5e4a8175a",
     "components/tier3_jit/jit_runtime_hotspot.md": "bf4ced6b78c1978a08624c8fe9f430ee307c068780cd0c314d6f527ea698603f",
@@ -316,6 +316,23 @@
       "summary": "Independent heuristic evaluation for '4.1 アルゴリズム'."
     },
     {
+      "section_id": "sec:components/tier3_jit/jit_compiler.md#8. 設計判断 (ADR)",
+      "file_path": "components/tier3_jit/jit_compiler.md",
+      "heading": "8. 設計判断 (ADR)",
+      "tier": 3,
+      "complexity_score": 3,
+      "risk_score": 3,
+      "formal_needed": false,
+      "recommended_verification": "LLM_Judge",
+      "suggested_tags": [
+        "{VERIFY_LLM}"
+      ],
+      "risk_factors": [
+        "Architectural trade-off or natural language design decision"
+      ],
+      "summary": "Independent heuristic evaluation for '8. 設計判断 (ADR)'."
+    },
+    {
       "section_id": "sec:requires/requirement_list.md#3.1.5 共通基盤・実装パターン",
       "file_path": "requires/requirement_list.md",
       "heading": "3.1.5 共通基盤・実装パターン",
@@ -551,23 +568,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for 'Copy-and-Patch コンパイル手順'."
-    },
-    {
-      "section_id": "sec:components/tier3_jit/jit_compiler.md#8. 設計判断 (ADR)",
-      "file_path": "components/tier3_jit/jit_compiler.md",
-      "heading": "8. 設計判断 (ADR)",
-      "tier": 3,
-      "complexity_score": 3,
-      "risk_score": 3,
-      "formal_needed": false,
-      "recommended_verification": "LLM_Judge",
-      "suggested_tags": [
-        "{VERIFY_LLM}"
-      ],
-      "risk_factors": [
-        "Architectural trade-off or natural language design decision"
-      ],
-      "summary": "Independent heuristic evaluation for '8. 設計判断 (ADR)'."
     },
     {
       "section_id": "sec:components/tier1_core/system_containers.md#6.2 メモリ制約と方策",

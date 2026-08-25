@@ -913,6 +913,7 @@
     "JIT_LazyChaining": [
       "sec:components/tier3_jit/jit_compiler.md#4.2 状態遷移図",
       "sec:components/tier3_jit/jit_compiler.md#4.3 内部シーケンス",
+      "sec:components/tier3_jit/jit_compiler.md#8. 設計判断 (ADR)",
       "sec:components/tier3_jit/jit_compiler.md#トレース・チェイニング（連鎖実行）",
       "sec:components/tier3_jit/jit_compiler.md#ホットスポット判定 (yield 時)",
       "sec:plans/backlog_list.md#Phase 1.3: Copy-and-Patch JIT Compiler (`jit_compiler`)"
@@ -2122,7 +2123,7 @@
     "sec:components/tier3_jit/jit_compiler.md#7. 制約達成の方策": "247d83c640293e1b640c4891a38d0614ff58f8c93b5b25f3fe0fe7d13c756d78",
     "sec:components/tier3_jit/jit_compiler.md#7.1 性能制約と方策": "e8c6ed1959281d8226dcb441bce835234abf261de03804b555f967640354cdde",
     "sec:components/tier3_jit/jit_compiler.md#7.2 安全性制約と方策": "9217eaffded6fb7a6d5dd5a3d6ff037f0af8eea61affb69f16fc9313b8a9bceb",
-    "sec:components/tier3_jit/jit_compiler.md#8. 設計判断 (ADR)": "416a22804b09816baa474afb237d961c4d24e2d30b0c859627f141f587934892",
+    "sec:components/tier3_jit/jit_compiler.md#8. 設計判断 (ADR)": "2fd4499cbcde4ca9ee2a79e1bb524ff2602ee3616387e81e54a45e924c1e7127",
     "sec:components/tier3_jit/jit_compiler.md#Copy-and-Patch コンパイル手順": "b36390f372a1369b5c5691bafe29c7f5edd0952505d29d80f442246c9e8441a2",
     "sec:components/tier3_jit/jit_compiler.md#JIT コンパイラ コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}": "818fd94c3893419b0568975113f3308c101a0ac1091781e2cb6dd273431f0336",
     "sec:components/tier3_jit/jit_compiler.md#JIT トレース実行シグネチャ (`exec_trace`)": "ae7bc2700552cd1a15d6d726ca9b4a465cdd5da6f63a9e7f0c34e017928dfcd2",

@@ -36,7 +36,7 @@ graph TD
 
 #### 命令テンプレート（jit_template）
 <!-- traceability: {JIT_RegisterMapping} {ContextPointerRegister} {EnvironmentPointer} {ADR_TosCacheAsymmetry} -->
-WASM命令に対応するネイティブバイナリの雛形。インタープリタの `opcode_handler` と完全整合する `__fastcall` CPS 3引数呼び出し規約（`R0`: `ip`, `R1`: `stack_bot`, `R2`: `env`）に基づいて設計される。スタックボトム渡しにより `R3`（Caller-saved）および `R4-R6, R8-R11`（Callee-saved 計7本）をトレース単位の任意割当プール（スタックトップキャッシュ TOS/NOS/NNOS、コンテキストスピル mem_base/local_base/sp_offset、ローカル変数スロット、ループカウンタ）として活用できる。JIT コンパイラはトレース解析結果に応じて最適なテンプレートバリアントを選択・結合する。 `{JIT_RegisterMapping}` `{ContextPointerRegister}` `{EnvironmentPointer}` `{ADR_TosCacheAsymmetry}`
+WASM命令に対応するネイティブバイナリの雛形。インタープリタの `opcode_handler` と完全整合する `__fastcall` CPS 3引数呼び出し規約（`R0`: `ip`, `R1`: `stack_bot`, `R2`: `env`）に基づいて設計される。スタックボトム渡しにより `R3`（Caller-saved）および `R4-R6, R8-R11`（Callee-saved 計7本）をトレース単位の任意割当プール（スタックトップキャッシュ TOS/NOS/NNOS、コンテキストスピル mem_base/local_base、ローカル変数スロット、ループカウンタ）として活用できる。`local_base` は呼び出し元ごとに絶対位置が異なる実行時値であるためトレース入口で毎回ロードされるが、`sp_offset`（オペランドスタック深さ）はそこからの静的既知オフセットとしてパッチ適用時に即値化されるため、独立したレジスタ役割は持たない。JIT コンパイラはトレース解析結果に応じて最適なテンプレートバリアントを選択・結合する。 `{JIT_RegisterMapping}` `{ContextPointerRegister}` `{EnvironmentPointer}` `{ADR_TosCacheAsymmetry}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |

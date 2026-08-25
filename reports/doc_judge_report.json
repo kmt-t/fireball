@@ -99,39 +99,6 @@
       ]
     },
     {
-      "item_id": "item:LowLatencyJIT",
-      "item_label": "{LowLatencyJIT}",
-      "status": "PASS",
-      "summary": "The specification for {LowLatencyJIT} is highly consistent across all referencing design sections. The design implements the high-level requirement of minimizing compile latency through a combination of Copy-and-Patch JIT, a threaded interpreter with zero-overhead interop, and a transaction-based MPU switching protocol.",
-      "issues": [],
-      "covered_files": [
-        "components/tier2_runtime/runtime_interpreter.md",
-        "components/tier2_runtime/runtime_vsoc.md",
-        "components/tier3_jit/jit_compiler.md",
-        "components/tier3_jit/jit_engine_copy_patch.md",
-        "components/tier3_jit/jit_runtime_hotspot.md",
-        "components/tier3_platform/platform_memory.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:ContextPointerRegister",
-      "item_label": "{ContextPointerRegister}",
-      "status": "PASS",
-      "summary": "The specification for {ContextPointerRegister} is highly consistent across all definition and design sections. The mechanism of using R1 as the stack_bot pointer to enable a unified stack model and liberate R3 as a scratch register is uniformly described and implemented across the interpreter, JIT compiler, and vSoC layers.",
-      "issues": [],
-      "covered_files": [
-        "architecture/master_physical_design.md",
-        "components/tier1_core/system_config_details.md",
-        "components/tier2_runtime/runtime_interpreter.md",
-        "components/tier2_runtime/runtime_vsoc.md",
-        "components/tier3_jit/jit_compiler.md",
-        "components/tier3_jit/jit_engine_copy_patch.md",
-        "plans/backlog_list.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
       "item_id": "item:GLOBAL_StaticScalability",
       "item_label": "{GLOBAL_StaticScalability}",
       "status": "PASS",
@@ -381,21 +348,6 @@
       ]
     },
     {
-      "item_id": "item:EnvironmentPointer",
-      "item_label": "{EnvironmentPointer}",
-      "status": "PASS",
-      "summary": "The specification for {EnvironmentPointer} is consistent across all definition and design sections. The mapping to physical register R2 and the type vsoc_runtime* are uniformly applied.",
-      "issues": [],
-      "covered_files": [
-        "architecture/master_physical_design.md",
-        "components/tier2_runtime/runtime_interpreter.md",
-        "components/tier2_runtime/runtime_vsoc.md",
-        "components/tier3_jit/jit_compiler.md",
-        "components/tier3_jit/jit_engine_copy_patch.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
       "item_id": "item:GLOBAL_InterruptWakeup",
       "item_label": "{GLOBAL_InterruptWakeup}",
       "status": "PASS",
@@ -579,21 +531,6 @@
         "components/tier1_core/os_coos.md",
         "components/tier1_core/os_scheduler.md",
         "components/tier1_interface/ipc_router.md",
-        "plans/backlog_list.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:ADR_TosCacheAsymmetry",
-      "item_label": "{ADR_TosCacheAsymmetry}",
-      "status": "PASS",
-      "summary": "The specification for {ADR_TosCacheAsymmetry} is highly consistent across all referencing sections. The asymmetry between the interpreter (no TOS cache) and the JIT (TOS/NOS cache in R4/R5) is clearly defined, justified, and implemented consistently in the register maps, the runtime interpreter logic, and the JIT compiler's prologue/epilogue procedures.",
-      "issues": [],
-      "covered_files": [
-        "architecture/master_physical_design.md",
-        "components/tier2_runtime/runtime_interpreter.md",
-        "components/tier3_jit/jit_compiler.md",
-        "components/tier3_jit/jit_engine_copy_patch.md",
         "plans/backlog_list.md",
         "requires/requirement_list.md"
       ]
@@ -841,21 +778,6 @@
       ]
     },
     {
-      "item_id": "item:JIT_RegisterMapping",
-      "item_label": "{JIT_RegisterMapping}",
-      "status": "PASS",
-      "summary": "The specification for {JIT_RegisterMapping} is highly consistent across all referencing design sections. The mapping of physical registers (R0-R15) is uniformly described, and the distinction between the interpreter's register usage and the JIT trace's assignable pool is clearly maintained and cross-referenced.",
-      "issues": [],
-      "covered_files": [
-        "architecture/master_physical_design.md",
-        "components/tier2_runtime/runtime_interpreter.md",
-        "components/tier3_jit/concepts/README.md",
-        "components/tier3_jit/jit_compiler.md",
-        "components/tier3_jit/jit_engine_copy_patch.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
       "item_id": "item:CooperativeMultitasking",
       "item_label": "{CooperativeMultitasking}",
       "status": "PASS",
@@ -941,18 +863,6 @@
       ],
       "covered_files": [
         "components/tier2_runtime/runtime_vsoc.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:JIT_LazyChaining",
-      "item_label": "{JIT_LazyChaining}",
-      "status": "PASS",
-      "summary": "The specification for {JIT_LazyChaining} is consistent across all definition and design sections. The design details correctly implement the requirement to reduce search overhead by defaulting to the interpreter and providing a mechanism for direct native-to-native chaining.",
-      "issues": [],
-      "covered_files": [
-        "components/tier3_jit/jit_compiler.md",
-        "plans/backlog_list.md",
         "requires/requirement_list.md"
       ]
     },
@@ -1409,17 +1319,6 @@
       ]
     },
     {
-      "item_id": "item:ADR_SafeQueuingOnHotMiss",
-      "item_label": "{ADR_SafeQueuingOnHotMiss}",
-      "status": "PASS",
-      "summary": "The specification for {ADR_SafeQueuingOnHotMiss} is consistent across all referenced sections. The definition, the algorithmic description, the truth table, and the ADR rationale all align on the behavior of queuing compilation requests and falling back to the interpreter without altering the card state when a 'COMPILED' card results in a cache miss.",
-      "issues": [],
-      "covered_files": [
-        "components/tier3_jit/jit_compiler.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
       "item_id": "item:JIT_ReverseCompilationOrder",
       "item_label": "{JIT_ReverseCompilationOrder}",
       "status": "PASS",
@@ -1823,17 +1722,6 @@
       ]
     },
     {
-      "item_id": "item:ADR_ScalableCodeOffset",
-      "item_label": "{ADR_ScalableCodeOffset}",
-      "status": "PASS",
-      "summary": "The design section for {ADR_ScalableCodeOffset} is fully consistent with the definition section.",
-      "issues": [],
-      "covered_files": [
-        "components/tier3_jit/jit_compiler.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
       "item_id": "item:SinglePassCompilation",
       "item_label": "{SinglePassCompilation}",
       "status": "PASS",
@@ -1854,13 +1742,125 @@
         "components/tier3_jit/jit_runtime_hotspot.md",
         "requires/requirement_list.md"
       ]
+    },
+    {
+      "item_id": "item:LowLatencyJIT",
+      "item_label": "{LowLatencyJIT}",
+      "status": "PASS",
+      "summary": "The specification for {LowLatencyJIT} is highly consistent across all referencing design sections. The design implements the requirement through a combination of Copy-and-Patch JIT, a threaded interpreter with a shared CPS calling convention, and a multi-buffer cache rotation strategy. All numeric values and register assignments are aligned.",
+      "issues": [],
+      "covered_files": [
+        "components/tier2_runtime/runtime_interpreter.md",
+        "components/tier2_runtime/runtime_vsoc.md",
+        "components/tier3_jit/jit_compiler.md",
+        "components/tier3_jit/jit_engine_copy_patch.md",
+        "components/tier3_jit/jit_runtime_hotspot.md",
+        "components/tier3_platform/platform_memory.md",
+        "requires/requirement_list.md"
+      ]
+    },
+    {
+      "item_id": "item:ContextPointerRegister",
+      "item_label": "{ContextPointerRegister}",
+      "status": "PASS",
+      "summary": "The specification for {ContextPointerRegister} is highly consistent across all definition and design sections. The mechanism of using R1 as the stack_bot pointer to enable a unified stack model and liberate R3 as a scratch register is uniformly described and implemented across the interpreter, JIT compiler, and memory configuration.",
+      "issues": [],
+      "covered_files": [
+        "architecture/master_physical_design.md",
+        "components/tier1_core/system_config_details.md",
+        "components/tier2_runtime/runtime_interpreter.md",
+        "components/tier2_runtime/runtime_vsoc.md",
+        "components/tier3_jit/jit_compiler.md",
+        "components/tier3_jit/jit_engine_copy_patch.md",
+        "plans/backlog_list.md",
+        "requires/requirement_list.md"
+      ]
+    },
+    {
+      "item_id": "item:EnvironmentPointer",
+      "item_label": "{EnvironmentPointer}",
+      "status": "PASS",
+      "summary": "The EnvironmentPointer requirement is consistently implemented across all referencing design sections. The mapping to physical register R2 and the type vsoc_runtime* are uniform throughout the architecture and runtime specifications.",
+      "issues": [],
+      "covered_files": [
+        "architecture/master_physical_design.md",
+        "components/tier2_runtime/runtime_interpreter.md",
+        "components/tier2_runtime/runtime_vsoc.md",
+        "components/tier3_jit/jit_compiler.md",
+        "components/tier3_jit/jit_engine_copy_patch.md",
+        "requires/requirement_list.md"
+      ]
+    },
+    {
+      "item_id": "item:ADR_TosCacheAsymmetry",
+      "item_label": "{ADR_TosCacheAsymmetry}",
+      "status": "PASS",
+      "summary": "The specification for {ADR_TosCacheAsymmetry} is highly consistent across all referencing sections. The asymmetry between the interpreter (no TOS cache) and the JIT (TOS/NOS cache in R4/R5) is clearly defined, justified, and implemented consistently in the register maps, execution signatures, and compilation procedures.",
+      "issues": [],
+      "covered_files": [
+        "architecture/master_physical_design.md",
+        "components/tier2_runtime/runtime_interpreter.md",
+        "components/tier3_jit/jit_compiler.md",
+        "components/tier3_jit/jit_engine_copy_patch.md",
+        "plans/backlog_list.md",
+        "requires/requirement_list.md"
+      ]
+    },
+    {
+      "item_id": "item:JIT_RegisterMapping",
+      "item_label": "{JIT_RegisterMapping}",
+      "status": "PASS",
+      "summary": "The specification for {JIT_RegisterMapping} is highly consistent across all referencing design sections. The mapping of physical registers (R0-R15) is uniformly described, and the distinction between the interpreter's register usage and the JIT trace's assignable pool is clearly maintained and cross-referenced.",
+      "issues": [],
+      "covered_files": [
+        "architecture/master_physical_design.md",
+        "components/tier2_runtime/runtime_interpreter.md",
+        "components/tier3_jit/concepts/README.md",
+        "components/tier3_jit/jit_compiler.md",
+        "components/tier3_jit/jit_engine_copy_patch.md",
+        "requires/requirement_list.md"
+      ]
+    },
+    {
+      "item_id": "item:JIT_LazyChaining",
+      "item_label": "{JIT_LazyChaining}",
+      "status": "PASS",
+      "summary": "The specification for {JIT_LazyChaining} is consistent across all definition and design sections. The design details correctly implement the requirement to reduce search overhead by defaulting to the interpreter and providing a mechanism for direct native-to-native chaining.",
+      "issues": [],
+      "covered_files": [
+        "components/tier3_jit/jit_compiler.md",
+        "plans/backlog_list.md",
+        "requires/requirement_list.md"
+      ]
+    },
+    {
+      "item_id": "item:ADR_SafeQueuingOnHotMiss",
+      "item_label": "{ADR_SafeQueuingOnHotMiss}",
+      "status": "PASS",
+      "summary": "The requirement {ADR_SafeQueuingOnHotMiss} is consistently implemented and described across all referencing sections.",
+      "issues": [],
+      "covered_files": [
+        "components/tier3_jit/jit_compiler.md",
+        "requires/requirement_list.md"
+      ]
+    },
+    {
+      "item_id": "item:ADR_ScalableCodeOffset",
+      "item_label": "{ADR_ScalableCodeOffset}",
+      "status": "PASS",
+      "summary": "The design section for {ADR_ScalableCodeOffset} is fully consistent with the definition section. The implementation details (bit-shifting via code_align_shift) directly address the requirement of determining a representation format for JIT code offsets that can exceed 32/64-bit boundaries (specifically addressing the 64KB limit).",
+      "issues": [],
+      "covered_files": [
+        "components/tier3_jit/jit_compiler.md",
+        "requires/requirement_list.md"
+      ]
     }
   ],
   "doc_hashes": {
     "architecture/architecture_overview.md": "019aea4f717286caa9ef81aaccc453e67a28a358300d5db20d908a23281e5e94",
     "architecture/concept_harness.md": "2160b8e29a617ecefbf46165542544705de7ebb0f6d5b7df4bbeb1c084f9cd3c",
     "architecture/document_structure.md": "533b951c9adfc5bf8b23931b7bd6497f9cc5234b9a4d91bb624391b4b850b324",
-    "architecture/master_physical_design.md": "b367d6bc701c39ed30a70a1bcb1fcb022cf74c86239ba9edffdc8ae7657b3d7b",
+    "architecture/master_physical_design.md": "0808b4566e7f74efd641d584f5d9037ec0f4554930a75d00399fee3e05964084",
     "architecture/resource_budget.md": "ac4928f5ad7fcc1a360b6539ec3d44d072a67c6b7d4aa7d76bdac014971def00",
     "components/tier1_core/os_coos.md": "7f2041f9ed21e99a75448b8112629ed0a4e95605e70425807cdb8a431db531bf",
     "components/tier1_core/os_scheduler.md": "bb8d0e129d9ce8c153fb4d7f0297d095eb2f1bdcff24de9fa345d39e67013a83",
@@ -1881,8 +1881,8 @@
     "components/tier2_runtime/wasm_instruction.md": "640483f8a25bca7885110ce37e499c4ba3622fdc2ba3507e3a78b2bc1fcf8b5f",
     "components/tier3_jit/concepts/README.md": "a39c8c192999a792243e697e008fcad02c701d14b9559d492d668208122b6ebc",
     "components/tier3_jit/jit_assembler_constexpr.md": "4798eb6d2692ae574c45917a0597feb16e1ffa3ec9d9771566a6523607f7c7d5",
-    "components/tier3_jit/jit_compiler.md": "cd5bcfebbd6e3d13232214ab501dee7ac2376c1b6d7d9b5bef0b2ee50e179152",
-    "components/tier3_jit/jit_engine_copy_patch.md": "90bd034b03771cb1f5853fd30ee96cef0df40f7be435648e9a48c6c713fa0f11",
+    "components/tier3_jit/jit_compiler.md": "31394d9ee8497ff49adde2f45572bf979122689b5bdcc61c1d4793cd06314e4e",
+    "components/tier3_jit/jit_engine_copy_patch.md": "eba90ed1625fb29bc055ad92517e06d5e52d3b7f0b899f8f7ebfd437e6f32c1f",
     "components/tier3_jit/jit_runtime_entry.md": "f605d7ff040f12ecdcbb9b8d145a92d421d819cfdc949b427ed43ca5e4a8175a",
     "components/tier3_jit/jit_runtime_hotspot.md": "bf4ced6b78c1978a08624c8fe9f430ee307c068780cd0c314d6f527ea698603f",
     "components/tier3_platform/platform_hal.md": "b7e90323ad0269f78e10e3f59dc1e373d3b8818d02ecf4bcf03e5970096842e2",

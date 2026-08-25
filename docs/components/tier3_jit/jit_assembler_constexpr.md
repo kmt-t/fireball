@@ -102,3 +102,7 @@ graph TD
 <!-- traceability: {META_Static_Resolution} -->
 - **方策**: C++の型システムと `static_assert` を利用し、アセンブラレベルのバグ（誤ったレジスタ使用等）を開発段階で完全に排除する。
 
+#### constexpr アセンブラ フルセット・コンセプトコード (`concepts/jit_assembler_constexpr_concept.py`)
+型安全なレジスタ列挙型、16-bit/32-bit Thumb-2 命令エンコード、コンパイル時バリデーション、およびステンシルカタログとのバイナリ一致検証の参照実装：
+[`concepts/jit_assembler_constexpr_concept.py`](concepts/jit_assembler_constexpr_concept.py)
+

@@ -30,47 +30,47 @@
 #### `STENCIL_PROLOGUE_FULL` (Callee-saved 全域退避 + LR)
 - **Thumb-2 命令列**:
   ```asm
-  push {r4-r6, r8-r11, lr} ; [Offset 0x00] AAPCS 準拠 Callee-saved 退避
+  push.w {r4-r6, r8-r11, lr} ; [Offset 0x00] AAPCS 準拠 Callee-saved 退避
   ```
-- **バイナリ列 (4 Bytes)**: `2D E9 F0 4F`
+- **バイナリ列 (4 Bytes)**: `2D E9 70 4F`
 
 #### `STENCIL_EPILOGUE_FLUSH_D1` (TOS 書き戻し + Callee-saved 復元 & リターン)
 - **Thumb-2 命令列**:
   ```asm
-  str  r4, [r1, #0x00]    ; [Offset 0x00] RELOC_IMM8_OFFSET (TOS 書き戻し)
-  pop  {r4-r6, r8-r11, pc} ; [Offset 0x02] Callee-saved 復元 & リターン
+  str   r4, [r1, #0x00]    ; [Offset 0x00] RELOC_IMM8_OFFSET (TOS 書き戻し)
+  pop.w {r4-r6, r8-r11, pc} ; [Offset 0x02] Callee-saved 復元 & リターン
   ```
-- **バイナリ列 (6 Bytes)**: `04 60 BD E8 F0 8F`
+- **バイナリ列 (6 Bytes)**: `0C 60 BD E8 70 8F`
 
 #### `STENCIL_EPILOGUE_FLUSH_D2` (TOS & NOS 書き戻し + Callee-saved 復元 & リターン)
 - **Thumb-2 命令列**:
   ```asm
-  str  r4, [r1, #0x00]    ; [Offset 0x00] RELOC_IMM8_OFFSET (TOS 書き戻し)
-  str  r5, [r1, #0x04]    ; [Offset 0x02] RELOC_IMM8_OFFSET (NOS 書き戻し)
-  pop  {r4-r6, r8-r11, pc} ; [Offset 0x04] Callee-saved 復元 & リターン
+  str   r4, [r1, #0x00]    ; [Offset 0x00] RELOC_IMM8_OFFSET (TOS 書き戻し)
+  str   r5, [r1, #0x04]    ; [Offset 0x02] RELOC_IMM8_OFFSET (NOS 書き戻し)
+  pop.w {r4-r6, r8-r11, pc} ; [Offset 0x04] Callee-saved 復元 & リターン
   ```
-- **バイナリ列 (8 Bytes)**: `04 60 4D 60 BD E8 F0 8F`
+- **バイナリ列 (8 Bytes)**: `0C 60 4D 60 BD E8 70 8F`
 
 #### `STENCIL_FALLBACK_FLUSH_D1` (TOS 書き戻し + Callee-saved 復元 $\to$ インタープリタ末尾ジャンプ)
 - **Thumb-2 命令列**:
   ```asm
-  str  r4, [r1, #0x00]    ; [Offset 0x00] RELOC_IMM8_OFFSET (TOS 書き戻し)
-  pop  {r4-r6, r8-r11, lr} ; [Offset 0x02] Callee-saved 復元
-  bx   r12                ; [Offset 0x06] R12 のハンドラアドレスへ直接ジャンプ
+  str   r4, [r1, #0x00]    ; [Offset 0x00] RELOC_IMM8_OFFSET (TOS 書き戻し)
+  pop.w {r4-r6, r8-r11, lr} ; [Offset 0x02] Callee-saved 復元
+  bx    r12                ; [Offset 0x06] R12 のハンドラアドレスへ直接ジャンプ
   ```
-- **バイナリ列 (8 Bytes)**: `04 60 BD E8 F0 4F 60 47`
+- **バイナリ列 (8 Bytes)**: `0C 60 BD E8 70 4F 60 47`
 
 #### `STENCIL_FALLBACK_FLUSH_D2_LOCALS` (TOS/NOS + ダーティ Local 変数書き戻し $\to$ インタープリタ末尾ジャンプ)
 - **Thumb-2 命令列**:
   ```asm
-  str  r4, [r1, #0x00]    ; [Offset 0x00] RELOC_IMM8_OFFSET (TOS 書き戻し)
-  str  r5, [r1, #0x04]    ; [Offset 0x02] RELOC_IMM8_OFFSET (NOS 書き戻し)
-  str  r8, [r1, #0x08]    ; [Offset 0x04] RELOC_IMM8_OFFSET (ダーティ local[0] 書き戻し)
-  str  r9, [r1, #0x0C]    ; [Offset 0x06] RELOC_IMM8_OFFSET (ダーティ local[1] 書き戻し)
-  pop  {r4-r6, r8-r11, lr} ; [Offset 0x08] Callee-saved 復元
-  bx   r12                ; [Offset 0x0C] R12 のハンドラアドレスへ直接ジャンプ
+  str   r4, [r1, #0x00]    ; [Offset 0x00] RELOC_IMM8_OFFSET (TOS 書き戻し)
+  str   r5, [r1, #0x04]    ; [Offset 0x02] RELOC_IMM8_OFFSET (NOS 書き戻し)
+  str   r8, [r1, #0x08]    ; [Offset 0x04] RELOC_IMM8_OFFSET (ダーティ local[0] 書き戻し)
+  str   r9, [r1, #0x0C]    ; [Offset 0x06] RELOC_IMM8_OFFSET (ダーティ local[1] 書き戻し)
+  pop.w {r4-r6, r8-r11, lr} ; [Offset 0x08] Callee-saved 復元
+  bx    r12                ; [Offset 0x0C] R12 のハンドラアドレスへ直接ジャンプ
   ```
-- **バイナリ列 (14 Bytes)**: `04 60 4D 60 88 60 C9 60 BD E8 F0 4F 60 47`
+- **バイナリ列 (14 Bytes)**: `0C 60 4D 60 88 60 C9 60 BD E8 70 4F 60 47`
 
 #### `STENCIL_EXTERNAL_CALL_STUB` (外部 AAPCS C/C++ 関数呼出境界)
 - **Thumb-2 命令列**:
@@ -164,21 +164,21 @@
   ```asm
   ldr  r4, [r1, #0x00]    ; [Offset 0x00] RELOC_IMM8_OFFSET (local_offset)
   ```
-- **バイナリ列 (2 Bytes)**: `04 68`
+- **バイナリ列 (2 Bytes)**: `0C 68`
 
 #### `STENCIL_LOCAL_SET_D1` (`0x21` R4 $\to$ Local)
 - **Thumb-2 命令列**:
   ```asm
   str  r4, [r1, #0x00]    ; [Offset 0x00] RELOC_IMM8_OFFSET
   ```
-- **バイナリ列 (2 Bytes)**: `04 60`
+- **バイナリ列 (2 Bytes)**: `0C 60`
 
 #### `STENCIL_LOCAL_TEE_D1` (`0x22` R4 $\to$ Local, R4 維持)
 - **Thumb-2 命令列**:
   ```asm
   str  r4, [r1, #0x00]    ; [Offset 0x00] RELOC_IMM8_OFFSET (TOSはR4に残す)
   ```
-- **バイナリ列 (2 Bytes)**: `04 60`
+- **バイナリ列 (2 Bytes)**: `0C 60`
 
 #### `STENCIL_GLOBAL_GET_D0` (`0x23` Env経由ロード)
 - **Thumb-2 命令列**:
@@ -201,8 +201,8 @@
 
 | WASM 命令 | Stencil 名 | 入力状態 | 出力状態 | Thumb-2 命令列 | バイナリ列 (Hex) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `i32.add` (`0x6A`) | `STENCIL_I32_ADD_D2` | R4=TOS, R5=NOS | R4=TOS | `adds r4, r5, r4` | `6C 19` |
-| `i32.sub` (`0x6B`) | `STENCIL_I32_SUB_D2` | R4=TOS, R5=NOS | R4=TOS | `subs r4, r5, r4` | `AC 1B` |
+| `i32.add` (`0x6A`) | `STENCIL_I32_ADD_D2` | R4=TOS, R5=NOS | R4=TOS | `adds r4, r5, r4` | `2C 19` |
+| `i32.sub` (`0x6B`) | `STENCIL_I32_SUB_D2` | R4=TOS, R5=NOS | R4=TOS | `subs r4, r5, r4` | `2C 1B` |
 | `i32.mul` (`0x6C`) | `STENCIL_I32_MUL_D2` | R4=TOS, R5=NOS | R4=TOS | `mul r4, r5, r4` | `05 FB 04 F4` |
 | `i32.div_s` (`0x6D`) | `STENCIL_I32_DIV_S_D2` | R4=TOS, R5=NOS | R4=TOS | `sdiv r4, r5, r4` | `95 FB F4 F4` |
 | `i32.div_u` (`0x6E`) | `STENCIL_I32_DIV_U_D2` | R4=TOS, R5=NOS | R4=TOS | `udiv r4, r5, r4` | `B5 FB F4 F4` |

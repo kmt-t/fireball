@@ -44,20 +44,20 @@ class CopyPatchJITEngine:
             # --- Prologue, Epilogue & Interop ---
             "prologue_full": Stencil(
                 "prologue_full",
-                ["PUSH {r4-r6, r8-r11, lr}"],
-                "2D E9 F0 4F",
+                ["PUSH.W {r4-r6, r8-r11, lr}"],
+                "2D E9 70 4F",
                 {}
             ),
             "epilogue_return": Stencil(
                 "epilogue_return",
-                ["POP {r4-r6, r8-r11, pc}"],
-                "BD E8 F0 8F",
+                ["POP.W {r4-r6, r8-r11, pc}"],
+                "BD E8 70 8F",
                 {}
             ),
             "fallback_interp": Stencil(
                 "fallback_interp",
-                ["POP {r4-r6, r8-r11, lr}", "BX r12"],
-                "BD E8 F0 4F 60 47",
+                ["POP.W {r4-r6, r8-r11, lr}", "BX r12"],
+                "BD E8 70 4F 60 47",
                 {}
             ),
             "external_call_stub": Stencil(
@@ -95,15 +95,15 @@ class CopyPatchJITEngine:
             ),
 
             # --- Variables ---
-            "local_get_d0": Stencil("local_get_d0", ["LDR r4, [r1, #0x00]"], "04 68", {"offset": 0}),
-            "local_set_d1": Stencil("local_set_d1", ["STR r4, [r1, #0x00]"], "04 60", {"offset": 0}),
-            "local_tee_d1": Stencil("local_tee_d1", ["STR r4, [r1, #0x00]"], "04 60", {"offset": 0}),
+            "local_get_d0": Stencil("local_get_d0", ["LDR r4, [r1, #0x00]"], "0C 68", {"offset": 0}),
+            "local_set_d1": Stencil("local_set_d1", ["STR r4, [r1, #0x00]"], "0C 60", {"offset": 0}),
+            "local_tee_d1": Stencil("local_tee_d1", ["STR r4, [r1, #0x00]"], "0C 60", {"offset": 0}),
             "global_get_d0": Stencil("global_get_d0", ["LDR.W r4, [r2, #0x00]"], "D2 F8 00 40", {"offset": 0}),
             "global_set_d1": Stencil("global_set_d1", ["STR.W r4, [r2, #0x00]"], "C2 F8 00 40", {"offset": 0}),
 
             # --- 32-bit Integer Arithmetic & Logic ---
-            "i32_add_d2": Stencil("i32_add_d2", ["ADDS r4, r5, r4"], "6C 19", {}),
-            "i32_sub_d2": Stencil("i32_sub_d2", ["SUBS r4, r5, r4"], "AC 1B", {}),
+            "i32_add_d2": Stencil("i32_add_d2", ["ADDS r4, r5, r4"], "2C 19", {}),
+            "i32_sub_d2": Stencil("i32_sub_d2", ["SUBS r4, r5, r4"], "2C 1B", {}),
             "i32_mul_d2": Stencil("i32_mul_d2", ["MUL r4, r5, r4"], "05 FB 04 F4", {}),
             "i32_div_s_d2": Stencil("i32_div_s_d2", ["SDIV r4, r5, r4"], "95 FB F4 F4", {}),
             "i32_div_u_d2": Stencil("i32_div_u_d2", ["UDIV r4, r5, r4"], "B5 FB F4 F4", {}),
@@ -313,9 +313,9 @@ def test_arithmetic_and_logic_traces():
     assert engine.barrier_flushes == 1
 
     code = engine.execute_native(start_pos, count)
-    assert code[0] == "PUSH {r4-r6, r8-r11, lr}"
+    assert code[0] == "PUSH.W {r4-r6, r8-r11, lr}"
     assert "MOVW r4, #100" in code[1]
-    assert code[-1] == "POP {r4-r6, r8-r11, pc}"
+    assert code[-1] == "POP.W {r4-r6, r8-r11, pc}"
 
 
 def test_external_aapcs_call_stub():
@@ -345,7 +345,7 @@ def test_cps_shared_registers_never_clobbered():
 
     for inst in code:
         mnemonic, _, operands = inst.partition(" ")
-        if mnemonic in ("STR", "STR.W", "STRB.W", "STRH.W", "BX", "PUSH", "POP", "CMP", "BNE.W", "BL"):
+        if mnemonic in ("STR", "STR.W", "STRB.W", "STRH.W", "BX", "PUSH", "PUSH.W", "POP", "POP.W", "CMP", "BNE.W", "BL"):
             continue
         dest = operands.split(",")[0].strip()
         assert dest not in ("r0", "r1", "r2", "R0", "R1", "R2"), \
@@ -372,7 +372,7 @@ def test_epilogue_spill_variable_flush():
     # Check spill flush STR instructions before POP
     assert "STR r4, [r1, #0]" in code
     assert "STR r8, [r1, #8]" in code
-    assert "POP {r4-r6, r8-r11, lr}" in code
+    assert "POP.W {r4-r6, r8-r11, lr}" in code
     assert "BX r12" in code
 
 

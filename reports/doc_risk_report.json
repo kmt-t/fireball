@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-08-25T22:10:06.786421+00:00",
+  "generated_at": "2026-08-25T22:24:59.691495+00:00",
   "backend": "heuristic",
-  "total_evaluated": 771,
+  "total_evaluated": 772,
   "formal_candidates_count": 31,
   "llm_candidates_count": 5,
-  "sections_scanned": 771,
+  "sections_scanned": 772,
   "max_sections": 0,
   "doc_hashes": {
     "architecture/architecture_overview.md": "019aea4f717286caa9ef81aaccc453e67a28a358300d5db20d908a23281e5e94",
@@ -30,7 +30,7 @@
     "components/tier2_runtime/runtime_vsoc.md": "2c2f025fb53b9adaf73f9f554415335dd25d4de37f94dd71025aa0eb12ce6cd3",
     "components/tier2_runtime/wasm_instruction.md": "640483f8a25bca7885110ce37e499c4ba3622fdc2ba3507e3a78b2bc1fcf8b5f",
     "components/tier3_jit/concepts/README.md": "a39c8c192999a792243e697e008fcad02c701d14b9559d492d668208122b6ebc",
-    "components/tier3_jit/jit_assembler_constexpr.md": "4798eb6d2692ae574c45917a0597feb16e1ffa3ec9d9771566a6523607f7c7d5",
+    "components/tier3_jit/jit_assembler_constexpr.md": "1ce2346b0371f5a1d470aaaf5c42a2e72b01d5cb7589ea8e29625a5ab199e067",
     "components/tier3_jit/jit_compiler.md": "1a6653d433500d5e026c386428369515e42e54160feb5c33819d11034852e2c3",
     "components/tier3_jit/jit_engine_copy_patch.md": "d179e3bf586cf1ba6bceb4c81e1eccfd6397b634dc19075e92123e41ff4be7d1",
     "components/tier3_jit/jit_runtime_entry.md": "4e1acdf6e3c5b56d5ed285c252a8c3f692fa86714eee534e4ae1ba996e034395",
@@ -42,7 +42,7 @@
     "plans/roadmap_phase.md": "92ad637d4e9baed7d2083ae53145a3416cd1df7e1266339c6cabe1c969b4fe2c",
     "requires/requirement_list.md": "35a59e542a9ee036904a2c2de7949d8332e61e571ef2e2f6ab801ace63f28f8b",
     "specs/gdb_rsp_protocol.md": "386dfa524ed02219a8aa89a7a7c35d6e97dfbba666b0b24a05e7c35d7c89e0dc",
-    "specs/jit_stencil_catalog.md": "50dcea5a432dd14107dc6c5869ffdfb17b40a71f11a76187c0656a252ad6a4d0",
+    "specs/jit_stencil_catalog.md": "c3e77d81bb21b6aedf1c45742741f727149a74b8464f4d3e822fd09b2adc239d",
     "specs/wasi_preview1_abi.md": "4cb53fb6d8c5e8cbfc416eaf39041fae538cfaabc0cabf1de6eedafcc12e8512",
     "specs/wasm_instruction_set.md": "9eb1c42e94a99c446d381089c647534b5cde92aae1d616488065933855b0ee02"
   },
@@ -7306,6 +7306,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for 'コンパイル時エンコード'."
+    },
+    {
+      "section_id": "sec:components/tier3_jit/jit_assembler_constexpr.md#constexpr アセンブラ フルセット・コンセプトコード (`concepts/jit_assembler_constexpr_concept.py`)",
+      "file_path": "components/tier3_jit/jit_assembler_constexpr.md",
+      "heading": "constexpr アセンブラ フルセット・コンセプトコード (`concepts/jit_assembler_constexpr_concept.py`)",
+      "tier": 3,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for 'constexpr アセンブラ フルセット・コンセプトコード (`concepts/jit_assembler_constexpr_concept.py`)'."
     },
     {
       "section_id": "sec:components/tier3_jit/jit_compiler.md#統合 Tiered ランタイムエンジン・コンセプトコード (`../tier2_runtime/concepts/runtime_engine_concept.py`)",

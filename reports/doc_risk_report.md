@@ -1,6 +1,6 @@
 # Fireball 設計複雑度 & リスク評価レポート (Risk Assessment Report)
 
-- **評価セクション総数**: 771
+- **評価セクション総数**: 772
 - **形式検証 (pyModelChecking) 推奨セクション**: 31
 - **LLM 意味監査 推奨セクション**: 5
 
@@ -598,6 +598,7 @@
 | `components/tier2_runtime/wasm_instruction.md` | 2.5 スタック操作・変数命令 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '2.5 スタック操作・変数命令'. |
 | `components/tier3_jit/jit_assembler_constexpr.md` | `x64::mov_ri` | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`x64::mov_ri`'. |
 | `components/tier3_jit/jit_assembler_constexpr.md` | コンパイル時エンコード | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'コンパイル時エンコード'. |
+| `components/tier3_jit/jit_assembler_constexpr.md` | constexpr アセンブラ フルセット・コンセプトコード (`concepts/jit_assembler_constexpr_concept.py`) | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'constexpr アセンブラ フルセット・コンセプトコード (`concepts/jit_assembler_constexpr_concept.py`)'. |
 | `components/tier3_jit/jit_engine_copy_patch.md` | コピーアンドパッチエンジン（CopyAndPatchEngine）クラス | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'コピーアンドパッチエンジン（CopyAndPatchEngine）クラス'. |
 | `components/tier3_jit/jit_runtime_entry.md` | 3.1 データ構造 | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.1 データ構造'. |
 | `components/tier3_jit/jit_runtime_entry.md` | JITエントリインデックス（JitEntryIndex）クラス | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'JITエントリインデックス（JitEntryIndex）クラス'. |

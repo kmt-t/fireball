@@ -110,6 +110,7 @@ risk_assessment:
       - 'plans/.*\.md'
       - 'requires/.*\.md'
       - 'architecture/.*\.md'
+      - 'specs/.*\.md'
       - 'resource_budget\.md'
     # 宣言的表・非実行定義セクションの明示的免除ルール（Waivers）
     waivers:

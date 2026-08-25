@@ -431,7 +431,8 @@
       "sec:components/tier1_core/os_coos.md#6.2 直交表: CSP通信と状態遷移",
       "sec:components/tier1_core/os_coos.md#CSPチャネル（channel）",
       "sec:components/tier1_core/os_scheduler.md#4.2 状態遷移図 (SysML SMD: Scheduler 視点)",
-      "sec:components/tier1_interface/ipc_router.md#メッセージルーティング（route_message）"
+      "sec:components/tier1_interface/ipc_router.md#メッセージルーティング（route_message）",
+      "sec:specs/wasi_preview1_abi.md#3.3 プロセス制御 & 乱数 & スケジューラ API (Process, Random & Scheduler)"
     ],
     "ADR_SafeQueuingOnHotMiss": [
       "sec:components/tier3_jit/jit_compiler.md#5.1 直交表: 検索・昇格・代謝",
@@ -449,7 +450,9 @@
       "sec:components/tier3_jit/jit_compiler.md#Copy-and-Patch コンパイル手順",
       "sec:components/tier3_jit/jit_engine_copy_patch.md#トレースコンパイル手順",
       "sec:components/tier3_jit/jit_engine_copy_patch.md#命令テンプレート（jit_template）",
-      "sec:plans/backlog_list.md#Phase 1.3: Copy-and-Patch JIT Compiler (`jit_compiler`)"
+      "sec:plans/backlog_list.md#Phase 1.3: Copy-and-Patch JIT Compiler (`jit_compiler`)",
+      "sec:specs/jit_stencil_catalog.md#3.1 定数ロード系ステンシル (`i32.const`)",
+      "sec:specs/jit_stencil_catalog.md#3.5 プロローグ & エピローグ・ステンシル (Prologue & Epilogue)"
     ],
     "Asynchronous_Notification": [
       "sec:components/tier1_core/system_syscall.md#8. ホストからゲストへの非同期通知メカニズム",
@@ -499,7 +502,8 @@
       "sec:components/tier1_core/os_coos.md#6.2 直交表: CSP通信と状態遷移",
       "sec:components/tier1_core/os_scheduler.md#4.2 状態遷移図 (SysML SMD: Scheduler 視点)",
       "sec:components/tier1_interface/ipc_router.md#メッセージルーティング（route_message）",
-      "sec:plans/backlog_list.md#オーナーレビュー観点 & チェックリスト"
+      "sec:plans/backlog_list.md#オーナーレビュー観点 & チェックリスト",
+      "sec:specs/wasi_preview1_abi.md#3.3 プロセス制御 & 乱数 & スケジューラ API (Process, Random & Scheduler)"
     ],
     "Challenge_ApproximateYield": [
       "sec:architecture/architecture_overview.md#5. 設計判断 (ADR)",
@@ -535,7 +539,8 @@
       "sec:components/tier1_interface/ipc_router.md#4.2.1 所有権移譲状態機械 (Ownership Transfer State Machine)",
       "sec:components/tier1_interface/ipc_router.md#4.4 内部シーケンス図",
       "sec:components/tier1_interface/ipc_router.md#6.1 検証対象の不変条件",
-      "sec:components/tier1_interface/ipc_router.md#メッセージルーティング（route_message）"
+      "sec:components/tier1_interface/ipc_router.md#メッセージルーティング（route_message）",
+      "sec:specs/wasi_preview1_abi.md#1. 概要と基本思想"
     ],
     "Challenge_JITCacheEfficiency": [
       "sec:architecture/architecture_overview.md#5. 設計判断 (ADR)",
@@ -580,7 +585,13 @@
       "sec:components/tier3_jit/jit_compiler.md#JIT トレース実行シグネチャ (`exec_trace`)",
       "sec:components/tier3_jit/jit_engine_copy_patch.md#4.1 アルゴリズム",
       "sec:components/tier3_jit/jit_engine_copy_patch.md#命令テンプレート（jit_template）",
-      "sec:plans/backlog_list.md#Phase 1.2: WASM Stackless Fast Interpreter (`runtime_interpreter`)"
+      "sec:plans/backlog_list.md#Phase 1.2: WASM Stackless Fast Interpreter (`runtime_interpreter`)",
+      "sec:specs/gdb_rsp_protocol.md#4. WASM 仮想レジスタ番号マッピング (GDB Target XML Map)",
+      "sec:specs/jit_stencil_catalog.md#3.4 ローカル変数アクセス系ステンシル (`local.get`, `local.set`)",
+      "sec:specs/jit_stencil_catalog.md#3.5 プロローグ & エピローグ・ステンシル (Prologue & Epilogue)",
+      "sec:specs/wasm_instruction_set.md#3.1 制御フロー命令 (Control Flow)",
+      "sec:specs/wasm_instruction_set.md#3.2 パラメトリック命令 (Parametric)",
+      "sec:specs/wasm_instruction_set.md#3.3 変数アクセス命令 (Variable Access)"
     ],
     "CooperativeMultitasking": [
       "sec:components/tier1_core/os_coos.md#1. コンセプト",
@@ -598,7 +609,8 @@
       "sec:components/tier2_runtime/runtime_interpreter.md#4.1 アルゴリズム",
       "sec:components/tier2_runtime/runtime_interpreter.md#4.2 状態遷移図",
       "sec:components/tier2_runtime/runtime_interpreter.md#4.3 内部シーケンス",
-      "sec:components/tier2_runtime/runtime_vsoc.md#Debugger 介入時のキャッシュ一貫性"
+      "sec:components/tier2_runtime/runtime_vsoc.md#Debugger 介入時のキャッシュ一貫性",
+      "sec:specs/gdb_rsp_protocol.md#1. 概要と基本思想"
     ],
     "Debug_Standard_Env": [
       "sec:components/tier2_runtime/debug/debug_manager.md#1. コンセプト",
@@ -607,7 +619,10 @@
     "DebuggerLabelTableSwitch": [
       "sec:components/tier2_runtime/debug/debug_manager.md#1. コンセプト",
       "sec:components/tier2_runtime/debug/debug_manager.md#4.1 アルゴリズム",
-      "sec:components/tier2_runtime/debug/debug_manager.md#6.1 性能制約と方策"
+      "sec:components/tier2_runtime/debug/debug_manager.md#6.1 性能制約と方策",
+      "sec:specs/gdb_rsp_protocol.md#1. 概要と基本思想",
+      "sec:specs/gdb_rsp_protocol.md#2. パケット構造とチェックサム規約",
+      "sec:specs/gdb_rsp_protocol.md#4. WASM 仮想レジスタ番号マッピング (GDB Target XML Map)"
     ],
     "Debugger_Jit_Flush": [
       "sec:components/tier2_runtime/runtime_vsoc.md#4.1 アルゴリズム",
@@ -651,7 +666,8 @@
       "sec:components/tier2_runtime/runtime_interpreter.md#実行コンテキスト（execution_context @ スタックボトム）",
       "sec:components/tier2_runtime/runtime_vsoc.md#1. コンセプト",
       "sec:components/tier3_jit/jit_compiler.md#JIT トレース実行シグネチャ (`exec_trace`)",
-      "sec:components/tier3_jit/jit_engine_copy_patch.md#命令テンプレート（jit_template）"
+      "sec:components/tier3_jit/jit_engine_copy_patch.md#命令テンプレート（jit_template）",
+      "sec:specs/jit_stencil_catalog.md#3.5 プロローグ & エピローグ・ステンシル (Prologue & Epilogue)"
     ],
     "Errorcode_To_Strategy": [
       "sec:components/tier1_core/system_syscall.md#4.2. 戻り値",
@@ -666,7 +682,9 @@
       "sec:components/tier2_runtime/runtime_vmmio.md#1. コンセプト",
       "sec:components/tier2_runtime/runtime_vmmio.md#6.1 性能制約と方策",
       "sec:components/tier3_jit/jit_compiler.md#7.2 安全性制約と方策",
-      "sec:plans/backlog_list.md#オーナーレビュー観点 & チェックリスト"
+      "sec:plans/backlog_list.md#オーナーレビュー観点 & チェックリスト",
+      "sec:specs/jit_stencil_catalog.md#3.3 メモリアクセス系ステンシル (`i32.load`, `i32.store`)",
+      "sec:specs/wasm_instruction_set.md#3.4 メモリアクセス命令 (Memory Access - 32-bit Linear Memory)"
     ],
     "Fast_Path_GPIO": [
       "sec:components/tier1_core/system_syscall.md#6.2. 高応答 Trigger のマッピング例",
@@ -749,7 +767,8 @@
       "sec:components/tier3_jit/jit_compiler.md#4.2 状態遷移図",
       "sec:components/tier3_jit/jit_compiler.md#4.3 内部シーケンス",
       "sec:components/tier3_jit/jit_compiler.md#バッチコンパイル (周期実行またはアイドル時)",
-      "sec:components/tier3_jit/jit_runtime_hotspot.md#1. コンセプト"
+      "sec:components/tier3_jit/jit_runtime_hotspot.md#1. コンセプト",
+      "sec:specs/wasi_preview1_abi.md#3.2 システム時刻 & クロック API (Clocks & Timers)"
     ],
     "GLOBAL_Policy_Memory": [
       "sec:components/tier1_core/os_coos.md#2. 公開 API インターフェイス",
@@ -795,7 +814,10 @@
       "sec:components/tier1_core/system_containers.md#ビット詰めビュー（bit_view）",
       "sec:components/tier1_core/system_containers.md#添字による状態参照（at / put）",
       "sec:components/tier3_platform/platform_memory.md#5. 制約と不変条件",
-      "sec:components/tier3_platform/platform_memory.md#初期化"
+      "sec:components/tier3_platform/platform_memory.md#初期化",
+      "sec:specs/gdb_rsp_protocol.md#5. 非サポートコマンド (Explicit Non-Goals)",
+      "sec:specs/wasi_preview1_abi.md#4. 非サポート API 一覧 (Explicit Non-Goals)",
+      "sec:specs/wasm_instruction_set.md#2. 非サポート機能 (Explicit Non-Goals)"
     ],
     "GLOBAL_UseCpp20Coroutine": [
       "sec:components/tier1_core/os_coos.md#1. コンセプト",
@@ -901,7 +923,13 @@
       "sec:components/tier3_jit/jit_engine_copy_patch.md#4.1 アルゴリズム",
       "sec:components/tier3_jit/jit_engine_copy_patch.md#6.1 性能制約と最優先設計方針",
       "sec:plans/backlog_list.md#Phase 1.3: Copy-and-Patch JIT Compiler (`jit_compiler`)",
-      "sec:plans/backlog_list.md#Phase 1: vSoC First 実装（約3ヶ月） 【GO 判定後に着手】"
+      "sec:plans/backlog_list.md#Phase 1: vSoC First 実装（約3ヶ月） 【GO 判定後に着手】",
+      "sec:specs/jit_stencil_catalog.md#1. 概要と基本思想",
+      "sec:specs/jit_stencil_catalog.md#2. プレースホルダ（穴 / Relocations）の種類とパッチ規約",
+      "sec:specs/jit_stencil_catalog.md#3.1 定数ロード系ステンシル (`i32.const`)",
+      "sec:specs/jit_stencil_catalog.md#3.2 整数演算系ステンシル (`i32.add`, `i32.sub`, `i32.mul`)",
+      "sec:specs/wasm_instruction_set.md#1. 概要と適用方針",
+      "sec:specs/wasm_instruction_set.md#3.5 整数算術・論理・比較命令 (Integer Arithmetic, Logic & Comparison)"
     ],
     "JIT_Encoder": [
       "sec:components/tier3_jit/jit_assembler_constexpr.md#1. コンセプト",
@@ -951,7 +979,12 @@
       "sec:components/tier2_runtime/runtime_interpreter.md#オプコードハンドラ / トレース実行（opcode_handler / exec_trace）",
       "sec:components/tier3_jit/concepts/README.md#Tier 3 JIT — コンセプトコード",
       "sec:components/tier3_jit/jit_compiler.md#7.1 性能制約と方策",
-      "sec:components/tier3_jit/jit_engine_copy_patch.md#命令テンプレート（jit_template）"
+      "sec:components/tier3_jit/jit_engine_copy_patch.md#命令テンプレート（jit_template）",
+      "sec:specs/jit_stencil_catalog.md#1. 概要と基本思想",
+      "sec:specs/jit_stencil_catalog.md#3.2 整数演算系ステンシル (`i32.add`, `i32.sub`, `i32.mul`)",
+      "sec:specs/jit_stencil_catalog.md#3.3 メモリアクセス系ステンシル (`i32.load`, `i32.store`)",
+      "sec:specs/jit_stencil_catalog.md#3.4 ローカル変数アクセス系ステンシル (`local.get`, `local.set`)",
+      "sec:specs/wasm_instruction_set.md#3.3 変数アクセス命令 (Variable Access)"
     ],
     "JIT_ReverseCompilationOrder": [
       "sec:components/tier3_jit/jit_compiler.md#4.2 状態遷移図",
@@ -968,7 +1001,9 @@
       "sec:components/tier3_jit/jit_engine_copy_patch.md#4.1 アルゴリズム",
       "sec:components/tier3_jit/jit_engine_copy_patch.md#6.1 性能制約と最優先設計方針",
       "sec:components/tier3_jit/jit_engine_copy_patch.md#トレースコンパイル手順",
-      "sec:plans/backlog_list.md#Phase 1.3: Copy-and-Patch JIT Compiler (`jit_compiler`)"
+      "sec:plans/backlog_list.md#Phase 1.3: Copy-and-Patch JIT Compiler (`jit_compiler`)",
+      "sec:specs/jit_stencil_catalog.md#3.5 プロローグ & エピローグ・ステンシル (Prologue & Epilogue)",
+      "sec:specs/wasm_instruction_set.md#3.1 制御フロー命令 (Control Flow)"
     ],
     "JIT_Safepoint": [
       "sec:components/tier2_runtime/runtime_vsoc.md#4.1 アルゴリズム",
@@ -980,7 +1015,8 @@
     ],
     "JIT_ZeroCompileCostTheorem": [
       "sec:components/tier3_jit/jit_compiler.md#1. コンセプト",
-      "sec:components/tier3_jit/jit_engine_copy_patch.md#1. コンセプト"
+      "sec:components/tier3_jit/jit_engine_copy_patch.md#1. コンセプト",
+      "sec:specs/jit_stencil_catalog.md#1. 概要と基本思想"
     ],
     "LightweightVerifier": [
       "sec:components/tier2_runtime/runtime_loader.md#4.4 状態遷移図",
@@ -1271,7 +1307,12 @@
       "sec:components/tier1_core/system_containers.md#ビット詰めビュー（bit_view）",
       "sec:components/tier1_core/system_containers.md#疎マップビュー（flat_map_view）",
       "sec:components/tier1_core/system_containers.md#疎集合ビュー（flat_set_view）",
-      "sec:components/tier3_jit/jit_assembler_constexpr.md#`fireball::riscv::i_type`"
+      "sec:components/tier3_jit/jit_assembler_constexpr.md#`fireball::riscv::i_type`",
+      "sec:specs/gdb_rsp_protocol.md#1. 概要と基本思想",
+      "sec:specs/jit_stencil_catalog.md#1. 概要と基本思想",
+      "sec:specs/wasi_preview1_abi.md#1. 概要と基本思想",
+      "sec:specs/wasm_instruction_set.md#1. 概要と適用方針",
+      "sec:specs/wasm_instruction_set.md#3.5 整数算術・論理・比較命令 (Integer Arithmetic, Logic & Comparison)"
     ],
     "META_ZeroOverhead": [
       "sec:architecture/concept_harness.md#Conceptベースハーネス アーキテクチャ設計書",
@@ -1287,7 +1328,10 @@
       "sec:components/tier2_runtime/runtime_interpreter.md#実行コンテキスト（execution_context @ スタックボトム）",
       "sec:components/tier2_runtime/runtime_vsoc.md#7.3 安全性制約と方策",
       "sec:components/tier3_jit/jit_compiler.md#7.2 安全性制約と方策",
-      "sec:plans/backlog_list.md#Phase 1.2: WASM Stackless Fast Interpreter (`runtime_interpreter`)"
+      "sec:plans/backlog_list.md#Phase 1.2: WASM Stackless Fast Interpreter (`runtime_interpreter`)",
+      "sec:specs/jit_stencil_catalog.md#3.3 メモリアクセス系ステンシル (`i32.load`, `i32.store`)",
+      "sec:specs/wasi_preview1_abi.md#3.1 文字入出力 & ストリーム API (I/O & Streams)",
+      "sec:specs/wasm_instruction_set.md#3.4 メモリアクセス命令 (Memory Access - 32-bit Linear Memory)"
     ],
     "MemoryIsolation": [
       "sec:components/tier1_core/system_logging.md#6.2 メモリ制約と方策",
@@ -1356,7 +1400,9 @@
       "sec:components/tier2_runtime/runtime_interpreter.md#実行コンテキスト（execution_context @ スタックボトム）",
       "sec:components/tier3_jit/jit_assembler_constexpr.md#1. コンセプト",
       "sec:components/tier3_jit/jit_compiler.md#7.2 安全性制約と方策",
-      "sec:plans/backlog_list.md#Phase 1: vSoC First 実装（約3ヶ月） 【GO 判定後に着手】"
+      "sec:plans/backlog_list.md#Phase 1: vSoC First 実装（約3ヶ月） 【GO 判定後に着手】",
+      "sec:specs/jit_stencil_catalog.md#2. プレースホルダ（穴 / Relocations）の種類とパッチ規約",
+      "sec:specs/wasm_instruction_set.md#3.4 メモリアクセス命令 (Memory Access - 32-bit Linear Memory)"
     ],
     "ROMParsing": [
       "sec:components/tier2_runtime/runtime_loader.md#1. コンセプト",
@@ -1469,7 +1515,9 @@
       "sec:components/tier2_runtime/runtime_vsoc.md#4.2 状態遷移図 (SysML SMD: vSoC Engine ライフサイクル)",
       "sec:components/tier2_runtime/runtime_vsoc.md#4.3 内部シーケンス",
       "sec:components/tier2_runtime/runtime_vsoc.md#7.1 性能制約と方策",
-      "sec:plans/backlog_list.md#Phase 1.2: WASM Stackless Fast Interpreter (`runtime_interpreter`)"
+      "sec:plans/backlog_list.md#Phase 1.2: WASM Stackless Fast Interpreter (`runtime_interpreter`)",
+      "sec:specs/wasm_instruction_set.md#1. 概要と適用方針",
+      "sec:specs/wasm_instruction_set.md#3.1 制御フロー命令 (Control Flow)"
     ],
     "Trap_Interface": [
       "sec:components/tier1_core/system_syscall.md#10. トラップ状態プロトコル",
@@ -1483,7 +1531,9 @@
       "sec:components/tier1_interface/ipc_router.md#IPCメッセージ（message）",
       "sec:components/tier1_interface/ipc_router.md#レジストリエントリ（registry_entry）",
       "sec:components/tier3_platform/platform_hal.md#5.5 メッセージ形式",
-      "sec:components/tier3_platform/platform_hal.md#非標準制御 (control)"
+      "sec:components/tier3_platform/platform_hal.md#非標準制御 (control)",
+      "sec:specs/wasi_preview1_abi.md#1. 概要と基本思想",
+      "sec:specs/wasi_preview1_abi.md#3.1 文字入出力 & ストリーム API (I/O & Streams)"
     ],
     "Type_Vocabulary": [
       "sec:components/tier1_core/system_containers.md#1. コンセプト",
@@ -1493,7 +1543,9 @@
       "sec:components/tier1_core/system_containers.md#5.3 利用箇所",
       "sec:components/tier1_core/system_syscall.md#4.1. 引数のパッキング",
       "sec:components/tier1_core/system_syscall.md#5.1. カテゴリ一覧",
-      "sec:components/tier1_core/system_syscall.md#型のエイリアス定義 (Type Vocabulary) `{Type_Vocabulary}`"
+      "sec:components/tier1_core/system_syscall.md#型のエイリアス定義 (Type Vocabulary) `{Type_Vocabulary}`",
+      "sec:specs/wasi_preview1_abi.md#1. 概要と基本思想",
+      "sec:specs/wasi_preview1_abi.md#2. WASI 型定義と物理レイアウト (WASI Type Vocabulary)"
     ],
     "URIAbstraction": [
       "sec:architecture/architecture_overview.md#1. アーキテクチャコンセプト",
@@ -1543,7 +1595,10 @@
     ],
     "Wasm32Only": [
       "sec:components/tier2_runtime/runtime_loader.md#6.3 安全性制約と方策",
-      "sec:components/tier2_runtime/wasm_instruction.md#1. 概要"
+      "sec:components/tier2_runtime/wasm_instruction.md#1. 概要",
+      "sec:specs/wasi_preview1_abi.md#2. WASI 型定義と物理レイアウト (WASI Type Vocabulary)",
+      "sec:specs/wasm_instruction_set.md#1. 概要と適用方針",
+      "sec:specs/wasm_instruction_set.md#2. 非サポート機能 (Explicit Non-Goals)"
     ],
     "WasmPageAlignment": [
       "sec:components/tier2_runtime/runtime_vsoc.md#7.2 メモリ制約と方策",
@@ -1608,8 +1663,8 @@
     "sec:architecture/concept_harness.md#C++実装構造": "7cef41ea0966c80ce26b6d858868fb773529dda551cccb3ea97d42d5dc1db03d",
     "sec:architecture/concept_harness.md#Conceptベースハーネス アーキテクチャ設計書": "4b1397b742f44df166f06f244dadef699153f5fc4f907238d7e1ce9ccc2b742b",
     "sec:architecture/concept_harness.md#特性比較": "cb1bd9f794e1018c0059a880888606688825ec815c23f4e9e6db7ac3a77c096f",
-    "sec:architecture/document_structure.md#1. 設計複雑度に基づく Tier（分解階層）の定義": "e58b0a4fc89d86a39254bdd0b7be69535dbff5f7c5bb57500711084c820d56a7",
-    "sec:architecture/document_structure.md#1.1 各 Tier の定義と配置ディレクトリ": "a3227bd8602a043edb854579f83834726fd158c8aa34e31848da55b1e149e10f",
+    "sec:architecture/document_structure.md#1. 設計複雑度に基づく Tier（分解階層）の定義": "0b7aa3b971d3163fcdd5f6a0e2720d530e9ca67d7d306f811ec7befdf8afd7fe",
+    "sec:architecture/document_structure.md#1.1 各 Tier の定義と配置ディレクトリ": "4c6bcf20a5b6ab7e1157130e67d72751ccaef042097d6a37c95c0451cb177153",
     "sec:architecture/document_structure.md#2. 階層間デコンポジションと依存性ルール": "4e144b6b975e75ecb82725d4f4ba1f81509ac78be3b484745e25e71d51b208d6",
     "sec:architecture/document_structure.md#2.1 デコンポジション基準（いつ下位 Tier へ分解するか）": "739e91a1857993208a19ad7216e5afaef7b5c94d43516ef93f4fa2c9a7046dc4",
     "sec:architecture/document_structure.md#2.2 依存方向のルール": "d6394d50aba57f96febd22eecb7857a4801301810ea24c4e41979701c7e26f22",
@@ -2297,7 +2352,51 @@
     "sec:requires/requirement_list.md#5. 制約事項": "61c3b6fad10f3b79049b99fce401e39a559ec8e4c50aad226b3755b652268eb1",
     "sec:requires/requirement_list.md#6. 用語定義": "dbc14639ad86b5fe90937a58aa103cb76fb40956664c37e57bc3ba19f4791a4e",
     "sec:requires/requirement_list.md#Fireball システム要求仕様書": "675d0d5f7d988600286906d513a0bcf3859e5bd054200e51221b44c14c435d9c",
-    "sec:requires/requirement_list.md#[Template & Meta]": "f194bdd0865c85aa94dcd6e7cb5257c31a184c6c723cf512b97fe532e08257f1"
+    "sec:requires/requirement_list.md#[Template & Meta]": "f194bdd0865c85aa94dcd6e7cb5257c31a184c6c723cf512b97fe532e08257f1",
+    "sec:specs/gdb_rsp_protocol.md#1. 概要と基本思想": "0de0268e3aeb6bfdce6ed1e696b203dd8023f195dfd3a03218d520bee4f828df",
+    "sec:specs/gdb_rsp_protocol.md#2. パケット構造とチェックサム規約": "6e240d0e79be99db3ba8811cbae2bc1f54d302797d603c23201e761d5af82509",
+    "sec:specs/gdb_rsp_protocol.md#3. サポートコマンド・マトリクス (GDB RSP Commands)": "b9ff5722e4ce7522b765634f0de991c5da14bbe1b1c68270cd30d328c48edd49",
+    "sec:specs/gdb_rsp_protocol.md#4. WASM 仮想レジスタ番号マッピング (GDB Target XML Map)": "4c81f40a22dd434e072ef57a3d398a03f001ff0e77a32ce7367c551253c9d602",
+    "sec:specs/gdb_rsp_protocol.md#5. 非サポートコマンド (Explicit Non-Goals)": "5839f6be36201e062c596eac7bd85da72f3e86eaa735f44cbde2b0b7794abe30",
+    "sec:specs/gdb_rsp_protocol.md#GDB Remote Serial Protocol 物理仕様書 (Supported GDB RSP Protocol)": "127ff6f03e85c1ccca577ed931a69f71a86c992840eb8265036c601ec23e5bd3",
+    "sec:specs/jit_stencil_catalog.md#1. 概要と基本思想": "c3c5a746b978c9ab5b80adfc9c8cfde6ab8adfd2d133d25410c144503e7164b8",
+    "sec:specs/jit_stencil_catalog.md#2. プレースホルダ（穴 / Relocations）の種類とパッチ規約": "c0424ff6176b9cec954ad556fc12dc5ad350b84b013b3e7f07bd4ae8a4ec821c",
+    "sec:specs/jit_stencil_catalog.md#3. ステンシル・カタログ (Thumb-2 Stencil Catalog)": "bfacda9272f6847c74a339e9a342ca2f6c849882495377053800c71d85fb0b37",
+    "sec:specs/jit_stencil_catalog.md#3.1 定数ロード系ステンシル (`i32.const`)": "c332db8e7a58ba1f6f87cce9844bdcdd9cc20dae064afbfaedc46fde85ff6c14",
+    "sec:specs/jit_stencil_catalog.md#3.2 整数演算系ステンシル (`i32.add`, `i32.sub`, `i32.mul`)": "15a13a8e59b4feda64fcbfc83f3d5e4a1edafb7ee9dde1fd12fbf2418cb8e8cb",
+    "sec:specs/jit_stencil_catalog.md#3.3 メモリアクセス系ステンシル (`i32.load`, `i32.store`)": "08e87a1251d6380eb182273fcd5f1a323f5e831adf8e6dd1f663b5ec6d58ed38",
+    "sec:specs/jit_stencil_catalog.md#3.4 ローカル変数アクセス系ステンシル (`local.get`, `local.set`)": "afc0be53333f6f3b09c5f5369ae807ce8b7dc2e4302f7b3ee8bd50c4b9058c0e",
+    "sec:specs/jit_stencil_catalog.md#3.5 プロローグ & エピローグ・ステンシル (Prologue & Epilogue)": "26e0fb14c10b39d5ddde0577ae63923ea5414ac208b4daa7c8f18dfa399ed362",
+    "sec:specs/jit_stencil_catalog.md#JIT ステンシルテンプレート・カタログ物理仕様書 (JIT Stencil Template Catalog)": "bce4b3471f39f0a311be3f164cb1efd6bba92fb5c3a42598b310eeddf718d3a9",
+    "sec:specs/jit_stencil_catalog.md#`STENCIL_I32_ADD_DEPTH_1` (片方が R4、もう片方は統合スタックからロード)": "40029fbfa6cbc46aec4145f1b9126645f0e703f1183231d7359e1b6bfc782ed8",
+    "sec:specs/jit_stencil_catalog.md#`STENCIL_I32_ADD_DEPTH_2` (両オペランドが R4, R5 にキャッシュ)": "9ecf817e2e75afe8867aec4596003fab759f5a5b07bc40edae50460a66f1fcfc",
+    "sec:specs/jit_stencil_catalog.md#`STENCIL_I32_CONST_DEPTH_0` (スタック空 $\\to$ R4 にロード)": "799458301aea347df6d4059a82b97904074a497ddc85844bb16ede2e2cd1846f",
+    "sec:specs/jit_stencil_catalog.md#`STENCIL_I32_CONST_DEPTH_1` (R4 に TOS $\\to$ R4 を R5 (NOS) へ移し、R4 に新即値ロード)": "2e29a1b202f01700ff77a73b480fd9eeea1dd581265a17807c2d50546610b55b",
+    "sec:specs/jit_stencil_catalog.md#`STENCIL_I32_LOAD_R3_MEMBASE` (`R3` に `mem_base` がピン留めされているバリアント)": "295dc16d99b26cad7c6914d474345e8bea62c19e474a94c0768bf03895203f7f",
+    "sec:specs/jit_stencil_catalog.md#`STENCIL_I32_STORE_R3_MEMBASE` (`R3` に `mem_base` がピン留めされているバリアント)": "b27b6db8ef9667548e4752c73d74d867c4d6f82632e3b8988ee73d683242ebc0",
+    "sec:specs/jit_stencil_catalog.md#`STENCIL_I32_SUB_DEPTH_2`": "e59b8035e07441f1a867254e6da277b9c39302be80161955225c26b8858f35ed",
+    "sec:specs/jit_stencil_catalog.md#`STENCIL_LOCAL_GET_IMM8` (ローカル配列オフセットを即値パッチ)": "b11dcca0792d331567367527371ce5e63cd67e99ad26ea5d7a3bc8c672d5c099",
+    "sec:specs/jit_stencil_catalog.md#`STENCIL_LOCAL_SET_DEPTH_1`": "62ebf283f24a5a3f283cfb24ca62a87eaceb93c3e9d7db7f2c8c36557e3dfdaa",
+    "sec:specs/jit_stencil_catalog.md#`STENCIL_TRACE_EPILOGUE_RETURN` (Callee-saved 復元 & リターン)": "37c7d6c214a8708be7120c556e06b32fff2270e05544a633f8077c5edb11c49a",
+    "sec:specs/jit_stencil_catalog.md#`STENCIL_TRACE_FALLBACK_INTERP` (インタープリタへ直接末尾ジャンプ)": "57a049c8697b743f2a2941be18a25c3bfb7488a77dad5a464942ab0bd44abbba",
+    "sec:specs/jit_stencil_catalog.md#`STENCIL_TRACE_PROLOGUE_FULL` (使用する Callee-saved レジスタを退避)": "85a9cc630ca37bab3c52db6bf4beabf575031cc46eab0beaa7d3c824b08472c6",
+    "sec:specs/wasi_preview1_abi.md#1. 概要と基本思想": "8baa834b2d09416bf4e89c9b62e675cace8026d52f51c0d960106b67ee49c4ce",
+    "sec:specs/wasi_preview1_abi.md#2. WASI 型定義と物理レイアウト (WASI Type Vocabulary)": "b1652d037eb89f13ebe97ee0c7cbf20778dd11f6ae1b35f43ffed12897f4ad91",
+    "sec:specs/wasi_preview1_abi.md#3. WASI Preview 1 サポート API マトリクス": "ac24861aaeed329cd281ac2caad6f9635b490020cce48038142062f1ff9be447",
+    "sec:specs/wasi_preview1_abi.md#3.1 文字入出力 & ストリーム API (I/O & Streams)": "da1b97f386380310196d294ee14d6c5198e6b8464393f34872e4581119e7b363",
+    "sec:specs/wasi_preview1_abi.md#3.2 システム時刻 & クロック API (Clocks & Timers)": "70c3244fd3df5d51bfe4fb3058831dbd50977becb2bc4f597b9918c39dfd50b7",
+    "sec:specs/wasi_preview1_abi.md#3.3 プロセス制御 & 乱数 & スケジューラ API (Process, Random & Scheduler)": "d46a043e8bdbfa6c2f41b6659dfd743383b6eee216178edd4e4f147fb857545d",
+    "sec:specs/wasi_preview1_abi.md#4. 非サポート API 一覧 (Explicit Non-Goals)": "9a96dd9d4862bc926a85748ebc0156fc6845470cde333e8f811eb96ac519e620",
+    "sec:specs/wasi_preview1_abi.md#WASI Preview 1 ABI 物理仕様書 (Supported WASI Preview 1 ABI)": "5da5134c6a2712b42d1fc1f3672bda54db464734ae300654aba1ee0e5f14bf33",
+    "sec:specs/wasm_instruction_set.md#1. 概要と適用方針": "992d107fef339bc4672553668a3bb7337d1aad567ce8f10148faecb5f3e10170",
+    "sec:specs/wasm_instruction_set.md#2. 非サポート機能 (Explicit Non-Goals)": "1d06ad43f739ba23932de05ee292b70dd07b52a5da6cce007b15992a205b975a",
+    "sec:specs/wasm_instruction_set.md#3. WASM MVP オプコード物理マトリクス": "99dd1fc9943513e485ac18aa449d3a02373e72324f85018a39441c2786623575",
+    "sec:specs/wasm_instruction_set.md#3.1 制御フロー命令 (Control Flow)": "ef908c2798c1275b4c9caede403ea1b51e057d5f6ff7c8d891bbcb200be2603b",
+    "sec:specs/wasm_instruction_set.md#3.2 パラメトリック命令 (Parametric)": "177d45892bfa410d907cef572b6af7485999c0df10507a007d205af9d59e3682",
+    "sec:specs/wasm_instruction_set.md#3.3 変数アクセス命令 (Variable Access)": "23dc0be8542a1a6c8993b5615a46bc0821ce10e21f65fdcd794399ffa3c41a91",
+    "sec:specs/wasm_instruction_set.md#3.4 メモリアクセス命令 (Memory Access - 32-bit Linear Memory)": "4278eb8c9ae06e24e2089006d08fe4e7d6d4d666ccb84efd5c614c23a1ab3889",
+    "sec:specs/wasm_instruction_set.md#3.5 整数算術・論理・比較命令 (Integer Arithmetic, Logic & Comparison)": "5d1599068a944b22c5002a01460b1b6394fb71df4b100a63edf5defceddc532c",
+    "sec:specs/wasm_instruction_set.md#WASM 命令セット物理仕様書 (Supported WASM Instruction Set)": "7c3d856eb641419ed6356d969673b9deffd6bd7e93d2ad9345ba18a34f1f68fd"
   },
   "version": 2
 }

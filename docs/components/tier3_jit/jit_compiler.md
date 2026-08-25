@@ -95,12 +95,12 @@ JITエンジンの挙動を制御する性能パラメータ。 `{META_Configura
 
 #### JIT トレース実行シグネチャ (`exec_trace`)
 <!-- traceability: {JIT_RuntimeAPI_Fallback} {ContextPointerRegister} {EnvironmentPointer} -->
-JIT コンパイル済みネイティブトレースの実行エントリポイント。インタープリタの `opcode_handler` と完全同一の `__fastcall` 継続渡し（CPS）3引数シグネチャを持ち、レジスタ再配置オーバーヘッドなしに相互遷移する。 `{JIT_RuntimeAPI_Fallback}` `{ContextPointerRegister}` `{EnvironmentPointer}`
+JIT コンパイル済みネイティブトレースの実行エントリポイント。インタープリタの `opcode_handler` と完全同一の `__fastcall` 継続渡し（CPS）3引数シグネチャを持ち、レジスタ再配置オーバーヘッドなしに相互遷移する。物理レジスタ規約および Callee-saved 任意割当プールの詳細は [マスター物理設計書 §3](../../architecture/master_physical_design.md) を参照。 `{JIT_RuntimeAPI_Fallback}` `{ContextPointerRegister}` `{EnvironmentPointer}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
 | トレースシグネチャ | `__fastcall` によるネイティブトレース実行関数 | 関数ポインタ | `void (__fastcall *)(const uint8_t* __restrict__ ip, execution_context* __restrict__ stack_bot, vsoc_runtime* __restrict__ env) noexcept` |
-| レジスタ割り当て | ARM AAPCS / `__fastcall` 引数レジスタマッピング | 物理レジスタ | `R0`: `ip` (WASM PC)<br>`R1`: `stack_bot` (スタックボトム基底ポインタ `{ContextPointerRegister}`)<br>`R2`: `env` (環境ポインタ `{EnvironmentPointer}`)<br>`R3`: **`Caller-saved スクラッチ / スピル`**<br>`R4-R6, R8-R11`: **`Callee-saved 任意割当プール`** (TOS/NOS/NNOS, mem_base, local_base, local変数, ループカウンタ)<br>`R7`: **`FP` (不可侵フレームポインタ)** |
+| レジスタ割り当て | ARM AAPCS / `__fastcall` 引数レジスタマッピング | 物理レジスタ | `R0`: `ip`, `R1`: `stack_bot`, `R2`: `env`, `R3`: `spill/scratch`, `R4-R6, R8-R11`: `assignable pool`, `R7`: `FP` ([マスター物理設計書 §3](../../architecture/master_physical_design.md) 準拠) |
 
 ### 3.4 公開API
 外部コンポーネント（Executor等）からJITコンパイル機能を利用するためのAPI。
@@ -125,42 +125,24 @@ JIT コンパイル済みネイティブトレースの実行エントリポイ�
 
 ### 4.1 アルゴリズム
 
-#### Copy-and-Patch コンパイル手順
-
+#### JIT コンパイル・オーケストレーション手順
 <!-- traceability: {JIT_CopyAndPatch} {META_AI_Native_Dev} {JIT_RuntimeAPI_Fallback} {ContextPointerRegister} {ADR_TosCacheAsymmetry} -->
-1. **トレース解析とレジスタ役割バインディング決定**: コンパイル対象トレース内の命令構成（メモリ/ローカル/スタック/ループ）を走査し、`R3`（Caller-saved スピル/スクラッチ）および `R4-R6, R8-R11`（Callee-saved プール計7本）に対する最適な役割マップ（TOS/NOS/NNOS, mem_base, local_base, local[0..N], ループカウンタ）を決定する。
-2. **テンプレート・バリアント選択とプロローグ生成**: 決定されたレジスタバインディングに対応する事前定義済みのネイティブコードテンプレート・バリアントを選択する。トレース先頭では使用する Callee-saved レジスタの `PUSH` および初期値ロード（`LDR`）を配置する。すべてのテンプレートは `__fastcall` CPS 3引数規約に完全準拠する。 `{ADR_TosCacheAsymmetry}`
-3. **コードコピー**: テンプレートをアクティブ・キャッシュ領域の「ベースアドレス + 使用済みサイズ」の位置へコピーする。
-4. **パッチ適用 (プレースホルダ埋め & AAPCS 外部呼び出し境界)**:
-    - 即値（定数）をプレースホルダに書き込む。
-    - 相対ジャンプ先を計算して書き込む。
-    - **外部 AAPCS 関数呼び出し（WASI/vMMIO/ランタイムAPI）の埋め込み**: 外部 C/C++ 関数を呼ぶ箇所では、Caller-saved レジスタ `(R0-R3, R12, LR)` をスタックまたは未使用の Callee-saved レジスタへ退避し、SP を 8 バイト境界に整列して `BL` 発行、復帰後に Caller-saved を復元するスタブをインライン展開する。Callee-saved レジスタ（`R4-R11`）は AAPCS により安全に保全される。
-5. **インタープリタ連携とフォールバック (Zero-Reconstruction Interop)**:
-    - JIT トレース末尾、未コンパイル命令、またはトラップ発生時、JIT コードはレジスタ R0〜R2 に最新の `(ip, stack_bot, env)` を保持し、ダーティなレジスタ（TOS/NOS、ローカル変数）を統合スタックへ書き戻した上で `POP` 復元（Callee-saved 保全完了）し、インタープリタのオプコードハンドラ（またはディスパッチャ）へ直接末尾ジャンプ（`BX`）する。
-    - **コンテキストの再構築（構造体への退避/復元、レジスタ再配置）は発生しない**。レジスタ復元と末尾ジャンプが JIT ↔ インタープリタ遷移の唯一のコストであり、トレース長で償却される。 `{JIT_RuntimeAPI_Fallback}` `{ADR_TosCacheAsymmetry}`
-6. **エントリ登録 & 命令キャッシュ同期**: JITエントリを作成し、命令オフセット（PC）順を維持するようにエントリ配列に挿入する。同時に JIT エントリグループインデックスを更新する。パッチ適用完了後、Cortex-M33 向けにデータキャッシュをクリーンし、`__DSB()`（データ同期バリア）および `__ISB()`（命令同期バリア）を発行して命令キャッシュ（I-Cache）のコヒーレンシを保証する。
+JIT コンパイラは、ホットスポット検出からネイティブコード生成、エントリ登録、命令キャッシュ同期までのパイプライン全体をオーケストレーションする：
 
-#### JITトレース検索 & 3面キャッシュ代謝アルゴリズム
+1. **ホットスポット判定とトレース抽出**: [`hotspot_detector`](jit_runtime_hotspot.md) を参照し、対象 WASM PC がホットであるか確認する。
+2. **コード生成委譲**: [`copy_and_patch_engine`](jit_engine_copy_patch.md) を呼び出し、トレース解析、レジスタバインディング決定、ステンシルバリアント選択、およびパッチ適用（即値・ジャンプ・外部 AAPCS 境界スタブ）を行ってアクティブ・キャッシュ領域へネイティブ命令列を生成させる。
+3. **エントリ登録 & 命令キャッシュ同期**: [`jit_entry_index`](jit_runtime_entry.md) を呼び出して JIT エントリ配列および JIT エントリグループインデックスを更新する。パッチ適用完了後、Cortex-M33 向けにデータキャッシュをクリーンし、`__DSB()`（データ同期バリア）および `__ISB()`（命令同期バリア）を発行して命令キャッシュ（I-Cache）のコヒーレンシを保証する。
+4. **インタープリタ連携とフォールバック (Zero-Reconstruction Interop)**: JIT トレースとインタープリタ間のレジスタ規約整合および直接末尾ジャンプ（`BX`）による相互遷移を保証する。コンテキストの再構築オーバーヘッドは発生しない。 `{JIT_RuntimeAPI_Fallback}` `{ADR_TosCacheAsymmetry}`
+
+#### JIT トレース検索 & 3面キャッシュ代謝オーケストレーション
 <!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} -->
-1. **事前フィルタ (カードマーキング)**: 命令オフセット（PC）をカードインデックス（`pc >> card_shift`）に変換し、カードマーキング表 (`bit_view<2>`) を $O(1)$ で直接参照する。該当カードの状態が「コンパイル完了」でない場合は即座に終了。
-2. **アクティブ領域（Bank 0: Active）検索**:
-    - JIT エントリグループインデックスを用いて $O(1)$ で探索区間を絞り込み、得られた `flat_map_view` に対して命令オフセットで二分探索を行う。
-    - ヒットした場合は、そのネイティブコードのアドレスを返して終了。
-3. **中間領域（Bank 1: Warm）検索**:
-    - Active バンクでミスした場合、Warm バンクのエントリを JIT エントリグループインデックス経由で二分探索する。
-    - ヒットした場合、無償観測期間（Observation Window）として**昇格コピーを行わず**、そのままネイティブコードのアドレスを返して実行する（無駄な昇格オーバーヘッドを排除）。
-4. **最古領域（Bank 2: Oldest）検索と限定昇格 (Oldest-Only Promotion)**: `{JIT_OldestOnly_Promote}`
-    - Warm バンクでもミスした場合、破棄直前の Oldest バンクを同様に検索する。
-    - Oldest バンクでヒットしたコード（現在も実行され続けている Hot コード）を新 Active バンクへ Promote（昇格コピー）する。昇格しないまま次回のローテーションを迎えた Cold コードはそのまま Eviction（破棄）される。
-5. **3面リングバッファローテーション（Swap/Eviction）**:
-    - Active バンク（2KB）の残り容量が不足した場合、3面リングローテーションを実行する：
-      * `Bank 2 (Oldest)` の全エントリを完全に破棄・クリア（Purge）し、新たな `Bank 0 (Active)` とする。
-      * 従来の `Bank 0 (Active)` は `Bank 1 (Warm)` へ、従来の `Bank 1 (Warm)` は `Bank 2 (Oldest)` へと役割をシフトする。
-6. **オンデマンド・キューイング (頻出カード・フォールバック)**:
-    - 全 3 バンクでミスし、かつ状態が「コンパイル完了」の場合、対象の命令オフセットをコンパイル待ち列（LIFO）へ登録する。実際のコンパイルは次回のバッチ処理（アイドル時等）で行われる。
-7. **結果の返却**:
-    - ヒット（または昇格成功）時はネイティブコードのアドレスを返す。
-    - いずれのバンクでもミスした場合は（たとえ「コンパイル完了」カードであっても） NULL を返し、インタープリタ実行を継続する。カード状態は `COMPILED` のまま変更しない（`{ADR_SafeQueuingOnHotMiss}` に従い、再コンパイル要求はステップ 6 のキュー投入のみで表現する）。 `{ADR_SafeQueuingOnHotMiss}`
+3段直接 JIT 検索（[マスター物理設計書 §2.2](../../architecture/master_physical_design.md)）に基づき、各サブコンポーネントを統括する：
+
+1. **事前フィルタ**: [`hotspot_detector`](jit_runtime_hotspot.md) のカードマーキング表 (`bit_view<2>`) を $O(1)$ 参照し、未コンパイル PC を Fast Exit。
+2. **多世代エントリ検索**: [`jit_entry_index`](jit_runtime_entry.md) を呼び出し、Active / Warm / Oldest の各バンクを JIT エントリグループインデックス経由で二分探索（$O(\log n)$）。
+3. **最古限定昇格 (Oldest-Only Promotion)**: Oldest バンクでヒットした場合のみ、新 Active バンクへ昇格コピー。 `{JIT_OldestOnly_Promote}`
+4. **3面世代交代回転**: Active バンク容量枯渇時、Oldest パージ $\to$ Active/Warm/Oldest 役割シフトを実行。
+5. **オンデマンド・キューイング**: 全バンクミスかつコンパイル済みカードの場合、LIFO キューへ登録してインタープリタへフォールバック。 `{ADR_SafeQueuingOnHotMiss}`
 
 #### トレース・チェイニング（連鎖実行）
 <!-- traceability: {JIT_LazyChaining} -->

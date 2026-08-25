@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-25T07:58:44.313003+00:00",
+  "generated_at": "2026-08-25T10:26:11.707276+00:00",
   "backend": "heuristic",
   "total_evaluated": 763,
   "formal_candidates_count": 31,
@@ -24,16 +24,16 @@
     "components/tier1_interface/system_service.md": "7c98009196d56c50c4d1d27269f38eb51d4fe1fa654aedb51dba7c496cd5fe62",
     "components/tier2_runtime/debug/debug_gdb_rsp.md": "f07fbc1fbe307552ce65dbe964361442c7df855ac18cce53dc59684373c6befc",
     "components/tier2_runtime/debug/debug_manager.md": "6f62ba245c1b68577bccd8d7f104f286aa33820e12dd68d45ededb65ea99f5e2",
-    "components/tier2_runtime/runtime_interpreter.md": "cb70cfcbe67e532df563e029f9ae455db52102805f69dc9a640976a626075c62",
+    "components/tier2_runtime/runtime_interpreter.md": "af7c5022a526040d775d92e0ede80bb625979c260a11763b5dec84e2674af5df",
     "components/tier2_runtime/runtime_loader.md": "591c6d491434e54f39eed5c48ae3216fc1b0ca1e2299044161cccac48f93dca5",
     "components/tier2_runtime/runtime_vmmio.md": "5b1afbf97ab169fe86f4081b63d5b5ffefb043abd22b571d132e4379809b3968",
     "components/tier2_runtime/runtime_vsoc.md": "2c2f025fb53b9adaf73f9f554415335dd25d4de37f94dd71025aa0eb12ce6cd3",
     "components/tier2_runtime/wasm_instruction.md": "640483f8a25bca7885110ce37e499c4ba3622fdc2ba3507e3a78b2bc1fcf8b5f",
     "components/tier3_jit/concepts/README.md": "a39c8c192999a792243e697e008fcad02c701d14b9559d492d668208122b6ebc",
     "components/tier3_jit/jit_assembler_constexpr.md": "4798eb6d2692ae574c45917a0597feb16e1ffa3ec9d9771566a6523607f7c7d5",
-    "components/tier3_jit/jit_compiler.md": "31394d9ee8497ff49adde2f45572bf979122689b5bdcc61c1d4793cd06314e4e",
-    "components/tier3_jit/jit_engine_copy_patch.md": "eba90ed1625fb29bc055ad92517e06d5e52d3b7f0b899f8f7ebfd437e6f32c1f",
-    "components/tier3_jit/jit_runtime_entry.md": "f605d7ff040f12ecdcbb9b8d145a92d421d819cfdc949b427ed43ca5e4a8175a",
+    "components/tier3_jit/jit_compiler.md": "1a6653d433500d5e026c386428369515e42e54160feb5c33819d11034852e2c3",
+    "components/tier3_jit/jit_engine_copy_patch.md": "d179e3bf586cf1ba6bceb4c81e1eccfd6397b634dc19075e92123e41ff4be7d1",
+    "components/tier3_jit/jit_runtime_entry.md": "4e1acdf6e3c5b56d5ed285c252a8c3f692fa86714eee534e4ae1ba996e034395",
     "components/tier3_jit/jit_runtime_hotspot.md": "bf4ced6b78c1978a08624c8fe9f430ee307c068780cd0c314d6f527ea698603f",
     "components/tier3_platform/platform_hal.md": "b7e90323ad0269f78e10e3f59dc1e373d3b8818d02ecf4bcf03e5970096842e2",
     "components/tier3_platform/platform_memory.md": "7269a7df0573b9753da79472f7aaa4970a47f4ab9e7ef5a8406b70cceff05e1b",
@@ -208,19 +208,6 @@
       "summary": "Independent heuristic evaluation for '3.1.2 タスク管理・通信 (COOS)'."
     },
     {
-      "section_id": "sec:components/tier2_runtime/runtime_interpreter.md#オプコードハンドラ / トレース実行（opcode_handler / exec_trace）",
-      "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "heading": "オプコードハンドラ / トレース実行（opcode_handler / exec_trace）",
-      "tier": 2,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for 'オプコードハンドラ / トレース実行（opcode_handler / exec_trace）'."
-    },
-    {
       "section_id": "sec:components/tier1_interface/ipc_router.md#4.1 アルゴリズム",
       "file_path": "components/tier1_interface/ipc_router.md",
       "heading": "4.1 アルゴリズム",
@@ -275,6 +262,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '1. コンセプト'."
+    },
+    {
+      "section_id": "sec:components/tier2_runtime/runtime_interpreter.md#オプコードハンドラ / トレース実行（opcode_handler / exec_trace）",
+      "file_path": "components/tier2_runtime/runtime_interpreter.md",
+      "heading": "オプコードハンドラ / トレース実行（opcode_handler / exec_trace）",
+      "tier": 2,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for 'オプコードハンドラ / トレース実行（opcode_handler / exec_trace）'."
     },
     {
       "section_id": "sec:components/tier1_core/os_coos.md#4.1 アルゴリズム",
@@ -531,19 +531,6 @@
       "summary": "Independent heuristic evaluation for '1. コンセプト'."
     },
     {
-      "section_id": "sec:components/tier3_jit/jit_engine_copy_patch.md#命令テンプレート（jit_template）",
-      "file_path": "components/tier3_jit/jit_engine_copy_patch.md",
-      "heading": "命令テンプレート（jit_template）",
-      "tier": 3,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '命令テンプレート（jit_template）'."
-    },
-    {
       "section_id": "sec:components/tier1_core/os_scheduler.md#4.2 状態遷移図 (SysML SMD: Scheduler 視点)",
       "file_path": "components/tier1_core/os_scheduler.md",
       "heading": "4.2 状態遷移図 (SysML SMD: Scheduler 視点)",
@@ -559,19 +546,6 @@
         "Stateful concurrent protocol or hardware safety invariant identified"
       ],
       "summary": "Independent heuristic evaluation for '4.2 状態遷移図 (SysML SMD: Scheduler 視点)'."
-    },
-    {
-      "section_id": "sec:components/tier3_jit/jit_compiler.md#Copy-and-Patch コンパイル手順",
-      "file_path": "components/tier3_jit/jit_compiler.md",
-      "heading": "Copy-and-Patch コンパイル手順",
-      "tier": 3,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for 'Copy-and-Patch コンパイル手順'."
     },
     {
       "section_id": "sec:components/tier1_core/system_containers.md#6.2 メモリ制約と方策",
@@ -598,6 +572,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '4.2 状態遷移図'."
+    },
+    {
+      "section_id": "sec:components/tier3_jit/jit_engine_copy_patch.md#命令テンプレート（jit_template）",
+      "file_path": "components/tier3_jit/jit_engine_copy_patch.md",
+      "heading": "命令テンプレート（jit_template）",
+      "tier": 3,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '命令テンプレート（jit_template）'."
     },
     {
       "section_id": "sec:architecture/master_physical_design.md#3. 物理レジスタ＆ABI規約 (Physical Register & ABI Map)",
@@ -654,19 +641,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for 'オーナーレビュー観点 & チェックリスト'."
-    },
-    {
-      "section_id": "sec:components/tier3_jit/jit_compiler.md#JIT トレース実行シグネチャ (`exec_trace`)",
-      "file_path": "components/tier3_jit/jit_compiler.md",
-      "heading": "JIT トレース実行シグネチャ (`exec_trace`)",
-      "tier": 3,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for 'JIT トレース実行シグネチャ (`exec_trace`)'."
     },
     {
       "section_id": "sec:requires/requirement_list.md#3.2.2 開発方針・品質",
@@ -924,6 +898,19 @@
       "summary": "Independent heuristic evaluation for '4.2.1 所有権移譲状態機械 (Ownership Transfer State Machine)'."
     },
     {
+      "section_id": "sec:components/tier3_jit/jit_compiler.md#JIT コンパイル・オーケストレーション手順",
+      "file_path": "components/tier3_jit/jit_compiler.md",
+      "heading": "JIT コンパイル・オーケストレーション手順",
+      "tier": 3,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for 'JIT コンパイル・オーケストレーション手順'."
+    },
+    {
       "section_id": "sec:components/tier1_interface/ipc_router.md#6.1 検証対象の不変条件",
       "file_path": "components/tier1_interface/ipc_router.md",
       "heading": "6.1 検証対象の不変条件",
@@ -1123,6 +1110,19 @@
       "summary": "Independent heuristic evaluation for 'デバッガ（Debugger）クラス'."
     },
     {
+      "section_id": "sec:components/tier3_jit/jit_compiler.md#JIT トレース実行シグネチャ (`exec_trace`)",
+      "file_path": "components/tier3_jit/jit_compiler.md",
+      "heading": "JIT トレース実行シグネチャ (`exec_trace`)",
+      "tier": 3,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for 'JIT トレース実行シグネチャ (`exec_trace`)'."
+    },
+    {
       "section_id": "sec:components/tier3_jit/jit_compiler.md#5.1 直交表: 検索・昇格・代謝",
       "file_path": "components/tier3_jit/jit_compiler.md",
       "heading": "5.1 直交表: 検索・昇格・代謝",
@@ -1316,19 +1316,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '7.2 メモリ制約と方策'."
-    },
-    {
-      "section_id": "sec:components/tier3_jit/jit_compiler.md#JITトレース検索 & 3面キャッシュ代謝アルゴリズム",
-      "file_path": "components/tier3_jit/jit_compiler.md",
-      "heading": "JITトレース検索 & 3面キャッシュ代謝アルゴリズム",
-      "tier": 3,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for 'JITトレース検索 & 3面キャッシュ代謝アルゴリズム'."
     },
     {
       "section_id": "sec:components/tier3_jit/jit_compiler.md#バッチコンパイル (周期実行またはアイドル時)",
@@ -1913,6 +1900,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '`fireball::riscv::i_type`'."
+    },
+    {
+      "section_id": "sec:components/tier3_jit/jit_compiler.md#JIT トレース検索 & 3面キャッシュ代謝オーケストレーション",
+      "file_path": "components/tier3_jit/jit_compiler.md",
+      "heading": "JIT トレース検索 & 3面キャッシュ代謝オーケストレーション",
+      "tier": 3,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for 'JIT トレース検索 & 3面キャッシュ代謝オーケストレーション'."
     },
     {
       "section_id": "sec:components/tier3_platform/platform_memory.md#7. 共有メモリ (shared-block) のライフサイクル",

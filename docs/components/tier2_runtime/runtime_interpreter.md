@@ -103,7 +103,9 @@ ARM Cortex-M ターゲットにおいて、`execution_context` は **WASM スタ
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
 | 実行シグネチャ | `__fastcall` による継続渡し（CPS）3引数シグネチャ | 関数ポインタ | `void (__fastcall *)(const uint8_t* __restrict__ ip, execution_context* __restrict__ stack_bot, vsoc_runtime* __restrict__ env) noexcept` |
-| レジスタ割り当て | ARM AAPCS / `__fastcall` 引数レジスタマッピング | 物理レジスタ | `R0`: `ip` (WASM PC)<br>`R1`: `stack_bot` (スタックボトム基底ポインタ `{ContextPointerRegister}`)<br>`R2`: `env` (環境ポインタ `{EnvironmentPointer}`)<br>`R3`: **スクラッチレジスタ（解放・演算用）** |
+| レジスタ割り当て | ARM AAPCS / `__fastcall` 引数レジスタマッピング | 物理レジスタ | `R0`: `ip`, `R1`: `stack_bot`, `R2`: `env`, `R3`: `scratch` ([マスター物理設計書 §3](../../architecture/master_physical_design.md) 準拠) |
+
+WASM オプコードごとのスタック遷移およびハンドラ実装マトリクスは [WASM 命令セット物理仕様書 (`docs/specs/wasm_instruction_set.md`)](../../specs/wasm_instruction_set.md) を参照。
 
 **スタックトップキャッシュ (`R4`/`R5`) を持たない理由 (`{ADR_TosCacheAsymmetry}`)**:
 インタープリタのオプコードハンドラは、オペランドを常に統合スタック上（`[R1, #sp_offset]` 相対）で読み書きし、`R4`/`R5` に TOS/NOS をキャッシュ **しない**。AAPCS の引数レジスタは `R0`〜`R3` の 4 本しかなく、TOS を 4 番目の引数に昇格させると `{ContextPointerRegister}` の再設計で解放したばかりの `R3` スクラッチを再び失うためである。一方 JIT トレースは単一トレース内で `R4`/`R5` を TOS/NOS として占有してよい。この非対称性は、JIT トレース脱出時の `STR` × 2 という有界なコストとして精算される。 `{ADR_TosCacheAsymmetry}` `{JIT_RegisterMapping}`

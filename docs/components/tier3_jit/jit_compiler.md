@@ -100,7 +100,7 @@ JIT コンパイル済みネイティブトレースの実行エントリポイ�
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
 | トレースシグネチャ | `__fastcall` によるネイティブトレース実行関数 | 関数ポインタ | `void (__fastcall *)(const uint8_t* __restrict__ ip, execution_context* __restrict__ stack_bot, vsoc_runtime* __restrict__ env) noexcept` |
-| レジスタ割り当て | ARM AAPCS / `__fastcall` 引数レジスタマッピング | 物理レジスタ | `R0`: `ip` (WASM PC)<br>`R1`: `stack_bot` (スタックボトム基底ポインタ `{ContextPointerRegister}`)<br>`R2`: `env` (環境ポインタ `{EnvironmentPointer}`)<br>`R3`: **スクラッチレジスタ（解放・演算用）**<br>`R4`/`R5`: スタックトップキャッシュ (TOS, NOS) |
+| レジスタ割り当て | ARM AAPCS / `__fastcall` 引数レジスタマッピング | 物理レジスタ | `R0`: `ip` (WASM PC)<br>`R1`: `stack_bot` (スタックボトム基底ポインタ `{ContextPointerRegister}`)<br>`R2`: `env` (環境ポインタ `{EnvironmentPointer}`)<br>`R3`: **`Context Spill` (任意ピン留め: `mem_base`, `local_base`, `scratch` 等)**<br>`R4`/`R5`: スタックトップキャッシュ (TOS, NOS) |
 
 ### 3.4 公開API
 外部コンポーネント（Executor等）からJITコンパイル機能を利用するためのAPI。
@@ -128,16 +128,17 @@ JIT コンパイル済みネイティブトレースの実行エントリポイ�
 #### Copy-and-Patch コンパイル手順
 
 <!-- traceability: {JIT_CopyAndPatch} {META_AI_Native_Dev} {JIT_RuntimeAPI_Fallback} {ContextPointerRegister} {ADR_TosCacheAsymmetry} -->
-1. **テンプレート選択**: WASM命令に対応する事前定義済みのネイティブコードテンプレートを選択する。すべてのテンプレートは `__fastcall` CPS 3引数レジスタ割り当て（R0=IP, R1=stack_bot, R2=ENV, R3=スクラッチ）に完全準拠して設計される。トレース内部に限り `R4`/`R5` を TOS/NOS キャッシュとして占有してよい。 `{ADR_TosCacheAsymmetry}`
-2. **コードコピー**: テンプレートをアクティブ・キャッシュ領域の「ベースアドレス + 使用済みサイズ」の位置へコピーする。
-3. **パッチ適用 (プレースホルダ埋め)**:
+1. **トレース解析と R3 スピル変数決定**: コンパイル対象トレース内の命令構成を走査し、翻訳単位として `R3` にピン留めするコンテキスト変数（メモリアクセス主体なら `mem_base`、ローカル変数主体なら `local_base`、セーフポイント監視なら `safepoint_flag`、純粋計算なら `scratch`）を決定する。
+2. **テンプレート・バリアント選択**: 決定された `R3` スピル状態およびスタックキャッシュ状態（R4=TOS, R5=NOS）に対応する事前定義済みのネイティブコードテンプレート・バリアントを選択する。トレース先頭では必要に応じて `LDR R3, [R1, #offset]` を 1 度だけ配置する。すべてのテンプレートは `__fastcall` CPS 3引数規約に完全準拠する。 `{ADR_TosCacheAsymmetry}`
+3. **コードコピー**: テンプレートをアクティブ・キャッシュ領域の「ベースアドレス + 使用済みサイズ」の位置へコピーする。
+4. **パッチ適用 (プレースホルダ埋め)**:
     - 即値（定数）をプレースホルダに書き込む。
     - ランタイムAPIのアドレスを書き込む。
     - 相対ジャンプ先を計算して書き込む。
-4. **インタープリタ連携とフォールバック (Zero-Reconstruction Interop)**:
+5. **インタープリタ連携とフォールバック (Zero-Reconstruction Interop)**:
     - JIT トレース末尾、未コンパイル命令、またはトラップ発生時、JIT コードはレジスタ R0〜R2 に最新の `(ip, stack_bot, env)` を保持したまま、インタープリタのオプコードハンドラ（またはディスパッチャ）へ直接末尾ジャンプ（`BX`）する。
     - **コンテキストの再構築（構造体への退避/復元、レジスタ再配置）は発生しない**。ただしスタックトップキャッシュ `R4`/`R5` はインタープリタ側の規約に存在しないため、ダーティであれば統合スタックへ `STR` × 2 で書き戻してから制御を渡す。この 2 命令が JIT ↔ インタープリタ遷移の唯一のコストであり、トレース長で償却される。 `{JIT_RuntimeAPI_Fallback}` `{ADR_TosCacheAsymmetry}`
-5. **エントリ登録 & 命令キャッシュ同期**: JITエントリを作成し、命令オフセット（PC）順を維持するようにエントリ配列に挿入する。同時に JIT エントリグループインデックスを更新する。パッチ適用完了後、Cortex-M33 向けにデータキャッシュをクリーンし、`__DSB()`（データ同期バリア）および `__ISB()`（命令同期バリア）を発行して命令キャッシュ（I-Cache）のコヒーレンシを保証する。
+6. **エントリ登録 & 命令キャッシュ同期**: JITエントリを作成し、命令オフセット（PC）順を維持するようにエントリ配列に挿入する。同時に JIT エントリグループインデックスを更新する。パッチ適用完了後、Cortex-M33 向けにデータキャッシュをクリーンし、`__DSB()`（データ同期バリア）および `__ISB()`（命令同期バリア）を発行して命令キャッシュ（I-Cache）のコヒーレンシを保証する。
 
 #### JITトレース検索 & 3面キャッシュ代謝アルゴリズム
 <!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} -->

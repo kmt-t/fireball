@@ -125,7 +125,7 @@ ARM Cortex-M33 (ARMv8-M Mainline) における物理レジスタの厳格な役�
 | **`R0`** | Argument 1 / Scratch | `ip` (WASM PC) | `ip` (WASM PC) | 継続渡し（CPS）第1引数。現在実行中のバイトコード位置。 |
 | **`R1`** | Argument 2 / Scratch | `stack_bot` | `stack_bot` | 継続渡し（CPS）第2引数。統合スタックボトム基底ポインタ `{ContextPointerRegister}`。 |
 | **`R2`** | Argument 3 / Scratch | `env` | `env` | 継続渡し（CPS）第3引数。ランタイム環境ポインタ `{EnvironmentPointer}`。 |
-| **`R3`** | Argument 4 / Scratch | `scratch` (解放) | `scratch` (解放) | **Caller-saved スクラッチレジスタ**。即値ロード・一時演算用。 |
+| **`R3`** | Argument 4 / Scratch | `scratch` (解放) | **`Context Spill` (任意)** | **コンテキスト・スピル / スクラッチ**。JITトレースの翻訳単位ごとにコンテキスト内の任意変数（`mem_base`, `local_base`, `sp_offset`, `scratch`等）をピン留め。コンパイラはスピル変数に応じてステンシルバリアントを選択。 |
 | **`R4`** | Callee-saved | (未使用 / 保全) | **`TOS` (Stack Top)** | JIT 内スタックトップキャッシュ。JIT 脱出時に `STR` で統合スタックへ書き戻し。 |
 | **`R5`** | Callee-saved | (未使用 / 保全) | **`NOS` (Next on Stack)** | JIT 内スタックネクストキャッシュ。JIT 脱出時に `STR` で統合スタックへ書き戻し。 |
 | **`R6`** | Callee-saved | (保全) | (保全) | 将来拡張用・コンテキスト補助ポインタ。 |

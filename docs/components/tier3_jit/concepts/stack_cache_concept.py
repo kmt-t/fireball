@@ -17,7 +17,7 @@ Register assignment (Cortex-M33 / AAPCS __fastcall convention):
     R0  = ip        (WASM PC / bytecode pointer)
     R1  = stack_bot (stack bottom context pointer `{ContextPointerRegister}`)
     R2  = env       (runtime environment pointer `{EnvironmentPointer}`)
-    R3  = scratch   (caller-saved scratch register for immediate load & temporary arithmetic)
+    R3  = spill/scr (context spill: pinned mem_base/local_base or scratch, per-trace variant)
     R4  = TOS       (top of operand stack, JIT callee-saved cache)
     R5  = NOS       (next on stack, JIT callee-saved cache)
     R7  = FP        (AAPCS standard frame pointer - preserved)

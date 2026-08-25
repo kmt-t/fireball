@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-25T00:35:51.569636+00:00",
+  "generated_at": "2026-08-25T00:41:00.420970+00:00",
   "backend": "heuristic",
   "total_evaluated": 707,
   "formal_candidates_count": 31,
@@ -15,7 +15,7 @@
     "components/tier1_core/os_scheduler.md": "bb8d0e129d9ce8c153fb4d7f0297d095eb2f1bdcff24de9fa345d39e67013a83",
     "components/tier1_core/system_config.md": "18d6e2eeb837773f55bb1d285809d64d86bdf94dc0bff012116caf908b9177a0",
     "components/tier1_core/system_config_details.md": "d01b76be672dc64e340304989cd087ebc46edef5f75c2a0b633bf2c927af019b",
-    "components/tier1_core/system_containers.md": "0174671f32943b4a4165985c91427348dbadc516f2688686cdc62938c4de6875",
+    "components/tier1_core/system_containers.md": "037c624c2af7c2cfdbf00ecc4da2051fc865f7700d64563f9a191aba07d44c17",
     "components/tier1_core/system_logging.md": "7ec474b1ad605d7e56d14c9eb01f763fb2cd93553a8c7d91e4a4c71f4072cb4d",
     "components/tier1_core/system_syscall.md": "7fddb15242b1858522120553eebdf76354802bffe4bfdffe648f50f6e788a234",
     "components/tier1_interface/interface_wit.md": "889909501181705efbeff8ca5d96f1ae036ab6c756e478acc6c7418907bb2d1f",
@@ -30,9 +30,9 @@
     "components/tier2_runtime/wasm_instruction.md": "640483f8a25bca7885110ce37e499c4ba3622fdc2ba3507e3a78b2bc1fcf8b5f",
     "components/tier3_jit/concepts/README.md": "a39c8c192999a792243e697e008fcad02c701d14b9559d492d668208122b6ebc",
     "components/tier3_jit/jit_assembler_constexpr.md": "4798eb6d2692ae574c45917a0597feb16e1ffa3ec9d9771566a6523607f7c7d5",
-    "components/tier3_jit/jit_compiler.md": "6bacd95ecc630f6e13974a7a6db0749b70908027adc2fafe8043a74182d34c95",
+    "components/tier3_jit/jit_compiler.md": "4c6c75edd5da000f2ce475cd69781b50fdb0eec797ab70c3d00ad68d442e3806",
     "components/tier3_jit/jit_engine_copy_patch.md": "4fa983d73c4f184a6ffdf59ad08a8e4218a818e065102d39a36ec55e2a3bc11e",
-    "components/tier3_jit/jit_runtime_entry.md": "0e8b1e1382713af8ed113cd54a6d0a276419c3b218c3aaa79a27f3bc4226107b",
+    "components/tier3_jit/jit_runtime_entry.md": "f605d7ff040f12ecdcbb9b8d145a92d421d819cfdc949b427ed43ca5e4a8175a",
     "components/tier3_jit/jit_runtime_hotspot.md": "bf4ced6b78c1978a08624c8fe9f430ee307c068780cd0c314d6f527ea698603f",
     "components/tier3_platform/platform_hal.md": "b7e90323ad0269f78e10e3f59dc1e373d3b8818d02ecf4bcf03e5970096842e2",
     "components/tier3_platform/platform_memory.md": "7269a7df0573b9753da79472f7aaa4970a47f4ab9e7ef5a8406b70cceff05e1b",
@@ -582,6 +582,19 @@
       "summary": "Independent heuristic evaluation for '4.2 状態遷移図'."
     },
     {
+      "section_id": "sec:components/tier3_jit/jit_compiler.md#Copy-and-Patch コンパイル手順",
+      "file_path": "components/tier3_jit/jit_compiler.md",
+      "heading": "Copy-and-Patch コンパイル手順",
+      "tier": 3,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for 'Copy-and-Patch コンパイル手順'."
+    },
+    {
       "section_id": "sec:components/tier1_interface/ipc_router.md#メッセージルーティング（route_message）",
       "file_path": "components/tier1_interface/ipc_router.md",
       "heading": "メッセージルーティング（route_message）",
@@ -610,19 +623,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '4.2 状態遷移図 (SysML SMD: vSoC Engine ライフサイクル)'."
-    },
-    {
-      "section_id": "sec:components/tier3_jit/jit_compiler.md#Copy-and-Patch コンパイル手順",
-      "file_path": "components/tier3_jit/jit_compiler.md",
-      "heading": "Copy-and-Patch コンパイル手順",
-      "tier": 3,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for 'Copy-and-Patch コンパイル手順'."
     },
     {
       "section_id": "sec:plans/backlog_list.md#オーナーレビュー観点 & チェックリスト",
@@ -1079,6 +1079,19 @@
       "summary": "Independent heuristic evaluation for '5.5. IRQ (`0x30`-`0x3F`)'."
     },
     {
+      "section_id": "sec:components/tier3_jit/jit_compiler.md#検索範囲取得（get_search_range）",
+      "file_path": "components/tier3_jit/jit_compiler.md",
+      "heading": "検索範囲取得（get_search_range）",
+      "tier": 3,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '検索範囲取得（get_search_range）'."
+    },
+    {
       "section_id": "sec:components/tier3_platform/platform_hal.md#4.1 アルゴリズム",
       "file_path": "components/tier3_platform/platform_hal.md",
       "heading": "4.1 アルゴリズム",
@@ -1246,19 +1259,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '4.2 状態遷移図'."
-    },
-    {
-      "section_id": "sec:components/tier3_jit/jit_compiler.md#バンクエントリ取得（get_bank_entries）",
-      "file_path": "components/tier3_jit/jit_compiler.md",
-      "heading": "バンクエントリ取得（get_bank_entries）",
-      "tier": 3,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for 'バンクエントリ取得（get_bank_entries）'."
     },
     {
       "section_id": "sec:components/tier1_core/os_coos.md#6.2 直交表: CSP通信と状態遷移",
@@ -6618,6 +6618,19 @@
       "summary": "Independent heuristic evaluation for 'コピーアンドパッチエンジン（CopyAndPatchEngine）クラス'."
     },
     {
+      "section_id": "sec:components/tier3_jit/jit_runtime_entry.md#3.1 データ構造",
+      "file_path": "components/tier3_jit/jit_runtime_entry.md",
+      "heading": "3.1 データ構造",
+      "tier": 3,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '3.1 データ構造'."
+    },
+    {
       "section_id": "sec:components/tier3_jit/jit_runtime_entry.md#JITエントリインデックス（JitEntryIndex）クラス",
       "file_path": "components/tier3_jit/jit_runtime_entry.md",
       "heading": "JITエントリインデックス（JitEntryIndex）クラス",
@@ -8765,19 +8778,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '3. 静的モデル'."
-    },
-    {
-      "section_id": "sec:components/tier3_jit/jit_runtime_entry.md#3.1 データ構造",
-      "file_path": "components/tier3_jit/jit_runtime_entry.md",
-      "heading": "3.1 データ構造",
-      "tier": 3,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '3.1 データ構造'."
     },
     {
       "section_id": "sec:components/tier3_jit/jit_runtime_entry.md#4. 動的モデル",

@@ -3,24 +3,26 @@
 ## 1. コンセプト
 <!-- traceability: {SimpleJITArchitecture} {JIT_MultiBuffer_Cache} {META_FlatMapIndexed} {META_BinarySearch} -->
 JIT Entry Index は、WASM 命令オフセット とそれに対応するネイティブコードのアドレスの紐付けを管理する。
-インタープリタの実行ループ内という極めてクリティカルなパスで呼び出されるため、**カードマーキング表 (`bit_view<2>`)** による $O(1)$ 判定と、ソート済みエントリ配列に対する二分探索（`flat_map_view`）を組み合わせた高速な検索アルゴリズムを提供する。内部的には `fireball::flat_map_view` 相当の構造を用い、限られたメモリ内での動的キャッシュ代謝を実現する。 `{SimpleJITArchitecture}` `{JIT_MultiBuffer_Cache}` `{META_FlatMapIndexed}` `{META_BinarySearch}`
+インタープリタの実行ループ内という極めてクリティカルなパスで呼び出されるため、**カードマーキング表 (`bit_view<2>`)** による $O(1)$ 事前判定、**JITエントリグループインデックス** による $O(1)$ 探索区間絞り込み、およびソート済みエントリ配列に対する二分探索（`fireball::flat_map_view`）を組み合わせた高速な検索アルゴリズムを提供する。限られたメモリ内での動的キャッシュ代謝と低レイテンシ検索を両立する。 `{SimpleJITArchitecture}` `{JIT_MultiBuffer_Cache}` `{META_FlatMapIndexed}` `{META_BinarySearch}`
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {SimpleJITArchitecture} -->
-本コンポーネントは **Tier 3 (詳細リーフコンポーネント: Leaf Component)** に属し、JIT コンパイラ (`jit_compiler.md`) から分解された JIT エントリインデックス管理およびカードマーキング二分探索を担当する。 `{META_3TierSeparation}` `{SimpleJITArchitecture}`
+本コンポーネントは **Tier 3 (詳細リーフコンポーネント: Leaf Component)** に属し、JIT コンパイラ (`jit_compiler.md`) から分解された JIT エントリインデックス管理およびエントリグループ二分探索を担当する。 `{META_3TierSeparation}` `{SimpleJITArchitecture}`
 
 ## 3. 静的モデル
 
 ### 3.1 データ構造
 - **`JitEntryIndex`**: WASMオフセットとネイティブコードの対応付け、および高速な検索ロジックをカプセル化した主要クラス。
-- **JITエントリ表**: 命令オフセットと生成コード位置のペアをソート順で管理する内部配列（プライベートメンバ）。
+- **JITエントリ表**: 命令オフセットと生成コード位置のペアをソート順で管理する内部配列（プライベートメンバ）。`fireball::flat_map_view` として参照される。
+- **JITエントリグループインデックス**: 二分探索の範囲を $O(1)$ で絞り込むための粗索引配列（プライベートメンバ）。
 
 ### 3.2 内部ブロック図
 ```mermaid
 graph TD
     Search[Search Request] --> Engine[JitEntryIndex]
     Engine -->|"Step 1: O(1)"| Mark[Card Marking bit_view check]
-    Engine -->|"Step 2: Binary Search"| BinSearch[Binary Search on flat_map_view]
+    Engine -->|"Step 2: O(1)"| Group[JIT Entry Group slice]
+    Group -->|"Step 3: O(log n)"| BinSearch[Binary Search on narrowed flat_map_view]
     BinSearch --> Result{Hit?}
 ```
 
@@ -30,7 +32,8 @@ graph TD
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| エントリ配列 | ソート済みの `jit_entry` 群を保持する | ソート済み配列 | - |
+| エントリ配列 | ソート済みの `jit_entry` 群を保持する | ソート済み配列 | `flat_map_view` で参照 |
+| エントリグループ索引 | JITエントリグループごとの開始・終了インデックス | 固定長配列 | $O(1)$ 直接参照 |
 | エントリ数 | 現在登録されているエントリ数 | エントリ数 | - |
 
 ## 4. 動的モデル
@@ -41,8 +44,9 @@ graph TD
 #### 高速検索
 1. **カードマーキング確認 ($O(1)$)**: カード単位でコンパイル状態を保持する「カードマーキング表 (`bit_view<2>`)」を $O(1)$ で確認し、状態が「コンパイル完了」でなければ即座に終了する。
     - ※ カード単位の管理であるため、コンパイルされていないオフセットでも同じカード内の他オフセットの影響でパスする場合がある（後に二分探索で厳密にチェックされる）。
-2. **二分探索 ($O(\log N)$)**: `jit_entry` ソート済み配列（`flat_map_view`）から対象の命令オフセットを二分探索する。
-3. **オンデマンド・キューイング**: Active / Warm / Oldest の全3バンクでミスし、かつカードマーキング表の状態が「コンパイル完了」である場合は、対象の命令オフセットを「コンパイル待ち列」へ登録し、インタープリタ実行を継続する。
+2. **エントリグループ絞り込み ($O(1)$)**: 検索対象の命令オフセットを右シフト（`pc >> entry_group_shift`）し、対応するJITエントリグループ索引から探索区間を取得して `flat_map_view` をスライスする。
+3. **二分探索 ($O(\log n)$)**: 絞り込まれた `flat_map_view` から対象の命令オフセットを二分探索する。
+4. **オンデマンド・キューイング**: Active / Warm / Oldest の全3バンクでミスし、かつカードマーキング表の状態が「コンパイル完了」である場合は、対象の命令オフセットを「コンパイル待ち列」へ登録し、インタープリタ実行を継続する。
 
 ### 4.2 状態遷移図
 本コンポーネントは管理情報の更新と検索を行うため、明確な内部状態（ステートマシン）は持たないが、エントリの `Valid/Invalid` を管理する。
@@ -99,7 +103,7 @@ sequenceDiagram
 
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | 新しい命令オフセットとコードアドレスのペアを登録する。 |
+| 機能概要 | 新しい命令オフセットとコードアドレスのペアを登録し、エントリグループ索引を更新する。 |
 | シグネチャ | `register_entry(pc: オフセット, offset: オフセット) -> void` |
 | 引数 | `pc`: WASM 命令オフセット (Key)<br>`offset`: コードキャッシュ内の相対位置 (Value) |
 | 戻り値 | void |
@@ -107,7 +111,7 @@ sequenceDiagram
 ## 6. 制約達成の方策
 
 ### 6.1 性能制約
-- **方策**: カードマーキング表 (`bit_view<2>`) による $O(1)$ 事前判定と、ソート済みエントリ配列（`flat_map_view`）の二分探索の組み合わせにより、高速な検索を維持する。
+- **方策**: カードマーキング表 (`bit_view<2>`) による $O(1)$ 事前判定、JITエントリグループインデックスによる $O(1)$ 範囲絞り込み、およびソート済みエントリ配列（`flat_map_view`）の二分探索（$O(\log n)$）の多段合成により、極めて高速な検索を維持する。
 
 ### 6.2 メモリ制約
 <!-- traceability: {JIT_MultiBuffer_Cache} -->

@@ -274,16 +274,20 @@ class FlatSetView(_SortedWindow):
 
 # --- 本プロジェクトでの用途 ---
 
-def lookup_jit_entry(view: FlatMapView, card_table: BitView, pc: int, card_shift: int):
-    """JIT entry lookup: O(1) card marking pre-filter, then binary search on FlatMapView.
-
-    The 2-bit card marking table answers in O(1) whether this PC's card is compiled.
-    Only compiled cards proceed to binary search on the entry table.
+def lookup_jit_entry(view: FlatMapView, card_table: BitView, entry_group_bounds: dict[int, tuple[int, int]], pc: int, card_shift: int, group_shift: int):
+    """JIT entry lookup:
+    1. O(1) card marking pre-filter: verify card state == 3 (COMPILED).
+    2. O(1) JIT entry group narrowing: slice FlatMapView to group bounds [first, last].
+    3. Binary search on narrowed FlatMapView.
     """
     card_idx = pc >> card_shift
     if card_idx >= card_table.size() or card_table.at(card_idx) != 3:  # 3 = COMPILED
         return None
-    return view.find(pc)
+    group_idx = pc >> group_shift
+    bounds = entry_group_bounds.get(group_idx)
+    if bounds is None:
+        return None
+    return view.slice(*bounds).find(pc)
 
 
 def card_marking_table(storage: bytearray, card_count: int) -> BitView:
@@ -396,7 +400,7 @@ sequenceDiagram
 
 | 利用コンポーネント | 型 | 用途 | 絞り込みに用いる粗索引 |
 | :--- | :--- | :--- | :--- |
-| JIT エントリ索引 (`jit_runtime_entry`) | `flat_map_view` | WASM PC からネイティブコードオフセットへの変換 | バンク別索引 (Active/Warm/Oldest) |
+| JIT エントリ索引 (`jit_runtime_entry`) | `flat_map_view` | WASM PC からネイティブコードオフセットへの変換 | JITエントリグループ索引 ($O(1)$) |
 | JIT カードマーキング (`jit_runtime_hotspot`) | `bit_view<2>` | カード単位の 2-bit 実行状態 | なし ($O(1)$ 直接添字アクセス) |
 | vMMIO PTE表 (`runtime_vmmio`) | `flat_map_view` | 仮想ページ番号 (VPN) から PTE への変換 | ファンクションコード (FC) による Tier 区分 |
 | vMMIO 許可アドレス (`system_config_details`) | `flat_set_view` | 物理アドレスが許可範囲に属するかの判定 | なし（`FB_CONF_VMMIO_ALLOWED_ADDRS` で有界） |

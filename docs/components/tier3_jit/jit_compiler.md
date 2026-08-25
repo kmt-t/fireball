@@ -15,7 +15,6 @@ JIT Compiler は、WASMバイトコードを実行時にネイティブコード
 - **JITキャッシュ**: ネイティブコードを保持するマルチバッファ (デフォルト 3面: 2KB x 3 = 6144 Bytes `FB_CONF_JIT_CACHE_SIZE`)。Copy-GC方式により、フラグメンテーションを回避しつつ効率的にメモリを再利用する。 `{JIT_MultiBuffer_Cache}`
 - **最古バッファ限定 Promote ポリシー (Oldest-Only Promotion)**: 中間バッファでは無償観測期間 (Observation Window) としてコードをコピーせず保持し、破棄直前の**最古バッファ (Oldest Buffer)** に到達した時点でなおヒットし続けている Hot コードのみを新 Active バッファへ Promote 昇格させる（純粋な 2-bit 状態機械であり、実行カウンタや閾値は持たない）。これにより無駄な昇格コピーを排除し、高いJITヒット率の維持を目指す [目標値: 95%以上]。 `{JIT_OldestOnly_Promote}`
 - **JITエントリテーブル**: WASM PCとキャッシュ内のコードオフセットを紐付ける管理テーブル。**カードマーキング**と二分探索を組み合わせ、高速な検索を実現する。 `{SimpleJITArchitecture}`
-- **カードグループインデックス**: 複数のカードをグループ化して管理するインデックステーブル。検索範囲の絞り込みに使用する。高速化のため、カード数およびグループサイズは2のべき乗（シフト量）で管理される。
 - **カードマーキング表 (Card Marking Table)**: **カード単位**で実行頻度とコンパイル状態を管理する2ビット状態表。密ビュー `fireball::bit_view<2>` として参照し、1バイトあたり4カードを保持する（[静的コンテナ語彙](../tier1_core/system_containers.md)）。
     - `0: UNEXECUTED` (未実行)
     - `1: EXECUTED` (実行済み)
@@ -138,13 +137,13 @@ JIT コンパイル済みネイティブトレースの実行エントリポイ�
 4. **インタープリタ連携とフォールバック (Zero-Reconstruction Interop)**:
     - JIT トレース末尾、未コンパイル命令、またはトラップ発生時、JIT コードはレジスタ R0〜R2 に最新の `(ip, stack_bot, env)` を保持したまま、インタープリタのオプコードハンドラ（またはディスパッチャ）へ直接末尾ジャンプ（`BX`）する。
     - **コンテキストの再構築（構造体への退避/復元、レジスタ再配置）は発生しない**。ただしスタックトップキャッシュ `R4`/`R5` はインタープリタ側の規約に存在しないため、ダーティであれば統合スタックへ `STR` × 2 で書き戻してから制御を渡す。この 2 命令が JIT ↔ インタープリタ遷移の唯一のコストであり、トレース長で償却される。 `{JIT_RuntimeAPI_Fallback}` `{ADR_TosCacheAsymmetry}`
-5. **エントリ登録 & 命令キャッシュ同期**: JITエントリを作成し、命令オフセット（PC）順を維持するようにエントリ配列に挿入する。同時にカードグループ索引を更新する。パッチ適用完了後、Cortex-M33 向けにデータキャッシュをクリーンし、`__DSB()`（データ同期バリア）および `__ISB()`（命令同期バリア）を発行して命令キャッシュ（I-Cache）のコヒーレンシを保証する。
+5. **エントリ登録 & 命令キャッシュ同期**: JITエントリを作成し、命令オフセット（PC）順を維持するようにエントリ配列に挿入する。パッチ適用完了後、Cortex-M33 向けにデータキャッシュをクリーンし、`__DSB()`（データ同期バリア）および `__ISB()`（命令同期バリア）を発行して命令キャッシュ（I-Cache）のコヒーレンシを保証する。
 
 #### JITトレース検索 & 3面キャッシュ代謝アルゴリズム
 <!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} -->
-1. **事前フィルタ (カードマーキング)**: 命令オフセット（PC）をカードインデックスに変換し、実行履歴マップ（カードマーキング表）を確認する。該当カードの状態が「コンパイル完了」でない場合は即座に終了。
+1. **事前フィルタ (カードマーキング)**: 命令オフセット（PC）をカードインデックス（`pc >> card_shift`）に変換し、カードマーキング表 (`bit_view<2>`) を $O(1)$ で直接参照する。該当カードの状態が「コンパイル完了」でない場合は即座に終了。
 2. **アクティブ領域（Bank 0: Active）検索**:
-    - カードグループ索引を用いて探索範囲を絞り込み、命令オフセットで二分探索を行う。
+    - Bank 0 のソート済みエントリ配列（`flat_map_view`）を命令オフセットで二分探索する。
     - ヒットした場合は、そのネイティブコードのアドレスを返して終了。
 3. **中間領域（Bank 1: Warm）検索**:
     - Active バンクでミスした場合、Warm バンクを二分探索する。
@@ -320,14 +319,14 @@ JITエンジンの責務を、以下の独立したサブコンポーネント�
 | シグネチャ | `get_card_state(pc: address) -> u8` |
 | 補足 | 本機能は、コンパイル時に固定されたカード境界シフト値（`FB_CONF_JIT_CARD_SHIFT`等）のマクロ定義に基づき、PC値からカードインデックスへの変換を高速に行う。 `{META_ConfigurableSystem}` |
 
-#### 検索範囲取得（get_search_range）
+#### バンクエントリ取得（get_bank_entries）
 <!-- traceability: {META_ConfigurableSystem} {FlatViewNarrowing} {META_BinarySearch} -->
 
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | カードマーキング索引（カードグループ）を用いて、エントリ索引の探索区間を `fireball::flat_map_view` へ絞り込む。生の添字対ではなくビューを返すことで、呼び出し側が区間を誤った配列と組み合わせる余地をなくす（[静的コンテナ語彙](../tier1_core/system_containers.md) を参照）。該当カードグループが存在しない場合は空ビューを返す。 `{FlatViewNarrowing}` |
-| シグネチャ | `get_search_range(pc: address) -> flat_map_view<u32, code_offset>` |
-| 補足 | 本機能は、ヘッダファイルで定義されたカードグループサイズおよび最大登録件数のマクロ定数に基づき、インデックスの二分探索範囲をコンパイル時に静的に制限して計算する。 `{META_ConfigurableSystem}` |
+| 機能概要 | 指定されたキャッシュバンク（Active/Warm/Oldest）に登録されたソート済みエントリ索引を `fireball::flat_map_view` として取得する。呼び出し側は本ビューに対して直接二分探索を実行する（[静的コンテナ語彙](../tier1_core/system_containers.md) を参照）。 `{FlatViewNarrowing}` `{META_BinarySearch}` |
+| シグネチャ | `get_bank_entries(bank_idx: u8) -> flat_map_view<u32, code_offset>` |
+| 補足 | 本機能は、ヘッダファイルで定義された最大登録件数のマクロ定数（`FB_CONF_JIT_MAX_ENTRIES`等）に基づき、固定長配列に対する非所有ビューを即座に返す。 `{META_ConfigurableSystem}` |
 
 #### バッチコンパイル処理（process_batch_compile）
 <!-- traceability: {META_ConfigurableSystem} -->
@@ -352,7 +351,7 @@ JITエンジンの責務を、以下の独立したサブコンポーネント�
 - **方策**: 
     - `{JIT_CopyAndPatch}`: 複雑な最適化を省き、テンプレートコピーのみでコンパイルを完了。
     - `{JIT_RegisterMapping}`: `Context`, `StackTop`, `WASM_PC` を物理レジスタに固定し、メモリアクセスを削減。
-    - `Card Marking + Card Group Index + Binary Search`: 検索範囲を限定し、高速な検索を実現。
+    - `Card Marking (O(1)) + Binary Search`: カードマーキング表による $O(1)$ 事前フィルタと二分探索により、高速な検索を実現。
 
 ### 7.2 安全性制約と方策
 <!-- traceability: {PositionIndependentCode} {MemoryBoundaryCheck} {FastAddressCheck} {SimpleJITArchitecture} -->

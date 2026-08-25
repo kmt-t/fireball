@@ -41,7 +41,7 @@ graph LR
     FMV["flat_map_view Key,Value<br/>sorted keys + values"]
     FSV["flat_set_view Key<br/>sorted keys only"]
     BV["bit_view Bits<br/>packed states, dense"]
-    COARSE["粗索引<br/>card group / FC tier / URI scheme"]
+    COARSE["粗索引<br/>Bank / FC tier / URI scheme"]
     R1["optional Value : O(log n)"]
     R2["bool : O(log n)"]
     R3["state : O(1)"]
@@ -155,11 +155,10 @@ class bit_view {
 ### 4.1 アルゴリズム
 <!-- traceability: {META_BinarySearch} {FlatViewNarrowing} {PackedBitView} {LowLatencyLookup} {GLOBAL_StrictMemoryLimit} -->
 - **絞り込み後二分探索 (Narrow-then-Search)**: 粗い索引で対象区間を先に狭め、狭めた区間に対してのみ二分探索を行う。全体の件数を $N$、絞り込み後を $n$ とすると計算量は $O(\log n)$ となり、$n$ が $N$ より十分小さい限り全体探索より少ない比較回数で済む。加えて、走査するキーが連続した狭い範囲に収まるため参照局所性が改善する。map / set の双方に適用される。 `{FlatViewNarrowing}` `{META_BinarySearch}` `{LowLatencyLookup}`
-- **絞り込みの合成**: 絞り込み操作の戻り値は同じビュー型であるため、複数段の索引（例: カードグループからカードへ）を順に適用できる。各段は区間を単調に狭めるのみで、区間外の要素を再び含めることはない。
+- **絞り込みの合成**: 絞り込み操作の戻り値は同じビュー型であるため、複数段の索引を順に適用できる。各段は区間を単調に狭めるのみで、区間外の要素を再び含めることはない。
 - **ビット詰めアクセス**: 論理添字 $i$ に対する物理位置は `bit = origin + i * Bits` として求まり、`byte = bit >> 3`、`shift = bit & 7` となる。`Bits` が 8 の約数であるため 1 要素がバイトを跨ぐことはなく、単一バイトのロードとシフト・マスクで読み出しが完結する。 `{PackedBitView}` `{GLOBAL_StrictMemoryLimit}`
 
-#### コンテナ語彙 コンセプトコード (`concepts/flat_view_concept.py`)
-実行可能な参照実装と検証テストは [`concepts/flat_view_concept.py`](concepts/flat_view_concept.py) を参照。ビット詰めの近傍非破壊性、非バイト境界での `slice`、絞り込みの単調縮小性、集合の所属判定、カードグループ経由の JIT 検索経路をテストで固定している。
+実行可能な参照実装と検証テストは [`concepts/flat_view_concept.py`](concepts/flat_view_concept.py) を参照。ビット詰めの近傍非破壊性、非バイト境界での `slice`、絞り込みの単調縮小性、集合の所属判定、JIT 検索経路をテストで固定している。
 
 ```python
 # コンテナ語彙の概念コード (FlatViewNarrowing / PackedBitView)
@@ -275,16 +274,16 @@ class FlatSetView(_SortedWindow):
 
 # --- 本プロジェクトでの用途 ---
 
-def lookup_jit_entry(view, card_group_bounds, pc, card_group_shift):
-    """JIT entry lookup: coarse card-group narrowing, then binary search.
+def lookup_jit_entry(view: FlatMapView, card_table: BitView, pc: int, card_shift: int):
+    """JIT entry lookup: O(1) card marking pre-filter, then binary search on FlatMapView.
 
-    The card group index knows which contiguous slice of entries can possibly
-    contain this PC, so the binary search never walks the whole table.
+    The 2-bit card marking table answers in O(1) whether this PC's card is compiled.
+    Only compiled cards proceed to binary search on the entry table.
     """
-    bounds = card_group_bounds.get(pc >> card_group_shift)
-    if bounds is None:
+    card_idx = pc >> card_shift
+    if card_idx >= card_table.size() or card_table.at(card_idx) != 3:  # 3 = COMPILED
         return None
-    return view.slice(*bounds).find(pc)
+    return view.find(pc)
 
 
 def card_marking_table(storage: bytearray, card_count: int) -> BitView:
@@ -310,15 +309,15 @@ def breakpoint_set(sorted_pcs) -> FlatSetView:
 <!-- traceability: {FlatViewNarrowing} {META_BinarySearch} -->
 ```mermaid
 sequenceDiagram
-    participant C as Caller (JIT Entry Index)
-    participant I as Coarse Index (Card Group)
+    participant C as Caller
+    participant I as Coarse Index (e.g. URI Prefix)
     participant V as flat_map_view
 
-    C->>I: bounds_for(pc)
+    C->>I: bounds_for(key)
     I-->>C: first and last
     C->>V: slice(first, last)
     V-->>C: flat_map_view (narrowed)
-    C->>V: find(pc)
+    C->>V: find(key)
     Note over V: binary search within the window only
     V-->>C: value or empty
 ```
@@ -397,8 +396,8 @@ sequenceDiagram
 
 | 利用コンポーネント | 型 | 用途 | 絞り込みに用いる粗索引 |
 | :--- | :--- | :--- | :--- |
-| JIT エントリ索引 (`jit_runtime_entry`) | `flat_map_view` | WASM PC からネイティブコードオフセットへの変換 | カードグループ索引 |
-| JIT カードマーキング (`jit_runtime_hotspot`) | `bit_view<2>` | カード単位の 2-bit 実行状態 | カードグループ単位の `slice` |
+| JIT エントリ索引 (`jit_runtime_entry`) | `flat_map_view` | WASM PC からネイティブコードオフセットへの変換 | バンク別索引 (Active/Warm/Oldest) |
+| JIT カードマーキング (`jit_runtime_hotspot`) | `bit_view<2>` | カード単位の 2-bit 実行状態 | なし ($O(1)$ 直接添字アクセス) |
 | vMMIO PTE表 (`runtime_vmmio`) | `flat_map_view` | 仮想ページ番号 (VPN) から PTE への変換 | ファンクションコード (FC) による Tier 区分 |
 | vMMIO 許可アドレス (`system_config_details`) | `flat_set_view` | 物理アドレスが許可範囲に属するかの判定 | なし（`FB_CONF_VMMIO_ALLOWED_ADDRS` で有界） |
 | IPCルータ (`ipc_router`) | `flat_map_view` | サービスURI からチャネルIDへの解決 | URI スキーマ・ドメインの前方一致 |

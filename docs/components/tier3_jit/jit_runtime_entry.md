@@ -3,7 +3,7 @@
 ## 1. コンセプト
 <!-- traceability: {SimpleJITArchitecture} {JIT_MultiBuffer_Cache} {META_FlatMapIndexed} {META_BinarySearch} -->
 JIT Entry Index は、WASM 命令オフセット とそれに対応するネイティブコードのアドレスの紐付けを管理する。
-インタープリタの実行ループ内という極めてクリティカルなパスで呼び出されるため、**カードマーキング**（コンパイル状態の高速判定）と**カードグループ索引**（二分探索の範囲絞り込み）を組み合わせた高速な検索アルゴリズムを提供する。内部的には C++23 `std::flat_map` 相当の構造を用い、限られたメモリ内での動的キャッシュ代謝を実現する。 `{SimpleJITArchitecture}` `{JIT_MultiBuffer_Cache}` `{META_FlatMapIndexed}` `{META_BinarySearch}`
+インタープリタの実行ループ内という極めてクリティカルなパスで呼び出されるため、**カードマーキング表 (`bit_view<2>`)** による $O(1)$ 判定と、ソート済みエントリ配列に対する二分探索（`flat_map_view`）を組み合わせた高速な検索アルゴリズムを提供する。内部的には `fireball::flat_map_view` 相当の構造を用い、限られたメモリ内での動的キャッシュ代謝を実現する。 `{SimpleJITArchitecture}` `{JIT_MultiBuffer_Cache}` `{META_FlatMapIndexed}` `{META_BinarySearch}`
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {SimpleJITArchitecture} -->
@@ -13,16 +13,14 @@ JIT Entry Index は、WASM 命令オフセット とそれに対応するネイ�
 
 ### 3.1 データ構造
 - **`JitEntryIndex`**: WASMオフセットとネイティブコードの対応付け、および高速な検索ロジックをカプセル化した主要クラス。
-- **JITエントリ表**: 命令オフセットと生成コード位置のペアを管理する内部配列（プライベートメンバ）。
-- **カードグループ索引**: 二分探索の範囲を絞り込むための補助的なインデックス（プライベートメンバ）。
+- **JITエントリ表**: 命令オフセットと生成コード位置のペアをソート順で管理する内部配列（プライベートメンバ）。
 
 ### 3.2 内部ブロック図
 ```mermaid
 graph TD
     Search[Search Request] --> Engine[JitEntryIndex]
-    Engine -->|Step 1| Mark[Card Marking check]
-    Engine -->|Step 2| Card[Card Group lookup]
-    Engine -->|Step 3| BinSearch[Binary Search]
+    Engine -->|"Step 1: O(1)"| Mark[Card Marking bit_view check]
+    Engine -->|"Step 2: Binary Search"| BinSearch[Binary Search on flat_map_view]
     BinSearch --> Result{Hit?}
 ```
 
@@ -33,7 +31,6 @@ graph TD
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
 | エントリ配列 | ソート済みの `jit_entry` 群を保持する | ソート済み配列 | - |
-| グループ索引 | カードグループごとの開始インデックス | 固定長配列 | `entry_index` の配列 |
 | エントリ数 | 現在登録されているエントリ数 | エントリ数 | - |
 
 ## 4. 動的モデル
@@ -42,11 +39,10 @@ graph TD
 
 
 #### 高速検索
-1. **カードマーキング確認**: カード単位でコンパイル状態を保持する「カードマーキング表 (`bit_view<2>`)」を確認し、状態が「コンパイル完了」でなければ即座に終了する。
+1. **カードマーキング確認 ($O(1)$)**: カード単位でコンパイル状態を保持する「カードマーキング表 (`bit_view<2>`)」を $O(1)$ で確認し、状態が「コンパイル完了」でなければ即座に終了する。
     - ※ カード単位の管理であるため、コンパイルされていないオフセットでも同じカード内の他オフセットの影響でパスする場合がある（後に二分探索で厳密にチェックされる）。
-2. **カードグループ検索**: 検索対象の命令オフセットを右シフトし、対応するカードグループ索引を取得する。これにより二分探索の範囲 `[low, high]` を限定する。
-3. **二分探索**: `jit_entry` 配列の限定された範囲から対象の命令オフセットを検索する。
-4. **オンデマンド・キューイング**: Active / Warm / Oldest の全3バンクでミスし、かつ実行履歴マップの状態が「コンパイル完了」である場合は、対象の命令オフセットを「コンパイル待ち列」へ登録し、インタープリタ実行を継続する。
+2. **二分探索 ($O(\log N)$)**: `jit_entry` ソート済み配列（`flat_map_view`）から対象の命令オフセットを二分探索する。
+3. **オンデマンド・キューイング**: Active / Warm / Oldest の全3バンクでミスし、かつカードマーキング表の状態が「コンパイル完了」である場合は、対象の命令オフセットを「コンパイル待ち列」へ登録し、インタープリタ実行を継続する。
 
 ### 4.2 状態遷移図
 本コンポーネントは管理情報の更新と検索を行うため、明確な内部状態（ステートマシン）は持たないが、エントリの `Valid/Invalid` を管理する。
@@ -75,7 +71,7 @@ sequenceDiagram
                 O-->>M: code_addr (exec_trace)
                 M->>M: Promote to Active
             else Oldest Miss
-                alt Bitmap == COMPILED
+                alt Card state == COMPILED
                     M->>Q: Push(PC)
                 end
                 M-->>I: NULL (Fallback)
@@ -111,7 +107,7 @@ sequenceDiagram
 ## 6. 制約達成の方策
 
 ### 6.1 性能制約
-- **方策**: カードグループインデックスによる範囲絞り込みと、二分探索の組み合わせにより、多数のトレースが存在しても高速な検索を維持する。
+- **方策**: カードマーキング表 (`bit_view<2>`) による $O(1)$ 事前判定と、ソート済みエントリ配列（`flat_map_view`）の二分探索の組み合わせにより、高速な検索を維持する。
 
 ### 6.2 メモリ制約
 <!-- traceability: {JIT_MultiBuffer_Cache} -->

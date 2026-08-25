@@ -118,18 +118,16 @@ class FlatSetView(_SortedWindow):
         return self._locate(key) is not None
 
 
-# --- 本プロジェクトでの用途 ---
+def lookup_jit_entry(view: FlatMapView, card_table: BitView, pc: int, card_shift: int):
+    """JIT entry lookup: O(1) card marking pre-filter, then binary search on FlatMapView.
 
-def lookup_jit_entry(view, card_group_bounds, pc, card_group_shift):
-    """JIT entry lookup: coarse card-group narrowing, then binary search.
-
-    The card group index knows which contiguous slice of entries can possibly
-    contain this PC, so the binary search never walks the whole table.
+    The 2-bit card marking table answers in O(1) whether this PC's card is compiled.
+    Only compiled cards proceed to binary search on the entry table.
     """
-    bounds = card_group_bounds.get(pc >> card_group_shift)
-    if bounds is None:
+    card_idx = pc >> card_shift
+    if card_idx >= card_table.size() or card_table.at(card_idx) != 3:  # 3 = COMPILED
         return None
-    return view.slice(*bounds).find(pc)
+    return view.find(pc)
 
 
 def card_marking_table(storage: bytearray, card_count: int) -> BitView:
@@ -233,15 +231,17 @@ def test_set_view_answers_membership_without_any_value_storage():
     assert window.contains(0x300) is False, "a key outside the window must not be found"
 
 
-def test_card_group_narrowing_is_the_jit_lookup_path():
-    """The card group index knows which contiguous slice can hold this PC, so
-    the binary search never walks the whole entry table."""
+def test_card_marking_prefilter_and_flat_map_jit_lookup():
+    """The 2-bit card marking table filters uncompiled PCs in O(1), and compiled
+    PCs are looked up directly via FlatMapView binary search."""
     view = _map_fixture()
-    bounds = {0: (0, 3), 1: (3, 6)}
+    card_table = card_marking_table(bytearray(2), card_count=8)
+    card_table.put(0, 3)  # card 0 (covers pc 0-31 with shift=5) -> 3: COMPILED
+    card_table.put(1, 3)  # card 1 (covers pc 32-63 with shift=5) -> 3: COMPILED
 
-    assert lookup_jit_entry(view, bounds, pc=30, card_group_shift=5) == 3
-    assert lookup_jit_entry(view, bounds, pc=60, card_group_shift=5) == 6
-    assert lookup_jit_entry(view, bounds, pc=99, card_group_shift=5) is None
+    assert lookup_jit_entry(view, card_table, pc=30, card_shift=5) == 3
+    assert lookup_jit_entry(view, card_table, pc=60, card_shift=5) == 6
+    assert lookup_jit_entry(view, card_table, pc=99, card_shift=5) is None  # card 3 is UNEXECUTED (0)
 
 
 def test_bits_must_divide_a_byte():
@@ -261,6 +261,6 @@ if __name__ == "__main__":
     test_bit_view_offers_no_search()
     test_narrowing_only_ever_shrinks_and_composes()
     test_set_view_answers_membership_without_any_value_storage()
-    test_card_group_narrowing_is_the_jit_lookup_path()
+    test_card_marking_prefilter_and_flat_map_jit_lookup()
     test_bits_must_divide_a_byte()
     print("[PASS] All container vocabulary concept tests passed successfully.")

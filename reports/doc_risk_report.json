@@ -1,16 +1,16 @@
 {
-  "generated_at": "2026-08-25T10:41:28.703837+00:00",
+  "generated_at": "2026-08-25T21:19:01.799703+00:00",
   "backend": "heuristic",
-  "total_evaluated": 762,
+  "total_evaluated": 771,
   "formal_candidates_count": 31,
   "llm_candidates_count": 5,
-  "sections_scanned": 762,
+  "sections_scanned": 771,
   "max_sections": 0,
   "doc_hashes": {
     "architecture/architecture_overview.md": "019aea4f717286caa9ef81aaccc453e67a28a358300d5db20d908a23281e5e94",
     "architecture/concept_harness.md": "2160b8e29a617ecefbf46165542544705de7ebb0f6d5b7df4bbeb1c084f9cd3c",
     "architecture/document_structure.md": "24357f01283821a32a25234b99d2e956f10b1db600b3311f5f1f28ac664770b3",
-    "architecture/master_physical_design.md": "0808b4566e7f74efd641d584f5d9037ec0f4554930a75d00399fee3e05964084",
+    "architecture/master_physical_design.md": "c11f0a004d5edba7f3a4cfed42570cdbe95fb69fddc8d14c5f85ea8e74ee416e",
     "architecture/resource_budget.md": "ac4928f5ad7fcc1a360b6539ec3d44d072a67c6b7d4aa7d76bdac014971def00",
     "components/tier1_core/os_coos.md": "7f2041f9ed21e99a75448b8112629ed0a4e95605e70425807cdb8a431db531bf",
     "components/tier1_core/os_scheduler.md": "bb8d0e129d9ce8c153fb4d7f0297d095eb2f1bdcff24de9fa345d39e67013a83",
@@ -42,7 +42,7 @@
     "plans/roadmap_phase.md": "92ad637d4e9baed7d2083ae53145a3416cd1df7e1266339c6cabe1c969b4fe2c",
     "requires/requirement_list.md": "35a59e542a9ee036904a2c2de7949d8332e61e571ef2e2f6ab801ace63f28f8b",
     "specs/gdb_rsp_protocol.md": "386dfa524ed02219a8aa89a7a7c35d6e97dfbba666b0b24a05e7c35d7c89e0dc",
-    "specs/jit_stencil_catalog.md": "a8c17a4b9a9949cbc6ec1c98c50f4e5b760ff7a041857c32c1f256c0f363d0f2",
+    "specs/jit_stencil_catalog.md": "50dcea5a432dd14107dc6c5869ffdfb17b40a71f11a76187c0656a252ad6a4d0",
     "specs/wasi_preview1_abi.md": "4cb53fb6d8c5e8cbfc416eaf39041fae538cfaabc0cabf1de6eedafcc12e8512",
     "specs/wasm_instruction_set.md": "9eb1c42e94a99c446d381089c647534b5cde92aae1d616488065933855b0ee02"
   },
@@ -656,6 +656,19 @@
       "summary": "Independent heuristic evaluation for '3.2.2 開発方針・品質'."
     },
     {
+      "section_id": "sec:specs/jit_stencil_catalog.md#1. 概要と基本思想",
+      "file_path": "specs/jit_stencil_catalog.md",
+      "heading": "1. 概要と基本思想",
+      "tier": null,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '1. 概要と基本思想'."
+    },
+    {
       "section_id": "sec:components/tier1_core/system_containers.md#6.1 性能制約と方策",
       "file_path": "components/tier1_core/system_containers.md",
       "heading": "6.1 性能制約と方策",
@@ -758,19 +771,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '1. コンセプト'."
-    },
-    {
-      "section_id": "sec:specs/jit_stencil_catalog.md#1. 概要と基本思想",
-      "file_path": "specs/jit_stencil_catalog.md",
-      "heading": "1. 概要と基本思想",
-      "tier": null,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '1. 概要と基本思想'."
     },
     {
       "section_id": "sec:specs/wasm_instruction_set.md#1. 概要と適用方針",
@@ -2608,6 +2608,32 @@
       "summary": "Independent heuristic evaluation for 'Phase 1: vSoC First 実装（約3ヶ月） 【GO 判定後に着手】'."
     },
     {
+      "section_id": "sec:specs/jit_stencil_catalog.md#3.1 プロローグ & エピローグ・ステンシル (Prologue, Epilogue & Spill Flush)",
+      "file_path": "specs/jit_stencil_catalog.md",
+      "heading": "3.1 プロローグ & エピローグ・ステンシル (Prologue, Epilogue & Spill Flush)",
+      "tier": null,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '3.1 プロローグ & エピローグ・ステンシル (Prologue, Epilogue & Spill Flush)'."
+    },
+    {
+      "section_id": "sec:specs/jit_stencil_catalog.md#3.7 メモリアクセス系ステンシル (Linear Memory Load & Store)",
+      "file_path": "specs/jit_stencil_catalog.md",
+      "heading": "3.7 メモリアクセス系ステンシル (Linear Memory Load & Store)",
+      "tier": null,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '3.7 メモリアクセス系ステンシル (Linear Memory Load & Store)'."
+    },
+    {
       "section_id": "sec:architecture/master_physical_design.md#2. 6大物理コアメカニズム (The 6 Physical Pillars)",
       "file_path": "architecture/master_physical_design.md",
       "heading": "2. 6大物理コアメカニズム (The 6 Physical Pillars)",
@@ -2949,9 +2975,9 @@
       "summary": "Independent heuristic evaluation for 'HAL コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}'."
     },
     {
-      "section_id": "sec:specs/jit_stencil_catalog.md#3.5 プロローグ & エピローグ・ステンシル (Prologue & Epilogue)",
+      "section_id": "sec:specs/jit_stencil_catalog.md#3.5 整数算術 & 論理演算ステンシル (32-bit Integer Arithmetic & Logic)",
       "file_path": "specs/jit_stencil_catalog.md",
-      "heading": "3.5 プロローグ & エピローグ・ステンシル (Prologue & Epilogue)",
+      "heading": "3.5 整数算術 & 論理演算ステンシル (32-bit Integer Arithmetic & Logic)",
       "tier": null,
       "complexity_score": 2,
       "risk_score": 2,
@@ -2959,7 +2985,7 @@
       "recommended_verification": "Static",
       "suggested_tags": [],
       "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '3.5 プロローグ & エピローグ・ステンシル (Prologue & Epilogue)'."
+      "summary": "Independent heuristic evaluation for '3.5 整数算術 & 論理演算ステンシル (32-bit Integer Arithmetic & Logic)'."
     },
     {
       "section_id": "sec:specs/wasm_instruction_set.md#3.5 整数算術・論理・比較命令 (Integer Arithmetic, Logic & Comparison)",
@@ -3654,19 +3680,6 @@
       "summary": "Independent heuristic evaluation for '4. WASM 仮想レジスタ番号マッピング (GDB Target XML Map)'."
     },
     {
-      "section_id": "sec:specs/jit_stencil_catalog.md#3.3 メモリアクセス系ステンシル (`i32.load`, `i32.store`)",
-      "file_path": "specs/jit_stencil_catalog.md",
-      "heading": "3.3 メモリアクセス系ステンシル (`i32.load`, `i32.store`)",
-      "tier": null,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '3.3 メモリアクセス系ステンシル (`i32.load`, `i32.store`)'."
-    },
-    {
       "section_id": "sec:specs/wasi_preview1_abi.md#3.1 文字入出力 & ストリーム API (I/O & Streams)",
       "file_path": "specs/wasi_preview1_abi.md",
       "heading": "3.1 文字入出力 & ストリーム API (I/O & Streams)",
@@ -3704,6 +3717,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '4.3 内部シーケンス'."
+    },
+    {
+      "section_id": "sec:specs/jit_stencil_catalog.md#3.6 整数比較演算ステンシル (32-bit Integer Comparisons)",
+      "file_path": "specs/jit_stencil_catalog.md",
+      "heading": "3.6 整数比較演算ステンシル (32-bit Integer Comparisons)",
+      "tier": null,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '3.6 整数比較演算ステンシル (32-bit Integer Comparisons)'."
     },
     {
       "section_id": "sec:specs/wasi_preview1_abi.md#2. WASI 型定義と物理レイアウト (WASI Type Vocabulary)",
@@ -3834,6 +3860,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '2. プレースホルダ（穴 / Relocations）の種類とパッチ規約'."
+    },
+    {
+      "section_id": "sec:specs/jit_stencil_catalog.md#`STENCIL_FALLBACK_FLUSH_D2_LOCALS` (TOS/NOS + ダーティ Local 変数書き戻し $\\to$ インタープリタ末尾ジャンプ)",
+      "file_path": "specs/jit_stencil_catalog.md",
+      "heading": "`STENCIL_FALLBACK_FLUSH_D2_LOCALS` (TOS/NOS + ダーティ Local 変数書き戻し $\\to$ インタープリタ末尾ジャンプ)",
+      "tier": null,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '`STENCIL_FALLBACK_FLUSH_D2_LOCALS` (TOS/NOS + ダーティ Local 変数書き戻し $\\to$ インタープリタ末尾ジャンプ)'."
     },
     {
       "section_id": "sec:architecture/architecture_overview.md#[SD] 起動およびタスク登録",
@@ -4186,9 +4225,9 @@
       "summary": "Independent heuristic evaluation for '6. 所有権追跡'."
     },
     {
-      "section_id": "sec:specs/jit_stencil_catalog.md#`STENCIL_I32_CONST_DEPTH_1` (R4 に TOS $\\to$ R4 を R5 (NOS) へ移し、R4 に新即値ロード)",
+      "section_id": "sec:specs/jit_stencil_catalog.md#`STENCIL_I64_CONST_D0` (`0x42` 64-bit 即値 $\\to$ R4:R5)",
       "file_path": "specs/jit_stencil_catalog.md",
-      "heading": "`STENCIL_I32_CONST_DEPTH_1` (R4 に TOS $\\to$ R4 を R5 (NOS) へ移し、R4 に新即値ロード)",
+      "heading": "`STENCIL_I64_CONST_D0` (`0x42` 64-bit 即値 $\\to$ R4:R5)",
       "tier": null,
       "complexity_score": 2,
       "risk_score": 2,
@@ -4196,7 +4235,7 @@
       "recommended_verification": "Static",
       "suggested_tags": [],
       "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '`STENCIL_I32_CONST_DEPTH_1` (R4 に TOS $\\to$ R4 を R5 (NOS) へ移し、R4 に新即値ロード)'."
+      "summary": "Independent heuristic evaluation for '`STENCIL_I64_CONST_D0` (`0x42` 64-bit 即値 $\\to$ R4:R5)'."
     },
     {
       "section_id": "sec:components/tier1_core/os_scheduler.md#実行（run）",
@@ -5000,9 +5039,9 @@
       "summary": "Independent heuristic evaluation for '2.1 ユースケース図'."
     },
     {
-      "section_id": "sec:specs/jit_stencil_catalog.md#`STENCIL_I32_CONST_DEPTH_0` (スタック空 $\\to$ R4 にロード)",
+      "section_id": "sec:specs/jit_stencil_catalog.md#`STENCIL_EPILOGUE_FLUSH_D1` (TOS 書き戻し + Callee-saved 復元 & リターン)",
       "file_path": "specs/jit_stencil_catalog.md",
-      "heading": "`STENCIL_I32_CONST_DEPTH_0` (スタック空 $\\to$ R4 にロード)",
+      "heading": "`STENCIL_EPILOGUE_FLUSH_D1` (TOS 書き戻し + Callee-saved 復元 & リターン)",
       "tier": null,
       "complexity_score": 2,
       "risk_score": 2,
@@ -5010,12 +5049,12 @@
       "recommended_verification": "Static",
       "suggested_tags": [],
       "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '`STENCIL_I32_CONST_DEPTH_0` (スタック空 $\\to$ R4 にロード)'."
+      "summary": "Independent heuristic evaluation for '`STENCIL_EPILOGUE_FLUSH_D1` (TOS 書き戻し + Callee-saved 復元 & リターン)'."
     },
     {
-      "section_id": "sec:specs/jit_stencil_catalog.md#`STENCIL_I32_ADD_DEPTH_2` (両オペランドが R4, R5 にキャッシュ)",
+      "section_id": "sec:specs/jit_stencil_catalog.md#`STENCIL_EPILOGUE_FLUSH_D2` (TOS & NOS 書き戻し + Callee-saved 復元 & リターン)",
       "file_path": "specs/jit_stencil_catalog.md",
-      "heading": "`STENCIL_I32_ADD_DEPTH_2` (両オペランドが R4, R5 にキャッシュ)",
+      "heading": "`STENCIL_EPILOGUE_FLUSH_D2` (TOS & NOS 書き戻し + Callee-saved 復元 & リターン)",
       "tier": null,
       "complexity_score": 2,
       "risk_score": 2,
@@ -5023,12 +5062,12 @@
       "recommended_verification": "Static",
       "suggested_tags": [],
       "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '`STENCIL_I32_ADD_DEPTH_2` (両オペランドが R4, R5 にキャッシュ)'."
+      "summary": "Independent heuristic evaluation for '`STENCIL_EPILOGUE_FLUSH_D2` (TOS & NOS 書き戻し + Callee-saved 復元 & リターン)'."
     },
     {
-      "section_id": "sec:specs/jit_stencil_catalog.md#`STENCIL_I32_ADD_DEPTH_1` (片方が R4、もう片方は統合スタックからロード)",
+      "section_id": "sec:specs/jit_stencil_catalog.md#`STENCIL_FALLBACK_FLUSH_D1` (TOS 書き戻し + Callee-saved 復元 $\\to$ インタープリタ末尾ジャンプ)",
       "file_path": "specs/jit_stencil_catalog.md",
-      "heading": "`STENCIL_I32_ADD_DEPTH_1` (片方が R4、もう片方は統合スタックからロード)",
+      "heading": "`STENCIL_FALLBACK_FLUSH_D1` (TOS 書き戻し + Callee-saved 復元 $\\to$ インタープリタ末尾ジャンプ)",
       "tier": null,
       "complexity_score": 2,
       "risk_score": 2,
@@ -5036,12 +5075,12 @@
       "recommended_verification": "Static",
       "suggested_tags": [],
       "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '`STENCIL_I32_ADD_DEPTH_1` (片方が R4、もう片方は統合スタックからロード)'."
+      "summary": "Independent heuristic evaluation for '`STENCIL_FALLBACK_FLUSH_D1` (TOS 書き戻し + Callee-saved 復元 $\\to$ インタープリタ末尾ジャンプ)'."
     },
     {
-      "section_id": "sec:specs/jit_stencil_catalog.md#`STENCIL_I32_SUB_DEPTH_2`",
+      "section_id": "sec:specs/jit_stencil_catalog.md#`STENCIL_EXTERNAL_CALL_STUB` (外部 AAPCS C/C++ 関数呼出境界)",
       "file_path": "specs/jit_stencil_catalog.md",
-      "heading": "`STENCIL_I32_SUB_DEPTH_2`",
+      "heading": "`STENCIL_EXTERNAL_CALL_STUB` (外部 AAPCS C/C++ 関数呼出境界)",
       "tier": null,
       "complexity_score": 2,
       "risk_score": 2,
@@ -5049,12 +5088,12 @@
       "recommended_verification": "Static",
       "suggested_tags": [],
       "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '`STENCIL_I32_SUB_DEPTH_2`'."
+      "summary": "Independent heuristic evaluation for '`STENCIL_EXTERNAL_CALL_STUB` (外部 AAPCS C/C++ 関数呼出境界)'."
     },
     {
-      "section_id": "sec:specs/jit_stencil_catalog.md#`STENCIL_I32_LOAD_R3_MEMBASE` (`R3` に `mem_base` がピン留めされているバリアント)",
+      "section_id": "sec:specs/jit_stencil_catalog.md#`STENCIL_BR_IF_DEPTH_1` (`0x0D` 条件分岐: TOS != 0)",
       "file_path": "specs/jit_stencil_catalog.md",
-      "heading": "`STENCIL_I32_LOAD_R3_MEMBASE` (`R3` に `mem_base` がピン留めされているバリアント)",
+      "heading": "`STENCIL_BR_IF_DEPTH_1` (`0x0D` 条件分岐: TOS != 0)",
       "tier": null,
       "complexity_score": 2,
       "risk_score": 2,
@@ -5062,12 +5101,12 @@
       "recommended_verification": "Static",
       "suggested_tags": [],
       "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '`STENCIL_I32_LOAD_R3_MEMBASE` (`R3` に `mem_base` がピン留めされているバリアント)'."
+      "summary": "Independent heuristic evaluation for '`STENCIL_BR_IF_DEPTH_1` (`0x0D` 条件分岐: TOS != 0)'."
     },
     {
-      "section_id": "sec:specs/jit_stencil_catalog.md#`STENCIL_I32_STORE_R3_MEMBASE` (`R3` に `mem_base` がピン留めされているバリアント)",
+      "section_id": "sec:specs/jit_stencil_catalog.md#`STENCIL_SELECT_DEPTH_3` (`0x1B` 3値選択: c, val2, val1)",
       "file_path": "specs/jit_stencil_catalog.md",
-      "heading": "`STENCIL_I32_STORE_R3_MEMBASE` (`R3` に `mem_base` がピン留めされているバリアント)",
+      "heading": "`STENCIL_SELECT_DEPTH_3` (`0x1B` 3値選択: c, val2, val1)",
       "tier": null,
       "complexity_score": 2,
       "risk_score": 2,
@@ -5075,12 +5114,12 @@
       "recommended_verification": "Static",
       "suggested_tags": [],
       "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '`STENCIL_I32_STORE_R3_MEMBASE` (`R3` に `mem_base` がピン留めされているバリアント)'."
+      "summary": "Independent heuristic evaluation for '`STENCIL_SELECT_DEPTH_3` (`0x1B` 3値選択: c, val2, val1)'."
     },
     {
-      "section_id": "sec:specs/jit_stencil_catalog.md#`STENCIL_LOCAL_GET_IMM8` (ローカル配列オフセットを即値パッチ)",
+      "section_id": "sec:specs/jit_stencil_catalog.md#`STENCIL_I32_CONST_D0` (`0x41` Depth 0 $\\to$ R4)",
       "file_path": "specs/jit_stencil_catalog.md",
-      "heading": "`STENCIL_LOCAL_GET_IMM8` (ローカル配列オフセットを即値パッチ)",
+      "heading": "`STENCIL_I32_CONST_D0` (`0x41` Depth 0 $\\to$ R4)",
       "tier": null,
       "complexity_score": 2,
       "risk_score": 2,
@@ -5088,12 +5127,12 @@
       "recommended_verification": "Static",
       "suggested_tags": [],
       "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '`STENCIL_LOCAL_GET_IMM8` (ローカル配列オフセットを即値パッチ)'."
+      "summary": "Independent heuristic evaluation for '`STENCIL_I32_CONST_D0` (`0x41` Depth 0 $\\to$ R4)'."
     },
     {
-      "section_id": "sec:specs/jit_stencil_catalog.md#`STENCIL_LOCAL_SET_DEPTH_1`",
+      "section_id": "sec:specs/jit_stencil_catalog.md#`STENCIL_I32_CONST_D1` (`0x41` Depth 1 $\\to$ R5=旧TOS, R4=新TOS)",
       "file_path": "specs/jit_stencil_catalog.md",
-      "heading": "`STENCIL_LOCAL_SET_DEPTH_1`",
+      "heading": "`STENCIL_I32_CONST_D1` (`0x41` Depth 1 $\\to$ R5=旧TOS, R4=新TOS)",
       "tier": null,
       "complexity_score": 2,
       "risk_score": 2,
@@ -5101,46 +5140,7 @@
       "recommended_verification": "Static",
       "suggested_tags": [],
       "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '`STENCIL_LOCAL_SET_DEPTH_1`'."
-    },
-    {
-      "section_id": "sec:specs/jit_stencil_catalog.md#`STENCIL_TRACE_PROLOGUE_FULL` (使用する Callee-saved レジスタを退避)",
-      "file_path": "specs/jit_stencil_catalog.md",
-      "heading": "`STENCIL_TRACE_PROLOGUE_FULL` (使用する Callee-saved レジスタを退避)",
-      "tier": null,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '`STENCIL_TRACE_PROLOGUE_FULL` (使用する Callee-saved レジスタを退避)'."
-    },
-    {
-      "section_id": "sec:specs/jit_stencil_catalog.md#`STENCIL_TRACE_EPILOGUE_RETURN` (Callee-saved 復元 & リターン)",
-      "file_path": "specs/jit_stencil_catalog.md",
-      "heading": "`STENCIL_TRACE_EPILOGUE_RETURN` (Callee-saved 復元 & リターン)",
-      "tier": null,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '`STENCIL_TRACE_EPILOGUE_RETURN` (Callee-saved 復元 & リターン)'."
-    },
-    {
-      "section_id": "sec:specs/jit_stencil_catalog.md#`STENCIL_TRACE_FALLBACK_INTERP` (インタープリタへ直接末尾ジャンプ)",
-      "file_path": "specs/jit_stencil_catalog.md",
-      "heading": "`STENCIL_TRACE_FALLBACK_INTERP` (インタープリタへ直接末尾ジャンプ)",
-      "tier": null,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '`STENCIL_TRACE_FALLBACK_INTERP` (インタープリタへ直接末尾ジャンプ)'."
+      "summary": "Independent heuristic evaluation for '`STENCIL_I32_CONST_D1` (`0x41` Depth 1 $\\to$ R5=旧TOS, R4=新TOS)'."
     },
     {
       "section_id": "sec:components/tier1_core/os_coos.md#5. インターフェイス設計",
@@ -5472,9 +5472,9 @@
       "summary": "Independent heuristic evaluation for '9.1 Cortex-M33 PMSAv8 MPU リージョン配分'."
     },
     {
-      "section_id": "sec:specs/jit_stencil_catalog.md#3.1 定数ロード系ステンシル (`i32.const`)",
+      "section_id": "sec:specs/jit_stencil_catalog.md#`STENCIL_PROLOGUE_FULL` (Callee-saved 全域退避 + LR)",
       "file_path": "specs/jit_stencil_catalog.md",
-      "heading": "3.1 定数ロード系ステンシル (`i32.const`)",
+      "heading": "`STENCIL_PROLOGUE_FULL` (Callee-saved 全域退避 + LR)",
       "tier": null,
       "complexity_score": 2,
       "risk_score": 2,
@@ -5482,12 +5482,12 @@
       "recommended_verification": "Static",
       "suggested_tags": [],
       "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '3.1 定数ロード系ステンシル (`i32.const`)'."
+      "summary": "Independent heuristic evaluation for '`STENCIL_PROLOGUE_FULL` (Callee-saved 全域退避 + LR)'."
     },
     {
-      "section_id": "sec:specs/jit_stencil_catalog.md#3.2 整数演算系ステンシル (`i32.add`, `i32.sub`, `i32.mul`)",
+      "section_id": "sec:specs/jit_stencil_catalog.md#3.2 制御フロー系ステンシル (Control Flow)",
       "file_path": "specs/jit_stencil_catalog.md",
-      "heading": "3.2 整数演算系ステンシル (`i32.add`, `i32.sub`, `i32.mul`)",
+      "heading": "3.2 制御フロー系ステンシル (Control Flow)",
       "tier": null,
       "complexity_score": 2,
       "risk_score": 2,
@@ -5495,12 +5495,12 @@
       "recommended_verification": "Static",
       "suggested_tags": [],
       "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '3.2 整数演算系ステンシル (`i32.add`, `i32.sub`, `i32.mul`)'."
+      "summary": "Independent heuristic evaluation for '3.2 制御フロー系ステンシル (Control Flow)'."
     },
     {
-      "section_id": "sec:specs/jit_stencil_catalog.md#3.4 ローカル変数アクセス系ステンシル (`local.get`, `local.set`)",
+      "section_id": "sec:specs/jit_stencil_catalog.md#`STENCIL_BR` (`0x0C` 無条件ジャンプ)",
       "file_path": "specs/jit_stencil_catalog.md",
-      "heading": "3.4 ローカル変数アクセス系ステンシル (`local.get`, `local.set`)",
+      "heading": "`STENCIL_BR` (`0x0C` 無条件ジャンプ)",
       "tier": null,
       "complexity_score": 2,
       "risk_score": 2,
@@ -5508,7 +5508,98 @@
       "recommended_verification": "Static",
       "suggested_tags": [],
       "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '3.4 ローカル変数アクセス系ステンシル (`local.get`, `local.set`)'."
+      "summary": "Independent heuristic evaluation for '`STENCIL_BR` (`0x0C` 無条件ジャンプ)'."
+    },
+    {
+      "section_id": "sec:specs/jit_stencil_catalog.md#3.3 定数ロード系ステンシル (Constants)",
+      "file_path": "specs/jit_stencil_catalog.md",
+      "heading": "3.3 定数ロード系ステンシル (Constants)",
+      "tier": null,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '3.3 定数ロード系ステンシル (Constants)'."
+    },
+    {
+      "section_id": "sec:specs/jit_stencil_catalog.md#3.4 変数アクセス系ステンシル (Local & Global Variables)",
+      "file_path": "specs/jit_stencil_catalog.md",
+      "heading": "3.4 変数アクセス系ステンシル (Local & Global Variables)",
+      "tier": null,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '3.4 変数アクセス系ステンシル (Local & Global Variables)'."
+    },
+    {
+      "section_id": "sec:specs/jit_stencil_catalog.md#`STENCIL_LOCAL_GET_D0` (`0x20` Depth 0 $\\to$ R4)",
+      "file_path": "specs/jit_stencil_catalog.md",
+      "heading": "`STENCIL_LOCAL_GET_D0` (`0x20` Depth 0 $\\to$ R4)",
+      "tier": null,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '`STENCIL_LOCAL_GET_D0` (`0x20` Depth 0 $\\to$ R4)'."
+    },
+    {
+      "section_id": "sec:specs/jit_stencil_catalog.md#`STENCIL_LOCAL_SET_D1` (`0x21` R4 $\\to$ Local)",
+      "file_path": "specs/jit_stencil_catalog.md",
+      "heading": "`STENCIL_LOCAL_SET_D1` (`0x21` R4 $\\to$ Local)",
+      "tier": null,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '`STENCIL_LOCAL_SET_D1` (`0x21` R4 $\\to$ Local)'."
+    },
+    {
+      "section_id": "sec:specs/jit_stencil_catalog.md#`STENCIL_LOCAL_TEE_D1` (`0x22` R4 $\\to$ Local, R4 維持)",
+      "file_path": "specs/jit_stencil_catalog.md",
+      "heading": "`STENCIL_LOCAL_TEE_D1` (`0x22` R4 $\\to$ Local, R4 維持)",
+      "tier": null,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '`STENCIL_LOCAL_TEE_D1` (`0x22` R4 $\\to$ Local, R4 維持)'."
+    },
+    {
+      "section_id": "sec:specs/jit_stencil_catalog.md#`STENCIL_GLOBAL_GET_D0` (`0x23` Env経由ロード)",
+      "file_path": "specs/jit_stencil_catalog.md",
+      "heading": "`STENCIL_GLOBAL_GET_D0` (`0x23` Env経由ロード)",
+      "tier": null,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '`STENCIL_GLOBAL_GET_D0` (`0x23` Env経由ロード)'."
+    },
+    {
+      "section_id": "sec:specs/jit_stencil_catalog.md#`STENCIL_GLOBAL_SET_D1` (`0x24` Env経由ストア)",
+      "file_path": "specs/jit_stencil_catalog.md",
+      "heading": "`STENCIL_GLOBAL_SET_D1` (`0x24` Env経由ストア)",
+      "tier": null,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '`STENCIL_GLOBAL_SET_D1` (`0x24` Env経由ストア)'."
     },
     {
       "section_id": "sec:components/tier1_core/system_syscall.md#型のエイリアス定義 (Type Vocabulary) `{Type_Vocabulary}`",
@@ -10044,6 +10135,32 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '3. ステンシル・カタログ (Thumb-2 Stencil Catalog)'."
+    },
+    {
+      "section_id": "sec:specs/jit_stencil_catalog.md#`STENCIL_UNREACHABLE` (`0x00`)",
+      "file_path": "specs/jit_stencil_catalog.md",
+      "heading": "`STENCIL_UNREACHABLE` (`0x00`)",
+      "tier": null,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '`STENCIL_UNREACHABLE` (`0x00`)'."
+    },
+    {
+      "section_id": "sec:specs/jit_stencil_catalog.md#`STENCIL_NOP` (`0x01`)",
+      "file_path": "specs/jit_stencil_catalog.md",
+      "heading": "`STENCIL_NOP` (`0x01`)",
+      "tier": null,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '`STENCIL_NOP` (`0x01`)'."
     },
     {
       "section_id": "sec:specs/wasi_preview1_abi.md#WASI Preview 1 ABI 物理仕様書 (Supported WASI Preview 1 ABI)",

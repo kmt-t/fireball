@@ -1,6 +1,6 @@
 # Fireball 設計複雑度 & リスク評価レポート (Risk Assessment Report)
 
-- **評価セクション総数**: 762
+- **評価セクション総数**: 771
 - **形式検証 (pyModelChecking) 推奨セクション**: 31
 - **LLM 意味監査 推奨セクション**: 5
 
@@ -119,6 +119,7 @@
 | `components/tier2_runtime/runtime_vsoc.md` | 4.2 状態遷移図 (SysML SMD: vSoC Engine ライフサイクル) | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.2 状態遷移図 (SysML SMD: vSoC Engine ライフサイクル)'. |
 | `plans/backlog_list.md` | オーナーレビュー観点 & チェックリスト | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'オーナーレビュー観点 & チェックリスト'. |
 | `requires/requirement_list.md` | 3.2.2 開発方針・品質 | 0 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.2.2 開発方針・品質'. |
+| `specs/jit_stencil_catalog.md` | 1. 概要と基本思想 | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '1. 概要と基本思想'. |
 | `components/tier1_core/system_containers.md` | 6.1 性能制約と方策 | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '6.1 性能制約と方策'. |
 | `components/tier1_core/system_logging.md` | 1. コンセプト | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '1. コンセプト'. |
 | `components/tier2_runtime/runtime_interpreter.md` | 1. コンセプト | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '1. コンセプト'. |
@@ -127,7 +128,6 @@
 | `components/tier3_jit/jit_engine_copy_patch.md` | 6.1 性能制約と最優先設計方針 | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '6.1 性能制約と最優先設計方針'. |
 | `components/tier3_jit/jit_runtime_entry.md` | 1. コンセプト | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '1. コンセプト'. |
 | `components/tier3_platform/platform_memory.md` | 1. コンセプト | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '1. コンセプト'. |
-| `specs/jit_stencil_catalog.md` | 1. 概要と基本思想 | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '1. 概要と基本思想'. |
 | `specs/wasm_instruction_set.md` | 1. 概要と適用方針 | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '1. 概要と適用方針'. |
 | `components/tier2_runtime/runtime_vsoc.md` | 1. コンセプト | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '1. コンセプト'. |
 | `components/tier3_jit/jit_runtime_hotspot.md` | 1. コンセプト | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '1. コンセプト'. |
@@ -260,6 +260,8 @@
 | `components/tier3_jit/jit_runtime_hotspot.md` | 2. アーキテクチャ分類 | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '2. アーキテクチャ分類'. |
 | `components/tier3_platform/platform_memory.md` | 2. アーキテクチャ分類 | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '2. アーキテクチャ分類'. |
 | `plans/backlog_list.md` | Phase 1: vSoC First 実装（約3ヶ月） 【GO 判定後に着手】 | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'Phase 1: vSoC First 実装（約3ヶ月） 【GO 判定後に着手】'. |
+| `specs/jit_stencil_catalog.md` | 3.1 プロローグ & エピローグ・ステンシル (Prologue, Epilogue & Spill Flush) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.1 プロローグ & エピローグ・ステンシル (Prologue, Epilogue & Spill Flush)'. |
+| `specs/jit_stencil_catalog.md` | 3.7 メモリアクセス系ステンシル (Linear Memory Load & Store) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.7 メモリアクセス系ステンシル (Linear Memory Load & Store)'. |
 | `architecture/master_physical_design.md` | 2. 6大物理コアメカニズム (The 6 Physical Pillars) | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '2. 6大物理コアメカニズム (The 6 Physical Pillars)'. |
 | `architecture/master_physical_design.md` | 3.1 AAPCS 非スクラッチ完全準拠と外部 C/C++ 関数呼び出し境界 | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.1 AAPCS 非スクラッチ完全準拠と外部 C/C++ 関数呼び出し境界'. |
 | `components/tier1_core/os_coos.md` | 協調型OS COOS コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM} | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '協調型OS COOS コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}'. |
@@ -281,7 +283,7 @@
 | `components/tier3_jit/jit_compiler.md` | 4.3 内部シーケンス | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.3 内部シーケンス'. |
 | `components/tier3_jit/jit_runtime_hotspot.md` | JIT Hotspot Detector コンポーネント設計書 {VERIFY_LLM} | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'JIT Hotspot Detector コンポーネント設計書 {VERIFY_LLM}'. |
 | `components/tier3_platform/platform_hal.md` | HAL コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM} | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'HAL コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}'. |
-| `specs/jit_stencil_catalog.md` | 3.5 プロローグ & エピローグ・ステンシル (Prologue & Epilogue) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.5 プロローグ & エピローグ・ステンシル (Prologue & Epilogue)'. |
+| `specs/jit_stencil_catalog.md` | 3.5 整数算術 & 論理演算ステンシル (32-bit Integer Arithmetic & Logic) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.5 整数算術 & 論理演算ステンシル (32-bit Integer Arithmetic & Logic)'. |
 | `specs/wasm_instruction_set.md` | 3.5 整数算術・論理・比較命令 (Integer Arithmetic, Logic & Comparison) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.5 整数算術・論理・比較命令 (Integer Arithmetic, Logic & Comparison)'. |
 | `components/tier1_core/system_config.md` | 3.3 主要な構造体・クラス・定数 | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.3 主要な構造体・クラス・定数'. |
 | `components/tier2_runtime/runtime_vmmio.md` | 3.2 内部ブロック図 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.2 内部ブロック図'. |
@@ -330,10 +332,10 @@
 | `components/tier3_jit/jit_compiler.md` | トレース・チェイニング（連鎖実行） | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'トレース・チェイニング（連鎖実行）'. |
 | `components/tier3_platform/platform_hal.md` | 4.3 内部シーケンス | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.3 内部シーケンス'. |
 | `specs/gdb_rsp_protocol.md` | 4. WASM 仮想レジスタ番号マッピング (GDB Target XML Map) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4. WASM 仮想レジスタ番号マッピング (GDB Target XML Map)'. |
-| `specs/jit_stencil_catalog.md` | 3.3 メモリアクセス系ステンシル (`i32.load`, `i32.store`) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.3 メモリアクセス系ステンシル (`i32.load`, `i32.store`)'. |
 | `specs/wasi_preview1_abi.md` | 3.1 文字入出力 & ストリーム API (I/O & Streams) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.1 文字入出力 & ストリーム API (I/O & Streams)'. |
 | `components/tier1_interface/interface_wit.md` | 5.5. WASI標準APIの実装仕様 (WASI Standard API Implementation Specification) | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '5.5. WASI標準APIの実装仕様 (WASI Standard API Implementation Specification)'. |
 | `components/tier3_jit/jit_runtime_entry.md` | 4.3 内部シーケンス | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.3 内部シーケンス'. |
+| `specs/jit_stencil_catalog.md` | 3.6 整数比較演算ステンシル (32-bit Integer Comparisons) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.6 整数比較演算ステンシル (32-bit Integer Comparisons)'. |
 | `specs/wasi_preview1_abi.md` | 2. WASI 型定義と物理レイアウト (WASI Type Vocabulary) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '2. WASI 型定義と物理レイアウト (WASI Type Vocabulary)'. |
 | `specs/wasi_preview1_abi.md` | 3.3 プロセス制御 & 乱数 & スケジューラ API (Process, Random & Scheduler) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.3 プロセス制御 & 乱数 & スケジューラ API (Process, Random & Scheduler)'. |
 | `specs/wasm_instruction_set.md` | 3.3 変数アクセス命令 (Variable Access) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.3 変数アクセス命令 (Variable Access)'. |
@@ -344,6 +346,7 @@
 | `components/tier2_runtime/runtime_vsoc.md` | 5.2 ネイティブAPI エクスポート | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '5.2 ネイティブAPI エクスポート'. |
 | `components/tier3_jit/jit_compiler.md` | 5.2 内部コンポーネントのデコンポジション | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '5.2 内部コンポーネントのデコンポジション'. |
 | `specs/jit_stencil_catalog.md` | 2. プレースホルダ（穴 / Relocations）の種類とパッチ規約 | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '2. プレースホルダ（穴 / Relocations）の種類とパッチ規約'. |
+| `specs/jit_stencil_catalog.md` | `STENCIL_FALLBACK_FLUSH_D2_LOCALS` (TOS/NOS + ダーティ Local 変数書き戻し $\to$ インタープリタ末尾ジャンプ) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`STENCIL_FALLBACK_FLUSH_D2_LOCALS` (TOS/NOS + ダーティ Local 変数書き戻し $\to$ インタープリタ末尾ジャンプ)'. |
 | `architecture/architecture_overview.md` | [SD] 起動およびタスク登録 | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '[SD] 起動およびタスク登録'. |
 | `architecture/architecture_overview.md` | [SD] IPC通信 (URIベース) | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '[SD] IPC通信 (URIベース)'. |
 | `architecture/concept_harness.md` | 2.2 コンポーネント俯瞰図 | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '2.2 コンポーネント俯瞰図'. |
@@ -367,7 +370,7 @@
 | `components/tier3_jit/jit_compiler.md` | トレース検索（lookup_trace） | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'トレース検索（lookup_trace）'. |
 | `components/tier3_jit/jit_engine_copy_patch.md` | 4.3 内部シーケンス | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.3 内部シーケンス'. |
 | `components/tier3_platform/platform_memory.md` | 6. 所有権追跡 | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '6. 所有権追跡'. |
-| `specs/jit_stencil_catalog.md` | `STENCIL_I32_CONST_DEPTH_1` (R4 に TOS $\to$ R4 を R5 (NOS) へ移し、R4 に新即値ロード) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`STENCIL_I32_CONST_DEPTH_1` (R4 に TOS $\to$ R4 を R5 (NOS) へ移し、R4 に新即値ロード)'. |
+| `specs/jit_stencil_catalog.md` | `STENCIL_I64_CONST_D0` (`0x42` 64-bit 即値 $\to$ R4:R5) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`STENCIL_I64_CONST_D0` (`0x42` 64-bit 即値 $\to$ R4:R5)'. |
 | `components/tier1_core/os_scheduler.md` | 実行（run） | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '実行（run）'. |
 | `components/tier1_core/system_config.md` | 3.1 データ構造 | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.1 データ構造'. |
 | `components/tier1_core/system_config_details.md` | 2.5 ロギング | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '2.5 ロギング'. |
@@ -427,17 +430,14 @@
 | `components/tier3_platform/platform_hal.md` | ゼロコピー転送 (bus_master/streaming) | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'ゼロコピー転送 (bus_master/streaming)'. |
 | `components/tier3_platform/platform_hal.md` | 5.4 RSPトランスポート構成 | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '5.4 RSPトランスポート構成'. |
 | `requires/requirement_list.md` | 2.1 ユースケース図 | 0 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '2.1 ユースケース図'. |
-| `specs/jit_stencil_catalog.md` | `STENCIL_I32_CONST_DEPTH_0` (スタック空 $\to$ R4 にロード) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`STENCIL_I32_CONST_DEPTH_0` (スタック空 $\to$ R4 にロード)'. |
-| `specs/jit_stencil_catalog.md` | `STENCIL_I32_ADD_DEPTH_2` (両オペランドが R4, R5 にキャッシュ) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`STENCIL_I32_ADD_DEPTH_2` (両オペランドが R4, R5 にキャッシュ)'. |
-| `specs/jit_stencil_catalog.md` | `STENCIL_I32_ADD_DEPTH_1` (片方が R4、もう片方は統合スタックからロード) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`STENCIL_I32_ADD_DEPTH_1` (片方が R4、もう片方は統合スタックからロード)'. |
-| `specs/jit_stencil_catalog.md` | `STENCIL_I32_SUB_DEPTH_2` | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`STENCIL_I32_SUB_DEPTH_2`'. |
-| `specs/jit_stencil_catalog.md` | `STENCIL_I32_LOAD_R3_MEMBASE` (`R3` に `mem_base` がピン留めされているバリアント) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`STENCIL_I32_LOAD_R3_MEMBASE` (`R3` に `mem_base` がピン留めされているバリアント)'. |
-| `specs/jit_stencil_catalog.md` | `STENCIL_I32_STORE_R3_MEMBASE` (`R3` に `mem_base` がピン留めされているバリアント) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`STENCIL_I32_STORE_R3_MEMBASE` (`R3` に `mem_base` がピン留めされているバリアント)'. |
-| `specs/jit_stencil_catalog.md` | `STENCIL_LOCAL_GET_IMM8` (ローカル配列オフセットを即値パッチ) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`STENCIL_LOCAL_GET_IMM8` (ローカル配列オフセットを即値パッチ)'. |
-| `specs/jit_stencil_catalog.md` | `STENCIL_LOCAL_SET_DEPTH_1` | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`STENCIL_LOCAL_SET_DEPTH_1`'. |
-| `specs/jit_stencil_catalog.md` | `STENCIL_TRACE_PROLOGUE_FULL` (使用する Callee-saved レジスタを退避) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`STENCIL_TRACE_PROLOGUE_FULL` (使用する Callee-saved レジスタを退避)'. |
-| `specs/jit_stencil_catalog.md` | `STENCIL_TRACE_EPILOGUE_RETURN` (Callee-saved 復元 & リターン) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`STENCIL_TRACE_EPILOGUE_RETURN` (Callee-saved 復元 & リターン)'. |
-| `specs/jit_stencil_catalog.md` | `STENCIL_TRACE_FALLBACK_INTERP` (インタープリタへ直接末尾ジャンプ) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`STENCIL_TRACE_FALLBACK_INTERP` (インタープリタへ直接末尾ジャンプ)'. |
+| `specs/jit_stencil_catalog.md` | `STENCIL_EPILOGUE_FLUSH_D1` (TOS 書き戻し + Callee-saved 復元 & リターン) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`STENCIL_EPILOGUE_FLUSH_D1` (TOS 書き戻し + Callee-saved 復元 & リターン)'. |
+| `specs/jit_stencil_catalog.md` | `STENCIL_EPILOGUE_FLUSH_D2` (TOS & NOS 書き戻し + Callee-saved 復元 & リターン) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`STENCIL_EPILOGUE_FLUSH_D2` (TOS & NOS 書き戻し + Callee-saved 復元 & リターン)'. |
+| `specs/jit_stencil_catalog.md` | `STENCIL_FALLBACK_FLUSH_D1` (TOS 書き戻し + Callee-saved 復元 $\to$ インタープリタ末尾ジャンプ) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`STENCIL_FALLBACK_FLUSH_D1` (TOS 書き戻し + Callee-saved 復元 $\to$ インタープリタ末尾ジャンプ)'. |
+| `specs/jit_stencil_catalog.md` | `STENCIL_EXTERNAL_CALL_STUB` (外部 AAPCS C/C++ 関数呼出境界) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`STENCIL_EXTERNAL_CALL_STUB` (外部 AAPCS C/C++ 関数呼出境界)'. |
+| `specs/jit_stencil_catalog.md` | `STENCIL_BR_IF_DEPTH_1` (`0x0D` 条件分岐: TOS != 0) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`STENCIL_BR_IF_DEPTH_1` (`0x0D` 条件分岐: TOS != 0)'. |
+| `specs/jit_stencil_catalog.md` | `STENCIL_SELECT_DEPTH_3` (`0x1B` 3値選択: c, val2, val1) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`STENCIL_SELECT_DEPTH_3` (`0x1B` 3値選択: c, val2, val1)'. |
+| `specs/jit_stencil_catalog.md` | `STENCIL_I32_CONST_D0` (`0x41` Depth 0 $\to$ R4) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`STENCIL_I32_CONST_D0` (`0x41` Depth 0 $\to$ R4)'. |
+| `specs/jit_stencil_catalog.md` | `STENCIL_I32_CONST_D1` (`0x41` Depth 1 $\to$ R5=旧TOS, R4=新TOS) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`STENCIL_I32_CONST_D1` (`0x41` Depth 1 $\to$ R5=旧TOS, R4=新TOS)'. |
 | `components/tier1_core/os_coos.md` | 5. インターフェイス設計 | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '5. インターフェイス設計'. |
 | `components/tier1_core/os_scheduler.md` | 2. アーキテクチャ分類 | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '2. アーキテクチャ分類'. |
 | `components/tier1_core/system_config.md` | 4.1 アルゴリズム | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.1 アルゴリズム'. |
@@ -462,9 +462,16 @@
 | `components/tier3_platform/platform_hal.md` | 6.1 性能制約と方策 | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '6.1 性能制約と方策'. |
 | `components/tier3_platform/platform_hal.md` | 6.2 メモリ制約と方策 | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '6.2 メモリ制約と方策'. |
 | `components/tier3_platform/platform_hal.md` | 6.3 安全性制約と方策 | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '6.3 安全性制約と方策'. |
-| `specs/jit_stencil_catalog.md` | 3.1 定数ロード系ステンシル (`i32.const`) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.1 定数ロード系ステンシル (`i32.const`)'. |
-| `specs/jit_stencil_catalog.md` | 3.2 整数演算系ステンシル (`i32.add`, `i32.sub`, `i32.mul`) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.2 整数演算系ステンシル (`i32.add`, `i32.sub`, `i32.mul`)'. |
-| `specs/jit_stencil_catalog.md` | 3.4 ローカル変数アクセス系ステンシル (`local.get`, `local.set`) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.4 ローカル変数アクセス系ステンシル (`local.get`, `local.set`)'. |
+| `specs/jit_stencil_catalog.md` | `STENCIL_PROLOGUE_FULL` (Callee-saved 全域退避 + LR) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`STENCIL_PROLOGUE_FULL` (Callee-saved 全域退避 + LR)'. |
+| `specs/jit_stencil_catalog.md` | 3.2 制御フロー系ステンシル (Control Flow) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.2 制御フロー系ステンシル (Control Flow)'. |
+| `specs/jit_stencil_catalog.md` | `STENCIL_BR` (`0x0C` 無条件ジャンプ) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`STENCIL_BR` (`0x0C` 無条件ジャンプ)'. |
+| `specs/jit_stencil_catalog.md` | 3.3 定数ロード系ステンシル (Constants) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.3 定数ロード系ステンシル (Constants)'. |
+| `specs/jit_stencil_catalog.md` | 3.4 変数アクセス系ステンシル (Local & Global Variables) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.4 変数アクセス系ステンシル (Local & Global Variables)'. |
+| `specs/jit_stencil_catalog.md` | `STENCIL_LOCAL_GET_D0` (`0x20` Depth 0 $\to$ R4) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`STENCIL_LOCAL_GET_D0` (`0x20` Depth 0 $\to$ R4)'. |
+| `specs/jit_stencil_catalog.md` | `STENCIL_LOCAL_SET_D1` (`0x21` R4 $\to$ Local) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`STENCIL_LOCAL_SET_D1` (`0x21` R4 $\to$ Local)'. |
+| `specs/jit_stencil_catalog.md` | `STENCIL_LOCAL_TEE_D1` (`0x22` R4 $\to$ Local, R4 維持) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`STENCIL_LOCAL_TEE_D1` (`0x22` R4 $\to$ Local, R4 維持)'. |
+| `specs/jit_stencil_catalog.md` | `STENCIL_GLOBAL_GET_D0` (`0x23` Env経由ロード) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`STENCIL_GLOBAL_GET_D0` (`0x23` Env経由ロード)'. |
+| `specs/jit_stencil_catalog.md` | `STENCIL_GLOBAL_SET_D1` (`0x24` Env経由ストア) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`STENCIL_GLOBAL_SET_D1` (`0x24` Env経由ストア)'. |
 | `components/tier1_core/system_syscall.md` | 型のエイリアス定義 (Type Vocabulary) `{Type_Vocabulary}` | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '型のエイリアス定義 (Type Vocabulary) `{Type_Vocabulary}`'. |
 | `components/tier1_interface/ipc_router.md` | Key-Valueペア（kv_pair） | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'Key-Valueペア（kv_pair）'. |
 | `architecture/resource_budget.md` | 1. メモリ予算 (RAM) | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '1. メモリ予算 (RAM)'. |
@@ -806,6 +813,8 @@
 | `specs/gdb_rsp_protocol.md` | GDB Remote Serial Protocol 物理仕様書 (Supported GDB RSP Protocol) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'GDB Remote Serial Protocol 物理仕様書 (Supported GDB RSP Protocol)'. |
 | `specs/jit_stencil_catalog.md` | JIT ステンシルテンプレート・カタログ物理仕様書 (JIT Stencil Template Catalog) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'JIT ステンシルテンプレート・カタログ物理仕様書 (JIT Stencil Template Catalog)'. |
 | `specs/jit_stencil_catalog.md` | 3. ステンシル・カタログ (Thumb-2 Stencil Catalog) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3. ステンシル・カタログ (Thumb-2 Stencil Catalog)'. |
+| `specs/jit_stencil_catalog.md` | `STENCIL_UNREACHABLE` (`0x00`) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`STENCIL_UNREACHABLE` (`0x00`)'. |
+| `specs/jit_stencil_catalog.md` | `STENCIL_NOP` (`0x01`) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`STENCIL_NOP` (`0x01`)'. |
 | `specs/wasi_preview1_abi.md` | WASI Preview 1 ABI 物理仕様書 (Supported WASI Preview 1 ABI) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'WASI Preview 1 ABI 物理仕様書 (Supported WASI Preview 1 ABI)'. |
 | `specs/wasi_preview1_abi.md` | 3. WASI Preview 1 サポート API マトリクス | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3. WASI Preview 1 サポート API マトリクス'. |
 | `specs/wasm_instruction_set.md` | WASM 命令セット物理仕様書 (Supported WASM Instruction Set) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'WASM 命令セット物理仕様書 (Supported WASM Instruction Set)'. |

@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-08-25T10:26:11.707276+00:00",
+  "generated_at": "2026-08-25T10:41:28.703837+00:00",
   "backend": "heuristic",
-  "total_evaluated": 763,
+  "total_evaluated": 762,
   "formal_candidates_count": 31,
   "llm_candidates_count": 5,
-  "sections_scanned": 763,
+  "sections_scanned": 762,
   "max_sections": 0,
   "doc_hashes": {
     "architecture/architecture_overview.md": "019aea4f717286caa9ef81aaccc453e67a28a358300d5db20d908a23281e5e94",
@@ -22,8 +22,8 @@
     "components/tier1_interface/interface_wit.md": "889909501181705efbeff8ca5d96f1ae036ab6c756e478acc6c7418907bb2d1f",
     "components/tier1_interface/ipc_router.md": "31fea15446204d7627b2cb6a0843b2f20dd7388915b86c31a20bd55bd79c74e7",
     "components/tier1_interface/system_service.md": "7c98009196d56c50c4d1d27269f38eb51d4fe1fa654aedb51dba7c496cd5fe62",
-    "components/tier2_runtime/debug/debug_gdb_rsp.md": "f07fbc1fbe307552ce65dbe964361442c7df855ac18cce53dc59684373c6befc",
-    "components/tier2_runtime/debug/debug_manager.md": "6f62ba245c1b68577bccd8d7f104f286aa33820e12dd68d45ededb65ea99f5e2",
+    "components/tier2_runtime/debug/debug_gdb_rsp.md": "859626792a35fd049f3eb3591ac233df7b6285787cd581e0d6f952b1450e9226",
+    "components/tier2_runtime/debug/debug_manager.md": "b1d464f59f6acb34e21971a8977af1f4fa2d91b4b2035309b77ac9326564c219",
     "components/tier2_runtime/runtime_interpreter.md": "af7c5022a526040d775d92e0ede80bb625979c260a11763b5dec84e2674af5df",
     "components/tier2_runtime/runtime_loader.md": "591c6d491434e54f39eed5c48ae3216fc1b0ca1e2299044161cccac48f93dca5",
     "components/tier2_runtime/runtime_vmmio.md": "5b1afbf97ab169fe86f4081b63d5b5ffefb043abd22b571d132e4379809b3968",
@@ -1266,6 +1266,19 @@
       "summary": "Independent heuristic evaluation for '4.2 状態遷移図'."
     },
     {
+      "section_id": "sec:components/tier2_runtime/debug/debug_gdb_rsp.md#1. コンセプト",
+      "file_path": "components/tier2_runtime/debug/debug_gdb_rsp.md",
+      "heading": "1. コンセプト",
+      "tier": 2,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '1. コンセプト'."
+    },
+    {
       "section_id": "sec:components/tier2_runtime/debug/debug_manager.md#4.1 アルゴリズム",
       "file_path": "components/tier2_runtime/debug/debug_manager.md",
       "heading": "4.1 アルゴリズム",
@@ -2372,6 +2385,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '4.1 アルゴリズム'."
+    },
+    {
+      "section_id": "sec:components/tier2_runtime/debug/debug_gdb_rsp.md#2. アーキテクチャ分類",
+      "file_path": "components/tier2_runtime/debug/debug_gdb_rsp.md",
+      "heading": "2. アーキテクチャ分類",
+      "tier": 2,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '2. アーキテクチャ分類'."
     },
     {
       "section_id": "sec:components/tier2_runtime/runtime_interpreter.md#6.3 安全性制約と方策",
@@ -4004,19 +4030,6 @@
       "summary": "Independent heuristic evaluation for '6.3 検証モデル概要'."
     },
     {
-      "section_id": "sec:components/tier2_runtime/debug/debug_manager.md#仮想レジスタセット（virtual_register_set）",
-      "file_path": "components/tier2_runtime/debug/debug_manager.md",
-      "heading": "仮想レジスタセット（virtual_register_set）",
-      "tier": 2,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '仮想レジスタセット（virtual_register_set）'."
-    },
-    {
       "section_id": "sec:components/tier2_runtime/runtime_interpreter.md#3.2 内部ブロック図",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
       "heading": "3.2 内部ブロック図",
@@ -4621,6 +4634,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '3.2 内部ブロック図'."
+    },
+    {
+      "section_id": "sec:components/tier2_runtime/debug/debug_manager.md#仮想レジスタセット（virtual_register_set）",
+      "file_path": "components/tier2_runtime/debug/debug_manager.md",
+      "heading": "仮想レジスタセット（virtual_register_set）",
+      "tier": 2,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '仮想レジスタセット（virtual_register_set）'."
     },
     {
       "section_id": "sec:components/tier2_runtime/debug/debug_manager.md#4.2 状態遷移図",
@@ -5284,19 +5310,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '6.3 安全性制約と方策'."
-    },
-    {
-      "section_id": "sec:components/tier2_runtime/debug/debug_gdb_rsp.md#1. 概要",
-      "file_path": "components/tier2_runtime/debug/debug_gdb_rsp.md",
-      "heading": "1. 概要",
-      "tier": 2,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '1. 概要'."
     },
     {
       "section_id": "sec:components/tier2_runtime/debug/debug_manager.md#6.1 性能制約と方策",
@@ -6416,6 +6429,19 @@
       "summary": "Independent heuristic evaluation for '4.1 制約ブロック定義'."
     },
     {
+      "section_id": "sec:components/tier2_runtime/debug/debug_gdb_rsp.md#4.1 アルゴリズム",
+      "file_path": "components/tier2_runtime/debug/debug_gdb_rsp.md",
+      "heading": "4.1 アルゴリズム",
+      "tier": 2,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '4.1 アルゴリズム'."
+    },
+    {
       "section_id": "sec:components/tier2_runtime/runtime_vmmio.md#アクセスディスパッチ (`dispatch-access`)",
       "file_path": "components/tier2_runtime/runtime_vmmio.md",
       "heading": "アクセスディスパッチ (`dispatch-access`)",
@@ -6927,9 +6953,9 @@
       "summary": "Independent heuristic evaluation for '検証対象となる制約事項 (形式検証 pyModelChecking モデリングポイント)'."
     },
     {
-      "section_id": "sec:components/tier2_runtime/debug/debug_gdb_rsp.md#2.1 セッション管理",
+      "section_id": "sec:components/tier2_runtime/debug/debug_gdb_rsp.md#3.2 主要なクラス・構造体",
       "file_path": "components/tier2_runtime/debug/debug_gdb_rsp.md",
-      "heading": "2.1 セッション管理",
+      "heading": "3.2 主要なクラス・構造体",
       "tier": 2,
       "complexity_score": 2,
       "risk_score": 2,
@@ -6937,33 +6963,7 @@
       "recommended_verification": "Static",
       "suggested_tags": [],
       "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '2.1 セッション管理'."
-    },
-    {
-      "section_id": "sec:components/tier2_runtime/debug/debug_gdb_rsp.md#2.4 ブレークポイント",
-      "file_path": "components/tier2_runtime/debug/debug_gdb_rsp.md",
-      "heading": "2.4 ブレークポイント",
-      "tier": 2,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '2.4 ブレークポイント'."
-    },
-    {
-      "section_id": "sec:components/tier2_runtime/debug/debug_gdb_rsp.md#2.5 スレッド・情報取得",
-      "file_path": "components/tier2_runtime/debug/debug_gdb_rsp.md",
-      "heading": "2.5 スレッド・情報取得",
-      "tier": 2,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '2.5 スレッド・情報取得'."
+      "summary": "Independent heuristic evaluation for '3.2 主要なクラス・構造体'."
     },
     {
       "section_id": "sec:components/tier2_runtime/runtime_interpreter.md#インタプリタ（Interpreter）クラス",
@@ -8447,9 +8447,9 @@
       "summary": "Independent heuristic evaluation for '6. 制約達成の方策'."
     },
     {
-      "section_id": "sec:components/tier2_runtime/debug/debug_gdb_rsp.md#サポートGDB RSPコマンドセット",
+      "section_id": "sec:components/tier2_runtime/debug/debug_gdb_rsp.md#GDB RSP パーサ コンポーネント設計書",
       "file_path": "components/tier2_runtime/debug/debug_gdb_rsp.md",
-      "heading": "サポートGDB RSPコマンドセット",
+      "heading": "GDB RSP パーサ コンポーネント設計書",
       "tier": 2,
       "complexity_score": 2,
       "risk_score": 2,
@@ -8457,12 +8457,12 @@
       "recommended_verification": "Static",
       "suggested_tags": [],
       "risk_factors": [],
-      "summary": "Independent heuristic evaluation for 'サポートGDB RSPコマンドセット'."
+      "summary": "Independent heuristic evaluation for 'GDB RSP パーサ コンポーネント設計書'."
     },
     {
-      "section_id": "sec:components/tier2_runtime/debug/debug_gdb_rsp.md#2. コマンドリスト",
+      "section_id": "sec:components/tier2_runtime/debug/debug_gdb_rsp.md#3. 静的モデル",
       "file_path": "components/tier2_runtime/debug/debug_gdb_rsp.md",
-      "heading": "2. コマンドリスト",
+      "heading": "3. 静的モデル",
       "tier": 2,
       "complexity_score": 2,
       "risk_score": 2,
@@ -8470,12 +8470,12 @@
       "recommended_verification": "Static",
       "suggested_tags": [],
       "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '2. コマンドリスト'."
+      "summary": "Independent heuristic evaluation for '3. 静的モデル'."
     },
     {
-      "section_id": "sec:components/tier2_runtime/debug/debug_gdb_rsp.md#2.2 メモリアクセス",
+      "section_id": "sec:components/tier2_runtime/debug/debug_gdb_rsp.md#3.1 データ構造",
       "file_path": "components/tier2_runtime/debug/debug_gdb_rsp.md",
-      "heading": "2.2 メモリアクセス",
+      "heading": "3.1 データ構造",
       "tier": 2,
       "complexity_score": 2,
       "risk_score": 2,
@@ -8483,12 +8483,12 @@
       "recommended_verification": "Static",
       "suggested_tags": [],
       "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '2.2 メモリアクセス'."
+      "summary": "Independent heuristic evaluation for '3.1 データ構造'."
     },
     {
-      "section_id": "sec:components/tier2_runtime/debug/debug_gdb_rsp.md#2.3 レジスタアクセス",
+      "section_id": "sec:components/tier2_runtime/debug/debug_gdb_rsp.md#4. 動的モデル",
       "file_path": "components/tier2_runtime/debug/debug_gdb_rsp.md",
-      "heading": "2.3 レジスタアクセス",
+      "heading": "4. 動的モデル",
       "tier": 2,
       "complexity_score": 2,
       "risk_score": 2,
@@ -8496,20 +8496,7 @@
       "recommended_verification": "Static",
       "suggested_tags": [],
       "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '2.3 レジスタアクセス'."
-    },
-    {
-      "section_id": "sec:components/tier2_runtime/debug/debug_gdb_rsp.md#3. 応答形式",
-      "file_path": "components/tier2_runtime/debug/debug_gdb_rsp.md",
-      "heading": "3. 応答形式",
-      "tier": 2,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '3. 応答形式'."
+      "summary": "Independent heuristic evaluation for '4. 動的モデル'."
     },
     {
       "section_id": "sec:components/tier2_runtime/debug/debug_manager.md#3. 静的モデル",

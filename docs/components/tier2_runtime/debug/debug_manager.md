@@ -52,14 +52,7 @@ graph TD
 
 #### 仮想レジスタセット（virtual_register_set）
 <!-- traceability: {RSPMinimalSet} -->
-GDB等の外部クライアントに提示する仮想的なCPUレジスタ群。 `{RSPMinimalSet}`
-
-| 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
-| :--- | :--- | :--- | :--- |
-| `PC (Reg 0)` | 現在の実行オフセット。 | オフセット | `context.pc` に連動 |
-| `LR (Reg 1)` | 呼び出し元の戻り先アドレス。 | オフセット | `frame.return_pc` に連動 |
-| `SP (Reg 2)` | オペランドスタックの頂点位置。 | オフセット | `context.sp_offset` に連動 |
-| `FP (Reg 3)` | 現在のフレームの基点位置。 | オフセット | `frame.local_base` に連動 |
+GDB等の外部クライアントに提示する WASM 仮想レジスタ番号マッピング（`0: pc`, `1: sp`, `2: fp`, `3: tos`, `4..19: local0..15`）は [GDB RSP 物理仕様書 §4 (`docs/specs/gdb_rsp_protocol.md`)](../../../specs/gdb_rsp_protocol.md) を正本とする。 `{RSPMinimalSet}`
 
 ## 4. 動的モデル
 

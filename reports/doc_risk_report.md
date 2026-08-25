@@ -1,6 +1,6 @@
 # Fireball 設計複雑度 & リスク評価レポート (Risk Assessment Report)
 
-- **評価セクション総数**: 763
+- **評価セクション総数**: 762
 - **形式検証 (pyModelChecking) 推奨セクション**: 31
 - **LLM 意味監査 推奨セクション**: 5
 
@@ -162,6 +162,7 @@
 | `components/tier1_interface/ipc_router.md` | 4.3.1 二分探索による O(log N) 低遅延ルックアップ | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.3.1 二分探索による O(log N) 低遅延ルックアップ'. |
 | `components/tier1_interface/ipc_router.md` | サービス検索と接続フロー | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'サービス検索と接続フロー'. |
 | `components/tier1_interface/system_service.md` | 4.2 状態遷移図 | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.2 状態遷移図'. |
+| `components/tier2_runtime/debug/debug_gdb_rsp.md` | 1. コンセプト | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '1. コンセプト'. |
 | `components/tier2_runtime/debug/debug_manager.md` | 4.1 アルゴリズム | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.1 アルゴリズム'. |
 | `components/tier2_runtime/runtime_vmmio.md` | FlatMap ページテーブル定義 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'FlatMap ページテーブル定義'. |
 | `components/tier2_runtime/runtime_vmmio.md` | 6.1 性能制約と方策 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '6.1 性能制約と方策'. |
@@ -242,6 +243,7 @@
 | `components/tier1_interface/ipc_router.md` | 7.2 メモリ制約と方策 | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '7.2 メモリ制約と方策'. |
 | `components/tier1_interface/ipc_router.md` | 7.3 安全性制約と方策 | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '7.3 安全性制約と方策'. |
 | `components/tier1_interface/system_service.md` | 4.1 アルゴリズム | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.1 アルゴリズム'. |
+| `components/tier2_runtime/debug/debug_gdb_rsp.md` | 2. アーキテクチャ分類 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '2. アーキテクチャ分類'. |
 | `components/tier2_runtime/runtime_interpreter.md` | 6.3 安全性制約と方策 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '6.3 安全性制約と方策'. |
 | `components/tier2_runtime/runtime_loader.md` | 6.2 メモリ制約と方策 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '6.2 メモリ制約と方策'. |
 | `components/tier2_runtime/runtime_loader.md` | 6.3 安全性制約と方策 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '6.3 安全性制約と方策'. |
@@ -353,7 +355,6 @@
 | `components/tier1_core/system_logging.md` | ログ出力シーケンス | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'ログ出力シーケンス'. |
 | `components/tier1_core/system_logging.md` | ログイベント記録 (`log_event`) | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'ログイベント記録 (`log_event`)'. |
 | `components/tier1_interface/interface_wit.md` | リカバリー戦略の事前・事後条件と不変条件 | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'リカバリー戦略の事前・事後条件と不変条件'. |
-| `components/tier2_runtime/debug/debug_manager.md` | 仮想レジスタセット（virtual_register_set） | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '仮想レジスタセット（virtual_register_set）'. |
 | `components/tier2_runtime/runtime_interpreter.md` | 3.2 内部ブロック図 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.2 内部ブロック図'. |
 | `components/tier2_runtime/runtime_interpreter.md` | Interpreter 実行シーケンス | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'Interpreter 実行シーケンス'. |
 | `components/tier2_runtime/runtime_loader.md` | 4.2 メモリ制約 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.2 メモリ制約'. |
@@ -398,6 +399,7 @@
 | `components/tier1_interface/system_service.md` | 6.1 性能制約と方策 | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '6.1 性能制約と方策'. |
 | `components/tier2_runtime/debug/debug_manager.md` | 2. アーキテクチャ分類 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '2. アーキテクチャ分類'. |
 | `components/tier2_runtime/debug/debug_manager.md` | 3.2 内部ブロック図 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.2 内部ブロック図'. |
+| `components/tier2_runtime/debug/debug_manager.md` | 仮想レジスタセット（virtual_register_set） | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '仮想レジスタセット（virtual_register_set）'. |
 | `components/tier2_runtime/debug/debug_manager.md` | 4.2 状態遷移図 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.2 状態遷移図'. |
 | `components/tier2_runtime/debug/debug_manager.md` | デバッグコマンド処理シーケンス | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'デバッグコマンド処理シーケンス'. |
 | `components/tier2_runtime/runtime_interpreter.md` | 2. アーキテクチャ分類 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '2. アーキテクチャ分類'. |
@@ -449,7 +451,6 @@
 | `components/tier1_interface/system_service.md` | 5.1 エラーハンドリング戦略 | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '5.1 エラーハンドリング戦略'. |
 | `components/tier1_interface/system_service.md` | 設計判断 | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '設計判断'. |
 | `components/tier1_interface/system_service.md` | 6.3 安全性制約と方策 | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '6.3 安全性制約と方策'. |
-| `components/tier2_runtime/debug/debug_gdb_rsp.md` | 1. 概要 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '1. 概要'. |
 | `components/tier2_runtime/debug/debug_manager.md` | 6.1 性能制約と方策 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '6.1 性能制約と方策'. |
 | `components/tier2_runtime/debug/debug_manager.md` | 6.3 安全性制約と方策 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '6.3 安全性制約と方策'. |
 | `components/tier2_runtime/runtime_interpreter.md` | 6.1 性能制約と方策 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '6.1 性能制約と方策'. |
@@ -532,6 +533,7 @@
 | `requires/requirement_list.md` | 3.2.3 移植性・互換性 | 0 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.2.3 移植性・互換性'. |
 | `architecture/architecture_overview.md` | 依存性ルール | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '依存性ルール'. |
 | `architecture/resource_budget.md` | 4.1 制約ブロック定義 | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.1 制約ブロック定義'. |
+| `components/tier2_runtime/debug/debug_gdb_rsp.md` | 4.1 アルゴリズム | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.1 アルゴリズム'. |
 | `components/tier2_runtime/runtime_vmmio.md` | アクセスディスパッチ (`dispatch-access`) | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'アクセスディスパッチ (`dispatch-access`)'. |
 | `architecture/architecture_overview.md` | 2.1 レイヤー構成 | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '2.1 レイヤー構成'. |
 | `architecture/document_structure.md` | 2.1 デコンポジション基準（いつ下位 Tier へ分解するか） | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '2.1 デコンポジション基準（いつ下位 Tier へ分解するか）'. |
@@ -570,9 +572,7 @@
 | `components/tier1_interface/ipc_router.md` | サービス登録（register_service） | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'サービス登録（register_service）'. |
 | `components/tier1_interface/system_service.md` | サービス定義（service） | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'サービス定義（service）'. |
 | `components/tier1_interface/system_service.md` | 検証対象となる制約事項 (形式検証 pyModelChecking モデリングポイント) | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '検証対象となる制約事項 (形式検証 pyModelChecking モデリングポイント)'. |
-| `components/tier2_runtime/debug/debug_gdb_rsp.md` | 2.1 セッション管理 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '2.1 セッション管理'. |
-| `components/tier2_runtime/debug/debug_gdb_rsp.md` | 2.4 ブレークポイント | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '2.4 ブレークポイント'. |
-| `components/tier2_runtime/debug/debug_gdb_rsp.md` | 2.5 スレッド・情報取得 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '2.5 スレッド・情報取得'. |
+| `components/tier2_runtime/debug/debug_gdb_rsp.md` | 3.2 主要なクラス・構造体 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.2 主要なクラス・構造体'. |
 | `components/tier2_runtime/runtime_interpreter.md` | インタプリタ（Interpreter）クラス | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'インタプリタ（Interpreter）クラス'. |
 | `components/tier2_runtime/runtime_interpreter.md` | 7. 参考実装リスト | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '7. 参考実装リスト'. |
 | `components/tier2_runtime/runtime_loader.md` | WASMローダ（WasmLoader）クラス | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'WASMローダ（WasmLoader）クラス'. |
@@ -683,11 +683,10 @@
 | `components/tier1_interface/system_service.md` | 5. インターフェイス定義 | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '5. インターフェイス定義'. |
 | `components/tier1_interface/system_service.md` | 5.2 公開API | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '5.2 公開API'. |
 | `components/tier1_interface/system_service.md` | 6. 制約達成の方策 | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '6. 制約達成の方策'. |
-| `components/tier2_runtime/debug/debug_gdb_rsp.md` | サポートGDB RSPコマンドセット | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'サポートGDB RSPコマンドセット'. |
-| `components/tier2_runtime/debug/debug_gdb_rsp.md` | 2. コマンドリスト | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '2. コマンドリスト'. |
-| `components/tier2_runtime/debug/debug_gdb_rsp.md` | 2.2 メモリアクセス | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '2.2 メモリアクセス'. |
-| `components/tier2_runtime/debug/debug_gdb_rsp.md` | 2.3 レジスタアクセス | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '2.3 レジスタアクセス'. |
-| `components/tier2_runtime/debug/debug_gdb_rsp.md` | 3. 応答形式 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3. 応答形式'. |
+| `components/tier2_runtime/debug/debug_gdb_rsp.md` | GDB RSP パーサ コンポーネント設計書 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'GDB RSP パーサ コンポーネント設計書'. |
+| `components/tier2_runtime/debug/debug_gdb_rsp.md` | 3. 静的モデル | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3. 静的モデル'. |
+| `components/tier2_runtime/debug/debug_gdb_rsp.md` | 3.1 データ構造 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.1 データ構造'. |
+| `components/tier2_runtime/debug/debug_gdb_rsp.md` | 4. 動的モデル | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4. 動的モデル'. |
 | `components/tier2_runtime/debug/debug_manager.md` | 3. 静的モデル | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3. 静的モデル'. |
 | `components/tier2_runtime/debug/debug_manager.md` | 3.3 主要なクラス・構造体・配列・定数 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.3 主要なクラス・構造体・配列・定数'. |
 | `components/tier2_runtime/debug/debug_manager.md` | 4. 動的モデル | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4. 動的モデル'. |

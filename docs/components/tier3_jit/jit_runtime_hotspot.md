@@ -6,20 +6,20 @@ JIT Hotspot Detector は、インタープリタが実行したWASM命令の頻�
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {SimpleJITArchitecture} -->
-本コンポーネントは **Tier 3 (詳細リーフコンポーネント: Leaf Component)** に属し、JIT コンパイラ (`jit_compiler.md`) から分解されたホットスポット検出・ビットマップ管理およびコンパイルキュー制御を担当する。 `{META_3TierSeparation}` `{SimpleJITArchitecture}`
+本コンポーネントは **Tier 3 (詳細リーフコンポーネント: Leaf Component)** に属し、JIT コンパイラ (`jit_compiler.md`) から分解されたホットスポット検出・カードマーキング表管理およびコンパイルキュー制御を担当する。 `{META_3TierSeparation}` `{SimpleJITArchitecture}`
 
 ## 3. 静的モデル
 
 ### 3.1 データ構造
 - **`HotspotDetector`**: 実行頻度の監視、状態管理、およびコンパイル対象の特定を一括して行う主要クラス。
-- **カードマーキング表 (Card Marking Table)**: WASMコード領域をカード単位に分割管理する2ビットの状態表。密ビュー `fireball::bit_view<2>` として参照する（1バイトあたり4カード）。旧称「ホットスポット・ビットマップ」。
+- **カードマーキング表 (Card Marking Table)**: WASMコード領域をカード単位に分割管理する2ビットの状態表。密ビュー `fireball::bit_view<2>` として参照する（1バイトあたり4カード）。
 - **実行履歴バッファ**: 短期間の実行履歴を一時的に保持するスタックまたはリングバッファ。
 
 ### 3.2 内部ブロック図
 ```mermaid
 graph TD
     Interp[Interpreter] -->|record_execution| Detector[HotspotDetector]
-    Detector -->|Internal Process| Bitmap[Hotspot Bitmap]
+    Detector -->|Internal Process| CardTable[Card Marking Table]
     Detector -->|Push| Queue[Compile Queue]
 ```
 
@@ -29,7 +29,7 @@ graph TD
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| ビットマップ | WASM カードごとの実行状態（未実行/実行済/頻出/完了） | 固定長配列 | 2bit / card |
+| カードマーキング表 | WASM カードごとの実行状態（未実行/実行済/頻出/完了） | 固定長配列 | 2bit / card |
 | 履歴バッファ | 判定契機（yield等）までの一時的な実行記録 | リングバッファ | `offset` の配列 |
 
 ## 4. 動的モデル
@@ -40,7 +40,7 @@ graph TD
 #### ホットスポット判定
 1. 実行権放棄（`yield`）時、または例外発生時に呼び出される。
 2. 実行履歴バッファに蓄積された各命令オフセット（PC）を走査する。
-3. 命令オフセットを右シフトして対応する「カード」を特定し、実行履歴マップ（ビットマップ）の状態を更新する：
+3. 命令オフセットを右シフトして対応する「カード」を特定し、カードマーキング表の状態を更新する：
    - 「未実行」 -> 「実行済」
    - 「実行済」 -> 「頻出」
 4. 状態が「頻出」に遷移したカード（およびその契機となったオフセット）を「コンパイル待ち列」へ登録し、状態を「コンパイル完了」に更新する。
@@ -74,7 +74,7 @@ stateDiagram-v2
 
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | 蓄積された履歴を基にビットマップの状態を更新し、ホットスポットを特定する。 |
+| 機能概要 | 蓄積された履歴を基にカードマーキング表の状態を更新し、ホットスポットを特定する。 |
 | シグネチャ | `process_history() -> void` |
 | 補足 | 実行権放棄（`yield`）時に呼び出す。 |
 
@@ -84,4 +84,4 @@ stateDiagram-v2
 <!-- traceability: {LowLatencyJIT} {SimpleJITArchitecture} -->
 - **コンパイルレイテンシの最小化 (Low Latency JIT)**: ホットスポットの早期特定とコンパイル対象の絞り込みにより、実行頻度の低いコードに対する無駄なコンパイル処理を回避し、JITの起動・コンパイルオーバーヘッドを最小化（レイテンシの最小化）する。 `{LowLatencyJIT}`
 - **小規模JITキャッシュ管理 (Simple JIT Architecture)**: メモリ制約の厳しい64KB RAM環境でJITキャッシュ効率を最大化するため、ホットスポットと判定された高頻度実行領域（WASMカード単位）のみを選択的にコンパイルし、フットプリントを極限まで小さく抑えつつ、キャッシュ溢れ（Eviction）の頻度を最小化する。 `{SimpleJITArchitecture}`
-- **2-bitビットマップによる最適化**: 2-bitのカード状態ビットマップを用いることで、超高速な状態遷移判定とメモリ節約を両立する。
+- **2-bitカードマーキング表による最適化**: 2-bitのカード状態表（`bit_view<2>`）を用いることで、超高速な状態遷移判定とメモリ節約を両立する。

@@ -426,6 +426,7 @@
   },
   "references": {
     "ADR_RendezvousChannel": [
+      "sec:architecture/master_physical_design.md#2.4 Pillar 4: 対称直接ハンドオフ・エンジン (Symmetric Direct Handoff Engine)",
       "sec:components/tier1_core/os_coos.md#3.1 データ構造",
       "sec:components/tier1_core/os_coos.md#6.2 直交表: CSP通信と状態遷移",
       "sec:components/tier1_core/os_coos.md#CSPチャネル（channel）",
@@ -441,6 +442,7 @@
       "sec:components/tier3_jit/jit_compiler.md#8. 設計判断 (ADR)"
     ],
     "ADR_TosCacheAsymmetry": [
+      "sec:architecture/master_physical_design.md#3. 物理レジスタ＆ABI規約 (Physical Register & ABI Map)",
       "sec:components/tier2_runtime/runtime_interpreter.md#4.1 アルゴリズム",
       "sec:components/tier2_runtime/runtime_interpreter.md#オプコードハンドラ / トレース実行（opcode_handler / exec_trace）",
       "sec:components/tier3_jit/jit_compiler.md#8. 設計判断 (ADR)",
@@ -490,6 +492,7 @@
       "sec:components/tier1_core/system_syscall.md#5.6. IPC (`0x40`-`0x4F`)"
     ],
     "CSP_Handoff": [
+      "sec:architecture/master_physical_design.md#2.4 Pillar 4: 対称直接ハンドオフ・エンジン (Symmetric Direct Handoff Engine)",
       "sec:components/tier1_core/os_coos.md#4.1 アルゴリズム",
       "sec:components/tier1_core/os_coos.md#4.2 状態遷移図 (SMD: COOS システムレベル)",
       "sec:components/tier1_core/os_coos.md#6.1 検証対象の不変条件",
@@ -526,6 +529,7 @@
       "sec:components/tier3_platform/platform_hal.md#6.3 安全性制約と方策"
     ],
     "Challenge_IpcQueueStarvation": [
+      "sec:architecture/master_physical_design.md#2.6 Pillar 6: 有界ゼロコピー・ランデブー・メールボックス (Bounded Zero-Copy Rendezvous Mailbox)",
       "sec:components/tier1_interface/ipc_router.md#4.1 アルゴリズム",
       "sec:components/tier1_interface/ipc_router.md#4.2 状態遷移図 (SysML SMD: IPC Router ルーティングフロー)",
       "sec:components/tier1_interface/ipc_router.md#4.2.1 所有権移譲状態機械 (Ownership Transfer State Machine)",
@@ -561,6 +565,8 @@
       "sec:components/tier3_platform/platform_memory.md#1. コンセプト"
     ],
     "ContextPointerRegister": [
+      "sec:architecture/master_physical_design.md#2.1 Pillar 1: 統合スタックフレーム・モデル (Unified Stack Frame Model)",
+      "sec:architecture/master_physical_design.md#3. 物理レジスタ＆ABI規約 (Physical Register & ABI Map)",
       "sec:components/tier1_core/system_config_details.md#2.1 メモリ管理",
       "sec:components/tier2_runtime/runtime_interpreter.md#4.1 アルゴリズム",
       "sec:components/tier2_runtime/runtime_interpreter.md#オプコードハンドラ / トレース実行（opcode_handler / exec_trace）",
@@ -623,6 +629,7 @@
       "sec:components/tier1_interface/ipc_router.md#レジストリエントリ（registry_entry）"
     ],
     "DirectContextSwitch": [
+      "sec:architecture/master_physical_design.md#2.4 Pillar 4: 対称直接ハンドオフ・エンジン (Symmetric Direct Handoff Engine)",
       "sec:components/tier1_core/os_coos.md#4.1 アルゴリズム",
       "sec:components/tier1_core/os_coos.md#4.2 状態遷移図 (SMD: COOS システムレベル)"
     ],
@@ -633,6 +640,7 @@
       "sec:components/tier1_core/os_coos.md#1. コンセプト"
     ],
     "EnvironmentPointer": [
+      "sec:architecture/master_physical_design.md#3. 物理レジスタ＆ABI規約 (Physical Register & ABI Map)",
       "sec:components/tier2_runtime/runtime_interpreter.md#1. コンセプト",
       "sec:components/tier2_runtime/runtime_interpreter.md#4.1 アルゴリズム",
       "sec:components/tier2_runtime/runtime_interpreter.md#オプコードハンドラ / トレース実行（opcode_handler / exec_trace）",
@@ -650,6 +658,7 @@
       "sec:components/tier1_interface/interface_wit.md#設計判断"
     ],
     "FastAddressCheck": [
+      "sec:architecture/master_physical_design.md#2.5 Pillar 5: 折りたたみXOR TLB ＆ 平坦ページ表 (Folding XOR TLB & FlatMap Page Table)",
       "sec:components/tier1_core/system_config_details.md#2.4 vSoC / vMMIO {VERIFY_FORMAL}",
       "sec:components/tier1_core/system_config_details.md#2.7 型定義・予約値",
       "sec:components/tier2_runtime/runtime_vmmio.md#1. コンセプト",
@@ -667,6 +676,7 @@
       "sec:architecture/architecture_overview.md#1. アーキテクチャコンセプト"
     ],
     "FlatViewNarrowing": [
+      "sec:architecture/master_physical_design.md#2.2 Pillar 2: 3段直接 JIT 検索パイプライン (3-Stage Direct JIT Lookup Pipeline)",
       "sec:components/tier1_core/system_config_details.md#物理アクセス許可範囲の定義",
       "sec:components/tier1_core/system_containers.md#1. コンセプト",
       "sec:components/tier1_core/system_containers.md#3.1 データ構造",
@@ -850,6 +860,7 @@
       "sec:architecture/architecture_overview.md#ヒープパーティション"
     ],
     "IPC_ZeroCopy": [
+      "sec:architecture/master_physical_design.md#2.6 Pillar 6: 有界ゼロコピー・ランデブー・メールボックス (Bounded Zero-Copy Rendezvous Mailbox)",
       "sec:components/tier1_core/system_config_details.md#2.1 メモリ管理",
       "sec:components/tier1_interface/ipc_router.md#4.1 アルゴリズム",
       "sec:components/tier1_interface/ipc_router.md#4.2 状態遷移図 (SysML SMD: IPC Router ルーティングフロー)",
@@ -905,6 +916,8 @@
       "sec:plans/backlog_list.md#Phase 1.3: Copy-and-Patch JIT Compiler (`jit_compiler`)"
     ],
     "JIT_MultiBuffer_Cache": [
+      "sec:architecture/master_physical_design.md#2.2 Pillar 2: 3段直接 JIT 検索パイプライン (3-Stage Direct JIT Lookup Pipeline)",
+      "sec:architecture/master_physical_design.md#2.3 Pillar 3: 3面世代交代回転コードキャッシュ (3-Bank Generational Rotating Code Cache)",
       "sec:components/tier1_core/system_config_details.md#2.4 vSoC / vMMIO {VERIFY_FORMAL}",
       "sec:components/tier1_core/system_config_details.md#2.7 型定義・予約値",
       "sec:components/tier2_runtime/runtime_vsoc.md#7.2 メモリ制約と方策",
@@ -920,6 +933,7 @@
       "sec:plans/backlog_list.md#オーナーレビュー観点 & チェックリスト"
     ],
     "JIT_OldestOnly_Promote": [
+      "sec:architecture/master_physical_design.md#2.3 Pillar 3: 3面世代交代回転コードキャッシュ (3-Bank Generational Rotating Code Cache)",
       "sec:architecture/resource_budget.md#1. メモリ予算 (RAM)",
       "sec:components/tier1_core/system_config_details.md#2.4 vSoC / vMMIO {VERIFY_FORMAL}",
       "sec:components/tier3_jit/jit_compiler.md#1. コンセプト",
@@ -929,6 +943,7 @@
       "sec:plans/backlog_list.md#Phase 1.3: Copy-and-Patch JIT Compiler (`jit_compiler`)"
     ],
     "JIT_RegisterMapping": [
+      "sec:architecture/master_physical_design.md#3. 物理レジスタ＆ABI規約 (Physical Register & ABI Map)",
       "sec:components/tier2_runtime/runtime_interpreter.md#オプコードハンドラ / トレース実行（opcode_handler / exec_trace）",
       "sec:components/tier3_jit/concepts/README.md#Tier 3 JIT — コンセプトコード",
       "sec:components/tier3_jit/jit_compiler.md#7.1 性能制約と方策",
@@ -990,6 +1005,7 @@
       "sec:components/tier3_platform/platform_memory.md#トランザクションバッチ化によるレイテンシ両立"
     ],
     "LowLatencyLookup": [
+      "sec:architecture/master_physical_design.md#2.5 Pillar 5: 折りたたみXOR TLB ＆ 平坦ページ表 (Folding XOR TLB & FlatMap Page Table)",
       "sec:components/tier1_core/system_containers.md#4.1 アルゴリズム",
       "sec:components/tier1_core/system_containers.md#6.1 性能制約と方策",
       "sec:components/tier1_core/system_containers.md#区間内探索（find）",
@@ -1011,6 +1027,8 @@
       "sec:components/tier1_core/os_scheduler.md#実行（run）"
     ],
     "META_3TierSeparation": [
+      "sec:architecture/master_physical_design.md#1. 概要と基本思想 (Overview & Philosophy)",
+      "sec:architecture/master_physical_design.md#4. ドキュメント体系上の位置づけ (System Integration)",
       "sec:components/tier1_core/os_coos.md#2. アーキテクチャ分類",
       "sec:components/tier1_core/os_coos.md#2.1 構成要素",
       "sec:components/tier1_core/os_scheduler.md#2. アーキテクチャ分類",
@@ -1036,6 +1054,7 @@
       "sec:plans/backlog_list.md#Phase 2: Integration（周辺コンポーネント統合 / 将来予定）"
     ],
     "META_AI_Native_Dev": [
+      "sec:architecture/master_physical_design.md#1. 概要と基本思想 (Overview & Philosophy)",
       "sec:components/tier3_jit/jit_compiler.md#Copy-and-Patch コンパイル手順",
       "sec:plans/backlog_list.md#Phase 1: vSoC First 実装（約3ヶ月） 【GO 判定後に着手】",
       "sec:plans/roadmap_phase.md#Phase 1: vSoC First（GO後に約3ヶ月）"
@@ -1058,6 +1077,7 @@
       "sec:plans/backlog_list.md#Phase 1.1: WASM 32-bit Binary Loader (`runtime_loader`)"
     ],
     "META_BinarySearch": [
+      "sec:architecture/master_physical_design.md#2.2 Pillar 2: 3段直接 JIT 検索パイプライン (3-Stage Direct JIT Lookup Pipeline)",
       "sec:components/tier1_core/system_containers.md#1. コンセプト",
       "sec:components/tier1_core/system_containers.md#3.1 データ構造",
       "sec:components/tier1_core/system_containers.md#3.2 内部ブロック図",
@@ -1136,6 +1156,7 @@
       "sec:components/tier3_platform/platform_memory.md#9.1 Cortex-M33 PMSAv8 MPU リージョン配分"
     ],
     "META_FlatMapIndexed": [
+      "sec:architecture/master_physical_design.md#2.2 Pillar 2: 3段直接 JIT 検索パイプライン (3-Stage Direct JIT Lookup Pipeline)",
       "sec:components/tier1_core/system_config_details.md#2.4 vSoC / vMMIO {VERIFY_FORMAL}",
       "sec:components/tier1_core/system_containers.md#1. コンセプト",
       "sec:components/tier1_core/system_containers.md#3.1 データ構造",
@@ -1188,6 +1209,7 @@
       "sec:plans/backlog_list.md#オーナーレビュー観点 & チェックリスト"
     ],
     "META_RestrictedPhysicalAccess": [
+      "sec:architecture/master_physical_design.md#2.5 Pillar 5: 折りたたみXOR TLB ＆ 平坦ページ表 (Folding XOR TLB & FlatMap Page Table)",
       "sec:components/tier1_core/system_config_details.md#2.4 vSoC / vMMIO {VERIFY_FORMAL}",
       "sec:components/tier1_core/system_config_details.md#2.7 型定義・予約値",
       "sec:components/tier1_core/system_config_details.md#物理アクセス許可範囲の定義",
@@ -1239,6 +1261,7 @@
       "sec:components/tier3_jit/jit_assembler_constexpr.md#6.2 安全性制約"
     ],
     "META_ZeroCostAbstraction": [
+      "sec:architecture/master_physical_design.md#1. 概要と基本思想 (Overview & Philosophy)",
       "sec:components/tier1_core/system_containers.md#1. コンセプト",
       "sec:components/tier1_core/system_containers.md#6.3 安全性制約と方策",
       "sec:components/tier1_core/system_containers.md#ビット詰めビュー（bit_view）",
@@ -1252,6 +1275,7 @@
       "sec:components/tier3_jit/jit_assembler_constexpr.md#`fireball::arm::add_imm`"
     ],
     "MemoryBoundaryCheck": [
+      "sec:architecture/master_physical_design.md#2.1 Pillar 1: 統合スタックフレーム・モデル (Unified Stack Frame Model)",
       "sec:components/tier2_runtime/debug/debug_manager.md#6.3 安全性制約と方策",
       "sec:components/tier2_runtime/runtime_interpreter.md#6.3 安全性制約と方策",
       "sec:components/tier2_runtime/runtime_interpreter.md#コールフレーム（call_frame @ 統合スタックインライン）",
@@ -1390,6 +1414,8 @@
       "sec:architecture/architecture_overview.md#1. アーキテクチャコンセプト"
     ],
     "SimpleJITArchitecture": [
+      "sec:architecture/master_physical_design.md#2.2 Pillar 2: 3段直接 JIT 検索パイプライン (3-Stage Direct JIT Lookup Pipeline)",
+      "sec:architecture/master_physical_design.md#2.3 Pillar 3: 3面世代交代回転コードキャッシュ (3-Bank Generational Rotating Code Cache)",
       "sec:components/tier2_runtime/runtime_interpreter.md#4.1 アルゴリズム",
       "sec:components/tier2_runtime/runtime_interpreter.md#4.2 状態遷移図",
       "sec:components/tier2_runtime/runtime_interpreter.md#4.3 内部シーケンス",
@@ -1428,6 +1454,7 @@
       "sec:components/tier3_platform/platform_hal.md#4.3 内部シーケンス"
     ],
     "ThreadedInterpreter": [
+      "sec:architecture/master_physical_design.md#2.1 Pillar 1: 統合スタックフレーム・モデル (Unified Stack Frame Model)",
       "sec:components/tier2_runtime/runtime_interpreter.md#1. コンセプト",
       "sec:components/tier2_runtime/runtime_interpreter.md#4.1 アルゴリズム",
       "sec:components/tier2_runtime/runtime_interpreter.md#4.2 状態遷移図",
@@ -1447,6 +1474,7 @@
       "sec:components/tier1_core/system_syscall.md#トラップ高速パスとレジスタ直接マッピング"
     ],
     "TypeSafeMessaging": [
+      "sec:architecture/master_physical_design.md#2.6 Pillar 6: 有界ゼロコピー・ランデブー・メールボックス (Bounded Zero-Copy Rendezvous Mailbox)",
       "sec:components/tier1_interface/ipc_router.md#5.2 URI/IPCインターフェイス",
       "sec:components/tier1_interface/ipc_router.md#IPCメッセージ（message）",
       "sec:components/tier1_interface/ipc_router.md#レジストリエントリ（registry_entry）",
@@ -1576,7 +1604,7 @@
     "sec:architecture/concept_harness.md#C++実装構造": "7cef41ea0966c80ce26b6d858868fb773529dda551cccb3ea97d42d5dc1db03d",
     "sec:architecture/concept_harness.md#Conceptベースハーネス アーキテクチャ設計書": "4b1397b742f44df166f06f244dadef699153f5fc4f907238d7e1ce9ccc2b742b",
     "sec:architecture/concept_harness.md#特性比較": "cb1bd9f794e1018c0059a880888606688825ec815c23f4e9e6db7ac3a77c096f",
-    "sec:architecture/document_structure.md#1. 設計複雑度に基づく Tier（分解階層）の定義": "958ca61ad85ef1c3fe0521dae4a7e0448f8b8a95c063215e91555500e12b8300",
+    "sec:architecture/document_structure.md#1. 設計複雑度に基づく Tier（分解階層）の定義": "e58b0a4fc89d86a39254bdd0b7be69535dbff5f7c5bb57500711084c820d56a7",
     "sec:architecture/document_structure.md#1.1 各 Tier の定義と配置ディレクトリ": "a3227bd8602a043edb854579f83834726fd158c8aa34e31848da55b1e149e10f",
     "sec:architecture/document_structure.md#2. 階層間デコンポジションと依存性ルール": "4e144b6b975e75ecb82725d4f4ba1f81509ac78be3b484745e25e71d51b208d6",
     "sec:architecture/document_structure.md#2.1 デコンポジション基準（いつ下位 Tier へ分解するか）": "739e91a1857993208a19ad7216e5afaef7b5c94d43516ef93f4fa2c9a7046dc4",
@@ -1587,6 +1615,17 @@
     "sec:architecture/document_structure.md#4.2 メタキーワード（共通非機能要件・設計方針）の定義": "79eed376a4becd15bfbb780eaa776d1766c2b35fef2c0b76baacce32ac5a3be5",
     "sec:architecture/document_structure.md#4.3 グローバルキーワード（広域仕様・横断ポリシー）の定義": "ab54652c190dd6c218e2a0d272f7137b859ef74a112f864faa53258a25b92c50",
     "sec:architecture/document_structure.md#Fireball ドキュメント体系定義書 (Document Structure & Metadata)": "65f04ec24037b24e5ff2dc29bf26fe5634f6d29caaaa5290b3985444f0cff142",
+    "sec:architecture/master_physical_design.md#1. 概要と基本思想 (Overview & Philosophy)": "fb2480903bd5aa5df5678de9fb6cde3daad357484c3377a88933e28a3875c223",
+    "sec:architecture/master_physical_design.md#2. 6大物理コアメカニズム (The 6 Physical Pillars)": "15f3882664350411262c35c2df840555d62e3ce3920f454687afeaf60e03ac05",
+    "sec:architecture/master_physical_design.md#2.1 Pillar 1: 統合スタックフレーム・モデル (Unified Stack Frame Model)": "7385e5ed8b521a3139d7ea79ac10ea0a68512035c5d8a61354600cfc70989adf",
+    "sec:architecture/master_physical_design.md#2.2 Pillar 2: 3段直接 JIT 検索パイプライン (3-Stage Direct JIT Lookup Pipeline)": "853e2f817da7d97e9df6eaf99411ac5d19f7d519b8bdbbdb417cc5ce5d71c4ff",
+    "sec:architecture/master_physical_design.md#2.3 Pillar 3: 3面世代交代回転コードキャッシュ (3-Bank Generational Rotating Code Cache)": "3974b8a0c39f24d23c06eefda63c0c1e3a792d85d87cf00986eff4e089b819b2",
+    "sec:architecture/master_physical_design.md#2.4 Pillar 4: 対称直接ハンドオフ・エンジン (Symmetric Direct Handoff Engine)": "e2134aa06988db1b5cad7b1c2da3a85f67cd7276db01300e84dd18caf236f5bf",
+    "sec:architecture/master_physical_design.md#2.5 Pillar 5: 折りたたみXOR TLB ＆ 平坦ページ表 (Folding XOR TLB & FlatMap Page Table)": "b6ac85d7a1504534a5d54cbf0282b987a1c35591c119eb72d5d4a5cf7b1e06d9",
+    "sec:architecture/master_physical_design.md#2.6 Pillar 6: 有界ゼロコピー・ランデブー・メールボックス (Bounded Zero-Copy Rendezvous Mailbox)": "93cf0d8ecb1088d9e4f253a4843363b30cd5116b1c658c57acc6a24770381f99",
+    "sec:architecture/master_physical_design.md#3. 物理レジスタ＆ABI規約 (Physical Register & ABI Map)": "7c3ae2826fb73f24ea65573ada6c81c21a9222da5d65979659fa7aa33dc37260",
+    "sec:architecture/master_physical_design.md#4. ドキュメント体系上の位置づけ (System Integration)": "460f2ccbfb21c562d7657da3bf3b7cd7ed964948ec40f1856d33f0c968bb453f",
+    "sec:architecture/master_physical_design.md#Fireball マスター物理設計仕様書 (Master Physical Design)": "ce2e602ce779a051fb1949fe5473c589030444796df383034349ba3ee2419060",
     "sec:architecture/resource_budget.md#0. 予算ターゲットの定義": "06ccc4c8d4a06fd13eb8206347305fa7e8aaf8223594d038098dbffe30e7aeab",
     "sec:architecture/resource_budget.md#1. メモリ予算 (RAM)": "b54bde3bf040cfe4b0536fdd5b03983fb533adb48f5c8cc1117cf865d41bb42d",
     "sec:architecture/resource_budget.md#2. ストレージ予算 (ROM/Flash)": "eb355eb461d2c49627d764eca75ad5f7c17112b0e4bbdd4e8a3920393b527301",

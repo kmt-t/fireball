@@ -1,15 +1,16 @@
 {
-  "generated_at": "2026-08-25T00:41:00.420970+00:00",
+  "generated_at": "2026-08-25T00:57:06.373410+00:00",
   "backend": "heuristic",
-  "total_evaluated": 707,
+  "total_evaluated": 718,
   "formal_candidates_count": 31,
   "llm_candidates_count": 5,
-  "sections_scanned": 707,
+  "sections_scanned": 718,
   "max_sections": 0,
   "doc_hashes": {
     "architecture/architecture_overview.md": "019aea4f717286caa9ef81aaccc453e67a28a358300d5db20d908a23281e5e94",
     "architecture/concept_harness.md": "2160b8e29a617ecefbf46165542544705de7ebb0f6d5b7df4bbeb1c084f9cd3c",
-    "architecture/document_structure.md": "8882e25d3b07bd6fdabf69739827f3dfb1c3c5d992fce688407d7d13e1727fee",
+    "architecture/document_structure.md": "533b951c9adfc5bf8b23931b7bd6497f9cc5234b9a4d91bb624391b4b850b324",
+    "architecture/master_physical_design.md": "f74f4f606804396d6237909d5f9dddfb4ade44b34e18df8fd72de318a5cb1d27",
     "architecture/resource_budget.md": "ac4928f5ad7fcc1a360b6539ec3d44d072a67c6b7d4aa7d76bdac014971def00",
     "components/tier1_core/os_coos.md": "7f2041f9ed21e99a75448b8112629ed0a4e95605e70425807cdb8a431db531bf",
     "components/tier1_core/os_scheduler.md": "bb8d0e129d9ce8c153fb4d7f0297d095eb2f1bdcff24de9fa345d39e67013a83",
@@ -850,6 +851,19 @@
       "summary": "Independent heuristic evaluation for '4.1 アルゴリズム'."
     },
     {
+      "section_id": "sec:architecture/master_physical_design.md#2.2 Pillar 2: 3段直接 JIT 検索パイプライン (3-Stage Direct JIT Lookup Pipeline)",
+      "file_path": "architecture/master_physical_design.md",
+      "heading": "2.2 Pillar 2: 3段直接 JIT 検索パイプライン (3-Stage Direct JIT Lookup Pipeline)",
+      "tier": "meta",
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '2.2 Pillar 2: 3段直接 JIT 検索パイプライン (3-Stage Direct JIT Lookup Pipeline)'."
+    },
+    {
       "section_id": "sec:components/tier1_interface/ipc_router.md#4.2.1 所有権移譲状態機械 (Ownership Transfer State Machine)",
       "file_path": "components/tier1_interface/ipc_router.md",
       "heading": "4.2.1 所有権移譲状態機械 (Ownership Transfer State Machine)",
@@ -891,6 +905,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for 'Phase 1.3: Copy-and-Patch JIT Compiler (`jit_compiler`)'."
+    },
+    {
+      "section_id": "sec:architecture/master_physical_design.md#3. 物理レジスタ＆ABI規約 (Physical Register & ABI Map)",
+      "file_path": "architecture/master_physical_design.md",
+      "heading": "3. 物理レジスタ＆ABI規約 (Physical Register & ABI Map)",
+      "tier": "meta",
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '3. 物理レジスタ＆ABI規約 (Physical Register & ABI Map)'."
     },
     {
       "section_id": "sec:requires/requirement_list.md#3.1.4 デバッグ・運用",
@@ -1103,6 +1130,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '4.1 アルゴリズム'."
+    },
+    {
+      "section_id": "sec:architecture/master_physical_design.md#1. 概要と基本思想 (Overview & Philosophy)",
+      "file_path": "architecture/master_physical_design.md",
+      "heading": "1. 概要と基本思想 (Overview & Philosophy)",
+      "tier": "meta",
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '1. 概要と基本思想 (Overview & Philosophy)'."
     },
     {
       "section_id": "sec:components/tier1_core/os_scheduler.md#4.1 アルゴリズム",
@@ -1447,6 +1487,45 @@
       "summary": "Independent heuristic evaluation for 'WASM実行およびJIT遷移シーケンス'."
     },
     {
+      "section_id": "sec:architecture/master_physical_design.md#2.3 Pillar 3: 3面世代交代回転コードキャッシュ (3-Bank Generational Rotating Code Cache)",
+      "file_path": "architecture/master_physical_design.md",
+      "heading": "2.3 Pillar 3: 3面世代交代回転コードキャッシュ (3-Bank Generational Rotating Code Cache)",
+      "tier": "meta",
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '2.3 Pillar 3: 3面世代交代回転コードキャッシュ (3-Bank Generational Rotating Code Cache)'."
+    },
+    {
+      "section_id": "sec:architecture/master_physical_design.md#2.4 Pillar 4: 対称直接ハンドオフ・エンジン (Symmetric Direct Handoff Engine)",
+      "file_path": "architecture/master_physical_design.md",
+      "heading": "2.4 Pillar 4: 対称直接ハンドオフ・エンジン (Symmetric Direct Handoff Engine)",
+      "tier": "meta",
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '2.4 Pillar 4: 対称直接ハンドオフ・エンジン (Symmetric Direct Handoff Engine)'."
+    },
+    {
+      "section_id": "sec:architecture/master_physical_design.md#2.5 Pillar 5: 折りたたみXOR TLB ＆ 平坦ページ表 (Folding XOR TLB & FlatMap Page Table)",
+      "file_path": "architecture/master_physical_design.md",
+      "heading": "2.5 Pillar 5: 折りたたみXOR TLB ＆ 平坦ページ表 (Folding XOR TLB & FlatMap Page Table)",
+      "tier": "meta",
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '2.5 Pillar 5: 折りたたみXOR TLB ＆ 平坦ページ表 (Folding XOR TLB & FlatMap Page Table)'."
+    },
+    {
       "section_id": "sec:components/tier1_core/system_config_details.md#物理アクセス許可範囲の定義",
       "file_path": "components/tier1_core/system_config_details.md",
       "heading": "物理アクセス許可範囲の定義",
@@ -1605,6 +1684,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '4.3 内部シーケンス'."
+    },
+    {
+      "section_id": "sec:architecture/master_physical_design.md#2.1 Pillar 1: 統合スタックフレーム・モデル (Unified Stack Frame Model)",
+      "file_path": "architecture/master_physical_design.md",
+      "heading": "2.1 Pillar 1: 統合スタックフレーム・モデル (Unified Stack Frame Model)",
+      "tier": "meta",
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '2.1 Pillar 1: 統合スタックフレーム・モデル (Unified Stack Frame Model)'."
     },
     {
       "section_id": "sec:components/tier1_core/os_scheduler.md#タスク生成（spawn_task - ネイティブタスク用）",
@@ -1791,6 +1883,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for 'Phase 0: Foundation（約6ヶ月）'."
+    },
+    {
+      "section_id": "sec:architecture/master_physical_design.md#2.6 Pillar 6: 有界ゼロコピー・ランデブー・メールボックス (Bounded Zero-Copy Rendezvous Mailbox)",
+      "file_path": "architecture/master_physical_design.md",
+      "heading": "2.6 Pillar 6: 有界ゼロコピー・ランデブー・メールボックス (Bounded Zero-Copy Rendezvous Mailbox)",
+      "tier": "meta",
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '2.6 Pillar 6: 有界ゼロコピー・ランデブー・メールボックス (Bounded Zero-Copy Rendezvous Mailbox)'."
     },
     {
       "section_id": "sec:components/tier1_core/os_coos.md#2.1 構成要素",
@@ -2380,6 +2485,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for 'Phase 1: vSoC First 実装（約3ヶ月） 【GO 判定後に着手】'."
+    },
+    {
+      "section_id": "sec:architecture/master_physical_design.md#2. 6大物理コアメカニズム (The 6 Physical Pillars)",
+      "file_path": "architecture/master_physical_design.md",
+      "heading": "2. 6大物理コアメカニズム (The 6 Physical Pillars)",
+      "tier": "meta",
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '2. 6大物理コアメカニズム (The 6 Physical Pillars)'."
     },
     {
       "section_id": "sec:components/tier1_core/os_coos.md#協調型OS COOS コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}",
@@ -5233,6 +5351,19 @@
       "summary": "Independent heuristic evaluation for 'Fireball ドキュメント体系定義書 (Document Structure & Metadata)'."
     },
     {
+      "section_id": "sec:architecture/master_physical_design.md#4. ドキュメント体系上の位置づけ (System Integration)",
+      "file_path": "architecture/master_physical_design.md",
+      "heading": "4. ドキュメント体系上の位置づけ (System Integration)",
+      "tier": "meta",
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '4. ドキュメント体系上の位置づけ (System Integration)'."
+    },
+    {
       "section_id": "sec:components/tier1_core/system_syscall.md#4.1. 引数のパッキング",
       "file_path": "components/tier1_core/system_syscall.md",
       "heading": "4.1. 引数のパッキング",
@@ -7058,6 +7189,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '4. 特殊キーワードの分類と検証仕様'."
+    },
+    {
+      "section_id": "sec:architecture/master_physical_design.md#Fireball マスター物理設計仕様書 (Master Physical Design)",
+      "file_path": "architecture/master_physical_design.md",
+      "heading": "Fireball マスター物理設計仕様書 (Master Physical Design)",
+      "tier": "meta",
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for 'Fireball マスター物理設計仕様書 (Master Physical Design)'."
     },
     {
       "section_id": "sec:architecture/resource_budget.md#4. リソース制約モデル (SysML Parametric Diagram)",

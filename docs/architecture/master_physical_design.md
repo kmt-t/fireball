@@ -168,14 +168,15 @@ Fireball は外部の AAPCS 準拠 C/C++ 関数（WASI ホストコール、vMMI
 
 `R1`（`execution_context`）および `R2`（`vsoc_runtime`）が指す構造体のフィールドは、複数のドキュメント（インタープリタ、JIT ステンシルカタログ）から `[R1, #offset]` / `[r2, #offset]` の形で直接参照される。これらの数値がドキュメントごとに独立に決め打ちされると、シフト命令のビット配置バグと同種の——一方だけが更新されて他方が追従しない——サイレントなドリフトが発生する。本節をこれらオフセットの単一正本とする。フィールドの型・名称の正本は各コンポーネントの `wit/*.wit` を参照。
 
-#### `execution_context`（`R1: stack_bot` 起点、計12バイト）
+#### `execution_context`（`R1: stack_bot` 起点、計16バイト）
 正本: [`runtime_interpreter.md` 3.3](../components/tier2_runtime/runtime_interpreter.md) / [`execution_context.wit`](../components/tier2_runtime/wit/execution_context.wit)
 
-| オフセット | フィールド | 型 |
-| :--- | :--- | :--- |
-| `+0x00` | `sp_offset` | u32 |
-| `+0x04` | `frame_offset` | u32 |
-| `+0x08` | `handler_table` | u32（ポインタ） |
+| オフセット | フィールド | 型 | 役割 |
+| :--- | :--- | :--- | :--- |
+| `+0x00` | `sp_offset` | u32 | オペランドスタック頂点オフセット |
+| `+0x04` | `frame_offset` | u32 | アクティブな call-frame 開始オフセット |
+| `+0x08` | `sp_boundary` | u32 | スタックオーバーフロー検知上限オフセット |
+| `+0x0C` | `handler_table` | u32 | 通常/デバッグ用ハンドラテーブルポインタ |
 
 #### `call_frame`（統合スタック上、各フレーム先頭からの相対オフセット、計20バイト）
 正本: [`runtime_interpreter.md` 3.3](../components/tier2_runtime/runtime_interpreter.md) / [`execution_context.wit`](../components/tier2_runtime/wit/execution_context.wit)
@@ -208,9 +209,6 @@ Fireball は外部の AAPCS 準拠 C/C++ 関数（WASI ホストコール、vMMI
 | `+0x00` | `mem_base` | u32（アドレス値） |
 | `+0x04` | `mem_size` | u32 |
 | `+0x08` | `globals_base` | u32（アドレス値） |
-
-> [!NOTE]
-> `global_get_d0`/`global_set_d1` ステンシル（`docs/components/tier3_jit/concepts/jit_copy_patch_concept.py`）は現状 `[r2, #0x00]` を直接1命令でロード/ストアしているが、この表の定義では `+0x00` は `mem_base` であり `globals_base`（`+0x08`）ではない。正しくは `globals_base` を経由した2段参照（`LDR r3, [r2, #0x08]` の後 `LDR/STR r4, [r3, #global_index*4]`）が必要——この不一致は未修正で残っている。
 
 ---
 

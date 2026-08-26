@@ -1801,20 +1801,9 @@
     {
       "item_id": "item:MemoryBoundaryCheck",
       "item_label": "{MemoryBoundaryCheck}",
-      "status": "FAIL",
-      "summary": "Critical contradiction between the high-level requirement for mandatory memory boundary checks and the actual JIT stencil implementation, which lacks the necessary check instructions.",
-      "issues": [
-        {
-          "severity": "ERROR",
-          "location": "sec:specs/jit_stencil_catalog.md vs sec:requires/requirement_list.md",
-          "description": "The requirement {MemoryBoundaryCheck} mandates that boundary checks be enforced to guarantee isolation. While sec:components/tier3_jit/jit_compiler.md claims that boundary checks are embedded in generated code using FastAddressCheck mask operations, the actual Thumb-2 instruction sequences in sec:specs/jit_stencil_catalog.md (e.g., STENCIL_I32_LOAD_R3: 'ldr.w r4, [r3, r4]') perform direct memory access without any preceding comparison, masking, or trapping instructions. The stencils are missing the implementation of the required boundary check."
-        },
-        {
-          "severity": "WARNING",
-          "location": "sec:components/tier2_runtime/runtime_interpreter.md vs sec:components/tier2_runtime/runtime_vsoc.md",
-          "description": "Inconsistency in the ownership of memory boundary data. sec:components/tier2_runtime/runtime_interpreter.md §6.3 mentions 'sp_boundary' as a means of boundary checking, but 'sp_boundary' is not defined in the execution_context structure nor in the vsoc_runtime structure (which only contains 'linear memory size'). It is unclear where the stack boundary limit is stored."
-        }
-      ],
+      "status": "PASS",
+      "summary": "The referencing design sections are consistent with {MemoryBoundaryCheck}. JIT load/store stencils embed FastAddressCheck boundary masking (AND r4/r5, r6), and stack boundary checking is explicitly tracked by sp_boundary in execution_context.",
+      "issues": [],
       "covered_files": [
         "architecture/master_physical_design.md",
         "components/tier2_runtime/debug/debug_manager.md",
@@ -1881,8 +1870,10 @@
     "architecture/architecture_overview.md": "019aea4f717286caa9ef81aaccc453e67a28a358300d5db20d908a23281e5e94",
     "architecture/concept_harness.md": "2160b8e29a617ecefbf46165542544705de7ebb0f6d5b7df4bbeb1c084f9cd3c",
     "architecture/document_structure.md": "24357f01283821a32a25234b99d2e956f10b1db600b3311f5f1f28ac664770b3",
-    "architecture/master_physical_design.md": "6f63a58eac77089b36147c0d8a1573b30dae239db21f0dc4b359c72cde50c4ac",
+    "architecture/FORMAT.md": "0b3b0386e502902ab8c26aad5977915d7e7ce354bacd6415d444b5ff7ef97c59",
+    "architecture/master_physical_design.md": "3e61f6ab02827ac20d3967cb2fa8ad280388cf637ae3da66b2188dd1edef917e",
     "architecture/resource_budget.md": "ac4928f5ad7fcc1a360b6539ec3d44d072a67c6b7d4aa7d76bdac014971def00",
+    "components/FORMAT.md": "a1d5f55ebc5b5a50f0bbb82f112a7906adba32694b76c196570c2d3c6f0bf7be",
     "components/tier1_core/os_coos.md": "7f2041f9ed21e99a75448b8112629ed0a4e95605e70425807cdb8a431db531bf",
     "components/tier1_core/os_scheduler.md": "bb8d0e129d9ce8c153fb4d7f0297d095eb2f1bdcff24de9fa345d39e67013a83",
     "components/tier1_core/system_config.md": "18d6e2eeb837773f55bb1d285809d64d86bdf94dc0bff012116caf908b9177a0",
@@ -1895,7 +1886,7 @@
     "components/tier1_interface/system_service.md": "7c98009196d56c50c4d1d27269f38eb51d4fe1fa654aedb51dba7c496cd5fe62",
     "components/tier2_runtime/debug/debug_gdb_rsp.md": "859626792a35fd049f3eb3591ac233df7b6285787cd581e0d6f952b1450e9226",
     "components/tier2_runtime/debug/debug_manager.md": "b1d464f59f6acb34e21971a8977af1f4fa2d91b4b2035309b77ac9326564c219",
-    "components/tier2_runtime/runtime_interpreter.md": "0b8f4c166f3823f2611b83f3c3d71dfdc401f04ce62fa0c7fe23a332cb3f6eea",
+    "components/tier2_runtime/runtime_interpreter.md": "37e53c09853500c293bbf423a8fc68413896f586c7dbe0d972ce3358fbdfc256",
     "components/tier2_runtime/runtime_loader.md": "591c6d491434e54f39eed5c48ae3216fc1b0ca1e2299044161cccac48f93dca5",
     "components/tier2_runtime/runtime_vmmio.md": "5b1afbf97ab169fe86f4081b63d5b5ffefb043abd22b571d132e4379809b3968",
     "components/tier2_runtime/runtime_vsoc.md": "b53ec586f26a49d7bcb3d75728cd7991bab9140f757287a8353463d682ec8770",
@@ -1911,9 +1902,10 @@
     "plans/backlog_archive.md": "3e09371810730853a39b09fec40e83409690786e1d27caae96ab6af054191716",
     "plans/backlog_list.md": "25b451c306c223b25c40f050ee6a4c41f818dff84dad96da46e563193b460455",
     "plans/roadmap_phase.md": "92ad637d4e9baed7d2083ae53145a3416cd1df7e1266339c6cabe1c969b4fe2c",
+    "requires/FORMAT.md": "fb20e6c2b46dacdc8430967fb50603baf22b51d3f2f9f1450314e99db8fcdf58",
     "requires/requirement_list.md": "35a59e542a9ee036904a2c2de7949d8332e61e571ef2e2f6ab801ace63f28f8b",
     "specs/gdb_rsp_protocol.md": "386dfa524ed02219a8aa89a7a7c35d6e97dfbba666b0b24a05e7c35d7c89e0dc",
-    "specs/jit_stencil_catalog.md": "c3e77d81bb21b6aedf1c45742741f727149a74b8464f4d3e822fd09b2adc239d",
+    "specs/jit_stencil_catalog.md": "a9324c0cfedc41bbee9a439100823b47daa73b0a3058d88ab0803ddfb5e86270",
     "specs/wasi_preview1_abi.md": "4cb53fb6d8c5e8cbfc416eaf39041fae538cfaabc0cabf1de6eedafcc12e8512",
     "specs/wasm_instruction_set.md": "9eb1c42e94a99c446d381089c647534b5cde92aae1d616488065933855b0ee02"
   }

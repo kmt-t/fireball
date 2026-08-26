@@ -180,19 +180,21 @@
   ```
 - **バイナリ列 (2 Bytes)**: `0C 60`
 
-#### `STENCIL_GLOBAL_GET_D0` (`0x23` Env経由ロード)
+#### `STENCIL_GLOBAL_GET_D0` (`0x23` Env globals_base 経由ロード)
 - **Thumb-2 命令列**:
   ```asm
-  ldr.w r4, [r2, #0x00]   ; [Offset 0x00] RELOC_IMM8_OFFSET (globals_offset)
+  ldr.w r3, [r2, #0x08]   ; [Offset 0x00] env->globals_base ロード (vsoc_runtime +0x08)
+  ldr.w r4, [r3, #0x00]   ; [Offset 0x04] RELOC_IMM8_OFFSET (global[N] ロード)
   ```
-- **バイナリ列 (4 Bytes)**: `D2 F8 00 40`
+- **バイナリ列 (8 Bytes)**: `D2 F8 08 30 D3 F8 00 40`
 
-#### `STENCIL_GLOBAL_SET_D1` (`0x24` Env経由ストア)
+#### `STENCIL_GLOBAL_SET_D1` (`0x24` Env globals_base 経由ストア)
 - **Thumb-2 命令列**:
   ```asm
-  str.w r4, [r2, #0x00]   ; [Offset 0x00] RELOC_IMM8_OFFSET
+  ldr.w r3, [r2, #0x08]   ; [Offset 0x00] env->globals_base ロード (vsoc_runtime +0x08)
+  str.w r4, [r3, #0x00]   ; [Offset 0x04] RELOC_IMM8_OFFSET (global[N] ストア)
   ```
-- **バイナリ列 (4 Bytes)**: `C2 F8 00 40`
+- **バイナリ列 (8 Bytes)**: `D2 F8 08 30 C3 F8 00 40`
 
 ---
 
@@ -211,11 +213,11 @@
 | `i32.and` (`0x71`) | `STENCIL_I32_AND_D2` | R4=TOS, R5=NOS | R4=TOS | `ands r4, r5, r4` | `2C 40` |
 | `i32.or` (`0x72`) | `STENCIL_I32_OR_D2` | R4=TOS, R5=NOS | R4=TOS | `orrs r4, r5, r4` | `2C 43` |
 | `i32.xor` (`0x73`) | `STENCIL_I32_XOR_D2` | R4=TOS, R5=NOS | R4=TOS | `eors r4, r5, r4` | `6C 40` |
-| `i32.shl` (`0x74`) | `STENCIL_I32_SHL_D2` | R4=TOS, R5=NOS | R4=TOS | `lsls r4, r5, r4` | `2C 40` |
-| `i32.shr_s` (`0x75`)| `STENCIL_I32_SHR_S_D2` | R4=TOS, R5=NOS | R4=TOS | `asrs r4, r5, r4` | `2C 41` |
-| `i32.shr_u` (`0x76`)| `STENCIL_I32_SHR_U_D2` | R4=TOS, R5=NOS | R4=TOS | `lsrs r4, r5, r4` | `2C 41` |
-| `i32.rotl` (`0x77`) | `STENCIL_I32_ROTL_D2` | R4=TOS, R5=NOS | R4=TOS | `rsb r3, r4, #32; ror r4, r5, r3` | `C4 F1 20 03 35 FA 03 F4` |
-| `i32.rotr` (`0x78`) | `STENCIL_I32_ROTR_D2` | R4=TOS, R5=NOS | R4=TOS | `rors r4, r5, r4` | `2C 41` |
+| `i32.shl` (`0x74`) | `STENCIL_I32_SHL_D2` | R4=TOS, R5=NOS | R4=TOS | `lsl.w r4, r5, r4` | `05 FA 04 F4` |
+| `i32.shr_s` (`0x75`)| `STENCIL_I32_SHR_S_D2` | R4=TOS, R5=NOS | R4=TOS | `asr.w r4, r5, r4` | `25 FA 04 F4` |
+| `i32.shr_u` (`0x76`)| `STENCIL_I32_SHR_U_D2` | R4=TOS, R5=NOS | R4=TOS | `lsr.w r4, r5, r4` | `15 FA 04 F4` |
+| `i32.rotl` (`0x77`) | `STENCIL_I32_ROTL_D2` | R4=TOS, R5=NOS | R4=TOS | `rsb r3, r4, #32; ror.w r4, r5, r3` | `C4 F1 20 03 35 FA 03 F4` |
+| `i32.rotr` (`0x78`) | `STENCIL_I32_ROTR_D2` | R4=TOS, R5=NOS | R4=TOS | `ror.w r4, r5, r4` | `35 FA 04 F4` |
 | `i32.clz` (`0x67`) | `STENCIL_I32_CLZ_D1` | R4=TOS | R4=TOS | `clz r4, r4` | `B4 FA 84 F4` |
 | `i32.ctz` (`0x68`) | `STENCIL_I32_CTZ_D1` | R4=TOS | R4=TOS | `rbit r4, r4; clz r4, r4` | `94 FA A4 F4 B4 FA 84 F4` |
 
@@ -226,7 +228,7 @@
 
 | WASM 命令 | Stencil 名 | 入力状態 | 出力状態 | Thumb-2 命令列 | バイナリ列 (Hex) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `i32.eqz` (`0x45`) | `STENCIL_I32_EQZ_D1` | R4=TOS | R4=TOS | `rsbs r3, r4, #1; sbc r4, r4, r4` | `54 F1 01 03 64 EB 04 04` |
+| `i32.eqz` (`0x45`) | `STENCIL_I32_EQZ_D1` | R4=TOS | R4=TOS | `cmp r4, #0; it eq; moveq r4, #1; it ne; movne r4, #0` | `00 2C 08 BF 01 24 18 BF 00 24` |
 | `i32.eq` (`0x46`) | `STENCIL_I32_EQ_D2` | R4=TOS, R5=NOS | R4=TOS | `cmp r5, r4; it eq; moveq r4, #1; it ne; movne r4, #0` | `A5 42 08 BF 01 24 18 BF 00 24` |
 | `i32.ne` (`0x47`) | `STENCIL_I32_NE_D2` | R4=TOS, R5=NOS | R4=TOS | `cmp r5, r4; it ne; movne r4, #1; it eq; moveq r4, #0` | `A5 42 18 BF 01 24 08 BF 00 24` |
 | `i32.lt_s` (`0x48`)| `STENCIL_I32_LT_S_D2` | R4=TOS, R5=NOS | R4=TOS | `cmp r5, r4; it lt; movlt r4, #1; it ge; movge r4, #0` | `A5 42 B8 BF 01 24 A8 BF 00 24` |
@@ -240,19 +242,19 @@
 
 ---
 
-### 3.7 メモリアクセス系ステンシル (Linear Memory Load & Store)
+### 3.7 メモリアクセス系ステンシル (Linear Memory Load & Store with Boundary Protection)
 <!-- traceability: {MemoryBoundaryCheck} {FastAddressCheck} {JIT_RegisterMapping} -->
 
-すべてのロード/ストア命令は、`R3 = mem_base` ピン留めバリアント、または統合スタックからの `mem_base` 参照バリアントとして結合される。
+すべてのロード/ストア命令は、境界チェック保護（`FastAddressCheck` マスク演算 `AND r4, r6` または比較トラップ `CMP r4, r6; BHS __trap`）を経て、`R3 = mem_base` ピン留めバリアント（または統合スタック参照バリアント）によりアクセスされる。以下は `R6 = mem_mask`（例: 64KB 境界 `0x0000_FFFF`）によるマスク保護バリアント。
 
-| WASM 命令 | Stencil 名 | 入力状態 | 出力状態 | Thumb-2 命令列 (`R3 = mem_base`) | バイナリ列 (Hex) |
+| WASM 命令 | Stencil 名 | 入力状態 | 出力状態 | Thumb-2 命令列 (`R3=mem_base, R6=mem_mask`) | バイナリ列 (Hex) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `i32.load` (`0x28`) | `STENCIL_I32_LOAD_R3` | R4=addr | R4=val | `ldr.w r4, [r3, r4]` | `53 F8 04 40` |
-| `i32.load8_s` (`0x2C`)| `STENCIL_I32_LOAD8_S_R3` | R4=addr | R4=val | `ldrsb.w r4, [r3, r4]` | `13 F9 04 40` |
-| `i32.load8_u` (`0x2D`)| `STENCIL_I32_LOAD8_U_R3` | R4=addr | R4=val | `ldrb.w r4, [r3, r4]` | `13 F8 04 40` |
-| `i32.load16_s` (`0x2E`)| `STENCIL_I32_LOAD16_S_R3` | R4=addr | R4=val | `ldrsh.w r4, [r3, r4]` | `33 F9 04 40` |
-| `i32.load16_u` (`0x2F`)| `STENCIL_I32_LOAD16_U_R3` | R4=addr | R4=val | `ldrh.w r4, [r3, r4]` | `33 F8 04 40` |
-| `i32.store` (`0x36`) | `STENCIL_I32_STORE_R3` | R4=val, R5=addr | (なし) | `str.w r4, [r3, r5]` | `43 F8 05 40` |
-| `i32.store8` (`0x3A`) | `STENCIL_I32_STORE8_R3` | R4=val, R5=addr | (なし) | `strb.w r4, [r3, r5]` | `03 F8 05 40` |
-| `i32.store16` (`0x3B`)| `STENCIL_I32_STORE16_R3` | R4=val, R5=addr | (なし) | `strh.w r4, [r3, r5]` | `23 F8 05 40` |
-| `memory.size` (`0x3F`)| `STENCIL_MEM_SIZE_D0` | (なし) | R4=pages | `ldr.w r4, [r2, #0x04]` (`env->mem_pages`) | `D2 F8 04 40` |
+| `i32.load` (`0x28`) | `STENCIL_I32_LOAD_R3` | R4=addr | R4=val | `ands r4, r6; ldr.w r4, [r3, r4]` | `34 40 53 F8 04 40` |
+| `i32.load8_s` (`0x2C`)| `STENCIL_I32_LOAD8_S_R3` | R4=addr | R4=val | `ands r4, r6; ldrsb.w r4, [r3, r4]` | `34 40 13 F9 04 40` |
+| `i32.load8_u` (`0x2D`)| `STENCIL_I32_LOAD8_U_R3` | R4=addr | R4=val | `ands r4, r6; ldrb.w r4, [r3, r4]` | `34 40 13 F8 04 40` |
+| `i32.load16_s` (`0x2E`)| `STENCIL_I32_LOAD16_S_R3` | R4=addr | R4=val | `ands r4, r6; ldrsh.w r4, [r3, r4]` | `34 40 33 F9 04 40` |
+| `i32.load16_u` (`0x2F`)| `STENCIL_I32_LOAD16_U_R3` | R4=addr | R4=val | `ands r4, r6; ldrh.w r4, [r3, r4]` | `34 40 33 F8 04 40` |
+| `i32.store` (`0x36`) | `STENCIL_I32_STORE_R3` | R4=val, R5=addr | (なし) | `ands r5, r6; str.w r4, [r3, r5]` | `35 40 43 F8 05 40` |
+| `i32.store8` (`0x3A`) | `STENCIL_I32_STORE8_R3` | R4=val, R5=addr | (なし) | `ands r5, r6; strb.w r4, [r3, r5]` | `35 40 03 F8 05 40` |
+| `i32.store16` (`0x3B`)| `STENCIL_I32_STORE16_R3` | R4=val, R5=addr | (なし) | `ands r5, r6; strh.w r4, [r3, r5]` | `35 40 23 F8 05 40` |
+| `memory.size` (`0x3F`)| `STENCIL_MEM_SIZE_D0` | (なし) | R4=pages | `ldr.w r4, [r2, #0x04]` (`env->mem_size`) | `D2 F8 04 40` |

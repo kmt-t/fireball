@@ -1,16 +1,16 @@
 {
-  "generated_at": "2026-08-26T00:03:16.081137+00:00",
+  "generated_at": "2026-08-26T05:16:39.964215+00:00",
   "backend": "heuristic",
   "total_evaluated": 778,
   "formal_candidates_count": 31,
-  "llm_candidates_count": 9,
-  "sections_scanned": 772,
+  "llm_candidates_count": 5,
+  "sections_scanned": 778,
   "max_sections": 0,
   "doc_hashes": {
     "architecture/architecture_overview.md": "019aea4f717286caa9ef81aaccc453e67a28a358300d5db20d908a23281e5e94",
     "architecture/concept_harness.md": "2160b8e29a617ecefbf46165542544705de7ebb0f6d5b7df4bbeb1c084f9cd3c",
     "architecture/document_structure.md": "24357f01283821a32a25234b99d2e956f10b1db600b3311f5f1f28ac664770b3",
-    "architecture/master_physical_design.md": "6f63a58eac77089b36147c0d8a1573b30dae239db21f0dc4b359c72cde50c4ac",
+    "architecture/master_physical_design.md": "3e61f6ab02827ac20d3967cb2fa8ad280388cf637ae3da66b2188dd1edef917e",
     "architecture/resource_budget.md": "ac4928f5ad7fcc1a360b6539ec3d44d072a67c6b7d4aa7d76bdac014971def00",
     "components/tier1_core/os_coos.md": "7f2041f9ed21e99a75448b8112629ed0a4e95605e70425807cdb8a431db531bf",
     "components/tier1_core/os_scheduler.md": "bb8d0e129d9ce8c153fb4d7f0297d095eb2f1bdcff24de9fa345d39e67013a83",
@@ -24,7 +24,7 @@
     "components/tier1_interface/system_service.md": "7c98009196d56c50c4d1d27269f38eb51d4fe1fa654aedb51dba7c496cd5fe62",
     "components/tier2_runtime/debug/debug_gdb_rsp.md": "859626792a35fd049f3eb3591ac233df7b6285787cd581e0d6f952b1450e9226",
     "components/tier2_runtime/debug/debug_manager.md": "b1d464f59f6acb34e21971a8977af1f4fa2d91b4b2035309b77ac9326564c219",
-    "components/tier2_runtime/runtime_interpreter.md": "0b8f4c166f3823f2611b83f3c3d71dfdc401f04ce62fa0c7fe23a332cb3f6eea",
+    "components/tier2_runtime/runtime_interpreter.md": "37e53c09853500c293bbf423a8fc68413896f586c7dbe0d972ce3358fbdfc256",
     "components/tier2_runtime/runtime_loader.md": "591c6d491434e54f39eed5c48ae3216fc1b0ca1e2299044161cccac48f93dca5",
     "components/tier2_runtime/runtime_vmmio.md": "5b1afbf97ab169fe86f4081b63d5b5ffefb043abd22b571d132e4379809b3968",
     "components/tier2_runtime/runtime_vsoc.md": "b53ec586f26a49d7bcb3d75728cd7991bab9140f757287a8353463d682ec8770",
@@ -42,7 +42,7 @@
     "plans/roadmap_phase.md": "92ad637d4e9baed7d2083ae53145a3416cd1df7e1266339c6cabe1c969b4fe2c",
     "requires/requirement_list.md": "35a59e542a9ee036904a2c2de7949d8332e61e571ef2e2f6ab801ace63f28f8b",
     "specs/gdb_rsp_protocol.md": "386dfa524ed02219a8aa89a7a7c35d6e97dfbba666b0b24a05e7c35d7c89e0dc",
-    "specs/jit_stencil_catalog.md": "c3e77d81bb21b6aedf1c45742741f727149a74b8464f4d3e822fd09b2adc239d",
+    "specs/jit_stencil_catalog.md": "a9324c0cfedc41bbee9a439100823b47daa73b0a3058d88ab0803ddfb5e86270",
     "specs/wasi_preview1_abi.md": "4cb53fb6d8c5e8cbfc416eaf39041fae538cfaabc0cabf1de6eedafcc12e8512",
     "specs/wasm_instruction_set.md": "9eb1c42e94a99c446d381089c647534b5cde92aae1d616488065933855b0ee02"
   },
@@ -1028,6 +1028,19 @@
       "summary": "Independent heuristic evaluation for '4.1 アルゴリズム'."
     },
     {
+      "section_id": "sec:components/tier2_runtime/runtime_vsoc.md#vSoCランタイム環境（vsoc_runtime）",
+      "file_path": "components/tier2_runtime/runtime_vsoc.md",
+      "heading": "vSoCランタイム環境（vsoc_runtime）",
+      "tier": 2,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for 'vSoCランタイム環境（vsoc_runtime）'."
+    },
+    {
       "section_id": "sec:components/tier3_jit/jit_compiler.md#3.1 データ構造",
       "file_path": "components/tier3_jit/jit_compiler.md",
       "heading": "3.1 データ構造",
@@ -1530,6 +1543,19 @@
       "summary": "Independent heuristic evaluation for '3.2 内部ブロック図'."
     },
     {
+      "section_id": "sec:components/tier2_runtime/runtime_interpreter.md#コールフレーム（call_frame @ 統合スタックインライン）",
+      "file_path": "components/tier2_runtime/runtime_interpreter.md",
+      "heading": "コールフレーム（call_frame @ 統合スタックインライン）",
+      "tier": 2,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for 'コールフレーム（call_frame @ 統合スタックインライン）'."
+    },
+    {
       "section_id": "sec:components/tier2_runtime/runtime_vsoc.md#WASM実行およびJIT遷移シーケンス",
       "file_path": "components/tier2_runtime/runtime_vsoc.md",
       "heading": "WASM実行およびJIT遷移シーケンス",
@@ -1781,6 +1807,19 @@
       "summary": "Independent heuristic evaluation for '5.3 利用箇所'."
     },
     {
+      "section_id": "sec:components/tier2_runtime/runtime_interpreter.md#制御フレーム（control_frame @ 統合スタックインライン）",
+      "file_path": "components/tier2_runtime/runtime_interpreter.md",
+      "heading": "制御フレーム（control_frame @ 統合スタックインライン）",
+      "tier": 2,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '制御フレーム（control_frame @ 統合スタックインライン）'."
+    },
+    {
       "section_id": "sec:components/tier2_runtime/runtime_vsoc.md#Safepoint の動作メカニズム",
       "file_path": "components/tier2_runtime/runtime_vsoc.md",
       "heading": "Safepoint の動作メカニズム",
@@ -1967,6 +2006,19 @@
       "summary": "Independent heuristic evaluation for 'Phase 0: Foundation（約6ヶ月）'."
     },
     {
+      "section_id": "sec:specs/jit_stencil_catalog.md#3.7 メモリアクセス系ステンシル (Linear Memory Load & Store with Boundary Protection)",
+      "file_path": "specs/jit_stencil_catalog.md",
+      "heading": "3.7 メモリアクセス系ステンシル (Linear Memory Load & Store with Boundary Protection)",
+      "tier": null,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '3.7 メモリアクセス系ステンシル (Linear Memory Load & Store with Boundary Protection)'."
+    },
+    {
       "section_id": "sec:architecture/master_physical_design.md#2.6 Pillar 6: 有界ゼロコピー・ランデブー・メールボックス (Bounded Zero-Copy Rendezvous Mailbox)",
       "file_path": "architecture/master_physical_design.md",
       "heading": "2.6 Pillar 6: 有界ゼロコピー・ランデブー・メールボックス (Bounded Zero-Copy Rendezvous Mailbox)",
@@ -2073,32 +2125,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for 'IPCメッセージ（message）'."
-    },
-    {
-      "section_id": "sec:components/tier2_runtime/runtime_interpreter.md#コールフレーム（call_frame @ 統合スタックインライン）",
-      "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "heading": "コールフレーム（call_frame @ 統合スタックインライン）",
-      "tier": 2,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for 'コールフレーム（call_frame @ 統合スタックインライン）'."
-    },
-    {
-      "section_id": "sec:components/tier2_runtime/runtime_interpreter.md#制御フレーム（control_frame @ 統合スタックインライン）",
-      "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "heading": "制御フレーム（control_frame @ 統合スタックインライン）",
-      "tier": 2,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '制御フレーム（control_frame @ 統合スタックインライン）'."
     },
     {
       "section_id": "sec:components/tier2_runtime/runtime_vsoc.md#5.5 関連コンポーネントとの連携",
@@ -2621,17 +2647,17 @@
       "summary": "Independent heuristic evaluation for '3.1 プロローグ & エピローグ・ステンシル (Prologue, Epilogue & Spill Flush)'."
     },
     {
-      "section_id": "sec:specs/jit_stencil_catalog.md#3.7 メモリアクセス系ステンシル (Linear Memory Load & Store)",
-      "file_path": "specs/jit_stencil_catalog.md",
-      "heading": "3.7 メモリアクセス系ステンシル (Linear Memory Load & Store)",
-      "tier": null,
+      "section_id": "sec:architecture/master_physical_design.md#Fireball マスター物理設計仕様書 (Master Physical Design) {VERIFY_LLM}",
+      "file_path": "architecture/master_physical_design.md",
+      "heading": "Fireball マスター物理設計仕様書 (Master Physical Design) {VERIFY_LLM}",
+      "tier": "meta",
       "complexity_score": 2,
       "risk_score": 2,
       "formal_needed": false,
       "recommended_verification": "Static",
       "suggested_tags": [],
       "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '3.7 メモリアクセス系ステンシル (Linear Memory Load & Store)'."
+      "summary": "Independent heuristic evaluation for 'Fireball マスター物理設計仕様書 (Master Physical Design) {VERIFY_LLM}'."
     },
     {
       "section_id": "sec:architecture/master_physical_design.md#2. 6大物理コアメカニズム (The 6 Physical Pillars)",
@@ -3129,6 +3155,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '2. 非サポート機能 (Explicit Non-Goals)'."
+    },
+    {
+      "section_id": "sec:architecture/master_physical_design.md#3.2 メモリ常駐構造体の物理バイトオフセット (Physical Byte Offsets of Memory-Resident Structures)",
+      "file_path": "architecture/master_physical_design.md",
+      "heading": "3.2 メモリ常駐構造体の物理バイトオフセット (Physical Byte Offsets of Memory-Resident Structures)",
+      "tier": "meta",
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '3.2 メモリ常駐構造体の物理バイトオフセット (Physical Byte Offsets of Memory-Resident Structures)'."
     },
     {
       "section_id": "sec:components/tier1_core/os_scheduler.md#3.2 内部ブロック図",
@@ -5143,6 +5182,32 @@
       "summary": "Independent heuristic evaluation for '`STENCIL_I32_CONST_D1` (`0x41` Depth 1 $\\to$ R5=旧TOS, R4=新TOS)'."
     },
     {
+      "section_id": "sec:specs/jit_stencil_catalog.md#`STENCIL_GLOBAL_GET_D0` (`0x23` Env globals_base 経由ロード)",
+      "file_path": "specs/jit_stencil_catalog.md",
+      "heading": "`STENCIL_GLOBAL_GET_D0` (`0x23` Env globals_base 経由ロード)",
+      "tier": null,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '`STENCIL_GLOBAL_GET_D0` (`0x23` Env globals_base 経由ロード)'."
+    },
+    {
+      "section_id": "sec:specs/jit_stencil_catalog.md#`STENCIL_GLOBAL_SET_D1` (`0x24` Env globals_base 経由ストア)",
+      "file_path": "specs/jit_stencil_catalog.md",
+      "heading": "`STENCIL_GLOBAL_SET_D1` (`0x24` Env globals_base 経由ストア)",
+      "tier": null,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '`STENCIL_GLOBAL_SET_D1` (`0x24` Env globals_base 経由ストア)'."
+    },
+    {
       "section_id": "sec:components/tier1_core/os_coos.md#5. インターフェイス設計",
       "file_path": "components/tier1_core/os_coos.md",
       "heading": "5. インターフェイス設計",
@@ -5574,32 +5639,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '`STENCIL_LOCAL_TEE_D1` (`0x22` R4 $\\to$ Local, R4 維持)'."
-    },
-    {
-      "section_id": "sec:specs/jit_stencil_catalog.md#`STENCIL_GLOBAL_GET_D0` (`0x23` Env経由ロード)",
-      "file_path": "specs/jit_stencil_catalog.md",
-      "heading": "`STENCIL_GLOBAL_GET_D0` (`0x23` Env経由ロード)",
-      "tier": null,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '`STENCIL_GLOBAL_GET_D0` (`0x23` Env経由ロード)'."
-    },
-    {
-      "section_id": "sec:specs/jit_stencil_catalog.md#`STENCIL_GLOBAL_SET_D1` (`0x24` Env経由ストア)",
-      "file_path": "specs/jit_stencil_catalog.md",
-      "heading": "`STENCIL_GLOBAL_SET_D1` (`0x24` Env経由ストア)",
-      "tier": null,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '`STENCIL_GLOBAL_SET_D1` (`0x24` Env経由ストア)'."
     },
     {
       "section_id": "sec:components/tier1_core/system_syscall.md#型のエイリアス定義 (Type Vocabulary) `{Type_Vocabulary}`",
@@ -6602,6 +6641,45 @@
       "summary": "Independent heuristic evaluation for '4.1 分類基準と検証時の挙動'."
     },
     {
+      "section_id": "sec:architecture/master_physical_design.md#`execution_context`（`R1: stack_bot` 起点、計16バイト）",
+      "file_path": "architecture/master_physical_design.md",
+      "heading": "`execution_context`（`R1: stack_bot` 起点、計16バイト）",
+      "tier": "meta",
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '`execution_context`（`R1: stack_bot` 起点、計16バイト）'."
+    },
+    {
+      "section_id": "sec:architecture/master_physical_design.md#`call_frame`（統合スタック上、各フレーム先頭からの相対オフセット、計20バイト）",
+      "file_path": "architecture/master_physical_design.md",
+      "heading": "`call_frame`（統合スタック上、各フレーム先頭からの相対オフセット、計20バイト）",
+      "tier": "meta",
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '`call_frame`（統合スタック上、各フレーム先頭からの相対オフセット、計20バイト）'."
+    },
+    {
+      "section_id": "sec:architecture/master_physical_design.md#`control_frame`（統合スタック上、各フレーム先頭からの相対オフセット、計16バイト）",
+      "file_path": "architecture/master_physical_design.md",
+      "heading": "`control_frame`（統合スタック上、各フレーム先頭からの相対オフセット、計16バイト）",
+      "tier": "meta",
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '`control_frame`（統合スタック上、各フレーム先頭からの相対オフセット、計16バイト）'."
+    },
+    {
       "section_id": "sec:components/tier1_core/os_scheduler.md#スケジューラクラス（Scheduler）",
       "file_path": "components/tier1_core/os_scheduler.md",
       "heading": "スケジューラクラス（Scheduler）",
@@ -6925,6 +7003,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '3. ドキュメントの静的チェックルール'."
+    },
+    {
+      "section_id": "sec:architecture/master_physical_design.md#`vsoc_runtime`（`R2: env` 起点、計12バイト）",
+      "file_path": "architecture/master_physical_design.md",
+      "heading": "`vsoc_runtime`（`R2: env` 起点、計12バイト）",
+      "tier": "meta",
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '`vsoc_runtime`（`R2: env` 起点、計12バイト）'."
     },
     {
       "section_id": "sec:components/tier1_core/os_scheduler.md#アイドルハンドラ設定（set_idle_handler）",
@@ -7791,19 +7882,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '4. 特殊キーワードの分類と検証仕様'."
-    },
-    {
-      "section_id": "sec:architecture/master_physical_design.md#Fireball マスター物理設計仕様書 (Master Physical Design)",
-      "file_path": "architecture/master_physical_design.md",
-      "heading": "Fireball マスター物理設計仕様書 (Master Physical Design)",
-      "tier": "meta",
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for 'Fireball マスター物理設計仕様書 (Master Physical Design)'."
     },
     {
       "section_id": "sec:architecture/resource_budget.md#4. リソース制約モデル (SysML Parametric Diagram)",
@@ -10226,114 +10304,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '3. WASM MVP オプコード物理マトリクス'."
-    },
-    {
-      "section_id": "sec:components/tier2_runtime/runtime_vsoc.md#vSoCランタイム環境（vsoc_runtime）",
-      "file_path": "components/tier2_runtime/runtime_vsoc.md",
-      "heading": "vSoCランタイム環境（vsoc_runtime）",
-      "tier": 2,
-      "complexity_score": 2,
-      "risk_score": 3,
-      "formal_needed": false,
-      "recommended_verification": "LLM_Judge",
-      "suggested_tags": [
-        "{VERIFY_LLM}"
-      ],
-      "risk_factors": [
-        "Ambiguity between 'vsoc_runtime' and 'vsoc_context' may lead to implementation inconsistencies or redundant state management.",
-        "Dynamic memory growth (memory.grow) introduces a risk of pointer invalidation if the base address changes without atomic updates across all active traces.",
-        "Memory boundary check logic is critical; failure to strictly enforce the 'Linear Memory Size' leads to out-of-bounds access (OOB)."
-      ],
-      "summary": "The section defines a static data structure for the runtime environment. While the structure itself is simple, the operational risk lies in the semantic ambiguity between runtime and context structures and the safety-critical nature of the memory boundary checks during dynamic growth."
-    },
-    {
-      "section_id": "sec:architecture/master_physical_design.md#3.2 メモリ常駐構造体の物理バイトオフセット (Physical Byte Offsets of Memory-Resident Structures)",
-      "file_path": "architecture/master_physical_design.md",
-      "heading": "3.2 メモリ常駐構造体の物理バイトオフセット (Physical Byte Offsets of Memory-Resident Structures)",
-      "tier": "meta",
-      "complexity_score": 1,
-      "risk_score": 4,
-      "formal_needed": false,
-      "recommended_verification": "LLM_Judge",
-      "suggested_tags": [
-        "{VERIFY_LLM}"
-      ],
-      "risk_factors": [
-        "Silent drift between the master offset table and implementation in JIT stencils or interpreter logic",
-        "Memory corruption risk due to incorrect byte offset calculations leading to out-of-bounds writes or type punning",
-        "Synchronization failure between WIT definitions (types) and the physical layout defined in this section"
-      ],
-      "summary": "The section is a declarative definition of memory offsets (low complexity), but carries high risk because it serves as the single source of truth for raw pointer arithmetic. While it does not require state-space model checking (pyModelChecking), it requires rigorous semantic auditing (LLM_Judge) to ensure cross-document alignment and consistency with WIT files."
-    },
-    {
-      "section_id": "sec:architecture/master_physical_design.md#`vsoc_runtime`（`R2: env` 起点、計12バイト）",
-      "file_path": "architecture/master_physical_design.md",
-      "heading": "`vsoc_runtime`（`R2: env` 起点、計12バイト）",
-      "tier": "meta",
-      "complexity_score": 2,
-      "risk_score": 4,
-      "formal_needed": false,
-      "recommended_verification": "LLM_Judge",
-      "suggested_tags": [
-        "{VERIFY_LLM}"
-      ],
-      "risk_factors": [
-        "Critical mismatch between the memory layout definition (globals_base at +0x08) and the actual JIT stencil implementation (direct access at +0x00).",
-        "High probability of memory corruption or invalid memory access due to the identified 1-stage vs 2-stage pointer dereference discrepancy.",
-        "Potential for systemic failure across Tier 3 (JIT) and Tier 2 (Runtime) due to inconsistent address resolution logic."
-      ],
-      "summary": "The section itself is a simple declarative memory map (low complexity), but it explicitly documents a critical implementation bug regarding pointer indirection for globals. This is a semantic alignment failure between the architecture spec and the JIT stencil code, requiring an LLM-based audit of the cross-tier compliance and a manual fix of the assembly logic rather than state-space model checking."
-    },
-    {
-      "section_id": "sec:architecture/master_physical_design.md#`call_frame`（統合スタック上、各フレーム先頭からの相対オフセット、計20バイト）",
-      "file_path": "architecture/master_physical_design.md",
-      "heading": "`call_frame`（統合スタック上、各フレーム先頭からの相対オフセット、計20バイト）",
-      "tier": "meta",
-      "complexity_score": 1,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [
-        "Potential for stack overflow or underflow if offset calculations are not bounds-checked in the implementation",
-        "Risk of pointer misalignment if the 20-byte frame size is not padded to a word boundary in certain architectures"
-      ],
-      "summary": "The section defines a static data structure for a call frame. It is a declarative memory layout with no inherent concurrency, state transitions, or complex logic, requiring only static verification for alignment and size compliance."
-    },
-    {
-      "section_id": "sec:architecture/master_physical_design.md#`control_frame`（統合スタック上、各フレーム先頭からの相対オフセット、計16バイト）",
-      "file_path": "architecture/master_physical_design.md",
-      "heading": "`control_frame`（統合スタック上、各フレーム先頭からの相対オフセット、計16バイト）",
-      "tier": "meta",
-      "complexity_score": 2,
-      "risk_score": 3,
-      "formal_needed": false,
-      "recommended_verification": "LLM_Judge",
-      "suggested_tags": [
-        "{VERIFY_LLM}"
-      ],
-      "risk_factors": [
-        "Potential for memory corruption if 'exec_trace_ptr' is not strictly validated against the executable memory map.",
-        "Risk of stack overflow or underflow if 'saved_stack_len' is manipulated or incorrectly calculated during frame popping.",
-        "Alignment risks associated with the 16-byte frame size and the 4-byte alignment padding."
-      ],
-      "summary": "The section defines a static data structure for a control frame. While the structure itself is simple (declarative), it governs critical runtime execution state (PC, stack length, and function pointers). The primary risk is semantic alignment between this definition and the actual implementation in the runtime interpreter and WIT files."
-    },
-    {
-      "section_id": "sec:architecture/master_physical_design.md#`execution_context`（`R1: stack_bot` 起点、計12バイト）",
-      "file_path": "architecture/master_physical_design.md",
-      "heading": "`execution_context`（`R1: stack_bot` 起点、計12バイト）",
-      "tier": "meta",
-      "complexity_score": 1,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [
-        "Potential for pointer misalignment if the base address R1 is not 4-byte aligned",
-        "Risk of buffer overflow if sp_offset or frame_offset are not bounds-checked against the physical stack limit"
-      ],
-      "summary": "The section defines a static memory layout for an execution context. It is a declarative data structure without inherent concurrency, state transitions, or complex logic, making it suitable for static verification."
     }
   ]
 }

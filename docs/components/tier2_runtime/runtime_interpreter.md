@@ -58,10 +58,11 @@ ARM Cortex-M ターゲットにおいて、`execution_context` は **WASM スタ
 | プログラムカウンタ | 現在実行中の命令を指し示すプログラムカウンタ（WASMバイトコードオフセット） | オフセット | 32bit符号なし (`ip`: R0) |
 | スタック成長長 (SPオフセット) | スタックボトムからの現在のオペランドスタック頂点オフセット/深さ | 長さ/オフセット | 32bit符号なし (`[R1, #0x00]`) |
 | カレントフレームオフセット | 現在アクティブな `call_frame` のスタックボトムからの開始オフセット | オフセット | 32bit符号なし (`[R1, #0x04]`) |
-| 有効命令ハンドラ | 現在使用されているハンドラ（通常用/デバッグ用）への参照 | テーブルポインタ | `opcode_handler` の配列 (`[R1, #0x08]`) |
+| スタック境界上限 (sp_boundary) | スタックオーバーフロー検知用の上限オフセット | 長さ/オフセット | 32bit符号なし (`[R1, #0x08]`) |
+| 有効命令ハンドラ | 現在使用されているハンドラ（通常用/デバッグ用）への参照 | テーブルポインタ | `opcode_handler` の配列 (`[R1, #0x0C]`) |
 | 環境ポインタ | 実行に必要な環境（vSoC等）への参照 `{EnvironmentPointer}` | 構造体への参照 | [`vsoc_runtime`](runtime_vsoc.md) (`env`: R2) |
 
-`execution_context` は `sp_offset` / `frame_offset` / `handler_table` の3フィールド（計12バイト、`[R1, #0x00]`〜`[R1, #0x0B]`）のみを保持する。リニアメモリ基底・サイズは `execution_context` ではなく **`vsoc_runtime`（`env`: R2）が所有** する——`memory.grow` によって動的に伸長するメモリの実体は複数モジュールにまたがる「環境」側の責務であり、`execution_context` はトレース／ハンドラ呼び出しごとに軽量な統一スタックフレーム情報のみを保持する設計とする。完全な構造体定義（フィールド型と並び順）は正本として [`wit/execution_context.wit`](wit/execution_context.wit) に、バイトオフセットの物理配置は [`master_physical_design.md` §3.2](../../architecture/master_physical_design.md) に記載する。
+`execution_context` は `sp_offset` / `frame_offset` / `sp_boundary` / `handler_table` の4フィールド（計16バイト、`[R1, #0x00]`〜`[R1, #0x0F]`）のみを保持する。リニアメモリ基底・サイズは `execution_context` ではなく **`vsoc_runtime`（`env`: R2）が所有** する——`memory.grow` によって動的に伸長するメモリの実体は複数モジュールにまたがる「環境」側の責務であり、`execution_context` はトレース／ハンドラ呼び出しごとに軽量な統一スタックフレーム情報のみを保持する設計とする。完全な構造体定義（フィールド型と並び順）は正本として [`wit/execution_context.wit`](wit/execution_context.wit) に、バイトオフセットの物理配置は [`master_physical_design.md` §3.2](../../architecture/master_physical_design.md) に記載する。
 
 #### コールフレーム（call_frame @ 統合スタックインライン）
 <!-- traceability: {PositionIndependentCode} {ContextPointerRegister} {MemoryBoundaryCheck} {EnvironmentPointer} -->

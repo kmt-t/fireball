@@ -4,13 +4,15 @@ package fireball:interpreter@0.1.0;
 /// 正本: docs/components/tier2_runtime/runtime_interpreter.md 3.3
 /// 物理配置（バイトオフセット）: docs/architecture/master_physical_design.md 3.2
 interface unified-stack {
-    /// スタックボトム（R1: stack_bot）に常駐する実行コンテキスト。計12バイト。
+    /// スタックボトム（R1: stack_bot）に常駐する実行コンテキスト。計16バイト。
     record execution-context {
         /// オペランドスタック頂点オフセット。[R1, #0x00]
         sp-offset: u32,
         /// アクティブな call-frame のスタックボトム相対開始オフセット。[R1, #0x04]
         frame-offset: u32,
-        /// 使用中のオプコードハンドラテーブル（通常用/デバッグ用）への参照。[R1, #0x08]
+        /// 統合スタック最大許容オフセット（スタックオーバーフロー検知上限）。[R1, #0x08]
+        sp-boundary: u32,
+        /// 使用中のオプコードハンドラテーブル（通常用/デバッグ用）への参照。[R1, #0x0C]
         handler-table: u32,
     }
 

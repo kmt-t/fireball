@@ -1,4 +1,4 @@
-# コンポーネント設計：constexpr Assembler
+# コンポーネント設計：constexpr Assembler {VERIFY_BENCHMARK}
 
 ## 1. コンセプト
 <!-- traceability: {JIT_Encoder} {META_Static_Resolution} {META_CompileTimeValidation} {PositionIndependentCode} -->
@@ -96,7 +96,7 @@ graph TD
 ### 6.1 性能制約
 <!-- traceability: {META_Static_Resolution} {ZeroRuntimeOverhead} -->
 - **静的解像 (Static Resolution)**: `{META_Static_Resolution}` により、命令生成に関わるあらゆるビットシフトや論理和（OR）の演算を実行時から排除し、ビルド時に完全に定数へと評価（解像）しておく。
-- **実行時オーバーヘッドの完全排除 (Zero Runtime Overhead)**: constexpr関数内で事前評価された命令バイト列は実行時に直接メモリアライメントされた命令バッファに転記されるため、実行時のアセンブル処理オーバーヘッドは単なる `memcpy` と同等の超高速なメモリ転送のみとなる。これにより、抽象化のための余分な実行時オーバーヘッドを完全にゼロにする。 `{ZeroRuntimeOverhead}`
+- **実行時オーバーヘッドの完全排除 (Zero Runtime Overhead)**: constexpr関数内で事前評価された命令バイト列は実行時に直接メモリアライメントされた命令バッファに転記されるため、実行時のアセンブル処理オーバーヘッドは単なる `memcpy` と同等の超高速なメモリ転送のみとなる。これにより、抽象化のための余分な実行時オーバーヘッドを完全にゼロにする。実測は [`benchmarks/zero_runtime_overhead_bench.py`](benchmarks/zero_runtime_overhead_bench.py)（ステンシル・バリアント選択が命令数を実際に削減し、ブロック内スピルを追加しないことを計測）を参照。 `{ZeroRuntimeOverhead}`
 
 ### 6.2 安全性制約
 <!-- traceability: {META_Static_Resolution} -->

@@ -145,6 +145,25 @@ if ($conceptFailed) {
     Write-Host "✔ Concept Code Verification: $($conceptFiles.Count) file(s) passed" -ForegroundColor Green
 }
 
+# Benchmarks: empirical backing for keywords whose requirement_list.md verification
+# method is "ベンチマーク" (Benchmark), tagged {VERIFY_BENCHMARK} and checked for
+# existence by the Evidence gate below. Running them here (not just checking they
+# exist) catches a benchmark that has silently started failing its own assertions.
+$benchFiles = Get-ChildItem -Path "docs" -Filter "*_bench.py" -Recurse
+foreach ($f in $benchFiles) {
+    $relPath = Resolve-Path -Relative $f.FullName
+    & uv run --system-certs --project tools/spec-integrator python $f.FullName
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "✖ $relPath FAILED" -ForegroundColor Red
+        $conceptFailed = $true
+    } else {
+        Write-Host "✔ $relPath" -ForegroundColor Green
+    }
+}
+if ($benchFiles.Count -gt 0) {
+    Write-Host "✔ Benchmarks: $($benchFiles.Count) file(s) ran" -ForegroundColor Green
+}
+
 # Dynamic semantic check: actually executes the JIT stencil catalog's machine code
 # on a real ARMv8-M Thumb emulator (unicorn) and checks the resulting register state
 # against the WASM-specified result, instead of only comparing bytes to a second

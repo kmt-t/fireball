@@ -53,37 +53,6 @@
       ]
     },
     {
-      "item_id": "item:META_FlatMapIndexed",
-      "item_label": "{META_FlatMapIndexed}",
-      "status": "PASS",
-      "summary": "The keyword {META_FlatMapIndexed} is consistently applied across all referencing design sections. The implementation pattern (sorted static arrays + non-owning views) is uniformly described, and the complexity analysis (O(log N)) is consistent across JIT, vMMIO, and IPC Router components.",
-      "issues": [],
-      "covered_files": [
-        "architecture/document_structure.md",
-        "architecture/master_physical_design.md",
-        "components/tier1_core/system_config_details.md",
-        "components/tier1_core/system_containers.md",
-        "components/tier1_interface/ipc_router.md",
-        "components/tier2_runtime/runtime_vmmio.md",
-        "components/tier3_jit/jit_compiler.md",
-        "components/tier3_jit/jit_runtime_entry.md"
-      ]
-    },
-    {
-      "item_id": "item:META_Static_Resolution",
-      "item_label": "{META_Static_Resolution}",
-      "status": "PASS",
-      "summary": "The keyword {META_Static_Resolution} is consistently applied across all referencing design sections. The definition's goal of minimizing overhead by shifting runtime decisions to compile-time is strictly followed in the system configuration, vMMIO, and JIT assembler components.",
-      "issues": [],
-      "covered_files": [
-        "architecture/architecture_overview.md",
-        "architecture/document_structure.md",
-        "components/tier1_core/system_config.md",
-        "components/tier2_runtime/runtime_vmmio.md",
-        "components/tier3_jit/jit_assembler_constexpr.md"
-      ]
-    },
-    {
       "item_id": "item:META_RecoveryStrategy",
       "item_label": "{META_RecoveryStrategy}",
       "status": "PASS",
@@ -117,51 +86,6 @@
       ]
     },
     {
-      "item_id": "item:META_AccessDictionary",
-      "item_label": "{META_AccessDictionary}",
-      "status": "PASS",
-      "summary": "The keyword {META_AccessDictionary} is consistently applied across all referencing sections. It is used to justify the implementation of indexing structures (flat_map_view, exports_dict, and module_view) to optimize runtime access and minimize memory overhead, aligning perfectly with the definition.",
-      "issues": [],
-      "covered_files": [
-        "architecture/document_structure.md",
-        "components/tier1_core/system_containers.md",
-        "components/tier1_interface/ipc_router.md",
-        "components/tier2_runtime/runtime_loader.md",
-        "plans/backlog_list.md"
-      ]
-    },
-    {
-      "item_id": "item:SimpleJITArchitecture",
-      "item_label": "{SimpleJITArchitecture}",
-      "status": "PASS",
-      "summary": "The design sections are highly consistent with the {SimpleJITArchitecture} requirement and with each other. The implementation of the 3-bank rotating cache and the 3-stage lookup pipeline directly fulfills the requirement for efficient operation within a small JIT cache area.",
-      "issues": [],
-      "covered_files": [
-        "architecture/master_physical_design.md",
-        "components/tier2_runtime/runtime_interpreter.md",
-        "components/tier3_jit/jit_compiler.md",
-        "components/tier3_jit/jit_runtime_entry.md",
-        "components/tier3_jit/jit_runtime_hotspot.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:JIT_MultiBuffer_Cache",
-      "item_label": "{JIT_MultiBuffer_Cache}",
-      "status": "PASS",
-      "summary": "The specification for {JIT_MultiBuffer_Cache} is highly consistent across all referencing sections. Numeric values, bank roles, and the promotion logic are aligned between the definition and the design implementation details.",
-      "issues": [],
-      "covered_files": [
-        "architecture/master_physical_design.md",
-        "components/tier1_core/system_config_details.md",
-        "components/tier2_runtime/runtime_vsoc.md",
-        "components/tier3_jit/jit_compiler.md",
-        "components/tier3_jit/jit_runtime_entry.md",
-        "plans/backlog_list.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
       "item_id": "item:META_BinarySearch",
       "item_label": "{META_BinarySearch}",
       "status": "PASS",
@@ -173,21 +97,6 @@
         "components/tier1_core/system_containers.md",
         "components/tier3_jit/jit_compiler.md",
         "components/tier3_jit/jit_runtime_entry.md"
-      ]
-    },
-    {
-      "item_id": "item:GLOBAL_IdleDetection",
-      "item_label": "{GLOBAL_IdleDetection}",
-      "status": "PASS",
-      "summary": "The specification for {GLOBAL_IdleDetection} is consistent across all definition and design sections. The mechanism for idle detection, its trigger conditions, and its application in logging and JIT compilation are aligned.",
-      "issues": [],
-      "covered_files": [
-        "architecture/document_structure.md",
-        "components/tier1_core/os_coos.md",
-        "components/tier1_core/os_scheduler.md",
-        "components/tier1_core/system_logging.md",
-        "components/tier3_jit/jit_compiler.md",
-        "requires/requirement_list.md"
       ]
     },
     {
@@ -235,22 +144,6 @@
       ]
     },
     {
-      "item_id": "item:GLOBAL_StrictMemoryLimit",
-      "item_label": "{GLOBAL_StrictMemoryLimit}",
-      "status": "PASS",
-      "summary": "The specification for {GLOBAL_StrictMemoryLimit} is highly consistent across all referenced sections. Numeric budgets, memory partitioning, and the implementation of memory-dense containers (bit_view) align perfectly with the defined constraints.",
-      "issues": [],
-      "covered_files": [
-        "architecture/architecture_overview.md",
-        "architecture/document_structure.md",
-        "components/tier1_core/os_coos.md",
-        "components/tier1_core/system_config_details.md",
-        "components/tier1_core/system_containers.md",
-        "components/tier3_platform/platform_memory.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
       "item_id": "item:RoleBasedAccessControl",
       "item_label": "{RoleBasedAccessControl}",
       "status": "PASS",
@@ -273,20 +166,6 @@
         "components/tier1_interface/ipc_router.md",
         "components/tier2_runtime/runtime_vmmio.md",
         "components/tier3_platform/platform_memory.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:JIT_CopyAndPatch",
-      "item_label": "{JIT_CopyAndPatch}",
-      "status": "PASS",
-      "summary": "The specification for {JIT_CopyAndPatch} is highly consistent across all definition and design sections. The mechanism, register conventions, and architectural goals are aligned.",
-      "issues": [],
-      "covered_files": [
-        "components/tier2_runtime/runtime_vsoc.md",
-        "components/tier3_jit/jit_compiler.md",
-        "components/tier3_jit/jit_engine_copy_patch.md",
-        "plans/backlog_list.md",
         "requires/requirement_list.md"
       ]
     },
@@ -317,19 +196,6 @@
         "components/tier2_runtime/runtime_interpreter.md",
         "components/tier2_runtime/runtime_vsoc.md",
         "plans/backlog_list.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:LowLatencyLookup",
-      "item_label": "{LowLatencyLookup}",
-      "status": "PASS",
-      "summary": "The requirement {LowLatencyLookup} is consistently implemented across all referencing design sections. The definition's mandate for sorted arrays and binary search to achieve O(log N) complexity is strictly followed in the TLB miss handler, the system container algorithms, and the IPC router's service lookup mechanism.",
-      "issues": [],
-      "covered_files": [
-        "architecture/master_physical_design.md",
-        "components/tier1_core/system_containers.md",
-        "components/tier1_interface/ipc_router.md",
         "requires/requirement_list.md"
       ]
     },
@@ -1714,22 +1580,6 @@
       ]
     },
     {
-      "item_id": "item:LowLatencyJIT",
-      "item_label": "{LowLatencyJIT}",
-      "status": "PASS",
-      "summary": "The specification for {LowLatencyJIT} is highly consistent across all referencing design sections. The design implements the requirement through a combination of Copy-and-Patch JIT, a threaded interpreter with a shared CPS calling convention, and a multi-buffer cache rotation strategy. All numeric values and register assignments are aligned.",
-      "issues": [],
-      "covered_files": [
-        "components/tier2_runtime/runtime_interpreter.md",
-        "components/tier2_runtime/runtime_vsoc.md",
-        "components/tier3_jit/jit_compiler.md",
-        "components/tier3_jit/jit_engine_copy_patch.md",
-        "components/tier3_jit/jit_runtime_hotspot.md",
-        "components/tier3_platform/platform_memory.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
       "item_id": "item:JIT_RegisterMapping",
       "item_label": "{JIT_RegisterMapping}",
       "status": "PASS",
@@ -1864,45 +1714,253 @@
         "specs/jit_stencil_catalog.md",
         "specs/wasm_instruction_set.md"
       ]
+    },
+    {
+      "item_id": "item:META_FlatMapIndexed",
+      "item_label": "{META_FlatMapIndexed}",
+      "status": "WARN",
+      "summary": "The implementation of {META_FlatMapIndexed} is consistent across all design sections, utilizing `fireball::flat_map_view` for O(log N) lookups in JIT, vMMIO, and IPC. However, there is a documented implementation gap in the IPC router and an unsourced performance claim.",
+      "issues": [
+        {
+          "severity": "WARNING",
+          "location": "sec:components/tier1_interface/ipc_router.md#4.3.1",
+          "description": "The text explicitly admits a 'known divergence' (既知の乖離) where the current implementation `ipc_router_concept.py` still uses a dictionary instead of the required `flat_map_view` specified by {META_FlatMapIndexed}."
+        },
+        {
+          "severity": "WARNING",
+          "location": "sec:components/tier1_interface/ipc_router.md#4.3.1",
+          "description": "Unsourced Metric: The section claims 'low latency name resolution' and refers to a benchmark file `benchmarks/low_latency_lookup_bench.py`, but no actual measurement values or environment details are provided in the text to substantiate the claim."
+        }
+      ],
+      "covered_files": [
+        "architecture/document_structure.md",
+        "architecture/master_physical_design.md",
+        "components/tier1_core/system_config_details.md",
+        "components/tier1_core/system_containers.md",
+        "components/tier1_interface/ipc_router.md",
+        "components/tier2_runtime/runtime_vmmio.md",
+        "components/tier3_jit/jit_compiler.md",
+        "components/tier3_jit/jit_runtime_entry.md"
+      ]
+    },
+    {
+      "item_id": "item:JIT_CopyAndPatch",
+      "item_label": "{JIT_CopyAndPatch}",
+      "status": "FAIL",
+      "summary": "Critical contradictions found in the physical implementation of the JIT Copy-and-Patch mechanism, specifically regarding register assignments and instruction logic between the Stencil Catalog and the Instruction Set specification.",
+      "issues": [
+        {
+          "severity": "ERROR",
+          "location": "sec:specs/jit_stencil_catalog.md vs sec:specs/wasm_instruction_set.md",
+          "description": "Contradiction in physical instruction implementation for 'i32.eqz' (0x45). The Stencil Catalog defines the implementation as 'cmp r4, #0; it eq; moveq r4, #1; it ne; movne r4, #0', whereas the Instruction Set specification defines it as 'RSBS r4, r4, #1; SBC r4, r4, r4'. These are fundamentally different Thumb-2 sequences."
+        },
+        {
+          "severity": "ERROR",
+          "location": "sec:specs/jit_stencil_catalog.md vs sec:specs/wasm_instruction_set.md",
+          "description": "Contradiction in register operand order for binary operations. The Stencil Catalog consistently uses 'r4' as TOS and 'r5' as NOS with the pattern 'op r4, r5, r4' (e.g., i32.add: 'adds r4, r5, r4'), while the Instruction Set specification defines the physical action as 'op r4, r4, r5' (e.g., i32.add: 'ADDS r4, r4, r5'). This reverses the source/destination relationship for non-commutative operations (like sub, div, shr)."
+        },
+        {
+          "severity": "WARNING",
+          "location": "sec:components/tier3_jit/jit_compiler.md",
+          "description": "Unbacked Verification Claim: The section claims the 'Zero Compile Cost Theorem' is measured via 'benchmarks/jit_zero_compile_cost_bench.py', but the provided text does not include the results or the log of this benchmark to substantiate the claim that execution time scales linearly."
+        }
+      ],
+      "covered_files": [
+        "components/tier2_runtime/runtime_vsoc.md",
+        "components/tier3_jit/jit_compiler.md",
+        "components/tier3_jit/jit_engine_copy_patch.md",
+        "plans/backlog_list.md",
+        "requires/requirement_list.md",
+        "specs/jit_stencil_catalog.md",
+        "specs/wasm_instruction_set.md"
+      ]
+    },
+    {
+      "item_id": "item:META_Static_Resolution",
+      "item_label": "{META_Static_Resolution}",
+      "status": "PASS",
+      "summary": "The keyword {META_Static_Resolution} is consistently applied across all referencing sections. The design sections correctly implement the definition by shifting runtime decisions to compile-time (via constexpr and macros) to minimize overhead.",
+      "issues": [],
+      "covered_files": [
+        "architecture/architecture_overview.md",
+        "architecture/document_structure.md",
+        "components/tier1_core/system_config.md",
+        "components/tier2_runtime/runtime_vmmio.md",
+        "components/tier3_jit/jit_assembler_constexpr.md"
+      ]
+    },
+    {
+      "item_id": "item:LowLatencyJIT",
+      "item_label": "{LowLatencyJIT}",
+      "status": "PASS",
+      "summary": "The specification for {LowLatencyJIT} is highly consistent across the definition and design sections. The design implements the 'minimum compile latency' requirement through a Copy-and-Patch architecture, a specific register-passing convention (__fastcall CPS), and MPU transaction batching. All numeric values and register assignments are aligned.",
+      "issues": [
+        {
+          "severity": "WARNING",
+          "location": "sec:components/tier3_jit/jit_compiler.md#1. コンセプト",
+          "description": "The section claims that the 'Zero Compile Cost Theorem' is verified by a specific benchmark script (`benchmarks/jit_zero_compile_cost_bench.py`), but the actual results or the specific metric (e.g., cycles per instruction) are not provided in the text, making it an unsourced measurement of the actual performance gain."
+        }
+      ],
+      "covered_files": [
+        "components/tier2_runtime/runtime_interpreter.md",
+        "components/tier2_runtime/runtime_vsoc.md",
+        "components/tier3_jit/jit_compiler.md",
+        "components/tier3_jit/jit_engine_copy_patch.md",
+        "components/tier3_jit/jit_runtime_hotspot.md",
+        "components/tier3_platform/platform_memory.md",
+        "requires/requirement_list.md"
+      ]
+    },
+    {
+      "item_id": "item:GLOBAL_StrictMemoryLimit",
+      "item_label": "{GLOBAL_StrictMemoryLimit}",
+      "status": "PASS",
+      "summary": "The specification for {GLOBAL_StrictMemoryLimit} is highly consistent across all referenced sections. Numeric budgets sum correctly, and the design decisions (bit-packing, non-owning views, and explicit non-goals) directly support the strict memory limit definition.",
+      "issues": [
+        {
+          "severity": "WARNING",
+          "location": "sec:components/tier1_core/os_coos.md#4.1 アルゴリズム",
+          "description": "The claim that Direct Context Switch is 'deterministic O(1)' and 'does not cause stack overflow in 2KB environments' is supported by a reference to a python benchmark script (benchmarks/direct_context_switch_bench.py), but as a Python script, it may not provide a formal proof of stack safety for the actual C++ implementation on target hardware."
+        }
+      ],
+      "covered_files": [
+        "architecture/architecture_overview.md",
+        "architecture/document_structure.md",
+        "components/tier1_core/os_coos.md",
+        "components/tier1_core/system_config_details.md",
+        "components/tier1_core/system_containers.md",
+        "components/tier3_platform/platform_memory.md",
+        "requires/requirement_list.md",
+        "specs/gdb_rsp_protocol.md",
+        "specs/wasi_preview1_abi.md",
+        "specs/wasm_instruction_set.md"
+      ]
+    },
+    {
+      "item_id": "item:META_AccessDictionary",
+      "item_label": "{META_AccessDictionary}",
+      "status": "PASS",
+      "summary": "The keyword {META_AccessDictionary} is consistently applied across all referencing sections. It is used to justify the use of indexing structures (flat_map_view, exports_dict, and module_view) to optimize runtime access and minimize memory overhead, aligning perfectly with the definition.",
+      "issues": [],
+      "covered_files": [
+        "architecture/document_structure.md",
+        "components/tier1_core/system_containers.md",
+        "components/tier1_interface/ipc_router.md",
+        "components/tier2_runtime/runtime_loader.md",
+        "plans/backlog_list.md"
+      ]
+    },
+    {
+      "item_id": "item:SimpleJITArchitecture",
+      "item_label": "{SimpleJITArchitecture}",
+      "status": "PASS",
+      "summary": "The specification for {SimpleJITArchitecture} is highly consistent across all referencing design sections. The architectural pillars (3-stage lookup and 3-bank rotating cache) directly implement the requirement for efficient operation within a small JIT cache area.",
+      "issues": [
+        {
+          "severity": "WARNING",
+          "location": "sec:components/tier3_jit/jit_compiler.md#1. コンセプト",
+          "description": "The section claims the 'Zero Compile Cost Theorem' is measured via 'benchmarks/jit_zero_compile_cost_bench.py', but it does not specify the hardware environment (e.g., Cortex-M33) where this measurement was taken, making it an unsourced metric."
+        }
+      ],
+      "covered_files": [
+        "architecture/master_physical_design.md",
+        "components/tier2_runtime/runtime_interpreter.md",
+        "components/tier3_jit/jit_compiler.md",
+        "components/tier3_jit/jit_runtime_entry.md",
+        "components/tier3_jit/jit_runtime_hotspot.md",
+        "requires/requirement_list.md"
+      ]
+    },
+    {
+      "item_id": "item:JIT_MultiBuffer_Cache",
+      "item_label": "{JIT_MultiBuffer_Cache}",
+      "status": "PASS",
+      "summary": "The specification for {JIT_MultiBuffer_Cache} is highly consistent across all referencing sections. Numeric values, bank roles, and the promotion policy are aligned between the definition, physical design, configuration, and implementation details.",
+      "issues": [],
+      "covered_files": [
+        "architecture/master_physical_design.md",
+        "components/tier1_core/system_config_details.md",
+        "components/tier2_runtime/runtime_vsoc.md",
+        "components/tier3_jit/jit_compiler.md",
+        "components/tier3_jit/jit_runtime_entry.md",
+        "plans/backlog_list.md",
+        "requires/requirement_list.md"
+      ]
+    },
+    {
+      "item_id": "item:GLOBAL_IdleDetection",
+      "item_label": "{GLOBAL_IdleDetection}",
+      "status": "PASS",
+      "summary": "The specification for {GLOBAL_IdleDetection} is consistent across all definition and design sections. The mechanism for idle detection is clearly defined in the OS core and correctly utilized by the logging and JIT components.",
+      "issues": [],
+      "covered_files": [
+        "architecture/document_structure.md",
+        "components/tier1_core/os_coos.md",
+        "components/tier1_core/os_scheduler.md",
+        "components/tier1_core/system_logging.md",
+        "components/tier3_jit/jit_compiler.md",
+        "requires/requirement_list.md"
+      ]
+    },
+    {
+      "item_id": "item:LowLatencyLookup",
+      "item_label": "{LowLatencyLookup}",
+      "status": "WARN",
+      "summary": "The specification is generally consistent and well-traced, but contains a self-admitted implementation gap and a potential ambiguity regarding the complexity of the 'Narrow-then-Search' optimization.",
+      "issues": [
+        {
+          "severity": "WARNING",
+          "location": "sec:components/tier1_interface/ipc_router.md#4.3.1 二分探索による O(log N) 低遅延ルックアップ",
+          "description": "The text explicitly admits a 'known divergence' (既知の乖離) where the current implementation in `ipc_router_concept.py` is still dictionary-based and has not yet migrated to `flat_map_view`, contradicting the design claim of using sorted arrays for O(log N) lookup."
+        },
+        {
+          "severity": "WARNING",
+          "location": "sec:components/tier1_core/system_containers.md#4.1 アルゴリズム",
+          "description": "The 'Narrow-then-Search' mechanism claims a complexity of O(log n) where n is the narrowed range. While this is mathematically correct for the search phase, the total complexity is O(Cost of Narrowing + log n). The specification does not define the complexity of the 'coarse index' (粗い索引) lookup used for narrowing, leaving the total latency bound slightly ambiguous compared to the strict O(log N) requirement in the definition."
+        }
+      ],
+      "covered_files": [
+        "architecture/master_physical_design.md",
+        "components/tier1_core/system_containers.md",
+        "components/tier1_interface/ipc_router.md",
+        "requires/requirement_list.md"
+      ]
     }
   ],
   "doc_hashes": {
-    "architecture/architecture_overview.md": "019aea4f717286caa9ef81aaccc453e67a28a358300d5db20d908a23281e5e94",
+    "architecture/architecture_overview.md": "3f183179addd8251c6a0b6faecd54a999ea326f528f1cd4b24ff98bf922def4f",
     "architecture/concept_harness.md": "2160b8e29a617ecefbf46165542544705de7ebb0f6d5b7df4bbeb1c084f9cd3c",
     "architecture/document_structure.md": "24357f01283821a32a25234b99d2e956f10b1db600b3311f5f1f28ac664770b3",
-    "architecture/FORMAT.md": "0b3b0386e502902ab8c26aad5977915d7e7ce354bacd6415d444b5ff7ef97c59",
     "architecture/master_physical_design.md": "e871bee662ff35dbdf63561456ecfdc511921160e5909f39351cfee2ba453371",
     "architecture/resource_budget.md": "ac4928f5ad7fcc1a360b6539ec3d44d072a67c6b7d4aa7d76bdac014971def00",
-    "components/FORMAT.md": "a1d5f55ebc5b5a50f0bbb82f112a7906adba32694b76c196570c2d3c6f0bf7be",
-    "components/tier1_core/os_coos.md": "7f2041f9ed21e99a75448b8112629ed0a4e95605e70425807cdb8a431db531bf",
-    "components/tier1_core/os_scheduler.md": "bb8d0e129d9ce8c153fb4d7f0297d095eb2f1bdcff24de9fa345d39e67013a83",
-    "components/tier1_core/system_config.md": "18d6e2eeb837773f55bb1d285809d64d86bdf94dc0bff012116caf908b9177a0",
+    "components/tier1_core/os_coos.md": "f1579a3a615047b5b3b3e189413e953088d502bd81bf9a180321001f5cf53a79",
+    "components/tier1_core/os_scheduler.md": "8f2a91e241b3e52b23d22c75dc01f37adab4592a59255070983ded474fed5f77",
+    "components/tier1_core/system_config.md": "35a7a52c8def43525248931e019176457585eb4ded4185c126af1877fd12684b",
     "components/tier1_core/system_config_details.md": "d01b76be672dc64e340304989cd087ebc46edef5f75c2a0b633bf2c927af019b",
-    "components/tier1_core/system_containers.md": "037c624c2af7c2cfdbf00ecc4da2051fc865f7700d64563f9a191aba07d44c17",
+    "components/tier1_core/system_containers.md": "5ab53c7035c1d71a351af3c8245e095357752fb093b978500f9293e9418c67ed",
     "components/tier1_core/system_logging.md": "7ec474b1ad605d7e56d14c9eb01f763fb2cd93553a8c7d91e4a4c71f4072cb4d",
     "components/tier1_core/system_syscall.md": "7fddb15242b1858522120553eebdf76354802bffe4bfdffe648f50f6e788a234",
     "components/tier1_interface/interface_wit.md": "889909501181705efbeff8ca5d96f1ae036ab6c756e478acc6c7418907bb2d1f",
-    "components/tier1_interface/ipc_router.md": "31fea15446204d7627b2cb6a0843b2f20dd7388915b86c31a20bd55bd79c74e7",
+    "components/tier1_interface/ipc_router.md": "fe4cca6403929a33265471f2051fb561adc66fc5dca85f77556590501b139b1d",
     "components/tier1_interface/system_service.md": "7c98009196d56c50c4d1d27269f38eb51d4fe1fa654aedb51dba7c496cd5fe62",
-    "components/tier2_runtime/debug/debug_gdb_rsp.md": "859626792a35fd049f3eb3591ac233df7b6285787cd581e0d6f952b1450e9226",
-    "components/tier2_runtime/debug/debug_manager.md": "b1d464f59f6acb34e21971a8977af1f4fa2d91b4b2035309b77ac9326564c219",
+    "components/tier2_runtime/debug/debug_gdb_rsp.md": "06768beb3ae0225f25b723b60e8da734c09bc1073ffc9d99831161c83604254f",
+    "components/tier2_runtime/debug/debug_manager.md": "1083cbaaaf7992ec9b4377e6e6209aeb3a038f9fc5143c37ed8d67f1be7bafde",
     "components/tier2_runtime/runtime_interpreter.md": "37e53c09853500c293bbf423a8fc68413896f586c7dbe0d972ce3358fbdfc256",
     "components/tier2_runtime/runtime_loader.md": "591c6d491434e54f39eed5c48ae3216fc1b0ca1e2299044161cccac48f93dca5",
     "components/tier2_runtime/runtime_vmmio.md": "5b1afbf97ab169fe86f4081b63d5b5ffefb043abd22b571d132e4379809b3968",
-    "components/tier2_runtime/runtime_vsoc.md": "76f40f789eea30da7e8516dbc8ea0ea9ee42d85c7264bffcdbbffcff52e8d8e1",
+    "components/tier2_runtime/runtime_vsoc.md": "11f5f489ba65a0b14333b0642daa149741dd11db9b9bbbfa70caa4093cee3906",
     "components/tier2_runtime/wasm_instruction.md": "640483f8a25bca7885110ce37e499c4ba3622fdc2ba3507e3a78b2bc1fcf8b5f",
     "components/tier3_jit/concepts/README.md": "a39c8c192999a792243e697e008fcad02c701d14b9559d492d668208122b6ebc",
-    "components/tier3_jit/jit_assembler_constexpr.md": "1ce2346b0371f5a1d470aaaf5c42a2e72b01d5cb7589ea8e29625a5ab199e067",
-    "components/tier3_jit/jit_compiler.md": "1a6653d433500d5e026c386428369515e42e54160feb5c33819d11034852e2c3",
-    "components/tier3_jit/jit_engine_copy_patch.md": "d179e3bf586cf1ba6bceb4c81e1eccfd6397b634dc19075e92123e41ff4be7d1",
+    "components/tier3_jit/jit_assembler_constexpr.md": "bdeb28e114f82861fadac6ac3f3c9953dfd2cd3264a243d5db232d893c980924",
+    "components/tier3_jit/jit_compiler.md": "c29a6cdebfbd187b0fa3fb01f0a3fad1463a1240c39c008a60394b0b0378f9d3",
+    "components/tier3_jit/jit_engine_copy_patch.md": "07af5b827cdd19b1bb48f78234953707a4d55f5c3d0f5940cd099ed28d70676f",
     "components/tier3_jit/jit_runtime_entry.md": "4e1acdf6e3c5b56d5ed285c252a8c3f692fa86714eee534e4ae1ba996e034395",
     "components/tier3_jit/jit_runtime_hotspot.md": "bf4ced6b78c1978a08624c8fe9f430ee307c068780cd0c314d6f527ea698603f",
-    "components/tier3_platform/platform_hal.md": "b7e90323ad0269f78e10e3f59dc1e373d3b8818d02ecf4bcf03e5970096842e2",
+    "components/tier3_platform/platform_hal.md": "a5407e2d644de41349938325e01ca15be3fc8f17304d3ea9bc74251ff431353c",
     "components/tier3_platform/platform_memory.md": "7269a7df0573b9753da79472f7aaa4970a47f4ab9e7ef5a8406b70cceff05e1b",
     "plans/backlog_archive.md": "3e09371810730853a39b09fec40e83409690786e1d27caae96ab6af054191716",
     "plans/backlog_list.md": "25b451c306c223b25c40f050ee6a4c41f818dff84dad96da46e563193b460455",
     "plans/roadmap_phase.md": "92ad637d4e9baed7d2083ae53145a3416cd1df7e1266339c6cabe1c969b4fe2c",
-    "requires/FORMAT.md": "fb20e6c2b46dacdc8430967fb50603baf22b51d3f2f9f1450314e99db8fcdf58",
     "requires/requirement_list.md": "35a59e542a9ee036904a2c2de7949d8332e61e571ef2e2f6ab801ace63f28f8b",
     "specs/gdb_rsp_protocol.md": "386dfa524ed02219a8aa89a7a7c35d6e97dfbba666b0b24a05e7c35d7c89e0dc",
     "specs/jit_stencil_catalog.md": "f1214b9b906133e9362cbad1bc22eeae6b254c39ce855e38e0394e69b114ba0d",

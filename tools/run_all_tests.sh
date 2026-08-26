@@ -190,6 +190,24 @@ else
     echo "✔ Concept Code Verification: passed"
 fi
 
+# Benchmarks: empirical backing for keywords whose requirement_list.md verification
+# method is "ベンチマーク" (Benchmark), tagged {VERIFY_BENCHMARK} and checked for
+# existence by the Evidence gate below. Running them here (not just checking they
+# exist) catches a benchmark that has silently started failing its own assertions.
+BENCH_COUNT=0
+while IFS= read -r -d '' f; do
+    BENCH_COUNT=$((BENCH_COUNT + 1))
+    if uv run --system-certs --project tools/spec-integrator python "$f"; then
+        echo "✔ $f"
+    else
+        echo "✖ $f FAILED"
+        CONCEPT_FAILED=1
+    fi
+done < <(find docs -name "*_bench.py" -print0)
+if [ "$BENCH_COUNT" -gt 0 ]; then
+    echo "✔ Benchmarks: $BENCH_COUNT file(s) ran"
+fi
+
 # Dynamic semantic check: actually executes the JIT stencil catalog's machine code
 # on a real ARMv8-M Thumb emulator (unicorn) and checks the resulting register state
 # against the WASM-specified result, instead of only comparing bytes to a second

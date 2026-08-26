@@ -54,6 +54,10 @@ wit_verification:
   wit_dir_name: "wit"
   tag: "{VERIFY_WIT}"
 
+benchmark_verification:
+  benchmark_dir_name: "benchmarks"
+  tag: "{VERIFY_BENCHMARK}"
+
 evidence:
   llm_substantiation_audit: true
   # reports/doc_report.md is gitignored: the pipeline generates it as its own

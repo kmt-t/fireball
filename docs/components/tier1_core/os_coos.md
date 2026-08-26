@@ -1,4 +1,4 @@
-# 協調型OS COOS コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}
+# 協調型OS COOS コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM} {VERIFY_BENCHMARK}
 
 ## 1. コンセプト
 <!-- traceability: {CooperativeMultitasking} {GLOBAL_UseCpp23Library} {GLOBAL_UseCpp20Coroutine} {CSPCommunication} {EliminateDataRace} {GLOBAL_PeriodicTask} {GLOBAL_IdleDetection} {GLOBAL_InterruptWakeup} {NotRTOS} -->
@@ -6,7 +6,7 @@ COOSは、シングルスレッド環境向けのホーアCSPベースのグリ�
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {GLOBAL_ComponentHarness} -->
-本コンポーネントは **Tier 1 (主要システムコンポーネント: Primary Component)** に属し、システム要求 (Tier 0) を受けて協調型タスク実行基盤およびCSPチャネル通信を提供する。 `{META_3TierSeparation}` `{GLOBAL_ComponentHarness}`
+本コンポーネントは **Tier 1 (主要システムコンポーネント: Primary Component)** に属し、システム要求定義（`requires/`）を受けて協調型タスク実行基盤およびCSPチャネル通信を提供する。 `{META_3TierSeparation}` `{GLOBAL_ComponentHarness}`
 
 ### 2.1 構成要素
 <!-- traceability: {META_3TierSeparation} {GLOBAL_ComponentHarness} -->
@@ -113,7 +113,7 @@ def handoff_or_yield(target: Task) -> CoroutineHandle:
 ### 4.1 アルゴリズム
 <!-- traceability: {CSP_Handoff} {DirectContextSwitch} {GLOBAL_IdleDetection} {GLOBAL_StrictMemoryLimit} {GLOBAL_IndependentHeap} {GLOBAL_InterruptWakeup} -->
 - **CSP Handoff (直接スイッチ)**: `send`/`recv` 時に相手タスクが既に待機状態であった場合、スケジューラを介さず即座に相手タスクへ実行権を移譲する。 `{CSP_Handoff}`
-- **直接コンテキストスイッチ (Direct Context Switch)**: コルーチンの対称遷移（Symmetric Transfer）により、コールスタックを消費せずに相手タスクのコルーチンハンドルへ直接ジャンプする。OSスケジューラのキュー処理オーバーヘッドを完全にバイパスし、極小スタック（2KB）環境下でもスタックオーバーフローを起こさない決定論的 $O(1)$ スイッチを実現する。 `{DirectContextSwitch}`
+- **直接コンテキストスイッチ (Direct Context Switch)**: コルーチンの対称遷移（Symmetric Transfer）により、コールスタックを消費せずに相手タスクのコルーチンハンドルへ直接ジャンプする。OSスケジューラのキュー処理オーバーヘッドを完全にバイパスし、極小スタック（2KB）環境下でもスタックオーバーフローを起こさない決定論的 $O(1)$ スイッチを実現する。実測は [`benchmarks/direct_context_switch_bench.py`](benchmarks/direct_context_switch_bench.py) を参照。 `{DirectContextSwitch}`
 - **割り込みウェイクアップ (Interrupt Wakeup)**: 外部割り込みが発生した際、割り込みサービスルーチン（ISR）から `notify_interrupt` が呼び出され、INT イベントを有界キューに投函する。スケジューラが yield 点でこれをドレインし、特定の割り込みベクトル（`irq_id`）に登録されて待機しているタスクを READY 状態に遷移させて実行可能キュー末尾に投入する。 `{GLOBAL_InterruptWakeup}`
 - **Idle Detection**: 全ての実行中タスクがブロック状態にあり、かつイベントキューが空（割り込みや外部イベントによる起床待ちのみ）の場合にアイドル状態と判定する。この条件を `idle_hook` のトリガーとし、イベントキューが空かつ全タスクがブロック状態の時のみ、リングバッファ内の未出力ログが1件以上存在する、あるいはイベント待機開始から10ミリ秒以上経過した際に、バックグラウンド処理（リングバッファからロガーを介した物理ストレージや非揮発性メモリへのログ書き出し・フラッシュ処理）をREADYリング外の専用Idleタスクとして呼び出す。 `{GLOBAL_IdleDetection}`
 - **Memory Management**: タスク生成時に独立したメモリパーティションを割り当てる。 `{GLOBAL_StrictMemoryLimit}` `{GLOBAL_IndependentHeap}`

@@ -272,19 +272,24 @@ class JITMultiBufferCache:
         self.rotate()
         return self.active.allocate(trace)
 
+    def find_bank_excluding(self, head_pc: int, excluding_bank_id: int) -> JITCacheBank | None:
+        for bank in self.banks:
+            if bank.bank_id != excluding_bank_id and head_pc in bank.traces:
+                return bank
+        return None
+
     def rotate(self):
         """Oldest is purged and becomes the new Active; Active->Warm, Warm->Oldest.
 
-        Unlinks incoming chains targeting Oldest in O(k) bounded time via
-        Oldest's inbound_sources right before Oldest is cleared and reused as Active.
-        Traces resident in Warm transitioning to Oldest remain valid and chained.
+        Resolves incoming chains targeting Oldest in O(k) bounded time via
+        Oldest's inbound_sources right before Oldest is cleared and reused as Active:
+        - If the target was promoted to Active, it is re-chained to the promoted trace.
+        - If the target was not promoted and is evicted, it is unlinked to fallback.
         """
         self._require_writable()
         
-        # 1. Unlink incoming chains that pointed into Oldest (which is about to be cleared and reused).
-        # Warm->Oldest transition keeps code valid and execution chained without harm.
-        # Only when Oldest is purged do we unlink its recorded inbound sources -- O(k) local unlinking!
-        self._unlink_bank_inbound(self.oldest)
+        # 1. Resolve incoming chains that pointed into Oldest (re-chain if promoted, unlink if evicted).
+        self._resolve_bank_inbound(self.oldest)
 
         purged = self.banks[self.oldest_idx].clear()
         self.evictions += len(purged)
@@ -295,12 +300,24 @@ class JITMultiBufferCache:
         if purged and self.on_evict:
             self.on_evict(purged)        # let the bitmap mark the cards re-compilable
 
-    def _unlink_bank_inbound(self, bank: JITCacheBank):
-        """Unlinks only the sources that chained into `bank`, avoiding O(N) full-cache sweeps."""
-        for src_pc in bank.inbound_sources:
+    def _resolve_bank_inbound(self, bank: JITCacheBank):
+        """Resolves inbound chains pointing to `bank` right before `bank` is purged.
+
+        If a target was promoted to Active (or still alive elsewhere), re-chains
+        the source to the promoted target without dropping to interpreter fallback.
+        Only if the target is completely evicted is the source unlinked.
+        """
+        for src_pc in list(bank.inbound_sources):
             src_trace = self.find_trace(src_pc)
-            if src_trace is not None and src_trace.chain_next in bank.traces:
-                src_trace.chain_next = None
+            if src_trace is not None and src_trace.chain_next is not None:
+                target_pc = src_trace.chain_next
+                promoted_bank = self.find_bank_excluding(target_pc, excluding_bank_id=bank.bank_id)
+                if promoted_bank is not None:
+                    # Target was promoted: keep link and transfer inbound tracking!
+                    promoted_bank.inbound_sources.add(src_pc)
+                else:
+                    # Target was not promoted and is evicted: unpatch to interpreter fallback
+                    src_trace.chain_next = None
         bank.inbound_sources.clear()
 
 
@@ -779,6 +796,35 @@ def test_rotate_unlinks_chains_when_oldest_is_purged():
     cache.begin_patch(); cache.rotate(); cache.commit_patch()   # target: Oldest -> PURGED into Active
     assert source.chain_next is None, \
         "target was purged on rotation; inbound link must be unlinked to interpreter fallback"
+
+
+def test_rotate_rechains_when_target_was_promoted_to_active():
+    """If a target in Oldest was promoted to Active before Oldest is purged,
+    the inbound chain must be RE-CHAINED to the promoted trace rather than
+    unlinked to the interpreter fallback."""
+    cache = JITMultiBufferCache()
+    cache.begin_patch()
+    target = JITTrace(0x200, lambda ctx: "COMPLETED", 64)
+    cache.insert(target)
+    cache.rotate()                       # target: Active -> Warm
+    source = JITTrace(0x100, lambda ctx: "COMPLETED", 64)
+    source.chain_next = 0x200            # link established
+    cache.register_chain(0x100, 0x200)
+    cache.insert(source)
+    cache.commit_patch()
+
+    cache.begin_patch(); cache.rotate(); cache.commit_patch()   # target: Warm -> Oldest
+    assert 0x200 in cache.oldest.traces
+
+    # Simulate execution of target while in Oldest -> triggers Oldest-Only Promotion to Active!
+    promoted = cache.lookup(0x200)
+    assert promoted is not None
+    assert 0x200 in cache.active.traces
+
+    # Now rotate again: Oldest is purged. Since target was promoted to Active, source must RE-CHAIN!
+    cache.begin_patch(); cache.rotate(); cache.commit_patch()
+    assert source.chain_next == 0x200, "source must be re-chained to promoted target in Active"
+    assert 0x100 in cache.warm.inbound_sources, "inbound tracking must follow the promoted bank"
 
 
 def test_eviction_makes_the_card_recompilable():

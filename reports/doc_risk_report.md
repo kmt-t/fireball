@@ -229,6 +229,7 @@
 | `components/tier2_runtime/runtime_vsoc.md` | 5.5 関連コンポーネントとの連携 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '5.5 関連コンポーネントとの連携'. |
 | `components/tier3_jit/jit_assembler_constexpr.md` | 6.1 性能制約 | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '6.1 性能制約'. |
 | `components/tier3_jit/jit_compiler.md` | JIT構成（jit_config） | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'JIT構成（jit_config）'. |
+| `components/tier3_jit/jit_compiler.md` | トレース・チェイニング（連鎖実行） | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'トレース・チェイニング（連鎖実行）'. |
 | `components/tier3_jit/jit_runtime_hotspot.md` | 6.1 性能制約 | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '6.1 性能制約'. |
 | `components/tier3_platform/platform_memory.md` | 5. 制約と不変条件 | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '5. 制約と不変条件'. |
 | `specs/wasm_instruction_set.md` | 3.1 制御フロー命令 (Control Flow) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.1 制御フロー命令 (Control Flow)'. |
@@ -256,7 +257,6 @@
 | `components/tier2_runtime/runtime_vsoc.md` | 5.4 URI/IPCインターフェイス | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '5.4 URI/IPCインターフェイス'. |
 | `components/tier2_runtime/runtime_vsoc.md` | 7.1 性能制約と方策 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '7.1 性能制約と方策'. |
 | `components/tier2_runtime/runtime_vsoc.md` | 7.3 安全性制約と方策 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '7.3 安全性制約と方策'. |
-| `components/tier3_jit/jit_compiler.md` | トレース・チェイニング（連鎖実行） | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'トレース・チェイニング（連鎖実行）'. |
 | `components/tier3_jit/jit_compiler.md` | 7.1 性能制約と方策 | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '7.1 性能制約と方策'. |
 | `components/tier3_jit/jit_engine_copy_patch.md` | 2. アーキテクチャ分類 | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '2. アーキテクチャ分類'. |
 | `components/tier3_jit/jit_engine_copy_patch.md` | トレースコンパイル手順 | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'トレースコンパイル手順'. |
@@ -542,12 +542,12 @@
 | `components/tier3_platform/platform_hal.md` | 5.2 Tier 3 リソースインターフェイス | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '5.2 Tier 3 リソースインターフェイス'. |
 | `plans/roadmap_phase.md` | Phase 1: vSoC First（GO後に約3ヶ月） | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'Phase 1: vSoC First（GO後に約3ヶ月）'. |
 | `requires/requirement_list.md` | 3.2.3 移植性・互換性 | 0 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.2.3 移植性・互換性'. |
+| `components/tier3_jit/jit_runtime_entry.md` | 高速検索 | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '高速検索'. |
 | `architecture/architecture_overview.md` | 依存性ルール | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '依存性ルール'. |
 | `architecture/resource_budget.md` | 4.1 制約ブロック定義 | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.1 制約ブロック定義'. |
 | `components/tier2_runtime/debug/debug_gdb_rsp.md` | 4.1 アルゴリズム | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.1 アルゴリズム'. |
 | `components/tier2_runtime/runtime_vmmio.md` | アクセスディスパッチ (`dispatch-access`) | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'アクセスディスパッチ (`dispatch-access`)'. |
 | `components/tier3_jit/jit_compiler.md` | JITコンテキスト（jit_context） | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'JITコンテキスト（jit_context）'. |
-| `components/tier3_jit/jit_runtime_entry.md` | 高速検索 | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '高速検索'. |
 | `architecture/architecture_overview.md` | 2.1 レイヤー構成 | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '2.1 レイヤー構成'. |
 | `architecture/document_structure.md` | 2.1 デコンポジション基準（いつ下位 Tier へ分解するか） | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '2.1 デコンポジション基準（いつ下位 Tier へ分解するか）'. |
 | `architecture/document_structure.md` | 4.1 分類基準と検証時の挙動 | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.1 分類基準と検証時の挙動'. |

@@ -245,7 +245,7 @@
 ### 3.7 メモリアクセス系ステンシル (Linear Memory Load & Store with Boundary Protection)
 <!-- traceability: {MemoryBoundaryCheck} {FastAddressCheck} {JIT_RegisterMapping} -->
 
-すべてのロード/ストア命令は、境界チェック保護（`FastAddressCheck` マスク演算 `AND r4, r6` または比較トラップ `CMP r4, r6; BHS __trap`）を経て、`R3 = mem_base` ピン留めバリアント（または統合スタック参照バリアント）によりアクセスされる。以下は `R6 = mem_mask`（例: 64KB 境界 `0x0000_FFFF`、または `N * 64KB` / 部分ページ境界マスク）によるマスク保護バリアント。リニアメモリは 64KB ページ単位（`memory.size` / `memory.grow`）で管理・ページングされる。
+すべてのロード/ストア命令は、境界チェック保護（`FastAddressCheck` 比較トラップ `CMP addr, limit; BHS __trap` またはマスク演算 `AND addr, mask`）を経て、`R3 = mem_base` ピン留めバリアント（または統合スタック参照バリアント）によりアクセスされる。実メモリサイズ `R6 = guest_ram_size`（またはマスク）による単一の統一境界判定アルゴリズムにより、部分ページ、単一 64KB ページ、および複数 64KB ページ（`N * 64KB`）の全ケースを統一的に保護する。リニアメモリは 64KB ページ単位（`memory.size` / `memory.grow`）で管理・ページングされる。
 
 | WASM 命令 | Stencil 名 | 入力状態 | 出力状態 | Thumb-2 命令列 (`R3=mem_base, R6=mem_mask`) | バイナリ列 (Hex) |
 | :--- | :--- | :--- | :--- | :--- | :--- |

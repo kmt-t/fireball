@@ -142,11 +142,16 @@ class JITCacheBank:
         self.capacity_bytes = capacity_bytes
         self.used_bytes = 0
         self.traces: dict[int, JITTrace] = {}   # head_pc -> JITTrace
+        # Inbound chains: sources (traces in any bank) that point into THIS bank.
+        # When this bank transitions Warm -> Oldest (or Oldest is purged),
+        # only these registered sources need to be unlinked, eliminating O(N) full-scans.
+        self.inbound_sources: set[int] = set()  # set of source head_pcs
 
     def clear(self) -> list[int]:
         """Purges the bank and returns the head PCs that were discarded."""
         purged = list(self.traces.keys())
         self.traces.clear()
+        self.inbound_sources.clear()
         self.used_bytes = 0
         return purged
 
@@ -191,6 +196,27 @@ class JITMultiBufferCache:
     def oldest(self) -> JITCacheBank:
         return self.banks[self.oldest_idx]
 
+    def find_bank(self, head_pc: int) -> JITCacheBank | None:
+        for bank in self.banks:
+            if head_pc in bank.traces:
+                return bank
+        return None
+
+    def find_trace(self, head_pc: int) -> JITTrace | None:
+        for bank in self.banks:
+            if head_pc in bank.traces:
+                return bank.traces[head_pc]
+        return None
+
+    def register_chain(self, source_pc: int, target_pc: int):
+        """Registers a direct chain link from source_pc to target_pc.
+        
+        The target's resident bank records source_pc in its inbound_sources table.
+        """
+        target_bank = self.find_bank(target_pc)
+        if target_bank is not None:
+            target_bank.inbound_sources.add(source_pc)
+
     # --- MPU W^X transaction ---
 
     def begin_patch(self):
@@ -232,8 +258,7 @@ class JITMultiBufferCache:
                 self.promotions += 1
                 # No re-link needed here: promotion only ever ADDS a pc to
                 # the Active bank, so it can never invalidate a link that
-                # `_sweep_dangling_chains()` already verified valid as of
-                # the last rotate(). `{JIT_LazyChaining}`
+                # was valid as of the last rotate(). `{JIT_LazyChaining}`
         finally:
             self.commit_patch()
         return trace
@@ -248,8 +273,19 @@ class JITMultiBufferCache:
         return self.active.allocate(trace)
 
     def rotate(self):
-        """Oldest is purged and becomes the new Active; Active->Warm, Warm->Oldest."""
+        """Oldest is purged and becomes the new Active; Active->Warm, Warm->Oldest.
+
+        Unlinks incoming chains targeting Warm (which transitions to Oldest)
+        in O(k) bounded time via Warm's inbound_sources, without scanning all traces.
+        """
         self._require_writable()
+        
+        # 1. Unlink incoming chains that pointed into Warm (which is about to become Oldest).
+        # A trace chained into Warm survives this rotation as Oldest, but Oldest is one
+        # rotate away from purge and is not a valid chain target. We directly unlink
+        # only the sources recorded in warm's inbound_sources -- O(k) without full scan!
+        self._unlink_bank_inbound(self.warm)
+
         purged = self.banks[self.oldest_idx].clear()
         self.evictions += len(purged)
 
@@ -259,23 +295,13 @@ class JITMultiBufferCache:
         if purged and self.on_evict:
             self.on_evict(purged)        # let the bitmap mark the cards re-compilable
 
-        # A trace chained into what was Warm survives this rotation (it is
-        # merely relabelled Oldest), but it will be cleared by the NEXT
-        # rotate(). Since a chain source can outlive its target by exactly
-        # one rotation (Active always has more remaining lifetime than
-        # Warm), sweep every live trace now and drop any chain_next that no
-        # longer resolves inside {Active, Warm} before it goes dangling.
-        self._sweep_dangling_chains()
-
-    def _sweep_dangling_chains(self):
-        live_active = self.active.traces
-        live_warm = self.warm.traces
-        for bank in self.banks:
-            for trace in bank.traces.values():
-                if trace.chain_next is not None and \
-                   trace.chain_next not in live_active and \
-                   trace.chain_next not in live_warm:
-                    trace.chain_next = None
+    def _unlink_bank_inbound(self, bank: JITCacheBank):
+        """Unlinks only the sources that chained into `bank`, avoiding O(N) full-cache sweeps."""
+        for src_pc in bank.inbound_sources:
+            src_trace = self.find_trace(src_pc)
+            if src_trace is not None and src_trace.chain_next in bank.traces:
+                src_trace.chain_next = None
+        bank.inbound_sources.clear()
 
 
 # ==============================================================================
@@ -528,6 +554,7 @@ class IntegratedRuntimeEngine:
                 if succ is not None and \
                    (succ in self.cache.active.traces or succ in self.cache.warm.traces):
                     trace.chain_next = succ
+                    self.cache.register_chain(head_pc, succ)
                 self.bitmap.mark_compiled(head_pc)
                 self.compilations += 1
                 compiled += 1
@@ -740,6 +767,7 @@ def test_rotate_sweeps_a_chain_target_that_is_about_to_leave_warm():
     cache.rotate()                       # target: Active -> Warm
     source = JITTrace(0x100, lambda ctx: "COMPLETED", 64)
     source.chain_next = 0x200            # simulate idle_hook having chained into Warm
+    cache.register_chain(0x100, 0x200)
     cache.insert(source)
     cache.commit_patch()
     assert source.chain_next == 0x200, "sanity: link established while target is in Warm"

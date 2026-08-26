@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-26T08:24:56.014066+00:00",
+  "generated_at": "2026-08-26T20:17:45.252018+00:00",
   "backend": "heuristic",
   "total_evaluated": 778,
   "formal_candidates_count": 31,
@@ -10,12 +10,12 @@
     "architecture/architecture_overview.md": "3f183179addd8251c6a0b6faecd54a999ea326f528f1cd4b24ff98bf922def4f",
     "architecture/concept_harness.md": "2160b8e29a617ecefbf46165542544705de7ebb0f6d5b7df4bbeb1c084f9cd3c",
     "architecture/document_structure.md": "24357f01283821a32a25234b99d2e956f10b1db600b3311f5f1f28ac664770b3",
-    "architecture/master_physical_design.md": "e871bee662ff35dbdf63561456ecfdc511921160e5909f39351cfee2ba453371",
+    "architecture/master_physical_design.md": "648ffa58c33e0e1c48c4da70854ea70f3352e95c5d5590054e78c60bd308a4cd",
     "architecture/resource_budget.md": "ac4928f5ad7fcc1a360b6539ec3d44d072a67c6b7d4aa7d76bdac014971def00",
     "components/tier1_core/os_coos.md": "f1579a3a615047b5b3b3e189413e953088d502bd81bf9a180321001f5cf53a79",
     "components/tier1_core/os_scheduler.md": "8f2a91e241b3e52b23d22c75dc01f37adab4592a59255070983ded474fed5f77",
     "components/tier1_core/system_config.md": "35a7a52c8def43525248931e019176457585eb4ded4185c126af1877fd12684b",
-    "components/tier1_core/system_config_details.md": "d01b76be672dc64e340304989cd087ebc46edef5f75c2a0b633bf2c927af019b",
+    "components/tier1_core/system_config_details.md": "d3b9b82252004263b845452de3dacb9a974af1f9b4119c7c8a5e0bf8e243304d",
     "components/tier1_core/system_containers.md": "5ab53c7035c1d71a351af3c8245e095357752fb093b978500f9293e9418c67ed",
     "components/tier1_core/system_logging.md": "7ec474b1ad605d7e56d14c9eb01f763fb2cd93553a8c7d91e4a4c71f4072cb4d",
     "components/tier1_core/system_syscall.md": "7fddb15242b1858522120553eebdf76354802bffe4bfdffe648f50f6e788a234",
@@ -31,9 +31,9 @@
     "components/tier2_runtime/wasm_instruction.md": "640483f8a25bca7885110ce37e499c4ba3622fdc2ba3507e3a78b2bc1fcf8b5f",
     "components/tier3_jit/concepts/README.md": "a39c8c192999a792243e697e008fcad02c701d14b9559d492d668208122b6ebc",
     "components/tier3_jit/jit_assembler_constexpr.md": "bdeb28e114f82861fadac6ac3f3c9953dfd2cd3264a243d5db232d893c980924",
-    "components/tier3_jit/jit_compiler.md": "c29a6cdebfbd187b0fa3fb01f0a3fad1463a1240c39c008a60394b0b0378f9d3",
+    "components/tier3_jit/jit_compiler.md": "326abf9b0bae3f5f6a2dc62e871a0d172e5cfc65f0a48a9a8231391ed5c64aa9",
     "components/tier3_jit/jit_engine_copy_patch.md": "07af5b827cdd19b1bb48f78234953707a4d55f5c3d0f5940cd099ed28d70676f",
-    "components/tier3_jit/jit_runtime_entry.md": "4e1acdf6e3c5b56d5ed285c252a8c3f692fa86714eee534e4ae1ba996e034395",
+    "components/tier3_jit/jit_runtime_entry.md": "48f66e5e3bc006117688caf06e87cea886b7b004f52a46b50e84d11b7758dac2",
     "components/tier3_jit/jit_runtime_hotspot.md": "bf4ced6b78c1978a08624c8fe9f430ee307c068780cd0c314d6f527ea698603f",
     "components/tier3_platform/platform_hal.md": "a5407e2d644de41349938325e01ca15be3fc8f17304d3ea9bc74251ff431353c",
     "components/tier3_platform/platform_memory.md": "7269a7df0573b9753da79472f7aaa4970a47f4ab9e7ef5a8406b70cceff05e1b",
@@ -65,19 +65,6 @@
       "summary": "Independent heuristic evaluation for '2.1 メモリ管理'."
     },
     {
-      "section_id": "sec:requires/requirement_list.md#3.1.1 WASM実行 (vSoC)",
-      "file_path": "requires/requirement_list.md",
-      "heading": "3.1.1 WASM実行 (vSoC)",
-      "tier": 0,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '3.1.1 WASM実行 (vSoC)'."
-    },
-    {
       "section_id": "sec:components/tier1_core/system_config_details.md#2.4 vSoC / vMMIO {VERIFY_FORMAL}",
       "file_path": "components/tier1_core/system_config_details.md",
       "heading": "2.4 vSoC / vMMIO {VERIFY_FORMAL}",
@@ -89,6 +76,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '2.4 vSoC / vMMIO {VERIFY_FORMAL}'."
+    },
+    {
+      "section_id": "sec:requires/requirement_list.md#3.1.1 WASM実行 (vSoC)",
+      "file_path": "requires/requirement_list.md",
+      "heading": "3.1.1 WASM実行 (vSoC)",
+      "tier": 0,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '3.1.1 WASM実行 (vSoC)'."
     },
     {
       "section_id": "sec:components/tier2_runtime/runtime_interpreter.md#4.1 アルゴリズム",
@@ -156,10 +156,10 @@
       "summary": "Independent heuristic evaluation for '4.2 メタキーワード（共通非機能要件・設計方針）の定義'."
     },
     {
-      "section_id": "sec:components/tier1_core/os_coos.md#1. コンセプト",
-      "file_path": "components/tier1_core/os_coos.md",
+      "section_id": "sec:components/tier3_jit/jit_compiler.md#1. コンセプト",
+      "file_path": "components/tier3_jit/jit_compiler.md",
       "heading": "1. コンセプト",
-      "tier": 1,
+      "tier": 3,
       "complexity_score": 2,
       "risk_score": 2,
       "formal_needed": false,
@@ -169,10 +169,10 @@
       "summary": "Independent heuristic evaluation for '1. コンセプト'."
     },
     {
-      "section_id": "sec:components/tier3_jit/jit_compiler.md#1. コンセプト",
-      "file_path": "components/tier3_jit/jit_compiler.md",
+      "section_id": "sec:components/tier1_core/os_coos.md#1. コンセプト",
+      "file_path": "components/tier1_core/os_coos.md",
       "heading": "1. コンセプト",
-      "tier": 3,
+      "tier": 1,
       "complexity_score": 2,
       "risk_score": 2,
       "formal_needed": false,
@@ -1015,6 +1015,32 @@
       "summary": "Independent heuristic evaluation for '4.3 内部シーケンス'."
     },
     {
+      "section_id": "sec:components/tier3_jit/jit_compiler.md#3.1 データ構造",
+      "file_path": "components/tier3_jit/jit_compiler.md",
+      "heading": "3.1 データ構造",
+      "tier": 3,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '3.1 データ構造'."
+    },
+    {
+      "section_id": "sec:architecture/master_physical_design.md#2.3 Pillar 3: 3面世代交代回転コードキャッシュ (3-Bank Generational Rotating Code Cache)",
+      "file_path": "architecture/master_physical_design.md",
+      "heading": "2.3 Pillar 3: 3面世代交代回転コードキャッシュ (3-Bank Generational Rotating Code Cache)",
+      "tier": "meta",
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '2.3 Pillar 3: 3面世代交代回転コードキャッシュ (3-Bank Generational Rotating Code Cache)'."
+    },
+    {
       "section_id": "sec:components/tier1_core/system_syscall.md#5.7. WASI (`0x80`-`0xBF`)",
       "file_path": "components/tier1_core/system_syscall.md",
       "heading": "5.7. WASI (`0x80`-`0xBF`)",
@@ -1052,19 +1078,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '4.1 アルゴリズム'."
-    },
-    {
-      "section_id": "sec:components/tier3_jit/jit_compiler.md#3.1 データ構造",
-      "file_path": "components/tier3_jit/jit_compiler.md",
-      "heading": "3.1 データ構造",
-      "tier": 3,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '3.1 データ構造'."
     },
     {
       "section_id": "sec:components/tier3_platform/platform_memory.md#9. ハードウェアメモリ保護 (MPU) & W^X 設計",
@@ -1188,6 +1201,19 @@
       "summary": "Independent heuristic evaluation for '5.5. IRQ (`0x30`-`0x3F`)'."
     },
     {
+      "section_id": "sec:components/tier1_interface/ipc_router.md#4.3.1 二分探索による O(log N) 低遅延ルックアップ",
+      "file_path": "components/tier1_interface/ipc_router.md",
+      "heading": "4.3.1 二分探索による O(log N) 低遅延ルックアップ",
+      "tier": 1,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '4.3.1 二分探索による O(log N) 低遅延ルックアップ'."
+    },
+    {
       "section_id": "sec:components/tier3_jit/jit_compiler.md#検索範囲取得（get_search_range）",
       "file_path": "components/tier3_jit/jit_compiler.md",
       "heading": "検索範囲取得（get_search_range）",
@@ -1251,19 +1277,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '3.1 データ構造'."
-    },
-    {
-      "section_id": "sec:components/tier1_interface/ipc_router.md#4.3.1 二分探索による O(log N) 低遅延ルックアップ",
-      "file_path": "components/tier1_interface/ipc_router.md",
-      "heading": "4.3.1 二分探索による O(log N) 低遅延ルックアップ",
-      "tier": 1,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '4.3.1 二分探索による O(log N) 低遅延ルックアップ'."
     },
     {
       "section_id": "sec:components/tier1_interface/ipc_router.md#サービス検索と接続フロー",
@@ -1593,19 +1606,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for 'WASM実行およびJIT遷移シーケンス'."
-    },
-    {
-      "section_id": "sec:architecture/master_physical_design.md#2.3 Pillar 3: 3面世代交代回転コードキャッシュ (3-Bank Generational Rotating Code Cache)",
-      "file_path": "architecture/master_physical_design.md",
-      "heading": "2.3 Pillar 3: 3面世代交代回転コードキャッシュ (3-Bank Generational Rotating Code Cache)",
-      "tier": "meta",
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '2.3 Pillar 3: 3面世代交代回転コードキャッシュ (3-Bank Generational Rotating Code Cache)'."
     },
     {
       "section_id": "sec:architecture/master_physical_design.md#2.4 Pillar 4: 対称直接ハンドオフ・エンジン (Symmetric Direct Handoff Engine)",
@@ -2556,6 +2556,19 @@
       "summary": "Independent heuristic evaluation for '7.3 安全性制約と方策'."
     },
     {
+      "section_id": "sec:components/tier3_jit/jit_compiler.md#トレース・チェイニング（連鎖実行）",
+      "file_path": "components/tier3_jit/jit_compiler.md",
+      "heading": "トレース・チェイニング（連鎖実行）",
+      "tier": 3,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for 'トレース・チェイニング（連鎖実行）'."
+    },
+    {
       "section_id": "sec:components/tier3_jit/jit_compiler.md#7.1 性能制約と方策",
       "file_path": "components/tier3_jit/jit_compiler.md",
       "heading": "7.1 性能制約と方策",
@@ -2699,9 +2712,9 @@
       "summary": "Independent heuristic evaluation for '3.1 AAPCS 非スクラッチ完全準拠と外部 C/C++ 関数呼び出し境界'."
     },
     {
-      "section_id": "sec:components/tier1_core/os_coos.md#協調型OS COOS コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}",
+      "section_id": "sec:components/tier1_core/os_coos.md#協調型OS COOS コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM} {VERIFY_BENCHMARK}",
       "file_path": "components/tier1_core/os_coos.md",
-      "heading": "協調型OS COOS コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}",
+      "heading": "協調型OS COOS コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM} {VERIFY_BENCHMARK}",
       "tier": 1,
       "complexity_score": 2,
       "risk_score": 2,
@@ -2709,7 +2722,7 @@
       "recommended_verification": "Static",
       "suggested_tags": [],
       "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '協調型OS COOS コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}'."
+      "summary": "Independent heuristic evaluation for '協調型OS COOS コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM} {VERIFY_BENCHMARK}'."
     },
     {
       "section_id": "sec:components/tier1_core/os_coos.md#COOS フルセット・コンセプトコード (`concepts/coos_concept.py`)",
@@ -2798,9 +2811,9 @@
       "summary": "Independent heuristic evaluation for 'WIT インターフェイス仕様書 (WASI 準拠版) {VERIFY_WIT} {VERIFY_LLM}'."
     },
     {
-      "section_id": "sec:components/tier1_interface/ipc_router.md#IPCルータ コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}",
+      "section_id": "sec:components/tier1_interface/ipc_router.md#IPCルータ コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM} {VERIFY_BENCHMARK}",
       "file_path": "components/tier1_interface/ipc_router.md",
-      "heading": "IPCルータ コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}",
+      "heading": "IPCルータ コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM} {VERIFY_BENCHMARK}",
       "tier": 1,
       "complexity_score": 2,
       "risk_score": 2,
@@ -2808,7 +2821,7 @@
       "recommended_verification": "Static",
       "suggested_tags": [],
       "risk_factors": [],
-      "summary": "Independent heuristic evaluation for 'IPCルータ コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}'."
+      "summary": "Independent heuristic evaluation for 'IPCルータ コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM} {VERIFY_BENCHMARK}'."
     },
     {
       "section_id": "sec:components/tier1_interface/ipc_router.md#IPC ルータ フルセット・コンセプトコード (`concepts/ipc_router_concept.py`)",
@@ -2945,9 +2958,9 @@
       "summary": "Independent heuristic evaluation for 'vSoC コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}'."
     },
     {
-      "section_id": "sec:components/tier3_jit/jit_compiler.md#JIT コンパイラ コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}",
-      "file_path": "components/tier3_jit/jit_compiler.md",
-      "heading": "JIT コンパイラ コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}",
+      "section_id": "sec:components/tier3_jit/jit_assembler_constexpr.md#コンポーネント設計：constexpr Assembler {VERIFY_BENCHMARK}",
+      "file_path": "components/tier3_jit/jit_assembler_constexpr.md",
+      "heading": "コンポーネント設計：constexpr Assembler {VERIFY_BENCHMARK}",
       "tier": 3,
       "complexity_score": 2,
       "risk_score": 2,
@@ -2955,7 +2968,20 @@
       "recommended_verification": "Static",
       "suggested_tags": [],
       "risk_factors": [],
-      "summary": "Independent heuristic evaluation for 'JIT コンパイラ コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}'."
+      "summary": "Independent heuristic evaluation for 'コンポーネント設計：constexpr Assembler {VERIFY_BENCHMARK}'."
+    },
+    {
+      "section_id": "sec:components/tier3_jit/jit_compiler.md#JIT コンパイラ コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM} {VERIFY_BENCHMARK}",
+      "file_path": "components/tier3_jit/jit_compiler.md",
+      "heading": "JIT コンパイラ コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM} {VERIFY_BENCHMARK}",
+      "tier": 3,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for 'JIT コンパイラ コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM} {VERIFY_BENCHMARK}'."
     },
     {
       "section_id": "sec:components/tier3_jit/jit_compiler.md#4.3 内部シーケンス",
@@ -3678,19 +3704,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '6.3 検証モデル概要（vsoc_cache_coherency_model.py）'."
-    },
-    {
-      "section_id": "sec:components/tier3_jit/jit_compiler.md#トレース・チェイニング（連鎖実行）",
-      "file_path": "components/tier3_jit/jit_compiler.md",
-      "heading": "トレース・チェイニング（連鎖実行）",
-      "tier": 3,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for 'トレース・チェイニング（連鎖実行）'."
     },
     {
       "section_id": "sec:components/tier3_platform/platform_hal.md#4.3 内部シーケンス",
@@ -6585,6 +6598,32 @@
       "summary": "Independent heuristic evaluation for 'アクセスディスパッチ (`dispatch-access`)'."
     },
     {
+      "section_id": "sec:components/tier3_jit/jit_compiler.md#JITコンテキスト（jit_context）",
+      "file_path": "components/tier3_jit/jit_compiler.md",
+      "heading": "JITコンテキスト（jit_context）",
+      "tier": 3,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for 'JITコンテキスト（jit_context）'."
+    },
+    {
+      "section_id": "sec:components/tier3_jit/jit_runtime_entry.md#高速検索",
+      "file_path": "components/tier3_jit/jit_runtime_entry.md",
+      "heading": "高速検索",
+      "tier": 3,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '高速検索'."
+    },
+    {
       "section_id": "sec:components/tier3_platform/platform_memory.md#属性切替シーケンス",
       "file_path": "components/tier3_platform/platform_memory.md",
       "heading": "属性切替シーケンス",
@@ -6901,19 +6940,6 @@
       "summary": "Independent heuristic evaluation for 'JITハーネス（jit_harness）'."
     },
     {
-      "section_id": "sec:components/tier3_jit/jit_compiler.md#JITコンテキスト（jit_context）",
-      "file_path": "components/tier3_jit/jit_compiler.md",
-      "heading": "JITコンテキスト（jit_context）",
-      "tier": 3,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for 'JITコンテキスト（jit_context）'."
-    },
-    {
       "section_id": "sec:components/tier3_jit/jit_compiler.md#JITコンパイル実行 (`jit_compile`)",
       "file_path": "components/tier3_jit/jit_compiler.md",
       "heading": "JITコンパイル実行 (`jit_compile`)",
@@ -6953,9 +6979,9 @@
       "summary": "Independent heuristic evaluation for 'トレースコンパイル（compile_trace）'."
     },
     {
-      "section_id": "sec:components/tier3_jit/jit_runtime_entry.md#高速検索",
+      "section_id": "sec:components/tier3_jit/jit_runtime_entry.md#JITエントリインデックス（JitEntryIndex）クラス",
       "file_path": "components/tier3_jit/jit_runtime_entry.md",
-      "heading": "高速検索",
+      "heading": "JITエントリインデックス（JitEntryIndex）クラス",
       "tier": 3,
       "complexity_score": 2,
       "risk_score": 2,
@@ -6963,7 +6989,7 @@
       "recommended_verification": "Static",
       "suggested_tags": [],
       "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '高速検索'."
+      "summary": "Independent heuristic evaluation for 'JITエントリインデックス（JitEntryIndex）クラス'."
     },
     {
       "section_id": "sec:architecture/concept_harness.md#1. アーキテクチャコンセプト",
@@ -7453,19 +7479,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '3.1 データ構造'."
-    },
-    {
-      "section_id": "sec:components/tier3_jit/jit_runtime_entry.md#JITエントリインデックス（JitEntryIndex）クラス",
-      "file_path": "components/tier3_jit/jit_runtime_entry.md",
-      "heading": "JITエントリインデックス（JitEntryIndex）クラス",
-      "tier": 3,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for 'JITエントリインデックス（JitEntryIndex）クラス'."
     },
     {
       "section_id": "sec:components/tier3_jit/jit_runtime_entry.md#検索（lookup）",
@@ -9212,19 +9225,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '2.6 その他'."
-    },
-    {
-      "section_id": "sec:components/tier3_jit/jit_assembler_constexpr.md#コンポーネント設計：constexpr Assembler",
-      "file_path": "components/tier3_jit/jit_assembler_constexpr.md",
-      "heading": "コンポーネント設計：constexpr Assembler",
-      "tier": 3,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for 'コンポーネント設計：constexpr Assembler'."
     },
     {
       "section_id": "sec:components/tier3_jit/jit_assembler_constexpr.md#3. 静的モデル",

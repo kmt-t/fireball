@@ -21,6 +21,7 @@ JIT Compiler は、WASMバイトコードを実行時にネイティブコード
     - `2: HOT` (コンパイル要求中)
     - `3: COMPILED` (Hotカード。いずれかのPCがコンパイル済み、またはオンデマンド・コンパイルが許可された状態)
 - **コンパイルキュー**: コンパイル待ちのWASM PCを保持する。即時チェイニングを最大化するため、**後入れ先出し (LIFO)** または **履歴の逆順** で処理される。
+- **バンク別被チェイン逆引きテーブル (Inbound Chain Index Table)**: 各キャッシュバンク内のコードをジャンプ先（ターゲット）として直接チェイニングしている JIT エントリインデックスを保持する固定長配列。キャッシュローテーション時に全 JIT エントリを走査（全舐め）することなく、該当バンクに依存するエントリのみを $O(k)$ の定数時間でインタープリタ復帰スタブへアンリンク（安全化）する。
 
 ### 3.2 内部ブロック図
 <!-- traceability: {JIT_MultiBuffer_Cache} {SimpleJITArchitecture} -->
@@ -81,6 +82,7 @@ graph TD
 | アクティブバンク索引 | 現在の Active バンク番号。`(active_index + 1) % 3` が Warm、`(active_index + 2) % 3` が Oldest | 索引 | 8bit符号なし（rotate() で加算） |
 | コンパイル待ち列 | 後でコンパイルを行うWASM PC (uint32_t) の格納キュー | 固定長LIFOキュー | `std::array<uint32_t, FB_CONF_JIT_QUEUE_SIZE>` |
 | カードマーキング表 | カード単位の 2-bit 実行状態 | 密ビュー | `fireball::bit_view<2>` |
+| 被チェイン逆引きテーブル | バンクごとの被チェイン元 JIT エントリインデックス配列 | 固定長配列の配列 | `std::array<std::array<uint16_t, FB_CONF_JIT_MAX_INBOUND_CHAINS_PER_BANK>, 3>` |
 
 #### JIT構成（jit_config）
 <!-- traceability: {META_ConfigurableSystem} {GLOBAL_StaticScalability} -->
@@ -153,7 +155,7 @@ JIT コンパイラは、ホットスポット検出からネイティブコー�
     - **新規コンパイル時**: 生成したトレースのフォールスルー先（`next_pc`）が既に **アクティブ領域または Warm 領域** にあれば、スロットをそのアドレスへ書き換える。Warm はまだ rotate() で消去されておらず実行可能なコードとして常駐しているため、Active に限定する必要はない。
       ループの背進辺（`loops_to`）は連結の対象外とする。バックエッジに埋め込まれるのは Safepoint ポーリングのみであり、実際の比較分岐命令ではないため、ループを継続するか抜けるかの判定は依然として WASM スタックをポップする `_next_pc()` に委ねられている。背進辺へ直接チェインすると、その判定とスタック pop の両方を飛ばしてしまい、条件付きループが無条件の無限ループに変質する。
     - **昇格時**: Oldest 領域からアクティブ領域へトレースを移すだけであり、これは既存の有効なリンク集合（アクティブ ∪ Warm）を狭める操作ではないため、追加のリンク再評価は不要である。
-4. **ダングリング・チェイン掃引**: Oldest 領域は次の rotate() で即座にパージされ得るため、連結先として採用しない。一方で Warm 領域は rotate() のたびに 1 世代ずつ Oldest へ繰り下がるため、常に最も残存寿命の長い世代（新規挿入直後のアクティブ領域）に生まれるチェイン元より **先に** パージされる場合がある。この非対称性に対処するため、rotate() のたびに全バンクの生存トレースを走査し、`chain_next` の参照先がアクティブ領域・Warm 領域のいずれにも属さなくなっていれば、その場でスタブへフォールバックさせる（Dangling Pointer を作らせない）。
+4. **局所アンリンク（O(k) Bounded Unlinking）**: Oldest 領域は次の rotate() で即座にパージされ得るため、連結先として採用しない。一方で Warm 領域は rotate() のたびに 1 世代ずつ Oldest へ繰り下がるため、常に最も残存寿命の長い世代（新規挿入直後のアクティブ領域）に生まれるチェイン元より **先に** パージされる場合がある。この非対称性に対処するため、チェイニング確立時にターゲットの属するバンクの **被チェイン逆引きテーブル（`inbound_chains`）** にソースの JIT エントリインデックスを登録する。rotate() 時には全 JIT エントリを走査（全舐め）することなく、Oldest へ移行するバンクに登録された被チェインエントリのみを直接参照して `chain_next` をインタープリタ復帰スタブにアンパッチする。これにより、$O(N)$ の全走査オーバーヘッドを完全に排除し、マイクロ秒未満の決定論的ローテーションレイテンシ（$O(k)$）を保証する。 `{JIT_LazyChaining}`
 
 #### 統合 Tiered ランタイムエンジン・コンセプトコード (`../tier2_runtime/concepts/runtime_engine_concept.py`)
 インタープリタ実行、2-bit Hotspot 検出、Copy-and-Patch JIT コンパイル、3面マルチバッファキャッシュ（Active/Warm/Oldest）、および MPU W^X 保護プロトコルを統合した自己完結実行シミュレーションは [`../tier2_runtime/concepts/runtime_engine_concept.py`](../tier2_runtime/concepts/runtime_engine_concept.py) を参照。

@@ -98,6 +98,7 @@ namespace fireball {
 | `FB_CONF_WASM_PAGE_SIZE` | WASM標準論理ページサイズ (64KB, 65,536 Bytes) | `65536` | `{FastAddressCheck}` |
 | `FB_CONF_JIT_CACHE_SIZE` | JITキャッシュサイズ (合計バイト数: 2KB x 3面) | `6144` | `{JIT_MultiBuffer_Cache}` |
 | `FB_CONF_JIT_NUM_BUFFERS` | JITキャッシュバッファ面数 (3: トリプルバッファ推奨) | `3` | `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}` |
+| `FB_CONF_JIT_MAX_INBOUND_CHAINS_PER_BANK` | 単一キャッシュバンクに保持可能な最大被チェイン（他トレースからのジャンプ元）エントリ数。ローテーション時の局所アンリンクに使用 | `32` | `{JIT_LazyChaining}` `{META_ConfigurableSystem}` |
 | `FB_CONF_GUEST_RAM_BASE` | ゲストRAMの開始アドレス（アライメント検証と高速境界チェックのため、必ず64KB境界に配置） | `0x00000000` | `{FastAddressCheck}` |
 | `FB_CONF_GUEST_RAM_SIZE` | ゲストRAMの物理割り当てサイズ（WASM 64KB論理ページに対する部分ページ）。**`FB_CONF_TASK_HEAP_SIZE` と同一の領域を指すゲスト側の呼称**であり、両者の等値は `static_assert` で保証される（2.1 参照） | `4096` | `{GLOBAL_StrictMemoryLimit}` `{FastAddressCheck}` |
 | `FB_CONF_VMMIO_BASE` | vMMIO領域の開始アドレス (Bit 31 == 1, 2段階ダイレクトデコード) | `0x80000000` | `{vMMIO_Isolation}` |

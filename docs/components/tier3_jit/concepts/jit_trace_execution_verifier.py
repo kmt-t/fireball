@@ -40,10 +40,16 @@ def test_compiled_trace_runs_on_real_cpu_and_spills_correctly():
         [("i32.add", None)],
         exit_kind="fallback",
         dirty_spills=[("r4", 0)],
+        head_wasm_pc=0x100,
     )
     start_byte, length = engine.last_trace_byte_range
     code = engine.execute_native_bytes(start_byte, length)
     assert code, "compile_trace produced zero bytes -- nothing to execute"
+
+    # Verify the inlined JITTraceHeader immediately preceding the code
+    header_offset, header_len = engine.last_trace_header_range
+    assert header_offset == start_byte - 16
+    assert header_len == 16
 
     mu = Uc(UC_ARCH_ARM, UC_MODE_THUMB)
     mu.mem_map(CODE_BASE, 0x1000)

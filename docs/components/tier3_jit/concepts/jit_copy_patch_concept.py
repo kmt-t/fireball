@@ -35,6 +35,31 @@ class Stencil:
         self.reloc_offsets = dict(reloc_offsets)
 
 
+class JITTraceHeader:
+    """Fixed-size 16-byte header inlined at the head of every compiled trace in the JIT cache."""
+    SIZE_BYTES = 16
+
+    def __init__(self, head_wasm_pc: int = 0, trace_size_bytes: int = 0, flags: int = 0,
+                 variant_id: int = 0, chain_next_pc: int = 0, chain_target_addr: int = 0):
+        self.head_wasm_pc = head_wasm_pc
+        self.trace_size_bytes = trace_size_bytes
+        self.flags = flags
+        self.variant_id = variant_id
+        self.chain_next_pc = chain_next_pc
+        self.chain_target_addr = chain_target_addr
+
+    def to_bytes(self) -> bytes:
+        import struct
+        return struct.pack("<IHBBII", self.head_wasm_pc, self.trace_size_bytes,
+                           self.flags, self.variant_id, self.chain_next_pc, self.chain_target_addr)
+
+    @classmethod
+    def from_bytes(cls, data: bytes | bytearray, offset: int = 0) -> "JITTraceHeader":
+        import struct
+        head_pc, size, flags, variant, chain_next, chain_target = struct.unpack_from("<IHBBII", data, offset)
+        return cls(head_pc, size, flags, variant, chain_next, chain_target)
+
+
 _REG_NAME_TO_ENUM = {r.name.lower(): r for r in Reg}
 
 
@@ -220,17 +245,32 @@ class CopyPatchJITEngine:
         self,
         wasm_ops: list[tuple[str, Any]],
         exit_kind: str = "return",
-        dirty_spills: list[tuple[str, int]] | None = None
+        dirty_spills: list[tuple[str, int]] | None = None,
+        head_wasm_pc: int = 0,
+        chain_next_pc: int = 0,
+        chain_target_addr: int = 0,
     ) -> tuple[int, int]:
         """
         Batches stencil copy & relocation patching inside a single W^X transaction.
+        Inlines a 16-byte JITTraceHeader at the start of the trace buffer.
         Flushes all dirty spilled variables (TOS/NOS, registers) to unified stack before POP/BX.
-        Returns (start_offset, total_instructions).
+        Returns (code_start_offset, total_instructions).
         """
         start_offset = self.current_write_pos
-        start_byte_offset = self.byte_write_pos
         dirty_spills = dirty_spills or []
         asm = Thumb2Assembler()
+
+        # 1. Begin W^X Transaction (RW + XN)
+        self.begin_jit_patch()
+
+        # 2. Emit 16-byte JIT Trace Header (inlined at the head of every trace)
+        header_byte_offset = self.byte_write_pos
+        self.write_instruction(self.current_write_pos, f"// [JIT_TRACE_HEADER] pc=0x{head_wasm_pc:X} (16 bytes)")
+        self.current_write_pos += 1
+        self._emit_bytes(bytes(JITTraceHeader.SIZE_BYTES))
+
+        code_start_byte_offset = self.byte_write_pos
+        code_start_inst_offset = self.current_write_pos
 
         def emit(inst: str, data: bytes):
             self.write_instruction(self.current_write_pos, inst)
@@ -239,10 +279,6 @@ class CopyPatchJITEngine:
 
         def emit_stencil(st: "Stencil"):
             raw = bytes.fromhex(st.hex_bytes.replace(" ", "")) if st.hex_bytes else b""
-            # A stencil's disassembly can list several logical instructions (e.g. the
-            # 2-instruction fallback epilogue) that together correspond to one
-            # contiguous hex_bytes run; only the first written string gets the whole
-            # byte payload so the byte and instruction cursors don't double-count it.
             if not st.code:
                 return
             self.write_instruction(self.current_write_pos, st.code[0])
@@ -252,13 +288,10 @@ class CopyPatchJITEngine:
                 self.write_instruction(self.current_write_pos, inst)
                 self.current_write_pos += 1
 
-        # 1. Begin W^X Transaction (RW + XN)
-        self.begin_jit_patch()
-
-        # 2. Emit Full Callee-saved Prologue
+        # 3. Emit Full Callee-saved Prologue
         emit_stencil(self.stencils["prologue_full"])
 
-        # 3. Emit WASM Ops with Relocation Patching
+        # 4. Emit WASM Ops with Relocation Patching
         for op, arg in wasm_ops:
             if op == "i32.const":
                 imm = int(arg) & 0xFFFFFFFF
@@ -271,11 +304,6 @@ class CopyPatchJITEngine:
                 off = int(arg)
                 emit(f"STR r4, [r1, #{off}]", asm.str_imm(Reg.R4, Reg.R1, off))
             elif op == "br_if":
-                # Target address is not resolvable inside a single compile_trace call
-                # (it may be a forward label in a not-yet-compiled trace), so the branch
-                # displacement is left as an unresolved relocation hole (offset 0), same
-                # as external_call's BL below -- both need a real patch pass after the
-                # target address is known, which is outside this concept engine's scope.
                 emit("CMP r4, #0", asm.cmp_imm8(Reg.R4, 0))
                 target_pc = int(arg)
                 emit(f"BNE.W 0x{target_pc:08X}", asm.b_cond_w(Cond.NE, 0))
@@ -300,9 +328,7 @@ class CopyPatchJITEngine:
                 else:
                     raise ValueError(f"Unsupported stencil opcode: {op}")
 
-        # 4. Emit Epilogue: Flush Dirty Spill Variables before POP
-        # The 16-bit STR (imm5) form only encodes low registers (R0-R7); the
-        # assignable pool's high half (R8-R11) needs the 32-bit STR.W (imm12) form.
+        # 5. Emit Epilogue: Flush Dirty Spill Variables before POP
         for reg, stack_off in dirty_spills:
             reg_enum = _REG_NAME_TO_ENUM[reg.lower()]
             if reg_enum <= Reg.R7:
@@ -315,12 +341,25 @@ class CopyPatchJITEngine:
         elif exit_kind == "fallback":
             emit_stencil(self.stencils["fallback_interp"])
 
-        # 5. Commit W^X Transaction (RO + X + Barriers)
+        # 6. Patch inlined JIT Trace Header
+        total_trace_bytes = self.byte_write_pos - header_byte_offset
+        header = JITTraceHeader(
+            head_wasm_pc=head_wasm_pc,
+            trace_size_bytes=total_trace_bytes,
+            flags=0,
+            variant_id=0,
+            chain_next_pc=chain_next_pc,
+            chain_target_addr=chain_target_addr,
+        )
+        self.byte_cache[header_byte_offset:header_byte_offset + JITTraceHeader.SIZE_BYTES] = header.to_bytes()
+
+        # 7. Commit W^X Transaction (RO + X + Barriers)
         self.commit_jit_patch()
 
         total_emitted = self.current_write_pos - start_offset
-        self.last_trace_byte_range = (start_byte_offset, self.byte_write_pos - start_byte_offset)
-        return (start_offset, total_emitted)
+        self.last_trace_byte_range = (code_start_byte_offset, self.byte_write_pos - code_start_byte_offset)
+        self.last_trace_header_range = (header_byte_offset, JITTraceHeader.SIZE_BYTES)
+        return (code_start_inst_offset, total_emitted - 1)
 
 
 # ==============================================================================
@@ -540,6 +579,31 @@ def test_mpu_wx_protection():
         assert "W^X VIOLATION" in str(e)
 
 
+def test_jit_trace_header_layout():
+    """Verify that a 16-byte JITTraceHeader is correctly inlined at the head of every compiled trace."""
+    engine = CopyPatchJITEngine()
+    ops = [("i32.const", 42), ("local.set", 0)]
+    start_pos, count = engine.compile_trace(
+        ops,
+        exit_kind="fallback",
+        head_wasm_pc=0x100,
+        chain_next_pc=0x200,
+        chain_target_addr=0x08001020,
+    )
+    assert count > 0
+
+    header_offset, header_len = engine.last_trace_header_range
+    assert header_len == JITTraceHeader.SIZE_BYTES == 16
+    assert header_offset == 0
+
+    # Parse the header directly from byte_cache
+    header = JITTraceHeader.from_bytes(engine.byte_cache, header_offset)
+    assert header.head_wasm_pc == 0x100
+    assert header.trace_size_bytes > 16
+    assert header.chain_next_pc == 0x200
+    assert header.chain_target_addr == 0x08001020
+
+
 if __name__ == "__main__":
     test_full_stencil_library_coverage()
     test_stencil_catalog_matches_assembler()
@@ -548,4 +612,5 @@ if __name__ == "__main__":
     test_epilogue_spill_variable_flush()
     test_cps_shared_registers_never_clobbered()
     test_mpu_wx_protection()
+    test_jit_trace_header_layout()
     print("[PASS] All JIT Copy-and-Patch Full-Set concept tests passed successfully.")

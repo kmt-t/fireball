@@ -1,6 +1,6 @@
 # Fireball 設計複雑度 & リスク評価レポート (Risk Assessment Report)
 
-- **評価セクション総数**: 778
+- **評価セクション総数**: 780
 - **形式検証 (pyModelChecking) 推奨セクション**: 31
 - **LLM 意味監査 推奨セクション**: 5
 
@@ -146,6 +146,7 @@
 | `components/tier2_runtime/runtime_interpreter.md` | 4.3 内部シーケンス | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.3 内部シーケンス'. |
 | `components/tier3_jit/jit_compiler.md` | 3.1 データ構造 | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.1 データ構造'. |
 | `architecture/master_physical_design.md` | 2.3 Pillar 3: 3面世代交代回転コードキャッシュ (3-Bank Generational Rotating Code Cache) | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '2.3 Pillar 3: 3面世代交代回転コードキャッシュ (3-Bank Generational Rotating Code Cache)'. |
+| `architecture/master_physical_design.md` | 2.3.1 JIT トレース・インラインヘッダ物理レイアウト (JIT Trace Header & Binary Layout) | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '2.3.1 JIT トレース・インラインヘッダ物理レイアウト (JIT Trace Header & Binary Layout)'. |
 | `components/tier1_core/system_syscall.md` | 5.7. WASI (`0x80`-`0xBF`) | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '5.7. WASI (`0x80`-`0xBF`)'. |
 | `components/tier1_interface/ipc_router.md` | 4.4 内部シーケンス図 | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.4 内部シーケンス図'. |
 | `components/tier2_runtime/runtime_loader.md` | 4.1 アルゴリズム | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.1 アルゴリズム'. |
@@ -348,6 +349,7 @@
 | `components/tier2_runtime/runtime_vsoc.md` | Debugger 介入時のキャッシュ一貫性 | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'Debugger 介入時のキャッシュ一貫性'. |
 | `components/tier2_runtime/runtime_vsoc.md` | `register-hook` | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`register-hook`'. |
 | `components/tier2_runtime/runtime_vsoc.md` | 5.2 ネイティブAPI エクスポート | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '5.2 ネイティブAPI エクスポート'. |
+| `components/tier3_jit/jit_compiler.md` | JIT トレースヘッダ（jit_trace_header） | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'JIT トレースヘッダ（jit_trace_header）'. |
 | `components/tier3_jit/jit_compiler.md` | 5.2 内部コンポーネントのデコンポジション | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '5.2 内部コンポーネントのデコンポジション'. |
 | `specs/jit_stencil_catalog.md` | 2. プレースホルダ（穴 / Relocations）の種類とパッチ規約 | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '2. プレースホルダ（穴 / Relocations）の種類とパッチ規約'. |
 | `specs/jit_stencil_catalog.md` | `STENCIL_FALLBACK_FLUSH_D2_LOCALS` (TOS/NOS + ダーティ Local 変数書き戻し $\to$ インタープリタ末尾ジャンプ) | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`STENCIL_FALLBACK_FLUSH_D2_LOCALS` (TOS/NOS + ダーティ Local 変数書き戻し $\to$ インタープリタ末尾ジャンプ)'. |
@@ -574,6 +576,7 @@
 | `components/tier3_jit/jit_compiler.md` | JITコンパイル実行 (`jit_compile`) | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'JITコンパイル実行 (`jit_compile`)'. |
 | `components/tier3_jit/jit_compiler.md` | JITコード検索 (`jit_lookup`) | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'JITコード検索 (`jit_lookup`)'. |
 | `components/tier3_jit/jit_engine_copy_patch.md` | トレースコンパイル（compile_trace） | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'トレースコンパイル（compile_trace）'. |
+| `components/tier3_jit/jit_runtime_entry.md` | 3.1 データ構造 | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.1 データ構造'. |
 | `components/tier3_jit/jit_runtime_entry.md` | JITエントリインデックス（JitEntryIndex）クラス | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'JITエントリインデックス（JitEntryIndex）クラス'. |
 | `architecture/concept_harness.md` | 1. アーキテクチャコンセプト | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '1. アーキテクチャコンセプト'. |
 | `architecture/concept_harness.md` | 特性比較 | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '特性比較'. |
@@ -609,7 +612,6 @@
 | `components/tier3_jit/jit_assembler_constexpr.md` | コンパイル時エンコード | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'コンパイル時エンコード'. |
 | `components/tier3_jit/jit_assembler_constexpr.md` | constexpr アセンブラ フルセット・コンセプトコード (`concepts/jit_assembler_constexpr_concept.py`) | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'constexpr アセンブラ フルセット・コンセプトコード (`concepts/jit_assembler_constexpr_concept.py`)'. |
 | `components/tier3_jit/jit_engine_copy_patch.md` | コピーアンドパッチエンジン（CopyAndPatchEngine）クラス | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'コピーアンドパッチエンジン（CopyAndPatchEngine）クラス'. |
-| `components/tier3_jit/jit_runtime_entry.md` | 3.1 データ構造 | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.1 データ構造'. |
 | `components/tier3_jit/jit_runtime_entry.md` | 検索（lookup） | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '検索（lookup）'. |
 | `components/tier3_jit/jit_runtime_entry.md` | エントリ登録（register_entry） | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'エントリ登録（register_entry）'. |
 | `components/tier3_jit/jit_runtime_hotspot.md` | 3.1 データ構造 | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.1 データ構造'. |

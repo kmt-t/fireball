@@ -21,6 +21,7 @@ JIT Compiler は、WASMバイトコードを実行時にネイティブコード
     - `2: HOT` (コンパイル要求中)
     - `3: COMPILED` (Hotカード。いずれかのPCがコンパイル済み、またはオンデマンド・コンパイルが許可された状態)
 - **コンパイルキュー**: コンパイル待ちのWASM PCを保持する。即時チェイニングを最大化するため、**後入れ先出し (LIFO)** または **履歴の逆順** で処理される。
+- **JIT トレースヘッダ (JIT Trace Header)**: キャッシュに書き込まれる各ネイティブトレースの先頭（`+0x00`）に配置される 16 バイト固定長のメタデータ構造体。開始 WASM PC、トレースサイズ、チェイン先アドレスなどをインラインで保持する。
 - **バンク別被チェイン逆引きテーブル (Inbound Chain Index Table)**: 各キャッシュバンク内のコードをジャンプ先（ターゲット）として直接チェイニングしている JIT エントリインデックスを保持する固定長配列。キャッシュローテーション時に全 JIT エントリを走査（全舐め）することなく、該当バンクに依存するエントリのみを $O(k)$ の定数時間でインタープリタ復帰スタブへアンリンク（安全化）する。
 
 ### 3.2 内部ブロック図
@@ -95,9 +96,22 @@ JITエンジンの挙動を制御する性能パラメータ。 `{META_Configura
 | カード境界シフト | カード1枚がカバーするWASMサイズ（2のべき乗） | シフト量 | 8bit符号なし |
 | 命令境界シフト | 生成コードのアドレスアライメント | シフト量 | 8bit符号なし |
 
+#### JIT トレースヘッダ（jit_trace_header）
+<!-- traceability: {JIT_MultiBuffer_Cache} {JIT_LazyChaining} -->
+各ネイティブトレースの先頭（`+0x00`）に配置される 16 バイト固定長の物理メタデータ構造体。
+
+| 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
+| :--- | :--- | :--- | :--- |
+| 開始 WASM PC (`head_wasm_pc`) | トレースの開始バイトコード位置 | 32bit符号なし | 4 Bytes (`+0x00`) |
+| トレース総サイズ (`trace_byte_size`) | ヘッダを含むトレース全体の総物理バイト数 | 16bit符号なし | 2 Bytes (`+0x04`) |
+| 状態フラグ (`flags`) | 昇格フラグ・ループヘッダフラグ | 8bit符号なし | 1 Byte (`+0x06`) |
+| バリアント ID (`variant_id`) | ステンシルバリアント/TOSレジスタ状態 ID | 8bit符号なし | 1 Byte (`+0x07`) |
+| チェイン先 PC (`chain_next_pc`) | 直結チェイン先 WASM PC (0: インタープリタ復帰) | 32bit符号なし | 4 Bytes (`+0x08`) |
+| チェイン先アドレス (`chain_target_addr`) | チェイン先ネイティブアドレス（初期値: 復帰スタブ） | 32bit符号なし | 4 Bytes (`+0x0C`) |
+
 #### JIT トレース実行シグネチャ (`exec_trace`)
 <!-- traceability: {JIT_RuntimeAPI_Fallback} {ContextPointerRegister} {EnvironmentPointer} -->
-JIT コンパイル済みネイティブトレースの実行エントリポイント。インタープリタの `opcode_handler` と完全同一の `__fastcall` 継続渡し（CPS）3引数シグネチャを持ち、レジスタ再配置オーバーヘッドなしに相互遷移する。物理レジスタ規約および Callee-saved 任意割当プールの詳細は [マスター物理設計書 §3](../../architecture/master_physical_design.md) を参照。 `{JIT_RuntimeAPI_Fallback}` `{ContextPointerRegister}` `{EnvironmentPointer}`
+JIT コンパイル済みネイティブトレースの実行エントリポイント。インタープリタの `opcode_handler` と完全同一の `__fastcall` 継続渡し（CPS）3引数シグネチャを持ち、レジスタ再配置オーバーヘッドなしに相互遷移する。物理レジスタ規約および Callee-saved 任意割当プールの詳細は [マスター物理設計書 §3](../../architecture/master_physical_design.md) を参照。実行エントリは `trace_base + sizeof(jit_trace_header) | 1` となる。 `{JIT_RuntimeAPI_Fallback}` `{ContextPointerRegister}` `{EnvironmentPointer}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |

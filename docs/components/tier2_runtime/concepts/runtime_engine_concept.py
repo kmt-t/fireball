@@ -123,11 +123,8 @@ class HistoryRing:
 # ==============================================================================
 
 class JITTrace:
-    """A compiled trace, keyed by its head WASM PC.
-
-    `chain_next` defaults to None, meaning "return to the interpreter"
-    (the dispatcher stub). `{JIT_LazyChaining}`
-    """
+    """Compiled native trace with inlined 16-byte JIT trace header. [master_physical_design.md §2.3.1]"""
+    HEADER_SIZE_BYTES = 16
 
     def __init__(self, head_pc: int, native_fn: Callable, size_bytes: int):
         self.head_pc = head_pc

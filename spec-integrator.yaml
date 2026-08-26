@@ -59,7 +59,6 @@ benchmark_verification:
   tag: "{VERIFY_BENCHMARK}"
 
 evidence:
-  llm_substantiation_audit: true
   # reports/doc_report.md is gitignored: the pipeline generates it as its own
   # LAST step, so on a fresh checkout it legitimately does not exist yet.
   # backlog_list.md / roadmap_phase.md point readers at it as "where the

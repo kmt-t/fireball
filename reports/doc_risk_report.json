@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-26T21:04:02.263982+00:00",
+  "generated_at": "2026-08-26T21:13:41.960306+00:00",
   "backend": "heuristic",
   "total_evaluated": 780,
   "formal_candidates_count": 31,
@@ -25,8 +25,8 @@
     "components/tier2_runtime/debug/debug_gdb_rsp.md": "06768beb3ae0225f25b723b60e8da734c09bc1073ffc9d99831161c83604254f",
     "components/tier2_runtime/debug/debug_manager.md": "1083cbaaaf7992ec9b4377e6e6209aeb3a038f9fc5143c37ed8d67f1be7bafde",
     "components/tier2_runtime/runtime_interpreter.md": "37e53c09853500c293bbf423a8fc68413896f586c7dbe0d972ce3358fbdfc256",
-    "components/tier2_runtime/runtime_loader.md": "591c6d491434e54f39eed5c48ae3216fc1b0ca1e2299044161cccac48f93dca5",
-    "components/tier2_runtime/runtime_vmmio.md": "5b1afbf97ab169fe86f4081b63d5b5ffefb043abd22b571d132e4379809b3968",
+    "components/tier2_runtime/runtime_loader.md": "9b3f74c9a0269f626aba5029a615463a35e282aaf51a56b6980d8997fd9529e7",
+    "components/tier2_runtime/runtime_vmmio.md": "72b03c5e5093de078f10cb474d1ba57cf7d2fd11b5ca1712abd192a8fbbd8b34",
     "components/tier2_runtime/runtime_vsoc.md": "11f5f489ba65a0b14333b0642daa149741dd11db9b9bbbfa70caa4093cee3906",
     "components/tier2_runtime/wasm_instruction.md": "640483f8a25bca7885110ce37e499c4ba3622fdc2ba3507e3a78b2bc1fcf8b5f",
     "components/tier3_jit/concepts/README.md": "a39c8c192999a792243e697e008fcad02c701d14b9559d492d668208122b6ebc",
@@ -42,7 +42,7 @@
     "plans/roadmap_phase.md": "92ad637d4e9baed7d2083ae53145a3416cd1df7e1266339c6cabe1c969b4fe2c",
     "requires/requirement_list.md": "35a59e542a9ee036904a2c2de7949d8332e61e571ef2e2f6ab801ace63f28f8b",
     "specs/gdb_rsp_protocol.md": "386dfa524ed02219a8aa89a7a7c35d6e97dfbba666b0b24a05e7c35d7c89e0dc",
-    "specs/jit_stencil_catalog.md": "f1214b9b906133e9362cbad1bc22eeae6b254c39ce855e38e0394e69b114ba0d",
+    "specs/jit_stencil_catalog.md": "eddb2ab8a1f54b2cdc98660f6ebdadf6815abb26677c60d82aeebf298aea1776",
     "specs/wasi_preview1_abi.md": "4cb53fb6d8c5e8cbfc416eaf39041fae538cfaabc0cabf1de6eedafcc12e8512",
     "specs/wasm_instruction_set.md": "727879555c7cc44852148ecf006a730caf22026480ff1154ccfc1e4a78ec52ef"
   },

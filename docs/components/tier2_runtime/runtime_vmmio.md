@@ -4,7 +4,7 @@
 <!-- traceability: {META_RestrictedPhysicalAccess} {vMMIO_TrapAndEmulate} {PhysicalPassthrough} {DynamicMmap} {UnifiedAccessModel} {FastAddressCheck} {Fast_Path_GPIO} {META_FlatMapIndexed} -->
 vMMIO (Virtual Memory-Mapped I/O) は、WASMゲストとホスト間の**すべてのデータ交換**を仲介する統一的なアクセス層である。物理レジスタ（GPIO等）、共有メモリ、システムコール用バッファなど、ホスト-ゲスト間境界を横切るアクセスはすべてvMMIO空間を経由する。
 
-WASM ゲストのリニアメモリは、WebAssembly 標準仕様に準拠して **64KB ページ単位 (65,536 bytes)** を基本とする。ただし、RAM < 64KB の極小組込み環境（Cortex-M 等）に適合するため、物理実装としては **64KB に満たない部分ページ（Sub-64KB / Partial Page: 例 8KB, 16KB）** の割り当てを許容し、境界超過アクセスを即座にトラップする設計をとる。一方、ホスト/デバイス側の vMMIO 領域は **1ページ（4KB）** 単位で管理される。 `{META_RestrictedPhysicalAccess}` `{vMMIO_TrapAndEmulate}` `{PhysicalPassthrough}` `{DynamicMmap}` `{UnifiedAccessModel}`
+WASM ゲストのリニアメモリは、WebAssembly 標準仕様に準拠して **64KB ページ単位 (65,536 bytes)** でページング・管理・拡張（`memory.grow`）される論理空間（`N * 64KB`）である。ただし、RAM < 64KB の極小組込み環境（Cortex-M 等）に適合するため、物理実装としては **64KB に満たない部分ページ（Sub-64KB / Partial Page: 例 8KB, 16KB）** の割り当てを許容し、境界超過アクセスを即座にトラップする設計をとる。一方、ホスト/デバイス側の vMMIO 領域は **1ページ（4KB）** 単位で管理される。 `{META_RestrictedPhysicalAccess}` `{vMMIO_TrapAndEmulate}` `{PhysicalPassthrough}` `{DynamicMmap}` `{UnifiedAccessModel}`
 
 本アーキテクチャでは、PTE（Page Table Entry）の保存にシステム全体の設計規約（`{META_FlatMapIndexed}`）に準拠した **静的ソート済み配列と、それを引く `fireball::flat_map_view`** を採用し、仮想ページ番号（VPN）から PTE へのマッピングをフラットに保持・管理する。
 
@@ -12,10 +12,11 @@ WASM ゲストのリニアメモリは、WebAssembly 標準仕様に準拠して
 
 FlatMap 単体での探索は $O(\log N)$（またはハッシュ探索）となるが、本アーキテクチャでは手前に **「ダイレクトマップ方式のソフトウェアTLB（16エントリ、完全 $O(1)$ キャッシュ）」** を配置する。JIT 実行やホットな共有メモリ操作などのクリティカルパスでは、大半のアクセス（目標 90% 以上）が TLB キャッシュヒット（$O(1)$）で高速解決されるため、FlatMap 化に伴うテーブル探索の遅延は十分に吸収・容認される。
 
-1. **リニアアドレス空間フィルタ（高速バイパス & 64KB/部分ページ境界チェック）**:
+1. **リニアアドレス空間フィルタ（高速バイパス & 64KB単位ページング/部分ページ境界チェック）**:
    32ビットゲストアドレスの最上位ビット（Bit 31）が `0` の場合、そのアドレスは vMMIO 管理対象外として、Tier 1（ゲストRAM）への直接アクセスとして高速バイパス（O(1) 処理）を実行する。 `{FastAddressCheck}`
-   - **完全 64KB ページ時**: ゲストアドレスが 64KB 境界内にあるかを `(addr & ~0xFFFF) == 0` のビットマスク 1 命令で超高速判定。
-   - **部分ページ時（例: 8KB）**: 実際の割り当てサイズに対して `addr < guest_ram_size`（または $2^N$ アライメントマスク `(addr & ~0x1FFF) == 0`）で O(1) 判定。境界外アクセスは即座に `ERR_OUT_OF_BOUNDS` トラップを発生させる。
+   - **単一 64KB ページ時 ($N=1$)**: ゲストアドレスが 64KB 境界内にあるかを `(addr & ~0xFFFF) == 0` のビットマスク 1 命令で超高速判定。
+   - **複数 64KB ページ時 ($N \ge 2$, 例: 128KB, 256KB)**: 割り当てられた総ページ境界に対して `addr < (N * 65536)`（$2^k$ アライメント時はビットマスク `(addr & ~mask) == 0`）で O(1) 判定。
+   - **部分ページ時（例: 8KB）**: 実際の物理割り当てサイズに対して `addr < guest_ram_size`（または $2^k$ マスク `(addr & ~0x1FFF) == 0`）で O(1) 判定。境界外アクセスは即座に `ERR_OUT_OF_BOUNDS` トラップを発生させる。
 2. **FlatMap PTE 管理**:
    最上位ビット（Bit 31）が `1` のアドレス空間を vMMIO 領域（`0x8000_0000` – `0xFFFF_FFFF`）とする。
    - 仮想ページ番号（VPN = `raw >> 12`）をキーとして、FlatMap（`vmmio_ptes`）に PTE を格納する。
@@ -27,7 +28,7 @@ FlatMap 単体での探索は $O(\log N)$（またはハッシュ探索）とな
 
 セキュリティモデルは**PTEに埋め込まれた権限フィールドが唯一のゲート**である。アクセス権限は PTE に保持され、ルックアップと権限チェックを1パスで完結させる。アクセス特性に応じてセキュリティゲートを以下の3層に階層化する。 `{META_RestrictedPhysicalAccess}`
 
-1. **Tier 1 (ゲストRAM)**: ゲスト専用RAM領域（Bit 31 == 0）。コンパイル時または実行時の 64KB マスクおよび部分ページ境界チェック（`FastAddressCheck`）のみで高速処理。
+1. **Tier 1 (ゲストRAM)**: ゲスト専用RAM領域（Bit 31 == 0）。コンパイル時または実行時の 64KB / `N * 64KB` マスクおよび部分ページ境界チェック（`FastAddressCheck`）のみで高速処理。
 2. **Tier 2 (静的vMMIO, FC=12)**: コンパイル時にアドレスが確定するコアデバイス（SYSCTL, IPCR, VDMA等）。アドレス `0xC000_0000` は FC=12 に位置する。JIT生成時に許可チェックを行い、許可済みならネイティブコードに直接デバイスキーを埋め込む。
 3. **Tier 3 (動的vMMIO, FC=14-15)**: SHM（FC=14, `0xE000_0000`）、PASSTHROUGH（FC=15, `0xF000_0000`）領域のアクセス。TLB または FlatMap を経由して PTE を解決し、エントリの権限フィールドで可否を判定する。
 

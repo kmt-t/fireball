@@ -4,7 +4,10 @@ Reference Concept Implementation: Full-Set C++20 constexpr Thumb-2 Assembler DSL
 - Type-safe Register Enums (R0-R15, Low Regs R0-R7, High Regs R8-R15)
 - Compile-time instruction encoding & range validation (static_assert emulation)
 - Full ARMv8-M Mainline (Cortex-M33) Thumb-1 (16-bit) & Thumb-2 (32-bit) instruction sets
-- Verified 100% binary-identical matching against docs/specs/jit_stencil_catalog.md
+- Encoder output checked against known-correct ARM reference bit patterns below.
+  The actual cross-check against the jit_stencil_catalog byte strings used by the
+  JIT engine lives in jit_copy_patch_concept.py (test_stencil_catalog_matches_assembler),
+  which imports this module's Thumb2Assembler directly rather than duplicating literals.
 """
 
 from enum import IntEnum
@@ -292,9 +295,58 @@ class Thumb2Assembler:
 
     @staticmethod
     def mls(rd: Reg, rn: Reg, rm: Reg, ra: Reg) -> bytes:
-        """MLS Rd, Rn, Rm, Ra (32-bit Thumb-2: FB00 0000 | (ra << 12))"""
+        """MLS Rd, Rn, Rm, Ra (32-bit Thumb-2: FB00 0010 | (ra << 12))
+
+        Shares the MUL/MLA family encoding (Ra:Rd:op:Rm in the second halfword);
+        the op nibble (bits[7:4]) must be 0001 to select MLS instead of MLA's 0000.
+        """
         hw1 = 0xFB00 | rn
-        hw2 = (ra << 12) | (rd << 8) | rm
+        hw2 = (ra << 12) | (rd << 8) | 0x10 | rm
+        return struct.pack("<HH", hw1, hw2)
+
+    @staticmethod
+    def _shift_reg_w(op: int, rd: Reg, rn: Reg, rm: Reg) -> bytes:
+        """Shared encoder for LSL/LSR/ASR/ROR (register), 32-bit Thumb-2 3-operand form.
+
+        Rd = Rn <op> Rm, op in {0:LSL, 1:LSR, 2:ASR, 3:ROR}. Unlike the 16-bit
+        Thumb-1 2-operand ALU forms (ANDS/EORS/LSLS/.../RORS), this is a genuine
+        3-register instruction: it does not require the shift amount and the
+        shifted operand to share a register, so it can express "Rn shifted by
+        Rm" without clobbering either input via an extra MOV.
+        """
+        hw1 = 0xFA00 | (op << 5) | rn
+        hw2 = 0xF000 | (rd << 8) | rm
+        return struct.pack("<HH", hw1, hw2)
+
+    @staticmethod
+    def lsl_w(rd: Reg, rn: Reg, rm: Reg) -> bytes:
+        """LSL.W Rd, Rn, Rm (32-bit Thumb-2, register shift amount)"""
+        return Thumb2Assembler._shift_reg_w(0, rd, rn, rm)
+
+    @staticmethod
+    def lsr_w(rd: Reg, rn: Reg, rm: Reg) -> bytes:
+        """LSR.W Rd, Rn, Rm (32-bit Thumb-2, register shift amount)"""
+        return Thumb2Assembler._shift_reg_w(1, rd, rn, rm)
+
+    @staticmethod
+    def asr_w(rd: Reg, rn: Reg, rm: Reg) -> bytes:
+        """ASR.W Rd, Rn, Rm (32-bit Thumb-2, register shift amount)"""
+        return Thumb2Assembler._shift_reg_w(2, rd, rn, rm)
+
+    @staticmethod
+    def ror_w(rd: Reg, rn: Reg, rm: Reg) -> bytes:
+        """ROR.W Rd, Rn, Rm (32-bit Thumb-2, register shift amount)"""
+        return Thumb2Assembler._shift_reg_w(3, rd, rn, rm)
+
+    @staticmethod
+    def rsb_imm(rd: Reg, rn: Reg, imm12: int) -> bytes:
+        """RSB Rd, Rn, #imm12 (32-bit Thumb-2 reverse subtract, Rd = imm12 - Rn)"""
+        _check_imm(imm12, 12)
+        i = (imm12 >> 11) & 0x1
+        imm3 = (imm12 >> 8) & 0x7
+        imm8 = imm12 & 0xFF
+        hw1 = 0xF1C0 | (i << 10) | rn
+        hw2 = (imm3 << 12) | (rd << 8) | imm8
         return struct.pack("<HH", hw1, hw2)
 
     @staticmethod
@@ -447,8 +499,14 @@ def test_compile_time_range_validation():
         assert "multiple of 4" in str(e)
 
 
-def test_stencil_catalog_binary_parity():
-    """Verify that constexpr Assembler generates exact binary match with docs/specs/jit_stencil_catalog.md."""
+def test_known_thumb2_encoding_reference_values():
+    """Verify the encoder against known-correct ARMv8-M Thumb-2 bit patterns.
+
+    This only checks the assembler against manually-transcribed literals; it does
+    NOT read jit_copy_patch_concept.py's stencil catalog, so it cannot by itself
+    prove the two stay in sync. See test_stencil_catalog_matches_assembler() in
+    jit_copy_patch_concept.py for the real cross-file check.
+    """
     asm = Thumb2Assembler()
 
     # STENCIL_PROLOGUE_FULL: push {r4-r6, r8-r11, lr} -> 2D E9 70 4F
@@ -504,5 +562,5 @@ def test_stencil_catalog_binary_parity():
 
 if __name__ == "__main__":
     test_compile_time_range_validation()
-    test_stencil_catalog_binary_parity()
-    print("[PASS] All Full-Set constexpr Thumb-2 Assembler tests and parity checks passed successfully.")
+    test_known_thumb2_encoding_reference_values()
+    print("[PASS] All Full-Set constexpr Thumb-2 Assembler tests and reference-value checks passed successfully.")

@@ -70,7 +70,7 @@ if ($sync) {
 # Phase 1: Risk Assessment — establishes the verification obligations
 # ---------------------------------------------------------------------------
 if ($assess) {
-    Write-Host "`n>>> [Phase 1/3] Risk Assessment (deciding what must be verified)..." -ForegroundColor Yellow
+    Write-Host "`n>>> [Phase 1/4] Risk Assessment (deciding what must be verified)..." -ForegroundColor Yellow
     $assessArgs = $specInt + @("assess", "--config", "spec-integrator.yaml",
                                "--backend", $backend, "--max-sections", "$maxSections",
                                "--min-length", "$minLength",
@@ -88,7 +88,7 @@ if ($assess) {
     }
     Write-Host "✔ Risk Assessment: obligations recorded in $riskReport" -ForegroundColor Green
 } else {
-    Write-Host "`n>>> [Phase 1/3] Skipping Risk Assessment (-assess to run it)" -ForegroundColor DarkGray
+    Write-Host "`n>>> [Phase 1/4] Skipping Risk Assessment (-assess to run it)" -ForegroundColor DarkGray
     if (Test-Path $riskReport) {
         Write-Host "    Reusing the stored assessment. The gate will reject it if the docs have changed." -ForegroundColor DarkGray
     } else {
@@ -100,7 +100,7 @@ if ($assess) {
 # Phase 2: LLM Semantic Audit
 # ---------------------------------------------------------------------------
 if ($llm) {
-    Write-Host "`n>>> [Phase 2/3] LLM as a Judge (semantic audit)..." -ForegroundColor Yellow
+    Write-Host "`n>>> [Phase 2/4] LLM as a Judge (semantic audit)..." -ForegroundColor Yellow
     $judgeArgs = $specInt + @("judge", "--config", "spec-integrator.yaml",
                               "--backend", $backend, "--max-subgraphs", "$maxSubgraphs",
                               "--min-references", "$minReferences",
@@ -117,13 +117,58 @@ if ($llm) {
         Write-Host "✔ LLM as a Judge: no semantic failures" -ForegroundColor Green
     }
 } else {
-    Write-Host "`n>>> [Phase 2/3] Skipping LLM as a Judge (-llm to run it)" -ForegroundColor DarkGray
+    Write-Host "`n>>> [Phase 2/4] Skipping LLM as a Judge (-llm to run it)" -ForegroundColor DarkGray
 }
 
 # ---------------------------------------------------------------------------
-# Phase 3: Quality Gates — the authoritative verdict
+# Phase 3: Concept Code Verification — the reference implementations under
+# docs/**/concepts/*_concept.py are not test_*.py, so pytest silently collects
+# zero tests from them and no other phase ever imports or executes them. This
+# is the only thing that actually runs each one and checks it still works.
 # ---------------------------------------------------------------------------
-Write-Host "`n>>> [Phase 3/3] Quality Gates (Format / Traceability / Hierarchy / Formal / WIT / Evidence / Obligation / Consistency)..." -ForegroundColor Yellow
+Write-Host "`n>>> [Phase 3/4] Concept Code Verification (running docs/**/concepts/*_concept.py)..." -ForegroundColor Yellow
+$conceptFiles = Get-ChildItem -Path "docs" -Filter "*_concept.py" -Recurse
+$conceptFailed = $false
+foreach ($f in $conceptFiles) {
+    $relPath = Resolve-Path -Relative $f.FullName
+    & uv run --system-certs --project tools/spec-integrator python $f.FullName
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "✖ $relPath FAILED" -ForegroundColor Red
+        $conceptFailed = $true
+    } else {
+        Write-Host "✔ $relPath" -ForegroundColor Green
+    }
+}
+if ($conceptFailed) {
+    Write-Host "✖ Concept Code Verification: FAILED" -ForegroundColor Red
+} else {
+    Write-Host "✔ Concept Code Verification: $($conceptFiles.Count) file(s) passed" -ForegroundColor Green
+}
+
+# Dynamic semantic check: actually executes the JIT stencil catalog's machine code
+# on a real ARMv8-M Thumb emulator (unicorn) and checks the resulting register state
+# against the WASM-specified result, instead of only comparing bytes to a second
+# hand-written copy. Needs the `unicorn` package, which is not a spec-integrator
+# dependency, so it is invoked separately via `--with`.
+foreach ($semVerifier in @(
+    "docs/components/tier3_jit/concepts/thumb2_stencil_semantic_verifier.py",
+    "docs/components/tier3_jit/concepts/jit_trace_execution_verifier.py"
+)) {
+    if (Test-Path $semVerifier) {
+        & uv run --system-certs --project tools/spec-integrator --with unicorn python $semVerifier
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "✖ $semVerifier FAILED" -ForegroundColor Red
+            $conceptFailed = $true
+        } else {
+            Write-Host "✔ $semVerifier" -ForegroundColor Green
+        }
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Phase 4: Quality Gates — the authoritative verdict
+# ---------------------------------------------------------------------------
+Write-Host "`n>>> [Phase 4/4] Quality Gates (Format / Traceability / Hierarchy / Formal / WIT / Evidence / Obligation / Consistency)..." -ForegroundColor Yellow
 $checkArgs = $specInt + @("check", "--config", "spec-integrator.yaml",
                           "--report", "reports/doc_report.md",
                           "--graph-json", "reports/doc_graph.json")
@@ -133,9 +178,10 @@ if ($clean) { $checkArgs += "--clean" }
 $checkExit = $LASTEXITCODE
 
 Write-Host "`n================================================================================" -ForegroundColor Cyan
-if ($checkExit -ne 0) {
+if ($conceptFailed -or $checkExit -ne 0) {
     Write-Host " Verification Pipeline Summary: FAILED" -ForegroundColor Red
-    Write-Host " See reports/doc_report.md for the full list of violations." -ForegroundColor Cyan
+    if ($conceptFailed) { Write-Host " Concept code verification failed — see output above." -ForegroundColor Cyan }
+    if ($checkExit -ne 0) { Write-Host " See reports/doc_report.md for the full list of violations." -ForegroundColor Cyan }
     Write-Host "================================================================================" -ForegroundColor Cyan
     exit 1
 }

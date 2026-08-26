@@ -63,7 +63,8 @@ Options:
 Phases:
   1. assess  - decides what must be verified   (skippable; the stored report is reused)
   2. judge   - semantic audit                  (skippable)
-  3. check   - quality gates, authoritative    (always runs)
+  3. concept - runs docs/**/concepts/*_concept.py (always runs)
+  4. check   - quality gates, authoritative    (always runs)
 EOF
     exit 0
 }
@@ -117,7 +118,7 @@ fi
 # ---------------------------------------------------------------------------
 if [ "$RUN_ASSESS" -eq 1 ]; then
     echo ""
-    echo ">>> [Phase 1/3] Risk Assessment (deciding what must be verified)..."
+    echo ">>> [Phase 1/4] Risk Assessment (deciding what must be verified)..."
     ASSESS_ARGS=("${SPEC_INT[@]}" "assess" "--config" "spec-integrator.yaml"
                  "--backend" "$BACKEND" "--max-sections" "$MAX_SECTIONS"
                  "--min-length" "$MIN_LENGTH"
@@ -135,7 +136,7 @@ if [ "$RUN_ASSESS" -eq 1 ]; then
     echo "✔ Risk Assessment: obligations recorded in $RISK_REPORT"
 else
     echo ""
-    echo ">>> [Phase 1/3] Skipping Risk Assessment (--assess to run it)"
+    echo ">>> [Phase 1/4] Skipping Risk Assessment (--assess to run it)"
     if [ -f "$RISK_REPORT" ]; then
         echo "    Reusing the stored assessment. The gate will reject it if the docs have changed."
     else
@@ -148,7 +149,7 @@ fi
 # ---------------------------------------------------------------------------
 if [ "$RUN_LLM" -eq 1 ]; then
     echo ""
-    echo ">>> [Phase 2/3] LLM as a Judge (semantic audit)..."
+    echo ">>> [Phase 2/4] LLM as a Judge (semantic audit)..."
     JUDGE_ARGS=("${SPEC_INT[@]}" "judge" "--config" "spec-integrator.yaml"
                 "--backend" "$BACKEND" "--max-subgraphs" "$MAX_SUBGRAPHS"
                 "--min-references" "$MIN_REFERENCES"
@@ -163,14 +164,56 @@ if [ "$RUN_LLM" -eq 1 ]; then
     fi
 else
     echo ""
-    echo ">>> [Phase 2/3] Skipping LLM as a Judge (--llm to run it)"
+    echo ">>> [Phase 2/4] Skipping LLM as a Judge (--llm to run it)"
 fi
 
 # ---------------------------------------------------------------------------
-# Phase 3: Quality Gates — the authoritative verdict
+# Phase 3: Concept Code Verification — the reference implementations under
+# docs/**/concepts/*_concept.py are not test_*.py, so pytest silently collects
+# zero tests from them and no other phase ever imports or executes them. This
+# is the only thing that actually runs each one and checks it still works.
 # ---------------------------------------------------------------------------
 echo ""
-echo ">>> [Phase 3/3] Quality Gates (Format / Traceability / Hierarchy / Formal / WIT / Evidence / Obligation / Consistency)..."
+echo ">>> [Phase 3/4] Concept Code Verification (running docs/**/concepts/*_concept.py)..."
+CONCEPT_FAILED=0
+while IFS= read -r -d '' f; do
+    if uv run --system-certs --project tools/spec-integrator python "$f"; then
+        echo "✔ $f"
+    else
+        echo "✖ $f FAILED"
+        CONCEPT_FAILED=1
+    fi
+done < <(find docs -name "*_concept.py" -print0)
+if [ "$CONCEPT_FAILED" -eq 1 ]; then
+    echo "✖ Concept Code Verification: FAILED"
+else
+    echo "✔ Concept Code Verification: passed"
+fi
+
+# Dynamic semantic check: actually executes the JIT stencil catalog's machine code
+# on a real ARMv8-M Thumb emulator (unicorn) and checks the resulting register state
+# against the WASM-specified result, instead of only comparing bytes to a second
+# hand-written copy. Needs the `unicorn` package, which is not a spec-integrator
+# dependency, so it is invoked separately via `--with`.
+for SEM_VERIFIER in \
+    "docs/components/tier3_jit/concepts/thumb2_stencil_semantic_verifier.py" \
+    "docs/components/tier3_jit/concepts/jit_trace_execution_verifier.py"
+do
+    if [ -f "$SEM_VERIFIER" ]; then
+        if uv run --system-certs --project tools/spec-integrator --with unicorn python "$SEM_VERIFIER"; then
+            echo "✔ $SEM_VERIFIER"
+        else
+            echo "✖ $SEM_VERIFIER FAILED"
+            CONCEPT_FAILED=1
+        fi
+    fi
+done
+
+# ---------------------------------------------------------------------------
+# Phase 4: Quality Gates — the authoritative verdict
+# ---------------------------------------------------------------------------
+echo ""
+echo ">>> [Phase 4/4] Quality Gates (Format / Traceability / Hierarchy / Formal / WIT / Evidence / Obligation / Consistency)..."
 CHECK_ARGS=("${SPEC_INT[@]}" "check" "--config" "spec-integrator.yaml"
             "--report" "$REPORT_PATH" "--graph-json" "$GRAPH_JSON_PATH")
 [ -n "$CLEAN_FLAG" ] && CHECK_ARGS+=("$CLEAN_FLAG")
@@ -180,9 +223,10 @@ CHECK_EXIT=$?
 
 echo ""
 echo "================================================================================"
-if [ "$CHECK_EXIT" -ne 0 ]; then
+if [ "$CONCEPT_FAILED" -eq 1 ] || [ "$CHECK_EXIT" -ne 0 ]; then
     echo " Verification Pipeline Summary: FAILED"
-    echo " See $REPORT_PATH for the full list of violations."
+    [ "$CONCEPT_FAILED" -eq 1 ] && echo " Concept code verification failed — see output above."
+    [ "$CHECK_EXIT" -ne 0 ] && echo " See $REPORT_PATH for the full list of violations."
     echo "================================================================================"
     exit 1
 fi

@@ -183,18 +183,18 @@
 #### `STENCIL_GLOBAL_GET_D0` (`0x23` Env globals_base 経由ロード)
 - **Thumb-2 命令列**:
   ```asm
-  ldr.w r3, [r2, #0x08]   ; [Offset 0x00] env->globals_base ロード (vsoc_runtime +0x08)
+  ldr.w r3, [r2, #0x0C]   ; [Offset 0x00] env->globals_base ロード (vsoc_runtime +0x0C)
   ldr.w r4, [r3, #0x00]   ; [Offset 0x04] RELOC_IMM8_OFFSET (global[N] ロード)
   ```
-- **バイナリ列 (8 Bytes)**: `D2 F8 08 30 D3 F8 00 40`
+- **バイナリ列 (8 Bytes)**: `D2 F8 0C 30 D3 F8 00 40`
 
 #### `STENCIL_GLOBAL_SET_D1` (`0x24` Env globals_base 経由ストア)
 - **Thumb-2 命令列**:
   ```asm
-  ldr.w r3, [r2, #0x08]   ; [Offset 0x00] env->globals_base ロード (vsoc_runtime +0x08)
+  ldr.w r3, [r2, #0x0C]   ; [Offset 0x00] env->globals_base ロード (vsoc_runtime +0x0C)
   str.w r4, [r3, #0x00]   ; [Offset 0x04] RELOC_IMM8_OFFSET (global[N] ストア)
   ```
-- **バイナリ列 (8 Bytes)**: `D2 F8 08 30 C3 F8 00 40`
+- **バイナリ列 (8 Bytes)**: `D2 F8 0C 30 C3 F8 00 40`
 
 ---
 

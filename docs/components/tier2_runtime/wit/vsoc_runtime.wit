@@ -7,13 +7,15 @@ package fireball:vsoc@0.1.0;
 interface environment {
     /// vsoc_runtime: memory.grow で動的に伸長するリニアメモリの実体や、モジュール横断で
     /// 共有されるグローバル変数配列など、execution_context（R1）より長く生存する状態を保持する。
-    /// 計12バイト。
+    /// 計16バイト。
     record vsoc-runtime {
         /// ゲストリニアメモリの開始アドレス（memory.grow で再割当されうる）。+0x00
         mem-base: u32,
         /// ゲストリニアメモリの現在の有効バイト数。境界チェックに使用。+0x04
         mem-size: u32,
-        /// WASM global 配列（4バイト単位でインデックス付け）の開始アドレス。+0x08
+        /// FastAddressCheck 用メモリ境界マスク値（next_pow2(mem-size) - 1）。+0x08
+        mem-mask: u32,
+        /// WASM global 配列（4バイト単位でインデックス付け）の開始アドレス。+0x0C
         globals-base: u32,
     }
 }

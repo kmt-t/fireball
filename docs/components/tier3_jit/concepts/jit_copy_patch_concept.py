@@ -114,8 +114,8 @@ class CopyPatchJITEngine:
             "local_get_d0": Stencil("local_get_d0", ["LDR r4, [r1, #0x00]"], "0C 68", {"offset": 0}),
             "local_set_d1": Stencil("local_set_d1", ["STR r4, [r1, #0x00]"], "0C 60", {"offset": 0}),
             "local_tee_d1": Stencil("local_tee_d1", ["STR r4, [r1, #0x00]"], "0C 60", {"offset": 0}),
-            "global_get_d0": Stencil("global_get_d0", ["LDR.W r4, [r2, #0x00]"], "D2 F8 00 40", {"offset": 0}),
-            "global_set_d1": Stencil("global_set_d1", ["STR.W r4, [r2, #0x00]"], "C2 F8 00 40", {"offset": 0}),
+            "global_get_d0": Stencil("global_get_d0", ["LDR.W r3, [r2, #0x0C]", "LDR.W r4, [r3, #0x00]"], "D2 F8 0C 30 D3 F8 00 40", {"offset": 1}),
+            "global_set_d1": Stencil("global_set_d1", ["LDR.W r3, [r2, #0x0C]", "STR.W r4, [r3, #0x00]"], "D2 F8 0C 30 C3 F8 00 40", {"offset": 1}),
 
             # --- 32-bit Integer Arithmetic & Logic ---
             "i32_add_d2": Stencil("i32_add_d2", ["ADDS r4, r5, r4"], "2C 19", {}),
@@ -162,15 +162,15 @@ class CopyPatchJITEngine:
             "i32_ge_s_d2": Stencil("i32_ge_s_d2", ["CMP r5, r4", "IT GE", "MOVGE r4, #1", "IT LT", "MOVLT r4, #0"], "A5 42 A8 BF 01 24 B8 BF 00 24", {}),
             "i32_ge_u_d2": Stencil("i32_ge_u_d2", ["CMP r5, r4", "IT HS", "MOVHS r4, #1", "IT LO", "MOVLO r4, #0"], "A5 42 28 BF 01 24 38 BF 00 24", {}),
 
-            # --- Linear Memory Access (R3 = mem_base) ---
-            "i32_load_r3": Stencil("i32_load_r3", ["LDR.W r4, [r3, r4]"], "53 F8 04 40", {}),
-            "i32_load8_s_r3": Stencil("i32_load8_s_r3", ["LDRSB.W r4, [r3, r4]"], "13 F9 04 40", {}),
-            "i32_load8_u_r3": Stencil("i32_load8_u_r3", ["LDRB.W r4, [r3, r4]"], "13 F8 04 40", {}),
-            "i32_load16_s_r3": Stencil("i32_load16_s_r3", ["LDRSH.W r4, [r3, r4]"], "33 F9 04 40", {}),
-            "i32_load16_u_r3": Stencil("i32_load16_u_r3", ["LDRH.W r4, [r3, r4]"], "33 F8 04 40", {}),
-            "i32_store_r3": Stencil("i32_store_r3", ["STR.W r4, [r3, r5]"], "43 F8 05 40", {}),
-            "i32_store8_r3": Stencil("i32_store8_r3", ["STRB.W r4, [r3, r5]"], "03 F8 05 40", {}),
-            "i32_store16_r3": Stencil("i32_store16_r3", ["STRH.W r4, [r3, r5]"], "23 F8 05 40", {}),
+            # --- Linear Memory Access with FastAddressCheck Boundary Mask (R3 = mem_base, R6 = mem_mask) ---
+            "i32_load_r3": Stencil("i32_load_r3", ["ANDS r4, r6", "LDR.W r4, [r3, r4]"], "34 40 53 F8 04 40", {}),
+            "i32_load8_s_r3": Stencil("i32_load8_s_r3", ["ANDS r4, r6", "LDRSB.W r4, [r3, r4]"], "34 40 13 F9 04 40", {}),
+            "i32_load8_u_r3": Stencil("i32_load8_u_r3", ["ANDS r4, r6", "LDRB.W r4, [r3, r4]"], "34 40 13 F8 04 40", {}),
+            "i32_load16_s_r3": Stencil("i32_load16_s_r3", ["ANDS r4, r6", "LDRSH.W r4, [r3, r4]"], "34 40 33 F9 04 40", {}),
+            "i32_load16_u_r3": Stencil("i32_load16_u_r3", ["ANDS r4, r6", "LDRH.W r4, [r3, r4]"], "34 40 33 F8 04 40", {}),
+            "i32_store_r3": Stencil("i32_store_r3", ["ANDS r5, r6", "STR.W r4, [r3, r5]"], "35 40 43 F8 05 40", {}),
+            "i32_store8_r3": Stencil("i32_store8_r3", ["ANDS r5, r6", "STRB.W r4, [r3, r5]"], "35 40 03 F8 05 40", {}),
+            "i32_store16_r3": Stencil("i32_store16_r3", ["ANDS r5, r6", "STRH.W r4, [r3, r5]"], "35 40 23 F8 05 40", {}),
             "memory_size_d0": Stencil("memory_size_d0", ["LDR.W r4, [r2, #0x04]"], "D2 F8 04 40", {}),
         }
 
@@ -370,8 +370,8 @@ def test_stencil_catalog_matches_assembler():
         "local_get_d0": asm.ldr_imm(Reg.R4, Reg.R1, 0),
         "local_set_d1": asm.str_imm(Reg.R4, Reg.R1, 0),
         "local_tee_d1": asm.str_imm(Reg.R4, Reg.R1, 0),
-        "global_get_d0": asm.ldr_w_imm12(Reg.R4, Reg.R2, 0),
-        "global_set_d1": asm.str_w_imm12(Reg.R4, Reg.R2, 0),
+        "global_get_d0": asm.ldr_w_imm12(Reg.R3, Reg.R2, 0x0C) + asm.ldr_w_imm12(Reg.R4, Reg.R3, 0),
+        "global_set_d1": asm.ldr_w_imm12(Reg.R3, Reg.R2, 0x0C) + asm.str_w_imm12(Reg.R4, Reg.R3, 0),
         "memory_size_d0": asm.ldr_w_imm12(Reg.R4, Reg.R2, 4),
         "i32_add_d2": asm.adds_reg(Reg.R4, Reg.R5, Reg.R4),
         "i32_sub_d2": asm.subs_reg(Reg.R4, Reg.R5, Reg.R4),
@@ -389,8 +389,8 @@ def test_stencil_catalog_matches_assembler():
         "i32_rotr_d2": asm.ror_w(Reg.R4, Reg.R5, Reg.R4),
         "i32_clz_d1": asm.clz(Reg.R4, Reg.R4),
         "i32_ctz_d1": asm.rbit(Reg.R4, Reg.R4) + asm.clz(Reg.R4, Reg.R4),
-        "i32_load_r3": asm.ldr_w_reg(Reg.R4, Reg.R3, Reg.R4),
-        "i32_store_r3": asm.str_w_reg(Reg.R4, Reg.R3, Reg.R5),
+        "i32_load_r3": asm.ands_reg(Reg.R4, Reg.R6) + asm.ldr_w_reg(Reg.R4, Reg.R3, Reg.R4),
+        "i32_store_r3": asm.ands_reg(Reg.R5, Reg.R6) + asm.str_w_reg(Reg.R4, Reg.R3, Reg.R5),
     }
 
     for name, encoded in checks.items():

@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-26T05:42:46.258752+00:00",
+  "generated_at": "2026-08-26T05:55:20.414525+00:00",
   "backend": "heuristic",
   "total_evaluated": 778,
   "formal_candidates_count": 31,
@@ -10,7 +10,7 @@
     "architecture/architecture_overview.md": "019aea4f717286caa9ef81aaccc453e67a28a358300d5db20d908a23281e5e94",
     "architecture/concept_harness.md": "2160b8e29a617ecefbf46165542544705de7ebb0f6d5b7df4bbeb1c084f9cd3c",
     "architecture/document_structure.md": "24357f01283821a32a25234b99d2e956f10b1db600b3311f5f1f28ac664770b3",
-    "architecture/master_physical_design.md": "3e61f6ab02827ac20d3967cb2fa8ad280388cf637ae3da66b2188dd1edef917e",
+    "architecture/master_physical_design.md": "e871bee662ff35dbdf63561456ecfdc511921160e5909f39351cfee2ba453371",
     "architecture/resource_budget.md": "ac4928f5ad7fcc1a360b6539ec3d44d072a67c6b7d4aa7d76bdac014971def00",
     "components/tier1_core/os_coos.md": "7f2041f9ed21e99a75448b8112629ed0a4e95605e70425807cdb8a431db531bf",
     "components/tier1_core/os_scheduler.md": "bb8d0e129d9ce8c153fb4d7f0297d095eb2f1bdcff24de9fa345d39e67013a83",
@@ -27,7 +27,7 @@
     "components/tier2_runtime/runtime_interpreter.md": "37e53c09853500c293bbf423a8fc68413896f586c7dbe0d972ce3358fbdfc256",
     "components/tier2_runtime/runtime_loader.md": "591c6d491434e54f39eed5c48ae3216fc1b0ca1e2299044161cccac48f93dca5",
     "components/tier2_runtime/runtime_vmmio.md": "5b1afbf97ab169fe86f4081b63d5b5ffefb043abd22b571d132e4379809b3968",
-    "components/tier2_runtime/runtime_vsoc.md": "b53ec586f26a49d7bcb3d75728cd7991bab9140f757287a8353463d682ec8770",
+    "components/tier2_runtime/runtime_vsoc.md": "76f40f789eea30da7e8516dbc8ea0ea9ee42d85c7264bffcdbbffcff52e8d8e1",
     "components/tier2_runtime/wasm_instruction.md": "640483f8a25bca7885110ce37e499c4ba3622fdc2ba3507e3a78b2bc1fcf8b5f",
     "components/tier3_jit/concepts/README.md": "a39c8c192999a792243e697e008fcad02c701d14b9559d492d668208122b6ebc",
     "components/tier3_jit/jit_assembler_constexpr.md": "1ce2346b0371f5a1d470aaaf5c42a2e72b01d5cb7589ea8e29625a5ab199e067",
@@ -42,7 +42,7 @@
     "plans/roadmap_phase.md": "92ad637d4e9baed7d2083ae53145a3416cd1df7e1266339c6cabe1c969b4fe2c",
     "requires/requirement_list.md": "35a59e542a9ee036904a2c2de7949d8332e61e571ef2e2f6ab801ace63f28f8b",
     "specs/gdb_rsp_protocol.md": "386dfa524ed02219a8aa89a7a7c35d6e97dfbba666b0b24a05e7c35d7c89e0dc",
-    "specs/jit_stencil_catalog.md": "a9324c0cfedc41bbee9a439100823b47daa73b0a3058d88ab0803ddfb5e86270",
+    "specs/jit_stencil_catalog.md": "f1214b9b906133e9362cbad1bc22eeae6b254c39ce855e38e0394e69b114ba0d",
     "specs/wasi_preview1_abi.md": "4cb53fb6d8c5e8cbfc416eaf39041fae538cfaabc0cabf1de6eedafcc12e8512",
     "specs/wasm_instruction_set.md": "9eb1c42e94a99c446d381089c647534b5cde92aae1d616488065933855b0ee02"
   },
@@ -799,6 +799,19 @@
       "summary": "Independent heuristic evaluation for '1. コンセプト'."
     },
     {
+      "section_id": "sec:components/tier2_runtime/runtime_vsoc.md#vSoCランタイム環境（vsoc_runtime）",
+      "file_path": "components/tier2_runtime/runtime_vsoc.md",
+      "heading": "vSoCランタイム環境（vsoc_runtime）",
+      "tier": 2,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for 'vSoCランタイム環境（vsoc_runtime）'."
+    },
+    {
       "section_id": "sec:components/tier3_jit/jit_runtime_hotspot.md#1. コンセプト",
       "file_path": "components/tier3_jit/jit_runtime_hotspot.md",
       "heading": "1. コンセプト",
@@ -1026,19 +1039,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '4.1 アルゴリズム'."
-    },
-    {
-      "section_id": "sec:components/tier2_runtime/runtime_vsoc.md#vSoCランタイム環境（vsoc_runtime）",
-      "file_path": "components/tier2_runtime/runtime_vsoc.md",
-      "heading": "vSoCランタイム環境（vsoc_runtime）",
-      "tier": 2,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for 'vSoCランタイム環境（vsoc_runtime）'."
     },
     {
       "section_id": "sec:components/tier3_jit/jit_compiler.md#3.1 データ構造",
@@ -6680,6 +6680,19 @@
       "summary": "Independent heuristic evaluation for '`control_frame`（統合スタック上、各フレーム先頭からの相対オフセット、計16バイト）'."
     },
     {
+      "section_id": "sec:architecture/master_physical_design.md#`vsoc_runtime`（`R2: env` 起点、計16バイト）",
+      "file_path": "architecture/master_physical_design.md",
+      "heading": "`vsoc_runtime`（`R2: env` 起点、計16バイト）",
+      "tier": "meta",
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '`vsoc_runtime`（`R2: env` 起点、計16バイト）'."
+    },
+    {
       "section_id": "sec:components/tier1_core/os_scheduler.md#スケジューラクラス（Scheduler）",
       "file_path": "components/tier1_core/os_scheduler.md",
       "heading": "スケジューラクラス（Scheduler）",
@@ -7003,19 +7016,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '3. ドキュメントの静的チェックルール'."
-    },
-    {
-      "section_id": "sec:architecture/master_physical_design.md#`vsoc_runtime`（`R2: env` 起点、計12バイト）",
-      "file_path": "architecture/master_physical_design.md",
-      "heading": "`vsoc_runtime`（`R2: env` 起点、計12バイト）",
-      "tier": "meta",
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '`vsoc_runtime`（`R2: env` 起点、計12バイト）'."
     },
     {
       "section_id": "sec:components/tier1_core/os_scheduler.md#アイドルハンドラ設定（set_idle_handler）",

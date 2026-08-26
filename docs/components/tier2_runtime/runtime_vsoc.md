@@ -74,12 +74,15 @@ graph TD
 | :--- | :--- | :--- | :--- |
 | リニアメモリ基底 | ゲストリニアメモリ（`memory.grow` で再割当されうる）の開始アドレス | アドレス値 | 32bit符号なし (`+0x00`) |
 | リニアメモリサイズ | ゲストリニアメモリの現在の有効バイト数。境界チェックに使用 `{MemoryBoundaryCheck}` | バイト数 | 32bit符号なし (`+0x04`) |
-| グローバル変数基底 | WASM `global` 配列（4バイト単位でインデックス付け）の開始アドレス | アドレス値 | 32bit符号なし (`+0x08`) |
+| メモリ境界マスク | FastAddressCheck 用境界マスク値（`next_pow2(mem_size) - 1`） `{MemoryBoundaryCheck}` | マスク値 | 32bit符号なし (`+0x08`) |
+| グローバル変数基底 | WASM `global` 配列（4バイト単位でインデックス付け）の開始アドレス | アドレス値 | 32bit符号なし (`+0x0C`) |
 
-`vsoc_runtime` は計12バイト（`+0x00`〜`+0x0B`）。正本は [`wit/vsoc_runtime.wit`](wit/vsoc_runtime.wit)、物理配置は [`master_physical_design.md` §3.2](../../architecture/master_physical_design.md)。
+`vsoc_runtime` は計16バイト（`+0x00`〜`+0x0F`）。正本は [`wit/vsoc_runtime.wit`](wit/vsoc_runtime.wit)、物理配置は [`master_physical_design.md` §3.2](../../architecture/master_physical_design.md)。
 
 > [!NOTE]
-> **既知の未整理点**: 本節の `vsoc_runtime` とは別に、上記の `vsoc_context`（割り込みフラグ・モジュールビュー・PC を保持）という類似名の構造体が存在する。両者の関係（統合すべきか、役割が異なる独立した構造体として維持すべきか）は未整理であり、次回レビューで確定する。
+> **構造体の役割分離**:
+> - **`vsoc_runtime` (R2: env)**: JIT トレースおよびインタープリタハンドラが実行ループ内で直接参照する**極小の物理実行環境（16バイト）**。最速パス上でのレジスタ間接アクセス（`[R2, #0x00]`〜`#0x0C`）に特化。
+> - **`vsoc_context`**: タスク全体のライフサイクル、仮想割り込みフラグ、WASM モジュール構造体へのポインタを管理する**上位マネージャ層の制御構造体**。実行ループ外でのタスク切り替えやデバッガ連携時に参照される。両者は明確に役割分離して維持する。
 
 #### vSoC構成（vsoc_config）
 <!-- traceability: {META_ConfigurableSystem} -->

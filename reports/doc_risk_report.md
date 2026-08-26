@@ -130,6 +130,7 @@
 | `components/tier3_platform/platform_memory.md` | 1. コンセプト | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '1. コンセプト'. |
 | `specs/wasm_instruction_set.md` | 1. 概要と適用方針 | None | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '1. 概要と適用方針'. |
 | `components/tier2_runtime/runtime_vsoc.md` | 1. コンセプト | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '1. コンセプト'. |
+| `components/tier2_runtime/runtime_vsoc.md` | vSoCランタイム環境（vsoc_runtime） | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'vSoCランタイム環境（vsoc_runtime）'. |
 | `components/tier3_jit/jit_runtime_hotspot.md` | 1. コンセプト | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '1. コンセプト'. |
 | `components/tier3_platform/platform_hal.md` | 2. アーキテクチャ分類 | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '2. アーキテクチャ分類'. |
 | `components/tier1_core/system_syscall.md` | 6.2. 高応答 Trigger のマッピング例 | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '6.2. 高応答 Trigger のマッピング例'. |
@@ -145,7 +146,6 @@
 | `components/tier1_core/system_syscall.md` | 5.7. WASI (`0x80`-`0xBF`) | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '5.7. WASI (`0x80`-`0xBF`)'. |
 | `components/tier1_interface/ipc_router.md` | 4.4 内部シーケンス図 | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.4 内部シーケンス図'. |
 | `components/tier2_runtime/runtime_loader.md` | 4.1 アルゴリズム | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '4.1 アルゴリズム'. |
-| `components/tier2_runtime/runtime_vsoc.md` | vSoCランタイム環境（vsoc_runtime） | 2 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'vSoCランタイム環境（vsoc_runtime）'. |
 | `components/tier3_jit/jit_compiler.md` | 3.1 データ構造 | 3 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.1 データ構造'. |
 | `architecture/architecture_overview.md` | ヒープパーティション | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'ヒープパーティション'. |
 | `components/tier1_core/system_containers.md` | 3.2 内部ブロック図 | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3.2 内部ブロック図'. |
@@ -551,6 +551,7 @@
 | `architecture/master_physical_design.md` | `execution_context`（`R1: stack_bot` 起点、計16バイト） | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`execution_context`（`R1: stack_bot` 起点、計16バイト）'. |
 | `architecture/master_physical_design.md` | `call_frame`（統合スタック上、各フレーム先頭からの相対オフセット、計20バイト） | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`call_frame`（統合スタック上、各フレーム先頭からの相対オフセット、計20バイト）'. |
 | `architecture/master_physical_design.md` | `control_frame`（統合スタック上、各フレーム先頭からの相対オフセット、計16バイト） | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`control_frame`（統合スタック上、各フレーム先頭からの相対オフセット、計16バイト）'. |
+| `architecture/master_physical_design.md` | `vsoc_runtime`（`R2: env` 起点、計16バイト） | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`vsoc_runtime`（`R2: env` 起点、計16バイト）'. |
 | `components/tier1_core/os_scheduler.md` | スケジューラクラス（Scheduler） | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'スケジューラクラス（Scheduler）'. |
 | `components/tier1_core/os_scheduler.md` | `notify-interrupt` (内部 API) | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`notify-interrupt` (内部 API)'. |
 | `components/tier1_core/system_config_details.md` | task_id 型 | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'task_id 型'. |
@@ -576,7 +577,6 @@
 | `architecture/concept_harness.md` | 特性比較 | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '特性比較'. |
 | `architecture/document_structure.md` | 2.2 依存方向のルール | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '2.2 依存方向のルール'. |
 | `architecture/document_structure.md` | 3. ドキュメントの静的チェックルール | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '3. ドキュメントの静的チェックルール'. |
-| `architecture/master_physical_design.md` | `vsoc_runtime`（`R2: env` 起点、計12バイト） | meta | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '`vsoc_runtime`（`R2: env` 起点、計12バイト）'. |
 | `components/tier1_core/os_scheduler.md` | アイドルハンドラ設定（set_idle_handler） | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'アイドルハンドラ設定（set_idle_handler）'. |
 | `components/tier1_core/os_scheduler.md` | タスク終了（terminate） | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for 'タスク終了（terminate）'. |
 | `components/tier1_core/system_containers.md` | 7. 参考実装リスト | 1 | 2/5 | 2/5 | `Static` | - | Independent heuristic evaluation for '7. 参考実装リスト'. |

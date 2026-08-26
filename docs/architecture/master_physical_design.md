@@ -201,14 +201,15 @@ Fireball は外部の AAPCS 準拠 C/C++ 関数（WASI ホストコール、vMMI
 | `+0x0E` | `loop_flag` | u8 |
 | `+0x0F` | （予約、4バイトアライメント） | — |
 
-#### `vsoc_runtime`（`R2: env` 起点、計12バイト）
+#### `vsoc_runtime`（`R2: env` 起点、計16バイト）
 正本: [`runtime_vsoc.md` 3.3](../components/tier2_runtime/runtime_vsoc.md) / [`vsoc_runtime.wit`](../components/tier2_runtime/wit/vsoc_runtime.wit)
 
-| オフセット | フィールド | 型 |
-| :--- | :--- | :--- |
-| `+0x00` | `mem_base` | u32（アドレス値） |
-| `+0x04` | `mem_size` | u32 |
-| `+0x08` | `globals_base` | u32（アドレス値） |
+| オフセット | フィールド | 型 | 役割 |
+| :--- | :--- | :--- | :--- |
+| `+0x00` | `mem_base` | u32（アドレス値） | ゲストリニアメモリ開始アドレス |
+| `+0x04` | `mem_size` | u32 | ゲストリニアメモリ有効バイト数 |
+| `+0x08` | `mem_mask` | u32 | FastAddressCheck 境界マスク（`next_pow2(mem_size) - 1`） |
+| `+0x0C` | `globals_base` | u32（アドレス値） | グローバル変数配列開始アドレス |
 
 ---
 

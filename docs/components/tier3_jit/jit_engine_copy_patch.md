@@ -45,6 +45,37 @@ WASM命令に対応するネイティブバイナリの雛形。インタープ�
 | パッチ情報 | 各パッチ位置のオフセットと修正方法（即値/分岐/APIポインタ）を定義する情報の配列 | バイナリビュー | [JIT ステンシルカタログ §2](../../specs/jit_stencil_catalog.md) |
 | レジスタ規約 | JIT トレースとインタープリタ間で共有される物理レジスタ規約および Callee-saved プール | 規約定義 | [マスター物理設計書 §3](../../architecture/master_physical_design.md) 準拠 (`R0-R2: CPS`, `R3: spill`, `R4-R6, R8-R11: assignable pool`, `R7: FP`) |
 
+#### JIT トレース物理メモリレイアウト (JIT Trace Header & Binary Layout)
+<!-- traceability: {JIT_MultiBuffer_Cache} {JIT_LazyChaining} {SimpleJITArchitecture} -->
+JIT キャッシュ（2KB バンク）内に書き込まれる各コンパイル済みトレースは、**先頭に 16 バイト固定長のメタデータヘッダ（JITエントリ: `jit_trace_header`）を持ち、直後（`+0x10`）からネイティブ Thumb-2 命令列が展開される** インライン物理レイアウトをとる。
+
+```text
++---------------------------------------------------------------------------------------------------+
+| JIT トレース物理メモリレイアウト (4-byte アライン)                                                |
++---------------------------------------------------------------------------------------------------+
+| [Trace Header / JIT Entry Metadata] (固定長 16 Bytes: sizeof(jit_trace_header))                  |
+|  +0x00: uint32_t head_wasm_pc      -- トレース開始 WASM PC (逆引き/デバッグ照合用)               |
+|  +0x04: uint16_t trace_byte_size   -- ヘッダ含むトレース全体の総物理バイトサイズ                  |
+|  +0x06: uint8_t  flags             -- 状態フラグ (0x01: PROMOTED, 0x02: LOOP_HEADER)              |
+|  +0x07: uint8_t  variant_id        -- ステンシルバリアント/TOSレジスタ割り当て状態 ID             |
+|  +0x08: uint32_t chain_next_pc     -- 直結チェイン先 WASM PC (0: インタープリタ復帰)             |
+|  +0x0C: uint32_t chain_target_addr -- チェイン先ネイティブアドレス (初期値: ディスパッチャスタブ) |
++---------------------------------------------------------------------------------------------------+
+| [Native Executable Code] (Thumb-2 機械語命令列, 実行エントリ = trace_base + 0x10 | 1)            |
+|  +0x10: PUSH.W {r4-r6, r8-r11, lr} -- Callee-saved レジスタ退避                                   |
+|  +0x14: [Copied & Patched Stencils]-- WASM 命令群のネイティブ展開                                  |
+|         - Immediate loads / ALU / Memory loads                                                    |
+|         - Loop Safepoint Poll (CBZ / LDR)                                                         |
+|         - Dirty Spill Flush to stack_bot                                                          |
+|  +0xXX: POP.W {r4-r6, r8-r11, lr}  -- Callee-saved レジスタ復元                                   |
+|  +0xYY: LDR R12, [PC, #chain_slot] -- +0x0C の chain_target_addr をロード                         |
+|  +0xZZ: BX R12                     -- チェイン先またはインタープリタ復帰スタブへ末尾ジャンプ      |
++---------------------------------------------------------------------------------------------------+
+```
+
+- **Zero-Lookup ヘッダ逆引き**: 実行中のネイティブ命令ポインタ `pc_native` から、`header = (pc_native & ~1) - offset` により $O(1)$・メモリアクセス 0 回でメタデータ（WASM PC, チェインスロット）を逆引きできる。
+- **高速再チェイニング**: キャッシュローテーション時の再チェイニング／アンリンクは、コードバイナリをスキャンすることなく、先頭ヘッダの `+0x0C`（`chain_target_addr`）を直接書き換えるだけで完了する。
+
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム

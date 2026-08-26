@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-26T20:37:38.281888+00:00",
+  "generated_at": "2026-08-26T21:04:02.263982+00:00",
   "backend": "heuristic",
   "total_evaluated": 780,
   "formal_candidates_count": 31,
@@ -10,7 +10,7 @@
     "architecture/architecture_overview.md": "3f183179addd8251c6a0b6faecd54a999ea326f528f1cd4b24ff98bf922def4f",
     "architecture/concept_harness.md": "2160b8e29a617ecefbf46165542544705de7ebb0f6d5b7df4bbeb1c084f9cd3c",
     "architecture/document_structure.md": "24357f01283821a32a25234b99d2e956f10b1db600b3311f5f1f28ac664770b3",
-    "architecture/master_physical_design.md": "78cbcf35c2b49483f428ae308e110bdb81e057d09dd77268e1f09022059d6187",
+    "architecture/master_physical_design.md": "67d789c20fe9ec57757c66685d7dad4ebb1ecefe49c19ed319ab00ca3dd5c289",
     "architecture/resource_budget.md": "ac4928f5ad7fcc1a360b6539ec3d44d072a67c6b7d4aa7d76bdac014971def00",
     "components/tier1_core/os_coos.md": "f1579a3a615047b5b3b3e189413e953088d502bd81bf9a180321001f5cf53a79",
     "components/tier1_core/os_scheduler.md": "8f2a91e241b3e52b23d22c75dc01f37adab4592a59255070983ded474fed5f77",
@@ -32,7 +32,7 @@
     "components/tier3_jit/concepts/README.md": "a39c8c192999a792243e697e008fcad02c701d14b9559d492d668208122b6ebc",
     "components/tier3_jit/jit_assembler_constexpr.md": "bdeb28e114f82861fadac6ac3f3c9953dfd2cd3264a243d5db232d893c980924",
     "components/tier3_jit/jit_compiler.md": "6e6bbe03576190ff78c114cde3ef653b47cc11648eeade424bb2be25f30c639e",
-    "components/tier3_jit/jit_engine_copy_patch.md": "436367393b257c49f91cd8a800d2ff1446bc72441df89047de78ce82501df8d0",
+    "components/tier3_jit/jit_engine_copy_patch.md": "a7c88211b59a03fde6428041bd46104f16ee5dec8a65788d49305bb3b27ef606",
     "components/tier3_jit/jit_runtime_entry.md": "fba8e4844ca9cf64c718c57e5b4058a1cafd5f28b56d0d3cd019dac83ea88834",
     "components/tier3_jit/jit_runtime_hotspot.md": "bf4ced6b78c1978a08624c8fe9f430ee307c068780cd0c314d6f527ea698603f",
     "components/tier3_platform/platform_hal.md": "a5407e2d644de41349938325e01ca15be3fc8f17304d3ea9bc74251ff431353c",
@@ -963,6 +963,19 @@
       "summary": "Independent heuristic evaluation for 'Phase 1.3: Copy-and-Patch JIT Compiler (`jit_compiler`)'."
     },
     {
+      "section_id": "sec:architecture/master_physical_design.md#2.3 Pillar 3: 3面世代交代回転コードキャッシュ (3-Bank Generational Rotating Code Cache)",
+      "file_path": "architecture/master_physical_design.md",
+      "heading": "2.3 Pillar 3: 3面世代交代回転コードキャッシュ (3-Bank Generational Rotating Code Cache)",
+      "tier": "meta",
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '2.3 Pillar 3: 3面世代交代回転コードキャッシュ (3-Bank Generational Rotating Code Cache)'."
+    },
+    {
       "section_id": "sec:requires/requirement_list.md#3.1.4 デバッグ・運用",
       "file_path": "requires/requirement_list.md",
       "heading": "3.1.4 デバッグ・運用",
@@ -1028,32 +1041,6 @@
       "summary": "Independent heuristic evaluation for '3.1 データ構造'."
     },
     {
-      "section_id": "sec:architecture/master_physical_design.md#2.3 Pillar 3: 3面世代交代回転コードキャッシュ (3-Bank Generational Rotating Code Cache)",
-      "file_path": "architecture/master_physical_design.md",
-      "heading": "2.3 Pillar 3: 3面世代交代回転コードキャッシュ (3-Bank Generational Rotating Code Cache)",
-      "tier": "meta",
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '2.3 Pillar 3: 3面世代交代回転コードキャッシュ (3-Bank Generational Rotating Code Cache)'."
-    },
-    {
-      "section_id": "sec:architecture/master_physical_design.md#2.3.1 JIT トレース・インラインヘッダ物理レイアウト (JIT Trace Header & Binary Layout)",
-      "file_path": "architecture/master_physical_design.md",
-      "heading": "2.3.1 JIT トレース・インラインヘッダ物理レイアウト (JIT Trace Header & Binary Layout)",
-      "tier": "meta",
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '2.3.1 JIT トレース・インラインヘッダ物理レイアウト (JIT Trace Header & Binary Layout)'."
-    },
-    {
       "section_id": "sec:components/tier1_core/system_syscall.md#5.7. WASI (`0x80`-`0xBF`)",
       "file_path": "components/tier1_core/system_syscall.md",
       "heading": "5.7. WASI (`0x80`-`0xBF`)",
@@ -1091,6 +1078,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '4.1 アルゴリズム'."
+    },
+    {
+      "section_id": "sec:components/tier3_jit/jit_engine_copy_patch.md#JIT トレース物理メモリレイアウト (JIT Trace Header & Binary Layout)",
+      "file_path": "components/tier3_jit/jit_engine_copy_patch.md",
+      "heading": "JIT トレース物理メモリレイアウト (JIT Trace Header & Binary Layout)",
+      "tier": 3,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for 'JIT トレース物理メモリレイアウト (JIT Trace Header & Binary Layout)'."
     },
     {
       "section_id": "sec:components/tier3_platform/platform_memory.md#9. ハードウェアメモリ保護 (MPU) & W^X 設計",

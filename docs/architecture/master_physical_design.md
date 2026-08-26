@@ -79,38 +79,9 @@ Fireball の実行コアは、以下の 6 つの明確に命名された物理�
 - **局所再チェイニング＆アンリンク機構 (Inbound Chain Index Table)**:
   - バンクごとに被チェイン元 JIT エントリインデックスを保持する固定長配列 `bank_inbound_chains[3]` を配備。
   - ローテーション時、全 JIT エントリを走査（全舐め）することなく、Oldest バンクがパージされ新 Active へ再利用される直前に、そのバンクを指す被チェイン元のみを $O(k)$ で参照し、ターゲットが昇格済みの場合は再チェイニング、完全破棄の場合のみインタープリタ復帰スタブにアンパッチする（Warm $\to$ Oldest 期間中はチェイン実行を維持）。
+- **インライン JIT トレースヘッダ (Inline Trace Header)**:
+  - キャッシュ内の各トレース先頭に 16 バイト固定長のメタデータヘッダ（`jit_trace_header`）をインライン配置。$O(1)$ ゼロルックアップ逆引きと高速な直接再チェイニングを実現。詳細な物理メモリレイアウトおよびオフセット定義は [`../components/tier3_jit/jit_engine_copy_patch.md`](../components/tier3_jit/jit_engine_copy_patch.md) を参照。
 - **物理的利点**: 実行時カウンタや動的メモリ確保（malloc）を一切使わず、純粋な 3面リングローテーション、最古限定昇格、および $O(k)$ 局所再チェイニング・アンリンクにより、断片化ゼロ・全走査ゼロの高速な動的代謝を実現する。 `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}` `{JIT_LazyChaining}`
-
-#### 2.3.1 JIT トレース・インラインヘッダ物理レイアウト (JIT Trace Header & Binary Layout)
-<!-- traceability: {JIT_MultiBuffer_Cache} {JIT_LazyChaining} {SimpleJITArchitecture} -->
-JIT キャッシュ（2KB バンク）内に書き込まれる各コンパイル済みトレースは、**先頭に 16 バイト固定長のメタデータヘッダ（JITエントリ: `jit_trace_header`）を持ち、直後（`+0x10`）からネイティブ Thumb-2 命令列が展開される** インライン物理レイアウトをとる。
-
-```text
-+---------------------------------------------------------------------------------------------------+
-| JIT トレース物理メモリレイアウト (4-byte アライン)                                                |
-+---------------------------------------------------------------------------------------------------+
-| [Trace Header / JIT Entry Metadata] (固定長 16 Bytes: sizeof(jit_trace_header))                  |
-|  +0x00: uint32_t head_wasm_pc      -- トレース開始 WASM PC (逆引き/デバッグ照合用)               |
-|  +0x04: uint16_t trace_byte_size   -- ヘッダ含むトレース全体の総物理バイトサイズ                  |
-|  +0x06: uint8_t  flags             -- 状態フラグ (0x01: PROMOTED, 0x02: LOOP_HEADER)              |
-|  +0x07: uint8_t  variant_id        -- ステンシルバリアント/TOSレジスタ割り当て状態 ID             |
-|  +0x08: uint32_t chain_next_pc     -- 直結チェイン先 WASM PC (0: インタープリタ復帰)             |
-|  +0x0C: uint32_t chain_target_addr -- チェイン先ネイティブアドレス (初期値: ディスパッチャスタブ) |
-+---------------------------------------------------------------------------------------------------+
-| [Native Executable Code] (Thumb-2 機械語命令列, 実行エントリ = trace_base + 0x10 | 1)            |
-|  +0x10: PUSH.W {r4-r6, r8-r11, lr} -- Callee-saved レジスタ退避                                   |
-|  +0x14: [Copied & Patched Stencils]-- WASM 命令群のネイティブ展開                                  |
-|         - Immediate loads / ALU / Memory loads                                                    |
-|         - Loop Safepoint Poll (CBZ / LDR)                                                         |
-|         - Dirty Spill Flush to stack_bot                                                          |
-|  +0xXX: POP.W {r4-r6, r8-r11, lr}  -- Callee-saved レジスタ復元                                   |
-|  +0xYY: LDR R12, [PC, #chain_slot] -- +0x0C の chain_target_addr をロード                         |
-|  +0xZZ: BX R12                     -- チェイン先またはインタープリタ復帰スタブへ末尾ジャンプ      |
-+---------------------------------------------------------------------------------------------------+
-```
-
-- **Zero-Lookup ヘッダ逆引き**: 実行中のネイティブ命令ポインタ `pc_native` から、`header = (pc_native & ~1) - offset` により $O(1)$・メモリアクセス 0 回でメタデータ（WASM PC, チェインスロット）を逆引きできる。
-- **高速再チェイニング**: キャッシュローテーション時の再チェイニング／アンリンクは、コードバイナリをスキャンすることなく、先頭ヘッダの `+0x0C`（`chain_target_addr`）を直接書き換えるだけで完了する。
 
 ---
 

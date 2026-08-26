@@ -2427,7 +2427,7 @@
     "sec:specs/wasm_instruction_set.md#3.2 パラメトリック命令 (Parametric)": "177d45892bfa410d907cef572b6af7485999c0df10507a007d205af9d59e3682",
     "sec:specs/wasm_instruction_set.md#3.3 変数アクセス命令 (Variable Access)": "23dc0be8542a1a6c8993b5615a46bc0821ce10e21f65fdcd794399ffa3c41a91",
     "sec:specs/wasm_instruction_set.md#3.4 メモリアクセス命令 (Memory Access - 32-bit Linear Memory)": "4278eb8c9ae06e24e2089006d08fe4e7d6d4d666ccb84efd5c614c23a1ab3889",
-    "sec:specs/wasm_instruction_set.md#3.5 整数算術・論理・比較命令 (Integer Arithmetic, Logic & Comparison)": "5d1599068a944b22c5002a01460b1b6394fb71df4b100a63edf5defceddc532c",
+    "sec:specs/wasm_instruction_set.md#3.5 整数算術・論理・比較命令 (Integer Arithmetic, Logic & Comparison)": "e78c19f32ac04e82abf1ec77ce12b7543e35517c96ee0d7d8c991c5dfe4a7215",
     "sec:specs/wasm_instruction_set.md#WASM 命令セット物理仕様書 (Supported WASM Instruction Set)": "7c3d856eb641419ed6356d969673b9deffd6bd7e93d2ad9345ba18a34f1f68fd"
   },
   "version": 2

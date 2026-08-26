@@ -464,19 +464,6 @@
       ]
     },
     {
-      "item_id": "item:META_ZeroCostAbstraction",
-      "item_label": "{META_ZeroCostAbstraction}",
-      "status": "PASS",
-      "summary": "The referencing design sections are consistent with the definition of {META_ZeroCostAbstraction} and with each other. The implementation details provided in the design sections (non-owning views, constexpr encoding, and bit-manipulation without runtime division) directly realize the 'zero-cost' and 'non-virtual interface' goals defined in the meta-keyword.",
-      "issues": [],
-      "covered_files": [
-        "architecture/document_structure.md",
-        "architecture/master_physical_design.md",
-        "components/tier1_core/system_containers.md",
-        "components/tier3_jit/jit_assembler_constexpr.md"
-      ]
-    },
-    {
       "item_id": "item:META_NoStdVector",
       "item_label": "{META_NoStdVector}",
       "status": "PASS",
@@ -1744,38 +1731,6 @@
       ]
     },
     {
-      "item_id": "item:JIT_CopyAndPatch",
-      "item_label": "{JIT_CopyAndPatch}",
-      "status": "FAIL",
-      "summary": "Critical contradictions found in the physical implementation of the JIT Copy-and-Patch mechanism, specifically regarding register assignments and instruction logic between the Stencil Catalog and the Instruction Set specification.",
-      "issues": [
-        {
-          "severity": "ERROR",
-          "location": "sec:specs/jit_stencil_catalog.md vs sec:specs/wasm_instruction_set.md",
-          "description": "Contradiction in physical instruction implementation for 'i32.eqz' (0x45). The Stencil Catalog defines the implementation as 'cmp r4, #0; it eq; moveq r4, #1; it ne; movne r4, #0', whereas the Instruction Set specification defines it as 'RSBS r4, r4, #1; SBC r4, r4, r4'. These are fundamentally different Thumb-2 sequences."
-        },
-        {
-          "severity": "ERROR",
-          "location": "sec:specs/jit_stencil_catalog.md vs sec:specs/wasm_instruction_set.md",
-          "description": "Contradiction in register operand order for binary operations. The Stencil Catalog consistently uses 'r4' as TOS and 'r5' as NOS with the pattern 'op r4, r5, r4' (e.g., i32.add: 'adds r4, r5, r4'), while the Instruction Set specification defines the physical action as 'op r4, r4, r5' (e.g., i32.add: 'ADDS r4, r4, r5'). This reverses the source/destination relationship for non-commutative operations (like sub, div, shr)."
-        },
-        {
-          "severity": "WARNING",
-          "location": "sec:components/tier3_jit/jit_compiler.md",
-          "description": "Unbacked Verification Claim: The section claims the 'Zero Compile Cost Theorem' is measured via 'benchmarks/jit_zero_compile_cost_bench.py', but the provided text does not include the results or the log of this benchmark to substantiate the claim that execution time scales linearly."
-        }
-      ],
-      "covered_files": [
-        "components/tier2_runtime/runtime_vsoc.md",
-        "components/tier3_jit/jit_compiler.md",
-        "components/tier3_jit/jit_engine_copy_patch.md",
-        "plans/backlog_list.md",
-        "requires/requirement_list.md",
-        "specs/jit_stencil_catalog.md",
-        "specs/wasm_instruction_set.md"
-      ]
-    },
-    {
       "item_id": "item:META_Static_Resolution",
       "item_label": "{META_Static_Resolution}",
       "status": "PASS",
@@ -1925,6 +1880,45 @@
         "components/tier1_interface/ipc_router.md",
         "requires/requirement_list.md"
       ]
+    },
+    {
+      "item_id": "item:JIT_CopyAndPatch",
+      "item_label": "{JIT_CopyAndPatch}",
+      "status": "PASS",
+      "summary": "The specification for {JIT_CopyAndPatch} is highly consistent across all definition and design sections. Register assignments, the Copy-and-Patch mechanism, and the integration with the interpreter are aligned.",
+      "issues": [
+        {
+          "severity": "WARNING",
+          "location": "sec:components/tier3_jit/jit_compiler.md#1. コンセプト",
+          "description": "The section claims a 'Zero Compile Cost Theorem' and references a benchmark file `benchmarks/jit_zero_compile_cost_bench.py` to substantiate the claim that execution time scales linearly. While a file is cited, the actual results or the formal definition of the 'Theorem' are not provided in the text, making it an empirical claim based on an external artifact not present in the spec."
+        }
+      ],
+      "covered_files": [
+        "components/tier2_runtime/runtime_vsoc.md",
+        "components/tier3_jit/jit_compiler.md",
+        "components/tier3_jit/jit_engine_copy_patch.md",
+        "plans/backlog_list.md",
+        "requires/requirement_list.md",
+        "specs/jit_stencil_catalog.md",
+        "specs/wasm_instruction_set.md"
+      ]
+    },
+    {
+      "item_id": "item:META_ZeroCostAbstraction",
+      "item_label": "{META_ZeroCostAbstraction}",
+      "status": "PASS",
+      "summary": "The keyword {META_ZeroCostAbstraction} is consistently applied across all referencing sections. The design implementations (non-owning views, constexpr encoding, and pre-compiled stencils) align with the definition of avoiding runtime costs through C++ optimization and static resolution.",
+      "issues": [],
+      "covered_files": [
+        "architecture/document_structure.md",
+        "architecture/master_physical_design.md",
+        "components/tier1_core/system_containers.md",
+        "components/tier3_jit/jit_assembler_constexpr.md",
+        "specs/gdb_rsp_protocol.md",
+        "specs/jit_stencil_catalog.md",
+        "specs/wasi_preview1_abi.md",
+        "specs/wasm_instruction_set.md"
+      ]
     }
   ],
   "doc_hashes": {
@@ -1965,6 +1959,6 @@
     "specs/gdb_rsp_protocol.md": "386dfa524ed02219a8aa89a7a7c35d6e97dfbba666b0b24a05e7c35d7c89e0dc",
     "specs/jit_stencil_catalog.md": "f1214b9b906133e9362cbad1bc22eeae6b254c39ce855e38e0394e69b114ba0d",
     "specs/wasi_preview1_abi.md": "4cb53fb6d8c5e8cbfc416eaf39041fae538cfaabc0cabf1de6eedafcc12e8512",
-    "specs/wasm_instruction_set.md": "9eb1c42e94a99c446d381089c647534b5cde92aae1d616488065933855b0ee02"
+    "specs/wasm_instruction_set.md": "727879555c7cc44852148ecf006a730caf22026480ff1154ccfc1e4a78ec52ef"
   }
 }

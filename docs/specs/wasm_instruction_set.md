@@ -99,24 +99,24 @@
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `0x41` | `i32.const` | `[] -> [i32]` | 即値を TOS へプッシュ | あり (MOVW / MOV) | `MOVW r4, #imm16; MOVT r4, #imm16` |
 | `0x42` | `i64.const` | `[] -> [i64]` | 64-bit 即値をプッシュ | あり (2x MOV) | 2 レジスタへロード |
-| `0x45` | `i32.eqz` | `[i32] -> [i32]` | $x == 0$ 判定 | あり (CLZ & LSR) | `RSBS r4, r4, #1; SBC r4, r4, r4` 等 |
-| `0x46` | `i32.eq` | `[i32, i32] -> [i32]` | $a == b$ 判定 | あり (CMP & CSET) | `CMP r4, r5; IT EQ; MOVEQ r4, #1` |
-| `0x47` | `i32.ne` | `[i32, i32] -> [i32]` | $a \ne b$ 判定 | あり (CMP & CSET) | `CMP r4, r5; IT NE; MOVNE r4, #1` |
-| `0x48` | `i32.lt_s` | `[i32, i32] -> [i32]` | 符号付き $a < b$ | あり (CMP & LT) | `CMP r4, r5; IT LT; MOVLT r4, #1` |
-| `0x49` | `i32.lt_u` | `[i32, i32] -> [i32]` | 符号なし $a < b$ | あり (CMP & LO) | `CMP r4, r5; IT LO; MOVLO r4, #1` |
+| `0x45` | `i32.eqz` | `[i32] -> [i32]` | $x == 0$ 判定 | あり (CMP & IT) | `CMP r4, #0; IT EQ; MOVEQ r4, #1; IT NE; MOVNE r4, #0` |
+| `0x46` | `i32.eq` | `[i32, i32] -> [i32]` | $a == b$ 判定 | あり (CMP & CSET) | `CMP r5, r4; IT EQ; MOVEQ r4, #1; IT NE; MOVNE r4, #0` |
+| `0x47` | `i32.ne` | `[i32, i32] -> [i32]` | $a \ne b$ 判定 | あり (CMP & CSET) | `CMP r5, r4; IT NE; MOVNE r4, #1; IT EQ; MOVEQ r4, #0` |
+| `0x48` | `i32.lt_s` | `[i32, i32] -> [i32]` | 符号付き $a < b$ | あり (CMP & LT) | `CMP r5, r4; IT LT; MOVLT r4, #1; IT GE; MOVGE r4, #0` |
+| `0x49` | `i32.lt_u` | `[i32, i32] -> [i32]` | 符号なし $a < b$ | あり (CMP & LO) | `CMP r5, r4; IT LO; MOVLO r4, #1; IT HS; MOVHS r4, #0` |
 | `0x67` | `i32.clz` | `[i32] -> [i32]` | 先頭連続ゼロビット数 | あり (CLZ) | `CLZ r4, r4` |
 | `0x68` | `i32.ctz` | `[i32] -> [i32]` | 末尾連続ゼロビット数 | あり (RBIT & CLZ) | `RBIT r4, r4; CLZ r4, r4` |
 | `0x69` | `i32.popcnt`| `[i32] -> [i32]` | 立っているビット数 | あり (Inline SW) | 算術アルゴリズム展開 |
-| `0x6A` | `i32.add` | `[i32, i32] -> [i32]` | 加算 | あり (ADDS / ADD) | `ADDS r4, r4, r5` |
-| `0x6B` | `i32.sub` | `[i32, i32] -> [i32]` | 減算 | あり (SUBS / SUB) | `SUBS r4, r4, r5` |
-| `0x6C` | `i32.mul` | `[i32, i32] -> [i32]` | 乗算 | あり (MUL) | `MUL r4, r4, r5` |
-| `0x6D` | `i32.div_s` | `[i32, i32] -> [i32]` | 符号付き除算 (0除算トラップ)| あり (SDIV) | 0判定 $\to$ `SDIV r4, r4, r5` |
-| `0x6E` | `i32.div_u` | `[i32, i32] -> [i32]` | 符号なし除算 (0除算トラップ)| あり (UDIV) | 0判定 $\to$ `UDIV r4, r4, r5` |
-| `0x71` | `i32.and` | `[i32, i32] -> [i32]` | ビット論理積 | あり (ANDS / AND) | `ANDS r4, r4, r5` |
-| `0x72` | `i32.or` | `[i32, i32] -> [i32]` | ビット論理和 | あり (ORRS / ORR) | `ORRS r4, r4, r5` |
-| `0x73` | `i32.xor` | `[i32, i32] -> [i32]` | ビット排他論理和 | あり (EORS / EOR) | `EORS r4, r4, r5` |
-| `0x74` | `i32.shl` | `[i32, i32] -> [i32]` | 左シフト | あり (LSL) | `LSL r4, r4, r5` |
-| `0x75` | `i32.shr_s` | `[i32, i32] -> [i32]` | 算術右シフト | あり (ASR) | `ASR r4, r4, r5` |
-| `0x76` | `i32.shr_u` | `[i32, i32] -> [i32]` | 論理右シフト | あり (LSR) | `LSR r4, r4, r5` |
-| `0x77` | `i32.rotl` | `[i32, i32] -> [i32]` | 左循環シフト | あり (ROR with 32-s) | 算術合成 |
-| `0x78` | `i32.rotr` | `[i32, i32] -> [i32]` | 右循環シフト | あり (ROR) | `ROR r4, r4, r5` |
+| `0x6A` | `i32.add` | `[i32, i32] -> [i32]` | 加算 | あり (ADDS / ADD) | `ADDS r4, r5, r4` |
+| `0x6B` | `i32.sub` | `[i32, i32] -> [i32]` | 減算 | あり (SUBS / SUB) | `SUBS r4, r5, r4` |
+| `0x6C` | `i32.mul` | `[i32, i32] -> [i32]` | 乗算 | あり (MUL) | `MUL r4, r5, r4` |
+| `0x6D` | `i32.div_s` | `[i32, i32] -> [i32]` | 符号付き除算 (0除算トラップ)| あり (SDIV) | 0判定 $\to$ `SDIV r4, r5, r4` |
+| `0x6E` | `i32.div_u` | `[i32, i32] -> [i32]` | 符号なし除算 (0除算トラップ)| あり (UDIV) | 0判定 $\to$ `UDIV r4, r5, r4` |
+| `0x71` | `i32.and` | `[i32, i32] -> [i32]` | ビット論理積 | あり (ANDS / AND) | `ANDS r4, r5, r4` |
+| `0x72` | `i32.or` | `[i32, i32] -> [i32]` | ビット論理和 | あり (ORRS / ORR) | `ORRS r4, r5, r4` |
+| `0x73` | `i32.xor` | `[i32, i32] -> [i32]` | ビット排他論理和 | あり (EORS / EOR) | `EORS r4, r5, r4` |
+| `0x74` | `i32.shl` | `[i32, i32] -> [i32]` | 左シフト | あり (LSL.W, 3オペランド) | `LSL.W r4, r5, r4` |
+| `0x75` | `i32.shr_s` | `[i32, i32] -> [i32]` | 算術右シフト | あり (ASR.W, 3オペランド) | `ASR.W r4, r5, r4` |
+| `0x76` | `i32.shr_u` | `[i32, i32] -> [i32]` | 論理右シフト | あり (LSR.W, 3オペランド) | `LSR.W r4, r5, r4` |
+| `0x77` | `i32.rotl` | `[i32, i32] -> [i32]` | 左循環シフト | あり (RSB & ROR.W) | `RSB r3, r4, #32; ROR.W r4, r5, r3` |
+| `0x78` | `i32.rotr` | `[i32, i32] -> [i32]` | 右循環シフト | あり (ROR.W, 3オペランド) | `ROR.W r4, r5, r4` |

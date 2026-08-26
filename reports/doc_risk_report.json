@@ -44,7 +44,7 @@
     "specs/gdb_rsp_protocol.md": "386dfa524ed02219a8aa89a7a7c35d6e97dfbba666b0b24a05e7c35d7c89e0dc",
     "specs/jit_stencil_catalog.md": "f1214b9b906133e9362cbad1bc22eeae6b254c39ce855e38e0394e69b114ba0d",
     "specs/wasi_preview1_abi.md": "4cb53fb6d8c5e8cbfc416eaf39041fae538cfaabc0cabf1de6eedafcc12e8512",
-    "specs/wasm_instruction_set.md": "9eb1c42e94a99c446d381089c647534b5cde92aae1d616488065933855b0ee02"
+    "specs/wasm_instruction_set.md": "727879555c7cc44852148ecf006a730caf22026480ff1154ccfc1e4a78ec52ef"
   },
   "assessments": [
     {

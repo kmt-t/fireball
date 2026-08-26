@@ -275,16 +275,16 @@ class JITMultiBufferCache:
     def rotate(self):
         """Oldest is purged and becomes the new Active; Active->Warm, Warm->Oldest.
 
-        Unlinks incoming chains targeting Warm (which transitions to Oldest)
-        in O(k) bounded time via Warm's inbound_sources, without scanning all traces.
+        Unlinks incoming chains targeting Oldest in O(k) bounded time via
+        Oldest's inbound_sources right before Oldest is cleared and reused as Active.
+        Traces resident in Warm transitioning to Oldest remain valid and chained.
         """
         self._require_writable()
         
-        # 1. Unlink incoming chains that pointed into Warm (which is about to become Oldest).
-        # A trace chained into Warm survives this rotation as Oldest, but Oldest is one
-        # rotate away from purge and is not a valid chain target. We directly unlink
-        # only the sources recorded in warm's inbound_sources -- O(k) without full scan!
-        self._unlink_bank_inbound(self.warm)
+        # 1. Unlink incoming chains that pointed into Oldest (which is about to be cleared and reused).
+        # Warm->Oldest transition keeps code valid and execution chained without harm.
+        # Only when Oldest is purged do we unlink its recorded inbound sources -- O(k) local unlinking!
+        self._unlink_bank_inbound(self.oldest)
 
         purged = self.banks[self.oldest_idx].clear()
         self.evictions += len(purged)
@@ -756,10 +756,10 @@ def test_idle_hook_never_chains_into_the_oldest_bank():
     assert trace.chain_next is None, "Oldest is never a valid chain target"
 
 
-def test_rotate_sweeps_a_chain_target_that_is_about_to_leave_warm():
-    """A source that outlives its Warm-resident target (Active always has
-    more remaining lifetime than Warm) must not keep a dangling chain_next
-    once the target ages into Oldest -- one rotate away from being purged."""
+def test_rotate_unlinks_chains_when_oldest_is_purged():
+    """A link to a target in Warm remains valid when the target moves into Oldest
+    (the code is still cached and executable). The link is unlinked only when
+    Oldest is purged and rotated into the new Active bank."""
     cache = JITMultiBufferCache()
     cache.begin_patch()
     target = JITTrace(0x200, lambda ctx: "COMPLETED", 64)
@@ -773,8 +773,12 @@ def test_rotate_sweeps_a_chain_target_that_is_about_to_leave_warm():
     assert source.chain_next == 0x200, "sanity: link established while target is in Warm"
 
     cache.begin_patch(); cache.rotate(); cache.commit_patch()   # target: Warm -> Oldest
+    assert source.chain_next == 0x200, \
+        "target in Oldest is still valid and executable; link must remain intact"
+
+    cache.begin_patch(); cache.rotate(); cache.commit_patch()   # target: Oldest -> PURGED into Active
     assert source.chain_next is None, \
-        "the sweep must drop the link before the next rotate() purges the target"
+        "target was purged on rotation; inbound link must be unlinked to interpreter fallback"
 
 
 def test_eviction_makes_the_card_recompilable():

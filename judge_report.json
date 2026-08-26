@@ -3,43 +3,38 @@
     {
       "item_id": "item:META_ConfigurableSystem",
       "item_label": "{META_ConfigurableSystem}",
-      "status": "FAIL",
-      "summary": "Most referencing sections consistently implement META_ConfigurableSystem as compile-time configuration via header macros and constexpr constants. However, one section gives two different values for the same passthrough base address, which is a numeric inconsistency. Additional warnings concern ambiguous use of a 'DYNAMIC' memory region, incomplete macro/constexpr bindings for some configuration parameters, and an unsubstantiated absolute tamper-impossibility claim.",
+      "status": "WARN",
+      "summary": "The referencing sections are largely consistent with {META_ConfigurableSystem}: system parameters are repeatedly described as compile-time fixed via header macros and constexpr constants, and numeric values such as JIT cache size, vMMIO base, and WASM page size agree across sections. However, there are several consistency, completeness, and substantiation gaps: a separate irq_mapping_config is introduced without clarifying that it is compile-time header/constexpr configuration; logging memory pool independence is ambiguous relative to the static RAM accounting model; guest RAM allowed values are ambiguous relative to the 4096-byte default; safety and build-time verification claims lack concrete backing artifacts; and several referenced configuration macros are not defined in the provided configuration details.",
       "issues": [
         {
-          "severity": "ERROR",
-          "location": "sec:components/tier2_runtime/runtime_vsoc.md#vSoC構成（vsoc_config）",
-          "description": "The passthrough base address is defined as the start of the physical address space used by PASSTHROUGH (FC=15), with the formula physical addr = passthrough_base + offset. The same entry gives 0xF000_0000 and also states 'ARM Cortex-M: 0x4000_0000'. These are different values for the same configured quantity, and no macro, target selection rule, or default is specified. This violates numeric agreement and the requirement that system parameters be statically determined at compile time."
+          "severity": "WARNING",
+          "location": "sec:components/tier2_runtime/runtime_vmmio.md#4.7 仮想割り込みマッピング vs sec:components/tier1_core/system_config.md#1. コンセプト / sec:components/tier1_core/system_config_details.md#1. 概要",
+          "description": "The virtual interrupt mapping section introduces a separate 'irq_mapping_config' that is managed independently from 'vsoc_config', but it does not state that this configuration is a header macro or constexpr constant fixed at compile time, nor where it is defined. Other sections describe system configuration as header-file macros/constexpr constants, with system_config_details.md stating that the compile-time configuration macros are defined in inc/fireball_config.hxx. This leaves ambiguity about whether irq_mapping_config conforms to {META_ConfigurableSystem} or could be a runtime configuration artifact."
         },
         {
           "severity": "WARNING",
-          "location": "sec:components/tier3_platform/platform_hal.md#6.2 メモリ制約と方策",
-          "description": "The section states that HAL buffer count and size are compile-time fixed, but also says the buffers are placed in the vMMIO dynamic area (DYNAMIC). In a specification that repeatedly requires static compile-time memory and avoidance of heap allocation, the term DYNAMIC is ambiguous. It should clarify whether DYNAMIC is a statically allocated region or implies runtime dynamic allocation."
+          "location": "sec:components/tier1_core/system_logging.md#6.2 メモリ制約と方策 / #6.3 安全性制約と方策 vs sec:components/tier1_core/system_config.md#静的リソース消費の概算モデル",
+          "description": "The logging section states that logging uses an independent static memory pool and that the log area is isolated by memory partitioning. The static resource consumption model, however, states that FB_CONF_LOG_BUFFER_SIZE is an internal part of the subsystem pool and is not added separately to the total RAM consumption. The relationship between an 'independent static memory pool' and being 'inside the subsystem pool' is not clarified, creating a possible horizontal inconsistency in memory accounting and isolation semantics."
         },
         {
           "severity": "WARNING",
-          "location": "sec:components/tier2_runtime/runtime_vmmio.md#6.2 メモリ制約と方策",
-          "description": "This section claims that PTE management realizes a minimal memory footprint according to the number of registered pages. However, sec:components/tier1_core/system_config_details.md#2.4 fixes FB_CONF_VMMIO_MAX_PTES=32 as the static array capacity. If the array capacity is compile-time fixed, the allocated footprint is not determined by the runtime registered page count unless the flat_map_view size/capacity semantics are explicitly specified."
-        },
-        {
-          "severity": "WARNING",
-          "location": "sec:components/tier2_runtime/runtime_vmmio.md#4.7 仮想割り込みマッピング",
-          "description": "The section references a separate irq_mapping_config for static 1:1 IRQ mapping but does not specify that this configuration is provided as header macros or constexpr constants, as required by META_ConfigurableSystem."
-        },
-        {
-          "severity": "WARNING",
-          "location": "sec:components/tier3_jit/jit_compiler.md#JIT構成（jit_config）",
-          "description": "Several JIT configuration parameters (single bank limit, max registered entries, card boundary shift, instruction boundary shift) are not all bound to explicit header macro or constexpr names. Only FB_CONF_JIT_CACHE_SIZE, FB_CONF_JIT_CARD_SHIFT, and FB_CONF_JIT_ENTRY_GROUP_SHIFT appear in related prose, leaving the compile-time configuration incomplete."
-        },
-        {
-          "severity": "WARNING",
-          "location": "sec:components/tier2_runtime/runtime_interpreter.md#インタプリタ構成（interpreter_config）",
-          "description": "The interpreter yield threshold is specified as a 32-bit unsigned compile-time parameter but lacks an explicit macro or constexpr name, while the stack size is bound to FB_CONF_INTERP_STACK_SIZE. This leaves the configuration binding incomplete."
+          "location": "sec:components/tier2_runtime/runtime_vsoc.md#vSoC構成（vsoc_config） vs sec:components/tier1_core/system_config_details.md#2.4 vSoC / vMMIO",
+          "description": "The vSoC configuration describes RAM capacity as '64KB or 8KB etc partial page', while FB_CONF_GUEST_RAM_SIZE has a default value of 4096 bytes, i.e. 4KB. If 64KB and 8KB are intended to be the allowed or representative values, the 4KB default is inconsistent. If 4KB is also allowed, the wording should explicitly include it or state that the listed values are examples only."
         },
         {
           "severity": "WARNING",
           "location": "sec:components/tier1_core/system_config.md#6.3 安全性制約と方策",
-          "description": "The claim that placing configuration in ROM/Flash makes runtime tampering impossible is an absolute safety assertion. The text does not cite a threat model, access-control mechanism, or verification artifact covering debug access, flash reprogramming, or hardware faults, so the claim is not fully substantiated."
+          "description": "The section claims that system configuration constants placed as constexpr/const in ROM/Flash .rodata are 'definitely protected' from runtime erroneous writes or tampering. This is a strong safety claim, but no concrete backing artifact is cited, such as MPU configuration, flash write-protection settings, memory attribute definitions, or a verification test. The protection depends on hardware and linker/memory-map behavior that is not substantiated in the text."
+        },
+        {
+          "severity": "WARNING",
+          "location": "sec:components/tier1_core/system_config.md#静的リソース消費の概算モデル",
+          "description": "The section states that compile-time macro constants deterministically determine the ROM/RAM footprint and that build-time constraint compliance is verified by static_assert. However, it does not cite the concrete static_assert code, file, or test artifact that performs this verification. As written, the build-time verification claim is under-specified and not directly substantiated by a referenced artifact."
+        },
+        {
+          "severity": "WARNING",
+          "location": "sec:components/tier1_core/system_config_details.md#1. 概要 vs sec:components/tier3_jit/jit_compiler.md / sec:components/tier2_runtime/runtime_interpreter.md / sec:components/tier2_runtime/runtime_loader.md / sec:components/tier2_runtime/runtime_vsoc.md",
+          "description": "Several macros referenced as compile-time configuration parameters are not defined in the provided system_config_details.md list, including FB_CONF_JIT_CARD_SHIFT, FB_CONF_JIT_ENTRY_GROUP_SHIFT, FB_CONF_INTERP_STACK_SIZE, FB_CONF_MAX_MODULES, FB_CONF_JIT_ENABLED, and FB_CONF_VSOC_PASSTHROUGH_BASE. This leaves their default values, types, ranges, and derivation incomplete for the {META_ConfigurableSystem} requirement, even though the configuration details section presents itself as the list of compile-time configuration macros."
         }
       ],
       "covered_files": [
@@ -60,38 +55,18 @@
     {
       "item_id": "item:META_3TierSeparation",
       "item_label": "{META_3TierSeparation}",
-      "status": "FAIL",
-      "summary": "Most referencing sections use the META_3TierSeparation keyword consistently to express a Tier 1 / Tier 2 / Tier 3 decomposition, but there are concrete contradictions in tier assignment and dependency direction. The most serious issue is that jit_compiler is classified as Tier 3 in its own section and in the master physical design, while another section describes it as Tier 2. There is also a conflict between a stated lower-to-upper dependency rule and a Tier 2 component that integrates Tier 3 components. Additional warnings arise from an undefined Tier 0 reference, inconsistent Tier 1 role naming, and unclear responsibility boundaries between COOS and IPC router.",
+      "status": "WARN",
+      "summary": "The referencing sections consistently apply the 3-tier labels (Tier 1 primary, Tier 2 decomposed runtime, Tier 3 leaf/platform) and generally align with META_3TierSeparation. No numeric contradictions were found. However, two ambiguities weaken the 3-tier separation: memory management is described as both a Tier 1 COOS component and a Tier 3 platform component without a clear boundary, and the JIT copy-and-patch section ambiguously claims independence from the upper facade's interface while also requiring integration through upper-layer contracts.",
       "issues": [
         {
-          "severity": "ERROR",
-          "location": "sec:components/tier3_jit/jit_engine_copy_patch.md#6.2 3層分離設計 (3-Tier Separation) vs sec:components/tier3_jit/jit_compiler.md#2. アーキテクチャ分類 and sec:architecture/master_physical_design.md#4. ドキュメント体系上の位置づけ",
-          "description": "jit_engine_copy_patch.md#6.2 states that the upper 'Tier 2 (subsystem domain)' is jit_compiler. However, jit_compiler.md#2 explicitly classifies jit_compiler as 'Tier 3 (詳細リーフコンポーネント: Leaf Component)', and master_physical_design.md#4 places JIT under 'Tier 3 JIT/Platform'. This is a direct contradiction in the tier taxonomy required by META_3TierSeparation."
-        },
-        {
-          "severity": "ERROR",
-          "location": "sec:components/tier1_core/system_containers.md#2. アーキテクチャ分類 vs sec:components/tier2_runtime/runtime_vsoc.md#2. アーキテクチャ分類",
-          "description": "system_containers.md#2 states that the dependency direction is always from lower Tier to upper Tier, and that the Tier 1 document does not depend on lower Tier concrete implementations. In contrast, runtime_vsoc.md#2 describes a Tier 2 component that integrates Loader, Interpreter, JIT, vMMIO, and Debugger, including Tier 3 JIT components. This implies an upper Tier 2 component depending on lower Tier 3 components, which conflicts with the stated lower-to-upper dependency rule and weakens the claimed encapsulated dependency management."
+          "severity": "WARNING",
+          "location": "sec:components/tier1_core/os_coos.md#2.1 構成要素 and sec:components/tier3_platform/platform_memory.md#1. コンセプト / #2. アーキテクチャ分類",
+          "description": "os_coos.md assigns co_mem, a memory manager, to Tier 1 and describes it as managing task-independent static memory buffer pools/memory partitions. platform_memory.md assigns a memory manager to Tier 3 and describes it as managing the consolidated physical memory pool and independent host/VM heap partitions. The two descriptions overlap in responsibility but place the same named mechanism in different tiers without an explicit boundary, creating a horizontal consistency risk for the 3-tier decomposition."
         },
         {
           "severity": "WARNING",
-          "location": "sec:components/tier1_core/os_coos.md#2. アーキテクチャ分類",
-          "description": "This section introduces 'Tier 0' as the source of system requirements, while the definition and master physical design describe a 3-tier component decomposition using Tier 1, Tier 2, and Tier 3. The text does not clarify whether Tier 0 is part of the 3-tier separation or merely an external requirements layer, creating ambiguity in the tier model."
-        },
-        {
-          "severity": "WARNING",
-          "location": "sec:components/tier1_core/os_scheduler.md#2. アーキテクチャ分類 vs sec:components/tier1_core/os_coos.md#2. アーキテクチャ分類, sec:components/tier1_core/system_config.md#2. アーキテクチャ分類, sec:components/tier1_core/system_containers.md#2. アーキテクチャ分類, sec:components/tier1_core/system_logging.md#2. アーキテクチャ分類, sec:components/tier1_interface/ipc_router.md#2. アーキテクチャ分類, sec:components/tier1_interface/system_service.md#2. アーキテクチャ分類",
-          "description": "Tier 1 is labeled inconsistently. os_scheduler.md#2 calls Tier 1 'アーキテクチャドメイン', while the other Tier 1 sections call it '主要システムコンポーネント: Primary Component'. This is a horizontal inconsistency in the tier taxonomy and may obscure whether Tier 1 denotes a domain, a component class, or both."
-        },
-        {
-          "severity": "WARNING",
-          "location": "sec:components/tier1_core/os_coos.md#2.1 構成要素 vs sec:components/tier1_interface/ipc_router.md#2. アーキテクチャ分類",
-          "description": "os_coos.md#2.1 assigns COOS a 'co_csp' communication engine for channel-based synchronization and ownership transfer, while ipc_router.md#2 describes the IPC router as the system-wide communication foundation using zero-copy CSP channels and ownership transfer. Both are Tier 1 and both describe CSP-based communication, but the sections do not clarify the boundary, dependency direction, or encapsulation between COOS-internal CSP and system-level IPC routing."
-        },
-        {
-          "severity": "WARNING",
-          "location": "sec:components/tier3_platform/platform_memory.md#1. コンセプト",
-          "description": "The section claims that independent heap partitions prevent a memory shortage in one VM from causing other VMs or the host runtime to crash. This is a safety-relevant isolation claim, but no verification artifact, test, formal model, or concrete design evidence is cited. It should be expressed as a design intent or backed by a referenced verification artifact."
+          "location": "sec:components/tier3_jit/jit_engine_copy_patch.md#6.2 3層分離設計 (3-Tier Separation) とハーネスパターン (Static Dependency Inversion)",
+          "description": "The section states that the Tier 3 leaf is 'completely independent' from the interface defined by the upper facade jit_compiler (Tier 3) and from Tier 1 system configuration. Other sections state that this component is decomposed from jit_compiler and must integrate through upper-layer interfaces/harness contracts. As written, independence from the facade's interface conflicts with encapsulated dependency management; the text should clarify that it is independent of implementation/configuration while still conforming to the facade/harness contract."
         }
       ],
       "covered_files": [
@@ -122,35 +97,35 @@
     }
   ],
   "doc_hashes": {
-    "architecture/architecture_overview.md": "019aea4f717286caa9ef81aaccc453e67a28a358300d5db20d908a23281e5e94",
+    "architecture/architecture_overview.md": "3f183179addd8251c6a0b6faecd54a999ea326f528f1cd4b24ff98bf922def4f",
     "architecture/concept_harness.md": "2160b8e29a617ecefbf46165542544705de7ebb0f6d5b7df4bbeb1c084f9cd3c",
     "architecture/document_structure.md": "24357f01283821a32a25234b99d2e956f10b1db600b3311f5f1f28ac664770b3",
     "architecture/master_physical_design.md": "e871bee662ff35dbdf63561456ecfdc511921160e5909f39351cfee2ba453371",
     "architecture/resource_budget.md": "ac4928f5ad7fcc1a360b6539ec3d44d072a67c6b7d4aa7d76bdac014971def00",
-    "components/tier1_core/os_coos.md": "7f2041f9ed21e99a75448b8112629ed0a4e95605e70425807cdb8a431db531bf",
-    "components/tier1_core/os_scheduler.md": "bb8d0e129d9ce8c153fb4d7f0297d095eb2f1bdcff24de9fa345d39e67013a83",
-    "components/tier1_core/system_config.md": "18d6e2eeb837773f55bb1d285809d64d86bdf94dc0bff012116caf908b9177a0",
+    "components/tier1_core/os_coos.md": "f1579a3a615047b5b3b3e189413e953088d502bd81bf9a180321001f5cf53a79",
+    "components/tier1_core/os_scheduler.md": "8f2a91e241b3e52b23d22c75dc01f37adab4592a59255070983ded474fed5f77",
+    "components/tier1_core/system_config.md": "35a7a52c8def43525248931e019176457585eb4ded4185c126af1877fd12684b",
     "components/tier1_core/system_config_details.md": "d01b76be672dc64e340304989cd087ebc46edef5f75c2a0b633bf2c927af019b",
-    "components/tier1_core/system_containers.md": "037c624c2af7c2cfdbf00ecc4da2051fc865f7700d64563f9a191aba07d44c17",
+    "components/tier1_core/system_containers.md": "5ab53c7035c1d71a351af3c8245e095357752fb093b978500f9293e9418c67ed",
     "components/tier1_core/system_logging.md": "7ec474b1ad605d7e56d14c9eb01f763fb2cd93553a8c7d91e4a4c71f4072cb4d",
     "components/tier1_core/system_syscall.md": "7fddb15242b1858522120553eebdf76354802bffe4bfdffe648f50f6e788a234",
     "components/tier1_interface/interface_wit.md": "889909501181705efbeff8ca5d96f1ae036ab6c756e478acc6c7418907bb2d1f",
-    "components/tier1_interface/ipc_router.md": "31fea15446204d7627b2cb6a0843b2f20dd7388915b86c31a20bd55bd79c74e7",
+    "components/tier1_interface/ipc_router.md": "fe4cca6403929a33265471f2051fb561adc66fc5dca85f77556590501b139b1d",
     "components/tier1_interface/system_service.md": "7c98009196d56c50c4d1d27269f38eb51d4fe1fa654aedb51dba7c496cd5fe62",
-    "components/tier2_runtime/debug/debug_gdb_rsp.md": "859626792a35fd049f3eb3591ac233df7b6285787cd581e0d6f952b1450e9226",
-    "components/tier2_runtime/debug/debug_manager.md": "b1d464f59f6acb34e21971a8977af1f4fa2d91b4b2035309b77ac9326564c219",
+    "components/tier2_runtime/debug/debug_gdb_rsp.md": "06768beb3ae0225f25b723b60e8da734c09bc1073ffc9d99831161c83604254f",
+    "components/tier2_runtime/debug/debug_manager.md": "1083cbaaaf7992ec9b4377e6e6209aeb3a038f9fc5143c37ed8d67f1be7bafde",
     "components/tier2_runtime/runtime_interpreter.md": "37e53c09853500c293bbf423a8fc68413896f586c7dbe0d972ce3358fbdfc256",
     "components/tier2_runtime/runtime_loader.md": "591c6d491434e54f39eed5c48ae3216fc1b0ca1e2299044161cccac48f93dca5",
     "components/tier2_runtime/runtime_vmmio.md": "5b1afbf97ab169fe86f4081b63d5b5ffefb043abd22b571d132e4379809b3968",
-    "components/tier2_runtime/runtime_vsoc.md": "76f40f789eea30da7e8516dbc8ea0ea9ee42d85c7264bffcdbbffcff52e8d8e1",
+    "components/tier2_runtime/runtime_vsoc.md": "11f5f489ba65a0b14333b0642daa149741dd11db9b9bbbfa70caa4093cee3906",
     "components/tier2_runtime/wasm_instruction.md": "640483f8a25bca7885110ce37e499c4ba3622fdc2ba3507e3a78b2bc1fcf8b5f",
     "components/tier3_jit/concepts/README.md": "a39c8c192999a792243e697e008fcad02c701d14b9559d492d668208122b6ebc",
-    "components/tier3_jit/jit_assembler_constexpr.md": "1ce2346b0371f5a1d470aaaf5c42a2e72b01d5cb7589ea8e29625a5ab199e067",
-    "components/tier3_jit/jit_compiler.md": "1a6653d433500d5e026c386428369515e42e54160feb5c33819d11034852e2c3",
-    "components/tier3_jit/jit_engine_copy_patch.md": "d179e3bf586cf1ba6bceb4c81e1eccfd6397b634dc19075e92123e41ff4be7d1",
+    "components/tier3_jit/jit_assembler_constexpr.md": "bdeb28e114f82861fadac6ac3f3c9953dfd2cd3264a243d5db232d893c980924",
+    "components/tier3_jit/jit_compiler.md": "c29a6cdebfbd187b0fa3fb01f0a3fad1463a1240c39c008a60394b0b0378f9d3",
+    "components/tier3_jit/jit_engine_copy_patch.md": "07af5b827cdd19b1bb48f78234953707a4d55f5c3d0f5940cd099ed28d70676f",
     "components/tier3_jit/jit_runtime_entry.md": "4e1acdf6e3c5b56d5ed285c252a8c3f692fa86714eee534e4ae1ba996e034395",
     "components/tier3_jit/jit_runtime_hotspot.md": "bf4ced6b78c1978a08624c8fe9f430ee307c068780cd0c314d6f527ea698603f",
-    "components/tier3_platform/platform_hal.md": "b7e90323ad0269f78e10e3f59dc1e373d3b8818d02ecf4bcf03e5970096842e2",
+    "components/tier3_platform/platform_hal.md": "a5407e2d644de41349938325e01ca15be3fc8f17304d3ea9bc74251ff431353c",
     "components/tier3_platform/platform_memory.md": "7269a7df0573b9753da79472f7aaa4970a47f4ab9e7ef5a8406b70cceff05e1b",
     "plans/backlog_archive.md": "3e09371810730853a39b09fec40e83409690786e1d27caae96ab6af054191716",
     "plans/backlog_list.md": "25b451c306c223b25c40f050ee6a4c41f818dff84dad96da46e563193b460455",

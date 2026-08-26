@@ -22,7 +22,7 @@
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {Type_Vocabulary} -->
-本コンポーネントは **Tier 1 (主要システムコンポーネント: Primary Component)** に属する。実行時の振る舞いも状態も持たないヘッダオンリーの型語彙であり、下位 Tier（Tier 2 の vMMIO、Tier 3 の JIT エントリ索引・カードマーキング等）は本書で定義された型を参照して実装する。依存方向は常に下位から上位への参照（Refine）であり、本書が下位 Tier の具象に依存することはない。 `{META_3TierSeparation}` `{Type_Vocabulary}`
+本コンポーネントは **Tier 1 (主要システムコンポーネント: Primary Component)** に属する。実行時の振る舞いも状態も持たないヘッダオンリーの型語彙（Vocabulary）であり、各 Tier（Tier 2 の vMMIO、Tier 3 の JIT エントリ索引・カードマーキング等）は本書で定義された非所有ビュー型（`flat_map_view`, `flat_set_view`, `bit_view`）を利用して具象データを操作する。本書は下位 Tier の具象データ構造や内部ヘッダには一切依存せず、純粋な型語彙の提供に専念する。 `{META_3TierSeparation}` `{Type_Vocabulary}`
 
 ## 3. 静的モデル
 

@@ -5,8 +5,8 @@
 vSoC (Virtual System-on-Chip) は、WASM実行環境の統合マネージャであり、Loader、Interpreter、JIT、vMMIO、Debugger を統括して実行制御を行う。各サブコンポーネントを統合する「環境」としての役割を持ち、`vsoc_runtime` を `execution_context` から参照される Environment として提供する。 `{LowLatencyJIT}` `{MemoryIsolation}` `{META_FaultIsolation}` `{EnvironmentPointer}`
 
 ## 2. アーキテクチャ分類
-<!-- traceability: {META_3TierSeparation} {GLOBAL_ComponentHarness} -->
-本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属し、WASM仮想実行環境として Loader, Interpreter, JIT, vMMIO, Debugger などのサブコンポーネント群をハーネスパターンによって統合する。 `{META_3TierSeparation}` `{GLOBAL_ComponentHarness}`
+<!-- traceability: {META_3TierSeparation} {GLOBAL_ComponentHarness} {META_StaticDI} -->
+本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属し、WASM仮想実行環境として Loader, Interpreter (Tier 2), JIT, vMMIO, Debugger などのサブコンポーネント群を**ハーネスパターン（`vsoc_harness`）による静的依存性逆転（Static Dependency Inversion）**によって統合する。組込みベアメタル環境において仮想関数（vtable）や動的ディスパッチによる仮想化オーバーヘッドは一切容認できないため、Tier 2 の vSoC は Tier 3 具象エンジンの内部ヘッダに依存せず、ハーネスに集約された POD 関数ポインタ・インスタンスを介してゼロオーバーヘッドで制御を委譲する。 `{META_3TierSeparation}` `{GLOBAL_ComponentHarness}` `{META_StaticDI}`
 
 ## 3. 静的モデル
 
@@ -58,17 +58,18 @@ graph TD
 | vMMIO | 仮想的なメモリマップドI/Oを制御するコンポーネントへの参照。 | `VmmioController*` |
 
 #### vSoCコンテキスト（vsoc_context）
-可変な実行状態を保持する。
+vSoC全体の可変な実行時状態を保持する構造体。
 
 | 項目名 | 機能と役割 | 備考（制約、型など） |
 | :--- | :--- | :--- |
-| 割り込みフラグ | ゲストに通知された仮想割り込みの状態を保持する。 | 32bitフラグ |
-| モジュールビュー | ロード済みWASMモジュールの索引情報への参照。 | `wasm_module_view*` |
-| プログラムカウンタ | ゲストの現在のプログラム実行位置（WASMオフセット）。 | `uint32_t` |
+| 実行状態 | 現在のvSoCの実行状態（停止、実行中、ブレークポイント等）。 | `VsocState` 列挙型 |
+| 仮想割り込みフラグ | ゲストOSまたはタスクに対する保留中の割り込みビットマップ。 | `uint32_t` |
+| JITキャッシュ状態 | 現在アクティブなJITコードキャッシュの管理情報。 | `JitCacheManager` 構造体 |
+| WASMモジュール参照 | 現在ロードされているWASMモジュールのインスタンスへのポインタ。 | `WasmModule*` |
 
 #### vSoCランタイム環境（vsoc_runtime）
 <!-- traceability: {ContextPointerRegister} {EnvironmentPointer} {MemoryBoundaryCheck} -->
-`exec_trace`（インタープリタ／JIT共通の継続渡しシグネチャ）の第3引数（`env`: R2）として全ハンドラ・全JITトレースへ渡される、実行時に共有される環境実体。`execution_context`（R1、トレース／呼び出しごとに軽量な統一スタックフレーム情報のみを保持）とは異なり、`vsoc_runtime` は **`memory.grow` で動的に伸長するリニアメモリの実体や、モジュール横断で共有されるグローバル変数配列など、単一の呼び出しコンテキストを超えて生存する状態** を保持する。 `{EnvironmentPointer}` `{MemoryBoundaryCheck}`
+JIT トレース実行時およびインタープリタの各命令ハンドラが最速実行ループ内で **レジスタ `R2`（`env`）** を介して直接間接参照（`[R2, #offset]`）する物理メモリ環境構造体。`execution_context`（R1）とは異なり、`vsoc_runtime` は **`memory.grow` で動的に伸長するリニアメモリの実体や、モジュール横断で共有されるグローバル変数配列など、単一の呼び出しコンテキストを超えて生存する状態** を保持する。 `{EnvironmentPointer}` `{MemoryBoundaryCheck}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
@@ -90,12 +91,12 @@ vSoCの動作パラメータを定義する。 `{META_ConfigurableSystem}`
 
 | 項目名 | 機能と役割 | 備考（制約、型など） |
 | :--- | :--- | :--- |
-| JIT有効化フラグ | システム全体でJITコンパイル機能を有効にするかどうかを決定する。 | ブール値 |
+| JIT有効化フラグ | システム全体でJITコンパイル機能を有効にするかどうかを決定する。 | ブール値 (`FB_CONF_JIT_ENABLED`) |
 | コードキャッシュサイズ | 生成されたネイティブコードを保存するためのメモリ領域の大きさ（2KB×3面 = 6144B）。 | `FB_CONF_JIT_CACHE_SIZE` |
 | RAM開始アドレス | ゲストから見たRAMの仮想アドレス空間上の開始位置。 | `0x0000_0000` (Bit 31 == 0) |
 | RAM容量 | ゲストに割り当てられるRAMの有効バイト数（64KBまたは8KB等の部分ページ）。 | `FB_CONF_GUEST_RAM_SIZE` |
 | vMMIO基点アドレス | 仮想デバイスレジスタおよび共有メモリ空間の開始位置（2段階ダイレクトデコード）。 | `0x8000_0000` (Bit 31 == 1) |
-| パススルー基点アドレス | PASSTHROUGH領域（FC=15）が参照する物理アドレス空間の開始位置。`物理addr = passthrough_base + offset` | `0xF000_0000` (ARM Cortex-M: 0x4000_0000) |
+| パススルー基点アドレス | ゲスト仮想 PASSTHROUGH 領域（FC=15, `0xF000_0000`〜`0xFFFF_FFFF`）がマッピングされるホスト実物理ペリフェラル空間の開始アドレス。`物理addr = passthrough_base + (vmmio_addr - 0xF000_0000)`。 | `FB_CONF_VSOC_PASSTHROUGH_BASE` (Cortex-M デフォルト: `0x4000_0000`) |
 
 ## 4. 動的モデル
 

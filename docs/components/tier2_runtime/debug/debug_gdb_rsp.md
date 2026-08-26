@@ -6,7 +6,7 @@ GDB RSP Parser は、HAL から受信したデバッグ通信シリアルバイ�
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {RSPMinimalSet} -->
-本コンポーネントは **Tier 3 (詳細リーフコンポーネント: Leaf Component)** に属し、デバッグマネージャ (`debug_manager.md`) から分解された GDB RSP パケットのフレーミング、構文解析、およびレスポンス生成を担当する。 `{META_3TierSeparation}` `{RSPMinimalSet}`
+本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属し、デバッグマネージャ (`debug_manager.md`) から分解された GDB RSP パケットのフレーミング、構文解析、およびレスポンス生成を担当する。 `{META_3TierSeparation}` `{RSPMinimalSet}`
 
 ## 3. 静的モデル
 

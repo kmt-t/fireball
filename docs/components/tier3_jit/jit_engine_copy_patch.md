@@ -189,7 +189,7 @@ sequenceDiagram
 - **Copy-and-Patchによる時間短縮**: `{JIT_CopyAndPatch}` により、コンパイル時にレジスタ割り当てやアセンブル処理を実行せず、事前アセンブルされた命令テンプレートを単純コピー・穴埋め（パッチ）するだけにすることで、コンパイル時間を理論上の最速値まで圧縮する。 `{JIT_CopyAndPatch}`
 - **複雑なエッジケースのオフロード**: ランタイムAPIフォールバック `{JIT_RuntimeAPI_Fallback}` により、JITエンジン自体のロジックを肥大化させず、複雑な浮動小数点演算や例外エミュレーションなどをヘルパー関数呼び出しに落とし込み、コンパイルパスを単一（Single-Pass）で超高速に完結させる。 `{JIT_RuntimeAPI_Fallback}`
 
-### 6.2 3層分離設計 (3-Tier Separation)
-<!-- traceability: {META_3TierSeparation} -->
-- **3層構造における役割**: 本コンポーネントは、システムアーキテクチャにおける「Tier 3 (実装ドメイン)」として位置付けられる。上位の「Tier 2 (サブシステムドメイン)」である `jit_compiler` が定義する抽象インターフェイスと、「Tier 1」に属する全体的なシステムコンフィグから、完全に独立した具体的なマシンコード生成・バイナリ操作の実装に特化する。 `{META_3TierSeparation}`
-- **依存性管理**: 上位レイヤー（スケジューラやランタイム）の構造体や内部状態に直接依存することはせず、依存関係はすべて引数ポインタやシステムハーネスなどのインターフェイス層を経由して疎結合に管理される。 `{META_3TierSeparation}`
+### 6.2 3層分離設計 (3-Tier Separation) とハーネスパターン (Static Dependency Inversion)
+<!-- traceability: {META_3TierSeparation} {META_StaticDI} {GLOBAL_ComponentHarness} -->
+- **3層構造における役割**: 本コンポーネントは、システムアーキテクチャにおける「Tier 3 (詳細リーフコンポーネント: Leaf Component)」として位置付けられる。上位のファサードである [`jit_compiler`](jit_compiler.md) (Tier 3) が定義するインターフェイスと、「Tier 1」に属する全体的なシステムコンフィグから、完全に独立した具体的なマシンコード生成・バイナリ操作の実装に特化する。 `{META_3TierSeparation}`
+- **ハーネスパターンによる依存関係の逆転 (Zero Virtual Overhead)**: 仮想関数（vtable）や動的ディスパッチに伴う実行時仮想化オーバーヘッドを一切排除するため、上位の統合サブシステムである [`runtime_vsoc`](../tier2_runtime/runtime_vsoc.md) (Tier 2) との接続は、POD 構造体 `vsoc_harness` (`{META_StaticDI}`) による静的依存性逆転（Dependency Inversion）を用いて行われる。JITエンジンは上位層の内部状態に直接依存せず、ハーネスから提供される関数シグネチャおよび引数ポインタ（`RuntimeContext*` 等）のみを介して疎結合に結合される。 `{META_3TierSeparation}` `{META_StaticDI}` `{GLOBAL_ComponentHarness}`

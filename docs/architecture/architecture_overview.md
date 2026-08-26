@@ -7,9 +7,8 @@ Fireballは、極小リソース環境での柔軟性と高性能を両立させ
 - **クリーンアーキテクチャとDI**: URIベースの抽象化とIPCルータによる依存性の注入により、コンポーネント間の結合度を下げ、移植性を向上させる。「内側 (Inner)」= Kernel Layer（COOS, IPC Router）、「外側 (Outer)」= Subsystem/Driver/Hardware Layer（HAL, Logging, 物理デバイス）と定義し、内側は外側の具象実装を一切 `#include` しない。外側が内側の定義するインターフェイスを実装（`register-hook` 等）することで依存性の逆転を実現する（詳細は 2.2 節 BDD 図の依存性ルールを参照）。 `{CleanArchitecture}` `{URIAbstraction}` `{IPCDI}`
 - **協調型マルチタスク (COOS)**: C++23ベースのスタックレス・タスク構造を採用し、低オーバーヘッドな切り替えを実現する。各サービスのリブート（自己修復）を前提としたフォールトトレラント設計をとる。 `{LowOverhead}` `{ServiceSelfReboot}` `{FaultTolerant}`
 - **高速JIT (Copy-and-Patch)**: コンパイルレイテンシを最小化し、小規模なコードキャッシュ（2KB x 3面 = 6KB）を「移動する窓（Moving Window）」として活用する。
-- **動的代謝 (Metabolism-First)**: インタープリタはブートストラップおよびフォールバックとして機能し、実行の主力は JIT による動的なコード変換とキャッシュアウト（代謝）のサイクルが担う。
 - **コンポーネント・ハーネス**: vSoCを独立したサブコンポーネント（Loader, Engine, MMIO, Debugger）の集合体として定義し、ハーネスを介して差し替え可能なプラグイン構造とする。 `{GLOBAL_ComponentHarness}`
-- **静的構成**: システムパラメータや依存関係の多くをコンパイル時に決定し、実行時の動的メモリ確保や探索コストを排除する。 `{META_StaticDI}` `{META_ConfigurableSystem}` `{META_Static_Resolution}`
+- **静的構成**: システム構成値（バッファサイズ、タスク数、メモリ上限等）や依存関係をコンパイル時に確定（ヘッダマクロ/`constexpr`）し、実行時におけるシステム構成の動的メモリ確保や構成解決の探索コストをゼロにする。 `{META_StaticDI}` `{META_ConfigurableSystem}` `{META_Static_Resolution}`
 
 ## 2. 静的構造
 

@@ -120,5 +120,5 @@ static_assert(FB_CONF_MEMORY_POOL_SIZE <= FB_CONF_PHYSICAL_RAM_SIZE);
 
 ### 6.3 安全性制約と方策
 <!-- traceability: {META_ConfigurableSystem} -->
-- **目標**: 実行時の不正な設定変更を防止する。
-- **方策**: `{META_ConfigurableSystem}` 設定を読み取り専用領域（ROM/Flash）に配置し、実行時の改ざんを不可能にする。
+- **目標**: 実行時におけるタスクや誤動作によるシステム構成値の不正な書き換えを防止する。
+- **方策**: `{META_ConfigurableSystem}` システム構成定数はすべて `constexpr` / `const` として ROM / Flash（`.rodata` 読み取り専用セクション）に静的配置され、ソフトウェア実行時における誤書き込みや改ざんから確実に防護される。

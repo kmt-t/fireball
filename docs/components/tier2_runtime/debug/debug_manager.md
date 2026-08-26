@@ -6,7 +6,7 @@
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->
-本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属し、vSoC (`runtime_vsoc.md`) から分解されたデバッグ状態制御、プロファイラ集計、およびブレークポイント管理を担当する。プロトコル解析の詳細は Tier 3 (`debug_gdb_rsp.md`) にデコンポジションされる。 `{META_3TierSeparation}`
+本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属し、vSoC (`runtime_vsoc.md`) から分解されたデバッグ状態制御、プロファイラ集計、およびブレークポイント管理を担当する。プロトコル解析の詳細は詳細サブコンポーネント ([`debug_gdb_rsp.md`](debug_gdb_rsp.md)) にデコンポジションされる。 `{META_3TierSeparation}`
 
 ## 3. 静的モデル
 

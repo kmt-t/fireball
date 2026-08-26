@@ -65,8 +65,12 @@ evidence:
 
 llm_judge:
   tag: "{VERIFY_LLM}"
-  default_backend: "sakura"
+  default_backend: "openrouter"
   backends:
+    openrouter:
+      api_key_env: "OPENROUTER_API_KEY"
+      endpoint: "https://openrouter.ai/api/v1/chat/completions"
+      model: "qwen/qwen3.8-27b"
     sakura:
       api_key_env: "SAKURA_API_KEY"
       model: "preview/gemma-4-31B-it"

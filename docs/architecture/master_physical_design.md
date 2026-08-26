@@ -1,4 +1,4 @@
-# Fireball マスター物理設計仕様書 (Master Physical Design)
+# Fireball マスター物理設計仕様書 (Master Physical Design) {VERIFY_LLM}
 
 ## 1. 概要と基本思想 (Overview & Philosophy)
 <!-- traceability: {META_AI_Native_Dev} {META_3TierSeparation} {META_ZeroCostAbstraction} -->
@@ -160,6 +160,57 @@ Fireball は外部の AAPCS 準拠 C/C++ 関数（WASI ホストコール、vMMI
      - ① 継続渡し引数 `(R0: ip, R1: stack_bot, R2: env)` および `R3: spill` をスタック、または Callee-saved レジスタ（`R4-R11`）へ退避する。
      - ② AAPCS 規約に従い引数を `R0-R3` にセットして関数を呼び出す。
      - ③ 関数復帰時、`R4-R11`（Callee-saved）に保持されている JIT スタックキャッシュやコンテキスト変数は AAPCS により **完全に維持** されているため、Caller-saved を復元して即座に高速実行を継続する。
+
+---
+
+### 3.2 メモリ常駐構造体の物理バイトオフセット (Physical Byte Offsets of Memory-Resident Structures)
+<!-- traceability: {ContextPointerRegister} {EnvironmentPointer} {MemoryBoundaryCheck} -->
+
+`R1`（`execution_context`）および `R2`（`vsoc_runtime`）が指す構造体のフィールドは、複数のドキュメント（インタープリタ、JIT ステンシルカタログ）から `[R1, #offset]` / `[r2, #offset]` の形で直接参照される。これらの数値がドキュメントごとに独立に決め打ちされると、シフト命令のビット配置バグと同種の——一方だけが更新されて他方が追従しない——サイレントなドリフトが発生する。本節をこれらオフセットの単一正本とする。フィールドの型・名称の正本は各コンポーネントの `wit/*.wit` を参照。
+
+#### `execution_context`（`R1: stack_bot` 起点、計12バイト）
+正本: [`runtime_interpreter.md` 3.3](../components/tier2_runtime/runtime_interpreter.md) / [`execution_context.wit`](../components/tier2_runtime/wit/execution_context.wit)
+
+| オフセット | フィールド | 型 |
+| :--- | :--- | :--- |
+| `+0x00` | `sp_offset` | u32 |
+| `+0x04` | `frame_offset` | u32 |
+| `+0x08` | `handler_table` | u32（ポインタ） |
+
+#### `call_frame`（統合スタック上、各フレーム先頭からの相対オフセット、計20バイト）
+正本: [`runtime_interpreter.md` 3.3](../components/tier2_runtime/runtime_interpreter.md) / [`execution_context.wit`](../components/tier2_runtime/wit/execution_context.wit)
+
+| オフセット | フィールド | 型 |
+| :--- | :--- | :--- |
+| `+0x00` | `parent_frame_offset` | u32 |
+| `+0x04` | `return_pc` | u32 |
+| `+0x08` | `local_var_offset` | u32 |
+| `+0x0C` | `function_index` | u32 |
+| `+0x10` | `saved_stack_len` | u32 |
+
+#### `control_frame`（統合スタック上、各フレーム先頭からの相対オフセット、計16バイト）
+正本: [`runtime_interpreter.md` 3.3](../components/tier2_runtime/runtime_interpreter.md) / [`execution_context.wit`](../components/tier2_runtime/wit/execution_context.wit)
+
+| オフセット | フィールド | 型 |
+| :--- | :--- | :--- |
+| `+0x00` | `label_pc` | u32 |
+| `+0x04` | `exec_trace_ptr` | u32（関数ポインタ） |
+| `+0x08` | `saved_stack_len` | u32 |
+| `+0x0C` | `result_arity` | u16 |
+| `+0x0E` | `loop_flag` | u8 |
+| `+0x0F` | （予約、4バイトアライメント） | — |
+
+#### `vsoc_runtime`（`R2: env` 起点、計12バイト）
+正本: [`runtime_vsoc.md` 3.3](../components/tier2_runtime/runtime_vsoc.md) / [`vsoc_runtime.wit`](../components/tier2_runtime/wit/vsoc_runtime.wit)
+
+| オフセット | フィールド | 型 |
+| :--- | :--- | :--- |
+| `+0x00` | `mem_base` | u32（アドレス値） |
+| `+0x04` | `mem_size` | u32 |
+| `+0x08` | `globals_base` | u32（アドレス値） |
+
+> [!NOTE]
+> `global_get_d0`/`global_set_d1` ステンシル（`docs/components/tier3_jit/concepts/jit_copy_patch_concept.py`）は現状 `[r2, #0x00]` を直接1命令でロード/ストアしているが、この表の定義では `+0x00` は `mem_base` であり `globals_base`（`+0x08`）ではない。正しくは `globals_base` を経由した2段参照（`LDR r3, [r2, #0x08]` の後 `LDR/STR r4, [r3, #global_index*4]`）が必要——この不一致は未修正で残っている。
 
 ---
 

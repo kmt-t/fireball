@@ -66,6 +66,21 @@ graph TD
 | モジュールビュー | ロード済みWASMモジュールの索引情報への参照。 | `wasm_module_view*` |
 | プログラムカウンタ | ゲストの現在のプログラム実行位置（WASMオフセット）。 | `uint32_t` |
 
+#### vSoCランタイム環境（vsoc_runtime）
+<!-- traceability: {ContextPointerRegister} {EnvironmentPointer} {MemoryBoundaryCheck} -->
+`exec_trace`（インタープリタ／JIT共通の継続渡しシグネチャ）の第3引数（`env`: R2）として全ハンドラ・全JITトレースへ渡される、実行時に共有される環境実体。`execution_context`（R1、トレース／呼び出しごとに軽量な統一スタックフレーム情報のみを保持）とは異なり、`vsoc_runtime` は **`memory.grow` で動的に伸長するリニアメモリの実体や、モジュール横断で共有されるグローバル変数配列など、単一の呼び出しコンテキストを超えて生存する状態** を保持する。 `{EnvironmentPointer}` `{MemoryBoundaryCheck}`
+
+| 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
+| :--- | :--- | :--- | :--- |
+| リニアメモリ基底 | ゲストリニアメモリ（`memory.grow` で再割当されうる）の開始アドレス | アドレス値 | 32bit符号なし (`+0x00`) |
+| リニアメモリサイズ | ゲストリニアメモリの現在の有効バイト数。境界チェックに使用 `{MemoryBoundaryCheck}` | バイト数 | 32bit符号なし (`+0x04`) |
+| グローバル変数基底 | WASM `global` 配列（4バイト単位でインデックス付け）の開始アドレス | アドレス値 | 32bit符号なし (`+0x08`) |
+
+`vsoc_runtime` は計12バイト（`+0x00`〜`+0x0B`）。正本は [`wit/vsoc_runtime.wit`](wit/vsoc_runtime.wit)、物理配置は [`master_physical_design.md` §3.2](../../architecture/master_physical_design.md)。
+
+> [!NOTE]
+> **既知の未整理点**: 本節の `vsoc_runtime` とは別に、上記の `vsoc_context`（割り込みフラグ・モジュールビュー・PC を保持）という類似名の構造体が存在する。両者の関係（統合すべきか、役割が異なる独立した構造体として維持すべきか）は未整理であり、次回レビューで確定する。
+
 #### vSoC構成（vsoc_config）
 <!-- traceability: {META_ConfigurableSystem} -->
 vSoCの動作パラメータを定義する。 `{META_ConfigurableSystem}`

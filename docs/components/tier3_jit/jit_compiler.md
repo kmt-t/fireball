@@ -116,7 +116,7 @@ JIT コンパイル済みネイティブトレースの実行エントリポイ�
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
 | トレースシグネチャ | `__fastcall` によるネイティブトレース実行関数 | 関数ポインタ | `void (__fastcall *)(const uint8_t* __restrict__ ip, execution_context* __restrict__ stack_bot, vsoc_runtime* __restrict__ env) noexcept` |
-| レジスタ割り当て | ARM AAPCS / `__fastcall` 引数レジスタマッピング | 物理レジスタ | `R0`: `ip`, `R1`: `stack_bot`, `R2`: `env`, `R3`: `spill/scratch`, `R4-R6, R8-R11`: `assignable pool`, `R7`: `FP` ([マスター物理設計書 §3](../../architecture/master_physical_design.md) 準拠) |
+| レジスタ割り当て | ARM AAPCS / `__fastcall` 引数レジスタマッピング | 物理レジスタ | `R0`: `ip`, `R1`: `stack_bot`, `R2`: `env`, `R3`: `local_param`, `R4-R6, R8-R11`: `assignable pool`（メモリアクセス時は `R8`/`R9` を `mem_base`/`mem_size` に固定）, `R7`: `FP` ([マスター物理設計書 §3](../../architecture/master_physical_design.md) 準拠) |
 
 ### 3.4 公開API
 外部コンポーネント（Executor等）からJITコンパイル機能を利用するためのAPI。

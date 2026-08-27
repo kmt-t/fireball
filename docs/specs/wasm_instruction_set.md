@@ -4,7 +4,7 @@
 <!-- traceability: {ThreadedInterpreter} {JIT_CopyAndPatch} {Wasm32Only} {META_ZeroCostAbstraction} -->
 本仕様書は、Fireball Hypervisor（インタープリタおよび Copy-and-Patch JIT コンパイラ）がサポートする **WASM MVP (v1, 32-bit)** 命令セットの物理マトリクスを定義する正本である。
 
-全バイトコードは Cortex-M33（ARMv8-M）ターゲットにおける `__fastcall` 継続渡し（CPS）3引数（`R0: ip`, `R1: stack_bot`, `R2: env`）ハンドラ、および JIT Stencil テンプレート（Callee-saved 任意割当プール `R4-R6, R8-R11`、`R3: spill/scratch`）へのマッピングを一意に確定する。 `{ThreadedInterpreter}` `{JIT_CopyAndPatch}` `{Wasm32Only}` `{META_ZeroCostAbstraction}`
+全バイトコードは Cortex-M33（ARMv8-M）ターゲットにおける `__fastcall` 継続渡し（CPS）3引数（`R0: ip`, `R1: stack_bot`, `R2: env`）ハンドラ、および JIT Stencil テンプレート（Callee-saved 任意割当プール `R4-R6, R8-R11`（メモリアクセス時は `R8`/`R9` を `mem_base`/`mem_size` に固定）、`R3: local_param`、`R12`: 一時スクラッチ）へのマッピングを一意に確定する。 `{ThreadedInterpreter}` `{JIT_CopyAndPatch}` `{Wasm32Only}` `{META_ZeroCostAbstraction}`
 
 ---
 
@@ -73,20 +73,20 @@
 
 | Opcode | 命令名 | スタック遷移 | インタープリタ実装 | JIT Stencil 提供 | 物理動作・備考 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `0x28` | `i32.load` | `[i32] -> [i32]` | 境界チェック（比較+トラップ） $\to$ 32-bit ロード | あり (LDR.W) | `CMP r4, r6; BHS.W <trap>; LDR r4, [r3, r4]` (`r3=mem_base, r6=mem_size`) |
-| `0x29` | `i64.load` | `[i32] -> [i64]` | 境界チェック（比較+トラップ） $\to$ 64-bit ロード | あり (LDRD) | `CMP r4, r6; BHS.W <trap>; LDRD r4, r5, [r3, r4]` |
-| `0x2A` | `f32.load` | `[i32] -> [f32]` | 境界チェック（比較+トラップ） $\to$ 単精度ロード | あり (VLDR.32) | `CMP r4, r6; BHS.W <trap>; VLDR s0, [r3, r4]` (FPU搭載時) |
-| `0x2B` | `f64.load` | `[i32] -> [f64]` | 境界チェック（比較+トラップ） $\to$ 倍精度ロード | あり (VLDR.64) | `CMP r4, r6; BHS.W <trap>; VLDR d0, [r3, r4]` (FPv5搭載時) |
-| `0x2C` | `i32.load8_s`| `[i32] -> [i32]` | 境界チェック（比較+トラップ） $\to$ 符号拡張 8-bit ロード | あり (LDRSB) | `CMP r4, r6; BHS.W <trap>; LDRSB r4, [r3, r4]` |
-| `0x2D` | `i32.load8_u`| `[i32] -> [i32]` | 境界チェック（比較+トラップ） $\to$ ゼロ拡張 8-bit ロード | あり (LDRB) | `CMP r4, r6; BHS.W <trap>; LDRB r4, [r3, r4]` |
-| `0x2E` | `i32.load16_s`| `[i32] -> [i32]`| 境界チェック（比較+トラップ） $\to$ 符号拡張 16-bit ロード | あり (LDRSH) | `CMP r4, r6; BHS.W <trap>; LDRSH r4, [r3, r4]` |
-| `0x2F` | `i32.load16_u`| `[i32] -> [i32]`| 境界チェック（比較+トラップ） $\to$ ゼロ拡張 16-bit ロード | あり (LDRH) | `CMP r4, r6; BHS.W <trap>; LDRH r4, [r3, r4]` |
-| `0x36` | `i32.store` | `[i32, i32] -> []` | 境界チェック（比較+トラップ） $\to$ 32-bit メモリストア | あり (STR.W) | `CMP r5, r6; BHS.W <trap>; STR r4, [r3, r5]` (`r4=val, r5=addr`) |
-| `0x37` | `i64.store` | `[i32, i64] -> []` | 境界チェック（比較+トラップ） $\to$ 64-bit メモリストア | あり (STRD) | `CMP r4, r6; BHS.W <trap>; STRD r5, r8, [r3, r4]`（値ペアと `r6=mem_size` の競合を避けるため高位語は `r8` を使う） |
-| `0x38` | `f32.store` | `[i32, f32] -> []` | 境界チェック（比較+トラップ） $\to$ 単精度メモリストア | あり (VSTR.32) | `CMP r4, r6; BHS.W <trap>; VSTR s0, [r3, r4]` |
-| `0x39` | `f64.store` | `[i32, f64] -> []` | 境界チェック（比較+トラップ） $\to$ 倍精度メモリストア | あり (VSTR.64) | `CMP r4, r6; BHS.W <trap>; VSTR d0, [r3, r4]` |
-| `0x3A` | `i32.store8` | `[i32, i32] -> []` | 境界チェック（比較+トラップ） $\to$ 8-bit メモリストア | あり (STRB) | `CMP r5, r6; BHS.W <trap>; STRB r4, [r3, r5]` |
-| `0x3B` | `i32.store16`| `[i32, i32] -> []` | 境界チェック（比較+トラップ） $\to$ 16-bit メモリストア | あり (STRH) | `CMP r5, r6; BHS.W <trap>; STRH r4, [r3, r5]` |
+| `0x28` | `i32.load` | `[i32] -> [i32]` | 境界チェック（比較+トラップ） $\to$ 32-bit ロード | あり (LDR.W) | `CMP r4, r9; BHS.W <trap>; LDR r4, [r8, r4]` (`r8=mem_base, r9=mem_size`) |
+| `0x29` | `i64.load` | `[i32] -> [i64]` | 境界チェック（比較+トラップ） $\to$ 64-bit ロード | あり (LDRD) | `CMP r4, r9; BHS.W <trap>; LDRD r4, r5, [r8, r4]` |
+| `0x2A` | `f32.load` | `[i32] -> [f32]` | 境界チェック（比較+トラップ） $\to$ 単精度ロード | あり (VLDR.32) | `CMP r4, r9; BHS.W <trap>; VLDR s0, [r8, r4]` (FPU搭載時) |
+| `0x2B` | `f64.load` | `[i32] -> [f64]` | 境界チェック（比較+トラップ） $\to$ 倍精度ロード | あり (VLDR.64) | `CMP r4, r9; BHS.W <trap>; VLDR d0, [r8, r4]` (FPv5搭載時) |
+| `0x2C` | `i32.load8_s`| `[i32] -> [i32]` | 境界チェック（比較+トラップ） $\to$ 符号拡張 8-bit ロード | あり (LDRSB) | `CMP r4, r9; BHS.W <trap>; LDRSB r4, [r8, r4]` |
+| `0x2D` | `i32.load8_u`| `[i32] -> [i32]` | 境界チェック（比較+トラップ） $\to$ ゼロ拡張 8-bit ロード | あり (LDRB) | `CMP r4, r9; BHS.W <trap>; LDRB r4, [r8, r4]` |
+| `0x2E` | `i32.load16_s`| `[i32] -> [i32]`| 境界チェック（比較+トラップ） $\to$ 符号拡張 16-bit ロード | あり (LDRSH) | `CMP r4, r9; BHS.W <trap>; LDRSH r4, [r8, r4]` |
+| `0x2F` | `i32.load16_u`| `[i32] -> [i32]`| 境界チェック（比較+トラップ） $\to$ ゼロ拡張 16-bit ロード | あり (LDRH) | `CMP r4, r9; BHS.W <trap>; LDRH r4, [r8, r4]` |
+| `0x36` | `i32.store` | `[i32, i32] -> []` | 境界チェック（比較+トラップ） $\to$ 32-bit メモリストア | あり (STR.W) | `CMP r5, r9; BHS.W <trap>; STR r4, [r8, r5]` (`r4=val, r5=addr`) |
+| `0x37` | `i64.store` | `[i32, i64] -> []` | 境界チェック（比較+トラップ） $\to$ 64-bit メモリストア | あり (STRD) | `CMP r4, r9; BHS.W <trap>; STRD r5, r6, [r8, r4]`（値ペア高位語は `mem_base`/`mem_size` と衝突しない `r6` を使う） |
+| `0x38` | `f32.store` | `[i32, f32] -> []` | 境界チェック（比較+トラップ） $\to$ 単精度メモリストア | あり (VSTR.32) | `CMP r4, r9; BHS.W <trap>; VSTR s0, [r8, r4]` |
+| `0x39` | `f64.store` | `[i32, f64] -> []` | 境界チェック（比較+トラップ） $\to$ 倍精度メモリストア | あり (VSTR.64) | `CMP r4, r9; BHS.W <trap>; VSTR d0, [r8, r4]` |
+| `0x3A` | `i32.store8` | `[i32, i32] -> []` | 境界チェック（比較+トラップ） $\to$ 8-bit メモリストア | あり (STRB) | `CMP r5, r9; BHS.W <trap>; STRB r4, [r8, r5]` |
+| `0x3B` | `i32.store16`| `[i32, i32] -> []` | 境界チェック（比較+トラップ） $\to$ 16-bit メモリストア | あり (STRH) | `CMP r5, r9; BHS.W <trap>; STRH r4, [r8, r5]` |
 | `0x3F` | `memory.size`| `[] -> [i32]` | 現在のリニアメモリページ数を返す | あり (LDR via Env) | `LDR r4, [r2, #mem_pages]` |
 | `0x40` | `memory.grow`| `[i32] -> [i32]` | リニアメモリ拡張 (ランタイムAPI呼出) | あり (Runtime Call) | `BL vsoc_memory_grow` |
 
@@ -118,5 +118,5 @@
 | `0x74` | `i32.shl` | `[i32, i32] -> [i32]` | 左シフト | あり (LSL.W, 3オペランド) | `LSL.W r4, r5, r4` |
 | `0x75` | `i32.shr_s` | `[i32, i32] -> [i32]` | 算術右シフト | あり (ASR.W, 3オペランド) | `ASR.W r4, r5, r4` |
 | `0x76` | `i32.shr_u` | `[i32, i32] -> [i32]` | 論理右シフト | あり (LSR.W, 3オペランド) | `LSR.W r4, r5, r4` |
-| `0x77` | `i32.rotl` | `[i32, i32] -> [i32]` | 左循環シフト | あり (RSB & ROR.W) | `RSB r3, r4, #32; ROR.W r4, r5, r3` |
+| `0x77` | `i32.rotl` | `[i32, i32] -> [i32]` | 左循環シフト | あり (RSB & ROR.W) | `RSB r12, r4, #32; ROR.W r4, r5, r12` |
 | `0x78` | `i32.rotr` | `[i32, i32] -> [i32]` | 右循環シフト | あり (ROR.W, 3オペランド) | `ROR.W r4, r5, r4` |

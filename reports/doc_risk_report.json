@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-27T02:17:52.863671+00:00",
+  "generated_at": "2026-08-27T21:25:28.042565+00:00",
   "backend": "heuristic",
   "total_evaluated": 782,
   "formal_candidates_count": 32,
@@ -10,7 +10,7 @@
     "architecture/architecture_overview.md": "3f183179addd8251c6a0b6faecd54a999ea326f528f1cd4b24ff98bf922def4f",
     "architecture/concept_harness.md": "2160b8e29a617ecefbf46165542544705de7ebb0f6d5b7df4bbeb1c084f9cd3c",
     "architecture/document_structure.md": "24357f01283821a32a25234b99d2e956f10b1db600b3311f5f1f28ac664770b3",
-    "architecture/master_physical_design.md": "39ed35a17d61b9d9e2871cb688b6577cdb045e2f9516dc233fab12512579197f",
+    "architecture/master_physical_design.md": "457ad4fb53a01e28cbd123d92ee62ab3ef3592dcc44d79f7e876cf5479081652",
     "architecture/resource_budget.md": "ac4928f5ad7fcc1a360b6539ec3d44d072a67c6b7d4aa7d76bdac014971def00",
     "components/tier1_core/os_coos.md": "f1579a3a615047b5b3b3e189413e953088d502bd81bf9a180321001f5cf53a79",
     "components/tier1_core/os_scheduler.md": "8f2a91e241b3e52b23d22c75dc01f37adab4592a59255070983ded474fed5f77",
@@ -25,13 +25,13 @@
     "components/tier2_runtime/debug/debug_gdb_rsp.md": "06768beb3ae0225f25b723b60e8da734c09bc1073ffc9d99831161c83604254f",
     "components/tier2_runtime/debug/debug_manager.md": "1083cbaaaf7992ec9b4377e6e6209aeb3a038f9fc5143c37ed8d67f1be7bafde",
     "components/tier2_runtime/runtime_interpreter.md": "37e53c09853500c293bbf423a8fc68413896f586c7dbe0d972ce3358fbdfc256",
-    "components/tier2_runtime/runtime_loader.md": "9b3f74c9a0269f626aba5029a615463a35e282aaf51a56b6980d8997fd9529e7",
+    "components/tier2_runtime/runtime_loader.md": "826cbf820ac56fdbf3a6309a31154647567408f108db7b4f19c8e4eb383e8a29",
     "components/tier2_runtime/runtime_vmmio.md": "6bdb05cbd341d20f77ca74e2677952dc13d090a2d574e0f6673e2bce3dbf2811",
-    "components/tier2_runtime/runtime_vsoc.md": "af26a61c4bdafc89cbf7ce41698c14ed26a9cef78d53327ff16fa6202a1ba6b1",
+    "components/tier2_runtime/runtime_vsoc.md": "ff978931a4fb959f4d28825847cd594df68a6e7429bd74fee56f2dfa1814d8c0",
     "components/tier2_runtime/wasm_instruction.md": "640483f8a25bca7885110ce37e499c4ba3622fdc2ba3507e3a78b2bc1fcf8b5f",
     "components/tier3_jit/concepts/README.md": "a39c8c192999a792243e697e008fcad02c701d14b9559d492d668208122b6ebc",
     "components/tier3_jit/jit_assembler_constexpr.md": "bdeb28e114f82861fadac6ac3f3c9953dfd2cd3264a243d5db232d893c980924",
-    "components/tier3_jit/jit_compiler.md": "1212daecba81d2423d48308e90d1951e70ba0f21c525a34637d99ea9878e848a",
+    "components/tier3_jit/jit_compiler.md": "5403b527593322701323acd19987c7cab93d08cde87046cac538f841b761904c",
     "components/tier3_jit/jit_engine_copy_patch.md": "a7c88211b59a03fde6428041bd46104f16ee5dec8a65788d49305bb3b27ef606",
     "components/tier3_jit/jit_runtime_entry.md": "fba8e4844ca9cf64c718c57e5b4058a1cafd5f28b56d0d3cd019dac83ea88834",
     "components/tier3_jit/jit_runtime_hotspot.md": "bf4ced6b78c1978a08624c8fe9f430ee307c068780cd0c314d6f527ea698603f",
@@ -42,9 +42,9 @@
     "plans/roadmap_phase.md": "92ad637d4e9baed7d2083ae53145a3416cd1df7e1266339c6cabe1c969b4fe2c",
     "requires/requirement_list.md": "a2277b44f6575e9366830934e25da7a35de95d635e468ae17ac77c2d327dfdf2",
     "specs/gdb_rsp_protocol.md": "386dfa524ed02219a8aa89a7a7c35d6e97dfbba666b0b24a05e7c35d7c89e0dc",
-    "specs/jit_stencil_catalog.md": "bfd1ea18dbfa42badf8812980a4108f2bf098784aa1cdf05c37dceea08c4e38b",
+    "specs/jit_stencil_catalog.md": "f42b4a7bff4a5fc7dc986a454f1c885c804d1f4e35db4d43c0c6bb1f6e036942",
     "specs/wasi_preview1_abi.md": "4cb53fb6d8c5e8cbfc416eaf39041fae538cfaabc0cabf1de6eedafcc12e8512",
-    "specs/wasm_instruction_set.md": "6ff3b164898f9afd43c00a54d0aa6535dd9d2b3ddc4c22c7fd12958706026dcc"
+    "specs/wasm_instruction_set.md": "740de9964a2e01a6be6a81c319094c5bb07b3e3947c730cb39774f8429dbbe99"
   },
   "assessments": [
     {
@@ -1106,6 +1106,19 @@
       "summary": "Independent heuristic evaluation for '4.1 アルゴリズム'."
     },
     {
+      "section_id": "sec:components/tier3_jit/jit_compiler.md#JIT トレース実行シグネチャ (`exec_trace`)",
+      "file_path": "components/tier3_jit/jit_compiler.md",
+      "heading": "JIT トレース実行シグネチャ (`exec_trace`)",
+      "tier": 3,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for 'JIT トレース実行シグネチャ (`exec_trace`)'."
+    },
+    {
       "section_id": "sec:components/tier3_jit/jit_engine_copy_patch.md#JIT トレース物理メモリレイアウト (JIT Trace Header & Binary Layout)",
       "file_path": "components/tier3_jit/jit_engine_copy_patch.md",
       "heading": "JIT トレース物理メモリレイアウト (JIT Trace Header & Binary Layout)",
@@ -1199,19 +1212,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for 'デバッガ（Debugger）クラス'."
-    },
-    {
-      "section_id": "sec:components/tier3_jit/jit_compiler.md#JIT トレース実行シグネチャ (`exec_trace`)",
-      "file_path": "components/tier3_jit/jit_compiler.md",
-      "heading": "JIT トレース実行シグネチャ (`exec_trace`)",
-      "tier": 3,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for 'JIT トレース実行シグネチャ (`exec_trace`)'."
     },
     {
       "section_id": "sec:components/tier3_jit/jit_compiler.md#5.1 直交表: 検索・昇格・代謝",
@@ -1355,6 +1355,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '4.1 アルゴリズム'."
+    },
+    {
+      "section_id": "sec:components/tier2_runtime/runtime_loader.md#1. コンセプト",
+      "file_path": "components/tier2_runtime/runtime_loader.md",
+      "heading": "1. コンセプト",
+      "tier": 2,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '1. コンセプト'."
     },
     {
       "section_id": "sec:components/tier2_runtime/runtime_vmmio.md#FlatMap ページテーブル定義",
@@ -1511,19 +1524,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '6.2 メモリ制約と方策'."
-    },
-    {
-      "section_id": "sec:components/tier2_runtime/runtime_loader.md#1. コンセプト",
-      "file_path": "components/tier2_runtime/runtime_loader.md",
-      "heading": "1. コンセプト",
-      "tier": 2,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '1. コンセプト'."
     },
     {
       "section_id": "sec:components/tier2_runtime/runtime_loader.md#4.4 状態遷移図",
@@ -2919,6 +2919,19 @@
       "summary": "Independent heuristic evaluation for 'WASM インタプリタ フルセット・コンセプトコード (`concepts/interpreter_concept.py`)'."
     },
     {
+      "section_id": "sec:components/tier2_runtime/runtime_loader.md#WASMローダ コンポーネント設計書 {VERIFY_CONCEPT}",
+      "file_path": "components/tier2_runtime/runtime_loader.md",
+      "heading": "WASMローダ コンポーネント設計書 {VERIFY_CONCEPT}",
+      "tier": 2,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for 'WASMローダ コンポーネント設計書 {VERIFY_CONCEPT}'."
+    },
+    {
       "section_id": "sec:components/tier2_runtime/runtime_loader.md#4.5 内部シーケンス",
       "file_path": "components/tier2_runtime/runtime_loader.md",
       "heading": "4.5 内部シーケンス",
@@ -3064,19 +3077,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '3.5 整数算術 & 論理演算ステンシル (32-bit Integer Arithmetic & Logic)'."
-    },
-    {
-      "section_id": "sec:specs/jit_stencil_catalog.md#`local_param` (`local_base`) ピン留めバリアント（直交軸）",
-      "file_path": "specs/jit_stencil_catalog.md",
-      "heading": "`local_param` (`local_base`) ピン留めバリアント（直交軸）",
-      "tier": null,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '`local_param` (`local_base`) ピン留めバリアント（直交軸）'."
     },
     {
       "section_id": "sec:specs/wasm_instruction_set.md#3.5 整数算術・論理・比較命令 (Integer Arithmetic, Logic & Comparison)",
@@ -3836,6 +3836,19 @@
       "summary": "Independent heuristic evaluation for '3.6 整数比較演算ステンシル (32-bit Integer Comparisons)'."
     },
     {
+      "section_id": "sec:specs/jit_stencil_catalog.md#`local_param` (`local_base`) ピン留めバリアント（直交軸）",
+      "file_path": "specs/jit_stencil_catalog.md",
+      "heading": "`local_param` (`local_base`) ピン留めバリアント（直交軸）",
+      "tier": null,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '`local_param` (`local_base`) ピン留めバリアント（直交軸）'."
+    },
+    {
       "section_id": "sec:specs/wasi_preview1_abi.md#2. WASI 型定義と物理レイアウト (WASI Type Vocabulary)",
       "file_path": "specs/wasi_preview1_abi.md",
       "heading": "2. WASI 型定義と物理レイアウト (WASI Type Vocabulary)",
@@ -4357,6 +4370,19 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '`STENCIL_I64_CONST_D0` (`0x42` 64-bit 即値 $\\to$ R4:R5)'."
+    },
+    {
+      "section_id": "sec:specs/jit_stencil_catalog.md#`STENCIL_GLOBAL_GET_D0` (`0x23` Env globals_base 経由ロード)",
+      "file_path": "specs/jit_stencil_catalog.md",
+      "heading": "`STENCIL_GLOBAL_GET_D0` (`0x23` Env globals_base 経由ロード)",
+      "tier": null,
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '`STENCIL_GLOBAL_GET_D0` (`0x23` Env globals_base 経由ロード)'."
     },
     {
       "section_id": "sec:components/tier1_core/os_scheduler.md#実行（run）",
@@ -5275,19 +5301,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '`STENCIL_I32_CONST_D1` (`0x41` Depth 1 $\\to$ R5=旧TOS, R4=新TOS)'."
-    },
-    {
-      "section_id": "sec:specs/jit_stencil_catalog.md#`STENCIL_GLOBAL_GET_D0` (`0x23` Env globals_base 経由ロード)",
-      "file_path": "specs/jit_stencil_catalog.md",
-      "heading": "`STENCIL_GLOBAL_GET_D0` (`0x23` Env globals_base 経由ロード)",
-      "tier": null,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for '`STENCIL_GLOBAL_GET_D0` (`0x23` Env globals_base 経由ロード)'."
     },
     {
       "section_id": "sec:specs/jit_stencil_catalog.md#`STENCIL_GLOBAL_SET_D1` (`0x24` Env globals_base 経由ストア)",
@@ -8956,19 +8969,6 @@
       "suggested_tags": [],
       "risk_factors": [],
       "summary": "Independent heuristic evaluation for '6. 制約達成の方策'."
-    },
-    {
-      "section_id": "sec:components/tier2_runtime/runtime_loader.md#WASMローダ コンポーネント設計書",
-      "file_path": "components/tier2_runtime/runtime_loader.md",
-      "heading": "WASMローダ コンポーネント設計書",
-      "tier": 2,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [],
-      "summary": "Independent heuristic evaluation for 'WASMローダ コンポーネント設計書'."
     },
     {
       "section_id": "sec:components/tier2_runtime/runtime_loader.md#3. 静的モデル",

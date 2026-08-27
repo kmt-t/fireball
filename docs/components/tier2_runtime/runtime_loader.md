@@ -1,8 +1,9 @@
-# WASMローダ コンポーネント設計書
+# WASMローダ コンポーネント設計書 {VERIFY_CONCEPT}
 
 ## 1. コンセプト
 <!-- traceability: {ROMParsing} {META_AccessDictionary} {META_BumpAllocator} -->
 WASMローダは、ROM上のWASM32バイナリをパースし、実行環境が参照しやすい索引構造（ModuleView）を生成する。RAMへの全展開を避け、ROM上のデータを直接参照することでメモリ消費を極小化する。 `{ROMParsing}` `{META_AccessDictionary}` `{META_BumpAllocator}`
+本設計の動作モデルおよび軽量検証スコープ（V1〜V6）、$O(\log N)$ エクスポート二分探索、バンプアロケータによるトランザクション保護（`save`/`restore`）は、コンセプトコード（[`concepts/loader_concept.py`](concepts/loader_concept.py)）によって動作検証されている。
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->

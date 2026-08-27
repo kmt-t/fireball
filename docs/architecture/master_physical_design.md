@@ -130,23 +130,23 @@ ARM Cortex-M33 (ARMv8-M Mainline) における物理レジスタの厳格な役�
 | **`R0`** | Argument 1 / Scratch | `ip` (WASM PC) | `ip` (WASM PC) | 継続渡し（CPS）第1引数。現在実行中のバイトコード位置。 |
 | **`R1`** | Argument 2 / Scratch | `stack_bot` | `stack_bot` | 継続渡し（CPS）第2引数。統合スタックボトム基底ポインタ `{ContextPointerRegister}`。 |
 | **`R2`** | Argument 3 / Scratch | `env` | `env` | 継続渡し（CPS）第3引数。ランタイム環境ポインタ `{EnvironmentPointer}`。 |
-| **`R3`** | Argument 4 / Scratch | `scratch` (解放) | **`mem_base` / `local_param` （いずれか一方に固定ピン留め）/ Scratch** | **Caller-saved スクラッチ / スピル**。メモリアクセス系ステンシルでは常に `mem_base`（`vsoc_runtime.mem_base` からロード）を保持する。`local.get`/`set`/`tee` の現行ステンシル（`docs/specs/wasm_instruction_set.md` 3.3）は `R1（stack_bot）` からの単一の即値オフセットのみで実装され `R3` を参照しないため、現行実装では同一トレース内に `local.get` と `i32.load` が混在しても `R3` の役割が衝突することはない。ただし `local_base` が再帰・共有呼び出し深さによりコンパイル時定数へ畳み込めない場合は `local_param` として `R3` にピン留めする必要があり（[`jit_stencil_catalog.md` 3.8](../specs/jit_stencil_catalog.md)「`local_param` ピン留めバリアント」を正本とする）、この場合は `mem_base` と排他——両方を要するトレースはコンパイル対象から除外しインタープリタへ委ねる。 |
+| **`R3`** | Argument 4 / Scratch | `scratch` (解放) | **`local_param`** | **Caller-saved スクラッチ / スピル**。`local_base`（フレーム基底）が再帰・共有呼び出し深さによりコンパイル時定数へ畳み込めない場合、トレース入口でコンテキスト構造体からロードしてピン留めする（[`jit_stencil_catalog.md` 3.8](../specs/jit_stencil_catalog.md)「`local_param` ピン留めバリアント」を正本とする）。`mem_base`/`mem_size`（`R8`/`R9`）や各ステンシルの一時スクラッチ（`R12`）とは別レジスタのため、メモリアクセスや他の演算ステンシルと衝突しない。`local.get`/`set`/`tee` の現行ステンシル（`docs/specs/wasm_instruction_set.md` 3.3）は `R1（stack_bot）` からの単一の即値オフセットのみで実装され `R3` を参照しないため、`local_param` ピン留め自体は現行の概念コードにはまだ実装されていない。 |
 | **`R4`** | Callee-saved | (保全) | **`Assignable Pool 0` (TOS等)** | **役割任意割当レジスタ 0**。スタックトップキャッシュ (TOS)、コンテキストスピル、ローカル変数等からトレース単位でバインド。 |
 | **`R5`** | Callee-saved | (保全) | **`Assignable Pool 1` (NOS等)** | **役割任意割当レジスタ 1**。スタック次段キャッシュ (NOS) 等。 |
-| **`R6`** | Callee-saved | (保全) | **`Assignable Pool 2`（メモリアクセス時は `mem_size`）** | **役割任意割当レジスタ 2**。メモリアクセス系ステンシルでは `vsoc_runtime.mem_size`（境界比較の上限値、`{FastAddressCheck}` は `CMP addr, mem_size; BHS __trap` の比較命令——マスク演算は使わない）を保持し、メモリアクセスを含まないトレースでは他の役割任意割当に用いる。 |
+| **`R6`** | Callee-saved | (保全) | **`Assignable Pool 2`（select 使用時は NNOS）** | **役割任意割当レジスタ 2**。`select_d3` ステンシルでは3値目（NNOS）を保持し、それ以外のトレースでは他の役割任意割当に用いる。`mem_size` は `R9` に分離されているため、メモリアクセスを含むトレースとも両立する。 |
 | **`R7`** | **Frame Pointer (FP)** | **FP (不可侵)** | **FP (不可侵)** | **AAPCS 標準フレームポインタ**。デバッガ・スタックアンワインドのため不変。 |
-| **`R8`** | Callee-saved | (保全) | **`Assignable Pool 3`** | **役割任意割当レジスタ 3**。高頻度ローカル変数 (`local[0]`)、ループカウンタ等。 |
-| **`R9`** | Callee-saved | (保全) | **`Assignable Pool 4`** | **役割任意割当レジスタ 4**。高頻度ローカル変数 (`local[1]`)、補助ポインタ等。 |
+| **`R8`** | Callee-saved | (保全) | **`Assignable Pool 3`（メモリアクセス時は `mem_base`）** | **役割任意割当レジスタ 3**。メモリアクセス系ステンシルでは常に `mem_base`（`vsoc_runtime.mem_base` からロード）を保持し、メモリアクセスを含まないトレースでは高頻度ローカル変数 (`local[0]`)、ループカウンタ等に用いる。 |
+| **`R9`** | Callee-saved | (保全) | **`Assignable Pool 4`（メモリアクセス時は `mem_size`）** | **役割任意割当レジスタ 4**。メモリアクセス系ステンシルでは `vsoc_runtime.mem_size`（境界比較の上限値、`{FastAddressCheck}` は `CMP addr, mem_size; BHS __trap` の比較命令——マスク演算は使わない）を保持し、メモリアクセスを含まないトレースでは高頻度ローカル変数 (`local[1]`)、補助ポインタ等に用いる。 |
 | **`R10`** | Callee-saved | (保全) | **`Assignable Pool 5`** | **役割任意割当レジスタ 5**。セーフポイント監視フラグ (`safepoint_flag`) 等。 |
 | **`R11`** | Callee-saved | (保全) | **`Assignable Pool 6`** | **役割任意割当レジスタ 6**。拡張レジスタキャッシュ。 |
-| **`R12 (IP)`**| Intra-Call Scratch | scratch | scratch | リンカ・スタブ用スクラッチ。 |
+| **`R12 (IP)`**| Intra-Call Scratch | scratch | **一時スクラッチ** | リンカ・スタブ用スクラッチに加え、`global.get`/`global.set`（globals_base ポインタ）、`i32.rem_s`/`i32.rem_u`/`i32.rotl`（除算・回転量の一時値）ステンシル内でのみ値を保持する使い捨てスクラッチ。呼び出しをまたいで保持されないため、`R3`（`local_param`）と異なりトレース単位のピン留めは行わない。 |
 | **`R13 (SP)`**| Stack Pointer | C++ Core SP | C++ Core SP | C++ コア実行用スタックポインタ。 |
 | **`R14 (LR)`**| Link Register | Return Address | Return Address | 関数呼び出し戻り先アドレス。 |
 | **`R15 (PC)`**| Program Counter | CPU PC | CPU PC | 命令ポインタ。 |
 
 > [!NOTE]
 > **トレース単位のレジスタバインディングとステンシル・バリアント選択**:
-> JIT コンパイラはトレース解析時に、`R3`（Caller-saved）および `R4-R6, R8-R11`（Callee-saved 計7本）に対する最適な役割マップ（TOS/NOS、mem_base/mem_size、local変数、ループカウンタ）を決定する。トレース突入時に使用する Callee-saved レジスタを `PUSH`（必要に応じて初期ロード）、脱出（リターンまたはインタープリタフォールバック）時に**ダーティなスピル変数（TOS/NOS、レジスタ常駐ローカル変数、SPオフセット等）を統合スタックへ `STR` で確実に書き戻した上で `POP` 復元** することで、インタープリタとゼロ再構築で相互遷移しつつ、トレース内部を純粋なレジスタマシンとして超高速実行する。ステンシルはレジスタ割当バインディングに応じた事前コンパイル済みバリアントを選択して結合される。
+> JIT コンパイラはトレース解析時に、`R4-R6, R8-R11`（Callee-saved 計7本）に対する役割マップ（TOS/NOS/NNOS、メモリアクセス時は `R8`/`R9` を `mem_base`/`mem_size` に固定、それ以外では local 変数・ループカウンタ等）を決定する。`R3` は Caller-saved の `local_param` 専用（メモリアクセス系ステンシルとは非衝突）、`R12` は各ステンシル内でのみ生存する使い捨てスクラッチであり、いずれもこの役割マップの対象外である。トレース突入時に使用する Callee-saved レジスタを `PUSH`（必要に応じて初期ロード）、脱出（リターンまたはインタープリタフォールバック）時に**ダーティなスピル変数（TOS/NOS、レジスタ常駐ローカル変数、SPオフセット等）を統合スタックへ `STR` で確実に書き戻した上で `POP` 復元** することで、インタープリタとゼロ再構築で相互遷移しつつ、トレース内部を純粋なレジスタマシンとして超高速実行する。ステンシルはレジスタ割当バインディングに応じた事前コンパイル済みバリアントを選択して結合される。
 >
 > `local_base`（フレーム基底）は同一トレースが再帰呼び出しや異なる呼び出し深さから共有されうるため、統合スタック上の絶対位置が毎回異なる実行時値であり、トレース入口でコンテキスト構造体から毎回ロードする必要がある——コンパイル時定数には畳み込めない。一方、各ローカル変数スロットや現在のオペランドスタック深さ（`sp_offset`）は `local_base` からの静的に決まる相対オフセットに過ぎないため、Copy-and-Patch のパッチ適用時に即値として書き込まれ、独立したプールロールを持たない。`sp_offset` はトレース脱出時にのみ算出されコンテキスト構造体へ書き戻される。 `{ADR_TosCacheAsymmetry}`
 
@@ -162,7 +162,7 @@ Fireball は外部の AAPCS 準拠 C/C++ 関数（WASI ホストコール、vMMI
 2. **外部 AAPCS 関数呼び出し時の Caller-saved 退避境界**:
    - 外部 AAPCS 準拠の C/C++ 関数は、Caller-saved スクラッチレジスタ（`R0-R3, R12, LR`）を自由に上書き・破壊する。
    - JIT トレースまたはインタープリタから外部 C/C++ 関数を `BL`/`BLX` で呼び出す際は：
-     - ① 継続渡し引数 `(R0: ip, R1: stack_bot, R2: env)` および `R3: spill` をスタック、または Callee-saved レジスタ（`R4-R11`）へ退避する。
+     - ① 継続渡し引数 `(R0: ip, R1: stack_bot, R2: env)` および `R3: local_param`（ピン留めしているトレースの場合）をスタック、または Callee-saved レジスタ（`R4-R11`）へ退避する。
      - ② AAPCS 規約に従い引数を `R0-R3` にセットして関数を呼び出す。
      - ③ 関数復帰時、`R4-R11`（Callee-saved）に保持されている JIT スタックキャッシュやコンテキスト変数は AAPCS により **完全に維持** されているため、Caller-saved を復元して即座に高速実行を継続する。
 

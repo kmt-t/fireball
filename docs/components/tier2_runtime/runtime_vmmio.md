@@ -14,7 +14,7 @@ FlatMap 単体での探索は $O(\log N)$（またはハッシュ探索）とな
 
 1. **リニアアドレス空間フィルタ（高速バイパス & 境界チェック）**:
    32ビットゲストアドレスの最上位ビット（Bit 31）が `0` の場合、そのアドレスは vMMIO 管理対象外として、Tier 1（ゲストRAM）への直接アクセスとして高速バイパス（O(1) 処理）を実行する。 `{FastAddressCheck}`
-   - **統一境界チェック**: 部分ページ（例: 8KB）でも、単一 64KB ページでも、複数 64KB ページ（`N * 64KB`）でも、**`addr < guest_ram_size`（符号なし比較 1 命令: `CMP addr, limit; BHS __trap`）の単一アルゴリズム** で完全に統一して判定する。境界外アクセスは即座に `ERR_OUT_OF_BOUNDS` トラップを発生させる。
+   - **統一境界チェック**: `{FastAddressCheck}` は比較命令ベースの単一の高速境界チェックである（マスクは用いない）。`guest_ram_size`（`vsoc_runtime.mem-size`）と直接比較し、`addr >= guest_ram_size` なら境界外として即座に `ERR_OUT_OF_BOUNDS` トラップを発生させる（Thumb-2 1 命令: `CMP addr, mem_size; BHS.W __trap`）。マスク方式と異なり `guest_ram_size` に2の冪の制約はなく、部分ページ（例: 8KB, 12KB, 16KB）・単一 64KB ページ・複数 64KB ページ（`N * 64KB`）のいずれも同一の比較一つで判定できる（`vmmio_concept.py` の `VMMIOController.access` を正本とする）。トラップは必須であり、境界外アドレスを黙ってラップアラウンドさせて処理を継続することは許容されない。JIT トレース側（`jit_stencil_catalog.md` §3.7, `jit_copy_patch_concept.py`）も同一の比較+トラップ方式を採り、トラップ発生時はインタープリタへフォールバックする。インタープリタが復旧不能と判断した場合はゲストタスクを停止してよい。
 2. **FlatMap PTE 管理**:
    最上位ビット（Bit 31）が `1` のアドレス空間を vMMIO 領域（`0x8000_0000` – `0xFFFF_FFFF`）とする。
    - 仮想ページ番号（VPN = `raw >> 12`）をキーとして、FlatMap（`vmmio_ptes`）に PTE を格納する。
@@ -26,7 +26,7 @@ FlatMap 単体での探索は $O(\log N)$（またはハッシュ探索）とな
 
 セキュリティモデルは**PTEに埋め込まれた権限フィールドが唯一のゲート**である。アクセス権限は PTE に保持され、ルックアップと権限チェックを1パスで完結させる。アクセス特性に応じてセキュリティゲートを以下の3層に階層化する。 `{META_RestrictedPhysicalAccess}`
 
-1. **Tier 1 (ゲストRAM)**: ゲスト専用RAM領域（Bit 31 == 0）。`addr < guest_ram_size` による単一の高速境界チェック（`FastAddressCheck`）のみで高速処理。
+1. **Tier 1 (ゲストRAM)**: ゲスト専用RAM領域（Bit 31 == 0）。`addr >= guest_ram_size` による比較ベースの単一の高速境界チェック（`FastAddressCheck`）のみで高速処理し、境界外は即座にトラップする。
 2. **Tier 2 (静的vMMIO, FC=12)**: コンパイル時にアドレスが確定するコアデバイス（SYSCTL, IPCR, VDMA等）。アドレス `0xC000_0000` は FC=12 に位置する。JIT生成時に許可チェックを行い、許可済みならネイティブコードに直接デバイスキーを埋め込む。
 3. **Tier 3 (動的vMMIO, FC=14-15)**: SHM（FC=14, `0xE000_0000`）、PASSTHROUGH（FC=15, `0xF000_0000`）領域のアクセス。TLB または FlatMap を経由して PTE を解決し、エントリの権限フィールドで可否を判定する。
 

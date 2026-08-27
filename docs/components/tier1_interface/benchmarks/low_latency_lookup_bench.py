@@ -6,7 +6,7 @@ whose verification method is declared as "ベンチマーク" (Benchmark).
 {LowLatencyLookup}'s claim is specifically about the sorted-array + binary-search
 mechanism (flat_map_view / system_containers.md), not about ipc_router_concept.py's
 current registry lookup -- that still uses a plain dict, not flat_map_view, which is
-a separate, already-known gap (see FromOpus.md correspondence). Benchmarking the dict
+a separate, already-known gap (see agentmails/FromOpus.md correspondence). Benchmarking the dict
 would not test the claim actually being made, so this measures the real mechanism the
 claim rests on directly: ../../tier1_core/concepts/flat_view_concept.py's FlatMapView,
 imported rather than reimplemented, so this cannot silently drift from the real code.

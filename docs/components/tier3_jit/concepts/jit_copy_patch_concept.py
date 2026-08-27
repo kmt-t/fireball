@@ -2,7 +2,7 @@
 docs/components/tier3_jit/concepts/jit_copy_patch_concept.py
 Reference Concept Implementation: Full-Set Copy-and-Patch JIT Engine & MPU W^X Transaction Protocol
 - Exhaustive binary stencil library matching docs/specs/jit_stencil_catalog.md & wasm_instruction_set.md
-- Multi-dimensional register variants (Depth 0/1/2/3, R3 mem_base/scratch, Callee-saved R4-R6, R8-R11)
+- Multi-dimensional register variants (Depth 0/1/2/3, R3 local_param, R8/R9 mem_base/mem_size, Callee-saved R4-R6, R8-R11)
 - Direct relocation patching (RelocImm32, RelocBranch24, RelocOffset8, RelocApi)
 - Hardware-enforced MPU W^X attribute switching protocol (RW_XN <-> RO_X)
 - Comprehensive verification of all supported WASM opcodes
@@ -27,12 +27,43 @@ class MPUFault(Exception):
 
 
 class Stencil:
-    """Pre-compiled binary template with relocation hole descriptors and Thumb-2 disassembly."""
+    """Pre-compiled binary template with relocation hole descriptors and Thumb-2 disassembly.
+
+    variant_id is the intra-trace register-occupancy ID from
+    docs/specs/jit_stencil_catalog.md 3.8 (0..3 = Depth 0..3, how many of
+    TOS/NOS/NNOS are register-resident), derived from the name's `_dN` suffix so
+    it can never drift out of sync with the name itself. It is used both for the
+    (not yet implemented) dynamic per-depth stencil selection and for the real
+    reconciliation-glue mechanism between consecutive stencils *within* one trace
+    (see emit_variant_reconciliation_glue()) -- NOT for chaining between separately
+    compiled traces, which always goes through memory regardless of variant
+    (jit_compiler.md 8, {ADR_TosCacheAsymmetry}). The `_r8` memory stencils don't
+    introduce a depth of their own -- loads reuse Depth 1's R4=addr, stores reuse
+    Depth 2's R4=val/R5=addr -- so they're mapped onto the depth they build on top
+    of. Stencils with no depth meaning (prologue/epilogue/control-flow) get
+    variant_id=None.
+    """
+    _R8_BASE_VARIANT = {
+        "i32_load_r8": 1, "i32_load8_s_r8": 1, "i32_load8_u_r8": 1,
+        "i32_load16_s_r8": 1, "i32_load16_u_r8": 1,
+        "i32_store_r8": 2, "i32_store8_r8": 2, "i32_store16_r8": 2,
+    }
+
     def __init__(self, name: str, code: list[str], hex_bytes: str, reloc_offsets: dict[str, int]):
         self.name = name
         self.code = list(code)
         self.hex_bytes = hex_bytes
         self.reloc_offsets = dict(reloc_offsets)
+        self.variant_id = self._derive_variant_id(name)
+
+    @classmethod
+    def _derive_variant_id(cls, name: str) -> int | None:
+        if name in cls._R8_BASE_VARIANT:
+            return cls._R8_BASE_VARIANT[name]
+        for depth in (0, 1, 2, 3):
+            if name.endswith(f"_d{depth}"):
+                return depth
+        return None
 
 
 class JITTraceHeader:
@@ -62,6 +93,17 @@ class JITTraceHeader:
 
 _REG_NAME_TO_ENUM = {r.name.lower(): r for r in Reg}
 
+# WASM linear-memory ops whose operand register (r4 for a unary load's address,
+# r5 for a store's address -- value stays in r4) must be bounds-checked against
+# vsoc_runtime.mem-size (pinned in R9) before the access is allowed to execute.
+# See {FastAddressCheck} / {MemoryBoundaryCheck}: trapping to the interpreter is
+# mandatory on out-of-bounds, silent wrapping is not permitted.
+_MEMORY_OP_ADDR_REG = {
+    "i32.load": Reg.R4, "i32.load8_s": Reg.R4, "i32.load8_u": Reg.R4,
+    "i32.load16_s": Reg.R4, "i32.load16_u": Reg.R4,
+    "i32.store": Reg.R5, "i32.store8": Reg.R5, "i32.store16": Reg.R5,
+}
+
 
 class CopyPatchJITEngine:
     def __init__(self, cache_size: int = 4096):
@@ -75,12 +117,16 @@ class CopyPatchJITEngine:
         self.byte_cache: bytearray = bytearray(cache_size * 4)
         self.byte_write_pos: int = 0
         self.last_trace_byte_range: tuple[int, int] = (0, 0)
+        self.last_oob_fixups: list[int] = []
+        self.last_trap_tail_byte_addr: int | None = None
         self.mpu_attr: str = MPUAttribute.RO_X  # Default state: RO_X
         self.barrier_flushes: int = 0
         self.current_write_pos: int = 0
 
         # Exhaustive Stencil Library (Cortex-M33 AAPCS + JIT Register Map)
-        # R0=ip, R1=stack_bot, R2=env, R3=spill/scratch, R4=TOS, R5=NOS, R6=NNOS, R7=FP, R8-R11=assignable pool
+        # R0=ip, R1=stack_bot, R2=env, R3=local_param, R4=TOS, R5=NOS, R6=NNOS, R7=FP,
+        # R8/R9=mem_base/mem_size (pinned only when the trace touches linear memory),
+        # R12=intra-call scratch (globals_base pointer, rem/rotl temporaries), R8-R11=assignable pool otherwise
         self.stencils: dict[str, Stencil] = {
             # --- Prologue, Epilogue & Interop ---
             "prologue_full": Stencil(
@@ -139,8 +185,10 @@ class CopyPatchJITEngine:
             "local_get_d0": Stencil("local_get_d0", ["LDR r4, [r1, #0x00]"], "0C 68", {"offset": 0}),
             "local_set_d1": Stencil("local_set_d1", ["STR r4, [r1, #0x00]"], "0C 60", {"offset": 0}),
             "local_tee_d1": Stencil("local_tee_d1", ["STR r4, [r1, #0x00]"], "0C 60", {"offset": 0}),
-            "global_get_d0": Stencil("global_get_d0", ["LDR.W r3, [r2, #0x0C]", "LDR.W r4, [r3, #0x00]"], "D2 F8 0C 30 D3 F8 00 40", {"offset": 1}),
-            "global_set_d1": Stencil("global_set_d1", ["LDR.W r3, [r2, #0x0C]", "STR.W r4, [r3, #0x00]"], "D2 F8 0C 30 C3 F8 00 40", {"offset": 1}),
+            # R12 (AAPCS intra-call scratch) holds the globals_base pointer only for the
+            # duration of this one stencil -- R3 is local_param now, not general scratch.
+            "global_get_d0": Stencil("global_get_d0", ["LDR.W r12, [r2, #0x08]", "LDR.W r4, [r12, #0x00]"], "D2 F8 08 C0 DC F8 00 40", {"offset": 1}),
+            "global_set_d1": Stencil("global_set_d1", ["LDR.W r12, [r2, #0x08]", "STR.W r4, [r12, #0x00]"], "D2 F8 08 C0 CC F8 00 40", {"offset": 1}),
 
             # --- 32-bit Integer Arithmetic & Logic ---
             "i32_add_d2": Stencil("i32_add_d2", ["ADDS r4, r5, r4"], "2C 19", {}),
@@ -148,8 +196,9 @@ class CopyPatchJITEngine:
             "i32_mul_d2": Stencil("i32_mul_d2", ["MUL r4, r5, r4"], "05 FB 04 F4", {}),
             "i32_div_s_d2": Stencil("i32_div_s_d2", ["SDIV r4, r5, r4"], "95 FB F4 F4", {}),
             "i32_div_u_d2": Stencil("i32_div_u_d2", ["UDIV r4, r5, r4"], "B5 FB F4 F4", {}),
-            "i32_rem_s_d2": Stencil("i32_rem_s_d2", ["SDIV r3, r5, r4", "MLS r4, r3, r4, r5"], "95 FB F4 F3 03 FB 14 54", {}),
-            "i32_rem_u_d2": Stencil("i32_rem_u_d2", ["UDIV r3, r5, r4", "MLS r4, r3, r4, r5"], "B5 FB F4 F3 03 FB 14 54", {}),
+            # R12 scratch, not R3 -- R3 is local_param now (see i32_rotl_d2 below too).
+            "i32_rem_s_d2": Stencil("i32_rem_s_d2", ["SDIV r12, r5, r4", "MLS r4, r12, r4, r5"], "95 FB F4 FC 0C FB 14 54", {}),
+            "i32_rem_u_d2": Stencil("i32_rem_u_d2", ["UDIV r12, r5, r4", "MLS r4, r12, r4, r5"], "B5 FB F4 FC 0C FB 14 54", {}),
             "i32_and_d2": Stencil("i32_and_d2", ["ANDS r4, r5, r4"], "2C 40", {}),
             "i32_or_d2": Stencil("i32_or_d2", ["ORRS r4, r5, r4"], "2C 43", {}),
             "i32_xor_d2": Stencil("i32_xor_d2", ["EORS r4, r5, r4"], "6C 40", {}),
@@ -164,7 +213,7 @@ class CopyPatchJITEngine:
             "i32_shl_d2": Stencil("i32_shl_d2", ["LSL.W r4, r5, r4"], "05 FA 04 F4", {}),
             "i32_shr_s_d2": Stencil("i32_shr_s_d2", ["ASR.W r4, r5, r4"], "45 FA 04 F4", {}),
             "i32_shr_u_d2": Stencil("i32_shr_u_d2", ["LSR.W r4, r5, r4"], "25 FA 04 F4", {}),
-            "i32_rotl_d2": Stencil("i32_rotl_d2", ["RSB r3, r4, #32", "ROR.W r4, r5, r3"], "C4 F1 20 03 65 FA 03 F4", {}),
+            "i32_rotl_d2": Stencil("i32_rotl_d2", ["RSB r12, r4, #32", "ROR.W r4, r5, r12"], "C4 F1 20 0C 65 FA 0C F4", {}),
             "i32_rotr_d2": Stencil("i32_rotr_d2", ["ROR.W r4, r5, r4"], "65 FA 04 F4", {}),
             "i32_clz_d1": Stencil("i32_clz_d1", ["CLZ r4, r4"], "B4 FA 84 F4", {}),
             "i32_ctz_d1": Stencil("i32_ctz_d1", ["RBIT r4, r4", "CLZ r4, r4"], "94 FA A4 F4 B4 FA 84 F4", {}),
@@ -187,15 +236,21 @@ class CopyPatchJITEngine:
             "i32_ge_s_d2": Stencil("i32_ge_s_d2", ["CMP r5, r4", "IT GE", "MOVGE r4, #1", "IT LT", "MOVLT r4, #0"], "A5 42 A8 BF 01 24 B8 BF 00 24", {}),
             "i32_ge_u_d2": Stencil("i32_ge_u_d2", ["CMP r5, r4", "IT HS", "MOVHS r4, #1", "IT LO", "MOVLO r4, #0"], "A5 42 28 BF 01 24 38 BF 00 24", {}),
 
-            # --- Linear Memory Access with FastAddressCheck Boundary Mask (R3 = mem_base, R6 = mem_mask) ---
-            "i32_load_r3": Stencil("i32_load_r3", ["ANDS r4, r6", "LDR.W r4, [r3, r4]"], "34 40 53 F8 04 40", {}),
-            "i32_load8_s_r3": Stencil("i32_load8_s_r3", ["ANDS r4, r6", "LDRSB.W r4, [r3, r4]"], "34 40 13 F9 04 40", {}),
-            "i32_load8_u_r3": Stencil("i32_load8_u_r3", ["ANDS r4, r6", "LDRB.W r4, [r3, r4]"], "34 40 13 F8 04 40", {}),
-            "i32_load16_s_r3": Stencil("i32_load16_s_r3", ["ANDS r4, r6", "LDRSH.W r4, [r3, r4]"], "34 40 33 F9 04 40", {}),
-            "i32_load16_u_r3": Stencil("i32_load16_u_r3", ["ANDS r4, r6", "LDRH.W r4, [r3, r4]"], "34 40 33 F8 04 40", {}),
-            "i32_store_r3": Stencil("i32_store_r3", ["ANDS r5, r6", "STR.W r4, [r3, r5]"], "35 40 43 F8 05 40", {}),
-            "i32_store8_r3": Stencil("i32_store8_r3", ["ANDS r5, r6", "STRB.W r4, [r3, r5]"], "35 40 03 F8 05 40", {}),
-            "i32_store16_r3": Stencil("i32_store16_r3", ["ANDS r5, r6", "STRH.W r4, [r3, r5]"], "35 40 23 F8 05 40", {}),
+            # --- Linear Memory Access (R8 = mem_base) ---
+            # R3 is local_param (not mem_base) -- see docs/specs/jit_stencil_catalog.md 3.8.
+            # mem_base/mem_size are pinned in R8/R9 precisely so they never collide with it.
+            # The FastAddressCheck bounds check (CMP addr, r9=mem_size; BHS.W <trap>) is NOT part of
+            # these stencils -- it needs a runtime-patched branch target (the trace's own trap tail),
+            # so it is emitted directly by compile_trace() around whichever of these gets selected,
+            # the same way local.get/local.set are handled rather than being a fixed byte template.
+            "i32_load_r8": Stencil("i32_load_r8", ["LDR.W r4, [r8, r4]"], "58 F8 04 40", {}),
+            "i32_load8_s_r8": Stencil("i32_load8_s_r8", ["LDRSB.W r4, [r8, r4]"], "18 F9 04 40", {}),
+            "i32_load8_u_r8": Stencil("i32_load8_u_r8", ["LDRB.W r4, [r8, r4]"], "18 F8 04 40", {}),
+            "i32_load16_s_r8": Stencil("i32_load16_s_r8", ["LDRSH.W r4, [r8, r4]"], "38 F9 04 40", {}),
+            "i32_load16_u_r8": Stencil("i32_load16_u_r8", ["LDRH.W r4, [r8, r4]"], "38 F8 04 40", {}),
+            "i32_store_r8": Stencil("i32_store_r8", ["STR.W r4, [r8, r5]"], "48 F8 05 40", {}),
+            "i32_store8_r8": Stencil("i32_store8_r8", ["STRB.W r4, [r8, r5]"], "08 F8 05 40", {}),
+            "i32_store16_r8": Stencil("i32_store16_r8", ["STRH.W r4, [r8, r5]"], "28 F8 05 40", {}),
             "memory_size_d0": Stencil("memory_size_d0", ["LDR.W r4, [r2, #0x04]"], "D2 F8 04 40", {}),
         }
 
@@ -249,12 +304,26 @@ class CopyPatchJITEngine:
         head_wasm_pc: int = 0,
         chain_next_pc: int = 0,
         chain_target_addr: int = 0,
+        variant_id: int = 2,
     ) -> tuple[int, int]:
         """
         Batches stencil copy & relocation patching inside a single W^X transaction.
         Inlines a 16-byte JITTraceHeader at the start of the trace buffer.
         Flushes all dirty spilled variables (TOS/NOS, registers) to unified stack before POP/BX.
         Returns (code_start_offset, total_instructions).
+
+        `variant_id` is the trace's register-occupancy ID (Depth 0..3, see
+        docs/specs/jit_stencil_catalog.md 3.8) -- which of TOS/NOS/NNOS are register-
+        resident. It does NOT describe anything about chaining to another trace:
+        trace-boundary chaining ({JIT_LazyChaining}) always goes through memory
+        regardless of variant (jit_compiler.md 8, {ADR_TosCacheAsymmetry}) and never
+        reads this field to decide how to link. It exists for consecutive stencils
+        *within* this same trace (see emit_variant_reconciliation_glue() below), which
+        matters once a future per-trace register allocator can make them disagree --
+        this engine does not yet compute variant_id automatically from `wasm_ops`
+        (that belongs to that allocator, out of scope here); the caller states it, the
+        same way it already states `exit_kind`/`dirty_spills`. Recorded in the header
+        for real, not hardcoded.
         """
         start_offset = self.current_write_pos
         dirty_spills = dirty_spills or []
@@ -291,6 +360,22 @@ class CopyPatchJITEngine:
         # 3. Emit Full Callee-saved Prologue
         emit_stencil(self.stencils["prologue_full"])
 
+        # 3b. If the trace touches linear memory, pin R8=mem_base and R9=mem_size for the
+        # lifetime of the trace (vsoc_runtime: mem-base @+0x00, mem-size @+0x04 -- see
+        # docs/components/tier2_runtime/wit/vsoc_runtime.wit). Loaded once here rather than
+        # per-access since neither value can change mid-trace. R3 is deliberately NOT used
+        # here -- it's local_param (docs/specs/jit_stencil_catalog.md 3.8), and pinning
+        # mem_base/mem_size on R8/R9 instead means a trace can use linear memory and a
+        # non-foldable local_base at the same time without the two colliding.
+        has_memory_ops = any(op in _MEMORY_OP_ADDR_REG for op, _ in wasm_ops)
+        if has_memory_ops:
+            emit("LDR.W r8, [r2, #0x00]", asm.ldr_w_imm12(Reg.R8, Reg.R2, 0x00))
+            emit("LDR.W r9, [r2, #0x04]", asm.ldr_w_imm12(Reg.R9, Reg.R2, 0x04))
+
+        # Byte addresses of BHS.W trap branches emitted below, patched once the trace's
+        # trap tail (see step 5b) is known.
+        oob_branch_fixups: list[int] = []
+
         # 4. Emit WASM Ops with Relocation Patching
         for op, arg in wasm_ops:
             if op == "i32.const":
@@ -313,13 +398,24 @@ class CopyPatchJITEngine:
                 emit("PUSH {r0-r3, r12, lr}", asm.push_w(reg_mask=call_mask, push_lr=True))
                 emit(f"BL {func_name}", asm.bl(0))  # relocation hole: patched after linking
                 emit("POP {r0-r3, r12, lr}", asm.pop_w(reg_mask=call_mask, pop_lr=True))
+            elif op in _MEMORY_OP_ADDR_REG:
+                # FastAddressCheck: CMP the address against mem_size (R9) and take a
+                # placeholder BHS.W to the trace's trap tail (patched in step 5b, once its
+                # address is known) *before* the actual load/store executes, so an
+                # out-of-bounds access never has a side effect to unwind. R9 is a high
+                # register, so the low addr_reg (R4/R5) needs the T2 CMP encoding.
+                addr_reg = _MEMORY_OP_ADDR_REG[op]
+                emit(f"CMP {addr_reg.name.lower()}, r9", asm.cmp_reg_t2(addr_reg, Reg.R9))
+                oob_branch_fixups.append(self.byte_write_pos)
+                emit("BHS.W <trap>", asm.b_cond_w(Cond.HS, 0))
+                emit_stencil(self.stencils[op.replace(".", "_") + "_r8"])
             else:
                 # Direct stencil mapping
                 stencil_key = op.replace(".", "_") + "_d2"
                 if stencil_key not in self.stencils:
                     stencil_key = op.replace(".", "_") + "_d1"
                 if stencil_key not in self.stencils:
-                    stencil_key = op.replace(".", "_") + "_r3"
+                    stencil_key = op.replace(".", "_") + "_r8"
                 if stencil_key not in self.stencils:
                     stencil_key = op.replace(".", "_")
 
@@ -328,18 +424,39 @@ class CopyPatchJITEngine:
                 else:
                     raise ValueError(f"Unsupported stencil opcode: {op}")
 
+        def flush_dirty_spills():
+            for reg, stack_off in dirty_spills:
+                reg_enum = _REG_NAME_TO_ENUM[reg.lower()]
+                if reg_enum <= Reg.R7:
+                    emit(f"STR {reg}, [r1, #{stack_off}]", asm.str_imm(reg_enum, Reg.R1, stack_off))
+                else:
+                    emit(f"STR {reg}, [r1, #{stack_off}]", asm.str_w_imm12(reg_enum, Reg.R1, stack_off))
+
         # 5. Emit Epilogue: Flush Dirty Spill Variables before POP
-        for reg, stack_off in dirty_spills:
-            reg_enum = _REG_NAME_TO_ENUM[reg.lower()]
-            if reg_enum <= Reg.R7:
-                emit(f"STR {reg}, [r1, #{stack_off}]", asm.str_imm(reg_enum, Reg.R1, stack_off))
-            else:
-                emit(f"STR {reg}, [r1, #{stack_off}]", asm.str_w_imm12(reg_enum, Reg.R1, stack_off))
+        flush_dirty_spills()
 
         if exit_kind == "return":
             emit_stencil(self.stencils["epilogue_return"])
         elif exit_kind == "fallback":
             emit_stencil(self.stencils["fallback_interp"])
+
+        # 5b. Trap tail: every FastAddressCheck failure above lands here, regardless of the
+        # trace's own exit_kind. The bounds check runs strictly before the faulting load/store,
+        # so no partial side effect has happened yet and it is always safe to flush spills and
+        # fall back into the interpreter at the same WASM PC -- which owns TrapCode.OUT_OF_BOUNDS
+        # handling, including halting the guest task if it cannot recover. See {vMMIO_TrapAndEmulate}.
+        self.last_oob_fixups = list(oob_branch_fixups)
+        self.last_trap_tail_byte_addr = None
+        if oob_branch_fixups:
+            trap_tail_byte_addr = self.byte_write_pos
+            self.last_trap_tail_byte_addr = trap_tail_byte_addr
+            flush_dirty_spills()
+            emit_stencil(self.stencils["fallback_interp"])
+
+            for branch_byte_addr in oob_branch_fixups:
+                rel_offset = trap_tail_byte_addr - (branch_byte_addr + 4)
+                patched = asm.b_cond_w(Cond.HS, rel_offset)
+                self.byte_cache[branch_byte_addr:branch_byte_addr + len(patched)] = patched
 
         # 6. Patch inlined JIT Trace Header
         total_trace_bytes = self.byte_write_pos - header_byte_offset
@@ -347,7 +464,7 @@ class CopyPatchJITEngine:
             head_wasm_pc=head_wasm_pc,
             trace_size_bytes=total_trace_bytes,
             flags=0,
-            variant_id=0,
+            variant_id=variant_id,
             chain_next_pc=chain_next_pc,
             chain_target_addr=chain_target_addr,
         )
@@ -360,6 +477,96 @@ class CopyPatchJITEngine:
         self.last_trace_byte_range = (code_start_byte_offset, self.byte_write_pos - code_start_byte_offset)
         self.last_trace_header_range = (header_byte_offset, JITTraceHeader.SIZE_BYTES)
         return (code_start_inst_offset, total_emitted - 1)
+
+    # --- Intra-Trace Variant Compatibility & Reconciliation Glue ---
+    #
+    # This is about consecutive STENCILS within a single compile_trace() call,
+    # NOT about chaining between two separately-compiled traces. Trace-boundary
+    # chaining ({JIT_LazyChaining}) always goes through memory -- every trace's
+    # prologue reloads from the canonical stack_bot-relative address and every
+    # exit writes back there, regardless of the neighboring trace's variant (see
+    # jit_compiler.md 8 "トレース境界とチェイニングの安全性" / {ADR_TosCacheAsymmetry}).
+    # That's a settled, separate design; nothing here changes it.
+    #
+    # What's still open is *inside* one trace: today every WASM op maps to
+    # exactly one hardcoded stencil (no dynamic depth-based selection -- see the
+    # NOTE in docs/specs/jit_stencil_catalog.md 3.8), so two consecutive stencils
+    # can never actually disagree on which register holds which role. If a
+    # future per-trace register allocator changes that, this is the mechanism
+    # that keeps it correct: VARIANT_REGISTER_MAPS records, for each variant_id,
+    # which logical roles (TOS/NOS/NNOS) are register-resident and where, and
+    # emit_variant_reconciliation_glue() emits whatever MOVs are needed to carry
+    # values from one stencil's output layout into the next stencil's expected
+    # input layout, inline in the same instruction stream (no branch -- this is
+    # sequential code in one trace, not a jump to another compilation unit).
+    # mem_base/mem_size/local_param are deliberately excluded from the register
+    # maps: they're loaded once at trace entry and held fixed for the trace's
+    # whole body, never re-negotiated between stencils.
+
+    def emit_variant_reconciliation_glue(self, source_variant_id: int, target_variant_id: int) -> bool:
+        """Emits, inline at the engine's current write position, the MOVs needed to
+        carry source_variant_id's register-resident values into target_variant_id's
+        expected layout before the next stencil runs. Must be called with a W^X
+        patch transaction already open (e.g. from inside compile_trace()'s op loop).
+
+        Returns True if the transition is representable (possibly zero MOVs, if the
+        layouts already agree) or False if target_variant_id needs a role
+        source_variant_id never produced -- no MOV sequence can synthesize a value
+        that was never computed; a well-formed trace should never reach this.
+        """
+        source_map = VARIANT_REGISTER_MAPS[source_variant_id]
+        target_map = VARIANT_REGISTER_MAPS[target_variant_id]
+        if not set(target_map).issubset(source_map):
+            return False
+
+        moves = {target_map[role]: source_map[role]
+                 for role in target_map if source_map[role] != target_map[role]}
+        asm = Thumb2Assembler()
+        for dst, src in _order_register_moves(moves):
+            self._emit_bytes(asm.mov_reg(dst, src))
+        return True
+
+
+VARIANT_REGISTER_MAPS: dict[int, dict[str, Reg]] = {
+    0: {},
+    1: {"TOS": Reg.R4},
+    2: {"TOS": Reg.R4, "NOS": Reg.R5},
+    3: {"TOS": Reg.R4, "NOS": Reg.R5, "NNOS": Reg.R6},
+}
+
+
+def _order_register_moves(moves: dict[Reg, Reg]) -> list[tuple[Reg, Reg]]:
+    """Sequences a parallel register-to-register move set (dst -> src) into a
+    correct sequential MOV order, using R12 to break cycles (the classic
+    permutation-shuffle problem: a straight MOV order corrupts a swap, since the
+    second MOV would read back the value the first MOV just overwrote).
+
+    R12 is used as scratch because it is Intra-Call Scratch (never a Callee-saved
+    assignable-pool register, never live across a chain boundary on its own)."""
+    remaining = dict(moves)
+    ordered: list[tuple[Reg, Reg]] = []
+    while remaining:
+        # A "leaf" dst is never itself read as someone else's src -- safe to move now
+        # without clobbering a value some other pending move still needs to read.
+        leaf = next((d for d in remaining if d not in remaining.values()), None)
+        if leaf is not None:
+            ordered.append((leaf, remaining.pop(leaf)))
+            continue
+        # Everything left forms a pure cycle (e.g. a straight R4<->R5 swap): no dst
+        # is safe to overwrite first without losing a value another move still
+        # needs. Break it by saving the starting value in R12, walking the cycle
+        # with ordinary MOVs, and closing the loop with a MOV from R12.
+        start = next(iter(remaining))
+        ordered.append((Reg.R12, start))
+        node = start
+        while True:
+            src = remaining.pop(node)
+            if src == start:
+                ordered.append((node, Reg.R12))
+                break
+            ordered.append((node, src))
+            node = src
+    return ordered
 
 
 # ==============================================================================
@@ -378,6 +585,55 @@ def test_full_stencil_library_coverage():
         for tok in st.hex_bytes.split():
             assert len(tok) == 2 and set(tok) <= hex_digits, \
                 f"Stencil {name} hex_bytes token {tok!r} is not a valid byte"
+
+
+def test_stencil_variant_ids_match_the_documented_table():
+    """docs/specs/jit_stencil_catalog.md 3.8 is the source of truth for which stencil
+    belongs to which trace-boundary register variant (Depth 0..3). Stencil.variant_id
+    is derived from the name rather than hand-set per entry precisely so it cannot
+    drift from that name -- this test instead guards the table (in the .md) against
+    drifting from the code, by pinning a representative sample from every row."""
+    engine = CopyPatchJITEngine()
+    expected = {
+        # Depth 0 (Empty): next stencil generates a value from nothing.
+        "i32_const_d0": 0, "i64_const_d0": 0, "local_get_d0": 0,
+        "global_get_d0": 0, "memory_size_d0": 0,
+        # Depth 1 (TOS only, R4).
+        "i32_const_d1": 1, "local_set_d1": 1, "local_tee_d1": 1, "global_set_d1": 1,
+        "br_if_d1": 1, "i32_eqz_d1": 1, "i32_clz_d1": 1, "i32_ctz_d1": 1,
+        # Depth 2 (TOS+NOS, R4+R5): every binary arithmetic/comparison stencil.
+        "i32_add_d2": 2, "i32_sub_d2": 2, "i32_mul_d2": 2, "i32_eq_d2": 2, "i32_lt_s_d2": 2,
+        # Depth 3 (TOS+NOS+NNOS, R4+R5+R6): select is the only Depth-3 stencil.
+        "select_d3": 3,
+        # The _r8 memory stencils build on top of an existing depth rather than
+        # introducing their own: loads reuse Depth 1 (R4=addr), stores reuse
+        # Depth 2 (R4=val, R5=addr).
+        "i32_load_r8": 1, "i32_load8_s_r8": 1, "i32_load16_u_r8": 1,
+        "i32_store_r8": 2, "i32_store8_r8": 2, "i32_store16_r8": 2,
+        # Prologue/epilogue/control-flow stencils have no depth-variant meaning.
+        "prologue_full": None, "epilogue_return": None, "fallback_interp": None,
+        "unreachable": None, "nop": None, "br": None, "external_call_stub": None,
+    }
+    for name, variant_id in expected.items():
+        assert name in engine.stencils, f"expected stencil {name!r} is missing from the catalog"
+        actual = engine.stencils[name].variant_id
+        assert actual == variant_id, (
+            f"{name}: variant_id={actual}, expected {variant_id} per "
+            f"docs/specs/jit_stencil_catalog.md 3.8"
+        )
+
+    # Every stencil must be accounted for: either it matches a documented depth
+    # suffix, or it's one of the no-depth-meaning control/prologue stencils.
+    no_depth_meaning = {"prologue_full", "epilogue_return", "fallback_interp",
+                        "unreachable", "nop", "br", "external_call_stub"}
+    for name, st in engine.stencils.items():
+        if name in no_depth_meaning:
+            assert st.variant_id is None, f"{name} should have no variant_id, got {st.variant_id}"
+        else:
+            assert st.variant_id is not None, (
+                f"{name} has no variant_id -- add it to jit_stencil_catalog.md 3.8's table "
+                f"and to Stencil._R8_BASE_VARIANT if it's an _r8 memory stencil"
+            )
 
 
 def test_stencil_catalog_matches_assembler():
@@ -409,16 +665,16 @@ def test_stencil_catalog_matches_assembler():
         "local_get_d0": asm.ldr_imm(Reg.R4, Reg.R1, 0),
         "local_set_d1": asm.str_imm(Reg.R4, Reg.R1, 0),
         "local_tee_d1": asm.str_imm(Reg.R4, Reg.R1, 0),
-        "global_get_d0": asm.ldr_w_imm12(Reg.R3, Reg.R2, 0x0C) + asm.ldr_w_imm12(Reg.R4, Reg.R3, 0),
-        "global_set_d1": asm.ldr_w_imm12(Reg.R3, Reg.R2, 0x0C) + asm.str_w_imm12(Reg.R4, Reg.R3, 0),
+        "global_get_d0": asm.ldr_w_imm12(Reg.R12, Reg.R2, 0x08) + asm.ldr_w_imm12(Reg.R4, Reg.R12, 0),
+        "global_set_d1": asm.ldr_w_imm12(Reg.R12, Reg.R2, 0x08) + asm.str_w_imm12(Reg.R4, Reg.R12, 0),
         "memory_size_d0": asm.ldr_w_imm12(Reg.R4, Reg.R2, 4),
         "i32_add_d2": asm.adds_reg(Reg.R4, Reg.R5, Reg.R4),
         "i32_sub_d2": asm.subs_reg(Reg.R4, Reg.R5, Reg.R4),
         "i32_mul_d2": asm.mul(Reg.R4, Reg.R5, Reg.R4),
         "i32_div_s_d2": asm.sdiv(Reg.R4, Reg.R5, Reg.R4),
         "i32_div_u_d2": asm.udiv(Reg.R4, Reg.R5, Reg.R4),
-        "i32_rem_s_d2": asm.sdiv(Reg.R3, Reg.R5, Reg.R4) + asm.mls(Reg.R4, Reg.R3, Reg.R4, Reg.R5),
-        "i32_rem_u_d2": asm.udiv(Reg.R3, Reg.R5, Reg.R4) + asm.mls(Reg.R4, Reg.R3, Reg.R4, Reg.R5),
+        "i32_rem_s_d2": asm.sdiv(Reg.R12, Reg.R5, Reg.R4) + asm.mls(Reg.R4, Reg.R12, Reg.R4, Reg.R5),
+        "i32_rem_u_d2": asm.udiv(Reg.R12, Reg.R5, Reg.R4) + asm.mls(Reg.R4, Reg.R12, Reg.R4, Reg.R5),
         "i32_and_d2": asm.ands_reg(Reg.R4, Reg.R5),
         "i32_or_d2": asm.orrs_reg(Reg.R4, Reg.R5),
         "i32_xor_d2": asm.eors_reg(Reg.R4, Reg.R5),
@@ -428,8 +684,8 @@ def test_stencil_catalog_matches_assembler():
         "i32_rotr_d2": asm.ror_w(Reg.R4, Reg.R5, Reg.R4),
         "i32_clz_d1": asm.clz(Reg.R4, Reg.R4),
         "i32_ctz_d1": asm.rbit(Reg.R4, Reg.R4) + asm.clz(Reg.R4, Reg.R4),
-        "i32_load_r3": asm.ands_reg(Reg.R4, Reg.R6) + asm.ldr_w_reg(Reg.R4, Reg.R3, Reg.R4),
-        "i32_store_r3": asm.ands_reg(Reg.R5, Reg.R6) + asm.str_w_reg(Reg.R4, Reg.R3, Reg.R5),
+        "i32_load_r8": asm.ldr_w_reg(Reg.R4, Reg.R8, Reg.R4),
+        "i32_store_r8": asm.str_w_reg(Reg.R4, Reg.R8, Reg.R5),
     }
 
     for name, encoded in checks.items():
@@ -458,8 +714,9 @@ def test_stencil_catalog_matches_assembler():
         f"Stencil 'external_call_stub' POP half drifted: catalog={call_hex!r} expected suffix={pop_expected!r}"
     )
 
-    # i32_rotl_d2: RSB r3,r4,#32 (amount = 32 - shift) then ROR.W r4,r5,r3.
-    rotl_expected = h(asm.rsb_imm(Reg.R3, Reg.R4, 32) + asm.ror_w(Reg.R4, Reg.R5, Reg.R3))
+    # i32_rotl_d2: RSB r12,r4,#32 (amount = 32 - shift) then ROR.W r4,r5,r12. R12 scratch,
+    # not R3 -- R3 is local_param now.
+    rotl_expected = h(asm.rsb_imm(Reg.R12, Reg.R4, 32) + asm.ror_w(Reg.R4, Reg.R5, Reg.R12))
     assert rotl_expected == engine.stencils["i32_rotl_d2"].hex_bytes, (
         f"Stencil 'i32_rotl_d2' drifted from the assembler: "
         f"catalog={engine.stencils['i32_rotl_d2'].hex_bytes!r} assembler={rotl_expected!r}"
@@ -508,8 +765,14 @@ def test_arithmetic_and_logic_traces():
 
     code = engine.execute_native(start_pos, count)
     assert code[0] == "PUSH.W {r4-r6, r8-r11, lr}"
-    assert "MOVW r4, #100" in code[1]
-    assert code[-1] == "POP.W {r4-r6, r8-r11, pc}"
+    # ops include i32.load/i32.store, so the prologue also pins R8=mem_base/R9=mem_size,
+    # and the trace grows a trap tail (FastAddressCheck fallback to the interpreter) after
+    # the normal return path.
+    assert code[1] == "LDR.W r8, [r2, #0x00]"
+    assert code[2] == "LDR.W r9, [r2, #0x04]"
+    assert "MOVW r4, #100" in code[3]
+    assert "POP.W {r4-r6, r8-r11, pc}" in code
+    assert code[-1] == "BX r12"
 
 
 def test_external_aapcs_call_stub():
@@ -544,6 +807,119 @@ def test_cps_shared_registers_never_clobbered():
         dest = operands.split(",")[0].strip()
         assert dest not in ("r0", "r1", "r2", "R0", "R1", "R2"), \
             f"Instruction '{inst}' illegal write to shared CPS register"
+
+
+def test_fast_address_check_traps_before_access():
+    """FastAddressCheck/MemoryBoundaryCheck: OOB address must trap to the interpreter, not wrap.
+
+    Bounds checking is size-comparison based (no mask, no power-of-two constraint on mem-size).
+    The check must precede the actual load/store, and the placeholder BHS.W branch emitted for
+    it must be back-patched to a real (non-placeholder) offset pointing at the trace's trap
+    tail -- an un-patched offset=0 branch would silently fall through into the faulting access.
+    """
+    engine = CopyPatchJITEngine()
+    asm = Thumb2Assembler()
+    ops = [("i32.const", 0), ("i32.load", None)]
+
+    start_pos, count = engine.compile_trace(ops)
+    code = engine.execute_native(start_pos, count)
+
+    assert "CMP r4, r9" in code
+    assert "BHS.W <trap>" in code
+    assert "LDR.W r4, [r8, r4]" in code
+    # The bounds check + branch must be emitted strictly before the access it guards.
+    assert code.index("BHS.W <trap>") < code.index("LDR.W r4, [r8, r4]")
+
+    assert len(engine.last_oob_fixups) == 1
+    assert engine.last_trap_tail_byte_addr is not None
+    branch_byte_addr = engine.last_oob_fixups[0]
+    rel_offset = engine.last_trap_tail_byte_addr - (branch_byte_addr + 4)
+    assert rel_offset > 0, "trap tail must be patched to a real forward offset, not left at 0"
+    expected_bytes = asm.b_cond_w(Cond.HS, rel_offset)
+    patched_bytes = bytes(engine.byte_cache[branch_byte_addr:branch_byte_addr + len(expected_bytes)])
+    assert patched_bytes == expected_bytes, "BHS.W placeholder was not back-patched to the trap tail"
+
+    # The trap tail itself must reach the interpreter fallback (POP + BX r12), never a bare return.
+    assert code[-1] == "BX r12"
+
+
+def test_memory_access_without_bounds_check_is_impossible():
+    """No memory-access stencil is reachable from compile_trace() without the CMP/BHS.W guard --
+    i.e. there is no code path left that performs a raw unchecked load/store (the old mask-based
+    ANDS design silently wrapped instead of trapping; the design now requires a trap on OOB)."""
+    for op in ("i32.load", "i32.load8_s", "i32.load8_u", "i32.load16_s", "i32.load16_u",
+               "i32.store", "i32.store8", "i32.store16"):
+        engine = CopyPatchJITEngine()
+        ops = [("i32.const", 0)] if op.startswith("i32.load") else [("i32.const", 0), ("i32.const", 0)]
+        ops.append((op, None))
+        start_pos, count = engine.compile_trace(ops)
+        code = engine.execute_native(start_pos, count)
+        assert "BHS.W <trap>" in code, f"{op} compiled without a FastAddressCheck guard"
+    del engine
+
+
+def test_variant_reconciliation_glue_same_variant_emits_nothing():
+    """Depth 2 -> Depth 2 (the only real transition today) must be a no-op: the next
+    stencil already finds TOS/NOS exactly where it left them, no MOVs needed."""
+    engine = CopyPatchJITEngine()
+    engine.begin_jit_patch()
+    start_pos = engine.byte_write_pos
+    ok = engine.emit_variant_reconciliation_glue(source_variant_id=2, target_variant_id=2)
+    engine.commit_jit_patch()
+    assert ok is True
+    assert engine.byte_write_pos == start_pos, "identical layouts must not emit any MOV"
+
+
+def test_variant_reconciliation_glue_subset_emits_nothing():
+    """A Depth-2 exit feeding a Depth-1 entry needs no reconciliation either: the
+    entry only reads TOS (R4), which the Depth-2 layout already has in R4 too."""
+    engine = CopyPatchJITEngine()
+    engine.begin_jit_patch()
+    start_pos = engine.byte_write_pos
+    ok = engine.emit_variant_reconciliation_glue(source_variant_id=2, target_variant_id=1)
+    engine.commit_jit_patch()
+    assert ok is True
+    assert engine.byte_write_pos == start_pos
+
+
+def test_variant_reconciliation_glue_rejects_missing_value():
+    """A Depth-1 exit cannot feed a Depth-2 entry: the entry needs a NOS value the
+    predecessor never computed, and no MOV sequence can synthesize a value that was
+    never produced. This should never actually arise in a well-formed trace (depth
+    only grows via real pushes), but the mechanism must fail closed if it did."""
+    engine = CopyPatchJITEngine()
+    engine.begin_jit_patch()
+    ok = engine.emit_variant_reconciliation_glue(source_variant_id=1, target_variant_id=2)
+    engine.commit_jit_patch()
+    assert ok is False
+
+
+def test_variant_reconciliation_glue_emits_real_swap_bytes():
+    """Structural check that a genuine register-layout mismatch (same role set,
+    different physical registers -- what a future allocator could produce) emits the
+    real cycle-safe MOV sequence, not a placeholder. Semantic correctness on actual
+    hardware is proven separately in jit_trace_execution_verifier.py (Unicorn)."""
+    engine = CopyPatchJITEngine()
+    asm = Thumb2Assembler()
+    # A synthetic alt-Depth-2 layout (TOS=R5, NOS=R4) swapped relative to the real one,
+    # standing in for a hypothetical future allocator output -- not a real variant_id.
+    engine.begin_jit_patch()
+    start_pos = engine.byte_write_pos
+    moves = {Reg.R4: Reg.R5, Reg.R5: Reg.R4}
+    for dst, src in _order_register_moves(moves):
+        engine._emit_bytes(asm.mov_reg(dst, src))
+    engine.commit_jit_patch()
+    emitted = bytes(engine.byte_cache[start_pos:engine.byte_write_pos])
+    expected = asm.mov_reg(Reg.R12, Reg.R4) + asm.mov_reg(Reg.R4, Reg.R5) + asm.mov_reg(Reg.R5, Reg.R12)
+    assert emitted == expected
+
+
+def test_order_register_moves_breaks_swap_cycle_correctly():
+    """A straight R4<->R5 swap is the classic case a naive move-ordering corrupts: emitting
+    MOV r4,r5 then MOV r5,r4 would make r5 end up equal to r4's NEW (already-overwritten)
+    value instead of its original one. _order_register_moves must route through R12."""
+    moves = _order_register_moves({Reg.R4: Reg.R5, Reg.R5: Reg.R4})
+    assert moves == [(Reg.R12, Reg.R4), (Reg.R4, Reg.R5), (Reg.R5, Reg.R12)]
 
 
 def test_epilogue_spill_variable_flush():
@@ -606,11 +982,19 @@ def test_jit_trace_header_layout():
 
 if __name__ == "__main__":
     test_full_stencil_library_coverage()
+    test_stencil_variant_ids_match_the_documented_table()
     test_stencil_catalog_matches_assembler()
     test_arithmetic_and_logic_traces()
     test_external_aapcs_call_stub()
     test_epilogue_spill_variable_flush()
     test_cps_shared_registers_never_clobbered()
+    test_fast_address_check_traps_before_access()
+    test_memory_access_without_bounds_check_is_impossible()
+    test_variant_reconciliation_glue_same_variant_emits_nothing()
+    test_variant_reconciliation_glue_subset_emits_nothing()
+    test_variant_reconciliation_glue_rejects_missing_value()
+    test_variant_reconciliation_glue_emits_real_swap_bytes()
+    test_order_register_moves_breaks_swap_cycle_correctly()
     test_mpu_wx_protection()
     test_jit_trace_header_layout()
     print("[PASS] All JIT Copy-and-Patch Full-Set concept tests passed successfully.")

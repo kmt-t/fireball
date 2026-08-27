@@ -194,6 +194,21 @@ class Thumb2Assembler:
         return struct.pack("<H", code)
 
     @staticmethod
+    def cmp_reg_t2(rn: Reg, rm: Reg) -> bytes:
+        """CMP Rn, Rm (16-bit, T2 encoding) -> 4500 | (N << 7) | (Rm << 3) | rn_low3
+
+        Unlike cmp_reg (T1), Rm may be any register R0-R14, at the cost of only
+        3 bits of Rn (extended to the full register via the N bit) -- the ARM-
+        documented form for comparing a low register against a high one. Per the
+        architecture reference this encoding is UNPREDICTABLE if both Rn and Rm
+        are low registers (use cmp_reg/T1 for that case) or if either is PC."""
+        assert rn != Reg.PC and rm != Reg.PC, "CMP (T2) does not accept PC"
+        assert not (rn < Reg.R8 and rm < Reg.R8), "use cmp_reg (T1) when both operands are low registers"
+        n = 1 if rn >= Reg.R8 else 0
+        code = 0x4500 | (n << 7) | (rm << 3) | (rn & 7)
+        return struct.pack("<H", code)
+
+    @staticmethod
     def cmp_imm8(rn: Reg, imm8: int) -> bytes:
         """CMP Rn, #imm8 (16-bit) -> 2800 | (rn << 8) | imm8"""
         _check_low_reg(rn)
@@ -558,6 +573,17 @@ def test_known_thumb2_encoding_reference_values():
     # STENCIL_LOCAL_SET_D1: str r4, [r1, #0] -> 0C 60
     str_d1 = asm.str_imm(Reg.R4, Reg.R1, 0)
     assert _hex(str_d1) == "0C 60", f"Got {_hex(str_d1)}"
+
+    # CMP R0, R8 (T2, Rm high) -> 40 45 -- classic textbook reference value for this encoding
+    cmp_t2_ref = asm.cmp_reg_t2(Reg.R0, Reg.R8)
+    assert _hex(cmp_t2_ref) == "40 45", f"Got {_hex(cmp_t2_ref)}"
+
+    # FastAddressCheck bounds check against mem_size pinned in R9 (R8=mem_base, R9=mem_size):
+    # cmp r4, r9 -> 4C 45 ; cmp r5, r9 -> 4D 45
+    cmp_r4_r9 = asm.cmp_reg_t2(Reg.R4, Reg.R9)
+    assert _hex(cmp_r4_r9) == "4C 45", f"Got {_hex(cmp_r4_r9)}"
+    cmp_r5_r9 = asm.cmp_reg_t2(Reg.R5, Reg.R9)
+    assert _hex(cmp_r5_r9) == "4D 45", f"Got {_hex(cmp_r5_r9)}"
 
 
 if __name__ == "__main__":

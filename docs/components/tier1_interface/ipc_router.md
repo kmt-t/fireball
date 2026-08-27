@@ -390,7 +390,7 @@ stateDiagram-v2
 
 ### 4.3.1 二分探索による O(log N) 低遅延ルックアップ
 <!-- traceability: {LowLatencyLookup} {META_AccessDictionary} {META_FlatMapIndexed} -->
-* **サービス検索**: サービスレジストリ（URI から channel_id への解決）は、コンパイル時にソートされた URI 文字列スパンに対して二分探索を行うことで、動的なアロケーションを行うことなく $O(\log N)$ の低遅延名前解決を達成する。実測は [`benchmarks/low_latency_lookup_bench.py`](benchmarks/low_latency_lookup_bench.py)（`fireball::flat_map_view` の二分探索を直接計測、線形探索比較付き）を参照。`ipc_router_concept.py` の現行実装がまだ辞書ベースで `flat_map_view` に未移行である点は既知の乖離として残っている。 `{LowLatencyLookup}`
+* **サービス検索**: サービスレジストリ（URI から channel_id への解決）は、コンパイル時にソートされた URI 文字列スパンに対して二分探索を行うことで、動的なアロケーションを行うことなく $O(\log N)$ の低遅延名前解決を達成する。`ipc_router_concept.py` の `IPCRouter.registry` は `fireball::flat_map_view`（[`flat_view_concept.py`](../tier1_core/concepts/flat_view_concept.py) の `FlatMapView`）そのものであり、`find()` による二分探索でルックアップする——辞書ベース実装からの移行は完了している。実測は [`benchmarks/low_latency_lookup_bench.py`](benchmarks/low_latency_lookup_bench.py)（同一の `FlatMapView` を直接計測、線形探索比較付き）を参照。この計測は IPC ルータの実サービス数（通常 ≤ 16）ではなく $O(\log N)$ の漸近的な成長特性そのものを N=1,000〜1,000,000 の範囲で検証するものであり、キー数を1000倍にしても `flat_map_view` のルックアップ時間は約1.0倍（線形探索は約1,100倍）にしか増えないことを実測している。 `{LowLatencyLookup}`
 * **メッセージ内検索**: メッセージの引数（KVマップ）は、キー値を昇順にソートした固定長配列（静的 flat_map 構造）として実装され、受信側でのパラメータ探索に $O(\log N)$ の二分探索を適用し、ゼロコスト抽象化を保証する。 `{META_AccessDictionary}` `{META_FlatMapIndexed}`
 
 ### 4.3.2 CSP Handoff スターベーション防止対策

@@ -57,7 +57,8 @@ HAL全体の制限値を定義する。 `{META_ConfigurableSystem}`
 <!-- traceability: {RSP_Transport_Selectable} {TaskPollInterruptFlag} {GLOBAL_InterruptWakeup} -->
 - **コマンドルーティング**: IPCで受信したコマンド（read/write等）を、デバイスIDに基づいて適切なドライバへ振り分ける。
 - **RSPパケット解析**: UARTまたはRTTから受信したRSPパケットを解析し、`debug_command` 構造体へ変換してコマンドキューへ投入する。 `{RSP_Transport_Selectable}`
-- **割り込み通知**: 物理割り込み発生時、ISR は COOS の `notify_interrupt(irq_id)` を呼び、INT イベントを有界キューへ投函するのみとする。**ISR がタスク状態を直接書き換えることはない。**実際の READY 遷移は、スケジューラが yield 点でキューをドレインする際に行われる（[`os_coos.md`](../tier1_core/os_coos.md) 4.1「割り込みウェイクアップ」を正本とする）。この非同期境界の分離が vSoC 実行状態モデルの `irq_jit_race_freedom_proof` が証明している性質である。 `{TaskPollInterruptFlag}` `{GLOBAL_InterruptWakeup}`
+- **割り込み通知（push）**: 物理割り込み発生時、ISR は COOS の `notify_interrupt(irq_id)` を呼び、INT イベントを有界キューへ投函するのみとする。**ISR がタスク状態を直接書き換えることはない。**実際の READY 遷移は、スケジューラが yield 点でキューをドレインする際に行われる（[`os_coos.md`](../tier1_core/os_coos.md) 4.1「割り込みウェイクアップ」を正本とする）。この非同期境界の分離が vSoC 実行状態モデルの安全性検証項目 `irq_jit_race_freedom_proof`（[形式検証モデル](../tier2_runtime/formal/vsoc_state_model.py)の CTL 安全性検証 `AG(Not(handling_irq & jit_mode))` として証明されている）性質である。
+- **割り込み確認（pull）**: `{TaskPollInterruptFlag}` が定義するもう一方の経路として、ゲスト実行エンジン（JIT/インタープリタ）は Safepoint で `vsoc_context.interrupt_flags` を自ら確認する。この pull 側の実装（Safepoint 埋め込み位置、フラグ構造）は HAL の管轄外であり、[`runtime_vsoc.md` 4.2.1](../tier2_runtime/runtime_vsoc.md#421-safepoint-と-jit-キャッシュ協調モデル) を正本とする。 `{TaskPollInterruptFlag}` `{GLOBAL_InterruptWakeup}`
 
 ### 4.2 状態遷移図
 <!-- traceability: {RSP_Transport_Selectable} {TaskPollInterruptFlag} {GLOBAL_InterruptWakeup} -->
@@ -141,7 +142,7 @@ sequenceDiagram
 
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | デバイス通信に使用する静的固定長バッファプールからスロットを一つ確保する。**確保されたバッファは vMMIO の共有メモリ領域（SHM領域: `0xE000_0000`〜、静的アロケーション）のスロットにマッピングされる。** |
+| 機能概要 | デバイス通信に使用する静的固定長バッファプールからスロットを一つ確保する。**確保されたバッファは vMMIO の共有メモリ領域（SHM領域: `0xE000_0000`〜、静的アロケーション）のスロットにマッピングされる。** このアドレス範囲・ページ単位のレイアウトは [`runtime_vmmio.md` 4.6「共有メモリマッピング (FC=14)」](../tier2_runtime/runtime_vmmio.md#46-共有メモリマッピング-fc14)を正本とする。 |
 | シグネチャ | `acquire_buffer(size: バイト数) -> result<shm-id, recovery-strategy>` |
 | 引数 | `size`: 必要なバイト数 |
 | 戻り値 | 成功時は共有メモリアイデンティファイア (`shm-id`) `{IPC_ZeroCopy}` |
@@ -175,6 +176,7 @@ sequenceDiagram
 ### 5.3 URI/IPCインターフェイス
 <!-- traceability: {HAL_Interface} {URIAbstraction} -->
 - **URI**: `fireball://hal/<device_name>/<instance_id>`
+- **`device-id` との対応**: `device-id` は HAL 自身のデバイスレジストリ（3.1「デバイス識別子」）が静的に払い出す管理番号であり、初期化時に各デバイスドライバがその `device-id` を `channel` として `fireball://hal/<device_name>/<instance_id>` の URI で IPC ルータへ `register_service`（[`ipc_router.md`](../tier1_interface/ipc_router.md) 4.1.1「名前解決パイプライン」を正本とする）する。以後の `read`/`write`/`control` 呼び出しは、URI 文字列ではなくこの `device-id` を渡すが、これは Stage 1（URI 文字列の二分探索）を省略するためのキャッシュ済み参照キーに過ぎない。1章「すべてのアクセスはIPCルータを経由し」の通り、呼び出しは必ず IPC ルータの `role_matrix[sender_role][target_role]` 照合（[`ipc_router.md`](../tier1_interface/ipc_router.md) 4.1.1「Stage 2: Access Control」を正本とする）を経由する設計であり、**`device-id` へのキャッシュはこの照合を代替・省略しない**。
 
 ### 5.4 RSPトランスポート構成
 <!-- traceability: {RSP_Transport_Selectable} -->

@@ -42,7 +42,7 @@ Fireball の実行コアは、以下の 6 つの明確に命名された物理�
 <!-- traceability: {ContextPointerRegister} {MemoryBoundaryCheck} {ThreadedInterpreter} -->
 - **物理実体**: 単一の連続した固定長メモリバッファ（2KB〜4KB）。
 - **物理レイアウト**:
-  1. **スタックボトム (`+0x00`)**: `execution_context` 構造体が固定配置される（SP長 `sp_offset`、フレームオフセット `frame_offset`、リニアメモリ基底 `mem_base`、セーフポイントフラグ等を保持）。
+  1. **スタックボトム (`+0x00`)**: `execution_context` 構造体が固定配置される（SP長 `sp_offset`、フレームオフセット `frame_offset`、スタック境界 `sp_boundary`、ハンドラテーブル参照等を保持——リニアメモリ基底 `mem_base` は `vsoc_runtime`（`R2: env`）側が所有する。§3.2 参照）。
   2. **スタック中間〜トップ**: `CallFrame`（親フレームオフセット、戻り先PC）、`Function Locals`（ローカル変数スロット）、`Operand Stack`（計算用オペランド）、`ControlFrames`（ブロック・ループ分岐情報）が単一の配列上にインラインで積層される。
 - **レジスタ渡し規約**:
   - `R1: stack_bot`（スタックボトム基底ポインタ）が全バイトコードハンドラおよび JIT トレースへ不変で渡される。
@@ -130,10 +130,10 @@ ARM Cortex-M33 (ARMv8-M Mainline) における物理レジスタの厳格な役�
 | **`R0`** | Argument 1 / Scratch | `ip` (WASM PC) | `ip` (WASM PC) | 継続渡し（CPS）第1引数。現在実行中のバイトコード位置。 |
 | **`R1`** | Argument 2 / Scratch | `stack_bot` | `stack_bot` | 継続渡し（CPS）第2引数。統合スタックボトム基底ポインタ `{ContextPointerRegister}`。 |
 | **`R2`** | Argument 3 / Scratch | `env` | `env` | 継続渡し（CPS）第3引数。ランタイム環境ポインタ `{EnvironmentPointer}`。 |
-| **`R3`** | Argument 4 / Scratch | `scratch` (解放) | **`Spill / Scratch` (任意)** | **Caller-saved スクラッチ / スピル**。トレース単位でコンテキスト変数（`mem_base`, `local_base` 等）をピン留め、または一時演算スクラッチ。 |
+| **`R3`** | Argument 4 / Scratch | `scratch` (解放) | **`mem_base` / `local_param` （いずれか一方に固定ピン留め）/ Scratch** | **Caller-saved スクラッチ / スピル**。メモリアクセス系ステンシルでは常に `mem_base`（`vsoc_runtime.mem_base` からロード）を保持する。`local.get`/`set`/`tee` の現行ステンシル（`docs/specs/wasm_instruction_set.md` 3.3）は `R1（stack_bot）` からの単一の即値オフセットのみで実装され `R3` を参照しないため、現行実装では同一トレース内に `local.get` と `i32.load` が混在しても `R3` の役割が衝突することはない。ただし `local_base` が再帰・共有呼び出し深さによりコンパイル時定数へ畳み込めない場合は `local_param` として `R3` にピン留めする必要があり（[`jit_stencil_catalog.md` 3.8](../specs/jit_stencil_catalog.md)「`local_param` ピン留めバリアント」を正本とする）、この場合は `mem_base` と排他——両方を要するトレースはコンパイル対象から除外しインタープリタへ委ねる。 |
 | **`R4`** | Callee-saved | (保全) | **`Assignable Pool 0` (TOS等)** | **役割任意割当レジスタ 0**。スタックトップキャッシュ (TOS)、コンテキストスピル、ローカル変数等からトレース単位でバインド。 |
-| **`R5`** | Callee-saved | (保全) | **`Assignable Pool 1` (NOS等)** | **役割任意割当レジスタ 1**。スタック次段キャッシュ (NOS)、リニアメモリ基底 (`mem_base`) 等。 |
-| **`R6`** | Callee-saved | (保全) | **`Assignable Pool 2`** | **役割任意割当レジスタ 2**。メモリマスク (`mem_mask`)、ローカル変数基底 (`local_base`) 等。 |
+| **`R5`** | Callee-saved | (保全) | **`Assignable Pool 1` (NOS等)** | **役割任意割当レジスタ 1**。スタック次段キャッシュ (NOS) 等。 |
+| **`R6`** | Callee-saved | (保全) | **`Assignable Pool 2`（メモリアクセス時は `mem_size`）** | **役割任意割当レジスタ 2**。メモリアクセス系ステンシルでは `vsoc_runtime.mem_size`（境界比較の上限値、`{FastAddressCheck}` は `CMP addr, mem_size; BHS __trap` の比較命令——マスク演算は使わない）を保持し、メモリアクセスを含まないトレースでは他の役割任意割当に用いる。 |
 | **`R7`** | **Frame Pointer (FP)** | **FP (不可侵)** | **FP (不可侵)** | **AAPCS 標準フレームポインタ**。デバッガ・スタックアンワインドのため不変。 |
 | **`R8`** | Callee-saved | (保全) | **`Assignable Pool 3`** | **役割任意割当レジスタ 3**。高頻度ローカル変数 (`local[0]`)、ループカウンタ等。 |
 | **`R9`** | Callee-saved | (保全) | **`Assignable Pool 4`** | **役割任意割当レジスタ 4**。高頻度ローカル変数 (`local[1]`)、補助ポインタ等。 |
@@ -146,7 +146,7 @@ ARM Cortex-M33 (ARMv8-M Mainline) における物理レジスタの厳格な役�
 
 > [!NOTE]
 > **トレース単位のレジスタバインディングとステンシル・バリアント選択**:
-> JIT コンパイラはトレース解析時に、`R3`（Caller-saved）および `R4-R6, R8-R11`（Callee-saved 計7本）に対する最適な役割マップ（TOS/NOS、mem_base/mask、local変数、ループカウンタ）を決定する。トレース突入時に使用する Callee-saved レジスタを `PUSH`（必要に応じて初期ロード）、脱出（リターンまたはインタープリタフォールバック）時に**ダーティなスピル変数（TOS/NOS、レジスタ常駐ローカル変数、SPオフセット等）を統合スタックへ `STR` で確実に書き戻した上で `POP` 復元** することで、インタープリタとゼロ再構築で相互遷移しつつ、トレース内部を純粋なレジスタマシンとして超高速実行する。ステンシルはレジスタ割当バインディングに応じた事前コンパイル済みバリアントを選択して結合される。
+> JIT コンパイラはトレース解析時に、`R3`（Caller-saved）および `R4-R6, R8-R11`（Callee-saved 計7本）に対する最適な役割マップ（TOS/NOS、mem_base/mem_size、local変数、ループカウンタ）を決定する。トレース突入時に使用する Callee-saved レジスタを `PUSH`（必要に応じて初期ロード）、脱出（リターンまたはインタープリタフォールバック）時に**ダーティなスピル変数（TOS/NOS、レジスタ常駐ローカル変数、SPオフセット等）を統合スタックへ `STR` で確実に書き戻した上で `POP` 復元** することで、インタープリタとゼロ再構築で相互遷移しつつ、トレース内部を純粋なレジスタマシンとして超高速実行する。ステンシルはレジスタ割当バインディングに応じた事前コンパイル済みバリアントを選択して結合される。
 >
 > `local_base`（フレーム基底）は同一トレースが再帰呼び出しや異なる呼び出し深さから共有されうるため、統合スタック上の絶対位置が毎回異なる実行時値であり、トレース入口でコンテキスト構造体から毎回ロードする必要がある——コンパイル時定数には畳み込めない。一方、各ローカル変数スロットや現在のオペランドスタック深さ（`sp_offset`）は `local_base` からの静的に決まる相対オフセットに過ぎないため、Copy-and-Patch のパッチ適用時に即値として書き込まれ、独立したプールロールを持たない。`sp_offset` はトレース脱出時にのみ算出されコンテキスト構造体へ書き戻される。 `{ADR_TosCacheAsymmetry}`
 
@@ -206,15 +206,14 @@ Fireball は外部の AAPCS 準拠 C/C++ 関数（WASI ホストコール、vMMI
 | `+0x0E` | `loop_flag` | u8 |
 | `+0x0F` | （予約、4バイトアライメント） | — |
 
-#### `vsoc_runtime`（`R2: env` 起点、計16バイト）
+#### `vsoc_runtime`（`R2: env` 起点、計12バイト）
 正本: [`runtime_vsoc.md` 3.3](../components/tier2_runtime/runtime_vsoc.md) / [`vsoc_runtime.wit`](../components/tier2_runtime/wit/vsoc_runtime.wit)
 
 | オフセット | フィールド | 型 | 役割 |
 | :--- | :--- | :--- | :--- |
 | `+0x00` | `mem_base` | u32（アドレス値） | ゲストリニアメモリ開始アドレス |
-| `+0x04` | `mem_size` | u32 | ゲストリニアメモリ有効バイト数 |
-| `+0x08` | `mem_mask` | u32 | FastAddressCheck 境界マスク（`next_pow2(mem_size) - 1`） |
-| `+0x0C` | `globals_base` | u32（アドレス値） | グローバル変数配列開始アドレス |
+| `+0x04` | `mem_size` | u32 | ゲストリニアメモリ有効バイト数。`{FastAddressCheck}` の境界比較 `CMP addr, mem_size; BHS __trap` に直接使う（マスクは使わない、2の冪制約もない） |
+| `+0x08` | `globals_base` | u32（アドレス値） | グローバル変数配列開始アドレス |
 
 ---
 

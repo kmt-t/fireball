@@ -24,6 +24,7 @@ from jit_copy_patch_concept import CopyPatchJITEngine  # noqa: E402
 from unicorn import Uc, UC_ARCH_ARM, UC_MODE_THUMB, UC_ERR_EXCEPTION, UcError  # noqa: E402
 from unicorn.arm_const import (  # noqa: E402
     UC_ARM_REG_R2, UC_ARM_REG_R3, UC_ARM_REG_R4, UC_ARM_REG_R5, UC_ARM_REG_R6,
+    UC_ARM_REG_R8, UC_ARM_REG_R9, UC_ARM_REG_R12,
 )
 
 CODE_BASE = 0x8000
@@ -41,6 +42,7 @@ def _to_s32(x: int) -> int:
 
 
 def run_stencil(hex_bytes: str, r2: int = 0, r3: int = 0, r4: int = 0, r5: int = 0, r6: int = 0,
+                r8: int = 0, r9: int = 0, r12: int = 0,
                 mem_writes: dict[int, bytes] | None = None) -> dict:
     """Execute a stencil's raw bytes (+ a BKPT sentinel) and return final registers and memory."""
     code = bytes.fromhex(hex_bytes.replace(" ", "")) + bytes.fromhex("00BE")  # BKPT #0
@@ -58,6 +60,9 @@ def run_stencil(hex_bytes: str, r2: int = 0, r3: int = 0, r4: int = 0, r5: int =
     mu.reg_write(UC_ARM_REG_R4, _to_u32(r4))
     mu.reg_write(UC_ARM_REG_R5, _to_u32(r5))
     mu.reg_write(UC_ARM_REG_R6, _to_u32(r6))
+    mu.reg_write(UC_ARM_REG_R8, _to_u32(r8))
+    mu.reg_write(UC_ARM_REG_R9, _to_u32(r9))
+    mu.reg_write(UC_ARM_REG_R12, _to_u32(r12))
     try:
         mu.emu_start(CODE_BASE | 1, CODE_BASE + len(code))
     except UcError as e:
@@ -69,6 +74,9 @@ def run_stencil(hex_bytes: str, r2: int = 0, r3: int = 0, r4: int = 0, r5: int =
         "r4": mu.reg_read(UC_ARM_REG_R4),
         "r5": mu.reg_read(UC_ARM_REG_R5),
         "r6": mu.reg_read(UC_ARM_REG_R6),
+        "r8": mu.reg_read(UC_ARM_REG_R8),
+        "r9": mu.reg_read(UC_ARM_REG_R9),
+        "r12": mu.reg_read(UC_ARM_REG_R12),
         "mem_read": lambda addr, size: mu.mem_read(addr, size),
     }
 
@@ -131,7 +139,8 @@ ALU_CASES = [
 ]
 
 REM_CASES = [
-    # rem stencils use r3 as scratch (SDIV/UDIV r3,r5,r4 ; MLS r4,r3,r4,r5)
+    # rem stencils use r12 as scratch (SDIV/UDIV r12,r5,r4 ; MLS r4,r12,r4,r5) --
+    # not r3, which is local_param now (docs/specs/jit_stencil_catalog.md 3.8).
     ("i32_rem_s_d2", 7, _to_u32(-100), _to_u32(-100 - 7 * int(-100 / 7))),
     ("i32_rem_u_d2", 7, 100, 100 % 7),
 ]
@@ -192,45 +201,48 @@ def main() -> None:
                 f"{name}(r4={r4_in}, r5={r5_in}): got r4={result['r4']}, expected {expected}"
             )
 
-    # --- Memory Load/Store Stencils with FastAddressCheck Boundary Mask (r3=mem_base, r6=mem_mask) ---
+    # --- Memory Load/Store Stencils (r8=mem_base) ---
+    # r3 is local_param, not mem_base (docs/specs/jit_stencil_catalog.md 3.8), which is
+    # precisely why mem_base/mem_size were moved to r8/r9. The FastAddressCheck bounds
+    # check (CMP addr, r9=mem_size; BHS.W <trap>) is no longer part of these stencils --
+    # compile_trace() emits it separately with a runtime-patched trap target (see
+    # jit_copy_patch_concept.py, docs/specs/jit_stencil_catalog.md 3.7), so these
+    # stencils are exercised here as bare, unguarded loads/stores of r8+offset.
     mem_base = DATA_BASE
-    mem_mask = 0x0000FFFF  # 64KB mask
 
-    # Test i32_load_r3: load from masked address
-    # Address 0x10004 & 0xFFFF = 0x0004 -> reads from mem_base + 0x0004
-    st_load = engine.stencils["i32_load_r3"]
+    # Test i32_load_r8: reads from mem_base + offset
+    st_load = engine.stencils["i32_load_r8"]
     res_load = run_stencil(
         st_load.hex_bytes,
-        r3=mem_base, r4=0x10004, r6=mem_mask,
+        r8=mem_base, r4=0x0004,
         mem_writes={mem_base + 0x0004: (0xDEADBEEF).to_bytes(4, "little")}
     )
     total += 1
     if _to_u32(res_load["r4"]) != 0xDEADBEEF:
-        failures.append(f"i32_load_r3: got r4={res_load['r4']:#x}, expected 0xDEADBEEF")
+        failures.append(f"i32_load_r8: got r4={res_load['r4']:#x}, expected 0xDEADBEEF")
 
-    # Test i32_store_r3: store to masked address
-    # Address 0x20008 & 0xFFFF = 0x0008 -> writes to mem_base + 0x0008
-    st_store = engine.stencils["i32_store_r3"]
+    # Test i32_store_r8: writes to mem_base + offset
+    st_store = engine.stencils["i32_store_r8"]
     res_store = run_stencil(
         st_store.hex_bytes,
-        r3=mem_base, r4=0xCAFEBABE, r5=0x20008, r6=mem_mask,
+        r8=mem_base, r4=0xCAFEBABE, r5=0x0008,
     )
     total += 1
     stored_val = int.from_bytes(res_store["mem_read"](mem_base + 0x0008, 4), "little")
     if stored_val != 0xCAFEBABE:
-        failures.append(f"i32_store_r3: stored val={stored_val:#x}, expected 0xCAFEBABE")
+        failures.append(f"i32_store_r8: stored val={stored_val:#x}, expected 0xCAFEBABE")
 
-    # --- Global Get / Set Stencils via vsoc_runtime.globals_base (env + 0x0C) ---
+    # --- Global Get / Set Stencils via vsoc_runtime.globals-base (env + 0x08) ---
     env_addr = DATA_BASE + 0x10000
     globals_addr = DATA_BASE + 0x11000
 
-    # Test global_get_d0: env + 0x0C -> globals_addr -> reads global[0]
+    # Test global_get_d0: env + 0x08 -> globals_addr -> reads global[0]
     st_gget = engine.stencils["global_get_d0"]
     res_gget = run_stencil(
         st_gget.hex_bytes,
         r2=env_addr,
         mem_writes={
-            env_addr + 0x0C: globals_addr.to_bytes(4, "little"),
+            env_addr + 0x08: globals_addr.to_bytes(4, "little"),
             globals_addr + 0x00: (0x12345678).to_bytes(4, "little"),
         }
     )
@@ -238,13 +250,13 @@ def main() -> None:
     if _to_u32(res_gget["r4"]) != 0x12345678:
         failures.append(f"global_get_d0: got r4={res_gget['r4']:#x}, expected 0x12345678")
 
-    # Test global_set_d1: env + 0x0C -> globals_addr -> writes global[0]
+    # Test global_set_d1: env + 0x08 -> globals_addr -> writes global[0]
     st_gset = engine.stencils["global_set_d1"]
     res_gset = run_stencil(
         st_gset.hex_bytes,
         r2=env_addr, r4=0x87654321,
         mem_writes={
-            env_addr + 0x0C: globals_addr.to_bytes(4, "little"),
+            env_addr + 0x08: globals_addr.to_bytes(4, "little"),
         }
     )
     total += 1

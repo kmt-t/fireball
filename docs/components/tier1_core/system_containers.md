@@ -86,8 +86,8 @@ graph LR
 - **添字の取り違えを型で防ぐ**: 生の開始・終了インデックス対を返す設計では、呼び出し側が誤った配列と組み合わせても検出できない。ビューは区間を 1 つの値として束ねるため、この誤りが表現できない。
 
 #### ビット詰めビュー（bit_view）
-<!-- traceability: {PackedBitView} {GLOBAL_StrictMemoryLimit} {META_AccessDictionary} {META_ZeroCostAbstraction} -->
-1 要素が 1 バイト未満の密な状態表を指す非所有ビュー。**探索を行わない**。 `{PackedBitView}` `{META_AccessDictionary}`
+<!-- traceability: {PackedBitView} {GLOBAL_StrictMemoryLimit} {META_ZeroCostAbstraction} -->
+1 要素が 1 バイト未満の密な状態表を指す非所有ビュー。**探索を行わない**——添字による直接参照のみであり、`{META_AccessDictionary}`（データの索引化に基づく検索最適化）の対象外である。 `{PackedBitView}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
@@ -380,7 +380,7 @@ sequenceDiagram
 | 補足 | 値を返さないため、値列を持たない記憶域に対して使用できる。ブレークポイント判定のように「あるか否か」のみが問われる用途に用いる |
 
 #### 添字による状態参照（at / put）
-<!-- traceability: {PackedBitView} {META_AccessDictionary} {GLOBAL_StrictMemoryLimit} -->
+<!-- traceability: {PackedBitView} {GLOBAL_StrictMemoryLimit} -->
 
 | 項目 | 内容 |
 | :--- | :--- |

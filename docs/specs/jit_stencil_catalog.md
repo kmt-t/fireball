@@ -183,18 +183,18 @@
 #### `STENCIL_GLOBAL_GET_D0` (`0x23` Env globals_base 経由ロード)
 - **Thumb-2 命令列**:
   ```asm
-  ldr.w r3, [r2, #0x0C]   ; [Offset 0x00] env->globals_base ロード (vsoc_runtime +0x0C)
+  ldr.w r3, [r2, #0x08]   ; [Offset 0x00] env->globals_base ロード (vsoc_runtime +0x08)
   ldr.w r4, [r3, #0x00]   ; [Offset 0x04] RELOC_IMM8_OFFSET (global[N] ロード)
   ```
-- **バイナリ列 (8 Bytes)**: `D2 F8 0C 30 D3 F8 00 40`
+- **バイナリ列 (8 Bytes)**: `D2 F8 08 30 D3 F8 00 40`
 
 #### `STENCIL_GLOBAL_SET_D1` (`0x24` Env globals_base 経由ストア)
 - **Thumb-2 命令列**:
   ```asm
-  ldr.w r3, [r2, #0x0C]   ; [Offset 0x00] env->globals_base ロード (vsoc_runtime +0x0C)
+  ldr.w r3, [r2, #0x08]   ; [Offset 0x00] env->globals_base ロード (vsoc_runtime +0x08)
   str.w r4, [r3, #0x00]   ; [Offset 0x04] RELOC_IMM8_OFFSET (global[N] ストア)
   ```
-- **バイナリ列 (8 Bytes)**: `D2 F8 0C 30 C3 F8 00 40`
+- **バイナリ列 (8 Bytes)**: `D2 F8 08 30 C3 F8 00 40`
 
 ---
 
@@ -245,16 +245,54 @@
 ### 3.7 メモリアクセス系ステンシル (Linear Memory Load & Store with Boundary Protection)
 <!-- traceability: {MemoryBoundaryCheck} {FastAddressCheck} {JIT_RegisterMapping} -->
 
-すべてのロード/ストア命令は、境界チェック保護（`FastAddressCheck` 比較トラップ `CMP addr, limit; BHS __trap` またはマスク演算 `AND addr, mask`）を経て、`R3 = mem_base` ピン留めバリアント（または統合スタック参照バリアント）によりアクセスされる。実メモリサイズ `R6 = guest_ram_size`（またはマスク）による単一の統一境界判定アルゴリズムにより、部分ページ、単一 64KB ページ、および複数 64KB ページ（`N * 64KB`）の全ケースを統一的に保護する。リニアメモリは 64KB ページ単位（`memory.size` / `memory.grow`）で管理・ページングされる。
+すべてのロード/ストア命令は、`R6 = mem_size`（`vsoc_runtime.mem-size`。`{FastAddressCheck}` が要求するのはサイズ比較の単一命令であり、マスクではない — `requirement_list.md` 参照）に対する `CMP` + `BHS.W` の境界チェックを経て、`R3 = mem_base` ピン留めバリアントによりアクセスされる。`CMP addr, r6` の直後の `BHS.W <trap>` は、アドレスが `mem_size` 以上（符号なし）ならトレースのトラップテール（インタープリタへのフォールバック）へ即座に分岐する——実際のロード/ストアはこの分岐が不成立の場合にのみ実行される。境界チェックはロード/ストアの副作用（メモリアクセスそのもの）より必ず先に評価されるため、トラップ経路には巻き戻すべき副作用が存在しない。`mem_size` に2の冪の制約はなく、部分ページ（例: 8KB, 12KB, 16KB）・単一 64KB ページ・複数 64KB ページ（`N * 64KB`）のいずれも同一の比較一つで判定できる。
 
-| WASM 命令 | Stencil 名 | 入力状態 | 出力状態 | Thumb-2 命令列 (`R3=mem_base, R6=mem_mask`) | バイナリ列 (Hex) |
+`BHS.W` の分岐先オフセットはコンパイル時には未確定（トレースのトラップテールは、通常の出口エピローグの後にレイアウトされるため、エピローグ全体が生成し終わるまでアドレスが決まらない）。JIT エンジン（`jit_copy_patch_concept.py` の `compile_trace()`）はプレースホルダのオフセット `0` で `BHS.W` を発行しつつ、その命令のバイト位置を記録しておき、トレース末尾にトラップテール（ダーティスピルのフラッシュ + `fallback_interp`）を生成し終えた後、記録しておいた全ての `BHS.W` を実アドレスへバックパッチする（2パス発行 + バックパッチ）。
+
+> [!NOTE]
+> **JITホットパスとインタープリタ/vMMIO経路の境界チェックは統一されている**: JITステンシル（本節）とインタープリタ/vMMIO側（[`runtime_vmmio.md`](../components/tier2_runtime/runtime_vmmio.md)）は、どちらも同一の比較ベース境界チェック（マスクなし）を用い、境界外アクセスは必ずトラップしてインタープリタへフォールバックする。境界外アドレスを黙って範囲内へ折り畳んで処理を継続する（Address Wrapping）ことは許容されない。インタープリタがトラップ元の WASM PC から復旧できないと判断した場合は、ゲストタスクを停止してよい。`{MemoryBoundaryCheck}` `{vMMIO_TrapAndEmulate}`
+
+| WASM 命令 | Stencil 名 | 入力状態 | 出力状態 | Thumb-2 命令列 (`R3=mem_base, R6=mem_size`) | バイナリ列 (Hex) |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `i32.load` (`0x28`) | `STENCIL_I32_LOAD_R3` | R4=addr | R4=val | `ands r4, r6; ldr.w r4, [r3, r4]` | `34 40 53 F8 04 40` |
-| `i32.load8_s` (`0x2C`)| `STENCIL_I32_LOAD8_S_R3` | R4=addr | R4=val | `ands r4, r6; ldrsb.w r4, [r3, r4]` | `34 40 13 F9 04 40` |
-| `i32.load8_u` (`0x2D`)| `STENCIL_I32_LOAD8_U_R3` | R4=addr | R4=val | `ands r4, r6; ldrb.w r4, [r3, r4]` | `34 40 13 F8 04 40` |
-| `i32.load16_s` (`0x2E`)| `STENCIL_I32_LOAD16_S_R3` | R4=addr | R4=val | `ands r4, r6; ldrsh.w r4, [r3, r4]` | `34 40 33 F9 04 40` |
-| `i32.load16_u` (`0x2F`)| `STENCIL_I32_LOAD16_U_R3` | R4=addr | R4=val | `ands r4, r6; ldrh.w r4, [r3, r4]` | `34 40 33 F8 04 40` |
-| `i32.store` (`0x36`) | `STENCIL_I32_STORE_R3` | R4=val, R5=addr | (なし) | `ands r5, r6; str.w r4, [r3, r5]` | `35 40 43 F8 05 40` |
-| `i32.store8` (`0x3A`) | `STENCIL_I32_STORE8_R3` | R4=val, R5=addr | (なし) | `ands r5, r6; strb.w r4, [r3, r5]` | `35 40 03 F8 05 40` |
-| `i32.store16` (`0x3B`)| `STENCIL_I32_STORE16_R3` | R4=val, R5=addr | (なし) | `ands r5, r6; strh.w r4, [r3, r5]` | `35 40 23 F8 05 40` |
+| `i32.load` (`0x28`) | `STENCIL_I32_LOAD_R3` | R4=addr | R4=val | `cmp r4, r6; bhs.w <trap>; ldr.w r4, [r3, r4]` | `A4 42` + `BHS.W`(reloc) + `53 F8 04 40` |
+| `i32.load8_s` (`0x2C`)| `STENCIL_I32_LOAD8_S_R3` | R4=addr | R4=val | `cmp r4, r6; bhs.w <trap>; ldrsb.w r4, [r3, r4]` | `A4 42` + `BHS.W`(reloc) + `13 F9 04 40` |
+| `i32.load8_u` (`0x2D`)| `STENCIL_I32_LOAD8_U_R3` | R4=addr | R4=val | `cmp r4, r6; bhs.w <trap>; ldrb.w r4, [r3, r4]` | `A4 42` + `BHS.W`(reloc) + `13 F8 04 40` |
+| `i32.load16_s` (`0x2E`)| `STENCIL_I32_LOAD16_S_R3` | R4=addr | R4=val | `cmp r4, r6; bhs.w <trap>; ldrsh.w r4, [r3, r4]` | `A4 42` + `BHS.W`(reloc) + `33 F9 04 40` |
+| `i32.load16_u` (`0x2F`)| `STENCIL_I32_LOAD16_U_R3` | R4=addr | R4=val | `cmp r4, r6; bhs.w <trap>; ldrh.w r4, [r3, r4]` | `A4 42` + `BHS.W`(reloc) + `33 F8 04 40` |
+| `i32.store` (`0x36`) | `STENCIL_I32_STORE_R3` | R4=val, R5=addr | (なし) | `cmp r5, r6; bhs.w <trap>; str.w r4, [r3, r5]` | `B5 42` + `BHS.W`(reloc) + `43 F8 05 40` |
+| `i32.store8` (`0x3A`) | `STENCIL_I32_STORE8_R3` | R4=val, R5=addr | (なし) | `cmp r5, r6; bhs.w <trap>; strb.w r4, [r3, r5]` | `B5 42` + `BHS.W`(reloc) + `03 F8 05 40` |
+| `i32.store16` (`0x3B`)| `STENCIL_I32_STORE16_R3` | R4=val, R5=addr | (なし) | `cmp r5, r6; bhs.w <trap>; strh.w r4, [r3, r5]` | `B5 42` + `BHS.W`(reloc) + `23 F8 05 40` |
 | `memory.size` (`0x3F`)| `STENCIL_MEM_SIZE_D0` | (なし) | R4=pages | `ldr.w r4, [r2, #0x04]` (`env->mem_size`) | `D2 F8 04 40` |
+
+`cmp r4, r6`/`cmp r5, r6` のバイト列（`A4 42`/`B5 42`）は 16-bit Thumb-1 `CMP Rn, Rm` エンコーディング（`0x4280 | (rm << 3) | rn`）から導出。`BHS.W <trap>` は 32-bit Thumb-2 条件分岐（`Cond.HS = 0b0010`）で、オフセットはバックパッチされるまで確定しないためリテラルのバイト列を持たない（`jit_copy_patch_concept.py` の `_MEMORY_OP_ADDR_REG` / `oob_branch_fixups` を正本とする）。
+
+### 3.8 トレース内レジスタバリアント (Register Variants) と `variant_id`
+
+<!-- traceability: {JIT_RegisterMapping} -->
+
+各ステンシル名の末尾 `_dN` は、その命令が実行される時点でオペランドスタックキャッシュに何個の値が常駐しているか（= これから読み書きするレジスタの組）を表す**レジスタバリアント**であり、`jit_trace_header.variant_id`（8bit、[`jit_compiler.md` 3.3](../components/tier3_jit/jit_compiler.md)「JIT トレースヘッダ」参照）と同じ ID 空間を共有する。**この軸は同一トレース内部（intra-trace）で連続する命令間のレジスタ引き継ぎに関するものであり、トレース境界をまたぐチェイニング（`{JIT_LazyChaining}`）とは無関係である**——トレース境界は常にメモリ（統合スタック上の正準アドレス）経由でスピル/リロードされ、レジスタ内容を熱いまま引き継ぐことはない（[`jit_compiler.md` 8 節「トレース境界とチェイニングの安全性」](../components/tier3_jit/jit_compiler.md)を正本とする）。同一トレース内で、将来のステンシルバリアント動的選択が連続する命令間で異なるレジスタ配置を選ぶ場合（下記 NOTE 参照）にのみ、この `variant_id` を使った引き継ぎ互換性の判定とグルー挿入が意味を持つ。
+
+| `variant_id` | 名称 | レジスタ占有状態 | 該当ステンシル |
+| :---: | :--- | :--- | :--- |
+| `0` | Depth 0 (Empty) | キャッシュなし。次の命令がゼロから値を生成する。 | `i32_const_d0`, `i64_const_d0`, `local_get_d0`, `global_get_d0`, `memory_size_d0` |
+| `1` | Depth 1 (TOS) | `R4` = TOS のみ常駐。 | `i32_const_d1`, `local_set_d1`, `local_tee_d1`, `global_set_d1`, `br_if_d1`, `i32_eqz_d1`, `i32_clz_d1`, `i32_ctz_d1` |
+| `2` | Depth 2 (TOS+NOS) | `R4` = TOS, `R5` = NOS が常駐。現行の唯一の物理レジスタ割当。 | `i32_add_d2` 等すべての2項算術・比較ステンシル（3.5, 3.6 節） |
+| `3` | Depth 3 (TOS+NOS+NNOS) | `R4`/`R5`/`R6` の3値が常駐。`R6` を使うため、メモリアクセス系ステンシル（`R6=mem_size` 常駐）を含むトレースとは**同時に成立し得ない**。 | `select_d3` |
+
+`3.7` のメモリアクセス系ステンシル（`*_r3`）はこの4段階のバリアント軸そのものではなく、Depth 1/2 の上に重ねて `R3=mem_base`/`R6=mem_size` を追加で要求する直交した制約である（ロード系は Depth 1 の `R4` をアドレスとして再利用、ストア系は Depth 2 の `R4=val, R5=addr` をそのまま用いる）。
+
+#### `local_param` (`local_base`) ピン留めバリアント（直交軸）
+
+<!-- traceability: {ContextPointerRegister} -->
+
+[`master_physical_design.md` §3 NOTE](../architecture/master_physical_design.md) の通り、`local_base`（フレーム基底、`local_param` とも呼ぶ）は同一トレースが再帰呼び出しや異なる呼び出し深さから共有されうる場合、統合スタック上の絶対位置が毎回異なる実行時値となり、コンパイル時定数（`R1` からの静的オフセット）には畳み込めない。この場合 `local_base` はトレース入口でコンテキスト構造体から都度ロードされ、レジスタにピン留めされる必要がある——`mem_base` と同じ **`R3`** に割り当てる（`{FastAddressCheck}` の `R3=mem_base` ピン留めと同様、Caller-saved スクラッチをトレース単位で用途固定する運用）。この場合、ローカル変数アクセスは `LDR r4, [r3, #slot_offset]` のように `local_base` レジスタ経由の間接参照へ変わり、上表 3.4 節の `[r1, #offset]` 直接参照とは異なるステンシルバリアントになる。
+
+**`mem_base` との排他性**: `R3` は1トレース内で `mem_base` と `local_param` のどちらか一方にしか使えない。したがって「`local_base` が非畳み込み（再帰・共有呼び出し深さ）」かつ「メモリアクセスを含む」トレースは、両方を同時に `R3` へピン留めできず現行の物理レジスタ割当では成立しない——このようなトレースはコンパイル対象から除外し、インタープリタ実行に委ねる（Copy-and-Patch のコンパイル可否判定に新しい除外条件を追加する必要がある。概念コードにはまだ実装されていない）。
+
+`mem_base`/`mem_size` と同様、`local_param` はトレース入口で一度だけフレッシュにロードされ、トレース内では変化しない値であるため、命令間引き継ぎを判定する `variant_id`（後述）の対象には含めない——含めるのは TOS/NOS/NNOS の Depth 0-3 のみである。ただし、`R3` の用途（`mem_base` / `local_param` / 未使用）はトレース自身がどのステンシル（`[r1,#off]` 直接参照 or `[r3,#off]` 間接参照）を選ぶかに関わる別軸であり、上表と合わせて「そのトレースが使用可能なレジスタ予算」を決定する。
+
+> [!NOTE]
+> **`local_param` ピン留めも動的選択は未実装**: 現行の `compile_trace()` の `local.get`/`local.set`/`local.tee` は常に `[r1, #off]` 直接参照であり（`R1=stack_bot` がそのまま `local_base=0` として畳み込まれる前提）、`local_base` を `R3` にロードして間接参照するパスも、上記の `mem_base` との排他性チェックも概念コードにはまだ存在しない。同一トレースの再利用（再帰・共有呼び出し深さ）を跨ぐケースが実装されるまでは、この軸は表上の予約のみである。
+
+> [!NOTE]
+> **現状は静的割当であり、動的なバリアント選択はまだ実装されていない**: `jit_copy_patch_concept.py` の `compile_trace()` は WASM 命令ごとに1つの固定ステンシルしか持たず（例: `i32.const` は常に特別処理で `R4` へ直接書き込み、`i32_const_d0`/`i32_const_d1` のどちらのステンシルも実際には参照しない）、実行時のキャッシュ深度に応じて `_d0`/`_d1`/`_d2` を動的に選び分けるロジックはまだ存在しない。したがって同一トレース内で連続する命令のレジスタ配置が食い違う状況も現状は発生しない。上表の `variant_id` は、(1) 将来その動的選択を実装する際の ID 体系、および (2) その際に必要となる命令間引き継ぎ互換性判定・グルー挿入（`_order_register_moves`/`emit_variant_reconciliation_glue` を参照、`jit_copy_patch_concept.py` 内の再利用可能なユーティリティとして検証済み実装が既に存在する）の両方に使われる、正本の割当表である。

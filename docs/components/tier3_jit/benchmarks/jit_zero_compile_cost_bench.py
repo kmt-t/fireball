@@ -2,8 +2,8 @@
 docs/components/tier3_jit/benchmarks/jit_zero_compile_cost_bench.py
 Empirical backing for {JIT_ZeroCompileCostTheorem} (requires/requirement_list.md),
 whose verification method is declared as "ベンチマーク" (Benchmark). This is also
-the exact claim a live Qwen 3.8 judge run flagged as unsourced (FromGemini.md /
-FromOpus.md 19th letter correspondence): "aim for Zero Compile Cost" with no
+the exact claim a live Qwen 3.8 judge run flagged as unsourced (agentmails/FromGemini.md /
+agentmails/FromOpus.md 19th letter correspondence): "aim for Zero Compile Cost" with no
 benchmark artifact cited.
 
 Copy-and-Patch's whole premise is that compilation is just concatenating and

@@ -5,7 +5,8 @@ Reference Concept Implementation: vMMIO FlatMap Page Table & Direct-Mapped TLB
 - FlatMap PTE storage: maps 20-bit VPN -> PTE
 - Direct-mapped Software TLB[16] keyed by Folding XOR Hash over 20-bit VPN:
   diffuses all 20 bits (including Function Code) into a 4-bit slot index (0..15)
-- Tier 1 linear RAM: Bit31 bypass PLUS a power-of-two mask bound check
+- Tier 1 linear RAM: Bit31 bypass PLUS a size-comparison bound check (no mask, no
+  power-of-two constraint on guest_ram_size) — traps to the interpreter on OOB
 - PTE permission check (VALID/READ/WRITE/EXEC + Owner ID) on every access,
   including on TLB hit — the TLB only skips the table lookup, never the check
 """
@@ -85,12 +86,13 @@ class VMMIOController:
     """
 
     def __init__(self, guest_ram_size: int = 8192):     # FB_CONF_GUEST_RAM_SIZE
-        # `{FastAddressCheck}`: for a power-of-two allocation the bound check is a
-        # single mask, so the Tier 1 path stays O(1) and branch-predictable.
-        if guest_ram_size <= 0 or (guest_ram_size & (guest_ram_size - 1)):
-            raise ValueError("guest RAM size must be a power of two for the mask-based bound check")
+        # `{FastAddressCheck}`: a direct size comparison (addr >= guest_ram_size), not a
+        # mask. This is still O(1) and branch-predictable, and unlike a mask it places
+        # no power-of-two constraint on guest_ram_size and never silently wraps an
+        # out-of-bounds address back into range — see `{MemoryBoundaryCheck}`.
+        if guest_ram_size <= 0:
+            raise ValueError("guest RAM size must be positive")
         self.guest_ram_size = guest_ram_size
-        self.guest_ram_mask = ~(guest_ram_size - 1) & 0xFFFF_FFFF
 
         # FlatMap PTE storage: vpn (20-bit) -> PTE
         self.ptes: dict[int, object] = {}
@@ -167,7 +169,7 @@ class VMMIOController:
 
         # 1. Fast RAM bypass (Tier 1) — O(1), never touches the page table.
         if addr.is_linear():
-            if addr.raw & self.guest_ram_mask:
+            if addr.raw >= self.guest_ram_size:
                 return (TrapCode.OUT_OF_BOUNDS,
                         f"guest address {addr.raw:#010x} exceeds "
                         f"FB_CONF_GUEST_RAM_SIZE ({self.guest_ram_size})")
@@ -299,6 +301,19 @@ def test_linear_ram_is_bounds_checked_not_waved_through():
         "the Tier 1 path must never touch the page table"
 
 
+def test_linear_ram_bound_check_works_for_non_power_of_two_size():
+    """Comparison-based bounds checking (no mask) must not constrain guest_ram_size to a
+    power of two. This is exactly the gap the earlier mask-based design left open: a mask
+    derived from a non-power-of-two size does not land on the real boundary."""
+    ctrl = VMMIOController(guest_ram_size=12288)  # 12KB — not a power of two
+
+    ok, _ = ctrl.access(12287, is_write=False)
+    assert ok == "OK_GUEST_RAM", "last in-range byte (size-1) must be accepted"
+
+    st, _ = ctrl.access(12288, is_write=False)
+    assert st == TrapCode.OUT_OF_BOUNDS, "the first byte past the real 12KB boundary must trap"
+
+
 def test_tlb_index_separates_function_codes():
     """FC=12 page 3 and FC=14 page 3 must not share a TLB slot."""
     idx = VMMIOController.tlb_index
@@ -364,6 +379,7 @@ if __name__ == "__main__":
     test_shm_owner_isolation()
     test_revoke_invalidates_tlb_and_blocks_access_during_flight()
     test_linear_ram_is_bounds_checked_not_waved_through()
+    test_linear_ram_bound_check_works_for_non_power_of_two_size()
     test_tlb_index_separates_function_codes()
     test_interleaved_syscall_and_shm_keep_hitting_the_tlb()
     test_flatmap_pte_registration_and_tlb_caching()

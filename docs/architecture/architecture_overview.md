@@ -1,33 +1,34 @@
-# アーキテクチャ設計書：Fireball システム概要
+# アーキテクチャ設計書：Fireball システム概要 {VERIFY_LLM}
 
-## 1. アーキテクチャコンセプト
+## 1. アーキテクチャコンセプトと基本思想
+<!-- traceability: {META_AI_Native_Dev} {META_3TierSeparation} {META_ZeroCostAbstraction} {CleanArchitecture} {URIAbstraction} {IPCDI} {LowOverhead} {ServiceSelfReboot} {FaultTolerant} {GLOBAL_ComponentHarness} {META_StaticDI} {META_ConfigurableSystem} {META_Static_Resolution} -->
 
-Fireballは、極小リソース環境での柔軟性と高性能を両立させるため、以下の設計思想を採用する。
+Fireballは、リソース制限の厳しい小規模組み込みデバイス（ARM Cortex-M33、RISC-V等）向けに設計された軽量WASMハイパーバイザである。以下のコア設計思想を採用し、極小リソース環境での柔軟性と高性能・安全性を両立させる。
 
-- **クリーンアーキテクチャとDI**: URIベースの抽象化とIPCルータによる依存性の注入により、コンポーネント間の結合度を下げ、移植性を向上させる。「内側 (Inner)」= Kernel Layer（COOS, IPC Router）、「外側 (Outer)」= Subsystem/Driver/Hardware Layer（HAL, Logging, 物理デバイス）と定義し、内側は外側の具象実装を一切 `#include` しない。外側が内側の定義するインターフェイスを実装（`register-hook` 等）することで依存性の逆転を実現する（詳細は 2.2 節 BDD 図の依存性ルールを参照）。 `{CleanArchitecture}` `{URIAbstraction}` `{IPCDI}`
-- **協調型マルチタスク (COOS)**: C++23ベースのスタックレス・タスク構造を採用し、低オーバーヘッドな切り替えを実現する。各サービスのリブート（自己修復）を前提としたフォールトトレラント設計をとる。 `{LowOverhead}` `{ServiceSelfReboot}` `{FaultTolerant}`
-- **高速JIT (Copy-and-Patch)**: コンパイルレイテンシを最小化し、小規模なコードキャッシュ（2KB x 3面 = 6KB）を「移動する窓（Moving Window）」として活用する。
-- **コンポーネント・ハーネス**: vSoCを独立したサブコンポーネント（Loader, Engine, MMIO, Debugger）の集合体として定義し、ハーネスを介して差し替え可能なプラグイン構造とする。 `{GLOBAL_ComponentHarness}`
-- **静的構成**: システム構成値（バッファサイズ、タスク数、メモリ上限等）や依存関係をコンパイル時に確定（ヘッダマクロ/`constexpr`）し、実行時におけるシステム構成の動的メモリ確保や構成解決の探索コストをゼロにする。 `{META_StaticDI}` `{META_ConfigurableSystem}` `{META_Static_Resolution}`
+- **クリーンアーキテクチャと静的DI**: URIベースの抽象化とIPCルータによる依存性の注入により、コンポーネント間の結合度を下げ、移植性を向上させる。「内側 (Inner)」= Kernel Layer（COOS, IPC Router）、「外側 (Outer)」= Subsystem/Driver/Hardware Layer（HAL, Logging, 物理デバイス）と定義し、内側は外側の具象実装を一切 `#include` しない。外側が内側の定義するインターフェイスを実装することで依存性の逆転を実現する。 `{CleanArchitecture}` `{URIAbstraction}` `{IPCDI}`
+- **協調型マルチタスク (COOS)**: C++20/23コルーチンベースのスタックレス・タスク構造を採用し、低オーバーヘッドな切り替えを実現する。ホーアCSPモデルに基づき、所有権移譲によるゼロコピーメッセージパッシングによりデータ競合を原理的に排除する。 `{LowOverhead}` `{ServiceSelfReboot}` `{FaultTolerant}`
+- **高速JIT (Copy-and-Patch)**: コンパイルレイテンシを最小化し、小規模なコードキャッシュ（2KB x 3面 = 6KB）を循環活用する。
+- **Conceptベース・コンポーネントハーネス**: vSoC等の複合コンポーネントを独立したサブコンポーネントの集合体として定義し、C++20 Conceptsとハーネス構造体（`vsoc_harness`, `coos_harness`）による静的DIで結合する。仮想関数（vtable）のオーバーヘッドをゼロにする。 `{GLOBAL_ComponentHarness}` `{META_StaticDI}`
+- **静的構成**: システム構成値（バッファサイズ、タスク数、メモリ上限等）をヘッダマクロおよび `constexpr` 定数によりコンパイル時に静的確定し、実行時の動的メモリ確保や探索コストをゼロにする。 `{META_ConfigurableSystem}` `{META_Static_Resolution}`
 
-## 2. 静的構造
+---
+
+## 2. 静的構造とレイヤー構成
 
 ### 2.1 レイヤー構成
 
 | レイヤー | 構成要素 | 説明 |
 | :--- | :--- | :--- |
 | **ゲストアプリケーション** | WASMバイナリ | ユーザー提供のWASMバイナリアプリケーション。 |
-| **サービス** | WASMプラグイン | システム機能を拡張するユーザー提供のWASMサービス。 |
-| **vSoC** | ハーネス (Loader, Engine, MMIO, DBG) | WASM実行環境と仮想ハードウェア抽象化をプラグイン形式で提供。 |
+| **サービス** | WASMプラグイン | システム機能を拡張するWASMサービス。 |
+| **vSoC** | ハーネス (Loader, Interpreter, JIT, vMMIO, Debugger) | WASM実行環境と仮想ハードウェア抽象化をプラグイン形式で提供。 |
 | **COOSカーネル** | スケジューラ, CSP, メモリ | 協調型マルチタスクと安全な通信の基盤。 |
 | **サブシステム** | IPCルータ, HAL, ロギング | システムの共通機能とハードウェア抽象化層。 |
 | **デバイスドライバ** | 各種ドライバ | 物理デバイス制御（UART, GPIO等）。 |
 | **ハードウェア** | CPU, 周辺機器 | 物理基盤（ARM Cortex-M, RISC-V等）。 |
 
 ### 2.2 コンポーネント定義図 (BDD)
-
-本図は SysML ブロック定義図 (BDD) に準拠し、システムの静的構造と依存関係を定義する。
-矢印は**接続および依存関係 (Dependency)** を示す。`{CleanArchitecture}` `{IoC}`
+<!-- traceability: {CleanArchitecture} {IoC} -->
 
 ```mermaid
 graph TD
@@ -57,8 +58,8 @@ graph TD
         HW["<b>block: Hardware Platform</b><br/>─ CPU, Memory, Peripherals<br/>─ Cortex-M / RISC-V"]:::hwStyle
     end
 
-    %% 実線 = 直接依存 (uses: 呼び出し側が相手の型/シグネチャを知る)
-    %% 破線 = インターフェイス実装 (realizes: 下位が上位定義のインターフェイスを実装)
+    %% 実線 = 直接依存 (uses)
+    %% 破線 = インターフェイス実装 (realizes)
     App -->|"uses: execute()"| vSoC
     Svc -->|"uses: syscall(uri)"| vSoC
     
@@ -74,15 +75,175 @@ graph TD
 
 #### 依存性ルール
 - **Inner / Outer の定義**: 「内側 (Inner)」= Kernel Layer（COOS, IPCR）。「外側 (Outer)」= Guest/Runtime/Subsystem/Driver/Hardware Layer（App, Svc, vSoC, HAL, Log, HW）。内側は外側の具象実装に一切依存してはならない。
-- **2種類の矢印**: **実線 (uses)** はソース側が対象の型・シグネチャを直接知って呼び出す通常の依存。**破線 (realizes)** はソース側（下位/外側）が対象（上位/内側）の定義したインターフェイスを実装する関係——UMLの実現 (Realization) 関係に相当し、内側は破線の相手の具象型を一切知らない。図中で内側（COOS, IPCR）へ向かう矢印はすべて破線か、内側自身が発した実線（IPCR→COOS）のみであり、外側（HAL, Log）から内側（IPCR）への唯一の関係は破線（インターフェイス実装）である。
-- **具体例**: HAL/Log は IPCR が定義するハンドラ登録インターフェイス（`register-hook` 等）を実装・登録する（破線）。実行時には IPCR がそのインターフェイス越しに HAL/Log 側の登録済みハンドラを能動的に呼び出すが、コンパイル時の型依存としては逆に HAL/Log が IPCR のインターフェイス定義を `#include` する。IPCR のソースは HAL/Log の具象ヘッダを一切 `#include` しない。
-- **URIベースの疎結合**: コンポーネント間の具体的な依存は `fireball://` URI を介したルックアップにより解決され、コンパイル時の静的DIによって結合される。
+- **実線 (uses) と 破線 (realizes)**: 実線は呼び出し側が対象のシグネチャを直接知る通常の依存。破線は下位が上位のインターフェイスを実装する関係。内側は相手の具象型を知らない。
+- **URIベースの疎結合**: コンポーネント間の具体的な依存は `fireball://` URI を介したルックアップにより解決される。
 
-## 3. 動的構造
+---
 
-### 3.1 主要シーケンス図 (SD)
+## 3. 6大物理コアメカニズム (The 6 Physical Pillars)
 
-#### [SD] 起動およびタスク登録
+Fireball の実行コアは、以下の 6 つの物理メカニズムによって構成される。
+
+```
++---------------------------------------------------------------------------------------------------+
+|                                  FIREBALL MASTER PHYSICAL DESIGN                                  |
++---------------------------------------------------------------------------------------------------+
+|  [Pillar 1] 統合スタックフレーム・モデル (Unified Stack Frame Model)                              |
+|             └─ 基底 stack_bot (R1), ボトム常駐 execution_context, インラインフレーム/ローカル/オペランド  |
++---------------------------------------------------------------------------------------------------+
+|  [Pillar 2] 3段直接 JIT 検索パイプライン (3-Stage Direct JIT Lookup Pipeline)                     |
+|             └─ Card Marking (O(1)) -> Entry Group Index (O(1)) -> flat_map_view Binary Search     |
++---------------------------------------------------------------------------------------------------+
+|  [Pillar 3] 3面世代交代回転コードキャッシュ (3-Bank Generational Rotating Code Cache)             |
+|             └─ Bank 0 (Active) <-> Bank 1 (Warm) <-> Bank 2 (Oldest) + 最古限定昇格 + MPU W^X     |
++---------------------------------------------------------------------------------------------------+
+|  [Pillar 4] 対称直接ハンドオフ・エンジン (Symmetric Direct Handoff Engine)                        |
+|             └─ 純粋同期ランデブー (容量0) + スケジューラバイパス 対称遷移 (Symmetric Transfer)     |
++---------------------------------------------------------------------------------------------------+
+|  [Pillar 5] 折りたたみXOR TLB ＆ 平坦ページ表 (Folding XOR TLB & FlatMap Page Table)               |
+|             └─ 20-bit VPN Folding XOR (16 entries) + flat_map_view PTE FlatMap                    |
++---------------------------------------------------------------------------------------------------+
+|  [Pillar 6] 有界ゼロコピー・ランデブー・メールボックス (Bounded Zero-Copy Rendezvous Mailbox)     |
+|             └─ Revoke -> Enqueue -> Grant (TCBポインタ置換によるゼロコピー所有権移転)              |
++---------------------------------------------------------------------------------------------------+
+```
+
+### 3.1 Pillar 1: 統合スタックフレーム・モデル (Unified Stack Frame Model)
+<!-- traceability: {ContextPointerRegister} {MemoryBoundaryCheck} {ThreadedInterpreter} -->
+- **物理実体**: 単一の連続した固定長メモリバッファ（2KB〜4KB）。
+- **物理レイアウト**:
+  1. **スタックボトム (`+0x00`)**: `execution_context` 構造体が固定配置される（SP長 `sp_offset`、フレームオフセット `frame_offset`、スタック境界 `sp_boundary`、ハンドラテーブル参照等を保持）。
+  2. **スタック中間〜トップ**: `CallFrame`、`Function Locals`、`Operand Stack`、`ControlFrames` が単一の配列上にインラインで積層される。
+- **レジスタ規約**: `R1: stack_bot` が全ハンドラおよびJITトレースへ不変で渡され、`R3` を一時計算用スクラッチとして解放する。 `{ContextPointerRegister}`
+
+### 3.2 Pillar 2: 3段直接 JIT 検索パイプライン (3-Stage Direct JIT Lookup Pipeline)
+<!-- traceability: {SimpleJITArchitecture} {JIT_MultiBuffer_Cache} {FlatViewNarrowing} {META_FlatMapIndexed} {META_BinarySearch} -->
+- **Stage 1 (カードマーキング表: `bit_view<2>`) [$O(1)$]**: `pc >> card_shift` で 2-bit 状態表を参照し、`COMPILED` でなければ即座にインタープリタ継続（Fast Exit）。
+- **Stage 2 & 3 (基数二分探索木索引: `radix_binary_tree_view`) [$O(1) + O(\log n)$]**:
+  - **Stage 2 (Radix Table) [$O(1)$]**: `pc >> entry_group_shift` で基数粗索引テーブルを参照し、有界区間 `[first, last]` を $O(1)$ で特定。
+  - **Stage 3 (有界二分探索) [$O(\log n)$]**: 狭められたソート済みエントリ区間に対してのみ二分探索を実行し、ネイティブ実行アドレスを特定。 `{FlatViewNarrowing}` `{META_BinarySearch}`
+
+### 3.3 Pillar 3: 3面世代交代回転コードキャッシュ (3-Bank Generational Rotating Code Cache)
+<!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} {SimpleJITArchitecture} -->
+- **3面の物理的役割**:
+  - `Bank 0 (Active)`: 新規JITコンパイルコードおよび Oldest からの昇格コードを格納。
+  - `Bank 1 (Warm)`: 1世代前のコードを保持。無償観測期間として昇格コピーを行わずに実行。
+  - `Bank 2 (Oldest)`: 2世代前のコードを保持。ここでヒットした Hot コードのみを新 Active へ昇格コピー。
+- **MPU W^X 保護遷移**: コンパイル時は `RW + XN`、パッチ完了時に `__DSB(); __ISB();` を発行して `RO + X` に切り替え。
+- **局所再チェイニング＆アンリンク**: バンク別被チェイン逆引きテーブルにより、全走査なし（$O(k)$）でアンパッチ・再チェイニングを実施。 `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}`
+
+### 3.4 Pillar 4: 対称直接ハンドオフ・エンジン (Symmetric Direct Handoff Engine)
+<!-- traceability: {ADR_RendezvousChannel} {CSP_Handoff} {DirectContextSwitch} -->
+- **純粋同期ランデブー**: バッファを持たない（容量 0）同期スロットで値ポインタを直接受渡し（ゼロコピー）。
+- **対称遷移 (Symmetric Transfer)**: C++20 コルーチンの `await_suspend` から相手タスクの `std::coroutine_handle` を直接返却し、スケジューラをバイパスしてスタック深度 $O(1)$ で直接ジャンプ。 `{CSP_Handoff}` `{DirectContextSwitch}`
+
+### 3.5 Pillar 5: 折りたたみXOR TLB ＆ 平坦ページ表 (Folding XOR TLB & FlatMap Page Table)
+<!-- traceability: {FastAddressCheck} {META_RestrictedPhysicalAccess} {LowLatencyLookup} -->
+- **Fast-path (Bit 31 = 0)**: ゲストRAMアクセス。ベースポインタ加算とマスク演算のみで 1 サイクル変換。
+- **vMMIO-path (Bit 31 = 1)**: VPN（20 bits）に対し 4-bit Folding XOR を計算し、16エントリ TLB を直接参照。ミス時は `flat_map_view` を二分探索。 `{FastAddressCheck}` `{LowLatencyLookup}`
+
+### 3.6 Pillar 6: 有界ゼロコピー・ランデブー・メールボックス (Bounded Zero-Copy Rendezvous Mailbox)
+<!-- traceability: {IPC_ZeroCopy} {TypeSafeMessaging} {Challenge_IpcQueueStarvation} -->
+- **所有権移転シーケンス**: `Revoke`（送信元の所有権無効化） $\to$ `Enqueue`（メールボックス登録） $\to$ `Grant`（受信側へ所有権付与）。メモリコピーを排除し、TCBポインタ置換のみで通信。 `{IPC_ZeroCopy}`
+
+---
+
+## 4. 物理レジスタ＆ABI規約 (Physical Register & ABI Map)
+<!-- traceability: {ContextPointerRegister} {EnvironmentPointer} {JIT_RegisterMapping} {ADR_TosCacheAsymmetry} -->
+
+ARM Cortex-M33 (ARMv8-M Mainline) における物理レジスタの厳格な役割分担：
+
+| 物理レジスタ | AAPCS 規約 | Fireball インタープリタ | Fireball JIT トレース (トレース単位任意割当) | 役割と不変条件 |
+| :--- | :--- | :--- | :--- | :--- |
+| **`R0`** | Argument 1 / Scratch | `ip` (WASM PC) | `ip` (WASM PC) | 継続渡し（CPS）第1引数。現在実行中のバイトコード位置。 |
+| **`R1`** | Argument 2 / Scratch | `stack_bot` | `stack_bot` | 継続渡し（CPS）第2引数。統合スタックボトム基底ポインタ `{ContextPointerRegister}`。 |
+| **`R2`** | Argument 3 / Scratch | `env` | `env` | 継続渡し（CPS）第3引数。ランタイム環境ポインタ `{EnvironmentPointer}`。 |
+| **`R3`** | Argument 4 / Scratch | `scratch` (解放) | `scratch` (解放) | **Caller-saved スクラッチ / スピル**。ハンドラ・ステンシル内で自由に利用可能。 |
+| **`R4`** | Callee-saved | (保全) | **`Assignable Pool 0` (TOS等)** | **役割任意割当レジスタ 0**。スタックトップキャッシュ (TOS) 等。 |
+| **`R5`** | Callee-saved | (保全) | **`Assignable Pool 1` (NOS等)** | **役割任意割当レジスタ 1**。スタック次段キャッシュ (NOS) 等。 |
+| **`R6`** | Callee-saved | (保全) | **`Assignable Pool 2`** | **役割任意割当レジスタ 2**。`select` 使用時は NNOS。 |
+| **`R7`** | **Frame Pointer (FP)** | **FP (不可侵)** | **FP (不可侵)** | **AAPCS 標準フレームポインタ**。デバッガ・アンワインドのため不変。 |
+| **`R8`** | Callee-saved | (保全) | **`Assignable Pool 3`** | **役割任意割当レジスタ 3**。メモリアクセス時は `mem_base`。 |
+| **`R9`** | Callee-saved | (保全) | **`Assignable Pool 4`** | **役割任意割当レジスタ 4**。メモリアクセス時は `mem_size`。 |
+| **`R10`** | Callee-saved | (保全) | **`Assignable Pool 5`** | **役割任意割当レジスタ 5**。セーフポイント監視フラグ等。 |
+| **`R11`** | Callee-saved | (保全) | **`Assignable Pool 6`** | **役割任意割当レジスタ 6**。拡張レジスタキャッシュ。 |
+| **`R12 (IP)`**| Intra-Call Scratch | scratch | **一時スクラッチ** | リンカ・スタブ用スクラッチ、使い捨て一時値。 |
+| **`R13 (SP)`**| Stack Pointer | C++ Core SP | C++ Core SP | C++ コア実行用スタックポインタ（8バイト境界整列）。 |
+| **`R14 (LR)`**| Link Register | Return Address | Return Address | 関数呼び出し戻り先アドレス。 |
+| **`R15 (PC)`**| Program Counter | CPU PC | CPU PC | 命令ポインタ。 |
+
+### 4.1 メモリ常駐構造体の物理バイトオフセット
+
+- **`execution_context`（`R1: stack_bot` 起点、計16バイト）**:
+  - `+0x00`: `sp_offset` (u32), `+0x04`: `frame_offset` (u32), `+0x08`: `sp_boundary` (u32), `+0x0C`: `handler_table` (u32)
+- **`vsoc_runtime`（`R2: env` 起点、計12バイト）**:
+  - `+0x00`: `mem_base` (u32), `+0x04`: `mem_size` (u32), `+0x08`: `globals_base` (u32)
+
+---
+
+## 5. Conceptベース・ハーネス設計 (Concept Harness)
+<!-- traceability: {GLOBAL_ComponentHarness} {META_StaticDI} {META_ZeroOverhead} -->
+
+Tier 2 複合コンポーネント（vSoC等）における依存性注入をゼロコストで実現するため、C++20/23 Concepts と POD ハーネス構造体による設計基盤を採用する。
+
+```mermaid
+graph TD
+    subgraph Component_Logic [Component Logic]
+        C[Class Template] -- requires --> Concept[C++ Concept]
+    end
+
+    subgraph Platform_Harness [Platform / Harness]
+        H[Concrete Harness Struct] -- satisfies --> Concept
+        H -- holds pointers to --> D1[Dependency A: Loader]
+        H -- holds pointers to --> D2[Dependency B: Interpreter]
+        H -- holds pointers to --> D3[Dependency C: JIT]
+    end
+
+    C -- instantiated with --> H
+```
+
+- **ゼロコスト抽象化**: 仮想関数（vtable）を排除し、継承・仮想呼び出しのオーバーヘッド（8バイト/オブジェクト + 間接ジャンプ）を完全排除する。
+- **適用基準**: 内部デコンポジションが必要な複合コンポーネント（COOS, vSoC）にのみ適用し、単一責務の末端コンポーネントには適用しない。
+
+---
+
+## 6. リソース予算 (RAM/ROM/SLOC) とスケーラビリティ
+<!-- traceability: {Resource_Estimation_Model} {GLOBAL_StaticScalability} {GLOBAL_StrictMemoryLimit} {Size_15KLOC} -->
+
+### 6.1 メモリ予算 (RAM: 評価ターゲット 32KB)
+
+| パーティション | 最小構成 (KB) | 想定構成 (KB) | 責務 / 縮退方針 |
+| :--- | ---: | ---: | :--- |
+| ネイティブヒープ | 4.0 | 4.0 | COOSカーネル, 共有メモリ管理, TCB。縮退しない |
+| vSoCメタデータ | 2.0 | 2.0 | WASMモジュール索引, コンテキスト情報。縮退しない |
+| サブシステム | 3.0 | 4.0 | IPCルータ, HAL, ログバッファ。ログリングバッファを削減 |
+| JITコードキャッシュ | 6.0 | 6.0 | 2KB x 3面 (Active/Warm/Oldest)。**縮退しない** |
+| WASMリニアメモリ | 4.0 | 8.0 | ゲスト作業領域。4KB 部分ページへ縮退 |
+| 統合スタック | 2.0 | 2.0 | `execution_context` + CallFrame/オペランド。縮退しない |
+| **静的合計** | **21.0** | **26.0** | - |
+| **安全余裕** | **11.0** | **38.0** | .bss / 割り込みスタック / 将来拡張 |
+| **総計** | **32.0** | **64.0** | - |
+
+### 6.2 ストレージ予算 (ROM/Flash: 評価ターゲット 96KB)
+
+| コンポーネント | 最小構成 (KB) | 想定構成 (KB) | 備考 / 縮退方針 |
+| :--- | ---: | ---: | :--- |
+| Core Kernel | 16.0 | 16.0 | COOS, IPC Router, Memory Manager |
+| Engine (JIT/Intp) | 32.0 | 32.0 | Interpreter, Copy-and-Patch Engine, テンプレート RO-Data |
+| HAL / Drivers | 12.0 | 16.0 | 最小構成では UART/RTT のみ |
+| Built-in WASM | 24.0 | 32.0 | 最小構成では初期イメージのみ |
+| **静的合計** | **84.0** | **96.0** | - |
+| **安全余裕** | **12.0** | **32.0** | リンカ配置余裕 |
+| **総計** | **96.0** | **128.0** | - |
+
+### 6.3 コード規模予算 (SLOC)
+- ターゲット: `{Size_15KLOC}` (15,000行以内)
+
+---
+
+## 7. 動的構造 (主要シーケンス)
+
+### 7.1 起動およびタスク登録
 ```mermaid
 sequenceDiagram
     participant Boot as <<block>> Bootloader
@@ -108,7 +269,7 @@ sequenceDiagram
     deactivate Boot
 ```
 
-#### [SD] IPC通信 (URIベース)
+### 7.2 IPC通信 (URIベース)
 ```mermaid
 sequenceDiagram
     participant App as <<block>> Guest App
@@ -134,73 +295,16 @@ sequenceDiagram
     deactivate App
 ```
 
-## 4. アーキテクチャスタイルと設計定石
-
-Fireball が準拠するアーキテクチャスタイルと設計定石を明示し、後続の設計判断の一貫性を保証する。
-
-| 設計課題 | 採用スタイル | 選択理由 | 適用範囲 |
-| :--- | :--- | :--- | :--- |
-| **カーネル構造** | **マイクロカーネル** | COOS は最小限の機能に絞り、ドライバ・サービス等は IPC ファサードで提供 | vSoC, HAL, サービス |
-| **通信モデル** | **同期メッセージング（全体）** | CSP ハンドオフも IPC ルータ経由も、呼び出し側は応答を待つ（BLOCKED状態）。予測可能な実行フロー。 | タスク間通信 |
-| **タスク制御** | **協調型マルチタスク（Cooperative）** | スタックレス coroutine で RAM 削減、割り込みオーバーヘッド最小化。co_yield による主動的な譲渡。 | スケジューリング |
-| **割り込み処理** | **イベント駆動（ISR） + ポーリング（処理層）** | ISR は軽量に（フラグ設定のみ）、実処理はメインループでイベント処理。割り込みレイテンシ削減。 | 割り込みハンドリング |
-| **制御フロー** | **集中型（Centralized）** | グローバルスケジューラとルータで全体の流れを統御、一貫性保証 | 全体統制 |
-| **メモリ管理** | **静的割り当て優先** | RAM < 64KB 制約下での確定的動作、フラグメンテーション回避。動的確保禁止。 | 全般 |
-| **エラーハンドリング** | **自律復帰（Self-Healing via Event）** | 各サービスが独立して復帰、システム全体は稼働継続。故障隔離。 | フォールトトレランス |
-| **依存関係解決** | **静的 DI（Harness Pattern）** | コンパイル時に依存を確定、実行時の動的解決コストなし。URI ベースの疎結合。 | コンポーネント連携 |
-
-**スタイル選定の基本原則:**
-- **Zero-Cost Abstraction**: オーバーヘッドのない抽象化を最優先
-- **Deterministic Execution**: 実行時間の予測可能性（同期ベース）を重視
-- **Extreme Efficiency**: RAM < 64KB, SLOC < 15K 制約下での効率最大化
-
 ---
 
-## 5. 設計判断 (ADR)
+## 8. アーキテクチャスタイルと設計判断 (ADR)
 
-- **決定事項**: `{Challenge_ApproximateYield}`
-  - **背景**: タイマ割り込みによる厳密なプリエンプションはオーバーヘッドが大きい。
-  - **選択肢と評価**: 
-    - 案1: タイマ割り込みによるプリエンプション（高精度だが重い）
-    - 案2: トレース数ベースの概算Yield（低オーバーヘッドだが実行時間が逸脱する可能性あり）
-  - **結論**: 案2を採用。実行時間の逸脱はログで検知し、設計にフィードバックする。
+| 設計課題 | 採用スタイル | 選択理由 |
+| :--- | :--- | :--- |
+| **カーネル構造** | **マイクロカーネル** | COOS は最小限の機能に絞り、ドライバ・サービスは IPC 経由で提供 |
+| **通信モデル** | **同期メッセージング** | CSP ハンドオフも IPC ルータ経由も呼び出し側は応答待機。確定的な実行フロー |
+| **タスク制御** | **協調型マルチタスク** | スタックレス coroutine で RAM 削減、`co_yield` による主動的譲渡 |
+| **割り込み処理** | **イベント駆動 (ISR) + ポーリング (処理層)** | ISR は軽量通知のみ、実処理はメインループで安全に処理 |
+| **メモリ管理** | **静的割り当て優先** | 動的ヒープ（malloc/new）を原則禁止し、フラグメンテーションを完全排除 |
+| **依存関係解決** | **静的 DI (Harness)** | C++20 Concepts と Harness 構造体によりコンパイル時に確定 |
 
-- **決定事項**: `{Challenge_InterruptSafety}`
-  - **背景**: 割り込みハンドラによる実行コンテキスト破壊の防止。
-  - **結論**: Poll方式（`co_yield` 後のフラグチェック）を基本とする。将来的にJITスキャンやスタック分離を検討。
-
-- **決定事項**: `{Challenge_JITCacheEfficiency}`
-  - **背景**: RAM 64KB制約下での効率的なキャッシュ管理。
-  - **結論**: 3面マルチバッファ（Active/Warm/Oldest、2KB x 3 = 6KB）を採用し、Oldest-Only Promotion による効率的な代謝を行う。
-
-- **決定事項**: `{NativeAPI_Export}`
-  - **背景**: WASIなどの標準ホストサービスの実装コストとコード規模の削減。
-  - **結論**: 単一のトラップ命令（Single Trap）と vMMIO レジスタによる引数渡しを採用。ホスト側のグルーコードを最小化し、複雑なロジックはゲスト側の Shim ライブラリへオフロードする。
-
-## 6. 共通ポリシー
-
-### ヒープパーティション
-システムRAMを独立したヒープに分割し、障害隔離を実現する。 `{GLOBAL_IndependentHeap}` `{META_FaultIsolation}` `{GLOBAL_StrictMemoryLimit}`
-
-詳細なメモリ予算およびSLOC予算については **[resource_budget.md](resource_budget.md)** を参照。
-
-- ロジックエラー発生時は該当サービスが受信した `TASK_CRASHED` イベントをトリガーに自律リブートを行い、システム全体の稼働を継続する。 `{SelfReboot_via_Event}`
-- IPCルータが各サービスが所有するIPCリソースのレジストリ管理を担い、リブート時の不整合は強制解放および生成番号（Generation Cookie）による検証で解消する。 `{IPC_Resource_Isolation}`
-- COOSおよびvSoCは、リカバリ用イベントハンドラを介して各コンポーネントの回復処理を管理する。
-
-数値は評価ターゲットである最小構成（RAM 32KB）を示す。想定構成（64KB）の値および縮退方針は **[resource_budget.md](resource_budget.md)** を正本とする。
-
-| パーティション名 | 目的 | 最小構成サイズ | メモリ確保失敗時の影響 |
-|---|---|---|---|
-| ネイティブヒープ | スケジューラ, CSP, 共有メモリ等 | 4.0KB | アボート |
-| vSoCヒープ | JITメタデータ, WASMコンテキスト等 | 2.0KB | ハイパーバイザ終了 |
-| サブシステムヒープ | IPCルータ, HAL等 | 3.0KB | ハイパーバイザ終了 |
-| JITコードキャッシュ | 生成済みネイティブコード (2KB x 3面) | 6.0KB | 古いキャッシュの破棄 |
-| Interpreter 統合スタック | context, Call/Control フレーム, オペランド | 2.0KB | ゲストのみ終了 |
-| WASMリニアメモリ | ゲストアプリ・サービス作業領域 | 4.0KB | ゲストのみ終了 |
-
-### スケーラビリティ
-本システムは、ゲストリニアメモリ・ログバッファ・オプションドライバの調整により、**32KB（評価ターゲット）から64KB以上**のRAM環境に柔軟に対応する。JITコードキャッシュ（3面固定）と統合スタックは、面数・呼び出し深度が設計前提を成すため縮退対象から除外する。 `{GLOBAL_StaticScalability}`
-
-### 設定方式
-ヘッダファイル形式のコンフィグファイルでシステムパラメータを定義し、コンパイル時に固定する。 `{META_ConfigurableSystem}`

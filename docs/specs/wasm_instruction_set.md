@@ -4,7 +4,7 @@
 <!-- traceability: {ThreadedInterpreter} {JIT_CopyAndPatch} {Wasm32Only} {META_ZeroCostAbstraction} -->
 本仕様書は、Fireball Hypervisor（インタープリタおよび Copy-and-Patch JIT コンパイラ）がサポートする **WASM MVP (v1, 32-bit)** 命令セットの物理マトリクスを定義する正本である。
 
-全バイトコードは Cortex-M33（ARMv8-M）ターゲットにおける `__fastcall` 継続渡し（CPS）3引数（`R0: ip`, `R1: stack_bot`, `R2: env`）ハンドラ、および JIT Stencil テンプレート（Callee-saved 任意割当プール `R4-R6, R8-R11`（メモリアクセス時は `R8`/`R9` を `mem_base`/`mem_size` に固定）、`R3: local_param`、`R12`: 一時スクラッチ）へのマッピングを一意に確定する。 `{ThreadedInterpreter}` `{JIT_CopyAndPatch}` `{Wasm32Only}` `{META_ZeroCostAbstraction}`
+全バイトコードは Cortex-M33（ARMv8-M）ターゲットにおける `__fastcall` 継続渡し（CPS）3引数シグネチャ（`R0: ip`, `R1: stack_bot`, `R2: env`）＋一時スクラッチ（`R3: scratch`）ハンドラ、および JIT Stencil テンプレート（Callee-saved 任意割当プール `R4-R6, R8-R11`（メモリアクセス時は `R8`/`R9` を `mem_base`/`mem_size` に固定）、`R3`: スクラッチ（解放済み）、`R12`: 一時スクラッチ）へのマッピングを一意に確定する。 `{ThreadedInterpreter}` `{JIT_CopyAndPatch}` `{Wasm32Only}` `{META_ZeroCostAbstraction}`
 
 ---
 
@@ -37,7 +37,7 @@
 | `0x0C` | `br` | `[] -> []` | 指定深度のラベルへ無条件ジャンプ | あり (Branch) | `B.W <target_label>` |
 | `0x0D` | `br_if` | `[i32] -> []` | TOS $\ne 0$ ならラベルへジャンプ | あり (Branch Cond) | `CMP r4, #0; BNE.W <target>` |
 | `0x0E` | `br_table` | `[i32] -> []` | テーブルインデックス分岐 | あり (Jump Table) | `TBB` / `TBH` テーブル分岐 |
-| `0x0F` | `return` | `[t*] -> [t*]` | 関数コールフレームをポップして復帰 | あり (Epilogue & BX) | `POP r4-r11; BX lr` 復元 |
+| `0x0F` | `return` | `[t*] -> [t*]` | 関数コールフレームをポップして復帰 | あり (Epilogue & Return) | `POP {r4-r6, r8-r11, pc}` (JITプール復元、R7 FP除外) |
 | `0x10` | `call` | `[t1*] -> [t2*]`| `call_frame` を積んで関数呼出 | あり (Direct Call / BL) | インラインまたは `BL` |
 | `0x11` | `call_indirect`| `[t1*, i32] -> [t2*]`| 関数テーブル照合 $\to$ 間接呼出 | あり (Indirect Call) | 型シグネチャ照合＋ `BLX` |
 
@@ -100,8 +100,8 @@
 | `0x41` | `i32.const` | `[] -> [i32]` | 即値を TOS へプッシュ | あり (MOVW / MOV) | `MOVW r4, #imm16; MOVT r4, #imm16` |
 | `0x42` | `i64.const` | `[] -> [i64]` | 64-bit 即値をプッシュ | あり (2x MOV) | 2 レジスタへロード |
 | `0x45` | `i32.eqz` | `[i32] -> [i32]` | $x == 0$ 判定 | あり (CMP & IT) | `CMP r4, #0; IT EQ; MOVEQ r4, #1; IT NE; MOVNE r4, #0` |
-| `0x46` | `i32.eq` | `[i32, i32] -> [i32]` | $a == b$ 判定 | あり (CMP & CSET) | `CMP r5, r4; IT EQ; MOVEQ r4, #1; IT NE; MOVNE r4, #0` |
-| `0x47` | `i32.ne` | `[i32, i32] -> [i32]` | $a \ne b$ 判定 | あり (CMP & CSET) | `CMP r5, r4; IT NE; MOVNE r4, #1; IT EQ; MOVEQ r4, #0` |
+| `0x46` | `i32.eq` | `[i32, i32] -> [i32]` | $a == b$ 判定 | あり (CMP & IT) | `CMP r5, r4; IT EQ; MOVEQ r4, #1; IT NE; MOVNE r4, #0` |
+| `0x47` | `i32.ne` | `[i32, i32] -> [i32]` | $a \ne b$ 判定 | あり (CMP & IT) | `CMP r5, r4; IT NE; MOVNE r4, #1; IT EQ; MOVEQ r4, #0` |
 | `0x48` | `i32.lt_s` | `[i32, i32] -> [i32]` | 符号付き $a < b$ | あり (CMP & LT) | `CMP r5, r4; IT LT; MOVLT r4, #1; IT GE; MOVGE r4, #0` |
 | `0x49` | `i32.lt_u` | `[i32, i32] -> [i32]` | 符号なし $a < b$ | あり (CMP & LO) | `CMP r5, r4; IT LO; MOVLO r4, #1; IT HS; MOVHS r4, #0` |
 | `0x67` | `i32.clz` | `[i32] -> [i32]` | 先頭連続ゼロビット数 | あり (CLZ) | `CLZ r4, r4` |

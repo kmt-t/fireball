@@ -4,13 +4,12 @@
       "item_id": "item:META_ConfigurableSystem",
       "item_label": "{META_ConfigurableSystem}",
       "status": "PASS",
-      "summary": "The audit of {META_ConfigurableSystem} confirms strict vertical and horizontal consistency. All referencing design sections adhere to the definition of compile-time static determination via header macros and constexpr. Numeric values for JIT cache and memory limits are consistent across the architecture overview, system config, and JIT compiler sections.",
+      "summary": "All referencing design sections strictly conform to the {META_ConfigurableSystem} definition. System parameters are uniformly implemented as compile-time static constants via header macros and constexpr, with explicit enforcement of zero runtime overhead and static ROM/Flash placement. Cross-referenced macro names, default values, and architectural constraints are numerically and logically consistent across all tiers. No contradictions, ambiguities, or unbacked claims were detected.",
       "issues": [],
       "covered_files": [
         "architecture/architecture_overview.md",
         "architecture/document_structure.md",
         "components/tier1_core/system_config.md",
-        "components/tier1_core/system_config_details.md",
         "components/tier1_core/system_logging.md",
         "components/tier1_interface/system_service.md",
         "components/tier2_runtime/runtime_interpreter.md",
@@ -22,14 +21,30 @@
       ]
     },
     {
+      "item_id": "item:META_FlatMapIndexed",
+      "item_label": "{META_FlatMapIndexed}",
+      "status": "PASS",
+      "summary": "All referencing design sections strictly conform to the {META_FlatMapIndexed} definition. The designs consistently implement sorted arrays, fireball::flat_map_view, and coarse indexing (two-level lookup) to maintain order and achieve O(log N) fast search while adhering to low-memory constraints (static allocation, no std::vector, constexpr). Cross-subsystem implementations (JIT, vMMIO, IPC Router) are horizontally consistent, numerically sound, and properly cite backing artifacts where empirical claims are made. No contradictions, ambiguities, or unbacked assertions were detected.",
+      "issues": [],
+      "covered_files": [
+        "architecture/architecture_overview.md",
+        "architecture/document_structure.md",
+        "components/tier1_core/system_config.md",
+        "components/tier1_core/system_containers.md",
+        "components/tier1_interface/ipc_router.md",
+        "components/tier2_runtime/runtime_vmmio.md",
+        "components/tier3_jit/jit_runtime.md"
+      ]
+    },
+    {
       "item_id": "item:META_3TierSeparation",
       "item_label": "{META_3TierSeparation}",
       "status": "PASS",
-      "summary": "The audit of {META_3TierSeparation} confirms strict vertical and horizontal consistency. All referencing design sections correctly implement the 3-tier decomposition (Tier 1: Primary, Tier 2: Decomposed Subcomponent, Tier 3: Leaf Component) as defined in the architecture specifications. Dependency management via the harness pattern is consistently applied across the tiers to maintain the required encapsulation and zero-overhead goals.",
+      "summary": "The referencing design sections strictly conform to the {META_3TierSeparation} definition. All components are explicitly and consistently classified into a 3-tier hierarchy (Tier 1: Primary/Core, Tier 2: Decomposed Subcomponents, Tier 3: Leaf/Platform), directly reflecting the 'decomposition based on design complexity' requirement. Encapsulated dependency management is correctly enforced across tiers through static DI, harness patterns, view-only abstractions, and strict inner/outer separation rules. No contradictions, ambiguities, or specification drifts were detected.",
       "issues": [],
       "covered_files": [
+        "architecture/architecture_overview.md",
         "architecture/document_structure.md",
-        "architecture/master_physical_design.md",
         "components/tier1_core/os_coos.md",
         "components/tier1_core/os_scheduler.md",
         "components/tier1_core/system_config.md",
@@ -37,17 +52,13 @@
         "components/tier1_core/system_logging.md",
         "components/tier1_interface/ipc_router.md",
         "components/tier1_interface/system_service.md",
-        "components/tier2_runtime/debug/debug_gdb_rsp.md",
         "components/tier2_runtime/debug/debug_manager.md",
         "components/tier2_runtime/runtime_interpreter.md",
         "components/tier2_runtime/runtime_loader.md",
         "components/tier2_runtime/runtime_vmmio.md",
         "components/tier2_runtime/runtime_vsoc.md",
-        "components/tier3_jit/jit_assembler_constexpr.md",
         "components/tier3_jit/jit_compiler.md",
-        "components/tier3_jit/jit_engine_copy_patch.md",
-        "components/tier3_jit/jit_runtime_entry.md",
-        "components/tier3_jit/jit_runtime_hotspot.md",
+        "components/tier3_jit/jit_runtime.md",
         "components/tier3_platform/platform_hal.md",
         "components/tier3_platform/platform_memory.md",
         "plans/backlog_list.md"
@@ -57,15 +68,14 @@
       "item_id": "item:ContextPointerRegister",
       "item_label": "{ContextPointerRegister}",
       "status": "PASS",
-      "summary": "The design defines the execution_context and explicitly maps the context base pointer to dedicated physical register R7 on ARM Cortex-M targets, enabling single-cycle base-relative addressing and fulfilling {ContextPointerRegister}.",
+      "summary": "The requirement {ContextPointerRegister} is consistently and rigorously implemented across all referencing design sections. Vertical alignment confirms strict adherence to the stack-bottom placement, unified stack model, context-managed stack length, and argument register saving/scratch freeing. Horizontal cross-audits reveal no drift in register assignments (R1=stack_bot, R3=scratch), call signatures (3-arg CPS), or memory layouts. Numeric offsets, sizes, and architectural constraints are arithmetically consistent. No ambiguities, unbacked claims, or problematic duplications were detected.",
       "issues": [],
       "covered_files": [
-        "architecture/master_physical_design.md",
-        "components/tier1_core/system_config_details.md",
+        "architecture/architecture_overview.md",
+        "components/tier1_core/system_config.md",
         "components/tier2_runtime/runtime_interpreter.md",
         "components/tier2_runtime/runtime_vsoc.md",
         "components/tier3_jit/jit_compiler.md",
-        "components/tier3_jit/jit_engine_copy_patch.md",
         "plans/backlog_list.md",
         "requires/requirement_list.md",
         "specs/gdb_rsp_protocol.md",
@@ -74,32 +84,14 @@
       ]
     },
     {
-      "item_id": "item:META_FlatMapIndexed",
-      "item_label": "{META_FlatMapIndexed}",
-      "status": "PASS",
-      "summary": "The audit of {META_FlatMapIndexed} across all referencing design sections confirms strict vertical and horizontal consistency. The implementation of the 'flat_map_view' pattern is uniformly applied across JIT entry indexing, vMMIO PTE management, and IPC routing, adhering to the constraints of zero-cost abstraction and the prohibition of std::vector.",
-      "issues": [],
-      "covered_files": [
-        "architecture/document_structure.md",
-        "architecture/master_physical_design.md",
-        "components/tier1_core/system_config_details.md",
-        "components/tier1_core/system_containers.md",
-        "components/tier1_interface/ipc_router.md",
-        "components/tier2_runtime/runtime_vmmio.md",
-        "components/tier3_jit/jit_compiler.md",
-        "components/tier3_jit/jit_runtime_entry.md"
-      ]
-    },
-    {
       "item_id": "item:JIT_CopyAndPatch",
       "item_label": "{JIT_CopyAndPatch}",
       "status": "PASS",
-      "summary": "The audit of the {JIT_CopyAndPatch} requirement across the provided definition and design sections shows high vertical and horizontal consistency. The design implements the 'Copy-and-Patch' mechanism through a tiered architecture (Tier 2 Runtime and Tier 3 JIT Engine/Stencil Catalog) without contradictions in register assignments, call conventions, or algorithmic flow.",
+      "summary": "The requirement {JIT_CopyAndPatch} is consistently and comprehensively implemented across all referencing design sections. Vertical alignment confirms the definition ('concatenate instruction templates and apply patches') is strictly followed by the detailed Copy-and-Patch algorithm, stencil catalog, and runtime integration. Horizontal consistency shows no drift between runtime, compiler, and specification layers. Numeric values, relocation types, and cache policies are coherent. All empirical claims are properly cited or framed as design goals. No contradictions, ambiguities, or unbacked assertions were detected.",
       "issues": [],
       "covered_files": [
         "components/tier2_runtime/runtime_vsoc.md",
         "components/tier3_jit/jit_compiler.md",
-        "components/tier3_jit/jit_engine_copy_patch.md",
         "plans/backlog_list.md",
         "requires/requirement_list.md",
         "specs/jit_stencil_catalog.md",
@@ -107,24 +99,10 @@
       ]
     },
     {
-      "item_id": "item:META_Static_Resolution",
-      "item_label": "{META_Static_Resolution}",
-      "status": "PASS",
-      "summary": "The audit of {META_Static_Resolution} across all referencing design sections confirms strict adherence to the definition. The principle of shifting runtime decisions to compile-time to minimize overhead is consistently applied across Tier 1 (System Config), Tier 2 (vMMIO), and Tier 3 (JIT Assembler) layers.",
-      "issues": [],
-      "covered_files": [
-        "architecture/architecture_overview.md",
-        "architecture/document_structure.md",
-        "components/tier1_core/system_config.md",
-        "components/tier2_runtime/runtime_vmmio.md",
-        "components/tier3_jit/jit_assembler_constexpr.md"
-      ]
-    },
-    {
       "item_id": "item:META_RecoveryStrategy",
       "item_label": "{META_RecoveryStrategy}",
       "status": "PASS",
-      "summary": "The audit of {META_RecoveryStrategy} confirms strict vertical and horizontal consistency. The definition of replacing error codes with recovery strategies is uniformly implemented across the WIT interfaces, system services, and runtime components. The four defined strategies (ignore, retry, restart, panic) are consistently applied with matching preconditions and post-conditions across all referencing sections.",
+      "summary": "The referencing design sections consistently and correctly implement the {META_RecoveryStrategy} requirement. All components replace error codes with explicit recovery strategy enums (ignore, retry, restart, panic). Numeric constraints (e.g., retry limit of 3) are aligned across sections. Domain-specific adaptations (e.g., excluding IGNORE for service loading) are logically sound and do not contradict the core definition. No vertical/horizontal inconsistencies, arithmetic errors, or unbacked claims were detected.",
       "issues": [],
       "covered_files": [
         "architecture/document_structure.md",
@@ -136,49 +114,22 @@
       ]
     },
     {
-      "item_id": "item:JIT_MultiBuffer_Cache",
-      "item_label": "{JIT_MultiBuffer_Cache}",
-      "status": "PASS",
-      "summary": "The specification for {JIT_MultiBuffer_Cache} is exhaustively consistent across all architectural layers. Numeric values, bank roles, and the promotion policy are perfectly aligned between the requirements, physical design, system configuration, and component-level details.",
-      "issues": [],
-      "covered_files": [
-        "architecture/master_physical_design.md",
-        "components/tier1_core/system_config_details.md",
-        "components/tier2_runtime/runtime_vsoc.md",
-        "components/tier3_jit/jit_compiler.md",
-        "components/tier3_jit/jit_engine_copy_patch.md",
-        "components/tier3_jit/jit_runtime_entry.md",
-        "plans/backlog_list.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:LowLatencyJIT",
-      "item_label": "{LowLatencyJIT}",
-      "status": "PASS",
-      "summary": "The audit of {LowLatencyJIT} across the provided sections shows high vertical and horizontal consistency. The design sections successfully translate the high-level requirement of 'minimizing compile latency' into concrete technical implementations: Copy-and-Patch, Transactional MPU batching, and a specific 3-buffer cache rotation strategy. The potential contradiction regarding 'Zero-Overhead' is explicitly resolved via ADR_TosCacheAsymmetry, which defines the exact boundary of the claim.",
-      "issues": [],
-      "covered_files": [
-        "components/tier2_runtime/runtime_interpreter.md",
-        "components/tier2_runtime/runtime_vsoc.md",
-        "components/tier3_jit/jit_compiler.md",
-        "components/tier3_jit/jit_engine_copy_patch.md",
-        "components/tier3_jit/jit_runtime_hotspot.md",
-        "components/tier3_platform/platform_memory.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
       "item_id": "item:GLOBAL_StrictMemoryLimit",
       "item_label": "{GLOBAL_StrictMemoryLimit}",
-      "status": "PASS",
-      "summary": "The audit of {GLOBAL_StrictMemoryLimit} confirms strict vertical and horizontal consistency. All numeric allocations sum correctly to the defined budget, and the design sections consistently implement the strict memory constraints through static allocation and bit-packing techniques.",
-      "issues": [],
+      "status": "WARN",
+      "summary": "The referencing design sections demonstrate strict vertical and horizontal consistency with the {GLOBAL_StrictMemoryLimit} requirement. All designs correctly implement the 21KB static memory pool and 32KB physical RAM constraints through static configuration macros, bit-packing optimizations, and explicit exclusion of heavy WASM/GDB features. Numeric allocations sum precisely to the stated budget. A single WARNING is issued for a minor cross-subsection macro duplication.",
+      "issues": [
+        {
+          "severity": "WARNING",
+          "location": "sec:components/tier1_core/system_config.md#3.3.1 メモリ管理 & sec:components/tier1_core/system_config.md#3.3.4 vSoC / vMMIO",
+          "description": "Redundant Specification Duplication: The macro `FB_CONF_JIT_CACHE_SIZE` (default value: 6144) is defined identically in both the Memory Management and vSoC/vMMIO configuration tables. While the values are consistent, duplicating the same configuration parameter across multiple subsections violates the single Source of Truth principle. It should be consolidated into one location with cross-references."
+        }
+      ],
       "covered_files": [
         "architecture/architecture_overview.md",
         "architecture/document_structure.md",
         "components/tier1_core/os_coos.md",
-        "components/tier1_core/system_config_details.md",
+        "components/tier1_core/system_config.md",
         "components/tier1_core/system_containers.md",
         "components/tier3_platform/platform_memory.md",
         "requires/requirement_list.md",
@@ -188,47 +139,13 @@
       ]
     },
     {
-      "item_id": "item:SimpleJITArchitecture",
-      "item_label": "{SimpleJITArchitecture}",
-      "status": "PASS",
-      "summary": "The audit of {SimpleJITArchitecture} confirms strict vertical and horizontal consistency. The design sections implement the requirement of 'efficient operation within a small JIT cache' through a concrete 3-bank rotating cache and a 3-stage lookup pipeline. Numeric values for cache sizes and memory layouts are consistent across all referencing sections.",
-      "issues": [],
-      "covered_files": [
-        "architecture/master_physical_design.md",
-        "components/tier2_runtime/runtime_interpreter.md",
-        "components/tier3_jit/jit_compiler.md",
-        "components/tier3_jit/jit_engine_copy_patch.md",
-        "components/tier3_jit/jit_runtime_entry.md",
-        "components/tier3_jit/jit_runtime_hotspot.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:GLOBAL_StaticScalability",
-      "item_label": "{GLOBAL_StaticScalability}",
-      "status": "PASS",
-      "summary": "The audit of {GLOBAL_StaticScalability} confirms strict vertical and horizontal consistency. All design sections adhere to the definition of determining resource limits at compile-time to eliminate dynamic overhead. Numeric allocations for the minimum configuration (32KB RAM) are mathematically sound and consistent across the resource budget and system configuration details.",
-      "issues": [],
-      "covered_files": [
-        "architecture/architecture_overview.md",
-        "architecture/document_structure.md",
-        "architecture/resource_budget.md",
-        "components/tier1_core/system_config.md",
-        "components/tier1_core/system_config_details.md",
-        "components/tier1_core/system_containers.md",
-        "components/tier1_interface/ipc_router.md",
-        "components/tier3_jit/jit_compiler.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
       "item_id": "item:ThreadedInterpreter",
       "item_label": "{ThreadedInterpreter}",
       "status": "PASS",
-      "summary": "The specification for {ThreadedInterpreter} is highly consistent across all architectural layers. The definition's requirements for __fastcall CPS, register-based variable holding, and JIT calling convention alignment are strictly implemented and detailed in the design sections.",
+      "summary": "The {ThreadedInterpreter} requirement is consistently and comprehensively implemented across all referencing design sections. The definition's three core mandates—__fastcall CPS for register holding, table dispatch for fast execution, and complete calling convention alignment with JIT—are explicitly and uniformly specified in the interpreter algorithm, vSoC runtime delegation, instruction set mapping, and backlog tasks. Register assignments (R0-R2 for CPS, R3 scratch), state transitions, and JIT/Interpreter interop mechanisms show zero drift or contradiction. All claims are framed as design targets or architectural specifications without unbacked empirical assertions. The multi-section references represent legitimate layered perspectives rather than problematic duplication.",
       "issues": [],
       "covered_files": [
-        "architecture/master_physical_design.md",
+        "architecture/architecture_overview.md",
         "components/tier2_runtime/runtime_interpreter.md",
         "components/tier2_runtime/runtime_vsoc.md",
         "plans/backlog_list.md",
@@ -241,21 +158,21 @@
       "item_id": "item:META_BinarySearch",
       "item_label": "{META_BinarySearch}",
       "status": "PASS",
-      "summary": "The audit of {META_BinarySearch} across all referencing design sections confirms strict vertical and horizontal consistency. The definition of O(log N) search on sorted arrays is consistently applied to flat_map_view and flat_set_view, and the 'Narrow-then-Search' optimization is uniformly described across the JIT pipeline and container specifications.",
+      "summary": "The referencing design sections consistently and correctly implement the {META_BinarySearch} requirement. All sections specify binary search on strictly sorted, non-duplicate arrays, achieving $O(\\log n)$ complexity via a narrow-then-search optimization. Preconditions, algorithmic behavior, and complexity claims are uniformly stated across architectural, component, and JIT layers without contradiction or drift. The design explicitly cites a concept verification artifact for algorithmic validation.",
       "issues": [],
       "covered_files": [
+        "architecture/architecture_overview.md",
         "architecture/document_structure.md",
-        "architecture/master_physical_design.md",
         "components/tier1_core/system_containers.md",
         "components/tier3_jit/jit_compiler.md",
-        "components/tier3_jit/jit_runtime_entry.md"
+        "components/tier3_jit/jit_runtime.md"
       ]
     },
     {
       "item_id": "item:META_AccessDictionary",
       "item_label": "{META_AccessDictionary}",
       "status": "PASS",
-      "summary": "The audit of {META_AccessDictionary} across the provided sections shows strict vertical and horizontal consistency. The keyword is consistently applied to optimize runtime access via indexing (binary search/flat_map) in the IPC Router and WASM Loader, while being explicitly excluded from the bit_view where direct indexing is used instead of search.",
+      "summary": "All referencing design sections consistently implement and align with the {META_AccessDictionary} definition. Indexing mechanisms (sorted arrays, flat_map_view, module_view) are correctly applied to optimize runtime access with O(log N) complexity. The explicit exclusion of bit_view from this keyword is a valid scope boundary that clarifies direct indexing versus search-based optimization. Numeric claims, traceability tags, and multi-perspective descriptions are consistent, substantiated, and free of contradictions or redundant drift.",
       "issues": [],
       "covered_files": [
         "architecture/document_structure.md",
@@ -264,1645 +181,37 @@
         "components/tier2_runtime/runtime_loader.md",
         "plans/backlog_list.md"
       ]
-    },
-    {
-      "item_id": "item:GLOBAL_IdleDetection",
-      "item_label": "{GLOBAL_IdleDetection}",
-      "status": "PASS",
-      "summary": "The audit of {GLOBAL_IdleDetection} confirms strict vertical and horizontal consistency across the OS core, logging system, and JIT compiler. The definition is consistently implemented as a mechanism for background processing (log flushing and batch compilation) triggered when the system is idle.",
-      "issues": [],
-      "covered_files": [
-        "architecture/document_structure.md",
-        "components/tier1_core/os_coos.md",
-        "components/tier1_core/os_scheduler.md",
-        "components/tier1_core/system_logging.md",
-        "components/tier3_jit/jit_compiler.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:MemoryBoundaryCheck",
-      "item_label": "{MemoryBoundaryCheck}",
-      "status": "PASS",
-      "summary": "The audit of {MemoryBoundaryCheck} confirms strict vertical and horizontal consistency across all referencing design sections. The implementation details for both the Interpreter and JIT (stencils) align perfectly with the high-level requirements and the FastAddressCheck constraint.",
-      "issues": [],
-      "covered_files": [
-        "architecture/master_physical_design.md",
-        "components/tier2_runtime/debug/debug_manager.md",
-        "components/tier2_runtime/runtime_interpreter.md",
-        "components/tier2_runtime/runtime_vsoc.md",
-        "components/tier3_jit/jit_compiler.md",
-        "plans/backlog_list.md",
-        "requires/requirement_list.md",
-        "specs/jit_stencil_catalog.md",
-        "specs/wasi_preview1_abi.md",
-        "specs/wasm_instruction_set.md"
-      ]
-    },
-    {
-      "item_id": "item:FlatViewNarrowing",
-      "item_label": "{FlatViewNarrowing}",
-      "status": "PASS",
-      "summary": "The audit of {FlatViewNarrowing} across all referencing design sections confirms strict vertical and horizontal consistency. The implementation of the 'narrow-then-search' pattern is uniformly applied across JIT lookup, vMMIO access, and debugger breakpoint management.",
-      "issues": [],
-      "covered_files": [
-        "architecture/master_physical_design.md",
-        "components/tier1_core/system_config_details.md",
-        "components/tier1_core/system_containers.md",
-        "components/tier2_runtime/debug/debug_manager.md",
-        "components/tier3_jit/jit_compiler.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:EnvironmentPointer",
-      "item_label": "{EnvironmentPointer}",
-      "status": "PASS",
-      "summary": "The audit of the {EnvironmentPointer} requirement across all referencing design sections shows perfect vertical and horizontal consistency. The definition of the environment pointer as a type-safe reference to the runtime environment is strictly implemented as the 'env' pointer (vsoc_runtime*) mapped to physical register R2 across the interpreter, JIT compiler, and physical register maps.",
-      "issues": [],
-      "covered_files": [
-        "architecture/master_physical_design.md",
-        "components/tier2_runtime/runtime_interpreter.md",
-        "components/tier2_runtime/runtime_vsoc.md",
-        "components/tier3_jit/jit_compiler.md",
-        "components/tier3_jit/jit_engine_copy_patch.md",
-        "requires/requirement_list.md",
-        "specs/jit_stencil_catalog.md"
-      ]
-    },
-    {
-      "item_id": "item:IPCRouter",
-      "item_label": "{IPCRouter}",
-      "status": "PASS",
-      "summary": "The audit of the {IPCRouter} requirement across the provided design sections shows high vertical and horizontal consistency. All referencing components (System Logging, IPC Router, System Service, and Platform HAL) strictly adhere to the invariant that all system calls must pass through the IPC Router.",
-      "issues": [],
-      "covered_files": [
-        "components/tier1_core/system_logging.md",
-        "components/tier1_interface/ipc_router.md",
-        "components/tier1_interface/system_service.md",
-        "components/tier3_platform/platform_hal.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:META_FaultIsolation",
-      "item_label": "{META_FaultIsolation}",
-      "status": "PASS",
-      "summary": "The audit of {META_FaultIsolation} confirms strict vertical and horizontal consistency. The definition of preventing fault propagation via memory partitioning is concretely implemented across multiple layers: from high-level heap partitioning and service isolation to low-level MPU region assignments and ownership-based shared memory transfers.",
-      "issues": [],
-      "covered_files": [
-        "architecture/architecture_overview.md",
-        "architecture/document_structure.md",
-        "components/tier1_interface/system_service.md",
-        "components/tier2_runtime/runtime_interpreter.md",
-        "components/tier2_runtime/runtime_vsoc.md",
-        "components/tier3_platform/platform_memory.md"
-      ]
-    },
-    {
-      "item_id": "item:META_ZeroCostAbstraction",
-      "item_label": "{META_ZeroCostAbstraction}",
-      "status": "PASS",
-      "summary": "The audit of {META_ZeroCostAbstraction} across all referencing design sections confirms strict adherence to the definition. The implementation patterns (non-owning views, constexpr encoding, and direct register mapping) consistently realize the 'zero runtime cost' requirement.",
-      "issues": [],
-      "covered_files": [
-        "architecture/document_structure.md",
-        "architecture/master_physical_design.md",
-        "components/tier1_core/system_containers.md",
-        "components/tier3_jit/jit_assembler_constexpr.md",
-        "specs/gdb_rsp_protocol.md",
-        "specs/jit_stencil_catalog.md",
-        "specs/wasi_preview1_abi.md",
-        "specs/wasm_instruction_set.md"
-      ]
-    },
-    {
-      "item_id": "item:RoleBasedAccessControl",
-      "item_label": "{RoleBasedAccessControl}",
-      "status": "PASS",
-      "summary": "The specification for {RoleBasedAccessControl} is highly consistent across all definition and design sections. The static role matrix is defined concretely in the configuration and implemented consistently in the IPC router's lookup pipeline and sequence diagrams. The claim regarding deadlock prevention is backed by a specific verification artifact.",
-      "issues": [],
-      "covered_files": [
-        "components/tier1_core/system_config_details.md",
-        "components/tier1_core/system_syscall.md",
-        "components/tier1_interface/ipc_router.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:OwnershipTransfer",
-      "item_label": "{OwnershipTransfer}",
-      "status": "PASS",
-      "summary": "The audit of {OwnershipTransfer} confirms high vertical and horizontal consistency across the IPC Router, vMMIO, and Platform Memory sections. The design successfully decomposes the abstract definition into a concrete 3-stage handoff (Revoke -> Enqueue -> Grant) with robust error recovery (Rollback) and emergency cleanup (Drop Handler).",
-      "issues": [],
-      "covered_files": [
-        "components/tier1_interface/ipc_router.md",
-        "components/tier2_runtime/runtime_vmmio.md",
-        "components/tier3_platform/platform_memory.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:JIT_RuntimeAPI_Fallback",
-      "item_label": "{JIT_RuntimeAPI_Fallback}",
-      "status": "PASS",
-      "summary": "The audit of {JIT_RuntimeAPI_Fallback} confirms strict vertical and horizontal consistency across all referencing design sections. The requirement to offload complex instructions to runtime APIs to reduce JIT engine complexity is consistently implemented as a mechanism for both interpreter handlers and JIT stencils, ensuring a unified execution model.",
-      "issues": [],
-      "covered_files": [
-        "components/tier2_runtime/runtime_interpreter.md",
-        "components/tier3_jit/jit_compiler.md",
-        "components/tier3_jit/jit_engine_copy_patch.md",
-        "plans/backlog_list.md",
-        "requires/requirement_list.md",
-        "specs/jit_stencil_catalog.md",
-        "specs/wasm_instruction_set.md"
-      ]
-    },
-    {
-      "item_id": "item:GLOBAL_Policy_Memory",
-      "item_label": "{GLOBAL_Policy_Memory}",
-      "status": "PASS",
-      "summary": "The audit of {GLOBAL_Policy_Memory} across all referencing design sections confirms strict adherence to the defined policy of prohibiting dynamic heap allocation (malloc/new) in favor of static or stack-based allocation.",
-      "issues": [],
-      "covered_files": [
-        "architecture/document_structure.md",
-        "components/tier1_core/os_coos.md",
-        "components/tier1_core/os_scheduler.md",
-        "components/tier1_core/system_containers.md",
-        "components/tier2_runtime/runtime_vmmio.md",
-        "components/tier3_platform/platform_memory.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:FastAddressCheck",
-      "item_label": "{FastAddressCheck}",
-      "status": "PASS",
-      "summary": "The audit of {FastAddressCheck} across all referencing design sections confirms strict vertical and horizontal consistency. The requirement for a single-instruction size comparison without masking, the prohibition of silent wrap-around, and the specific register mapping (R9 for mem_size) are uniformly implemented across the JIT stencils, the vMMIO concept, and the runtime environment structures.",
-      "issues": [],
-      "covered_files": [
-        "architecture/master_physical_design.md",
-        "components/tier1_core/system_config_details.md",
-        "components/tier2_runtime/runtime_vmmio.md",
-        "components/tier2_runtime/runtime_vsoc.md",
-        "components/tier3_jit/jit_compiler.md",
-        "plans/backlog_list.md",
-        "requires/requirement_list.md",
-        "specs/jit_stencil_catalog.md",
-        "specs/wasm_instruction_set.md"
-      ]
-    },
-    {
-      "item_id": "item:LowLatencyLookup",
-      "item_label": "{LowLatencyLookup}",
-      "status": "PASS",
-      "summary": "The audit of {LowLatencyLookup} confirms strict vertical and horizontal consistency. The requirement for O(log N) lookup via sorted arrays and binary search is uniformly implemented across the TLB design, system containers, and the IPC router. All empirical claims are backed by specific artifact citations.",
-      "issues": [],
-      "covered_files": [
-        "architecture/master_physical_design.md",
-        "components/tier1_core/system_containers.md",
-        "components/tier1_interface/ipc_router.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:META_StaticDI",
-      "item_label": "{META_StaticDI}",
-      "status": "PASS",
-      "summary": "The audit of {META_StaticDI} across all referencing design sections confirms strict vertical and horizontal consistency. The implementation of 'Static Dependency Injection' is consistently described as the use of POD structures (harnesses) to achieve dependency inversion without runtime overhead (vtable/virtual functions), aligning perfectly with the definition of compile-time static binding.",
-      "issues": [],
-      "covered_files": [
-        "architecture/architecture_overview.md",
-        "architecture/concept_harness.md",
-        "architecture/document_structure.md",
-        "components/tier1_core/os_coos.md",
-        "components/tier2_runtime/runtime_vsoc.md",
-        "components/tier3_jit/jit_engine_copy_patch.md",
-        "components/tier3_platform/platform_hal.md"
-      ]
-    },
-    {
-      "item_id": "item:JIT_LazyChaining",
-      "item_label": "{JIT_LazyChaining}",
-      "status": "PASS",
-      "summary": "The audit of {JIT_LazyChaining} confirms strict vertical and horizontal consistency across all referencing design sections. The implementation details for the chaining mechanism, the physical memory layout of the trace header, and the register spill/reload strategy at trace boundaries are logically aligned and mutually supportive.",
-      "issues": [],
-      "covered_files": [
-        "architecture/master_physical_design.md",
-        "components/tier1_core/system_config_details.md",
-        "components/tier3_jit/jit_compiler.md",
-        "components/tier3_jit/jit_engine_copy_patch.md",
-        "plans/backlog_list.md",
-        "requires/requirement_list.md",
-        "specs/jit_stencil_catalog.md"
-      ]
-    },
-    {
-      "item_id": "item:IPC_ZeroCopy",
-      "item_label": "{IPC_ZeroCopy}",
-      "status": "PASS",
-      "summary": "The specification for {IPC_ZeroCopy} is highly consistent across all architectural layers. The definition of eliminating data copying is concretely implemented via a three-stage ownership transfer (Revoke -> Enqueue -> Grant) and supported by a dedicated static shared memory budget.",
-      "issues": [],
-      "covered_files": [
-        "architecture/master_physical_design.md",
-        "components/tier1_core/system_config_details.md",
-        "components/tier1_interface/ipc_router.md",
-        "components/tier3_platform/platform_hal.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:JIT_RegisterMapping",
-      "item_label": "{JIT_RegisterMapping}",
-      "status": "PASS",
-      "summary": "The audit of {JIT_RegisterMapping} confirms strict vertical and horizontal consistency across all referencing design sections. The physical register mapping for the ARM Cortex-M33 is consistently defined, and the distinction between the interpreter's register usage and the JIT trace's assignable pool is clearly maintained and justified.",
-      "issues": [],
-      "covered_files": [
-        "architecture/master_physical_design.md",
-        "components/tier2_runtime/runtime_interpreter.md",
-        "components/tier3_jit/concepts/README.md",
-        "components/tier3_jit/jit_compiler.md",
-        "components/tier3_jit/jit_engine_copy_patch.md",
-        "requires/requirement_list.md",
-        "specs/jit_stencil_catalog.md",
-        "specs/wasm_instruction_set.md"
-      ]
-    },
-    {
-      "item_id": "item:ADR_TosCacheAsymmetry",
-      "item_label": "{ADR_TosCacheAsymmetry}",
-      "status": "PASS",
-      "summary": "The audit of {ADR_TosCacheAsymmetry} confirms strict vertical and horizontal consistency across all referencing design sections. The asymmetric register convention (JIT uses R4/R5 for TOS/NOS, Interpreter does not) is consistently applied, and the associated costs (STR x2 on exit) are explicitly acknowledged as the bounded cost of this design choice.",
-      "issues": [],
-      "covered_files": [
-        "architecture/master_physical_design.md",
-        "components/tier2_runtime/runtime_interpreter.md",
-        "components/tier3_jit/jit_compiler.md",
-        "components/tier3_jit/jit_engine_copy_patch.md",
-        "plans/backlog_list.md",
-        "requires/requirement_list.md",
-        "specs/jit_stencil_catalog.md"
-      ]
-    },
-    {
-      "item_id": "item:GLOBAL_InterruptWakeup",
-      "item_label": "{GLOBAL_InterruptWakeup}",
-      "status": "PASS",
-      "summary": "The audit of {GLOBAL_InterruptWakeup} confirms strict vertical and horizontal consistency across all architectural tiers. The design implements a decoupled 'push-pull' notification model that aligns with the requirement of waking up associated tasks without violating the cooperative multitasking constraints of the COOS.",
-      "issues": [],
-      "covered_files": [
-        "architecture/document_structure.md",
-        "components/tier1_core/os_coos.md",
-        "components/tier1_core/os_scheduler.md",
-        "components/tier1_interface/ipc_router.md",
-        "components/tier2_runtime/runtime_vsoc.md",
-        "components/tier3_platform/platform_hal.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:BufferedLogging",
-      "item_label": "{BufferedLogging}",
-      "status": "PASS",
-      "summary": "The specification for {BufferedLogging} is consistent across all definition and design sections. The requirement for ring-buffering and idle-time flushing is correctly decomposed into the system_logging component and the COOS idle hook mechanism.",
-      "issues": [],
-      "covered_files": [
-        "components/tier1_core/os_coos.md",
-        "components/tier1_core/system_config_details.md",
-        "components/tier1_core/system_logging.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:Type_Vocabulary",
-      "item_label": "{Type_Vocabulary}",
-      "status": "PASS",
-      "summary": "The audit of {Type_Vocabulary} confirms strict vertical and horizontal consistency. The design sections correctly implement the definition as a set of strict type aliases and vocabulary to link specifications and implementation across different architectural layers.",
-      "issues": [],
-      "covered_files": [
-        "components/tier1_core/system_containers.md",
-        "components/tier1_core/system_syscall.md",
-        "requires/requirement_list.md",
-        "specs/wasi_preview1_abi.md"
-      ]
-    },
-    {
-      "item_id": "item:PackedBitView",
-      "item_label": "{PackedBitView}",
-      "status": "PASS",
-      "summary": "The specification for {PackedBitView} is exhaustively consistent across all definition and design sections. The implementation details in the design sections strictly adhere to the constraints defined in the requirement list, and the provided conceptual Python code serves as a concrete artifact substantiating the architectural claims.",
-      "issues": [],
-      "covered_files": [
-        "components/tier1_core/system_containers.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:Debug_Integrated",
-      "item_label": "{Debug_Integrated}",
-      "status": "PASS",
-      "summary": "The design explicitly integrates execution profiler sampling (hotspot PC sampling and frequency tracking) and dynamic test tool validation hooks into the DebugManager and RuntimeInterpreter, satisfying all requirements of {Debug_Integrated}.",
-      "issues": [],
-      "covered_files": [
-        "components/tier2_runtime/debug/debug_gdb_rsp.md",
-        "components/tier2_runtime/debug/debug_manager.md",
-        "components/tier2_runtime/runtime_interpreter.md",
-        "components/tier2_runtime/runtime_vsoc.md",
-        "requires/requirement_list.md",
-        "specs/gdb_rsp_protocol.md"
-      ]
-    },
-    {
-      "item_id": "item:GLOBAL_ComponentHarness",
-      "item_label": "{GLOBAL_ComponentHarness}",
-      "status": "PASS",
-      "summary": "The architectural policy for harness application is fully aligned across all tiers. Tier 1 COOS uses coos_harness for static internal component binding, Tier 2 Subsystems use vsoc_harness, while Tier 3 leaf components (such as jit_compiler) are confirmed to operate as single-responsibility units without redundant harnesses.",
-      "issues": [],
-      "covered_files": [
-        "architecture/architecture_overview.md",
-        "architecture/concept_harness.md",
-        "architecture/document_structure.md",
-        "components/tier1_core/os_coos.md",
-        "components/tier2_runtime/runtime_vsoc.md",
-        "components/tier3_jit/jit_engine_copy_patch.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:META_RestrictedPhysicalAccess",
-      "item_label": "{META_RestrictedPhysicalAccess}",
-      "status": "PASS",
-      "summary": "The audit of {META_RestrictedPhysicalAccess} confirms strict vertical and horizontal consistency. The definition of restricting physical resource access via permission tables is consistently implemented across the vMMIO configuration, the system call interface, and the runtime safety constraints.",
-      "issues": [],
-      "covered_files": [
-        "architecture/document_structure.md",
-        "architecture/master_physical_design.md",
-        "components/tier1_core/system_config_details.md",
-        "components/tier1_core/system_syscall.md",
-        "components/tier2_runtime/runtime_vmmio.md",
-        "components/tier2_runtime/runtime_vsoc.md"
-      ]
-    },
-    {
-      "item_id": "item:GLOBAL_PeriodicTask",
-      "item_label": "{GLOBAL_PeriodicTask}",
-      "status": "PASS",
-      "summary": "The audit of {GLOBAL_PeriodicTask} confirms strict vertical and horizontal consistency across all referencing design sections. The definition is correctly implemented as a mechanism for periodic task scheduling, specifically utilized by the JIT compiler for background batch compilation and integrated into the COOS scheduler's idle handling logic.",
-      "issues": [],
-      "covered_files": [
-        "architecture/document_structure.md",
-        "components/tier1_core/os_coos.md",
-        "components/tier1_core/os_scheduler.md",
-        "components/tier3_jit/jit_compiler.md",
-        "components/tier3_jit/jit_runtime_hotspot.md",
-        "requires/requirement_list.md",
-        "specs/wasi_preview1_abi.md"
-      ]
-    },
-    {
-      "item_id": "item:CSP_Handoff",
-      "item_label": "{CSP_Handoff}",
-      "status": "PASS",
-      "summary": "The specification for {CSP_Handoff} is highly consistent across all architectural layers. The definition's requirements for scheduler bypass, symmetric transfer, and bounded consecutive handoffs are strictly adhered to in the physical design, algorithm descriptions, state machines, and formal verification invariants.",
-      "issues": [],
-      "covered_files": [
-        "architecture/master_physical_design.md",
-        "components/tier1_core/os_coos.md",
-        "components/tier1_core/os_scheduler.md",
-        "components/tier1_interface/ipc_router.md",
-        "plans/backlog_list.md",
-        "requires/requirement_list.md",
-        "specs/wasi_preview1_abi.md"
-      ]
-    },
-    {
-      "item_id": "item:DictionaryBasedIPC",
-      "item_label": "{DictionaryBasedIPC}",
-      "status": "PASS",
-      "summary": "The audit of {DictionaryBasedIPC} confirms strict vertical and horizontal consistency. The definition of reducing IPC transfer volume via static dictionary offsets is accurately implemented across the logging component and the IPC router interface.",
-      "issues": [],
-      "covered_files": [
-        "components/tier1_core/system_logging.md",
-        "components/tier1_interface/ipc_router.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:GLOBAL_IndependentHeap",
-      "item_label": "{GLOBAL_IndependentHeap}",
-      "status": "PASS",
-      "summary": "The audit of {GLOBAL_IndependentHeap} confirms strict vertical and horizontal consistency across all definition and design sections. The requirement for independent heap memory areas for fault isolation is consistently implemented through static partitioning of a consolidated physical pool.",
-      "issues": [],
-      "covered_files": [
-        "architecture/architecture_overview.md",
-        "architecture/document_structure.md",
-        "components/tier1_core/os_coos.md",
-        "components/tier1_core/system_config_details.md",
-        "components/tier2_runtime/runtime_vsoc.md",
-        "components/tier3_platform/platform_memory.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:JIT_OldestOnly_Promote",
-      "item_label": "{JIT_OldestOnly_Promote}",
-      "status": "PASS",
-      "summary": "The audit of {JIT_OldestOnly_Promote} confirms strict vertical and horizontal consistency across all referencing design sections. The promotion policy is consistently defined as 'Oldest-Only', and the supporting physical architecture (3-bank rotation) and memory budgets are mathematically aligned.",
-      "issues": [],
-      "covered_files": [
-        "architecture/master_physical_design.md",
-        "architecture/resource_budget.md",
-        "components/tier1_core/system_config_details.md",
-        "components/tier3_jit/jit_compiler.md",
-        "plans/backlog_list.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:TypeSafeMessaging",
-      "item_label": "{TypeSafeMessaging}",
-      "status": "PASS",
-      "summary": "The audit of {TypeSafeMessaging} confirms strict vertical and horizontal consistency across all referencing design sections. The implementation details in the IPC Router and HAL sections align perfectly with the definition's requirements for type safety, search efficiency (O(log N)), and the use of fireball::flat_map_view.",
-      "issues": [],
-      "covered_files": [
-        "architecture/master_physical_design.md",
-        "components/tier1_interface/ipc_router.md",
-        "components/tier3_platform/platform_hal.md",
-        "requires/requirement_list.md",
-        "specs/wasi_preview1_abi.md"
-      ]
-    },
-    {
-      "item_id": "item:Challenge_IpcQueueStarvation",
-      "item_label": "{Challenge_IpcQueueStarvation}",
-      "status": "WARN",
-      "summary": "The design sections are vertically and horizontally consistent regarding the mechanism of {Challenge_IpcQueueStarvation} (Rollback on queue full). However, there is a lack of concrete evidence for the 'mitigation' claims specified in the definition, and a minor redundancy in the state machine descriptions.",
-      "issues": [
-        {
-          "severity": "WARNING",
-          "location": "sec:requires/requirement_list.md#4. 設計課題・制約追跡 (Design Challenges & ADRs)",
-          "description": "The definition for {Challenge_IpcQueueStarvation} explicitly states that the mitigation involves 'adjustment of queue length and retransmission policy' (緩和策はキュー長・再送方針の調整). However, none of the referencing design sections (ipc_router.md or master_physical_design.md) specify the actual queue length values or the retransmission policy/algorithm to be used. The design describes the 'Rollback' mechanism but not the 'Adjustment' or 'Policy' required to solve the starvation risk."
-        },
-        {
-          "severity": "WARNING",
-          "location": "sec:components/tier1_interface/ipc_router.md#4.2 vs 4.2.1",
-          "description": "Redundant Specification Duplication: The 'Routing State' table in Section 4.2 and the 'Ownership State' table in Section 4.2.1 describe the same logical transition (Queue Full -> Rollback -> SenderOwned) using slightly different terminology. While they represent different perspectives (Routing Flow vs. Ownership State), the technical detail regarding the Rollback trigger is duplicated verbatim in logic."
-        }
-      ],
-      "covered_files": [
-        "architecture/master_physical_design.md",
-        "components/tier1_interface/ipc_router.md",
-        "requires/requirement_list.md",
-        "specs/wasi_preview1_abi.md"
-      ]
-    },
-    {
-      "item_id": "item:Resource_Estimation_Model",
-      "item_label": "{Resource_Estimation_Model}",
-      "status": "PASS",
-      "summary": "The Resource_Estimation_Model requirement is consistently implemented across all referencing design sections. The definition's mandate to estimate ROM/RAM footprints and verify constraint suitability is concretely realized through a static assertion model in the system configuration and a budget tracking document.",
-      "issues": [],
-      "covered_files": [
-        "architecture/resource_budget.md",
-        "components/tier1_core/system_config.md",
-        "plans/backlog_list.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:PositionIndependentCode",
-      "item_label": "{PositionIndependentCode}",
-      "status": "PASS",
-      "summary": "The audit of the {PositionIndependentCode} requirement across the provided design sections shows full vertical and horizontal consistency. The design implements PIC through a combination of relative addressing, literal pools for runtime APIs, and a constexpr assembler that enforces PIC rules.",
-      "issues": [],
-      "covered_files": [
-        "components/tier2_runtime/runtime_interpreter.md",
-        "components/tier3_jit/jit_assembler_constexpr.md",
-        "components/tier3_jit/jit_compiler.md",
-        "plans/backlog_list.md",
-        "requires/requirement_list.md",
-        "specs/jit_stencil_catalog.md",
-        "specs/wasm_instruction_set.md"
-      ]
-    },
-    {
-      "item_id": "item:ROMParsing",
-      "item_label": "{ROMParsing}",
-      "status": "PASS",
-      "summary": "The design sections for {ROMParsing} are strictly consistent with the definition. The implementation strategy (ModuleView, BinaryStream, and Accessors) directly realizes the 'Zero Copy Loading' requirement by referencing ROM data via spans and offsets rather than expanding the module into RAM.",
-      "issues": [],
-      "covered_files": [
-        "components/tier2_runtime/runtime_loader.md",
-        "plans/backlog_list.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:URIAbstraction",
-      "item_label": "{URIAbstraction}",
-      "status": "PASS",
-      "summary": "The audit of {URIAbstraction} across the provided sections shows strict vertical and horizontal consistency. The definition of URI-based loose coupling is correctly propagated from the high-level architecture down to the leaf component (HAL) implementation.",
-      "issues": [],
-      "covered_files": [
-        "architecture/architecture_overview.md",
-        "components/tier1_core/os_coos.md",
-        "components/tier1_interface/ipc_router.md",
-        "components/tier1_interface/system_service.md",
-        "components/tier3_platform/platform_hal.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:Challenge_ApproximateYield",
-      "item_label": "{Challenge_ApproximateYield}",
-      "status": "PASS",
-      "summary": "The audit of {Challenge_ApproximateYield} confirms full vertical and horizontal consistency across the definition and design sections. The transition from a 'Pending' (検討中) status in the requirement list to a 'Decided' (決定済) implementation in the architecture and runtime sections is logically consistent.",
-      "issues": [],
-      "covered_files": [
-        "architecture/architecture_overview.md",
-        "components/tier2_runtime/runtime_interpreter.md",
-        "components/tier2_runtime/runtime_vsoc.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:META_NoStdVector",
-      "item_label": "{META_NoStdVector}",
-      "status": "PASS",
-      "summary": "The audit of {META_NoStdVector} across all referencing design sections confirms strict adherence to the prohibition of std::vector and dynamic memory allocation. All components consistently employ fixed-length arrays, static pools, or non-owning views.",
-      "issues": [],
-      "covered_files": [
-        "architecture/document_structure.md",
-        "components/tier1_core/os_coos.md",
-        "components/tier1_core/system_containers.md",
-        "components/tier2_runtime/debug/debug_manager.md",
-        "components/tier2_runtime/runtime_loader.md",
-        "components/tier2_runtime/runtime_vmmio.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:ADR_RendezvousChannel",
-      "item_label": "{ADR_RendezvousChannel}",
-      "status": "PASS",
-      "summary": "The audit of {ADR_RendezvousChannel} confirms strict vertical and horizontal consistency across all referencing design sections. The definition of a bufferless synchronous rendezvous is consistently applied across the physical design, core OS data structures, state transition tables, and scheduler logic. A critical distinction is explicitly maintained between the CSP Rendezvous Channel and the IPC Router's bounded mailboxes, preventing architectural confusion.",
-      "issues": [],
-      "covered_files": [
-        "architecture/master_physical_design.md",
-        "components/tier1_core/os_coos.md",
-        "components/tier1_core/os_scheduler.md",
-        "components/tier1_interface/ipc_router.md",
-        "requires/requirement_list.md",
-        "specs/wasi_preview1_abi.md"
-      ]
-    },
-    {
-      "item_id": "item:MemoryIsolation",
-      "item_label": "{MemoryIsolation}",
-      "status": "PASS",
-      "summary": "The audit of {MemoryIsolation} across the provided definition and design sections shows full vertical and horizontal consistency. All design implementations align with the requirement for hardware or logical boundary-based memory isolation.",
-      "issues": [],
-      "covered_files": [
-        "components/tier1_core/system_logging.md",
-        "components/tier1_interface/system_service.md",
-        "components/tier2_runtime/debug/debug_manager.md",
-        "components/tier2_runtime/runtime_vsoc.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:VDMA",
-      "item_label": "{VDMA}",
-      "status": "PASS",
-      "summary": "The specification for {VDMA} is consistent across all definition and design sections. The high-level requirement for high-speed transfer between guest linear memory and virtual/physical addresses is concretely implemented through a defined register set, a clear execution algorithm, and integration with the system's interrupt and memory management (TLB) systems.",
-      "issues": [],
-      "covered_files": [
-        "components/tier1_core/system_syscall.md",
-        "components/tier2_runtime/runtime_vmmio.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:IPC_DropHandler",
-      "item_label": "{IPC_DropHandler}",
-      "status": "PASS",
-      "summary": "The specification for {IPC_DropHandler} is consistent across all definition and design sections. The design correctly implements the requirement for in-flight resource recovery to prevent leaks, with a clear mapping from the high-level definition to the state machine and formal verification properties.",
-      "issues": [],
-      "covered_files": [
-        "components/tier1_interface/ipc_router.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:RSPMinimalSet",
-      "item_label": "{RSPMinimalSet}",
-      "status": "PASS",
-      "summary": "The audit of {RSPMinimalSet} confirms vertical and horizontal consistency across the definition and referencing design sections. The design correctly implements the 'minimal set' constraint by delegating the detailed command specification to a single source of truth (the GDB RSP Physical Specification) and distributing the implementation responsibilities across the HAL (parsing) and Debug Manager (execution) without contradiction.",
-      "issues": [],
-      "covered_files": [
-        "components/tier2_runtime/debug/debug_gdb_rsp.md",
-        "components/tier2_runtime/debug/debug_manager.md",
-        "components/tier3_platform/platform_hal.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:MultiModule_Support",
-      "item_label": "{MultiModule_Support}",
-      "status": "PASS",
-      "summary": "The design sections for {MultiModule_Support} are vertically and horizontally consistent with the definition. The requirement for multiple module loading and dynamic linking is fully addressed through the implementation of a Module Registry and a defined dynamic linking sequence.",
-      "issues": [],
-      "covered_files": [
-        "components/tier2_runtime/runtime_loader.md",
-        "components/tier2_runtime/runtime_vsoc.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:Debugger_Jit_Flush",
-      "item_label": "{Debugger_Jit_Flush}",
-      "status": "PASS",
-      "summary": "The specification for {Debugger_Jit_Flush} is exhaustive, consistent across all architectural layers, and backed by formal verification artifacts.",
-      "issues": [],
-      "covered_files": [
-        "components/tier2_runtime/runtime_vsoc.md",
-        "plans/backlog_list.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:GLOBAL_UseCpp20Coroutine",
-      "item_label": "{GLOBAL_UseCpp20Coroutine}",
-      "status": "PASS",
-      "summary": "The audit of {GLOBAL_UseCpp20Coroutine} confirms strict vertical and horizontal consistency. The design sections correctly implement the requirement for C++20/23 coroutines, specifically detailing the use of Symmetric Transfer to achieve the low-overhead context switching goals defined in the requirements.",
-      "issues": [],
-      "covered_files": [
-        "architecture/document_structure.md",
-        "components/tier1_core/os_coos.md",
-        "components/tier1_core/os_scheduler.md",
-        "plans/backlog_list.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:CooperativeMultitasking",
-      "item_label": "{CooperativeMultitasking}",
-      "status": "PASS",
-      "summary": "The design sections are strictly consistent with the definition of {CooperativeMultitasking}. The implementation details regarding C++23 coroutines, symmetric transfer for low overhead, and the integration with the system call interface (SYS_YIELD) and IRQ flags align perfectly across all referenced documents.",
-      "issues": [],
-      "covered_files": [
-        "components/tier1_core/os_coos.md",
-        "components/tier1_core/os_scheduler.md",
-        "components/tier1_core/system_syscall.md",
-        "components/tier1_interface/interface_wit.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:CSPCommunication",
-      "item_label": "{CSPCommunication}",
-      "status": "PASS",
-      "summary": "The specification for {CSPCommunication} is highly consistent across all referenced sections. The definition of Hoare CSP, zero-copy ownership transfer, and the rendezvous mechanism is strictly maintained from the high-level requirements through the OS core design and down to the system call interface.",
-      "issues": [],
-      "covered_files": [
-        "components/tier1_core/os_coos.md",
-        "components/tier1_core/os_scheduler.md",
-        "components/tier1_core/system_syscall.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:Asynchronous_Notification",
-      "item_label": "{Asynchronous_Notification}",
-      "status": "PASS",
-      "summary": "The design sections are strictly consistent with the definition of {Asynchronous_Notification}. The implementation strategy correctly bridges the high-level WASI 'pollable' requirement with the low-level vSoC virtual interrupt mechanism.",
-      "issues": [],
-      "covered_files": [
-        "components/tier1_core/system_syscall.md",
-        "components/tier1_interface/interface_wit.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:RSP_Transport_Selectable",
-      "item_label": "{RSP_Transport_Selectable}",
-      "status": "PASS",
-      "summary": "The requirement {RSP_Transport_Selectable} is consistently implemented across all referencing design sections. The definition's mandate for selectable transport layers is explicitly realized in the HAL layer with specific support for UART and RTT, and is correctly referenced as a conceptual dependency in the Debug Manager and RSP Parser.",
-      "issues": [],
-      "covered_files": [
-        "components/tier2_runtime/debug/debug_gdb_rsp.md",
-        "components/tier2_runtime/debug/debug_manager.md",
-        "components/tier3_platform/platform_hal.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:DebuggerLabelTableSwitch",
-      "item_label": "{DebuggerLabelTableSwitch}",
-      "status": "PASS",
-      "summary": "The audit of {DebuggerLabelTableSwitch} confirms full vertical and horizontal consistency across all referencing design sections. The requirement to switch the interpreter handler table for debugging is consistently implemented as a fallback mechanism that disables JIT and enables step-by-step execution.",
-      "issues": [],
-      "covered_files": [
-        "components/tier2_runtime/debug/debug_manager.md",
-        "requires/requirement_list.md",
-        "specs/gdb_rsp_protocol.md"
-      ]
-    },
-    {
-      "item_id": "item:vMMIO_TrapAndEmulate",
-      "item_label": "{vMMIO_TrapAndEmulate}",
-      "status": "PASS",
-      "summary": "The audit of {vMMIO_TrapAndEmulate} confirms strict vertical and horizontal consistency. The design sections correctly implement the requirement to trap guest memory accesses and invoke host hooks, with a unified boundary check mechanism shared between the JIT stencils and the vMMIO runtime.",
-      "issues": [],
-      "covered_files": [
-        "components/tier2_runtime/runtime_vmmio.md",
-        "components/tier2_runtime/runtime_vsoc.md",
-        "requires/requirement_list.md",
-        "specs/jit_stencil_catalog.md"
-      ]
-    },
-    {
-      "item_id": "item:JIT_Safepoint",
-      "item_label": "{JIT_Safepoint}",
-      "status": "PASS",
-      "summary": "The specification for {JIT_Safepoint} is consistent across all definition and design sections. The design provides concrete implementation details (loop-back edges, function calls, memory access checks) that expand upon the abstract definition without contradicting it. State transitions and formal verification properties are well-aligned.",
-      "issues": [],
-      "covered_files": [
-        "components/tier2_runtime/runtime_vsoc.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:Challenge_JITCacheEfficiency",
-      "item_label": "{Challenge_JITCacheEfficiency}",
-      "status": "PASS",
-      "summary": "The specification for {Challenge_JITCacheEfficiency} is highly consistent across all architectural layers, from high-level ADRs to detailed buffer layouts and formal verification properties.",
-      "issues": [],
-      "covered_files": [
-        "architecture/architecture_overview.md",
-        "components/tier2_runtime/runtime_vsoc.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:NativeAPI_Export",
-      "item_label": "{NativeAPI_Export}",
-      "status": "PASS",
-      "summary": "The design sections are strictly consistent with the definition of {NativeAPI_Export}. The implementation details regarding the single trap instruction and vMMIO register usage are coherently distributed across architectural and runtime layers without contradiction.",
-      "issues": [],
-      "covered_files": [
-        "architecture/architecture_overview.md",
-        "components/tier1_core/system_syscall.md",
-        "components/tier2_runtime/runtime_vsoc.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:Interpreter_LazyJITSwitch",
-      "item_label": "{Interpreter_LazyJITSwitch}",
-      "status": "PASS",
-      "summary": "The requirement {Interpreter_LazyJITSwitch} is consistently implemented across the definition and design sections. The mechanism for re-evaluating the JIT cache during loop returns is explicitly detailed in the interpreter algorithm and supported by the runtime sequence diagram.",
-      "issues": [],
-      "covered_files": [
-        "components/tier2_runtime/runtime_interpreter.md",
-        "components/tier2_runtime/runtime_vsoc.md",
-        "plans/backlog_list.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:LightweightVerifier",
-      "item_label": "{LightweightVerifier}",
-      "status": "PASS",
-      "summary": "The specification for {LightweightVerifier} is consistent across all referencing sections. The definition of a 'fast verifier performing minimal checks' is correctly implemented in the design as a set of specific checks (magic value, version, section boundaries) and is properly integrated into the loader's state machine and backlog.",
-      "issues": [],
-      "covered_files": [
-        "components/tier2_runtime/runtime_loader.md",
-        "plans/backlog_list.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:Wasm32Only",
-      "item_label": "{Wasm32Only}",
-      "status": "PASS",
-      "summary": "The audit of keyword {Wasm32Only} confirms strict vertical and horizontal consistency across all referencing design sections. The definition's constraints (MVP only, 32-bit, exclusion of floating-point) are uniformly applied and reinforced in the loader, instruction set, and ABI specifications.",
-      "issues": [],
-      "covered_files": [
-        "components/tier2_runtime/runtime_loader.md",
-        "components/tier2_runtime/wasm_instruction.md",
-        "requires/requirement_list.md",
-        "specs/wasi_preview1_abi.md",
-        "specs/wasm_instruction_set.md"
-      ]
-    },
-    {
-      "item_id": "item:WasmPageAlignment",
-      "item_label": "{WasmPageAlignment}",
-      "status": "PASS",
-      "summary": "The audit of {WasmPageAlignment} confirms strict vertical and horizontal consistency across all referencing design sections. The definition of 64KB page alignment is consistently applied from the high-level requirement down to the physical memory layout and MPU configuration.",
-      "issues": [],
-      "covered_files": [
-        "components/tier2_runtime/runtime_vsoc.md",
-        "components/tier3_platform/platform_memory.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:JIT_Encoder",
-      "item_label": "{JIT_Encoder}",
-      "status": "PASS",
-      "summary": "The design sections for {JIT_Encoder} are strictly consistent with the definition. The use of C++ constexpr for build-time instruction template generation is uniformly implemented across RISC-V and ARM architectures and correctly integrated into the JIT Compiler's decomposition.",
-      "issues": [],
-      "covered_files": [
-        "components/tier3_jit/jit_assembler_constexpr.md",
-        "components/tier3_jit/jit_compiler.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:HAL_Interface",
-      "item_label": "{HAL_Interface}",
-      "status": "PASS",
-      "summary": "The HAL interface correctly defines standard IPC abstractions, buffer management, and verified fast-path mechanisms. Traceability links and return mappings are completely defined and compliant.",
-      "issues": [],
-      "covered_files": [
-        "components/tier3_platform/platform_hal.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:Challenge_InterruptSafety",
-      "item_label": "{Challenge_InterruptSafety}",
-      "status": "PASS",
-      "summary": "The audit of {Challenge_InterruptSafety} confirms full vertical and horizontal consistency across the definition and design sections. The implementation strategy evolves logically from a high-level goal to a specific mechanism.",
-      "issues": [],
-      "covered_files": [
-        "architecture/architecture_overview.md",
-        "components/tier2_runtime/runtime_vsoc.md",
-        "components/tier3_platform/platform_hal.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:META_AI_Native_Dev",
-      "item_label": "{META_AI_Native_Dev}",
-      "status": "WARN",
-      "summary": "The keyword {META_AI_Native_Dev} is consistently used as a traceability marker across design and planning documents, aligning with its definition of leveraging LLMs for implementation while focusing on design/verification quality. However, a traceability gap was detected in one technical section.",
-      "issues": [
-        {
-          "severity": "WARNING",
-          "location": "sec:components/tier3_jit/jit_compiler.md#JIT コンパイル・オーケストレーション手順",
-          "description": "The section includes {META_AI_Native_Dev} in the traceability metadata comment, but unlike other referencing sections (e.g., sec:architecture/master_physical_design.md), it fails to explicitly invoke or reference the keyword within the body text to indicate which specific parts of the orchestration logic are targeted for LLM-assisted implementation or design-centric verification."
-        }
-      ],
-      "covered_files": [
-        "architecture/document_structure.md",
-        "architecture/master_physical_design.md",
-        "components/tier3_jit/jit_compiler.md",
-        "plans/backlog_list.md",
-        "plans/roadmap_phase.md"
-      ]
-    },
-    {
-      "item_id": "item:META_SpecificationFirst",
-      "item_label": "{META_SpecificationFirst}",
-      "status": "PASS",
-      "summary": "The audit of {META_SpecificationFirst} confirms strict vertical and horizontal consistency. The design sections correctly implement the 'specification-first' stance by establishing formal models, WIT contracts, and a rigorous quality gate before proceeding to implementation.",
-      "issues": [],
-      "covered_files": [
-        "architecture/document_structure.md",
-        "components/tier1_interface/interface_wit.md",
-        "plans/backlog_list.md",
-        "plans/roadmap_phase.md"
-      ]
-    },
-    {
-      "item_id": "item:META_BumpAllocator",
-      "item_label": "{META_BumpAllocator}",
-      "status": "PASS",
-      "summary": "The audit of {META_BumpAllocator} across the definition and referencing design sections shows full consistency. The designs correctly apply the allocator's purpose (preventing fragmentation and providing high-speed allocation) and extend it with specific implementation details (LIFO constraints and transaction-based rollback) that are compatible with the nature of a bump allocator.",
-      "issues": [],
-      "covered_files": [
-        "architecture/document_structure.md",
-        "components/tier1_interface/ipc_router.md",
-        "components/tier2_runtime/runtime_loader.md"
-      ]
-    },
-    {
-      "item_id": "item:Trap_Interface",
-      "item_label": "{Trap_Interface}",
-      "status": "PASS",
-      "summary": "The design sections for {Trap_Interface} are strictly consistent with the definition and with each other. The documentation correctly distinguishes between the trap-based synchronous interface and the vMMIO direct-store fast path, avoiding any conceptual contradiction.",
-      "issues": [],
-      "covered_files": [
-        "components/tier1_core/system_syscall.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:Errorcode_To_Strategy",
-      "item_label": "{Errorcode_To_Strategy}",
-      "status": "PASS",
-      "summary": "The design sections strictly adhere to the definition of {Errorcode_To_Strategy}. The transition from low-level errno (Syscall) to high-level recovery strategies (WIT) is consistently described across the system call and interface layers.",
-      "issues": [],
-      "covered_files": [
-        "components/tier1_core/system_syscall.md",
-        "components/tier1_interface/interface_wit.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:WASI_Implementation",
-      "item_label": "{WASI_Implementation}",
-      "status": "PASS",
-      "summary": "The implementation of {WASI_Implementation} is consistent across the definition and design sections. The design correctly splits the implementation into a low-level syscall mapping (Tier 1 Core) and high-level WIT interface definitions (Tier 1 Interface), maintaining a clear architectural layering without contradiction.",
-      "issues": [],
-      "covered_files": [
-        "components/tier1_core/system_syscall.md",
-        "components/tier1_interface/interface_wit.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:Syscall_Mapping",
-      "item_label": "{Syscall_Mapping}",
-      "status": "PASS",
-      "summary": "The audit of {Syscall_Mapping} confirms strict vertical and horizontal consistency. The design sections correctly implement the static mapping of WASM guest instructions to host syscall IDs as defined in the requirements.",
-      "issues": [],
-      "covered_files": [
-        "components/tier1_core/system_syscall.md",
-        "components/tier1_interface/interface_wit.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:Fast_Path_GPIO",
-      "item_label": "{Fast_Path_GPIO}",
-      "status": "PASS",
-      "summary": "The audit of {Fast_Path_GPIO} confirms strict vertical and horizontal consistency. The design sections correctly distinguish between the high-performance vMMIO direct-store path and the portable Shim path, aligning with the definition's requirement for a bypass of the abstraction layer.",
-      "issues": [],
-      "covered_files": [
-        "components/tier1_core/system_syscall.md",
-        "components/tier2_runtime/runtime_vmmio.md",
-        "components/tier3_platform/platform_hal.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:ZeroCopyIndexing",
-      "item_label": "{ZeroCopyIndexing}",
-      "status": "PASS",
-      "summary": "The design sections strictly adhere to the definition of {ZeroCopyIndexing}. The implementation details in the runtime loader align with the high-level requirement of avoiding RAM copies for WASM sections and strings.",
-      "issues": [],
-      "covered_files": [
-        "components/tier2_runtime/runtime_loader.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:PhysicalPassthrough",
-      "item_label": "{PhysicalPassthrough}",
-      "status": "PASS",
-      "summary": "The audit of {PhysicalPassthrough} confirms strict vertical and horizontal consistency. The definition of a high-speed path bypassing memory copies is correctly implemented across the vMMIO runtime and HAL layers.",
-      "issues": [],
-      "covered_files": [
-        "components/tier2_runtime/runtime_vmmio.md",
-        "components/tier3_platform/platform_hal.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:TaskPollInterruptFlag",
-      "item_label": "{TaskPollInterruptFlag}",
-      "status": "PASS",
-      "summary": "The design sections strictly adhere to the definition of {TaskPollInterruptFlag}, maintaining a clear separation between the push-based notification (ISR to Queue) and pull-based observation (Guest Engine Safepoint).",
-      "issues": [],
-      "covered_files": [
-        "components/tier3_platform/platform_hal.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:CleanArchitecture",
-      "item_label": "{CleanArchitecture}",
-      "status": "PASS",
-      "summary": "The design sections strictly adhere to the {CleanArchitecture} requirement. The dependency direction is explicitly defined as 'Inner' (Kernel) and 'Outer' (Subsystem/Hardware), with a clear prohibition of Inner-to-Outer #include dependencies. This is consistently reflected in the BDD diagram where the Kernel Layer is the dependency sink and the Subsystem Layer implements interfaces defined by the Kernel (via the IPC Router).",
-      "issues": [],
-      "covered_files": [
-        "architecture/architecture_overview.md",
-        "components/tier1_interface/interface_wit.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:META_ZeroOverhead",
-      "item_label": "{META_ZeroOverhead}",
-      "status": "PASS",
-      "summary": "Zero overhead properties are substantiated with benchmark artifacts and constexpr static dispatch in accordance with project standards.",
-      "issues": [],
-      "covered_files": [
-        "architecture/concept_harness.md",
-        "architecture/document_structure.md",
-        "components/tier1_core/system_logging.md",
-        "components/tier3_jit/jit_assembler_constexpr.md"
-      ]
-    },
-    {
-      "item_id": "item:META_Risk_Tiering",
-      "item_label": "{META_Risk_Tiering}",
-      "status": "PASS",
-      "summary": "The audit of {META_Risk_Tiering} confirms that the keyword is consistently applied across architecture principles, project management phases, and quality gates. The design sections correctly utilize the definition of 'risk-based design layering' to justify the prioritization of formal verification for high-risk components.",
-      "issues": [],
-      "covered_files": [
-        "architecture/document_structure.md",
-        "components/tier1_interface/interface_wit.md",
-        "plans/backlog_list.md",
-        "plans/roadmap_phase.md"
-      ]
-    },
-    {
-      "item_id": "item:META_CompileTimeValidation",
-      "item_label": "{META_CompileTimeValidation}",
-      "status": "PASS",
-      "summary": "The audit of {META_CompileTimeValidation} across the provided sections shows full consistency. The definition's requirement for static type checking and constexpr-based error detection is strictly implemented in the design sections through the use of static_assert and constexpr DSLs.",
-      "issues": [],
-      "covered_files": [
-        "architecture/document_structure.md",
-        "components/tier1_core/system_containers.md",
-        "components/tier3_jit/jit_assembler_constexpr.md"
-      ]
-    },
-    {
-      "item_id": "item:DirectContextSwitch",
-      "item_label": "{DirectContextSwitch}",
-      "status": "PASS",
-      "summary": "The specification for {DirectContextSwitch} is consistent across all definition and design sections. The design correctly implements the requirement of bypassing the scheduler's READY queue using C++20 symmetric transfer, and the state machine accurately reflects this direct transition.",
-      "issues": [],
-      "covered_files": [
-        "architecture/master_physical_design.md",
-        "components/tier1_core/os_coos.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:Size_15KLOC",
-      "item_label": "{Size_15KLOC}",
-      "status": "PASS",
-      "summary": "The codebase size budget adheres to the 15KLOC limit across all evaluated components and tiers.",
-      "issues": [],
-      "covered_files": [
-        "architecture/resource_budget.md",
-        "components/tier3_platform/platform_memory.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:LowOverheadSwitch",
-      "item_label": "{LowOverheadSwitch}",
-      "status": "PASS",
-      "summary": "The OS Scheduler design explicitly adopts C++20 coroutine Symmetric Transfer for cooperative context switching (yield/run), minimizing register saving to frame pointer and PC swaps to achieve multi-cycle transition overhead in compliance with {LowOverheadSwitch}.",
-      "issues": [],
-      "covered_files": [
-        "components/tier1_core/os_scheduler.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:COOS_Transparent",
-      "item_label": "{COOS_Transparent}",
-      "status": "PASS",
-      "summary": "The design sections for the scheduler strictly adhere to the requirement {COOS_Transparent}. The definition of task state visualization is consistently implemented across the data structure definitions and the internal block diagram.",
-      "issues": [],
-      "covered_files": [
-        "components/tier1_core/os_scheduler.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:ConsolidatedHeap",
-      "item_label": "{ConsolidatedHeap}",
-      "status": "PASS",
-      "summary": "The audit of the {ConsolidatedHeap} requirement across the provided design sections confirms full vertical and horizontal consistency. The implementation of a single physical pool from which independent partitions are statically carved is consistently described across the system configuration, service policy, and platform memory concept sections. Numeric calculations for the memory budget are accurate and align with the stated constraints.",
-      "issues": [],
-      "covered_files": [
-        "components/tier1_core/system_config_details.md",
-        "components/tier1_interface/system_service.md",
-        "components/tier3_platform/platform_memory.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:vMMIO_Isolation",
-      "item_label": "{vMMIO_Isolation}",
-      "status": "PASS",
-      "summary": "The audit of {vMMIO_Isolation} confirms strict vertical and horizontal consistency between the definition and the referencing design sections. The design implements the isolation requirement through a dedicated base address and a controlled page table mechanism.",
-      "issues": [],
-      "covered_files": [
-        "components/tier1_core/system_config_details.md",
-        "components/tier2_runtime/runtime_vmmio.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:UnifiedAccessModel",
-      "item_label": "{UnifiedAccessModel}",
-      "status": "PASS",
-      "summary": "The audit of {UnifiedAccessModel} confirms strict vertical and horizontal consistency. The design sections correctly implement the requirement to unify all memory accesses (physical, logical, shared) through the vMMIO layer to centralize security.",
-      "issues": [],
-      "covered_files": [
-        "components/tier1_core/system_syscall.md",
-        "components/tier2_runtime/runtime_vmmio.md",
-        "plans/backlog_list.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:IPC_HandleBased",
-      "item_label": "{IPC_HandleBased}",
-      "status": "PASS",
-      "summary": "The design sections strictly adhere to the definition of {IPC_HandleBased}. The transition from URI-based name resolution to handle-based communication is consistently implemented across the syscall interface and the IPC router.",
-      "issues": [],
-      "covered_files": [
-        "components/tier1_core/system_syscall.md",
-        "components/tier1_interface/ipc_router.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:IPCRegistry",
-      "item_label": "{IPCRegistry}",
-      "status": "PASS",
-      "summary": "The design sections for the IPC Router strictly adhere to the definition of {IPCRegistry}. The implementation details regarding the use of fireball::flat_map_view, the O(log N) lookup complexity, and the static nature of the table (constexpr sorted array in ROM) are consistent across the definition and the design documentation.",
-      "issues": [],
-      "covered_files": [
-        "components/tier1_interface/ipc_router.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:JIT_ZeroCompileCostTheorem",
-      "item_label": "{JIT_ZeroCompileCostTheorem}",
-      "status": "PASS",
-      "summary": "The audit of {JIT_ZeroCompileCostTheorem} confirms strict vertical and horizontal consistency. The design sections correctly implement the requirement by shifting optimization costs to build-time via a Copy-and-Patch mechanism using pre-compiled stencils.",
-      "issues": [],
-      "covered_files": [
-        "components/tier3_jit/jit_compiler.md",
-        "components/tier3_jit/jit_engine_copy_patch.md",
-        "requires/requirement_list.md",
-        "specs/jit_stencil_catalog.md"
-      ]
-    },
-    {
-      "item_id": "item:ADR_SafeQueuingOnHotMiss",
-      "item_label": "{ADR_SafeQueuingOnHotMiss}",
-      "status": "PASS",
-      "summary": "The audit of {ADR_SafeQueuingOnHotMiss} confirms full vertical and horizontal consistency across the definition and design sections. The mechanism for preventing double-compilation requests during a 'hot miss' is consistently defined and implemented across the architectural decision, the operational flow, and the state transition table.",
-      "issues": [],
-      "covered_files": [
-        "components/tier3_jit/jit_compiler.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:JIT_ReverseCompilationOrder",
-      "item_label": "{JIT_ReverseCompilationOrder}",
-      "status": "PASS",
-      "summary": "The design sections strictly adhere to the definition of {JIT_ReverseCompilationOrder}. The requirement for LIFO processing of the compilation queue to improve immediate chaining is consistently implemented and described across the referencing sections.",
-      "issues": [],
-      "covered_files": [
-        "components/tier3_jit/jit_compiler.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:IPCDI",
-      "item_label": "{IPCDI}",
-      "status": "PASS",
-      "summary": "The audit of keyword {IPCDI} across the definition and referencing design sections shows full vertical and horizontal consistency. The design sections correctly implement the definition's requirement for URI-based dependency resolution and injection.",
-      "issues": [],
-      "covered_files": [
-        "architecture/architecture_overview.md",
-        "components/tier1_interface/ipc_router.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:IoC",
-      "item_label": "{IoC}",
-      "status": "PASS",
-      "summary": "The referencing design sections are consistent with the definition of {IoC}. The architecture demonstrates the principle through the use of interface realization (dashed lines in BDD) and the explicit implementation of a Service Facade to invert dependencies.",
-      "issues": [],
-      "covered_files": [
-        "architecture/architecture_overview.md",
-        "components/tier1_interface/ipc_router.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:ConceptHarnessDI",
-      "item_label": "{ConceptHarnessDI}",
-      "status": "WARN",
-      "summary": "The design sections are vertically and horizontally consistent with the definition of {ConceptHarnessDI}, but there is an unbacked empirical claim regarding performance.",
-      "issues": [
-        {
-          "severity": "ERROR",
-          "location": "sec:architecture/concept_harness.md#4. 設計判断 (ADR)",
-          "description": "Unbacked Verification Claim: The text claims that Option 3 (Concept-based harness) allows for 'zero runtime cost' (実行時コストゼロ). However, no concrete artifact, benchmark log, or formal proof is cited to substantiate this empirical claim."
-        }
-      ],
-      "covered_files": [
-        "architecture/concept_harness.md",
-        "components/tier1_core/os_scheduler.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:GLOBAL_UseCpp23Library",
-      "item_label": "{GLOBAL_UseCpp23Library}",
-      "status": "PASS",
-      "summary": "The design sections strictly adhere to the definition of {GLOBAL_UseCpp23Library}. The constraints regarding the use of C++23 features and the specific prohibition of std::vector (via the requirement for fireball::flat_map_view) are consistently maintained across the OS and Scheduler design documents.",
-      "issues": [],
-      "covered_files": [
-        "architecture/document_structure.md",
-        "components/tier1_core/os_coos.md",
-        "components/tier1_core/os_scheduler.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:Challenge_CspHandoffStarvation",
-      "item_label": "{Challenge_CspHandoffStarvation}",
-      "status": "PASS",
-      "summary": "The design sections are strictly consistent with the definition of {Challenge_CspHandoffStarvation}. The mitigation strategy (FB_CONF_MAX_CONSECUTIVE_HANDOFFS) is consistently applied across the OS core invariants and the IPC router implementation. Verification claims are properly backed by citations to the formal model.",
-      "issues": [],
-      "covered_files": [
-        "components/tier1_core/os_coos.md",
-        "components/tier1_interface/ipc_router.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:COOS_Scheduling_Refine",
-      "item_label": "{COOS_Scheduling_Refine}",
-      "status": "PASS",
-      "summary": "The referencing design sections are consistent with the definition of {COOS_Scheduling_Refine}. The design implements the 'continuous improvement and optimization' requirement by explicitly deciding on a low-overhead, O(1) dispatch mechanism via an intrusive circular list, which aligns with the goal of scheduling optimization.",
-      "issues": [],
-      "covered_files": [
-        "components/tier1_core/os_scheduler.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:Challenge_CoosBlockedList",
-      "item_label": "{Challenge_CoosBlockedList}",
-      "status": "PASS",
-      "summary": "The audit of {Challenge_CoosBlockedList} confirms full consistency between the definition and the referencing design sections. The design decision in ADR-SCHED-003 directly addresses the trade-off between management cost and real-time performance specified in the requirement list.",
-      "issues": [],
-      "covered_files": [
-        "components/tier1_core/os_scheduler.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:Challenge_DebuggerResource",
-      "item_label": "{Challenge_DebuggerResource}",
-      "status": "PASS",
-      "summary": "The referencing design sections are consistent with the definition of {Challenge_DebuggerResource}. The design provides a concrete implementation (buffer size configuration) to address the constraint of debug buffer allocation in a memory-constrained environment.",
-      "issues": [],
-      "covered_files": [
-        "components/tier1_core/system_config_details.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:WIT_Interface_Purpose",
-      "item_label": "{WIT_Interface_Purpose}",
-      "status": "PASS",
-      "summary": "The referencing design sections are consistent with the definition of {WIT_Interface_Purpose}. The definition specifies the requirement for describing the background and logical invariants of the interface design, which is fulfilled by the 'Purpose' section in the WIT interface document and the 'Role' section in the system syscall document.",
-      "issues": [],
-      "covered_files": [
-        "components/tier1_core/system_syscall.md",
-        "components/tier1_interface/interface_wit.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:WASI_Async_Bridge",
-      "item_label": "{WASI_Async_Bridge}",
-      "status": "PASS",
-      "summary": "The audit of {WASI_Async_Bridge} confirms vertical and horizontal consistency. The definition is correctly implemented across the system call and interface layers without contradictions.",
-      "issues": [],
-      "covered_files": [
-        "components/tier1_core/system_syscall.md",
-        "components/tier1_interface/interface_wit.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:Debug_Standard_Env",
-      "item_label": "{Debug_Standard_Env}",
-      "status": "PASS",
-      "summary": "The design sections strictly adhere to the definition of {Debug_Standard_Env}. The required support for VSCode, UART, and J-Link is explicitly stated in the concept section, and the functional implementation is linked via the attach mechanism.",
-      "issues": [],
-      "covered_files": [
-        "components/tier2_runtime/debug/debug_manager.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:ZeroRuntimeOverhead",
-      "item_label": "{ZeroRuntimeOverhead}",
-      "status": "PASS",
-      "summary": "The design sections strictly adhere to the definition of {ZeroRuntimeOverhead}. The implementation strategy (constexpr DSL for static resolution) directly fulfills the requirement of 'zero-cost abstraction' by shifting computation from runtime to build-time.",
-      "issues": [],
-      "covered_files": [
-        "components/tier3_jit/jit_assembler_constexpr.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:LowOverhead",
-      "item_label": "{LowOverhead}",
-      "status": "PASS",
-      "summary": "The referencing design section is consistent with the definition of {LowOverhead}. The design implements the requirement through a specific technical choice (stackless task structure in COOS) to achieve low-overhead switching, which aligns with the definition's goal of minimal resource consumption and low-latency execution.",
-      "issues": [],
-      "covered_files": [
-        "architecture/architecture_overview.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:ServiceSelfReboot",
-      "item_label": "{ServiceSelfReboot}",
-      "status": "PASS",
-      "summary": "The referencing design section is vertically consistent with the definition of {ServiceSelfReboot}.",
-      "issues": [],
-      "covered_files": [
-        "architecture/architecture_overview.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:FaultTolerant",
-      "item_label": "{FaultTolerant}",
-      "status": "PASS",
-      "summary": "The referencing design section is vertically consistent with the definition of {FaultTolerant}. The design explicitly adopts a fault-tolerant approach based on service rebooting, which aligns with the requirement for task failure localization and recovery.",
-      "issues": [],
-      "covered_files": [
-        "architecture/architecture_overview.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:SelfReboot_via_Event",
-      "item_label": "{SelfReboot_via_Event}",
-      "status": "PASS",
-      "summary": "The design section strictly adheres to the definition of {SelfReboot_via_Event}. The mechanism is explicitly linked to the 'TASK_CRASHED' event trigger, fulfilling the requirement for event-driven autonomous service rebooting.",
-      "issues": [],
-      "covered_files": [
-        "architecture/architecture_overview.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:IPC_Resource_Isolation",
-      "item_label": "{IPC_Resource_Isolation}",
-      "status": "PASS",
-      "summary": "The design section for Heap Partitioning correctly implements and references the IPC_Resource_Isolation requirement. The mechanism for resource isolation (registry management by the IPC router and validation via Generation Cookies) provides a concrete technical implementation of the abstract requirement for 'complete separation and protection' of IPC resources.",
-      "issues": [],
-      "covered_files": [
-        "architecture/architecture_overview.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:EliminateDataRace",
-      "item_label": "{EliminateDataRace}",
-      "status": "PASS",
-      "summary": "The design section strictly adheres to the definition of {EliminateDataRace}. The requirement to eliminate data races via message passing is explicitly implemented in the design through the adoption of Hoare CSP and ownership transfer for zero-copy message passing.",
-      "issues": [],
-      "covered_files": [
-        "components/tier1_core/os_coos.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:NotRTOS",
-      "item_label": "{NotRTOS}",
-      "status": "PASS",
-      "summary": "The design section strictly adheres to the definition of {NotRTOS}. The requirement to prioritize memory efficiency and portability over real-time performance is concretely implemented via a stackless green-thread architecture using C++23 coroutines and static allocation, which directly supports the goal of low overhead and memory efficiency.",
-      "issues": [],
-      "covered_files": [
-        "components/tier1_core/os_coos.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:COOS_Deterministic",
-      "item_label": "{COOS_Deterministic}",
-      "status": "PASS",
-      "summary": "The design section for the COOS scheduler strictly adheres to the definition of {COOS_Deterministic}. The requirement for deterministic execution via explicit context switch points is correctly mapped to the implementation of a stackless cooperative multitasking system using C++20 symmetric transfer.",
-      "issues": [],
-      "covered_files": [
-        "components/tier1_core/os_scheduler.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:WIT_Interface_Spec",
-      "item_label": "{WIT_Interface_Spec}",
-      "status": "PASS",
-      "summary": "The design section strictly adheres to the definition of {WIT_Interface_Spec}. The provided WIT code correctly implements a language-independent interface definition for the 'trap' interface, fulfilling the requirement for a formal interface specification.",
-      "issues": [],
-      "covered_files": [
-        "components/tier1_core/system_syscall.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:Syscall_Return_Value",
-      "item_label": "{Syscall_Return_Value}",
-      "status": "PASS",
-      "summary": "The design section strictly adheres to the definition of {Syscall_Return_Value}. The return type (u32), the success/failure convention (0 vs non-zero), and the error propagation mechanism (WASI errno_t to WIT recovery-strategy) are clearly defined and consistent with the requirement for a standard return value and error propagation strategy.",
-      "issues": [],
-      "covered_files": [
-        "components/tier1_core/system_syscall.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:Challenge_WasiFdWriteLoop",
-      "item_label": "{Challenge_WasiFdWriteLoop}",
-      "status": "PASS",
-      "summary": "The design implementation for {Challenge_WasiFdWriteLoop} is consistent with its definition. The definition identifies the challenge as 'implementation layer separation and buffer management', and the design section explicitly resolves this by delegating the loop logic to the Shim (guest side) to keep the host minimal, thereby achieving the required layer separation.",
-      "issues": [],
-      "covered_files": [
-        "components/tier1_core/system_syscall.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:Challenge_SyscallMemorySafety",
-      "item_label": "{Challenge_SyscallMemorySafety}",
-      "status": "PASS",
-      "summary": "The design section strictly adheres to the definition of the challenge. The implementation strategy (using the vMMIO permission table as a security gate) directly addresses the requirement for guest memory access safety.",
-      "issues": [],
-      "covered_files": [
-        "components/tier1_core/system_syscall.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:WIT_First",
-      "item_label": "{WIT_First}",
-      "status": "PASS",
-      "summary": "The referencing design section strictly adheres to the definition of {WIT_First}. The design document explicitly establishes the WIT interface as the foundation for system calls and HAL, aligning with the requirement that WIT be the 'sole source of truth' and the starting point of the design.",
-      "issues": [],
-      "covered_files": [
-        "components/tier1_interface/interface_wit.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:WIT_Common_Types",
-      "item_label": "{WIT_Common_Types}",
-      "status": "PASS",
-      "summary": "The referencing design section correctly identifies the requirement {WIT_Common_Types} as a foundational element for the interface specifications. There are no contradictions, numeric discrepancies, or unbacked claims within the provided text.",
-      "issues": [],
-      "covered_files": [
-        "components/tier1_interface/interface_wit.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:ServiceFacade",
-      "item_label": "{ServiceFacade}",
-      "status": "PASS",
-      "summary": "The design section for ServiceFacade is vertically consistent with the definition. The definition specifies it as a 'thin wrapper' to hide low-layer IPC and provide type-safe methods, and the design section correctly implements this by stating it 'hides the primitivity of IPC' and enables 'Inversion of Control (IoC)' by allowing the consumer to define the facade class.",
-      "issues": [],
-      "covered_files": [
-        "components/tier1_interface/ipc_router.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:InterpreterContextStackless",
-      "item_label": "{InterpreterContextStackless}",
-      "status": "PASS",
-      "summary": "The referencing design section strictly adheres to the definition of {InterpreterContextStackless}. The design acknowledges the requirement as a core concept of the interpreter without introducing contradictions or unbacked claims.",
-      "issues": [],
-      "covered_files": [
-        "components/tier2_runtime/runtime_interpreter.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:DynamicMmap",
-      "item_label": "{DynamicMmap}",
-      "status": "PASS",
-      "summary": "The design section for vMMIO correctly implements and references the {DynamicMmap} requirement without contradictions or omissions.",
-      "issues": [],
-      "covered_files": [
-        "components/tier2_runtime/runtime_vmmio.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:vMMIO_TLB",
-      "item_label": "{vMMIO_TLB}",
-      "status": "PASS",
-      "summary": "The referencing design section is strictly consistent with the definition of {vMMIO_TLB}.",
-      "issues": [],
-      "covered_files": [
-        "components/tier2_runtime/runtime_vmmio.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:ADR_ScalableCodeOffset",
-      "item_label": "{ADR_ScalableCodeOffset}",
-      "status": "PASS",
-      "summary": "The audit of {ADR_ScalableCodeOffset} confirms full consistency between the definition and the design implementation. The design section correctly expands upon the definition's goal of determining the representation format for JIT code offsets to handle 32/64-bit boundaries.",
-      "issues": [],
-      "covered_files": [
-        "components/tier3_jit/jit_compiler.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:SinglePassCompilation",
-      "item_label": "{SinglePassCompilation}",
-      "status": "WARN",
-      "summary": "The design section is vertically consistent with the definition of SinglePassCompilation, but it contains an unbacked empirical claim regarding 'Zero Compile Cost'.",
-      "issues": [
-        {
-          "severity": "ERROR",
-          "location": "sec:components/tier3_jit/jit_engine_copy_patch.md#1. コンセプト",
-          "description": "Unbacked Verification Claim: The text claims to aim for 'Zero Compile Cost' and references {JIT_ZeroCompileCostTheorem}, but no formal proof, mathematical model, or benchmark artifact is cited to substantiate the 'Theorem' or the 'Zero' cost assertion."
-        }
-      ],
-      "covered_files": [
-        "components/tier3_jit/jit_engine_copy_patch.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:HistoryBuffer",
-      "item_label": "{HistoryBuffer}",
-      "status": "PASS",
-      "summary": "The referencing design section is consistent with the definition of {HistoryBuffer}.",
-      "issues": [],
-      "covered_files": [
-        "components/tier3_jit/jit_runtime_hotspot.md",
-        "requires/requirement_list.md"
-      ]
     }
   ],
   "doc_hashes": {
-    "architecture/architecture_overview.md": "3f183179addd8251c6a0b6faecd54a999ea326f528f1cd4b24ff98bf922def4f",
-    "architecture/concept_harness.md": "2160b8e29a617ecefbf46165542544705de7ebb0f6d5b7df4bbeb1c084f9cd3c",
-    "architecture/document_structure.md": "24357f01283821a32a25234b99d2e956f10b1db600b3311f5f1f28ac664770b3",
-    "architecture/FORMAT.md": "0b3b0386e502902ab8c26aad5977915d7e7ce354bacd6415d444b5ff7ef97c59",
-    "architecture/master_physical_design.md": "457ad4fb53a01e28cbd123d92ee62ab3ef3592dcc44d79f7e876cf5479081652",
-    "architecture/resource_budget.md": "ac4928f5ad7fcc1a360b6539ec3d44d072a67c6b7d4aa7d76bdac014971def00",
-    "components/FORMAT.md": "a1d5f55ebc5b5a50f0bbb82f112a7906adba32694b76c196570c2d3c6f0bf7be",
-    "components/tier1_core/os_coos.md": "f1579a3a615047b5b3b3e189413e953088d502bd81bf9a180321001f5cf53a79",
-    "components/tier1_core/os_scheduler.md": "8f2a91e241b3e52b23d22c75dc01f37adab4592a59255070983ded474fed5f77",
-    "components/tier1_core/system_config.md": "35a7a52c8def43525248931e019176457585eb4ded4185c126af1877fd12684b",
-    "components/tier1_core/system_config_details.md": "d3b9b82252004263b845452de3dacb9a974af1f9b4119c7c8a5e0bf8e243304d",
-    "components/tier1_core/system_containers.md": "0e8aa16f0306412af667099f01afc29afae4c12da3ee6fe083ca42144343962f",
-    "components/tier1_core/system_logging.md": "7ec474b1ad605d7e56d14c9eb01f763fb2cd93553a8c7d91e4a4c71f4072cb4d",
-    "components/tier1_core/system_syscall.md": "7fddb15242b1858522120553eebdf76354802bffe4bfdffe648f50f6e788a234",
-    "components/tier1_interface/interface_wit.md": "889909501181705efbeff8ca5d96f1ae036ab6c756e478acc6c7418907bb2d1f",
-    "components/tier1_interface/ipc_router.md": "48e1fe2ec6b63e04fdeefb9a9ba5a6a897691d666be9ca635adf143f479242ad",
-    "components/tier1_interface/system_service.md": "7c98009196d56c50c4d1d27269f38eb51d4fe1fa654aedb51dba7c496cd5fe62",
-    "components/tier2_runtime/debug/debug_gdb_rsp.md": "06768beb3ae0225f25b723b60e8da734c09bc1073ffc9d99831161c83604254f",
-    "components/tier2_runtime/debug/debug_manager.md": "1083cbaaaf7992ec9b4377e6e6209aeb3a038f9fc5143c37ed8d67f1be7bafde",
-    "components/tier2_runtime/runtime_interpreter.md": "37e53c09853500c293bbf423a8fc68413896f586c7dbe0d972ce3358fbdfc256",
-    "components/tier2_runtime/runtime_loader.md": "826cbf820ac56fdbf3a6309a31154647567408f108db7b4f19c8e4eb383e8a29",
-    "components/tier2_runtime/runtime_vmmio.md": "6bdb05cbd341d20f77ca74e2677952dc13d090a2d574e0f6673e2bce3dbf2811",
-    "components/tier2_runtime/runtime_vsoc.md": "ff978931a4fb959f4d28825847cd594df68a6e7429bd74fee56f2dfa1814d8c0",
-    "components/tier2_runtime/wasm_instruction.md": "640483f8a25bca7885110ce37e499c4ba3622fdc2ba3507e3a78b2bc1fcf8b5f",
+    "architecture/architecture_overview.md": "21ce2aec976c39daf31ad378abc3e49aa7c1687d7d17cbf95dd1633eae3cf25f",
+    "architecture/document_structure.md": "6fb76d9e1085447473305e7618aeebdf58d9d8e8981f1eb02c6c63bd38b662dd",
+    "components/tier1_core/os_coos.md": "3e0d2926fd72882e7f15b86d38680ef9f259c3afe65d1ed4f391ad757bceb6ef",
+    "components/tier1_core/os_scheduler.md": "14b8c326ed35d4a3bbfa813d2d17051d9aa146e9d0e0c569dacff78e22726965",
+    "components/tier1_core/system_config.md": "8ae1de137048c8e23ab3b6f628e66f02b5b8a3535a276bf1e75236adc88c64e4",
+    "components/tier1_core/system_containers.md": "69de15be18396d322a9ac68c152d452abb39cc7c1859710c2b4e920677fdc80f",
+    "components/tier1_core/system_logging.md": "eb3cb2e6c3487fff991579edec8568ae04d7509db96d4fc1c6001a2193a28e7e",
+    "components/tier1_core/system_syscall.md": "dbae080aed6b1ae6e0e01533c20c9efe3fe9fa05206cde8374ab0257a97c4502",
+    "components/tier1_interface/interface_wit.md": "43f7a66d8a6a0981cfe72cd4bf7bbf9f216d1581a3a37c6cfe44cf339f986732",
+    "components/tier1_interface/ipc_router.md": "5359b1693852b3acd1b0f82121d3b7d50d5c937ea07408880d51873fd0a362e6",
+    "components/tier1_interface/system_service.md": "994f3b608db7c674cda3e7c4c341b7fd3041cb158b6b00ef9b3afd4027a359f5",
+    "components/tier2_runtime/debug/debug_manager.md": "1ebcfca02dd95f6c8cb1946b76905311841b00b21c4770b002117083abda7890",
+    "components/tier2_runtime/runtime_interpreter.md": "eac056626b61db232432010fdc1809584315492142e2c0a7be562a1239bb71e1",
+    "components/tier2_runtime/runtime_loader.md": "0ab2b7a8a2549469f1c459ea92f2ed543eb6890d5753011201af9e64aae24826",
+    "components/tier2_runtime/runtime_vmmio.md": "51427e920c9b2e6be0cf6a4988dcbe54079e075a38ebb77ac5c715f3cbc2a911",
+    "components/tier2_runtime/runtime_vsoc.md": "5340b0e638e1a42cc62e62d86f0afff79cc2c9b30466b18bd3d81786ec7cc425",
     "components/tier3_jit/concepts/README.md": "a39c8c192999a792243e697e008fcad02c701d14b9559d492d668208122b6ebc",
-    "components/tier3_jit/jit_assembler_constexpr.md": "bdeb28e114f82861fadac6ac3f3c9953dfd2cd3264a243d5db232d893c980924",
-    "components/tier3_jit/jit_compiler.md": "5403b527593322701323acd19987c7cab93d08cde87046cac538f841b761904c",
-    "components/tier3_jit/jit_engine_copy_patch.md": "a7c88211b59a03fde6428041bd46104f16ee5dec8a65788d49305bb3b27ef606",
-    "components/tier3_jit/jit_runtime_entry.md": "fba8e4844ca9cf64c718c57e5b4058a1cafd5f28b56d0d3cd019dac83ea88834",
-    "components/tier3_jit/jit_runtime_hotspot.md": "bf4ced6b78c1978a08624c8fe9f430ee307c068780cd0c314d6f527ea698603f",
-    "components/tier3_platform/platform_hal.md": "f08e3bb086b9ec1c84b3750c7e029926b554d9d41e51807b27f402939dc27a87",
-    "components/tier3_platform/platform_memory.md": "7269a7df0573b9753da79472f7aaa4970a47f4ab9e7ef5a8406b70cceff05e1b",
+    "components/tier3_jit/jit_compiler.md": "da4a57a189386aa18353222ec606b326fcf160dcd51eb59de05d8a3a7d9da94f",
+    "components/tier3_jit/jit_runtime.md": "1bbec33941b5677a47d4f299f1b3a29f3618ff2b166ec90b21dc764186f00a06",
+    "components/tier3_platform/platform_hal.md": "d2312540961c30d63d90209ece4ee01eb523e39ded4a8065c750f6cc9b76be5d",
+    "components/tier3_platform/platform_memory.md": "49dc2215cd84f238c31e71ac7fb3e28922fa562c1a1b6bcc38c6025a4585fc7e",
     "plans/backlog_archive.md": "3e09371810730853a39b09fec40e83409690786e1d27caae96ab6af054191716",
-    "plans/backlog_list.md": "25b451c306c223b25c40f050ee6a4c41f818dff84dad96da46e563193b460455",
+    "plans/backlog_list.md": "cd91708d36f74a1649eba78dfcb207ea760c5bb9a166d7aaeaadfffe2bfa1b83",
     "plans/roadmap_phase.md": "92ad637d4e9baed7d2083ae53145a3416cd1df7e1266339c6cabe1c969b4fe2c",
-    "requires/FORMAT.md": "fb20e6c2b46dacdc8430967fb50603baf22b51d3f2f9f1450314e99db8fcdf58",
     "requires/requirement_list.md": "a2277b44f6575e9366830934e25da7a35de95d635e468ae17ac77c2d327dfdf2",
-    "specs/gdb_rsp_protocol.md": "386dfa524ed02219a8aa89a7a7c35d6e97dfbba666b0b24a05e7c35d7c89e0dc",
-    "specs/jit_stencil_catalog.md": "f42b4a7bff4a5fc7dc986a454f1c885c804d1f4e35db4d43c0c6bb1f6e036942",
+    "specs/gdb_rsp_protocol.md": "cdeb36b17580a6d9d6f0d17a6ca8908e9c31cb2501b914a65e838ea75b026a33",
+    "specs/jit_stencil_catalog.md": "4eaeea1aa86d64b83865674ab9ad8e86faa0a6a086c589d30ec5a2b11f0eab0b",
     "specs/wasi_preview1_abi.md": "4cb53fb6d8c5e8cbfc416eaf39041fae538cfaabc0cabf1de6eedafcc12e8512",
-    "specs/wasm_instruction_set.md": "740de9964a2e01a6be6a81c319094c5bb07b3e3947c730cb39774f8429dbbe99"
-  },
-  "fail_count": 0,
-  "warn_count": 4,
-  "pass_count": 133
+    "specs/wasm_instruction_set.md": "a589c4bdc4e894425191232ae0c86ea67701243a7eff6282427de1bc4f6b2707"
+  }
 }

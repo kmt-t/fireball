@@ -1,4 +1,7 @@
 # WIT インターフェイス仕様書 (WASI 準拠版) {VERIFY_WIT} {VERIFY_LLM}
+<!-- evidence:
+     wit: ../tier2_runtime/wit/execution_context.wit
+-->
 
 ## 1. 目的
 

@@ -1,4 +1,9 @@
 # Interpreter コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}
+<!-- evidence:
+     formal: formal/vsoc_state_model.py
+     wit: wit/execution_context.wit
+     concept: concepts/interpreter_concept.py
+-->
 
 ## 1. コンセプト
 <!-- traceability: {ThreadedInterpreter} {LowLatencyJIT} {InterpreterContextStackless} {EnvironmentPointer} -->
@@ -62,7 +67,7 @@ ARM Cortex-M ターゲットにおいて、`execution_context` は **WASM スタ
 | 有効命令ハンドラ | 現在使用されているハンドラ（通常用/デバッグ用）への参照 | テーブルポインタ | `opcode_handler` の配列 (`[R1, #0x0C]`) |
 | 環境ポインタ | 実行に必要な環境（vSoC等）への参照 `{EnvironmentPointer}` | 構造体への参照 | [`vsoc_runtime`](runtime_vsoc.md) (`env`: R2) |
 
-`execution_context` は `sp_offset` / `frame_offset` / `sp_boundary` / `handler_table` の4フィールド（計16バイト、`[R1, #0x00]`〜`[R1, #0x0F]`）のみを保持する。リニアメモリ基底・サイズは `execution_context` ではなく **`vsoc_runtime`（`env`: R2）が所有** する——`memory.grow` によって動的に伸長するメモリの実体は複数モジュールにまたがる「環境」側の責務であり、`execution_context` はトレース／ハンドラ呼び出しごとに軽量な統一スタックフレーム情報のみを保持する設計とする。完全な構造体定義（フィールド型と並び順）は正本として [`wit/execution_context.wit`](wit/execution_context.wit) に、バイトオフセットの物理配置は [`master_physical_design.md` §3.2](../../architecture/master_physical_design.md) に記載する。
+`execution_context` は `sp_offset` / `frame_offset` / `sp_boundary` / `handler_table` の4フィールド（計16バイト、`[R1, #0x00]`〜`[R1, #0x0F]`）のみを保持する。リニアメモリ基底・サイズは `execution_context` ではなく **`vsoc_runtime`（`env`: R2）が所有** する——`memory.grow` によって動的に伸長するメモリの実体は複数モジュールにまたがる「環境」側の責務であり、`execution_context` はトレース／ハンドラ呼び出しごとに軽量な統一スタックフレーム情報のみを保持する設計とする。完全な構造体定義（フィールド型と並び順）は正本として [`wit/execution_context.wit`](wit/execution_context.wit) に、バイトオフセットの物理配置は [アーキテクチャ概要書 §3.1](../../architecture/architecture_overview.md) に記載する。
 
 #### コールフレーム（call_frame @ 統合スタックインライン）
 <!-- traceability: {PositionIndependentCode} {ContextPointerRegister} {MemoryBoundaryCheck} {EnvironmentPointer} -->
@@ -76,7 +81,7 @@ ARM Cortex-M ターゲットにおいて、`execution_context` は **WASM スタ
 | 関数インデックス | 現在実行中の関数の管理番号 | 関数インデックス | 32bit符号なし (`+0x0C`) |
 | 保存済みスタック長 | 関数呼び出し時点のスタック長（復元用） | 長さ | 32bit符号なし (`+0x10`) |
 
-`call_frame` は計20バイト（`+0x00`〜`+0x13`）で、統合スタック上の各フレーム先頭からの相対オフセットを持つ（絶対オフセットは呼び出し深さごとに異なる——{ADR_TosCacheAsymmetry} 参照）。正本は [`wit/execution_context.wit`](wit/execution_context.wit)、物理配置は [`master_physical_design.md` §3.2](../../architecture/master_physical_design.md)。
+`call_frame` は計20バイト（`+0x00`〜`+0x13`）で、統合スタック上の各フレーム先頭からの相対オフセットを持つ（絶対オフセットは呼び出し深さごとに異なる——{ADR_TosCacheAsymmetry} 参照）。正本は [`wit/execution_context.wit`](wit/execution_context.wit)、物理配置は [アーキテクチャ概要書 §3.1](../../architecture/architecture_overview.md)。
 
 #### 制御フレーム（control_frame @ 統合スタックインライン）
 <!-- traceability: {PositionIndependentCode} {ContextPointerRegister} {MemoryBoundaryCheck} {EnvironmentPointer} -->
@@ -90,7 +95,7 @@ ARM Cortex-M ターゲットにおいて、`execution_context` は **WASM スタ
 | 結果アリティ | このブロックが戻す値の数（スタック Pruning に使用） | 整数 | 16bit符号なし (`+0x0C`) |
 | ループフラグ | 現在の構造が `loop` かどうかを示す | ブール値 | 8bit (`+0x0E`)。`+0x0F` は4バイトアライメントのための予約バイト |
 
-`control_frame` は計16バイト（`+0x00`〜`+0x0F`）。正本は [`wit/execution_context.wit`](wit/execution_context.wit)、物理配置は [`master_physical_design.md` §3.2](../../architecture/master_physical_design.md)。
+`control_frame` は計16バイト（`+0x00`〜`+0x0F`）。正本は [`wit/execution_context.wit`](wit/execution_context.wit)、物理配置は [アーキテクチャ概要書 §3.1](../../architecture/architecture_overview.md)。
 
 #### インタプリタ構成（interpreter_config）
 <!-- traceability: {META_ConfigurableSystem} -->
@@ -108,7 +113,7 @@ ARM Cortex-M ターゲットにおいて、`execution_context` は **WASM スタ
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
 | 実行シグネチャ | `__fastcall` による継続渡し（CPS）3引数シグネチャ | 関数ポインタ | `void (__fastcall *)(const uint8_t* __restrict__ ip, execution_context* __restrict__ stack_bot, vsoc_runtime* __restrict__ env) noexcept` |
-| レジスタ割り当て | ARM AAPCS / `__fastcall` 引数レジスタマッピング | 物理レジスタ | `R0`: `ip`, `R1`: `stack_bot`, `R2`: `env`, `R3`: `scratch` ([マスター物理設計書 §3](../../architecture/master_physical_design.md) 準拠) |
+| レジスタ割り当て | ARM AAPCS / `__fastcall` 引数レジスタマッピング | 物理レジスタ | `R0`: `ip`, `R1`: `stack_bot`, `R2`: `env`, `R3`: `scratch` ([アーキテクチャ概要書 §4](../../architecture/architecture_overview.md) 準拠) |
 
 WASM オプコードごとのスタック遷移およびハンドラ実装マトリクスは [WASM 命令セット物理仕様書 (`docs/specs/wasm_instruction_set.md`)](../../specs/wasm_instruction_set.md) を参照。
 
@@ -124,10 +129,10 @@ WASM オプコードごとのスタック遷移およびハンドラ実装マト
   - `ip` (R0), `stack_bot` (R1 `{ContextPointerRegister}`), `env` (R2 `{EnvironmentPointer}`) のホットな変数を `__fastcall` 引数レジスタ上で保持・更新。
   - スタックの成長長（SP長）を `stack_bot` 内で管理し、`call_frame` / `control_frame` も単一スタック上にインライン構築（Android ART スタイル）することで、Caller-saved な **`R3` を一時計算用スクラッチレジスタとして解放**。 `{ContextPointerRegister}`
   - 非制御命令では `[[clang::musttail]]` による直接末尾ジャンプ（Direct-Threaded Code）を行い、レジスタ上の引数をそのまま次のハンドラへ継続渡し（CPS）する。 `{ThreadedInterpreter}`
-- **JIT コードとの完全な呼び出し規約整合 (Zero-Overhead Interop)**:
+- **JIT コードとの完全な呼び出し規約整合 (Low-Overhead Interop)**:
   - JIT コンパイラが生成するネイティブトレース（`exec_trace`）も、インタープリタと全く同一の `__fastcall` CPS 3引数シグネチャ（R0=IP, R1=stack_bot, R2=ENV）に従う。
   - **インタープリタ $\to$ JIT 遷移**: インタープリタから JIT コードへ移行する際、レジスタ上の `(ip, stack_bot, env)` をそのまま渡して `exec_trace` へ直接ジャンプする。インタープリタは TOS/NOS をレジスタに保持しないため、JIT 側が入口でスタックメモリから `R4`/`R5` をロードする（`{ADR_TosCacheAsymmetry}`）。
-  - **JIT $\to$ インタープリタ フォールバック (OSR / Exit)**: JIT トレース内で未サポート命令、トラップ、またはトレース終端に達した場合、レジスタ上の `(ip, stack_bot, env)` をそのまま次のオプコードハンドラに渡して末尾ジャンプ（`BX`）する。**コンテキストの再構築（構造体への退避・復元、レジスタ再配置）は一切発生しない**。ただし JIT 側のみが保持するスタックトップキャッシュ `R4`/`R5` については、ダーティであれば統合スタックへ 2 命令（`STR` × 2）で書き戻す。これが JIT ↔ インタープリタ遷移の唯一のコストである。 `{JIT_RuntimeAPI_Fallback}` `{LowLatencyJIT}` `{ADR_TosCacheAsymmetry}`
+  - **JIT $\to$ インタープリタ フォールバック (OSR / Exit)**: JIT トレース内で未サポート命令、トラップ、またはトレース終端に達した場合、レジスタ上の `(ip, stack_bot, env)` をそのまま次のオプコードハンドラに渡して末尾ジャンプ（`BX`）する。**コンテキストの再構築（構造体への退避・復元、レジスタ再配置）は一切発生しない**。ただし JIT 側のみが保持するスタックトップキャッシュ `R4`/`R5`（ダーティな場合）および更新された `sp_offset` については、統合スタック／コンテキスト構造体へ 2〜3 命令（`STR`）で書き戻す。これが JIT ↔ インタープリタ遷移の唯一の極小コストである。 `{JIT_RuntimeAPI_Fallback}` `{LowLatencyJIT}` `{ADR_TosCacheAsymmetry}`
 - **WASM命令とRuntime APIの1対1対応**: 各命令ハンドラはスタックボトム相対でオペランド/スタック長を更新し、必要に応じてランタイムAPIを呼び出す。 `{JIT_RuntimeAPI_Fallback}`
 - **ジャンプの高速化 (exec_trace)**: 制御命令（`br`, `br_if` 等）によるジャンプ先を `control_frame` 内の `exec_trace` に保持する。
 - **スタック Pruning (Label Arity対応)**: `br` 命令等の実行時、ジャンプ先の `control_frame` に記録された `結果アリティ` に基づき、スタック上のオペランドを残してスタック長を `保存済みスタック長` まで巻き戻す。これにより、Wasm 規定のスタック整合性を保証する。
@@ -269,7 +274,7 @@ sequenceDiagram
 | 機能概要 | WASM命令を1トレース分実行し、実行コンテキストを更新する。 |
 | シグネチャ | `run_step(ctx: 可変参照) -> 結果型` |
 | 引数 | `ctx`: 実行コンテキスト (`execution_context`) への可変参照 |
-| 戻り値 | 結果型 (正常終了時は空、トラップ発生時はトラップ要因 `{META_RecoveryStrategy}`) |
+| 戻り値 | 結果型 (正常終了時は SUCCESS、トラップ発生時はリカバリー戦略カテゴリ `recovery-strategy-category` `{META_RecoveryStrategy}`) |
 | 補足 | 必要に応じて内部的に JIT コードへのジャンプを行い、JIT/Interpreter を透過的に切り替える。 |
 
 #### 割り込み同期 (`sync_interrupts`)

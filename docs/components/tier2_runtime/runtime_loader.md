@@ -1,4 +1,7 @@
-# WASMローダ コンポーネント設計書 {VERIFY_CONCEPT}
+# WASMローダ コンポーネント設計書 {VERIFY_LLM}
+<!-- evidence:
+     concept: concepts/loader_concept.py
+-->
 
 ## 1. コンセプト
 <!-- traceability: {ROMParsing} {META_AccessDictionary} {META_BumpAllocator} -->
@@ -137,7 +140,7 @@ ROM上のデータストリームを管理し、LEB128可変長整数やプリ�
 | V3 | セクション境界 | 各セクションのsizeがバイナリ末尾を超えない | reject |
 | V4 | セクション順 | Customセクション以外はID昇順 | reject |
 | V5 | インポート/エクスポート型整合 | 型インデックスがTypeセクション範囲内 | reject |
-| V6 | メモリセクション境界 | 初期ページ数（64KB単位）がシステム物理予算（`FB_CONF_MAX_WASM_PAGES`）以下であること | reject |
+| V6 | メモリセクション境界 | 初期要求メモリサイズ（初期ページ数 × 64KB、または部分ページ構成時は初期バイト数）がゲストRAM物理割り当て予算（`FB_CONF_GUEST_RAM_SIZE`）以下であること | reject |
 
 ### 4.4 状態遷移図
 <!-- traceability: {ZeroCopyIndexing} {META_AccessDictionary} {META_ConfigurableSystem} {LightweightVerifier} -->

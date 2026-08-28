@@ -118,15 +118,39 @@ class FlatSetView(_SortedWindow):
         return self._locate(key) is not None
 
 
-def lookup_jit_entry(view: FlatMapView, card_table: BitView, entry_group_bounds: dict[int, tuple[int, int]], pc: int, card_shift: int, group_shift: int):
+class RadixBinaryTreeView:
+    """fireball::radix_binary_tree_view<Key, Value, RadixShift>:
+    Container combining an O(1) Radix Table (coarse prefix lookup)
+    with bounded binary search on a sorted key-value array.
+    """
+
+    def __init__(self, keys: Sequence[int], values: Sequence[Any],
+                 radix_table: Sequence[tuple[int, int]], radix_shift: int):
+        self.map_view = FlatMapView(keys, values)
+        self.radix_table = radix_table  # prefix -> (first, last) entry indices
+        self.radix_shift = radix_shift
+
+    def find(self, key: int) -> Any | None:
+        prefix = key >> self.radix_shift
+        if prefix < 0 or prefix >= len(self.radix_table):
+            return None
+        first, last = self.radix_table[prefix]
+        if first >= last:
+            return None
+        return self.map_view.slice(first, last).find(key)
+
+
+def lookup_jit_entry(view: FlatMapView | RadixBinaryTreeView, card_table: BitView, entry_group_bounds: dict[int, tuple[int, int]], pc: int, card_shift: int, group_shift: int):
     """JIT entry lookup:
     1. O(1) card marking pre-filter: verify card state == 3 (COMPILED).
-    2. O(1) JIT entry group narrowing: slice FlatMapView to group bounds [first, last].
-    3. Binary search on narrowed FlatMapView.
+    2. O(1) Radix Table prefix lookup: slice to group bounds [first, last].
+    3. Bounded local binary search on narrowed FlatMapView (RadixBinaryTree index model).
     """
     card_idx = pc >> card_shift
     if card_idx >= card_table.size() or card_table.at(card_idx) != 3:  # 3 = COMPILED
         return None
+    if isinstance(view, RadixBinaryTreeView):
+        return view.find(pc)
     group_idx = pc >> group_shift
     bounds = entry_group_bounds.get(group_idx)
     if bounds is None:
@@ -260,6 +284,23 @@ def test_bits_must_divide_a_byte():
         assert "1, 2 or 4" in str(e), e
 
 
+def test_radix_binary_tree_view():
+    """RadixBinaryTree index model: Radix Table yields O(1) bounded segment [first, last],
+    then local binary search finds entry in O(log n)."""
+    keys = [10, 20, 30, 40, 50, 60]
+    values = [1, 2, 3, 4, 5, 6]
+    # Radix shift = 5 (bin size 32): bin 0 (0..31) -> (0, 3), bin 1 (32..63) -> (3, 6)
+    radix_table = [(0, 3), (3, 6)]
+    rbt_view = RadixBinaryTreeView(keys, values, radix_table, radix_shift=5)
+
+    assert rbt_view.find(20) == 2
+    assert rbt_view.find(30) == 3
+    assert rbt_view.find(50) == 5
+    assert rbt_view.find(60) == 6
+    assert rbt_view.find(25) is None
+    assert rbt_view.find(100) is None
+
+
 if __name__ == "__main__":
     test_two_bit_card_marking_packs_four_cards_per_byte()
     test_packed_write_does_not_disturb_neighbours()
@@ -268,5 +309,6 @@ if __name__ == "__main__":
     test_narrowing_only_ever_shrinks_and_composes()
     test_set_view_answers_membership_without_any_value_storage()
     test_card_marking_prefilter_and_jit_entry_group_narrowing_lookup()
+    test_radix_binary_tree_view()
     test_bits_must_divide_a_byte()
     print("[PASS] All container vocabulary concept tests passed successfully.")

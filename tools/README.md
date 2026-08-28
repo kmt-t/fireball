@@ -1,34 +1,47 @@
 # Fireball Verification & Specification Tools
 
-Fireball Hypervisor のドキュメント品質、静的トレーサビリティ、形式検証（pyModelChecking）、WIT インターフェース検証、および LLM as a Judge を実行する統合ツール環境です。
+Fireball Hypervisor のドキュメント品質、静的トレーサビリティ、形式検証（pyModelChecking）、WIT インターフェース検証、ベンチマーク実測、および LLM as a Judge を実行する統合ツール環境です。
 
 コア検証エンジンとして [spec-integrator](spec-integrator/)（submodule）を採用しています。
 
 ---
 
-## 1. クイックスタート
+## 1. 段階的クイックスタート (Staged Operations)
+
+目的に応じて最適なレベルのコマンドを実行することで、無駄な全件監査や待機時間を排除します。
+
+| レベル | タイミング | 実行コマンド | コスト・所要時間 |
+| :--- | :--- | :--- | :--- |
+| **Level 0** (秒速) | 日常の編集・個別コード確認 | `uv run python docs/components/.../concepts/*_concept.py` | 0円 / 0.1秒〜数秒 |
+| **Level 1** (Pre-Commit) | コミット前の静的整合性確認 | `powershell tools/run_all_tests.ps1 -sync`<br>`powershell tools/run_all_tests.ps1` | 0円 / 5〜10秒 |
+| **Level 2** (Milestone) | 仕様変更・ADR 追加時の意味監査 | `powershell tools/run_all_tests.ps1 -assess -backend sakura`<br>`powershell tools/run_all_tests.ps1 -llm -backend sakura` | 無料 / 30秒〜1分 |
+| **Level 3** (Release) | PR・リリース前の完全全量監査 | `powershell tools/run_all_tests.ps1 -full -backend sakura` | 完全パス確認用 |
 
 ### PowerShell (Windows)
 ```powershell
-# 品質ゲートのみ（保存済みリスク評価を再利用）
-powershell tools/run_all_tests.ps1 -clean
+# Level 1: コミット前同期 & 高速静的チェック
+powershell tools/run_all_tests.ps1 -sync
+powershell tools/run_all_tests.ps1
 
-# リスク評価 → 品質ゲート
+# Level 2: さくら Qwen 3.6 による意味監査
 powershell tools/run_all_tests.ps1 -assess -backend sakura
+powershell tools/run_all_tests.ps1 -llm -backend sakura
 
-# 全フェーズを全量で実行（リリース判定用）
+# Level 3: 全量完全監査（リリース判定用）
 powershell tools/run_all_tests.ps1 -full -backend sakura
 ```
 
 ### Bash (Linux / macOS / WSL)
 ```bash
-# 品質ゲートのみ（保存済みリスク評価を再利用）
-./tools/run_all_tests.sh --clean
+# Level 1: コミット前同期 & 高速静的チェック
+./tools/run_all_tests.sh --sync
+./tools/run_all_tests.sh
 
-# リスク評価 → 品質ゲート
+# Level 2: さくら Qwen 3.6 による意味監査
 ./tools/run_all_tests.sh --assess --backend sakura
+./tools/run_all_tests.sh --llm --backend sakura
 
-# 全フェーズを全量で実行（リリース判定用）
+# Level 3: 全量完全監査（リリース判定用）
 ./tools/run_all_tests.sh --full --backend sakura
 ```
 
@@ -38,30 +51,26 @@ powershell tools/run_all_tests.ps1 -full -backend sakura
 
 | Phase | コマンド | 役割 | 省略時 |
 | :---: | :--- | :--- | :--- |
-| 1 | `assess` | **何を検証すべきか**を決定し、義務台帳（`doc_risk_report.json`）を出力 | 保存済み台帳を再利用（無ければ Obligation Gate が失敗） |
-| 2 | `judge` | 意味的整合性の監査 | 保存済みレポートを再利用 |
-| 3 | `check` | **7つの品質ゲート**。Phase 1/2 の結論を消費する唯一の合否判定 | 常に実行 |
-
-`check` を先に走らせてはならない。「検証すべき」と評価された項目が、既に合格を出した後に判明することになるため。
-
-`assess` は既定で全セクションを評価しない限り失敗する（`--max-sections` を上げるか `--no-strict`）。
-部分評価では未評価セクションの検証義務が不明のままになり、それは「合格」ではないため。
+| 1 | `assess` | **何を検証すべきか**を決定し、義務台帳（`doc_risk_report.json`）を出力 | 保存済み台帳を再利用 |
+| 2 | `judge` | 意味的整合性・ADR のセマンティック監査 | 保存済みレポートを再利用 |
+| 3 | `concepts / bench` | Python 概念コード・実測ベンチマーク・ARM エミュレータの実行 | 常に実行 |
+| 4 | `check` | **8 つの品質ゲート**。Phase 1〜3 の結果を包括して最終合否を判定 | 常に実行 |
 
 ---
 
 ## 3. 品質ゲート (Quality Gates)
 
-`spec-integrator check` により以下 7 ゲートを監査します（エラー検知時は終了コード 1 で CI が失敗）。
+`spec-integrator check` により以下 8 ゲートを監査します（エラー検知時は終了コード 1 で CI が失敗）。
 
 1. **Format Gate**: Markdown リンク切れ、アンカー切れの検知
 2. **Traceability Gate**: 未定義キーワードの参照、未参照要件の検知
 3. **Hierarchy Gate**: Tier（0〜3）間の逆流依存・カプセル化違反の検知
-4. **Formal Gate**: `docs/components/<tier>/formal/*.py` の実行に加え、**モデル自体の妥当性**を監査
-   （空虚な命題・到達不能状態・単一経路モデル・1モデルの二重計上）
-5. **WIT Gate**: `docs/components/<tier>/wit/*.wit` の構文・構造検証
-6. **Evidence Gate**: 「検証済み」「証明完了」「測定環境」等の主張が成果物に裏付けられているかの検証
-7. **Obligation Gate**: リスク評価が要求した検証の未実施・評価の陳腐化の検知
-8. **Consistency Gate**: **修正漏れ**（1つの事実が場所によって違う値を持つ／定義を直したのに参照側が旧記述のまま）の検知
+4. **Formal Gate**: `formal/*.py` の pyModelChecking 実行、妥当性監査、および `BACKS` 双方向照合
+5. **WIT Gate**: `wit/*.wit` の構文・型安全性・エラー回復契約の検証
+6. **Evidence Gate**: `<!-- evidence: ... -->` 宣言ファイルの実在性と未裏付け主張の検知
+7. **Obligation Gate**: リスク評価から導出された全検証義務の 100% 充足（Discharge）監査
+8. **Consistency Gate**: `spec-consistency.lock` との差分・波及漏れの検知
+*(Topology Verifier)*: 循環依存のない静的メッセージングトポロジーの保証
 
 ゲート 4/6/7 は「検証に失敗したこと」ではなく **「検証すべきものをやらなかったこと」** を落とすためのものです。
 ゲート 8 は **「直したつもりで直っていないこと」** を落とすためのものです。

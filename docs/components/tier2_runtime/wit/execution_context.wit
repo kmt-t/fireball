@@ -2,7 +2,7 @@ package fireball:interpreter@0.1.0;
 
 /// インタープリタ/JIT 共通の統一スタックフレーム構造体群。
 /// 正本: docs/components/tier2_runtime/runtime_interpreter.md 3.3
-/// 物理配置（バイトオフセット）: docs/architecture/master_physical_design.md 3.2
+/// 物理配置（バイトオフセット）: docs/architecture/architecture_overview.md 3.3
 interface unified-stack {
     /// スタックボトム（R1: stack_bot）に常駐する実行コンテキスト。計16バイト。
     record execution-context {

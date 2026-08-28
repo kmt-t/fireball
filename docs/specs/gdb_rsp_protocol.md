@@ -52,7 +52,7 @@ GDB クライアントが参照するレジスタ番号（Target Description XML
 
 | GDB レジスタ番号 | レジスタ名 | ビット幅 | 物理ソース（スタックボトム `execution_context` / 統合スタック） |
 | :--- | :--- | :--- | :--- |
-| **`0`** | `pc` | 32-bit | `execution_context.ip` (現在実行中の WASM バイトコードオフセット) |
+| **`0`** | `pc` | 32-bit | `R0 (ip)` (現在実行中の WASM バイトコードオフセット / PC) |
 | **`1`** | `sp` | 32-bit | `execution_context.sp_offset` (スタックボトムからのオペランド頂点オフセット) |
 | **`2`** | `fp` | 32-bit | `execution_context.frame_offset` (カレントコールフレームの開始オフセット) |
 | **`3`** | `tos` | 32-bit | オペランドスタック最上位の値（`[stack_bot + sp_offset - 4]`） |

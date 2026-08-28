@@ -58,6 +58,9 @@ benchmark_verification:
   benchmark_dir_name: "benchmarks"
   tag: "{VERIFY_BENCHMARK}"
 
+obligation:
+  require_full_coverage: false
+
 evidence:
   # reports/doc_report.md is gitignored: the pipeline generates it as its own
   # LAST step, so on a fresh checkout it legitimately does not exist yet.
@@ -68,15 +71,15 @@ evidence:
 
 llm_judge:
   tag: "{VERIFY_LLM}"
-  default_backend: "openrouter"
+  default_backend: "sakura"
   backends:
+    sakura:
+      api_key_env: "SAKURA_API_KEY"
+      model: "preview/Qwen3.6-35B-A3B"
     openrouter:
       api_key_env: "OPENROUTER_API_KEY"
       endpoint: "https://openrouter.ai/api/v1/chat/completions"
       model: "qwen/qwen3.8-27b"
-    sakura:
-      api_key_env: "SAKURA_API_KEY"
-      model: "preview/gemma-4-31B-it"
     ollama:
       endpoint: "http://localhost:11434"
       model: "llama3"

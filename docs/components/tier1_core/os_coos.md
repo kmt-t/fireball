@@ -1,4 +1,9 @@
 # 協調型OS COOS コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM} {VERIFY_BENCHMARK}
+<!-- evidence:
+     formal: formal/coos_channel_model.py
+     benchmark: benchmarks/direct_context_switch_bench.py
+     concept: concepts/coos_concept.py
+-->
 
 ## 1. コンセプト
 <!-- traceability: {CooperativeMultitasking} {GLOBAL_UseCpp23Library} {GLOBAL_UseCpp20Coroutine} {CSPCommunication} {EliminateDataRace} {GLOBAL_PeriodicTask} {GLOBAL_IdleDetection} {GLOBAL_InterruptWakeup} {NotRTOS} -->
@@ -10,8 +15,8 @@ COOSは、シングルスレッド環境向けのホーアCSPベースのグリ�
 
 ### 2.1 構成要素
 <!-- traceability: {META_3TierSeparation} {GLOBAL_ComponentHarness} -->
-- **[`co_sched`](os_scheduler.md)**: スケジューラ。タスクのライフサイクルと実行順序の管理。
-- **`co_csp`**: 通信エンジン。チャネルベースの同期と所有権移譲。
+- **[`co_sched`](os_scheduler.md)**: スケジューラ。タスクのライフサイクル、READYキュー管理、実行順序制御（詳細は [`os_scheduler.md`](os_scheduler.md) を正本とする）。
+- **`co_csp`**: 通信エンジン。チャネルベースの同期と所有権移譲（本設計書が正本）。
 - **`co_mem`**: メモリマネージャ。タスク独立な静的メモリバッファプール（メモリパーティション）の管理。
 
 ロギングは COOS の構成要素ではなく、独立した Tier 1 コンポーネント [`system_logging`](system_logging.md) が担う。COOS は `set_idle_hook` によりアイドル時のフラッシュ契機のみを提供する。 `{BufferedLogging}` `{GLOBAL_IdleDetection}`

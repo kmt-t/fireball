@@ -1,4 +1,8 @@
 # vMMIO コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}
+<!-- evidence:
+     formal: formal/vsoc_state_model.py
+     concept: concepts/vmmio_concept.py
+-->
 
 ## 1. コンセプト
 <!-- traceability: {META_RestrictedPhysicalAccess} {vMMIO_TrapAndEmulate} {PhysicalPassthrough} {DynamicMmap} {UnifiedAccessModel} {FastAddressCheck} {Fast_Path_GPIO} {META_FlatMapIndexed} -->
@@ -217,9 +221,14 @@ Static Devices (Tier 2) 向け。PTE には Device Type やパーミッション
 
 ```cpp
 // FlatMap ページテーブル定義 (C++23)
-using VmmioPteStore = std::array<uint32_t, FB_CONF_VMMIO_MAX_PTES>;  // 実体 (静的確保)
-using VmmioPteView  = fireball::flat_map_view<uint32_t, uint32_t>;        // 参照用ビュー
-VmmioPteMap vmmio_ptes; // VPN -> PTE
+struct pte_entry {
+  uint32_t vpn;  // Key: 仮想ページ番号 (VPN)
+  uint32_t pte;  // Value: 32bit PTE属性
+};
+using VmmioPteStore = std::array<pte_entry, FB_CONF_VMMIO_MAX_PTES>;  // 実体 (静的確保)
+using VmmioPteView  = fireball::flat_map_view<uint32_t, uint32_t>;     // 参照用ビュー
+inline VmmioPteStore vmmio_pte_store; // 静的PTE配列
+inline VmmioPteView  vmmio_ptes{vmmio_pte_store}; // VPN -> PTE ビュー
 ```
 
 #### ハンドラ定義 (vmmio_handler)

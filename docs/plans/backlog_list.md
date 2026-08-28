@@ -15,9 +15,9 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
 ### オーナーレビュー観点 & チェックリスト
 
 - [ ] **1. アーキテクチャ構成 & リソース予算**:
-  - 評価ターゲットである最小構成（RAM 32KB / ROM 96KB）に対し、静的合計 21.0KB / 84KB とする予算設計、および縮退方針（JITキャッシュ3面と統合スタックを縮退対象外とする判断）の妥当性確認 (`architecture_overview.md`, `resource_budget.md`) `{Resource_Estimation_Model}`
+  - 評価ターゲットである最小構成（RAM 32KB / ROM 96KB）に対し、静的合計 21.0KB / 84KB とする予算設計、および縮退方針（JITキャッシュ3面と統合スタックを縮退対象外とする判断）の妥当性確認 (`architecture_overview.md`) `{Resource_Estimation_Model}`
 - [ ] **2. WASM 64KB ページング & 8KB 部分ページ境界モデル**:
-  - WebAssembly 標準 64KB ページングと、極小環境向け 8KB/16KB 部分ページの `FastAddressCheck` 境界トラップ仕様の確認 (`runtime_vmmio.md`, `system_config_details.md`) `{FastAddressCheck}`
+  - WebAssembly 標準 64KB ページングと、極小環境向け 8KB/16KB 部分ページの `FastAddressCheck` 境界トラップ仕様の確認 (`runtime_vmmio.md`, `system_config.md`) `{FastAddressCheck}`
 - [ ] **3. 形式検証（pyModelChecking: 5モデル）の検証**:
   - CSP デッドロックフリー・二重所有不在、IPC 所有権移譲と Drop ハンドラ、vSoC Safepoint 応答性、JIT キャッシュ世代整合性とデバッガ介入安全性、JIT 3面代謝・MPU W^X のモデル検査確認 (`docs/components/*/formal/*.py`、一覧は `roadmap_phase.md` を正本とする) `{GLOBAL_UseCpp20Coroutine}` `{CSP_Handoff}` `{JIT_MultiBuffer_Cache}` `{Debugger_Jit_Flush}`
 - [ ] **4. WIT インターフェース契約 & リカバリー戦略**:
@@ -57,7 +57,7 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
 - [ ] **トリプルバッファ キャッシュマネージャ**:
   - 2KB × 3面 の代謝（`JIT_OldestOnly_Promote` / 最古破棄）制御 `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}`
 - [ ] **Safepoint 協調 & 透過的インタープリタ切り替え**:
-  - JIT $\leftrightarrow$ インタープリタ間の Zero-Overhead フォールバックおよびホットスポット検知 `{JIT_LazyChaining}` `{Interpreter_LazyJITSwitch}` `{JIT_RuntimeAPI_Fallback}`
+  - JIT $\leftrightarrow$ インタープリタ間の Low-Overhead フォールバック（コンテキスト再構築ゼロ、有界極小コスト）およびホットスポット検知 `{JIT_LazyChaining}` `{Interpreter_LazyJITSwitch}` `{JIT_RuntimeAPI_Fallback}`
 
 ### Phase 1.4: Standalone vSoC Harness & WAMR Benchmark (`runtime_vsoc`)
 - [ ] **ホスト実行ハーネス (x86_64 / Linux / macOS)**:

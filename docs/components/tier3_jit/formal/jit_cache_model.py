@@ -9,8 +9,7 @@ from pyModelChecking.CTL import AG, AF, And, Not, Imply, AtomicProposition
 BACKS = [
     "components/tier2_runtime/concepts/runtime_engine_concept.py",
     "components/tier3_jit/jit_compiler.md",
-    "components/tier3_jit/jit_engine_copy_patch.md",
-    "components/tier3_jit/jit_runtime_hotspot.md",
+    "components/tier3_jit/jit_runtime.md",
     "components/tier3_platform/platform_memory.md",
 ]
 

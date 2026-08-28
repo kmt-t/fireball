@@ -1,164 +1,99 @@
 # JIT コンパイラ コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM} {VERIFY_BENCHMARK}
+<!-- evidence:
+     formal: formal/jit_cache_model.py
+     benchmark: benchmarks/zero_runtime_overhead_bench.py
+     concept: concepts/jit_copy_patch_concept.py
+-->
 
 ## 1. コンセプト
-<!-- traceability: {LowLatencyJIT} {JIT_CopyAndPatch} {JIT_ZeroCompileCostTheorem} {SimpleJITArchitecture} {GLOBAL_PeriodicTask} {GLOBAL_IdleDetection} {JIT_Encoder} {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} -->
-JIT Compiler は、WASMバイトコードを実行時にネイティブコードへ変換し、実行速度を向上させる。Execution Engine (`executor`) の一部として、インタープリタと一対の「実行エンジン」として機能する。極小リソース環境（RAM 64KB）において、コンパイルコストを極小化する「Zero Compile Cost 定理」に基づき、最適化を省いた高速な **Copy-and-Patch** 方式を採用する。実測は [`benchmarks/jit_zero_compile_cost_bench.py`](benchmarks/jit_zero_compile_cost_bench.py)（`compile_trace()` の実行時間がトレース長に対して線形にスケールすることを計測）を参照。 `{LowLatencyJIT}` `{JIT_CopyAndPatch}` `{JIT_ZeroCompileCostTheorem}` `{SimpleJITArchitecture}` `{GLOBAL_PeriodicTask}` `{GLOBAL_IdleDetection}` `{JIT_Encoder}` `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}`
+<!-- traceability: {LowLatencyJIT} {JIT_CopyAndPatch} {JIT_ZeroCompileCostTheorem} {SimpleJITArchitecture} {JIT_Encoder} {PositionIndependentCode} {SinglePassCompilation} -->
+JIT Compiler は、WASMバイトコードを実行時にネイティブコードへ変換し、実行速度を向上させる。Execution Engine (`executor`) の一部として、インタープリタと一対の実行エンジンとして機能する。極小リソース環境（RAM 32KB〜64KB）において、コンパイルコストを極小化する「Zero Compile Cost」方針に基づき、最適化を省いた高速な **Copy-and-Patch** 方式を採用する。命令テンプレートは C++ `constexpr` アセンブラによりビルド時に確定され、実行時は単純なメモリコピーと特定箇所への定数書き込み（パッチ）のみを行う。 `{LowLatencyJIT}` `{JIT_CopyAndPatch}` `{JIT_ZeroCompileCostTheorem}` `{SimpleJITArchitecture}` `{JIT_Encoder}` `{PositionIndependentCode}` `{SinglePassCompilation}`
 
 ## 2. アーキテクチャ分類
-<!-- traceability: {META_3TierSeparation} -->
-本コンポーネントは **Tier 3 (詳細リーフコンポーネント: Leaf Component)** に属し、vSoC (`runtime_vsoc.md`) から分解された JIT コンパイルパイプラインおよびマルチバッファキャッシュローテーションを統括する。Copy-and-Patchコード生成、Constexprアセンブラ、エントリスタブ、ホットスポット検出の深層責務は、同じく Tier 3 の各リーフコンポーネントへさらに分割して記述する。 `{META_3TierSeparation}`
+<!-- traceability: {META_3TierSeparation} {JIT_CopyAndPatch} -->
+本コンポーネントは **Tier 3 (詳細リーフコンポーネント: Leaf Component)** に属し、vSoC (`runtime_vsoc.md`) から分解された JIT コンパイルパイプライン、事前生成テンプレートのコピー＆パッチ結合、および C++ `constexpr` 命令エンコードを担当する。ランタイム側のエントリ検索・キャッシュ管理・ホットスポット検出は [`jit_runtime.md`](jit_runtime.md) が担当する。 `{META_3TierSeparation}` `{JIT_CopyAndPatch}`
 
 ## 3. 静的モデル
 
 ### 3.1 データ構造
-<!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} {SimpleJITArchitecture} -->
-- **JITキャッシュ**: ネイティブコードを保持するマルチバッファ (デフォルト 3面: 2KB x 3 = 6144 Bytes `FB_CONF_JIT_CACHE_SIZE`)。Copy-GC方式により、フラグメンテーションを回避しつつ効率的にメモリを再利用する。 `{JIT_MultiBuffer_Cache}`
-- **JITエントリテーブル**: WASM PCとキャッシュ内のコードオフセットを紐付けるソート済み管理テーブル。非所有ビュー `fireball::flat_map_view` として参照され、二分探索で検索される。 `{SimpleJITArchitecture}` `{META_FlatMapIndexed}`
-- **JITエントリグループインデックス (JIT Entry Group Index)**: JITエントリテーブルの探索区間を $O(1)$ で絞り込むための粗索引（固定長配列）。WASM PCのビットシフトにより、対応するエントリ配列の探索区間 `[first, last]` を $O(1)$ で特定する。
-- **カードマーキング表 (Card Marking Table)**: **カード単位**で実行頻度とコンパイル状態を管理する2ビット状態表。密ビュー `fireball::bit_view<2>` として参照し、1バイトあたり4カードを保持する（[静的コンテナ語彙](../tier1_core/system_containers.md)）。
-    - `0: UNEXECUTED` (未実行)
-    - `1: EXECUTED` (実行済み)
-    - `2: HOT` (コンパイル要求中)
-    - `3: COMPILED` (Hotカード。いずれかのPCがコンパイル済み、またはオンデマンド・コンパイルが許可された状態)
-- **コンパイルキュー**: コンパイル待ちのWASM PCを保持する。即時チェイニングを最大化するため、**後入れ先出し (LIFO)** または **履歴の逆順** で処理される。
-- **JIT トレースヘッダ (JIT Trace Header)**: キャッシュに書き込まれる各ネイティブトレースの先頭（`+0x00`）に配置される 16 バイト固定長のメタデータ構造体。開始 WASM PC、トレースサイズ、チェイン先アドレスなどをインラインで保持する。
-- **バンク別被チェイン逆引きテーブル (Inbound Chain Index Table)**: 各キャッシュバンク内のコードをジャンプ先（ターゲット）として直接チェイニングしている JIT エントリインデックスを保持する固定長配列。キャッシュローテーション時に全 JIT エントリを走査（全舐め）することなく、該当バンクに依存するエントリのみを $O(k)$ の定数時間でインタープリタ復帰スタブへアンリンク（安全化）する。
+- **`CopyAndPatchEngine`**: WASM命令に対応するネイティブ命令テンプレートを選択・コピーし、即値・分岐先・APIポインタをパッチ適用するクラス。
+- **`constexpr_assembler`**: C++の `constexpr` 機能を活用し、ビルド時に Thumb-2 / RISC-V 命令バイナリを型安全に静的生成する DSL。
+- **命令テンプレート (`jit_template`)**: パッチスロットを含むネイティブ命令列の雛形（[JIT ステンシルカタログ](../../specs/jit_stencil_catalog.md) 準拠）。
+- **JIT トレースヘッダ (`jit_trace_header`)**: キャッシュに書き込まれる各ネイティブトレースの先頭（`+0x00`）に配置される 16 バイト固定長のメタデータ構造体。
 
 ### 3.2 内部ブロック図
-<!-- traceability: {JIT_MultiBuffer_Cache} {SimpleJITArchitecture} -->
 ```mermaid
 graph TD
-    subgraph JIT_Layer
+    subgraph JIT_Compiler_Core
         Pipeline[jit_pipeline]
-        Manager[jit_manager]
-        Context[jit_context]
+        Engine[CopyAndPatchEngine]
+        ConstAsm[constexpr Assembler]
     end
 
-    subgraph Sub_Systems
-        Detector[hotspot_detector]
-        Engine[copy_patch_engine]
-        Index[jit_entry_index]
-        Cache[cache_manager]
+    subgraph Runtime_Interface
+        Runtime[jit_runtime]
+        Cache[Active Code Cache]
     end
 
-    subgraph Memory_Buffers ["JIT Cache: JIT_MultiBuffer_Cache"]
-        ActiveBuffer["Bank 0: Active Buffer Bank"]
-        WarmBuffer["Bank 1: Warm Buffer Bank"]
-        OldBuffer["Bank 2: Oldest Buffer Bank"]
-    end
-
-    subgraph Harness_Layer
-        Harness[jit_harness]
-    end
-
-    Manager -- uses --> Harness
-    Harness -- points to --> Detector
-    Harness -- points to --> Engine
-    Harness -- points to --> Index
-    Harness -- points to --> Cache
-    Cache -- manages 3-bank rotation --> Memory_Buffers
-    Manager -- operates on --> Context
+    Pipeline --> Engine
+    ConstAsm -.->|build-time template generation| Engine
+    Engine -->|write native code + patch| Cache
+    Pipeline -->|register entry| Runtime
 ```
 
-### 3.3 主要なクラス・構造体・配列・定数
-<!-- traceability: {JIT_MultiBuffer_Cache} {SimpleJITArchitecture} -->
+### 3.3 主要なクラス・構造体・定数
 
-
-#### JITハーネス（jit_harness）
-サブコンポーネントへのポインタを集約する。
-
-| 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
-| :--- | :--- | :--- | :--- |
-| ホットスポット検知器 | 命令の実行頻度を監視するサブコンポーネント | 構造体への参照 | [`hotspot_detector`](jit_runtime_hotspot.md) (非所有) |
-| パッチエンジン | テンプレートからコードを生成するサブコンポーネント | 構造体への参照 | [`copy_and_patch_engine`](jit_engine_copy_patch.md) (非所有) |
-| エントリ索引 | PCと生成コードの対応を管理する索引 | 構造体への参照 | [`jit_entry_index`](jit_runtime_entry.md) (非所有) |
-| キャッシュマネージャ | 生成コードのメモリ領域を管理するサブコンポーネント | 構造体への参照 | 独自構造体 (非所有) |
-
-#### JITコンテキスト（jit_context）
-可変状態を保持する。
+#### コピーアンドパッチエンジン（CopyAndPatchEngine）クラス
+<!-- traceability: {JIT_RegisterMapping} {ContextPointerRegister} {EnvironmentPointer} {ADR_TosCacheAsymmetry} -->
+テンプレートの解決とバイナリ操作をカプセル化する。インタープリタの `opcode_handler` と完全整合する `__fastcall` CPS 3引数呼び出し規約（`R0: ip`, `R1: stack_bot`, `R2: env`）に基づいて設計される。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| バンク配列 | 3面のキャッシュバンク実体。役割は `active_index` からの相対で決まる | データ範囲の配列 | `std::array<std::span<uint8_t>, 3>` |
-| アクティブバンク索引 | 現在の Active バンク番号。`(active_index + 1) % 3` が Warm、`(active_index + 2) % 3` が Oldest | 索引 | 8bit符号なし（rotate() で加算） |
-| コンパイル待ち列 | 後でコンパイルを行うWASM PC (uint32_t) の格納キュー | 固定長LIFOキュー | `std::array<uint32_t, FB_CONF_JIT_QUEUE_SIZE>` |
-| カードマーキング表 | カード単位の 2-bit 実行状態 | 密ビュー | `fireball::bit_view<2>` |
-| 被チェイン逆引きテーブル | バンクごとの被チェイン元 JIT エントリインデックス配列 | 固定長配列の配列 | `std::array<std::array<uint16_t, FB_CONF_JIT_MAX_INBOUND_CHAINS_PER_BANK>, 3>` |
+| テンプレート辞書 | WASM命令に対応するJITテンプレートの検索索引 | アクセス辞書 | `jit_template_map` |
+| 命令テンプレート | WASM命令に対応するネイティブバイナリの雛形 | バイナリビュー | ROM参照（[JIT ステンシルカタログ](../../specs/jit_stencil_catalog.md) 準拠） |
+| レジスタ規約 | JIT トレースとインタープリタ間で共有される物理レジスタ規約 | 規約定義 | `R0-R2: CPS (ip, stack_bot, env)`, `R3: scratch`, `R4-R6, R8-R11: assignable pool`, `R7: FP` |
 
-#### JIT構成（jit_config）
-<!-- traceability: {META_ConfigurableSystem} {GLOBAL_StaticScalability} -->
-JITエンジンの挙動を制御する性能パラメータ。 `{META_ConfigurableSystem}` `{GLOBAL_StaticScalability}`
+#### JIT トレース物理メモリレイアウト (`jit_trace_header`)
+<!-- traceability: {JIT_LazyChaining} {SimpleJITArchitecture} -->
+JIT キャッシュ内に書き込まれる各トレースは、**先頭に 16 バイト固定長のメタデータヘッダを持ち、直後（`+0x10`）からネイティブ Thumb-2 命令列が展開される**。
 
-| 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
-| :--- | :--- | :--- | :--- |
-| 単一バンク上限 | 各キャッシュ領域（Active/Warm/Oldest）の最大バイト数 | バイト数 | 32bit符号なし（2のべき乗） |
-| 最大登録件数 | 1つのバンクに保持可能な最大トレース件数 | エントリ数 | 32bit符号なし |
-| カード境界シフト | カード1枚がカバーするWASMサイズ（2のべき乗） | シフト量 | 8bit符号なし |
-| 命令境界シフト | 生成コードのアドレスアライメント | シフト量 | 8bit符号なし |
+```text
++---------------------------------------------------------------------------------------------------+
+| [Trace Header] (固定長 16 Bytes: sizeof(jit_trace_header))                                        |
+|  +0x00: uint32_t head_wasm_pc      -- トレース開始 WASM PC                                        |
+|  +0x04: uint16_t trace_byte_size   -- ヘッダ含むトレース全体の総物理バイトサイズ                  |
+|  +0x06: uint8_t  flags             -- 状態フラグ (0x01: PROMOTED, 0x02: LOOP_HEADER)              |
+|  +0x07: uint8_t  variant_id        -- ステンシルバリアント/TOSレジスタ割り当て状態 ID             |
+|  +0x08: uint32_t chain_next_pc     -- 直結チェイン先 WASM PC                                      |
+|  +0x0C: uint32_t chain_target_addr -- チェイン先ネイティブアドレス (初期値: 復帰スタブ)           |
++---------------------------------------------------------------------------------------------------+
+| [Native Thumb-2 Code Stream] (+0x10 〜 trace_byte_size)                                           |
++---------------------------------------------------------------------------------------------------+
+```
 
-#### JIT トレースヘッダ（jit_trace_header）
-<!-- traceability: {JIT_MultiBuffer_Cache} {JIT_LazyChaining} -->
-各ネイティブトレースの先頭（`+0x00`）に配置される 16 バイト固定長の物理メタデータ構造体。
+#### `constexpr_assembler` (DSL)
+<!-- traceability: {JIT_Encoder} {META_ZeroCostAbstraction} -->
+ビルド時に Thumb-2 / RISC-V 命令バイナリを静的エンコードし、実行時の命令生成オーバーヘッドを完全排除する。
 
-| 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
-| :--- | :--- | :--- | :--- |
-| 開始 WASM PC (`head_wasm_pc`) | トレースの開始バイトコード位置 | 32bit符号なし | 4 Bytes (`+0x00`) |
-| トレース総サイズ (`trace_byte_size`) | ヘッダを含むトレース全体の総物理バイト数 | 16bit符号なし | 2 Bytes (`+0x04`) |
-| 状態フラグ (`flags`) | 昇格フラグ・ループヘッダフラグ | 8bit符号なし | 1 Byte (`+0x06`) |
-| バリアント ID (`variant_id`) | ステンシルバリアント/TOSレジスタ状態 ID | 8bit符号なし | 1 Byte (`+0x07`) |
-| チェイン先 PC (`chain_next_pc`) | 直結チェイン先 WASM PC (0: インタープリタ復帰) | 32bit符号なし | 4 Bytes (`+0x08`) |
-| チェイン先アドレス (`chain_target_addr`) | チェイン先ネイティブアドレス（初期値: 復帰スタブ） | 32bit符号なし | 4 Bytes (`+0x0C`) |
-
-#### JIT トレース実行シグネチャ (`exec_trace`)
-<!-- traceability: {JIT_RuntimeAPI_Fallback} {ContextPointerRegister} {EnvironmentPointer} -->
-JIT コンパイル済みネイティブトレースの実行エントリポイント。インタープリタの `opcode_handler` と完全同一の `__fastcall` 継続渡し（CPS）3引数シグネチャを持ち、レジスタ再配置オーバーヘッドなしに相互遷移する。物理レジスタ規約および Callee-saved 任意割当プールの詳細は [マスター物理設計書 §3](../../architecture/master_physical_design.md) を参照。実行エントリは `trace_base + sizeof(jit_trace_header) | 1` となる。 `{JIT_RuntimeAPI_Fallback}` `{ContextPointerRegister}` `{EnvironmentPointer}`
-
-| 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
-| :--- | :--- | :--- | :--- |
-| トレースシグネチャ | `__fastcall` によるネイティブトレース実行関数 | 関数ポインタ | `void (__fastcall *)(const uint8_t* __restrict__ ip, execution_context* __restrict__ stack_bot, vsoc_runtime* __restrict__ env) noexcept` |
-| レジスタ割り当て | ARM AAPCS / `__fastcall` 引数レジスタマッピング | 物理レジスタ | `R0`: `ip`, `R1`: `stack_bot`, `R2`: `env`, `R3`: `local_param`, `R4-R6, R8-R11`: `assignable pool`（メモリアクセス時は `R8`/`R9` を `mem_base`/`mem_size` に固定）, `R7`: `FP` ([マスター物理設計書 §3](../../architecture/master_physical_design.md) 準拠) |
-
-### 3.4 公開API
-外部コンポーネント（Executor等）からJITコンパイル機能を利用するためのAPI。
-
-#### JITコンパイル実行 (`jit_compile`)
-| 項目 | 内容 |
-| :--- | :--- |
-| 機能概要 | 指定されたWASM PCから始まる命令トレースをネイティブコードへJITコンパイルし、アクティブ領域へ書き込む。 |
-| シグネチャ | `auto jit_compile(jit_context& ctx, const jit_harness& harness, uint32_t pc) noexcept -> jit_compile_result_t` |
-| 引数 | `ctx`: JIT可変コンテキスト構造体<br>`harness`: 各種モジュールへの参照を保持するハーネス<br>`pc`: コンパイル開始位置の WASM PC |
-| 戻り値 | `jit_compile_result_t` (成功時は `SUCCESS`、キャッシュフル時は `ERR_CACHE_FULL` などのエラーコード列挙型) |
-
-#### JITコード検索 (`jit_lookup`)
-| 項目 | 内容 |
-| :--- | :--- |
-| 機能概要 | 指定されたWASM PCに対するネイティブコードが既にコンパイル済みであるか検索し、ヒットした場合はその実行開始アドレスを返す。 |
-| シグネチャ | `auto jit_lookup(jit_context& ctx, const jit_harness& harness, uint32_t pc) noexcept -> result<uintptr_t, jit_lookup_result_t>` |
-| 引数 | `ctx`: JIT可変コンテキスト構造体<br>`harness`: ハーネス参照<br>`pc`: 検索対象の WASM PC |
-| 戻り値 | 成功時はネイティブ実行開始アドレス（`uintptr_t`、`exec_trace` 型）を返し、未コンパイル時は `ERR_NOT_COMPILED` などのステータスコードを返す `result` 型。 |
+| 構造体 | 機能 | ビット幅 |
+| :--- | :--- | :--- |
+| `fireball::arm::add_imm` | Thumb-2 即値加算命令エンコーダ | 32bit |
+| `fireball::arm::ldr_imm` | Thumb-2 即値ロード命令エンコーダ | 32bit |
+| `fireball::riscv::i_type`| RISC-V I-Type 命令エンコーダ | 32bit |
 
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
-
-#### JIT コンパイル・オーケストレーション手順
-<!-- traceability: {JIT_CopyAndPatch} {META_AI_Native_Dev} {JIT_RuntimeAPI_Fallback} {ContextPointerRegister} {ADR_TosCacheAsymmetry} -->
-JIT コンパイラは、ホットスポット検出からネイティブコード生成、エントリ登録、命令キャッシュ同期までのパイプライン全体をオーケストレーションする：
-
-1. **ホットスポット判定とトレース抽出**: [`hotspot_detector`](jit_runtime_hotspot.md) を参照し、対象 WASM PC がホットであるか確認する。
-2. **コード生成委譲**: [`copy_and_patch_engine`](jit_engine_copy_patch.md) を呼び出し、トレース解析、レジスタバインディング決定、ステンシルバリアント選択、およびパッチ適用（即値・ジャンプ・外部 AAPCS 境界スタブ）を行ってアクティブ・キャッシュ領域へネイティブ命令列を生成させる。
-3. **エントリ登録 & 命令キャッシュ同期**: [`jit_entry_index`](jit_runtime_entry.md) を呼び出して JIT エントリ配列および JIT エントリグループインデックスを更新する。パッチ適用完了後、Cortex-M33 向けにデータキャッシュをクリーンし、`__DSB()`（データ同期バリア）および `__ISB()`（命令同期バリア）を発行して命令キャッシュ（I-Cache）のコヒーレンシを保証する。
-4. **インタープリタ連携とフォールバック (Zero-Reconstruction Interop)**: JIT トレースとインタープリタ間のレジスタ規約整合および直接末尾ジャンプ（`BX`）による相互遷移を保証する。コンテキストの再構築オーバーヘッドは発生しない。 `{JIT_RuntimeAPI_Fallback}` `{ADR_TosCacheAsymmetry}`
+<!-- traceability: {JIT_CopyAndPatch} {JIT_RuntimeAPI_Fallback} {SinglePassCompilation} -->
+1. **トレース解析 & テンプレート選択**: WASM PC から始まる基本ブロックを 1 パス走査し、対応する事前生成ステンシルテンプレートを選択する。
+2. **メモリコピー & パッチ適用**: アクティブキャッシュへテンプレート命令列をコピーし、即値オペランドや相対分岐オフセットをインプレースでパッチする。
+3. **AAPCS 境界フォールバック**: 複雑な命令やホスト関数呼び出しはランタイム API 呼び出しスタブを生成してフォールバックする。 `{JIT_RuntimeAPI_Fallback}`
+4. **命令キャッシュ同期**: パッチ完了後、`__DSB()` および `__ISB()` バリアを発行して命令キャッシュを同期する。
+5. **インタープリタ連携とフォールバック (Low-Overhead Interop)**: JIT トレースとインタープリタ間のレジスタ規約整合および直接末尾ジャンプ（`BX`）による相互遷移を保証する。コンテキスト再構築は発生せず、遷移コストはダーティな TOS/NOS および `sp_offset` の書き戻し（`STR` 2〜3命令）のみに抑えられる。 `{JIT_RuntimeAPI_Fallback}` `{ADR_TosCacheAsymmetry}`
 
 #### JIT トレース検索 & 3面キャッシュ代謝オーケストレーション
 <!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} -->
-3段直接 JIT 検索（[マスター物理設計書 §2.2](../../architecture/master_physical_design.md)）に基づき、各サブコンポーネントを統括する：
-
-1. **事前フィルタ**: [`hotspot_detector`](jit_runtime_hotspot.md) のカードマーキング表 (`bit_view<2>`) を $O(1)$ 参照し、未コンパイル PC を Fast Exit。
-2. **多世代エントリ検索**: [`jit_entry_index`](jit_runtime_entry.md) を呼び出し、Active / Warm / Oldest の各バンクを JIT エントリグループインデックス経由で二分探索（$O(\log n)$）。
-3. **最古限定昇格 (Oldest-Only Promotion)**: Oldest バンクでヒットした場合のみ、新 Active バンクへ昇格コピー。 `{JIT_OldestOnly_Promote}`
-4. **3面世代交代回転**: Active バンク容量枯渇時、Oldest パージ $\to$ Active/Warm/Oldest 役割シフトを実行。
-5. **オンデマンド・キューイング**: 全バンクミスかつコンパイル済みカードの場合、LIFO キューへ登録してインタープリタへフォールバック。 `{ADR_SafeQueuingOnHotMiss}`
+3段直接 JIT 検索および 3面キャッシュローテーションの詳細は、ランタイム管理の正本である [`jit_runtime.md`](jit_runtime.md) および [アーキテクチャ概要書 §3.2](../../architecture/architecture_overview.md) を参照すること。コンパイラコアは生成されたネイティブトレースの登録と命令同期を [`jit_runtime.md`](jit_runtime.md) に委譲する。
 
 #### トレース・チェイニング（連鎖実行）
 <!-- traceability: {JIT_LazyChaining} -->
@@ -270,17 +205,11 @@ JITトレース検索時の内部状態と期待される挙動を検証する�
 | 8 | (書き込み時) | **満杯** | - | - | 3面リングローテーション: Oldest を Purge して新 Active に、Active→Warm、Warm→Oldest。同時に `chain_next` のダングリング掃引を行う |
 
 ### 5.2 内部コンポーネントのデコンポジション
-<!-- traceability: {JIT_Encoder} -->
-JITエンジンの責務を、以下の独立したサブコンポーネントに分離して設計する。
+<!-- traceability: {JIT_Encoder} {JIT_CopyAndPatch} -->
+JITサブシステムは、以下の2つの独立した設計書に責務を分離して構成される。
 
-- **[JIT Hotspot Detector](jit_runtime_hotspot.md)**: 実行履歴の監視とコンパイル要否の判定。
-- **[Copy-and-Patch Engine](jit_engine_copy_patch.md)**: 命令テンプレートを用いたネイティブコード生成。
-- **[JIT Entry Index](jit_runtime_entry.md)**: PC-アドレス変換テーブルの管理と検索高速化。
-- **[constexpr Assembler](jit_assembler_constexpr.md)**: 静的な命令エンコード DSL。 `{JIT_Encoder}`
-
-**責務の境界**:
-- **jit_manager**: ホットスポット判定、コンパイルキュー管理、Active/Warm/Oldestキャッシュ領域の選択、エントリテーブルへの登録を担う調整役。`compile_trace` を介してエンジンに処理を委譲する。
-- **Copy-and-Patch Engine** ([jit_engine_copy_patch.md](jit_engine_copy_patch.md)): WASM命令のフェッチ、テンプレート選択、バイナリコピー、プレースホルダへのパッチ適用というバイナリ生成操作に特化。書き込んだバイト数を返すのみで、エントリ管理には関与しない。
+- **[JIT Compiler (コード生成コア)](jit_compiler.md)**: 命令テンプレートを用いたネイティブコード生成（Copy-and-Patch Engine）および静的な命令エンコード DSL（constexpr Assembler）。 `{JIT_Encoder}` `{JIT_CopyAndPatch}`
+- **[JIT Runtime (ランタイム管理)](jit_runtime.md)**: 実行履歴監視・ホットスポット判定（Hotspot Detector）、PC-アドレス変換検索（JIT Entry Index）、および 3面キャッシュローテーション。 `{SimpleJITArchitecture}` `{JIT_MultiBuffer_Cache}`
 
 ## 6. インターフェイス定義
 
@@ -374,10 +303,9 @@ JITエンジンの責務を、以下の独立したサブコンポーネント�
     - 案2: JIT からも `R4`/`R5` を廃し、両者ともオペランドを統合スタックのメモリ上でのみ扱う。記述は最も単純になるが、スタックマシンに対する唯一かつ最大の最適化余地を捨てることになり、`{LowLatencyJIT}`（WAMR 超え）の達成が困難になる。
     - 案3: 非対称を許容し、JIT トレース内部でのみ `R4`/`R5` を TOS/NOS として使用する。トレース脱出時にダーティ値を統合スタックへ書き戻す。
   - **結論**: 案3を採用する。
-  - **評価**: 「ゼロオーバーヘッド」の主張範囲を **コンテキスト再構築がゼロであること** に限定し、トレース脱出時の `STR` × 2 を明示的な有界コストとして仕様に記載する。JIT トレースは複数 WASM 命令にまたがるため、この 2 命令はトレース長で償却され、トレース内部で得られる TOS/NOS キャッシュの利得を下回る。インタープリタは `R4`/`R5` について何の不変条件も負わない（callee-saved として通常どおり扱う）ため、ハンドラ実装の複雑度も増えない。
-  - **トレース境界とチェイニングの安全性**: この設計は現在 `R4-R6, R8-R11`（計7本）のトレース単位任意割当プールへ一般化されているが、境界での扱いは変わらない。**トレース境界はコンパイラの基本ブロック境界と同じ扱いを受ける**——異なる先行/後続ブロックが異なるレジスタ割当を選ぶ場合にライブ値を φ ノード解決や部分スピルで辻褄合わせする標準的なコンパイラ技法の、最も単純な退化形として、Fireball は「境界では常にメモリへスピルし、常にメモリから再ロードする」を採用している（部分的な生存区間最適化は行わない）。トレース入口のプロローグは自身が選んだバインディングに従って `stack_bot` 相対の正準アドレスから毎回ロードし、出口（インタープリタへのフォールバックか、`chain_next` による次トレースへの直接ジャンプかを問わず）は毎回そこへ書き戻す。したがって `{JIT_LazyChaining}` によって直接連結された2トレースが異なるバリアント（異なるレジスタ割当）を選んでいても、正準アドレスという共通の受け渡し地点を介するため安全である。連結が省略するのはコード検索（エントリテーブル探索）のオーバーヘッドのみであり、レジスタ内容をまたいで「熱いまま」引き継ぐことは元より主張していない——`{JIT_LazyChaining}` の要求定義自体も「実行時検索のオーバーヘッドを削減する」とのみ書いており、レジスタ受け渡しの省略は要求されていない。
-  - **トレース境界（inter-trace）とトレース内部（intra-trace）の区別**: 上記の「常にメモリ経由」はトレース**境界**（チェイン元→チェイン先という別々のコンパイル単位間の受け渡し）にのみ適用される。これとは別に、**同一トレース内部**で連続する命令のステンシルが異なるレジスタバリアント（[`jit_stencil_catalog.md` 3.8](../../specs/jit_stencil_catalog.md)「トレース境界レジスタバリアント」——命名はトレース境界だが、値そのものは同一トレース内の命令間引き継ぎにも使われる）を要求する場合、これは基本ブロック**内**のレジスタ配分の問題であり、φ ノードのような別コンパイル単位間の合流ではない。将来、動的なステンシルバリアント選択（現状は各 WASM 命令ごとに1つの固定ステンシルのみで未実装）が入った場合、連続する命令間でレジスタ配置が食い違う可能性があり、その場合の辻褄合わせ（`MOV` によるレジスタ間引き継ぎ、サイクル発生時は `R12` を退避に使う）は `jit_copy_patch_concept.py` の `_order_register_moves`/`emit_variant_reconciliation_glue` を正本とする。これはトレース境界のチェイニング機構（本項目冒頭）とは独立した、別の関心事である。
-  - **`local_base` のロードタイミングと `sp_offset` の非独立性**: 同一のコンパイル済みトレースは再帰呼び出しや異なる呼び出し深さを持つ複数の呼び出し元から共有されうるため、現フレームの統合スタック上の絶対位置（`frame_offset`）は呼び出しごとに異なる——ネイティブコンパイラの `FP` がプロローグで毎回セットされるのと同じ実行時値であり、コンパイル時定数には畳み込めない。したがって `local_base` はトレース入口で毎回コンテキスト構造体からロードする実レジスタを要する。一方、各ローカル変数スロットや現在のオペランドスタック深さは `local_base` からの**静的に決まる相対オフセット**でしかなく、この相対オフセットは Copy-and-Patch のパッチ適用ステップ（本節手順4）でステンシルコピー後に即値として書き込まれる。よって `sp_offset` はトレース内部で独立したレジスタ役割を持たず、`local_base + 静的既知のローカル領域サイズ + 静的既知のスタック深さ` として算出され、トレース脱出時にのみコンテキスト構造体の `sp_offset` フィールドへ書き戻される。
+  - **評価**: 「低オーバーヘッド」の根拠を **コンテキスト再構築がゼロであること** に限定し、トレース脱出時のダーティな TOS/NOS（`R4`/`R5`）の書き戻し（`STR` × 2）を明示的な有界極小コストとして仕様に記載する。JIT トレースは複数 WASM 命令にまたがるため、この 2 命令はトレース長で償却され、トレース内部で得られる TOS/NOS キャッシュの利得を下回る。インタープリタは `R4`/`R5` について何の不変条件も負わない（callee-saved として通常どおり扱う）ため、ハンドラ実装の複雑度も増えない。
+  - **トレース境界とチェイニングの安全性**: この設計は現在 `R4-R6, R8-R11`（計7本）のトレース単位任意割当プールへ一般化されているが、境界での扱いは変わらない。トレース境界では、ダーティなスタックキャッシュ（`R4`/`R5`）が `stack_bot` 相対の正準アドレスへ書き戻され、次のトレースまたはインタープリタハンドラは正準アドレスからロードする。したがって `{JIT_LazyChaining}` によって直接連結された2トレースが異なるバリアントを選んでいても、正準アドレスという共通の受け渡し地点を介するため安全である。
+  - **ローカル変数アクセスの静的オフセット畳み込み (`ContextPointerRegister`)**: 各関数フレームにおけるローカル変数のアドレスは、スタックボトムから `frame_offset + local_offset + idx * 4` として定まる。JIT コンパイル（Copy-and-Patch）は同一関数フレームのコンテキスト下で行われるため、この合成オフセットはトレース生成時に即値定数としてステンシルにパッチ（`[R1, #offset]`）される。これにより、実行時に追加のベースレジスタ（`local_base`）を消費することなく、固定のスタックボトム基底ポインタ `{ContextPointerRegister}`（`R1: stack_bot`）から直接1命令でアクセスできる。`sp_offset` はトレース内部で独立したレジスタ役割を持たず、トレース脱出時にのみコンテキスト構造体の `sp_offset` フィールドへ書き戻される。
 
 - **決定事項**: `{ADR_ScalableCodeOffset}`
   - **背景**: 16ビットの `code_offset` をそのまま使用すると、コードキャッシュが64KBに制限される。将来的に外部メモリ等を活用してキャッシュを拡張（例：512KB）する場合、このビット幅がボトルネックとなる。

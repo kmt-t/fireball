@@ -1,4 +1,8 @@
 # COOS スケジューラ コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}
+<!-- evidence:
+     formal: formal/coos_channel_model.py
+     concept: concepts/scheduler_concept.py
+-->
 
 ## 1. コンセプト
 <!-- traceability: {CooperativeMultitasking} {GLOBAL_UseCpp23Library} {GLOBAL_UseCpp20Coroutine} {COOS_Deterministic} {CSPCommunication} {LowOverheadSwitch} -->

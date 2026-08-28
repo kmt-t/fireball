@@ -1,8 +1,8 @@
-# サービス コンポーネント設計書
+# サービス コンポーネント設計書 {VERIFY_LLM}
 
 ## 1. コンセプト
 <!-- traceability: {META_FaultIsolation} {MemoryIsolation} {IPCRouter} -->
-サービスは、WASMゲストに対して共有ライブラリ機能（WASI, libc, およびメモリ管理用のGC）を提供するコンポーネントである。信頼度と通信方式に応じてTierで分離し、障害隔離とメモリ安全性を確保する。システムコールはすべてIPCルータを経由して処理される。 `{META_FaultIsolation}` `{MemoryIsolation}` `{IPCRouter}`
+サービスは、WASMゲストに対してシステム機能（WASI、ロギング、HALデバイス等）を提供するコンポーネントである。IPCルータを経由したゼロコピー通信によってタスク分離を行い、障害隔離とメモリ安全性を確保する。 `{META_FaultIsolation}` `{MemoryIsolation}` `{IPCRouter}`
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {IPCRouter} {URIAbstraction} -->
@@ -16,11 +16,8 @@
 ### 3.2 内部ブロック図
 ```mermaid
 graph TD
-    Guest[WASM Guest] --> Direct[Direct-Linked Library]
-    Guest --> IPCService[Isolated IPC Service]
-    Direct --> libc[wasi-libc]
-    Direct --> GC[Garbage Collection]
-    Direct --> WASI[WASI Wrapper]
+    Guest[WASM Guest] --> IPCService[Isolated IPC Service]
+    Guest --> WASI[WASI Shim Layer]
     IPCService --> Console[Console Logging Service]
     WASI --> HAL[HAL Subsystem]
 ```
@@ -33,7 +30,6 @@ graph TD
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
 | サービス名称 | サービスを識別するための共通のシステム名 | 文字列ビュー | - |
-| 隔離モード | サービスの実行形態（Direct-Linked: ゲスト内リンク、Isolated: 独立IPCタスク） | 列挙型 | `service_isolation_mode` |
 | 識別URI | ルータを介して公開される、サービスを指し示す唯一の正規名称 | 文字列ビュー | - |
 
 #### サービス構成（service_config）
@@ -48,9 +44,10 @@ graph TD
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
-<!-- traceability: {META_FaultIsolation} {IPCRouter} -->
-- **サービス分離**: インプロセス・ライブラリ（wasi-libc/GC等）はゲストのWASMモジュールとして直接リンクされ、独立アイソレーション・サービスは独立したタスクとして動作し、IPCルータを介して通信する。 `{META_FaultIsolation}`
+<!-- traceability: {META_FaultIsolation} {IPCRouter} {SelfReboot_via_Event} -->
+- **サービス分離**: 各サービスは独立したタスクとして動作し、IPCルータを介してゼロコピーで通信する。 `{META_FaultIsolation}`
 - **WASI呼び出し**: ゲストからのWASIシステムコールを、HALのIPCコマンドへ変換して転送する。 `{IPCRouter}`
+- **自己再起動**: 異常終了したサービスは、IPCルータまたは上位マネージャからの障害イベント通知を契機として自律的に初期化・再起動される。 `{SelfReboot_via_Event}`
 
 ### 4.2 状態遷移図
 <!-- traceability: {META_FaultIsolation} {IPCRouter} -->
@@ -188,18 +185,18 @@ def wasi_fd_write(fd: int, iovs: std.span[WasiIov], iovs_len: int, nwritten_ptr:
 ```text
 enum class service_load_result_t : uint32_t {
     SUCCESS = 0,
-    RETRY = 1,     // 再ロード試行が必要
-    RESTART = 2,   // システム全体の再初期化が必要
+    RETRY = 1,     // 一時的障害に対する再ロード試行
+    RESTART = 2,   // モジュール/サービスの再初期化・TCBスロットリセット
     PANIC = 3      // 起動不可、システム停止
 };
 ```
-各ステータスに応じて、呼び出し側（システムマネージャなど）は 5.1節 で定義したリカバリーアクションを決定し、実行する。 `{META_RecoveryStrategy}`
+サービスロード処理において `IGNORE` は非適用（ロード失敗を無視して未初期化のまま続行することは許容されない）であり、`SUCCESS` または 3 つのエラーリカバリー戦略（`RETRY`, `RESTART`, `PANIC`）のいずれかを返却する。各ステータスに応じて、呼び出し側（システムマネージャなど）は 5.1節 で定義したリカバリーアクションを決定し、実行する。 `{META_RecoveryStrategy}`
 
 ### 5.3 URI/IPCインターフェイス
 <!-- traceability: {META_RecoveryStrategy} -->
 - **URI規則**: `fireball://<subsystem_id>/<service_name>/<instance_id>` に準拠する（例: `fireball://services/wasi/0`）。
 - **メッセージ形式**: 64ビットのKey-Value値を最大8個含むパケット。
-  * **ヘッダ部**: `arg0` にコマンドID、`arg1` にエラー/リカバリー戦略 `{META_RecoveryStrategy}` を格納。
+  * **ヘッダ部**: `arg0` にコマンドID、`arg1` にリカバリー戦略カテゴリ `{META_RecoveryStrategy}`（`recovery-strategy-category` 値）を格納。
   * **ペイロード部**: `arg2`〜`arg5` にコマンド固有引数（または共有メモリハンドル等）を格納。
 
 ## 6. 制約達成の方策

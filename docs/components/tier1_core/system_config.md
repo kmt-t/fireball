@@ -1,12 +1,12 @@
-# システムコンフィグ コンポーネント設計書
+# システムコンフィグ コンポーネント設計書 {VERIFY_LLM}
 
 ## 1. コンセプト
-<!-- traceability: {META_ConfigurableSystem} {META_Static_Resolution} -->
-Fireballハイパーバイザは、リソース制約の厳しい組み込み環境で動作するため、メモリサイズや最大リソース数をコンパイル時に固定する設計を採用する。設定はヘッダファイル形式のコンフィグファイル（`inc/fireball_config.hxx`）内のマクロ定義および `constexpr` 定数によって行われる。 `{META_ConfigurableSystem}` `{META_Static_Resolution}`
+<!-- traceability: {META_ConfigurableSystem} {META_Static_Resolution} {GLOBAL_IndependentHeap} {GLOBAL_StrictMemoryLimit} {ConsolidatedHeap} {GLOBAL_StaticScalability} {RoleBasedAccessControl} {FastAddressCheck} {vMMIO_Isolation} {META_RestrictedPhysicalAccess} {BufferedLogging} {Challenge_DebuggerResource} {ZeroRuntimeOverhead} -->
+Fireballハイパーバイザは、リソース制約の厳しい組み込み環境で動作するため、メモリサイズや最大リソース数をコンパイル時に固定する設計を採用する。設定はヘッダファイル形式のコンフィグファイル（`inc/fireball_config.hxx`）内のマクロ定義および `constexpr` 定数によって行われ、実行時オーバーヘッドを完全に排除する（ゼロコスト抽象化）。 `{META_ConfigurableSystem}` `{META_Static_Resolution}` `{ZeroRuntimeOverhead}`
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {META_Static_Resolution} -->
-本コンポーネントは **Tier 1 (主要システムコンポーネント: Primary Component)** に属し、システム全体の静的構成方針およびリソース概算モデルを統括する。具体的な定数・マクロパラメータの詳細は Tier 2 の `system_config_details.md` にデコンポジションされる。 `{META_3TierSeparation}` `{META_Static_Resolution}`
+本コンポーネントは **Tier 1 (主要システムコンポーネント: Primary Component)** に属し、システム全体の静的構成方針、メモリパーティション配分、および各サブシステムの設定定数を統括・提供する。 `{META_3TierSeparation}` `{META_Static_Resolution}`
 
 ## 3. 静的モデル
 
@@ -26,17 +26,34 @@ graph TD
     Config --> Svc[Services]
 ```
 
-##### 静的リソース消費の概算モデル
-<!-- traceability: {Resource_Estimation_Model} -->
-コンパイル時に各マクロ定数から全体のメモリ（ROM/RAM）フットプリントが決定論的に算出され、ビルド時に以下の概算モデルに従って制約適合性が検証される。
-* **RAM消費量 (概算値)**: `FB_CONF_MEMORY_POOL_SIZE`。その内訳は「メモリ総量と個別プールの依存関係」に示す `static_assert` を正本とする。ゲスト用プールに乗じるのは `FB_CONF_MAX_GUEST_VMS` であり `FB_CONF_MAX_TASKS` ではない（後者は TCB スロット数）。`FB_CONF_LOG_BUFFER_SIZE` と `FB_CONF_SHM_SIZE` はそれぞれサブシステム用・カーネル用プールの内数であり、別途加算しない。
-* **適合性の静的アサート**: 上記総RAM消費量が、評価ターゲットである最小構成の物理SRAMサイズ `FB_CONF_PHYSICAL_RAM_SIZE`（32KB）以下であることを、コンパイル時に `static_assert` により検証しビルドを保護する。 `{META_ConfigurableSystem}` `{Resource_Estimation_Model}`
+### 3.3 コンフィグマクロ一覧・定義
 
-### 3.3 主要な構造体・クラス・定数
-<!-- traceability: {Resource_Estimation_Model} -->
-具体的なコンフィグマクロおよび定数の詳細一覧とアライメント要件については、[システムコンフィグマクロ一覧](system_config_details.md) を参照すること。主要パラメータは以下の制約・相互依存関係を持つ：
-- **最大タスク数とID予約値の制約**: `FB_CONF_MAX_TASKS` の値は、予約済みの制御用Sentinel値である `FB_TASK_ID_FLIGHT=0xFF` や無効値 `FB_TASK_ID_INVALID=0` と重複しないよう、254 以下でなければならない。
-- **メモリ総量と個別プールの依存関係**: ゲストVM個別の静的プール `FB_CONF_TASK_HEAP_SIZE` は `FB_CONF_MAX_GUEST_VMS` との積でRAM消費量を決める（`FB_CONF_MAX_TASKS` はTCBスロット数であり、この積には寄与しない）。これらのパラメータ変更時は、評価ターゲットである最小構成の SRAM 物理限界（32KB）を突破しない範囲で調整される必要があり、ビルド時に静的アサートにより自動検証される。検証される不等式は次のとおり:
+#### 3.3.1 メモリ管理
+<!-- traceability: {GLOBAL_IndependentHeap} {GLOBAL_StrictMemoryLimit} {ConsolidatedHeap} {ContextPointerRegister} {GLOBAL_StaticScalability} {IPC_ZeroCopy} -->
+デフォルト値は **評価ターゲットである最小構成（RAM 32KB）** の予算配分に対応する。
+
+| マクロ名 | 説明 | デフォルト値 | 導出元 |
+| :--- | :--- | :--- | :--- |
+| `FB_CONF_TASK_HEAP_SIZE` | 各VM/タスクに対してコンパイル時に固定された独立静的プールサイズ | `4096` | `{GLOBAL_IndependentHeap}` `{GLOBAL_StrictMemoryLimit}` |
+| `FB_CONF_RUNTIME_HEAP_SIZE` | ホスト（WASMランタイム）実行専用の独立静的プールサイズ | `2048` | `{GLOBAL_IndependentHeap}` `{GLOBAL_StrictMemoryLimit}` |
+| `FB_CONF_KERNEL_HEAP_SIZE` | COOSカーネル（スケジューラ、CSP、TCB、共有メモリ）用静的プールサイズ | `4096` | `{GLOBAL_IndependentHeap}` `{GLOBAL_StrictMemoryLimit}` |
+| `FB_CONF_SUBSYS_HEAP_SIZE` | IPCルータ・HAL・ログバッファ用静的プールサイズ | `3072` | `{GLOBAL_IndependentHeap}` `{GLOBAL_StrictMemoryLimit}` |
+| `FB_CONF_INTERP_STACK_SIZE` | インタープリタ統合スタック（`execution_context` + フレーム/オペランド）総容量 | `2048` | `{ContextPointerRegister}` `{GLOBAL_StrictMemoryLimit}` |
+| `FB_CONF_JIT_CACHE_SIZE` | JITコードキャッシュ（2KB x 3面、統合プールからの割り当て） | `6144` | `{JIT_MultiBuffer_Cache}` `{GLOBAL_StrictMemoryLimit}` |
+| `FB_CONF_MAX_GUEST_VMS` | 同時にロード可能なゲストVMの最大数 | `1` | `{GLOBAL_IndependentHeap}` `{GLOBAL_StaticScalability}` |
+| `FB_CONF_SHM_SIZE` | ゼロコピーIPCで使用する静的共有メモリの総バイト数（カーネル用プールの内数） | `1024` | `{IPC_ZeroCopy}` `{GLOBAL_StrictMemoryLimit}` |
+| `FB_CONF_MEMORY_POOL_SIZE` | 全パーティションを切り出す統合物理プールの総サイズ | `21504` | `{ConsolidatedHeap}` `{GLOBAL_StrictMemoryLimit}` |
+| `FB_CONF_PHYSICAL_RAM_SIZE` | ターゲットの物理SRAM容量（最小構成 32KB / 想定構成 64KB） | `32768` | `{GLOBAL_StrictMemoryLimit}` |
+
+##### メモリ総量と個別プールの依存関係
+統合物理プール（`FB_CONF_MEMORY_POOL_SIZE` = 21,504 Bytes）は、以下の静的パーティションの総和として完全に一致する：
+- カーネルプール (`FB_CONF_KERNEL_HEAP_SIZE`): 4,096 Bytes（共有メモリ `FB_CONF_SHM_SIZE` 1,024 Bytes を内包）
+- ランタイムプール (`FB_CONF_RUNTIME_HEAP_SIZE`): 2,048 Bytes
+- サブシステムプール (`FB_CONF_SUBSYS_HEAP_SIZE`): 3,072 Bytes
+- JITコードキャッシュ (`FB_CONF_JIT_CACHE_SIZE`): 6,144 Bytes (2KB × 3面)
+- インタープリタ統合スタック (`FB_CONF_INTERP_STACK_SIZE`): 2,048 Bytes
+- ゲストタスクRAM (`FB_CONF_TASK_HEAP_SIZE` × `FB_CONF_MAX_GUEST_VMS`): 4,096 Bytes × 1 = 4,096 Bytes
+- **合計**: 4,096 + 2,048 + 3,072 + 6,144 + 2,048 + 4,096 = **21,504 Bytes**
 
 ```text
 static_assert(FB_CONF_KERNEL_HEAP_SIZE
@@ -47,78 +64,102 @@ static_assert(FB_CONF_KERNEL_HEAP_SIZE
             + FB_CONF_TASK_HEAP_SIZE * FB_CONF_MAX_GUEST_VMS
             == FB_CONF_MEMORY_POOL_SIZE);
 static_assert(FB_CONF_MEMORY_POOL_SIZE <= FB_CONF_PHYSICAL_RAM_SIZE);
+static_assert(FB_CONF_GUEST_RAM_SIZE == FB_CONF_TASK_HEAP_SIZE);
 ```
 
-
-
-##### 代表的な主要構成パラメータ
-
-デフォルト値は評価ターゲットである最小構成（RAM 32KB）に対応する。**全マクロの網羅的な定義とデフォルト値は [`system_config_details.md`](system_config_details.md) を正本とし、本節はその抜粋である。**
-
-* **`FB_CONF_MAX_TASKS`**: 静的に管理されるCOOSタスクの最大数（デフォルト値: 16、最大許容値: 254）。TCB スロットのみを消費し、ゲストリニアメモリは消費しない。
-* **`FB_CONF_MAX_GUEST_VMS`**: 同時にロード可能なゲストVMの最大数（最小構成のデフォルト値: 1）。ゲスト用プールはVM単位で消費されるため、RAM消費量を決めるのはこの値である。
-* **`FB_CONF_TASK_HEAP_SIZE`**: 各VMに個別に割り当てられる（共有されない）独立した静的メモリプールの容量（デフォルト値: 4096バイト、動的ヒープではない）。
-* **`FB_CONF_RUNTIME_HEAP_SIZE`**: WASMホストランタイム用に割り当てられる静的メモリプールの容量（デフォルト値: 2048バイト、動的ヒープではない）。
-* **`FB_CONF_LOG_BUFFER_SIZE`**: ログメッセージ保持用の循環バッファのサイズ（デフォルト値: 512バイト、動的メモリ確保を回避する固定バッファ）。サブシステム用プールの内数として配置される。
-* **`FB_CONF_JIT_CACHE_SIZE`**: 生成されたネイティブコードを保存するための 3面キャッシュサイズ合計（デフォルト値: 6144バイト = 2KB x 3面）。
-* **`FB_CONF_SHM_SIZE`**: ゼロコピーIPCデータ転送で使用される静的共有メモリの総バイト数（デフォルト値: 1024バイト）。カーネル用プールの内数として配置される。
-* **`FB_CONF_VMMIO_MAX_REGIONS`**: 登録可能な最大仮想MMIO（vMMIO）領域数（デフォルト値: 8）。
-
-各プールの容量マクロ（`FB_CONF_KERNEL_HEAP_SIZE`、`FB_CONF_SUBSYS_HEAP_SIZE`、`FB_CONF_INTERP_STACK_SIZE`、`FB_CONF_MEMORY_POOL_SIZE`）の値は [`system_config_details.md`](system_config_details.md) 2.1 を正本とし、本節では重複定義しない。
-
-
-| 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
+#### 3.3.2 IPCルータ
+<!-- traceability: {META_ConfigurableSystem} {IPC_ZeroCopy} -->
+| マクロ名 | 説明 | デフォルト値 | 導出元 |
 | :--- | :--- | :--- | :--- |
-| 最大管理タスク数 | システムが同時に保持可能なタスク制御ブロックの最大数 | エントリ数 | `FB_CONF_MAX_TASKS`（≤ 254。`FB_TASK_ID_FLIGHT=0xFF` との衝突を静的アサートで保証） |
-| 共有メモリ容量 | タスク間共有やゼロコピー通信のために静的配置される共有領域の総バイト数 | バイト数 | `FB_CONF_SHM_SIZE` |
-| JITキャッシュ容量 | 生成されたネイティブコードを保存するための静的メモリバッファサイズ | バイト数 | `FB_CONF_JIT_CACHE_SIZE` |
-| タスクID型・予約値 | `task_id` の型定義と無効値・FLIGHT_SENTINEL 定義 | 型／定数 | `FB_TASK_ID_T`, `FB_TASK_ID_INVALID=0`, `FB_TASK_ID_FLIGHT=0xFF` |
+| `FB_CONF_IPC_MAX_SERVICES` | 登録可能な最大サービス数 | `16` | `{META_ConfigurableSystem}` |
+| `FB_CONF_IPC_MAX_QUEUED_MESSAGES` | 単一チャネルあたりの最大キューイングメッセージ数 | `8` | `{META_ConfigurableSystem}` |
+| `FB_CONF_MAX_CONSECUTIVE_HANDOFFS` | スケジューラ復帰なしでの最大連続CSPハンドオフ回数 | `4` | `{Challenge_CspHandoffStarvation}` |
+
+```cpp
+namespace fireball::config {
+    // ロール定義
+    enum class router_role : uint8_t {
+        CLIENT_APP = 0,
+        CORE_SERVICE = 1,
+        PLATFORM_HAL = 2,
+        DEBUGGER = 3,
+        COUNT = 4
+    };
+
+    // ロール間通信許可マトリクス (4x4 static bool table)
+    inline constexpr std::array<std::array<bool, 4>, 4> FB_CONF_ROUTER_ROLE_MATRIX {{
+        // Target:  CLIENT_APP, CORE_SERVICE, PLATFORM_HAL, DEBUGGER
+        /* CLIENT_APP   */ {false, true,  true,  false},
+        /* CORE_SERVICE */ {false, false, true,  false},
+        /* PLATFORM_HAL */ {false, false, false, false},
+        /* DEBUGGER     */ {false, true,  true,  false},
+    }};
+}
+```
+
+#### 3.3.3 HAL
+<!-- traceability: {META_ConfigurableSystem} -->
+| マクロ名 | 説明 | デフォルト値 | 導出元 |
+| :--- | :--- | :--- | :--- |
+| `FB_CONF_HAL_MAX_DEVICES` | 管理可能な最大デバイス数 | `8` | `{META_ConfigurableSystem}` |
+| `FB_CONF_HAL_BUFFER_SIZE` | デバイス通信用バッファの最大サイズ (Bytes) | `256` | `{META_ConfigurableSystem}` |
+| `FB_CONF_HAL_MAX_BUFFERS` | デバイス通信用バッファの最大数 | `4` | `{META_ConfigurableSystem}` |
+
+#### 3.3.4 vSoC / vMMIO
+<!-- traceability: {JIT_MultiBuffer_Cache} {FastAddressCheck} {GLOBAL_StrictMemoryLimit} {vMMIO_Isolation} {META_ConfigurableSystem} {META_RestrictedPhysicalAccess} {META_FlatMapIndexed} {GLOBAL_StaticScalability} -->
+| マクロ名 | 説明 | デフォルト値 | 導出元 |
+| :--- | :--- | :--- | :--- |
+| `FB_CONF_JIT_ENABLED` | JITコンパイラ機能の有効化フラグ | `true` | `{META_ConfigurableSystem}` |
+| `FB_CONF_WASM_PAGE_SIZE` | WASM標準論理ページサイズ (64KB, 65,536 Bytes) | `65536` | `{FastAddressCheck}` |
+| `FB_CONF_MAX_WASM_PAGES` | システム物理予算上限としての最大WASMページ数（最小構成は1ページ/部分ページ） | `1` | `{GLOBAL_StrictMemoryLimit}` |
+| `FB_CONF_JIT_CACHE_SIZE` | JITキャッシュサイズ (合計バイト数: 2KB x 3面) | `6144` | `{JIT_MultiBuffer_Cache}` |
+| `FB_CONF_JIT_NUM_BUFFERS` | JITキャッシュバッファ面数 (3面) | `3` | `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}` |
+| `FB_CONF_JIT_MAX_INBOUND_CHAINS_PER_BANK` | 単一キャッシュバンクの最大被チェインエントリ数 | `32` | `{JIT_LazyChaining}` `{META_ConfigurableSystem}` |
+| `FB_CONF_JIT_CARD_SHIFT` | JITカードテーブルのビットシフト数（256バイト単位 = 8） | `8` | `{META_ConfigurableSystem}` |
+| `FB_CONF_JIT_ENTRY_GROUP_SHIFT` | JITエントリテーブルの粗粒度グループシフト数（64バイト単位 = 6） | `6` | `{META_ConfigurableSystem}` |
+| `FB_CONF_GUEST_RAM_BASE` | ゲストRAMの開始アドレス（64KB境界配置） | `0x00000000` | `{FastAddressCheck}` |
+| `FB_CONF_GUEST_RAM_SIZE` | ゲストRAMの物理割り当てサイズ（`FB_CONF_TASK_HEAP_SIZE` と同値、4KB部分ページ） | `4096` | `{GLOBAL_StrictMemoryLimit}` `{FastAddressCheck}` |
+| `FB_CONF_VMMIO_BASE` | vMMIO領域の開始アドレス (Bit 31 == 1) | `0x80000000` | `{vMMIO_Isolation}` |
+| `FB_CONF_VSOC_PASSTHROUGH_BASE` | ゲスト仮想PASSTHROUGH領域（FC=15）のホスト実ペリフェラル基底アドレス | `0x40000000` | `{META_RestrictedPhysicalAccess}` |
+| `FB_CONF_VMMIO_MAX_REGIONS` | 登録可能な最大vMMIO領域数 | `8` | `{META_ConfigurableSystem}` |
+| `FB_CONF_VMMIO_MAX_PTES` | FlatMap ページテーブルに保持可能な PTE の最大件数 | `32` | `{META_FlatMapIndexed}` `{GLOBAL_StaticScalability}` |
+| `FB_CONF_VMMIO_ALLOWED_ADDRS` | ゲストからのアクセスを許可する物理アドレス範囲 | `constexpr`構造体配列 | `{META_RestrictedPhysicalAccess}` |
+
+#### 3.3.5 ロギング・デバッガ
+<!-- traceability: {BufferedLogging} {Challenge_DebuggerResource} -->
+| マクロ名 | 説明 | デフォルト値 | 導出元 |
+| :--- | :--- | :--- | :--- |
+| `FB_CONF_LOG_BUFFER_SIZE` | ログメッセージ保持用のバッファサイズ (Bytes) | `512` | `{BufferedLogging}` |
+| `FB_CONF_DEBUG_MAX_BREAKPOINTS` | 最大ブレークポイント数 | `8` | `{META_ConfigurableSystem}` |
+| `FB_CONF_DEBUG_PACKET_SIZE` | RSPパケットバッファサイズ | `1024` | `{Challenge_DebuggerResource}` |
+
+#### 3.3.6 タスクID型・予約値
+<!-- traceability: {GLOBAL_StaticScalability} -->
+| マクロ名 | 説明 | 値 | 備考 |
+| :--- | :--- | :--- | :--- |
+| `FB_TASK_ID_T` | タスクIDの基底型 | `uint8_t` | 有効値域 `1`〜`FB_CONF_MAX_TASKS` |
+| `FB_TASK_ID_INVALID` | 未割り当て・無効を示す予約値 | `0` | 初期値。「誰も所有していない」を表す |
+| `FB_TASK_ID_FLIGHT` | 所有権移譲中を示す予約値 (FLIGHT_SENTINEL) | `0xFF` | IPCルータ移譲中にセット |
+| `FB_CONF_MAX_TASKS` | 同時実行可能な最大タスク数 | `16` | `≤ 254`（`FB_TASK_ID_FLIGHT` との衝突防止） |
+
+```python
+# コンパイル時検証
+assert FB_CONF_MAX_TASKS <= 254, "FB_CONF_MAX_TASKS must be <= 254"
+```
 
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
 <!-- traceability: {META_Static_Resolution} -->
-本コンポーネントは静的な定義のみを提供し、動的なアルゴリズムは持たない。すべての値はコンパイル時に確定する。 `{META_Static_Resolution}`
+本コンポーネントは静的な定義のみを提供し、すべての値はコンパイル時に確定する。 `{META_Static_Resolution}`
 
-### 4.2 状態遷移図
-<!-- traceability: {META_Static_Resolution} -->
-静的構成のため、状態遷移は存在しない。
+## 5. 制約達成の方策
 
-### 4.3 内部シーケンス
-<!-- traceability: {META_Static_Resolution} -->
-静的構成のため、内部シーケンスは存在しない。
+### 5.1 性能・メモリ制約と方策
+<!-- traceability: {META_Static_Resolution} {META_ConfigurableSystem} {GLOBAL_StaticScalability} -->
+- **方策**: `{META_Static_Resolution}` `{META_ConfigurableSystem}` `{GLOBAL_StaticScalability}` すべてのパラメータをコンパイル時定数（`constexpr` / マクロ）とし、実行時の探索・計算コストおよび動的ヒープ（malloc/new）消費を完全排除する。
 
-## 5. インターフェイス定義
-
-### 5.1 公開API
-本コンポーネントは C++ ヘッダファイルとして不変な定数のみを提供する。振る舞いの契約 (Contract) としては以下の通り。
-
-
-#### コンフィグ定数の参照
-
-| 項目 | 内容 |
-| :--- | :--- |
-| 機能概要 | ビルド時に確定されたシステム構成値をプリプロセッサまたは定数として提供する。 |
-| 識別子マクロ | 各種マクロ識別子 |
-| 戻り値 | コンパイル時に即値として展開される。 |
-| 補足 | すべてのコンポーネントは、サイズ指定等にこれらの定数を直接使用する。 |
-
-### 5.2 URI/IPCインターフェイス
-本コンポーネントはIPCインターフェイスを提供しない。
-
-## 6. 制約達成の方策
-
-### 6.1 性能制約と方策
-<!-- traceability: {META_Static_Resolution} -->
-- **目標**: 実行時のコンフィグ参照コストをゼロにする。
-- **方策**: `{META_Static_Resolution}` すべての値をコンパイル時定数とし、実行時の探索や計算を排除する。
-
-### 6.2 メモリ制約と方策
-<!-- traceability: {META_ConfigurableSystem} {GLOBAL_StaticScalability} -->
-- **目標**: コンフィグ保持のための動的メモリ消費をゼロにする。
-- **方策**: `{META_ConfigurableSystem}` `{GLOBAL_StaticScalability}` 静的配列のサイズをコンパイル時に決定し、ヒープ消費を最小化する。
-
-### 6.3 安全性制約と方策
+### 5.2 安全性制約と方策
 <!-- traceability: {META_ConfigurableSystem} -->
-- **目標**: 実行時におけるタスクや誤動作によるシステム構成値の不正な書き換えを防止する。
-- **方策**: `{META_ConfigurableSystem}` システム構成定数はすべて `constexpr` / `const` として ROM / Flash（`.rodata` 読み取り専用セクション）に静的配置され、ソフトウェア実行時における誤書き込みや改ざんから確実に防護される。
+- **方策**: `{META_ConfigurableSystem}` システム構成定数はすべて `constexpr` / `const` として ROM / Flash（`.rodata`）に静的配置され、実行時の不正な書き換えから保護される。
+

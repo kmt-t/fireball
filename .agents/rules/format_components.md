@@ -19,4 +19,5 @@ instructions: |
       - stateDiagram-v2: 複合状態の入出力遷移が正しく定義されているか
       - sequenceDiagram: 参加者、メッセージ、activate/deactivate が正しく対応しているか
       - graph（flowchart）: ノード定義とエッジが一貫しているか
+  13. タイトル直下に `<!-- evidence: ... -->` を付与し、検証エビデンス（formal, benchmark, wit, concept）を明示しているか
 ---

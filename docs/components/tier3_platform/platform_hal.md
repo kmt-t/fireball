@@ -1,4 +1,7 @@
 # HAL コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}
+<!-- evidence:
+     formal: ../tier2_runtime/formal/vsoc_state_model.py
+-->
 
 ## 1. コンセプト
 <!-- traceability: {IPCRouter} {Challenge_InterruptSafety} {TaskPollInterruptFlag} {RSPMinimalSet} {Fast_Path_GPIO} -->

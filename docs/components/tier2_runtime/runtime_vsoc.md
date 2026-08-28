@@ -1,4 +1,9 @@
 # vSoC コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}
+<!-- evidence:
+     formal: formal/vsoc_state_model.py
+     wit: wit/vsoc_runtime.wit
+     concept: concepts/runtime_engine_concept.py
+-->
 
 ## 1. コンセプト
 <!-- traceability: {LowLatencyJIT} {MemoryIsolation} {META_FaultIsolation} {EnvironmentPointer} -->
@@ -77,7 +82,7 @@ JIT トレース実行時およびインタープリタの各命令ハンドラ�
 | リニアメモリサイズ | ゲストリニアメモリの現在の有効バイト数。`{FastAddressCheck}` の境界比較（`CMP addr, mem_size; BHS __trap`）に直接使う——マスクは使わないため2の冪制約もない `{MemoryBoundaryCheck}` | バイト数 | 32bit符号なし (`+0x04`) |
 | グローバル変数基底 | WASM `global` 配列（4バイト単位でインデックス付け）の開始アドレス | アドレス値 | 32bit符号なし (`+0x08`) |
 
-`vsoc_runtime` は計12バイト（`+0x00`〜`+0x0B`）。正本は [`wit/vsoc_runtime.wit`](wit/vsoc_runtime.wit)、物理配置は [`master_physical_design.md` §3.2](../../architecture/master_physical_design.md)。
+`vsoc_runtime` は計12バイト（`+0x00`〜`+0x0B`）。正本は [`wit/vsoc_runtime.wit`](wit/vsoc_runtime.wit)、物理配置は [アーキテクチャ概要書 §3.3](../../architecture/architecture_overview.md)。
 
 > [!NOTE]
 > **構造体の役割分離**:
@@ -101,7 +106,7 @@ vSoCの動作パラメータを定義する。 `{META_ConfigurableSystem}`
 
 ### 4.1 アルゴリズム
 <!-- traceability: {ThreadedInterpreter} {JIT_CopyAndPatch} {Challenge_ApproximateYield} {JIT_Safepoint} {Debugger_Jit_Flush} {ContextPointerRegister} -->
-- **実行エンジン委譲 (exec_trace)**: vSoCは `step()` で現在のPCに対応する `exec_trace`（`void __fastcall (const uint8_t* ip, execution_context* stack_bot, vsoc_runtime* env)`）を呼び出す。 `exec_trace` はインタープリタのディスパッチャまたはJITコードを指し、`__fastcall` 呼び出し規約（R0=IP, R1=stack_bot, R2=ENV, R3=local_param）によってレジスタ上で高速に実行エンジンへ制御を委譲する。呼び出し側は実行エンジンの種別を意識する必要がない。 `{ThreadedInterpreter}` `{JIT_CopyAndPatch}` `{ContextPointerRegister}`
+- **実行エンジン委譲 (exec_trace)**: vSoCは `step()` で現在のPCに対応する `exec_trace`（`void __fastcall (const uint8_t* ip, execution_context* stack_bot, vsoc_runtime* env)`）を呼び出す。 `exec_trace` はインタープリタのディスパッチャまたはJITコードを指し、`__fastcall` 呼び出し規約（R0=IP, R1=stack_bot, R2=ENV, R3=scratch）によってレジスタ上で高速に実行エンジンへ制御を委譲する。呼び出し側は実行エンジンの種別を意識する必要がない。 `{ThreadedInterpreter}` `{JIT_CopyAndPatch}` `{ContextPointerRegister}`
 - **概算Yield**: 監視対象の `yield_threshold` を基準に `co_yield` を発行する。 `{Challenge_ApproximateYield}`
 - **デバッグ連携**: `step()` 前後で Debugger を呼び出し、HAL層からのコマンドを処理する。
 - **JIT Safepoint (非同期割込対応)**: `{JIT_Safepoint}`
@@ -174,7 +179,7 @@ stateDiagram-v2
 | SafepointCheck → JitRun | [no interrupt] | フラグなし | JIT 実行継続 | JitRun |
 | SafepointCheck → Ready | [interrupt pending] | 割り込みフラグ有り | インタープリタ フォールバック | Ready |
 | (any) → Debugging | breakpoint [debugger] | RSP ブレークポイント | デバッガコマンド待ち | Debugging |
-| Debugging → Ready | resume(interp) | 再開要求（インタープリタ） | JIT キャッシュ flush、PC リセット | Ready |
+| Debugging → InterpreterRun | resume(interp) | 再開要求（インタープリタ） | JIT キャッシュ flush、PC 保持 | InterpreterRun |
 | (any) → Error | trap() | ページフォルト / 不正オペコード | トラップハンドラ実行 | Error |
 | Error → Ready | recover() | リカバリ可能 | コンテキストリセット | Ready |
 
@@ -466,10 +471,10 @@ code_status : {fresh, stale_code}                      -- 実行中コードの�
 ### 7.2 メモリ制約と方策
 <!-- traceability: {JIT_MultiBuffer_Cache} {GLOBAL_IndependentHeap} {WasmPageAlignment} -->
 - **目標**: 64KB RAM環境で動作させる。
-- **方策**: `{JIT_MultiBuffer_Cache}` `{GLOBAL_IndependentHeap}` 3面マルチバッファ（Active/Warm/Oldest）による効率的なキャッシュ代謝と、厳密なヒープ分離によりメモリ使用量を制御する。JITキャッシュは `FB_CONF_JIT_CACHE_SIZE`（デフォルト6144バイト、`docs/components/tier1_core/system_config_details.md`）を 3領域に均等分割して使用し、各領域の容量は `code_cache_size / 3`（各2048バイト）となる。
+- **方策**: `{JIT_MultiBuffer_Cache}` `{GLOBAL_IndependentHeap}` 3面マルチバッファ（Active/Warm/Oldest）による効率的なキャッシュ代謝と、厳密なヒープ分離によりメモリ使用量を制御する。JITキャッシュは `FB_CONF_JIT_CACHE_SIZE`（デフォルト6144バイト、[`system_config.md`](../tier1_core/system_config.md)）を 3領域に均等分割して使用し、各領域の容量は `code_cache_size / 3`（各2048バイト）となる。
 - **高速アドレス判定**: ゲストRAMを `0x0` から配置し、単一の比較命令でRAMアクセスを判定することで、インタープリタおよびJITのオーバーヘッドを最小化する。 `{WasmPageAlignment}`
 
 ### 7.3 安全性制約と方策
 <!-- traceability: {MemoryBoundaryCheck} {META_RestrictedPhysicalAccess} -->
 - **目標**: ゲストアプリケーションの暴走を完全に隔離する。
-- **方策**: `{MemoryBoundaryCheck}` `{META_RestrictedPhysicalAccess}` JITコードへの境界チェック埋め込みと、vMMIOによる物理アクセスの制限を行う。物理アドレスアクセスの許可範囲は `FB_CONF_VMMIO_ALLOWED_ADDRS`（`docs/components/tier1_core/system_config_details.md`）に `constexpr` 定義されたテーブルに基づき、vMMIOが検証する。
+- **方策**: `{MemoryBoundaryCheck}` `{META_RestrictedPhysicalAccess}` JITコードへの境界チェック埋め込みと、vMMIOによる物理アクセスの制限を行う。物理アドレスアクセスの許可範囲は `FB_CONF_VMMIO_ALLOWED_ADDRS`（[`system_config.md`](../tier1_core/system_config.md)）に `constexpr` 定義されたテーブルに基づき、vMMIOが検証する。

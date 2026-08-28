@@ -1,4 +1,7 @@
-# COOS メモリマネージャ コンポーネント設計書
+# COOS メモリマネージャ コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}
+<!-- evidence:
+     formal: ../tier3_jit/formal/jit_cache_model.py
+-->
 
 ## 1. コンセプト
 <!-- traceability: {META_3TierSeparation} {GLOBAL_Policy_Memory} {ConsolidatedHeap} {GLOBAL_IndependentHeap} -->

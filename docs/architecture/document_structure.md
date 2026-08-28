@@ -25,19 +25,17 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
            │  複雑な状態空間・機能のサブシステム分解
            ▼
 [ Tier 2: 分解されたサブコンポーネント (Decomposed Subcomponents) ] ─ (How - Subsystem)
-  · vSoC Subsystem (runtime_vsoc, runtime_loader, runtime_interpreter, runtime_vmmio, wasm_instruction)
+  · vSoC Subsystem (runtime_vsoc, runtime_loader, runtime_interpreter, runtime_vmmio)
   · Debug Subsystem (debug_manager)
-  · Configuration Details (system_config_details)
            │
            │  深層コンポーネント・プラットフォーム具象化への分解
            ▼
 [ Tier 3: リーフ / プラットフォームコンポーネント (Leaf & Platform Components) ] ─ (How - Leaf / Physical)
-  · JIT Subsystem (jit_compiler, jit_engine_copy_patch, jit_assembler_constexpr, jit_runtime_entry, jit_runtime_hotspot) — vSoC の実行エンジンから分解された JIT 一式
-  · Debug Internals (debug_gdb_rsp)
+  · JIT Subsystem (jit_compiler, jit_runtime) — vSoC の実行エンジンから分解された JIT コアおよびランタイム
   · Platform (platform_hal, platform_memory)
 
 [ Meta: 横断的メタ設計・開発計画 (Cross-cutting / Meta) ] ─ (全Tier横断)
-  · Architecture (architecture_overview, concept_harness, document_structure, master_physical_design, resource_budget)
+  · Architecture (architecture_overview, document_structure)
   · Plans (roadmap_phase, backlog_list, backlog_archive)
 
 [ Specs: 横串物理仕様・規格マトリクス (Cross-cutting Physical Specs & Catalogs) ] ─ (全Tier横断・具象規格)
@@ -50,8 +48,8 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 | :--- | :--- | :--- | :--- |
 | **Tier 0** | `docs/requires/` | システム要求仕様書 (`requirement_list.md`) | **最上位要求 (Why)**<br>システム全体が満たすべき受入基準・機能要求。 |
 | **Tier 1** | `docs/components/tier1_core/`<br>`docs/components/tier1_interface/` | スケジューラ、チャネル通信、システムサービス、IPCルータ、共有静的コンテナ語彙等のコア仕様書 | **粗粒度主要コンポーネント (What)**<br>要求（Tier 0）を直接受け取る。単一仕様書で状態遷移・ポリシーを自己完結して記述可能なシステム要素。 |
-| **Tier 2** | `docs/components/tier2_runtime/` | WASMインタープリタ、WASMローダー、vMMIO等のサブコンポーネント仕様書 | **分解されたサブコンポーネント (How - Subsystem)**<br>Tier 1 で扱うには状態空間やアルゴリズムが複雑化するため、独立した責務としてブレークダウンされた要素。 |
-| **Tier 3** | `docs/components/tier3_platform/`<br>`docs/components/tier3_jit/` | HAL実装、物理メモリ管理、JITコンパイラ一式（Copy-and-Patchコード生成器、Constexprアセンブラ等）| **詳細リーフ / 物理コンポーネント (How - Leaf)**<br>Tier 2 からさらに責務が切り出された具象コンポーネント、またはハードウェア抽象化層。JIT は vSoC (Tier 2) の実行エンジンから分解された一式として、内部を jit_compiler.md がオーケストレーションする。 |
+| **Tier 2** | `docs/components/tier2_runtime/` | WASMインタープリタ、WASMローダー、vMMIO、デバッグマネージャ等のサブコンポーネント仕様書 | **分解されたサブコンポーネント (How - Subsystem)**<br>Tier 1 で扱うには状態空間やアルゴリズムが複雑化するため、独立した責務としてブレークダウンされた要素。 |
+| **Tier 3** | `docs/components/tier3_platform/`<br>`docs/components/tier3_jit/` | HAL実装、物理メモリ管理、JITコンパイラ一式（コード生成コア `jit_compiler.md`、ランタイム管理 `jit_runtime.md`）| **詳細リーフ / 物理コンポーネント (How - Leaf)**<br>Tier 2 からさらに責務が切り出された具象コンポーネント、またはハードウェア抽象化層。 |
 | **Specs** | `docs/specs/` | WASM命令セット、WASI API、GDB RSP、JITステンシルカタログ等の規格マトリクス | **横串物理規格・具象カタログ (How - Physical Specs)**<br>コンポーネントを横断して統一される具象バイナリ列、ABI、パケット形式、命令セットマトリクス。 |
 | **Meta** | `docs/architecture/`<br>`docs/plans/` | 全体アーキテクチャ、設計方針、開発計画 | **全Tier横断メタ設計**<br>Hypervisor の機能コンポーネント自体には属さない共通ポリシー・計画。 |
 
@@ -63,7 +61,7 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 
 ### 2.1 デコンポジション基準（いつ下位 Tier へ分解するか）
 1. **単一責務・複雑度制御の原則**: コンポーネントが複数の独立した状態機械・アルゴリズムを持つ場合、単一仕様書に肥大化させず、サブコンポーネントとして分解して Tier を 1 つ下げる。
-   - 判定基準は「単一仕様書に自己完結して書けるか」であり、「親から分解された」という記述の有無ではない。vSoC の Interpreter/vMMIO/Loader は vSoC から分解されたと書きつつも各々 1 ファイルに自己完結するため Tier 2 のまま（vSoC の Tier 2 サブコンポーネント群の一員）。JIT だけは複雑度が突出しており、`jit_compiler.md` を親に 4 本のリーフ仕様書へさらに分割する必要があったため、JIT 一式は Tier 3 に位置する。
+   - 判定基準は「単一仕様書に自己完結して書けるか」であり、「親から分解された」という記述の有無ではない。vSoC の Interpreter/vMMIO/Loader は vSoC から分解されたと書きつつも各々 1 ファイルに自己完結するため Tier 2 のまま（vSoC の Tier 2 サブコンポーネント群の一員）。JIT は実行時コード生成の責務分離として、コード生成コア（`jit_compiler.md`）とランタイム制御（`jit_runtime.md`）の 2 ファイルで Tier 3 に位置する。
 2. **検証可能性（Verification Tractability）の維持**: 形式検証（pyModelChecking等）において状態空間が爆発しない単位に状態遷移モデルを区切る。
 3. **親コンポーネントのカプセル化**: 分解元（上位Tier）は、分解先（下位Tier）の内部実装パラメータに依存せず、抽象インターフェースのみで統合する。
 
@@ -137,3 +135,29 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 | `{GLOBAL_UseCpp20Coroutine}` | C++20 コルーチンの使用方針。 |
 | `{GLOBAL_UseCpp23Library}` | C++23 標準ライブラリ機能の使用方針。 |
 | `{GLOBAL_StaticScalability}` | 静的にパラメータ化されたスケーラビリティ。 |
+
+---
+
+## 5. 検証タグとエビデンス（Evidence）の対応体系
+
+各設計書は、タイトル行で検証種別（`{VERIFY_*}`）を明示し、直下に `<!-- evidence: ... -->` コメントブロックを配置して機械検証可能なエビデンスファイルを宣言する。
+
+### 5.1 検証タグとエビデンスの対応表
+
+| 検証タグ | 検証義務の分類 | 必要なエビデンス宣言 (`<!-- evidence: ... -->`) | 検証を実行・判定する Verifier |
+| :--- | :--- | :--- | :--- |
+| `VERIFY_FORMAL` | 形式検証義務 | `formal: formal/*_model.py`<br>（Kripke 構造・CTL/LTL 性質・`BACKS` 宣言） | **Formal Gate** + **Obligation Gate** |
+| `VERIFY_WIT` | インターフェース契約義務 | `wit: wit/*.wit`<br>（型安全・物理バイトオフセット・リカバリー戦略） | **WIT Gate** |
+| `VERIFY_BENCHMARK` | 定量性能・予算実測義務 | `benchmark: benchmarks/*_bench.py`<br>（計算量 $O(1)/O(\log N)$、レイテンシ実測） | **Phase 3 (Benchmarks)** + **Evidence Gate** |
+| `VERIFY_LLM` | 意味的整合性・ADR監査義務 | LLM as a Judge 判定ログ（さくらインターネット / Qwen 3.6） | **Phase 2 (Judge)** + **Obligation Gate** |
+| *(暗黙・全件)* | 実行可能参照実装 | `concept: concepts/*_concept.py` | **Phase 3 (Concepts)** + Unicorn エミュレータ |
+
+### 5.2 形式検証モデル（`formal/*.py`）の責任分担正本表
+
+| 形式検証モデルファイル | 検証・証明する対象性質 | `BACKS` 正本ドキュメント一覧 |
+| :--- | :--- | :--- |
+| [`../components/tier1_core/formal/coos_channel_model.py`](../components/tier1_core/formal/coos_channel_model.py) | - CSP チャネル純粋ランデブー<br>- デッドロック不在・二重所有不在<br>- 連続ハンドオフ有界復帰 | - `components/tier1_core/os_coos.md`<br>- `components/tier1_core/os_scheduler.md`<br>- `components/tier1_core/system_config.md` |
+| [`../components/tier1_interface/formal/csp_handoff_model.py`](../components/tier1_interface/formal/csp_handoff_model.py) | - 所有権移譲と Drop ハンドラによる二重所有・リーク防止 | - `components/tier1_interface/ipc_router.md` |
+| [`../components/tier2_runtime/formal/vsoc_cache_coherency_model.py`](../components/tier2_runtime/formal/vsoc_cache_coherency_model.py) | - vSoC JIT キャッシュ整合性・Debugger 介入安全性・ローテーション有界性 | - `components/tier2_runtime/runtime_vsoc.md`<br>- `components/tier2_runtime/debug/debug_manager.md`<br>- `components/tier3_jit/jit_compiler.md`<br>- `components/tier3_platform/platform_memory.md` |
+| [`../components/tier2_runtime/formal/vsoc_state_model.py`](../components/tier2_runtime/formal/vsoc_state_model.py) | - vSoC 実行状態<br>- Safepoint ポーリング応答性<br>- 割り込み/デバッグフォールバック | - `components/tier2_runtime/runtime_vsoc.md`<br>- `components/tier2_runtime/runtime_vmmio.md`<br>- `components/tier2_runtime/runtime_interpreter.md`<br>- `components/tier2_runtime/debug/debug_manager.md`<br>- `components/tier3_platform/platform_hal.md`<br>- `components/tier1_core/system_config.md` |
+| [`../components/tier3_jit/formal/jit_cache_model.py`](../components/tier3_jit/formal/jit_cache_model.py) | - 3面キャッシュ代謝<br>- MPU W^X 保護<br>- 遅延チェイニング局所アンリンク安全性<br>- 2-bit Hotspot FSM | - `components/tier3_jit/jit_compiler.md`<br>- `components/tier3_jit/jit_runtime.md`<br>- `components/tier3_platform/platform_memory.md` |

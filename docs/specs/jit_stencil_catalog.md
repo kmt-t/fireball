@@ -4,7 +4,7 @@
 <!-- traceability: {JIT_CopyAndPatch} {JIT_ZeroCompileCostTheorem} {JIT_RegisterMapping} {META_ZeroCostAbstraction} -->
 本仕様書は、Fireball Copy-and-Patch JIT コンパイラが実行時にコード結合およびパッチ適用を行うための **事前コンパイル済み Thumb-2 ネイティブ命令テンプレート（Stencil）** の完全な物理カタログである。
 
-ビルド時に Clang 17（`-target arm-none-eabi -mcpu=cortex-m33 -mthumb -O2`）で生成されたバイナリ列とプレースホルダ（穴: Relocation Slots）のオフセット、および多次元レジスタバリアント（スタックキャッシュ深度 TOS/NOS、`R3` local_param、`R8`/`R9` mem_base/mem_size ピン留め、Callee-saved 任意割当プール `R4-R6, R8-R11`、AAPCS 準拠 Frame Pointer `R7`）を一意に定義する。 `{JIT_CopyAndPatch}` `{JIT_ZeroCompileCostTheorem}` `{JIT_RegisterMapping}` `{META_ZeroCostAbstraction}`
+ビルド時に Clang 17（`-target arm-none-eabi -mcpu=cortex-m33 -mthumb -O2`）で生成されたバイナリ列とプレースホルダ（穴: Relocation Slots）のオフセット、および多次元レジスタバリアント（スタックキャッシュ深度 TOS/NOS、`R3` スクラッチ解放、`R8`/`R9` mem_base/mem_size ピン留め、Callee-saved 任意割当プール `R4-R6, R8-R11`、AAPCS 準拠 Frame Pointer `R7`）を一意に定義する。 `{JIT_CopyAndPatch}` `{JIT_ZeroCompileCostTheorem}` `{JIT_RegisterMapping}` `{META_ZeroCostAbstraction}`
 
 ---
 
@@ -13,7 +13,7 @@
 
 | リロケーション型 | ビット幅 / 形式 | 説明 | パッチ処理 |
 | :--- | :--- | :--- | :--- |
-| **`RELOC_IMM32_MOVW_MOVT`** | 32-bit (2x 16-bit) | 32-bit 即値を `MOVW` (下位16bit) + `MOVT` (上位16bit) 命令ペアに書き込む。 | `insn0[15:0] |= imm[15:0]`, `insn1[15:0] |= imm[31:16]` |
+| **`RELOC_IMM32_MOVW_MOVT`** | 32-bit (2x 16-bit) | 32-bit 即値を `MOVW` (下位16bit) + `MOVT` (上位16bit) 命令ペアに書き込む。 | `encode_movw_movt_imm16(insn0, imm[15:0]); encode_movw_movt_imm16(insn1, imm[31:16])` (Thumb-2 即値ビットフィールド展開) |
 | **`RELOC_REL24_BRANCH`** | 24-bit (Thumb-2 `B.W`) | JIT トレース内および前方/後方ラベルへの相対ジャンプオフセット。 | `delta = target - (pc + 4); patch_b_w(insn, delta)` |
 | **`RELOC_IMM8_OFFSET`** | 8-bit | 構造体メンバオフセットまたはローカル配列オフセット。 | `insn[7:0] |= offset` |
 | **`RELOC_API_POINTER`** | 32-bit (Literal Pool) | ランタイム関数アドレス（`vsoc_memory_grow` 等）をリテラルプールへ書き込み。 | `*(uint32_t*)(cache_ptr + offset) = func_addr` |
@@ -25,7 +25,7 @@
 ### 3.1 プロローグ & エピローグ・ステンシル (Prologue, Epilogue & Spill Flush)
 <!-- traceability: {ContextPointerRegister} {EnvironmentPointer} {JIT_RuntimeAPI_Fallback} {ADR_TosCacheAsymmetry} -->
 
-エピローグおよびインタープリタ脱出（フォールバック）では、トレース実行中にレジスタへバインドされた値のうち、**ダーティ（変更済み）なスピル変数（TOS/NOS、レジスタ常駐ローカル変数、SPオフセット等）を統合スタックメモリへ `STR` で確実に書き戻した（Flush / Writeback）上で**、Callee-saved レジスタを `POP` 復元してジャンプする。
+エピローグおよびインタープリタ脱出（フォールバック）では、トレース実行中にレジスタへバインドされた値のうち、**ダーティ（変更済み）なスタックキャッシュ（`R4`/`R5`: TOS/NOS）および更新された `sp_offset` を統合スタックメモリ／コンテキスト構造体へ `STR` で確実に書き戻した（Flush / Writeback）上で**、Callee-saved レジスタを `POP` 復元してジャンプする。
 
 #### `STENCIL_PROLOGUE_FULL` (Callee-saved 全域退避 + LR)
 - **Thumb-2 命令列**:
@@ -60,17 +60,15 @@
   ```
 - **バイナリ列 (8 Bytes)**: `0C 60 BD E8 70 4F 60 47`
 
-#### `STENCIL_FALLBACK_FLUSH_D2_LOCALS` (TOS/NOS + ダーティ Local 変数書き戻し $\to$ インタープリタ末尾ジャンプ)
+#### `STENCIL_FALLBACK_FLUSH_D2` (TOS & NOS 書き戻し $\to$ インタープリタ末尾ジャンプ)
 - **Thumb-2 命令列**:
   ```asm
   str   r4, [r1, #0x00]    ; [Offset 0x00] RELOC_IMM8_OFFSET (TOS 書き戻し)
   str   r5, [r1, #0x04]    ; [Offset 0x02] RELOC_IMM8_OFFSET (NOS 書き戻し)
-  str   r8, [r1, #0x08]    ; [Offset 0x04] RELOC_IMM8_OFFSET (ダーティ local[0] 書き戻し)
-  str   r9, [r1, #0x0C]    ; [Offset 0x06] RELOC_IMM8_OFFSET (ダーティ local[1] 書き戻し)
-  pop.w {r4-r6, r8-r11, lr} ; [Offset 0x08] Callee-saved 復元
-  bx    r12                ; [Offset 0x0C] R12 のハンドラアドレスへ直接ジャンプ
+  pop.w {r4-r6, r8-r11, lr} ; [Offset 0x04] Callee-saved 復元
+  bx    r12                ; [Offset 0x08] R12 のハンドラアドレスへ直接ジャンプ
   ```
-- **バイナリ列 (14 Bytes)**: `0C 60 4D 60 88 60 C9 60 BD E8 70 4F 60 47`
+- **バイナリ列 (10 Bytes)**: `0C 60 4D 60 BD E8 70 4F 60 47`
 
 #### `STENCIL_EXTERNAL_CALL_STUB` (外部 AAPCS C/C++ 関数呼出境界)
 - **Thumb-2 命令列**:
@@ -181,7 +179,7 @@
 - **バイナリ列 (2 Bytes)**: `0C 60`
 
 #### `STENCIL_GLOBAL_GET_D0` (`0x23` Env globals_base 経由ロード)
-- **Thumb-2 命令列**（`R12` は AAPCS Intra-call スクラッチで、この1ステンシル内でのみ globals_base ポインタを保持する——`R3` は local_param のため汎用スクラッチには使わない）:
+- **Thumb-2 命令列**（`R12` は AAPCS Intra-call スクラッチで、この1ステンシル内でのみ globals_base ポインタを保持する）:
   ```asm
   ldr.w r12, [r2, #0x08]  ; [Offset 0x00] env->globals_base ロード (vsoc_runtime +0x08)
   ldr.w r4, [r12, #0x00]  ; [Offset 0x04] RELOC_IMM8_OFFSET (global[N] ロード)
@@ -206,10 +204,13 @@
 | `i32.add` (`0x6A`) | `STENCIL_I32_ADD_D2` | R4=TOS, R5=NOS | R4=TOS | `adds r4, r5, r4` | `2C 19` |
 | `i32.sub` (`0x6B`) | `STENCIL_I32_SUB_D2` | R4=TOS, R5=NOS | R4=TOS | `subs r4, r5, r4` | `2C 1B` |
 | `i32.mul` (`0x6C`) | `STENCIL_I32_MUL_D2` | R4=TOS, R5=NOS | R4=TOS | `mul r4, r5, r4` | `05 FB 04 F4` |
-| `i32.div_s` (`0x6D`) | `STENCIL_I32_DIV_S_D2` | R4=TOS, R5=NOS | R4=TOS | `sdiv r4, r5, r4` | `95 FB F4 F4` |
-| `i32.div_u` (`0x6E`) | `STENCIL_I32_DIV_U_D2` | R4=TOS, R5=NOS | R4=TOS | `udiv r4, r5, r4` | `B5 FB F4 F4` |
-| `i32.rem_s` (`0x6F`) | `STENCIL_I32_REM_S_D2` | R4=TOS, R5=NOS | R4=TOS | `sdiv r12, r5, r4; mls r4, r12, r4, r5` | `95 FB F4 FC 0C FB 14 54` |
-| `i32.rem_u` (`0x70`) | `STENCIL_I32_REM_U_D2` | R4=TOS, R5=NOS | R4=TOS | `udiv r12, r5, r4; mls r4, r12, r4, r5` | `B5 FB F4 FC 0C FB 14 54` |
+| `i32.div_s` (`0x6D`) | `STENCIL_I32_DIV_S_D2` | R4=TOS, R5=NOS | R4=TOS | `cbz r4, <trap>; cmp r5, #0x80000000; it eq; cmpeq r4, #-1; beq <trap>; sdiv r4, r5, r4` (0除算・INT_MIN/-1時はインタープリタへトラップ) | `00 B1 ... 95 FB F4 F4` |
+| `i32.div_u` (`0x6E`) | `STENCIL_I32_DIV_U_D2` | R4=TOS, R5=NOS | R4=TOS | `cbz r4, <trap>; udiv r4, r5, r4` (0除算時はインタープリタへトラップ) | `00 B1 B5 FB F4 F4` |
+| `i32.rem_s` (`0x6F`) | `STENCIL_I32_REM_S_D2` | R4=TOS, R5=NOS | R4=TOS | `cbz r4, <trap>; sdiv r12, r5, r4; mls r4, r12, r4, r5` (ARM MLS: $Rd(r4) = Ra(r5) - Rn(r12) \times Rm(r4)$) | `00 B1 95 FB F4 FC 0C FB 14 54` |
+| `i32.rem_u` (`0x70`) | `STENCIL_I32_REM_U_D2` | R4=TOS, R5=NOS | R4=TOS | `cbz r4, <trap>; udiv r12, r5, r4; mls r4, r12, r4, r5` (ARM MLS: $Rd(r4) = Ra(r5) - Rn(r12) \times Rm(r4)$) | `00 B1 B5 FB F4 FC 0C FB 14 54` |
+
+※ ARMv8-M Architecture Reference Manual 規定：`MLS Rd, Rn, Rm, Ra` 命令の動作は $Rd = Ra - (Rn \times Rm)$ である。したがって `mls r4, r12, r4, r5` は $Rd(r4) = Ra(r5) - Rn(r12) \times Rm(r4)$（$被除数 - 商 \times 除数 = 剰余$）を正しく算出する。
+※ 16-bit Thumb-2 命令（`adds r4, r5, r4` 等）はリトルエンディアンバイト列（`2C 19` 等）として格納される。実機エミュレータ検証（[`thumb2_stencil_semantic_verifier.py`](../components/tier3_jit/concepts/thumb2_stencil_semantic_verifier.py)）にて全ステンシルの動作整合性を検証済みである。
 | `i32.and` (`0x71`) | `STENCIL_I32_AND_D2` | R4=TOS, R5=NOS | R4=TOS | `ands r4, r5, r4` | `2C 40` |
 | `i32.or` (`0x72`) | `STENCIL_I32_OR_D2` | R4=TOS, R5=NOS | R4=TOS | `orrs r4, r5, r4` | `2C 43` |
 | `i32.xor` (`0x73`) | `STENCIL_I32_XOR_D2` | R4=TOS, R5=NOS | R4=TOS | `eors r4, r5, r4` | `6C 40` |
@@ -281,18 +282,9 @@
 
 `3.7` のメモリアクセス系ステンシル（`*_r8`）はこの4段階のバリアント軸そのものではなく、Depth 1/2 の上に重ねて `R8=mem_base`/`R9=mem_size` を追加で要求する直交した制約である（ロード系は Depth 1 の `R4` をアドレスとして再利用、ストア系は Depth 2 の `R4=val, R5=addr` をそのまま用いる）。`R8`/`R9` は Depth 0-3 のいずれとも重ならないため、メモリアクセスは全バリアントと自由に組み合わせられる。
 
-#### `local_param` (`local_base`) ピン留めバリアント（直交軸）
-
+#### ローカル変数アクセスの静的オフセット畳み込み (`ContextPointerRegister`)
 <!-- traceability: {ContextPointerRegister} -->
-
-[`master_physical_design.md` §3 NOTE](../architecture/master_physical_design.md) の通り、`local_base`（フレーム基底、`local_param` とも呼ぶ）は同一トレースが再帰呼び出しや異なる呼び出し深さから共有されうる場合、統合スタック上の絶対位置が毎回異なる実行時値となり、コンパイル時定数（`R1` からの静的オフセット）には畳み込めない。この場合 `local_base` はトレース入口でコンテキスト構造体から都度ロードされ、レジスタにピン留めされる必要がある——**`R3`** に割り当てる。この場合、ローカル変数アクセスは `LDR r4, [r3, #slot_offset]` のように `local_base` レジスタ経由の間接参照へ変わり、上表 3.4 節の `[r1, #offset]` 直接参照とは異なるステンシルバリアントになる。
-
-**`mem_base`/`mem_size` との非衝突**: `R3`（local_param）は `R8`/`R9`（mem_base/mem_size）とは別レジスタであるため、`local_base` が非畳み込み（再帰・共有呼び出し深さ）かつメモリアクセスを含むトレースも、両方を同時にピン留めして問題なくコンパイルできる——排他制約は存在しない。`rem_s`/`rem_u`/`rotl_d2`（3.5節）や `global_get_d0`/`global_set_d1`（3.4節）の一時スクラッチも `R3` ではなく `R12`（AAPCS Intra-call スクラッチ）を使うため、これらのステンシルとも衝突しない。
-
-`mem_base`/`mem_size` と同様、`local_param` はトレース入口で一度だけフレッシュにロードされ、トレース内では変化しない値であるため、命令間引き継ぎを判定する `variant_id`（後述）の対象には含めない——含めるのは TOS/NOS/NNOS の Depth 0-3 のみである。
-
-> [!NOTE]
-> **`local_param` ピン留めも動的選択は未実装**: 現行の `compile_trace()` の `local.get`/`local.set`/`local.tee` は常に `[r1, #off]` 直接参照であり（`R1=stack_bot` がそのまま `local_base=0` として畳み込まれる前提）、`local_base` を `R3` にロードして間接参照するパスは概念コードにはまだ存在しない。同一トレースの再利用（再帰・共有呼び出し深さ）を跨ぐケースが実装されるまでは、この軸は表上の予約のみである。
+ローカル変数アクセス（`local.get`/`local.set`/`local.tee`）は、統合スタックボトム（`R1 = stack_bot`）からのコンパイル時定数オフセット（`[R1, #offset]`）として直接解決される。スタックボトム基底ポインタ `{ContextPointerRegister}` により、追加のベースレジスタを消費することなく極小フットプリントで実行可能である。ステンシル内では `R3` はスクラッチとして解放されており、Caller-saved 一時レジスタとして利用される。
 
 > [!NOTE]
 > **現状は静的割当であり、動的なバリアント選択はまだ実装されていない**: `jit_copy_patch_concept.py` の `compile_trace()` は WASM 命令ごとに1つの固定ステンシルしか持たず（例: `i32.const` は常に特別処理で `R4` へ直接書き込み、`i32_const_d0`/`i32_const_d1` のどちらのステンシルも実際には参照しない）、実行時のキャッシュ深度に応じて `_d0`/`_d1`/`_d2` を動的に選び分けるロジックはまだ存在しない。したがって同一トレース内で連続する命令のレジスタ配置が食い違う状況も現状は発生しない。上表の `variant_id` は、(1) 将来その動的選択を実装する際の ID 体系、および (2) その際に必要となる命令間引き継ぎ互換性判定・グルー挿入（`_order_register_moves`/`emit_variant_reconciliation_glue` を参照、`jit_copy_patch_concept.py` 内の再利用可能なユーティリティとして検証済み実装が既に存在する）の両方に使われる、正本の割当表である。

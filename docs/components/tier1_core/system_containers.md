@@ -1,19 +1,25 @@
-# 静的コンテナ語彙 コンポーネント設計書 {VERIFY_LLM}
+# 静的コンテナ語彙 コンポーネント設計書 {VERIFY_BENCHMARK} {VERIFY_LLM}
+<!-- evidence:
+     benchmark: ../tier1_interface/benchmarks/low_latency_lookup_bench.py
+     concept: concepts/flat_view_concept.py
+-->
 
 ## 1. コンセプト
 <!-- traceability: {Type_Vocabulary} {META_FlatMapIndexed} {META_BinarySearch} {META_NoStdVector} {GLOBAL_Policy_Memory} {META_ZeroCostAbstraction} {GLOBAL_StaticScalability} {FlatViewNarrowing} {PackedBitView} -->
 本コンポーネントは、Fireball 全体で共有されるコンテナ語彙を定義する。複数の Tier が同じ参照パターンを必要とするため、各所で個別に説明せず本書を型定義の正本とする。 `{Type_Vocabulary}`
 
-語彙は **3 つの独立した型**からなる。それぞれ答える問いが異なるため、共通のテンプレートに統合しない。
+語彙は **4 つの独立した型**からなる。それぞれ答える問いが異なるため、共通のテンプレートに統合しない。
 
 | 型 | 答える問い | 参照方法 | 主な用途 |
 | :--- | :--- | :--- | :--- |
-| `fireball::flat_map_view<Key, Value>` | 「キー `K` に対応する値は何か」 | 絞り込み + **二分探索** $O(\log n)$ | JITエントリ索引、vMMIO PTE表、IPCサービスレジストリ |
+| `fireball::flat_map_view<Key, Value>` | 「キー `K` に対応する値は何か」 | 絞り込み + **二分探索** $O(\log n)$ | vMMIO PTE表、IPCサービスレジストリ |
 | `fireball::flat_set_view<Key>` | 「キー `K` は含まれるか」 | 絞り込み + **二分探索** $O(\log n)$ | ブレークポイントPC集合、vMMIO許可アドレス範囲 |
+| `fireball::radix_binary_tree_view<Key, Value, RadixShift>` | 「キー `K` に対応する値は何か（基数＋二分探索）」 | **Radix Table** ($O(1)$) + **有界二分探索** $O(\log n)$ | JITエントリ索引（WASM PC $\to$ ネイティブコードオフセット） |
 | `fireball::bit_view<Bits>` | 「添字 `i` の状態は何か」 | 添字による**直接参照** $O(1)$ | JITカードマーキング表、権限ニブル、フラグ列 |
 
-**なぜ 3 つに分けるか**:
+**なぜ 4 つに分けるか**:
 - **map と set を分ける**: 集合は値列を持たない。`Value` を `void` や擬似型で埋めた map として表現すると、存在しない値列に対する参照を型が持ち続けることになる。集合の問いは「含まれるか」であって「何が入っているか」ではないため、返すものも真偽であり値ではない。
+- **純粋 flat_map と Radix Binary Tree を分ける**: `radix_binary_tree_view` は基数プレフィックスによる $O(1)$ 粗索引境界テーブル（Radix Table）と、境界内に有界化されたソート済みキー列の二分探索を統合した複合ビューである。手動の `slice().find()` を都度組み合わせる代わりに、型として不変条件（$O(1)$ 境界解決 + $O(\log n)$ 局所探索）をカプセル化する。
 - **探索する型と探索しない型を分ける**: `bit_view` は疎なキー空間に対する探索構造ではなく、密な添字空間に対するビット詰め表である。キー列を持たない `flat_map_view` の特殊形として表現することは技術的には可能だが、「`flat_*_view` なら二分探索するもの」という読み手の期待を裏切り、カードマーキング表があたかも探索対象であるかのような誤解を生む。**カードマーキングは探索しない。添字がそのまま問いである。** `{Type_Vocabulary}`
 
 **所有コンテナは定義しない。** 表の実体は既に各コンポーネントが持っている（IPCレジストリは ROM 上の `constexpr` 配列、PTE表・エントリ索引・カードマーキング表は静的に確保された配列である）。所有を担う汎用マップ型を別途設けると、実体の二重管理と余分なブックキーピングを生むだけになる。共有すべきは**それらをどう見るか**という語彙だけであり、本書は非所有ビューのみを定義する。 `{GLOBAL_Policy_Memory}` `{META_NoStdVector}`
@@ -22,7 +28,7 @@
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {Type_Vocabulary} -->
-本コンポーネントは **Tier 1 (主要システムコンポーネント: Primary Component)** に属する。実行時の振る舞いも状態も持たないヘッダオンリーの型語彙（Vocabulary）であり、各 Tier（Tier 2 の vMMIO、Tier 3 の JIT エントリ索引・カードマーキング等）は本書で定義された非所有ビュー型（`flat_map_view`, `flat_set_view`, `bit_view`）を利用して具象データを操作する。本書は下位 Tier の具象データ構造や内部ヘッダには一切依存せず、純粋な型語彙の提供に専念する。 `{META_3TierSeparation}` `{Type_Vocabulary}`
+本コンポーネントは **Tier 1 (主要システムコンポーネント: Primary Component)** に属する。実行時の振る舞いも状態も持たないヘッダオンリーの型語彙（Vocabulary）であり、各 Tier（Tier 2 の vMMIO、Tier 3 の JIT エントリ索引・カードマーキング等）は本書で定義された非所有ビュー型（`flat_map_view`, `flat_set_view`, `radix_binary_tree_view`, `bit_view`）を利用して具象データを操作する。本書は下位 Tier の具象データ構造や内部ヘッダには一切依存せず、純粋な型語彙の提供に専念する。 `{META_3TierSeparation}` `{Type_Vocabulary}`
 
 ## 3. 静的モデル
 
@@ -30,6 +36,7 @@
 <!-- traceability: {META_FlatMapIndexed} {META_BinarySearch} {FlatViewNarrowing} {PackedBitView} {GLOBAL_StaticScalability} -->
 - **`flat_map_view<Key, Value>`**: 昇順ソート済みのキー列と、それに添字対応する値列を指す非所有ビュー。粗索引で区間を狭めてから二分探索する。 `{META_BinarySearch}` `{FlatViewNarrowing}`
 - **`flat_set_view<Key>`**: 昇順ソート済みのキー列のみを指す非所有ビュー。所属判定を行う。 `{META_BinarySearch}` `{FlatViewNarrowing}`
+- **`radix_binary_tree_view<Key, Value, RadixShift>`**: 基数テーブル（Radix Table / $O(1)$ プレフィックス境界）とソート済みエントリ配列の局所二分探索をカプセル化した多段索引ビュー。 `{META_BinarySearch}` `{FlatViewNarrowing}`
 - **`bit_view<Bits>`**: 1 要素が 1 バイト未満の密なビット詰め表を指す非所有ビュー。添字で直接読み書きする。 `{PackedBitView}`
 
 ### 3.2 内部ブロック図
@@ -40,19 +47,23 @@ graph LR
     OWN["各コンポーネントが所有する実体<br/>constexpr ROM 配列 / static 配列"]
     FMV["flat_map_view Key,Value<br/>sorted keys + values"]
     FSV["flat_set_view Key<br/>sorted keys only"]
+    RBTV["radix_binary_tree_view Key,Value<br/>Radix Table + sorted entries"]
     BV["bit_view Bits<br/>packed states, dense"]
     COARSE["粗索引<br/>Bank / FC tier / URI scheme"]
     R1["optional Value : O(log n)"]
     R2["bool : O(log n)"]
     R3["state : O(1)"]
+    R4["optional Value : O(log n)"]
 
     OWN -- "view over" --> FMV
     OWN -- "view over" --> FSV
+    OWN -- "view over" --> RBTV
     OWN -- "view over" --> BV
     COARSE -- "bounds" --> FMV
     COARSE -- "bounds" --> FSV
     FMV -- "narrow / slice" --> FMV
     FSV -- "narrow / slice" --> FSV
+    RBTV -- "find" --> R4
     BV -- "slice" --> BV
     FMV -- "find" --> R1
     FSV -- "contains" --> R2
@@ -131,6 +142,19 @@ class flat_set_view {
   constexpr auto narrow(const Key& lo, const Key& hi) const noexcept -> flat_set_view;
   constexpr auto slice(std::size_t first, std::size_t last) const noexcept -> flat_set_view;
   constexpr auto contains(const Key& k) const noexcept -> bool;
+  constexpr auto size() const noexcept -> std::size_t;
+  constexpr auto empty() const noexcept -> bool;
+};
+
+// 基数二分探索木索引: O(1) Radix Table + O(log n) 有界二分探索
+template <typename Key, typename Value, std::size_t RadixShift>
+class radix_binary_tree_view {
+ public:
+  constexpr explicit radix_binary_tree_view(
+      std::span<const Key> keys,
+      std::span<const Value> values,
+      std::span<const std::pair<std::size_t, std::size_t>> radix_table) noexcept;
+  constexpr auto find(const Key& k) const noexcept -> std::optional<Value>;
   constexpr auto size() const noexcept -> std::size_t;
   constexpr auto empty() const noexcept -> bool;
 };
@@ -272,17 +296,41 @@ class FlatSetView(_SortedWindow):
         return self._locate(key) is not None
 
 
+class RadixBinaryTreeView:
+    """fireball::radix_binary_tree_view<Key, Value, RadixShift>:
+    Container combining an O(1) Radix Table (coarse prefix lookup)
+    with bounded binary search on a sorted key-value array.
+    """
+
+    def __init__(self, keys: Sequence[int], values: Sequence[Any],
+                 radix_table: Sequence[tuple[int, int]], radix_shift: int):
+        self.map_view = FlatMapView(keys, values)
+        self.radix_table = radix_table  # prefix -> (first, last) entry indices
+        self.radix_shift = radix_shift
+
+    def find(self, key: int) -> Any | None:
+        prefix = key >> self.radix_shift
+        if prefix < 0 or prefix >= len(self.radix_table):
+            return None
+        first, last = self.radix_table[prefix]
+        if first >= last:
+            return None
+        return self.map_view.slice(first, last).find(key)
+
+
 # --- 本プロジェクトでの用途 ---
 
-def lookup_jit_entry(view: FlatMapView, card_table: BitView, entry_group_bounds: dict[int, tuple[int, int]], pc: int, card_shift: int, group_shift: int):
+def lookup_jit_entry(view: FlatMapView | RadixBinaryTreeView, card_table: BitView, entry_group_bounds: dict[int, tuple[int, int]], pc: int, card_shift: int, group_shift: int):
     """JIT entry lookup:
     1. O(1) card marking pre-filter: verify card state == 3 (COMPILED).
-    2. O(1) JIT entry group narrowing: slice FlatMapView to group bounds [first, last].
-    3. Binary search on narrowed FlatMapView.
+    2. O(1) Radix Table prefix lookup: slice to group bounds [first, last].
+    3. Bounded local binary search on narrowed FlatMapView (RadixBinaryTree index model).
     """
     card_idx = pc >> card_shift
     if card_idx >= card_table.size() or card_table.at(card_idx) != 3:  # 3 = COMPILED
         return None
+    if isinstance(view, RadixBinaryTreeView):
+        return view.find(pc)
     group_idx = pc >> group_shift
     bounds = entry_group_bounds.get(group_idx)
     if bounds is None:
@@ -400,7 +448,7 @@ sequenceDiagram
 
 | 利用コンポーネント | 型 | 用途 | 絞り込みに用いる粗索引 |
 | :--- | :--- | :--- | :--- |
-| JIT エントリ索引 (`jit_runtime_entry`) | `flat_map_view` | WASM PC からネイティブコードオフセットへの変換 | JITエントリグループ索引 ($O(1)$) |
+| JIT エントリ索引 (`jit_runtime_entry`) | `radix_binary_tree_view` | WASM PC からネイティブコードオフセットへの変換 | Radix Table (基数プレフィックス $O(1)$) |
 | JIT カードマーキング (`jit_runtime_hotspot`) | `bit_view<2>` | カード単位の 2-bit 実行状態 | なし ($O(1)$ 直接添字アクセス) |
 | vMMIO PTE表 (`runtime_vmmio`) | `flat_map_view` | 仮想ページ番号 (VPN) から PTE への変換 | ファンクションコード (FC) による Tier 区分 |
 | vMMIO 許可アドレス (`system_config_details`) | `flat_set_view` | 物理アドレスが許可範囲に属するかの判定 | なし（`FB_CONF_VMMIO_ALLOWED_ADDRS` で有界） |
@@ -412,7 +460,7 @@ sequenceDiagram
 ### 6.1 性能制約と方策
 <!-- traceability: {META_BinarySearch} {FlatViewNarrowing} {PackedBitView} {LowLatencyLookup} -->
 - **目標**: クリティカルパス（インタープリタ実行ループ内の JIT エントリ検索、カード状態判定、ブレークポイント判定）での参照コストを最小化する。
-- **方策**: `{FlatViewNarrowing}` により粗索引で区間を狭めてから二分探索を行い、比較回数を全件に対する $O(\log N)$ から区間長に対する $O(\log n)$ へ削減する。カード状態の判定は `{PackedBitView}` により探索を伴わず、単一のロードとシフト・マスクで完了する。 `{META_BinarySearch}` `{LowLatencyLookup}`
+- **方策**: `{FlatViewNarrowing}` により粗索引で区間を狭めてから二分探索を行い、比較回数を全件に対する $O(\log N)$ から区間長に対する $O(\log n)$ へ削減する。JIT エントリ検索では `radix_binary_tree_view` により $O(1)$ の Radix Table ルックアップと有界区間の二分探索 $O(\log n)$ を適用する。カード状態の判定は `{PackedBitView}` により探索を伴わず、単一のロードとシフト・マスクで完了する。 `{META_BinarySearch}` `{LowLatencyLookup}`
 
 ### 6.2 メモリ制約と方策
 <!-- traceability: {GLOBAL_Policy_Memory} {META_NoStdVector} {GLOBAL_StrictMemoryLimit} {GLOBAL_StaticScalability} -->
@@ -428,6 +476,7 @@ sequenceDiagram
 
 | 名称 | 参照先URL/文献名 | 採用/考慮する理由 |
 | :--- | :--- | :--- |
+| Radix Tree & Static Binary Search Tree | アルゴリズム定石 (Knuth TAOCP Vol.3) | 基数プレフィックス粗索引＋ソート済み配列二分探索の合成モデルの参照元 |
 | C++23 `std::flat_map` / `std::flat_set` | ISO/IEC 14882:2024 | 疎ビューのインターフェイス設計の参照元。所有責務と下位コンテナ `std::vector` が本プロジェクトに不適合 |
 | `std::span` | ISO/IEC 14882:2020 | 非所有ビューの設計定石として。8ビット以上の密な表には本型をそのまま用いる |
 | `std::bitset` / `std::vector<bool>` | ISO/IEC 14882:2020 | ビット詰め表現の先行例。固定長・非所有・多値状態のいずれも満たさないため直接は採用しない |

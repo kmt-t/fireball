@@ -12,7 +12,7 @@ param(
     [switch]$exhaustive,
     [string]$backend = "sakura",
     [string]$model = "",
-    [int]$maxSubgraphs = 10,
+    [int]$maxSubgraphs = 15,
     [int]$maxSections = 15,
     [int]$minReferences = 1,
     [int]$minLength = 50,

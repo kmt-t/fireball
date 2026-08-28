@@ -1,17 +1,22 @@
 # Debug Manager コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}
+<!-- evidence:
+     formal: ../formal/vsoc_state_model.py
+     concept: ../concepts/debugger_concept.py
+-->
 
 ## 1. コンセプト
 <!-- traceability: {RSPMinimalSet} {DebuggerLabelTableSwitch} {MemoryIsolation} {Debug_Standard_Env} {RSP_Transport_Selectable} {Debug_Integrated} -->
 デバッガは、VSCode等の外部ツールからのデバッグを可能にするため、GDB Remote Serial Protocol (RSP) に基づく実行制御を行う。標準環境として VSCode, UART, J-Link をサポートする。また `{Debug_Integrated}` に準拠し、GDB RSP制御に加えて、**実行時プロファイラ機能（ホットスポットサンプリングや実行頻度計測）** および **動的テストツール機能（命令トレース・実行時メモリ/レジスタアサーション）** を内蔵する。RSPパケットの解析はHAL層で行われ、デバッガはHALから供給されるコマンドキューを消費して実行状態を制御する。リソース制約に対応するため、デバッグ中はJITを無効化し、インタープリタ実行にフォールバックする設計を採用する。 `{RSPMinimalSet}` `{DebuggerLabelTableSwitch}` `{MemoryIsolation}` `{Debug_Standard_Env}` `{RSP_Transport_Selectable}` `{Debug_Integrated}`
 
 ## 2. アーキテクチャ分類
-<!-- traceability: {META_3TierSeparation} -->
-本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属し、vSoC (`runtime_vsoc.md`) から分解されたデバッグ状態制御、プロファイラ集計、およびブレークポイント管理を担当する。プロトコル解析の詳細は詳細サブコンポーネント ([`debug_gdb_rsp.md`](debug_gdb_rsp.md)) にデコンポジションされる。 `{META_3TierSeparation}`
+<!-- traceability: {META_3TierSeparation} {RSPMinimalSet} -->
+本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属し、vSoC (`runtime_vsoc.md`) から分解されたデバッグ状態制御、プロファイラ集計、ブレークポイント管理、および GDB RSP パケットのフレーミング・構文解析・レスポンス生成を担当する。具象的なプロトコル仕様は [GDB RSP 物理仕様書 (`docs/specs/gdb_rsp_protocol.md`)](../../../specs/gdb_rsp_protocol.md) を正本とする。 `{META_3TierSeparation}` `{RSPMinimalSet}`
 
 ## 3. 静的モデル
 
 ### 3.1 データ構造
 - **`Debugger`**: GDB RSPプロプライエタリな制御ロジック、デバッグ状態、およびブレークポイント管理をカプセル化した主要クラス。
+- **`RspParser` / `RspSerializer`**: UART等からのバイトストリーム受信、`$` から `#` までのパケットフレーミング、チェックサム計算、およびレスポンス生成を行うクラス。
 - **`Profiler` / `DynamicTestTool`**: 命令実行サンプリングカウンタ、PC実行頻度マップ、および動的アサーションフックテーブル。 `{Debug_Integrated}`
 - **`debug_config`**: 最大ブレークポイント数やポート番号などの不変の設定。
 
@@ -20,24 +25,26 @@
 graph TD
     subgraph Debugger_Layer
         Engine[Debugger Engine]
+        RspParser[RSP Packet Parser / Serializer]
         Profiler[Profiler & Test Tool Engine]
     end
 
     subgraph External
-        HAL[HAL RSP Parser]
+        HAL[HAL Transport UART/RTT]
         ECtx[execution_context]
     end
 
     Engine -- holds references --> HAL
+    Engine -- uses --> RspParser
     Engine -- holds reference --> ECtx
-    Engine -- manages --> BP[breakpoint]
+    Engine -- manages --> BP[breakpoint flat_set_view]
     Profiler -- samples --> ECtx
 ```
 
 ### 3.3 主要なクラス・構造体・配列・定数
 
 #### デバッガ（Debugger）クラス
-<!-- traceability: {META_NoStdVector} {Debug_Integrated} -->
+<!-- traceability: {META_NoStdVector} {Debug_Integrated} {RSPMinimalSet} -->
 依存関係（実行コンテキスト、HAL）と内部状態（ブレークポイント、プロファイラサンプリング、現在状態）をカプセル化する。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
@@ -46,7 +53,8 @@ graph TD
 | HALトランスポート | RSPパケットの送受信を担うHAL抽象化レイヤへの参照。 | 構造体への参照 | `hal_transport` (非所有) |
 | `cmd_queue` | HALから供給されるコマンドキュー。 | 構造体への参照 | `debug_command_queue` |
 | デバッグ状態 | デバッガの現在の動作モード（実行中、中断中など）。 | 列挙型 | `debug_state` |
-| ブレークポイントリスト | 設定されているブレークポイントのアドレス一覧。昇順ソート済みの固定長配列（`FB_CONF_DEBUG_MAX_BREAKPOINTS` 件）として保持し、実行時の判定は `fireball::flat_set_view<address>` の `contains()` で行う。判定は「そのPCが含まれるか」であって値の取得ではないため、値列を持たない集合ビューを用いる（[静的コンテナ語彙](../../tier1_core/system_containers.md)）。 | 固定長配列 + 集合ビュー | `{META_NoStdVector}` `{FlatViewNarrowing}` |
+| ブレークポイントリスト | 設定されているブレークポイントのアドレス一覧。昇順ソート済みの固定長配列（`FB_CONF_DEBUG_MAX_BREAKPOINTS` 件）として保持し、実行時の判定は `fireball::flat_set_view<address>` の `contains()` で行う。 | 固定長配列 + 集合ビュー | `{META_NoStdVector}` `{FlatViewNarrowing}` |
+| RSPパケットバッファ | フレーミングされた 1 パケットの ASCII ペイロード | 固定長配列 | 256 Bytes (`FB_CONF_RSP_PACKET_MAX`) |
 | プロファイラバッファ | サンプリングされたPC頻度とホットスポット統計。 | 固定長配列 | `{Debug_Integrated}` `{META_NoStdVector}` |
 | `last_stop_reason` | 直近の停止要因。 | ID値 | 信号番号等 |
 
@@ -58,10 +66,17 @@ GDB等の外部クライアントに提示する WASM 仮想レジスタ番号�
 
 ### 4.1 アルゴリズム
 <!-- traceability: {DebuggerLabelTableSwitch} {RSPMinimalSet} {Debug_Integrated} -->
-- **コマンド消費**: `poll()` によりコマンドキューから解析済みコマンドを取り出し、実行コンテキストに対して操作を行う。
-- **インタープリタ・フォールバック実行**: デバッガアタッチ中は JIT キャッシュを無効化し、インタープリタのハンドラテーブルをデバッグ用テーブル（`debug_handler_table`）へ切り替えて 1 命令ずつステップ実行またはブレークポイントまで連続実行する。 `{DebuggerLabelTableSwitch}`
-- **ステップ実行**: インタープリタを「1命令実行」モードで呼び出し、実行後に `Stopped` 状態へ遷移し、HAL層へ停止理由（SIGTRAP）を通知する。 `{RSPMinimalSet}`
-- **プロファイリング & 動的テスト**: 各ステップまたはタイマー割り込み契機で実行中 PC をサンプリング記録し、外部ツール（GDB monitor コマンド等）からプロファイルサマリを出力する。また特定メモリアドレスへの動的アサーションを検証する。 `{Debug_Integrated}`
+1. **パケット受信とチェックサム検証**:
+   - `$` 文字でパケット開始を検知し、ASCII 文字を受信バッファへ蓄積しつつ算術合計（modulo 256）を計算。
+   - `#` に続く 2 桁の 16 進チェックサムを検証し、一致時は ACK (`+`)、不一致時は NAK (`-`) を返却。
+2. **コマンドディスパッチ**:
+   - パースしたコマンド（`?`, `g/G`, `m/M`, `c`, `s`, `Z0/z0` 等）を `debug_command` としてディスパッチ。
+3. **インタープリタ・フォールバック実行**:
+   - デバッガアタッチ中は JIT キャッシュを無効化し、インタープリタのハンドラテーブルをデバッグ用テーブル（`debug_handler_table`）へ切り替えて 1 命令ずつステップ実行またはブレークポイントまで連続実行する。 `{DebuggerLabelTableSwitch}`
+4. **ステップ実行**:
+   - インタープリタを「1命令実行」モードで呼び出し、実行後に `Stopped` 状態へ遷移して停止理由（SIGTRAP）を通知。 `{RSPMinimalSet}`
+5. **プロファイリング & 動的テスト**:
+   - 実行中 PC をサンプリング記録し、外部ツールへプロファイルサマリを出力。メモリアサーションを検証。 `{Debug_Integrated}`
 
 #### デバッガ・インタープリタ結合コンセプトコード (`../concepts/debugger_concept.py`)
 デバッガとインタープリタの結合、GDB RSP パケット処理、統一スタック検査、プロファイラサンプリングの参照実装：

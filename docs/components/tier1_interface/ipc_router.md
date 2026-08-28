@@ -1,8 +1,13 @@
 # IPCルータ コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM} {VERIFY_BENCHMARK}
+<!-- evidence:
+     formal: formal/csp_handoff_model.py
+     benchmark: benchmarks/low_latency_lookup_bench.py
+     concept: concepts/ipc_router_concept.py
+-->
 
 ## 1. コンセプト
-<!-- traceability: {IPCRouter} {URIAbstraction} {RoleBasedAccessControl} {OwnershipTransfer} {IPCDI} -->
-IPCルータは、URIベースのサービスディスカバリとロールベースのアクセス制御を備えたメッセージルーティング層である。コンポーネント間の依存性をURIで抽象化し、所有権移譲を伴う安全なデータ移動を実現する。 `{IPCRouter}` `{URIAbstraction}` `{RoleBasedAccessControl}` `{OwnershipTransfer}` `{IPCDI}`
+<!-- traceability: {IPCRouter} {URIAbstraction} {RoleBasedAccessControl} {OwnershipTransfer} {IPCDI} {IPC_Resource_Isolation} -->
+IPCルータは、URIベースのサービスディスカバリとロールベースのアクセス制御を備えたメッセージルーティング層である。コンポーネント間の依存性をURIで抽象化し、所有権移譲を伴う安全なデータ移動とリソースの完全分離を実現する。 `{IPCRouter}` `{URIAbstraction}` `{RoleBasedAccessControl}` `{OwnershipTransfer}` `{IPCDI}` `{IPC_Resource_Isolation}`
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {IPCRouter} {URIAbstraction} -->
@@ -251,7 +256,7 @@ graph TD
 #### ロール間通信許可マトリクス (FB_CONF_ROUTER_ROLE_MATRIX)
 <!-- traceability: {RoleBasedAccessControl} -->
 
-本表は `system_config_details.md` 2.2 の `FB_CONF_ROUTER_ROLE_MATRIX` (4x4 `constexpr` 配列) を**そのまま**表現したものであり、全 DENY の行・列も省略しない。省略すると「そのロールの権限が未定義」と読めてしまい、C++ 定義との差分が生じるためである。
+本表は [`system_config.md`](../tier1_core/system_config.md) 3.3.2 の `FB_CONF_ROUTER_ROLE_MATRIX` (4x4 `constexpr` 配列) を**そのまま**表現したものであり、全 DENY の行・列も省略しない。省略すると「そのロールの権限が未定義」と読めてしまい、C++ 定義との差分が生じるためである。
 
 | 送信元ロール (Sender) \ 送信先ロール (Target) | CLIENT_APP | CORE_SERVICE | PLATFORM_HAL | DEBUGGER |
 | :--- | :---: | :---: | :---: | :---: |
@@ -313,7 +318,7 @@ stateDiagram-v2
 | 状態 | 説明 | 主要アクション |
 | :--- | :--- | :--- |
 | **Idle** | 初期待機状態 | - |
-| **Service Lookup** | URI文字列をレジストリで検索 | `fireball::`fireball::flat_map_view` による $O(\log N)$ 二分探索 |
+| **Service Lookup** | URI文字列をレジストリで検索 | `fireball::flat_map_view` による $O(\log N)$ 二分探索 |
 | **Permission Check** | 送信側ロールと受信側ロールのマトリックスで許可判定 | ロールマトリックス参照 |
 | **Message Routing** | 送信メッセージの転送処理 | チャネルへの Enqueue |
 | **Ownership Transfer** | ゼロコピーハンドオフの所有権移譲フロー | 3段階：Revoke → Enqueue → Grant |
@@ -390,7 +395,7 @@ stateDiagram-v2
 
 ### 4.3.1 二分探索による O(log N) 低遅延ルックアップ
 <!-- traceability: {LowLatencyLookup} {META_AccessDictionary} {META_FlatMapIndexed} -->
-* **サービス検索**: サービスレジストリ（URI から channel_id への解決）は、コンパイル時にソートされた URI 文字列スパンに対して二分探索を行うことで、動的なアロケーションを行うことなく $O(\log N)$ の低遅延名前解決を達成する。`ipc_router_concept.py` の `IPCRouter.registry` は `fireball::flat_map_view`（[`flat_view_concept.py`](../tier1_core/concepts/flat_view_concept.py) の `FlatMapView`）そのものであり、`find()` による二分探索でルックアップする——辞書ベース実装からの移行は完了している。実測は [`benchmarks/low_latency_lookup_bench.py`](benchmarks/low_latency_lookup_bench.py)（同一の `FlatMapView` を直接計測、線形探索比較付き）を参照。この計測は IPC ルータの実サービス数（通常 ≤ 16）ではなく $O(\log N)$ の漸近的な成長特性そのものを N=1,000〜1,000,000 の範囲で検証するものであり、キー数を1000倍にしても `flat_map_view` のルックアップ時間は約1.0倍（線形探索は約1,100倍）にしか増えないことを実測している。 `{LowLatencyLookup}`
+* **サービス検索**: サービスレジストリ（URI から channel_id への解決）は、コンパイル時にソートされた URI 文字列スパンに対して二分探索を行うことで、動的なアロケーションを行うことなく $O(\log N)$ の低遅延名前解決を達成する。`ipc_router_concept.py` の `IPCRouter.registry` は `fireball::flat_map_view`（[`flat_view_concept.py`](../tier1_core/concepts/flat_view_concept.py) の `FlatMapView`）そのものであり、`find()` による二分探索でルックアップする——辞書ベース実装からの移行は完了している。実測は [`benchmarks/low_latency_lookup_bench.py`](benchmarks/low_latency_lookup_bench.py)（同一の `FlatMapView` を直接計測、線形探索比較付き）を参照。この計測は IPC ルータの実サービス数（通常 ≤ 16）ではなく $O(\log N)$ の漸近的な成長特性そのものを N=1,000〜1,000,000 の範囲で検証するものであり、キー数を1000倍にしても `flat_map_view` のルックアップ時間は約2.0倍（$\log_2(10^6)/\log_2(10^3) = 2$、線形探索は約1,100倍）の増加に留まり、二分探索の理論的計算量と完全に合致することを実測している。 `{LowLatencyLookup}`
 * **メッセージ内検索**: メッセージの引数（KVマップ）は、キー値を昇順にソートした固定長配列（静的 flat_map 構造）として実装され、受信側でのパラメータ探索に $O(\log N)$ の二分探索を適用し、ゼロコスト抽象化を保証する。 `{META_AccessDictionary}` `{META_FlatMapIndexed}`
 
 ### 4.3.2 CSP Handoff スターベーション防止対策

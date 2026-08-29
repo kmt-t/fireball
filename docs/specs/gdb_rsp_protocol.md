@@ -1,4 +1,4 @@
-# GDB Remote Serial Protocol 物理仕様書 (Supported GDB RSP Protocol)
+# GDB Remote Serial Protocol 物理仕様書 (Supported GDB RSP Protocol) {VERIFY_LLM}
 
 ## 1. 概要と基本思想
 <!-- traceability: {DebuggerLabelTableSwitch} {Debug_Integrated} {META_ZeroCostAbstraction} -->

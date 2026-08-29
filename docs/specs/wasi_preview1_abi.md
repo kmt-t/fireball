@@ -1,4 +1,7 @@
-# WASI Preview 1 ABI 物理仕様書 (Supported WASI Preview 1 ABI)
+# WASI Preview 1 ABI 物理仕様書 (Supported WASI Preview 1 ABI) {VERIFY_FORMAL}
+<!-- evidence:
+     formal: formal/wasi_lifecycle_model.py
+-->
 
 ## 1. 概要と基本思想
 <!-- traceability: {Type_Vocabulary} {TypeSafeMessaging} {Challenge_IpcQueueStarvation} {META_ZeroCostAbstraction} -->

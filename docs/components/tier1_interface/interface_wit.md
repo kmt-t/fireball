@@ -1,6 +1,7 @@
-# WIT インターフェイス仕様書 (WASI 準拠版) {VERIFY_WIT} {VERIFY_LLM}
+# WIT インターフェイス仕様書 (WASI 準拠版) {VERIFY_WIT} {VERIFY_LLM} {VERIFY_FORMAL}
 <!-- evidence:
      wit: ../tier2_runtime/wit/execution_context.wit
+     formal: formal/wit_resource_lifecycle_model.py
 -->
 
 ## 1. 目的

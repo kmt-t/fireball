@@ -1,4 +1,7 @@
-# サービス コンポーネント設計書 {VERIFY_LLM}
+# サービス コンポーネント設計書 {VERIFY_LLM} {VERIFY_FORMAL}
+<!-- evidence:
+     formal: formal/service_fault_isolation_model.py
+-->
 
 ## 1. コンセプト
 <!-- traceability: {META_FaultIsolation} {MemoryIsolation} {IPCRouter} -->
@@ -44,10 +47,10 @@ graph TD
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
-<!-- traceability: {META_FaultIsolation} {IPCRouter} {SelfReboot_via_Event} -->
-- **サービス分離**: 各サービスは独立したタスクとして動作し、IPCルータを介してゼロコピーで通信する。 `{META_FaultIsolation}`
+<!-- traceability: {META_FaultIsolation} {IPCRouter} {SelfReboot_via_Event} {ServiceSelfReboot} {FaultTolerant} -->
+- **サービス分離**: 各サービスは独立したタスクとして動作し、IPCルータを介してゼロコピーで通信する。タスク単位の障害局所化（`{META_FaultIsolation}`）と自己再起動（`{SelfReboot_via_Event}`）を組み合わせることで、単一サービスの異常終了が他サービスへ波及せず、かつ自律的に復旧するフォールトトレラント設計を実現する。 `{META_FaultIsolation}` `{FaultTolerant}`
 - **WASI呼び出し**: ゲストからのWASIシステムコールを、HALのIPCコマンドへ変換して転送する。 `{IPCRouter}`
-- **自己再起動**: 異常終了したサービスは、IPCルータまたは上位マネージャからの障害イベント通知を契機として自律的に初期化・再起動される。 `{SelfReboot_via_Event}`
+- **自己再起動**: 異常終了したサービスは、IPCルータまたは上位マネージャからの障害イベント通知を契機として自律的に初期化・再起動される。TCBスロットの状態をリセットし、当該サービスのみを再初期化する（他サービスやシステム全体への波及はない）。 `{SelfReboot_via_Event}` `{ServiceSelfReboot}`
 
 ### 4.2 状態遷移図
 <!-- traceability: {META_FaultIsolation} {IPCRouter} -->

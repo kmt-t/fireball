@@ -76,6 +76,20 @@ powershell tools/run_all_tests.ps1 -full -backend sakura
 ゲート 8 は **「直したつもりで直っていないこと」** を落とすためのものです。
 形式検証モデルが満たすべき契約は [spec-integrator/docs/formal_model_contract.md](spec-integrator/docs/formal_model_contract.md) を参照。
 
+### 3.1 でっち上げ決定の検知 (`detect-fake-decision`, Advisory)
+
+`spec-integrator detect-fake-decision` は、上記 8 ゲートには含まれない**アドバイザリ専用コマンド**です。「本来コンポーネント単独で決めていい話ではないのに、辻褄合わせでその場のADRとして勝手に決められていないか」を、`{ADR_*}` の決定事項ブロック（`- **決定事項**: {ADR_X}` 形式、および `### ADR-<id>: <title>` 見出し形式の両方）を対象に以下 3 パターンでスキャンし、`reports/fake_decision_report.md` に一覧化します。CI を落とすことはなく、**人間が目視で確認する対象を絞り込むためのもの**です。
+
+1. **孤立ADR**: 他コンポーネントの設計文書から一切参照されていない決定（本当に単一コンポーネント限定の決定か要確認）
+2. **未コミット差分内**: 現在の作業ツリーの差分でその決定事項ブロックが追加/変更されている（Judge/Gate 失敗の帳尻合わせで後付けされていないか要確認）
+3. **選択肢が実質1つ以下、または対抗案が藁人形**: 「選択肢」節の比較検討が実質的に存在しない、または非採用案が採用案に比べ著しく短い
+
+```powershell
+uv run --system-certs --project tools/spec-integrator python -m spec_integrator.cli detect-fake-decision
+```
+
+検知は「でっち上げであることの証明」ではなく「確認する価値がある」ことの目印です。すべての判定は最終的に人間が行ってください。
+
 ---
 
 ## 4. 修正漏れの検知 (Consistency Gate)
@@ -120,5 +134,6 @@ powershell tools/run_all_tests.ps1 -full -backend sakura
 - `reports/doc_risk_report.md`: コンテンツ複雑度・設計リスク・形式検証トリアージレポート
 - `reports/doc_risk_report.json`: **検証義務台帳**。`check` の Obligation Gate が消費する（文書ハッシュを含み、陳腐化を検知する）
 - `reports/doc_judge_report.json`: LLM as a Judge による意味的一貫性監査レポート
+- `reports/fake_decision_report.md` / `.json`: `detect-fake-decision` によるでっち上げ決定検知レポート（アドバイザリ、ゲートではない）
 
 これらのレポートは検証の**入力**でもある。手で編集してはならない。

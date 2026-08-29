@@ -1,4 +1,7 @@
-# WASM 命令セット物理仕様書 (Supported WASM Instruction Set)
+# WASM 命令セット物理仕様書 (Supported WASM Instruction Set) {VERIFY_FORMAL}
+<!-- evidence:
+     formal: formal/wasm_control_flow_model.py
+-->
 
 ## 1. 概要と適用方針
 <!-- traceability: {ThreadedInterpreter} {JIT_CopyAndPatch} {Wasm32Only} {META_ZeroCostAbstraction} -->

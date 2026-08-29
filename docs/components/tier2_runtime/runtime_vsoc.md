@@ -107,7 +107,7 @@ vSoCの動作パラメータを定義する。 `{META_ConfigurableSystem}`
 ### 4.1 アルゴリズム
 <!-- traceability: {ThreadedInterpreter} {JIT_CopyAndPatch} {Challenge_ApproximateYield} {JIT_Safepoint} {Debugger_Jit_Flush} {ContextPointerRegister} -->
 - **実行エンジン委譲 (exec_trace)**: vSoCは `step()` で現在のPCに対応する `exec_trace`（`void __fastcall (const uint8_t* ip, execution_context* stack_bot, vsoc_runtime* env)`）を呼び出す。 `exec_trace` はインタープリタのディスパッチャまたはJITコードを指し、`__fastcall` 呼び出し規約（R0=IP, R1=stack_bot, R2=ENV, R3=scratch）によってレジスタ上で高速に実行エンジンへ制御を委譲する。呼び出し側は実行エンジンの種別を意識する必要がない。 `{ThreadedInterpreter}` `{JIT_CopyAndPatch}` `{ContextPointerRegister}`
-- **概算Yield**: 監視対象の `yield_threshold` を基準に `co_yield` を発行する。 `{Challenge_ApproximateYield}`
+- **概算Yield**: 監視対象の `yield_threshold` を基準に `co_yield` を発行する。閾値のスコープ（タスク単位/グローバル）、精度キャリブレーション、スターベーション対策は `{Challenge_ApproximateYield}` の定義どおり「検討中」の未解決課題である。 `{Challenge_ApproximateYield}`
 - **デバッグ連携**: `step()` 前後で Debugger を呼び出し、HAL層からのコマンドを処理する。
 - **JIT Safepoint (非同期割込対応)**: `{JIT_Safepoint}`
     - JIT生成されるネイティブコードのループバック点（バックエッジ）に、ソフトウェアフラグ（またはタイマ割込状況）をチェックし、必要に応じて `executor_loop` へ強制フォールバックするフック（Safepoint）を埋め込む。これにより、JIT実行中の非同期ブレークポイント（Ctrl+C等）への応答性を担保する。

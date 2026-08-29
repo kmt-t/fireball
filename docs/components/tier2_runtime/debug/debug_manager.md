@@ -6,17 +6,17 @@
 
 ## 1. コンセプト
 <!-- traceability: {RSPMinimalSet} {DebuggerLabelTableSwitch} {MemoryIsolation} {Debug_Standard_Env} {RSP_Transport_Selectable} {Debug_Integrated} -->
-デバッガは、VSCode等の外部ツールからのデバッグを可能にするため、GDB Remote Serial Protocol (RSP) に基づく実行制御を行う。標準環境として VSCode, UART, J-Link をサポートする。また `{Debug_Integrated}` に準拠し、GDB RSP制御に加えて、**実行時プロファイラ機能（ホットスポットサンプリングや実行頻度計測）** および **動的テストツール機能（命令トレース・実行時メモリ/レジスタアサーション）** を内蔵する。RSPパケットの解析はHAL層で行われ、デバッガはHALから供給されるコマンドキューを消費して実行状態を制御する。リソース制約に対応するため、デバッグ中はJITを無効化し、インタープリタ実行にフォールバックする設計を採用する。 `{RSPMinimalSet}` `{DebuggerLabelTableSwitch}` `{MemoryIsolation}` `{Debug_Standard_Env}` `{RSP_Transport_Selectable}` `{Debug_Integrated}`
+デバッガは、VSCode等の外部ツールからのデバッグを可能にするため、GDB Remote Serial Protocol (RSP) に基づく実行制御を行う。標準環境として VSCode, UART, J-Link をサポートする。また `{Debug_Integrated}` に準拠し、GDB RSP制御に加えて、**実行時プロファイラ機能（ホットスポットサンプリングや実行頻度計測）** および **動的テストツール機能（命令トレース・実行時メモリ/レジスタアサーション）** を内蔵する。RSPパケットのフレーミング・チェックサム検証はHAL層で行われ、デバッガはHALから供給される`debug_command`キューを消費し、GDBコマンドの構文解析・実行制御・レスポンス生成を行う。リソース制約に対応するため、デバッグ中はJITを無効化し、インタープリタ実行にフォールバックする設計を採用する。 `{RSPMinimalSet}` `{DebuggerLabelTableSwitch}` `{MemoryIsolation}` `{Debug_Standard_Env}` `{RSP_Transport_Selectable}` `{Debug_Integrated}`
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {RSPMinimalSet} -->
-本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属し、vSoC (`runtime_vsoc.md`) から分解されたデバッグ状態制御、プロファイラ集計、ブレークポイント管理、および GDB RSP パケットのフレーミング・構文解析・レスポンス生成を担当する。具象的なプロトコル仕様は [GDB RSP 物理仕様書 (`docs/specs/gdb_rsp_protocol.md`)](../../../specs/gdb_rsp_protocol.md) を正本とする。 `{META_3TierSeparation}` `{RSPMinimalSet}`
+本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属し、vSoC (`runtime_vsoc.md`) から分解されたデバッグ状態制御、プロファイラ集計、ブレークポイント管理、および HAL からフレーミング済みで供給される GDB RSP コマンドの構文解析・レスポンス生成を担当する（パケットのフレーミング・チェックサム検証自体は HAL 層の責務）。具象的なプロトコル仕様は [GDB RSP 物理仕様書 (`docs/specs/gdb_rsp_protocol.md`)](../../../specs/gdb_rsp_protocol.md) を正本とする。 `{META_3TierSeparation}` `{RSPMinimalSet}`
 
 ## 3. 静的モデル
 
 ### 3.1 データ構造
 - **`Debugger`**: GDB RSPプロプライエタリな制御ロジック、デバッグ状態、およびブレークポイント管理をカプセル化した主要クラス。
-- **`RspParser` / `RspSerializer`**: UART等からのバイトストリーム受信、`$` から `#` までのパケットフレーミング、チェックサム計算、およびレスポンス生成を行うクラス。
+- **`RspParser` / `RspSerializer`**: HAL層でフレーミング・チェックサム検証済みの `debug_command` を受け取り、GDBコマンドの構文解析（例: `g`, `m addr,len`, `Z0,addr,kind`）およびレスポンスペイロードの生成を行うクラス。パケットの生バイト受信・フレーミング・チェックサム計算自体は HAL 層 (`platform_hal.md`) の責務であり、本クラスはその対象外である。
 - **`Profiler` / `DynamicTestTool`**: 命令実行サンプリングカウンタ、PC実行頻度マップ、および動的アサーションフックテーブル。 `{Debug_Integrated}`
 - **`debug_config`**: 最大ブレークポイント数やポート番号などの不変の設定。
 
@@ -25,7 +25,7 @@
 graph TD
     subgraph Debugger_Layer
         Engine[Debugger Engine]
-        RspParser[RSP Packet Parser / Serializer]
+        RspParser[GDB Command Parser / Response Serializer]
         Profiler[Profiler & Test Tool Engine]
     end
 
@@ -66,11 +66,10 @@ GDB等の外部クライアントに提示する WASM 仮想レジスタ番号�
 
 ### 4.1 アルゴリズム
 <!-- traceability: {DebuggerLabelTableSwitch} {RSPMinimalSet} {Debug_Integrated} -->
-1. **パケット受信とチェックサム検証**:
-   - `$` 文字でパケット開始を検知し、ASCII 文字を受信バッファへ蓄積しつつ算術合計（modulo 256）を計算。
-   - `#` に続く 2 桁の 16 進チェックサムを検証し、一致時は ACK (`+`)、不一致時は NAK (`-`) を返却。
+1. **コマンド取得**:
+   - HAL層が `$`〜`#`のパケットフレーミングとチェックサム検証（一致時 ACK (`+`)、不一致時 NAK (`-`)）を完了させた上で供給する `debug_command` を、コマンドキューから取得する。
 2. **コマンドディスパッチ**:
-   - パースしたコマンド（`?`, `g/G`, `m/M`, `c`, `s`, `Z0/z0` 等）を `debug_command` としてディスパッチ。
+   - 取得したコマンド（`?`, `g/G`, `m/M`, `c`, `s`, `Z0/z0` 等）の GDB コマンド構文を解析し、ディスパッチする。
 3. **インタープリタ・フォールバック実行**:
    - デバッガアタッチ中は JIT キャッシュを無効化し、インタープリタのハンドラテーブルをデバッグ用テーブル（`debug_handler_table`）へ切り替えて 1 命令ずつステップ実行またはブレークポイントまで連続実行する。 `{DebuggerLabelTableSwitch}`
 4. **ステップ実行**:

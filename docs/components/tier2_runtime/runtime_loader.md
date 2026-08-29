@@ -1,6 +1,7 @@
-# WASMローダ コンポーネント設計書 {VERIFY_LLM}
+# WASMローダ コンポーネント設計書 {VERIFY_LLM} {VERIFY_FORMAL}
 <!-- evidence:
      concept: concepts/loader_concept.py
+     formal: formal/loader_verification_model.py
 -->
 
 ## 1. コンセプト

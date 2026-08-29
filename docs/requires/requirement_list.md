@@ -53,7 +53,7 @@ graph LR
 | `{ROMParsing}` | WASMモジュールをRAMに展開せず、ROM上のデータを直接解析・実行する (Zero Copy Loading)。 | 高 | テスト |
 | `{MemoryBoundaryCheck}` | メモリアクセス時の境界チェックを強制し、隔離性を保証する。 | 高 | テスト |
 | `{WasmPageAlignment}` | メモリ割り当てをWASMページ単位（64KB）で行い、アドレス変換を効率化する。 | 中 | レビュー |
-| `{UnifiedAccessModel}` | 物理、論理、共有メモリの全アクセスをvMMIO層に一本化し、セキュリティを一律化する。 | 高 | レビュー |
+| `{UnifiedAccessModel}` | 物理・共有メモリへの全アクセスをvMMIO層（PTE許可テーブル）に一本化してセキュリティを標準化する。ゲスト専用RAM（論理メモリ）はレイテンシ最優先のため`FastAddressCheck`による独立した高速境界チェック経路とし、vMMIO層の対象外とする。 | 高 | レビュー |
 | `{Wasm32Only}` | MVP命令セットのみをサポートし、浮動小数点演算を除外してリソースを削減する。 | 高 | テスト |
 | `{FastAddressCheck}` | ゲストアドレスの境界チェックをサイズ比較の単一命令で高速化し、境界外は即座にトラップする（黙ったラップアラウンドは不可）。 | 中 | レビュー |
 | `{vMMIO_Isolation}` | vMMIO空間へのアクセスのみをデバイスI/Oとして許可し、メモリ安全性を確保する。 | 高 | テスト |
@@ -195,7 +195,7 @@ graph LR
 | `{Challenge_CspHandoffStarvation}` | COOS の CSP Handoff 連鎖が特定のタスクセット間で閉じ、他タスクが実行機会を失うスターベーションリスク。緩和策は `FB_CONF_MAX_CONSECUTIVE_HANDOFFS` による連鎖の有界化。 | 検討中 |
 | `{Challenge_IpcQueueStarvation}` | IPCルータの有界メールボックスにおいて、特定の送信側がスロット獲得競争に繰り返し敗れて Rollback を受け続けるスターベーションリスク。CSP Handoffとは別機構の課題であり、緩和策はキュー長・再送方針の調整。 | 検討中 |
 | `{Challenge_DebuggerResource}` | 極小メモリ環境でのデバッグ用バッファ確保とJIT併用の制約。 | 検討中 |
-| `{ADR_ScalableCodeOffset}` | 32/64ビット境界を越えるJITコードオフセットの表現形式決定。 | 決定済 |
+| `{ADR_ScalableCodeOffset}` | コードキャッシュ拡張時の 16 ビット `code_offset` 上限（64KB）を越えるための表現形式決定。 | 決定済 |
 | `{ADR_SafeQueuingOnHotMiss}` | ホットスポット検出時の二重コンパイル要求防止策。 | 決定済 |
 | `{ADR_TosCacheAsymmetry}` | スタックトップキャッシュ（`R4`/`R5`）を JIT トレース内部に限定し、インタープリタは保持しない非対称規約の採用。 | 決定済 |
 | `{ADR_RendezvousChannel}` | CSP チャネルをバッファなしの純粋同期ランデブーとする決定（送信側は相手が現れるまで値を保持したまま BLOCK）。 | 決定済 |

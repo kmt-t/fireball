@@ -1,6 +1,7 @@
-# ロギング コンポーネント設計書 {VERIFY_LLM}
+# ロギング コンポーネント設計書 {VERIFY_LLM} {VERIFY_FORMAL}
 <!-- evidence:
      concept: concepts/logging_concept.py
+     formal: formal/logging_flush_model.py
 -->
 
 ## 1. コンセプト
@@ -130,7 +131,7 @@ sequenceDiagram
 | :--- | :--- |
 | 機能概要 | 発生したイベントを、レベルと辞書オフセット形式で記録する。 |
 | シグネチャ | `auto log_event(level: uint8_t, offset: uint32_t, args: std::span<const uint32_t, 4>) -> log_result_t` |
-| 引数 | `level`: ログレベル重要度<br>`offset`: 辞書オフセット（32bit）<br>`args`: ログパラメータとなる数値配列（最大4要素の `std::span`） |
+| 引数 | `level`: ログレベル重要度<br>`offset`: 辞書オフセット（API上は `uint32_t` で受け取るが、IPC送信時は下記 IPC 不変条件のとおり `kv_pair` の識別キー幅である24bitに収める）<br>`args`: ログパラメータとなる数値配列（最大4要素の `std::span`） |
 | 戻り値 | `log_result_t` (常に `SUCCESS` を返し、バッファ満杯時は最古ログを自動上書きしてシステムの実行継続性を最優先する) |
 | 期待する結果 | 正常：ログ情報がリングバッファにキューイングされる。 |
 
@@ -147,7 +148,7 @@ sequenceDiagram
 <!-- traceability: {DictionaryBasedIPC} -->
 - **URI**: `fireball://logging/system/0`
 - **メッセージ形式**: Key-Valueプロトコル。 `level`, `dict_offset`, `arg0`〜`arg3` を含む。 `{DictionaryBasedIPC}`
-- **不変条件**: 辞書オフセットは 32bit、引数は各 32bit とする。
+- **不変条件**: 辞書オフセットは `kv_pair`（`ipc_router.md` §3.3）の識別キー幅に合わせ 24bit、引数は各 32bit とする。24bit（最大16MB）は本プロジェクトの ROM 辞書サイズに対して十分な範囲である。
 
 ## 6. 制約達成の方策
 

@@ -6,7 +6,7 @@
 
 ## 1. コンセプト
 <!-- traceability: {META_RestrictedPhysicalAccess} {vMMIO_TrapAndEmulate} {PhysicalPassthrough} {DynamicMmap} {UnifiedAccessModel} {FastAddressCheck} {Fast_Path_GPIO} {META_FlatMapIndexed} -->
-vMMIO (Virtual Memory-Mapped I/O) は、WASMゲストとホスト間の**すべてのデータ交換**を仲介する統一的なアクセス層である。物理レジスタ（GPIO等）、共有メモリ、システムコール用バッファなど、ホスト-ゲスト間境界を横切るアクセスはすべてvMMIO空間を経由する。
+vMMIO (Virtual Memory-Mapped I/O) は、ホストが仲介するリソース（物理レジスタ（GPIO等）、共有メモリ、システムコール用バッファなど）へのアクセスを統一的に扱うアクセス層である。ホスト-ゲスト間境界を横切るアクセスのうち、vMMIOアドレス空間（Bit 31 == 1、下記 Tier 2/3）を経由するものはすべてこの層で仲介される。一方、ゲスト専用RAM（Tier 1, Bit 31 == 0）はvMMIO管理対象外とし、境界チェックのみで完結する高速バイパス経路を別途持つ（詳細は後述）。
 
 WASM ゲストのリニアメモリは、WebAssembly 標準仕様に準拠して **64KB ページ単位 (65,536 bytes)** でページング・管理・拡張（`memory.grow`）される論理空間（`N * 64KB`）である。ただし、RAM < 64KB の極小組込み環境（Cortex-M 等）に適合するため、物理実装としては **64KB に満たない部分ページ（Sub-64KB / Partial Page: 例 8KB, 16KB）** の割り当てを許容し、境界超過アクセスを即座にトラップする設計をとる。一方、ホスト/デバイス側の vMMIO 領域は **1ページ（4KB）** 単位で管理される。 `{META_RestrictedPhysicalAccess}` `{vMMIO_TrapAndEmulate}` `{PhysicalPassthrough}` `{DynamicMmap}` `{UnifiedAccessModel}`
 
@@ -28,7 +28,7 @@ FlatMap 単体での探索は $O(\log N)$（またはハッシュ探索）とな
    - 仮想ページ番号（20-bit: `vpn = raw >> 12`）の全ビットを 4-bit（16スロット）に均等拡散する Folding XOR Hash `tlb_idx = (vpn ^ (vpn >> 4) ^ (vpn >> 8) ^ (vpn >> 12) ^ (vpn >> 16)) & 15` を算出し、TLBに一撃でアクセスする。ヒット時は権限チェックを通過した後に即時実行する。 `{META_RestrictedPhysicalAccess}`
    - **全ビット拡散**: FC[31:28] や中間ページ番号ビット、下位ページ番号ビットのすべてが 4-bit 幅で折り畳まれるため、FC 間やページ番号の変動に対して TLB スロットが均等に分散する。
 
-セキュリティモデルは**PTEに埋め込まれた権限フィールドが唯一のゲート**である。アクセス権限は PTE に保持され、ルックアップと権限チェックを1パスで完結させる。アクセス特性に応じてセキュリティゲートを以下の3層に階層化する。 `{META_RestrictedPhysicalAccess}`
+vMMIO領域（Tier 2/3）のセキュリティモデルは**PTEに埋め込まれた権限フィールドがゲート**である。アクセス権限は PTE に保持され、ルックアップと権限チェックを1パスで完結させる。ゲストRAM（Tier 1）はPTEを経由せず、`FastAddressCheck` による境界チェックのみをゲートとする別経路である。アクセス特性に応じてセキュリティゲートを以下の3層に階層化する。 `{META_RestrictedPhysicalAccess}`
 
 1. **Tier 1 (ゲストRAM)**: ゲスト専用RAM領域（Bit 31 == 0）。`addr >= guest_ram_size` による比較ベースの単一の高速境界チェック（`FastAddressCheck`）のみで高速処理し、境界外は即座にトラップする。
 2. **Tier 2 (静的vMMIO, FC=12)**: コンパイル時にアドレスが確定するコアデバイス（SYSCTL, IPCR, VDMA等）。アドレス `0xC000_0000` は FC=12 に位置する。JIT生成時に許可チェックを行い、許可済みならネイティブコードに直接デバイスキーを埋め込む。

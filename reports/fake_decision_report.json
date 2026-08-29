@@ -1,0 +1,71 @@
+{
+  "generated_at": "2026-08-29T02:09:32.091753+00:00",
+  "flagged_count": 5,
+  "findings": [
+    {
+      "keyword": "ADR-SCHED-001",
+      "is_bracket_keyword": false,
+      "file_path": "components/tier1_core/os_scheduler.md",
+      "line": 295,
+      "reasons": [
+        "他コンポーネントの設計文書から一切参照されていない（孤立ADR。本当に単一コンポーネント限定の決定か確認）",
+        "「選択肢」の実質エントリ数が0件で、対抗案の比較検討が見当たらない"
+      ],
+      "option_count": 0,
+      "referenced_file_count": 0,
+      "in_working_diff": false
+    },
+    {
+      "keyword": "ADR-SCHED-002",
+      "is_bracket_keyword": false,
+      "file_path": "components/tier1_core/os_scheduler.md",
+      "line": 300,
+      "reasons": [
+        "他コンポーネントの設計文書から一切参照されていない（孤立ADR。本当に単一コンポーネント限定の決定か確認）",
+        "「選択肢」の実質エントリ数が0件で、対抗案の比較検討が見当たらない"
+      ],
+      "option_count": 0,
+      "referenced_file_count": 0,
+      "in_working_diff": false
+    },
+    {
+      "keyword": "ADR-SCHED-003",
+      "is_bracket_keyword": false,
+      "file_path": "components/tier1_core/os_scheduler.md",
+      "line": 305,
+      "reasons": [
+        "他コンポーネントの設計文書から一切参照されていない（孤立ADR。本当に単一コンポーネント限定の決定か確認）",
+        "「選択肢」の実質エントリ数が0件で、対抗案の比較検討が見当たらない"
+      ],
+      "option_count": 0,
+      "referenced_file_count": 0,
+      "in_working_diff": false
+    },
+    {
+      "keyword": "ADR_ScalableCodeOffset",
+      "is_bracket_keyword": true,
+      "file_path": "components/tier3_jit/jit_compiler.md",
+      "line": 310,
+      "reasons": [
+        "他コンポーネントの設計文書から一切参照されていない（孤立ADR。本当に単一コンポーネント限定の決定か確認）",
+        "現在の未コミット差分でこの決定事項ブロックが追加/変更されている（Judge/Gate失敗の帳尻合わせで後付けされた記述でないか確認）"
+      ],
+      "option_count": 2,
+      "referenced_file_count": 0,
+      "in_working_diff": true
+    },
+    {
+      "keyword": "ADR_SafeQueuingOnHotMiss",
+      "is_bracket_keyword": true,
+      "file_path": "components/tier3_jit/jit_compiler.md",
+      "line": 318,
+      "reasons": [
+        "他コンポーネントの設計文書から一切参照されていない（孤立ADR。本当に単一コンポーネント限定の決定か確認）",
+        "「選択肢」の実質エントリ数が0件で、対抗案の比較検討が見当たらない"
+      ],
+      "option_count": 0,
+      "referenced_file_count": 0,
+      "in_working_diff": false
+    }
+  ]
+}

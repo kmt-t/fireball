@@ -1,4 +1,7 @@
-# システムコール仕様 コンポーネント設計書 {VERIFY_LLM}
+# システムコール仕様 コンポーネント設計書 {VERIFY_LLM} {VERIFY_FORMAL}
+<!-- evidence:
+     formal: formal/syscall_trap_model.py
+-->
 
 ## 1. 目的
 <!-- traceability: {NativeAPI_Export} -->
@@ -6,14 +9,14 @@
 
 ## 2. 背景
 <!-- traceability: {UnifiedAccessModel} -->
-`fireball_call` は、vMMIO機能全体の**代理実行ラッパー**である。直接vMMIOアドレスにアクセスできないゲスト言語のために、シングル・トラップ命令経由でホストがvMMIO操作を代行する。
+`fireball_call` は、vMMIOアドレス空間（`docs/components/tier2_runtime/runtime_vmmio.md` の Tier 2/3、Bit 31 == 1）に対する**代理実行ラッパー**である。直接vMMIOアドレスにアクセスできないゲスト言語のために、シングル・トラップ命令経由でホストがvMMIO操作を代行する。ゲスト専用RAM（Tier 1, Bit 31 == 0）はこの対象外であり、`FastAddressCheck` による別経路の境界チェックのみで完結する。
 
 ```
 アクセスパスA: guest load/store(vMMIO_addr) → 許可テーブル → 直接物理アクセス
 アクセスパスB: guest fireball_call(id, args) → host代理 → vMMIO → 許可テーブル → 直接物理アクセス
 ```
 
-どちらのパスも最終的にvMMIO許可テーブルを通る。セキュリティゲートは1箇所。 `{UnifiedAccessModel}`
+vMMIOアドレス空間（Tier 2/3）に対しては、どちらのパスも最終的にvMMIO許可テーブルを通る。セキュリティゲートはvMMIO領域内で1箇所に統一される（ゲストRAMのFastAddressCheckとは独立した別ゲート）。 `{UnifiedAccessModel}`
 
 ## 3. `fireball_call` WIT定義
 <!-- traceability: {WIT_Interface_Spec} -->

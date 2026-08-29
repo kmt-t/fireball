@@ -3,7 +3,7 @@ docs/components/tier2_runtime/concepts/interpreter_concept.py
 Reference Concept Implementation: Exhaustive WASM MVP (v1) Stack Interpreter & Android ART Unified Frame
 - Complete WASM MVP opcode set matching docs/specs/wasm_instruction_set.md
 - Bottom-resident execution_context & unified stack frame (CallFrame + ControlFrame + Locals + Operands)
-- Direct-Threaded __fastcall Continuation Passing Style (CPS) 3-argument dispatch (ip, stack_bot, env)
+- Direct-Threaded __fastcall Continuation Passing Style (CPS) 4-argument dispatch (ip, stack_bot, env, local_base)
 - Full stack pruning (Label Arity handling) on br / br_if / br_table
 - 64-bit integer arithmetic, memory loads/stores (8/16/32/64-bit), and type conversions
 - Cooperative safepoint polling at loop headers for deterministic yield

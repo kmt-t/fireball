@@ -55,7 +55,7 @@ graph TD
 WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想CPUレジスタ群として設計する。 `{PositionIndependentCode}` `{ContextPointerRegister}`
 
 **スタックボトム配置と統一スタックフレーム (`{ContextPointerRegister}`)**:
-ARM Cortex-M ターゲットにおいて、`execution_context` は **WASM スタックバッファ（2KB 境界アライン）の最下部（Bottom: offset 0）にインライン配置** され、ハンドラ呼び出しの第2引数（`R1: stack_bot`）として渡される。スタックの成長した長さ（`stack_depth` / `sp_offset`）はコンテキスト内で管理され、`call_frame` や `control_frame`、ローカル変数、オペランドスタックはすべてこの単一スタックバッファ上にインラインで積まれる（Android ART ShadowFrame スタイル）。これにより、`sp` ではなく固定の `stack_bot` をレジスタ渡しすることで、ベース相対ロード（`LDR R0, [R1, #offset]`）による高速アクセスを維持しつつ、**`R3` をゼロコストなスクラッチレジスタとして解放** する。 `{ContextPointerRegister}`
+ARM Cortex-M ターゲットにおいて、`execution_context` は **WASM スタックバッファ（2KB 境界アライン）の最下部（Bottom: offset 0）にインライン配置** され、ハンドラ呼び出しの第2引数（`R1: stack_bot`）として渡される。スタックの成長した長さ（`stack_depth` / `sp_offset`）はコンテキスト内で管理され、`call_frame` や `control_frame`、ローカル変数、オペランドスタックはすべてこの単一スタックバッファ上にインラインで積まれる（Android ART ShadowFrame スタイル）。これにより、`sp` ではなく固定の `stack_bot` をレジスタ渡しすることで、ベース相対ロード（`LDR R0, [R1, #offset]`）による高速アクセスを維持しつつ、**`R3` をローカル変数基底ポインタ `local_base`（第4引数）として直接引き回す**。 `{ContextPointerRegister}` `{JIT_RegisterMapping}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
@@ -108,31 +108,31 @@ ARM Cortex-M ターゲットにおいて、`execution_context` は **WASM スタ
 
 #### オプコードハンドラ / トレース実行（opcode_handler / exec_trace）
 <!-- traceability: {JIT_RuntimeAPI_Fallback} {ContextPointerRegister} {EnvironmentPointer} {JIT_RegisterMapping} {ADR_TosCacheAsymmetry} -->
-命令ハンドラおよびJITトレースの共通実行シグネチャ。継続渡し（Continuation Passing Style: CPS）と `__fastcall` 呼び出し規約により、ホットな実行変数を物理レジスタに直接載せてハンドラ間で引き継ぐ。スタックボトム渡し（`stack_bot`）により `sp` 引数を排除し、3引数シグネチャにスリム化している。 `{JIT_RuntimeAPI_Fallback}` `{ContextPointerRegister}` `{EnvironmentPointer}`
+命令ハンドラおよびJITトレースの共通実行シグネチャ。継続渡し（Continuation Passing Style: CPS）と `__fastcall` 呼び出し規約により、ホットな実行変数を物理レジスタに直接載せてハンドラ間で引き継ぐ。スタックボトム渡し（`stack_bot`）および第4引数ローカル変数基底（`local_base`）渡しにより、4引数シグネチャに統一している。 `{JIT_RuntimeAPI_Fallback}` `{ContextPointerRegister}` `{EnvironmentPointer}` `{JIT_RegisterMapping}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| 実行シグネチャ | `__fastcall` による継続渡し（CPS）3引数シグネチャ | 関数ポインタ | `void (__fastcall *)(const uint8_t* __restrict__ ip, execution_context* __restrict__ stack_bot, vsoc_runtime* __restrict__ env) noexcept` |
-| レジスタ割り当て | ARM AAPCS / `__fastcall` 引数レジスタマッピング | 物理レジスタ | `R0`: `ip`, `R1`: `stack_bot`, `R2`: `env`, `R3`: `scratch` ([アーキテクチャ概要書 §4](../../architecture/architecture_overview.md) 準拠) |
+| 実行シグネチャ | `__fastcall` による継続渡し（CPS）4引数シグネチャ | 関数ポインタ | `void (__fastcall *)(const uint8_t* __restrict__ ip, execution_context* __restrict__ stack_bot, vsoc_runtime* __restrict__ env, uint32_t* __restrict__ local_base) noexcept` |
+| レジスタ割り当て | ARM AAPCS / `__fastcall` 引数レジスタマッピング | 物理レジスタ | `R0`: `ip`, `R1`: `stack_bot`, `R2`: `env`, `R3`: `local_base` ([アーキテクチャ概要書 §4](../../architecture/architecture_overview.md) 準拠) |
 
 WASM オプコードごとのスタック遷移およびハンドラ実装マトリクスは [WASM 命令セット物理仕様書 (`docs/specs/wasm_instruction_set.md`)](../../specs/wasm_instruction_set.md) を参照。
 
 **スタックトップキャッシュ (`R4`/`R5`) を持たない理由 (`{ADR_TosCacheAsymmetry}`)**:
-インタープリタのオプコードハンドラは、オペランドを常に統合スタック上（`[R1, #sp_offset]` 相対）で読み書きし、`R4`/`R5` に TOS/NOS をキャッシュ **しない**。AAPCS の引数レジスタは `R0`〜`R3` の 4 本しかなく、TOS を 4 番目の引数に昇格させると `{ContextPointerRegister}` の再設計で解放したばかりの `R3` スクラッチを再び失うためである。一方 JIT トレースは単一トレース内で `R4`/`R5` を TOS/NOS として占有してよい。この非対称性は、JIT トレース脱出時の `STR` × 2 という有界なコストとして精算される。 `{ADR_TosCacheAsymmetry}` `{JIT_RegisterMapping}`
+インタープリタのオプコードハンドラは、オペランドを常に統合スタック上（`[R1, #sp_offset]` 相対）で読み書きし、`R4`/`R5` に TOS/NOS をキャッシュ **しない**。AAPCS の引数レジスタは `R0`〜`R3` の 4 本しかなく、`(ip, stack_bot, env, local_base)` で使い切っており、TOS を保持する余地がないためである。一方 JIT トレースは単一トレース内で `R4`/`R5` を TOS/NOS として占有してよい。この非対称性は、JIT トレース脱出時の `STR` × 2 という有界なコストとして精算される。 `{ADR_TosCacheAsymmetry}` `{JIT_RegisterMapping}`
 
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
 <!-- traceability: {ThreadedInterpreter} {JIT_RuntimeAPI_Fallback} {Interpreter_LazyJITSwitch} {LowLatencyJIT} {SimpleJITArchitecture} {Challenge_ApproximateYield} {Debug_Integrated} {ContextPointerRegister} {ADR_TosCacheAsymmetry} -->
 - **Threaded Dispatch with Continuation Passing Style (CPS)**: 命令ハンドラを連鎖させるテーブルディスパッチ方式で分岐コストを極小化する。
-  - ハンドラ関数型を `void __fastcall(const uint8_t* ip, execution_context* stack_bot, vsoc_runtime* env) noexcept` に統一。
-  - `ip` (R0), `stack_bot` (R1 `{ContextPointerRegister}`), `env` (R2 `{EnvironmentPointer}`) のホットな変数を `__fastcall` 引数レジスタ上で保持・更新。
-  - スタックの成長長（SP長）を `stack_bot` 内で管理し、`call_frame` / `control_frame` も単一スタック上にインライン構築（Android ART スタイル）することで、Caller-saved な **`R3` を一時計算用スクラッチレジスタとして解放**。 `{ContextPointerRegister}`
+  - ハンドラ関数型を `void __fastcall(const uint8_t* ip, execution_context* stack_bot, vsoc_runtime* env, uint32_t* local_base) noexcept` に統一。
+  - `ip` (R0), `stack_bot` (R1 `{ContextPointerRegister}`), `env` (R2 `{EnvironmentPointer}`), `local_base` (R3 `{ContextPointerRegister}` `{JIT_RegisterMapping}`) のホットな変数を `__fastcall` 引数レジスタ上で保持・更新。
+  - スタックの成長長（SP長）を `stack_bot` 内で管理し、`call_frame` / `control_frame` も単一スタック上にインライン構築（Android ART スタイル）し、`R3` をローカル変数基底ポインタ `local_base` として直接引き回す。 `{ContextPointerRegister}` `{JIT_RegisterMapping}`
   - 非制御命令では `[[clang::musttail]]` による直接末尾ジャンプ（Direct-Threaded Code）を行い、レジスタ上の引数をそのまま次のハンドラへ継続渡し（CPS）する。 `{ThreadedInterpreter}`
 - **JIT コードとの完全な呼び出し規約整合 (Low-Overhead Interop)**:
-  - JIT コンパイラが生成するネイティブトレース（`exec_trace`）も、インタープリタと全く同一の `__fastcall` CPS 3引数シグネチャ（R0=IP, R1=stack_bot, R2=ENV）に従う。
-  - **インタープリタ $\to$ JIT 遷移**: インタープリタから JIT コードへ移行する際、レジスタ上の `(ip, stack_bot, env)` をそのまま渡して `exec_trace` へ直接ジャンプする。インタープリタは TOS/NOS をレジスタに保持しないため、JIT 側が入口でスタックメモリから `R4`/`R5` をロードする（`{ADR_TosCacheAsymmetry}`）。
-  - **JIT $\to$ インタープリタ フォールバック (OSR / Exit)**: JIT トレース内で未サポート命令、トラップ、またはトレース終端に達した場合、レジスタ上の `(ip, stack_bot, env)` をそのまま次のオプコードハンドラに渡して末尾ジャンプ（`BX`）する。**コンテキストの再構築（構造体への退避・復元、レジスタ再配置）は一切発生しない**。ただし JIT 側のみが保持するスタックトップキャッシュ `R4`/`R5`（ダーティな場合）および更新された `sp_offset` については、統合スタック／コンテキスト構造体へ 2〜3 命令（`STR`）で書き戻す。これが JIT ↔ インタープリタ遷移の唯一の極小コストである。 `{JIT_RuntimeAPI_Fallback}` `{LowLatencyJIT}` `{ADR_TosCacheAsymmetry}`
+  - JIT コンパイラが生成するネイティブトレース（`exec_trace`）も、インタープリタと全く同一の `__fastcall` CPS 4引数シグネチャ（R0=IP, R1=stack_bot, R2=ENV, R3=local_base）に従う。
+  - **インタープリタ $\to$ JIT 遷移**: インタープリタから JIT コードへ移行する際、レジスタ上の `(ip, stack_bot, env, local_base)` をそのまま渡して `exec_trace` へ直接ジャンプする。インタープリタは TOS/NOS をレジスタに保持しないため、JIT 側が入口でスタックメモリから `R4`/`R5` をロードする（`{ADR_TosCacheAsymmetry}`）。
+  - **JIT $\to$ インタープリタ フォールバック (OSR / Exit)**: JIT トレース内で未サポート命令、トラップ、またはトレース終端に達した場合、レジスタ上の `(ip, stack_bot, env, local_base)` をそのまま次のオプコードハンドラに渡して末尾ジャンプ（`BX`）する。**コンテキストの再構築（構造体への退避・復元、レジスタ再配置）は一切発生しない**。ただし JIT 側のみが保持するスタックトップキャッシュ `R4`/`R5`（ダーティな場合）および更新された `sp_offset` については、統合スタック／コンテキスト構造体へ 2〜3 命令（`STR`）で書き戻す。これが JIT ↔ インタープリタ遷移の唯一の極小コストである。 `{JIT_RuntimeAPI_Fallback}` `{LowLatencyJIT}` `{ADR_TosCacheAsymmetry}`
 - **WASM命令とRuntime APIの1対1対応**: 各命令ハンドラはスタックボトム相対でオペランド/スタック長を更新し、必要に応じてランタイムAPIを呼び出す。 `{JIT_RuntimeAPI_Fallback}`
 - **ジャンプの高速化 (exec_trace)**: 制御命令（`br`, `br_if` 等）によるジャンプ先を `control_frame` 内の `exec_trace` に保持する。
 - **スタック Pruning (Label Arity対応)**: `br` 命令等の実行時、ジャンプ先の `control_frame` に記録された `結果アリティ` に基づき、スタック上のオペランドを残してスタック長を `保存済みスタック長` まで巻き戻す。これにより、Wasm 規定のスタック整合性を保証する。

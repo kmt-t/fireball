@@ -45,13 +45,13 @@ graph TD
 
 #### コピーアンドパッチエンジン（CopyAndPatchEngine）クラス
 <!-- traceability: {JIT_RegisterMapping} {ContextPointerRegister} {EnvironmentPointer} {ADR_TosCacheAsymmetry} -->
-テンプレートの解決とバイナリ操作をカプセル化する。インタープリタの `opcode_handler` と完全整合する `__fastcall` CPS 3引数呼び出し規約（`R0: ip`, `R1: stack_bot`, `R2: env`）に基づいて設計される。
+テンプレートの解決とバイナリ操作をカプセル化する。インタープリタの `opcode_handler` と完全整合する `__fastcall` CPS 4引数呼び出し規約（`R0: ip`, `R1: stack_bot`, `R2: env`, `R3: local_base`）に基づいて設計される。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
 | テンプレート辞書 | WASM命令に対応するJITテンプレートの検索索引 | アクセス辞書 | `jit_template_map` |
 | 命令テンプレート | WASM命令に対応するネイティブバイナリの雛形 | バイナリビュー | ROM参照（[JIT ステンシルカタログ](../../specs/jit_stencil_catalog.md) 準拠） |
-| レジスタ規約 | JIT トレースとインタープリタ間で共有される物理レジスタ規約 | 規約定義 | `R0-R2: CPS (ip, stack_bot, env)`, `R3: local_base (JIT) / scratch (Interp)`, `R4-R6, R8-R11: assignable pool (R4=TOS, R5=NOS, R6=NNOS, R8=mem_base, R9=mem_size, R10=safepoint)`, `R7: FP (不可侵)` |
+| レジスタ規約 | JIT トレースとインタープリタ間で共有される物理レジスタ規約 | 規約定義 | `R0-R3: CPS (ip, stack_bot, env, local_base)`, `R4-R6, R8-R11: assignable pool (R4=TOS, R5=NOS, R6=NNOS, R8=mem_base, R9=mem_size, R10=safepoint)`, `R7: FP (不可侵)` |
 
 #### JIT トレース物理メモリレイアウト (`jit_trace_header`)
 <!-- traceability: {JIT_LazyChaining} {SimpleJITArchitecture} -->
@@ -297,7 +297,7 @@ JITサブシステムは、以下の2つの独立した設計書に責務を分�
 <!-- traceability: {ADR_ScalableCodeOffset} {ADR_SafeQueuingOnHotMiss} {ADR_TosCacheAsymmetry} {JIT_LazyChaining} -->
 
 - **決定事項**: `{ADR_TosCacheAsymmetry}`
-  - **背景**: JIT トレースはスタックマシンである WASM のオペランドを `R4`/`R5` に TOS/NOS としてキャッシュすると大きく速くなるが、インタープリタのオプコードハンドラは AAPCS 引数レジスタ `R0`〜`R3` を `(ip, stack_bot, env, scratch)` で使い切っており、TOS を保持する余地がない。両者は `__fastcall` CPS シグネチャを共有するため、この差をどう扱うかを決める必要がある。
+  - **背景**: JIT トレースはスタックマシンである WASM のオペランドを `R4`/`R5` に TOS/NOS としてキャッシュすると大きく速くなるが、インタープリタのオプコードハンドラは AAPCS 引数レジスタ `R0`〜`R3` を `(ip, stack_bot, env, local_base)` で使い切っており、TOS を保持する余地がない。両者は `__fastcall` CPS シグネチャを共有するため、この差をどう扱うかを決める必要がある。
   - **選択肢と評価**:
     - 案1: CPS を 4 引数化（`ip, stack_bot, env, tos`）し、インタープリタ側も TOS をレジスタ保持する。遷移コストは真にゼロになるが、`{ContextPointerRegister}` の統合スタック化でせっかく解放した `R3` スクラッチを再び失い、全ハンドラが TOS 不変条件の維持義務を負う。
     - 案2: JIT からも `R4`/`R5` を廃し、両者ともオペランドを統合スタックのメモリ上でのみ扱う。記述は最も単純になるが、スタックマシンに対する唯一かつ最大の最適化余地を捨てることになり、`{LowLatencyJIT}`（WAMR 超え）の達成が困難になる。

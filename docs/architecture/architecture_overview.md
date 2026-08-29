@@ -114,7 +114,7 @@ Fireball の実行コアは、以下の 6 つの物理メカニズムによっ�
 - **物理レイアウト**:
   1. **スタックボトム (`+0x00`)**: `execution_context` 構造体が固定配置される（SP長 `sp_offset`、フレームオフセット `frame_offset`、スタック境界 `sp_boundary`、ハンドラテーブル参照等を保持）。
   2. **スタック中間〜トップ**: `CallFrame`、`Function Locals`、`Operand Stack`、`ControlFrames` が単一の配列上にインラインで積層される。
-- **レジスタ規約**: `R1: stack_bot` が全ハンドラおよびJITトレースへ不変で渡され、`R3` を一時計算用スクラッチとして解放する。 `{ContextPointerRegister}`
+- **レジスタ規約**: `R1: stack_bot` および `R3: local_base` が全ハンドラおよびJITトレースへ渡され、CPS 第1〜第4引数（`ip`, `stack_bot`, `env`, `local_base`）として直接引き継がれる。 `{ContextPointerRegister}` `{JIT_RegisterMapping}`
 
 ### 3.2 Pillar 2: 3段直接 JIT 検索パイプライン (3-Stage Direct JIT Lookup Pipeline)
 <!-- traceability: {SimpleJITArchitecture} {JIT_MultiBuffer_Cache} {FlatViewNarrowing} {META_FlatMapIndexed} {META_BinarySearch} -->
@@ -158,7 +158,7 @@ ARM Cortex-M33 (ARMv8-M Mainline) における物理レジスタの厳格な役�
 | **`R0`** | Argument 1 / Scratch | `ip` (WASM PC) | `ip` (WASM PC) | 継続渡し（CPS）第1引数。現在実行中のバイトコード位置。 |
 | **`R1`** | Argument 2 / Scratch | `stack_bot` | `stack_bot` | 継続渡し（CPS）第2引数。統合スタックボトム基底ポインタ `{ContextPointerRegister}`。 |
 | **`R2`** | Argument 3 / Scratch | `env` | `env` | 継続渡し（CPS）第3引数。ランタイム環境ポインタ `{EnvironmentPointer}`。 |
-| **`R3`** | Argument 4 / Scratch | `scratch` (解放) | **`local_base`** | **ローカル変数基底ポインタ / スクラッチ**。インタープリタではスクラッチ解放、JITでは `local_base`。 |
+| **`R3`** | Argument 4 / Scratch | `local_base` | `local_base` | 継続渡し（CPS）第4引数。ローカル変数基底ポインタ `{ContextPointerRegister}` `{JIT_RegisterMapping}`。 |
 | **`R4`** | Callee-saved | (保全) | **`Assignable Pool 0` (TOS等)** | **役割任意割当レジスタ 0**。スタックトップキャッシュ (TOS) 等。 |
 | **`R5`** | Callee-saved | (保全) | **`Assignable Pool 1` (NOS等)** | **役割任意割当レジスタ 1**。スタック次段キャッシュ (NOS) 等。 |
 | **`R6`** | Callee-saved | (保全) | **`Assignable Pool 2`** | **役割任意割当レジスタ 2**。`select` 使用時は NNOS。 |

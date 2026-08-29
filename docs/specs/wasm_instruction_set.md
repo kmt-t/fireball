@@ -7,7 +7,7 @@
 <!-- traceability: {ThreadedInterpreter} {JIT_CopyAndPatch} {Wasm32Only} {META_ZeroCostAbstraction} -->
 本仕様書は、Fireball Hypervisor（インタープリタおよび Copy-and-Patch JIT コンパイラ）がサポートする **WASM MVP (v1, 32-bit)** 命令セットの物理マトリクスを定義する正本である。
 
-全バイトコードは Cortex-M33（ARMv8-M）ターゲットにおける `__fastcall` 継続渡し（CPS）3引数シグネチャ（`R0: ip`, `R1: stack_bot`, `R2: env`）＋一時スクラッチ（`R3: scratch`）ハンドラ、および JIT Stencil テンプレート（Callee-saved 任意割当プール `R4-R6, R8-R11`（メモリアクセス時は `R8`/`R9` を `mem_base`/`mem_size` に固定）、`R3`: スクラッチ（解放済み）、`R12`: 一時スクラッチ）へのマッピングを一意に確定する。 `{ThreadedInterpreter}` `{JIT_CopyAndPatch}` `{Wasm32Only}` `{META_ZeroCostAbstraction}`
+全バイトコードは Cortex-M33（ARMv8-M）ターゲットにおける `__fastcall` 継続渡し（CPS）4引数シグネチャ（`R0: ip`, `R1: stack_bot`, `R2: env`, `R3: local_base`）ハンドラ、および JIT Stencil テンプレート（Callee-saved 任意割当プール `R4-R6, R8-R11`（メモリアクセス時は `R8`/`R9` を `mem_base`/`mem_size` に固定）、`R3`: `local_base`、`R12`: 一時スクラッチ）へのマッピングを一意に確定する。 `{ThreadedInterpreter}` `{JIT_CopyAndPatch}` `{Wasm32Only}` `{META_ZeroCostAbstraction}`
 
 ---
 

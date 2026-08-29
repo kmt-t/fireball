@@ -14,10 +14,10 @@ Copy-and-Patch pays nothing for this at compile time: the variants are all
 pre-compiled byte sequences, so the extra table costs ROM, not cycles.
 
 Register assignment (Cortex-M33 / AAPCS __fastcall convention):
-    R0  = ip        (WASM PC / bytecode pointer)
-    R1  = stack_bot (stack bottom context pointer `{ContextPointerRegister}`)
-    R2  = env       (runtime environment pointer `{EnvironmentPointer}`)
-    R3  = local_base (WASM local variables base pointer)
+    R0  = ip        (WASM PC / bytecode pointer - Arg 1)
+    R1  = stack_bot (stack bottom context pointer `{ContextPointerRegister}` - Arg 2)
+    R2  = env       (runtime environment pointer `{EnvironmentPointer}` - Arg 3)
+    R3  = local_base (WASM local variables base pointer - Arg 4)
     R4  = TOS       (operand stack top cache)
     R5  = NOS       (operand stack next-of-top cache)
     R6  = NNOS      (operand stack 3rd cache / select)

@@ -78,14 +78,20 @@ powershell tools/run_all_tests.ps1 -full -backend sakura
 
 ### 3.1 でっち上げ決定の検知 (`detect-fake-decision`, Advisory)
 
-`spec-integrator detect-fake-decision` は、上記 8 ゲートには含まれない**アドバイザリ専用コマンド**です。「本来コンポーネント単独で決めていい話ではないのに、辻褄合わせでその場のADRとして勝手に決められていないか」を、`{ADR_*}` の決定事項ブロック（`- **決定事項**: {ADR_X}` 形式、および `### ADR-<id>: <title>` 見出し形式の両方）を対象に以下 3 パターンでスキャンし、`reports/fake_decision_report.md` に一覧化します。CI を落とすことはなく、**人間が目視で確認する対象を絞り込むためのもの**です。
+`spec-integrator detect-fake-decision` は、上記 8 ゲートには含まれない**アドバイザリ専用コマンド**です。「本来コンポーネント単独で決めていい話ではないのに、辻褄合わせで勝手に決められていないか」「ADRタグが付いていない勝手な設計判断が紛れ込んでいないか」を、静的構造スキャンおよび **LLM によるセマンティック監査（`--llm`）** で検知し、`reports/fake_decision_report.md` に一覧化します。CI を落とすことはなく、**人間が目視で確認する対象を絞り込むためのもの**です。
 
 1. **孤立ADR**: 他コンポーネントの設計文書から一切参照されていない決定（本当に単一コンポーネント限定の決定か要確認）
 2. **未コミット差分内**: 現在の作業ツリーの差分でその決定事項ブロックが追加/変更されている（Judge/Gate 失敗の帳尻合わせで後付けされていないか要確認）
 3. **選択肢が実質1つ以下、または対抗案が藁人形**: 「選択肢」節の比較検討が実質的に存在しない、または非採用案が採用案に比べ著しく短い
+4. **ADRタグなしの独断・勝手な決定（Unlabeled Decision）**: 明示的な `{ADR_*}` タグや選択肢の検討なしに、本文中で勝手に仕様・設計方針が決定・固定されている
+5. **LLM セマンティック Fake Decision 監査（`--llm`）**: LLM により、文章中の隠れた独断、辻褄合わせの制約導入、形骸化したトレードオフなどを深層検知
 
 ```powershell
-uv run --system-certs --project tools/spec-integrator python -m spec_integrator.cli detect-fake-decision
+# 静的スキャン（高速・0円）
+uv run --project tools/spec-integrator python -m spec_integrator.cli detect-fake-decision
+
+# LLM セマンティック監査（ユーザー指示時のみ）
+uv run --project tools/spec-integrator python -m spec_integrator.cli detect-fake-decision --llm --backend sakura
 ```
 
 検知は「でっち上げであることの証明」ではなく「確認する価値がある」ことの目印です。すべての判定は最終的に人間が行ってください。

@@ -91,6 +91,16 @@ powershell -ExecutionPolicy Bypass -File tools/run_all_tests.ps1 -full -backend 
 | **8. Consistency Gate** | `spec-consistency.lock` との差分・波及漏れの検知 | **ERROR** (Exit 1) |
 | *(Topology)* | 通信チャネル・メッセージングの静的非巡回性検証 | **ERROR** (Exit 1) |
 
+### アドバイザリ検証: でっち上げ決定検知 (`detect-fake-decision`)
+勝手な独断や辻褄合わせの偽決定（Fake Decision）、および明示的な `{ADR_*}` タグが付いていない暗黙の仕様変更を静的・LLMセマンティック両面から検出します。
+```powershell
+# 静的スキャン（日常・コスト0）
+uv run python -m spec_integrator.cli detect-fake-decision
+
+# LLM セマンティック監査（ユーザー指示時のみ）
+uv run python -m spec_integrator.cli detect-fake-decision --llm --backend sakura
+```
+
 ---
 
 ## エビデンス明示記法（方式A）

@@ -1,67 +1,37 @@
 {
-  "generated_at": "2026-08-29T18:46:40.820470+00:00",
-  "flagged_count": 5,
+  "generated_at": "2026-08-29T22:23:23.835243+00:00",
+  "flagged_count": 2,
   "findings": [
     {
       "keyword": "ADR_SafeQueuingOnHotMiss",
       "is_bracket_keyword": true,
       "file_path": "components/tier3_jit/jit_compiler.md",
       "line": 318,
+      "kind": "EXPLICIT_ADR",
       "reasons": [
         "他コンポーネントの設計文書から一切参照されていない（孤立ADR。本当に単一コンポーネント限定の決定か確認）",
         "「選択肢」の実質エントリ数が0件で、対抗案の比較検討が見当たらない"
       ],
       "option_count": 0,
       "referenced_file_count": 0,
-      "in_working_diff": false
-    },
-    {
-      "keyword": "ADR_IntrusiveTcbList",
-      "is_bracket_keyword": true,
-      "file_path": "components/tier1_core/os_scheduler.md",
-      "line": 298,
-      "reasons": [
-        "現在の未コミット差分でこの決定事項ブロックが追加/変更されている（Judge/Gate失敗の帳尻合わせで後付けされた記述でないか確認）"
-      ],
-      "option_count": 2,
-      "referenced_file_count": 1,
-      "in_working_diff": true
-    },
-    {
-      "keyword": "ADR_CoosPureRoundRobin",
-      "is_bracket_keyword": true,
-      "file_path": "components/tier1_core/os_scheduler.md",
-      "line": 306,
-      "reasons": [
-        "現在の未コミット差分でこの決定事項ブロックが追加/変更されている（Judge/Gate失敗の帳尻合わせで後付けされた記述でないか確認）"
-      ],
-      "option_count": 3,
-      "referenced_file_count": 1,
-      "in_working_diff": true
-    },
-    {
-      "keyword": "ADR_EventDrivenWakeQueue",
-      "is_bracket_keyword": true,
-      "file_path": "components/tier1_core/os_scheduler.md",
-      "line": 315,
-      "reasons": [
-        "現在の未コミット差分でこの決定事項ブロックが追加/変更されている（Judge/Gate失敗の帳尻合わせで後付けされた記述でないか確認）"
-      ],
-      "option_count": 3,
-      "referenced_file_count": 1,
-      "in_working_diff": true
+      "in_working_diff": false,
+      "confidence": "MEDIUM",
+      "snippet": "- **背景**: `COMPILED` 状態のカードで検索ミスが発生した場合、その場で同期コンパイルを行うか、キューイングするか。\n  - **結論**: `Compile Queue` にプッシュし、インタープリタへフォールバックする。\n  - **理由**: 同期コンパイルは実行ループ内での予測不可能なレイテンシ（ジッタ）の原因となるため。"
     },
     {
       "keyword": "ADR_ScalableCodeOffset",
       "is_bracket_keyword": true,
       "file_path": "components/tier3_jit/jit_compiler.md",
       "line": 310,
+      "kind": "EXPLICIT_ADR",
       "reasons": [
         "他コンポーネントの設計文書から一切参照されていない（孤立ADR。本当に単一コンポーネント限定の決定か確認）"
       ],
       "option_count": 2,
       "referenced_file_count": 0,
-      "in_working_diff": false
+      "in_working_diff": false,
+      "confidence": "MEDIUM",
+      "snippet": "- **背景**: 16ビットの `code_offset` をそのまま使用すると、コードキャッシュが64KBに制限される。将来的に外部メモリ等を活用してキャッシュを拡張（例：512KB）する場合、このビット幅がボトルネックとなる。\n  - **選択肢**:\n    - 案1: `code_offset` を32ビットにする。エントリは `flat_map_view<u32, code_of"
     }
   ]
 }

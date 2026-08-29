@@ -6,4 +6,4 @@
   実行モデル全体を跨ぐため Tier 2 Runtime 側を単一の正本とし、ここでは複製しない。
 - [`stack_cache_concept.py`](stack_cache_concept.py): スタックトップキャッシング版ステンシル。
   `{JIT_RegisterMapping}` の実装。素朴なステンシル 23 命令に対し 12 命令
-  （PUSH/POP を完全に消去）。`i32.load` / `i32.store` の境界チェックを含む。
+  （PUSH/POP を完全に消去、ベンチマーク証跡: [`../benchmarks/zero_runtime_overhead_bench.py`](../benchmarks/zero_runtime_overhead_bench.py) 参照）。`i32.load` / `i32.store` の境界チェックを含む。

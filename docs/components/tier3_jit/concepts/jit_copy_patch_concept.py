@@ -2,7 +2,7 @@
 docs/components/tier3_jit/concepts/jit_copy_patch_concept.py
 Reference Concept Implementation: Full-Set Copy-and-Patch JIT Engine & MPU W^X Transaction Protocol
 - Exhaustive binary stencil library matching docs/specs/jit_stencil_catalog.md & wasm_instruction_set.md
-- Multi-dimensional register variants (Depth 0/1/2/3, R3 local_param, R8/R9 mem_base/mem_size, Callee-saved R4-R6, R8-R11)
+- Multi-dimensional register variants (Depth 0/1/2/3, R3 local_base, R8/R9 mem_base/mem_size, Callee-saved R4-R6, R8-R11)
 - Direct relocation patching (RelocImm32, RelocBranch24, RelocOffset8, RelocApi)
 - Hardware-enforced MPU W^X attribute switching protocol (RW_XN <-> RO_X)
 - Comprehensive verification of all supported WASM opcodes
@@ -124,7 +124,7 @@ class CopyPatchJITEngine:
         self.current_write_pos: int = 0
 
         # Exhaustive Stencil Library (Cortex-M33 AAPCS + JIT Register Map)
-        # R0=ip, R1=stack_bot, R2=env, R3=local_param, R4=TOS, R5=NOS, R6=NNOS, R7=FP,
+        # R0=ip, R1=stack_bot, R2=env, R3=local_base, R4=TOS, R5=NOS, R6=NNOS, R7=FP,
         # R8/R9=mem_base/mem_size (pinned only when the trace touches linear memory),
         # R12=intra-call scratch (globals_base pointer, rem/rotl temporaries), R8-R11=assignable pool otherwise
         self.stencils: dict[str, Stencil] = {
@@ -186,7 +186,7 @@ class CopyPatchJITEngine:
             "local_set_d1": Stencil("local_set_d1", ["STR r4, [r1, #0x00]"], "0C 60", {"offset": 0}),
             "local_tee_d1": Stencil("local_tee_d1", ["STR r4, [r1, #0x00]"], "0C 60", {"offset": 0}),
             # R12 (AAPCS intra-call scratch) holds the globals_base pointer only for the
-            # duration of this one stencil -- R3 is local_param now, not general scratch.
+            # duration of this one stencil -- R3 is local_base now, not general scratch.
             "global_get_d0": Stencil("global_get_d0", ["LDR.W r12, [r2, #0x08]", "LDR.W r4, [r12, #0x00]"], "D2 F8 08 C0 DC F8 00 40", {"offset": 1}),
             "global_set_d1": Stencil("global_set_d1", ["LDR.W r12, [r2, #0x08]", "STR.W r4, [r12, #0x00]"], "D2 F8 08 C0 CC F8 00 40", {"offset": 1}),
 
@@ -196,7 +196,7 @@ class CopyPatchJITEngine:
             "i32_mul_d2": Stencil("i32_mul_d2", ["MUL r4, r5, r4"], "05 FB 04 F4", {}),
             "i32_div_s_d2": Stencil("i32_div_s_d2", ["SDIV r4, r5, r4"], "95 FB F4 F4", {}),
             "i32_div_u_d2": Stencil("i32_div_u_d2", ["UDIV r4, r5, r4"], "B5 FB F4 F4", {}),
-            # R12 scratch, not R3 -- R3 is local_param now (see i32_rotl_d2 below too).
+            # R12 scratch, not R3 -- R3 is local_base now (see i32_rotl_d2 below too).
             "i32_rem_s_d2": Stencil("i32_rem_s_d2", ["SDIV r12, r5, r4", "MLS r4, r12, r4, r5"], "95 FB F4 FC 0C FB 14 54", {}),
             "i32_rem_u_d2": Stencil("i32_rem_u_d2", ["UDIV r12, r5, r4", "MLS r4, r12, r4, r5"], "B5 FB F4 FC 0C FB 14 54", {}),
             "i32_and_d2": Stencil("i32_and_d2", ["ANDS r4, r5, r4"], "2C 40", {}),
@@ -237,7 +237,7 @@ class CopyPatchJITEngine:
             "i32_ge_u_d2": Stencil("i32_ge_u_d2", ["CMP r5, r4", "IT HS", "MOVHS r4, #1", "IT LO", "MOVLO r4, #0"], "A5 42 28 BF 01 24 38 BF 00 24", {}),
 
             # --- Linear Memory Access (R8 = mem_base) ---
-            # R3 is local_param (not mem_base) -- see docs/specs/jit_stencil_catalog.md 3.8.
+            # R3 is local_base (not mem_base) -- see docs/specs/jit_stencil_catalog.md 3.8.
             # mem_base/mem_size are pinned in R8/R9 precisely so they never collide with it.
             # The FastAddressCheck bounds check (CMP addr, r9=mem_size; BHS.W <trap>) is NOT part of
             # these stencils -- it needs a runtime-patched branch target (the trace's own trap tail),
@@ -364,7 +364,7 @@ class CopyPatchJITEngine:
         # lifetime of the trace (vsoc_runtime: mem-base @+0x00, mem-size @+0x04 -- see
         # docs/components/tier2_runtime/wit/vsoc_runtime.wit). Loaded once here rather than
         # per-access since neither value can change mid-trace. R3 is deliberately NOT used
-        # here -- it's local_param (docs/specs/jit_stencil_catalog.md 3.8), and pinning
+        # here -- it's local_base (docs/specs/jit_stencil_catalog.md 3.8), and pinning
         # mem_base/mem_size on R8/R9 instead means a trace can use linear memory and a
         # non-foldable local_base at the same time without the two colliding.
         has_memory_ops = any(op in _MEMORY_OP_ADDR_REG for op, _ in wasm_ops)
@@ -499,7 +499,7 @@ class CopyPatchJITEngine:
     # values from one stencil's output layout into the next stencil's expected
     # input layout, inline in the same instruction stream (no branch -- this is
     # sequential code in one trace, not a jump to another compilation unit).
-    # mem_base/mem_size/local_param are deliberately excluded from the register
+    # mem_base/mem_size/local_base are deliberately excluded from the register
     # maps: they're loaded once at trace entry and held fixed for the trace's
     # whole body, never re-negotiated between stencils.
 
@@ -715,7 +715,7 @@ def test_stencil_catalog_matches_assembler():
     )
 
     # i32_rotl_d2: RSB r12,r4,#32 (amount = 32 - shift) then ROR.W r4,r5,r12. R12 scratch,
-    # not R3 -- R3 is local_param now.
+    # not R3 -- R3 is local_base now.
     rotl_expected = h(asm.rsb_imm(Reg.R12, Reg.R4, 32) + asm.ror_w(Reg.R4, Reg.R5, Reg.R12))
     assert rotl_expected == engine.stencils["i32_rotl_d2"].hex_bytes, (
         f"Stencil 'i32_rotl_d2' drifted from the assembler: "

@@ -140,7 +140,7 @@ ALU_CASES = [
 
 REM_CASES = [
     # rem stencils use r12 as scratch (SDIV/UDIV r12,r5,r4 ; MLS r4,r12,r4,r5) --
-    # not r3, which is local_param now (docs/specs/jit_stencil_catalog.md 3.8).
+    # not r3, which is local_base now (docs/specs/jit_stencil_catalog.md 3.8).
     ("i32_rem_s_d2", 7, _to_u32(-100), _to_u32(-100 - 7 * int(-100 / 7))),
     ("i32_rem_u_d2", 7, 100, 100 % 7),
 ]
@@ -202,7 +202,7 @@ def main() -> None:
             )
 
     # --- Memory Load/Store Stencils (r8=mem_base) ---
-    # r3 is local_param, not mem_base (docs/specs/jit_stencil_catalog.md 3.8), which is
+    # r3 is local_base, not mem_base (docs/specs/jit_stencil_catalog.md 3.8), which is
     # precisely why mem_base/mem_size were moved to r8/r9. The FastAddressCheck bounds
     # check (CMP addr, r9=mem_size; BHS.W <trap>) is no longer part of these stencils --
     # compile_trace() emits it separately with a runtime-patched trap target (see

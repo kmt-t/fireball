@@ -347,15 +347,15 @@ class CopyPatchCompiler:
     def __init__(self):
         self.stencils = {
             "i32.const": Stencil("i32.const",
-                                 ["MOVW R0, #{imm_lo}", "MOVT R0, #{imm_hi}", "PUSH R0"],
+                                 ["MOVW R4, #{imm_lo}", "MOVT R4, #{imm_hi}", "PUSH R4"],
                                  ("imm_lo", "imm_hi")),
-            "i32.add":   Stencil("i32.add", ["POP R1", "POP R0", "ADD R0, R0, R1", "PUSH R0"]),
-            "i32.sub":   Stencil("i32.sub", ["POP R1", "POP R0", "SUB R0, R0, R1", "PUSH R0"]),
-            "i32.mul":   Stencil("i32.mul", ["POP R1", "POP R0", "MUL R0, R0, R1", "PUSH R0"]),
-            "local.get": Stencil("local.get", ["LDR R0, [R7, #{slot}]", "PUSH R0"], ("slot",)),
-            "local.set": Stencil("local.set", ["POP R0", "STR R0, [R7, #{slot}]"], ("slot",)),
+            "i32.add":   Stencil("i32.add", ["POP R5", "POP R4", "ADD R4, R4, R5", "PUSH R4"]),
+            "i32.sub":   Stencil("i32.sub", ["POP R5", "POP R4", "SUB R4, R4, R5", "PUSH R4"]),
+            "i32.mul":   Stencil("i32.mul", ["POP R5", "POP R4", "MUL R4, R4, R5", "PUSH R4"]),
+            "local.get": Stencil("local.get", ["LDR R4, [R3, #{slot}]", "PUSH R4"], ("slot",)),
+            "local.set": Stencil("local.set", ["POP R4", "STR R4, [R3, #{slot}]"], ("slot",)),
             "backedge":  Stencil("backedge",
-                                 ["LDR R1, [R6, #SAFEPOINT]", "CBNZ R1, __safepoint",
+                                 ["LDR R12, [R10, #SAFEPOINT]", "CBNZ R12, __safepoint",
                                   "B #{target}"],
                                  ("target",)),
             "chain":     Stencil("chain", ["B #{chain_next}"], ("chain_next",)),
@@ -391,44 +391,48 @@ class CopyPatchCompiler:
 def make_native_executor(listing: list[str]) -> Callable:
     """Simulates the CPU executing the emitted instruction listing.
 
-    Deliberately a machine over the NATIVE listing (R0/R1/R7/stack), so this is
+    Deliberately a machine over the NATIVE listing (R3/R4/R5/R12/stack), so this is
     a genuinely different execution path from the interpreter. If a stencil is
     wrong, the result diverges.
     """
 
     def run(ctx: "WASMContext") -> str:
-        R = {"R0": 0, "R1": 0}
+        R = {"R3": 0, "R4": 0, "R5": 0, "R10": 0, "R12": 0}
         i = 0
         while i < len(listing):
             ins = listing[i]
             head = ins.split()[0]
             if head == "MOVW":
-                R["R0"] = int(ins.split("#")[1])
+                dst = ins.replace(",", "").split()[1]
+                R[dst] = int(ins.split("#")[1])
             elif head == "MOVT":
-                R["R0"] = (R["R0"] & 0xFFFF) | (int(ins.split("#")[1]) << 16)
+                dst = ins.replace(",", "").split()[1]
+                R[dst] = (R[dst] & 0xFFFF) | (int(ins.split("#")[1]) << 16)
             elif head == "PUSH":
                 ctx.push(R[ins.split()[1]])
             elif head == "POP":
                 R[ins.split()[1]] = ctx.pop()
-            elif head == "ADD":
-                R["R0"] = (R["R0"] + R["R1"]) & 0xFFFF_FFFF
-            elif head == "SUB":
-                R["R0"] = (R["R0"] - R["R1"]) & 0xFFFF_FFFF
-            elif head == "MUL":
-                R["R0"] = (R["R0"] * R["R1"]) & 0xFFFF_FFFF
+            elif head in ("ADD", "SUB", "MUL"):
+                d, a, b = ins.replace(",", "").split()[1:4]
+                x, y = R[a], R[b]
+                R[d] = ((x + y) if head == "ADD" else
+                        (x - y) if head == "SUB" else (x * y)) & 0xFFFF_FFFF
             elif head == "LDR":
                 if "SAFEPOINT" in ins:
-                    R["R1"] = 1 if ctx.interrupt_flag else 0
-                else:
+                    R["R12"] = 1 if ctx.interrupt_flag else 0
+                elif "[R3" in ins:
                     slot = int(ins.split("#")[1].rstrip("]")) // 4
                     if not 0 <= slot < len(ctx.locals):
                         raise WASMTrap("LOCAL_INDEX_OUT_OF_RANGE")
-                    R["R0"] = ctx.locals[slot]
+                    dst = ins.replace(",", "").split()[1]
+                    R[dst] = ctx.locals[slot]
             elif head == "STR":
-                slot = int(ins.split("#")[1].rstrip("]")) // 4
-                if not 0 <= slot < len(ctx.locals):
-                    raise WASMTrap("LOCAL_INDEX_OUT_OF_RANGE")
-                ctx.locals[slot] = R["R0"]
+                if "[R3" in ins:
+                    slot = int(ins.split("#")[1].rstrip("]")) // 4
+                    if not 0 <= slot < len(ctx.locals):
+                        raise WASMTrap("LOCAL_INDEX_OUT_OF_RANGE")
+                    src = ins.replace(",", "").split()[1]
+                    ctx.locals[slot] = R[src]
             elif head == "CBNZ":
                 # Safepoint check emitted at every backward edge. `{JIT_Safepoint}`
                 if ctx.poll_safepoint():

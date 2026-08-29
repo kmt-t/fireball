@@ -61,9 +61,9 @@
 
 | Opcode | 命令名 | スタック遷移 | インタープリタ実装 | JIT Stencil 提供 | 物理動作・備考 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `0x20` | `local.get` | `[] -> [t]` | ローカル配列 `[local_base + idx]` をロード | あり (Direct LDR / Mov) | `LDR r4, [r1, #offset]` またはレジスタ転送（`r1=stack_bot`。オフセットはコンパイル時定数に畳み込まれ、`local_base` は独立したレジスタプールロールを持たない——`{ContextPointerRegister}` 参照） |
-| `0x21` | `local.set` | `[t] -> []` | ローカル配列 `[local_base + idx]` へストア | あり (Direct STR / Mov) | `STR r4, [r1, #offset]` またはレジスタ代入 |
-| `0x22` | `local.tee` | `[t] -> [t]` | ローカルへ保存しつつスタックに残す | あり (STR & Keep) | `STR r4, [r1, #offset]` (TOS維持) |
+| `0x20` | `local.get` | `[] -> [t]` | ローカル配列 `[local_base + idx]` をロード | あり (Direct LDR / Mov) | `LDR r4, [r3, #offset]` または `LDR r4, [r1, #offset]`（`r3=local_base` または `r1=stack_bot` 起点の静的オフセット畳み込み——`{ContextPointerRegister}` `{JIT_RegisterMapping}` 参照） |
+| `0x21` | `local.set` | `[t] -> []` | ローカル配列 `[local_base + idx]` へストア | あり (Direct STR / Mov) | `STR r4, [r3, #offset]` または `STR r4, [r1, #offset]` |
+| `0x22` | `local.tee` | `[t] -> [t]` | ローカルへ保存しつつスタックに残す | あり (STR & Keep) | `STR r4, [r3, #offset]` または `STR r4, [r1, #offset]` (TOS維持) |
 | `0x23` | `global.get` | `[] -> [t]` | グローバル配列 `[env + globals + idx]` ロード | あり (LDR via Env) | `LDR r4, [r2, #glob_off]` |
 | `0x24` | `global.set` | `[t] -> []` | グローバル配列へストア | あり (STR via Env) | `STR r4, [r2, #glob_off]` |
 

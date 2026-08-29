@@ -17,9 +17,15 @@ Register assignment (Cortex-M33 / AAPCS __fastcall convention):
     R0  = ip        (WASM PC / bytecode pointer)
     R1  = stack_bot (stack bottom context pointer `{ContextPointerRegister}`)
     R2  = env       (runtime environment pointer `{EnvironmentPointer}`)
-    R3  = spill/scr (caller-saved context spill: pinned mem_base/local_base or scratch)
-    R4-R6, R8-R11 = callee-saved assignable pool (TOS/NOS/NNOS, mem_base, local_base, local vars)
+    R3  = local_base (WASM local variables base pointer)
+    R4  = TOS       (operand stack top cache)
+    R5  = NOS       (operand stack next-of-top cache)
+    R6  = NNOS      (operand stack 3rd cache / select)
     R7  = FP        (AAPCS standard frame pointer - preserved)
+    R8  = mem_base  (linear memory base pointer)
+    R9  = mem_size  (linear memory size for bounds check)
+    R10 = safepoint (safepoint poll flag pointer)
+    R12 = scratch   (intra-call temporary scratch)
 
 Cache state is the number of operands currently held in registers: 0, 1 or 2.
 A stencil declares what it consumes and produces, so the compiler tracks the
@@ -64,30 +70,29 @@ STENCILS: dict[str, dict[int, Variant]] = {
                    ("imm_lo", "imm_hi")),
     },
     "local.get": {
-        0: Variant(["LDR R4, [R7, #{slot}]"], 1, ("slot",)),
-        1: Variant(["MOV R5, R4", "LDR R4, [R7, #{slot}]"], 2, ("slot",)),
-        2: Variant(["PUSH R5", "MOV R5, R4", "LDR R4, [R7, #{slot}]"], 2, ("slot",)),
+        0: Variant(["LDR R4, [R3, #{slot}]"], 1, ("slot",)),
+        1: Variant(["MOV R5, R4", "LDR R4, [R3, #{slot}]"], 2, ("slot",)),
+        2: Variant(["PUSH R5", "MOV R5, R4", "LDR R4, [R3, #{slot}]"], 2, ("slot",)),
     },
     "local.set": {
-        1: Variant(["STR R4, [R7, #{slot}]"], 0, ("slot",)),
-        2: Variant(["STR R4, [R7, #{slot}]", "MOV R4, R5"], 1, ("slot",)),
+        1: Variant(["STR R4, [R3, #{slot}]"], 0, ("slot",)),
+        2: Variant(["STR R4, [R3, #{slot}]", "MOV R4, R5"], 1, ("slot",)),
     },
     # Binary ops consume TOS and NOS, produce one value in TOS.
     "i32.add": {2: Variant(["ADD R4, R5, R4"], 1)},
     "i32.sub": {2: Variant(["SUB R4, R5, R4"], 1)},
     "i32.mul": {2: Variant(["MUL R4, R5, R4"], 1)},
     # Memory ops. `{MemoryBoundaryCheck}` `{FastAddressCheck}`
-    # The bound check is a single mask because the guest RAM size is a power of
-    # two; R8 holds ~(size-1).
+    # R8 holds mem_base, R9 holds mem_size. Bounds check is CMP + BHS.
     "i32.load": {
-        1: Variant(["TST R4, R8", "BNE __trap_oob", "LDR R4, [R9, R4]"], 1),
-        2: Variant(["TST R4, R8", "BNE __trap_oob", "LDR R4, [R9, R4]"], 2),
+        1: Variant(["CMP R4, R9", "BHS __trap_oob", "LDR R4, [R8, R4]"], 1),
+        2: Variant(["CMP R4, R9", "BHS __trap_oob", "LDR R4, [R8, R4]"], 2),
     },
     "i32.store": {
-        2: Variant(["TST R5, R8", "BNE __trap_oob", "STR R4, [R9, R5]"], 0),
+        2: Variant(["CMP R5, R9", "BHS __trap_oob", "STR R4, [R8, R5]"], 0),
     },
     "backedge": {
-        d: Variant(["LDR R1, [R6, #SAFEPOINT]", "CBNZ R1, __safepoint", "B #{target}"],
+        d: Variant(["LDR R12, [R10, #SAFEPOINT]", "CBNZ R12, __safepoint", "B #{target}"],
                    d, ("target",))
         for d in (0, 1, 2)
     },
@@ -167,11 +172,15 @@ class StackCachingCompiler:
 # ==============================================================================
 
 def execute(listing: list[str], locals_: list[int], memory: bytearray | None = None,
-            ram_mask: int = ~(8192 - 1) & 0xFFFF_FFFF,
+            mem_size: int = 8192,
             interrupt: bool = False) -> tuple[list[int], str]:
-    R = {"R1": 0, "R4": 0, "R5": 0}
+    R = {
+        "R0": 0, "R1": 0, "R2": 0, "R3": 0,
+        "R4": 0, "R5": 0, "R6": 0, "R7": 0,
+        "R8": 0, "R9": mem_size, "R10": 0, "R12": 0,
+    }
     stack: list[int] = []
-    mem = memory if memory is not None else bytearray(8192)
+    mem = memory if memory is not None else bytearray(mem_size)
     i = 0
     while i < len(listing):
         ins = listing[i]
@@ -196,32 +205,33 @@ def execute(listing: list[str], locals_: list[int], memory: bytearray | None = N
                     (x - y) if head == "SUB" else (x * y)) & 0xFFFF_FFFF
         elif head == "LDR":
             if "SAFEPOINT" in ins:
-                R["R1"] = 1 if interrupt else 0
-            elif "[R7" in ins:
+                R["R12"] = 1 if interrupt else 0
+            elif "[R3" in ins:
                 slot = int(ins.split("#")[1].rstrip("]")) // 4
                 if not 0 <= slot < len(locals_):
                     raise WASMTrap("LOCAL_INDEX_OUT_OF_RANGE")
                 R["R4"] = locals_[slot]
-            elif "[R9" in ins:
+            elif "[R8" in ins:
                 a = R["R4"]
                 R["R4"] = int.from_bytes(mem[a:a + 4], "little")
         elif head == "STR":
-            if "[R7" in ins:
+            if "[R3" in ins:
                 slot = int(ins.split("#")[1].rstrip("]")) // 4
                 if not 0 <= slot < len(locals_):
                     raise WASMTrap("LOCAL_INDEX_OUT_OF_RANGE")
                 locals_[slot] = R["R4"]
-            elif "[R9" in ins:
+            elif "[R8" in ins:
                 a = R["R5"]
                 mem[a:a + 4] = (R["R4"] & 0xFFFF_FFFF).to_bytes(4, "little")
-        elif head == "TST":
-            reg = ins.replace(",", "").split()[1]
-            R["_z"] = (R[reg] & ram_mask) == 0
-        elif head == "BNE":
-            if not R.get("_z", True):
+        elif head == "CMP":
+            reg, limit_reg = ins.replace(",", "").split()[1:3]
+            R["_bhs"] = (R[reg] & 0xFFFF_FFFF) >= (R[limit_reg] & 0xFFFF_FFFF)
+        elif head == "BHS":
+            if R.get("_bhs", False):
                 return locals_, "TRAP_OOB"
         elif head == "CBNZ":
-            if R["R1"]:
+            reg = ins.replace(",", "").split()[1]
+            if R.get(reg, 0):
                 return locals_, "SAFEPOINT_YIELD"
         elif head == "B":
             pass
@@ -270,7 +280,7 @@ def test_spill_only_when_the_cache_overflows():
 def test_memory_access_carries_the_bound_check():
     listing, _ = StackCachingCompiler().compile_block(
         [("local.get", 0), ("i32.load", None)])
-    assert "TST R4, R8" in listing and "BNE __trap_oob" in listing, listing
+    assert "CMP R4, R9" in listing and "BHS __trap_oob" in listing, listing
 
 
 def test_out_of_bounds_load_traps():
@@ -313,7 +323,7 @@ def test_a_broken_stencil_is_detected():
 def test_backedge_spills_so_the_loop_head_state_is_known():
     listing, depth = StackCachingCompiler().compile_block(LOOP_OPS, loops_to=0x100)
     assert depth == 0, "cache must be empty across a backward edge"
-    assert "CBNZ R1, __safepoint" in listing, "Safepoint at the backward edge"
+    assert "CBNZ R12, __safepoint" in listing, "Safepoint at the backward edge"
 
 
 if __name__ == "__main__":

@@ -18,7 +18,7 @@ FlatMap 単体での探索は $O(\log N)$（またはハッシュ探索）とな
 
 1. **リニアアドレス空間フィルタ（高速バイパス & 境界チェック）**:
    32ビットゲストアドレスの最上位ビット（Bit 31）が `0` の場合、そのアドレスは vMMIO 管理対象外として、Tier 1（ゲストRAM）への直接アクセスとして高速バイパス（O(1) 処理）を実行する。 `{FastAddressCheck}`
-   - **統一境界チェック**: `{FastAddressCheck}` は比較命令ベースの単一の高速境界チェックである（マスクは用いない）。`guest_ram_size`（`vsoc_runtime.mem-size`）と直接比較し、`addr >= guest_ram_size` なら境界外として即座に `ERR_OUT_OF_BOUNDS` トラップを発生させる（Thumb-2 1 命令: `CMP addr, mem_size; BHS.W __trap`）。マスク方式と異なり `guest_ram_size` に2の冪の制約はなく、部分ページ（例: 8KB, 12KB, 16KB）・単一 64KB ページ・複数 64KB ページ（`N * 64KB`）のいずれも同一の比較一つで判定できる（`vmmio_concept.py` の `VMMIOController.access` を正本とする）。トラップは必須であり、境界外アドレスを黙ってラップアラウンドさせて処理を継続することは許容されない。JIT トレース側（`jit_stencil_catalog.md` §3.7, `jit_copy_patch_concept.py`）も同一の比較+トラップ方式を採り、トラップ発生時はインタープリタへフォールバックする。インタープリタが復旧不能と判断した場合はゲストタスクを停止してよい。
+   - **統一境界チェック**: `{FastAddressCheck}` は比較命令ベースの単一の高速境界チェックである（マスクは用いない）。`guest_ram_size`（`vsoc_runtime.mem-size`）と直接比較し、`addr >= guest_ram_size` なら境界外として即座に `ERR_OUT_OF_BOUNDS` トラップを発生させる（Thumb-2: 単一の境界チェック比較命令 `CMP addr, mem_size` とトラップ分岐 `BHS.W __trap`）。マスク方式と異なり `guest_ram_size` に2の冪の制約はなく、部分ページ（例: 8KB, 12KB, 16KB）・単一 64KB ページ・複数 64KB ページ（`N * 64KB`）のいずれも同一の比較一つで判定できる（`vmmio_concept.py` の `VMMIOController.access` を正本とする）。トラップは必須であり、境界外アドレスを黙ってラップアラウンドさせて処理を継続することは許容されない。JIT トレース側（`jit_stencil_catalog.md` §3.7, `jit_copy_patch_concept.py`）も同一の比較+トラップ方式を採り、トラップ発生時はインタープリタへフォールバックする。インタープリタが復旧不能と判断した場合はゲストタスクを停止してよい。
 2. **FlatMap PTE 管理**:
    最上位ビット（Bit 31）が `1` のアドレス空間を vMMIO 領域（`0x8000_0000` – `0xFFFF_FFFF`）とする。
    - 仮想ページ番号（VPN = `raw >> 12`）をキーとして、FlatMap（`vmmio_ptes`）に PTE を格納する。

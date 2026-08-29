@@ -139,7 +139,7 @@ Fireball の実行コアは、以下の 6 つの物理メカニズムによっ�
 
 ### 3.5 Pillar 5: 折りたたみXOR TLB ＆ 平坦ページ表 (Folding XOR TLB & FlatMap Page Table)
 <!-- traceability: {FastAddressCheck} {META_RestrictedPhysicalAccess} {LowLatencyLookup} -->
-- **Fast-path (Bit 31 = 0)**: ゲストRAMアクセス。ベースポインタ加算とマスク演算のみで 1 サイクル変換。
+- **Fast-path (Bit 31 = 0)**: ゲストRAMアクセス。ベースポインタ加算と単一のサイズ比較命令（`CMP addr, mem_size`、マスクなし）による高速変換・境界保護。
 - **vMMIO-path (Bit 31 = 1)**: VPN（20 bits）に対し 4-bit Folding XOR を計算し、16エントリ TLB を直接参照。ミス時は `flat_map_view` を二分探索。 `{FastAddressCheck}` `{LowLatencyLookup}`
 
 ### 3.6 Pillar 6: 有界ゼロコピー・ランデブー・メールボックス (Bounded Zero-Copy Rendezvous Mailbox)
@@ -158,16 +158,16 @@ ARM Cortex-M33 (ARMv8-M Mainline) における物理レジスタの厳格な役�
 | **`R0`** | Argument 1 / Scratch | `ip` (WASM PC) | `ip` (WASM PC) | 継続渡し（CPS）第1引数。現在実行中のバイトコード位置。 |
 | **`R1`** | Argument 2 / Scratch | `stack_bot` | `stack_bot` | 継続渡し（CPS）第2引数。統合スタックボトム基底ポインタ `{ContextPointerRegister}`。 |
 | **`R2`** | Argument 3 / Scratch | `env` | `env` | 継続渡し（CPS）第3引数。ランタイム環境ポインタ `{EnvironmentPointer}`。 |
-| **`R3`** | Argument 4 / Scratch | `scratch` (解放) | `scratch` (解放) | **Caller-saved スクラッチ / スピル**。ハンドラ・ステンシル内で自由に利用可能。 |
+| **`R3`** | Argument 4 / Scratch | `scratch` (解放) | **`local_base`** | **ローカル変数基底ポインタ / スクラッチ**。インタープリタではスクラッチ解放、JITでは `local_base`。 |
 | **`R4`** | Callee-saved | (保全) | **`Assignable Pool 0` (TOS等)** | **役割任意割当レジスタ 0**。スタックトップキャッシュ (TOS) 等。 |
 | **`R5`** | Callee-saved | (保全) | **`Assignable Pool 1` (NOS等)** | **役割任意割当レジスタ 1**。スタック次段キャッシュ (NOS) 等。 |
 | **`R6`** | Callee-saved | (保全) | **`Assignable Pool 2`** | **役割任意割当レジスタ 2**。`select` 使用時は NNOS。 |
 | **`R7`** | **Frame Pointer (FP)** | **FP (不可侵)** | **FP (不可侵)** | **AAPCS 標準フレームポインタ**。デバッガ・アンワインドのため不変。 |
-| **`R8`** | Callee-saved | (保全) | **`Assignable Pool 3`** | **役割任意割当レジスタ 3**。メモリアクセス時は `mem_base`。 |
-| **`R9`** | Callee-saved | (保全) | **`Assignable Pool 4`** | **役割任意割当レジスタ 4**。メモリアクセス時は `mem_size`。 |
-| **`R10`** | Callee-saved | (保全) | **`Assignable Pool 5`** | **役割任意割当レジスタ 5**。セーフポイント監視フラグ等。 |
+| **`R8`** | Callee-saved | (保全) | **`Assignable Pool 3` (mem_base)** | **役割任意割当レジスタ 3**。メモリアクセス時は `mem_base`。 |
+| **`R9`** | Callee-saved | (保全) | **`Assignable Pool 4` (mem_size)** | **役割任意割当レジスタ 4**。メモリアクセス時は `mem_size`（境界チェック比較用）。 |
+| **`R10`** | Callee-saved | (保全) | **`Assignable Pool 5` (safepoint)** | **役割任意割当レジスタ 5**。セーフポイント監視フラグ等。 |
 | **`R11`** | Callee-saved | (保全) | **`Assignable Pool 6`** | **役割任意割当レジスタ 6**。拡張レジスタキャッシュ。 |
-| **`R12 (IP)`**| Intra-Call Scratch | scratch | **一時スクラッチ** | リンカ・スタブ用スクラッチ、使い捨て一時値。 |
+| **`R12 (IP)`**| Intra-Call Scratch | scratch | **一時スクラッチ** | リンカ・スタブ用スクラッチ、使い捨て一時値、インタープリタ復帰 `BX r12`。 |
 | **`R13 (SP)`**| Stack Pointer | C++ Core SP | C++ Core SP | C++ コア実行用スタックポインタ（8バイト境界整列）。 |
 | **`R14 (LR)`**| Link Register | Return Address | Return Address | 関数呼び出し戻り先アドレス。 |
 | **`R15 (PC)`**| Program Counter | CPU PC | CPU PC | 命令ポインタ。 |

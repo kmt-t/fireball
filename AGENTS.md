@@ -31,11 +31,14 @@
 
 ## 検証
 
-- 具体的な検証コマンドは `tools/README.md` を正本とする。
-  - Windows: `powershell tools/run_all_tests.ps1 -clean`
-  - Linux/WSL: `./tools/run_all_tests.sh --clean`
+- 具体的な検証コマンドは `tools/README.md` および `.agents/skills/document-validation/` を正本とする。
+- **普段（コミット前など）は簡易テスト（コスト0）のみ実行する**：
+  - Windows: `powershell tools/run_all_tests.ps1` または単体 Python 実行
+  - Linux/WSL: `./tools/run_all_tests.sh`
+- **クラウド LLM 監査（API 課金）はユーザーから明示的な指示があった場合のみ実行する**：
   - 複雑度・リスク評価: `powershell tools/run_all_tests.ps1 -assess -backend sakura`
   - LLM 意味監査: `powershell tools/run_all_tests.ps1 -llm -backend sakura`
+  - フル全量監査: `powershell tools/run_all_tests.ps1 -full -backend sakura`
 
 ## エージェント入口
 

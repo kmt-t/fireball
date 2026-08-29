@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-29T22:23:23.835243+00:00",
+  "generated_at": "2026-08-29T22:28:29.080343+00:00",
   "flagged_count": 2,
   "findings": [
     {
@@ -7,10 +7,10 @@
       "is_bracket_keyword": true,
       "file_path": "components/tier3_jit/jit_compiler.md",
       "line": 318,
-      "kind": "EXPLICIT_ADR",
+      "kind": "ADHOC_LOCAL_ADR",
       "reasons": [
-        "他コンポーネントの設計文書から一切参照されていない（孤立ADR。本当に単一コンポーネント限定の決定か確認）",
-        "「選択肢」の実質エントリ数が0件で、対抗案の比較検討が見当たらない"
+        "他コンポーネントから一切参照されていない孤立した決定ブロック（コンポーネント内で勝手に閉じたアドホック決定の疑い）",
+        "「選択肢」の実質エントリ数が0件で、対抗案のないアドホックな独断決定"
       ],
       "option_count": 0,
       "referenced_file_count": 0,
@@ -23,9 +23,9 @@
       "is_bracket_keyword": true,
       "file_path": "components/tier3_jit/jit_compiler.md",
       "line": 310,
-      "kind": "EXPLICIT_ADR",
+      "kind": "ADHOC_LOCAL_ADR",
       "reasons": [
-        "他コンポーネントの設計文書から一切参照されていない（孤立ADR。本当に単一コンポーネント限定の決定か確認）"
+        "他コンポーネントから一切参照されていない孤立した決定ブロック（コンポーネント内で勝手に閉じたアドホック決定の疑い）"
       ],
       "option_count": 2,
       "referenced_file_count": 0,

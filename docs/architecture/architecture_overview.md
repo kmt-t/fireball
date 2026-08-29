@@ -298,6 +298,7 @@ sequenceDiagram
 ---
 
 ## 8. アーキテクチャスタイルと設計判断 (ADR)
+<!-- traceability: {ADR_IntrusiveTcbList} {ADR_CoosPureRoundRobin} {ADR_EventDrivenWakeQueue} -->
 
 | 設計課題 | 採用スタイル | 選択理由 |
 | :--- | :--- | :--- |
@@ -307,4 +308,7 @@ sequenceDiagram
 | **割り込み処理** | **イベント駆動 (ISR) + ポーリング (処理層)** | ISR は軽量通知のみ、実処理はメインループで安全に処理 |
 | **メモリ管理** | **静的割り当て優先** | 動的ヒープ（malloc/new）を原則禁止し、フラグメンテーションを完全排除 |
 | **依存関係解決** | **静的 DI (Harness)** | C++20 Concepts と Harness 構造体によりコンパイル時に確定 |
+| **TCB連結方式** (`{ADR_IntrusiveTcbList}`) | **侵入型リスト** | ノード確保が不要で `{GLOBAL_Policy_Memory}` に適合。詳細は [os_scheduler.md §6](../components/tier1_core/os_scheduler.md#6-設計判断-adr) |
+| **スケジューリングアルゴリズム** (`{ADR_CoosPureRoundRobin}`) | **純粋な協調型ラウンドロビン（優先度なし）** | 優先度逆転を根本排除し、`{NotRTOS}` 方針と整合。詳細は [os_scheduler.md §6](../components/tier1_core/os_scheduler.md#6-設計判断-adr) |
+| **BLOCKEDタスク起床方式** (`{ADR_EventDrivenWakeQueue}`) | **イベントドリブン起床キュー** | 線形スキャンによる $O(n)$ ポーリングを排除し、O(1) コンテキストスイッチを維持。詳細は [os_scheduler.md §6](../components/tier1_core/os_scheduler.md#6-設計判断-adr) |
 

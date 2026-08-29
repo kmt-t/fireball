@@ -271,7 +271,7 @@ class COOSKernel:
 ```
 
 ### 4.2 状態遷移図 (SMD: COOS システムレベル)
-<!-- traceability: {CSP_Handoff} {DirectContextSwitch} {GLOBAL_IdleDetection} {GLOBAL_StrictMemoryLimit} {GLOBAL_IndependentHeap} -->
+<!-- traceability: {CSP_Handoff} {DirectContextSwitch} {GLOBAL_IdleDetection} {GLOBAL_StrictMemoryLimit} {GLOBAL_IndependentHeap} {META_RecoveryStrategy} -->
 
 COOS 全体のシステムレベル状態遷移を以下に示す。各タスクの状態遷移については **[os_scheduler.md](os_scheduler.md#42-状態遷移図-sysml-smd-scheduler-視点)** を参照。
 
@@ -302,8 +302,8 @@ stateDiagram-v2
 - **Ready**: 正常稼働。RUNNING または IDLE の どちらかの状態
   - **Running Task**: 1つ以上のタスクが実行中。各タスクは独立メモリプール（`GLOBAL_IndependentHeap`）から論理的に切り出された固定サイズメモリ内に完全に隔離され、実行が保護される。 `{GLOBAL_StrictMemoryLimit}` `{GLOBAL_IndependentHeap}`
   - **Idle**: 全タスクが BLOCKED で、イベント待ちの状態。アイドルフック実行時は追加のメモリ消費は発生しない。
-- **Recovery**: タスク障害（panic、メモリ保護例外等）が発生し、安全な状態への復旧処理中
-- **Shutdown**: システム終了処理中。リソースの静的解放。
+- **Recovery**: タスク障害（panic、メモリ保護例外等）が発生し、安全な状態への復旧処理中。`{META_RecoveryStrategy}`（[interface_wit.md §3.2](../tier1_interface/interface_wit.md#32-リカバリー戦略とエラーハンドリング)）の分類との対応は次のとおり: `Recovery --> Ready`（recovery complete）は当該タスクの `restart`（TCB・ヒープ初期化、他サービス・カーネルのメモリ空間は隔離済みのため波及なし）に相当する。`Recovery --> Shutdown`（unrecoverable error）は `panic`（全タスク停止、クラッシュダンプ出力、フェイルセーフ停止）に相当し、`ignore`/`retry` では継続不能と判定された場合のみ到達する。
+- **Shutdown**: システム終了処理中。リソースの静的解放。`{META_RecoveryStrategy}` の `panic` が要求するフェイルセーフ停止の完了状態。
 
 ### 4.3 タスク状態遷移図 (SMD: Task ライフサイクル)
 

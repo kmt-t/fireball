@@ -8,6 +8,8 @@
 <!-- traceability: {IPCRouter} {DictionaryBasedIPC} {BufferedLogging} {GLOBAL_IdleDetection} -->
 ロギングコンポーネントは、ハイパーバイザ内部の状態を記録し、外部（UART/ITM等）へ出力する。システムコールはすべてIPCルータを経由して行われ、ログデータの転送もIPCルータを通過する。メモリ消費と通信負荷を抑えるため、辞書参照IPCと内部リングバッファによる遅延出力を採用する。また、COOSの **Idle Hook** を利用してシステム負荷が低い時に集中的に出力を行うことで、実行性能への影響を抑える。自己完結した参照実装は [`concepts/logging_concept.py`](concepts/logging_concept.py) を参照。 `{IPCRouter}` `{DictionaryBasedIPC}` `{BufferedLogging}` `{GLOBAL_IdleDetection}`
 
+**適用範囲外**: 本コンポーネントが扱うのはビルド時に辞書登録された固定フォーマットの内部状態ログのみである。ゲストの `wasi:cli/stdout`/`stderr`（`print`/`eprint` による実行時生成の任意長文字列）はここでは表現できず、[`interface_wit.md` §5.5](../tier1_interface/interface_wit.md#55-fireballhostconsole-wasiclistdout-stderr-用の生バイト出力) の `console-output`（`{WASI_ConsoleRawOutput}`）という別経路で扱う。
+
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->
 本コンポーネントは **Tier 1 (主要システムコンポーネント: Primary Component)** に属し、システム共通のリングバッファロギングおよびアイドル検知フックに基づく遅延出力を担当する。 `{META_3TierSeparation}`

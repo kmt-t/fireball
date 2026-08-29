@@ -56,7 +56,7 @@ type routing-result = result<_, recovery-strategy-category>;
 | 戦略カテゴリ | 選択基準（事前条件） | 事後条件 / システム状態 | 不変条件 |
 | :--- | :--- | :--- | :--- |
 | `ignore` | 一時的なバッファ空/満杯通知など、データ喪失を伴わず無視可能な事象 | 状態変化なし。呼び出し元は継続実行 | システム整合性は完全に維持される |
-| `retry` | 一時的なリソース競合やタイムアウト。再試行により回復可能な場合 | 引数状態は維持。バックオフ後に再実行 | 再試行上限回数（3回）を超えないこと |
+| `retry` | 一時的なリソース競合やタイムアウト。再試行により回復可能な場合 | 引数状態は維持。`FB_CONF_RETRY_BACKOFF_MS`（[system_config.md §3.3.7](../tier1_core/system_config.md#337-リカバリー戦略)）のバックオフ後に再実行 | 再試行上限回数（3回）を超えないこと |
 | `restart` | サービスコンテキストやメモリ破損の疑い。モジュール単体の自己修復が必要な場合 | 該当タスク/サービスのTCB・ヒープを初期化し再起動 | 他サービスおよびカーネルのメモリ空間は隔離され保護される |
 | `panic` | MPU違反、二重解放、デッドロック検知など、安全な継続が不可能な致命的障害 | 全タスク停止、クラッシュダンプを出力しフェイルセーフ停止 | ハードウェアおよび不揮発性領域への不正書き込みを即時遮断 |
 
@@ -104,25 +104,28 @@ resource periodic-timer {
 ```
 
 ### 5.3 `fireball:host/bus` (Master/Slave Bus)
-<!-- traceability: {WASI_Implementation} -->
-バス通信も標準WASIにはないため、リソースパターンを適用。
+<!-- traceability: {WASI_Implementation} {IPC_ZeroCopy} {OwnershipTransfer} -->
+バス通信も標準WASIにはないため、リソースパターンを適用。DMA等の物理転送に直接渡せるのは所有権管理された共有メモリ（SHM）ハンドルのみであり（`{OwnershipTransfer}` `{IPC_ZeroCopy}`）、ゲストのリニアメモリ上のポインタを直接渡すことはできない。ゲストは事前に `acquire_buffer()` 相当の操作で `shm-id`（ホスト実装の詳細は下位 Tier の設計文書を正本とする）を取得し、その範囲内のオフセットのみを指定できる。
 
 ```wit
-record buffer-slice {
+// SHM上の範囲を指す。handle は acquire_buffer() が返す shm-id
+// （`(page_idx << 8) | slot_idx`）であり、ゲストのリニアメモリを指すポインタではない。
+record shm-slice {
+    handle: u32,
     offset: u32,
     len: u32,
 }
 
 resource bus-master {
-    // tx-bufのオフセット/サイズを渡し、受信データはrx-buf（事前に確保したバッファ）に直接書き込ませ、実際に転送したバイト数を返す
-    transfer-data: func(tx-buf: buffer-slice, rx-buf: buffer-slice) -> result<u32, recovery-strategy>;
+    // tx-bufのオフセット/サイズを渡し、受信データはrx-buf（事前に確保したSHMスロット）に直接書き込ませ、実際に転送したバイト数を返す
+    transfer-data: func(tx-buf: shm-slice, rx-buf: shm-slice) -> result<u32, recovery-strategy>;
 }
 
 resource bus-slave {
     // 送信応答データを設定
-    set-response: func(data: buffer-slice) -> operation-result;
-    // 受信データを指定した静的バッファに読み出し、実際に取得したバイト数を返す
-    get-received: func(dest-buf: buffer-slice) -> result<u32, recovery-strategy>;
+    set-response: func(data: shm-slice) -> operation-result;
+    // 受信データを指定したSHMスロットに読み出し、実際に取得したバイト数を返す
+    get-received: func(dest-buf: shm-slice) -> result<u32, recovery-strategy>;
     subscribe: func() -> pollable; // マスタからのアクセス通知
 }
 ```
@@ -141,7 +144,20 @@ resource streaming-slave {
 }
 ```
 
-### 5.5. WASI標準APIの実装仕様 (WASI Standard API Implementation Specification)
+### 5.5 `fireball:host/console` (`wasi:cli/stdout` / `stderr` 用の生バイト出力)
+<!-- traceability: {WASI_ConsoleRawOutput} {DictionaryBasedIPC} -->
+ゲストの `print`/`eprint` が書き込む文字列は実行時に組み立てられる任意長データであり、`system_logging.md` の内部ロガー（`{DictionaryBasedIPC}`、ビルド時登録の辞書オフセット＋固定4引数のみを扱い、実行時の辞書追加は不可）では表現できない。そのため、`wasi:cli/stdout`/`stderr` は内部ロガーとは独立した生バイト出力専用の経路として定義する。 `{WASI_ConsoleRawOutput}`
+
+```wit
+resource console-output {
+    // 任意長の生バイト列をそのまま HAL_Transport (UART/ITM 等) へ渡す。辞書変換もリングバッファへの構造化格納も行わない。
+    write: func(data: list<u8>) -> result<u32, recovery-strategy-category>;
+}
+```
+
+物理トランスポート（`HAL_Transport`）は `system_logging.md` のロガーと共有するが、辞書・リングバッファは経由しない別経路であり、両者は排他的に出力順序が保証されるわけではない（インターリーブし得る）。
+
+### 5.6. WASI標準APIの実装仕様 (WASI Standard API Implementation Specification)
 <!-- traceability: {WASI_Implementation} -->
 FireballにおけるWASI 0.2標準APIの具体的なマッピングと実装方針（`{WASI_Implementation}`）は以下の通りである。
 
@@ -152,8 +168,8 @@ FireballにおけるWASI 0.2標準APIの具体的なマッピングと実装方�
    - ストリームI/O操作（データの順次読み書き）は、COOSのIPCチャネルを用いたメッセージ通信として実装される。
    - ホスト側のメモリバッファとゲスト（WASM）側のリニアメモリ間で、ゼロコピーまたは最小限のオーバーヘッドでデータ転送を行う。
 3. **`wasi:cli/stdout` / `wasi:cli/stderr`**:
-   - コンソール出力（標準出力・標準エラー出力）は、ホスト環境のシステムログサービス（`system_logging.md`）へ転送される。
-   - ゲスト内での `print` や `eprint` は、自動的にシステムコール経由でロガーにルーティングされる。
+   - コンソール出力（標準出力・標準エラー出力）は、5.5節の `console-output` リソース経由で `HAL_Transport` へ直接転送される。`system_logging.md` の内部ロガー（辞書ベース）は経由しない。 `{WASI_ConsoleRawOutput}`
+   - ゲスト内での `print` や `eprint` は、自動的にシステムコール経由で `console-output.write` にルーティングされる。
 4. **`wasi:filesystem/types` / `wasi:filesystem/preopens`**:
    - Fireballは組み込み向け極小ハイパーバイザであるため、一般的な物理ディスク上のファイルシステムはサポートしない。
    - ただし、特定のメモリマップドI/O（VMMIO）領域や共有メモリ領域を「事前オープンされた仮想ファイル記述子」としてエミュレートする仕組みを提供する。

@@ -1,6 +1,6 @@
 # WIT インターフェイス仕様書 (WASI 準拠版) {VERIFY_WIT} {VERIFY_LLM} {VERIFY_FORMAL}
 <!-- evidence:
-     wit: ../tier2_runtime/wit/execution_context.wit
+     wit: wit/fireball.wit
      formal: formal/wit_resource_lifecycle_model.py
      test: tests/interface_wit_test_spec.md
 -->

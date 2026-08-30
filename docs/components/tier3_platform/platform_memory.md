@@ -121,7 +121,7 @@ IPC転送のための共有メモリブロック確保は、上記の `acquire-p
 <!-- traceability: {META_FaultIsolation} {OwnershipTransfer} -->
 `shared-block` リソースが物理メモリ側での所有権の単位である。ただし所有権の実体（誰が読み書きしてよいか）を最終的に判定するのは、[`runtime_vmmio.md` §1「3層セキュリティゲート」](../tier2_runtime/runtime_vmmio.md#1-コンセプト)のTier 3ゲート（vMMIO FC=14のPTE `owner_id`/`FLIGHT_SENTINEL`）である。`shared-block`の`release()`/`claim()`は、[`ipc_router.md` §4.1「ゼロコピー所有権移譲」](../tier1_interface/ipc_router.md#41-アルゴリズム)のRevoke→Enqueue→Grantと1対1で対応する物理層の操作であり、独立した二重の所有権管理を行うものではない: `release()`はRevokeフェーズで対応するvMMIO PTEの`owner_id`を`FB_TASK_ID_FLIGHT`（移譲中）にし、Grant成立時に`claim()`が呼ばれて`owner_id`を受信タスクへ更新する。 `{META_FaultIsolation}` `{OwnershipTransfer}`
 
-大きなデータを転送する場合、`shm-id` をkv_pairの `value` フィールドに格納し、通常のIPCメッセージとして送信する。kv_pairの型スコープは [`ipc_router.md` §3.3「型スコープのビット構成」](../tier1_interface/ipc_router.md#kv-valueペアkv_pair)が定義する語彙の範囲内で表現する: `shm-id`はハードウェア記述子ではなく物理メモリ側のハンドルであるため、上位3bitは `0b010`（リソース）ではなく `0b000`（機能的、`{IPC_HandleBased}`が定義するハンドル値として解釈）を用い、下位5bitは既定の `0b00001`（`uint32_t`/32bit即値）とする。`ipc_router.md`の型語彙表に`shm-id`専用の型値は存在しないため、新規の型値追加が必要であれば`ipc_router.md`（Tier 1）側の拡張として提案すること。本書側で独自の`dtype=handle`を勝手に定義しない。
+大きなデータを転送する場合、`shm-id` をkv_pairの `value` フィールドに格納し、通常のIPCメッセージとして送信する。kv_pairの型スコープは [`ipc_router.md` §3.3「型スコープのビット構成」](../tier1_interface/ipc_router.md#key-value%E3%83%9A%E3%82%A2kv_pair)が定義する語彙の範囲内で表現する: `shm-id`はハードウェア記述子ではなく物理メモリ側のハンドルであるため、上位3bitは `0b010`（リソース）ではなく `0b000`（機能的、`{IPC_HandleBased}`が定義するハンドル値として解釈）を用い、下位5bitは既定の `0b00001`（`uint32_t`/32bit即値）とする。`ipc_router.md`の型語彙表に`shm-id`専用の型値は存在しないため、新規の型値追加が必要であれば`ipc_router.md`（Tier 1）側の拡張として提案すること。本書側で独自の`dtype=handle`を勝手に定義しない。
 
 1. タスクAが `allocate-shared(size)` → `shared-block` リソースを取得
 2. `shm.get-address()` でローカルアドレスを取得、データを書き込み

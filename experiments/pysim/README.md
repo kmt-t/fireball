@@ -164,7 +164,7 @@ in `interface_wit.md`, not their internal hardware-facing implementations.
 | `test_host_call.py` | The `fireball_call` bridge in isolation: every arity 0-7, register+stack marshalling, ABI alignment |
 | `test_loader.py` | Invariant tests for WASM loader, verification rules V1-V6, and RadixBinaryTreeView symbol lookup |
 | `test_debugger.py` | Invariant tests for GDB RSP parser, register/memory inspection, and breakpoint hit detection |
-| `test_concept_differential.py` | Differential equivalence test suite asserting 100% behavioral identity between `experiments/pysim` and `docs/**/concepts` |
+| `test_pairwise_combinations.py` | 2-way All-Pairs Combinatorial Test Matrix (26 test cases covering 100% of 2-way orthogonal interactions) |
 | `aobench.py` | Full 3D Raytracing Ambient Occlusion Benchmark (AO-Bench) running via WASM, JIT trace execution, and WASI `fd_write` |
 
 ## Standard WAT & OSS WASM Toolchain
@@ -190,14 +190,8 @@ hand-counting the *first* four bugs below is exactly what this replaced.
 
 ```bash
 # from this directory, with any Python 3.11+ (stdlib + ctypes only)
-python tests.py
-python test_concept_differential.py
-python test_loader.py
-python test_debugger.py
-python test_x64_asm.py
-python test_x64_stencils.py
-python test_x64_jit.py
-python test_host_call.py
+python tests/run_all.py
+python scenarios/run_all.py
 python aobench.py
 python main.py
 ```

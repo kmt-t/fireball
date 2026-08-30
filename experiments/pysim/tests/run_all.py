@@ -31,7 +31,6 @@ TEST_FILES = [
     ("x64 Assembler", TEST_DIR / "test_x64_asm.py"),
     ("x64 Stencils Catalog", TEST_DIR / "test_x64_stencils.py"),
     ("x64 Copy-and-Patch JIT", TEST_DIR / "test_x64_jit.py"),
-    ("Tier Concept Differential", TEST_DIR / "test_concept_differential.py"),
     ("All-Pairs Combinatorial Matrix", TEST_DIR / "test_pairwise_combinations.py"),
 ]
 

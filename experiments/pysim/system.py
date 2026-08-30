@@ -40,6 +40,7 @@ from platform_memory import (
 )
 from runtime_engine import RuntimeEngine
 from scheduler import Scheduler
+from system_containers import RadixBinaryTreeView
 from vmmio import (
     FC_PASSTHROUGH,
     FC_SHM,
@@ -227,6 +228,55 @@ class System:
         self._guest_memory: bytearray | None = None
         self._current_task_id = 0
 
+        # Build fireball_call dispatch table via RadixBinaryTreeView
+        syscall_handlers: list[tuple[int, Any]] = [
+            (FbSyscallId.SYS_YIELD, lambda a0, a1, a2, a3, a4, a5: int(self._apply_sys_control(SYS_CONTROL_YIELD))),
+            (FbSyscallId.SYS_HALT, lambda a0, a1, a2, a3, a4, a5: int(self._apply_sys_control(SYS_CONTROL_HALT))),
+            (FbSyscallId.SYS_RESET, lambda a0, a1, a2, a3, a4, a5: int(self._apply_sys_control(SYS_CONTROL_RESET))),
+
+            (FbSyscallId.MMIO_READ32, lambda a0, a1, a2, a3, a4, a5: self._mmio_read(a0, 4)),
+            (FbSyscallId.MMIO_WRITE32, lambda a0, a1, a2, a3, a4, a5: int(self._mmio_write(a0, a1, 4))),
+            (FbSyscallId.MMIO_READ8, lambda a0, a1, a2, a3, a4, a5: self._mmio_read(a0, 1)),
+            (FbSyscallId.MMIO_WRITE8, lambda a0, a1, a2, a3, a4, a5: int(self._mmio_write(a0, a1, 1))),
+            (FbSyscallId.MMIO_BULK_READ, lambda a0, a1, a2, a3, a4, a5: int(self._mmio_bulk_read(a0, a1, a2))),
+            (FbSyscallId.MMIO_BULK_WRITE, lambda a0, a1, a2, a3, a4, a5: int(self._mmio_bulk_write(a0, a1, a2))),
+
+            (FbSyscallId.VDMA_START, lambda a0, a1, a2, a3, a4, a5: int(self._vdma_start(a0, a1, a2))),
+
+            (FbSyscallId.IRQ_READ_FLAGS, lambda a0, a1, a2, a3, a4, a5: self._irq_read_flags()),
+            (FbSyscallId.IRQ_CLEAR, lambda a0, a1, a2, a3, a4, a5: int(self._irq_clear(a0))),
+
+            (FbSyscallId.IPC_SEND, lambda a0, a1, a2, a3, a4, a5: int(self._ipc_send(a0, a1, a2))),
+            (FbSyscallId.IPC_RECV, lambda a0, a1, a2, a3, a4, a5: int(self._ipc_recv(a0, a1, a2))),
+            (FbSyscallId.IPC_LOOKUP, lambda a0, a1, a2, a3, a4, a5: self._ipc_lookup(a0, a1)),
+
+            (FbSyscallId.WASI_FD_WRITE, lambda a0, a1, a2, a3, a4, a5: int(self._wasi_fd_write(a0, a1, a2, a3))),
+            (FbSyscallId.WASI_FD_READ, lambda a0, a1, a2, a3, a4, a5: int(self._wasi_fd_read(a0, a1, a2, a3))),
+            (FbSyscallId.WASI_FD_CLOSE, lambda a0, a1, a2, a3, a4, a5: int(self._wasi_fd_close(a0))),
+            (FbSyscallId.WASI_CLOCK_TIME_GET, lambda a0, a1, a2, a3, a4, a5: int(self._wasi_clock_time_get(a2))),
+            (FbSyscallId.WASI_PROC_EXIT, lambda a0, a1, a2, a3, a4, a5: int(self._wasi_proc_exit(a0))),
+            (FbSyscallId.WASI_RANDOM_GET, lambda a0, a1, a2, a3, a4, a5: int(self._wasi_random_get(a0, a1))),
+        ]
+
+        syscall_handlers.sort(key=lambda x: int(x[0]))
+        keys = [int(x[0]) for x in syscall_handlers]
+        values = [x[1] for x in syscall_handlers]
+
+        radix_shift = 4
+        max_prefix = max(keys) >> radix_shift
+        radix_table = [(0, 0)] * (max_prefix + 1)
+        current_prefix = 0
+        first_idx = 0
+        for idx, k in enumerate(keys):
+            prefix = k >> radix_shift
+            while current_prefix < prefix:
+                radix_table[current_prefix] = (first_idx, idx)
+                current_prefix += 1
+                first_idx = idx
+        radix_table[current_prefix] = (first_idx, len(keys))
+
+        self._syscall_dispatch_tree = RadixBinaryTreeView(keys, values, radix_table, radix_shift=radix_shift)
+
     def _on_idle(self) -> None:
         """COOS idle_hook dispatch: flushes deferred logs and compiles queued JIT traces."""
         self.logger.flush()
@@ -253,65 +303,11 @@ class System:
                        arg3: int, arg4: int, arg5: int) -> int:
         """The one host import a guest actually needs
         (system_syscall.md §3-4): a single syscall-ID-dispatched bridge
-        carrying `id` plus six generic u32 args. The real spec offers
-        `fireball-call0`..`fireball-call6` as arity-specific variants purely
-        to avoid marshalling unused args; since x64_jit.py's host-call glue
-        already handles any arity uniformly, this experiment exposes only
-        the richest (6-arg) form and lets a guest pass zeros it doesn't need.
+        carrying `id` plus six generic u32 args, dispatched via RadixBinaryTreeView.
         """
-        try:
-            sid = FbSyscallId(syscall_id)
-        except ValueError:
-            return int(WasiErrno.NOSYS)
-
-        if sid == FbSyscallId.SYS_YIELD:
-            return int(self._apply_sys_control(SYS_CONTROL_YIELD))
-        if sid == FbSyscallId.SYS_HALT:
-            return int(self._apply_sys_control(SYS_CONTROL_HALT))
-        if sid == FbSyscallId.SYS_RESET:
-            return int(self._apply_sys_control(SYS_CONTROL_RESET))
-
-        if sid == FbSyscallId.MMIO_READ32:
-            return self._mmio_read(arg0, 4)
-        if sid == FbSyscallId.MMIO_WRITE32:
-            return int(self._mmio_write(arg0, arg1, 4))
-        if sid == FbSyscallId.MMIO_READ8:
-            return self._mmio_read(arg0, 1)
-        if sid == FbSyscallId.MMIO_WRITE8:
-            return int(self._mmio_write(arg0, arg1, 1))
-        if sid == FbSyscallId.MMIO_BULK_READ:
-            return int(self._mmio_bulk_read(arg0, arg1, arg2))
-        if sid == FbSyscallId.MMIO_BULK_WRITE:
-            return int(self._mmio_bulk_write(arg0, arg1, arg2))
-
-        if sid == FbSyscallId.VDMA_START:
-            return int(self._vdma_start(arg0, arg1, arg2))
-
-        if sid == FbSyscallId.IRQ_READ_FLAGS:
-            return self._irq_read_flags()
-        if sid == FbSyscallId.IRQ_CLEAR:
-            return int(self._irq_clear(arg0))
-
-        if sid == FbSyscallId.IPC_SEND:
-            return int(self._ipc_send(arg0, arg1, arg2))
-        if sid == FbSyscallId.IPC_RECV:
-            return int(self._ipc_recv(arg0, arg1, arg2))
-        if sid == FbSyscallId.IPC_LOOKUP:
-            return self._ipc_lookup(arg0, arg1)
-
-        if sid == FbSyscallId.WASI_FD_WRITE:
-            return int(self._wasi_fd_write(arg0, arg1, arg2, arg3))
-        if sid == FbSyscallId.WASI_FD_READ:
-            return int(self._wasi_fd_read(arg0, arg1, arg2, arg3))
-        if sid == FbSyscallId.WASI_FD_CLOSE:
-            return int(self._wasi_fd_close(arg0))
-        if sid == FbSyscallId.WASI_CLOCK_TIME_GET:
-            return int(self._wasi_clock_time_get(arg2))
-        if sid == FbSyscallId.WASI_PROC_EXIT:
-            return int(self._wasi_proc_exit(arg0))
-        if sid == FbSyscallId.WASI_RANDOM_GET:
-            return int(self._wasi_random_get(arg0, arg1))
-
+        handler = self._syscall_dispatch_tree.find(syscall_id)
+        if handler is not None:
+            return handler(arg0, arg1, arg2, arg3, arg4, arg5)
         return int(WasiErrno.NOSYS)
 
     # --- guest memory (fb_offset_t resolution) -------------------------

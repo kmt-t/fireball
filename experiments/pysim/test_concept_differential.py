@@ -355,6 +355,21 @@ def test_diff_wasi_host_context_radix_binary_tree_imports():
     assert ctx.get_handler_for_import("unknown_module", "fd_write") is None
 
 
+def test_diff_fireball_call_radix_binary_tree_dispatch():
+    """Validates that System.fireball_call dispatches syscalls via RadixBinaryTreeView in O(k)."""
+    import system as p_sys
+
+    sysv = p_sys.System()
+
+    # Valid syscalls
+    assert sysv.fireball_call(p_sys.FbSyscallId.SYS_YIELD, 0, 0, 0, 0, 0, 0) == int(p_sys.WasiErrno.SUCCESS)
+    assert sysv.fireball_call(p_sys.FbSyscallId.SYS_HALT, 0, 0, 0, 0, 0, 0) == int(p_sys.WasiErrno.SUCCESS)
+    assert sysv.halted is True
+
+    # Invalid syscall
+    assert sysv.fireball_call(0x999, 0, 0, 0, 0, 0, 0) == int(p_sys.WasiErrno.NOSYS)
+
+
 ALL_DIFF_TESTS = [
     test_diff_system_containers_flat_map_view,
     test_diff_system_containers_radix_binary_tree_view,
@@ -365,6 +380,7 @@ ALL_DIFF_TESTS = [
     test_diff_wasm_loader_symbol_hashing_and_indexing,
     test_diff_debugger_manager_gdb_rsp,
     test_diff_wasi_host_context_radix_binary_tree_imports,
+    test_diff_fireball_call_radix_binary_tree_dispatch,
 ]
 
 if __name__ == "__main__":

@@ -154,11 +154,9 @@ class Module:
         return slots
 
     def is_import(self, func_index: int) -> bool:
-
         return func_index < len(self.imports)
 
     def func_type(self, func_index: int) -> FuncType:
-
         if self.is_import(func_index):
             return self.types[self.imports[func_index].type_index]
 
@@ -166,7 +164,6 @@ class Module:
         return self.types[local.type_index]
 
     def export_func_index(self, name: str) -> int:
-
         for exp in self.exports:
             if exp.kind == 0 and exp.name == name:
                 return exp.index

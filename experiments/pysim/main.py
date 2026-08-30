@@ -129,7 +129,6 @@ def task_retry_then_succeed(sysv: System):
     attempts_made = [0]
 
     def flaky_operation() -> Result[str, str]:
-
         attempts_made[0] += 1
         if attempts_made[0] < 3:
             return Result.err("BUSY", RecoveryStrategy.RETRY)
@@ -154,11 +153,9 @@ def task_retry_exhausted(sysv: System):
     reset_performed = [False]
 
     def failing_op() -> Result[str, str]:
-
         return Result.err("RESOURCE_DEADLOCK", RecoveryStrategy.RETRY)
 
     def on_reset() -> bool:
-
         reset_performed[0] = True
         return False  # Reset failed to clear condition, forces escalation to PANIC
 
@@ -252,7 +249,6 @@ def run_wasm_demo(sysv: System) -> None:
 
     # Compile and execute WASI guest trace
     def host_wasi_roundtrip():
-
         # 1. fd_write
         ctx_wasi.fd_write(1, MSG_IOV, 1, NWRITTEN)
         # 2. IPC lookup
@@ -289,7 +285,6 @@ def run_wasm_demo(sysv: System) -> None:
 
 
 def main() -> None:
-
     sysv = System()
     sched = Scheduler()
     sched.set_idle_hook(

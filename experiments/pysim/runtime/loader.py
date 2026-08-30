@@ -116,22 +116,18 @@ class FlatMapView:
     """fireball::flat_map_view<Key, Value>: Sorted key-value slice with O(log n) binary search."""
 
     def __init__(self, keys: Sequence[Any], values: Sequence[Any]):
-
         assert len(keys) == len(values)
         self.keys = list(keys)
         self.values = list(values)
 
     def size(self) -> int:
-
         return len(self.keys)
 
     def slice(self, first: int, last: int) -> FlatMapView:
-
         assert 0 <= first <= last <= len(self.keys)
         return FlatMapView(self.keys[first:last], self.values[first:last])
 
     def find(self, key: Any) -> Any | None:
-
         idx = bisect.bisect_left(self.keys, key)
         if idx < len(self.keys) and self.keys[idx] == key:
             return self.values[idx]
@@ -146,7 +142,6 @@ class RadixBinaryTreeView:
     """
 
     def __init__(self, keys: Sequence[int], values: Sequence[Any], radix_shift: int = 16):
-
         paired = sorted(zip(keys, values, strict=False), key=lambda p: p[0])
         self.keys = [p[0] for p in paired]
         self.values = [p[1] for p in paired]
@@ -171,7 +166,6 @@ class RadixBinaryTreeView:
             self.radix_table = []
 
     def find(self, key: int) -> Any | None:
-
         prefix = key >> self.radix_shift
         if prefix < 0 or prefix >= len(self.radix_table):
             return None
@@ -201,13 +195,11 @@ class BumpAllocator:
     """Non-owning LIFO bump allocator simulating scratch allocation ({META_BumpAllocator})."""
 
     def __init__(self, capacity: int = 16384):
-
         self.capacity = capacity
         self.storage = bytearray(capacity)
         self.offset = 0
 
     def allocate(self, size: int, alignment: int = 4) -> int:
-
         aligned_offset = (self.offset + (alignment - 1)) & ~(alignment - 1)
         if aligned_offset + size > self.capacity:
             raise MemoryError("BumpAllocator capacity exceeded")
@@ -216,16 +208,13 @@ class BumpAllocator:
         return aligned_offset
 
     def save(self) -> int:
-
         return self.offset
 
     def restore(self, saved_offset: int) -> None:
-
         assert 0 <= saved_offset <= self.offset
         self.offset = saved_offset
 
     def reset(self) -> None:
-
         self.offset = 0
 
 
@@ -248,22 +237,18 @@ class BinaryStream:
             )
 
     def remaining(self) -> int:
-
         return max(0, self.limit - self.cursor)
 
     def tell(self) -> int:
-
         return self.cursor
 
     def seek(self, pos: int) -> None:
-
         if pos < 0 or pos > self.limit:
             raise WasmParseError(f"Seek position {pos} out of range [0, {self.limit}]")
 
         self.cursor = pos
 
     def read_bytes(self, n: int) -> memoryview:
-
         if self.cursor + n > self.limit:
             raise WasmParseError(
                 f"Unexpected end of stream: requested {n} bytes, {self.remaining()} remaining"
@@ -274,11 +259,9 @@ class BinaryStream:
         return res
 
     def read_u8(self) -> int:
-
         return self.read_bytes(1)[0]
 
     def read_leb128_u32(self) -> int:
-
         result = 0
         shift = 0
         count = 0
@@ -303,7 +286,6 @@ class BinaryStream:
         return result
 
     def read_leb128_s32(self) -> int:
-
         result = 0
         shift = 0
         count = 0
@@ -331,7 +313,6 @@ class BinaryStream:
         return result
 
     def read_string(self) -> str:
-
         length = self.read_leb128_u32()
         raw_bytes = self.read_bytes(length)
         try:
@@ -343,12 +324,10 @@ class BinaryStream:
 
 class FuncType:
     def __init__(self, params: list[int], results: list[int]):
-
         self.params = params
         self.results = results
 
     def __eq__(self, other: object) -> bool:
-
         if not isinstance(other, FuncType):
             return False
 
@@ -357,7 +336,6 @@ class FuncType:
 
 class ImportEntry:
     def __init__(self, module_name: str, field_name: str, kind: int, desc: int):
-
         self.module_name = module_name
         self.field_name = field_name
         self.kind = kind
@@ -366,19 +344,16 @@ class ImportEntry:
 
 class ExportEntry:
     def __init__(self, name: str, kind: int, index: int):
-
         self.name = name
         self.kind = kind
         self.index = index
 
     def __lt__(self, other: ExportEntry) -> bool:
-
         return self.name < other.name
 
 
 class GlobalEntry:
     def __init__(self, valtype: int, mutable: bool, init_expr_offset: int, init_expr_size: int):
-
         self.valtype = valtype
         self.mutable = mutable
         self.init_expr_offset = init_expr_offset
@@ -387,14 +362,12 @@ class GlobalEntry:
 
 class MemoryEntry:
     def __init__(self, initial_pages: int, maximum_pages: int | None = None):
-
         self.initial_pages = initial_pages
         self.maximum_pages = maximum_pages
 
 
 class TableEntry:
     def __init__(self, elemtype: int, initial: int, maximum: int | None = None):
-
         self.elemtype = elemtype
         self.initial = initial
         self.maximum = maximum
@@ -436,19 +409,15 @@ class FunctionAccessor:
         self._code_size = code_size
 
     def get_type_index(self) -> int:
-
         return self.type_idx
 
     def get_signature(self) -> FuncType:
-
         return self.type_sig
 
     def get_locals_stream(self) -> BinaryStream:
-
         return BinaryStream(self._rom_data, offset=self._code_offset, length=self._code_size)
 
     def get_code_stream(self) -> BinaryStream:
-
         stream = self.get_locals_stream()
         local_vec_count = stream.read_leb128_u32()
         for _ in range(local_vec_count):
@@ -471,11 +440,9 @@ class GlobalAccessor:
         self._rom_data = rom_data
 
     def get_metadata(self) -> tuple[int, bool]:
-
         return (self.entry.valtype, self.entry.mutable)
 
     def get_init_expr_stream(self) -> BinaryStream:
-
         return BinaryStream(
             self._rom_data,
             offset=self.entry.init_expr_offset,
@@ -509,7 +476,6 @@ class ModuleView:
     """
 
     def __init__(self, module_name: str, rom_binary: bytes | bytearray | memoryview):
-
         self.module_name = module_name
         self.rom_binary = memoryview(rom_binary)
         self.sections: dict[int, SectionView] = {}
@@ -581,7 +547,6 @@ class ModuleView:
         return None
 
     def lookup_export_func(self, name: str) -> int | None:
-
         exp = self.lookup_export(name)
         if exp is not None and exp.kind == ExternalKind.FUNCTION:
             return exp.index
@@ -596,11 +561,9 @@ class ModuleView:
         return self.entity_offset_tree.find_interval(file_offset)
 
     def num_imported_functions(self) -> int:
-
         return sum(1 for imp in self.imports if imp.kind == ExternalKind.FUNCTION)
 
     def get_function(self, func_idx: int) -> FunctionAccessor:
-
         num_imported = self.num_imported_functions()
         if func_idx < num_imported:
             raise ValueError(f"Cannot get code accessor for imported function index {func_idx}")
@@ -622,7 +585,6 @@ class ModuleView:
         )
 
     def get_global(self, global_idx: int) -> GlobalAccessor:
-
         if global_idx < 0 or global_idx >= len(self.globals):
             raise IndexError(f"Global index {global_idx} out of range")
 
@@ -648,11 +610,9 @@ class WasmLoader:
         self.max_wasm_pages = max_wasm_pages
 
     def lookup(self, name: str) -> ModuleView | None:
-
         return self.registry.get(name)
 
     def prepare(self, module_name: str, wasm_binary: bytes | bytearray | memoryview) -> ModuleView:
-
         if len(self.registry) >= self.max_modules:
             raise WasmLinkError(f"Module registry capacity ({self.max_modules}) exceeded")
 
@@ -745,7 +705,6 @@ class WasmLoader:
             raise
 
     def _parse_section_content(self, sec_id: int, stream: BinaryStream, view: ModuleView) -> None:
-
         if sec_id == SectionID.TYPE:
             count = stream.read_leb128_u32()
             for _ in range(count):
@@ -860,7 +819,6 @@ class WasmLoader:
                 stream.seek(body_start + body_size)
 
     def resolve_imports(self, module: ModuleView) -> bool:
-
         for imp in module.imports:
             target_mod = self.lookup(imp.module_name)
             if target_mod is None:
@@ -876,7 +834,6 @@ class WasmLoader:
         return True
 
     def unload(self, module: ModuleView) -> bool:
-
         if module.module_name in self.registry:
             del self.registry[module.module_name]
             return True

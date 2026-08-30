@@ -60,14 +60,12 @@ TRACE_FN_TYPE = ctypes.CFUNCTYPE(
 
 
 def patch(code: bytearray, base: int, stencil: st.Stencil, reloc_name: str, value: int) -> None:
-
     width = 8 if reloc_name == "addr" else 4
     off = base + stencil.relocs[reloc_name]
     code[off : off + width] = (value & ((1 << (width * 8)) - 1)).to_bytes(width, "little")
 
 
 def emit(code: bytearray, stencil: st.Stencil, **patches: int) -> int:
-
     base = len(code)
     code += stencil.code
     for name, value in patches.items():
@@ -121,7 +119,6 @@ class TraceCompiler:
     """
 
     def __init__(self, host_trampolines: Any = None):
-
         self.host_trampolines = host_trampolines or []
 
     SUPPORTED_OPS: tuple[str, ...] = (

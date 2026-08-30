@@ -75,16 +75,13 @@ class Result(Generic[T, E]):
 
     @classmethod
     def ok(cls, value: T) -> Result[T, Any]:
-
         return cls(is_ok=True, value=value, error=None, strategy=RecoveryStrategy.IGNORE)
 
     @classmethod
     def err(cls, error: E, strategy: RecoveryStrategy = RecoveryStrategy.RETRY) -> Result[Any, E]:
-
         return cls(is_ok=False, value=None, error=error, strategy=strategy)
 
     def unwrap(self) -> T:
-
         if not self.is_ok:
             return None  # No exception raised
 

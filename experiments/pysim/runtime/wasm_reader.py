@@ -68,18 +68,15 @@ class WasmParseError(Exception):
 
 class WasmUnsupportedFeatureError(WasmParseError):
     def __init__(self, message: str = "ERR_WASM_UNSUPPORTED_FEATURE"):
-
         super().__init__(message)
         self.error_code = "ERR_WASM_UNSUPPORTED_FEATURE"
 
 
 def _read_vec_len(data: bytes, off: int) -> tuple[int, int]:
-
     return decode_unsigned(data, off)
 
 
 def _parse_functype(data: bytes, off: int) -> tuple[FuncType, int]:
-
     tag = data[off]
     off += 1
     if tag != 0x60:
@@ -101,7 +98,6 @@ def _parse_functype(data: bytes, off: int) -> tuple[FuncType, int]:
 
 
 def _parse_type_section(data: bytes, off: int, end: int, module: Module) -> None:
-
     n, off = decode_unsigned(data, off)
     for _ in range(n):
         ft, off = _parse_functype(data, off)
@@ -111,7 +107,6 @@ def _parse_type_section(data: bytes, off: int, end: int, module: Module) -> None
 
 
 def _parse_import_section(data: bytes, off: int, end: int, module: Module) -> None:
-
     n, off = decode_unsigned(data, off)
     for _ in range(n):
         mod_len, off = decode_unsigned(data, off)
@@ -132,7 +127,6 @@ def _parse_import_section(data: bytes, off: int, end: int, module: Module) -> No
 
 
 def _parse_function_section(data: bytes, off: int, end: int) -> list[int]:
-
     n, off = decode_unsigned(data, off)
     type_indices = []
     for _ in range(n):
@@ -144,7 +138,6 @@ def _parse_function_section(data: bytes, off: int, end: int) -> list[int]:
 
 
 def _parse_limits(data: bytes, off: int) -> tuple[int, int | None, int]:
-
     flag = data[off]
     off += 1
     minimum, off = decode_unsigned(data, off)
@@ -156,7 +149,6 @@ def _parse_limits(data: bytes, off: int) -> tuple[int, int | None, int]:
 
 
 def _parse_memory_section(data: bytes, off: int, end: int, module: Module) -> None:
-
     n, off = decode_unsigned(data, off)
     assert n <= 1, "only single linear memory is supported"
     for _ in range(n):
@@ -167,7 +159,6 @@ def _parse_memory_section(data: bytes, off: int, end: int, module: Module) -> No
 
 
 def _parse_table_section(data: bytes, off: int, end: int, module: Module) -> None:
-
     n, off = decode_unsigned(data, off)
     for _ in range(n):
         elem_type = data[off]
@@ -182,7 +173,6 @@ def _parse_table_section(data: bytes, off: int, end: int, module: Module) -> Non
 
 
 def _parse_element_section(data: bytes, off: int, end: int, module: Module) -> None:
-
     n, off = decode_unsigned(data, off)
     for _ in range(n):
         table_index, off = decode_unsigned(data, off)
@@ -208,7 +198,6 @@ def _parse_element_section(data: bytes, off: int, end: int, module: Module) -> N
 
 
 def _parse_global_section(data: bytes, off: int, end: int, module: Module) -> None:
-
     n, off = decode_unsigned(data, off)
     for _ in range(n):
         vtype = VALTYPE_BYTES[data[off]]
@@ -227,7 +216,6 @@ def _parse_global_section(data: bytes, off: int, end: int, module: Module) -> No
 
 
 def _parse_export_section(data: bytes, off: int, end: int, module: Module) -> None:
-
     n, off = decode_unsigned(data, off)
     for _ in range(n):
         name_len, off = decode_unsigned(data, off)
@@ -269,14 +257,12 @@ def _parse_code_section(
 
 
 def _parse_start_section(data: bytes, off: int, end: int, module: Module) -> None:
-
     func_idx, off = decode_unsigned(data, off)
     module.start_function = func_idx
     assert off == end, "start section length mismatch"
 
 
 def _parse_data_section(data: bytes, off: int, end: int, module: Module) -> None:
-
     n, off = decode_unsigned(data, off)
     for _ in range(n):
         mem_idx, off = decode_unsigned(data, off)
@@ -297,7 +283,6 @@ def _parse_data_section(data: bytes, off: int, end: int, module: Module) -> None
 
 
 def parse(data: bytes) -> Module:
-
     if data[0:4] != MAGIC:
         raise WasmParseError("missing \\0asm magic header")
 

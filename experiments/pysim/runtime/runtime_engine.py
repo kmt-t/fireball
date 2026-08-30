@@ -150,25 +150,20 @@ class HistoryRing:
     """Fixed-size ring of recently executed basic-block head PCs backed by RingBuffer."""
 
     def __init__(self, capacity: int = 32):
-
         self.ring: RingBuffer[int] = RingBuffer(capacity)
 
     @property
     def capacity(self) -> int:
-
         return self.ring.capacity
 
     @property
     def dropped(self) -> int:
-
         return self.ring.dropped
 
     def record(self, pc: int) -> None:
-
         self.ring.push(pc)
 
     def drain(self) -> list[int]:
-
         return self.ring.drain()
 
 
@@ -202,7 +197,6 @@ class JITTraceHeader:
         self.chain_target_addr: int | None = None
 
     def pack(self) -> bytes:
-
         import struct
 
         return struct.pack(
@@ -243,17 +237,14 @@ class JITTrace:
 
     @property
     def native_fn(self) -> Any:
-
         return self.fn
 
     @property
     def flags(self) -> int:
-
         return self.header.flags
 
     @flags.setter
     def flags(self, val: int) -> None:
-
         self.header.flags = val
 
     def __call__(
@@ -296,7 +287,6 @@ class JITTrace:
 
 class JITCacheBank:
     def __init__(self, bank_id: int, capacity_bytes: int = 2048):
-
         self.bank_id = bank_id
         self.capacity_bytes = capacity_bytes
         self.used_bytes = 0
@@ -305,7 +295,6 @@ class JITCacheBank:
         self.inbound_sources: list[int] = []
 
     def get_trace(self, head_pc: int) -> JITTrace | None:
-
         for pc, trace in self.traces:
             if pc == head_pc:
                 return trace
@@ -313,11 +302,9 @@ class JITCacheBank:
         return None
 
     def has_trace(self, head_pc: int) -> bool:
-
         return self.get_trace(head_pc) is not None
 
     def remove_trace(self, head_pc: int) -> JITTrace | None:
-
         for i, (pc, trace) in enumerate(self.traces):
             if pc == head_pc:
                 self.traces.pop(i)
@@ -326,7 +313,6 @@ class JITCacheBank:
         return None
 
     def clear(self) -> list[int]:
-
         purged = [pc for pc, _ in self.traces]
         self.traces.clear()
         self.inbound_sources.clear()
@@ -334,7 +320,6 @@ class JITCacheBank:
         return purged
 
     def allocate(self, trace: JITTrace) -> bool:
-
         prev = self.get_trace(trace.head_pc)
         delta = trace.size_bytes - (prev.size_bytes if prev else 0)
         if self.used_bytes + delta > self.capacity_bytes:
@@ -352,7 +337,6 @@ class JITMultiBufferCache:
     """3-bank rotating JIT code cache: Active / Warm / Oldest with O(k) bounded unlinking."""
 
     def __init__(self, bank_capacity: int = 2048):
-
         self.banks = [JITCacheBank(i, bank_capacity) for i in range(3)]
         self.active_idx, self.warm_idx, self.oldest_idx = 0, 1, 2
         self.promotions = 0
@@ -361,21 +345,17 @@ class JITMultiBufferCache:
 
     @property
     def active(self) -> JITCacheBank:
-
         return self.banks[self.active_idx]
 
     @property
     def warm(self) -> JITCacheBank:
-
         return self.banks[self.warm_idx]
 
     @property
     def oldest(self) -> JITCacheBank:
-
         return self.banks[self.oldest_idx]
 
     def find_bank(self, head_pc: int) -> JITCacheBank | None:
-
         for bank in self.banks:
             if bank.has_trace(head_pc):
                 return bank
@@ -383,7 +363,6 @@ class JITMultiBufferCache:
         return None
 
     def find_trace(self, head_pc: int) -> JITTrace | None:
-
         for bank in self.banks:
             trace = bank.get_trace(head_pc)
             if trace is not None:
@@ -392,13 +371,11 @@ class JITMultiBufferCache:
         return None
 
     def register_chain(self, source_pc: int, target_pc: int) -> None:
-
         target_bank = self.find_bank(target_pc)
         if target_bank is not None and source_pc not in target_bank.inbound_sources:
             target_bank.inbound_sources.append(source_pc)
 
     def lookup(self, head_pc: int) -> JITTrace | None:
-
         trace = self.active.get_trace(head_pc)
         if trace is not None:
             return trace
@@ -423,7 +400,6 @@ class JITMultiBufferCache:
         return trace
 
     def insert(self, trace: JITTrace) -> bool:
-
         if not self.active.allocate(trace):
             self.rotate()
             if not self.active.allocate(trace):
@@ -483,7 +459,6 @@ class RuntimeEngine:
     """Integrated Tiered Tracing Runtime Engine combining Interpreter and JIT."""
 
     def __init__(self, jit_compiler: Any | None = None, yield_threshold: int = 16):
-
         self.bitmap = HotspotBitmap()
         self.ring = HistoryRing()
         self.cache = JITMultiBufferCache()
@@ -495,12 +470,10 @@ class RuntimeEngine:
         self.exec_counter = 0
 
     def _handle_eviction(self, purged_pcs: list[int]) -> None:
-
         for pc in purged_pcs:
             self.bitmap.mark_evicted(pc)
 
     def register_block(self, block: BasicBlock) -> None:
-
         for i, (pc, _) in enumerate(self.blocks):
             if pc == block.head_pc:
                 self.blocks[i] = (block.head_pc, block)
@@ -509,7 +482,6 @@ class RuntimeEngine:
         self.blocks.append((block.head_pc, block))
 
     def get_block(self, pc: int) -> BasicBlock | None:
-
         for b_pc, block in self.blocks:
             if b_pc == pc:
                 return block
@@ -571,7 +543,6 @@ class RuntimeEngine:
         return compiled_count
 
     def drain_compile_queue(self) -> int:
-
         return self.idle_hook(budget=len(self.compile_queue) or 1000)
 
     def run_wasm_coroutine(
@@ -622,17 +593,14 @@ class WASMContext:
 
     @property
     def stack_bot_ptr(self) -> ctypes.c_void_p:
-
         return ctypes.c_void_p(0)
 
     @property
     def locals_ptr(self) -> ctypes.c_void_p:
-
         return ctypes.cast(self._c_locals, ctypes.c_void_p)
 
     @property
     def mem_ptr(self) -> ctypes.c_void_p:
-
         if self._c_mem is not None:
             return ctypes.c_void_p(ctypes.addressof(self._c_mem))
 
@@ -640,46 +608,37 @@ class WASMContext:
 
     class _LocalsView:
         def __init__(self, ctx: WASMContext):
-
             self._ctx = ctx
 
         def __getitem__(self, idx: int) -> int:
-
             return self._ctx._c_locals[idx] & 0xFFFF_FFFF
 
         def __setitem__(self, idx: int, val: int) -> None:
-
             self._ctx._c_locals[idx] = val & 0xFFFF_FFFF
 
         def __len__(self) -> int:
-
             return self._ctx._n_locals
 
         def __iter__(self):
-
             for i in range(self._ctx._n_locals):
                 yield self._ctx._c_locals[i] & 0xFFFF_FFFF
 
     @property
     def locals(self):
-
         return self._LocalsView(self)
 
     @locals.setter
     def locals(self, values: list[int]):
-
         for i, v in enumerate(values):
             self._c_locals[i] = v & 0xFFFF_FFFF
 
     def push(self, val: int) -> None:
-
         if len(self.stack) >= self.stack_capacity:
             raise RuntimeError("WASM execution stack overflow")
 
         self.stack.append(val & 0xFFFF_FFFF)
 
     def pop(self) -> int:
-
         if not self.stack:
             raise RuntimeError("WASM execution stack underflow")
 
@@ -707,12 +666,10 @@ class WASMTraceCompiler:
     """Compiles a BasicBlock into a fast callable native JITTrace."""
 
     def compile_trace(self, head_pc: int, block: BasicBlock) -> JITTrace:
-
         ops = list(block.ops)
         has_ret = any(op.startswith("i32.") for op, _ in ops)
 
         def trace_fn(ip: int, stack_bot: Any, env: Any, local_base: Any) -> int:
-
             # Emulated handler matching CPS 4-argument C signature
             c_arr = ctypes.cast(local_base, ctypes.POINTER(ctypes.c_int64))
             stk: list[int] = []
@@ -766,7 +723,6 @@ class IntegratedHybridEngine:
     """
 
     def __init__(self, yield_threshold: int = 4, card_shift: int = 4, compiler: Any = None):
-
         self.bitmap = HotspotBitmap(card_shift=card_shift)
         self.history = HistoryRing(capacity=32)
         self.cache = JITMultiBufferCache()
@@ -787,7 +743,6 @@ class IntegratedHybridEngine:
 
     @property
     def handler_table(self) -> str:
-
         return "debug" if self._dispatch == self._dispatch_debug else "normal"
 
     def attach_debugger(self, debugger: Any) -> None:
@@ -801,7 +756,6 @@ class IntegratedHybridEngine:
         self._dispatch = self._dispatch_normal
 
     def register_block(self, block: BasicBlock) -> None:
-
         for i, (pc, _) in enumerate(self.blocks):
             if pc == block.head_pc:
                 self.blocks[i] = (block.head_pc, block)
@@ -810,7 +764,6 @@ class IntegratedHybridEngine:
         self.blocks.append((block.head_pc, block))
 
     def get_block(self, pc: int) -> BasicBlock | None:
-
         for b_pc, block in self.blocks:
             if b_pc == pc:
                 return block
@@ -842,7 +795,6 @@ class IntegratedHybridEngine:
         return compiled
 
     def _interpret_block(self, block: BasicBlock, ctx: WASMContext) -> None:
-
         for op, arg in block.ops:
             if op == "i32.const":
                 ctx.push(arg)
@@ -866,7 +818,6 @@ class IntegratedHybridEngine:
                 ctx.locals[arg] = ctx.pop()
 
     def _next_pc(self, block: BasicBlock, ctx: WASMContext) -> int | None:
-
         if block.loops_to is not None:
             # Condition at TOS: if non-zero, loop back; else fallthrough
             cond = ctx.pop()

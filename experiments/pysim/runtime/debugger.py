@@ -45,7 +45,6 @@ class DebuggerManager:
     """Manages debug state, breakpoint sets, execution stepping, and integrated profiling."""
 
     def __init__(self, engine: IntegratedHybridEngine | None = None):
-
         self.engine = engine
         self.attached: bool = False
         self.halted: bool = False
@@ -138,18 +137,15 @@ class GDBRspProtocol:
     """GDB Remote Serial Protocol (RSP) packet handler and dispatcher ({RSPMinimalSet})."""
 
     def __init__(self, dbg: DebuggerManager):
-
         self.dbg = dbg
 
     @staticmethod
     def calculate_checksum(payload: str) -> str:
-
         cksum = sum(ord(c) for c in payload) % 256
         return f"{cksum:02x}"
 
     @classmethod
     def format_packet(cls, payload: str) -> str:
-
         return f"${payload}#{cls.calculate_checksum(payload)}"
 
     def handle_packet(

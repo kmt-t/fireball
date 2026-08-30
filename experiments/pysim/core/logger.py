@@ -70,11 +70,9 @@ class LogDictionary:
     """
 
     def __init__(self, capacity: int = 128):
-
         self._map: StaticFlatMap[int, str] = StaticFlatMap(capacity)
 
     def register(self, offset: int, fmt: str) -> None:
-
         for bad in _DISALLOWED_SPECIFIERS:
             if bad in fmt:
                 raise ValueError(
@@ -85,7 +83,6 @@ class LogDictionary:
         self._map.insert(offset, fmt)
 
     def view(self) -> FlatMapView[int, str]:
-
         return self._map.view()
 
     def format(self, offset: int, args: tuple[int, int, int, int]) -> str:
@@ -121,7 +118,6 @@ class RingBuffer:
     """Fixed-capacity, overwrite-oldest-on-full (system_logging.md 4.1 "FINALIZED: Overwrite")."""
 
     def __init__(self, capacity: int = 16):
-
         assert capacity & (capacity - 1) == 0, "capacity must be a power of two"
         self._buf: list[LogEntry | None] = [None] * capacity
         self._mask = capacity - 1
@@ -131,7 +127,6 @@ class RingBuffer:
         self.overwrite_count = 0
 
     def push(self, entry: LogEntry) -> bool:
-
         overwritten = self._count == len(self._buf)
         if overwritten:
             self._tail = (self._tail + 1) & self._mask
@@ -144,7 +139,6 @@ class RingBuffer:
         return overwritten
 
     def pop(self) -> LogEntry | None:
-
         if self._count == 0:
             return None
 
@@ -155,7 +149,6 @@ class RingBuffer:
         return entry
 
     def is_empty(self) -> bool:
-
         return self._count == 0
 
 
@@ -196,7 +189,6 @@ class Logger:
         return "OVERWRITTEN" if overwritten else "QUEUED"
 
     def flush(self) -> int:
-
         flushed = 0
         while not self.ring.is_empty():
             entry = self.ring.pop()
@@ -213,9 +205,7 @@ class ConsoleOutput:
     """{WASI_ConsoleRawOutput}: raw bytes, no dictionary, no ring buffer."""
 
     def __init__(self, transport: UartTransport):
-
         self.transport = transport
 
     def write(self, data: bytes) -> int:
-
         return self.transport.write(data)

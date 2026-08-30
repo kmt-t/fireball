@@ -52,14 +52,12 @@ class WasiWhence:
 
 class VirtualFile:
     def __init__(self, name: str, data: bytes = b"", read_only: bool = False):
-
         self.name = name
         self.data = bytearray(data)
         self.cursor = 0
         self.read_only = read_only
 
     def read(self, size: int) -> bytes:
-
         if self.cursor >= len(self.data):
             return b""
 
@@ -68,7 +66,6 @@ class VirtualFile:
         return chunk
 
     def write(self, buf: bytes) -> int:
-
         if self.read_only:
             return 0
 
@@ -81,7 +78,6 @@ class VirtualFile:
         return len(buf)
 
     def seek(self, offset: int, whence: int) -> int:
-
         if whence == WasiWhence.SET:
             self.cursor = max(0, offset)
 
@@ -101,7 +97,6 @@ class WasiDummyContext:
     """Simulates the host environment implementing WASI Preview 1 calls."""
 
     def __init__(self, env: dict[str, str] | None = None, args: list[str] | None = None):
-
         self.stdin_buffer = bytearray(b"INPUT_STREAM_DATA\n")
         self.stdin_pos = 0
         self.stdout_buffer = bytearray()
@@ -194,7 +189,6 @@ class WasiDummyContext:
         return WasiErrno.SUCCESS
 
     def random_get(self, memory: bytearray, buf_ptr: int, buf_len: int) -> int:
-
         rand_bytes = os.urandom(buf_len)
         memory[buf_ptr : buf_ptr + buf_len] = rand_bytes
         return WasiErrno.SUCCESS

@@ -133,7 +133,6 @@ def test_trace_compiler_host_call_cps():
     received = []
 
     def host_callback():
-
         received.append(42)
         return 999
 

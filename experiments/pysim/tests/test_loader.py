@@ -42,7 +42,6 @@ from loader import (
 
 
 def _encode_leb128_u32(val: int) -> bytes:
-
     buf = bytearray()
     while True:
         b = val & 0x7F
@@ -58,7 +57,6 @@ def _encode_leb128_u32(val: int) -> bytes:
 
 
 def _encode_leb128_s32(val: int) -> bytes:
-
     buf = bytearray()
     more = True
     while more:

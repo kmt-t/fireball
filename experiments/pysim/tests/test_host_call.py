@@ -42,12 +42,10 @@ def _run_with_host_call(nparams: int, arg_values: list[int]) -> tuple[int, list[
     received: list[int] = []
 
     def host_fn(*args):
-
         received.extend(args[:nparams])
         return sum(v * (i + 1) for i, v in enumerate(args[:nparams])) & 0xFFFFFFFF
 
     def host_wrapper():
-
         return host_fn(*arg_values)
 
     trampoline = ctypes.CFUNCTYPE(ctypes.c_uint32)(host_wrapper)
@@ -68,35 +66,30 @@ def _run_with_host_call(nparams: int, arg_values: list[int]) -> tuple[int, list[
 
 
 def test_0_params():
-
     res, received = _run_with_host_call(0, [])
     assert received == []
     assert res == 0
 
 
 def test_1_param():
-
     res, received = _run_with_host_call(1, [42])
     assert received == [42]
     assert res == 42
 
 
 def test_2_params():
-
     res, received = _run_with_host_call(2, [10, 20])
     assert received == [10, 20]
     assert res == 10 * 1 + 20 * 2  # 50
 
 
 def test_4_params():
-
     res, received = _run_with_host_call(4, [1, 2, 3, 4])
     assert received == [1, 2, 3, 4]
     assert res == 1 * 1 + 2 * 2 + 3 * 3 + 4 * 4  # 30
 
 
 def test_6_params_fireball_call6_max():
-
     res, received = _run_with_host_call(6, [10, 20, 30, 40, 50, 60])
     assert received == [10, 20, 30, 40, 50, 60]
     expected = 10 * 1 + 20 * 2 + 30 * 3 + 40 * 4 + 50 * 5 + 60 * 6  # 910

@@ -108,7 +108,6 @@ class JITTraceHeader:
 
     @classmethod
     def from_bytes(cls, data: bytes | bytearray, offset: int = 0) -> "JITTraceHeader":
-
         head_pc, size, flags, variant, chain_next, chain_target = struct.unpack_from(
             "<IHBBII", data, offset
         )

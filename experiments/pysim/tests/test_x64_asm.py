@@ -71,7 +71,6 @@ def _wrap(body: bytes) -> bytes:
 
 
 def _run_u64(body: bytes, a: int = 0, b: int = 0) -> int:
-
     code = _wrap(body)
     buf = ExecutableBuffer(max(len(code), 64))
     try:
@@ -99,7 +98,6 @@ def _run_void_ptr_arg(body: bytes, out_len: int) -> list[int]:
 
 
 def test_push_pop_roundtrip_for_every_tested_register():
-
     for reg in TESTED_REGS:
         code = bytearray()
         if reg != ARG0:
@@ -116,7 +114,6 @@ def test_push_pop_roundtrip_for_every_tested_register():
 
 
 def test_mov_reg_reg_moves_the_full_64_bits_between_every_pair():
-
     value = 0x0123456789ABCDEF
     for src in TESTED_REGS:
         for dst in TESTED_REGS:
@@ -136,7 +133,6 @@ def test_mov_reg_reg_moves_the_full_64_bits_between_every_pair():
 
 
 def test_mov_reg_imm64_loads_every_bit_of_a_64_bit_immediate():
-
     interesting = [
         0,
         1,
@@ -157,7 +153,6 @@ def test_mov_reg_imm64_loads_every_bit_of_a_64_bit_immediate():
 
 
 def test_mov_store_and_load_rsp_disp32_round_trip_at_several_offsets():
-
     for disp in (0, 8, 40, 96):
         code = bytearray()
         code += asm.sub_rsp_imm8(disp + 8)
@@ -169,7 +164,6 @@ def test_mov_store_and_load_rsp_disp32_round_trip_at_several_offsets():
 
 
 def test_mov_store_rsp_disp32_uses_a_distinct_register_per_slot_without_aliasing():
-
     code = bytearray()
     code += asm.sub_rsp_imm8(56)
     code += asm.mov_reg_reg("r13", ARG0)
@@ -190,7 +184,6 @@ def test_mov_store_rsp_disp32_uses_a_distinct_register_per_slot_without_aliasing
 
 
 def test_and_rsp_imm8_aligns_the_stack_pointer_down_to_16():
-
     code = bytearray()
     code += asm.mov_reg_reg("r12", ARG0)
     code += asm.mov_reg_reg("r13", "rsp")
@@ -207,7 +200,6 @@ def test_and_rsp_imm8_aligns_the_stack_pointer_down_to_16():
 
 
 def test_call_reg_performs_a_real_indirect_call_and_returns_here():
-
     callee_code = asm.mov_reg_reg("rax", ARG0) + bytes((0x48, 0x01, 0xC0)) + asm.ret()
     callee_buf = ExecutableBuffer(64)
     try:
@@ -224,7 +216,6 @@ def test_call_reg_performs_a_real_indirect_call_and_returns_here():
 
 
 def test_mov_load_scaled_reads_an_array_element_by_index():
-
     import ctypes as _ct
 
     arr = (_ct.c_uint64 * 4)(0x1111, 0x2222, 0x3333, 0x4444)
@@ -239,7 +230,6 @@ def test_mov_load_scaled_reads_an_array_element_by_index():
 
 
 def test_cmp_dword_scaled_imm32():
-
     arr = (_ct.c_uint32 * 4)(10, 20, 30, 40)
     base_addr = _ct.addressof(arr)
     code = bytearray()

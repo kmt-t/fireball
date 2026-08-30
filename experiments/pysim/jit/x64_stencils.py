@@ -61,7 +61,6 @@ class Stencil:
     relocs: dict[str, int] = field(default_factory=dict)
 
     def __len__(self) -> int:
-
         return len(self.code)
 
 
@@ -137,7 +136,6 @@ def _materialize(
 
 
 def _gen_prologue() -> Generator[int, None, None]:
-
     # Callee-saved: rbx, r12, r13, r14, r15
     # push rbx            53
     yield 0x53
@@ -173,7 +171,6 @@ def _gen_prologue() -> Generator[int, None, None]:
 
 
 def _gen_epilogue_return_i32() -> Generator[int, None, None]:
-
     # pop rax             58
     yield 0x58
     # movsxd rax, eax  (sign-extend the i32 result into rax)  48 63 C0
@@ -182,14 +179,12 @@ def _gen_epilogue_return_i32() -> Generator[int, None, None]:
 
 
 def _gen_epilogue_return_void() -> Generator[int, None, None]:
-
     # xor eax, eax        31 C0
     yield from (0x31, 0xC0)
     yield from _gen_restore_callee_saved_and_ret()
 
 
 def _gen_restore_callee_saved_and_ret() -> Generator[int, None, None]:
-
     # pop rdi / r15 / r14 / r13 / r12 / rbx -- exact reverse of the
     # prologue's push order -- then ret.
     yield from _gen_restore_unwind_only()
@@ -197,7 +192,6 @@ def _gen_restore_callee_saved_and_ret() -> Generator[int, None, None]:
 
 
 def _gen_local_get() -> Generator[int, None, None]:
-
     # mov eax, [r10 + disp32]     41 8B 82 xx xx xx xx   (disp32 relocated)
     yield from (0x41, 0x8B, 0x82, 0x00, 0x00, 0x00, 0x00)
     # movsxd rax, eax             48 63 C0
@@ -207,7 +201,6 @@ def _gen_local_get() -> Generator[int, None, None]:
 
 
 def _gen_local_set() -> Generator[int, None, None]:
-
     # pop rax                     58
     yield 0x58
     # mov [r10 + disp32], eax     41 89 82 xx xx xx xx
@@ -215,7 +208,6 @@ def _gen_local_set() -> Generator[int, None, None]:
 
 
 def _gen_local_tee() -> Generator[int, None, None]:
-
     # mov rax, [rsp]              48 8B 04 24     (peek without popping)
     yield from (0x48, 0x8B, 0x04, 0x24)
     # mov [r10 + disp32], eax     41 89 82 xx xx xx xx
@@ -223,7 +215,6 @@ def _gen_local_tee() -> Generator[int, None, None]:
 
 
 def _gen_i32_const() -> Generator[int, None, None]:
-
     # mov eax, imm32 (zero-extends into rax)   B8 xx xx xx xx
     yield 0xB8
     yield from (0x00, 0x00, 0x00, 0x00)
@@ -263,31 +254,26 @@ def _gen_cmp_setcc(setcc_opcode: int) -> bytes:
 
 
 def _gen_i32_eqz() -> Generator[int, None, None]:
-
     # pop rax; test eax,eax; sete al; movzx eax,al; push rax
     yield from (0x58, 0x85, 0xC0, 0x0F, 0x94, 0xC0, 0x0F, 0xB6, 0xC0, 0x50)
 
 
 def _gen_i32_div_s() -> Generator[int, None, None]:
-
     # pop rbx (divisor); pop rax (dividend); cdq; idiv ebx; push rax
     yield from (0x5B, 0x58, 0x99, 0xF7, 0xFB, 0x50)
 
 
 def _gen_i32_div_u() -> Generator[int, None, None]:
-
     # pop rbx; pop rax; xor edx,edx; div ebx; push rax
     yield from (0x5B, 0x58, 0x31, 0xD2, 0xF7, 0xF3, 0x50)
 
 
 def _gen_i32_rem_s() -> Generator[int, None, None]:
-
     # pop rbx; pop rax; cdq; idiv ebx; push rdx (remainder)
     yield from (0x5B, 0x58, 0x99, 0xF7, 0xFB, 0x52)
 
 
 def _gen_i32_rem_u() -> Generator[int, None, None]:
-
     # pop rbx; pop rax; xor edx,edx; div ebx; push rdx
     yield from (0x5B, 0x58, 0x31, 0xD2, 0xF7, 0xF3, 0x52)
 
@@ -322,7 +308,6 @@ def _gen_bounds_check() -> Generator[int, None, None]:
 
 
 def _gen_i32_load() -> Generator[int, None, None]:
-
     # pop rax (address, zero-extended u32 already on stack as such)
     yield 0x58
     yield from _gen_bounds_check()
@@ -337,7 +322,6 @@ def _gen_i32_load() -> Generator[int, None, None]:
 
 
 def _gen_i32_load8_u() -> Generator[int, None, None]:
-
     yield 0x58
     yield from _gen_bounds_check()
     # movzx eax, byte [r11+rax+disp32]   41 0F B6 84 03 xx xx xx xx
@@ -347,7 +331,6 @@ def _gen_i32_load8_u() -> Generator[int, None, None]:
 
 
 def _gen_i32_load8_s() -> Generator[int, None, None]:
-
     yield 0x58
     yield from _gen_bounds_check()
     # movsx eax, byte [r11+rax+disp32]   41 0F BE 84 03 xx xx xx xx
@@ -358,7 +341,6 @@ def _gen_i32_load8_s() -> Generator[int, None, None]:
 
 
 def _gen_i32_load16_u() -> Generator[int, None, None]:
-
     yield 0x58
     yield from _gen_bounds_check()
     # movzx eax, word [r11+rax+disp32]   41 0F B7 84 03 xx xx xx xx
@@ -368,7 +350,6 @@ def _gen_i32_load16_u() -> Generator[int, None, None]:
 
 
 def _gen_i32_load16_s() -> Generator[int, None, None]:
-
     yield 0x58
     yield from _gen_bounds_check()
     # movsx eax, word [r11+rax+disp32]   41 0F BF 84 03 xx xx xx xx
@@ -379,7 +360,6 @@ def _gen_i32_load16_s() -> Generator[int, None, None]:
 
 
 def _gen_i32_store() -> Generator[int, None, None]:
-
     # pop rbx (value); pop rax (address)
     yield from (0x5B, 0x58)
     yield from _gen_bounds_check()
@@ -389,7 +369,6 @@ def _gen_i32_store() -> Generator[int, None, None]:
 
 
 def _gen_i32_store8() -> Generator[int, None, None]:
-
     yield from (0x5B, 0x58)
     yield from _gen_bounds_check()
     # mov [r11+rax+disp32], bl   41 88 9C 03 xx xx xx xx
@@ -398,7 +377,6 @@ def _gen_i32_store8() -> Generator[int, None, None]:
 
 
 def _gen_i32_store16() -> Generator[int, None, None]:
-
     yield from (0x5B, 0x58)
     yield from _gen_bounds_check()
     # mov [r11+rax+disp32], bx   66 41 89 9C 03 xx xx xx xx  (0x66 operand-size prefix before REX)
@@ -408,26 +386,22 @@ def _gen_i32_store16() -> Generator[int, None, None]:
 
 
 def _gen_drop() -> Generator[int, None, None]:
-
     # add rsp, 8   48 83 C4 08
     yield from (0x48, 0x83, 0xC4, 0x08)
 
 
 def _gen_select() -> Generator[int, None, None]:
-
     # pop rcx (cond); pop rbx (b); pop rax (a); test ecx,ecx; cmovz rax, rbx; push rax
     yield from (0x59, 0x5B, 0x58, 0x85, 0xC9, 0x48, 0x0F, 0x44, 0xC3, 0x50)
 
 
 def _gen_br() -> Generator[int, None, None]:
-
     # jmp rel32   E9 xx xx xx xx   (relocated)
     yield 0xE9
     yield from (0x00, 0x00, 0x00, 0x00)
 
 
 def _gen_br_if() -> Generator[int, None, None]:
-
     # pop rax; test eax,eax; jnz rel32
     yield from (0x58, 0x85, 0xC0)
     yield 0x0F
@@ -436,14 +410,12 @@ def _gen_br_if() -> Generator[int, None, None]:
 
 
 def _gen_call() -> Generator[int, None, None]:
-
     # call rel32   E8 xx xx xx xx   (relocated to the callee's final address)
     yield 0xE8
     yield from (0x00, 0x00, 0x00, 0x00)
 
 
 def _gen_unreachable() -> Generator[int, None, None]:
-
     yield from _gen_trap()
 
 
@@ -492,7 +464,6 @@ def _gen_restore_unwind_only() -> Generator[int, None, None]:
 
 
 def _gen_i32_clz() -> Generator[int, None, None]:
-
     # pop rax; lzcnt eax, eax; push rax  (LZCNT returns 32 for a zero
     # input, exactly WASM's i32.clz(0) == 32 -- needs the LZCNT CPU
     # feature, ubiquitous on x86-64 hardware built in the last ~15 years)
@@ -502,7 +473,6 @@ def _gen_i32_clz() -> Generator[int, None, None]:
 
 
 def _gen_i32_ctz() -> Generator[int, None, None]:
-
     # pop rax; tzcnt eax, eax; push rax  (TZCNT(0) == 32, matching WASM)
     yield 0x58
     yield from (0xF3, 0x0F, 0xBC, 0xC0)
@@ -510,7 +480,6 @@ def _gen_i32_ctz() -> Generator[int, None, None]:
 
 
 def _gen_i32_popcnt() -> Generator[int, None, None]:
-
     yield 0x58
     yield from (0xF3, 0x0F, 0xB8, 0xC0)
     yield 0x50
@@ -546,7 +515,6 @@ def _gen_global_get() -> Generator[int, None, None]:
 
 
 def _gen_global_set() -> Generator[int, None, None]:
-
     # pop rbx (value)        5B
     yield 0x5B
     # mov rax, imm64(addr)   48 B8 xx*8

@@ -166,12 +166,10 @@ class BusMaster:
     """
 
     def __init__(self, pool: ShmBufferPool, task_id: int):
-
         self.pool = pool
         self.task_id = task_id
 
     def transfer_data(self, tx: ShmSlice, rx: ShmSlice) -> int:
-
         tx_view = self.pool.view(self.task_id, tx.handle, tx.offset, tx.len)
         rx_view = self.pool.view(self.task_id, rx.handle, rx.offset, rx.len)
         n = min(len(tx_view), len(rx_view))
@@ -183,18 +181,15 @@ class BusSlave:
     """`fireball:host/bus`'s `bus-slave.set-response` / `get-received`."""
 
     def __init__(self, pool: ShmBufferPool, task_id: int):
-
         self.pool = pool
         self.task_id = task_id
         self._pending_response: bytes = b""
 
     def set_response(self, data: ShmSlice) -> None:
-
         view = self.pool.view(self.task_id, data.handle, data.offset, data.len)
         self._pending_response = bytes(view)
 
     def get_received(self, dest: ShmSlice) -> int:
-
         view = self.pool.view(self.task_id, dest.handle, dest.offset, dest.len)
         n = min(len(view), len(self._pending_response))
         view[:n] = self._pending_response[:n]
@@ -212,7 +207,6 @@ class System:
     """
 
     def __init__(self):
-
         self.transport = UartTransport()
         self.pool = ShmBufferPool()
         self.dictionary = LogDictionary()
@@ -366,11 +360,9 @@ class System:
         self.runtime_engine.idle_hook(budget=4)
 
     def bus_master(self, task_id: int) -> BusMaster:
-
         return BusMaster(self.pool, task_id)
 
     def bus_slave(self, task_id: int) -> BusSlave:
-
         return BusSlave(self.pool, task_id)
 
     def bind_guest(self, memory: bytearray | None, task_id: int = 1) -> None:
@@ -409,7 +401,6 @@ class System:
 
     # --- guest memory (fb_offset_t resolution) -------------------------
     def _guest_ram_ok(self, offset: int, length: int) -> bool:
-
         return (
             self._guest_memory is not None
             and 0 <= offset
@@ -417,14 +408,12 @@ class System:
         )
 
     def _read_guest(self, offset: int, length: int) -> bytes | None:
-
         if not self._guest_ram_ok(offset, length):
             return None
 
         return bytes(self._guest_memory[offset : offset + length])
 
     def _write_guest(self, offset: int, data: bytes) -> bool:
-
         if not self._guest_ram_ok(offset, len(data)):
             return False
 
@@ -464,7 +453,6 @@ class System:
 
     # --- vMMIO Generic (real FlatMap/TLB dispatch + real backing bytes) -
     def _trap_to_errno(self, status: str) -> WasiErrno | None:
-
         if status in ("OK_SYSCALL", "OK_PHYSICAL", "OK_GUEST_RAM"):
             return None
 
@@ -512,7 +500,6 @@ class System:
         return None, self.phys_mem, phys_addr
 
     def _mmio_read(self, addr: int, width: int) -> int:
-
         errno, backing, off = self._mmio_touch(addr, is_write=False)
         if errno is not None:
             return int(errno)
@@ -523,7 +510,6 @@ class System:
         return int.from_bytes(backing[off : off + width], "little")
 
     def _mmio_write(self, addr: int, value: int, width: int) -> WasiErrno:
-
         errno, backing, off = self._mmio_touch(addr, is_write=True)
         if errno is not None:
             return errno
@@ -541,7 +527,6 @@ class System:
         return WasiErrno.SUCCESS
 
     def _mmio_bulk_read(self, addr: int, dest_offset: int, byte_count: int) -> WasiErrno:
-
         errno, backing, off = self._mmio_touch(addr, is_write=False)
         if errno is not None:
             return errno
@@ -555,7 +540,6 @@ class System:
         return WasiErrno.SUCCESS
 
     def _mmio_bulk_write(self, addr: int, src_offset: int, byte_count: int) -> WasiErrno:
-
         errno, backing, off = self._mmio_touch(addr, is_write=True)
         if errno is not None:
             return errno
@@ -569,7 +553,6 @@ class System:
 
     # --- VDMA (real REG_VDMA_* registers + a real memcpy) ---------------
     def _vdma_start(self, src: int, dst: int, byte_count: int) -> WasiErrno:
-
         struct.pack_into(
             "<III",
             self.vdma_regs,
@@ -598,7 +581,6 @@ class System:
         return backing, off
 
     def _run_vdma(self) -> WasiErrno:
-
         src, dst, count = struct.unpack_from("<III", self.vdma_regs, REG_VDMA_SRC)
         src_backing, src_off = self._vdma_region(src, count, is_write=False)
         if src_backing is None:
@@ -613,11 +595,9 @@ class System:
 
     # --- IRQ (REG_IRQ_FLAGS, shared with SYSCTL's own register file) ----
     def _irq_read_flags(self) -> int:
-
         return struct.unpack_from("<I", self.sysctl_regs, REG_IRQ_FLAGS)[0]
 
     def _irq_clear(self, mask: int) -> WasiErrno:
-
         flags = struct.unpack_from("<I", self.sysctl_regs, REG_IRQ_FLAGS)[0]
         struct.pack_into("<I", self.sysctl_regs, REG_IRQ_FLAGS, flags & ~mask & 0xFFFF_FFFF)
         return WasiErrno.SUCCESS
@@ -635,7 +615,6 @@ class System:
 
     # --- IPC (real IPCRouter: URI lookup, RBAC, bounded-queue handoff) ---
     def _ipc_lookup(self, uri_offset: int, uri_len: int) -> int:
-
         raw = self._read_guest(uri_offset, uri_len)
         if raw is None:
             return int(WasiErrno.FAULT)
@@ -653,7 +632,6 @@ class System:
         return int(WasiErrno.NOENT)
 
     def _ipc_send(self, handle_id: int, msg_offset: int, msg_len: int) -> WasiErrno:
-
         if handle_id < 1 or handle_id > len(self.ipc.registry.keys):
             return WasiErrno.BADF
 
@@ -682,7 +660,6 @@ class System:
         return WasiErrno.NOENT
 
     def _ipc_recv(self, handle_id: int, buf_offset: int, buf_len: int) -> int:
-
         if handle_id < 1 or handle_id > len(self.ipc.registry.keys):
             return int(WasiErrno.BADF)
 
@@ -736,7 +713,6 @@ class System:
         return WasiErrno.SUCCESS
 
     def _wasi_fd_read(self, fd: int, iovs_ptr: int, iovs_len: int, nread_ptr: int) -> WasiErrno:
-
         # No real stdin exists in this experiment -- reporting 0 bytes read
         # (EOF) is a genuine, spec-legal WASI outcome, not a stand-in value.
         if not self._write_guest(nread_ptr, struct.pack("<I", 0)):
@@ -745,11 +721,9 @@ class System:
         return WasiErrno.SUCCESS
 
     def _wasi_fd_close(self, fd: int) -> WasiErrno:
-
         return WasiErrno.SUCCESS
 
     def _wasi_clock_time_get(self, time_ptr: int) -> WasiErrno:
-
         # wasi:clocks/monotonic-clock (interface_wit.md 5.1/5.6): backed by
         # the real host monotonic clock, same as hal.py's Timer.
         now_ns = time.monotonic_ns()
@@ -759,13 +733,11 @@ class System:
         return WasiErrno.SUCCESS
 
     def _wasi_proc_exit(self, exit_code: int) -> WasiErrno:
-
         self.halted = True
         self.exit_code = exit_code
         return WasiErrno.SUCCESS
 
     def _wasi_random_get(self, buf_ptr: int, buf_len: int) -> WasiErrno:
-
         data = os.urandom(buf_len)
         if not self._write_guest(buf_ptr, data):
             return WasiErrno.FAULT
@@ -773,6 +745,5 @@ class System:
         return WasiErrno.SUCCESS
 
     def shutdown(self) -> None:
-
         self.pool.close_all()
         self.transport.close()

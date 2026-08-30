@@ -53,12 +53,10 @@ class GDBClientHelper:
     """Helper client to simulate a real GDB debugger communicating over RSP."""
 
     def __init__(self, host: str, port: int):
-
         self.sock = socket.create_connection((host, port), timeout=3.0)
         self.sock.settimeout(3.0)
 
     def close(self):
-
         try:
             self.sock.close()
 
@@ -95,7 +93,6 @@ class GDBClientHelper:
 
 
 def test_gdb_remote_socket_session():
-
     print("[*] Starting GDB Remote Debugger Socket Connection Test...")
     # 1. Setup execution environment with BasicBlocks
     # Program:

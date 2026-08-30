@@ -48,18 +48,15 @@ I32_MASK = 0xFFFFFFFF
 
 
 def _to_i32(v: int) -> int:
-
     v &= I32_MASK
     return v - (1 << 32) if v & 0x8000_0000 else v
 
 
 def _u32(v: int) -> int:
-
     return v & I32_MASK
 
 
 def patch(code: bytearray, base: int, stencil: st.Stencil, reloc_name: str, value: int) -> None:
-
     # Every relocation this codebase uses is 4 bytes except globals'
     # absolute-address "addr" slots, which are a full 64-bit pointer.
     width = 8 if reloc_name == "addr" else 4
@@ -166,12 +163,10 @@ def run_i32_checked(
 
 
 def const_(v: int) -> tuple[st.Stencil, dict]:
-
     return (st.I32_CONST, {"imm": v})
 
 
 def push_two(a: int, b: int) -> list[tuple[st.Stencil, dict]]:
-
     return [const_(a), const_(b)]
 
 
@@ -181,13 +176,11 @@ def push_two(a: int, b: int) -> list[tuple[st.Stencil, dict]]:
 
 
 def test_prologue_epilogue_passthrough_constant():
-
     assert run_i32([const_(42)]) == 42
     assert run_i32([const_(-7)]) == -7
 
 
 def test_epilogue_sign_extends_negative_i32_into_the_i64_return_value():
-
     result = run_i32([const_(-1)])
     assert result == -1, "a naive zero-extend would return 0xFFFFFFFF (4294967295) instead"
 
@@ -198,20 +191,17 @@ def test_epilogue_sign_extends_negative_i32_into_the_i64_return_value():
 
 
 def test_local_get_reads_the_correct_slot_by_index():
-
     code = [(st.LOCAL_GET, {"disp": 1 * 8})]
     assert run_i32(code, locals_values=[111, 222, 333]) == 222
 
 
 def test_local_set_writes_the_correct_slot_and_leaves_stack_empty_of_it():
-
     # local[0] = 99; return local[0]
     code = [const_(99), (st.LOCAL_SET, {"disp": 0}), (st.LOCAL_GET, {"disp": 0})]
     assert run_i32(code, locals_values=[0]) == 99
 
 
 def test_local_tee_writes_the_slot_but_also_leaves_the_value_on_the_stack():
-
     # local[0] = tee(77)  -- the teed value is the function's return value directly
     code = [const_(77), (st.LOCAL_TEE, {"disp": 0})]
     assert run_i32(code, locals_values=[0]) == 77
@@ -246,21 +236,18 @@ def test_local_get_set_tee_at_a_nonzero_locals_array_offset():
 
 
 def test_i32_add_wraps_at_32_bits_like_real_wasm_i32():
-
     a, b = 0x7FFFFFFF, 1
     assert run_i32([*push_two(a, b), (st.I32_ADD, {})]) == _to_i32(a + b)
     assert _to_i32(a + b) == -0x80000000  # sanity: this really does overflow
 
 
 def test_i32_sub_and_mul_match_python_reference():
-
     a, b = -5, 17
     assert run_i32([*push_two(a, b), (st.I32_SUB, {})]) == _to_i32(a - b)
     assert run_i32([*push_two(a, b), (st.I32_MUL, {})]) == _to_i32(a * b)
 
 
 def test_i32_bitwise_ops_match_python_reference():
-
     a, b = 0x0F0F0F0F, 0x00FFFF00
     assert run_i32([*push_two(a, b), (st.I32_AND, {})]) == _to_i32(a & b)
     assert run_i32([*push_two(a, b), (st.I32_OR, {})]) == _to_i32(a | b)
@@ -268,7 +255,6 @@ def test_i32_bitwise_ops_match_python_reference():
 
 
 def test_i32_div_and_rem_signed_and_unsigned():
-
     assert run_i32([*push_two(7, 2), (st.I32_DIV_S, {})]) == 3
     assert run_i32([*push_two(-7, 2), (st.I32_DIV_S, {})]) == -3  # truncated toward zero
     assert run_i32([*push_two(7, 2), (st.I32_REM_S, {})]) == 1
@@ -282,7 +268,6 @@ def test_i32_div_and_rem_signed_and_unsigned():
 
 
 def test_i32_shifts_mask_the_count_to_5_bits_like_wasm_requires():
-
     assert run_i32([*push_two(1, 33), (st.I32_SHL, {})]) == 1 << (33 % 32)  # == 2
     assert run_i32([*push_two(-8, 1), (st.I32_SHR_S, {})]) == -4
     assert run_i32([*push_two(_to_i32(2147483648), 1), (st.I32_SHR_U, {})]) == 0x40000000
@@ -294,13 +279,11 @@ def test_i32_shifts_mask_the_count_to_5_bits_like_wasm_requires():
 
 
 def test_i32_eqz():
-
     assert run_i32([const_(0), (st.I32_EQZ, {})]) == 1
     assert run_i32([const_(5), (st.I32_EQZ, {})]) == 0
 
 
 def test_all_i32_comparisons_against_python_reference():
-
     cases = [(-3, 5), (5, -3), (5, 5), (0, 0), (-1, 1)]
     ops = {
         "eq": (st.I32_EQ, lambda a, b: a == b),
@@ -327,7 +310,6 @@ def test_all_i32_comparisons_against_python_reference():
 
 
 def test_i32_store_then_i32_load_round_trip():
-
     memory = bytearray(64)
     # store(addr=8, value=0x11223344); return load(addr=8)
     code = [
@@ -342,7 +324,6 @@ def test_i32_store_then_i32_load_round_trip():
 
 
 def test_i32_load_store_honor_the_memarg_static_offset():
-
     memory = bytearray(64)
     # i32.store leaves nothing on the stack (unlike i32.load); a trailing
     # const gives the epilogue something of its own to pop, so it can never
@@ -363,7 +344,6 @@ def test_i32_load_store_honor_the_memarg_static_offset():
 
 
 def test_in_bounds_access_does_not_trap():
-
     memory = bytearray(16)
     # max_addr = mem_size(16) - memarg.offset(0) - width(4) = 12: addr=12 is exactly in bounds.
     code = [
@@ -377,7 +357,6 @@ def test_in_bounds_access_does_not_trap():
 
 
 def test_out_of_bounds_load_traps():
-
     memory = bytearray(16)
     code = [
         const_(13),
@@ -392,7 +371,6 @@ def test_out_of_bounds_load_traps():
 
 
 def test_out_of_bounds_store_traps():
-
     memory = bytearray(16)
     code = [const_(13), const_(0), (st.I32_STORE, {"disp": 0, "max_addr": 12})]
     try:
@@ -428,7 +406,6 @@ def test_memarg_static_offset_is_folded_into_the_bounds_check():
 
 
 def test_i32_load8_and_load16_sign_and_zero_extend_correctly():
-
     memory = bytearray(16)
     memory[0] = 0xFF  # -1 as i8, 255 as u8
     memory[4:6] = (0x8000).to_bytes(2, "little")  # -32768 as i16, 32768 as u16
@@ -439,7 +416,6 @@ def test_i32_load8_and_load16_sign_and_zero_extend_correctly():
 
 
 def test_i32_store8_and_store16_write_only_their_width():
-
     memory = bytearray(b"\xcc" * 8)
     run_i32(
         [const_(0), const_(0x1234), (st.I32_STORE8, {"disp": 0}), const_(0)],
@@ -461,7 +437,6 @@ def test_i32_store8_and_store16_write_only_their_width():
 
 
 def test_i32_clz_ctz_popcnt_match_python_reference():
-
     cases = [0, 1, 2, 0x80000000, 0xFFFFFFFF, 0x0000FFFF, 0x12345678]
     for v in cases:
         sv = _to_i32(v)
@@ -475,14 +450,11 @@ def test_i32_clz_ctz_popcnt_match_python_reference():
 
 
 def test_i32_rotl_rotr_match_python_reference():
-
     def rotl(v, n):
-
         n &= 31
         return ((v << n) | (v >> (32 - n))) & I32_MASK if n else v
 
     def rotr(v, n):
-
         n &= 31
         return ((v >> n) | (v << (32 - n))) & I32_MASK if n else v
 
@@ -497,7 +469,6 @@ def test_i32_rotl_rotr_match_python_reference():
 
 
 def test_global_get_reads_through_the_baked_in_absolute_address():
-
     Globals = ctypes.c_int64 * 2
     globals_arr = Globals(111, 222)
     addr = ctypes.addressof(globals_arr)
@@ -505,7 +476,6 @@ def test_global_get_reads_through_the_baked_in_absolute_address():
 
 
 def test_global_set_writes_through_the_baked_in_absolute_address():
-
     Globals = ctypes.c_int64 * 2
     globals_arr = Globals(111, 222)
     addr = ctypes.addressof(globals_arr)
@@ -520,13 +490,11 @@ def test_global_set_writes_through_the_baked_in_absolute_address():
 
 
 def test_drop_discards_the_top_value():
-
     code = [const_(1), const_(2), (st.DROP, {})]
     assert run_i32(code) == 1
 
 
 def test_select_picks_operand_a_when_condition_nonzero_else_b():
-
     # select(a=10, b=20, cond) -- pushed in that order per WASM's operand layout
     assert run_i32([const_(10), const_(20), const_(1), (st.SELECT, {})]) == 10
     assert run_i32([const_(10), const_(20), const_(0), (st.SELECT, {})]) == 20
@@ -538,7 +506,6 @@ def test_select_picks_operand_a_when_condition_nonzero_else_b():
 
 
 def test_fuzz_add_sub_mul_against_python_reference():
-
     rng = random.Random(1234)
     for _ in range(200):
         a = rng.randint(-(2**31), 2**31 - 1)

@@ -60,14 +60,12 @@ REG_INFO: dict[str, tuple[int, int]] = {
 
 
 def push_reg(name: str) -> bytes:
-
     ext, lo = REG_INFO[name]
     prefix = bytes((0x41,)) if ext else b""
     return prefix + bytes((0x50 + lo,))
 
 
 def pop_reg(name: str) -> bytes:
-
     ext, lo = REG_INFO[name]
     prefix = bytes((0x41,)) if ext else b""
     return prefix + bytes((0x58 + lo,))
@@ -83,7 +81,6 @@ def mov_reg_reg(dst: str, src: str) -> bytes:
 
 
 def mov_reg_imm64(dst: str, imm64: int) -> bytes:
-
     dst_ext, dst_lo = REG_INFO[dst]
     rex = 0x48 | (0x01 if dst_ext else 0)
     opcode = 0xB8 + dst_lo
@@ -114,19 +111,16 @@ def and_rsp_imm8(imm8: int) -> bytes:
 
 
 def sub_rsp_imm8(imm8: int) -> bytes:
-
     assert 0 <= imm8 <= 127
     return bytes((0x48, 0x83, 0xEC, imm8))
 
 
 def add_rsp_imm8(imm8: int) -> bytes:
-
     assert 0 <= imm8 <= 127
     return bytes((0x48, 0x83, 0xC4, imm8))
 
 
 def call_reg(reg: str) -> bytes:
-
     ext, lo = REG_INFO[reg]
     prefix = bytes((0x41,)) if ext else b""
     modrm = 0xD0 | lo
@@ -134,7 +128,6 @@ def call_reg(reg: str) -> bytes:
 
 
 def ret() -> bytes:
-
     return bytes((0xC3,))
 
 

@@ -131,13 +131,11 @@ PAGE_SIZE = 65536
 
 
 def _to_i32(v: int) -> int:
-
     v &= I32_MASK
     return v - (1 << 32) if v & 0x8000_0000 else v
 
 
 def _to_u32(v: int) -> int:
-
     return v & I32_MASK
 
 
@@ -181,7 +179,6 @@ class CallFrame:
     __slots__ = ("code", "frames", "instrs", "values")
 
     def __init__(self, instrs: dict[int, Instr], code: bytes, values: list[int]):
-
         self.values = values
         self.frames: list[_Frame] = []
         self.instrs = instrs
@@ -199,9 +196,7 @@ _HANDLERS: list[Callable[[int, CallFrame, ExecEnv, list[int]], object] | None] =
 
 
 def _handler(opcode: int):
-
     def register(fn):
-
         _HANDLERS[opcode] = fn
         return fn
 
@@ -258,7 +253,6 @@ class Interpreter:
             self.call(self.module.start_function, [])
 
     def call(self, func_index: int, args: list[int]) -> list[int]:
-
         gen = self.call_coroutine(func_index, args, yield_every=0)
         try:
             while True:
@@ -358,19 +352,16 @@ class Interpreter:
 
 @_handler(UNREACHABLE)
 def _h_unreachable(ip, frame, env, local_base):
-
     raise Trap("unreachable instruction executed")
 
 
 @_handler(NOP)
 def _h_nop(ip, frame, env, local_base):
-
     return (frame.instrs[ip].end_offset, frame, env, local_base)
 
 
 @_handler(BLOCK)
 def _h_block(ip, frame, env, local_base):
-
     ins = frame.instrs[ip]
     frame.frames.append(_Frame("block", ins.offset, ins.match_offset, len(frame.values)))
     return (ins.end_offset, frame, env, local_base)
@@ -378,7 +369,6 @@ def _h_block(ip, frame, env, local_base):
 
 @_handler(LOOP)
 def _h_loop(ip, frame, env, local_base):
-
     ins = frame.instrs[ip]
     frame.frames.append(_Frame("loop", ins.offset, ins.match_offset, len(frame.values)))
     return (ins.end_offset, frame, env, local_base)
@@ -386,7 +376,6 @@ def _h_loop(ip, frame, env, local_base):
 
 @_handler(IF)
 def _h_if(ip, frame, env, local_base):
-
     ins = frame.instrs[ip]
     cond = frame.values.pop()
     if cond == 0:
@@ -404,7 +393,6 @@ def _h_if(ip, frame, env, local_base):
 
 @_handler(ELSE)
 def _h_else(ip, frame, env, local_base):
-
     # Reached only by falling out of a taken `if` branch's body: the branch
     # completed normally, so pop the if frame and skip past the matching END.
     if frame.frames:
@@ -416,7 +404,6 @@ def _h_else(ip, frame, env, local_base):
 
 @_handler(END)
 def _h_end(ip, frame, env, local_base):
-
     ins = frame.instrs[ip]
     if frame.frames:
         frame.frames.pop()
@@ -426,14 +413,12 @@ def _h_end(ip, frame, env, local_base):
 
 @_handler(BR)
 def _h_br(ip, frame, env, local_base):
-
     next_ip = _do_branch(frame.instrs[ip].operand, frame)
     return None if next_ip is None else (next_ip, frame, env, local_base)
 
 
 @_handler(BR_IF)
 def _h_br_if(ip, frame, env, local_base):
-
     ins = frame.instrs[ip]
     cond = frame.values.pop()
     if cond != 0:
@@ -445,7 +430,6 @@ def _h_br_if(ip, frame, env, local_base):
 
 @_handler(BR_TABLE)
 def _h_br_table(ip, frame, env, local_base):
-
     ins = frame.instrs[ip]
     index = _to_u32(frame.values.pop())
     depth = ins.br_table_labels[index] if index < len(ins.br_table_labels) else ins.operand
@@ -455,13 +439,11 @@ def _h_br_table(ip, frame, env, local_base):
 
 @_handler(RETURN)
 def _h_return(ip, frame, env, local_base):
-
     return None
 
 
 @_handler(CALL)
 def _h_call(ip, frame, env, local_base):
-
     ins = frame.instrs[ip]
     callee_ft = env.module.func_type(ins.operand)
     call_args = [frame.values.pop() for _ in range(len(callee_ft.params))][::-1]
@@ -472,7 +454,6 @@ def _h_call(ip, frame, env, local_base):
 
 @_handler(CALL_INDIRECT)
 def _h_call_indirect(ip, frame, env, local_base):
-
     ins = frame.instrs[ip]
     table = env.tables[ins.table_index]
     table_slot = _to_u32(frame.values.pop())
@@ -499,14 +480,12 @@ def _h_call_indirect(ip, frame, env, local_base):
 
 @_handler(DROP)
 def _h_drop(ip, frame, env, local_base):
-
     frame.values.pop()
     return (frame.instrs[ip].end_offset, frame, env, local_base)
 
 
 @_handler(SELECT)
 def _h_select(ip, frame, env, local_base):
-
     c = frame.values.pop()
     b = frame.values.pop()
     a = frame.values.pop()
@@ -516,42 +495,36 @@ def _h_select(ip, frame, env, local_base):
 
 @_handler(LOCAL_GET)
 def _h_local_get(ip, frame, env, local_base):
-
     frame.values.append(local_base[frame.instrs[ip].operand])
     return (frame.instrs[ip].end_offset, frame, env, local_base)
 
 
 @_handler(LOCAL_SET)
 def _h_local_set(ip, frame, env, local_base):
-
     local_base[frame.instrs[ip].operand] = frame.values.pop()
     return (frame.instrs[ip].end_offset, frame, env, local_base)
 
 
 @_handler(LOCAL_TEE)
 def _h_local_tee(ip, frame, env, local_base):
-
     local_base[frame.instrs[ip].operand] = frame.values[-1]
     return (frame.instrs[ip].end_offset, frame, env, local_base)
 
 
 @_handler(I32_CONST)
 def _h_i32_const(ip, frame, env, local_base):
-
     frame.values.append(_to_i32(frame.instrs[ip].const_value))
     return (frame.instrs[ip].end_offset, frame, env, local_base)
 
 
 @_handler(GLOBAL_GET)
 def _h_global_get(ip, frame, env, local_base):
-
     frame.values.append(env.globals[frame.instrs[ip].operand])
     return (frame.instrs[ip].end_offset, frame, env, local_base)
 
 
 @_handler(GLOBAL_SET)
 def _h_global_set(ip, frame, env, local_base):
-
     env.globals[frame.instrs[ip].operand] = _to_i32(frame.values.pop())
     return (frame.instrs[ip].end_offset, frame, env, local_base)
 
@@ -561,7 +534,6 @@ def _h_global_set(ip, frame, env, local_base):
 
 @_handler(I32_LOAD)
 def _h_i32_load(ip, frame, env, local_base):
-
     ins = frame.instrs[ip]
     addr = _to_u32(frame.values.pop()) + ins.memarg[1]
     if env.memory is None or addr + 4 > len(env.memory):
@@ -573,7 +545,6 @@ def _h_i32_load(ip, frame, env, local_base):
 
 @_handler(I32_LOAD8_S)
 def _h_i32_load8_s(ip, frame, env, local_base):
-
     ins = frame.instrs[ip]
     addr = _to_u32(frame.values.pop()) + ins.memarg[1]
     if env.memory is None or addr + 1 > len(env.memory):
@@ -585,7 +556,6 @@ def _h_i32_load8_s(ip, frame, env, local_base):
 
 @_handler(I32_LOAD8_U)
 def _h_i32_load8_u(ip, frame, env, local_base):
-
     ins = frame.instrs[ip]
     addr = _to_u32(frame.values.pop()) + ins.memarg[1]
     if env.memory is None or addr + 1 > len(env.memory):
@@ -597,7 +567,6 @@ def _h_i32_load8_u(ip, frame, env, local_base):
 
 @_handler(I32_LOAD16_S)
 def _h_i32_load16_s(ip, frame, env, local_base):
-
     ins = frame.instrs[ip]
     addr = _to_u32(frame.values.pop()) + ins.memarg[1]
     if env.memory is None or addr + 2 > len(env.memory):
@@ -609,7 +578,6 @@ def _h_i32_load16_s(ip, frame, env, local_base):
 
 @_handler(I32_LOAD16_U)
 def _h_i32_load16_u(ip, frame, env, local_base):
-
     ins = frame.instrs[ip]
     addr = _to_u32(frame.values.pop()) + ins.memarg[1]
     if env.memory is None or addr + 2 > len(env.memory):
@@ -624,7 +592,6 @@ def _h_i32_load16_u(ip, frame, env, local_base):
 
 @_handler(I32_STORE)
 def _h_i32_store(ip, frame, env, local_base):
-
     ins = frame.instrs[ip]
     value = _to_i32(frame.values.pop())
     addr = _to_u32(frame.values.pop()) + ins.memarg[1]
@@ -637,7 +604,6 @@ def _h_i32_store(ip, frame, env, local_base):
 
 @_handler(I32_STORE8)
 def _h_i32_store8(ip, frame, env, local_base):
-
     ins = frame.instrs[ip]
     value = frame.values.pop() & 0xFF
     addr = _to_u32(frame.values.pop()) + ins.memarg[1]
@@ -650,7 +616,6 @@ def _h_i32_store8(ip, frame, env, local_base):
 
 @_handler(I32_STORE16)
 def _h_i32_store16(ip, frame, env, local_base):
-
     ins = frame.instrs[ip]
     value = frame.values.pop() & 0xFFFF
     addr = _to_u32(frame.values.pop()) + ins.memarg[1]
@@ -666,7 +631,6 @@ def _h_i32_store16(ip, frame, env, local_base):
 
 @_handler(MEMORY_SIZE)
 def _h_memory_size(ip, frame, env, local_base):
-
     if env.memory is None:
         raise Trap("memory.size with no memory section")
 
@@ -676,7 +640,6 @@ def _h_memory_size(ip, frame, env, local_base):
 
 @_handler(MEMORY_GROW)
 def _h_memory_grow(ip, frame, env, local_base):
-
     delta_pages = _to_u32(frame.values.pop())
     if env.memory is None:
         frame.values.append(_to_i32(0xFFFFFFFF))
@@ -694,14 +657,12 @@ def _h_memory_grow(ip, frame, env, local_base):
 
 @_handler(I32_EQZ)
 def _h_i32_eqz(ip, frame, env, local_base):
-
     frame.values.append(1 if frame.values.pop() == 0 else 0)
     return (frame.instrs[ip].end_offset, frame, env, local_base)
 
 
 @_handler(I32_EQ)
 def _h_i32_eq(ip, frame, env, local_base):
-
     b = frame.values.pop()
     a = frame.values.pop()
     frame.values.append(1 if _to_i32(a) == _to_i32(b) else 0)
@@ -710,7 +671,6 @@ def _h_i32_eq(ip, frame, env, local_base):
 
 @_handler(I32_NE)
 def _h_i32_ne(ip, frame, env, local_base):
-
     b = frame.values.pop()
     a = frame.values.pop()
     frame.values.append(1 if _to_i32(a) != _to_i32(b) else 0)
@@ -719,7 +679,6 @@ def _h_i32_ne(ip, frame, env, local_base):
 
 @_handler(I32_LT_S)
 def _h_i32_lt_s(ip, frame, env, local_base):
-
     b = frame.values.pop()
     a = frame.values.pop()
     frame.values.append(1 if _to_i32(a) < _to_i32(b) else 0)
@@ -728,7 +687,6 @@ def _h_i32_lt_s(ip, frame, env, local_base):
 
 @_handler(I32_LT_U)
 def _h_i32_lt_u(ip, frame, env, local_base):
-
     b = frame.values.pop()
     a = frame.values.pop()
     frame.values.append(1 if _to_u32(a) < _to_u32(b) else 0)
@@ -737,7 +695,6 @@ def _h_i32_lt_u(ip, frame, env, local_base):
 
 @_handler(I32_GT_S)
 def _h_i32_gt_s(ip, frame, env, local_base):
-
     b = frame.values.pop()
     a = frame.values.pop()
     frame.values.append(1 if _to_i32(a) > _to_i32(b) else 0)
@@ -746,7 +703,6 @@ def _h_i32_gt_s(ip, frame, env, local_base):
 
 @_handler(I32_GT_U)
 def _h_i32_gt_u(ip, frame, env, local_base):
-
     b = frame.values.pop()
     a = frame.values.pop()
     frame.values.append(1 if _to_u32(a) > _to_u32(b) else 0)
@@ -755,7 +711,6 @@ def _h_i32_gt_u(ip, frame, env, local_base):
 
 @_handler(I32_LE_S)
 def _h_i32_le_s(ip, frame, env, local_base):
-
     b = frame.values.pop()
     a = frame.values.pop()
     frame.values.append(1 if _to_i32(a) <= _to_i32(b) else 0)
@@ -764,7 +719,6 @@ def _h_i32_le_s(ip, frame, env, local_base):
 
 @_handler(I32_LE_U)
 def _h_i32_le_u(ip, frame, env, local_base):
-
     b = frame.values.pop()
     a = frame.values.pop()
     frame.values.append(1 if _to_u32(a) <= _to_u32(b) else 0)
@@ -773,7 +727,6 @@ def _h_i32_le_u(ip, frame, env, local_base):
 
 @_handler(I32_GE_S)
 def _h_i32_ge_s(ip, frame, env, local_base):
-
     b = frame.values.pop()
     a = frame.values.pop()
     frame.values.append(1 if _to_i32(a) >= _to_i32(b) else 0)
@@ -782,7 +735,6 @@ def _h_i32_ge_s(ip, frame, env, local_base):
 
 @_handler(I32_GE_U)
 def _h_i32_ge_u(ip, frame, env, local_base):
-
     b = frame.values.pop()
     a = frame.values.pop()
     frame.values.append(1 if _to_u32(a) >= _to_u32(b) else 0)
@@ -794,7 +746,6 @@ def _h_i32_ge_u(ip, frame, env, local_base):
 
 @_handler(I32_CLZ)
 def _h_i32_clz(ip, frame, env, local_base):
-
     v = _to_u32(frame.values.pop())
     frame.values.append(32 if v == 0 else 32 - v.bit_length())
     return (frame.instrs[ip].end_offset, frame, env, local_base)
@@ -802,7 +753,6 @@ def _h_i32_clz(ip, frame, env, local_base):
 
 @_handler(I32_CTZ)
 def _h_i32_ctz(ip, frame, env, local_base):
-
     v = _to_u32(frame.values.pop())
     if v == 0:
         res = 32
@@ -821,7 +771,6 @@ def _h_i32_ctz(ip, frame, env, local_base):
 
 @_handler(I32_POPCNT)
 def _h_i32_popcnt(ip, frame, env, local_base):
-
     v = _to_u32(frame.values.pop())
     frame.values.append(bin(v).count("1"))
     return (frame.instrs[ip].end_offset, frame, env, local_base)
@@ -832,7 +781,6 @@ def _h_i32_popcnt(ip, frame, env, local_base):
 
 @_handler(I32_ADD)
 def _h_i32_add(ip, frame, env, local_base):
-
     b = frame.values.pop()
     a = frame.values.pop()
     frame.values.append(_to_i32(a + b))
@@ -841,7 +789,6 @@ def _h_i32_add(ip, frame, env, local_base):
 
 @_handler(I32_SUB)
 def _h_i32_sub(ip, frame, env, local_base):
-
     b = frame.values.pop()
     a = frame.values.pop()
     frame.values.append(_to_i32(a - b))
@@ -850,7 +797,6 @@ def _h_i32_sub(ip, frame, env, local_base):
 
 @_handler(I32_MUL)
 def _h_i32_mul(ip, frame, env, local_base):
-
     b = frame.values.pop()
     a = frame.values.pop()
     frame.values.append(_to_i32(a * b))
@@ -859,7 +805,6 @@ def _h_i32_mul(ip, frame, env, local_base):
 
 @_handler(I32_DIV_S)
 def _h_i32_div_s(ip, frame, env, local_base):
-
     b = _to_i32(frame.values.pop())
     a = _to_i32(frame.values.pop())
     if b == 0:
@@ -875,7 +820,6 @@ def _h_i32_div_s(ip, frame, env, local_base):
 
 @_handler(I32_DIV_U)
 def _h_i32_div_u(ip, frame, env, local_base):
-
     b = _to_u32(frame.values.pop())
     a = _to_u32(frame.values.pop())
     if b == 0:
@@ -887,7 +831,6 @@ def _h_i32_div_u(ip, frame, env, local_base):
 
 @_handler(I32_REM_S)
 def _h_i32_rem_s(ip, frame, env, local_base):
-
     b = _to_i32(frame.values.pop())
     a = _to_i32(frame.values.pop())
     if b == 0:
@@ -900,7 +843,6 @@ def _h_i32_rem_s(ip, frame, env, local_base):
 
 @_handler(I32_REM_U)
 def _h_i32_rem_u(ip, frame, env, local_base):
-
     b = _to_u32(frame.values.pop())
     a = _to_u32(frame.values.pop())
     if b == 0:
@@ -912,7 +854,6 @@ def _h_i32_rem_u(ip, frame, env, local_base):
 
 @_handler(I32_AND)
 def _h_i32_and(ip, frame, env, local_base):
-
     b = frame.values.pop()
     a = frame.values.pop()
     frame.values.append(_to_i32(_to_u32(a) & _to_u32(b)))
@@ -921,7 +862,6 @@ def _h_i32_and(ip, frame, env, local_base):
 
 @_handler(I32_OR)
 def _h_i32_or(ip, frame, env, local_base):
-
     b = frame.values.pop()
     a = frame.values.pop()
     frame.values.append(_to_i32(_to_u32(a) | _to_u32(b)))
@@ -930,7 +870,6 @@ def _h_i32_or(ip, frame, env, local_base):
 
 @_handler(I32_XOR)
 def _h_i32_xor(ip, frame, env, local_base):
-
     b = frame.values.pop()
     a = frame.values.pop()
     frame.values.append(_to_i32(_to_u32(a) ^ _to_u32(b)))
@@ -939,7 +878,6 @@ def _h_i32_xor(ip, frame, env, local_base):
 
 @_handler(I32_SHL)
 def _h_i32_shl(ip, frame, env, local_base):
-
     b = frame.values.pop()
     a = frame.values.pop()
     frame.values.append(_to_i32(_to_u32(a) << (_to_u32(b) & 31)))
@@ -948,7 +886,6 @@ def _h_i32_shl(ip, frame, env, local_base):
 
 @_handler(I32_SHR_S)
 def _h_i32_shr_s(ip, frame, env, local_base):
-
     b = frame.values.pop()
     a = frame.values.pop()
     frame.values.append(_to_i32(_to_i32(a) >> (_to_u32(b) & 31)))
@@ -957,7 +894,6 @@ def _h_i32_shr_s(ip, frame, env, local_base):
 
 @_handler(I32_SHR_U)
 def _h_i32_shr_u(ip, frame, env, local_base):
-
     b = frame.values.pop()
     a = frame.values.pop()
     frame.values.append(_to_i32(_to_u32(a) >> (_to_u32(b) & 31)))
@@ -966,7 +902,6 @@ def _h_i32_shr_u(ip, frame, env, local_base):
 
 @_handler(I32_ROTL)
 def _h_i32_rotl(ip, frame, env, local_base):
-
     b = frame.values.pop()
     a = frame.values.pop()
     n = _to_u32(b) & 31
@@ -977,7 +912,6 @@ def _h_i32_rotl(ip, frame, env, local_base):
 
 @_handler(I32_ROTR)
 def _h_i32_rotr(ip, frame, env, local_base):
-
     b = frame.values.pop()
     a = frame.values.pop()
     n = _to_u32(b) & 31

@@ -62,7 +62,6 @@ def decode_signed(data: bytes, offset: int) -> tuple[int, int]:
 
 
 def encode_unsigned(value: int) -> bytes:
-
     assert value >= 0
     out = bytearray()
     while True:
@@ -77,7 +76,6 @@ def encode_unsigned(value: int) -> bytes:
 
 
 def encode_signed(value: int) -> bytes:
-
     out = bytearray()
     more = True
     while more:

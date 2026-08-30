@@ -241,7 +241,6 @@ def test_coos_08_interrupt_notification_and_drain():
     woken = []
 
     def irq_handler():
-
         sched.wait_for_interrupt(16)
         yield ("BLOCK", None)
         woken.append("IRQ_PROCESSED")
@@ -275,7 +274,6 @@ def test_sched_01_pure_round_robin_fifo():
     order: list[str] = []
 
     def worker(name: str, steps: int):
-
         for _ in range(steps):
             order.append(name)
             yield None
@@ -459,7 +457,6 @@ def test_mem_21_jit_code_cache_wx_switch_and_restore():
 
 
 def test_hal_01_uart_transport_is_real_pipe():
-
     t = UartTransport()
     try:
         assert t.write(b"fireball\n") == 9
@@ -471,7 +468,6 @@ def test_hal_01_uart_transport_is_real_pipe():
 
 
 def test_hal_02_timer_monotonic_ns():
-
     timer = Timer()
     t1 = timer.get_now_ns()
     time.sleep(0.001)
@@ -480,7 +476,6 @@ def test_hal_02_timer_monotonic_ns():
 
 
 def test_hal_03_shm_pool_rejects_oversized():
-
     pool = ShmBufferPool()
     try:
         try:
@@ -498,7 +493,6 @@ def test_hal_03_shm_pool_rejects_oversized():
 
 
 def test_hal_04_shm_slice_bounds_and_ownership():
-
     pool = ShmBufferPool()
     try:
         h = pool.acquire_buffer(task_id=1, size=16)
@@ -521,7 +515,6 @@ def test_hal_04_shm_slice_bounds_and_ownership():
 
 
 def test_log_01_dictionary_rejects_pointer_specifiers():
-
     d = LogDictionary()
     d.register(0x01, "ok: %d %d")
     for bad in ("bad: %s", "bad: %p", "bad: %c"):
@@ -534,7 +527,6 @@ def test_log_01_dictionary_rejects_pointer_specifiers():
 
 
 def test_log_02_logger_ring_buffer_overwrites():
-
     t = UartTransport()
     try:
         d = LogDictionary()
@@ -559,7 +551,6 @@ def test_recovery_01_retry_success_within_limit():
     attempts = [0]
 
     def op() -> Result[str, str]:
-
         attempts[0] += 1
         if attempts[0] < 3:
             return Result.err("BUSY", RecoveryStrategy.RETRY)
@@ -582,7 +573,6 @@ def test_recovery_02_retry_exhaustion_escalates_to_restart():
     reset_called = [False]
 
     def failing_op() -> Result[str, str]:
-
         attempts[0] += 1
         if reset_called[0]:
             return Result.ok("RECOVERED_AFTER_RESET")
@@ -590,7 +580,6 @@ def test_recovery_02_retry_exhaustion_escalates_to_restart():
         return Result.err("RESOURCE_EXHAUSTED", RecoveryStrategy.RETRY)
 
     def do_reset() -> bool:
-
         reset_called[0] = True
         return True
 
@@ -609,11 +598,9 @@ def test_recovery_03_panic_triggers_immediate_failsafe():
     panic_msg = []
 
     def fatal_op() -> Result[str, str]:
-
         return Result.err("TRAP_ACCESS_VIOLATION", RecoveryStrategy.PANIC)
 
     def panic_hook(msg: str) -> None:
-
         panic_msg.append(msg)
 
     res = mgr.execute_with_recovery(fatal_op, panic_fn=panic_hook)
@@ -696,7 +683,6 @@ def test_hotspot_03_lifo_compile_queue_batch_drain():
     compiled_traces = []
 
     def dummy_compiler(pc: int) -> JITTrace:
-
         t = JITTrace(head_pc=pc, native_fn=lambda: pc * 2, size_bytes=64)
         compiled_traces.append(pc)
         return t
@@ -919,7 +905,6 @@ def test_ipc_03_queue_full_rollback_restores_owner():
 
 
 def test_syscall_01_unknown_id_returns_nosys():
-
     sysv = System()
     try:
         assert sysv.fireball_call(0xDEAD, 0, 0, 0, 0, 0, 0) == WasiErrno.NOSYS
@@ -929,7 +914,6 @@ def test_syscall_01_unknown_id_returns_nosys():
 
 
 def test_syscall_02_sys_control_registers():
-
     sysv = System()
     try:
         assert sysv.fireball_call(FbSyscallId.SYS_YIELD, 0, 0, 0, 0, 0, 0) == WasiErrno.SUCCESS
@@ -943,7 +927,6 @@ def test_syscall_02_sys_control_registers():
 
 
 def test_syscall_03_mmio_read_write():
-
     sysv = System()
     try:
         addr = FB_CONF_VSOC_PASSTHROUGH_BASE
@@ -958,7 +941,6 @@ def test_syscall_03_mmio_read_write():
 
 
 def test_syscall_04_vdma_transfer():
-
     sysv = System()
     try:
         guest_mem = bytearray(64)
@@ -973,7 +955,6 @@ def test_syscall_04_vdma_transfer():
 
 
 def test_syscall_05_irq_flags():
-
     sysv = System()
     try:
         sysv.raise_irq(0x4)
@@ -986,7 +967,6 @@ def test_syscall_05_irq_flags():
 
 
 def test_syscall_06_ipc_lookup_send_recv():
-
     sysv = System()
     try:
         guest_mem = bytearray(128)
@@ -1581,7 +1561,6 @@ def test_idle_01_jit_batch_compilation_on_idle():
     compiled_log = []
 
     def mock_compiler(pc: int) -> JITTrace:
-
         compiled_log.append(pc)
         return JITTrace(head_pc=pc, native_fn=lambda: pc, size_bytes=64)
 
@@ -1628,7 +1607,6 @@ def test_tier_01_interpreter_to_jit_cooperative_flow():
     executed_steps = []
 
     def wasm_task():
-
         # Emulate a WASM task executing in slices
         for i in range(5):
             sysv.runtime_engine.record_block_head(0x1000)
@@ -1637,7 +1615,6 @@ def test_tier_01_interpreter_to_jit_cooperative_flow():
             yield  # Cooperative yield
 
     def monitor_task():
-
         for i in range(5):
             executed_steps.append(f"monitor_step_{i}")
             yield  # Cooperative yield
@@ -1870,7 +1847,6 @@ def test_guest_wasi_04_jit_fd_write_native():
         ctx.guest_memory[16 : 16 + len(msg)] = msg
 
         def host_fd_write():
-
             return ctx.fd_write(1, 0, 1, 48)
 
         t = ctypes.CFUNCTYPE(ctypes.c_uint32)(host_fd_write)
@@ -1907,7 +1883,6 @@ def test_guest_wasi_05_jit_fireball_call_ipc_messaging():
         ctx.guest_memory[32 : 32 + len(payload)] = payload
 
         def host_ipc_roundtrip():
-
             h = ctx.fireball_call(0x42, 0, len(uri), 0, 0, 0, 0)
             ctx.fireball_call(0x40, h, 32, len(payload), 0, 0, 0)
             return ctx.fireball_call(0x41, h, 64, len(payload), 0, 0, 0)

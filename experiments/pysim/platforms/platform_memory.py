@@ -69,7 +69,6 @@ class MemoryErrorResult:
     recovery: RecoveryStrategy
 
     def __str__(self) -> str:
-
         return f"MemoryError({self.error_code}: {self.recovery.message}, action={self.recovery.action.name})"
 
 
@@ -80,16 +79,13 @@ class Result(Generic[T]):
 
     @property
     def is_ok(self) -> bool:
-
         return self.error is None
 
     @property
     def is_err(self) -> bool:
-
         return self.error is not None
 
     def unwrap(self) -> T:
-
         if self.error is not None:
             raise RuntimeError(f"Unwrap failed on Result: {self.error}")
 
@@ -107,7 +103,6 @@ class PartitionView:
     data: bytearray
 
     def is_valid_for(self, task_id: int) -> bool:
-
         return self.owner == task_id
 
 
@@ -134,11 +129,9 @@ class VMMIOPTERegistry:
     """vMMIO Tier 3 PTE Registry mock for memory manager integration."""
 
     def __init__(self):
-
         self.ptes: dict[int, VMMIOPTE] = {}
 
     def register_page(self, page_idx: int, owner_id: int, physical_addr: int):
-
         self.ptes[page_idx] = VMMIOPTE(
             page_idx=page_idx,
             owner_id=owner_id,
@@ -147,7 +140,6 @@ class VMMIOPTERegistry:
         )
 
     def update_owner(self, page_idx: int, new_owner_id: int) -> bool:
-
         if page_idx not in self.ptes or not self.ptes[page_idx].is_valid:
             return False
 
@@ -155,12 +147,10 @@ class VMMIOPTERegistry:
         return True
 
     def get_owner(self, page_idx: int) -> int | None:
-
         pte = self.ptes.get(page_idx)
         return pte.owner_id if pte and pte.is_valid else None
 
     def unregister_page(self, page_idx: int):
-
         if page_idx in self.ptes:
             self.ptes[page_idx].is_valid = False
 
@@ -190,16 +180,13 @@ class SharedBlock:
         self._is_in_flight = False
 
     def get_address(self) -> int:
-
         assert self._is_active, "Cannot access released or dropped SharedBlock"
         return self.base_address
 
     def get_size(self) -> int:
-
         return self.size
 
     def get_owner(self) -> int:
-
         return self.owner
 
     def release(self) -> int:
@@ -220,15 +207,12 @@ class SharedBlock:
             pass
 
     def __del__(self):
-
         self.drop()
 
     def __enter__(self) -> SharedBlock:
-
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-
         self.drop()
 
 
@@ -251,12 +235,10 @@ class MPURegion:
 
     @property
     def is_writable(self) -> bool:
-
         return self.enabled and self.ap == AccessPermission.RW
 
     @property
     def is_executable(self) -> bool:
-
         return self.enabled and not self.xn
 
 
@@ -264,7 +246,6 @@ class PMSAv8MPU:
     """Cortex-M33 PMSAv8 8-region Memory Protection Unit simulator."""
 
     def __init__(self, pool_base: int = 0x20020000):
-
         self.regions: list[MPURegion] = []
         self.dsb_count = 0
         self.isb_count = 0
@@ -272,7 +253,6 @@ class PMSAv8MPU:
         self._setup_static_regions(pool_base)
 
     def _setup_static_regions(self, pool_base: int):
-
         self.regions = [
             MPURegion(
                 0,
@@ -335,7 +315,6 @@ class PMSAv8MPU:
         ]
 
     def begin_jit_patch(self):
-
         assert not self.patch_in_progress, "Nested JIT patch transaction is invalid"
         r4 = self.regions[4]
         r4.ap = AccessPermission.RW
@@ -345,7 +324,6 @@ class PMSAv8MPU:
         self.patch_in_progress = True
 
     def commit_jit_patch(self):
-
         assert self.patch_in_progress, "Cannot commit without begin_jit_patch"
         r4 = self.regions[4]
         r4.ap = AccessPermission.RO
@@ -355,7 +333,6 @@ class PMSAv8MPU:
         self.patch_in_progress = False
 
     def assert_no_rwx(self):
-
         for r in self.regions:
             if r.enabled:
                 assert not (r.is_writable and r.is_executable), (
@@ -367,7 +344,6 @@ class MemoryManager:
     """Tier 3 Consolidated Physical Memory Manager (platform_memory.md)."""
 
     def __init__(self):
-
         self.pool_base: int = 0
         self.pool_size: int = 0
         self.total_allocated_bytes: int = 0
@@ -378,7 +354,6 @@ class MemoryManager:
         self.shm_slots: dict[int, dict[str, Any]] = {}
 
     def init_manager(self, pool_base: int, pool_size: int) -> Result[bool]:
-
         assert pool_base % FB_WASM_PAGE_SIZE == 0, (
             f"pool_base 0x{pool_base:X} must be 64KB aligned (WasmPageAlignment)"
         )
@@ -389,7 +364,6 @@ class MemoryManager:
         return Result(value=True)
 
     def acquire_partition(self, owner: int) -> Result[PartitionView]:
-
         if owner in self.partition_owners:
             return Result(
                 error=MemoryErrorResult(
@@ -422,7 +396,6 @@ class MemoryManager:
         return Result(value=pv)
 
     def release_partition(self, caller_task_id: int):
-
         if caller_task_id not in self.partition_owners:
             return
 
@@ -430,7 +403,6 @@ class MemoryManager:
         self.total_allocated_bytes -= FB_CONF_PARTITION_SIZE
 
     def acquire_slot(self, owner: int, cls: type[T]) -> Result[PoolRef[T]]:
-
         slot_size = getattr(cls, "__size__", 256)
         if self.total_allocated_bytes + slot_size > self.pool_size:
             return Result(
@@ -448,7 +420,6 @@ class MemoryManager:
         return Result(value=ref)
 
     def release_slot(self, caller_task_id: int, ref: PoolRef[T]):
-
         if ref.owner != caller_task_id:
             return
 
@@ -459,7 +430,6 @@ class MemoryManager:
             self.total_allocated_bytes -= slot_size
 
     def allocate_shared(self, caller_task_id: int, size: int) -> Result[SharedBlock]:
-
         assert caller_task_id != 0, "Shared block must be owned by an explicit task"
         if size <= 0 or size > FB_PAGE_SIZE:
             return Result(
@@ -503,7 +473,6 @@ class MemoryManager:
         return Result(value=sb)
 
     def claim(self, receiver_task_id: int, shm_id: int) -> Result[SharedBlock]:
-
         slot = self.shm_slots.get(shm_id)
         if not slot or not slot["allocated"]:
             return Result(
@@ -553,7 +522,6 @@ class MemoryManager:
                 return
 
     def _deallocate_shared_slot(self, page_idx: int, slot_idx: int, owner: int):
-
         shm_id = (page_idx << 8) | slot_idx
         if shm_id in self.shm_slots:
             del self.shm_slots[shm_id]

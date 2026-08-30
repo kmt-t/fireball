@@ -41,7 +41,6 @@ class GDBServer:
     """TCP Server implementing GDB Remote Serial Protocol (RSP) wire interface."""
 
     def __init__(self, dbg: DebuggerManager, host: str = "127.0.0.1", port: int = 0):
-
         self.dbg = dbg
         self.rsp = GDBRspProtocol(dbg)
         self.host = host

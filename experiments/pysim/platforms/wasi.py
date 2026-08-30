@@ -44,7 +44,6 @@ class WasiHostContext:
     """Provides WASI Preview 1 and Fireball host functions for WASM guest execution."""
 
     def __init__(self, sysv: System, guest_memory: bytearray | None = None, task_id: int = 1):
-
         self.sysv = sysv
         self.task_id = task_id
         self.guest_memory = guest_memory if guest_memory is not None else bytearray(64 * 1024)
@@ -96,7 +95,6 @@ class WasiHostContext:
         self._import_tree = RadixBinaryTreeView(keys, values, radix_table, radix_shift=radix_shift)
 
     def fd_write(self, fd: int, iovs_ptr: int, iovs_len: int, nwritten_ptr: int) -> int:
-
         return int(
             self.sysv.fireball_call(
                 FbSyscallId.WASI_FD_WRITE, fd, iovs_ptr, iovs_len, nwritten_ptr, 0, 0
@@ -104,7 +102,6 @@ class WasiHostContext:
         )
 
     def fd_read(self, fd: int, iovs_ptr: int, iovs_len: int, nread_ptr: int) -> int:
-
         return int(
             self.sysv.fireball_call(
                 FbSyscallId.WASI_FD_READ, fd, iovs_ptr, iovs_len, nread_ptr, 0, 0
@@ -112,21 +109,17 @@ class WasiHostContext:
         )
 
     def fd_close(self, fd: int) -> int:
-
         return int(self.sysv.fireball_call(FbSyscallId.WASI_FD_CLOSE, fd, 0, 0, 0, 0, 0))
 
     def clock_time_get(self, clock_id: int, precision: int, time_ptr: int) -> int:
-
         return int(
             self.sysv.fireball_call(FbSyscallId.WASI_CLOCK_TIME_GET, clock_id, 0, time_ptr, 0, 0, 0)
         )
 
     def proc_exit(self, exit_code: int) -> int:
-
         return int(self.sysv.fireball_call(FbSyscallId.WASI_PROC_EXIT, exit_code, 0, 0, 0, 0, 0))
 
     def random_get(self, buf_ptr: int, buf_len: int) -> int:
-
         return int(
             self.sysv.fireball_call(FbSyscallId.WASI_RANDOM_GET, buf_ptr, buf_len, 0, 0, 0, 0)
         )
@@ -182,9 +175,7 @@ class WasiHostContext:
             c_func_type = ctypes.CFUNCTYPE(c_ret, *c_args)
 
             def make_wrapper(h: Callable[..., int], np: int):
-
                 def wrapper(*args):
-
                     return h(*args[:np]) & 0xFFFF_FFFF
 
                 return wrapper

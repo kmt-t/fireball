@@ -46,7 +46,6 @@ class OwnershipState:
 
 class IPCMessage:
     def __init__(self, resource_id: str, payload: dict[str, Any]):
-
         self.resource_id = resource_id
         self.payload = payload
         self.ownership = OwnershipState.SENDER_OWNS
@@ -54,7 +53,6 @@ class IPCMessage:
 
 class IPCRouter:
     def __init__(self):
-
         # Stage 1: Static registry (URI -> Service Descriptor)
         entries = sorted(
             {

@@ -275,7 +275,6 @@ def decode_all(code: bytes) -> dict[int, Instr]:
 
 
 def ordered(instrs: dict[int, Instr]) -> list[Instr]:
-
     return [instrs[k] for k in sorted(instrs.keys())]
 
 

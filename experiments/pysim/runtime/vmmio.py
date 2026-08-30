@@ -60,30 +60,24 @@ class VmmioAddress:
     """Decodes a 32-bit guest address into fields. See runtime_vmmio.md §3.3."""
 
     def __init__(self, raw: int):
-
         self.raw = raw & 0xFFFF_FFFF
 
     def is_linear(self) -> bool:
-
         # Bit[31] == 0 -> guest RAM (Tier 1), fast-bypass vMMIO entirely.
         return (self.raw & 0x8000_0000) == 0
 
     def fc(self) -> int:
-
         return (self.raw >> 28) & 0xF
 
     def syscall_metadata(self) -> int:
-
         # Syscall Metadata / Syscall ID: bits [27:16] (12 bits)
         return (self.raw >> 16) & 0xFFF
 
     def vpn(self) -> int:
-
         # 20-bit Virtual Page Number (VPN)
         return self.raw >> 12
 
     def offset(self) -> int:
-
         return self.raw & 0xFFF
 
 
@@ -191,11 +185,9 @@ class VMMIOController:
             self.tlb[tlb_idx] = {"vpn": 0xFFFF_FFFF, "pte": None}
 
     def flush_tlb(self) -> None:
-
         self.tlb = [{"vpn": 0xFFFF_FFFF, "pte": None} for _ in range(16)]
 
     def flush_tlb_entry(self, vpn: int) -> None:
-
         tlb_idx = self.tlb_index(vpn)
         if self.tlb[tlb_idx]["vpn"] == vpn:
             self.tlb[tlb_idx] = {"vpn": 0xFFFF_FFFF, "pte": None}

@@ -283,7 +283,6 @@ GENUINE_AO_WAT = r"""
 
 
 def run_aobench():
-
     print("================================================================================")
     print("      Fireball 3D Ambient Occlusion Benchmark (Genuine WASM Execution)         ")
     print("================================================================================")

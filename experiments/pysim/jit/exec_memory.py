@@ -96,7 +96,6 @@ class ExecutableBuffer:
     """
 
     def __init__(self, size: int):
-
         self.size = size
         self.patch_in_progress = True
         self.dsb_count = 0
@@ -182,7 +181,6 @@ class ExecutableBuffer:
             )
 
     def write(self, offset: int, data: bytes) -> None:
-
         assert self.patch_in_progress, (
             "Cannot write to ExecutableBuffer outside begin_jit_patch() transaction"
         )
@@ -190,30 +188,25 @@ class ExecutableBuffer:
         ctypes.memmove(self.base + offset, data, len(data))
 
     def read(self, offset: int, size: int) -> bytes:
-
         assert offset + size <= self.size, "read past the end of the executable buffer"
         buf = (ctypes.c_char * size)()
         ctypes.memmove(buf, self.base + offset, size)
         return bytes(buf)
 
     def finalize(self) -> None:
-
         if self.patch_in_progress:
             self.commit_jit_patch()
 
     def function_at(self, offset: int, restype, argtypes):
-
         self.finalize()
         func_type = ctypes.CFUNCTYPE(restype, *argtypes)
         return func_type(self.base + offset)
 
     def address_of(self, offset: int) -> int:
-
         self.finalize()
         return self.base + offset
 
     def close(self) -> None:
-
         if getattr(self, "base", None):
             if IS_WINDOWS:
                 _kernel32.VirtualFree(self.base, 0, MEM_RELEASE)
@@ -224,5 +217,4 @@ class ExecutableBuffer:
             self.base = None
 
     def __del__(self) -> None:
-
         self.close()

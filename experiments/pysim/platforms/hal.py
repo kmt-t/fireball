@@ -80,7 +80,6 @@ class UartTransport:
     """
 
     def __init__(self):
-
         self.device_sock, self.host_sock = socket.socketpair()
         self.device_sock.settimeout(0.2)
         self.host_sock.settimeout(0.2)
@@ -113,7 +112,6 @@ class UartTransport:
         return b"".join(chunks)
 
     def close(self) -> None:
-
         self.device_sock.close()
         self.host_sock.close()
 
@@ -150,11 +148,9 @@ class ShmBufferPool:
     """
 
     def __init__(self):
-
         self._slots: list[ShmHandle | None] = [None] * FB_CONF_HAL_MAX_BUFFERS
 
     def acquire_buffer(self, task_id: int, size: int) -> ShmHandle:
-
         if size <= 0 or size > FB_CONF_HAL_BUFFER_SIZE:
             raise ValueError(
                 f"acquire_buffer(size={size}) exceeds FB_CONF_HAL_BUFFER_SIZE={FB_CONF_HAL_BUFFER_SIZE}"
@@ -175,7 +171,6 @@ class ShmBufferPool:
         return handle
 
     def release_buffer(self, task_id: int, handle: ShmHandle) -> None:
-
         for i, s in enumerate(self._slots):
             if s is not None and s.name == handle.name:
                 if s.owner_task != task_id:
@@ -187,7 +182,6 @@ class ShmBufferPool:
         raise ShmTrap(f"task {task_id} cannot release {handle.name}: not found")
 
     def _resolve(self, task_id: int, handle: ShmHandle) -> ShmHandle:
-
         for s in self._slots:
             if s is not None and s.name == handle.name:
                 if s.owner_task != task_id:
@@ -201,7 +195,6 @@ class ShmBufferPool:
         raise ShmTrap(f"handle {handle.name} does not exist (stale, or never acquired)")
 
     def close_all(self) -> None:
-
         for i in range(len(self._slots)):
             self._slots[i] = None
 
@@ -231,11 +224,9 @@ class Timer:
     """wasi:clocks/monotonic-clock, backed by the real system clock."""
 
     def get_now_ns(self) -> int:
-
         return time.monotonic_ns()
 
     def subscribe(self, nanos: int, callback) -> threading.Timer:
-
         t = threading.Timer(nanos / 1e9, callback)
         t.daemon = True
         t.start()

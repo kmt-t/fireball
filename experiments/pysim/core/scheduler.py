@@ -63,7 +63,6 @@ class Channel:
     """Bufferless synchronous CSP rendezvous channel (ADR_RendezvousChannel)."""
 
     def __init__(self, channel_id: str):
-
         self.channel_id = channel_id
         self.waiter_task: Task | None = None
         self.waiter_dir: WaitDir = WaitDir.NONE
@@ -71,7 +70,6 @@ class Channel:
 
 class Task:
     def __init__(self, task_id: int | str, name: str, coro: Generator[Any, None, None] | None):
-
         self.task_id = task_id
         self.name = name
         self.coro = coro
@@ -102,7 +100,6 @@ class Scheduler:
         self.dropped_irqs = 0
 
     def get_task(self, task_id: int | str) -> Task | None:
-
         for t in self._all:
             if t.task_id == task_id:
                 return t
@@ -132,7 +129,6 @@ class Scheduler:
         return task.task_id
 
     def get_channel(self, channel_id: str) -> Channel | None:
-
         for ch in self._channels:
             if ch.channel_id == channel_id:
                 return ch
@@ -140,7 +136,6 @@ class Scheduler:
         return None
 
     def create_channel(self, channel_id: str) -> Channel:
-
         existing = self.get_channel(channel_id)
         if existing is not None:
             return existing
@@ -242,7 +237,6 @@ class Scheduler:
         return count
 
     def wait_for_interrupt(self, irq_id: int) -> None:
-
         task = self.current_task
         assert task is not None
         task.state = TaskState.BLOCKED
@@ -254,11 +248,9 @@ class Scheduler:
         self.irq_waiters.append((irq_id, [task]))
 
     def set_idle_hook(self, fn: Callable[[], None]) -> None:
-
         self.idle_hooks.append(fn)
 
     def notify_event(self, event_key: Any) -> None:
-
         woken = []
         for i, (k, tlist) in enumerate(self._blocked_by_event):
             if k == event_key:
@@ -271,7 +263,6 @@ class Scheduler:
             self._ready.append(task)
 
     def pending_task_count(self) -> int:
-
         return (
             len(self._ready)
             + sum(len(w) for _, w in self._blocked_by_event)
@@ -323,7 +314,6 @@ class Scheduler:
             hook()
 
     def run_to_completion(self, max_sweeps: int = 1000) -> None:
-
         for _ in range(max_sweeps):
             self.run_until_idle()
             if not self._ready and not self._blocked_by_event and not self.irq_waiters:

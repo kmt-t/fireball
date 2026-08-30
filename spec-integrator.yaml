@@ -61,6 +61,17 @@ benchmark_verification:
 obligation:
   require_full_coverage: false
 
+consistency:
+  enabled: true
+  lockfile: "spec-consistency.lock"
+  cochange: true
+  symbol_patterns:
+    - '\bFB_CONF_[A-Z0-9_]+\b'
+    - '\bFB_[A-Z0-9_]+_(?:MAX|MIN|SIZE|BASE|LIMIT)\b'
+  extra_scan_globs:
+    - "inc/**/*.hxx"
+    - "inc/*.hxx"
+
 evidence:
   # reports/doc_report.md is gitignored: the pipeline generates it as its own
   # LAST step, so on a fresh checkout it legitimately does not exist yet.

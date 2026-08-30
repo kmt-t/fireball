@@ -88,6 +88,13 @@ class Element:
 
 
 @dataclass
+class DataSegment:
+    memory_index: int
+    offset: int                 # i32.const offset expr
+    data: bytes
+
+
+@dataclass
 class Module:
     types: list[FuncType] = field(default_factory=list)
     imports: list[Import] = field(default_factory=list)
@@ -97,6 +104,14 @@ class Module:
     globals: list[Global] = field(default_factory=list)
     tables: list[Table] = field(default_factory=list)
     elements: list[Element] = field(default_factory=list)
+    data_segments: list[DataSegment] = field(default_factory=list)
+    start_function: int | None = None
+
+    def init_memory_data(self, memory: bytearray) -> None:
+        """Initializes memory with active data segments."""
+        for seg in self.data_segments:
+            if seg.offset + len(seg.data) <= len(memory):
+                memory[seg.offset:seg.offset + len(seg.data)] = seg.data
 
     def table_contents(self, table_index: int) -> list[int | None]:
         """Materializes table `table_index` as a flat list of unified

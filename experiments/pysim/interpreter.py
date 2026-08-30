@@ -145,12 +145,16 @@ class Interpreter:
                  host_functions: dict[int, Callable[..., int | None]] | None = None):
         self.module = module
         self.memory = memory
+        if self.memory is not None:
+            self.module.init_memory_data(self.memory)
         self.host_functions = host_functions or {}
         self.globals: list[int] = [g.init_value for g in module.globals]
         self.tables: list[list[int | None]] = [
             module.table_contents(i) for i in range(len(module.tables))
         ]
         self._env = ExecEnv(module, memory, self.globals, self.tables, self.host_functions, self)
+        if self.module.start_function is not None:
+            self.call(self.module.start_function, [])
 
     def call(self, func_index: int, args: list[int]) -> list[int]:
         if self.module.is_import(func_index):

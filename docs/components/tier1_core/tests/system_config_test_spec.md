@@ -23,7 +23,7 @@
 
 ## 3. 現状のギャップ（pysim実装との差分）
 
-- pysimの`system.py`は`FB_CONF_GUEST_RAM_SIZE=4096`、`FB_CONF_VSOC_PASSTHROUGH_BASE=0xF000_0000`を独自定義しているが、**`FB_CONF_VSOC_PASSTHROUGH_BASE`の値がsystem_config.mdの`0x4000_0000`と異なる**（pysimはFC=15のvMMIOアドレス自体、system_config.mdはその先のホスト実ペリフェラル物理アドレス — 意味が異なる可能性があるため要精査、単純な数値不一致ではないかもしれない）。
+- pysimの`system.py`は`FB_CONF_GUEST_RAM_SIZE=4096`を定義している。またFC=15仮想アドレスとして`0xF000_0000`を用いている（`system_config.md`のホスト実ペリフェラル物理アドレス`FB_CONF_VSOC_PASSTHROUGH_BASE=0x40000000`へのマッピング先）。
 - CFG-01〜08すべて未検証（テストコードとして存在しない）。C++実装が存在しないため`static_assert`自体も検証できない。
 - ロール間マトリクス(CFG-04)はpysimでは`ipc_router_concept.py`が直接保持しており、`system_config.md`の`FB_CONF_ROUTER_ROLE_MATRIX`との一致は目視確認のみ（自動検証なし）。
 

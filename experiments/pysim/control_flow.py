@@ -18,6 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from leb128 import decode_signed, decode_unsigned
+from wasm_reader import WasmUnsupportedFeatureError
 from wasm_opcodes import (
     BLOCK, BR, BR_IF, BR_TABLE, CALL, CALL_INDIRECT, DROP, ELSE, END, GLOBAL_GET,
     GLOBAL_SET, I32_CONST, I32_LOAD, I32_LOAD8_S, I32_LOAD8_U, I32_LOAD16_S,
@@ -104,7 +105,7 @@ def decode_all(code: bytes) -> dict[int, Instr]:
         elif opcode in _NO_OPERAND:
             pass
         else:
-            raise NotImplementedError(f"opcode 0x{opcode:02X} at offset {start} is not supported")
+            raise WasmUnsupportedFeatureError(f"ERR_WASM_UNSUPPORTED_FEATURE: opcode 0x{opcode:02X} at offset {start} is not supported")
 
         instr = Instr(offset=start, opcode=opcode, end_offset=off, operand=operand,
                        const_value=const_value, memarg=memarg,

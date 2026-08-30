@@ -9,6 +9,7 @@ covering all Fireball component test specifications (*_test_spec.md):
 - Tier 3 Platform Memory & HAL & MPU W^X (platform_memory_test_spec.md, platform_hal_test_spec.md)
 - Tier 3 JIT Hotspot Profiling & 3-Bank Cache (jit_compiler_test_spec.md, jit_runtime_test_spec.md)
 - Tier 1/2 Syscalls (system_syscall_test_spec.md)
+- WASM Instruction Set MVP (wasm_instruction_set_test_spec.md)
 
 Run with:  uv run python experiments/pysim/tests.py
 """
@@ -27,6 +28,7 @@ for _sub in (("tier3_platform", "concepts"), ("tier2_runtime", "concepts"), ("ti
         sys.path.insert(0, _p)
 
 from hal import FB_CONF_HAL_BUFFER_SIZE, FB_CONF_HAL_MAX_BUFFERS, HalError, ShmBufferPool, ShmTrap, Timer, UartTransport
+from interpreter import Interpreter, Trap
 from ipc_router_concept import IPCMessage, IPCRouter
 from logger import ConsoleOutput, LogDictionary, Logger, LogLevel
 from platform_memory_concept import (
@@ -61,6 +63,8 @@ from vmmio_concept import (
     VmmioAddress,
     VMMIOController,
 )
+from wasm_builder import ModuleBuilder
+from wasm_reader import WasmParseError, WasmUnsupportedFeatureError, parse
 
 
 # ===========================================================================
@@ -392,7 +396,7 @@ def test_mem_10c_route_message_rollback_restores_owner_id():
     assert mm.vmmio_registry.get_owner(sb.page_idx) == 1
 
 
-def test_mem_11_shared_block_raii_auto_deallocate():
+def test_mem_11_shared_block_raII_auto_deallocate():
     """MEM-11: SharedBlock RAII automatically deallocates buffer on drop."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
@@ -851,6 +855,205 @@ def test_syscall_07_wasi_fd_write():
         assert sysv.transport.drain() == message
     finally:
         sysv.shutdown()
+
+
+# ===========================================================================
+# 10. WASM Instruction Set MVP (wasm_instruction_set_test_spec.md)
+# ===========================================================================
+
+def test_wasm_01_to_06_unsupported_features_rejected():
+    """WASM-01..06: Unsupported features (SIMD, threads, tail-call) are rejected with error code."""
+    builder = ModuleBuilder()
+    fb = builder.add_function(params=(), results=("i32",), export_name="test_simd")
+    # Emit unsupported SIMD prefix opcode 0xFD
+    fb.code.append(0xFD)
+    fb.code.append(0x00)
+    fb.end()
+
+    wasm_bytes = builder.build()
+    mod = parse(wasm_bytes)
+    try:
+        interp = Interpreter(mod)
+        interp.call(0, [])
+        raise AssertionError("Expected WasmUnsupportedFeatureError for SIMD opcode")
+    except WasmUnsupportedFeatureError as e:
+        assert "ERR_WASM_UNSUPPORTED_FEATURE" in str(e)
+
+
+def test_wasm_10_to_15_control_flow_and_calls():
+    """WASM-10..15: Unreachable trap, block/loop/if/br_table, call, and call_indirect."""
+    builder = ModuleBuilder()
+    builder.add_table(min_size=2, max_size=2)
+
+    # f0: unreachable trap
+    f0 = builder.add_function(params=(), results=(), export_name="unreachable_fn")
+    f0.unreachable().end()
+
+    # f1: loop + br_table
+    f1 = builder.add_function(params=("i32",), results=("i32",), export_name="calc_fn")
+    f1.block()
+    f1.block()
+    f1.local_get(0)
+    f1.br_table([0, 1], 0)
+    f1.end()
+    f1.i32_const(100).return_()
+    f1.end()
+    f1.i32_const(200).return_()
+    f1.end()
+
+    # f2: indirect caller
+    f2 = builder.add_function(params=("i32", "i32"), results=("i32",), export_name="call_ind")
+    f2.local_get(0)   # arg to target
+    f2.local_get(1)   # table index
+    f2.call_indirect(type_index=1, table_index=0)
+    f2.end()
+
+    builder.add_element(table_index=0, offset=0, func_indices=[1, 1])
+
+    wasm_bytes = builder.build()
+    mod = parse(wasm_bytes)
+    interp = Interpreter(mod)
+
+    # WASM-10: unreachable traps
+    try:
+        interp.call(mod.export_func_index("unreachable_fn"), [])
+        raise AssertionError("Expected Trap for unreachable")
+    except Trap:
+        pass
+
+    # WASM-13: br_table branch resolution
+    assert interp.call(mod.export_func_index("calc_fn"), [0]) == [100]
+    assert interp.call(mod.export_func_index("calc_fn"), [1]) == [200]
+
+    # WASM-15: call_indirect
+    assert interp.call(mod.export_func_index("call_ind"), [0, 0]) == [100]
+    assert interp.call(mod.export_func_index("call_ind"), [1, 1]) == [200]
+
+
+def test_wasm_20_21_drop_and_select():
+    """WASM-20..21: drop and select parametric instructions."""
+    builder = ModuleBuilder()
+    fb = builder.add_function(params=("i32", "i32", "i32"), results=("i32",), export_name="sel")
+    fb.local_get(0)
+    fb.drop()         # drops param 0
+    fb.local_get(1)   # val1 (if cond != 0)
+    fb.local_get(2)   # val2 (if cond == 0)
+    fb.local_get(0)   # cond
+    fb.select()
+    fb.end()
+
+    mod = parse(builder.build())
+    interp = Interpreter(mod)
+    assert interp.call(mod.export_func_index("sel"), [1, 10, 20]) == [10]
+    assert interp.call(mod.export_func_index("sel"), [0, 10, 20]) == [20]
+
+
+def test_wasm_30_31_locals_and_globals():
+    """WASM-30..31: local.get/set/tee and global.get/set."""
+    builder = ModuleBuilder()
+    g_idx = builder.add_global(vtype="i32", mutable=True, init_value=42)
+
+    fb = builder.add_function(params=("i32",), results=("i32",), locals_extra=["i32"], export_name="loc_glob")
+    # local.tee: set local 1 and keep on stack
+    fb.local_get(0)
+    fb.local_tee(1)
+    # global.set
+    fb.global_set(g_idx)
+    # global.get + local 1
+    fb.global_get(g_idx)
+    fb.local_get(1)
+    fb.i32_add()
+    fb.end()
+
+    mod = parse(builder.build())
+    interp = Interpreter(mod)
+    assert interp.call(mod.export_func_index("loc_glob"), [5]) == [10]
+    assert interp.globals[0] == 5
+
+
+def test_wasm_40_to_46_memory_load_store_grow_and_data():
+    """WASM-40..46 & WASM-60: Linear memory load, store, size, grow, bounds traps, and Data segments."""
+    builder = ModuleBuilder()
+    builder.add_memory(min_pages=1, max_pages=2)
+    # Add initial data segment: string "WASM_INIT" at offset 0
+    builder.add_data_segment(offset=0, data=b"WASM_INIT")
+
+    fb = builder.add_function(params=(), results=("i32",), export_name="mem_ops")
+    # Read first 4 bytes as i32
+    fb.i32_const(0)
+    fb.i32_load(align=2, offset=0)
+    # Write 0x12345678 to offset 16
+    fb.i32_const(16)
+    fb.i32_const(0x12345678)
+    fb.i32_store(align=2, offset=0)
+    # Grow memory by 1 page
+    fb.i32_const(1)
+    fb.memory_grow()
+    fb.drop()
+    # Return memory.size
+    fb.memory_size()
+    fb.end()
+
+    # Function that attempts out-of-bounds access
+    fb_oob = builder.add_function(params=(), results=(), export_name="trap_oob")
+    fb_oob.i32_const(0x1000000)   # Out of bounds offset
+    fb_oob.i32_load(align=2, offset=0)
+    fb_oob.drop()
+    fb_oob.end()
+
+    mod = parse(builder.build())
+    mem = bytearray(65536)
+    interp = Interpreter(mod, memory=mem)
+
+    # Initial data check
+    assert bytes(mem[0:9]) == b"WASM_INIT"
+
+    # Execution
+    pages = interp.call(mod.export_func_index("mem_ops"), [])
+    assert pages == [2]
+    assert struct.unpack_from("<I", mem, 16)[0] == 0x12345678
+
+    # OOB trap check
+    try:
+        interp.call(mod.export_func_index("trap_oob"), [])
+        raise AssertionError("Expected Trap on out of bounds memory access")
+    except Trap:
+        pass
+
+
+def test_wasm_50_to_56_integer_arithmetic_and_bitwise():
+    """WASM-50..56: 32-bit integer arithmetic, div-by-zero trap, popcnt, clz, rotl, rotr."""
+    builder = ModuleBuilder()
+
+    # Div by zero
+    fb_div = builder.add_function(params=("i32", "i32"), results=("i32",), export_name="div_s")
+    fb_div.local_get(0).local_get(1).i32_div_s().end()
+
+    # Bit counts and rotation
+    fb_bit = builder.add_function(params=("i32",), results=("i32",), export_name="bit_ops")
+    fb_bit.local_get(0).i32_popcnt()   # popcnt(x)
+    fb_bit.local_get(0).i32_clz()      # clz(x)
+    fb_bit.i32_add()
+    fb_bit.local_get(0).i32_const(4).i32_rotl()  # rotl(x, 4)
+    fb_bit.i32_xor()
+    fb_bit.end()
+
+    mod = parse(builder.build())
+    interp = Interpreter(mod)
+
+    # WASM-54: Div by zero traps
+    try:
+        interp.call(mod.export_func_index("div_s"), [10, 0])
+        raise AssertionError("Expected Trap on division by zero")
+    except Trap:
+        pass
+
+    # Normal div
+    assert interp.call(mod.export_func_index("div_s"), [10, 2]) == [5]
+
+    # WASM-52, 55, 56: Bit ops
+    # x = 0x80000001 -> popcnt=2, clz=0 -> sum=2. rotl(x, 4) = 0x00000018. 2 ^ 0x18 = 0x1A (26)
+    assert interp.call(mod.export_func_index("bit_ops"), [0x80000001]) == [26]
 
 
 # ===========================================================================

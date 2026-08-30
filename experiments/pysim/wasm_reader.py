@@ -10,7 +10,7 @@ module carrying them still loads.
 from __future__ import annotations
 
 from leb128 import decode_signed, decode_unsigned
-from wasm_module import Element, Export, Function, FuncType, Global, Import, Memory, Module, Table, VALTYPE_BYTES
+from wasm_module import DataSegment, Element, Export, Function, FuncType, Global, Import, Memory, Module, Table, VALTYPE_BYTES
 
 MAGIC = b"\x00asm"
 VERSION = b"\x01\x00\x00\x00"
@@ -22,14 +22,22 @@ SEC_TABLE = 4
 SEC_MEMORY = 5
 SEC_GLOBAL = 6
 SEC_EXPORT = 7
+SEC_START = 8
 SEC_ELEMENT = 9
 SEC_CODE = 10
+SEC_DATA = 11
 
 ELEM_TYPE_FUNCREF = 0x70
 
 
 class WasmParseError(Exception):
     pass
+
+
+class WasmUnsupportedFeatureError(WasmParseError):
+    def __init__(self, message: str = "ERR_WASM_UNSUPPORTED_FEATURE"):
+        super().__init__(message)
+        self.error_code = "ERR_WASM_UNSUPPORTED_FEATURE"
 
 
 def _read_vec_len(data: bytes, off: int) -> tuple[int, int]:
@@ -191,6 +199,29 @@ def _parse_code_section(data: bytes, off: int, end: int, type_indices: list[int]
     assert off == end, "code section length mismatch"
 
 
+def _parse_start_section(data: bytes, off: int, end: int, module: Module) -> None:
+    func_idx, off = decode_unsigned(data, off)
+    module.start_function = func_idx
+    assert off == end, "start section length mismatch"
+
+
+def _parse_data_section(data: bytes, off: int, end: int, module: Module) -> None:
+    n, off = decode_unsigned(data, off)
+    for _ in range(n):
+        mem_idx, off = decode_unsigned(data, off)
+        # Offset expr: only i32.const N end
+        assert data[off] == 0x41, "only i32.const offset expressions are supported for data segments"
+        off += 1
+        offset, off = decode_signed(data, off)
+        assert data[off] == 0x0B, "data offset expr must end with 0x0B"
+        off += 1
+        data_len, off = decode_unsigned(data, off)
+        seg_data = data[off:off + data_len]
+        off += data_len
+        module.data_segments.append(DataSegment(memory_index=mem_idx, offset=offset, data=seg_data))
+    assert off == end, "data section length mismatch"
+
+
 def parse(data: bytes) -> Module:
     if data[0:4] != MAGIC:
         raise WasmParseError("missing \\0asm magic header")
@@ -220,11 +251,15 @@ def parse(data: bytes) -> Module:
             _parse_global_section(data, off, sec_end, module)
         elif sec_id == SEC_EXPORT:
             _parse_export_section(data, off, sec_end, module)
+        elif sec_id == SEC_START:
+            _parse_start_section(data, off, sec_end, module)
         elif sec_id == SEC_ELEMENT:
             _parse_element_section(data, off, sec_end, module)
         elif sec_id == SEC_CODE:
             _parse_code_section(data, off, sec_end, type_indices, module)
-        # else: unsupported section (Data, custom, ...) -- skip its bytes.
+        elif sec_id == SEC_DATA:
+            _parse_data_section(data, off, sec_end, module)
+        # else: custom section -- skip its bytes.
 
         off = sec_end
 

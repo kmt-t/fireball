@@ -16,8 +16,8 @@ from dataclasses import dataclass, field
 from leb128 import encode_signed, encode_unsigned
 from wasm_module import VALTYPE_CODES
 from wasm_reader import (
-    ELEM_TYPE_FUNCREF, MAGIC, SEC_CODE, SEC_ELEMENT, SEC_EXPORT, SEC_FUNCTION, SEC_GLOBAL,
-    SEC_IMPORT, SEC_MEMORY, SEC_TABLE, SEC_TYPE, VERSION,
+    ELEM_TYPE_FUNCREF, MAGIC, SEC_CODE, SEC_DATA, SEC_ELEMENT, SEC_EXPORT, SEC_FUNCTION, SEC_GLOBAL,
+    SEC_IMPORT, SEC_MEMORY, SEC_START, SEC_TABLE, SEC_TYPE, VERSION,
 )
 
 EXPORT_KIND_FUNC = 0
@@ -94,6 +94,9 @@ class FuncBuilder:
 
     def drop(self):
         self.code.append(0x1A); return self
+
+    def select(self):
+        self.code.append(0x1B); return self
 
     # --- locals --------------------------------------------------------------
     def local_get(self, idx: int):
@@ -201,6 +204,13 @@ class ElementSpec:
     func_indices: list[int]
 
 
+@dataclass
+class DataSegmentSpec:
+    memory_index: int
+    offset: int
+    data: bytes
+
+
 class ModuleBuilder:
     def __init__(self):
         self._funcs: list[FuncBuilder] = []
@@ -208,10 +218,15 @@ class ModuleBuilder:
         self._globals: list[GlobalSpec] = []
         self._tables: list[tuple[int, int | None]] = []
         self._elements: list[ElementSpec] = []
+        self._data_segments: list[DataSegmentSpec] = []
+        self._start_function: int | None = None
         self._memory_pages: int | None = None
 
     def add_memory(self, min_pages: int, max_pages: int | None = None) -> None:
         self._memory_pages = (min_pages, max_pages)
+
+    def set_start_function(self, func_idx: int) -> None:
+        self._start_function = func_idx
 
     def add_global(self, vtype: str, mutable: bool, init_value: int) -> int:
         idx = len(self._globals)
@@ -226,6 +241,9 @@ class ModuleBuilder:
     def add_element(self, table_index: int, offset: int, func_indices: list[int]) -> None:
         self._elements.append(ElementSpec(table_index=table_index, offset=offset, func_indices=func_indices))
 
+    def add_data_segment(self, offset: int, data: bytes, memory_index: int = 0) -> None:
+        self._data_segments.append(DataSegmentSpec(memory_index=memory_index, offset=offset, data=data))
+
     def add_import(self, module: str, name: str, params: tuple[str, ...],
                     results: tuple[str, ...]) -> int:
         """Registers a host-function import and returns its function index
@@ -235,9 +253,10 @@ class ModuleBuilder:
         self._imports.append(ImportSpec(module=module, name=name, params=params, results=results))
         return idx
 
-    def add_function(self, params: tuple[str, ...], results: tuple[str, ...],
-                      export_name: str | None = None) -> FuncBuilder:
-        fb = FuncBuilder(params=params, results=results, export_name=export_name)
+    def add_function(self, params: tuple[str, ...] = (), results: tuple[str, ...] = (),
+                     locals_extra: list[str] | None = None,
+                     export_name: str | None = None) -> FuncBuilder:
+        fb = FuncBuilder(params=params, results=results, locals_extra=locals_extra or [], export_name=export_name)
         self._funcs.append(fb)
         return fb
 
@@ -308,6 +327,9 @@ class ModuleBuilder:
         if export_entries:
             out += _section(SEC_EXPORT, _vec(export_entries))
 
+        if self._start_function is not None:
+            out += _section(SEC_START, encode_unsigned(self._start_function))
+
         if self._elements:
             element_entries = []
             for e in self._elements:
@@ -333,5 +355,12 @@ class ModuleBuilder:
             body = locals_b + fb.build_body()
             code_entries.append(encode_unsigned(len(body)) + body)
         out += _section(SEC_CODE, _vec(code_entries))
+
+        if self._data_segments:
+            data_entries = []
+            for d in self._data_segments:
+                offset_expr = bytes([0x41]) + encode_signed(d.offset) + bytes([0x0B])
+                data_entries.append(encode_unsigned(d.memory_index) + offset_expr + encode_unsigned(len(d.data)) + d.data)
+            out += _section(SEC_DATA, _vec(data_entries))
 
         return bytes(out)

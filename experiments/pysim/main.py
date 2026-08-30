@@ -27,7 +27,7 @@ from system import FbSyscallId, ShmSlice, System, WasiErrno
 from wasi import WasiHostContext
 from wasm_builder import ModuleBuilder
 from wasm_module import I32
-from x64_jit import ModuleJIT
+from x64_jit import TraceJITCompiler
 
 findings: list[str] = []
 
@@ -238,15 +238,15 @@ def run_wasm_demo(sysv: System) -> None:
     fb.end()
 
     mod = wasm_reader.parse(builder.build())
+    entry_idx = mod.export_func_index("guest_main")
     trampolines = ctx_wasi.build_jit_trampolines(mod)
-    jit = ModuleJIT(mod, mem_size_bytes=len(ctx_wasi.guest_memory), host_trampolines=trampolines)
-    blob = jit.compile_all()
+    jit = TraceJITCompiler(mem_size_bytes=len(ctx_wasi.guest_memory), host_trampolines=trampolines)
+    blob, _ = jit.compile_function_as_trace(mod, entry_idx)
 
     buf = ExecutableBuffer(max(len(blob), 64))
     try:
         buf.write(0, blob)
-        entry_idx = mod.export_func_index("guest_main")
-        fn = buf.function_at(jit.func_offsets[entry_idx], ctypes.c_int64, [ctypes.c_void_p, ctypes.c_void_p])
+        fn = buf.function_at(0, ctypes.c_int64, [ctypes.c_void_p, ctypes.c_void_p])
 
         c_mem = (ctypes.c_char * len(ctx_wasi.guest_memory)).from_buffer(ctx_wasi.guest_memory)
         mem_ptr = ctypes.addressof(c_mem)

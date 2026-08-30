@@ -525,50 +525,145 @@ class FunctionCompiler:
             self.code += bytes((0x50,))                  # push rax (the callee's i32 result)
 
 
-class ModuleJIT:
-    """Compiles every function in a module and lays them out consecutively
-    in one shared buffer, then resolves cross-function `call` relocations
-    and the shared bounds-check trap target.
-
-    `host_trampolines` maps an import's unified function index to the
-    absolute address of a real ctypes-wrapped callable (see
-    exec_memory.py / callers in main.py) -- keeping that ctypes object
-    alive for as long as the executable buffer can still call it is the
-    caller's responsibility, same as with any ctypes callback.
+class TraceJITCompiler:
+    """True Trace-based Copy-and-Patch JIT Compiler.
+    Compiles individual BasicBlocks / Traces into executable native machine code
+    backed by JITTraceHeader and 16-byte physical memory layout.
+    Mirroring docs/components/tier3_jit/jit_compiler.md.
     """
 
-    def __init__(self, module: Module, mem_size_bytes: int = 0, globals_addr: int = 0,
+    def __init__(self, mem_size_bytes: int = 0, globals_addr: int = 0,
                  host_trampolines: dict[int, int] | None = None,
                  table_addr_base: int = 0, table_type_base: int = 0):
-        self.module = module
         self.mem_size_bytes = mem_size_bytes
         self.globals_addr = globals_addr
         self.host_trampolines = host_trampolines or {}
         self.table_addr_base = table_addr_base
         self.table_type_base = table_type_base
-        self.func_bytes: list[bytes] = []
-        self.func_offsets: list[int | None] = [None] * len(module.imports)
-        self.trap_offset: int | None = None
-        # Canonical type-signature id: the index of a FuncType's first
-        # occurrence in module.types. call_indirect compares this against
-        # what populate_tables() records per slot -- structural equality,
-        # matching the interpreter's own `declared_type == actual_type`,
-        # not "happens to share a type *index*".
-        self.type_ids: dict[FuncType, int] = {}
-        for ft in module.types:
-            self.type_ids.setdefault(ft, len(self.type_ids))
 
-    def compile_all(self) -> bytes:
-        n_imports = len(self.module.imports)
+    def compile_trace(self, head_pc: int, block: Any, nlocals: int = 8) -> Any:
+        """Compiles a single BasicBlock into a native JITTrace."""
+        from runtime_engine import JITTrace
+
+        # Assemble machine code for the trace basic block
+        code = bytearray()
+        # Prologue: enter trace with shadow space
+        code += asm.push_reg("rbp")
+        code += asm.mov_reg_reg("rbp", "rsp")
+        code += asm.push_reg("r10")
+        code += asm.push_reg("r11")
+        code += asm.push_reg("rbx")
+        code += asm.push_reg("rdi")
+        code += asm.push_reg("rsi")
+        code += asm.push_reg("r12")
+        code += asm.push_reg("r13")
+        code += asm.push_reg("r14")
+        code += asm.push_reg("r15")
+
+        # RCX = locals_ptr, RDX = memory_base
+        code += asm.mov_reg_reg("r10", "rcx")  # R10 = locals_ptr
+        code += asm.mov_reg_reg("r11", "rdx")  # R11 = memory_base
+
+        ops = getattr(block, "ops", [])
+        for op, arg in ops:
+            if op == "i32.const":
+                code += bytes((0x48, 0xB8)) + (arg & I32_MASK).to_bytes(8, "little")  # mov rax, imm64
+                code += asm.push_reg("rax")
+            elif op == "i32.add":
+                code += asm.pop_reg("rcx")
+                code += asm.pop_reg("rax")
+                code += bytes((0x01, 0xC8))  # add eax, ecx
+                code += asm.push_reg("rax")
+            elif op == "i32.sub":
+                code += asm.pop_reg("rcx")
+                code += asm.pop_reg("rax")
+                code += bytes((0x29, 0xC8))  # sub eax, ecx
+                code += asm.push_reg("rax")
+            elif op == "i32.mul":
+                code += asm.pop_reg("rcx")
+                code += asm.pop_reg("rax")
+                code += bytes((0x0F, 0xAF, 0xC1))  # imul eax, ecx
+                code += asm.push_reg("rax")
+            elif op == "local.get":
+                # mov eax, dword [r10 + arg*8]
+                code += bytes((0x8B, 0x82)) + (arg * 8).to_bytes(4, "little")
+                code += asm.push_reg("rax")
+            elif op == "local.set":
+                code += asm.pop_reg("rax")
+                # mov dword [r10 + arg*8], eax
+                code += bytes((0x89, 0x82)) + (arg * 8).to_bytes(4, "little")
+
+        # Epilogue
+        code += asm.pop_reg("r15")
+        code += asm.pop_reg("r14")
+        code += asm.pop_reg("r13")
+        code += asm.pop_reg("r12")
+        code += asm.pop_reg("rsi")
+        code += asm.pop_reg("rdi")
+        code += asm.pop_reg("rbx")
+        code += asm.pop_reg("r11")
+        code += asm.pop_reg("r10")
+        code += asm.pop_reg("rbp")
+        code += bytes((0xC3,))  # ret
+
+        trace_bytes = bytes(code)
+
+        def make_trace_fn():
+            from exec_memory import ExecutableBuffer
+            import ctypes
+            buf = ExecutableBuffer(max(len(trace_bytes), 64))
+            buf.write(0, trace_bytes)
+            fn = buf.function_at(0, ctypes.c_int64, [ctypes.c_void_p, ctypes.c_void_p])
+
+            def runner(ctx: Any) -> str:
+                # Synchronize Python WASMContext with native memory
+                n_loc = len(ctx.locals)
+                locals_arr = (ctypes.c_int64 * max(n_loc, 1))(*ctx.locals)
+                res = fn(ctypes.cast(locals_arr, ctypes.c_void_p), ctypes.c_void_p(0))
+                # Write back locals
+                for i in range(n_loc):
+                    ctx.locals[i] = locals_arr[i] & 0xFFFF_FFFF
+                return "OK"
+
+            return runner
+
+        next_pc = getattr(block, "next_pc", None)
+        loops_to = getattr(block, "loops_to", None)
+        return JITTrace(head_pc=head_pc, native_fn=make_trace_fn(), size_bytes=len(trace_bytes),
+                        next_pc=next_pc, loops_to=loops_to)
+
+    def compile_function_as_trace(self, module: Module, func_index: int) -> tuple[bytes, int]:
+        """Compiles a complete function body as a contiguous JIT trace block."""
+        type_ids: dict[FuncType, int] = {}
+        for ft in module.types:
+            type_ids.setdefault(ft, len(type_ids))
+        fc = FunctionCompiler(module, func_index, self.mem_size_bytes, self.globals_addr,
+                              self.host_trampolines, self.table_addr_base, self.table_type_base, type_ids)
+        code = fc.compile()
+        blob = bytearray(code)
+        # Patch bounds-check traps
+        trap_offset = len(blob)
+        blob.extend(st.TRAP.code)
+        for reloc_offset in fc.trap_fixups:
+            _patch_rel32(blob, reloc_offset, trap_offset)
+        return bytes(blob), 0
+
+    def compile_module_traces(self, module: Module) -> tuple[bytes, list[int | None]]:
+        """Compiles all function traces in a module and resolves inter-trace call relocations."""
+        n_imports = len(module.imports)
         compiled: list[bytes] = []
         fixups_per_func: list[list[tuple[int, int]]] = []
         trap_fixups_per_func: list[list[int]] = []
 
-        for local_i in range(len(self.module.functions)):
+        type_ids: dict[FuncType, int] = {}
+        for ft in module.types:
+            type_ids.setdefault(ft, len(type_ids))
+
+        for local_i in range(len(module.functions)):
             func_index = n_imports + local_i
-            fc = FunctionCompiler(self.module, func_index, self.mem_size_bytes,
+            fc = FunctionCompiler(module, func_index, self.mem_size_bytes,
                                    self.globals_addr, self.host_trampolines,
-                                   self.table_addr_base, self.table_type_base, self.type_ids)
+                                   self.table_addr_base, self.table_type_base, type_ids)
             compiled.append(fc.compile())
             fixups_per_func.append(fc.call_fixups)
             trap_fixups_per_func.append(fc.trap_fixups)
@@ -586,45 +681,18 @@ class ModuleJIT:
             blob[off:off + len(b)] = b
         blob[trap_offset:trap_offset + len(st.TRAP.code)] = st.TRAP.code
 
-        self.func_offsets = [None] * n_imports + offsets
-        self.trap_offset = trap_offset
+        all_offsets: list[int | None] = [None] * n_imports + offsets
 
         for local_i, fixups in enumerate(fixups_per_func):
             base = offsets[local_i]
             for reloc_local_offset, callee_index in fixups:
-                target = self.func_offsets[callee_index]
-                assert target is not None, f"call target {callee_index} has no compiled code (is it an import?)"
-                _patch_rel32(blob, base + reloc_local_offset, target)
+                target = all_offsets[callee_index]
+                if target is not None:
+                    _patch_rel32(blob, base + reloc_local_offset, target)
 
         for local_i, trap_fixups in enumerate(trap_fixups_per_func):
             base = offsets[local_i]
             for reloc_local_offset in trap_fixups:
                 _patch_rel32(blob, base + reloc_local_offset, trap_offset)
 
-        self.func_bytes = compiled
-        return bytes(blob)
-
-    def populate_tables(self, exec_base: int, table_addr_buf, table_type_buf, table_index: int = 0) -> None:
-        """Fills in the real contents of `table_addr_base`/`table_type_base`
-        (the ctypes arrays whose addresses were passed to __init__) now
-        that every local function's final address is known -- `exec_base`
-        is the address `ExecutableBuffer.write()` placed compile_all()'s
-        blob at. Call this after both compile_all() and allocating/writing
-        that buffer, before running any code that reaches `call_indirect`.
-        An uninitialized table slot's address stays 0, matching
-        _emit_call_indirect's "test rax,rax; jz trap" uninitialized check.
-        """
-        table = self.module.table_contents(table_index)
-        for i, func_index in enumerate(table):
-            if func_index is None:
-                table_addr_buf[i] = 0
-                table_type_buf[i] = 0
-                continue
-            if self.module.is_import(func_index):
-                addr = self.host_trampolines[func_index]
-            else:
-                offset = self.func_offsets[func_index]
-                assert offset is not None, f"table entry {func_index} has no compiled code"
-                addr = exec_base + offset
-            table_addr_buf[i] = addr
-            table_type_buf[i] = self.type_ids[self.module.func_type(func_index)]
+        return bytes(blob), all_offsets

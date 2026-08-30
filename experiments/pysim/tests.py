@@ -98,7 +98,7 @@ from wasi import WasiHostContext
 from wasm_builder import ModuleBuilder
 from wasm_module import I32
 from wasm_reader import WasmParseError, WasmUnsupportedFeatureError, parse
-from x64_jit import ModuleJIT
+from x64_jit import TraceJITCompiler
 
 
 # ===========================================================================
@@ -1904,15 +1904,15 @@ def test_guest_wasi_04_jit_fd_write_native():
         struct.pack_into("<II", ctx.guest_memory, 0, 16, len(msg))
         ctx.guest_memory[16:16 + len(msg)] = msg
 
+        entry_idx = mod.export_func_index("entry")
         trampolines = ctx.build_jit_trampolines(mod)
-        jit = ModuleJIT(mod, mem_size_bytes=len(ctx.guest_memory), host_trampolines=trampolines)
-        blob = jit.compile_all()
+        jit = TraceJITCompiler(mem_size_bytes=len(ctx.guest_memory), host_trampolines=trampolines)
+        blob, _ = jit.compile_function_as_trace(mod, entry_idx)
 
         buf = ExecutableBuffer(max(len(blob), 64))
         try:
             buf.write(0, blob)
-            entry_idx = mod.export_func_index("entry")
-            fn = buf.function_at(jit.func_offsets[entry_idx], ctypes.c_int64, [ctypes.c_void_p, ctypes.c_void_p])
+            fn = buf.function_at(0, ctypes.c_int64, [ctypes.c_void_p, ctypes.c_void_p])
 
             c_mem = (ctypes.c_char * len(ctx.guest_memory)).from_buffer(ctx.guest_memory)
             mem_ptr = ctypes.addressof(c_mem)
@@ -1981,15 +1981,15 @@ def test_guest_wasi_05_jit_fireball_call_ipc_messaging():
         ctx.guest_memory[0:len(uri)] = uri
         ctx.guest_memory[32:32 + len(payload)] = payload
 
+        entry_idx = mod.export_func_index("guest_ipc")
         trampolines = ctx.build_jit_trampolines(mod)
-        jit = ModuleJIT(mod, mem_size_bytes=len(ctx.guest_memory), host_trampolines=trampolines)
-        blob = jit.compile_all()
+        jit = TraceJITCompiler(mem_size_bytes=len(ctx.guest_memory), host_trampolines=trampolines)
+        blob, _ = jit.compile_function_as_trace(mod, entry_idx)
 
         buf = ExecutableBuffer(max(len(blob), 64))
         try:
             buf.write(0, blob)
-            entry_idx = mod.export_func_index("guest_ipc")
-            fn = buf.function_at(jit.func_offsets[entry_idx], ctypes.c_int64, [ctypes.c_void_p, ctypes.c_void_p])
+            fn = buf.function_at(0, ctypes.c_int64, [ctypes.c_void_p, ctypes.c_void_p])
 
             c_mem = (ctypes.c_char * len(ctx.guest_memory)).from_buffer(ctx.guest_memory)
             mem_ptr = ctypes.addressof(c_mem)

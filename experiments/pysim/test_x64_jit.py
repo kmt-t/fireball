@@ -21,12 +21,12 @@ from exec_memory import ExecutableBuffer
 from interpreter import Interpreter
 from wasm_builder import ModuleBuilder
 from wasm_module import I32
-from x64_jit import ModuleJIT
+from x64_jit import TraceJITCompiler
 
 
 def _run_jit(module, func_index: int, args: list[int], memory: bytearray | None = None) -> int:
-    jit = ModuleJIT(module, mem_size_bytes=len(memory) if memory is not None else 0)
-    blob = jit.compile_all()
+    jit = TraceJITCompiler(mem_size_bytes=len(memory) if memory is not None else 0)
+    blob, offsets = jit.compile_module_traces(module)
 
     buf = ExecutableBuffer(max(len(blob), 64))
     try:
@@ -44,7 +44,8 @@ def _run_jit(module, func_index: int, args: list[int], memory: bytearray | None 
             c_mem = (ctypes.c_char * len(memory)).from_buffer(memory)
             mem_ptr = ctypes.addressof(c_mem)
 
-        fn = buf.function_at(jit.func_offsets[func_index], ctypes.c_int64, [ctypes.c_void_p, ctypes.c_void_p])
+        target_offset = offsets[func_index] or 0
+        fn = buf.function_at(target_offset, ctypes.c_int64, [ctypes.c_void_p, ctypes.c_void_p])
         return fn(ctypes.cast(locals_arr, ctypes.c_void_p), ctypes.c_void_p(mem_ptr))
     finally:
         buf.close()
@@ -280,13 +281,13 @@ def test_calling_jitted_code_preserves_the_callers_callee_saved_registers():
     inner.local_get(0).i32_const(3).i32_mul().i32_const(1).i32_add()
 
     module, _ = _build_and_parse(b)
-    jit = ModuleJIT(module)
-    blob = jit.compile_all()
+    jit = TraceJITCompiler()
+    blob, offsets = jit.compile_module_traces(module)
 
     buf = ExecutableBuffer(len(blob))
     try:
         buf.write(0, blob)
-        target_offset = jit.func_offsets[0]
+        target_offset = offsets[0]
 
         sentinels = {
             "rbx": 0xB0B0B0B0B0B0B0B0,
@@ -470,8 +471,8 @@ def _run_jit_with_globals(module, func_index: int, args: list[int], global_value
     globals_arr = GlobalsArray(*(global_values or [0]))
     globals_addr = ctypes.addressof(globals_arr)
 
-    jit = ModuleJIT(module, globals_addr=globals_addr)
-    blob = jit.compile_all()
+    jit = TraceJITCompiler(globals_addr=globals_addr)
+    blob, _ = jit.compile_function_as_trace(module, func_index)
     buf = ExecutableBuffer(max(len(blob), 64))
     try:
         buf.write(0, blob)
@@ -480,7 +481,7 @@ def _run_jit_with_globals(module, func_index: int, args: list[int], global_value
         locals_arr = LocalsArray(*([0] * max(len(layout), 1)))
         for i, v in enumerate(args):
             locals_arr[i] = v
-        fn = buf.function_at(jit.func_offsets[func_index], ctypes.c_int64, [ctypes.c_void_p, ctypes.c_void_p])
+        fn = buf.function_at(0, ctypes.c_int64, [ctypes.c_void_p, ctypes.c_void_p])
         result = fn(ctypes.cast(locals_arr, ctypes.c_void_p), ctypes.c_void_p(0))
         return result, list(globals_arr)
     finally:
@@ -555,19 +556,31 @@ def _run_jit_with_table(module, func_index: int, args: list[int], table_size: in
     table_addr_buf = TableAddr()
     table_type_buf = TableType()
 
-    jit = ModuleJIT(module, table_addr_base=ctypes.addressof(table_addr_buf),
-                     table_type_base=ctypes.addressof(table_type_buf))
-    blob = jit.compile_all()
+    jit = TraceJITCompiler(table_addr_base=ctypes.addressof(table_addr_buf),
+                           table_type_base=ctypes.addressof(table_type_buf))
+    blob, offsets = jit.compile_module_traces(module)
+
     buf = ExecutableBuffer(max(len(blob), 64))
     try:
         buf.write(0, blob)
-        jit.populate_tables(buf.base, table_addr_buf, table_type_buf)
+
+        # Populate tables
+        table = module.table_contents(0)
+        type_ids: dict[FuncType, int] = {}
+        for ft in module.types:
+            type_ids.setdefault(ft, len(type_ids))
+
+        for i, target_f_idx in enumerate(table):
+            if target_f_idx is not None:
+                table_addr_buf[i] = buf.base + offsets[target_f_idx]
+                table_type_buf[i] = type_ids[module.func_type(target_f_idx)]
+
         layout = module.locals_layout(func_index)
         LocalsArray = ctypes.c_int64 * max(len(layout), 1)
         locals_arr = LocalsArray(*([0] * max(len(layout), 1)))
         for i, v in enumerate(args):
             locals_arr[i] = v
-        fn = buf.function_at(jit.func_offsets[func_index], ctypes.c_int64, [ctypes.c_void_p, ctypes.c_void_p])
+        fn = buf.function_at(offsets[func_index], ctypes.c_int64, [ctypes.c_void_p, ctypes.c_void_p])
         return fn(ctypes.cast(locals_arr, ctypes.c_void_p), ctypes.c_void_p(0))
     finally:
         buf.close()

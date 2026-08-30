@@ -24,7 +24,7 @@ from exec_memory import ExecutableBuffer
 from wasm_builder import ModuleBuilder
 from wasm_module import I32
 from wasm_reader import parse as parse_wasm
-from x64_jit import ModuleJIT
+from x64_jit import TraceJITCompiler
 
 HOST_FUNC_T = ctypes.CFUNCTYPE(
     ctypes.c_uint32, *([ctypes.c_uint32] * 7)  # up to 7 total params (fireball-call6's max)
@@ -57,15 +57,15 @@ def _run_with_host_call(nparams: int, arg_values: list[int]) -> tuple[int, list[
 
     builder, host_idx = _build_module_calling_host(nparams, arg_values)
     module = parse_wasm(builder.build())
+    entry_index = module.export_func_index("entry")
 
-    jit = ModuleJIT(module, host_trampolines={host_idx: trampoline_addr})
-    blob = jit.compile_all()
+    jit = TraceJITCompiler(host_trampolines={host_idx: trampoline_addr})
+    blob, _ = jit.compile_function_as_trace(module, entry_index)
 
     buf = ExecutableBuffer(max(len(blob), 64))
     try:
         buf.write(0, blob)
-        entry_index = module.export_func_index("entry")
-        fn = buf.function_at(jit.func_offsets[entry_index], ctypes.c_int64, [ctypes.c_void_p, ctypes.c_void_p])
+        fn = buf.function_at(0, ctypes.c_int64, [ctypes.c_void_p, ctypes.c_void_p])
         result = fn(0, 0)
         return result, received
     finally:
@@ -125,14 +125,14 @@ def test_host_call_does_not_corrupt_the_wasm_stack_around_it():
     trampoline = HOST_FUNC_T(host_fn)
     trampoline_addr = ctypes.cast(trampoline, ctypes.c_void_p).value
     module = parse_wasm(b.build())
-    jit = ModuleJIT(module, host_trampolines={host_idx: trampoline_addr})
-    blob = jit.compile_all()
+    entry_index = module.export_func_index("entry")
+    jit = TraceJITCompiler(host_trampolines={host_idx: trampoline_addr})
+    blob, _ = jit.compile_function_as_trace(module, entry_index)
 
     buf = ExecutableBuffer(max(len(blob), 64))
     try:
         buf.write(0, blob)
-        entry_index = module.export_func_index("entry")
-        fn = buf.function_at(jit.func_offsets[entry_index], ctypes.c_int64, [ctypes.c_void_p, ctypes.c_void_p])
+        fn = buf.function_at(0, ctypes.c_int64, [ctypes.c_void_p, ctypes.c_void_p])
         result = fn(0, 0)
         assert received == [1, 2]
         assert result == 777 + 1000
@@ -161,14 +161,14 @@ def test_host_call_result_bit_pattern_survives_high_bit_set():
     f = b.add_function((), (I32,), export_name="entry")
     f.call(host_idx)
     module = parse_wasm(b.build())
-    jit = ModuleJIT(module, host_trampolines={host_idx: trampoline_addr})
-    blob = jit.compile_all()
+    entry_index = module.export_func_index("entry")
+    jit = TraceJITCompiler(host_trampolines={host_idx: trampoline_addr})
+    blob, _ = jit.compile_function_as_trace(module, entry_index)
 
     buf = ExecutableBuffer(max(len(blob), 64))
     try:
         buf.write(0, blob)
-        entry_index = module.export_func_index("entry")
-        fn = buf.function_at(jit.func_offsets[entry_index], ctypes.c_int64, [ctypes.c_void_p, ctypes.c_void_p])
+        fn = buf.function_at(0, ctypes.c_int64, [ctypes.c_void_p, ctypes.c_void_p])
         result = fn(0, 0)
         assert result & 0xFFFFFFFF == 0x80000001, f"expected bit pattern 0x80000001, got {result & 0xFFFFFFFF:#x}"
     finally:

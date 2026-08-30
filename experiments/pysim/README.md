@@ -161,7 +161,7 @@ in `interface_wit.md`, not their internal hardware-facing implementations.
 | `x64_asm.py` | Generic register-name-driven x64 encoders (push/pop/mov/call-reg/...) for calling-convention glue that a fixed stencil table can't parametrize |
 | `x64_stencils.py` | Copy-and-Patch x64 stencils, each built by a **generator drained once** to simulate `constexpr`; multi-relocation stencils use sentinel-byte auto-discovery instead of hand-counted offsets |
 | `x64_jit.py` | The real JIT: control-flow compilation, branch/call/bounds-check-trap relocation, cross-function layout, the `fireball_call` host-call bridge |
-| `exec_memory.py` | Real executable memory (Win32 `VirtualAlloc`) + `ctypes` function-pointer creation |
+| `exec_memory.py` | Cross-platform real executable memory (Windows `VirtualAlloc` & Linux `mmap`/`mprotect` with strict W^X) + `ctypes` function-pointer creation |
 | `test_x64_asm.py` | Every generic encoder, executed as real machine code |
 | `test_x64_stencils.py` | Every stencil, executed as real machine code and checked against Python-computed expected values |
 | `test_x64_jit.py` | End-to-end: build real `.wasm` bytes -> parse -> JIT -> execute -> cross-check vs. the interpreter |

@@ -1,4 +1,4 @@
-﻿"""
+"""
 experiments/pysim/x64_jit.py
 
 Pure Trace-based Copy-and-Patch JIT Compiler for Fireball.
@@ -17,6 +17,7 @@ CPS 4-argument calling convention:
 from __future__ import annotations
 
 import ctypes
+import sys
 from typing import Any
 
 import x64_asm as asm
@@ -24,15 +25,16 @@ import x64_stencils as st
 from exec_memory import ExecutableBuffer
 from runtime_engine import BasicBlock, JITTrace, JITTraceHeader, WASMContext
 
+IS_WINDOWS = sys.platform == "win32"
 I32_MASK = 0xFFFFFFFF
 
 # CPS 4-argument function pointer type matching interpreter opcode_handler
 TRACE_FN_TYPE = ctypes.CFUNCTYPE(
     ctypes.c_int64,
-    ctypes.c_uint32,  # RCX: ip
-    ctypes.c_void_p,  # RDX: stack_bot
-    ctypes.c_void_p,  # R8:  env
-    ctypes.c_void_p,  # R9:  local_base
+    ctypes.c_uint32,  # arg0: ip
+    ctypes.c_void_p,  # arg1: stack_bot
+    ctypes.c_void_p,  # arg2: env
+    ctypes.c_void_p,  # arg3: local_base
 )
 
 
@@ -51,12 +53,12 @@ def emit(code: bytearray, stencil: st.Stencil, **patches: int) -> int:
 
 
 def gen_pic_prologue() -> bytes:
-    """Generates the PIC CPS 4-argument prologue:
+    """Generates the PIC CPS 4-argument prologue for Windows or Linux:
     Saves callee-saved registers and maps arguments to execution registers:
-      R10 = local_base (R9)
-      R11 = env (R8)
-      R12 = stack_bot (RDX)
-      R13 = ip (RCX)
+      R10 = local_base
+      R11 = env
+      R12 = stack_bot
+      R13 = ip
     """
     code = bytearray()
     code += bytes((0x53,))                    # push rbx
@@ -64,12 +66,23 @@ def gen_pic_prologue() -> bytes:
     code += bytes((0x41, 0x55))               # push r13
     code += bytes((0x41, 0x56))               # push r14
     code += bytes((0x41, 0x57))               # push r15
-    code += bytes((0x57,))                    # push rdi
-    code += bytes((0x48, 0x89, 0xE7))         # mov rdi, rsp
-    code += bytes((0x4D, 0x89, 0xCA))         # mov r10, r9   (R10 = local_base)
-    code += bytes((0x4D, 0x89, 0xC3))         # mov r11, r8   (R11 = env / memory_base)
-    code += bytes((0x49, 0x89, 0xD4))         # mov r12, rdx  (R12 = stack_bot)
-    code += bytes((0x49, 0x89, 0xCD))         # mov r13, rcx  (R13 = ip)
+
+    if IS_WINDOWS:
+        # Windows x64 ABI: (RCX=ip, RDX=stack_bot, R8=env, R9=local_base)
+        code += bytes((0x57,))                    # push rdi
+        code += bytes((0x48, 0x89, 0xE7))         # mov rdi, rsp
+        code += bytes((0x4D, 0x89, 0xCA))         # mov r10, r9   (R10 = local_base)
+        code += bytes((0x4D, 0x89, 0xC3))         # mov r11, r8   (R11 = env / memory_base)
+        code += bytes((0x49, 0x89, 0xD4))         # mov r12, rdx  (R12 = stack_bot)
+        code += bytes((0x49, 0x89, 0xCD))         # mov r13, rcx  (R13 = ip)
+    else:
+        # System V AMD64 ABI (Linux): (RDI=ip, RSI=stack_bot, RDX=env, RCX=local_base)
+        code += bytes((0x55,))                    # push rbp
+        code += bytes((0x48, 0x89, 0xE5))         # mov rbp, rsp
+        code += bytes((0x49, 0x89, 0xCA))         # mov r10, rcx  (R10 = local_base)
+        code += bytes((0x49, 0x89, 0xD3))         # mov r11, rdx  (R11 = env / memory_base)
+        code += bytes((0x49, 0x89, 0xF4))         # mov r12, rsi  (R12 = stack_bot)
+        code += bytes((0x49, 0x89, 0xFD))         # mov r13, rdi  (R13 = ip)
     return bytes(code)
 
 

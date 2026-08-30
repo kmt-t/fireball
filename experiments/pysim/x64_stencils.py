@@ -27,8 +27,11 @@ the real x64 hardware stack (PUSH/POP), one 8-byte slot per WASM value.
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass, field
 from typing import Generator, Iterable
+
+IS_WINDOWS = sys.platform == "win32"
 
 
 @dataclass(frozen=True)
@@ -102,30 +105,7 @@ def _materialize(name: str, gen: Generator[int, None, dict[str, int]] | Iterable
 # ---------------------------------------------------------------------------
 
 def _gen_prologue() -> Generator[int, None, None]:
-    # The Microsoft x64 ABI makes rbx/r12/r13/r14/r15/rdi callee-saved: our
-    # ctypes caller is entitled to have them come back unchanged. Every
-    # arithmetic stencil below uses rbx as scratch, and the call glue uses
-    # r12-r15, so every one of them is saved here unconditionally (cheaper
-    # and far less error-prone than tracking which stencils in a given
-    # function body actually touch which register) and restored in the
-    # matching EPILOGUE_* below.
-    #
-    # rdi is additionally repurposed as a permanent, function-local
-    # "restore point": immediately after these pushes, rdi is set to the
-    # current rsp so that TRAP (below) can unconditionally snap rsp back to
-    # this exact depth before crashing, regardless of how much the WASM
-    # operand stack has grown natively by the time a bounds check trips.
-    # Without this, two traps at *different* native stack depths within
-    # the same process reliably crash the whole interpreter instead of
-    # raising a catchable OSError -- Windows' exception unwinder falls
-    # back to "assume a leaf frame" for JIT code with no registered
-    # .pdata/.xdata unwind info, and that fallback only happens to recover
-    # correctly when the depth exactly matches whatever the *previous*
-    # trap in the process already primed it for. Found by adding
-    # call_indirect's traps: the pre-existing memory-bounds trap test was
-    # the only trap the whole suite ever exercised, so this was never
-    # exposed until a second trap, at a different depth, ran in the same
-    # process (test_x64_jit.py's repro is in the "traps" section).
+    # Callee-saved: rbx, r12, r13, r14, r15
     # push rbx            53
     yield 0x53
     # push r12            41 54
@@ -136,14 +116,27 @@ def _gen_prologue() -> Generator[int, None, None]:
     yield from (0x41, 0x56)
     # push r15            41 57
     yield from (0x41, 0x57)
-    # push rdi            57
-    yield 0x57
-    # mov rdi, rsp        48 89 E7
-    yield from (0x48, 0x89, 0xE7)
-    # mov r10, rcx        49 89 CA
-    yield from (0x49, 0x89, 0xCA)
-    # mov r11, rdx        49 89 D3
-    yield from (0x49, 0x89, 0xD3)
+
+    if IS_WINDOWS:
+        # Microsoft x64 ABI: arg0=rcx (locals), arg1=rdx (mem)
+        # push rdi            57
+        yield 0x57
+        # mov rdi, rsp        48 89 E7
+        yield from (0x48, 0x89, 0xE7)
+        # mov r10, rcx        49 89 CA  (R10 = locals)
+        yield from (0x49, 0x89, 0xCA)
+        # mov r11, rdx        49 89 D3  (R11 = mem)
+        yield from (0x49, 0x89, 0xD3)
+    else:
+        # System V AMD64 ABI (Linux): arg0=rdi (locals), arg1=rsi (mem)
+        # push rbp            55
+        yield 0x55
+        # mov rbp, rsp        48 89 E5
+        yield from (0x48, 0x89, 0xE5)
+        # mov r10, rdi        49 89 FA  (R10 = locals)
+        yield from (0x49, 0x89, 0xFA)
+        # mov r11, rsi        49 89 F3  (R11 = mem)
+        yield from (0x49, 0x89, 0xF3)
 
 
 def _gen_epilogue_return_i32() -> Generator[int, None, None]:
@@ -407,7 +400,10 @@ def _gen_restore_unwind_only() -> Generator[int, None, None]:
     """Same register-restore sequence as _gen_restore_callee_saved_and_ret,
     minus the trailing `ret` -- shared by TRAP, which needs the stack
     unwound but must fall through into the crash instead of returning."""
-    yield 0x5F                 # pop rdi
+    if IS_WINDOWS:
+        yield 0x5F                 # pop rdi
+    else:
+        yield 0x5D                 # pop rbp
     yield from (0x41, 0x5F)   # pop r15
     yield from (0x41, 0x5E)   # pop r14
     yield from (0x41, 0x5D)   # pop r13

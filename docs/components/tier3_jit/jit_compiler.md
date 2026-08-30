@@ -123,15 +123,30 @@ JIT キャッシュ内に書き込まれる各トレースは、**先頭に 16 �
 <!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} -->
 3段直接 JIT 検索および 3面キャッシュローテーションの詳細は、ランタイム管理の正本である [`jit_runtime.md`](jit_runtime.md) および [アーキテクチャ概要書 §3.2](../../architecture/architecture_overview.md) を参照すること。コンパイラコアは生成されたネイティブトレースの登録と命令同期を [`jit_runtime.md`](jit_runtime.md) に委譲する。
 
-#### トレース・チェイニング（連鎖実行）
+#### トレース・チェイニング（連鎖実行）と専用分岐ハンドラ分離
 <!-- traceability: {JIT_LazyChaining} -->
-検索オーバーヘッドを排除するため、ネイティブコード同士を直接接続（チェイニング）する。
-1. **トレース構造**: 各トレースの末尾に、次に実行すべきネイティブアドレスを保持する「チェイニング・スロット（`chain_next`）」を設ける。
-2. **既定状態**: スロットは初期状態で **インタープリタへの復帰** を指す。これにより、不必要な動的検索（ディスパッチャ・スタブ経由）を排除する。 `{JIT_LazyChaining}`
-3. **連結（Linking）タイミング**:
-    - **新規コンパイル時**: 生成したトレースのフォールスルー先（`next_pc`）が既に **アクティブ領域または Warm 領域** にあれば、スロットをそのアドレスへ書き換える。Warm はまだ rotate() で消去されておらず実行可能なコードとして常駐しているため、Active に限定する必要はない。
-      ループの背進辺（`loops_to`）は連結の対象外とする。バックエッジに埋め込まれるのは Safepoint ポーリングのみであり、実際の比較分岐命令ではないため、ループを継続するか抜けるかの判定は依然として WASM スタックをポップする `_next_pc()` に委ねられている。背進辺へ直接チェインすると、その判定とスタック pop の両方を飛ばしてしまい、条件付きループが無条件の無限ループに変質する。
-    - **昇格時**: Oldest 領域からアクティブ領域へトレースを移すだけであり、これは既存の有効なリンク集合（アクティブ ∪ Warm）を狭める操作ではないため、追加のリンク再評価は不要である。
+検索オーバーヘッドを排除し、ネイティブコード同士を直接接続（チェイニング）するため、**純粋インタープリタ用のジャンプハンドラと、JIT トレースから呼び出される専用チェイニングハンドラ（`jit_chain_branch_handler`）を明確に分離**する。
+
+```mermaid
+graph TD
+    JITTrace[JIT Trace Exit / Branch] --> JITHdr[JIT-Specific Chaining Handler]
+    JITHdr --> Lookup{Target in JIT Cache?}
+    Lookup -->|Hit: Active/Warm| Patch[In-place Patch chain_target_addr + Tail Call BX]
+    Patch --> TargetTrace[Target JIT Trace Native Exec]
+    Lookup -->|Miss: Uncompiled| Fallback[Record Hotspot + Return to Interpreter Loop]
+
+    Interp[Interpreter Step] --> InterpHdr[Pure Interpreter Branch Handler]
+    InterpHdr --> InterpLoop[Direct _do_branch -> Next Opcode Dispatch]
+```
+
+1. **ハンドラの責務分離**:
+   - **純粋インタープリタ用ハンドラ (`_h_br` 等)**: 単純にスタックを巻き戻して次の WASM PC を算出し、ディスパッチループへ戻る（JIT 探索やパッチのオーバーヘッドが完全ゼロ）。
+   - **JIT 専用チェイニングハンドラ (`jit_chain_branch_handler`)**: JIT トレースから呼び出され、分岐先 `UnifiedPC` を解決した上で JIT キャッシュを照会する。
+2. **オンデマンド・インプレースパッチ（Lazy Chaining）**:
+   - 分岐先が既にコンパイル済みであれば、呼び出し元トレースの末尾スロット（`chain_target_addr`）をターゲットのネイティブアドレスへ書き換え、被チェイン逆引きテーブル（`inbound_chains`）へ登録する。
+   - インタープリタディスパッチループを介さず、**そのままターゲットのネイティブトレースへ直接 tail-call（`BX`）してネイティブ実行を継続**する。
+3. **未コンパイル時の遅延昇格**:
+   - 分岐先が未コンパイルの場合のみ、HistoryRing に分岐先 PC を記録した上でインタープリタ復帰スタブ経由でインタープリタへ戻る。次回以降ホット化してコンパイルされた際にチェイニングが確立される。
 4. **局所再チェイニングとアンリンク（O(k) Bounded Re-chaining & Unlinking）**: チェイニング確立時にターゲットの属するバンクの **被チェイン逆引きテーブル（`inbound_chains`）** にソースの JIT エントリインデックスを登録する。ターゲットが Active $\to$ Warm $\to$ Oldest へ推移する間はキャッシュ内のコードは依然として有効に常駐しているため、チェイニングは維持され JIT 実行が継続する。**Oldest バンクがパージされ新 Active へローテートするまさにその瞬間**、破棄される Oldest バンクの `inbound_chains` に登録された被チェインエントリ（$k$ 件）のみを直接参照する。
     - **ターゲットが Oldest-Only Promotion 等により Active/Warm へ昇格（Promote）している場合**: チェインスロットを昇格先のアドレスへ **再チェイニング（Re-chaining）** し、昇格先バンクの `inbound_chains` へ登録を移譲する（インタープリタへフォールバックさせず、ネイティブ直接チェイン実行を維持）。
     - **ターゲットが昇格せず完全にキャッシュアウト（Evict）する場合のみ**: チェインスロットをインタープリタ復帰スタブにアンパッチする。

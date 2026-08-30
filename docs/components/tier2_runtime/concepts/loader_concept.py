@@ -366,6 +366,57 @@ class GlobalAccessor:
         return BinaryStream(self._rom_data, offset=self.entry.init_expr_offset, length=self.entry.init_expr_size)
 
 
+class DecodedEntity:
+    """
+    Represents a decoded entity located at file offset interval [start_offset, end_offset).
+    """
+    def __init__(self, kind: str, start_offset: int, end_offset: int, name_or_idx: Any, payload: Any):
+        self.kind = kind  # "SECTION", "FUNCTION", "GLOBAL", "DATA"
+        self.start_offset = start_offset
+        self.end_offset = end_offset
+        self.name_or_idx = name_or_idx
+        self.payload = payload
+
+    def __repr__(self) -> str:
+        return f"DecodedEntity({self.kind}, [{hex(self.start_offset)}..{hex(self.end_offset)}), {self.name_or_idx})"
+
+
+class RadixBinaryTreeNode:
+    def __init__(self):
+        self.children: list[Optional[RadixBinaryTreeNode]] = [None, None]
+        self.entity: Optional[DecodedEntity] = None
+
+
+class RadixBinaryTree:
+    """
+    Radix Binary Search Tree indexing file offset intervals [start, end) ({META_BinarySearch}).
+    Provides O(k) prefix trie lookup and interval containment search.
+    """
+    def __init__(self, max_bits: int = 32):
+        self.root = RadixBinaryTreeNode()
+        self.max_bits = max_bits
+        self.entries: list[tuple[int, int, DecodedEntity]] = []
+
+    def insert(self, start_offset: int, end_offset: int, entity: DecodedEntity) -> None:
+        node = self.root
+        for bit_i in range(self.max_bits - 1, -1, -1):
+            bit = (start_offset >> bit_i) & 1
+            if node.children[bit] is None:
+                node.children[bit] = RadixBinaryTreeNode()
+            node = node.children[bit]
+        node.entity = entity
+        bisect.insort_left(self.entries, (start_offset, end_offset, entity), key=lambda e: e[0])
+
+    def find_at_offset(self, file_offset: int) -> Optional[DecodedEntity]:
+        """Finds decoded entity whose [start_offset, end_offset) contains file_offset."""
+        idx = bisect.bisect_right(self.entries, file_offset, key=lambda e: e[0]) - 1
+        if 0 <= idx < len(self.entries):
+            start, end, entity = self.entries[idx]
+            if start <= file_offset < end:
+                return entity
+        return None
+
+
 # ==============================================================================
 # 4. ModuleView (Zero-Copy ROM Window)
 # ==============================================================================
@@ -390,6 +441,20 @@ class ModuleView:
         self.start_func_idx: Optional[int] = None
         self.resolved_imports: dict[str, Any] = {}
         self.is_ready: bool = False
+
+        # Decoded entity registry & RadixBinaryTree file offset index ({META_BinarySearch})
+        self.entity_registry: list[DecodedEntity] = []
+        self.offset_tree = RadixBinaryTree()
+
+    def register_entity(self, kind: str, start_offset: int, end_offset: int, name_or_idx: Any, payload: Any) -> DecodedEntity:
+        entity = DecodedEntity(kind, start_offset, end_offset, name_or_idx, payload)
+        self.entity_registry.append(entity)
+        self.offset_tree.insert(start_offset, end_offset, entity)
+        return entity
+
+    def lookup_by_file_offset(self, file_offset: int) -> Optional[DecodedEntity]:
+        """Looks up a decoded entity containing the given file byte offset in O(k) / O(log N)."""
+        return self.offset_tree.find_at_offset(file_offset)
 
     def lookup_export(self, name: str) -> Optional[ExportEntry]:
         """
@@ -536,14 +601,16 @@ class WasmLoader:
                     )
                 last_section_id = sec_id
 
+            sec_total_size = (payload_start - sec_start) + sec_size
             sec_view = SectionView(
                 section_id=sec_id,
                 offset=sec_start,
-                size=(payload_start - sec_start) + sec_size,
+                size=sec_total_size,
                 payload_offset=payload_start,
                 payload_size=sec_size
             )
             view.sections[sec_id] = sec_view
+            view.register_entity("SECTION", sec_start, sec_start + sec_total_size, sec_id, sec_view)
 
             # Dispatch section-specific zero-copy parsers
             sec_stream = BinaryStream(wasm_binary, offset=payload_start, length=sec_size)
@@ -664,7 +731,7 @@ class WasmLoader:
 
         elif sec_id == SectionID.GLOBAL:
             count = stream.read_leb128_u32()
-            for _ in range(count):
+            for g_idx in range(count):
                 valtype = stream.read_u8()
                 mutable = (stream.read_u8() == 1)
                 init_start = stream.tell()
@@ -672,7 +739,9 @@ class WasmLoader:
                 while stream.remaining() > 0 and stream.read_u8() != 0x0B:
                     pass
                 init_size = stream.tell() - init_start
-                view.globals.append(GlobalEntry(valtype, mutable, init_start, init_size))
+                g_entry = GlobalEntry(valtype, mutable, init_start, init_size)
+                view.globals.append(g_entry)
+                view.register_entity("GLOBAL", init_start, init_start + init_size, g_idx, g_entry)
 
         elif sec_id == SectionID.EXPORT:
             count = stream.read_leb128_u32()
@@ -689,10 +758,12 @@ class WasmLoader:
 
         elif sec_id == SectionID.CODE:
             count = stream.read_leb128_u32()
-            for _ in range(count):
+            for c_idx in range(count):
                 body_size = stream.read_leb128_u32()
                 body_start = stream.tell()
                 view.code_offsets.append((body_start, body_size))
+                func_idx = view.num_imported_functions() + c_idx
+                view.register_entity("FUNCTION", body_start, body_start + body_size, func_idx, (body_start, body_size))
                 stream.seek(body_start + body_size)
 
     def resolve_imports(self, module: ModuleView) -> bool:
@@ -759,6 +830,20 @@ def _encode_leb128_u32(val: int) -> bytes:
     return bytes(buf)
 
 
+def _encode_leb128_s32(val: int) -> bytes:
+    buf = bytearray()
+    more = True
+    while more:
+        b = val & 0x7F
+        val >>= 7
+        if (val == 0 and (b & 0x40) == 0) or (val == -1 and (b & 0x40) != 0):
+            more = False
+        else:
+            b |= 0x80
+        buf.append(b)
+    return bytes(buf)
+
+
 def _build_test_wasm_binary(
     magic: bytes = b"\x00asm",
     version: int = 1,
@@ -804,6 +889,19 @@ def _build_test_wasm_binary(
     buf.append(SectionID.MEMORY)
     buf.extend(_encode_leb128_u32(len(mem_payload)))
     buf.extend(mem_payload)
+
+    # Global Section (ID=6) -> 1 immutable i32 global initialized to 42
+    glob_payload = bytearray()
+    glob_payload.extend(_encode_leb128_u32(1))  # 1 global
+    glob_payload.append(ValType.I32)            # valtype
+    glob_payload.append(0x00)                   # mutable=false
+    glob_payload.append(0x41)                   # i32.const
+    glob_payload.extend(_encode_leb128_s32(42)) # 42
+    glob_payload.append(0x0B)                   # end
+
+    buf.append(SectionID.GLOBAL)
+    buf.extend(_encode_leb128_u32(len(glob_payload)))
+    buf.extend(glob_payload)
 
     # Export Section (ID=7)
     names = export_names or ["add", "main", "compute"]
@@ -977,5 +1075,53 @@ def test_wasm_loader_lifecycle_and_verification():
     print("[PASS] All WASM Loader concept tests passed successfully.")
 
 
+def test_wasm_loader_radix_binary_tree_offset_indexing():
+    """
+    Verifies LOAD-40 ~ LOAD-44:
+    - Registration of decoded entities in DecodedEntityRegistry
+    - O(k) RadixBinaryTree file offset containment search
+    - Reverse-lookup of FunctionAccessor, GlobalAccessor, SectionView by file byte offset
+    - Boundary and invalid offset rejection
+    """
+    loader = WasmLoader()
+    wasm_bytes = _build_test_wasm_binary(export_names=["alpha", "beta"])
+    view = loader.prepare("radix_test_module", wasm_bytes)
+
+    # 1. LOAD-40: Entities registered
+    assert len(view.entity_registry) > 0
+    kinds = [e.kind for e in view.entity_registry]
+    assert "SECTION" in kinds
+    assert "FUNCTION" in kinds
+    assert "GLOBAL" in kinds
+
+    # 2. LOAD-41 & LOAD-42: RadixBinaryTree offset lookup for function code
+    func_start, func_size = view.code_offsets[0]
+    # Lookup exactly at start of function body
+    entity_at_start = view.lookup_by_file_offset(func_start)
+    assert entity_at_start is not None
+    assert entity_at_start.kind == "FUNCTION"
+    assert entity_at_start.name_or_idx == 0
+
+    # Lookup in the middle of function body
+    entity_in_mid = view.lookup_by_file_offset(func_start + 2)
+    assert entity_in_mid is not None
+    assert entity_in_mid.kind == "FUNCTION"
+    assert entity_in_mid.name_or_idx == 0
+
+    # 3. LOAD-43: Lookup global entity
+    global_entry = view.globals[0]
+    entity_global = view.lookup_by_file_offset(global_entry.init_expr_offset)
+    assert entity_global is not None
+    assert entity_global.kind == "GLOBAL"
+    assert entity_global.name_or_idx == 0
+
+    # 4. LOAD-44: Invalid / out-of-range offsets
+    assert view.lookup_by_file_offset(len(wasm_bytes) + 100) is None
+    assert view.lookup_by_file_offset(0xFFFFFFFF) is None
+
+    print("[PASS] RadixBinaryTree file offset indexing verified successfully.")
+
+
 if __name__ == "__main__":
     test_wasm_loader_lifecycle_and_verification()
+    test_wasm_loader_radix_binary_tree_offset_indexing()

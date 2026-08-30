@@ -5,14 +5,14 @@
   "fail_count": 0,
   "results": [
     {
-      "component_name": "runtime_interpreter",
-      "design_doc": "docs\\components\\tier2_runtime\\runtime_interpreter.md",
-      "test_spec": "docs\\components\\tier2_runtime\\tests\\runtime_interpreter_test_spec.md",
+      "component_name": "runtime_loader",
+      "design_doc": "docs\\components\\tier2_runtime\\runtime_loader.md",
+      "test_spec": "docs\\components\\tier2_runtime\\tests\\runtime_loader_test_spec.md",
       "test_code_files": [
         "experiments\\pysim\\tests.py"
       ],
       "status": "PASS",
-      "summary": "[MOCK] 3-tier chain (Design -> TestSpec -> TestCode) for 'runtime_interpreter' is fully verified and consistent.",
+      "summary": "[MOCK] 3-tier chain (Design -> TestSpec -> TestCode) for 'runtime_loader' is fully verified and consistent.",
       "issues": []
     }
   ]

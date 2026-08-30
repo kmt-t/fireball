@@ -17,4 +17,4 @@
 
 | コンポーネント | 判定 | 評価サマリー | 検出Issue数 |
 | :--- | :---: | :--- | :---: |
-| `runtime_interpreter` | 🟢 PASS | [MOCK] 3-tier chain (Design -> TestSpec -> TestCode) for 'runtime_interpreter' is fully verified and consistent. | 0 |
+| `runtime_loader` | 🟢 PASS | [MOCK] 3-tier chain (Design -> TestSpec -> TestCode) for 'runtime_loader' is fully verified and consistent. | 0 |

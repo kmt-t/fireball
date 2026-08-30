@@ -2068,6 +2068,52 @@ def test_interpreter_debugger_handler_table_switch_and_hooks():
     assert engine.handler_table == "normal"
 
 
+def test_wasm_loader_and_radix_binary_tree_file_offset_indexing():
+    """LOAD-01..44: Verifies WASM Loader zero-copy indexing, verification, and RadixBinaryTree file offset reverse-lookup."""
+    from loader import WasmLoader, WasmVerifyError
+    from test_loader import _build_test_wasm_binary
+
+    loader = WasmLoader()
+    wasm_bytes = _build_test_wasm_binary(export_names=["zeta", "alpha", "beta"])
+    view = loader.prepare("test_module", wasm_bytes)
+
+    # 1. Zero-copy & binary search export lookup
+    assert [e.name for e in view.exports_dict] == ["alpha", "beta", "zeta"]
+    assert view.lookup_export_func("alpha") == 0
+    assert view.lookup_export_func("unknown") is None
+
+    # 2. Transactional rollback on invalid WASM
+    watermark = loader.allocator.offset
+    try:
+        loader.prepare("bad", _build_test_wasm_binary(magic=b"\x7fELF"))
+        assert False
+    except WasmVerifyError:
+        pass
+    assert loader.allocator.offset == watermark
+
+    # 3. RadixBinaryTree file offset reverse-lookup (LOAD-40..44)
+    assert len(view.entity_registry) > 0
+    func_start, func_size = view.code_offsets[0]
+    entity_fn = view.lookup_by_file_offset(func_start)
+    assert entity_fn is not None
+    assert entity_fn.kind == "FUNCTION"
+    assert entity_fn.name_or_idx == 0
+
+    # Middle of function
+    entity_fn_mid = view.lookup_by_file_offset(func_start + 2)
+    assert entity_fn_mid is not None
+    assert entity_fn_mid.kind == "FUNCTION"
+
+    # Global lookup
+    glob_entry = view.globals[0]
+    entity_glob = view.lookup_by_file_offset(glob_entry.init_expr_offset)
+    assert entity_glob is not None
+    assert entity_glob.kind == "GLOBAL"
+
+    # Out-of-bounds offset
+    assert view.lookup_by_file_offset(len(wasm_bytes) + 1000) is None
+
+
 # ===========================================================================
 # Test Runner
 # ===========================================================================

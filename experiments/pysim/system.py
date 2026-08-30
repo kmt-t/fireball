@@ -45,6 +45,7 @@ import struct
 import time
 from dataclasses import dataclass
 from enum import IntEnum
+from typing import Any
 
 from hal import ShmBufferPool, ShmHandle, UartTransport
 from ipc_router import IPCMessage, IPCRouter
@@ -241,9 +242,7 @@ class System:
 
         # Physical Memory Manager (platform_memory.md) with 64KB aligned pool
         self.memory_manager = MemoryManager()
-        self.memory_manager.init_manager(
-            pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE
-        )
+        self.memory_manager.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
         self.ipc = IPCRouter()
         # Direct 1-based index mapping over sorted self.ipc.registry.keys array (no dynamic dict)
         self.scheduler = Scheduler()
@@ -258,21 +257,15 @@ class System:
         syscall_handlers: list[tuple[int, Any]] = [
             (
                 FbSyscallId.SYS_YIELD,
-                lambda a0, a1, a2, a3, a4, a5: int(
-                    self._apply_sys_control(SYS_CONTROL_YIELD)
-                ),
+                lambda a0, a1, a2, a3, a4, a5: int(self._apply_sys_control(SYS_CONTROL_YIELD)),
             ),
             (
                 FbSyscallId.SYS_HALT,
-                lambda a0, a1, a2, a3, a4, a5: int(
-                    self._apply_sys_control(SYS_CONTROL_HALT)
-                ),
+                lambda a0, a1, a2, a3, a4, a5: int(self._apply_sys_control(SYS_CONTROL_HALT)),
             ),
             (
                 FbSyscallId.SYS_RESET,
-                lambda a0, a1, a2, a3, a4, a5: int(
-                    self._apply_sys_control(SYS_CONTROL_RESET)
-                ),
+                lambda a0, a1, a2, a3, a4, a5: int(self._apply_sys_control(SYS_CONTROL_RESET)),
             ),
             (
                 FbSyscallId.MMIO_READ32,
@@ -491,9 +484,7 @@ class System:
                 Returns (errno_or_None, backing_bytearray_or_None, local_offset).
         """
 
-        status, _ = self.vmmio.access(
-            addr, is_write, current_task_id=self._current_task_id
-        )
+        status, _ = self.vmmio.access(addr, is_write, current_task_id=self._current_task_id)
         errno = self._trap_to_errno(status)
         if errno is not None:
             return errno, None, None
@@ -540,24 +531,16 @@ class System:
         if off + width > len(backing):
             return WasiErrno.FAULT
 
-        backing[off : off + width] = (value & ((1 << (8 * width)) - 1)).to_bytes(
-            width, "little"
-        )
+        backing[off : off + width] = (value & ((1 << (8 * width)) - 1)).to_bytes(width, "little")
         if backing is self.sysctl_regs and off == REG_SYS_CONTROL:
             return self._apply_sys_control(value)
 
-        if (
-            backing is self.vdma_regs
-            and off == REG_VDMA_CTRL
-            and (value & VDMA_CTRL_START_BIT)
-        ):
+        if backing is self.vdma_regs and off == REG_VDMA_CTRL and (value & VDMA_CTRL_START_BIT):
             return self._run_vdma()
 
         return WasiErrno.SUCCESS
 
-    def _mmio_bulk_read(
-        self, addr: int, dest_offset: int, byte_count: int
-    ) -> WasiErrno:
+    def _mmio_bulk_read(self, addr: int, dest_offset: int, byte_count: int) -> WasiErrno:
 
         errno, backing, off = self._mmio_touch(addr, is_write=False)
         if errno is not None:
@@ -571,9 +554,7 @@ class System:
 
         return WasiErrno.SUCCESS
 
-    def _mmio_bulk_write(
-        self, addr: int, src_offset: int, byte_count: int
-    ) -> WasiErrno:
+    def _mmio_bulk_write(self, addr: int, src_offset: int, byte_count: int) -> WasiErrno:
 
         errno, backing, off = self._mmio_touch(addr, is_write=True)
         if errno is not None:
@@ -608,11 +589,7 @@ class System:
 
         a = VmmioAddress(addr)
         if a.is_linear():
-            return (
-                (self._guest_memory, addr)
-                if self._guest_ram_ok(addr, count)
-                else (None, None)
-            )
+            return (self._guest_memory, addr) if self._guest_ram_ok(addr, count) else (None, None)
 
         errno, backing, off = self._mmio_touch(addr, is_write)
         if errno is not None or off + count > len(backing):
@@ -631,9 +608,7 @@ class System:
         if dst_backing is None:
             return WasiErrno.FAULT
 
-        dst_backing[dst_off : dst_off + count] = bytes(
-            src_backing[src_off : src_off + count]
-        )
+        dst_backing[dst_off : dst_off + count] = bytes(src_backing[src_off : src_off + count])
         return WasiErrno.SUCCESS
 
     # --- IRQ (REG_IRQ_FLAGS, shared with SYSCTL's own register file) ----
@@ -644,9 +619,7 @@ class System:
     def _irq_clear(self, mask: int) -> WasiErrno:
 
         flags = struct.unpack_from("<I", self.sysctl_regs, REG_IRQ_FLAGS)[0]
-        struct.pack_into(
-            "<I", self.sysctl_regs, REG_IRQ_FLAGS, flags & ~mask & 0xFFFF_FFFF
-        )
+        struct.pack_into("<I", self.sysctl_regs, REG_IRQ_FLAGS, flags & ~mask & 0xFFFF_FFFF)
         return WasiErrno.SUCCESS
 
     def raise_irq(self, mask: int) -> None:
@@ -658,9 +631,7 @@ class System:
         """
 
         flags = struct.unpack_from("<I", self.sysctl_regs, REG_IRQ_FLAGS)[0]
-        struct.pack_into(
-            "<I", self.sysctl_regs, REG_IRQ_FLAGS, (flags | mask) & 0xFFFF_FFFF
-        )
+        struct.pack_into("<I", self.sysctl_regs, REG_IRQ_FLAGS, (flags | mask) & 0xFFFF_FFFF)
 
     # --- IPC (real IPCRouter: URI lookup, RBAC, bounded-queue handoff) ---
     def _ipc_lookup(self, uri_offset: int, uri_len: int) -> int:
@@ -734,9 +705,7 @@ class System:
         return n
 
     # --- WASI (interface_wit.md §5.5-5.6) --------------------------------
-    def _wasi_fd_write(
-        self, fd: int, iovs_ptr: int, iovs_len: int, nwritten_ptr: int
-    ) -> WasiErrno:
+    def _wasi_fd_write(self, fd: int, iovs_ptr: int, iovs_len: int, nwritten_ptr: int) -> WasiErrno:
         """
         system_syscall.md §7.1: the Shim already loops per-vector before
                 trapping, so `iovs_len` reaching here is expected to be 1 -- but
@@ -766,9 +735,7 @@ class System:
 
         return WasiErrno.SUCCESS
 
-    def _wasi_fd_read(
-        self, fd: int, iovs_ptr: int, iovs_len: int, nread_ptr: int
-    ) -> WasiErrno:
+    def _wasi_fd_read(self, fd: int, iovs_ptr: int, iovs_len: int, nread_ptr: int) -> WasiErrno:
 
         # No real stdin exists in this experiment -- reporting 0 bytes read
         # (EOF) is a genuine, spec-legal WASI outcome, not a stand-in value.

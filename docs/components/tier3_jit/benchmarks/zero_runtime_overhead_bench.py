@@ -18,10 +18,8 @@ as a side effect of an unrelated test run.
 import os
 import sys
 
-sys.path.insert(
-    0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "concepts")
-)
-from stack_cache_concept import LOOP_OPS, NAIVE, StackCachingCompiler  # noqa: E402
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "concepts"))
+from stack_cache_concept import LOOP_OPS, NAIVE, StackCachingCompiler
 
 
 def main() -> None:
@@ -31,9 +29,7 @@ def main() -> None:
     mem_ops = sum(1 for i in listing if i.split()[0] in ("PUSH", "POP"))
     reduction = 1 - (cached_count / naive_count)
     print(f"[MEASURED] workload: {len(LOOP_OPS)} WASM ops ({LOOP_OPS})")
-    print(
-        f"           naive (always-memory) stencils : {naive_count} native instructions"
-    )
+    print(f"           naive (always-memory) stencils : {naive_count} native instructions")
     print(
         f"           stack-cached (constexpr variant): {cached_count} native instructions "
         f"({naive_count / cached_count:.2f}x fewer)"

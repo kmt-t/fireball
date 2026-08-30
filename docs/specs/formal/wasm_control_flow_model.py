@@ -38,9 +38,9 @@ def build_model(*, guards: bool = True) -> Kripke:
     if not guards:
         # ガード無効時（変異検査）:
         # 1. 静的検証（V1-V6 相当）を外すと、スタック空の状態で end がポップを試みうる
-        R = R + [("s_depth0", "s_underflow")]
+        R = [*R, ("s_depth0", "s_underflow")]
         # 2. ラベル深度の静的検証を外すと、br が開いていないスコープへ分岐しうる
-        R = R + [("s_depth1", "s_invalid_branch")]
+        R = [*R, ("s_depth1", "s_invalid_branch")]
 
     L = {
         "s_depth0": {"depth0"},

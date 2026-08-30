@@ -107,7 +107,7 @@ class UartTransport:
                 if len(chunk) < 4096:
                     break
 
-        except (BlockingIOError, socket.timeout):
+        except (TimeoutError, BlockingIOError):
             pass
 
         return b"".join(chunks)
@@ -170,9 +170,7 @@ class ShmBufferPool:
             raise HalError("HAL buffer pool exhausted (FB_CONF_HAL_MAX_BUFFERS)")
 
         name = f"fb_shm_{uuid.uuid4().hex[:12]}"
-        handle = ShmHandle(
-            name=name, owner_task=task_id, capacity=size, _storage=bytearray(size)
-        )
+        handle = ShmHandle(name=name, owner_task=task_id, capacity=size, _storage=bytearray(size))
         self._slots[slot_idx] = handle
         return handle
 
@@ -181,9 +179,7 @@ class ShmBufferPool:
         for i, s in enumerate(self._slots):
             if s is not None and s.name == handle.name:
                 if s.owner_task != task_id:
-                    raise ShmTrap(
-                        f"task {task_id} cannot release {handle.name}: not the owner"
-                    )
+                    raise ShmTrap(f"task {task_id} cannot release {handle.name}: not the owner")
 
                 self._slots[i] = None
                 return
@@ -209,9 +205,7 @@ class ShmBufferPool:
         for i in range(len(self._slots)):
             self._slots[i] = None
 
-    def view(
-        self, task_id: int, handle: ShmHandle, offset: int, length: int
-    ) -> memoryview:
+    def view(self, task_id: int, handle: ShmHandle, offset: int, length: int) -> memoryview:
         """
         Resolves a bounds-checked (offset, length) window inside `handle`.
                 This is what interface_wit.md 5.3's `shm-slice{handle, offset, len}`

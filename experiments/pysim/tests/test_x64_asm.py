@@ -112,9 +112,7 @@ def test_push_pop_roundtrip_for_every_tested_register():
             code += asm.mov_reg_reg("rax", reg)
 
         got = _run_u64(bytes(code), a=0x1122334455667788)
-        assert got == 0x1122334455667788, (
-            f"push/pop round-trip failed for {reg}: got {got:#x}"
-        )
+        assert got == 0x1122334455667788, f"push/pop round-trip failed for {reg}: got {got:#x}"
 
 
 def test_mov_reg_reg_moves_the_full_64_bits_between_every_pair():
@@ -134,9 +132,7 @@ def test_mov_reg_reg_moves_the_full_64_bits_between_every_pair():
                 code += asm.mov_reg_reg("rax", dst)
 
             got = _run_u64(bytes(code), a=value)
-            assert got == value, (
-                f"mov {dst}, {src} did not carry the value (got {got:#x})"
-            )
+            assert got == value, f"mov {dst}, {src} did not carry the value (got {got:#x})"
 
 
 def test_mov_reg_imm64_loads_every_bit_of_a_64_bit_immediate():
@@ -169,9 +165,7 @@ def test_mov_store_and_load_rsp_disp32_round_trip_at_several_offsets():
         code += asm.mov_load_rsp_disp32("rax", disp)
         code += asm.add_rsp_imm8(disp + 8)
         got = _run_u64(bytes(code), a=0xAABBCCDD11223344)
-        assert got == 0xAABBCCDD11223344, (
-            f"store/load round-trip at disp={disp} got {got:#x}"
-        )
+        assert got == 0xAABBCCDD11223344, f"store/load round-trip at disp={disp} got {got:#x}"
 
 
 def test_mov_store_rsp_disp32_uses_a_distinct_register_per_slot_without_aliasing():
@@ -241,9 +235,7 @@ def test_mov_load_scaled_reads_an_array_element_by_index():
         code += asm.mov_reg_imm64("rcx", i)
         code += asm.mov_load_scaled("rax", "rbx", "rcx", scale=8)
         got = _run_u64(bytes(code))
-        assert got == expected, (
-            f"scale=8 failed at idx {i}: got {got:#x}, expected {expected:#x}"
-        )
+        assert got == expected, f"scale=8 failed at idx {i}: got {got:#x}, expected {expected:#x}"
 
 
 def test_cmp_dword_scaled_imm32():

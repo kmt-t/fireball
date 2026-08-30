@@ -11,7 +11,7 @@ Reference Concept Implementation: vMMIO FlatMap Page Table & Direct-Mapped TLB
   including on TLB hit — the TLB only skips the table lookup, never the check
 """
 
-from typing import Callable
+from collections.abc import Callable
 
 
 class TrapCode:
@@ -137,9 +137,7 @@ class VMMIOController:
             owner_id=owner_id,
         )
 
-    def map_passthrough_page(
-        self, vpn: int, phys_page: int, read: bool = True, write: bool = True
-    ):
+    def map_passthrough_page(self, vpn: int, phys_page: int, read: bool = True, write: bool = True):
         """Registers a Tier 3 Passthrough page (FC=15) into FlatMap."""
         self.ptes[vpn] = Tier3PTE(
             phys_page=phys_page,
@@ -187,9 +185,7 @@ class VMMIOController:
         self.tlb[tlb_idx] = {"vpn": vpn, "pte": pte}
         return pte
 
-    def access(
-        self, raw_addr: int, is_write: bool, current_task_id: int = 0
-    ) -> tuple[str, str]:
+    def access(self, raw_addr: int, is_write: bool, current_task_id: int = 0) -> tuple[str, str]:
         """
         Full dispatch: RAM bypass -> TLB/FlatMap -> permission check (always,
         TLB hit or not) -> syscall dispatch or physical access.
@@ -290,9 +286,7 @@ def test_tlb_hit_after_first_walk():
 
 def test_undefined_fc_traps():
     ctrl = VMMIOController()
-    status, _ = ctrl.access(
-        0x8000_0000 | (0xD << 28), is_write=False
-    )  # FC=13, reserved
+    status, _ = ctrl.access(0x8000_0000 | (0xD << 28), is_write=False)  # FC=13, reserved
     assert status == TrapCode.UNDEFINED_FC
 
 
@@ -343,9 +337,7 @@ def test_linear_ram_bound_check_works_for_non_power_of_two_size():
     ok, _ = ctrl.access(12287, is_write=False)
     assert ok == "OK_GUEST_RAM", "last in-range byte (size-1) must be accepted"
     st, _ = ctrl.access(12288, is_write=False)
-    assert st == TrapCode.OUT_OF_BOUNDS, (
-        "the first byte past the real 12KB boundary must trap"
-    )
+    assert st == TrapCode.OUT_OF_BOUNDS, "the first byte past the real 12KB boundary must trap"
 
 
 def test_tlb_index_separates_function_codes():
@@ -369,9 +361,7 @@ def test_interleaved_syscall_and_shm_keep_hitting_the_tlb():
         ctrl.access(shm, is_write=True, current_task_id=1)
 
     total = ctrl.tlb_hits + ctrl.tlb_misses
-    assert ctrl.tlb_hits / total >= 0.9, (
-        f"expected >=90% hit rate, got {ctrl.tlb_hits}/{total}"
-    )
+    assert ctrl.tlb_hits / total >= 0.9, f"expected >=90% hit rate, got {ctrl.tlb_hits}/{total}"
 
 
 def test_flatmap_pte_registration_and_tlb_caching():
@@ -388,8 +378,7 @@ def test_flatmap_pte_registration_and_tlb_caching():
         st, msg = ctrl.access(addr, is_write=False, current_task_id=42)
         assert st == "OK_PHYSICAL"
         assert (
-            f"0x{0x1000010 + (p << 12):08x}" in msg
-            or f"0x{(0x1000 + p) << 12 | 0x10:08x}" in msg
+            f"0x{0x1000010 + (p << 12):08x}" in msg or f"0x{(0x1000 + p) << 12 | 0x10:08x}" in msg
         )
 
     # Repeated access to a hot working set of 8 pages achieves 100% TLB hits
@@ -403,9 +392,7 @@ def test_flatmap_pte_registration_and_tlb_caching():
             addr = 0xE000_0000 | (p << 12)
             st, _ = ctrl.access(addr, is_write=False, current_task_id=42)
             assert st == "OK_PHYSICAL"
-    assert ctrl.tlb_hits == before_hits + 80, (
-        "working set in TLB must achieve 100% hit rate"
-    )
+    assert ctrl.tlb_hits == before_hits + 80, "working set in TLB must achieve 100% hit rate"
 
 
 if __name__ == "__main__":

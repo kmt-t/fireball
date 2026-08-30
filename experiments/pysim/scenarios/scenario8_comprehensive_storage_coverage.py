@@ -147,8 +147,7 @@ class GDBClientHelper:
                 break
             buf += chunk
 
-        if buf.startswith("+"):
-            buf = buf[1:]
+        buf = buf.removeprefix("+")
 
         if "$" in buf and "#" in buf:
             dollar_idx = buf.index("$")
@@ -161,9 +160,7 @@ class GDBClientHelper:
 
 
 def test_scenario_comprehensive_storage_and_debugger():
-    print(
-        "[*] Running Scenario 8: Comprehensive Storage (Globals/Locals/Memory) & GDB Debugger..."
-    )
+    print("[*] Running Scenario 8: Comprehensive Storage (Globals/Locals/Memory) & GDB Debugger...")
     wasm_bytes = bytes(wasmtime.wat2wasm(SCENARIO8_WAT))
     module = parse(wasm_bytes)
     # -------------------------------------------------------------------------
@@ -172,9 +169,7 @@ def test_scenario_comprehensive_storage_and_debugger():
     sysv = System()
     wasi_ctx = WasiHostContext(sysv)
     host_funcs = wasi_ctx.build_interpreter_host_functions(module)
-    interp = Interpreter(
-        module, memory=wasi_ctx.guest_memory, host_functions=host_funcs
-    )
+    interp = Interpreter(module, memory=wasi_ctx.guest_memory, host_functions=host_funcs)
     fn_mem_test = module.export_func_index("test_memory_widths")
     res_mem = interp.call(fn_mem_test, [])
     # 254 (u8) + (-2 s8) + 65520 (u16) + (-16 s16) + 1 (eq) = 252 + 65504 + 1 = 65757
@@ -195,18 +190,14 @@ def test_scenario_comprehensive_storage_and_debugger():
     fn_pipeline = module.export_func_index("pipeline_process")
     res_pipe1 = interp.call(fn_pipeline, [5, base_ptr])
     assert res_pipe1 == [550], f"Pipeline process mismatch: {res_pipe1}"
-    assert interp.globals[0] == 550, (
-        f"Global counter was not updated: {interp.globals[0]}"
-    )
+    assert interp.globals[0] == 550, f"Global counter was not updated: {interp.globals[0]}"
     print(
         "    [Phase 2] Globals & Local Storage Pipeline -> Acc=550 (Global mutated to 550) [PASS]"
     )
     # Second run with same global state: 550 + 450 = 1000
     res_pipe2 = interp.call(fn_pipeline, [5, base_ptr])
     assert res_pipe2 == [1000] and interp.globals[0] == 1000
-    print(
-        "    [Phase 2.1] Global Mutation Persistence Across Invocations -> Acc=1000 [PASS]"
-    )
+    print("    [Phase 2.1] Global Mutation Persistence Across Invocations -> Acc=1000 [PASS]")
     # -------------------------------------------------------------------------
     # Phase 3: Interactive GDB RSP Socket Debugging Session on Live Storage
     # -------------------------------------------------------------------------
@@ -220,9 +211,7 @@ def test_scenario_comprehensive_storage_and_debugger():
         ops=[("local.get", 0), ("i32.const", 10), ("i32.mul", None), ("local.set", 1)],
         next_pc=0x120,
     )
-    block120 = BasicBlock(
-        head_pc=0x120, ops=[("local.get", 1), ("local.set", 2)], next_pc=None
-    )
+    block120 = BasicBlock(head_pc=0x120, ops=[("local.get", 1), ("local.set", 2)], next_pc=None)
     blocks = {0x100: block100, 0x110: block110, 0x120: block120}
     engine = IntegratedHybridEngine(compiler=TraceCompiler())
     dbg = DebuggerManager(engine=engine)

@@ -81,16 +81,16 @@ def build_model(*, guards: bool = True) -> Kripke:
         # ガード無効時（変異検査）:
         # 1. Safepoint での generation cookie 照合を省くと、デバッガ書き込み後・flush 完了前に
         #    登録済み exec_trace ポインタから旧世代コードへ再突入できてしまう
-        R = R + [("s_dbg_write", "s_exec_stale")]
+        R = [*R, ("s_dbg_write", "s_exec_stale")]
         # 2. generation cookie を全バンク一括でインクリメントせず個別更新にすると、
         #    flush 途中でバンク間の世代が食い違い、単調性が壊れる
-        R = R + [("s_flushing", "s_gen_regressed")]
+        R = [*R, ("s_flushing", "s_gen_regressed")]
         # 3. ローテーション時に Oldest バンクの Purge だけ行いエントリ表スロットの回収を
         #    怠ると、回収されないスロットが蓄積する（リソースリーク）
-        R = R + [("s_rotate", "s_leaked_bank")]
+        R = [*R, ("s_rotate", "s_leaked_bank")]
         # 4. flush を Safepoint で即時実行せず遅延可能にすると、dirty のまま
         #    flush が完了しない経路が生じる
-        R = R + [("s_safepoint", "s_flush_stalled")]
+        R = [*R, ("s_safepoint", "s_flush_stalled")]
 
     L = {
         "s_interp": {"interp_mode", "gen_consistent", "all_banks_accounted"},

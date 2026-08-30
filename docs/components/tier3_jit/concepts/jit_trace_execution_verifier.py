@@ -19,19 +19,19 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from jit_assembler_constexpr_concept import Reg, Thumb2Assembler  # noqa: E402
-from jit_copy_patch_concept import (  # noqa: E402
+from jit_assembler_constexpr_concept import Reg, Thumb2Assembler
+from jit_copy_patch_concept import (
     CopyPatchJITEngine,
     _order_register_moves,
 )
-from unicorn import (  # noqa: E402
+from unicorn import (
     UC_ARCH_ARM,
     UC_ERR_EXCEPTION,
     UC_MODE_THUMB,
     Uc,
     UcError,
 )
-from unicorn.arm_const import (  # noqa: E402
+from unicorn.arm_const import (
     UC_ARM_REG_R1,
     UC_ARM_REG_R2,
     UC_ARM_REG_R4,
@@ -45,9 +45,7 @@ CSTACK_TOP = 0x21000  # native (R13) call stack -- grows down from here
 WASM_STACK_BASE = 0x22000  # unified stack (R1 / stack_bot)
 SENTINEL_ADDR = 0x23000  # where BX r12 lands on fallback exit
 ENV_BASE = 0x24000  # vsoc_runtime: mem-base @+0x00, mem-size @+0x04
-GUEST_RAM_BASE = (
-    0x25000  # a deliberately small, tightly-mapped guest linear memory region
-)
+GUEST_RAM_BASE = 0x25000  # a deliberately small, tightly-mapped guest linear memory region
 
 
 def test_compiled_trace_runs_on_real_cpu_and_spills_correctly():
@@ -124,20 +122,12 @@ def _run_memory_access_trace(guest_addr: int, mem_size: int) -> dict:
     code = engine.execute_native_bytes(start_byte, length)
     mu = Uc(UC_ARCH_ARM, UC_MODE_THUMB)
     mu.mem_map(CODE_BASE, 0x1000)
-    mu.mem_map(
-        0x20000, 0x5000
-    )  # covers CSTACK, WASM_STACK, SENTINEL, ENV -- up to 0x25000
-    mu.mem_map(
-        GUEST_RAM_BASE, 0x1000
-    )  # guest RAM: exactly one page, nothing beyond it mapped
+    mu.mem_map(0x20000, 0x5000)  # covers CSTACK, WASM_STACK, SENTINEL, ENV -- up to 0x25000
+    mu.mem_map(GUEST_RAM_BASE, 0x1000)  # guest RAM: exactly one page, nothing beyond it mapped
     mu.mem_write(CODE_BASE, code)
     mu.mem_write(SENTINEL_ADDR, bytes.fromhex("00BE"))  # BKPT sentinel to stop on
-    mu.mem_write(
-        ENV_BASE + 0x00, GUEST_RAM_BASE.to_bytes(4, "little")
-    )  # vsoc_runtime.mem-base
-    mu.mem_write(
-        ENV_BASE + 0x04, mem_size.to_bytes(4, "little")
-    )  # vsoc_runtime.mem-size
+    mu.mem_write(ENV_BASE + 0x00, GUEST_RAM_BASE.to_bytes(4, "little"))  # vsoc_runtime.mem-base
+    mu.mem_write(ENV_BASE + 0x04, mem_size.to_bytes(4, "little"))  # vsoc_runtime.mem-size
     # Sentinel word at the fixed in-bounds offset the in-bounds test's guest_addr targets.
     # The OOB test's guest_addr lands outside the mapped page entirely, so it never reads this.
     mu.mem_write(GUEST_RAM_BASE + 0x10, (0xAABBCCDD).to_bytes(4, "little"))
@@ -217,12 +207,8 @@ def test_intra_trace_variant_reconciliation_swap_on_real_hardware():
         if e.errno != UC_ERR_EXCEPTION:
             raise
 
-    assert mu.reg_read(UC_ARM_REG_R4) == 0xCAFEF00D, (
-        "R4 must end up with R5's original value"
-    )
-    assert mu.reg_read(UC_ARM_REG_R5) == 0xAAAAAAAA, (
-        "R5 must end up with R4's original value"
-    )
+    assert mu.reg_read(UC_ARM_REG_R4) == 0xCAFEF00D, "R4 must end up with R5's original value"
+    assert mu.reg_read(UC_ARM_REG_R5) == 0xAAAAAAAA, "R5 must end up with R4's original value"
 
 
 if __name__ == "__main__":
@@ -230,6 +216,4 @@ if __name__ == "__main__":
     test_in_bounds_memory_access_executes_the_load()
     test_out_of_bounds_memory_access_traps_before_executing_the_load()
     test_intra_trace_variant_reconciliation_swap_on_real_hardware()
-    print(
-        "[PASS] compile_trace() output is real, executable, and correct Thumb-2 machine code."
-    )
+    print("[PASS] compile_trace() output is real, executable, and correct Thumb-2 machine code.")

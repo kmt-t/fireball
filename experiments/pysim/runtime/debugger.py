@@ -121,7 +121,7 @@ class DebuggerManager:
         fp = 0
         tos = ctx.stack[-1] if ctx.stack else 0
         locals_list = [ctx.locals[i] if i < len(ctx.locals) else 0 for i in range(16)]
-        return [pc, sp, fp, tos] + locals_list
+        return [pc, sp, fp, tos, *locals_list]
 
     def write_virtual_registers(self, regs: list[int], ctx: WASMContext) -> int:
         """Updates virtual registers from a 20-integer list. Returns new PC."""
@@ -162,8 +162,7 @@ class GDBRspProtocol:
         """Handles an RSP packet payload and returns (response_packet, new_pc)."""
         # Strip framing if present
         raw = packet.strip()
-        if raw.startswith("$"):
-            raw = raw[1:]
+        raw = raw.removeprefix("$")
 
         if "#" in raw:
             raw = raw.split("#")[0]
@@ -188,9 +187,7 @@ class GDBRspProtocol:
             try:
                 # 20 registers * 8 hex digits = 160 chars
                 hex_data = args
-                regs = [
-                    int(hex_data[i : i + 8], 16) for i in range(0, len(hex_data), 8)
-                ]
+                regs = [int(hex_data[i : i + 8], 16) for i in range(0, len(hex_data), 8)]
                 new_pc = self.dbg.write_virtual_registers(regs, ctx)
                 return self.format_packet("OK"), new_pc
 
@@ -220,11 +217,7 @@ class GDBRspProtocol:
                 addr = int(addr_str, 16)
                 length = int(len_str, 16)
                 data = bytes.fromhex(hex_data)
-                if (
-                    ctx.memory is None
-                    or addr + len(data) > len(ctx.memory)
-                    or len(data) != length
-                ):
+                if ctx.memory is None or addr + len(data) > len(ctx.memory) or len(data) != length:
                     return self.format_packet("E01"), current_pc
 
                 ctx.memory[addr : addr + length] = data

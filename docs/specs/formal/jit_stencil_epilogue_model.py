@@ -51,9 +51,9 @@ def build_model(*, guards: bool = True) -> Kripke:
     if not guards:
         # ガード無効時（変異検査）:
         # 1. スピルフラッシュ（STR x2）を外すと、ダーティなキャッシュを抱えたまま抜けてしまう
-        R = R + [("s_trace_dirty", "s_exit_dirty")]
+        R = [*R, ("s_trace_dirty", "s_exit_dirty")]
         # 2. エピローグの対称ポップを外すと、プッシュしたレジスタを積んだまま復帰してしまう
-        R = R + [("s_prologue_push", "s_return_unbalanced")]
+        R = [*R, ("s_prologue_push", "s_return_unbalanced")]
 
     L = {
         "s_trace_entry": {"entry"},

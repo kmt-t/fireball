@@ -18,10 +18,8 @@ import os
 import sys
 import time
 
-sys.path.insert(
-    0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "concepts")
-)
-from jit_copy_patch_concept import CopyPatchJITEngine  # noqa: E402
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "concepts"))
+from jit_copy_patch_concept import CopyPatchJITEngine
 
 
 def compile_n_ops(n: int) -> float:

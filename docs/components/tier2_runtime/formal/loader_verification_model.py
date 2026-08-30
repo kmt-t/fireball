@@ -56,11 +56,11 @@ def build_model(*, guards: bool = True) -> Kripke:
     if not guards:
         # ガード無効時（変異検査）:
         # 1. 検証ステップを飛ばして直接実行してしまう経路
-        R = R + [("s_parsed_unverified", "s_executing_unverified")]
+        R = [*R, ("s_parsed_unverified", "s_executing_unverified")]
         # 2. 検証不合格にもかかわらず拒否されず実行されてしまう経路
-        R = R + [("s_verified_bad", "s_executing_unverified")]
+        R = [*R, ("s_verified_bad", "s_executing_unverified")]
         # 3. V1-V6 の境界（有限個の固定チェック）を外すと、検証が合否に収束しないままになりうる
-        R = R + [("s_verifying", "s_stuck_verifying")]
+        R = [*R, ("s_verifying", "s_stuck_verifying")]
 
     L = {
         "s_rom_unparsed": {"unparsed"},

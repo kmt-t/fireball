@@ -47,10 +47,10 @@ def build_model(*, guards: bool = True) -> Kripke:
     if not guards:
         # ガード無効時（変異検査）:
         # 1. 送信時に Revoke によるアトミック剥奪を行わず、受信者に直接 Grant すると二重所有が発生
-        R = R + [("s_sender_holds", "s_both_owns")]
+        R = [*R, ("s_sender_holds", "s_both_owns")]
         # 2. IPC_DropHandler を外すと、受信者が Kill された in-flight メッセージは
         #    誰にも回収されずキュー内に滞留し続ける（リソースリーク）
-        R = R + [("s_in_flight", "s_in_flight_leaked")]
+        R = [*R, ("s_in_flight", "s_in_flight_leaked")]
 
     L = {
         "s_sender_holds": {"sender_owns"},

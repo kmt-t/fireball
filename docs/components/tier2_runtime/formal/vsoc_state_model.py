@@ -62,10 +62,10 @@ def build_model(*, guards: bool = True) -> Kripke:
     if not guards:
         # ガード無効時（変異検査）:
         # 1. Safepoint 同期を介さず JIT 実行中に直接割り込みを処理すると IRQ/JIT レース違反へ突入
-        R = R + [("s_jit_run", "s_bad_irq_jit")]
+        R = [*R, ("s_jit_run", "s_bad_irq_jit")]
         # 2. バックエッジへの Safepoint 埋め込みを省くと、JIT ネイティブループは
         #    Safepoint へ到達しないまま実行を続け、割り込みに永久に応答しなくなる
-        R = R + [("s_jit_run", "s_safepoint_starved")]
+        R = [*R, ("s_jit_run", "s_safepoint_starved")]
 
     L = {
         "s_interpreter_run": {"running", "interp_mode"},

@@ -7,7 +7,8 @@ Reference Concept Implementation: COOS (Cooperative OS)
 - Strict idle detection and power-saving sleep hook
 """
 
-from typing import Any, Generator
+from collections.abc import Generator
+from typing import Any
 
 
 class TaskState:
@@ -167,9 +168,7 @@ class COOSKernel:
         """Executes one scheduling step. Returns False when all tasks terminated."""
         self.drain_interrupts()
         # Check for active tasks
-        active_tasks = [
-            t for t in self.tasks.values() if t["state"] != TaskState.TERMINATED
-        ]
+        active_tasks = [t for t in self.tasks.values() if t["state"] != TaskState.TERMINATED]
         if not active_tasks:
             return False
 
@@ -285,7 +284,7 @@ def test_one_waiter_per_channel_is_enforced():
     kernel.current_task = "b"
     try:
         kernel.channel_send("ch_data", 2)
-        assert False, "second sender on the same channel must assert"
+        raise AssertionError("second sender on the same channel must assert")
     except AssertionError as e:
         assert "separate channels" in str(e)
 

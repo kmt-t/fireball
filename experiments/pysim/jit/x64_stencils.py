@@ -47,8 +47,8 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
+from collections.abc import Generator, Iterable
 from dataclasses import dataclass, field
-from typing import Generator, Iterable
 
 IS_WINDOWS = sys.platform == "win32"
 
@@ -89,9 +89,7 @@ _RELOC_SENTINELS = {
 }
 
 
-def _materialize_auto(
-    name: str, gen: Generator[int, None, None] | Iterable[int]
-) -> "Stencil":
+def _materialize_auto(name: str, gen: Generator[int, None, None] | Iterable[int]) -> Stencil:
     """
     Like _materialize(), but discovers every relocation slot in `gen`'s
         output by locating the sentinel patterns in `_RELOC_SENTINELS`, instead
@@ -301,9 +299,7 @@ def _gen_shift(shift_opcode_ext: int) -> bytes:
     """
 
     modrm = 0xC0 | (shift_opcode_ext << 3)  # ModRM for "D3 /ext, eax"
-    return bytes(
-        (0x59, 0x58, 0xD3, modrm, 0x50)
-    )  # pop rcx; pop rax; D3 /ext eax,cl; push rax
+    return bytes((0x59, 0x58, 0xD3, modrm, 0x50))  # pop rcx; pop rax; D3 /ext eax,cl; push rax
 
 
 def _gen_bounds_check() -> Generator[int, None, None]:
@@ -573,9 +569,7 @@ LOCAL_TEE = _materialize("local_tee", _gen_local_tee(), {"disp": 7})
 I32_CONST = _materialize("i32_const", _gen_i32_const(), {"imm": 1})
 I32_ADD = _materialize("i32_add", _gen_binop(bytes((0x01, 0xD8))))  # add eax, ebx
 I32_SUB = _materialize("i32_sub", _gen_binop(bytes((0x29, 0xD8))))  # sub eax, ebx
-I32_MUL = _materialize(
-    "i32_mul", _gen_binop(bytes((0x0F, 0xAF, 0xC3)))
-)  # imul eax, ebx
+I32_MUL = _materialize("i32_mul", _gen_binop(bytes((0x0F, 0xAF, 0xC3))))  # imul eax, ebx
 
 I32_AND = _materialize("i32_and", _gen_binop(bytes((0x21, 0xD8))))  # and eax, ebx
 I32_OR = _materialize("i32_or", _gen_binop(bytes((0x09, 0xD8))))  # or eax, ebx

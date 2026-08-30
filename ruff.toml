@@ -1,0 +1,38 @@
+# Fireball Standard Python Linter & Formatter Configuration
+target-version = "py310"
+line-length = 100
+
+[lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes (undefined variables, syntax, etc.)
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "RUF", # Ruff-specific rules
+]
+
+ignore = [
+    "E501",   # line-too-long (handled by formatter)
+    "E402",   # module level import not at top of file (handled by path setup)
+    "E741",   # ambiguous variable name
+    "B008",   # do not perform function calls in argument defaults
+    "RUF001", # ambiguous unicode in strings (Japanese docs/tests)
+    "RUF002", # ambiguous unicode in docstrings
+    "RUF003", # ambiguous unicode in comments
+    "RUF012", # mutable class attributes
+    "RUF059", # unpacked variable never used
+    "B023",   # function definition does not bind loop variable
+]
+
+[lint.per-file-ignores]
+"**/tests/*" = ["F841", "B011"]
+"**/scenarios/*" = ["F841"]
+"**/concepts/*" = ["F841"]
+"tools/spec-integrator/tests/*" = ["F841", "B011"]
+
+[format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"

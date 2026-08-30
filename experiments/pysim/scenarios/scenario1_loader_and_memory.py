@@ -69,9 +69,7 @@ SCENARIO_WAT = """
 
 
 def test_scenario_loader_memory():
-    print(
-        "[*] Running Scenario 1: Loader, Linear Memory, Data Segments & Radix Lookup..."
-    )
+    print("[*] Running Scenario 1: Loader, Linear Memory, Data Segments & Radix Lookup...")
     wasm_bytes = bytes(wasmtime.wat2wasm(SCENARIO_WAT))
     module = parse(wasm_bytes)
     # 1. Verify module structure
@@ -82,14 +80,10 @@ def test_scenario_loader_memory():
     sysv = System()
     wasi_ctx = WasiHostContext(sysv)
     host_funcs = wasi_ctx.build_interpreter_host_functions(module)
-    interp = Interpreter(
-        module, memory=wasi_ctx.guest_memory, host_functions=host_funcs
-    )
+    interp = Interpreter(module, memory=wasi_ctx.guest_memory, host_functions=host_funcs)
     # 3. Verify Active Data Segments loaded in memory
     seg1 = wasi_ctx.guest_memory[256 : 256 + 39].decode("utf-8")
-    assert seg1 == "FIREBALL-SYSTEM-DATA-SEGMENT-0123456789", (
-        f"Data segment 1 corrupted: {seg1}"
-    )
+    assert seg1 == "FIREBALL-SYSTEM-DATA-SEGMENT-0123456789", f"Data segment 1 corrupted: {seg1}"
     seg2 = list(wasi_ctx.guest_memory[1024 : 1024 + 8])
     assert seg2 == [1, 2, 3, 4, 5, 6, 7, 8], f"Data segment 2 corrupted: {seg2}"
     # 4. Test Memory Read / Write via WASM guest functions
@@ -107,9 +101,7 @@ def test_scenario_loader_memory():
     val_cafebabe = 0xCAFEBABE - 0x100000000  # signed i32 representation
     interp.call(fn_write, [131072, val_cafebabe])
     res_page2 = interp.call(fn_read, [131072])
-    assert (res_page2[0] & 0xFFFFFFFF) == 0xCAFEBABE, (
-        f"Page 2 memory access failed: {res_page2}"
-    )
+    assert (res_page2[0] & 0xFFFFFFFF) == 0xCAFEBABE, f"Page 2 memory access failed: {res_page2}"
     # 6. Test Globals Mutation
     fn_global = module.export_func_index("inc_global")
     res_g1 = interp.call(fn_global, [25])

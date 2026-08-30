@@ -103,9 +103,7 @@ class ExecutableBuffer:
         self.isb_count = 0
         if IS_WINDOWS:
             # Initial state: RW+XN (PAGE_READWRITE) for initial configuration
-            addr = _kernel32.VirtualAlloc(
-                None, size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE
-            )
+            addr = _kernel32.VirtualAlloc(None, size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE)
             if not addr:
                 raise MemoryError("VirtualAlloc failed to allocate executable memory")
 
@@ -128,17 +126,13 @@ class ExecutableBuffer:
         assert not self.patch_in_progress, "Nested begin_jit_patch is invalid"
         if IS_WINDOWS:
             old = wt.DWORD()
-            res = _kernel32.VirtualProtect(
-                self.base, self.size, PAGE_READWRITE, ctypes.byref(old)
-            )
+            res = _kernel32.VirtualProtect(self.base, self.size, PAGE_READWRITE, ctypes.byref(old))
             assert res != 0, "VirtualProtect to PAGE_READWRITE failed"
             self.current_protection = PAGE_READWRITE
 
         else:
             res = _libc.mprotect(self.base, self.size, PROT_READ | PROT_WRITE)
-            assert res == 0, (
-                f"mprotect to PROT_READ|PROT_WRITE failed (errno={ctypes.get_errno()})"
-            )
+            assert res == 0, f"mprotect to PROT_READ|PROT_WRITE failed (errno={ctypes.get_errno()})"
             self.current_protection = PROT_READ | PROT_WRITE
 
         self.patch_in_progress = True
@@ -158,9 +152,7 @@ class ExecutableBuffer:
 
         else:
             res = _libc.mprotect(self.base, self.size, PROT_READ | PROT_EXEC)
-            assert res == 0, (
-                f"mprotect to PROT_READ|PROT_EXEC failed (errno={ctypes.get_errno()})"
-            )
+            assert res == 0, f"mprotect to PROT_READ|PROT_EXEC failed (errno={ctypes.get_errno()})"
             self.current_protection = PROT_READ | PROT_EXEC
 
         self.patch_in_progress = False
@@ -194,9 +186,7 @@ class ExecutableBuffer:
         assert self.patch_in_progress, (
             "Cannot write to ExecutableBuffer outside begin_jit_patch() transaction"
         )
-        assert offset + len(data) <= self.size, (
-            "write past the end of the executable buffer"
-        )
+        assert offset + len(data) <= self.size, "write past the end of the executable buffer"
         ctypes.memmove(self.base + offset, data, len(data))
 
     def read(self, offset: int, size: int) -> bytes:

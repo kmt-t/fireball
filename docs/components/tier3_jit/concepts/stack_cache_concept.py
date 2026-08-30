@@ -63,9 +63,7 @@ class Variant:
 # NOS in R5. Entering a variant that would exceed MAX_CACHED spills first.
 STENCILS: dict[str, dict[int, Variant]] = {
     "i32.const": {
-        0: Variant(
-            ["MOVW R4, #{imm_lo}", "MOVT R4, #{imm_hi}"], 1, ("imm_lo", "imm_hi")
-        ),
+        0: Variant(["MOVW R4, #{imm_lo}", "MOVT R4, #{imm_hi}"], 1, ("imm_lo", "imm_hi")),
         1: Variant(
             ["MOV R5, R4", "MOVW R4, #{imm_lo}", "MOVT R4, #{imm_hi}"],
             2,
@@ -317,16 +315,12 @@ def test_spill_only_when_the_cache_overflows():
 
 
 def test_memory_access_carries_the_bound_check():
-    listing, _ = StackCachingCompiler().compile_block(
-        [("local.get", 0), ("i32.load", None)]
-    )
+    listing, _ = StackCachingCompiler().compile_block([("local.get", 0), ("i32.load", None)])
     assert "CMP R4, R9" in listing and "BHS __trap_oob" in listing, listing
 
 
 def test_out_of_bounds_load_traps():
-    listing, _ = StackCachingCompiler().compile_block(
-        [("local.get", 0), ("i32.load", None)]
-    )
+    listing, _ = StackCachingCompiler().compile_block([("local.get", 0), ("i32.load", None)])
     _, st = execute(listing, [0x4000])  # 0x4000 > 8KB
     assert st == "TRAP_OOB", st
     _, st = execute(listing, [0x100])

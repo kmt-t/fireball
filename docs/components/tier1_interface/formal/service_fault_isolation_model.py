@@ -58,9 +58,9 @@ def build_model(*, guards: bool = True) -> Kripke:
     if not guards:
         # ガード無効時（変異検査）:
         # 1. 障害隔離（IPC ルータ経由のタスク分離）を外すと、異常終了が他方を直接破壊する
-        R = R + [("s_a_crashed", "s_corrupted"), ("s_b_crashed", "s_corrupted")]
+        R = [*R, ("s_a_crashed", "s_corrupted"), ("s_b_crashed", "s_corrupted")]
         # 2. イベント通知契機の自己再起動を外すと、隔離済みのまま復旧しない経路が生じる
-        R = R + [("s_a_isolated", "s_stuck"), ("s_b_isolated", "s_stuck")]
+        R = [*R, ("s_a_isolated", "s_stuck"), ("s_b_isolated", "s_stuck")]
 
     L = {
         "s_all_running": {"up"},

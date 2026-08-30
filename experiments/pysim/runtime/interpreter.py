@@ -57,8 +57,9 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
+from typing import Any
 
 from control_flow import Instr, decode_all
 from wasm_module import Module
@@ -166,7 +167,7 @@ class ExecEnv:
     globals: list[int]
     tables: list[list[int | None]]
     host_functions: dict[int, Callable[..., int | None]]
-    interp: "Interpreter"
+    interp: Interpreter
 
 
 class CallFrame:
@@ -177,7 +178,7 @@ class CallFrame:
         given `ip`).
     """
 
-    __slots__ = ("values", "frames", "instrs", "code")
+    __slots__ = ("code", "frames", "instrs", "values")
 
     def __init__(self, instrs: dict[int, Instr], code: bytes, values: list[int]):
 
@@ -194,9 +195,7 @@ _Cont = "tuple[int, CallFrame, ExecEnv, list[int]] | None"
 
 # Fixed 256-slot direct-indexed dispatch table for WASM byte opcodes (0x00..0xFF)
 
-_HANDLERS: list[Callable[[int, CallFrame, ExecEnv, list[int]], object] | None] = [
-    None
-] * 256
+_HANDLERS: list[Callable[[int, CallFrame, ExecEnv, list[int]], object] | None] = [None] * 256
 
 
 def _handler(opcode: int):
@@ -254,9 +253,7 @@ class Interpreter:
             module.table_contents(i) for i in range(len(module.tables))
         ]
         self.runtime_engine = runtime_engine
-        self._env = ExecEnv(
-            module, memory, self.globals, self.tables, self.host_functions, self
-        )
+        self._env = ExecEnv(module, memory, self.globals, self.tables, self.host_functions, self)
         if self.module.start_function is not None:
             self.call(self.module.start_function, [])
 
@@ -339,9 +336,7 @@ class Interpreter:
             ins = frame.instrs[ip]
             handler = _HANDLERS[ins.opcode]
             if handler is None:
-                raise NotImplementedError(
-                    f"interpreter: unhandled opcode 0x{ins.opcode:02X}"
-                )
+                raise NotImplementedError(f"interpreter: unhandled opcode 0x{ins.opcode:02X}")
 
             cont = handler(ip, frame, env, locals_arr)
             instr_step += 1
@@ -377,9 +372,7 @@ def _h_nop(ip, frame, env, local_base):
 def _h_block(ip, frame, env, local_base):
 
     ins = frame.instrs[ip]
-    frame.frames.append(
-        _Frame("block", ins.offset, ins.match_offset, len(frame.values))
-    )
+    frame.frames.append(_Frame("block", ins.offset, ins.match_offset, len(frame.values)))
     return (ins.end_offset, frame, env, local_base)
 
 
@@ -398,9 +391,7 @@ def _h_if(ip, frame, env, local_base):
     cond = frame.values.pop()
     if cond == 0:
         if ins.else_offset is not None:
-            frame.frames.append(
-                _Frame("if", ins.offset, ins.match_offset, len(frame.values))
-            )
+            frame.frames.append(_Frame("if", ins.offset, ins.match_offset, len(frame.values)))
             return (ins.else_offset + 1, frame, env, local_base)
 
         else:
@@ -457,9 +448,7 @@ def _h_br_table(ip, frame, env, local_base):
 
     ins = frame.instrs[ip]
     index = _to_u32(frame.values.pop())
-    depth = (
-        ins.br_table_labels[index] if index < len(ins.br_table_labels) else ins.operand
-    )
+    depth = ins.br_table_labels[index] if index < len(ins.br_table_labels) else ins.operand
     next_ip = _do_branch(depth, frame)
     return None if next_ip is None else (next_ip, frame, env, local_base)
 
@@ -488,9 +477,7 @@ def _h_call_indirect(ip, frame, env, local_base):
     table = env.tables[ins.table_index]
     table_slot = _to_u32(frame.values.pop())
     if table_slot >= len(table):
-        raise Trap(
-            f"call_indirect: table index {table_slot} out of bounds (size {len(table)})"
-        )
+        raise Trap(f"call_indirect: table index {table_slot} out of bounds (size {len(table)})")
 
     func_index = table[table_slot]
     if func_index is None:
@@ -580,9 +567,7 @@ def _h_i32_load(ip, frame, env, local_base):
     if env.memory is None or addr + 4 > len(env.memory):
         raise Trap(f"i32.load out of bounds at addr={addr}")
 
-    frame.values.append(
-        int.from_bytes(env.memory[addr : addr + 4], "little", signed=True)
-    )
+    frame.values.append(int.from_bytes(env.memory[addr : addr + 4], "little", signed=True))
     return (ins.end_offset, frame, env, local_base)
 
 
@@ -594,9 +579,7 @@ def _h_i32_load8_s(ip, frame, env, local_base):
     if env.memory is None or addr + 1 > len(env.memory):
         raise Trap(f"i32.load8_s out of bounds at addr={addr}")
 
-    frame.values.append(
-        int.from_bytes(env.memory[addr : addr + 1], "little", signed=True)
-    )
+    frame.values.append(int.from_bytes(env.memory[addr : addr + 1], "little", signed=True))
     return (ins.end_offset, frame, env, local_base)
 
 
@@ -620,9 +603,7 @@ def _h_i32_load16_s(ip, frame, env, local_base):
     if env.memory is None or addr + 2 > len(env.memory):
         raise Trap(f"i32.load16_s out of bounds at addr={addr}")
 
-    frame.values.append(
-        int.from_bytes(env.memory[addr : addr + 2], "little", signed=True)
-    )
+    frame.values.append(int.from_bytes(env.memory[addr : addr + 2], "little", signed=True))
     return (ins.end_offset, frame, env, local_base)
 
 
@@ -634,9 +615,7 @@ def _h_i32_load16_u(ip, frame, env, local_base):
     if env.memory is None or addr + 2 > len(env.memory):
         raise Trap(f"i32.load16_u out of bounds at addr={addr}")
 
-    frame.values.append(
-        int.from_bytes(env.memory[addr : addr + 2], "little", signed=False)
-    )
+    frame.values.append(int.from_bytes(env.memory[addr : addr + 2], "little", signed=False))
     return (ins.end_offset, frame, env, local_base)
 
 

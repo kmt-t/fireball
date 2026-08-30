@@ -214,9 +214,7 @@ class SharedBlock:
         """RAII drop handler: automatically deallocates physical buffer if still owned."""
         if self._is_active:
             self._is_active = False
-            self._manager._deallocate_shared_slot(
-                self.page_idx, self.slot_idx, self.owner
-            )
+            self._manager._deallocate_shared_slot(self.page_idx, self.slot_idx, self.owner)
 
         elif self._is_in_flight:
             pass
@@ -325,9 +323,7 @@ class PMSAv8MPU:
                 xn=True,
                 is_device=True,
             ),
-            MPURegion(
-                6, "Shared_Memory", 0x20080000, 0x200BFFE0, AccessPermission.RW, xn=True
-            ),
+            MPURegion(6, "Shared_Memory", 0x20080000, 0x200BFFE0, AccessPermission.RW, xn=True),
             MPURegion(
                 7,
                 "Stack_Guard",
@@ -409,9 +405,7 @@ class MemoryManager:
             return Result(
                 error=MemoryErrorResult(
                     "ERR_POOL_EXHAUSTED",
-                    RecoveryStrategy(
-                        RecoveryAction.DEGRADE, "Physical memory pool exhausted"
-                    ),
+                    RecoveryStrategy(RecoveryAction.DEGRADE, "Physical memory pool exhausted"),
                 )
             )
 
@@ -442,9 +436,7 @@ class MemoryManager:
             return Result(
                 error=MemoryErrorResult(
                     "ERR_SLOT_EXHAUSTED",
-                    RecoveryStrategy(
-                        RecoveryAction.DEGRADE, "Slot allocation pool exhausted"
-                    ),
+                    RecoveryStrategy(RecoveryAction.DEGRADE, "Slot allocation pool exhausted"),
                 )
             )
 
@@ -473,9 +465,7 @@ class MemoryManager:
             return Result(
                 error=MemoryErrorResult(
                     "ERR_INVALID_SIZE",
-                    RecoveryStrategy(
-                        RecoveryAction.RETRY, "Requested SHM size out of bounds"
-                    ),
+                    RecoveryStrategy(RecoveryAction.RETRY, "Requested SHM size out of bounds"),
                 )
             )
 
@@ -483,9 +473,7 @@ class MemoryManager:
             return Result(
                 error=MemoryErrorResult(
                     "ERR_SHM_EXHAUSTED",
-                    RecoveryStrategy(
-                        RecoveryAction.DEGRADE, "No free SHM pages in physical pool"
-                    ),
+                    RecoveryStrategy(RecoveryAction.DEGRADE, "No free SHM pages in physical pool"),
                 )
             )
 
@@ -521,9 +509,7 @@ class MemoryManager:
             return Result(
                 error=MemoryErrorResult(
                     "ERR_INVALID_SHM_ID",
-                    RecoveryStrategy(
-                        RecoveryAction.RETRY, "Invalid or deallocated SHM ID"
-                    ),
+                    RecoveryStrategy(RecoveryAction.RETRY, "Invalid or deallocated SHM ID"),
                 )
             )
 
@@ -533,9 +519,7 @@ class MemoryManager:
             return Result(
                 error=MemoryErrorResult(
                     "ERR_GRANT_NOT_COMPLETED",
-                    RecoveryStrategy(
-                        RecoveryAction.RETRY, "Grant phase incomplete in vMMIO PTE"
-                    ),
+                    RecoveryStrategy(RecoveryAction.RETRY, "Grant phase incomplete in vMMIO PTE"),
                 )
             )
 

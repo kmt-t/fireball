@@ -67,12 +67,12 @@ def build_model(*, guards: bool = True) -> Kripke:
     if not guards:
         # ガード無効時（変異検査）:
         # 1. クライアント・サーバ規律を破り、タスク A がサスペンド待機中にタスク B も A にブロック送信すると循環デッドロック
-        R = R + [("s_blocked_tx_a", "s_deadlock")]
+        R = [*R, ("s_blocked_tx_a", "s_deadlock")]
         # 2. 所有権アトミック剥奪を怠ると、ハンドオフ中に二重所有が発生
-        R = R + [("s_handoff_1", "s_double_owned")]
+        R = [*R, ("s_handoff_1", "s_double_owned")]
         # 3. FB_CONF_MAX_CONSECUTIVE_HANDOFFS の強制 yield を外すと、上限到達後も
         #    ハンドオフ連鎖を続けられてしまい、メインループへ復帰しないライブロックに陥る
-        R = R + [("s_handoff_max", "s_handoff_livelock")]
+        R = [*R, ("s_handoff_max", "s_handoff_livelock")]
 
     L = {
         "s_main_loop": {"main_loop"},

@@ -100,9 +100,7 @@ class VirtualFile:
 class WasiDummyContext:
     """Simulates the host environment implementing WASI Preview 1 calls."""
 
-    def __init__(
-        self, env: dict[str, str] | None = None, args: list[str] | None = None
-    ):
+    def __init__(self, env: dict[str, str] | None = None, args: list[str] | None = None):
 
         self.stdin_buffer = bytearray(b"INPUT_STREAM_DATA\n")
         self.stdin_pos = 0
@@ -113,9 +111,7 @@ class WasiDummyContext:
         # Virtual FD table
         self.files: dict[int, VirtualFile] = {
             3: VirtualFile("config.ini", b"[system]\nrate=1000\n", read_only=False),
-            4: VirtualFile(
-                "sensors.dat", b"\x01\x02\x03\x04\x05\x06\x07\x08", read_only=True
-            ),
+            4: VirtualFile("sensors.dat", b"\x01\x02\x03\x04\x05\x06\x07\x08", read_only=True),
         }
         self.next_fd = 5
 

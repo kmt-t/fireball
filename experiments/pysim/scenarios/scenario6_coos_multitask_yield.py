@@ -86,9 +86,7 @@ def test_scenario_coos_multitask():
     sysv = System()
     wasi_ctx = WasiHostContext(sysv)
     host_funcs = wasi_ctx.build_interpreter_host_functions(module)
-    interp = Interpreter(
-        module, memory=wasi_ctx.guest_memory, host_functions=host_funcs
-    )
+    interp = Interpreter(module, memory=wasi_ctx.guest_memory, host_functions=host_funcs)
     fn_prod = module.export_func_index("producer_task")
     fn_cons = module.export_func_index("consumer_task")
     N = 100  # 100 items: sum(1..100) * 10 = 5050 * 10 = 50500
@@ -121,13 +119,9 @@ def test_scenario_coos_multitask():
             cons_res = e.value
             cons_done = True
 
-    assert cons_res == [50500], (
-        f"Consumer task sum mismatch: expected 50500, got {cons_res}"
-    )
+    assert cons_res == [50500], f"Consumer task sum mismatch: expected 50500, got {cons_res}"
     assert cons_yields > 0, "Consumer should have yielded multiple times"
-    print(
-        f"    -> Consumer yielded {cons_yields} times and computed expected sum: {cons_res[0]}."
-    )
+    print(f"    -> Consumer yielded {cons_yields} times and computed expected sum: {cons_res[0]}.")
     print("    [PASS] Scenario 6 (COOS Cooperative Multitasking) succeeded seamlessly.")
 
 

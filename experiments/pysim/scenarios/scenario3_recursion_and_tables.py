@@ -94,9 +94,7 @@ def test_scenario_recursion_and_tables():
     sysv = System()
     wasi_ctx = WasiHostContext(sysv)
     host_funcs = wasi_ctx.build_interpreter_host_functions(module)
-    interp = Interpreter(
-        module, memory=wasi_ctx.guest_memory, host_functions=host_funcs
-    )
+    interp = Interpreter(module, memory=wasi_ctx.guest_memory, host_functions=host_funcs)
     # 1. Test Recursive Fibonacci (fib(12) = 144)
     fn_fib = module.export_func_index("fib")
     res_fib = interp.call(fn_fib, [12])
@@ -106,9 +104,7 @@ def test_scenario_recursion_and_tables():
     assert interp.call(fn_dispatch, [0, 40, 2]) == [42], "call_indirect (add) failed"
     assert interp.call(fn_dispatch, [1, 50, 8]) == [42], "call_indirect (sub) failed"
     assert interp.call(fn_dispatch, [2, 6, 7]) == [42], "call_indirect (mul) failed"
-    assert interp.call(fn_dispatch, [3, 0x55, 0x7F]) == [0x2A], (
-        "call_indirect (xor) failed"
-    )
+    assert interp.call(fn_dispatch, [3, 0x55, 0x7F]) == [0x2A], "call_indirect (xor) failed"
     # 3. Test br_table switch
     fn_br_table = module.export_func_index("test_br_table")
     assert interp.call(fn_br_table, [0]) == [100], "br_table case 0 failed"

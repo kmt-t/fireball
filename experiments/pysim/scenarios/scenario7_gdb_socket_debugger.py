@@ -71,8 +71,7 @@ class GDBClientHelper:
             buf += chunk
 
         # Consume ACK
-        if buf.startswith("+"):
-            buf = buf[1:]
+        buf = buf.removeprefix("+")
 
         # Extract payload from response '$reply#cksum'
         if "$" in buf and "#" in buf:
@@ -161,9 +160,7 @@ def test_scenario_gdb_socket_debugger():
         # Step 10: Continue to termination ('c') -> Execute block30, exit with W00
         resp = client.send_raw_packet("c")
         assert resp == "W00" and ctx.locals[1] == 498
-        print(
-            "    [PASS] Scenario 7 (GDB Socket Debugger Session) succeeded seamlessly."
-        )
+        print("    [PASS] Scenario 7 (GDB Socket Debugger Session) succeeded seamlessly.")
 
     finally:
         client.close()

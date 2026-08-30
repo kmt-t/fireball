@@ -47,9 +47,9 @@ def build_model(*, guards: bool = True) -> Kripke:
     if not guards:
         # ガード無効時（変異検査）:
         # 1. overwrite-on-full 方針を外すと、満杯時の log_event が呼び出し側をブロックする
-        R = R + [("s_active_full", "s_blocked_caller")]
+        R = [*R, ("s_active_full", "s_blocked_caller")]
         # 2. Idle Hook 連携を外すと、保留ログが一度もフラッシュされずに終わる経路が生じる
-        R = R + [("s_active_partial", "s_never_flushed")]
+        R = [*R, ("s_active_partial", "s_never_flushed")]
 
     L = {
         "s_idle_empty": {"flushed"},

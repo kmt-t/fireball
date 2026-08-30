@@ -141,9 +141,7 @@ def test_coos_02_recv_after_send_completes_rendezvous():
     action, _ = sched.channel_recv("ch_test")
     assert action in ("DIRECT_SWITCH", "YIELD")
     assert t2.received_val == "DATA_PAYLOAD"
-    assert t1.pending_val is None, (
-        "Pending value must be cleared on sender (no double-ownership)"
-    )
+    assert t1.pending_val is None, "Pending value must be cleared on sender (no double-ownership)"
     assert t1.state == TaskState.READY
     assert t2.state == TaskState.READY
 
@@ -188,9 +186,7 @@ def test_coos_05_one_waiter_per_channel_enforced():
     sched.current_task = t2
     try:
         sched.channel_send("ch_test", 2)
-        raise AssertionError(
-            "Expected AssertionError for second sender on same channel"
-        )
+        raise AssertionError("Expected AssertionError for second sender on same channel")
 
     except AssertionError as e:
         assert "separate channels" in str(e)
@@ -235,9 +231,7 @@ def test_coos_07_consecutive_handoff_limit_yields():
     sched.channel_send("ch3", 3)
     sched.current_task = t2
     act3, _ = sched.channel_recv("ch3")
-    assert act3 == "YIELD", (
-        "Must yield back to scheduler when consecutive handoffs reach threshold"
-    )
+    assert act3 == "YIELD", "Must yield back to scheduler when consecutive handoffs reach threshold"
     assert sched.consecutive_handoffs == 0
 
 
@@ -386,9 +380,7 @@ def test_mem_05_release_and_deallocate_owner_only():
 def test_mem_06_guest_ram_64kb_alignment():
     """MEM-06: pool_base is strictly 64KB aligned."""
     mm = MemoryManager()
-    assert mm.init_manager(
-        pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE
-    ).is_ok
+    assert mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE).is_ok
     try:
         mm.init_manager(pool_base=0x20021000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
         raise AssertionError("Expected AssertionError for unaligned pool_base")
@@ -498,9 +490,7 @@ def test_hal_03_shm_pool_rejects_oversized():
         except ValueError:
             pass
 
-        handles = [
-            pool.acquire_buffer(1, size=32) for _ in range(FB_CONF_HAL_MAX_BUFFERS)
-        ]
+        handles = [pool.acquire_buffer(1, size=32) for _ in range(FB_CONF_HAL_MAX_BUFFERS)]
         assert len(handles) == FB_CONF_HAL_MAX_BUFFERS
 
     finally:
@@ -648,9 +638,7 @@ def test_recovery_04_errorcode_to_strategy_mapping():
     assert classify_error_strategy(63) == RecoveryStrategy.PANIC  # EPERM
     assert classify_error_strategy(21) == RecoveryStrategy.PANIC  # EFAULT
     # String traps
-    assert (
-        classify_error_strategy("TRAP_MEMORY_OUT_OF_BOUNDS") == RecoveryStrategy.PANIC
-    )
+    assert classify_error_strategy("TRAP_MEMORY_OUT_OF_BOUNDS") == RecoveryStrategy.PANIC
     assert classify_error_strategy("TRAP_ACCESS_VIOLATION") == RecoveryStrategy.PANIC
     assert classify_error_strategy("TRAP_OWNER_MISMATCH") == RecoveryStrategy.PANIC
     assert classify_error_strategy("TRAP_UNDEFINED_FC") == RecoveryStrategy.PANIC
@@ -676,9 +664,7 @@ def test_hotspot_01_2bit_card_marking_state_transitions():
     # Mark COMPILED
     bitmap.mark_compiled(pc)
     assert bitmap.get_state(pc) == CardState.COMPILED
-    assert (
-        bitmap.touch(pc) == CardState.COMPILED
-    )  # JITR-03: COMPILED touch remains COMPILED
+    assert bitmap.touch(pc) == CardState.COMPILED  # JITR-03: COMPILED touch remains COMPILED
 
 
 def test_jitr_01_card_marking_granularity():
@@ -774,9 +760,7 @@ def test_jitr_31_to_35_trace_chaining_and_ok_unlinking():
 
 def test_jitc_20_trace_header_16byte_physical_layout():
     """JITC-20: Trace header is strictly 16 bytes: u32 pc, u16 size, u8 flags, u8 variant, u32 next, u32 target."""
-    hdr = JITTraceHeader(
-        head_wasm_pc=0x12345678, trace_byte_size=128, flags=0x01, variant_id=0x02
-    )
+    hdr = JITTraceHeader(head_wasm_pc=0x12345678, trace_byte_size=128, flags=0x01, variant_id=0x02)
     hdr.chain_next_pc = 0x87654321
     hdr.chain_target_addr = 0x20001000
     raw = hdr.pack()
@@ -889,10 +873,7 @@ def test_ipc_02_e2e_shared_block_transfer():
         assert addr >= 0x20020000
         # Sender releases to FLIGHT
         shm_id = sb.release()
-        assert (
-            sysv.memory_manager.vmmio_registry.get_owner(sb.page_idx)
-            == FB_TASK_ID_FLIGHT
-        )
+        assert sysv.memory_manager.vmmio_registry.get_owner(sb.page_idx) == FB_TASK_ID_FLIGHT
         # Route via IPC
         msg = IPCMessage(resource_id="shm_msg", payload={"shm_id": shm_id})
         status, _ = sysv.ipc.route_message("CLIENT_APP", "fireball://hal/gpio/0", msg)
@@ -903,9 +884,7 @@ def test_ipc_02_e2e_shared_block_transfer():
         recv_shm_id = recv_msg.payload["shm_id"]
         # Grant to task 2 and claim
         sysv.memory_manager.vmmio_registry.update_owner(sb.page_idx, 2)
-        recv_sb = sysv.memory_manager.claim(
-            receiver_task_id=2, shm_id=recv_shm_id
-        ).unwrap()
+        recv_sb = sysv.memory_manager.claim(receiver_task_id=2, shm_id=recv_shm_id).unwrap()
         assert recv_sb.get_owner() == 2
         assert recv_sb.get_address() == addr
 
@@ -953,19 +932,10 @@ def test_syscall_02_sys_control_registers():
 
     sysv = System()
     try:
-        assert (
-            sysv.fireball_call(FbSyscallId.SYS_YIELD, 0, 0, 0, 0, 0, 0)
-            == WasiErrno.SUCCESS
-        )
-        assert (
-            sysv.fireball_call(FbSyscallId.SYS_RESET, 0, 0, 0, 0, 0, 0)
-            == WasiErrno.SUCCESS
-        )
+        assert sysv.fireball_call(FbSyscallId.SYS_YIELD, 0, 0, 0, 0, 0, 0) == WasiErrno.SUCCESS
+        assert sysv.fireball_call(FbSyscallId.SYS_RESET, 0, 0, 0, 0, 0, 0) == WasiErrno.SUCCESS
         assert sysv.reset_requested
-        assert (
-            sysv.fireball_call(FbSyscallId.SYS_HALT, 0, 0, 0, 0, 0, 0)
-            == WasiErrno.SUCCESS
-        )
+        assert sysv.fireball_call(FbSyscallId.SYS_HALT, 0, 0, 0, 0, 0, 0) == WasiErrno.SUCCESS
         assert sysv.halted
 
     finally:
@@ -981,10 +951,7 @@ def test_syscall_03_mmio_read_write():
             sysv.fireball_call(FbSyscallId.MMIO_WRITE32, addr, 0xCAFEBABE, 0, 0, 0, 0)
             == WasiErrno.SUCCESS
         )
-        assert (
-            sysv.fireball_call(FbSyscallId.MMIO_READ32, addr, 0, 0, 0, 0, 0)
-            == 0xCAFEBABE
-        )
+        assert sysv.fireball_call(FbSyscallId.MMIO_READ32, addr, 0, 0, 0, 0, 0) == 0xCAFEBABE
 
     finally:
         sysv.shutdown()
@@ -998,14 +965,8 @@ def test_syscall_04_vdma_transfer():
         guest_mem[0:4] = struct.pack("<I", 0x11223344)
         sysv.bind_guest(guest_mem, task_id=1)
         dst = FB_CONF_VSOC_PASSTHROUGH_BASE + 0x1000
-        assert (
-            sysv.fireball_call(FbSyscallId.VDMA_START, 0, dst, 4, 0, 0, 0)
-            == WasiErrno.SUCCESS
-        )
-        assert (
-            sysv.fireball_call(FbSyscallId.MMIO_READ32, dst, 0, 0, 0, 0, 0)
-            == 0x11223344
-        )
+        assert sysv.fireball_call(FbSyscallId.VDMA_START, 0, dst, 4, 0, 0, 0) == WasiErrno.SUCCESS
+        assert sysv.fireball_call(FbSyscallId.MMIO_READ32, dst, 0, 0, 0, 0, 0) == 0x11223344
 
     finally:
         sysv.shutdown()
@@ -1017,10 +978,7 @@ def test_syscall_05_irq_flags():
     try:
         sysv.raise_irq(0x4)
         assert sysv.fireball_call(FbSyscallId.IRQ_READ_FLAGS, 0, 0, 0, 0, 0, 0) == 0x4
-        assert (
-            sysv.fireball_call(FbSyscallId.IRQ_CLEAR, 0x4, 0, 0, 0, 0, 0)
-            == WasiErrno.SUCCESS
-        )
+        assert sysv.fireball_call(FbSyscallId.IRQ_CLEAR, 0x4, 0, 0, 0, 0, 0) == WasiErrno.SUCCESS
         assert sysv.fireball_call(FbSyscallId.IRQ_READ_FLAGS, 0, 0, 0, 0, 0, 0) == 0
 
     finally:
@@ -1060,10 +1018,7 @@ def test_syscall_07_wasi_fd_write():
         guest_mem[32 : 32 + len(message)] = message
         struct.pack_into("<II", guest_mem, 0, 32, len(message))
         sysv.bind_guest(guest_mem, task_id=1)
-        assert (
-            sysv.fireball_call(FbSyscallId.WASI_FD_WRITE, 1, 0, 1, 48, 0, 0)
-            == WasiErrno.SUCCESS
-        )
+        assert sysv.fireball_call(FbSyscallId.WASI_FD_WRITE, 1, 0, 1, 48, 0, 0) == WasiErrno.SUCCESS
         assert sysv.transport.drain() == message
         nwritten = struct.unpack_from("<I", guest_mem, 48)[0]
         assert nwritten == len(message)
@@ -1087,8 +1042,7 @@ def test_wasi_01_fd_write_scatter_gather():
         sysv.bind_guest(guest_mem, task_id=1)
         # Write to stdout (fd=1) with 2 iovecs, result at offset 100
         assert (
-            sysv.fireball_call(FbSyscallId.WASI_FD_WRITE, 1, 0, 2, 100, 0, 0)
-            == WasiErrno.SUCCESS
+            sysv.fireball_call(FbSyscallId.WASI_FD_WRITE, 1, 0, 2, 100, 0, 0) == WasiErrno.SUCCESS
         )
         assert sysv.transport.drain() == chunk1 + chunk2
         nwritten = struct.unpack_from("<I", guest_mem, 100)[0]
@@ -1105,10 +1059,7 @@ def test_wasi_02_fd_read_eof():
         guest_mem = bytearray(64)
         struct.pack_into("<II", guest_mem, 0, 16, 32)
         sysv.bind_guest(guest_mem, task_id=1)
-        assert (
-            sysv.fireball_call(FbSyscallId.WASI_FD_READ, 0, 0, 1, 48, 0, 0)
-            == WasiErrno.SUCCESS
-        )
+        assert sysv.fireball_call(FbSyscallId.WASI_FD_READ, 0, 0, 1, 48, 0, 0) == WasiErrno.SUCCESS
         nread = struct.unpack_from("<I", guest_mem, 48)[0]
         assert nread == 0  # Standard WASI EOF
 
@@ -1120,10 +1071,7 @@ def test_wasi_03_fd_close():
     """SYS-82: WASI_FD_CLOSE returns SUCCESS for any fd."""
     sysv = System()
     try:
-        assert (
-            sysv.fireball_call(FbSyscallId.WASI_FD_CLOSE, 3, 0, 0, 0, 0, 0)
-            == WasiErrno.SUCCESS
-        )
+        assert sysv.fireball_call(FbSyscallId.WASI_FD_CLOSE, 3, 0, 0, 0, 0, 0) == WasiErrno.SUCCESS
 
     finally:
         sysv.shutdown()
@@ -1159,8 +1107,7 @@ def test_wasi_05_proc_exit():
     try:
         assert sysv.halted is False
         assert (
-            sysv.fireball_call(FbSyscallId.WASI_PROC_EXIT, 42, 0, 0, 0, 0, 0)
-            == WasiErrno.SUCCESS
+            sysv.fireball_call(FbSyscallId.WASI_PROC_EXIT, 42, 0, 0, 0, 0, 0) == WasiErrno.SUCCESS
         )
         assert sysv.halted is True
         assert sysv.exit_code == 42
@@ -1176,8 +1123,7 @@ def test_wasi_06_random_get():
         guest_mem = bytearray(64)
         sysv.bind_guest(guest_mem, task_id=1)
         assert (
-            sysv.fireball_call(FbSyscallId.WASI_RANDOM_GET, 8, 16, 0, 0, 0, 0)
-            == WasiErrno.SUCCESS
+            sysv.fireball_call(FbSyscallId.WASI_RANDOM_GET, 8, 16, 0, 0, 0, 0) == WasiErrno.SUCCESS
         )
         random_bytes = bytes(guest_mem[8:24])
         assert len(random_bytes) == 16
@@ -1567,17 +1513,13 @@ def test_cont_09_jit_entry_lookup_card_table_prefilter():
     tree = RadixBinaryTreeView(keys, values, radix_table, radix_shift=8)
     # PC 0x0100 is card 1 (shift=8). Currently UNEXECUTED (0) -> lookup returns None without search
     assert (
-        lookup_jit_entry(
-            tree, card_table, radix_table, pc=0x0100, card_shift=8, group_shift=8
-        )
+        lookup_jit_entry(tree, card_table, radix_table, pc=0x0100, card_shift=8, group_shift=8)
         is None
     )
     # Mark card 1 as COMPILED (3)
     card_table.put(1, 3)
     assert (
-        lookup_jit_entry(
-            tree, card_table, radix_table, pc=0x0100, card_shift=8, group_shift=8
-        )
+        lookup_jit_entry(tree, card_table, radix_table, pc=0x0100, card_shift=8, group_shift=8)
         == "NATIVE_0100"
     )
 
@@ -1619,9 +1561,7 @@ def test_coop_01_wasm_coroutine_yields_on_quantum():
     mod = parse(wat_to_wasm(wat))
     interp = Interpreter(mod)
     # Execute with yield every 10 instructions
-    coro = interp.call_coroutine(
-        mod.export_func_index("busy_loop"), [0], yield_every=10
-    )
+    coro = interp.call_coroutine(mod.export_func_index("busy_loop"), [0], yield_every=10)
     yield_count = 0
     result = None
     try:

@@ -162,9 +162,7 @@ class IPCRouter:
 
         self.queues = {"ch_coos": [], "ch_gpio": [], "ch_dbg": []}
 
-    def route_message(
-        self, sender_role: str, uri: str, message: IPCMessage
-    ) -> tuple[str, str]:
+    def route_message(self, sender_role: str, uri: str, message: IPCMessage) -> tuple[str, str]:
         """3-stage IPC routing pipeline with Zero-Copy Handoff & Rollback."""
         assert message.ownership == OwnershipState.SENDER_OWNS
 

@@ -36,7 +36,7 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-from typing import Callable
+from collections.abc import Callable
 
 
 class TrapCode:
@@ -169,9 +169,7 @@ class VMMIOController:
             owner_id=owner_id,
         )
 
-    def map_passthrough_page(
-        self, vpn: int, phys_page: int, read: bool = True, write: bool = True
-    ):
+    def map_passthrough_page(self, vpn: int, phys_page: int, read: bool = True, write: bool = True):
         """Registers a Tier 3 Passthrough page (FC=15) into FlatMap."""
         self.ptes[vpn] = Tier3PTE(
             phys_page=phys_page,
@@ -231,9 +229,7 @@ class VMMIOController:
         self.tlb[tlb_idx] = {"vpn": vpn, "pte": pte}
         return pte
 
-    def access(
-        self, raw_addr: int, is_write: bool, current_task_id: int = 0
-    ) -> tuple[str, str]:
+    def access(self, raw_addr: int, is_write: bool, current_task_id: int = 0) -> tuple[str, str]:
         """
         Full dispatch: RAM bypass -> TLB/FlatMap -> permission check (always,
         TLB hit or not) -> syscall dispatch or physical access.

@@ -10,7 +10,8 @@ Reference Concept Implementation: Exhaustive WASM MVP (v1) Stack Interpreter & A
 """
 
 import struct
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any
 
 
 class WASMTrap(Exception):
@@ -62,7 +63,7 @@ class ControlFrame:
         self.saved_sp = saved_sp
         self.result_arity = result_arity
         self.is_loop = is_loop
-        self.exec_trace: Optional[Callable] = None
+        self.exec_trace: Callable | None = None
 
 
 class ExecutionContext:
@@ -120,9 +121,7 @@ class WASMInterpreter:
     def __init__(self):
         pass
 
-    def execute_function(
-        self, ctx: ExecutionContext, func_idx: int, args: list[Any]
-    ) -> Any:
+    def execute_function(self, ctx: ExecutionContext, func_idx: int, args: list[Any]) -> Any:
         """
         Pushes a new CallFrame on the unified stack and executes function bytecode.
         """
@@ -147,9 +146,7 @@ class WASMInterpreter:
             return res
         return None
 
-    def execute_bytecode(
-        self, ctx: ExecutionContext, bytecode: list[tuple[str, Any]]
-    ) -> str:
+    def execute_bytecode(self, ctx: ExecutionContext, bytecode: list[tuple[str, Any]]) -> str:
         """
         Direct-Threaded CPS execution loop over WASM MVP opcodes via _DISPATCH_TABLE.
         """
@@ -174,7 +171,7 @@ _DISPATCH_TABLE: dict[
     str,
     Callable[
         [ExecutionContext, Any, int, WASMInterpreter],
-        tuple[Optional[str], Optional[int]],
+        tuple[str | None, int | None],
     ],
 ] = {}
 
@@ -571,17 +568,13 @@ def _h_i64_store32(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpr
 
 
 @_op_handler("memory.size")
-def _h_memory_size_op(
-    ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter
-):
+def _h_memory_size_op(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
     ctx.push(ctx.mem_pages)
     return (None, None)
 
 
 @_op_handler("memory.grow")
-def _h_memory_grow_op(
-    ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter
-):
+def _h_memory_grow_op(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
     delta = ctx.pop()
     old_pages = ctx.mem_pages
     ctx.memory.extend(bytearray(delta * 65536))
@@ -1079,9 +1072,7 @@ def _h_i32_wrap_i64(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterp
 
 
 @_op_handler("i64.extend_i32_s")
-def _h_i64_extend_i32_s(
-    ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter
-):
+def _h_i64_extend_i32_s(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
     val32 = ctx.pop() & 0xFFFF_FFFF
     signed32 = struct.unpack(">i", struct.pack(">I", val32))[0]
     ctx.push(struct.unpack(">Q", struct.pack(">q", signed32))[0])
@@ -1089,9 +1080,7 @@ def _h_i64_extend_i32_s(
 
 
 @_op_handler("i64.extend_i32_u")
-def _h_i64_extend_i32_u(
-    ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter
-):
+def _h_i64_extend_i32_u(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
     val32 = ctx.pop() & 0xFFFF_FFFF
     ctx.push(val32)
     return (None, None)

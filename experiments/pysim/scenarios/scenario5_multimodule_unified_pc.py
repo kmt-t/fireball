@@ -107,9 +107,7 @@ def test_scenario_multimodule_unified_pc():
     sysv_t2 = System()
     wasi_t2 = WasiHostContext(sysv_t2)
     funcs_t2 = wasi_t2.build_interpreter_host_functions(module)
-    interp_t2 = Interpreter(
-        module, memory=wasi_t2.guest_memory, host_functions=funcs_t2
-    )
+    interp_t2 = Interpreter(module, memory=wasi_t2.guest_memory, host_functions=funcs_t2)
     res_t2 = interp_t2.call(fn_idx, [ITERS])
     # 2. Tier 3 Hybrid Execution
     sysv_t3 = System()
@@ -135,9 +133,7 @@ def test_scenario_multimodule_unified_pc():
     assert res_t2 == res_t3, f"Calculations diverged: T2={res_t2} vs T3={res_t3}"
     assert len(runtime_engine.cache.active.traces) > 0, "No JIT traces compiled"
     # 3. Verify that traces belong to multiple distinct functions via UnifiedPC
-    func_indices_in_jit = set(
-        (pc >> 16) for pc, _ in runtime_engine.cache.active.traces
-    )
+    func_indices_in_jit = {(pc >> 16) for pc, _ in runtime_engine.cache.active.traces}
     print(f"    -> Compiled JIT traces belong to functions: {func_indices_in_jit}")
     assert len(func_indices_in_jit) >= 2, "Traces should span across multiple functions"
     # 4. Verify RadixBinaryTreeView lookup across all compiled UnifiedPCs
@@ -158,7 +154,7 @@ def test_scenario_multimodule_unified_pc():
         radix_table[current_prefix] = len(keys)
 
     radix_tree = RadixBinaryTreeView(keys, vals, radix_table, radix_shift=radix_shift)
-    for k, v in zip(keys, vals):
+    for k, v in zip(keys, vals, strict=False):
         found = radix_tree.find(k)
         assert found is v, f"RadixBinaryTreeView lookup failed for UnifiedPC 0x{k:08X}"
 

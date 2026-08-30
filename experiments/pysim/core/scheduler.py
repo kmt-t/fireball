@@ -36,8 +36,9 @@ for _p in [
         sys.path.insert(0, _sp)
 
 from collections import deque
+from collections.abc import Callable, Generator
 from enum import Enum, auto
-from typing import Any, Callable, Generator
+from typing import Any
 
 FB_CONF_MAX_TASKS = 16
 FB_CONF_MAX_CONSECUTIVE_HANDOFFS = 4
@@ -69,9 +70,7 @@ class Channel:
 
 
 class Task:
-    def __init__(
-        self, task_id: int | str, name: str, coro: Generator[Any, None, None] | None
-    ):
+    def __init__(self, task_id: int | str, name: str, coro: Generator[Any, None, None] | None):
 
         self.task_id = task_id
         self.name = name
@@ -98,9 +97,7 @@ class Scheduler:
         self.current_task: Task | None = None
         self._next_id = 1
         self.idle_hooks: list[Callable[[], None]] = []
-        self.interrupt_event_queue: deque[int] = deque(
-            maxlen=FB_CONF_INTERRUPT_QUEUE_SIZE
-        )
+        self.interrupt_event_queue: deque[int] = deque(maxlen=FB_CONF_INTERRUPT_QUEUE_SIZE)
         self.irq_waiters: list[tuple[int, list[Task]]] = []
         self.dropped_irqs = 0
 

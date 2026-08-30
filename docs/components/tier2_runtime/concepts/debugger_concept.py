@@ -10,7 +10,7 @@ Architecture:
 - Integrated Profiler & Test Tool: PC sampling counter and memory/register assertion hooks ({Debug_Integrated}).
 """
 
-from typing import Any, Optional
+from typing import Any
 
 
 class WASMTrap(Exception):
@@ -25,9 +25,7 @@ class WASMTrap(Exception):
 class CallFrame:
     """Inline CallFrame placed on the unified stack."""
 
-    def __init__(
-        self, parent_offset: int, return_pc: int, func_idx: int, local_base: int
-    ):
+    def __init__(self, parent_offset: int, return_pc: int, func_idx: int, local_base: int):
         self.parent_offset = parent_offset
         self.return_pc = return_pc
         self.func_idx = func_idx
@@ -44,7 +42,7 @@ class ExecutionContext:
         self.pc: int = 0
         self.stack: list[int] = [0] * stack_capacity  # Unified stack buffer
         self.sp_offset: int = 0  # Current stack growth length
-        self.current_frame: Optional[CallFrame] = None
+        self.current_frame: CallFrame | None = None
         self.memory: bytearray = bytearray(memory_size)
         self.is_debug_mode: bool = False
         self.halted: bool = False
@@ -146,9 +144,7 @@ class DebuggerManager:
         self.attached: bool = False
         # Integrated Profiler & Test Tool statistics ({Debug_Integrated})
         self.pc_sample_counts: dict[int, int] = {}
-        self.memory_assertions: list[
-            tuple[int, int, str]
-        ] = []  # (addr, expected_val, desc)
+        self.memory_assertions: list[tuple[int, int, str]] = []  # (addr, expected_val, desc)
         self.assertion_violations: list[str] = []
 
     def attach(self):

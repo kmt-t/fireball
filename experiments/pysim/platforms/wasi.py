@@ -31,7 +31,8 @@ for _p in [
         sys.path.insert(0, _sp)
 
 import ctypes
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from loader import fnv1a_32
 from system import FbSyscallId, System
@@ -42,15 +43,11 @@ from wasm_module import Module
 class WasiHostContext:
     """Provides WASI Preview 1 and Fireball host functions for WASM guest execution."""
 
-    def __init__(
-        self, sysv: System, guest_memory: bytearray | None = None, task_id: int = 1
-    ):
+    def __init__(self, sysv: System, guest_memory: bytearray | None = None, task_id: int = 1):
 
         self.sysv = sysv
         self.task_id = task_id
-        self.guest_memory = (
-            guest_memory if guest_memory is not None else bytearray(64 * 1024)
-        )
+        self.guest_memory = guest_memory if guest_memory is not None else bytearray(64 * 1024)
         self.sysv.bind_guest(self.guest_memory, task_id=self.task_id)
         self._keepalive_trampolines: list[Any] = []
         # Build static host import table via RadixBinaryTreeView
@@ -96,9 +93,7 @@ class WasiHostContext:
         else:
             radix_table = [0]
 
-        self._import_tree = RadixBinaryTreeView(
-            keys, values, radix_table, radix_shift=radix_shift
-        )
+        self._import_tree = RadixBinaryTreeView(keys, values, radix_table, radix_shift=radix_shift)
 
     def fd_write(self, fd: int, iovs_ptr: int, iovs_len: int, nwritten_ptr: int) -> int:
 
@@ -118,32 +113,22 @@ class WasiHostContext:
 
     def fd_close(self, fd: int) -> int:
 
-        return int(
-            self.sysv.fireball_call(FbSyscallId.WASI_FD_CLOSE, fd, 0, 0, 0, 0, 0)
-        )
+        return int(self.sysv.fireball_call(FbSyscallId.WASI_FD_CLOSE, fd, 0, 0, 0, 0, 0))
 
     def clock_time_get(self, clock_id: int, precision: int, time_ptr: int) -> int:
 
         return int(
-            self.sysv.fireball_call(
-                FbSyscallId.WASI_CLOCK_TIME_GET, clock_id, 0, time_ptr, 0, 0, 0
-            )
+            self.sysv.fireball_call(FbSyscallId.WASI_CLOCK_TIME_GET, clock_id, 0, time_ptr, 0, 0, 0)
         )
 
     def proc_exit(self, exit_code: int) -> int:
 
-        return int(
-            self.sysv.fireball_call(
-                FbSyscallId.WASI_PROC_EXIT, exit_code, 0, 0, 0, 0, 0
-            )
-        )
+        return int(self.sysv.fireball_call(FbSyscallId.WASI_PROC_EXIT, exit_code, 0, 0, 0, 0, 0))
 
     def random_get(self, buf_ptr: int, buf_len: int) -> int:
 
         return int(
-            self.sysv.fireball_call(
-                FbSyscallId.WASI_RANDOM_GET, buf_ptr, buf_len, 0, 0, 0, 0
-            )
+            self.sysv.fireball_call(FbSyscallId.WASI_RANDOM_GET, buf_ptr, buf_len, 0, 0, 0, 0)
         )
 
     def fireball_call(
@@ -172,9 +157,7 @@ class WasiHostContext:
 
         return None
 
-    def build_interpreter_host_functions(
-        self, module: Module
-    ) -> dict[int, Callable[..., int]]:
+    def build_interpreter_host_functions(self, module: Module) -> dict[int, Callable[..., int]]:
         """Maps all imported functions in the module to host function callables for the Interpreter."""
         host_funcs: dict[int, Callable[..., int]] = {}
         for idx, imp in enumerate(module.imports):
@@ -195,9 +178,7 @@ class WasiHostContext:
             ft = module.types[imp.type_index]
             nparams = len(ft.params)
             c_args = [ctypes.c_uint32] * nparams
-            c_ret = (
-                ctypes.c_uint32 if ft.results else ctypes.c_uint32
-            )  # WASI returns errno as u32
+            c_ret = ctypes.c_uint32  # WASI returns errno as u32
             c_func_type = ctypes.CFUNCTYPE(c_ret, *c_args)
 
             def make_wrapper(h: Callable[..., int], np: int):

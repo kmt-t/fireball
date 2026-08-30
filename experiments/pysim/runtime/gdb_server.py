@@ -52,9 +52,7 @@ class GDBServer:
         self._running = False
         self.actual_port: int = 0
 
-    def start(
-        self, current_pc: int, ctx: WASMContext, blocks: dict[int, BasicBlock]
-    ) -> int:
+    def start(self, current_pc: int, ctx: WASMContext, blocks: dict[int, BasicBlock]) -> int:
         """Starts TCP listener in a background thread and returns bound port."""
         self._server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -91,9 +89,7 @@ class GDBServer:
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=1.0)
 
-    def _server_loop(
-        self, start_pc: int, ctx: WASMContext, blocks: dict[int, BasicBlock]
-    ) -> None:
+    def _server_loop(self, start_pc: int, ctx: WASMContext, blocks: dict[int, BasicBlock]) -> None:
         """Accepts a client connection and processes RSP packets until disconnected."""
         try:
             self._server_sock.settimeout(2.0)
@@ -103,7 +99,7 @@ class GDBServer:
                     self._client_sock = client
                     break
 
-                except socket.timeout:
+                except TimeoutError:
                     continue
 
             if not self._running or not self._client_sock:
@@ -121,7 +117,7 @@ class GDBServer:
 
                     buffer += data.decode("latin1")
 
-                except socket.timeout:
+                except TimeoutError:
                     continue
 
                 except Exception:

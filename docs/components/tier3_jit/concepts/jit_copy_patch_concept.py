@@ -9,11 +9,12 @@ Reference Concept Implementation: Full-Set Copy-and-Patch JIT Engine & MPU W^X T
 """
 
 import os
+import struct
 import sys
 from typing import Any
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from jit_assembler_constexpr_concept import Cond, Reg, Thumb2Assembler  # noqa: E402
+from jit_assembler_constexpr_concept import Cond, Reg, Thumb2Assembler
 
 
 class MPUAttribute:
@@ -54,9 +55,7 @@ class Stencil:
         "i32_store16_r8": 2,
     }
 
-    def __init__(
-        self, name: str, code: list[str], hex_bytes: str, reloc_offsets: dict[str, int]
-    ):
+    def __init__(self, name: str, code: list[str], hex_bytes: str, reloc_offsets: dict[str, int]):
         self.name = name
         self.code = list(code)
         self.hex_bytes = hex_bytes
@@ -244,12 +243,8 @@ class CopyPatchJITEngine:
             "i32_add_d2": Stencil("i32_add_d2", ["ADDS r4, r5, r4"], "2C 19", {}),
             "i32_sub_d2": Stencil("i32_sub_d2", ["SUBS r4, r5, r4"], "2C 1B", {}),
             "i32_mul_d2": Stencil("i32_mul_d2", ["MUL r4, r5, r4"], "05 FB 04 F4", {}),
-            "i32_div_s_d2": Stencil(
-                "i32_div_s_d2", ["SDIV r4, r5, r4"], "95 FB F4 F4", {}
-            ),
-            "i32_div_u_d2": Stencil(
-                "i32_div_u_d2", ["UDIV r4, r5, r4"], "B5 FB F4 F4", {}
-            ),
+            "i32_div_s_d2": Stencil("i32_div_s_d2", ["SDIV r4, r5, r4"], "95 FB F4 F4", {}),
+            "i32_div_u_d2": Stencil("i32_div_u_d2", ["UDIV r4, r5, r4"], "B5 FB F4 F4", {}),
             # R12 scratch, not R3 -- R3 is local_base now (see i32_rotl_d2 below too).
             "i32_rem_s_d2": Stencil(
                 "i32_rem_s_d2",
@@ -274,24 +269,16 @@ class CopyPatchJITEngine:
             # stencils use the 32-bit Thumb-2 3-operand shift-by-register form instead
             # (LSL.W/LSR.W/ASR.W/ROR.W Rd,Rn,Rm), which keeps Rn (value/NOS) and Rm
             # (amount/TOS) independent. See {ADR_TosCacheAsymmetry}.
-            "i32_shl_d2": Stencil(
-                "i32_shl_d2", ["LSL.W r4, r5, r4"], "05 FA 04 F4", {}
-            ),
-            "i32_shr_s_d2": Stencil(
-                "i32_shr_s_d2", ["ASR.W r4, r5, r4"], "45 FA 04 F4", {}
-            ),
-            "i32_shr_u_d2": Stencil(
-                "i32_shr_u_d2", ["LSR.W r4, r5, r4"], "25 FA 04 F4", {}
-            ),
+            "i32_shl_d2": Stencil("i32_shl_d2", ["LSL.W r4, r5, r4"], "05 FA 04 F4", {}),
+            "i32_shr_s_d2": Stencil("i32_shr_s_d2", ["ASR.W r4, r5, r4"], "45 FA 04 F4", {}),
+            "i32_shr_u_d2": Stencil("i32_shr_u_d2", ["LSR.W r4, r5, r4"], "25 FA 04 F4", {}),
             "i32_rotl_d2": Stencil(
                 "i32_rotl_d2",
                 ["RSB r12, r4, #32", "ROR.W r4, r5, r12"],
                 "C4 F1 20 0C 65 FA 0C F4",
                 {},
             ),
-            "i32_rotr_d2": Stencil(
-                "i32_rotr_d2", ["ROR.W r4, r5, r4"], "65 FA 04 F4", {}
-            ),
+            "i32_rotr_d2": Stencil("i32_rotr_d2", ["ROR.W r4, r5, r4"], "65 FA 04 F4", {}),
             "i32_clz_d1": Stencil("i32_clz_d1", ["CLZ r4, r4"], "B4 FA 84 F4", {}),
             "i32_ctz_d1": Stencil(
                 "i32_ctz_d1",
@@ -373,30 +360,20 @@ class CopyPatchJITEngine:
             # these stencils -- it needs a runtime-patched branch target (the trace's own trap tail),
             # so it is emitted directly by compile_trace() around whichever of these gets selected,
             # the same way local.get/local.set are handled rather than being a fixed byte template.
-            "i32_load_r8": Stencil(
-                "i32_load_r8", ["LDR.W r4, [r8, r4]"], "58 F8 04 40", {}
-            ),
+            "i32_load_r8": Stencil("i32_load_r8", ["LDR.W r4, [r8, r4]"], "58 F8 04 40", {}),
             "i32_load8_s_r8": Stencil(
                 "i32_load8_s_r8", ["LDRSB.W r4, [r8, r4]"], "18 F9 04 40", {}
             ),
-            "i32_load8_u_r8": Stencil(
-                "i32_load8_u_r8", ["LDRB.W r4, [r8, r4]"], "18 F8 04 40", {}
-            ),
+            "i32_load8_u_r8": Stencil("i32_load8_u_r8", ["LDRB.W r4, [r8, r4]"], "18 F8 04 40", {}),
             "i32_load16_s_r8": Stencil(
                 "i32_load16_s_r8", ["LDRSH.W r4, [r8, r4]"], "38 F9 04 40", {}
             ),
             "i32_load16_u_r8": Stencil(
                 "i32_load16_u_r8", ["LDRH.W r4, [r8, r4]"], "38 F8 04 40", {}
             ),
-            "i32_store_r8": Stencil(
-                "i32_store_r8", ["STR.W r4, [r8, r5]"], "48 F8 05 40", {}
-            ),
-            "i32_store8_r8": Stencil(
-                "i32_store8_r8", ["STRB.W r4, [r8, r5]"], "08 F8 05 40", {}
-            ),
-            "i32_store16_r8": Stencil(
-                "i32_store16_r8", ["STRH.W r4, [r8, r5]"], "28 F8 05 40", {}
-            ),
+            "i32_store_r8": Stencil("i32_store_r8", ["STR.W r4, [r8, r5]"], "48 F8 05 40", {}),
+            "i32_store8_r8": Stencil("i32_store8_r8", ["STRB.W r4, [r8, r5]"], "08 F8 05 40", {}),
+            "i32_store16_r8": Stencil("i32_store16_r8", ["STRH.W r4, [r8, r5]"], "28 F8 05 40", {}),
             "memory_size_d0": Stencil(
                 "memory_size_d0", ["LDR.W r4, [r2, #0x04]"], "D2 F8 04 40", {}
             ),
@@ -409,9 +386,7 @@ class CopyPatchJITEngine:
 
     def commit_jit_patch(self):
         """Restores JIT Code Cache MPU attribute to RO + X with DSB & ISB barriers."""
-        assert self.mpu_attr == MPUAttribute.RW_XN, (
-            "Must be in patching mode before commit"
-        )
+        assert self.mpu_attr == MPUAttribute.RW_XN, "Must be in patching mode before commit"
         self.mpu_attr = MPUAttribute.RO_X
         self.barrier_flushes += 1
 
@@ -551,9 +526,7 @@ class CopyPatchJITEngine:
                     "PUSH {r0-r3, r12, lr}",
                     asm.push_w(reg_mask=call_mask, push_lr=True),
                 )
-                emit(
-                    f"BL {func_name}", asm.bl(0)
-                )  # relocation hole: patched after linking
+                emit(f"BL {func_name}", asm.bl(0))  # relocation hole: patched after linking
                 emit("POP {r0-r3, r12, lr}", asm.pop_w(reg_mask=call_mask, pop_lr=True))
             elif op in _MEMORY_OP_ADDR_REG:
                 # FastAddressCheck: CMP the address against mem_size (R9) and take a
@@ -562,9 +535,7 @@ class CopyPatchJITEngine:
                 # out-of-bounds access never has a side effect to unwind. R9 is a high
                 # register, so the low addr_reg (R4/R5) needs the T2 CMP encoding.
                 addr_reg = _MEMORY_OP_ADDR_REG[op]
-                emit(
-                    f"CMP {addr_reg.name.lower()}, r9", asm.cmp_reg_t2(addr_reg, Reg.R9)
-                )
+                emit(f"CMP {addr_reg.name.lower()}, r9", asm.cmp_reg_t2(addr_reg, Reg.R9))
                 oob_branch_fixups.append(self.byte_write_pos)
                 emit("BHS.W <trap>", asm.b_cond_w(Cond.HS, 0))
                 emit_stencil(self.stencils[op.replace(".", "_") + "_r8"])
@@ -619,9 +590,7 @@ class CopyPatchJITEngine:
             for branch_byte_addr in oob_branch_fixups:
                 rel_offset = trap_tail_byte_addr - (branch_byte_addr + 4)
                 patched = asm.b_cond_w(Cond.HS, rel_offset)
-                self.byte_cache[branch_byte_addr : branch_byte_addr + len(patched)] = (
-                    patched
-                )
+                self.byte_cache[branch_byte_addr : branch_byte_addr + len(patched)] = patched
 
         # 6. Patch inlined JIT Trace Header
         total_trace_bytes = self.byte_write_pos - header_byte_offset
@@ -633,9 +602,9 @@ class CopyPatchJITEngine:
             chain_next_pc=chain_next_pc,
             chain_target_addr=chain_target_addr,
         )
-        self.byte_cache[
-            header_byte_offset : header_byte_offset + JITTraceHeader.SIZE_BYTES
-        ] = header.to_bytes()
+        self.byte_cache[header_byte_offset : header_byte_offset + JITTraceHeader.SIZE_BYTES] = (
+            header.to_bytes()
+        )
         # 7. Commit W^X Transaction (RO + X + Barriers)
         self.commit_jit_patch()
         total_emitted = self.current_write_pos - start_offset
@@ -747,15 +716,11 @@ def _order_register_moves(moves: dict[Reg, Reg]) -> list[tuple[Reg, Reg]]:
 def test_full_stencil_library_coverage():
     """Verify all opcodes in the stencil catalog have valid Thumb-2 code and hex bytes."""
     engine = CopyPatchJITEngine()
-    assert len(engine.stencils) >= 35, (
-        f"Expected full stencil library, got {len(engine.stencils)}"
-    )
+    assert len(engine.stencils) >= 35, f"Expected full stencil library, got {len(engine.stencils)}"
     hex_digits = set("0123456789ABCDEFabcdef")
     for name, st in engine.stencils.items():
         if st.code:
-            assert st.hex_bytes, (
-                f"Stencil {name} has disassembly but no hex byte definition"
-            )
+            assert st.hex_bytes, f"Stencil {name} has disassembly but no hex byte definition"
         for tok in st.hex_bytes.split():
             assert len(tok) == 2 and set(tok) <= hex_digits, (
                 f"Stencil {name} hex_bytes token {tok!r} is not a valid byte"
@@ -812,9 +777,7 @@ def test_stencil_variant_ids_match_the_documented_table():
         "external_call_stub": None,
     }
     for name, variant_id in expected.items():
-        assert name in engine.stencils, (
-            f"expected stencil {name!r} is missing from the catalog"
-        )
+        assert name in engine.stencils, f"expected stencil {name!r} is missing from the catalog"
         actual = engine.stencils[name].variant_id
         assert actual == variant_id, (
             f"{name}: variant_id={actual}, expected {variant_id} per "
@@ -834,9 +797,7 @@ def test_stencil_variant_ids_match_the_documented_table():
     }
     for name, st in engine.stencils.items():
         if name in no_depth_meaning:
-            assert st.variant_id is None, (
-                f"{name} should have no variant_id, got {st.variant_id}"
-            )
+            assert st.variant_id is None, f"{name} should have no variant_id, got {st.variant_id}"
         else:
             assert st.variant_id is not None, (
                 f"{name} has no variant_id -- add it to jit_stencil_catalog.md 3.8's table "
@@ -858,9 +819,7 @@ def test_stencil_catalog_matches_assembler():
     def h(b: bytes) -> str:
         return " ".join(f"{x:02X}" for x in b)
 
-    full_mask = (
-        (1 << 4) | (1 << 5) | (1 << 6) | (1 << 8) | (1 << 9) | (1 << 10) | (1 << 11)
-    )
+    full_mask = (1 << 4) | (1 << 5) | (1 << 6) | (1 << 8) | (1 << 9) | (1 << 10) | (1 << 11)
     call_mask = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 12)
     checks = {
         "prologue_full": asm.push_w(reg_mask=full_mask, push_lr=True),
@@ -869,10 +828,7 @@ def test_stencil_catalog_matches_assembler():
         "unreachable": asm.bkpt(0),
         "i32_const_d0": asm.movw(Reg.R4, 0) + asm.movt(Reg.R4, 0),
         "i64_const_d0": (
-            asm.movw(Reg.R4, 0)
-            + asm.movt(Reg.R4, 0)
-            + asm.movw(Reg.R5, 0)
-            + asm.movt(Reg.R5, 0)
+            asm.movw(Reg.R4, 0) + asm.movt(Reg.R4, 0) + asm.movw(Reg.R5, 0) + asm.movt(Reg.R5, 0)
         ),
         "local_get_d0": asm.ldr_imm(Reg.R4, Reg.R1, 0),
         "local_set_d1": asm.str_imm(Reg.R4, Reg.R1, 0),
@@ -911,9 +867,7 @@ def test_stencil_catalog_matches_assembler():
         )
 
     # i32_const_d1 prepends a plain register MOV ahead of the shared MOVW/MOVT pair.
-    const_d1_expected = h(
-        asm.mov_reg(Reg.R5, Reg.R4) + asm.movw(Reg.R4, 0) + asm.movt(Reg.R4, 0)
-    )
+    const_d1_expected = h(asm.mov_reg(Reg.R5, Reg.R4) + asm.movw(Reg.R4, 0) + asm.movt(Reg.R4, 0))
     assert const_d1_expected == engine.stencils["i32_const_d1"].hex_bytes, (
         f"Stencil 'i32_const_d1' drifted from the assembler: "
         f"catalog={engine.stencils['i32_const_d1'].hex_bytes!r} assembler={const_d1_expected!r}"
@@ -931,9 +885,7 @@ def test_stencil_catalog_matches_assembler():
     )
     # i32_rotl_d2: RSB r12,r4,#32 (amount = 32 - shift) then ROR.W r4,r5,r12. R12 scratch,
     # not R3 -- R3 is local_base now.
-    rotl_expected = h(
-        asm.rsb_imm(Reg.R12, Reg.R4, 32) + asm.ror_w(Reg.R4, Reg.R5, Reg.R12)
-    )
+    rotl_expected = h(asm.rsb_imm(Reg.R12, Reg.R4, 32) + asm.ror_w(Reg.R4, Reg.R5, Reg.R12))
     assert rotl_expected == engine.stencils["i32_rotl_d2"].hex_bytes, (
         f"Stencil 'i32_rotl_d2' drifted from the assembler: "
         f"catalog={engine.stencils['i32_rotl_d2'].hex_bytes!r} assembler={rotl_expected!r}"
@@ -1057,9 +1009,7 @@ def test_fast_address_check_traps_before_access():
     assert engine.last_trap_tail_byte_addr is not None
     branch_byte_addr = engine.last_oob_fixups[0]
     rel_offset = engine.last_trap_tail_byte_addr - (branch_byte_addr + 4)
-    assert rel_offset > 0, (
-        "trap tail must be patched to a real forward offset, not left at 0"
-    )
+    assert rel_offset > 0, "trap tail must be patched to a real forward offset, not left at 0"
     expected_bytes = asm.b_cond_w(Cond.HS, rel_offset)
     patched_bytes = bytes(
         engine.byte_cache[branch_byte_addr : branch_byte_addr + len(expected_bytes)]
@@ -1104,9 +1054,7 @@ def test_variant_reconciliation_glue_same_variant_emits_nothing():
     engine = CopyPatchJITEngine()
     engine.begin_jit_patch()
     start_pos = engine.byte_write_pos
-    ok = engine.emit_variant_reconciliation_glue(
-        source_variant_id=2, target_variant_id=2
-    )
+    ok = engine.emit_variant_reconciliation_glue(source_variant_id=2, target_variant_id=2)
     engine.commit_jit_patch()
     assert ok is True
     assert engine.byte_write_pos == start_pos, "identical layouts must not emit any MOV"
@@ -1118,9 +1066,7 @@ def test_variant_reconciliation_glue_subset_emits_nothing():
     engine = CopyPatchJITEngine()
     engine.begin_jit_patch()
     start_pos = engine.byte_write_pos
-    ok = engine.emit_variant_reconciliation_glue(
-        source_variant_id=2, target_variant_id=1
-    )
+    ok = engine.emit_variant_reconciliation_glue(source_variant_id=2, target_variant_id=1)
     engine.commit_jit_patch()
     assert ok is True
     assert engine.byte_write_pos == start_pos
@@ -1133,9 +1079,7 @@ def test_variant_reconciliation_glue_rejects_missing_value():
     only grows via real pushes), but the mechanism must fail closed if it did."""
     engine = CopyPatchJITEngine()
     engine.begin_jit_patch()
-    ok = engine.emit_variant_reconciliation_glue(
-        source_variant_id=1, target_variant_id=2
-    )
+    ok = engine.emit_variant_reconciliation_glue(source_variant_id=1, target_variant_id=2)
     engine.commit_jit_patch()
     assert ok is False
 
@@ -1157,9 +1101,7 @@ def test_variant_reconciliation_glue_emits_real_swap_bytes():
     engine.commit_jit_patch()
     emitted = bytes(engine.byte_cache[start_pos : engine.byte_write_pos])
     expected = (
-        asm.mov_reg(Reg.R12, Reg.R4)
-        + asm.mov_reg(Reg.R4, Reg.R5)
-        + asm.mov_reg(Reg.R5, Reg.R12)
+        asm.mov_reg(Reg.R12, Reg.R4) + asm.mov_reg(Reg.R4, Reg.R5) + asm.mov_reg(Reg.R5, Reg.R12)
     )
     assert emitted == expected
 
@@ -1196,7 +1138,7 @@ def test_mpu_wx_protection():
     engine = CopyPatchJITEngine()
     try:
         engine.write_instruction(0, "ILLEGAL")
-        assert False, "Should raise MPUFault"
+        raise AssertionError("Should raise MPUFault")
     except MPUFault as e:
         assert "W^X VIOLATION" in str(e)
 

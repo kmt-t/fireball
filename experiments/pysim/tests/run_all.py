@@ -43,9 +43,7 @@ TEST_FILES = [
 
 def run_all_tests():
     print("=" * 80)
-    print(
-        "      Fireball pysim Unit Test Suite                                            "
-    )
+    print("      Fireball pysim Unit Test Suite                                            ")
     print("=" * 80)
     total_start = time.perf_counter()
     passed = 0

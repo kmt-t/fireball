@@ -78,9 +78,7 @@ SCENARIOS = [
 
 def run_all_scenarios():
     print("=" * 80)
-    print(
-        "      Fireball End-to-End Component Integration Test Suite                      "
-    )
+    print("      Fireball End-to-End Component Integration Test Suite                      ")
     print("=" * 80)
     total_start = time.perf_counter()
     passed = 0

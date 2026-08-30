@@ -71,9 +71,7 @@ def _check_low_reg(reg: Reg, msg: str = "Register must be R0-R7 (Low Register)")
         raise AssemblerError(f"COMPILE-TIME ERROR: {msg}, got {reg.name}")
 
 
-def _check_imm(
-    val: int, bits: int, signed: bool = False, msg: str = "Immediate out of range"
-):
+def _check_imm(val: int, bits: int, signed: bool = False, msg: str = "Immediate out of range"):
     if signed:
         min_v = -(1 << (bits - 1))
         max_v = (1 << (bits - 1)) - 1
@@ -229,9 +227,7 @@ class Thumb2Assembler:
         _check_low_reg(rt)
         _check_low_reg(rn)
         if imm_offset % 4 != 0:
-            raise AssemblerError(
-                f"Immediate offset must be multiple of 4, got {imm_offset}"
-            )
+            raise AssemblerError(f"Immediate offset must be multiple of 4, got {imm_offset}")
         imm5 = imm_offset // 4
         _check_imm(imm5, 5)
         code = 0x6800 | (imm5 << 6) | (rn << 3) | rt
@@ -243,9 +239,7 @@ class Thumb2Assembler:
         _check_low_reg(rt)
         _check_low_reg(rn)
         if imm_offset % 4 != 0:
-            raise AssemblerError(
-                f"Immediate offset must be multiple of 4, got {imm_offset}"
-            )
+            raise AssemblerError(f"Immediate offset must be multiple of 4, got {imm_offset}")
         imm5 = imm_offset // 4
         _check_imm(imm5, 5)
         code = 0x6000 | (imm5 << 6) | (rn << 3) | rt
@@ -497,21 +491,21 @@ def test_compile_time_range_validation():
     # 1. Low register validation on Thumb-1 instruction
     try:
         asm.adds_reg(Reg.R8, Reg.R1, Reg.R2)
-        assert False, "Should raise AssemblerError for R8 on 16-bit adds_reg"
+        raise AssertionError("Should raise AssemblerError for R8 on 16-bit adds_reg")
     except AssemblerError as e:
         assert "Low Register" in str(e)
 
     # 2. Immediate overflow on movs_imm8 (8-bit max 255)
     try:
         asm.movs_imm8(Reg.R0, 256)
-        assert False, "Should raise AssemblerError for imm8 = 256"
+        raise AssertionError("Should raise AssemblerError for imm8 = 256")
     except AssemblerError as e:
         assert "out of range" in str(e)
 
     # 3. Word-alignment check on LDR/STR
     try:
         asm.ldr_imm(Reg.R0, Reg.R1, imm_offset=3)
-        assert False, "Should raise AssemblerError for unaligned offset 3"
+        raise AssertionError("Should raise AssemblerError for unaligned offset 3")
     except AssemblerError as e:
         assert "multiple of 4" in str(e)
 
@@ -527,26 +521,14 @@ def test_known_thumb2_encoding_reference_values():
     # STENCIL_PROLOGUE_FULL: push {r4-r6, r8-r11, lr} -> 2D E9 70 4F
     # r4-r6 (mask 0x0070) | r8-r11 (mask 0x0F00) = 0x0F70, lr = True (bit 14: 0x4000) -> 0x4F70
     prologue = asm.push_w(
-        reg_mask=(1 << 4)
-        | (1 << 5)
-        | (1 << 6)
-        | (1 << 8)
-        | (1 << 9)
-        | (1 << 10)
-        | (1 << 11),
+        reg_mask=(1 << 4) | (1 << 5) | (1 << 6) | (1 << 8) | (1 << 9) | (1 << 10) | (1 << 11),
         push_lr=True,
     )
     assert _hex(prologue) == "2D E9 70 4F", f"Got {_hex(prologue)}"
     # STENCIL_EPILOGUE_RETURN: pop {r4-r6, r8-r11, pc} -> BD E8 70 8F
     # r4-r6 | r8-r11 = 0x0F70, pc = True (bit 15: 0x8000) -> 0x8F70
     epilogue = asm.pop_w(
-        reg_mask=(1 << 4)
-        | (1 << 5)
-        | (1 << 6)
-        | (1 << 8)
-        | (1 << 9)
-        | (1 << 10)
-        | (1 << 11),
+        reg_mask=(1 << 4) | (1 << 5) | (1 << 6) | (1 << 8) | (1 << 9) | (1 << 10) | (1 << 11),
         pop_pc=True,
     )
     assert _hex(epilogue) == "BD E8 70 8F", f"Got {_hex(epilogue)}"

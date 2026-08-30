@@ -59,9 +59,9 @@ def build_model(*, guards: bool = True) -> Kripke:
     if not guards:
         # ガード無効時（変異検査）:
         # 1. drop 済みハンドルの検証を外すと、操作が実際に実行されてしまう
-        R = R + [("s_op_call_on_dropped", "s_op_performed_on_dropped")]
+        R = [*R, ("s_op_call_on_dropped", "s_op_performed_on_dropped")]
         # 2. pollable への ready 通知配送を外すと、割り込みが届かない経路が生じる
-        R = R + [("s_interrupt_triggered", "s_notification_lost")]
+        R = [*R, ("s_interrupt_triggered", "s_notification_lost")]
 
     L = {
         "s_idle": {"idle"},

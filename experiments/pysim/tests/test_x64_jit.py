@@ -247,6 +247,4 @@ if __name__ == "__main__":
         test()
         print(f"[PASS] {test.__name__}")
 
-    print(
-        f"\n[PASS] All {len(ALL_TESTS)} pure trace JIT CPS 4-arg and PIC tests passed."
-    )
+    print(f"\n[PASS] All {len(ALL_TESTS)} pure trace JIT CPS 4-arg and PIC tests passed.")

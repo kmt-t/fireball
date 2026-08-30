@@ -63,12 +63,13 @@ def build_model(*, guards: bool = True) -> Kripke:
     if not guards:
         # ガード無効時（変異検査）:
         # 1. fd バリデーション（EBADF チェック）を外すと、無効な fd への I/O が実際に実行されてしまう
-        R = R + [
+        R = [
+            *R,
             ("s_io_call_on_closed", "s_io_performed_on_invalid"),
             ("s_io_call_bogus", "s_io_performed_on_invalid"),
         ]
         # 2. noreturn 規約（TERMINATED 遷移とスタック回収）を外すと、proc_exit 後にゲストへ復帰しうる
-        R = R + [("s_proc_exit_called", "s_phantom_return")]
+        R = [*R, ("s_proc_exit_called", "s_phantom_return")]
 
     L = {
         "s_task_running": {"running"},

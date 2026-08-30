@@ -37,6 +37,7 @@ for _p in [
         sys.path.insert(0, _sp)
 
 from dataclasses import dataclass
+from typing import Any
 
 from leb128 import decode_signed, decode_unsigned
 from wasm_opcodes import (
@@ -175,13 +176,9 @@ class Instr:
     )
     const_value: int | None = None  # i32.const's decoded sleb128 value
     memarg: tuple[int, int] | None = None  # (align, offset) for load/store
-    match_offset: int | None = (
-        None  # BLOCK/LOOP/IF -> its END's offset; ELSE -> its END's offset
-    )
+    match_offset: int | None = None  # BLOCK/LOOP/IF -> its END's offset; ELSE -> its END's offset
     else_offset: int | None = None  # IF only: matching ELSE's offset, if present
-    br_table_labels: list[int] | None = (
-        None  # BR_TABLE's vec(labelidx), default is in `operand`
-    )
+    br_table_labels: list[int] | None = None  # BR_TABLE's vec(labelidx), default is in `operand`
     table_index: int | None = None  # CALL_INDIRECT's tableidx
 
 
@@ -208,9 +205,7 @@ def decode_all(code: bytes) -> dict[int, Instr]:
         if opcode in _BLOCK_OPENERS:
             blocktype = code[off]
             off += 1
-            assert blocktype == 0x40, (
-                "only the empty blocktype is supported in this experiment"
-            )
+            assert blocktype == 0x40, "only the empty blocktype is supported in this experiment"
 
         elif opcode in _LEB_UNSIGNED_OPERAND:
             operand, off = decode_unsigned(code, off)
@@ -240,9 +235,7 @@ def decode_all(code: bytes) -> dict[int, Instr]:
 
         elif opcode == CALL_INDIRECT:
             operand, off = decode_unsigned(code, off)  # typeidx
-            table_index, off = decode_unsigned(
-                code, off
-            )  # tableidx (0x00 in the MVP encoding)
+            table_index, off = decode_unsigned(code, off)  # tableidx (0x00 in the MVP encoding)
 
         elif opcode in _NO_OPERAND:
             pass

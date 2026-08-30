@@ -108,9 +108,7 @@ def test_scenario_hybrid_jit():
     sysv_t2 = System()
     wasi_t2 = WasiHostContext(sysv_t2)
     funcs_t2 = wasi_t2.build_interpreter_host_functions(module)
-    interp_t2 = Interpreter(
-        module, memory=wasi_t2.guest_memory, host_functions=funcs_t2
-    )
+    interp_t2 = Interpreter(module, memory=wasi_t2.guest_memory, host_functions=funcs_t2)
     res_t2 = interp_t2.call(fn_idx, [LIMIT])
     assert res_t2 == [168], f"Tier 2 prime count mismatch: expected 168, got {res_t2}"
     # 2. Tier 3 Hybrid Execution with Card Marking and idle_hook JIT

@@ -10,7 +10,8 @@ Reference Concept Implementation: the fireball container vocabulary
 from __future__ import annotations
 
 import bisect
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 ALLOWED_BITS = (1, 2, 4)
 
@@ -54,9 +55,7 @@ class BitView:
         """Narrow by index. The bit origin absorbs the remainder, so `first`
         does not have to land on a byte boundary."""
         assert 0 <= first <= last <= self.count, "a view may only ever shrink"
-        return BitView(
-            self.storage, self.bits, self.origin + first * self.bits, last - first
-        )
+        return BitView(self.storage, self.bits, self.origin + first * self.bits, last - first)
 
 
 class _SortedWindow:
@@ -291,21 +290,15 @@ def test_card_marking_prefilter_and_jit_entry_group_narrowing_lookup():
         1: (3, 6),
     }  # group 0: entries 0..2, group 1: entries 3..5
     assert (
-        lookup_jit_entry(
-            view, card_table, entry_group_bounds, pc=30, card_shift=3, group_shift=5
-        )
+        lookup_jit_entry(view, card_table, entry_group_bounds, pc=30, card_shift=3, group_shift=5)
         == 3
     )
     assert (
-        lookup_jit_entry(
-            view, card_table, entry_group_bounds, pc=60, card_shift=3, group_shift=5
-        )
+        lookup_jit_entry(view, card_table, entry_group_bounds, pc=60, card_shift=3, group_shift=5)
         == 6
     )
     assert (
-        lookup_jit_entry(
-            view, card_table, entry_group_bounds, pc=99, card_shift=3, group_shift=5
-        )
+        lookup_jit_entry(view, card_table, entry_group_bounds, pc=99, card_shift=3, group_shift=5)
         is None
     )
 

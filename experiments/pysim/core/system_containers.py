@@ -39,7 +39,8 @@ for _p in [
         sys.path.insert(0, _sp)
 
 import bisect
-from typing import Callable, Generic, Iterator, Sequence, TypeVar
+from collections.abc import Callable, Iterator, Sequence
+from typing import Generic, TypeVar
 
 KeyT = TypeVar("KeyT")
 ValT = TypeVar("ValT")
@@ -58,11 +59,9 @@ class BitView:
         Bits must divide 8 (1, 2, or 4) so an element never straddles a byte.
     """
 
-    __slots__ = ("storage", "bits", "origin", "count")
+    __slots__ = ("bits", "count", "origin", "storage")
 
-    def __init__(
-        self, storage: bytearray | bytes, bits: int, origin: int = 0, count: int = 0
-    ):
+    def __init__(self, storage: bytearray | bytes, bits: int, origin: int = 0, count: int = 0):
 
         if bits not in ALLOWED_BITS:
             raise ValueError(f"Bits must be 1, 2 or 4 (got {bits})")
@@ -97,9 +96,7 @@ class BitView:
 
         mask = (1 << self.bits) - 1
         if not (0 <= value <= mask):
-            raise ValueError(
-                f"value {value} does not fit in {self.bits} bits (max {mask})"
-            )
+            raise ValueError(f"value {value} does not fit in {self.bits} bits (max {mask})")
 
         bit = self._bit_pos(i)
         byte_idx, shift = bit >> 3, bit & 7
@@ -117,9 +114,7 @@ class BitView:
                 f"a view may only ever shrink (0 <= {first} <= {last} <= {self.count})"
             )
 
-        return BitView(
-            self.storage, self.bits, self.origin + first * self.bits, last - first
-        )
+        return BitView(self.storage, self.bits, self.origin + first * self.bits, last - first)
 
 
 # ---------------------------------------------------------------------------
@@ -128,7 +123,7 @@ class BitView:
 
 
 class _SortedWindow(Generic[KeyT]):
-    __slots__ = ("keys", "first", "last")
+    __slots__ = ("first", "keys", "last")
 
     def __init__(self, keys: Sequence[KeyT], first: int = 0, last: int | None = None):
 
@@ -244,12 +239,7 @@ class FlatSetView(_SortedWindow[KeyT], Generic[KeyT]):
 
 def bswap32(v: int) -> int:
     """32-bit byte-order reversal for maximizing Radix table distribution on UnifiedPC."""
-    return (
-        ((v & 0xFF) << 24)
-        | ((v & 0xFF00) << 8)
-        | ((v >> 8) & 0xFF00)
-        | ((v >> 24) & 0xFF)
-    )
+    return ((v & 0xFF) << 24) | ((v & 0xFF00) << 8) | ((v >> 8) & 0xFF00) | ((v >> 24) & 0xFF)
 
 
 class RadixBinaryTreeView(Generic[ValT]):
@@ -260,7 +250,7 @@ class RadixBinaryTreeView(Generic[ValT]):
         (such as bswap32) to project high-entropy lower bytes to radix prefix.
     """
 
-    __slots__ = ("map_view", "radix_table", "radix_shift", "key_transform")
+    __slots__ = ("key_transform", "map_view", "radix_shift", "radix_table")
 
     def __init__(
         self,
@@ -328,7 +318,7 @@ def lookup_jit_entry(
 class StaticFlatMap(Generic[KeyT, ValT]):
     """Fixed-capacity sorted map stored in parallel arrays without dynamic reallocation."""
 
-    __slots__ = ("capacity", "_keys", "_values")
+    __slots__ = ("_keys", "_values", "capacity")
 
     def __init__(self, capacity: int = 32):
 
@@ -393,7 +383,7 @@ class StaticFlatMap(Generic[KeyT, ValT]):
 class StaticFlatSet(Generic[KeyT]):
     """Fixed-capacity sorted set stored in a flat array."""
 
-    __slots__ = ("capacity", "_keys")
+    __slots__ = ("_keys", "capacity")
 
     def __init__(self, capacity: int = 32):
 
@@ -455,7 +445,7 @@ class StaticFlatSet(Generic[KeyT]):
 class RingBuffer(Generic[T]):
     """Fixed-size ring buffer with bounded storage and FIFO/overwrite behavior."""
 
-    __slots__ = ("capacity", "buf", "head", "count", "dropped")
+    __slots__ = ("buf", "capacity", "count", "dropped", "head")
 
     def __init__(self, capacity: int = 32):
 
@@ -520,7 +510,7 @@ class RingBuffer(Generic[T]):
 class StaticVector(Generic[T]):
     """Fixed-capacity sequential storage without dynamic heap reallocation."""
 
-    __slots__ = ("capacity", "_items")
+    __slots__ = ("_items", "capacity")
 
     def __init__(self, capacity: int = 32):
 

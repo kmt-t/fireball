@@ -16,15 +16,13 @@ import time
 
 sys.path.insert(
     0,
-    os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "..", "..", "tier1_core", "concepts"
-    ),
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "tier1_core", "concepts"),
 )
-from flat_view_concept import FlatMapView  # noqa: E402
+from flat_view_concept import FlatMapView
 
 
 def linear_scan(keys: list[int], values: list[int], key: int):
-    for k, v in zip(keys, values):
+    for k, v in zip(keys, values, strict=False):
         if k == key:
             return v
     return None
@@ -50,18 +48,14 @@ def main() -> None:
         view = FlatMapView(keys, values)
         probe = keys[n // 2]  # a worst-case-depth-representative middle key
         t_flat = time_lookup(lambda: view.find(probe), n_calls)
-        t_linear = time_lookup(
-            lambda: linear_scan(keys, values, probe), max(1, n_calls // 20)
-        )
+        t_linear = time_lookup(lambda: linear_scan(keys, values, probe), max(1, n_calls // 20))
         # linear_scan is O(n) per call and gets very slow at large n; fewer calls,
         # normalized back to a fair per-call comparison below.
         t_linear_per_call = t_linear / max(1, n_calls // 20)
         t_flat_per_call = t_flat / n_calls
         flat_times.append(t_flat_per_call)
         linear_times.append(t_linear_per_call)
-        speedup = (
-            t_linear_per_call / t_flat_per_call if t_flat_per_call > 0 else float("inf")
-        )
+        speedup = t_linear_per_call / t_flat_per_call if t_flat_per_call > 0 else float("inf")
         print(
             f"{n:<8} | {t_flat_per_call * 1e6:>10.3f} us              | "
             f"{t_linear_per_call * 1e6:>10.3f} us | {speedup:>6.1f}x"

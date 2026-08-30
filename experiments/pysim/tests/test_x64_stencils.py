@@ -58,17 +58,13 @@ def _u32(v: int) -> int:
     return v & I32_MASK
 
 
-def patch(
-    code: bytearray, base: int, stencil: st.Stencil, reloc_name: str, value: int
-) -> None:
+def patch(code: bytearray, base: int, stencil: st.Stencil, reloc_name: str, value: int) -> None:
 
     # Every relocation this codebase uses is 4 bytes except globals'
     # absolute-address "addr" slots, which are a full 64-bit pointer.
     width = 8 if reloc_name == "addr" else 4
     off = base + stencil.relocs[reloc_name]
-    code[off : off + width] = (value & ((1 << (width * 8)) - 1)).to_bytes(
-        width, "little"
-    )
+    code[off : off + width] = (value & ((1 << (width * 8)) - 1)).to_bytes(width, "little")
 
 
 def emit(code: bytearray, stencil: st.Stencil, **patches: int) -> int:
@@ -193,9 +189,7 @@ def test_prologue_epilogue_passthrough_constant():
 def test_epilogue_sign_extends_negative_i32_into_the_i64_return_value():
 
     result = run_i32([const_(-1)])
-    assert result == -1, (
-        "a naive zero-extend would return 0xFFFFFFFF (4294967295) instead"
-    )
+    assert result == -1, "a naive zero-extend would return 0xFFFFFFFF (4294967295) instead"
 
 
 # ---------------------------------------------------------------------------
@@ -254,48 +248,44 @@ def test_local_get_set_tee_at_a_nonzero_locals_array_offset():
 def test_i32_add_wraps_at_32_bits_like_real_wasm_i32():
 
     a, b = 0x7FFFFFFF, 1
-    assert run_i32(push_two(a, b) + [(st.I32_ADD, {})]) == _to_i32(a + b)
+    assert run_i32([*push_two(a, b), (st.I32_ADD, {})]) == _to_i32(a + b)
     assert _to_i32(a + b) == -0x80000000  # sanity: this really does overflow
 
 
 def test_i32_sub_and_mul_match_python_reference():
 
     a, b = -5, 17
-    assert run_i32(push_two(a, b) + [(st.I32_SUB, {})]) == _to_i32(a - b)
-    assert run_i32(push_two(a, b) + [(st.I32_MUL, {})]) == _to_i32(a * b)
+    assert run_i32([*push_two(a, b), (st.I32_SUB, {})]) == _to_i32(a - b)
+    assert run_i32([*push_two(a, b), (st.I32_MUL, {})]) == _to_i32(a * b)
 
 
 def test_i32_bitwise_ops_match_python_reference():
 
     a, b = 0x0F0F0F0F, 0x00FFFF00
-    assert run_i32(push_two(a, b) + [(st.I32_AND, {})]) == _to_i32(a & b)
-    assert run_i32(push_two(a, b) + [(st.I32_OR, {})]) == _to_i32(a | b)
-    assert run_i32(push_two(a, b) + [(st.I32_XOR, {})]) == _to_i32(a ^ b)
+    assert run_i32([*push_two(a, b), (st.I32_AND, {})]) == _to_i32(a & b)
+    assert run_i32([*push_two(a, b), (st.I32_OR, {})]) == _to_i32(a | b)
+    assert run_i32([*push_two(a, b), (st.I32_XOR, {})]) == _to_i32(a ^ b)
 
 
 def test_i32_div_and_rem_signed_and_unsigned():
 
-    assert run_i32(push_two(7, 2) + [(st.I32_DIV_S, {})]) == 3
-    assert (
-        run_i32(push_two(-7, 2) + [(st.I32_DIV_S, {})]) == -3
-    )  # truncated toward zero
-    assert run_i32(push_two(7, 2) + [(st.I32_REM_S, {})]) == 1
-    assert run_i32(push_two(-7, 2) + [(st.I32_REM_S, {})]) == -1
-    assert run_i32(push_two(_to_i32(0xFFFFFFF0), 2) + [(st.I32_DIV_U, {})]) == _to_i32(
+    assert run_i32([*push_two(7, 2), (st.I32_DIV_S, {})]) == 3
+    assert run_i32([*push_two(-7, 2), (st.I32_DIV_S, {})]) == -3  # truncated toward zero
+    assert run_i32([*push_two(7, 2), (st.I32_REM_S, {})]) == 1
+    assert run_i32([*push_two(-7, 2), (st.I32_REM_S, {})]) == -1
+    assert run_i32([*push_two(_to_i32(4294967280), 2), (st.I32_DIV_U, {})]) == _to_i32(
         0xFFFFFFF0 // 2
     )
-    assert run_i32(push_two(_to_i32(0xFFFFFFF0), 3) + [(st.I32_REM_U, {})]) == _to_i32(
+    assert run_i32([*push_two(_to_i32(4294967280), 3), (st.I32_REM_U, {})]) == _to_i32(
         0xFFFFFFF0 % 3
     )
 
 
 def test_i32_shifts_mask_the_count_to_5_bits_like_wasm_requires():
 
-    assert run_i32(push_two(1, 33) + [(st.I32_SHL, {})]) == 1 << (33 % 32)  # == 2
-    assert run_i32(push_two(-8, 1) + [(st.I32_SHR_S, {})]) == -4
-    assert (
-        run_i32(push_two(_to_i32(0x80000000), 1) + [(st.I32_SHR_U, {})]) == 0x40000000
-    )
+    assert run_i32([*push_two(1, 33), (st.I32_SHL, {})]) == 1 << (33 % 32)  # == 2
+    assert run_i32([*push_two(-8, 1), (st.I32_SHR_S, {})]) == -4
+    assert run_i32([*push_two(_to_i32(2147483648), 1), (st.I32_SHR_U, {})]) == 0x40000000
 
 
 # ---------------------------------------------------------------------------
@@ -326,7 +316,7 @@ def test_all_i32_comparisons_against_python_reference():
     }
     for a, b in cases:
         for name, (stencil, ref) in ops.items():
-            got = run_i32(push_two(a, b) + [(stencil, {})])
+            got = run_i32([*push_two(a, b), (stencil, {})])
             want = 1 if ref(a, b) else 0
             assert got == want, f"i32.{name}({a},{b}): got {got}, want {want}"
 
@@ -455,9 +445,7 @@ def test_i32_store8_and_store16_write_only_their_width():
         [const_(0), const_(0x1234), (st.I32_STORE8, {"disp": 0}), const_(0)],
         memory=memory,
     )
-    assert memory[0] == 0x34 and memory[1] == 0xCC, (
-        "store8 must not touch the byte after it"
-    )
+    assert memory[0] == 0x34 and memory[1] == 0xCC, "store8 must not touch the byte after it"
     memory2 = bytearray(b"\xcc" * 8)
     run_i32(
         [const_(0), const_(0x12345678), (st.I32_STORE16, {"disp": 0}), const_(0)],
@@ -499,12 +487,8 @@ def test_i32_rotl_rotr_match_python_reference():
         return ((v >> n) | (v << (32 - n))) & I32_MASK if n else v
 
     for v, n in [(0x12345678, 4), (0x80000000, 1), (1, 31), (0xFFFFFFFF, 8), (5, 0)]:
-        assert run_i32(push_two(_to_i32(v), n) + [(st.I32_ROTL, {})]) == _to_i32(
-            rotl(v, n)
-        )
-        assert run_i32(push_two(_to_i32(v), n) + [(st.I32_ROTR, {})]) == _to_i32(
-            rotr(v, n)
-        )
+        assert run_i32([*push_two(_to_i32(v), n), (st.I32_ROTL, {})]) == _to_i32(rotl(v, n))
+        assert run_i32([*push_two(_to_i32(v), n), (st.I32_ROTR, {})]) == _to_i32(rotr(v, n))
 
 
 # ---------------------------------------------------------------------------
@@ -559,9 +543,9 @@ def test_fuzz_add_sub_mul_against_python_reference():
     for _ in range(200):
         a = rng.randint(-(2**31), 2**31 - 1)
         b = rng.randint(-(2**31), 2**31 - 1)
-        assert run_i32(push_two(a, b) + [(st.I32_ADD, {})]) == _to_i32(a + b)
-        assert run_i32(push_two(a, b) + [(st.I32_SUB, {})]) == _to_i32(a - b)
-        assert run_i32(push_two(a, b) + [(st.I32_MUL, {})]) == _to_i32(a * b)
+        assert run_i32([*push_two(a, b), (st.I32_ADD, {})]) == _to_i32(a + b)
+        assert run_i32([*push_two(a, b), (st.I32_SUB, {})]) == _to_i32(a - b)
+        assert run_i32([*push_two(a, b), (st.I32_MUL, {})]) == _to_i32(a * b)
 
 
 # Discovered by name rather than hand-listed: a hand-maintained list is
@@ -579,6 +563,4 @@ if __name__ == "__main__":
         test()
         print(f"[PASS] {test.__name__}")
 
-    print(
-        f"[PASS] All {len(ALL_TESTS)} x64 stencil tests passed (executed as real machine code)."
-    )
+    print(f"[PASS] All {len(ALL_TESTS)} x64 stencil tests passed (executed as real machine code).")

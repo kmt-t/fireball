@@ -38,8 +38,9 @@ for _p in [
         sys.path.insert(0, _sp)
 
 import time
+from collections.abc import Callable
 from enum import IntEnum
-from typing import Any, Callable, Generic, TypeVar
+from typing import Any, Generic, TypeVar
 
 T = TypeVar("T")
 E = TypeVar("E")
@@ -57,7 +58,7 @@ class RecoveryStrategy(IntEnum):
 class Result(Generic[T, E]):
     """Zero-exception Result container representing success or failure with actionable recovery strategy."""
 
-    __slots__ = ("is_ok", "value", "error", "strategy")
+    __slots__ = ("error", "is_ok", "strategy", "value")
 
     def __init__(
         self,
@@ -75,14 +76,10 @@ class Result(Generic[T, E]):
     @classmethod
     def ok(cls, value: T) -> Result[T, Any]:
 
-        return cls(
-            is_ok=True, value=value, error=None, strategy=RecoveryStrategy.IGNORE
-        )
+        return cls(is_ok=True, value=value, error=None, strategy=RecoveryStrategy.IGNORE)
 
     @classmethod
-    def err(
-        cls, error: E, strategy: RecoveryStrategy = RecoveryStrategy.RETRY
-    ) -> Result[Any, E]:
+    def err(cls, error: E, strategy: RecoveryStrategy = RecoveryStrategy.RETRY) -> Result[Any, E]:
 
         return cls(is_ok=False, value=None, error=error, strategy=strategy)
 

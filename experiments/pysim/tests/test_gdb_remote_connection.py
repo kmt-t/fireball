@@ -80,8 +80,7 @@ class GDBClientHelper:
             buf += chunk
 
         # Consume ACK
-        if buf.startswith("+"):
-            buf = buf[1:]
+        buf = buf.removeprefix("+")
 
         # Extract payload from response '$reply#cksum'
         if "$" in buf and "#" in buf:
@@ -138,22 +137,16 @@ def test_gdb_remote_socket_session():
         print("    [Step 1] Query halt reason '?' -> S05 (SIGTRAP) [PASS]")
         # Step 2: Read virtual registers ('g')
         resp = client.send_raw_packet("g")
-        assert len(resp) == 160, (
-            f"Expected 160 hex chars for 20 virtual registers, got {len(resp)}"
-        )
+        assert len(resp) == 160, f"Expected 160 hex chars for 20 virtual registers, got {len(resp)}"
         pc = int(resp[0:8], 16)
         l0 = int(resp[32:40], 16)
         assert pc == 0x10, f"Expected PC 0x10, got {pc:x}"
         assert l0 == 2, f"Expected Local0 = 2, got {l0}"
-        print(
-            f"    [Step 2] Read virtual registers 'g' (PC=0x{pc:x}, Local0={l0}) [PASS]"
-        )
+        print(f"    [Step 2] Read virtual registers 'g' (PC=0x{pc:x}, Local0={l0}) [PASS]")
         # Step 3: Read memory ('m0,8')
         resp = client.send_raw_packet("m0,8")
         assert resp == b"TESTDATA".hex(), f"Expected TESTDATA hex, got {resp}"
-        print(
-            f"    [Step 3] Read guest memory 'm0,8' -> '{bytes.fromhex(resp).decode()}' [PASS]"
-        )
+        print(f"    [Step 3] Read guest memory 'm0,8' -> '{bytes.fromhex(resp).decode()}' [PASS]")
         # Step 4: Insert breakpoint at PC 0x20 ('Z0,20,0')
         resp = client.send_raw_packet("Z0,20,0")
         assert resp == "OK", f"Expected OK, got {resp}"
@@ -168,9 +161,7 @@ def test_gdb_remote_socket_session():
         l0 = int(resp_g[32:40], 16)
         assert pc == 0x20, f"Expected break at PC 0x20, got 0x{pc:x}"
         assert l0 == 12, f"Expected Local0 = 12, got {l0}"
-        print(
-            f"    [Step 5] Continue 'c' -> Trapped at breakpoint PC=0x{pc:x}, Local0={l0} [PASS]"
-        )
+        print(f"    [Step 5] Continue 'c' -> Trapped at breakpoint PC=0x{pc:x}, Local0={l0} [PASS]")
         # Step 6: Write virtual registers ('G') -> Modify local0 to 100
         new_regs = [0x20, 0, 0, 0, 100, 0] + [0] * 14
         g_payload = "G" + "".join(f"{r:08x}" for r in new_regs)
@@ -191,9 +182,7 @@ def test_gdb_remote_socket_session():
         l1 = int(resp_g[40:48], 16)
         assert pc == 0x30, f"Expected step to PC 0x30, got 0x{pc:x}"
         assert l1 == 500, f"Expected Local1 = 500, got {l1}"
-        print(
-            f"    [Step 8] Single-step 's' -> Stepped to PC=0x{pc:x}, Local1={l1} [PASS]"
-        )
+        print(f"    [Step 8] Single-step 's' -> Stepped to PC=0x{pc:x}, Local1={l1} [PASS]")
         # Step 9: Remove breakpoint ('z0,20,0')
         resp = client.send_raw_packet("z0,20,0")
         assert resp == "OK", f"Expected OK, got {resp}"
@@ -212,9 +201,7 @@ def test_gdb_remote_socket_session():
         server.stop()
         print("    [Cleanup] Remote GDB Server stopped and socket disconnected.")
 
-    print(
-        "    [PASS] All 10 GDB Remote Debugger Socket integration tests succeeded seamlessly.\n"
-    )
+    print("    [PASS] All 10 GDB Remote Debugger Socket integration tests succeeded seamlessly.\n")
 
 
 if __name__ == "__main__":

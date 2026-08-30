@@ -7,7 +7,8 @@ Reference Concept Implementation: COOS Round-Robin Scheduler
 - Strict memory bound: fixed task table, zero dynamic allocation
 """
 
-from typing import Any, Generator
+from collections.abc import Generator
+from typing import Any
 
 
 class TaskState:
@@ -134,9 +135,7 @@ def test_round_robin_fairness():
     while sched.run_cycle():
         pass
 
-    assert exec_order == ["A1", "B1", "A2", "B2"], (
-        f"Unexpected execution order: {exec_order}"
-    )
+    assert exec_order == ["A1", "B1", "A2", "B2"], f"Unexpected execution order: {exec_order}"
     assert sched.tasks["A"]["state"] == TaskState.TERMINATED
     assert sched.tasks["B"]["state"] == TaskState.TERMINATED
     assert sched.total_dispatches == 6

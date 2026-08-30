@@ -75,9 +75,7 @@ class IPCRouter:
                 },
             }.items()
         )
-        self.registry = FlatMapView(
-            [uri for uri, _ in entries], [desc for _, desc in entries]
-        )
+        self.registry = FlatMapView([uri for uri, _ in entries], [desc for _, desc in entries])
         # Stage 2: Role-based Access Control Matrix
         self.role_matrix: dict[tuple[str, str], bool] = {
             ("CLIENT_APP", "CORE_SERVICE"): True,
@@ -94,9 +92,7 @@ class IPCRouter:
             "ch_dbg": [],
         }
 
-    def route_message(
-        self, sender_role: str, uri: str, message: IPCMessage
-    ) -> tuple[str, str]:
+    def route_message(self, sender_role: str, uri: str, message: IPCMessage) -> tuple[str, str]:
         """
         Executes the 3-stage IPC routing pipeline.
         Returns (status_code, detail_message).

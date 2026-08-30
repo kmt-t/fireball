@@ -30,7 +30,6 @@ Conforms strictly to docs/components/tier2_runtime/tests/runtime_loader_test_spe
 """
 
 import struct
-from typing import Optional
 
 from loader import (
     ExternalKind,
@@ -79,7 +78,7 @@ def _encode_leb128_s32(val: int) -> bytes:
 def _build_test_wasm_binary(
     magic: bytes = b"\x00asm",
     version: int = 1,
-    export_names: Optional[list[str]] = None,
+    export_names: list[str] | None = None,
     corrupt_section_order: bool = False,
     corrupt_section_bounds: bool = False,
     invalid_type_idx: bool = False,
@@ -191,9 +190,7 @@ def test_load_01_to_07_lightweight_verification():
     assert loader.allocator.offset == watermark
     # V3: Bad section bounds
     try:
-        loader.prepare(
-            "bad_bounds", _build_test_wasm_binary(corrupt_section_bounds=True)
-        )
+        loader.prepare("bad_bounds", _build_test_wasm_binary(corrupt_section_bounds=True))
         assert False
 
     except WasmVerifyError:
@@ -245,9 +242,7 @@ def test_load_10_to_15_zero_copy_and_accessors():
     # Function Accessor
     func_acc = view.get_function(0)
     assert func_acc.get_type_index() == 0
-    assert func_acc.get_signature() == FuncType(
-        [ValType.I32, ValType.I32], [ValType.I32]
-    )
+    assert func_acc.get_signature() == FuncType([ValType.I32, ValType.I32], [ValType.I32])
     code_stream = func_acc.get_code_stream()
     bytecode = bytes(code_stream.read_bytes(code_stream.remaining()))
     assert bytecode == bytes([0x20, 0x00, 0x20, 0x01, 0x6A, 0x0B])
@@ -304,9 +299,7 @@ def test_load_20_to_25_multi_module_import_resolution():
 def test_load_40_to_47_radix_binary_tree_view_indexes():
     """LOAD-40..47: Verifies RadixBinaryTreeView file offset and Hash symbol/import indexes."""
     loader = WasmLoader()
-    wasm_bytes = _build_test_wasm_binary(
-        export_names=["alpha", "beta", "gamma", "compute"]
-    )
+    wasm_bytes = _build_test_wasm_binary(export_names=["alpha", "beta", "gamma", "compute"])
     view = loader.prepare("radix_mod", wasm_bytes)
     # 1. LOAD-40: Entities registered in DecodedEntityRegistry
     assert len(view.entity_registry) > 0

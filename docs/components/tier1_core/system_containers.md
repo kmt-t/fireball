@@ -233,9 +233,7 @@ class BitView:
         """Narrow by index. The bit origin absorbs the remainder, so `first`
         does not have to land on a byte boundary."""
         assert 0 <= first <= last <= self.count, "a view may only ever shrink"
-        return BitView(
-            self.storage, self.bits, self.origin + first * self.bits, last - first
-        )
+        return BitView(self.storage, self.bits, self.origin + first * self.bits, last - first)
 
 
 class _SortedWindow:
@@ -303,12 +301,7 @@ class FlatSetView(_SortedWindow):
 
 def bswap32(v: int) -> int:
     """32-bit byte-order reversal for maximizing Radix table distribution on UnifiedPC."""
-    return (
-        ((v & 0xFF) << 24)
-        | ((v & 0xFF00) << 8)
-        | ((v >> 8) & 0xFF00)
-        | ((v >> 24) & 0xFF)
-    )
+    return ((v & 0xFF) << 24) | ((v & 0xFF00) << 8) | ((v >> 8) & 0xFF00) | ((v >> 24) & 0xFF)
 
 
 class RadixBinaryTreeView:

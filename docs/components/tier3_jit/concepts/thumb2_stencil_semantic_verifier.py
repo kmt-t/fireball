@@ -19,15 +19,15 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from jit_copy_patch_concept import CopyPatchJITEngine  # noqa: E402
-from unicorn import (  # noqa: E402
+from jit_copy_patch_concept import CopyPatchJITEngine
+from unicorn import (
     UC_ARCH_ARM,
     UC_ERR_EXCEPTION,
     UC_MODE_THUMB,
     Uc,
     UcError,
 )
-from unicorn.arm_const import (  # noqa: E402
+from unicorn.arm_const import (
     UC_ARM_REG_R2,
     UC_ARM_REG_R3,
     UC_ARM_REG_R4,
@@ -250,9 +250,7 @@ def main() -> None:
     total += 1
     stored_val = int.from_bytes(res_store["mem_read"](mem_base + 0x0008, 4), "little")
     if stored_val != 0xCAFEBABE:
-        failures.append(
-            f"i32_store_r8: stored val={stored_val:#x}, expected 0xCAFEBABE"
-        )
+        failures.append(f"i32_store_r8: stored val={stored_val:#x}, expected 0xCAFEBABE")
 
     # --- Global Get / Set Stencils via vsoc_runtime.globals-base (env + 0x08) ---
     env_addr = DATA_BASE + 0x10000
@@ -269,9 +267,7 @@ def main() -> None:
     )
     total += 1
     if _to_u32(res_gget["r4"]) != 0x12345678:
-        failures.append(
-            f"global_get_d0: got r4={res_gget['r4']:#x}, expected 0x12345678"
-        )
+        failures.append(f"global_get_d0: got r4={res_gget['r4']:#x}, expected 0x12345678")
 
     # Test global_set_d1: env + 0x08 -> globals_addr -> writes global[0]
     st_gset = engine.stencils["global_set_d1"]
@@ -288,7 +284,7 @@ def main() -> None:
     if g_stored != 0x87654321:
         failures.append(f"global_set_d1: stored val={g_stored:#x}, expected 0x87654321")
 
-    stencil_count = len(set(c[0] for c in ALU_CASES + REM_CASES + CMP_CASES)) + 4
+    stencil_count = len({c[0] for c in ALU_CASES + REM_CASES + CMP_CASES}) + 4
     print(
         f"Executed {total} case(s) across {stencil_count} stencils on a real ARMv8-M Thumb emulator."
     )

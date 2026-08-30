@@ -43,7 +43,8 @@ for _p in [
         sys.path.insert(0, _sp)
 
 import ctypes
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from system_containers import BitView, RingBuffer
 
@@ -231,9 +232,7 @@ class JITTrace:
     ):
 
         self.head_pc = head_pc
-        self.fn = (
-            fn or native_fn
-        )  # Direct ctypes CFUNCTYPE function pointer or callable
+        self.fn = fn or native_fn  # Direct ctypes CFUNCTYPE function pointer or callable
         self.size_bytes = size_bytes
         self.next_pc = next_pc  # Unconditional fallthrough successor
         self.loops_to = loops_to  # Conditional loop backedge (never auto-chained)
@@ -432,9 +431,7 @@ class JITMultiBufferCache:
 
         # Chain into active/warm successor if resident (never oldest, never loops_to)
         succ = trace.next_pc
-        if succ is not None and (
-            self.active.has_trace(succ) or self.warm.has_trace(succ)
-        ):
+        if succ is not None and (self.active.has_trace(succ) or self.warm.has_trace(succ)):
             trace.chain_next = succ
             self.register_chain(trace.head_pc, succ)
 
@@ -493,9 +490,7 @@ class RuntimeEngine:
         self.cache.on_evict = self._handle_eviction
         self.jit_compiler = jit_compiler
         self.compile_queue: list[int] = []  # LIFO queue
-        self.blocks: list[
-            tuple[int, BasicBlock]
-        ] = []  # Flat slot list instead of dynamic dict
+        self.blocks: list[tuple[int, BasicBlock]] = []  # Flat slot list instead of dynamic dict
         self.yield_threshold = yield_threshold
         self.exec_counter = 0
 
@@ -531,9 +526,7 @@ class RuntimeEngine:
             extracted = extract_basic_blocks(fn.code, func_index=func_idx)
             for head_pc, ops, next_pc in extracted:
                 if ops:
-                    self.register_block(
-                        BasicBlock(head_pc=head_pc, ops=ops, next_pc=next_pc)
-                    )
+                    self.register_block(BasicBlock(head_pc=head_pc, ops=ops, next_pc=next_pc))
 
     def record_block_head(self, pc: int) -> None:
         """Called at each basic-block head by the interpreter."""
@@ -772,9 +765,7 @@ class IntegratedHybridEngine:
         Cooperative Yield -> Idle-Hook Batch Compilation -> Trace Chaining -> JIT execution.
     """
 
-    def __init__(
-        self, yield_threshold: int = 4, card_shift: int = 4, compiler: Any = None
-    ):
+    def __init__(self, yield_threshold: int = 4, card_shift: int = 4, compiler: Any = None):
 
         self.bitmap = HotspotBitmap(card_shift=card_shift)
         self.history = HistoryRing(capacity=32)
@@ -783,9 +774,7 @@ class IntegratedHybridEngine:
         self.compile_queue: list[int] = []
         self.yield_threshold = yield_threshold
         self.exec_counter = 0
-        self.blocks: list[
-            tuple[int, BasicBlock]
-        ] = []  # Flat slot list instead of dynamic dict
+        self.blocks: list[tuple[int, BasicBlock]] = []  # Flat slot list instead of dynamic dict
         self.interp_blocks = 0
         self.jit_traces = 0
         self.compilations = 0
@@ -831,10 +820,7 @@ class IntegratedHybridEngine:
     def on_yield(self) -> None:
         """Promotes HOT cards in history ring to LIFO compile queue."""
         for pc in self.history.drain():
-            if (
-                self.bitmap.get_state(pc) == CardState.HOT
-                and pc not in self.compile_queue
-            ):
+            if self.bitmap.get_state(pc) == CardState.HOT and pc not in self.compile_queue:
                 self.compile_queue.append(pc)
 
     def idle_hook(self, budget: int = 4) -> int:
@@ -893,9 +879,7 @@ class IntegratedHybridEngine:
         self._interpret_block(block, ctx)
         return self._next_pc(block, ctx)
 
-    def _dispatch_normal(
-        self, pc: int, block: BasicBlock, ctx: WASMContext
-    ) -> int | None:
+    def _dispatch_normal(self, pc: int, block: BasicBlock, ctx: WASMContext) -> int | None:
         """Normal handler table: Pure zero-overhead execution (JIT or Fast Interpreter)."""
         trace = self.cache.lookup(pc)
         if trace is not None:
@@ -904,9 +888,7 @@ class IntegratedHybridEngine:
             trace.invoke(ctx)
             # Trace chaining or fallback to interpreter
             next_pc = (
-                trace.chain_next
-                if trace.chain_next is not None
-                else self._next_pc(block, ctx)
+                trace.chain_next if trace.chain_next is not None else self._next_pc(block, ctx)
             )
 
         else:
@@ -925,9 +907,7 @@ class IntegratedHybridEngine:
 
         return next_pc
 
-    def _dispatch_debug(
-        self, pc: int, block: BasicBlock, ctx: WASMContext
-    ) -> int | None:
+    def _dispatch_debug(self, pc: int, block: BasicBlock, ctx: WASMContext) -> int | None:
         """Debug handler table: JIT bypass, breakpoint check, PC sampling, dynamic assertion verification."""
         dbg = self.debugger
         if dbg is not None and dbg.has_breakpoint(pc):

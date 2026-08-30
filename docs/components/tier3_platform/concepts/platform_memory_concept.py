@@ -197,9 +197,7 @@ class SharedBlock:
         """RAII drop handler: automatically deallocates physical buffer if still owned."""
         if self._is_active:
             self._is_active = False
-            self._manager._deallocate_shared_slot(
-                self.page_idx, self.slot_idx, self.owner
-            )
+            self._manager._deallocate_shared_slot(self.page_idx, self.slot_idx, self.owner)
         elif self._is_in_flight:
             pass
 
@@ -314,9 +312,7 @@ class PMSAv8MPU:
                 is_device=True,
             ),
             # Region 6: Shared Memory Buffers (RW + XN)
-            MPURegion(
-                6, "Shared_Memory", 0x20080000, 0x200BFFE0, AccessPermission.RW, xn=True
-            ),
+            MPURegion(6, "Shared_Memory", 0x20080000, 0x200BFFE0, AccessPermission.RW, xn=True),
             # Region 7: Stack Guard Band (No Access)
             MPURegion(
                 7,
@@ -407,9 +403,7 @@ class MemoryManager:
             return Result(
                 error=MemoryErrorResult(
                     "ERR_POOL_EXHAUSTED",
-                    RecoveryStrategy(
-                        RecoveryAction.DEGRADE, "Physical memory pool exhausted"
-                    ),
+                    RecoveryStrategy(RecoveryAction.DEGRADE, "Physical memory pool exhausted"),
                 )
             )
 
@@ -440,9 +434,7 @@ class MemoryManager:
             return Result(
                 error=MemoryErrorResult(
                     "ERR_SLOT_EXHAUSTED",
-                    RecoveryStrategy(
-                        RecoveryAction.DEGRADE, "Slot allocation pool exhausted"
-                    ),
+                    RecoveryStrategy(RecoveryAction.DEGRADE, "Slot allocation pool exhausted"),
                 )
             )
 
@@ -471,9 +463,7 @@ class MemoryManager:
             return Result(
                 error=MemoryErrorResult(
                     "ERR_INVALID_SIZE",
-                    RecoveryStrategy(
-                        RecoveryAction.RETRY, "Requested SHM size out of bounds"
-                    ),
+                    RecoveryStrategy(RecoveryAction.RETRY, "Requested SHM size out of bounds"),
                 )
             )
 
@@ -481,9 +471,7 @@ class MemoryManager:
             return Result(
                 error=MemoryErrorResult(
                     "ERR_SHM_EXHAUSTED",
-                    RecoveryStrategy(
-                        RecoveryAction.DEGRADE, "No free SHM pages in physical pool"
-                    ),
+                    RecoveryStrategy(RecoveryAction.DEGRADE, "No free SHM pages in physical pool"),
                 )
             )
 
@@ -520,9 +508,7 @@ class MemoryManager:
             return Result(
                 error=MemoryErrorResult(
                     "ERR_INVALID_SHM_ID",
-                    RecoveryStrategy(
-                        RecoveryAction.RETRY, "Invalid or deallocated SHM ID"
-                    ),
+                    RecoveryStrategy(RecoveryAction.RETRY, "Invalid or deallocated SHM ID"),
                 )
             )
 
@@ -533,9 +519,7 @@ class MemoryManager:
             return Result(
                 error=MemoryErrorResult(
                     "ERR_GRANT_NOT_COMPLETED",
-                    RecoveryStrategy(
-                        RecoveryAction.RETRY, "Grant phase incomplete in vMMIO PTE"
-                    ),
+                    RecoveryStrategy(RecoveryAction.RETRY, "Grant phase incomplete in vMMIO PTE"),
                 )
             )
 
@@ -612,9 +596,7 @@ def test_mem_01_acquire_partition_fixed_size():
     )
     assert pv.owner == 1
     # Verify no arbitrary allocate(size, category) API exists
-    assert not hasattr(mm, "allocate"), (
-        "Generic heap allocate(size, category) must not exist"
-    )
+    assert not hasattr(mm, "allocate"), "Generic heap allocate(size, category) must not exist"
 
 
 def test_mem_01b_acquire_slot_typed():
@@ -701,7 +683,7 @@ def test_mem_06_guest_ram_64kb_alignment():
     unaligned_base = 0x20021000
     try:
         mm.init_manager(pool_base=unaligned_base, pool_size=FB_CONF_MEMORY_POOL_SIZE)
-        assert False, "Unaligned pool_base must fail"
+        raise AssertionError("Unaligned pool_base must fail")
     except AssertionError as e:
         assert "64KB aligned" in str(e)
 
@@ -784,9 +766,7 @@ def test_mem_10c_route_message_rollback_restores_owner_id():
     assert mm.vmmio_registry.get_owner(sb.page_idx) == FB_TASK_ID_FLIGHT
     # Send failed with ERR_QUEUE_FULL -> Rollback
     mm.rollback_transfer(original_sender_id=1, shm_id=shm_id)
-    assert mm.vmmio_registry.get_owner(sb.page_idx) == 1, (
-        "PTE owner must be restored to Task 1"
-    )
+    assert mm.vmmio_registry.get_owner(sb.page_idx) == 1, "PTE owner must be restored to Task 1"
 
 
 def test_mem_11_shared_block_raii_auto_deallocate():
@@ -883,9 +863,7 @@ def test_mem_25_pmsav8_32byte_alignment():
     """MEM-25: All MPU base and limit addresses adhere to 32-byte alignment."""
     mpu = PMSAv8MPU(pool_base=0x20020000)
     for r in mpu.regions:
-        assert r.base_address % 32 == 0, (
-            f"Region {r.region_no} base must be 32-byte aligned"
-        )
+        assert r.base_address % 32 == 0, f"Region {r.region_no} base must be 32-byte aligned"
         assert (r.limit_address + 32) % 32 == 0 or r.limit_address % 32 == 0, (
             f"Region {r.region_no} limit must be 32-byte aligned"
         )
@@ -918,6 +896,4 @@ if __name__ == "__main__":
     test_mem_23_rwx_state_permanently_eliminated()
     test_mem_24_transaction_batching_barrier_efficiency()
     test_mem_25_pmsav8_32byte_alignment()
-    print(
-        "[PASS] All platform memory concept tests (MEM-01 ~ MEM-25) passed successfully."
-    )
+    print("[PASS] All platform memory concept tests (MEM-01 ~ MEM-25) passed successfully.")

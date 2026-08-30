@@ -234,9 +234,7 @@ namespace fireball {
 ```python
 # ゲスト側での trigger.set_pin の実装例 (Shim) `{Fast_Path_GPIO}`
 def fireball_trigger_set_pin(pin: int, value: bool):
-    __fireball_call(
-        fb_syscall_id.FB_SYSCALL_TRIGGER_SET_PIN, pin, int(value), 0, 0, 0, 0
-    )
+    __fireball_call(fb_syscall_id.FB_SYSCALL_TRIGGER_SET_PIN, pin, int(value), 0, 0, 0, 0)
 ```
 > [!IMPORTANT]
 > WASI 0.2 標準のリソース（`output-stream` 等）は、対応する WIT インターフェイスの実装関数を通じて呼び出される。`fireball_call`はvMMIO機能全体の代理実行ラッパーであり、GPIOのような物理アクセスもMMIO Generic経由で行える。

@@ -23,7 +23,8 @@ The compilation unit is a TRACE identified by its head WASM PC. This is a
 tracing JIT: there is no function/method-level unit anywhere in the design.
 """
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 # ==============================================================================
 # 1. Hardware protection & traps
@@ -58,9 +59,7 @@ class CardState:
 class BitView:
     """bit_view<2>: a dense, index-addressed table of 2-bit states (4 cards per byte)."""
 
-    def __init__(
-        self, storage: bytearray, bits: int = 2, origin: int = 0, count: int = 0
-    ):
+    def __init__(self, storage: bytearray, bits: int = 2, origin: int = 0, count: int = 0):
         self.storage = storage
         self.bits = bits
         self.origin = origin
@@ -349,9 +348,7 @@ class JITMultiBufferCache:
         self.rotate()
         return self.active.allocate(trace)
 
-    def find_bank_excluding(
-        self, head_pc: int, excluding_bank_id: int
-    ) -> JITCacheBank | None:
+    def find_bank_excluding(self, head_pc: int, excluding_bank_id: int) -> JITCacheBank | None:
         for bank in self.banks:
             if bank.bank_id != excluding_bank_id and head_pc in bank.traces:
                 return bank
@@ -388,9 +385,7 @@ class JITMultiBufferCache:
             src_trace = self.find_trace(src_pc)
             if src_trace is not None and src_trace.chain_next is not None:
                 target_pc = src_trace.chain_next
-                promoted_bank = self.find_bank_excluding(
-                    target_pc, excluding_bank_id=bank.bank_id
-                )
+                promoted_bank = self.find_bank_excluding(target_pc, excluding_bank_id=bank.bank_id)
                 if promoted_bank is not None:
                     # Target was promoted: keep link and transfer inbound tracking!
                     promoted_bank.inbound_sources.add(src_pc)
@@ -435,21 +430,11 @@ class CopyPatchCompiler:
                 ["MOVW R4, #{imm_lo}", "MOVT R4, #{imm_hi}", "PUSH R4"],
                 ("imm_lo", "imm_hi"),
             ),
-            "i32.add": Stencil(
-                "i32.add", ["POP R5", "POP R4", "ADD R4, R4, R5", "PUSH R4"]
-            ),
-            "i32.sub": Stencil(
-                "i32.sub", ["POP R5", "POP R4", "SUB R4, R4, R5", "PUSH R4"]
-            ),
-            "i32.mul": Stencil(
-                "i32.mul", ["POP R5", "POP R4", "MUL R4, R4, R5", "PUSH R4"]
-            ),
-            "local.get": Stencil(
-                "local.get", ["LDR R4, [R3, #{slot}]", "PUSH R4"], ("slot",)
-            ),
-            "local.set": Stencil(
-                "local.set", ["POP R4", "STR R4, [R3, #{slot}]"], ("slot",)
-            ),
+            "i32.add": Stencil("i32.add", ["POP R5", "POP R4", "ADD R4, R4, R5", "PUSH R4"]),
+            "i32.sub": Stencil("i32.sub", ["POP R5", "POP R4", "SUB R4, R4, R5", "PUSH R4"]),
+            "i32.mul": Stencil("i32.mul", ["POP R5", "POP R4", "MUL R4, R4, R5", "PUSH R4"]),
+            "local.get": Stencil("local.get", ["LDR R4, [R3, #{slot}]", "PUSH R4"], ("slot",)),
+            "local.set": Stencil("local.set", ["POP R4", "STR R4, [R3, #{slot}]"], ("slot",)),
             "backedge": Stencil(
                 "backedge",
                 ["LDR R12, [R10, #SAFEPOINT]", "CBNZ R12, __safepoint", "B #{target}"],
@@ -482,9 +467,7 @@ class CopyPatchCompiler:
             listing += self.stencils["backedge"].emit(target=block.loops_to)
 
         size = len(listing) * self.BYTES_PER_INSTRUCTION
-        return JITTrace(
-            head_pc, native_fn=make_native_executor(listing), size_bytes=size
-        )
+        return JITTrace(head_pc, native_fn=make_native_executor(listing), size_bytes=size)
 
 
 def make_native_executor(listing: list[str]) -> Callable:
@@ -641,10 +624,7 @@ class IntegratedRuntimeEngine:
     def on_yield(self):
         """Scan the history ring, promote HOT cards, enqueue their head PCs (LIFO)."""
         for pc in self.history.drain():
-            if (
-                self.bitmap.get_state(pc) == CardState.HOT
-                and pc not in self.compile_queue
-            ):
+            if self.bitmap.get_state(pc) == CardState.HOT and pc not in self.compile_queue:
                 self.compile_queue.append(pc)
 
     # --- Batch compilation  [set_idle_hook / register_periodic_callback] ---
@@ -704,11 +684,7 @@ class IntegratedRuntimeEngine:
                 if status == "SAFEPOINT_YIELD":
                     return "SAFEPOINT_YIELD"
                 # chain_next is None -> return to the interpreter (dispatcher stub)
-                pc = (
-                    trace.chain_next
-                    if trace.chain_next is not None
-                    else self._next_pc(block, ctx)
-                )
+                pc = trace.chain_next if trace.chain_next is not None else self._next_pc(block, ctx)
             else:
                 # Record ONLY the basic-block head. `{HistoryBuffer}`
                 self.bitmap.touch(pc)
@@ -870,9 +846,7 @@ def test_idle_hook_chains_into_a_warm_resident_successor():
     eng.compile_queue = [0x100]
     eng.idle_hook()
     trace = eng.cache.active.traces[0x100]
-    assert trace.chain_next == 0x200, (
-        "a Warm-resident successor must still be a valid chain target"
-    )
+    assert trace.chain_next == 0x200, "a Warm-resident successor must still be a valid chain target"
 
 
 def test_idle_hook_never_chains_into_the_oldest_bank():
@@ -908,9 +882,7 @@ def test_rotate_unlinks_chains_when_oldest_is_purged():
     cache.register_chain(0x100, 0x200)
     cache.insert(source)
     cache.commit_patch()
-    assert source.chain_next == 0x200, (
-        "sanity: link established while target is in Warm"
-    )
+    assert source.chain_next == 0x200, "sanity: link established while target is in Warm"
     cache.begin_patch()
     cache.rotate()
     cache.commit_patch()  # target: Warm -> Oldest
@@ -951,12 +923,8 @@ def test_rotate_rechains_when_target_was_promoted_to_active():
     cache.begin_patch()
     cache.rotate()
     cache.commit_patch()
-    assert source.chain_next == 0x200, (
-        "source must be re-chained to promoted target in Active"
-    )
-    assert 0x100 in cache.warm.inbound_sources, (
-        "inbound tracking must follow the promoted bank"
-    )
+    assert source.chain_next == 0x200, "source must be re-chained to promoted target in Active"
+    assert 0x100 in cache.warm.inbound_sources, "inbound tracking must follow the promoted bank"
 
 
 def test_eviction_makes_the_card_recompilable():
@@ -1002,9 +970,7 @@ def test_warm_hit_does_not_promote_but_oldest_hit_does():
     cache.commit_patch()  # Warm -> Oldest
     assert 0x100 in cache.oldest.traces
     cache.lookup(0x100)
-    assert cache.promotions == before + 1, (
-        "an Oldest hit promotes immediately to Active"
-    )
+    assert cache.promotions == before + 1, "an Oldest hit promotes immediately to Active"
     assert 0x100 in cache.active.traces
 
 
@@ -1027,14 +993,14 @@ def test_mpu_wx_is_enforced_in_both_directions():
     cache = JITMultiBufferCache()
     try:
         cache.insert(JITTrace(0x100, lambda ctx: "COMPLETED", 64))
-        assert False, "write under RO_X must fault"
+        raise AssertionError("write under RO_X must fault")
     except MPUFault as e:
         assert "W^X VIOLATION" in str(e)
 
     cache.begin_patch()
     try:
         cache.require_executable()
-        assert False, "execute under RW_XN must fault"
+        raise AssertionError("execute under RW_XN must fault")
     except MPUFault as e:
         assert "W^X VIOLATION" in str(e)
 
@@ -1061,7 +1027,7 @@ def test_stencil_requires_its_relocation_holes():
     c = CopyPatchCompiler()
     try:
         c.stencils["i32.const"].emit(imm_lo=1)
-        assert False, "missing relocation must be rejected"
+        raise AssertionError("missing relocation must be rejected")
     except KeyError as e:
         assert "imm_hi" in str(e)
 

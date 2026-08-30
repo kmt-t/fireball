@@ -7,9 +7,10 @@ Reference Concept Implementation: Fireball Logger Component
 - Memory isolation & zero dynamic allocation ({MemoryIsolation}, {META_ConfigurableSystem})
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Any, Callable
+from typing import Any
 
 
 class LogLevel(IntEnum):
@@ -52,9 +53,7 @@ class LogRingBuffer:
     """
 
     def __init__(self, capacity: int = 8):
-        assert (capacity & (capacity - 1)) == 0 and capacity > 0, (
-            "Capacity must be power of 2"
-        )
+        assert (capacity & (capacity - 1)) == 0 and capacity > 0, "Capacity must be power of 2"
         self.capacity = capacity
         self.mask = capacity - 1
         self.buffer: list[LogEntry | None] = [None] * capacity

@@ -73,9 +73,7 @@ graph TD
 # チャネルは値を保持しない。待機者は最大1タスク（ADR_RendezvousChannel）。
 
 
-def channel_send(
-    channel: Channel, sender_task: Task, value: CoValue
-) -> CoroutineHandle:
+def channel_send(channel: Channel, sender_task: Task, value: CoValue) -> CoroutineHandle:
     if channel.waiter_dir == RECV:
         # 受信側が待機中: 値を直接移譲してランデブー成立
         receiver = channel.take_waiter()
@@ -380,9 +378,7 @@ stateDiagram-v2
 ```python
 # システムハーネスによる依存性注入パターン
 class CoosHarness:
-    def __init__(
-        self, scheduler: "Scheduler", csp: "CspEngine", memory: "MemoryManager"
-    ):
+    def __init__(self, scheduler: "Scheduler", csp: "CspEngine", memory: "MemoryManager"):
         # 各サブコンポーネントへの参照を保持し、結合テストやモックの差し替えを容易にする
         self.scheduler = scheduler
         self.csp = csp

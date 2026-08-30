@@ -15,11 +15,9 @@ from typing import Any
 
 sys.path.insert(
     0,
-    os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "..", "..", "tier1_core", "concepts"
-    ),
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "tier1_core", "concepts"),
 )
-from flat_view_concept import FlatMapView  # noqa: E402
+from flat_view_concept import FlatMapView
 
 
 class OwnershipState:
@@ -61,9 +59,7 @@ class IPCRouter:
                 },
             }.items()
         )
-        self.registry = FlatMapView(
-            [uri for uri, _ in entries], [desc for _, desc in entries]
-        )
+        self.registry = FlatMapView([uri for uri, _ in entries], [desc for _, desc in entries])
         # Stage 2: Role-based Access Control Matrix (sender_role, target_role) -> bool
         self.role_matrix: dict[tuple[str, str], bool] = {
             ("CLIENT_APP", "CORE_SERVICE"): True,
@@ -83,9 +79,7 @@ class IPCRouter:
             "ch_dbg": [],
         }
 
-    def route_message(
-        self, sender_role: str, uri: str, message: IPCMessage
-    ) -> tuple[str, str]:
+    def route_message(self, sender_role: str, uri: str, message: IPCMessage) -> tuple[str, str]:
         """
         Executes the 3-stage IPC routing pipeline.
         Returns (status_code, detail_message).
@@ -178,9 +172,7 @@ def test_registry_is_a_real_flat_map_view_not_a_dict():
 def test_unregistered_uri_is_rejected():
     router = IPCRouter()
     msg = IPCMessage("shm_buf_x", {"cmd": "NOOP"})
-    status, detail = router.route_message(
-        "CLIENT_APP", "fireball://nonexistent/service/0", msg
-    )
+    status, detail = router.route_message("CLIENT_APP", "fireball://nonexistent/service/0", msg)
     assert status == "ERR_NOT_FOUND"
     assert msg.ownership == OwnershipState.SENDER_OWNS
 
@@ -213,14 +205,8 @@ def test_queue_full_rollback():
     msg1 = IPCMessage("buf_1", {"d": 1})
     msg2 = IPCMessage("buf_2", {"d": 2})
     msg3 = IPCMessage("buf_3", {"d": 3})
-    assert (
-        router.route_message("CLIENT_APP", "fireball://hal/gpio/0", msg1)[0]
-        == "OK_ENQUEUED"
-    )
-    assert (
-        router.route_message("CLIENT_APP", "fireball://hal/gpio/0", msg2)[0]
-        == "OK_ENQUEUED"
-    )
+    assert router.route_message("CLIENT_APP", "fireball://hal/gpio/0", msg1)[0] == "OK_ENQUEUED"
+    assert router.route_message("CLIENT_APP", "fireball://hal/gpio/0", msg2)[0] == "OK_ENQUEUED"
     # 3rd message exceeds max_queue=2 -> Rollback
     status, _ = router.route_message("CLIENT_APP", "fireball://hal/gpio/0", msg3)
     assert status == "ERR_QUEUE_FULL"

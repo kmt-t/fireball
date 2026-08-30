@@ -123,14 +123,10 @@ def _parse_import_section(data: bytes, off: int, end: int, module: Module) -> No
         kind = data[off]
         off += 1
         if kind != 0:
-            raise WasmParseError(
-                f"only function imports (kind=0) are supported, got kind={kind}"
-            )
+            raise WasmParseError(f"only function imports (kind=0) are supported, got kind={kind}")
 
         type_index, off = decode_unsigned(data, off)
-        module.imports.append(
-            Import(module=mod_name, name=field_name, type_index=type_index)
-        )
+        module.imports.append(Import(module=mod_name, name=field_name, type_index=type_index))
 
     assert off == end, "import section length mismatch"
 
@@ -220,16 +216,12 @@ def _parse_global_section(data: bytes, off: int, end: int, module: Module) -> No
         mutable = data[off] == 0x01
         off += 1
         # Init expr: this experiment only supports `i32.const N end`.
-        assert data[off] == 0x41, (
-            "only i32.const init expressions are supported for globals"
-        )
+        assert data[off] == 0x41, "only i32.const init expressions are supported for globals"
         off += 1
         init_value, off = decode_signed(data, off)
         assert data[off] == 0x0B, "global init expr must end with 0x0B"
         off += 1
-        module.globals.append(
-            Global(vtype=vtype, mutable=mutable, init_value=init_value)
-        )
+        module.globals.append(Global(vtype=vtype, mutable=mutable, init_value=init_value))
 
     assert off == end, "global section length mismatch"
 
@@ -254,9 +246,7 @@ def _parse_code_section(
 ) -> None:
 
     n, off = decode_unsigned(data, off)
-    assert n == len(type_indices), (
-        "code section entry count must match function section"
-    )
+    assert n == len(type_indices), "code section entry count must match function section"
     for i in range(n):
         body_size, off = decode_unsigned(data, off)
         body_start = off
@@ -269,9 +259,7 @@ def _parse_code_section(
             loff += 1
             locals_extra.extend([vtype] * count)
 
-        code = data[
-            loff:body_end
-        ]  # instruction stream, including the trailing 0x0B (end)
+        code = data[loff:body_end]  # instruction stream, including the trailing 0x0B (end)
         module.functions.append(
             Function(type_index=type_indices[i], locals_extra=locals_extra, code=code)
         )
@@ -303,9 +291,7 @@ def _parse_data_section(data: bytes, off: int, end: int, module: Module) -> None
         data_len, off = decode_unsigned(data, off)
         seg_data = data[off : off + data_len]
         off += data_len
-        module.data_segments.append(
-            DataSegment(memory_index=mem_idx, offset=offset, data=seg_data)
-        )
+        module.data_segments.append(DataSegment(memory_index=mem_idx, offset=offset, data=seg_data))
 
     assert off == end, "data section length mismatch"
 

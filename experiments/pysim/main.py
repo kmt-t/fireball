@@ -53,9 +53,7 @@ def task_structured_logger(sysv: System):
         exactly what {DictionaryBasedIPC} can carry.
     """
 
-    sysv.dictionary.register(
-        0x01, "task booted (free=%d bytes, retries=%d, x=%d, y=%d)"
-    )
+    sysv.dictionary.register(0x01, "task booted (free=%d bytes, retries=%d, x=%d, y=%d)")
     status = sysv.logger.log_event(LogLevel.INFO, 0x01, 21504, 0, 0, 0)
     print(f"  [structured-logger] log_event -> {status}")
     yield
@@ -88,9 +86,7 @@ def task_bus_owner(sysv: System, task_id: int):
     tx_view[:8] = b"HELLOHAL"
     n = master.transfer_data(ShmSlice(tx, 0, 8), ShmSlice(rx, 0, 8))
     rx_view = sysv.pool.view(task_id, rx, 0, 8)
-    print(
-        f"  [bus-owner] handle-resolved zero-copy transfer moved {n} bytes: {bytes(rx_view)!r}"
-    )
+    print(f"  [bus-owner] handle-resolved zero-copy transfer moved {n} bytes: {bytes(rx_view)!r}")
     assert bytes(rx_view) == b"HELLOHAL"
     try:
         master.transfer_data(ShmSlice(tx, 0, 999), ShmSlice(rx, 0, 999))
@@ -113,8 +109,8 @@ def task_hostile_neighbor(sysv: System, my_task_id: int, other_handle):
     try:
         sysv.pool.view(my_task_id, other_handle, 0, 8)
         findings.append(
-            "BUG: task {} could read another task's SHM handle {} -- "
-            "ownership isolation is broken".format(my_task_id, other_handle.name)
+            f"BUG: task {my_task_id} could read another task's SHM handle {other_handle.name} -- "
+            "ownership isolation is broken"
         )
 
     except ShmTrap as e:
@@ -141,9 +137,7 @@ def task_retry_then_succeed(sysv: System):
         return Result.ok("SUCCESS")
 
     res = mgr.execute_with_recovery(flaky_operation)
-    print(
-        f"  [retry-then-succeed] succeeded after {attempts_made[0]} attempt(s): {res.value}"
-    )
+    print(f"  [retry-then-succeed] succeeded after {attempts_made[0]} attempt(s): {res.value}")
     assert attempts_made[0] == 3
     assert res.is_ok is True
     yield
@@ -216,25 +210,17 @@ def run_wasm_demo(sysv: System) -> None:
     print("  [Stage 1] Initial iterations running via Tier 2 Interpreter...")
     for iter_idx in range(1, 4):
         pc = engine.run_step(pc, ctx)
-        state_name = ["UNEXECUTED", "EXECUTED", "HOT", "COMPILED"][
-            engine.bitmap.get_state(0x100)
-        ]
-        print(
-            f"    iteration {iter_idx}: executed via Interpreter (card 0x100 state={state_name})"
-        )
+        state_name = ["UNEXECUTED", "EXECUTED", "HOT", "COMPILED"][engine.bitmap.get_state(0x100)]
+        print(f"    iteration {iter_idx}: executed via Interpreter (card 0x100 state={state_name})")
 
-    assert 0x100 in engine.compile_queue, (
-        "HOT block must be enqueued to compile_queue on yield"
-    )
+    assert 0x100 in engine.compile_queue, "HOT block must be enqueued to compile_queue on yield"
     print(
         "  [Stage 2] COOS idle_hook triggered: batch-compiling HOT trace into Active JIT cache..."
     )
     compiled = engine.idle_hook()
     print(f"    idle_hook compiled {compiled} trace(s); card 0x100 state=COMPILED")
     assert engine.cache.active.has_trace(0x100)
-    print(
-        "  [Stage 3] Remaining iterations executing via Tier 3 Native JIT Trace & chaining..."
-    )
+    print("  [Stage 3] Remaining iterations executing via Tier 3 Native JIT Trace & chaining...")
     iter_idx = 4
     while pc is not None:
         prev_jit = engine.jit_traces
@@ -270,17 +256,11 @@ def run_wasm_demo(sysv: System) -> None:
         # 1. fd_write
         ctx_wasi.fd_write(1, MSG_IOV, 1, NWRITTEN)
         # 2. IPC lookup
-        h = ctx_wasi.fireball_call(
-            FbSyscallId.IPC_LOOKUP, URI_OFF, len(uri), 0, 0, 0, 0
-        )
+        h = ctx_wasi.fireball_call(FbSyscallId.IPC_LOOKUP, URI_OFF, len(uri), 0, 0, 0, 0)
         # 3. IPC send
-        ctx_wasi.fireball_call(
-            FbSyscallId.IPC_SEND, h, PAYLOAD_OFF, len(payload), 0, 0, 0
-        )
+        ctx_wasi.fireball_call(FbSyscallId.IPC_SEND, h, PAYLOAD_OFF, len(payload), 0, 0, 0)
         # 4. IPC recv
-        return ctx_wasi.fireball_call(
-            FbSyscallId.IPC_RECV, h, RECV_BUF, len(payload), 0, 0, 0
-        )
+        return ctx_wasi.fireball_call(FbSyscallId.IPC_RECV, h, RECV_BUF, len(payload), 0, 0, 0)
 
     t = ctypes.CFUNCTYPE(ctypes.c_uint32)(host_wasi_roundtrip)
     t_addr = ctypes.cast(t, ctypes.c_void_p).value
@@ -347,15 +327,11 @@ def main() -> None:
 
         raise SystemExit(1)
 
-    print(
-        "  No behavioral bugs found: every enforced invariant held under real execution."
-    )
+    print("  No behavioral bugs found: every enforced invariant held under real execution.")
     print("  (See recovery.py/logger.py source comments for two spec gaps this build")
     print("   had to resolve by assumption -- retry-exhaustion escalation, and the")
     print("   ignore-vs-retry ambiguity on IPC queue-full -- neither is a code bug,")
-    print(
-        "   both are places interface_wit.md should say more than it currently does.)"
-    )
+    print("   both are places interface_wit.md should say more than it currently does.)")
 
 
 if __name__ == "__main__":

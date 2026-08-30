@@ -39,7 +39,8 @@ for _p in [
 
 import bisect
 import struct
-from typing import Any, Optional, Sequence, Union
+from collections.abc import Sequence
+from typing import Any
 
 # Configuration Constants
 
@@ -96,7 +97,7 @@ class ExternalKind:
     GLOBAL = 0x03
 
 
-def fnv1a_32(data: Union[str, bytes]) -> int:
+def fnv1a_32(data: str | bytes) -> int:
     """FNV-1a 32-bit hash for fast zero-copy symbol lookup."""
     if isinstance(data, str):
         raw = data.encode("utf-8")
@@ -129,7 +130,7 @@ class FlatMapView:
         assert 0 <= first <= last <= len(self.keys)
         return FlatMapView(self.keys[first:last], self.values[first:last])
 
-    def find(self, key: Any) -> Optional[Any]:
+    def find(self, key: Any) -> Any | None:
 
         idx = bisect.bisect_left(self.keys, key)
         if idx < len(self.keys) and self.keys[idx] == key:
@@ -144,11 +145,9 @@ class RadixBinaryTreeView:
     System container combining O(1) Radix Table prefix lookup with bounded binary search ({META_BinarySearch}).
     """
 
-    def __init__(
-        self, keys: Sequence[int], values: Sequence[Any], radix_shift: int = 16
-    ):
+    def __init__(self, keys: Sequence[int], values: Sequence[Any], radix_shift: int = 16):
 
-        paired = sorted(zip(keys, values), key=lambda p: p[0])
+        paired = sorted(zip(keys, values, strict=False), key=lambda p: p[0])
         self.keys = [p[0] for p in paired]
         self.values = [p[1] for p in paired]
         self.map_view = FlatMapView(self.keys, self.values)
@@ -171,7 +170,7 @@ class RadixBinaryTreeView:
         else:
             self.radix_table = []
 
-    def find(self, key: int) -> Optional[Any]:
+    def find(self, key: int) -> Any | None:
 
         prefix = key >> self.radix_shift
         if prefix < 0 or prefix >= len(self.radix_table):
@@ -183,7 +182,7 @@ class RadixBinaryTreeView:
 
         return self.map_view.slice(first, last).find(key)
 
-    def find_interval(self, offset: int) -> Optional[Any]:
+    def find_interval(self, offset: int) -> Any | None:
         """Range lookup for interval keys [start, end) stored as DecodedEntity."""
         if not self.keys:
             return None
@@ -235,9 +234,9 @@ class BinaryStream:
 
     def __init__(
         self,
-        data: Union[bytes, bytearray, memoryview],
+        data: bytes | bytearray | memoryview,
         offset: int = 0,
-        length: Optional[int] = None,
+        length: int | None = None,
     ):
 
         self.view = memoryview(data)
@@ -339,7 +338,7 @@ class BinaryStream:
             return bytes(raw_bytes).decode("utf-8")
 
         except UnicodeDecodeError as e:
-            raise WasmParseError(f"Invalid UTF-8 string: {e}")
+            raise WasmParseError(f"Invalid UTF-8 string: {e}") from e
 
 
 class FuncType:
@@ -348,7 +347,7 @@ class FuncType:
         self.params = params
         self.results = results
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
 
         if not isinstance(other, FuncType):
             return False
@@ -378,9 +377,7 @@ class ExportEntry:
 
 
 class GlobalEntry:
-    def __init__(
-        self, valtype: int, mutable: bool, init_expr_offset: int, init_expr_size: int
-    ):
+    def __init__(self, valtype: int, mutable: bool, init_expr_offset: int, init_expr_size: int):
 
         self.valtype = valtype
         self.mutable = mutable
@@ -389,14 +386,14 @@ class GlobalEntry:
 
 
 class MemoryEntry:
-    def __init__(self, initial_pages: int, maximum_pages: Optional[int] = None):
+    def __init__(self, initial_pages: int, maximum_pages: int | None = None):
 
         self.initial_pages = initial_pages
         self.maximum_pages = maximum_pages
 
 
 class TableEntry:
-    def __init__(self, elemtype: int, initial: int, maximum: Optional[int] = None):
+    def __init__(self, elemtype: int, initial: int, maximum: int | None = None):
 
         self.elemtype = elemtype
         self.initial = initial
@@ -426,7 +423,7 @@ class FunctionAccessor:
         func_idx: int,
         type_idx: int,
         type_sig: FuncType,
-        rom_data: Union[bytes, bytearray, memoryview],
+        rom_data: bytes | bytearray | memoryview,
         code_offset: int,
         code_size: int,
     ):
@@ -448,9 +445,7 @@ class FunctionAccessor:
 
     def get_locals_stream(self) -> BinaryStream:
 
-        return BinaryStream(
-            self._rom_data, offset=self._code_offset, length=self._code_size
-        )
+        return BinaryStream(self._rom_data, offset=self._code_offset, length=self._code_size)
 
     def get_code_stream(self) -> BinaryStream:
 
@@ -460,9 +455,7 @@ class FunctionAccessor:
             stream.read_leb128_u32()
             stream.read_u8()
 
-        return BinaryStream(
-            self._rom_data, offset=stream.tell(), length=stream.remaining()
-        )
+        return BinaryStream(self._rom_data, offset=stream.tell(), length=stream.remaining())
 
 
 class GlobalAccessor:
@@ -470,7 +463,7 @@ class GlobalAccessor:
         self,
         global_idx: int,
         entry: GlobalEntry,
-        rom_data: Union[bytes, bytearray, memoryview],
+        rom_data: bytes | bytearray | memoryview,
     ):
 
         self.global_idx = global_idx
@@ -515,9 +508,7 @@ class ModuleView:
     `{ROMParsing}` `{ZeroCopyIndexing}` `{META_AccessDictionary}` `{META_BinarySearch}`
     """
 
-    def __init__(
-        self, module_name: str, rom_binary: Union[bytes, bytearray, memoryview]
-    ):
+    def __init__(self, module_name: str, rom_binary: bytes | bytearray | memoryview):
 
         self.module_name = module_name
         self.rom_binary = memoryview(rom_binary)
@@ -530,14 +521,14 @@ class ModuleView:
         self.globals: list[GlobalEntry] = []
         self.exports_dict: list[ExportEntry] = []
         self.code_offsets: list[tuple[int, int]] = []
-        self.start_func_idx: Optional[int] = None
+        self.start_func_idx: int | None = None
         self.resolved_imports: dict[str, Any] = {}
         self.is_ready: bool = False
         # Decoded entity registry & RadixBinaryTreeView indexes ({META_BinarySearch})
         self.entity_registry: list[DecodedEntity] = []
-        self.export_tree: Optional[RadixBinaryTreeView] = None
-        self.import_tree: Optional[RadixBinaryTreeView] = None
-        self.entity_offset_tree: Optional[RadixBinaryTreeView] = None
+        self.export_tree: RadixBinaryTreeView | None = None
+        self.import_tree: RadixBinaryTreeView | None = None
+        self.entity_offset_tree: RadixBinaryTreeView | None = None
 
     def register_entity(
         self,
@@ -555,19 +546,13 @@ class ModuleView:
     def build_indexes(self) -> None:
         """Constructs RadixBinaryTreeView indexes for exports, imports, and entity offsets."""
         exp_keys = [fnv1a_32(exp.name) for exp in self.exports_dict]
-        self.export_tree = RadixBinaryTreeView(
-            exp_keys, self.exports_dict, radix_shift=16
-        )
-        imp_keys = [
-            fnv1a_32(f"{imp.module_name}::{imp.field_name}") for imp in self.imports
-        ]
+        self.export_tree = RadixBinaryTreeView(exp_keys, self.exports_dict, radix_shift=16)
+        imp_keys = [fnv1a_32(f"{imp.module_name}::{imp.field_name}") for imp in self.imports]
         self.import_tree = RadixBinaryTreeView(imp_keys, self.imports, radix_shift=16)
         ent_keys = [e.start_offset for e in self.entity_registry]
-        self.entity_offset_tree = RadixBinaryTreeView(
-            ent_keys, self.entity_registry, radix_shift=4
-        )
+        self.entity_offset_tree = RadixBinaryTreeView(ent_keys, self.entity_registry, radix_shift=4)
 
-    def lookup_export(self, name: str) -> Optional[ExportEntry]:
+    def lookup_export(self, name: str) -> ExportEntry | None:
         """Hash + RadixBinaryTreeView symbol lookup with zero-copy string verification in O(k)."""
         if self.export_tree is None:
             return None
@@ -579,7 +564,7 @@ class ModuleView:
 
         return None
 
-    def find_import(self, module_name: str, field_name: str) -> Optional[ImportEntry]:
+    def find_import(self, module_name: str, field_name: str) -> ImportEntry | None:
         """Hash + RadixBinaryTreeView import table lookup in O(k)."""
         if self.import_tree is None:
             return None
@@ -595,7 +580,7 @@ class ModuleView:
 
         return None
 
-    def lookup_export_func(self, name: str) -> Optional[int]:
+    def lookup_export_func(self, name: str) -> int | None:
 
         exp = self.lookup_export(name)
         if exp is not None and exp.kind == ExternalKind.FUNCTION:
@@ -603,7 +588,7 @@ class ModuleView:
 
         return None
 
-    def lookup_by_file_offset(self, file_offset: int) -> Optional[DecodedEntity]:
+    def lookup_by_file_offset(self, file_offset: int) -> DecodedEntity | None:
         """Looks up a decoded entity containing the given file byte offset using RadixBinaryTreeView in O(k)."""
         if self.entity_offset_tree is None:
             return None
@@ -618,9 +603,7 @@ class ModuleView:
 
         num_imported = self.num_imported_functions()
         if func_idx < num_imported:
-            raise ValueError(
-                f"Cannot get code accessor for imported function index {func_idx}"
-            )
+            raise ValueError(f"Cannot get code accessor for imported function index {func_idx}")
 
         internal_idx = func_idx - num_imported
         if internal_idx >= len(self.functions):
@@ -654,7 +637,7 @@ class WasmLoader:
 
     def __init__(
         self,
-        allocator: Optional[BumpAllocator] = None,
+        allocator: BumpAllocator | None = None,
         max_modules: int = FB_CONF_MAX_MODULES,
         max_wasm_pages: int = FB_CONF_MAX_WASM_PAGES,
     ):
@@ -664,18 +647,14 @@ class WasmLoader:
         self.max_modules = max_modules
         self.max_wasm_pages = max_wasm_pages
 
-    def lookup(self, name: str) -> Optional[ModuleView]:
+    def lookup(self, name: str) -> ModuleView | None:
 
         return self.registry.get(name)
 
-    def prepare(
-        self, module_name: str, wasm_binary: Union[bytes, bytearray, memoryview]
-    ) -> ModuleView:
+    def prepare(self, module_name: str, wasm_binary: bytes | bytearray | memoryview) -> ModuleView:
 
         if len(self.registry) >= self.max_modules:
-            raise WasmLinkError(
-                f"Module registry capacity ({self.max_modules}) exceeded"
-            )
+            raise WasmLinkError(f"Module registry capacity ({self.max_modules}) exceeded")
 
         watermark = self.allocator.save()
         try:
@@ -718,16 +697,12 @@ class WasmLoader:
                     last_section_id = sec_id
 
                 sec_total_size = (payload_start - sec_start) + sec_size
-                sec_view = SectionView(
-                    sec_id, sec_start, sec_total_size, payload_start, sec_size
-                )
+                sec_view = SectionView(sec_id, sec_start, sec_total_size, payload_start, sec_size)
                 view.sections[sec_id] = sec_view
                 view.register_entity(
                     "SECTION", sec_start, sec_start + sec_total_size, sec_id, sec_view
                 )
-                sec_stream = BinaryStream(
-                    wasm_binary, offset=payload_start, length=sec_size
-                )
+                sec_stream = BinaryStream(wasm_binary, offset=payload_start, length=sec_size)
                 self._parse_section_content(sec_id, sec_stream, view)
                 stream.seek(payload_start + sec_size)
 
@@ -769,9 +744,7 @@ class WasmLoader:
             self.allocator.restore(watermark)
             raise
 
-    def _parse_section_content(
-        self, sec_id: int, stream: BinaryStream, view: ModuleView
-    ) -> None:
+    def _parse_section_content(self, sec_id: int, stream: BinaryStream, view: ModuleView) -> None:
 
         if sec_id == SectionID.TYPE:
             count = stream.read_leb128_u32()
@@ -794,9 +767,7 @@ class WasmLoader:
                 kind = stream.read_u8()
                 if kind == ExternalKind.FUNCTION:
                     type_idx = stream.read_leb128_u32()
-                    view.imports.append(
-                        ImportEntry(mod_name, field_name, kind, type_idx)
-                    )
+                    view.imports.append(ImportEntry(mod_name, field_name, kind, type_idx))
 
                 elif kind == ExternalKind.TABLE:
                     elemtype = stream.read_u8()
@@ -856,9 +827,7 @@ class WasmLoader:
                 init_size = stream.tell() - init_start
                 g_entry = GlobalEntry(valtype, mutable, init_start, init_size)
                 view.globals.append(g_entry)
-                view.register_entity(
-                    "GLOBAL", init_start, init_start + init_size, g_idx, g_entry
-                )
+                view.register_entity("GLOBAL", init_start, init_start + init_size, g_idx, g_entry)
 
         elif sec_id == SectionID.EXPORT:
             count = stream.read_leb128_u32()
@@ -899,13 +868,9 @@ class WasmLoader:
 
             export_entry = target_mod.lookup_export(imp.field_name)
             if export_entry is None or export_entry.kind != imp.kind:
-                raise WasmLinkError(
-                    f"Unresolved import '{imp.module_name}.{imp.field_name}'"
-                )
+                raise WasmLinkError(f"Unresolved import '{imp.module_name}.{imp.field_name}'")
 
-            module.resolved_imports[f"{imp.module_name}.{imp.field_name}"] = (
-                export_entry
-            )
+            module.resolved_imports[f"{imp.module_name}.{imp.field_name}"] = export_entry
 
         module.is_ready = True
         return True

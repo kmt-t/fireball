@@ -77,9 +77,7 @@ def mov_reg_reg(dst: str, src: str) -> bytes:
     """mov dst, src (64-bit)."""
     dst_ext, dst_lo = REG_INFO[dst]
     src_ext, src_lo = REG_INFO[src]
-    rex = (
-        0x48 | (0x04 if src_ext else 0) | (0x01 if dst_ext else 0)
-    )  # W | R(src) | B(dst)
+    rex = 0x48 | (0x04 if src_ext else 0) | (0x01 if dst_ext else 0)  # W | R(src) | B(dst)
     modrm = 0xC0 | (src_lo << 3) | dst_lo
     return bytes((rex, 0x89, modrm))
 
@@ -151,21 +149,12 @@ def mov_load_scaled(dst: str, base: str, index: str, scale: int) -> bytes:
         stack-pointer-relative helpers above.
     """
 
-    assert index != "rsp", (
-        'rsp cannot be a SIB index register (that encoding means "no index")'
-    )
+    assert index != "rsp", 'rsp cannot be a SIB index register (that encoding means "no index")'
     dst_ext, dst_lo = REG_INFO[dst]
     base_ext, base_lo = REG_INFO[base]
     index_ext, index_lo = REG_INFO[index]
-    rex = (
-        0x48
-        | (0x04 if dst_ext else 0)
-        | (0x02 if index_ext else 0)
-        | (0x01 if base_ext else 0)
-    )
-    needs_disp8 = (
-        base_lo == 5
-    )  # rbp/r13 as SIB base always needs an explicit displacement
+    rex = 0x48 | (0x04 if dst_ext else 0) | (0x02 if index_ext else 0) | (0x01 if base_ext else 0)
+    needs_disp8 = base_lo == 5  # rbp/r13 as SIB base always needs an explicit displacement
     mod = 0x40 if needs_disp8 else 0x00
     modrm = mod | (dst_lo << 3) | 0x04  # rm=100 => SIB follows
     sib = (_SCALE_BITS[scale] << 6) | (index_lo << 3) | base_lo
@@ -182,17 +171,10 @@ def cmp_dword_scaled_imm32(base: str, index: str, scale: int, imm32: int) -> byt
     prefix = bytes((0x40 | rex_bits,)) if rex_bits else b""
     needs_disp8 = base_lo == 5
     mod = 0x40 if needs_disp8 else 0x00
-    modrm = (
-        mod | (0x07 << 3) | 0x04
-    )  # reg=111 (the /7 CMP extension), rm=100 => SIB follows
+    modrm = mod | (0x07 << 3) | 0x04  # reg=111 (the /7 CMP extension), rm=100 => SIB follows
     sib = (_SCALE_BITS[scale] << 6) | (index_lo << 3) | base_lo
     tail = bytes((0x00,)) if needs_disp8 else b""
-    return (
-        prefix
-        + bytes((0x81, modrm, sib))
-        + tail
-        + (imm32 & 0xFFFFFFFF).to_bytes(4, "little")
-    )
+    return prefix + bytes((0x81, modrm, sib)) + tail + (imm32 & 0xFFFFFFFF).to_bytes(4, "little")
 
 
 def test_reg_reg(reg: str) -> bytes:

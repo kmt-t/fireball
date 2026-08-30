@@ -59,15 +59,11 @@ TRACE_FN_TYPE = ctypes.CFUNCTYPE(
 )
 
 
-def patch(
-    code: bytearray, base: int, stencil: st.Stencil, reloc_name: str, value: int
-) -> None:
+def patch(code: bytearray, base: int, stencil: st.Stencil, reloc_name: str, value: int) -> None:
 
     width = 8 if reloc_name == "addr" else 4
     off = base + stencil.relocs[reloc_name]
-    code[off : off + width] = (value & ((1 << (width * 8)) - 1)).to_bytes(
-        width, "little"
-    )
+    code[off : off + width] = (value & ((1 << (width * 8)) - 1)).to_bytes(width, "little")
 
 
 def emit(code: bytearray, stencil: st.Stencil, **patches: int) -> int:

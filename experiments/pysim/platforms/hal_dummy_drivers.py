@@ -34,7 +34,7 @@ for _p in [
         sys.path.insert(0, _sp)
 
 import time
-from typing import Callable
+from collections.abc import Callable
 
 
 class PinMode:
@@ -136,9 +136,7 @@ class DummySpiDriver:
         elif cmd == 0x04:  # WRDI (Write Disable)
             self.write_enabled = False
 
-        elif (
-            cmd == 0x03 and len(tx_data) >= 3
-        ):  # READ: [0x03, addr_hi, addr_lo, dummy...]
+        elif cmd == 0x03 and len(tx_data) >= 3:  # READ: [0x03, addr_hi, addr_lo, dummy...]
             addr = (tx_data[1] << 8) | tx_data[2]
             length = len(tx_data) - 3
             for i in range(length):

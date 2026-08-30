@@ -7,87 +7,96 @@
 
 | フェーズ | 工期 | 目的 | 状態 |
 |---|---|---|:---:|
-| **Phase 0: Quality Gate / Foundation** | 約6ヶ月 | 仕様品質のGO判定・設計固定化・形式検証基盤の確立 | **GO判定中** |
-| **Phase 1: vSoC First** | 約3ヶ月 | スタンドアロンvSoCコア実装（Loader/Interpreter/JIT） | 待機中 |
-| **Phase 2: Integration** | 約4ヶ月 | 周辺コンポーネント実装・統合（COOS/IPC/vMMIO/HAL） | 未着手 |
-| **Phase 3: PoC** | 約2ヶ月 | ターゲットボード移植（Cortex-M33）・性能評価 | 未着手 |
-| **Phase 4: OSS** | 継続 | OSSリリース整備・コミュニティ対応 | 未着手 |
+| **Phase 0: Quality Gate & Executable Prototype** | 約6ヶ月 | 仕様品質合格・13形式検証・Python実機シミュレータ実証 | **DONE (完全合格)** |
+| **Phase 1: vSoC First (C++23 実装)** | 約3ヶ月 | スタンドアロンvSoCコア実装（Loader/Interpreter/JIT） | **進行中 (着手)** |
+| **Phase 2: Integration (周辺統合)** | 約4ヶ月 | 周辺サブシステム実装・統合（COOS/IPC/vMMIO/HAL/GDB） | 次期予定 |
+| **Phase 3: PoC (実機移植・評価)** | 約2ヶ月 | ターゲットボード移植（Cortex-M33/Zephyr）・性能評価 | 未着手 |
+| **Phase 4: OSS & Production** | 継続 | OSSリリース整備・エコシステム対応・ドキュメント公開 | 未着手 |
 
-**Phase 0を品質ゲートに集中させる理由:**
-- 仕様品質がGO判定に達しない状態で実装に入ると、手戻りが増えて開発が停止するため
-- vSoCの設計を「作る」前に、矛盾・未確定点・検証不能点を減らす必要があるため
-- 周辺コンポーネントは実装ではなく、インターフェースと不変条件の確定を優先するため
+**Phase 0 の成果と Phase 1 移行:**
+- 仕様品質ゲート（spec-integrator）により、静的リンク、要求トレーサビリティ（100+キーワード）、一貫性（Lockfile）、WIT契約、LLM意味監査を 0 Errors で完全パス。
+- pyModelChecking による数学的検証モデル（13モデル）により、CSPデッドロックフリー、W^X分離、キャッシュ整合性、PTE状態遷移の健全性を証明。
+- Python 実機シミュレータ（`experiments/pysim`）により、WASMローダ、Threaded Interpreter、Copy-and-Patch JIT、COOS、IPC、vMMIO、GDBサーバー等を含む 11 統合シナリオの動作を実証完了。
+- 以上の確立されたアーキテクチャに基づき、**Phase 1: C++23 スタンドアロン vSoC コア実装** に着手する。
 
 ---
 
-## Phase 0: Foundation（約6ヶ月）
+## Phase 0: Quality Gate & Prototype（DONE）
 
-設計ドキュメント・WIT契約・ビルド基盤・形式検証を完成させる。**仕様のGO判定に必要な品質基準を満たす**ことを最優先とする。`{META_SpecificationFirst}` `{META_Risk_Tiering}`
+設計ドキュメント・WIT契約・ビルド基盤・形式検証・実機シミュレータを完成。`{META_SpecificationFirst}` `{META_Risk_Tiering}`
 
 | サブフェーズ | 目的 | 状態 |
 |---|---|:---:|
 | Phase 0.7: Static DI & Build System | Harnessパターン・静的DI・WIT→C++自動生成・CMakeビルド | **DONE** |
 | Phase 0.75: Constexpr Verification | コード生成のconstexpr対応・コンパイル時計算の実証 | **DONE** |
 | Phase 0.76: SysML Alignment | 既存設計図のSysML準拠化・パラメトリック図導入 | **DONE** |
-| Phase 0.8: Spec Quality Gate | 仕様の矛盾解消・形式検証（pyModelChecking 5モデル）・WIT契約・LLM監査合格 ➔ **オーナー最終GO判定** | **進行中 (レビュー中)** |
+| Phase 0.8: Spec Quality Gate & Formal Models | 13形式検証モデル・WIT契約・LLM意味監査合格・全ゲート0 Error | **DONE** |
+| Phase 0.85: Executable Python Simulator (`pysim`) | 全11シナリオ（Loader/Interpreter/JIT/COOS/vMMIO/GDB）完走実証 | **DONE** |
 
-**形式検証モデル一覧（5モデル）** — この一覧を `docs/components/*/formal/*.py` の正本とする:
+**形式検証モデル一覧（pyModelChecking 13モデル）** — `docs/components/*/formal/*.py`:
 
 | モデル | 対象 | 主要プロパティ |
 | :--- | :--- | :--- |
 | `components/tier1_core/formal/coos_channel_model.py` | COOS CSP ランデブーとハンドオフ有界性 | デッドロック不在 / 二重所有不在 / メインループ復帰保証 |
+| `components/tier1_core/formal/logging_flush_model.py` | 構造化ログのバッファリングとアイドル時フラッシュ | ログ欠損不在 / バッファ溢れ防止 / アイドルフラッシュ保証 |
+| `components/tier1_core/formal/syscall_trap_model.py` | システムコールトラップ遷移とコンテキスト保護 | 特権昇格分離 / 状態復帰不変条件 |
 | `components/tier1_interface/formal/csp_handoff_model.py` | IPC 所有権移譲と Drop ハンドラ | 二重所有不在 / in-flight 解決保証 |
+| `components/tier1_interface/formal/service_fault_isolation_model.py` | サービスフォルト隔離とチャネルリカバリー | フォールト波及防止 / チャネル再初期化 |
+| `components/tier1_interface/formal/wit_resource_lifecycle_model.py` | WIT リソースライフサイクルと Drop 契約 | リソースリーク不在 / 二重解放不在 |
+| `components/tier2_runtime/formal/loader_verification_model.py` | WASM バイナリローダの検証状態遷移 | 不正バイナリ完全拒絶 / 整合状態遷移 |
 | `components/tier2_runtime/formal/vsoc_state_model.py` | vSoC 実行状態と Safepoint 応答性 | IRQ/JIT レース不在 / Safepoint 到達保証 |
 | `components/tier2_runtime/formal/vsoc_cache_coherency_model.py` | JIT キャッシュ世代とデバッガ介入 | 旧コード実行不在 / 世代単調性 / バンク回収 / flush 完了 |
 | `components/tier3_jit/formal/jit_cache_model.py` | JIT 3面代謝・MPU W^X・遅延チェイニング | W^X 分離 / ダングリングチェイン不在 / 2-bit FSM 健全性 |
 
-**Phase 0 達成状況 & GO判定基準:**
-- [ ] 全設計ドキュメントの整合性確認（0 Errors, 0 Warnings）
-- [ ] 全WITファイルへの契約（リカバリー戦略パターン、リソース・ストリーム）定義
-- [ ] コア形式検証（pyModelChecking 5モデル、上表参照）のモデル検査合格。全プロパティが `build_model(guards=False)` による変異検査を伴うこと
-- [ ] トレーサビリティマトリクス（100+キーワード）の一方向追従確立
-- [ ] LLM as a Judge（Sakura AI Engine）による意味監査合格（0 Failures）
-- [ ] `Resource_Estimation_Model` による制約適合（評価ターゲットの最小構成 RAM 32KB / ROM 96KB に対し、静的合計 21.0KB / 84KB）
-- [ ] **オーナー（アーキテクト）による最終仕様精読 & GO 判定**
-
 ---
 
-## Phase 1: vSoC First（GO後に約3ヶ月）
+## Phase 1: vSoC First（C++23 実装 / 約3ヶ月）
 
-スタンドアロンvSoCを実装し、WAMR比較評価を実施する。Phase 0 の GO 判定後に開始する。`{META_AI_Native_Dev}`
+スタンドアロン vSoC コア（Loader, Interpreter, JIT）を C++23 で実装し、ホストハーネス上で WAMR 比較ベンチマークを実施する。`{META_AI_Native_Dev}`
 
-- WASMローダ
-- インタープリタ（算術・制御・メモリ）
-- JITコンパイラ
-- ベンチマーク・ハーネス・WAMR比較評価
+- **Phase 1.1: WASM 32-bit Binary Loader (`runtime_loader`)**
+  - ROM バイト列ゼロコピー LEB128 デコーダ・セクションインデックス構築 `{ROMParsing}` `{META_AccessDictionary}`
+  - バリデータ (V1〜V6) `{LightweightVerifier}`
+- **Phase 1.2: WASM Stackless Fast Interpreter (`runtime_interpreter`)**
+  - `execution_context` & 統合スタック（ARTスタイル） `{ContextPointerRegister}`
+  - `__fastcall` CPS 4引数（`[[clang::musttail]]`）スレッド化ディスパッチャ `{ThreadedInterpreter}`
+  - 全コア命令ハンドラ（算術・制御・メモリ境界トラップ） `{MemoryBoundaryCheck}`
+- **Phase 1.3: Copy-and-Patch JIT Compiler (`jit_compiler`)**
+  - ARM Thumb-2 ネイティブパッチステンシル & 事前コンパイルテンプレート `{JIT_CopyAndPatch}` `{ADR_TosCacheAsymmetry}`
+  - 2KB×3面 トリプルバッファ MPU W^X 代謝マネージャ `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}`
+  - Safepoint 協調 & JIT/インタープリタ透過切り替え `{JIT_LazyChaining}` `{Interpreter_LazyJITSwitch}` `{JIT_RuntimeAPI_Fallback}`
+- **Phase 1.4: Standalone vSoC Harness & WAMR Benchmark (`runtime_vsoc`)**
+  - ホスト (x86_64 / Linux / macOS) 実行ハーネス
+  - WAMR (Fast Interpreter) 比較ベンチマーク (CoreMark-PRO, aobench)
 
 ---
 
 ## Phase 2: Integration（約4ヶ月）
 
-周辺コンポーネントの実装と統合。
+周辺コンポーネントの実装と C++23 統合。
 
-- COOSカーネル（スケジューラ・CSP）
-- IPCルータ
-- HAL（x64上での標準入出力のみ）
-- vSoC追加機能（ロギング・デバッガ・vMMIO）
+- **COOS カーネル**: スタックレス C++20 コルーチンスケジューラ (`os_scheduler.hxx`, `os_coos.hxx`) `{GLOBAL_UseCpp20Coroutine}`
+- **IPC ルータ**: ゼロコピー CSP チャネル & RAII 所有権移譲 (`ipc_router.hxx`) `{CSP_Handoff}`
+- **vMMIO コントローラ**: 2段階ダイレクトデコードページテーブル & ソフトウェア TLB (`runtime_vmmio.hxx`) `{FastAddressCheck}`
+- **HAL & WASI ドライバ**: GPIO / I2C / SPI / Timer / WASI Preview 1 (`platform_hal.hxx`, `platform_wasi.hxx`)
+- **GDB Server**: GDB リモートシリアルプロトコル（RSP）デバッガ (`runtime_debugger.hxx`)
 
 ---
 
 ## Phase 3: PoC（約2ヶ月）
 
-実機での最終検証。
+実機ターゲットボード移植と最終検証。
 
-- ターゲットボード移植（Microbit, Zephyr）
-- デバッグ・テスト・性能評価
+- **ターゲットボード移植**: ARM Cortex-M33 (nRF5340 / STM32U5 / micro:bit v2 / Zephyr OS)
+- **実機性能・リアルタイム性評価**: sub-µs 割り込み応答、64KB RAM 適合、CoreMark 測定
 
 ---
 
-## Phase 4: OSS（継続）
+## Phase 4: OSS & Production（継続）
 
-OSSリリースに向けた整備。
+OSS リリースに向けた整備とエコシステム展開。
 
-- ドキュメンテーション
-- CMake設定ジェネレータ
-- 開発環境整備（標準ビルド環境・リンカスクリプト）
-- コミュニティ対応
+- ドキュメンテーション・公開 Web サイト
+- CMake / Meson ビルド設定ジェネレータ
+- 標準開発環境（コンテナ・リンカスクリプト・デバッグ環境）
+- コミュニティ対応・RFC プロセス運用

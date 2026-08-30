@@ -95,10 +95,23 @@ powershell -ExecutionPolicy Bypass -File tools/run_all_tests.ps1 -full -backend 
 勝手な独断や辻褄合わせの偽決定（Fake Decision）、および明示的な `{ADR_*}` タグが付いていない暗黙の仕様変更を静的・LLMセマンティック両面から検出します。
 ```powershell
 # 静的スキャン（日常・コスト0）
-uv run python -m spec_integrator.cli detect-fake-decision
+uv run --project tools/spec-integrator python -m spec_integrator.cli detect-fake-decision
+
+# PR差分に限定したスキャン
+uv run --project tools/spec-integrator python -m spec_integrator.cli detect-fake-decision --diff-only
 
 # LLM セマンティック監査（ユーザー指示時のみ）
-uv run python -m spec_integrator.cli detect-fake-decision --llm --backend sakura
+uv run --project tools/spec-integrator python -m spec_integrator.cli detect-fake-decision --llm --backend sakura
+```
+
+### 設計 -> テスト仕様 -> テストコード 3層一貫性監査 (`judge-test-chain`)
+設計書（`docs/components/**/*.md`）、テスト仕様書（`docs/components/**/tests/*_test_spec.md`）、および結合テストコード（`docs/architecture/integration_test_scenarios.md`）の3層トレーサビリティと意味的一貫性を LLM as a Judge で検証します。
+```powershell
+# 特定コンポーネントの3層監査
+powershell -ExecutionPolicy Bypass -File tools/run_all_tests.ps1 -testchain -component jit_compiler -backend sakura
+
+# 全コンポーネントの3層監査
+powershell -ExecutionPolicy Bypass -File tools/run_all_tests.ps1 -testchain -full -backend sakura
 ```
 
 ---
@@ -121,4 +134,5 @@ uv run python -m spec_integrator.cli detect-fake-decision --llm --backend sakura
 ## 設定と真実の源泉 (Source of Truth)
 - システム設定: [`spec-integrator.yaml`](../../../spec-integrator.yaml)
 - 階層・キーワード・エビデンス規約: [`docs/architecture/document_structure.md`](../../../docs/architecture/document_structure.md)
+- リンク用キーワード台帳正本: [`docs/architecture/keyword_dictionary.md`](../../../docs/architecture/keyword_dictionary.md)
 - 要求仕様正本: [`docs/requires/requirement_list.md`](../../../docs/requires/requirement_list.md)

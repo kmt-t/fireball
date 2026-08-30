@@ -1116,6 +1116,7 @@
       "sec:components/tier2_runtime/runtime_vsoc.md#4.2 状態遷移図 (SysML SMD: vSoC Engine ライフサイクル)",
       "sec:components/tier2_runtime/runtime_vsoc.md#4.3 内部シーケンス",
       "sec:components/tier2_runtime/runtime_vsoc.md#WASM実行およびJIT遷移シーケンス",
+      "sec:components/tier3_jit/concepts/README.md#Tier 3 JIT — コンセプトコード & 検証スクリプト",
       "sec:components/tier3_jit/jit_compiler.md#1. コンセプト",
       "sec:components/tier3_jit/jit_compiler.md#2. アーキテクチャ分類",
       "sec:components/tier3_jit/jit_compiler.md#4.1 アルゴリズム",
@@ -1132,6 +1133,7 @@
       "sec:specs/wasm_instruction_set.md#3.5 整数算術・論理・比較命令 (Integer Arithmetic, Logic & Comparison)"
     ],
     "JIT_Encoder": [
+      "sec:components/tier3_jit/concepts/README.md#Tier 3 JIT — コンセプトコード & 検証スクリプト",
       "sec:components/tier3_jit/jit_compiler.md#1. コンセプト",
       "sec:components/tier3_jit/jit_compiler.md#5.2 内部コンポーネントのデコンポジション",
       "sec:components/tier3_jit/jit_compiler.md#`constexpr_assembler` (DSL)"
@@ -1181,7 +1183,7 @@
       "sec:components/tier2_runtime/runtime_interpreter.md#4.1 アルゴリズム",
       "sec:components/tier2_runtime/runtime_interpreter.md#オプコードハンドラ / トレース実行（opcode_handler / exec_trace）",
       "sec:components/tier2_runtime/runtime_interpreter.md#実行コンテキスト（execution_context @ スタックボトム）",
-      "sec:components/tier3_jit/concepts/README.md#Tier 3 JIT — コンセプトコード",
+      "sec:components/tier3_jit/concepts/README.md#Tier 3 JIT — コンセプトコード & 検証スクリプト",
       "sec:components/tier3_jit/jit_compiler.md#7.1 性能制約と方策",
       "sec:components/tier3_jit/jit_compiler.md#コピーアンドパッチエンジン（CopyAndPatchEngine）クラス",
       "sec:specs/jit_stencil_catalog.md#1. 概要と基本思想",
@@ -2464,7 +2466,7 @@
     "sec:components/tier2_runtime/tests/runtime_vsoc_test_spec.md#vSoC Engineライフサイクル (§4.2)": "fa5f471292785cad0bfcdb6d52a7c8c9c3acf804f15a42378816349e9be73795",
     "sec:components/tier2_runtime/tests/runtime_vsoc_test_spec.md#ハーネス統合 (§3, §5.1)": "9de3b1d8449d011474c0bd8080a71900074d326f04b2dbe6e0f7609627163417",
     "sec:components/tier2_runtime/tests/runtime_vsoc_test_spec.md#マルチモジュール動的リンク (§5.3, §4.3)": "ad503c2b47c606c45e1b4cf1d5a6c6323a1504afb041018b1382d7060429b5d3",
-    "sec:components/tier3_jit/concepts/README.md#Tier 3 JIT — コンセプトコード": "e10b8da2b083bb32296f04d367c1af7a1532a38d5e6f24386d7cb87d83de6efa",
+    "sec:components/tier3_jit/concepts/README.md#Tier 3 JIT — コンセプトコード & 検証スクリプト": "195091587a0a16243634a31d2b9bc424ac76a73c9f163764df463d118a1ba75f",
     "sec:components/tier3_jit/jit_compiler.md#1. コンセプト": "474e06874a0a48f240cff03a712a5053e509a85c88680dafc7f1c115a06ccc9f",
     "sec:components/tier3_jit/jit_compiler.md#2. アーキテクチャ分類": "333c3464a76e275c054df07af994b27a500617bc82b1cab2d9cd565d3e9cf728",
     "sec:components/tier3_jit/jit_compiler.md#3. 静的モデル": "459903c009123dfac68cdcb823db2cc6942f63d0c494c2127f2dbd07be7268f6",

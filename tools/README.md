@@ -130,21 +130,28 @@ uv run --project tools/spec-integrator python -m spec_integrator.cli detect-fake
 
 ---
 
-## 4. 設定ファイル
+## 5. リンクキーワード台帳 (Keyword Dictionary)
+
+リンク切れや章節番号のズレを防ぐため、ドキュメント間の相互参照はすべて `{Keyword}` アンカーを用います。登録済みキーワードの正本台帳は [`docs/architecture/keyword_dictionary.md`](../docs/architecture/keyword_dictionary.md) にて管理されます。
+
+---
+
+## 6. 設定ファイル
 
 リポジトリルートの `spec-integrator.yaml` にて、Tier の正規表現パス、LLM バックエンド、モデル名、品質ゲートの有効/無効を設定できます。
 
 ---
 
-## 5. レポート成果物 (reports/)
+## 7. レポート成果物 (reports/)
 
 検証実行時に以下の成果物が `reports/` ディレクトリ配下に自動出力されます：
 
-- `reports/doc_report.md`: 7ゲートの監査レポート（違反一覧・プロパティ単位の形式検証結果・検証義務の充足状況）
+- `reports/doc_report.md`: 8ゲートの監査レポート（違反一覧・プロパティ単位の形式検証結果・検証義務の充足状況）
 - `reports/doc_graph.json`: ドキュメント全体のトポロジー・依存関係グラフ
 - `reports/doc_risk_report.md`: コンテンツ複雑度・設計リスク・形式検証トリアージレポート
 - `reports/doc_risk_report.json`: **検証義務台帳**。`check` の Obligation Gate が消費する（文書ハッシュを含み、陳腐化を検知する）
 - `reports/doc_judge_report.json`: LLM as a Judge による意味的一貫性監査レポート
+- `reports/test_chain_judge_report.md` / `.json`: `judge-test-chain` による設計・テスト仕様・コード3層一貫性監査レポート
 - `reports/fake_decision_report.md` / `.json`: `detect-fake-decision` によるでっち上げ決定検知レポート（アドバイザリ、ゲートではない）
 
 これらのレポートは検証の**入力**でもある。手で編集してはならない。

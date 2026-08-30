@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-30T12:29:10.735856+00:00",
+  "generated_at": "2026-08-30T13:03:27.669807+00:00",
   "backend": "heuristic",
   "total_evaluated": 15,
   "formal_candidates_count": 3,
@@ -39,7 +39,7 @@
     "components/tier2_runtime/tests/runtime_loader_test_spec.md": "e1c3316978a7a003591e145b90c2b50fa36363c9b16c248f70cdded7a916bc27",
     "components/tier2_runtime/tests/runtime_vmmio_test_spec.md": "6e391447e67fafff8123c97748d1c727a56bab1b23fa9db6f1d033546176586a",
     "components/tier2_runtime/tests/runtime_vsoc_test_spec.md": "5a5aff1550f7b7121101bc1fdc46ea3c09e25e25d75963707025134b00423bf1",
-    "components/tier3_jit/concepts/README.md": "6ab0e050a4a625c7ea8f4ec29a274ebc5b92764fef73c9fe357e7a85aa0ec0bb",
+    "components/tier3_jit/concepts/README.md": "2de732ac1ea826587fefebcc0d1ed83ae8f8addb376f904f545920b63ac0a5be",
     "components/tier3_jit/jit_compiler.md": "0b4d4daf59856282cd3bb7c02805645fd8d730a330c1dc334998e3545f0a3556",
     "components/tier3_jit/jit_runtime.md": "1df7c988f4c467c216f39e4478b5088a8e08cec3ce17557237a59da9b59d7305",
     "components/tier3_jit/tests/jit_compiler_test_spec.md": "8a14fef480d23f2bd96db0d6b50467cb63a9a636c065e3f71bf375d16d964cfe",

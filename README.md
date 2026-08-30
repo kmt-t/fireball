@@ -36,19 +36,22 @@ You need Clang, CMake, Ninja, and Python with `uv` to build and verify the proje
 
 ### 2. Verification & Quality Gates
 
-Run the integrated 8-gate verification pipeline (Format, Traceability, Hierarchy, Formal model checking with mutation tests, WIT interfaces, Evidence backing, Verification obligations, and Consistency lockfiles):
+Fireball enforces a strict 8-gate automated verification pipeline (`spec-integrator`) ensuring static format, keyword traceability, tier hierarchy encapsulation, pyModelChecking formal verification, WIT interface types, evidence backing, verification obligations, and consistency baselines:
 
 ```powershell
-# Windows PowerShell
-powershell -ExecutionPolicy Bypass -File tools/run_all_tests.ps1 -clean
+# Windows PowerShell (Fast Pre-Commit Test, Cost: 0)
+powershell -ExecutionPolicy Bypass -File tools/run_all_tests.ps1 -sync
+powershell -ExecutionPolicy Bypass -File tools/run_all_tests.ps1
 
 # Linux / macOS / WSL
-./tools/run_all_tests.sh --clean
+./tools/run_all_tests.sh --sync
+./tools/run_all_tests.sh
 ```
 
-To run risk assessment and quality gates together:
+For Milestone & Semantic Audit using Sakura Cloud LLM (Qwen 3.6):
 ```powershell
-powershell -ExecutionPolicy Bypass -File tools/run_all_tests.ps1 -assess -noStrict -clean
+powershell -ExecutionPolicy Bypass -File tools/run_all_tests.ps1 -assess -backend sakura
+powershell -ExecutionPolicy Bypass -File tools/run_all_tests.ps1 -llm -backend sakura
 ```
 
 ## How to Build
@@ -63,13 +66,14 @@ ninja
 
 ## Documentation and Development Process
 
-All Fireball development is strictly governed by the specifications in `docs/` and verified by `spec-integrator`. Before implementing changes, adhere to the development policies defined in `.agents/rules/`.
+All Fireball development is strictly governed by the specifications in `docs/` and verified by `spec-integrator`. Document links utilize unified `{Keyword}` anchor tokens recorded in the keyword dictionary to eliminate fragile file-name and section-number references.
 
-- **Top-Level Requirements**: `docs/requires/`
-- **Architecture & Metamodels**: `docs/architecture/`
+- **Top-Level Requirements**: `docs/requires/requirement_list.md`
+- **Keyword Dictionary (Link Registry)**: `docs/architecture/keyword_dictionary.md`
+- **Architecture & Document Structure**: `docs/architecture/architecture_overview.md`, `docs/architecture/document_structure.md`
 - **Component Specifications**: `docs/components/` (Tier 1 Core/Interface, Tier 2 Runtime, Tier 3 Platform/JIT)
-- **Development Guidelines**: `.agents/rules/development-policy.md`
-- **Verification Reports**: `reports/doc_report.md`, `reports/doc_risk_report.md`
+- **Integration Test Scenarios**: `docs/architecture/integration_test_scenarios.md`
+- **Tooling and Validation**: `tools/README.md`, `.agents/skills/document-validation/`
 
 ## License
 

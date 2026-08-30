@@ -1,9 +1,10 @@
-# Tier 3 JIT — コンセプトコード
+# Tier 3 JIT — コンセプトコード & 検証スクリプト
 
-- [`jit_copy_patch_concept.py`](jit_copy_patch_concept.py): Copy-and-Patch エンジンと MPU W^X トランザクション単体。
+- [`jit_copy_patch_concept.py`](jit_copy_patch_concept.py): `{JIT_CopyAndPatch}` Copy-and-Patch エンジンと MPU W^X トランザクション単体。
+- [`jit_assembler_constexpr_concept.py`](jit_assembler_constexpr_concept.py): `{JIT_Encoder}` C++20 constexpr Thumb-2 アセンブラ概念実装。
+- [`stack_cache_concept.py`](stack_cache_concept.py): `{JIT_RegisterMapping}` スタックトップキャッシング版ステンシル（素朴ステンシル 23 命令 $\to$ 12 命令に削減）。
+- [`thumb2_stencil_semantic_verifier.py`](thumb2_stencil_semantic_verifier.py): Unicorn ARMv8-M エミュレータによるステンシルバイナリの実機意味論検証。
+- [`jit_trace_execution_verifier.py`](jit_trace_execution_verifier.py): Unicorn ARMv8-M 上での JIT トレース出力マシンコード実実行検証。
 - 統合ランタイム（インタプリタ + トレーシング JIT + 3面キャッシュ + MPU W^X）の正本は
   [`../../tier2_runtime/concepts/runtime_engine_concept.py`](../../tier2_runtime/concepts/runtime_engine_concept.py) に置く。
   実行モデル全体を跨ぐため Tier 2 Runtime 側を単一の正本とし、ここでは複製しない。
-- [`stack_cache_concept.py`](stack_cache_concept.py): スタックトップキャッシング版ステンシル。
-  `{JIT_RegisterMapping}` の実装。素朴なステンシル 23 命令に対し 12 命令
-  （PUSH/POP を完全に消去、ベンチマーク証跡: [`../benchmarks/zero_runtime_overhead_bench.py`](../benchmarks/zero_runtime_overhead_bench.py) 参照）。`i32.load` / `i32.store` の境界チェックを含む。

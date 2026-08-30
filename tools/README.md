@@ -11,13 +11,13 @@ Windows（PowerShell）および Linux / WSL（Bash）の双方で完全透過�
 ```mermaid
 graph TD
     Dev[開発者 / AI エージェント] -->|コード整形| F[tools/format_all.ps1 / .sh]
-    Dev -->|統合テスト・検証| R[tools/run_all_tests.ps1 / .sh]
+    Dev -->|統合テスト・検証| R["tools/run_all_tests.ps1 / .sh<br/>-level 1/2/3/sync"]
     
     subgraph Pipeline [run_all_tests 実行パイプライン]
-        P0[Phase 0: Ruff Lint & Format 検証] --> P1[Phase 1: Risk Assessment - 義務導出]
-        P1 --> P2[Phase 2: LLM as a Judge - 意味監査]
+        P0[Phase 0: Ruff Lint & Format 検証] --> P1["Phase 1: Risk Assessment - 義務導出<br/>(Level 2+)"]
+        P1 --> P2["Phase 2: LLM as a Judge<br/>意味監査 + 文書単位監査 + 3層一貫性監査<br/>(Level 2+)"]
         P2 --> P3[Phase 3: Concept Code & Benchmarks & Verifiers]
-        P3 --> P3_Sim[Optional: pysim ユニット・シナリオテスト]
+        P3 --> P3_Sim["pysim ユニット・シナリオテスト<br/>(Level 2+)"]
         P3_Sim --> P4[Phase 4: spec-integrator check - 8大品質ゲート]
     end
     
@@ -38,14 +38,15 @@ graph TD
 
 開発フローに応じて最適なコマンドを実行します。
 
+`run_all_tests` が公開するオプションは検証レベル（`-level` / `--level`）ひとつだけです。バックエンドやコンポーネント指定などの微調整は `spec-integrator` 本体の CLI を直接叩きます（§5, §6）。
+
 | 開発ステージ | タイミング | 実行コマンド（Windows / Linux） | コスト・所要時間 |
 | :--- | :--- | :--- | :--- |
 | **0. 自動フォーマット** | コード編集後・コミット前 | `powershell tools/format_all.ps1`<br>`./tools/format_all.sh` | 0円 / 1〜2秒 |
-| **1. 簡易テスト (日常)** | コミット前の標準確認 | `powershell tools/run_all_tests.ps1`<br>`./tools/run_all_tests.sh` | 0円 / 5〜10秒 |
-| **2. シミュレータ込み確認** | 実装変更・ロジック検証時 | `powershell tools/run_all_tests.ps1 -pysim`<br>`./tools/run_all_tests.sh --pysim` | 0円 / 15〜20秒 |
-| **3. 仕様変更同期** | 仕様書編集後のベースライン更新 | `powershell tools/run_all_tests.ps1 -sync`<br>`./tools/run_all_tests.sh --sync` | 0円 / 2〜3秒 |
-| **4. クラウド LLM 監査** | ADR 追加・大規模仕様変更時（明示指示のみ） | `powershell tools/run_all_tests.ps1 -assess -backend sakura`<br>`powershell tools/run_all_tests.ps1 -llm -backend sakura` | 無料 / 30秒〜1分 |
-| **5. リリース前全量監査** | PR 作成・リリース判定時 | `powershell tools/run_all_tests.ps1 -full -backend sakura`<br>`./tools/run_all_tests.sh --full --backend sakura` | 完全全量監査 |
+| **仕様変更同期** | 仕様書編集後・他レベルの前 | `powershell tools/run_all_tests.ps1 -level sync`<br>`./tools/run_all_tests.sh --level sync` | 0円 / 2〜3秒 |
+| **Level 1 (既定・日常)** | コミット前の標準確認 | `powershell tools/run_all_tests.ps1`<br>`./tools/run_all_tests.sh` | 0円 / 5〜10秒 |
+| **Level 2 (明示指示のみ)** | ADR 追加・大規模仕様変更時 | `powershell tools/run_all_tests.ps1 -level 2`<br>`./tools/run_all_tests.sh --level 2` | 課金 / 30秒〜1分 |
+| **Level 3 (明示指示のみ)** | PR 作成・リリース判定時 | `powershell tools/run_all_tests.ps1 -level 3`<br>`./tools/run_all_tests.sh --level 3` | 課金 / 完全全量監査 |
 
 ---
 
@@ -55,38 +56,42 @@ graph TD
 
 ### 3.1 フェーズ構成 (Execution Phases)
 
-1. **Phase 0: Python Linter & Formatter (`ruff check` & `ruff format --check`)**
+1. **Phase 0: Python Linter & Formatter (`ruff check` & `ruff format --check`)** — 全レベル共通。
    - リポジトリ全域の Python コード（`experiments`, `tools`, `docs`）の PEP8 準拠性、未定義変数、インポート順を検査。
    - 違反時は即座に停止し、`format_all` の実行を促します。
-2. **Phase 1: Risk Assessment (`assess`)**
-   - セクションごとの複雑度・設計リスクをトリアージし、検証義務台帳（`reports/doc_risk_report.json`）を生成。
-   - オプション未指定時は保存済みの台帳を再利用（0円）。
-3. **Phase 2: LLM as a Judge (`judge`)**
-   - LLM によるセマンティック意味監査（ADR の妥当性、要件とコンポーネントの整合性）を実施。
-   - オプション未指定時はスキップ（0円）。
-4. **Phase 3: Concept Code & Benchmarks & Semantic Verifiers**
+2. **Phase 1: Risk Assessment (`llm-assess`)** — Level 2 以上。
+   - キーワードごとの複雑度・設計リスクをトリアージし、検証義務をキャッシュ DB（`.spec-integrator/doc_cache.db`）に記録。
+   - Level 1 ではスキップし、DB に保存済みの評価を再利用（0円）。
+3. **Phase 2: LLM as a Judge (`llm-judge`)** — Level 2 以上。
+   - キーワードサブグラフの意味監査（ADR の妥当性、要件とコンポーネントの整合性）、ドキュメント単位の自己一貫性監査、
+     設計仕様→テスト仕様→テストコードの 3 層トレーサビリティ監査の3つを、同一コマンドで常に実行。
+   - Level 1 ではスキップ（0円）。
+4. **Phase 3: Concept Code & Benchmarks & Semantic Verifiers** — 全レベル共通。
    - `docs/**/concepts/*_concept.py`（概念実証コード 14 本）の実行。
    - `docs/**/benchmarks/*_bench.py`（実測ベンチマーク 4 本）の実行とアサーション検証。
    - ARMv8-M Thumb2 エミュレータ（Unicorn）による JIT ステンシルの実機マシンコード実行検証。
-   - `-pysim` / `--pysim` 指定時は、`experiments/pysim` の単体テストスイート（9本）と結合シナリオテスト（11本）も追加実行。
-5. **Phase 4: Quality Gates (`check`)**
+   - Level 2 以上では `experiments/pysim` の単体テストスイート（9本）と結合シナリオテスト（11本）も追加実行。
+5. **Phase 4: Quality Gates (`check`)** — 全レベル共通。
    - 8 大品質ゲート（静的リンク、トレーサビリティ、階層分離、形式モデル、WIT契約、エビデンス、義務充足、一貫性ロック）を評価し、最終合否を出力。
+   - Level 3 ではキャッシュ DB を使わない `--clean` スキャンで実行。
 
 ### 3.2 コマンドライン引数一覧
 
 | 引数 (PowerShell) | 引数 (Bash) | 型 | 説明 |
 | :--- | :--- | :---: | :--- |
-| `-pysim` | `--pysim` | Switch | Python シミュレータの単体テスト（9本）および結合シナリオテスト（11本）を実行。 |
-| `-sync` | `--sync` | Switch | 現在の仕様状態を基準として `spec-consistency.lock` を更新し、終了。 |
-| `-clean` | `--clean` | Switch | キャッシュ DB を使用せず、クリーンな状態で全文書を走査・検証。 |
-| `-assess` | `--assess` | Switch | リスク評価（Phase 1）を実行し、検証義務台帳を再生成。 |
-| `-llm` | `--llm` | Switch | LLM as a Judge 意味監査（Phase 2）を実行。 |
-| `-testchain` | `--testchain` | Switch | 設計仕様 $\to$ テスト仕様 $\to$ テストコードの 3 層トレーサビリティ一貫性監査を実行。 |
-| `-component <C>` | `--component <C>` | String | `-testchain` の監査対象を特定コンポーネントに限定（例: `jit_compiler`）。 |
-| `-full` | `--full` | Switch | `-assess`, `-llm`, `-pysim` をすべて含む完全全量監査を実行。 |
-| `-backend <B>` | `--backend <B>` | String | LLM バックエンド指定（`sakura` / `ollama` / `mock` / `heuristic`、デフォルト: `sakura`）。 |
-| `-model <M>` | `--model <M>` | String | 使用する LLM モデル名のオーバーライド。 |
-| `-noStrict` | `--no-strict` | Switch | リスク評価が部分カバレッジの場合でも終了コード 0 を許容。 |
+| `-level <1\|2\|3\|sync>` | `--level <1\|2\|3\|sync>` | String | 検証レベル（既定: `1`）。`sync` は検証ではなく `spec-consistency.lock` の更新のみ行い終了する。詳細は §3.1・§3.3。 |
+| `-h`, `-help` | `-h`, `--help` | Switch | ヘルプを表示。 |
+
+### 3.3 レベルの内訳
+
+| レベル | 含まれる処理 | コスト |
+| :--- | :--- | :--- |
+| `sync` | 一貫性ベースラインの更新のみ（他の処理は行わず終了） | 0円 |
+| `1`（既定） | Phase 0, 3, 4（保存済みのリスク評価・判定結果を再利用） | 0円 |
+| `2` | Level 1 + `llm-assess` + `llm-judge`（意味監査 + 文書単位監査 + 3層一貫性監査）+ pysim スイート | 課金（LLM呼び出し） |
+| `3` | Level 2 + 網羅的評価（`--exhaustive`、上限なし・全コンポーネント）+ `check --clean` | 課金（最大） |
+
+バックエンド・モデル・Tier・コンポーネントの指定は `-level` に含まれません。これらは全コマンドで共通の `spec-integrator.yaml` の `llm_judge.default_backend` が使われるため、個別に上書きしたい場合のみ `spec-integrator` 本体を直接呼び出してください（§5, §6）。
 
 ---
 
@@ -104,37 +109,24 @@ graph TD
 | **6. Evidence Gate** | `EVIDENCE-*` | `<!-- evidence: ... -->` で主張されたベンチマークや実装ファイルの実在性とアサーション検証。 |
 | **7. Obligation Gate** | `OBLIG-*` | Phase 1 のリスク評価で導出された検証義務（形式検証・LLM監査等）が **100% 履行** されているかの検証。 |
 | **8. Consistency Gate** | `CONSIST-*` | `spec-consistency.lock` と比較し、仕様変更時の修正漏れ・シンボル値ズレ（`FB_CONF_*`）を機械検出。 |
-| *(Topology Verifier)* | `TOPOLOGY-*` | IPC Router 等のロール間通信マトリクスにおける循環依存（デッドロック）の静的検出。 |
 
 ---
 
-## 5. でっち上げ決定の検知 (`detect-fake-decision`, Advisory)
-
-「本来コンポーネント単独で決めていい話ではないのに、辻褄合わせで勝手に決められていないか」「ADR タグのない勝手な仕様固定がないか」をスキャンするアドバイザリ機能です。
-
-```bash
-# 静的スキャン（高速・0円）
-uv run --project tools/spec-integrator python -m spec_integrator.cli detect-fake-decision
-
-# LLM セマンティック監査（ユーザー指示時のみ）
-uv run --project tools/spec-integrator python -m spec_integrator.cli detect-fake-decision --llm --backend sakura
-```
-
----
-
-## 6. トラブルシューティング (Troubleshooting)
+## 5. トラブルシューティング (Troubleshooting)
 
 ### Q1. `OBLIG-ASSESSMENT-STALE` または `OBLIG-JUDGE-STALE` で失敗する
-- **原因**: ドキュメント本文を編集したため、以前のリスク評価台帳（`reports/doc_risk_report.json`）のハッシュ値と不整合が生じています。
+- **原因**: ドキュメント本文を編集したため、以前のリスク評価（キャッシュ DB に記録済み）のハッシュ値と不整合が生じています。
 - **対処**:
   ```bash
-  # ローカル・コスト0でアセスメントを再計算する場合:
-  uv run --system-certs --project tools/spec-integrator python -m spec_integrator.cli assess --backend heuristic -a --include-reqs --include-meta --min-length 0 --max-sections 0 -o reports/doc_risk_report.json -r reports/doc_risk_report.md
+  # 通常の再計算（クラウド LLM、既定バックエンドを使用）:
+  powershell tools/run_all_tests.ps1 -level 2
+  # または、ローカルの Ollama があればコスト0で:
+  uv run --system-certs --project tools/spec-integrator python -m spec_integrator.cli llm-assess --backend ollama -a --include-reqs --include-meta --max-keywords 0
   ```
 
 ### Q2. `CONSIST-COCHANGE-STALE` または `CONSIST-SYMBOL-DRIFT` で失敗する
 - **原因**: キーワード定義や `FB_CONF_*` 定数を変更した際、それを参照している別コンポーネントの記述が更新されていません。
-- **対処**: レポート（`reports/doc_report.md`）に示された該当箇所を修正した後、`powershell tools/run_all_tests.ps1 -sync` または `./tools/run_all_tests.sh --sync` を実行してロックファイルを更新します。
+- **対処**: レポート（`reports/doc_report.md`）に示された該当箇所を修正した後、`powershell tools/run_all_tests.ps1 -level sync` または `./tools/run_all_tests.sh --level sync` を実行してロックファイルを更新します。
 
 ### Q3. Python コードの Lint / フォーマットエラーで Phase 0 が失敗する
 - **原因**: PEP8 フォーマット違反、未使用インポート、未定義シンボル等が存在します。

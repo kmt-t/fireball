@@ -218,7 +218,7 @@ class IPCRouter:
         return reclaimed_ids
 ```
 
-※ 所有権移譲プロトコルの二重所有不在および有限解決性は、`formal/csp_handoff_model.py` により変異検査付き形式モデルとして検証される。トポロジレベルのデッドロック不在は、非循環チャネル依存規律（クライアント・サーバ規律）に基づき `spec-integrator` Topology Gate (`TopologyVerifier`) により静的閉路検出検証される。
+※ 所有権移譲プロトコルの二重所有不在および有限解決性は、`formal/csp_handoff_model.py` により変異検査付き形式モデルとして検証される。トポロジレベルのデッドロック不在は、非循環チャネル依存規律（クライアント・サーバ規律）により設計上保証される（自動検証ツールでの機械的な閉路検査は行っておらず、設計レビューによる担保）。
 
 ### 4.1.1 名前解決パイプラインとアクセス制御フロー
 <!-- traceability: {LowLatencyLookup} {META_AccessDictionary} {META_FlatMapIndexed} {RoleBasedAccessControl} -->
@@ -551,7 +551,7 @@ IPCのプリミティブ性を隠蔽し、依存性の逆転 (IoC) を実現す�
 | 不変条件 | 説明 | 検証方法 |
 | :--- | :--- | :--- |
 | **所有権単調性** | リソース所有権が Sender → In-flight → Receiver と一方向に移譲され、二重所有が発生しないこと。`{OwnershipTransfer}` `{IPC_ZeroCopy}` | `formal/csp_handoff_model.py` CTL 安全性検証 (`AG(Not(sender_owns & receiver_owns))` ➔ True) |
-| **デッドロック不在** | クライアント・サーバ規律（非循環チャネル依存）により、Send/Recv の循環待ちデッドロックが発生しないこと。`{RoleBasedAccessControl}` | `spec-integrator` Topology Gate (`TopologyVerifier` 閉路検査) |
+| **デッドロック不在** | クライアント・サーバ規律（非循環チャネル依存）により、Send/Recv の循環待ちデッドロックが発生しないこと。`{RoleBasedAccessControl}` | 設計レビュー（自動の機械的閉路検査ツールは無し） |
 | **In-flight 有限解決性** | In-flight 状態のリソースは、Grant / Drop回収 / Rollback のいずれかにより必ず有限ステップで解決すること。`{IPC_DropHandler}` | `formal/csp_handoff_model.py` CTL 進行性検証 (`AG(in_flight -> AF(not in_flight))` ➔ True) |
 | **メッセージ順序** | 同一チャネル上のメッセージは FIFO 順で処理されること。 | 静的 FIFO SPSC キュー構造 |
 

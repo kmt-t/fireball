@@ -38,25 +38,26 @@ jobs:
     - name: LLM Semantic Audit (changed subgraphs only)
       # PR-only: the comparison needs a base-branch lockfile to diff against.
       # This is a fast, independent smoke check on the sections this PR
-      # actually touches — it does not read or write reports/doc_judge_report.json,
-      # which stays the full committed audit maintained by `spec-integrator sync`
-      # + `judge --exhaustive` run locally, per tools/README.md.
+      # actually touches. SPEC_INTEGRATOR_DB_PATH points it at a scratch DB so
+      # it cannot wholesale-replace the committed cache DB, which stays the
+      # full audit maintained by `spec-integrator sync` + a full `llm-judge`
+      # run locally, per tools/README.md.
+      # `llm-judge` always also runs the whole-document audit and the Design ->
+      # Test Spec -> Test Code chain audit alongside the subgraph one, and
+      # neither has a --changed-only equivalent (each always covers whichever
+      # documents/components it evaluates) -- so --max-documents/--max-targets
+      # cap them low here to keep this specific check cheap.
       if: github.event_name == 'pull_request' && env.SAKURA_API_KEY != ''
       env:
         SAKURA_API_KEY: ${{ secrets.SAKURA_API_KEY }}
+        SPEC_INTEGRATOR_DB_PATH: /tmp/pr_changed_audit_cache.db
       run: |
         git show "origin/${{ github.base_ref }}:spec-consistency.lock" > /tmp/base.lock
-        uv run --project tools/spec-integrator python -m spec_integrator.cli judge \
+        uv run --project tools/spec-integrator python -m spec_integrator.cli llm-judge \
           --config spec-integrator.yaml --backend sakura \
           --changed-only --baseline /tmp/base.lock --min-references 0 \
-          -o /tmp/pr_changed_audit.json -r /tmp/pr_changed_audit.md
-
-    - name: Detect Fake Decisions (Advisory scan)
-      if: github.event_name == 'pull_request'
-      run: |
-        uv run --project tools/spec-integrator python -m spec_integrator.cli detect-fake-decision \
-          --config spec-integrator.yaml --diff-only \
-          -o reports/fake_decision_report.json -r reports/fake_decision_report.md || true
+          --max-documents 1 --max-targets 1 \
+          | tee /tmp/pr_changed_audit.txt
 
     - name: Publish Summary to Step Summary
       if: always()
@@ -64,13 +65,11 @@ jobs:
         if [ -f reports/doc_report.md ]; then
           cat reports/doc_report.md >> $GITHUB_STEP_SUMMARY
         fi
-        if [ -f /tmp/pr_changed_audit.md ]; then
+        if [ -f /tmp/pr_changed_audit.txt ]; then
           echo -e "\n## LLM Semantic Audit (Changed Subgraphs)\n" >> $GITHUB_STEP_SUMMARY
-          cat /tmp/pr_changed_audit.md >> $GITHUB_STEP_SUMMARY
-        fi
-        if [ -f reports/fake_decision_report.md ]; then
-          echo -e "\n## Fake Decision Scan (Advisory)\n" >> $GITHUB_STEP_SUMMARY
-          cat reports/fake_decision_report.md >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          cat /tmp/pr_changed_audit.txt >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
         fi
 
     - name: Upload Verification Artifacts
@@ -80,9 +79,5 @@ jobs:
         name: spec-verification-reports
         path: |
           reports/doc_report.md
-          reports/doc_graph.json
-          reports/doc_risk_report.md
-          reports/doc_judge_report.md
-          reports/fake_decision_report.md
-          /tmp/pr_changed_audit.md
+          /tmp/pr_changed_audit.txt
         if-no-files-found: ignore

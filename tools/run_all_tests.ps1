@@ -1,29 +1,49 @@
 # Fireball Document Verification Pipeline (PowerShell Runner)
 #
-# Phase ordering matters. `assess` decides WHAT must be verified and `judge`
-# performs the semantic audit; `check` is the gate that consumes both verdicts
+# Phase ordering matters. `llm-assess` decides WHAT must be verified and
+# `llm-judge` performs the semantic audit; `check` is the gate that consumes both verdicts
 # and is the only authoritative result. Running `check` first — as this script
 # used to — meant the risk assessment could demand verification that the gate
 # had already declared unnecessary.
+#
+# The only knob this script exposes is the verification level. Backend, model,
+# component, and other fine-tuning belong to `spec-integrator` itself — invoke
+# it directly (see tools/spec-integrator/README.md) when you need that control.
 param(
-    [switch]$llm,
-    [switch]$assess,
-    [switch]$testchain,
-    [string]$component = "",
-    [switch]$full,
-    [switch]$exhaustive,
-    [string]$backend = "sakura",
-    [string]$model = "",
-    [int]$maxSubgraphs = 15,
-    [int]$maxSections = 15,
-    [int]$minReferences = 1,
-    [int]$minLength = 50,
-    [string]$tier = "",
-    [switch]$noStrict,
-    [switch]$sync,
-    [switch]$clean,
-    [switch]$pysim
+    [string]$level = "1",
+    [switch]$h,
+    [switch]$help
 )
+
+if ($h -or $help) {
+    Write-Host @"
+Fireball Document Quality & Verification Pipeline (spec-integrator)
+
+Usage:
+  powershell tools/run_all_tests.ps1 [-level <1|2|3|sync>]
+
+Levels:
+  1 (default)  Local static gates only. Free, ~5-10s. No LLM calls.
+               Phase 0 (lint/fmt) + Phase 3 (concept/bench/semantic) + Phase 4 (check).
+               Reuses the stored risk assessment / judge report if present.
+  2            Milestone audit. Costs a cloud LLM call, ~30s-1min.
+               Level 1 + llm-assess + llm-judge (semantic audit + Design -> Test Spec
+               -> Test Code consistency) + the pysim test suite.
+  3            Release-gate audit. Costs cloud LLM calls, full coverage, slowest.
+               Level 2 with exhaustive assessment/judge coverage across every
+               keyword and component, plus a --clean scan.
+  sync         Record the current spec state as the propagation baseline, then exit.
+               Not a verification level - run this after a spec edit, before Level 1.
+
+  -h, -help    Show this help
+
+Backend, model, tier, and component selection are not exposed here - they are
+the same for every level (spec-integrator.yaml's llm_judge.default_backend).
+For anything more specific, call spec-integrator directly, e.g.:
+  uv run --system-certs --project tools/spec-integrator python -m spec_integrator.cli llm-judge --component jit_compiler
+"@
+    exit 0
+}
 
 $ErrorActionPreference = "Stop"
 
@@ -31,30 +51,25 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Split-Path -Parent $scriptDir
 Set-Location $repoRoot
 
+if ($level -notin @("1", "2", "3", "sync")) {
+    Write-Host "✖ Invalid -level '$level'. Use 1, 2, 3, or sync." -ForegroundColor Red
+    exit 1
+}
+
 $reportsDir = Join-Path $repoRoot "reports"
 if (-not (Test-Path $reportsDir)) {
     New-Item -ItemType Directory -Path $reportsDir | Out-Null
 }
 
-if ($full -or $exhaustive) {
-    $assess = $true
-    $llm = $true
-    if (-not $PSBoundParameters.ContainsKey('maxSections')) { $maxSections = 0 }
-    if (-not $PSBoundParameters.ContainsKey('maxSubgraphs')) { $maxSubgraphs = 0 }
-}
-
 $specInt = @("run", "--system-certs", "--project", "tools/spec-integrator",
              "python", "-m", "spec_integrator.cli")
 
-$riskReport = "reports/doc_risk_report.json"
-$judgeReport = "reports/doc_judge_report.json"
-
 Write-Host "================================================================================" -ForegroundColor Cyan
-Write-Host " Fireball Document Verification Pipeline [spec-integrator]" -ForegroundColor Cyan
+Write-Host " Fireball Document Verification Pipeline [spec-integrator] - Level $level" -ForegroundColor Cyan
 Write-Host "================================================================================" -ForegroundColor Cyan
 
 # ---------------------------------------------------------------------------
-# Phase 0: Python Code Lint & Formatting Gate
+# Phase 0: Python Code Lint & Formatting Gate — runs at every level.
 # ---------------------------------------------------------------------------
 Write-Host "`n>>> [Phase 0] Python Code Linter & Formatter Verification (Ruff)..." -ForegroundColor Yellow
 & uv run --system-certs --with ruff ruff check experiments tools docs
@@ -74,7 +89,7 @@ Write-Host "✔ Python Linter & Formatter: All checks passed (0 errors)" -Foregr
 # Deliberately not part of the pipeline: doing it automatically would erase the
 # very record that reveals an edit which never reached its dependants.
 # ---------------------------------------------------------------------------
-if ($sync) {
+if ($level -eq "sync") {
     Write-Host "`n>>> Recording consistency baseline..." -ForegroundColor Yellow
     & uv @($specInt + @("sync", "--config", "spec-integrator.yaml"))
     if ($LASTEXITCODE -ne 0) {
@@ -85,77 +100,56 @@ if ($sync) {
     exit 0
 }
 
+$runLLM = $level -in @("2", "3")
+$exhaustive = $level -eq "3"
+$maxKeywords = if ($exhaustive) { 0 } else { 15 }
+$maxSubgraphs = if ($exhaustive) { 0 } else { 10 }
+$maxDocuments = if ($exhaustive) { 0 } else { 15 }
+
 # ---------------------------------------------------------------------------
 # Phase 1: Risk Assessment — establishes the verification obligations
 # ---------------------------------------------------------------------------
-if ($assess) {
+if ($runLLM) {
     Write-Host "`n>>> [Phase 1/4] Risk Assessment (deciding what must be verified)..." -ForegroundColor Yellow
-    $assessArgs = $specInt + @("assess", "--config", "spec-integrator.yaml",
-                               "--backend", $backend, "--max-sections", "$maxSections",
-                               "--min-length", "$minLength",
-                               "-o", $riskReport, "-r", "reports/doc_risk_report.md")
-    if ($model) { $assessArgs += @("--model", $model) }
-    if ($tier) { $assessArgs += @("--tier", $tier) }
+    $assessArgs = $specInt + @("llm-assess", "--config", "spec-integrator.yaml",
+                               "--max-keywords", "$maxKeywords")
     if ($exhaustive) { $assessArgs += "--exhaustive" }
-    if ($noStrict) { $assessArgs += "--no-strict" }
 
     & uv @assessArgs
     if ($LASTEXITCODE -ne 0) {
         Write-Host "✖ Risk Assessment: FAILED (incomplete coverage leaves obligations unknown)" -ForegroundColor Red
-        Write-Host "  Raise -maxSections, or pass -noStrict to accept a partial assessment." -ForegroundColor DarkGray
+        Write-Host "  Use -level 3 for exhaustive (unlimited-section) coverage." -ForegroundColor DarkGray
         exit 1
     }
-    Write-Host "✔ Risk Assessment: obligations recorded in $riskReport" -ForegroundColor Green
+    Write-Host "✔ Risk Assessment: obligations recorded in the cache DB" -ForegroundColor Green
 } else {
-    Write-Host "`n>>> [Phase 1/4] Skipping Risk Assessment (-assess to run it)" -ForegroundColor DarkGray
-    if (Test-Path $riskReport) {
-        Write-Host "    Reusing the stored assessment. The gate will reject it if the docs have changed." -ForegroundColor DarkGray
-    } else {
-        Write-Host "    No stored assessment exists — the Obligation Gate will fail." -ForegroundColor DarkYellow
-    }
+    Write-Host "`n>>> [Phase 1/4] Skipping Risk Assessment (-level 2 or 3 to run it)" -ForegroundColor DarkGray
+    Write-Host "    Reusing whatever assessment is already in the cache DB, if any. The gate" -ForegroundColor DarkGray
+    Write-Host "    will reject it if the docs have changed, and fail if none exists." -ForegroundColor DarkGray
 }
 
 # ---------------------------------------------------------------------------
-# Phase 2: LLM Semantic Audit
+# Phase 2: LLM Semantic Audit — subgraph consistency, whole-document
+# self-consistency, AND the Design -> Test Spec -> Test Code traceability
+# chain always run together in one pass.
 # ---------------------------------------------------------------------------
-if ($llm) {
-    Write-Host "`n>>> [Phase 2/4] LLM as a Judge (semantic audit)..." -ForegroundColor Yellow
-    $judgeArgs = $specInt + @("judge", "--config", "spec-integrator.yaml",
-                              "--backend", $backend, "--max-subgraphs", "$maxSubgraphs",
-                              "--min-references", "$minReferences",
-                              "-o", $judgeReport, "-r", "reports/doc_judge_report.md")
-    if ($model) { $judgeArgs += @("--model", $model) }
+if ($runLLM) {
+    Write-Host "`n>>> [Phase 2/4] LLM as a Judge (subgraph + whole-document + Design -> Test Spec -> Test Code consistency)..." -ForegroundColor Yellow
+    $judgeArgs = $specInt + @("llm-judge", "--config", "spec-integrator.yaml",
+                              "--max-subgraphs", "$maxSubgraphs",
+                              "--max-documents", "$maxDocuments")
     if ($exhaustive) { $judgeArgs += "--exhaustive" }
 
     & uv @judgeArgs
     $judgeExit = $LASTEXITCODE
     if ($judgeExit -ne 0) {
         # A FAIL verdict is data for the gate, not a reason to abort the pipeline.
-        Write-Host "! LLM as a Judge reported findings — see reports/doc_judge_report.md" -ForegroundColor DarkYellow
+        Write-Host "! LLM as a Judge reported findings — see reports/doc_report.md § LLM Judge Verdicts / § Whole-Document LLM Judge Verdicts / § Test Chain Verdicts" -ForegroundColor DarkYellow
     } else {
         Write-Host "✔ LLM as a Judge: no semantic failures" -ForegroundColor Green
     }
 } else {
-    Write-Host "`n>>> [Phase 2/4] Skipping LLM as a Judge (-llm to run it)" -ForegroundColor DarkGray
-}
-
-# ---------------------------------------------------------------------------
-# Design -> Test Spec -> Test Code 3-Tier Traceability & Consistency Judge
-# ---------------------------------------------------------------------------
-if ($testchain) {
-    Write-Host "`n>>> [3-Tier Consistency] LLM Design-to-Test Consistency Judge..." -ForegroundColor Yellow
-    $chainArgs = $specInt + @("judge-test-chain", "--config", "spec-integrator.yaml",
-                              "--backend", $backend)
-    if ($component) { $chainArgs += @("--component", $component) }
-    if ($model) { $chainArgs += @("--model", $model) }
-    if ($exhaustive -or $full) { $chainArgs += "--all" }
-
-    & uv @chainArgs
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "! Test Chain Judge reported findings — see reports/test_chain_judge_report.md" -ForegroundColor DarkYellow
-    } else {
-        Write-Host "✔ Test Chain Judge: all audited components are consistent across Spec -> TestSpec -> TestCode" -ForegroundColor Green
-    }
+    Write-Host "`n>>> [Phase 2/4] Skipping LLM as a Judge (-level 2 or 3 to run it)" -ForegroundColor DarkGray
 }
 
 # ---------------------------------------------------------------------------
@@ -223,9 +217,10 @@ foreach ($semVerifier in @(
 }
 
 # ---------------------------------------------------------------------------
-# Optional: Python Simulator (pysim) Invariant & Integration Scenarios
+# Python Simulator (pysim) Invariant & Integration Scenarios — free and local,
+# but slow enough (~15-20s) to reserve for Level 2+.
 # ---------------------------------------------------------------------------
-if ($pysim -or $full) {
+if ($runLLM) {
     Write-Host "`n>>> [pysim] Python Simulator Unit & Scenario Test Suite..." -ForegroundColor Yellow
     Write-Host "  -> Running experiments/pysim/tests/run_all.py..." -ForegroundColor DarkGray
     & uv run --system-certs --project tools/spec-integrator --with wasmtime python experiments/pysim/tests/run_all.py
@@ -246,9 +241,8 @@ if ($pysim -or $full) {
 # ---------------------------------------------------------------------------
 Write-Host "`n>>> [Phase 4/4] Quality Gates (Format / Traceability / Hierarchy / Formal / WIT / Evidence / Obligation / Consistency)..." -ForegroundColor Yellow
 $checkArgs = $specInt + @("check", "--config", "spec-integrator.yaml",
-                          "--report", "reports/doc_report.md",
-                          "--graph-json", "reports/doc_graph.json")
-if ($clean) { $checkArgs += "--clean" }
+                          "--report", "reports/doc_report.md")
+if ($exhaustive) { $checkArgs += "--clean" }
 
 & uv @checkArgs
 $checkExit = $LASTEXITCODE

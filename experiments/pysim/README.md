@@ -39,7 +39,7 @@ experiments/pysim/
 │   └── exec_memory.py     # MPU W^X トランザクション & 実行可能メモリ (mprotect/VirtualProtect)
 │
 ├── platforms/             # Tier 3 Platform & ハードウェア抽象化
-│   ├── platform_memory.py # 物理メモリパーティション (RAM/ROM) & PMSAv8 MPU
+│   ├── memory.py          # 物理メモリパーティション (RAM/ROM) & PMSAv8 MPU
 │   ├── hal.py             # HAL バス & メモリプール
 │   ├── hal_dummy_drivers.py # HAL ダミードライバ (GPIO/I2C/SPI/Timer)
 │   ├── wasi.py            # WASI Preview 1 ホストコンテキスト & システムコール
@@ -172,8 +172,8 @@ Python シミュレータ上において JIT 側が見かけ上遅くなって�
 
 ### 全シナリオの実行
 ```bash
-# Windows (PowerShell)
-powershell tools/run_all_tests.ps1 -pysim
+# Windows (PowerShell) — Level 2 以上で pysim スイートも実行される
+powershell tools/run_all_tests.ps1 -level 2
 
 # Python 直接実行
 uv run --system-certs --with wasmtime python experiments/pysim/scenarios/run_all.py

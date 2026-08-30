@@ -1,5 +1,5 @@
 """
-experiments/pysim/platform_memory.py
+experiments/pysim/platforms/memory.py
 COOS Memory Manager & PMSAv8 MPU simulation.
 - Consolidated physical memory pool and fixed-size partition leasing
 - Typed slot pools with zero dynamic void* heap

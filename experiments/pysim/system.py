@@ -50,7 +50,7 @@ from typing import Any
 from hal import ShmBufferPool, ShmHandle, UartTransport
 from ipc_router import IPCMessage, IPCRouter
 from logger import ConsoleOutput, LogDictionary, Logger, LogLevel
-from platform_memory import (
+from memory import (
     FB_CONF_MEMORY_POOL_SIZE,
     MemoryManager,
 )

@@ -36,22 +36,20 @@ You need Clang, CMake, Ninja, and Python with `uv` to build and verify the proje
 ### 2. Verification & Quality Gates
 Fireball enforces an automated verification pipeline (`spec-integrator`) ensuring static formatting, keyword traceability, tier hierarchy encapsulation, pyModelChecking formal verification (13 models), WIT interface types, evidence backing, verification obligations, and consistency baselines:
 
-```powershell
-# Windows PowerShell (Fast Pre-Commit Test, Cost: 0)
-powershell -ExecutionPolicy Bypass -File tools/run_all_tests.ps1
+`run_all_tests` exposes a single option, the verification level (`-level` / `--level`; default `1`):
 
-# Run with all 11 Python Simulator Integration Scenarios
-powershell -ExecutionPolicy Bypass -File tools/run_all_tests.ps1 -pysim
+```powershell
+# Windows PowerShell (Level 1: Fast Pre-Commit Test, Cost: 0)
+powershell -ExecutionPolicy Bypass -File tools/run_all_tests.ps1
 
 # Linux / macOS / WSL
 ./tools/run_all_tests.sh
-./tools/run_all_tests.sh --pysim
 ```
 
-For Cloud LLM Semantic Audit (Sakura Cloud LLM):
+For Cloud LLM Semantic Audit (milestone / release gate — explicit user instruction only):
 ```powershell
-powershell -ExecutionPolicy Bypass -File tools/run_all_tests.ps1 -assess -backend sakura
-powershell -ExecutionPolicy Bypass -File tools/run_all_tests.ps1 -llm -backend sakura
+powershell -ExecutionPolicy Bypass -File tools/run_all_tests.ps1 -level 2   # risk assessment + semantic judge + pysim
+powershell -ExecutionPolicy Bypass -File tools/run_all_tests.ps1 -level 3   # full exhaustive audit
 ```
 
 ## How to Build

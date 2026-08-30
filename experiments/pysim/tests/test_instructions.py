@@ -52,7 +52,7 @@ from hal import (
 from interpreter import Interpreter, Trap
 from ipc_router import IPCMessage, IPCRouter
 from logger import LogDictionary, Logger, LogLevel
-from platform_memory import (
+from memory import (
     FB_CONF_MEMORY_POOL_SIZE,
     FB_CONF_PARTITION_SIZE,
     FB_TASK_ID_FLIGHT,

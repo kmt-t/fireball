@@ -1,11 +1,15 @@
 #!/bin/bash
 # Fireball Unified Document Verification Pipeline (Powered by spec-integrator)
 #
-# Phase ordering matters. `assess` decides WHAT must be verified and `judge`
-# performs the semantic audit; `check` is the gate that consumes both verdicts
+# Phase ordering matters. `llm-assess` decides WHAT must be verified and
+# `llm-judge` performs the semantic audit; `check` is the gate that consumes both verdicts
 # and is the only authoritative result. Running `check` first — as this script
 # used to — meant the risk assessment could demand verification that the gate
 # had already declared unnecessary.
+#
+# The only knob this script exposes is the verification level. Backend, model,
+# component, and other fine-tuning belong to `spec-integrator` itself — invoke
+# it directly (see tools/spec-integrator/README.md) when you need that control.
 
 set -uo pipefail
 
@@ -13,99 +17,64 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
-RUN_LLM=0
-RUN_ASSESS=0
-RUN_TESTCHAIN=0
-COMPONENT=""
-BACKEND="sakura"
-MODEL=""
-MAX_SUBGRAPHS=10
-MAX_SECTIONS=15
-MIN_REFERENCES=1
-MIN_LENGTH=50
-TARGET_TIER=""
-EXHAUSTIVE=0
-MAX_SECTIONS_SET=0
-MAX_SUBGRAPHS_SET=0
-RUN_SYNC=0
-RUN_PYSIM=0
-CLEAN_FLAG=""
+LEVEL="1"
 REPORTS_DIR="reports"
 REPORT_PATH="reports/doc_report.md"
-GRAPH_JSON_PATH="reports/doc_graph.json"
-RISK_REPORT="reports/doc_risk_report.json"
-JUDGE_REPORT="reports/doc_judge_report.json"
-
-mkdir -p "$REPORTS_DIR"
 
 usage() {
     cat <<'EOF'
 Fireball Document Quality & Verification Pipeline (spec-integrator)
 
 Usage:
-  ./tools/run_all_tests.sh [OPTIONS]
+  ./tools/run_all_tests.sh [--level <1|2|3|sync>]
 
-Options:
-  --assess           Run the Complexity & Risk Assessment (establishes obligations).
-  --llm              Run the LLM as a Judge semantic audit.
-  --pysim            Run the Python Simulator (pysim) unit & scenario test suites.
-  --full             Run everything with full coverage (implies --assess --llm --pysim).
-  --exhaustive       Run exhaustive assessment & semantic audit (checks all sections/subgraphs).
-  --backend B        LLM backend (sakura, ollama, mock - default: sakura)
-  --model M          LLM model name
-  --max-subgraphs N  Subgraphs to evaluate with the LLM judge (default: 10, 0 for unlimited)
-  --max-sections N   Sections to risk-assess (default: 15, 0 for unlimited)
-  --min-references N Minimum referencing sections required to audit a subgraph (default: 1)
-  --min-length N     Minimum body character length to evaluate (default: 50)
-  --tier T           Comma-separated tiers to assess (e.g. '0,1,2')
-  --no-strict        Accept a partial risk assessment instead of failing.
-  --sync             Record the current spec state as the propagation baseline, then exit.
-  --clean            Run a clean audit without the cache DB.
-  -h, --help         Show this help
+Levels:
+  1 (default)  Local static gates only. Free, ~5-10s. No LLM calls.
+               Phase 0 (lint/fmt) + Phase 3 (concept/bench/semantic) + Phase 4 (check).
+               Reuses the stored risk assessment / judge report if present.
+  2            Milestone audit. Costs a cloud LLM call, ~30s-1min.
+               Level 1 + llm-assess + llm-judge (semantic audit + Design -> Test Spec
+               -> Test Code consistency) + the pysim test suite.
+  3            Release-gate audit. Costs cloud LLM calls, full coverage, slowest.
+               Level 2 with exhaustive assessment/judge coverage across every
+               keyword and component, plus a --clean scan.
+  sync         Record the current spec state as the propagation baseline, then exit.
+               Not a verification level - run this after a spec edit, before Level 1.
 
-Phases:
-  0. lint/fmt- verify Ruff linting and formatting (always runs)
-  1. assess  - decides what must be verified   (skippable; the stored report is reused)
-  2. judge   - semantic audit                  (skippable)
-  3. concept - runs docs/**/concepts/*_concept.py (always runs)
-  4. check   - quality gates, authoritative    (always runs)
+  -h, --help   Show this help
+
+Backend, model, tier, and component selection are not exposed here - they are
+the same for every level (spec-integrator.yaml's llm_judge.default_backend).
+For anything more specific, call spec-integrator directly, e.g.:
+  uv run --system-certs --project tools/spec-integrator python -m spec_integrator.cli llm-judge --component jit_compiler
 EOF
     exit 0
 }
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --llm)              RUN_LLM=1; shift ;;
-        --assess)           RUN_ASSESS=1; shift ;;
-        --pysim)            RUN_PYSIM=1; shift ;;
-        --test-chain|--testchain) RUN_TESTCHAIN=1; shift ;;
-        --component)        COMPONENT="$2"; shift 2 ;;
-        --full)             RUN_ASSESS=1; RUN_LLM=1; RUN_PYSIM=1; MAX_SECTIONS=0; MAX_SUBGRAPHS=0; shift ;;
-        --exhaustive)       RUN_ASSESS=1; RUN_LLM=1; RUN_PYSIM=1; EXHAUSTIVE=1; MAX_SECTIONS=0; MAX_SUBGRAPHS=0; shift ;;
-        --backend)          BACKEND="$2"; shift 2 ;;
-        --model)            MODEL="$2"; shift 2 ;;
-        --max-subgraphs)    MAX_SUBGRAPHS="$2"; MAX_SUBGRAPHS_SET=1; shift 2 ;;
-        --max-sections)     MAX_SECTIONS="$2"; MAX_SECTIONS_SET=1; shift 2 ;;
-        --min-references)   MIN_REFERENCES="$2"; shift 2 ;;
-        --min-length)       MIN_LENGTH="$2"; shift 2 ;;
-        --tier)             TARGET_TIER="$2"; shift 2 ;;
-        --no-strict)        NO_STRICT=1; shift ;;
-        --sync)             RUN_SYNC=1; shift ;;
-        --clean)            CLEAN_FLAG="--clean"; shift ;;
-        -h|--help)          usage ;;
+        --level)      LEVEL="$2"; shift 2 ;;
+        -h|--help)    usage ;;
         *) echo "Unknown argument: $1"; usage ;;
     esac
 done
+
+case "$LEVEL" in
+    1|2|3|sync) ;;
+    *) echo "✖ Invalid --level '$LEVEL'. Use 1, 2, 3, or sync."; exit 1 ;;
+esac
+
+mkdir -p "$REPORTS_DIR"
 
 SPEC_INT=("run" "--system-certs" "--project" "tools/spec-integrator"
           "python" "-m" "spec_integrator.cli")
 
 echo "================================================================================"
-echo " Fireball Document Verification Pipeline [spec-integrator]"
+echo " Fireball Document Verification Pipeline [spec-integrator] - Level $LEVEL"
 echo "================================================================================"
 
 # ---------------------------------------------------------------------------
-# Phase 0: Python Code Lint & Formatting Gate
+# Phase 0: Python Code Lint & Formatting Gate — runs at every level.
 # ---------------------------------------------------------------------------
 echo ""
 echo ">>> [Phase 0] Python Code Linter & Formatter Verification (Ruff)..."
@@ -124,7 +93,7 @@ echo "✔ Python Linter & Formatter: All checks passed (0 errors)"
 # Deliberately not part of the pipeline: doing it automatically would erase the
 # very record that reveals an edit which never reached its dependants.
 # ---------------------------------------------------------------------------
-if [ "$RUN_SYNC" -eq 1 ]; then
+if [ "$LEVEL" = "sync" ]; then
     echo ""
     echo ">>> Recording consistency baseline..."
     if ! uv "${SPEC_INT[@]}" sync --config spec-integrator.yaml; then
@@ -135,77 +104,64 @@ if [ "$RUN_SYNC" -eq 1 ]; then
     exit 0
 fi
 
-# ---------------------------------------------------------------------------
-# Phase 1: Risk Assessment — establishes the verification obligations
-# ---------------------------------------------------------------------------
-if [ "$RUN_ASSESS" -eq 1 ]; then
-    echo ""
-    echo ">>> [Phase 1/4] Risk Assessment (deciding what must be verified)..."
-    ASSESS_ARGS=("${SPEC_INT[@]}" "assess" "--config" "spec-integrator.yaml"
-                 "--backend" "$BACKEND" "--max-sections" "$MAX_SECTIONS"
-                 "--min-length" "$MIN_LENGTH"
-                 "-o" "$RISK_REPORT" "-r" "reports/doc_risk_report.md")
-    [ -n "$MODEL" ] && ASSESS_ARGS+=("--model" "$MODEL")
-    [ -n "$TARGET_TIER" ] && ASSESS_ARGS+=("--tier" "$TARGET_TIER")
-    [ "$EXHAUSTIVE" -eq 1 ] && ASSESS_ARGS+=("--exhaustive")
-    [ "$NO_STRICT" -eq 1 ] && ASSESS_ARGS+=("--no-strict")
-
-    if ! uv "${ASSESS_ARGS[@]}"; then
-        echo "✖ Risk Assessment: FAILED (incomplete coverage leaves obligations unknown)"
-        echo "  Raise --max-sections, or pass --no-strict to accept a partial assessment."
-        exit 1
-    fi
-    echo "✔ Risk Assessment: obligations recorded in $RISK_REPORT"
-else
-    echo ""
-    echo ">>> [Phase 1/4] Skipping Risk Assessment (--assess to run it)"
-    if [ -f "$RISK_REPORT" ]; then
-        echo "    Reusing the stored assessment. The gate will reject it if the docs have changed."
-    else
-        echo "    No stored assessment exists — the Obligation Gate will fail."
-    fi
+RUN_LLM=0
+EXHAUSTIVE=0
+MAX_KEYWORDS=15
+MAX_SUBGRAPHS=10
+MAX_DOCUMENTS=15
+if [ "$LEVEL" = "2" ] || [ "$LEVEL" = "3" ]; then
+    RUN_LLM=1
+fi
+if [ "$LEVEL" = "3" ]; then
+    EXHAUSTIVE=1
+    MAX_KEYWORDS=0
+    MAX_SUBGRAPHS=0
+    MAX_DOCUMENTS=0
 fi
 
 # ---------------------------------------------------------------------------
-# Phase 2: LLM Semantic Audit
+# Phase 1: Risk Assessment — establishes the verification obligations
 # ---------------------------------------------------------------------------
 if [ "$RUN_LLM" -eq 1 ]; then
     echo ""
-    echo ">>> [Phase 2/4] LLM as a Judge (semantic audit)..."
-    JUDGE_ARGS=("${SPEC_INT[@]}" "judge" "--config" "spec-integrator.yaml"
-                "--backend" "$BACKEND" "--max-subgraphs" "$MAX_SUBGRAPHS"
-                "--min-references" "$MIN_REFERENCES"
-                "-o" "$JUDGE_REPORT" "-r" "reports/doc_judge_report.md")
-    [ -n "$MODEL" ] && JUDGE_ARGS+=("--model" "$MODEL")
+    echo ">>> [Phase 1/4] Risk Assessment (deciding what must be verified)..."
+    ASSESS_ARGS=("${SPEC_INT[@]}" "llm-assess" "--config" "spec-integrator.yaml"
+                 "--max-keywords" "$MAX_KEYWORDS")
+    [ "$EXHAUSTIVE" -eq 1 ] && ASSESS_ARGS+=("--exhaustive")
+
+    if ! uv "${ASSESS_ARGS[@]}"; then
+        echo "✖ Risk Assessment: FAILED (incomplete coverage leaves obligations unknown)"
+        echo "  Use --level 3 for exhaustive (unlimited-section) coverage."
+        exit 1
+    fi
+    echo "✔ Risk Assessment: obligations recorded in the cache DB"
+else
+    echo ""
+    echo ">>> [Phase 1/4] Skipping Risk Assessment (--level 2 or 3 to run it)"
+    echo "    Reusing whatever assessment is already in the cache DB, if any. The gate"
+    echo "    will reject it if the docs have changed, and fail if none exists."
+fi
+
+# ---------------------------------------------------------------------------
+# Phase 2: LLM Semantic Audit — subgraph consistency, whole-document
+# self-consistency, AND the Design -> Test Spec -> Test Code traceability
+# chain always run together in one pass.
+# ---------------------------------------------------------------------------
+if [ "$RUN_LLM" -eq 1 ]; then
+    echo ""
+    echo ">>> [Phase 2/4] LLM as a Judge (subgraph + whole-document + Design -> Test Spec -> Test Code consistency)..."
+    JUDGE_ARGS=("${SPEC_INT[@]}" "llm-judge" "--config" "spec-integrator.yaml"
+                "--max-subgraphs" "$MAX_SUBGRAPHS" "--max-documents" "$MAX_DOCUMENTS")
     [ "$EXHAUSTIVE" -eq 1 ] && JUDGE_ARGS+=("--exhaustive")
 
     if ! uv "${JUDGE_ARGS[@]}"; then
-        echo "! LLM as a Judge reported findings — see reports/doc_judge_report.md"
+        echo "! LLM as a Judge reported findings — see reports/doc_report.md § LLM Judge Verdicts / § Whole-Document LLM Judge Verdicts / § Test Chain Verdicts"
     else
         echo "✔ LLM as a Judge: no semantic failures"
     fi
 else
     echo ""
-    echo ">>> [Phase 2/4] Skipping LLM as a Judge (--llm to run it)"
-fi
-
-# ---------------------------------------------------------------------------
-# Design -> Test Spec -> Test Code 3-Tier Traceability & Consistency Judge
-# ---------------------------------------------------------------------------
-if [ "$RUN_TESTCHAIN" -eq 1 ]; then
-    echo ""
-    echo ">>> [3-Tier Consistency] LLM Design-to-Test Consistency Judge..."
-    CHAIN_ARGS=("${SPEC_INT[@]}" "judge-test-chain" "--config" "spec-integrator.yaml"
-                "--backend" "$BACKEND")
-    [ -n "$COMPONENT" ] && CHAIN_ARGS+=("--component" "$COMPONENT")
-    [ -n "$MODEL" ] && CHAIN_ARGS+=("--model" "$MODEL")
-    [ "$EXHAUSTIVE" -eq 1 ] || [ "$RUN_ASSESS" -eq 1 ] && CHAIN_ARGS+=("--all")
-
-    if ! uv "${CHAIN_ARGS[@]}"; then
-        echo "! Test Chain Judge reported findings — see reports/test_chain_judge_report.md"
-    else
-        echo "✔ Test Chain Judge: all audited components are consistent across Spec -> TestSpec -> TestCode"
-    fi
+    echo ">>> [Phase 2/4] Skipping LLM as a Judge (--level 2 or 3 to run it)"
 fi
 
 # ---------------------------------------------------------------------------
@@ -269,9 +225,10 @@ do
 done
 
 # ---------------------------------------------------------------------------
-# Optional: Python Simulator (pysim) Invariant & Integration Scenarios
+# Python Simulator (pysim) Invariant & Integration Scenarios — free and local,
+# but slow enough (~15-20s) to reserve for Level 2+.
 # ---------------------------------------------------------------------------
-if [ "$RUN_PYSIM" -eq 1 ]; then
+if [ "$RUN_LLM" -eq 1 ]; then
     echo ""
     echo ">>> [pysim] Python Simulator Unit & Scenario Test Suite..."
     echo "  -> Running experiments/pysim/tests/run_all.py..."
@@ -292,8 +249,8 @@ fi
 echo ""
 echo ">>> [Phase 4/4] Quality Gates (Format / Traceability / Hierarchy / Formal / WIT / Evidence / Obligation / Consistency)..."
 CHECK_ARGS=("${SPEC_INT[@]}" "check" "--config" "spec-integrator.yaml"
-            "--report" "$REPORT_PATH" "--graph-json" "$GRAPH_JSON_PATH")
-[ -n "$CLEAN_FLAG" ] && CHECK_ARGS+=("$CLEAN_FLAG")
+            "--report" "$REPORT_PATH")
+[ "$EXHAUSTIVE" -eq 1 ] && CHECK_ARGS+=("--clean")
 
 uv "${CHECK_ARGS[@]}"
 CHECK_EXIT=$?

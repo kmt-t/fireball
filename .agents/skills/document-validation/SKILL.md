@@ -12,16 +12,17 @@ Fireball のドキュメント品質、トレーサビリティ、形式モデ�
 > [!IMPORTANT]
 > **エージェント実行原則（コスト・課金制御）**:
 > - **普段（日常の編集・実装・コミット前）**: 必ず **Level 0（個別単体テスト）** または **Level 1（ローカル静的ゲート `powershell tools/run_all_tests.ps1` / コスト 0）** の簡易テストのみを実行すること。
-> - **フルテスト / クラウド LLM 監査（Level 2 / Level 3: `-assess`, `-llm`, `-full`）**: クラウド API 課金が発生するため、**ユーザーから明示的な指示（「フルテストやって」「LLM監査して」等）があった場合のみ** 実行すること。エージェントが自発的・コミットごとに自動実行してはならない。
+> - **フルテスト / クラウド LLM 監査（Level 2 / Level 3）**: クラウド API 課金が発生するため、**ユーザーから明示的な指示（「フルテストやって」「LLM監査して」等）があった場合のみ** 実行すること。エージェントが自発的・コミットごとに自動実行してはならない。
 
-日常の編集からリリース判定まで、目的に応じて最適なレベルのコマンドを実行することで、無駄な全件監査や待機時間・API課金を排除します。
+日常の編集からリリース判定まで、`run_all_tests` が公開する唯一のオプション `-level`（PowerShell）/ `--level`（Bash）で最適な深さの検証を実行し、無駄な全件監査や待機時間・API課金を排除します。バックエンド・モデル・コンポーネント選択などの微調整はレベルに含めず、`spec-integrator` 本体の CLI を直接叩きます（各セクション参照）。
 
 ```mermaid
 graph TD
     L0[Level 0: 単体コード実行<br/>秒速・コスト0] -->|編集・実装中| L0
-    L0 -->|コミット前| L1[Level 1: 静的ゲート & 同期<br/>5〜10秒・コスト0]
-    L1 -.->|【ユーザー明示指示時のみ】<br/>仕様・ADR変更時| L2[Level 2: さくら LLM 意味監査<br/>30秒〜1分]
+    L0 -->|コミット前| L1["Level 1 (既定): 静的ゲート<br/>5〜10秒・コスト0"]
+    L1 -.->|【ユーザー明示指示時のみ】<br/>仕様・ADR変更時| L2[Level 2: マイルストーン LLM 意味監査<br/>30秒〜1分]
     L2 -.->|【ユーザー明示指示時のみ】<br/>PR・リリース前| L3[Level 3: 完全全量監査<br/>CI / リリースゲート]
+    Sync["--level sync: 整合性ベースライン更新<br/>（検証レベルではない、書き込み専用）"]
 ```
 
 ### Level 0: 日常の編集・個別検証 (Inner Loop / 0.1秒〜数秒)
@@ -39,41 +40,39 @@ uv run python docs/components/tier1_core/formal/coos_channel_model.py
 uv run python docs/components/tier1_core/benchmarks/direct_context_switch_bench.py
 ```
 
-### Level 1: コミット前・静的リンク & トレーサビリティ確認 (Pre-Commit / 5〜10秒)
-Markdown の編集が完了したら、文書ハッシュを同期し、静的品質ゲート（Format, Traceability, Hierarchy, WIT, Evidence, Consistency）を高速確認します。LLM は呼び出されません。
+### --level sync: 仕様変更後のベースライン更新
+Markdown を編集したら、他の検証を走らせる前にまず一貫性ベースラインを更新し、変更した Markdown と一緒に `spec-consistency.lock` をコミットします。「検証レベル」ではなく、書き込み専用の一回限りの操作です。
 
 ```powershell
-# 1. 整合性ベースラインの同期（変更した Markdown と一緒に lock ファイルをコミット）
-powershell -ExecutionPolicy Bypass -File tools/run_all_tests.ps1 -sync
+powershell -ExecutionPolicy Bypass -File tools/run_all_tests.ps1 -level sync
+```
 
-# 2. 静的品質ゲートの高速実行（保存済み台帳再利用）
+### Level 1 (既定): コミット前・静的ゲート (Pre-Commit / 5〜10秒)
+静的品質ゲート（Format, Traceability, Hierarchy, WIT, Evidence, Consistency）と概念コード・ベンチマークを高速確認します。LLM は呼び出されません。
+
+```powershell
 powershell -ExecutionPolicy Bypass -File tools/run_all_tests.ps1
+# 明示するなら: -level 1
 ```
 
 ### Level 2: マイルストーン・意味監査 (Feature Milestone / 30秒〜1分)
-仕様変更や新しい ADR を追加した際、さくらインターネット（Qwen 3.6 / 高速・低コスト）を用いてリスク評価とセマンティック整合性監査を行います。
+仕様変更や新しい ADR を追加した際、`spec-integrator.yaml` の `llm_judge.default_backend`（既定: さくらインターネット / Qwen 3.6）を用いてリスク評価、キーワードサブグラフの意味監査、ドキュメント単位の自己一貫性監査、設計仕様→テスト仕様→テストコードの3層一貫性監査（`llm-judge` が常に3つとも実行）、および pysim テストスイートを実行します。
 
 ```powershell
-# リスク評価（何を監査すべきか決定）
-powershell -ExecutionPolicy Bypass -File tools/run_all_tests.ps1 -assess -backend sakura
-
-# LLM as a Judge 意味監査を実行
-powershell -ExecutionPolicy Bypass -File tools/run_all_tests.ps1 -llm -backend sakura
-
-# （特定 Tier のみ監査する場合）
-powershell -ExecutionPolicy Bypass -File tools/run_all_tests.ps1 -llm -backend sakura -tier tier3_jit
+powershell -ExecutionPolicy Bypass -File tools/run_all_tests.ps1 -level 2
 ```
 
 ### Level 3: リリース前・CI 完全全量監査 (Release Gate / 全件)
-PR 作成時やリリース判定時に、全品質ゲート、全形式検証、全ベンチマーク、ARM エミュレータ、および全サブグラフの LLM 監査を実行します。
+PR 作成時やリリース判定時に、全品質ゲート、全形式検証、全ベンチマーク、ARM エミュレータ、全サブグラフの LLM 意味監査、全ドキュメントの自己一貫性監査、および全コンポーネントの 3 層一貫性監査（下記）をキャッシュなしの `--clean` スキャンで実行します。
 
 ```powershell
-# 全フェーズを全量で完全実行
-powershell -ExecutionPolicy Bypass -File tools/run_all_tests.ps1 -full -backend sakura
+powershell -ExecutionPolicy Bypass -File tools/run_all_tests.ps1 -level 3
 
 # Linux / CI 環境
-./tools/run_all_tests.sh --full --backend sakura
+./tools/run_all_tests.sh --level 3
 ```
+
+特定の Tier・コンポーネントだけを監査したい、または `--backend`/`--model` を明示的に上書きしたい場合は、`run_all_tests` を介さず `spec-integrator` を直接呼び出します（下記「3層一貫性監査」参照）。
 
 ---
 
@@ -89,29 +88,15 @@ powershell -ExecutionPolicy Bypass -File tools/run_all_tests.ps1 -full -backend 
 | **6. Evidence Gate** | `<!-- evidence: ... -->` 宣言ファイルの実在性、未裏付け主張（Dangling Ref）の検知 | **ERROR** (Exit 1) |
 | **7. Obligation Gate** | リスク評価（Assess）から導出された全検証義務（100%）の充足監査 | **ERROR** (Exit 1) |
 | **8. Consistency Gate** | `spec-consistency.lock` との差分・波及漏れの検知 | **ERROR** (Exit 1) |
-| *(Topology)* | 通信チャネル・メッセージングの静的非巡回性検証 | **ERROR** (Exit 1) |
 
-### アドバイザリ検証: でっち上げ決定検知 (`detect-fake-decision`)
-勝手な独断や辻褄合わせの偽決定（Fake Decision）、および明示的な `{ADR_*}` タグが付いていない暗黙の仕様変更を静的・LLMセマンティック両面から検出します。
-```powershell
-# 静的スキャン（日常・コスト0）
-uv run --project tools/spec-integrator python -m spec_integrator.cli detect-fake-decision
-
-# PR差分に限定したスキャン
-uv run --project tools/spec-integrator python -m spec_integrator.cli detect-fake-decision --diff-only
-
-# LLM セマンティック監査（ユーザー指示時のみ）
-uv run --project tools/spec-integrator python -m spec_integrator.cli detect-fake-decision --llm --backend sakura
-```
-
-### 設計 -> テスト仕様 -> テストコード 3層一貫性監査 (`judge-test-chain`)
-設計書（`docs/components/**/*.md`）、テスト仕様書（`docs/components/**/tests/*_test_spec.md`）、および結合テストコード（`docs/architecture/integration_test_scenarios.md`）の3層トレーサビリティと意味的一貫性を LLM as a Judge で検証します。
+### 設計 -> テスト仕様 -> テストコード 3層一貫性監査 (`llm-judge`)
+設計書（`docs/components/**/*.md`）、テスト仕様書（`docs/components/**/tests/*_test_spec.md`）、および結合テストコード（`docs/architecture/integration_test_scenarios.md`）の3層トレーサビリティと意味的一貫性を LLM as a Judge で検証します。`llm-judge` は要求サブグラフの意味監査とこの3層監査を常に両方実行するため、専用フラグは不要です。`run_all_tests -level 2` 以上で自動実行されますが、特定コンポーネントだけを見たい場合や `--backend`/`--model` を明示したい場合は直接呼び出します。
 ```powershell
 # 特定コンポーネントの3層監査
-powershell -ExecutionPolicy Bypass -File tools/run_all_tests.ps1 -testchain -component jit_compiler -backend sakura
+uv run --system-certs --project tools/spec-integrator python -m spec_integrator.cli llm-judge --component jit_compiler --backend sakura
 
-# 全コンポーネントの3層監査
-powershell -ExecutionPolicy Bypass -File tools/run_all_tests.ps1 -testchain -full -backend sakura
+# 全コンポーネントの3層監査（意味監査も併せて網羅的に実行）
+uv run --system-certs --project tools/spec-integrator python -m spec_integrator.cli llm-judge --all --backend sakura
 ```
 
 ---

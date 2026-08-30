@@ -153,16 +153,25 @@ class JITTrace:
     def flags(self, val: int) -> None:
         self.header.flags = val
 
-    def __call__(self, locals_ptr: int | Any, memory_base: int | Any = 0) -> int:
-        """Invokes the native JIT trace directly via ctypes (same convention as opcode handler)."""
-        return self.fn(locals_ptr, memory_base)
+    def __call__(self, ip_or_locals: Any, stack_bot_or_mem: Any = 0, env: Any = 0, local_base: Any = 0) -> int:
+        """Invokes the native JIT trace directly via ctypes CPS 4-argument calling convention:
+        (uint32_t ip, void* stack_bot, void* env, void* local_base)"""
+        try:
+            # 4-argument call
+            return self.fn(ip_or_locals, stack_bot_or_mem, env, local_base)
+        except TypeError:
+            # 2-argument fallback
+            return self.fn(ip_or_locals, stack_bot_or_mem)
 
     def invoke(self, ctx: Any) -> int:
-        """Helper to invoke trace directly on WASMContext via ctypes pointers."""
+        """Helper to invoke trace directly on WASMContext via CPS 4-argument calling convention."""
         try:
-            res = self.fn(ctx.locals_ptr, ctx.mem_ptr)
+            res = self.fn(self.head_pc, ctx.stack_bot_ptr, ctx.mem_ptr, ctx.locals_ptr)
         except TypeError:
-            res = self.fn(ctx)
+            try:
+                res = self.fn(ctx.locals_ptr, ctx.mem_ptr)
+            except TypeError:
+                res = self.fn(ctx)
         if self.has_return_val and isinstance(res, int):
             ctx.push(res & 0xFFFF_FFFF)
         return res
@@ -402,6 +411,10 @@ class WASMContext:
             self._c_mem = None
 
     @property
+    def stack_bot_ptr(self) -> ctypes.c_void_p:
+        return ctypes.c_void_p(0)
+
+    @property
     def locals_ptr(self) -> ctypes.c_void_p:
         return ctypes.cast(self._c_locals, ctypes.c_void_p)
 
@@ -465,9 +478,9 @@ class WASMTraceCompiler:
         ops = list(block.ops)
         has_ret = any(op.startswith("i32.") for op, _ in ops)
 
-        def trace_fn(locals_ptr: Any, memory_base: Any = 0) -> int:
-            # Emulated handler matching identical C signature
-            c_arr = ctypes.cast(locals_ptr, ctypes.POINTER(ctypes.c_int64))
+        def trace_fn(ip: int, stack_bot: Any, env: Any, local_base: Any) -> int:
+            # Emulated handler matching CPS 4-argument C signature
+            c_arr = ctypes.cast(local_base, ctypes.POINTER(ctypes.c_int64))
             stk: list[int] = []
             for op, arg in ops:
                 if op == "i32.const":
@@ -487,7 +500,7 @@ class WASMTraceCompiler:
                     c_arr[arg] = stk.pop() & 0xFFFF_FFFF
             return stk[-1] if stk else 0
 
-        c_fn = ctypes.CFUNCTYPE(ctypes.c_int64, ctypes.c_void_p, ctypes.c_void_p)(trace_fn)
+        c_fn = ctypes.CFUNCTYPE(ctypes.c_int64, ctypes.c_uint32, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)(trace_fn)
         trace = JITTrace(head_pc=head_pc, fn=c_fn, size_bytes=len(ops) * 4,
                          next_pc=block.next_pc, loops_to=block.loops_to, has_return_val=has_ret)
         trace._keepalive = c_fn

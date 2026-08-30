@@ -1,11 +1,17 @@
-"""
+﻿"""
 experiments/pysim/x64_jit.py
 
 Pure Trace-based Copy-and-Patch JIT Compiler for Fireball.
-Compiles individual HOT BasicBlocks / Traces into executable native machine code
+Compiles individual HOT BasicBlocks / Traces into Position-Independent Code (PIC)
 with 16-byte fixed headers (JITTraceHeader) and direct trace chaining.
-Conforms strictly to docs/components/tier3_jit/jit_compiler.md and jit_runtime.md.
-No module/function-level compilation: compilation is strictly per-trace.
+Conforms strictly to docs/components/tier3_jit/jit_compiler.md and
+docs/components/tier2_runtime/runtime_interpreter.md.
+
+CPS 4-argument calling convention:
+  RCX (R0): uint32_t ip          -- WASM PC
+  RDX (R1): void* stack_bot      -- execution_context
+  R8  (R2): void* env            -- vsoc_runtime (memory_base)
+  R9  (R3): void* local_base     -- locals array pointer
 """
 
 from __future__ import annotations
@@ -16,9 +22,18 @@ from typing import Any
 import x64_asm as asm
 import x64_stencils as st
 from exec_memory import ExecutableBuffer
-from runtime_engine import BasicBlock, JITTrace, WASMContext
+from runtime_engine import BasicBlock, JITTrace, JITTraceHeader, WASMContext
 
 I32_MASK = 0xFFFFFFFF
+
+# CPS 4-argument function pointer type matching interpreter opcode_handler
+TRACE_FN_TYPE = ctypes.CFUNCTYPE(
+    ctypes.c_int64,
+    ctypes.c_uint32,  # RCX: ip
+    ctypes.c_void_p,  # RDX: stack_bot
+    ctypes.c_void_p,  # R8:  env
+    ctypes.c_void_p,  # R9:  local_base
+)
 
 
 def patch(code: bytearray, base: int, stencil: st.Stencil, reloc_name: str, value: int) -> None:
@@ -35,20 +50,49 @@ def emit(code: bytearray, stencil: st.Stencil, **patches: int) -> int:
     return base
 
 
+def gen_pic_prologue() -> bytes:
+    """Generates the PIC CPS 4-argument prologue:
+    Saves callee-saved registers and maps arguments to execution registers:
+      R10 = local_base (R9)
+      R11 = env (R8)
+      R12 = stack_bot (RDX)
+      R13 = ip (RCX)
+    """
+    code = bytearray()
+    code += bytes((0x53,))                    # push rbx
+    code += bytes((0x41, 0x54))               # push r12
+    code += bytes((0x41, 0x55))               # push r13
+    code += bytes((0x41, 0x56))               # push r14
+    code += bytes((0x41, 0x57))               # push r15
+    code += bytes((0x57,))                    # push rdi
+    code += bytes((0x48, 0x89, 0xE7))         # mov rdi, rsp
+    code += bytes((0x4D, 0x89, 0xCA))         # mov r10, r9   (R10 = local_base)
+    code += bytes((0x4D, 0x89, 0xC3))         # mov r11, r8   (R11 = env / memory_base)
+    code += bytes((0x49, 0x89, 0xD4))         # mov r12, rdx  (R12 = stack_bot)
+    code += bytes((0x49, 0x89, 0xCD))         # mov r13, rcx  (R13 = ip)
+    return bytes(code)
+
+
 class TraceCompiler:
-    """True Copy-and-Patch Trace Compiler for BasicBlocks.
+    """True Copy-and-Patch Trace Compiler for BasicBlocks producing Position-Independent Code (PIC).
 
     Compiles straight-line instruction sequences into native x64 traces,
-    emitting 16-byte physical headers, inline operands, and chaining slots.
+    emitting 16-byte physical headers (JITTraceHeader) at offset 0x00 and
+    PIC code starting at offset 0x10.
     """
 
     def __init__(self, host_trampolines: dict[int, int] | None = None):
         self.host_trampolines = host_trampolines or {}
 
     def compile_trace(self, head_pc: int, block: BasicBlock) -> JITTrace:
-        """Compiles a single BasicBlock into a native JITTrace."""
+        """Compiles a single BasicBlock into a PIC native JITTrace."""
+        # 1. Physical 16-byte JITTraceHeader at +0x00
+        header = JITTraceHeader(head_wasm_pc=head_pc)
+        header_bytes = header.pack()
+
+        # 2. PIC Code Stream at +0x10
         code = bytearray()
-        code += st.PROLOGUE.code
+        code += gen_pic_prologue()
 
         stack_depth = 0
         for op, arg in block.ops:
@@ -105,20 +149,28 @@ class TraceCompiler:
         else:
             code += st.EPILOGUE_RETURN_VOID.code
 
-        trace_bytes = bytes(code)
+        total_size = len(header_bytes) + len(code)
+        header.trace_byte_size = total_size
 
-        buf = ExecutableBuffer(max(len(trace_bytes), 64))
-        buf.write(0, trace_bytes)
-        # Direct ctypes C function pointer matching the opcode handler calling convention:
-        # int64_t (*)(void* locals_ptr, void* memory_base)
-        fn = buf.function_at(0, ctypes.c_int64, [ctypes.c_void_p, ctypes.c_void_p])
+        # Combine 16-byte header + PIC code stream
+        full_blob = bytearray(header.pack()) + code
 
-        return JITTrace(
+        buf = ExecutableBuffer(max(len(full_blob), 64))
+        buf.write(0, bytes(full_blob))
+
+        # Direct ctypes C function entry at +0x10 (past the 16-byte header)
+        # Signature matches interpreter opcode handler:
+        # int64_t (*)(uint32_t ip, void* stack_bot, void* env, void* local_base)
+        fn = buf.function_at(16, ctypes.c_int64, [ctypes.c_uint32, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p])
+
+        trace = JITTrace(
             head_pc=head_pc,
             fn=fn,
-            size_bytes=len(trace_bytes),
+            size_bytes=total_size,
             next_pc=block.next_pc,
             loops_to=block.loops_to,
             has_return_val=(stack_depth > 0),
             buf=buf,
         )
+        trace.header = header
+        return trace

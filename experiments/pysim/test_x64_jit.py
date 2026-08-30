@@ -2,20 +2,25 @@
 experiments/pysim/test_x64_jit.py
 
 Spec-compliant tests for Fireball Trace-based Copy-and-Patch JIT Compiler (x64_jit.py).
-Verifies direct ctypes C-calling of JIT traces sharing the identical signature
-with interpreter opcode handlers (docs/components/tier3_jit/jit_compiler.md).
+Verifies:
+1. Exact CPS 4-argument calling convention: (uint32_t ip, void* stack_bot, void* env, void* local_base)
+2. 16-byte physical JITTraceHeader layout at offset +0x00
+3. Position-Independent Code (PIC) execution across arbitrary memory relocations
+4. Direct trace chaining and hybrid tiering transitions
+(docs/components/tier3_jit/jit_compiler.md and docs/components/tier2_runtime/runtime_interpreter.md)
 """
 
 from __future__ import annotations
 
 import ctypes
 
+from exec_memory import ExecutableBuffer
 from runtime_engine import BasicBlock, CardState, IntegratedHybridEngine, WASMContext
 from x64_jit import TraceCompiler
 
 
-def test_trace_compiler_arithmetic_ops_direct_ctypes():
-    """JITC-01: TraceCompiler compiles basic arithmetic and invokes directly via ctypes."""
+def test_trace_compiler_cps_4arg_and_pic():
+    """JITC-01: TraceCompiler emits 16-byte header + PIC code callable via CPS 4-arg convention."""
     compiler = TraceCompiler()
 
     # Block: local[1] = (local[0] + 10) * 3 - 5
@@ -36,26 +41,43 @@ def test_trace_compiler_arithmetic_ops_direct_ctypes():
 
     trace = compiler.compile_trace(0x100, block)
 
-    # 1. Direct call via ctypes C function pointer fn(locals_ptr, mem_ptr)
+    # 1. 16-byte header verification
+    assert trace.header.head_wasm_pc == 0x100
+    assert trace.size_bytes >= 16
+
+    # 2. Direct call via CPS 4-argument C function pointer fn(ip, stack_bot, env, local_base)
     locals_arr = (ctypes.c_int64 * 8)(5, 0)
-    res = trace.fn(ctypes.cast(locals_arr, ctypes.c_void_p), ctypes.c_void_p(0))
+    res = trace.fn(0x100, ctypes.c_void_p(0), ctypes.c_void_p(0), ctypes.cast(locals_arr, ctypes.c_void_p))
     assert res == 0
     assert locals_arr[1] == 40
 
-    # 2. Call via trace(locals_ptr, mem_ptr)
-    locals_arr2 = (ctypes.c_int64 * 8)(10, 0)
-    trace(ctypes.cast(locals_arr2, ctypes.c_void_p), 0)
-    # (10 + 10) * 3 - 5 = 55
-    assert locals_arr2[1] == 55
+    # 3. PIC Verification: Copy raw trace binary to a completely different buffer address
+    # and execute it without any relocation adjustments -- must produce identical result!
+    raw_blob = trace._exec_buf.read(0, trace.size_bytes)
+    reloc_buf = ExecutableBuffer(len(raw_blob) + 128)
+    try:
+        reloc_offset = 64  # Placed at arbitrary non-zero offset
+        reloc_buf.write(reloc_offset, raw_blob)
+        pic_fn = reloc_buf.function_at(
+            reloc_offset + 16,  # Entry at +0x10 past 16-byte header
+            ctypes.c_int64,
+            [ctypes.c_uint32, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
+        )
+        locals_arr_pic = (ctypes.c_int64 * 8)(10, 0)
+        pic_fn(0x100, ctypes.c_void_p(0), ctypes.c_void_p(0), ctypes.cast(locals_arr_pic, ctypes.c_void_p))
+        # (10 + 10) * 3 - 5 = 55
+        assert locals_arr_pic[1] == 55, "PIC trace failed when relocated in memory"
+    finally:
+        reloc_buf.close()
 
-    # 3. Call via trace.invoke(ctx)
+    # 4. Context-based invocation via trace.invoke(ctx)
     ctx = WASMContext(locals_values=[5, 0])
     trace.invoke(ctx)
     assert ctx.locals[1] == 40
 
 
-def test_trace_compiler_bitwise_and_shifts_direct_ctypes():
-    """JITC-02: TraceCompiler compiles bitwise and, or, xor, shl, shr_u, shr_s called via ctypes."""
+def test_trace_compiler_bitwise_and_shifts_pic():
+    """JITC-02: TraceCompiler compiles bitwise ops into PIC code."""
     compiler = TraceCompiler()
 
     block = BasicBlock(
@@ -81,8 +103,8 @@ def test_trace_compiler_bitwise_and_shifts_direct_ctypes():
     assert ctx.locals[3] == (0x0F << 2)
 
 
-def test_trace_compiler_host_call_direct_ctypes():
-    """JITC-03: TraceCompiler executes host function calls via ctypes native trampolines."""
+def test_trace_compiler_host_call_cps():
+    """JITC-03: TraceCompiler executes host function calls via ctypes CPS trampolines."""
     received = []
 
     def host_callback():
@@ -209,4 +231,4 @@ if __name__ == "__main__":
     for test in ALL_TESTS:
         test()
         print(f"[PASS] {test.__name__}")
-    print(f"\n[PASS] All {len(ALL_TESTS)} pure trace JIT direct ctypes tests passed.")
+    print(f"\n[PASS] All {len(ALL_TESTS)} pure trace JIT CPS 4-arg and PIC tests passed.")

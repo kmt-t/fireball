@@ -81,6 +81,12 @@ class ExecutableBuffer:
         assert offset + len(data) <= self.size, "write past the end of the executable buffer"
         ctypes.memmove(self.base + offset, data, len(data))
 
+    def read(self, offset: int, size: int) -> bytes:
+        assert offset + size <= self.size, "read past the end of the executable buffer"
+        buf = (ctypes.c_char * size)()
+        ctypes.memmove(buf, self.base + offset, size)
+        return bytes(buf)
+
     def finalize(self) -> None:
         if self.patch_in_progress:
             self.commit_jit_patch()

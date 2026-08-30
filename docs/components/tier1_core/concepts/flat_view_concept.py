@@ -121,21 +121,23 @@ class FlatSetView(_SortedWindow):
 
 class RadixBinaryTreeView:
     """fireball::radix_binary_tree_view<Key, Value, RadixShift>:
-    Container combining an O(1) Radix Table (coarse prefix lookup)
+    Container combining an O(1) Radix Table (pure scalar start-index array)
     with bounded binary search on a sorted key-value array.
+    Bucket bounds are: first = radix_table[prefix], last = radix_table[prefix + 1].
     """
 
     def __init__(self, keys: Sequence[int], values: Sequence[Any],
-                 radix_table: Sequence[tuple[int, int]], radix_shift: int):
+                 radix_table: Sequence[int], radix_shift: int):
         self.map_view = FlatMapView(keys, values)
-        self.radix_table = radix_table  # prefix -> (first, last) entry indices
+        self.radix_table = radix_table  # pure scalar offsets array [0, 3, 6, ...]
         self.radix_shift = radix_shift
 
     def find(self, key: int) -> Any | None:
         prefix = key >> self.radix_shift
-        if prefix < 0 or prefix >= len(self.radix_table):
+        if prefix < 0 or prefix + 1 >= len(self.radix_table):
             return None
-        first, last = self.radix_table[prefix]
+        first = self.radix_table[prefix]
+        last = self.radix_table[prefix + 1]
         if first >= last:
             return None
         return self.map_view.slice(first, last).find(key)
@@ -266,13 +268,16 @@ def test_card_marking_prefilter_and_jit_entry_group_narrowing_lookup():
     finds the entry in O(log n)."""
     view = _map_fixture()
     card_table = card_marking_table(bytearray(2), card_count=8)
-    card_table.put(0, 3)  # card 0 (covers pc 0-31 with shift=5) -> 3: COMPILED
-    card_table.put(1, 3)  # card 1 (covers pc 32-63 with shift=5) -> 3: COMPILED
+    # card_shift=3 (8 bytes/card):
+    # pc=30 -> card_idx = 30 >> 3 = 3
+    # pc=60 -> card_idx = 60 >> 3 = 7
+    card_table.put(3, 3)  # card 3 (covers pc 24-31) -> 3: COMPILED
+    card_table.put(7, 3)  # card 7 (covers pc 56-63) -> 3: COMPILED
     entry_group_bounds = {0: (0, 3), 1: (3, 6)}  # group 0: entries 0..2, group 1: entries 3..5
 
-    assert lookup_jit_entry(view, card_table, entry_group_bounds, pc=30, card_shift=5, group_shift=5) == 3
-    assert lookup_jit_entry(view, card_table, entry_group_bounds, pc=60, card_shift=5, group_shift=5) == 6
-    assert lookup_jit_entry(view, card_table, entry_group_bounds, pc=99, card_shift=5, group_shift=5) is None
+    assert lookup_jit_entry(view, card_table, entry_group_bounds, pc=30, card_shift=3, group_shift=5) == 3
+    assert lookup_jit_entry(view, card_table, entry_group_bounds, pc=60, card_shift=3, group_shift=5) == 6
+    assert lookup_jit_entry(view, card_table, entry_group_bounds, pc=99, card_shift=3, group_shift=5) is None
 
 
 def test_bits_must_divide_a_byte():
@@ -287,11 +292,13 @@ def test_bits_must_divide_a_byte():
 
 def test_radix_binary_tree_view():
     """RadixBinaryTree index model: Radix Table yields O(1) bounded segment [first, last],
-    then local binary search finds entry in O(log n)."""
+    then local binary search finds entry in O(log n).
+    Radix table is a compact scalar start-index array where bucket prefix bounds are [table[p], table[p+1]]."""
     keys = [10, 20, 30, 40, 50, 60]
     values = [1, 2, 3, 4, 5, 6]
-    # Radix shift = 5 (bin size 32): bin 0 (0..31) -> (0, 3), bin 1 (32..63) -> (3, 6)
-    radix_table = [(0, 3), (3, 6)]
+    # Radix shift = 5 (bin size 32): bin 0 (0..31) -> [0, 3], bin 1 (32..63) -> [3, 6]
+    # Compact scalar start-indices: [0, 3, 6] (size = num_bins + 1)
+    radix_table = [0, 3, 6]
     rbt_view = RadixBinaryTreeView(keys, values, radix_table, radix_shift=5)
 
     assert rbt_view.find(20) == 2

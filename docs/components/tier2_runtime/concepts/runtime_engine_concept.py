@@ -54,44 +54,125 @@ class CardState:
     COMPILED = 3
 
 
-class HotspotBitmap:
-    """2-bit state per CARD, where card = pc >> card_shift.
+class BitView:
+    """bit_view<2>: a dense, index-addressed table of 2-bit states (4 cards per byte)."""
 
-    Only basic-block head PCs are ever recorded. Inside a basic block control
-    flow is straight-line, so intermediate PCs add no information and cost
-    ring-buffer bandwidth we do not have.
+    def __init__(self, storage: bytearray, bits: int = 2, origin: int = 0, count: int = 0):
+        self.storage = storage
+        self.bits = bits
+        self.origin = origin
+        self.count = count
+
+    def size(self) -> int:
+        return self.count
+
+    def _bit_pos(self, i: int) -> int:
+        assert 0 <= i < self.count, f"index {i} outside view of size {self.count}"
+        return self.origin + i * self.bits
+
+    def at(self, i: int) -> int:
+        bit = self._bit_pos(i)
+        mask = (1 << self.bits) - 1
+        return (self.storage[bit >> 3] >> (bit & 7)) & mask
+
+    def put(self, i: int, value: int):
+        mask = (1 << self.bits) - 1
+        assert 0 <= value <= mask, "value does not fit in 2 bits"
+        bit = self._bit_pos(i)
+        byte, shift = bit >> 3, bit & 7
+        cleared = self.storage[byte] & ~(mask << shift) & 0xFF
+        self.storage[byte] = cleared | (value << shift)
+
+
+class HotspotBitmap:
+    """Per-Function 2-bit state per CARD (8 bytes per card) backed by BitView<2>.
+
+    `func_tables` is a static list of BitViews indexed by `func_idx` (0 <= func_idx < num_functions).
+    Each function's BitView is sized strictly to its code length at module load time:
+    card_count = (func_code_len + (1 << card_shift) - 1) >> card_shift
+    storage = bytearray((card_count + 3) // 4)
     """
 
-    def __init__(self, card_shift: int = 6):
+    def __init__(self, card_shift: int = 3, default_func_code_len: int = 64):
         self.card_shift = card_shift
-        self.state: dict[int, int] = {}      # card_index -> CardState (2-bit: UNEXECUTED, EXECUTED, HOT, COMPILED)
+        self.default_func_code_len = default_func_code_len
+        # Static array of BitView indexed by func_idx
+        self.func_tables: list[BitView | None] = []
+
+    def allocate_functions(self, num_functions: int) -> None:
+        """Allocates static slot array for known number of functions at load time."""
+        if len(self.func_tables) < num_functions:
+            self.func_tables.extend([None] * (num_functions - len(self.func_tables)))
+
+    def register_function(self, func_idx: int, code_len: int) -> BitView:
+        """Allocates a dedicated BitView<2> matching the exact function code length."""
+        if func_idx >= len(self.func_tables):
+            self.func_tables.extend([None] * (func_idx + 1 - len(self.func_tables)))
+        card_count = max(1, (code_len + (1 << self.card_shift) - 1) >> self.card_shift)
+        storage = bytearray((card_count + 3) // 4)
+        view = BitView(storage, bits=2, origin=0, count=card_count)
+        self.func_tables[func_idx] = view
+        return view
+
+    def _get_or_create_view(self, func_idx: int) -> BitView:
+        if func_idx < len(self.func_tables) and self.func_tables[func_idx] is not None:
+            return self.func_tables[func_idx]  # type: ignore[return-value]
+        return self.register_function(func_idx, self.default_func_code_len)
+
+    def _split_pc(self, pc: int) -> tuple[int, int]:
+        if pc > 0xFFFF:
+            func_idx = (pc >> 16) & 0xFFFF
+            offset = pc & 0xFFFF
+        else:
+            func_idx = 0
+            offset = pc
+        return func_idx, offset
 
     def card_of(self, pc: int) -> int:
-        return pc >> self.card_shift
+        _, offset = self._split_pc(pc)
+        return offset >> self.card_shift
 
     def get_state(self, pc: int) -> int:
-        return self.state.get(self.card_of(pc), CardState.UNEXECUTED)
+        func_idx, offset = self._split_pc(pc)
+        view = self._get_or_create_view(func_idx)
+        card = offset >> self.card_shift
+        if card >= view.size():
+            return CardState.UNEXECUTED
+        return view.at(card)
 
     def touch(self, pc: int) -> int:
         """Records execution using pure 2-bit state machine (UNEXECUTED -> EXECUTED -> HOT)."""
-        card = self.card_of(pc)
-        state = self.state.get(card, CardState.UNEXECUTED)
-        if state == CardState.COMPILED:
-            return state
-        if state == CardState.UNEXECUTED:
-            state = CardState.EXECUTED
-        elif state == CardState.EXECUTED:
-            state = CardState.HOT
-        self.state[card] = state
-        return state
+        func_idx, offset = self._split_pc(pc)
+        view = self._get_or_create_view(func_idx)
+        card = offset >> self.card_shift
+        if card >= view.size():
+            view = self.register_function(func_idx, (card + 1) << self.card_shift)
+        s = view.at(card)
+        if s == CardState.COMPILED:
+            return s
+        if s == CardState.UNEXECUTED:
+            s = CardState.EXECUTED
+        elif s == CardState.EXECUTED:
+            s = CardState.HOT
+        view.put(card, s)
+        return s
 
     def mark_compiled(self, pc: int):
-        self.state[self.card_of(pc)] = CardState.COMPILED
+        func_idx, offset = self._split_pc(pc)
+        view = self._get_or_create_view(func_idx)
+        card = offset >> self.card_shift
+        if card >= view.size():
+            view = self.register_function(func_idx, (card + 1) << self.card_shift)
+        view.put(card, CardState.COMPILED)
 
     def mark_evicted(self, pc: int):
         """Trace was purged from the cache: the card becomes EXECUTED (01)."""
-        card = self.card_of(pc)
-        self.state[card] = CardState.EXECUTED
+        func_idx, offset = self._split_pc(pc)
+        if func_idx < len(self.func_tables) and self.func_tables[func_idx] is not None:
+            view = self.func_tables[func_idx]
+            card = offset >> self.card_shift
+            if card < view.size():  # type: ignore[union-attr]
+                view.put(card, CardState.EXECUTED)  # type: ignore[union-attr]
 
 
 class HistoryRing:
@@ -502,7 +583,7 @@ class BasicBlock:
 class IntegratedRuntimeEngine:
     """Interpreter -> card history -> yield-time triage -> LIFO batch compile -> JIT."""
 
-    def __init__(self, yield_threshold: int = 8, card_shift: int = 6):
+    def __init__(self, yield_threshold: int = 8, card_shift: int = 3):
         self.bitmap = HotspotBitmap(card_shift=card_shift)
         self.history = HistoryRing(capacity=32)
         self.cache = JITMultiBufferCache()

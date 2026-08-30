@@ -118,7 +118,7 @@ Fireball の実行コアは、以下の 6 つの物理メカニズムによっ�
 
 ### 3.2 Pillar 2: 3段直接 JIT 検索パイプライン (3-Stage Direct JIT Lookup Pipeline)
 <!-- traceability: {SimpleJITArchitecture} {JIT_MultiBuffer_Cache} {FlatViewNarrowing} {META_FlatMapIndexed} {META_BinarySearch} -->
-- **Stage 1 (カードマーキング表: `bit_view<2>`) [$O(1)$]**: `pc >> card_shift` で 2-bit 状態表を参照し、`COMPILED` でなければ即座にインタープリタ継続（Fast Exit）。
+- **Stage 1 (カードマーキング表: `bit_view<2>`) [$O(1)$]**: 関数ごとのコード領域に対し `func_code_offset >> 3`（`card_shift = 3`、8バイト単位）で 2-bit 状態表を参照し、`COMPILED` でなければ即座にインタープリタ継続（Fast Exit）。
 - **Stage 2 & 3 (基数二分探索木索引: `radix_binary_tree_view`) [$O(1) + O(\log n)$]**:
   - **Stage 2 (Radix Table) [$O(1)$]**: `pc >> entry_group_shift` で基数粗索引テーブルを参照し、有界区間 `[first, last]` を $O(1)$ で特定。
   - **Stage 3 (有界二分探索) [$O(\log n)$]**: 狭められたソート済みエントリ区間に対してのみ二分探索を実行し、ネイティブ実行アドレスを特定。 `{FlatViewNarrowing}` `{META_BinarySearch}`

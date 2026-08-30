@@ -65,6 +65,8 @@ type routing-result = result<_, recovery-strategy-category>;
 <!-- traceability: {META_RecoveryStrategy} {Errorcode_To_Strategy} -->
 - **実装詳細の分離**: `hardware-error`や`timeout`は実装の内部状態であり、クリーンアーキテクチャの内側が知るべきではない。
 - **アクション指向**: リカバリー戦略により、呼び出し側は具体的なアクション（リトライ/エラーログ出力して諦める）を決定できる。
+- **リトライ上限到達時の段階的エスカレーション (Retry Exhaustion Escalation)**: `retry` 戦略で `RETRY_MAX_ATTEMPTS`（3回）を超過した場合、呼び出し元は自動的に `restart`（タスクコンテキスト再初期化・再起動）へエスカレーションする。再起動後もエラーが回復不能な場合は最終的に `panic` へエスカレーションし、システム安全性を担保する。
+- **IPC キュー満杯時の一時競合と所有権ロールバック**: IPC 送信時に宛先キューが満杯（`ERR_QUEUE_FULL`）となった場合、送信側には `Result::Err(ERR_QUEUE_FULL, Strategy::RETRY)` が返却され、共有メモリブロックの所有権は自動的に送信元タスクへロールバック（保持）される。送信元はバックオフ後に再送または安全回収を行える。
 - **デバッグ情報の分離**: 失敗の詳細理由はログシステムで確認する。インターフェースには含めない。
 
 ## 4. 低レベル・トラップ・インターフェイス

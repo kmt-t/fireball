@@ -10,10 +10,37 @@
       "metadata": {}
     },
     {
+      "id": "file:architecture/combinatorial_test_spec.md",
+      "label": "architecture/combinatorial_test_spec.md",
+      "type": "file",
+      "file_path": "architecture/combinatorial_test_spec.md",
+      "line": 0,
+      "tier": "meta",
+      "metadata": {}
+    },
+    {
       "id": "file:architecture/document_structure.md",
       "label": "architecture/document_structure.md",
       "type": "file",
       "file_path": "architecture/document_structure.md",
+      "line": 0,
+      "tier": "meta",
+      "metadata": {}
+    },
+    {
+      "id": "file:architecture/integration_test_scenarios.md",
+      "label": "architecture/integration_test_scenarios.md",
+      "type": "file",
+      "file_path": "architecture/integration_test_scenarios.md",
+      "line": 0,
+      "tier": "meta",
+      "metadata": {}
+    },
+    {
+      "id": "file:architecture/keyword_dictionary.md",
+      "label": "architecture/keyword_dictionary.md",
+      "type": "file",
+      "file_path": "architecture/keyword_dictionary.md",
       "line": 0,
       "tier": "meta",
       "metadata": {}
@@ -658,6 +685,33 @@
       "metadata": {}
     },
     {
+      "id": "item:ExecutionContext_Layout",
+      "label": "{ExecutionContext_Layout}",
+      "type": "item",
+      "file_path": "architecture/architecture_overview.md",
+      "line": 111,
+      "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "item:CallFrame_Layout",
+      "label": "{CallFrame_Layout}",
+      "type": "item",
+      "file_path": "architecture/architecture_overview.md",
+      "line": 111,
+      "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "item:ControlFrame_Layout",
+      "label": "{ControlFrame_Layout}",
+      "type": "item",
+      "file_path": "architecture/architecture_overview.md",
+      "line": 111,
+      "tier": null,
+      "metadata": {}
+    },
+    {
       "id": "item:JIT_RegisterMapping",
       "label": "{JIT_RegisterMapping}",
       "type": "item",
@@ -732,6 +786,15 @@
     {
       "id": "item:JIT_OldestOnly_Promote",
       "label": "{JIT_OldestOnly_Promote}",
+      "type": "item",
+      "file_path": "architecture/architecture_overview.md",
+      "line": 126,
+      "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "item:VsocRuntime_Layout",
+      "label": "{VsocRuntime_Layout}",
       "type": "item",
       "file_path": "architecture/architecture_overview.md",
       "line": 126,
@@ -867,6 +930,15 @@
     {
       "id": "item:ADR_TosCacheAsymmetry",
       "label": "{ADR_TosCacheAsymmetry}",
+      "type": "item",
+      "file_path": "architecture/architecture_overview.md",
+      "line": 151,
+      "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "item:AAPCS_FastCall",
+      "label": "{AAPCS_FastCall}",
       "type": "item",
       "file_path": "architecture/architecture_overview.md",
       "line": 151,
@@ -1069,6 +1141,96 @@
       "file_path": "architecture/architecture_overview.md",
       "line": 300,
       "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "sec:architecture/combinatorial_test_spec.md#システム全体 ペアワイズ組み合わせテスト仕様書 (Combinatorial Test Specification)",
+      "label": "システム全体 ペアワイズ組み合わせテスト仕様書 (Combinatorial Test Specification)",
+      "type": "section",
+      "file_path": "architecture/combinatorial_test_spec.md",
+      "line": 1,
+      "tier": "meta",
+      "metadata": {}
+    },
+    {
+      "id": "item:Pairwise_Combinatorial_Testing",
+      "label": "{Pairwise_Combinatorial_Testing}",
+      "type": "item",
+      "file_path": "architecture/combinatorial_test_spec.md",
+      "line": 1,
+      "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "item:CoverageMatrix",
+      "label": "{CoverageMatrix}",
+      "type": "item",
+      "file_path": "architecture/combinatorial_test_spec.md",
+      "line": 1,
+      "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "sec:architecture/combinatorial_test_spec.md#1. 目的と網羅基準",
+      "label": "1. 目的と網羅基準",
+      "type": "section",
+      "file_path": "architecture/combinatorial_test_spec.md",
+      "line": 5,
+      "tier": "meta",
+      "metadata": {}
+    },
+    {
+      "id": "sec:architecture/combinatorial_test_spec.md#1.1 網羅基準 (Coverage Criteria)",
+      "label": "1.1 網羅基準 (Coverage Criteria)",
+      "type": "section",
+      "file_path": "architecture/combinatorial_test_spec.md",
+      "line": 9,
+      "tier": "meta",
+      "metadata": {}
+    },
+    {
+      "id": "item:7",
+      "label": "{7}",
+      "type": "item",
+      "file_path": "architecture/combinatorial_test_spec.md",
+      "line": 9,
+      "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "item:2",
+      "label": "{2}",
+      "type": "item",
+      "file_path": "architecture/combinatorial_test_spec.md",
+      "line": 9,
+      "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "sec:architecture/combinatorial_test_spec.md#2. 因子（Factors）および水準（Levels）定義",
+      "label": "2. 因子（Factors）および水準（Levels）定義",
+      "type": "section",
+      "file_path": "architecture/combinatorial_test_spec.md",
+      "line": 15,
+      "tier": "meta",
+      "metadata": {}
+    },
+    {
+      "id": "sec:architecture/combinatorial_test_spec.md#3. ペアワイズ テストケース マトリクス (Test Matrix)",
+      "label": "3. ペアワイズ テストケース マトリクス (Test Matrix)",
+      "type": "section",
+      "file_path": "architecture/combinatorial_test_spec.md",
+      "line": 29,
+      "tier": "meta",
+      "metadata": {}
+    },
+    {
+      "id": "sec:architecture/combinatorial_test_spec.md#4. テスト実行環境・ランナー構成",
+      "label": "4. テスト実行環境・ランナー構成",
+      "type": "section",
+      "file_path": "architecture/combinatorial_test_spec.md",
+      "line": 64,
+      "tier": "meta",
       "metadata": {}
     },
     {
@@ -1333,6 +1495,546 @@
       "metadata": {}
     },
     {
+      "id": "sec:architecture/integration_test_scenarios.md#コンポーネント間 結合テスト仕様書 (Integration Test Specification)",
+      "label": "コンポーネント間 結合テスト仕様書 (Integration Test Specification)",
+      "type": "section",
+      "file_path": "architecture/integration_test_scenarios.md",
+      "line": 1,
+      "tier": "meta",
+      "metadata": {}
+    },
+    {
+      "id": "sec:architecture/integration_test_scenarios.md#1. 目的と対象範囲",
+      "label": "1. 目的と対象範囲",
+      "type": "section",
+      "file_path": "architecture/integration_test_scenarios.md",
+      "line": 3,
+      "tier": "meta",
+      "metadata": {}
+    },
+    {
+      "id": "sec:architecture/integration_test_scenarios.md#1.1 コンポーネント × 結合テストシナリオ カバレッジマトリクス (Coverage Matrix)",
+      "label": "1.1 コンポーネント × 結合テストシナリオ カバレッジマトリクス (Coverage Matrix)",
+      "type": "section",
+      "file_path": "architecture/integration_test_scenarios.md",
+      "line": 11,
+      "tier": "meta",
+      "metadata": {}
+    },
+    {
+      "id": "sec:architecture/integration_test_scenarios.md#1.2 仕様キーワード・不変条件カバレッジ追跡表 (Requirements Traceability Matrix: RTM)",
+      "label": "1.2 仕様キーワード・不変条件カバレッジ追跡表 (Requirements Traceability Matrix: RTM)",
+      "type": "section",
+      "file_path": "architecture/integration_test_scenarios.md",
+      "line": 34,
+      "tier": "meta",
+      "metadata": {}
+    },
+    {
+      "id": "sec:architecture/integration_test_scenarios.md#2. 結合テストシナリオ一覧",
+      "label": "2. 結合テストシナリオ一覧",
+      "type": "section",
+      "file_path": "architecture/integration_test_scenarios.md",
+      "line": 70,
+      "tier": "meta",
+      "metadata": {}
+    },
+    {
+      "id": "sec:architecture/integration_test_scenarios.md#シナリオ 1: Tier 1 Core + Tier 2 Loader & Linear Memory",
+      "label": "シナリオ 1: Tier 1 Core + Tier 2 Loader & Linear Memory",
+      "type": "section",
+      "file_path": "architecture/integration_test_scenarios.md",
+      "line": 72,
+      "tier": "meta",
+      "metadata": {}
+    },
+    {
+      "id": "sec:architecture/integration_test_scenarios.md#シナリオ 2: Tier 2 Runtime + System Call & WASI I/O",
+      "label": "シナリオ 2: Tier 2 Runtime + System Call & WASI I/O",
+      "type": "section",
+      "file_path": "architecture/integration_test_scenarios.md",
+      "line": 89,
+      "tier": "meta",
+      "metadata": {}
+    },
+    {
+      "id": "sec:architecture/integration_test_scenarios.md#シナリオ 3: Tier 2 Interpreter + Recursion & Indirect Table Dispatch",
+      "label": "シナリオ 3: Tier 2 Interpreter + Recursion & Indirect Table Dispatch",
+      "type": "section",
+      "file_path": "architecture/integration_test_scenarios.md",
+      "line": 104,
+      "tier": "meta",
+      "metadata": {}
+    },
+    {
+      "id": "sec:architecture/integration_test_scenarios.md#シナリオ 4: Tier 2 Runtime + Tier 3 JIT Hybrid Compilation",
+      "label": "シナリオ 4: Tier 2 Runtime + Tier 3 JIT Hybrid Compilation",
+      "type": "section",
+      "file_path": "architecture/integration_test_scenarios.md",
+      "line": 120,
+      "tier": "meta",
+      "metadata": {}
+    },
+    {
+      "id": "sec:architecture/integration_test_scenarios.md#シナリオ 5: Multi-Function UnifiedPC & bswap32 Radix Tree",
+      "label": "シナリオ 5: Multi-Function UnifiedPC & bswap32 Radix Tree",
+      "type": "section",
+      "file_path": "architecture/integration_test_scenarios.md",
+      "line": 136,
+      "tier": "meta",
+      "metadata": {}
+    },
+    {
+      "id": "sec:architecture/integration_test_scenarios.md#シナリオ 6: COOS Cooperative Multitasking & Coroutines",
+      "label": "シナリオ 6: COOS Cooperative Multitasking & Coroutines",
+      "type": "section",
+      "file_path": "architecture/integration_test_scenarios.md",
+      "line": 151,
+      "tier": "meta",
+      "metadata": {}
+    },
+    {
+      "id": "sec:architecture/integration_test_scenarios.md#シナリオ 7: GDB Remote Serial Protocol (RSP) Socket Debugger",
+      "label": "シナリオ 7: GDB Remote Serial Protocol (RSP) Socket Debugger",
+      "type": "section",
+      "file_path": "architecture/integration_test_scenarios.md",
+      "line": 166,
+      "tier": "meta",
+      "metadata": {}
+    },
+    {
+      "id": "item:Debugger_Jit_Flush",
+      "label": "{Debugger_Jit_Flush}",
+      "type": "item",
+      "file_path": "architecture/integration_test_scenarios.md",
+      "line": 166,
+      "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "sec:architecture/integration_test_scenarios.md#シナリオ 8: Storage Coverage (Globals / Locals / Memory Full-Width) & GDB Debugger",
+      "label": "シナリオ 8: Storage Coverage (Globals / Locals / Memory Full-Width) & GDB Debugger",
+      "type": "section",
+      "file_path": "architecture/integration_test_scenarios.md",
+      "line": 187,
+      "tier": "meta",
+      "metadata": {}
+    },
+    {
+      "id": "sec:architecture/integration_test_scenarios.md#シナリオ 9: Tier 1 Interface IPC Router & Structured Logging",
+      "label": "シナリオ 9: Tier 1 Interface IPC Router & Structured Logging",
+      "type": "section",
+      "file_path": "architecture/integration_test_scenarios.md",
+      "line": 205,
+      "tier": "meta",
+      "metadata": {}
+    },
+    {
+      "id": "sec:architecture/integration_test_scenarios.md#シナリオ 10: Tier 2 Runtime vMMIO Virtual Devices & Address Translation",
+      "label": "シナリオ 10: Tier 2 Runtime vMMIO Virtual Devices & Address Translation",
+      "type": "section",
+      "file_path": "architecture/integration_test_scenarios.md",
+      "line": 221,
+      "tier": "meta",
+      "metadata": {}
+    },
+    {
+      "id": "sec:architecture/integration_test_scenarios.md#シナリオ 11: HAL Peripheral Drivers & WASI Preview 1 Full Dummy Stack",
+      "label": "シナリオ 11: HAL Peripheral Drivers & WASI Preview 1 Full Dummy Stack",
+      "type": "section",
+      "file_path": "architecture/integration_test_scenarios.md",
+      "line": 239,
+      "tier": "meta",
+      "metadata": {}
+    },
+    {
+      "id": "sec:architecture/integration_test_scenarios.md#3. 実行方法と検証結果",
+      "label": "3. 実行方法と検証結果",
+      "type": "section",
+      "file_path": "architecture/integration_test_scenarios.md",
+      "line": 264,
+      "tier": "meta",
+      "metadata": {}
+    },
+    {
+      "id": "sec:architecture/integration_test_scenarios.md#検証実績",
+      "label": "検証実績",
+      "type": "section",
+      "file_path": "architecture/integration_test_scenarios.md",
+      "line": 271,
+      "tier": "meta",
+      "metadata": {}
+    },
+    {
+      "id": "sec:architecture/keyword_dictionary.md#Fireball リンク用キーワード台帳 (Keyword Dictionary & Link Registry)",
+      "label": "Fireball リンク用キーワード台帳 (Keyword Dictionary & Link Registry)",
+      "type": "section",
+      "file_path": "architecture/keyword_dictionary.md",
+      "line": 1,
+      "tier": "meta",
+      "metadata": {}
+    },
+    {
+      "id": "sec:architecture/keyword_dictionary.md#1. リンクキーワードの運用ルール",
+      "label": "1. リンクキーワードの運用ルール",
+      "type": "section",
+      "file_path": "architecture/keyword_dictionary.md",
+      "line": 9,
+      "tier": "meta",
+      "metadata": {}
+    },
+    {
+      "id": "sec:architecture/keyword_dictionary.md#2. カテゴリ別 リンクキーワード台帳",
+      "label": "2. カテゴリ別 リンクキーワード台帳",
+      "type": "section",
+      "file_path": "architecture/keyword_dictionary.md",
+      "line": 17,
+      "tier": "meta",
+      "metadata": {}
+    },
+    {
+      "id": "sec:architecture/keyword_dictionary.md#2.1 WASM実行 & ランタイム (vSoC / Interpreter / Loader / vMMIO)",
+      "label": "2.1 WASM実行 & ランタイム (vSoC / Interpreter / Loader / vMMIO)",
+      "type": "section",
+      "file_path": "architecture/keyword_dictionary.md",
+      "line": 19,
+      "tier": "meta",
+      "metadata": {}
+    },
+    {
+      "id": "item:CPS_4Args",
+      "label": "{CPS_4Args}",
+      "type": "item",
+      "file_path": "architecture/keyword_dictionary.md",
+      "line": 19,
+      "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "item:SignZeroExtension",
+      "label": "{SignZeroExtension}",
+      "type": "item",
+      "file_path": "architecture/keyword_dictionary.md",
+      "line": 19,
+      "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "item:ControlFrameCleanup",
+      "label": "{ControlFrameCleanup}",
+      "type": "item",
+      "file_path": "architecture/keyword_dictionary.md",
+      "line": 19,
+      "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "item:ROMParsing",
+      "label": "{ROMParsing}",
+      "type": "item",
+      "file_path": "architecture/keyword_dictionary.md",
+      "line": 19,
+      "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "item:ActiveDataSegments",
+      "label": "{ActiveDataSegments}",
+      "type": "item",
+      "file_path": "architecture/keyword_dictionary.md",
+      "line": 19,
+      "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "item:RAM_Bypass_Bit31",
+      "label": "{RAM_Bypass_Bit31}",
+      "type": "item",
+      "file_path": "architecture/keyword_dictionary.md",
+      "line": 19,
+      "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "item:DirectMappedTLB16",
+      "label": "{DirectMappedTLB16}",
+      "type": "item",
+      "file_path": "architecture/keyword_dictionary.md",
+      "line": 19,
+      "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "item:OwnerMismatchTrap",
+      "label": "{OwnerMismatchTrap}",
+      "type": "item",
+      "file_path": "architecture/keyword_dictionary.md",
+      "line": 19,
+      "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "item:vMMIO_TrapAndEmulate",
+      "label": "{vMMIO_TrapAndEmulate}",
+      "type": "item",
+      "file_path": "architecture/keyword_dictionary.md",
+      "line": 19,
+      "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "item:DynamicMmap",
+      "label": "{DynamicMmap}",
+      "type": "item",
+      "file_path": "architecture/keyword_dictionary.md",
+      "line": 19,
+      "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "sec:architecture/keyword_dictionary.md#2.2 タスク管理・スケジューリング・通信 (COOS / Scheduler / IPC)",
+      "label": "2.2 タスク管理・スケジューリング・通信 (COOS / Scheduler / IPC)",
+      "type": "section",
+      "file_path": "architecture/keyword_dictionary.md",
+      "line": 43,
+      "tier": "meta",
+      "metadata": {}
+    },
+    {
+      "id": "item:CooperativeMultitasking",
+      "label": "{CooperativeMultitasking}",
+      "type": "item",
+      "file_path": "architecture/keyword_dictionary.md",
+      "line": 43,
+      "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "item:FuelExhaustion_Yield",
+      "label": "{FuelExhaustion_Yield}",
+      "type": "item",
+      "file_path": "architecture/keyword_dictionary.md",
+      "line": 43,
+      "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "item:MainLoopReturnGuarantee",
+      "label": "{MainLoopReturnGuarantee}",
+      "type": "item",
+      "file_path": "architecture/keyword_dictionary.md",
+      "line": 43,
+      "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "item:CSPCommunication",
+      "label": "{CSPCommunication}",
+      "type": "item",
+      "file_path": "architecture/keyword_dictionary.md",
+      "line": 43,
+      "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "item:ThreeStageRouting",
+      "label": "{ThreeStageRouting}",
+      "type": "item",
+      "file_path": "architecture/keyword_dictionary.md",
+      "line": 43,
+      "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "item:QueueFullRollback",
+      "label": "{QueueFullRollback}",
+      "type": "item",
+      "file_path": "architecture/keyword_dictionary.md",
+      "line": 43,
+      "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "item:TargetFaultDropHandler",
+      "label": "{TargetFaultDropHandler}",
+      "type": "item",
+      "file_path": "architecture/keyword_dictionary.md",
+      "line": 43,
+      "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "sec:architecture/keyword_dictionary.md#2.3 JIT コンパイラ & ランタイム (JIT Compiler / Runtime)",
+      "label": "2.3 JIT コンパイラ & ランタイム (JIT Compiler / Runtime)",
+      "type": "section",
+      "file_path": "architecture/keyword_dictionary.md",
+      "line": 58,
+      "tier": "meta",
+      "metadata": {}
+    },
+    {
+      "id": "item:JIT_CopyAndPatch",
+      "label": "{JIT_CopyAndPatch}",
+      "type": "item",
+      "file_path": "architecture/keyword_dictionary.md",
+      "line": 58,
+      "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "item:TraceBoundaryInvariant",
+      "label": "{TraceBoundaryInvariant}",
+      "type": "item",
+      "file_path": "architecture/keyword_dictionary.md",
+      "line": 58,
+      "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "item:JitBranchChainingHandler",
+      "label": "{JitBranchChainingHandler}",
+      "type": "item",
+      "file_path": "architecture/keyword_dictionary.md",
+      "line": 58,
+      "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "item:ThreeBankCacheEviction",
+      "label": "{ThreeBankCacheEviction}",
+      "type": "item",
+      "file_path": "architecture/keyword_dictionary.md",
+      "line": 58,
+      "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "item:RadixBinaryTreeView_bswap32",
+      "label": "{RadixBinaryTreeView_bswap32}",
+      "type": "item",
+      "file_path": "architecture/keyword_dictionary.md",
+      "line": 58,
+      "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "item:BitView_CardMarking",
+      "label": "{BitView_CardMarking}",
+      "type": "item",
+      "file_path": "architecture/keyword_dictionary.md",
+      "line": 58,
+      "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "sec:architecture/keyword_dictionary.md#2.4 デバッガ & システムコア & プラットフォーム (Debug / Syscall / Logging / HAL)",
+      "label": "2.4 デバッガ & システムコア & プラットフォーム (Debug / Syscall / Logging / HAL)",
+      "type": "section",
+      "file_path": "architecture/keyword_dictionary.md",
+      "line": 72,
+      "tier": "meta",
+      "metadata": {}
+    },
+    {
+      "id": "item:RSPMinimalSet",
+      "label": "{RSPMinimalSet}",
+      "type": "item",
+      "file_path": "architecture/keyword_dictionary.md",
+      "line": 72,
+      "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "item:DebuggerLabelTableSwitch",
+      "label": "{DebuggerLabelTableSwitch}",
+      "type": "item",
+      "file_path": "architecture/keyword_dictionary.md",
+      "line": 72,
+      "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "item:WASI_ScatteredIO",
+      "label": "{WASI_ScatteredIO}",
+      "type": "item",
+      "file_path": "architecture/keyword_dictionary.md",
+      "line": 72,
+      "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "item:Syscall_ProcExit",
+      "label": "{Syscall_ProcExit}",
+      "type": "item",
+      "file_path": "architecture/keyword_dictionary.md",
+      "line": 72,
+      "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "item:DictionaryBasedIPC",
+      "label": "{DictionaryBasedIPC}",
+      "type": "item",
+      "file_path": "architecture/keyword_dictionary.md",
+      "line": 72,
+      "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "item:BufferedLogging",
+      "label": "{BufferedLogging}",
+      "type": "item",
+      "file_path": "architecture/keyword_dictionary.md",
+      "line": 72,
+      "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "item:HAL_PeripheralDrivers",
+      "label": "{HAL_PeripheralDrivers}",
+      "type": "item",
+      "file_path": "architecture/keyword_dictionary.md",
+      "line": 72,
+      "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "item:WASI_InMemVFS",
+      "label": "{WASI_InMemVFS}",
+      "type": "item",
+      "file_path": "architecture/keyword_dictionary.md",
+      "line": 72,
+      "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "item:FlatMapView_BinarySearch",
+      "label": "{FlatMapView_BinarySearch}",
+      "type": "item",
+      "file_path": "architecture/keyword_dictionary.md",
+      "line": 72,
+      "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "item:RingBuffer_Overwrite",
+      "label": "{RingBuffer_Overwrite}",
+      "type": "item",
+      "file_path": "architecture/keyword_dictionary.md",
+      "line": 72,
+      "tier": null,
+      "metadata": {}
+    },
+    {
+      "id": "sec:architecture/keyword_dictionary.md#3. システム横断 メタキーワード (Meta & Global Keywords)",
+      "label": "3. システム横断 メタキーワード (Meta & Global Keywords)",
+      "type": "section",
+      "file_path": "architecture/keyword_dictionary.md",
+      "line": 91,
+      "tier": "meta",
+      "metadata": {}
+    },
+    {
       "id": "sec:components/tier1_core/os_coos.md#協調型OS COOS コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM} {VERIFY_BENCHMARK}",
       "label": "協調型OS COOS コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM} {VERIFY_BENCHMARK}",
       "type": "section",
@@ -1348,24 +2050,6 @@
       "file_path": "components/tier1_core/os_coos.md",
       "line": 9,
       "tier": 1,
-      "metadata": {}
-    },
-    {
-      "id": "item:CooperativeMultitasking",
-      "label": "{CooperativeMultitasking}",
-      "type": "item",
-      "file_path": "components/tier1_core/os_coos.md",
-      "line": 9,
-      "tier": null,
-      "metadata": {}
-    },
-    {
-      "id": "item:CSPCommunication",
-      "label": "{CSPCommunication}",
-      "type": "item",
-      "file_path": "components/tier1_core/os_coos.md",
-      "line": 9,
-      "tier": null,
       "metadata": {}
     },
     {
@@ -1393,15 +2077,6 @@
       "file_path": "components/tier1_core/os_coos.md",
       "line": 17,
       "tier": 1,
-      "metadata": {}
-    },
-    {
-      "id": "item:BufferedLogging",
-      "label": "{BufferedLogging}",
-      "type": "item",
-      "file_path": "components/tier1_core/os_coos.md",
-      "line": 17,
-      "tier": null,
       "metadata": {}
     },
     {
@@ -2210,7 +2885,7 @@
       "label": "4. 動的モデル",
       "type": "section",
       "file_path": "components/tier1_core/system_containers.md",
-      "line": 178,
+      "line": 179,
       "tier": 1,
       "metadata": {}
     },
@@ -2219,7 +2894,7 @@
       "label": "4.1 アルゴリズム",
       "type": "section",
       "file_path": "components/tier1_core/system_containers.md",
-      "line": 180,
+      "line": 181,
       "tier": 1,
       "metadata": {}
     },
@@ -2228,7 +2903,7 @@
       "label": "4.2 状態遷移図",
       "type": "section",
       "file_path": "components/tier1_core/system_containers.md",
-      "line": 357,
+      "line": 368,
       "tier": 1,
       "metadata": {}
     },
@@ -2237,7 +2912,7 @@
       "label": "4.3 内部シーケンス",
       "type": "section",
       "file_path": "components/tier1_core/system_containers.md",
-      "line": 361,
+      "line": 372,
       "tier": 1,
       "metadata": {}
     },
@@ -2246,7 +2921,7 @@
       "label": "5. インターフェイス定義",
       "type": "section",
       "file_path": "components/tier1_core/system_containers.md",
-      "line": 378,
+      "line": 389,
       "tier": 1,
       "metadata": {}
     },
@@ -2255,7 +2930,7 @@
       "label": "5.1 公開API",
       "type": "section",
       "file_path": "components/tier1_core/system_containers.md",
-      "line": 380,
+      "line": 391,
       "tier": 1,
       "metadata": {}
     },
@@ -2264,7 +2939,7 @@
       "label": "キー範囲による絞り込み（narrow）",
       "type": "section",
       "file_path": "components/tier1_core/system_containers.md",
-      "line": 383,
+      "line": 394,
       "tier": 1,
       "metadata": {}
     },
@@ -2273,7 +2948,7 @@
       "label": "添字区間による絞り込み（slice）",
       "type": "section",
       "file_path": "components/tier1_core/system_containers.md",
-      "line": 396,
+      "line": 407,
       "tier": 1,
       "metadata": {}
     },
@@ -2282,7 +2957,7 @@
       "label": "区間内探索（find）",
       "type": "section",
       "file_path": "components/tier1_core/system_containers.md",
-      "line": 409,
+      "line": 420,
       "tier": 1,
       "metadata": {}
     },
@@ -2291,7 +2966,7 @@
       "label": "所属判定（contains）",
       "type": "section",
       "file_path": "components/tier1_core/system_containers.md",
-      "line": 420,
+      "line": 431,
       "tier": 1,
       "metadata": {}
     },
@@ -2300,7 +2975,7 @@
       "label": "添字による状態参照（at / put）",
       "type": "section",
       "file_path": "components/tier1_core/system_containers.md",
-      "line": 431,
+      "line": 442,
       "tier": 1,
       "metadata": {}
     },
@@ -2309,7 +2984,7 @@
       "label": "5.2 URI/IPCインターフェイス",
       "type": "section",
       "file_path": "components/tier1_core/system_containers.md",
-      "line": 443,
+      "line": 454,
       "tier": 1,
       "metadata": {}
     },
@@ -2318,7 +2993,7 @@
       "label": "5.3 利用箇所",
       "type": "section",
       "file_path": "components/tier1_core/system_containers.md",
-      "line": 447,
+      "line": 458,
       "tier": 1,
       "metadata": {}
     },
@@ -2327,7 +3002,7 @@
       "label": "6. 制約達成の方策",
       "type": "section",
       "file_path": "components/tier1_core/system_containers.md",
-      "line": 459,
+      "line": 470,
       "tier": 1,
       "metadata": {}
     },
@@ -2336,7 +3011,7 @@
       "label": "6.1 性能制約と方策",
       "type": "section",
       "file_path": "components/tier1_core/system_containers.md",
-      "line": 461,
+      "line": 472,
       "tier": 1,
       "metadata": {}
     },
@@ -2345,7 +3020,7 @@
       "label": "6.2 メモリ制約と方策",
       "type": "section",
       "file_path": "components/tier1_core/system_containers.md",
-      "line": 466,
+      "line": 477,
       "tier": 1,
       "metadata": {}
     },
@@ -2354,7 +3029,7 @@
       "label": "6.3 安全性制約と方策",
       "type": "section",
       "file_path": "components/tier1_core/system_containers.md",
-      "line": 471,
+      "line": 482,
       "tier": 1,
       "metadata": {}
     },
@@ -2363,7 +3038,7 @@
       "label": "7. 参考実装リスト",
       "type": "section",
       "file_path": "components/tier1_core/system_containers.md",
-      "line": 476,
+      "line": 487,
       "tier": 1,
       "metadata": {}
     },
@@ -2388,15 +3063,6 @@
     {
       "id": "item:IPCRouter",
       "label": "{IPCRouter}",
-      "type": "item",
-      "file_path": "components/tier1_core/system_logging.md",
-      "line": 8,
-      "tier": null,
-      "metadata": {}
-    },
-    {
-      "id": "item:DictionaryBasedIPC",
-      "label": "{DictionaryBasedIPC}",
       "type": "item",
       "file_path": "components/tier1_core/system_logging.md",
       "line": 8,
@@ -2629,8 +3295,8 @@
       "metadata": {}
     },
     {
-      "id": "sec:components/tier1_core/system_syscall.md#システムコール仕様 コンポーネント設計書 {VERIFY_LLM} {VERIFY_FORMAL}",
-      "label": "システムコール仕様 コンポーネント設計書 {VERIFY_LLM} {VERIFY_FORMAL}",
+      "id": "sec:components/tier1_core/system_syscall.md#システムコール仕様 コンポーネント設計書 {VERIFY_FORMAL}",
+      "label": "システムコール仕様 コンポーネント設計書 {VERIFY_FORMAL}",
       "type": "section",
       "file_path": "components/tier1_core/system_syscall.md",
       "line": 1,
@@ -2863,6 +3529,15 @@
       "metadata": {}
     },
     {
+      "id": "item:Syscall_Mapping",
+      "label": "{Syscall_Mapping}",
+      "type": "item",
+      "file_path": "components/tier1_core/system_syscall.md",
+      "line": 156,
+      "tier": null,
+      "metadata": {}
+    },
+    {
       "id": "sec:components/tier1_core/system_syscall.md#6. Fireball Shim (`libfireball_shim`)",
       "label": "6. Fireball Shim (`libfireball_shim`)",
       "type": "section",
@@ -2896,15 +3571,6 @@
       "file_path": "components/tier1_core/system_syscall.md",
       "line": 224,
       "tier": 1,
-      "metadata": {}
-    },
-    {
-      "id": "item:Syscall_Mapping",
-      "label": "{Syscall_Mapping}",
-      "type": "item",
-      "file_path": "components/tier1_core/system_syscall.md",
-      "line": 224,
-      "tier": null,
       "metadata": {}
     },
     {
@@ -4429,24 +5095,6 @@
       "metadata": {}
     },
     {
-      "id": "item:RSPMinimalSet",
-      "label": "{RSPMinimalSet}",
-      "type": "item",
-      "file_path": "components/tier2_runtime/debug_manager.md",
-      "line": 8,
-      "tier": null,
-      "metadata": {}
-    },
-    {
-      "id": "item:DebuggerLabelTableSwitch",
-      "label": "{DebuggerLabelTableSwitch}",
-      "type": "item",
-      "file_path": "components/tier2_runtime/debug_manager.md",
-      "line": 8,
-      "tier": null,
-      "metadata": {}
-    },
-    {
       "id": "item:Debug_Standard_Env",
       "label": "{Debug_Standard_Env}",
       "type": "item",
@@ -4467,15 +5115,6 @@
     {
       "id": "item:Debug_Integrated",
       "label": "{Debug_Integrated}",
-      "type": "item",
-      "file_path": "components/tier2_runtime/debug_manager.md",
-      "line": 8,
-      "tier": null,
-      "metadata": {}
-    },
-    {
-      "id": "item:Debugger_Jit_Flush",
-      "label": "{Debugger_Jit_Flush}",
       "type": "item",
       "file_path": "components/tier2_runtime/debug_manager.md",
       "line": 8,
@@ -4816,11 +5455,20 @@
       "metadata": {}
     },
     {
+      "id": "sec:components/tier2_runtime/runtime_interpreter.md#制御フレーム整合性とリーク防止不変条件 (Control Frame Integrity Invariant)",
+      "label": "制御フレーム整合性とリーク防止不変条件 (Control Frame Integrity Invariant)",
+      "type": "section",
+      "file_path": "components/tier2_runtime/runtime_interpreter.md",
+      "line": 101,
+      "tier": 2,
+      "metadata": {}
+    },
+    {
       "id": "sec:components/tier2_runtime/runtime_interpreter.md#インタプリタ構成（interpreter_config）",
       "label": "インタプリタ構成（interpreter_config）",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 101,
+      "line": 111,
       "tier": 2,
       "metadata": {}
     },
@@ -4829,7 +5477,7 @@
       "label": "オプコードハンドラ / トレース実行（opcode_handler / exec_trace）",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 110,
+      "line": 120,
       "tier": 2,
       "metadata": {}
     },
@@ -4838,7 +5486,7 @@
       "label": "{JIT_RuntimeAPI_Fallback}",
       "type": "item",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 110,
+      "line": 120,
       "tier": null,
       "metadata": {}
     },
@@ -4847,7 +5495,7 @@
       "label": "4. 動的モデル",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 124,
+      "line": 134,
       "tier": 2,
       "metadata": {}
     },
@@ -4856,7 +5504,7 @@
       "label": "4.1 アルゴリズム",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 126,
+      "line": 136,
       "tier": 2,
       "metadata": {}
     },
@@ -4865,7 +5513,7 @@
       "label": "{Interpreter_LazyJITSwitch}",
       "type": "item",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 126,
+      "line": 136,
       "tier": null,
       "metadata": {}
     },
@@ -4874,7 +5522,7 @@
       "label": "{Challenge_ApproximateYield}",
       "type": "item",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 126,
+      "line": 136,
       "tier": null,
       "metadata": {}
     },
@@ -4883,7 +5531,7 @@
       "label": "WASM インタプリタ フルセット・コンセプトコード (`concepts/interpreter_concept.py`)",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 147,
+      "line": 157,
       "tier": 2,
       "metadata": {}
     },
@@ -4892,7 +5540,7 @@
       "label": "統合 Tiered ランタイムエンジン・コンセプトコード (`concepts/runtime_engine_concept.py`)",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 212,
+      "line": 222,
       "tier": 2,
       "metadata": {}
     },
@@ -4901,7 +5549,7 @@
       "label": "4.2 状態遷移図",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 215,
+      "line": 225,
       "tier": 2,
       "metadata": {}
     },
@@ -4910,7 +5558,7 @@
       "label": "4.3 内部シーケンス",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 228,
+      "line": 238,
       "tier": 2,
       "metadata": {}
     },
@@ -4919,7 +5567,7 @@
       "label": "Interpreter 実行シーケンス",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 230,
+      "line": 240,
       "tier": 2,
       "metadata": {}
     },
@@ -4928,7 +5576,7 @@
       "label": "5. インターフェイス定義",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 251,
+      "line": 261,
       "tier": 2,
       "metadata": {}
     },
@@ -4937,7 +5585,7 @@
       "label": "5.1 公開API",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 253,
+      "line": 263,
       "tier": 2,
       "metadata": {}
     },
@@ -4946,7 +5594,7 @@
       "label": "初期化（initialize）",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 256,
+      "line": 266,
       "tier": 2,
       "metadata": {}
     },
@@ -4955,7 +5603,7 @@
       "label": "実行ステップ (`run_step`)",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 270,
+      "line": 280,
       "tier": 2,
       "metadata": {}
     },
@@ -4964,7 +5612,7 @@
       "label": "割り込み同期 (`sync_interrupts`)",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 281,
+      "line": 291,
       "tier": 2,
       "metadata": {}
     },
@@ -4973,7 +5621,7 @@
       "label": "5.2 URI/IPCインターフェイス",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 297,
+      "line": 307,
       "tier": 2,
       "metadata": {}
     },
@@ -4982,7 +5630,7 @@
       "label": "5.3 関連コンポーネントとの連携",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 301,
+      "line": 311,
       "tier": 2,
       "metadata": {}
     },
@@ -4991,7 +5639,7 @@
       "label": "6. 制約達成の方策",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 310,
+      "line": 320,
       "tier": 2,
       "metadata": {}
     },
@@ -5000,7 +5648,7 @@
       "label": "6.1 性能制約と方策",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 312,
+      "line": 322,
       "tier": 2,
       "metadata": {}
     },
@@ -5009,7 +5657,7 @@
       "label": "6.2 メモリ制約と方策",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 317,
+      "line": 327,
       "tier": 2,
       "metadata": {}
     },
@@ -5018,7 +5666,7 @@
       "label": "6.3 安全性制約と方策",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 322,
+      "line": 332,
       "tier": 2,
       "metadata": {}
     },
@@ -5027,7 +5675,7 @@
       "label": "7. 参考実装リスト",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
-      "line": 327,
+      "line": 337,
       "tier": 2,
       "metadata": {}
     },
@@ -5047,15 +5695,6 @@
       "file_path": "components/tier2_runtime/runtime_loader.md",
       "line": 8,
       "tier": 2,
-      "metadata": {}
-    },
-    {
-      "id": "item:ROMParsing",
-      "label": "{ROMParsing}",
-      "type": "item",
-      "file_path": "components/tier2_runtime/runtime_loader.md",
-      "line": 8,
-      "tier": null,
       "metadata": {}
     },
     {
@@ -5428,26 +6067,8 @@
       "metadata": {}
     },
     {
-      "id": "item:vMMIO_TrapAndEmulate",
-      "label": "{vMMIO_TrapAndEmulate}",
-      "type": "item",
-      "file_path": "components/tier2_runtime/runtime_vmmio.md",
-      "line": 8,
-      "tier": null,
-      "metadata": {}
-    },
-    {
       "id": "item:PhysicalPassthrough",
       "label": "{PhysicalPassthrough}",
-      "type": "item",
-      "file_path": "components/tier2_runtime/runtime_vmmio.md",
-      "line": 8,
-      "tier": null,
-      "metadata": {}
-    },
-    {
-      "id": "item:DynamicMmap",
-      "label": "{DynamicMmap}",
       "type": "item",
       "file_path": "components/tier2_runtime/runtime_vmmio.md",
       "line": 8,
@@ -5842,15 +6463,6 @@
       "metadata": {}
     },
     {
-      "id": "item:JIT_CopyAndPatch",
-      "label": "{JIT_CopyAndPatch}",
-      "type": "item",
-      "file_path": "components/tier2_runtime/runtime_vsoc.md",
-      "line": 108,
-      "tier": null,
-      "metadata": {}
-    },
-    {
       "id": "item:JIT_Safepoint",
       "label": "{JIT_Safepoint}",
       "type": "item",
@@ -6193,11 +6805,20 @@
       "metadata": {}
     },
     {
+      "id": "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#実ソケット GDB RSP リモート接続・対話セッション (§4.1, gdb_rsp_protocol.md)",
+      "label": "実ソケット GDB RSP リモート接続・対話セッション (§4.1, gdb_rsp_protocol.md)",
+      "type": "section",
+      "file_path": "components/tier2_runtime/tests/debug_manager_test_spec.md",
+      "line": 42,
+      "tier": 2,
+      "metadata": {}
+    },
+    {
       "id": "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#3. テスト検証実績と網羅状況",
       "label": "3. テスト検証実績と網羅状況",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/debug_manager_test_spec.md",
-      "line": 42,
+      "line": 52,
       "tier": 2,
       "metadata": {}
     },
@@ -6206,7 +6827,7 @@
       "label": "4. 未検証・スコープ外",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/debug_manager_test_spec.md",
-      "line": 48,
+      "line": 59,
       "tier": 2,
       "metadata": {}
     },
@@ -6269,7 +6890,7 @@
       "label": "i64整数演算 (interpreter_concept.py §3.7, wasm_instruction_set.md §3.4)",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/runtime_interpreter_test_spec.md",
-      "line": 39,
+      "line": 42,
       "tier": 2,
       "metadata": {}
     },
@@ -6278,7 +6899,7 @@
       "label": "メモリアクセス全幅 (interpreter_concept.py §3.4)",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/runtime_interpreter_test_spec.md",
-      "line": 50,
+      "line": 53,
       "tier": 2,
       "metadata": {}
     },
@@ -6287,7 +6908,7 @@
       "label": "Cooperative Safepoint (interpreter_concept.py §末尾)",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/runtime_interpreter_test_spec.md",
-      "line": 59,
+      "line": 62,
       "tier": 2,
       "metadata": {}
     },
@@ -6296,7 +6917,7 @@
       "label": "デバッガ・プロファイラ統合とハンドラテーブル切り替え (§3.3, §4.1, {DebuggerLabelTableSwitch}, {Debug_Integrated})",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/runtime_interpreter_test_spec.md",
-      "line": 66,
+      "line": 69,
       "tier": 2,
       "metadata": {}
     },
@@ -6305,7 +6926,7 @@
       "label": "3. テスト検証実績と網羅状況",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/runtime_interpreter_test_spec.md",
-      "line": 77,
+      "line": 80,
       "tier": 2,
       "metadata": {}
     },
@@ -6314,7 +6935,7 @@
       "label": "4. 未検証・スコープ外",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/runtime_interpreter_test_spec.md",
-      "line": 85,
+      "line": 88,
       "tier": 2,
       "metadata": {}
     },
@@ -6580,12 +7201,21 @@
       "metadata": {}
     },
     {
-      "id": "sec:components/tier3_jit/concepts/README.md#Tier 3 JIT — コンセプトコード",
-      "label": "Tier 3 JIT — コンセプトコード",
+      "id": "sec:components/tier3_jit/concepts/README.md#Tier 3 JIT — コンセプトコード & 検証スクリプト",
+      "label": "Tier 3 JIT — コンセプトコード & 検証スクリプト",
       "type": "section",
       "file_path": "components/tier3_jit/concepts/README.md",
       "line": 1,
       "tier": 3,
+      "metadata": {}
+    },
+    {
+      "id": "item:JIT_Encoder",
+      "label": "{JIT_Encoder}",
+      "type": "item",
+      "file_path": "components/tier3_jit/concepts/README.md",
+      "line": 1,
+      "tier": null,
       "metadata": {}
     },
     {
@@ -6609,15 +7239,6 @@
     {
       "id": "item:JIT_ZeroCompileCostTheorem",
       "label": "{JIT_ZeroCompileCostTheorem}",
-      "type": "item",
-      "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 9,
-      "tier": null,
-      "metadata": {}
-    },
-    {
-      "id": "item:JIT_Encoder",
-      "label": "{JIT_Encoder}",
       "type": "item",
       "file_path": "components/tier3_jit/jit_compiler.md",
       "line": 9,
@@ -6692,7 +7313,16 @@
       "label": "コピーアンドパッチエンジン（CopyAndPatchEngine）クラス",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 53,
+      "line": 60,
+      "tier": 3,
+      "metadata": {}
+    },
+    {
+      "id": "sec:components/tier3_jit/jit_compiler.md#トレース境界不変条件とスタックフレーム整合性 (Trace Boundary Invariants)",
+      "label": "トレース境界不変条件とスタックフレーム整合性 (Trace Boundary Invariants)",
+      "type": "section",
+      "file_path": "components/tier3_jit/jit_compiler.md",
+      "line": 81,
       "tier": 3,
       "metadata": {}
     },
@@ -6701,7 +7331,7 @@
       "label": "JIT トレース物理メモリレイアウト (`jit_trace_header`)",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 74,
+      "line": 93,
       "tier": 3,
       "metadata": {}
     },
@@ -6710,7 +7340,7 @@
       "label": "`constexpr_assembler` (DSL)",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 92,
+      "line": 111,
       "tier": 3,
       "metadata": {}
     },
@@ -6719,7 +7349,7 @@
       "label": "4. 動的モデル",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 102,
+      "line": 121,
       "tier": 3,
       "metadata": {}
     },
@@ -6728,7 +7358,7 @@
       "label": "4.1 アルゴリズム",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 104,
+      "line": 123,
       "tier": 3,
       "metadata": {}
     },
@@ -6737,16 +7367,16 @@
       "label": "JIT トレース検索 & 3面キャッシュ代謝オーケストレーション",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 112,
+      "line": 134,
       "tier": 3,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier3_jit/jit_compiler.md#トレース・チェイニング（連鎖実行）",
-      "label": "トレース・チェイニング（連鎖実行）",
+      "id": "sec:components/tier3_jit/jit_compiler.md#トレース・チェイニング（連鎖実行）と専用分岐ハンドラ分離",
+      "label": "トレース・チェイニング（連鎖実行）と専用分岐ハンドラ分離",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 116,
+      "line": 138,
       "tier": 3,
       "metadata": {}
     },
@@ -6755,7 +7385,7 @@
       "label": "統合 Tiered ランタイムエンジン・コンセプトコード (`../tier2_runtime/concepts/runtime_engine_concept.py`)",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 130,
+      "line": 167,
       "tier": 3,
       "metadata": {}
     },
@@ -6764,7 +7394,7 @@
       "label": "ホットスポット判定 (yield 時)",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 133,
+      "line": 170,
       "tier": 3,
       "metadata": {}
     },
@@ -6773,7 +7403,7 @@
       "label": "バッチコンパイル (周期実行またはアイドル時)",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 139,
+      "line": 176,
       "tier": 3,
       "metadata": {}
     },
@@ -6782,7 +7412,7 @@
       "label": "{JIT_ReverseCompilationOrder}",
       "type": "item",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 139,
+      "line": 176,
       "tier": null,
       "metadata": {}
     },
@@ -6791,7 +7421,7 @@
       "label": "4.2 状態遷移図",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 145,
+      "line": 182,
       "tier": 3,
       "metadata": {}
     },
@@ -6800,7 +7430,7 @@
       "label": "4.3 内部シーケンス",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 163,
+      "line": 200,
       "tier": 3,
       "metadata": {}
     },
@@ -6809,7 +7439,7 @@
       "label": "JITコンパイルおよび検索シーケンス",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 165,
+      "line": 202,
       "tier": 3,
       "metadata": {}
     },
@@ -6818,7 +7448,7 @@
       "label": "5. 検証",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 208,
+      "line": 245,
       "tier": 3,
       "metadata": {}
     },
@@ -6827,7 +7457,7 @@
       "label": "5.1 直交表: 検索・昇格・代謝",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 210,
+      "line": 247,
       "tier": 3,
       "metadata": {}
     },
@@ -6836,7 +7466,7 @@
       "label": "{ADR_SafeQueuingOnHotMiss}",
       "type": "item",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 210,
+      "line": 247,
       "tier": null,
       "metadata": {}
     },
@@ -6845,7 +7475,7 @@
       "label": "5.2 内部コンポーネントのデコンポジション",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 225,
+      "line": 262,
       "tier": 3,
       "metadata": {}
     },
@@ -6854,7 +7484,7 @@
       "label": "6. インターフェイス定義",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 232,
+      "line": 269,
       "tier": 3,
       "metadata": {}
     },
@@ -6863,7 +7493,7 @@
       "label": "6.1 公開API",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 234,
+      "line": 271,
       "tier": 3,
       "metadata": {}
     },
@@ -6872,7 +7502,7 @@
       "label": "初期化（initialize）",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 238,
+      "line": 275,
       "tier": 3,
       "metadata": {}
     },
@@ -6881,7 +7511,7 @@
       "label": "トレース検索（lookup_trace）",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 253,
+      "line": 290,
       "tier": 3,
       "metadata": {}
     },
@@ -6890,7 +7520,7 @@
       "label": "カード状態取得（get_card_state）",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 262,
+      "line": 299,
       "tier": 3,
       "metadata": {}
     },
@@ -6899,7 +7529,7 @@
       "label": "検索範囲取得（get_search_range）",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 271,
+      "line": 308,
       "tier": 3,
       "metadata": {}
     },
@@ -6908,7 +7538,7 @@
       "label": "バッチコンパイル処理（process_batch_compile）",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 280,
+      "line": 317,
       "tier": 3,
       "metadata": {}
     },
@@ -6917,7 +7547,7 @@
       "label": "6.2 URI/IPCインターフェイス",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 291,
+      "line": 328,
       "tier": 3,
       "metadata": {}
     },
@@ -6926,7 +7556,7 @@
       "label": "7. 制約達成の方策",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 295,
+      "line": 332,
       "tier": 3,
       "metadata": {}
     },
@@ -6935,7 +7565,7 @@
       "label": "7.1 性能制約と方策",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 297,
+      "line": 334,
       "tier": 3,
       "metadata": {}
     },
@@ -6944,7 +7574,7 @@
       "label": "7.2 安全性制約と方策",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 305,
+      "line": 342,
       "tier": 3,
       "metadata": {}
     },
@@ -6953,7 +7583,7 @@
       "label": "8. 設計判断 (ADR)",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 314,
+      "line": 351,
       "tier": 3,
       "metadata": {}
     },
@@ -6962,7 +7592,7 @@
       "label": "{ADR_ScalableCodeOffset}",
       "type": "item",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 314,
+      "line": 351,
       "tier": null,
       "metadata": {}
     },
@@ -7025,7 +7655,7 @@
       "label": "3.2 内部ブロック図",
       "type": "section",
       "file_path": "components/tier3_jit/jit_runtime.md",
-      "line": 32,
+      "line": 37,
       "tier": 3,
       "metadata": {}
     },
@@ -7034,7 +7664,7 @@
       "label": "3.3 主要なクラス・構造体・配列・定数",
       "type": "section",
       "file_path": "components/tier3_jit/jit_runtime.md",
-      "line": 43,
+      "line": 48,
       "tier": 3,
       "metadata": {}
     },
@@ -7043,7 +7673,7 @@
       "label": "JITエントリインデックス（JitEntryIndex）クラス",
       "type": "section",
       "file_path": "components/tier3_jit/jit_runtime.md",
-      "line": 45,
+      "line": 50,
       "tier": 3,
       "metadata": {}
     },
@@ -7052,7 +7682,7 @@
       "label": "4. 動的モデル",
       "type": "section",
       "file_path": "components/tier3_jit/jit_runtime.md",
-      "line": 54,
+      "line": 59,
       "tier": 3,
       "metadata": {}
     },
@@ -7061,7 +7691,7 @@
       "label": "4.1 アルゴリズム",
       "type": "section",
       "file_path": "components/tier3_jit/jit_runtime.md",
-      "line": 56,
+      "line": 61,
       "tier": 3,
       "metadata": {}
     },
@@ -7070,7 +7700,7 @@
       "label": "4.2 状態遷移図",
       "type": "section",
       "file_path": "components/tier3_jit/jit_runtime.md",
-      "line": 63,
+      "line": 70,
       "tier": 3,
       "metadata": {}
     },
@@ -7079,7 +7709,7 @@
       "label": "5. インターフェイス定義",
       "type": "section",
       "file_path": "components/tier3_jit/jit_runtime.md",
-      "line": 73,
+      "line": 80,
       "tier": 3,
       "metadata": {}
     },
@@ -7088,7 +7718,7 @@
       "label": "5.1 公開API",
       "type": "section",
       "file_path": "components/tier3_jit/jit_runtime.md",
-      "line": 75,
+      "line": 82,
       "tier": 3,
       "metadata": {}
     },
@@ -7097,7 +7727,7 @@
       "label": "検索（lookup）",
       "type": "section",
       "file_path": "components/tier3_jit/jit_runtime.md",
-      "line": 77,
+      "line": 84,
       "tier": 3,
       "metadata": {}
     },
@@ -7106,7 +7736,7 @@
       "label": "エントリ登録（register_entry）",
       "type": "section",
       "file_path": "components/tier3_jit/jit_runtime.md",
-      "line": 84,
+      "line": 91,
       "tier": 3,
       "metadata": {}
     },
@@ -7115,7 +7745,7 @@
       "label": "6. 制約達成の方策",
       "type": "section",
       "file_path": "components/tier3_jit/jit_runtime.md",
-      "line": 90,
+      "line": 97,
       "tier": 3,
       "metadata": {}
     },
@@ -7124,7 +7754,7 @@
       "label": "6.1 性能制約",
       "type": "section",
       "file_path": "components/tier3_jit/jit_runtime.md",
-      "line": 92,
+      "line": 99,
       "tier": 3,
       "metadata": {}
     },
@@ -7133,7 +7763,7 @@
       "label": "6.2 メモリ制約",
       "type": "section",
       "file_path": "components/tier3_jit/jit_runtime.md",
-      "line": 95,
+      "line": 102,
       "tier": 3,
       "metadata": {}
     },
@@ -7210,11 +7840,20 @@
       "metadata": {}
     },
     {
+      "id": "sec:components/tier3_jit/tests/jit_compiler_test_spec.md#トレース境界不変条件とハンドラ委譲 (§3.3, §4.1)",
+      "label": "トレース境界不変条件とハンドラ委譲 (§3.3, §4.1)",
+      "type": "section",
+      "file_path": "components/tier3_jit/tests/jit_compiler_test_spec.md",
+      "line": 55,
+      "tier": 3,
+      "metadata": {}
+    },
+    {
       "id": "sec:components/tier3_jit/tests/jit_compiler_test_spec.md#3. テスト検証実績と網羅状況",
       "label": "3. テスト検証実績と網羅状況",
       "type": "section",
       "file_path": "components/tier3_jit/tests/jit_compiler_test_spec.md",
-      "line": 55,
+      "line": 64,
       "tier": 3,
       "metadata": {}
     },
@@ -7223,7 +7862,7 @@
       "label": "4. 未検証・スコープ外",
       "type": "section",
       "file_path": "components/tier3_jit/tests/jit_compiler_test_spec.md",
-      "line": 64,
+      "line": 73,
       "tier": 3,
       "metadata": {}
     },
@@ -7759,20 +8398,11 @@
       "metadata": {}
     },
     {
-      "id": "sec:components/tier3_platform/platform_memory.md#5. 制約と不変条件",
-      "label": "5. 制約と不変条件",
-      "type": "section",
-      "file_path": "components/tier3_platform/platform_memory.md",
-      "line": 103,
-      "tier": 3,
-      "metadata": {}
-    },
-    {
       "id": "sec:components/tier3_platform/platform_memory.md#6. 所有権追跡",
       "label": "6. 所有権追跡",
       "type": "section",
       "file_path": "components/tier3_platform/platform_memory.md",
-      "line": 112,
+      "line": 104,
       "tier": 3,
       "metadata": {}
     },
@@ -7781,7 +8411,7 @@
       "label": "7. 共有メモリ (shared-block) のライフサイクル",
       "type": "section",
       "file_path": "components/tier3_platform/platform_memory.md",
-      "line": 120,
+      "line": 112,
       "tier": 3,
       "metadata": {}
     },
@@ -7790,7 +8420,7 @@
       "label": "8. 設計判断 (ADR)",
       "type": "section",
       "file_path": "components/tier3_platform/platform_memory.md",
-      "line": 138,
+      "line": 128,
       "tier": 3,
       "metadata": {}
     },
@@ -7799,7 +8429,7 @@
       "label": "9. ハードウェアメモリ保護 (MPU) & W^X 設計",
       "type": "section",
       "file_path": "components/tier3_platform/platform_memory.md",
-      "line": 158,
+      "line": 148,
       "tier": 3,
       "metadata": {}
     },
@@ -7808,7 +8438,7 @@
       "label": "9.1 Cortex-M33 PMSAv8 MPU リージョン配分",
       "type": "section",
       "file_path": "components/tier3_platform/platform_memory.md",
-      "line": 162,
+      "line": 152,
       "tier": 3,
       "metadata": {}
     },
@@ -7817,7 +8447,7 @@
       "label": "9.2 JIT W^X (Write XOR Execute) 切替プロトコル",
       "type": "section",
       "file_path": "components/tier3_platform/platform_memory.md",
-      "line": 177,
+      "line": 167,
       "tier": 3,
       "metadata": {}
     },
@@ -7826,7 +8456,7 @@
       "label": "属性切替シーケンス",
       "type": "section",
       "file_path": "components/tier3_platform/platform_memory.md",
-      "line": 181,
+      "line": 171,
       "tier": 3,
       "metadata": {}
     },
@@ -7835,7 +8465,7 @@
       "label": "トランザクションバッチ化によるレイテンシ両立",
       "type": "section",
       "file_path": "components/tier3_platform/platform_memory.md",
-      "line": 197,
+      "line": 187,
       "tier": 3,
       "metadata": {}
     },
@@ -7844,7 +8474,7 @@
       "label": "9.3 アライメントおよび境界制約 (PMSAv8)",
       "type": "section",
       "file_path": "components/tier3_platform/platform_memory.md",
-      "line": 200,
+      "line": 190,
       "tier": 3,
       "metadata": {}
     },
@@ -9079,6 +9709,24 @@
     },
     {
       "source": "sec:architecture/architecture_overview.md#3.1 Pillar 1: 統合スタックフレーム・モデル (Unified Stack Frame Model)",
+      "target": "item:ExecutionContext_Layout",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/architecture_overview.md#3.1 Pillar 1: 統合スタックフレーム・モデル (Unified Stack Frame Model)",
+      "target": "item:CallFrame_Layout",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/architecture_overview.md#3.1 Pillar 1: 統合スタックフレーム・モデル (Unified Stack Frame Model)",
+      "target": "item:ControlFrame_Layout",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/architecture_overview.md#3.1 Pillar 1: 統合スタックフレーム・モデル (Unified Stack Frame Model)",
       "target": "item:JIT_RegisterMapping",
       "relation": "refers_to",
       "metadata": {}
@@ -9140,6 +9788,12 @@
     {
       "source": "sec:architecture/architecture_overview.md#3.3 Pillar 3: 3面世代交代回転コードキャッシュ (3-Bank Generational Rotating Code Cache)",
       "target": "item:SimpleJITArchitecture",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/architecture_overview.md#3.3 Pillar 3: 3面世代交代回転コードキャッシュ (3-Bank Generational Rotating Code Cache)",
+      "target": "item:VsocRuntime_Layout",
       "relation": "refers_to",
       "metadata": {}
     },
@@ -9242,6 +9896,12 @@
     {
       "source": "sec:architecture/architecture_overview.md#4. 物理レジスタ＆ABI規約 (Physical Register & ABI Map)",
       "target": "item:ADR_TosCacheAsymmetry",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/architecture_overview.md#4. 物理レジスタ＆ABI規約 (Physical Register & ABI Map)",
+      "target": "item:AAPCS_FastCall",
       "relation": "refers_to",
       "metadata": {}
     },
@@ -9393,6 +10053,66 @@
       "source": "sec:architecture/architecture_overview.md#8. アーキテクチャスタイルと設計判断 (ADR)",
       "target": "item:NotRTOS",
       "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "file:architecture/combinatorial_test_spec.md",
+      "target": "sec:architecture/combinatorial_test_spec.md#システム全体 ペアワイズ組み合わせテスト仕様書 (Combinatorial Test Specification)",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/combinatorial_test_spec.md#システム全体 ペアワイズ組み合わせテスト仕様書 (Combinatorial Test Specification)",
+      "target": "item:Pairwise_Combinatorial_Testing",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/combinatorial_test_spec.md#システム全体 ペアワイズ組み合わせテスト仕様書 (Combinatorial Test Specification)",
+      "target": "item:CoverageMatrix",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/combinatorial_test_spec.md#システム全体 ペアワイズ組み合わせテスト仕様書 (Combinatorial Test Specification)",
+      "target": "sec:architecture/combinatorial_test_spec.md#1. 目的と網羅基準",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/combinatorial_test_spec.md#1. 目的と網羅基準",
+      "target": "sec:architecture/combinatorial_test_spec.md#1.1 網羅基準 (Coverage Criteria)",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/combinatorial_test_spec.md#1.1 網羅基準 (Coverage Criteria)",
+      "target": "item:7",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/combinatorial_test_spec.md#1.1 網羅基準 (Coverage Criteria)",
+      "target": "item:2",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/combinatorial_test_spec.md#システム全体 ペアワイズ組み合わせテスト仕様書 (Combinatorial Test Specification)",
+      "target": "sec:architecture/combinatorial_test_spec.md#2. 因子（Factors）および水準（Levels）定義",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/combinatorial_test_spec.md#システム全体 ペアワイズ組み合わせテスト仕様書 (Combinatorial Test Specification)",
+      "target": "sec:architecture/combinatorial_test_spec.md#3. ペアワイズ テストケース マトリクス (Test Matrix)",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/combinatorial_test_spec.md#システム全体 ペアワイズ組み合わせテスト仕様書 (Combinatorial Test Specification)",
+      "target": "sec:architecture/combinatorial_test_spec.md#4. テスト実行環境・ランナー構成",
+      "relation": "contains",
       "metadata": {}
     },
     {
@@ -9660,6 +10380,498 @@
       "metadata": {}
     },
     {
+      "source": "file:architecture/integration_test_scenarios.md",
+      "target": "sec:architecture/integration_test_scenarios.md#コンポーネント間 結合テスト仕様書 (Integration Test Specification)",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/integration_test_scenarios.md#コンポーネント間 結合テスト仕様書 (Integration Test Specification)",
+      "target": "sec:architecture/integration_test_scenarios.md#1. 目的と対象範囲",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/integration_test_scenarios.md#1. 目的と対象範囲",
+      "target": "sec:architecture/integration_test_scenarios.md#1.1 コンポーネント × 結合テストシナリオ カバレッジマトリクス (Coverage Matrix)",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/integration_test_scenarios.md#1. 目的と対象範囲",
+      "target": "sec:architecture/integration_test_scenarios.md#1.2 仕様キーワード・不変条件カバレッジ追跡表 (Requirements Traceability Matrix: RTM)",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/integration_test_scenarios.md#コンポーネント間 結合テスト仕様書 (Integration Test Specification)",
+      "target": "sec:architecture/integration_test_scenarios.md#2. 結合テストシナリオ一覧",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/integration_test_scenarios.md#2. 結合テストシナリオ一覧",
+      "target": "sec:architecture/integration_test_scenarios.md#シナリオ 1: Tier 1 Core + Tier 2 Loader & Linear Memory",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/integration_test_scenarios.md#2. 結合テストシナリオ一覧",
+      "target": "sec:architecture/integration_test_scenarios.md#シナリオ 2: Tier 2 Runtime + System Call & WASI I/O",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/integration_test_scenarios.md#2. 結合テストシナリオ一覧",
+      "target": "sec:architecture/integration_test_scenarios.md#シナリオ 3: Tier 2 Interpreter + Recursion & Indirect Table Dispatch",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/integration_test_scenarios.md#2. 結合テストシナリオ一覧",
+      "target": "sec:architecture/integration_test_scenarios.md#シナリオ 4: Tier 2 Runtime + Tier 3 JIT Hybrid Compilation",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/integration_test_scenarios.md#2. 結合テストシナリオ一覧",
+      "target": "sec:architecture/integration_test_scenarios.md#シナリオ 5: Multi-Function UnifiedPC & bswap32 Radix Tree",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/integration_test_scenarios.md#2. 結合テストシナリオ一覧",
+      "target": "sec:architecture/integration_test_scenarios.md#シナリオ 6: COOS Cooperative Multitasking & Coroutines",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/integration_test_scenarios.md#2. 結合テストシナリオ一覧",
+      "target": "sec:architecture/integration_test_scenarios.md#シナリオ 7: GDB Remote Serial Protocol (RSP) Socket Debugger",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/integration_test_scenarios.md#シナリオ 7: GDB Remote Serial Protocol (RSP) Socket Debugger",
+      "target": "item:Debugger_Jit_Flush",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/integration_test_scenarios.md#2. 結合テストシナリオ一覧",
+      "target": "sec:architecture/integration_test_scenarios.md#シナリオ 8: Storage Coverage (Globals / Locals / Memory Full-Width) & GDB Debugger",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/integration_test_scenarios.md#2. 結合テストシナリオ一覧",
+      "target": "sec:architecture/integration_test_scenarios.md#シナリオ 9: Tier 1 Interface IPC Router & Structured Logging",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/integration_test_scenarios.md#2. 結合テストシナリオ一覧",
+      "target": "sec:architecture/integration_test_scenarios.md#シナリオ 10: Tier 2 Runtime vMMIO Virtual Devices & Address Translation",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/integration_test_scenarios.md#2. 結合テストシナリオ一覧",
+      "target": "sec:architecture/integration_test_scenarios.md#シナリオ 11: HAL Peripheral Drivers & WASI Preview 1 Full Dummy Stack",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/integration_test_scenarios.md#コンポーネント間 結合テスト仕様書 (Integration Test Specification)",
+      "target": "sec:architecture/integration_test_scenarios.md#3. 実行方法と検証結果",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/integration_test_scenarios.md#3. 実行方法と検証結果",
+      "target": "sec:architecture/integration_test_scenarios.md#検証実績",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "file:architecture/keyword_dictionary.md",
+      "target": "sec:architecture/keyword_dictionary.md#Fireball リンク用キーワード台帳 (Keyword Dictionary & Link Registry)",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#Fireball リンク用キーワード台帳 (Keyword Dictionary & Link Registry)",
+      "target": "sec:architecture/keyword_dictionary.md#1. リンクキーワードの運用ルール",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#Fireball リンク用キーワード台帳 (Keyword Dictionary & Link Registry)",
+      "target": "sec:architecture/keyword_dictionary.md#2. カテゴリ別 リンクキーワード台帳",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2. カテゴリ別 リンクキーワード台帳",
+      "target": "sec:architecture/keyword_dictionary.md#2.1 WASM実行 & ランタイム (vSoC / Interpreter / Loader / vMMIO)",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.1 WASM実行 & ランタイム (vSoC / Interpreter / Loader / vMMIO)",
+      "target": "item:ThreadedInterpreter",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.1 WASM実行 & ランタイム (vSoC / Interpreter / Loader / vMMIO)",
+      "target": "item:CPS_4Args",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.1 WASM実行 & ランタイム (vSoC / Interpreter / Loader / vMMIO)",
+      "target": "item:MemoryBoundaryCheck",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.1 WASM実行 & ランタイム (vSoC / Interpreter / Loader / vMMIO)",
+      "target": "item:SignZeroExtension",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.1 WASM実行 & ランタイム (vSoC / Interpreter / Loader / vMMIO)",
+      "target": "item:ControlFrameCleanup",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.1 WASM実行 & ランタイム (vSoC / Interpreter / Loader / vMMIO)",
+      "target": "item:ROMParsing",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.1 WASM実行 & ランタイム (vSoC / Interpreter / Loader / vMMIO)",
+      "target": "item:ActiveDataSegments",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.1 WASM実行 & ランタイム (vSoC / Interpreter / Loader / vMMIO)",
+      "target": "item:RAM_Bypass_Bit31",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.1 WASM実行 & ランタイム (vSoC / Interpreter / Loader / vMMIO)",
+      "target": "item:DirectMappedTLB16",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.1 WASM実行 & ランタイム (vSoC / Interpreter / Loader / vMMIO)",
+      "target": "item:OwnerMismatchTrap",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.1 WASM実行 & ランタイム (vSoC / Interpreter / Loader / vMMIO)",
+      "target": "item:vMMIO_TrapAndEmulate",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.1 WASM実行 & ランタイム (vSoC / Interpreter / Loader / vMMIO)",
+      "target": "item:DynamicMmap",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.1 WASM実行 & ランタイム (vSoC / Interpreter / Loader / vMMIO)",
+      "target": "item:ExecutionContext_Layout",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.1 WASM実行 & ランタイム (vSoC / Interpreter / Loader / vMMIO)",
+      "target": "item:CallFrame_Layout",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.1 WASM実行 & ランタイム (vSoC / Interpreter / Loader / vMMIO)",
+      "target": "item:ControlFrame_Layout",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.1 WASM実行 & ランタイム (vSoC / Interpreter / Loader / vMMIO)",
+      "target": "item:AAPCS_FastCall",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.1 WASM実行 & ランタイム (vSoC / Interpreter / Loader / vMMIO)",
+      "target": "item:VsocRuntime_Layout",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2. カテゴリ別 リンクキーワード台帳",
+      "target": "sec:architecture/keyword_dictionary.md#2.2 タスク管理・スケジューリング・通信 (COOS / Scheduler / IPC)",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.2 タスク管理・スケジューリング・通信 (COOS / Scheduler / IPC)",
+      "target": "item:CooperativeMultitasking",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.2 タスク管理・スケジューリング・通信 (COOS / Scheduler / IPC)",
+      "target": "item:DirectContextSwitch",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.2 タスク管理・スケジューリング・通信 (COOS / Scheduler / IPC)",
+      "target": "item:FuelExhaustion_Yield",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.2 タスク管理・スケジューリング・通信 (COOS / Scheduler / IPC)",
+      "target": "item:MainLoopReturnGuarantee",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.2 タスク管理・スケジューリング・通信 (COOS / Scheduler / IPC)",
+      "target": "item:CSPCommunication",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.2 タスク管理・スケジューリング・通信 (COOS / Scheduler / IPC)",
+      "target": "item:ThreeStageRouting",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.2 タスク管理・スケジューリング・通信 (COOS / Scheduler / IPC)",
+      "target": "item:QueueFullRollback",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.2 タスク管理・スケジューリング・通信 (COOS / Scheduler / IPC)",
+      "target": "item:TargetFaultDropHandler",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2. カテゴリ別 リンクキーワード台帳",
+      "target": "sec:architecture/keyword_dictionary.md#2.3 JIT コンパイラ & ランタイム (JIT Compiler / Runtime)",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.3 JIT コンパイラ & ランタイム (JIT Compiler / Runtime)",
+      "target": "item:JIT_CopyAndPatch",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.3 JIT コンパイラ & ランタイム (JIT Compiler / Runtime)",
+      "target": "item:TraceBoundaryInvariant",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.3 JIT コンパイラ & ランタイム (JIT Compiler / Runtime)",
+      "target": "item:JitBranchChainingHandler",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.3 JIT コンパイラ & ランタイム (JIT Compiler / Runtime)",
+      "target": "item:JIT_MultiBuffer_Cache",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.3 JIT コンパイラ & ランタイム (JIT Compiler / Runtime)",
+      "target": "item:ThreeBankCacheEviction",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.3 JIT コンパイラ & ランタイム (JIT Compiler / Runtime)",
+      "target": "item:RadixBinaryTreeView_bswap32",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.3 JIT コンパイラ & ランタイム (JIT Compiler / Runtime)",
+      "target": "item:BitView_CardMarking",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2. カテゴリ別 リンクキーワード台帳",
+      "target": "sec:architecture/keyword_dictionary.md#2.4 デバッガ & システムコア & プラットフォーム (Debug / Syscall / Logging / HAL)",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.4 デバッガ & システムコア & プラットフォーム (Debug / Syscall / Logging / HAL)",
+      "target": "item:RSPMinimalSet",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.4 デバッガ & システムコア & プラットフォーム (Debug / Syscall / Logging / HAL)",
+      "target": "item:Debugger_Jit_Flush",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.4 デバッガ & システムコア & プラットフォーム (Debug / Syscall / Logging / HAL)",
+      "target": "item:DebuggerLabelTableSwitch",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.4 デバッガ & システムコア & プラットフォーム (Debug / Syscall / Logging / HAL)",
+      "target": "item:WASI_ScatteredIO",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.4 デバッガ & システムコア & プラットフォーム (Debug / Syscall / Logging / HAL)",
+      "target": "item:Syscall_ProcExit",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.4 デバッガ & システムコア & プラットフォーム (Debug / Syscall / Logging / HAL)",
+      "target": "item:DictionaryBasedIPC",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.4 デバッガ & システムコア & プラットフォーム (Debug / Syscall / Logging / HAL)",
+      "target": "item:BufferedLogging",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.4 デバッガ & システムコア & プラットフォーム (Debug / Syscall / Logging / HAL)",
+      "target": "item:HAL_PeripheralDrivers",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.4 デバッガ & システムコア & プラットフォーム (Debug / Syscall / Logging / HAL)",
+      "target": "item:WASI_InMemVFS",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.4 デバッガ & システムコア & プラットフォーム (Debug / Syscall / Logging / HAL)",
+      "target": "item:FlatMapView_BinarySearch",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.4 デバッガ & システムコア & プラットフォーム (Debug / Syscall / Logging / HAL)",
+      "target": "item:RingBuffer_Overwrite",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#2.4 デバッガ & システムコア & プラットフォーム (Debug / Syscall / Logging / HAL)",
+      "target": "item:Pairwise_Combinatorial_Testing",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#Fireball リンク用キーワード台帳 (Keyword Dictionary & Link Registry)",
+      "target": "sec:architecture/keyword_dictionary.md#3. システム横断 メタキーワード (Meta & Global Keywords)",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#3. システム横断 メタキーワード (Meta & Global Keywords)",
+      "target": "item:META_3TierSeparation",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#3. システム横断 メタキーワード (Meta & Global Keywords)",
+      "target": "item:META_ConfigurableSystem",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#3. システム横断 メタキーワード (Meta & Global Keywords)",
+      "target": "item:META_FaultIsolation",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#3. システム横断 メタキーワード (Meta & Global Keywords)",
+      "target": "item:META_RecoveryStrategy",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#3. システム横断 メタキーワード (Meta & Global Keywords)",
+      "target": "item:META_RestrictedPhysicalAccess",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#3. システム横断 メタキーワード (Meta & Global Keywords)",
+      "target": "item:META_ZeroOverhead",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#3. システム横断 メタキーワード (Meta & Global Keywords)",
+      "target": "item:GLOBAL_UseCpp20Coroutine",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#3. システム横断 メタキーワード (Meta & Global Keywords)",
+      "target": "item:GLOBAL_UseCpp23Library",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#3. システム横断 メタキーワード (Meta & Global Keywords)",
+      "target": "item:GLOBAL_InterruptWakeup",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#3. システム横断 メタキーワード (Meta & Global Keywords)",
+      "target": "item:GLOBAL_PeriodicTask",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
+      "source": "sec:architecture/keyword_dictionary.md#3. システム横断 メタキーワード (Meta & Global Keywords)",
+      "target": "item:GLOBAL_IdleDetection",
+      "relation": "defines",
+      "metadata": {}
+    },
+    {
       "source": "file:components/tier1_core/os_coos.md",
       "target": "sec:components/tier1_core/os_coos.md#協調型OS COOS コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM} {VERIFY_BENCHMARK}",
       "relation": "contains",
@@ -9860,6 +11072,12 @@
     {
       "source": "sec:components/tier1_core/os_coos.md#チャネル送受信動作の挙動定義",
       "target": "item:CSPCommunication",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier1_core/os_coos.md#チャネル送受信動作の挙動定義",
+      "target": "item:MainLoopReturnGuarantee",
       "relation": "refers_to",
       "metadata": {}
     },
@@ -10094,6 +11312,12 @@
     {
       "source": "sec:components/tier1_core/os_coos.md#6.2 直交表: CSP通信と状態遷移",
       "target": "item:GLOBAL_InterruptWakeup",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier1_core/os_coos.md#6.2 直交表: CSP通信と状態遷移",
+      "target": "item:MainLoopReturnGuarantee",
       "relation": "refers_to",
       "metadata": {}
     },
@@ -11707,12 +12931,12 @@
     },
     {
       "source": "file:components/tier1_core/system_syscall.md",
-      "target": "sec:components/tier1_core/system_syscall.md#システムコール仕様 コンポーネント設計書 {VERIFY_LLM} {VERIFY_FORMAL}",
+      "target": "sec:components/tier1_core/system_syscall.md#システムコール仕様 コンポーネント設計書 {VERIFY_FORMAL}",
       "relation": "contains",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier1_core/system_syscall.md#システムコール仕様 コンポーネント設計書 {VERIFY_LLM} {VERIFY_FORMAL}",
+      "source": "sec:components/tier1_core/system_syscall.md#システムコール仕様 コンポーネント設計書 {VERIFY_FORMAL}",
       "target": "sec:components/tier1_core/system_syscall.md#1. 目的",
       "relation": "contains",
       "metadata": {}
@@ -11724,7 +12948,7 @@
       "metadata": {}
     },
     {
-      "source": "sec:components/tier1_core/system_syscall.md#システムコール仕様 コンポーネント設計書 {VERIFY_LLM} {VERIFY_FORMAL}",
+      "source": "sec:components/tier1_core/system_syscall.md#システムコール仕様 コンポーネント設計書 {VERIFY_FORMAL}",
       "target": "sec:components/tier1_core/system_syscall.md#2. 背景",
       "relation": "contains",
       "metadata": {}
@@ -11736,7 +12960,7 @@
       "metadata": {}
     },
     {
-      "source": "sec:components/tier1_core/system_syscall.md#システムコール仕様 コンポーネント設計書 {VERIFY_LLM} {VERIFY_FORMAL}",
+      "source": "sec:components/tier1_core/system_syscall.md#システムコール仕様 コンポーネント設計書 {VERIFY_FORMAL}",
       "target": "sec:components/tier1_core/system_syscall.md#3. `fireball_call` WIT定義",
       "relation": "contains",
       "metadata": {}
@@ -11760,7 +12984,7 @@
       "metadata": {}
     },
     {
-      "source": "sec:components/tier1_core/system_syscall.md#システムコール仕様 コンポーネント設計書 {VERIFY_LLM} {VERIFY_FORMAL}",
+      "source": "sec:components/tier1_core/system_syscall.md#システムコール仕様 コンポーネント設計書 {VERIFY_FORMAL}",
       "target": "sec:components/tier1_core/system_syscall.md#4. `fireball_call` 呼び出し規約",
       "relation": "contains",
       "metadata": {}
@@ -11814,7 +13038,7 @@
       "metadata": {}
     },
     {
-      "source": "sec:components/tier1_core/system_syscall.md#システムコール仕様 コンポーネント設計書 {VERIFY_LLM} {VERIFY_FORMAL}",
+      "source": "sec:components/tier1_core/system_syscall.md#システムコール仕様 コンポーネント設計書 {VERIFY_FORMAL}",
       "target": "sec:components/tier1_core/system_syscall.md#5. システムコールID",
       "relation": "contains",
       "metadata": {}
@@ -11940,7 +13164,13 @@
       "metadata": {}
     },
     {
-      "source": "sec:components/tier1_core/system_syscall.md#システムコール仕様 コンポーネント設計書 {VERIFY_LLM} {VERIFY_FORMAL}",
+      "source": "sec:components/tier1_core/system_syscall.md#5.7. WASI (`0x80`-`0xBF`)",
+      "target": "item:Syscall_Mapping",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier1_core/system_syscall.md#システムコール仕様 コンポーネント設計書 {VERIFY_FORMAL}",
       "target": "sec:components/tier1_core/system_syscall.md#6. Fireball Shim (`libfireball_shim`)",
       "relation": "contains",
       "metadata": {}
@@ -11982,7 +13212,7 @@
       "metadata": {}
     },
     {
-      "source": "sec:components/tier1_core/system_syscall.md#システムコール仕様 コンポーネント設計書 {VERIFY_LLM} {VERIFY_FORMAL}",
+      "source": "sec:components/tier1_core/system_syscall.md#システムコール仕様 コンポーネント設計書 {VERIFY_FORMAL}",
       "target": "sec:components/tier1_core/system_syscall.md#7. WASIホスト側実装",
       "relation": "contains",
       "metadata": {}
@@ -12006,7 +13236,7 @@
       "metadata": {}
     },
     {
-      "source": "sec:components/tier1_core/system_syscall.md#システムコール仕様 コンポーネント設計書 {VERIFY_LLM} {VERIFY_FORMAL}",
+      "source": "sec:components/tier1_core/system_syscall.md#システムコール仕様 コンポーネント設計書 {VERIFY_FORMAL}",
       "target": "sec:components/tier1_core/system_syscall.md#8. ホストからゲストへの非同期通知メカニズム",
       "relation": "contains",
       "metadata": {}
@@ -12054,7 +13284,7 @@
       "metadata": {}
     },
     {
-      "source": "sec:components/tier1_core/system_syscall.md#システムコール仕様 コンポーネント設計書 {VERIFY_LLM} {VERIFY_FORMAL}",
+      "source": "sec:components/tier1_core/system_syscall.md#システムコール仕様 コンポーネント設計書 {VERIFY_FORMAL}",
       "target": "sec:components/tier1_core/system_syscall.md#9. メモリ安全性",
       "relation": "contains",
       "metadata": {}
@@ -12066,7 +13296,7 @@
       "metadata": {}
     },
     {
-      "source": "sec:components/tier1_core/system_syscall.md#システムコール仕様 コンポーネント設計書 {VERIFY_LLM} {VERIFY_FORMAL}",
+      "source": "sec:components/tier1_core/system_syscall.md#システムコール仕様 コンポーネント設計書 {VERIFY_FORMAL}",
       "target": "sec:components/tier1_core/system_syscall.md#10. トラップ状態プロトコル",
       "relation": "contains",
       "metadata": {}
@@ -12998,6 +14228,12 @@
     {
       "source": "sec:components/tier1_interface/ipc_router.md#ロール間通信許可マトリクス (FB_CONF_ROUTER_ROLE_MATRIX)",
       "target": "item:RoleBasedAccessControl",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier1_interface/ipc_router.md#ロール間通信許可マトリクス (FB_CONF_ROUTER_ROLE_MATRIX)",
+      "target": "item:META_ConfigurableSystem",
       "relation": "refers_to",
       "metadata": {}
     },
@@ -14370,6 +15606,12 @@
       "metadata": {}
     },
     {
+      "source": "sec:components/tier2_runtime/runtime_interpreter.md#実行コンテキスト（execution_context @ スタックボトム）",
+      "target": "item:ExecutionContext_Layout",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
       "source": "sec:components/tier2_runtime/runtime_interpreter.md#3.3 主要なクラス・構造体・配列・定数",
       "target": "sec:components/tier2_runtime/runtime_interpreter.md#コールフレーム（call_frame @ 統合スタックインライン）",
       "relation": "contains",
@@ -14406,6 +15648,12 @@
       "metadata": {}
     },
     {
+      "source": "sec:components/tier2_runtime/runtime_interpreter.md#コールフレーム（call_frame @ 統合スタックインライン）",
+      "target": "item:CallFrame_Layout",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
       "source": "sec:components/tier2_runtime/runtime_interpreter.md#3.3 主要なクラス・構造体・配列・定数",
       "target": "sec:components/tier2_runtime/runtime_interpreter.md#制御フレーム（control_frame @ 統合スタックインライン）",
       "relation": "contains",
@@ -14432,6 +15680,30 @@
     {
       "source": "sec:components/tier2_runtime/runtime_interpreter.md#制御フレーム（control_frame @ 統合スタックインライン）",
       "target": "item:EnvironmentPointer",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier2_runtime/runtime_interpreter.md#制御フレーム（control_frame @ 統合スタックインライン）",
+      "target": "item:ControlFrame_Layout",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier2_runtime/runtime_interpreter.md#3.3 主要なクラス・構造体・配列・定数",
+      "target": "sec:components/tier2_runtime/runtime_interpreter.md#制御フレーム整合性とリーク防止不変条件 (Control Frame Integrity Invariant)",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier2_runtime/runtime_interpreter.md#制御フレーム整合性とリーク防止不変条件 (Control Frame Integrity Invariant)",
+      "target": "item:InterpreterContextStackless",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier2_runtime/runtime_interpreter.md#制御フレーム整合性とリーク防止不変条件 (Control Frame Integrity Invariant)",
+      "target": "item:PositionIndependentCode",
       "relation": "refers_to",
       "metadata": {}
     },
@@ -14480,6 +15752,18 @@
     {
       "source": "sec:components/tier2_runtime/runtime_interpreter.md#オプコードハンドラ / トレース実行（opcode_handler / exec_trace）",
       "target": "item:ADR_TosCacheAsymmetry",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier2_runtime/runtime_interpreter.md#オプコードハンドラ / トレース実行（opcode_handler / exec_trace）",
+      "target": "item:AAPCS_FastCall",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier2_runtime/runtime_interpreter.md#オプコードハンドラ / トレース実行（opcode_handler / exec_trace）",
+      "target": "item:ThreadedInterpreter",
       "relation": "refers_to",
       "metadata": {}
     },
@@ -15816,6 +17100,12 @@
       "metadata": {}
     },
     {
+      "source": "sec:components/tier2_runtime/runtime_vsoc.md#vSoCランタイム環境（vsoc_runtime）",
+      "target": "item:VsocRuntime_Layout",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
       "source": "sec:components/tier2_runtime/runtime_vsoc.md#3.3 主要なクラス・構造体・配列・定数",
       "target": "sec:components/tier2_runtime/runtime_vsoc.md#vSoC構成（vsoc_config）",
       "relation": "contains",
@@ -16308,6 +17598,12 @@
       "metadata": {}
     },
     {
+      "source": "sec:components/tier2_runtime/runtime_vsoc.md#7.2 メモリ制約と方策",
+      "target": "item:META_ConfigurableSystem",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
       "source": "sec:components/tier2_runtime/runtime_vsoc.md#7. 制約達成の方策",
       "target": "sec:components/tier2_runtime/runtime_vsoc.md#7.3 安全性制約と方策",
       "relation": "contains",
@@ -16322,6 +17618,12 @@
     {
       "source": "sec:components/tier2_runtime/runtime_vsoc.md#7.3 安全性制約と方策",
       "target": "item:META_RestrictedPhysicalAccess",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier2_runtime/runtime_vsoc.md#7.3 安全性制約と方策",
+      "target": "item:META_ConfigurableSystem",
       "relation": "refers_to",
       "metadata": {}
     },
@@ -16406,6 +17708,18 @@
     {
       "source": "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#デバッガ協調 & 統合プロファイラ (§1, §4.1)",
       "target": "item:Debug_Integrated",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#2. テストケース一覧",
+      "target": "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#実ソケット GDB RSP リモート接続・対話セッション (§4.1, gdb_rsp_protocol.md)",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#実ソケット GDB RSP リモート接続・対話セッション (§4.1, gdb_rsp_protocol.md)",
+      "target": "item:Debugger_Jit_Flush",
       "relation": "refers_to",
       "metadata": {}
     },
@@ -16789,12 +18103,24 @@
     },
     {
       "source": "file:components/tier3_jit/concepts/README.md",
-      "target": "sec:components/tier3_jit/concepts/README.md#Tier 3 JIT — コンセプトコード",
+      "target": "sec:components/tier3_jit/concepts/README.md#Tier 3 JIT — コンセプトコード & 検証スクリプト",
       "relation": "contains",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier3_jit/concepts/README.md#Tier 3 JIT — コンセプトコード",
+      "source": "sec:components/tier3_jit/concepts/README.md#Tier 3 JIT — コンセプトコード & 検証スクリプト",
+      "target": "item:JIT_CopyAndPatch",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier3_jit/concepts/README.md#Tier 3 JIT — コンセプトコード & 検証スクリプト",
+      "target": "item:JIT_Encoder",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier3_jit/concepts/README.md#Tier 3 JIT — コンセプトコード & 検証スクリプト",
       "target": "item:JIT_RegisterMapping",
       "relation": "refers_to",
       "metadata": {}
@@ -16920,6 +18246,12 @@
       "metadata": {}
     },
     {
+      "source": "sec:components/tier3_jit/jit_compiler.md#コンパイル単位とインタープリタ協調方針",
+      "target": "item:JIT_RuntimeAPI_Fallback",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
       "source": "sec:components/tier3_jit/jit_compiler.md#3.3 主要なクラス・構造体・定数",
       "target": "sec:components/tier3_jit/jit_compiler.md#コピーアンドパッチエンジン（CopyAndPatchEngine）クラス",
       "relation": "contains",
@@ -16952,6 +18284,30 @@
     {
       "source": "sec:components/tier3_jit/jit_compiler.md#コピーアンドパッチエンジン（CopyAndPatchEngine）クラス",
       "target": "item:PositionIndependentCode",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier3_jit/jit_compiler.md#3.3 主要なクラス・構造体・定数",
+      "target": "sec:components/tier3_jit/jit_compiler.md#トレース境界不変条件とスタックフレーム整合性 (Trace Boundary Invariants)",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier3_jit/jit_compiler.md#トレース境界不変条件とスタックフレーム整合性 (Trace Boundary Invariants)",
+      "target": "item:LowLatencyJIT",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier3_jit/jit_compiler.md#トレース境界不変条件とスタックフレーム整合性 (Trace Boundary Invariants)",
+      "target": "item:PositionIndependentCode",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier3_jit/jit_compiler.md#トレース境界不変条件とスタックフレーム整合性 (Trace Boundary Invariants)",
+      "target": "item:JIT_RuntimeAPI_Fallback",
       "relation": "refers_to",
       "metadata": {}
     },
@@ -17053,12 +18409,12 @@
     },
     {
       "source": "sec:components/tier3_jit/jit_compiler.md#4.1 アルゴリズム",
-      "target": "sec:components/tier3_jit/jit_compiler.md#トレース・チェイニング（連鎖実行）",
+      "target": "sec:components/tier3_jit/jit_compiler.md#トレース・チェイニング（連鎖実行）と専用分岐ハンドラ分離",
       "relation": "contains",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier3_jit/jit_compiler.md#トレース・チェイニング（連鎖実行）",
+      "source": "sec:components/tier3_jit/jit_compiler.md#トレース・チェイニング（連鎖実行）と専用分岐ハンドラ分離",
       "target": "item:JIT_LazyChaining",
       "relation": "refers_to",
       "metadata": {}
@@ -17742,6 +19098,18 @@
       "metadata": {}
     },
     {
+      "source": "sec:components/tier3_jit/tests/jit_compiler_test_spec.md#2. テストケース一覧",
+      "target": "sec:components/tier3_jit/tests/jit_compiler_test_spec.md#トレース境界不変条件とハンドラ委譲 (§3.3, §4.1)",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier3_jit/tests/jit_compiler_test_spec.md#トレース境界不変条件とハンドラ委譲 (§3.3, §4.1)",
+      "target": "item:JIT_LazyChaining",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
       "source": "sec:components/tier3_jit/tests/jit_compiler_test_spec.md#JITコンパイラ (コード生成コア) テスト仕様書 (Test Specification)",
       "target": "sec:components/tier3_jit/tests/jit_compiler_test_spec.md#3. テスト検証実績と網羅状況",
       "relation": "contains",
@@ -18126,6 +19494,12 @@
       "metadata": {}
     },
     {
+      "source": "sec:components/tier3_platform/platform_hal.md#バッファの確保",
+      "target": "item:OwnerMismatchTrap",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
       "source": "sec:components/tier3_platform/platform_hal.md#5. インターフェイス定義",
       "target": "sec:components/tier3_platform/platform_hal.md#5.2 Tier 3 リソースインターフェイス",
       "relation": "contains",
@@ -18176,6 +19550,12 @@
     {
       "source": "sec:components/tier3_platform/platform_hal.md#5.3 URI/IPCインターフェイス",
       "target": "item:URIAbstraction",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier3_platform/platform_hal.md#5.3 URI/IPCインターフェイス",
+      "target": "item:ThreeStageRouting",
       "relation": "refers_to",
       "metadata": {}
     },
@@ -18331,6 +19711,12 @@
     },
     {
       "source": "sec:components/tier3_platform/platform_memory.md#4. インターフェイス設計",
+      "target": "item:META_StaticDI",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier3_platform/platform_memory.md#4. インターフェイス設計",
       "target": "sec:components/tier3_platform/platform_memory.md#初期化",
       "relation": "contains",
       "metadata": {}
@@ -18366,6 +19752,12 @@
       "metadata": {}
     },
     {
+      "source": "sec:components/tier3_platform/platform_memory.md#パーティションの貸与（acquire-partition）",
+      "target": "item:CooperativeMultitasking",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
       "source": "sec:components/tier3_platform/platform_memory.md#4. インターフェイス設計",
       "target": "sec:components/tier3_platform/platform_memory.md#パーティションの返却（release-partition）",
       "relation": "contains",
@@ -18390,33 +19782,45 @@
       "metadata": {}
     },
     {
+      "source": "sec:components/tier3_platform/platform_memory.md#`allocate-shared` (IPC転送データ専用)",
+      "target": "item:ThreeStageRouting",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier3_platform/platform_memory.md#`allocate-shared` (IPC転送データ専用)",
+      "target": "item:OwnerMismatchTrap",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier3_platform/platform_memory.md#`allocate-shared` (IPC転送データ専用)",
+      "target": "item:HAL_Interface",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
       "source": "sec:components/tier3_platform/platform_memory.md#4. インターフェイス設計",
       "target": "sec:components/tier3_platform/platform_memory.md#所有権要求（claim）",
       "relation": "contains",
       "metadata": {}
     },
     {
+      "source": "sec:components/tier3_platform/platform_memory.md#所有権要求（claim）",
+      "target": "item:Syscall_Mapping",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier3_platform/platform_memory.md#所有権要求（claim）",
+      "target": "item:ThreeStageRouting",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
       "source": "sec:components/tier3_platform/platform_memory.md#4. インターフェイス設計",
       "target": "sec:components/tier3_platform/platform_memory.md#解放（deallocate）",
       "relation": "contains",
-      "metadata": {}
-    },
-    {
-      "source": "sec:components/tier3_platform/platform_memory.md#COOS メモリマネージャ コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}",
-      "target": "sec:components/tier3_platform/platform_memory.md#5. 制約と不変条件",
-      "relation": "contains",
-      "metadata": {}
-    },
-    {
-      "source": "sec:components/tier3_platform/platform_memory.md#5. 制約と不変条件",
-      "target": "item:GLOBAL_StrictMemoryLimit",
-      "relation": "refers_to",
-      "metadata": {}
-    },
-    {
-      "source": "sec:components/tier3_platform/platform_memory.md#5. 制約と不変条件",
-      "target": "item:WasmPageAlignment",
-      "relation": "refers_to",
       "metadata": {}
     },
     {
@@ -18446,6 +19850,24 @@
     {
       "source": "sec:components/tier3_platform/platform_memory.md#7. 共有メモリ (shared-block) のライフサイクル",
       "target": "item:OwnershipTransfer",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier3_platform/platform_memory.md#7. 共有メモリ (shared-block) のライフサイクル",
+      "target": "item:OwnerMismatchTrap",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier3_platform/platform_memory.md#7. 共有メモリ (shared-block) のライフサイクル",
+      "target": "item:ThreeStageRouting",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier3_platform/platform_memory.md#7. 共有メモリ (shared-block) のライフサイクル",
+      "target": "item:IPC_ZeroCopy",
       "relation": "refers_to",
       "metadata": {}
     },
@@ -20616,21 +22038,165 @@
       "metadata": {}
     },
     {
-      "source": "sec:architecture/architecture_overview.md#8. アーキテクチャスタイルと設計判断 (ADR)",
-      "target": "file:components/tier1_core/os_scheduler.md",
+      "source": "sec:architecture/integration_test_scenarios.md#1.1 コンポーネント × 結合テストシナリオ カバレッジマトリクス (Coverage Matrix)",
+      "target": "file:components/tier1_core/os_coos.md",
       "relation": "links_to",
       "metadata": {
-        "line": 311,
-        "text": "os_scheduler.md §6"
+        "line": 15,
+        "text": "os_coos.md"
       }
     },
     {
-      "source": "sec:architecture/architecture_overview.md#8. アーキテクチャスタイルと設計判断 (ADR)",
+      "source": "sec:architecture/integration_test_scenarios.md#1.1 コンポーネント × 結合テストシナリオ カバレッジマトリクス (Coverage Matrix)",
+      "target": "file:components/tier1_core/os_scheduler.md",
+      "relation": "links_to",
+      "metadata": {
+        "line": 16,
+        "text": "os_scheduler.md"
+      }
+    },
+    {
+      "source": "sec:architecture/integration_test_scenarios.md#1.1 コンポーネント × 結合テストシナリオ カバレッジマトリクス (Coverage Matrix)",
+      "target": "file:components/tier1_core/system_config.md",
+      "relation": "links_to",
+      "metadata": {
+        "line": 17,
+        "text": "system_config.md"
+      }
+    },
+    {
+      "source": "sec:architecture/integration_test_scenarios.md#1.1 コンポーネント × 結合テストシナリオ カバレッジマトリクス (Coverage Matrix)",
+      "target": "file:components/tier1_core/system_containers.md",
+      "relation": "links_to",
+      "metadata": {
+        "line": 18,
+        "text": "system_containers.md"
+      }
+    },
+    {
+      "source": "sec:architecture/integration_test_scenarios.md#1.1 コンポーネント × 結合テストシナリオ カバレッジマトリクス (Coverage Matrix)",
+      "target": "file:components/tier1_core/system_logging.md",
+      "relation": "links_to",
+      "metadata": {
+        "line": 19,
+        "text": "system_logging.md"
+      }
+    },
+    {
+      "source": "sec:architecture/integration_test_scenarios.md#1.1 コンポーネント × 結合テストシナリオ カバレッジマトリクス (Coverage Matrix)",
+      "target": "file:components/tier1_core/system_syscall.md",
+      "relation": "links_to",
+      "metadata": {
+        "line": 20,
+        "text": "system_syscall.md"
+      }
+    },
+    {
+      "source": "sec:architecture/integration_test_scenarios.md#1.1 コンポーネント × 結合テストシナリオ カバレッジマトリクス (Coverage Matrix)",
+      "target": "file:components/tier1_interface/interface_wit.md",
+      "relation": "links_to",
+      "metadata": {
+        "line": 21,
+        "text": "interface_wit.md"
+      }
+    },
+    {
+      "source": "sec:architecture/integration_test_scenarios.md#1.1 コンポーネント × 結合テストシナリオ カバレッジマトリクス (Coverage Matrix)",
+      "target": "file:components/tier1_interface/ipc_router.md",
+      "relation": "links_to",
+      "metadata": {
+        "line": 22,
+        "text": "ipc_router.md"
+      }
+    },
+    {
+      "source": "sec:architecture/integration_test_scenarios.md#1.1 コンポーネント × 結合テストシナリオ カバレッジマトリクス (Coverage Matrix)",
+      "target": "file:components/tier1_interface/system_service.md",
+      "relation": "links_to",
+      "metadata": {
+        "line": 23,
+        "text": "system_service.md"
+      }
+    },
+    {
+      "source": "sec:architecture/integration_test_scenarios.md#1.1 コンポーネント × 結合テストシナリオ カバレッジマトリクス (Coverage Matrix)",
+      "target": "file:components/tier2_runtime/runtime_vsoc.md",
+      "relation": "links_to",
+      "metadata": {
+        "line": 24,
+        "text": "runtime_vsoc.md"
+      }
+    },
+    {
+      "source": "sec:architecture/integration_test_scenarios.md#1.1 コンポーネント × 結合テストシナリオ カバレッジマトリクス (Coverage Matrix)",
+      "target": "file:components/tier2_runtime/runtime_loader.md",
+      "relation": "links_to",
+      "metadata": {
+        "line": 25,
+        "text": "runtime_loader.md"
+      }
+    },
+    {
+      "source": "sec:architecture/integration_test_scenarios.md#1.1 コンポーネント × 結合テストシナリオ カバレッジマトリクス (Coverage Matrix)",
+      "target": "file:components/tier2_runtime/runtime_interpreter.md",
+      "relation": "links_to",
+      "metadata": {
+        "line": 26,
+        "text": "runtime_interpreter.md"
+      }
+    },
+    {
+      "source": "sec:architecture/integration_test_scenarios.md#1.1 コンポーネント × 結合テストシナリオ カバレッジマトリクス (Coverage Matrix)",
+      "target": "file:components/tier2_runtime/runtime_vmmio.md",
+      "relation": "links_to",
+      "metadata": {
+        "line": 27,
+        "text": "runtime_vmmio.md"
+      }
+    },
+    {
+      "source": "sec:architecture/integration_test_scenarios.md#1.1 コンポーネント × 結合テストシナリオ カバレッジマトリクス (Coverage Matrix)",
+      "target": "file:components/tier2_runtime/debug_manager.md",
+      "relation": "links_to",
+      "metadata": {
+        "line": 28,
+        "text": "debug_manager.md"
+      }
+    },
+    {
+      "source": "sec:architecture/integration_test_scenarios.md#1.1 コンポーネント × 結合テストシナリオ カバレッジマトリクス (Coverage Matrix)",
+      "target": "file:components/tier3_platform/platform_hal.md",
+      "relation": "links_to",
+      "metadata": {
+        "line": 29,
+        "text": "platform_hal.md"
+      }
+    },
+    {
+      "source": "sec:architecture/integration_test_scenarios.md#1.1 コンポーネント × 結合テストシナリオ カバレッジマトリクス (Coverage Matrix)",
       "target": "file:components/tier3_platform/platform_memory.md",
       "relation": "links_to",
       "metadata": {
-        "line": 314,
-        "text": "platform_memory.md §8"
+        "line": 30,
+        "text": "platform_memory.md"
+      }
+    },
+    {
+      "source": "sec:architecture/integration_test_scenarios.md#1.1 コンポーネント × 結合テストシナリオ カバレッジマトリクス (Coverage Matrix)",
+      "target": "file:components/tier3_jit/jit_compiler.md",
+      "relation": "links_to",
+      "metadata": {
+        "line": 31,
+        "text": "jit_compiler.md"
+      }
+    },
+    {
+      "source": "sec:architecture/integration_test_scenarios.md#1.1 コンポーネント × 結合テストシナリオ カバレッジマトリクス (Coverage Matrix)",
+      "target": "file:components/tier3_jit/jit_runtime.md",
+      "relation": "links_to",
+      "metadata": {
+        "line": 32,
+        "text": "jit_runtime.md"
       }
     },
     {
@@ -20661,15 +22227,6 @@
       }
     },
     {
-      "source": "sec:components/tier1_core/os_coos.md#4.2 状態遷移図 (SMD: COOS システムレベル)",
-      "target": "file:components/tier1_interface/interface_wit.md",
-      "relation": "links_to",
-      "metadata": {
-        "line": 306,
-        "text": "interface_wit.md §3.2"
-      }
-    },
-    {
       "source": "sec:components/tier1_core/os_coos.md#5.1 `coos_harness` (システムハーネス)",
       "target": "file:components/tier1_core/os_scheduler.md",
       "relation": "links_to",
@@ -20679,93 +22236,12 @@
       }
     },
     {
-      "source": "sec:components/tier1_core/os_scheduler.md#6. 設計判断 (ADR)",
-      "target": "file:architecture/architecture_overview.md",
-      "relation": "links_to",
-      "metadata": {
-        "line": 297,
-        "text": "architecture_overview.md §8"
-      }
-    },
-    {
-      "source": "sec:components/tier1_core/system_config.md#3.3.7 リカバリー戦略",
-      "target": "file:components/tier1_interface/interface_wit.md",
-      "relation": "links_to",
-      "metadata": {
-        "line": 159,
-        "text": "interface_wit.md §3.2"
-      }
-    },
-    {
-      "source": "sec:components/tier1_core/system_logging.md#1. コンセプト",
-      "target": "file:components/tier1_interface/interface_wit.md",
-      "relation": "links_to",
-      "metadata": {
-        "line": 12,
-        "text": "interface_wit.md §5.5"
-      }
-    },
-    {
       "source": "sec:components/tier1_core/system_syscall.md#5.3. vMMIO Generic (`0x10`-`0x1F`)",
       "target": "file:components/tier1_core/system_config.md",
       "relation": "links_to",
       "metadata": {
         "line": 115,
         "text": "system_config.md"
-      }
-    },
-    {
-      "source": "sec:components/tier1_core/system_syscall.md#5.7. WASI (`0x80`-`0xBF`)",
-      "target": "file:components/tier1_interface/interface_wit.md",
-      "relation": "links_to",
-      "metadata": {
-        "line": 158,
-        "text": "interface_wit.md"
-      }
-    },
-    {
-      "source": "sec:components/tier1_interface/interface_wit.md#リカバリー戦略の事前・事後条件と不変条件",
-      "target": "file:components/tier1_core/system_config.md",
-      "relation": "links_to",
-      "metadata": {
-        "line": 60,
-        "text": "system_config.md §3.3.7"
-      }
-    },
-    {
-      "source": "sec:components/tier1_interface/interface_wit.md#4.2. 高応答トラインターフェイス",
-      "target": "file:components/tier1_core/system_syscall.md",
-      "relation": "links_to",
-      "metadata": {
-        "line": 85,
-        "text": "system_syscall.md"
-      }
-    },
-    {
-      "source": "sec:components/tier1_interface/ipc_router.md#ロール間通信許可マトリクス (FB_CONF_ROUTER_ROLE_MATRIX)",
-      "target": "file:components/tier1_core/system_config.md",
-      "relation": "links_to",
-      "metadata": {
-        "line": 260,
-        "text": "system_config.md"
-      }
-    },
-    {
-      "source": "sec:components/tier1_interface/ipc_router.md#メッセージルーティング（route_message）",
-      "target": "file:components/tier1_core/os_coos.md",
-      "relation": "links_to",
-      "metadata": {
-        "line": 514,
-        "text": "os_coos.md"
-      }
-    },
-    {
-      "source": "sec:components/tier1_interface/system_service.md#リカバリー戦略の種類と具体的ポリシー",
-      "target": "file:components/tier1_core/system_config.md",
-      "relation": "links_to",
-      "metadata": {
-        "line": 166,
-        "text": "system_config.md §3.3.7"
       }
     },
     {
@@ -20787,15 +22263,6 @@
       }
     },
     {
-      "source": "sec:components/tier2_runtime/debug_manager.md#仮想レジスタセット（virtual_register_set）",
-      "target": "file:specs/gdb_rsp_protocol.md",
-      "relation": "links_to",
-      "metadata": {
-        "line": 64,
-        "text": "GDB RSP 物理仕様書 §4 (docs/specs/gdb_rsp_protocol.md)"
-      }
-    },
-    {
       "source": "sec:components/tier2_runtime/runtime_interpreter.md#インタプリタ（Interpreter）クラス",
       "target": "file:components/tier2_runtime/runtime_vsoc.md",
       "relation": "links_to",
@@ -20814,84 +22281,12 @@
       }
     },
     {
-      "source": "sec:components/tier2_runtime/runtime_interpreter.md#実行コンテキスト（execution_context @ スタックボトム）",
-      "target": "file:architecture/architecture_overview.md",
-      "relation": "links_to",
-      "metadata": {
-        "line": 71,
-        "text": "アーキテクチャ概要書 §3.1"
-      }
-    },
-    {
-      "source": "sec:components/tier2_runtime/runtime_interpreter.md#コールフレーム（call_frame @ 統合スタックインライン）",
-      "target": "file:architecture/architecture_overview.md",
-      "relation": "links_to",
-      "metadata": {
-        "line": 85,
-        "text": "アーキテクチャ概要書 §3.1"
-      }
-    },
-    {
-      "source": "sec:components/tier2_runtime/runtime_interpreter.md#制御フレーム（control_frame @ 統合スタックインライン）",
-      "target": "file:architecture/architecture_overview.md",
-      "relation": "links_to",
-      "metadata": {
-        "line": 99,
-        "text": "アーキテクチャ概要書 §3.1"
-      }
-    },
-    {
-      "source": "sec:components/tier2_runtime/runtime_interpreter.md#オプコードハンドラ / トレース実行（opcode_handler / exec_trace）",
-      "target": "file:architecture/architecture_overview.md",
-      "relation": "links_to",
-      "metadata": {
-        "line": 117,
-        "text": "アーキテクチャ概要書 §4"
-      }
-    },
-    {
-      "source": "sec:components/tier2_runtime/runtime_interpreter.md#オプコードハンドラ / トレース実行（opcode_handler / exec_trace）",
-      "target": "file:specs/wasm_instruction_set.md",
-      "relation": "links_to",
-      "metadata": {
-        "line": 119,
-        "text": "WASM 命令セット物理仕様書 (docs/specs/wasm_instruction_set.md)"
-      }
-    },
-    {
       "source": "sec:components/tier2_runtime/runtime_interpreter.md#5.3 関連コンポーネントとの連携",
       "target": "file:components/tier2_runtime/runtime_loader.md",
       "relation": "links_to",
       "metadata": {
-        "line": 305,
+        "line": 315,
         "text": "module_view"
-      }
-    },
-    {
-      "source": "sec:components/tier2_runtime/runtime_vmmio.md#1. コンセプト",
-      "target": "file:components/tier1_core/system_containers.md",
-      "relation": "links_to",
-      "metadata": {
-        "line": 16,
-        "text": "静的コンテナ語彙"
-      }
-    },
-    {
-      "source": "sec:components/tier2_runtime/runtime_vmmio.md#フック登録 (`register-hook`)",
-      "target": "file:components/tier2_runtime/runtime_vsoc.md",
-      "relation": "links_to",
-      "metadata": {
-        "line": 414,
-        "text": "runtime_vsoc.md"
-      }
-    },
-    {
-      "source": "sec:components/tier2_runtime/runtime_vsoc.md#vSoCランタイム環境（vsoc_runtime）",
-      "target": "file:architecture/architecture_overview.md",
-      "relation": "links_to",
-      "metadata": {
-        "line": 86,
-        "text": "アーキテクチャ概要書 §3.3"
       }
     },
     {
@@ -20910,24 +22305,6 @@
       "metadata": {
         "line": 369,
         "text": "runtime_vmmio.md"
-      }
-    },
-    {
-      "source": "sec:components/tier2_runtime/runtime_vsoc.md#7.2 メモリ制約と方策",
-      "target": "file:components/tier1_core/system_config.md",
-      "relation": "links_to",
-      "metadata": {
-        "line": 475,
-        "text": "system_config.md"
-      }
-    },
-    {
-      "source": "sec:components/tier2_runtime/runtime_vsoc.md#7.3 安全性制約と方策",
-      "target": "file:components/tier1_core/system_config.md",
-      "relation": "links_to",
-      "metadata": {
-        "line": 481,
-        "text": "system_config.md"
       }
     },
     {
@@ -20953,26 +22330,8 @@
       "target": "file:specs/jit_stencil_catalog.md",
       "relation": "links_to",
       "metadata": {
-        "line": 70,
+        "line": 77,
         "text": "JIT ステンシルカタログ"
-      }
-    },
-    {
-      "source": "sec:components/tier3_jit/jit_compiler.md#JIT トレース検索 & 3面キャッシュ代謝オーケストレーション",
-      "target": "file:components/tier3_jit/jit_runtime.md",
-      "relation": "links_to",
-      "metadata": {
-        "line": 114,
-        "text": "jit_runtime.md"
-      }
-    },
-    {
-      "source": "sec:components/tier3_jit/jit_compiler.md#JIT トレース検索 & 3面キャッシュ代謝オーケストレーション",
-      "target": "file:architecture/architecture_overview.md",
-      "relation": "links_to",
-      "metadata": {
-        "line": 114,
-        "text": "アーキテクチャ概要書 §3.2"
       }
     },
     {
@@ -20980,7 +22339,7 @@
       "target": "file:components/tier3_jit/jit_compiler.md",
       "relation": "links_to",
       "metadata": {
-        "line": 229,
+        "line": 266,
         "text": "JIT Compiler (コード生成コア)"
       }
     },
@@ -20989,17 +22348,8 @@
       "target": "file:components/tier3_jit/jit_runtime.md",
       "relation": "links_to",
       "metadata": {
-        "line": 230,
+        "line": 267,
         "text": "JIT Runtime (ランタイム管理)"
-      }
-    },
-    {
-      "source": "sec:components/tier3_jit/jit_compiler.md#検索範囲取得（get_search_range）",
-      "target": "file:components/tier1_core/system_containers.md",
-      "relation": "links_to",
-      "metadata": {
-        "line": 276,
-        "text": "静的コンテナ語彙"
       }
     },
     {
@@ -21009,105 +22359,6 @@
       "metadata": {
         "line": 15,
         "text": "jit_compiler.md"
-      }
-    },
-    {
-      "source": "sec:components/tier3_platform/platform_hal.md#4.1 アルゴリズム",
-      "target": "file:components/tier1_core/os_coos.md",
-      "relation": "links_to",
-      "metadata": {
-        "line": 64,
-        "text": "os_coos.md"
-      }
-    },
-    {
-      "source": "sec:components/tier3_platform/platform_hal.md#4.1 アルゴリズム",
-      "target": "file:components/tier2_runtime/runtime_vsoc.md",
-      "relation": "links_to",
-      "metadata": {
-        "line": 65,
-        "text": "runtime_vsoc.md 4.2.1"
-      }
-    },
-    {
-      "source": "sec:components/tier3_platform/platform_hal.md#バッファの確保",
-      "target": "file:components/tier2_runtime/runtime_vmmio.md",
-      "relation": "links_to",
-      "metadata": {
-        "line": 149,
-        "text": "runtime_vmmio.md 4.6「共有メモリマッピング (FC=14)」"
-      }
-    },
-    {
-      "source": "sec:components/tier3_platform/platform_hal.md#5.3 URI/IPCインターフェイス",
-      "target": "file:components/tier1_interface/ipc_router.md",
-      "relation": "links_to",
-      "metadata": {
-        "line": 183,
-        "text": "ipc_router.md"
-      }
-    },
-    {
-      "source": "sec:components/tier3_platform/platform_memory.md#4. インターフェイス設計",
-      "target": "file:components/tier1_core/os_coos.md",
-      "relation": "links_to",
-      "metadata": {
-        "line": 28,
-        "text": "os_coos.md §5.2「サブコンポーネント・インターフェイス」"
-      }
-    },
-    {
-      "source": "sec:components/tier3_platform/platform_memory.md#`allocate-shared` (IPC転送データ専用)",
-      "target": "file:components/tier1_interface/ipc_router.md",
-      "relation": "links_to",
-      "metadata": {
-        "line": 75,
-        "text": "ipc_router.md"
-      }
-    },
-    {
-      "source": "sec:components/tier3_platform/platform_memory.md#`allocate-shared` (IPC転送データ専用)",
-      "target": "file:components/tier2_runtime/runtime_vmmio.md",
-      "relation": "links_to",
-      "metadata": {
-        "line": 75,
-        "text": "runtime_vmmio.md §4.6"
-      }
-    },
-    {
-      "source": "sec:components/tier3_platform/platform_memory.md#`allocate-shared` (IPC転送データ専用)",
-      "target": "file:components/tier3_platform/platform_hal.md",
-      "relation": "links_to",
-      "metadata": {
-        "line": 84,
-        "text": "platform_hal.md §5.1「バッファの確保」"
-      }
-    },
-    {
-      "source": "sec:components/tier3_platform/platform_memory.md#7. 共有メモリ (shared-block) のライフサイクル",
-      "target": "file:components/tier2_runtime/runtime_vmmio.md",
-      "relation": "links_to",
-      "metadata": {
-        "line": 122,
-        "text": "runtime_vmmio.md §1「3層セキュリティゲート」"
-      }
-    },
-    {
-      "source": "sec:components/tier3_platform/platform_memory.md#7. 共有メモリ (shared-block) のライフサイクル",
-      "target": "file:components/tier1_interface/ipc_router.md",
-      "relation": "links_to",
-      "metadata": {
-        "line": 122,
-        "text": "ipc_router.md §4.1「ゼロコピー所有権移譲」"
-      }
-    },
-    {
-      "source": "sec:components/tier3_platform/platform_memory.md#8. 設計判断 (ADR)",
-      "target": "file:architecture/architecture_overview.md",
-      "relation": "links_to",
-      "metadata": {
-        "line": 140,
-        "text": "architecture_overview.md §8"
       }
     },
     {

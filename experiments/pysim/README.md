@@ -1,6 +1,6 @@
-# pysim -- one full-set experimental Python system
+# pysim -- Fireball Experimental Python System
 
-A single, runnable Python implementation of a slice of Fireball end to end:
+A modular, multi-tier runnable Python implementation of Fireball end to end:
 scheduler, dictionary logger, guest console output, HAL buffers, the
 recovery-strategy contract, and the real `fireball_call` syscall ID table
 (`system_syscall.md` §5) dispatched over a real vMMIO controller and a real
@@ -9,17 +9,15 @@ reference interpreter, and a real Copy-and-Patch **x64** JIT compiler that
 executes actual `.wasm` bytes as real machine code -- including WASM `call`
 reaching a guest all the way out through `fireball_call` into
 `WASI_FD_WRITE`'s real console output and `IPC_SEND`/`IPC_RECV`'s real,
-URI-routed, ownership-transferring message queue. Everything lives in this
-one folder and is wired into one `main.py` run -- no sub-folders, no
-external WASM tooling or runtime library (no wasmtime, wasm3, or anything
-else) anywhere in the import graph. C++ naming/type conventions were set
-aside on purpose so the Python could stay natural; this is fully self-contained
-within `experiments/pysim/` and does not import any `docs/**/concepts` files.
+URI-routed, ownership-transferring message queue.
 
-`system.py` uses self-contained simulation modules (`vmmio.py`, `ipc_router.py`,
-`platform_memory.py`, `system_containers.py`) that implement the exact
-vMMIO permission/dispatch mechanism, IPC routing/ownership-handoff, and
-physical memory/MPU management in Python.
+Organized cleanly into Tier-aligned modules:
+- `core/`: Tier 1 Core OS, Scheduler, System Containers (`BitView`, `FlatMapView`, `RadixBinaryTreeView`, `RingBuffer`), Logger, Recovery, IPC Router.
+- `runtime/`: Tier 2 Runtime, WASM Reader/Module/Opcodes, Loader, CPS Interpreter, Control Flow & Block Extractor, Runtime Engine, vMMIO, Debugger & GDB Server.
+- `jit/`: Tier 3 JIT Compiler, x64 Assembler, Stencil Catalog, Executable Memory.
+- `platforms/`: Tier 3 Platform, Physical Memory Partitions & PMSAv8 MPU, HAL Interfaces & Dummy Drivers (GPIO/I2C/SPI/Timer), WASI Preview 1 & VFS.
+- `tests/`: 9 Comprehensive unit test suites (`tests/run_all.py`).
+- `scenarios/`: 11 End-to-End Component Integration Scenarios (`scenarios/run_all.py`).
 
 ## Why it exists
 

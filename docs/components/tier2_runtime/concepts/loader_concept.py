@@ -413,25 +413,26 @@ class RadixBinaryTreeView:
 
         if self.keys:
             max_prefix = max(self.keys) >> radix_shift
-            table_size = max_prefix + 1
-            self.radix_table: list[tuple[int, int]] = [(0, 0)] * table_size
+            table_size = max_prefix + 2
+            self.radix_table: list[int] = [0] * table_size
             current_prefix = 0
-            first_idx = 0
             for idx, k in enumerate(self.keys):
                 prefix = k >> radix_shift
                 while current_prefix < prefix:
-                    self.radix_table[current_prefix] = (first_idx, idx)
                     current_prefix += 1
-                    first_idx = idx
-            self.radix_table[current_prefix] = (first_idx, len(self.keys))
+                    self.radix_table[current_prefix] = idx
+            while current_prefix <= max_prefix:
+                current_prefix += 1
+                self.radix_table[current_prefix] = len(self.keys)
         else:
-            self.radix_table = []
+            self.radix_table = [0]
 
     def find(self, key: int) -> Optional[Any]:
         prefix = key >> self.radix_shift
-        if prefix < 0 or prefix >= len(self.radix_table):
+        if prefix < 0 or prefix + 1 >= len(self.radix_table):
             return None
-        first, last = self.radix_table[prefix]
+        first = self.radix_table[prefix]
+        last = self.radix_table[prefix + 1]
         if first >= last:
             return None
         return self.map_view.slice(first, last).find(key)

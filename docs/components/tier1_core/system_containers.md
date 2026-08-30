@@ -37,7 +37,7 @@
 <!-- traceability: {META_FlatMapIndexed} {META_BinarySearch} {FlatViewNarrowing} {PackedBitView} {GLOBAL_StaticScalability} -->
 - **`flat_map_view<Key, Value>`**: 昇順ソート済みのキー列と、それに添字対応する値列を指す非所有ビュー。粗索引で区間を狭めてから二分探索する。 `{META_BinarySearch}` `{FlatViewNarrowing}`
 - **`flat_set_view<Key>`**: 昇順ソート済みのキー列のみを指す非所有ビュー。所属判定を行う。 `{META_BinarySearch}` `{FlatViewNarrowing}`
-- **`radix_binary_tree_view<Key, Value, RadixShift>`**: 基数テーブル（Radix Table / $O(1)$ プレフィックス境界）とソート済みエントリ配列の局所二分探索をカプセル化した多段索引ビュー。 `{META_BinarySearch}` `{FlatViewNarrowing}`
+- **`radix_binary_tree_view<Key, Value, RadixShift>`**: 基数テーブル（Radix Table / $O(1)$ スカラー開始インデックス配列：サイズ $K+1$、バケット $p$ の区間は `[table[p], table[p+1]]`）とソート済みエントリ配列の局所二分探索をカプセル化した多段索引ビュー。 `{META_BinarySearch}` `{FlatViewNarrowing}`
 - **`bit_view<Bits>`**: 1 要素が 1 バイト未満の密なビット詰め表を指す非所有ビュー。添字で直接読み書きする。 `{PackedBitView}`
 
 ### 3.2 内部ブロック図
@@ -154,7 +154,7 @@ class radix_binary_tree_view {
   constexpr explicit radix_binary_tree_view(
       std::span<const Key> keys,
       std::span<const Value> values,
-      std::span<const std::pair<std::size_t, std::size_t>> radix_table,
+      std::span<const std::size_t> radix_table,
       KeyProjection proj = {}) noexcept;
   constexpr auto find(const Key& k) const noexcept -> std::optional<Value>;
   constexpr auto size() const noexcept -> std::size_t;
@@ -305,24 +305,26 @@ def bswap32(v: int) -> int:
 
 class RadixBinaryTreeView:
     """fireball::radix_binary_tree_view<Key, Value, RadixShift, KeyProjection>:
-    Container combining an O(1) Radix Table (coarse prefix lookup)
+    Container combining an O(1) Radix Table (pure scalar start-index array)
     with bounded binary search on a sorted key-value array.
+    Bucket bounds are: first = radix_table[prefix], last = radix_table[prefix + 1].
     """
 
     def __init__(self, keys: Sequence[int], values: Sequence[Any],
-                 radix_table: Sequence[tuple[int, int]], radix_shift: int,
+                 radix_table: Sequence[int], radix_shift: int,
                  key_transform: Any = None):
         self.map_view = FlatMapView(keys, values)
-        self.radix_table = radix_table  # prefix -> (first, last) entry indices
+        self.radix_table = radix_table  # pure scalar offsets array [0, 3, 6, ...]
         self.radix_shift = radix_shift
         self.key_transform = key_transform
 
     def find(self, key: int) -> Any | None:
         rk = self.key_transform(key) if self.key_transform is not None else key
         prefix = rk >> self.radix_shift
-        if prefix < 0 or prefix >= len(self.radix_table):
+        if prefix < 0 or prefix + 1 >= len(self.radix_table):
             return None
-        first, last = self.radix_table[prefix]
+        first = self.radix_table[prefix]
+        last = self.radix_table[prefix + 1]
         if first >= last:
             return None
         return self.map_view.slice(first, last).find(key)
@@ -459,7 +461,7 @@ sequenceDiagram
 | 利用コンポーネント | 型 | 用途 | 絞り込みに用いる粗索引 |
 | :--- | :--- | :--- | :--- |
 | JIT エントリ索引 (`jit_runtime_entry`) | `radix_binary_tree_view` | WASM PC からネイティブコードオフセットへの変換 | Radix Table (基数プレフィックス $O(1)$) |
-| JIT カードマーキング (`jit_runtime_hotspot`) | `bit_view<2>` | カード単位の 2-bit 実行状態 | なし ($O(1)$ 直接添字アクセス) |
+| JIT カードマーキング (`jit_runtime_hotspot`) | `bit_view<2>` | 関数ごと 8バイト単位カードの 2-bit 実行状態 | なし ($O(1)$ 直接添字アクセス: `func_code_offset >> 3`) |
 | vMMIO PTE表 (`runtime_vmmio`) | `flat_map_view` | 仮想ページ番号 (VPN) から PTE への変換 | ファンクションコード (FC) による Tier 区分 |
 | vMMIO 許可アドレス (`system_config_details`) | `flat_set_view` | 物理アドレスが許可範囲に属するかの判定 | なし（`FB_CONF_VMMIO_ALLOWED_ADDRS` で有界） |
 | IPCルータ (`ipc_router`) | `flat_map_view` | サービスURI からチャネルIDへの解決 | URI スキーマ・ドメインの前方一致 |

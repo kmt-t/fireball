@@ -328,9 +328,8 @@ stateDiagram-v2
 | **Grant** | 受信側にリソースの権限を付与 | 所有権ハンドシェイク完了 |
 | **Complete** | ルーティング完了 | メッセージ処理の次ステップへ |
 | **Service Not Found** | 指定 URI が未登録 | エラー応答を呼び出し側に返却 |
-| **Permission Denied** | アクセス権限不足 | エラー応答を呼び出し側に返却 |
-| **Queue Full** | 受信側のメッセージキューが満杯 | **Rollback**: 送信側に所有権を返却、再試行 |
-| **Rollback & Recovery** | キュー満杯からの復帰処理 | 送信側へ所有権を復元、Idle へ戻す |
+| **Queue Full** | 受信側のメッセージキューが満杯 | **Rollback**: 送信側に所有権をロールバック（保持）し `Result::Err(ERR_QUEUE_FULL, Strategy::RETRY)` を返却 |
+| **Rollback & Recovery** | キュー満杯からの復帰処理 | 送信側へ所有権を復元、呼び出し元はバックオフ後に再試行可能 |
 
 ### 4.2.1 所有権移譲状態機械 (Ownership Transfer State Machine)
 <!-- traceability: {OwnershipTransfer} {IPC_ZeroCopy} {Challenge_IpcQueueStarvation} {IPC_DropHandler} -->

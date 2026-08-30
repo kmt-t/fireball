@@ -65,7 +65,7 @@
 | `{JIT_MultiBuffer_Cache}` | `requirement_list.md` | `jit_runtime.md` | Active / Warm / Oldest 3面バンク循環キャッシュ管理 | Scenario 4, 5 (`INT-31`) |
 | `{ThreeBankCacheEviction}` | `jit_runtime.md` | `jit_runtime.md` | 3面バンク代謝と Oldest ヒット時の Active 昇格・局所アンリンク | Scenario 4, 5 (`INT-31`, `INT-41`) |
 | `{RadixBinaryTreeView_bswap32}` | `system_containers.md` | `jit_runtime.md` | UnifiedPC（`func_idx << 20 \| pc`）の bswap32 による Radix 検索 | Scenario 5 (`INT-40`, `INT-41`) |
-| `{BitView_CardMarking}` | `system_containers.md` | `jit_runtime.md` | 2-bit カードマーキング Hotspot 検出（UNEXEC $\to$ EXEC $\to$ HOT $\to$ COMPILED） | Scenario 4 (`INT-30`) |
+| `{BitView_CardMarking}` | `system_containers.md` | `jit_runtime.md` | 関数ごと 8バイト/カード 2-bit カードマーキング Hotspot 検出（UNEXEC $\to$ EXEC $\to$ HOT $\to$ COMPILED） | Scenario 4 (`INT-30`) |
 
 ---
 
@@ -84,6 +84,7 @@
 | `{WASI_InMemVFS}` | `interface_wit.md` | `system_service.md` | WASI In-Memory VFS（`fd_seek`, `fd_read`, `fd_write`, `random_get`, `clock_time_get`） | Scenario 11 (`INT-103`〜`INT-105`) |
 | `{FlatMapView_BinarySearch}` | `system_containers.md` | `system_containers.md` | 静的ソート配列に対する $O(\log N)$ バイナリサーチ（動的割当なし） | Scenario 1, 9 (`INT-01`, `INT-80`) |
 | `{RingBuffer_Overwrite}` | `system_containers.md` | `system_containers.md` | 静的容量リングバッファ、満杯時の最古エントリ自動上書き | Scenario 9 (`INT-82`) |
+| `{Pairwise_Combinatorial_Testing}` | `combinatorial_test_spec.md` | `combinatorial_test_spec.md` | 7因子288組の全2因子間ペアを100%網羅する All-Pairs 組み合わせテスト | `PAIR-01`〜`PAIR-26` |
 
 ---
 

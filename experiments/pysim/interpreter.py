@@ -365,47 +365,94 @@ def _h_global_set(ip, frame, env, local_base):
     return (frame.instrs[ip].end_offset, frame, env, local_base)
 
 
-_LOAD_WIDTH = {I32_LOAD: 4, I32_LOAD8_S: 1, I32_LOAD8_U: 1, I32_LOAD16_S: 2, I32_LOAD16_U: 2}
-_LOAD_SIGNED = (I32_LOAD, I32_LOAD8_S, I32_LOAD16_S)
+# --- Loads (Dedicated per-opcode handlers without if statements) ---
+
+@_handler(I32_LOAD)
+def _h_i32_load(ip, frame, env, local_base):
+    ins = frame.instrs[ip]
+    addr = _to_u32(frame.values.pop()) + ins.memarg[1]
+    if env.memory is None or addr + 4 > len(env.memory):
+        raise Trap(f"i32.load out of bounds at addr={addr}")
+    frame.values.append(int.from_bytes(env.memory[addr:addr + 4], "little", signed=True))
+    return (ins.end_offset, frame, env, local_base)
 
 
-def _make_load_handler(op: int):
-    width = _LOAD_WIDTH[op]
-    signed = op in _LOAD_SIGNED
-
-    def handler(ip, frame, env, local_base):
-        ins = frame.instrs[ip]
-        addr = _to_u32(frame.values.pop()) + ins.memarg[1]
-        if env.memory is None or addr + width > len(env.memory):
-            raise Trap(f"i32.load (width={width}) out of bounds at addr={addr}")
-        frame.values.append(int.from_bytes(env.memory[addr:addr + width], "little", signed=signed))
-        return (ins.end_offset, frame, env, local_base)
-    return handler
+@_handler(I32_LOAD8_S)
+def _h_i32_load8_s(ip, frame, env, local_base):
+    ins = frame.instrs[ip]
+    addr = _to_u32(frame.values.pop()) + ins.memarg[1]
+    if env.memory is None or addr + 1 > len(env.memory):
+        raise Trap(f"i32.load8_s out of bounds at addr={addr}")
+    frame.values.append(int.from_bytes(env.memory[addr:addr + 1], "little", signed=True))
+    return (ins.end_offset, frame, env, local_base)
 
 
-for _op in _LOAD_WIDTH:
-    _HANDLERS[_op] = _make_load_handler(_op)
-
-_STORE_WIDTH = {I32_STORE: 4, I32_STORE8: 1, I32_STORE16: 2}
-
-
-def _make_store_handler(op: int):
-    width = _STORE_WIDTH[op]
-
-    def handler(ip, frame, env, local_base):
-        ins = frame.instrs[ip]
-        value = _to_i32(frame.values.pop())
-        addr = _to_u32(frame.values.pop()) + ins.memarg[1]
-        if env.memory is None or addr + width > len(env.memory):
-            raise Trap(f"i32.store (width={width}) out of bounds at addr={addr}")
-        env.memory[addr:addr + width] = (value & ((1 << (width * 8)) - 1)).to_bytes(width, "little")
-        return (ins.end_offset, frame, env, local_base)
-    return handler
+@_handler(I32_LOAD8_U)
+def _h_i32_load8_u(ip, frame, env, local_base):
+    ins = frame.instrs[ip]
+    addr = _to_u32(frame.values.pop()) + ins.memarg[1]
+    if env.memory is None or addr + 1 > len(env.memory):
+        raise Trap(f"i32.load8_u out of bounds at addr={addr}")
+    frame.values.append(env.memory[addr])
+    return (ins.end_offset, frame, env, local_base)
 
 
-for _op in _STORE_WIDTH:
-    _HANDLERS[_op] = _make_store_handler(_op)
+@_handler(I32_LOAD16_S)
+def _h_i32_load16_s(ip, frame, env, local_base):
+    ins = frame.instrs[ip]
+    addr = _to_u32(frame.values.pop()) + ins.memarg[1]
+    if env.memory is None or addr + 2 > len(env.memory):
+        raise Trap(f"i32.load16_s out of bounds at addr={addr}")
+    frame.values.append(int.from_bytes(env.memory[addr:addr + 2], "little", signed=True))
+    return (ins.end_offset, frame, env, local_base)
 
+
+@_handler(I32_LOAD16_U)
+def _h_i32_load16_u(ip, frame, env, local_base):
+    ins = frame.instrs[ip]
+    addr = _to_u32(frame.values.pop()) + ins.memarg[1]
+    if env.memory is None or addr + 2 > len(env.memory):
+        raise Trap(f"i32.load16_u out of bounds at addr={addr}")
+    frame.values.append(int.from_bytes(env.memory[addr:addr + 2], "little", signed=False))
+    return (ins.end_offset, frame, env, local_base)
+
+
+# --- Stores (Dedicated per-opcode handlers without if statements) ---
+
+@_handler(I32_STORE)
+def _h_i32_store(ip, frame, env, local_base):
+    ins = frame.instrs[ip]
+    value = _to_i32(frame.values.pop())
+    addr = _to_u32(frame.values.pop()) + ins.memarg[1]
+    if env.memory is None or addr + 4 > len(env.memory):
+        raise Trap(f"i32.store out of bounds at addr={addr}")
+    env.memory[addr:addr + 4] = (value & 0xFFFFFFFF).to_bytes(4, "little")
+    return (ins.end_offset, frame, env, local_base)
+
+
+@_handler(I32_STORE8)
+def _h_i32_store8(ip, frame, env, local_base):
+    ins = frame.instrs[ip]
+    value = frame.values.pop() & 0xFF
+    addr = _to_u32(frame.values.pop()) + ins.memarg[1]
+    if env.memory is None or addr + 1 > len(env.memory):
+        raise Trap(f"i32.store8 out of bounds at addr={addr}")
+    env.memory[addr] = value
+    return (ins.end_offset, frame, env, local_base)
+
+
+@_handler(I32_STORE16)
+def _h_i32_store16(ip, frame, env, local_base):
+    ins = frame.instrs[ip]
+    value = frame.values.pop() & 0xFFFF
+    addr = _to_u32(frame.values.pop()) + ins.memarg[1]
+    if env.memory is None or addr + 2 > len(env.memory):
+        raise Trap(f"i32.store16 out of bounds at addr={addr}")
+    env.memory[addr:addr + 2] = value.to_bytes(2, "little")
+    return (ins.end_offset, frame, env, local_base)
+
+
+# --- Memory Size / Grow ---
 
 @_handler(MEMORY_SIZE)
 def _h_memory_size(ip, frame, env, local_base):
@@ -427,128 +474,259 @@ def _h_memory_grow(ip, frame, env, local_base):
     return (frame.instrs[ip].end_offset, frame, env, local_base)
 
 
+# --- Comparisons (Dedicated per-opcode handlers without if statements) ---
+
 @_handler(I32_EQZ)
 def _h_i32_eqz(ip, frame, env, local_base):
     frame.values.append(1 if frame.values.pop() == 0 else 0)
     return (frame.instrs[ip].end_offset, frame, env, local_base)
 
 
-_COMPARE_OPS = (I32_EQ, I32_NE, I32_LT_S, I32_LT_U, I32_GT_S, I32_GT_U,
-                I32_LE_S, I32_LE_U, I32_GE_S, I32_GE_U)
+@_handler(I32_EQ)
+def _h_i32_eq(ip, frame, env, local_base):
+    b = frame.values.pop()
+    a = frame.values.pop()
+    frame.values.append(1 if _to_i32(a) == _to_i32(b) else 0)
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
 
 
-def _make_compare_handler(op: int):
-    def handler(ip, frame, env, local_base):
-        b = frame.values.pop()
-        a = frame.values.pop()
-        frame.values.append(1 if _compare(op, a, b) else 0)
-        return (frame.instrs[ip].end_offset, frame, env, local_base)
-    return handler
+@_handler(I32_NE)
+def _h_i32_ne(ip, frame, env, local_base):
+    b = frame.values.pop()
+    a = frame.values.pop()
+    frame.values.append(1 if _to_i32(a) != _to_i32(b) else 0)
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
 
 
-for _op in _COMPARE_OPS:
-    _HANDLERS[_op] = _make_compare_handler(_op)
-
-_UNOP_OPS = (I32_CLZ, I32_CTZ, I32_POPCNT)
-
-
-def _make_unop_handler(op: int):
-    def handler(ip, frame, env, local_base):
-        frame.values.append(_unop(op, frame.values.pop()))
-        return (frame.instrs[ip].end_offset, frame, env, local_base)
-    return handler
+@_handler(I32_LT_S)
+def _h_i32_lt_s(ip, frame, env, local_base):
+    b = frame.values.pop()
+    a = frame.values.pop()
+    frame.values.append(1 if _to_i32(a) < _to_i32(b) else 0)
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
 
 
-for _op in _UNOP_OPS:
-    _HANDLERS[_op] = _make_unop_handler(_op)
-
-_ARITH_OPS = (I32_ADD, I32_SUB, I32_MUL, I32_DIV_S, I32_DIV_U, I32_REM_S,
-              I32_REM_U, I32_AND, I32_OR, I32_XOR, I32_SHL, I32_SHR_S, I32_SHR_U,
-              I32_ROTL, I32_ROTR)
-
-
-def _make_arith_handler(op: int):
-    def handler(ip, frame, env, local_base):
-        b = frame.values.pop()
-        a = frame.values.pop()
-        frame.values.append(_arith(op, a, b))
-        return (frame.instrs[ip].end_offset, frame, env, local_base)
-    return handler
+@_handler(I32_LT_U)
+def _h_i32_lt_u(ip, frame, env, local_base):
+    b = frame.values.pop()
+    a = frame.values.pop()
+    frame.values.append(1 if _to_u32(a) < _to_u32(b) else 0)
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
 
 
-for _op in _ARITH_OPS:
-    _HANDLERS[_op] = _make_arith_handler(_op)
+@_handler(I32_GT_S)
+def _h_i32_gt_s(ip, frame, env, local_base):
+    b = frame.values.pop()
+    a = frame.values.pop()
+    frame.values.append(1 if _to_i32(a) > _to_i32(b) else 0)
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
 
 
-def _compare(op: int, a: int, b: int) -> bool:
-    if op == I32_EQ: return _to_i32(a) == _to_i32(b)
-    if op == I32_NE: return _to_i32(a) != _to_i32(b)
-    if op == I32_LT_S: return _to_i32(a) < _to_i32(b)
-    if op == I32_LT_U: return _to_u32(a) < _to_u32(b)
-    if op == I32_GT_S: return _to_i32(a) > _to_i32(b)
-    if op == I32_GT_U: return _to_u32(a) > _to_u32(b)
-    if op == I32_LE_S: return _to_i32(a) <= _to_i32(b)
-    if op == I32_LE_U: return _to_u32(a) <= _to_u32(b)
-    if op == I32_GE_S: return _to_i32(a) >= _to_i32(b)
-    if op == I32_GE_U: return _to_u32(a) >= _to_u32(b)
-    raise NotImplementedError(op)
+@_handler(I32_GT_U)
+def _h_i32_gt_u(ip, frame, env, local_base):
+    b = frame.values.pop()
+    a = frame.values.pop()
+    frame.values.append(1 if _to_u32(a) > _to_u32(b) else 0)
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
 
 
-def _arith(op: int, a: int, b: int) -> int:
-    if op == I32_ADD: return _to_i32(a + b)
-    if op == I32_SUB: return _to_i32(a - b)
-    if op == I32_MUL: return _to_i32(a * b)
-    if op == I32_DIV_S:
-        a, b = _to_i32(a), _to_i32(b)
-        if b == 0:
-            raise Trap("integer divide by zero")
-        q = abs(a) // abs(b)
-        return _to_i32(-q if (a < 0) != (b < 0) else q)
-    if op == I32_DIV_U:
-        b = _to_u32(b)
-        if b == 0:
-            raise Trap("integer divide by zero")
-        return _to_i32(_to_u32(a) // b)
-    if op == I32_REM_S:
-        a, b = _to_i32(a), _to_i32(b)
-        if b == 0:
-            raise Trap("integer divide by zero")
-        r = abs(a) % abs(b)
-        return _to_i32(-r if a < 0 else r)
-    if op == I32_REM_U:
-        b = _to_u32(b)
-        if b == 0:
-            raise Trap("integer divide by zero")
-        return _to_i32(_to_u32(a) % b)
-    if op == I32_AND: return _to_i32(_to_u32(a) & _to_u32(b))
-    if op == I32_OR: return _to_i32(_to_u32(a) | _to_u32(b))
-    if op == I32_XOR: return _to_i32(_to_u32(a) ^ _to_u32(b))
-    if op == I32_SHL: return _to_i32(_to_u32(a) << (_to_u32(b) & 31))
-    if op == I32_SHR_S: return _to_i32(_to_i32(a) >> (_to_u32(b) & 31))
-    if op == I32_SHR_U: return _to_i32(_to_u32(a) >> (_to_u32(b) & 31))
-    if op == I32_ROTL:
-        n = _to_u32(b) & 31
-        v = _to_u32(a)
-        return _to_i32(((v << n) | (v >> (32 - n))) & I32_MASK if n else v)
-    if op == I32_ROTR:
-        n = _to_u32(b) & 31
-        v = _to_u32(a)
-        return _to_i32(((v >> n) | (v << (32 - n))) & I32_MASK if n else v)
-    raise NotImplementedError(op)
+@_handler(I32_LE_S)
+def _h_i32_le_s(ip, frame, env, local_base):
+    b = frame.values.pop()
+    a = frame.values.pop()
+    frame.values.append(1 if _to_i32(a) <= _to_i32(b) else 0)
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
 
 
-def _unop(op: int, a: int) -> int:
-    v = _to_u32(a)
-    if op == I32_CLZ:
-        return 32 if v == 0 else 32 - v.bit_length()
-    if op == I32_CTZ:
-        if v == 0:
-            return 32
+@_handler(I32_LE_U)
+def _h_i32_le_u(ip, frame, env, local_base):
+    b = frame.values.pop()
+    a = frame.values.pop()
+    frame.values.append(1 if _to_u32(a) <= _to_u32(b) else 0)
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(I32_GE_S)
+def _h_i32_ge_s(ip, frame, env, local_base):
+    b = frame.values.pop()
+    a = frame.values.pop()
+    frame.values.append(1 if _to_i32(a) >= _to_i32(b) else 0)
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(I32_GE_U)
+def _h_i32_ge_u(ip, frame, env, local_base):
+    b = frame.values.pop()
+    a = frame.values.pop()
+    frame.values.append(1 if _to_u32(a) >= _to_u32(b) else 0)
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+# --- Unary Ops (Dedicated per-opcode handlers without if statements) ---
+
+@_handler(I32_CLZ)
+def _h_i32_clz(ip, frame, env, local_base):
+    v = _to_u32(frame.values.pop())
+    frame.values.append(32 if v == 0 else 32 - v.bit_length())
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(I32_CTZ)
+def _h_i32_ctz(ip, frame, env, local_base):
+    v = _to_u32(frame.values.pop())
+    if v == 0:
+        res = 32
+    else:
         n = 0
-        while v & 1 == 0:
+        while (v & 1) == 0:
             v >>= 1
             n += 1
-        return n
-    if op == I32_POPCNT:
-        return bin(v).count("1")
-    raise NotImplementedError(op)
+        res = n
+    frame.values.append(res)
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(I32_POPCNT)
+def _h_i32_popcnt(ip, frame, env, local_base):
+    v = _to_u32(frame.values.pop())
+    frame.values.append(bin(v).count("1"))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+# --- Binary Arithmetic & Bitwise Ops (Dedicated per-opcode handlers without if statements) ---
+
+@_handler(I32_ADD)
+def _h_i32_add(ip, frame, env, local_base):
+    b = frame.values.pop()
+    a = frame.values.pop()
+    frame.values.append(_to_i32(a + b))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(I32_SUB)
+def _h_i32_sub(ip, frame, env, local_base):
+    b = frame.values.pop()
+    a = frame.values.pop()
+    frame.values.append(_to_i32(a - b))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(I32_MUL)
+def _h_i32_mul(ip, frame, env, local_base):
+    b = frame.values.pop()
+    a = frame.values.pop()
+    frame.values.append(_to_i32(a * b))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(I32_DIV_S)
+def _h_i32_div_s(ip, frame, env, local_base):
+    b = _to_i32(frame.values.pop())
+    a = _to_i32(frame.values.pop())
+    if b == 0:
+        raise Trap("integer divide by zero")
+    if a == -2147483648 and b == -1:
+        raise Trap("integer overflow")
+    q = abs(a) // abs(b)
+    frame.values.append(_to_i32(-q if (a < 0) != (b < 0) else q))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(I32_DIV_U)
+def _h_i32_div_u(ip, frame, env, local_base):
+    b = _to_u32(frame.values.pop())
+    a = _to_u32(frame.values.pop())
+    if b == 0:
+        raise Trap("integer divide by zero")
+    frame.values.append(_to_i32(a // b))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(I32_REM_S)
+def _h_i32_rem_s(ip, frame, env, local_base):
+    b = _to_i32(frame.values.pop())
+    a = _to_i32(frame.values.pop())
+    if b == 0:
+        raise Trap("integer divide by zero")
+    r = abs(a) % abs(b)
+    frame.values.append(_to_i32(-r if a < 0 else r))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(I32_REM_U)
+def _h_i32_rem_u(ip, frame, env, local_base):
+    b = _to_u32(frame.values.pop())
+    a = _to_u32(frame.values.pop())
+    if b == 0:
+        raise Trap("integer divide by zero")
+    frame.values.append(_to_i32(a % b))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(I32_AND)
+def _h_i32_and(ip, frame, env, local_base):
+    b = frame.values.pop()
+    a = frame.values.pop()
+    frame.values.append(_to_i32(_to_u32(a) & _to_u32(b)))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(I32_OR)
+def _h_i32_or(ip, frame, env, local_base):
+    b = frame.values.pop()
+    a = frame.values.pop()
+    frame.values.append(_to_i32(_to_u32(a) | _to_u32(b)))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(I32_XOR)
+def _h_i32_xor(ip, frame, env, local_base):
+    b = frame.values.pop()
+    a = frame.values.pop()
+    frame.values.append(_to_i32(_to_u32(a) ^ _to_u32(b)))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(I32_SHL)
+def _h_i32_shl(ip, frame, env, local_base):
+    b = frame.values.pop()
+    a = frame.values.pop()
+    frame.values.append(_to_i32(_to_u32(a) << (_to_u32(b) & 31)))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(I32_SHR_S)
+def _h_i32_shr_s(ip, frame, env, local_base):
+    b = frame.values.pop()
+    a = frame.values.pop()
+    frame.values.append(_to_i32(_to_i32(a) >> (_to_u32(b) & 31)))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(I32_SHR_U)
+def _h_i32_shr_u(ip, frame, env, local_base):
+    b = frame.values.pop()
+    a = frame.values.pop()
+    frame.values.append(_to_i32(_to_u32(a) >> (_to_u32(b) & 31)))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(I32_ROTL)
+def _h_i32_rotl(ip, frame, env, local_base):
+    b = frame.values.pop()
+    a = frame.values.pop()
+    n = _to_u32(b) & 31
+    v = _to_u32(a)
+    frame.values.append(_to_i32(((v << n) | (v >> (32 - n))) & I32_MASK if n else v))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(I32_ROTR)
+def _h_i32_rotr(ip, frame, env, local_base):
+    b = frame.values.pop()
+    a = frame.values.pop()
+    n = _to_u32(b) & 31
+    v = _to_u32(a)
+    frame.values.append(_to_i32(((v >> n) | (v << (32 - n))) & I32_MASK if n else v))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+

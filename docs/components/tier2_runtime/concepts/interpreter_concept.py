@@ -130,544 +130,927 @@ class WASMInterpreter:
 
     def execute_bytecode(self, ctx: ExecutionContext, bytecode: list[tuple[str, Any]]) -> str:
         """
-        Direct-Threaded CPS execution loop over WASM MVP opcodes.
+        Direct-Threaded CPS execution loop over WASM MVP opcodes via _DISPATCH_TABLE.
         """
         pc = 0
         while pc < len(bytecode):
             op, arg = bytecode[pc]
-
-            # --- 3.1 Control Flow ---
-            if op == "unreachable":
-                raise WASMTrap("UNREACHABLE_INSTRUCTION")
-
-            elif op == "nop":
-                pass
-
-            elif op == "block":
-                # arg = (end_pc, result_arity)
-                end_pc, arity = arg
-                ctrl = ControlFrame(
-                    parent_offset=len(ctx.control_frame_stack),
-                    label_pc=end_pc,
-                    saved_sp=ctx.sp_offset,
-                    result_arity=arity,
-                    is_loop=False
-                )
-                ctx.control_frame_stack.append(ctrl)
-
-            elif op == "loop":
-                # arg = (loop_start_pc, result_arity)
-                start_pc, arity = arg
-                ctrl = ControlFrame(
-                    parent_offset=len(ctx.control_frame_stack),
-                    label_pc=start_pc,
-                    saved_sp=ctx.sp_offset,
-                    result_arity=arity,
-                    is_loop=True
-                )
-                ctx.control_frame_stack.append(ctrl)
-
-            elif op == "if":
-                # arg = (else_or_end_pc, end_pc, result_arity)
-                else_or_end_pc, end_pc, arity = arg
-                cond = ctx.pop()
-                ctrl = ControlFrame(
-                    parent_offset=len(ctx.control_frame_stack),
-                    label_pc=end_pc,
-                    saved_sp=ctx.sp_offset,
-                    result_arity=arity,
-                    is_loop=False
-                )
-                ctx.control_frame_stack.append(ctrl)
-                if cond == 0:
-                    pc = else_or_end_pc
-                    continue
-
-            elif op == "else":
-                # Jump to corresponding end_pc
-                end_pc = arg
-                pc = end_pc
-                continue
-
-            elif op == "end":
-                if ctx.control_frame_stack:
-                    ctx.control_frame_stack.pop()
-
-            elif op == "br":
-                depth = int(arg)
-                target_ctrl = ctx.control_frame_stack[-(depth + 1)]
-                ctx.prune_stack(target_ctrl.saved_sp, target_ctrl.result_arity)
-                if target_ctrl.is_loop:
-                    if ctx.safepoint_pending:
-                        ctx.safepoints_hit += 1
-                        return "SAFEPOINT_YIELD"
-                # Pop intermediate control frames
-                for _ in range(depth + (0 if target_ctrl.is_loop else 1)):
-                    ctx.control_frame_stack.pop()
-                pc = target_ctrl.label_pc
-                continue
-
-            elif op == "br_if":
-                depth = int(arg)
-                cond = ctx.pop()
-                if cond != 0:
-                    target_ctrl = ctx.control_frame_stack[-(depth + 1)]
-                    ctx.prune_stack(target_ctrl.saved_sp, target_ctrl.result_arity)
-                    if target_ctrl.is_loop:
-                        if ctx.safepoint_pending:
-                            ctx.safepoints_hit += 1
-                            return "SAFEPOINT_YIELD"
-                    for _ in range(depth + (0 if target_ctrl.is_loop else 1)):
-                        ctx.control_frame_stack.pop()
-                    pc = target_ctrl.label_pc
-                    continue
-
-            elif op == "br_table":
-                # arg = (targets_list, default_target)
-                targets, default_target = arg
-                idx = ctx.pop()
-                depth = targets[idx] if 0 <= idx < len(targets) else default_target
-                target_ctrl = ctx.control_frame_stack[-(depth + 1)]
-                ctx.prune_stack(target_ctrl.saved_sp, target_ctrl.result_arity)
-                for _ in range(depth + (0 if target_ctrl.is_loop else 1)):
-                    ctx.control_frame_stack.pop()
-                pc = target_ctrl.label_pc
-                continue
-
-            elif op == "return":
-                return "RETURN"
-
-            elif op == "call":
-                if isinstance(arg, tuple):
-                    target_func_idx, num_args = arg
-                else:
-                    target_func_idx, num_args = int(arg), 1
-                call_args = [ctx.pop() for _ in range(num_args)]
-                call_args.reverse()
-                res = self.execute_function(ctx, target_func_idx, call_args)
-                if res is not None:
-                    ctx.push(res)
-
-            elif op == "call_indirect":
-                if isinstance(arg, tuple):
-                    type_idx, num_args = arg
-                else:
-                    type_idx, num_args = int(arg), 1
-                call_args = [ctx.pop() for _ in range(num_args)]
-                call_args.reverse()
-                res = self.execute_function(ctx, elem_idx, call_args)
-                if res is not None:
-                    ctx.push(res)
-
-            # --- 3.2 Parametric ---
-            elif op == "drop":
-                ctx.pop()
-
-            elif op == "select":
-                c = ctx.pop()
-                v2 = ctx.pop()
-                v1 = ctx.pop()
-                ctx.push(v1 if c != 0 else v2)
-
-            # --- 3.3 Variable Access ---
-            elif op == "local.get":
-                frame = ctx.call_frame_stack[-1]
-                idx = int(arg)
-                ctx.push(ctx.stack[frame.local_base + idx])
-
-            elif op == "local.set":
-                frame = ctx.call_frame_stack[-1]
-                idx = int(arg)
-                ctx.stack[frame.local_base + idx] = ctx.pop()
-
-            elif op == "local.tee":
-                frame = ctx.call_frame_stack[-1]
-                idx = int(arg)
-                val = ctx.peek()
-                ctx.stack[frame.local_base + idx] = val
-
-            elif op == "global.get":
-                ctx.push(ctx.globals[int(arg)])
-
-            elif op == "global.set":
-                ctx.globals[int(arg)] = ctx.pop()
-
-            # --- 3.4 Memory Access ---
-            elif op == "i32.load":
-                addr = ctx.pop()
-                if addr + 4 > len(ctx.memory):
-                    raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
-                ctx.push(struct.unpack("<I", ctx.memory[addr:addr+4])[0])
-
-            elif op == "i64.load":
-                addr = ctx.pop()
-                if addr + 8 > len(ctx.memory):
-                    raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
-                ctx.push(struct.unpack("<Q", ctx.memory[addr:addr+8])[0])
-
-            elif op == "i32.load8_s":
-                addr = ctx.pop()
-                if addr + 1 > len(ctx.memory):
-                    raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
-                ctx.push(struct.unpack("<b", bytes([ctx.memory[addr]]))[0])
-
-            elif op == "i32.load8_u":
-                addr = ctx.pop()
-                if addr + 1 > len(ctx.memory):
-                    raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
-                ctx.push(ctx.memory[addr])
-
-            elif op == "i32.load16_s":
-                addr = ctx.pop()
-                if addr + 2 > len(ctx.memory):
-                    raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
-                ctx.push(struct.unpack("<h", ctx.memory[addr:addr+2])[0])
-
-            elif op == "i32.load16_u":
-                addr = ctx.pop()
-                if addr + 2 > len(ctx.memory):
-                    raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
-                ctx.push(struct.unpack("<H", ctx.memory[addr:addr+2])[0])
-
-            elif op == "i64.load8_s":
-                addr = ctx.pop()
-                if addr + 1 > len(ctx.memory):
-                    raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
-                ctx.push(struct.unpack("<b", bytes([ctx.memory[addr]]))[0])
-
-            elif op == "i64.load8_u":
-                addr = ctx.pop()
-                if addr + 1 > len(ctx.memory):
-                    raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
-                ctx.push(ctx.memory[addr])
-
-            elif op == "i64.load16_s":
-                addr = ctx.pop()
-                if addr + 2 > len(ctx.memory):
-                    raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
-                ctx.push(struct.unpack("<h", ctx.memory[addr:addr+2])[0])
-
-            elif op == "i64.load16_u":
-                addr = ctx.pop()
-                if addr + 2 > len(ctx.memory):
-                    raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
-                ctx.push(struct.unpack("<H", ctx.memory[addr:addr+2])[0])
-
-            elif op == "i64.load32_s":
-                addr = ctx.pop()
-                if addr + 4 > len(ctx.memory):
-                    raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
-                ctx.push(struct.unpack("<i", ctx.memory[addr:addr+4])[0])
-
-            elif op == "i64.load32_u":
-                addr = ctx.pop()
-                if addr + 4 > len(ctx.memory):
-                    raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
-                ctx.push(struct.unpack("<I", ctx.memory[addr:addr+4])[0])
-
-            elif op == "i32.store":
-                val = ctx.pop()
-                addr = ctx.pop()
-                if addr + 4 > len(ctx.memory):
-                    raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
-                ctx.memory[addr:addr+4] = struct.pack("<I", val & 0xFFFF_FFFF)
-
-            elif op == "i64.store":
-                val = ctx.pop()
-                addr = ctx.pop()
-                if addr + 8 > len(ctx.memory):
-                    raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
-                ctx.memory[addr:addr+8] = struct.pack("<Q", val & 0xFFFF_FFFF_FFFF_FFFF)
-
-            elif op == "i32.store8" or op == "i64.store8":
-                val = ctx.pop()
-                addr = ctx.pop()
-                if addr + 1 > len(ctx.memory):
-                    raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
-                ctx.memory[addr] = val & 0xFF
-
-            elif op == "i32.store16" or op == "i64.store16":
-                val = ctx.pop()
-                addr = ctx.pop()
-                if addr + 2 > len(ctx.memory):
-                    raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
-                ctx.memory[addr:addr+2] = struct.pack("<H", val & 0xFFFF)
-
-            elif op == "i64.store32":
-                val = ctx.pop()
-                addr = ctx.pop()
-                if addr + 4 > len(ctx.memory):
-                    raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
-                ctx.memory[addr:addr+4] = struct.pack("<I", val & 0xFFFF_FFFF)
-
-            elif op == "memory.size":
-                ctx.push(ctx.mem_pages)
-
-            elif op == "memory.grow":
-                delta = ctx.pop()
-                old_pages = ctx.mem_pages
-                ctx.memory.extend(bytearray(delta * 65536))
-                ctx.mem_pages += delta
-                ctx.push(old_pages)
-
-            # --- 3.5 Constants ---
-            elif op == "i32.const":
-                ctx.push(int(arg) & 0xFFFF_FFFF)
-
-            elif op == "i64.const":
-                ctx.push(int(arg) & 0xFFFF_FFFF_FFFF_FFFF)
-
-            # --- 3.6 32-bit Integer ALU & Logic ---
-            elif op == "i32.eqz":
-                ctx.push(1 if ctx.pop() == 0 else 0)
-            elif op == "i32.eq":
-                b, a = ctx.pop(), ctx.pop()
-                ctx.push(1 if a == b else 0)
-            elif op == "i32.ne":
-                b, a = ctx.pop(), ctx.pop()
-                ctx.push(1 if a != b else 0)
-            elif op == "i32.lt_s":
-                b, a = ctx.pop(), ctx.pop()
-                sa = struct.unpack(">i", struct.pack(">I", a & 0xFFFF_FFFF))[0]
-                sb = struct.unpack(">i", struct.pack(">I", b & 0xFFFF_FFFF))[0]
-                ctx.push(1 if sa < sb else 0)
-            elif op == "i32.lt_u":
-                b, a = ctx.pop(), ctx.pop()
-                ctx.push(1 if a < b else 0)
-            elif op == "i32.gt_s":
-                b, a = ctx.pop(), ctx.pop()
-                sa = struct.unpack(">i", struct.pack(">I", a & 0xFFFF_FFFF))[0]
-                sb = struct.unpack(">i", struct.pack(">I", b & 0xFFFF_FFFF))[0]
-                ctx.push(1 if sa > sb else 0)
-            elif op == "i32.gt_u":
-                b, a = ctx.pop(), ctx.pop()
-                ctx.push(1 if a > b else 0)
-            elif op == "i32.le_s":
-                b, a = ctx.pop(), ctx.pop()
-                sa = struct.unpack(">i", struct.pack(">I", a & 0xFFFF_FFFF))[0]
-                sb = struct.unpack(">i", struct.pack(">I", b & 0xFFFF_FFFF))[0]
-                ctx.push(1 if sa <= sb else 0)
-            elif op == "i32.le_u":
-                b, a = ctx.pop(), ctx.pop()
-                ctx.push(1 if a <= b else 0)
-            elif op == "i32.ge_s":
-                b, a = ctx.pop(), ctx.pop()
-                sa = struct.unpack(">i", struct.pack(">I", a & 0xFFFF_FFFF))[0]
-                sb = struct.unpack(">i", struct.pack(">I", b & 0xFFFF_FFFF))[0]
-                ctx.push(1 if sa >= sb else 0)
-            elif op == "i32.ge_u":
-                b, a = ctx.pop(), ctx.pop()
-                ctx.push(1 if a >= b else 0)
-
-            elif op == "i32.clz":
-                a = ctx.pop() & 0xFFFF_FFFF
-                bits = bin(a)[2:].zfill(32)
-                ctx.push(len(bits) - len(bits.lstrip('0')))
-            elif op == "i32.ctz":
-                a = ctx.pop() & 0xFFFF_FFFF
-                bits = bin(a)[2:].zfill(32)
-                ctx.push(len(bits) - len(bits.rstrip('0')))
-            elif op == "i32.popcnt":
-                ctx.push(bin(ctx.pop() & 0xFFFF_FFFF).count('1'))
-            elif op == "i32.add":
-                b, a = ctx.pop(), ctx.pop()
-                ctx.push((a + b) & 0xFFFF_FFFF)
-            elif op == "i32.sub":
-                b, a = ctx.pop(), ctx.pop()
-                ctx.push((a - b) & 0xFFFF_FFFF)
-            elif op == "i32.mul":
-                b, a = ctx.pop(), ctx.pop()
-                ctx.push((a * b) & 0xFFFF_FFFF)
-            elif op == "i32.div_s":
-                b, a = ctx.pop(), ctx.pop()
-                if b == 0:
-                    raise WASMTrap("INTEGER_DIVIDE_BY_ZERO")
-                sa = struct.unpack(">i", struct.pack(">I", a & 0xFFFF_FFFF))[0]
-                sb = struct.unpack(">i", struct.pack(">I", b & 0xFFFF_FFFF))[0]
-                ctx.push(int(sa / sb) & 0xFFFF_FFFF)
-            elif op == "i32.div_u":
-                b, a = ctx.pop(), ctx.pop()
-                if b == 0:
-                    raise WASMTrap("INTEGER_DIVIDE_BY_ZERO")
-                ctx.push((a // b) & 0xFFFF_FFFF)
-            elif op == "i32.rem_s":
-                b, a = ctx.pop(), ctx.pop()
-                if b == 0:
-                    raise WASMTrap("INTEGER_DIVIDE_BY_ZERO")
-                sa = struct.unpack(">i", struct.pack(">I", a & 0xFFFF_FFFF))[0]
-                sb = struct.unpack(">i", struct.pack(">I", b & 0xFFFF_FFFF))[0]
-                res = sa % sb if sa * sb >= 0 else sa % sb - sb
-                ctx.push(res & 0xFFFF_FFFF)
-            elif op == "i32.rem_u":
-                b, a = ctx.pop(), ctx.pop()
-                if b == 0:
-                    raise WASMTrap("INTEGER_DIVIDE_BY_ZERO")
-                ctx.push((a % b) & 0xFFFF_FFFF)
-            elif op == "i32.and":
-                b, a = ctx.pop(), ctx.pop()
-                ctx.push(a & b)
-            elif op == "i32.or":
-                b, a = ctx.pop(), ctx.pop()
-                ctx.push(a | b)
-            elif op == "i32.xor":
-                b, a = ctx.pop(), ctx.pop()
-                ctx.push(a ^ b)
-            elif op == "i32.shl":
-                b, a = ctx.pop(), ctx.pop()
-                ctx.push((a << (b & 31)) & 0xFFFF_FFFF)
-            elif op == "i32.shr_s":
-                b, a = ctx.pop(), ctx.pop()
-                sa = struct.unpack(">i", struct.pack(">I", a & 0xFFFF_FFFF))[0]
-                ctx.push((sa >> (b & 31)) & 0xFFFF_FFFF)
-            elif op == "i32.shr_u":
-                b, a = ctx.pop(), ctx.pop()
-                ctx.push(((a & 0xFFFF_FFFF) >> (b & 31)) & 0xFFFF_FFFF)
-            elif op == "i32.rotl":
-                b, a = ctx.pop(), ctx.pop()
-                shift = b & 31
-                val = ((a << shift) | (a >> (32 - shift))) & 0xFFFF_FFFF
-                ctx.push(val)
-            elif op == "i32.rotr":
-                b, a = ctx.pop(), ctx.pop()
-                shift = b & 31
-                val = ((a >> shift) | (a << (32 - shift))) & 0xFFFF_FFFF
-                ctx.push(val)
-
-            # --- 3.7 64-bit Integer ALU & Logic ---
-            elif op == "i64.eqz":
-                ctx.push(1 if ctx.pop() == 0 else 0)
-            elif op == "i64.eq":
-                b, a = ctx.pop(), ctx.pop()
-                ctx.push(1 if a == b else 0)
-            elif op == "i64.ne":
-                b, a = ctx.pop(), ctx.pop()
-                ctx.push(1 if a != b else 0)
-            elif op == "i64.lt_s":
-                b, a = ctx.pop(), ctx.pop()
-                sa = struct.unpack(">q", struct.pack(">Q", a & 0xFFFF_FFFF_FFFF_FFFF))[0]
-                sb = struct.unpack(">q", struct.pack(">Q", b & 0xFFFF_FFFF_FFFF_FFFF))[0]
-                ctx.push(1 if sa < sb else 0)
-            elif op == "i64.lt_u":
-                b, a = ctx.pop(), ctx.pop()
-                ctx.push(1 if a < b else 0)
-            elif op == "i64.gt_s":
-                b, a = ctx.pop(), ctx.pop()
-                sa = struct.unpack(">q", struct.pack(">Q", a & 0xFFFF_FFFF_FFFF_FFFF))[0]
-                sb = struct.unpack(">q", struct.pack(">Q", b & 0xFFFF_FFFF_FFFF_FFFF))[0]
-                ctx.push(1 if sa > sb else 0)
-            elif op == "i64.gt_u":
-                b, a = ctx.pop(), ctx.pop()
-                ctx.push(1 if a > b else 0)
-            elif op == "i64.le_s":
-                b, a = ctx.pop(), ctx.pop()
-                sa = struct.unpack(">q", struct.pack(">Q", a & 0xFFFF_FFFF_FFFF_FFFF))[0]
-                sb = struct.unpack(">q", struct.pack(">Q", b & 0xFFFF_FFFF_FFFF_FFFF))[0]
-                ctx.push(1 if sa <= sb else 0)
-            elif op == "i64.le_u":
-                b, a = ctx.pop(), ctx.pop()
-                ctx.push(1 if a <= b else 0)
-            elif op == "i64.ge_s":
-                b, a = ctx.pop(), ctx.pop()
-                sa = struct.unpack(">q", struct.pack(">Q", a & 0xFFFF_FFFF_FFFF_FFFF))[0]
-                sb = struct.unpack(">q", struct.pack(">Q", b & 0xFFFF_FFFF_FFFF_FFFF))[0]
-                ctx.push(1 if sa >= sb else 0)
-            elif op == "i64.ge_u":
-                b, a = ctx.pop(), ctx.pop()
-                ctx.push(1 if a >= b else 0)
-
-            elif op == "i64.clz":
-                a = ctx.pop() & 0xFFFF_FFFF_FFFF_FFFF
-                bits = bin(a)[2:].zfill(64)
-                ctx.push(len(bits) - len(bits.lstrip('0')))
-            elif op == "i64.ctz":
-                a = ctx.pop() & 0xFFFF_FFFF_FFFF_FFFF
-                bits = bin(a)[2:].zfill(64)
-                ctx.push(len(bits) - len(bits.rstrip('0')))
-            elif op == "i64.popcnt":
-                ctx.push(bin(ctx.pop() & 0xFFFF_FFFF_FFFF_FFFF).count('1'))
-            elif op == "i64.add":
-                b, a = ctx.pop(), ctx.pop()
-                ctx.push((a + b) & 0xFFFF_FFFF_FFFF_FFFF)
-            elif op == "i64.sub":
-                b, a = ctx.pop(), ctx.pop()
-                ctx.push((a - b) & 0xFFFF_FFFF_FFFF_FFFF)
-            elif op == "i64.mul":
-                b, a = ctx.pop(), ctx.pop()
-                ctx.push((a * b) & 0xFFFF_FFFF_FFFF_FFFF)
-            elif op == "i64.div_s":
-                b, a = ctx.pop(), ctx.pop()
-                if b == 0:
-                    raise WASMTrap("INTEGER_DIVIDE_BY_ZERO")
-                sa = struct.unpack(">q", struct.pack(">Q", a & 0xFFFF_FFFF_FFFF_FFFF))[0]
-                sb = struct.unpack(">q", struct.pack(">Q", b & 0xFFFF_FFFF_FFFF_FFFF))[0]
-                ctx.push(int(sa / sb) & 0xFFFF_FFFF_FFFF_FFFF)
-            elif op == "i64.div_u":
-                b, a = ctx.pop(), ctx.pop()
-                if b == 0:
-                    raise WASMTrap("INTEGER_DIVIDE_BY_ZERO")
-                ctx.push((a // b) & 0xFFFF_FFFF_FFFF_FFFF)
-            elif op == "i64.rem_s":
-                b, a = ctx.pop(), ctx.pop()
-                if b == 0:
-                    raise WASMTrap("INTEGER_DIVIDE_BY_ZERO")
-                sa = struct.unpack(">q", struct.pack(">Q", a & 0xFFFF_FFFF_FFFF_FFFF))[0]
-                sb = struct.unpack(">q", struct.pack(">Q", b & 0xFFFF_FFFF_FFFF_FFFF))[0]
-                res = sa % sb if sa * sb >= 0 else sa % sb - sb
-                ctx.push(res & 0xFFFF_FFFF_FFFF_FFFF)
-            elif op == "i64.rem_u":
-                b, a = ctx.pop(), ctx.pop()
-                if b == 0:
-                    raise WASMTrap("INTEGER_DIVIDE_BY_ZERO")
-                ctx.push((a % b) & 0xFFFF_FFFF_FFFF_FFFF)
-            elif op == "i64.and":
-                b, a = ctx.pop(), ctx.pop()
-                ctx.push(a & b)
-            elif op == "i64.or":
-                b, a = ctx.pop(), ctx.pop()
-                ctx.push(a | b)
-            elif op == "i64.xor":
-                b, a = ctx.pop(), ctx.pop()
-                ctx.push(a ^ b)
-            elif op == "i64.shl":
-                b, a = ctx.pop(), ctx.pop()
-                ctx.push((a << (b & 63)) & 0xFFFF_FFFF_FFFF_FFFF)
-            elif op == "i64.shr_s":
-                b, a = ctx.pop(), ctx.pop()
-                sa = struct.unpack(">q", struct.pack(">Q", a & 0xFFFF_FFFF_FFFF_FFFF))[0]
-                ctx.push((sa >> (b & 63)) & 0xFFFF_FFFF_FFFF_FFFF)
-            elif op == "i64.shr_u":
-                b, a = ctx.pop(), ctx.pop()
-                ctx.push(((a & 0xFFFF_FFFF_FFFF_FFFF) >> (b & 63)) & 0xFFFF_FFFF_FFFF_FFFF)
-            elif op == "i64.rotl":
-                b, a = ctx.pop(), ctx.pop()
-                shift = b & 63
-                val = ((a << shift) | (a >> (64 - shift))) & 0xFFFF_FFFF_FFFF_FFFF
-                ctx.push(val)
-            elif op == "i64.rotr":
-                b, a = ctx.pop(), ctx.pop()
-                shift = b & 63
-                val = ((a >> shift) | (a << (64 - shift))) & 0xFFFF_FFFF_FFFF_FFFF
-                ctx.push(val)
-
-            # --- 3.8 Type Conversions ---
-            elif op == "i32.wrap_i64":
-                ctx.push(ctx.pop() & 0xFFFF_FFFF)
-
-            elif op == "i64.extend_i32_s":
-                val32 = ctx.pop() & 0xFFFF_FFFF
-                signed32 = struct.unpack(">i", struct.pack(">I", val32))[0]
-                ctx.push(struct.unpack(">Q", struct.pack(">q", signed32))[0])
-
-            elif op == "i64.extend_i32_u":
-                val32 = ctx.pop() & 0xFFFF_FFFF
-                ctx.push(val32)
-
-            else:
+            handler = _DISPATCH_TABLE.get(op)
+            if handler is None:
                 raise WASMTrap(f"UNSUPPORTED_OPCODE: {op}")
-
-            pc += 1
-
+            status, next_pc = handler(ctx, arg, pc, self)
+            if status is not None:
+                return status
+            pc = next_pc if next_pc is not None else pc + 1
         return "COMPLETED"
+
+
+# ==============================================================================
+# 3. Direct-Threaded Discrete Opcode Handlers (Zero opcode if-statements)
+# ==============================================================================
+
+_DISPATCH_TABLE: dict[str, Callable[[ExecutionContext, Any, int, WASMInterpreter], tuple[Optional[str], Optional[int]]]] = {}
+
+
+def _op_handler(op_name: str):
+    def decorator(fn):
+        _DISPATCH_TABLE[op_name] = fn
+        return fn
+    return decorator
+
+
+# --- 3.1 Control Flow Handlers ---
+
+@_op_handler("unreachable")
+def _h_unreachable(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    raise WASMTrap("UNREACHABLE_INSTRUCTION")
+
+
+@_op_handler("nop")
+def _h_nop(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    return (None, None)
+
+
+@_op_handler("block")
+def _h_block(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    end_pc, arity = arg
+    ctrl = ControlFrame(
+        parent_offset=len(ctx.control_frame_stack),
+        label_pc=end_pc,
+        saved_sp=ctx.sp_offset,
+        result_arity=arity,
+        is_loop=False
+    )
+    ctx.control_frame_stack.append(ctrl)
+    return (None, None)
+
+
+@_op_handler("loop")
+def _h_loop(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    start_pc, arity = arg
+    ctrl = ControlFrame(
+        parent_offset=len(ctx.control_frame_stack),
+        label_pc=start_pc,
+        saved_sp=ctx.sp_offset,
+        result_arity=arity,
+        is_loop=True
+    )
+    ctx.control_frame_stack.append(ctrl)
+    return (None, None)
+
+
+@_op_handler("if")
+def _h_if(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    else_or_end_pc, end_pc, arity = arg
+    cond = ctx.pop()
+    ctrl = ControlFrame(
+        parent_offset=len(ctx.control_frame_stack),
+        label_pc=end_pc,
+        saved_sp=ctx.sp_offset,
+        result_arity=arity,
+        is_loop=False
+    )
+    ctx.control_frame_stack.append(ctrl)
+    if cond == 0:
+        return (None, else_or_end_pc)
+    return (None, None)
+
+
+@_op_handler("else")
+def _h_else(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    end_pc = arg
+    return (None, end_pc)
+
+
+@_op_handler("end")
+def _h_end(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    if ctx.control_frame_stack:
+        ctx.control_frame_stack.pop()
+    return (None, None)
+
+
+@_op_handler("br")
+def _h_br(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    depth = int(arg)
+    target_ctrl = ctx.control_frame_stack[-(depth + 1)]
+    ctx.prune_stack(target_ctrl.saved_sp, target_ctrl.result_arity)
+    if target_ctrl.is_loop:
+        if ctx.safepoint_pending:
+            ctx.safepoints_hit += 1
+            return ("SAFEPOINT_YIELD", None)
+    for _ in range(depth + (0 if target_ctrl.is_loop else 1)):
+        ctx.control_frame_stack.pop()
+    return (None, target_ctrl.label_pc)
+
+
+@_op_handler("br_if")
+def _h_br_if(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    depth = int(arg)
+    cond = ctx.pop()
+    if cond != 0:
+        target_ctrl = ctx.control_frame_stack[-(depth + 1)]
+        ctx.prune_stack(target_ctrl.saved_sp, target_ctrl.result_arity)
+        if target_ctrl.is_loop:
+            if ctx.safepoint_pending:
+                ctx.safepoints_hit += 1
+                return ("SAFEPOINT_YIELD", None)
+        for _ in range(depth + (0 if target_ctrl.is_loop else 1)):
+            ctx.control_frame_stack.pop()
+        return (None, target_ctrl.label_pc)
+    return (None, None)
+
+
+@_op_handler("br_table")
+def _h_br_table(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    targets, default_target = arg
+    idx = ctx.pop()
+    depth = targets[idx] if 0 <= idx < len(targets) else default_target
+    target_ctrl = ctx.control_frame_stack[-(depth + 1)]
+    ctx.prune_stack(target_ctrl.saved_sp, target_ctrl.result_arity)
+    for _ in range(depth + (0 if target_ctrl.is_loop else 1)):
+        ctx.control_frame_stack.pop()
+    return (None, target_ctrl.label_pc)
+
+
+@_op_handler("return")
+def _h_return(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    return ("RETURN", None)
+
+
+@_op_handler("call")
+def _h_call(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    if isinstance(arg, tuple):
+        target_func_idx, num_args = arg
+    else:
+        target_func_idx, num_args = int(arg), 1
+    call_args = [ctx.pop() for _ in range(num_args)]
+    call_args.reverse()
+    res = interp.execute_function(ctx, target_func_idx, call_args)
+    if res is not None:
+        ctx.push(res)
+    return (None, None)
+
+
+@_op_handler("call_indirect")
+def _h_call_indirect(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    if isinstance(arg, tuple):
+        type_idx, num_args = arg
+    else:
+        type_idx, num_args = int(arg), 1
+    call_args = [ctx.pop() for _ in range(num_args)]
+    call_args.reverse()
+    elem_idx = ctx.pop()
+    res = interp.execute_function(ctx, elem_idx, call_args)
+    if res is not None:
+        ctx.push(res)
+    return (None, None)
+
+
+# --- 3.2 Parametric Handlers ---
+
+@_op_handler("drop")
+def _h_drop(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    ctx.pop()
+    return (None, None)
+
+
+@_op_handler("select")
+def _h_select(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    c = ctx.pop()
+    v2 = ctx.pop()
+    v1 = ctx.pop()
+    ctx.push(v1 if c != 0 else v2)
+    return (None, None)
+
+
+# --- 3.3 Variable Access Handlers ---
+
+@_op_handler("local.get")
+def _h_local_get(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    frame = ctx.call_frame_stack[-1]
+    ctx.push(ctx.stack[frame.local_base + int(arg)])
+    return (None, None)
+
+
+@_op_handler("local.set")
+def _h_local_set(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    frame = ctx.call_frame_stack[-1]
+    ctx.stack[frame.local_base + int(arg)] = ctx.pop()
+    return (None, None)
+
+
+@_op_handler("local.tee")
+def _h_local_tee(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    frame = ctx.call_frame_stack[-1]
+    ctx.stack[frame.local_base + int(arg)] = ctx.peek()
+    return (None, None)
+
+
+@_op_handler("global.get")
+def _h_global_get(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    ctx.push(ctx.globals[int(arg)])
+    return (None, None)
+
+
+@_op_handler("global.set")
+def _h_global_set(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    ctx.globals[int(arg)] = ctx.pop()
+    return (None, None)
+
+
+# --- 3.4 Memory Access Handlers ---
+
+@_op_handler("i32.load")
+def _h_i32_load(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    addr = ctx.pop()
+    if addr + 4 > len(ctx.memory):
+        raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
+    ctx.push(struct.unpack("<I", ctx.memory[addr:addr+4])[0])
+    return (None, None)
+
+
+@_op_handler("i64.load")
+def _h_i64_load(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    addr = ctx.pop()
+    if addr + 8 > len(ctx.memory):
+        raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
+    ctx.push(struct.unpack("<Q", ctx.memory[addr:addr+8])[0])
+    return (None, None)
+
+
+@_op_handler("i32.load8_s")
+def _h_i32_load8_s(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    addr = ctx.pop()
+    if addr + 1 > len(ctx.memory):
+        raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
+    ctx.push(struct.unpack("<b", bytes([ctx.memory[addr]]))[0])
+    return (None, None)
+
+
+@_op_handler("i32.load8_u")
+def _h_i32_load8_u(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    addr = ctx.pop()
+    if addr + 1 > len(ctx.memory):
+        raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
+    ctx.push(ctx.memory[addr])
+    return (None, None)
+
+
+@_op_handler("i32.load16_s")
+def _h_i32_load16_s(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    addr = ctx.pop()
+    if addr + 2 > len(ctx.memory):
+        raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
+    ctx.push(struct.unpack("<h", ctx.memory[addr:addr+2])[0])
+    return (None, None)
+
+
+@_op_handler("i32.load16_u")
+def _h_i32_load16_u(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    addr = ctx.pop()
+    if addr + 2 > len(ctx.memory):
+        raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
+    ctx.push(struct.unpack("<H", ctx.memory[addr:addr+2])[0])
+    return (None, None)
+
+
+@_op_handler("i64.load8_s")
+def _h_i64_load8_s(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    addr = ctx.pop()
+    if addr + 1 > len(ctx.memory):
+        raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
+    ctx.push(struct.unpack("<b", bytes([ctx.memory[addr]]))[0])
+    return (None, None)
+
+
+@_op_handler("i64.load8_u")
+def _h_i64_load8_u(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    addr = ctx.pop()
+    if addr + 1 > len(ctx.memory):
+        raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
+    ctx.push(ctx.memory[addr])
+    return (None, None)
+
+
+@_op_handler("i64.load16_s")
+def _h_i64_load16_s(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    addr = ctx.pop()
+    if addr + 2 > len(ctx.memory):
+        raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
+    ctx.push(struct.unpack("<h", ctx.memory[addr:addr+2])[0])
+    return (None, None)
+
+
+@_op_handler("i64.load16_u")
+def _h_i64_load16_u(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    addr = ctx.pop()
+    if addr + 2 > len(ctx.memory):
+        raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
+    ctx.push(struct.unpack("<H", ctx.memory[addr:addr+2])[0])
+    return (None, None)
+
+
+@_op_handler("i64.load32_s")
+def _h_i64_load32_s(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    addr = ctx.pop()
+    if addr + 4 > len(ctx.memory):
+        raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
+    ctx.push(struct.unpack("<i", ctx.memory[addr:addr+4])[0])
+    return (None, None)
+
+
+@_op_handler("i64.load32_u")
+def _h_i64_load32_u(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    addr = ctx.pop()
+    if addr + 4 > len(ctx.memory):
+        raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
+    ctx.push(struct.unpack("<I", ctx.memory[addr:addr+4])[0])
+    return (None, None)
+
+
+@_op_handler("i32.store")
+def _h_i32_store(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    val = ctx.pop()
+    addr = ctx.pop()
+    if addr + 4 > len(ctx.memory):
+        raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
+    ctx.memory[addr:addr+4] = struct.pack("<I", val & 0xFFFF_FFFF)
+    return (None, None)
+
+
+@_op_handler("i64.store")
+def _h_i64_store(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    val = ctx.pop()
+    addr = ctx.pop()
+    if addr + 8 > len(ctx.memory):
+        raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
+    ctx.memory[addr:addr+8] = struct.pack("<Q", val & 0xFFFF_FFFF_FFFF_FFFF)
+    return (None, None)
+
+
+@_op_handler("i32.store8")
+def _h_i32_store8(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    val = ctx.pop()
+    addr = ctx.pop()
+    if addr + 1 > len(ctx.memory):
+        raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
+    ctx.memory[addr] = val & 0xFF
+    return (None, None)
+
+
+@_op_handler("i64.store8")
+def _h_i64_store8(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    val = ctx.pop()
+    addr = ctx.pop()
+    if addr + 1 > len(ctx.memory):
+        raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
+    ctx.memory[addr] = val & 0xFF
+    return (None, None)
+
+
+@_op_handler("i32.store16")
+def _h_i32_store16(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    val = ctx.pop()
+    addr = ctx.pop()
+    if addr + 2 > len(ctx.memory):
+        raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
+    ctx.memory[addr:addr+2] = struct.pack("<H", val & 0xFFFF)
+    return (None, None)
+
+
+@_op_handler("i64.store16")
+def _h_i64_store16(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    val = ctx.pop()
+    addr = ctx.pop()
+    if addr + 2 > len(ctx.memory):
+        raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
+    ctx.memory[addr:addr+2] = struct.pack("<H", val & 0xFFFF)
+    return (None, None)
+
+
+@_op_handler("i64.store32")
+def _h_i64_store32(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    val = ctx.pop()
+    addr = ctx.pop()
+    if addr + 4 > len(ctx.memory):
+        raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
+    ctx.memory[addr:addr+4] = struct.pack("<I", val & 0xFFFF_FFFF)
+    return (None, None)
+
+
+@_op_handler("memory.size")
+def _h_memory_size_op(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    ctx.push(ctx.mem_pages)
+    return (None, None)
+
+
+@_op_handler("memory.grow")
+def _h_memory_grow_op(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    delta = ctx.pop()
+    old_pages = ctx.mem_pages
+    ctx.memory.extend(bytearray(delta * 65536))
+    ctx.mem_pages += delta
+    ctx.push(old_pages)
+    return (None, None)
+
+
+# --- 3.5 Constants ---
+
+@_op_handler("i32.const")
+def _h_i32_const(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    ctx.push(int(arg) & 0xFFFF_FFFF)
+    return (None, None)
+
+
+@_op_handler("i64.const")
+def _h_i64_const(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    ctx.push(int(arg) & 0xFFFF_FFFF_FFFF_FFFF)
+    return (None, None)
+
+
+# --- 3.6 32-bit Integer ALU & Logic Handlers ---
+
+@_op_handler("i32.eqz")
+def _h_i32_eqz(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    ctx.push(1 if ctx.pop() == 0 else 0)
+    return (None, None)
+
+
+@_op_handler("i32.eq")
+def _h_i32_eq(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    ctx.push(1 if a == b else 0)
+    return (None, None)
+
+
+@_op_handler("i32.ne")
+def _h_i32_ne(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    ctx.push(1 if a != b else 0)
+    return (None, None)
+
+
+@_op_handler("i32.lt_s")
+def _h_i32_lt_s(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    sa = struct.unpack(">i", struct.pack(">I", a & 0xFFFF_FFFF))[0]
+    sb = struct.unpack(">i", struct.pack(">I", b & 0xFFFF_FFFF))[0]
+    ctx.push(1 if sa < sb else 0)
+    return (None, None)
+
+
+@_op_handler("i32.lt_u")
+def _h_i32_lt_u(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    ctx.push(1 if a < b else 0)
+    return (None, None)
+
+
+@_op_handler("i32.gt_s")
+def _h_i32_gt_s(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    sa = struct.unpack(">i", struct.pack(">I", a & 0xFFFF_FFFF))[0]
+    sb = struct.unpack(">i", struct.pack(">I", b & 0xFFFF_FFFF))[0]
+    ctx.push(1 if sa > sb else 0)
+    return (None, None)
+
+
+@_op_handler("i32.gt_u")
+def _h_i32_gt_u(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    ctx.push(1 if a > b else 0)
+    return (None, None)
+
+
+@_op_handler("i32.le_s")
+def _h_i32_le_s(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    sa = struct.unpack(">i", struct.pack(">I", a & 0xFFFF_FFFF))[0]
+    sb = struct.unpack(">i", struct.pack(">I", b & 0xFFFF_FFFF))[0]
+    ctx.push(1 if sa <= sb else 0)
+    return (None, None)
+
+
+@_op_handler("i32.le_u")
+def _h_i32_le_u(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    ctx.push(1 if a <= b else 0)
+    return (None, None)
+
+
+@_op_handler("i32.ge_s")
+def _h_i32_ge_s(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    sa = struct.unpack(">i", struct.pack(">I", a & 0xFFFF_FFFF))[0]
+    sb = struct.unpack(">i", struct.pack(">I", b & 0xFFFF_FFFF))[0]
+    ctx.push(1 if sa >= sb else 0)
+    return (None, None)
+
+
+@_op_handler("i32.ge_u")
+def _h_i32_ge_u(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    ctx.push(1 if a >= b else 0)
+    return (None, None)
+
+
+@_op_handler("i32.clz")
+def _h_i32_clz(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    a = ctx.pop() & 0xFFFF_FFFF
+    bits = bin(a)[2:].zfill(32)
+    ctx.push(len(bits) - len(bits.lstrip('0')))
+    return (None, None)
+
+
+@_op_handler("i32.ctz")
+def _h_i32_ctz(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    a = ctx.pop() & 0xFFFF_FFFF
+    bits = bin(a)[2:].zfill(32)
+    ctx.push(len(bits) - len(bits.rstrip('0')))
+    return (None, None)
+
+
+@_op_handler("i32.popcnt")
+def _h_i32_popcnt(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    ctx.push(bin(ctx.pop() & 0xFFFF_FFFF).count('1'))
+    return (None, None)
+
+
+@_op_handler("i32.add")
+def _h_i32_add(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    ctx.push((a + b) & 0xFFFF_FFFF)
+    return (None, None)
+
+
+@_op_handler("i32.sub")
+def _h_i32_sub(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    ctx.push((a - b) & 0xFFFF_FFFF)
+    return (None, None)
+
+
+@_op_handler("i32.mul")
+def _h_i32_mul(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    ctx.push((a * b) & 0xFFFF_FFFF)
+    return (None, None)
+
+
+@_op_handler("i32.div_s")
+def _h_i32_div_s(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    if b == 0:
+        raise WASMTrap("INTEGER_DIVIDE_BY_ZERO")
+    sa = struct.unpack(">i", struct.pack(">I", a & 0xFFFF_FFFF))[0]
+    sb = struct.unpack(">i", struct.pack(">I", b & 0xFFFF_FFFF))[0]
+    ctx.push(int(sa / sb) & 0xFFFF_FFFF)
+    return (None, None)
+
+
+@_op_handler("i32.div_u")
+def _h_i32_div_u(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    if b == 0:
+        raise WASMTrap("INTEGER_DIVIDE_BY_ZERO")
+    ctx.push((a // b) & 0xFFFF_FFFF)
+    return (None, None)
+
+
+@_op_handler("i32.rem_s")
+def _h_i32_rem_s(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    if b == 0:
+        raise WASMTrap("INTEGER_DIVIDE_BY_ZERO")
+    sa = struct.unpack(">i", struct.pack(">I", a & 0xFFFF_FFFF))[0]
+    sb = struct.unpack(">i", struct.pack(">I", b & 0xFFFF_FFFF))[0]
+    res = sa % sb if sa * sb >= 0 else sa % sb - sb
+    ctx.push(res & 0xFFFF_FFFF)
+    return (None, None)
+
+
+@_op_handler("i32.rem_u")
+def _h_i32_rem_u(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    if b == 0:
+        raise WASMTrap("INTEGER_DIVIDE_BY_ZERO")
+    ctx.push((a % b) & 0xFFFF_FFFF)
+    return (None, None)
+
+
+@_op_handler("i32.and")
+def _h_i32_and(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    ctx.push(a & b)
+    return (None, None)
+
+
+@_op_handler("i32.or")
+def _h_i32_or(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    ctx.push(a | b)
+    return (None, None)
+
+
+@_op_handler("i32.xor")
+def _h_i32_xor(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    ctx.push(a ^ b)
+    return (None, None)
+
+
+@_op_handler("i32.shl")
+def _h_i32_shl(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    ctx.push((a << (b & 31)) & 0xFFFF_FFFF)
+    return (None, None)
+
+
+@_op_handler("i32.shr_s")
+def _h_i32_shr_s(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    sa = struct.unpack(">i", struct.pack(">I", a & 0xFFFF_FFFF))[0]
+    ctx.push((sa >> (b & 31)) & 0xFFFF_FFFF)
+    return (None, None)
+
+
+@_op_handler("i32.shr_u")
+def _h_i32_shr_u(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    ctx.push(((a & 0xFFFF_FFFF) >> (b & 31)) & 0xFFFF_FFFF)
+    return (None, None)
+
+
+@_op_handler("i32.rotl")
+def _h_i32_rotl(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    shift = b & 31
+    val = ((a << shift) | (a >> (32 - shift))) & 0xFFFF_FFFF
+    ctx.push(val)
+    return (None, None)
+
+
+@_op_handler("i32.rotr")
+def _h_i32_rotr(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    shift = b & 31
+    val = ((a >> shift) | (a << (32 - shift))) & 0xFFFF_FFFF
+    ctx.push(val)
+    return (None, None)
+
+
+# --- 3.7 64-bit Integer ALU & Logic Handlers ---
+
+@_op_handler("i64.eqz")
+def _h_i64_eqz(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    ctx.push(1 if ctx.pop() == 0 else 0)
+    return (None, None)
+
+
+@_op_handler("i64.eq")
+def _h_i64_eq(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    ctx.push(1 if a == b else 0)
+    return (None, None)
+
+
+@_op_handler("i64.ne")
+def _h_i64_ne(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    ctx.push(1 if a != b else 0)
+    return (None, None)
+
+
+@_op_handler("i64.lt_s")
+def _h_i64_lt_s(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    sa = struct.unpack(">q", struct.pack(">Q", a & 0xFFFF_FFFF_FFFF_FFFF))[0]
+    sb = struct.unpack(">q", struct.pack(">Q", b & 0xFFFF_FFFF_FFFF_FFFF))[0]
+    ctx.push(1 if sa < sb else 0)
+    return (None, None)
+
+
+@_op_handler("i64.lt_u")
+def _h_i64_lt_u(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    ctx.push(1 if a < b else 0)
+    return (None, None)
+
+
+@_op_handler("i64.gt_s")
+def _h_i64_gt_s(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    sa = struct.unpack(">q", struct.pack(">Q", a & 0xFFFF_FFFF_FFFF_FFFF))[0]
+    sb = struct.unpack(">q", struct.pack(">Q", b & 0xFFFF_FFFF_FFFF_FFFF))[0]
+    ctx.push(1 if sa > sb else 0)
+    return (None, None)
+
+
+@_op_handler("i64.gt_u")
+def _h_i64_gt_u(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    ctx.push(1 if a > b else 0)
+    return (None, None)
+
+
+@_op_handler("i64.le_s")
+def _h_i64_le_s(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    sa = struct.unpack(">q", struct.pack(">Q", a & 0xFFFF_FFFF_FFFF_FFFF))[0]
+    sb = struct.unpack(">q", struct.pack(">Q", b & 0xFFFF_FFFF_FFFF_FFFF))[0]
+    ctx.push(1 if sa <= sb else 0)
+    return (None, None)
+
+
+@_op_handler("i64.le_u")
+def _h_i64_le_u(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    ctx.push(1 if a <= b else 0)
+    return (None, None)
+
+
+@_op_handler("i64.ge_s")
+def _h_i64_ge_s(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    sa = struct.unpack(">q", struct.pack(">Q", a & 0xFFFF_FFFF_FFFF_FFFF))[0]
+    sb = struct.unpack(">q", struct.pack(">Q", b & 0xFFFF_FFFF_FFFF_FFFF))[0]
+    ctx.push(1 if sa >= sb else 0)
+    return (None, None)
+
+
+@_op_handler("i64.ge_u")
+def _h_i64_ge_u(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    ctx.push(1 if a >= b else 0)
+    return (None, None)
+
+
+@_op_handler("i64.clz")
+def _h_i64_clz(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    a = ctx.pop() & 0xFFFF_FFFF_FFFF_FFFF
+    bits = bin(a)[2:].zfill(64)
+    ctx.push(len(bits) - len(bits.lstrip('0')))
+    return (None, None)
+
+
+@_op_handler("i64.ctz")
+def _h_i64_ctz(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    a = ctx.pop() & 0xFFFF_FFFF_FFFF_FFFF
+    bits = bin(a)[2:].zfill(64)
+    ctx.push(len(bits) - len(bits.rstrip('0')))
+    return (None, None)
+
+
+@_op_handler("i64.popcnt")
+def _h_i64_popcnt(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    ctx.push(bin(ctx.pop() & 0xFFFF_FFFF_FFFF_FFFF).count('1'))
+    return (None, None)
+
+
+@_op_handler("i64.add")
+def _h_i64_add(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    ctx.push((a + b) & 0xFFFF_FFFF_FFFF_FFFF)
+    return (None, None)
+
+
+@_op_handler("i64.sub")
+def _h_i64_sub(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    ctx.push((a - b) & 0xFFFF_FFFF_FFFF_FFFF)
+    return (None, None)
+
+
+@_op_handler("i64.mul")
+def _h_i64_mul(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    ctx.push((a * b) & 0xFFFF_FFFF_FFFF_FFFF)
+    return (None, None)
+
+
+@_op_handler("i64.div_s")
+def _h_i64_div_s(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    if b == 0:
+        raise WASMTrap("INTEGER_DIVIDE_BY_ZERO")
+    sa = struct.unpack(">q", struct.pack(">Q", a & 0xFFFF_FFFF_FFFF_FFFF))[0]
+    sb = struct.unpack(">q", struct.pack(">Q", b & 0xFFFF_FFFF_FFFF_FFFF))[0]
+    ctx.push(int(sa / sb) & 0xFFFF_FFFF_FFFF_FFFF)
+    return (None, None)
+
+
+@_op_handler("i64.div_u")
+def _h_i64_div_u(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    if b == 0:
+        raise WASMTrap("INTEGER_DIVIDE_BY_ZERO")
+    ctx.push((a // b) & 0xFFFF_FFFF_FFFF_FFFF)
+    return (None, None)
+
+
+@_op_handler("i64.rem_s")
+def _h_i64_rem_s(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    if b == 0:
+        raise WASMTrap("INTEGER_DIVIDE_BY_ZERO")
+    sa = struct.unpack(">q", struct.pack(">Q", a & 0xFFFF_FFFF_FFFF_FFFF))[0]
+    sb = struct.unpack(">q", struct.pack(">Q", b & 0xFFFF_FFFF_FFFF_FFFF))[0]
+    res = sa % sb if sa * sb >= 0 else sa % sb - sb
+    ctx.push(res & 0xFFFF_FFFF_FFFF_FFFF)
+    return (None, None)
+
+
+@_op_handler("i64.rem_u")
+def _h_i64_rem_u(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    if b == 0:
+        raise WASMTrap("INTEGER_DIVIDE_BY_ZERO")
+    ctx.push((a % b) & 0xFFFF_FFFF_FFFF_FFFF)
+    return (None, None)
+
+
+@_op_handler("i64.and")
+def _h_i64_and(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    ctx.push(a & b)
+    return (None, None)
+
+
+@_op_handler("i64.or")
+def _h_i64_or(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    ctx.push(a | b)
+    return (None, None)
+
+
+@_op_handler("i64.xor")
+def _h_i64_xor(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    ctx.push(a ^ b)
+    return (None, None)
+
+
+@_op_handler("i64.shl")
+def _h_i64_shl(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    ctx.push((a << (b & 63)) & 0xFFFF_FFFF_FFFF_FFFF)
+    return (None, None)
+
+
+@_op_handler("i64.shr_s")
+def _h_i64_shr_s(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    sa = struct.unpack(">q", struct.pack(">Q", a & 0xFFFF_FFFF_FFFF_FFFF))[0]
+    ctx.push((sa >> (b & 63)) & 0xFFFF_FFFF_FFFF_FFFF)
+    return (None, None)
+
+
+@_op_handler("i64.shr_u")
+def _h_i64_shr_u(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    ctx.push(((a & 0xFFFF_FFFF_FFFF_FFFF) >> (b & 63)) & 0xFFFF_FFFF_FFFF_FFFF)
+    return (None, None)
+
+
+@_op_handler("i64.rotl")
+def _h_i64_rotl(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    shift = b & 63
+    val = ((a << shift) | (a >> (64 - shift))) & 0xFFFF_FFFF_FFFF_FFFF
+    ctx.push(val)
+    return (None, None)
+
+
+@_op_handler("i64.rotr")
+def _h_i64_rotr(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    b, a = ctx.pop(), ctx.pop()
+    shift = b & 63
+    val = ((a >> shift) | (a << (64 - shift))) & 0xFFFF_FFFF_FFFF_FFFF
+    ctx.push(val)
+    return (None, None)
+
+
+# --- 3.8 Type Conversion Handlers ---
+
+@_op_handler("i32.wrap_i64")
+def _h_i32_wrap_i64(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    ctx.push(ctx.pop() & 0xFFFF_FFFF)
+    return (None, None)
+
+
+@_op_handler("i64.extend_i32_s")
+def _h_i64_extend_i32_s(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    val32 = ctx.pop() & 0xFFFF_FFFF
+    signed32 = struct.unpack(">i", struct.pack(">I", val32))[0]
+    ctx.push(struct.unpack(">Q", struct.pack(">q", signed32))[0])
+    return (None, None)
+
+
+@_op_handler("i64.extend_i32_u")
+def _h_i64_extend_i32_u(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+    val32 = ctx.pop() & 0xFFFF_FFFF
+    ctx.push(val32)
+    return (None, None)
 
 
 # ==============================================================================

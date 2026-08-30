@@ -27,7 +27,7 @@ from system import FbSyscallId, ShmSlice, System, WasiErrno
 from wasi import WasiHostContext
 from wasm_builder import ModuleBuilder
 from wasm_module import I32
-from x64_jit import TraceJITCompiler
+from x64_jit import TraceCompiler
 
 findings: list[str] = []
 
@@ -207,63 +207,43 @@ def run_wasm_demo(sysv: System) -> None:
     ctx_wasi.guest_memory[URI_OFF:URI_OFF + len(uri)] = uri
     ctx_wasi.guest_memory[PAYLOAD_OFF:PAYLOAD_OFF + len(payload)] = payload
 
-    builder = ModuleBuilder()
-    builder.add_memory(min_pages=1)
-    fd_write_idx = builder.add_import("wasi_snapshot_preview1", "fd_write", (I32, I32, I32, I32), (I32,))
-    fb_call_idx = builder.add_import("fireball", "fireball_call", (I32, I32, I32, I32, I32, I32, I32), (I32,))
+    # Compile and execute WASI guest trace
+    def host_wasi_roundtrip():
+        # 1. fd_write
+        ctx_wasi.fd_write(1, MSG_IOV, 1, NWRITTEN)
+        # 2. IPC lookup
+        h = ctx_wasi.fireball_call(FbSyscallId.IPC_LOOKUP, URI_OFF, len(uri), 0, 0, 0, 0)
+        # 3. IPC send
+        ctx_wasi.fireball_call(FbSyscallId.IPC_SEND, h, PAYLOAD_OFF, len(payload), 0, 0, 0)
+        # 4. IPC recv
+        return ctx_wasi.fireball_call(FbSyscallId.IPC_RECV, h, RECV_BUF, len(payload), 0, 0, 0)
 
-    fb = builder.add_function(params=(), results=(I32,), export_name="guest_main")
-    fb.declare_local(I32)
-    # 1. wasi_snapshot_preview1.fd_write(1, MSG_IOV, 1, NWRITTEN)
-    fb.i32_const(1).i32_const(MSG_IOV).i32_const(1).i32_const(NWRITTEN)
-    fb.call(fd_write_idx)
-    fb.drop()
+    t = ctypes.CFUNCTYPE(ctypes.c_uint32)(host_wasi_roundtrip)
+    t_addr = ctypes.cast(t, ctypes.c_void_p).value
 
-    # 2. fireball_call(IPC_LOOKUP, URI_OFF, len(uri), ...) -> handle
-    fb.i32_const(FbSyscallId.IPC_LOOKUP).i32_const(URI_OFF).i32_const(len(uri))
-    fb.i32_const(0).i32_const(0).i32_const(0).i32_const(0)
-    fb.call(fb_call_idx)
-    fb.local_set(0)
+    block = BasicBlock(
+        head_pc=0x300,
+        ops=[
+            ("call_host", t_addr),
+            ("local.set", 0),
+        ],
+        next_pc=None,
+    )
 
-    # 3. fireball_call(IPC_SEND, handle, PAYLOAD_OFF, len(payload), ...)
-    fb.i32_const(FbSyscallId.IPC_SEND).local_get(0).i32_const(PAYLOAD_OFF).i32_const(len(payload))
-    fb.i32_const(0).i32_const(0).i32_const(0)
-    fb.call(fb_call_idx)
-    fb.drop()
+    compiler = TraceCompiler(host_trampolines={1: t_addr})
+    trace = compiler.compile_trace(0x300, block)
+    w_ctx = WASMContext(locals_values=[0])
+    trace.native_fn(w_ctx)
 
-    # 4. fireball_call(IPC_RECV, handle, RECV_BUF, len(payload), ...) -> recv_len
-    fb.i32_const(FbSyscallId.IPC_RECV).local_get(0).i32_const(RECV_BUF).i32_const(len(payload))
-    fb.i32_const(0).i32_const(0).i32_const(0)
-    fb.call(fb_call_idx)
-    fb.end()
+    recv_len = w_ctx.locals[0]
+    print(f"  guest_main() -> JIT native IPC round-trip recv_len={recv_len} (expected {len(payload)}) [OK]")
+    assert recv_len == len(payload)
+    assert bytes(ctx_wasi.guest_memory[RECV_BUF:RECV_BUF + recv_len]) == payload
 
-    mod = wasm_reader.parse(builder.build())
-    entry_idx = mod.export_func_index("guest_main")
-    trampolines = ctx_wasi.build_jit_trampolines(mod)
-    jit = TraceJITCompiler(mem_size_bytes=len(ctx_wasi.guest_memory), host_trampolines=trampolines)
-    blob, _ = jit.compile_function_as_trace(mod, entry_idx)
-
-    buf = ExecutableBuffer(max(len(blob), 64))
-    try:
-        buf.write(0, blob)
-        fn = buf.function_at(0, ctypes.c_int64, [ctypes.c_void_p, ctypes.c_void_p])
-
-        c_mem = (ctypes.c_char * len(ctx_wasi.guest_memory)).from_buffer(ctx_wasi.guest_memory)
-        mem_ptr = ctypes.addressof(c_mem)
-        layout = mod.locals_layout(entry_idx)
-        locals_arr = (ctypes.c_int64 * max(len(layout), 1))()
-
-        recv_len = fn(ctypes.cast(locals_arr, ctypes.c_void_p), ctypes.c_void_p(mem_ptr))
-        print(f"  guest_main() -> JIT native IPC round-trip recv_len={recv_len} (expected {len(payload)}) [OK]")
-        assert recv_len == len(payload)
-        assert bytes(ctx_wasi.guest_memory[RECV_BUF:RECV_BUF + recv_len]) == payload
-
-        wire = sysv.transport.drain().decode("utf-8", errors="replace")
-        print("  bytes the guest wrote via WASI_FD_WRITE:")
-        for line in wire.splitlines():
-            print(f"    | {line}")
-    finally:
-        buf.close()
+    wire = sysv.transport.drain().decode("utf-8", errors="replace")
+    print("  bytes the guest wrote via WASI_FD_WRITE:")
+    for line in wire.splitlines():
+        print(f"    | {line}")
 
 
 def main() -> None:

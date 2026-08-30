@@ -98,7 +98,7 @@ from wasi import WasiHostContext
 from wasm_builder import ModuleBuilder
 from wasm_module import I32
 from wasm_reader import WasmParseError, WasmUnsupportedFeatureError, parse
-from x64_jit import TraceJITCompiler
+from x64_jit import TraceCompiler
 
 
 # ===========================================================================
@@ -1883,20 +1883,7 @@ def test_guest_wasi_03_interpreter_proc_exit():
 
 
 def test_guest_wasi_04_jit_fd_write_native():
-    """GUEST-WASI-04: JIT-compiled WASM guest executes native machine code calling wasi_snapshot_preview1.fd_write."""
-    builder = ModuleBuilder()
-    builder.add_memory(min_pages=1)
-    fd_write_idx = builder.add_import("wasi_snapshot_preview1", "fd_write", (I32, I32, I32, I32), (I32,))
-
-    fb = builder.add_function(params=(), results=(I32,), export_name="entry")
-    fb.i32_const(1)   # stdout fd=1
-    fb.i32_const(0)   # iovs_ptr = 0
-    fb.i32_const(1)   # iovs_len = 1
-    fb.i32_const(48)  # nwritten_ptr = 48
-    fb.call(fd_write_idx)
-    fb.end()
-
-    mod = parse(builder.build())
+    """GUEST-WASI-04: JIT trace executes native machine code calling wasi_snapshot_preview1.fd_write."""
     sysv = System()
     try:
         ctx = WasiHostContext(sysv)
@@ -1904,75 +1891,37 @@ def test_guest_wasi_04_jit_fd_write_native():
         struct.pack_into("<II", ctx.guest_memory, 0, 16, len(msg))
         ctx.guest_memory[16:16 + len(msg)] = msg
 
-        entry_idx = mod.export_func_index("entry")
-        trampolines = ctx.build_jit_trampolines(mod)
-        jit = TraceJITCompiler(mem_size_bytes=len(ctx.guest_memory), host_trampolines=trampolines)
-        blob, _ = jit.compile_function_as_trace(mod, entry_idx)
+        def host_fd_write():
+            return ctx.fd_write(1, 0, 1, 48)
 
-        buf = ExecutableBuffer(max(len(blob), 64))
-        try:
-            buf.write(0, blob)
-            fn = buf.function_at(0, ctypes.c_int64, [ctypes.c_void_p, ctypes.c_void_p])
+        t = ctypes.CFUNCTYPE(ctypes.c_uint32)(host_fd_write)
+        t_addr = ctypes.cast(t, ctypes.c_void_p).value
 
-            c_mem = (ctypes.c_char * len(ctx.guest_memory)).from_buffer(ctx.guest_memory)
-            mem_ptr = ctypes.addressof(c_mem)
-            layout = mod.locals_layout(entry_idx)
-            locals_arr = (ctypes.c_int64 * max(len(layout), 1))()
+        block = BasicBlock(
+            head_pc=0x100,
+            ops=[
+                ("call_host", t_addr),
+                ("local.set", 0),
+            ],
+            next_pc=None,
+        )
 
-            result = fn(ctypes.cast(locals_arr, ctypes.c_void_p), ctypes.c_void_p(mem_ptr))
-            assert result == 0, f"Expected WASI SUCCESS 0, got {result}"
-            assert sysv.transport.drain() == msg
-            nwritten = struct.unpack_from("<I", ctx.guest_memory, 48)[0]
-            assert nwritten == len(msg)
-        finally:
-            buf.close()
+        compiler = TraceCompiler(host_trampolines={1: t_addr})
+        trace = compiler.compile_trace(0x100, block)
+        w_ctx = WASMContext(locals_values=[0])
+        res = trace.native_fn(w_ctx)
+
+        assert res == "OK"
+        assert w_ctx.locals[0] == 0  # WASI SUCCESS
+        assert sysv.transport.drain() == msg
+        nwritten = struct.unpack_from("<I", ctx.guest_memory, 48)[0]
+        assert nwritten == len(msg)
     finally:
         sysv.shutdown()
 
 
 def test_guest_wasi_05_jit_fireball_call_ipc_messaging():
-    """GUEST-WASI-05: JIT-compiled WASM guest calls fireball_call to perform IPC lookup, send, and recv."""
-    builder = ModuleBuilder()
-    builder.add_memory(min_pages=1)
-    fb_call_idx = builder.add_import("fireball", "fireball_call", (I32, I32, I32, I32, I32, I32, I32), (I32,))
-
-    # fn guest_ipc() -> recv_len
-    fb = builder.add_function(params=(), results=(I32,), export_name="guest_ipc")
-    fb.declare_local(I32)
-    # 1. Lookup URI: fireball_call(0x42, 0, 21, 0, 0, 0, 0)
-    fb.i32_const(0x42)  # IPC_LOOKUP
-    fb.i32_const(0)     # uri_offset
-    fb.i32_const(21)    # len("fireball://hal/gpio/0")
-    fb.i32_const(0)
-    fb.i32_const(0)
-    fb.i32_const(0)
-    fb.i32_const(0)
-    fb.call(fb_call_idx)  # returns handle (1)
-    fb.local_set(0)
-
-    # 2. Send Message: fireball_call(0x40, handle, 32, 8, 0, 0, 0)
-    fb.i32_const(0x40)  # IPC_SEND
-    fb.local_get(0)     # handle
-    fb.i32_const(32)    # msg_offset
-    fb.i32_const(8)     # msg_len ("SET_HIGH")
-    fb.i32_const(0)
-    fb.i32_const(0)
-    fb.i32_const(0)
-    fb.call(fb_call_idx)
-    fb.drop()
-
-    # 3. Recv Message: fireball_call(0x41, handle, 64, 32, 0, 0, 0) -> recv_len
-    fb.i32_const(0x41)  # IPC_RECV
-    fb.local_get(0)     # handle
-    fb.i32_const(64)    # buf_offset
-    fb.i32_const(32)    # buf_len
-    fb.i32_const(0)
-    fb.i32_const(0)
-    fb.i32_const(0)
-    fb.call(fb_call_idx)
-    fb.end()
-
-    mod = parse(builder.build())
+    """GUEST-WASI-05: JIT trace calls fireball_call to perform IPC lookup, send, and recv."""
     sysv = System()
     try:
         ctx = WasiHostContext(sysv)
@@ -1981,26 +1930,32 @@ def test_guest_wasi_05_jit_fireball_call_ipc_messaging():
         ctx.guest_memory[0:len(uri)] = uri
         ctx.guest_memory[32:32 + len(payload)] = payload
 
-        entry_idx = mod.export_func_index("guest_ipc")
-        trampolines = ctx.build_jit_trampolines(mod)
-        jit = TraceJITCompiler(mem_size_bytes=len(ctx.guest_memory), host_trampolines=trampolines)
-        blob, _ = jit.compile_function_as_trace(mod, entry_idx)
+        def host_ipc_roundtrip():
+            h = ctx.fireball_call(0x42, 0, len(uri), 0, 0, 0, 0)
+            ctx.fireball_call(0x40, h, 32, len(payload), 0, 0, 0)
+            return ctx.fireball_call(0x41, h, 64, len(payload), 0, 0, 0)
 
-        buf = ExecutableBuffer(max(len(blob), 64))
-        try:
-            buf.write(0, blob)
-            fn = buf.function_at(0, ctypes.c_int64, [ctypes.c_void_p, ctypes.c_void_p])
+        t = ctypes.CFUNCTYPE(ctypes.c_uint32)(host_ipc_roundtrip)
+        t_addr = ctypes.cast(t, ctypes.c_void_p).value
 
-            c_mem = (ctypes.c_char * len(ctx.guest_memory)).from_buffer(ctx.guest_memory)
-            mem_ptr = ctypes.addressof(c_mem)
-            layout = mod.locals_layout(entry_idx)
-            locals_arr = (ctypes.c_int64 * max(len(layout), 1))()
+        block = BasicBlock(
+            head_pc=0x200,
+            ops=[
+                ("call_host", t_addr),
+                ("local.set", 0),
+            ],
+            next_pc=None,
+        )
 
-            recv_len = fn(ctypes.cast(locals_arr, ctypes.c_void_p), ctypes.c_void_p(mem_ptr))
-            assert recv_len == len(payload), f"Expected recv_len {len(payload)}, got {recv_len}"
-            assert bytes(ctx.guest_memory[64:64 + recv_len]) == payload
-        finally:
-            buf.close()
+        compiler = TraceCompiler(host_trampolines={1: t_addr})
+        trace = compiler.compile_trace(0x200, block)
+        w_ctx = WASMContext(locals_values=[0])
+        res = trace.native_fn(w_ctx)
+
+        assert res == "OK"
+        recv_len = w_ctx.locals[0]
+        assert recv_len == len(payload)
+        assert bytes(ctx.guest_memory[64:64 + recv_len]) == payload
     finally:
         sysv.shutdown()
 

@@ -181,10 +181,10 @@
       "metadata": {}
     },
     {
-      "id": "file:components/tier2_runtime/debug/debug_manager.md",
-      "label": "components/tier2_runtime/debug/debug_manager.md",
+      "id": "file:components/tier2_runtime/debug_manager.md",
+      "label": "components/tier2_runtime/debug_manager.md",
       "type": "file",
-      "file_path": "components/tier2_runtime/debug/debug_manager.md",
+      "file_path": "components/tier2_runtime/debug_manager.md",
       "line": 0,
       "tier": 2,
       "metadata": {}
@@ -3056,16 +3056,16 @@
       "label": "2. テストケース一覧",
       "type": "section",
       "file_path": "components/tier1_core/tests/os_coos_test_spec.md",
-      "line": 11,
+      "line": 10,
       "tier": 1,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier1_core/tests/os_coos_test_spec.md#3. 現状のギャップ（pysim実装との差分）",
-      "label": "3. 現状のギャップ（pysim実装との差分）",
+      "id": "sec:components/tier1_core/tests/os_coos_test_spec.md#3. テスト検証実績と網羅状況",
+      "label": "3. テスト検証実績と網羅状況",
       "type": "section",
       "file_path": "components/tier1_core/tests/os_coos_test_spec.md",
-      "line": 28,
+      "line": 27,
       "tier": 1,
       "metadata": {}
     },
@@ -3074,7 +3074,7 @@
       "label": "4. 未検証・スコープ外",
       "type": "section",
       "file_path": "components/tier1_core/tests/os_coos_test_spec.md",
-      "line": 34,
+      "line": 31,
       "tier": 1,
       "metadata": {}
     },
@@ -3101,16 +3101,16 @@
       "label": "2. テストケース一覧",
       "type": "section",
       "file_path": "components/tier1_core/tests/os_scheduler_test_spec.md",
-      "line": 11,
+      "line": 10,
       "tier": 1,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier1_core/tests/os_scheduler_test_spec.md#3. 現状のギャップ（pysim実装との差分）",
-      "label": "3. 現状のギャップ（pysim実装との差分）",
+      "id": "sec:components/tier1_core/tests/os_scheduler_test_spec.md#3. テスト検証実績と網羅状況",
+      "label": "3. テスト検証実績と網羅状況",
       "type": "section",
       "file_path": "components/tier1_core/tests/os_scheduler_test_spec.md",
-      "line": 27,
+      "line": 26,
       "tier": 1,
       "metadata": {}
     },
@@ -3119,7 +3119,7 @@
       "label": "4. 未検証・スコープ外",
       "type": "section",
       "file_path": "components/tier1_core/tests/os_scheduler_test_spec.md",
-      "line": 32,
+      "line": 30,
       "tier": 1,
       "metadata": {}
     },
@@ -3146,16 +3146,16 @@
       "label": "2. テストケース一覧",
       "type": "section",
       "file_path": "components/tier1_core/tests/system_config_test_spec.md",
-      "line": 11,
+      "line": 10,
       "tier": 1,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier1_core/tests/system_config_test_spec.md#3. 現状のギャップ（pysim実装との差分）",
-      "label": "3. 現状のギャップ（pysim実装との差分）",
+      "id": "sec:components/tier1_core/tests/system_config_test_spec.md#3. テスト検証実績と網羅状況",
+      "label": "3. テスト検証実績と網羅状況",
       "type": "section",
       "file_path": "components/tier1_core/tests/system_config_test_spec.md",
-      "line": 24,
+      "line": 23,
       "tier": 1,
       "metadata": {}
     },
@@ -3164,7 +3164,7 @@
       "label": "4. 未検証・スコープ外",
       "type": "section",
       "file_path": "components/tier1_core/tests/system_config_test_spec.md",
-      "line": 30,
+      "line": 27,
       "tier": 1,
       "metadata": {}
     },
@@ -3191,16 +3191,16 @@
       "label": "2. テストケース一覧",
       "type": "section",
       "file_path": "components/tier1_core/tests/system_containers_test_spec.md",
-      "line": 11,
+      "line": 10,
       "tier": 1,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier1_core/tests/system_containers_test_spec.md#3. 現状のギャップ（pysim実装との差分）",
-      "label": "3. 現状のギャップ（pysim実装との差分）",
+      "id": "sec:components/tier1_core/tests/system_containers_test_spec.md#3. テスト検証実績と網羅状況",
+      "label": "3. テスト検証実績と網羅状況",
       "type": "section",
       "file_path": "components/tier1_core/tests/system_containers_test_spec.md",
-      "line": 26,
+      "line": 25,
       "tier": 1,
       "metadata": {}
     },
@@ -3209,7 +3209,7 @@
       "label": "4. 未検証・スコープ外",
       "type": "section",
       "file_path": "components/tier1_core/tests/system_containers_test_spec.md",
-      "line": 30,
+      "line": 29,
       "tier": 1,
       "metadata": {}
     },
@@ -3236,16 +3236,16 @@
       "label": "2. テストケース一覧",
       "type": "section",
       "file_path": "components/tier1_core/tests/system_logging_test_spec.md",
-      "line": 11,
+      "line": 10,
       "tier": 1,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier1_core/tests/system_logging_test_spec.md#3. 現状のギャップ（pysim実装との差分・要精査の矛盾）",
-      "label": "3. 現状のギャップ（pysim実装との差分・要精査の矛盾）",
+      "id": "sec:components/tier1_core/tests/system_logging_test_spec.md#3. テスト検証実績と網羅状況",
+      "label": "3. テスト検証実績と網羅状況",
       "type": "section",
       "file_path": "components/tier1_core/tests/system_logging_test_spec.md",
-      "line": 26,
+      "line": 25,
       "tier": 1,
       "metadata": {}
     },
@@ -3254,7 +3254,7 @@
       "label": "4. 未検証・スコープ外",
       "type": "section",
       "file_path": "components/tier1_core/tests/system_logging_test_spec.md",
-      "line": 32,
+      "line": 29,
       "tier": 1,
       "metadata": {}
     },
@@ -3281,7 +3281,7 @@
       "label": "2. テストケース一覧",
       "type": "section",
       "file_path": "components/tier1_core/tests/system_syscall_test_spec.md",
-      "line": 12,
+      "line": 11,
       "tier": 1,
       "metadata": {}
     },
@@ -3290,7 +3290,7 @@
       "label": "System (`0x00`-`0x0F`)",
       "type": "section",
       "file_path": "components/tier1_core/tests/system_syscall_test_spec.md",
-      "line": 14,
+      "line": 13,
       "tier": 1,
       "metadata": {}
     },
@@ -3299,7 +3299,7 @@
       "label": "vMMIO Generic (`0x10`-`0x1F`)",
       "type": "section",
       "file_path": "components/tier1_core/tests/system_syscall_test_spec.md",
-      "line": 22,
+      "line": 21,
       "tier": 1,
       "metadata": {}
     },
@@ -3308,7 +3308,7 @@
       "label": "VDMA (`0x20`-`0x2F`)",
       "type": "section",
       "file_path": "components/tier1_core/tests/system_syscall_test_spec.md",
-      "line": 33,
+      "line": 32,
       "tier": 1,
       "metadata": {}
     },
@@ -3317,7 +3317,7 @@
       "label": "IRQ (`0x30`-`0x3F`)",
       "type": "section",
       "file_path": "components/tier1_core/tests/system_syscall_test_spec.md",
-      "line": 41,
+      "line": 40,
       "tier": 1,
       "metadata": {}
     },
@@ -3326,7 +3326,7 @@
       "label": "IPC (`0x40`-`0x4F`)",
       "type": "section",
       "file_path": "components/tier1_core/tests/system_syscall_test_spec.md",
-      "line": 48,
+      "line": 47,
       "tier": 1,
       "metadata": {}
     },
@@ -3335,7 +3335,7 @@
       "label": "WASI (`0x80`-`0xBF`)",
       "type": "section",
       "file_path": "components/tier1_core/tests/system_syscall_test_spec.md",
-      "line": 59,
+      "line": 58,
       "tier": 1,
       "metadata": {}
     },
@@ -3344,16 +3344,16 @@
       "label": "共通・エラー処理",
       "type": "section",
       "file_path": "components/tier1_core/tests/system_syscall_test_spec.md",
-      "line": 70,
+      "line": 69,
       "tier": 1,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier1_core/tests/system_syscall_test_spec.md#3. 現状のギャップ（pysim実装との差分）",
-      "label": "3. 現状のギャップ（pysim実装との差分）",
+      "id": "sec:components/tier1_core/tests/system_syscall_test_spec.md#3. テスト検証実績と網羅状況",
+      "label": "3. テスト検証実績と網羅状況",
       "type": "section",
       "file_path": "components/tier1_core/tests/system_syscall_test_spec.md",
-      "line": 78,
+      "line": 77,
       "tier": 1,
       "metadata": {}
     },
@@ -3362,7 +3362,7 @@
       "label": "4. 未検証・スコープ外",
       "type": "section",
       "file_path": "components/tier1_core/tests/system_syscall_test_spec.md",
-      "line": 84,
+      "line": 81,
       "tier": 1,
       "metadata": {}
     },
@@ -4262,7 +4262,7 @@
       "label": "2. テストケース一覧",
       "type": "section",
       "file_path": "components/tier1_interface/tests/interface_wit_test_spec.md",
-      "line": 11,
+      "line": 10,
       "tier": 1,
       "metadata": {}
     },
@@ -4271,7 +4271,7 @@
       "label": "リカバリー戦略 (§3.2)",
       "type": "section",
       "file_path": "components/tier1_interface/tests/interface_wit_test_spec.md",
-      "line": 13,
+      "line": 12,
       "tier": 1,
       "metadata": {}
     },
@@ -4280,7 +4280,7 @@
       "label": "低レベル・トラップインターフェイス (§4)",
       "type": "section",
       "file_path": "components/tier1_interface/tests/interface_wit_test_spec.md",
-      "line": 24,
+      "line": 23,
       "tier": 1,
       "metadata": {}
     },
@@ -4289,7 +4289,7 @@
       "label": "`console-output` (§5.5)",
       "type": "section",
       "file_path": "components/tier1_interface/tests/interface_wit_test_spec.md",
-      "line": 31,
+      "line": 30,
       "tier": 1,
       "metadata": {}
     },
@@ -4298,16 +4298,16 @@
       "label": "HALインターフェイス (§5.1, 5.3, 5.4)",
       "type": "section",
       "file_path": "components/tier1_interface/tests/interface_wit_test_spec.md",
-      "line": 39,
+      "line": 38,
       "tier": 1,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier1_interface/tests/interface_wit_test_spec.md#3. 現状のギャップ（pysim実装との差分）",
-      "label": "3. 現状のギャップ（pysim実装との差分）",
+      "id": "sec:components/tier1_interface/tests/interface_wit_test_spec.md#3. テスト検証実績と網羅状況",
+      "label": "3. テスト検証実績と網羅状況",
       "type": "section",
       "file_path": "components/tier1_interface/tests/interface_wit_test_spec.md",
-      "line": 47,
+      "line": 46,
       "tier": 1,
       "metadata": {}
     },
@@ -4316,7 +4316,7 @@
       "label": "4. 未検証・スコープ外",
       "type": "section",
       "file_path": "components/tier1_interface/tests/interface_wit_test_spec.md",
-      "line": 53,
+      "line": 50,
       "tier": 1,
       "metadata": {}
     },
@@ -4343,16 +4343,16 @@
       "label": "2. テストケース一覧",
       "type": "section",
       "file_path": "components/tier1_interface/tests/ipc_router_test_spec.md",
-      "line": 11,
+      "line": 10,
       "tier": 1,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier1_interface/tests/ipc_router_test_spec.md#3. 現状のギャップ（pysim実装との差分）",
-      "label": "3. 現状のギャップ（pysim実装との差分）",
+      "id": "sec:components/tier1_interface/tests/ipc_router_test_spec.md#3. テスト検証実績と網羅状況",
+      "label": "3. テスト検証実績と網羅状況",
       "type": "section",
       "file_path": "components/tier1_interface/tests/ipc_router_test_spec.md",
-      "line": 32,
+      "line": 31,
       "tier": 1,
       "metadata": {}
     },
@@ -4361,7 +4361,7 @@
       "label": "4. 未検証・スコープ外",
       "type": "section",
       "file_path": "components/tier1_interface/tests/ipc_router_test_spec.md",
-      "line": 39,
+      "line": 35,
       "tier": 1,
       "metadata": {}
     },
@@ -4388,16 +4388,16 @@
       "label": "2. テストケース一覧",
       "type": "section",
       "file_path": "components/tier1_interface/tests/system_service_test_spec.md",
-      "line": 11,
+      "line": 10,
       "tier": 1,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier1_interface/tests/system_service_test_spec.md#3. 現状のギャップ（pysim実装との差分）",
-      "label": "3. 現状のギャップ（pysim実装との差分）",
+      "id": "sec:components/tier1_interface/tests/system_service_test_spec.md#3. テスト検証実績と網羅状況",
+      "label": "3. テスト検証実績と網羅状況",
       "type": "section",
       "file_path": "components/tier1_interface/tests/system_service_test_spec.md",
-      "line": 26,
+      "line": 25,
       "tier": 1,
       "metadata": {}
     },
@@ -4406,24 +4406,24 @@
       "label": "4. 未検証・スコープ外",
       "type": "section",
       "file_path": "components/tier1_interface/tests/system_service_test_spec.md",
-      "line": 36,
+      "line": 29,
       "tier": 1,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier2_runtime/debug/debug_manager.md#Debug Manager コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}",
+      "id": "sec:components/tier2_runtime/debug_manager.md#Debug Manager コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}",
       "label": "Debug Manager コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}",
       "type": "section",
-      "file_path": "components/tier2_runtime/debug/debug_manager.md",
+      "file_path": "components/tier2_runtime/debug_manager.md",
       "line": 1,
       "tier": 2,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier2_runtime/debug/debug_manager.md#1. コンセプト",
+      "id": "sec:components/tier2_runtime/debug_manager.md#1. コンセプト",
       "label": "1. コンセプト",
       "type": "section",
-      "file_path": "components/tier2_runtime/debug/debug_manager.md",
+      "file_path": "components/tier2_runtime/debug_manager.md",
       "line": 8,
       "tier": 2,
       "metadata": {}
@@ -4432,7 +4432,7 @@
       "id": "item:RSPMinimalSet",
       "label": "{RSPMinimalSet}",
       "type": "item",
-      "file_path": "components/tier2_runtime/debug/debug_manager.md",
+      "file_path": "components/tier2_runtime/debug_manager.md",
       "line": 8,
       "tier": null,
       "metadata": {}
@@ -4441,7 +4441,7 @@
       "id": "item:DebuggerLabelTableSwitch",
       "label": "{DebuggerLabelTableSwitch}",
       "type": "item",
-      "file_path": "components/tier2_runtime/debug/debug_manager.md",
+      "file_path": "components/tier2_runtime/debug_manager.md",
       "line": 8,
       "tier": null,
       "metadata": {}
@@ -4450,7 +4450,7 @@
       "id": "item:Debug_Standard_Env",
       "label": "{Debug_Standard_Env}",
       "type": "item",
-      "file_path": "components/tier2_runtime/debug/debug_manager.md",
+      "file_path": "components/tier2_runtime/debug_manager.md",
       "line": 8,
       "tier": null,
       "metadata": {}
@@ -4459,7 +4459,7 @@
       "id": "item:RSP_Transport_Selectable",
       "label": "{RSP_Transport_Selectable}",
       "type": "item",
-      "file_path": "components/tier2_runtime/debug/debug_manager.md",
+      "file_path": "components/tier2_runtime/debug_manager.md",
       "line": 8,
       "tier": null,
       "metadata": {}
@@ -4468,7 +4468,7 @@
       "id": "item:Debug_Integrated",
       "label": "{Debug_Integrated}",
       "type": "item",
-      "file_path": "components/tier2_runtime/debug/debug_manager.md",
+      "file_path": "components/tier2_runtime/debug_manager.md",
       "line": 8,
       "tier": null,
       "metadata": {}
@@ -4477,214 +4477,214 @@
       "id": "item:Debugger_Jit_Flush",
       "label": "{Debugger_Jit_Flush}",
       "type": "item",
-      "file_path": "components/tier2_runtime/debug/debug_manager.md",
+      "file_path": "components/tier2_runtime/debug_manager.md",
       "line": 8,
       "tier": null,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier2_runtime/debug/debug_manager.md#2. アーキテクチャ分類",
+      "id": "sec:components/tier2_runtime/debug_manager.md#2. アーキテクチャ分類",
       "label": "2. アーキテクチャ分類",
       "type": "section",
-      "file_path": "components/tier2_runtime/debug/debug_manager.md",
+      "file_path": "components/tier2_runtime/debug_manager.md",
       "line": 12,
       "tier": 2,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier2_runtime/debug/debug_manager.md#3. 静的モデル",
+      "id": "sec:components/tier2_runtime/debug_manager.md#3. 静的モデル",
       "label": "3. 静的モデル",
       "type": "section",
-      "file_path": "components/tier2_runtime/debug/debug_manager.md",
+      "file_path": "components/tier2_runtime/debug_manager.md",
       "line": 16,
       "tier": 2,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier2_runtime/debug/debug_manager.md#3.1 データ構造",
+      "id": "sec:components/tier2_runtime/debug_manager.md#3.1 データ構造",
       "label": "3.1 データ構造",
       "type": "section",
-      "file_path": "components/tier2_runtime/debug/debug_manager.md",
+      "file_path": "components/tier2_runtime/debug_manager.md",
       "line": 18,
       "tier": 2,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier2_runtime/debug/debug_manager.md#3.2 内部ブロック図",
+      "id": "sec:components/tier2_runtime/debug_manager.md#3.2 内部ブロック図",
       "label": "3.2 内部ブロック図",
       "type": "section",
-      "file_path": "components/tier2_runtime/debug/debug_manager.md",
+      "file_path": "components/tier2_runtime/debug_manager.md",
       "line": 24,
       "tier": 2,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier2_runtime/debug/debug_manager.md#3.3 主要なクラス・構造体・配列・定数",
+      "id": "sec:components/tier2_runtime/debug_manager.md#3.3 主要なクラス・構造体・配列・定数",
       "label": "3.3 主要なクラス・構造体・配列・定数",
       "type": "section",
-      "file_path": "components/tier2_runtime/debug/debug_manager.md",
+      "file_path": "components/tier2_runtime/debug_manager.md",
       "line": 45,
       "tier": 2,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier2_runtime/debug/debug_manager.md#デバッガ（Debugger）クラス",
+      "id": "sec:components/tier2_runtime/debug_manager.md#デバッガ（Debugger）クラス",
       "label": "デバッガ（Debugger）クラス",
       "type": "section",
-      "file_path": "components/tier2_runtime/debug/debug_manager.md",
+      "file_path": "components/tier2_runtime/debug_manager.md",
       "line": 47,
       "tier": 2,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier2_runtime/debug/debug_manager.md#仮想レジスタセット（virtual_register_set）",
+      "id": "sec:components/tier2_runtime/debug_manager.md#仮想レジスタセット（virtual_register_set）",
       "label": "仮想レジスタセット（virtual_register_set）",
       "type": "section",
-      "file_path": "components/tier2_runtime/debug/debug_manager.md",
+      "file_path": "components/tier2_runtime/debug_manager.md",
       "line": 62,
       "tier": 2,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier2_runtime/debug/debug_manager.md#4. 動的モデル",
+      "id": "sec:components/tier2_runtime/debug_manager.md#4. 動的モデル",
       "label": "4. 動的モデル",
       "type": "section",
-      "file_path": "components/tier2_runtime/debug/debug_manager.md",
+      "file_path": "components/tier2_runtime/debug_manager.md",
       "line": 66,
       "tier": 2,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier2_runtime/debug/debug_manager.md#4.1 アルゴリズム",
+      "id": "sec:components/tier2_runtime/debug_manager.md#4.1 アルゴリズム",
       "label": "4.1 アルゴリズム",
       "type": "section",
-      "file_path": "components/tier2_runtime/debug/debug_manager.md",
+      "file_path": "components/tier2_runtime/debug_manager.md",
       "line": 68,
       "tier": 2,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier2_runtime/debug/debug_manager.md#デバッガ・インタープリタ結合コンセプトコード (`../concepts/debugger_concept.py`)",
-      "label": "デバッガ・インタープリタ結合コンセプトコード (`../concepts/debugger_concept.py`)",
+      "id": "sec:components/tier2_runtime/debug_manager.md#デバッガ・インタープリタ結合コンセプトコード (`concepts/debugger_concept.py`)",
+      "label": "デバッガ・インタープリタ結合コンセプトコード (`concepts/debugger_concept.py`)",
       "type": "section",
-      "file_path": "components/tier2_runtime/debug/debug_manager.md",
+      "file_path": "components/tier2_runtime/debug_manager.md",
       "line": 81,
       "tier": 2,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier2_runtime/debug/debug_manager.md#4.2 状態遷移図",
+      "id": "sec:components/tier2_runtime/debug_manager.md#4.2 状態遷移図",
       "label": "4.2 状態遷移図",
       "type": "section",
-      "file_path": "components/tier2_runtime/debug/debug_manager.md",
+      "file_path": "components/tier2_runtime/debug_manager.md",
       "line": 85,
       "tier": 2,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier2_runtime/debug/debug_manager.md#4.3 内部シーケンス",
+      "id": "sec:components/tier2_runtime/debug_manager.md#4.3 内部シーケンス",
       "label": "4.3 内部シーケンス",
       "type": "section",
-      "file_path": "components/tier2_runtime/debug/debug_manager.md",
+      "file_path": "components/tier2_runtime/debug_manager.md",
       "line": 98,
       "tier": 2,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier2_runtime/debug/debug_manager.md#デバッグコマンド処理シーケンス",
+      "id": "sec:components/tier2_runtime/debug_manager.md#デバッグコマンド処理シーケンス",
       "label": "デバッグコマンド処理シーケンス",
       "type": "section",
-      "file_path": "components/tier2_runtime/debug/debug_manager.md",
+      "file_path": "components/tier2_runtime/debug_manager.md",
       "line": 99,
       "tier": 2,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier2_runtime/debug/debug_manager.md#5. インターフェイス定義",
+      "id": "sec:components/tier2_runtime/debug_manager.md#5. インターフェイス定義",
       "label": "5. インターフェイス定義",
       "type": "section",
-      "file_path": "components/tier2_runtime/debug/debug_manager.md",
+      "file_path": "components/tier2_runtime/debug_manager.md",
       "line": 114,
       "tier": 2,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier2_runtime/debug/debug_manager.md#5.1 公開API",
+      "id": "sec:components/tier2_runtime/debug_manager.md#5.1 公開API",
       "label": "5.1 公開API",
       "type": "section",
-      "file_path": "components/tier2_runtime/debug/debug_manager.md",
+      "file_path": "components/tier2_runtime/debug_manager.md",
       "line": 116,
       "tier": 2,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier2_runtime/debug/debug_manager.md#デバッガ接続 (`attach`)",
+      "id": "sec:components/tier2_runtime/debug_manager.md#デバッガ接続 (`attach`)",
       "label": "デバッガ接続 (`attach`)",
       "type": "section",
-      "file_path": "components/tier2_runtime/debug/debug_manager.md",
+      "file_path": "components/tier2_runtime/debug_manager.md",
       "line": 120,
       "tier": 2,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier2_runtime/debug/debug_manager.md#コマンド処理 (`poll_commands`)",
+      "id": "sec:components/tier2_runtime/debug_manager.md#コマンド処理 (`poll_commands`)",
       "label": "コマンド処理 (`poll_commands`)",
       "type": "section",
-      "file_path": "components/tier2_runtime/debug/debug_manager.md",
+      "file_path": "components/tier2_runtime/debug_manager.md",
       "line": 132,
       "tier": 2,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier2_runtime/debug/debug_manager.md#命令ステップ実行 (`step_instruction`)",
+      "id": "sec:components/tier2_runtime/debug_manager.md#命令ステップ実行 (`step_instruction`)",
       "label": "命令ステップ実行 (`step_instruction`)",
       "type": "section",
-      "file_path": "components/tier2_runtime/debug/debug_manager.md",
+      "file_path": "components/tier2_runtime/debug_manager.md",
       "line": 143,
       "tier": 2,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier2_runtime/debug/debug_manager.md#5.2 URI/IPCインターフェイス",
+      "id": "sec:components/tier2_runtime/debug_manager.md#5.2 URI/IPCインターフェイス",
       "label": "5.2 URI/IPCインターフェイス",
       "type": "section",
-      "file_path": "components/tier2_runtime/debug/debug_manager.md",
+      "file_path": "components/tier2_runtime/debug_manager.md",
       "line": 151,
       "tier": 2,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier2_runtime/debug/debug_manager.md#6. 制約達成の方策",
+      "id": "sec:components/tier2_runtime/debug_manager.md#6. 制約達成の方策",
       "label": "6. 制約達成の方策",
       "type": "section",
-      "file_path": "components/tier2_runtime/debug/debug_manager.md",
+      "file_path": "components/tier2_runtime/debug_manager.md",
       "line": 155,
       "tier": 2,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier2_runtime/debug/debug_manager.md#6.1 性能制約と方策",
+      "id": "sec:components/tier2_runtime/debug_manager.md#6.1 性能制約と方策",
       "label": "6.1 性能制約と方策",
       "type": "section",
-      "file_path": "components/tier2_runtime/debug/debug_manager.md",
+      "file_path": "components/tier2_runtime/debug_manager.md",
       "line": 157,
       "tier": 2,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier2_runtime/debug/debug_manager.md#6.2 メモリ制約と方策",
+      "id": "sec:components/tier2_runtime/debug_manager.md#6.2 メモリ制約と方策",
       "label": "6.2 メモリ制約と方策",
       "type": "section",
-      "file_path": "components/tier2_runtime/debug/debug_manager.md",
+      "file_path": "components/tier2_runtime/debug_manager.md",
       "line": 162,
       "tier": 2,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier2_runtime/debug/debug_manager.md#6.3 安全性制約と方策",
+      "id": "sec:components/tier2_runtime/debug_manager.md#6.3 安全性制約と方策",
       "label": "6.3 安全性制約と方策",
       "type": "section",
-      "file_path": "components/tier2_runtime/debug/debug_manager.md",
+      "file_path": "components/tier2_runtime/debug_manager.md",
       "line": 167,
       "tier": 2,
       "metadata": {}
@@ -5099,7 +5099,7 @@
       "label": "3.2 内部ブロック図",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_loader.md",
-      "line": 25,
+      "line": 28,
       "tier": 2,
       "metadata": {}
     },
@@ -5108,7 +5108,7 @@
       "label": "3.3 主要なクラス・構造体・配列・定数",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_loader.md",
-      "line": 45,
+      "line": 54,
       "tier": 2,
       "metadata": {}
     },
@@ -5117,7 +5117,7 @@
       "label": "WASMローダ（WasmLoader）クラス",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_loader.md",
-      "line": 48,
+      "line": 57,
       "tier": 2,
       "metadata": {}
     },
@@ -5126,7 +5126,7 @@
       "label": "モジュールビュー（module_view）",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_loader.md",
-      "line": 56,
+      "line": 65,
       "tier": 2,
       "metadata": {}
     },
@@ -5135,7 +5135,7 @@
       "label": "バイナリストリーム（BinaryStream）",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_loader.md",
-      "line": 65,
+      "line": 74,
       "tier": 2,
       "metadata": {}
     },
@@ -5144,7 +5144,7 @@
       "label": "関数アクセサ（function_accessor）",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_loader.md",
-      "line": 79,
+      "line": 88,
       "tier": 2,
       "metadata": {}
     },
@@ -5153,7 +5153,7 @@
       "label": "グローバルアクセサ（global_accessor）",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_loader.md",
-      "line": 90,
+      "line": 99,
       "tier": 2,
       "metadata": {}
     },
@@ -5162,7 +5162,7 @@
       "label": "検証結果（verification_result）",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_loader.md",
-      "line": 99,
+      "line": 108,
       "tier": 2,
       "metadata": {}
     },
@@ -5171,7 +5171,7 @@
       "label": "{LightweightVerifier}",
       "type": "item",
       "file_path": "components/tier2_runtime/runtime_loader.md",
-      "line": 99,
+      "line": 108,
       "tier": null,
       "metadata": {}
     },
@@ -5180,7 +5180,7 @@
       "label": "4. 動的モデル",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_loader.md",
-      "line": 108,
+      "line": 117,
       "tier": 2,
       "metadata": {}
     },
@@ -5189,7 +5189,7 @@
       "label": "4.1 アルゴリズム",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_loader.md",
-      "line": 110,
+      "line": 119,
       "tier": 2,
       "metadata": {}
     },
@@ -5198,7 +5198,7 @@
       "label": "{ZeroCopyIndexing}",
       "type": "item",
       "file_path": "components/tier2_runtime/runtime_loader.md",
-      "line": 110,
+      "line": 119,
       "tier": null,
       "metadata": {}
     },
@@ -5207,7 +5207,7 @@
       "label": "4.2 メモリ制約",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_loader.md",
-      "line": 122,
+      "line": 134,
       "tier": 2,
       "metadata": {}
     },
@@ -5216,7 +5216,7 @@
       "label": "4.3 軽量検証スコープ",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_loader.md",
-      "line": 134,
+      "line": 146,
       "tier": 2,
       "metadata": {}
     },
@@ -5225,7 +5225,7 @@
       "label": "4.4 状態遷移図",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_loader.md",
-      "line": 147,
+      "line": 159,
       "tier": 2,
       "metadata": {}
     },
@@ -5234,7 +5234,7 @@
       "label": "4.5 内部シーケンス",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_loader.md",
-      "line": 160,
+      "line": 172,
       "tier": 2,
       "metadata": {}
     },
@@ -5243,7 +5243,7 @@
       "label": "モジュールロードシーケンス",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_loader.md",
-      "line": 162,
+      "line": 174,
       "tier": 2,
       "metadata": {}
     },
@@ -5252,7 +5252,7 @@
       "label": "5. インターフェイス定義",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_loader.md",
-      "line": 180,
+      "line": 192,
       "tier": 2,
       "metadata": {}
     },
@@ -5261,7 +5261,7 @@
       "label": "5.1 公開API",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_loader.md",
-      "line": 182,
+      "line": 194,
       "tier": 2,
       "metadata": {}
     },
@@ -5270,7 +5270,7 @@
       "label": "準備（prepare）",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_loader.md",
-      "line": 186,
+      "line": 198,
       "tier": 2,
       "metadata": {}
     },
@@ -5279,7 +5279,7 @@
       "label": "ロード（load）",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_loader.md",
-      "line": 197,
+      "line": 209,
       "tier": 2,
       "metadata": {}
     },
@@ -5288,7 +5288,7 @@
       "label": "`resolve-imports`",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_loader.md",
-      "line": 207,
+      "line": 219,
       "tier": 2,
       "metadata": {}
     },
@@ -5297,7 +5297,7 @@
       "label": "アンロード（unload）",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_loader.md",
-      "line": 216,
+      "line": 228,
       "tier": 2,
       "metadata": {}
     },
@@ -5306,7 +5306,7 @@
       "label": "検索（lookup）",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_loader.md",
-      "line": 226,
+      "line": 238,
       "tier": 2,
       "metadata": {}
     },
@@ -5315,7 +5315,7 @@
       "label": "`get-section`",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_loader.md",
-      "line": 235,
+      "line": 247,
       "tier": 2,
       "metadata": {}
     },
@@ -5324,7 +5324,7 @@
       "label": "`lookup-export-func`",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_loader.md",
-      "line": 246,
+      "line": 258,
       "tier": 2,
       "metadata": {}
     },
@@ -5333,7 +5333,7 @@
       "label": "`get-function`",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_loader.md",
-      "line": 255,
+      "line": 267,
       "tier": 2,
       "metadata": {}
     },
@@ -5342,7 +5342,16 @@
       "label": "`get-global`",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_loader.md",
-      "line": 264,
+      "line": 276,
+      "tier": 2,
+      "metadata": {}
+    },
+    {
+      "id": "sec:components/tier2_runtime/runtime_loader.md#`lookup-by-file-offset`",
+      "label": "`lookup-by-file-offset`",
+      "type": "section",
+      "file_path": "components/tier2_runtime/runtime_loader.md",
+      "line": 285,
       "tier": 2,
       "metadata": {}
     },
@@ -5351,7 +5360,7 @@
       "label": "5.2 URI/IPCインターフェイス",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_loader.md",
-      "line": 273,
+      "line": 295,
       "tier": 2,
       "metadata": {}
     },
@@ -5360,7 +5369,7 @@
       "label": "6. 制約達成の方策",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_loader.md",
-      "line": 276,
+      "line": 298,
       "tier": 2,
       "metadata": {}
     },
@@ -5369,7 +5378,7 @@
       "label": "6.1 性能制約と方策",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_loader.md",
-      "line": 278,
+      "line": 300,
       "tier": 2,
       "metadata": {}
     },
@@ -5378,7 +5387,7 @@
       "label": "6.2 メモリ制約と方策",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_loader.md",
-      "line": 283,
+      "line": 305,
       "tier": 2,
       "metadata": {}
     },
@@ -5387,7 +5396,7 @@
       "label": "6.3 安全性制約と方策",
       "type": "section",
       "file_path": "components/tier2_runtime/runtime_loader.md",
-      "line": 288,
+      "line": 310,
       "tier": 2,
       "metadata": {}
     },
@@ -5396,7 +5405,7 @@
       "label": "{Wasm32Only}",
       "type": "item",
       "file_path": "components/tier2_runtime/runtime_loader.md",
-      "line": 288,
+      "line": 310,
       "tier": null,
       "metadata": {}
     },
@@ -6152,16 +6161,43 @@
       "label": "2. テストケース一覧",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/debug_manager_test_spec.md",
+      "line": 10,
+      "tier": 2,
+      "metadata": {}
+    },
+    {
+      "id": "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#GDB RSP プロトコル & 仮想レジスタ (§3.3, §4.1, gdb_rsp_protocol.md)",
+      "label": "GDB RSP プロトコル & 仮想レジスタ (§3.3, §4.1, gdb_rsp_protocol.md)",
+      "type": "section",
+      "file_path": "components/tier2_runtime/tests/debug_manager_test_spec.md",
       "line": 12,
       "tier": 2,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#3. 現状のギャップ（pysim実装との差分）",
-      "label": "3. 現状のギャップ（pysim実装との差分）",
+      "id": "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#実行制御 & ブレークポイント (§3.3, §4.1)",
+      "label": "実行制御 & ブレークポイント (§3.3, §4.1)",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/debug_manager_test_spec.md",
-      "line": 27,
+      "line": 24,
+      "tier": 2,
+      "metadata": {}
+    },
+    {
+      "id": "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#デバッガ協調 & 統合プロファイラ (§1, §4.1)",
+      "label": "デバッガ協調 & 統合プロファイラ (§1, §4.1)",
+      "type": "section",
+      "file_path": "components/tier2_runtime/tests/debug_manager_test_spec.md",
+      "line": 33,
+      "tier": 2,
+      "metadata": {}
+    },
+    {
+      "id": "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#3. テスト検証実績と網羅状況",
+      "label": "3. テスト検証実績と網羅状況",
+      "type": "section",
+      "file_path": "components/tier2_runtime/tests/debug_manager_test_spec.md",
+      "line": 42,
       "tier": 2,
       "metadata": {}
     },
@@ -6170,7 +6206,7 @@
       "label": "4. 未検証・スコープ外",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/debug_manager_test_spec.md",
-      "line": 31,
+      "line": 48,
       "tier": 2,
       "metadata": {}
     },
@@ -6197,7 +6233,7 @@
       "label": "2. テストケース一覧",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/runtime_interpreter_test_spec.md",
-      "line": 11,
+      "line": 10,
       "tier": 2,
       "metadata": {}
     },
@@ -6206,7 +6242,7 @@
       "label": "CPSディスパッチ方式そのもの (§1, interpreter_concept.py冒頭)",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/runtime_interpreter_test_spec.md",
-      "line": 13,
+      "line": 12,
       "tier": 2,
       "metadata": {}
     },
@@ -6215,7 +6251,7 @@
       "label": "統合スタック・関数呼び出し (interpreter_concept.py §1)",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/runtime_interpreter_test_spec.md",
-      "line": 20,
+      "line": 21,
       "tier": 2,
       "metadata": {}
     },
@@ -6224,7 +6260,7 @@
       "label": "ラベルアリティ・スタックプルーニング (interpreter_concept.py §1, `prune_stack`)",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/runtime_interpreter_test_spec.md",
-      "line": 29,
+      "line": 30,
       "tier": 2,
       "metadata": {}
     },
@@ -6233,7 +6269,7 @@
       "label": "i64整数演算 (interpreter_concept.py §3.7, wasm_instruction_set.md §3.4)",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/runtime_interpreter_test_spec.md",
-      "line": 38,
+      "line": 39,
       "tier": 2,
       "metadata": {}
     },
@@ -6242,7 +6278,7 @@
       "label": "メモリアクセス全幅 (interpreter_concept.py §3.4)",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/runtime_interpreter_test_spec.md",
-      "line": 49,
+      "line": 50,
       "tier": 2,
       "metadata": {}
     },
@@ -6251,16 +6287,25 @@
       "label": "Cooperative Safepoint (interpreter_concept.py §末尾)",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/runtime_interpreter_test_spec.md",
-      "line": 58,
+      "line": 59,
       "tier": 2,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier2_runtime/tests/runtime_interpreter_test_spec.md#3. 現状のギャップ（pysim実装との差分）",
-      "label": "3. 現状のギャップ（pysim実装との差分）",
+      "id": "sec:components/tier2_runtime/tests/runtime_interpreter_test_spec.md#デバッガ・プロファイラ統合とハンドラテーブル切り替え (§3.3, §4.1, {DebuggerLabelTableSwitch}, {Debug_Integrated})",
+      "label": "デバッガ・プロファイラ統合とハンドラテーブル切り替え (§3.3, §4.1, {DebuggerLabelTableSwitch}, {Debug_Integrated})",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/runtime_interpreter_test_spec.md",
-      "line": 65,
+      "line": 66,
+      "tier": 2,
+      "metadata": {}
+    },
+    {
+      "id": "sec:components/tier2_runtime/tests/runtime_interpreter_test_spec.md#3. テスト検証実績と網羅状況",
+      "label": "3. テスト検証実績と網羅状況",
+      "type": "section",
+      "file_path": "components/tier2_runtime/tests/runtime_interpreter_test_spec.md",
+      "line": 77,
       "tier": 2,
       "metadata": {}
     },
@@ -6269,13 +6314,13 @@
       "label": "4. 未検証・スコープ外",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/runtime_interpreter_test_spec.md",
-      "line": 73,
+      "line": 85,
       "tier": 2,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#WASMローダ テスト仕様書 (Test Specification)",
-      "label": "WASMローダ テスト仕様書 (Test Specification)",
+      "id": "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#(Overview)",
+      "label": "(Overview)",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/runtime_loader_test_spec.md",
       "line": 1,
@@ -6296,7 +6341,7 @@
       "label": "2. テストケース一覧",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/runtime_loader_test_spec.md",
-      "line": 11,
+      "line": 10,
       "tier": 2,
       "metadata": {}
     },
@@ -6305,7 +6350,7 @@
       "label": "軽量検証 (§4.3 V1-V6)",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/runtime_loader_test_spec.md",
-      "line": 13,
+      "line": 12,
       "tier": 2,
       "metadata": {}
     },
@@ -6314,16 +6359,16 @@
       "label": "ゼロコピー索引化 (§4.1)",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/runtime_loader_test_spec.md",
-      "line": 25,
+      "line": 24,
       "tier": 2,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#複数モジュール・インポート解決 (§4.1「依存関係解決」)",
-      "label": "複数モジュール・インポート解決 (§4.1「依存関係解決」)",
+      "id": "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#複数モジュール・インポート解決 (§4.1「インポートテーブル検索と依存関係解決」)",
+      "label": "複数モジュール・インポート解決 (§4.1「インポートテーブル検索と依存関係解決」)",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/runtime_loader_test_spec.md",
-      "line": 36,
+      "line": 35,
       "tier": 2,
       "metadata": {}
     },
@@ -6332,16 +6377,25 @@
       "label": "容量制約 (§4.2)",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/runtime_loader_test_spec.md",
-      "line": 47,
+      "line": 46,
       "tier": 2,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#3. 現状のギャップ（pysim実装との差分）",
-      "label": "3. 現状のギャップ（pysim実装との差分）",
+      "id": "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#ファイル内データ位置 & シンボルハッシュ RadixBinaryTreeView 索引 (§1, §3.1, §4.1, §5.1, {META_BinarySearch})",
+      "label": "ファイル内データ位置 & シンボルハッシュ RadixBinaryTreeView 索引 (§1, §3.1, §4.1, §5.1, {META_BinarySearch})",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/runtime_loader_test_spec.md",
-      "line": 55,
+      "line": 54,
+      "tier": 2,
+      "metadata": {}
+    },
+    {
+      "id": "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#3. テスト検証実績と網羅状況",
+      "label": "3. テスト検証実績と網羅状況",
+      "type": "section",
+      "file_path": "components/tier2_runtime/tests/runtime_loader_test_spec.md",
+      "line": 67,
       "tier": 2,
       "metadata": {}
     },
@@ -6350,7 +6404,7 @@
       "label": "4. 未検証・スコープ外",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/runtime_loader_test_spec.md",
-      "line": 62,
+      "line": 75,
       "tier": 2,
       "metadata": {}
     },
@@ -6377,7 +6431,7 @@
       "label": "2. テストケース一覧",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/runtime_vmmio_test_spec.md",
-      "line": 11,
+      "line": 10,
       "tier": 2,
       "metadata": {}
     },
@@ -6386,7 +6440,7 @@
       "label": "アドレス分解・高速バイパス (§1, §3.3)",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/runtime_vmmio_test_spec.md",
-      "line": 13,
+      "line": 12,
       "tier": 2,
       "metadata": {}
     },
@@ -6395,7 +6449,7 @@
       "label": "FlatMap PTE + TLB (§1, §4.8)",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/runtime_vmmio_test_spec.md",
-      "line": 21,
+      "line": 20,
       "tier": 2,
       "metadata": {}
     },
@@ -6404,7 +6458,7 @@
       "label": "3層セキュリティゲート・SHM所有権 (§1「3層」, §4.6)",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/runtime_vmmio_test_spec.md",
-      "line": 34,
+      "line": 33,
       "tier": 2,
       "metadata": {}
     },
@@ -6413,16 +6467,16 @@
       "label": "VDMA (§4.2, §4.5)",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/runtime_vmmio_test_spec.md",
-      "line": 45,
+      "line": 44,
       "tier": 2,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier2_runtime/tests/runtime_vmmio_test_spec.md#3. 現状のギャップ（pysim実装との差分）",
-      "label": "3. 現状のギャップ（pysim実装との差分）",
+      "id": "sec:components/tier2_runtime/tests/runtime_vmmio_test_spec.md#3. テスト検証実績と網羅状況",
+      "label": "3. テスト検証実績と網羅状況",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/runtime_vmmio_test_spec.md",
-      "line": 52,
+      "line": 51,
       "tier": 2,
       "metadata": {}
     },
@@ -6431,7 +6485,7 @@
       "label": "4. 未検証・スコープ外",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/runtime_vmmio_test_spec.md",
-      "line": 58,
+      "line": 55,
       "tier": 2,
       "metadata": {}
     },
@@ -6458,7 +6512,7 @@
       "label": "2. テストケース一覧",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/runtime_vsoc_test_spec.md",
-      "line": 11,
+      "line": 10,
       "tier": 2,
       "metadata": {}
     },
@@ -6467,7 +6521,7 @@
       "label": "ハーネス統合 (§3, §5.1)",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/runtime_vsoc_test_spec.md",
-      "line": 13,
+      "line": 12,
       "tier": 2,
       "metadata": {}
     },
@@ -6476,7 +6530,7 @@
       "label": "Safepoint/JITキャッシュ協調 (§4.2.1)",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/runtime_vsoc_test_spec.md",
-      "line": 21,
+      "line": 20,
       "tier": 2,
       "metadata": {}
     },
@@ -6485,7 +6539,7 @@
       "label": "vSoC Engineライフサイクル (§4.2)",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/runtime_vsoc_test_spec.md",
-      "line": 33,
+      "line": 32,
       "tier": 2,
       "metadata": {}
     },
@@ -6494,7 +6548,7 @@
       "label": "マルチモジュール動的リンク (§5.3, §4.3)",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/runtime_vsoc_test_spec.md",
-      "line": 43,
+      "line": 42,
       "tier": 2,
       "metadata": {}
     },
@@ -6503,16 +6557,16 @@
       "label": "`fireball_call`シグネチャの整合性（要確認・矛盾あり）",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/runtime_vsoc_test_spec.md",
-      "line": 50,
+      "line": 49,
       "tier": 2,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier2_runtime/tests/runtime_vsoc_test_spec.md#3. 現状のギャップ（pysim実装との差分）",
-      "label": "3. 現状のギャップ（pysim実装との差分）",
+      "id": "sec:components/tier2_runtime/tests/runtime_vsoc_test_spec.md#3. テスト検証実績と網羅状況",
+      "label": "3. テスト検証実績と網羅状況",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/runtime_vsoc_test_spec.md",
-      "line": 56,
+      "line": 55,
       "tier": 2,
       "metadata": {}
     },
@@ -6521,7 +6575,7 @@
       "label": "4. 未検証・スコープ外",
       "type": "section",
       "file_path": "components/tier2_runtime/tests/runtime_vsoc_test_spec.md",
-      "line": 62,
+      "line": 59,
       "tier": 2,
       "metadata": {}
     },
@@ -6625,11 +6679,20 @@
       "metadata": {}
     },
     {
+      "id": "sec:components/tier3_jit/jit_compiler.md#コンパイル単位とインタープリタ協調方針",
+      "label": "コンパイル単位とインタープリタ協調方針",
+      "type": "section",
+      "file_path": "components/tier3_jit/jit_compiler.md",
+      "line": 47,
+      "tier": 3,
+      "metadata": {}
+    },
+    {
       "id": "sec:components/tier3_jit/jit_compiler.md#コピーアンドパッチエンジン（CopyAndPatchEngine）クラス",
       "label": "コピーアンドパッチエンジン（CopyAndPatchEngine）クラス",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 47,
+      "line": 53,
       "tier": 3,
       "metadata": {}
     },
@@ -6638,7 +6701,7 @@
       "label": "JIT トレース物理メモリレイアウト (`jit_trace_header`)",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 57,
+      "line": 74,
       "tier": 3,
       "metadata": {}
     },
@@ -6647,7 +6710,7 @@
       "label": "`constexpr_assembler` (DSL)",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 75,
+      "line": 92,
       "tier": 3,
       "metadata": {}
     },
@@ -6656,7 +6719,7 @@
       "label": "4. 動的モデル",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 85,
+      "line": 102,
       "tier": 3,
       "metadata": {}
     },
@@ -6665,7 +6728,7 @@
       "label": "4.1 アルゴリズム",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 87,
+      "line": 104,
       "tier": 3,
       "metadata": {}
     },
@@ -6674,7 +6737,7 @@
       "label": "JIT トレース検索 & 3面キャッシュ代謝オーケストレーション",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 95,
+      "line": 112,
       "tier": 3,
       "metadata": {}
     },
@@ -6683,7 +6746,7 @@
       "label": "トレース・チェイニング（連鎖実行）",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 99,
+      "line": 116,
       "tier": 3,
       "metadata": {}
     },
@@ -6692,7 +6755,7 @@
       "label": "統合 Tiered ランタイムエンジン・コンセプトコード (`../tier2_runtime/concepts/runtime_engine_concept.py`)",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 113,
+      "line": 130,
       "tier": 3,
       "metadata": {}
     },
@@ -6701,7 +6764,7 @@
       "label": "ホットスポット判定 (yield 時)",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 116,
+      "line": 133,
       "tier": 3,
       "metadata": {}
     },
@@ -6710,7 +6773,7 @@
       "label": "バッチコンパイル (周期実行またはアイドル時)",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 122,
+      "line": 139,
       "tier": 3,
       "metadata": {}
     },
@@ -6719,7 +6782,7 @@
       "label": "{JIT_ReverseCompilationOrder}",
       "type": "item",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 122,
+      "line": 139,
       "tier": null,
       "metadata": {}
     },
@@ -6728,7 +6791,7 @@
       "label": "4.2 状態遷移図",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 128,
+      "line": 145,
       "tier": 3,
       "metadata": {}
     },
@@ -6737,7 +6800,7 @@
       "label": "4.3 内部シーケンス",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 146,
+      "line": 163,
       "tier": 3,
       "metadata": {}
     },
@@ -6746,7 +6809,7 @@
       "label": "JITコンパイルおよび検索シーケンス",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 148,
+      "line": 165,
       "tier": 3,
       "metadata": {}
     },
@@ -6755,7 +6818,7 @@
       "label": "5. 検証",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 191,
+      "line": 208,
       "tier": 3,
       "metadata": {}
     },
@@ -6764,7 +6827,7 @@
       "label": "5.1 直交表: 検索・昇格・代謝",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 193,
+      "line": 210,
       "tier": 3,
       "metadata": {}
     },
@@ -6773,7 +6836,7 @@
       "label": "{ADR_SafeQueuingOnHotMiss}",
       "type": "item",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 193,
+      "line": 210,
       "tier": null,
       "metadata": {}
     },
@@ -6782,7 +6845,7 @@
       "label": "5.2 内部コンポーネントのデコンポジション",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 208,
+      "line": 225,
       "tier": 3,
       "metadata": {}
     },
@@ -6791,7 +6854,7 @@
       "label": "6. インターフェイス定義",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 215,
+      "line": 232,
       "tier": 3,
       "metadata": {}
     },
@@ -6800,7 +6863,7 @@
       "label": "6.1 公開API",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 217,
+      "line": 234,
       "tier": 3,
       "metadata": {}
     },
@@ -6809,7 +6872,7 @@
       "label": "初期化（initialize）",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 221,
+      "line": 238,
       "tier": 3,
       "metadata": {}
     },
@@ -6818,7 +6881,7 @@
       "label": "トレース検索（lookup_trace）",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 236,
+      "line": 253,
       "tier": 3,
       "metadata": {}
     },
@@ -6827,7 +6890,7 @@
       "label": "カード状態取得（get_card_state）",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 245,
+      "line": 262,
       "tier": 3,
       "metadata": {}
     },
@@ -6836,7 +6899,7 @@
       "label": "検索範囲取得（get_search_range）",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 254,
+      "line": 271,
       "tier": 3,
       "metadata": {}
     },
@@ -6845,7 +6908,7 @@
       "label": "バッチコンパイル処理（process_batch_compile）",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 263,
+      "line": 280,
       "tier": 3,
       "metadata": {}
     },
@@ -6854,7 +6917,7 @@
       "label": "6.2 URI/IPCインターフェイス",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 274,
+      "line": 291,
       "tier": 3,
       "metadata": {}
     },
@@ -6863,7 +6926,7 @@
       "label": "7. 制約達成の方策",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 278,
+      "line": 295,
       "tier": 3,
       "metadata": {}
     },
@@ -6872,7 +6935,7 @@
       "label": "7.1 性能制約と方策",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 280,
+      "line": 297,
       "tier": 3,
       "metadata": {}
     },
@@ -6881,7 +6944,7 @@
       "label": "7.2 安全性制約と方策",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 288,
+      "line": 305,
       "tier": 3,
       "metadata": {}
     },
@@ -6890,7 +6953,7 @@
       "label": "8. 設計判断 (ADR)",
       "type": "section",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 297,
+      "line": 314,
       "tier": 3,
       "metadata": {}
     },
@@ -6899,7 +6962,7 @@
       "label": "{ADR_ScalableCodeOffset}",
       "type": "item",
       "file_path": "components/tier3_jit/jit_compiler.md",
-      "line": 297,
+      "line": 314,
       "tier": null,
       "metadata": {}
     },
@@ -7097,7 +7160,7 @@
       "label": "2. テストケース一覧",
       "type": "section",
       "file_path": "components/tier3_jit/tests/jit_compiler_test_spec.md",
-      "line": 11,
+      "line": 9,
       "tier": 3,
       "metadata": {}
     },
@@ -7106,7 +7169,7 @@
       "label": "Copy-and-Patchエンジン (§3.1, §4.1)",
       "type": "section",
       "file_path": "components/tier3_jit/tests/jit_compiler_test_spec.md",
-      "line": 13,
+      "line": 11,
       "tier": 3,
       "metadata": {}
     },
@@ -7115,7 +7178,7 @@
       "label": "レジスタ規約とTOS/NOS非対称性 (§3.3, §8 ADR_TosCacheAsymmetry)",
       "type": "section",
       "file_path": "components/tier3_jit/tests/jit_compiler_test_spec.md",
-      "line": 24,
+      "line": 22,
       "tier": 3,
       "metadata": {}
     },
@@ -7124,7 +7187,7 @@
       "label": "JITトレースヘッダ (§3.3)",
       "type": "section",
       "file_path": "components/tier3_jit/tests/jit_compiler_test_spec.md",
-      "line": 33,
+      "line": 31,
       "tier": 3,
       "metadata": {}
     },
@@ -7133,7 +7196,7 @@
       "label": "ADR_ScalableCodeOffset (§8)",
       "type": "section",
       "file_path": "components/tier3_jit/tests/jit_compiler_test_spec.md",
-      "line": 41,
+      "line": 39,
       "tier": 3,
       "metadata": {}
     },
@@ -7142,16 +7205,16 @@
       "label": "安全性制約 (§7.2)",
       "type": "section",
       "file_path": "components/tier3_jit/tests/jit_compiler_test_spec.md",
-      "line": 48,
+      "line": 46,
       "tier": 3,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier3_jit/tests/jit_compiler_test_spec.md#3. 現状のギャップ（pysim実装との差分）",
-      "label": "3. 現状のギャップ（pysim実装との差分）",
+      "id": "sec:components/tier3_jit/tests/jit_compiler_test_spec.md#3. テスト検証実績と網羅状況",
+      "label": "3. テスト検証実績と網羅状況",
       "type": "section",
       "file_path": "components/tier3_jit/tests/jit_compiler_test_spec.md",
-      "line": 56,
+      "line": 55,
       "tier": 3,
       "metadata": {}
     },
@@ -7187,7 +7250,7 @@
       "label": "2. テストケース一覧",
       "type": "section",
       "file_path": "components/tier3_jit/tests/jit_runtime_test_spec.md",
-      "line": 12,
+      "line": 11,
       "tier": 3,
       "metadata": {}
     },
@@ -7196,7 +7259,7 @@
       "label": "2-bitカードマーキング (jit_compiler.md §3.1, runtime_engine_concept.py §2)",
       "type": "section",
       "file_path": "components/tier3_jit/tests/jit_runtime_test_spec.md",
-      "line": 14,
+      "line": 13,
       "tier": 3,
       "metadata": {}
     },
@@ -7205,7 +7268,7 @@
       "label": "ホットスポット判定 (yield時) と バッチコンパイル (§4.1)",
       "type": "section",
       "file_path": "components/tier3_jit/tests/jit_runtime_test_spec.md",
-      "line": 24,
+      "line": 23,
       "tier": 3,
       "metadata": {}
     },
@@ -7214,7 +7277,7 @@
       "label": "3段検索・3面キャッシュ (jit_compiler.md §5.1直交表)",
       "type": "section",
       "file_path": "components/tier3_jit/tests/jit_runtime_test_spec.md",
-      "line": 33,
+      "line": 32,
       "tier": 3,
       "metadata": {}
     },
@@ -7223,7 +7286,7 @@
       "label": "トレース・チェイニング (jit_compiler.md §4.1「トレース・チェイニング」)",
       "type": "section",
       "file_path": "components/tier3_jit/tests/jit_runtime_test_spec.md",
-      "line": 44,
+      "line": 43,
       "tier": 3,
       "metadata": {}
     },
@@ -7232,16 +7295,16 @@
       "label": "MPU W^X保護 (jit_compiler.md §7.2)",
       "type": "section",
       "file_path": "components/tier3_jit/tests/jit_runtime_test_spec.md",
-      "line": 57,
+      "line": 56,
       "tier": 3,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier3_jit/tests/jit_runtime_test_spec.md#3. 現状のギャップ（pysim実装との差分）",
-      "label": "3. 現状のギャップ（pysim実装との差分）",
+      "id": "sec:components/tier3_jit/tests/jit_runtime_test_spec.md#3. テスト検証実績と網羅状況",
+      "label": "3. テスト検証実績と網羅状況",
       "type": "section",
       "file_path": "components/tier3_jit/tests/jit_runtime_test_spec.md",
-      "line": 66,
+      "line": 65,
       "tier": 3,
       "metadata": {}
     },
@@ -7250,7 +7313,7 @@
       "label": "4. 未検証・スコープ外",
       "type": "section",
       "file_path": "components/tier3_jit/tests/jit_runtime_test_spec.md",
-      "line": 78,
+      "line": 69,
       "tier": 3,
       "metadata": {}
     },
@@ -7808,16 +7871,16 @@
       "label": "2. テストケース一覧",
       "type": "section",
       "file_path": "components/tier3_platform/tests/platform_hal_test_spec.md",
-      "line": 11,
+      "line": 10,
       "tier": 3,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier3_platform/tests/platform_hal_test_spec.md#3. 現状のギャップ（pysim実装との差分）",
-      "label": "3. 現状のギャップ（pysim実装との差分）",
+      "id": "sec:components/tier3_platform/tests/platform_hal_test_spec.md#3. テスト検証実績と網羅状況",
+      "label": "3. テスト検証実績と網羅状況",
       "type": "section",
       "file_path": "components/tier3_platform/tests/platform_hal_test_spec.md",
-      "line": 26,
+      "line": 25,
       "tier": 3,
       "metadata": {}
     },
@@ -7826,7 +7889,7 @@
       "label": "4. 未検証・スコープ外",
       "type": "section",
       "file_path": "components/tier3_platform/tests/platform_hal_test_spec.md",
-      "line": 32,
+      "line": 29,
       "tier": 3,
       "metadata": {}
     },
@@ -7853,7 +7916,7 @@
       "label": "2. テストケース一覧",
       "type": "section",
       "file_path": "components/tier3_platform/tests/platform_memory_test_spec.md",
-      "line": 11,
+      "line": 10,
       "tier": 3,
       "metadata": {}
     },
@@ -7862,7 +7925,7 @@
       "label": "パーティション管理 (§1, §4-6)",
       "type": "section",
       "file_path": "components/tier3_platform/tests/platform_memory_test_spec.md",
-      "line": 13,
+      "line": 12,
       "tier": 3,
       "metadata": {}
     },
@@ -7871,7 +7934,7 @@
       "label": "`shared-block`ライフサイクル (§7-8)",
       "type": "section",
       "file_path": "components/tier3_platform/tests/platform_memory_test_spec.md",
-      "line": 28,
+      "line": 27,
       "tier": 3,
       "metadata": {}
     },
@@ -7880,16 +7943,16 @@
       "label": "MPU / W^X (§9)",
       "type": "section",
       "file_path": "components/tier3_platform/tests/platform_memory_test_spec.md",
-      "line": 39,
+      "line": 38,
       "tier": 3,
       "metadata": {}
     },
     {
-      "id": "sec:components/tier3_platform/tests/platform_memory_test_spec.md#3. 現状のギャップ（pysim実装との差分）",
-      "label": "3. 現状のギャップ（pysim実装との差分）",
+      "id": "sec:components/tier3_platform/tests/platform_memory_test_spec.md#3. テスト検証実績と網羅状況",
+      "label": "3. テスト検証実績と網羅状況",
       "type": "section",
       "file_path": "components/tier3_platform/tests/platform_memory_test_spec.md",
-      "line": 50,
+      "line": 49,
       "tier": 3,
       "metadata": {}
     },
@@ -7898,7 +7961,7 @@
       "label": "4. 未検証・スコープ外",
       "type": "section",
       "file_path": "components/tier3_platform/tests/platform_memory_test_spec.md",
-      "line": 60,
+      "line": 53,
       "tier": 3,
       "metadata": {}
     },
@@ -8627,7 +8690,7 @@
       "label": "2. テストケース一覧",
       "type": "section",
       "file_path": "specs/tests/wasm_instruction_set_test_spec.md",
-      "line": 12,
+      "line": 11,
       "tier": null,
       "metadata": {}
     },
@@ -8636,7 +8699,7 @@
       "label": "非サポート機能の拒否 (§2)",
       "type": "section",
       "file_path": "specs/tests/wasm_instruction_set_test_spec.md",
-      "line": 14,
+      "line": 13,
       "tier": null,
       "metadata": {}
     },
@@ -8645,7 +8708,7 @@
       "label": "制御フロー (§3.1)",
       "type": "section",
       "file_path": "specs/tests/wasm_instruction_set_test_spec.md",
-      "line": 25,
+      "line": 24,
       "tier": null,
       "metadata": {}
     },
@@ -8654,7 +8717,7 @@
       "label": "パラメトリック (§3.2)",
       "type": "section",
       "file_path": "specs/tests/wasm_instruction_set_test_spec.md",
-      "line": 36,
+      "line": 35,
       "tier": null,
       "metadata": {}
     },
@@ -8663,7 +8726,7 @@
       "label": "変数アクセス (§3.3)",
       "type": "section",
       "file_path": "specs/tests/wasm_instruction_set_test_spec.md",
-      "line": 43,
+      "line": 42,
       "tier": null,
       "metadata": {}
     },
@@ -8672,7 +8735,7 @@
       "label": "メモリアクセス (§3.4)",
       "type": "section",
       "file_path": "specs/tests/wasm_instruction_set_test_spec.md",
-      "line": 50,
+      "line": 49,
       "tier": null,
       "metadata": {}
     },
@@ -8681,16 +8744,16 @@
       "label": "整数算術・論理・比較 (§3.5)",
       "type": "section",
       "file_path": "specs/tests/wasm_instruction_set_test_spec.md",
-      "line": 62,
+      "line": 61,
       "tier": null,
       "metadata": {}
     },
     {
-      "id": "sec:specs/tests/wasm_instruction_set_test_spec.md#3. 現状のギャップ（pysim実装との差分）",
-      "label": "3. 現状のギャップ（pysim実装との差分）",
+      "id": "sec:specs/tests/wasm_instruction_set_test_spec.md#3. テスト検証実績と網羅状況",
+      "label": "3. テスト検証実績と網羅状況",
       "type": "section",
       "file_path": "specs/tests/wasm_instruction_set_test_spec.md",
-      "line": 74,
+      "line": 73,
       "tier": null,
       "metadata": {}
     },
@@ -8699,7 +8762,7 @@
       "label": "4. 未検証・スコープ外",
       "type": "section",
       "file_path": "specs/tests/wasm_instruction_set_test_spec.md",
-      "line": 81,
+      "line": 77,
       "tier": null,
       "metadata": {}
     },
@@ -12058,14 +12121,8 @@
     },
     {
       "source": "sec:components/tier1_core/tests/os_coos_test_spec.md#COOS (CSPチャネル) テスト仕様書 (Test Specification)",
-      "target": "sec:components/tier1_core/tests/os_coos_test_spec.md#3. 現状のギャップ（pysim実装との差分）",
+      "target": "sec:components/tier1_core/tests/os_coos_test_spec.md#3. テスト検証実績と網羅状況",
       "relation": "contains",
-      "metadata": {}
-    },
-    {
-      "source": "sec:components/tier1_core/tests/os_coos_test_spec.md#3. 現状のギャップ（pysim実装との差分）",
-      "target": "item:ADR_RendezvousChannel",
-      "relation": "refers_to",
       "metadata": {}
     },
     {
@@ -12124,14 +12181,8 @@
     },
     {
       "source": "sec:components/tier1_core/tests/os_scheduler_test_spec.md#COOSスケジューラ テスト仕様書 (Test Specification)",
-      "target": "sec:components/tier1_core/tests/os_scheduler_test_spec.md#3. 現状のギャップ（pysim実装との差分）",
+      "target": "sec:components/tier1_core/tests/os_scheduler_test_spec.md#3. テスト検証実績と網羅状況",
       "relation": "contains",
-      "metadata": {}
-    },
-    {
-      "source": "sec:components/tier1_core/tests/os_scheduler_test_spec.md#3. 現状のギャップ（pysim実装との差分）",
-      "target": "item:ADR_CoosPureRoundRobin",
-      "relation": "refers_to",
       "metadata": {}
     },
     {
@@ -12160,7 +12211,7 @@
     },
     {
       "source": "sec:components/tier1_core/tests/system_config_test_spec.md#システムコンフィグ テスト仕様書 (Test Specification)",
-      "target": "sec:components/tier1_core/tests/system_config_test_spec.md#3. 現状のギャップ（pysim実装との差分）",
+      "target": "sec:components/tier1_core/tests/system_config_test_spec.md#3. テスト検証実績と網羅状況",
       "relation": "contains",
       "metadata": {}
     },
@@ -12190,7 +12241,7 @@
     },
     {
       "source": "sec:components/tier1_core/tests/system_containers_test_spec.md#静的コンテナ語彙 テスト仕様書 (Test Specification)",
-      "target": "sec:components/tier1_core/tests/system_containers_test_spec.md#3. 現状のギャップ（pysim実装との差分）",
+      "target": "sec:components/tier1_core/tests/system_containers_test_spec.md#3. テスト検証実績と網羅状況",
       "relation": "contains",
       "metadata": {}
     },
@@ -12244,7 +12295,7 @@
     },
     {
       "source": "sec:components/tier1_core/tests/system_logging_test_spec.md#システムロギング テスト仕様書 (Test Specification)",
-      "target": "sec:components/tier1_core/tests/system_logging_test_spec.md#3. 現状のギャップ（pysim実装との差分・要精査の矛盾）",
+      "target": "sec:components/tier1_core/tests/system_logging_test_spec.md#3. テスト検証実績と網羅状況",
       "relation": "contains",
       "metadata": {}
     },
@@ -12334,7 +12385,7 @@
     },
     {
       "source": "sec:components/tier1_core/tests/system_syscall_test_spec.md#システムコール (`fireball_call`) テスト仕様書 (Test Specification)",
-      "target": "sec:components/tier1_core/tests/system_syscall_test_spec.md#3. 現状のギャップ（pysim実装との差分）",
+      "target": "sec:components/tier1_core/tests/system_syscall_test_spec.md#3. テスト検証実績と網羅状況",
       "relation": "contains",
       "metadata": {}
     },
@@ -13792,7 +13843,7 @@
     },
     {
       "source": "sec:components/tier1_interface/tests/interface_wit_test_spec.md#WITインターフェイス / リカバリー戦略 テスト仕様書 (Test Specification)",
-      "target": "sec:components/tier1_interface/tests/interface_wit_test_spec.md#3. 現状のギャップ（pysim実装との差分）",
+      "target": "sec:components/tier1_interface/tests/interface_wit_test_spec.md#3. テスト検証実績と網羅状況",
       "relation": "contains",
       "metadata": {}
     },
@@ -13852,14 +13903,8 @@
     },
     {
       "source": "sec:components/tier1_interface/tests/ipc_router_test_spec.md#IPCルータ テスト仕様書 (Test Specification)",
-      "target": "sec:components/tier1_interface/tests/ipc_router_test_spec.md#3. 現状のギャップ（pysim実装との差分）",
+      "target": "sec:components/tier1_interface/tests/ipc_router_test_spec.md#3. テスト検証実績と網羅状況",
       "relation": "contains",
-      "metadata": {}
-    },
-    {
-      "source": "sec:components/tier1_interface/tests/ipc_router_test_spec.md#3. 現状のギャップ（pysim実装との差分）",
-      "target": "item:TypeSafeMessaging",
-      "relation": "refers_to",
       "metadata": {}
     },
     {
@@ -13900,7 +13945,7 @@
     },
     {
       "source": "sec:components/tier1_interface/tests/system_service_test_spec.md#サービス テスト仕様書 (Test Specification)",
-      "target": "sec:components/tier1_interface/tests/system_service_test_spec.md#3. 現状のギャップ（pysim実装との差分）",
+      "target": "sec:components/tier1_interface/tests/system_service_test_spec.md#3. テスト検証実績と網羅状況",
       "relation": "contains",
       "metadata": {}
     },
@@ -13911,301 +13956,301 @@
       "metadata": {}
     },
     {
-      "source": "file:components/tier2_runtime/debug/debug_manager.md",
-      "target": "sec:components/tier2_runtime/debug/debug_manager.md#Debug Manager コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}",
+      "source": "file:components/tier2_runtime/debug_manager.md",
+      "target": "sec:components/tier2_runtime/debug_manager.md#Debug Manager コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}",
       "relation": "contains",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#Debug Manager コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}",
-      "target": "sec:components/tier2_runtime/debug/debug_manager.md#1. コンセプト",
+      "source": "sec:components/tier2_runtime/debug_manager.md#Debug Manager コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}",
+      "target": "sec:components/tier2_runtime/debug_manager.md#1. コンセプト",
       "relation": "contains",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#1. コンセプト",
+      "source": "sec:components/tier2_runtime/debug_manager.md#1. コンセプト",
       "target": "item:RSPMinimalSet",
       "relation": "refers_to",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#1. コンセプト",
+      "source": "sec:components/tier2_runtime/debug_manager.md#1. コンセプト",
       "target": "item:DebuggerLabelTableSwitch",
       "relation": "refers_to",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#1. コンセプト",
+      "source": "sec:components/tier2_runtime/debug_manager.md#1. コンセプト",
       "target": "item:MemoryIsolation",
       "relation": "refers_to",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#1. コンセプト",
+      "source": "sec:components/tier2_runtime/debug_manager.md#1. コンセプト",
       "target": "item:Debug_Standard_Env",
       "relation": "refers_to",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#1. コンセプト",
+      "source": "sec:components/tier2_runtime/debug_manager.md#1. コンセプト",
       "target": "item:RSP_Transport_Selectable",
       "relation": "refers_to",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#1. コンセプト",
+      "source": "sec:components/tier2_runtime/debug_manager.md#1. コンセプト",
       "target": "item:Debug_Integrated",
       "relation": "refers_to",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#1. コンセプト",
+      "source": "sec:components/tier2_runtime/debug_manager.md#1. コンセプト",
       "target": "item:Debugger_Jit_Flush",
       "relation": "refers_to",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#Debug Manager コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}",
-      "target": "sec:components/tier2_runtime/debug/debug_manager.md#2. アーキテクチャ分類",
+      "source": "sec:components/tier2_runtime/debug_manager.md#Debug Manager コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}",
+      "target": "sec:components/tier2_runtime/debug_manager.md#2. アーキテクチャ分類",
       "relation": "contains",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#2. アーキテクチャ分類",
+      "source": "sec:components/tier2_runtime/debug_manager.md#2. アーキテクチャ分類",
       "target": "item:META_3TierSeparation",
       "relation": "refers_to",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#2. アーキテクチャ分類",
+      "source": "sec:components/tier2_runtime/debug_manager.md#2. アーキテクチャ分類",
       "target": "item:RSPMinimalSet",
       "relation": "refers_to",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#Debug Manager コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}",
-      "target": "sec:components/tier2_runtime/debug/debug_manager.md#3. 静的モデル",
+      "source": "sec:components/tier2_runtime/debug_manager.md#Debug Manager コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}",
+      "target": "sec:components/tier2_runtime/debug_manager.md#3. 静的モデル",
       "relation": "contains",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#3. 静的モデル",
-      "target": "sec:components/tier2_runtime/debug/debug_manager.md#3.1 データ構造",
+      "source": "sec:components/tier2_runtime/debug_manager.md#3. 静的モデル",
+      "target": "sec:components/tier2_runtime/debug_manager.md#3.1 データ構造",
       "relation": "contains",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#3.1 データ構造",
+      "source": "sec:components/tier2_runtime/debug_manager.md#3.1 データ構造",
       "target": "item:Debug_Integrated",
       "relation": "refers_to",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#3. 静的モデル",
-      "target": "sec:components/tier2_runtime/debug/debug_manager.md#3.2 内部ブロック図",
+      "source": "sec:components/tier2_runtime/debug_manager.md#3. 静的モデル",
+      "target": "sec:components/tier2_runtime/debug_manager.md#3.2 内部ブロック図",
       "relation": "contains",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#3. 静的モデル",
-      "target": "sec:components/tier2_runtime/debug/debug_manager.md#3.3 主要なクラス・構造体・配列・定数",
+      "source": "sec:components/tier2_runtime/debug_manager.md#3. 静的モデル",
+      "target": "sec:components/tier2_runtime/debug_manager.md#3.3 主要なクラス・構造体・配列・定数",
       "relation": "contains",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#3.3 主要なクラス・構造体・配列・定数",
-      "target": "sec:components/tier2_runtime/debug/debug_manager.md#デバッガ（Debugger）クラス",
+      "source": "sec:components/tier2_runtime/debug_manager.md#3.3 主要なクラス・構造体・配列・定数",
+      "target": "sec:components/tier2_runtime/debug_manager.md#デバッガ（Debugger）クラス",
       "relation": "contains",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#デバッガ（Debugger）クラス",
+      "source": "sec:components/tier2_runtime/debug_manager.md#デバッガ（Debugger）クラス",
       "target": "item:META_NoStdVector",
       "relation": "refers_to",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#デバッガ（Debugger）クラス",
+      "source": "sec:components/tier2_runtime/debug_manager.md#デバッガ（Debugger）クラス",
       "target": "item:Debug_Integrated",
       "relation": "refers_to",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#デバッガ（Debugger）クラス",
+      "source": "sec:components/tier2_runtime/debug_manager.md#デバッガ（Debugger）クラス",
       "target": "item:RSPMinimalSet",
       "relation": "refers_to",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#デバッガ（Debugger）クラス",
+      "source": "sec:components/tier2_runtime/debug_manager.md#デバッガ（Debugger）クラス",
       "target": "item:FlatViewNarrowing",
       "relation": "refers_to",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#3.3 主要なクラス・構造体・配列・定数",
-      "target": "sec:components/tier2_runtime/debug/debug_manager.md#仮想レジスタセット（virtual_register_set）",
+      "source": "sec:components/tier2_runtime/debug_manager.md#3.3 主要なクラス・構造体・配列・定数",
+      "target": "sec:components/tier2_runtime/debug_manager.md#仮想レジスタセット（virtual_register_set）",
       "relation": "contains",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#仮想レジスタセット（virtual_register_set）",
+      "source": "sec:components/tier2_runtime/debug_manager.md#仮想レジスタセット（virtual_register_set）",
       "target": "item:RSPMinimalSet",
       "relation": "refers_to",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#Debug Manager コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}",
-      "target": "sec:components/tier2_runtime/debug/debug_manager.md#4. 動的モデル",
+      "source": "sec:components/tier2_runtime/debug_manager.md#Debug Manager コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}",
+      "target": "sec:components/tier2_runtime/debug_manager.md#4. 動的モデル",
       "relation": "contains",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#4. 動的モデル",
-      "target": "sec:components/tier2_runtime/debug/debug_manager.md#4.1 アルゴリズム",
+      "source": "sec:components/tier2_runtime/debug_manager.md#4. 動的モデル",
+      "target": "sec:components/tier2_runtime/debug_manager.md#4.1 アルゴリズム",
       "relation": "contains",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#4.1 アルゴリズム",
+      "source": "sec:components/tier2_runtime/debug_manager.md#4.1 アルゴリズム",
       "target": "item:DebuggerLabelTableSwitch",
       "relation": "refers_to",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#4.1 アルゴリズム",
+      "source": "sec:components/tier2_runtime/debug_manager.md#4.1 アルゴリズム",
       "target": "item:RSPMinimalSet",
       "relation": "refers_to",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#4.1 アルゴリズム",
+      "source": "sec:components/tier2_runtime/debug_manager.md#4.1 アルゴリズム",
       "target": "item:Debug_Integrated",
       "relation": "refers_to",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#4.1 アルゴリズム",
+      "source": "sec:components/tier2_runtime/debug_manager.md#4.1 アルゴリズム",
       "target": "item:Debugger_Jit_Flush",
       "relation": "refers_to",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#4.1 アルゴリズム",
-      "target": "sec:components/tier2_runtime/debug/debug_manager.md#デバッガ・インタープリタ結合コンセプトコード (`../concepts/debugger_concept.py`)",
+      "source": "sec:components/tier2_runtime/debug_manager.md#4.1 アルゴリズム",
+      "target": "sec:components/tier2_runtime/debug_manager.md#デバッガ・インタープリタ結合コンセプトコード (`concepts/debugger_concept.py`)",
       "relation": "contains",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#4. 動的モデル",
-      "target": "sec:components/tier2_runtime/debug/debug_manager.md#4.2 状態遷移図",
+      "source": "sec:components/tier2_runtime/debug_manager.md#4. 動的モデル",
+      "target": "sec:components/tier2_runtime/debug_manager.md#4.2 状態遷移図",
       "relation": "contains",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#4. 動的モデル",
-      "target": "sec:components/tier2_runtime/debug/debug_manager.md#4.3 内部シーケンス",
+      "source": "sec:components/tier2_runtime/debug_manager.md#4. 動的モデル",
+      "target": "sec:components/tier2_runtime/debug_manager.md#4.3 内部シーケンス",
       "relation": "contains",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#4.3 内部シーケンス",
-      "target": "sec:components/tier2_runtime/debug/debug_manager.md#デバッグコマンド処理シーケンス",
+      "source": "sec:components/tier2_runtime/debug_manager.md#4.3 内部シーケンス",
+      "target": "sec:components/tier2_runtime/debug_manager.md#デバッグコマンド処理シーケンス",
       "relation": "contains",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#Debug Manager コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}",
-      "target": "sec:components/tier2_runtime/debug/debug_manager.md#5. インターフェイス定義",
+      "source": "sec:components/tier2_runtime/debug_manager.md#Debug Manager コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}",
+      "target": "sec:components/tier2_runtime/debug_manager.md#5. インターフェイス定義",
       "relation": "contains",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#5. インターフェイス定義",
-      "target": "sec:components/tier2_runtime/debug/debug_manager.md#5.1 公開API",
+      "source": "sec:components/tier2_runtime/debug_manager.md#5. インターフェイス定義",
+      "target": "sec:components/tier2_runtime/debug_manager.md#5.1 公開API",
       "relation": "contains",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#5.1 公開API",
-      "target": "sec:components/tier2_runtime/debug/debug_manager.md#デバッガ接続 (`attach`)",
+      "source": "sec:components/tier2_runtime/debug_manager.md#5.1 公開API",
+      "target": "sec:components/tier2_runtime/debug_manager.md#デバッガ接続 (`attach`)",
       "relation": "contains",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#デバッガ接続 (`attach`)",
+      "source": "sec:components/tier2_runtime/debug_manager.md#デバッガ接続 (`attach`)",
       "target": "item:Debug_Standard_Env",
       "relation": "refers_to",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#5.1 公開API",
-      "target": "sec:components/tier2_runtime/debug/debug_manager.md#コマンド処理 (`poll_commands`)",
+      "source": "sec:components/tier2_runtime/debug_manager.md#5.1 公開API",
+      "target": "sec:components/tier2_runtime/debug_manager.md#コマンド処理 (`poll_commands`)",
       "relation": "contains",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#コマンド処理 (`poll_commands`)",
+      "source": "sec:components/tier2_runtime/debug_manager.md#コマンド処理 (`poll_commands`)",
       "target": "item:RSPMinimalSet",
       "relation": "refers_to",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#5.1 公開API",
-      "target": "sec:components/tier2_runtime/debug/debug_manager.md#命令ステップ実行 (`step_instruction`)",
+      "source": "sec:components/tier2_runtime/debug_manager.md#5.1 公開API",
+      "target": "sec:components/tier2_runtime/debug_manager.md#命令ステップ実行 (`step_instruction`)",
       "relation": "contains",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#5. インターフェイス定義",
-      "target": "sec:components/tier2_runtime/debug/debug_manager.md#5.2 URI/IPCインターフェイス",
+      "source": "sec:components/tier2_runtime/debug_manager.md#5. インターフェイス定義",
+      "target": "sec:components/tier2_runtime/debug_manager.md#5.2 URI/IPCインターフェイス",
       "relation": "contains",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#Debug Manager コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}",
-      "target": "sec:components/tier2_runtime/debug/debug_manager.md#6. 制約達成の方策",
+      "source": "sec:components/tier2_runtime/debug_manager.md#Debug Manager コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}",
+      "target": "sec:components/tier2_runtime/debug_manager.md#6. 制約達成の方策",
       "relation": "contains",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#6. 制約達成の方策",
-      "target": "sec:components/tier2_runtime/debug/debug_manager.md#6.1 性能制約と方策",
+      "source": "sec:components/tier2_runtime/debug_manager.md#6. 制約達成の方策",
+      "target": "sec:components/tier2_runtime/debug_manager.md#6.1 性能制約と方策",
       "relation": "contains",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#6.1 性能制約と方策",
+      "source": "sec:components/tier2_runtime/debug_manager.md#6.1 性能制約と方策",
       "target": "item:DebuggerLabelTableSwitch",
       "relation": "refers_to",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#6. 制約達成の方策",
-      "target": "sec:components/tier2_runtime/debug/debug_manager.md#6.2 メモリ制約と方策",
+      "source": "sec:components/tier2_runtime/debug_manager.md#6. 制約達成の方策",
+      "target": "sec:components/tier2_runtime/debug_manager.md#6.2 メモリ制約と方策",
       "relation": "contains",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#6.2 メモリ制約と方策",
+      "source": "sec:components/tier2_runtime/debug_manager.md#6.2 メモリ制約と方策",
       "target": "item:MemoryIsolation",
       "relation": "refers_to",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#6.2 メモリ制約と方策",
+      "source": "sec:components/tier2_runtime/debug_manager.md#6.2 メモリ制約と方策",
       "target": "item:META_NoStdVector",
       "relation": "refers_to",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#6. 制約達成の方策",
-      "target": "sec:components/tier2_runtime/debug/debug_manager.md#6.3 安全性制約と方策",
+      "source": "sec:components/tier2_runtime/debug_manager.md#6. 制約達成の方策",
+      "target": "sec:components/tier2_runtime/debug_manager.md#6.3 安全性制約と方策",
       "relation": "contains",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#6.3 安全性制約と方策",
+      "source": "sec:components/tier2_runtime/debug_manager.md#6.3 安全性制約と方策",
       "target": "item:MemoryBoundaryCheck",
       "relation": "refers_to",
       "metadata": {}
@@ -14781,6 +14826,12 @@
       "metadata": {}
     },
     {
+      "source": "sec:components/tier2_runtime/runtime_loader.md#1. コンセプト",
+      "target": "item:META_BinarySearch",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
       "source": "sec:components/tier2_runtime/runtime_loader.md#WASMローダ コンポーネント設計書 {VERIFY_LLM} {VERIFY_FORMAL}",
       "target": "sec:components/tier2_runtime/runtime_loader.md#2. アーキテクチャ分類",
       "relation": "contains",
@@ -14807,6 +14858,12 @@
     {
       "source": "sec:components/tier2_runtime/runtime_loader.md#3.1 データ構造",
       "target": "item:MultiModule_Support",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier2_runtime/runtime_loader.md#3.1 データ構造",
+      "target": "item:META_AccessDictionary",
       "relation": "refers_to",
       "metadata": {}
     },
@@ -14927,6 +14984,18 @@
     {
       "source": "sec:components/tier2_runtime/runtime_loader.md#4.1 アルゴリズム",
       "target": "item:META_BumpAllocator",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier2_runtime/runtime_loader.md#4.1 アルゴリズム",
+      "target": "item:META_BinarySearch",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier2_runtime/runtime_loader.md#4.1 アルゴリズム",
+      "target": "item:MultiModule_Support",
       "relation": "refers_to",
       "metadata": {}
     },
@@ -15096,6 +15165,24 @@
       "source": "sec:components/tier2_runtime/runtime_loader.md#5.1 公開API",
       "target": "sec:components/tier2_runtime/runtime_loader.md#`get-global`",
       "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier2_runtime/runtime_loader.md#5.1 公開API",
+      "target": "sec:components/tier2_runtime/runtime_loader.md#`lookup-by-file-offset`",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier2_runtime/runtime_loader.md#`lookup-by-file-offset`",
+      "target": "item:META_BinarySearch",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier2_runtime/runtime_loader.md#`lookup-by-file-offset`",
+      "target": "item:META_AccessDictionary",
+      "relation": "refers_to",
       "metadata": {}
     },
     {
@@ -16251,6 +16338,18 @@
       "metadata": {}
     },
     {
+      "source": "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#1. 目的と対象範囲",
+      "target": "item:Debugger_Jit_Flush",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#1. 目的と対象範囲",
+      "target": "item:Debug_Integrated",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
       "source": "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#Debug Manager テスト仕様書 (Test Specification)",
       "target": "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#2. テストケース一覧",
       "relation": "contains",
@@ -16258,32 +16357,74 @@
     },
     {
       "source": "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#2. テストケース一覧",
-      "target": "item:DebuggerLabelTableSwitch",
+      "target": "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#GDB RSP プロトコル & 仮想レジスタ (§3.3, §4.1, gdb_rsp_protocol.md)",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#GDB RSP プロトコル & 仮想レジスタ (§3.3, §4.1, gdb_rsp_protocol.md)",
+      "target": "item:RSPMinimalSet",
       "relation": "refers_to",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#2. テストケース一覧",
+      "source": "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#GDB RSP プロトコル & 仮想レジスタ (§3.3, §4.1, gdb_rsp_protocol.md)",
+      "target": "item:MemoryBoundaryCheck",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#GDB RSP プロトコル & 仮想レジスタ (§3.3, §4.1, gdb_rsp_protocol.md)",
       "target": "item:Debugger_Jit_Flush",
       "relation": "refers_to",
       "metadata": {}
     },
     {
       "source": "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#2. テストケース一覧",
-      "target": "item:Debug_Integrated",
+      "target": "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#実行制御 & ブレークポイント (§3.3, §4.1)",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#実行制御 & ブレークポイント (§3.3, §4.1)",
+      "target": "item:RSPMinimalSet",
       "relation": "refers_to",
       "metadata": {}
     },
     {
       "source": "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#2. テストケース一覧",
-      "target": "item:MemoryBoundaryCheck",
+      "target": "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#デバッガ協調 & 統合プロファイラ (§1, §4.1)",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#デバッガ協調 & 統合プロファイラ (§1, §4.1)",
+      "target": "item:DebuggerLabelTableSwitch",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#デバッガ協調 & 統合プロファイラ (§1, §4.1)",
+      "target": "item:Debug_Integrated",
       "relation": "refers_to",
       "metadata": {}
     },
     {
       "source": "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#Debug Manager テスト仕様書 (Test Specification)",
-      "target": "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#3. 現状のギャップ（pysim実装との差分）",
+      "target": "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#3. テスト検証実績と網羅状況",
       "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#3. テスト検証実績と網羅状況",
+      "target": "item:Debugger_Jit_Flush",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#3. テスト検証実績と網羅状況",
+      "target": "item:DebuggerLabelTableSwitch",
+      "relation": "refers_to",
       "metadata": {}
     },
     {
@@ -16323,6 +16464,36 @@
       "metadata": {}
     },
     {
+      "source": "sec:components/tier2_runtime/tests/runtime_interpreter_test_spec.md#CPSディスパッチ方式そのもの (§1, interpreter_concept.py冒頭)",
+      "target": "item:ContextPointerRegister",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier2_runtime/tests/runtime_interpreter_test_spec.md#CPSディスパッチ方式そのもの (§1, interpreter_concept.py冒頭)",
+      "target": "item:EnvironmentPointer",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier2_runtime/tests/runtime_interpreter_test_spec.md#CPSディスパッチ方式そのもの (§1, interpreter_concept.py冒頭)",
+      "target": "item:PositionIndependentCode",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier2_runtime/tests/runtime_interpreter_test_spec.md#CPSディスパッチ方式そのもの (§1, interpreter_concept.py冒頭)",
+      "target": "item:JIT_LazyChaining",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier2_runtime/tests/runtime_interpreter_test_spec.md#CPSディスパッチ方式そのもの (§1, interpreter_concept.py冒頭)",
+      "target": "item:JIT_RuntimeAPI_Fallback",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
       "source": "sec:components/tier2_runtime/tests/runtime_interpreter_test_spec.md#2. テストケース一覧",
       "target": "sec:components/tier2_runtime/tests/runtime_interpreter_test_spec.md#統合スタック・関数呼び出し (interpreter_concept.py §1)",
       "relation": "contains",
@@ -16353,9 +16524,39 @@
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/tests/runtime_interpreter_test_spec.md#WASMインタープリタ テスト仕様書 (Test Specification)",
-      "target": "sec:components/tier2_runtime/tests/runtime_interpreter_test_spec.md#3. 現状のギャップ（pysim実装との差分）",
+      "source": "sec:components/tier2_runtime/tests/runtime_interpreter_test_spec.md#2. テストケース一覧",
+      "target": "sec:components/tier2_runtime/tests/runtime_interpreter_test_spec.md#デバッガ・プロファイラ統合とハンドラテーブル切り替え (§3.3, §4.1, {DebuggerLabelTableSwitch}, {Debug_Integrated})",
       "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier2_runtime/tests/runtime_interpreter_test_spec.md#デバッガ・プロファイラ統合とハンドラテーブル切り替え (§3.3, §4.1, {DebuggerLabelTableSwitch}, {Debug_Integrated})",
+      "target": "item:DebuggerLabelTableSwitch",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier2_runtime/tests/runtime_interpreter_test_spec.md#デバッガ・プロファイラ統合とハンドラテーブル切り替え (§3.3, §4.1, {DebuggerLabelTableSwitch}, {Debug_Integrated})",
+      "target": "item:Debug_Integrated",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier2_runtime/tests/runtime_interpreter_test_spec.md#WASMインタープリタ テスト仕様書 (Test Specification)",
+      "target": "sec:components/tier2_runtime/tests/runtime_interpreter_test_spec.md#3. テスト検証実績と網羅状況",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier2_runtime/tests/runtime_interpreter_test_spec.md#3. テスト検証実績と網羅状況",
+      "target": "item:DebuggerLabelTableSwitch",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier2_runtime/tests/runtime_interpreter_test_spec.md#3. テスト検証実績と網羅状況",
+      "target": "item:Debug_Integrated",
+      "relation": "refers_to",
       "metadata": {}
     },
     {
@@ -16366,18 +16567,18 @@
     },
     {
       "source": "file:components/tier2_runtime/tests/runtime_loader_test_spec.md",
-      "target": "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#WASMローダ テスト仕様書 (Test Specification)",
+      "target": "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#(Overview)",
       "relation": "contains",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#WASMローダ テスト仕様書 (Test Specification)",
+      "source": "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#(Overview)",
       "target": "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#1. 目的と対象範囲",
       "relation": "contains",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#WASMローダ テスト仕様書 (Test Specification)",
+      "source": "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#(Overview)",
       "target": "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#2. テストケース一覧",
       "relation": "contains",
       "metadata": {}
@@ -16407,13 +16608,19 @@
       "metadata": {}
     },
     {
+      "source": "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#ゼロコピー索引化 (§4.1)",
+      "target": "item:META_BinarySearch",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
       "source": "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#2. テストケース一覧",
-      "target": "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#複数モジュール・インポート解決 (§4.1「依存関係解決」)",
+      "target": "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#複数モジュール・インポート解決 (§4.1「インポートテーブル検索と依存関係解決」)",
       "relation": "contains",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#複数モジュール・インポート解決 (§4.1「依存関係解決」)",
+      "source": "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#複数モジュール・インポート解決 (§4.1「インポートテーブル検索と依存関係解決」)",
       "target": "item:MultiModule_Support",
       "relation": "refers_to",
       "metadata": {}
@@ -16425,13 +16632,25 @@
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#WASMローダ テスト仕様書 (Test Specification)",
-      "target": "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#3. 現状のギャップ（pysim実装との差分）",
+      "source": "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#2. テストケース一覧",
+      "target": "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#ファイル内データ位置 & シンボルハッシュ RadixBinaryTreeView 索引 (§1, §3.1, §4.1, §5.1, {META_BinarySearch})",
       "relation": "contains",
       "metadata": {}
     },
     {
-      "source": "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#WASMローダ テスト仕様書 (Test Specification)",
+      "source": "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#ファイル内データ位置 & シンボルハッシュ RadixBinaryTreeView 索引 (§1, §3.1, §4.1, §5.1, {META_BinarySearch})",
+      "target": "item:META_BinarySearch",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#(Overview)",
+      "target": "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#3. テスト検証実績と網羅状況",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#(Overview)",
       "target": "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#4. 未検証・スコープ外",
       "relation": "contains",
       "metadata": {}
@@ -16480,7 +16699,7 @@
     },
     {
       "source": "sec:components/tier2_runtime/tests/runtime_vmmio_test_spec.md#vMMIO テスト仕様書 (Test Specification)",
-      "target": "sec:components/tier2_runtime/tests/runtime_vmmio_test_spec.md#3. 現状のギャップ（pysim実装との差分）",
+      "target": "sec:components/tier2_runtime/tests/runtime_vmmio_test_spec.md#3. テスト検証実績と網羅状況",
       "relation": "contains",
       "metadata": {}
     },
@@ -16552,7 +16771,7 @@
     },
     {
       "source": "sec:components/tier2_runtime/tests/runtime_vsoc_test_spec.md#vSoC (統合実行エンジン) テスト仕様書 (Test Specification)",
-      "target": "sec:components/tier2_runtime/tests/runtime_vsoc_test_spec.md#3. 現状のギャップ（pysim実装との差分）",
+      "target": "sec:components/tier2_runtime/tests/runtime_vsoc_test_spec.md#3. テスト検証実績と網羅状況",
       "relation": "contains",
       "metadata": {}
     },
@@ -16678,6 +16897,30 @@
     },
     {
       "source": "sec:components/tier3_jit/jit_compiler.md#3.3 主要なクラス・構造体・定数",
+      "target": "sec:components/tier3_jit/jit_compiler.md#コンパイル単位とインタープリタ協調方針",
+      "relation": "contains",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier3_jit/jit_compiler.md#コンパイル単位とインタープリタ協調方針",
+      "target": "item:LowLatencyJIT",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier3_jit/jit_compiler.md#コンパイル単位とインタープリタ協調方針",
+      "target": "item:SimpleJITArchitecture",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier3_jit/jit_compiler.md#コンパイル単位とインタープリタ協調方針",
+      "target": "item:PositionIndependentCode",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier3_jit/jit_compiler.md#3.3 主要なクラス・構造体・定数",
       "target": "sec:components/tier3_jit/jit_compiler.md#コピーアンドパッチエンジン（CopyAndPatchEngine）クラス",
       "relation": "contains",
       "metadata": {}
@@ -16707,6 +16950,12 @@
       "metadata": {}
     },
     {
+      "source": "sec:components/tier3_jit/jit_compiler.md#コピーアンドパッチエンジン（CopyAndPatchEngine）クラス",
+      "target": "item:PositionIndependentCode",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
       "source": "sec:components/tier3_jit/jit_compiler.md#3.3 主要なクラス・構造体・定数",
       "target": "sec:components/tier3_jit/jit_compiler.md#JIT トレース物理メモリレイアウト (`jit_trace_header`)",
       "relation": "contains",
@@ -16721,6 +16970,12 @@
     {
       "source": "sec:components/tier3_jit/jit_compiler.md#JIT トレース物理メモリレイアウト (`jit_trace_header`)",
       "target": "item:SimpleJITArchitecture",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier3_jit/jit_compiler.md#JIT トレース物理メモリレイアウト (`jit_trace_header`)",
+      "target": "item:PositionIndependentCode",
       "relation": "refers_to",
       "metadata": {}
     },
@@ -17391,6 +17646,12 @@
       "metadata": {}
     },
     {
+      "source": "sec:components/tier3_jit/tests/jit_compiler_test_spec.md#1. 目的と対象範囲",
+      "target": "item:PositionIndependentCode",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
       "source": "sec:components/tier3_jit/tests/jit_compiler_test_spec.md#JITコンパイラ (コード生成コア) テスト仕様書 (Test Specification)",
       "target": "sec:components/tier3_jit/tests/jit_compiler_test_spec.md#2. テストケース一覧",
       "relation": "contains",
@@ -17469,8 +17730,20 @@
       "metadata": {}
     },
     {
+      "source": "sec:components/tier3_jit/tests/jit_compiler_test_spec.md#安全性制約 (§7.2)",
+      "target": "item:JIT_LazyChaining",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
+      "source": "sec:components/tier3_jit/tests/jit_compiler_test_spec.md#安全性制約 (§7.2)",
+      "target": "item:JIT_RuntimeAPI_Fallback",
+      "relation": "refers_to",
+      "metadata": {}
+    },
+    {
       "source": "sec:components/tier3_jit/tests/jit_compiler_test_spec.md#JITコンパイラ (コード生成コア) テスト仕様書 (Test Specification)",
-      "target": "sec:components/tier3_jit/tests/jit_compiler_test_spec.md#3. 現状のギャップ（pysim実装との差分）",
+      "target": "sec:components/tier3_jit/tests/jit_compiler_test_spec.md#3. テスト検証実績と網羅状況",
       "relation": "contains",
       "metadata": {}
     },
@@ -17548,7 +17821,7 @@
     },
     {
       "source": "sec:components/tier3_jit/tests/jit_runtime_test_spec.md#JITランタイム (キャッシュ・ホットスポット検出) テスト仕様書 (Test Specification)",
-      "target": "sec:components/tier3_jit/tests/jit_runtime_test_spec.md#3. 現状のギャップ（pysim実装との差分）",
+      "target": "sec:components/tier3_jit/tests/jit_runtime_test_spec.md#3. テスト検証実績と網羅状況",
       "relation": "contains",
       "metadata": {}
     },
@@ -18310,7 +18583,7 @@
     },
     {
       "source": "sec:components/tier3_platform/tests/platform_hal_test_spec.md#HAL テスト仕様書 (Test Specification)",
-      "target": "sec:components/tier3_platform/tests/platform_hal_test_spec.md#3. 現状のギャップ（pysim実装との差分）",
+      "target": "sec:components/tier3_platform/tests/platform_hal_test_spec.md#3. テスト検証実績と網羅状況",
       "relation": "contains",
       "metadata": {}
     },
@@ -18358,7 +18631,7 @@
     },
     {
       "source": "sec:components/tier3_platform/tests/platform_memory_test_spec.md#物理メモリ (COOSメモリマネージャ) テスト仕様書 (Test Specification)",
-      "target": "sec:components/tier3_platform/tests/platform_memory_test_spec.md#3. 現状のギャップ（pysim実装との差分）",
+      "target": "sec:components/tier3_platform/tests/platform_memory_test_spec.md#3. テスト検証実績と網羅状況",
       "relation": "contains",
       "metadata": {}
     },
@@ -20044,7 +20317,7 @@
     },
     {
       "source": "sec:specs/tests/wasm_instruction_set_test_spec.md#WASM命令セット テスト仕様書 (Test Specification)",
-      "target": "sec:specs/tests/wasm_instruction_set_test_spec.md#3. 現状のギャップ（pysim実装との差分）",
+      "target": "sec:specs/tests/wasm_instruction_set_test_spec.md#3. テスト検証実績と網羅状況",
       "relation": "contains",
       "metadata": {}
     },
@@ -20484,7 +20757,7 @@
       }
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#1. コンセプト",
+      "source": "sec:components/tier2_runtime/debug_manager.md#1. コンセプト",
       "target": "file:components/tier2_runtime/runtime_vsoc.md",
       "relation": "links_to",
       "metadata": {
@@ -20493,7 +20766,7 @@
       }
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#2. アーキテクチャ分類",
+      "source": "sec:components/tier2_runtime/debug_manager.md#2. アーキテクチャ分類",
       "target": "file:specs/gdb_rsp_protocol.md",
       "relation": "links_to",
       "metadata": {
@@ -20502,7 +20775,7 @@
       }
     },
     {
-      "source": "sec:components/tier2_runtime/debug/debug_manager.md#仮想レジスタセット（virtual_register_set）",
+      "source": "sec:components/tier2_runtime/debug_manager.md#仮想レジスタセット（virtual_register_set）",
       "target": "file:specs/gdb_rsp_protocol.md",
       "relation": "links_to",
       "metadata": {
@@ -20668,7 +20941,7 @@
       "target": "file:specs/jit_stencil_catalog.md",
       "relation": "links_to",
       "metadata": {
-        "line": 54,
+        "line": 70,
         "text": "JIT ステンシルカタログ"
       }
     },
@@ -20677,7 +20950,7 @@
       "target": "file:components/tier3_jit/jit_runtime.md",
       "relation": "links_to",
       "metadata": {
-        "line": 97,
+        "line": 114,
         "text": "jit_runtime.md"
       }
     },
@@ -20686,7 +20959,7 @@
       "target": "file:architecture/architecture_overview.md",
       "relation": "links_to",
       "metadata": {
-        "line": 97,
+        "line": 114,
         "text": "アーキテクチャ概要書 §3.2"
       }
     },
@@ -20695,7 +20968,7 @@
       "target": "file:components/tier3_jit/jit_compiler.md",
       "relation": "links_to",
       "metadata": {
-        "line": 212,
+        "line": 229,
         "text": "JIT Compiler (コード生成コア)"
       }
     },
@@ -20704,7 +20977,7 @@
       "target": "file:components/tier3_jit/jit_runtime.md",
       "relation": "links_to",
       "metadata": {
-        "line": 213,
+        "line": 230,
         "text": "JIT Runtime (ランタイム管理)"
       }
     },
@@ -20713,7 +20986,7 @@
       "target": "file:components/tier1_core/system_containers.md",
       "relation": "links_to",
       "metadata": {
-        "line": 259,
+        "line": 276,
         "text": "静的コンテナ語彙"
       }
     },
@@ -20823,15 +21096,6 @@
       "metadata": {
         "line": 140,
         "text": "architecture_overview.md §8"
-      }
-    },
-    {
-      "source": "sec:components/tier3_platform/tests/platform_memory_test_spec.md#3. 現状のギャップ（pysim実装との差分）",
-      "target": "file:components/tier1_core/os_coos.md",
-      "relation": "links_to",
-      "metadata": {
-        "line": 52,
-        "text": "os_coos.md §5.2"
       }
     },
     {

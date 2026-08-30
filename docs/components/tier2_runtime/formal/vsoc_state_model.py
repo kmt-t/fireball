@@ -10,7 +10,7 @@ BACKS = [
     "components/tier2_runtime/runtime_vsoc.md",
     "components/tier2_runtime/runtime_vmmio.md",
     "components/tier2_runtime/runtime_interpreter.md",
-    "components/tier2_runtime/debug/debug_manager.md",
+    "components/tier2_runtime/debug_manager.md",
     "components/tier3_platform/platform_hal.md",
     "components/tier1_core/system_config.md",
 ]

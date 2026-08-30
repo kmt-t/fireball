@@ -15,7 +15,7 @@ from pyModelChecking.CTL import AG, AF, Not, Imply, AtomicProposition
 
 BACKS = [
     "components/tier2_runtime/runtime_vsoc.md",
-    "components/tier2_runtime/debug/debug_manager.md",
+    "components/tier2_runtime/debug_manager.md",
     "components/tier3_jit/jit_compiler.md",
     "components/tier3_platform/platform_memory.md",
 ]

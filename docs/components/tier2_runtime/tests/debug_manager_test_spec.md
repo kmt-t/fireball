@@ -2,7 +2,7 @@
 
 ## 1. 目的と対象範囲
 
-正本: `docs/components/tier2_runtime/debug/debug_manager.md`
+正本: `docs/components/tier2_runtime/debug_manager.md`
 関連正本: `docs/specs/gdb_rsp_protocol.md`
 
 GDB RSPコマンド処理（`?`, `g/G`, `m/M`, `Z0/z0`, `s`, `c`）、ブレークポイント管理（`fireball::flat_set_view`）、インタープリタ・ハンドラテーブル切り替え（`DebuggerLabelTableSwitch`）、JITキャッシュ協調無効化（`{Debugger_Jit_Flush}`）、統合プロファイラ（PCサンプリング & メモリアサーション `{Debug_Integrated}`）、および仮想レジスタセットを検証する。

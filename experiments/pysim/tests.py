@@ -998,6 +998,7 @@ def test_syscall_06_ipc_lookup_send_recv():
 
 
 def test_syscall_07_wasi_fd_write():
+    """SYS-80: WASI_FD_WRITE writes single iovec to UART stdout and reports written bytes."""
     sysv = System()
     try:
         guest_mem = bytearray(64)
@@ -1008,6 +1009,130 @@ def test_syscall_07_wasi_fd_write():
 
         assert sysv.fireball_call(FbSyscallId.WASI_FD_WRITE, 1, 0, 1, 48, 0, 0) == WasiErrno.SUCCESS
         assert sysv.transport.drain() == message
+        nwritten = struct.unpack_from("<I", guest_mem, 48)[0]
+        assert nwritten == len(message)
+    finally:
+        sysv.shutdown()
+
+
+def test_wasi_01_fd_write_scatter_gather():
+    """SYS-80: WASI_FD_WRITE supports scatter-gather output with multiple iovecs."""
+    sysv = System()
+    try:
+        guest_mem = bytearray(128)
+        chunk1 = b"FIREBALL_"
+        chunk2 = b"WASI_SCATTER_GATHER\n"
+        guest_mem[32:32 + len(chunk1)] = chunk1
+        guest_mem[64:64 + len(chunk2)] = chunk2
+
+        # 2 iovecs at offset 0 and 8
+        struct.pack_into("<II", guest_mem, 0, 32, len(chunk1))
+        struct.pack_into("<II", guest_mem, 8, 64, len(chunk2))
+        sysv.bind_guest(guest_mem, task_id=1)
+
+        # Write to stdout (fd=1) with 2 iovecs, result at offset 100
+        assert sysv.fireball_call(FbSyscallId.WASI_FD_WRITE, 1, 0, 2, 100, 0, 0) == WasiErrno.SUCCESS
+        assert sysv.transport.drain() == chunk1 + chunk2
+        nwritten = struct.unpack_from("<I", guest_mem, 100)[0]
+        assert nwritten == len(chunk1) + len(chunk2)
+    finally:
+        sysv.shutdown()
+
+
+def test_wasi_02_fd_read_eof():
+    """SYS-81: WASI_FD_READ reports 0 bytes read (EOF) without crashing."""
+    sysv = System()
+    try:
+        guest_mem = bytearray(64)
+        struct.pack_into("<II", guest_mem, 0, 16, 32)
+        sysv.bind_guest(guest_mem, task_id=1)
+
+        assert sysv.fireball_call(FbSyscallId.WASI_FD_READ, 0, 0, 1, 48, 0, 0) == WasiErrno.SUCCESS
+        nread = struct.unpack_from("<I", guest_mem, 48)[0]
+        assert nread == 0  # Standard WASI EOF
+    finally:
+        sysv.shutdown()
+
+
+def test_wasi_03_fd_close():
+    """SYS-82: WASI_FD_CLOSE returns SUCCESS for any fd."""
+    sysv = System()
+    try:
+        assert sysv.fireball_call(FbSyscallId.WASI_FD_CLOSE, 3, 0, 0, 0, 0, 0) == WasiErrno.SUCCESS
+    finally:
+        sysv.shutdown()
+
+
+def test_wasi_04_clock_time_get_monotonic():
+    """SYS-83: WASI_CLOCK_TIME_GET writes monotonic 64-bit nanosecond timestamp to guest memory."""
+    sysv = System()
+    try:
+        guest_mem = bytearray(64)
+        sysv.bind_guest(guest_mem, task_id=1)
+
+        assert sysv.fireball_call(FbSyscallId.WASI_CLOCK_TIME_GET, 0, 0, 16, 0, 0, 0) == WasiErrno.SUCCESS
+        t1 = struct.unpack_from("<Q", guest_mem, 16)[0]
+        assert t1 > 0
+
+        time.sleep(0.001)
+        assert sysv.fireball_call(FbSyscallId.WASI_CLOCK_TIME_GET, 0, 0, 24, 0, 0, 0) == WasiErrno.SUCCESS
+        t2 = struct.unpack_from("<Q", guest_mem, 24)[0]
+        assert t2 >= t1, "WASI monotonic clock must be monotonically non-decreasing"
+    finally:
+        sysv.shutdown()
+
+
+def test_wasi_05_proc_exit():
+    """SYS-84: WASI_PROC_EXIT sets system halted state and exit code."""
+    sysv = System()
+    try:
+        assert sysv.halted is False
+        assert sysv.fireball_call(FbSyscallId.WASI_PROC_EXIT, 42, 0, 0, 0, 0, 0) == WasiErrno.SUCCESS
+        assert sysv.halted is True
+        assert sysv.exit_code == 42
+    finally:
+        sysv.shutdown()
+
+
+def test_wasi_06_random_get():
+    """SYS-85: WASI_RANDOM_GET fills guest buffer with cryptographically secure random bytes."""
+    sysv = System()
+    try:
+        guest_mem = bytearray(64)
+        sysv.bind_guest(guest_mem, task_id=1)
+
+        assert sysv.fireball_call(FbSyscallId.WASI_RANDOM_GET, 8, 16, 0, 0, 0, 0) == WasiErrno.SUCCESS
+        random_bytes = bytes(guest_mem[8:24])
+        assert len(random_bytes) == 16
+        assert random_bytes != bytes(16), "Random buffer must not be all zeros"
+    finally:
+        sysv.shutdown()
+
+
+def test_wasi_07_invalid_fd_returns_badf():
+    """SYS-91: WASI_FD_WRITE to invalid fd (e.g. fd=99) returns EBADF."""
+    sysv = System()
+    try:
+        guest_mem = bytearray(64)
+        struct.pack_into("<II", guest_mem, 0, 16, 8)
+        sysv.bind_guest(guest_mem, task_id=1)
+
+        res = sysv.fireball_call(FbSyscallId.WASI_FD_WRITE, 99, 0, 1, 48, 0, 0)
+        assert res == WasiErrno.BADF
+    finally:
+        sysv.shutdown()
+
+
+def test_wasi_08_out_of_bounds_offset_returns_fault():
+    """SYS-92: Out-of-bounds guest memory offset in WASI call returns EFAULT instantly."""
+    sysv = System()
+    try:
+        guest_mem = bytearray(64)
+        sysv.bind_guest(guest_mem, task_id=1)
+
+        # iovs_ptr way past 64 bytes
+        res = sysv.fireball_call(FbSyscallId.WASI_FD_WRITE, 1, 0x10000, 1, 48, 0, 0)
+        assert res == WasiErrno.FAULT
     finally:
         sysv.shutdown()
 

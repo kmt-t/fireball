@@ -6,23 +6,34 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
 
 ---
 
-## Phase 0: 仕様確定・形式検証・実機シミュレータ実証 【DONE】
+## Phase 0.8: 仕様レビュー・バジェット再見積・クラス設計 【進行中 / ACTIVE】
 <!-- traceability: {META_SpecificationFirst} {META_Risk_Tiering} {Resource_Estimation_Model} -->
 
 機械的な品質ゲート（静的解析・pyModelChecking 13モデル形式検証・WIT契約・LLM意味監査）はすべて合格（0 Errors, 0 Warnings）。
 さらに、Python 完全実行可能シミュレータ（`experiments/pysim`）により全 11 統合シナリオの実証を完了。
+現在、**オーナー（アーキテクト）による最終仕様精読、RAM/ROM バジェットの厳密な再見積もり、および C++23 クラス・構造体メモリレイアウト設計の確定** を実施中。
 
-### Phase 0 達成実績
-- [x] **1. アーキテクチャ設計・リソース予算固定**: 最小構成（RAM 32KB / ROM 96KB）に対し、静的合計 21.0KB / 84KB とする予算設計完了 `{Resource_Estimation_Model}`
-- [x] **2. WASM 64KB ページング & 8KB 部分ページ境界モデル確立**: `FastAddressCheck` 境界トラップ仕様の確定 `{FastAddressCheck}`
-- [x] **3. pyModelChecking 13形式検証モデル合格**: CSPデッドロックフリー、W^X分離、PTE状態遷移等の完全証明 `{GLOBAL_UseCpp20Coroutine}` `{CSP_Handoff}` `{JIT_MultiBuffer_Cache}` `{Debugger_Jit_Flush}`
-- [x] **4. WIT インターフェース契約 & リカバリー戦略確定**: 4つのリカバリー戦略（`ignore`, `retry`, `restart`, `panic`）パターン確定 `{META_RecoveryStrategy}`
-- [x] **5. Python 実機シミュレータ (`experiments/pysim`) 実証**: Loader, Interpreter, Copy-and-Patch JIT, COOS, IPC, vMMIO, GDB デバッガの全 11 シナリオ完走
-- [x] **6. オーナー最終 GO 判定**: C++23 実装フェーズ（Phase 1）への移行承認 `{META_SpecificationFirst}`
+### Phase 0 達成実績 & 現在進行中のタスク
+- [x] **1. 形式検証・WIT契約・Python シミュレータ実証 (DONE)**:
+  - pyModelChecking 13モデル形式検証合格（CSPデッドロックフリー、W^X分離、PTE状態遷移等） `{GLOBAL_UseCpp20Coroutine}` `{CSP_Handoff}` `{JIT_MultiBuffer_Cache}` `{Debugger_Jit_Flush}`
+  - WIT インターフェース契約 & 4つのリカバリー戦略（`ignore`, `retry`, `restart`, `panic`）確定 `{META_RecoveryStrategy}`
+  - Python 実機シミュレータ (`experiments/pysim`) 全11シナリオ完走実証
+- [ ] **2. 物理リソース予算（RAM 32KB / ROM 96KB）の厳密な再見積もり (進行中)**:
+  - **RAM (32KB)**: JITキャッシュ 6.63KB, 統合スタック 2.02KB, WASMリニアメモリ 4.0KB, vSoCメタデータ 1.13KB, COOS 1.31KB, IPC/vMMIO 1.38KB, サブシステム 1.75KB, C++ Core/MSPスタック 3.0KB $\to$ 静的合計 **21.20 KB** (安全余白 10.80 KB / 33.7%) の実機適合確認 `{Resource_Estimation_Model}`
+  - **ROM (96KB)**: JITステンシル 8.0KB, Interpreter 14.0KB, Loader 6.0KB, COOS/IPC 10.0KB, vMMIO 5.5KB, HAL/WASI 12.0KB, GDB 4.5KB, 内蔵WASM 20.0KB, スタートアップ 4.0KB $\to$ 静的合計 **84.0 KB** (安全余白 12.0 KB / 12.5%) の確認
+- [ ] **3. C++23 クラス・構造体メモリレイアウト & constexpr 設計 (進行中)**:
+  - `inc/core/`: `TaskControlBlock`, `CoosChannel`, `SchedulerContext`
+  - `inc/interface/`: `IpcRouter`, `SharedBlockView`, `WitResourceTable`
+  - `inc/runtime/`: `ExecutionContext` (16B), `ModuleView` (ゼロコピー索引), `OpcodeHandlerTable` (`[[clang::musttail]]`), `VmmioPageTable`
+  - `inc/jit/`: `JitCacheManager` (2KB×3面), `Thumb2StencilTable`, `SafepointController`
+  - `inc/platform/`: `ConsolidatedMemoryManager`, `PMSAv8MPUController`, `HalDriverHarness`
+  - POD ハーネスと C++20/23 Concepts によるゼロオーバーヘッド静的 DI のヘッダ定義 `{META_StaticDI}` `{GLOBAL_ComponentHarness}`
+- [ ] **4. オーナー（人間）による最終仕様精読 & GO 判定**:
+  - 仕様・バジェット・クラス設計を Freeze し、C++23 実装フェーズ（Phase 1）への移行を最終承認 `{META_SpecificationFirst}`
 
 ---
 
-## Phase 1: vSoC First 実装（約3ヶ月） 【進行中 / ACTIVE】
+## Phase 1: vSoC First 実装（約3ヶ月） 【オーナー GO 判定後に着手】
 <!-- traceability: {META_AI_Native_Dev} {PositionIndependentCode} {JIT_CopyAndPatch} {ROMParsing} -->
 
 スタンドアロン vSoC コア（Loader, Interpreter, JIT）を C++23 で実装し、ホストハーネス上で WAMR 比較ベンチマークを実施する。

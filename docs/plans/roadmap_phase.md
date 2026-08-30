@@ -7,17 +7,19 @@
 
 | フェーズ | 工期 | 目的 | 状態 |
 |---|---|---|:---:|
-| **Phase 0: Quality Gate & Executable Prototype** | 約6ヶ月 | 仕様品質合格・13形式検証・Python実機シミュレータ実証 | **DONE (完全合格)** |
-| **Phase 1: vSoC First (C++23 実装)** | 約3ヶ月 | スタンドアロンvSoCコア実装（Loader/Interpreter/JIT） | **進行中 (着手)** |
-| **Phase 2: Integration (周辺統合)** | 約4ヶ月 | 周辺サブシステム実装・統合（COOS/IPC/vMMIO/HAL/GDB） | 次期予定 |
+| **Phase 0: Quality Gate & Foundation** | 約6ヶ月 | 仕様品質検証・13形式検証・バジェット再見積・クラス設計 | **進行中 (レビュー・設計中)** |
+| **Phase 1: vSoC First (C++23 実装)** | 約3ヶ月 | スタンドアロンvSoCコア実装（Loader/Interpreter/JIT） | **待機中 (オーナーGO待ち)** |
+| **Phase 2: Integration (周辺統合)** | 約4ヶ月 | 周辺サブシステム実装・統合（COOS/IPC/vMMIO/HAL/GDB） | 未着手 |
 | **Phase 3: PoC (実機移植・評価)** | 約2ヶ月 | ターゲットボード移植（Cortex-M33/Zephyr）・性能評価 | 未着手 |
 | **Phase 4: OSS & Production** | 継続 | OSSリリース整備・エコシステム対応・ドキュメント公開 | 未着手 |
 
-**Phase 0 の成果と Phase 1 移行:**
-- 仕様品質ゲート（spec-integrator）により、静的リンク、要求トレーサビリティ（100+キーワード）、一貫性（Lockfile）、WIT契約、LLM意味監査を 0 Errors で完全パス。
-- pyModelChecking による数学的検証モデル（13モデル）により、CSPデッドロックフリー、W^X分離、キャッシュ整合性、PTE状態遷移の健全性を証明。
-- Python 実機シミュレータ（`experiments/pysim`）により、WASMローダ、Threaded Interpreter、Copy-and-Patch JIT、COOS、IPC、vMMIO、GDBサーバー等を含む 11 統合シナリオの動作を実証完了。
-- 以上の確立されたアーキテクチャに基づき、**Phase 1: C++23 スタンドアロン vSoC コア実装** に着手する。
+**Phase 0 を品質ゲート・設計確定に集中させる理由:**
+- **ゲート判定は人間（オーナー/アーキテクト）が実施する**: 機械的ゲート合格は前提条件に過ぎず、リソース制約・クラス構造・トレードオフの最終承認はアーキテクトが行う。
+- **C++ 実装着手前の必須要件**:
+  1. 物理リソース（RAM 32KB / ROM 96KB）のバイト単位の再見積もりと整合性検証 `{Resource_Estimation_Model}`
+  2. C++23 ヘッダ（`inc/**/*.hxx`）における具体的な構造体メモリレイアウト、アライメント、constexpr 設計、POD ハーネス設計の確定
+  3. Python 実機シミュレータ（`pysim` 11シナリオ）による動的振る舞いの先行検証の確認
+- 仕様・設計・バジェットが完全に固まる前に C++ 実装へ進むことによる手戻りを完全防止する。
 
 ---
 

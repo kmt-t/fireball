@@ -37,6 +37,7 @@
         "components/tier3_jit/jit_compiler.md",
         "components/tier3_jit/tests/jit_compiler_test_spec.md",
         "plans/backlog_list.md",
+        "plans/roadmap_phase.md",
         "requires/requirement_list.md",
         "specs/gdb_rsp_protocol.md",
         "specs/jit_stencil_catalog.md",
@@ -108,6 +109,24 @@
       ]
     },
     {
+      "item_id": "item:JIT_CopyAndPatch",
+      "item_label": "{JIT_CopyAndPatch}",
+      "status": "PASS",
+      "summary": "Mock evaluation passed.",
+      "issues": [],
+      "covered_files": [
+        "architecture/keyword_dictionary.md",
+        "components/tier2_runtime/runtime_vsoc.md",
+        "components/tier3_jit/concepts/README.md",
+        "components/tier3_jit/jit_compiler.md",
+        "plans/backlog_list.md",
+        "plans/roadmap_phase.md",
+        "requires/requirement_list.md",
+        "specs/jit_stencil_catalog.md",
+        "specs/wasm_instruction_set.md"
+      ]
+    },
+    {
       "item_id": "item:META_BinarySearch",
       "item_label": "{META_BinarySearch}",
       "status": "PASS",
@@ -124,23 +143,6 @@
       ]
     },
     {
-      "item_id": "item:JIT_CopyAndPatch",
-      "item_label": "{JIT_CopyAndPatch}",
-      "status": "PASS",
-      "summary": "Mock evaluation passed.",
-      "issues": [],
-      "covered_files": [
-        "architecture/keyword_dictionary.md",
-        "components/tier2_runtime/runtime_vsoc.md",
-        "components/tier3_jit/concepts/README.md",
-        "components/tier3_jit/jit_compiler.md",
-        "plans/backlog_list.md",
-        "requires/requirement_list.md",
-        "specs/jit_stencil_catalog.md",
-        "specs/wasm_instruction_set.md"
-      ]
-    },
-    {
       "item_id": "item:ThreadedInterpreter",
       "item_label": "{ThreadedInterpreter}",
       "status": "PASS",
@@ -153,6 +155,7 @@
         "components/tier2_runtime/runtime_vsoc.md",
         "components/tier2_runtime/tests/runtime_interpreter_test_spec.md",
         "plans/backlog_list.md",
+        "plans/roadmap_phase.md",
         "requires/requirement_list.md",
         "specs/jit_stencil_catalog.md",
         "specs/wasm_instruction_set.md"
@@ -170,27 +173,36 @@
         "components/tier1_interface/ipc_router.md",
         "components/tier2_runtime/runtime_loader.md",
         "components/tier2_runtime/tests/runtime_loader_test_spec.md",
-        "plans/backlog_list.md"
+        "plans/backlog_list.md",
+        "plans/roadmap_phase.md"
       ]
     },
     {
-      "item_id": "item:OwnershipTransfer",
-      "item_label": "{OwnershipTransfer}",
+      "item_id": "item:MemoryBoundaryCheck",
+      "item_label": "{MemoryBoundaryCheck}",
       "status": "PASS",
       "summary": "Mock evaluation passed.",
       "issues": [],
       "covered_files": [
-        "components/tier1_interface/interface_wit.md",
-        "components/tier1_interface/ipc_router.md",
-        "components/tier1_interface/tests/ipc_router_test_spec.md",
-        "components/tier2_runtime/runtime_vmmio.md",
-        "components/tier3_platform/platform_memory.md",
-        "requires/requirement_list.md"
+        "architecture/architecture_overview.md",
+        "architecture/keyword_dictionary.md",
+        "components/tier2_runtime/debug_manager.md",
+        "components/tier2_runtime/runtime_interpreter.md",
+        "components/tier2_runtime/runtime_vsoc.md",
+        "components/tier2_runtime/tests/debug_manager_test_spec.md",
+        "components/tier3_jit/jit_compiler.md",
+        "components/tier3_jit/tests/jit_compiler_test_spec.md",
+        "plans/backlog_list.md",
+        "plans/roadmap_phase.md",
+        "requires/requirement_list.md",
+        "specs/jit_stencil_catalog.md",
+        "specs/wasi_preview1_abi.md",
+        "specs/wasm_instruction_set.md"
       ]
     }
   ],
   "doc_hashes": {
-    "architecture/architecture_overview.md": "b1467cae85d96c4e9f9c4712affdd647470aa6717bf943f948bfe54652994c4c",
+    "architecture/architecture_overview.md": "709f5700b0c8c1204ea1dafdcaace6b5d246041d6b652544ae727eced52da25a",
     "architecture/combinatorial_test_spec.md": "8820aee063e8195b2df170fe3fd465662801b0b80edc1321ca73b96bb51746af",
     "architecture/document_structure.md": "25567a8b8ca8a954d21778bf66d69e8ad637a802e1a0c6eca26eb86488429208",
     "architecture/integration_test_scenarios.md": "efa9fbe6d3539d350d8ca83c7263277f3313d0bb375612adf8350951db4becae",
@@ -233,8 +245,8 @@
     "components/tier3_platform/tests/platform_hal_test_spec.md": "546f2669958dcb11053a71bfa715038b023a36a959e030368685acc13327753f",
     "components/tier3_platform/tests/platform_memory_test_spec.md": "e313ff8d8ecae657a0658fca406348d0371c23625fc8023c9f2d6afbcc712232",
     "plans/backlog_archive.md": "3e09371810730853a39b09fec40e83409690786e1d27caae96ab6af054191716",
-    "plans/backlog_list.md": "a89f6d834f50184f6ea49e663c24e89f46968b96d576aee1cfb4bc3449ea8fdf",
-    "plans/roadmap_phase.md": "92ad637d4e9baed7d2083ae53145a3416cd1df7e1266339c6cabe1c969b4fe2c",
+    "plans/backlog_list.md": "68631284249570e49a3ca8f66c0e71996ae8d9bc7f428dd24fb7abeb55a86c57",
+    "plans/roadmap_phase.md": "0268cb6b36e49e74aee76a93833c207faa83a7495082fe796d833577b6ee243a",
     "requires/requirement_list.md": "0b287ef5c3747d595b55eb71dfb0fa59abf7f265aa59eb62e79fe6f010d64f2f",
     "specs/gdb_rsp_protocol.md": "f1bf5afcbe01b72cd1f88353d95b67171d62239e865d9298880c8d9682d540cd",
     "specs/jit_stencil_catalog.md": "7478285b80e4e535f2acf9db0da4c70998db843ff6d9c71234ee0de1639fe2f3",

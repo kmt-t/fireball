@@ -318,13 +318,27 @@ class Interpreter:
                     self.runtime_engine.record_block_head(unified_pc)
 
             ins = frame.instrs[ip]
+            is_boundary = ins.opcode in (
+                BLOCK,
+                LOOP,
+                IF,
+                ELSE,
+                END,
+                BR,
+                BR_IF,
+                BR_TABLE,
+                RETURN,
+                CALL,
+                CALL_INDIRECT,
+            )
             handler = _HANDLERS[ins.opcode]
             if handler is None:
                 raise NotImplementedError(f"interpreter: unhandled opcode 0x{ins.opcode:02X}")
             cont = handler(ip, frame, env, locals_arr)
-            instr_step += 1
-            if yield_every > 0 and (instr_step % yield_every == 0):
-                yield  # Cooperative yield to COOS scheduler
+            if is_boundary:
+                instr_step += 1
+                if yield_every > 0 and (instr_step % yield_every == 0):
+                    yield  # Cooperative yield to COOS scheduler at trace boundary {ADR_TraceBoundaryYield}
 
         ft = self.module.func_type(func_index)
         if ft.results:

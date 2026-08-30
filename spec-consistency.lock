@@ -30,6 +30,9 @@
     "ADR_TosCacheAsymmetry": {
       "sec:requires/requirement_list.md#4. 設計課題・制約追跡 (Design Challenges & ADRs)": "3ff33f9fee9d920d572706bc714e00cb895b961233583844c95873f32aa518a0"
     },
+    "ADR_TraceBoundaryYield": {
+      "sec:architecture/keyword_dictionary.md#2.1 WASM実行 & ランタイム (vSoC / Interpreter / Loader / vMMIO)": "f4dfa80aa5b223f27583573da0bee143e268a7b00337992bd87bbcce92559a92"
+    },
     "ActiveDataSegments": {
       "sec:architecture/keyword_dictionary.md#2.1 WASM実行 & ランタイム (vSoC / Interpreter / Loader / vMMIO)": "01e0163e25f9192e1d915dbdce05e8bbb6b1ed7412959c2bd07cf53d46267c3f"
     },
@@ -618,6 +621,11 @@
       "sec:plans/roadmap_phase.md#Phase 1: vSoC First（C++23 実装 / 約3ヶ月）",
       "sec:specs/jit_stencil_catalog.md#3.1 プロローグ & エピローグ・ステンシル (Prologue, Epilogue & Spill Flush)",
       "sec:specs/jit_stencil_catalog.md#3.3 定数ロード系ステンシル (Constants)"
+    ],
+    "ADR_TraceBoundaryYield": [
+      "sec:components/tier2_runtime/runtime_interpreter.md#4.1 アルゴリズム",
+      "sec:components/tier2_runtime/runtime_interpreter.md#ADR-INTERP-01: トレース境界での協調的 Yield (`{ADR_TraceBoundaryYield}`)",
+      "sec:components/tier2_runtime/runtime_vsoc.md#4.2 状態遷移図 (SysML SMD: vSoC Engine ライフサイクル)"
     ],
     "Asynchronous_Notification": [
       "sec:components/tier1_core/system_syscall.md#8. ホストからゲストへの非同期通知メカニズム",
@@ -1978,7 +1986,7 @@
     "sec:architecture/integration_test_scenarios.md#検証実績": "a829deb445eb7a0f34f6b2e47159ba9ea7ec5f09ce9ae26824cc27532aedb2be",
     "sec:architecture/keyword_dictionary.md#1. リンクキーワードの運用ルール": "1920a8c9397b9831fb2a9e5660bb34e3bb102c80303e9213179ed449ad8bcf15",
     "sec:architecture/keyword_dictionary.md#2. カテゴリ別 リンクキーワード台帳": "3e7482e011c124a23ae770d3d7f39b4738b9e08fbcd1027912eb4d64167e282a",
-    "sec:architecture/keyword_dictionary.md#2.1 WASM実行 & ランタイム (vSoC / Interpreter / Loader / vMMIO)": "79296faf240121af52977f47837830ebf0d721747cb51f3fa30ae7fe48ac6336",
+    "sec:architecture/keyword_dictionary.md#2.1 WASM実行 & ランタイム (vSoC / Interpreter / Loader / vMMIO)": "1347a04368a5cf9c458590a8435d6a5a137a8c21b7c696f7715908de2cf822f9",
     "sec:architecture/keyword_dictionary.md#2.2 タスク管理・スケジューリング・通信 (COOS / Scheduler / IPC)": "3f5ca6b932072ba03d7d8e9892310765af5ecafa5015fddf67b56ae1bc07c42b",
     "sec:architecture/keyword_dictionary.md#2.3 JIT コンパイラ & ランタイム (JIT Compiler / Runtime)": "6b7ef298f08313480efbd31e9ff2b6de2b726ae459a7a47ab23c40831dca71e3",
     "sec:architecture/keyword_dictionary.md#2.4 デバッガ & システムコア & プラットフォーム (Debug / Syscall / Logging / HAL)": "076f075d9480e10b18ad4c3036bf635ca95314a00294712a53cb6dcb4ec2918d",
@@ -2311,7 +2319,7 @@
     "sec:components/tier2_runtime/runtime_interpreter.md#3.2 内部ブロック図": "1800a68c7a397ce97b8d9b6c34b815ba990cdf023b4056c42796eea8cb647323",
     "sec:components/tier2_runtime/runtime_interpreter.md#3.3 主要なクラス・構造体・配列・定数": "343760f0b594de0591386397610b0f816a7706c6df4f44c8f027a01d6c1e01a0",
     "sec:components/tier2_runtime/runtime_interpreter.md#4. 動的モデル": "341dff8c7275b6011b54ff1bbf2ddf06f6c8faa457638ff164c4b2df64ef68f0",
-    "sec:components/tier2_runtime/runtime_interpreter.md#4.1 アルゴリズム": "77ab5303e99902011d9c7538d8b9d6988127fba4b989350173f0932400acd1b9",
+    "sec:components/tier2_runtime/runtime_interpreter.md#4.1 アルゴリズム": "1d99e98f92bc39beb5e264d0654c87d4a1bdf1507c1037f63c6300e4b4e715e5",
     "sec:components/tier2_runtime/runtime_interpreter.md#4.2 状態遷移図": "29c07a79525c247d3906bf4b811f0aad5d9a5545cb4feaa04e5347ca407a78e6",
     "sec:components/tier2_runtime/runtime_interpreter.md#4.3 内部シーケンス": "3095d6692b8e3e636169eec13bc6d3a5f708d0f34ee096f51f76d2fd68fa5f18",
     "sec:components/tier2_runtime/runtime_interpreter.md#5. インターフェイス定義": "7fb2c3f821c8108eaeee550240364da2e99fa84646a9aedec1b6dc4e18c54849",
@@ -2322,7 +2330,9 @@
     "sec:components/tier2_runtime/runtime_interpreter.md#6.1 性能制約と方策": "25b98136ebbc5936f49e4b1ac5a51eda26be599d0171a1b23f852e5316ea92a0",
     "sec:components/tier2_runtime/runtime_interpreter.md#6.2 メモリ制約と方策": "1d96c8c0a5a21680bc5dc35376eb78849be6d0a49cf207cc69317ff46182d5ef",
     "sec:components/tier2_runtime/runtime_interpreter.md#6.3 安全性制約と方策": "ad8c53d2d0ac5c8a64b1ded959aad3a9a306caa461454fa6b1bf84eed5ab00fd",
-    "sec:components/tier2_runtime/runtime_interpreter.md#7. 参考実装リスト": "cadaaf548146312652925063cdcfd6b97a2f7a947a296fe45bc8b542a4c641a4",
+    "sec:components/tier2_runtime/runtime_interpreter.md#7. 参考実装リスト": "c4bfee42fbffd95c8fdbde562a2f913f95088dbf8cc5d217299bd903163a16ed",
+    "sec:components/tier2_runtime/runtime_interpreter.md#8. 設計判断 (ADR)": "e12929a1c1babfc33f165e058a65fd8b8753af890ae58417a171a10575d2c763",
+    "sec:components/tier2_runtime/runtime_interpreter.md#ADR-INTERP-01: トレース境界での協調的 Yield (`{ADR_TraceBoundaryYield}`)": "426e198feb02e098bdeb2832f893ca7044573865cd6337d31b8b04b1a08bcbf3",
     "sec:components/tier2_runtime/runtime_interpreter.md#Interpreter コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}": "633dc2662a0bd4d9da8ad1ee2df841dcb371df8a4d498b8ee07327d49267e6eb",
     "sec:components/tier2_runtime/runtime_interpreter.md#Interpreter 実行シーケンス": "0f78a71d0bf59af6e7e5274967dff4dd51afaed98eedeb26233dfdf37176fa85",
     "sec:components/tier2_runtime/runtime_interpreter.md#WASM インタプリタ フルセット・コンセプトコード (`concepts/interpreter_concept.py`)": "8222c2d6d8929a484778c3a33b8bbb824880471ca20fc38865d78756c2102d91",
@@ -2413,7 +2423,7 @@
     "sec:components/tier2_runtime/runtime_vsoc.md#3.3 主要なクラス・構造体・配列・定数": "2b9d645fa7637d370500720b9484a36a156e17dd932c9506c4b8ba475c9c4f0e",
     "sec:components/tier2_runtime/runtime_vsoc.md#4. 動的モデル": "341dff8c7275b6011b54ff1bbf2ddf06f6c8faa457638ff164c4b2df64ef68f0",
     "sec:components/tier2_runtime/runtime_vsoc.md#4.1 アルゴリズム": "6fe532609601a61a9da1661b424adb7ecfae2bc3ab822425d181c8b84552acc7",
-    "sec:components/tier2_runtime/runtime_vsoc.md#4.2 状態遷移図 (SysML SMD: vSoC Engine ライフサイクル)": "e4b39c92d7441d3b7974090b9a3fe318a36fe4154d298581a326435f34d3bf32",
+    "sec:components/tier2_runtime/runtime_vsoc.md#4.2 状態遷移図 (SysML SMD: vSoC Engine ライフサイクル)": "6644d4ddebcaa144e3154c39fcf1d17e6cb04a5cc0425978e6188948368bceb2",
     "sec:components/tier2_runtime/runtime_vsoc.md#4.2.1 Safepoint と JIT キャッシュ協調モデル": "50a0bdf6f1f64f01b31b24b161b38c76e8dcac5a9b56108a38b411b4aea65396",
     "sec:components/tier2_runtime/runtime_vsoc.md#4.3 内部シーケンス": "abb33a4331facbc23252f7f38d5585777e122b633a46c579456570cec888653f",
     "sec:components/tier2_runtime/runtime_vsoc.md#5. インターフェイス定義": "7fb2c3f821c8108eaeee550240364da2e99fa84646a9aedec1b6dc4e18c54849",

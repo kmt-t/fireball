@@ -151,7 +151,7 @@ WASM オプコードごとのスタック遷移およびハンドラ実装マト
   - 新しく `block`/`loop`/`if` 命令を実行して制御フレームを積む際に、最新の `exec_trace`（JIT済みならそのアドレス、未ならインタープリタ）を取得して保持する。
   - ループの先頭に戻る（`br` 等の）ジャンプ時、現在の `exec_trace` がインタープリタを指している場合は JIT キャッシュを再確認する。最新の JIT トレースが存在すれば、`control_frame` を更新し、ネイティブ実行へ切り替える。 `{Interpreter_LazyJITSwitch}`
 - **Hotspot検知**: トレース開始時のPCを履歴バッファに記録する。このバッファは `step` 実行中にのみスタック等に一時保持される揮発的なデータであり、判定終了とともに自動的に破棄される。 `{LowLatencyJIT}` `{SimpleJITArchitecture}`
-- **概算Yield**: トレース実行数ベースで `co_yield` を発行し、協調型マルチタスクに整合させる。基本の閾値方式（`yield_threshold`）のみを実装し、Yield精度のキャリブレーションおよびスターベーション対策は `{Challenge_ApproximateYield}` の定義どおり「検討中」ステータスの未解決課題として明示的に据え置く。 `{Challenge_ApproximateYield}`
+- **トレース境界での協調的Yield (`{ADR_TraceBoundaryYield}`)**: 命令ごとに精密なステップカウンタや割り込みフラグを評価・中断するのではなく、**トレースの切れ目（基本ブロック末尾、ループ境界、関数呼出/復帰、または JIT トレース脱出境界）でのみ `yield_threshold` を判定し `co_yield` を発行する**。命令単位の検査オーバーヘッドを完全排除して `[[clang::musttail]]` 直結ディスパッチを最速化しつつ、トレース境界でレジスタとスタックが自然に整合するためステート退避を極小化する。 `{ADR_TraceBoundaryYield}` `{Challenge_ApproximateYield}`
 - **デバッグ・プロファイラフック**: 命令実行前後でブレークポイント判定、実行時PC頻度サンプリング（プロファイラ統合）、およびメモリ/レジスタの動的アサーション検証を行い、Debugger/Profiler に制御を委譲する。 `{Debug_Integrated}`
 
 #### WASM インタプリタ フルセット・コンセプトコード (`concepts/interpreter_concept.py`)
@@ -340,3 +340,21 @@ sequenceDiagram
 | :--- | :--- | :--- |
 | WAMR Fast Interpreter | github.com/bytecodealliance/wasm-micro-runtime | ロード時ルックアップによる直接ジャンプの定石として |
 | WASM3 Interpreter | github.com/wasm3/wasm3 | 最適化されたバイトコードディスパッチャの参考 |
+
+---
+
+## 8. 設計判断 (ADR)
+
+### ADR-INTERP-01: トレース境界での協調的 Yield (`{ADR_TraceBoundaryYield}`)
+
+- **ステータス**: 承認 (Approved)
+- **コンテキスト**:
+  COOS 協調型マルチタスク環境において、ゲスト WASM のインタープリタ実行を中断（`co_yield`）する粒度と Safepoint ポーリング頻度の設計。
+- **決定事項**:
+  命令ごとの精密な割り込みフラグチェックや命令数カウンタデクリメントは行わず、**「トレースの切れ目（基本ブロック末尾、ループバックエッジ、関数呼出/復帰、IPC/システムコール、または JIT トレース脱出境界）」でのみ Yield 判定を行う**。
+- **根拠とトレードオフ**:
+  1. **ディスパッチ性能の最大化**: 命令ハンドラ（CPS 4引数）内での条件分岐を完全排除し、`[[clang::musttail]]` による最高速のダイレクトスレッド実行を維持する。
+  2. **レジスタ・スタック整合性の保証**: トレース境界では TOS/NOS レジスタと統合スタック（`execution_context`）が規約通り自然に整合しているため、中途半端なステート退避・OSR ハンドラが不要となる。
+  3. **有界レイテンシ**: 組み込み WASM の基本ブロック長は通常数命令〜数十命令（サブマイクロ秒〜数マイクロ秒）であり、トレース境界での yield であってもリアルタイム応答性の要件を十分に満たす。
+- **影響範囲**:
+  - `runtime_interpreter.md`, `runtime_vsoc.md`, `os_coos.md`, `jit_compiler.md`

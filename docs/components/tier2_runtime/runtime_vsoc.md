@@ -185,9 +185,7 @@ stateDiagram-v2
 
 **重要な設計ポイント:**
 
-- **JIT Safepoint**: ネイティブコード実行中も、ループバックエッジでソフトウェアフラグをチェックし、非同期割り込みに応答できる仕組み
-- **Debugger Flush**: デバッガがメモリを変更した場合、関連するすべての JIT キャッシュを無効化して整合性を保証
-- **Approximate Yield**: exec_trace のトレース数をカウントして概算的にタスク切り替えを判定
+- **Approximate Yield (`{ADR_TraceBoundaryYield}`)**: 命令単位の精密中断を廃止し、トレースの切れ目（基本ブロック末尾・ループ境界・関数境界）でのみ概算的にタスク切り替えを判定して `co_yield` を発行
 
 ### 4.2.1 Safepoint と JIT キャッシュ協調モデル
 <!-- traceability: {JIT_Safepoint} {Challenge_JITCacheEfficiency} {Debugger_Jit_Flush} -->

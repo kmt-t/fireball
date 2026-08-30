@@ -37,6 +37,7 @@
 | `{ControlFrame_Layout}` | `architecture_overview.md` | `runtime_interpreter.md` | `control_frame` 16バイト統合スタックインライン物理配置 | Scenario 3 |
 | `{AAPCS_FastCall}` | `architecture_overview.md` | `runtime_interpreter.md` | CPS 4引数 AAPCS レジスタマッピング規約 (`R0`〜`R3`) | Scenario 1〜11 |
 | `{VsocRuntime_Layout}` | `architecture_overview.md` | `runtime_vsoc.md` | `vsoc_runtime` 12バイト物理実行環境配置 | Scenario 1〜11 |
+| `{ADR_TraceBoundaryYield}` | `runtime_interpreter.md` | `runtime_interpreter.md` | インタープリタ/JIT の協調的 Yield をトレース境界（切れ目）に限定する設計判断 | Scenario 6 (`INT-50`) |
 
 ---
 

@@ -3,6 +3,7 @@
      formal: formal/jit_cache_model.py
      benchmark: benchmarks/zero_runtime_overhead_bench.py
      concept: concepts/jit_copy_patch_concept.py
+     test: tests/jit_compiler_test_spec.md
 -->
 
 ## 1. コンセプト

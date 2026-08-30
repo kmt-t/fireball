@@ -2,6 +2,7 @@
 <!-- evidence:
      formal: formal/coos_channel_model.py
      concept: concepts/scheduler_concept.py
+     test: tests/os_scheduler_test_spec.md
 -->
 
 ## 1. コンセプト

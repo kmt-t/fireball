@@ -1,4 +1,7 @@
 # システムコンフィグ コンポーネント設計書 {VERIFY_LLM}
+<!-- evidence:
+     test: tests/system_config_test_spec.md
+-->
 
 ## 1. コンセプト
 <!-- traceability: {META_ConfigurableSystem} {META_Static_Resolution} {GLOBAL_IndependentHeap} {GLOBAL_StrictMemoryLimit} {ConsolidatedHeap} {GLOBAL_StaticScalability} {RoleBasedAccessControl} {FastAddressCheck} {vMMIO_Isolation} {META_RestrictedPhysicalAccess} {BufferedLogging} {Challenge_DebuggerResource} {ZeroRuntimeOverhead} -->

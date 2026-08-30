@@ -1,0 +1,84 @@
+# WASM命令セット テスト仕様書 (Test Specification)
+
+## 1. 目的と対象範囲
+
+正本: `docs/specs/wasm_instruction_set.md`
+関連: `docs/components/tier2_runtime/runtime_interpreter.md`（インタープリタ側実装）, `docs/components/tier3_jit/jit_compiler.md`（JIT側実装）
+参考実装: `docs/components/tier2_runtime/concepts/interpreter_concept.py`
+現行実装: `experiments/pysim/interpreter.py`, `x64_stencils.py`, `x64_jit.py`
+
+インタープリタ・JIT双方が対応すべきWASM MVPオプコード物理マトリクスを、命令カテゴリごとに検証する。本書は個々のオプコードのスタック遷移・トラップ条件を横断的に一覧化する（実行エンジンごとの内部実装詳細は`runtime_interpreter_test_spec.md`/`jit_compiler_test_spec.md`を参照）。
+
+## 2. テストケース一覧
+
+### 非サポート機能の拒否 (§2)
+
+| ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| WASM-01 | Wasm64/Memory64/Table64の拒否 | 該当構文を含むバイナリ | ロード | `ERR_WASM_UNSUPPORTED_FEATURE`で即時拒否 | §2 `{Wasm32Only}` |
+| WASM-02 | SIMD(`0xFD`)の拒否 | SIMDプレフィックス命令 | ロード | 同上 | §2 |
+| WASM-03 | Threads/Atomics(`0xFE`)の拒否 | 該当命令 | ロード | 同上 | §2 |
+| WASM-04 | 参照型(`externref`/`funcref`をGC対象として)の拒否 | 該当構文 | ロード | 同上 | §2 |
+| WASM-05 | 例外処理(EH)命令の拒否 | 該当命令 | ロード | 同上 | §2 |
+| WASM-06 | Tail Call(`return_call`/`return_call_indirect`)の拒否 | 該当命令 | ロード | 同上 | §2 |
+
+### 制御フロー (§3.1)
+
+| ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| WASM-10 | `unreachable` | - | 実行 | トラップハンドラへジャンプ | §3.1 |
+| WASM-11 | `nop` | - | 実行(JIT) | 0バイト生成（命令生成スキップ） | §3.1 |
+| WASM-12 | `block`/`loop`/`if`/`else`/`end`のラベル解決 | ネストしたブロック | 実行 | 分岐先ラベルが正しく記録・解決される | §3.1 |
+| WASM-13 | `br`/`br_if`/`br_table` | 各種分岐条件 | 実行 | スタック遷移`[i32]->[]`等を満たし、正しい深さへジャンプ | §3.1 |
+| WASM-14 | `return` | 関数呼び出し中 | 実行 | コールフレームをpopして復帰 | §3.1 |
+| WASM-15 | `call`/`call_indirect` | 直接/間接呼び出し | 実行 | `call_frame`を積んで関数呼出。`call_indirect`は型シグネチャ照合を行う | §3.1 |
+
+### パラメトリック (§3.2)
+
+| ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| WASM-20 | `drop` | スタックに1値 | 実行 | `[t]->[]` | §3.2 |
+| WASM-21 | `select` | 条件+2値 | 実行 | `[t,t,i32]->[t]`、条件で選択 | §3.2 |
+
+### 変数アクセス (§3.3)
+
+| ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| WASM-30 | `local.get`/`set`/`tee` | ローカル変数宣言済み | 実行 | `local_base`起点の静的オフセットで正しく読み書き | §3.3 |
+| WASM-31 | `global.get`/`set` | グローバル変数宣言済み | 実行 | `env`(グローバル配列)経由で正しく読み書き | §3.3 |
+
+### メモリアクセス (§3.4)
+
+| ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| WASM-40 | `i32.load`/`i64.load`/`f32.load`/`f64.load` | メモリ確保済み、境界内アドレス | 実行 | 各幅で正しくロードされる。事前に境界チェック(比較+トラップ)を実施 | §3.4 |
+| WASM-41 | `i32.load8_s/u`, `load16_s/u` | 同上 | 実行 | 符号/ゼロ拡張が正しい | §3.4 |
+| WASM-42 | `i32.store`/`i64.store`/`f32.store`/`f64.store` | 同上 | 実行 | 各幅で正しくストア | §3.4 |
+| WASM-43 | `i32.store8`/`store16` | 同上 | 実行 | 指定幅のみ書き込む | §3.4 |
+| WASM-44 | 境界外アクセスのトラップ | `addr`がメモリ範囲外 | load/store実行 | 比較+トラップで即座に検出（黙って折り畳まない） | §3.4「すべてのメモリアクセスは...境界チェックを伴う」 |
+| WASM-45 | `memory.size` | - | 実行 | 現在のページ数(u32)を返す | §3.4 |
+| WASM-46 | `memory.grow` | 拡張要求ページ数 | 実行 | メモリ拡張後、旧ページ数を返す（ランタイムAPI呼出） | §3.4 |
+
+### 整数算術・論理・比較 (§3.5)
+
+| ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| WASM-50 | `i32.const`/`i64.const` | - | 実行 | 即値を正しくpush | §3.5 |
+| WASM-51 | `i32.eqz`/`eq`/`ne`/`lt_s`/`lt_u`(以降gt/le/ge含む全10種) | 2値または1値 | 実行 | 比較結果(0/1)を返す。符号付き/符号なしを区別する | §3.5 |
+| WASM-52 | `i32.clz`/`ctz`/`popcnt` | 既知のビットパターン | 実行 | 正しいビットカウント | §3.5 |
+| WASM-53 | `i32.add`/`sub`/`mul` | - | 実行 | 32bitラップアラウンド | §3.5 |
+| WASM-54 | `i32.div_s`/`div_u`のゼロ除算トラップ | 除数0 | 実行 | 0判定後にトラップ（SDIV/UDIVを実行しない） | §3.5「0判定 → SDIV/UDIV」 |
+| WASM-55 | `i32.and`/`or`/`xor`/`shl`/`shr_s`/`shr_u` | - | 実行 | ビット演算・シフトが正しい。シフト量は実装依存のマスク幅 | §3.5 |
+| WASM-56 | `i32.rotl`/`rotr` | - | 実行 | `RSB+ROR`相当（左右循環シフト）が正しい | §3.5 |
+
+## 3. 現状のギャップ（pysim実装との差分）
+
+- i32系（WASM-10〜56のi32部分）はpysim `interpreter.py`/`x64_jit.py`双方でおおむね実装・cross-check済み（`test_x64_jit.py`）。
+- **重大・未対応**: i64/f32/f64のload/store/const（WASM-40/42/50の一部）。i32のみ実装。
+- WASM-01〜06（非サポート機能の明示的拒否）はpysimでは検証されていない: `wasm_reader.py`は非対応セクション/命令に遭遇した場合に`ERR_WASM_UNSUPPORTED_FEATURE`のような明確なエラーコードで即時拒否するのではなく、`NotImplementedError`や`KeyError`等のPython例外に任せている（runtime_loader_test_spec.mdのV系検証とも関連する一般的な検証不足）。
+- `call_indirect`（WASM-15）はpysimで実装・テスト済み。
+
+## 4. 未検証・スコープ外
+
+- 本書自体の「物理動作・備考」列（Thumb-2実機命令列）はpysimの対象外（x64のみ）。
+- f32/f64の算術演算子（wasm_instruction_set.md §3.5に該当行が存在せず、スコープが不明瞭。README「Missing spec coverage」参照）。

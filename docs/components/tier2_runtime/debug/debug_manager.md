@@ -2,6 +2,7 @@
 <!-- evidence:
      formal: ../formal/vsoc_state_model.py
      concept: ../concepts/debugger_concept.py
+     test: ../tests/debug_manager_test_spec.md
 -->
 
 ## 1. コンセプト

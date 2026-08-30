@@ -1,6 +1,7 @@
 # WASM 命令セット物理仕様書 (Supported WASM Instruction Set) {VERIFY_FORMAL}
 <!-- evidence:
      formal: formal/wasm_control_flow_model.py
+     test: tests/wasm_instruction_set_test_spec.md
 -->
 
 ## 1. 概要と適用方針

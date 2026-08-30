@@ -2,6 +2,7 @@
 <!-- evidence:
      formal: formal/vsoc_state_model.py
      concept: concepts/vmmio_concept.py
+     test: tests/runtime_vmmio_test_spec.md
 -->
 
 ## 1. コンセプト

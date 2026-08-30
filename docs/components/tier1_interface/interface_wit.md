@@ -2,6 +2,7 @@
 <!-- evidence:
      wit: ../tier2_runtime/wit/execution_context.wit
      formal: formal/wit_resource_lifecycle_model.py
+     test: tests/interface_wit_test_spec.md
 -->
 
 ## 1. 目的

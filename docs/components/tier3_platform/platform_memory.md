@@ -1,6 +1,7 @@
 # COOS メモリマネージャ コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}
 <!-- evidence:
      formal: ../tier3_jit/formal/jit_cache_model.py
+     test: tests/platform_memory_test_spec.md
 -->
 
 ## 1. コンセプト

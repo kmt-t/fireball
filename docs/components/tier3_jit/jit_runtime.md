@@ -3,6 +3,7 @@
      formal: formal/jit_cache_model.py
      benchmark: benchmarks/jit_zero_compile_cost_bench.py
      concept: concepts/stack_cache_concept.py
+     test: tests/jit_runtime_test_spec.md
 -->
 
 ## 1. コンセプト

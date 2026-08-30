@@ -1,6 +1,7 @@
 # HAL コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}
 <!-- evidence:
      formal: ../tier2_runtime/formal/vsoc_state_model.py
+     test: tests/platform_hal_test_spec.md
 -->
 
 ## 1. コンセプト

@@ -3,6 +3,7 @@
      formal: formal/coos_channel_model.py
      benchmark: benchmarks/direct_context_switch_bench.py
      concept: concepts/coos_concept.py
+     test: tests/os_coos_test_spec.md
 -->
 
 ## 1. コンセプト

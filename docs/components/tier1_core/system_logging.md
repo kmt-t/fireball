@@ -2,6 +2,7 @@
 <!-- evidence:
      concept: concepts/logging_concept.py
      formal: formal/logging_flush_model.py
+     test: tests/system_logging_test_spec.md
 -->
 
 ## 1. コンセプト

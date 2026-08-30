@@ -2,6 +2,7 @@
 <!-- evidence:
      concept: concepts/loader_concept.py
      formal: formal/loader_verification_model.py
+     test: tests/runtime_loader_test_spec.md
 -->
 
 ## 1. コンセプト

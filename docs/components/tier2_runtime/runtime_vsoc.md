@@ -3,6 +3,7 @@
      formal: formal/vsoc_state_model.py
      wit: wit/vsoc_runtime.wit
      concept: concepts/runtime_engine_concept.py
+     test: tests/runtime_vsoc_test_spec.md
 -->
 
 ## 1. コンセプト

@@ -3,6 +3,7 @@
      formal: formal/vsoc_state_model.py
      wit: wit/execution_context.wit
      concept: concepts/interpreter_concept.py
+     test: tests/runtime_interpreter_test_spec.md
 -->
 
 ## 1. コンセプト

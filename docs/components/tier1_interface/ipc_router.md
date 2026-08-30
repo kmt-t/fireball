@@ -3,6 +3,7 @@
      formal: formal/csp_handoff_model.py
      benchmark: benchmarks/low_latency_lookup_bench.py
      concept: concepts/ipc_router_concept.py
+     test: tests/ipc_router_test_spec.md
 -->
 
 ## 1. コンセプト

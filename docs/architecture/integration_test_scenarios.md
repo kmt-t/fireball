@@ -1,4 +1,4 @@
-﻿# コンポーネント間 結合テスト仕様書 (Integration Test Specification)
+# コンポーネント間 結合テスト仕様書 (Integration Test Specification)
 
 ## 1. 目的と対象範囲
 
@@ -6,7 +6,7 @@
 
 - **対象 Tier**: Tier 1 Core (`system_containers`, `system_syscall`, `os_scheduler`), Tier 2 Runtime (`runtime_loader`, `runtime_interpreter`, `runtime_vsoc`, `wasi`), Tier 3 JIT (`jit_compiler`, `jit_runtime`)
 - **テストランナー**: `experiments/pysim/run_integration_tests.py`
-- **テストスクリプト群**: `experiments/pysim/scenario1_loader_and_memory.py` 〜 `scenario6_coos_multitask_yield.py`
+- **テストスクリプト群**: `experiments/pysim/scenario1_loader_and_memory.py` 〜 `experiments/pysim/scenario6_coos_multitask_yield.py`
 
 ---
 
@@ -71,7 +71,7 @@
 
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| INT-30 | ホットスポット検出と JIT 自動コンパイル | ループ実行 | `idle_hook` を呼び出す | ループ内の BasicBlock が HOT 昇格し、JIT キャッシュバンクに登録される | `jit_runtime.md`, `runtime_engine.md` |
+| INT-30 | ホットスポット検出と JIT 自動コンパイル | ループ実行 | `idle_hook` を呼び出す | ループ内の BasicBlock が HOT 昇格し、JIT キャッシュバンクに登録される | `jit_runtime.md`, `runtime_vsoc.md` |
 | INT-31 | JIT / インタープリタ差分検証 | 同一ワークロード | Tier 2 と Tier 3 の結果を比較 | 双方が正確に `168`（1000未満の素数の個数）を返し、値が 100% 一致する | `jit_compiler.md`, `runtime_interpreter.md` |
 
 ---

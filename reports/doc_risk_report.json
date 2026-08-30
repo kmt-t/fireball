@@ -1,41 +1,61 @@
 {
-  "generated_at": "2026-08-29T18:01:10.559268+00:00",
+  "generated_at": "2026-08-30T11:33:08.175907+00:00",
   "backend": "sakura",
   "total_evaluated": 15,
-  "formal_candidates_count": 9,
+  "formal_candidates_count": 10,
   "llm_candidates_count": 2,
-  "sections_scanned": 650,
+  "sections_scanned": 814,
   "max_sections": 15,
   "doc_hashes": {
-    "architecture/architecture_overview.md": "b9de099ae79b116c822c6662648789dd31b8003527f52c71cacf50dc582e9af3",
-    "architecture/document_structure.md": "6fb76d9e1085447473305e7618aeebdf58d9d8e8981f1eb02c6c63bd38b662dd",
-    "components/tier1_core/os_coos.md": "e05d256ebfbed3edc2fa0800a106ccc636dc88e2c2256753de4be823ba4b932f",
-    "components/tier1_core/os_scheduler.md": "a59f37e2e82bb5d4403cfadeb65b69a89a885a5b09a987a2cb5192e7376edae9",
-    "components/tier1_core/system_config.md": "8ae1de137048c8e23ab3b6f628e66f02b5b8a3535a276bf1e75236adc88c64e4",
-    "components/tier1_core/system_containers.md": "133a8e4139469fa0adfff1034b57dfc50b8cb5ac751cc64a9aacadd370baf11b",
-    "components/tier1_core/system_logging.md": "e2743452a010ba84a7defdded1403da9b984bc4e663a6b97c4be011bc9e9ce1f",
-    "components/tier1_core/system_syscall.md": "a83880b37300bb2c0e0a055f578748dc1274312f1939896f081688789ee69c9e",
-    "components/tier1_interface/interface_wit.md": "c78a21e8b99e46b38bd3be994a2057b26511ed86c6f75749c0fc190e0f8f00fe",
-    "components/tier1_interface/ipc_router.md": "07d4a0c7657ed395b5918f828de17b81b42ff539a316c95c6ad2aab22ee6023d",
-    "components/tier1_interface/system_service.md": "e09525e716eb05c23427b4403e3103571df2f4e5234e6052539114359778ec49",
-    "components/tier2_runtime/debug/debug_manager.md": "a914f4fd62bd65d163857750ebbfc9f40d1fbb1f89cd2d0d8de0b811521baba9",
-    "components/tier2_runtime/runtime_interpreter.md": "8e778c22e68f18b4321dc153d1e366d21018418404caad56cec6de396ac13699",
-    "components/tier2_runtime/runtime_loader.md": "61675946c9eb545ec891f0a91514bbb6091b354a0b43b515bea21e2df35ea10c",
-    "components/tier2_runtime/runtime_vmmio.md": "7e793fd035b7d8caac451642aad57db808e6a468ad6fbeafce8d9f6d968329f7",
-    "components/tier2_runtime/runtime_vsoc.md": "30f603165e2a447951145b8657b65998338ba4eebc0947582875d206973d5447",
+    "architecture/architecture_overview.md": "08d57f68cd61c9f1aedca2a5c0c839221f5e3a664529cf0dace0da9ee8b8798b",
+    "architecture/document_structure.md": "b92815934116d54de31e86aacc1276a42865f04c7a069d94db9a6ba9c8d2fb25",
+    "architecture/integration_test_scenarios.md": "0f85d48ceb75fbdb0099abe91318daa56c90bf03e57c86141a7f13cd274802dc",
+    "components/tier1_core/os_coos.md": "4b325d9925c8daf835fd0954d6364ec2ff14f4eee8caedf64a8f58a76f834b3e",
+    "components/tier1_core/os_scheduler.md": "bd7ea187d80f2de56b5fafd2fe7df9ee127275a8fc623b261cad7baa199a72ec",
+    "components/tier1_core/system_config.md": "ab4043bc8aa9b803d4fb494a36724f584d886b0a153fe0a8bacd1968b4f6a46e",
+    "components/tier1_core/system_containers.md": "4f8dd7c4feced2f3f6eac5dbe55c7e7f227d707032388cf4f66804f8d19ebe88",
+    "components/tier1_core/system_logging.md": "4b750d873f90f2c55f4f9220cd4563ff6fbad3622598d077a278577b8eb1e89f",
+    "components/tier1_core/system_syscall.md": "67bb8d932d02f7608e89b5d87064faf25511bb18d31ab7f6d0ef70a0872a0987",
+    "components/tier1_core/tests/os_coos_test_spec.md": "26b9cd3c3dfd7ffd53852886e161ce9c2c756005587867966ca256fecec39839",
+    "components/tier1_core/tests/os_scheduler_test_spec.md": "27551b690041bd7dbf47f7212c60f965e42c6e7efed67b15ef0ef5cc69c5000d",
+    "components/tier1_core/tests/system_config_test_spec.md": "b805b60a98225d8a31e6292d30dc8fa00bda24eaeaa96ca930d276a43ac25964",
+    "components/tier1_core/tests/system_containers_test_spec.md": "ba471f1d1598e47bb767c4449853a9c7a636744a735ec618db4ba147355ca9e0",
+    "components/tier1_core/tests/system_logging_test_spec.md": "2c1fef9ebf626c2d9fecb9e13235395105af13eaf68840a991db3a8fd55d6ed0",
+    "components/tier1_core/tests/system_syscall_test_spec.md": "9eb05db3158fd4534cc8238bf04593ed659bf9b1ef8bff917935d67db066cc49",
+    "components/tier1_interface/interface_wit.md": "a2eea161f48ee529c1f0c04000efc2980e920b491c79be5b46a698eb85d87679",
+    "components/tier1_interface/ipc_router.md": "b6a4e7a9a54d7b1af19d335164f9c449519056ecdff5d0e6efa655d5b641451f",
+    "components/tier1_interface/system_service.md": "80094e8c3519372889e3b4abcbd280fa63f24c2905a8915313a2eeeb785366de",
+    "components/tier1_interface/tests/interface_wit_test_spec.md": "16b13ae874d37f0cf107b11b5b341590542fe1bea9e76d1a9ef1df9a5884372e",
+    "components/tier1_interface/tests/ipc_router_test_spec.md": "4427d1c68bbcc44a7feba9f6c91ab27d0cfc790c80946df4d3179c3f89f27af7",
+    "components/tier1_interface/tests/system_service_test_spec.md": "b8041bcf84e001fa8337cfb9c25c0e81f4b39680117f8942005ae21222590348",
+    "components/tier2_runtime/debug_manager.md": "349b02275d2c5dae012d942b1512a33696d2f6d8da73cab58c7aff1896ddf293",
+    "components/tier2_runtime/runtime_interpreter.md": "fa89cc4ba6f21620174155ce6cf649b09de283a7c7eb07973706752af354f0c0",
+    "components/tier2_runtime/runtime_loader.md": "cc8b0a04e1a0d27ca8a7c833a780b9dcf641e816fbdf03845ce183889a0891c7",
+    "components/tier2_runtime/runtime_vmmio.md": "98e638cdbd857178451e9838d116365eab254f1454016f00040891d153ced37f",
+    "components/tier2_runtime/runtime_vsoc.md": "60faf62e3c39234ca73846cffd672507ed48cbf60448fb8cdcffc84262055169",
+    "components/tier2_runtime/tests/debug_manager_test_spec.md": "bdabdc6ddc0b669b1b68fb35a88a0dd941c2aa4532dc2c157ec2c56d870bfbe3",
+    "components/tier2_runtime/tests/runtime_interpreter_test_spec.md": "fd267aa23255891645ae0c8b9f1a2a803f35527764d4bc1859343c98cb8ec2d6",
+    "components/tier2_runtime/tests/runtime_loader_test_spec.md": "e1c3316978a7a003591e145b90c2b50fa36363c9b16c248f70cdded7a916bc27",
+    "components/tier2_runtime/tests/runtime_vmmio_test_spec.md": "6e391447e67fafff8123c97748d1c727a56bab1b23fa9db6f1d033546176586a",
+    "components/tier2_runtime/tests/runtime_vsoc_test_spec.md": "5a5aff1550f7b7121101bc1fdc46ea3c09e25e25d75963707025134b00423bf1",
     "components/tier3_jit/concepts/README.md": "6ab0e050a4a625c7ea8f4ec29a274ebc5b92764fef73c9fe357e7a85aa0ec0bb",
-    "components/tier3_jit/jit_compiler.md": "adb5da7b7e6f987e9b5a847e2074c0d25173c90939f7b4d6f4a60cb511085e7b",
-    "components/tier3_jit/jit_runtime.md": "7d0d9628ddd2dc6efd3720bb9cb95f6da4746c350e3350ad2930ba1b3c54cf6d",
-    "components/tier3_platform/platform_hal.md": "d2312540961c30d63d90209ece4ee01eb523e39ded4a8065c750f6cc9b76be5d",
-    "components/tier3_platform/platform_memory.md": "49dc2215cd84f238c31e71ac7fb3e28922fa562c1a1b6bcc38c6025a4585fc7e",
+    "components/tier3_jit/jit_compiler.md": "90d67a03c488911e7e26baee679d09b340933e904cdd0437a5275d010d276b38",
+    "components/tier3_jit/jit_runtime.md": "1df7c988f4c467c216f39e4478b5088a8e08cec3ce17557237a59da9b59d7305",
+    "components/tier3_jit/tests/jit_compiler_test_spec.md": "8a14fef480d23f2bd96db0d6b50467cb63a9a636c065e3f71bf375d16d964cfe",
+    "components/tier3_jit/tests/jit_runtime_test_spec.md": "276ef44821ff9182327f16eada2ce74a96d375fac19411d2145ec7b1484a6eea",
+    "components/tier3_platform/platform_hal.md": "e92ee69113da37a99fcc7bfb7dafe1c7c6415dcb2998f2668ace96637245855f",
+    "components/tier3_platform/platform_memory.md": "98dbd89f2cb33b8aebea899ee2454e38c3268e641d0996adcdba097fa1a9ebdf",
+    "components/tier3_platform/tests/platform_hal_test_spec.md": "546f2669958dcb11053a71bfa715038b023a36a959e030368685acc13327753f",
+    "components/tier3_platform/tests/platform_memory_test_spec.md": "e313ff8d8ecae657a0658fca406348d0371c23625fc8023c9f2d6afbcc712232",
     "plans/backlog_archive.md": "3e09371810730853a39b09fec40e83409690786e1d27caae96ab6af054191716",
-    "plans/backlog_list.md": "cd91708d36f74a1649eba78dfcb207ea760c5bb9a166d7aaeaadfffe2bfa1b83",
+    "plans/backlog_list.md": "a89f6d834f50184f6ea49e663c24e89f46968b96d576aee1cfb4bc3449ea8fdf",
     "plans/roadmap_phase.md": "92ad637d4e9baed7d2083ae53145a3416cd1df7e1266339c6cabe1c969b4fe2c",
-    "requires/requirement_list.md": "9da464f95901ac052059f4eea1bf60c13a41daab48e6068481d544c8409b387f",
+    "requires/requirement_list.md": "0b287ef5c3747d595b55eb71dfb0fa59abf7f265aa59eb62e79fe6f010d64f2f",
     "specs/gdb_rsp_protocol.md": "f1bf5afcbe01b72cd1f88353d95b67171d62239e865d9298880c8d9682d540cd",
-    "specs/jit_stencil_catalog.md": "d17a099f14b1df7b24a44410811e2e9ce8b7eff651626ef45bd4f40dcc73827c",
+    "specs/jit_stencil_catalog.md": "7478285b80e4e535f2acf9db0da4c70998db843ff6d9c71234ee0de1639fe2f3",
+    "specs/tests/wasm_instruction_set_test_spec.md": "ac05afe3220c1e4a66e1a85ccf877c8ed09a8924fb2207ec2c05b3972ccd82f4",
     "specs/wasi_preview1_abi.md": "36ea99358a502842ae22b9d04b92511522f063d81b496e32ded38db3e75fdcb2",
-    "specs/wasm_instruction_set.md": "9b315c4e8a76ab6fa469f1a1e1b5d2c30b8edf461fe044bf7e9d5fc7e6371238"
+    "specs/wasm_instruction_set.md": "ec2ee12f7c9def4328381a74af81b78e473b85551b5e8aaf2676ea8518fbb929"
   },
   "assessments": [
     {
@@ -51,12 +71,12 @@
         "{VERIFY_FORMAL}"
       ],
       "risk_factors": [
-        "JIT-to-Interpreter fallback state desynchronization: Dirty TOS/NOS (R4/R5) and sp_offset writeback logic is tightly coupled to the fallback jump; incorrect tracking or missing writeback causes stack corruption.",
-        "Stack Pruning & Arity Mismatch: Rewinding stack based on control_frame arity must exactly match WASM semantics; off-by-one or stale arity values break execution state.",
-        "musttail & CPS Register Passing: Compiler optimizations might violate the strict __fastcall CPS contract if not carefully constrained, leading to register clobbering across mode switches.",
-        "Lazy JIT Switch Race: Updating control_frame's exec_trace during loop back without atomicity could cause partial jumps or stale trace execution."
+        "Manual stack management and TOS/NOS cache coherence across JIT/interpreter boundaries risk memory corruption if dirty state or sp_offset is not correctly written back.",
+        "Lazy JIT switching and exec_trace pointer updates lack explicit consistency guarantees, risking stale trace execution or control flow desynchronization.",
+        "Direct tail jumps (musttail, BX) bypass standard call/return mechanisms, eliminating built-in stack frame validation and error recovery paths.",
+        "Stack pruning logic must precisely match WASM arity semantics; any mismatch causes stack underflow/overflow or incorrect operand handling."
       ],
-      "summary": "The section describes a highly optimized, low-level threaded interpreter with tight JIT/interpreter interop using CPS and direct register passing. Complexity is high due to manual stack management, register allocation, and mode-switching logic. Design risk is elevated due to fragile state synchronization between interpreter and JIT execution modes, particularly around stack pruning, dirty flag tracking, and musttail optimizations. Mathematical formal verification is required to prove stack invariants, mode-switch correctness, and register state consistency across transitions."
+      "summary": "High complexity due to low-level register-based CPS threading, manual single-stack frame management, and tight JIT/interpreter interop. Design risk is elevated by manual state synchronization, cache coherence requirements, and direct control flow transfers that bypass standard safety mechanisms. Formal verification is strongly recommended to prove invariants around stack consistency, cross-boundary state preservation, and lazy JIT switching correctness."
     },
     {
       "section_id": "sec:components/tier2_runtime/runtime_vmmio.md#1. コンセプト",
@@ -71,12 +91,12 @@
         "{VERIFY_LLM}"
       ],
       "risk_factors": [
-        "Incomplete specification: Text cuts off mid-sentence at Bit 31 == 1 handling, leaving the vMMIO mediation path and trap/emulation flow undefined.",
-        "TLB/PTE Coherency: Missing invalidation or update policy for the 16-entry software TLB when PTEs are dynamically modified, risking stale cache entries and incorrect address translation.",
-        "Page Granularity Mismatch: WASM linear memory uses 64KB pages, vMMIO uses 4KB pages, and guest RAM supports sub-64KB sizes; routing and boundary-check logic for mixed granularities is unspecified.",
-        "Trap Recovery State: Fallback to interpreter and potential task termination lacks a defined state restoration protocol, risking guest register/memory corruption on recovery."
+        "Incomplete specification: Text cuts off mid-sentence at the Bit 31 == 1 vMMIO routing path, leaving critical logic undefined.",
+        "TLB Coherency Gap: Missing policy for invalidating or updating the 16-entry software TLB when PTEs in the static FlatMap change.",
+        "Granularity Mismatch: Potential boundary check errors due to mixed page sizes (WASM 64KB, sub-64KB RAM, vMMIO 4KB) without explicit alignment rules.",
+        "Trap State Restoration: Fallback to interpreter and task termination lack detailed state preservation/rollback semantics, risking undefined guest behavior."
       ],
-      "summary": "The section defines a unified vMMIO access layer with a fast bypass for guest RAM and a TLB-optimized FlatMap for PTE lookup. Complexity is moderate due to multi-layer address decoding and cache management. Design risk is elevated primarily due to an incomplete specification (cutoff text), missing TLB coherency/invalidation policies, and unresolved alignment between WASM 64KB pages and vMMIO 4KB pages. Formal verification is not strictly required for this conceptual section, but semantic LLM auditing is recommended to ensure cross-tier compliance, contract alignment, and to identify missing state-transition specifications before implementation."
+      "summary": "The section outlines a unified vMMIO access layer with a fast RAM bypass and TLB-accelerated FlatMap routing. Complexity is moderate, but design risk is elevated due to incomplete specification, missing TLB coherency policies, and mixed memory granularity handling. Formal verification is not required for this conceptual overview; semantic LLM auditing is recommended to ensure cross-tier compliance and precise trap/memory contract alignment."
     },
     {
       "section_id": "sec:components/tier1_core/system_containers.md#1. コンセプト",
@@ -113,6 +133,45 @@
         "Interrupt wakeup integration with coroutine scheduling and channel state transitions"
       ],
       "summary": "High architectural complexity involving C++20 coroutines, Hoare CSP channels, and zero-copy ownership transfer. Significant design risks around coroutine state lifecycle, channel invariants, and cooperative scheduling starvation. Requires formal verification to mathematically prove deadlock freedom, race elimination, and liveness properties."
+    },
+    {
+      "section_id": "sec:components/tier1_core/os_scheduler.md#6. 設計判断 (ADR)",
+      "file_path": "components/tier1_core/os_scheduler.md",
+      "heading": "6. 設計判断 (ADR)",
+      "tier": 1,
+      "complexity_score": 3,
+      "risk_score": 4,
+      "formal_needed": true,
+      "recommended_verification": "pyModelChecking",
+      "suggested_tags": [
+        "{VERIFY_FORMAL}"
+      ],
+      "risk_factors": [
+        "Interrupt-driven wake queue operations may race with scheduler list updates if interrupt masking strategies are not explicitly defined.",
+        "Intrusive linked list manipulation lacks explicit corruption recovery or bounds checking, risking memory corruption on task failure.",
+        "Pure cooperative round-robin scheduling may cause starvation or unbounded blocking if tasks fail to yield or if event queues overflow."
+      ],
+      "summary": "The scheduler design uses static intrusive lists and cooperative round-robin scheduling to minimize memory and overhead, aligning with non-RTOS constraints. While this reduces complexity compared to preemptive RTOS designs, the interaction between interrupt-driven wake events and cooperative state transitions introduces moderate concurrency risks. Formal verification is recommended to prove liveness, absence of deadlocks, and correct state transitions under interrupt preemption."
+    },
+    {
+      "section_id": "sec:components/tier2_runtime/debug_manager.md#1. コンセプト",
+      "file_path": "components/tier2_runtime/debug_manager.md",
+      "heading": "1. コンセプト",
+      "tier": 2,
+      "complexity_score": 4,
+      "risk_score": 4,
+      "formal_needed": true,
+      "recommended_verification": "pyModelChecking",
+      "suggested_tags": [
+        "{VERIFY_FORMAL}"
+      ],
+      "risk_factors": [
+        "JIT cache coherency race condition triggered by debugger memory writes",
+        "Potential deadlock or starvation in debug_command queue processing under concurrent profiling/tracing interrupts",
+        "Unspecified error recovery for malformed RSP packets or HAL transport failures",
+        "Risk of violating MemoryIsolation invariants during dynamic register/memory assertions"
+      ],
+      "summary": "The debug manager defines a stateful, concurrent architecture combining RSP command processing, conditional JIT cache invalidation, and integrated profiling/tracing. Complexity and risk are elevated due to cache coherency constraints, queue execution control, and isolation invariants. Formal verification is required to mathematically prove safety and liveness properties of the command state machine and resource handoffs."
     },
     {
       "section_id": "sec:components/tier1_core/system_config.md#1. コンセプト",
@@ -197,11 +256,11 @@
         "{VERIFY_FORMAL}"
       ],
       "risk_factors": [
-        "Race condition between JIT cache flush and ongoing JIT execution or safepoint checks",
-        "Unresolved yield threshold calibration and potential starvation in cooperative scheduling",
-        "Cache coherence failure if debugger writes bypass synchronization with JIT bank lifecycle"
+        "Race condition between JIT cache flush and active native execution, risking instruction corruption or use-after-free.",
+        "Unresolved yield threshold mechanics may lead to task starvation or unpredictable coroutine scheduling.",
+        "Safepoint hook reliability depends on timer/flag synchronization; missed checks could block async breakpoint handling."
       ],
-      "summary": "High complexity due to mixed interpreter/JIT execution, safepoint injection, and multi-bank cache management. Significant design risks include race conditions during debugger-triggered cache flushes, unresolved yield starvation, and potential stale code execution. Formal verification is required to prove safety and liveness of concurrent state transitions."
+      "summary": "High complexity due to mixed interpreter/JIT execution, async safepoints, and multi-bank cache management. Significant design risks include race conditions during JIT cache invalidation, unresolved yield starvation, and safepoint synchronization gaps. Requires formal verification to prove safety and liveness properties."
     },
     {
       "section_id": "sec:components/tier1_core/system_containers.md#4.1 アルゴリズム",
@@ -216,17 +275,17 @@
         "{VERIFY_LLM}"
       ],
       "risk_factors": [
-        "Bit manipulation errors (shift/mask misalignment) causing silent data corruption",
-        "Out-of-bounds index access in view slicing or binary search if bounds checks are bypassed",
-        "Violation of monotonic narrowing assumption leading to inconsistent or overlapping view states"
+        "Off-by-one errors in bit indexing and byte shifting calculations",
+        "Potential cross-byte memory access if Bits divisibility assumption is violated",
+        "Assertion stripping in release builds may remove bounds validation"
       ],
-      "summary": "Low-complexity, stateless data structure operations focusing on bit-packed views and deterministic search algorithms. Minimal design risk due to explicit bounds checking and fixed bit-width constraints, but bit-level arithmetic and index management require careful validation. No concurrent state transitions or deadlock potential, making mathematical formal verification unnecessary. Semantic and API contract auditing is recommended to ensure parameter alignment, memory limit compliance, and correct narrowing composition."
+      "summary": "Stateless, deterministic data structure operations with low complexity. Risks are confined to bitwise arithmetic correctness and bounds validation. No concurrency or stateful transitions exist, eliminating the need for mathematical formal verification. Semantic auditing is recommended to verify API contracts and bitwise logic consistency."
     },
     {
-      "section_id": "sec:components/tier2_runtime/debug/debug_manager.md#1. コンセプト",
-      "file_path": "components/tier2_runtime/debug/debug_manager.md",
-      "heading": "1. コンセプト",
-      "tier": 2,
+      "section_id": "sec:components/tier1_core/os_coos.md#4.2 状態遷移図 (SMD: COOS システムレベル)",
+      "file_path": "components/tier1_core/os_coos.md",
+      "heading": "4.2 状態遷移図 (SMD: COOS システムレベル)",
+      "tier": 1,
       "complexity_score": 3,
       "risk_score": 4,
       "formal_needed": true,
@@ -235,11 +294,11 @@
         "{VERIFY_FORMAL}"
       ],
       "risk_factors": [
-        "Queue-driven command processing between HAL and debugger may cause deadlock or starvation if producer/consumer synchronization and backpressure aren't formally specified.",
-        "Runtime switching between JIT and interpreter execution introduces state inconsistency and potential race conditions when debug commands interrupt normal control flow.",
-        "Memory/register assertions and instruction tracing may breach memory isolation invariants if sandboxing or access control isn't rigorously enforced."
+        "Potential deadlock or starvation in Idle/RunningTask transitions due to missed interrupts, improper task blocking/unblocking logic, or race conditions in the 'all tasks BLOCKED' global condition.",
+        "Recovery state inconsistency risk: The 'reset task queue' and TCB/heap reinitialization during Recovery->Ready may race with pending hardware exceptions or asynchronous events, leading to undefined behavior.",
+        "CSP Handoff and Direct Context Switch synchronization hazards: Rapid context switches or shared state handoffs could violate memory isolation boundaries or cause data races if invariants are not strictly enforced."
       ],
-      "summary": "The concept describes a concurrent, stateful debug manager with queue-based command consumption and runtime execution mode switching. Although high-level, it implies critical synchronization points, state transitions, and isolation boundaries that require mathematical model checking to guarantee liveness, safety, and invariant preservation."
+      "summary": "The system-level state machine is moderately complex, covering initialization, normal operation, idle detection, context switching, and fault recovery. Design risks center on concurrency hazards in task scheduling, potential deadlocks during idle/running transitions, and recovery state consistency under hardware exceptions. Formal verification is required to prove liveness (no deadlock/starvation), safety (invariant preservation during recovery and context switches), and correct handling of asynchronous interrupts."
     },
     {
       "section_id": "sec:components/tier1_core/os_coos.md#4.1 アルゴリズム",
@@ -274,46 +333,11 @@
         "{VERIFY_FORMAL}"
       ],
       "risk_factors": [
-        "Trace boundary state corruption: Incorrect ordering or omission of dirty R4/R5 writebacks to canonical stack addresses during JIT-to-interpreter or JIT-to-JIT handoffs.",
-        "Lazy chaining invariant violation: Mismatched trace variants or register states breaking the canonical address contract, leading to silent data corruption.",
-        "Context pointer miscalculation: Incorrect static offset folding for local variables causing stack frame corruption or out-of-bounds memory access."
+        "Dirty R4/R5 register synchronization at JIT trace boundaries may cause stack state corruption if write-back ordering or exception handling is violated.",
+        "Lazy chaining across heterogeneous trace variants relies on canonical memory addresses; unhandled trace exits or misaligned state transitions could break safety invariants.",
+        "Missing specification for {ADR_SafeQueuingOnHotMiss} introduces ambiguity in concurrent cache miss handling, queue state management, and potential starvation/deadlock scenarios."
       ],
-      "summary": "High complexity due to low-level register caching, JIT/interpreter state handoffs, and trace chaining invariants. Significant design risk stems from strict boundary synchronization requirements and potential state corruption if dirty register writebacks or offset calculations fail. Requires formal verification to prove trace boundary invariants and lazy chaining safety."
-    },
-    {
-      "section_id": "sec:components/tier1_core/os_scheduler.md#1. コンセプト",
-      "file_path": "components/tier1_core/os_scheduler.md",
-      "heading": "1. コンセプト",
-      "tier": 1,
-      "complexity_score": 4,
-      "risk_score": 4,
-      "formal_needed": true,
-      "recommended_verification": "pyModelChecking",
-      "suggested_tags": [
-        "{VERIFY_FORMAL}"
-      ],
-      "risk_factors": [
-        "Coroutine symmetric transfer combined with interrupt-driven resumption risks state corruption or undefined behavior if strict serialization is not enforced.",
-        "CSP zero-copy message passing and cooperative yielding introduce potential deadlock and starvation scenarios requiring invariant verification.",
-        "Deterministic execution guarantees may be violated by unhandled interrupt timing or mismatched coroutine lifetimes in minimal resource environments."
-      ],
-      "summary": "High complexity due to C++20 coroutine symmetric transfer and CSP integration. Significant design risks around interrupt safety, coroutine state management, and deadlock potential in zero-copy message passing. Requires formal verification to prove safety and liveness properties."
-    },
-    {
-      "section_id": "sec:components/tier1_core/system_containers.md#3.1 データ構造",
-      "file_path": "components/tier1_core/system_containers.md",
-      "heading": "3.1 データ構造",
-      "tier": 1,
-      "complexity_score": 2,
-      "risk_score": 2,
-      "formal_needed": false,
-      "recommended_verification": "Static",
-      "suggested_tags": [],
-      "risk_factors": [
-        "Dangling reference risk if underlying sorted arrays are mutated or deallocated while views are active.",
-        "Algorithmic off-by-one or boundary errors in binary search and radix table prefix calculations."
-      ],
-      "summary": "Defines zero-copy views over pre-sorted data using standard algorithms (binary search, radix indexing, bit packing). Low complexity and risk as it lacks concurrency, dynamic state, or hardware interaction. Suitable for static verification or API contract auditing rather than formal state-model checking."
+      "summary": "The section defines a high-complexity asymmetric TOS/NOS caching strategy requiring strict state synchronization at JIT trace boundaries. Design risks center on dirty register write-back ordering, lazy chaining safety across trace variants, and undefined hot-miss queuing logic. Mathematical formal verification via pyModelChecking is required to prove trace exit invariants and state transition safety, while the offset scaling decision remains static and declarative."
     }
   ]
 }

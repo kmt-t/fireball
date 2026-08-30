@@ -1,4 +1,4 @@
-# システムコール仕様 コンポーネント設計書 {VERIFY_LLM} {VERIFY_FORMAL}
+# システムコール仕様 コンポーネント設計書 {VERIFY_FORMAL}
 <!-- evidence:
      formal: formal/syscall_trap_model.py
      test: tests/system_syscall_test_spec.md

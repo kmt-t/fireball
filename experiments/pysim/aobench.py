@@ -353,14 +353,14 @@ def run_aobench():
     host_funcs_t3 = wasi_ctx_t3.build_interpreter_host_functions(module)
 
     trace_compiler = TraceCompiler()
-    runtime_engine = RuntimeEngine(jit_compiler=trace_compiler, yield_threshold=32)
+    runtime_engine = RuntimeEngine(jit_compiler=trace_compiler, yield_threshold=16)
     runtime_engine.register_module_blocks(module)
 
     interp_t3 = Interpreter(module, memory=wasi_ctx_t3.guest_memory, host_functions=host_funcs_t3, runtime_engine=runtime_engine)
 
     # Run cooperatively on COOS scheduler, draining compile queue via idle_hook on yields
     t0_t3 = time.perf_counter()
-    coro = interp_t3.call_coroutine(main_func_idx, [WIDTH, HEIGHT], yield_every=64)
+    coro = interp_t3.call_coroutine(main_func_idx, [WIDTH, HEIGHT], yield_every=32)
     try:
         while True:
             next(coro)
@@ -370,9 +370,20 @@ def run_aobench():
         pass
     t1_t3 = time.perf_counter()
 
+    render_output_t3 = sysv_t3.transport.drain().decode("utf-8", errors="replace")
     t3_time_ms = (t1_t3 - t0_t3) * 1000
     t3_rays_per_sec = total_rays / (t3_time_ms / 1000.0) if t3_time_ms > 0 else 0
     speedup_ratio = t2_time_ms / t3_time_ms if t3_time_ms > 0 else 1.0
+
+    # Differential Verification: verify byte-for-byte exact equality between Tier 2 and Tier 3 outputs
+    is_identical = (render_output == render_output_t3)
+    has_no_nul = ('\x00' not in render_output)
+    expected_bytes = (WIDTH + 1) * HEIGHT  # (32 chars + 1 newline) * 16 rows = 528 bytes
+    is_valid_size = (len(render_output.encode("utf-8")) == expected_bytes)
+
+    assert is_identical, "CRITICAL: Tier 3 JIT output diverges from Tier 2 Interpreter reference output!"
+    assert has_no_nul, "CRITICAL: Output contains corrupted NUL bytes!"
+    assert is_valid_size, f"CRITICAL: Output size {len(render_output.encode('utf-8'))} != expected {expected_bytes} bytes!"
 
     print("\n================================================================================")
     print("                     3D AO-Bench Performance Results (Genuine Measured)         ")
@@ -380,7 +391,8 @@ def run_aobench():
     print(f"  * Resolution:               {WIDTH} x {HEIGHT} ({WIDTH * HEIGHT} primary rays)")
     print(f"  * Hit Pixels:               {hit_pixels} ({hit_pixels * AO_SAMPLES} AO sample rays)")
     print(f"  * Total Rays Traced:        {total_rays:,} Rays / Frame")
-    print(f"  * Rendered Output:          {rendered_bytes[0] if rendered_bytes else 0} bytes")
+    print(f"  * Output Verified:          {len(render_output.encode('utf-8'))} bytes (Exact match: 33 B x 16 rows, 0 NULs)")
+    print(f"  * Differential Check:       PASS (Tier 2 & Tier 3 match byte-for-byte)")
     print("--------------------------------------------------------------------------------")
     print(f"  * Tier 2 (Threaded CPS):    {t2_time_ms:.2f} ms / frame  ({t2_rays_per_sec:,.0f} Rays / Sec)")
     print(f"  * Tier 3 (Hybrid + JIT):    {t3_time_ms:.2f} ms / frame  ({t3_rays_per_sec:,.0f} Rays / Sec)")
@@ -389,7 +401,7 @@ def run_aobench():
     print("================================================================================")
 
     print(f"\n[Result] Genuine 3D AO-Bench: {total_rays:,} Rays traced in {t2_time_ms:.2f} ms (Tier 2) vs {t3_time_ms:.2f} ms (Tier 3), Speedup: {speedup_ratio:.2f}x.")
-    print("[PASS] 3D Ambient Occlusion raytracing benchmark completed successfully.")
+    print("[PASS] 3D Ambient Occlusion differential verification & benchmark completed successfully.")
 
 
 if __name__ == "__main__":

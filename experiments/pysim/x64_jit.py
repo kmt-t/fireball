@@ -105,9 +105,56 @@ class TraceCompiler:
         "drop", "local.get", "local.set", "call_host",
     )
 
+    # (pops, pushes) stack effect per opcode
+    STACK_EFFECTS: dict[str, tuple[int, int]] = {
+        "i32.const": (0, 1),
+        "local.get": (0, 1),
+        "local.set": (1, 0),
+        "drop": (1, 0),
+        "i32.eqz": (1, 1),
+        "i32.add": (2, 1),
+        "i32.sub": (2, 1),
+        "i32.mul": (2, 1),
+        "i32.div_s": (2, 1),
+        "i32.div_u": (2, 1),
+        "i32.rem_s": (2, 1),
+        "i32.rem_u": (2, 1),
+        "i32.and": (2, 1),
+        "i32.or": (2, 1),
+        "i32.xor": (2, 1),
+        "i32.shl": (2, 1),
+        "i32.shr_s": (2, 1),
+        "i32.shr_u": (2, 1),
+        "i32.eq": (2, 1),
+        "i32.ne": (2, 1),
+        "i32.lt_s": (2, 1),
+        "i32.lt_u": (2, 1),
+        "i32.gt_s": (2, 1),
+        "i32.gt_u": (2, 1),
+        "i32.le_s": (2, 1),
+        "i32.le_u": (2, 1),
+        "i32.ge_s": (2, 1),
+        "i32.ge_u": (2, 1),
+        "call_host": (0, 1),
+    }
+
     def compile_trace(self, head_pc: int, block: BasicBlock) -> JITTrace | None:
         """Compiles a single BasicBlock into a PIC native JITTrace."""
         if not block.ops or any(op not in self.SUPPORTED_OPS for op, _ in block.ops):
+            return None
+
+        # Trace Boundary Invariant: Verify block is self-contained (stack depth never drops below 0)
+        sim_depth = 0
+        for op, _ in block.ops:
+            pops, pushes = self.STACK_EFFECTS[op]
+            sim_depth -= pops
+            if sim_depth < 0:
+                # Depends on values on caller's operand stack -> execute safely in interpreter
+                return None
+            sim_depth += pushes
+
+        if sim_depth < 0 or sim_depth > 1:
+            # Multi-value stack outputs or underflow are executed safely by Tier 2 Interpreter
             return None
 
         # 1. Physical 16-byte JITTraceHeader at +0x00

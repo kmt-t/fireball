@@ -267,10 +267,14 @@ def _h_loop(ip, frame, env, local_base):
 def _h_if(ip, frame, env, local_base):
     ins = frame.instrs[ip]
     cond = frame.values.pop()
-    frame.frames.append(_Frame("if", ins.offset, ins.match_offset, len(frame.values)))
     if cond == 0:
-        next_ip = ins.else_offset + 1 if ins.else_offset is not None else ins.match_offset + 1
-        return (next_ip, frame, env, local_base)
+        if ins.else_offset is not None:
+            frame.frames.append(_Frame("if", ins.offset, ins.match_offset, len(frame.values)))
+            return (ins.else_offset + 1, frame, env, local_base)
+        else:
+            # Skip past matching END without leaving an unpopped frame
+            return (ins.match_offset + 1, frame, env, local_base)
+    frame.frames.append(_Frame("if", ins.offset, ins.match_offset, len(frame.values)))
     return (ins.end_offset, frame, env, local_base)
 
 

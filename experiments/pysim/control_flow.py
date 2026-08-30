@@ -194,9 +194,9 @@ def extract_basic_blocks(code: bytes, func_index: int = 0) -> list[tuple[int, li
 
         # Check if this instruction ends the basic block
         if ins.opcode in (BR, BR_IF, RETURN, END, ELSE, LOOP, BLOCK, IF, CALL, CALL_INDIRECT):
-            next_pc = (base_pc | ins.end_offset) if ins.opcode not in (BR, RETURN) else None
-            blocks.append((cur_head, list(cur_ops), next_pc))
-            cur_ops.clear()
+            if cur_ops:
+                blocks.append((cur_head, list(cur_ops), base_pc | ins.offset))
+                cur_ops.clear()
             cur_head = None
 
     if cur_head is not None and cur_ops:

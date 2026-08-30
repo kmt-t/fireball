@@ -13,13 +13,11 @@
 ```
 experiments/pysim/
 ├── core/                  # Tier 1 Core OS & システム基盤
-│   ├── os_coos.py         # スタックレスコルーチンスケジューラ (COOS)
-│   ├── scheduler.py       # READYキュー, 対称遷移, CSP 直接ハンドオフ
+│   ├── scheduler.py       # COOS コルーチンスケジューラ, READYキュー, 対称遷移, CSP 直接ハンドオフ
 │   ├── ipc_router.py      # ゼロコピー所有権移譲 & RBAC ルーティング
-│   ├── system_logging.py  # 構造化ログカタログ & アイドルフラッシュ
+│   ├── logger.py          # 構造化ログカタログ & アイドルフラッシュ
 │   ├── system_containers.py # BitView, FlatMapView, RadixBinaryTreeView, RingBuffer
-│   ├── recovery.py        # 4つのリカバリー戦略 (ignore, retry, restart, panic)
-│   └── system.py          # システム統合ファサード
+│   └── recovery.py        # 4つのリカバリー戦略 (ignore, retry, restart, panic)
 │
 ├── runtime/               # Tier 2 Runtime & WASM 仮想マシン
 │   ├── wasm_reader.py     # WASM バイナリパーサ & セクション検証 (ゼロコピー)
@@ -27,21 +25,25 @@ experiments/pysim/
 │   ├── wasm_opcodes.py    # WASM 全オプコード定義 (i32, i64, f32, f64, 制御, メモリ)
 │   ├── leb128.py          # uleb128 / sleb128 デコーダ
 │   ├── control_flow.py    # 静的ブロック解析 & 制御構造デコーダ
+│   ├── loader.py          # WASM モジュールローダー & アクティブセグメント展開
 │   ├── interpreter.py     # CPS 4引数 スレッド化インタープリタ (Threaded Interpreter)
 │   ├── runtime_engine.py  # 2-bit カードマーキング Hotspot 検出 & 3面キャッシュ管理
 │   ├── vmmio.py           # 2段階ダイレクトデコード ページテーブル & ソフトウェア TLB
-│   └── debugger.py        # GDB Remote Serial Protocol (RSP) ソケットサーバー
+│   ├── debugger.py        # 統合デバッガコントローラ
+│   └── gdb_server.py      # GDB Remote Serial Protocol (RSP) ソケットサーバー
 │
 ├── jit/                   # Tier 3 JIT コンパイラ & ネイティブ生成
 │   ├── x64_jit.py         # Copy-and-Patch JIT コンパイラ (x64)
-│   ├── x64_assembler.py   # constexpr x64 アセンブラ
+│   ├── x64_asm.py         # constexpr x64 アセンブラ
 │   ├── x64_stencils.py    # 事前コンパイル済み JIT ネイティブステンシルカタログ
-│   └── exec_mem.py        # MPU W^X トランザクション & 実行可能メモリ (mprotect/VirtualProtect)
+│   └── exec_memory.py     # MPU W^X トランザクション & 実行可能メモリ (mprotect/VirtualProtect)
 │
 ├── platforms/             # Tier 3 Platform & ハードウェア抽象化
 │   ├── platform_memory.py # 物理メモリパーティション (RAM/ROM) & PMSAv8 MPU
-│   ├── hal.py             # HAL インターフェース & ダミードライバ (GPIO/I2C/SPI/Timer)
-│   └── wasi.py            # WASI Preview 1 実装 & インメモリ VFS
+│   ├── hal.py             # HAL バス & メモリプール
+│   ├── hal_dummy_drivers.py # HAL ダミードライバ (GPIO/I2C/SPI/Timer)
+│   ├── wasi.py            # WASI Preview 1 ホストコンテキスト & システムコール
+│   └── wasi_dummy_fs.py   # インメモリ VFS ファイルシステム
 │
 ├── scenarios/             # 全 11 コンポーネント統合シナリオ (End-to-End Scenarios)
 │   ├── scenario1_loader_and_memory.py
@@ -60,7 +62,9 @@ experiments/pysim/
 ├── tests/                 # 単体テストスイート (9 テストファイル)
 │   └── run_all.py         # 全単体テスト一括実行ドライバ
 │
-└── aobench.py             # 3D レイトレーシング Ambient Occlusion ベンチマーク (f32 / Q8.8)
+├── system.py              # 全 Tier 統合ファサード
+├── aobench.py             # 3D レイトレーシング Ambient Occlusion ベンチマーク (f32 / Q8.8)
+└── main.py                # エントリポイント CLI
 ```
 
 ---
@@ -69,27 +73,27 @@ experiments/pysim/
 
 `pysim` は以下の全 11 シナリオ（`scenarios/run_all.py`）を 100% パスし、Fireball 仕様の実現可能性を実証しています：
 
-1. **Scenario 1: WASM Loader & Active Data Segments (`scenario1_loader_and_memory.py`)**:
+1. **Scenario 1: WASM Loader & Active Data Segments (`scenarios/scenario1_loader_and_memory.py`)**:
    - ROM 上の WASM バイナリのゼロコピー解析、Type/Func/Memory/Export セクション展開、アクティブデータセグメントのリニアメモリ初期配置。
-2. **Scenario 2: WASI System Call & I/O Dispatch (`scenario2_wasi_syscall_io.py`)**:
+2. **Scenario 2: WASI System Call & I/O Dispatch (`scenarios/scenario2_wasi_syscall_io.py`)**:
    - `fireball_call` 経由での `wasi_snapshot_preview1.fd_write` (分散ギャザー I/O) および `proc_exit` 終了コード伝播。
-3. **Scenario 3: Recursion & Indirect Table Dispatch (`scenario3_recursion_and_tables.py`)**:
+3. **Scenario 3: Recursion & Indirect Table Dispatch (`scenarios/scenario3_recursion_and_tables.py`)**:
    - 再帰呼び出し、CallFrame/ControlFrame インライン整合性、`call_indirect` による Table+Element 間接ディスパッチと型シグネチャ照合。
-4. **Scenario 4: Hybrid JIT Compilation & Hotspot (`scenario4_hybrid_jit_loop.py`)**:
-   - 2-bit カードマーキング（UNEXEC $	o$ EXEC $	o$ HOT $	o$ COMPILED）によるホットスポット検出、Copy-and-Patch x64 ネイティブコード生成、インタープリタと JIT の差分実行検証。
-5. **Scenario 5: Multi-Function UnifiedPC & Radix (`scenario5_multimodule_unified_pc.py`)**:
+4. **Scenario 4: Hybrid JIT Compilation & Hotspot (`scenarios/scenario4_hybrid_jit_loop.py`)**:
+   - 2-bit カードマーキング（UNEXEC → EXEC → HOT → COMPILED）によるホットスポット検出、Copy-and-Patch x64 ネイティブコード生成、インタープリタと JIT の差分実行検証。
+5. **Scenario 5: Multi-Function UnifiedPC & Radix (`scenarios/scenario5_multimodule_unified_pc.py`)**:
    - `UnifiedPC`（`func_idx << 16 | pc`）の `bswap32` RadixBinaryTreeView による $O(1)$ キャッシュ索引、複数関数にまたがる JIT トレース実行。
-6. **Scenario 6: COOS Cooperative Multitasking (`scenario6_coos_multitask_yield.py`)**:
+6. **Scenario 6: COOS Cooperative Multitasking (`scenarios/scenario6_coos_multitask_yield.py`)**:
    - コルーチン協調マルチタスク、トレース境界での Yield 判定（`{ADR_TraceBoundaryYield}`）、Producer-Consumer CSP 直接ハンドオフ。
-7. **Scenario 7: GDB Remote Debugger Socket Session (`scenario7_gdb_socket_debugger.py`)**:
+7. **Scenario 7: GDB Remote Debugger Socket Session (`scenarios/scenario7_gdb_socket_debugger.py`)**:
    - 実際の TCP ソケット経由での GDB Remote Serial Protocol (RSP) 対話（`?`, `g`, `m`, `M`, `Z0`, `s`, `c`）、ブレークポイント停止と再開。
-8. **Scenario 8: Storage Coverage & GDB Debugger (`scenario8_comprehensive_storage_coverage.py`)**:
+8. **Scenario 8: Storage Coverage & GDB Debugger (`scenarios/scenario8_comprehensive_storage_coverage.py`)**:
    - メモリ全幅（8/16/32-bit 符号/ゼロ拡張）、グローバル・ローカル変数の永続性、および稼働中の GDB ソケットデバッグ統合。
-9. **Scenario 9: IPC Router & Structured Logging (`scenario9_ipc_router_and_logging.py`)**:
-   - 3段階ルーティング（Stage 1 URI検索 $	o$ Stage 2 RBAC判定 $	o$ Stage 3 Zero-Copy 所有権移譲）、キュー満杯ロールバック、サービスフォールト回収（`RECLAIMED_BY_DROP`）、構造化ログのアイドルフラッシュ。
-10. **Scenario 10: vMMIO Virtual Devices & Address Translation (`scenario10_vmmio_virtual_devices.py`)**:
+9. **Scenario 9: IPC Router & Structured Logging (`scenarios/scenario9_ipc_router_and_logging.py`)**:
+   - 3段階ルーティング（Stage 1 URI検索 → Stage 2 RBAC判定 → Stage 3 Zero-Copy 所有権移譲）、キュー満杯ロールバック、サービスフォールト回収（`RECLAIMED_BY_DROP`）、構造化ログのアイドルフラッシュ。
+10. **Scenario 10: vMMIO Virtual Devices & Address Translation (`scenarios/scenario10_vmmio_virtual_devices.py`)**:
     - 2段階ダイレクトデコードページテーブル、Bit 31 ゲスト RAM バイパス、Direct-Mapped ソフトウェア TLB（Folding XOR Hash）、タスク間共有メモリ（FC=0xE）の所有権検証と `TRAP_OWNER_MISMATCH` 遮断、パススルー物理アクセス。
-11. **Scenario 11: HAL & WASI Dummy Drivers (`scenario11_hal_and_wasi_drivers.py`)**:
+11. **Scenario 11: HAL & WASI Dummy Drivers (`scenarios/scenario11_hal_and_wasi_drivers.py`)**:
     - HAL GPIO（割り込み通知）、I2C（LM75 温度センサ）、SPI（EEPROM）、Timer、および WASI Preview 1（fd_read, fd_write, fd_seek, random_get, clock_time_get）。
 
 ---

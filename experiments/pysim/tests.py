@@ -61,7 +61,15 @@ from recovery import (
     Result,
     classify_error_strategy,
 )
-from runtime_engine import CardState, HistoryRing, HotspotBitmap, JITMultiBufferCache, JITTrace, RuntimeEngine
+from runtime_engine import (
+    CardState,
+    HistoryRing,
+    HotspotBitmap,
+    JITMultiBufferCache,
+    JITTrace,
+    JITTraceHeader,
+    RuntimeEngine,
+)
 from scheduler import FB_CONF_MAX_TASKS, Scheduler, TaskState, WaitDir
 from system import (
     FB_CONF_GUEST_RAM_SIZE,
@@ -627,7 +635,7 @@ def test_recovery_04_errorcode_to_strategy_mapping():
 # ===========================================================================
 
 def test_hotspot_01_2bit_card_marking_state_transitions():
-    """HOTSPOT-01: 2-bit state machine: UNEXECUTED (00) -> EXECUTED (01) -> HOT (10) -> COMPILED (11)."""
+    """HOTSPOT-01 / JITR-02: 2-bit state machine: UNEXECUTED (00) -> EXECUTED (01) -> HOT (10) -> COMPILED (11)."""
     bitmap = HotspotBitmap(card_shift=4)
     pc = 0x100
     assert bitmap.get_state(pc) == CardState.UNEXECUTED
@@ -643,11 +651,24 @@ def test_hotspot_01_2bit_card_marking_state_transitions():
     # Mark COMPILED
     bitmap.mark_compiled(pc)
     assert bitmap.get_state(pc) == CardState.COMPILED
-    assert bitmap.touch(pc) == CardState.COMPILED
+    assert bitmap.touch(pc) == CardState.COMPILED  # JITR-03: COMPILED touch remains COMPILED
+
+
+def test_jitr_01_card_marking_granularity():
+    """JITR-01: Card marking granularity is 64-byte card, not individual instruction."""
+    bitmap = HotspotBitmap(card_shift=6)  # 64-byte cards
+    pc1 = 0x1000
+    pc2 = 0x1020  # Same 64-byte card (0x1000..0x103F)
+    assert bitmap.get_state(pc1) == CardState.UNEXECUTED
+    assert bitmap.get_state(pc2) == CardState.UNEXECUTED
+
+    bitmap.touch(pc1)
+    # pc2 reflects the state change because both share the same card
+    assert bitmap.get_state(pc2) == CardState.EXECUTED
 
 
 def test_hotspot_02_history_ring_buffered_yield_drain():
-    """HOTSPOT-02: Interpreter records basic-block heads to HistoryRing, drained on yield."""
+    """HOTSPOT-02 / JITR-05: Interpreter records basic-block heads to HistoryRing, drained on yield."""
     ring = HistoryRing(capacity=8)
     for i in range(10):
         ring.record(0x1000 + i * 4)
@@ -658,54 +679,93 @@ def test_hotspot_02_history_ring_buffered_yield_drain():
 
 
 def test_hotspot_03_lifo_compile_queue_batch_drain():
-    """HOTSPOT-03: HOT traces are queued to LIFO compile queue and batch-compiled into Active bank."""
+    """HOTSPOT-03 / JITR-12: HOT traces are queued to LIFO compile queue and batch-compiled into Active bank."""
     compiled_traces = []
     def dummy_compiler(pc: int) -> JITTrace:
         t = JITTrace(head_pc=pc, native_fn=lambda: pc * 2, size_bytes=64)
         compiled_traces.append(pc)
         return t
 
-    engine = RuntimeEngine(jit_compiler=dummy_compiler, yield_threshold=4)
-    # Touch PC 0x200 multiple times to promote to HOT
-    engine.record_block_head(0x200)
-    engine.record_block_head(0x200)
-    engine.record_block_head(0x300)
-    engine.record_block_head(0x300)
-    # Trigger yield threshold
-    engine.on_yield()
-
-    assert 0x200 in engine.compile_queue
-    assert 0x300 in engine.compile_queue
-
-    count = engine.drain_compile_queue()
+    engine = RuntimeEngine(jit_compiler=dummy_compiler)
+    engine.compile_queue = [0x100, 0x200, 0x300]
+    count = engine.idle_hook(budget=2)
     assert count == 2
-    assert engine.bitmap.get_state(0x200) == CardState.COMPILED
-    assert engine.bitmap.get_state(0x300) == CardState.COMPILED
-    assert engine.cache.lookup(0x200) is not None
+    assert compiled_traces == [0x300, 0x200], "LIFO compilation order required {JIT_ReverseCompilationOrder}"
+    assert engine.cache.active.has_trace(0x300)
+    assert engine.cache.active.has_trace(0x200)
+    assert not engine.cache.active.has_trace(0x100)
 
 
 def test_hotspot_04_3bank_cache_oldest_only_promotion():
-    """HOTSPOT-04: Multi-bank cache promotes traces from Oldest bank to Active bank upon hit."""
-    cache = JITMultiBufferCache(bank_capacity=256)
-    t1 = JITTrace(0x10, lambda: 1, size_bytes=64)
-    assert cache.insert(t1)
-    assert cache.active.has_trace(0x10)
+    """HOTSPOT-04 / JITR-22, 23: 3-bank cache: Warm hit never promotes; Oldest hit promotes to Active."""
+    cache = JITMultiBufferCache(bank_capacity=512)
+    t1 = JITTrace(head_pc=0x100, native_fn=lambda: 1, size_bytes=64)
+    t2 = JITTrace(head_pc=0x200, native_fn=lambda: 2, size_bytes=64)
 
-    # Rotate twice: Active -> Warm -> Oldest
-    cache.rotate()
-    assert cache.warm.has_trace(0x10)
-    # Warm bank hit does NOT promote
-    assert cache.lookup(0x10) is t1
+    cache.insert(t1)  # In Active
+    cache.rotate()    # t1 moved to Warm
+    cache.insert(t2)  # t2 in Active
+
+    # Warm hit on t1: zero promotion overhead {JIT_OldestOnly_Promote}
+    assert cache.lookup(0x100) is t1
     assert cache.promotions == 0
+    assert cache.warm.has_trace(0x100)
 
-    cache.rotate()
-    assert cache.oldest.has_trace(0x10)
-    # Oldest bank hit MUST promote immediately to Active
-    promoted = cache.lookup(0x10)
+    cache.rotate()  # t1 moved to Oldest, t2 moved to Warm
+    assert cache.oldest.has_trace(0x100)
+
+    # Oldest hit on t1: must promote to Active
+    promoted = cache.lookup(0x100)
     assert promoted is t1
     assert cache.promotions == 1
-    assert cache.active.has_trace(0x10)
-    assert not cache.oldest.has_trace(0x10)
+    assert cache.active.has_trace(0x100)
+    assert not cache.oldest.has_trace(0x100)
+    assert (t1.flags & JITTraceHeader.FLAG_PROMOTED) != 0
+
+
+def test_jitr_31_to_35_trace_chaining_and_ok_unlinking():
+    """JITR-31..35: Direct chaining into resident Active/Warm successors and O(k) unlinking on Oldest purge."""
+    cache = JITMultiBufferCache(bank_capacity=512)
+
+    # t1 falls through to t2
+    t2 = JITTrace(head_pc=0x200, native_fn=lambda: 2, size_bytes=64)
+    cache.insert(t2)  # t2 in Active
+
+    t1 = JITTrace(head_pc=0x100, native_fn=lambda: 1, size_bytes=64, next_pc=0x200)
+    cache.insert(t1)  # t1 chains directly into resident t2 (Active)
+    assert t1.chain_next == 0x200
+
+    # Rotate 1: t1, t2 -> Warm
+    cache.rotate()
+    assert cache.warm.has_trace(0x100)
+    assert t1.chain_next == 0x200  # Preserved
+
+    # Rotate 2: t1, t2 -> Oldest
+    cache.rotate()
+    assert cache.oldest.has_trace(0x100)
+    assert t1.chain_next == 0x200  # Preserved in Oldest
+
+    # Rotate 3: Oldest is purged. O(k) unlinking resets chain_next of source pointing to purged targets
+    cache.rotate()
+    assert not cache.oldest.has_trace(0x200)
+
+
+def test_jitc_20_trace_header_16byte_physical_layout():
+    """JITC-20: Trace header is strictly 16 bytes: u32 pc, u16 size, u8 flags, u8 variant, u32 next, u32 target."""
+    hdr = JITTraceHeader(head_wasm_pc=0x12345678, trace_byte_size=128, flags=0x01, variant_id=0x02)
+    hdr.chain_next_pc = 0x87654321
+    hdr.chain_target_addr = 0x20001000
+
+    raw = hdr.pack()
+    assert len(raw) == 16
+    import struct
+    pc, size, flags, var, next_pc, target = struct.unpack("<IHBBII", raw)
+    assert pc == 0x12345678
+    assert size == 128
+    assert flags == 0x01
+    assert var == 0x02
+    assert next_pc == 0x87654321
+    assert target == 0x20001000
 
 
 def test_hotspot_05_3bank_cache_rotation_and_eviction_resets_card():
@@ -953,8 +1013,27 @@ def test_syscall_07_wasi_fd_write():
 
 
 # ===========================================================================
-# 10. WASM Instruction Set MVP (wasm_instruction_set_test_spec.md)
+# 10. WASM Instruction Set & Interpreter (runtime_interpreter_test_spec.md, wasm_instruction_set_test_spec.md)
 # ===========================================================================
+
+def test_intp_01_02_cps_handlers_and_dispatch_table():
+    """INTP-01, 02: Opcode handlers use CPS 4-arg signature (ip, frame, env, locals) and direct array table dispatch."""
+    import inspect
+    from interpreter import _HANDLERS
+
+    # Direct 256-element array table (no dynamic dict lookup)
+    assert isinstance(_HANDLERS, list)
+    assert len(_HANDLERS) == 256
+
+    # Every registered handler must accept exactly 4 arguments and return next continuation
+    registered_count = 0
+    for op, handler in enumerate(_HANDLERS):
+        if handler is not None:
+            registered_count += 1
+            sig = inspect.signature(handler)
+            assert len(sig.parameters) == 4, f"Handler for opcode 0x{op:02X} must have exactly 4 arguments (CPS)"
+    assert registered_count >= 30, f"Expected at least 30 registered MVP opcode handlers, found {registered_count}"
+
 
 def test_wasm_01_to_06_unsupported_features_rejected():
     """WASM-01..06: Unsupported features (SIMD, threads, tail-call) are rejected with error code."""

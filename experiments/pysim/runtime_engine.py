@@ -92,14 +92,59 @@ class HistoryRing:
         return self.ring.drain()
 
 
-class JITTrace:
-    """Compiled native trace descriptor."""
+class JITTraceHeader:
+    """16-byte fixed physical memory layout:
+    +0x00 head_wasm_pc(u32)
+    +0x04 trace_byte_size(u16)
+    +0x06 flags(u8) [0x01: PROMOTED, 0x02: LOOP_HEADER]
+    +0x07 variant_id(u8)
+    +0x08 chain_next_pc(u32)
+    +0x0C chain_target_addr(u32)
+    """
+    FLAG_PROMOTED = 0x01
+    FLAG_LOOP_HEADER = 0x02
 
-    def __init__(self, head_pc: int, native_fn: Callable[..., Any], size_bytes: int = 64):
+    def __init__(self, head_wasm_pc: int, trace_byte_size: int = 64, flags: int = 0, variant_id: int = 0):
+        self.head_wasm_pc = head_wasm_pc & 0xFFFF_FFFF
+        self.trace_byte_size = trace_byte_size & 0xFFFF
+        self.flags = flags & 0xFF
+        self.variant_id = variant_id & 0xFF
+        self.chain_next_pc: int | None = None
+        self.chain_target_addr: int | None = None
+
+    def pack(self) -> bytes:
+        import struct
+        return struct.pack(
+            "<IHBBII",
+            self.head_wasm_pc,
+            self.trace_byte_size,
+            self.flags,
+            self.variant_id,
+            self.chain_next_pc or 0,
+            self.chain_target_addr or 0,
+        )
+
+
+class JITTrace:
+    """Compiled native trace descriptor backed by JITTraceHeader."""
+
+    def __init__(self, head_pc: int, native_fn: Callable[..., Any], size_bytes: int = 64,
+                 next_pc: int | None = None, loops_to: int | None = None):
         self.head_pc = head_pc
         self.native_fn = native_fn
         self.size_bytes = size_bytes
+        self.next_pc = next_pc          # Unconditional fallthrough successor
+        self.loops_to = loops_to        # Conditional loop backedge (never auto-chained)
+        self.header = JITTraceHeader(head_wasm_pc=head_pc, trace_byte_size=size_bytes)
         self.chain_next: int | None = None
+
+    @property
+    def flags(self) -> int:
+        return self.header.flags
+
+    @flags.setter
+    def flags(self, val: int) -> None:
+        self.header.flags = val
 
 
 class JITCacheBank:
@@ -147,7 +192,7 @@ class JITCacheBank:
 
 
 class JITMultiBufferCache:
-    """3-bank rotating JIT code cache: Active / Warm / Oldest."""
+    """3-bank rotating JIT code cache: Active / Warm / Oldest with O(k) bounded unlinking."""
 
     def __init__(self, bank_capacity: int = 2048):
         self.banks = [JITCacheBank(i, bank_capacity) for i in range(3)]
@@ -202,6 +247,7 @@ class JITMultiBufferCache:
         # Oldest bank hit: promote to Active bank immediately
         self.oldest.remove_trace(head_pc)
         self.oldest.used_bytes -= trace.size_bytes
+        trace.flags |= JITTraceHeader.FLAG_PROMOTED
         if not self.active.allocate(trace):
             self.rotate()
             self.active.allocate(trace)
@@ -213,16 +259,31 @@ class JITMultiBufferCache:
             self.rotate()
             if not self.active.allocate(trace):
                 return False
+        # Chain into active/warm successor if resident (never oldest, never loops_to)
+        succ = trace.next_pc
+        if succ is not None and (self.active.has_trace(succ) or self.warm.has_trace(succ)):
+            trace.chain_next = succ
+            self.register_chain(trace.head_pc, succ)
         return True
 
     def rotate(self) -> list[int]:
-        """Rotates Active -> Warm -> Oldest -> Active and purges the old Oldest bank."""
+        """Rotates Active -> Warm -> Oldest -> Active and purges the old Oldest bank.
+        Performs O(k) bounded unlinking on purged inbound sources."""
         new_active = self.oldest_idx
         new_warm = self.active_idx
         new_oldest = self.warm_idx
 
-        # Invalidate inbound chains into the old Oldest bank before purging
-        purged_pcs = self.banks[new_active].clear()
+        old_oldest_bank = self.banks[new_active]
+        # O(k) Unlink inbound chains pointing to traces in the bank being purged
+        for src_pc in old_oldest_bank.inbound_sources:
+            src_trace = self.find_trace(src_pc)
+            if src_trace is not None and src_trace.chain_next in [pc for pc, _ in old_oldest_bank.traces]:
+                # Check if target was promoted to Active
+                target_in_active = self.banks[new_warm].get_trace(src_trace.chain_next) or self.banks[self.active_idx].get_trace(src_trace.chain_next)
+                if target_in_active is None:
+                    src_trace.chain_next = None  # Unlink to interpreter fallback
+
+        purged_pcs = old_oldest_bank.clear()
         self.evictions += len(purged_pcs)
 
         self.active_idx = new_active

@@ -1,13 +1,15 @@
-name: Document Lint and Consistency Audit
+name: Document Quality & Verification Pipeline
 
 on:
   push:
     branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
+  workflow_dispatch:
 
 jobs:
   lint:
+    name: Spec Quality Gates & Verification
     runs-on: ubuntu-latest
 
     steps:
@@ -20,21 +22,26 @@ jobs:
         fetch-depth: 0
 
     - name: Install uv
-      uses: astral-sh/setup-uv@v7
+      uses: astral-sh/setup-uv@v5
       with:
+        enable-cache: true
         python-version: '3.11'
 
-    - name: Run Mechanical Audits
+    - name: Ensure script execution permissions
+      run: |
+        chmod +x tools/run_all_tests.sh
+
+    - name: Run Mechanical & Quality Gates
       run: |
         ./tools/run_all_tests.sh
 
-    - name: LLM Semantic Audit (changed sections only)
+    - name: LLM Semantic Audit (changed subgraphs only)
       # PR-only: the comparison needs a base-branch lockfile to diff against.
       # This is a fast, independent smoke check on the sections this PR
       # actually touches — it does not read or write reports/doc_judge_report.json,
       # which stays the full committed audit maintained by `spec-integrator sync`
       # + `judge --exhaustive` run locally, per tools/README.md.
-      if: github.event_name == 'pull_request'
+      if: github.event_name == 'pull_request' && env.SAKURA_API_KEY != ''
       env:
         SAKURA_API_KEY: ${{ secrets.SAKURA_API_KEY }}
       run: |
@@ -44,10 +51,38 @@ jobs:
           --changed-only --baseline /tmp/base.lock --min-references 0 \
           -o /tmp/pr_changed_audit.json -r /tmp/pr_changed_audit.md
 
-    - name: Upload changed-section audit report
-      if: always() && github.event_name == 'pull_request'
+    - name: Detect Fake Decisions (Advisory scan)
+      if: github.event_name == 'pull_request'
+      run: |
+        uv run --project tools/spec-integrator python -m spec_integrator.cli detect-fake-decision \
+          --config spec-integrator.yaml --diff-only \
+          -o reports/fake_decision_report.json -r reports/fake_decision_report.md || true
+
+    - name: Publish Summary to Step Summary
+      if: always()
+      run: |
+        if [ -f reports/doc_report.md ]; then
+          cat reports/doc_report.md >> $GITHUB_STEP_SUMMARY
+        fi
+        if [ -f /tmp/pr_changed_audit.md ]; then
+          echo -e "\n## LLM Semantic Audit (Changed Subgraphs)\n" >> $GITHUB_STEP_SUMMARY
+          cat /tmp/pr_changed_audit.md >> $GITHUB_STEP_SUMMARY
+        fi
+        if [ -f reports/fake_decision_report.md ]; then
+          echo -e "\n## Fake Decision Scan (Advisory)\n" >> $GITHUB_STEP_SUMMARY
+          cat reports/fake_decision_report.md >> $GITHUB_STEP_SUMMARY
+        fi
+
+    - name: Upload Verification Artifacts
+      if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: pr-changed-audit
-        path: /tmp/pr_changed_audit.md
+        name: spec-verification-reports
+        path: |
+          reports/doc_report.md
+          reports/doc_graph.json
+          reports/doc_risk_report.md
+          reports/doc_judge_report.md
+          reports/fake_decision_report.md
+          /tmp/pr_changed_audit.md
         if-no-files-found: ignore

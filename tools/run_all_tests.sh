@@ -27,8 +27,8 @@ TARGET_TIER=""
 EXHAUSTIVE=0
 MAX_SECTIONS_SET=0
 MAX_SUBGRAPHS_SET=0
-NO_STRICT=0
 RUN_SYNC=0
+RUN_PYSIM=0
 CLEAN_FLAG=""
 REPORTS_DIR="reports"
 REPORT_PATH="reports/doc_report.md"
@@ -48,7 +48,8 @@ Usage:
 Options:
   --assess           Run the Complexity & Risk Assessment (establishes obligations).
   --llm              Run the LLM as a Judge semantic audit.
-  --full             Run everything with full coverage (implies --assess --llm).
+  --pysim            Run the Python Simulator (pysim) unit & scenario test suites.
+  --full             Run everything with full coverage (implies --assess --llm --pysim).
   --exhaustive       Run exhaustive assessment & semantic audit (checks all sections/subgraphs).
   --backend B        LLM backend (sakura, ollama, mock - default: sakura)
   --model M          LLM model name
@@ -63,6 +64,7 @@ Options:
   -h, --help         Show this help
 
 Phases:
+  0. lint/fmt- verify Ruff linting and formatting (always runs)
   1. assess  - decides what must be verified   (skippable; the stored report is reused)
   2. judge   - semantic audit                  (skippable)
   3. concept - runs docs/**/concepts/*_concept.py (always runs)
@@ -75,10 +77,11 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --llm)              RUN_LLM=1; shift ;;
         --assess)           RUN_ASSESS=1; shift ;;
+        --pysim)            RUN_PYSIM=1; shift ;;
         --test-chain|--testchain) RUN_TESTCHAIN=1; shift ;;
         --component)        COMPONENT="$2"; shift 2 ;;
-        --full)             RUN_ASSESS=1; RUN_LLM=1; MAX_SECTIONS=0; MAX_SUBGRAPHS=0; shift ;;
-        --exhaustive)       RUN_ASSESS=1; RUN_LLM=1; EXHAUSTIVE=1; MAX_SECTIONS=0; MAX_SUBGRAPHS=0; shift ;;
+        --full)             RUN_ASSESS=1; RUN_LLM=1; RUN_PYSIM=1; MAX_SECTIONS=0; MAX_SUBGRAPHS=0; shift ;;
+        --exhaustive)       RUN_ASSESS=1; RUN_LLM=1; RUN_PYSIM=1; EXHAUSTIVE=1; MAX_SECTIONS=0; MAX_SUBGRAPHS=0; shift ;;
         --backend)          BACKEND="$2"; shift 2 ;;
         --model)            MODEL="$2"; shift 2 ;;
         --max-subgraphs)    MAX_SUBGRAPHS="$2"; MAX_SUBGRAPHS_SET=1; shift 2 ;;
@@ -264,6 +267,24 @@ do
         fi
     fi
 done
+
+# ---------------------------------------------------------------------------
+# Optional: Python Simulator (pysim) Invariant & Integration Scenarios
+# ---------------------------------------------------------------------------
+if [ "$RUN_PYSIM" -eq 1 ]; then
+    echo ""
+    echo ">>> [pysim] Python Simulator Unit & Scenario Test Suite..."
+    echo "  -> Running experiments/pysim/tests/run_all.py..."
+    if ! uv run --system-certs --project tools/spec-integrator --with wasmtime python experiments/pysim/tests/run_all.py; then
+        echo "✖ pysim Unit Tests: FAILED"
+        CONCEPT_FAILED=1
+    fi
+    echo "  -> Running experiments/pysim/scenarios/run_all.py..."
+    if ! uv run --system-certs --project tools/spec-integrator --with wasmtime python experiments/pysim/scenarios/run_all.py; then
+        echo "✖ pysim Scenario Tests: FAILED"
+        CONCEPT_FAILED=1
+    fi
+fi
 
 # ---------------------------------------------------------------------------
 # Phase 4: Quality Gates — the authoritative verdict

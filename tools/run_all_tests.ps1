@@ -21,7 +21,8 @@ param(
     [string]$tier = "",
     [switch]$noStrict,
     [switch]$sync,
-    [switch]$clean
+    [switch]$clean,
+    [switch]$pysim
 )
 
 $ErrorActionPreference = "Stop"
@@ -218,6 +219,25 @@ foreach ($semVerifier in @(
         } else {
             Write-Host "✔ $semVerifier" -ForegroundColor Green
         }
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Optional: Python Simulator (pysim) Invariant & Integration Scenarios
+# ---------------------------------------------------------------------------
+if ($pysim -or $full) {
+    Write-Host "`n>>> [pysim] Python Simulator Unit & Scenario Test Suite..." -ForegroundColor Yellow
+    Write-Host "  -> Running experiments/pysim/tests/run_all.py..." -ForegroundColor DarkGray
+    & uv run --system-certs --project tools/spec-integrator --with wasmtime python experiments/pysim/tests/run_all.py
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "✖ pysim Unit Tests: FAILED" -ForegroundColor Red
+        $conceptFailed = $true
+    }
+    Write-Host "  -> Running experiments/pysim/scenarios/run_all.py..." -ForegroundColor DarkGray
+    & uv run --system-certs --project tools/spec-integrator --with wasmtime python experiments/pysim/scenarios/run_all.py
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "✖ pysim Scenario Tests: FAILED" -ForegroundColor Red
+        $conceptFailed = $true
     }
 }
 

@@ -72,6 +72,7 @@ graph TD
 # CSPチャネルの送受信処理 (概念コード: 純粋同期ランデブー + Symmetric Transfer 規約)
 # チャネルは値を保持しない。待機者は最大1タスク（ADR_RendezvousChannel）。
 
+
 def channel_send(
     channel: Channel, sender_task: Task, value: CoValue
 ) -> CoroutineHandle:
@@ -92,6 +93,7 @@ def channel_send(
         sender_task.state = SUSPENDED_CSP
         return scheduler_handle
 
+
 def channel_recv(channel: Channel, receiver_task: Task) -> CoroutineHandle:
     if channel.waiter_dir == SEND:
         # 送信側が待機中: 送信側フレームから値を引き取ってランデブー成立
@@ -108,6 +110,7 @@ def channel_recv(channel: Channel, receiver_task: Task) -> CoroutineHandle:
         channel.set_waiter(receiver_task, RECV)
         receiver_task.state = SUSPENDED_CSP
         return scheduler_handle
+
 
 def handoff_or_yield(target: Task) -> CoroutineHandle:
     """連続ハンドオフを有界化し、必ずスケジューラへ復帰する経路を残す。
@@ -139,10 +142,12 @@ class TaskState:
     SUSPENDED_CSP = "SUSPENDED_CSP"
     TERMINATED = "TERMINATED"
 
+
 class WaitDir:
     NONE = "NONE"
     SEND = "SEND"
     RECV = "RECV"
+
 
 class Channel:
     """Bufferless synchronous CSP rendezvous channel (ADR_RendezvousChannel).
@@ -156,6 +161,7 @@ class Channel:
         self.channel_id = channel_id
         self.waiter_task = None
         self.waiter_dir = WaitDir.NONE
+
 
 class COOSKernel:
     def __init__(self, max_consecutive_handoffs: int = 4):

@@ -1,17 +1,9 @@
 """
-
 experiments/pysim/wasm_reader.py
-
-
-
 Binary .wasm parser. Supports Type(1), Import(2), Function(3), Table(4),
-
 Memory(5), Global(6), Export(7), Element(9), Code(10). Data(11) and custom
-
 sections are skipped by length rather than rejected, so a real-world
-
 module carrying them still loads.
-
 """
 
 from __future__ import annotations
@@ -43,7 +35,6 @@ import sys
 
 from pathlib import Path
 
-
 from leb128 import decode_signed, decode_unsigned
 
 from wasm_module import (
@@ -60,11 +51,9 @@ from wasm_module import (
     VALTYPE_BYTES,
 )
 
-
 MAGIC = b"\x00asm"
 
 VERSION = b"\x01\x00\x00\x00"
-
 
 SEC_TYPE = 1
 
@@ -87,7 +76,6 @@ SEC_ELEMENT = 9
 SEC_CODE = 10
 
 SEC_DATA = 11
-
 
 ELEM_TYPE_FUNCREF = 0x70
 

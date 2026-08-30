@@ -24,7 +24,6 @@ for _p in [
 import sys
 from pathlib import Path
 
-
 """Integration Scenario 6: COOS Cooperative Multitasking & Coroutine Interleaving.
 
 Tests:

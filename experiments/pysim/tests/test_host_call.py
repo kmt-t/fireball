@@ -1,17 +1,10 @@
 """
 
-
 experiments/pysim/test_host_call.py
-
-
-
-
 
 Tests host-function dispatch via pure trace JIT compiler (TraceCompiler).
 
-
 Verifies native execution of host-calls across 0 to 6 arguments (fireball-call6 max).
-
 
 """
 
@@ -44,27 +37,19 @@ import sys
 
 from pathlib import Path
 
-
 import sys
-
 
 from pathlib import Path
 
-
 import sys
 
-
 from pathlib import Path
-
 
 import ctypes
 
-
 from runtime_engine import BasicBlock, WASMContext
 
-
 from x64_jit import TraceCompiler
-
 
 HOST_FUNC_T = ctypes.CFUNCTYPE(ctypes.c_uint32, *([ctypes.c_uint32] * 7))
 
@@ -162,7 +147,6 @@ ALL_TESTS = [
     test_4_params,
     test_6_params_fireball_call6_max,
 ]
-
 
 if __name__ == "__main__":
     for test in ALL_TESTS:

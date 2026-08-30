@@ -1,48 +1,16 @@
 """
-
-
 experiments/pysim/test_x64_stencils.py
-
-
-
-
-
 Spec-first tests for x64_stencils.py: each stencil is assembled into a real
-
-
 executable buffer and actually run on the CPU with controlled inputs, and
-
-
 the result is checked against a value computed independently in Python from
-
-
 the *semantic* spec (WASM i32 wraparound, signed/unsigned comparison,
-
-
 32-bit truncating shifts, ...) -- never against a second hand-derived hex
-
-
 string, since hand-deriving the same encoding twice reproduces the same
-
-
 mistake twice. This is what caught four real REX-byte / relocation-offset
-
-
 bugs during development; run this file whenever a stencil changes.
-
-
-
-
-
 Each test builds PROLOGUE + <stencil(s) under test, with relocations
-
-
 patched> + EPILOGUE_RETURN_I32, executes it via ctypes, and asserts on the
-
-
 real return value.
-
-
 """
 
 from __future__ import annotations
@@ -74,30 +42,21 @@ import sys
 
 from pathlib import Path
 
-
 import sys
-
 
 from pathlib import Path
 
-
 import sys
 
-
 from pathlib import Path
-
 
 import ctypes
 
-
 import random
-
 
 import x64_stencils as st
 
-
 from exec_memory import ExecutableBuffer
-
 
 I32_MASK = 0xFFFFFFFF
 
@@ -134,9 +93,7 @@ def patch(
 def emit(code: bytearray, stencil: st.Stencil, **patches: int) -> int:
     """Appends `stencil` to `code`, patches any given relocations, and
 
-
     returns the base offset it was written at (for patches that need to be
-
 
     computed after the fact, e.g. branch targets in the JIT proper)."""
 
@@ -201,19 +158,13 @@ def run_i32_checked(
     locals_values: list[int] | None = None,
     memory: bytearray | None = None,
 ) -> int:
-    """Like run_i32, but any memory-access stencil's "trap" relocation left
-
-
-    unspecified in `body_stencils_with_patches` is wired to a real trap
-
-
-    stub placed after the epilogue -- an out-of-bounds access genuinely
-
-
-    raises `OSError` (a real access violation) instead of silently landing
-
-
-    on whatever bytes happen to follow."""
+    """
+    Like run_i32, but any memory-access stencil's "trap" relocation left
+        unspecified in `body_stencils_with_patches` is wired to a real trap
+        stub placed after the epilogue -- an out-of-bounds access genuinely
+        raises `OSError` (a real access violation) instead of silently landing
+        on whatever bytes happen to follow.
+    """
 
     code = bytearray()
 
@@ -281,9 +232,7 @@ def push_two(a: int, b: int) -> list[tuple[st.Stencil, dict]]:
 
 # ---------------------------------------------------------------------------
 
-
 # prologue/epilogue plumbing
-
 
 # ---------------------------------------------------------------------------
 
@@ -306,9 +255,7 @@ def test_epilogue_sign_extends_negative_i32_into_the_i64_return_value():
 
 # ---------------------------------------------------------------------------
 
-
 # locals
-
 
 # ---------------------------------------------------------------------------
 
@@ -352,9 +299,7 @@ def test_local_tee_writes_the_slot_but_also_leaves_the_value_on_the_stack():
 def test_local_get_set_tee_at_a_nonzero_locals_array_offset():
     """Regression test for the disp-offset-off-by-one bugs found by hand
 
-
     audit: local index 2 must resolve to byte offset 16, not some
-
 
     off-by-a-few-bytes address inside the instruction encoding itself."""
 
@@ -369,9 +314,7 @@ def test_local_get_set_tee_at_a_nonzero_locals_array_offset():
 
 # ---------------------------------------------------------------------------
 
-
 # arithmetic (checked against Python's own i32 wraparound arithmetic)
-
 
 # ---------------------------------------------------------------------------
 
@@ -439,9 +382,7 @@ def test_i32_shifts_mask_the_count_to_5_bits_like_wasm_requires():
 
 # ---------------------------------------------------------------------------
 
-
 # comparisons
-
 
 # ---------------------------------------------------------------------------
 
@@ -481,9 +422,7 @@ def test_all_i32_comparisons_against_python_reference():
 
 # ---------------------------------------------------------------------------
 
-
 # memory
-
 
 # ---------------------------------------------------------------------------
 
@@ -531,9 +470,7 @@ def test_i32_load_store_honor_the_memarg_static_offset():
 
 # ---------------------------------------------------------------------------
 
-
 # bounds checking (wasm_instruction_set.md 3.4's mandatory "比較+トラップ")
-
 
 # ---------------------------------------------------------------------------
 
@@ -592,9 +529,7 @@ def test_out_of_bounds_store_traps():
 def test_memarg_static_offset_is_folded_into_the_bounds_check():
     """A large memarg.offset can push an in-range-looking address out of
 
-
     bounds; max_addr already accounts for it (mem_size - offset - width),
-
 
     so this must trap without any extra runtime addition."""
 
@@ -617,9 +552,7 @@ def test_memarg_static_offset_is_folded_into_the_bounds_check():
 
 # ---------------------------------------------------------------------------
 
-
 # sub-word memory access
-
 
 # ---------------------------------------------------------------------------
 
@@ -668,9 +601,7 @@ def test_i32_store8_and_store16_write_only_their_width():
 
 # ---------------------------------------------------------------------------
 
-
 # clz / ctz / popcnt / rotl / rotr
-
 
 # ---------------------------------------------------------------------------
 
@@ -723,9 +654,7 @@ def test_i32_rotl_rotr_match_python_reference():
 
 # ---------------------------------------------------------------------------
 
-
 # globals
-
 
 # ---------------------------------------------------------------------------
 
@@ -758,9 +687,7 @@ def test_global_set_writes_through_the_baked_in_absolute_address():
 
 # ---------------------------------------------------------------------------
 
-
 # drop / select
-
 
 # ---------------------------------------------------------------------------
 
@@ -783,9 +710,7 @@ def test_select_picks_operand_a_when_condition_nonzero_else_b():
 
 # ---------------------------------------------------------------------------
 
-
 # fuzz cross-check against Python's operator semantics for the arithmetic ops
-
 
 # ---------------------------------------------------------------------------
 
@@ -808,21 +733,16 @@ def test_fuzz_add_sub_mul_against_python_reference():
 
 # Discovered by name rather than hand-listed: a hand-maintained list is
 
-
 # exactly the kind of bookkeeping that silently drifts (a new test added
-
 
 # above and never wired in here would just never run). Order is
 
-
 # definition order, so failures still read top-to-bottom sensibly.
-
 
 ALL_TESTS = sorted(
     (v for k, v in globals().items() if k.startswith("test_") and callable(v)),
     key=lambda fn: fn.__code__.co_firstlineno,
 )
-
 
 if __name__ == "__main__":
     for test in ALL_TESTS:

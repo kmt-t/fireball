@@ -1,31 +1,15 @@
 """
-
 experiments/pysim/x64_jit.py
-
-
-
 Pure Trace-based Copy-and-Patch JIT Compiler for Fireball.
-
 Compiles individual HOT BasicBlocks / Traces into Position-Independent Code (PIC)
-
 with 16-byte fixed headers (JITTraceHeader) and direct trace chaining.
-
 Conforms strictly to docs/components/tier3_jit/jit_compiler.md and
-
 docs/components/tier2_runtime/runtime_interpreter.md.
-
-
-
 CPS 4-argument calling convention:
-
   RCX (R0): uint32_t ip          -- WASM PC
-
   RDX (R1): void* stack_bot      -- execution_context
-
   R8  (R2): void* env            -- vsoc_runtime (memory_base)
-
   R9  (R3): void* local_base     -- locals array pointer
-
 """
 
 from __future__ import annotations
@@ -57,13 +41,11 @@ import sys
 
 from pathlib import Path
 
-
 import ctypes
 
 import sys
 
 from typing import Any
-
 
 import x64_asm as asm
 
@@ -73,11 +55,9 @@ from exec_memory import ExecutableBuffer
 
 from runtime_engine import BasicBlock, JITTrace, JITTraceHeader, WASMContext
 
-
 IS_WINDOWS = sys.platform == "win32"
 
 I32_MASK = 0xFFFFFFFF
-
 
 # CPS 4-argument function pointer type matching interpreter opcode_handler
 
@@ -116,18 +96,13 @@ def emit(code: bytearray, stencil: st.Stencil, **patches: int) -> int:
 
 
 def gen_pic_prologue() -> bytes:
-    """Generates the PIC CPS 4-argument prologue for Windows or Linux:
-
-    Saves callee-saved registers and maps arguments to execution registers:
-
-      R10 = local_base
-
-      R11 = env
-
-      R12 = stack_bot
-
-      R13 = ip
-
+    """
+    Generates the PIC CPS 4-argument prologue for Windows or Linux:
+        Saves callee-saved registers and maps arguments to execution registers:
+          R10 = local_base
+          R11 = env
+          R12 = stack_bot
+          R13 = ip
     """
 
     code = bytearray()
@@ -176,16 +151,11 @@ def gen_pic_prologue() -> bytes:
 
 
 class TraceCompiler:
-    """True Copy-and-Patch Trace Compiler for BasicBlocks producing Position-Independent Code (PIC).
-
-
-
-    Compiles straight-line instruction sequences into native x64 traces,
-
-    emitting 16-byte physical headers (JITTraceHeader) at offset 0x00 and
-
-    PIC code starting at offset 0x10.
-
+    """
+    True Copy-and-Patch Trace Compiler for BasicBlocks producing Position-Independent Code (PIC).
+        Compiles straight-line instruction sequences into native x64 traces,
+        emitting 16-byte physical headers (JITTraceHeader) at offset 0x00 and
+        PIC code starting at offset 0x10.
     """
 
     def __init__(self, host_trampolines: Any = None):

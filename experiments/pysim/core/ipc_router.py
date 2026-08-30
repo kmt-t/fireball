@@ -1,19 +1,10 @@
 """
-
 experiments/pysim/ipc_router.py
-
-
-
 Fireball IPC Router & Zero-Copy Ownership Handoff.
-
 - Stage 1: Static URI Lookup to Service Descriptor via FlatMapView (binary search)
-
 - Stage 2: Bitmask Role-Based Access Control (RBAC)
-
 - Stage 3: Zero-Copy Ownership Handoff (Revoke -> Enqueue -> Grant)
-
 - Fault Recovery: Queue Full Rollback & Drop Handler on Target Fault
-
 """
 
 from __future__ import annotations
@@ -44,7 +35,6 @@ for _p in [
 import sys
 
 from pathlib import Path
-
 
 from typing import Any
 

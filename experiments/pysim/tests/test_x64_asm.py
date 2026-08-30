@@ -1,21 +1,8 @@
 """
-
-
 experiments/pysim/test_x64_asm.py
-
-
-
-
-
 Spec-first tests for x64_asm.py: every encoder is assembled into a real
-
-
 executable buffer and run on the CPU, never just re-derived by hand a
-
-
 second time. Supports Windows x64 ABI and Linux System V AMD64 ABI.
-
-
 """
 
 from __future__ import annotations
@@ -47,39 +34,27 @@ import sys
 
 from pathlib import Path
 
-
 import sys
-
 
 from pathlib import Path
 
-
 import sys
 
-
 from pathlib import Path
-
 
 import ctypes
 
-
 import sys
-
 
 import x64_asm as asm
 
-
 from exec_memory import ExecutableBuffer
-
 
 IS_WINDOWS = sys.platform == "win32"
 
-
 ARG0 = "rcx" if IS_WINDOWS else "rdi"
 
-
 ARG1 = "rdx" if IS_WINDOWS else "rsi"
-
 
 TESTED_REGS = [
     "rax",
@@ -96,13 +71,10 @@ TESTED_REGS = [
     "r15",
 ]
 
-
 _CALLEE_SAVED = ["rbx", "r12", "r13", "r14", "r15"]
-
 
 if IS_WINDOWS:
     _CALLEE_SAVED = ["rbx", "r12", "r13", "r14", "r15", "rdi", "rsi"]
-
 
 else:
     _CALLEE_SAVED = ["rbx", "r12", "r13", "r14", "r15", "rbp"]
@@ -398,7 +370,6 @@ ALL_TESTS = sorted(
     (v for k, v in globals().items() if k.startswith("test_") and callable(v)),
     key=lambda fn: fn.__code__.co_firstlineno,
 )
-
 
 if __name__ == "__main__":
     for t in ALL_TESTS:

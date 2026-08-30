@@ -1,60 +1,18 @@
 """
-
-
 experiments/pysim/system.py
-
-
-
-
-
 Wires HAL + Logger/ConsoleOutput + the recovery-strategy engine + the real
-
-
 fireball_call syscall surface into one running system.
-
-
-
-
-
 fireball_call's ID space, register layout and error-code convention adhere
-
-
 strictly to the architectural specifications:
-
-
 - `docs/components/tier1_core/system_syscall.md` §5 defines the real ID table
-
-
 - `docs/components/tier2_runtime/runtime_vmmio.md` defines the vMMIO address/register layout
-
-
 - `docs/components/tier1_interface/ipc_router.md` defines the URI-routed, zero-copy message queue
-
-
-
-
-
 This module uses self-contained simulation modules (`vmmio.py`, `ipc_router.py`,
-
-
 `platform_memory.py`) mirroring the authoritative concept models, and provides
-
-
 the actual register/byte-level storage and wire-level u32 handle numbering
-
-
 required for end-to-end execution.
-
-
-
-
-
 All guest output routes through WASI_FD_WRITE (console-output) to adhere strictly
-
-
 to system_logging.md and interface_wit.md §5.5 (dictionary logger is internal-only).
-
-
 """
 
 from __future__ import annotations
@@ -86,45 +44,31 @@ import sys
 
 from pathlib import Path
 
-
 import sys
-
 
 from pathlib import Path
 
-
 import sys
 
-
 from pathlib import Path
-
 
 import os
 
-
 import struct
-
 
 import sys
 
-
 import time
-
 
 from dataclasses import dataclass
 
-
 from enum import IntEnum
-
 
 from hal import ShmBufferPool, ShmHandle, UartTransport
 
-
 from ipc_router import IPCMessage, IPCRouter
 
-
 from logger import ConsoleOutput, LogDictionary, Logger, LogLevel
-
 
 from platform_memory import (
     FB_CONF_MEMORY_POOL_SIZE,
@@ -134,15 +78,11 @@ from platform_memory import (
     SharedBlock,
 )
 
-
 from runtime_engine import RuntimeEngine
-
 
 from scheduler import Scheduler
 
-
 from system_containers import RadixBinaryTreeView
-
 
 from vmmio import (
     FC_PASSTHROUGH,
@@ -155,16 +95,12 @@ from vmmio import (
 
 
 class FbSyscallId(IntEnum):
-    """system_syscall.md §5's real per-category ID table (not a subset picked
-
-
-    for convenience -- every ID this experiment can plausibly back with real
-
-
-    behavior is included; ones it can't yet (see README's missing-spec list)
-
-
-    still route here and fail with a real WASI errno, not silently vanish)."""
+    """
+    system_syscall.md §5's real per-category ID table (not a subset picked
+        for convenience -- every ID this experiment can plausibly back with real
+        behavior is included; ones it can't yet (see README's missing-spec list)
+        still route here and fail with a real WASI errno, not silently vanish).
+    """
 
     RESERVED = 0x00
 
@@ -212,22 +148,14 @@ class FbSyscallId(IntEnum):
 
 
 class WasiErrno(IntEnum):
-    """system_syscall.md §4.2: `fireball_call` returns 0 on success, else a
-
-
-    "WASIのerrno_t に準拠" error code -- the real wasi_snapshot_preview1
-
-
-    numeric table, not a project-invented sentinel. Only the subset this
-
-
-    file actually returns is enumerated; values match the real table's
-
-
-    fixed alphabetical-after-e2big numbering exactly, so adding more later
-
-
-    is just adding more real entries, never renumbering these."""
+    """
+    system_syscall.md §4.2: `fireball_call` returns 0 on success, else a
+        "WASIのerrno_t に準拠" error code -- the real wasi_snapshot_preview1
+        numeric table, not a project-invented sentinel. Only the subset this
+        file actually returns is enumerated; values match the real table's
+        fixed alphabetical-after-e2big numbering exactly, so adding more later
+        is just adding more real entries, never renumbering these.
+    """
 
     SUCCESS = 0
 
@@ -252,69 +180,47 @@ class WasiErrno(IntEnum):
 
 # runtime_vmmio.md §4.3-§4.5: real static-device addresses and register
 
-
 # offsets (not invented -- copied from the spec's own register tables).
-
 
 SYSCTL_BASE = 0xC000_0000
 
-
 IPCR_BASE = 0xC000_1000
-
 
 VDMA_BASE = 0xC000_2000
 
-
 _STATIC_DEVICE_PAGE_MASK = 0xFFFF_F000
-
 
 REG_SYS_CONTROL = 0x00
 
-
 REG_SYS_STATUS = 0x04
-
 
 REG_IRQ_FLAGS = 0x08
 
-
 REG_VDMA_SRC = 0x00
-
 
 REG_VDMA_DST = 0x04
 
-
 REG_VDMA_COUNT = 0x08
-
 
 REG_VDMA_CTRL = 0x0C
 
-
 VDMA_CTRL_START_BIT = 0x1
-
 
 SYS_CONTROL_RESET = 1
 
-
 SYS_CONTROL_YIELD = 2
-
 
 SYS_CONTROL_HALT = 3
 
-
 SYS_CONTROL_SYSCALL = 4
-
 
 FB_CONF_GUEST_RAM_SIZE = 4096  # system_config.md §3.3.4
 
-
 FB_CONF_VSOC_PASSTHROUGH_BASE = 0xF000_0000  # runtime_vmmio.md §3.3's FC=15 window
-
 
 _PASSTHROUGH_TEST_PAGES = 16  # this experiment's own arbitrary backing size,
 
-
 # not a spec constant -- real PASSTHROUGH size
-
 
 # depends on the host peripherals actually mapped
 
@@ -323,9 +229,7 @@ _PASSTHROUGH_TEST_PAGES = 16  # this experiment's own arbitrary backing size,
 class ShmSlice:
     """interface_wit.md 5.3's `shm-slice{handle, offset, len}`. There is no
 
-
     field here that could ever carry a guest linear-memory address -- only
-
 
     a handle name the pool must independently recognize and authorize."""
 
@@ -338,7 +242,6 @@ class ShmSlice:
 
 class BusMaster:
     """`fireball:host/bus`'s `bus-master.transfer-data`, resolved to the
-
 
     real shared-memory pool."""
 
@@ -390,24 +293,13 @@ class BusSlave:
 
 
 class System:
-    """One running Fireball-shaped host: a single UART line, a single SHM
-
-
-    buffer pool, one dictionary logger and one raw console writer sharing
-
-
-    that line, a real vMMIO controller (FlatMap PTEs + TLB, reused from
-
-
-    vmmio_concept.py) fronted by SYSCTL/IPCR/VDMA static-device registers
-
-
-    and a PASSTHROUGH-backed physical memory window, and a real IPC router
-
-
-    (reused from ipc_router_concept.py) with its fixed 3-service registry.
-
-
+    """
+    One running Fireball-shaped host: a single UART line, a single SHM
+        buffer pool, one dictionary logger and one raw console writer sharing
+        that line, a real vMMIO controller (FlatMap PTEs + TLB, reused from
+        vmmio_concept.py) fronted by SYSCTL/IPCR/VDMA static-device registers
+        and a PASSTHROUGH-backed physical memory window, and a real IPC router
+        (reused from ipc_router_concept.py) with its fixed 3-service registry.
     """
 
     def __init__(self):
@@ -623,19 +515,13 @@ class System:
         return BusSlave(self.pool, task_id)
 
     def bind_guest(self, memory: bytearray | None, task_id: int = 1) -> None:
-        """Must be called before invoking guest code that will use
-
-
-        `fb_offset_t` arguments (IPC_*/WASI_*): those are relative offsets
-
-
-        into "the calling task's own guest memory" (system_syscall.md
-
-
-        §4.1), which this single-tenant experiment models as one mutable
-
-
-        binding set by the embedder rather than a per-task table."""
+        """
+        Must be called before invoking guest code that will use
+                `fb_offset_t` arguments (IPC_*/WASI_*): those are relative offsets
+                into "the calling task's own guest memory" (system_syscall.md
+                §4.1), which this single-tenant experiment models as one mutable
+                binding set by the embedder rather than a per-task table.
+        """
 
         self._guest_memory = memory
 
@@ -655,12 +541,9 @@ class System:
     ) -> int:
         """The one host import a guest actually needs
 
-
         (system_syscall.md §3-4): a single syscall-ID-dispatched bridge
 
-
         carrying `id` plus six generic u32 args, dispatched via RadixBinaryTreeView.
-
 
         """
 
@@ -700,19 +583,13 @@ class System:
     # --- System (SYS_YIELD/HALT/RESET, real REG_SYS_CONTROL semantics) --
 
     def _apply_sys_control(self, cmd: int) -> WasiErrno:
-        """runtime_vmmio.md §4.4's REG_SYS_CONTROL: `1`=Reset, `2`=Yield,
-
-
-        `3`=Halt. `fireball_call`'s SYS_YIELD/HALT/RESET IDs are the
-
-
-        "cannot do a raw vMMIO store" proxy for writing this exact
-
-
-        register (system_syscall.md §2's "アクセスパスB"), so both paths
-
-
-        funnel through this one real effect."""
+        """
+        runtime_vmmio.md §4.4's REG_SYS_CONTROL: `1`=Reset, `2`=Yield,
+                `3`=Halt. `fireball_call`'s SYS_YIELD/HALT/RESET IDs are the
+                "cannot do a raw vMMIO store" proxy for writing this exact
+                register (system_syscall.md §2's "アクセスパスB"), so both paths
+                funnel through this one real effect.
+        """
 
         struct.pack_into("<I", self.sysctl_regs, REG_SYS_CONTROL, cmd & 0xFFFF_FFFF)
 
@@ -760,18 +637,11 @@ class System:
         }.get(status, WasiErrno.FAULT)
 
     def _mmio_touch(self, addr: int, is_write: bool):
-        """Runs the real permission dispatch, then resolves this
-
-
-        experiment's own backing storage for the byte-level effect
-
-
-        vmmio_concept.access() intentionally leaves to the caller.
-
-
-        Returns (errno_or_None, backing_bytearray_or_None, local_offset).
-
-
+        """
+        Runs the real permission dispatch, then resolves this
+                experiment's own backing storage for the byte-level effect
+                vmmio_concept.access() intentionally leaves to the caller.
+                Returns (errno_or_None, backing_bytearray_or_None, local_offset).
         """
 
         status, _ = self.vmmio.access(
@@ -904,9 +774,7 @@ class System:
     def _vdma_region(self, addr: int, count: int, is_write: bool):
         """runtime_vmmio.md §4.5: VDMA src/dst may be guest RAM (Tier 1) or
 
-
         vMMIO FC=14/15 -- resolved through the exact same permission gate
-
 
         as a direct access, owner checks included."""
 
@@ -963,16 +831,12 @@ class System:
         return WasiErrno.SUCCESS
 
     def raise_irq(self, mask: int) -> None:
-        """Not itself a syscall (system_syscall.md §8: interrupts are a
-
-
-        host-to-guest notification, not a guest-initiated call) -- lets a
-
-
-        test or the HAL demo set REG_IRQ_FLAGS bits for IRQ_READ_FLAGS/
-
-
-        IRQ_CLEAR to observe."""
+        """
+        Not itself a syscall (system_syscall.md §8: interrupts are a
+                host-to-guest notification, not a guest-initiated call) -- lets a
+                test or the HAL demo set REG_IRQ_FLAGS bits for IRQ_READ_FLAGS/
+                IRQ_CLEAR to observe.
+        """
 
         flags = struct.unpack_from("<I", self.sysctl_regs, REG_IRQ_FLAGS)[0]
 
@@ -1075,16 +939,12 @@ class System:
     def _wasi_fd_write(
         self, fd: int, iovs_ptr: int, iovs_len: int, nwritten_ptr: int
     ) -> WasiErrno:
-        """system_syscall.md §7.1: the Shim already loops per-vector before
-
-
-        trapping, so `iovs_len` reaching here is expected to be 1 -- but
-
-
-        this loops anyway rather than assuming it, since nothing enforces
-
-
-        that at this boundary."""
+        """
+        system_syscall.md §7.1: the Shim already loops per-vector before
+                trapping, so `iovs_len` reaching here is expected to be 1 -- but
+                this loops anyway rather than assuming it, since nothing enforces
+                that at this boundary.
+        """
 
         if fd not in (1, 2):
             return WasiErrno.BADF

@@ -26,7 +26,6 @@ for _p in [
 import sys
 from pathlib import Path
 
-
 """Integration Scenario 11: HAL Peripheral Drivers & WASI Preview 1 Full Dummy Stack.
 
 Tests:
@@ -40,7 +39,6 @@ Tests:
    - Standard Streams: stdin buffered reading, stdout/stderr capture
    - System Utilities: random_get (entropy pool fill), clock_time_get (monotonic/realtime timestamp)
 """
-
 
 from hal_dummy_drivers import (
     DummyGpioDriver,

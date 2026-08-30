@@ -1,51 +1,24 @@
 """
-
 experiments/pysim/hal.py
-
-
-
 Real (not mocked) HAL underlayer for the pysim experiment.
-
-
-
 - UartTransport: a genuine OS-level byte pipe (socket.socketpair), standing
-
   in for the physical UART/ITM line. Bytes written here really cross a
-
   kernel-buffered duplex socket, so a full/blocked transport is an actual
-
   socket condition, not an in-memory flag someone forgot to flip.
-
 - ShmBufferPool: acquire_buffer()/release_buffer() backed by a plain
-
   bytearray per slot. The point being tested -- "a guest can only touch a
-
   buffer via a handle the pool has authorized, never via a raw pointer" --
-
   is a property of the *lookup discipline* (every access goes through
-
   _resolve()'s ownership/bounds check), not of the byte storage being real
-
   OS shared memory, so a bytearray proves it exactly as well without the
-
   extra process-boundary machinery.
-
 - Timer: wall-clock timer via time.monotonic_ns(), matching
-
   wasi:clocks/monotonic-clock's nanosecond contract.
-
-
-
 This intentionally sets aside C++ naming/type conventions and is not wired
-
 into the C++ build. It exists to pressure-test whether the *design* in
-
 docs/components/tier1_interface/interface_wit.md and
-
 docs/components/tier3_platform/platform_hal.md actually holds together when
-
 something has to really run.
-
 """
 
 from __future__ import annotations
@@ -76,7 +49,6 @@ for _p in [
 import sys
 
 from pathlib import Path
-
 
 import socket
 
@@ -109,18 +81,12 @@ class ShmTrap(HalError):
 
 
 class UartTransport:
-    """One physical serial line, modeled as a real duplex OS socket pair.
-
-
-
-    `device_sock` is the "wire" a real UART peripheral would drive;
-
-    `host_sock` is what a host-side terminal/log collector reads from.
-
-    Nothing here is a Python list standing in for hardware: bytes written
-
-    via write() genuinely traverse a kernel socket buffer.
-
+    """
+    One physical serial line, modeled as a real duplex OS socket pair.
+        `device_sock` is the "wire" a real UART peripheral would drive;
+        `host_sock` is what a host-side terminal/log collector reads from.
+        Nothing here is a Python list standing in for hardware: bytes written
+        via write() genuinely traverse a kernel socket buffer.
     """
 
     def __init__(self):
@@ -180,7 +146,6 @@ class UartTransport:
 
 # ---------------------------------------------------------------------------
 
-
 FB_CONF_HAL_BUFFER_SIZE = 256  # docs/components/tier1_core/system_config.md 3.3.3
 
 FB_CONF_HAL_MAX_BUFFERS = 4  # docs/components/tier1_core/system_config.md 3.3.3
@@ -188,15 +153,13 @@ FB_CONF_HAL_MAX_BUFFERS = 4  # docs/components/tier1_core/system_config.md 3.3.3
 
 @dataclass
 class ShmHandle:
-    """What acquire_buffer() actually returns: an opaque *name*, not a
-
-    pointer. Handing this value to code running as a different owner is
-
-    meaningless -- there is no address inside it that could be dereferenced
-
-    as guest linear memory, only a lookup key the pool checks against an
-
-    owner table before it will hand back a byte."""
+    """
+    What acquire_buffer() actually returns: an opaque *name*, not a
+        pointer. Handing this value to code running as a different owner is
+        meaningless -- there is no address inside it that could be dereferenced
+        as guest linear memory, only a lookup key the pool checks against an
+        owner table before it will hand back a byte.
+    """
 
     name: str
 
@@ -286,8 +249,6 @@ class ShmBufferPool:
         self, task_id: int, handle: ShmHandle, offset: int, length: int
     ) -> memoryview:
         """Resolves a bounds-checked (offset, length) window inside `handle`.
-
-
 
         This is what interface_wit.md 5.3's `shm-slice{handle, offset, len}`
 

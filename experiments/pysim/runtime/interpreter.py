@@ -1,75 +1,35 @@
 """
-
 experiments/pysim/interpreter.py
-
-
-
 A minimal reference interpreter for the wasm_opcodes subset, used as the
-
 correctness oracle the JIT's output is checked against -- mirroring the
-
 real project's own "interpreter + JIT, cross-checked" architecture
-
 (docs/components/tier2_runtime/runtime_interpreter.md /
-
 docs/components/tier3_jit/jit_compiler.md), just without the ARM/Copy-and-
-
 Patch specifics.
-
-
-
 Execution model: `docs/specs/wasm_instruction_set.md` §1 mandates a real
-
 **threaded interpreter** (`{ThreadedInterpreter}`) -- every opcode is its
-
 own CPS (continuation-passing) handler with a fixed 4-argument
-
 `__fastcall` signature (`R0: ip`, `R1: stack_bot`, `R2: env`,
-
 `R3: local_base`), not a central switch/if-elif loop a handler merely
-
 falls back into. This file follows that shape for real: `_HANDLERS` maps
-
 opcode -> handler function, each handler receives exactly those four
-
 arguments and returns the *next* continuation itself (or `None` to end the
-
 call) -- dispatch is never done by a shared loop deciding what comes next
-
 on a handler's behalf.
-
-
-
 The one adaptation from the literal ARM/native design: native code tail-
-
 calls the next handler directly (or dispatches via a jump table with no
-
 return address at all), which Python cannot do without unbounded
-
 recursion depth for long-running loops. So the four-argument continuation
-
 is *returned* rather than tail-called, and a small trampoline in `_run`
-
 re-dispatches it -- indirect threading instead of direct threading, same
-
 handler-per-opcode shape, no stack growth per WASM instruction.
-
-
-
 `R1: stack_bot` addresses, in the real design, one combined region holding
-
 both operand values and block/loop/if control frames (system_config.md's
-
 `FB_CONF_INTERP_STACK_SIZE` comment: "execution_context + フレーム/オペ
-
 ランド"). `CallFrame` is that combined region's Python equivalent, plus
-
 this activation's own decoded instruction table (needed to fetch the next
-
 instruction from `ip`) -- kept there rather than smuggled in as a 5th
-
 argument outside the declared signature.
-
 """
 
 from __future__ import annotations
@@ -101,11 +61,9 @@ import sys
 
 from pathlib import Path
 
-
 from dataclasses import dataclass
 
 from typing import Callable
-
 
 from control_flow import Instr, decode_all
 
@@ -174,7 +132,6 @@ from wasm_opcodes import (
     UNREACHABLE,
 )
 
-
 I32_MASK = 0xFFFFFFFF
 
 PAGE_SIZE = 65536
@@ -209,13 +166,12 @@ class _Frame:
 
 @dataclass
 class ExecEnv:
-    """R2 (`env`): state shared across every call in this run -- the
-
-    module, linear memory, globals, tables and host-import dispatch table.
-
-    Never mutated per-instruction-dispatch, only by the opcodes that are
-
-    specified to mutate it (global.set, stores, memory.grow)."""
+    """
+    R2 (`env`): state shared across every call in this run -- the
+        module, linear memory, globals, tables and host-import dispatch table.
+        Never mutated per-instruction-dispatch, only by the opcodes that are
+        specified to mutate it (global.set, stores, memory.grow).
+    """
 
     module: Module
 
@@ -231,13 +187,12 @@ class ExecEnv:
 
 
 class CallFrame:
-    """R1 (`stack_bot`): the combined operand-value + control-frame region
-
-    for one function activation, plus that activation's own decoded
-
-    instruction table and raw code (needed to fetch the instruction at a
-
-    given `ip`)."""
+    """
+    R1 (`stack_bot`): the combined operand-value + control-frame region
+        for one function activation, plus that activation's own decoded
+        instruction table and raw code (needed to fetch the instruction at a
+        given `ip`).
+    """
 
     __slots__ = ("values", "frames", "instrs", "code")
 
@@ -258,7 +213,6 @@ class CallFrame:
 
 _Cont = "tuple[int, CallFrame, ExecEnv, list[int]] | None"
 
-
 # Fixed 256-slot direct-indexed dispatch table for WASM byte opcodes (0x00..0xFF)
 
 _HANDLERS: list[Callable[[int, CallFrame, ExecEnv, list[int]], object] | None] = [
@@ -278,13 +232,12 @@ def _handler(opcode: int):
 
 
 def _do_branch(depth: int, frame: CallFrame) -> int | None:
-    """Shared by BR/BR_IF/BR_TABLE: unwind `depth` control frames and
-
-    compute where execution resumes -- a loop resumes its body, a
-
-    block/if resumes just past its matching END. Returns None if the
-
-    branch unwinds past the outermost implicit function block (== return)."""
+    """
+    Shared by BR/BR_IF/BR_TABLE: unwind `depth` control frames and
+        compute where execution resumes -- a loop resumes its body, a
+        block/if resumes just past its matching END. Returns None if the
+        branch unwinds past the outermost implicit function block (== return).
+    """
 
     cframes = frame.frames
 

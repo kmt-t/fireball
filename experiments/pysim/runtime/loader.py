@@ -1,31 +1,15 @@
 """
-
 experiments/pysim/loader.py
-
-
-
 WASM Loader & Zero-Copy Indexing Engine with Hash + RadixBinaryTreeView Indexes.
-
 Conforms strictly to docs/components/tier2_runtime/runtime_loader.md
-
 and docs/components/tier1_core/system_containers.md.
-
-
-
 Implements:
-
 1. Zero-Copy ROM-resident WASM32 parsing ({ROMParsing}, {ZeroCopyIndexing})
-
 2. Transactional memory rollback via BumpAllocator ({META_BumpAllocator})
-
 3. RadixBinaryTreeView interval indexing for file offset reverse-lookup ({META_BinarySearch})
-
 4. Hash + RadixBinaryTreeView symbol and import lookup in O(k) ({META_AccessDictionary}, {META_BinarySearch})
-
 5. Lightweight Verification Scope (V1-V6) ({LightweightVerifier})
-
 6. Multi-module registry & import resolution ({MultiModule_Support})
-
 """
 
 from __future__ import annotations
@@ -57,13 +41,11 @@ import sys
 
 from pathlib import Path
 
-
 import bisect
 
 import struct
 
 from typing import Any, Optional, Sequence, Union
-
 
 # Configuration Constants
 

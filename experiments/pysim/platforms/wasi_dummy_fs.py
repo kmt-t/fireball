@@ -1,19 +1,11 @@
-"""experiments/pysim/wasi_dummy_fs.py
-
-
-
+"""
+experiments/pysim/wasi_dummy_fs.py
 Comprehensive In-Memory WASI Preview 1 Dummy Driver for Fireball.
-
 Provides deterministic virtual file system and environment services:
-
 - FD 0 (stdin), FD 1 (stdout), FD 2 (stderr)
-
 - In-memory virtual file descriptors (fd_read, fd_write, fd_seek, fd_close, fd_fdstat_get)
-
 - Clock & Random services (clock_time_get, random_get)
-
 - Process environment (environ_sizes_get, environ_get, args_sizes_get, args_get)
-
 """
 
 from __future__ import annotations
@@ -44,7 +36,6 @@ for _p in [
 import sys
 
 from pathlib import Path
-
 
 import os
 

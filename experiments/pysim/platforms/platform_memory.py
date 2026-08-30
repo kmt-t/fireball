@@ -1,19 +1,10 @@
 """
-
 experiments/pysim/platform_memory.py
-
-
-
 COOS Memory Manager & PMSAv8 MPU simulation.
-
 - Consolidated physical memory pool and fixed-size partition leasing
-
 - Typed slot pools with zero dynamic void* heap
-
 - RAII SharedBlock zero-copy ownership transfer linked with vMMIO FC=14 PTEs
-
 - Cortex-M33 PMSAv8 8-region MPU allocation and JIT W^X transaction switching
-
 """
 
 from __future__ import annotations
@@ -45,16 +36,13 @@ import sys
 
 from pathlib import Path
 
-
 from dataclasses import dataclass, field
 
 from enum import Enum, auto
 
 from typing import Any, Generic, TypeVar
 
-
 T = TypeVar("T")
-
 
 # Configuration & Constants (FB_CONF_*)
 

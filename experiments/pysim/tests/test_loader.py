@@ -27,42 +27,27 @@ import sys
 
 from pathlib import Path
 
-
 import sys
-
 
 from pathlib import Path
 
-
 """
-
 
 experiments/pysim/test_loader.py
 
-
-
-
-
 Tests for WASM Loader, Zero-Copy Indexing, and Hash + RadixBinaryTreeView Symbol/Import/Offset Indexes.
-
 
 Conforms strictly to docs/components/tier2_runtime/tests/runtime_loader_test_spec.md (LOAD-01 ~ LOAD-47).
 
-
 """
-
 
 import sys
 
-
 from pathlib import Path
-
 
 import struct
 
-
 from typing import Optional
-
 
 from loader import (
     BumpAllocator,
@@ -647,7 +632,6 @@ ALL_TESTS = sorted(
     (v for k, v in globals().items() if k.startswith("test_") and callable(v)),
     key=lambda fn: fn.__code__.co_firstlineno,
 )
-
 
 if __name__ == "__main__":
     for test in ALL_TESTS:

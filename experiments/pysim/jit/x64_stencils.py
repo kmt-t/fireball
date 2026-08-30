@@ -1,53 +1,25 @@
 """
-
 experiments/pysim/x64_stencils.py
-
-
-
 x64 Copy-and-Patch stencils, mirroring the real design's split between
-
 compile-time template construction and runtime copy+patch
-
 (docs/components/tier3_jit/jit_compiler.md,
-
 docs/components/tier3_jit/concepts/jit_copy_patch_concept.py's `Stencil`).
-
-
-
 The real system builds each stencil once via a C++20 `constexpr` function,
-
 baking a fixed byte array into ROM; the JIT then only ever copies that byte
-
 array and patches a few relocation slots into it. Python has no constexpr,
-
 so each stencil here is instead built by a **generator** that is drained
-
 exactly once, at import time, into an immutable `bytes` object -- the
-
 generator's single run stands in for "compile-time evaluation", and every
-
 actual JIT compilation afterwards only ever touches the frozen result,
-
 never re-runs the generator. This is enforced by `_materialize()` below,
-
 not just a naming convention.
-
-
-
 Calling convention for a compiled function (Microsoft x64 ABI, since the
-
 host is Windows): RCX = pointer to this function's [params..., locals...]
-
 array (int64 slots), RDX = pointer to the linear memory byte buffer.
-
 R10/R11 hold those two values for the lifetime of the function body (the
-
 prologue copies them there) so RCX/RDX stay free as general scratch, since
-
 i32.shl/shr_s/shr_u need the shift count in CL. The WASM operand stack is
-
 the real x64 hardware stack (PUSH/POP), one 8-byte slot per WASM value.
-
 """
 
 from __future__ import annotations
@@ -79,13 +51,11 @@ import sys
 
 from pathlib import Path
 
-
 import sys
 
 from dataclasses import dataclass, field
 
 from typing import Generator, Iterable
-
 
 IS_WINDOWS = sys.platform == "win32"
 
@@ -134,7 +104,6 @@ _SENTINEL_TRAP = bytes((0xA2, 0xA2, 0xA2, 0xA2))
 _SENTINEL_DISP = bytes((0xA3, 0xA3, 0xA3, 0xA3))
 
 _SENTINEL_ADDR64 = bytes((0xA4,) * 8)
-
 
 _RELOC_SENTINELS = {
     "max_addr": _SENTINEL_MAX_ADDR,
@@ -433,22 +402,15 @@ def _gen_shift(shift_opcode_ext: int) -> bytes:
 
 
 def _gen_bounds_check() -> Generator[int, None, None]:
-    """wasm_instruction_set.md 3.4 mandates a "比較+トラップ" (compare +
-
-    trap) bounds check before every memory access. `max_addr` is
-
-    `mem_size_bytes - memarg.offset - access_width`, computed once at JIT
-
-    time (this experiment treats linear memory as fixed-size, matching its
-
-    lack of a JIT-side memory.grow); an unsigned compare against it covers
-
-    the memarg offset and access width in one shot, so the checked address
-
-    itself needs no further arithmetic before the actual load/store.
-
-    Consumes nothing, assumes the (unsigned) address is already in eax.
-
+    """
+    wasm_instruction_set.md 3.4 mandates a "比較+トラップ" (compare +
+        trap) bounds check before every memory access. `max_addr` is
+        `mem_size_bytes - memarg.offset - access_width`, computed once at JIT
+        time (this experiment treats linear memory as fixed-size, matching its
+        lack of a JIT-side memory.grow); an unsigned compare against it covers
+        the memarg offset and access width in one shot, so the checked address
+        itself needs no further arithmetic before the actual load/store.
+        Consumes nothing, assumes the (unsigned) address is already in eax.
     """
 
     # cmp eax, imm32(max_addr)   3D xx xx xx xx
@@ -647,31 +609,20 @@ def _gen_unreachable() -> Generator[int, None, None]:
 
 
 def _gen_trap() -> Generator[int, None, None]:
-    """Deliberate null-pointer dereference: on Windows this reliably
-
-    raises a real, catchable access violation (Python's ctypes surfaces it
-
-    as `OSError`) rather than requiring an attached debugger the way `int3`
-
-    would -- the same trap target `unreachable` and every bounds-checked
-
-    memory stencil jump to.
-
-
-
-    First snaps rsp back to rdi (the restore point PROLOGUE captured right
-
-    after its pushes) and unwinds those same 6 registers, exactly like a
-
-    normal return -- so the fault always occurs at the identical, fixed
-
-    native stack depth relative to this function's own entry, no matter
-
-    how deep the WASM operand stack had grown at the trapping instruction.
-
-    See _gen_prologue's comment for why this consistency is load-bearing:
-
-    without it, Windows' unwinder only recovers by accident."""
+    """
+    Deliberate null-pointer dereference: on Windows this reliably
+        raises a real, catchable access violation (Python's ctypes surfaces it
+        as `OSError`) rather than requiring an attached debugger the way `int3`
+        would -- the same trap target `unreachable` and every bounds-checked
+        memory stencil jump to.
+        First snaps rsp back to rdi (the restore point PROLOGUE captured right
+        after its pushes) and unwinds those same 6 registers, exactly like a
+        normal return -- so the fault always occurs at the identical, fixed
+        native stack depth relative to this function's own entry, no matter
+        how deep the WASM operand stack had grown at the trapping instruction.
+        See _gen_prologue's comment for why this consistency is load-bearing:
+        without it, Windows' unwinder only recovers by accident.
+    """
 
     # mov rsp, rdi          48 89 FC
 
@@ -758,15 +709,13 @@ def _gen_rotate(rotate_opcode_ext: int) -> bytes:
 
 
 def _gen_global_get() -> Generator[int, None, None]:
-    """Reads through an absolute address baked in at JIT-compile time
-
-    (base-of-globals-array + index*8, both known once the globals buffer
-
-    is allocated) -- simpler than threading a third persistent register
-
-    through every function's calling convention for a per-module-not-per-
-
-    call concept."""
+    """
+    Reads through an absolute address baked in at JIT-compile time
+        (base-of-globals-array + index*8, both known once the globals buffer
+        is allocated) -- simpler than threading a third persistent register
+        through every function's calling convention for a per-module-not-per-
+        call concept.
+    """
 
     # mov rax, imm64(addr)   48 B8 xx*8
 
@@ -810,13 +759,11 @@ def _gen_global_set() -> Generator[int, None, None]:
 
 # ---------------------------------------------------------------------------
 
-
 PROLOGUE = _materialize("prologue", _gen_prologue())
 
 EPILOGUE_RETURN_I32 = _materialize("epilogue_return_i32", _gen_epilogue_return_i32())
 
 EPILOGUE_RETURN_VOID = _materialize("epilogue_return_void", _gen_epilogue_return_void())
-
 
 LOCAL_GET = _materialize("local_get", _gen_local_get(), {"disp": 3})
 
@@ -824,9 +771,7 @@ LOCAL_SET = _materialize("local_set", _gen_local_set(), {"disp": 4})
 
 LOCAL_TEE = _materialize("local_tee", _gen_local_tee(), {"disp": 7})
 
-
 I32_CONST = _materialize("i32_const", _gen_i32_const(), {"imm": 1})
-
 
 I32_ADD = _materialize("i32_add", _gen_binop(bytes((0x01, 0xD8))))  # add eax, ebx
 
@@ -842,7 +787,6 @@ I32_OR = _materialize("i32_or", _gen_binop(bytes((0x09, 0xD8))))  # or eax, ebx
 
 I32_XOR = _materialize("i32_xor", _gen_binop(bytes((0x31, 0xD8))))  # xor eax, ebx
 
-
 I32_DIV_S = _materialize("i32_div_s", _gen_i32_div_s())
 
 I32_DIV_U = _materialize("i32_div_u", _gen_i32_div_u())
@@ -851,13 +795,11 @@ I32_REM_S = _materialize("i32_rem_s", _gen_i32_rem_s())
 
 I32_REM_U = _materialize("i32_rem_u", _gen_i32_rem_u())
 
-
 I32_SHL = _materialize("i32_shl", _gen_shift(4))
 
 I32_SHR_S = _materialize("i32_shr_s", _gen_shift(7))
 
 I32_SHR_U = _materialize("i32_shr_u", _gen_shift(5))
-
 
 I32_EQZ = _materialize("i32_eqz", _gen_i32_eqz())
 
@@ -881,7 +823,6 @@ I32_GE_S = _materialize("i32_ge_s", _gen_cmp_setcc(0x9D))  # setge
 
 I32_GE_U = _materialize("i32_ge_u", _gen_cmp_setcc(0x93))  # setae
 
-
 I32_LOAD = _materialize_auto("i32_load", _gen_i32_load())
 
 I32_LOAD8_S = _materialize_auto("i32_load8_s", _gen_i32_load8_s())
@@ -898,7 +839,6 @@ I32_STORE8 = _materialize_auto("i32_store8", _gen_i32_store8())
 
 I32_STORE16 = _materialize_auto("i32_store16", _gen_i32_store16())
 
-
 I32_CLZ = _materialize("i32_clz", _gen_i32_clz())
 
 I32_CTZ = _materialize("i32_ctz", _gen_i32_ctz())
@@ -909,23 +849,19 @@ I32_ROTL = _materialize("i32_rotl", _gen_rotate(0))
 
 I32_ROTR = _materialize("i32_rotr", _gen_rotate(1))
 
-
 GLOBAL_GET = _materialize_auto("global_get", _gen_global_get())
 
 GLOBAL_SET = _materialize_auto("global_set", _gen_global_set())
 
-
 DROP = _materialize("drop", _gen_drop())
 
 SELECT = _materialize("select", _gen_select())
-
 
 BR = _materialize("br", _gen_br(), {"rel32": 1})
 
 BR_IF = _materialize("br_if", _gen_br_if(), {"rel32": 5})
 
 CALL = _materialize("call", _gen_call(), {"rel32": 1})
-
 
 UNREACHABLE = _materialize("unreachable", _gen_unreachable())
 

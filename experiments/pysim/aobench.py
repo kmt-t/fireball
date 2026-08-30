@@ -1,42 +1,15 @@
 """
-
-
 experiments/pysim/aobench.py
-
-
-
-
-
 Genuine 3D Ambient Occlusion Benchmark (AO-Bench):
-
-
 1. Written in standard WAT using fixed-point Q8.8 arithmetic (no floats, {Wasm32Only} compliant).
-
-
 2. Computes:
-
-
    - Primary ray generation per pixel (Origin O, Direction D).
-
-
    - Ray-Sphere (quadratic discriminant) and Ray-Plane 3D intersections.
-
-
    - Hit point P and 4 hemisphere sample rays per hit for Ambient Occlusion shading.
-
-
    - Occlusion integration and ASCII gradation mapping.
-
-
 3. Compiled to .wasm binary using OSS wasmtime.wat2wasm.
-
-
 4. Directly parsed with Fireball wasm_reader.py and executed on Tier 2 Threaded CPS Interpreter.
-
-
 5. Flushes rendered ASCII output via WASI fd_write and reports exact ray count & throughput.
-
-
 """
 
 from __future__ import annotations
@@ -68,841 +41,262 @@ import sys
 
 from pathlib import Path
 
-
 import sys
-
 
 from pathlib import Path
 
-
 import sys
 
-
 from pathlib import Path
-
 
 import time
 
-
 import wasmtime
-
 
 from interpreter import Interpreter
 
-
 from system import System
-
 
 from wasi import WasiHostContext
 
-
 from wasm_reader import parse
 
-
 # ---------------------------------------------------------------------------
-
 
 # Genuine 3D Raytracing Ambient Occlusion WAT (Fixed-point Q8.8: 1.0 = 256)
 
-
 # ---------------------------------------------------------------------------
 
-
 GENUINE_AO_WAT = r"""
-
-
 (module
-
-
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
-
-
   (memory (export "memory") 1 16)
-
-
-
-
-
   ;; Fixed-point Q8.8 arithmetic: fp_mul(a, b) = (a * b) >> 8
-
-
   (func $fp_mul (param $a i32) (param $b i32) (result i32)
-
-
     (i32.shr_s (i32.mul (local.get $a) (local.get $b)) (i32.const 8))
-
-
   )
-
-
-
-
-
   ;; Fixed-point Q8.8 division: fp_div(a, b) = (a << 8) / b
-
-
   (func $fp_div (param $a i32) (param $b i32) (result i32)
-
-
     (if (i32.eqz (local.get $b))
-
-
       (then (return (i32.const 0)))
-
-
     )
-
-
     (i32.div_s (i32.shl (local.get $a) (i32.const 8)) (local.get $b))
-
-
   )
-
-
-
-
-
   ;; Fixed-point Q8.8 square root using binary shift integer method
-
-
   (func $fp_sqrt (param $x i32) (result i32)
-
-
     (local $val i32)
-
-
     (local $res i32)
-
-
     (local $bit i32)
-
-
     (if (i32.le_s (local.get $x) (i32.const 0))
-
-
       (then (return (i32.const 0)))
-
-
     )
-
-
     (local.set $val (i32.shl (local.get $x) (i32.const 8)))
-
-
     (local.set $res (i32.const 0))
-
-
     (local.set $bit (i32.const 1073741824))
-
-
     (block $b0
-
-
       (loop $l0
-
-
         (br_if $b0 (i32.eqz (i32.gt_u (local.get $bit) (local.get $val))))
-
-
         (local.set $bit (i32.shr_u (local.get $bit) (i32.const 2)))
-
-
         (br $l0)
-
-
       )
-
-
     )
-
-
     (block $b1
-
-
       (loop $l1
-
-
         (br_if $b1 (i32.eqz (local.get $bit)))
-
-
         (if (i32.ge_u (local.get $val) (i32.add (local.get $res) (local.get $bit)))
-
-
           (then
-
-
             (local.set $val (i32.sub (local.get $val) (i32.add (local.get $res) (local.get $bit))))
-
-
             (local.set $res (i32.add (i32.shr_u (local.get $res) (i32.const 1)) (local.get $bit)))
-
-
           )
-
-
           (else
-
-
             (local.set $res (i32.shr_u (local.get $res) (i32.const 1)))
-
-
           )
-
-
         )
-
-
         (local.set $bit (i32.shr_u (local.get $bit) (i32.const 2)))
-
-
         (br $l1)
-
-
       )
-
-
     )
-
-
     (local.get $res)
-
-
   )
-
-
-
-
-
   ;; Ray-Sphere 3D intersection (quadratic discriminant: b^2 - c)
-
-
   (func $ray_sphere (param $ox i32) (param $oy i32) (param $oz i32)
-
-
                     (param $dx i32) (param $dy i32) (param $dz i32)
-
-
                     (param $cx i32) (param $cy i32) (param $cz i32)
-
-
                     (param $rsq i32) (result i32)
-
-
     (local $vx i32) (local $vy i32) (local $vz i32)
-
-
     (local $b i32) (local $c i32) (local $disc i32) (local $sq i32) (local $t i32)
-
-
-
-
-
     (local.set $vx (i32.sub (local.get $ox) (local.get $cx)))
-
-
     (local.set $vy (i32.sub (local.get $oy) (local.get $cy)))
-
-
     (local.set $vz (i32.sub (local.get $oz) (local.get $cz)))
-
-
-
-
-
     (local.set $b
-
-
       (i32.add
-
-
         (call $fp_mul (local.get $vx) (local.get $dx))
-
-
         (i32.add
-
-
           (call $fp_mul (local.get $vy) (local.get $dy))
-
-
           (call $fp_mul (local.get $vz) (local.get $dz))
-
-
         )
-
-
       )
-
-
     )
-
-
-
-
-
     (local.set $c
-
-
       (i32.sub
-
-
         (i32.add
-
-
           (call $fp_mul (local.get $vx) (local.get $vx))
-
-
           (i32.add
-
-
             (call $fp_mul (local.get $vy) (local.get $vy))
-
-
             (call $fp_mul (local.get $vz) (local.get $vz))
-
-
           )
-
-
         )
-
-
         (local.get $rsq)
-
-
       )
-
-
     )
-
-
-
-
-
     (local.set $disc (i32.sub (call $fp_mul (local.get $b) (local.get $b)) (local.get $c)))
-
-
     (if (i32.lt_s (local.get $disc) (i32.const 0))
-
-
       (then (return (i32.const -1)))
-
-
     )
-
-
-
-
-
     (local.set $sq (call $fp_sqrt (local.get $disc)))
-
-
     (local.set $t (i32.sub (i32.sub (i32.const 0) (local.get $b)) (local.get $sq)))
-
-
     (if (i32.gt_s (local.get $t) (i32.const 2))
-
-
       (then (return (local.get $t)))
-
-
     )
-
-
     (i32.const -1)
-
-
   )
-
-
-
-
-
   ;; Intersect whole 3D scene (3 Spheres + 1 Floor Plane): returns shortest t (>0) or -1
-
-
   (func $intersect_scene (param $ox i32) (param $oy i32) (param $oz i32)
-
-
                          (param $dx i32) (param $dy i32) (param $dz i32) (result i32)
-
-
     (local $tmin i32)
-
-
     (local $t i32)
-
-
-
-
-
     (local.set $tmin (i32.const 2147483647))
-
-
-
-
-
     ;; Sphere 1: center=(0, -102, 768), rsq=64 (radius=0.5)
-
-
     (local.set $t (call $ray_sphere (local.get $ox) (local.get $oy) (local.get $oz)
-
-
                                     (local.get $dx) (local.get $dy) (local.get $dz)
-
-
                                     (i32.const 0) (i32.const -102) (i32.const 768) (i32.const 64)))
-
-
     (if (i32.and (i32.gt_s (local.get $t) (i32.const 0)) (i32.lt_s (local.get $t) (local.get $tmin)))
-
-
       (then (local.set $tmin (local.get $t)))
-
-
     )
-
-
-
-
-
     ;; Sphere 2: center=(-230, 51, 845), rsq=41 (radius=0.4)
-
-
     (local.set $t (call $ray_sphere (local.get $ox) (local.get $oy) (local.get $oz)
-
-
                                     (local.get $dx) (local.get $dy) (local.get $dz)
-
-
                                     (i32.const -230) (i32.const 51) (i32.const 845) (i32.const 41)))
-
-
     (if (i32.and (i32.gt_s (local.get $t) (i32.const 0)) (i32.lt_s (local.get $t) (local.get $tmin)))
-
-
       (then (local.set $tmin (local.get $t)))
-
-
     )
-
-
-
-
-
     ;; Sphere 3: center=(230, 51, 845), rsq=41 (radius=0.4)
-
-
     (local.set $t (call $ray_sphere (local.get $ox) (local.get $oy) (local.get $oz)
-
-
                                     (local.get $dx) (local.get $dy) (local.get $dz)
-
-
                                     (i32.const 230) (i32.const 51) (i32.const 845) (i32.const 41)))
-
-
     (if (i32.and (i32.gt_s (local.get $t) (i32.const 0)) (i32.lt_s (local.get $t) (local.get $tmin)))
-
-
       (then (local.set $tmin (local.get $t)))
-
-
     )
-
-
-
-
-
     ;; Floor plane: y = 154 (y=0.6)
-
-
     (if (i32.gt_s (local.get $dy) (i32.const 12))
-
-
       (then
-
-
         (local.set $t (call $fp_div (i32.sub (i32.const 154) (local.get $oy)) (local.get $dy)))
-
-
         (if (i32.and (i32.gt_s (local.get $t) (i32.const 2)) (i32.lt_s (local.get $t) (local.get $tmin)))
-
-
           (then (local.set $tmin (local.get $t)))
-
-
         )
-
-
       )
-
-
     )
-
-
-
-
-
     (if (i32.lt_s (local.get $tmin) (i32.const 2147483647))
-
-
       (then (return (local.get $tmin)))
-
-
     )
-
-
     (i32.const -1)
-
-
   )
-
-
-
-
-
   ;; Main render routine: 3D Raytracing with 4 Ambient Occlusion sample rays per hit
-
-
   (func (export "main") (param $w i32) (param $h i32) (result i32)
-
-
     (local $x i32) (local $y i32) (local $ptr i32)
-
-
     (local $rdx i32) (local $rdy i32) (local $rdz i32) (local $rlen i32) (local $lensq i32)
-
-
     (local $thit i32) (local $px i32) (local $py i32) (local $pz i32)
-
-
     (local $unocc i32) (local $ch i32)
-
-
-
-
-
     (local.set $ptr (i32.const 1024))
-
-
     (local.set $y (i32.const 0))
-
-
-
-
-
     (block $b_y_exit
-
-
       (loop $l_y
-
-
         (br_if $b_y_exit (i32.ge_s (local.get $y) (local.get $h)))
-
-
-
-
-
         (local.set $x (i32.const 0))
-
-
         (block $b_x_exit
-
-
           (loop $l_x
-
-
             (br_if $b_x_exit (i32.ge_s (local.get $x) (local.get $w)))
-
-
-
-
-
             ;; Primary ray direction:
-
-
             ;; rdx = (x - w/2) * 256 / (w/2)
-
-
             (local.set $rdx (call $fp_div (i32.sub (local.get $x) (i32.shr_s (local.get $w) (i32.const 1)))
-
-
                                           (i32.shr_s (local.get $w) (i32.const 1))))
-
-
             ;; rdy = (y - h/2) * 384 / (h/2)
-
-
             (local.set $rdy (call $fp_div (i32.mul (i32.sub (local.get $y) (i32.shr_s (local.get $h) (i32.const 1))) (i32.const 384))
-
-
                                           (i32.mul (i32.shr_s (local.get $h) (i32.const 1)) (i32.const 256))))
-
-
             ;; rdz = 2.0 (512 in Q8.8)
-
-
             (local.set $rdz (i32.const 512))
-
-
-
-
-
             ;; Normalize primary ray
-
-
             (local.set $lensq
-
-
               (i32.add (call $fp_mul (local.get $rdx) (local.get $rdx))
-
-
               (i32.add (call $fp_mul (local.get $rdy) (local.get $rdy))
-
-
                        (call $fp_mul (local.get $rdz) (local.get $rdz)))))
-
-
             (local.set $rlen (call $fp_sqrt (local.get $lensq)))
-
-
             (local.set $rdx (call $fp_div (local.get $rdx) (local.get $rlen)))
-
-
             (local.set $rdy (call $fp_div (local.get $rdy) (local.get $rlen)))
-
-
             (local.set $rdz (call $fp_div (local.get $rdz) (local.get $rlen)))
-
-
-
-
-
             ;; Intersect primary ray
-
-
             (local.set $thit (call $intersect_scene (i32.const 0) (i32.const 0) (i32.const 0)
-
-
                                                    (local.get $rdx) (local.get $rdy) (local.get $rdz)))
-
-
-
-
-
             (if (i32.lt_s (local.get $thit) (i32.const 0))
-
-
               (then
-
-
                 ;; Miss -> Space (32)
-
-
                 (i32.store8 (local.get $ptr) (i32.const 32))
-
-
               )
-
-
               (else
-
-
                 ;; Hit point P = t * D
-
-
                 (local.set $px (call $fp_mul (local.get $thit) (local.get $rdx)))
-
-
                 (local.set $py (call $fp_mul (local.get $thit) (local.get $rdy)))
-
-
                 (local.set $pz (call $fp_mul (local.get $thit) (local.get $rdz)))
-
-
-
-
-
                 ;; Shoot 4 AO sample rays from hit point
-
-
                 (local.set $unocc (i32.const 0))
-
-
-
-
-
                 ;; Sample 1: dir = (0, -204, 153)
-
-
                 (if (i32.lt_s (call $intersect_scene (local.get $px) (i32.sub (local.get $py) (i32.const 10)) (i32.add (local.get $pz) (i32.const 10))
-
-
                                                      (i32.const 0) (i32.const -204) (i32.const 153)) (i32.const 0))
-
-
                   (then (local.set $unocc (i32.add (local.get $unocc) (i32.const 1))))
-
-
                 )
-
-
-
-
-
                 ;; Sample 2: dir = (153, -204, 0)
-
-
                 (if (i32.lt_s (call $intersect_scene (i32.add (local.get $px) (i32.const 10)) (i32.sub (local.get $py) (i32.const 10)) (local.get $pz)
-
-
                                                      (i32.const 153) (i32.const -204) (i32.const 0)) (i32.const 0))
-
-
                   (then (local.set $unocc (i32.add (local.get $unocc) (i32.const 1))))
-
-
                 )
-
-
-
-
-
                 ;; Sample 3: dir = (-153, -204, 0)
-
-
                 (if (i32.lt_s (call $intersect_scene (i32.sub (local.get $px) (i32.const 10)) (i32.sub (local.get $py) (i32.const 10)) (local.get $pz)
-
-
                                                      (i32.const -153) (i32.const -204) (i32.const 0)) (i32.const 0))
-
-
                   (then (local.set $unocc (i32.add (local.get $unocc) (i32.const 1))))
-
-
                 )
-
-
-
-
-
                 ;; Sample 4: dir = (0, -204, -153)
-
-
                 (if (i32.lt_s (call $intersect_scene (local.get $px) (i32.sub (local.get $py) (i32.const 10)) (i32.sub (local.get $pz) (i32.const 10))
-
-
                                                      (i32.const 0) (i32.const -204) (i32.const -153)) (i32.const 0))
-
-
                   (then (local.set $unocc (i32.add (local.get $unocc) (i32.const 1))))
-
-
                 )
-
-
-
-
-
                 ;; Map unoccluded count (0..4) to ASCII shading character:
-
-
                 ;; 0: '.', 1: ':', 2: '+', 3: '#', 4: '@'
-
-
                 (local.set $ch (i32.const 64)) ;; '@'
-
-
                 (if (i32.eq (local.get $unocc) (i32.const 0)) (then (local.set $ch (i32.const 46)))) ;; '.'
-
-
                 (if (i32.eq (local.get $unocc) (i32.const 1)) (then (local.set $ch (i32.const 58)))) ;; ':'
-
-
                 (if (i32.eq (local.get $unocc) (i32.const 2)) (then (local.set $ch (i32.const 43)))) ;; '+'
-
-
                 (if (i32.eq (local.get $unocc) (i32.const 3)) (then (local.set $ch (i32.const 35)))) ;; '#'
-
-
-
-
-
                 (i32.store8 (local.get $ptr) (local.get $ch))
-
-
               )
-
-
             )
-
-
-
-
-
             (local.set $ptr (i32.add (local.get $ptr) (i32.const 1)))
-
-
             (local.set $x (i32.add (local.get $x) (i32.const 1)))
-
-
             (br $l_x)
-
-
           )
-
-
         )
-
-
-
-
-
         ;; newline (10)
-
-
         (i32.store8 (local.get $ptr) (i32.const 10))
-
-
         (local.set $ptr (i32.add (local.get $ptr) (i32.const 1)))
-
-
-
-
-
         (local.set $y (i32.add (local.get $y) (i32.const 1)))
-
-
         (br $l_y)
-
-
       )
-
-
     )
-
-
-
-
-
     (i32.store (i32.const 64) (i32.const 1024))
-
-
     (i32.store (i32.const 68) (i32.sub (local.get $ptr) (i32.const 1024)))
-
-
     (drop (call $fd_write (i32.const 1) (i32.const 64) (i32.const 1) (i32.const 80)))
-
-
     (i32.sub (local.get $ptr) (i32.const 1024))
-
-
   )
-
-
 )
-
-
 """
 
 

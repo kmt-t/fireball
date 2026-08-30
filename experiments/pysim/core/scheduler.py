@@ -1,25 +1,13 @@
 """
-
 experiments/pysim/scheduler.py
-
-
-
 A cooperative round-robin scheduler and Hoare CSP rendezvous engine, mirroring
-
 docs/components/tier1_core/os_scheduler.md ({ADR_CoosPureRoundRobin}) and
-
 docs/components/tier1_core/os_coos.md ({ADR_RendezvousChannel}, {CSP_Handoff}).
-
 - Pure round-robin FIFO dispatch (no priority).
-
 - Fixed capacity check: FB_CONF_MAX_TASKS = 16.
-
 - Bufferless synchronous Hoare CSP channels with single-waiter enforcement.
-
 - Direct symmetric context switch with consecutive handoff bound (FB_CONF_MAX_CONSECUTIVE_HANDOFFS = 4).
-
 - Asynchronous ISR interrupt notification queue and drain wake-up.
-
 """
 
 from __future__ import annotations
@@ -51,13 +39,11 @@ import sys
 
 from pathlib import Path
 
-
 from collections import deque
 
 from enum import Enum, auto
 
 from typing import Any, Callable, Generator
-
 
 FB_CONF_MAX_TASKS = 16
 

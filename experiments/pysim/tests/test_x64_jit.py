@@ -27,60 +27,30 @@ import sys
 
 from pathlib import Path
 
-
 import sys
-
 
 from pathlib import Path
 
-
 """
-
-
 experiments/pysim/test_x64_jit.py
-
-
-
-
-
 Spec-compliant tests for Fireball Trace-based Copy-and-Patch JIT Compiler (x64_jit.py).
-
-
 Verifies:
-
-
 1. Exact CPS 4-argument calling convention: (uint32_t ip, void* stack_bot, void* env, void* local_base)
-
-
 2. 16-byte physical JITTraceHeader layout at offset +0x00
-
-
 3. Position-Independent Code (PIC) execution across arbitrary memory relocations
-
-
 4. Direct trace chaining and hybrid tiering transitions
-
-
 (docs/components/tier3_jit/jit_compiler.md and docs/components/tier2_runtime/runtime_interpreter.md)
-
-
 """
-
 
 import sys
 
-
 from pathlib import Path
-
 
 import ctypes
 
-
 from exec_memory import ExecutableBuffer
 
-
 from runtime_engine import BasicBlock, CardState, IntegratedHybridEngine, WASMContext
-
 
 from x64_jit import TraceCompiler
 
@@ -373,7 +343,6 @@ ALL_TESTS = sorted(
     (v for k, v in globals().items() if k.startswith("test_") and callable(v)),
     key=lambda fn: fn.__code__.co_firstlineno,
 )
-
 
 if __name__ == "__main__":
     for test in ALL_TESTS:

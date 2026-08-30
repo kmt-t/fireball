@@ -26,7 +26,6 @@ for _p in [
 import sys
 from pathlib import Path
 
-
 """Integration Scenario 8: Comprehensive Full-Coverage Storage & Debugger Integration.
 
 Tests exhaustive read/write operations across all WASM storage tiers:
@@ -45,7 +44,6 @@ Tests exhaustive read/write operations across all WASM storage tiers:
    - Single-stepping (s) and continue-to-exit (c, W00)
 """
 
-
 import socket
 import time
 import wasmtime
@@ -58,7 +56,6 @@ from system import System
 from wasi import WasiHostContext
 from wasm_reader import parse
 from x64_jit import TraceCompiler
-
 
 SCENARIO8_WAT = """
 (module

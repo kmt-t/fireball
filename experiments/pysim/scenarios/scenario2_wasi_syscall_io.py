@@ -24,7 +24,6 @@ for _p in [
 import sys
 from pathlib import Path
 
-
 """Integration Scenario 2: Tier 2 Runtime + System Call & WASI IO.
 
 Tests:

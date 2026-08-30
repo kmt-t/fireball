@@ -1,29 +1,14 @@
 """
-
 experiments/pysim/control_flow.py
-
-
-
 Shared instruction decoding and block-nesting analysis, used by BOTH
-
 interpreter.py and x64_jit.py so the two engines can never disagree about
-
 where a block/loop/if actually ends -- exactly the kind of drift a real
-
 dual-engine (interpreter + JIT) design has to rule out structurally, not by
-
 convention.
-
-
-
 For each BLOCK/LOOP/IF this resolves the byte-offset of its matching END
-
 (and, for IF, its matching ELSE if present) in one linear forward pass with
-
 an explicit stack -- no recursion, so it scales to real function bodies
-
 without hitting Python's recursion limit.
-
 """
 
 from __future__ import annotations
@@ -55,9 +40,7 @@ import sys
 
 from pathlib import Path
 
-
 from dataclasses import dataclass
-
 
 from leb128 import decode_signed, decode_unsigned
 
@@ -119,7 +102,6 @@ from wasm_opcodes import (
     I32_GE_U,
 )
 
-
 _MEMARG_OPCODES = {
     I32_LOAD,
     I32_LOAD8_S,
@@ -135,7 +117,6 @@ _MEMORY_INDEX_OPCODES = {
     MEMORY_SIZE,
     MEMORY_GROW,
 }  # followed by a single reserved 0x00 byte
-
 
 _NO_OPERAND = {
     UNREACHABLE,

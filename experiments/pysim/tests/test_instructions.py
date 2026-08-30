@@ -1,45 +1,15 @@
 """
-
-
 experiments/pysim/tests.py
-
-
-
-
-
 Comprehensive assert-based invariant test suite for the pysim experiment,
-
-
 covering all Fireball component test specifications (*_test_spec.md):
-
-
 - Tier 1 COOS & Scheduler (os_coos_test_spec.md, os_scheduler_test_spec.md)
-
-
 - Tier 1 Logging & IPC Router (system_logging_test_spec.md, ipc_router_test_spec.md)
-
-
 - Tier 2 vMMIO & Recovery (runtime_vmmio_test_spec.md)
-
-
 - Tier 3 Platform Memory & HAL & MPU W^X (platform_memory_test_spec.md, platform_hal_test_spec.md)
-
-
 - Tier 3 JIT Hotspot Profiling & 3-Bank Cache (jit_compiler_test_spec.md, jit_runtime_test_spec.md)
-
-
 - Tier 1/2 Syscalls (system_syscall_test_spec.md)
-
-
 - WASM Instruction Set MVP (wasm_instruction_set_test_spec.md)
-
-
-
-
-
 Run with:  uv run python experiments/pysim/tests.py
-
-
 """
 
 from __future__ import annotations
@@ -71,33 +41,23 @@ import sys
 
 from pathlib import Path
 
-
 import sys
-
 
 from pathlib import Path
 
-
 import sys
 
-
 from pathlib import Path
-
 
 import ctypes
 
-
 import os
-
 
 import struct
 
-
 import sys
 
-
 import time
-
 
 from hal import (
     FB_CONF_HAL_BUFFER_SIZE,
@@ -109,15 +69,11 @@ from hal import (
     UartTransport,
 )
 
-
 from interpreter import Interpreter, Trap
-
 
 from ipc_router import IPCMessage, IPCRouter
 
-
 from logger import ConsoleOutput, LogDictionary, Logger, LogLevel
-
 
 from platform_memory import (
     FB_CONF_MEMORY_POOL_SIZE,
@@ -131,7 +87,6 @@ from platform_memory import (
     SharedBlock,
 )
 
-
 from system_containers import (
     BitView,
     FlatMapView,
@@ -144,7 +99,6 @@ from system_containers import (
     lookup_jit_entry,
 )
 
-
 from recovery import (
     FB_CONF_RETRY_BACKOFF_MS,
     RETRY_MAX_ATTEMPTS,
@@ -153,7 +107,6 @@ from recovery import (
     Result,
     classify_error_strategy,
 )
-
 
 from runtime_engine import (
     BasicBlock,
@@ -168,9 +121,7 @@ from runtime_engine import (
     WASMContext,
 )
 
-
 from scheduler import FB_CONF_MAX_TASKS, Scheduler, TaskState, WaitDir
-
 
 from system import (
     FB_CONF_GUEST_RAM_SIZE,
@@ -183,7 +134,6 @@ from system import (
     WasiErrno,
 )
 
-
 from vmmio import (
     FC_PASSTHROUGH,
     FC_SHM,
@@ -193,18 +143,13 @@ from vmmio import (
     VMMIOController,
 )
 
-
 from exec_memory import ExecutableBuffer
-
 
 from wasi import WasiHostContext
 
-
 from wasm_module import I32
 
-
 from wasm_reader import WasmParseError, WasmUnsupportedFeatureError, parse
-
 
 from x64_jit import TraceCompiler
 
@@ -219,9 +164,7 @@ def wat_to_wasm(wat_text: str) -> bytes:
 
 # ===========================================================================
 
-
 # 1. Tier 1 COOS: Hoare CSP Rendezvous Channel (os_coos_test_spec.md)
-
 
 # ===========================================================================
 
@@ -487,9 +430,7 @@ def test_coos_09_interrupt_queue_overflow_drops():
 
 # ===========================================================================
 
-
 # 2. Tier 1 Scheduler: Pure Round-Robin (os_scheduler_test_spec.md)
-
 
 # ===========================================================================
 
@@ -552,9 +493,7 @@ def test_sched_03_duplicate_task_id_rejected():
 
 # ===========================================================================
 
-
 # 3. Tier 3 Platform Memory: Partitions & SharedBlock RAII (platform_memory_test_spec.md)
-
 
 # ===========================================================================
 
@@ -782,9 +721,7 @@ def test_mem_21_jit_code_cache_wx_switch_and_restore():
 
 # ===========================================================================
 
-
 # 4. Tier 3 Platform HAL & UART / Timer (platform_hal_test_spec.md)
-
 
 # ===========================================================================
 
@@ -865,9 +802,7 @@ def test_hal_04_shm_slice_bounds_and_ownership():
 
 # ===========================================================================
 
-
 # 5. Tier 1 Logging & Recovery (system_logging_test_spec.md)
-
 
 # ===========================================================================
 
@@ -1056,9 +991,7 @@ def test_recovery_04_errorcode_to_strategy_mapping():
 
 # ===========================================================================
 
-
 # 6. Tier 3 JIT Hotspot Profiling & 3-Bank Cache (jit_compiler_test_spec.md, jit_runtime_test_spec.md)
-
 
 # ===========================================================================
 
@@ -1310,9 +1243,7 @@ def test_hotspot_05_3bank_cache_rotation_and_eviction_resets_card():
 
 # ===========================================================================
 
-
 # 7. Tier 2 vMMIO: 3-Tier Gate & FC=14 SHM Ownership (runtime_vmmio_test_spec.md)
-
 
 # ===========================================================================
 
@@ -1391,9 +1322,7 @@ def test_vmmio_03_undefined_function_code_traps():
 
 # ===========================================================================
 
-
 # 8. Tier 1 IPC Router & Zero-Copy SharedBlock Transfer (ipc_router_test_spec.md)
-
 
 # ===========================================================================
 
@@ -1521,9 +1450,7 @@ def test_ipc_03_queue_full_rollback_restores_owner():
 
 # ===========================================================================
 
-
 # 9. fireball_call Full Syscall Surface (system_syscall_test_spec.md)
-
 
 # ===========================================================================
 
@@ -1905,9 +1832,7 @@ def test_wasi_08_out_of_bounds_offset_returns_fault():
 
 # ===========================================================================
 
-
 # 10. WASM Instruction Set & Interpreter (runtime_interpreter_test_spec.md, wasm_instruction_set_test_spec.md)
-
 
 # ===========================================================================
 
@@ -1974,69 +1899,27 @@ def test_wasm_10_to_15_control_flow_and_calls():
     """WASM-10..15: Unreachable trap, block/loop/if/br_table, call, and call_indirect."""
 
     wat = """
-
-
     (module
-
-
       (table 2 2 funcref)
-
-
       (type $sig_calc (func (param i32) (result i32)))
-
-
       (func $unreachable_fn (export "unreachable_fn")
-
-
         (unreachable)
-
-
       )
-
-
       (func $calc_fn (export "calc_fn") (param $x i32) (result i32)
-
-
         (block $b0
-
-
           (block $b1
-
-
             (br_table $b1 $b0 (local.get $x))
-
-
           )
-
-
           (return (i32.const 100))
-
-
         )
-
-
         (return (i32.const 200))
-
-
       )
-
-
       (func $call_ind (export "call_ind") (param $arg i32) (param $idx i32) (result i32)
-
-
         (call_indirect (type $sig_calc) (local.get $arg) (local.get $idx))
-
-
       )
-
-
       (elem (i32.const 0) $calc_fn $calc_fn)
-
-
     )
-
-
-    """
+"""
 
     wasm_bytes = wat_to_wasm(wat)
 
@@ -2071,27 +1954,13 @@ def test_wasm_20_21_drop_and_select():
     """WASM-20..21: drop and select parametric instructions."""
 
     wat = """
-
-
     (module
-
-
       (func $sel (export "sel") (param $cond i32) (param $val1 i32) (param $val2 i32) (result i32)
-
-
         (drop (local.get $cond))
-
-
         (select (local.get $val1) (local.get $val2) (local.get $cond))
-
-
       )
-
-
     )
-
-
-    """
+"""
 
     mod = parse(wat_to_wasm(wat))
 
@@ -2106,36 +1975,16 @@ def test_wasm_30_31_locals_and_globals():
     """WASM-30..31: local.get/set/tee and global.get/set."""
 
     wat = """
-
-
     (module
-
-
       (global $g (mut i32) (i32.const 42))
-
-
       (func $loc_glob (export "loc_glob") (param $p0 i32) (result i32)
-
-
         (local $l1 i32)
-
-
         (local.set $l1 (local.get $p0))
-
-
         (global.set $g (local.get $l1))
-
-
         (i32.add (global.get $g) (local.get $l1))
-
-
       )
-
-
     )
-
-
-    """
+"""
 
     mod = parse(wat_to_wasm(wat))
 
@@ -2150,48 +1999,20 @@ def test_wasm_40_to_46_memory_load_store_grow_and_data():
     """WASM-40..46 & WASM-60: Linear memory load, store, size, grow, bounds traps, and Data segments."""
 
     wat = """
-
-
     (module
-
-
       (memory 1 2)
-
-
       (data (i32.const 0) "WASM_INIT")
-
-
       (func $mem_ops (export "mem_ops") (result i32)
-
-
         (drop (i32.load (i32.const 0)))
-
-
         (i32.store (i32.const 16) (i32.const 0x12345678))
-
-
         (drop (memory.grow (i32.const 1)))
-
-
         (memory.size)
-
-
       )
-
-
       (func $trap_oob (export "trap_oob")
-
-
         (drop (i32.load (i32.const 0x1000000)))
-
-
       )
-
-
     )
-
-
-    """
+"""
 
     mod = parse(wat_to_wasm(wat))
 
@@ -2226,42 +2047,18 @@ def test_wasm_50_to_56_integer_arithmetic_and_bitwise():
     """WASM-50..56: 32-bit integer arithmetic, div-by-zero trap, popcnt, clz, rotl, rotr."""
 
     wat = """
-
-
     (module
-
-
       (func $div_s (export "div_s") (param $a i32) (param $b i32) (result i32)
-
-
         (i32.div_s (local.get $a) (local.get $b))
-
-
       )
-
-
       (func $bit_ops (export "bit_ops") (param $x i32) (result i32)
-
-
         (i32.xor
-
-
           (i32.add (i32.popcnt (local.get $x)) (i32.clz (local.get $x)))
-
-
           (i32.rotl (local.get $x) (i32.const 4))
-
-
         )
-
-
       )
-
-
     )
-
-
-    """
+"""
 
     mod = parse(wat_to_wasm(wat))
 
@@ -2290,9 +2087,7 @@ def test_wasm_50_to_56_integer_arithmetic_and_bitwise():
 
 # ===========================================================================
 
-
 # System Containers (CONT-01 .. CONT-10)
-
 
 # ===========================================================================
 
@@ -2586,9 +2381,7 @@ def test_cont_10_container_type_separation():
 
 # ===========================================================================
 
-
 # Cooperative Multitasking & Idle-Hook Integration (YIELD / IDLE / TIER)
-
 
 # ===========================================================================
 
@@ -2597,42 +2390,18 @@ def test_coop_01_wasm_coroutine_yields_on_quantum():
     """YIELD-01: Long-running WASM task yields every `yield_every` instructions, interleaving with other tasks."""
 
     wat = """
-
-
     (module
-
-
       (func $busy_loop (export "busy_loop") (param $x i32) (result i32)
-
-
         (block $b
-
-
           (loop $l
-
-
             (local.set $x (i32.add (local.get $x) (i32.const 1)))
-
-
             (br_if $l (i32.lt_s (local.get $x) (i32.const 100)))
-
-
           )
-
-
         )
-
-
         (local.get $x)
-
-
       )
-
-
     )
-
-
-    """
+"""
 
     mod = parse(wat_to_wasm(wat))
 
@@ -2974,9 +2743,7 @@ def test_tier_03_trace_chaining_and_interpreter_fallback():
 
 # ===========================================================================
 
-
 # Guest-Side WASI & Host-Call Execution (Interpreter & x64 JIT)
-
 
 # ===========================================================================
 
@@ -2985,27 +2752,13 @@ def test_guest_wasi_01_interpreter_fd_write():
     """GUEST-WASI-01: WASM guest invoking wasi_snapshot_preview1.fd_write in Interpreter outputs to host UART."""
 
     wat = """
-
-
     (module
-
-
       (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
-
-
       (func (export "main") (result i32)
-
-
         (call $fd_write (i32.const 1) (i32.const 0) (i32.const 1) (i32.const 32))
-
-
       )
-
-
     )
-
-
-    """
+"""
 
     mod = parse(wat_to_wasm(wat))
 
@@ -3048,33 +2801,15 @@ def test_guest_wasi_02_interpreter_clock_and_random():
     """GUEST-WASI-02: WASM guest invoking clock_time_get and random_get stores valid data in guest memory."""
 
     wat = """
-
-
     (module
-
-
       (import "wasi_snapshot_preview1" "clock_time_get" (func $clock (param i32 i32 i32) (result i32)))
-
-
       (import "wasi_snapshot_preview1" "random_get" (func $rand (param i32 i32) (result i32)))
-
-
       (func (export "main") (result i32)
-
-
         (drop (call $clock (i32.const 0) (i32.const 0) (i32.const 16)))
-
-
         (call $rand (i32.const 32) (i32.const 16))
-
-
       )
-
-
     )
-
-
-    """
+"""
 
     mod = parse(wat_to_wasm(wat))
 
@@ -3109,27 +2844,13 @@ def test_guest_wasi_03_interpreter_proc_exit():
     """GUEST-WASI-03: WASM guest invoking proc_exit(99) halts the host system with exit code."""
 
     wat = """
-
-
     (module
-
-
       (import "wasi_snapshot_preview1" "proc_exit" (func $exit (param i32)))
-
-
       (func (export "main")
-
-
         (call $exit (i32.const 99))
-
-
       )
-
-
     )
-
-
-    """
+"""
 
     mod = parse(wat_to_wasm(wat))
 
@@ -3528,18 +3249,14 @@ def test_wasm_loader_and_radix_binary_tree_view_indexes():
 
 # ===========================================================================
 
-
 # Test Runner
 
-
 # ===========================================================================
-
 
 ALL_TESTS = sorted(
     (v for k, v in globals().items() if k.startswith("test_") and callable(v)),
     key=lambda fn: fn.__code__.co_firstlineno,
 )
-
 
 if __name__ == "__main__":
     for test in ALL_TESTS:

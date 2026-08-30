@@ -121,11 +121,13 @@ class OwnershipState:
     RECEIVER_OWNS = "RECEIVER_OWNS"
     RECLAIMED_BY_DROP = "RECLAIMED_BY_DROP"
 
+
 class IPCMessage:
     def __init__(self, resource_id: str, payload: dict):
         self.resource_id = resource_id
         self.payload = payload
         self.ownership = OwnershipState.SENDER_OWNS
+
 
 class IPCRouter:
     def __init__(self):

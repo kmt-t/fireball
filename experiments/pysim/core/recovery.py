@@ -1,31 +1,15 @@
 """
-
 experiments/pysim/recovery.py
-
-
-
 {META_RecoveryStrategy} & {Errorcode_To_Strategy}
-
 Reference Implementation of the Fireball Recovery Engine without exceptions.
-
 Mirroring docs/components/tier1_interface/interface_wit.md §3.2,
-
 docs/components/tier1_core/os_coos.md §4.2, and
-
 docs/components/tier1_core/system_config.md §3.3.7.
-
-
-
 Recovery Strategy Classification:
-
   0. IGNORE: Harmless or transient notification, caller continues execution.
-
   1. RETRY: Transient contention/timeout. Re-execute after FB_CONF_RETRY_BACKOFF_MS (10ms), up to 3 times.
-
   2. RESTART: Module/task context corrupted or retry exhausted. Reset TCB/heap/context and restart.
-
   3. PANIC: Fatal safety violation (MPU fault, double free, RBAC violation). Halt system safely.
-
 """
 
 from __future__ import annotations
@@ -57,18 +41,15 @@ import sys
 
 from pathlib import Path
 
-
 import time
 
 from enum import IntEnum
 
 from typing import Any, Callable, Generic, TypeVar
 
-
 T = TypeVar("T")
 
 E = TypeVar("E")
-
 
 FB_CONF_RETRY_BACKOFF_MS = 10  # docs/components/tier1_core/system_config.md 3.3.7
 
@@ -202,20 +183,13 @@ class RecoveryManager:
         task_reset_fn: Callable[[], bool] | None = None,
         panic_fn: Callable[[str], None] | None = None,
     ) -> Result[T, Any]:
-        """Executes operation with full 4-tier recovery strategy without raising exceptions.
-
-
-
-        Workflow:
-
-          1. Initial attempts with RETRY (up to max_retries with backoff).
-
-          2. On retry exhaustion: escalate to RESTART.
-
-          3. RESTART: invoke task_reset_fn() to clean TCB/heap and retry once.
-
-          4. PANIC: invoke panic_fn() to safely halt kernel and return PANIC result.
-
+        """
+        Executes operation with full 4-tier recovery strategy without raising exceptions.
+                Workflow:
+                  1. Initial attempts with RETRY (up to max_retries with backoff).
+                  2. On retry exhaustion: escalate to RESTART.
+                  3. RESTART: invoke task_reset_fn() to clean TCB/heap and retry once.
+                  4. PANIC: invoke panic_fn() to safely halt kernel and return PANIC result.
         """
 
         # Tier 1: Initial execution and retry loop

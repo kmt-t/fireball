@@ -1,30 +1,10 @@
 """
-
-
 experiments/pysim/main.py
-
-
-
-
-
 Runs the pysim experiment end to end: spawns a handful of guest tasks on
-
-
 the cooperative scheduler, drives them to completion, and prints a report
-
-
 of what happened -- including the design gaps this build surfaced.
-
-
-
-
-
 Run with:  uv run --project ../.. python main.py     (from this directory)
-
-
        or: uv run --project . python experiments/pysim/main.py   (from repo root)
-
-
 """
 
 from __future__ import annotations
@@ -56,70 +36,49 @@ import sys
 
 from pathlib import Path
 
-
 import sys
-
 
 from pathlib import Path
 
-
 import sys
 
-
 from pathlib import Path
-
 
 import ctypes
 
-
 import os
-
 
 import struct
 
-
 import wasm_reader
-
 
 from exec_memory import ExecutableBuffer
 
-
 from hal import ShmTrap
-
 
 from interpreter import Interpreter
 
-
 from logger import LogLevel
-
 
 from recovery import RecoveryManager, RecoveryStrategy, Result
 
-
 from runtime_engine import BasicBlock, CardState, IntegratedHybridEngine, WASMContext
-
 
 from scheduler import Scheduler
 
-
 from system import FbSyscallId, ShmSlice, System, WasiErrno
-
 
 from wasi import WasiHostContext
 
-
 from wasm_module import I32
 
-
 from x64_jit import TraceCompiler
-
 
 findings: list[str] = []
 
 
 def task_structured_logger(sysv: System):
     """A guest that only ever needs pre-registered, numeric-argument events:
-
 
     exactly what {DictionaryBasedIPC} can carry."""
 
@@ -137,9 +96,7 @@ def task_structured_logger(sysv: System):
 def task_console_writer(sysv: System):
     """A guest running wasi:cli/stdout's `print` with a string built at
 
-
     runtime -- a value the build-time dictionary could never have known
-
 
     about. Proves {WASI_ConsoleRawOutput} actually carries it."""
 
@@ -155,9 +112,7 @@ def task_console_writer(sysv: System):
 def task_bus_owner(sysv: System, task_id: int):
     """Acquires a real SHM buffer, does a zero-copy bus transfer within its
 
-
     own ownership, and then tries two things that must fail: handing a
-
 
     bounds-violating slice to itself, and touching another task's handle."""
 
@@ -197,9 +152,7 @@ def task_bus_owner(sysv: System, task_id: int):
 def task_hostile_neighbor(sysv: System, my_task_id: int, other_handle):
     """A different task trying to use someone else's shm-id -- the direct
 
-
     experiment for "can a guest hand HAL something that isn't really a
-
 
     shared-memory handle it owns?" The answer must be no."""
 
@@ -219,7 +172,6 @@ def task_hostile_neighbor(sysv: System, my_task_id: int, other_handle):
 
 def task_retry_then_succeed(sysv: System):
     """RETRY strategy: fails twice, then succeeds on the 3rd attempt --
-
 
     managed cleanly by RecoveryManager without exceptions."""
 
@@ -252,9 +204,7 @@ def task_retry_then_succeed(sysv: System):
 def task_retry_exhausted(sysv: System):
     """An operation that never succeeds: proves the concept's answer to the
 
-
     "what happens after 3 failures" gap (escalate to RESTART -> PANIC)
-
 
     is handled by RecoveryManager returning a PANIC result without crashing."""
 
@@ -288,27 +238,14 @@ def task_retry_exhausted(sysv: System):
 
 
 def run_wasm_demo(sysv: System) -> None:
-    """Demonstrates true Tiered Tracing JIT execution:
-
-
-    1. Loop begins executing in Tier 2 Interpreter with 2-bit card tracking.
-
-
-    2. Hot basic-blocks are detected and queued to LIFO compile_queue upon yield.
-
-
-    3. COOS scheduler idle_hook compiles queued traces into Active JIT cache and chains them.
-
-
-    4. Execution seamlessly transitions from Interpreter into native JIT traces,
-
-
-       falling back cleanly to Interpreter when traces end.
-
-
-    5. WASM guest invokes standard WASI Preview 1 host calls (fd_write) and fireball_call IPC.
-
-
+    """
+    Demonstrates true Tiered Tracing JIT execution:
+        1. Loop begins executing in Tier 2 Interpreter with 2-bit card tracking.
+        2. Hot basic-blocks are detected and queued to LIFO compile_queue upon yield.
+        3. COOS scheduler idle_hook compiles queued traces into Active JIT cache and chains them.
+        4. Execution seamlessly transitions from Interpreter into native JIT traces,
+           falling back cleanly to Interpreter when traces end.
+        5. WASM guest invokes standard WASI Preview 1 host calls (fd_write) and fireball_call IPC.
     """
 
     print("\n== wasmjit: Tiered Tracing JIT & Interpreter Hybrid Execution ==")

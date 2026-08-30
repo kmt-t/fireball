@@ -1,29 +1,14 @@
 """
-
 experiments/pysim/wasm_module.py
-
-
-
 In-memory representation of a parsed WASM module: the MVP binary format
-
 needed to run real, non-trivial exported functions (arithmetic, locals,
-
 globals, structured control flow, direct and indirect calls, linear
-
 memory, and imported host functions -- Fireball's `fireball_call` syscall
-
 bridge in miniature). No multi-value returns.
-
-
-
 Function index space (per the WASM spec): imported functions occupy
-
 indices [0, len(imports)), and locally-defined functions occupy
-
 [len(imports), len(imports)+len(functions)). `call` targets, exports, and
-
 the Code section's implicit numbering are all in this unified space.
-
 """
 
 from __future__ import annotations
@@ -55,9 +40,7 @@ import sys
 
 from pathlib import Path
 
-
 from dataclasses import dataclass, field
-
 
 # WASM value types we support (MVP i32 only for now; i64/f32/f64 are parsed
 
@@ -70,7 +53,6 @@ I64 = "i64"
 F32 = "f32"
 
 F64 = "f64"
-
 
 VALTYPE_BYTES = {
     0x7F: I32,

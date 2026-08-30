@@ -1,27 +1,14 @@
 """
-
 experiments/pysim/vmmio.py
-
-
-
 vMMIO FlatMap Page Table & Direct-Mapped TLB simulation.
-
 - RAM Bypass Flag (Bit 31): O(1) linear-RAM fast path, no table lookup
-
 - FlatMap PTE storage: maps 20-bit VPN -> PTE
-
 - Direct-mapped Software TLB[16] keyed by Folding XOR Hash over 20-bit VPN:
-
   diffuses all 20 bits (including Function Code) into a 4-bit slot index (0..15)
-
 - Tier 1 linear RAM: Bit31 bypass PLUS a size-comparison bound check (no mask, no
-
   power-of-two constraint on guest_ram_size) — traps to the interpreter on OOB
-
 - PTE permission check (VALID/READ/WRITE/EXEC + Owner ID) on every access,
-
   including on TLB hit — the TLB only skips the table lookup, never the check
-
 """
 
 from __future__ import annotations
@@ -53,7 +40,6 @@ import sys
 
 from pathlib import Path
 
-
 from typing import Callable
 
 
@@ -76,7 +62,6 @@ FC_STATIC_DEVICE = 0xC  # 0xC000_0000: SYSCTL / IPCR / VDMA (Tier 2, syscall dis
 FC_SHM = 0xE  # 0xE000_0000: Shared Memory (Tier 3, owner-checked)
 
 FC_PASSTHROUGH = 0xF  # 0xF000_0000: Physical passthrough (Tier 3)
-
 
 FB_TASK_ID_INVALID = 0x00
 

@@ -1,51 +1,18 @@
 """
-
-
 experiments/pysim/test_gdb_remote_connection.py
-
-
-
-
-
 End-to-end integration test for GDB Remote Serial Protocol (RSP) over real TCP socket.
-
-
 Simulates a real GDB client session connecting to Fireball GDBServer:
-
-
 1. TCP Socket connect & initial handshake
-
-
 2. Query halt reason ('?')
-
-
 3. Read virtual registers ('g')
-
-
 4. Read memory ('m')
-
-
 5. Insert breakpoint ('Z0')
-
-
 6. Continue execution ('c') & hit breakpoint
-
-
 7. Write virtual registers ('G')
-
-
 8. Write memory ('M') & verify JIT cache flush
-
-
 9. Single-step execution ('s')
-
-
 10. Remove breakpoint ('z0')
-
-
 11. Continue to program termination ('W00')
-
-
 """
 
 from __future__ import annotations
@@ -77,33 +44,23 @@ import sys
 
 from pathlib import Path
 
-
 import sys
-
 
 from pathlib import Path
 
-
 import sys
 
-
 from pathlib import Path
-
 
 import socket
 
-
 import time
-
 
 from debugger import DebuggerManager, GDBRspProtocol
 
-
 from gdb_server import GDBServer
 
-
 from runtime_engine import BasicBlock, IntegratedHybridEngine, WASMContext
-
 
 from x64_jit import TraceCompiler
 

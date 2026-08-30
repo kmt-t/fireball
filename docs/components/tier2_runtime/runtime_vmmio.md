@@ -123,6 +123,7 @@ class VmmioAddress:
         # 20-bit Virtual Page Number (VPN) for TLB and FlatMap Key
         return self.raw >> 12
 
+
 def lookup_tlb(addr: VmmioAddress) -> int:
     vpn = addr.vpn()
     # 20-bit VPN の Folding XOR Hash（全ビットを4ビット幅に拡散）
@@ -139,6 +140,7 @@ def lookup_tlb(addr: VmmioAddress) -> int:
     # TLB をリフィル
     vmmio_tlb_cache[tlb_idx] = {"vpn": vpn, "pte": pte}
     return pte
+
 
 def access_vmmio(addr: VmmioAddress, is_write: bool):
     # 1. リニアアドレスフィルタ

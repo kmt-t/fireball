@@ -1,31 +1,16 @@
 """
-
 experiments/pysim/system_containers.py
-
-
-
 Fireball System Container Vocabulary (Zero-allocation static container vocabulary).
-
 Implements the 4 fundamental non-owning views and static-capacity containers defined in
-
 docs/components/tier1_core/system_containers.md:
-
   1. FlatMapView: sorted keys + values, O(log N) binary search with narrowing/slicing
-
   2. FlatSetView: sorted keys only, O(log N) membership query (no value span)
-
   3. RadixBinaryTreeView: O(1) Radix Table + bounded local binary search
-
   4. BitView: dense sub-byte state table (1, 2, 4 bits), O(1) index-addressed, non-destructive write
-
   5. StaticFlatMap: fixed-capacity sorted key-value store with zero dynamic reallocation
-
   6. StaticFlatSet: fixed-capacity sorted key set
-
   7. RingBuffer: fixed-capacity ring buffer with overwrite / fifo semantics
-
   8. StaticVector: fixed-capacity sequential array
-
 """
 
 from __future__ import annotations
@@ -57,11 +42,9 @@ import sys
 
 from pathlib import Path
 
-
 import bisect
 
 from typing import Any, Callable, Generic, Iterator, Sequence, TypeVar
-
 
 KeyT = TypeVar("KeyT")
 
@@ -69,9 +52,7 @@ ValT = TypeVar("ValT")
 
 T = TypeVar("T")
 
-
 ALLOWED_BITS = (1, 2, 4)
-
 
 # ---------------------------------------------------------------------------
 
@@ -82,8 +63,6 @@ ALLOWED_BITS = (1, 2, 4)
 
 class BitView:
     """bit_view<Bits>: a dense, index-addressed table of sub-byte states.
-
-
 
     Deliberately offers NO search: index IS the query (e.g. Card Marking table).
 
@@ -313,14 +292,11 @@ def bswap32(v: int) -> int:
 
 
 class RadixBinaryTreeView(Generic[ValT]):
-    """fireball::radix_binary_tree_view<Key, Value, RadixShift, KeyProjection>:
-
-    Combines an O(1) Radix Table (coarse prefix lookup) with bounded local
-
-    binary search on a sorted key-value array. Supports optional KeyProjection
-
-    (such as bswap32) to project high-entropy lower bytes to radix prefix.
-
+    """
+    fireball::radix_binary_tree_view<Key, Value, RadixShift, KeyProjection>:
+        Combines an O(1) Radix Table (coarse prefix lookup) with bounded local
+        binary search on a sorted key-value array. Supports optional KeyProjection
+        (such as bswap32) to project high-entropy lower bytes to radix prefix.
     """
 
     __slots__ = ("map_view", "radix_table", "radix_shift", "key_transform")
@@ -358,14 +334,11 @@ def lookup_jit_entry(
     card_shift: int = 8,
     group_shift: int = 6,
 ) -> ValT | None:
-    """JIT entry lookup:
-
-    1. O(1) card marking pre-filter: verify card state == 3 (COMPILED).
-
-    2. O(1) Radix Table prefix lookup: slice to group bounds [first, last].
-
-    3. Bounded local binary search on narrowed FlatMapView.
-
+    """
+    JIT entry lookup:
+        1. O(1) card marking pre-filter: verify card state == 3 (COMPILED).
+        2. O(1) Radix Table prefix lookup: slice to group bounds [first, last].
+        3. Bounded local binary search on narrowed FlatMapView.
     """
 
     card_idx = pc >> card_shift

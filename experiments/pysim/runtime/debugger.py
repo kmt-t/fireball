@@ -1,29 +1,14 @@
 """
-
 experiments/pysim/debugger.py
-
-
-
 Debugger Manager & GDB RSP Protocol Engine for Fireball.
-
 Conforms strictly to docs/components/tier2_runtime/debug_manager.md
-
 and docs/specs/gdb_rsp_protocol.md.
-
-
-
 Implements:
-
 1. GDB RSP Minimal Command Set (?, g, G, m, M, Z0, z0, s, c) ({RSPMinimalSet})
-
 2. Virtual Register Mapping (0:pc, 1:sp, 2:fp, 3:tos, 4..19:local0..15)
-
 3. Breakpoint Management via sorted FlatSetView semantics ({FlatViewNarrowing})
-
 4. JIT Cache Invalidation on Memory Write ({Debugger_Jit_Flush})
-
 5. Integrated Profiler (PC sampling frequency & memory assertions) ({Debug_Integrated})
-
 """
 
 from __future__ import annotations
@@ -55,13 +40,11 @@ import sys
 
 from pathlib import Path
 
-
 import bisect
 
 import struct
 
 from typing import Any, Callable
-
 
 from runtime_engine import BasicBlock, IntegratedHybridEngine, WASMContext
 

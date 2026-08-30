@@ -193,6 +193,7 @@ import bisect
 
 ALLOWED_BITS = (1, 2, 4)
 
+
 class BitView:
     """bit_view<Bits>: a dense, index-addressed table of sub-byte states.
 
@@ -236,6 +237,7 @@ class BitView:
             self.storage, self.bits, self.origin + first * self.bits, last - first
         )
 
+
 class _SortedWindow:
     """Shared narrowing behaviour of the two sparse views."""
 
@@ -260,6 +262,7 @@ class _SortedWindow:
         i = bisect.bisect_left(self.keys, key, self.first, self.last)
         return i if i < self.last and self.keys[i] == key else None
 
+
 class FlatMapView(_SortedWindow):
     """flat_map_view<Key, Value>: sorted keys, narrow-then-search, returns a value."""
 
@@ -279,6 +282,7 @@ class FlatMapView(_SortedWindow):
         i = self._locate(key)
         return None if i is None else self.values[i]
 
+
 class FlatSetView(_SortedWindow):
     """flat_set_view<Key>: sorted keys only, answers membership.
 
@@ -296,6 +300,7 @@ class FlatSetView(_SortedWindow):
     def contains(self, key):
         return self._locate(key) is not None
 
+
 def bswap32(v: int) -> int:
     """32-bit byte-order reversal for maximizing Radix table distribution on UnifiedPC."""
     return (
@@ -304,6 +309,7 @@ def bswap32(v: int) -> int:
         | ((v >> 8) & 0xFF00)
         | ((v >> 24) & 0xFF)
     )
+
 
 class RadixBinaryTreeView:
     """fireball::radix_binary_tree_view<Key, Value, RadixShift, KeyProjection>:
@@ -336,7 +342,9 @@ class RadixBinaryTreeView:
             return None
         return self.map_view.slice(first, last).find(key)
 
+
 # --- 本プロジェクトでの用途 ---
+
 
 def lookup_jit_entry(
     view: FlatMapView | RadixBinaryTreeView,
@@ -362,6 +370,7 @@ def lookup_jit_entry(
         return None
     return view.slice(*bounds).find(pc)
 
+
 def card_marking_table(storage: bytearray, card_count: int) -> BitView:
     """The 2-bit per-card state table: 4 cards per byte instead of one.
 
@@ -369,6 +378,7 @@ def card_marking_table(storage: bytearray, card_count: int) -> BitView:
     by the index, never searched for.
     """
     return BitView(storage, bits=2, origin=0, count=card_count)
+
 
 def breakpoint_set(sorted_pcs) -> FlatSetView:
     """Debugger breakpoints: the interpreter asks 'is this PC a breakpoint?',

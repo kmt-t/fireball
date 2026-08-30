@@ -1,60 +1,20 @@
 """
-
-
 experiments/pysim/runtime_engine.py
-
-
-
-
-
 Integrated WASM Tiered Tracing Runtime Engine for pysim.
-
-
 Implements the 2-bit card-marking hotspot profiler, history ring,
-
-
 3-bank rotating JIT code cache, and dynamic tiering execution loop
-
-
 mirroring docs/components/tier2_runtime/runtime_engine.md and
-
-
 docs/components/tier3_jit/jit_compiler.md.
-
-
-
-
-
 Execution model:
-
-
   Interpreter execution:
-
-
     -> at basic-block head PCs: record card index into HistoryRing
-
-
     -> 2-bit card state: UNEXECUTED (00) -> EXECUTED (01) -> HOT (10) -> COMPILED (11)
-
-
     -> on yield/idle: drain HistoryRing, promote HOT cards, push trace heads to LIFO compile queue
-
-
     -> async/batch JIT compilation into Active cache bank
-
-
   JIT trace execution:
-
-
     -> lookup in 3-bank cache (Active, Warm, Oldest)
-
-
     -> Oldest bank hit triggers immediate Promotion to Active bank
-
-
     -> trace chaining with inbound-source unlinking on bank eviction
-
-
 """
 
 from __future__ import annotations
@@ -86,12 +46,9 @@ import sys
 
 from pathlib import Path
 
-
 import ctypes
 
-
 from typing import Any, Callable
-
 
 from system_containers import BitView, RingBuffer
 
@@ -224,27 +181,14 @@ class HistoryRing:
 
 
 class JITTraceHeader:
-    """16-byte fixed physical memory layout:
-
-
-    +0x00 head_wasm_pc(u32)
-
-
-    +0x04 trace_byte_size(u16)
-
-
-    +0x06 flags(u8) [0x01: PROMOTED, 0x02: LOOP_HEADER]
-
-
-    +0x07 variant_id(u8)
-
-
-    +0x08 chain_next_pc(u32)
-
-
-    +0x0C chain_target_addr(u32)
-
-
+    """
+    16-byte fixed physical memory layout:
+        +0x00 head_wasm_pc(u32)
+        +0x04 trace_byte_size(u16)
+        +0x06 flags(u8) [0x01: PROMOTED, 0x02: LOOP_HEADER]
+        +0x07 variant_id(u8)
+        +0x08 chain_next_pc(u32)
+        +0x0C chain_target_addr(u32)
     """
 
     FLAG_PROMOTED = 0x01
@@ -344,7 +288,6 @@ class JITTrace:
         local_base: Any = 0,
     ) -> int:
         """Invokes the native JIT trace directly via ctypes CPS 4-argument calling convention:
-
 
         (uint32_t ip, void* stack_bot, void* env, void* local_base)"""
 
@@ -558,7 +501,6 @@ class JITMultiBufferCache:
     def rotate(self) -> list[int]:
         """Rotates Active -> Warm -> Oldest -> Active and purges the old Oldest bank.
 
-
         Performs O(k) bounded unlinking on purged inbound sources."""
 
         new_active = self.oldest_idx
@@ -705,7 +647,6 @@ class RuntimeEngine:
     def idle_hook(self, budget: int = 4) -> int:
         """Drains the LIFO compile queue during COOS idle_hook. {JIT_ReverseCompilationOrder}
 
-
         Compiling in reverse order increases immediate chaining probability."""
 
         compiled_count = 0
@@ -741,7 +682,6 @@ class RuntimeEngine:
         self, interp: Any, func_index: int, args: list[int], yield_every: int = 64
     ):
         """Runs a WASM function as a cooperative coroutine on COOS.
-
 
         Yields every `yield_every` instructions, draining history ring to compile queue on each yield."""
 
@@ -947,7 +887,6 @@ class WASMTraceCompiler:
 
 class IntegratedHybridEngine:
     """Full Tiered Runtime Engine: Interpreter execution -> 2-bit card tracking ->
-
 
     Cooperative Yield -> Idle-Hook Batch Compilation -> Trace Chaining -> JIT execution."""
 
@@ -1190,7 +1129,6 @@ class IntegratedHybridEngine:
 
     def run_step(self, pc: int, ctx: WASMContext) -> int | None:
         """Executes a single basic block by directly calling the active handler table dispatcher.
-
 
         Zero overhead when debugger is detached ({DebuggerLabelTableSwitch})."""
 

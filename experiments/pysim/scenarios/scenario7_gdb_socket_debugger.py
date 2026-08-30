@@ -26,7 +26,6 @@ for _p in [
 import sys
 from pathlib import Path
 
-
 """Integration Scenario 7: GDB Remote Serial Protocol (RSP) Socket Debugger.
 
 Tests:
@@ -38,7 +37,6 @@ Tests:
 - JIT cache invalidation on debugger memory write ({Debugger_Jit_Flush})
 - Single-stepping ('s') and continue-to-exit ('c', 'W00')
 """
-
 
 import socket
 import time

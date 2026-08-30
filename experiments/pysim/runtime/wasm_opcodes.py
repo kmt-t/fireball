@@ -1,15 +1,8 @@
 """
-
 experiments/pysim/wasm_opcodes.py
-
-
-
 The WASM MVP opcode subset this experiment's interpreter and JIT both
-
 compile against. Kept as one shared table so the two engines can never
-
 silently disagree about what a byte means.
-
 """
 
 import sys
@@ -38,7 +31,6 @@ for _p in [
 import sys
 
 from pathlib import Path
-
 
 UNREACHABLE = 0x00
 
@@ -70,7 +62,6 @@ DROP = 0x1A
 
 SELECT = 0x1B
 
-
 LOCAL_GET = 0x20
 
 LOCAL_SET = 0x21
@@ -80,7 +71,6 @@ LOCAL_TEE = 0x22
 GLOBAL_GET = 0x23
 
 GLOBAL_SET = 0x24
-
 
 I32_LOAD = 0x28
 
@@ -102,9 +92,7 @@ MEMORY_SIZE = 0x3F
 
 MEMORY_GROW = 0x40
 
-
 I32_CONST = 0x41
-
 
 I32_EQZ = 0x45
 
@@ -128,13 +116,11 @@ I32_GE_S = 0x4E
 
 I32_GE_U = 0x4F
 
-
 I32_CLZ = 0x67
 
 I32_CTZ = 0x68
 
 I32_POPCNT = 0x69
-
 
 I32_ADD = 0x6A
 
@@ -165,7 +151,6 @@ I32_SHR_U = 0x76
 I32_ROTL = 0x77
 
 I32_ROTR = 0x78
-
 
 # blocktype byte used by block/loop/if when there is no result value (the
 

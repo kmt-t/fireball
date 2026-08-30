@@ -1,15 +1,8 @@
 """
-
 experiments/pysim/wasi.py
-
-
-
 WASI Preview 1 and Fireball Host Interface Bridge for Guest WASM Execution.
-
 Supports both Interpreter and JIT (ctypes native trampolines).
-
 Implements docs/components/tier1_core/system_syscall.md §5.7 and interface_wit.md §5.5-5.6.
-
 """
 
 from __future__ import annotations
@@ -41,11 +34,9 @@ import sys
 
 from pathlib import Path
 
-
 import ctypes
 
 from typing import Any, Callable
-
 
 from loader import fnv1a_32
 

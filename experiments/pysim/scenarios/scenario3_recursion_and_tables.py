@@ -24,7 +24,6 @@ for _p in [
 import sys
 from pathlib import Path
 
-
 """Integration Scenario 3: Tier 2 Interpreter + Recursion & Indirect Table Dispatch.
 
 Tests:

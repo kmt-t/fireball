@@ -25,7 +25,6 @@ tracing JIT: there is no function/method-level unit anywhere in the design.
 
 from typing import Any, Callable
 
-
 # ==============================================================================
 # 1. Hardware protection & traps
 # ==============================================================================
@@ -389,11 +388,11 @@ class JITMultiBufferCache:
             self.on_evict(purged)  # let the bitmap mark the cards re-compilable
 
     def _resolve_bank_inbound(self, bank: JITCacheBank):
-        """Resolves inbound chains pointing to `bank` right before `bank` is purged.
-
-        If a target was promoted to Active (or still alive elsewhere), re-chains
-        the source to the promoted target without dropping to interpreter fallback.
-        Only if the target is completely evicted is the source unlinked.
+        """
+        Resolves inbound chains pointing to `bank` right before `bank` is purged.
+                If a target was promoted to Active (or still alive elsewhere), re-chains
+                the source to the promoted target without dropping to interpreter fallback.
+                Only if the target is completely evicted is the source unlinked.
         """
         for src_pc in list(bank.inbound_sources):
             src_trace = self.find_trace(src_pc)
@@ -469,11 +468,11 @@ class CopyPatchCompiler:
         }
 
     def compile_trace(self, head_pc: int, block: "BasicBlock") -> JITTrace:
-        """Emits one straight-line trace starting at `block.head_pc`.
-
-        Returns a JITTrace whose native_fn REPLAYS THE EMITTED NATIVE LISTING,
-        not the WASM operand list — so a stencil bug shows up as a wrong result
-        rather than being masked by re-interpreting the source.
+        """
+        Emits one straight-line trace starting at `block.head_pc`.
+                Returns a JITTrace whose native_fn REPLAYS THE EMITTED NATIVE LISTING,
+                not the WASM operand list — so a stencil bug shows up as a wrong result
+                rather than being masked by re-interpreting the source.
         """
         listing: list[str] = []
         for op, arg in block.ops:
@@ -498,11 +497,11 @@ class CopyPatchCompiler:
 
 
 def make_native_executor(listing: list[str]) -> Callable:
-    """Simulates the CPU executing the emitted instruction listing.
-
-    Deliberately a machine over the NATIVE listing (R3/R4/R5/R12/stack), so this is
-    a genuinely different execution path from the interpreter. If a stencil is
-    wrong, the result diverges.
+    """
+    Simulates the CPU executing the emitted instruction listing.
+        Deliberately a machine over the NATIVE listing (R3/R4/R5/R12/stack), so this is
+        a genuinely different execution path from the interpreter. If a stencil is
+        wrong, the result diverges.
     """
 
     def run(ctx: "WASMContext") -> str:
@@ -596,11 +595,11 @@ class WASMContext:
 
 
 class BasicBlock:
-    """Straight-line WASM code starting at `head_pc`.
-
-    `next_pc` is the fallthrough / backward-branch target head PC, or None to
-    end execution. No branches occur inside `ops`, which is exactly why only
-    `head_pc` is recorded in the history ring.
+    """
+    Straight-line WASM code starting at `head_pc`.
+        `next_pc` is the fallthrough / backward-branch target head PC, or None to
+        end execution. No branches occur inside `ops`, which is exactly why only
+        `head_pc` is recorded in the history ring.
     """
 
     def __init__(

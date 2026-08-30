@@ -1,31 +1,15 @@
 """
-
 experiments/pysim/logger.py
-
-
-
 Two independently-addressable output paths sharing one physical transport,
-
 per docs/components/tier1_core/system_logging.md and the interface_wit.md
-
 5.5 fix added this session:
-
-
-
 - Logger: {DictionaryBasedIPC} structured logging. Can only ever emit a
-
   message whose *format string* was registered before this process started.
-
   There is no code path here that accepts an arbitrary runtime string --
-
   log_event()'s signature has no str parameter at all.
-
 - ConsoleOutput: {WASI_ConsoleRawOutput}. Backs wasi:cli/stdout/stderr and
-
   carries whatever bytes the guest computed at runtime, bypassing the
-
   dictionary and the ring buffer entirely.
-
 """
 
 from __future__ import annotations
@@ -57,16 +41,13 @@ import sys
 
 from pathlib import Path
 
-
 import re
 
 from dataclasses import dataclass
 
 from enum import IntEnum
 
-
 from hal import UartTransport
-
 
 # Matches a printf-style numeric conversion (%d, %08X, %u, ...) but not a
 
@@ -90,7 +71,6 @@ class LogLevel(IntEnum):
 
 
 _DISALLOWED_SPECIFIERS = ("%s", "%p", "%c")
-
 
 from system_containers import FlatMapView, StaticFlatMap
 
@@ -120,26 +100,17 @@ class LogDictionary:
         return self._map.view()
 
     def format(self, offset: int, args: tuple[int, int, int, int]) -> str:
-        """FINDING: system_logging.md 4.2 says a format string may reference
-
-        "最大4個" (up to 4) u32 args -- i.e. using fewer than 4 is normal and
-
-        expected (most messages need 1-2). A real C `vsnprintf` silently
-
-        ignores unused variadic arguments, but Python's `%` operator raises
-
-        TypeError if the tuple is longer than the specifier count. A naive
-
-        port of this component would crash on every log_event() call whose
-
-        format string uses fewer than 4 specifiers -- i.e. almost all of
-
-        them. This slices `args` down to the specifier count actually
-
-        present so behavior matches C's variadic semantics instead of
-
-        Python's stricter one.
-
+        """
+        FINDING: system_logging.md 4.2 says a format string may reference
+                "最大4個" (up to 4) u32 args -- i.e. using fewer than 4 is normal and
+                expected (most messages need 1-2). A real C `vsnprintf` silently
+                ignores unused variadic arguments, but Python's `%` operator raises
+                TypeError if the tuple is longer than the specifier count. A naive
+                port of this component would crash on every log_event() call whose
+                format string uses fewer than 4 specifiers -- i.e. almost all of
+                them. This slices `args` down to the specifier count actually
+                present so behavior matches C's variadic semantics instead of
+                Python's stricter one.
         """
 
         fmt = self._map.find(offset)

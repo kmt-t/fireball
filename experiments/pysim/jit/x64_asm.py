@@ -1,31 +1,15 @@
 """
-
 experiments/pysim/x64_asm.py
-
-
-
 Generic, register-name-driven x64 encoders for the small set of
-
 instructions the JIT's calling-convention glue code needs (as opposed to
-
 x64_stencils.py's fixed, WASM-opcode-keyed Copy-and-Patch templates). Used
-
 for WASM-to-WASM `call` argument marshalling and for the `fireball_call`-
-
 style host-call bridge, both of which need a variable number of registers
-
 depending on the callee's arity -- something a fixed stencil table can't
-
 parametrize, but a name -> (REX-needs-extension, low-3-bits) table can.
-
-
-
 Every helper here is covered by test_x64_asm.py, which executes the
-
 encoded bytes as real machine code -- the same "run it, don't just
-
 re-derive it" discipline that caught four bugs in x64_stencils.py.
-
 """
 
 from __future__ import annotations
@@ -56,7 +40,6 @@ for _p in [
 import sys
 
 from pathlib import Path
-
 
 # name -> (needs_rex_extension_bit, low_3_bits_of_the_register_number)
 
@@ -193,13 +176,12 @@ _SCALE_BITS = {1: 0, 2: 1, 4: 2, 8: 3}
 
 
 def mov_load_scaled(dst: str, base: str, index: str, scale: int) -> bytes:
-    """mov dst, [base + index*scale] (64-bit load). `index` may not be
-
-    "rsp" (that encoding means "no index" instead); `base` being "rbp" or
-
-    "r13" costs one extra (zero) displacement byte, same SIB quirk as the
-
-    stack-pointer-relative helpers above."""
+    """
+    mov dst, [base + index*scale] (64-bit load). `index` may not be
+        "rsp" (that encoding means "no index" instead); `base` being "rbp" or
+        "r13" costs one extra (zero) displacement byte, same SIB quirk as the
+        stack-pointer-relative helpers above.
+    """
 
     assert index != "rsp", (
         'rsp cannot be a SIB index register (that encoding means "no index")'

@@ -27,45 +27,24 @@ import sys
 
 from pathlib import Path
 
-
 import sys
-
 
 from pathlib import Path
 
-
 """
-
-
 experiments/pysim/test_debugger.py
-
-
-
-
-
 Comprehensive tests for Debug Manager & GDB RSP Protocol Engine (debugger.py).
-
-
 Strictly implements and verifies all test cases from:
-
-
 docs/components/tier2_runtime/tests/debug_manager_test_spec.md (DBG-01 ~ DBG-15).
-
-
 """
-
 
 import sys
 
-
 from pathlib import Path
-
 
 from debugger import DebuggerManager, GDBRspProtocol
 
-
 from runtime_engine import BasicBlock, IntegratedHybridEngine, WASMContext
-
 
 from x64_jit import TraceCompiler
 
@@ -378,7 +357,6 @@ ALL_TESTS = sorted(
     (v for k, v in globals().items() if k.startswith("test_") and callable(v)),
     key=lambda fn: fn.__code__.co_firstlineno,
 )
-
 
 if __name__ == "__main__":
     for test in ALL_TESTS:

@@ -159,6 +159,7 @@ WASM オプコードごとのスタック遷移およびハンドラ実装マト
 class WASMTrap(Exception):
     pass
 
+
 class WASMInterpreter:
     MAX_STACK_DEPTH = 64
 

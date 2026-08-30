@@ -1,15 +1,8 @@
 """
-
 experiments/pysim/gdb_server.py
-
-
-
 GDB Remote Serial Protocol (RSP) TCP Server for Fireball Hypervisor.
-
 Provides real TCP socket listening, packet frame encoding/decoding,
-
 ACK/NACK negotiation, and execution dispatch to GDBRspProtocol.
-
 """
 
 from __future__ import annotations
@@ -41,7 +34,6 @@ import sys
 
 from pathlib import Path
 
-
 import socket
 
 import threading
@@ -49,7 +41,6 @@ import threading
 import time
 
 from typing import Any
-
 
 from debugger import DebuggerManager, GDBRspProtocol
 

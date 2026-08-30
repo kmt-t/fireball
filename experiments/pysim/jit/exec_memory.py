@@ -1,15 +1,8 @@
 """
-
 experiments/pysim/exec_memory.py
-
-
-
 Cross-platform executable memory with strict W^X (Write XOR Execute) lifecycle protection.
-
 Supports Windows (VirtualAlloc/VirtualProtect/VirtualFree) and Linux/POSIX (mmap/mprotect/munmap).
-
 Conforms strictly to docs/components/tier3_platform/platform_memory.md §9.2 and {LowLatencyJIT}.
-
 """
 
 from __future__ import annotations
@@ -41,18 +34,15 @@ import sys
 
 from pathlib import Path
 
-
 import ctypes
 
 import os
 
 import sys
 
-
 # Platform detection
 
 IS_WINDOWS = sys.platform == "win32"
-
 
 if IS_WINDOWS:
     import ctypes.wintypes as wt
@@ -129,18 +119,12 @@ else:
 
 
 class ExecutableBuffer:
-    """Owns executable memory with strict W^X (Write XOR Execute) lifecycle protection.
-
-
-
-    Adheres to platform_memory.md §9.2 and {LowLatencyJIT}:
-
-    - begin_jit_patch(): flips protection from RO+X to RW+XN (PAGE_READWRITE / PROT_READ|PROT_WRITE)
-
-    - commit_jit_patch(): flips protection from RW+XN back to RO+X (PAGE_EXECUTE_READ / PROT_READ|PROT_EXEC)
-
-    - assert_no_rwx(): verifies no state ever permits both write and execution.
-
+    """
+    Owns executable memory with strict W^X (Write XOR Execute) lifecycle protection.
+        Adheres to platform_memory.md §9.2 and {LowLatencyJIT}:
+        - begin_jit_patch(): flips protection from RO+X to RW+XN (PAGE_READWRITE / PROT_READ|PROT_WRITE)
+        - commit_jit_patch(): flips protection from RW+XN back to RO+X (PAGE_EXECUTE_READ / PROT_READ|PROT_EXEC)
+        - assert_no_rwx(): verifies no state ever permits both write and execution.
     """
 
     def __init__(self, size: int):

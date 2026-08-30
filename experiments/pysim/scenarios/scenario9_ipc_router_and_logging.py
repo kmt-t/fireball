@@ -26,7 +26,6 @@ for _p in [
 import sys
 from pathlib import Path
 
-
 """Integration Scenario 9: Tier 1 Interface IPC Router & Structured System Logging.
 
 Tests:
@@ -35,7 +34,6 @@ Tests:
 - Dictionary-based structured logging (LogDictionary, LogLevel filtering, UART transport emission)
 - Safety check rejecting unsafe format specifiers (%s/%p) at dictionary registration
 """
-
 
 from hal import UartTransport
 from ipc_router import IPCMessage, IPCRouter, OwnershipState

@@ -40,7 +40,6 @@ from wasi import WasiHostContext
 from debugger import DebuggerManager
 from system_containers import BitView, FlatMapView, RadixBinaryTreeView, RingBuffer
 
-
 PAIRWISE_CASES = [
     # (ID, engine, cache, mem_width, storage, host_call, scheduler, debugger)
     ("PAIR-01", "hybrid", "cold", "8bit", "ram", "wasi_console", "noint", "detached"),
@@ -80,7 +79,6 @@ PAIRWISE_CASES = [
     ("PAIR-26", "hybrid", "warm", "8bit", "locals", "wasi_vfs", "multi", "active"),
 ]
 
-
 WAT_TEMPLATE = """
 (module
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
@@ -116,7 +114,6 @@ WAT_TEMPLATE = """
   )
 )
 """
-
 
 from wasi_dummy_fs import WasiDummyContext, VirtualFile
 from hal_dummy_drivers import DummyGpioDriver, PinMode

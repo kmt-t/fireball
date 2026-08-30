@@ -694,6 +694,7 @@
       "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#1. 目的と対象範囲",
       "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#3. テスト検証実績と網羅状況",
       "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#GDB RSP プロトコル & 仮想レジスタ (§3.3, §4.1, gdb_rsp_protocol.md)",
+      "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#実ソケット GDB RSP リモート接続・対話セッション (§4.1, gdb_rsp_protocol.md)",
       "sec:plans/backlog_list.md#オーナーレビュー観点 & チェックリスト"
     ],
     "DictionaryBasedIPC": [
@@ -2248,11 +2249,12 @@
     "sec:components/tier2_runtime/runtime_vsoc.md#準備（prepare）": "a6c4343626850683fc9040c5a2c01885993338b50297c7856a06764bc86d154c",
     "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#1. 目的と対象範囲": "e6496fbe0a11a8df5ab3cd19281fb624a78363c5531ad3fbdae55146c5fd8410",
     "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#2. テストケース一覧": "07c66dedc5007761a55d09a950d8038e2eda29cba4b06ba0f50031507dc98675",
-    "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#3. テスト検証実績と網羅状況": "a0319b996376c360d95bc18503eaa95f22c733231e040a27338e51df4ca549ef",
+    "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#3. テスト検証実績と網羅状況": "eb1870b23b3f6529097014c71f852653d86ee2febbd5257684c6fa425b9560e9",
     "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#4. 未検証・スコープ外": "c6b1ae1d21f3dfe608cc01902625ac862ee215f18bb62d21f692955c3281e332",
     "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#Debug Manager テスト仕様書 (Test Specification)": "1d4d16edf3b6d76cd080c18d8c01270ebe8b7a84b76be2c0983830330776c821",
     "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#GDB RSP プロトコル & 仮想レジスタ (§3.3, §4.1, gdb_rsp_protocol.md)": "c378f3a03d1438c4393545c9c7edf5627dc385a837f05064a35cbdf065c6fb76",
     "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#デバッガ協調 & 統合プロファイラ (§1, §4.1)": "65aab0a3718eeb7211ca540b7379e761d1366dd5b4babd2d5b1697f95a8b9511",
+    "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#実ソケット GDB RSP リモート接続・対話セッション (§4.1, gdb_rsp_protocol.md)": "c2a73c015ee759c3239f03b1f36bf339ab8223e8910e6f73de3f4217dcf813b7",
     "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#実行制御 & ブレークポイント (§3.3, §4.1)": "4707da983d115bf40108f3b28a91d0234e2421c1d4320ee8b8deb41420efa7d2",
     "sec:components/tier2_runtime/tests/runtime_interpreter_test_spec.md#1. 目的と対象範囲": "7bc5962e7cc1cbe2aae79f178a1ff4f7fefb3edce45bfb2e7aa53ab608040f14",
     "sec:components/tier2_runtime/tests/runtime_interpreter_test_spec.md#2. テストケース一覧": "07c66dedc5007761a55d09a950d8038e2eda29cba4b06ba0f50031507dc98675",

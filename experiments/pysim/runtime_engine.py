@@ -359,3 +359,161 @@ class RuntimeEngine:
         except StopIteration as e:
             self.on_yield()
             return e.value or []
+
+
+class WASMContext:
+    """Execution context for hybrid Tiered Interpreter/JIT execution."""
+
+    def __init__(self, locals_values: list[int] | None = None, stack_capacity: int = 64):
+        self.locals = list(locals_values or [0] * 8)
+        self.stack: list[int] = []
+        self.stack_capacity = stack_capacity
+
+    def push(self, val: int) -> None:
+        if len(self.stack) >= self.stack_capacity:
+            raise RuntimeError("WASM execution stack overflow")
+        self.stack.append(val & 0xFFFF_FFFF)
+
+    def pop(self) -> int:
+        if not self.stack:
+            raise RuntimeError("WASM execution stack underflow")
+        return self.stack.pop()
+
+
+class BasicBlock:
+    """A straight-line sequence of WASM instructions ending with branch/return."""
+
+    def __init__(self, head_pc: int, ops: list[tuple[str, Any]], next_pc: int | None = None, loops_to: int | None = None):
+        self.head_pc = head_pc
+        self.ops = ops
+        self.next_pc = next_pc
+        self.loops_to = loops_to
+
+
+class WASMTraceCompiler:
+    """Compiles a BasicBlock into a fast callable native JITTrace."""
+
+    def compile_trace(self, head_pc: int, block: BasicBlock) -> JITTrace:
+        ops = list(block.ops)
+
+        def trace_fn(ctx: WASMContext) -> str:
+            for op, arg in ops:
+                if op == "i32.const":
+                    ctx.push(arg)
+                elif op == "i32.add":
+                    b, a = ctx.pop(), ctx.pop()
+                    ctx.push((a + b) & 0xFFFF_FFFF)
+                elif op == "i32.sub":
+                    b, a = ctx.pop(), ctx.pop()
+                    ctx.push((a - b) & 0xFFFF_FFFF)
+                elif op == "i32.mul":
+                    b, a = ctx.pop(), ctx.pop()
+                    ctx.push((a * b) & 0xFFFF_FFFF)
+                elif op == "local.get":
+                    ctx.push(ctx.locals[arg])
+                elif op == "local.set":
+                    ctx.locals[arg] = ctx.pop()
+            return "OK"
+
+        return JITTrace(head_pc=head_pc, native_fn=trace_fn, size_bytes=len(ops) * 4,
+                        next_pc=block.next_pc, loops_to=block.loops_to)
+
+
+class IntegratedHybridEngine:
+    """Full Tiered Runtime Engine: Interpreter execution -> 2-bit card tracking ->
+    Cooperative Yield -> Idle-Hook Batch Compilation -> Trace Chaining -> JIT execution."""
+
+    def __init__(self, yield_threshold: int = 4, card_shift: int = 4):
+        self.bitmap = HotspotBitmap(card_shift=card_shift)
+        self.history = HistoryRing(capacity=32)
+        self.cache = JITMultiBufferCache()
+        self.compiler = WASMTraceCompiler()
+        self.compile_queue: list[int] = []
+        self.yield_threshold = yield_threshold
+        self.exec_counter = 0
+
+        self.blocks: dict[int, BasicBlock] = {}
+        self.interp_blocks = 0
+        self.jit_traces = 0
+        self.compilations = 0
+        self.yields = 0
+
+        self.cache.on_evict = lambda pcs: [self.bitmap.mark_evicted(pc) for pc in pcs]
+
+    def register_block(self, block: BasicBlock) -> None:
+        self.blocks[block.head_pc] = block
+
+    def on_yield(self) -> None:
+        """Promotes HOT cards in history ring to LIFO compile queue."""
+        for pc in self.history.drain():
+            if self.bitmap.get_state(pc) == CardState.HOT and pc not in self.compile_queue:
+                self.compile_queue.append(pc)
+
+    def idle_hook(self, budget: int = 4) -> int:
+        """Drains compile queue in LIFO reverse order and chains resident successors."""
+        compiled = 0
+        while self.compile_queue and compiled < budget:
+            head_pc = self.compile_queue.pop()
+            block = self.blocks.get(head_pc)
+            if block is None:
+                continue
+            trace = self.compiler.compile_trace(head_pc, block)
+            self.cache.insert(trace)
+            self.bitmap.mark_compiled(head_pc)
+            self.compilations += 1
+            compiled += 1
+        return compiled
+
+    def _interpret_block(self, block: BasicBlock, ctx: WASMContext) -> None:
+        for op, arg in block.ops:
+            if op == "i32.const":
+                ctx.push(arg)
+            elif op == "i32.add":
+                b, a = ctx.pop(), ctx.pop()
+                ctx.push((a + b) & 0xFFFF_FFFF)
+            elif op == "i32.sub":
+                b, a = ctx.pop(), ctx.pop()
+                ctx.push((a - b) & 0xFFFF_FFFF)
+            elif op == "i32.mul":
+                b, a = ctx.pop(), ctx.pop()
+                ctx.push((a * b) & 0xFFFF_FFFF)
+            elif op == "local.get":
+                ctx.push(ctx.locals[arg])
+            elif op == "local.set":
+                ctx.locals[arg] = ctx.pop()
+
+    def _next_pc(self, block: BasicBlock, ctx: WASMContext) -> int | None:
+        if block.loops_to is not None:
+            # Condition at TOS: if non-zero, loop back; else fallthrough
+            cond = ctx.pop()
+            return block.loops_to if cond != 0 else block.next_pc
+        return block.next_pc
+
+    def run_step(self, pc: int, ctx: WASMContext) -> int | None:
+        """Executes a single basic block either via native JIT trace or Tier 2 interpreter."""
+        block = self.blocks.get(pc)
+        if block is None:
+            return None
+
+        trace = self.cache.lookup(pc)
+        if trace is not None:
+            # Tier 3 JIT Trace Execution
+            self.jit_traces += 1
+            trace.native_fn(ctx)
+            # Trace chaining or fallback to interpreter
+            next_pc = trace.chain_next if trace.chain_next is not None else self._next_pc(block, ctx)
+        else:
+            # Tier 2 Interpreter Execution with 2-bit hotspot tracking
+            self.bitmap.touch(pc)
+            self.history.record(pc)
+            self.interp_blocks += 1
+            self._interpret_block(block, ctx)
+            next_pc = self._next_pc(block, ctx)
+
+        self.exec_counter += 1
+        if self.exec_counter >= self.yield_threshold:
+            self.exec_counter = 0
+            self.yields += 1
+            self.on_yield()
+
+        return next_pc

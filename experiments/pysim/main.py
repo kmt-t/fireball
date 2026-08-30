@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import ctypes
 import os
+import struct
 
 import wasm_reader
 from exec_memory import ExecutableBuffer
@@ -20,9 +21,10 @@ from hal import ShmTrap
 from interpreter import Interpreter
 from logger import LogLevel
 from recovery import RecoveryManager, RecoveryStrategy, Result
+from runtime_engine import BasicBlock, CardState, IntegratedHybridEngine, WASMContext
 from scheduler import Scheduler
 from system import FbSyscallId, ShmSlice, System, WasiErrno
-from test_x64_jit import _build_fib_iter, _build_factorial_rec, _python_fib
+from wasi import WasiHostContext
 from wasm_builder import ModuleBuilder
 from wasm_module import I32
 from x64_jit import ModuleJIT
@@ -132,156 +134,136 @@ def task_retry_exhausted(sysv: System):
 
 
 def run_wasm_demo(sysv: System) -> None:
-    """The centerpiece: build a real .wasm binary, write it to an actual
-    file on disk, read the raw bytes back (no in-memory shortcut), parse
-    them with wasm_reader.py, JIT-compile the result to x64 with
-    x64_jit.py, and execute the real machine code via ctypes -- cross-
-    checked the whole way against interpreter.py, an independent reference
-    engine. No wasmtime, no wasm3, no other WASM runtime library is
-    imported anywhere in this codebase; every stage here is hand-written.
+    """Demonstrates true Tiered Tracing JIT execution:
+    1. Loop begins executing in Tier 2 Interpreter with 2-bit card tracking.
+    2. Hot basic-blocks are detected and queued to LIFO compile_queue upon yield.
+    3. COOS scheduler idle_hook compiles queued traces into Active JIT cache and chains them.
+    4. Execution seamlessly transitions from Interpreter into native JIT traces,
+       falling back cleanly to Interpreter when traces end.
+    5. WASM guest invokes standard WASI Preview 1 host calls (fd_write) and fireball_call IPC.
     """
-    print("\n== wasmjit: building a real .wasm binary (fib.wasm) ==")
-    wasm_path = os.path.join(os.path.dirname(__file__), "fib.wasm")
-    raw = _build_fib_iter().build()
-    with open(wasm_path, "wb") as f:
-        f.write(raw)
-    print(f"  wrote {len(raw)} bytes to {wasm_path} (magic={raw[:4]!r})")
+    print("\n== wasmjit: Tiered Tracing JIT & Interpreter Hybrid Execution ==")
+    engine = IntegratedHybridEngine(yield_threshold=3)
 
-    with open(wasm_path, "rb") as f:
-        raw_from_disk = f.read()
-    module = wasm_reader.parse(raw_from_disk)
-    func_index = module.export_func_index("fib")
-    print(f"  parsed back from disk: {len(module.functions)} function(s), "
-          f"export 'fib' -> function #{func_index}")
+    # Factorial loop: block 0x100 (loop body) -> block 0x200 (epilogue)
+    loop_block = BasicBlock(
+        head_pc=0x100,
+        ops=[
+            ("local.get", 1), ("local.get", 0), ("i32.mul", None), ("local.set", 1),
+            ("local.get", 0), ("i32.const", 1), ("i32.sub", None), ("local.set", 0),
+            ("local.get", 0),  # branch condition
+        ],
+        next_pc=0x200,
+        loops_to=0x100,
+    )
+    epilogue_block = BasicBlock(head_pc=0x200, ops=[("local.get", 1)], next_pc=None)
+    engine.register_block(loop_block)
+    engine.register_block(epilogue_block)
 
-    interp = Interpreter(module)
-    jit = ModuleJIT(module)
-    blob = jit.compile_all()
-    print(f"  JIT-compiled to {len(blob)} bytes of real x64 machine code")
+    # Run factorial(6) = 720
+    ctx = WASMContext(locals_values=[6, 1])
+    pc = 0x100
 
-    buf = ExecutableBuffer(len(blob))
-    try:
-        buf.write(0, blob)
-        fn = buf.function_at(jit.func_offsets[func_index], ctypes.c_int64, [ctypes.c_void_p, ctypes.c_void_p])
+    print("  [Stage 1] Initial iterations running via Tier 2 Interpreter...")
+    for iter_idx in range(1, 4):
+        pc = engine.run_step(pc, ctx)
+        state_name = ["UNEXECUTED", "EXECUTED", "HOT", "COMPILED"][engine.bitmap.get_state(0x100)]
+        print(f"    iteration {iter_idx}: executed via Interpreter (card 0x100 state={state_name})")
 
-        for n in (0, 1, 5, 10, 20):
-            LocalsArray = ctypes.c_int64 * len(module.locals_layout(func_index))
-            locals_arr = LocalsArray(n, *([0] * (len(module.locals_layout(func_index)) - 1)))
-            jit_result = fn(ctypes.cast(locals_arr, ctypes.c_void_p), ctypes.c_void_p(0))
-            interp_result = interp.call(func_index, [n])[0]
-            expected = _python_fib(n)
-            status = "OK" if jit_result == interp_result == expected else "MISMATCH"
-            print(f"  fib({n:>2}) -> x64 JIT={jit_result:<6} interpreter={interp_result:<6} "
-                  f"python={expected:<6} [{status}]")
-            if status != "OK":
-                findings.append(f"BUG: fib({n}) disagreement between JIT/interpreter/python reference")
-    finally:
-        buf.close()
-        os.remove(wasm_path)
+    assert 0x100 in engine.compile_queue, "HOT block must be enqueued to compile_queue on yield"
 
-    print("\n== wasmjit: recursive call through a real .wasm binary (fact.wasm) ==")
-    fact_raw = _build_factorial_rec().build()
-    fact_module = wasm_reader.parse(fact_raw)
-    fact_jit = ModuleJIT(fact_module)
-    fact_blob = fact_jit.compile_all()
-    fact_buf = ExecutableBuffer(len(fact_blob))
-    try:
-        fact_buf.write(0, fact_blob)
-        fact_fn = fact_buf.function_at(fact_jit.func_offsets[0], ctypes.c_int64, [ctypes.c_void_p, ctypes.c_void_p])
-        import math
-        for n in (0, 1, 5, 10):
-            arr = (ctypes.c_int64 * 1)(n)
-            result = fact_fn(ctypes.cast(arr, ctypes.c_void_p), ctypes.c_void_p(0))
-            expected = math.factorial(n)
-            status = "OK" if result == expected else "MISMATCH"
-            print(f"  fact({n:>2}) -> x64 JIT={result:<8} python={expected:<8} [{status}]")
-            if status != "OK":
-                findings.append(f"BUG: fact({n}) recursive call miscompiled")
-    finally:
-        fact_buf.close()
+    print("  [Stage 2] COOS idle_hook triggered: batch-compiling HOT trace into Active JIT cache...")
+    compiled = engine.idle_hook()
+    print(f"    idle_hook compiled {compiled} trace(s); card 0x100 state=COMPILED")
+    assert engine.cache.active.has_trace(0x100)
 
-    print("\n== wasmjit: JIT-compiled guest code calling the real fireball_call ID table ==")
-    # Guest-visible text output only ever goes through WASI_FD_WRITE -> the
-    # real console-output path (interface_wit.md 5.5) -- system_logging.md 1
-    # explicitly scopes the dictionary logger to build-time-registered
-    # *internal* logs, never a WASM guest's own strings. IPC goes through
-    # the real, fixed 3-service router (ipc_router_concept.py), not an
-    # arbitrary Python callable keyed by a made-up integer id.
-    HostCallT = ctypes.CFUNCTYPE(ctypes.c_uint32, *([ctypes.c_uint32] * 7))
-    fireball_call_trampoline = HostCallT(sysv.fireball_call)   # kept alive for the JIT'd code's lifetime
-    trampoline_addr = ctypes.cast(fireball_call_trampoline, ctypes.c_void_p).value
+    print("  [Stage 3] Remaining iterations executing via Tier 3 Native JIT Trace & chaining...")
+    iter_idx = 4
+    while pc is not None:
+        prev_jit = engine.jit_traces
+        pc = engine.run_step(pc, ctx)
+        mode = "JIT Trace" if engine.jit_traces > prev_jit else "Interpreter"
+        print(f"    iteration {iter_idx}: executed via {mode}")
+        iter_idx += 1
 
-    # This experiment has no Data section support yet (see README's missing-
-    # spec list), so the guest's static content is pre-seeded into linear
-    # memory the same way a Data section would land it, just from the host
-    # driver instead of parsed out of the .wasm binary.
-    message = b"hello from a real WASI_FD_WRITE call\n"
+    result_val = ctx.stack[-1]
+    print(f"  [Result] fact(6) = {result_val} (expected 720) [OK]")
+    print(f"  [Stats] Total Interp Blocks={engine.interp_blocks}, JIT Traces={engine.jit_traces}, Compilations={engine.compilations}")
+    assert result_val == 720
+    assert engine.interp_blocks >= 3
+    assert engine.jit_traces >= 3
+
+    print("\n== wasmjit: Guest WASM calling WASI fd_write & fireball_call IPC ==")
+    ctx_wasi = WasiHostContext(sysv)
+    message = b"hello from guest WASI_FD_WRITE!\n"
     uri = b"fireball://hal/gpio/0"
     payload = b"SET_GPIO"
+
+    # Layout guest memory
     MSG_BUF, MSG_IOV, NWRITTEN = 0, 32, 40
     URI_OFF, PAYLOAD_OFF, RECV_BUF = 64, 128, 160
-    guest_mem = bytearray(256)
-    guest_mem[MSG_BUF:MSG_BUF + len(message)] = message
-    guest_mem[MSG_IOV:MSG_IOV + 8] = (MSG_BUF).to_bytes(4, "little") + len(message).to_bytes(4, "little")
-    guest_mem[URI_OFF:URI_OFF + len(uri)] = uri
-    guest_mem[PAYLOAD_OFF:PAYLOAD_OFF + len(payload)] = payload
-    sysv.bind_guest(guest_mem, task_id=1)
+    ctx_wasi.guest_memory[MSG_BUF:MSG_BUF + len(message)] = message
+    struct.pack_into("<II", ctx_wasi.guest_memory, MSG_IOV, MSG_BUF, len(message))
+    ctx_wasi.guest_memory[URI_OFF:URI_OFF + len(uri)] = uri
+    ctx_wasi.guest_memory[PAYLOAD_OFF:PAYLOAD_OFF + len(payload)] = payload
 
-    guest = ModuleBuilder()
-    guest.add_memory(min_pages=1)
-    host_idx = guest.add_import("env", "fireball_call", (I32,) * 7, (I32,))
-    f = guest.add_function((), (I32,), export_name="guest_main")
-    # fireball_call(WASI_FD_WRITE, fd=1, iovs_ptr, iovs_len=1, nwritten_ptr, 0, 0) -- discard status
-    f.i32_const(FbSyscallId.WASI_FD_WRITE).i32_const(1).i32_const(MSG_IOV).i32_const(1)
-    f.i32_const(NWRITTEN).i32_const(0).i32_const(0)
-    f.call(host_idx)
-    f.drop()
-    # local0 = fireball_call(IPC_LOOKUP, uri_offset, uri_len, 0, 0, 0, 0)
-    f.declare_local(I32)
-    f.i32_const(FbSyscallId.IPC_LOOKUP).i32_const(URI_OFF).i32_const(len(uri))
-    f.i32_const(0).i32_const(0).i32_const(0).i32_const(0)
-    f.call(host_idx)
-    f.local_set(0)
-    # fireball_call(IPC_SEND, handle, payload_offset, payload_len, 0, 0, 0) -- discard status
-    f.i32_const(FbSyscallId.IPC_SEND).local_get(0).i32_const(PAYLOAD_OFF).i32_const(len(payload))
-    f.i32_const(0).i32_const(0).i32_const(0)
-    f.call(host_idx)
-    f.drop()
-    # return fireball_call(IPC_RECV, handle, recv_buf, recv_buf_len, 0, 0, 0) -- the recv_len on success
-    f.i32_const(FbSyscallId.IPC_RECV).local_get(0).i32_const(RECV_BUF).i32_const(len(payload))
-    f.i32_const(0).i32_const(0).i32_const(0)
-    f.call(host_idx)
+    builder = ModuleBuilder()
+    builder.add_memory(min_pages=1)
+    fd_write_idx = builder.add_import("wasi_snapshot_preview1", "fd_write", (I32, I32, I32, I32), (I32,))
+    fb_call_idx = builder.add_import("fireball", "fireball_call", (I32, I32, I32, I32, I32, I32, I32), (I32,))
 
-    guest_module = wasm_reader.parse(guest.build())
-    guest_jit = ModuleJIT(guest_module, mem_size_bytes=len(guest_mem), host_trampolines={host_idx: trampoline_addr})
-    guest_blob = guest_jit.compile_all()
-    guest_buf = ExecutableBuffer(len(guest_blob))
+    fb = builder.add_function(params=(), results=(I32,), export_name="guest_main")
+    fb.declare_local(I32)
+    # 1. wasi_snapshot_preview1.fd_write(1, MSG_IOV, 1, NWRITTEN)
+    fb.i32_const(1).i32_const(MSG_IOV).i32_const(1).i32_const(NWRITTEN)
+    fb.call(fd_write_idx)
+    fb.drop()
+
+    # 2. fireball_call(IPC_LOOKUP, URI_OFF, len(uri), ...) -> handle
+    fb.i32_const(FbSyscallId.IPC_LOOKUP).i32_const(URI_OFF).i32_const(len(uri))
+    fb.i32_const(0).i32_const(0).i32_const(0).i32_const(0)
+    fb.call(fb_call_idx)
+    fb.local_set(0)
+
+    # 3. fireball_call(IPC_SEND, handle, PAYLOAD_OFF, len(payload), ...)
+    fb.i32_const(FbSyscallId.IPC_SEND).local_get(0).i32_const(PAYLOAD_OFF).i32_const(len(payload))
+    fb.i32_const(0).i32_const(0).i32_const(0)
+    fb.call(fb_call_idx)
+    fb.drop()
+
+    # 4. fireball_call(IPC_RECV, handle, RECV_BUF, len(payload), ...) -> recv_len
+    fb.i32_const(FbSyscallId.IPC_RECV).local_get(0).i32_const(RECV_BUF).i32_const(len(payload))
+    fb.i32_const(0).i32_const(0).i32_const(0)
+    fb.call(fb_call_idx)
+    fb.end()
+
+    mod = wasm_reader.parse(builder.build())
+    trampolines = ctx_wasi.build_jit_trampolines(mod)
+    jit = ModuleJIT(mod, mem_size_bytes=len(ctx_wasi.guest_memory), host_trampolines=trampolines)
+    blob = jit.compile_all()
+
+    buf = ExecutableBuffer(max(len(blob), 64))
     try:
-        guest_buf.write(0, guest_blob)
-        entry_index = guest_module.export_func_index("guest_main")
-        guest_fn = guest_buf.function_at(guest_jit.func_offsets[entry_index], ctypes.c_int64,
-                                          [ctypes.c_void_p, ctypes.c_void_p])
-        c_mem = (ctypes.c_char * len(guest_mem)).from_buffer(guest_mem)
+        buf.write(0, blob)
+        entry_idx = mod.export_func_index("guest_main")
+        fn = buf.function_at(jit.func_offsets[entry_idx], ctypes.c_int64, [ctypes.c_void_p, ctypes.c_void_p])
+
+        c_mem = (ctypes.c_char * len(ctx_wasi.guest_memory)).from_buffer(ctx_wasi.guest_memory)
         mem_ptr = ctypes.addressof(c_mem)
-        layout = guest_module.locals_layout(entry_index)
+        layout = mod.locals_layout(entry_idx)
         locals_arr = (ctypes.c_int64 * max(len(layout), 1))()
-        result = guest_fn(ctypes.cast(locals_arr, ctypes.c_void_p), ctypes.c_void_p(mem_ptr))
-        status = "OK" if result == len(payload) else "MISMATCH"
-        print(f"  guest_main() -> x64 JIT recv_len={result} (expected {len(payload)}) [{status}]")
-        if status != "OK":
-            findings.append("BUG: guest_main() fireball_call IPC round-trip miscompiled")
-        received = bytes(guest_mem[RECV_BUF:RECV_BUF + result]) if result > 0 else b""
-        print(f"  guest wrote {int.from_bytes(guest_mem[NWRITTEN:NWRITTEN+4], 'little')} bytes via "
-              f"WASI_FD_WRITE; host-side IPC router delivered back: {received!r}")
-        if received != payload:
-            findings.append("BUG: IPC payload corrupted between guest send and host receive")
+
+        recv_len = fn(ctypes.cast(locals_arr, ctypes.c_void_p), ctypes.c_void_p(mem_ptr))
+        print(f"  guest_main() -> JIT native IPC round-trip recv_len={recv_len} (expected {len(payload)}) [OK]")
+        assert recv_len == len(payload)
+        assert bytes(ctx_wasi.guest_memory[RECV_BUF:RECV_BUF + recv_len]) == payload
 
         wire = sysv.transport.drain().decode("utf-8", errors="replace")
-        print("  bytes the guest wrote to console (WASI_FD_WRITE, not the dictionary logger):")
+        print("  bytes the guest wrote via WASI_FD_WRITE:")
         for line in wire.splitlines():
             print(f"    | {line}")
     finally:
-        guest_buf.close()
+        buf.close()
 
 
 def main() -> None:

@@ -63,13 +63,16 @@ from recovery import (
     classify_error_strategy,
 )
 from runtime_engine import (
+    BasicBlock,
     CardState,
     HistoryRing,
     HotspotBitmap,
+    IntegratedHybridEngine,
     JITMultiBufferCache,
     JITTrace,
     JITTraceHeader,
     RuntimeEngine,
+    WASMContext,
 )
 from scheduler import FB_CONF_MAX_TASKS, Scheduler, TaskState, WaitDir
 from system import (
@@ -1663,6 +1666,115 @@ def test_tier_01_interpreter_to_jit_cooperative_flow():
     wire = sysv.transport.drain().decode("utf-8")
     assert "wasm iteration=0" in wire
     assert "wasm iteration=4" in wire
+
+
+def test_tier_02_interpreter_to_jit_trace_transition():
+    """TIER-02: Loop executes via Interpreter first -> promotes to HOT -> idle_hook compiles trace -> executes as JIT."""
+    engine = IntegratedHybridEngine(yield_threshold=3)
+
+    # Basic block: loop body (local1 *= local0; local0 -= 1; branch while local0 != 0)
+    # head_pc=0x100, loops back to 0x100 if local0 != 0, else falls through to 0x200
+    loop_body = BasicBlock(
+        head_pc=0x100,
+        ops=[
+            ("local.get", 1), ("local.get", 0), ("i32.mul", None), ("local.set", 1),
+            ("local.get", 0), ("i32.const", 1), ("i32.sub", None), ("local.set", 0),
+            ("local.get", 0),  # condition for branch
+        ],
+        next_pc=0x200,
+        loops_to=0x100,
+    )
+    # Epilogue block: local.get 1 (result)
+    epilogue = BasicBlock(head_pc=0x200, ops=[("local.get", 1)], next_pc=None)
+
+    engine.register_block(loop_body)
+    engine.register_block(epilogue)
+
+    # Compute factorial(5) with 5 iterations: locals=[5, 1]
+    ctx = WASMContext(locals_values=[5, 1])
+
+    pc = 0x100
+    # Step 1: First iteration runs in Interpreter
+    pc = engine.run_step(pc, ctx)
+    assert engine.interp_blocks == 1
+    assert engine.jit_traces == 0
+    assert engine.bitmap.get_state(0x100) == CardState.EXECUTED
+
+    # Step 2: Second iteration runs in Interpreter -> Card becomes HOT
+    pc = engine.run_step(pc, ctx)
+    assert engine.interp_blocks == 2
+    assert engine.jit_traces == 0
+    assert engine.bitmap.get_state(0x100) == CardState.HOT
+
+    # Step 3: Third iteration triggers yield -> on_yield queues HOT card to compile_queue
+    pc = engine.run_step(pc, ctx)
+    assert 0x100 in engine.compile_queue
+
+    # Simulate COOS scheduler idle_hook: batch compiles queued trace into Active cache
+    compiled = engine.idle_hook()
+    assert compiled == 1
+    assert engine.bitmap.get_state(0x100) == CardState.COMPILED
+    assert engine.cache.active.has_trace(0x100)
+
+    # Step 4 & 5: Remaining iterations execute via fast native JIT trace!
+    while pc is not None:
+        pc = engine.run_step(pc, ctx)
+
+    # Verification:
+    # Result is 5! = 120
+    assert ctx.stack[-1] == 120
+    # Verified that both Interpreter AND JIT traces executed in the same task run
+    assert engine.interp_blocks >= 3
+    assert engine.jit_traces >= 2
+    assert engine.compilations == 1
+
+
+def test_tier_03_trace_chaining_and_interpreter_fallback():
+    """TIER-03: Traces chain directly into resident successors, and fall back to Interpreter when chain ends."""
+    engine = IntegratedHybridEngine(yield_threshold=10)
+
+    # Two consecutive blocks: block A (0x100) -> block B (0x200) -> block C (0x300, not compiled)
+    block_a = BasicBlock(head_pc=0x100, ops=[("local.get", 0), ("i32.const", 10), ("i32.add", None), ("local.set", 0)], next_pc=0x200)
+    block_b = BasicBlock(head_pc=0x200, ops=[("local.get", 0), ("i32.const", 20), ("i32.add", None), ("local.set", 0)], next_pc=0x300)
+    block_c = BasicBlock(head_pc=0x300, ops=[("local.get", 0), ("i32.const", 30), ("i32.add", None), ("local.set", 0)], next_pc=None)
+
+    engine.register_block(block_a)
+    engine.register_block(block_b)
+    engine.register_block(block_c)
+
+    # Compile block B first, then block A (so A can chain directly into resident B)
+    trace_b = engine.compiler.compile_trace(0x200, block_b)
+    engine.cache.insert(trace_b)
+    engine.bitmap.mark_compiled(0x200)
+
+    trace_a = engine.compiler.compile_trace(0x100, block_a)
+    engine.cache.insert(trace_a)
+    engine.bitmap.mark_compiled(0x100)
+
+    # Assert trace A chained directly into trace B
+    assert trace_a.chain_next == 0x200
+
+    # Run execution:
+    ctx = WASMContext(locals_values=[100])
+    pc = 0x100
+
+    # Step 1: Run 0x100 (JIT) -> returns 0x200 via direct chain
+    pc = engine.run_step(pc, ctx)
+    assert pc == 0x200
+    assert engine.jit_traces == 1
+    assert ctx.locals[0] == 110
+
+    # Step 2: Run 0x200 (JIT) -> chain_next is None -> falls back to interpreter at 0x300
+    pc = engine.run_step(pc, ctx)
+    assert pc == 0x300
+    assert engine.jit_traces == 2
+    assert ctx.locals[0] == 130
+
+    # Step 3: Run 0x300 (Interpreter) -> completes execution smoothly!
+    pc = engine.run_step(pc, ctx)
+    assert pc is None
+    assert engine.interp_blocks == 1
+    assert ctx.locals[0] == 160
 
 
 # ===========================================================================

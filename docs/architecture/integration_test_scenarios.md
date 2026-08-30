@@ -127,6 +127,24 @@
 
 ---
 
+### シナリオ 8: Storage Coverage (Globals / Locals / Memory Full-Width) & GDB Debugger
+- **スクリプト**: [`experiments/pysim/scenario8_comprehensive_storage_coverage.py`](file:///x:/hotspot/workspace/mysrc/fireball/experiments/pysim/scenario8_comprehensive_storage_coverage.py)
+- **対象コンポーネント**: `runtime_interpreter`, `debug_manager`, `gdb_rsp_protocol`, `runtime_loader`
+- **WAT & デバッグシナリオ**:
+  - 全幅メモリアクセス: `i32.store8`/`load8_u`/`load8_s`, `i32.store16`/`load16_u`/`load16_s`, `i32.store`/`load`
+  - 可変グローバル変数（`global.get`, `global.set`）と呼び出し間状態永続性
+  - ローカル変数パイプライン演算（`local.get`, `local.set`, パラメータ保持）
+  - リアルタイム GDB RSP ソケット経由でのブレークポイント捕捉、ローカル変数改変、リニアメモリ書き換えと JIT キャッシュ無効化
+
+| ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| INT-70 | 全幅メモリ読み書きと符号/ゼロ拡張 | モジュールロード完了 | `test_memory_widths()` 実行 | 8/16/32-bit の符号/ゼロ拡張が正しく反映され期待値 `65757` を返す | `runtime_interpreter.md` §3.4 |
+| INT-71 | グローバル変数パイプライン演算 | 初期値 100 | `pipeline_process(5, 200)` | メモリ配列との乗算累積が正確に実行され、グローバル値が `550` $\to$ `1000` へ更新保持される | `runtime_interpreter.md` |
+| INT-72 | デバッガからのストレージ動的改変 | ブレークポイント停止中 | `G` でローカル変数変更、`M` でメモリパッチ | 実行コンテキストとリニアメモリが即座に更新され、後続ステップに正確に反映される | `debug_manager.md`, `gdb_rsp_protocol.md` |
+| INT-73 | ストレージ改変後の単歩ステップと完走 | 改変完了後 | `s` でステップ実行後 `c` で完走 | 改変後のローカル変数とメモリに基づき正確に完走（結果 `150`）し正常終了する | `debug_manager.md` |
+
+---
+
 ## 3. 実行方法と検証結果
 
 ```bash
@@ -135,6 +153,6 @@ uv run --system-certs --with wasmtime python experiments/pysim/run_integration_t
 ```
 
 ### 検証実績
-- **全 7 シナリオ**: **7/7 PASSED** (約 4.8 秒)
+- **全 8 シナリオ**: **8/8 PASSED** (約 5.5 秒)
 - **完全差分検証**: 全シナリオにおいて、純粋インタープリタ実行と JIT 実行の出力がバイト単位・値単位で 100% 一致。
-- **GDB リモートデバッグ**: 実 TCP ソケットを介した 10 ステップの GDB RSP リモート対話デバッグセッションが完全動作。
+- **全ストレージ階層カバレッジ**: グローバル変数（可変/不変）、ローカル変数、リニアメモリ（8/16/32-bit 全幅・符号/ゼロ拡張）の読み書きおよびデバッガ動的介入を網羅実証。

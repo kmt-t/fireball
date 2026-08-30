@@ -98,6 +98,16 @@ ARM Cortex-M ターゲットにおいて、`execution_context` は **WASM スタ
 
 `control_frame` は計16バイト（`+0x00`〜`+0x0F`）。正本は [`wit/execution_context.wit`](wit/execution_context.wit)、物理配置は [アーキテクチャ概要書 §3.1](../../architecture/architecture_overview.md)。
 
+#### 制御フレーム整合性とリーク防止不変条件 (Control Frame Integrity Invariant)
+<!-- traceability: {InterpreterContextStackless} {PositionIndependentCode} -->
+`block`, `loop`, `if-else` によるネスト制御構造において、フレームスタックの不整合（フレームリークや未ポップ）を完全に防止するため、以下の不変条件を厳格に保持する：
+
+1. **`IF` 条件不成立時のフレーム整合性**:
+   - `if` 命令でスタック条件が偽（`cond == 0`）かつ `else` 節が存在しない場合、`END` 命令の直後へジャンプする際に制御フレームを積まずに直接遷移するか、または `END` 命令自体にジャンプして確実にポップさせる。これにより、未ポップのゴミフレームがスタックに残留することを完全に防止する。
+2. **分岐脱出時のフレーム Pruning (`_do_branch`)**:
+   - `br / br_if / br_table` で `depth` 個のフレームを脱出する際、対象フレームより外側のフレームを確実にポップし、オペランドスタック長を対象フレームの `stack_height` に巻き戻す。
+   - 脱出先が `loop` の場合はループ本体先頭（`target.start + 2`）へ巻き戻してフレームを維持し、`block / if` の場合はフレームをポップして `target.match_end + 1` へ遷移する。
+
 #### インタプリタ構成（interpreter_config）
 <!-- traceability: {META_ConfigurableSystem} -->
 インタープリタの動作パラメータを定義する。 `{META_ConfigurableSystem}`

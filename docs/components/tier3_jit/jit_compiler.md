@@ -78,6 +78,18 @@ typedef int64_t (*opcode_handler_t)(
 | レジスタ規約 | JIT トレースとインタープリタ間で共有される物理レジスタ規約 | 規約定義 | `R0-R3 / RCX,RDX,R8,R9: CPS (ip, stack_bot, env, local_base)`, `R4-R6, R8-R11: assignable pool (R4=TOS, R5=NOS, R6=NNOS, R8=mem_base, R9=mem_size, R10=safepoint)`, `R7 / RBP: FP (不可侵)` |
 | 位置独立性 (PIC) | 任意アドレス・キャッシュバンクで再コンパイル不要で動作 | 設計制約 | 絶対アドレス埋め込み禁止。`local_base` 相対、`env` 相対、`rel32` 相対分岐のみ `{PositionIndependentCode}` |
 
+#### トレース境界不変条件とスタックフレーム整合性 (Trace Boundary Invariants)
+<!-- traceability: {LowLatencyJIT} {PositionIndependentCode} {JIT_RuntimeAPI_Fallback} -->
+JIT トレースとインタープリタが同一の UnifiedStack 上でシームレスに相互運用するため、以下の 3 つの不変条件を厳格に保持する：
+
+1. **スタック自己完結性不変条件 (Stack Self-Containment Invariant)**:
+   - JIT コンパイル対象とする BasicBlock は、**命令走査中の累積スタック深さが 0 未満（`stack_depth < 0`）に落ちない自己完結ブロックのみ**とする。
+   - 先頭で `local.set` や二項演算が先行し、呼び出し元のオペランドスタック上の値を前提とするブロックは JIT 化せず、インタープリタがスタック整合性を保持して安全に実行する。
+2. **トレース境界でのメモリ同期不変条件 (Memory Synchronization at Trace Boundary)**:
+   - トレース境界（トレース終了時、分岐時、ハンドラ呼び出し時、Safepoint 到達時）では、レジスタ上のキャッシュされた値（TOS/NOS `R4/R5`）および更新されたローカル変数を確実にメモリ（`stack_bot` / `local_base` 配列）へスピル（書き戻し）し、未確定のレジスタ状態を次のブロックやインタープリタへ持ち越さない。
+3. **制御フロー・コール境界のインタープリタ委譲不変条件 (Control & Call Delegation Invariant)**:
+   - `BR`, `BR_IF`, `BR_TABLE`, `IF`, `CALL`, `CALL_INDIRECT`, `RETURN` 等の制御命令は JIT トレース内に含めず、その直前で BasicBlock を終端する。スタック巻き戻し（`_do_branch`）やコールフレーム（`call_frame`）生成はインタープリタ（または専用チェイニングハンドラ）に委譲する。
+
 #### JIT トレース物理メモリレイアウト (`jit_trace_header`)
 <!-- traceability: {JIT_LazyChaining} {SimpleJITArchitecture} {PositionIndependentCode} -->
 JIT キャッシュ内に書き込まれる各トレースは、**先頭に 16 バイト固定長のメタデータヘッダを持ち、直後（`+0x10`）からネイティブ命令列（PIC Code Stream）が展開される**。エントリポイントは `trace_base + 0x10`。

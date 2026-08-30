@@ -35,6 +35,9 @@
 | INTP-21 | void結果のブロックからの脱出 | `block`の結果型が空 | `br`で脱出 | ブロック開始時の高さまで完全にロールバックされる（保持する値なし） | wasm_instruction_set.md br のスタック遷移 `[] -> []` |
 | INTP-22 | br_tableでの多重ネストとプルーニング | 3階層以上ネストしたblock+br_table | 各indexで実行 | 深さに応じた正しいプルーニング＋分岐先ジャンプが行われる | interpreter_concept.py `test_br_table_and_parametric` |
 | INTP-23 | ループ背進辺でのプルーニング挙動 | `loop`から`br 0`（継続） | 実行 | ループ本体の先頭へ戻り、ループ自身のアリティに応じたプルーニングが行われる | interpreter_concept.py `br`の`is_loop`分岐 |
+| INTP-24 | `if`条件偽（elseなし）でのフレームリーク防止 | `if (cond=0)` で else 節なし | `if` 命令実行 | `match_offset + 1` へジャンプする際、`_Frame("if")` がスタックに残らずフレームスタックの深さが不変に保たれる | `runtime_interpreter.md` §3.3「制御フレーム整合性」 |
+| INTP-25 | `if-else` 条件偽での else 節遷移 | `if (cond=0)` で else 節あり | `if` 命令実行 | `else_offset + 1` へジャンプし、`_Frame("if")` が積まれ、`END` で正しくポップされる | `runtime_interpreter.md` §3.3 |
+| INTP-26 | `if` 内からの `br` 脱出とフレーム Pruning | `loop` 内に `if` を配置し `br 1` 脱出 | ループ内実行 | `if` フレームと `loop` フレームが正しく unwind され、後続の命令が正しいスコープで実行される | `runtime_interpreter.md` §3.3, §4.1 |
 
 ### i64整数演算 (interpreter_concept.py §3.7, wasm_instruction_set.md §3.4)
 

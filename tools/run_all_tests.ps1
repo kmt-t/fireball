@@ -8,6 +8,8 @@
 param(
     [switch]$llm,
     [switch]$assess,
+    [switch]$testchain,
+    [string]$component = "",
     [switch]$full,
     [switch]$exhaustive,
     [string]$backend = "sakura",
@@ -118,6 +120,25 @@ if ($llm) {
     }
 } else {
     Write-Host "`n>>> [Phase 2/4] Skipping LLM as a Judge (-llm to run it)" -ForegroundColor DarkGray
+}
+
+# ---------------------------------------------------------------------------
+# Design -> Test Spec -> Test Code 3-Tier Traceability & Consistency Judge
+# ---------------------------------------------------------------------------
+if ($testchain) {
+    Write-Host "`n>>> [3-Tier Consistency] LLM Design-to-Test Consistency Judge..." -ForegroundColor Yellow
+    $chainArgs = $specInt + @("judge-test-chain", "--config", "spec-integrator.yaml",
+                              "--backend", $backend)
+    if ($component) { $chainArgs += @("--component", $component) }
+    if ($model) { $chainArgs += @("--model", $model) }
+    if ($exhaustive -or $full) { $chainArgs += "--all" }
+
+    & uv @chainArgs
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "! Test Chain Judge reported findings — see reports/test_chain_judge_report.md" -ForegroundColor DarkYellow
+    } else {
+        Write-Host "✔ Test Chain Judge: all audited components are consistent across Spec -> TestSpec -> TestCode" -ForegroundColor Green
+    }
 }
 
 # ---------------------------------------------------------------------------

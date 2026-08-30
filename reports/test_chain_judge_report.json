@@ -1,0 +1,21 @@
+{
+  "total_evaluated": 1,
+  "pass_count": 1,
+  "warn_count": 0,
+  "fail_count": 0,
+  "results": [
+    {
+      "component_name": "jit_compiler",
+      "design_doc": "docs\\components\\tier3_jit\\jit_compiler.md",
+      "test_spec": "docs\\components\\tier3_jit\\tests\\jit_compiler_test_spec.md",
+      "test_code_files": [
+        "experiments\\pysim\\test_x64_jit.py",
+        "experiments\\pysim\\test_x64_stencils.py",
+        "experiments\\pysim\\tests.py"
+      ],
+      "status": "PASS",
+      "summary": "[MOCK] 3-tier chain (Design -> TestSpec -> TestCode) for 'jit_compiler' is fully verified and consistent.",
+      "issues": []
+    }
+  ]
+}

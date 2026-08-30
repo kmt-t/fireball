@@ -27,6 +27,11 @@ powershell tools/run_all_tests.ps1
 powershell tools/run_all_tests.ps1 -assess -backend sakura
 powershell tools/run_all_tests.ps1 -llm -backend sakura
 
+# 設計仕様 -> テスト仕様 -> テストコード 3層一貫性監査 (LLM as a Judge)
+powershell tools/run_all_tests.ps1 -testchain -backend sakura
+# 特定コンポーネントのみ監査する場合:
+powershell tools/run_all_tests.ps1 -testchain -component jit_compiler -backend sakura
+
 # Level 3: 全量完全監査（リリース判定用）
 powershell tools/run_all_tests.ps1 -full -backend sakura
 ```

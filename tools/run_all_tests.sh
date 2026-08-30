@@ -15,6 +15,8 @@ cd "$REPO_ROOT"
 
 RUN_LLM=0
 RUN_ASSESS=0
+RUN_TESTCHAIN=0
+COMPONENT=""
 BACKEND="sakura"
 MODEL=""
 MAX_SUBGRAPHS=10
@@ -73,6 +75,8 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --llm)              RUN_LLM=1; shift ;;
         --assess)           RUN_ASSESS=1; shift ;;
+        --test-chain|--testchain) RUN_TESTCHAIN=1; shift ;;
+        --component)        COMPONENT="$2"; shift 2 ;;
         --full)             RUN_ASSESS=1; RUN_LLM=1; MAX_SECTIONS=0; MAX_SUBGRAPHS=0; shift ;;
         --exhaustive)       RUN_ASSESS=1; RUN_LLM=1; EXHAUSTIVE=1; MAX_SECTIONS=0; MAX_SUBGRAPHS=0; shift ;;
         --backend)          BACKEND="$2"; shift 2 ;;
@@ -165,6 +169,25 @@ if [ "$RUN_LLM" -eq 1 ]; then
 else
     echo ""
     echo ">>> [Phase 2/4] Skipping LLM as a Judge (--llm to run it)"
+fi
+
+# ---------------------------------------------------------------------------
+# Design -> Test Spec -> Test Code 3-Tier Traceability & Consistency Judge
+# ---------------------------------------------------------------------------
+if [ "$RUN_TESTCHAIN" -eq 1 ]; then
+    echo ""
+    echo ">>> [3-Tier Consistency] LLM Design-to-Test Consistency Judge..."
+    CHAIN_ARGS=("${SPEC_INT[@]}" "judge-test-chain" "--config" "spec-integrator.yaml"
+                "--backend" "$BACKEND")
+    [ -n "$COMPONENT" ] && CHAIN_ARGS+=("--component" "$COMPONENT")
+    [ -n "$MODEL" ] && CHAIN_ARGS+=("--model" "$MODEL")
+    [ "$EXHAUSTIVE" -eq 1 ] || [ "$RUN_ASSESS" -eq 1 ] && CHAIN_ARGS+=("--all")
+
+    if ! uv "${CHAIN_ARGS[@]}"; then
+        echo "! Test Chain Judge reported findings — see reports/test_chain_judge_report.md"
+    else
+        echo "✔ Test Chain Judge: all audited components are consistent across Spec -> TestSpec -> TestCode"
+    fi
 fi
 
 # ---------------------------------------------------------------------------

@@ -7,9 +7,10 @@ Reference Concept Implementation: the fireball container vocabulary
 - bit_view      : dense sub-byte state table, index-addressed, never searched
 """
 
-# コンテナ語彙の概念コード (FlatViewNarrowing / PackedBitView)
+from __future__ import annotations
 
 import bisect
+from typing import Any, Sequence
 
 ALLOWED_BITS = (1, 2, 4)
 

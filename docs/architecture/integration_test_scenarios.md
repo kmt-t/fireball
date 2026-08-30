@@ -6,7 +6,7 @@
 
 - **対象 Tier**: Tier 1 Core (`os_coos`, `os_scheduler`, `system_config`, `system_containers`, `system_logging`, `system_syscall`), Tier 1 Interface (`interface_wit`, `ipc_router`, `system_service`), Tier 2 Runtime (`runtime_vsoc`, `runtime_loader`, `runtime_interpreter`, `runtime_vmmio`, `debug_manager`), Tier 3 Platform & JIT (`platform_hal`, `platform_memory`, `jit_compiler`, `jit_runtime`)
 - **テストランナー**: `experiments/pysim/run_integration_tests.py`
-- **テストスクリプト群**: `experiments/pysim/scenario1_loader_and_memory.py` 〜 `experiments/pysim/scenario10_vmmio_virtual_devices.py`
+- **テストスクリプト群**: `experiments/pysim/scenario1_loader_and_memory.py` 〜 `experiments/pysim/scenario11_hal_and_wasi_drivers.py`
 
 ### 1.1 コンポーネント × 結合テストシナリオ カバレッジマトリクス (Coverage Matrix)
 
@@ -17,16 +17,16 @@
 | | [`system_config.md`](../components/tier1_core/system_config.md) | システム静的定数、スタック・RAM容量制約 | Scenario 1, 10 |
 | | [`system_containers.md`](../components/tier1_core/system_containers.md) | `RadixBinaryTreeView` (bswap32), `FlatMapView`, `RingBuffer` | Scenario 1, 4, 5, 9 |
 | | [`system_logging.md`](../components/tier1_core/system_logging.md) | 構造化ロギング、LogDictionary、UART 出力 | Scenario 9 |
-| | [`system_syscall.md`](../components/tier1_core/system_syscall.md) | `fd_write` 分散ギャザー、`proc_exit`、`fireball_call` 代理 | Scenario 2, 10 |
-| **Tier 1 Interface** | [`interface_wit.md`](../components/tier1_interface/interface_wit.md) | WASI Preview 1 ABI、型シグネチャ整合 | Scenario 2 |
+| | [`system_syscall.md`](../components/tier1_core/system_syscall.md) | `fd_write` 分散ギャザー、`proc_exit`、`fireball_call` 代理 | Scenario 2, 10, 11 |
+| **Tier 1 Interface** | [`interface_wit.md`](../components/tier1_interface/interface_wit.md) | WASI Preview 1 ABI、型シグネチャ整合 | Scenario 2, 11 |
 | | [`ipc_router.md`](../components/tier1_interface/ipc_router.md) | 3段階ルーティング、RBAC、Zero-Copy 所有権移譲 | Scenario 9 |
-| | [`system_service.md`](../components/tier1_interface/system_service.md) | システムサービス呼び出し、WASI トランスポート | Scenario 2 |
+| | [`system_service.md`](../components/tier1_interface/system_service.md) | システムサービス呼び出し、WASI トランスポート | Scenario 2, 11 |
 | **Tier 2 Runtime** | [`runtime_vsoc.md`](../components/tier2_runtime/runtime_vsoc.md) | 統合 ExecEnv、モジュールリンク、共有メモリ | Scenario 1, 4, 6, 8 |
 | | [`runtime_loader.md`](../components/tier2_runtime/runtime_loader.md) | WASM バイナリパース、Active Data/Elem セグメント | Scenario 1, 8 |
-| | [`runtime_interpreter.md`](../components/tier2_runtime/runtime_interpreter.md) | CPS 4引数ディスパッチ、全幅メモリ、深い再帰、制御フレーム | Scenario 1〜10 |
+| | [`runtime_interpreter.md`](../components/tier2_runtime/runtime_interpreter.md) | CPS 4引数ディスパッチ、全幅メモリ、深い再帰、制御フレーム | Scenario 1〜11 |
 | | [`runtime_vmmio.md`](../components/tier2_runtime/runtime_vmmio.md) | Bit 31 RAM Bypass、FlatMap PTE、TLB[16]、仮想デバイス | Scenario 10 |
 | | [`debug_manager.md`](../components/tier2_runtime/debug_manager.md) | GDB RSP TCP ソケット接続、ブレークポイント、レジスタ/メモリ改変 | Scenario 7, 8 |
-| **Tier 3 Platform** | [`platform_hal.md`](../components/tier3_platform/platform_hal.md) | UartTransport ソケットペア、タイマー | Scenario 2, 7, 9 |
+| **Tier 3 Platform** | [`platform_hal.md`](../components/tier3_platform/platform_hal.md) | GPIO, I2C, SPI, Timer, UartTransport | Scenario 2, 7, 9, 11 |
 | | [`platform_memory.md`](../components/tier3_platform/platform_memory.md) | リニアメモリページ拡張（`memory.grow`）、MPU 領域保護 | Scenario 1, 4, 8, 10 |
 | **Tier 3 JIT** | [`jit_compiler.md`](../components/tier3_jit/jit_compiler.md) | Copy-and-Patch JIT 生成、PIC トレース、差分検証 | Scenario 4, 5, 8 |
 | | [`jit_runtime.md`](../components/tier3_jit/jit_runtime.md) | 3面キャッシュ代謝、2-bit Card Marking、UnifiedPC + bswap32 | Scenario 4, 5 |
@@ -202,6 +202,31 @@
 
 ---
 
+### シナリオ 11: HAL Peripheral Drivers & WASI Preview 1 Full Dummy Stack
+- **スクリプト**: [`experiments/pysim/scenario11_hal_and_wasi_drivers.py`](file:///x:/hotspot/workspace/mysrc/fireball/experiments/pysim/scenario11_hal_and_wasi_drivers.py)
+- **対象コンポーネント**: `platform_hal`, `interface_wit`, `system_service`, `system_syscall`, `runtime_interpreter`
+- **検証シナリオ**:
+  - **HAL 周辺機器ダミードライバ**:
+    - GPIO コントローラ（16ピン）: 入出力モード設定、ピン読み出し/書き込み、エッジ割り込み IRQ コールバック
+    - I2C バス・温度センサ（LM75 `0x48`）: 16-bit 温度レジスタ読み出し（`25.5℃` $\to$ `0x1980`）および設定レジスタ書き換え
+    - SPI バス・4KB EEPROM（25LC040）: WREN(0x06), WRITE(0x02), READ(0x03) による全二重トランザクション
+    - タイマードライバ: 単調増加ナノ秒クロック（`monotonic_ns`）およびハードウェア Tick 進行
+  - **WASI Preview 1 インメモリスタック**:
+    - 仮想ファイルディスクリプタ（`fd_read`, `fd_write`, `fd_seek`: SET/CUR/END）
+    - 標準入出力（stdin バッファ入力、stdout/stderr キャプチャ）
+    - ユーティリティ（`random_get` 乱数エントロピ充填、`clock_time_get` 高精度タイムスタンプ）
+
+| ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| INT-100 | HAL GPIO 入出力とエッジ IRQ | GPIO ドライバ初期化 | ピン出力設定後値トグル | ピン状態が正しく反転し、登録された IRQ コールバックがトリガされる | `platform_hal.md` |
+| INT-101 | HAL I2C 仮想温度センサ読み書き | I2C バス初期化 | 0x48 のレジスタ R/W | 温度値 `0x1980` が読み出され、設定レジスタが正常に更新される | `platform_hal.md` |
+| INT-102 | HAL SPI 4KB EEPROM 書き込み・読み出し | SPI ドライバ初期化 | WREN $\to$ Write $\to$ Read | 指定アドレスに書き込んだバイト列が 100% 一致して読み出される | `platform_hal.md` |
+| INT-103 | WASI In-Memory VFS シークと読み書き | 仮想 FD 3 (config.ini) | `fd_seek` 後 `fd_read`/`fd_write` | ファイルポインタが移動し、指定位置から正確に読み書きできる | `interface_wit.md`, `system_syscall.md` |
+| INT-104 | WASI 標準ストリームバッファリング | stdin にデータ充填 | `fd_read(fd=0)` 実行 | ストリームバッファから指定バイト数が正しく読み込まれる | `interface_wit.md` |
+| INT-105 | WASI 乱数取得 & 高精度クロック | ゲストメモリ指定 | `random_get`, `clock_time_get` | 乱数バッファが充填され、単調増加ナノ秒タイムスタンプが得られる | `interface_wit.md` |
+
+---
+
 ## 3. 実行方法と検証結果
 
 ```bash
@@ -210,7 +235,7 @@ uv run --system-certs --with wasmtime python experiments/pysim/run_integration_t
 ```
 
 ### 検証実績
-- **全 10 シナリオ**: **10/10 PASSED** (約 6.5 秒)
+- **全 11 シナリオ**: **11/11 PASSED** (約 6.3 秒)
 - **全 18 コンポーネント 100% カバレッジ**: Tier 1 Core、Tier 1 Interface、Tier 2 Runtime、Tier 3 Platform & JIT の全コンポーネントを実動検証。
 - **完全差分検証**: 全シナリオにおいて、純粋インタープリタ実行と JIT 実行の出力がバイト単位・値単位で 100% 一致。
-- **GDB リモートデバッグ & vMMIO & IPC**: 実ソケット GDB 対話、仮想 MMIO 変換、Zero-Copy IPC ルーティングが完全動作。
+- **HAL & WASI 完全スタック**: GPIO / I2C / SPI / Timer ダミードライバおよび WASI In-Memory VFS / Random / Clock が完全実動。

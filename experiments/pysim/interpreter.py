@@ -251,9 +251,11 @@ def _h_if(ip, frame, env, local_base):
 @_handler(ELSE)
 def _h_else(ip, frame, env, local_base):
     # Reached only by falling out of a taken `if` branch's body: the branch
-    # completed normally, so skip the else-body entirely.
-    target = frame.frames[-1]
-    return (target.match_end + 1, frame, env, local_base)
+    # completed normally, so pop the if frame and skip past the matching END.
+    if frame.frames:
+        target = frame.frames.pop()
+        return (target.match_end + 1, frame, env, local_base)
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
 
 
 @_handler(END)

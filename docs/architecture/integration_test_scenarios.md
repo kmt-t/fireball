@@ -106,6 +106,27 @@
 
 ---
 
+### シナリオ 7: GDB Remote Serial Protocol (RSP) Socket Debugger
+- **スクリプト**: [`experiments/pysim/scenario7_gdb_socket_debugger.py`](file:///x:/hotspot/workspace/mysrc/fireball/experiments/pysim/scenario7_gdb_socket_debugger.py)
+- **対象コンポーネント**: `debug_manager`, `gdb_rsp_protocol`, `runtime_engine` (JIT Cache Flush), `runtime_interpreter`
+- **通信シナリオ**:
+  - GDB サーバー（`GDBServer`）が実 TCP ソケットでリッスン
+  - GDB クライアントからの接続、パケット送受信（`?`, `g`, `G`, `m`, `M`, `Z0`, `z0`, `s`, `c`）
+  - 仮想レジスタ（PC, SP, FP, TOS, Locals）の読み出し・動的書き換え
+  - ブレークポイント設定とヒット時の `$S05`（SIGTRAP）停止
+  - メモリ書き換え時の JIT キャッシュ自動 Flush（`{Debugger_Jit_Flush}`）
+  - 単歩ステップ実行（`s`）と正常終了（`$W00`）
+
+| ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| INT-60 | TCP ソケット接続と停止理由クエリ | GDBServer 稼働中 | `?` パケット送信 | クライアント接続が受理され、`$S05#b8`（SIGTRAP）が返却される | `debug_manager.md`, `gdb_rsp_protocol.md` |
+| INT-61 | 20 仮想レジスタ読み出し・書き換え | 停止中 | `g` および `G` パケット送信 | 160文字 HEX 列で全仮想レジスタが正しく取得・変更される | `debug_manager.md` §3.3 |
+| INT-62 | メモリ検査・書き換えと JIT Flush | 停止中 | `m` および `M` パケット送信 | 指定オフセットのバイト列が読み書きされ、JIT キャッシュ全バンクが無効化される | `debug_manager.md`, `{Debugger_Jit_Flush}` |
+| INT-63 | ブレークポイント停止とステップ実行 | 実行中 | `Z0` でブレークポイント設定後 `c` / `s` | 指定 PC で正確にトラップ停止し、単歩ステップ実行で 1 命令進む | `debug_manager.md`, `gdb_rsp_protocol.md` |
+| INT-64 | プログラム正常完走とデタッチ | ブレークポイント解除済み | `c` パケット送信 | プログラムが最後まで完走し、`$W00#b7`（終了）が返る | `debug_manager.md` |
+
+---
+
 ## 3. 実行方法と検証結果
 
 ```bash
@@ -114,5 +135,6 @@ uv run --system-certs --with wasmtime python experiments/pysim/run_integration_t
 ```
 
 ### 検証実績
-- **全 6 シナリオ**: **6/6 PASSED** (約 4.7 秒)
+- **全 7 シナリオ**: **7/7 PASSED** (約 4.8 秒)
 - **完全差分検証**: 全シナリオにおいて、純粋インタープリタ実行と JIT 実行の出力がバイト単位・値単位で 100% 一致。
+- **GDB リモートデバッグ**: 実 TCP ソケットを介した 10 ステップの GDB RSP リモート対話デバッグセッションが完全動作。

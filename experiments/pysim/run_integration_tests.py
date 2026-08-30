@@ -1,4 +1,4 @@
-﻿"""
+"""
 Fireball Full Component Integration Test Suite Runner.
 
 Executes all 6 integration test scenarios end-to-end against genuine WASM bytecode:
@@ -21,6 +21,7 @@ SCENARIOS = [
     ("Scenario 4: Hybrid JIT Compilation & Hotspot", "experiments/pysim/scenario4_hybrid_jit_loop.py"),
     ("Scenario 5: Multi-Function UnifiedPC & Radix", "experiments/pysim/scenario5_multimodule_unified_pc.py"),
     ("Scenario 6: COOS Cooperative Multitasking", "experiments/pysim/scenario6_coos_multitask_yield.py"),
+    ("Scenario 7: GDB Remote Debugger Socket Session", "experiments/pysim/scenario7_gdb_socket_debugger.py"),
 ]
 
 

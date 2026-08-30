@@ -682,6 +682,7 @@
       "sec:specs/gdb_rsp_protocol.md#4. WASM 仮想レジスタ番号マッピング (GDB Target XML Map)"
     ],
     "Debugger_Jit_Flush": [
+      "sec:architecture/integration_test_scenarios.md#シナリオ 7: GDB Remote Serial Protocol (RSP) Socket Debugger",
       "sec:components/tier2_runtime/debug_manager.md#1. コンセプト",
       "sec:components/tier2_runtime/debug_manager.md#4.1 アルゴリズム",
       "sec:components/tier2_runtime/runtime_vsoc.md#4.1 アルゴリズム",
@@ -1781,7 +1782,8 @@
     "sec:architecture/integration_test_scenarios.md#シナリオ 4: Tier 2 Runtime + Tier 3 JIT Hybrid Compilation": "5cdd9511f5317a7b5dde51e98271127f266b472aac07345ace45dddf86d8eed2",
     "sec:architecture/integration_test_scenarios.md#シナリオ 5: Multi-Function UnifiedPC & bswap32 Radix Tree": "5a20a06f3caac72c1767f4fe80b40e7e95120f7d4dccbab9473d79b5a8c1b8d5",
     "sec:architecture/integration_test_scenarios.md#シナリオ 6: COOS Cooperative Multitasking & Coroutines": "6afec1ff3eac9b5aa8dfb502765ce7d5a4e1128bea0709ad263cb9e2f2f947d8",
-    "sec:architecture/integration_test_scenarios.md#検証実績": "a3593793f8aa26b3324c2585b945136be467a835c017dbdc71ee795f3421e7d5",
+    "sec:architecture/integration_test_scenarios.md#シナリオ 7: GDB Remote Serial Protocol (RSP) Socket Debugger": "5c89fa13d6406fced4d67710331360300a2c4f406a3b6034ce6bd632467a8ca8",
+    "sec:architecture/integration_test_scenarios.md#検証実績": "2b096a7e9f616756e0c8b3b36e8a92ea95f6bae36a581a8804848943cc8c02a1",
     "sec:components/tier1_core/os_coos.md#1. コンセプト": "bc2af744712125a2ae56eccf782ca8e2faf3ae9988d61a37fe6aa60aa44346b2",
     "sec:components/tier1_core/os_coos.md#1. 所有権管理 `CoValue`": "437f3fcf232cdabcb2d6dda3a6b20b0f492e8f798f31a7fee8fcbaa62623f11f",
     "sec:components/tier1_core/os_coos.md#2. アーキテクチャ分類": "28807620329e943c7a49d60180e995a102e82ac2f66aa4fcc40b96b186512c90",

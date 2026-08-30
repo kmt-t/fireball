@@ -1958,6 +1958,56 @@ def test_guest_wasi_05_jit_fireball_call_ipc_messaging():
         sysv.shutdown()
 
 
+def test_debugger_manager_gdb_rsp_integration():
+    """DBG-01..15: Verifies Debug Manager GDB RSP protocol, breakpoints, registers and JIT flush."""
+    from debugger import DebuggerManager, GDBRspProtocol
+    from x64_jit import TraceCompiler
+
+    engine = IntegratedHybridEngine(compiler=TraceCompiler())
+    dbg = DebuggerManager(engine=engine)
+    dbg.attach()
+    rsp = GDBRspProtocol(dbg)
+
+    mem = bytearray(64)
+    ctx = WASMContext(locals_values=[10, 20], memory=mem)
+
+    # 1. Query stop signal
+    res, _ = rsp.handle_packet("?", 0x100, ctx, {})
+    assert res == "$S05#b8"
+
+    # 2. Virtual registers read/write
+    res_g, _ = rsp.handle_packet("g", 0x100, ctx, {})
+    assert len(res_g[1:res_g.index("#")]) == 160
+
+    # 3. Memory write & JIT flush ({Debugger_Jit_Flush})
+    block = BasicBlock(head_pc=0x100, ops=[("i32.const", 42)])
+    trace = engine.compiler.compile_trace(0x100, block)
+    engine.cache.insert(trace)
+    assert engine.cache.active.has_trace(0x100)
+
+    res_m, _ = rsp.handle_packet("M0,4:aabbccdd", 0x100, ctx, {})
+    assert res_m.startswith("$OK#")
+    assert bytes(mem[0:4]) == bytes.fromhex("aabbccdd")
+    assert not engine.cache.active.has_trace(0x100)  # Flushed!
+
+    # 4. Breakpoint & Stepping
+    block1 = BasicBlock(head_pc=0x100, ops=[("local.get", 0), ("i32.const", 1), ("i32.add", None), ("local.set", 0)], next_pc=0x200)
+    block2 = BasicBlock(head_pc=0x200, ops=[("local.get", 0), ("i32.const", 2), ("i32.mul", None), ("local.set", 0)], next_pc=None)
+    blocks = {0x100: block1, 0x200: block2}
+
+    rsp.handle_packet("Z0,200,0", 0x100, ctx, blocks)
+    res_c, stop_pc = rsp.handle_packet("c", 0x100, ctx, blocks)
+    assert res_c.startswith("$S05#")
+    assert stop_pc == 0x200
+    assert ctx.locals[0] == 11
+
+    # Remove BP and finish
+    rsp.handle_packet("z0,200,0", 0x200, ctx, blocks)
+    res_c2, _ = rsp.handle_packet("c", 0x200, ctx, blocks)
+    assert res_c2.startswith("$W00#")
+    assert ctx.locals[0] == 22
+
+
 # ===========================================================================
 # Test Runner
 # ===========================================================================

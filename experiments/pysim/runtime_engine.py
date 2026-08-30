@@ -325,6 +325,14 @@ class JITMultiBufferCache:
 
         return purged_pcs
 
+    def flush_all(self) -> None:
+        """Invalidates all JIT cache banks and unlinks chains ({Debugger_Jit_Flush})."""
+        for bank in self.banks:
+            purged = bank.clear()
+            self.evictions += len(purged)
+            if self.on_evict and purged:
+                self.on_evict(purged)
+
 
 class RuntimeEngine:
     """Integrated Tiered Tracing Runtime Engine combining Interpreter and JIT."""
@@ -576,6 +584,11 @@ class IntegratedHybridEngine:
             cond = ctx.pop()
             return block.loops_to if cond != 0 else block.next_pc
         return block.next_pc
+
+    def run_block_interpret(self, block: BasicBlock, ctx: WASMContext) -> int | None:
+        """Executes a single basic block strictly in Interpreter mode (for debugging / fallback)."""
+        self._interpret_block(block, ctx)
+        return self._next_pc(block, ctx)
 
     def run_step(self, pc: int, ctx: WASMContext) -> int | None:
         """Executes a single basic block either via native JIT trace or Tier 2 interpreter."""

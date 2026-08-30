@@ -76,7 +76,7 @@ def test_coos_01_send_first_suspends_csp():
     sched = Scheduler()
     ch = sched.create_channel("ch_test")
     t1_id = sched.spawn("t1")
-    t1 = sched._all[t1_id]
+    t1 = sched.get_task(t1_id)
     sched.current_task = t1
 
     action, _ = sched.channel_send("ch_test", 42)
@@ -91,8 +91,8 @@ def test_coos_02_recv_after_send_completes_rendezvous():
     """COOS-02: Receiver arriving second completes rendezvous and takes ownership."""
     sched = Scheduler()
     sched.create_channel("ch_test")
-    t1 = sched._all[sched.spawn("t1")]
-    t2 = sched._all[sched.spawn("t2")]
+    t1 = sched.get_task(sched.spawn("t1"))
+    t2 = sched.get_task(sched.spawn("t2"))
 
     sched.current_task = t1
     sched.channel_send("ch_test", "DATA_PAYLOAD")
@@ -110,7 +110,7 @@ def test_coos_03_recv_first_suspends_csp():
     """COOS-03: Receiver arriving first transitions to SUSPENDED_CSP."""
     sched = Scheduler()
     ch = sched.create_channel("ch_test")
-    t2 = sched._all[sched.spawn("t2")]
+    t2 = sched.get_task(sched.spawn("t2"))
     sched.current_task = t2
 
     action, _ = sched.channel_recv("ch_test")
@@ -124,8 +124,8 @@ def test_coos_04_send_after_recv_completes_rendezvous():
     """COOS-04: Sender arriving second completes rendezvous and transfers ownership."""
     sched = Scheduler()
     sched.create_channel("ch_test")
-    t1 = sched._all[sched.spawn("t1")]
-    t2 = sched._all[sched.spawn("t2")]
+    t1 = sched.get_task(sched.spawn("t1"))
+    t2 = sched.get_task(sched.spawn("t2"))
 
     sched.current_task = t2
     sched.channel_recv("ch_test")
@@ -142,8 +142,8 @@ def test_coos_05_one_waiter_per_channel_enforced():
     """COOS-05: Only one waiter per channel direction; second waiter asserts."""
     sched = Scheduler()
     sched.create_channel("ch_test")
-    t1 = sched._all[sched.spawn("t1")]
-    t2 = sched._all[sched.spawn("t2")]
+    t1 = sched.get_task(sched.spawn("t1"))
+    t2 = sched.get_task(sched.spawn("t2"))
 
     sched.current_task = t1
     sched.channel_send("ch_test", 1)
@@ -160,8 +160,8 @@ def test_coos_06_csp_handoff_direct_switch():
     """COOS-06: Rendezvous completion performs direct symmetric handoff to head of READY queue."""
     sched = Scheduler()
     sched.create_channel("ch_test")
-    t1 = sched._all[sched.spawn("t1")]
-    t2 = sched._all[sched.spawn("t2")]
+    t1 = sched.get_task(sched.spawn("t1"))
+    t2 = sched.get_task(sched.spawn("t2"))
 
     sched.current_task = t1
     sched.channel_send("ch_test", 99)
@@ -180,8 +180,8 @@ def test_coos_07_consecutive_handoff_limit_yields():
     sched.create_channel("ch2")
     sched.create_channel("ch3")
 
-    t1 = sched._all[sched.spawn("t1")]
-    t2 = sched._all[sched.spawn("t2")]
+    t1 = sched.get_task(sched.spawn("t1"))
+    t2 = sched.get_task(sched.spawn("t2"))
 
     sched.current_task = t1
     sched.channel_send("ch1", 1)
@@ -594,23 +594,23 @@ def test_hotspot_04_3bank_cache_oldest_only_promotion():
     cache = JITMultiBufferCache(bank_capacity=256)
     t1 = JITTrace(0x10, lambda: 1, size_bytes=64)
     assert cache.insert(t1)
-    assert 0x10 in cache.active.traces
+    assert cache.active.has_trace(0x10)
 
     # Rotate twice: Active -> Warm -> Oldest
     cache.rotate()
-    assert 0x10 in cache.warm.traces
+    assert cache.warm.has_trace(0x10)
     # Warm bank hit does NOT promote
     assert cache.lookup(0x10) is t1
     assert cache.promotions == 0
 
     cache.rotate()
-    assert 0x10 in cache.oldest.traces
+    assert cache.oldest.has_trace(0x10)
     # Oldest bank hit MUST promote immediately to Active
     promoted = cache.lookup(0x10)
     assert promoted is t1
     assert cache.promotions == 1
-    assert 0x10 in cache.active.traces
-    assert 0x10 not in cache.oldest.traces
+    assert cache.active.has_trace(0x10)
+    assert not cache.oldest.has_trace(0x10)
 
 
 def test_hotspot_05_3bank_cache_rotation_and_eviction_resets_card():

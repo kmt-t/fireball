@@ -32,30 +32,31 @@ class CardState:
 
 
 class HotspotBitmap:
-    """2-bit state per CARD (card = pc >> card_shift)."""
+    """2-bit state per CARD (card = pc >> card_shift) stored in flat array."""
 
-    def __init__(self, card_shift: int = 6):
+    def __init__(self, card_shift: int = 6, max_cards: int = 4096):
         self.card_shift = card_shift
-        self.state: dict[int, int] = {}
+        self.max_cards = max_cards
+        self.state: bytearray = bytearray(max_cards)   # Direct flat byte array: 0=UNEXECUTED, 1=EXECUTED, 2=HOT, 3=COMPILED
 
     def card_of(self, pc: int) -> int:
-        return pc >> self.card_shift
+        return (pc >> self.card_shift) % self.max_cards
 
     def get_state(self, pc: int) -> int:
-        return self.state.get(self.card_of(pc), CardState.UNEXECUTED)
+        return self.state[self.card_of(pc)]
 
     def touch(self, pc: int) -> int:
         """2-bit state machine transition: UNEXECUTED -> EXECUTED -> HOT."""
         card = self.card_of(pc)
-        state = self.state.get(card, CardState.UNEXECUTED)
-        if state == CardState.COMPILED:
-            return state
-        if state == CardState.UNEXECUTED:
-            state = CardState.EXECUTED
-        elif state == CardState.EXECUTED:
-            state = CardState.HOT
-        self.state[card] = state
-        return state
+        s = self.state[card]
+        if s == CardState.COMPILED:
+            return s
+        if s == CardState.UNEXECUTED:
+            s = CardState.EXECUTED
+        elif s == CardState.EXECUTED:
+            s = CardState.HOT
+        self.state[card] = s
+        return s
 
     def mark_compiled(self, pc: int) -> None:
         self.state[self.card_of(pc)] = CardState.COMPILED
@@ -100,22 +101,41 @@ class JITCacheBank:
         self.bank_id = bank_id
         self.capacity_bytes = capacity_bytes
         self.used_bytes = 0
-        self.traces: dict[int, JITTrace] = {}
-        self.inbound_sources: set[int] = set()
+        # Flat list of (head_pc, JITTrace) pairs instead of dynamic dict
+        self.traces: list[tuple[int, JITTrace]] = []
+        self.inbound_sources: list[int] = []
+
+    def get_trace(self, head_pc: int) -> JITTrace | None:
+        for pc, trace in self.traces:
+            if pc == head_pc:
+                return trace
+        return None
+
+    def has_trace(self, head_pc: int) -> bool:
+        return self.get_trace(head_pc) is not None
+
+    def remove_trace(self, head_pc: int) -> JITTrace | None:
+        for i, (pc, trace) in enumerate(self.traces):
+            if pc == head_pc:
+                self.traces.pop(i)
+                return trace
+        return None
 
     def clear(self) -> list[int]:
-        purged = list(self.traces.keys())
+        purged = [pc for pc, _ in self.traces]
         self.traces.clear()
         self.inbound_sources.clear()
         self.used_bytes = 0
         return purged
 
     def allocate(self, trace: JITTrace) -> bool:
-        prev = self.traces.get(trace.head_pc)
+        prev = self.get_trace(trace.head_pc)
         delta = trace.size_bytes - (prev.size_bytes if prev else 0)
         if self.used_bytes + delta > self.capacity_bytes:
             return False
-        self.traces[trace.head_pc] = trace
+        if prev is not None:
+            self.remove_trace(trace.head_pc)
+        self.traces.append((trace.head_pc, trace))
         self.used_bytes += delta
         return True
 
@@ -144,34 +164,37 @@ class JITMultiBufferCache:
 
     def find_bank(self, head_pc: int) -> JITCacheBank | None:
         for bank in self.banks:
-            if head_pc in bank.traces:
+            if bank.has_trace(head_pc):
                 return bank
         return None
 
     def find_trace(self, head_pc: int) -> JITTrace | None:
         for bank in self.banks:
-            if head_pc in bank.traces:
-                return bank.traces[head_pc]
+            trace = bank.get_trace(head_pc)
+            if trace is not None:
+                return trace
         return None
 
     def register_chain(self, source_pc: int, target_pc: int) -> None:
         target_bank = self.find_bank(target_pc)
-        if target_bank is not None:
-            target_bank.inbound_sources.add(source_pc)
+        if target_bank is not None and source_pc not in target_bank.inbound_sources:
+            target_bank.inbound_sources.append(source_pc)
 
     def lookup(self, head_pc: int) -> JITTrace | None:
-        if head_pc in self.active.traces:
-            return self.active.traces[head_pc]
+        trace = self.active.get_trace(head_pc)
+        if trace is not None:
+            return trace
 
-        if head_pc in self.warm.traces:
-            return self.warm.traces[head_pc]
+        trace = self.warm.get_trace(head_pc)
+        if trace is not None:
+            return trace
 
-        trace = self.oldest.traces.get(head_pc)
+        trace = self.oldest.get_trace(head_pc)
         if trace is None:
             return None
 
         # Oldest bank hit: promote to Active bank immediately
-        del self.oldest.traces[head_pc]
+        self.oldest.remove_trace(head_pc)
         self.oldest.used_bytes -= trace.size_bytes
         if not self.active.allocate(trace):
             self.rotate()

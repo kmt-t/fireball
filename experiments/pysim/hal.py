@@ -118,37 +118,49 @@ class ShmBufferPool:
     """
 
     def __init__(self):
-        self._handles: dict[str, ShmHandle] = {}
+        self._slots: list[ShmHandle | None] = [None] * FB_CONF_HAL_MAX_BUFFERS
 
     def acquire_buffer(self, task_id: int, size: int) -> ShmHandle:
         if size <= 0 or size > FB_CONF_HAL_BUFFER_SIZE:
             raise ValueError(
                 f"acquire_buffer(size={size}) exceeds FB_CONF_HAL_BUFFER_SIZE={FB_CONF_HAL_BUFFER_SIZE}"
             )
-        if len(self._handles) >= FB_CONF_HAL_MAX_BUFFERS:
+        slot_idx = -1
+        for i, s in enumerate(self._slots):
+            if s is None:
+                slot_idx = i
+                break
+        if slot_idx < 0:
             raise HalError("HAL buffer pool exhausted (FB_CONF_HAL_MAX_BUFFERS)")
 
         name = f"fb_shm_{uuid.uuid4().hex[:12]}"
         handle = ShmHandle(name=name, owner_task=task_id, capacity=size, _storage=bytearray(size))
-        self._handles[name] = handle
+        self._slots[slot_idx] = handle
         return handle
 
     def release_buffer(self, task_id: int, handle: ShmHandle) -> None:
-        record = self._handles.get(handle.name)
-        if record is None or record.owner_task != task_id:
-            raise ShmTrap(f"task {task_id} cannot release {handle.name}: not the owner")
-        del self._handles[handle.name]
+        for i, s in enumerate(self._slots):
+            if s is not None and s.name == handle.name:
+                if s.owner_task != task_id:
+                    raise ShmTrap(f"task {task_id} cannot release {handle.name}: not the owner")
+                self._slots[i] = None
+                return
+        raise ShmTrap(f"task {task_id} cannot release {handle.name}: not found")
 
     def _resolve(self, task_id: int, handle: ShmHandle) -> ShmHandle:
-        record = self._handles.get(handle.name)
-        if record is None:
-            raise ShmTrap(f"handle {handle.name} does not exist (stale, or never acquired)")
-        if record.owner_task != task_id:
-            raise ShmTrap(
-                f"task {task_id} does not own {handle.name} (owner={record.owner_task}); "
-                "no linear-memory pointer would ever bypass this check"
-            )
-        return record
+        for s in self._slots:
+            if s is not None and s.name == handle.name:
+                if s.owner_task != task_id:
+                    raise ShmTrap(
+                        f"task {task_id} does not own {handle.name} (owner={s.owner_task}); "
+                        "no linear-memory pointer would ever bypass this check"
+                    )
+                return s
+        raise ShmTrap(f"handle {handle.name} does not exist (stale, or never acquired)")
+
+    def close_all(self) -> None:
+        for i in range(len(self._slots)):
+            self._slots[i] = None
 
     def view(self, task_id: int, handle: ShmHandle, offset: int, length: int) -> memoryview:
         """Resolves a bounds-checked (offset, length) window inside `handle`.
@@ -163,9 +175,6 @@ class ShmBufferPool:
                 f"acquired capacity ({record.capacity} bytes)"
             )
         return memoryview(record._storage)[offset: offset + length]
-
-    def close_all(self) -> None:
-        self._handles.clear()
 
 
 # ---------------------------------------------------------------------------

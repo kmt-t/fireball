@@ -61,17 +61,23 @@ class Scheduler:
         self.consecutive_handoffs = 0
 
         self._ready: deque[Task] = deque()
-        self._blocked_by_event: dict[Any, list[Task]] = {}
-        self._all: dict[int | str, Task] = {}
-        self._channels: dict[str, Channel] = {}
+        self._blocked_by_event: list[tuple[Any, list[Task]]] = []
+        self._all: list[Task] = []
+        self._channels: list[Channel] = []
 
         self.current_task: Task | None = None
         self._next_id = 1
         self.idle_hooks: list[Callable[[], None]] = []
 
         self.interrupt_event_queue: deque[int] = deque(maxlen=FB_CONF_INTERRUPT_QUEUE_SIZE)
-        self.irq_waiters: dict[int, list[Task]] = {}
+        self.irq_waiters: list[tuple[int, list[Task]]] = []
         self.dropped_irqs = 0
+
+    def get_task(self, task_id: int | str) -> Task | None:
+        for t in self._all:
+            if t.task_id == task_id:
+                return t
+        return None
 
     def spawn(self, name: str, coro: Generator[Any, None, None] | None = None, task_id: int | str | None = None) -> int | str:
         """Spawn a new task within FB_CONF_MAX_TASKS bounds."""
@@ -79,25 +85,36 @@ class Scheduler:
             raise RuntimeError(f"Task capacity exceeded (max {self.max_tasks})")
 
         assigned_id = task_id if task_id is not None else self._next_id
-        if assigned_id in self._all:
+        if self.get_task(assigned_id) is not None:
             raise ValueError(f"Task with ID {assigned_id} already exists")
 
         if task_id is None:
             self._next_id += 1
 
         task = Task(assigned_id, name, coro)
-        self._all[task.task_id] = task
+        self._all.append(task)
         self._ready.append(task)
         return task.task_id
 
+    def get_channel(self, channel_id: str) -> Channel | None:
+        for ch in self._channels:
+            if ch.channel_id == channel_id:
+                return ch
+        return None
+
     def create_channel(self, channel_id: str) -> Channel:
+        existing = self.get_channel(channel_id)
+        if existing is not None:
+            return existing
         ch = Channel(channel_id)
-        self._channels[channel_id] = ch
+        self._channels.append(ch)
         return ch
 
     def channel_send(self, channel_id: str, data: Any) -> tuple[str, Any]:
         """Synchronous CSP send with atomic ownership handoff."""
-        ch = self._channels[channel_id]
+        ch = self.get_channel(channel_id)
+        if ch is None:
+            ch = self.create_channel(channel_id)
         sender = self.current_task
         assert sender is not None, "channel_send requires active running task"
 
@@ -120,7 +137,9 @@ class Scheduler:
 
     def channel_recv(self, channel_id: str) -> tuple[str, Any]:
         """Synchronous CSP recv with atomic ownership handoff."""
-        ch = self._channels[channel_id]
+        ch = self.get_channel(channel_id)
+        if ch is None:
+            ch = self.create_channel(channel_id)
         receiver = self.current_task
         assert receiver is not None, "channel_recv requires active running task"
 
@@ -168,7 +187,12 @@ class Scheduler:
         while self.interrupt_event_queue:
             irq_id = self.interrupt_event_queue.popleft()
             count += 1
-            waiters = self.irq_waiters.pop(irq_id, [])
+            waiters = []
+            for i, (qid, wlist) in enumerate(self.irq_waiters):
+                if qid == irq_id:
+                    waiters = wlist
+                    self.irq_waiters.pop(i)
+                    break
             for task in waiters:
                 task.state = TaskState.READY
                 self._ready.append(task)
@@ -178,20 +202,28 @@ class Scheduler:
         task = self.current_task
         assert task is not None
         task.state = TaskState.BLOCKED
-        self.irq_waiters.setdefault(irq_id, []).append(task)
+        for qid, wlist in self.irq_waiters:
+            if qid == irq_id:
+                wlist.append(task)
+                return
+        self.irq_waiters.append((irq_id, [task]))
 
     def set_idle_hook(self, fn: Callable[[], None]) -> None:
         self.idle_hooks.append(fn)
 
     def notify_event(self, event_key: Any) -> None:
-        """O(1) wake via direct dict lookup."""
-        woken = self._blocked_by_event.pop(event_key, [])
+        woken = []
+        for i, (k, tlist) in enumerate(self._blocked_by_event):
+            if k == event_key:
+                woken = tlist
+                self._blocked_by_event.pop(i)
+                break
         for task in woken:
             task.state = TaskState.READY
             self._ready.append(task)
 
     def pending_task_count(self) -> int:
-        return len(self._ready) + sum(len(v) for v in self._blocked_by_event.values()) + sum(len(v) for v in self.irq_waiters.values())
+        return len(self._ready) + sum(len(w) for _, w in self._blocked_by_event) + sum(len(w) for _, w in self.irq_waiters)
 
     def run_until_idle(self) -> None:
         """Runs one full round-robin sweep, then fires idle hooks once READY queue drains."""
@@ -221,7 +253,14 @@ class Scheduler:
                 pass
             else:
                 task.state = TaskState.BLOCKED
-                self._blocked_by_event.setdefault(wait_on, []).append(task)
+                found = False
+                for k, tlist in self._blocked_by_event:
+                    if k == wait_on:
+                        tlist.append(task)
+                        found = True
+                        break
+                if not found:
+                    self._blocked_by_event.append((wait_on, [task]))
             self.current_task = None
 
         for hook in self.idle_hooks:

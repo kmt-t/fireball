@@ -234,11 +234,7 @@ class System:
         self.memory_manager.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
 
         self.ipc = IPCRouter()
-        self._ipc_handle_by_uri: dict[str, int] = {}
-        self._ipc_uri_by_handle: dict[int, str] = {}
-        for i, uri in enumerate(self.ipc.registry.keys, start=1):
-            self._ipc_handle_by_uri[uri] = i
-            self._ipc_uri_by_handle[i] = uri
+        # Direct 1-based index mapping over sorted self.ipc.registry.keys array (no dynamic dict)
 
         self.halted = False
         self.reset_requested = False
@@ -513,13 +509,15 @@ class System:
             uri = raw.decode("utf-8")
         except UnicodeDecodeError:
             return int(WasiErrno.INVAL)
-        handle = self._ipc_handle_by_uri.get(uri)
-        return handle if handle is not None else int(WasiErrno.NOENT)
+        for i, u in enumerate(self.ipc.registry.keys, start=1):
+            if u == uri:
+                return i
+        return int(WasiErrno.NOENT)
 
     def _ipc_send(self, handle_id: int, msg_offset: int, msg_len: int) -> WasiErrno:
-        uri = self._ipc_uri_by_handle.get(handle_id)
-        if uri is None:
+        if handle_id < 1 or handle_id > len(self.ipc.registry.keys):
             return WasiErrno.BADF
+        uri = self.ipc.registry.keys[handle_id - 1]
         payload = self._read_guest(msg_offset, msg_len)
         if payload is None:
             return WasiErrno.FAULT
@@ -537,9 +535,9 @@ class System:
         return WasiErrno.NOENT
 
     def _ipc_recv(self, handle_id: int, buf_offset: int, buf_len: int) -> int:
-        uri = self._ipc_uri_by_handle.get(handle_id)
-        if uri is None:
+        if handle_id < 1 or handle_id > len(self.ipc.registry.keys):
             return int(WasiErrno.BADF)
+        uri = self.ipc.registry.keys[handle_id - 1]
         entry = self.ipc.registry.find(uri)
         msg = self.ipc.receive_message(entry["channel_id"])
         if msg is None:

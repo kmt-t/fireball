@@ -111,7 +111,8 @@ class CallFrame:
 # to end this call (RETURN, or branching past the outermost implicit block).
 _Cont = "tuple[int, CallFrame, ExecEnv, list[int]] | None"
 
-_HANDLERS: dict[int, Callable[[int, CallFrame, ExecEnv, list[int]], object]] = {}
+# Fixed 256-slot direct-indexed dispatch table for WASM byte opcodes (0x00..0xFF)
+_HANDLERS: list[Callable[[int, CallFrame, ExecEnv, list[int]], object] | None] = [None] * 256
 
 
 def _handler(opcode: int):
@@ -192,10 +193,9 @@ class Interpreter:
             if ip >= len(frame.code):
                 break   # fell off the function's own closing END, same as WASM falling off a function body
             ins = frame.instrs[ip]
-            try:
-                handler = _HANDLERS[ins.opcode]
-            except KeyError:
-                raise NotImplementedError(f"interpreter: unhandled opcode 0x{ins.opcode:02X}") from None
+            handler = _HANDLERS[ins.opcode]
+            if handler is None:
+                raise NotImplementedError(f"interpreter: unhandled opcode 0x{ins.opcode:02X}")
             cont = handler(ip, frame, env, local_base)
 
 

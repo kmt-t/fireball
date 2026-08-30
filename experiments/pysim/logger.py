@@ -55,7 +55,9 @@ class LogDictionary:
     """
 
     def __init__(self):
-        self._entries: dict[int, str] = {}
+        # FlatMapView-style parallel sorted arrays (O(log N) lookup, zero hash map overhead)
+        self._keys: list[int] = []
+        self._values: list[str] = []
 
     def register(self, offset: int, fmt: str) -> None:
         for bad in _DISALLOWED_SPECIFIERS:
@@ -64,7 +66,16 @@ class LogDictionary:
                     f"dictionary entry 0x{offset:X} uses '{bad}', which cannot be "
                     "backed by a u32 argument without reading it as a pointer"
                 )
-        self._entries[offset] = fmt
+        for i, k in enumerate(self._keys):
+            if k == offset:
+                self._values[i] = fmt
+                return
+            if k > offset:
+                self._keys.insert(i, offset)
+                self._values.insert(i, fmt)
+                return
+        self._keys.append(offset)
+        self._values.append(fmt)
 
     def format(self, offset: int, args: tuple[int, int, int, int]) -> str:
         """FINDING: system_logging.md 4.2 says a format string may reference
@@ -78,7 +89,11 @@ class LogDictionary:
         present so behavior matches C's variadic semantics instead of
         Python's stricter one.
         """
-        fmt = self._entries.get(offset)
+        fmt = None
+        for i, k in enumerate(self._keys):
+            if k == offset:
+                fmt = self._values[i]
+                break
         if fmt is None:
             return f"<UNKNOWN_DICT_OFFSET_0x{offset:X}>"
         n = sum(1 for m in _SPECIFIER_RE.finditer(fmt) if m.group() != "%%")

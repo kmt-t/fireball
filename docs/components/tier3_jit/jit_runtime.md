@@ -17,6 +17,11 @@ JIT ランタイム管理は、WASM PC とネイティブコードの紐付け�
 ## 3. 静的モデル
 
 ### 3.1 データ構造
+- **統一プログラムカウンタ (`UnifiedPC` / `wasm_pc_t`)**: モジュール全体の全関数・全命令を一意に識別する 32-bit 整数。
+  - **構造**: `(func_index << 16) | (bytecode_offset & 0xFFFF)`
+    - **上位 16-bit (`func_index`)**: モジュール内の関数インデックス（0 〜 65,535）。
+    - **下位 16-bit (`bytecode_offset`)**: 当該関数のバイトコード内オフセット（0 〜 65,535 バイト）。
+  - **役割**: 複数関数を含む WASM モジュールにおいて、HotspotBitmap、HistoryRing、JITTraceHeader、JITCacheLookup、Trace Chaining 全域で関数間の PC 衝突を防止し、一意な追跡とディスパッチを保証する。
 - **`JitEntryIndex`**: WASMオフセットとネイティブコードの対応付け、および 3 段高速検索ロジックをカプセル化した主要クラス。
 - **カードマーキング表 (Card Marking Table)**: WASMコード領域をカード単位で分割管理する 2 ビット状態表。密ビュー `fireball::bit_view<2>` として参照（1 バイトあたり 4 カード）。
   - `0: UNEXECUTED` (未実行)

@@ -78,11 +78,11 @@ JIT キャッシュ内に書き込まれる各トレースは、**先頭に 16 �
 ```text
 +---------------------------------------------------------------------------------------------------+
 | [Trace Header] (固定長 16 Bytes: sizeof(jit_trace_header))                                        |
-|  +0x00: uint32_t head_wasm_pc      -- トレース開始 WASM PC                                        |
+|  +0x00: uint32_t head_wasm_pc      -- トレース開始 UnifiedPC: (func_index << 16) | bytecode_offset |
 |  +0x04: uint16_t trace_byte_size   -- ヘッダ含むトレース全体の総物理バイトサイズ                  |
 |  +0x06: uint8_t  flags             -- 状態フラグ (0x01: PROMOTED, 0x02: LOOP_HEADER)              |
 |  +0x07: uint8_t  variant_id        -- ステンシルバリアント/TOSレジスタ割り当て状態 ID             |
-|  +0x08: uint32_t chain_next_pc     -- 直結チェイン先 WASM PC                                      |
+|  +0x08: uint32_t chain_next_pc     -- 直結チェイン先 UnifiedPC                                     |
 |  +0x0C: uint32_t chain_target_addr -- チェイン先ネイティブアドレス (初期値: 復帰スタブ)           |
 +---------------------------------------------------------------------------------------------------+
 | [Native Thumb-2 Code Stream] (+0x10 〜 trace_byte_size)                                           |

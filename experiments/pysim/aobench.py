@@ -313,10 +313,8 @@ def run_aobench():
     print(f"  * Raytracing Throughput:    {rays_per_sec:,.0f} Rays / Second")
     print("================================================================================")
 
-    if fps > 60:
-        print(f"\n[評価] 爆速ですにゃん！ (60 FPS を大幅に超える 【 {fps:.1f} FPS / 毎秒 {rays_per_sec:,.0f} 本の光線追跡 】 を達成！)")
-    else:
-        print(f"\n[評価] 実用速度ですにゃん！ ({fps:.1f} FPS)")
+    print(f"\n[Result] Performance: {fps:.1f} FPS ({rays_per_sec:,.0f} Rays/Sec)")
+    print("[PASS] WASM AO-Bench raytracing benchmark completed successfully.")
 
 
 if __name__ == "__main__":

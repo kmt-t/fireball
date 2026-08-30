@@ -7,6 +7,7 @@ covering all Fireball component test specifications (*_test_spec.md):
 - Tier 1 Logging & IPC Router (system_logging_test_spec.md, ipc_router_test_spec.md)
 - Tier 2 vMMIO & Recovery (runtime_vmmio_test_spec.md)
 - Tier 3 Platform Memory & HAL & MPU W^X (platform_memory_test_spec.md, platform_hal_test_spec.md)
+- Tier 3 JIT Hotspot Profiling & 3-Bank Cache (jit_compiler_test_spec.md, jit_runtime_test_spec.md)
 - Tier 1/2 Syscalls (system_syscall_test_spec.md)
 
 Run with:  uv run python experiments/pysim/tests.py
@@ -26,6 +27,7 @@ for _sub in (("tier3_platform", "concepts"), ("tier2_runtime", "concepts"), ("ti
         sys.path.insert(0, _p)
 
 from hal import FB_CONF_HAL_BUFFER_SIZE, FB_CONF_HAL_MAX_BUFFERS, HalError, ShmBufferPool, ShmTrap, Timer, UartTransport
+from ipc_router_concept import IPCMessage, IPCRouter
 from logger import ConsoleOutput, LogDictionary, Logger, LogLevel
 from platform_memory_concept import (
     FB_CONF_MEMORY_POOL_SIZE,
@@ -39,6 +41,7 @@ from platform_memory_concept import (
     SharedBlock,
 )
 from recovery import RecoveryStrategy, RetryExhausted, call_with_retry, classify_ipc_enqueue_failure
+from runtime_engine import CardState, HistoryRing, HotspotBitmap, JITMultiBufferCache, JITTrace, RuntimeEngine
 from scheduler import FB_CONF_MAX_TASKS, Scheduler, TaskState, WaitDir
 from system import (
     FB_CONF_GUEST_RAM_SIZE,
@@ -49,6 +52,14 @@ from system import (
     FbSyscallId,
     System,
     WasiErrno,
+)
+from vmmio_concept import (
+    FC_PASSTHROUGH,
+    FC_SHM,
+    FC_STATIC_DEVICE,
+    TrapCode,
+    VmmioAddress,
+    VMMIOController,
 )
 
 
@@ -513,7 +524,243 @@ def test_recovery_retry_and_escalation():
 
 
 # ===========================================================================
-# 6. fireball_call Full Syscall Surface (system_syscall_test_spec.md)
+# 6. Tier 3 JIT Hotspot Profiling & 3-Bank Cache (jit_compiler_test_spec.md, jit_runtime_test_spec.md)
+# ===========================================================================
+
+def test_hotspot_01_2bit_card_marking_state_transitions():
+    """HOTSPOT-01: 2-bit state machine: UNEXECUTED (00) -> EXECUTED (01) -> HOT (10) -> COMPILED (11)."""
+    bitmap = HotspotBitmap(card_shift=4)
+    pc = 0x100
+    assert bitmap.get_state(pc) == CardState.UNEXECUTED
+
+    # First touch: UNEXECUTED -> EXECUTED
+    assert bitmap.touch(pc) == CardState.EXECUTED
+    assert bitmap.get_state(pc) == CardState.EXECUTED
+
+    # Second touch: EXECUTED -> HOT
+    assert bitmap.touch(pc) == CardState.HOT
+    assert bitmap.get_state(pc) == CardState.HOT
+
+    # Mark COMPILED
+    bitmap.mark_compiled(pc)
+    assert bitmap.get_state(pc) == CardState.COMPILED
+    assert bitmap.touch(pc) == CardState.COMPILED
+
+
+def test_hotspot_02_history_ring_buffered_yield_drain():
+    """HOTSPOT-02: Interpreter records basic-block heads to HistoryRing, drained on yield."""
+    ring = HistoryRing(capacity=8)
+    for i in range(10):
+        ring.record(0x1000 + i * 4)
+    assert ring.dropped == 2
+    drained = ring.drain()
+    assert len(drained) == 8
+    assert len(ring.drain()) == 0
+
+
+def test_hotspot_03_lifo_compile_queue_batch_drain():
+    """HOTSPOT-03: HOT traces are queued to LIFO compile queue and batch-compiled into Active bank."""
+    compiled_traces = []
+    def dummy_compiler(pc: int) -> JITTrace:
+        t = JITTrace(head_pc=pc, native_fn=lambda: pc * 2, size_bytes=64)
+        compiled_traces.append(pc)
+        return t
+
+    engine = RuntimeEngine(jit_compiler=dummy_compiler, yield_threshold=4)
+    # Touch PC 0x200 multiple times to promote to HOT
+    engine.record_block_head(0x200)
+    engine.record_block_head(0x200)
+    engine.record_block_head(0x300)
+    engine.record_block_head(0x300)
+    # Trigger yield threshold
+    engine.on_yield()
+
+    assert 0x200 in engine.compile_queue
+    assert 0x300 in engine.compile_queue
+
+    count = engine.drain_compile_queue()
+    assert count == 2
+    assert engine.bitmap.get_state(0x200) == CardState.COMPILED
+    assert engine.bitmap.get_state(0x300) == CardState.COMPILED
+    assert engine.cache.lookup(0x200) is not None
+
+
+def test_hotspot_04_3bank_cache_oldest_only_promotion():
+    """HOTSPOT-04: Multi-bank cache promotes traces from Oldest bank to Active bank upon hit."""
+    cache = JITMultiBufferCache(bank_capacity=256)
+    t1 = JITTrace(0x10, lambda: 1, size_bytes=64)
+    assert cache.insert(t1)
+    assert 0x10 in cache.active.traces
+
+    # Rotate twice: Active -> Warm -> Oldest
+    cache.rotate()
+    assert 0x10 in cache.warm.traces
+    # Warm bank hit does NOT promote
+    assert cache.lookup(0x10) is t1
+    assert cache.promotions == 0
+
+    cache.rotate()
+    assert 0x10 in cache.oldest.traces
+    # Oldest bank hit MUST promote immediately to Active
+    promoted = cache.lookup(0x10)
+    assert promoted is t1
+    assert cache.promotions == 1
+    assert 0x10 in cache.active.traces
+    assert 0x10 not in cache.oldest.traces
+
+
+def test_hotspot_05_3bank_cache_rotation_and_eviction_resets_card():
+    """HOTSPOT-05: Oldest bank eviction unlinks inbound sources and resets card state to EXECUTED."""
+    bitmap = HotspotBitmap()
+    cache = JITMultiBufferCache(bank_capacity=256)
+    cache.on_evict = lambda pcs: [bitmap.mark_evicted(p) for p in pcs]
+
+    t_evict = JITTrace(0x50, lambda: 50, size_bytes=64)
+    cache.insert(t_evict)
+    bitmap.mark_compiled(0x50)
+    assert bitmap.get_state(0x50) == CardState.COMPILED
+
+    # Rotate 3 times without lookup -> evicted from Oldest
+    cache.rotate()
+    cache.rotate()
+    cache.rotate()
+    assert bitmap.get_state(0x50) == CardState.EXECUTED, "Evicted trace must revert card state to EXECUTED (01)"
+
+
+# ===========================================================================
+# 7. Tier 2 vMMIO: 3-Tier Gate & FC=14 SHM Ownership (runtime_vmmio_test_spec.md)
+# ===========================================================================
+
+def test_vmmio_01_three_tier_gate_dispatch():
+    """VMMIO-01: 3-tier address gate resolves Linear RAM, Static Devices, and SHM/Passthrough."""
+    ctrl = VMMIOController(guest_ram_size=64 * 1024)
+    ctrl.map_static_device(0xC0000)
+    ctrl.map_passthrough_page(vpn=0xF0000, phys_page=1)
+
+    # Linear RAM (Tier 1)
+    stat, detail = ctrl.access(raw_addr=0x1000, is_write=False, current_task_id=0)
+    assert stat == "OK_GUEST_RAM"
+
+    # Static Device (Tier 2, FC=12)
+    stat, detail = ctrl.access(raw_addr=0xC000_0000, is_write=True, current_task_id=0)
+    assert stat == "OK_SYSCALL"
+
+    # Passthrough (Tier 3, FC=15)
+    stat, detail = ctrl.access(raw_addr=0xF000_0000, is_write=False, current_task_id=0)
+    assert stat == "OK_PHYSICAL"
+
+    # Out of Bounds Linear RAM
+    stat, _ = ctrl.access(raw_addr=0x10000, is_write=False, current_task_id=0)
+    assert stat == TrapCode.OUT_OF_BOUNDS
+
+
+def test_vmmio_02_fc14_shm_owner_isolation_and_flight():
+    """VMMIO-02: FC=14 shared memory enforces owner_id match and traps FLIGHT state."""
+    ctrl = VMMIOController(guest_ram_size=64 * 1024)
+    ctrl.map_shm_page(vpn=0xE0000, phys_page=2, owner_id=1)
+
+    # Owner 1 access OK
+    stat, _ = ctrl.access(raw_addr=0xE000_0000, is_write=True, current_task_id=1)
+    assert stat == "OK_PHYSICAL"
+
+    # Rogue task 2 access TRAPS
+    stat, _ = ctrl.access(raw_addr=0xE000_0000, is_write=True, current_task_id=2)
+    assert stat == TrapCode.OWNER_MISMATCH
+
+    # In-flight access TRAPS for all tasks
+    ctrl.revoke_shm_owner(vpn=0xE0000)
+    stat, _ = ctrl.access(raw_addr=0xE000_0000, is_write=True, current_task_id=1)
+    assert stat == TrapCode.OWNER_MISMATCH
+
+
+def test_vmmio_03_undefined_function_code_traps():
+    """VMMIO-03: Undefined FC (0x0..0xB, 0xD) immediately traps."""
+    ctrl = VMMIOController(guest_ram_size=64 * 1024)
+    stat, _ = ctrl.access(raw_addr=0xD000_0000, is_write=False, current_task_id=1)
+    assert stat == TrapCode.UNDEFINED_FC
+
+
+# ===========================================================================
+# 8. Tier 1 IPC Router & Zero-Copy SharedBlock Transfer (ipc_router_test_spec.md)
+# ===========================================================================
+
+def test_ipc_01_uri_lookup_and_permission_matrix():
+    """IPC-01: Service URI lookup and role-based access control."""
+    router = IPCRouter()
+    entry = router.registry.find("fireball://hal/gpio/0")
+    assert entry is not None
+    assert entry["channel_id"] == "ch_gpio"
+    assert entry["role"] == "PLATFORM_HAL"
+
+    msg1 = IPCMessage(resource_id="msg1", payload={"cmd": "PIN_HIGH"})
+    # CLIENT_APP has permission
+    status, _ = router.route_message("CLIENT_APP", "fireball://hal/gpio/0", msg1)
+    assert status == "OK_ENQUEUED"
+
+    # UNKNOWN role has NO permission
+    msg2 = IPCMessage(resource_id="msg2", payload={"cmd": "PIN_HIGH"})
+    status_bad, _ = router.route_message("UNKNOWN_ROLE", "fireball://hal/gpio/0", msg2)
+    assert status_bad == "ERR_PERMISSION_DENIED"
+
+
+def test_ipc_02_e2e_shared_block_transfer():
+    """IPC-02: End-to-end zero-copy SharedBlock transfer via IPC router."""
+    sysv = System()
+    try:
+        # Sender allocates SharedBlock
+        sb = sysv.memory_manager.allocate_shared(caller_task_id=1, size=256).unwrap()
+        assert sb.get_owner() == 1
+        addr = sb.get_address()
+        assert addr >= 0x20020000
+
+        # Sender releases to FLIGHT
+        shm_id = sb.release()
+        assert sysv.memory_manager.vmmio_registry.get_owner(sb.page_idx) == FB_TASK_ID_FLIGHT
+
+        # Route via IPC
+        msg = IPCMessage(resource_id="shm_msg", payload={"shm_id": shm_id})
+        status, _ = sysv.ipc.route_message("CLIENT_APP", "fireball://hal/gpio/0", msg)
+        assert status == "OK_ENQUEUED"
+
+        # Receiver retrieves message from ch_gpio and claims block
+        recv_msg = sysv.ipc.receive_message("ch_gpio")
+        assert recv_msg is not None
+        recv_shm_id = recv_msg.payload["shm_id"]
+
+        # Grant to task 2 and claim
+        sysv.memory_manager.vmmio_registry.update_owner(sb.page_idx, 2)
+        recv_sb = sysv.memory_manager.claim(receiver_task_id=2, shm_id=recv_shm_id).unwrap()
+        assert recv_sb.get_owner() == 2
+        assert recv_sb.get_address() == addr
+    finally:
+        sysv.shutdown()
+
+
+def test_ipc_03_queue_full_rollback_restores_owner():
+    """IPC-03: Enqueue failure on full queue rolls back SharedBlock ownership to sender."""
+    sysv = System()
+    try:
+        uri = "fireball://hal/gpio/0"   # Max queue = 2
+        sysv.ipc.route_message("CLIENT_APP", uri, IPCMessage("m1", {}))
+        sysv.ipc.route_message("CLIENT_APP", uri, IPCMessage("m2", {}))
+
+        # Third message with SharedBlock
+        sb = sysv.memory_manager.allocate_shared(caller_task_id=1, size=256).unwrap()
+        shm_id = sb.release()
+
+        msg3 = IPCMessage("m3", {"shm_id": shm_id})
+        status, _ = sysv.ipc.route_message("CLIENT_APP", uri, msg3)
+        assert status == "ERR_QUEUE_FULL"
+
+        # Rollback
+        sysv.memory_manager.rollback_transfer(original_sender_id=1, shm_id=shm_id)
+        assert sysv.memory_manager.vmmio_registry.get_owner(sb.page_idx) == 1
+    finally:
+        sysv.shutdown()
+
+
+# ===========================================================================
+# 9. fireball_call Full Syscall Surface (system_syscall_test_spec.md)
 # ===========================================================================
 
 def test_syscall_01_unknown_id_returns_nosys():

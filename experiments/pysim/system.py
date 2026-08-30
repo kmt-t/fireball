@@ -47,7 +47,7 @@ from logger import ConsoleOutput, LogDictionary, Logger, LogLevel
 # instead of re-deriving their logic (both docs explicitly say not to keep a
 # second copy of them).
 _DOCS_COMPONENTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "docs", "components")
-for _sub in (("tier2_runtime", "concepts"), ("tier1_interface", "concepts"), ("tier1_core", "concepts")):
+for _sub in (("tier3_platform", "concepts"), ("tier2_runtime", "concepts"), ("tier1_interface", "concepts"), ("tier1_core", "concepts")):
     _p = os.path.join(_DOCS_COMPONENTS, *_sub)
     if _p not in sys.path:
         sys.path.insert(0, _p)
@@ -61,6 +61,13 @@ from vmmio_concept import (  # noqa: E402
     VMMIOController,
 )
 from ipc_router_concept import IPCMessage, IPCRouter  # noqa: E402
+from platform_memory_concept import (  # noqa: E402
+    FB_CONF_MEMORY_POOL_SIZE,
+    FB_TASK_ID_FLIGHT,
+    MemoryManager,
+    PMSAv8MPU,
+    SharedBlock,
+)
 
 
 class FbSyscallId(IntEnum):
@@ -222,11 +229,9 @@ class System:
         for i in range(_PASSTHROUGH_TEST_PAGES):
             self.vmmio.map_passthrough_page(vpn=(FB_CONF_VSOC_PASSTHROUGH_BASE >> 12) + i, phys_page=i)
 
-        # KNOWN GAP (see README's missing-spec list): this SHM window and
-        # hal.py's ShmBufferPool are two independent implementations of
-        # "shared memory" that are not yet unified -- a real system has
-        # exactly one. This experiment does not yet register ShmBufferPool
-        # handles as vMMIO FC=14 pages.
+        # Physical Memory Manager (platform_memory.md) with 64KB aligned pool
+        self.memory_manager = MemoryManager()
+        self.memory_manager.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
 
         self.ipc = IPCRouter()
         self._ipc_handle_by_uri: dict[str, int] = {}

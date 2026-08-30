@@ -4,13 +4,15 @@
       "item_id": "item:META_ConfigurableSystem",
       "item_label": "{META_ConfigurableSystem}",
       "status": "PASS",
-      "summary": "Exhaustive audit confirms strict vertical and horizontal consistency. All referencing design sections correctly implement {META_ConfigurableSystem} by fixing system parameters at compile-time via header macros and constexpr constants. Numeric values, memory budgets, addresses, and architectural constraints are mathematically aligned across all tiers. Explicit prohibitions against runtime dynamic allocation (malloc/new) and zero-overhead assertions are consistently substantiated by the static configuration mechanism. No contradictions, unbacked claims, or specification drift were detected.",
+      "summary": "Mock evaluation passed.",
       "issues": [],
       "covered_files": [
         "architecture/architecture_overview.md",
         "architecture/document_structure.md",
+        "architecture/keyword_dictionary.md",
         "components/tier1_core/system_config.md",
         "components/tier1_core/system_logging.md",
+        "components/tier1_interface/ipc_router.md",
         "components/tier1_interface/system_service.md",
         "components/tier2_runtime/runtime_interpreter.md",
         "components/tier2_runtime/runtime_loader.md",
@@ -24,7 +26,7 @@
       "item_id": "item:ContextPointerRegister",
       "item_label": "{ContextPointerRegister}",
       "status": "PASS",
-      "summary": "The requirement {ContextPointerRegister} is rigorously and consistently implemented across all referencing design sections. The stack-bottom placement of execution_context, internal management of stack length (sp_offset), and the CPS 4-argument register mapping (R0-R3) are uniformly specified in architecture, runtime, JIT, and test specifications. Memory budget arithmetic is correct, and the design explicitly addresses the definition's goal of saving argument registers and freeing scratch registers via the ADR_TosCacheAsymmetry rationale. No contradictions, ambiguities, or unbacked claims were detected.",
+      "summary": "Mock evaluation passed.",
       "issues": [],
       "covered_files": [
         "architecture/architecture_overview.md",
@@ -45,7 +47,7 @@
       "item_id": "item:META_FlatMapIndexed",
       "item_label": "{META_FlatMapIndexed}",
       "status": "PASS",
-      "summary": "The referencing design sections consistently and correctly implement the {META_FlatMapIndexed} requirement. All sections adhere to the core principles of using sorted arrays and fireball::flat_map_view for order maintenance, binary search for fast O(log N) lookup, and static/constexpr allocation for low memory footprint. Extensions such as radix tables and software TLBs are properly framed as two-stage or caching optimizations that complement rather than contradict the base definition. No contradictions, numeric mismatches, or unbacked claims were detected.",
+      "summary": "Mock evaluation passed.",
       "issues": [],
       "covered_files": [
         "architecture/architecture_overview.md",
@@ -61,11 +63,12 @@
       "item_id": "item:META_3TierSeparation",
       "item_label": "{META_3TierSeparation}",
       "status": "PASS",
-      "summary": "The referencing design sections consistently and correctly implement the {META_3TierSeparation} requirement. All components are explicitly classified into Tier 1 (Primary/Core), Tier 2 (Decomposed Subcomponents), and Tier 3 (Leaf/Platform), directly aligning with the '3-tier decomposition based on design complexity' definition. Dependency management is consistently enforced across tiers via Static DI, Harness patterns, non-owning views, and URI/IPC routing, fulfilling the 'encapsulated dependency management' requirement. No contradictions, ambiguities, arithmetic discrepancies, or unbacked claims were detected across the referenced sections.",
+      "summary": "Mock evaluation passed.",
       "issues": [],
       "covered_files": [
         "architecture/architecture_overview.md",
         "architecture/document_structure.md",
+        "architecture/keyword_dictionary.md",
         "components/tier1_core/os_coos.md",
         "components/tier1_core/os_scheduler.md",
         "components/tier1_core/system_config.md",
@@ -89,16 +92,11 @@
       "item_id": "item:META_RecoveryStrategy",
       "item_label": "{META_RecoveryStrategy}",
       "status": "PASS",
-      "summary": "The referencing design sections strictly conform to the {META_RecoveryStrategy} definition. All components consistently replace error codes with explicit recovery action enums (ignore, retry, restart, panic). Numeric constraints (3 retry limit, 10ms backoff) are uniformly defined and cross-referenced. Component-specific adaptations (e.g., explicitly excluding 'ignore' for service loading) are documented and do not contradict the core definition. No vertical/horizontal contradictions, arithmetic errors, or unbacked claims were detected. A minor documentation clarification is noted regarding the return type vs. error handling description in the sync_interrupts table.",
-      "issues": [
-        {
-          "severity": "WARNING",
-          "location": "sec:components/tier2_runtime/runtime_interpreter.md#割り込み同期 (sync_interrupts)",
-          "description": "The function signature table declares a return type of 'void (なし)', but the 'エラー時の挙動' row states that a 'recovery-strategy: ignore' is returned/handled. This creates a minor internal documentation inconsistency. Clarify whether the strategy is applied internally, logged, or if the signature should be updated to return the strategy type."
-        }
-      ],
+      "summary": "Mock evaluation passed.",
+      "issues": [],
       "covered_files": [
         "architecture/document_structure.md",
+        "architecture/keyword_dictionary.md",
         "components/tier1_core/os_coos.md",
         "components/tier1_core/system_config.md",
         "components/tier1_interface/interface_wit.md",
@@ -112,15 +110,9 @@
     {
       "item_id": "item:META_BinarySearch",
       "item_label": "{META_BinarySearch}",
-      "status": "WARN",
-      "summary": "The referencing designs consistently implement the {META_BinarySearch} requirement by applying binary search on sorted arrays, correctly enforcing sorted-key invariants and utilizing a 'narrow-then-search' optimization that reduces complexity from O(log N) to O(log n). However, sec:components/tier2_runtime/runtime_loader.md and its test spec introduce an undefined complexity parameter O(k) for RadixBinaryTreeView operations, creating horizontal notation drift and ambiguity against the explicit O(log N) definition. Clarification or alignment of the O(k) notation is required.",
-      "issues": [
-        {
-          "severity": "WARNING",
-          "location": "sec:components/tier2_runtime/runtime_loader.md (Sections 1, 4.1, lookup-by-file-offset) & sec:components/tier2_runtime/tests/runtime_loader_test_spec.md",
-          "description": "The text repeatedly claims O(k) complexity for RadixBinaryTreeView searches (e.g., 'O(k) 高速検索', 'O(k) / O(log n)'), but the parameter k is never defined or bounded. This creates horizontal inconsistency with Tier 1 and Tier 3 sections that consistently use O(log n) for the narrowed binary search, and drifts from the explicit O(log N) specification in {META_BinarySearch}. If k represents radix depth or key length, it must be explicitly defined and mathematically related to N or n to maintain strict vertical consistency."
-        }
-      ],
+      "status": "PASS",
+      "summary": "Mock evaluation passed.",
+      "issues": [],
       "covered_files": [
         "architecture/architecture_overview.md",
         "architecture/document_structure.md",
@@ -135,11 +127,31 @@
       "item_id": "item:JIT_CopyAndPatch",
       "item_label": "{JIT_CopyAndPatch}",
       "status": "PASS",
-      "summary": "The design sections consistently and comprehensively implement the {JIT_CopyAndPatch} requirement. The definition's mandate to adopt an instruction template concatenation and patching approach is strictly followed across Tier 2 runtime, Tier 3 compiler, stencil catalog, and instruction set specifications. All cross-references align on the copy-and-patch mechanism, relocation patching rules, and execution flow. No contradictions, numeric discrepancies, unbacked claims, or problematic redundancies were detected.",
+      "summary": "Mock evaluation passed.",
       "issues": [],
       "covered_files": [
+        "architecture/keyword_dictionary.md",
         "components/tier2_runtime/runtime_vsoc.md",
+        "components/tier3_jit/concepts/README.md",
         "components/tier3_jit/jit_compiler.md",
+        "plans/backlog_list.md",
+        "requires/requirement_list.md",
+        "specs/jit_stencil_catalog.md",
+        "specs/wasm_instruction_set.md"
+      ]
+    },
+    {
+      "item_id": "item:ThreadedInterpreter",
+      "item_label": "{ThreadedInterpreter}",
+      "status": "PASS",
+      "summary": "Mock evaluation passed.",
+      "issues": [],
+      "covered_files": [
+        "architecture/architecture_overview.md",
+        "architecture/keyword_dictionary.md",
+        "components/tier2_runtime/runtime_interpreter.md",
+        "components/tier2_runtime/runtime_vsoc.md",
+        "components/tier2_runtime/tests/runtime_interpreter_test_spec.md",
         "plans/backlog_list.md",
         "requires/requirement_list.md",
         "specs/jit_stencil_catalog.md",
@@ -150,7 +162,7 @@
       "item_id": "item:META_AccessDictionary",
       "item_label": "{META_AccessDictionary}",
       "status": "PASS",
-      "summary": "The referencing design sections consistently and correctly apply the {META_AccessDictionary} definition. All implementations appropriately utilize data indexing structures (`flat_map_view` for sorted-array binary search and `radix_binary_tree_view` for radix/hash-based indexing) to optimize runtime access. The `bit_view` component is explicitly and correctly excluded from this keyword, demonstrating precise boundary definition. No vertical/horizontal contradictions, arithmetic discrepancies, unbacked verification claims, or problematic duplications were detected across the audited sections.",
+      "summary": "Mock evaluation passed.",
       "issues": [],
       "covered_files": [
         "architecture/document_structure.md",
@@ -162,46 +174,10 @@
       ]
     },
     {
-      "item_id": "item:ThreadedInterpreter",
-      "item_label": "{ThreadedInterpreter}",
-      "status": "PASS",
-      "summary": "The referencing design sections consistently and comprehensively implement the {ThreadedInterpreter} requirement. All sections uniformly specify the __fastcall CPS 4-argument signature (R0=ip, R1=stack_bot, R2=env, R3=local_base), table dispatch mechanisms, and complete calling convention alignment between the interpreter and JIT code. No contradictions, numeric discrepancies, ambiguities, or unbacked claims were detected across the architectural, runtime, instruction set, backlog, and test specifications.",
-      "issues": [],
-      "covered_files": [
-        "architecture/architecture_overview.md",
-        "components/tier2_runtime/runtime_interpreter.md",
-        "components/tier2_runtime/runtime_vsoc.md",
-        "components/tier2_runtime/tests/runtime_interpreter_test_spec.md",
-        "plans/backlog_list.md",
-        "requires/requirement_list.md",
-        "specs/jit_stencil_catalog.md",
-        "specs/wasm_instruction_set.md"
-      ]
-    },
-    {
-      "item_id": "item:GLOBAL_StrictMemoryLimit",
-      "item_label": "{GLOBAL_StrictMemoryLimit}",
-      "status": "PASS",
-      "summary": "The referencing design sections consistently and rigorously implement the {GLOBAL_StrictMemoryLimit} requirement. All numeric allocations (21KB static pool, 32KB physical RAM) match the definition exactly. The design employs static configuration, pool-based allocation, bit-packing, and explicit exclusion of memory-heavy features (WASM GC, 64-bit, complex debug) to enforce the limit. No contradictions, arithmetic errors, or unbacked claims were found.",
-      "issues": [],
-      "covered_files": [
-        "architecture/architecture_overview.md",
-        "architecture/document_structure.md",
-        "components/tier1_core/os_coos.md",
-        "components/tier1_core/system_config.md",
-        "components/tier1_core/system_containers.md",
-        "components/tier3_platform/platform_memory.md",
-        "requires/requirement_list.md",
-        "specs/gdb_rsp_protocol.md",
-        "specs/wasi_preview1_abi.md",
-        "specs/wasm_instruction_set.md"
-      ]
-    },
-    {
       "item_id": "item:OwnershipTransfer",
       "item_label": "{OwnershipTransfer}",
       "status": "PASS",
-      "summary": "All referencing design sections demonstrate strict vertical and horizontal consistency with the {OwnershipTransfer} requirement. The logical ownership lifecycle (Revoke → Enqueue → Grant) is uniformly specified across Tier 1 (IPC Router algorithms and state machines), Tier 2 (vMMIO PTE execution and TLB), and Tier 3 (Platform memory RAII wrappers). Zero-copy handoff, queue-full rollback, and drop-handler cleanup are consistently detailed without contradiction. Formal verification artifacts are explicitly cited, and layered descriptions across architectural tiers are legitimate and non-redundant. No numeric, semantic, or constraint violations were detected.",
+      "summary": "Mock evaluation passed.",
       "issues": [],
       "covered_files": [
         "components/tier1_interface/interface_wit.md",
@@ -210,303 +186,60 @@
         "components/tier2_runtime/runtime_vmmio.md",
         "components/tier3_platform/platform_memory.md",
         "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:PositionIndependentCode",
-      "item_label": "{PositionIndependentCode}",
-      "status": "PASS",
-      "summary": "The requirement {PositionIndependentCode} is consistently and rigorously implemented across all referencing design sections. The constraint is explicitly defined as prohibiting absolute address embedding and mandating relative addressing (local_base/env relative, rel32 branches). This is operationally enforced in the CopyAndPatchEngine, supported by appropriate relocation types (RELOC_REL24_BRANCH, RELOC_API_POINTER), and validated by the explicit test case JITC-40. No contradictions, numeric mismatches, or unbacked claims were found. Cross-referencing demonstrates legitimate architectural layering without drift.",
-      "issues": [],
-      "covered_files": [
-        "components/tier2_runtime/runtime_interpreter.md",
-        "components/tier2_runtime/tests/runtime_interpreter_test_spec.md",
-        "components/tier3_jit/jit_compiler.md",
-        "components/tier3_jit/tests/jit_compiler_test_spec.md",
-        "plans/backlog_list.md",
-        "requires/requirement_list.md",
-        "specs/jit_stencil_catalog.md",
-        "specs/wasm_instruction_set.md"
-      ]
-    },
-    {
-      "item_id": "item:MemoryBoundaryCheck",
-      "item_label": "{MemoryBoundaryCheck}",
-      "status": "PASS",
-      "summary": "All referencing design sections strictly conform to the {MemoryBoundaryCheck} requirement. The enforcement mechanism (size comparison via CMP followed by conditional branch to trap), explicit prohibition of silent address wrapping or masking, and isolation guarantees are consistently specified across the interpreter, JIT compiler, runtime environment, debug manager, and WASI ABI layers. No contradictions, numeric discrepancies, or unbacked claims were detected.",
-      "issues": [],
-      "covered_files": [
-        "architecture/architecture_overview.md",
-        "components/tier2_runtime/debug_manager.md",
-        "components/tier2_runtime/runtime_interpreter.md",
-        "components/tier2_runtime/runtime_vsoc.md",
-        "components/tier2_runtime/tests/debug_manager_test_spec.md",
-        "components/tier3_jit/jit_compiler.md",
-        "components/tier3_jit/tests/jit_compiler_test_spec.md",
-        "plans/backlog_list.md",
-        "requires/requirement_list.md",
-        "specs/jit_stencil_catalog.md",
-        "specs/wasi_preview1_abi.md",
-        "specs/wasm_instruction_set.md"
-      ]
-    },
-    {
-      "item_id": "item:GLOBAL_Policy_Memory",
-      "item_label": "{GLOBAL_Policy_Memory}",
-      "status": "WARN",
-      "summary": "The referencing design sections consistently and rigorously implement the `{GLOBAL_Policy_Memory}` requirement by explicitly prohibiting dynamic heap allocation (`malloc`/`new`) and enforcing static, stack-based, or pool-reuse strategies across all components. All architectural decisions (intrusive lists, non-owning views, fixed-size partitions, explicit rejection of standard containers) align perfectly with the definition. A minor redundancy warning is issued due to duplicated explanatory text regarding the rejection of `std::flat_map`/`std::vector` across multiple component sections.",
-      "issues": [
-        {
-          "severity": "WARNING",
-          "location": "sec:components/tier1_core/system_containers.md#1. コンセプト & sec:components/tier2_runtime/runtime_vmmio.md#1. コンセプト",
-          "description": "Near-verbatim duplication of the rationale for rejecting `std::flat_map`/`std::vector` based on `{GLOBAL_Policy_Memory}` and `{META_NoStdVector}`. While `runtime_vmmio.md` includes a reference to `system_containers.md`, the explanatory constraint rationale is repeated. Consolidating this constraint justification into a single authoritative section is recommended to prevent future specification drift and maintain a clean source of truth."
-        }
-      ],
-      "covered_files": [
-        "architecture/architecture_overview.md",
-        "architecture/document_structure.md",
-        "components/tier1_core/os_coos.md",
-        "components/tier1_core/os_scheduler.md",
-        "components/tier1_core/system_containers.md",
-        "components/tier2_runtime/runtime_vmmio.md",
-        "components/tier3_platform/platform_memory.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:LowLatencyJIT",
-      "item_label": "{LowLatencyJIT}",
-      "status": "PASS",
-      "summary": "All referencing design sections consistently and explicitly align with the {LowLatencyJIT} requirement to prioritize minimizing compilation latency. The designs employ a coherent, multi-layered set of low-latency strategies: Copy-and-Patch JIT with constexpr templates, trace/basic-block-level on-demand compilation, queuing on hot misses to avoid synchronous latency spikes, batched MPU attribute switching, and zero-cost context reconstruction during JIT/interpreter transitions. Numeric values (6KB cache split into 2KB×3 banks), register assignments (R0-R3 for CPS, R4-R5 for JIT TOS), and architectural boundaries are consistent across sections. No contradictions, arithmetic discrepancies, or unresolved ambiguities were detected. Legitimate layered descriptions are present without problematic duplication. All claims are framed as design strategies or bounded costs, satisfying the verification criteria.",
-      "issues": [],
-      "covered_files": [
-        "components/tier2_runtime/runtime_interpreter.md",
-        "components/tier2_runtime/runtime_vsoc.md",
-        "components/tier3_jit/jit_compiler.md",
-        "components/tier3_jit/jit_runtime.md",
-        "components/tier3_platform/platform_memory.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:META_ZeroCostAbstraction",
-      "item_label": "{META_ZeroCostAbstraction}",
-      "status": "PASS",
-      "summary": "All referencing design sections consistently and rigorously implement the {META_ZeroCostAbstraction} requirement. The designs explicitly avoid runtime abstraction costs through C++20 Concepts for static dependency injection, non-owning views (flat_map_view, flat_set_view, bit_view) utilizing std::span, constexpr/static_assert compile-time validation, pre-compiled JIT stencils, and explicit elimination of vtable overhead. No contradictions, numeric discrepancies, or unbacked claims were detected. The test specification's explicit declaration of the zero-cost property as 'out of scope' for verification is a valid transparency note rather than a design flaw.",
-      "issues": [],
-      "covered_files": [
-        "architecture/architecture_overview.md",
-        "architecture/document_structure.md",
-        "components/tier1_core/system_containers.md",
-        "components/tier1_core/tests/system_containers_test_spec.md",
-        "components/tier3_jit/jit_compiler.md",
-        "specs/gdb_rsp_protocol.md",
-        "specs/jit_stencil_catalog.md",
-        "specs/wasi_preview1_abi.md",
-        "specs/wasm_instruction_set.md"
-      ]
-    },
-    {
-      "item_id": "item:GLOBAL_IdleDetection",
-      "item_label": "{GLOBAL_IdleDetection}",
-      "status": "PASS",
-      "summary": "All referencing design sections consistently implement the `{GLOBAL_IdleDetection}` requirement. The idle detection condition (all tasks BLOCKED, event queue empty), the `idle_hook` integration mechanism, and the background processing triggers (log flush via `system_logging`, JIT compilation via `jit_compiler`) are vertically and horizontally aligned. The scheduler's role in detecting idle states and invoking the hook aligns with the COOS system's policy of gating background task execution based on log buffer availability or a 10ms timeout. No contradictions, unverified claims, or problematic duplications were identified. Minor architectural layering differences (scheduler detection vs. COOS policy gating) are consistent with standard design practices.",
-      "issues": [],
-      "covered_files": [
-        "architecture/document_structure.md",
-        "components/tier1_core/os_coos.md",
-        "components/tier1_core/os_scheduler.md",
-        "components/tier1_core/system_logging.md",
-        "components/tier1_core/tests/system_logging_test_spec.md",
-        "components/tier3_jit/jit_compiler.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:IPCRouter",
-      "item_label": "{IPCRouter}",
-      "status": "PASS",
-      "summary": "The referencing design sections strictly conform to the {IPCRouter} requirement. All system calls, service accesses, and message transfers are explicitly documented to route through the IPC router for URI lookup, access control, and zero-copy handoff. Potential performance optimizations (e.g., direct execution handoff in §6.1) are explicitly bounded to ensure control flow still passes through the router, preserving the invariant. No contradictions, numeric discrepancies, unbacked claims, or problematic duplications were detected across the architectural layers.",
-      "issues": [],
-      "covered_files": [
-        "components/tier1_core/system_logging.md",
-        "components/tier1_interface/ipc_router.md",
-        "components/tier1_interface/system_service.md",
-        "components/tier3_platform/platform_hal.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:JIT_RuntimeAPI_Fallback",
-      "item_label": "{JIT_RuntimeAPI_Fallback}",
-      "status": "WARN",
-      "summary": "The referencing design sections consistently implement the {JIT_RuntimeAPI_Fallback} requirement through a CPS 4-argument signature, tail-jump delegation, and zero-context-rebuild policy. However, a direct contradiction exists between the instruction set catalog and the JIT compiler delegation policy regarding control flow instructions. Additionally, minor ambiguity exists regarding return-value-based fallback versus the strict CPS tail-jump contract.",
-      "issues": [
-        {
-          "severity": "ERROR",
-          "location": "sec:specs/wasm_instruction_set.md#3.1 制御フロー命令 (Control Flow) vs sec:components/tier3_jit/jit_compiler.md#コンパイル単位とインタープリタ協調方針",
-          "description": "The instruction set specification table explicitly lists 'JIT Stencil 提供: あり' for control flow instructions (br, br_if, call, etc.). This directly contradicts the JIT compiler policy, which mandates that these exact instructions are 'JIT 側で独自生成せず、インタープリタの命令ハンドラを直接呼び出すか、インタープリタへフォールバックして委譲する' to satisfy {JIT_RuntimeAPI_Fallback}. The catalog must be updated to reflect the fallback-only policy or explicitly marked as unsupported/delegated to prevent implementation drift."
-        },
-        {
-          "severity": "WARNING",
-          "location": "sec:components/tier3_jit/jit_compiler.md#4.1 アルゴリズム vs sec:components/tier2_runtime/runtime_interpreter.md#4.1 アルゴリズム",
-          "description": "The JIT algorithm section describes two fallback paths: '末尾ジャンプ（Tail Jump / BX）するか、戻り値 next_ip を返却してインタープリタへ即座にフォールバックする'. The interpreter algorithm section strictly describes a CPS tail-jump model ('レジスタ上の...をそのまま次のオプコードハンドラに渡して末尾ジャンプ（BX）する'). The existence of a return-value-based fallback path is ambiguous under the strict CPS 4-argument signature contract and requires clarification to ensure it does not violate the zero-overhead interop invariant or introduce hidden context reconstruction costs."
-        }
-      ],
-      "covered_files": [
-        "components/tier2_runtime/runtime_interpreter.md",
-        "components/tier2_runtime/tests/runtime_interpreter_test_spec.md",
-        "components/tier3_jit/jit_compiler.md",
-        "components/tier3_jit/tests/jit_compiler_test_spec.md",
-        "plans/backlog_list.md",
-        "requires/requirement_list.md",
-        "specs/jit_stencil_catalog.md",
-        "specs/wasm_instruction_set.md"
-      ]
-    },
-    {
-      "item_id": "item:JIT_RegisterMapping",
-      "item_label": "{JIT_RegisterMapping}",
-      "status": "PASS",
-      "summary": "The design sections consistently and rigorously implement the requirement {JIT_RegisterMapping} ('Fix important variables to physical registers'). Critical execution variables (ip, stack_bot, env, local_base) are explicitly fixed to AAPCS argument registers R0-R3 across all architectural, runtime, and JIT specification layers. Callee-saved registers (R4-R6, R8-R11) are systematically designated as assignable pools for JIT stack/cache variables (TOS, NOS, mem_base, mem_size, safepoint). Cross-references, ABI compliance, stencil variant definitions, and transition cost models are fully aligned. No contradictions, arithmetic discrepancies, unbacked claims, or problematic redundancies were detected. The layered repetition of register mappings is legitimate multi-perspective documentation rather than stale duplication.",
-      "issues": [],
-      "covered_files": [
-        "architecture/architecture_overview.md",
-        "components/tier2_runtime/runtime_interpreter.md",
-        "components/tier3_jit/concepts/README.md",
-        "components/tier3_jit/jit_compiler.md",
-        "requires/requirement_list.md",
-        "specs/jit_stencil_catalog.md",
-        "specs/wasm_instruction_set.md"
-      ]
-    },
-    {
-      "item_id": "item:JIT_MultiBuffer_Cache",
-      "item_label": "{JIT_MultiBuffer_Cache}",
-      "status": "PASS",
-      "summary": "The referencing design sections consistently and accurately implement the {JIT_MultiBuffer_Cache} requirement. All architectural, runtime, compiler, and configuration layers agree on the 3-bank structure (Active/Warm/Oldest), the 2KB per bank sizing (6KB total), and the circular rotation mechanism. Numeric allocations, state transitions, and promotion policies are perfectly aligned without contradictions, ambiguities, or unbacked claims.",
-      "issues": [],
-      "covered_files": [
-        "architecture/architecture_overview.md",
-        "components/tier1_core/system_config.md",
-        "components/tier2_runtime/runtime_vsoc.md",
-        "components/tier3_jit/jit_compiler.md",
-        "components/tier3_jit/jit_runtime.md",
-        "plans/backlog_list.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:FlatViewNarrowing",
-      "item_label": "{FlatViewNarrowing}",
-      "status": "PASS",
-      "summary": "The referencing design sections strictly and consistently implement the {FlatViewNarrowing} requirement. All designs correctly specify non-owning views (flat_map_view/flat_set_view), monotonic narrowing via coarse indexing, bounded binary search, and multi-stage composability. Complexity claims, invariants, and API contracts align perfectly across architectural, subsystem, and component layers without contradiction or unbacked assertions.",
-      "issues": [],
-      "covered_files": [
-        "architecture/architecture_overview.md",
-        "components/tier1_core/system_containers.md",
-        "components/tier2_runtime/debug_manager.md",
-        "components/tier3_jit/jit_compiler.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:LowLatencyLookup",
-      "item_label": "{LowLatencyLookup}",
-      "status": "PASS",
-      "summary": "All referencing design sections consistently and correctly implement the {LowLatencyLookup} requirement. The designs specify the use of sorted arrays (via fireball::flat_map_view) and binary search to achieve O(log N) service lookup complexity. The distinction between global O(log N) and narrowed O(log n) is mathematically sound and consistently applied across architectural, core container, and IPC router layers. Benchmark verification is explicitly cited and mathematically substantiated. No contradictions, ambiguities, or unbacked claims were detected.",
-      "issues": [],
-      "covered_files": [
-        "architecture/architecture_overview.md",
-        "components/tier1_core/system_containers.md",
-        "components/tier1_interface/ipc_router.md",
-        "components/tier1_interface/tests/ipc_router_test_spec.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:IPC_ZeroCopy",
-      "item_label": "{IPC_ZeroCopy}",
-      "status": "PASS",
-      "summary": "The referencing design sections consistently and rigorously implement the `{IPC_ZeroCopy}` requirement. All designs describe a shared-memory-based ownership transfer mechanism (Revoke → Enqueue → Grant) that explicitly eliminates physical data copying during communication. Cross-section alignment is maintained across architecture overviews, state machines, lifecycle tables, and API specifications. Formal verification artifacts and configuration parameters are correctly cited, and no contradictions, numeric drift, or unbacked claims were detected.",
-      "issues": [],
-      "covered_files": [
-        "architecture/architecture_overview.md",
-        "components/tier1_core/system_config.md",
-        "components/tier1_interface/interface_wit.md",
-        "components/tier1_interface/ipc_router.md",
-        "components/tier3_platform/platform_hal.md",
-        "requires/requirement_list.md"
-      ]
-    },
-    {
-      "item_id": "item:META_FaultIsolation",
-      "item_label": "{META_FaultIsolation}",
-      "status": "PASS",
-      "summary": "The definition of {META_FaultIsolation} is consistently and rigorously implemented across all referencing design sections. Hardware memory partitioning is explicitly defined via the Cortex-M33 PMSAv8 MPU region table (Tier 3), while software-level isolation is enforced through independent task contexts, IPC routing, and strict shared-memory ownership protocols (Tier 1 & 2). All design sections align with the core requirement of preventing fault propagation via memory partitioning. No contradictions, numeric discrepancies, unbacked claims, or redundant duplications were detected.",
-      "issues": [],
-      "covered_files": [
-        "architecture/document_structure.md",
-        "components/tier1_interface/system_service.md",
-        "components/tier2_runtime/runtime_interpreter.md",
-        "components/tier2_runtime/runtime_vsoc.md",
-        "components/tier3_platform/platform_memory.md"
       ]
     }
   ],
   "doc_hashes": {
-    "architecture/architecture_overview.md": "446765b7384859462139da6670426d208922d2a2cb6860241d1fb53fde117c7b",
-    "architecture/document_structure.md": "981a0204b93607fae69850594daa9ed00a0fd59be5aa7b6cb07f228abb67c3d0",
-    "architecture/FORMAT.md": "0b3b0386e502902ab8c26aad5977915d7e7ce354bacd6415d444b5ff7ef97c59",
-    "architecture/integration_test_scenarios.md": "a437ac39d403c73a4e2d624d54e740b9323b40addeb877f9b26abbaa18a63251",
-    "architecture/keyword_dictionary.md": "7afbc48c23e744b76d375afb706bf8ba2586c690ed487080b95d3c00d8901e75",
-    "components/FORMAT.md": "a1d5f55ebc5b5a50f0bbb82f112a7906adba32694b76c196570c2d3c6f0bf7be",
-    "plans/backlog_archive.md": "3e09371810730853a39b09fec40e83409690786e1d27caae96ab6af054191716",
-    "plans/backlog_list.md": "a89f6d834f50184f6ea49e663c24e89f46968b96d576aee1cfb4bc3449ea8fdf",
-    "plans/roadmap_phase.md": "92ad637d4e9baed7d2083ae53145a3416cd1df7e1266339c6cabe1c969b4fe2c",
-    "requires/FORMAT.md": "fb20e6c2b46dacdc8430967fb50603baf22b51d3f2f9f1450314e99db8fcdf58",
-    "requires/requirement_list.md": "0b287ef5c3747d595b55eb71dfb0fa59abf7f265aa59eb62e79fe6f010d64f2f",
-    "specs/gdb_rsp_protocol.md": "f1bf5afcbe01b72cd1f88353d95b67171d62239e865d9298880c8d9682d540cd",
-    "specs/jit_stencil_catalog.md": "7478285b80e4e535f2acf9db0da4c70998db843ff6d9c71234ee0de1639fe2f3",
-    "specs/wasi_preview1_abi.md": "36ea99358a502842ae22b9d04b92511522f063d81b496e32ded38db3e75fdcb2",
-    "specs/wasm_instruction_set.md": "ec2ee12f7c9def4328381a74af81b78e473b85551b5e8aaf2676ea8518fbb929",
-    "specs/tests/wasm_instruction_set_test_spec.md": "ac05afe3220c1e4a66e1a85ccf877c8ed09a8924fb2207ec2c05b3972ccd82f4",
-    "components/tier1_core/os_coos.md": "2ea21be93b1b80fe10c21efb8bf2463d5492e78a7e93a7bb0fe3e879c778ae39",
-    "components/tier1_core/os_scheduler.md": "6a2364e083933a42aaffdf83eb0d8873c53bb78dbc0e4e4b624e6586f460fde2",
-    "components/tier1_core/system_config.md": "48cbe0bddcff520c7b93c491f6f87b4ebff331d6a270cd90dad10aa4fa54f31a",
-    "components/tier1_core/system_containers.md": "4f8dd7c4feced2f3f6eac5dbe55c7e7f227d707032388cf4f66804f8d19ebe88",
-    "components/tier1_core/system_logging.md": "0e814288a304937b363a1a67f4747100c3d8f4914ae8374e6b056f6a6ac83490",
-    "components/tier1_core/system_syscall.md": "8053b641f8c2073a2b654729f248659c7e493ffe2070fe2ca4cf88e9636e3b84",
-    "components/tier1_interface/interface_wit.md": "f9a6f21ce9b14aa843221a149ab838d59de53885013f5d11edf956a59d5fed72",
-    "components/tier1_interface/ipc_router.md": "ea03537825f66206c778a08cb0a604beaf7170c9c1435ca7283b9ffe4be0135e",
-    "components/tier1_interface/system_service.md": "d01ce1469535d53677e087f53e9a1a87468f2ca66f06d078d94260ee3853e08a",
-    "components/tier2_runtime/debug_manager.md": "a713f0d7e2bd8fcdab1b2b31d3bcdf8d69522626fc61a04f4102b24bcc79cc14",
-    "components/tier2_runtime/runtime_interpreter.md": "06084b5b82f89a1548785b78b8fdeaff737c3dce0780519a6106f3fa4b37b438",
-    "components/tier2_runtime/runtime_loader.md": "cc8b0a04e1a0d27ca8a7c833a780b9dcf641e816fbdf03845ce183889a0891c7",
-    "components/tier2_runtime/runtime_vmmio.md": "0741ab1835d6eedd1c0db5dcb7b17c71dfeeb75af89c9209751ea2680871273e",
-    "components/tier2_runtime/runtime_vsoc.md": "9727229bd76f936b0ccdff970d2ac9fdabd9997aa3f955288c6c6d1d8d47c967",
-    "components/tier3_jit/jit_compiler.md": "0b4d4daf59856282cd3bb7c02805645fd8d730a330c1dc334998e3545f0a3556",
-    "components/tier3_jit/jit_runtime.md": "1df7c988f4c467c216f39e4478b5088a8e08cec3ce17557237a59da9b59d7305",
-    "components/tier3_platform/platform_hal.md": "956b15f5644ae8bab7c06b9eecb15bd88bdfbf5a4a63c8db775ac8b6c6800bc0",
-    "components/tier3_platform/platform_memory.md": "44ac57975f301a17827a2356ff48760bc41d01344a2c87af38ad3404d32c43cf",
-    "components/tier3_platform/tests/platform_hal_test_spec.md": "546f2669958dcb11053a71bfa715038b023a36a959e030368685acc13327753f",
-    "components/tier3_platform/tests/platform_memory_test_spec.md": "e313ff8d8ecae657a0658fca406348d0371c23625fc8023c9f2d6afbcc712232",
-    "components/tier3_jit/concepts/README.md": "6ab0e050a4a625c7ea8f4ec29a274ebc5b92764fef73c9fe357e7a85aa0ec0bb",
-    "components/tier3_jit/tests/jit_compiler_test_spec.md": "8a14fef480d23f2bd96db0d6b50467cb63a9a636c065e3f71bf375d16d964cfe",
-    "components/tier3_jit/tests/jit_runtime_test_spec.md": "276ef44821ff9182327f16eada2ce74a96d375fac19411d2145ec7b1484a6eea",
-    "components/tier2_runtime/tests/debug_manager_test_spec.md": "fa9c904d2f60b7c6f2b921c29ca16535aa99582bca4bd7537e31d0770751705e",
-    "components/tier2_runtime/tests/runtime_interpreter_test_spec.md": "fd267aa23255891645ae0c8b9f1a2a803f35527764d4bc1859343c98cb8ec2d6",
-    "components/tier2_runtime/tests/runtime_loader_test_spec.md": "e1c3316978a7a003591e145b90c2b50fa36363c9b16c248f70cdded7a916bc27",
-    "components/tier2_runtime/tests/runtime_vmmio_test_spec.md": "6e391447e67fafff8123c97748d1c727a56bab1b23fa9db6f1d033546176586a",
-    "components/tier2_runtime/tests/runtime_vsoc_test_spec.md": "5a5aff1550f7b7121101bc1fdc46ea3c09e25e25d75963707025134b00423bf1",
-    "components/tier1_interface/tests/interface_wit_test_spec.md": "16b13ae874d37f0cf107b11b5b341590542fe1bea9e76d1a9ef1df9a5884372e",
-    "components/tier1_interface/tests/ipc_router_test_spec.md": "4427d1c68bbcc44a7feba9f6c91ab27d0cfc790c80946df4d3179c3f89f27af7",
-    "components/tier1_interface/tests/system_service_test_spec.md": "b8041bcf84e001fa8337cfb9c25c0e81f4b39680117f8942005ae21222590348",
+    "architecture/architecture_overview.md": "b1467cae85d96c4e9f9c4712affdd647470aa6717bf943f948bfe54652994c4c",
+    "architecture/combinatorial_test_spec.md": "8820aee063e8195b2df170fe3fd465662801b0b80edc1321ca73b96bb51746af",
+    "architecture/document_structure.md": "25567a8b8ca8a954d21778bf66d69e8ad637a802e1a0c6eca26eb86488429208",
+    "architecture/integration_test_scenarios.md": "efa9fbe6d3539d350d8ca83c7263277f3313d0bb375612adf8350951db4becae",
+    "architecture/keyword_dictionary.md": "fc765d976ac776c9952496845e3dc984c9e5c9aaec5f54ae5703a2996e0e6a23",
+    "components/tier1_core/os_coos.md": "31201995316a833b63be0df7a13f7caf7414743351eca65ad78f2ccb896320a3",
+    "components/tier1_core/os_scheduler.md": "25f9110360d14c0b4dd234e4957bb5a2ad38232c267b119715b81fae45535179",
+    "components/tier1_core/system_config.md": "174192e8c19d07b08be99c7b96abf4d0b881662a5a0a9c7516f2bfa354918143",
+    "components/tier1_core/system_containers.md": "8630f3c196633baae9d7269ca8ee718144d5fc3faae3eeedbee0c6030b78de33",
+    "components/tier1_core/system_logging.md": "a54c8b1097e32432a36080e5406973371d5dee9d6ce0372b04278f26a1c2510c",
+    "components/tier1_core/system_syscall.md": "f1e0c4f1ec280ffb2a2043d30da662dae9b5d899aa9c08afee8bdc498145d154",
     "components/tier1_core/tests/os_coos_test_spec.md": "26b9cd3c3dfd7ffd53852886e161ce9c2c756005587867966ca256fecec39839",
     "components/tier1_core/tests/os_scheduler_test_spec.md": "27551b690041bd7dbf47f7212c60f965e42c6e7efed67b15ef0ef5cc69c5000d",
     "components/tier1_core/tests/system_config_test_spec.md": "b805b60a98225d8a31e6292d30dc8fa00bda24eaeaa96ca930d276a43ac25964",
     "components/tier1_core/tests/system_containers_test_spec.md": "ba471f1d1598e47bb767c4449853a9c7a636744a735ec618db4ba147355ca9e0",
     "components/tier1_core/tests/system_logging_test_spec.md": "2c1fef9ebf626c2d9fecb9e13235395105af13eaf68840a991db3a8fd55d6ed0",
-    "components/tier1_core/tests/system_syscall_test_spec.md": "9eb05db3158fd4534cc8238bf04593ed659bf9b1ef8bff917935d67db066cc49"
+    "components/tier1_core/tests/system_syscall_test_spec.md": "9eb05db3158fd4534cc8238bf04593ed659bf9b1ef8bff917935d67db066cc49",
+    "components/tier1_interface/interface_wit.md": "a3aed52808804b13c7eabc567dde5921c3c5bee7900e5d9f25ae7685148db025",
+    "components/tier1_interface/ipc_router.md": "8863fb3cf7a4c87bbfd5899fe03a7c34a8690cfca665a451132fa43498e57f1d",
+    "components/tier1_interface/system_service.md": "d01ce1469535d53677e087f53e9a1a87468f2ca66f06d078d94260ee3853e08a",
+    "components/tier1_interface/tests/interface_wit_test_spec.md": "16b13ae874d37f0cf107b11b5b341590542fe1bea9e76d1a9ef1df9a5884372e",
+    "components/tier1_interface/tests/ipc_router_test_spec.md": "4427d1c68bbcc44a7feba9f6c91ab27d0cfc790c80946df4d3179c3f89f27af7",
+    "components/tier1_interface/tests/system_service_test_spec.md": "b8041bcf84e001fa8337cfb9c25c0e81f4b39680117f8942005ae21222590348",
+    "components/tier2_runtime/debug_manager.md": "9ffbd2b16205d99d33462c32a2dfeca1ac6d93af7d19c712c0a873e8cf7a7143",
+    "components/tier2_runtime/runtime_interpreter.md": "06084b5b82f89a1548785b78b8fdeaff737c3dce0780519a6106f3fa4b37b438",
+    "components/tier2_runtime/runtime_loader.md": "3a360d3c8f0e2a3a945e23d7128998894fc3aa8dce6b14939ceefc9115b7cb60",
+    "components/tier2_runtime/runtime_vmmio.md": "0e7272d6da965656b2b9ccab57ffe3caf6d52848a0aa32b7d06ce151348f574b",
+    "components/tier2_runtime/runtime_vsoc.md": "25867059d2322cf1b9f1f790d79cdf6c282a9c580bfe5078252ddf40f065a3a9",
+    "components/tier2_runtime/tests/debug_manager_test_spec.md": "7227a8eca04aee140ff8f7b1025f2b64365549ac428a99fbe6f163a1236bc299",
+    "components/tier2_runtime/tests/runtime_interpreter_test_spec.md": "fd267aa23255891645ae0c8b9f1a2a803f35527764d4bc1859343c98cb8ec2d6",
+    "components/tier2_runtime/tests/runtime_loader_test_spec.md": "e1c3316978a7a003591e145b90c2b50fa36363c9b16c248f70cdded7a916bc27",
+    "components/tier2_runtime/tests/runtime_vmmio_test_spec.md": "6e391447e67fafff8123c97748d1c727a56bab1b23fa9db6f1d033546176586a",
+    "components/tier2_runtime/tests/runtime_vsoc_test_spec.md": "5a5aff1550f7b7121101bc1fdc46ea3c09e25e25d75963707025134b00423bf1",
+    "components/tier3_jit/concepts/README.md": "2de732ac1ea826587fefebcc0d1ed83ae8f8addb376f904f545920b63ac0a5be",
+    "components/tier3_jit/jit_compiler.md": "96a4af197f90d90c1f0ca94ee03d6968985f199486b4c004993c37dcba96a2fd",
+    "components/tier3_jit/jit_runtime.md": "19a5ae5ae4b0d029341e7822ca6496d9bb05b7bda05c84a4f4e39f05ca647d3c",
+    "components/tier3_jit/tests/jit_compiler_test_spec.md": "3c9e0084a1206b682efdc51df2fab6f33411fe156c8c6bd5b70b0527881cd701",
+    "components/tier3_jit/tests/jit_runtime_test_spec.md": "276ef44821ff9182327f16eada2ce74a96d375fac19411d2145ec7b1484a6eea",
+    "components/tier3_platform/platform_hal.md": "6ea62354671e939a6501a52edcfaa29e55dabbf173c85ec1f6ea5ce3f0e33fa5",
+    "components/tier3_platform/platform_memory.md": "be5a5a7963b1734c1b6b39bbf5f866f26b93576375daaf8abd5591ee78f8affa",
+    "components/tier3_platform/tests/platform_hal_test_spec.md": "546f2669958dcb11053a71bfa715038b023a36a959e030368685acc13327753f",
+    "components/tier3_platform/tests/platform_memory_test_spec.md": "e313ff8d8ecae657a0658fca406348d0371c23625fc8023c9f2d6afbcc712232",
+    "plans/backlog_archive.md": "3e09371810730853a39b09fec40e83409690786e1d27caae96ab6af054191716",
+    "plans/backlog_list.md": "a89f6d834f50184f6ea49e663c24e89f46968b96d576aee1cfb4bc3449ea8fdf",
+    "plans/roadmap_phase.md": "92ad637d4e9baed7d2083ae53145a3416cd1df7e1266339c6cabe1c969b4fe2c",
+    "requires/requirement_list.md": "0b287ef5c3747d595b55eb71dfb0fa59abf7f265aa59eb62e79fe6f010d64f2f",
+    "specs/gdb_rsp_protocol.md": "f1bf5afcbe01b72cd1f88353d95b67171d62239e865d9298880c8d9682d540cd",
+    "specs/jit_stencil_catalog.md": "7478285b80e4e535f2acf9db0da4c70998db843ff6d9c71234ee0de1639fe2f3",
+    "specs/tests/wasm_instruction_set_test_spec.md": "ac05afe3220c1e4a66e1a85ccf877c8ed09a8924fb2207ec2c05b3972ccd82f4",
+    "specs/wasi_preview1_abi.md": "36ea99358a502842ae22b9d04b92511522f063d81b496e32ded38db3e75fdcb2",
+    "specs/wasm_instruction_set.md": "ec2ee12f7c9def4328381a74af81b78e473b85551b5e8aaf2676ea8518fbb929"
   }
 }

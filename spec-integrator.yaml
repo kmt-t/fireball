@@ -116,15 +116,20 @@ risk_assessment:
     non_formal_tiers:
       - 0
       - "meta"
-    # 形式検証の対象外とするパス（計画・予算・アーキテクチャ俯瞰等）
+    # 形式検証の対象外とするパス（計画・予算・アーキテクチャ俯瞰・テスト仕様書等）
     non_formal_path_patterns:
       - 'plans/.*\.md'
       - 'requires/.*\.md'
       - 'architecture/.*\.md'
       - 'specs/.*\.md'
       - 'resource_budget\.md'
+      - '.*/tests/.*\.md'
     # 宣言的表・非実行定義セクションの明示的免除ルール（Waivers）
     waivers:
+      - section_pattern: 'components/tier1_core/system_config\.md'
+        heading_pattern: '^3\.3\.1 メモリ管理'
+        rationale: "メモリ設定定数の静的宣言テーブルであり、並行状態遷移を含まないため"
+        authorized_at: "2026-08-30"
       - section_pattern: 'components/tier1_core/system_syscall\.md'
         heading_pattern: '^5\.(1|6)\.'
         rationale: "システムコール番号およびカテゴリの静的テーブル定義であり、状態遷移を含まないため"

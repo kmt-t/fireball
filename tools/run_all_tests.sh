@@ -102,6 +102,21 @@ echo " Fireball Document Verification Pipeline [spec-integrator]"
 echo "================================================================================"
 
 # ---------------------------------------------------------------------------
+# Phase 0: Python Code Lint & Formatting Gate
+# ---------------------------------------------------------------------------
+echo ""
+echo ">>> [Phase 0] Python Code Linter & Formatter Verification (Ruff)..."
+if ! uv run --system-certs --with ruff ruff check experiments tools docs; then
+    echo "✖ Python Lint Check: FAILED — run './tools/format_all.sh' to auto-fix."
+    exit 1
+fi
+if ! uv run --system-certs --with ruff ruff format --check experiments tools docs; then
+    echo "✖ Python Format Check: FAILED — run './tools/format_all.sh' to auto-format."
+    exit 1
+fi
+echo "✔ Python Linter & Formatter: All checks passed (0 errors)"
+
+# ---------------------------------------------------------------------------
 # Accept the current specification state as the propagation baseline.
 # Deliberately not part of the pipeline: doing it automatically would erase the
 # very record that reveals an edit which never reached its dependants.

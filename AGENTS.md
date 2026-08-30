@@ -30,9 +30,12 @@
 - 図は Mermaid、表は Markdown を優先する。
 - 形式検証は Python `pyModelChecking`（Kripke 構造・CTL/LTL）で記述・実行する。
 
-## 検証
+## 検証・フォーマット
 
 - 具体的な検証コマンドは `tools/README.md` および `.agents/skills/document-validation/` を正本とする。
+- **コード自動フォーマット（コミット前実行）**：
+  - Windows: `powershell tools/format_all.ps1`
+  - Linux/WSL: `./tools/format_all.sh`
 - **普段（コミット前など）は簡易テスト（コスト0）のみ実行する**：
   - Windows: `powershell tools/run_all_tests.ps1` または単体 Python 実行
   - Linux/WSL: `./tools/run_all_tests.sh`

@@ -53,6 +53,22 @@ Write-Host " Fireball Document Verification Pipeline [spec-integrator]" -Foregro
 Write-Host "================================================================================" -ForegroundColor Cyan
 
 # ---------------------------------------------------------------------------
+# Phase 0: Python Code Lint & Formatting Gate
+# ---------------------------------------------------------------------------
+Write-Host "`n>>> [Phase 0] Python Code Linter & Formatter Verification (Ruff)..." -ForegroundColor Yellow
+& uv run --system-certs --with ruff ruff check experiments tools docs
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "✖ Python Lint Check: FAILED — run 'powershell tools/format_all.ps1' to auto-fix." -ForegroundColor Red
+    exit 1
+}
+& uv run --system-certs --with ruff ruff format --check experiments tools docs
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "✖ Python Format Check: FAILED — run 'powershell tools/format_all.ps1' to auto-format." -ForegroundColor Red
+    exit 1
+}
+Write-Host "✔ Python Linter & Formatter: All checks passed (0 errors)" -ForegroundColor Green
+
+# ---------------------------------------------------------------------------
 # Accept the current specification state as the propagation baseline.
 # Deliberately not part of the pipeline: doing it automatically would erase the
 # very record that reveals an edit which never reached its dependants.

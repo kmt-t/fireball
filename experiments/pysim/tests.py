@@ -31,6 +31,17 @@ from hal import FB_CONF_HAL_BUFFER_SIZE, FB_CONF_HAL_MAX_BUFFERS, HalError, ShmB
 from interpreter import Interpreter, Trap
 from ipc_router_concept import IPCMessage, IPCRouter
 from logger import ConsoleOutput, LogDictionary, Logger, LogLevel
+from system_containers import (
+    BitView,
+    FlatMapView,
+    FlatSetView,
+    RadixBinaryTreeView,
+    RingBuffer,
+    StaticFlatMap,
+    StaticFlatSet,
+    StaticVector,
+    lookup_jit_entry,
+)
 from platform_memory_concept import (
     FB_CONF_MEMORY_POOL_SIZE,
     FB_CONF_PARTITION_SIZE,
@@ -1054,6 +1065,189 @@ def test_wasm_50_to_56_integer_arithmetic_and_bitwise():
     # WASM-52, 55, 56: Bit ops
     # x = 0x80000001 -> popcnt=2, clz=0 -> sum=2. rotl(x, 4) = 0x00000018. 2 ^ 0x18 = 0x1A (26)
     assert interp.call(mod.export_func_index("bit_ops"), [0x80000001]) == [26]
+
+
+# ===========================================================================
+# System Containers (CONT-01 .. CONT-10)
+# ===========================================================================
+
+def test_cont_01_flat_map_view_find_binary_search():
+    """CONT-01: flat_map_view.find performs O(log n) binary search returning value or None."""
+    keys = [10, 20, 30, 40, 50, 60]
+    values = ["A", "B", "C", "D", "E", "F"]
+    view = FlatMapView(keys, values)
+
+    assert view.find(30) == "C"
+    assert view.find(10) == "A"
+    assert view.find(60) == "F"
+    assert view.find(25) is None
+    assert view.find(5) is None
+    assert view.find(70) is None
+    assert view.size() == 6
+    assert not view.empty()
+
+
+def test_cont_02_narrow_monotonic_shrinkage():
+    """CONT-02: narrow(lo, hi) produces monotonic sub-window subset."""
+    keys = [10, 20, 30, 40, 50, 60, 70, 80]
+    values = [1, 2, 3, 4, 5, 6, 7, 8]
+    v0 = FlatMapView(keys, values)
+
+    v1 = v0.narrow(20, 60)
+    assert v1.size() == 5  # 20, 30, 40, 50, 60
+    assert v1.find(20) == 2
+    assert v1.find(60) == 6
+    assert v1.find(10) is None
+
+    v2 = v1.narrow(30, 45)
+    assert v2.size() == 2  # 30, 40
+    assert v2.find(30) == 3
+    assert v2.find(40) == 4
+    assert v2.find(20) is None
+    assert v2.find(50) is None
+
+
+def test_cont_03_slice_monotonic_shrinkage_and_bounds():
+    """CONT-03: slice must only ever shrink within parent view bounds."""
+    keys = [10, 20, 30, 40, 50]
+    values = [1, 2, 3, 4, 5]
+    v0 = FlatMapView(keys, values)
+
+    v1 = v0.slice(1, 4)
+    assert v1.size() == 3
+    assert v1.find(20) == 2
+    assert v1.find(40) == 4
+
+    try:
+        v1.slice(0, 5)  # Expanding beyond v1's window [1, 4] must fail
+        raise AssertionError("Expected ValueError when expanding slice")
+    except ValueError:
+        pass
+
+
+def test_cont_04_flat_set_view_membership_only():
+    """CONT-04: flat_set_view answers contains(key) with bool, carries no value span."""
+    keys = [100, 200, 300, 400]
+    set_view = FlatSetView(keys)
+
+    assert set_view.contains(200) is True
+    assert set_view.contains(250) is False
+    assert (300 in set_view) is True
+    assert (50 in set_view) is False
+    assert not hasattr(set_view, "values"), "flat_set_view must not carry a values span"
+
+
+def test_cont_05_bit_view_adjacent_element_non_destructive():
+    """CONT-05: bit_view put/at modifies targeted sub-byte element without corrupting adjacent elements."""
+    storage = bytearray(4)  # 4 bytes = 16 2-bit elements
+    bv = BitView(storage, bits=2, origin=0, count=16)
+
+    # Initial state all 0
+    for i in range(16):
+        assert bv.at(i) == 0
+
+    # Write pattern to adjacent elements
+    bv.put(0, 1)  # 01
+    bv.put(1, 2)  # 10
+    bv.put(2, 3)  # 11
+    bv.put(3, 0)  # 00
+
+    # Verify byte 0 is 0b00111001 = 0x39 (little-endian bit packing)
+    assert storage[0] == (1 | (2 << 2) | (3 << 4) | (0 << 6))
+    assert bv.at(0) == 1
+    assert bv.at(1) == 2
+    assert bv.at(2) == 3
+    assert bv.at(3) == 0
+
+    # Mutate middle element, ensure neighbors remain untouched
+    bv.put(1, 3)
+    assert bv.at(0) == 1
+    assert bv.at(1) == 3
+    assert bv.at(2) == 3
+    assert bv.at(3) == 0
+
+
+def test_cont_06_bit_view_unaligned_slice_origin_absorption():
+    """CONT-06: bit_view.slice absorbs non-byte-aligned bit origins."""
+    storage = bytearray(2)  # 8 2-bit elements
+    bv = BitView(storage, bits=2, origin=0, count=8)
+    for i in range(8):
+        bv.put(i, i % 4)
+
+    # Slice starting at unaligned index 3 (bit offset = 6)
+    sub = bv.slice(3, 7)
+    assert sub.size() == 4
+    assert sub.origin == 6
+    assert sub.at(0) == bv.at(3)
+    assert sub.at(1) == bv.at(4)
+    assert sub.at(2) == bv.at(5)
+    assert sub.at(3) == bv.at(6)
+
+
+def test_cont_07_bit_view_allowed_bits_enforced():
+    """CONT-07: bit_view allows only 1, 2, 4 bits dividing 8."""
+    storage = bytearray(4)
+    # Valid
+    BitView(storage, bits=1, count=32)
+    BitView(storage, bits=2, count=16)
+    BitView(storage, bits=4, count=8)
+
+    # Invalid
+    for invalid in (3, 5, 6, 7, 8):
+        try:
+            BitView(storage, bits=invalid, count=4)
+            raise AssertionError(f"Expected ValueError for invalid Bits={invalid}")
+        except ValueError:
+            pass
+
+
+def test_cont_08_radix_binary_tree_view_coarse_radix_lookup():
+    """CONT-08: radix_binary_tree_view uses O(1) Radix Table prefix + local binary search."""
+    keys = [0x0010, 0x0020, 0x0110, 0x0120, 0x0130, 0x0210]
+    values = ["T0_A", "T0_B", "T1_A", "T1_B", "T1_C", "T2_A"]
+    # Radix shift = 8 -> prefix = pc >> 8
+    # Prefix 0: [0, 2), Prefix 1: [2, 5), Prefix 2: [5, 6)
+    radix_table = [(0, 2), (2, 5), (5, 6)]
+    tree = RadixBinaryTreeView(keys, values, radix_table, radix_shift=8)
+
+    assert tree.find(0x0120) == "T1_B"
+    assert tree.find(0x0010) == "T0_A"
+    assert tree.find(0x0210) == "T2_A"
+    assert tree.find(0x0199) is None
+    assert tree.find(0x0300) is None
+
+
+def test_cont_09_jit_entry_lookup_card_table_prefilter():
+    """CONT-09: lookup_jit_entry performs O(1) Card Marking check before searching."""
+    card_storage = bytearray(4)
+    card_table = BitView(card_storage, bits=2, origin=0, count=16)
+
+    keys = [0x0100, 0x0200]
+    values = ["NATIVE_0100", "NATIVE_0200"]
+    # Prefix 0: empty [0, 0), Prefix 1: [0, 1), Prefix 2: [1, 2)
+    radix_table = [(0, 0), (0, 1), (1, 2)]
+    tree = RadixBinaryTreeView(keys, values, radix_table, radix_shift=8)
+
+    # PC 0x0100 is card 1 (shift=8). Currently UNEXECUTED (0) -> lookup returns None without search
+    assert lookup_jit_entry(tree, card_table, radix_table, pc=0x0100, card_shift=8, group_shift=8) is None
+
+    # Mark card 1 as COMPILED (3)
+    card_table.put(1, 3)
+    assert lookup_jit_entry(tree, card_table, radix_table, pc=0x0100, card_shift=8, group_shift=8) == "NATIVE_0100"
+
+
+def test_cont_10_container_type_separation():
+    """CONT-10: flat_map_view and flat_set_view have strictly separated type responsibilities."""
+    keys = [1, 2, 3]
+    vals = [10, 20, 30]
+    m = FlatMapView(keys, vals)
+    s = FlatSetView(keys)
+
+    assert isinstance(m, FlatMapView)
+    assert isinstance(s, FlatSetView)
+    assert not isinstance(s, FlatMapView)
+    assert hasattr(m, "values")
+    assert not hasattr(s, "values")
 
 
 # ===========================================================================

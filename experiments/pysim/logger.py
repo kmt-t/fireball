@@ -39,25 +39,15 @@ class LogLevel(IntEnum):
 _DISALLOWED_SPECIFIERS = ("%s", "%p", "%c")
 
 
+from system_containers import FlatMapView, StaticFlatMap
+
+
 class LogDictionary:
-    """ROM-resident, build-time-only format string table (system_logging.md 4.2).
+    """ROM-resident, build-time-only format string table (system_logging.md 4.2)
+    backed by FlatMapView vocabulary."""
 
-    FINDING: the doc says the format is "printf形式" with up to 4 `u32`
-    arguments, but never restricts *which* printf conversions are legal. A
-    real C `vsnprintf("%s", ...)` reads its u32 argument as a `char*` --
-    with an arbitrary integer that is instant undefined behavior (and, on a
-    32KB-RAM target, a near-certain crash or memory disclosure). Python's
-    `%` operator has no such failure mode, so this bug would sail through a
-    naive Python port undetected. register() below closes the gap by
-    rejecting any entry using %s/%p/%c at registration time -- i.e. it makes
-    the missing constraint from the doc explicit and load-bearing here, and
-    the doc should gain the same restriction.
-    """
-
-    def __init__(self):
-        # FlatMapView-style parallel sorted arrays (O(log N) lookup, zero hash map overhead)
-        self._keys: list[int] = []
-        self._values: list[str] = []
+    def __init__(self, capacity: int = 128):
+        self._map: StaticFlatMap[int, str] = StaticFlatMap(capacity)
 
     def register(self, offset: int, fmt: str) -> None:
         for bad in _DISALLOWED_SPECIFIERS:
@@ -66,16 +56,10 @@ class LogDictionary:
                     f"dictionary entry 0x{offset:X} uses '{bad}', which cannot be "
                     "backed by a u32 argument without reading it as a pointer"
                 )
-        for i, k in enumerate(self._keys):
-            if k == offset:
-                self._values[i] = fmt
-                return
-            if k > offset:
-                self._keys.insert(i, offset)
-                self._values.insert(i, fmt)
-                return
-        self._keys.append(offset)
-        self._values.append(fmt)
+        self._map.insert(offset, fmt)
+
+    def view(self) -> FlatMapView[int, str]:
+        return self._map.view()
 
     def format(self, offset: int, args: tuple[int, int, int, int]) -> str:
         """FINDING: system_logging.md 4.2 says a format string may reference
@@ -89,11 +73,7 @@ class LogDictionary:
         present so behavior matches C's variadic semantics instead of
         Python's stricter one.
         """
-        fmt = None
-        for i, k in enumerate(self._keys):
-            if k == offset:
-                fmt = self._values[i]
-                break
+        fmt = self._map.find(offset)
         if fmt is None:
             return f"<UNKNOWN_DICT_OFFSET_0x{offset:X}>"
         n = sum(1 for m in _SPECIFIER_RE.finditer(fmt) if m.group() != "%%")

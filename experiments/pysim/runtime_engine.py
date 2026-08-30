@@ -24,6 +24,9 @@ from __future__ import annotations
 from typing import Any, Callable
 
 
+from system_containers import BitView, RingBuffer
+
+
 class CardState:
     UNEXECUTED = 0
     EXECUTED = 1
@@ -32,58 +35,61 @@ class CardState:
 
 
 class HotspotBitmap:
-    """2-bit state per CARD (card = pc >> card_shift) stored in flat array."""
+    """2-bit state per CARD (card = pc >> card_shift) backed by BitView<2>."""
 
     def __init__(self, card_shift: int = 6, max_cards: int = 4096):
         self.card_shift = card_shift
         self.max_cards = max_cards
-        self.state: bytearray = bytearray(max_cards)   # Direct flat byte array: 0=UNEXECUTED, 1=EXECUTED, 2=HOT, 3=COMPILED
+        # 2 bits per card => 4 cards per byte
+        self.storage = bytearray((max_cards + 3) // 4)
+        self.view = BitView(self.storage, bits=2, origin=0, count=max_cards)
 
     def card_of(self, pc: int) -> int:
         return (pc >> self.card_shift) % self.max_cards
 
     def get_state(self, pc: int) -> int:
-        return self.state[self.card_of(pc)]
+        return self.view.at(self.card_of(pc))
 
     def touch(self, pc: int) -> int:
         """2-bit state machine transition: UNEXECUTED -> EXECUTED -> HOT."""
         card = self.card_of(pc)
-        s = self.state[card]
+        s = self.view.at(card)
         if s == CardState.COMPILED:
             return s
         if s == CardState.UNEXECUTED:
             s = CardState.EXECUTED
         elif s == CardState.EXECUTED:
             s = CardState.HOT
-        self.state[card] = s
+        self.view.put(card, s)
         return s
 
     def mark_compiled(self, pc: int) -> None:
-        self.state[self.card_of(pc)] = CardState.COMPILED
+        self.view.put(self.card_of(pc), CardState.COMPILED)
 
     def mark_evicted(self, pc: int) -> None:
         """Evicted trace resets card state to EXECUTED (01)."""
-        self.state[self.card_of(pc)] = CardState.EXECUTED
+        self.view.put(self.card_of(pc), CardState.EXECUTED)
 
 
 class HistoryRing:
-    """Fixed-size ring of recently executed basic-block head PCs."""
+    """Fixed-size ring of recently executed basic-block head PCs backed by RingBuffer."""
 
     def __init__(self, capacity: int = 32):
-        self.capacity = capacity
-        self.buf: list[int] = []
-        self.dropped = 0
+        self.ring: RingBuffer[int] = RingBuffer(capacity)
+
+    @property
+    def capacity(self) -> int:
+        return self.ring.capacity
+
+    @property
+    def dropped(self) -> int:
+        return self.ring.dropped
 
     def record(self, pc: int) -> None:
-        if len(self.buf) >= self.capacity:
-            self.buf.pop(0)
-            self.dropped += 1
-        self.buf.append(pc)
+        self.ring.push(pc)
 
     def drain(self) -> list[int]:
-        out = self.buf
-        self.buf = []
-        return out
+        return self.ring.drain()
 
 
 class JITTrace:

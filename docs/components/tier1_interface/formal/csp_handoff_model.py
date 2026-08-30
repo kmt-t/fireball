@@ -44,7 +44,6 @@ def build_model(*, guards: bool = True) -> Kripke:
         ("s_both_owns", "s_both_owns"),
         ("s_in_flight_leaked", "s_in_flight_leaked"),
     ]
-
     if not guards:
         # ガード無効時（変異検査）:
         # 1. 送信時に Revoke によるアトミック剥奪を行わず、受信者に直接 Grant すると二重所有が発生

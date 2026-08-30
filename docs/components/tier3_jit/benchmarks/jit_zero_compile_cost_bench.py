@@ -36,7 +36,6 @@ def compile_n_ops(n: int) -> float:
 def main() -> None:
     sizes = [10, 100, 1_000, 10_000]
     times = []
-
     print("trace length (ops) | compile time | ns/op")
     print("-" * 48)
     for n in sizes:
@@ -55,7 +54,6 @@ def main() -> None:
         f"\n[MEASURED] {sizes[-2]}->{sizes[-1]} ops ({ratio_n:.0f}x more): "
         f"compile time grew {ratio_t:.2f}x"
     )
-
     assert ratio_t < ratio_n * 3, (
         f"compile time grew {ratio_t:.2f}x for a {ratio_n:.0f}x larger trace -- "
         "that is super-linear enough to suggest a hidden expensive pass, not "

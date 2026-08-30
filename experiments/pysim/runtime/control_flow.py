@@ -12,7 +12,6 @@ without hitting Python's recursion limit.
 """
 
 from __future__ import annotations
-
 import sys
 from pathlib import Path
 
@@ -37,15 +36,10 @@ for _p in [
         sys.path.insert(0, _sp)
 
 import sys
-
 from pathlib import Path
-
 from dataclasses import dataclass
-
 from leb128 import decode_signed, decode_unsigned
-
 from wasm_reader import WasmUnsupportedFeatureError
-
 from wasm_opcodes import (
     BLOCK,
     BR,
@@ -174,71 +168,46 @@ _BLOCK_OPENERS = {BLOCK, LOOP, IF}
 @dataclass
 class Instr:
     offset: int  # offset of the opcode byte itself
-
     opcode: int
-
     end_offset: int  # offset immediately after this instruction
-
     operand: int | None = (
         None  # depth / local index / func index / BR_TABLE's default label / CALL_INDIRECT's typeidx
     )
-
     const_value: int | None = None  # i32.const's decoded sleb128 value
-
     memarg: tuple[int, int] | None = None  # (align, offset) for load/store
-
     match_offset: int | None = (
         None  # BLOCK/LOOP/IF -> its END's offset; ELSE -> its END's offset
     )
-
     else_offset: int | None = None  # IF only: matching ELSE's offset, if present
-
     br_table_labels: list[int] | None = (
         None  # BR_TABLE's vec(labelidx), default is in `operand`
     )
-
     table_index: int | None = None  # CALL_INDIRECT's tableidx
 
 
 def decode_all(code: bytes) -> dict[int, Instr]:
-    """Decodes every instruction in `code` and resolves block nesting.
-
-    Returns {offset: Instr}, so callers can do random-access lookups (the
-
-    JIT needs this for branch targets; the interpreter walks it in order).
-
+    """
+    Decodes every instruction in `code` and resolves block nesting.
+        Returns {offset: Instr}, so callers can do random-access lookups (the
+        JIT needs this for branch targets; the interpreter walks it in order).
     """
 
     instrs: dict[int, Instr] = {}
-
     open_stack: list[Instr] = []  # BLOCK/LOOP/IF instrs still awaiting their END
-
     off = 0
-
     n = len(code)
-
     while off < n:
         start = off
-
         opcode = code[off]
-
         off += 1
-
         operand = None
-
         const_value = None
-
         memarg = None
-
         br_table_labels = None
-
         table_index = None
-
         if opcode in _BLOCK_OPENERS:
             blocktype = code[off]
-
             off += 1
-
             assert blocktype == 0x40, (
                 "only the empty blocktype is supported in this experiment"
             )
@@ -251,35 +220,26 @@ def decode_all(code: bytes) -> dict[int, Instr]:
 
         elif opcode in _MEMARG_OPCODES:
             align, off = decode_unsigned(code, off)
-
             mem_offset, off = decode_unsigned(code, off)
-
             memarg = (align, mem_offset)
 
         elif opcode in _MEMORY_INDEX_OPCODES:
             reserved = code[off]
-
             off += 1
-
             assert reserved == 0, "only memory index 0 is supported"
-
             operand = reserved
 
         elif opcode == BR_TABLE:
             n_labels, off = decode_unsigned(code, off)
-
             br_table_labels = []
-
             for _ in range(n_labels):
                 label, off = decode_unsigned(code, off)
-
                 br_table_labels.append(label)
 
             operand, off = decode_unsigned(code, off)  # default label
 
         elif opcode == CALL_INDIRECT:
             operand, off = decode_unsigned(code, off)  # typeidx
-
             table_index, off = decode_unsigned(
                 code, off
             )  # tableidx (0x00 in the MVP encoding)
@@ -302,29 +262,22 @@ def decode_all(code: bytes) -> dict[int, Instr]:
             br_table_labels=br_table_labels,
             table_index=table_index,
         )
-
         instrs[start] = instr
-
         if opcode in _BLOCK_OPENERS:
             open_stack.append(instr)
 
         elif opcode == ELSE:
             opener = open_stack[-1]
-
             assert opener.opcode == IF, "ELSE without a matching IF"
-
             opener.else_offset = start
 
         elif opcode == END:
             if open_stack:
                 opener = open_stack.pop()
-
                 opener.match_offset = start
-
                 instr.match_offset = opener.offset  # END also points back to its opener
 
     assert not open_stack, "unterminated block/loop/if (missing END)"
-
     return instrs
 
 
@@ -414,12 +367,10 @@ def extract_basic_blocks(
 
     instrs = decode_all(code)
     sorted_instrs = [instrs[k] for k in sorted(instrs.keys())]
-
     base_pc = func_index << 16
     blocks: list[tuple[int, list[tuple[str, Any]], int | None]] = []
     cur_ops: list[tuple[str, Any]] = []
     cur_head: int | None = None
-
     for ins in sorted_instrs:
         pc = base_pc | ins.offset
         if cur_head is None:
@@ -436,7 +387,6 @@ def extract_basic_blocks(
             cur_ops.append((op_name, arg))
 
         # Check if this instruction ends the basic block
-
         if ins.opcode in (
             BR,
             BR_IF,
@@ -451,7 +401,6 @@ def extract_basic_blocks(
         ):
             if cur_ops:
                 blocks.append((cur_head, list(cur_ops), base_pc | ins.offset))
-
                 cur_ops.clear()
 
             cur_head = None

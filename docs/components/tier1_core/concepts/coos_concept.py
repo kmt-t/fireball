@@ -26,7 +26,6 @@ class WaitDir:
 
 class Channel:
     """Bufferless synchronous CSP rendezvous channel (ADR_RendezvousChannel).
-
     The channel never holds a value. A sender that arrives first keeps the value
     in its own task frame until a receiver shows up, so channel overflow and
     send-rollback cannot occur, and the value has exactly one owner at all times.
@@ -68,18 +67,15 @@ class COOSKernel:
         return ch
 
     # --- Synchronous Hoare CSP Rendezvous ---
-
     def channel_send(self, channel_id: str, data: Any) -> tuple[str, Any]:
         """Send value over CSP channel."""
         ch = self.channels[channel_id]
         sender = self.current_task
         assert sender is not None
-
         if ch.waiter_dir == WaitDir.RECV:
             # Rendezvous matched: ownership moves sender -> receiver right here
             receiver = ch.waiter_task
             ch.waiter_task, ch.waiter_dir = None, WaitDir.NONE
-
             self.tasks[receiver]["received_val"] = data
             self.tasks[receiver]["state"] = TaskState.READY
             self.tasks[sender]["state"] = TaskState.READY
@@ -100,14 +96,12 @@ class COOSKernel:
         ch = self.channels[channel_id]
         receiver = self.current_task
         assert receiver is not None
-
         if ch.waiter_dir == WaitDir.SEND:
             # Rendezvous matched: take the value out of the sender's frame, so that
             # it is never reachable from two owners at once.
             sender = ch.waiter_task
             ch.waiter_task, ch.waiter_dir = None, WaitDir.NONE
             data = self.tasks[sender].pop("pending_val")
-
             self.tasks[receiver]["received_val"] = data
             self.tasks[sender]["state"] = TaskState.READY
             self.tasks[receiver]["state"] = TaskState.READY
@@ -139,7 +133,6 @@ class COOSKernel:
         return val
 
     # --- Interrupt Handling ---
-
     def notify_interrupt(self, irq_id: int):
         """Called from ISR context: non-blocking enqueue of IRQ event."""
         self.interrupt_event_queue.append(irq_id)
@@ -165,7 +158,6 @@ class COOSKernel:
         return ("BLOCK_IRQ", irq_id)
 
     # --- Main Dispatcher & Idle Loop ---
-
     def idle_hook(self):
         """Executed only when all tasks are blocked and event queue is empty."""
         self.idle_hook_called = True
@@ -174,7 +166,6 @@ class COOSKernel:
     def run_step(self) -> bool:
         """Executes one scheduling step. Returns False when all tasks terminated."""
         self.drain_interrupts()
-
         # Check for active tasks
         active_tasks = [
             t for t in self.tasks.values() if t["state"] != TaskState.TERMINATED
@@ -191,7 +182,6 @@ class COOSKernel:
         self.current_task = task_id
         task_entry = self.tasks[task_id]
         task_entry["state"] = TaskState.RUNNING
-
         try:
             action, arg = task_entry["coro"].send(None)
             if action == "YIELD":
@@ -238,7 +228,6 @@ def test_coos_synchronous_rendezvous():
         yield (action, arg)
         val1 = kernel.get_received_value()
         received_log.append(val1)
-
         # Receive second message
         action, arg = kernel.channel_recv("ch_data")
         yield (action, arg)
@@ -247,7 +236,6 @@ def test_coos_synchronous_rendezvous():
 
     kernel.register_task("receiver", receiver())
     kernel.register_task("sender", sender())
-
     steps = 0
     while kernel.run_step() and steps < 20:
         steps += 1
@@ -272,13 +260,11 @@ def test_value_has_exactly_one_owner_across_a_rendezvous():
 
     kernel.register_task("sender", sender())
     kernel.register_task("receiver", receiver())
-
     # Sender runs first and blocks: value is in its own frame, not in the channel.
     kernel.run_step()
     assert kernel.tasks["sender"]["state"] == TaskState.SUSPENDED_CSP
     assert kernel.tasks["sender"]["pending_val"] == 42
     assert not hasattr(ch, "buffer"), "a rendezvous channel must not carry a value slot"
-
     # Receiver arrives: ownership transfers, and the sender's copy is gone.
     kernel.run_step()
     assert kernel.tasks["receiver"]["received_val"] == 42
@@ -294,10 +280,8 @@ def test_one_waiter_per_channel_is_enforced():
     kernel.create_channel("ch_data")
     kernel.tasks["a"] = {"id": "a", "coro": None, "state": TaskState.RUNNING}
     kernel.tasks["b"] = {"id": "b", "coro": None, "state": TaskState.RUNNING}
-
     kernel.current_task = "a"
     kernel.channel_send("ch_data", 1)
-
     kernel.current_task = "b"
     try:
         kernel.channel_send("ch_data", 2)
@@ -316,18 +300,14 @@ def test_coos_interrupt_wakeup():
         irq_received.append("IRQ_16_PROCESSED")
 
     kernel.register_task("worker", irq_task())
-
     # Step 1: Worker blocks on IRQ 16
     kernel.run_step()
     assert kernel.tasks["worker"]["state"] == TaskState.BLOCKED
-
     # Step 2: With all tasks blocked, next step triggers idle hook
     kernel.run_step()
     assert kernel.idle_hook_called
-
     # Step 3: External ISR fires notify_interrupt(16)
     kernel.notify_interrupt(16)
-
     # Step 4: Next kernel step drains IRQ, wakes worker and completes
     kernel.run_step()
     assert irq_received == ["IRQ_16_PROCESSED"]

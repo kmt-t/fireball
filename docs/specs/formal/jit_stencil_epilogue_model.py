@@ -48,7 +48,6 @@ def build_model(*, guards: bool = True) -> Kripke:
         ("s_exit_dirty", "s_exit_dirty"),
         ("s_return_unbalanced", "s_return_unbalanced"),
     ]
-
     if not guards:
         # ガード無効時（変異検査）:
         # 1. スピルフラッシュ（STR x2）を外すと、ダーティなキャッシュを抱えたまま抜けてしまう

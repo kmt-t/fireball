@@ -126,7 +126,6 @@ IPCルータ経由で公開されるインターフェイス。
 
 - **Safety (安全性)**: 「悪いこと（deadlock, data race, use-after-free等）が起きない」
   - 例: `{Challenge_CspHandoffStarvation}` CSP ハンドオフ時のデッドロック不在
-  
 - **Liveness (活性)**: 「良いことが最終的に起きる」（例：要求は必ず応答される）
   - 例: IPC 呼び出し側は有限時間内に応答を受け取る
 

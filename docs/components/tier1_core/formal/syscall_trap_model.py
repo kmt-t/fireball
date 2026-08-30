@@ -60,7 +60,6 @@ def build_model(*, guards: bool = True) -> Kripke:
         ("s_premature_resume", "s_premature_resume"),
         ("s_stuck_trap", "s_stuck_trap"),
     ]
-
     if not guards:
         # ガード無効時（変異検査）:
         # 1. 「RET 設定 → 復帰」の同期規律を外すと、ハンドラ完了前にゲストが再開してしまう

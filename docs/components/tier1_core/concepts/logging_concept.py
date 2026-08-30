@@ -46,9 +46,9 @@ class LogDictionary:
 
 
 class LogRingBuffer:
-    """Fixed-size ring buffer with overwrite-oldest policy (BufferedLogging).
-
-    Zero dynamic memory allocation; uses pre-allocated static storage.
+    """
+    Fixed-size ring buffer with overwrite-oldest policy (BufferedLogging).
+        Zero dynamic memory allocation; uses pre-allocated static storage.
     """
 
     def __init__(self, capacity: int = 8):
@@ -170,7 +170,6 @@ class Logger:
         arg1 = int(message_payload.get("arg1", 0))
         arg2 = int(message_payload.get("arg2", 0))
         arg3 = int(message_payload.get("arg3", 0))
-
         status = self.log_event(level, dict_offset, arg0, arg1, arg2, arg3)
         return {"status": "SUCCESS", "detail": status}
 
@@ -180,7 +179,6 @@ class Logger:
         """Flushes buffered logs to HAL transport during COOS idle_hook."""
         flushed_count = 0
         batch: list[str] = []
-
         while not self.ring_buffer.is_empty() and flushed_count < max_batch:
             if interrupt_pending and interrupt_pending():
                 break
@@ -228,11 +226,9 @@ def test_logger_buffering_and_idle_flush():
     )
     transport = MockHALTransport()
     logger = Logger(transport, dictionary, min_level=LogLevel.INFO, buffer_capacity=4)
-
     assert logger.log_event(LogLevel.INFO, 0x10, 1, 100) == "QUEUED"
     assert logger.log_event(LogLevel.WARN, 0x20, 0x80000000, 0x1234) == "QUEUED"
     assert len(transport.output_log) == 0
-
     flushed = logger.flush()
     assert flushed == 2
     assert len(transport.output_log) == 2
@@ -251,15 +247,12 @@ def test_logger_overwrite_on_buffer_full():
     )
     transport = MockHALTransport()
     logger = Logger(transport, dictionary, min_level=LogLevel.DEBUG, buffer_capacity=4)
-
     for i in range(1, 5):
         assert logger.log_event(LogLevel.INFO, 0x01, i) == "QUEUED"
     assert logger.ring_buffer.is_full()
-
     assert logger.log_event(LogLevel.INFO, 0x01, 5) == "OVERWRITTEN"
     assert logger.log_event(LogLevel.INFO, 0x01, 6) == "OVERWRITTEN"
     assert logger.ring_buffer.overwrite_count == 2
-
     flushed = logger.flush()
     assert flushed == 4
     assert "Event #3" in transport.output_log[0]
@@ -272,12 +265,10 @@ def test_logger_level_filtering():
     dictionary = LogDictionary({0x01: "Log message"})
     transport = MockHALTransport()
     logger = Logger(transport, dictionary, min_level=LogLevel.WARN, buffer_capacity=8)
-
     assert logger.log_event(LogLevel.DEBUG, 0x01) == "FILTERED"
     assert logger.log_event(LogLevel.INFO, 0x01) == "FILTERED"
     assert logger.log_event(LogLevel.WARN, 0x01) == "QUEUED"
     assert logger.log_event(LogLevel.ERROR, 0x01) == "QUEUED"
-
     flushed = logger.flush()
     assert flushed == 2
     assert len(transport.output_log) == 2
@@ -287,7 +278,6 @@ def test_logger_ipc_message_handling():
     dictionary = LogDictionary({0x50: "Guest VM %d trap occurred (cause: %d)"})
     transport = MockHALTransport()
     logger = Logger(transport, dictionary, min_level=LogLevel.INFO, buffer_capacity=8)
-
     resp = logger.handle_ipc_message(
         {
             "level": int(LogLevel.ERROR),
@@ -298,7 +288,6 @@ def test_logger_ipc_message_handling():
     )
     assert resp["status"] == "SUCCESS"
     assert resp["detail"] == "QUEUED"
-
     logger.flush()
     assert len(transport.output_log) == 1
     assert "Guest VM 1 trap occurred (cause: 3)" in transport.output_log[0]
@@ -308,7 +297,6 @@ def test_logger_flush_interruption():
     dictionary = LogDictionary({0x01: "Message %d"})
     transport = MockHALTransport()
     logger = Logger(transport, dictionary, min_level=LogLevel.INFO, buffer_capacity=8)
-
     for i in range(4):
         logger.log_event(LogLevel.INFO, 0x01, i)
 

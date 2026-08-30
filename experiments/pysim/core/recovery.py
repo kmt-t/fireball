@@ -13,7 +13,6 @@ Recovery Strategy Classification:
 """
 
 from __future__ import annotations
-
 import sys
 from pathlib import Path
 
@@ -38,31 +37,21 @@ for _p in [
         sys.path.insert(0, _sp)
 
 import sys
-
 from pathlib import Path
-
 import time
-
 from enum import IntEnum
-
 from typing import Any, Callable, Generic, TypeVar
 
 T = TypeVar("T")
-
 E = TypeVar("E")
-
 FB_CONF_RETRY_BACKOFF_MS = 10  # docs/components/tier1_core/system_config.md 3.3.7
-
 RETRY_MAX_ATTEMPTS = 3  # interface_wit.md 3.2 retry invariant
 
 
 class RecoveryStrategy(IntEnum):
     IGNORE = 0
-
     RETRY = 1
-
     RESTART = 2
-
     PANIC = 3
 
 
@@ -80,11 +69,8 @@ class Result(Generic[T, E]):
     ):
 
         self.is_ok = is_ok
-
         self.value = value
-
         self.error = error
-
         self.strategy = strategy
 
     @classmethod
@@ -111,12 +97,9 @@ class Result(Generic[T, E]):
 
 def classify_error_strategy(errno_or_trap: int | str) -> RecoveryStrategy:
     """Deterministic mapping from low-level errno / trap string to {META_RecoveryStrategy}."""
-
     # 1. String traps from vMMIO / interpreter / MPU
-
     if isinstance(errno_or_trap, str):
         trap = errno_or_trap.upper()
-
         if (
             "OUT_OF_BOUNDS" in trap
             or "ACCESS_VIOLATION" in trap
@@ -137,9 +120,7 @@ def classify_error_strategy(errno_or_trap: int | str) -> RecoveryStrategy:
         return RecoveryStrategy.RESTART
 
     # 2. WASI errno integers (wasi::errno)
-
     errno = int(errno_or_trap)
-
     if errno == 0:  # SUCCESS
         return RecoveryStrategy.IGNORE
 
@@ -166,15 +147,10 @@ class RecoveryManager:
     ):
 
         self.max_retries = max_retries
-
         self.backoff_ms = backoff_ms
-
         self.sleep_fn = sleep_fn
-
         self.total_retries = 0
-
         self.total_restarts = 0
-
         self.total_panics = 0
 
     def execute_with_recovery(
@@ -191,23 +167,18 @@ class RecoveryManager:
                   3. RESTART: invoke task_reset_fn() to clean TCB/heap and retry once.
                   4. PANIC: invoke panic_fn() to safely halt kernel and return PANIC result.
         """
-
         # Tier 1: Initial execution and retry loop
-
         for attempt in range(1, self.max_retries + 1):
             res = operation()
-
             if res.is_ok:
                 return res
 
             strategy = res.strategy
-
             if strategy == RecoveryStrategy.IGNORE:
                 return res
 
             if strategy == RecoveryStrategy.PANIC:
                 self.total_panics += 1
-
                 if panic_fn:
                     panic_fn(f"Fatal panic triggered by error: {res.error}")
 
@@ -217,31 +188,22 @@ class RecoveryManager:
                 break  # Directly escalate to task reset
 
             # RETRY strategy: backoff and retry
-
             self.total_retries += 1
-
             if attempt < self.max_retries:
                 self.sleep_fn(self.backoff_ms / 1000.0)
 
         # Tier 2: Retry Exhaustion -> Escalate to RESTART
-
         self.total_restarts += 1
-
         if task_reset_fn is not None:
             reset_ok = task_reset_fn()
-
             if reset_ok:
                 # Re-run after clean task reset
-
                 post_reset_res = operation()
-
                 if post_reset_res.is_ok:
                     return post_reset_res
 
         # Tier 3: Unrecoverable after restart -> Escalate to PANIC
-
         self.total_panics += 1
-
         if panic_fn:
             panic_fn("Unrecoverable error after restart escalation")
 

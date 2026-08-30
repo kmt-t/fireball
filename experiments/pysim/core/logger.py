@@ -13,7 +13,6 @@ per docs/components/tier1_core/system_logging.md and the interface_wit.md
 """
 
 from __future__ import annotations
-
 import sys
 from pathlib import Path
 
@@ -38,21 +37,14 @@ for _p in [
         sys.path.insert(0, _sp)
 
 import sys
-
 from pathlib import Path
-
 import re
-
 from dataclasses import dataclass
-
 from enum import IntEnum
-
 from hal import UartTransport
 
 # Matches a printf-style numeric conversion (%d, %08X, %u, ...) but not a
-
 # literal "%%". Deliberately excludes %s/%p/%c: LogDictionary.register()
-
 # rejects those outright, see the FINDING below.
 
 _SPECIFIER_RE = re.compile(r"%(?:%|[-+0# ]*\d*(?:\.\d+)?[diouxX])")
@@ -60,13 +52,9 @@ _SPECIFIER_RE = re.compile(r"%(?:%|[-+0# ]*\d*(?:\.\d+)?[diouxX])")
 
 class LogLevel(IntEnum):
     DEBUG = 0
-
     INFO = 1
-
     WARN = 2
-
     ERROR = 3
-
     FATAL = 4
 
 
@@ -76,9 +64,10 @@ from system_containers import FlatMapView, StaticFlatMap
 
 
 class LogDictionary:
-    """ROM-resident, build-time-only format string table (system_logging.md 4.2)
-
-    backed by FlatMapView vocabulary."""
+    """
+    ROM-resident, build-time-only format string table (system_logging.md 4.2)
+        backed by FlatMapView vocabulary.
+    """
 
     def __init__(self, capacity: int = 128):
 
@@ -112,25 +101,19 @@ class LogDictionary:
                 present so behavior matches C's variadic semantics instead of
                 Python's stricter one.
         """
-
         fmt = self._map.find(offset)
-
         if fmt is None:
             return f"<UNKNOWN_DICT_OFFSET_0x{offset:X}>"
 
         n = sum(1 for m in _SPECIFIER_RE.finditer(fmt) if m.group() != "%%")
-
         return fmt % args[:n]
 
 
 @dataclass
 class LogEntry:
     level: LogLevel
-
     dict_offset: int
-
     args: tuple[int, int, int, int]
-
     tick: int
 
 
@@ -140,36 +123,24 @@ class RingBuffer:
     def __init__(self, capacity: int = 16):
 
         assert capacity & (capacity - 1) == 0, "capacity must be a power of two"
-
         self._buf: list[LogEntry | None] = [None] * capacity
-
         self._mask = capacity - 1
-
         self._head = 0
-
         self._tail = 0
-
         self._count = 0
-
         self.overwrite_count = 0
 
     def push(self, entry: LogEntry) -> bool:
 
         overwritten = self._count == len(self._buf)
-
         if overwritten:
             self._tail = (self._tail + 1) & self._mask
-
             self._count -= 1
-
             self.overwrite_count += 1
 
         self._buf[self._head] = entry
-
         self._head = (self._head + 1) & self._mask
-
         self._count += 1
-
         return overwritten
 
     def pop(self) -> LogEntry | None:
@@ -178,13 +149,9 @@ class RingBuffer:
             return None
 
         entry = self._buf[self._tail]
-
         self._buf[self._tail] = None
-
         self._tail = (self._tail + 1) & self._mask
-
         self._count -= 1
-
         return entry
 
     def is_empty(self) -> bool:
@@ -204,13 +171,9 @@ class Logger:
     ):
 
         self.transport = transport
-
         self.dictionary = dictionary
-
         self.min_level = min_level
-
         self.ring = RingBuffer(capacity)
-
         self._tick = 0
 
     def log_event(
@@ -224,31 +187,23 @@ class Logger:
     ) -> str:
 
         self._tick += 1
-
         if level < self.min_level:
             return "FILTERED"
 
         overwritten = self.ring.push(
             LogEntry(level, dict_offset, (arg0, arg1, arg2, arg3), self._tick)
         )
-
         return "OVERWRITTEN" if overwritten else "QUEUED"
 
     def flush(self) -> int:
 
         flushed = 0
-
         while not self.ring.is_empty():
             entry = self.ring.pop()
-
             assert entry is not None
-
             msg = self.dictionary.format(entry.dict_offset, entry.args)
-
             line = f"[{entry.level.name}][tick:{entry.tick}] {msg}\n"
-
             self.transport.write(line.encode("utf-8"))
-
             flushed += 1
 
         return flushed

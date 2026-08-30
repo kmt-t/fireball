@@ -139,10 +139,8 @@ class WASMInterpreter:
             func_idx=func_idx,
         )
         ctx.call_frame_stack.append(frame)
-
         status = self.execute_bytecode(ctx, bytecode)
         ctx.call_frame_stack.pop()
-
         if status == "RETURN":
             res = ctx.pop() if ctx.sp_offset > frame.saved_sp else None
             ctx.sp_offset = frame.saved_sp
@@ -1108,7 +1106,6 @@ def test_full_wasm_recursive_factorial():
     """Test CallFrame invocation, local variables, and recursion."""
     ctx = ExecutionContext()
     interp = WASMInterpreter()
-
     # Function 0: fact(n)
     # if n <= 1 return 1; else return n * fact(n - 1)
     fact_bytecode = [
@@ -1128,7 +1125,6 @@ def test_full_wasm_recursive_factorial():
         ("return", None),
         ("end", None),  # 14
     ]
-
     ctx.funcs = [fact_bytecode]
     res = interp.execute_function(ctx, func_idx=0, args=[5])
     assert res == 120, f"Expected 120, got {res}"
@@ -1138,7 +1134,6 @@ def test_block_loop_and_stack_pruning():
     """Test block/loop nesting and label arity pruning on br/br_if."""
     ctx = ExecutionContext()
     interp = WASMInterpreter()
-
     # Block returning i32 = 42
     # block (result i32)
     #   i32.const 10
@@ -1154,7 +1149,6 @@ def test_block_loop_and_stack_pruning():
         ("end", None),
         ("return", None),
     ]
-
     ctx.funcs = [pruning_bytecode]
     res = interp.execute_function(ctx, func_idx=0, args=[])
     assert res == 42
@@ -1164,7 +1158,6 @@ def test_64bit_integer_arithmetic():
     """Test full 64-bit ALU operations and type conversions."""
     ctx = ExecutionContext()
     interp = WASMInterpreter()
-
     i64_bytecode = [
         ("i64.const", 0x1_0000_0000),
         ("i64.const", 0x2_0000_0000),
@@ -1177,7 +1170,6 @@ def test_64bit_integer_arithmetic():
         ("i64.add", None),
         ("return", None),
     ]
-
     ctx.funcs = [i64_bytecode]
     res = interp.execute_function(ctx, func_idx=0, args=[])
     assert res == 100
@@ -1187,7 +1179,6 @@ def test_memory_load_store_all_sizes():
     """Test 8/16/32/64-bit load/store with signed/unsigned extensions."""
     ctx = ExecutionContext()
     interp = WASMInterpreter()
-
     mem_bytecode = [
         # Store 64-bit value at addr 0
         ("i32.const", 0),
@@ -1202,7 +1193,6 @@ def test_memory_load_store_all_sizes():
         ("i32.add", None),
         ("return", None),
     ]
-
     ctx.funcs = [mem_bytecode]
     res = interp.execute_function(ctx, func_idx=0, args=[])
     assert res == 0xEF + 0xCDEF
@@ -1212,13 +1202,11 @@ def test_cooperative_safepoint():
     """Test loop header safepoint interruption."""
     ctx = ExecutionContext()
     interp = WASMInterpreter()
-
     infinite_loop_bytecode = [
         ("loop", (0, 0)),
         ("br", 0),
         ("end", None),
     ]
-
     ctx.funcs = [infinite_loop_bytecode]
     ctx.safepoint_pending = True
     status = interp.execute_bytecode(ctx, infinite_loop_bytecode)
@@ -1230,7 +1218,6 @@ def test_br_table_and_parametric():
     """Test br_table multi-branching and select/drop parametric opcodes."""
     ctx = ExecutionContext()
     interp = WASMInterpreter()
-
     # block (result i32)
     #   block
     #     block
@@ -1270,7 +1257,6 @@ def test_br_table_and_parametric():
         ("end", None),  # 17
         ("return", None),  # 18
     ]
-
     ctx.funcs = [br_table_bytecode]
     res = interp.execute_function(ctx, func_idx=0, args=[])
     assert res == 142
@@ -1280,7 +1266,6 @@ def test_signed_memory_and_division_clz_popcnt():
     """Test signed 8/16/32/64-bit load/store, division/remainder, clz, ctz, popcnt."""
     ctx = ExecutionContext()
     interp = WASMInterpreter()
-
     bytecode = [
         # Store -5 at addr 0 (as 8-bit)
         ("i32.const", 0),
@@ -1309,7 +1294,6 @@ def test_signed_memory_and_division_clz_popcnt():
         ("i32.add", None),  # -1005 + 35 = -970
         ("return", None),
     ]
-
     ctx.funcs = [bytecode]
     res = interp.execute_function(ctx, func_idx=0, args=[])
     sa = struct.unpack(">i", struct.pack(">I", res & 0xFFFF_FFFF))[0]
@@ -1320,7 +1304,6 @@ def test_globals_and_memory_grow():
     """Test global variables and dynamic memory growth."""
     ctx = ExecutionContext()
     interp = WASMInterpreter()
-
     bytecode = [
         ("i32.const", 777),
         ("global.set", 0),
@@ -1334,7 +1317,6 @@ def test_globals_and_memory_grow():
         ("i32.add", None),  # 777 + 5 = 782
         ("return", None),
     ]
-
     ctx.funcs = [bytecode]
     res = interp.execute_function(ctx, func_idx=0, args=[])
     assert res == 782

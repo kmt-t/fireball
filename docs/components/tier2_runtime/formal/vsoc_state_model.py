@@ -59,7 +59,6 @@ def build_model(*, guards: bool = True) -> Kripke:
         ("s_bad_irq_jit", "s_bad_irq_jit"),
         ("s_safepoint_starved", "s_safepoint_starved"),
     ]
-
     if not guards:
         # ガード無効時（変異検査）:
         # 1. Safepoint 同期を介さず JIT 実行中に直接割り込みを処理すると IRQ/JIT レース違反へ突入

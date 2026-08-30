@@ -29,9 +29,7 @@ def main() -> None:
     naive_count = sum(NAIVE[op] for op, _ in LOOP_OPS)
     cached_count = len(listing)
     mem_ops = sum(1 for i in listing if i.split()[0] in ("PUSH", "POP"))
-
     reduction = 1 - (cached_count / naive_count)
-
     print(f"[MEASURED] workload: {len(LOOP_OPS)} WASM ops ({LOOP_OPS})")
     print(
         f"           naive (always-memory) stencils : {naive_count} native instructions"
@@ -44,7 +42,6 @@ def main() -> None:
         f"           spill/reload instructions emitted mid-block: {mem_ops} "
         f"(0 means the abstraction added no runtime memory traffic for this block)"
     )
-
     assert cached_count < naive_count, (
         "the variant-selecting compiler must beat the naive always-memory stencil set, "
         "or the zero-cost claim is false"

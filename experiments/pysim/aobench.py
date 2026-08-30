@@ -13,7 +13,6 @@ Genuine 3D Ambient Occlusion Benchmark (AO-Bench):
 """
 
 from __future__ import annotations
-
 import sys
 from pathlib import Path
 
@@ -38,33 +37,20 @@ for _p in [
         sys.path.insert(0, _sp)
 
 import sys
-
 from pathlib import Path
-
 import sys
-
 from pathlib import Path
-
 import sys
-
 from pathlib import Path
-
 import time
-
 import wasmtime
-
 from interpreter import Interpreter
-
 from system import System
-
 from wasi import WasiHostContext
-
 from wasm_reader import parse
 
 # ---------------------------------------------------------------------------
-
 # Genuine 3D Raytracing Ambient Occlusion WAT (Fixed-point Q8.8: 1.0 = 256)
-
 # ---------------------------------------------------------------------------
 
 GENUINE_AO_WAT = r"""
@@ -305,224 +291,145 @@ def run_aobench():
     print(
         "================================================================================"
     )
-
     print(
         "      Fireball 3D Ambient Occlusion Benchmark (Genuine WASM Execution)         "
     )
-
     print(
         "================================================================================"
     )
-
     WIDTH = 32
-
     HEIGHT = 16
-
     AO_SAMPLES = 4
-
     # 1. Compile 3D AO-Bench WAT to standard WASM binary using external toolchain
-
     print("\n[*] Step 1: Compiling Q8.8 3D AO-Bench WAT via `wasmtime.wat2wasm`...")
-
     wasm_bytes = bytes(wasmtime.wat2wasm(GENUINE_AO_WAT))
-
     wasm_path = "experiments/pysim/aobench.wasm"
-
     with open(wasm_path, "wb") as f:
         f.write(wasm_bytes)
 
     print(
         f"    -> Generated external WASM binary ({len(wasm_bytes)} bytes) -> {wasm_path}"
     )
-
     # 2. Parse using Fireball's pure Python parser
-
     print("\n[*] Step 2: Parsing binary with Fireball wasm_reader...")
-
     module = parse(wasm_bytes)
-
     print(
         f"    -> Parsed Module: {len(module.functions)} functions, {len(module.exports)} exports"
     )
-
     # 3. Setup System & WASI Context
-
     from runtime_engine import RuntimeEngine
-
     from x64_jit import TraceCompiler
 
     # 3. Setup System & WASI Context for Tier 2 Baseline
-
     sysv = System()
-
     wasi_ctx = WasiHostContext(sysv)
-
     host_funcs = wasi_ctx.build_interpreter_host_functions(module)
-
     # 4. Tier 2: Pure Threaded CPS Interpreter Execution
-
     print(
         f"\n[*] Step 3: Executing on Tier 2 Threaded CPS Interpreter ({WIDTH}x{HEIGHT}, {AO_SAMPLES} samples/hit)..."
     )
-
     interp_t2 = Interpreter(
         module, memory=wasi_ctx.guest_memory, host_functions=host_funcs
     )
-
     main_func_idx = module.export_func_index("main")
-
     t0_t2 = time.perf_counter()
-
     rendered_bytes = interp_t2.call(main_func_idx, [WIDTH, HEIGHT])
-
     t1_t2 = time.perf_counter()
-
     render_output = sysv.transport.drain().decode("utf-8", errors="replace")
-
     print("\n--- [Render Output from Guest WASM via WASI stdout] ---")
-
     print(render_output)
-
     print("-------------------------------------------------------")
-
     t2_time_ms = (t1_t2 - t0_t2) * 1000
-
     # Calculate actual ray count
-
     hit_pixels = sum(1 for ch in render_output if ch in (".", ":", "+", "#", "@"))
-
     total_rays = (WIDTH * HEIGHT) + (hit_pixels * AO_SAMPLES)
-
     t2_rays_per_sec = total_rays / (t2_time_ms / 1000.0) if t2_time_ms > 0 else 0
-
     # 5. Tier 3: Integrated Hybrid Execution with 2-bit Card Marking & idle_hook JIT Compilation
-
     print(
         f"[*] Step 4: Executing on Tier 3 RuntimeEngine (Card-Marking Hotspot Profiler + idle_hook JIT Compiler)..."
     )
-
     sysv_t3 = System()
-
     wasi_ctx_t3 = WasiHostContext(sysv_t3)
-
     host_funcs_t3 = wasi_ctx_t3.build_interpreter_host_functions(module)
-
     trace_compiler = TraceCompiler()
-
     runtime_engine = RuntimeEngine(jit_compiler=trace_compiler, yield_threshold=16)
-
     runtime_engine.register_module_blocks(module)
-
     interp_t3 = Interpreter(
         module,
         memory=wasi_ctx_t3.guest_memory,
         host_functions=host_funcs_t3,
         runtime_engine=runtime_engine,
     )
-
     # Run cooperatively on COOS scheduler, draining compile queue via idle_hook on yields
-
     t0_t3 = time.perf_counter()
-
     coro = interp_t3.call_coroutine(main_func_idx, [WIDTH, HEIGHT], yield_every=32)
-
     try:
         while True:
             next(coro)
-
             # COOS idle_hook: drain compile queue and batch-compile hot basic blocks
-
             runtime_engine.idle_hook(budget=4)
 
     except StopIteration:
         pass
 
     t1_t3 = time.perf_counter()
-
     render_output_t3 = sysv_t3.transport.drain().decode("utf-8", errors="replace")
-
     t3_time_ms = (t1_t3 - t0_t3) * 1000
-
     t3_rays_per_sec = total_rays / (t3_time_ms / 1000.0) if t3_time_ms > 0 else 0
-
     speedup_ratio = t2_time_ms / t3_time_ms if t3_time_ms > 0 else 1.0
-
     # Differential Verification: verify byte-for-byte exact equality between Tier 2 and Tier 3 outputs
-
     is_identical = render_output == render_output_t3
-
     has_no_nul = "\x00" not in render_output
-
     expected_bytes = (
         WIDTH + 1
     ) * HEIGHT  # (32 chars + 1 newline) * 16 rows = 528 bytes
-
     is_valid_size = len(render_output.encode("utf-8")) == expected_bytes
-
     assert is_identical, (
         "CRITICAL: Tier 3 JIT output diverges from Tier 2 Interpreter reference output!"
     )
-
     assert has_no_nul, "CRITICAL: Output contains corrupted NUL bytes!"
-
     assert is_valid_size, (
         f"CRITICAL: Output size {len(render_output.encode('utf-8'))} != expected {expected_bytes} bytes!"
     )
-
     print(
         "\n================================================================================"
     )
-
     print(
         "                     3D AO-Bench Performance Results (Genuine Measured)         "
     )
-
     print(
         "================================================================================"
     )
-
     print(
         f"  * Resolution:               {WIDTH} x {HEIGHT} ({WIDTH * HEIGHT} primary rays)"
     )
-
     print(
         f"  * Hit Pixels:               {hit_pixels} ({hit_pixels * AO_SAMPLES} AO sample rays)"
     )
-
     print(f"  * Total Rays Traced:        {total_rays:,} Rays / Frame")
-
     print(
         f"  * Output Verified:          {len(render_output.encode('utf-8'))} bytes (Exact match: 33 B x 16 rows, 0 NULs)"
     )
-
     print(f"  * Differential Check:       PASS (Tier 2 & Tier 3 match byte-for-byte)")
-
     print(
         "--------------------------------------------------------------------------------"
     )
-
     print(
         f"  * Tier 2 (Threaded CPS):    {t2_time_ms:.2f} ms / frame  ({t2_rays_per_sec:,.0f} Rays / Sec)"
     )
-
     print(
         f"  * Tier 3 (Hybrid + JIT):    {t3_time_ms:.2f} ms / frame  ({t3_rays_per_sec:,.0f} Rays / Sec)"
     )
-
     print(f"  * Measured Speedup Ratio:   {speedup_ratio:.2f}x faster")
-
     print(
         f"  * JIT Traces Compiled:      {len(runtime_engine.cache.active.traces)} traces in Active cache bank"
     )
-
     print(
         "================================================================================"
     )
-
     print(
         f"\n[Result] Genuine 3D AO-Bench: {total_rays:,} Rays traced in {t2_time_ms:.2f} ms (Tier 2) vs {t3_time_ms:.2f} ms (Tier 3), Speedup: {speedup_ratio:.2f}x."
     )
-
     print(
         "[PASS] 3D Ambient Occlusion differential verification & benchmark completed successfully."
     )

@@ -13,6 +13,5 @@ using namespace fireball;
  */
 int main([[maybe_unused]] int argc, [[maybe_unused]] char const** argv) {
   printf("--- Fireball WASM Hypervisor Booting ---\n");
-
   return 0;
 }

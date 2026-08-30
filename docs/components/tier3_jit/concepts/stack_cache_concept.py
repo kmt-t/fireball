@@ -128,7 +128,6 @@ class StackCachingCompiler:
         """Returns (native listing, final cache depth)."""
         listing: list[str] = []
         depth = 0
-
         for op, arg in ops:
             table = STENCILS.get(op)
             if table is None:

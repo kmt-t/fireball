@@ -52,7 +52,6 @@ SCENARIO5_WAT = """
         (i32.mul (local.get $y1) (local.get $y2))
         (i32.mul (local.get $z1) (local.get $z2))))
   )
-
   ;; Function 1: Manhattan distance: |x1-x2| + |y1-y2| + |z1-z2|
   (func $manhattan3 (param $x1 i32) (param $y1 i32) (param $z1 i32)
                     (param $x2 i32) (param $y2 i32) (param $z2 i32) (result i32)
@@ -71,18 +70,15 @@ SCENARIO5_WAT = """
     )
     (i32.add (local.get $dx) (i32.add (local.get $dy) (local.get $dz)))
   )
-
   ;; Function 2: Batch compute dot products across iterations
   (func (export "batch_metrics") (param $iters i32) (result i32)
     (local $i i32)
     (local $acc i32)
     (local.set $acc (i32.const 0))
     (local.set $i (i32.const 0))
-
     (block $b_exit
       (loop $l_top
         (br_if $b_exit (i32.ge_s (local.get $i) (local.get $iters)))
-
         ;; Call dot3 and manhattan3 alternately
         (local.set $acc
           (i32.add (local.get $acc)
@@ -106,12 +102,10 @@ SCENARIO5_WAT = """
 
 def test_scenario_multimodule_unified_pc():
     print("[*] Running Scenario 5: Multi-Function UnifiedPC & bswap32 Radix Tree...")
-
     wasm_bytes = bytes(wasmtime.wat2wasm(SCENARIO5_WAT))
     module = parse(wasm_bytes)
     fn_idx = module.export_func_index("batch_metrics")
     ITERS = 500
-
     # 1. Tier 2 Reference Execution
     sysv_t2 = System()
     wasi_t2 = WasiHostContext(sysv_t2)
@@ -119,25 +113,20 @@ def test_scenario_multimodule_unified_pc():
     interp_t2 = Interpreter(
         module, memory=wasi_t2.guest_memory, host_functions=funcs_t2
     )
-
     res_t2 = interp_t2.call(fn_idx, [ITERS])
-
     # 2. Tier 3 Hybrid Execution
     sysv_t3 = System()
     wasi_t3 = WasiHostContext(sysv_t3)
     funcs_t3 = wasi_t3.build_interpreter_host_functions(module)
-
     trace_compiler = TraceCompiler()
     runtime_engine = RuntimeEngine(jit_compiler=trace_compiler, yield_threshold=16)
     runtime_engine.register_module_blocks(module)
-
     interp_t3 = Interpreter(
         module,
         memory=wasi_t3.guest_memory,
         host_functions=funcs_t3,
         runtime_engine=runtime_engine,
     )
-
     coro = interp_t3.call_coroutine(fn_idx, [ITERS], yield_every=32)
     try:
         while True:
@@ -148,19 +137,16 @@ def test_scenario_multimodule_unified_pc():
 
     assert res_t2 == res_t3, f"Calculations diverged: T2={res_t2} vs T3={res_t3}"
     assert len(runtime_engine.cache.active.traces) > 0, "No JIT traces compiled"
-
     # 3. Verify that traces belong to multiple distinct functions via UnifiedPC
     func_indices_in_jit = set(
         (pc >> 16) for pc, _ in runtime_engine.cache.active.traces
     )
     print(f"    -> Compiled JIT traces belong to functions: {func_indices_in_jit}")
     assert len(func_indices_in_jit) >= 2, "Traces should span across multiple functions"
-
     # 4. Verify RadixBinaryTreeView lookup across all compiled UnifiedPCs
     sorted_pairs = sorted(runtime_engine.cache.active.traces, key=lambda x: x[0])
     keys = [p[0] for p in sorted_pairs]
     vals = [p[1] for p in sorted_pairs]
-
     radix_shift = 16
     max_prefix = max(keys) >> radix_shift
     radix_table = [0] * (max_prefix + 2)

@@ -60,7 +60,6 @@ def build_model(*, guards: bool = True) -> Kripke:
         ("s_io_performed_on_invalid", "s_io_performed_on_invalid"),
         ("s_phantom_return", "s_phantom_return"),
     ]
-
     if not guards:
         # ガード無効時（変異検査）:
         # 1. fd バリデーション（EBADF チェック）を外すと、無効な fd への I/O が実際に実行されてしまう

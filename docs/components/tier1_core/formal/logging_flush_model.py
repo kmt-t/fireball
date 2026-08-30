@@ -44,7 +44,6 @@ def build_model(*, guards: bool = True) -> Kripke:
         ("s_blocked_caller", "s_blocked_caller"),
         ("s_never_flushed", "s_never_flushed"),
     ]
-
     if not guards:
         # ガード無効時（変異検査）:
         # 1. overwrite-on-full 方針を外すと、満杯時の log_event が呼び出し側をブロックする

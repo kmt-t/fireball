@@ -28,7 +28,6 @@ class MPUFault(Exception):
 
 class Stencil:
     """Pre-compiled binary template with relocation hole descriptors and Thumb-2 disassembly.
-
     variant_id is the intra-trace register-occupancy ID from
     docs/specs/jit_stencil_catalog.md 3.8 (0..3 = Depth 0..3, how many of
     TOS/NOS/NNOS are register-resident), derived from the name's `_dN` suffix so
@@ -154,7 +153,6 @@ class CopyPatchJITEngine:
         self.mpu_attr: str = MPUAttribute.RO_X  # Default state: RO_X
         self.barrier_flushes: int = 0
         self.current_write_pos: int = 0
-
         # Exhaustive Stencil Library (Cortex-M33 AAPCS + JIT Register Map)
         # R0=ip, R1=stack_bot, R2=env, R3=local_base, R4=TOS, R5=NOS, R6=NNOS, R7=FP,
         # R8/R9=mem_base/mem_size (pinned only when the trace touches linear memory),
@@ -406,7 +404,6 @@ class CopyPatchJITEngine:
         }
 
     # --- MPU W^X Transaction Protocol ---
-
     def begin_jit_patch(self):
         """Switches JIT Code Cache MPU attribute to RW + XN."""
         self.mpu_attr = MPUAttribute.RW_XN
@@ -452,7 +449,6 @@ class CopyPatchJITEngine:
         return bytes(self.byte_cache[start_byte_offset : start_byte_offset + num_bytes])
 
     # --- Full Copy-and-Patch Compilation ---
-
     def compile_trace(
         self,
         wasm_ops: list[tuple[str, Any]],
@@ -468,7 +464,6 @@ class CopyPatchJITEngine:
         Inlines a 16-byte JITTraceHeader at the start of the trace buffer.
         Flushes all dirty spilled variables (TOS/NOS, registers) to unified stack before POP/BX.
         Returns (code_start_offset, total_instructions).
-
         `variant_id` is the trace's register-occupancy ID (Depth 0..3, see
         docs/specs/jit_stencil_catalog.md 3.8) -- which of TOS/NOS/NNOS are register-
         resident. It does NOT describe anything about chaining to another trace:
@@ -485,10 +480,8 @@ class CopyPatchJITEngine:
         start_offset = self.current_write_pos
         dirty_spills = dirty_spills or []
         asm = Thumb2Assembler()
-
         # 1. Begin W^X Transaction (RW + XN)
         self.begin_jit_patch()
-
         # 2. Emit 16-byte JIT Trace Header (inlined at the head of every trace)
         header_byte_offset = self.byte_write_pos
         self.write_instruction(
@@ -497,7 +490,6 @@ class CopyPatchJITEngine:
         )
         self.current_write_pos += 1
         self._emit_bytes(bytes(JITTraceHeader.SIZE_BYTES))
-
         code_start_byte_offset = self.byte_write_pos
         code_start_inst_offset = self.current_write_pos
 
@@ -519,7 +511,6 @@ class CopyPatchJITEngine:
 
         # 3. Emit Full Callee-saved Prologue
         emit_stencil(self.stencils["prologue_full"])
-
         # 3b. If the trace touches linear memory, pin R8=mem_base and R9=mem_size for the
         # lifetime of the trace (vsoc_runtime: mem-base @+0x00, mem-size @+0x04 -- see
         # docs/components/tier2_runtime/wit/vsoc_runtime.wit). Loaded once here rather than
@@ -535,7 +526,6 @@ class CopyPatchJITEngine:
         # Byte addresses of BHS.W trap branches emitted below, patched once the trace's
         # trap tail (see step 5b) is known.
         oob_branch_fixups: list[int] = []
-
         # 4. Emit WASM Ops with Relocation Patching
         for op, arg in wasm_ops:
             if op == "i32.const":
@@ -610,7 +600,6 @@ class CopyPatchJITEngine:
 
         # 5. Emit Epilogue: Flush Dirty Spill Variables before POP
         flush_dirty_spills()
-
         if exit_kind == "return":
             emit_stencil(self.stencils["epilogue_return"])
         elif exit_kind == "fallback":
@@ -628,7 +617,6 @@ class CopyPatchJITEngine:
             self.last_trap_tail_byte_addr = trap_tail_byte_addr
             flush_dirty_spills()
             emit_stencil(self.stencils["fallback_interp"])
-
             for branch_byte_addr in oob_branch_fixups:
                 rel_offset = trap_tail_byte_addr - (branch_byte_addr + 4)
                 patched = asm.b_cond_w(Cond.HS, rel_offset)
@@ -649,10 +637,8 @@ class CopyPatchJITEngine:
         self.byte_cache[
             header_byte_offset : header_byte_offset + JITTraceHeader.SIZE_BYTES
         ] = header.to_bytes()
-
         # 7. Commit W^X Transaction (RO + X + Barriers)
         self.commit_jit_patch()
-
         total_emitted = self.current_write_pos - start_offset
         self.last_trace_byte_range = (
             code_start_byte_offset,
@@ -685,7 +671,6 @@ class CopyPatchJITEngine:
     # mem_base/mem_size/local_base are deliberately excluded from the register
     # maps: they're loaded once at trace entry and held fixed for the trace's
     # whole body, never re-negotiated between stencils.
-
     def emit_variant_reconciliation_glue(
         self, source_variant_id: int, target_variant_id: int
     ) -> bool:
@@ -693,7 +678,6 @@ class CopyPatchJITEngine:
         carry source_variant_id's register-resident values into target_variant_id's
         expected layout before the next stencil runs. Must be called with a W^X
         patch transaction already open (e.g. from inside compile_trace()'s op loop).
-
         Returns True if the transition is representable (possibly zero MOVs, if the
         layouts already agree) or False if target_variant_id needs a role
         source_variant_id never produced -- no MOV sequence can synthesize a value
@@ -728,7 +712,6 @@ def _order_register_moves(moves: dict[Reg, Reg]) -> list[tuple[Reg, Reg]]:
     correct sequential MOV order, using R12 to break cycles (the classic
     permutation-shuffle problem: a straight MOV order corrupts a swap, since the
     second MOV would read back the value the first MOV just overwrote).
-
     R12 is used as scratch because it is Intra-Call Scratch (never a Callee-saved
     assignable-pool register, never live across a chain boundary on its own)."""
     remaining = dict(moves)
@@ -768,7 +751,6 @@ def test_full_stencil_library_coverage():
     assert len(engine.stencils) >= 35, (
         f"Expected full stencil library, got {len(engine.stencils)}"
     )
-
     hex_digits = set("0123456789ABCDEFabcdef")
     for name, st in engine.stencils.items():
         if st.code:
@@ -865,7 +847,6 @@ def test_stencil_variant_ids_match_the_documented_table():
 
 def test_stencil_catalog_matches_assembler():
     """Cross-file check: catalog hex_bytes must equal the real Thumb2Assembler's output.
-
     Without this, jit_assembler_constexpr_concept.py and this file each hand-transcribe
     the same bytes independently, and nothing catches them drifting apart if only one
     is edited. This imports the actual assembler used elsewhere and re-derives the
@@ -882,7 +863,6 @@ def test_stencil_catalog_matches_assembler():
         (1 << 4) | (1 << 5) | (1 << 6) | (1 << 8) | (1 << 9) | (1 << 10) | (1 << 11)
     )
     call_mask = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 12)
-
     checks = {
         "prologue_full": asm.push_w(reg_mask=full_mask, push_lr=True),
         "epilogue_return": asm.pop_w(reg_mask=full_mask, pop_pc=True),
@@ -924,7 +904,6 @@ def test_stencil_catalog_matches_assembler():
         "i32_load_r8": asm.ldr_w_reg(Reg.R4, Reg.R8, Reg.R4),
         "i32_store_r8": asm.str_w_reg(Reg.R4, Reg.R8, Reg.R5),
     }
-
     for name, encoded in checks.items():
         catalog_hex = engine.stencils[name].hex_bytes
         assert h(encoded) == catalog_hex, (
@@ -940,7 +919,6 @@ def test_stencil_catalog_matches_assembler():
         f"Stencil 'i32_const_d1' drifted from the assembler: "
         f"catalog={engine.stencils['i32_const_d1'].hex_bytes!r} assembler={const_d1_expected!r}"
     )
-
     # external_call_stub has a relocation hole (the BL target) between two otherwise
     # fixed PUSH/POP halves; check only the parts that don't depend on the patched call site.
     push_expected = h(asm.push_w(reg_mask=call_mask, push_lr=True))
@@ -952,7 +930,6 @@ def test_stencil_catalog_matches_assembler():
     assert call_hex.endswith(pop_expected), (
         f"Stencil 'external_call_stub' POP half drifted: catalog={call_hex!r} expected suffix={pop_expected!r}"
     )
-
     # i32_rotl_d2: RSB r12,r4,#32 (amount = 32 - shift) then ROR.W r4,r5,r12. R12 scratch,
     # not R3 -- R3 is local_base now.
     rotl_expected = h(
@@ -962,7 +939,6 @@ def test_stencil_catalog_matches_assembler():
         f"Stencil 'i32_rotl_d2' drifted from the assembler: "
         f"catalog={engine.stencils['i32_rotl_d2'].hex_bytes!r} assembler={rotl_expected!r}"
     )
-
     # i32_eqz_d1: CMP r4,#0 ; IT EQ ; MOVEQ r4,#1 ; IT NE ; MOVNE r4,#0.
     eqz_expected = h(
         asm.cmp_imm8(Reg.R4, 0)
@@ -1000,12 +976,10 @@ def test_arithmetic_and_logic_traces():
         ("i32.store", None),
         ("local.set", 4),
     ]
-
     start_pos, count = engine.compile_trace(ops)
     assert count > 20
     assert engine.mpu_attr == MPUAttribute.RO_X
     assert engine.barrier_flushes == 1
-
     code = engine.execute_native(start_pos, count)
     assert code[0] == "PUSH.W {r4-r6, r8-r11, lr}"
     # ops include i32.load/i32.store, so the prologue also pins R8=mem_base/R9=mem_size,
@@ -1026,10 +1000,8 @@ def test_external_aapcs_call_stub():
         ("external_call", "wasi_fd_write"),
         ("local.set", 0),
     ]
-
     start_pos, count = engine.compile_trace(ops)
     code = engine.execute_native(start_pos, count)
-
     # Check caller-saved preservation around external call
     assert "PUSH {r0-r3, r12, lr}" in code
     assert "BL wasi_fd_write" in code
@@ -1042,7 +1014,6 @@ def test_cps_shared_registers_never_clobbered():
     ops = [("i32.const", 42), ("i32.add", None), ("i32.load", None)]
     start_pos, count = engine.compile_trace(ops)
     code = engine.execute_native(start_pos, count)
-
     for inst in code:
         mnemonic, _, operands = inst.partition(" ")
         if mnemonic in (
@@ -1068,7 +1039,6 @@ def test_cps_shared_registers_never_clobbered():
 
 def test_fast_address_check_traps_before_access():
     """FastAddressCheck/MemoryBoundaryCheck: OOB address must trap to the interpreter, not wrap.
-
     Bounds checking is size-comparison based (no mask, no power-of-two constraint on mem-size).
     The check must precede the actual load/store, and the placeholder BHS.W branch emitted for
     it must be back-patched to a real (non-placeholder) offset pointing at the trace's trap
@@ -1077,16 +1047,13 @@ def test_fast_address_check_traps_before_access():
     engine = CopyPatchJITEngine()
     asm = Thumb2Assembler()
     ops = [("i32.const", 0), ("i32.load", None)]
-
     start_pos, count = engine.compile_trace(ops)
     code = engine.execute_native(start_pos, count)
-
     assert "CMP r4, r9" in code
     assert "BHS.W <trap>" in code
     assert "LDR.W r4, [r8, r4]" in code
     # The bounds check + branch must be emitted strictly before the access it guards.
     assert code.index("BHS.W <trap>") < code.index("LDR.W r4, [r8, r4]")
-
     assert len(engine.last_oob_fixups) == 1
     assert engine.last_trap_tail_byte_addr is not None
     branch_byte_addr = engine.last_oob_fixups[0]
@@ -1101,7 +1068,6 @@ def test_fast_address_check_traps_before_access():
     assert patched_bytes == expected_bytes, (
         "BHS.W placeholder was not back-patched to the trap tail"
     )
-
     # The trap tail itself must reach the interpreter fallback (POP + BX r12), never a bare return.
     assert code[-1] == "BX r12"
 
@@ -1215,13 +1181,11 @@ def test_epilogue_spill_variable_flush():
         ("local.get", 4),
         ("i32.add", None),
     ]
-
     # Compile with dirty spills: R4 (TOS) to stack offset 0, R8 (local[0]) to stack offset 8
     start_pos, count = engine.compile_trace(
         ops, exit_kind="fallback", dirty_spills=[("r4", 0), ("r8", 8)]
     )
     code = engine.execute_native(start_pos, count)
-
     # Check spill flush STR instructions before POP
     assert "STR r4, [r1, #0]" in code
     assert "STR r8, [r1, #8]" in code
@@ -1250,11 +1214,9 @@ def test_jit_trace_header_layout():
         chain_target_addr=0x08001020,
     )
     assert count > 0
-
     header_offset, header_len = engine.last_trace_header_range
     assert header_len == JITTraceHeader.SIZE_BYTES == 16
     assert header_offset == 0
-
     # Parse the header directly from byte_cache
     header = JITTraceHeader.from_bytes(engine.byte_cache, header_offset)
     assert header.head_wasm_pc == 0x100

@@ -49,7 +49,6 @@ def time_direct_switch_decision(n: int) -> float:
 def main() -> None:
     n = 100_000
     bound = 4
-
     direct, queue_ops = count_queue_ops_for_n_handoffs(n, bound)
     assert direct + queue_ops == n
     expected_queue_ops = n // (bound + 1)  # one forced YIELD every (bound+1) handoffs
@@ -58,10 +57,8 @@ def main() -> None:
         f"(expected ~{expected_queue_ops}); the bypass is not behaving as documented"
     )
     avoided_fraction = direct / n
-
     elapsed = time_direct_switch_decision(n)
     per_call_ns = (elapsed / n) * 1e9
-
     print(f"[MEASURED] {n} handoff decisions (consecutive_handoffs bound={bound}):")
     print(
         f"           {direct} DIRECT_SWITCH (queue bypassed), {queue_ops} queued "

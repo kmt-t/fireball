@@ -464,7 +464,6 @@ class RadixBinaryTreeView:
         self.values = [p[1] for p in paired]
         self.map_view = FlatMapView(self.keys, self.values)
         self.radix_shift = radix_shift
-
         if self.keys:
             max_prefix = max(self.keys) >> radix_shift
             table_size = max_prefix + 2
@@ -557,7 +556,6 @@ class ModuleView:
         self.start_func_idx: Optional[int] = None
         self.resolved_imports: dict[str, Any] = {}
         self.is_ready: bool = False
-
         # Decoded entity registry & RadixBinaryTreeView indexes ({META_BinarySearch})
         self.entity_registry: list[DecodedEntity] = []
         self.export_tree: Optional[RadixBinaryTreeView] = None
@@ -583,13 +581,11 @@ class ModuleView:
         self.export_tree = RadixBinaryTreeView(
             exp_keys, self.exports_dict, radix_shift=16
         )
-
         # 2. Import symbol RadixBinaryTreeView (Hash -> ImportEntry)
         imp_keys = [
             fnv1a_32(f"{imp.module_name}::{imp.field_name}") for imp in self.imports
         ]
         self.import_tree = RadixBinaryTreeView(imp_keys, self.imports, radix_shift=16)
-
         # 3. Entity file offset RadixBinaryTreeView (start_offset -> DecodedEntity)
         ent_keys = [e.start_offset for e in self.entity_registry]
         self.entity_offset_tree = RadixBinaryTreeView(
@@ -739,7 +735,6 @@ class WasmLoader:
         self, module_name: str, wasm_binary: Union[bytes, bytearray, memoryview]
     ) -> ModuleView:
         stream = BinaryStream(wasm_binary)
-
         # ----------------------------------------------------------------------
         # V1: Magic Number Check (\0asm -> 0x00, 0x61, 0x73, 0x6D)
         # ----------------------------------------------------------------------
@@ -765,13 +760,11 @@ class WasmLoader:
         # ----------------------------------------------------------------------
         view = ModuleView(module_name, wasm_binary)
         last_section_id = 0
-
         while stream.remaining() > 0:
             sec_start = stream.tell()
             sec_id = stream.read_u8()
             sec_size = stream.read_leb128_u32()
             payload_start = stream.tell()
-
             # V3: Section bounds check
             if payload_start + sec_size > stream.limit:
                 raise WasmVerifyError(
@@ -798,13 +791,11 @@ class WasmLoader:
             view.register_entity(
                 "SECTION", sec_start, sec_start + sec_total_size, sec_id, sec_view
             )
-
             # Dispatch section-specific zero-copy parsers
             sec_stream = BinaryStream(
                 wasm_binary, offset=payload_start, length=sec_size
             )
             self._parse_section_content(sec_id, sec_stream, view)
-
             # Seek past section
             stream.seek(payload_start + sec_size)
 
@@ -843,10 +834,8 @@ class WasmLoader:
 
         # Sort exports_dict by export name for deterministic layout
         view.exports_dict.sort()
-
         # Build RadixBinaryTreeView indexes for exports, imports, and file offset entities ({META_BinarySearch})
         view.build_indexes()
-
         # If module has no imports, it is ready immediately
         if not view.imports:
             view.is_ready = True
@@ -1074,7 +1063,6 @@ def _build_test_wasm_binary(
     buf = bytearray()
     buf.extend(magic)
     buf.extend(struct.pack("<I", version))
-
     # Type Section (ID=1) -> (i32, i32) -> i32
     type_payload = bytearray()
     type_payload.extend(_encode_leb128_u32(1))  # 1 type
@@ -1083,32 +1071,26 @@ def _build_test_wasm_binary(
     type_payload.extend([ValType.I32, ValType.I32])
     type_payload.extend(_encode_leb128_u32(1))  # 1 result
     type_payload.append(ValType.I32)
-
     buf.append(SectionID.TYPE)
     buf.extend(_encode_leb128_u32(len(type_payload)))
     buf.extend(type_payload)
-
     # Function Section (ID=3)
     func_payload = bytearray()
     func_payload.extend(_encode_leb128_u32(1))  # 1 function
     func_payload.extend(
         _encode_leb128_u32(999 if invalid_type_idx else 0)
     )  # type index
-
     buf.append(SectionID.FUNCTION)
     buf.extend(_encode_leb128_u32(len(func_payload)))
     buf.extend(func_payload)
-
     # Memory Section (ID=5)
     mem_payload = bytearray()
     mem_payload.extend(_encode_leb128_u32(1))  # 1 memory
     mem_payload.append(0x00)  # limits flags (no max)
     mem_payload.extend(_encode_leb128_u32(memory_pages))
-
     buf.append(SectionID.MEMORY)
     buf.extend(_encode_leb128_u32(len(mem_payload)))
     buf.extend(mem_payload)
-
     # Global Section (ID=6) -> 1 immutable i32 global initialized to 42
     glob_payload = bytearray()
     glob_payload.extend(_encode_leb128_u32(1))  # 1 global
@@ -1117,11 +1099,9 @@ def _build_test_wasm_binary(
     glob_payload.append(0x41)  # i32.const
     glob_payload.extend(_encode_leb128_s32(42))  # 42
     glob_payload.append(0x0B)  # end
-
     buf.append(SectionID.GLOBAL)
     buf.extend(_encode_leb128_u32(len(glob_payload)))
     buf.extend(glob_payload)
-
     # Export Section (ID=7)
     names = export_names or ["add", "main", "compute"]
     exp_payload = bytearray()
@@ -1141,42 +1121,35 @@ def _build_test_wasm_binary(
     buf.append(SectionID.EXPORT)
     buf.extend(_encode_leb128_u32(len(exp_payload)))
     buf.extend(exp_payload)
-
     # Code Section (ID=10)
     # Body: local.get 0, local.get 1, i32.add, end
     code_body = bytearray()
     code_body.extend(_encode_leb128_u32(0))  # 0 local vectors
     code_body.extend([0x20, 0x00, 0x20, 0x01, 0x6A, 0x0B])  # bytecodes
-
     code_payload = bytearray()
     code_payload.extend(_encode_leb128_u32(1))  # 1 code body
     code_payload.extend(_encode_leb128_u32(len(code_body)))
     code_payload.extend(code_body)
-
     buf.append(SectionID.CODE)
     if corrupt_section_bounds:
         buf.extend(_encode_leb128_u32(9999))  # Exceeds binary length!
     else:
         buf.extend(_encode_leb128_u32(len(code_payload)))
     buf.extend(code_payload)
-
     return bytes(buf)
 
 
 def test_wasm_loader_lifecycle_and_verification():
     loader = WasmLoader()
-
     # 1. Normal prepare & parse
     valid_wasm = _build_test_wasm_binary(export_names=["zeta", "alpha", "beta"])
     view = loader.prepare("math_module", valid_wasm)
-
     assert view.module_name == "math_module"
     assert view.is_ready is True
     assert len(view.types) == 1
     assert len(view.functions) == 1
     assert len(view.memories) == 1
     assert len(view.exports_dict) == 3
-
     # 2. Binary search over exports_dict (O(log N))
     assert [exp.name for exp in view.exports_dict] == ["alpha", "beta", "zeta"]
     assert view.lookup_export("alpha") is not None
@@ -1184,7 +1157,6 @@ def test_wasm_loader_lifecycle_and_verification():
     assert view.lookup_export("zeta") is not None
     assert view.lookup_export("gamma") is None
     assert view.lookup_export_func("alpha") == 0
-
     # 3. Lazy Function Accessor verification
     func_acc = view.get_function(0)
     assert func_acc.get_type_index() == 0
@@ -1194,7 +1166,6 @@ def test_wasm_loader_lifecycle_and_verification():
     code_stream = func_acc.get_code_stream()
     bytecode = bytes(code_stream.read_bytes(code_stream.remaining()))
     assert bytecode == bytes([0x20, 0x00, 0x20, 0x01, 0x6A, 0x0B])
-
     # 4. V1: Invalid Magic Number rejection & rollback
     watermark_before = loader.allocator.offset
     bad_magic_wasm = _build_test_wasm_binary(magic=b"\x7fELF")
@@ -1204,7 +1175,6 @@ def test_wasm_loader_lifecycle_and_verification():
     except WasmVerifyError as e:
         assert "V1 Verification Failed" in str(e)
     assert loader.allocator.offset == watermark_before
-
     # 5. V2: Invalid Version rejection & rollback
     bad_ver_wasm = _build_test_wasm_binary(version=2)
     try:
@@ -1213,7 +1183,6 @@ def test_wasm_loader_lifecycle_and_verification():
     except WasmVerifyError as e:
         assert "V2 Verification Failed" in str(e)
     assert loader.allocator.offset == watermark_before
-
     # 6. V3: Section bounds overflow rejection & rollback
     bad_bounds_wasm = _build_test_wasm_binary(corrupt_section_bounds=True)
     try:
@@ -1222,7 +1191,6 @@ def test_wasm_loader_lifecycle_and_verification():
     except WasmVerifyError as e:
         assert "V3 Verification Failed" in str(e)
     assert loader.allocator.offset == watermark_before
-
     # 7. V4: Section order corruption rejection & rollback
     bad_order_wasm = _build_test_wasm_binary(corrupt_section_order=True)
     try:
@@ -1231,7 +1199,6 @@ def test_wasm_loader_lifecycle_and_verification():
     except WasmVerifyError as e:
         assert "V4 Verification Failed" in str(e)
     assert loader.allocator.offset == watermark_before
-
     # 8. V5: Invalid Type signature index rejection & rollback
     bad_type_wasm = _build_test_wasm_binary(invalid_type_idx=True)
     try:
@@ -1240,7 +1207,6 @@ def test_wasm_loader_lifecycle_and_verification():
     except WasmVerifyError as e:
         assert "V5 Verification Failed" in str(e)
     assert loader.allocator.offset == watermark_before
-
     # 9. V6: Memory page limit overflow rejection & rollback
     bad_mem_wasm = _build_test_wasm_binary(memory_pages=32)
     try:
@@ -1249,12 +1215,10 @@ def test_wasm_loader_lifecycle_and_verification():
     except WasmVerifyError as e:
         assert "V6 Verification Failed" in str(e)
     assert loader.allocator.offset == watermark_before
-
     # 10. Multi-module linking (resolve_imports)
     # Build lib module exporting 'helper'
     lib_wasm = _build_test_wasm_binary(export_names=["helper"])
     lib_view = loader.prepare("lib_module", lib_wasm)
-
     # Build app module importing 'lib_module.helper'
     app_buf = bytearray()
     app_buf.extend(b"\x00asm\x01\x00\x00\x00")
@@ -1269,7 +1233,6 @@ def test_wasm_loader_lifecycle_and_verification():
     app_buf.append(SectionID.TYPE)
     app_buf.extend(_encode_leb128_u32(len(app_type)))
     app_buf.extend(app_type)
-
     # Import section: lib_module.helper
     app_imp = bytearray()
     app_imp.extend(_encode_leb128_u32(1))
@@ -1282,17 +1245,14 @@ def test_wasm_loader_lifecycle_and_verification():
     app_buf.append(SectionID.IMPORT)
     app_buf.extend(_encode_leb128_u32(len(app_imp)))
     app_buf.extend(app_imp)
-
     app_view = loader.prepare("app_module", bytes(app_buf))
     assert app_view.is_ready is False  # Not ready until imports resolved
     assert loader.resolve_imports(app_view) is True
     assert app_view.is_ready is True
     assert "lib_module.helper" in app_view.resolved_imports
-
     # 11. Unload
     assert loader.unload(app_view) is True
     assert loader.lookup("app_module") is None
-
     print("[PASS] All WASM Loader concept tests passed successfully.")
 
 
@@ -1307,14 +1267,12 @@ def test_wasm_loader_radix_binary_tree_offset_indexing():
     loader = WasmLoader()
     wasm_bytes = _build_test_wasm_binary(export_names=["alpha", "beta"])
     view = loader.prepare("radix_test_module", wasm_bytes)
-
     # 1. LOAD-40: Entities registered
     assert len(view.entity_registry) > 0
     kinds = [e.kind for e in view.entity_registry]
     assert "SECTION" in kinds
     assert "FUNCTION" in kinds
     assert "GLOBAL" in kinds
-
     # 2. LOAD-41 & LOAD-42: RadixBinaryTree offset lookup for function code
     func_start, func_size = view.code_offsets[0]
     # Lookup exactly at start of function body
@@ -1322,24 +1280,20 @@ def test_wasm_loader_radix_binary_tree_offset_indexing():
     assert entity_at_start is not None
     assert entity_at_start.kind == "FUNCTION"
     assert entity_at_start.name_or_idx == 0
-
     # Lookup in the middle of function body
     entity_in_mid = view.lookup_by_file_offset(func_start + 2)
     assert entity_in_mid is not None
     assert entity_in_mid.kind == "FUNCTION"
     assert entity_in_mid.name_or_idx == 0
-
     # 3. LOAD-43: Lookup global entity
     global_entry = view.globals[0]
     entity_global = view.lookup_by_file_offset(global_entry.init_expr_offset)
     assert entity_global is not None
     assert entity_global.kind == "GLOBAL"
     assert entity_global.name_or_idx == 0
-
     # 4. LOAD-44: Invalid / out-of-range offsets
     assert view.lookup_by_file_offset(len(wasm_bytes) + 100) is None
     assert view.lookup_by_file_offset(0xFFFFFFFF) is None
-
     print("[PASS] RadixBinaryTreeView file offset indexing verified successfully.")
 
 
@@ -1356,21 +1310,17 @@ def test_wasm_loader_hash_radix_binary_tree_view_symbol_lookup():
         export_names=["alpha", "beta", "gamma", "compute"]
     )
     view = loader.prepare("sym_mod", wasm_bytes)
-
     # LOAD-13: Hash + RadixBinaryTreeView symbol lookup
     exp_alpha = view.lookup_export("alpha")
     assert exp_alpha is not None
     assert exp_alpha.name == "alpha"
     assert exp_alpha.index == 0
-
     exp_gamma = view.lookup_export("gamma")
     assert exp_gamma is not None
     assert exp_gamma.name == "gamma"
-
     # LOAD-47: Fast non-existent symbol rejection
     assert view.lookup_export("non_existent_func") is None
     assert view.lookup_export("") is None
-
     # LOAD-45 & LOAD-21: Multi-module import resolution via Hash + RadixBinaryTreeView
     app_buf = bytearray()
     app_buf.extend(b"\x00asm\x01\x00\x00\x00")
@@ -1384,7 +1334,6 @@ def test_wasm_loader_hash_radix_binary_tree_view_symbol_lookup():
     app_buf.append(SectionID.TYPE)
     app_buf.extend(_encode_leb128_u32(len(app_type)))
     app_buf.extend(app_type)
-
     app_imp = bytearray()
     app_imp.extend(_encode_leb128_u32(2))
     # Import 1: sym_mod.alpha
@@ -1401,26 +1350,20 @@ def test_wasm_loader_hash_radix_binary_tree_view_symbol_lookup():
     app_imp.extend(b"compute")
     app_imp.append(ExternalKind.FUNCTION)
     app_imp.extend(_encode_leb128_u32(0))
-
     app_buf.append(SectionID.IMPORT)
     app_buf.extend(_encode_leb128_u32(len(app_imp)))
     app_buf.extend(app_imp)
-
     app_view = loader.prepare("app_sym_mod", bytes(app_buf))
     # Test find_import on import_tree
     imp_alpha = app_view.find_import("sym_mod", "alpha")
     assert imp_alpha is not None
     assert imp_alpha.field_name == "alpha"
-
     imp_compute = app_view.find_import("sym_mod", "compute")
     assert imp_compute is not None
     assert imp_compute.field_name == "compute"
-
     assert app_view.find_import("sym_mod", "unknown") is None
-
     assert loader.resolve_imports(app_view) is True
     assert app_view.is_ready is True
-
     print(
         "[PASS] Hash + RadixBinaryTreeView symbol and import lookup verified successfully."
     )

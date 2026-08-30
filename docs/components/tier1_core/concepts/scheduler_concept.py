@@ -26,14 +26,13 @@ class RoundRobinScheduler:
         self.total_dispatches = 0
 
     def spawn(self, task_id: str, coroutine: Generator) -> bool:
-        """Register a new task into the fixed task table and ready ring.
-
-        No priority parameter: scheduling is pure FIFO round-robin (D1). Priority
-        levels were considered and rejected — see os_scheduler.md ADR-SCHED-002.
+        """
+        Register a new task into the fixed task table and ready ring.
+                No priority parameter: scheduling is pure FIFO round-robin (D1). Priority
+                levels were considered and rejected — see os_scheduler.md ADR-SCHED-002.
         """
         assert len(self.tasks) < self.max_tasks, "Max task capacity exceeded"
         assert task_id not in self.tasks, f"Task {task_id} already exists"
-
         self.tasks[task_id] = {
             "id": task_id,
             "coro": coroutine,
@@ -132,7 +131,6 @@ def test_round_robin_fairness():
 
     sched.spawn("A", task_a())
     sched.spawn("B", task_b())
-
     while sched.run_cycle():
         pass
 
@@ -154,18 +152,15 @@ def test_block_and_unblock_cycle():
         trace.append("W_RESUMED")
 
     sched.spawn("W", worker())
-
     # Step 1: Worker runs and blocks
     sched.run_cycle()
     assert trace == ["W_START"]
     assert sched.tasks["W"]["state"] == TaskState.BLOCKED
     assert len(sched.ready_ring) == 0
-
     # Step 2: Unblock worker
     sched.unblock_task("W")
     assert sched.tasks["W"]["state"] == TaskState.READY
     assert len(sched.ready_ring) == 1
-
     # Step 3: Run worker to completion
     sched.run_cycle()
     assert trace == ["W_START", "W_RESUMED"]

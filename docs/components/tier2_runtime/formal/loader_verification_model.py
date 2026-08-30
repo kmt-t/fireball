@@ -53,7 +53,6 @@ def build_model(*, guards: bool = True) -> Kripke:
         ("s_executing_unverified", "s_executing_unverified"),
         ("s_stuck_verifying", "s_stuck_verifying"),
     ]
-
     if not guards:
         # ガード無効時（変異検査）:
         # 1. 検証ステップを飛ばして直接実行してしまう経路

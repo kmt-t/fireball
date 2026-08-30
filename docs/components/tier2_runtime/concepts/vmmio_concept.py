@@ -26,7 +26,6 @@ class TrapCode:
 FC_STATIC_DEVICE = 0xC  # 0xC000_0000: SYSCTL / IPCR / VDMA (Tier 2, syscall dispatch)
 FC_SHM = 0xE  # 0xE000_0000: Shared Memory (Tier 3, owner-checked)
 FC_PASSTHROUGH = 0xF  # 0xF000_0000: Physical passthrough (Tier 3)
-
 FB_TASK_ID_INVALID = 0x00
 FB_TASK_ID_FLIGHT = 0xFF
 
@@ -73,8 +72,9 @@ class StaticDevicePTE:
 
 
 class Tier3PTE:
-    """FC=14/15 (SHM / PASSTHROUGH). 32-bit layout, no bit overlap:
-    [31:12] PPN(20) | [11] VALID | [10] READ | [9] WRITE | [8] EXEC | [7:0] Owner ID
+    """
+    FC=14/15 (SHM / PASSTHROUGH). 32-bit layout, no bit overlap:
+        [31:12] PPN(20) | [11] VALID | [10] READ | [9] WRITE | [8] EXEC | [7:0] Owner ID
     """
 
     def __init__(
@@ -95,8 +95,9 @@ class Tier3PTE:
 
 
 class VMMIOController:
-    """FlatMap Page Table (vpn -> PTE) with a direct-mapped 16-entry software TLB.
-    TLB hits provide O(1) hot-path access, while TLB misses look up the FlatMap.
+    """
+    FlatMap Page Table (vpn -> PTE) with a direct-mapped 16-entry software TLB.
+        TLB hits provide O(1) hot-path access, while TLB misses look up the FlatMap.
     """
 
     def __init__(self, guest_ram_size: int = 8192):  # FB_CONF_GUEST_RAM_SIZE
@@ -107,17 +108,14 @@ class VMMIOController:
         if guest_ram_size <= 0:
             raise ValueError("guest RAM size must be positive")
         self.guest_ram_size = guest_ram_size
-
         # FlatMap PTE storage: vpn (20-bit) -> PTE
         self.ptes: dict[int, object] = {}
-
         # Direct-mapped TLB: 16 slots, keyed by 4-bit Folding XOR Hash over 20-bit VPN.
         self.tlb: list[dict] = [{"vpn": 0xFFFF_FFFF, "pte": None} for _ in range(16)]
         self.tlb_hits = 0
         self.tlb_misses = 0
 
     # --- Static & Dynamic PTE Registration (FlatMap) ---
-
     def map_static_device(
         self,
         vpn: int,
@@ -162,11 +160,11 @@ class VMMIOController:
             self.tlb[tlb_idx] = {"vpn": 0xFFFF_FFFF, "pte": None}
 
     # --- Hot path: TLB lookup + FlatMap fallback ---
-
     @staticmethod
     def tlb_index(vpn: int) -> int:
-        """4-bit Folding XOR Hash over 20-bit VPN.
-        Diffuses all 20 bits of the VPN (FC, Page, Subfields) into a 4-bit TLB slot (0..15).
+        """
+        4-bit Folding XOR Hash over 20-bit VPN.
+                Diffuses all 20 bits of the VPN (FC, Page, Subfields) into a 4-bit TLB slot (0..15).
         """
         return (vpn ^ (vpn >> 4) ^ (vpn >> 8) ^ (vpn >> 12) ^ (vpn >> 16)) & 15
 
@@ -175,7 +173,6 @@ class VMMIOController:
         vpn = addr.vpn()
         tlb_idx = self.tlb_index(vpn)
         slot = self.tlb[tlb_idx]
-
         if slot["vpn"] == vpn:
             self.tlb_hits += 1
             return slot["pte"]
@@ -199,7 +196,6 @@ class VMMIOController:
         Returns (status_code, detail).
         """
         addr = VmmioAddress(raw_addr)
-
         # 1. Fast RAM bypass (Tier 1) — O(1), never touches the page table.
         if addr.is_linear():
             if addr.raw >= self.guest_ram_size:
@@ -274,7 +270,6 @@ def test_static_device_syscall_dispatch():
     ctrl.map_static_device(
         vpn=vpn, handler=lambda sys_id, off, w: dispatched.append((sys_id, off, w))
     )
-
     addr = 0xC042_0004
     status, _ = ctrl.access(addr, is_write=True)
     assert status == "OK_SYSCALL"
@@ -285,11 +280,9 @@ def test_tlb_hit_after_first_walk():
     ctrl = VMMIOController()
     ctrl.map_static_device(vpn=0xC0001, handler=lambda sys_id, o, w: None)
     addr = 0xC000_1000
-
     status1, _ = ctrl.access(addr, is_write=False)
     assert status1 == "OK_SYSCALL"
     assert ctrl.tlb_misses == 1 and ctrl.tlb_hits == 0
-
     status2, _ = ctrl.access(addr, is_write=False)
     assert status2 == "OK_SYSCALL"
     assert ctrl.tlb_hits == 1, "second access to the same page must hit the TLB"
@@ -307,11 +300,9 @@ def test_shm_owner_isolation():
     ctrl = VMMIOController()
     ctrl.map_shm_page(vpn=0xE0002, phys_page=0x1234, owner_id=7)
     addr = 0xE000_2000
-
     # Owning task may access.
     status, _ = ctrl.access(addr, is_write=True, current_task_id=7)
     assert status == "OK_PHYSICAL"
-
     # A different task must not, even though the PTE was just cached in the TLB.
     status, _ = ctrl.access(addr, is_write=True, current_task_id=9)
     assert status == TrapCode.OWNER_MISMATCH
@@ -321,12 +312,9 @@ def test_revoke_invalidates_tlb_and_blocks_access_during_flight():
     ctrl = VMMIOController()
     ctrl.map_shm_page(vpn=0xE0003, phys_page=0x5678, owner_id=1)
     addr = 0xE000_3000
-
     ctrl.access(addr, is_write=False, current_task_id=1)  # warms the TLB
     assert ctrl.tlb_hits == 0 and ctrl.tlb_misses == 1
-
     ctrl.revoke_shm_owner(vpn=0xE0003)
-
     # In-flight: neither the old owner nor anyone else may access it.
     status, _ = ctrl.access(addr, is_write=False, current_task_id=1)
     assert status == TrapCode.OWNER_MISMATCH
@@ -339,11 +327,9 @@ def test_linear_ram_is_bounds_checked_not_waved_through():
     ctrl = VMMIOController(guest_ram_size=8192)
     ok, _ = ctrl.access(0x0000_1FFF, is_write=True)
     assert ok == "OK_GUEST_RAM", "last in-range byte must be accepted"
-
     for bad in (0x0000_2000, 0x0001_0000, 0x7FFF_FFFF):
         st, _ = ctrl.access(bad, is_write=True)
         assert st == TrapCode.OUT_OF_BOUNDS, f"{bad:#x} is past the 8KB allocation"
-
     assert ctrl.tlb_hits == 0 and ctrl.tlb_misses == 0, (
         "the Tier 1 path must never touch the page table"
     )
@@ -354,10 +340,8 @@ def test_linear_ram_bound_check_works_for_non_power_of_two_size():
     power of two. This is exactly the gap the earlier mask-based design left open: a mask
     derived from a non-power-of-two size does not land on the real boundary."""
     ctrl = VMMIOController(guest_ram_size=12288)  # 12KB — not a power of two
-
     ok, _ = ctrl.access(12287, is_write=False)
     assert ok == "OK_GUEST_RAM", "last in-range byte (size-1) must be accepted"
-
     st, _ = ctrl.access(12288, is_write=False)
     assert st == TrapCode.OUT_OF_BOUNDS, (
         "the first byte past the real 12KB boundary must trap"
@@ -378,7 +362,6 @@ def test_interleaved_syscall_and_shm_keep_hitting_the_tlb():
     ctrl = VMMIOController()
     ctrl.map_static_device(vpn=0xC0003, handler=lambda sys_id, o, w: None)
     ctrl.map_shm_page(vpn=0xE0003, phys_page=0x900, owner_id=1)
-
     sysc = 0xC000_3000
     shm = 0xE000_3000
     for _ in range(10):
@@ -399,7 +382,6 @@ def test_flatmap_pte_registration_and_tlb_caching():
         ctrl.map_shm_page(vpn=0xE0000 + p, phys_page=0x1000 + p, owner_id=42)
 
     assert len(ctrl.ptes) == 32, "all 32 pages must be stored in FlatMap"
-
     # Access all 32 pages
     for p in range(32):
         addr = 0xE000_0000 | (p << 12) | 0x10
@@ -421,7 +403,6 @@ def test_flatmap_pte_registration_and_tlb_caching():
             addr = 0xE000_0000 | (p << 12)
             st, _ = ctrl.access(addr, is_write=False, current_task_id=42)
             assert st == "OK_PHYSICAL"
-
     assert ctrl.tlb_hits == before_hits + 80, (
         "working set in TLB must achieve 100% hit rate"
     )

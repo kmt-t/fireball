@@ -89,7 +89,6 @@ class BitView:
 
 class HotspotBitmap:
     """Per-Function 2-bit state per CARD (8 bytes per card) backed by BitView<2>.
-
     `func_tables` is a static list of BitViews indexed by `func_idx` (0 <= func_idx < num_functions).
     Each function's BitView is sized strictly to its code length at module load time:
     card_count = (func_code_len + (1 << card_shift) - 1) >> card_shift
@@ -179,10 +178,10 @@ class HotspotBitmap:
 
 
 class HistoryRing:
-    """Fixed-size ring of recently executed basic-block head PCs. `{HistoryBuffer}`
-
-    The interpreter only appends here; no scanning happens on the hot path.
-    Scanning is deferred to the yield handler.
+    """
+    Fixed-size ring of recently executed basic-block head PCs. `{HistoryBuffer}`
+        The interpreter only appends here; no scanning happens on the hot path.
+        Scanning is deferred to the yield handler.
     """
 
     def __init__(self, capacity: int = 32):
@@ -250,7 +249,6 @@ class JITCacheBank:
 
 class JITMultiBufferCache:
     """Active / Warm / Oldest, 2KB each = 6KB [FB_CONF_JIT_CACHE_SIZE].
-
     Promotion happens ON AN OLDEST-BANK HIT, not at rotation time
     (jit_compiler.md §4.1-4: "Oldest バンクでヒットし、かつ実行カウンタが
     閾値に達している真の Hot コードのみを新 Active バンクへ Promote").
@@ -260,7 +258,6 @@ class JITMultiBufferCache:
     def __init__(self, bank_capacity: int = 2048):
         self.banks = [JITCacheBank(i, bank_capacity) for i in range(3)]
         self.active_idx, self.warm_idx, self.oldest_idx = 0, 1, 2
-
         self.mpu_attr = MPUAttribute.RO_X
         self.barrier_flushes = 0
         self.promotions = 0
@@ -292,16 +289,15 @@ class JITMultiBufferCache:
         return None
 
     def register_chain(self, source_pc: int, target_pc: int):
-        """Registers a direct chain link from source_pc to target_pc.
-
-        The target's resident bank records source_pc in its inbound_sources table.
+        """
+        Registers a direct chain link from source_pc to target_pc.
+                The target's resident bank records source_pc in its inbound_sources table.
         """
         target_bank = self.find_bank(target_pc)
         if target_bank is not None:
             target_bank.inbound_sources.add(source_pc)
 
     # --- MPU W^X transaction ---
-
     def begin_patch(self):
         self.mpu_attr = MPUAttribute.RW_XN
 
@@ -319,7 +315,6 @@ class JITMultiBufferCache:
             raise MPUFault("W^X VIOLATION: execute on RW_XN JIT cache")
 
     # --- Lookup with Oldest-Only Promotion ---
-
     def lookup(self, head_pc: int) -> JITTrace | None:
         if head_pc in self.active.traces:
             return self.active.traces[head_pc]
@@ -347,7 +342,6 @@ class JITMultiBufferCache:
         return trace
 
     # --- Insertion & rotation ---
-
     def insert(self, trace: JITTrace) -> bool:
         self._require_writable()
         if self.active.allocate(trace):
@@ -365,20 +359,16 @@ class JITMultiBufferCache:
 
     def rotate(self):
         """Oldest is purged and becomes the new Active; Active->Warm, Warm->Oldest.
-
         Resolves incoming chains targeting Oldest in O(k) bounded time via
         Oldest's inbound_sources right before Oldest is cleared and reused as Active:
         - If the target was promoted to Active, it is re-chained to the promoted trace.
         - If the target was not promoted and is evicted, it is unlinked to fallback.
         """
         self._require_writable()
-
         # 1. Resolve incoming chains that pointed into Oldest (re-chain if promoted, unlink if evicted).
         self._resolve_bank_inbound(self.oldest)
-
         purged = self.banks[self.oldest_idx].clear()
         self.evictions += len(purged)
-
         self.active_idx, self.warm_idx, self.oldest_idx = (
             self.oldest_idx,
             self.active_idx,
@@ -431,8 +421,9 @@ class Stencil:
 
 
 class CopyPatchCompiler:
-    """Concatenates stencils and patches relocation holes. No IR, single pass.
-    `{JIT_CopyAndPatch}` `{SinglePassCompilation}`
+    """
+    Concatenates stencils and patches relocation holes. No IR, single pass.
+        `{JIT_CopyAndPatch}` `{SinglePassCompilation}`
     """
 
     BYTES_PER_INSTRUCTION = 4  # Thumb-2 wide instruction
@@ -623,17 +614,14 @@ class IntegratedRuntimeEngine:
         self.history = HistoryRing(capacity=32)
         self.cache = JITMultiBufferCache()
         self.compiler = CopyPatchCompiler()
-
         self.compile_queue: list[int] = []  # LIFO of trace head PCs
         self.yield_threshold = yield_threshold
         self.trace_counter = 0
-
         self.blocks: dict[int, BasicBlock] = {}
         self.interp_blocks = 0
         self.jit_traces = 0
         self.compilations = 0
         self.yields = 0
-
         # Purged traces must make their cards re-compilable again.
         self.cache.on_evict = lambda pcs: [self.bitmap.mark_evicted(pc) for pc in pcs]
 
@@ -641,7 +629,6 @@ class IntegratedRuntimeEngine:
         self.blocks[block.head_pc] = block
 
     # --- Cooperative yield  [runtime_interpreter.md §4.1 概算Yield] ---
-
     def _tick_and_maybe_yield(self) -> bool:
         self.trace_counter += 1
         if self.trace_counter < self.yield_threshold:
@@ -661,12 +648,11 @@ class IntegratedRuntimeEngine:
                 self.compile_queue.append(pc)
 
     # --- Batch compilation  [set_idle_hook / register_periodic_callback] ---
-
     def idle_hook(self, budget: int = 4) -> int:
-        """Drains the compile queue LIFO. `{JIT_ReverseCompilationOrder}`
-
-        Compiling later traces first raises the chance that a preceding trace
-        can be chained directly at patch time.
+        """
+        Drains the compile queue LIFO. `{JIT_ReverseCompilationOrder}`
+                Compiling later traces first raises the chance that a preceding trace
+                can be chained directly at patch time.
         """
         compiled = 0
         self.cache.begin_patch()
@@ -701,11 +687,9 @@ class IntegratedRuntimeEngine:
         return compiled
 
     # --- Main execution loop ---
-
     def run(self, entry_pc: int, ctx: WASMContext, max_blocks: int = 1000) -> str:
         pc: int | None = entry_pc
         executed = 0
-
         while pc is not None and executed < max_blocks:
             executed += 1
             block = self.blocks.get(pc)
@@ -826,11 +810,9 @@ def test_compilation_is_deferred_to_the_yield_and_idle_hook():
     assert eng.bitmap.get_state(0x100) == CardState.HOT
     assert eng.compilations == 0, "no compilation may happen during execution"
     assert eng.compile_queue == [], "queue is only filled at yield time"
-
     eng.on_yield()  # yield handler scans the ring
     assert eng.compile_queue == [0x100]
     assert eng.compilations == 0
-
     eng.idle_hook()  # batch compile
     assert eng.compilations == 1
     assert eng.bitmap.get_state(0x100) == CardState.COMPILED
@@ -878,16 +860,13 @@ def test_idle_hook_chains_into_a_warm_resident_successor():
     eng = IntegratedRuntimeEngine()
     eng.register_block(BasicBlock(0x200, [("i32.const", 1)], next_pc=None))
     eng.register_block(BasicBlock(0x100, [("i32.const", 2)], next_pc=0x200))
-
     eng.compile_queue = [0x200]
     eng.idle_hook()
     assert 0x200 in eng.cache.active.traces
-
     eng.cache.begin_patch()
     eng.cache.rotate()
     eng.cache.commit_patch()  # 0x200: Active -> Warm
     assert 0x200 in eng.cache.warm.traces
-
     eng.compile_queue = [0x100]
     eng.idle_hook()
     trace = eng.cache.active.traces[0x100]
@@ -902,7 +881,6 @@ def test_idle_hook_never_chains_into_the_oldest_bank():
     eng = IntegratedRuntimeEngine()
     eng.register_block(BasicBlock(0x200, [("i32.const", 1)], next_pc=None))
     eng.register_block(BasicBlock(0x100, [("i32.const", 2)], next_pc=0x200))
-
     eng.compile_queue = [0x200]
     eng.idle_hook()
     eng.cache.begin_patch()
@@ -910,7 +888,6 @@ def test_idle_hook_never_chains_into_the_oldest_bank():
     eng.cache.rotate()
     eng.cache.commit_patch()
     assert 0x200 in eng.cache.oldest.traces
-
     eng.compile_queue = [0x100]
     eng.idle_hook()
     trace = eng.cache.active.traces[0x100]
@@ -934,14 +911,12 @@ def test_rotate_unlinks_chains_when_oldest_is_purged():
     assert source.chain_next == 0x200, (
         "sanity: link established while target is in Warm"
     )
-
     cache.begin_patch()
     cache.rotate()
     cache.commit_patch()  # target: Warm -> Oldest
     assert source.chain_next == 0x200, (
         "target in Oldest is still valid and executable; link must remain intact"
     )
-
     cache.begin_patch()
     cache.rotate()
     cache.commit_patch()  # target: Oldest -> PURGED into Active
@@ -964,17 +939,14 @@ def test_rotate_rechains_when_target_was_promoted_to_active():
     cache.register_chain(0x100, 0x200)
     cache.insert(source)
     cache.commit_patch()
-
     cache.begin_patch()
     cache.rotate()
     cache.commit_patch()  # target: Warm -> Oldest
     assert 0x200 in cache.oldest.traces
-
     # Simulate execution of target while in Oldest -> triggers Oldest-Only Promotion to Active!
     promoted = cache.lookup(0x200)
     assert promoted is not None
     assert 0x200 in cache.active.traces
-
     # Now rotate again: Oldest is purged. Since target was promoted to Active, source must RE-CHAIN!
     cache.begin_patch()
     cache.rotate()
@@ -994,13 +966,11 @@ def test_eviction_makes_the_card_recompilable():
     eng.compile_queue = [0x100]
     eng.idle_hook()
     assert eng.bitmap.get_state(0x100) == CardState.COMPILED
-
     eng.cache.begin_patch()
     eng.cache.rotate()  # Active -> Warm
     eng.cache.rotate()  # Warm  -> Oldest
     eng.cache.rotate()  # Oldest purged
     eng.cache.commit_patch()
-
     assert 0x100 not in eng.cache.active.traces
     assert eng.bitmap.get_state(0x100) == CardState.EXECUTED, (
         "card must be re-compilable after its trace was purged"
@@ -1020,7 +990,6 @@ def test_warm_hit_does_not_promote_but_oldest_hit_does():
     cache.begin_patch()
     cache.insert(JITTrace(0x100, lambda ctx: "COMPLETED", 64))
     cache.commit_patch()
-
     cache.begin_patch()
     cache.rotate()
     cache.commit_patch()  # Active -> Warm
@@ -1028,7 +997,6 @@ def test_warm_hit_does_not_promote_but_oldest_hit_does():
     before = cache.promotions
     cache.lookup(0x100)
     assert cache.promotions == before, "a Warm hit is a free observation window"
-
     cache.begin_patch()
     cache.rotate()
     cache.commit_patch()  # Warm -> Oldest
@@ -1078,7 +1046,6 @@ def test_safepoint_is_distinct_from_cooperative_yield():
     eng.run(0x100, ctx, max_blocks=10)
     assert eng.yields >= 1, "cooperative yields fire on the trace counter alone"
     assert ctx.safepoints_hit == 0, "no interrupt was raised, so no Safepoint fired"
-
     eng2, ctx2 = _countdown_engine(yield_threshold=2)
     ctx2.locals = [50, 1]
     eng2.run(0x100, ctx2, max_blocks=6)

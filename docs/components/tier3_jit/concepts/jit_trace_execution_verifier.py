@@ -21,7 +21,6 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from jit_copy_patch_concept import CopyPatchJITEngine, _order_register_moves  # noqa: E402
 from jit_assembler_constexpr_concept import Reg, Thumb2Assembler  # noqa: E402
-
 from unicorn import Uc, UC_ARCH_ARM, UC_MODE_THUMB, UC_ERR_EXCEPTION, UcError  # noqa: E402
 from unicorn.arm_const import (  # noqa: E402
     UC_ARM_REG_R1,
@@ -48,7 +47,6 @@ def test_compiled_trace_runs_on_real_cpu_and_spills_correctly():
         0x64,
         0x17,
     )  # TOS, NOS -- caller-loaded, as the real interpreter would
-
     engine.compile_trace(
         [("i32.add", None)],
         exit_kind="fallback",
@@ -58,24 +56,20 @@ def test_compiled_trace_runs_on_real_cpu_and_spills_correctly():
     start_byte, length = engine.last_trace_byte_range
     code = engine.execute_native_bytes(start_byte, length)
     assert code, "compile_trace produced zero bytes -- nothing to execute"
-
     # Verify the inlined JITTraceHeader immediately preceding the code
     header_offset, header_len = engine.last_trace_header_range
     assert header_offset == start_byte - 16
     assert header_len == 16
-
     mu = Uc(UC_ARCH_ARM, UC_MODE_THUMB)
     mu.mem_map(CODE_BASE, 0x1000)
     mu.mem_map(0x20000, 0x4000)  # covers CSTACK and WASM_STACK regions
     mu.mem_write(CODE_BASE, code)
     mu.mem_write(SENTINEL_ADDR, bytes.fromhex("00BE"))  # BKPT sentinel to stop on
-
     mu.reg_write(UC_ARM_REG_R4, r4_in)
     mu.reg_write(UC_ARM_REG_R5, r5_in)
     mu.reg_write(UC_ARM_REG_R1, WASM_STACK_BASE)
     mu.reg_write(UC_ARM_REG_R12, SENTINEL_ADDR)
     mu.reg_write(UC_ARM_REG_SP, CSTACK_TOP)
-
     try:
         mu.emu_start(CODE_BASE | 1, SENTINEL_ADDR)
     except UcError as e:
@@ -87,14 +81,12 @@ def test_compiled_trace_runs_on_real_cpu_and_spills_correctly():
         f"prologue/epilogue PUSH.W/POP.W did not round-trip SP: "
         f"started at {CSTACK_TOP:#x}, ended at {final_sp:#x}"
     )
-
     spilled = int.from_bytes(mu.mem_read(WASM_STACK_BASE, 4), "little")
     expected = (r5_in + r4_in) & 0xFFFFFFFF
     assert spilled == expected, (
         f"dirty-spill flush did not write the ADD result to the unified stack: "
         f"stack_bot[0]={spilled:#x}, expected r5+r4={expected:#x}"
     )
-
     pc = mu.reg_read(UC_ARM_REG_R12)
     print(
         f"[OK] compile_trace() emitted {length} real byte(s), executed on a real ARMv8-M "
@@ -121,7 +113,6 @@ def _run_memory_access_trace(guest_addr: int, mem_size: int) -> dict:
     )
     start_byte, length = engine.last_trace_byte_range
     code = engine.execute_native_bytes(start_byte, length)
-
     mu = Uc(UC_ARCH_ARM, UC_MODE_THUMB)
     mu.mem_map(CODE_BASE, 0x1000)
     mu.mem_map(
@@ -132,7 +123,6 @@ def _run_memory_access_trace(guest_addr: int, mem_size: int) -> dict:
     )  # guest RAM: exactly one page, nothing beyond it mapped
     mu.mem_write(CODE_BASE, code)
     mu.mem_write(SENTINEL_ADDR, bytes.fromhex("00BE"))  # BKPT sentinel to stop on
-
     mu.mem_write(
         ENV_BASE + 0x00, GUEST_RAM_BASE.to_bytes(4, "little")
     )  # vsoc_runtime.mem-base
@@ -142,12 +132,10 @@ def _run_memory_access_trace(guest_addr: int, mem_size: int) -> dict:
     # Sentinel word at the fixed in-bounds offset the in-bounds test's guest_addr targets.
     # The OOB test's guest_addr lands outside the mapped page entirely, so it never reads this.
     mu.mem_write(GUEST_RAM_BASE + 0x10, (0xAABBCCDD).to_bytes(4, "little"))
-
     mu.reg_write(UC_ARM_REG_R1, WASM_STACK_BASE)
     mu.reg_write(UC_ARM_REG_R2, ENV_BASE)
     mu.reg_write(UC_ARM_REG_R12, SENTINEL_ADDR)
     mu.reg_write(UC_ARM_REG_SP, CSTACK_TOP)
-
     try:
         mu.emu_start(CODE_BASE | 1, SENTINEL_ADDR)
     except UcError as e:
@@ -202,21 +190,18 @@ def test_intra_trace_variant_reconciliation_swap_on_real_hardware():
     engine = CopyPatchJITEngine()
     asm = Thumb2Assembler()
     moves = _order_register_moves({Reg.R4: Reg.R5, Reg.R5: Reg.R4})
-
     engine.begin_jit_patch()
     entry = engine.byte_write_pos
     for dst, src in moves:
         engine._emit_bytes(asm.mov_reg(dst, src))
     engine._emit_bytes(bytes.fromhex("00BE"))  # BKPT #0 -- marks "next stencil" reached
     engine.commit_jit_patch()
-
     code = bytes(engine.byte_cache[entry : engine.byte_write_pos])
     mu = Uc(UC_ARCH_ARM, UC_MODE_THUMB)
     mu.mem_map(CODE_BASE, 0x1000)
     mu.mem_write(CODE_BASE, code)
     mu.reg_write(UC_ARM_REG_R4, 0xAAAAAAAA)
     mu.reg_write(UC_ARM_REG_R5, 0xCAFEF00D)
-
     try:
         mu.emu_start(CODE_BASE | 1, CODE_BASE + len(code))
     except UcError as e:

@@ -42,7 +42,6 @@ def main() -> None:
     n_calls = 2_000
     flat_times = []
     linear_times = []
-
     print("N        | flat_map_view (binary search) | linear scan   | speedup")
     print("-" * 72)
     for n in sizes:
@@ -50,7 +49,6 @@ def main() -> None:
         values = [k * 2 for k in keys]
         view = FlatMapView(keys, values)
         probe = keys[n // 2]  # a worst-case-depth-representative middle key
-
         t_flat = time_lookup(lambda: view.find(probe), n_calls)
         t_linear = time_lookup(
             lambda: linear_scan(keys, values, probe), max(1, n_calls // 20)
@@ -59,7 +57,6 @@ def main() -> None:
         # normalized back to a fair per-call comparison below.
         t_linear_per_call = t_linear / max(1, n_calls // 20)
         t_flat_per_call = t_flat / n_calls
-
         flat_times.append(t_flat_per_call)
         linear_times.append(t_linear_per_call)
         speedup = (
@@ -80,7 +77,6 @@ def main() -> None:
         f"\n[MEASURED] {sizes[0]}->{sizes[-1]} ({sizes[-1] // sizes[0]}x more keys): "
         f"flat_map_view grew {growth_flat:.1f}x, linear scan grew {growth_linear:.1f}x"
     )
-
     assert growth_flat < growth_linear / 5, (
         "flat_map_view's lookup time scaled with N too closely to linear scan's -- "
         "the O(log N) claim is not supported by this measurement"

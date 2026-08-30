@@ -6,7 +6,6 @@ Implements docs/components/tier1_core/system_syscall.md §5.7 and interface_wit.
 """
 
 from __future__ import annotations
-
 import sys
 from pathlib import Path
 
@@ -31,19 +30,12 @@ for _p in [
         sys.path.insert(0, _sp)
 
 import sys
-
 from pathlib import Path
-
 import ctypes
-
 from typing import Any, Callable
-
 from loader import fnv1a_32
-
 from system import FbSyscallId, System, WasiErrno
-
 from system_containers import RadixBinaryTreeView
-
 from wasm_module import Module
 
 
@@ -55,19 +47,13 @@ class WasiHostContext:
     ):
 
         self.sysv = sysv
-
         self.task_id = task_id
-
         self.guest_memory = (
             guest_memory if guest_memory is not None else bytearray(64 * 1024)
         )
-
         self.sysv.bind_guest(self.guest_memory, task_id=self.task_id)
-
         self._keepalive_trampolines: list[Any] = []
-
         # Build static host import table via RadixBinaryTreeView
-
         host_entries: list[tuple[str, str, Callable[..., int]]] = [
             ("wasi_snapshot_preview1", "fd_write", self.fd_write),
             ("wasi_snapshot_preview1", "fd_read", self.fd_read),
@@ -86,20 +72,14 @@ class WasiHostContext:
             ("env", "fireball_call", self.fireball_call),
             ("env", "fd_write", self.fd_write),
         ]
-
         hashed_entries: list[tuple[int, tuple[str, str, Callable[..., int]]]] = []
-
         for mod, field, handler in host_entries:
             h = fnv1a_32(f"{mod}::{field}")
-
             hashed_entries.append((h, (mod, field, handler)))
 
         hashed_entries.sort(key=lambda x: x[0])
-
         keys = [x[0] for x in hashed_entries]
-
         values = [x[1] for x in hashed_entries]
-
         radix_shift = 16
         if keys:
             max_prefix = max(keys) >> radix_shift
@@ -183,14 +163,10 @@ class WasiHostContext:
         self, module_name: str, field_name: str
     ) -> Callable[..., int] | None:
         """Resolves an import name to the corresponding host function callable via RadixBinaryTreeView."""
-
         h = fnv1a_32(f"{module_name}::{field_name}")
-
         candidate = self._import_tree.find(h)
-
         if candidate is not None:
             mod, field, handler = candidate
-
             if mod == module_name and field == field_name:
                 return handler
 
@@ -200,12 +176,9 @@ class WasiHostContext:
         self, module: Module
     ) -> dict[int, Callable[..., int]]:
         """Maps all imported functions in the module to host function callables for the Interpreter."""
-
         host_funcs: dict[int, Callable[..., int]] = {}
-
         for idx, imp in enumerate(module.imports):
             handler = self.get_handler_for_import(imp.module, imp.name)
-
             if handler is not None:
                 host_funcs[idx] = handler
 
@@ -213,25 +186,18 @@ class WasiHostContext:
 
     def build_jit_trampolines(self, module: Module) -> dict[int, int]:
         """Creates ctypes CFUNCTYPE native trampolines for JIT execution."""
-
         trampolines: dict[int, int] = {}
-
         for idx, imp in enumerate(module.imports):
             handler = self.get_handler_for_import(imp.module, imp.name)
-
             if handler is None:
                 continue
 
             ft = module.types[imp.type_index]
-
             nparams = len(ft.params)
-
             c_args = [ctypes.c_uint32] * nparams
-
             c_ret = (
                 ctypes.c_uint32 if ft.results else ctypes.c_uint32
             )  # WASI returns errno as u32
-
             c_func_type = ctypes.CFUNCTYPE(c_ret, *c_args)
 
             def make_wrapper(h: Callable[..., int], np: int):
@@ -243,15 +209,10 @@ class WasiHostContext:
                 return wrapper
 
             wrapped = make_wrapper(handler, nparams)
-
             t = c_func_type(wrapped)
-
             self._keepalive_trampolines.append(t)
-
             addr = ctypes.cast(t, ctypes.c_void_p).value
-
             assert addr is not None
-
             trampolines[idx] = addr
 
         return trampolines

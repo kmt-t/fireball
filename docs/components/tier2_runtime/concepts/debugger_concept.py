@@ -86,7 +86,6 @@ class WASMInterpreter:
             return "TERMINATED"
 
         op, arg = bytecode[ctx.pc]
-
         if op == "i32.const":
             self.push(ctx, arg)
             ctx.pc += 1
@@ -145,7 +144,6 @@ class DebuggerManager:
         self.interpreter = interpreter
         self.breakpoints: set[int] = set()
         self.attached: bool = False
-
         # Integrated Profiler & Test Tool statistics ({Debug_Integrated})
         self.pc_sample_counts: dict[int, int] = {}
         self.memory_assertions: list[
@@ -199,7 +197,6 @@ class DebuggerManager:
         self._sample_pc()
         res = self.interpreter.step(self.ctx, bytecode)
         self._verify_assertions()
-
         self.ctx.halted = True
         self.ctx.stop_signal = 5  # SIGTRAP
         return res
@@ -210,7 +207,6 @@ class DebuggerManager:
             raise RuntimeError("Debugger not attached")
 
         self.ctx.halted = False
-
         while not self.ctx.halted:
             # Check breakpoint
             if self.ctx.pc in self.breakpoints:
@@ -221,7 +217,6 @@ class DebuggerManager:
             self._sample_pc()
             res = self.interpreter.step(self.ctx, bytecode)
             self._verify_assertions()
-
             if res in ("RETURN", "TERMINATED"):
                 self.ctx.halted = True
                 self.ctx.stop_signal = 0  # Process terminated cleanly
@@ -271,7 +266,6 @@ class GDBRspProtocol:
             return self.format_packet("")
 
         cmd = payload[0]
-
         # 1. Query Halt Reason ($?)
         if cmd == "?":
             return self.format_packet(f"S{self.dbg.ctx.stop_signal:02x}")
@@ -355,33 +349,27 @@ def test_debugger_step_and_registers():
     interp = WASMInterpreter()
     dbg = DebuggerManager(ctx, interp)
     rsp = GDBRspProtocol(dbg)
-
     bytecode = [
         ("i32.const", 42),
         ("i32.const", 8),
         ("i32.add", None),
         ("return", None),
     ]
-
     dbg.attach()
     assert ctx.is_debug_mode is True
-
     # Query initial stop reason
     resp = rsp.handle_packet("$?#3f", bytecode)
     assert resp == "$S05#b8"
-
     # Step 1: i32.const 42
     resp = rsp.handle_packet("$s#73", bytecode)
     assert ctx.pc == 1
     assert ctx.sp_offset == 1
     assert ctx.stack[0] == 42
-
     # Step 2: i32.const 8
     resp = rsp.handle_packet("$s#73", bytecode)
     assert ctx.pc == 2
     assert ctx.sp_offset == 2
     assert ctx.stack[1] == 8
-
     # Step 3: i32.add -> result 50
     resp = rsp.handle_packet("$s#73", bytecode)
     assert ctx.pc == 3
@@ -394,13 +382,11 @@ def test_debugger_breakpoint_and_continue():
     interp = WASMInterpreter()
     dbg = DebuggerManager(ctx, interp)
     rsp = GDBRspProtocol(dbg)
-
     # Loop computing sum 1..5
     # local 0 = counter (5), local 1 = sum (0)
     ctx.stack[0] = 5
     ctx.stack[1] = 0
     ctx.sp_offset = 2
-
     bytecode = [
         ("local.get", 0),  # PC 0
         ("local.get", 1),  # PC 1
@@ -414,21 +400,17 @@ def test_debugger_breakpoint_and_continue():
         ("br_if", 0),  # PC 9: loop back to PC 0 if counter > 0
         ("return", None),  # PC 10
     ]
-
     dbg.attach()
-
     # Set breakpoint at PC 3 ($Z0,3,1)
     resp = rsp.handle_packet("$Z0,3,1#45", bytecode)
     assert resp == "$OK#9a"
     assert 3 in dbg.breakpoints
-
     # Continue until breakpoint
     resp = rsp.handle_packet("$c#63", bytecode)
     assert resp == "$S05#b8"
     assert ctx.pc == 3
     assert ctx.stack[0] == 5  # counter
     assert interp.peek(ctx) == 5  # sum add result on stack top
-
     # Read registers ($g)
     resp = rsp.handle_packet("$g#67", bytecode)
     assert resp.startswith("$03000000")  # PC = 3 in hex little-endian
@@ -438,7 +420,6 @@ def test_debugger_integrated_profiler():
     ctx = ExecutionContext()
     interp = WASMInterpreter()
     dbg = DebuggerManager(ctx, interp)
-
     bytecode = [
         ("local.get", 0),
         ("i32.const", 1),
@@ -449,10 +430,8 @@ def test_debugger_integrated_profiler():
         ("return", None),
     ]
     ctx.stack[0] = 10  # loop 10 times
-
     dbg.attach()
     dbg.continue_execution(bytecode)
-
     # Verify profiling counts ({Debug_Integrated})
     assert dbg.pc_sample_counts[0] == 10
     assert dbg.pc_sample_counts[5] == 10

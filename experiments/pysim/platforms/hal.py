@@ -22,7 +22,6 @@ something has to really run.
 """
 
 from __future__ import annotations
-
 import sys
 from pathlib import Path
 
@@ -47,17 +46,11 @@ for _p in [
         sys.path.insert(0, _sp)
 
 import sys
-
 from pathlib import Path
-
 import socket
-
 import threading
-
 import time
-
 import uuid
-
 from dataclasses import dataclass, field
 
 
@@ -66,17 +59,15 @@ class HalError(Exception):
 
 
 class ShmTrap(HalError):
-    """A guest touched a shared-memory handle it does not own, or a slice
-
-    escaped the handle's acquired bounds. Mirrors runtime_vmmio.md 4.6's
-
-    vMMIO PTE ownership trap -- a real MMU would fault here."""
+    """
+    A guest touched a shared-memory handle it does not own, or a slice
+        escaped the handle's acquired bounds. Mirrors runtime_vmmio.md 4.6's
+        vMMIO PTE ownership trap -- a real MMU would fault here.
+    """
 
 
 # ---------------------------------------------------------------------------
-
 # UART / console transport
-
 # ---------------------------------------------------------------------------
 
 
@@ -92,39 +83,28 @@ class UartTransport:
     def __init__(self):
 
         self.device_sock, self.host_sock = socket.socketpair()
-
         self.device_sock.settimeout(0.2)
-
         self.host_sock.settimeout(0.2)
-
         self._lock = threading.Lock()
-
         self.bytes_written = 0
 
     def write(self, data: bytes) -> int:
         """Physical transmit: blocks on the real socket buffer if full."""
-
         with self._lock:
             n = self.device_sock.send(data)
-
             self.bytes_written += n
-
             return n
 
     def drain(self) -> bytes:
         """Host-side read of everything currently sitting on the wire."""
-
         chunks: list[bytes] = []
-
         try:
             while True:
                 chunk = self.host_sock.recv(4096)
-
                 if not chunk:
                     break
 
                 chunks.append(chunk)
-
                 if len(chunk) < 4096:
                     break
 
@@ -136,18 +116,14 @@ class UartTransport:
     def close(self) -> None:
 
         self.device_sock.close()
-
         self.host_sock.close()
 
 
 # ---------------------------------------------------------------------------
-
 # Shared-memory buffer pool (the HAL / vMMIO SHM region)
-
 # ---------------------------------------------------------------------------
 
 FB_CONF_HAL_BUFFER_SIZE = 256  # docs/components/tier1_core/system_config.md 3.3.3
-
 FB_CONF_HAL_MAX_BUFFERS = 4  # docs/components/tier1_core/system_config.md 3.3.3
 
 
@@ -162,21 +138,16 @@ class ShmHandle:
     """
 
     name: str
-
     owner_task: int
-
     capacity: int
-
     _storage: bytearray = field(repr=False, compare=False)
 
 
 class ShmBufferPool:
-    """`acquire_buffer()` backed by FB_CONF_HAL_MAX_BUFFERS fixed-size slots
-
-    of at most FB_CONF_HAL_BUFFER_SIZE bytes each: a static pool, not a
-
-    dynamic allocator (platform_hal.md 5.1's "静的固定長バッファプール").
-
+    """
+    `acquire_buffer()` backed by FB_CONF_HAL_MAX_BUFFERS fixed-size slots
+        of at most FB_CONF_HAL_BUFFER_SIZE bytes each: a static pool, not a
+        dynamic allocator (platform_hal.md 5.1's "静的固定長バッファプール").
     """
 
     def __init__(self):
@@ -191,24 +162,19 @@ class ShmBufferPool:
             )
 
         slot_idx = -1
-
         for i, s in enumerate(self._slots):
             if s is None:
                 slot_idx = i
-
                 break
 
         if slot_idx < 0:
             raise HalError("HAL buffer pool exhausted (FB_CONF_HAL_MAX_BUFFERS)")
 
         name = f"fb_shm_{uuid.uuid4().hex[:12]}"
-
         handle = ShmHandle(
             name=name, owner_task=task_id, capacity=size, _storage=bytearray(size)
         )
-
         self._slots[slot_idx] = handle
-
         return handle
 
     def release_buffer(self, task_id: int, handle: ShmHandle) -> None:
@@ -221,7 +187,6 @@ class ShmBufferPool:
                     )
 
                 self._slots[i] = None
-
                 return
 
         raise ShmTrap(f"task {task_id} cannot release {handle.name}: not found")
@@ -248,16 +213,13 @@ class ShmBufferPool:
     def view(
         self, task_id: int, handle: ShmHandle, offset: int, length: int
     ) -> memoryview:
-        """Resolves a bounds-checked (offset, length) window inside `handle`.
-
-        This is what interface_wit.md 5.3's `shm-slice{handle, offset, len}`
-
-        actually resolves to at the HAL layer.
-
+        """
+        Resolves a bounds-checked (offset, length) window inside `handle`.
+                This is what interface_wit.md 5.3's `shm-slice{handle, offset, len}`
+                actually resolves to at the HAL layer.
         """
 
         record = self._resolve(task_id, handle)
-
         if offset < 0 or length < 0 or offset + length > record.capacity:
             raise ShmTrap(
                 f"shm-slice(offset={offset}, len={length}) escapes {handle.name}'s "
@@ -268,9 +230,7 @@ class ShmBufferPool:
 
 
 # ---------------------------------------------------------------------------
-
 # Timer
-
 # ---------------------------------------------------------------------------
 
 
@@ -284,9 +244,6 @@ class Timer:
     def subscribe(self, nanos: int, callback) -> threading.Timer:
 
         t = threading.Timer(nanos / 1e9, callback)
-
         t.daemon = True
-
         t.start()
-
         return t

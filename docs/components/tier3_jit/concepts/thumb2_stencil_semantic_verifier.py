@@ -20,7 +20,6 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from jit_copy_patch_concept import CopyPatchJITEngine  # noqa: E402
-
 from unicorn import Uc, UC_ARCH_ARM, UC_MODE_THUMB, UC_ERR_EXCEPTION, UcError  # noqa: E402
 from unicorn.arm_const import (  # noqa: E402
     UC_ARM_REG_R2,
@@ -65,7 +64,6 @@ def run_stencil(
     mu.mem_map(CODE_BASE, 0x1000)
     mu.mem_write(CODE_BASE, code)
     mu.mem_map(DATA_BASE, 0x20000)  # 128KB data area for linear memory & globals
-
     if mem_writes:
         for addr, val in mem_writes.items():
             mu.mem_write(addr, val)
@@ -186,7 +184,6 @@ def main() -> None:
     engine = CopyPatchJITEngine()
     failures = []
     total = 0
-
     for name, r4_in, r5_in, expected in ALU_CASES:
         total += 1
         st = engine.stencils[name]
@@ -224,7 +221,6 @@ def main() -> None:
     # jit_copy_patch_concept.py, docs/specs/jit_stencil_catalog.md 3.7), so these
     # stencils are exercised here as bare, unguarded loads/stores of r8+offset.
     mem_base = DATA_BASE
-
     # Test i32_load_r8: reads from mem_base + offset
     st_load = engine.stencils["i32_load_r8"]
     res_load = run_stencil(
@@ -255,7 +251,6 @@ def main() -> None:
     # --- Global Get / Set Stencils via vsoc_runtime.globals-base (env + 0x08) ---
     env_addr = DATA_BASE + 0x10000
     globals_addr = DATA_BASE + 0x11000
-
     # Test global_get_d0: env + 0x08 -> globals_addr -> reads global[0]
     st_gget = engine.stencils["global_get_d0"]
     res_gget = run_stencil(

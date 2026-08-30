@@ -9,7 +9,6 @@ Provides deterministic dummy peripheral drivers:
 """
 
 from __future__ import annotations
-
 import sys
 from pathlib import Path
 
@@ -34,21 +33,15 @@ for _p in [
         sys.path.insert(0, _sp)
 
 import sys
-
 from pathlib import Path
-
 import time
-
 from typing import Callable
 
 
 class PinMode:
     INPUT = 0
-
     OUTPUT = 1
-
     PULLUP = 2
-
     PULLDOWN = 3
 
 
@@ -58,11 +51,8 @@ class DummyGpioDriver:
     def __init__(self, pin_count: int = 16):
 
         self.pin_count = pin_count
-
         self.modes = [PinMode.INPUT] * pin_count
-
         self.levels = [0] * pin_count
-
         self.irq_callbacks: dict[int, Callable[[int, int], None]] = {}
 
     def set_pin_mode(self, pin: int, mode: int) -> bool:
@@ -71,7 +61,6 @@ class DummyGpioDriver:
             return False
 
         self.modes[pin] = mode
-
         return True
 
     def write_pin(self, pin: int, level: int) -> bool:
@@ -80,11 +69,8 @@ class DummyGpioDriver:
             return False
 
         old_level = self.levels[pin]
-
         self.levels[pin] = 1 if level else 0
-
         # Trigger IRQ on edge if registered
-
         if old_level != self.levels[pin] and pin in self.irq_callbacks:
             self.irq_callbacks[pin](pin, self.levels[pin])
 
@@ -120,7 +106,6 @@ class DummyI2cDriver:
             return False
 
         self.devices[dev_addr][reg_addr] = value & 0xFFFF
-
         return True
 
     def read_register(self, dev_addr: int, reg_addr: int) -> int:
@@ -137,19 +122,15 @@ class DummySpiDriver:
     def __init__(self, memory_size: int = 4096):
 
         self.memory = bytearray(memory_size)
-
         self.write_enabled = False
 
     def transfer(self, tx_data: bytes) -> bytes:
         """Executes a full-duplex SPI transaction."""
-
         if not tx_data:
             return b""
 
         cmd = tx_data[0]
-
         rx = bytearray(len(tx_data))
-
         if cmd == 0x06:  # WREN (Write Enable)
             self.write_enabled = True
 
@@ -160,24 +141,18 @@ class DummySpiDriver:
             cmd == 0x03 and len(tx_data) >= 3
         ):  # READ: [0x03, addr_hi, addr_lo, dummy...]
             addr = (tx_data[1] << 8) | tx_data[2]
-
             length = len(tx_data) - 3
-
             for i in range(length):
                 read_idx = (addr + i) % len(self.memory)
-
                 rx[3 + i] = self.memory[read_idx]
 
         elif (
             cmd == 0x02 and len(tx_data) >= 3 and self.write_enabled
         ):  # WRITE: [0x02, addr_hi, addr_lo, data...]
             addr = (tx_data[1] << 8) | tx_data[2]
-
             payload = tx_data[3:]
-
             for i, b in enumerate(payload):
                 write_idx = (addr + i) % len(self.memory)
-
                 self.memory[write_idx] = b
 
             self.write_enabled = False  # Auto-disable after write
@@ -191,7 +166,6 @@ class DummyTimerDriver:
     def __init__(self):
 
         self.start_time_ns = time.monotonic_ns()
-
         self.tick_count = 0
 
     def get_monotonic_ns(self) -> int:
@@ -201,5 +175,4 @@ class DummyTimerDriver:
     def step_ticks(self, count: int = 1) -> int:
 
         self.tick_count += count
-
         return self.tick_count

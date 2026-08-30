@@ -562,7 +562,6 @@ IPCのプリミティブ性を隠蔽し、依存性の逆転 (IoC) を実現す�
 - **Safety**: 
   - 二重所有不在（所有権競合不在）`{IPC_ZeroCopy}`
   - メモリリーク不在（Drop Handler による In-flight 回収）`{IPC_DropHandler}`
-
 - **Liveness**: 
   - In-flight 状態の有限解決性（Revoke/Enqueue/Grant または Drop/Rollback）
 

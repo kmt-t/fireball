@@ -64,7 +64,6 @@ def build_model(*, guards: bool = True) -> Kripke:
         ("s_double_owned", "s_double_owned"),
         ("s_handoff_livelock", "s_handoff_livelock"),
     ]
-
     if not guards:
         # ガード無効時（変異検査）:
         # 1. クライアント・サーバ規律を破り、タスク A がサスペンド待機中にタスク B も A にブロック送信すると循環デッドロック

@@ -47,11 +47,9 @@ def run_all_tests():
         "      Fireball pysim Unit Test Suite                                            "
     )
     print("=" * 80)
-
     total_start = time.perf_counter()
     passed = 0
     failed = 0
-
     for name, script_path in TEST_FILES:
         print(f"\n>>> Running {name} ({script_path.name})...")
         t0 = time.perf_counter()
@@ -63,7 +61,6 @@ def run_all_tests():
         )
         t1 = time.perf_counter()
         elapsed_ms = (t1 - t0) * 1000
-
         if res.returncode == 0:
             print(res.stdout.strip())
             print(f"    -> [SUCCESS] {name} passed in {elapsed_ms:.2f} ms")
@@ -80,7 +77,6 @@ def run_all_tests():
         f" Unit Test Summary: {passed}/{len(TEST_FILES)} Passed, {failed} Failed ({total_elapsed_ms:.2f} ms total)"
     )
     print("=" * 80)
-
     if failed > 0:
         sys.exit(1)
 

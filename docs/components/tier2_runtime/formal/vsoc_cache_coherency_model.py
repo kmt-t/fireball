@@ -24,7 +24,6 @@ BACKS = [
 def build_model(*, guards: bool = True) -> Kripke:
     """
     JIT キャッシュ世代管理・デバッガ flush 因果順序・バンク回収の保護証明モデル
-
     正常状態:
     - s_interp: インタープリタ実行中（JIT キャッシュは参照のみ）
     - s_exec_fresh: 現行世代 (generation cookie 一致) の JIT トレースを実行中
@@ -34,7 +33,6 @@ def build_model(*, guards: bool = True) -> Kripke:
     - s_safepoint: Safepoint でデバッガ介入フラグを検出
     - s_flushing: 全バンクの無効化（generation cookie インクリメント）実行中
     - s_flushed: flush 完了、キャッシュ空
-
     違反状態:
     - s_exec_stale: デバッガ書き込み後、flush 完了前に旧世代コードを実行した状態
     - s_gen_regressed: generation cookie がバンク間で逆行・不一致になった状態
@@ -79,7 +77,6 @@ def build_model(*, guards: bool = True) -> Kripke:
         ("s_leaked_bank", "s_leaked_bank"),
         ("s_flush_stalled", "s_flush_stalled"),
     ]
-
     if not guards:
         # ガード無効時（変異検査）:
         # 1. Safepoint での generation cookie 照合を省くと、デバッガ書き込み後・flush 完了前に

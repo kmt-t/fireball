@@ -35,7 +35,6 @@ def build_model(*, guards: bool = True) -> Kripke:
         ("s_underflow", "s_underflow"),
         ("s_invalid_branch", "s_invalid_branch"),
     ]
-
     if not guards:
         # ガード無効時（変異検査）:
         # 1. 静的検証（V1-V6 相当）を外すと、スタック空の状態で end がポップを試みうる

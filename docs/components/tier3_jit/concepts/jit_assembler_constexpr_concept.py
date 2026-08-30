@@ -102,7 +102,6 @@ class Thumb2Assembler:
     """
 
     # --- 16-bit Thumb-1 Instructions ---
-
     @staticmethod
     def mov_reg(rd: Reg, rm: Reg) -> bytes:
         """MOV Rd, Rm (16-bit) -> 46xx"""
@@ -204,7 +203,6 @@ class Thumb2Assembler:
     @staticmethod
     def cmp_reg_t2(rn: Reg, rm: Reg) -> bytes:
         """CMP Rn, Rm (16-bit, T2 encoding) -> 4500 | (N << 7) | (Rm << 3) | rn_low3
-
         Unlike cmp_reg (T1), Rm may be any register R0-R14, at the cost of only
         3 bits of Rn (extended to the full register via the N bit) -- the ARM-
         documented form for comparing a low register against a high one. Per the
@@ -274,7 +272,6 @@ class Thumb2Assembler:
         return struct.pack("<H", code)
 
     # --- 32-bit Thumb-2 Instructions ---
-
     @staticmethod
     def movw(rd: Reg, imm16: int) -> bytes:
         """MOVW Rd, #imm16 (32-bit Thumb-2)"""
@@ -283,7 +280,6 @@ class Thumb2Assembler:
         i = (imm16 >> 11) & 0x1
         imm3 = (imm16 >> 8) & 0x7
         imm8 = imm16 & 0xFF
-
         hw1 = 0xF240 | (i << 10) | imm4
         hw2 = (imm3 << 12) | (rd << 8) | imm8
         return struct.pack("<HH", hw1, hw2)
@@ -296,7 +292,6 @@ class Thumb2Assembler:
         i = (imm16 >> 11) & 0x1
         imm3 = (imm16 >> 8) & 0x7
         imm8 = imm16 & 0xFF
-
         hw1 = 0xF2C0 | (i << 10) | imm4
         hw2 = (imm3 << 12) | (rd << 8) | imm8
         return struct.pack("<HH", hw1, hw2)
@@ -324,10 +319,10 @@ class Thumb2Assembler:
 
     @staticmethod
     def mls(rd: Reg, rn: Reg, rm: Reg, ra: Reg) -> bytes:
-        """MLS Rd, Rn, Rm, Ra (32-bit Thumb-2: FB00 0010 | (ra << 12))
-
-        Shares the MUL/MLA family encoding (Ra:Rd:op:Rm in the second halfword);
-        the op nibble (bits[7:4]) must be 0001 to select MLS instead of MLA's 0000.
+        """
+        MLS Rd, Rn, Rm, Ra (32-bit Thumb-2: FB00 0010 | (ra << 12))
+                Shares the MUL/MLA family encoding (Ra:Rd:op:Rm in the second halfword);
+                the op nibble (bits[7:4]) must be 0001 to select MLS instead of MLA's 0000.
         """
         hw1 = 0xFB00 | rn
         hw2 = (ra << 12) | (rd << 8) | 0x10 | rm
@@ -336,7 +331,6 @@ class Thumb2Assembler:
     @staticmethod
     def _shift_reg_w(op: int, rd: Reg, rn: Reg, rm: Reg) -> bytes:
         """Shared encoder for LSL/LSR/ASR/ROR (register), 32-bit Thumb-2 3-operand form.
-
         Rd = Rn <op> Rm, op in {0:LSL, 1:LSR, 2:ASR, 3:ROR}. Unlike the 16-bit
         Thumb-1 2-operand ALU forms (ANDS/EORS/LSLS/.../RORS), this is a genuine
         3-register instruction: it does not require the shift amount and the
@@ -452,10 +446,8 @@ class Thumb2Assembler:
         i2 = (imm25 >> 22) & 1
         imm10 = (imm25 >> 12) & 0x3FF
         imm11 = (imm25 >> 1) & 0x7FF
-
         j1 = (~i1 ^ s) & 1
         j2 = (~i2 ^ s) & 1
-
         hw1 = 0xF000 | (s << 10) | imm10
         hw2 = 0x9000 | (j1 << 13) | (j2 << 11) | imm11
         return struct.pack("<HH", hw1, hw2)
@@ -470,7 +462,6 @@ class Thumb2Assembler:
         j1 = (imm21 >> 18) & 1
         imm6 = (imm21 >> 12) & 0x3F
         imm11 = (imm21 >> 1) & 0x7FF
-
         hw1 = 0xF000 | (s << 10) | (int(cond) << 6) | imm6
         hw2 = 0x8000 | (j1 << 13) | (j2 << 11) | imm11
         return struct.pack("<HH", hw1, hw2)
@@ -485,10 +476,8 @@ class Thumb2Assembler:
         i2 = (imm25 >> 22) & 1
         imm10 = (imm25 >> 12) & 0x3FF
         imm11 = (imm25 >> 1) & 0x7FF
-
         j1 = (~i1 ^ s) & 1
         j2 = (~i2 ^ s) & 1
-
         hw1 = 0xF000 | (s << 10) | imm10
         hw2 = 0xD000 | (j1 << 13) | (j2 << 11) | imm11
         return struct.pack("<HH", hw1, hw2)
@@ -506,7 +495,6 @@ def _hex(b: bytes) -> str:
 def test_compile_time_range_validation():
     """Verify that illegal registers and immediate overflows trigger compile-time errors."""
     asm = Thumb2Assembler()
-
     # 1. Low register validation on Thumb-1 instruction
     try:
         asm.adds_reg(Reg.R8, Reg.R1, Reg.R2)
@@ -531,14 +519,12 @@ def test_compile_time_range_validation():
 
 def test_known_thumb2_encoding_reference_values():
     """Verify the encoder against known-correct ARMv8-M Thumb-2 bit patterns.
-
     This only checks the assembler against manually-transcribed literals; it does
     NOT read jit_copy_patch_concept.py's stencil catalog, so it cannot by itself
     prove the two stay in sync. See test_stencil_catalog_matches_assembler() in
     jit_copy_patch_concept.py for the real cross-file check.
     """
     asm = Thumb2Assembler()
-
     # STENCIL_PROLOGUE_FULL: push {r4-r6, r8-r11, lr} -> 2D E9 70 4F
     # r4-r6 (mask 0x0070) | r8-r11 (mask 0x0F00) = 0x0F70, lr = True (bit 14: 0x4000) -> 0x4F70
     prologue = asm.push_w(
@@ -552,7 +538,6 @@ def test_known_thumb2_encoding_reference_values():
         push_lr=True,
     )
     assert _hex(prologue) == "2D E9 70 4F", f"Got {_hex(prologue)}"
-
     # STENCIL_EPILOGUE_RETURN: pop {r4-r6, r8-r11, pc} -> BD E8 70 8F
     # r4-r6 | r8-r11 = 0x0F70, pc = True (bit 15: 0x8000) -> 0x8F70
     epilogue = asm.pop_w(
@@ -566,51 +551,39 @@ def test_known_thumb2_encoding_reference_values():
         pop_pc=True,
     )
     assert _hex(epilogue) == "BD E8 70 8F", f"Got {_hex(epilogue)}"
-
     # STENCIL_I32_ADD_D2: adds r4, r5, r4 -> 2C 19
     add_d2 = asm.adds_reg(Reg.R4, Reg.R5, Reg.R4)
     assert _hex(add_d2) == "2C 19", f"Got {_hex(add_d2)}"
-
     # STENCIL_I32_SUB_D2: subs r4, r5, r4 -> 2C 1B
     sub_d2 = asm.subs_reg(Reg.R4, Reg.R5, Reg.R4)
     assert _hex(sub_d2) == "2C 1B", f"Got {_hex(sub_d2)}"
-
     # STENCIL_I32_MUL_D2: mul r4, r5, r4 -> 05 FB 04 F4
     mul_d2 = asm.mul(Reg.R4, Reg.R5, Reg.R4)
     assert _hex(mul_d2) == "05 FB 04 F4", f"Got {_hex(mul_d2)}"
-
     # STENCIL_I32_DIV_S_D2: sdiv r4, r5, r4 -> 95 FB F4 F4
     sdiv_d2 = asm.sdiv(Reg.R4, Reg.R5, Reg.R4)
     assert _hex(sdiv_d2) == "95 FB F4 F4", f"Got {_hex(sdiv_d2)}"
-
     # STENCIL_I32_DIV_U_D2: udiv r4, r5, r4 -> B5 FB F4 F4
     udiv_d2 = asm.udiv(Reg.R4, Reg.R5, Reg.R4)
     assert _hex(udiv_d2) == "B5 FB F4 F4", f"Got {_hex(udiv_d2)}"
-
     # STENCIL_I32_CLZ_D1: clz r4, r4 -> B4 FA 84 F4
     clz_d1 = asm.clz(Reg.R4, Reg.R4)
     assert _hex(clz_d1) == "B4 FA 84 F4", f"Got {_hex(clz_d1)}"
-
     # STENCIL_I32_CTZ_D1: rbit r4, r4; clz r4, r4 -> 94 FA A4 F4 B4 FA 84 F4
     ctz_d1 = asm.rbit(Reg.R4, Reg.R4) + asm.clz(Reg.R4, Reg.R4)
     assert _hex(ctz_d1) == "94 FA A4 F4 B4 FA 84 F4", f"Got {_hex(ctz_d1)}"
-
     # STENCIL_UNREACHABLE: bkpt #0 -> 00 BE
     unreachable = asm.bkpt(0)
     assert _hex(unreachable) == "00 BE", f"Got {_hex(unreachable)}"
-
     # STENCIL_LOCAL_GET_D0: ldr r4, [r1, #0] -> 0C 68
     ldr_d0 = asm.ldr_imm(Reg.R4, Reg.R1, 0)
     assert _hex(ldr_d0) == "0C 68", f"Got {_hex(ldr_d0)}"
-
     # STENCIL_LOCAL_SET_D1: str r4, [r1, #0] -> 0C 60
     str_d1 = asm.str_imm(Reg.R4, Reg.R1, 0)
     assert _hex(str_d1) == "0C 60", f"Got {_hex(str_d1)}"
-
     # CMP R0, R8 (T2, Rm high) -> 40 45 -- classic textbook reference value for this encoding
     cmp_t2_ref = asm.cmp_reg_t2(Reg.R0, Reg.R8)
     assert _hex(cmp_t2_ref) == "40 45", f"Got {_hex(cmp_t2_ref)}"
-
     # FastAddressCheck bounds check against mem_size pinned in R9 (R8=mem_base, R9=mem_size):
     # cmp r4, r9 -> 4C 45 ; cmp r5, r9 -> 4D 45
     cmp_r4_r9 = asm.cmp_reg_t2(Reg.R4, Reg.R9)

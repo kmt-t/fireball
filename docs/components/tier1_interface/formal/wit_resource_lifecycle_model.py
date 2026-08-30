@@ -56,7 +56,6 @@ def build_model(*, guards: bool = True) -> Kripke:
         ("s_op_performed_on_dropped", "s_op_performed_on_dropped"),
         ("s_notification_lost", "s_notification_lost"),
     ]
-
     if not guards:
         # ガード無効時（変異検査）:
         # 1. drop 済みハンドルの検証を外すと、操作が実際に実行されてしまう

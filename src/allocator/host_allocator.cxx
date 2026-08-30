@@ -35,7 +35,6 @@ void* operator new(std::size_t num) {
   if (ret == nullptr) {
     THROW_NESTED_BACKTRACE("std::bad_alloc", std::bad_alloc);
   }
-
   return ret;
 }
 
@@ -46,7 +45,6 @@ void* operator new(std::size_t num, std::align_val_t align) {
   if (ret == nullptr) {
     THROW_NESTED_BACKTRACE("std::bad_alloc", std::bad_alloc);
   }
-
   return ret;
 }
 

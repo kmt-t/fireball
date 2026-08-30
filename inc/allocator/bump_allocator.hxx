@@ -26,12 +26,10 @@ template <uint32_t N, typename Tag>
 struct bump_allocator : public std::pmr::monotonic_buffer_resource {
 public:
   using this_type = bump_allocator;
-
   static this_type& instance() {
     static this_type inst;
     return inst;
   }
-
   template <typename T> struct allocator : public std::pmr::polymorphic_allocator<T> {
     allocator() : std::pmr::polymorphic_allocator<T>(&this_type::instance()) {}
   };
@@ -41,7 +39,6 @@ private:
       : std::pmr::monotonic_buffer_resource(arena_, N, std::pmr::null_memory_resource()) {
     // nothing.
   }
-
   uint8_t arena_[N];
 }; // struct bump_allocator : public std::pmr::monotonic_buffer_resource
 

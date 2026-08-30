@@ -8,7 +8,6 @@ Reference Concept Implementation: the fireball container vocabulary
 """
 
 from __future__ import annotations
-
 import bisect
 from typing import Any, Sequence
 
@@ -105,10 +104,10 @@ class FlatMapView(_SortedWindow):
 
 
 class FlatSetView(_SortedWindow):
-    """flat_set_view<Key>: sorted keys only, answers membership.
-
-    Carries no value span at all -- the question is whether the key is present,
-    not what is stored against it.
+    """
+    flat_set_view<Key>: sorted keys only, answers membership.
+        Carries no value span at all -- the question is whether the key is present,
+        not what is stored against it.
     """
 
     def slice(self, first, last):
@@ -177,10 +176,10 @@ def lookup_jit_entry(
 
 
 def card_marking_table(storage: bytearray, card_count: int) -> BitView:
-    """The 2-bit per-card state table: 4 cards per byte instead of one.
-
-    Note this returns a BitView, not a FlatMapView -- card marking is answered
-    by the index, never searched for.
+    """
+    The 2-bit per-card state table: 4 cards per byte instead of one.
+        Note this returns a BitView, not a FlatMapView -- card marking is answered
+        by the index, never searched for.
     """
     return BitView(storage, bits=2, origin=0, count=card_count)
 
@@ -201,7 +200,6 @@ def test_two_bit_card_marking_packs_four_cards_per_byte():
     whole reason bit_view exists: at RAM 32KB a byte-per-card table is waste."""
     store = bytearray(4)  # 4 bytes -> 16 cards at 2 bits each
     cards = card_marking_table(store, card_count=16)
-
     assert cards.size() == 16
     for i in range(16):
         cards.put(i, i % 4)
@@ -250,13 +248,11 @@ def test_narrowing_only_ever_shrinks_and_composes():
     """Monotonic shrinking is what makes multi-stage coarse indexes safe to
     compose: no stage can reintroduce an element an earlier stage excluded."""
     view = _map_fixture()
-
     narrowed = view.narrow(20, 40)
     assert narrowed.size() == 3
     assert narrowed.find(30) == 3
     assert narrowed.find(60) is None, "a key outside the window must not be found"
     assert narrowed.narrow(30, 30).size() == 1
-
     try:
         narrowed.slice(0, 6)
         raise AssertionError("slice widened the view beyond its parent")
@@ -268,12 +264,10 @@ def test_set_view_answers_membership_without_any_value_storage():
     """flat_set_view exists so a membership table need not allocate a value
     array at all -- the breakpoint list is keys and nothing else."""
     bps = breakpoint_set([0x100, 0x180, 0x240, 0x300])
-
     assert not hasattr(bps, "values"), "a set view must carry no value span"
     assert not hasattr(bps, "find"), "a set answers membership, not lookup"
     assert bps.contains(0x180) is True
     assert bps.contains(0x1C0) is False
-
     # Narrowing works the same way it does for the map view.
     window = bps.narrow(0x180, 0x240)
     assert window.size() == 2
@@ -295,7 +289,6 @@ def test_card_marking_prefilter_and_jit_entry_group_narrowing_lookup():
         0: (0, 3),
         1: (3, 6),
     }  # group 0: entries 0..2, group 1: entries 3..5
-
     assert (
         lookup_jit_entry(
             view, card_table, entry_group_bounds, pc=30, card_shift=3, group_shift=5
@@ -336,7 +329,6 @@ def test_radix_binary_tree_view():
     # Compact scalar start-indices: [0, 3, 6] (size = num_bins + 1)
     radix_table = [0, 3, 6]
     rbt_view = RadixBinaryTreeView(keys, values, radix_table, radix_shift=5)
-
     assert rbt_view.find(20) == 2
     assert rbt_view.find(30) == 3
     assert rbt_view.find(50) == 5

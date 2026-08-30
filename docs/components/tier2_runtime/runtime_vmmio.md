@@ -395,7 +395,6 @@ Tier 3 アクセス（FC=14/15）において毎回 FlatMap の二分探索を�
   - キー（VPN）: `raw >> 12`（20-bit）
   - HASH / インデックス計算: 20-bit VPN の Folding XOR Hash `tlb_idx = (vpn ^ (vpn >> 4) ^ (vpn >> 8) ^ (vpn >> 12) ^ (vpn >> 16)) & 15` (16エントリサイズ、全20ビットを拡散)
   - 値 (Value): 32-bit PTE エントリ
-  
 - **キャッシュ更新 & 押し出し (Eviction & Refill)**:
   TLBミス時に FlatMap から取得した PTE を `vmmio_tlb_cache[tlb_idx]` に上書き（同一ハッシュに別のアドレスが割り当てられた場合は以前のエントリを自動無効化・上書きする完全O(1)方式）。
   

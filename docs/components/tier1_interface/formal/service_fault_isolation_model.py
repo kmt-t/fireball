@@ -55,7 +55,6 @@ def build_model(*, guards: bool = True) -> Kripke:
         ("s_corrupted", "s_corrupted"),
         ("s_stuck", "s_stuck"),
     ]
-
     if not guards:
         # ガード無効時（変異検査）:
         # 1. 障害隔離（IPC ルータ経由のタスク分離）を外すと、異常終了が他方を直接破壊する

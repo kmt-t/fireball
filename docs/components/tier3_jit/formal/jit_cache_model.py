@@ -17,7 +17,6 @@ BACKS = [
 def build_model(*, guards: bool = True) -> Kripke:
     """
     JIT 3面キャッシュ代謝・遅延チェイニング安全性・2-bit Hotspot FSM・MPU W^X 統合形式検証モデル
-
     遅延チェイニング安全性モデル (第13信 §89 準拠):
     - 状態は 3つ組 (age_source, age_target, linked) で表現
       - age_source ∈ {0(Active), 1(Warm), 2(Oldest), 3(dead)}
@@ -58,7 +57,6 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_dangling_chain",  # guards=False で ch_s0_t1_l1 から到達するダングリング違反状態 (src=2, tgt=3, linked=1)
     ]
     S0 = {"s_idle", "ch_s0_t0_l1", "ch_s0_t1_l1"}
-
     R = [
         # --- MPU W^X & 3面キャッシュ代謝サイクル ---
         ("s_idle", "s_compiling"),
@@ -92,7 +90,6 @@ def build_model(*, guards: bool = True) -> Kripke:
         ("s_bad_permanent_deopt", "s_bad_permanent_deopt"),
         ("s_dangling_chain", "s_dangling_chain"),
     ]
-
     if guards:
         # ガード有効時: ch_s0_t1_l1 は掃引により ch_s1_t2_l0 (unlinked) へ安全遷移
         R.append(("ch_s0_t1_l1", "ch_s1_t2_l0"))

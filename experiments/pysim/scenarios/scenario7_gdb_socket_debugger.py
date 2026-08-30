@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 import sys
 from pathlib import Path
 
@@ -40,7 +39,6 @@ Tests:
 
 import socket
 import time
-
 from debugger import DebuggerManager, GDBRspProtocol
 from gdb_server import GDBServer
 from runtime_engine import BasicBlock, IntegratedHybridEngine, WASMContext
@@ -65,7 +63,6 @@ class GDBClientHelper:
         cksum = sum(ord(c) for c in payload) % 256
         wire_data = f"${payload}#{cksum:02x}".encode("latin1")
         self.sock.sendall(wire_data)
-
         # Receive ACK '+' and response packet
         buf = ""
         while "$" not in buf or "#" not in buf:
@@ -92,7 +89,6 @@ class GDBClientHelper:
 
 def test_scenario_gdb_socket_debugger():
     print("[*] Running Scenario 7: GDB Remote Debugger Socket Connection...")
-
     # 1. Setup execution environment with BasicBlocks
     block10 = BasicBlock(
         head_pc=0x10,
@@ -110,42 +106,34 @@ def test_scenario_gdb_socket_debugger():
         next_pc=None,
     )
     blocks = {0x10: block10, 0x20: block20, 0x30: block30}
-
     engine = IntegratedHybridEngine(compiler=TraceCompiler())
     dbg = DebuggerManager(engine=engine)
     server = GDBServer(dbg=dbg, host="127.0.0.1", port=0)
-
     # Initial guest state: local0 = 2, memory 128 bytes
     mem = bytearray(128)
     mem[0:8] = b"TESTDATA"
     ctx = WASMContext(locals_values=[2, 0, 0, 0], memory=mem)
-
     # Start TCP Server on dynamic port
     port = server.start(current_pc=0x10, ctx=ctx, blocks=blocks)
     time.sleep(0.05)
-
     client = GDBClientHelper("127.0.0.1", port)
     try:
         # Step 1: Query halt reason ('?')
         resp = client.send_raw_packet("?")
         assert resp == "S05", f"Expected S05 (SIGTRAP), got {resp}"
-
         # Step 2: Read virtual registers ('g')
         resp = client.send_raw_packet("g")
         assert len(resp) == 160
         pc = int(resp[0:8], 16)
         l0 = int(resp[32:40], 16)
         assert pc == 0x10 and l0 == 2
-
         # Step 3: Read memory ('m0,8')
         resp = client.send_raw_packet("m0,8")
         assert resp == b"TESTDATA".hex()
-
         # Step 4: Insert breakpoint at PC 0x20 ('Z0,20,0')
         resp = client.send_raw_packet("Z0,20,0")
         assert resp == "OK"
         assert dbg.has_breakpoint(0x20)
-
         # Step 5: Continue execution ('c') -> hit breakpoint at PC 0x20
         resp = client.send_raw_packet("c")
         assert resp == "S05"
@@ -153,17 +141,14 @@ def test_scenario_gdb_socket_debugger():
         pc = int(resp_g[0:8], 16)
         l0 = int(resp_g[32:40], 16)
         assert pc == 0x20 and l0 == 12
-
         # Step 6: Write virtual registers ('G') -> Modify local0 to 100
         new_regs = [0x20, 0, 0, 0, 100, 0] + [0] * 14
         g_payload = "G" + "".join(f"{r:08x}" for r in new_regs)
         resp = client.send_raw_packet(g_payload)
         assert resp == "OK" and ctx.locals[0] == 100
-
         # Step 7: Write memory ('M') & verify JIT cache flush
         resp = client.send_raw_packet("M0,4:50415443")
         assert resp == "OK" and ctx.memory[0:4] == b"PATC"
-
         # Step 8: Single-step execution ('s') -> Execute block20, land at PC 0x30
         resp = client.send_raw_packet("s")
         assert resp == "S05"
@@ -171,15 +156,12 @@ def test_scenario_gdb_socket_debugger():
         pc = int(resp_g[0:8], 16)
         l1 = int(resp_g[40:48], 16)
         assert pc == 0x30 and l1 == 500
-
         # Step 9: Remove breakpoint ('z0,20,0')
         resp = client.send_raw_packet("z0,20,0")
         assert resp == "OK" and not dbg.has_breakpoint(0x20)
-
         # Step 10: Continue to termination ('c') -> Execute block30, exit with W00
         resp = client.send_raw_packet("c")
         assert resp == "W00" and ctx.locals[1] == 498
-
         print(
             "    [PASS] Scenario 7 (GDB Socket Debugger Session) succeeded seamlessly."
         )

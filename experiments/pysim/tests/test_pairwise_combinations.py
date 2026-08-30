@@ -1,12 +1,10 @@
 """
 test_pairwise_combinations.py: Comprehensive 2-Way All-Pairs Combinatorial Test Suite.
-
 Verifies that all 26 orthogonal test cases (covering 100% of the 288 2-way factor interactions)
 execute seamlessly and preserve all architectural invariants across Tier 1, Tier 2, and Tier 3.
 """
 
 from __future__ import annotations
-
 import sys
 from pathlib import Path
 
@@ -94,19 +92,14 @@ WAT_TEMPLATE = """
     (loop $l
       ;; Mutate local
       (local.set $acc (i32.add (local.get $acc) (i32.const 1)))
-      
       ;; 8-bit RAM access
       (i32.store8 (i32.const 10) (i32.and (local.get $acc) (i32.const 0xFF)))
-      
       ;; 16-bit RAM access
       (i32.store16 (i32.const 20) (i32.and (local.get $acc) (i32.const 0xFFFF)))
-      
       ;; 32-bit RAM access
       (i32.store (i32.const 30) (local.get $acc))
-      
       ;; Global mutation
       (global.set $g_acc (i32.add (global.get $g_acc) (i32.const 2)))
-      
       (local.set $i (i32.add (local.get $i) (i32.const 1)))
       (br_if $l (i32.lt_s (local.get $i) (local.get $iter)))
     )
@@ -130,22 +123,18 @@ def run_single_pairwise_case(case_tuple: tuple) -> None:
         sched_mode,
         dbg_mode,
     ) = case_tuple
-
     # 1. Setup host system and services
     sysv = System()
     wasi_ctx = WasiHostContext(sysv)
     wasi_dummy = WasiDummyContext()
     gpio = DummyGpioDriver(pin_count=16)
     gpio.set_pin_mode(1, PinMode.OUTPUT)
-
     # 2. Parse WASM Module
     wasm_bytes = bytes(wasmtime.wat2wasm(WAT_TEMPLATE))
     module = parse(wasm_bytes)
     fn_idx = module.export_func_index("main")
-
     # Build host imports
     host_funcs = wasi_ctx.build_interpreter_host_functions(module)
-
     # 3. Setup Runtime Engine & JIT
     trace_compiler = TraceCompiler() if engine_mode in ("jit", "hybrid") else None
     runtime_engine = (
@@ -162,7 +151,6 @@ def run_single_pairwise_case(case_tuple: tuple) -> None:
         host_functions=host_funcs,
         runtime_engine=runtime_engine,
     )
-
     # Setup Debugger if needed
     dbg_mgr = None
     if dbg_mode in ("inspect", "active"):
@@ -211,16 +199,13 @@ def run_single_pairwise_case(case_tuple: tuple) -> None:
     assert res[0] == expected_acc + expected_gacc, (
         f"{case_id} result mismatch: got {res[0]}, expected {expected_acc + expected_gacc}"
     )
-
     # 9. Verify Invariants
     # Invariant A: Memory consistency
     assert wasi_ctx.guest_memory[10] == (n_iters & 0xFF)
     assert wasi_ctx.guest_memory[20] == (n_iters & 0xFF)
     assert wasi_ctx.guest_memory[30] == (n_iters & 0xFF)
-
     # Invariant B: Global state persistence
     assert interp.globals[0] == expected_gacc
-
     # Invariant C: Host call integrity
     if host_mode == "wasi_console":
         # write out to wasi

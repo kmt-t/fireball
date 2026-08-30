@@ -12,7 +12,6 @@ vMMIO FlatMap Page Table & Direct-Mapped TLB simulation.
 """
 
 from __future__ import annotations
-
 import sys
 from pathlib import Path
 
@@ -37,34 +36,24 @@ for _p in [
         sys.path.insert(0, _sp)
 
 import sys
-
 from pathlib import Path
-
 from typing import Callable
 
 
 class TrapCode:
     OUT_OF_BOUNDS = "TRAP_MEMORY_OUT_OF_BOUNDS"
-
     UNDEFINED_FC = "TRAP_UNDEFINED_FC"
-
     UNREGISTERED_PAGE = "TRAP_UNREGISTERED_PAGE"
-
     ACCESS_VIOLATION = "TRAP_ACCESS_VIOLATION"
-
     OWNER_MISMATCH = "TRAP_OWNER_MISMATCH"
 
 
 # Function Codes (bits[31:28]) — see runtime_vmmio.md "アドレス分解の対応関係"
 
 FC_STATIC_DEVICE = 0xC  # 0xC000_0000: SYSCTL / IPCR / VDMA (Tier 2, syscall dispatch)
-
 FC_SHM = 0xE  # 0xE000_0000: Shared Memory (Tier 3, owner-checked)
-
 FC_PASSTHROUGH = 0xF  # 0xF000_0000: Physical passthrough (Tier 3)
-
 FB_TASK_ID_INVALID = 0x00
-
 FB_TASK_ID_FLIGHT = 0xFF
 
 
@@ -78,7 +67,6 @@ class VmmioAddress:
     def is_linear(self) -> bool:
 
         # Bit[31] == 0 -> guest RAM (Tier 1), fast-bypass vMMIO entirely.
-
         return (self.raw & 0x8000_0000) == 0
 
     def fc(self) -> int:
@@ -88,13 +76,11 @@ class VmmioAddress:
     def syscall_metadata(self) -> int:
 
         # Syscall Metadata / Syscall ID: bits [27:16] (12 bits)
-
         return (self.raw >> 16) & 0xFFF
 
     def vpn(self) -> int:
 
         # 20-bit Virtual Page Number (VPN)
-
         return self.raw >> 12
 
     def offset(self) -> int:
@@ -114,19 +100,15 @@ class StaticDevicePTE:
     ):
 
         self.handler = handler
-
         self.read = read
-
         self.write = write
-
         self.cacheable = cacheable
 
 
 class Tier3PTE:
-    """FC=14/15 (SHM / PASSTHROUGH). 32-bit layout, no bit overlap:
-
-    [31:12] PPN(20) | [11] VALID | [10] READ | [9] WRITE | [8] EXEC | [7:0] Owner ID
-
+    """
+    FC=14/15 (SHM / PASSTHROUGH). 32-bit layout, no bit overlap:
+        [31:12] PPN(20) | [11] VALID | [10] READ | [9] WRITE | [8] EXEC | [7:0] Owner ID
     """
 
     def __init__(
@@ -140,23 +122,17 @@ class Tier3PTE:
     ):
 
         self.phys_page = phys_page
-
         self.valid = valid
-
         self.read = read
-
         self.write = write
-
         self.exec_ = exec_
-
         self.owner_id = owner_id
 
 
 class VMMIOController:
-    """FlatMap Page Table (vpn -> PTE) with a direct-mapped 16-entry software TLB.
-
-    TLB hits provide O(1) hot-path access, while TLB misses look up the FlatMap.
-
+    """
+    FlatMap Page Table (vpn -> PTE) with a direct-mapped 16-entry software TLB.
+        TLB hits provide O(1) hot-path access, while TLB misses look up the FlatMap.
     """
 
     def __init__(self, guest_ram_size: int = 8192):  # FB_CONF_GUEST_RAM_SIZE
@@ -165,21 +141,14 @@ class VMMIOController:
             raise ValueError("guest RAM size must be positive")
 
         self.guest_ram_size = guest_ram_size
-
         # FlatMap PTE storage: vpn (20-bit) -> PTE
-
         self.ptes: dict[int, object] = {}
-
         # Direct-mapped TLB: 16 slots, keyed by 4-bit Folding XOR Hash over 20-bit VPN.
-
         self.tlb: list[dict] = [{"vpn": 0xFFFF_FFFF, "pte": None} for _ in range(16)]
-
         self.tlb_hits = 0
-
         self.tlb_misses = 0
 
     # --- Static & Dynamic PTE Registration (FlatMap) ---
-
     def map_static_device(
         self,
         vpn: int,
@@ -188,12 +157,10 @@ class VMMIOController:
         write: bool = True,
     ):
         """Registers a Tier 2 static device page (FC=12) into FlatMap."""
-
         self.ptes[vpn] = StaticDevicePTE(handler=handler, read=read, write=write)
 
     def map_shm_page(self, vpn: int, phys_page: int, owner_id: int):
         """Registers a Tier 3 SHM page (FC=14) into FlatMap."""
-
         self.ptes[vpn] = Tier3PTE(
             phys_page=phys_page,
             valid=True,
@@ -207,7 +174,6 @@ class VMMIOController:
         self, vpn: int, phys_page: int, read: bool = True, write: bool = True
     ):
         """Registers a Tier 3 Passthrough page (FC=15) into FlatMap."""
-
         self.ptes[vpn] = Tier3PTE(
             phys_page=phys_page,
             valid=True,
@@ -219,14 +185,11 @@ class VMMIOController:
 
     def revoke_shm_owner(self, vpn: int):
         """IPC Router Revoke phase: mark the page in-flight and invalidate its TLB entry."""
-
         pte = self.ptes.get(vpn)
-
         if pte is not None and isinstance(pte, Tier3PTE):
             pte.owner_id = FB_TASK_ID_FLIGHT
 
         tlb_idx = self.tlb_index(vpn)
-
         if self.tlb[tlb_idx]["vpn"] == vpn:
             self.tlb[tlb_idx] = {"vpn": 0xFFFF_FFFF, "pte": None}
 
@@ -237,68 +200,49 @@ class VMMIOController:
     def flush_tlb_entry(self, vpn: int) -> None:
 
         tlb_idx = self.tlb_index(vpn)
-
         if self.tlb[tlb_idx]["vpn"] == vpn:
             self.tlb[tlb_idx] = {"vpn": 0xFFFF_FFFF, "pte": None}
 
     # --- Hot path: TLB lookup + FlatMap fallback ---
-
     @staticmethod
     def tlb_index(vpn: int) -> int:
-        """4-bit Folding XOR Hash over 20-bit VPN.
-
-        Diffuses all 20 bits of the VPN (FC, Page, Subfields) into a 4-bit TLB slot (0..15).
-
+        """
+        4-bit Folding XOR Hash over 20-bit VPN.
+                Diffuses all 20 bits of the VPN (FC, Page, Subfields) into a 4-bit TLB slot (0..15).
         """
 
         return (vpn ^ (vpn >> 4) ^ (vpn >> 8) ^ (vpn >> 12) ^ (vpn >> 16)) & 15
 
     def _lookup_pte(self, addr: VmmioAddress):
         """Returns the PTE from TLB (O(1)) or falls back to FlatMap."""
-
         vpn = addr.vpn()
-
         tlb_idx = self.tlb_index(vpn)
-
         slot = self.tlb[tlb_idx]
-
         if slot["vpn"] == vpn:
             self.tlb_hits += 1
-
             return slot["pte"]
 
         self.tlb_misses += 1
-
         # FlatMap lookup
-
         pte = self.ptes.get(vpn)
-
         if pte is None:
             return None
 
         # Refill: direct-mapped, unconditional overwrite (O(1), no eviction search).
-
         self.tlb[tlb_idx] = {"vpn": vpn, "pte": pte}
-
         return pte
 
     def access(
         self, raw_addr: int, is_write: bool, current_task_id: int = 0
     ) -> tuple[str, str]:
         """
-
         Full dispatch: RAM bypass -> TLB/FlatMap -> permission check (always,
-
         TLB hit or not) -> syscall dispatch or physical access.
-
         Returns (status_code, detail).
-
         """
 
         addr = VmmioAddress(raw_addr)
-
         # 1. Fast RAM bypass (Tier 1) — O(1), never touches the page table.
-
         if addr.is_linear():
             if addr.raw >= self.guest_ram_size:
                 return (
@@ -310,12 +254,9 @@ class VMMIOController:
             return ("OK_GUEST_RAM", "bypassed to linear guest RAM")
 
         # 2. TLB / FlatMap lookup.
-
         pte = self._lookup_pte(addr)
-
         if pte is None:
             # Check known valid FCs for proper trap classification
-
             if addr.fc() not in (FC_STATIC_DEVICE, FC_SHM, FC_PASSTHROUGH):
                 return (
                     TrapCode.UNDEFINED_FC,
@@ -325,7 +266,6 @@ class VMMIOController:
             return (TrapCode.UNREGISTERED_PAGE, f"no PTE at VPN {addr.vpn():#x}")
 
         # 3. Permission check — runs unconditionally, TLB hit or miss.
-
         if isinstance(pte, StaticDevicePTE):
             if is_write and not pte.write:
                 return (TrapCode.ACCESS_VIOLATION, "static device: write not permitted")
@@ -339,7 +279,6 @@ class VMMIOController:
             return ("OK_SYSCALL", "dispatched to static device handler")
 
         # Tier3PTE (SHM / PASSTHROUGH)
-
         if not pte.valid:
             return (TrapCode.ACCESS_VIOLATION, "page marked invalid")
 
@@ -363,5 +302,4 @@ class VMMIOController:
                 )
 
         phys_addr = (pte.phys_page << 12) | addr.offset()
-
         return ("OK_PHYSICAL", f"physical access at {phys_addr:#010x}")

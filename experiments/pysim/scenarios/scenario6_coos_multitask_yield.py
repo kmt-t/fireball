@@ -41,14 +41,12 @@ from wasi import WasiHostContext
 SCENARIO6_WAT = """
 (module
   (memory (export "memory") 1)
-
   ;; Task A: Producer - writes sequence into memory buffer starting at offset 512
   (func (export "producer_task") (param $count i32) (result i32)
     (local $i i32)
     (local $ptr i32)
     (local.set $i (i32.const 0))
     (local.set $ptr (i32.const 512))
-
     (block $b_exit
       (loop $l_top
         (br_if $b_exit (i32.ge_s (local.get $i) (local.get $count)))
@@ -61,7 +59,6 @@ SCENARIO6_WAT = """
     )
     (local.get $i)
   )
-
   ;; Task B: Consumer - reads sequence from memory buffer and calculates sum
   (func (export "consumer_task") (param $count i32) (result i32)
     (local $i i32)
@@ -70,7 +67,6 @@ SCENARIO6_WAT = """
     (local.set $i (i32.const 0))
     (local.set $ptr (i32.const 512))
     (local.set $sum (i32.const 0))
-
     (block $b_exit
       (loop $l_top
         (br_if $b_exit (i32.ge_s (local.get $i) (local.get $count)))
@@ -88,27 +84,22 @@ SCENARIO6_WAT = """
 
 def test_scenario_coos_multitask():
     print("[*] Running Scenario 6: COOS Cooperative Multitasking & Coroutines...")
-
     wasm_bytes = bytes(wasmtime.wat2wasm(SCENARIO6_WAT))
     module = parse(wasm_bytes)
-
     sysv = System()
     wasi_ctx = WasiHostContext(sysv)
     host_funcs = wasi_ctx.build_interpreter_host_functions(module)
     interp = Interpreter(
         module, memory=wasi_ctx.guest_memory, host_functions=host_funcs
     )
-
     fn_prod = module.export_func_index("producer_task")
     fn_cons = module.export_func_index("consumer_task")
     N = 100  # 100 items: sum(1..100) * 10 = 5050 * 10 = 50500
-
     # 1. Run Producer as a coroutine yielding every 16 ops
     prod_coro = interp.call_coroutine(fn_prod, [N], yield_every=16)
     prod_done = False
     prod_yields = 0
     prod_res = None
-
     while not prod_done:
         try:
             next(prod_coro)
@@ -120,13 +111,11 @@ def test_scenario_coos_multitask():
     assert prod_res == [100], f"Producer task failed: {prod_res}"
     assert prod_yields > 0, "Producer should have yielded multiple times"
     print(f"    -> Producer yielded {prod_yields} times and produced 100 items.")
-
     # 2. Run Consumer as a coroutine yielding every 16 ops
     cons_coro = interp.call_coroutine(fn_cons, [N], yield_every=16)
     cons_done = False
     cons_yields = 0
     cons_res = None
-
     while not cons_done:
         try:
             next(cons_coro)
@@ -142,7 +131,6 @@ def test_scenario_coos_multitask():
     print(
         f"    -> Consumer yielded {cons_yields} times and computed expected sum: {cons_res[0]}."
     )
-
     print("    [PASS] Scenario 6 (COOS Cooperative Multitasking) succeeded seamlessly.")
 
 

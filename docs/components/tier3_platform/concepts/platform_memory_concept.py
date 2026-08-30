@@ -9,7 +9,6 @@ Reference Concept Implementation & Test Suite: COOS Memory Manager
 """
 
 from __future__ import annotations
-
 import inspect
 from dataclasses import dataclass, field
 from enum import Enum, auto
@@ -371,7 +370,6 @@ class MemoryManager:
         self.total_allocated_bytes: int = 0
         self.vmmio_registry = VMMIOPTERegistry()
         self.mpu: PMSAv8MPU | None = None
-
         # Static partitions per task (fixed 64KB)
         self.partition_owners: dict[int, PartitionView] = {}
         # Typed slot pools
@@ -391,7 +389,6 @@ class MemoryManager:
         return Result(value=True)
 
     # --- Partition Management (§4 acquire-partition / release-partition) ---
-
     def acquire_partition(self, owner: int) -> Result[PartitionView]:
         """Lease a fixed-size partition to a task (NOT a general-purpose heap allocator)."""
         if owner in self.partition_owners:
@@ -435,7 +432,6 @@ class MemoryManager:
         self.total_allocated_bytes -= FB_CONF_PARTITION_SIZE
 
     # --- Typed Slot Pool (§4 acquire-slot / release-slot) ---
-
     def acquire_slot(self, owner: int, cls: type[T]) -> Result[PoolRef[T]]:
         """Lease a pre-allocated typed slot from static pool."""
         slot_size = getattr(cls, "__size__", 256)
@@ -467,7 +463,6 @@ class MemoryManager:
             self.total_allocated_bytes -= slot_size
 
     # --- Shared Block IPC Allocation & Transfer (§4, §7) ---
-
     def allocate_shared(self, caller_task_id: int, size: int) -> Result[SharedBlock]:
         """Allocate an IPC shared memory buffer with RAII ownership."""
         assert caller_task_id != 0, "Shared block must be owned by an explicit task"
@@ -495,7 +490,6 @@ class MemoryManager:
         slot_idx = 0
         shm_id = (page_idx << 8) | slot_idx
         base_addr = 0x20080000 + (page_idx * FB_PAGE_SIZE)
-
         # Register page into vMMIO FC=14 table with caller as owner
         self.vmmio_registry.register_page(page_idx, caller_task_id, base_addr)
         self.shm_slots[shm_id] = {
@@ -507,7 +501,6 @@ class MemoryManager:
             "allocated": True,
         }
         self.total_allocated_bytes += FB_PAGE_SIZE
-
         sb = SharedBlock(
             shm_id=shm_id,
             page_idx=page_idx,
@@ -534,7 +527,6 @@ class MemoryManager:
 
         page_idx = slot["page_idx"]
         current_owner = self.vmmio_registry.get_owner(page_idx)
-
         # Precondition check: Grant must be established in vMMIO PTE
         if current_owner != receiver_task_id:
             return Result(
@@ -606,13 +598,11 @@ def test_mem_01_acquire_partition_fixed_size():
     """MEM-01: acquire-partition provides task-specific fixed partition (no arbitrary size)."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
-
     # Signature must only take owner (task_id), NOT a size parameter
     sig = inspect.signature(mm.acquire_partition)
     assert list(sig.parameters.keys()) == ["owner"], (
         "acquire_partition must only take 'owner' parameter"
     )
-
     res = mm.acquire_partition(owner=1)
     assert res.is_ok
     pv = res.unwrap()
@@ -620,7 +610,6 @@ def test_mem_01_acquire_partition_fixed_size():
         f"Must return fixed size partition {FB_CONF_PARTITION_SIZE}"
     )
     assert pv.owner == 1
-
     # Verify no arbitrary allocate(size, category) API exists
     assert not hasattr(mm, "allocate"), (
         "Generic heap allocate(size, category) must not exist"
@@ -638,7 +627,6 @@ def test_mem_01b_acquire_slot_typed():
 
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
-
     res = mm.acquire_slot(owner=2, cls=TCB)
     assert res.is_ok
     ref = res.unwrap()
@@ -652,10 +640,8 @@ def test_mem_02_recovery_strategy_on_exhaustion():
     mm = MemoryManager()
     # Small pool that fits only 1 partition
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_PARTITION_SIZE)
-
     r1 = mm.acquire_partition(owner=1)
     assert r1.is_ok
-
     # Second allocation must fail and return structured error
     r2 = mm.acquire_partition(owner=2)
     assert r2.is_err
@@ -670,7 +656,6 @@ def test_mem_03_total_allocation_bound():
     mm = MemoryManager()
     pool_size = 256 * 1024
     mm.init_manager(pool_base=0x20020000, pool_size=pool_size)
-
     for i in range(1, 10):
         res = mm.acquire_partition(owner=i)
         assert mm.total_allocated_bytes <= pool_size
@@ -682,10 +667,8 @@ def test_mem_04_owner_task_id_auto_set():
     """MEM-04: Caller task-id is automatically recorded on all allocations."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
-
     p_res = mm.acquire_partition(owner=5)
     assert p_res.unwrap().owner == 5
-
     s_res = mm.allocate_shared(caller_task_id=5, size=1024)
     assert s_res.unwrap().owner == 5
 
@@ -694,16 +677,13 @@ def test_mem_05_release_and_deallocate_owner_only():
     """MEM-05: release-partition / deallocate is permitted ONLY by owner task."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
-
     mm.acquire_partition(owner=3)
     assert 3 in mm.partition_owners
-
     # Rogue task 4 attempts to release task 3's partition
     mm.release_partition(caller_task_id=4)
     assert 3 in mm.partition_owners, (
         "Rogue task must not be able to release another task's partition"
     )
-
     # Owner task 3 releases its partition
     mm.release_partition(caller_task_id=3)
     assert 3 not in mm.partition_owners
@@ -716,7 +696,6 @@ def test_mem_06_guest_ram_64kb_alignment():
     assert aligned_base % FB_WASM_PAGE_SIZE == 0
     res = mm.init_manager(pool_base=aligned_base, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     assert res.is_ok
-
     # Unaligned base must assert / reject
     unaligned_base = 0x20021000
     try:
@@ -730,11 +709,9 @@ def test_mem_07_allocate_shared_registers_vmmio_pte():
     """MEM-07: allocate-shared registers corresponding vMMIO FC=14 PTE with caller owner_id."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
-
     res = mm.allocate_shared(caller_task_id=1, size=2048)
     assert res.is_ok
     sb = res.unwrap()
-
     owner = mm.vmmio_registry.get_owner(sb.page_idx)
     assert owner == 1, "vMMIO PTE must be registered with owner_id = 1"
 
@@ -743,10 +720,8 @@ def test_mem_08_claim_requires_grant_completion():
     """MEM-08: claim fails if Grant phase has not updated vMMIO PTE owner_id."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
-
     sb = mm.allocate_shared(caller_task_id=1, size=1024).unwrap()
     shm_id = sb.release()
-
     # Attempt claim by Task 2 before IPC Router has granted (PTE still FLIGHT)
     c_res = mm.claim(receiver_task_id=2, shm_id=shm_id)
     assert c_res.is_err
@@ -758,7 +733,6 @@ def test_mem_09_hal_acquire_buffer_delegates_to_allocate_shared():
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     hal = HALBufferManager(mm)
-
     res = hal.acquire_buffer(hal_task_id=10, size=512)
     assert res.is_ok
     sb = res.unwrap()
@@ -770,18 +744,14 @@ def test_mem_10_shared_block_ownership_transfer():
     """MEM-10: allocate-shared -> release -> claim moves ownership cleanly without double-ownership."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
-
     # 1. Task A allocates
     sb_a = mm.allocate_shared(caller_task_id=1, size=1024).unwrap()
     assert sb_a.get_owner() == 1
-
     # 2. Task A releases (Revoke)
     shm_id = sb_a.release()
     assert not sb_a._is_active
-
     # 3. Simulate IPC Router Grant phase: update vMMIO PTE to Task B
     mm.vmmio_registry.update_owner(sb_a.page_idx, 2)
-
     # 4. Task B claims
     sb_b = mm.claim(receiver_task_id=2, shm_id=shm_id).unwrap()
     assert sb_b.get_owner() == 2
@@ -792,14 +762,11 @@ def test_mem_10b_shared_block_vmmio_pte_flight_and_claim():
     """MEM-10b: release() sets PTE to FLIGHT; claim() sets PTE to receiver."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
-
     sb = mm.allocate_shared(caller_task_id=1, size=1024).unwrap()
     page_idx = sb.page_idx
-
     assert mm.vmmio_registry.get_owner(page_idx) == 1
     sb.release()
     assert mm.vmmio_registry.get_owner(page_idx) == FB_TASK_ID_FLIGHT
-
     # Simulate Grant
     mm.vmmio_registry.update_owner(page_idx, 2)
     claimed_sb = mm.claim(receiver_task_id=2, shm_id=sb.shm_id).unwrap()
@@ -811,11 +778,9 @@ def test_mem_10c_route_message_rollback_restores_owner_id():
     """MEM-10c: Rollback on queue full restores PTE owner_id to sender (not left as FLIGHT)."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
-
     sb = mm.allocate_shared(caller_task_id=1, size=1024).unwrap()
     shm_id = sb.release()
     assert mm.vmmio_registry.get_owner(sb.page_idx) == FB_TASK_ID_FLIGHT
-
     # Send failed with ERR_QUEUE_FULL -> Rollback
     mm.rollback_transfer(original_sender_id=1, shm_id=shm_id)
     assert mm.vmmio_registry.get_owner(sb.page_idx) == 1, (
@@ -827,9 +792,7 @@ def test_mem_11_shared_block_raii_auto_deallocate():
     """MEM-11: SharedBlock RAII automatically deallocates buffer on drop."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
-
     initial_alloc = mm.total_allocated_bytes
-
     # Use context manager to trigger deterministic drop
     with mm.allocate_shared(caller_task_id=2, size=1024).unwrap() as sb:
         assert mm.total_allocated_bytes == initial_alloc + FB_PAGE_SIZE
@@ -845,10 +808,8 @@ def test_mem_12_shm_id_kv_pair_encoding():
     shm_id = 0x0102
     scope_functional = 0b000
     type_u32 = 0b00001
-
     kv_type_byte = (scope_functional << 5) | type_u32
     assert kv_type_byte == 0x01, "Functional u32 kv_pair type byte must be 0x01"
-
     # Ensure no custom unvocabularized dtype=handle is used
     assert scope_functional != 0b010, "shm-id is not a hardware resource descriptor"
 
@@ -864,7 +825,6 @@ def test_mem_20_mpu_8_regions_static_allocation():
     """MEM-20: 8 MPU regions match the PMSAv8 static allocation table."""
     mpu = PMSAv8MPU(pool_base=0x20020000)
     assert len(mpu.regions) == 8
-
     # Region 0: Flash RO+X
     assert mpu.regions[0].ap == AccessPermission.RO and not mpu.regions[0].xn
     # Region 3: Guest RAM RW+XN
@@ -879,7 +839,6 @@ def test_mem_21_jit_code_cache_wx_switch_on_begin():
     """MEM-21: begin_jit_patch switches JIT cache to RW+XN and issues DSB/ISB."""
     mpu = PMSAv8MPU(pool_base=0x20020000)
     assert mpu.regions[4].is_executable and not mpu.regions[4].is_writable
-
     mpu.begin_jit_patch()
     assert mpu.regions[4].is_writable and not mpu.regions[4].is_executable
     assert mpu.dsb_count == 1
@@ -891,7 +850,6 @@ def test_mem_22_jit_code_cache_wx_restore_on_commit():
     mpu = PMSAv8MPU(pool_base=0x20020000)
     mpu.begin_jit_patch()
     mpu.commit_jit_patch()
-
     assert mpu.regions[4].is_executable and not mpu.regions[4].is_writable
     assert mpu.dsb_count == 2
     assert mpu.isb_count == 2
@@ -901,10 +859,8 @@ def test_mem_23_rwx_state_permanently_eliminated():
     """MEM-23: RWX permissions are permanently eliminated in all MPU states."""
     mpu = PMSAv8MPU(pool_base=0x20020000)
     mpu.assert_no_rwx()
-
     mpu.begin_jit_patch()
     mpu.assert_no_rwx()
-
     mpu.commit_jit_patch()
     mpu.assert_no_rwx()
 
@@ -912,14 +868,12 @@ def test_mem_23_rwx_state_permanently_eliminated():
 def test_mem_24_transaction_batching_barrier_efficiency():
     """MEM-24: Batching emits exactly 1 begin / 1 commit pair per compilation unit."""
     mpu = PMSAv8MPU(pool_base=0x20020000)
-
     # 10 patches applied in a single compilation unit
     mpu.begin_jit_patch()
     for _ in range(10):
         # Simulate copying and patching instruction stencils
         pass
     mpu.commit_jit_patch()
-
     assert mpu.dsb_count == 2, "Batching must only emit 2 barriers per compilation unit"
     assert mpu.isb_count == 2
 

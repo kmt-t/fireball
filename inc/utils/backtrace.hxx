@@ -17,7 +17,6 @@ namespace fireball::utils {
 class exception_with_backtrace : public std::runtime_error {
 public:
   exception_with_backtrace(const std::string& msg);
-
   virtual ~exception_with_backtrace() noexcept = default;
 };
 #endif

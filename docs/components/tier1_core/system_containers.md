@@ -147,14 +147,15 @@ class flat_set_view {
   constexpr auto empty() const noexcept -> bool;
 };
 
-// 基数二分探索木索引: O(1) Radix Table + O(log n) 有界二分探索
-template <typename Key, typename Value, std::size_t RadixShift>
+// 基数二分探索木索引: O(1) Radix Table + O(log n) 有界二分探索 (KeyProjection 対応)
+template <typename Key, typename Value, std::size_t RadixShift, typename KeyProjection = std::identity>
 class radix_binary_tree_view {
  public:
   constexpr explicit radix_binary_tree_view(
       std::span<const Key> keys,
       std::span<const Value> values,
-      std::span<const std::pair<std::size_t, std::size_t>> radix_table) noexcept;
+      std::span<const std::pair<std::size_t, std::size_t>> radix_table,
+      KeyProjection proj = {}) noexcept;
   constexpr auto find(const Key& k) const noexcept -> std::optional<Value>;
   constexpr auto size() const noexcept -> std::size_t;
   constexpr auto empty() const noexcept -> bool;
@@ -297,20 +298,28 @@ class FlatSetView(_SortedWindow):
         return self._locate(key) is not None
 
 
+def bswap32(v: int) -> int:
+    """32-bit byte-order reversal for maximizing Radix table distribution on UnifiedPC."""
+    return (((v & 0xFF) << 24) | ((v & 0xFF00) << 8) | ((v >> 8) & 0xFF00) | ((v >> 24) & 0xFF))
+
+
 class RadixBinaryTreeView:
-    """fireball::radix_binary_tree_view<Key, Value, RadixShift>:
+    """fireball::radix_binary_tree_view<Key, Value, RadixShift, KeyProjection>:
     Container combining an O(1) Radix Table (coarse prefix lookup)
     with bounded binary search on a sorted key-value array.
     """
 
     def __init__(self, keys: Sequence[int], values: Sequence[Any],
-                 radix_table: Sequence[tuple[int, int]], radix_shift: int):
+                 radix_table: Sequence[tuple[int, int]], radix_shift: int,
+                 key_transform: Any = None):
         self.map_view = FlatMapView(keys, values)
         self.radix_table = radix_table  # prefix -> (first, last) entry indices
         self.radix_shift = radix_shift
+        self.key_transform = key_transform
 
     def find(self, key: int) -> Any | None:
-        prefix = key >> self.radix_shift
+        rk = self.key_transform(key) if self.key_transform is not None else key
+        prefix = rk >> self.radix_shift
         if prefix < 0 or prefix >= len(self.radix_table):
             return None
         first, last = self.radix_table[prefix]

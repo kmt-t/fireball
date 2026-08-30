@@ -60,7 +60,9 @@ graph TD
 
 ### 4.1 アルゴリズム
 1. **カードマーキング確認 ($O(1)$)**: カードマーキング表 (`bit_view<2>`) を $O(1)$ で確認し、状態が `COMPILED` でなければ即座に終了。
-2. **Radix Table 絞り込み ($O(1)$)**: 検索対象の WASM PC を基数シフト（`pc >> entry_group_shift`）し、対応する有界区間 `[first, last]` を取得。
+2. **Radix Table 絞り込み ($O(1)$)**:
+   - `UnifiedPC`（`(func_index << 16) | bytecode_offset`）の最下位バイト（最も変動頻度が高い `bytecode_offset` 下位ビット）を最上位へ投影するため、**32-bit バイトオーダー逆転（`bswap32(pc)`）** を適用する。
+   - `radix_key = bswap32(pc)` に対し基数シフト（`radix_key >> radix_shift`）を行い、対応する有界区間 `[first, last]` を $O(1)$ で取得。全バケットへの完全一様分散（バケット利用率 100%）を実現する。
 3. **有界二分探索 ($O(\log n)$)**: `radix_binary_tree_view` 内の有界区間から対象の命令オフセットを二分探索し、ヒットした場合はネイティブコードのアドレス（`exec_trace`）を返す。
 4. **ホットスポット昇格判定**: yield 時等に履歴バッファを走査し、実行頻度が閾値に達したカードを `HOT` $\to$ `COMPILED` に遷移させてコンパイル待ち列へ登録。
 5. **3面世代交代ローテーション＆局所アンリンク ($O(k)$)**: Active バンク満杯時、`Oldest` バンクをパージして新 `Active` に再利用する直前に、該当バンクの被チェイン逆引きテーブルに登録されたソースエントリ（$k$ 件）のみを参照し、昇格済みなら再チェイニング、完全破棄なら復帰スタブへアンパッチする。全件走査を行わない。 `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}`

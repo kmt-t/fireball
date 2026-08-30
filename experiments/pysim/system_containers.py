@@ -1,4 +1,4 @@
-﻿"""
+"""
 experiments/pysim/system_containers.py
 
 Fireball System Container Vocabulary (Zero-allocation static container vocabulary).
@@ -170,25 +170,37 @@ class FlatSetView(_SortedWindow[KeyT], Generic[KeyT]):
 
 
 # ---------------------------------------------------------------------------
-# 5. RadixBinaryTreeView (fireball::radix_binary_tree_view<Key, Value, RadixShift>)
+# 5. RadixBinaryTreeView (fireball::radix_binary_tree_view<Key, Value, RadixShift, KeyProjection>)
 # ---------------------------------------------------------------------------
 
+def bswap32(v: int) -> int:
+    """32-bit byte-order reversal for maximizing Radix table distribution on UnifiedPC."""
+    return (((v & 0xFF) << 24) |
+            ((v & 0xFF00) << 8) |
+            ((v >> 8) & 0xFF00) |
+            ((v >> 24) & 0xFF))
+
+
 class RadixBinaryTreeView(Generic[ValT]):
-    """fireball::radix_binary_tree_view<Key, Value, RadixShift>:
+    """fireball::radix_binary_tree_view<Key, Value, RadixShift, KeyProjection>:
     Combines an O(1) Radix Table (coarse prefix lookup) with bounded local
-    binary search on a sorted key-value array.
+    binary search on a sorted key-value array. Supports optional KeyProjection
+    (such as bswap32) to project high-entropy lower bytes to radix prefix.
     """
 
-    __slots__ = ("map_view", "radix_table", "radix_shift")
+    __slots__ = ("map_view", "radix_table", "radix_shift", "key_transform")
 
     def __init__(self, keys: Sequence[int], values: Sequence[ValT],
-                 radix_table: Sequence[tuple[int, int]], radix_shift: int):
+                 radix_table: Sequence[tuple[int, int]], radix_shift: int,
+                 key_transform: Callable[[int], int] | None = None):
         self.map_view = FlatMapView(keys, values)
         self.radix_table = radix_table  # prefix -> (first, last) entry indices
         self.radix_shift = radix_shift
+        self.key_transform = key_transform
 
     def find(self, key: int) -> ValT | None:
-        prefix = key >> self.radix_shift
+        rk = self.key_transform(key) if self.key_transform is not None else key
+        prefix = rk >> self.radix_shift
         if prefix < 0 or prefix >= len(self.radix_table):
             return None
         first, last = self.radix_table[prefix]

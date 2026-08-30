@@ -143,7 +143,11 @@ in `interface_wit.md`, not their internal hardware-facing implementations.
 | `vmmio.py` | Self-contained `VMMIOController` (3-tier security gate, 20-bit VPN FlatMap, 16-slot Folding XOR TLB) |
 | `ipc_router.py` | Self-contained `IPCRouter` (3-stage routing, RBAC matrix, zero-copy Revoke/Enqueue/Grant handoff) |
 | `platform_memory.py` | Self-contained `MemoryManager` & `PMSAv8MPU` (fixed-size partition leasing, typed slot pools, RAII `SharedBlock`) |
-| `system.py` | Wires HAL/logger/recovery together; `BusMaster`/`BusSlave` implement `shm-slice`; the real `fireball_call` ID table (`FbSyscallId`) over `VMMIOController` + `IPCRouter` + `MemoryManager` + real `WasiErrno` codes |
+| `system.py` | Wires HAL/logger/recovery together; `BusMaster`/`BusSlave` implement `shm-slice`; the real `fireball_call` ID table (`FbSyscallId`) dispatched via `RadixBinaryTreeView` over `VMMIOController` + `IPCRouter` + `MemoryManager` + real `WasiErrno` codes |
+| `wasi.py` | WASI Preview 1 host bridge (`fd_write`, `fd_read`, `fd_close`, `clock_time_get`, `proc_exit`, `random_get`) with `RadixBinaryTreeView` $O(k)$ symbol resolution |
+| `loader.py` | WASM binary loader, verification (V1-V6), multi-module registry, and `RadixBinaryTreeView` $O(k)$ export/import symbol indexing |
+| `debugger.py` | GDB Remote Serial Protocol (RSP) dispatcher (`$?`, `$g`, `$G`, `$m`, `$M`, `$Z0`, `$z0`), breakpoint management, and memory assertions |
+| `runtime_engine.py` | `IntegratedHybridEngine` (Tier 2 Interpreter $\to$ 2-bit Card Marking Hotspot detection $\to$ Tier 3 JIT Trace compilation $\to$ native execution) |
 | `main.py` | Runs the HAL/logger/scheduler/recovery demo, then the WASM/JIT demo (a guest reaching `WASI_FD_WRITE` and a real `IPC_LOOKUP`/`SEND`/`RECV` round trip via `fireball_call`), and reports findings |
 | `tests.py` | Full invariant test suite (93 tests covering COOS, scheduler, memory, HAL, logger, recovery, JIT, vMMIO, IPC, syscalls, WASI, and containers) |
 | `leb128.py` | LEB128 varint encode/decode |
@@ -161,6 +165,8 @@ in `interface_wit.md`, not their internal hardware-facing implementations.
 | `test_x64_stencils.py` | Every stencil, executed as real machine code and checked against Python-computed expected values |
 | `test_x64_jit.py` | End-to-end: build real `.wasm` bytes -> parse -> JIT -> execute -> cross-check vs. the interpreter |
 | `test_host_call.py` | The `fireball_call` bridge in isolation: every arity 0-7, register+stack marshalling, ABI alignment |
+| `test_loader.py` | Invariant tests for WASM loader, verification rules V1-V6, and RadixBinaryTreeView symbol lookup |
+| `test_debugger.py` | Invariant tests for GDB RSP parser, register/memory inspection, and breakpoint hit detection |
 | `test_concept_differential.py` | Differential equivalence test suite asserting 100% behavioral identity between `experiments/pysim` and `docs/**/concepts` |
 | `aobench.py` | Full 3D Raytracing Ambient Occlusion Benchmark (AO-Bench) running via WASM, JIT trace execution, and WASI `fd_write` |
 
@@ -196,6 +202,8 @@ hand-counting the *first* four bugs below is exactly what this replaced.
 # from this directory, with any Python 3.11+ (stdlib + ctypes only)
 python tests.py
 python test_concept_differential.py
+python test_loader.py
+python test_debugger.py
 python test_x64_asm.py
 python test_x64_stencils.py
 python test_x64_jit.py

@@ -21,8 +21,8 @@ Execution model:
 
 from __future__ import annotations
 
+import ctypes
 from typing import Any, Callable
-
 
 from system_containers import BitView, RingBuffer
 
@@ -126,17 +126,24 @@ class JITTraceHeader:
 
 
 class JITTrace:
-    """Compiled native trace descriptor backed by JITTraceHeader."""
+    """Compiled native trace descriptor backed by JITTraceHeader and native ctypes function pointer."""
 
-    def __init__(self, head_pc: int, native_fn: Callable[..., Any], size_bytes: int = 64,
-                 next_pc: int | None = None, loops_to: int | None = None):
+    def __init__(self, head_pc: int, fn: Any = None, size_bytes: int = 64,
+                 next_pc: int | None = None, loops_to: int | None = None,
+                 has_return_val: bool = False, buf: Any = None, native_fn: Any = None):
         self.head_pc = head_pc
-        self.native_fn = native_fn
+        self.fn = fn or native_fn        # Direct ctypes CFUNCTYPE function pointer or callable
         self.size_bytes = size_bytes
-        self.next_pc = next_pc          # Unconditional fallthrough successor
-        self.loops_to = loops_to        # Conditional loop backedge (never auto-chained)
+        self.next_pc = next_pc           # Unconditional fallthrough successor
+        self.loops_to = loops_to         # Conditional loop backedge (never auto-chained)
+        self.has_return_val = has_return_val
         self.header = JITTraceHeader(head_wasm_pc=head_pc, trace_byte_size=size_bytes)
         self.chain_next: int | None = None
+        self._exec_buf = buf             # Keeps executable buffer alive in memory
+
+    @property
+    def native_fn(self) -> Any:
+        return self.fn
 
     @property
     def flags(self) -> int:
@@ -145,6 +152,20 @@ class JITTrace:
     @flags.setter
     def flags(self, val: int) -> None:
         self.header.flags = val
+
+    def __call__(self, locals_ptr: int | Any, memory_base: int | Any = 0) -> int:
+        """Invokes the native JIT trace directly via ctypes (same convention as opcode handler)."""
+        return self.fn(locals_ptr, memory_base)
+
+    def invoke(self, ctx: Any) -> int:
+        """Helper to invoke trace directly on WASMContext via ctypes pointers."""
+        try:
+            res = self.fn(ctx.locals_ptr, ctx.mem_ptr)
+        except TypeError:
+            res = self.fn(ctx)
+        if self.has_return_val and isinstance(res, int):
+            ctx.push(res & 0xFFFF_FFFF)
+        return res
 
 
 class JITCacheBank:
@@ -362,12 +383,59 @@ class RuntimeEngine:
 
 
 class WASMContext:
-    """Execution context for hybrid Tiered Interpreter/JIT execution."""
+    """Execution context for hybrid Tiered Interpreter/JIT execution with direct ctypes backing."""
 
-    def __init__(self, locals_values: list[int] | None = None, stack_capacity: int = 64):
-        self.locals = list(locals_values or [0] * 8)
+    def __init__(self, locals_values: list[int] | None = None, memory: bytearray | None = None,
+                 stack_capacity: int = 64):
+        n_locals = max(len(locals_values or []), 16)
+        self._c_locals = (ctypes.c_int64 * n_locals)()
+        if locals_values:
+            for i, v in enumerate(locals_values):
+                self._c_locals[i] = v
+        self._n_locals = n_locals
         self.stack: list[int] = []
         self.stack_capacity = stack_capacity
+        self.memory = memory
+        if memory is not None:
+            self._c_mem = (ctypes.c_char * len(memory)).from_buffer(memory)
+        else:
+            self._c_mem = None
+
+    @property
+    def locals_ptr(self) -> ctypes.c_void_p:
+        return ctypes.cast(self._c_locals, ctypes.c_void_p)
+
+    @property
+    def mem_ptr(self) -> ctypes.c_void_p:
+        if self._c_mem is not None:
+            return ctypes.c_void_p(ctypes.addressof(self._c_mem))
+        return ctypes.c_void_p(0)
+
+    class _LocalsView:
+        def __init__(self, ctx: WASMContext):
+            self._ctx = ctx
+
+        def __getitem__(self, idx: int) -> int:
+            return self._ctx._c_locals[idx] & 0xFFFF_FFFF
+
+        def __setitem__(self, idx: int, val: int) -> None:
+            self._ctx._c_locals[idx] = val & 0xFFFF_FFFF
+
+        def __len__(self) -> int:
+            return self._ctx._n_locals
+
+        def __iter__(self):
+            for i in range(self._ctx._n_locals):
+                yield self._ctx._c_locals[i] & 0xFFFF_FFFF
+
+    @property
+    def locals(self):
+        return self._LocalsView(self)
+
+    @locals.setter
+    def locals(self, values: list[int]):
+        for i, v in enumerate(values):
+            self._c_locals[i] = v & 0xFFFF_FFFF
 
     def push(self, val: int) -> None:
         if len(self.stack) >= self.stack_capacity:
@@ -395,39 +463,46 @@ class WASMTraceCompiler:
 
     def compile_trace(self, head_pc: int, block: BasicBlock) -> JITTrace:
         ops = list(block.ops)
+        has_ret = any(op.startswith("i32.") for op, _ in ops)
 
-        def trace_fn(ctx: WASMContext) -> str:
+        def trace_fn(locals_ptr: Any, memory_base: Any = 0) -> int:
+            # Emulated handler matching identical C signature
+            c_arr = ctypes.cast(locals_ptr, ctypes.POINTER(ctypes.c_int64))
+            stk: list[int] = []
             for op, arg in ops:
                 if op == "i32.const":
-                    ctx.push(arg)
+                    stk.append(arg)
                 elif op == "i32.add":
-                    b, a = ctx.pop(), ctx.pop()
-                    ctx.push((a + b) & 0xFFFF_FFFF)
+                    b, a = stk.pop(), stk.pop()
+                    stk.append((a + b) & 0xFFFF_FFFF)
                 elif op == "i32.sub":
-                    b, a = ctx.pop(), ctx.pop()
-                    ctx.push((a - b) & 0xFFFF_FFFF)
+                    b, a = stk.pop(), stk.pop()
+                    stk.append((a - b) & 0xFFFF_FFFF)
                 elif op == "i32.mul":
-                    b, a = ctx.pop(), ctx.pop()
-                    ctx.push((a * b) & 0xFFFF_FFFF)
+                    b, a = stk.pop(), stk.pop()
+                    stk.append((a * b) & 0xFFFF_FFFF)
                 elif op == "local.get":
-                    ctx.push(ctx.locals[arg])
+                    stk.append(c_arr[arg] & 0xFFFF_FFFF)
                 elif op == "local.set":
-                    ctx.locals[arg] = ctx.pop()
-            return "OK"
+                    c_arr[arg] = stk.pop() & 0xFFFF_FFFF
+            return stk[-1] if stk else 0
 
-        return JITTrace(head_pc=head_pc, native_fn=trace_fn, size_bytes=len(ops) * 4,
-                        next_pc=block.next_pc, loops_to=block.loops_to)
+        c_fn = ctypes.CFUNCTYPE(ctypes.c_int64, ctypes.c_void_p, ctypes.c_void_p)(trace_fn)
+        trace = JITTrace(head_pc=head_pc, fn=c_fn, size_bytes=len(ops) * 4,
+                         next_pc=block.next_pc, loops_to=block.loops_to, has_return_val=has_ret)
+        trace._keepalive = c_fn
+        return trace
 
 
 class IntegratedHybridEngine:
     """Full Tiered Runtime Engine: Interpreter execution -> 2-bit card tracking ->
     Cooperative Yield -> Idle-Hook Batch Compilation -> Trace Chaining -> JIT execution."""
 
-    def __init__(self, yield_threshold: int = 4, card_shift: int = 4):
+    def __init__(self, yield_threshold: int = 4, card_shift: int = 4, compiler: Any = None):
         self.bitmap = HotspotBitmap(card_shift=card_shift)
         self.history = HistoryRing(capacity=32)
         self.cache = JITMultiBufferCache()
-        self.compiler = WASMTraceCompiler()
+        self.compiler = compiler or WASMTraceCompiler()
         self.compile_queue: list[int] = []
         self.yield_threshold = yield_threshold
         self.exec_counter = 0
@@ -497,9 +572,9 @@ class IntegratedHybridEngine:
 
         trace = self.cache.lookup(pc)
         if trace is not None:
-            # Tier 3 JIT Trace Execution
+            # Tier 3 JIT Trace Direct C-Call via ctypes
             self.jit_traces += 1
-            trace.native_fn(ctx)
+            trace.invoke(ctx)
             # Trace chaining or fallback to interpreter
             next_pc = trace.chain_next if trace.chain_next is not None else self._next_pc(block, ctx)
         else:

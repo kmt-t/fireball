@@ -1909,9 +1909,8 @@ def test_guest_wasi_04_jit_fd_write_native():
         compiler = TraceCompiler(host_trampolines={1: t_addr})
         trace = compiler.compile_trace(0x100, block)
         w_ctx = WASMContext(locals_values=[0])
-        res = trace.native_fn(w_ctx)
+        trace.invoke(w_ctx)
 
-        assert res == "OK"
         assert w_ctx.locals[0] == 0  # WASI SUCCESS
         assert sysv.transport.drain() == msg
         nwritten = struct.unpack_from("<I", ctx.guest_memory, 48)[0]
@@ -1950,9 +1949,8 @@ def test_guest_wasi_05_jit_fireball_call_ipc_messaging():
         compiler = TraceCompiler(host_trampolines={1: t_addr})
         trace = compiler.compile_trace(0x200, block)
         w_ctx = WASMContext(locals_values=[0])
-        res = trace.native_fn(w_ctx)
+        trace.invoke(w_ctx)
 
-        assert res == "OK"
         recv_len = w_ctx.locals[0]
         assert recv_len == len(payload)
         assert bytes(ctx.guest_memory[64:64 + recv_len]) == payload

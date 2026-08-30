@@ -109,29 +109,16 @@ class TraceCompiler:
 
         buf = ExecutableBuffer(max(len(trace_bytes), 64))
         buf.write(0, trace_bytes)
+        # Direct ctypes C function pointer matching the opcode handler calling convention:
+        # int64_t (*)(void* locals_ptr, void* memory_base)
         fn = buf.function_at(0, ctypes.c_int64, [ctypes.c_void_p, ctypes.c_void_p])
 
-        def native_runner(ctx: WASMContext) -> str:
-            n_loc = max(len(ctx.locals), 1)
-            LocalsArray = ctypes.c_int64 * n_loc
-            locals_arr = LocalsArray(*[0] * n_loc)
-            for i, v in enumerate(ctx.locals):
-                locals_arr[i] = v
-
-            res = fn(ctypes.cast(locals_arr, ctypes.c_void_p), ctypes.c_void_p(0))
-            for i in range(len(ctx.locals)):
-                ctx.locals[i] = locals_arr[i] & I32_MASK
-            if stack_depth > 0:
-                ctx.push(res & I32_MASK)
-            return "OK"
-
-        trace = JITTrace(
+        return JITTrace(
             head_pc=head_pc,
-            native_fn=native_runner,
+            fn=fn,
             size_bytes=len(trace_bytes),
             next_pc=block.next_pc,
             loops_to=block.loops_to,
+            has_return_val=(stack_depth > 0),
+            buf=buf,
         )
-        # Keep buffer alive for the lifetime of this JITTrace
-        trace._exec_buf = buf
-        return trace

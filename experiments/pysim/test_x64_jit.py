@@ -2,8 +2,8 @@
 experiments/pysim/test_x64_jit.py
 
 Spec-compliant tests for Fireball Trace-based Copy-and-Patch JIT Compiler (x64_jit.py).
-Tests strictly per-trace basic-block compilation, native execution,
-host-call dispatch, and direct trace chaining (docs/components/tier3_jit/jit_compiler.md).
+Verifies direct ctypes C-calling of JIT traces sharing the identical signature
+with interpreter opcode handlers (docs/components/tier3_jit/jit_compiler.md).
 """
 
 from __future__ import annotations
@@ -14,8 +14,8 @@ from runtime_engine import BasicBlock, CardState, IntegratedHybridEngine, WASMCo
 from x64_jit import TraceCompiler
 
 
-def test_trace_compiler_arithmetic_ops():
-    """JITC-01: TraceCompiler compiles basic arithmetic and bitwise ops into native code."""
+def test_trace_compiler_arithmetic_ops_direct_ctypes():
+    """JITC-01: TraceCompiler compiles basic arithmetic and invokes directly via ctypes."""
     compiler = TraceCompiler()
 
     # Block: local[1] = (local[0] + 10) * 3 - 5
@@ -35,16 +35,27 @@ def test_trace_compiler_arithmetic_ops():
     )
 
     trace = compiler.compile_trace(0x100, block)
-    ctx = WASMContext(locals_values=[5, 0])
-    res = trace.native_fn(ctx)
 
-    assert res == "OK"
-    # (5 + 10) * 3 - 5 = 40
+    # 1. Direct call via ctypes C function pointer fn(locals_ptr, mem_ptr)
+    locals_arr = (ctypes.c_int64 * 8)(5, 0)
+    res = trace.fn(ctypes.cast(locals_arr, ctypes.c_void_p), ctypes.c_void_p(0))
+    assert res == 0
+    assert locals_arr[1] == 40
+
+    # 2. Call via trace(locals_ptr, mem_ptr)
+    locals_arr2 = (ctypes.c_int64 * 8)(10, 0)
+    trace(ctypes.cast(locals_arr2, ctypes.c_void_p), 0)
+    # (10 + 10) * 3 - 5 = 55
+    assert locals_arr2[1] == 55
+
+    # 3. Call via trace.invoke(ctx)
+    ctx = WASMContext(locals_values=[5, 0])
+    trace.invoke(ctx)
     assert ctx.locals[1] == 40
 
 
-def test_trace_compiler_bitwise_and_shifts():
-    """JITC-02: TraceCompiler compiles bitwise and, or, xor, shl, shr_u, shr_s."""
+def test_trace_compiler_bitwise_and_shifts_direct_ctypes():
+    """JITC-02: TraceCompiler compiles bitwise and, or, xor, shl, shr_u, shr_s called via ctypes."""
     compiler = TraceCompiler()
 
     block = BasicBlock(
@@ -64,13 +75,13 @@ def test_trace_compiler_bitwise_and_shifts():
 
     trace = compiler.compile_trace(0x200, block)
     ctx = WASMContext(locals_values=[0x0F, 0x07, 0, 0])
-    trace.native_fn(ctx)
+    trace.invoke(ctx)
 
     assert ctx.locals[2] == (0x0F & 0x07)
     assert ctx.locals[3] == (0x0F << 2)
 
 
-def test_trace_compiler_host_call():
+def test_trace_compiler_host_call_direct_ctypes():
     """JITC-03: TraceCompiler executes host function calls via ctypes native trampolines."""
     received = []
 
@@ -94,7 +105,7 @@ def test_trace_compiler_host_call():
 
     trace = compiler.compile_trace(0x300, block)
     ctx = WASMContext(locals_values=[0])
-    trace.native_fn(ctx)
+    trace.invoke(ctx)
 
     assert received == [42]
     assert ctx.locals[0] == 999
@@ -102,7 +113,7 @@ def test_trace_compiler_host_call():
 
 def test_trace_chaining_between_traces():
     """JITC-04: Resident consecutive traces chain directly via chain_next."""
-    engine = IntegratedHybridEngine(yield_threshold=10)
+    engine = IntegratedHybridEngine(yield_threshold=10, compiler=TraceCompiler())
 
     block_a = BasicBlock(
         head_pc=0x100,
@@ -143,7 +154,7 @@ def test_trace_chaining_between_traces():
 
 def test_hybrid_interpreter_to_jit_trace_elevation():
     """JITC-05: Hotspot loop starts in Interpreter -> JIT trace compiles on idle -> runs native."""
-    engine = IntegratedHybridEngine(yield_threshold=3)
+    engine = IntegratedHybridEngine(yield_threshold=3, compiler=TraceCompiler())
 
     # Loop: local[1] += local[0]; local[0] -= 1; branch while local[0] != 0
     loop_body = BasicBlock(
@@ -198,4 +209,4 @@ if __name__ == "__main__":
     for test in ALL_TESTS:
         test()
         print(f"[PASS] {test.__name__}")
-    print(f"\n[PASS] All {len(ALL_TESTS)} pure trace JIT tests passed.")
+    print(f"\n[PASS] All {len(ALL_TESTS)} pure trace JIT direct ctypes tests passed.")

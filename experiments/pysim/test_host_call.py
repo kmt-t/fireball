@@ -1,4 +1,4 @@
-﻿"""
+"""
 experiments/pysim/test_host_call.py
 
 Tests host-function dispatch via pure trace JIT compiler (TraceCompiler).
@@ -43,7 +43,7 @@ def _run_with_host_call(nparams: int, arg_values: list[int]) -> tuple[int, list[
     compiler = TraceCompiler(host_trampolines={1: trampoline_addr})
     trace = compiler.compile_trace(0x100, block)
     ctx = WASMContext(locals_values=[0])
-    trace.native_fn(ctx)
+    trace.invoke(ctx)
 
     return ctx.locals[0], received
 

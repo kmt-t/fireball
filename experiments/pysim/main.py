@@ -233,7 +233,7 @@ def run_wasm_demo(sysv: System) -> None:
     compiler = TraceCompiler(host_trampolines={1: t_addr})
     trace = compiler.compile_trace(0x300, block)
     w_ctx = WASMContext(locals_values=[0])
-    trace.native_fn(w_ctx)
+    trace.invoke(w_ctx)
 
     recv_len = w_ctx.locals[0]
     print(f"  guest_main() -> JIT native IPC round-trip recv_len={recv_len} (expected {len(payload)}) [OK]")

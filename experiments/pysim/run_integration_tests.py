@@ -23,6 +23,8 @@ SCENARIOS = [
     ("Scenario 6: COOS Cooperative Multitasking", "experiments/pysim/scenario6_coos_multitask_yield.py"),
     ("Scenario 7: GDB Remote Debugger Socket Session", "experiments/pysim/scenario7_gdb_socket_debugger.py"),
     ("Scenario 8: Storage Coverage & GDB Debugger", "experiments/pysim/scenario8_comprehensive_storage_coverage.py"),
+    ("Scenario 9: IPC Router & Structured Logging", "experiments/pysim/scenario9_ipc_router_and_logging.py"),
+    ("Scenario 10: vMMIO Virtual Devices & Translation", "experiments/pysim/scenario10_vmmio_virtual_devices.py"),
 ]
 
 

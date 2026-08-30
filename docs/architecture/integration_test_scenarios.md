@@ -4,9 +4,32 @@
 
 本書は、Fireball ハイパーバイザの全 Tier（Tier 1 Core、Tier 2 Runtime、Tier 3 JIT）における各コンポーネント間の結合動作を、独立したリアル WASM バイトコード（WAT より生成されたバイナリ）を用いて包括的に検証する**結合テストシナリオ（End-to-End Component Integration Test Scenarios）**の仕様を定義する。
 
-- **対象 Tier**: Tier 1 Core (`system_containers`, `system_syscall`, `os_scheduler`), Tier 2 Runtime (`runtime_loader`, `runtime_interpreter`, `runtime_vsoc`, `wasi`), Tier 3 JIT (`jit_compiler`, `jit_runtime`)
+- **対象 Tier**: Tier 1 Core (`os_coos`, `os_scheduler`, `system_config`, `system_containers`, `system_logging`, `system_syscall`), Tier 1 Interface (`interface_wit`, `ipc_router`, `system_service`), Tier 2 Runtime (`runtime_vsoc`, `runtime_loader`, `runtime_interpreter`, `runtime_vmmio`, `debug_manager`), Tier 3 Platform & JIT (`platform_hal`, `platform_memory`, `jit_compiler`, `jit_runtime`)
 - **テストランナー**: `experiments/pysim/run_integration_tests.py`
-- **テストスクリプト群**: `experiments/pysim/scenario1_loader_and_memory.py` 〜 `experiments/pysim/scenario6_coos_multitask_yield.py`
+- **テストスクリプト群**: `experiments/pysim/scenario1_loader_and_memory.py` 〜 `experiments/pysim/scenario10_vmmio_virtual_devices.py`
+
+### 1.1 コンポーネント × 結合テストシナリオ カバレッジマトリクス (Coverage Matrix)
+
+| 分類 / Tier | コンポーネント設計書 | 主な検証責務 | カバーシナリオ |
+| :--- | :--- | :--- | :--- |
+| **Tier 1 Core** | [`os_coos.md`](../components/tier1_core/os_coos.md) | 協調型マルチタスク、コルーチン実行制御 | Scenario 6, 9 |
+| | [`os_scheduler.md`](../components/tier1_core/os_scheduler.md) | Fuel / `yield_every` 境界中断、DIRECT_SWITCH | Scenario 6, 9 |
+| | [`system_config.md`](../components/tier1_core/system_config.md) | システム静的定数、スタック・RAM容量制約 | Scenario 1, 10 |
+| | [`system_containers.md`](../components/tier1_core/system_containers.md) | `RadixBinaryTreeView` (bswap32), `FlatMapView`, `RingBuffer` | Scenario 1, 4, 5, 9 |
+| | [`system_logging.md`](../components/tier1_core/system_logging.md) | 構造化ロギング、LogDictionary、UART 出力 | Scenario 9 |
+| | [`system_syscall.md`](../components/tier1_core/system_syscall.md) | `fd_write` 分散ギャザー、`proc_exit`、`fireball_call` 代理 | Scenario 2, 10 |
+| **Tier 1 Interface** | [`interface_wit.md`](../components/tier1_interface/interface_wit.md) | WASI Preview 1 ABI、型シグネチャ整合 | Scenario 2 |
+| | [`ipc_router.md`](../components/tier1_interface/ipc_router.md) | 3段階ルーティング、RBAC、Zero-Copy 所有権移譲 | Scenario 9 |
+| | [`system_service.md`](../components/tier1_interface/system_service.md) | システムサービス呼び出し、WASI トランスポート | Scenario 2 |
+| **Tier 2 Runtime** | [`runtime_vsoc.md`](../components/tier2_runtime/runtime_vsoc.md) | 統合 ExecEnv、モジュールリンク、共有メモリ | Scenario 1, 4, 6, 8 |
+| | [`runtime_loader.md`](../components/tier2_runtime/runtime_loader.md) | WASM バイナリパース、Active Data/Elem セグメント | Scenario 1, 8 |
+| | [`runtime_interpreter.md`](../components/tier2_runtime/runtime_interpreter.md) | CPS 4引数ディスパッチ、全幅メモリ、深い再帰、制御フレーム | Scenario 1〜10 |
+| | [`runtime_vmmio.md`](../components/tier2_runtime/runtime_vmmio.md) | Bit 31 RAM Bypass、FlatMap PTE、TLB[16]、仮想デバイス | Scenario 10 |
+| | [`debug_manager.md`](../components/tier2_runtime/debug_manager.md) | GDB RSP TCP ソケット接続、ブレークポイント、レジスタ/メモリ改変 | Scenario 7, 8 |
+| **Tier 3 Platform** | [`platform_hal.md`](../components/tier3_platform/platform_hal.md) | UartTransport ソケットペア、タイマー | Scenario 2, 7, 9 |
+| | [`platform_memory.md`](../components/tier3_platform/platform_memory.md) | リニアメモリページ拡張（`memory.grow`）、MPU 領域保護 | Scenario 1, 4, 8, 10 |
+| **Tier 3 JIT** | [`jit_compiler.md`](../components/tier3_jit/jit_compiler.md) | Copy-and-Patch JIT 生成、PIC トレース、差分検証 | Scenario 4, 5, 8 |
+| | [`jit_runtime.md`](../components/tier3_jit/jit_runtime.md) | 3面キャッシュ代謝、2-bit Card Marking、UnifiedPC + bswap32 | Scenario 4, 5 |
 
 ---
 
@@ -145,6 +168,40 @@
 
 ---
 
+### シナリオ 9: Tier 1 Interface IPC Router & Structured Logging
+- **スクリプト**: [`experiments/pysim/scenario9_ipc_router_and_logging.py`](file:///x:/hotspot/workspace/mysrc/fireball/experiments/pysim/scenario9_ipc_router_and_logging.py)
+- **対象コンポーネント**: `ipc_router`, `system_logging`, `system_containers`, `platform_hal`
+- **検証シナリオ**:
+  - 3段階ルーティングパイプライン: FlatMapView URI 検索、RBAC ロール権限判定、Zero-Copy 所有権移譲
+  - キュー溢れ時の Rollback 復元とターゲットフォールト時の Drop Handler リソース回収
+  - `LogDictionary` によるポインタ書式（`%s`）の静的拒絶と、COOS アイドルフラッシュによる UART 出力
+
+| ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| INT-80 | IPC 3段階ルーティングと所有権移譲 | 送信元 `CLIENT_APP` | `route_message` 実行後 `receive_message` | 所有権が `SENDER_OWNS` $\to$ `IN_FLIGHT` $\to$ `RECEIVER_OWNS` へ遷移する | `ipc_router.md` §3.3 |
+| INT-81 | RBAC 権限拒絶とキュー溢れ Rollback | 未許可ロール / キュー満杯 | メッセージ送信 | `ERR_PERMISSION_DENIED` / `ERR_QUEUE_FULL` で安全に拒絶され送信元へロールバック | `ipc_router.md` §4.1 |
+| INT-82 | 構造化ロギングと安全書式検証 | LogDictionary 登録 | `log_event` 後 `flush()` | 不正書式 `%s` が拒絶され、ログレベルフィルタを経て UART へ正常出力される | `system_logging.md` |
+
+---
+
+### シナリオ 10: Tier 2 Runtime vMMIO Virtual Devices & Address Translation
+- **スクリプト**: [`experiments/pysim/scenario10_vmmio_virtual_devices.py`](file:///x:/hotspot/workspace/mysrc/fireball/experiments/pysim/scenario10_vmmio_virtual_devices.py)
+- **対象コンポーネント**: `runtime_vmmio`, `system_syscall`, `platform_memory`, `system_config`
+- **検証シナリオ**:
+  - Bit 31 RAM Bypass フラグ: ゲストリニア RAM（Bit 31 == 0）の $O(1)$ 高速パス
+  - 仮想デバイス（FC=0xC）、共有メモリ（FC=0xE）、物理パススルー（FC=0xF）の PTE マッピング
+  - 4-bit Folding XOR Hash による Direct-Mapped Software TLB[16] ヒット/ミス遷移
+  - タスク間共有メモリの所有権分離と `TRAP_OWNER_MISMATCH` 検知
+
+| ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| INT-90 | Bit 31 RAM Bypass 高速パス | リニア RAM アドレス | `access()` 実行 | ページテーブルを介さず `OK_GUEST_RAM` で即時バイパスされる | `runtime_vmmio.md` §3.3 |
+| INT-91 | 仮想デバイス書き込みとハンドラディスパッチ | デバイスページ登録済み | `access()` で書き込み | `OK_SYSCALL` が返り登録ハンドラが呼び出される | `runtime_vmmio.md` §4.1 |
+| INT-92 | 16エントリ Direct-Mapped TLB キャッシュ | 同一ページ反復アクセス | 連続 `access()` | 2回目以降が TLB ヒットとなり `tlb_hits` が増加する | `runtime_vmmio.md` §4.1 |
+| INT-93 | タスク間共有メモリ所有権分離 | Task 1 が Task 2 SHM アクセス | `access()` 実行 | `TRAP_OWNER_MISMATCH` で安全にトラップ遮断される | `runtime_vmmio.md` §4.6 |
+
+---
+
 ## 3. 実行方法と検証結果
 
 ```bash
@@ -153,6 +210,7 @@ uv run --system-certs --with wasmtime python experiments/pysim/run_integration_t
 ```
 
 ### 検証実績
-- **全 8 シナリオ**: **8/8 PASSED** (約 5.5 秒)
+- **全 10 シナリオ**: **10/10 PASSED** (約 6.5 秒)
+- **全 18 コンポーネント 100% カバレッジ**: Tier 1 Core、Tier 1 Interface、Tier 2 Runtime、Tier 3 Platform & JIT の全コンポーネントを実動検証。
 - **完全差分検証**: 全シナリオにおいて、純粋インタープリタ実行と JIT 実行の出力がバイト単位・値単位で 100% 一致。
-- **全ストレージ階層カバレッジ**: グローバル変数（可変/不変）、ローカル変数、リニアメモリ（8/16/32-bit 全幅・符号/ゼロ拡張）の読み書きおよびデバッガ動的介入を網羅実証。
+- **GDB リモートデバッグ & vMMIO & IPC**: 実ソケット GDB 対話、仮想 MMIO 変換、Zero-Copy IPC ルーティングが完全動作。

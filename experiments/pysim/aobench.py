@@ -13,6 +13,7 @@ Genuine 3D Ambient Occlusion Benchmark (AO-Bench):
 """
 
 from __future__ import annotations
+
 import sys
 from pathlib import Path
 
@@ -36,13 +37,8 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-import sys
-from pathlib import Path
-import sys
-from pathlib import Path
-import sys
-from pathlib import Path
 import time
+
 import wasmtime
 from interpreter import Interpreter
 from system import System

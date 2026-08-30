@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import sys
 from pathlib import Path
 
@@ -22,11 +23,6 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-import sys
-from pathlib import Path
-import sys
-from pathlib import Path
-
 """
 experiments/pysim/test_debugger.py
 Comprehensive tests for Debug Manager & GDB RSP Protocol Engine (debugger.py).
@@ -34,8 +30,6 @@ Strictly implements and verifies all test cases from:
 docs/components/tier2_runtime/tests/debug_manager_test_spec.md (DBG-01 ~ DBG-15).
 """
 
-import sys
-from pathlib import Path
 from debugger import DebuggerManager, GDBRspProtocol
 from runtime_engine import BasicBlock, IntegratedHybridEngine, WASMContext
 from x64_jit import TraceCompiler

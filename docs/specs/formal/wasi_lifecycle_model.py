@@ -7,7 +7,7 @@ pyModelChecking による WASI Preview 1 ABI の
 """
 
 from pyModelChecking import Kripke
-from pyModelChecking.CTL import AG, Not, AtomicProposition
+from pyModelChecking.CTL import AG, AtomicProposition, Not
 
 BACKS = ["specs/wasi_preview1_abi.md"]
 

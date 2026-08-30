@@ -21,9 +21,6 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-import sys
-from pathlib import Path
-
 """Integration Scenario 3: Tier 2 Interpreter + Recursion & Indirect Table Dispatch.
 
 Tests:
@@ -33,10 +30,10 @@ Tests:
 """
 
 import wasmtime
-from wasm_reader import parse
 from interpreter import Interpreter
 from system import System
 from wasi import WasiHostContext
+from wasm_reader import parse
 
 SCENARIO3_WAT = """
 (module

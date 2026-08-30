@@ -7,6 +7,7 @@ module carrying them still loads.
 """
 
 from __future__ import annotations
+
 import sys
 from pathlib import Path
 
@@ -30,10 +31,9 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-import sys
-from pathlib import Path
 from leb128 import decode_signed, decode_unsigned
 from wasm_module import (
+    VALTYPE_BYTES,
     DataSegment,
     Element,
     Export,
@@ -44,7 +44,6 @@ from wasm_module import (
     Memory,
     Module,
     Table,
-    VALTYPE_BYTES,
 )
 
 MAGIC = b"\x00asm"

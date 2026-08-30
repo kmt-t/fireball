@@ -5,6 +5,7 @@ execute seamlessly and preserve all architectural invariants across Tier 1, Tier
 """
 
 from __future__ import annotations
+
 import sys
 from pathlib import Path
 
@@ -29,14 +30,13 @@ for _p in [
         sys.path.insert(0, _sp)
 
 import wasmtime
-from wasm_reader import parse
-from interpreter import Interpreter
-from runtime_engine import RuntimeEngine, CardState
-from x64_jit import TraceCompiler
-from system import System, FbSyscallId
-from wasi import WasiHostContext
 from debugger import DebuggerManager
-from system_containers import BitView, FlatMapView, RadixBinaryTreeView, RingBuffer
+from interpreter import Interpreter
+from runtime_engine import RuntimeEngine
+from system import System
+from wasi import WasiHostContext
+from wasm_reader import parse
+from x64_jit import TraceCompiler
 
 PAIRWISE_CASES = [
     # (ID, engine, cache, mem_width, storage, host_call, scheduler, debugger)
@@ -108,8 +108,8 @@ WAT_TEMPLATE = """
 )
 """
 
-from wasi_dummy_fs import WasiDummyContext, VirtualFile
 from hal_dummy_drivers import DummyGpioDriver, PinMode
+from wasi_dummy_fs import WasiDummyContext
 
 
 def run_single_pairwise_case(case_tuple: tuple) -> None:

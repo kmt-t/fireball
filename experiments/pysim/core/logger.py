@@ -13,6 +13,7 @@ per docs/components/tier1_core/system_logging.md and the interface_wit.md
 """
 
 from __future__ import annotations
+
 import sys
 from pathlib import Path
 
@@ -36,11 +37,10 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-import sys
-from pathlib import Path
 import re
 from dataclasses import dataclass
 from enum import IntEnum
+
 from hal import UartTransport
 
 # Matches a printf-style numeric conversion (%d, %08X, %u, ...) but not a

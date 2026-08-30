@@ -16,6 +16,7 @@ to system_logging.md and interface_wit.md §5.5 (dictionary logger is internal-o
 """
 
 from __future__ import annotations
+
 import sys
 from pathlib import Path
 
@@ -39,35 +40,23 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-import sys
-from pathlib import Path
-import sys
-from pathlib import Path
-import sys
-from pathlib import Path
 import os
 import struct
-import sys
 import time
 from dataclasses import dataclass
 from enum import IntEnum
+
 from hal import ShmBufferPool, ShmHandle, UartTransport
 from ipc_router import IPCMessage, IPCRouter
 from logger import ConsoleOutput, LogDictionary, Logger, LogLevel
 from platform_memory import (
     FB_CONF_MEMORY_POOL_SIZE,
-    FB_TASK_ID_FLIGHT,
     MemoryManager,
-    PMSAv8MPU,
-    SharedBlock,
 )
-
 from runtime_engine import RuntimeEngine
 from scheduler import Scheduler
 from system_containers import RadixBinaryTreeView
 from vmmio import (
-    FC_PASSTHROUGH,
-    FC_SHM,
     FC_STATIC_DEVICE,
     TrapCode,
     VmmioAddress,

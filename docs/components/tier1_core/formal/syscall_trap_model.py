@@ -10,7 +10,7 @@ pyModelChecking による fireball_call トラップ状態プロトコルの
 """
 
 from pyModelChecking import Kripke
-from pyModelChecking.CTL import AG, AF, Imply, Not, AtomicProposition
+from pyModelChecking.CTL import AF, AG, AtomicProposition, Imply, Not
 
 BACKS = ["components/tier1_core/system_syscall.md"]
 

@@ -28,9 +28,6 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-import sys
-from pathlib import Path
-
 UNREACHABLE = 0x00
 NOP = 0x01
 BLOCK = 0x02

@@ -13,6 +13,7 @@ CPS 4-argument calling convention:
 """
 
 from __future__ import annotations
+
 import sys
 from pathlib import Path
 
@@ -36,15 +37,13 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-import sys
-from pathlib import Path
 import ctypes
-import sys
 from typing import Any
+
 import x64_asm as asm
 import x64_stencils as st
 from exec_memory import ExecutableBuffer
-from runtime_engine import BasicBlock, JITTrace, JITTraceHeader, WASMContext
+from runtime_engine import BasicBlock, JITTrace, JITTraceHeader
 
 IS_WINDOWS = sys.platform == "win32"
 I32_MASK = 0xFFFFFFFF

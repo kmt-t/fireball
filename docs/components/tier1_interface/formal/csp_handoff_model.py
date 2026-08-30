@@ -4,7 +4,7 @@ pyModelChecking による IPC CSP チャネル所有権移譲と二重所有不�
 """
 
 from pyModelChecking import Kripke
-from pyModelChecking.CTL import AG, AF, And, Not, Imply, AtomicProposition
+from pyModelChecking.CTL import AF, AG, And, AtomicProposition, Imply, Not
 
 BACKS = ["components/tier1_interface/ipc_router.md"]
 

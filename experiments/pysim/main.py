@@ -8,6 +8,7 @@ Run with:  uv run --project ../.. python main.py     (from this directory)
 """
 
 from __future__ import annotations
+
 import sys
 from pathlib import Path
 
@@ -31,26 +32,16 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-import sys
-from pathlib import Path
-import sys
-from pathlib import Path
-import sys
-from pathlib import Path
 import ctypes
-import os
 import struct
-import wasm_reader
-from exec_memory import ExecutableBuffer
+
 from hal import ShmTrap
-from interpreter import Interpreter
 from logger import LogLevel
 from recovery import RecoveryManager, RecoveryStrategy, Result
-from runtime_engine import BasicBlock, CardState, IntegratedHybridEngine, WASMContext
+from runtime_engine import BasicBlock, IntegratedHybridEngine, WASMContext
 from scheduler import Scheduler
-from system import FbSyscallId, ShmSlice, System, WasiErrno
+from system import FbSyscallId, ShmSlice, System
 from wasi import WasiHostContext
-from wasm_module import I32
 from x64_jit import TraceCompiler
 
 findings: list[str] = []

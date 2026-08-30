@@ -9,8 +9,9 @@ Reference Concept Implementation & Test Suite: COOS Memory Manager
 """
 
 from __future__ import annotations
+
 import inspect
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Any, Generic, TypeVar
 

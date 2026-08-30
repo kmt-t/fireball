@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import sys
 from pathlib import Path
 
@@ -22,9 +23,6 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-import sys
-from pathlib import Path
-
 """Integration Scenario 7: GDB Remote Serial Protocol (RSP) Socket Debugger.
 
 Tests:
@@ -39,7 +37,8 @@ Tests:
 
 import socket
 import time
-from debugger import DebuggerManager, GDBRspProtocol
+
+from debugger import DebuggerManager
 from gdb_server import GDBServer
 from runtime_engine import BasicBlock, IntegratedHybridEngine, WASMContext
 from x64_jit import TraceCompiler

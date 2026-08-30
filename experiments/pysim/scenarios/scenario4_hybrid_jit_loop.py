@@ -21,9 +21,6 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-import sys
-from pathlib import Path
-
 """Integration Scenario 4: Tier 2 Runtime + Tier 3 JIT Hybrid Compilation.
 
 Tests:
@@ -35,12 +32,12 @@ Tests:
 """
 
 import wasmtime
-from wasm_reader import parse
 from interpreter import Interpreter
 from runtime_engine import RuntimeEngine
-from x64_jit import TraceCompiler
 from system import System
 from wasi import WasiHostContext
+from wasm_reader import parse
+from x64_jit import TraceCompiler
 
 SCENARIO4_WAT = """
 (module

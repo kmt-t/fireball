@@ -6,6 +6,7 @@ Conforms strictly to docs/components/tier3_platform/platform_memory.md §9.2 and
 """
 
 from __future__ import annotations
+
 import sys
 from pathlib import Path
 
@@ -29,11 +30,7 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-import sys
-from pathlib import Path
 import ctypes
-import os
-import sys
 
 # Platform detection
 

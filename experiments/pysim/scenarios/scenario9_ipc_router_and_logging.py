@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import sys
 from pathlib import Path
 
@@ -21,9 +22,6 @@ for _p in [
     _sp = str(_p)
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
-
-import sys
-from pathlib import Path
 
 """Integration Scenario 9: Tier 1 Interface IPC Router & Structured System Logging.
 

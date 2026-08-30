@@ -14,6 +14,7 @@ docs/components/tier1_core/system_containers.md:
 """
 
 from __future__ import annotations
+
 import sys
 from pathlib import Path
 
@@ -37,10 +38,8 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-import sys
-from pathlib import Path
 import bisect
-from typing import Any, Callable, Generic, Iterator, Sequence, TypeVar
+from typing import Callable, Generic, Iterator, Sequence, TypeVar
 
 KeyT = TypeVar("KeyT")
 ValT = TypeVar("ValT")

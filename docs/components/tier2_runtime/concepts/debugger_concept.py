@@ -10,7 +10,7 @@ Architecture:
 - Integrated Profiler & Test Tool: PC sampling counter and memory/register assertion hooks ({Debug_Integrated}).
 """
 
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 
 class WASMTrap(Exception):

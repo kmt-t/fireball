@@ -7,7 +7,7 @@ pyModelChecking による WASM ローダの
 """
 
 from pyModelChecking import Kripke
-from pyModelChecking.CTL import AG, AF, Imply, Not, AtomicProposition
+from pyModelChecking.CTL import AF, AG, AtomicProposition, Imply, Not
 
 BACKS = ["components/tier2_runtime/runtime_loader.md"]
 

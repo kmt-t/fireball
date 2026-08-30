@@ -9,8 +9,8 @@ Reference Concept Implementation: Exhaustive WASM MVP (v1) Stack Interpreter & A
 - Cooperative safepoint polling at loop headers for deterministic yield
 """
 
-from typing import Any, Callable, Optional
 import struct
+from typing import Any, Callable, Optional
 
 
 class WASMTrap(Exception):

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import sys
 from pathlib import Path
 
@@ -22,32 +23,22 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-import sys
-from pathlib import Path
-import sys
-from pathlib import Path
-
 """
 experiments/pysim/test_loader.py
 Tests for WASM Loader, Zero-Copy Indexing, and Hash + RadixBinaryTreeView Symbol/Import/Offset Indexes.
 Conforms strictly to docs/components/tier2_runtime/tests/runtime_loader_test_spec.md (LOAD-01 ~ LOAD-47).
 """
 
-import sys
-from pathlib import Path
 import struct
 from typing import Optional
+
 from loader import (
-    BumpAllocator,
     ExternalKind,
     FuncType,
     SectionID,
     ValType,
-    WasmLinkError,
     WasmLoader,
-    WasmParseError,
     WasmVerifyError,
-    fnv1a_32,
 )
 
 

@@ -23,6 +23,7 @@ the real x64 hardware stack (PUSH/POP), one 8-byte slot per WASM value.
 """
 
 from __future__ import annotations
+
 import sys
 from pathlib import Path
 
@@ -46,9 +47,6 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-import sys
-from pathlib import Path
-import sys
 from dataclasses import dataclass, field
 from typing import Generator, Iterable
 

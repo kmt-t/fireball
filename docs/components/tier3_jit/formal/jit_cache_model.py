@@ -4,7 +4,7 @@ pyModelChecking による JIT 3面キャッシュ代謝・MPU W^X・遅延チェ
 """
 
 from pyModelChecking import Kripke
-from pyModelChecking.CTL import AG, AF, And, Not, Imply, AtomicProposition
+from pyModelChecking.CTL import AF, AG, And, AtomicProposition, Imply, Not
 
 BACKS = [
     "components/tier2_runtime/concepts/runtime_engine_concept.py",

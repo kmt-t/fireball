@@ -33,6 +33,7 @@ argument outside the declared signature.
 """
 
 from __future__ import annotations
+
 import sys
 from pathlib import Path
 
@@ -56,10 +57,9 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-import sys
-from pathlib import Path
 from dataclasses import dataclass
 from typing import Callable
+
 from control_flow import Instr, decode_all
 from wasm_module import Module
 from wasm_opcodes import (

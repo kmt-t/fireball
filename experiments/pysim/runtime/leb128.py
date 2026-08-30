@@ -6,6 +6,7 @@ sandbox, so binaries used for testing are synthesized directly in Python).
 """
 
 from __future__ import annotations
+
 import sys
 from pathlib import Path
 
@@ -28,9 +29,6 @@ for _p in [
     _sp = str(_p)
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
-
-import sys
-from pathlib import Path
 
 
 def decode_unsigned(data: bytes, offset: int) -> tuple[int, int]:

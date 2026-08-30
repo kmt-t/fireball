@@ -8,7 +8,7 @@ pyModelChecking による WASM 制御フロー命令（block/loop/if/end/br 系�
 """
 
 from pyModelChecking import Kripke
-from pyModelChecking.CTL import AG, Not, AtomicProposition
+from pyModelChecking.CTL import AG, AtomicProposition, Not
 
 BACKS = ["specs/wasm_instruction_set.md"]
 

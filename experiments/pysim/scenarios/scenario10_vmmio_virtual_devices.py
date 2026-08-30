@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import sys
 from pathlib import Path
 
@@ -22,9 +23,6 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-import sys
-from pathlib import Path
-
 """Integration Scenario 10: Tier 2 Runtime vMMIO Virtual Devices & Address Translation.
 
 Tests:
@@ -37,11 +35,7 @@ Tests:
 """
 
 from vmmio import (
-    FC_PASSTHROUGH,
-    FC_SHM,
     FC_STATIC_DEVICE,
-    StaticDevicePTE,
-    Tier3PTE,
     TrapCode,
     VmmioAddress,
     VMMIOController,

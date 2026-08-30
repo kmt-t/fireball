@@ -12,6 +12,7 @@ without hitting Python's recursion limit.
 """
 
 from __future__ import annotations
+
 import sys
 from pathlib import Path
 
@@ -35,11 +36,9 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-import sys
-from pathlib import Path
 from dataclasses import dataclass
+
 from leb128 import decode_signed, decode_unsigned
-from wasm_reader import WasmUnsupportedFeatureError
 from wasm_opcodes import (
     BLOCK,
     BR,
@@ -52,15 +51,37 @@ from wasm_opcodes import (
     END,
     GLOBAL_GET,
     GLOBAL_SET,
+    I32_ADD,
+    I32_AND,
     I32_CONST,
+    I32_DIV_S,
+    I32_DIV_U,
+    I32_EQ,
+    I32_EQZ,
+    I32_GE_S,
+    I32_GE_U,
+    I32_GT_S,
+    I32_GT_U,
+    I32_LE_S,
+    I32_LE_U,
     I32_LOAD,
     I32_LOAD8_S,
     I32_LOAD8_U,
     I32_LOAD16_S,
     I32_LOAD16_U,
+    I32_LT_S,
+    I32_LT_U,
+    I32_MUL,
+    I32_NE,
+    I32_OR,
+    I32_SHL,
+    I32_SHR_S,
+    I32_SHR_U,
     I32_STORE,
     I32_STORE8,
     I32_STORE16,
+    I32_SUB,
+    I32_XOR,
     IF,
     LOCAL_GET,
     LOCAL_SET,
@@ -72,29 +93,8 @@ from wasm_opcodes import (
     RETURN,
     SELECT,
     UNREACHABLE,
-    I32_ADD,
-    I32_SUB,
-    I32_MUL,
-    I32_DIV_S,
-    I32_DIV_U,
-    I32_AND,
-    I32_OR,
-    I32_XOR,
-    I32_SHL,
-    I32_SHR_S,
-    I32_SHR_U,
-    I32_EQZ,
-    I32_EQ,
-    I32_NE,
-    I32_LT_S,
-    I32_LT_U,
-    I32_GT_S,
-    I32_GT_U,
-    I32_LE_S,
-    I32_LE_U,
-    I32_GE_S,
-    I32_GE_U,
 )
+from wasm_reader import WasmUnsupportedFeatureError
 
 _MEMARG_OPCODES = {
     I32_LOAD,
@@ -363,7 +363,7 @@ def extract_basic_blocks(
 ) -> list[tuple[int, list[tuple[str, Any]], int | None]]:
     """Extracts straight-line BasicBlocks from WASM bytecode as a flat list.
     Returns [(head_pc, [(op_name, arg), ...], next_pc), ...] where head_pc = (func_index << 16) | offset."""
-    from wasm_opcodes import BLOCK, LOOP, IF, ELSE, END, BR, BR_IF, RETURN
+    from wasm_opcodes import BLOCK, BR, BR_IF, ELSE, END, IF, LOOP, RETURN
 
     instrs = decode_all(code)
     sorted_instrs = [instrs[k] for k in sorted(instrs.keys())]

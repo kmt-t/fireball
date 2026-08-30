@@ -21,9 +21,6 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-import sys
-from pathlib import Path
-
 """Integration Scenario 5: Multiple Functions, UnifiedPC & bswap32 Radix Tree.
 
 Tests:
@@ -33,13 +30,13 @@ Tests:
 """
 
 import wasmtime
-from wasm_reader import parse
 from interpreter import Interpreter
 from runtime_engine import RuntimeEngine
-from x64_jit import TraceCompiler
-from system_containers import RadixBinaryTreeView, bswap32
 from system import System
+from system_containers import RadixBinaryTreeView
 from wasi import WasiHostContext
+from wasm_reader import parse
+from x64_jit import TraceCompiler
 
 SCENARIO5_WAT = """
 (module

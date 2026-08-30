@@ -8,6 +8,7 @@ COOS Memory Manager & PMSAv8 MPU simulation.
 """
 
 from __future__ import annotations
+
 import sys
 from pathlib import Path
 
@@ -31,9 +32,7 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-import sys
-from pathlib import Path
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Any, Generic, TypeVar
 

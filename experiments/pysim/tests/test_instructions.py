@@ -13,6 +13,7 @@ Run with:  uv run python experiments/pysim/tests.py
 """
 
 from __future__ import annotations
+
 import sys
 from pathlib import Path
 
@@ -36,30 +37,21 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-import sys
-from pathlib import Path
-import sys
-from pathlib import Path
-import sys
-from pathlib import Path
 import ctypes
-import os
 import struct
-import sys
 import time
+
 from hal import (
     FB_CONF_HAL_BUFFER_SIZE,
     FB_CONF_HAL_MAX_BUFFERS,
-    HalError,
     ShmBufferPool,
     ShmTrap,
     Timer,
     UartTransport,
 )
-
 from interpreter import Interpreter, Trap
 from ipc_router import IPCMessage, IPCRouter
-from logger import ConsoleOutput, LogDictionary, Logger, LogLevel
+from logger import LogDictionary, Logger, LogLevel
 from platform_memory import (
     FB_CONF_MEMORY_POOL_SIZE,
     FB_CONF_PARTITION_SIZE,
@@ -67,32 +59,14 @@ from platform_memory import (
     AccessPermission,
     MemoryManager,
     PMSAv8MPU,
-    PoolRef,
     RecoveryAction,
-    SharedBlock,
 )
-
-from system_containers import (
-    BitView,
-    FlatMapView,
-    FlatSetView,
-    RadixBinaryTreeView,
-    RingBuffer,
-    StaticFlatMap,
-    StaticFlatSet,
-    StaticVector,
-    lookup_jit_entry,
-)
-
 from recovery import (
-    FB_CONF_RETRY_BACKOFF_MS,
-    RETRY_MAX_ATTEMPTS,
     RecoveryManager,
     RecoveryStrategy,
     Result,
     classify_error_strategy,
 )
-
 from runtime_engine import (
     BasicBlock,
     CardState,
@@ -105,32 +79,26 @@ from runtime_engine import (
     RuntimeEngine,
     WASMContext,
 )
-
-from scheduler import FB_CONF_MAX_TASKS, Scheduler, TaskState, WaitDir
+from scheduler import Scheduler, TaskState, WaitDir
 from system import (
-    FB_CONF_GUEST_RAM_SIZE,
     FB_CONF_VSOC_PASSTHROUGH_BASE,
-    SYS_CONTROL_HALT,
-    SYS_CONTROL_RESET,
-    SYS_CONTROL_YIELD,
     FbSyscallId,
     System,
     WasiErrno,
 )
-
+from system_containers import (
+    BitView,
+    FlatMapView,
+    FlatSetView,
+    RadixBinaryTreeView,
+    lookup_jit_entry,
+)
 from vmmio import (
-    FC_PASSTHROUGH,
-    FC_SHM,
-    FC_STATIC_DEVICE,
     TrapCode,
-    VmmioAddress,
     VMMIOController,
 )
-
-from exec_memory import ExecutableBuffer
 from wasi import WasiHostContext
-from wasm_module import I32
-from wasm_reader import WasmParseError, WasmUnsupportedFeatureError, parse
+from wasm_reader import WasmUnsupportedFeatureError, parse
 from x64_jit import TraceCompiler
 
 
@@ -813,7 +781,6 @@ def test_jitc_20_trace_header_16byte_physical_layout():
     hdr.chain_target_addr = 0x20001000
     raw = hdr.pack()
     assert len(raw) == 16
-    import struct
 
     pc, size, flags, var, next_pc, target = struct.unpack("<IHBBII", raw)
     assert pc == 0x12345678
@@ -1256,6 +1223,7 @@ def test_wasi_08_out_of_bounds_offset_returns_fault():
 def test_intp_01_02_cps_handlers_and_dispatch_table():
     """INTP-01, 02: Opcode handlers use CPS 4-arg signature (ip, frame, env, locals) and direct array table dispatch."""
     import inspect
+
     from interpreter import _HANDLERS
 
     # Direct 256-element array table (no dynamic dict lookup)
@@ -2029,7 +1997,6 @@ def test_guest_wasi_05_jit_fireball_call_ipc_messaging():
 def test_debugger_manager_gdb_rsp_integration():
     """DBG-01..15: Verifies Debug Manager GDB RSP protocol, breakpoints, registers and JIT flush."""
     from debugger import DebuggerManager, GDBRspProtocol
-    from x64_jit import TraceCompiler
 
     engine = IntegratedHybridEngine(compiler=TraceCompiler())
     dbg = DebuggerManager(engine=engine)
@@ -2079,7 +2046,6 @@ def test_debugger_manager_gdb_rsp_integration():
 def test_interpreter_debugger_handler_table_switch_and_hooks():
     """INTP-60..65: Verifies Interpreter DebuggerLabelTableSwitch, JIT bypass, PC sampling and assertions."""
     from debugger import DebuggerManager
-    from x64_jit import TraceCompiler
 
     engine = IntegratedHybridEngine(compiler=TraceCompiler())
     dbg = DebuggerManager(engine=engine)

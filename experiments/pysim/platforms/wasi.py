@@ -6,6 +6,7 @@ Implements docs/components/tier1_core/system_syscall.md §5.7 and interface_wit.
 """
 
 from __future__ import annotations
+
 import sys
 from pathlib import Path
 
@@ -29,12 +30,11 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-import sys
-from pathlib import Path
 import ctypes
 from typing import Any, Callable
+
 from loader import fnv1a_32
-from system import FbSyscallId, System, WasiErrno
+from system import FbSyscallId, System
 from system_containers import RadixBinaryTreeView
 from wasm_module import Module
 

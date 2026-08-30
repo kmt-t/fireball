@@ -3,9 +3,9 @@ Fireball Full Component Integration Test Suite Runner.
 Executes all 11 integration test scenarios end-to-end against genuine WASM bytecode.
 """
 
+import subprocess
 import sys
 import time
-import subprocess
 from pathlib import Path
 
 SCENARIO_DIR = Path(__file__).resolve().parent

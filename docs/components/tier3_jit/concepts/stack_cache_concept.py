@@ -32,7 +32,7 @@ A stencil declares what it consumes and produces, so the compiler tracks the
 state statically and never emits a spill that is not required.
 """
 
-from typing import Any, Callable
+from typing import Any
 
 
 class WASMTrap(Exception):

@@ -7,7 +7,7 @@ pyModelChecking による JIT ステンシルのプロローグ/エピローグ�
 """
 
 from pyModelChecking import Kripke
-from pyModelChecking.CTL import AG, Not, AtomicProposition
+from pyModelChecking.CTL import AG, AtomicProposition, Not
 
 BACKS = ["specs/jit_stencil_catalog.md"]
 

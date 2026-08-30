@@ -21,9 +21,6 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-import sys
-from pathlib import Path
-
 """Integration Scenario 2: Tier 2 Runtime + System Call & WASI IO.
 
 Tests:
@@ -34,10 +31,10 @@ Tests:
 """
 
 import wasmtime
-from wasm_reader import parse
 from interpreter import Interpreter
 from system import System
 from wasi import WasiHostContext
+from wasm_reader import parse
 
 SCENARIO2_WAT = """
 (module

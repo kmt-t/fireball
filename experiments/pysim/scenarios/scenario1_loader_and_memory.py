@@ -21,9 +21,6 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-import sys
-from pathlib import Path
-
 """Integration Scenario 1: Tier 1 Core + Tier 2 Loader & Linear Memory.
 
 Tests:
@@ -34,11 +31,10 @@ Tests:
 """
 
 import wasmtime
-from wasm_reader import parse
 from interpreter import Interpreter
-from system_containers import RadixBinaryTreeView, bswap32
 from system import System
 from wasi import WasiHostContext
+from wasm_reader import parse
 
 SCENARIO_WAT = """
 (module

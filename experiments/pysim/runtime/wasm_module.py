@@ -12,6 +12,7 @@ the Code section's implicit numbering are all in this unified space.
 """
 
 from __future__ import annotations
+
 import sys
 from pathlib import Path
 
@@ -35,8 +36,6 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-import sys
-from pathlib import Path
 from dataclasses import dataclass, field
 
 # WASM value types we support (MVP i32 only for now; i64/f32/f64 are parsed

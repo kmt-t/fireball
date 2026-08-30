@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import sys
 from pathlib import Path
 
@@ -22,11 +23,6 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-import sys
-from pathlib import Path
-import sys
-from pathlib import Path
-
 """
 experiments/pysim/test_x64_jit.py
 Spec-compliant tests for Fireball Trace-based Copy-and-Patch JIT Compiler (x64_jit.py).
@@ -38,11 +34,10 @@ Verifies:
 (docs/components/tier3_jit/jit_compiler.md and docs/components/tier2_runtime/runtime_interpreter.md)
 """
 
-import sys
-from pathlib import Path
 import ctypes
+
 from exec_memory import ExecutableBuffer
-from runtime_engine import BasicBlock, CardState, IntegratedHybridEngine, WASMContext
+from runtime_engine import BasicBlock, IntegratedHybridEngine, WASMContext
 from x64_jit import TraceCompiler
 
 

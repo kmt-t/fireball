@@ -13,6 +13,7 @@ Implements:
 """
 
 from __future__ import annotations
+
 import sys
 from pathlib import Path
 
@@ -36,8 +37,6 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-import sys
-from pathlib import Path
 import bisect
 import struct
 from typing import Any, Optional, Sequence, Union

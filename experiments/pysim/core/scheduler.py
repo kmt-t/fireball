@@ -11,6 +11,7 @@ docs/components/tier1_core/os_coos.md ({ADR_RendezvousChannel}, {CSP_Handoff}).
 """
 
 from __future__ import annotations
+
 import sys
 from pathlib import Path
 
@@ -34,8 +35,6 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-import sys
-from pathlib import Path
 from collections import deque
 from enum import Enum, auto
 from typing import Any, Callable, Generator

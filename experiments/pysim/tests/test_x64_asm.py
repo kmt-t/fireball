@@ -6,6 +6,7 @@ second time. Supports Windows x64 ABI and Linux System V AMD64 ABI.
 """
 
 from __future__ import annotations
+
 import sys
 from pathlib import Path
 
@@ -29,14 +30,9 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-import sys
-from pathlib import Path
-import sys
-from pathlib import Path
-import sys
-from pathlib import Path
 import ctypes
-import sys
+import ctypes as _ct
+
 import x64_asm as asm
 from exec_memory import ExecutableBuffer
 
@@ -251,8 +247,6 @@ def test_mov_load_scaled_reads_an_array_element_by_index():
 
 
 def test_cmp_dword_scaled_imm32():
-
-    import ctypes as _ct
 
     arr = (_ct.c_uint32 * 4)(10, 20, 30, 40)
     base_addr = _ct.addressof(arr)

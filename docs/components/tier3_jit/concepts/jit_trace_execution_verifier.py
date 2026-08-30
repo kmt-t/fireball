@@ -19,9 +19,18 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from jit_copy_patch_concept import CopyPatchJITEngine, _order_register_moves  # noqa: E402
 from jit_assembler_constexpr_concept import Reg, Thumb2Assembler  # noqa: E402
-from unicorn import Uc, UC_ARCH_ARM, UC_MODE_THUMB, UC_ERR_EXCEPTION, UcError  # noqa: E402
+from jit_copy_patch_concept import (  # noqa: E402
+    CopyPatchJITEngine,
+    _order_register_moves,
+)
+from unicorn import (  # noqa: E402
+    UC_ARCH_ARM,
+    UC_ERR_EXCEPTION,
+    UC_MODE_THUMB,
+    Uc,
+    UcError,
+)
 from unicorn.arm_const import (  # noqa: E402
     UC_ARM_REG_R1,
     UC_ARM_REG_R2,

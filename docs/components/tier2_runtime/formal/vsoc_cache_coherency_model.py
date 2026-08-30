@@ -11,7 +11,7 @@ runtime_vsoc.md 6.1 が主張する不変条件のうち、実行状態と Safep
 """
 
 from pyModelChecking import Kripke
-from pyModelChecking.CTL import AG, AF, Not, Imply, AtomicProposition
+from pyModelChecking.CTL import AF, AG, AtomicProposition, Imply, Not
 
 BACKS = [
     "components/tier2_runtime/runtime_vsoc.md",

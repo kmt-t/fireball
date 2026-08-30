@@ -4,7 +4,7 @@ pyModelChecking による COOS CSP チャネル・同期ランデブー・デッ
 """
 
 from pyModelChecking import Kripke
-from pyModelChecking.CTL import AG, AF, And, Not, Imply, AtomicProposition
+from pyModelChecking.CTL import AF, AG, AtomicProposition, Imply, Not
 
 BACKS = [
     "components/tier1_core/os_coos.md",

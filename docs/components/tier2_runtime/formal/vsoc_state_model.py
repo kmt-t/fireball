@@ -4,7 +4,7 @@ pyModelChecking による vSoC 実行状態・Safepoint 応答性・Debugger 整
 """
 
 from pyModelChecking import Kripke
-from pyModelChecking.CTL import AG, AF, And, Not, Imply, AtomicProposition
+from pyModelChecking.CTL import AF, AG, And, AtomicProposition, Imply, Not
 
 BACKS = [
     "components/tier2_runtime/runtime_vsoc.md",

@@ -3,9 +3,9 @@ Unit Test Suite Runner for pysim.
 Executes all unit tests under experiments/pysim/tests/.
 """
 
+import subprocess
 import sys
 import time
-import subprocess
 from pathlib import Path
 
 TEST_DIR = Path(__file__).resolve().parent

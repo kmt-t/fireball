@@ -5,6 +5,7 @@ Verifies native execution of host-calls across 0 to 6 arguments (fireball-call6 
 """
 
 from __future__ import annotations
+
 import sys
 from pathlib import Path
 
@@ -28,13 +29,8 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-import sys
-from pathlib import Path
-import sys
-from pathlib import Path
-import sys
-from pathlib import Path
 import ctypes
+
 from runtime_engine import BasicBlock, WASMContext
 from x64_jit import TraceCompiler
 

@@ -13,7 +13,7 @@ import sys
 from typing import Any
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from jit_assembler_constexpr_concept import Thumb2Assembler, Reg, Cond  # noqa: E402
+from jit_assembler_constexpr_concept import Cond, Reg, Thumb2Assembler  # noqa: E402
 
 
 class MPUAttribute:
@@ -109,7 +109,6 @@ class JITTraceHeader:
 
     @classmethod
     def from_bytes(cls, data: bytes | bytearray, offset: int = 0) -> "JITTraceHeader":
-        import struct
 
         head_pc, size, flags, variant, chain_next, chain_target = struct.unpack_from(
             "<IHBBII", data, offset

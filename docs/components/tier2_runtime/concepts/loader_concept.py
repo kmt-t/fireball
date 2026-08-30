@@ -9,9 +9,9 @@ Reference Concept Implementation: WASM Loader & Zero-Copy Indexing Engine
 - Lazy function/global accessors (FunctionAccessor, GlobalAccessor)
 """
 
-from typing import Any, Optional, Union
 import bisect
 import struct
+from typing import Any, Optional, Union
 
 # ==============================================================================
 # 0. Configuration Constants & Error Definitions

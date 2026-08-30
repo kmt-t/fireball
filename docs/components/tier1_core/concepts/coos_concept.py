@@ -7,7 +7,7 @@ Reference Concept Implementation: COOS (Cooperative OS)
 - Strict idle detection and power-saving sleep hook
 """
 
-from typing import Any, Callable, Generator
+from typing import Any, Generator
 
 
 class TaskState:

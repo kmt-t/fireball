@@ -8,6 +8,7 @@ Reference Concept Implementation: the fireball container vocabulary
 """
 
 from __future__ import annotations
+
 import bisect
 from typing import Any, Sequence
 

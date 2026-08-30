@@ -10,9 +10,8 @@ Reference Concept Implementation: Full-Set C++20 constexpr Thumb-2 Assembler DSL
   which imports this module's Thumb2Assembler directly rather than duplicating literals.
 """
 
-from enum import IntEnum
-from typing import NamedTuple, Union
 import struct
+from enum import IntEnum
 
 # ==============================================================================
 # 1. Type-Safe Enums and Validation Constants

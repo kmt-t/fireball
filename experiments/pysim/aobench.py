@@ -18,7 +18,6 @@ import time
 from runtime_engine import BasicBlock, WASMContext
 from system import System
 from wasi import WasiHostContext
-from wasm_builder import ModuleBuilder
 from wasm_reader import parse
 from x64_jit import TraceCompiler
 
@@ -185,57 +184,10 @@ AO_BENCH_WAT = r"""
 
 def compile_wat_to_wasm(wat_text: str) -> bytes:
     """Uses external OSS wasmtime toolchain to compile WAT to WASM binary."""
-    try:
-        import wasmtime
-        print("[*] Toolchain: Compiling WAT to binary using OSS `wasmtime.wat2wasm`...")
-        wasm_bytes = bytes(wasmtime.wat2wasm(wat_text))
-        return wasm_bytes
-    except Exception as e:
-        print(f"[*] Toolchain: wasmtime not found ({e}), falling back to internal ModuleBuilder...")
-        b = ModuleBuilder()
-        b.add_memory(min_pages=1, max_pages=16)
-        b.add_import("wasi_snapshot_preview1", "fd_write", params=("i32", "i32", "i32", "i32"), results=("i32",))
-
-        f_sqrt = b.add_function(params=("i32",), results=("i32",), export_name="fp_isqrt")
-        f_sqrt.declare_local("i32"); f_sqrt.declare_local("i32"); f_sqrt.declare_local("i32")
-        f_sqrt.local_get(0).i32_const(0).i32_le_s().if_().i32_const(0).return_().end()
-        f_sqrt.local_get(0).i32_const(16).i32_shl().local_set(1)
-        f_sqrt.i32_const(0).local_set(2); f_sqrt.i32_const(1 << 30).local_set(3)
-        f_sqrt.block().loop().local_get(3).local_get(1).i32_gt_u().i32_eqz().br_if(1)
-        f_sqrt.local_get(3).i32_const(2).i32_shr_u().local_set(3).br(0).end().end()
-        f_sqrt.block().loop().local_get(3).i32_eqz().br_if(1)
-        f_sqrt.local_get(1).local_get(2).local_get(3).i32_add().i32_ge_u().if_()
-        f_sqrt.local_get(1).local_get(2).local_get(3).i32_add().i32_sub().local_set(1)
-        f_sqrt.local_get(2).i32_const(1).i32_shr_u().local_get(3).i32_add().local_set(2).else_()
-        f_sqrt.local_get(2).i32_const(1).i32_shr_u().local_set(2).end()
-        f_sqrt.local_get(3).i32_const(2).i32_shr_u().local_set(3).br(0).end().end()
-        f_sqrt.local_get(2).return_()
-
-        f_render = b.add_function(params=("i32", "i32"), results=("i32",), export_name="render_scene")
-        f_render.declare_local("i32"); f_render.declare_local("i32"); f_render.declare_local("i32"); f_render.declare_local("i32"); f_render.declare_local("i32")
-        f_render.i32_const(1024).local_set(4).i32_const(0).local_set(3)
-        f_render.block().loop().local_get(3).local_get(1).i32_ge_s().br_if(1).i32_const(0).local_set(2)
-        f_render.block().loop().local_get(2).local_get(0).i32_ge_s().br_if(1).i32_const(0x20).local_set(5)
-        f_render.local_get(2).local_get(0).i32_const(2).i32_div_s().i32_sub().local_tee(6).local_get(6).i32_mul()
-        f_render.local_get(3).local_get(1).i32_const(3).i32_div_s().i32_sub().local_tee(6).local_get(6).i32_mul().i32_add()
-        f_render.local_get(1).i32_const(4).i32_div_s().local_tee(6).local_get(6).i32_mul().i32_le_s().if_()
-        f_render.local_get(3).local_get(1).i32_const(3).i32_div_s().i32_gt_s().if_().i32_const(0x23).local_set(5).else_().i32_const(0x25).local_set(5).end().else_()
-        f_render.local_get(2).local_get(0).i32_const(4).i32_div_s().i32_sub().local_tee(6).local_get(6).i32_mul()
-        f_render.local_get(3).local_get(1).i32_const(2).i32_mul().i32_const(3).i32_div_s().i32_sub().local_tee(6).local_get(6).i32_mul().i32_add()
-        f_render.local_get(1).i32_const(6).i32_div_s().local_tee(6).local_get(6).i32_mul().i32_le_s().if_().i32_const(0x40).local_set(5).else_()
-        f_render.local_get(2).local_get(0).i32_const(3).i32_mul().i32_const(4).i32_div_s().i32_sub().local_tee(6).local_get(6).i32_mul()
-        f_render.local_get(3).local_get(1).i32_const(2).i32_mul().i32_const(3).i32_div_s().i32_sub().local_tee(6).local_get(6).i32_mul().i32_add()
-        f_render.local_get(1).i32_const(6).i32_div_s().local_tee(6).local_get(6).i32_mul().i32_le_s().if_().i32_const(0x4F).local_set(5).else_()
-        f_render.local_get(3).local_get(1).i32_const(4).i32_mul().i32_const(5).i32_div_s().i32_ge_s().if_()
-        f_render.local_get(2).local_get(3).i32_add().i32_const(1).i32_and().if_().i32_const(0x3D).local_set(5).else_().i32_const(0x2D).local_set(5).end().end().end().end().end()
-        f_render.local_get(4).local_get(5).i32_store8().local_get(4).i32_const(1).i32_add().local_set(4)
-        f_render.local_get(2).i32_const(1).i32_add().local_set(2).br(0).end().end()
-        f_render.local_get(4).i32_const(0x0A).i32_store8().local_get(4).i32_const(1).i32_add().local_set(4)
-        f_render.local_get(3).i32_const(1).i32_add().local_set(3).br(0).end().end()
-        f_render.i32_const(64).i32_const(1024).i32_store().i32_const(68).local_get(4).i32_const(1024).i32_sub().i32_store()
-        f_render.i32_const(1).i32_const(64).i32_const(1).i32_const(80).call(0).drop()
-        f_render.local_get(4).i32_const(1024).i32_sub().return_()
-        return b.build()
+    import wasmtime
+    print("[*] Toolchain: Compiling WAT to binary using OSS `wasmtime.wat2wasm`...")
+    wasm_bytes = bytes(wasmtime.wat2wasm(wat_text))
+    return wasm_bytes
 
 
 def run_aobench():

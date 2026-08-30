@@ -154,7 +154,6 @@ in `interface_wit.md`, not their internal hardware-facing implementations.
 | `wasm_module.py` | In-memory parsed-module representation (`FuncType`, `Function`, `Import`, `Export`, `Memory`, `Global`, `Table`, `Element`) |
 | `wasm_opcodes.py` | The one opcode table both the interpreter and the JIT compile against |
 | `wasm_reader.py` | The real binary `.wasm` parser (Type/Import/Function/Table/Memory/Global/Export/Element/Code sections) |
-| `wasm_builder.py` | A minimal *encoder*, used only to synthesize test fixtures (see below) |
 | `control_flow.py` | Shared instruction decoding + block/loop/if nesting resolution, used by both the interpreter and the JIT |
 | `interpreter.py` | Reference WASM interpreter as a real **threaded (CPS) interpreter** -- a per-opcode handler table, each handler taking the spec's exact 4-argument signature (`ip, stack_bot, env, local_base`) and returning its own next continuation, not a shared if/elif loop deciding on a handler's behalf -- the correctness oracle the JIT is checked against |
 | `x64_asm.py` | Generic register-name-driven x64 encoders (push/pop/mov/call-reg/...) for calling-convention glue that a fixed stencil table can't parametrize |
@@ -170,16 +169,9 @@ in `interface_wit.md`, not their internal hardware-facing implementations.
 | `test_concept_differential.py` | Differential equivalence test suite asserting 100% behavioral identity between `experiments/pysim` and `docs/**/concepts` |
 | `aobench.py` | Full 3D Raytracing Ambient Occlusion Benchmark (AO-Bench) running via WASM, JIT trace execution, and WASI `fd_write` |
 
-## No existing WASM tooling
+## Standard WAT & OSS WASM Toolchain
 
-There is no `wat2wasm` and wasmtime is explicitly off-limits in this
-sandbox, so `wasm_builder.py` is a small from-scratch *encoder* used only
-to synthesize test fixtures (see below) -- it is test-fixture tooling, not part
-of the design under test. `wasm_reader.py` (the real parser) only ever
-sees genuine binary-format bytes produced by it, and `main.py`'s demo
-writes a module built this way to an actual file on disk and reads the raw
-bytes back before parsing, so the whole pipeline really does go through a
-`.wasm` file, not an in-memory shortcut.
+Test fixtures and benchmarks are written in standard **WebAssembly Text Format (WAT)** and compiled to `.wasm` binaries using OSS toolchains (e.g. `wasmtime.wat2wasm`). `wasm_reader.py` (Fireball's binary parser) parses these standard `.wasm` files directly, exercising the entire pipeline from raw binary bytes to Copy-and-Patch JIT compilation and native execution without any internal shortcuts.
 
 ## constexpr, simulated with a generator
 

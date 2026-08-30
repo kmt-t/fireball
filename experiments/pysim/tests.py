@@ -89,10 +89,15 @@ from vmmio import (
 )
 from exec_memory import ExecutableBuffer
 from wasi import WasiHostContext
-from wasm_builder import ModuleBuilder
 from wasm_module import I32
 from wasm_reader import WasmParseError, WasmUnsupportedFeatureError, parse
 from x64_jit import TraceCompiler
+
+
+def wat_to_wasm(wat_text: str) -> bytes:
+    """Compiles WAT text format to standard WASM binary via wasmtime."""
+    import wasmtime
+    return bytes(wasmtime.wat2wasm(wat_text))
 
 
 # ===========================================================================
@@ -1163,14 +1168,14 @@ def test_intp_01_02_cps_handlers_and_dispatch_table():
 
 def test_wasm_01_to_06_unsupported_features_rejected():
     """WASM-01..06: Unsupported features (SIMD, threads, tail-call) are rejected with error code."""
-    builder = ModuleBuilder()
-    fb = builder.add_function(params=(), results=("i32",), export_name="test_simd")
-    # Emit unsupported SIMD prefix opcode 0xFD
-    fb.code.append(0xFD)
-    fb.code.append(0x00)
-    fb.end()
-
-    wasm_bytes = builder.build()
+    # Module with unsupported SIMD opcode 0xFD
+    wasm_bytes = (
+        b"\x00asm\x01\x00\x00\x00"
+        b"\x01\x05\x01\x60\x00\x01\x7f"
+        b"\x03\x02\x01\x00"
+        b"\x07\x0d\x01\x09test_simd\x00\x00"
+        b"\x0a\x06\x01\x04\x00\xfd\x00\x0b"
+    )
     mod = parse(wasm_bytes)
     try:
         interp = Interpreter(mod)
@@ -1182,35 +1187,29 @@ def test_wasm_01_to_06_unsupported_features_rejected():
 
 def test_wasm_10_to_15_control_flow_and_calls():
     """WASM-10..15: Unreachable trap, block/loop/if/br_table, call, and call_indirect."""
-    builder = ModuleBuilder()
-    builder.add_table(min_size=2, max_size=2)
-
-    # f0: unreachable trap
-    f0 = builder.add_function(params=(), results=(), export_name="unreachable_fn")
-    f0.unreachable().end()
-
-    # f1: loop + br_table
-    f1 = builder.add_function(params=("i32",), results=("i32",), export_name="calc_fn")
-    f1.block()
-    f1.block()
-    f1.local_get(0)
-    f1.br_table([0, 1], 0)
-    f1.end()
-    f1.i32_const(100).return_()
-    f1.end()
-    f1.i32_const(200).return_()
-    f1.end()
-
-    # f2: indirect caller
-    f2 = builder.add_function(params=("i32", "i32"), results=("i32",), export_name="call_ind")
-    f2.local_get(0)   # arg to target
-    f2.local_get(1)   # table index
-    f2.call_indirect(type_index=1, table_index=0)
-    f2.end()
-
-    builder.add_element(table_index=0, offset=0, func_indices=[1, 1])
-
-    wasm_bytes = builder.build()
+    wat = """
+    (module
+      (table 2 2 funcref)
+      (type $sig_calc (func (param i32) (result i32)))
+      (func $unreachable_fn (export "unreachable_fn")
+        (unreachable)
+      )
+      (func $calc_fn (export "calc_fn") (param $x i32) (result i32)
+        (block $b0
+          (block $b1
+            (br_table $b1 $b0 (local.get $x))
+          )
+          (return (i32.const 100))
+        )
+        (return (i32.const 200))
+      )
+      (func $call_ind (export "call_ind") (param $arg i32) (param $idx i32) (result i32)
+        (call_indirect (type $sig_calc) (local.get $arg) (local.get $idx))
+      )
+      (elem (i32.const 0) $calc_fn $calc_fn)
+    )
+    """
+    wasm_bytes = wat_to_wasm(wat)
     mod = parse(wasm_bytes)
     interp = Interpreter(mod)
 
@@ -1232,17 +1231,15 @@ def test_wasm_10_to_15_control_flow_and_calls():
 
 def test_wasm_20_21_drop_and_select():
     """WASM-20..21: drop and select parametric instructions."""
-    builder = ModuleBuilder()
-    fb = builder.add_function(params=("i32", "i32", "i32"), results=("i32",), export_name="sel")
-    fb.local_get(0)
-    fb.drop()         # drops param 0
-    fb.local_get(1)   # val1 (if cond != 0)
-    fb.local_get(2)   # val2 (if cond == 0)
-    fb.local_get(0)   # cond
-    fb.select()
-    fb.end()
-
-    mod = parse(builder.build())
+    wat = """
+    (module
+      (func $sel (export "sel") (param $cond i32) (param $val1 i32) (param $val2 i32) (result i32)
+        (drop (local.get $cond))
+        (select (local.get $val1) (local.get $val2) (local.get $cond))
+      )
+    )
+    """
+    mod = parse(wat_to_wasm(wat))
     interp = Interpreter(mod)
     assert interp.call(mod.export_func_index("sel"), [1, 10, 20]) == [10]
     assert interp.call(mod.export_func_index("sel"), [0, 10, 20]) == [20]
@@ -1250,22 +1247,18 @@ def test_wasm_20_21_drop_and_select():
 
 def test_wasm_30_31_locals_and_globals():
     """WASM-30..31: local.get/set/tee and global.get/set."""
-    builder = ModuleBuilder()
-    g_idx = builder.add_global(vtype="i32", mutable=True, init_value=42)
-
-    fb = builder.add_function(params=("i32",), results=("i32",), locals_extra=["i32"], export_name="loc_glob")
-    # local.tee: set local 1 and keep on stack
-    fb.local_get(0)
-    fb.local_tee(1)
-    # global.set
-    fb.global_set(g_idx)
-    # global.get + local 1
-    fb.global_get(g_idx)
-    fb.local_get(1)
-    fb.i32_add()
-    fb.end()
-
-    mod = parse(builder.build())
+    wat = """
+    (module
+      (global $g (mut i32) (i32.const 42))
+      (func $loc_glob (export "loc_glob") (param $p0 i32) (result i32)
+        (local $l1 i32)
+        (local.set $l1 (local.get $p0))
+        (global.set $g (local.get $l1))
+        (i32.add (global.get $g) (local.get $l1))
+      )
+    )
+    """
+    mod = parse(wat_to_wasm(wat))
     interp = Interpreter(mod)
     assert interp.call(mod.export_func_index("loc_glob"), [5]) == [10]
     assert interp.globals[0] == 5
@@ -1273,35 +1266,22 @@ def test_wasm_30_31_locals_and_globals():
 
 def test_wasm_40_to_46_memory_load_store_grow_and_data():
     """WASM-40..46 & WASM-60: Linear memory load, store, size, grow, bounds traps, and Data segments."""
-    builder = ModuleBuilder()
-    builder.add_memory(min_pages=1, max_pages=2)
-    # Add initial data segment: string "WASM_INIT" at offset 0
-    builder.add_data_segment(offset=0, data=b"WASM_INIT")
-
-    fb = builder.add_function(params=(), results=("i32",), export_name="mem_ops")
-    # Read first 4 bytes as i32
-    fb.i32_const(0)
-    fb.i32_load(align=2, offset=0)
-    # Write 0x12345678 to offset 16
-    fb.i32_const(16)
-    fb.i32_const(0x12345678)
-    fb.i32_store(align=2, offset=0)
-    # Grow memory by 1 page
-    fb.i32_const(1)
-    fb.memory_grow()
-    fb.drop()
-    # Return memory.size
-    fb.memory_size()
-    fb.end()
-
-    # Function that attempts out-of-bounds access
-    fb_oob = builder.add_function(params=(), results=(), export_name="trap_oob")
-    fb_oob.i32_const(0x1000000)   # Out of bounds offset
-    fb_oob.i32_load(align=2, offset=0)
-    fb_oob.drop()
-    fb_oob.end()
-
-    mod = parse(builder.build())
+    wat = """
+    (module
+      (memory 1 2)
+      (data (i32.const 0) "WASM_INIT")
+      (func $mem_ops (export "mem_ops") (result i32)
+        (drop (i32.load (i32.const 0)))
+        (i32.store (i32.const 16) (i32.const 0x12345678))
+        (drop (memory.grow (i32.const 1)))
+        (memory.size)
+      )
+      (func $trap_oob (export "trap_oob")
+        (drop (i32.load (i32.const 0x1000000)))
+      )
+    )
+    """
+    mod = parse(wat_to_wasm(wat))
     mem = bytearray(65536)
     interp = Interpreter(mod, memory=mem)
 
@@ -1323,22 +1303,20 @@ def test_wasm_40_to_46_memory_load_store_grow_and_data():
 
 def test_wasm_50_to_56_integer_arithmetic_and_bitwise():
     """WASM-50..56: 32-bit integer arithmetic, div-by-zero trap, popcnt, clz, rotl, rotr."""
-    builder = ModuleBuilder()
-
-    # Div by zero
-    fb_div = builder.add_function(params=("i32", "i32"), results=("i32",), export_name="div_s")
-    fb_div.local_get(0).local_get(1).i32_div_s().end()
-
-    # Bit counts and rotation
-    fb_bit = builder.add_function(params=("i32",), results=("i32",), export_name="bit_ops")
-    fb_bit.local_get(0).i32_popcnt()   # popcnt(x)
-    fb_bit.local_get(0).i32_clz()      # clz(x)
-    fb_bit.i32_add()
-    fb_bit.local_get(0).i32_const(4).i32_rotl()  # rotl(x, 4)
-    fb_bit.i32_xor()
-    fb_bit.end()
-
-    mod = parse(builder.build())
+    wat = """
+    (module
+      (func $div_s (export "div_s") (param $a i32) (param $b i32) (result i32)
+        (i32.div_s (local.get $a) (local.get $b))
+      )
+      (func $bit_ops (export "bit_ops") (param $x i32) (result i32)
+        (i32.xor
+          (i32.add (i32.popcnt (local.get $x)) (i32.clz (local.get $x)))
+          (i32.rotl (local.get $x) (i32.const 4))
+        )
+      )
+    )
+    """
+    mod = parse(wat_to_wasm(wat))
     interp = Interpreter(mod)
 
     # WASM-54: Div by zero traps
@@ -1545,24 +1523,20 @@ def test_cont_10_container_type_separation():
 
 def test_coop_01_wasm_coroutine_yields_on_quantum():
     """YIELD-01: Long-running WASM task yields every `yield_every` instructions, interleaving with other tasks."""
-    builder = ModuleBuilder()
-    fb = builder.add_function(params=(I32,), results=(I32,), export_name="busy_loop")
-    fb.block()
-    fb.loop()
-    fb.local_get(0)
-    fb.i32_const(1)
-    fb.i32_add()
-    fb.local_set(0)
-    fb.local_get(0)
-    fb.i32_const(100)
-    fb.i32_lt_s()
-    fb.br_if(0)  # loop back
-    fb.end()     # end loop
-    fb.end()     # end block
-    fb.local_get(0)
-    fb.end()     # end func
-
-    mod = parse(builder.build())
+    wat = """
+    (module
+      (func $busy_loop (export "busy_loop") (param $x i32) (result i32)
+        (block $b
+          (loop $l
+            (local.set $x (i32.add (local.get $x) (i32.const 1)))
+            (br_if $l (i32.lt_s (local.get $x) (i32.const 100)))
+          )
+        )
+        (local.get $x)
+      )
+    )
+    """
+    mod = parse(wat_to_wasm(wat))
     interp = Interpreter(mod)
 
     # Execute with yield every 10 instructions
@@ -1777,20 +1751,15 @@ def test_tier_03_trace_chaining_and_interpreter_fallback():
 
 def test_guest_wasi_01_interpreter_fd_write():
     """GUEST-WASI-01: WASM guest invoking wasi_snapshot_preview1.fd_write in Interpreter outputs to host UART."""
-    builder = ModuleBuilder()
-    # import fd_write: (fd: i32, iovs_ptr: i32, iovs_len: i32, nwritten_ptr: i32) -> i32
-    fd_write_idx = builder.add_import("wasi_snapshot_preview1", "fd_write", (I32, I32, I32, I32), (I32,))
-
-    # main() -> i32: calls fd_write(1, 0, 1, 32)
-    fb = builder.add_function(params=(), results=(I32,), export_name="main")
-    fb.i32_const(1)   # stdout fd=1
-    fb.i32_const(0)   # iovs_ptr = 0
-    fb.i32_const(1)   # iovs_len = 1
-    fb.i32_const(32)  # nwritten_ptr = 32
-    fb.call(fd_write_idx)
-    fb.end()
-
-    mod = parse(builder.build())
+    wat = """
+    (module
+      (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
+      (func (export "main") (result i32)
+        (call $fd_write (i32.const 1) (i32.const 0) (i32.const 1) (i32.const 32))
+      )
+    )
+    """
+    mod = parse(wat_to_wasm(wat))
     sysv = System()
     try:
         ctx = WasiHostContext(sysv)
@@ -1815,25 +1784,17 @@ def test_guest_wasi_01_interpreter_fd_write():
 
 def test_guest_wasi_02_interpreter_clock_and_random():
     """GUEST-WASI-02: WASM guest invoking clock_time_get and random_get stores valid data in guest memory."""
-    builder = ModuleBuilder()
-    clock_idx = builder.add_import("wasi_snapshot_preview1", "clock_time_get", (I32, I32, I32), (I32,))
-    rand_idx = builder.add_import("wasi_snapshot_preview1", "random_get", (I32, I32), (I32,))
-
-    fb = builder.add_function(params=(), results=(I32,), export_name="main")
-    # clock_time_get(0, 0, 16)
-    fb.i32_const(0)
-    fb.i32_const(0)
-    fb.i32_const(16)
-    fb.call(clock_idx)
-    fb.drop()
-
-    # random_get(32, 16)
-    fb.i32_const(32)
-    fb.i32_const(16)
-    fb.call(rand_idx)
-    fb.end()
-
-    mod = parse(builder.build())
+    wat = """
+    (module
+      (import "wasi_snapshot_preview1" "clock_time_get" (func $clock (param i32 i32 i32) (result i32)))
+      (import "wasi_snapshot_preview1" "random_get" (func $rand (param i32 i32) (result i32)))
+      (func (export "main") (result i32)
+        (drop (call $clock (i32.const 0) (i32.const 0) (i32.const 16)))
+        (call $rand (i32.const 32) (i32.const 16))
+      )
+    )
+    """
+    mod = parse(wat_to_wasm(wat))
     sysv = System()
     try:
         ctx = WasiHostContext(sysv)
@@ -1853,15 +1814,15 @@ def test_guest_wasi_02_interpreter_clock_and_random():
 
 def test_guest_wasi_03_interpreter_proc_exit():
     """GUEST-WASI-03: WASM guest invoking proc_exit(99) halts the host system with exit code."""
-    builder = ModuleBuilder()
-    exit_idx = builder.add_import("wasi_snapshot_preview1", "proc_exit", (I32,), ())
-
-    fb = builder.add_function(params=(), results=(), export_name="main")
-    fb.i32_const(99)
-    fb.call(exit_idx)
-    fb.end()
-
-    mod = parse(builder.build())
+    wat = """
+    (module
+      (import "wasi_snapshot_preview1" "proc_exit" (func $exit (param i32)))
+      (func (export "main")
+        (call $exit (i32.const 99))
+      )
+    )
+    """
+    mod = parse(wat_to_wasm(wat))
     sysv = System()
     try:
         ctx = WasiHostContext(sysv)

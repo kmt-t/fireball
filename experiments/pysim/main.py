@@ -25,7 +25,6 @@ from runtime_engine import BasicBlock, CardState, IntegratedHybridEngine, WASMCo
 from scheduler import Scheduler
 from system import FbSyscallId, ShmSlice, System, WasiErrno
 from wasi import WasiHostContext
-from wasm_builder import ModuleBuilder
 from wasm_module import I32
 from x64_jit import TraceCompiler
 

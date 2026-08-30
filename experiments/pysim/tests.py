@@ -82,6 +82,7 @@ from vmmio_concept import (
     VMMIOController,
 )
 from wasm_builder import ModuleBuilder
+from wasm_module import I32
 from wasm_reader import WasmParseError, WasmUnsupportedFeatureError, parse
 
 
@@ -1331,6 +1332,129 @@ def test_cont_10_container_type_separation():
     assert not isinstance(s, FlatMapView)
     assert hasattr(m, "values")
     assert not hasattr(s, "values")
+
+
+# ===========================================================================
+# Cooperative Multitasking & Idle-Hook Integration (YIELD / IDLE / TIER)
+# ===========================================================================
+
+def test_coop_01_wasm_coroutine_yields_on_quantum():
+    """YIELD-01: Long-running WASM task yields every `yield_every` instructions, interleaving with other tasks."""
+    builder = ModuleBuilder()
+    fb = builder.add_function(params=(I32,), results=(I32,), export_name="busy_loop")
+    fb.block()
+    fb.loop()
+    fb.local_get(0)
+    fb.i32_const(1)
+    fb.i32_add()
+    fb.local_set(0)
+    fb.local_get(0)
+    fb.i32_const(100)
+    fb.i32_lt_s()
+    fb.br_if(0)  # loop back
+    fb.end()     # end loop
+    fb.end()     # end block
+    fb.local_get(0)
+    fb.end()     # end func
+
+    mod = parse(builder.build())
+    interp = Interpreter(mod)
+
+    # Execute with yield every 10 instructions
+    coro = interp.call_coroutine(mod.export_func_index("busy_loop"), [0], yield_every=10)
+    yield_count = 0
+    result = None
+    try:
+        while True:
+            next(coro)
+            yield_count += 1
+    except StopIteration as e:
+        result = e.value
+
+    assert yield_count >= 10, f"Expected multiple cooperative yields, got {yield_count}"
+    assert result == [100]
+
+
+def test_idle_01_jit_batch_compilation_on_idle():
+    """IDLE-01: Compile queue is drained and compiled in LIFO order when scheduler fires idle_hook."""
+    compiled_log = []
+    def mock_compiler(pc: int) -> JITTrace:
+        compiled_log.append(pc)
+        return JITTrace(head_pc=pc, native_fn=lambda: pc, size_bytes=64)
+
+    engine = RuntimeEngine(jit_compiler=mock_compiler)
+    engine.bitmap.touch(0x100)
+    engine.bitmap.touch(0x100)  # HOT
+    engine.bitmap.touch(0x200)
+    engine.bitmap.touch(0x200)  # HOT
+    engine.compile_queue = [0x100, 0x200]  # Enqueued
+
+    # COOS idle_hook fires with budget 2
+    count = engine.idle_hook(budget=2)
+    assert count == 2
+    assert compiled_log == [0x200, 0x100], "LIFO compilation order required"
+    assert engine.bitmap.get_state(0x100) == CardState.COMPILED
+    assert engine.bitmap.get_state(0x200) == CardState.COMPILED
+    assert engine.cache.active.has_trace(0x100)
+    assert engine.cache.active.has_trace(0x200)
+
+
+def test_idle_02_logging_flush_on_idle():
+    """IDLE-02: Deferred logs in RingBuffer are flushed to UART transport upon scheduler idle."""
+    transport = UartTransport()
+    dictionary = LogDictionary()
+    dictionary.register(0x01, "event payload=%d")
+    logger = Logger(transport, dictionary, min_level=LogLevel.INFO)
+
+    # Log events during active execution
+    status1 = logger.log_event(LogLevel.INFO, 0x01, 42)
+    status2 = logger.log_event(LogLevel.INFO, 0x01, 99)
+    assert status1 == "QUEUED"
+    assert status2 == "QUEUED"
+    assert transport.bytes_written == 0, "No UART I/O allowed on hot path"
+
+    # Scheduler reaches IDLE -> fires idle hook
+    flushed = logger.flush()
+    assert flushed == 2
+    wire_output = transport.drain().decode("utf-8")
+    assert "event payload=42" in wire_output
+    assert "event payload=99" in wire_output
+
+
+def test_tier_01_interpreter_to_jit_cooperative_flow():
+    """TIER-01: End-to-end integration of cooperative WASM execution on COOS with idle JIT compilation and log flush."""
+    sysv = System()
+    sysv.dictionary.register(0x10, "wasm iteration=%d")
+
+    executed_steps = []
+
+    def wasm_task():
+        # Emulate a WASM task executing in slices
+        for i in range(5):
+            sysv.runtime_engine.record_block_head(0x1000)
+            sysv.logger.log_event(LogLevel.INFO, 0x10, i)
+            executed_steps.append(f"task_step_{i}")
+            yield  # Cooperative yield
+
+    def monitor_task():
+        for i in range(5):
+            executed_steps.append(f"monitor_step_{i}")
+            yield  # Cooperative yield
+
+    sysv.scheduler.spawn("wasm_worker", wasm_task())
+    sysv.scheduler.spawn("monitor", monitor_task())
+
+    # Run COOS scheduler to completion
+    sysv.scheduler.run_to_completion()
+
+    # Verify interleaved cooperative execution
+    assert "task_step_0" in executed_steps
+    assert "monitor_step_0" in executed_steps
+
+    # Verify deferred logs were flushed by idle_hook
+    wire = sysv.transport.drain().decode("utf-8")
+    assert "wasm iteration=0" in wire
+    assert "wasm iteration=4" in wire
 
 
 # ===========================================================================

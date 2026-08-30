@@ -42,6 +42,8 @@ from enum import IntEnum
 
 from hal import ShmBufferPool, ShmHandle, UartTransport
 from logger import ConsoleOutput, LogDictionary, Logger, LogLevel
+from runtime_engine import RuntimeEngine
+from scheduler import Scheduler
 
 # --- Reuse the declared-authoritative reference concept implementations ---
 # instead of re-deriving their logic (both docs explicitly say not to keep a
@@ -236,12 +238,21 @@ class System:
         self.ipc = IPCRouter()
         # Direct 1-based index mapping over sorted self.ipc.registry.keys array (no dynamic dict)
 
+        self.scheduler = Scheduler()
+        self.runtime_engine = RuntimeEngine()
+        self.scheduler.set_idle_hook(self._on_idle)
+
         self.halted = False
         self.reset_requested = False
         self.exit_code: int | None = None
 
         self._guest_memory: bytearray | None = None
         self._current_task_id = 0
+
+    def _on_idle(self) -> None:
+        """COOS idle_hook dispatch: flushes deferred logs and compiles queued JIT traces."""
+        self.logger.flush()
+        self.runtime_engine.idle_hook(budget=4)
 
     def bus_master(self, task_id: int) -> BusMaster:
         return BusMaster(self.pool, task_id)

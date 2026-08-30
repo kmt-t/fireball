@@ -268,10 +268,11 @@ class RuntimeEngine:
             if new_state == CardState.HOT and pc not in self.compile_queue:
                 self.compile_queue.append(pc)
 
-    def drain_compile_queue(self) -> int:
-        """Drains LIFO compile queue and compiles traces into Active JIT cache."""
+    def idle_hook(self, budget: int = 4) -> int:
+        """Drains the LIFO compile queue during COOS idle_hook. {JIT_ReverseCompilationOrder}
+        Compiling in reverse order increases immediate chaining probability."""
         compiled_count = 0
-        while self.compile_queue:
+        while self.compile_queue and compiled_count < budget:
             pc = self.compile_queue.pop()
             if self.bitmap.get_state(pc) == CardState.COMPILED:
                 continue
@@ -281,3 +282,19 @@ class RuntimeEngine:
                     self.bitmap.mark_compiled(pc)
                     compiled_count += 1
         return compiled_count
+
+    def drain_compile_queue(self) -> int:
+        return self.idle_hook(budget=len(self.compile_queue) or 1000)
+
+    def run_wasm_coroutine(self, interp: Any, func_index: int, args: list[int], yield_every: int = 64):
+        """Runs a WASM function as a cooperative coroutine on COOS.
+        Yields every `yield_every` instructions, draining history ring to compile queue on each yield."""
+        gen = interp.call_coroutine(func_index, args, yield_every=yield_every)
+        try:
+            while True:
+                next(gen)
+                self.on_yield()
+                yield  # Cooperative yield to scheduler
+        except StopIteration as e:
+            self.on_yield()
+            return e.value or []

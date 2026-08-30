@@ -158,6 +158,17 @@ class Interpreter:
             self.call(self.module.start_function, [])
 
     def call(self, func_index: int, args: list[int]) -> list[int]:
+        gen = self.call_coroutine(func_index, args, yield_every=0)
+        try:
+            while True:
+                next(gen)
+        except StopIteration as e:
+            return e.value or []
+
+    def call_coroutine(self, func_index: int, args: list[int], yield_every: int = 64):
+        """Executes a WASM function cooperatively as a Python generator.
+        Yields every `yield_every` executed instructions (Fuel/Quantum),
+        enabling Hoare CSP green-thread multitasking on COOS without starving other tasks."""
         if self.module.is_import(func_index):
             handler = self.host_functions.get(func_index)
             if handler is None:
@@ -175,28 +186,26 @@ class Interpreter:
 
         instrs = decode_all(fn.code)
         frame = CallFrame(instrs, fn.code, [])
-        self._run(frame, locals_arr)
+
+        cont = (0, frame, self._env, locals_arr)
+        instr_step = 0
+        while cont is not None:
+            ip, frame, env, locals_arr = cont
+            if ip >= len(frame.code):
+                break
+            ins = frame.instrs[ip]
+            handler = _HANDLERS[ins.opcode]
+            if handler is None:
+                raise NotImplementedError(f"interpreter: unhandled opcode 0x{ins.opcode:02X}")
+            cont = handler(ip, frame, env, locals_arr)
+            instr_step += 1
+            if yield_every > 0 and (instr_step % yield_every == 0):
+                yield  # Cooperative yield to COOS scheduler
 
         ft = self.module.func_type(func_index)
         if ft.results:
             return [frame.values.pop()]
         return []
-
-    def _run(self, frame: CallFrame, local_base: list[int]) -> None:
-        """The trampoline: repeatedly fetches the handler for the opcode at
-        `ip` and re-enters it with the continuation it returns. Every
-        decision about "what happens next" belongs to the handler that was
-        just invoked, never to this loop."""
-        cont = (0, frame, self._env, local_base)
-        while cont is not None:
-            ip, frame, env, local_base = cont
-            if ip >= len(frame.code):
-                break   # fell off the function's own closing END, same as WASM falling off a function body
-            ins = frame.instrs[ip]
-            handler = _HANDLERS[ins.opcode]
-            if handler is None:
-                raise NotImplementedError(f"interpreter: unhandled opcode 0x{ins.opcode:02X}")
-            cont = handler(ip, frame, env, local_base)
 
 
 # ---------------------------------------------------------------------------

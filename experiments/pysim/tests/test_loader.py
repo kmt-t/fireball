@@ -52,7 +52,6 @@ def _encode_leb128_u32(val: int) -> bytes:
         buf.append(b)
         if val == 0:
             break
-
     return bytes(buf)
 
 
@@ -64,12 +63,10 @@ def _encode_leb128_s32(val: int) -> bytes:
         val >>= 7
         if (val == 0 and (b & 0x40) == 0) or (val == -1 and (b & 0x40) != 0):
             more = False
-
         else:
             b |= 0x80
 
         buf.append(b)
-
     return bytes(buf)
 
 
@@ -152,7 +149,6 @@ def _build_test_wasm_binary(
     buf.append(SectionID.CODE)
     if corrupt_section_bounds:
         buf.extend(_encode_leb128_u32(9999))
-
     else:
         buf.extend(_encode_leb128_u32(len(code_payload)))
 
@@ -172,55 +168,43 @@ def test_load_01_to_07_lightweight_verification():
     try:
         loader.prepare("bad_magic", _build_test_wasm_binary(magic=b"\x7fELF"))
         assert False
-
     except WasmVerifyError:
         pass
-
     assert loader.allocator.offset == watermark
     # V2: Bad version
     try:
         loader.prepare("bad_ver", _build_test_wasm_binary(version=2))
         assert False
-
     except WasmVerifyError:
         pass
-
     assert loader.allocator.offset == watermark
     # V3: Bad section bounds
     try:
         loader.prepare("bad_bounds", _build_test_wasm_binary(corrupt_section_bounds=True))
         assert False
-
     except WasmVerifyError:
         pass
-
     assert loader.allocator.offset == watermark
     # V4: Bad section order
     try:
         loader.prepare("bad_order", _build_test_wasm_binary(corrupt_section_order=True))
         assert False
-
     except WasmVerifyError:
         pass
-
     assert loader.allocator.offset == watermark
     # V5: Bad type index
     try:
         loader.prepare("bad_type", _build_test_wasm_binary(invalid_type_idx=True))
         assert False
-
     except WasmVerifyError:
         pass
-
     assert loader.allocator.offset == watermark
     # V6: Exceeds page budget
     try:
         loader.prepare("bad_mem", _build_test_wasm_binary(memory_pages=32))
         assert False
-
     except WasmVerifyError:
         pass
-
     assert loader.allocator.offset == watermark
 
 

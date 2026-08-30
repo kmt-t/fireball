@@ -40,7 +40,6 @@ from dataclasses import dataclass, field
 
 # WASM value types we support (MVP i32 only for now; i64/f32/f64 are parsed
 # but not compiled).
-
 I32 = "i32"
 I64 = "i64"
 F32 = "f32"
@@ -147,10 +146,8 @@ class Module:
         for elem in self.elements:
             if elem.table_index != table_index:
                 continue
-
             for i, func_index in enumerate(elem.func_indices):
                 slots[elem.offset + i] = func_index
-
         return slots
 
     def is_import(self, func_index: int) -> bool:
@@ -159,7 +156,6 @@ class Module:
     def func_type(self, func_index: int) -> FuncType:
         if self.is_import(func_index):
             return self.types[self.imports[func_index].type_index]
-
         local = self.functions[func_index - len(self.imports)]
         return self.types[local.type_index]
 
@@ -167,7 +163,6 @@ class Module:
         for exp in self.exports:
             if exp.kind == 0 and exp.name == name:
                 return exp.index
-
         raise KeyError(f"no exported function named {name!r}")
 
     def locals_layout(self, func_index: int) -> list[str]:
@@ -180,6 +175,5 @@ class Module:
         ft = self.func_type(func_index)
         if self.is_import(func_index):
             return list(ft.params)
-
         local = self.functions[func_index - len(self.imports)]
         return list(ft.params) + list(local.locals_extra)

@@ -101,14 +101,11 @@ class UartTransport:
                 chunk = self.host_sock.recv(4096)
                 if not chunk:
                     break
-
                 chunks.append(chunk)
                 if len(chunk) < 4096:
                     break
-
         except (TimeoutError, BlockingIOError):
             pass
-
         return b"".join(chunks)
 
     def close(self) -> None:
@@ -161,10 +158,8 @@ class ShmBufferPool:
             if s is None:
                 slot_idx = i
                 break
-
         if slot_idx < 0:
             raise HalError("HAL buffer pool exhausted (FB_CONF_HAL_MAX_BUFFERS)")
-
         name = f"fb_shm_{uuid.uuid4().hex[:12]}"
         handle = ShmHandle(name=name, owner_task=task_id, capacity=size, _storage=bytearray(size))
         self._slots[slot_idx] = handle
@@ -175,10 +170,8 @@ class ShmBufferPool:
             if s is not None and s.name == handle.name:
                 if s.owner_task != task_id:
                     raise ShmTrap(f"task {task_id} cannot release {handle.name}: not the owner")
-
                 self._slots[i] = None
                 return
-
         raise ShmTrap(f"task {task_id} cannot release {handle.name}: not found")
 
     def _resolve(self, task_id: int, handle: ShmHandle) -> ShmHandle:
@@ -189,9 +182,7 @@ class ShmBufferPool:
                         f"task {task_id} does not own {handle.name} (owner={s.owner_task}); "
                         "no linear-memory pointer would ever bypass this check"
                     )
-
                 return s
-
         raise ShmTrap(f"handle {handle.name} does not exist (stale, or never acquired)")
 
     def close_all(self) -> None:
@@ -211,7 +202,6 @@ class ShmBufferPool:
                 f"shm-slice(offset={offset}, len={length}) escapes {handle.name}'s "
                 f"acquired capacity ({record.capacity} bytes)"
             )
-
         return memoryview(record._storage)[offset : offset + length]
 
 

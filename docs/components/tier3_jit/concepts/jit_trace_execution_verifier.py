@@ -82,7 +82,6 @@ def test_compiled_trace_runs_on_real_cpu_and_spills_correctly():
     except UcError as e:
         if e.errno != UC_ERR_EXCEPTION:
             raise
-
     final_sp = mu.reg_read(UC_ARM_REG_SP)
     assert final_sp == CSTACK_TOP, (
         f"prologue/epilogue PUSH.W/POP.W did not round-trip SP: "
@@ -140,7 +139,6 @@ def _run_memory_access_trace(guest_addr: int, mem_size: int) -> dict:
     except UcError as e:
         if e.errno != UC_ERR_EXCEPTION:
             raise
-
     spilled = int.from_bytes(mu.mem_read(WASM_STACK_BASE, 4), "little")
     return {"r4_spilled": spilled, "sp": mu.reg_read(UC_ARM_REG_SP)}
 
@@ -206,7 +204,6 @@ def test_intra_trace_variant_reconciliation_swap_on_real_hardware():
     except UcError as e:
         if e.errno != UC_ERR_EXCEPTION:
             raise
-
     assert mu.reg_read(UC_ARM_REG_R4) == 0xCAFEF00D, "R4 must end up with R5's original value"
     assert mu.reg_read(UC_ARM_REG_R5) == 0xAAAAAAAA, "R5 must end up with R4's original value"
 

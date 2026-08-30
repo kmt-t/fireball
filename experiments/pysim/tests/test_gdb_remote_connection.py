@@ -59,7 +59,6 @@ class GDBClientHelper:
     def close(self):
         try:
             self.sock.close()
-
         except Exception:
             pass
 
@@ -74,7 +73,6 @@ class GDBClientHelper:
             chunk = self.sock.recv(1024).decode("latin1")
             if not chunk:
                 break
-
             buf += chunk
 
         # Consume ACK
@@ -88,7 +86,6 @@ class GDBClientHelper:
             # Send ACK for response
             self.sock.sendall(b"+")
             return response_payload
-
         return ""
 
 
@@ -192,7 +189,6 @@ def test_gdb_remote_socket_session():
         print(
             f"    [Step 10] Continue 'c' -> Program terminated cleanly W00 (Local1={ctx.locals[1]}) [PASS]"
         )
-
     finally:
         client.close()
         server.stop()

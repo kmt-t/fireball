@@ -174,13 +174,11 @@ class VMMIOController:
         if slot["vpn"] == vpn:
             self.tlb_hits += 1
             return slot["pte"]
-
         self.tlb_misses += 1
         # FlatMap lookup
         pte = self.ptes.get(vpn)
         if pte is None:
             return None  # UNREGISTERED_PAGE or UNDEFINED_FC
-
         # Refill: direct-mapped, unconditional overwrite (O(1), no eviction search).
         self.tlb[tlb_idx] = {"vpn": vpn, "pte": pte}
         return pte
@@ -201,7 +199,6 @@ class VMMIOController:
                     f"FB_CONF_GUEST_RAM_SIZE ({self.guest_ram_size})",
                 )
             return ("OK_GUEST_RAM", "bypassed to linear guest RAM")
-
         # 2. TLB / FlatMap lookup.
         pte = self._lookup_pte(addr)
         if pte is None:
@@ -212,7 +209,6 @@ class VMMIOController:
                     f"FC {addr.fc():#x} is not a valid vMMIO region",
                 )
             return (TrapCode.UNREGISTERED_PAGE, f"no PTE at VPN {addr.vpn():#x}")
-
         # 3. Permission check — runs unconditionally, TLB hit or miss.
         if isinstance(pte, StaticDevicePTE):
             if is_write and not pte.write:
@@ -222,7 +218,6 @@ class VMMIOController:
             if pte.handler is not None:
                 pte.handler(addr.syscall_metadata(), addr.offset(), is_write)
             return ("OK_SYSCALL", "dispatched to static device handler")
-
         # Tier3PTE (SHM / PASSTHROUGH)
         if not pte.valid:
             return (TrapCode.ACCESS_VIOLATION, "page marked invalid")
@@ -230,7 +225,6 @@ class VMMIOController:
             return (TrapCode.ACCESS_VIOLATION, "write not permitted")
         if not is_write and not pte.read:
             return (TrapCode.ACCESS_VIOLATION, "read not permitted")
-
         if addr.fc() == FC_SHM:
             if pte.owner_id == FB_TASK_ID_FLIGHT:
                 return (

@@ -81,7 +81,6 @@ def _parse_functype(data: bytes, off: int) -> tuple[FuncType, int]:
     off += 1
     if tag != 0x60:
         raise WasmParseError(f"expected functype tag 0x60, got 0x{tag:02X}")
-
     nparams, off = decode_unsigned(data, off)
     params = []
     for _ in range(nparams):
@@ -93,7 +92,6 @@ def _parse_functype(data: bytes, off: int) -> tuple[FuncType, int]:
     for _ in range(nresults):
         results.append(VALTYPE_BYTES[data[off]])
         off += 1
-
     return FuncType(tuple(params), tuple(results)), off
 
 
@@ -119,7 +117,6 @@ def _parse_import_section(data: bytes, off: int, end: int, module: Module) -> No
         off += 1
         if kind != 0:
             raise WasmParseError(f"only function imports (kind=0) are supported, got kind={kind}")
-
         type_index, off = decode_unsigned(data, off)
         module.imports.append(Import(module=mod_name, name=field_name, type_index=type_index))
 
@@ -144,7 +141,6 @@ def _parse_limits(data: bytes, off: int) -> tuple[int, int | None, int]:
     if flag == 0x01:
         maximum, off = decode_unsigned(data, off)
         return minimum, maximum, off
-
     return minimum, None, off
 
 
@@ -285,10 +281,8 @@ def _parse_data_section(data: bytes, off: int, end: int, module: Module) -> None
 def parse(data: bytes) -> Module:
     if data[0:4] != MAGIC:
         raise WasmParseError("missing \\0asm magic header")
-
     if data[4:8] != VERSION:
         raise WasmParseError(f"unsupported wasm version {data[4:8]!r}")
-
     module = Module()
     type_indices: list[int] = []
     off = 8
@@ -299,38 +293,27 @@ def parse(data: bytes) -> Module:
         sec_end = off + sec_len
         if sec_id == SEC_TYPE:
             _parse_type_section(data, off, sec_end, module)
-
         elif sec_id == SEC_IMPORT:
             _parse_import_section(data, off, sec_end, module)
-
         elif sec_id == SEC_FUNCTION:
             type_indices = _parse_function_section(data, off, sec_end)
-
         elif sec_id == SEC_TABLE:
             _parse_table_section(data, off, sec_end, module)
-
         elif sec_id == SEC_MEMORY:
             _parse_memory_section(data, off, sec_end, module)
-
         elif sec_id == SEC_GLOBAL:
             _parse_global_section(data, off, sec_end, module)
-
         elif sec_id == SEC_EXPORT:
             _parse_export_section(data, off, sec_end, module)
-
         elif sec_id == SEC_START:
             _parse_start_section(data, off, sec_end, module)
-
         elif sec_id == SEC_ELEMENT:
             _parse_element_section(data, off, sec_end, module)
-
         elif sec_id == SEC_CODE:
             _parse_code_section(data, off, sec_end, type_indices, module)
-
         elif sec_id == SEC_DATA:
             _parse_data_section(data, off, sec_end, module)
 
         # else: custom section -- skip its bytes.
         off = sec_end
-
     return module

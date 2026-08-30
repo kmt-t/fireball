@@ -81,7 +81,6 @@ class COOSKernel:
             self.tasks[receiver]["state"] = TaskState.READY
             self.tasks[sender]["state"] = TaskState.READY
             return self._handoff_or_yield(receiver)
-
         # No peer yet: the value stays in the sender's own frame. The channel holds
         # nothing, so there is no buffer to overflow and no send to roll back.
         assert ch.waiter_dir != WaitDir.SEND, (
@@ -107,7 +106,6 @@ class COOSKernel:
             self.tasks[sender]["state"] = TaskState.READY
             self.tasks[receiver]["state"] = TaskState.READY
             return self._handoff_or_yield(sender)
-
         assert ch.waiter_dir != WaitDir.RECV, (
             "one waiter per channel: concurrent receivers must use separate channels"
         )
@@ -171,12 +169,10 @@ class COOSKernel:
         active_tasks = [t for t in self.tasks.values() if t["state"] != TaskState.TERMINATED]
         if not active_tasks:
             return False
-
         if not self.ready_queue:
             # All tasks blocked => trigger idle hook
             self.idle_hook()
             return True
-
         task_id = self.ready_queue.pop(0)
         self.current_task = task_id
         task_entry = self.tasks[task_id]

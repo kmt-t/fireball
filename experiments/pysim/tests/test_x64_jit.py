@@ -94,7 +94,6 @@ def test_trace_compiler_cps_4arg_and_pic():
         )
         # (10 + 10) * 3 - 5 = 55
         assert locals_arr_pic[1] == 55, "PIC trace failed when relocated in memory"
-
     finally:
         reloc_buf.close()
 

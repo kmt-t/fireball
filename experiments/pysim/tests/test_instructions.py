@@ -187,7 +187,6 @@ def test_coos_05_one_waiter_per_channel_enforced():
     try:
         sched.channel_send("ch_test", 2)
         raise AssertionError("Expected AssertionError for second sender on same channel")
-
     except AssertionError as e:
         assert "separate channels" in str(e)
 
@@ -294,7 +293,6 @@ def test_sched_02_task_capacity_limit():
     try:
         sched.spawn("t_overflow")
         raise AssertionError("Expected RuntimeError for task capacity overflow")
-
     except RuntimeError as e:
         assert "capacity exceeded" in str(e)
 
@@ -306,7 +304,6 @@ def test_sched_03_duplicate_task_id_rejected():
     try:
         sched.spawn("t2", task_id=10)
         raise AssertionError("Expected ValueError for duplicate task_id")
-
     except ValueError as e:
         assert "already exists" in str(e)
 
@@ -382,7 +379,6 @@ def test_mem_06_guest_ram_64kb_alignment():
     try:
         mm.init_manager(pool_base=0x20021000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
         raise AssertionError("Expected AssertionError for unaligned pool_base")
-
     except AssertionError as e:
         assert "64KB aligned" in str(e)
 
@@ -462,7 +458,6 @@ def test_hal_01_uart_transport_is_real_pipe():
         assert t.write(b"fireball\n") == 9
         assert t.drain() == b"fireball\n"
         assert t.drain() == b""
-
     finally:
         t.close()
 
@@ -481,13 +476,10 @@ def test_hal_03_shm_pool_rejects_oversized():
         try:
             pool.acquire_buffer(1, size=FB_CONF_HAL_BUFFER_SIZE + 1)
             raise AssertionError("expected ValueError for oversized acquire_buffer")
-
         except ValueError:
             pass
-
         handles = [pool.acquire_buffer(1, size=32) for _ in range(FB_CONF_HAL_MAX_BUFFERS)]
         assert len(handles) == FB_CONF_HAL_MAX_BUFFERS
-
     finally:
         pool.close_all()
 
@@ -501,10 +493,8 @@ def test_hal_04_shm_slice_bounds_and_ownership():
         try:
             pool.view(2, h, 0, 16)
             raise AssertionError("expected ShmTrap: task 2 does not own handle")
-
         except ShmTrap:
             pass
-
     finally:
         pool.close_all()
 
@@ -521,7 +511,6 @@ def test_log_01_dictionary_rejects_pointer_specifiers():
         try:
             d.register(0x02, bad)
             raise AssertionError("expected ValueError for pointer-shaped specifier")
-
         except ValueError:
             pass
 
@@ -540,7 +529,6 @@ def test_log_02_logger_ring_buffer_overwrites():
         assert flushed == 4
         wire = t.drain().decode()
         assert "event #2" in wire and "event #5" in wire
-
     finally:
         t.close()
 
@@ -554,7 +542,6 @@ def test_recovery_01_retry_success_within_limit():
         attempts[0] += 1
         if attempts[0] < 3:
             return Result.err("BUSY", RecoveryStrategy.RETRY)
-
         return Result.ok("SUCCESS_DATA")
 
     res = mgr.execute_with_recovery(op)
@@ -576,7 +563,6 @@ def test_recovery_02_retry_exhaustion_escalates_to_restart():
         attempts[0] += 1
         if reset_called[0]:
             return Result.ok("RECOVERED_AFTER_RESET")
-
         return Result.err("RESOURCE_EXHAUSTED", RecoveryStrategy.RETRY)
 
     def do_reset() -> bool:
@@ -873,7 +859,6 @@ def test_ipc_02_e2e_shared_block_transfer():
         recv_sb = sysv.memory_manager.claim(receiver_task_id=2, shm_id=recv_shm_id).unwrap()
         assert recv_sb.get_owner() == 2
         assert recv_sb.get_address() == addr
-
     finally:
         sysv.shutdown()
 
@@ -894,7 +879,6 @@ def test_ipc_03_queue_full_rollback_restores_owner():
         # Rollback
         sysv.memory_manager.rollback_transfer(original_sender_id=1, shm_id=shm_id)
         assert sysv.memory_manager.vmmio_registry.get_owner(sb.page_idx) == 1
-
     finally:
         sysv.shutdown()
 
@@ -908,7 +892,6 @@ def test_syscall_01_unknown_id_returns_nosys():
     sysv = System()
     try:
         assert sysv.fireball_call(0xDEAD, 0, 0, 0, 0, 0, 0) == WasiErrno.NOSYS
-
     finally:
         sysv.shutdown()
 
@@ -921,7 +904,6 @@ def test_syscall_02_sys_control_registers():
         assert sysv.reset_requested
         assert sysv.fireball_call(FbSyscallId.SYS_HALT, 0, 0, 0, 0, 0, 0) == WasiErrno.SUCCESS
         assert sysv.halted
-
     finally:
         sysv.shutdown()
 
@@ -935,7 +917,6 @@ def test_syscall_03_mmio_read_write():
             == WasiErrno.SUCCESS
         )
         assert sysv.fireball_call(FbSyscallId.MMIO_READ32, addr, 0, 0, 0, 0, 0) == 0xCAFEBABE
-
     finally:
         sysv.shutdown()
 
@@ -949,7 +930,6 @@ def test_syscall_04_vdma_transfer():
         dst = FB_CONF_VSOC_PASSTHROUGH_BASE + 0x1000
         assert sysv.fireball_call(FbSyscallId.VDMA_START, 0, dst, 4, 0, 0, 0) == WasiErrno.SUCCESS
         assert sysv.fireball_call(FbSyscallId.MMIO_READ32, dst, 0, 0, 0, 0, 0) == 0x11223344
-
     finally:
         sysv.shutdown()
 
@@ -961,7 +941,6 @@ def test_syscall_05_irq_flags():
         assert sysv.fireball_call(FbSyscallId.IRQ_READ_FLAGS, 0, 0, 0, 0, 0, 0) == 0x4
         assert sysv.fireball_call(FbSyscallId.IRQ_CLEAR, 0x4, 0, 0, 0, 0, 0) == WasiErrno.SUCCESS
         assert sysv.fireball_call(FbSyscallId.IRQ_READ_FLAGS, 0, 0, 0, 0, 0, 0) == 0
-
     finally:
         sysv.shutdown()
 
@@ -984,7 +963,6 @@ def test_syscall_06_ipc_lookup_send_recv():
         recv_len = sysv.fireball_call(FbSyscallId.IPC_RECV, handle, 96, 32, 0, 0, 0)
         assert recv_len == len(payload)
         assert bytes(guest_mem[96 : 96 + recv_len]) == payload
-
     finally:
         sysv.shutdown()
 
@@ -1002,7 +980,6 @@ def test_syscall_07_wasi_fd_write():
         assert sysv.transport.drain() == message
         nwritten = struct.unpack_from("<I", guest_mem, 48)[0]
         assert nwritten == len(message)
-
     finally:
         sysv.shutdown()
 
@@ -1027,7 +1004,6 @@ def test_wasi_01_fd_write_scatter_gather():
         assert sysv.transport.drain() == chunk1 + chunk2
         nwritten = struct.unpack_from("<I", guest_mem, 100)[0]
         assert nwritten == len(chunk1) + len(chunk2)
-
     finally:
         sysv.shutdown()
 
@@ -1042,7 +1018,6 @@ def test_wasi_02_fd_read_eof():
         assert sysv.fireball_call(FbSyscallId.WASI_FD_READ, 0, 0, 1, 48, 0, 0) == WasiErrno.SUCCESS
         nread = struct.unpack_from("<I", guest_mem, 48)[0]
         assert nread == 0  # Standard WASI EOF
-
     finally:
         sysv.shutdown()
 
@@ -1052,7 +1027,6 @@ def test_wasi_03_fd_close():
     sysv = System()
     try:
         assert sysv.fireball_call(FbSyscallId.WASI_FD_CLOSE, 3, 0, 0, 0, 0, 0) == WasiErrno.SUCCESS
-
     finally:
         sysv.shutdown()
 
@@ -1076,7 +1050,6 @@ def test_wasi_04_clock_time_get_monotonic():
         )
         t2 = struct.unpack_from("<Q", guest_mem, 24)[0]
         assert t2 >= t1, "WASI monotonic clock must be monotonically non-decreasing"
-
     finally:
         sysv.shutdown()
 
@@ -1091,7 +1064,6 @@ def test_wasi_05_proc_exit():
         )
         assert sysv.halted is True
         assert sysv.exit_code == 42
-
     finally:
         sysv.shutdown()
 
@@ -1108,7 +1080,6 @@ def test_wasi_06_random_get():
         random_bytes = bytes(guest_mem[8:24])
         assert len(random_bytes) == 16
         assert random_bytes != bytes(16), "Random buffer must not be all zeros"
-
     finally:
         sysv.shutdown()
 
@@ -1122,7 +1093,6 @@ def test_wasi_07_invalid_fd_returns_badf():
         sysv.bind_guest(guest_mem, task_id=1)
         res = sysv.fireball_call(FbSyscallId.WASI_FD_WRITE, 99, 0, 1, 48, 0, 0)
         assert res == WasiErrno.BADF
-
     finally:
         sysv.shutdown()
 
@@ -1136,7 +1106,6 @@ def test_wasi_08_out_of_bounds_offset_returns_fault():
         # iovs_ptr way past 64 bytes
         res = sysv.fireball_call(FbSyscallId.WASI_FD_WRITE, 1, 0x10000, 1, 48, 0, 0)
         assert res == WasiErrno.FAULT
-
     finally:
         sysv.shutdown()
 
@@ -1185,7 +1154,6 @@ def test_wasm_01_to_06_unsupported_features_rejected():
         interp = Interpreter(mod)
         interp.call(0, [])
         raise AssertionError("Expected WasmUnsupportedFeatureError for SIMD opcode")
-
     except WasmUnsupportedFeatureError as e:
         assert "ERR_WASM_UNSUPPORTED_FEATURE" in str(e)
 
@@ -1222,10 +1190,8 @@ def test_wasm_10_to_15_control_flow_and_calls():
     try:
         interp.call(mod.export_func_index("unreachable_fn"), [])
         raise AssertionError("Expected Trap for unreachable")
-
     except Trap:
         pass
-
     # WASM-13: br_table branch resolution
     assert interp.call(mod.export_func_index("calc_fn"), [0]) == [100]
     assert interp.call(mod.export_func_index("calc_fn"), [1]) == [200]
@@ -1302,7 +1268,6 @@ def test_wasm_40_to_46_memory_load_store_grow_and_data():
     try:
         interp.call(mod.export_func_index("trap_oob"), [])
         raise AssertionError("Expected Trap on out of bounds memory access")
-
     except Trap:
         pass
 
@@ -1329,10 +1294,8 @@ def test_wasm_50_to_56_integer_arithmetic_and_bitwise():
     try:
         interp.call(mod.export_func_index("div_s"), [10, 0])
         raise AssertionError("Expected Trap on division by zero")
-
     except Trap:
         pass
-
     # Normal div
     assert interp.call(mod.export_func_index("div_s"), [10, 2]) == [5]
     # WASM-52, 55, 56: Bit ops
@@ -1390,7 +1353,6 @@ def test_cont_03_slice_monotonic_shrinkage_and_bounds():
     try:
         v1.slice(0, 5)  # Expanding beyond v1's window [1, 4] must fail
         raise AssertionError("Expected ValueError when expanding slice")
-
     except ValueError:
         pass
 
@@ -1462,7 +1424,6 @@ def test_cont_07_bit_view_allowed_bits_enforced():
         try:
             BitView(storage, bits=invalid, count=4)
             raise AssertionError(f"Expected ValueError for invalid Bits={invalid}")
-
         except ValueError:
             pass
 
@@ -1548,7 +1509,6 @@ def test_coop_01_wasm_coroutine_yields_on_quantum():
         while True:
             next(coro)
             yield_count += 1
-
     except StopIteration as e:
         result = e.value
 
@@ -1775,7 +1735,6 @@ def test_guest_wasi_01_interpreter_fd_write():
         assert sysv.transport.drain() == msg
         nwritten = struct.unpack_from("<I", ctx.guest_memory, 32)[0]
         assert nwritten == len(msg)
-
     finally:
         sysv.shutdown()
 
@@ -1806,7 +1765,6 @@ def test_guest_wasi_02_interpreter_clock_and_random():
         rand_data = bytes(ctx.guest_memory[32:48])
         assert len(rand_data) == 16
         assert rand_data != bytes(16)
-
     finally:
         sysv.shutdown()
 
@@ -1832,7 +1790,6 @@ def test_guest_wasi_03_interpreter_proc_exit():
         interp.call(mod.export_func_index("main"), [])
         assert sysv.halted is True
         assert sysv.exit_code == 99
-
     finally:
         sysv.shutdown()
 
@@ -1867,7 +1824,6 @@ def test_guest_wasi_04_jit_fd_write_native():
         assert sysv.transport.drain() == msg
         nwritten = struct.unpack_from("<I", ctx.guest_memory, 48)[0]
         assert nwritten == len(msg)
-
     finally:
         sysv.shutdown()
 
@@ -1904,7 +1860,6 @@ def test_guest_wasi_05_jit_fireball_call_ipc_messaging():
         recv_len = w_ctx.locals[0]
         assert recv_len == len(payload)
         assert bytes(ctx.guest_memory[64 : 64 + recv_len]) == payload
-
     finally:
         sysv.shutdown()
 
@@ -2035,10 +1990,8 @@ def test_wasm_loader_and_radix_binary_tree_view_indexes():
     try:
         loader.prepare("bad", _build_test_wasm_binary(magic=b"\x7fELF"))
         assert False
-
     except WasmVerifyError:
         pass
-
     assert loader.allocator.offset == watermark
     # 3. RadixBinaryTreeView file offset reverse-lookup (LOAD-40..44)
     assert len(view.entity_registry) > 0

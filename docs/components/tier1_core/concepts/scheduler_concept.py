@@ -47,7 +47,6 @@ class RoundRobinScheduler:
         """Selects the next task in O(1) from the ready ring."""
         if not self.ready_ring:
             return None
-
         task_id = self.ready_ring.pop(0)
         self.current_task = task_id
         task_entry = self.tasks[task_id]
@@ -95,7 +94,6 @@ class RoundRobinScheduler:
         task_id = self.schedule_next()
         if task_id is None:
             return False  # All tasks blocked or completed
-
         task_entry = self.tasks[task_id]
         try:
             action = task_entry["coro"].send(None)
@@ -105,7 +103,6 @@ class RoundRobinScheduler:
                 self.block_current()
         except StopIteration:
             self.terminate_current()
-
         return True
 
 
@@ -134,7 +131,6 @@ def test_round_robin_fairness():
     sched.spawn("B", task_b())
     while sched.run_cycle():
         pass
-
     assert exec_order == ["A1", "B1", "A2", "B2"], f"Unexpected execution order: {exec_order}"
     assert sched.tasks["A"]["state"] == TaskState.TERMINATED
     assert sched.tasks["B"]["state"] == TaskState.TERMINATED

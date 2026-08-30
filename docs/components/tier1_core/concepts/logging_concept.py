@@ -148,7 +148,6 @@ class Logger:
         self.tick_counter += 1
         if level < self.min_level:
             return "FILTERED"
-
         entry = LogEntry(
             level=level,
             dict_offset=dict_offset,
@@ -181,11 +180,9 @@ class Logger:
         while not self.ring_buffer.is_empty() and flushed_count < max_batch:
             if interrupt_pending and interrupt_pending():
                 break
-
             entry = self.ring_buffer.pop()
             if entry is None:
                 break
-
             msg = self.dictionary.format(
                 entry.dict_offset, entry.arg0, entry.arg1, entry.arg2, entry.arg3
             )
@@ -195,7 +192,6 @@ class Logger:
 
         if batch:
             self.transport.start_dma(batch)
-
         return flushed_count
 
 

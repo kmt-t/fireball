@@ -46,7 +46,6 @@ from hal import UartTransport
 # Matches a printf-style numeric conversion (%d, %08X, %u, ...) but not a
 # literal "%%". Deliberately excludes %s/%p/%c: LogDictionary.register()
 # rejects those outright, see the FINDING below.
-
 _SPECIFIER_RE = re.compile(r"%(?:%|[-+0# ]*\d*(?:\.\d+)?[diouxX])")
 
 
@@ -101,7 +100,6 @@ class LogDictionary:
         fmt = self._map.find(offset)
         if fmt is None:
             return f"<UNKNOWN_DICT_OFFSET_0x{offset:X}>"
-
         n = sum(1 for m in _SPECIFIER_RE.finditer(fmt) if m.group() != "%%")
         return fmt % args[:n]
 
@@ -141,7 +139,6 @@ class RingBuffer:
     def pop(self) -> LogEntry | None:
         if self._count == 0:
             return None
-
         entry = self._buf[self._tail]
         self._buf[self._tail] = None
         self._tail = (self._tail + 1) & self._mask
@@ -162,7 +159,6 @@ class Logger:
         min_level: LogLevel = LogLevel.INFO,
         capacity: int = 16,
     ):
-
         self.transport = transport
         self.dictionary = dictionary
         self.min_level = min_level
@@ -182,7 +178,6 @@ class Logger:
         self._tick += 1
         if level < self.min_level:
             return "FILTERED"
-
         overwritten = self.ring.push(
             LogEntry(level, dict_offset, (arg0, arg1, arg2, arg3), self._tick)
         )
@@ -197,7 +192,6 @@ class Logger:
             line = f"[{entry.level.name}][tick:{entry.tick}] {msg}\n"
             self.transport.write(line.encode("utf-8"))
             flushed += 1
-
         return flushed
 
 

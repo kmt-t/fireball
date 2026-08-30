@@ -64,7 +64,6 @@ class BitView:
     def __init__(self, storage: bytearray | bytes, bits: int, origin: int = 0, count: int = 0):
         if bits not in ALLOWED_BITS:
             raise ValueError(f"Bits must be 1, 2 or 4 (got {bits})")
-
         self.storage = storage
         self.bits = bits
         self.origin = origin  # bit offset of logical element 0
@@ -79,7 +78,6 @@ class BitView:
     def _bit_pos(self, i: int) -> int:
         if not (0 <= i < self.count):
             raise IndexError(f"index {i} outside bit_view of size {self.count}")
-
         return self.origin + i * self.bits
 
     def at(self, i: int) -> int:
@@ -91,7 +89,6 @@ class BitView:
         mask = (1 << self.bits) - 1
         if not (0 <= value <= mask):
             raise ValueError(f"value {value} does not fit in {self.bits} bits (max {mask})")
-
         bit = self._bit_pos(i)
         byte_idx, shift = bit >> 3, bit & 7
         cleared = self.storage[byte_idx] & ~(mask << shift) & 0xFF
@@ -107,7 +104,6 @@ class BitView:
             raise ValueError(
                 f"a view may only ever shrink (0 <= {first} <= {last} <= {self.count})"
             )
-
         return BitView(self.storage, self.bits, self.origin + first * self.bits, last - first)
 
 
@@ -160,14 +156,12 @@ class FlatMapView(_SortedWindow[KeyT], Generic[KeyT, ValT]):
         first: int = 0,
         last: int | None = None,
     ):
-
         super().__init__(keys, first, last)
         self.values = values
 
     def slice(self, first: int, last: int) -> FlatMapView[KeyT, ValT]:
         if not (self.first <= first <= last <= self.last):
             raise ValueError("a view may only ever shrink")
-
         return FlatMapView(self.keys, self.values, first, last)
 
     def narrow(self, lo: KeyT, hi: KeyT) -> FlatMapView[KeyT, ValT]:
@@ -182,7 +176,6 @@ class FlatMapView(_SortedWindow[KeyT], Generic[KeyT, ValT]):
         val = self.find(key)
         if val is None:
             raise KeyError(key)
-
         return val
 
 
@@ -200,7 +193,6 @@ class FlatSetView(_SortedWindow[KeyT], Generic[KeyT]):
     def slice(self, first: int, last: int) -> FlatSetView[KeyT]:
         if not (self.first <= first <= last <= self.last):
             raise ValueError("a view may only ever shrink")
-
         return FlatSetView(self.keys, first, last)
 
     def narrow(self, lo: KeyT, hi: KeyT) -> FlatSetView[KeyT]:
@@ -276,18 +268,14 @@ def lookup_jit_entry(
     card_idx = pc >> card_shift
     if card_idx >= card_table.size() or card_table.at(card_idx) != 3:  # 3 = COMPILED
         return None
-
     if isinstance(view, RadixBinaryTreeView):
         return view.find(pc)
-
     group_idx = pc >> group_shift
     if group_idx >= len(entry_group_bounds):
         return None
-
     first, last = entry_group_bounds[group_idx]
     if first >= last:
         return None
-
     return view.slice(first, last).find(pc)
 
 
@@ -319,7 +307,6 @@ class StaticFlatMap(Generic[KeyT, ValT]):
         idx = bisect.bisect_left(self._keys, key)
         if idx < len(self._keys) and self._keys[idx] == key:
             return self._values[idx]
-
         return None
 
     def insert(self, key: KeyT, value: ValT) -> bool:
@@ -327,10 +314,8 @@ class StaticFlatMap(Generic[KeyT, ValT]):
         if idx < len(self._keys) and self._keys[idx] == key:
             self._values[idx] = value
             return True
-
         if len(self._keys) >= self.capacity:
             return False
-
         self._keys.insert(idx, key)
         self._values.insert(idx, value)
         return True
@@ -340,7 +325,6 @@ class StaticFlatMap(Generic[KeyT, ValT]):
         if idx < len(self._keys) and self._keys[idx] == key:
             self._keys.pop(idx)
             return self._values.pop(idx)
-
         return None
 
     def clear(self) -> None:
@@ -382,10 +366,8 @@ class StaticFlatSet(Generic[KeyT]):
         idx = bisect.bisect_left(self._keys, key)
         if idx < len(self._keys) and self._keys[idx] == key:
             return True
-
         if len(self._keys) >= self.capacity:
             return False
-
         self._keys.insert(idx, key)
         return True
 
@@ -394,7 +376,6 @@ class StaticFlatSet(Generic[KeyT]):
         if idx < len(self._keys) and self._keys[idx] == key:
             self._keys.pop(idx)
             return True
-
         return False
 
     def clear(self) -> None:
@@ -427,19 +408,16 @@ class RingBuffer(Generic[T]):
             # Overwrite at head
             self.buf[self.head] = item
             self.head = (self.head + 1) % self.capacity
-
         else:
             tail = (self.head + self.count) % self.capacity
             self.buf[tail] = item
             self.count += 1
-
         return overwritten
 
     def pop(self) -> T | None:
         """Pop the oldest item (FIFO)."""
         if self.count == 0:
             return None
-
         item = self.buf[self.head]
         self.buf[self.head] = None
         self.head = (self.head + 1) % self.capacity
@@ -453,7 +431,6 @@ class RingBuffer(Generic[T]):
             item = self.pop()
             if item is not None:
                 out.append(item)
-
         return out
 
     def size(self) -> int:
@@ -480,7 +457,6 @@ class StaticVector(Generic[T]):
     def push_back(self, item: T) -> bool:
         if len(self._items) >= self.capacity:
             return False
-
         self._items.append(item)
         return True
 

@@ -33,7 +33,6 @@ for _p in [
 import ctypes
 
 # Platform detection
-
 IS_WINDOWS = sys.platform == "win32"
 
 if IS_WINDOWS:
@@ -63,7 +62,6 @@ if IS_WINDOWS:
         wt.DWORD,
         ctypes.POINTER(wt.DWORD),
     ]
-
 else:
     # Linux / POSIX
     PROT_NONE = 0x0
@@ -105,10 +103,8 @@ class ExecutableBuffer:
             addr = _kernel32.VirtualAlloc(None, size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE)
             if not addr:
                 raise MemoryError("VirtualAlloc failed to allocate executable memory")
-
             self.base = addr
             self.current_protection = PAGE_READWRITE
-
         else:
             # Initial state: PROT_READ | PROT_WRITE
             addr = _libc.mmap(
@@ -116,7 +112,6 @@ class ExecutableBuffer:
             )
             if addr is None or addr == -1 or addr == 0xFFFFFFFFFFFFFFFF:
                 raise MemoryError("mmap failed to allocate executable memory")
-
             self.base = addr
             self.current_protection = PROT_READ | PROT_WRITE
 
@@ -128,7 +123,6 @@ class ExecutableBuffer:
             res = _kernel32.VirtualProtect(self.base, self.size, PAGE_READWRITE, ctypes.byref(old))
             assert res != 0, "VirtualProtect to PAGE_READWRITE failed"
             self.current_protection = PAGE_READWRITE
-
         else:
             res = _libc.mprotect(self.base, self.size, PROT_READ | PROT_WRITE)
             assert res == 0, f"mprotect to PROT_READ|PROT_WRITE failed (errno={ctypes.get_errno()})"
@@ -148,7 +142,6 @@ class ExecutableBuffer:
             )
             assert res != 0, "VirtualProtect to PAGE_EXECUTE_READ failed"
             self.current_protection = PAGE_EXECUTE_READ
-
         else:
             res = _libc.mprotect(self.base, self.size, PROT_READ | PROT_EXEC)
             assert res == 0, f"mprotect to PROT_READ|PROT_EXEC failed (errno={ctypes.get_errno()})"
@@ -169,7 +162,6 @@ class ExecutableBuffer:
                 PAGE_EXECUTE_READ,
                 PAGE_READONLY,
             )
-
         else:
             assert self.current_protection != (PROT_READ | PROT_WRITE | PROT_EXEC), (
                 "Invariant violation: Buffer is in RWX state"
@@ -210,7 +202,6 @@ class ExecutableBuffer:
         if getattr(self, "base", None):
             if IS_WINDOWS:
                 _kernel32.VirtualFree(self.base, 0, MEM_RELEASE)
-
             else:
                 _libc.munmap(self.base, self.size)
 

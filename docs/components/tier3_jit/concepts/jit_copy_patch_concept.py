@@ -654,7 +654,6 @@ class CopyPatchJITEngine:
         target_map = VARIANT_REGISTER_MAPS[target_variant_id]
         if not set(target_map).issubset(source_map):
             return False
-
         moves = {
             target_map[role]: source_map[role]
             for role in target_map

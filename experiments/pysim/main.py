@@ -91,7 +91,6 @@ def task_bus_owner(sysv: System, task_id: int):
     try:
         master.transfer_data(ShmSlice(tx, 0, 999), ShmSlice(rx, 0, 999))
         findings.append("BUG: an out-of-bounds shm-slice was NOT rejected")
-
     except ShmTrap as e:
         print(f"  [bus-owner] out-of-bounds shm-slice correctly trapped: {e}")
 
@@ -112,7 +111,6 @@ def task_hostile_neighbor(sysv: System, my_task_id: int, other_handle):
             f"BUG: task {my_task_id} could read another task's SHM handle {other_handle.name} -- "
             "ownership isolation is broken"
         )
-
     except ShmTrap as e:
         print(f"  [hostile-neighbor] cross-task access correctly trapped: {e}")
 
@@ -132,7 +130,6 @@ def task_retry_then_succeed(sysv: System):
         attempts_made[0] += 1
         if attempts_made[0] < 3:
             return Result.err("BUSY", RecoveryStrategy.RETRY)
-
         return Result.ok("SUCCESS")
 
     res = mgr.execute_with_recovery(flaky_operation)
@@ -321,7 +318,6 @@ def main() -> None:
             print(f"  - {f}")
 
         raise SystemExit(1)
-
     print("  No behavioral bugs found: every enforced invariant held under real execution.")
     print("  (See recovery.py/logger.py source comments for two spec gaps this build")
     print("   had to resolve by assumption -- retry-exhaustion escalation, and the")

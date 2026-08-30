@@ -188,7 +188,6 @@ class JITTraceHeader:
         flags: int = 0,
         variant_id: int = 0,
     ):
-
         self.head_wasm_pc = head_wasm_pc & 0xFFFF_FFFF
         self.trace_byte_size = trace_byte_size & 0xFFFF
         self.flags = flags & 0xFF
@@ -224,7 +223,6 @@ class JITTrace:
         buf: Any = None,
         native_fn: Any = None,
     ):
-
         self.head_pc = head_pc
         self.fn = fn or native_fn  # Direct ctypes CFUNCTYPE function pointer or callable
         self.size_bytes = size_bytes
@@ -262,7 +260,6 @@ class JITTrace:
         try:
             # 4-argument call
             return self.fn(ip_or_locals, stack_bot_or_mem, env, local_base)
-
         except TypeError:
             # 2-argument fallback
             return self.fn(ip_or_locals, stack_bot_or_mem)
@@ -271,17 +268,14 @@ class JITTrace:
         """Helper to invoke trace directly on WASMContext via CPS 4-argument calling convention."""
         try:
             res = self.fn(self.head_pc, ctx.stack_bot_ptr, ctx.mem_ptr, ctx.locals_ptr)
-
         except TypeError:
             try:
                 res = self.fn(ctx.locals_ptr, ctx.mem_ptr)
-
             except TypeError:
                 res = self.fn(ctx)
 
         if self.has_return_val and isinstance(res, int):
             ctx.push(res & 0xFFFF_FFFF)
-
         return res
 
 
@@ -298,7 +292,6 @@ class JITCacheBank:
         for pc, trace in self.traces:
             if pc == head_pc:
                 return trace
-
         return None
 
     def has_trace(self, head_pc: int) -> bool:
@@ -309,7 +302,6 @@ class JITCacheBank:
             if pc == head_pc:
                 self.traces.pop(i)
                 return trace
-
         return None
 
     def clear(self) -> list[int]:
@@ -324,7 +316,6 @@ class JITCacheBank:
         delta = trace.size_bytes - (prev.size_bytes if prev else 0)
         if self.used_bytes + delta > self.capacity_bytes:
             return False
-
         if prev is not None:
             self.remove_trace(trace.head_pc)
 
@@ -359,7 +350,6 @@ class JITMultiBufferCache:
         for bank in self.banks:
             if bank.has_trace(head_pc):
                 return bank
-
         return None
 
     def find_trace(self, head_pc: int) -> JITTrace | None:
@@ -367,7 +357,6 @@ class JITMultiBufferCache:
             trace = bank.get_trace(head_pc)
             if trace is not None:
                 return trace
-
         return None
 
     def register_chain(self, source_pc: int, target_pc: int) -> None:
@@ -379,15 +368,12 @@ class JITMultiBufferCache:
         trace = self.active.get_trace(head_pc)
         if trace is not None:
             return trace
-
         trace = self.warm.get_trace(head_pc)
         if trace is not None:
             return trace
-
         trace = self.oldest.get_trace(head_pc)
         if trace is None:
             return None
-
         # Oldest bank hit: promote to Active bank immediately
         self.oldest.remove_trace(head_pc)
         self.oldest.used_bytes -= trace.size_bytes
@@ -404,13 +390,11 @@ class JITMultiBufferCache:
             self.rotate()
             if not self.active.allocate(trace):
                 return False
-
         # Chain into active/warm successor if resident (never oldest, never loops_to)
         succ = trace.next_pc
         if succ is not None and (self.active.has_trace(succ) or self.warm.has_trace(succ)):
             trace.chain_next = succ
             self.register_chain(trace.head_pc, succ)
-
         return True
 
     def rotate(self) -> list[int]:
@@ -443,7 +427,6 @@ class JITMultiBufferCache:
         self.oldest_idx = new_oldest
         if self.on_evict and purged_pcs:
             self.on_evict(purged_pcs)
-
         return purged_pcs
 
     def flush_all(self) -> None:
@@ -478,14 +461,12 @@ class RuntimeEngine:
             if pc == block.head_pc:
                 self.blocks[i] = (block.head_pc, block)
                 return
-
         self.blocks.append((block.head_pc, block))
 
     def get_block(self, pc: int) -> BasicBlock | None:
         for b_pc, block in self.blocks:
             if b_pc == pc:
                 return block
-
         return None
 
     def register_module_blocks(self, module: Any) -> None:
@@ -527,19 +508,16 @@ class RuntimeEngine:
             pc = self.compile_queue.pop()
             if self.bitmap.get_state(pc) == CardState.COMPILED:
                 continue
-
             block = self.get_block(pc)
             trace = None
             if hasattr(self.jit_compiler, "compile_trace") and block is not None:
                 trace = self.jit_compiler.compile_trace(pc, block)
-
             elif callable(self.jit_compiler):
                 trace = self.jit_compiler(pc)
 
             if trace is not None and self.cache.insert(trace):
                 self.bitmap.mark_compiled(pc)
                 compiled_count += 1
-
         return compiled_count
 
     def drain_compile_queue(self) -> int:
@@ -559,7 +537,6 @@ class RuntimeEngine:
                 next(gen)
                 self.on_yield()
                 yield  # Cooperative yield to scheduler
-
         except StopIteration as e:
             self.on_yield()
             return e.value or []
@@ -574,7 +551,6 @@ class WASMContext:
         memory: bytearray | None = None,
         stack_capacity: int = 64,
     ):
-
         n_locals = max(len(locals_values or []), 16)
         self._c_locals = (ctypes.c_int64 * n_locals)()
         if locals_values:
@@ -587,7 +563,6 @@ class WASMContext:
         self.memory = memory
         if memory is not None:
             self._c_mem = (ctypes.c_char * len(memory)).from_buffer(memory)
-
         else:
             self._c_mem = None
 
@@ -603,7 +578,6 @@ class WASMContext:
     def mem_ptr(self) -> ctypes.c_void_p:
         if self._c_mem is not None:
             return ctypes.c_void_p(ctypes.addressof(self._c_mem))
-
         return ctypes.c_void_p(0)
 
     class _LocalsView:
@@ -635,13 +609,11 @@ class WASMContext:
     def push(self, val: int) -> None:
         if len(self.stack) >= self.stack_capacity:
             raise RuntimeError("WASM execution stack overflow")
-
         self.stack.append(val & 0xFFFF_FFFF)
 
     def pop(self) -> int:
         if not self.stack:
             raise RuntimeError("WASM execution stack underflow")
-
         return self.stack.pop()
 
 
@@ -655,7 +627,6 @@ class BasicBlock:
         next_pc: int | None = None,
         loops_to: int | None = None,
     ):
-
         self.head_pc = head_pc
         self.ops = ops
         self.next_pc = next_pc
@@ -676,25 +647,19 @@ class WASMTraceCompiler:
             for op, arg in ops:
                 if op == "i32.const":
                     stk.append(arg)
-
                 elif op == "i32.add":
                     b, a = stk.pop(), stk.pop()
                     stk.append((a + b) & 0xFFFF_FFFF)
-
                 elif op == "i32.sub":
                     b, a = stk.pop(), stk.pop()
                     stk.append((a - b) & 0xFFFF_FFFF)
-
                 elif op == "i32.mul":
                     b, a = stk.pop(), stk.pop()
                     stk.append((a * b) & 0xFFFF_FFFF)
-
                 elif op == "local.get":
                     stk.append(c_arr[arg] & 0xFFFF_FFFF)
-
                 elif op == "local.set":
                     c_arr[arg] = stk.pop() & 0xFFFF_FFFF
-
             return stk[-1] if stk else 0
 
         c_fn = ctypes.CFUNCTYPE(
@@ -760,14 +725,12 @@ class IntegratedHybridEngine:
             if pc == block.head_pc:
                 self.blocks[i] = (block.head_pc, block)
                 return
-
         self.blocks.append((block.head_pc, block))
 
     def get_block(self, pc: int) -> BasicBlock | None:
         for b_pc, block in self.blocks:
             if b_pc == pc:
                 return block
-
         return None
 
     def on_yield(self) -> None:
@@ -784,36 +747,29 @@ class IntegratedHybridEngine:
             block = self.get_block(head_pc)
             if block is None:
                 continue
-
             trace = self.compiler.compile_trace(head_pc, block)
             if trace is not None:
                 self.cache.insert(trace)
                 self.bitmap.mark_compiled(head_pc)
                 self.compilations += 1
                 compiled += 1
-
         return compiled
 
     def _interpret_block(self, block: BasicBlock, ctx: WASMContext) -> None:
         for op, arg in block.ops:
             if op == "i32.const":
                 ctx.push(arg)
-
             elif op == "i32.add":
                 b, a = ctx.pop(), ctx.pop()
                 ctx.push((a + b) & 0xFFFF_FFFF)
-
             elif op == "i32.sub":
                 b, a = ctx.pop(), ctx.pop()
                 ctx.push((a - b) & 0xFFFF_FFFF)
-
             elif op == "i32.mul":
                 b, a = ctx.pop(), ctx.pop()
                 ctx.push((a * b) & 0xFFFF_FFFF)
-
             elif op == "local.get":
                 ctx.push(ctx.locals[arg])
-
             elif op == "local.set":
                 ctx.locals[arg] = ctx.pop()
 
@@ -822,7 +778,6 @@ class IntegratedHybridEngine:
             # Condition at TOS: if non-zero, loop back; else fallthrough
             cond = ctx.pop()
             return block.loops_to if cond != 0 else block.next_pc
-
         return block.next_pc
 
     def run_block_interpret(self, block: BasicBlock, ctx: WASMContext) -> int | None:
@@ -841,7 +796,6 @@ class IntegratedHybridEngine:
             next_pc = (
                 trace.chain_next if trace.chain_next is not None else self._next_pc(block, ctx)
             )
-
         else:
             # Tier 2 Interpreter Execution with 2-bit hotspot tracking
             self.bitmap.touch(pc)
@@ -855,7 +809,6 @@ class IntegratedHybridEngine:
             self.exec_counter = 0
             self.yields += 1
             self.on_yield()
-
         return next_pc
 
     def _dispatch_debug(self, pc: int, block: BasicBlock, ctx: WASMContext) -> int | None:
@@ -865,7 +818,6 @@ class IntegratedHybridEngine:
             dbg.halted = True
             dbg.stop_signal = 5
             return pc
-
         if dbg is not None:
             dbg.sample_pc(pc)
 
@@ -878,7 +830,6 @@ class IntegratedHybridEngine:
         if next_pc is not None and dbg is not None and dbg.has_breakpoint(next_pc):
             dbg.halted = True
             dbg.stop_signal = 5
-
         return next_pc
 
     def run_step(self, pc: int, ctx: WASMContext) -> int | None:
@@ -890,5 +841,4 @@ class IntegratedHybridEngine:
         block = self.get_block(pc)
         if block is None:
             return None
-
         return self._dispatch(pc, block, ctx)

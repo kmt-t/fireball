@@ -84,7 +84,6 @@ class Scheduler:
         max_tasks: int = FB_CONF_MAX_TASKS,
         max_handoffs: int = FB_CONF_MAX_CONSECUTIVE_HANDOFFS,
     ):
-
         self.max_tasks = max_tasks
         self.max_handoffs = max_handoffs
         self.consecutive_handoffs = 0
@@ -103,7 +102,6 @@ class Scheduler:
         for t in self._all:
             if t.task_id == task_id:
                 return t
-
         return None
 
     def spawn(
@@ -115,11 +113,9 @@ class Scheduler:
         """Spawn a new task within FB_CONF_MAX_TASKS bounds."""
         if len(self._all) >= self.max_tasks:
             raise RuntimeError(f"Task capacity exceeded (max {self.max_tasks})")
-
         assigned_id = task_id if task_id is not None else self._next_id
         if self.get_task(assigned_id) is not None:
             raise ValueError(f"Task with ID {assigned_id} already exists")
-
         if task_id is None:
             self._next_id += 1
 
@@ -132,14 +128,12 @@ class Scheduler:
         for ch in self._channels:
             if ch.channel_id == channel_id:
                 return ch
-
         return None
 
     def create_channel(self, channel_id: str) -> Channel:
         existing = self.get_channel(channel_id)
         if existing is not None:
             return existing
-
         ch = Channel(channel_id)
         self._channels.append(ch)
         return ch
@@ -160,7 +154,6 @@ class Scheduler:
             receiver.state = TaskState.READY
             sender.state = TaskState.READY
             return self._handoff_or_yield(receiver)
-
         assert ch.waiter_dir != WaitDir.SEND, (
             "one waiter per channel: concurrent senders must use separate channels"
         )
@@ -187,7 +180,6 @@ class Scheduler:
             sender.state = TaskState.READY
             receiver.state = TaskState.READY
             return self._handoff_or_yield(sender)
-
         assert ch.waiter_dir != WaitDir.RECV, (
             "one waiter per channel: concurrent receivers must use separate channels"
         )
@@ -204,7 +196,6 @@ class Scheduler:
 
             self._ready.appendleft(target_task)
             return ("DIRECT_SWITCH", target_task.task_id)
-
         self.consecutive_handoffs = 0
         return ("YIELD", None)
 
@@ -213,7 +204,6 @@ class Scheduler:
         if len(self.interrupt_event_queue) >= FB_CONF_INTERRUPT_QUEUE_SIZE:
             self.dropped_irqs += 1
             return False
-
         self.interrupt_event_queue.append(irq_id)
         return True
 
@@ -229,11 +219,9 @@ class Scheduler:
                     waiters = wlist
                     self.irq_waiters.pop(i)
                     break
-
             for task in waiters:
                 task.state = TaskState.READY
                 self._ready.append(task)
-
         return count
 
     def wait_for_interrupt(self, irq_id: int) -> None:
@@ -244,7 +232,6 @@ class Scheduler:
             if qid == irq_id:
                 wlist.append(task)
                 return
-
         self.irq_waiters.append((irq_id, [task]))
 
     def set_idle_hook(self, fn: Callable[[], None]) -> None:
@@ -257,7 +244,6 @@ class Scheduler:
                 woken = tlist
                 self._blocked_by_event.pop(i)
                 break
-
         for task in woken:
             task.state = TaskState.READY
             self._ready.append(task)
@@ -280,22 +266,17 @@ class Scheduler:
                 task.state = TaskState.READY
                 self._ready.append(task)
                 continue
-
             try:
                 wait_on = next(task.coro)
-
             except StopIteration:
                 task.state = TaskState.TERMINATED
                 self.current_task = None
                 continue
-
             if wait_on is None:
                 task.state = TaskState.READY
                 self._ready.append(task)
-
             elif isinstance(wait_on, tuple) and wait_on[0] == "BLOCK":
                 pass
-
             else:
                 task.state = TaskState.BLOCKED
                 found = False
@@ -304,7 +285,6 @@ class Scheduler:
                         tlist.append(task)
                         found = True
                         break
-
                 if not found:
                     self._blocked_by_event.append((wait_on, [task]))
 
@@ -318,7 +298,6 @@ class Scheduler:
             self.run_until_idle()
             if not self._ready and not self._blocked_by_event and not self.irq_waiters:
                 return
-
         raise RuntimeError(
             f"scheduler did not reach idle within {max_sweeps} sweeps "
             "(a task is stuck BLOCKED on an event nobody notifies)"

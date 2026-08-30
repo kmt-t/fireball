@@ -75,7 +75,6 @@ class Stencil:
 #: only by executing the stencils (see test_x64_stencils.py) -- multi-reloc
 #: stencils have that much more room for the same mistake, so they don't
 #: get to rely on hand-counting at all.
-
 _SENTINEL_MAX_ADDR = bytes((0xA1, 0xA1, 0xA1, 0xA1))
 _SENTINEL_TRAP = bytes((0xA2, 0xA2, 0xA2, 0xA2))
 _SENTINEL_DISP = bytes((0xA3, 0xA3, 0xA3, 0xA3))
@@ -101,13 +100,11 @@ def _materialize_auto(name: str, gen: Generator[int, None, None] | Iterable[int]
         idx = code.find(sentinel)
         if idx == -1:
             continue
-
         assert code.find(sentinel, idx + 1) == -1, (
             f"stencil {name!r}: sentinel for {reloc_name!r} appears more than once"
         )
         relocs[reloc_name] = idx
         code[idx : idx + len(sentinel)] = bytes(len(sentinel))
-
     return Stencil(name=name, code=bytes(code), relocs=relocs)
 
 
@@ -157,7 +154,6 @@ def _gen_prologue() -> Generator[int, None, None]:
         yield from (0x49, 0x89, 0xCA)
         # mov r11, rdx        49 89 D3  (R11 = mem)
         yield from (0x49, 0x89, 0xD3)
-
     else:
         # System V AMD64 ABI (Linux): arg0=rdi (locals), arg1=rsi (mem)
         # push rbp            55
@@ -452,7 +448,6 @@ def _gen_restore_unwind_only() -> Generator[int, None, None]:
 
     if IS_WINDOWS:
         yield 0x5F  # pop rdi
-
     else:
         yield 0x5D  # pop rbp
 

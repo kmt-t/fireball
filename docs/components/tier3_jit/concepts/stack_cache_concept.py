@@ -130,7 +130,6 @@ class StackCachingCompiler:
             table = STENCILS.get(op)
             if table is None:
                 raise WASMTrap(f"NO_STENCIL_FOR: {op}")
-
             need = min(k for k in table)  # smallest depth this op supports
             if depth < need:
                 listing += self._refill(depth, need)
@@ -146,7 +145,6 @@ class StackCachingCompiler:
             listing += self._spill(depth)
             depth = 0
             listing += STENCILS["backedge"][0].emit(target=loops_to)
-
         return listing, depth
 
     @staticmethod

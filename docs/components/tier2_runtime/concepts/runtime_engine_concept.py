@@ -317,15 +317,12 @@ class JITMultiBufferCache:
     def lookup(self, head_pc: int) -> JITTrace | None:
         if head_pc in self.active.traces:
             return self.active.traces[head_pc]
-
         if head_pc in self.warm.traces:
             # Free observation window: execute in place, copy nothing.
             return self.warm.traces[head_pc]
-
         trace = self.oldest.traces.get(head_pc)
         if trace is None:
             return None
-
         # Oldest-Only Promotion: a hit in Oldest promotes immediately to Active
         self.begin_patch()
         try:
@@ -675,7 +672,6 @@ class IntegratedRuntimeEngine:
             block = self.blocks.get(pc)
             if block is None:
                 raise WASMTrap(f"NO_BLOCK_AT_PC: {pc}")
-
             trace = self.cache.lookup(pc)
             if trace is not None:
                 self.cache.require_executable()
@@ -695,7 +691,6 @@ class IntegratedRuntimeEngine:
 
             if self._tick_and_maybe_yield():
                 self.idle_hook()
-
         return "COMPLETED"
 
     @staticmethod

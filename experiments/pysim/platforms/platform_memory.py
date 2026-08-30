@@ -39,7 +39,6 @@ from typing import Any, Generic, TypeVar
 T = TypeVar("T")
 
 # Configuration & Constants (FB_CONF_*)
-
 FB_CONF_MEMORY_POOL_SIZE = 2 * 1024 * 1024  # 2MB physical pool
 FB_CONF_PARTITION_SIZE = 64 * 1024  # 64KB fixed partition per task
 FB_CONF_MAX_TASKS = 16
@@ -88,7 +87,6 @@ class Result(Generic[T]):
     def unwrap(self) -> T:
         if self.error is not None:
             raise RuntimeError(f"Unwrap failed on Result: {self.error}")
-
         assert self.value is not None
         return self.value
 
@@ -142,7 +140,6 @@ class VMMIOPTERegistry:
     def update_owner(self, page_idx: int, new_owner_id: int) -> bool:
         if page_idx not in self.ptes or not self.ptes[page_idx].is_valid:
             return False
-
         self.ptes[page_idx].owner_id = new_owner_id
         return True
 
@@ -168,7 +165,6 @@ class SharedBlock:
         base_address: int,
         manager: MemoryManager,
     ):
-
         self.shm_id = shm_id
         self.page_idx = page_idx
         self.slot_idx = slot_idx
@@ -202,7 +198,6 @@ class SharedBlock:
         if self._is_active:
             self._is_active = False
             self._manager._deallocate_shared_slot(self.page_idx, self.slot_idx, self.owner)
-
         elif self._is_in_flight:
             pass
 
@@ -398,7 +393,6 @@ class MemoryManager:
     def release_partition(self, caller_task_id: int):
         if caller_task_id not in self.partition_owners:
             return
-
         del self.partition_owners[caller_task_id]
         self.total_allocated_bytes -= FB_CONF_PARTITION_SIZE
 
@@ -422,7 +416,6 @@ class MemoryManager:
     def release_slot(self, caller_task_id: int, ref: PoolRef[T]):
         if ref.owner != caller_task_id:
             return
-
         cls = type(ref.instance)
         if cls in self.typed_slots and ref in self.typed_slots[cls]:
             self.typed_slots[cls].remove(ref)
@@ -518,7 +511,6 @@ class MemoryManager:
             if pv.base_address == addr:
                 if owner == caller_task_id:
                     self.release_partition(caller_task_id)
-
                 return
 
     def _deallocate_shared_slot(self, page_idx: int, slot_idx: int, owner: int):

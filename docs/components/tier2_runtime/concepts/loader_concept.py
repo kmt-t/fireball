@@ -686,7 +686,6 @@ class WasmLoader:
         """
         if len(self.registry) >= self.max_modules:
             raise WasmLinkError(f"Module registry limit ({self.max_modules}) exceeded")
-
         save_point = self.allocator.save()
         try:
             view = self._parse_and_verify(module_name, wasm_binary)
@@ -801,7 +800,6 @@ class WasmLoader:
         # If module has no imports, it is ready immediately
         if not view.imports:
             view.is_ready = True
-
         return view
 
     def _parse_section_content(self, sec_id: int, stream: BinaryStream, view: ModuleView) -> None:
@@ -816,7 +814,6 @@ class WasmLoader:
                 result_count = stream.read_leb128_u32()
                 results = [stream.read_u8() for _ in range(result_count)]
                 view.types.append(FuncType(params, results))
-
         elif sec_id == SectionID.IMPORT:
             count = stream.read_leb128_u32()
             for _ in range(count):
@@ -846,7 +843,6 @@ class WasmLoader:
                     view.imports.append(ImportEntry(mod_name, field_name, kind, 0))
                 else:
                     raise WasmParseError(f"Unsupported import kind 0x{kind:02X}")
-
         elif sec_id == SectionID.FUNCTION:
             count = stream.read_leb128_u32()
             if count > FB_CONF_MAX_FUNCTIONS:
@@ -856,7 +852,6 @@ class WasmLoader:
             for _ in range(count):
                 type_idx = stream.read_leb128_u32()
                 view.functions.append(type_idx)
-
         elif sec_id == SectionID.TABLE:
             count = stream.read_leb128_u32()
             for _ in range(count):
@@ -865,7 +860,6 @@ class WasmLoader:
                 initial = stream.read_leb128_u32()
                 maximum = stream.read_leb128_u32() if (flags & 1) else None
                 view.tables.append(TableEntry(elemtype, initial, maximum))
-
         elif sec_id == SectionID.MEMORY:
             count = stream.read_leb128_u32()
             for _ in range(count):
@@ -873,7 +867,6 @@ class WasmLoader:
                 initial = stream.read_leb128_u32()
                 maximum = stream.read_leb128_u32() if (flags & 1) else None
                 view.memories.append(MemoryEntry(initial, maximum))
-
         elif sec_id == SectionID.GLOBAL:
             count = stream.read_leb128_u32()
             for g_idx in range(count):
@@ -887,7 +880,6 @@ class WasmLoader:
                 g_entry = GlobalEntry(valtype, mutable, init_start, init_size)
                 view.globals.append(g_entry)
                 view.register_entity("GLOBAL", init_start, init_start + init_size, g_idx, g_entry)
-
         elif sec_id == SectionID.EXPORT:
             count = stream.read_leb128_u32()
             if count > FB_CONF_MAX_EXPORTS:
@@ -899,10 +891,8 @@ class WasmLoader:
                 kind = stream.read_u8()
                 index = stream.read_leb128_u32()
                 view.exports_dict.append(ExportEntry(name, kind, index))
-
         elif sec_id == SectionID.START:
             view.start_func_idx = stream.read_leb128_u32()
-
         elif sec_id == SectionID.CODE:
             count = stream.read_leb128_u32()
             for c_idx in range(count):
@@ -928,7 +918,6 @@ class WasmLoader:
             target_mod = self.lookup(imp.module_name)
             if target_mod is None:
                 raise WasmLinkError(f"Dependency module '{imp.module_name}' not found in registry")
-
             export_entry = target_mod.lookup_export(imp.field_name)
             if export_entry is None:
                 raise WasmLinkError(

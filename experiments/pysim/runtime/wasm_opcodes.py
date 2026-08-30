@@ -92,5 +92,4 @@ I32_ROTR = 0x78
 # blocktype byte used by block/loop/if when there is no result value (the
 # only form this experiment supports -- multi-value blocktypes are not
 # implemented).
-
 BLOCKTYPE_EMPTY = 0x40

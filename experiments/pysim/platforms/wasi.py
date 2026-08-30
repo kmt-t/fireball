@@ -147,7 +147,6 @@ class WasiHostContext:
             mod, field, handler = candidate
             if mod == module_name and field == field_name:
                 return handler
-
         return None
 
     def build_interpreter_host_functions(self, module: Module) -> dict[int, Callable[..., int]]:
@@ -157,7 +156,6 @@ class WasiHostContext:
             handler = self.get_handler_for_import(imp.module, imp.name)
             if handler is not None:
                 host_funcs[idx] = handler
-
         return host_funcs
 
     def build_jit_trampolines(self, module: Module) -> dict[int, int]:
@@ -167,7 +165,6 @@ class WasiHostContext:
             handler = self.get_handler_for_import(imp.module, imp.name)
             if handler is None:
                 continue
-
             ft = module.types[imp.type_index]
             nparams = len(ft.params)
             c_args = [ctypes.c_uint32] * nparams
@@ -186,5 +183,4 @@ class WasiHostContext:
             addr = ctypes.cast(t, ctypes.c_void_p).value
             assert addr is not None
             trampolines[idx] = addr
-
         return trampolines

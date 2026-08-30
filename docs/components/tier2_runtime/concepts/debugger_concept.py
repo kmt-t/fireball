@@ -82,7 +82,6 @@ class WASMInterpreter:
         """
         if ctx.pc >= len(bytecode):
             return "TERMINATED"
-
         op, arg = bytecode[ctx.pc]
         if op == "i32.const":
             self.push(ctx, arg)
@@ -122,7 +121,6 @@ class WASMInterpreter:
             ctx.pc += 1
         else:
             raise WASMTrap(f"UNKNOWN_OPCODE: {op}")
-
         return "CONTINUE"
 
 
@@ -189,7 +187,6 @@ class DebuggerManager:
         """Single-steps one instruction via Interpreter Fallback."""
         if not self.attached:
             raise RuntimeError("Debugger not attached")
-
         self._sample_pc()
         res = self.interpreter.step(self.ctx, bytecode)
         self._verify_assertions()
@@ -201,7 +198,6 @@ class DebuggerManager:
         """Resumes execution until a breakpoint, termination, or trap is hit."""
         if not self.attached:
             raise RuntimeError("Debugger not attached")
-
         self.ctx.halted = False
         while not self.ctx.halted:
             # Check breakpoint
@@ -209,7 +205,6 @@ class DebuggerManager:
                 self.ctx.halted = True
                 self.ctx.stop_signal = 5
                 return "BREAKPOINT_HIT"
-
             self._sample_pc()
             res = self.interpreter.step(self.ctx, bytecode)
             self._verify_assertions()
@@ -217,12 +212,10 @@ class DebuggerManager:
                 self.ctx.halted = True
                 self.ctx.stop_signal = 0  # Process terminated cleanly
                 return res
-
             if self.ctx.pc in self.breakpoints:
                 self.ctx.halted = True
                 self.ctx.stop_signal = 5
                 return "BREAKPOINT_HIT"
-
         return "STOPPED"
 
 
@@ -260,12 +253,10 @@ class GDBRspProtocol:
 
         if not payload:
             return self.format_packet("")
-
         cmd = payload[0]
         # 1. Query Halt Reason ($?)
         if cmd == "?":
             return self.format_packet(f"S{self.dbg.ctx.stop_signal:02x}")
-
         # 2. Read General Registers ($g) -> PC (Reg 0), LR (Reg 1), SP (Reg 2), FP (Reg 3)
         elif cmd == "g":
             pc = self.dbg.ctx.pc
@@ -280,7 +271,6 @@ class GDBRspProtocol:
 
             reg_data = to_hex32(pc) + to_hex32(lr) + to_hex32(sp) + to_hex32(fp)
             return self.format_packet(reg_data)
-
         # 3. Read Memory ($m<addr>,<length>)
         elif cmd == "m":
             parts = payload[1:].split(",")
@@ -293,7 +283,6 @@ class GDBRspProtocol:
                 else:
                     return self.format_packet("E01")  # Memory boundary check error
             return self.format_packet("E00")
-
         # 4. Write Memory ($M<addr>,<length>:<data>)
         elif cmd == "M":
             header, data_hex = payload[1:].split(":")
@@ -306,31 +295,26 @@ class GDBRspProtocol:
                 return self.format_packet("OK")
             else:
                 return self.format_packet("E01")
-
         # 5. Insert Breakpoint ($Z0,<addr>,<kind>)
         elif payload.startswith("Z0,"):
             parts = payload.split(",")
             pc = int(parts[1], 16)
             self.dbg.add_breakpoint(pc)
             return self.format_packet("OK")
-
         # 6. Remove Breakpoint ($z0,<addr>,<kind>)
         elif payload.startswith("z0,"):
             parts = payload.split(",")
             pc = int(parts[1], 16)
             self.dbg.remove_breakpoint(pc)
             return self.format_packet("OK")
-
         # 7. Single Step ($s)
         elif cmd == "s":
             self.dbg.step_instruction(bytecode)
             return self.format_packet(f"S{self.dbg.ctx.stop_signal:02x}")
-
         # 8. Continue ($c)
         elif cmd == "c":
             self.dbg.continue_execution(bytecode)
             return self.format_packet(f"S{self.dbg.ctx.stop_signal:02x}")
-
         # Unsupported command
         return self.format_packet("")
 

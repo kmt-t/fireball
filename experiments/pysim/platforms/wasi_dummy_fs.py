@@ -60,7 +60,6 @@ class VirtualFile:
     def read(self, size: int) -> bytes:
         if self.cursor >= len(self.data):
             return b""
-
         chunk = bytes(self.data[self.cursor : self.cursor + size])
         self.cursor += len(chunk)
         return chunk
@@ -68,7 +67,6 @@ class VirtualFile:
     def write(self, buf: bytes) -> int:
         if self.read_only:
             return 0
-
         end_pos = self.cursor + len(buf)
         if end_pos > len(self.data):
             self.data.extend(b"\x00" * (end_pos - len(self.data)))
@@ -80,16 +78,12 @@ class VirtualFile:
     def seek(self, offset: int, whence: int) -> int:
         if whence == WasiWhence.SET:
             self.cursor = max(0, offset)
-
         elif whence == WasiWhence.CUR:
             self.cursor = max(0, self.cursor + offset)
-
         elif whence == WasiWhence.END:
             self.cursor = max(0, len(self.data) + offset)
-
         else:
             return -1
-
         return self.cursor
 
 
@@ -128,16 +122,13 @@ class WasiDummyContext:
                     ]
                     self.stdin_pos += to_read
                     total_read += to_read
-
             elif fd in self.files:
                 chunk = self.files[fd].read(buf_len)
                 if chunk:
                     memory[buf_ptr : buf_ptr + len(chunk)] = chunk
                     total_read += len(chunk)
-
             else:
                 return WasiErrno.BADF
-
         memory[nread_ptr : nread_ptr + 4] = total_read.to_bytes(4, "little")
         return WasiErrno.SUCCESS
 
@@ -159,18 +150,14 @@ class WasiDummyContext:
             if fd == 1:  # stdout
                 self.stdout_buffer.extend(chunk)
                 total_written += len(chunk)
-
             elif fd == 2:  # stderr
                 self.stderr_buffer.extend(chunk)
                 total_written += len(chunk)
-
             elif fd in self.files:
                 w = self.files[fd].write(chunk)
                 total_written += w
-
             else:
                 return WasiErrno.BADF
-
         memory[nwritten_ptr : nwritten_ptr + 4] = total_written.to_bytes(4, "little")
         return WasiErrno.SUCCESS
 
@@ -180,11 +167,9 @@ class WasiDummyContext:
 
         if fd not in self.files:
             return WasiErrno.BADF
-
         new_pos = self.files[fd].seek(offset, whence)
         if new_pos < 0:
             return WasiErrno.INVAL
-
         memory[newoffset_ptr : newoffset_ptr + 8] = new_pos.to_bytes(8, "little")
         return WasiErrno.SUCCESS
 

@@ -74,17 +74,13 @@ class GDBServer:
         if self._client_sock:
             try:
                 self._client_sock.close()
-
             except Exception:
                 pass
-
         if self._server_sock:
             try:
                 self._server_sock.close()
-
             except Exception:
                 pass
-
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=1.0)
 
@@ -97,13 +93,10 @@ class GDBServer:
                     client, _ = self._server_sock.accept()
                     self._client_sock = client
                     break
-
                 except TimeoutError:
                     continue
-
             if not self._running or not self._client_sock:
                 return
-
             self._client_sock.settimeout(2.0)
             current_pc = start_pc
             self.dbg.attach()
@@ -113,22 +106,17 @@ class GDBServer:
                     data = self._client_sock.recv(4096)
                     if not data:
                         break
-
                     buffer += data.decode("latin1")
-
                 except TimeoutError:
                     continue
-
                 except Exception:
                     break
-
                 # Process all complete packets in buffer
                 while "$" in buffer and "#" in buffer:
                     dollar_idx = buffer.index("$")
                     hash_idx = buffer.find("#", dollar_idx)
                     if hash_idx == -1 or len(buffer) < hash_idx + 3:
                         break  # Need more bytes for checksum
-
                     packet_str = buffer[dollar_idx : hash_idx + 3]
                     buffer = buffer[hash_idx + 3 :]
                     # Send immediate ACK
@@ -140,16 +128,12 @@ class GDBServer:
                     # Send response packet
                     if response:
                         self._client_sock.sendall(response.encode("latin1"))
-
         except Exception:
             pass
-
         finally:
             if self._client_sock:
                 try:
                     self._client_sock.close()
-
                 except Exception:
                     pass
-
             self.dbg.detach()

@@ -56,26 +56,22 @@ class DummyGpioDriver:
     def set_pin_mode(self, pin: int, mode: int) -> bool:
         if not (0 <= pin < self.pin_count):
             return False
-
         self.modes[pin] = mode
         return True
 
     def write_pin(self, pin: int, level: int) -> bool:
         if not (0 <= pin < self.pin_count) or self.modes[pin] != PinMode.OUTPUT:
             return False
-
         old_level = self.levels[pin]
         self.levels[pin] = 1 if level else 0
         # Trigger IRQ on edge if registered
         if old_level != self.levels[pin] and pin in self.irq_callbacks:
             self.irq_callbacks[pin](pin, self.levels[pin])
-
         return True
 
     def read_pin(self, pin: int) -> int:
         if not (0 <= pin < self.pin_count):
             return 0
-
         return self.levels[pin]
 
     def register_irq(self, pin: int, callback: Callable[[int, int], None]):
@@ -96,14 +92,12 @@ class DummyI2cDriver:
     def write_register(self, dev_addr: int, reg_addr: int, value: int) -> bool:
         if dev_addr not in self.devices:
             return False
-
         self.devices[dev_addr][reg_addr] = value & 0xFFFF
         return True
 
     def read_register(self, dev_addr: int, reg_addr: int) -> int:
         if dev_addr not in self.devices or reg_addr not in self.devices[dev_addr]:
             return 0xFFFF  # NACK / error
-
         return self.devices[dev_addr][reg_addr]
 
 
@@ -118,22 +112,18 @@ class DummySpiDriver:
         """Executes a full-duplex SPI transaction."""
         if not tx_data:
             return b""
-
         cmd = tx_data[0]
         rx = bytearray(len(tx_data))
         if cmd == 0x06:  # WREN (Write Enable)
             self.write_enabled = True
-
         elif cmd == 0x04:  # WRDI (Write Disable)
             self.write_enabled = False
-
         elif cmd == 0x03 and len(tx_data) >= 3:  # READ: [0x03, addr_hi, addr_lo, dummy...]
             addr = (tx_data[1] << 8) | tx_data[2]
             length = len(tx_data) - 3
             for i in range(length):
                 read_idx = (addr + i) % len(self.memory)
                 rx[3 + i] = self.memory[read_idx]
-
         elif (
             cmd == 0x02 and len(tx_data) >= 3 and self.write_enabled
         ):  # WRITE: [0x02, addr_hi, addr_lo, data...]
@@ -144,7 +134,6 @@ class DummySpiDriver:
                 self.memory[write_idx] = b
 
             self.write_enabled = False  # Auto-disable after write
-
         return bytes(rx)
 
 

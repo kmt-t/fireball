@@ -67,7 +67,6 @@ class Result(Generic[T, E]):
         error: E | None = None,
         strategy: RecoveryStrategy = RecoveryStrategy.IGNORE,
     ):
-
         self.is_ok = is_ok
         self.value = value
         self.error = error
@@ -84,7 +83,6 @@ class Result(Generic[T, E]):
     def unwrap(self) -> T:
         if not self.is_ok:
             return None  # No exception raised
-
         return self.value
 
 
@@ -100,32 +98,23 @@ def classify_error_strategy(errno_or_trap: int | str) -> RecoveryStrategy:
             or "MPU" in trap
         ):
             return RecoveryStrategy.PANIC
-
         if "UNDEFINED_FC" in trap:
             return RecoveryStrategy.PANIC
-
         if "UNREGISTERED_PAGE" in trap or "UNINITIALIZED" in trap:
             return RecoveryStrategy.RESTART
-
         if "QUEUE_FULL" in trap or "BUSY" in trap or "AGAIN" in trap:
             return RecoveryStrategy.RETRY
-
         return RecoveryStrategy.RESTART
-
     # 2. WASI errno integers (wasi::errno)
     errno = int(errno_or_trap)
     if errno == 0:  # SUCCESS
         return RecoveryStrategy.IGNORE
-
     if errno in (6, 73, 76):  # EAGAIN (6), ETIMEDOUT (73), ENOMEM (76)
         return RecoveryStrategy.RETRY
-
     if errno in (28, 44, 8):  # EINVAL (28), ENOENT (44), EBADF (8)
         return RecoveryStrategy.RESTART
-
     if errno in (63, 21):  # EPERM (63), EFAULT (21)
         return RecoveryStrategy.PANIC
-
     return RecoveryStrategy.RESTART
 
 
@@ -138,7 +127,6 @@ class RecoveryManager:
         backoff_ms: int = FB_CONF_RETRY_BACKOFF_MS,
         sleep_fn: Callable[[float], None] = time.sleep,
     ):
-
         self.max_retries = max_retries
         self.backoff_ms = backoff_ms
         self.sleep_fn = sleep_fn
@@ -165,21 +153,16 @@ class RecoveryManager:
             res = operation()
             if res.is_ok:
                 return res
-
             strategy = res.strategy
             if strategy == RecoveryStrategy.IGNORE:
                 return res
-
             if strategy == RecoveryStrategy.PANIC:
                 self.total_panics += 1
                 if panic_fn:
                     panic_fn(f"Fatal panic triggered by error: {res.error}")
-
                 return Result.err(error=res.error, strategy=RecoveryStrategy.PANIC)
-
             if strategy == RecoveryStrategy.RESTART:
                 break  # Directly escalate to task reset
-
             # RETRY strategy: backoff and retry
             self.total_retries += 1
             if attempt < self.max_retries:
@@ -194,12 +177,10 @@ class RecoveryManager:
                 post_reset_res = operation()
                 if post_reset_res.is_ok:
                     return post_reset_res
-
         # Tier 3: Unrecoverable after restart -> Escalate to PANIC
         self.total_panics += 1
         if panic_fn:
             panic_fn("Unrecoverable error after restart escalation")
-
         return Result.err(
             error="RETRY_EXHAUSTED_ESCALATED_TO_PANIC", strategy=RecoveryStrategy.PANIC
         )

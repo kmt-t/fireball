@@ -121,7 +121,6 @@ class WasiErrno(IntEnum):
 
 # runtime_vmmio.md §4.3-§4.5: real static-device addresses and register
 # offsets (not invented -- copied from the spec's own register tables).
-
 SYSCTL_BASE = 0xC000_0000
 IPCR_BASE = 0xC000_1000
 VDMA_BASE = 0xC000_2000
@@ -142,10 +141,9 @@ FB_CONF_GUEST_RAM_SIZE = 4096  # system_config.md §3.3.4
 FB_CONF_VSOC_PASSTHROUGH_BASE = 0xF000_0000  # runtime_vmmio.md §3.3's FC=15 window
 _PASSTHROUGH_TEST_PAGES = 16  # this experiment's own arbitrary backing size,
 
+
 # not a spec constant -- real PASSTHROUGH size
 # depends on the host peripherals actually mapped
-
-
 @dataclass(frozen=True)
 class ShmSlice:
     """
@@ -396,7 +394,6 @@ class System:
         handler = self._syscall_dispatch_tree.find(syscall_id)
         if handler is not None:
             return handler(arg0, arg1, arg2, arg3, arg4, arg5)
-
         return int(WasiErrno.NOSYS)
 
     # --- guest memory (fb_offset_t resolution) -------------------------
@@ -410,13 +407,11 @@ class System:
     def _read_guest(self, offset: int, length: int) -> bytes | None:
         if not self._guest_ram_ok(offset, length):
             return None
-
         return bytes(self._guest_memory[offset : offset + length])
 
     def _write_guest(self, offset: int, data: bytes) -> bool:
         if not self._guest_ram_ok(offset, len(data)):
             return False
-
         self._guest_memory[offset : offset + len(data)] = data
         return True
 
@@ -432,7 +427,6 @@ class System:
         struct.pack_into("<I", self.sysctl_regs, REG_SYS_CONTROL, cmd & 0xFFFF_FFFF)
         if cmd == SYS_CONTROL_RESET:
             self.reset_requested = True
-
         elif cmd == SYS_CONTROL_YIELD:
             # {CooperativeMultitasking}: a real yield suspends the calling
             # coroutine until the scheduler resumes it. This experiment's
@@ -442,20 +436,16 @@ class System:
             # generator-based yield is the actual host-side yield model for
             # the HAL demo; this path can only acknowledge the request.
             pass
-
         elif cmd == SYS_CONTROL_HALT:
             self.halted = True
-
         else:
             return WasiErrno.INVAL
-
         return WasiErrno.SUCCESS
 
     # --- vMMIO Generic (real FlatMap/TLB dispatch + real backing bytes) -
     def _trap_to_errno(self, status: str) -> WasiErrno | None:
         if status in ("OK_SYSCALL", "OK_PHYSICAL", "OK_GUEST_RAM"):
             return None
-
         return {
             TrapCode.OUT_OF_BOUNDS: WasiErrno.FAULT,
             TrapCode.UNDEFINED_FC: WasiErrno.NOENT,
@@ -476,21 +466,16 @@ class System:
         errno = self._trap_to_errno(status)
         if errno is not None:
             return errno, None, None
-
         a = VmmioAddress(addr)
         if a.fc() == FC_STATIC_DEVICE:
             page = addr & _STATIC_DEVICE_PAGE_MASK
             if page == SYSCTL_BASE:
                 return None, self.sysctl_regs, a.offset()
-
             if page == IPCR_BASE:
                 return None, self.ipcr_regs, a.offset()
-
             if page == VDMA_BASE:
                 return None, self.vdma_regs, a.offset()
-
             return WasiErrno.NOENT, None, None
-
         # Tier 3 (SHM / PASSTHROUGH): resolve the same phys_addr formula
         # vmmio_concept.access() itself already computed internally, from
         # the same public PTE fields it exposes (self.vmmio.ptes is a
@@ -503,51 +488,40 @@ class System:
         errno, backing, off = self._mmio_touch(addr, is_write=False)
         if errno is not None:
             return int(errno)
-
         if off + width > len(backing):
             return int(WasiErrno.FAULT)
-
         return int.from_bytes(backing[off : off + width], "little")
 
     def _mmio_write(self, addr: int, value: int, width: int) -> WasiErrno:
         errno, backing, off = self._mmio_touch(addr, is_write=True)
         if errno is not None:
             return errno
-
         if off + width > len(backing):
             return WasiErrno.FAULT
-
         backing[off : off + width] = (value & ((1 << (8 * width)) - 1)).to_bytes(width, "little")
         if backing is self.sysctl_regs and off == REG_SYS_CONTROL:
             return self._apply_sys_control(value)
-
         if backing is self.vdma_regs and off == REG_VDMA_CTRL and (value & VDMA_CTRL_START_BIT):
             return self._run_vdma()
-
         return WasiErrno.SUCCESS
 
     def _mmio_bulk_read(self, addr: int, dest_offset: int, byte_count: int) -> WasiErrno:
         errno, backing, off = self._mmio_touch(addr, is_write=False)
         if errno is not None:
             return errno
-
         if off + byte_count > len(backing):
             return WasiErrno.FAULT
-
         if not self._write_guest(dest_offset, bytes(backing[off : off + byte_count])):
             return WasiErrno.FAULT
-
         return WasiErrno.SUCCESS
 
     def _mmio_bulk_write(self, addr: int, src_offset: int, byte_count: int) -> WasiErrno:
         errno, backing, off = self._mmio_touch(addr, is_write=True)
         if errno is not None:
             return errno
-
         data = self._read_guest(src_offset, byte_count)
         if data is None or off + byte_count > len(backing):
             return WasiErrno.FAULT
-
         backing[off : off + byte_count] = data
         return WasiErrno.SUCCESS
 
@@ -573,11 +547,9 @@ class System:
         a = VmmioAddress(addr)
         if a.is_linear():
             return (self._guest_memory, addr) if self._guest_ram_ok(addr, count) else (None, None)
-
         errno, backing, off = self._mmio_touch(addr, is_write)
         if errno is not None or off + count > len(backing):
             return None, None
-
         return backing, off
 
     def _run_vdma(self) -> WasiErrno:
@@ -585,11 +557,9 @@ class System:
         src_backing, src_off = self._vdma_region(src, count, is_write=False)
         if src_backing is None:
             return WasiErrno.FAULT
-
         dst_backing, dst_off = self._vdma_region(dst, count, is_write=True)
         if dst_backing is None:
             return WasiErrno.FAULT
-
         dst_backing[dst_off : dst_off + count] = bytes(src_backing[src_off : src_off + count])
         return WasiErrno.SUCCESS
 
@@ -618,28 +588,22 @@ class System:
         raw = self._read_guest(uri_offset, uri_len)
         if raw is None:
             return int(WasiErrno.FAULT)
-
         try:
             uri = raw.decode("utf-8")
-
         except UnicodeDecodeError:
             return int(WasiErrno.INVAL)
-
         for i, u in enumerate(self.ipc.registry.keys, start=1):
             if u == uri:
                 return i
-
         return int(WasiErrno.NOENT)
 
     def _ipc_send(self, handle_id: int, msg_offset: int, msg_len: int) -> WasiErrno:
         if handle_id < 1 or handle_id > len(self.ipc.registry.keys):
             return WasiErrno.BADF
-
         uri = self.ipc.registry.keys[handle_id - 1]
         payload = self._read_guest(msg_offset, msg_len)
         if payload is None:
             return WasiErrno.FAULT
-
         msg = IPCMessage(
             resource_id=f"guest_task_{self._current_task_id}_msg",
             payload={"bytes": bytes(payload)},
@@ -650,19 +614,15 @@ class System:
         status, _ = self.ipc.route_message("CLIENT_APP", uri, msg)
         if status == "OK_ENQUEUED":
             return WasiErrno.SUCCESS
-
         if status == "ERR_QUEUE_FULL":
             return WasiErrno.AGAIN
-
         if status == "ERR_PERMISSION_DENIED":
             return WasiErrno.PERM
-
         return WasiErrno.NOENT
 
     def _ipc_recv(self, handle_id: int, buf_offset: int, buf_len: int) -> int:
         if handle_id < 1 or handle_id > len(self.ipc.registry.keys):
             return int(WasiErrno.BADF)
-
         uri = self.ipc.registry.keys[handle_id - 1]
         entry = self.ipc.registry.find(uri)
         msg = self.ipc.receive_message(entry["channel_id"])
@@ -673,12 +633,10 @@ class System:
             # is the real, standard "would block" signal WASI already
             # defines for exactly this situation, not a stand-in for it.
             return int(WasiErrno.AGAIN)
-
         data = msg.payload["bytes"]
         n = min(len(data), buf_len)
         if not self._write_guest(buf_offset, data[:n]):
             return int(WasiErrno.FAULT)
-
         return n
 
     # --- WASI (interface_wit.md §5.5-5.6) --------------------------------
@@ -692,24 +650,20 @@ class System:
 
         if fd not in (1, 2):
             return WasiErrno.BADF
-
         total = 0
         for i in range(iovs_len):
             iov = self._read_guest(iovs_ptr + i * 8, 8)
             if iov is None:
                 return WasiErrno.FAULT
-
             buf, buf_len = struct.unpack("<II", iov)
             data = self._read_guest(buf, buf_len)
             if data is None:
                 return WasiErrno.FAULT
-
             self.console.write(data)
             total += len(data)
 
         if not self._write_guest(nwritten_ptr, struct.pack("<I", total)):
             return WasiErrno.FAULT
-
         return WasiErrno.SUCCESS
 
     def _wasi_fd_read(self, fd: int, iovs_ptr: int, iovs_len: int, nread_ptr: int) -> WasiErrno:
@@ -717,7 +671,6 @@ class System:
         # (EOF) is a genuine, spec-legal WASI outcome, not a stand-in value.
         if not self._write_guest(nread_ptr, struct.pack("<I", 0)):
             return WasiErrno.FAULT
-
         return WasiErrno.SUCCESS
 
     def _wasi_fd_close(self, fd: int) -> WasiErrno:
@@ -729,7 +682,6 @@ class System:
         now_ns = time.monotonic_ns()
         if not self._write_guest(time_ptr, struct.pack("<Q", now_ns)):
             return WasiErrno.FAULT
-
         return WasiErrno.SUCCESS
 
     def _wasi_proc_exit(self, exit_code: int) -> WasiErrno:
@@ -741,7 +693,6 @@ class System:
         data = os.urandom(buf_len)
         if not self._write_guest(buf_ptr, data):
             return WasiErrno.FAULT
-
         return WasiErrno.SUCCESS
 
     def shutdown(self) -> None:

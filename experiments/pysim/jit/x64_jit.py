@@ -49,7 +49,6 @@ IS_WINDOWS = sys.platform == "win32"
 I32_MASK = 0xFFFFFFFF
 
 # CPS 4-argument function pointer type matching interpreter opcode_handler
-
 TRACE_FN_TYPE = ctypes.CFUNCTYPE(
     ctypes.c_int64,
     ctypes.c_uint32,  # arg0: ip
@@ -70,7 +69,6 @@ def emit(code: bytearray, stencil: st.Stencil, **patches: int) -> int:
     code += stencil.code
     for name, value in patches.items():
         patch(code, base, stencil, name, value)
-
     return base
 
 
@@ -97,7 +95,6 @@ def gen_pic_prologue() -> bytes:
         code += bytes((0x4D, 0x89, 0xC3))  # mov r11, r8   (R11 = env / memory_base)
         code += bytes((0x49, 0x89, 0xD4))  # mov r12, rdx  (R12 = stack_bot)
         code += bytes((0x49, 0x89, 0xCD))  # mov r13, rcx  (R13 = ip)
-
     else:
         # System V AMD64 ABI (Linux): (RDI=ip, RSI=stack_bot, RDX=env, RCX=local_base)
         code += bytes((0x55,))  # push rbp
@@ -106,7 +103,6 @@ def gen_pic_prologue() -> bytes:
         code += bytes((0x49, 0x89, 0xD3))  # mov r11, rdx  (R11 = env / memory_base)
         code += bytes((0x49, 0x89, 0xF4))  # mov r12, rsi  (R12 = stack_bot)
         code += bytes((0x49, 0x89, 0xFD))  # mov r13, rdi  (R13 = ip)
-
     return bytes(code)
 
 
@@ -189,7 +185,6 @@ class TraceCompiler:
         """Compiles a single BasicBlock into a PIC native JITTrace."""
         if not block.ops or any(op not in self.SUPPORTED_OPS for op, _ in block.ops):
             return None
-
         # Trace Boundary Invariant: Verify block is self-contained (stack depth never drops below 0)
         sim_depth = 0
         for op, _ in block.ops:
@@ -198,13 +193,11 @@ class TraceCompiler:
             if sim_depth < 0:
                 # Depends on values on caller's operand stack -> execute safely in interpreter
                 return None
-
             sim_depth += pushes
 
         if sim_depth < 0 or sim_depth > 1:
             # Multi-value stack outputs or underflow are executed safely by Tier 2 Interpreter
             return None
-
         # 1. Physical 16-byte JITTraceHeader at +0x00
         header = JITTraceHeader(head_wasm_pc=head_pc)
         header_bytes = header.pack()
@@ -216,114 +209,86 @@ class TraceCompiler:
             if op == "i32.const":
                 emit(code, st.I32_CONST, imm=arg)
                 stack_depth += 1
-
             elif op == "i32.add":
                 code += st.I32_ADD.code
                 stack_depth -= 1
-
             elif op == "i32.sub":
                 code += st.I32_SUB.code
                 stack_depth -= 1
-
             elif op == "i32.mul":
                 code += st.I32_MUL.code
                 stack_depth -= 1
-
             elif op == "i32.and":
                 code += st.I32_AND.code
                 stack_depth -= 1
-
             elif op == "i32.or":
                 code += st.I32_OR.code
                 stack_depth -= 1
-
             elif op == "i32.xor":
                 code += st.I32_XOR.code
                 stack_depth -= 1
-
             elif op == "i32.shl":
                 code += st.I32_SHL.code
                 stack_depth -= 1
-
             elif op == "i32.shr_u":
                 code += st.I32_SHR_U.code
                 stack_depth -= 1
-
             elif op == "i32.shr_s":
                 code += st.I32_SHR_S.code
                 stack_depth -= 1
-
             elif op == "i32.div_s":
                 code += st.I32_DIV_S.code
                 stack_depth -= 1
-
             elif op == "i32.div_u":
                 code += st.I32_DIV_U.code
                 stack_depth -= 1
-
             elif op == "i32.rem_s":
                 code += st.I32_REM_S.code
                 stack_depth -= 1
-
             elif op == "i32.rem_u":
                 code += st.I32_REM_U.code
                 stack_depth -= 1
-
             elif op == "i32.eqz":
                 code += st.I32_EQZ.code
-
             elif op == "i32.eq":
                 code += st.I32_EQ.code
                 stack_depth -= 1
-
             elif op == "i32.ne":
                 code += st.I32_NE.code
                 stack_depth -= 1
-
             elif op == "i32.lt_s":
                 code += st.I32_LT_S.code
                 stack_depth -= 1
-
             elif op == "i32.lt_u":
                 code += st.I32_LT_U.code
                 stack_depth -= 1
-
             elif op == "i32.gt_s":
                 code += st.I32_GT_S.code
                 stack_depth -= 1
-
             elif op == "i32.gt_u":
                 code += st.I32_GT_U.code
                 stack_depth -= 1
-
             elif op == "i32.le_s":
                 code += st.I32_LE_S.code
                 stack_depth -= 1
-
             elif op == "i32.le_u":
                 code += st.I32_LE_U.code
                 stack_depth -= 1
-
             elif op == "i32.ge_s":
                 code += st.I32_GE_S.code
                 stack_depth -= 1
-
             elif op == "i32.ge_u":
                 code += st.I32_GE_U.code
                 stack_depth -= 1
-
             elif op == "drop":
                 code += st.DROP.code
                 stack_depth -= 1
-
             elif op == "local.get":
                 emit(code, st.LOCAL_GET, disp=arg * 8)
                 stack_depth += 1
-
             elif op == "local.set":
                 emit(code, st.LOCAL_SET, disp=arg * 8)
                 stack_depth -= 1
-
             elif op == "call_host":
                 code += asm.push_reg("r10")
                 code += asm.push_reg("r11")
@@ -339,10 +304,8 @@ class TraceCompiler:
         if stack_depth < 0 or stack_depth > 1:
             # Multi-value stack outputs or underflow are executed safely by Tier 2 Interpreter
             return None
-
         if stack_depth == 1:
             code += st.EPILOGUE_RETURN_I32.code
-
         else:
             code += st.EPILOGUE_RETURN_VOID.code
 

@@ -206,24 +206,19 @@ def decode_all(code: bytes) -> dict[int, Instr]:
             blocktype = code[off]
             off += 1
             assert blocktype == 0x40, "only the empty blocktype is supported in this experiment"
-
         elif opcode in _LEB_UNSIGNED_OPERAND:
             operand, off = decode_unsigned(code, off)
-
         elif opcode == I32_CONST:
             const_value, off = decode_signed(code, off)
-
         elif opcode in _MEMARG_OPCODES:
             align, off = decode_unsigned(code, off)
             mem_offset, off = decode_unsigned(code, off)
             memarg = (align, mem_offset)
-
         elif opcode in _MEMORY_INDEX_OPCODES:
             reserved = code[off]
             off += 1
             assert reserved == 0, "only memory index 0 is supported"
             operand = reserved
-
         elif opcode == BR_TABLE:
             n_labels, off = decode_unsigned(code, off)
             br_table_labels = []
@@ -232,14 +227,11 @@ def decode_all(code: bytes) -> dict[int, Instr]:
                 br_table_labels.append(label)
 
             operand, off = decode_unsigned(code, off)  # default label
-
         elif opcode == CALL_INDIRECT:
             operand, off = decode_unsigned(code, off)  # typeidx
             table_index, off = decode_unsigned(code, off)  # tableidx (0x00 in the MVP encoding)
-
         elif opcode in _NO_OPERAND:
             pass
-
         else:
             raise WasmUnsupportedFeatureError(
                 f"ERR_WASM_UNSUPPORTED_FEATURE: opcode 0x{opcode:02X} at offset {start} is not supported"
@@ -258,12 +250,10 @@ def decode_all(code: bytes) -> dict[int, Instr]:
         instrs[start] = instr
         if opcode in _BLOCK_OPENERS:
             open_stack.append(instr)
-
         elif opcode == ELSE:
             opener = open_stack[-1]
             assert opener.opcode == IF, "ELSE without a matching IF"
             opener.else_offset = start
-
         elif opcode == END:
             if open_stack:
                 opener = open_stack.pop()
@@ -399,5 +389,4 @@ def extract_basic_blocks(
 
     if cur_head is not None and cur_ops:
         blocks.append((cur_head, list(cur_ops), None))
-
     return blocks

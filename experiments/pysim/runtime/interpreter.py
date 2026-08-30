@@ -187,11 +187,9 @@ class CallFrame:
 
 # A handler's continuation: (next_ip, stack_bot, env, local_base), or None
 # to end this call (RETURN, or branching past the outermost implicit block).
-
 _Cont = "tuple[int, CallFrame, ExecEnv, list[int]] | None"
 
 # Fixed 256-slot direct-indexed dispatch table for WASM byte opcodes (0x00..0xFF)
-
 _HANDLERS: list[Callable[[int, CallFrame, ExecEnv, list[int]], object] | None] = [None] * 256
 
 
@@ -218,12 +216,10 @@ def _do_branch(depth: int, frame: CallFrame) -> int | None:
 
     if not cframes:
         return None
-
     target = cframes[-1]
     del frame.values[target.stack_height :]
     if target.kind == "loop":
         return target.start + 2  # resume at the loop body (past opcode+blocktype)
-
     cframes.pop()
     return target.match_end + 1
 
@@ -236,7 +232,6 @@ class Interpreter:
         host_functions: dict[int, Callable[..., int | None]] | None = None,
         runtime_engine: Any | None = None,
     ):
-
         self.module = module
         self.memory = memory
         if self.memory is not None:
@@ -257,7 +252,6 @@ class Interpreter:
         try:
             while True:
                 next(gen)
-
         except StopIteration as e:
             return e.value or []
 
@@ -279,7 +273,6 @@ class Interpreter:
             result = handler(*[_to_i32(a) for a in args])
             ft = self.module.func_type(func_index)
             return [_to_i32(result)] if ft.results else []
-
         fn = self.module.functions[func_index - len(self.module.imports)]
         layout = self.module.locals_layout(func_index)
         locals_arr = [0] * len(layout)
@@ -294,7 +287,6 @@ class Interpreter:
             ip, frame, env, locals_arr = cont
             if ip >= len(frame.code):
                 break
-
             # Tier 3 JIT Trace check & Tier 2 Card Marking
             if self.runtime_engine is not None:
                 unified_pc = (func_index << 16) | ip
@@ -321,9 +313,7 @@ class Interpreter:
                     instr_step += 1
                     if yield_every > 0 and (instr_step % yield_every == 0):
                         yield
-
                     continue
-
                 else:
                     self.runtime_engine.record_block_head(unified_pc)
 
@@ -331,7 +321,6 @@ class Interpreter:
             handler = _HANDLERS[ins.opcode]
             if handler is None:
                 raise NotImplementedError(f"interpreter: unhandled opcode 0x{ins.opcode:02X}")
-
             cont = handler(ip, frame, env, locals_arr)
             instr_step += 1
             if yield_every > 0 and (instr_step % yield_every == 0):
@@ -340,7 +329,6 @@ class Interpreter:
         ft = self.module.func_type(func_index)
         if ft.results:
             return [frame.values.pop()]
-
         return []
 
 
@@ -382,11 +370,9 @@ def _h_if(ip, frame, env, local_base):
         if ins.else_offset is not None:
             frame.frames.append(_Frame("if", ins.offset, ins.match_offset, len(frame.values)))
             return (ins.else_offset + 1, frame, env, local_base)
-
         else:
             # Skip past matching END without leaving an unpopped frame
             return (ins.match_offset + 1, frame, env, local_base)
-
     frame.frames.append(_Frame("if", ins.offset, ins.match_offset, len(frame.values)))
     return (ins.end_offset, frame, env, local_base)
 
@@ -398,7 +384,6 @@ def _h_else(ip, frame, env, local_base):
     if frame.frames:
         target = frame.frames.pop()
         return (target.match_end + 1, frame, env, local_base)
-
     return (frame.instrs[ip].end_offset, frame, env, local_base)
 
 
@@ -407,7 +392,6 @@ def _h_end(ip, frame, env, local_base):
     ins = frame.instrs[ip]
     if frame.frames:
         frame.frames.pop()
-
     return (ins.end_offset, frame, env, local_base)
 
 
@@ -424,7 +408,6 @@ def _h_br_if(ip, frame, env, local_base):
     if cond != 0:
         next_ip = _do_branch(ins.operand, frame)
         return None if next_ip is None else (next_ip, frame, env, local_base)
-
     return (ins.end_offset, frame, env, local_base)
 
 
@@ -459,11 +442,9 @@ def _h_call_indirect(ip, frame, env, local_base):
     table_slot = _to_u32(frame.values.pop())
     if table_slot >= len(table):
         raise Trap(f"call_indirect: table index {table_slot} out of bounds (size {len(table)})")
-
     func_index = table[table_slot]
     if func_index is None:
         raise Trap(f"call_indirect: table slot {table_slot} is uninitialized")
-
     declared_type = env.module.types[ins.operand]
     actual_type = env.module.func_type(func_index)
     if declared_type != actual_type:
@@ -538,7 +519,6 @@ def _h_i32_load(ip, frame, env, local_base):
     addr = _to_u32(frame.values.pop()) + ins.memarg[1]
     if env.memory is None or addr + 4 > len(env.memory):
         raise Trap(f"i32.load out of bounds at addr={addr}")
-
     frame.values.append(int.from_bytes(env.memory[addr : addr + 4], "little", signed=True))
     return (ins.end_offset, frame, env, local_base)
 
@@ -549,7 +529,6 @@ def _h_i32_load8_s(ip, frame, env, local_base):
     addr = _to_u32(frame.values.pop()) + ins.memarg[1]
     if env.memory is None or addr + 1 > len(env.memory):
         raise Trap(f"i32.load8_s out of bounds at addr={addr}")
-
     frame.values.append(int.from_bytes(env.memory[addr : addr + 1], "little", signed=True))
     return (ins.end_offset, frame, env, local_base)
 
@@ -560,7 +539,6 @@ def _h_i32_load8_u(ip, frame, env, local_base):
     addr = _to_u32(frame.values.pop()) + ins.memarg[1]
     if env.memory is None or addr + 1 > len(env.memory):
         raise Trap(f"i32.load8_u out of bounds at addr={addr}")
-
     frame.values.append(env.memory[addr])
     return (ins.end_offset, frame, env, local_base)
 
@@ -571,7 +549,6 @@ def _h_i32_load16_s(ip, frame, env, local_base):
     addr = _to_u32(frame.values.pop()) + ins.memarg[1]
     if env.memory is None or addr + 2 > len(env.memory):
         raise Trap(f"i32.load16_s out of bounds at addr={addr}")
-
     frame.values.append(int.from_bytes(env.memory[addr : addr + 2], "little", signed=True))
     return (ins.end_offset, frame, env, local_base)
 
@@ -582,7 +559,6 @@ def _h_i32_load16_u(ip, frame, env, local_base):
     addr = _to_u32(frame.values.pop()) + ins.memarg[1]
     if env.memory is None or addr + 2 > len(env.memory):
         raise Trap(f"i32.load16_u out of bounds at addr={addr}")
-
     frame.values.append(int.from_bytes(env.memory[addr : addr + 2], "little", signed=False))
     return (ins.end_offset, frame, env, local_base)
 
@@ -597,7 +573,6 @@ def _h_i32_store(ip, frame, env, local_base):
     addr = _to_u32(frame.values.pop()) + ins.memarg[1]
     if env.memory is None or addr + 4 > len(env.memory):
         raise Trap(f"i32.store out of bounds at addr={addr}")
-
     env.memory[addr : addr + 4] = (value & 0xFFFFFFFF).to_bytes(4, "little")
     return (ins.end_offset, frame, env, local_base)
 
@@ -609,7 +584,6 @@ def _h_i32_store8(ip, frame, env, local_base):
     addr = _to_u32(frame.values.pop()) + ins.memarg[1]
     if env.memory is None or addr + 1 > len(env.memory):
         raise Trap(f"i32.store8 out of bounds at addr={addr}")
-
     env.memory[addr] = value
     return (ins.end_offset, frame, env, local_base)
 
@@ -621,7 +595,6 @@ def _h_i32_store16(ip, frame, env, local_base):
     addr = _to_u32(frame.values.pop()) + ins.memarg[1]
     if env.memory is None or addr + 2 > len(env.memory):
         raise Trap(f"i32.store16 out of bounds at addr={addr}")
-
     env.memory[addr : addr + 2] = value.to_bytes(2, "little")
     return (ins.end_offset, frame, env, local_base)
 
@@ -633,7 +606,6 @@ def _h_i32_store16(ip, frame, env, local_base):
 def _h_memory_size(ip, frame, env, local_base):
     if env.memory is None:
         raise Trap("memory.size with no memory section")
-
     frame.values.append(len(env.memory) // PAGE_SIZE)
     return (frame.instrs[ip].end_offset, frame, env, local_base)
 
@@ -643,12 +615,10 @@ def _h_memory_grow(ip, frame, env, local_base):
     delta_pages = _to_u32(frame.values.pop())
     if env.memory is None:
         frame.values.append(_to_i32(0xFFFFFFFF))
-
     else:
         old_pages = len(env.memory) // PAGE_SIZE
         env.memory.extend(bytes(delta_pages * PAGE_SIZE))
         frame.values.append(old_pages)
-
     return (frame.instrs[ip].end_offset, frame, env, local_base)
 
 
@@ -756,7 +726,6 @@ def _h_i32_ctz(ip, frame, env, local_base):
     v = _to_u32(frame.values.pop())
     if v == 0:
         res = 32
-
     else:
         n = 0
         while (v & 1) == 0:
@@ -809,10 +778,8 @@ def _h_i32_div_s(ip, frame, env, local_base):
     a = _to_i32(frame.values.pop())
     if b == 0:
         raise Trap("integer divide by zero")
-
     if a == -2147483648 and b == -1:
         raise Trap("integer overflow")
-
     q = abs(a) // abs(b)
     frame.values.append(_to_i32(-q if (a < 0) != (b < 0) else q))
     return (frame.instrs[ip].end_offset, frame, env, local_base)
@@ -824,7 +791,6 @@ def _h_i32_div_u(ip, frame, env, local_base):
     a = _to_u32(frame.values.pop())
     if b == 0:
         raise Trap("integer divide by zero")
-
     frame.values.append(_to_i32(a // b))
     return (frame.instrs[ip].end_offset, frame, env, local_base)
 
@@ -835,7 +801,6 @@ def _h_i32_rem_s(ip, frame, env, local_base):
     a = _to_i32(frame.values.pop())
     if b == 0:
         raise Trap("integer divide by zero")
-
     r = abs(a) % abs(b)
     frame.values.append(_to_i32(-r if a < 0 else r))
     return (frame.instrs[ip].end_offset, frame, env, local_base)
@@ -847,7 +812,6 @@ def _h_i32_rem_u(ip, frame, env, local_base):
     a = _to_u32(frame.values.pop())
     if b == 0:
         raise Trap("integer divide by zero")
-
     frame.values.append(_to_i32(a % b))
     return (frame.instrs[ip].end_offset, frame, env, local_base)
 

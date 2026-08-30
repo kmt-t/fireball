@@ -81,7 +81,6 @@ class GDBClientHelper:
             # Send ACK for response
             self.sock.sendall(b"+")
             return response_payload
-
         return ""
 
 
@@ -161,7 +160,6 @@ def test_scenario_gdb_socket_debugger():
         resp = client.send_raw_packet("c")
         assert resp == "W00" and ctx.locals[1] == 498
         print("    [PASS] Scenario 7 (GDB Socket Debugger Session) succeeded seamlessly.")
-
     finally:
         client.close()
         server.stop()

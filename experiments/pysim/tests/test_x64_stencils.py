@@ -75,7 +75,6 @@ def emit(code: bytearray, stencil: st.Stencil, **patches: int) -> int:
     code += stencil.code
     for name, value in patches.items():
         patch(code, base, stencil, name, value)
-
     return base
 
 
@@ -108,7 +107,6 @@ def run_i32(
 
         fn = buf.function_at(0, ctypes.c_int64, [ctypes.c_void_p, ctypes.c_void_p])
         return fn(ctypes.cast(locals_arr, ctypes.c_void_p), ctypes.c_void_p(mem_ptr))
-
     finally:
         buf.close()
 
@@ -157,7 +155,6 @@ def run_i32_checked(
 
         fn = buf.function_at(0, ctypes.c_int64, [ctypes.c_void_p, ctypes.c_void_p])
         return fn(ctypes.cast(locals_arr, ctypes.c_void_p), ctypes.c_void_p(mem_ptr))
-
     finally:
         buf.close()
 
@@ -365,7 +362,6 @@ def test_out_of_bounds_load_traps():
     try:
         run_i32_checked(code, memory=memory)
         raise AssertionError("expected an out-of-bounds i32.load to trap")
-
     except OSError:
         pass
 
@@ -376,7 +372,6 @@ def test_out_of_bounds_store_traps():
     try:
         run_i32_checked(code, memory=memory)
         raise AssertionError("expected an out-of-bounds i32.store to trap")
-
     except OSError:
         pass
 
@@ -395,7 +390,6 @@ def test_memarg_static_offset_is_folded_into_the_bounds_check():
     try:
         run_i32_checked(code, memory=memory)
         raise AssertionError("expected the memarg-offset-adjusted access to trap")
-
     except OSError:
         pass
 
@@ -519,7 +513,6 @@ def test_fuzz_add_sub_mul_against_python_reference():
 # exactly the kind of bookkeeping that silently drifts (a new test added
 # above and never wired in here would just never run). Order is
 # definition order, so failures still read top-to-bottom sensibly.
-
 ALL_TESTS = sorted(
     (v for k, v in globals().items() if k.startswith("test_") and callable(v)),
     key=lambda fn: fn.__code__.co_firstlineno,

@@ -351,10 +351,8 @@ def run_aobench():
             next(coro)
             # COOS idle_hook: drain compile queue and batch-compile hot basic blocks
             runtime_engine.idle_hook(budget=4)
-
     except StopIteration:
         pass
-
     t1_t3 = time.perf_counter()
     render_output_t3 = sysv_t3.transport.drain().decode("utf-8", errors="replace")
     t3_time_ms = (t1_t3 - t0_t3) * 1000

@@ -41,7 +41,6 @@ def decode_unsigned(data: bytes, offset: int) -> tuple[int, int]:
         result |= (byte & 0x7F) << shift
         if byte & 0x80 == 0:
             return result, offset
-
         shift += 7
 
 
@@ -57,7 +56,6 @@ def decode_signed(data: bytes, offset: int) -> tuple[int, int]:
         if byte & 0x80 == 0:
             if byte & 0x40 and shift < 64:
                 result |= -(1 << shift)
-
             return result, offset
 
 
@@ -69,7 +67,6 @@ def encode_unsigned(value: int) -> bytes:
         value >>= 7
         if value != 0:
             out.append(byte | 0x80)
-
         else:
             out.append(byte)
             return bytes(out)
@@ -83,10 +80,8 @@ def encode_signed(value: int) -> bytes:
         value >>= 7
         if (value == 0 and (byte & 0x40) == 0) or (value == -1 and (byte & 0x40) != 0):
             more = False
-
         else:
             byte |= 0x80
 
         out.append(byte)
-
     return bytes(out)

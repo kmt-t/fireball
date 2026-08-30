@@ -103,7 +103,6 @@ class IPCRouter:
         entry = self.registry.find(uri)
         if not entry:
             return ("ERR_NOT_FOUND", f"URI not registered: {uri}")
-
         target_role = entry["role"]
         channel_id = entry["channel_id"]
         max_queue = entry["max_queue"]
@@ -121,7 +120,6 @@ class IPCRouter:
         if len(target_queue) >= max_queue:
             message.ownership = OwnershipState.SENDER_OWNS
             return ("ERR_QUEUE_FULL", "Queue full, rolled back to sender")
-
         # 1. Revoke sender ownership -> IN_FLIGHT
         message.ownership = OwnershipState.IN_FLIGHT
         # 2. Enqueue into target queue
@@ -133,7 +131,6 @@ class IPCRouter:
         queue = self.queues.get(channel_id)
         if not queue:
             return None
-
         message = queue.pop(0)
         assert message.ownership == OwnershipState.IN_FLIGHT, (
             "Message must be in-flight before grant"
@@ -150,5 +147,4 @@ class IPCRouter:
             msg = queue.pop(0)
             msg.ownership = OwnershipState.RECLAIMED_BY_DROP
             reclaimed_resources.append(msg.resource_id)
-
         return reclaimed_resources

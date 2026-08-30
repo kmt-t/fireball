@@ -58,7 +58,6 @@ _CALLEE_SAVED = ["rbx", "r12", "r13", "r14", "r15"]
 
 if IS_WINDOWS:
     _CALLEE_SAVED = ["rbx", "r12", "r13", "r14", "r15", "rdi", "rsi"]
-
 else:
     _CALLEE_SAVED = ["rbx", "r12", "r13", "r14", "r15", "rbp"]
 
@@ -77,7 +76,6 @@ def _run_u64(body: bytes, a: int = 0, b: int = 0) -> int:
         buf.write(0, code)
         fn = buf.function_at(0, ctypes.c_uint64, [ctypes.c_uint64, ctypes.c_uint64])
         return fn(a, b)
-
     finally:
         buf.close()
 
@@ -92,7 +90,6 @@ def _run_void_ptr_arg(body: bytes, out_len: int) -> list[int]:
         fn = buf.function_at(0, ctypes.c_void_p, [ctypes.c_void_p])
         fn(ctypes.cast(out, ctypes.c_void_p))
         return list(out)
-
     finally:
         buf.close()
 
@@ -119,7 +116,6 @@ def test_mov_reg_reg_moves_the_full_64_bits_between_every_pair():
         for dst in TESTED_REGS:
             if src == dst:
                 continue
-
             code = bytearray()
             if src != ARG0:
                 code += asm.mov_reg_reg(src, ARG0)
@@ -210,7 +206,6 @@ def test_call_reg_performs_a_real_indirect_call_and_returns_here():
         caller_code += asm.call_reg("r10")
         got = _run_u64(bytes(caller_code), a=21)
         assert got == 42
-
     finally:
         callee_buf.close()
 

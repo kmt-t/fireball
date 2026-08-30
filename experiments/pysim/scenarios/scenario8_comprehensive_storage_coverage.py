@@ -155,7 +155,6 @@ class GDBClientHelper:
             response_payload = buf[dollar_idx + 1 : hash_idx]
             self.sock.sendall(b"+")
             return response_payload
-
         return ""
 
 
@@ -268,7 +267,6 @@ def test_scenario_comprehensive_storage_and_debugger():
         print(
             "    [PASS] Scenario 8 (Comprehensive Storage & Debugger Integration) verified completely."
         )
-
     finally:
         client.close()
         server.stop()

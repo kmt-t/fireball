@@ -38,7 +38,6 @@ for _p in [
         sys.path.insert(0, _sp)
 
 # name -> (needs_rex_extension_bit, low_3_bits_of_the_register_number)
-
 REG_INFO: dict[str, tuple[int, int]] = {
     "rax": (0, 0),
     "rcx": (0, 1),

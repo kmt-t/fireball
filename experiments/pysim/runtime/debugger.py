@@ -100,7 +100,6 @@ class DebuggerManager:
         """Verifies memory assertions against current guest memory ({Debug_Integrated})."""
         if memory is None:
             return
-
         for addr, expected, desc in self.memory_assertions:
             if addr < len(memory):
                 val = memory[addr]
@@ -129,7 +128,6 @@ class DebuggerManager:
         for i in range(16):
             if 4 + i < len(regs):
                 ctx.locals[i] = regs[4 + i]
-
         return new_pc
 
 
@@ -165,19 +163,16 @@ class GDBRspProtocol:
 
         if not raw:
             return self.format_packet(""), current_pc
-
         cmd = raw[0]
         args = raw[1:]
         # ? - Query Halt Reason
         if cmd == "?":
             return self.format_packet(f"S{self.dbg.stop_signal:02x}"), current_pc
-
         # g - Read All Registers
         elif cmd == "g":
             regs = self.dbg.read_virtual_registers(current_pc, ctx)
             hex_payload = "".join(f"{r & 0xFFFF_FFFF:08x}" for r in regs)
             return self.format_packet(hex_payload), current_pc
-
         # G - Write All Registers
         elif cmd == "G":
             try:
@@ -186,10 +181,8 @@ class GDBRspProtocol:
                 regs = [int(hex_data[i : i + 8], 16) for i in range(0, len(hex_data), 8)]
                 new_pc = self.dbg.write_virtual_registers(regs, ctx)
                 return self.format_packet("OK"), new_pc
-
             except Exception:
                 return self.format_packet("E01"), current_pc
-
         # m addr,len - Read Memory
         elif cmd == "m":
             try:
@@ -198,13 +191,10 @@ class GDBRspProtocol:
                 length = int(len_str, 16)
                 if ctx.memory is None or addr + length > len(ctx.memory):
                     return self.format_packet("E01"), current_pc
-
                 mem_bytes = bytes(ctx.memory[addr : addr + length])
                 return self.format_packet(mem_bytes.hex()), current_pc
-
             except Exception:
                 return self.format_packet("E01"), current_pc
-
         # M addr,len:XX... - Write Memory & Flush JIT Cache ({Debugger_Jit_Flush})
         elif cmd == "M":
             try:
@@ -215,40 +205,32 @@ class GDBRspProtocol:
                 data = bytes.fromhex(hex_data)
                 if ctx.memory is None or addr + len(data) > len(ctx.memory) or len(data) != length:
                     return self.format_packet("E01"), current_pc
-
                 ctx.memory[addr : addr + length] = data
                 # Invalidate JIT cache on memory rewrite ({Debugger_Jit_Flush})
                 self.dbg.flush_jit_cache()
                 return self.format_packet("OK"), current_pc
-
             except Exception:
                 return self.format_packet("E01"), current_pc
-
         # Z0,addr,kind - Insert Breakpoint
         elif cmd == "Z" and args.startswith("0,"):
             try:
                 addr = int(args.split(",")[1], 16)
                 self.dbg.add_breakpoint(addr)
                 return self.format_packet("OK"), current_pc
-
             except Exception:
                 return self.format_packet("E01"), current_pc
-
         # z0,addr,kind - Remove Breakpoint
         elif cmd == "z" and args.startswith("0,"):
             try:
                 addr = int(args.split(",")[1], 16)
                 self.dbg.remove_breakpoint(addr)
                 return self.format_packet("OK"), current_pc
-
             except Exception:
                 return self.format_packet("E01"), current_pc
-
         # s - Single Step Instruction
         elif cmd == "s":
             if current_pc not in blocks:
                 return self.format_packet("W00"), current_pc
-
             self.dbg.sample_pc(current_pc)
             block = blocks[current_pc]
             # Execute single step via Interpreter
@@ -257,10 +239,8 @@ class GDBRspProtocol:
             self.dbg.verify_assertions(ctx.memory)
             if next_pc is None:
                 return self.format_packet("W00"), 0  # Process terminated
-
             self.dbg.stop_signal = 5
             return self.format_packet("S05"), next_pc
-
         # c - Continue Execution
         elif cmd == "c":
             engine = self.dbg.engine or IntegratedHybridEngine()
@@ -269,10 +249,8 @@ class GDBRspProtocol:
                 if self.dbg.has_breakpoint(pc) and pc != current_pc:
                     self.dbg.stop_signal = 5
                     return self.format_packet("S05"), pc
-
                 if pc not in blocks:
                     return self.format_packet("W00"), pc
-
                 self.dbg.sample_pc(pc)
                 block = blocks[pc]
                 # Run step in interpreter fallback mode
@@ -281,8 +259,6 @@ class GDBRspProtocol:
                 if pc is not None and self.dbg.has_breakpoint(pc):
                     self.dbg.stop_signal = 5
                     return self.format_packet("S05"), pc
-
             return self.format_packet("W00"), 0
-
         # Unknown / Unsupported command
         return self.format_packet(""), current_pc

@@ -1,8 +1,8 @@
 ﻿"""
 experiments/pysim/test_loader.py
 
-Tests for WASM Loader, Zero-Copy Indexing, and RadixBinaryTree File Offset Registry (loader.py).
-Conforms strictly to docs/components/tier2_runtime/tests/runtime_loader_test_spec.md (LOAD-01 ~ LOAD-44).
+Tests for WASM Loader, Zero-Copy Indexing, and Hash + RadixBinaryTreeView Symbol/Import/Offset Indexes.
+Conforms strictly to docs/components/tier2_runtime/tests/runtime_loader_test_spec.md (LOAD-01 ~ LOAD-47).
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ from loader import (
     WasmLoader,
     WasmParseError,
     WasmVerifyError,
+    fnv1a_32,
 )
 
 
@@ -206,7 +207,7 @@ def test_load_01_to_07_lightweight_verification():
 
 
 def test_load_10_to_15_zero_copy_and_accessors():
-    """LOAD-10..15: Verifies ROM direct references, export sorting and lazy accessors."""
+    """LOAD-10..15: Verifies ROM direct references, Hash + RadixBinaryTreeView export lookup, and lazy accessors."""
     loader = WasmLoader()
     wasm_bytes = _build_test_wasm_binary(export_names=["zeta", "alpha", "beta"])
     view = loader.prepare("zc_mod", wasm_bytes)
@@ -215,8 +216,10 @@ def test_load_10_to_15_zero_copy_and_accessors():
     exp_names = [e.name for e in view.exports_dict]
     assert exp_names == ["alpha", "beta", "zeta"]
 
-    # Binary search lookup
+    # Hash + RadixBinaryTreeView lookup (LOAD-13)
     assert view.lookup_export_func("alpha") == 0
+    assert view.lookup_export_func("beta") == 0
+    assert view.lookup_export_func("zeta") == 0
     assert view.lookup_export_func("nonexistent") is None
 
     # Function Accessor
@@ -235,7 +238,7 @@ def test_load_10_to_15_zero_copy_and_accessors():
 
 
 def test_load_20_to_25_multi_module_import_resolution():
-    """LOAD-20..25: Verifies multi-module imports, readiness, linking, and unloading."""
+    """LOAD-20..25: Verifies multi-module imports, readiness, linking via Hash + RadixBinaryTreeView, and unloading."""
     loader = WasmLoader()
 
     # 1. Prepare target library module
@@ -273,6 +276,7 @@ def test_load_20_to_25_multi_module_import_resolution():
     app_view = loader.prepare("app_mod", bytes(app_buf))
     assert app_view.is_ready is False  # Pending resolution
 
+    # LOAD-21: Hash + RadixBinaryTreeView import resolution
     assert loader.resolve_imports(app_view) is True
     assert app_view.is_ready is True
     assert "lib_mod.helper" in app_view.resolved_imports
@@ -282,10 +286,10 @@ def test_load_20_to_25_multi_module_import_resolution():
     assert loader.lookup("app_mod") is None
 
 
-def test_load_40_to_44_radix_binary_tree_offset_lookup():
-    """LOAD-40..44: Verifies RadixBinaryTree file offset interval indexing and reverse-lookup."""
+def test_load_40_to_47_radix_binary_tree_view_indexes():
+    """LOAD-40..47: Verifies RadixBinaryTreeView file offset and Hash symbol/import indexes."""
     loader = WasmLoader()
-    wasm_bytes = _build_test_wasm_binary(export_names=["alpha", "beta"])
+    wasm_bytes = _build_test_wasm_binary(export_names=["alpha", "beta", "gamma", "compute"])
     view = loader.prepare("radix_mod", wasm_bytes)
 
     # 1. LOAD-40: Entities registered in DecodedEntityRegistry
@@ -315,6 +319,60 @@ def test_load_40_to_44_radix_binary_tree_offset_lookup():
     # 4. LOAD-44: Invalid / out-of-bounds offsets
     assert view.lookup_by_file_offset(len(wasm_bytes) + 100) is None
     assert view.lookup_by_file_offset(0xFFFFFFFF) is None
+
+    # 5. LOAD-45: Import table RadixBinaryTreeView search
+    app_buf = bytearray()
+    app_buf.extend(b"\x00asm\x01\x00\x00\x00")
+    app_type = bytearray()
+    app_type.extend(_encode_leb128_u32(1))
+    app_type.append(0x60)
+    app_type.extend(_encode_leb128_u32(2))
+    app_type.extend([ValType.I32, ValType.I32])
+    app_type.extend(_encode_leb128_u32(1))
+    app_type.append(ValType.I32)
+    app_buf.append(SectionID.TYPE)
+    app_buf.extend(_encode_leb128_u32(len(app_type)))
+    app_buf.extend(app_type)
+
+    app_imp = bytearray()
+    app_imp.extend(_encode_leb128_u32(2))
+    # Import 1: radix_mod.alpha
+    app_imp.extend(_encode_leb128_u32(len(b"radix_mod")))
+    app_imp.extend(b"radix_mod")
+    app_imp.extend(_encode_leb128_u32(len(b"alpha")))
+    app_imp.extend(b"alpha")
+    app_imp.append(ExternalKind.FUNCTION)
+    app_imp.extend(_encode_leb128_u32(0))
+    # Import 2: radix_mod.compute
+    app_imp.extend(_encode_leb128_u32(len(b"radix_mod")))
+    app_imp.extend(b"radix_mod")
+    app_imp.extend(_encode_leb128_u32(len(b"compute")))
+    app_imp.extend(b"compute")
+    app_imp.append(ExternalKind.FUNCTION)
+    app_imp.extend(_encode_leb128_u32(0))
+
+    app_buf.append(SectionID.IMPORT)
+    app_buf.extend(_encode_leb128_u32(len(app_imp)))
+    app_buf.extend(app_imp)
+
+    app_view = loader.prepare("app_test_view", bytes(app_buf))
+    imp_alpha = app_view.find_import("radix_mod", "alpha")
+    assert imp_alpha is not None
+    assert imp_alpha.field_name == "alpha"
+
+    imp_compute = app_view.find_import("radix_mod", "compute")
+    assert imp_compute is not None
+    assert imp_compute.field_name == "compute"
+
+    assert app_view.find_import("radix_mod", "unknown") is None
+
+    # 6. LOAD-46: Hash collision verification
+    exp_entry = view.lookup_export("gamma")
+    assert exp_entry is not None
+    assert exp_entry.name == "gamma"
+
+    # 7. LOAD-47: Fast non-existent symbol rejection
+    assert view.lookup_export("totally_fake_symbol") is None
 
 
 ALL_TESTS = sorted(

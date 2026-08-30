@@ -7,12 +7,12 @@
 
 ## 1. コンセプト
 <!-- traceability: {ROMParsing} {META_AccessDictionary} {META_BumpAllocator} {META_BinarySearch} -->
-WASMローダは、ROM上のWASM32バイナリをパースし、実行環境が参照しやすい索引構造（ModuleView）を生成する。RAMへの全展開を避け、ROM上のデータを直接参照することでメモリ消費を極小化する。デコードされた各種メタデータ・要素（セクション、関数コード、グローバル、データセグメント）は内部レジストリ（`decoded_entity_registry`）に格納され、**WASMファイル内のバイト位置（データオフセット）をキーとして `RadixBinaryTree`（`fireball::radix_binary_tree_view`）により $O(k)$ 高速検索** できる。 `{ROMParsing}` `{META_AccessDictionary}` `{META_BumpAllocator}` `{META_BinarySearch}`
-本設計の動作モデルおよび軽量検証スコープ（V1〜V6）、$O(\log N)$ エクスポート二分探索、RadixBinaryTree によるファイル位置逆引き、バンプアロケータによるトランザクション保護（`save`/`restore`）は、コンセプトコード（[`concepts/loader_concept.py`](concepts/loader_concept.py)）によって動作検証されている。
+WASMローダは、ROM上のWASM32バイナリをパースし、実行環境が参照しやすい索引構造（ModuleView）を生成する。RAMへの全展開を避け、ROM上のデータを直接参照することでメモリ消費を極小化する。デコードされた各種メタデータ・要素（セクション、関数コード、グローバル、データセグメント）は内部レジストリ（`decoded_entity_registry`）に格納され、**WASMファイル内のバイト位置（データオフセット）をキーとして `RadixBinaryTreeView`（`fireball::radix_binary_tree_view`）により $O(k)$ 高速検索** できる。さらに、**インポートテーブルおよびエクスポートシンボルの検索も、文字列比較ではなくシンボル名ハッシュ（FNV-1a 32-bit）をキーとした `RadixBinaryTreeView` により $O(k)$ で瞬時に解決・引き当てる**。 `{ROMParsing}` `{META_AccessDictionary}` `{META_BumpAllocator}` `{META_BinarySearch}`
+本設計の動作モデルおよび軽量検証スコープ（V1〜V6）、ハッシュ＋RadixBinaryTreeView によるシンボル・インポート検索、RadixBinaryTreeView によるファイル位置逆引き、バンプアロケータによるトランザクション保護（`save`/`restore`）は、コンセプトコード（[`concepts/loader_concept.py`](concepts/loader_concept.py)）によって動作検証されている。
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->
-本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属し、vSoC (`runtime_vsoc.md`) から分解された WASM バイナリのパース・検証、デコード値レジストリ管理、ファイル内データ位置からの RadixBinaryTree 索引構築、および ROM 上の索引構築（ModuleView）を担当する。 `{META_3TierSeparation}`
+本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属し、vSoC (`runtime_vsoc.md`) から分解された WASM バイナリのパース・検証、デコード値レジストリ管理、ファイル内データ位置およびインポート/エクスポートハッシュからの RadixBinaryTreeView 索引構築、および ROM 上の索引構築（ModuleView）を担当する。 `{META_3TierSeparation}`
 
 ## 3. 静的モデル
 
@@ -23,6 +23,7 @@ WASMローダは、ROM上のWASM32バイナリをパースし、実行環境が�
 - **`module_registry`**: ロード済みの `module_view` を名前で管理するための内部リスト。 `{MultiModule_Support}`
 - **`decoded_entity_registry`**: デコードされた各エンティティ（セクション、関数コード、グローバル、データセグメント）を保持するレジストリ。
 - **`entity_offset_tree` (`radix_binary_tree_view`)**: ファイル内のバイト位置（開始オフセット）をキーとしてデコード済みエンティティへ $O(k)$ / $O(\log n)$ でマッピングする基数2進木索引。
+- **`import_tree` / `export_tree` (`radix_binary_tree_view`)**: シンボル名（インポート名・エクスポート名）のハッシュ値をキーとして各エントリへ $O(k)$ でマッピングする基数2進木索引。
 
 ### 3.2 内部ブロック図
 <!-- traceability: {MultiModule_Support} -->
@@ -32,7 +33,8 @@ graph TD
         Loader[WasmLoader Engine]
         Registry[Internal Module Registry]
         EntityReg[Decoded Entity Registry]
-        RadixTree[RadixBinaryTree Offset Index]
+        RadixTree[RadixBinaryTreeView Offset Index]
+        SymbolTree[RadixBinaryTreeView Hash Symbol Index]
     end
 
     subgraph Memory
@@ -45,6 +47,7 @@ graph TD
     Loader -- manages --> EntityReg
     EntityReg -- indexed by --> RadixTree
     Registry -- holds --> View[module_view]
+    View -- indexed by --> SymbolTree
     View -- refers to --> ROM
 ```
 
@@ -66,7 +69,7 @@ ROM上のバイナリデータに対する「窓」として機能し、WIT上�
 これにより、RAM消費を最小限に抑えつつ、クライアントに対しては型安全なインターフェイスを提供する。 `{ROMParsing}`
 
 - **セクション索引**: WASM標準セクション（Type, Import, Code等）のオフセットとサイズをキャッシュする。
-- **シンボル検索**: エクスポート名からインデックスへの高速な引き当てを提供する。
+- **シンボル検索**: エクスポート名ハッシュからインデックスへの高速な引き当て（`export_tree`）を提供する。
 
 #### バイナリストリーム（BinaryStream）
 <!-- traceability: {ROMParsing} -->
@@ -119,11 +122,11 @@ ROM上のデータストリームを管理し、LEB128可変長整数やプリ�
 - **module_view 構築 & デコード値レジストリ登録 (Zero-Copy & Radix-Indexed)**: `{ZeroCopyIndexing}` `{META_BinarySearch}`
     - セクションスキャン時に内容をRAMにコピーせず、ROM上の開始オフセットとサイズを索引化する。
     - 各セクション、関数コードブロック、グローバル変数、データセグメント等のデコード済みエントリを `decoded_entity_registry` に登録する。
-    - 各エントリの開始ファイルオフセット `file_offset` をキーとして、基数2進探索木（`fireball::radix_binary_tree_view`）を構築する。粗い Radix Table で区間を特定後、有界二分探索により $O(k)$ / $O(\log n)$ でファイル内の任意バイト位置から該当するデコード済みエンティティ（関数メタデータ、セクション、データ定義）を高速逆引きできるようにする。
-    - エクスポートエントリをパースし、名前文字列は ROM 上のポインタ（`std::string_view`）として RAM コピーゼロで参照し、固定長配列 `exports_dict` 上で名前順にソート（`std::sort`）して格納する。
-- **シンボル検索**: `exports_dict` を二分探索することで O(log N) で関数IDを取得する。 `{META_AccessDictionary}`
-- **ファイル位置逆引き (lookup_by_file_offset)**: 任意のファイル内バイトオフセットから `entity_offset_tree`（RadixBinaryTree）を検索し、そのオフセットを包含するデコード済みエンティティ（セクション、関数、データ等）を即座に特定・返却する。
-- **依存関係解決**: インポートセクションをスキャンし、必要なモジュール名とエクスポート名（関数ID/グローバルID等）を抽出し、`module_registry` を介して他モジュールの `lookup_export` とリンクする。未解決のインポートがある場合、モジュールはロード済みだが実行不可状態となる。
+    - 各エントリの開始ファイルオフセット `file_offset` をキーとして、基数2進探索木ビュー（`fireball::radix_binary_tree_view`）を構築する。粗い Radix Table で区間を特定後、有界二分探索により $O(k)$ / $O(\log n)$ でファイル内の任意バイト位置から該当するデコード済みエンティティ（関数メタデータ、セクション、データ定義）を高速逆引きできるようにする。
+    - エクスポートおよびインポートエントリをパースし、シンボル名の 32-bit ハッシュ値（FNV-1a）を算出。名前文字列は ROM 上のポインタ（`std::string_view`）として RAM コピーゼロで保持しつつ、ハッシュ値をキーとした `export_tree` / `import_tree`（`fireball::radix_binary_tree_view`）を構築する。
+- **シンボル検索 (lookup_export / lookup_export_func)**: 文字列比較ループを行わず、シンボル名ハッシュ（FNV-1a 32-bit）をキーとして `export_tree`（`radix_binary_tree_view`）を $O(k)$ で探索。ヒット時にのみ ROM 上の文字列を照合して衝突を排除し、目的の関数ID・エクスポートエントリを即座に取得する。 `{META_AccessDictionary}` `{META_BinarySearch}`
+- **インポートテーブル検索と依存関係解決 (resolve_imports)**: インポートテーブルの各エントリに対し、インポート先モジュール名・フィールド名のハッシュ値を用いて対象モジュールの `export_tree`（`radix_binary_tree_view`）を $O(k)$ で直接引き当てる。文字列走査を行わずに $O(k)$ で依存関係を解決し、モジュールを実行可能状態へ遷移させる。 `{MultiModule_Support}` `{META_BinarySearch}`
+- **ファイル位置逆引き (lookup_by_file_offset)**: 任意のファイル内バイトオフセットから `entity_offset_tree`（`radix_binary_tree_view`）を検索し、そのオフセットを包含するデコード済みエンティティ（セクション、関数、データ等）を即座に特定・返却する。
 - **メモリセクション検証**: Memory Section をパースし、論理ページサイズ（64KB単位）および初期要求ページ数を取得。物理割当が部分ページ（例: 8KB）の場合や複数ページ（`N * 64KB`）の場合でも、モジュール初期ページ要求とシステム物理予算（`FB_CONF_MAX_WASM_PAGES`）を照合し、実行時境界判定へ引き渡す。
 - **アンロード**: `unload` はmodule_registryからモジュールを削除する。bump_allocatorのLIFO制約により、メモリの完全な回収はロード逆順のアンロード時のみ。
 

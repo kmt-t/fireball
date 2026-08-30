@@ -2068,8 +2068,8 @@ def test_interpreter_debugger_handler_table_switch_and_hooks():
     assert engine.handler_table == "normal"
 
 
-def test_wasm_loader_and_radix_binary_tree_file_offset_indexing():
-    """LOAD-01..44: Verifies WASM Loader zero-copy indexing, verification, and RadixBinaryTree file offset reverse-lookup."""
+def test_wasm_loader_and_radix_binary_tree_view_indexes():
+    """LOAD-01..47: Verifies WASM Loader zero-copy indexing, verification, and RadixBinaryTreeView file offset & hash symbol indexes."""
     from loader import WasmLoader, WasmVerifyError
     from test_loader import _build_test_wasm_binary
 
@@ -2077,9 +2077,11 @@ def test_wasm_loader_and_radix_binary_tree_file_offset_indexing():
     wasm_bytes = _build_test_wasm_binary(export_names=["zeta", "alpha", "beta"])
     view = loader.prepare("test_module", wasm_bytes)
 
-    # 1. Zero-copy & binary search export lookup
+    # 1. Zero-copy & Hash + RadixBinaryTreeView export lookup (LOAD-13)
     assert [e.name for e in view.exports_dict] == ["alpha", "beta", "zeta"]
     assert view.lookup_export_func("alpha") == 0
+    assert view.lookup_export_func("beta") == 0
+    assert view.lookup_export_func("zeta") == 0
     assert view.lookup_export_func("unknown") is None
 
     # 2. Transactional rollback on invalid WASM
@@ -2091,7 +2093,7 @@ def test_wasm_loader_and_radix_binary_tree_file_offset_indexing():
         pass
     assert loader.allocator.offset == watermark
 
-    # 3. RadixBinaryTree file offset reverse-lookup (LOAD-40..44)
+    # 3. RadixBinaryTreeView file offset reverse-lookup (LOAD-40..44)
     assert len(view.entity_registry) > 0
     func_start, func_size = view.code_offsets[0]
     entity_fn = view.lookup_by_file_offset(func_start)

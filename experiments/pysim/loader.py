@@ -1,15 +1,15 @@
 ﻿"""
 experiments/pysim/loader.py
 
-WASM Loader & Zero-Copy Indexing Engine with RadixBinaryTree File Offset Registry.
+WASM Loader & Zero-Copy Indexing Engine with Hash + RadixBinaryTreeView Indexes.
 Conforms strictly to docs/components/tier2_runtime/runtime_loader.md
 and docs/components/tier1_core/system_containers.md.
 
 Implements:
 1. Zero-Copy ROM-resident WASM32 parsing ({ROMParsing}, {ZeroCopyIndexing})
 2. Transactional memory rollback via BumpAllocator ({META_BumpAllocator})
-3. RadixBinaryTree interval indexing for file offset reverse-lookup ({META_BinarySearch})
-4. Export dictionary with O(log N) binary search ({META_AccessDictionary})
+3. RadixBinaryTreeView interval indexing for file offset reverse-lookup ({META_BinarySearch})
+4. Hash + RadixBinaryTreeView symbol and import lookup in O(k) ({META_AccessDictionary}, {META_BinarySearch})
 5. Lightweight Verification Scope (V1-V6) ({LightweightVerifier})
 6. Multi-module registry & import resolution ({MultiModule_Support})
 """
@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import bisect
 import struct
-from typing import Any, Optional, Union
+from typing import Any, Optional, Sequence, Union
 
 
 # Configuration Constants
@@ -73,6 +73,89 @@ class ExternalKind:
     TABLE = 0x01
     MEMORY = 0x02
     GLOBAL = 0x03
+
+
+def fnv1a_32(data: Union[str, bytes]) -> int:
+    """FNV-1a 32-bit hash for fast zero-copy symbol lookup."""
+    if isinstance(data, str):
+        raw = data.encode("utf-8")
+    else:
+        raw = bytes(data)
+    h = 0x811C9DC5
+    for b in raw:
+        h = ((h ^ b) * 0x01000193) & 0xFFFFFFFF
+    return h
+
+
+class FlatMapView:
+    """fireball::flat_map_view<Key, Value>: Sorted key-value slice with O(log n) binary search."""
+    def __init__(self, keys: Sequence[Any], values: Sequence[Any]):
+        assert len(keys) == len(values)
+        self.keys = list(keys)
+        self.values = list(values)
+
+    def size(self) -> int:
+        return len(self.keys)
+
+    def slice(self, first: int, last: int) -> FlatMapView:
+        assert 0 <= first <= last <= len(self.keys)
+        return FlatMapView(self.keys[first:last], self.values[first:last])
+
+    def find(self, key: Any) -> Optional[Any]:
+        idx = bisect.bisect_left(self.keys, key)
+        if idx < len(self.keys) and self.keys[idx] == key:
+            return self.values[idx]
+        return None
+
+
+class RadixBinaryTreeView:
+    """
+    fireball::radix_binary_tree_view<Key, Value, RadixShift>:
+    System container combining O(1) Radix Table prefix lookup with bounded binary search ({META_BinarySearch}).
+    """
+    def __init__(self, keys: Sequence[int], values: Sequence[Any], radix_shift: int = 16):
+        paired = sorted(zip(keys, values), key=lambda p: p[0])
+        self.keys = [p[0] for p in paired]
+        self.values = [p[1] for p in paired]
+        self.map_view = FlatMapView(self.keys, self.values)
+        self.radix_shift = radix_shift
+
+        if self.keys:
+            max_prefix = max(self.keys) >> radix_shift
+            table_size = max_prefix + 1
+            self.radix_table: list[tuple[int, int]] = [(0, 0)] * table_size
+            current_prefix = 0
+            first_idx = 0
+            for idx, k in enumerate(self.keys):
+                prefix = k >> radix_shift
+                while current_prefix < prefix:
+                    self.radix_table[current_prefix] = (first_idx, idx)
+                    current_prefix += 1
+                    first_idx = idx
+            self.radix_table[current_prefix] = (first_idx, len(self.keys))
+        else:
+            self.radix_table = []
+
+    def find(self, key: int) -> Optional[Any]:
+        prefix = key >> self.radix_shift
+        if prefix < 0 or prefix >= len(self.radix_table):
+            return None
+        first, last = self.radix_table[prefix]
+        if first >= last:
+            return None
+        return self.map_view.slice(first, last).find(key)
+
+    def find_interval(self, offset: int) -> Optional[Any]:
+        """Range lookup for interval keys [start, end) stored as DecodedEntity."""
+        if not self.keys:
+            return None
+        idx = bisect.bisect_right(self.keys, offset) - 1
+        if 0 <= idx < len(self.values):
+            entity = self.values[idx]
+            if hasattr(entity, "start_offset") and hasattr(entity, "end_offset"):
+                if entity.start_offset <= offset < entity.end_offset:
+                    return entity
+        return None
 
 
 class BumpAllocator:
@@ -290,45 +373,10 @@ class DecodedEntity:
         self.payload = payload
 
 
-class RadixBinaryTreeNode:
-    def __init__(self):
-        self.children: list[Optional[RadixBinaryTreeNode]] = [None, None]
-        self.entity: Optional[DecodedEntity] = None
-
-
-class RadixBinaryTree:
-    """
-    Radix Binary Tree for indexing file offset intervals [start, end) ({META_BinarySearch}).
-    Provides O(k) bitwise trie traversal and interval containment search.
-    """
-    def __init__(self, max_bits: int = 32):
-        self.root = RadixBinaryTreeNode()
-        self.max_bits = max_bits
-        self.entries: list[tuple[int, int, DecodedEntity]] = []
-
-    def insert(self, start_offset: int, end_offset: int, entity: DecodedEntity) -> None:
-        node = self.root
-        for bit_i in range(self.max_bits - 1, -1, -1):
-            bit = (start_offset >> bit_i) & 1
-            if node.children[bit] is None:
-                node.children[bit] = RadixBinaryTreeNode()
-            node = node.children[bit]
-        node.entity = entity
-        bisect.insort_left(self.entries, (start_offset, end_offset, entity), key=lambda e: e[0])
-
-    def find_at_offset(self, file_offset: int) -> Optional[DecodedEntity]:
-        idx = bisect.bisect_right(self.entries, file_offset, key=lambda e: e[0]) - 1
-        if 0 <= idx < len(self.entries):
-            start, end, entity = self.entries[idx]
-            if start <= file_offset < end:
-                return entity
-        return None
-
-
 class ModuleView:
     """
     Read-only structured index window over ROM WASM binary.
-    `{ROMParsing}` `{ZeroCopyIndexing}` `{META_AccessDictionary}`
+    `{ROMParsing}` `{ZeroCopyIndexing}` `{META_AccessDictionary}` `{META_BinarySearch}`
     """
     def __init__(self, module_name: str, rom_binary: Union[bytes, bytearray, memoryview]):
         self.module_name = module_name
@@ -346,25 +394,46 @@ class ModuleView:
         self.resolved_imports: dict[str, Any] = {}
         self.is_ready: bool = False
 
-        # Decoded entity registry & RadixBinaryTree file offset index ({META_BinarySearch})
+        # Decoded entity registry & RadixBinaryTreeView indexes ({META_BinarySearch})
         self.entity_registry: list[DecodedEntity] = []
-        self.offset_tree = RadixBinaryTree()
+        self.export_tree: Optional[RadixBinaryTreeView] = None
+        self.import_tree: Optional[RadixBinaryTreeView] = None
+        self.entity_offset_tree: Optional[RadixBinaryTreeView] = None
 
     def register_entity(self, kind: str, start_offset: int, end_offset: int, name_or_idx: Any, payload: Any) -> DecodedEntity:
         entity = DecodedEntity(kind, start_offset, end_offset, name_or_idx, payload)
         self.entity_registry.append(entity)
-        self.offset_tree.insert(start_offset, end_offset, entity)
         return entity
 
-    def lookup_by_file_offset(self, file_offset: int) -> Optional[DecodedEntity]:
-        """Looks up a decoded entity containing the given file byte offset in O(k) / O(log N)."""
-        return self.offset_tree.find_at_offset(file_offset)
+    def build_indexes(self) -> None:
+        """Constructs RadixBinaryTreeView indexes for exports, imports, and entity offsets."""
+        exp_keys = [fnv1a_32(exp.name) for exp in self.exports_dict]
+        self.export_tree = RadixBinaryTreeView(exp_keys, self.exports_dict, radix_shift=16)
+
+        imp_keys = [fnv1a_32(f"{imp.module_name}::{imp.field_name}") for imp in self.imports]
+        self.import_tree = RadixBinaryTreeView(imp_keys, self.imports, radix_shift=16)
+
+        ent_keys = [e.start_offset for e in self.entity_registry]
+        self.entity_offset_tree = RadixBinaryTreeView(ent_keys, self.entity_registry, radix_shift=4)
 
     def lookup_export(self, name: str) -> Optional[ExportEntry]:
-        keys = [exp.name for exp in self.exports_dict]
-        idx = bisect.bisect_left(keys, name)
-        if idx < len(self.exports_dict) and self.exports_dict[idx].name == name:
-            return self.exports_dict[idx]
+        """Hash + RadixBinaryTreeView symbol lookup with zero-copy string verification in O(k)."""
+        if self.export_tree is None:
+            return None
+        h = fnv1a_32(name)
+        candidate = self.export_tree.find(h)
+        if candidate is not None and candidate.name == name:
+            return candidate
+        return None
+
+    def find_import(self, module_name: str, field_name: str) -> Optional[ImportEntry]:
+        """Hash + RadixBinaryTreeView import table lookup in O(k)."""
+        if self.import_tree is None:
+            return None
+        h = fnv1a_32(f"{module_name}::{field_name}")
+        candidate = self.import_tree.find(h)
+        if candidate is not None and candidate.module_name == module_name and candidate.field_name == field_name:
+            return candidate
         return None
 
     def lookup_export_func(self, name: str) -> Optional[int]:
@@ -372,6 +441,12 @@ class ModuleView:
         if exp is not None and exp.kind == ExternalKind.FUNCTION:
             return exp.index
         return None
+
+    def lookup_by_file_offset(self, file_offset: int) -> Optional[DecodedEntity]:
+        """Looks up a decoded entity containing the given file byte offset using RadixBinaryTreeView in O(k)."""
+        if self.entity_offset_tree is None:
+            return None
+        return self.entity_offset_tree.find_interval(file_offset)
 
     def num_imported_functions(self) -> int:
         return sum(1 for imp in self.imports if imp.kind == ExternalKind.FUNCTION)
@@ -483,6 +558,8 @@ class WasmLoader:
                     raise WasmVerifyError(f"V6 Verification Failed: Memory pages {mem.initial_pages} > budget {self.max_wasm_pages}")
 
             view.exports_dict.sort()
+            view.build_indexes()
+
             if not view.imports:
                 view.is_ready = True
 

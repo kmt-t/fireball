@@ -107,7 +107,10 @@ JIT キャッシュ内に書き込まれる各トレースは、**先頭に 16 �
 2. **メモリコピー & パッチ適用**: アクティブキャッシュへテンプレート命令列をコピーし、即値オペランドや相対分岐オフセットをインプレースでパッチする。
 3. **AAPCS 境界フォールバック**: 複雑な命令やホスト関数呼び出しはランタイム API 呼び出しスタブを生成してフォールバックする。 `{JIT_RuntimeAPI_Fallback}`
 4. **命令キャッシュ同期**: パッチ完了後、`__DSB()` および `__ISB()` バリアを発行して命令キャッシュを同期する。
-5. **インタープリタ連携とフォールバック (Low-Overhead Interop)**: JIT トレースとインタープリタ間のレジスタ規約整合および直接末尾ジャンプ（`BX`）による相互遷移を保証する。コンテキスト再構築は発生せず、遷移コストはダーティな TOS/NOS および `sp_offset` の書き戻し（`STR` 2〜3命令）のみに抑えられる。 `{JIT_RuntimeAPI_Fallback}` `{ADR_TosCacheAsymmetry}`
+5. **インタープリタ連携とハンドラ直接呼び出し (Low-Overhead Interop & Direct Handler Call)**:
+   - JIT トレースとインタープリタの命令ハンドラ（`opcode_handler`）は完全に同一の CPS 4引数呼び出し規約（`R0: ip, R1: stack_bot, R2: env, R3: local_base`）を共有する。
+   - JIT トレースは直線的な算術・ローカル変数演算に専念し、複雑な制御フロー（`BR`, `BR_IF`, `BR_TABLE`, `CALL`, `RETURN`, `IF`）やホストシステムコールに達した際は、**JIT 内で複雑なジャンプ処理を重複実装せず、直接インタープリタのハンドラテーブル（`handler_table[opcode]`）へ末尾ジャンプ（Tail Jump / `BX`）するか、戻り値 `next_ip` を返却してインタープリタへ即座にフォールバック**する。
+   - レジスタ規約が完全一致しているためコンテキスト再構築コストはゼロであり、JIT の軽量性（Zero Compile Cost）と完全な制御フロー安全性を両立する。 `{JIT_RuntimeAPI_Fallback}` `{ADR_TosCacheAsymmetry}`
 
 #### JIT トレース検索 & 3面キャッシュ代謝オーケストレーション
 <!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} -->

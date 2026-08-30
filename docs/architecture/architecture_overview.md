@@ -109,8 +109,8 @@ Fireball の実行コアは、以下の 6 つの物理メカニズムによっ�
 ```
 
 ### 3.1 Pillar 1: 統合スタックフレーム・モデル (Unified Stack Frame Model)
-<!-- traceability: {ContextPointerRegister} {MemoryBoundaryCheck} {ThreadedInterpreter} -->
-- **物理実体**: 単一の連続した固定長メモリバッファ（2KB〜4KB）。
+<!-- traceability: {ContextPointerRegister} {MemoryBoundaryCheck} {ThreadedInterpreter} {ExecutionContext_Layout} {CallFrame_Layout} {ControlFrame_Layout} -->
+- **物理実体**: 単一の連続した固定長メモリバッファ（2KB〜4KB）。 `{ExecutionContext_Layout}` `{CallFrame_Layout}` `{ControlFrame_Layout}`
 - **物理レイアウト**:
   1. **スタックボトム (`+0x00`)**: `execution_context` 構造体が固定配置される（SP長 `sp_offset`、フレームオフセット `frame_offset`、スタック境界 `sp_boundary`、ハンドラテーブル参照等を保持）。
   2. **スタック中間〜トップ**: `CallFrame`、`Function Locals`、`Operand Stack`、`ControlFrames` が単一の配列上にインラインで積層される。
@@ -124,9 +124,9 @@ Fireball の実行コアは、以下の 6 つの物理メカニズムによっ�
   - **Stage 3 (有界二分探索) [$O(\log n)$]**: 狭められたソート済みエントリ区間に対してのみ二分探索を実行し、ネイティブ実行アドレスを特定。 `{FlatViewNarrowing}` `{META_BinarySearch}`
 
 ### 3.3 Pillar 3: 3面世代交代回転コードキャッシュ (3-Bank Generational Rotating Code Cache)
-<!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} {SimpleJITArchitecture} -->
+<!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} {SimpleJITArchitecture} {VsocRuntime_Layout} -->
 - **3面の物理的役割**:
-  - `Bank 0 (Active)`: 新規JITコンパイルコードおよび Oldest からの昇格コードを格納。
+  - `Bank 0 (Active)`: 新規JITコンパイルコードおよび Oldest からの昇格コードを格納。 `{VsocRuntime_Layout}`
   - `Bank 1 (Warm)`: 1世代前のコードを保持。無償観測期間として昇格コピーを行わずに実行。
   - `Bank 2 (Oldest)`: 2世代前のコードを保持。ここでヒットした Hot コードのみを新 Active へ昇格コピー。
 - **MPU W^X 保護遷移**: コンパイル時は `RW + XN`、パッチ完了時に `__DSB(); __ISB();` を発行して `RO + X` に切り替え。
@@ -149,9 +149,9 @@ Fireball の実行コアは、以下の 6 つの物理メカニズムによっ�
 ---
 
 ## 4. 物理レジスタ＆ABI規約 (Physical Register & ABI Map)
-<!-- traceability: {ContextPointerRegister} {EnvironmentPointer} {JIT_RegisterMapping} {ADR_TosCacheAsymmetry} -->
+<!-- traceability: {ContextPointerRegister} {EnvironmentPointer} {JIT_RegisterMapping} {ADR_TosCacheAsymmetry} {AAPCS_FastCall} -->
 
-ARM Cortex-M33 (ARMv8-M Mainline) における物理レジスタの厳格な役割分担：
+ARM Cortex-M33 (ARMv8-M Mainline) における物理レジスタの厳格な役割分担（`{AAPCS_FastCall}`）：
 
 | 物理レジスタ | AAPCS 規約 | Fireball インタープリタ | Fireball JIT トレース (トレース単位任意割当) | 役割と不変条件 |
 | :--- | :--- | :--- | :--- | :--- |
@@ -308,9 +308,9 @@ sequenceDiagram
 | **割り込み処理** | **イベント駆動 (ISR) + ポーリング (処理層)** | ISR は軽量通知のみ、実処理はメインループで安全に処理 |
 | **メモリ管理** | **静的割り当て優先** | 動的ヒープ（malloc/new）を原則禁止し、フラグメンテーションを完全排除 |
 | **依存関係解決** | **静的 DI (Harness)** | C++20 Concepts と Harness 構造体によりコンパイル時に確定 |
-| **TCB連結方式** (`{ADR_IntrusiveTcbList}`) | **侵入型リスト** | ノード確保が不要で `{GLOBAL_Policy_Memory}` に適合。詳細は [os_scheduler.md §6](../components/tier1_core/os_scheduler.md#6-設計判断-adr) |
-| **スケジューリングアルゴリズム** (`{ADR_CoosPureRoundRobin}`) | **純粋な協調型ラウンドロビン（優先度なし）** | 優先度逆転を根本排除し、`{NotRTOS}` 方針と整合。詳細は [os_scheduler.md §6](../components/tier1_core/os_scheduler.md#6-設計判断-adr) |
-| **BLOCKEDタスク起床方式** (`{ADR_EventDrivenWakeQueue}`) | **イベントドリブン起床キュー** | 線形スキャンによる $O(n)$ ポーリングを排除し、O(1) コンテキストスイッチを維持。詳細は [os_scheduler.md §6](../components/tier1_core/os_scheduler.md#6-設計判断-adr) |
-| **IPC共有メモリの所有権表現** (`{ADR_SharedBlockRaii}`) | **RAII所有権を持つ`shared-block`リソース** | 単なる整数IDでは防げないダングリング参照・解放忘れを型で排除。`release`/`claim`が`ipc_router.md`のRevoke/Grantと対応。詳細は [platform_memory.md §8](../components/tier3_platform/platform_memory.md#8-設計判断-adr) |
-| **メモリマネージャの問い合わせAPI** (`{ADR_MemoryManagerMinimalSurface}`) | **`query`/`check-ownership`を持たない最小公開面** | 情報は`shared_block`側や呼び出し元が既に保持しており、二重の問い合わせ経路を作らない。詳細は [platform_memory.md §8](../components/tier3_platform/platform_memory.md#8-設計判断-adr) |
+| **TCB連結方式** (`{ADR_IntrusiveTcbList}`) | **侵入型リスト** | ノード確保が不要で `{GLOBAL_Policy_Memory}` に適合。設計根拠: `{ADR_IntrusiveTcbList}` |
+| **スケジューリングアルゴリズム** (`{ADR_CoosPureRoundRobin}`) | **純粋な協調型ラウンドロビン（優先度なし）** | 優先度逆転を根本排除し、`{NotRTOS}` 方針と整合。設計根拠: `{ADR_CoosPureRoundRobin}` |
+| **BLOCKEDタスク起床方式** (`{ADR_EventDrivenWakeQueue}`) | **イベントドリブン起床キュー** | 線形スキャンによる $O(n)$ ポーリングを排除し、O(1) コンテキストスイッチを維持。設計根拠: `{ADR_EventDrivenWakeQueue}` |
+| **IPC共有メモリの所有権表現** (`{ADR_SharedBlockRaii}`) | **RAII所有権を持つ`shared-block`リソース** | 単なる整数IDでは防げないダングリング参照・解放忘れを型で排除。Revoke/Grantに対応。設計根拠: `{ADR_SharedBlockRaii}` |
+| **メモリマネージャの問い合わせAPI** (`{ADR_MemoryManagerMinimalSurface}`) | **`query`/`check-ownership`を持たない最小公開面** | 情報は`shared_block`側や呼び出し元が既に保持しており、二重の問い合わせ経路を作らない。設計根拠: `{ADR_MemoryManagerMinimalSurface}` |
 

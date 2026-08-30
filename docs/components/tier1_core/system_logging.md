@@ -9,7 +9,7 @@
 <!-- traceability: {IPCRouter} {DictionaryBasedIPC} {BufferedLogging} {GLOBAL_IdleDetection} -->
 ロギングコンポーネントは、ハイパーバイザ内部の状態を記録し、外部（UART/ITM等）へ出力する。システムコールはすべてIPCルータを経由して行われ、ログデータの転送もIPCルータを通過する。メモリ消費と通信負荷を抑えるため、辞書参照IPCと内部リングバッファによる遅延出力を採用する。また、COOSの **Idle Hook** を利用してシステム負荷が低い時に集中的に出力を行うことで、実行性能への影響を抑える。自己完結した参照実装は [`concepts/logging_concept.py`](concepts/logging_concept.py) を参照。 `{IPCRouter}` `{DictionaryBasedIPC}` `{BufferedLogging}` `{GLOBAL_IdleDetection}`
 
-**適用範囲外**: 本コンポーネントが扱うのはビルド時に辞書登録された固定フォーマットの内部状態ログのみである。ゲストの `wasi:cli/stdout`/`stderr`（`print`/`eprint` による実行時生成の任意長文字列）はここでは表現できず、[`interface_wit.md` §5.5](../tier1_interface/interface_wit.md#55-fireballhostconsole-wasiclistdout-stderr-用の生バイト出力) の `console-output`（`{WASI_ConsoleRawOutput}`）という別経路で扱う。
+**適用範囲外**: 本コンポーネントが扱うのはビルド時に辞書登録された固定フォーマットの内部状態ログのみである。ゲストの `wasi:cli/stdout`/`stderr`（`print`/`eprint` による実行時生成の任意長文字列）はここでは表現できず、`console-output`（`{WASI_ConsoleRawOutput}`）という別経路で扱う。
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->
@@ -151,7 +151,7 @@ sequenceDiagram
 <!-- traceability: {DictionaryBasedIPC} -->
 - **URI**: `fireball://logging/system/0`
 - **メッセージ形式**: Key-Valueプロトコル。 `level`, `dict_offset`, `arg0`〜`arg3` を含む。 `{DictionaryBasedIPC}`
-- **不変条件**: 辞書オフセットは `kv_pair`（`ipc_router.md` §3.3）の識別キー幅に合わせ 24bit、引数は各 32bit とする。24bit（最大16MB）は本プロジェクトの ROM 辞書サイズに対して十分な範囲である。
+- **不変条件**: 辞書オフセットは `kv_pair`（`{DictionaryBasedIPC}`）の識別キー幅に合わせ 24bit、引数は各 32bit とする。24bit（最大16MB）は本プロジェクトの ROM 辞書サイズに対して十分な範囲である。
 
 ## 6. 制約達成の方策
 

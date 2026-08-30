@@ -37,13 +37,13 @@ tiers:
 keywords:
   meta:
     pattern: "^META_[A-Za-z0-9_]+$"
-    defined_in: 'architecture/document_structure\.md'
+    defined_in: '(architecture/document_structure|architecture/keyword_dictionary)\.md'
   global:
     pattern: "^GLOBAL_[A-Za-z0-9_]+$"
-    defined_in: 'architecture/document_structure\.md'
+    defined_in: '(architecture/document_structure|architecture/keyword_dictionary)\.md'
   local:
     pattern: "^[A-Za-z0-9_]+$"
-    defined_in: 'requires/.*\.md'
+    defined_in: '(requires/.*|architecture/keyword_dictionary)\.md'
 
 formal_verification:
   model_dir_name: "formal"

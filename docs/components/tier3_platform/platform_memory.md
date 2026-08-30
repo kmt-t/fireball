@@ -25,7 +25,7 @@
 ## 4. インターフェイス設計
 
 <!-- traceability: {GLOBAL_Policy_Memory} -->
-本コンポーネントの公開APIは、[`os_coos.md` §5.2「サブコンポーネント・インターフェイス」](../tier1_core/os_coos.md#52-サブコンポーネントインターフェイス-c23)が定義する `co_mem` インターフェイス契約の物理的な実現である。`os_coos.md` が Tier 1（上位）としてこの契約の正本であり、本節はその具体的な割り当て戦略・データ構造・W^X 連携を詳細化（Refine）するにとどまる。契約自体（メソッド名・引数・戻り値の意味）に食い違いがあれば `os_coos.md` を正とし、本節を修正する。
+本コンポーネントの公開APIは、`{META_StaticDI}` が定義する `co_mem` インターフェイス契約の物理的な実現である。上位の契約を詳細化（Refine）するにとどまる。契約自体（メソッド名・引数・戻り値の意味）に食い違いがあれば上位を正とし、本節を修正する。
 
 WITインターフェース名は kebab-case で定義されるが、C++の公開APIバインディングにおいては、`fireball` 名前空間の下に `snake_case`（例: `fireball::init_manager`）として実装・公開される。
 
@@ -47,7 +47,7 @@ WITインターフェース名は kebab-case で定義されるが、C++の公�
 
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | タスク固有の静的メモリパーティションを貸与する。**汎用ヒープAPIではない**: `os_coos.md`が明示するとおり、`size_t`指定の任意サイズ確保も`void*`の返却も提供せず、コンパイル時に確定した固定長パーティションのみを貸し出す。 |
+| 機能概要 | タスク固有の静的メモリパーティションを貸与する。**汎用ヒープAPIではない**: `{CooperativeMultitasking}`が明示するとおり、`size_t`指定の任意サイズ確保も`void*`の返却も提供せず、コンパイル時に確定した固定長パーティションのみを貸し出す。 |
 | シグネチャ | `acquire-partition(owner: task-id) -> result<partition-view, memory-error>`<br>(C++マッピング: `fireball::co_mem::acquire_partition`) |
 | 引数 | `owner`: パーティションの貸与先タスクID |
 | 戻り値 | 成功時は `partition-view`（`std::span<std::byte>` 相当の非所有ビュー）。失敗時は `memory-error` |
@@ -72,7 +72,7 @@ WITインターフェース名は kebab-case で定義されるが、C++の公�
 
 #### `allocate-shared` (IPC転送データ専用)
 <!-- traceability: {OwnershipTransfer} -->
-IPC転送のための共有メモリブロック確保は、上記の `acquire-partition`/`acquire-slot` とは別のライフサイクルを持つ。所有権の移動が [`ipc_router.md`](../tier1_interface/ipc_router.md) の Revoke → Enqueue → Grant と、[`runtime_vmmio.md` §4.6](../tier2_runtime/runtime_vmmio.md#46-共有メモリマッピング-fc14)（Tier 2、SHM=FC=14 の PTE `owner_id`/`FLIGHT_SENTINEL`）双方に跨るため、`shared-block` はこの2つの上位仕様が管理する状態を物理メモリ側で保持するRAIIラッパーであり、独自の所有権管理を並行して持つものではない。`release()`/`claim()` の呼び出しは、`ipc_router.md`のRevoke/Grantフェーズおよび対応する vMMIO PTE の `owner_id` 更新と対応する（詳細は §7）。 `{OwnershipTransfer}`
+IPC転送のための共有メモリブロック確保は、上記の `acquire-partition`/`acquire-slot` とは別のライフサイクルを持つ。所有権の移動が `{ThreeStageRouting}` の Revoke → Enqueue → Grant と、`{OwnerMismatchTrap}`（Tier 2、SHM=FC=14 の PTE `owner_id`/`FLIGHT_SENTINEL`）双方に跨るため、`shared-block` はこの2つの上位仕様が管理する状態を物理メモリ側で保持するRAIIラッパーであり、独自の所有権管理を並行して持つものではない。`release()`/`claim()` の呼び出しは、`{ThreeStageRouting}` のRevoke/Grantフェーズおよび対応する vMMIO PTE の `owner_id` 更新と対応する（詳細は §7）。 `{OwnershipTransfer}`
 
 | 項目 | 内容 |
 | :--- | :--- |
@@ -80,17 +80,17 @@ IPC転送のための共有メモリブロック確保は、上記の `acquire-p
 | シグネチャ | `allocate-shared(size: byte-count) -> result<shared-block, recovery-strategy>` |
 | 引数 | `size`: 割り当てサイズ |
 | 戻り値 | 成功時は `shared-block` リソース |
-| 事後条件 | 対応する vMMIO FC=14 ページが `owner_id` = 呼び出し元タスクIDで登録される（`runtime_vmmio.md` `map_shm_page` 相当） |
-| 補足 | [`platform_hal.md` §5.1「バッファの確保」](platform_hal.md#51-公開api)が公開する`acquire_buffer(size)`は、本APIの上にHALのデバイス通信用途を薄くラップしたものである（同じTier 3内の兄弟コンポーネント。両者が別々にSHMページを確保することはない）。 |
+| 事後条件 | 対応する vMMIO FC=14 ページが `owner_id` = 呼び出し元タスクIDで登録される（`map_shm_page` 相当） |
+| 補足 | `{HAL_Interface}` が公開する`acquire_buffer(size)`は、本APIの上にHALのデバイス通信用途を薄くラップしたものである（同じTier 3内の兄弟コンポーネント。両者が別々にSHMページを確保することはない）。 |
 
 #### 所有権要求（claim）
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | IPC経由で受け取った共有メモリIDから、所有権を持つリソースを取得する。 |
 | シグネチャ | `claim(id: shm-id) -> result<shared-block, recovery-strategy>` |
-| 引数 | `id`: 共有メモリID（`interface_wit.md` §5.3 の `shm-slice.handle` と同一の `(page_idx << 8) \| slot_idx` 形式） |
+| 引数 | `id`: 共有メモリID（`{Syscall_Mapping}` の `shm-slice.handle` と同一の `(page_idx << 8) \| slot_idx` 形式） |
 | 戻り値 | 成功時は `shared-block` リソース |
-| 事前条件 | `ipc_router.md` のGrantフェーズが完了済み（対応するvMMIO PTEの`owner_id`が呼び出し元タスクIDに更新済み）であること |
+| 事前条件 | `{ThreeStageRouting}` のGrantフェーズが完了済み（対応するvMMIO PTEの`owner_id`が呼び出し元タスクIDに更新済み）であること |
 
 #### 解放（deallocate）
 | 項目 | 内容 |
@@ -100,14 +100,6 @@ IPC転送のための共有メモリブロック確保は、上記の `acquire-p
 | 引数 | `addr`: 解放するメモリアドレス |
 | 補足 | 共有メモリは `shared-block` のデストラクタで自動解放される。 |
 
-## 5. 制約と不変条件
-<!-- traceability: {GLOBAL_StrictMemoryLimit} {WasmPageAlignment} -->
-
-
-- `∀m ∈ Allocations : ¬dynamic(m) ∧ is_heap_less(m)`
-- `total_allocated_bytes <= FB_CONF_MEMORY_POOL_SIZE` `{GLOBAL_StrictMemoryLimit}`
-- `∀block ∈ allocated : block.owner != 0` (task-idと必ず紐付く)
-- ゲストRAMに使用する `pool-base` アドレスはWASMページ境界（64KBアライメント）に配置すること。vMMIOおよびインタープリタはこのアライメントを前提として単一比較命令での高速RAMアクセス判定を行う。 `{WasmPageAlignment}`
 
 ## 6. 所有権追跡
 <!-- traceability: {GLOBAL_Policy_Memory} -->
@@ -119,25 +111,23 @@ IPC転送のための共有メモリブロック確保は、上記の `acquire-p
 
 ## 7. 共有メモリ (shared-block) のライフサイクル
 <!-- traceability: {META_FaultIsolation} {OwnershipTransfer} -->
-`shared-block` リソースが物理メモリ側での所有権の単位である。ただし所有権の実体（誰が読み書きしてよいか）を最終的に判定するのは、[`runtime_vmmio.md` §1「3層セキュリティゲート」](../tier2_runtime/runtime_vmmio.md#1-コンセプト)のTier 3ゲート（vMMIO FC=14のPTE `owner_id`/`FLIGHT_SENTINEL`）である。`shared-block`の`release()`/`claim()`は、[`ipc_router.md` §4.1「ゼロコピー所有権移譲」](../tier1_interface/ipc_router.md#41-アルゴリズム)のRevoke→Enqueue→Grantと1対1で対応する物理層の操作であり、独立した二重の所有権管理を行うものではない: `release()`はRevokeフェーズで対応するvMMIO PTEの`owner_id`を`FB_TASK_ID_FLIGHT`（移譲中）にし、Grant成立時に`claim()`が呼ばれて`owner_id`を受信タスクへ更新する。 `{META_FaultIsolation}` `{OwnershipTransfer}`
+`shared-block` リソースが物理メモリ側での所有権の単位である。ただし所有権の実体（誰が読み書きしてよいか）を最終的に判定するのは、`{OwnerMismatchTrap}` のTier 3ゲート（vMMIO FC=14のPTE `owner_id`/`FLIGHT_SENTINEL`）である。`shared-block`の`release()`/`claim()`は、`{ThreeStageRouting}` のRevoke→Enqueue→Grantと1対1で対応する物理層の操作であり、独立した二重の所有権管理を行うものではない: `release()`はRevokeフェーズで対応するvMMIO PTEの`owner_id`を`FB_TASK_ID_FLIGHT`（移譲中）にし、Grant成立時に`claim()`が呼ばれて`owner_id`を受信タスクへ更新する。 `{META_FaultIsolation}` `{OwnershipTransfer}`
 
-大きなデータを転送する場合、`shm-id` をkv_pairの `value` フィールドに格納し、通常のIPCメッセージとして送信する。kv_pairの型スコープは [`ipc_router.md` §3.3「型スコープのビット構成」](../tier1_interface/ipc_router.md#key-value%E3%83%9A%E3%82%A2kv_pair)が定義する語彙の範囲内で表現する: `shm-id`はハードウェア記述子ではなく物理メモリ側のハンドルであるため、上位3bitは `0b010`（リソース）ではなく `0b000`（機能的、`{IPC_HandleBased}`が定義するハンドル値として解釈）を用い、下位5bitは既定の `0b00001`（`uint32_t`/32bit即値）とする。`ipc_router.md`の型語彙表に`shm-id`専用の型値は存在しないため、新規の型値追加が必要であれば`ipc_router.md`（Tier 1）側の拡張として提案すること。本書側で独自の`dtype=handle`を勝手に定義しない。
+大きなデータを転送する場合、`shm-id` をkv_pairの `value` フィールドに格納し、通常のIPCメッセージとして送信する。kv_pairの型スコープは `{IPC_ZeroCopy}` が定義する語彙の範囲内で表現する: `shm-id`はハードウェア記述子ではなく物理メモリ側のハンドルであるため、上位3bitは `0b010`（リソース）ではなく `0b000`（機能的、`{IPC_HandleBased}`が定義するハンドル値として解釈）を用い、下位5bitは既定の `0b00001`（`uint32_t`/32bit即値）とする。新規の型値追加が必要であれば上位側の拡張として提案すること。本書側で独自の`dtype=handle`を勝手に定義しない。
 
 1. タスクAが `allocate-shared(size)` → `shared-block` リソースを取得
 2. `shm.get-address()` でローカルアドレスを取得、データを書き込み
 3. `shm.release()` → `shm-id` を取得。リソースはA側で無効化。対応するvMMIO PTEの`owner_id`が`FB_TASK_ID_FLIGHT`になる（Revoke相当）
 4. `shm-id` を kv_pair (`scope=functional, type=u32, key=任意, value=shm-id`) に格納
-5. `ipc.send(chan, message(kv_pairs))` で送信。`ipc_router.md`のEnqueueフェーズに対応する（キュー満杯時は`ERR_QUEUE_FULL`でロールバックし、A側の`owner_id`が復元される）
+5. `ipc.send(chan, message(kv_pairs))` で送信。Enqueueフェーズに対応する（キュー満杯時は`ERR_QUEUE_FULL`でロールバックし、A側の`owner_id`が復元される）
 6. タスクBが `ipc.recv(chan)` → kv_pair から `shm-id` を取り出す
 7. `claim(shm-id)` → 新 `shared-block` リソースを取得（Grant相当。対応するvMMIO PTEの`owner_id`がB側タスクIDへ更新される）
 8. `shm.get-address()` でデータを読み取り
 9. B側の `shared-block` が drop されるとメモリ自動解放
 
-@see `../tier1_interface/wit/fireball.wit`
-
 ## 8. 設計判断 (ADR)
 <!-- traceability: {ADR_SharedBlockRaii} {ADR_MemoryManagerMinimalSurface} -->
-このコンポーネントのADRは [architecture_overview.md §8](../../architecture/architecture_overview.md#8-アーキテクチャスタイルと設計判断-adr) の一覧から `{ADR_*}` キーワードで参照される。詳細な背景・選択肢の比較検討は以下に記録する。
+このコンポーネントのADRは `{ADR_SharedBlockRaii}` のキーワードで参照される。詳細な背景・選択肢の比較検討は以下に記録する。
 
 - **決定事項**: `{ADR_SharedBlockRaii}` (2026-02-17)
   - **背景**: IPC転送用の共有メモリを、単なる`shm-id`（整数）として扱うか、所有権を持つリソース型として扱うかを決定する必要があった。

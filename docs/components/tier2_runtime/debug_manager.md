@@ -61,7 +61,7 @@ graph TD
 
 #### 仮想レジスタセット（virtual_register_set）
 <!-- traceability: {RSPMinimalSet} -->
-GDB等の外部クライアントに提示する WASM 仮想レジスタ番号マッピング（`0: pc`, `1: sp`, `2: fp`, `3: tos`, `4..19: local0..15`）は [GDB RSP 物理仕様書 §4 (`docs/specs/gdb_rsp_protocol.md`)](../../specs/gdb_rsp_protocol.md) を正本とする。 `{RSPMinimalSet}`
+GDB等の外部クライアントに提示する WASM 仮想レジスタ番号マッピング（`0: pc`, `1: sp`, `2: fp`, `3: tos`, `4..19: local0..15`）は `{RSPMinimalSet}` を正本とする。 `{RSPMinimalSet}`
 
 ## 4. 動的モデル
 

@@ -133,7 +133,7 @@ JIT キャッシュ内に書き込まれる各トレースは、**先頭に 16 �
 
 #### JIT トレース検索 & 3面キャッシュ代謝オーケストレーション
 <!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} -->
-3段直接 JIT 検索および 3面キャッシュローテーションの詳細は、ランタイム管理の正本である [`jit_runtime.md`](jit_runtime.md) および [アーキテクチャ概要書 §3.2](../../architecture/architecture_overview.md) を参照すること。コンパイラコアは生成されたネイティブトレースの登録と命令同期を [`jit_runtime.md`](jit_runtime.md) に委譲する。
+3段直接 JIT 検索および 3面キャッシュローテーションの詳細は、ランタイム管理の正本である `{JIT_MultiBuffer_Cache}` を参照すること。コンパイラコアは生成されたネイティブトレースの登録と命令同期を `{JIT_MultiBuffer_Cache}` に委譲する。
 
 #### トレース・チェイニング（連鎖実行）と専用分岐ハンドラ分離
 <!-- traceability: {JIT_LazyChaining} -->
@@ -310,7 +310,7 @@ JITサブシステムは、以下の2つの独立した設計書に責務を分�
 
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | JITエントリグループインデックスを用いて、指定されたWASM PCに対応する探索区間を $O(1)$ で `fireball::flat_map_view` へ絞り込む。生の添字対ではなくビューを返すことで、呼び出し側が区間を誤った配列と組み合わせる余地をなくす（[静的コンテナ語彙](../tier1_core/system_containers.md) を参照）。該当グループが存在しない場合は空ビューを返す。 `{FlatViewNarrowing}` `{META_BinarySearch}` |
+| 機能概要 | JITエントリグループインデックスを用いて、指定されたWASM PCに対応する探索区間を $O(1)$ で `fireball::flat_map_view` へ絞り込む。生の添字対ではなくビューを返すことで、呼び出し側が区間を誤った配列と組み合わせる余地をなくす（`{FlatViewNarrowing}` を参照）。該当グループが存在しない場合は空ビューを返す。 `{FlatViewNarrowing}` `{META_BinarySearch}` |
 | シグネチャ | `get_search_range(bank_idx: u8, pc: address) -> flat_map_view<u32, code_offset>` |
 | 補足 | 本機能は、ヘッダファイルで定義されたJITエントリグループサイズおよび最大登録件数のマクロ定数（`FB_CONF_JIT_ENTRY_GROUP_SHIFT`等）に基づき、二分探索範囲をコンパイル時に静的に制限して計算する。 `{META_ConfigurableSystem}` |
 

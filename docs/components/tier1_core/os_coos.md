@@ -66,7 +66,7 @@ graph TD
 チャネルを通じたCSPメッセージ通信の基本的な制御ロジックを以下に示す。 `{CSPCommunication}`
 直接コンテキストスイッチ（CSP Handoff）は、呼び出しスタックの再帰的な蓄積を防ぐため、C++20 コルーチンの**対称遷移（Symmetric Transfer: `await_suspend` から `coroutine_handle` を返却）** を採用し、スタック深度を定数 $O(1)$ に保つ。
 
-連続ハンドオフは `FB_CONF_MAX_CONSECUTIVE_HANDOFFS` で有界化する。この上限は §6.1「メインループ復帰保証」の形式証明が依拠する前提であり、実装は必ずこのカウンタを備えなければならない。
+連続ハンドオフは `FB_CONF_MAX_CONSECUTIVE_HANDOFFS` で有界化する。この上限は `{MainLoopReturnGuarantee}` の形式証明が依拠する前提であり、実装は必ずこのカウンタを備えなければならない。
 
 ```python
 # CSPチャネルの送受信処理 (概念コード: 純粋同期ランデブー + Symmetric Transfer 規約)
@@ -105,7 +105,7 @@ def channel_recv(channel: Channel, receiver_task: Task) -> CoroutineHandle:
 
 def handoff_or_yield(target: Task) -> CoroutineHandle:
     """連続ハンドオフを有界化し、必ずスケジューラへ復帰する経路を残す。
-    この上限が §6.1 のメインループ復帰保証（AF(main_loop)）の根拠である。"""
+    この上限が {MainLoopReturnGuarantee}（AF(main_loop)）の根拠である。"""
     if sched.consecutive_handoffs < FB_CONF_MAX_CONSECUTIVE_HANDOFFS:
         sched.consecutive_handoffs += 1
         return target.coroutine_handle      # 直接対称遷移
@@ -303,7 +303,7 @@ stateDiagram-v2
 - **Ready**: 正常稼働。RUNNING または IDLE の どちらかの状態
   - **Running Task**: 1つ以上のタスクが実行中。各タスクは独立メモリプール（`GLOBAL_IndependentHeap`）から論理的に切り出された固定サイズメモリ内に完全に隔離され、実行が保護される。 `{GLOBAL_StrictMemoryLimit}` `{GLOBAL_IndependentHeap}`
   - **Idle**: 全タスクが BLOCKED で、イベント待ちの状態。アイドルフック実行時は追加のメモリ消費は発生しない。
-- **Recovery**: タスク障害（panic、メモリ保護例外等）が発生し、安全な状態への復旧処理中。`{META_RecoveryStrategy}`（[interface_wit.md §3.2](../tier1_interface/interface_wit.md#32-リカバリー戦略とエラーハンドリング)）の分類との対応は次のとおり: `Recovery --> Ready`（recovery complete）は当該タスクの `restart`（TCB・ヒープ初期化、他サービス・カーネルのメモリ空間は隔離済みのため波及なし）に相当する。`Recovery --> Shutdown`（unrecoverable error）は `panic`（全タスク停止、クラッシュダンプ出力、フェイルセーフ停止）に相当し、`ignore`/`retry` では継続不能と判定された場合のみ到達する。
+- **Recovery**: タスク障害（panic、メモリ保護例外等）が発生し、安全な状態への復旧処理中。`{META_RecoveryStrategy}` の分類との対応は次のとおり: `Recovery --> Ready`（recovery complete）は当該タスクの `restart`（TCB・ヒープ初期化、他サービス・カーネルのメモリ空間は隔離済みのため波及なし）に相当する。`Recovery --> Shutdown`（unrecoverable error）は `panic`（全タスク停止、クラッシュダンプ出力、フェイルセーフ停止）に相当し、`ignore`/`retry` では継続不能と判定された場合のみ到達する。
 - **Shutdown**: システム終了処理中。リソースの静的解放。`{META_RecoveryStrategy}` の `panic` が要求するフェイルセーフ停止の完了状態。
 
 ### 4.3 タスク状態遷移図 (SMD: Task ライフサイクル)
@@ -434,6 +434,6 @@ struct CoValue {
 
 **注1**: ケース5・6は仕様上の不可能ケースであり、実装では `assert` により検出する。到達した場合は「1チャネルに複数の同方向待機者を作った」という設計違反を意味する。
 
-**注2**: ケース7は `FB_CONF_MAX_CONSECUTIVE_HANDOFFS` 到達時の挙動であり、§6.1「メインループ復帰保証」が形式検証している性質そのものに対応する。
+**注2**: ケース7は `FB_CONF_MAX_CONSECUTIVE_HANDOFFS` 到達時の挙動であり、`{MainLoopReturnGuarantee}` が形式検証している性質そのものに対応する。
 
 **注3**: ケース8では、割り込みハンドラ（ISR）がタスク状態を直接変更せず、代わりに INT イベントをイベントキューに投入する。スケジューラ/イベントループが INT イベントを取り出し、対象タスクを READY へ遷移させる。 `{GLOBAL_InterruptWakeup}`

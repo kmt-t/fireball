@@ -156,7 +156,7 @@ assert FB_CONF_MAX_TASKS <= 254, "FB_CONF_MAX_TASKS must be <= 254"
 | :--- | :--- | :--- | :--- |
 | `FB_CONF_RETRY_BACKOFF_MS` | `retry` 戦略の再試行間ウェイト（ミリ秒） | `10` | `{META_RecoveryStrategy}` |
 
-`retry` の上限回数（3回、[interface_wit.md §3.2](../tier1_interface/interface_wit.md#32-リカバリー戦略とエラーハンドリング) の不変条件）とあわせ、`{META_RecoveryStrategy}` を実装するすべてのコンポーネントはこの2値を共有する。個別のコンポーネント文書で異なる待機時間・回数を独自に定義しないこと。
+`retry` の上限回数（3回、`{META_RecoveryStrategy}` の不変条件）とあわせ、`{META_RecoveryStrategy}` を実装するすべてのコンポーネントはこの2値を共有する。個別のコンポーネント文書で異なる待機時間・回数を独自に定義しないこと。
 
 ## 4. 動的モデル
 

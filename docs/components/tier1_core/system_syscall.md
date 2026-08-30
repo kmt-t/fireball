@@ -41,7 +41,7 @@ interface trap {
 
 world fireball {
   import trap;
-  // 他の高レベル・インターフェイス（timer, bus, streams等）は、[interface_wit.md](../tier1_interface/interface_wit.md) においてリソース型として定義され、WASIバインディング経由で接続される。
+  // 他の高レベル・インターフェイス（timer, bus, streams等）は、{Syscall_Mapping} においてリソース型として定義され、WASIバインディング経由で接続される。
 }
 ```
 
@@ -155,7 +155,7 @@ URIによる名前解決後の接続確立（`lookup`）によって取得した
 
 ### 5.7. WASI (`0x80`-`0xBF`)
 <!-- traceability: {WASI_Implementation} -->
-WASI互換レイヤー。Shimライブラリが `wasi-libc` の呼び出しをこれらのIDに変換する。本ドキュメントは物理的なシステムコールのマッピング仕様に特化し、高レベルのWITインターフェース定義（ファイル構成や型バインディングポリシー等）については [interface_wit.md](../tier1_interface/interface_wit.md) にて分離して定義されている。
+WASI互換レイヤー。Shimライブラリが `wasi-libc` の呼び出しをこれらのIDに変換する。本ドキュメントは物理的なシステムコールのマッピング仕様に特化し、高レベルのWITインターフェース定義（ファイル構成や型バインディングポリシー等）については `{Syscall_Mapping}` にて分離して定義されている。
 WASI 0.2標準仕様に適合するように、各システムコールはShimによって `wasi_ciovec_t` レイアウトへ自動パッキングされ、ホスト側で `wasi:clocks` や `wasi:io` のリソース操作へと同期マッピングされる。 `{WASI_Implementation}`
 
 | ID | 名前 | 引数 | 戻り値 | 説明 |

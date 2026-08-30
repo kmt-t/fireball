@@ -257,7 +257,7 @@ graph TD
 #### ロール間通信許可マトリクス (FB_CONF_ROUTER_ROLE_MATRIX)
 <!-- traceability: {RoleBasedAccessControl} -->
 
-本表は [`system_config.md`](../tier1_core/system_config.md) 3.3.2 の `FB_CONF_ROUTER_ROLE_MATRIX` (4x4 `constexpr` 配列) を**そのまま**表現したものであり、全 DENY の行・列も省略しない。省略すると「そのロールの権限が未定義」と読めてしまい、C++ 定義との差分が生じるためである。
+本表は `{META_ConfigurableSystem}` の `FB_CONF_ROUTER_ROLE_MATRIX` (4x4 `constexpr` 配列) を**そのまま**表現したものであり、全 DENY の行・列も省略しない。省略すると「そのロールの権限が未定義」と読めてしまい、C++ 定義との差分が生じるためである。
 
 | 送信元ロール (Sender) \ 送信先ロール (Target) | CLIENT_APP | CORE_SERVICE | PLATFORM_HAL | DEBUGGER |
 | :--- | :---: | :---: | :---: | :---: |
@@ -396,7 +396,7 @@ stateDiagram-v2
 
 ### 4.3.1 二分探索による O(log N) 低遅延ルックアップ
 <!-- traceability: {LowLatencyLookup} {META_AccessDictionary} {META_FlatMapIndexed} -->
-* **サービス検索**: サービスレジストリ（URI から channel_id への解決）は、コンパイル時にソートされた URI 文字列スパンに対して二分探索を行うことで、動的なアロケーションを行うことなく $O(\log N)$ の低遅延名前解決を達成する。`ipc_router_concept.py` の `IPCRouter.registry` は `fireball::flat_map_view`（[`flat_view_concept.py`](../tier1_core/concepts/flat_view_concept.py) の `FlatMapView`）そのものであり、`find()` による二分探索でルックアップする——辞書ベース実装からの移行は完了している。実測は [`benchmarks/low_latency_lookup_bench.py`](benchmarks/low_latency_lookup_bench.py)（同一の `FlatMapView` を直接計測、線形探索比較付き）を参照。この計測は IPC ルータの実サービス数（通常 ≤ 16）ではなく $O(\log N)$ の漸近的な成長特性そのものを N=1,000〜1,000,000 の範囲で検証するものであり、キー数を1000倍にしても `flat_map_view` のルックアップ時間は約2.0倍（$\log_2(10^6)/\log_2(10^3) = 2$、線形探索は約1,100倍）の増加に留まり、二分探索の理論的計算量と完全に合致することを実測している。 `{LowLatencyLookup}`
+* **サービス検索**: サービスレジストリ（URI から channel_id への解決）は、コンパイル時にソートされた URI 文字列スパンに対して二分探索を行うことで、動的なアロケーションを行うことなく $O(\log N)$ の低遅延名前解決を達成する。`ipc_router_concept.py` の `IPCRouter.registry` は `fireball::flat_map_view`（`{META_FlatMapIndexed}` の `FlatMapView`）そのものであり、`find()` による二分探索でルックアップする——辞書ベース実装からの移行は完了している。実測は [`benchmarks/low_latency_lookup_bench.py`](benchmarks/low_latency_lookup_bench.py)（同一の `FlatMapView` を直接計測、線形探索比較付き）を参照。この計測は IPC ルータの実サービス数（通常 ≤ 16）ではなく $O(\log N)$ の漸近的な成長特性そのものを N=1,000〜1,000,000 の範囲で検証するものであり、キー数を1000倍にしても `flat_map_view` のルックアップ時間は約2.0倍（$\log_2(10^6)/\log_2(10^3) = 2$、線形探索は約1,100倍）の増加に留まり、二分探索の理論的計算量と完全に合致することを実測している。 `{LowLatencyLookup}`
 * **メッセージ内検索**: メッセージの引数（KVマップ）は、キー値を昇順にソートした固定長配列（静的 flat_map 構造）として実装され、受信側でのパラメータ探索に $O(\log N)$ の二分探索を適用し、ゼロコスト抽象化を保証する。 `{META_AccessDictionary}` `{META_FlatMapIndexed}`
 
 ### 4.3.2 CSP Handoff スターベーション防止対策
@@ -511,7 +511,7 @@ sequenceDiagram
 #### メッセージルーティング（route_message）
 <!-- traceability: {OwnershipTransfer} {IPC_ZeroCopy} {Challenge_IpcQueueStarvation} -->
 
-**COOS の CSP チャネルとの区別**: 本 API が扱うのはサービス単位の**有界メッセージキュー**（メールボックス）であり、`{ADR_RendezvousChannel}` が定めるバッファなし同期ランデブー（[`os_coos.md`](../tier1_core/os_coos.md) 3.3）とは別の機構である。前者はキュー満杯 (`ERR_QUEUE_FULL`) が起こりうるため Rollback を持ち、後者は値を保持しないため満杯状態が原理的に存在しない。両者を混同しないよう、本 API は `{CSP_Handoff}` を主張しない。
+**COOS の CSP チャネルとの区別**: 本 API が扱うのはサービス単位の**有界メッセージキュー**（メールボックス）であり、`{ADR_RendezvousChannel}` が定めるバッファなし同期ランデブーとは別の機構である。前者はキュー満杯 (`ERR_QUEUE_FULL`) が起こりうるため Rollback を持ち、後者は値を保持しないため満杯状態が原理的に存在しない。両者を混同しないよう、本 API は `{CSP_Handoff}` を主張しない。
 
 | 項目 | 内容 |
 | :--- | :--- |

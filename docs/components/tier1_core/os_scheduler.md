@@ -294,7 +294,7 @@ stateDiagram-v2
 ## 6. 設計判断 (ADR)
 <!-- traceability: {ADR_IntrusiveTcbList} {ADR_CoosPureRoundRobin} {ADR_EventDrivenWakeQueue} -->
 
-このコンポーネントの ADR は [architecture_overview.md §8](../../architecture/architecture_overview.md#8-アーキテクチャスタイルと設計判断-adr) の一覧から `{ADR_*}` キーワードで参照される。詳細な背景・選択肢の比較検討は以下に記録する。
+このコンポーネントの ADR は、全体アーキテクチャから `{ADR_*}` キーワードで参照される。詳細な背景・選択肢の比較検討は以下に記録する。
 
 - **決定事項**: `{ADR_IntrusiveTcbList}`
   - **背景**: TCBの連結方式を決定する必要がある。`{GLOBAL_Policy_Memory}` により実行時の動的メモリ確保（malloc/new）は禁止されている。

@@ -83,7 +83,7 @@ JIT トレース実行時およびインタープリタの各命令ハンドラ�
 | リニアメモリサイズ | ゲストリニアメモリの現在の有効バイト数。`{FastAddressCheck}` の境界比較（`CMP addr, mem_size; BHS __trap`）に直接使う——マスクは使わないため2の冪制約もない `{MemoryBoundaryCheck}` | バイト数 | 32bit符号なし (`+0x04`) |
 | グローバル変数基底 | WASM `global` 配列（4バイト単位でインデックス付け）の開始アドレス | アドレス値 | 32bit符号なし (`+0x08`) |
 
-`vsoc_runtime` は計12バイト（`+0x00`〜`+0x0B`）。正本は [`wit/vsoc_runtime.wit`](wit/vsoc_runtime.wit)、物理配置は [アーキテクチャ概要書 §3.3](../../architecture/architecture_overview.md)。
+`vsoc_runtime` は計12バイト（`+0x00`〜`+0x0B`）。正本は [`wit/vsoc_runtime.wit`](wit/vsoc_runtime.wit)、物理配置は `{VsocRuntime_Layout}`。
 
 > [!NOTE]
 > **構造体の役割分離**:
@@ -472,10 +472,10 @@ code_status : {fresh, stale_code}                      -- 実行中コードの�
 ### 7.2 メモリ制約と方策
 <!-- traceability: {JIT_MultiBuffer_Cache} {GLOBAL_IndependentHeap} {WasmPageAlignment} -->
 - **目標**: 64KB RAM環境で動作させる。
-- **方策**: `{JIT_MultiBuffer_Cache}` `{GLOBAL_IndependentHeap}` 3面マルチバッファ（Active/Warm/Oldest）による効率的なキャッシュ代謝と、厳密なヒープ分離によりメモリ使用量を制御する。JITキャッシュは `FB_CONF_JIT_CACHE_SIZE`（デフォルト6144バイト、[`system_config.md`](../tier1_core/system_config.md)）を 3領域に均等分割して使用し、各領域の容量は `code_cache_size / 3`（各2048バイト）となる。
+- **方策**: `{JIT_MultiBuffer_Cache}` `{GLOBAL_IndependentHeap}` 3面マルチバッファ（Active/Warm/Oldest）による効率的なキャッシュ代謝と、厳密なヒープ分離によりメモリ使用量を制御する。JITキャッシュは `FB_CONF_JIT_CACHE_SIZE`（`{META_ConfigurableSystem}`）を 3領域に均等分割して使用し、各領域の容量は `code_cache_size / 3`（各2048バイト）となる。
 - **高速アドレス判定**: ゲストRAMを `0x0` から配置し、単一の比較命令でRAMアクセスを判定することで、インタープリタおよびJITのオーバーヘッドを最小化する。 `{WasmPageAlignment}`
 
 ### 7.3 安全性制約と方策
 <!-- traceability: {MemoryBoundaryCheck} {META_RestrictedPhysicalAccess} -->
 - **目標**: ゲストアプリケーションの暴走を完全に隔離する。
-- **方策**: `{MemoryBoundaryCheck}` `{META_RestrictedPhysicalAccess}` JITコードへの境界チェック埋め込みと、vMMIOによる物理アクセスの制限を行う。物理アドレスアクセスの許可範囲は `FB_CONF_VMMIO_ALLOWED_ADDRS`（[`system_config.md`](../tier1_core/system_config.md)）に `constexpr` 定義されたテーブルに基づき、vMMIOが検証する。
+- **方策**: `{MemoryBoundaryCheck}` `{META_RestrictedPhysicalAccess}` JITコードへの境界チェック埋め込みと、vMMIOによる物理アクセスの制限を行う。物理アドレスアクセスの許可範囲は `FB_CONF_VMMIO_ALLOWED_ADDRS`（`{META_ConfigurableSystem}`）に `constexpr` 定義されたテーブルに基づき、vMMIOが検証する。

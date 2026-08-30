@@ -39,15 +39,19 @@ class DebuggerManager:
         self.assertion_violations: list[str] = []
 
     def attach(self) -> None:
-        """Attaches debugger, halting execution and enabling interpreter fallback mode."""
+        """Attaches debugger, halting execution and enabling interpreter debug handler table ({DebuggerLabelTableSwitch})."""
         self.attached = True
         self.halted = True
         self.stop_signal = 5
+        if self.engine and hasattr(self.engine, "attach_debugger"):
+            self.engine.attach_debugger(self)
 
     def detach(self) -> None:
-        """Detaches debugger and resumes normal execution."""
+        """Detaches debugger and restores normal zero-overhead execution."""
         self.attached = False
         self.halted = False
+        if self.engine and hasattr(self.engine, "detach_debugger"):
+            self.engine.detach_debugger()
 
     def add_breakpoint(self, pc: int) -> None:
         """Adds a breakpoint maintaining sorted order for flat_set_view O(log N) lookup."""

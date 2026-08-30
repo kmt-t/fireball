@@ -2008,6 +2008,66 @@ def test_debugger_manager_gdb_rsp_integration():
     assert ctx.locals[0] == 22
 
 
+def test_interpreter_debugger_handler_table_switch_and_hooks():
+    """INTP-60..65: Verifies Interpreter DebuggerLabelTableSwitch, JIT bypass, PC sampling and assertions."""
+    from debugger import DebuggerManager
+    from x64_jit import TraceCompiler
+
+    engine = IntegratedHybridEngine(compiler=TraceCompiler())
+    dbg = DebuggerManager(engine=engine)
+
+    block1 = BasicBlock(head_pc=0x100, ops=[("local.get", 0), ("i32.const", 1), ("i32.add", None), ("local.set", 0)], next_pc=0x200)
+    block2 = BasicBlock(head_pc=0x200, ops=[("local.get", 0), ("i32.const", 2), ("i32.mul", None), ("local.set", 0)], next_pc=None)
+    engine.register_block(block1)
+    engine.register_block(block2)
+
+    # 1. Normal mode (INTP-60: zero overhead, normal handler table)
+    assert engine.handler_table == "normal"
+    assert engine.debugger is None
+    ctx_normal = WASMContext(locals_values=[5])
+    next_pc = engine.run_step(0x100, ctx_normal)
+    assert next_pc == 0x200
+    assert ctx_normal.locals[0] == 6
+
+    # 2. Attach debugger (INTP-61: switches to debug handler table)
+    dbg.attach()
+    assert engine.handler_table == "debug"
+    assert engine.debugger is dbg
+
+    # 3. Breakpoint hit (INTP-62: halts before execution)
+    dbg.add_breakpoint(0x200)
+    ctx_debug = WASMContext(locals_values=[10], memory=bytearray([0x55, 0xAA]))
+    dbg.add_memory_assertion(0, 0x55, "valid magic")
+    dbg.add_memory_assertion(1, 0x00, "invalid magic")  # Will fail
+
+    # Step block1 (0x100 -> 0x200, stops at 0x200 due to BP)
+    next_pc = engine.run_step(0x100, ctx_debug)
+    assert next_pc == 0x200
+    assert dbg.halted is True
+    assert dbg.stop_signal == 5
+    assert ctx_debug.locals[0] == 11
+
+    # 4. Profiler & Assertions (INTP-63, INTP-64)
+    assert dbg.pc_sample_counts[0x100] == 1
+    assert len(dbg.assertion_violations) == 1
+
+    # 5. JIT Bypass under debug mode (INTP-65: JIT trace exists but interpreter debug table runs)
+    trace = engine.compiler.compile_trace(0x100, block1)
+    engine.cache.insert(trace)
+    assert engine.cache.active.has_trace(0x100)
+
+    # Run step at 0x100 under debug mode -> interp_blocks increments, NOT jit_traces
+    interp_before = engine.interp_blocks
+    jit_before = engine.jit_traces
+    engine.run_step(0x100, ctx_debug)
+    assert engine.interp_blocks == interp_before + 1
+    assert engine.jit_traces == jit_before  # JIT bypassed!
+
+    # Detach
+    dbg.detach()
+    assert engine.handler_table == "normal"
+
+
 # ===========================================================================
 # Test Runner
 # ===========================================================================

@@ -534,7 +534,21 @@ class IntegratedHybridEngine:
         self.compilations = 0
         self.yields = 0
 
+        # Debugger integration & handler table switch ({DebuggerLabelTableSwitch})
+        self.debugger: Any | None = None
+        self.handler_table: str = "normal"  # "normal" | "debug"
+
         self.cache.on_evict = lambda pcs: [self.bitmap.mark_evicted(pc) for pc in pcs]
+
+    def attach_debugger(self, debugger: Any) -> None:
+        """Attaches debugger, switching interpreter handler table to debug mode ({DebuggerLabelTableSwitch})."""
+        self.debugger = debugger
+        self.handler_table = "debug"
+
+    def detach_debugger(self) -> None:
+        """Detaches debugger and restores normal zero-overhead handler table."""
+        self.debugger = None
+        self.handler_table = "normal"
 
     def register_block(self, block: BasicBlock) -> None:
         self.blocks[block.head_pc] = block
@@ -591,11 +605,38 @@ class IntegratedHybridEngine:
         return self._next_pc(block, ctx)
 
     def run_step(self, pc: int, ctx: WASMContext) -> int | None:
-        """Executes a single basic block either via native JIT trace or Tier 2 interpreter."""
+        """Executes a single basic block either via native JIT trace or Tier 2 interpreter.
+        When debugger is attached (handler_table='debug'), switches to debug handlers ({DebuggerLabelTableSwitch})."""
         block = self.blocks.get(pc)
         if block is None:
             return None
 
+        # 1. Debug Mode: Interpreter Debug Handler Table ({DebuggerLabelTableSwitch}, {Debug_Integrated})
+        if self.handler_table == "debug" and self.debugger is not None:
+            # Breakpoint hit check before execution
+            if self.debugger.has_breakpoint(pc):
+                self.debugger.halted = True
+                self.debugger.stop_signal = 5
+                return pc
+
+            # PC sampling hook
+            self.debugger.sample_pc(pc)
+
+            # Strict Interpreter Step
+            self.interp_blocks += 1
+            self._interpret_block(block, ctx)
+
+            # Dynamic memory assertion hook
+            self.debugger.verify_assertions(ctx.memory)
+            next_pc = self._next_pc(block, ctx)
+
+            if next_pc is not None and self.debugger.has_breakpoint(next_pc):
+                self.debugger.halted = True
+                self.debugger.stop_signal = 5
+
+            return next_pc
+
+        # 2. Normal Mode: Zero-overhead Dispatch (JIT or Normal Interpreter)
         trace = self.cache.lookup(pc)
         if trace is not None:
             # Tier 3 JIT Trace Direct C-Call via ctypes

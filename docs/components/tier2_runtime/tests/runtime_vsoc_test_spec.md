@@ -58,6 +58,6 @@ Loader/Interpreter/JIT/vMMIO/Debuggerを統合する`vsoc_harness`（静的DI）
 
 ## 4. 未検証・スコープ外
 
-- `wit/vsoc_runtime.wit`によるWIT型定義そのものとの整合性。
+- `../wit/vsoc_runtime.wit`によるWIT型定義そのものとの整合性。
 - Cortex-M33実機でのSafepointチェック周期の精度（`{Challenge_ApproximateYield}`は仕様上も「検討中」の未解決課題）。
 - マルチコア環境でのメモリ可視性（§6.4「既知の制限」でスコープ外と明記）。

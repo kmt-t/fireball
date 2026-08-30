@@ -85,4 +85,4 @@
 ## 4. 未検証・スコープ外
 
 - f32/f64演算（`interpreter_concept.py`自体にも実装がなく、スコープが仕様上不明瞭。README「Missing spec coverage」参照）。
-- `wit/execution_context.wit`によるWIT型定義そのものとの整合性。
+- `../wit/execution_context.wit`によるWIT型定義そのものとの整合性。

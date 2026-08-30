@@ -69,5 +69,5 @@ WASM PC→ネイティブコードの3段検索（カードマーキング→Rad
 ## 4. 未検証・スコープ外
 
 - `docs/components/tier3_jit/concepts/stack_cache_concept.py`（未読。TOS/NOSキャッシュのトレース境界での書き戻しに関するテストが含まれる可能性が高く、別途読了・反映が必要）。
-- `formal/jit_cache_model.py`による3面キャッシュ代謝・MPU W^X・2-bit FSMの形式検証そのもの。
+- `../formal/jit_cache_model.py`による3面キャッシュ代謝・MPU W^X・2-bit FSMの形式検証そのもの。
 - Cortex-M33実機でのPMSAv8 MPU切り替えの実際のレイテンシ。

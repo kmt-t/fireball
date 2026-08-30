@@ -5,7 +5,7 @@
 正本: `docs/components/tier1_core/system_logging.md`
 参考実装: `docs/components/tier1_core/concepts/logging_concept.py`
 
-**適用範囲外の明記**: `system_logging.md` 冒頭は「本コンポーネントが扱うのはビルド時に辞書登録された固定フォーマットの内部状態ログのみである」と明示し、ゲストの `wasi:cli/stdout`/`stderr`（`print`/`eprint`）は別経路（`interface_wit.md` §5.5 `console-output`）で扱うとしている。したがって本テスト仕様書は **辞書ベースの内部ログ** のみを対象とし、生バイト出力（`ConsoleOutput`）は `interface_wit/test_spec.md` 側の責務とする。
+**適用範囲外の明記**: `system_logging.md` 冒頭は「本コンポーネントが扱うのはビルド時に辞書登録された固定フォーマットの内部状態ログのみである」と明示し、ゲストの `wasi:cli/stdout`/`stderr`（`print`/`eprint`）は別経路（`interface_wit.md` §5.5 `console-output`）で扱うとしている。したがって本テスト仕様書は **辞書ベースの内部ログ** のみを対象とし、生バイト出力（`ConsoleOutput`）は `../../tier1_interface/tests/interface_wit_test_spec.md` 側の責務とする。
 
 ## 2. テストケース一覧
 
@@ -28,5 +28,5 @@
 
 ## 4. 未検証・スコープ外
 
-- `wasi:cli/stdout`/`stderr`（`console-output`）は対象外。`interface_wit/test_spec.md`を参照。
+- `wasi:cli/stdout`/`stderr`（`console-output`）は対象外。`../../tier1_interface/tests/interface_wit_test_spec.md`を参照。
 - 物理DMA転送そのもの（`MockHALTransport.start_dma`相当）の実ハードウェア挙動は`platform_hal.md`側。

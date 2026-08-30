@@ -1,4 +1,4 @@
-﻿package fireball:host@0.1.0;
+package fireball:host@0.1.0;
 
 /// 共通リカバリー戦略とエラー型定義
 interface types {
@@ -26,12 +26,6 @@ interface types {
     /// 共有メモリ（SHM）スライス定義
     record shm-slice {
         handle: u32,
-        offset: u32,
-        len: u32,
-    }
-
-    /// バッファスライス定義
-    record buffer-slice {
         offset: u32,
         len: u32,
     }

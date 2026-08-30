@@ -189,7 +189,7 @@ graph LR
 | :--- | :--- | :--- |
 | `{Challenge_ApproximateYield}` | トレース数ベースの概算Yieldの精度とスターベーション対策。 | 検討中 |
 | `{Challenge_InterruptSafety}` | 割り込みハンドラとタスク間の競合回避と安全なウェイクアップ。 → ISRはフラグセットのみ行い、実処理はタスクコンテキストで実行する方策を採用（`platform_hal.md` §6.3）。 | 決定済 |
-| `{Challenge_JITCacheEfficiency}` | 小規模メモリ環境におけるJITキャッシュの代謝とヒット率の最適化。 → 3面リングローテーション（Active/Warm/Oldest）と世代Cookieによる代謝方式を採用し、形式検証済み（`runtime_vsoc.md` §4.2.1, `formal/vsoc_cache_coherency_model.py`）。 | 決定済 |
+| `{Challenge_JITCacheEfficiency}` | 小規模メモリ環境におけるJITキャッシュの代謝とヒット率の最適化。 → 3面リングローテーション（Active/Warm/Oldest）と世代Cookieによる代謝方式を採用し、形式検証済み（`runtime_vsoc.md` §4.2.1, `components/tier2_runtime/formal/vsoc_cache_coherency_model.py`）。 | 決定済 |
 | `{Challenge_WasiFdWriteLoop}` | WASI `fd_write` の実装レイヤー分離とバッファ管理。 → Shim側でベクタをループし1ベクタごとに `fireball_call` を発行する設計を採用（`system_syscall.md` §7.1）。 | 決定済 |
 | `{Challenge_SyscallMemorySafety}` | ゲストメモリアクセス時のセキュリティゲート（vMMIO許可テーブル）の有効性。 → 統一vMMIOモデルの許可テーブルで十分とし、別途の `vsoc_validate_ptr` は導入しない（`system_syscall.md` §9）。 | 決定済 |
 | `{Challenge_CoosBlockedList}` | `BLOCKED` タスクリストの管理コストとリアルタイム性のトレードオフ。 → `{ADR_EventDrivenWakeQueue}` として決定。 | 決定済 |
@@ -200,6 +200,8 @@ graph LR
 | `{ADR_SafeQueuingOnHotMiss}` | ホットスポット検出時の二重コンパイル要求防止策。 | 決定済 |
 | `{ADR_TosCacheAsymmetry}` | スタックトップキャッシュ（`R4`/`R5`）を JIT トレース内部に限定し、インタープリタは保持しない非対称規約の採用。 | 決定済 |
 | `{ADR_RendezvousChannel}` | CSP チャネルをバッファなしの純粋同期ランデブーとする決定（送信側は相手が現れるまで値を保持したまま BLOCK）。 | 決定済 |
+| `{ADR_SharedBlockRaii}` | IPC 転送用共有メモリを `shm-id` ではなく RAII 所有権を持つ `shared-block` リソースとして扱う決定。詳細は `platform_memory.md` §8。 | 決定済 |
+| `{ADR_MemoryManagerMinimalSurface}` | メモリマネージャ API から `query`/`check-ownership` を削除し、最小公開面とする決定。詳細は `platform_memory.md` §8。 | 決定済 |
 | `{ADR_IntrusiveTcbList}` | TCBの連結に `std::list` 等を避け、TCB自体に `next` ポインタを持たせる侵入型リストを採用する決定。 | 決定済 |
 | `{ADR_CoosPureRoundRobin}` | 協調型マルチタスクスケジューラのコアアルゴリズムを、優先度制御を持たない純粋な協調型ラウンドロビンとする決定。 | 決定済 |
 | `{ADR_EventDrivenWakeQueue}` | `BLOCKED` タスクリストの起床待ちタスク探索を、線形スキャンではなくイベントドリブンな起床キューで行う決定。 | 決定済 |

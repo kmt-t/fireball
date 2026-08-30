@@ -5,7 +5,7 @@
 正本: `docs/components/tier1_core/os_scheduler.md`
 参考実装: `docs/components/tier1_core/concepts/scheduler_concept.py`
 
-純粋協調型ラウンドロビンスケジューラ（`{ADR_CoosPureRoundRobin}`）の、タスクライフサイクル・READYキュー・イベント駆動起床（`{ADR_EventDrivenWakeQueue}`）に関する振る舞いを定義する。CSPチャネルによるハンドオフは対象外（`os_coos/test_spec.md` を参照）。
+純粋協調型ラウンドロビンスケジューラ（`{ADR_CoosPureRoundRobin}`）の、タスクライフサイクル・READYキュー・イベント駆動起床（`{ADR_EventDrivenWakeQueue}`）に関する振る舞いを定義する。CSPチャネルによるハンドオフは対象外（`os_coos_test_spec.md` を参照）。
 
 ## 2. テストケース一覧
 
@@ -29,5 +29,5 @@
 
 ## 4. 未検証・スコープ外
 
-- CSP Handoffによる直接コンテキストスイッチ（`os_coos/test_spec.md`側の責務）。
-- C++実装の対称遷移（Symmetric Transfer）自体の性能特性（`benchmarks/direct_context_switch_bench.py`が正本）。
+- CSP Handoffによる直接コンテキストスイッチ（`os_coos_test_spec.md`側の責務）。
+- C++実装の対称遷移（Symmetric Transfer）自体の性能特性（`../benchmarks/direct_context_switch_bench.py`が正本）。

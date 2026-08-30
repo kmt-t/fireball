@@ -75,4 +75,4 @@ ROM上WASM32バイナリのゼロコピー索引化（`ModuleView`）、V1〜V6�
 ## 4. 未検証・スコープ外
 
 - 物理ROM配置・`std::span<const uint8_t>`のメモリレイアウト詳細。
-- `formal/loader_verification_model.py`によるV1〜V6の形式検証そのもの。
+- `../formal/loader_verification_model.py`によるV1〜V6の形式検証そのもの。

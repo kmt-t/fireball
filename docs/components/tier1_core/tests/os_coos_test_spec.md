@@ -21,8 +21,8 @@
 | COOS-08 | 割り込みは状態を直接変更しない | タスクがirq_id待ち | `notify_interrupt(irq_id)`を呼ぶ | 呼び出し直後はイベントキューに追加されるのみで、タスク状態は変化しない。`drain_interrupts`実行後に初めてREADYへ遷移する | 6.2 ケース8、注3 |
 | COOS-09 | 割り込みイベントキュー枯渇時のドロップ | (該当する場合)イベントキュー満杯 | 追加でnotify_interrupt | ドロップされ、ドロップカウンタがインクリメントされる（os_scheduler.md `notify-interrupt`のキュー満杯時挙動と共通） | os_scheduler.md 5.1 notify-interrupt |
 | COOS-10 | アイドル検知はREADYキュー空 かつ 全タスクBLOCKED | 全タスクをSUSPENDED_CSP/BLOCKEDにする | `run_step`を実行 | READYキューが空である限りアイドルフックが呼ばれる（`idle_hook_called`） | 4.1 Idle Detection |
-| COOS-11 | 二重所有不在（形式検証と整合するサニティ確認） | ランデブー成立の瞬間を観測 | 送信側の値保持フィールドと受信側の値保持フィールドを同時にチェック | どの時点でも送信側・受信側が同時に同じ値を「所有」している状態が存在しない | `formal/coos_channel_model.py` AG(Not(double_owned)) |
-| COOS-12 | デッドロック不在（クライアント・サーバ規律） | 循環しないチャネル依存グラフを構築 | 一連の送受信を実行 | 循環待ちが発生しない（形式モデルの結果が実装のふるまいと矛盾しない） | `formal/coos_channel_model.py` AG(Not(deadlock)) |
+| COOS-11 | 二重所有不在（形式検証と整合するサニティ確認） | ランデブー成立の瞬間を観測 | 送信側の値保持フィールドと受信側の値保持フィールドを同時にチェック | どの時点でも送信側・受信側が同時に同じ値を「所有」している状態が存在しない | `../formal/coos_channel_model.py` AG(Not(double_owned)) |
+| COOS-12 | デッドロック不在（クライアント・サーバ規律） | 循環しないチャネル依存グラフを構築 | 一連の送受信を実行 | 循環待ちが発生しない（形式モデルの結果が実装のふるまいと矛盾しない） | `../formal/coos_channel_model.py` AG(Not(deadlock)) |
 
 ## 3. テスト検証実績と網羅状況
 
@@ -31,4 +31,4 @@
 ## 4. 未検証・スコープ外
 
 - `co_mem`（メモリパーティション貸与）はこの仕様書の対象外（platform_memory.md側）。
-- C++20コルーチンの対称遷移そのもののレイテンシ特性は `benchmarks/direct_context_switch_bench.py` が正本。
+- C++20コルーチンの対称遷移そのもののレイテンシ特性は `../benchmarks/direct_context_switch_bench.py` が正本。

@@ -21,7 +21,7 @@ URIベースのサービス検索（3段パイプライン）、ロールベー�
 | IPCR-08 | キュー満杯時のRollback | 対象チャネルの`max_queue`まで送信済み | さらに1件送信 | `ERR_QUEUE_FULL`を返し、当該メッセージの所有権は即座に送信側へ復元される（IN_FLIGHTを経由しない） | §4.1「Rollback」, ipc_router_concept.py `test_queue_full_rollback` |
 | IPCR-09 | Drop Handlerによる強制回収 | メッセージがキュー内でIN_FLIGHT中 | `trigger_drop_handler(channel_id)`を呼ぶ | キュー内の全メッセージが`RECLAIMED_BY_DROP`になり、リークしない | §4.1「異常時リカバリ」, `{IPC_DropHandler}` |
 | IPCR-10 | FIFO順序の保証 | 同一チャネルに複数メッセージ送信 | 順に`receive_message`を呼ぶ | 送信順(FIFO)でデキューされる | §6.1「メッセージ順序」 |
-| IPCR-11 | 二重所有不在（形式検証と整合） | 任意の移譲シーケンス | 各段階での所有権フィールドを確認 | `sender_ownership != OWNED または receiver_ownership != OWNED` が常に成立 | `formal/csp_handoff_model.py`, §6.3 |
+| IPCR-11 | 二重所有不在（形式検証と整合） | 任意の移譲シーケンス | 各段階での所有権フィールドを確認 | `sender_ownership != OWNED または receiver_ownership != OWNED` が常に成立 | `../formal/csp_handoff_model.py`, §6.3 |
 | IPCR-12 | In-flight有限解決性 | メッセージがEnqueueされる | Grant/Drop/Rollbackのいずれかに到達するまで追跡 | 有限ステップで必ずいずれかに解決する（無限にIN_FLIGHTのままにならない） | §6.1「In-flight 有限解決性」 |
 | IPCR-13 | kv_pair型スコープのビット構成 | メッセージペイロードを構築 | 型スコープ上位3bit（Functional/Dictionary/Resource）と下位5bit（型）を設定 | 正しくエンコード・デコードされる | §3.3 kv_pair |
 | IPCR-14 | メッセージの8要素固定長制限 | 9個以上のkv_pairを構築しようとする | メッセージ構築 | 拒否される、または`ERR_MSG_TOO_LARGE`（route_message仕様） | §3.3, §5.1 route_message |
@@ -34,5 +34,5 @@ URIベースのサービス検索（3段パイプライン）、ロールベー�
 
 ## 4. 未検証・スコープ外
 
-- `{LowLatencyLookup}`の実測ベンチマーク自体（`benchmarks/low_latency_lookup_bench.py`が正本）。
+- `{LowLatencyLookup}`の実測ベンチマーク自体（`../benchmarks/low_latency_lookup_bench.py`が正本）。
 - C++実装での`fireball::flat_map_view<std::string_view, registry_entry>`のROM配置詳細。

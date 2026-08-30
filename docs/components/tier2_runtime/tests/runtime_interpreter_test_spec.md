@@ -16,6 +16,8 @@
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | INTP-01 | ハンドラのシグネチャがCPS 4引数(`ip, stack_bot, env, local_base`)である | 実装コードを確認 | 各opcodeハンドラの引数を確認 | すべてのハンドラが同一の4引数シグネチャを持ち、次の継続を自ら返す（中央のswitch/if-elifループが「次に何をするか」を決定しない） | wasm_instruction_set.md §1, interpreter_concept.py冒頭 |
 | INTP-02 | ハンドラテーブルによるディスパッチ | - | ディスパッチ機構を確認 | opcode→ハンドラ関数のテーブル参照で分岐し、線形if-elif連鎖ではない | 同上 |
+| INTP-03 | インタープリタとJITトレースのCPS 4引数規約完全一致 | JITトレース生成 | JITエントリとハンドラシグネチャを比較 | `int64_t (*)(uint32_t ip, void* stack_bot, void* env, void* local_base)` で完全一致し、ディスパッチテーブルから直接 C 呼び出し可能 | `{ContextPointerRegister}` `{EnvironmentPointer}` `{PositionIndependentCode}` |
+| INTP-04 | JITトレースからインタープリタへのシームレスフォールバック | 未コンパイルのブロックへ分岐 | トレース実行完了 | トレース末尾でインタープリタへスムーズに復帰し、後続ブロックをインタープリタが継続実行する | `{JIT_LazyChaining}` `{JIT_RuntimeAPI_Fallback}` |
 
 ### 統合スタック・関数呼び出し (interpreter_concept.py §1)
 

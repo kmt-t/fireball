@@ -44,19 +44,36 @@ graph TD
 
 ### 3.3 主要なクラス・構造体・定数
 
+#### コンパイル単位とインタープリタ協調方針
+<!-- traceability: {LowLatencyJIT} {SimpleJITArchitecture} {PositionIndependentCode} -->
+- **関数/モジュール一括コンパイルの完全禁止**: 極小リソース環境（RAM 32KB〜64KB）におけるコンパイル遅延とメモリ消費をゼロ化するため、関数全体やモジュール全体の事前一括コンパイルは一切行わない。
+- **純粋ベーシックブロック/トレース単位コンパイル**: 2-bit カードテーブル（カードマーキング表）で HOT（`10`）に達した直線命令列（基本ブロック / トレース）のみを、スケジューラのアイドル時（`idle_hook` 等）に Copy-and-Patch により 1 トレースずつオンデマンド生成する。
+- **ハンドラ互換ディスパッチ**: JIT トレースエントリポイントは、インタープリタの命令ハンドラ（`opcode_handler`）と完全に同一の C/C++ 関数シグネチャを持ち、ディスパッチテーブルから直接呼び出しが可能である。
+
 #### コピーアンドパッチエンジン（CopyAndPatchEngine）クラス
-<!-- traceability: {JIT_RegisterMapping} {ContextPointerRegister} {EnvironmentPointer} {ADR_TosCacheAsymmetry} -->
+<!-- traceability: {JIT_RegisterMapping} {ContextPointerRegister} {EnvironmentPointer} {ADR_TosCacheAsymmetry} {PositionIndependentCode} -->
 テンプレートの解決とバイナリ操作をカプセル化する。インタープリタの `opcode_handler` と完全整合する `__fastcall` CPS 4引数呼び出し規約（`R0: ip`, `R1: stack_bot`, `R2: env`, `R3: local_base`）に基づいて設計される。
+
+```c
+// インタープリタ命令ハンドラおよび JIT トレース共通の C 呼び出し規約
+typedef int64_t (*opcode_handler_t)(
+    uint32_t ip,            // R0 / RCX: WASM プログラムカウンタ (head_pc)
+    void*    stack_bot,     // R1 / RDX: 実行コンテキスト (execution_context @ stack bottom)
+    void*    env,           // R2 / R8:  ランタイム環境 (vsoc_runtime*, リニアメモリ基底)
+    void*    local_base     // R3 / R9:  ローカル変数配列基底ポインタ
+);
+```
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
 | テンプレート辞書 | WASM命令に対応するJITテンプレートの検索索引 | アクセス辞書 | `jit_template_map` |
 | 命令テンプレート | WASM命令に対応するネイティブバイナリの雛形 | バイナリビュー | ROM参照（[JIT ステンシルカタログ](../../specs/jit_stencil_catalog.md) 準拠） |
-| レジスタ規約 | JIT トレースとインタープリタ間で共有される物理レジスタ規約 | 規約定義 | `R0-R3: CPS (ip, stack_bot, env, local_base)`, `R4-R6, R8-R11: assignable pool (R4=TOS, R5=NOS, R6=NNOS, R8=mem_base, R9=mem_size, R10=safepoint)`, `R7: FP (不可侵)` |
+| レジスタ規約 | JIT トレースとインタープリタ間で共有される物理レジスタ規約 | 規約定義 | `R0-R3 / RCX,RDX,R8,R9: CPS (ip, stack_bot, env, local_base)`, `R4-R6, R8-R11: assignable pool (R4=TOS, R5=NOS, R6=NNOS, R8=mem_base, R9=mem_size, R10=safepoint)`, `R7 / RBP: FP (不可侵)` |
+| 位置独立性 (PIC) | 任意アドレス・キャッシュバンクで再コンパイル不要で動作 | 設計制約 | 絶対アドレス埋め込み禁止。`local_base` 相対、`env` 相対、`rel32` 相対分岐のみ `{PositionIndependentCode}` |
 
 #### JIT トレース物理メモリレイアウト (`jit_trace_header`)
-<!-- traceability: {JIT_LazyChaining} {SimpleJITArchitecture} -->
-JIT キャッシュ内に書き込まれる各トレースは、**先頭に 16 バイト固定長のメタデータヘッダを持ち、直後（`+0x10`）からネイティブ Thumb-2 命令列が展開される**。
+<!-- traceability: {JIT_LazyChaining} {SimpleJITArchitecture} {PositionIndependentCode} -->
+JIT キャッシュ内に書き込まれる各トレースは、**先頭に 16 バイト固定長のメタデータヘッダを持ち、直後（`+0x10`）からネイティブ命令列（PIC Code Stream）が展開される**。エントリポイントは `trace_base + 0x10`。
 
 ```text
 +---------------------------------------------------------------------------------------------------+

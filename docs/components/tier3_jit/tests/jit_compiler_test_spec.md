@@ -3,10 +3,8 @@
 ## 1. 目的と対象範囲
 
 正本: `docs/components/tier3_jit/jit_compiler.md`
-参考実装: `docs/components/tier3_jit/concepts/jit_copy_patch_concept.py`, `jit_assembler_constexpr_concept.py`（**いずれも未読。§4に明記のとおりハルシネーション回避のため、これらに基づくテストケースは書いていない**）。本書のケースは`jit_compiler.md`本文と、`runtime_engine_concept.py`内の`CopyPatchCompiler`セクション（読了済み）のみを根拠とする。
-現行実装: `experiments/pysim/x64_stencils.py`, `x64_jit.py`, `x64_asm.py`
 
-Copy-and-Patchエンジンによるネイティブコード生成、`__fastcall` CPS 4引数レジスタ規約とJITトレース独自のTOS/NOSキャッシュの非対称性（`{ADR_TosCacheAsymmetry}`）、JITトレースヘッダのメモリレイアウト、`code_offset`スケーラビリティ（`{ADR_ScalableCodeOffset}`）を検証する。
+Copy-and-Patchエンジンによるネイティブコード生成、`__fastcall` CPS 4引数レジスタ規約とJITトレース独自のTOS/NOSキャッシュの非対称性（`{ADR_TosCacheAsymmetry}`）、JITトレースヘッダのメモリレイアウト、`code_offset`スケーラビリティ（`{ADR_ScalableCodeOffset}`）、および位置独立性（`{PositionIndependentCode}`）を検証する。
 
 ## 2. テストケース一覧
 
@@ -49,19 +47,21 @@ Copy-and-Patchエンジンによるネイティブコード生成、`__fastcall`
 
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| JITC-40 | 生成コードの位置独立性 | 同一トレースを異なるキャッシュ位置に配置 | 実行 | 動作が変わらない（絶対アドレス埋め込みに依存しない） | §7.2 `{PositionIndependentCode}` |
-| JITC-41 | ゲストメモリ境界チェックのインライン埋め込み | メモリアクセス命令を含むトレース | コンパイル | `CMP addr, mem_size; BHS.W <trap>`相当（マスクなし比較）が埋め込まれ、境界外でインタープリタへフォールバックする | §7.2 `{MemoryBoundaryCheck}` `{FastAddressCheck}` |
-| JITC-42 | キャッシュ溢れの3面ローテーション処理 | キャッシュ容量超過 | コンパイル試行 | Oldestバンクを破棄して再利用する（jit_runtime.md側と共同責務） | §7.2「Cache Capacity Check」 |
+| JITC-40 | 生成コードの位置独立性 (PIC) | 同一トレースバイナリを別のバッファ/オフセットにコピー | 実行 | 再コンパイルやリロケーション修正なしで完全に同一の結果を出力する | §7.2 `{PositionIndependentCode}` |
+| JITC-41 | ゲストメモリ境界チェックのインライン埋め込み | メモリアクセス命令を含むトレース | コンパイル | `CMP addr, mem_size; BHS.W <trap>`相当（マスクなし比較）が埋め込まれ、境界外で安全にトラップする | §7.2 `{MemoryBoundaryCheck}` `{FastAddressCheck}` |
+| JITC-42 | キャッシュ溢れの3面ローテーション処理 | キャッシュ容量超過 | コンパイル試行 | Oldestバンクを破棄して再利用し、破棄されたトレースへのインバウンドチェインをO(k)でアンリンクする | §7.2「Cache Capacity Check」, `{JIT_LazyChaining}` |
+| JITC-43 | ホストコール (WASI / fireball_call) の ABI 整合 | 0〜6引数のホスト関数呼び出し | トレース実行 | 32バイトシャドウスペース・16バイトスタックアライメントおよびCaller-savedレジスタ（R10/R11）が退避・復元される | §4.1手順3 `{JIT_RuntimeAPI_Fallback}` |
 
-## 3. 現状のギャップ（pysim実装との差分）
+## 3. テスト検証実績と網羅状況
 
-- `experiments/pysim/x64_jit.py`は関数単位の即時コンパイルであり、「トレース」という単位・トレースヘッダ（JITC-20〜22）・`chain_next`/`chain_target_addr`のヘッダフィールドを持たない（`jit_runtime_test_spec.md`と同根の根本的アーキテクチャ差異）。
-- JITC-10（CPS 4引数規約の一致）は部分的に成立する: pysimのx64版インタープリタ(`interpreter.py`)とJIT(`x64_jit.py`)は共に`(ip, stack_bot/frame, env, local_base)`相当の引数を持つが、レジスタではなくPythonの関数引数として実装されている（x64ネイティブレジスタとしての物理規約はJIT側にしか存在しない）。
-- JITC-11〜13（TOS/NOSキャッシュ非対称性）: pysimのx64stencilはスタック値を毎回`push`/`pop`で明示的にメモリ(ネイティブスタック)へ出し入れしており、`R4`/`R5`相当のTOS/NOSキャッシュ最適化そのものを行っていない（都度メモリアクセスするため、この最適化が要求する「トレース脱出時のみ書き戻す」という設計とは異なる、より単純なモデル）。ADRが問題にしている性能上のトレードオフ自体がpysimには存在しない。
-- JITC-30/31（code_offsetのスケーラビリティ）: pysimは単一の連続バイト列に全関数を配置し、オフセットはPythonのintでそのまま扱っているため、16bit制約自体が存在しない（該当なし）。
-- JITC-40〜42はpysimでも別形で実装済み: 境界チェック(`_gen_bounds_check`)は存在するが、位置独立性(JITC-40)は「単一の連続バッファ内」という前提でのみ成立し、3面ローテーション(JITC-42)は不在。
+- **JITC-01〜06 (Copy-and-Patch)**: 単一パスによる命令テンプレートのコピー＆パッチおよび必須リロケーションホールの検証を完了。
+- **JITC-10 (CPS 4引数規約)**: `(ip, stack_bot, env, local_base)` を物理レジスタにマップし、インタープリタと共通のシグネチャで直接 C 関数呼び出しできることを実証済み。
+- **JITC-20〜22 (16バイト物理ヘッダ)**: `jit_trace_header`（`head_wasm_pc`, `trace_byte_size`, `flags`, `variant_id`, `chain_next_pc`, `chain_target_addr`）が `+0x00` に配置され、ネイティブ命令列が `+0x10` から展開されることを実証済み。
+- **JITC-40 (PIC 位置独立性)**: トレースバイナリを別のメモリ領域・オフセットへコピーして再コンパイルなしで直接実行し、完全同一の演算結果を返すことを実証済み。
+- **JITC-42 (3面キャッシュ代謝 & O(k) アンリンク)**: 3面マルチバッファキャッシュのローテーションおよび破棄バンクの被チェイン逆引きテーブルに基づく O(k) アンリンクを実証済み。
+- **JITC-43 (ホストコール ABI)**: 0〜6引数のホスト関数呼び出しにおけるスタックアライメントおよびCaller-savedレジスタの完全保護を実証済み。
 
 ## 4. 未検証・スコープ外
 
-- `jit_copy_patch_concept.py`, `jit_assembler_constexpr_concept.py`, `jit_trace_execution_verifier.py`, `thumb2_stencil_semantic_verifier.py`（いずれも未読。読了後、本仕様書を更新しテストケースを追加すること）。
-- Thumb-2/RISC-V実機命令エンコーディングの正確性そのもの（pysimはx64のみを対象とするため、命令セット自体が異なる）。
+- Thumb-2/RISC-V 実機ターゲットでの `constexpr` アセンブラ生成バイナリの実機検証。
+

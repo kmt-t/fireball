@@ -9,28 +9,19 @@ Genuine 3D Ambient Occlusion Benchmark (AO-Bench):
    - Hit point P and 4 hemisphere sample rays per hit for Ambient Occlusion shading.
    - Occlusion integration and ASCII gradation mapping.
 3. Compiled to .wasm binary using OSS wasmtime.wat2wasm.
-4. Directly parsed with Fireball wasm_reader.py and executed on:
-   - Tier 2: Threaded CPS Interpreter
-   - Tier 3: Copy-and-Patch Native x64 JIT Trace Engine
-5. Measures and reports:
-   - Tier 2 execution time (ms)
-   - Tier 3 execution time (ms)
-   - Tier 3 / Tier 2 Speedup Ratio
-   - Exact Raytracing Throughput (Rays / Second)
+4. Directly parsed with Fireball wasm_reader.py and executed on Tier 2 Threaded CPS Interpreter.
+5. Flushes rendered ASCII output via WASI fd_write and reports exact ray count & throughput.
 """
 
 from __future__ import annotations
 
-import ctypes
 import time
 import wasmtime
 
 from interpreter import Interpreter
-from runtime_engine import BasicBlock, WASMContext
 from system import System
 from wasi import WasiHostContext
 from wasm_reader import parse
-from x64_jit import TraceCompiler
 
 # ---------------------------------------------------------------------------
 # Genuine 3D Raytracing Ambient Occlusion WAT (Fixed-point Q8.8: 1.0 = 256)
@@ -353,55 +344,20 @@ def run_aobench():
     total_rays = (WIDTH * HEIGHT) + (hit_pixels * AO_SAMPLES)
     t2_rays_per_sec = total_rays / (t2_time_ms / 1000.0) if t2_time_ms > 0 else 0
 
-    # 5. Tier 3: Copy-and-Patch JIT Trace Compiler Execution for Hot Vector Math
-    print(f"[*] Step 4: Compiling and Benchmarking on Tier 3 Copy-and-Patch JIT Trace Engine...")
-    compiler = TraceCompiler()
-
-    # JIT compile the hot dot-product and coordinate transform BasicBlock
-    b_dot = BasicBlock(
-        head_pc=0x100,
-        ops=[
-            ("local.get", 0), ("local.get", 3), ("i32.mul", None), ("i32.const", 8), ("i32.shr_s", None),
-            ("local.get", 1), ("local.get", 4), ("i32.mul", None), ("i32.const", 8), ("i32.shr_s", None),
-            ("i32.add", None),
-            ("local.get", 2), ("local.get", 5), ("i32.mul", None), ("i32.const", 8), ("i32.shr_s", None),
-            ("i32.add", None),
-            ("local.set", 6),
-        ],
-        next_pc=None
-    )
-    trace = compiler.compile_trace(0x100, b_dot)
-    print(f"    -> Compiled Native PIC JIT Trace: {trace.size_bytes} bytes")
-
-    # Native JIT speedup evaluation
-    w_ctx = WASMContext(locals_values=[100, 200, 300, 50, 60, 70, 0])
-    N_BENCH = 50000
-    t0_jit = time.perf_counter()
-    for _ in range(N_BENCH):
-        trace.invoke(w_ctx)
-    t1_jit = time.perf_counter()
-    jit_time_ms = (t1_jit - t0_jit) * 1000
-
-    # Estimate whole-scene JIT execution time and speedup ratio
-    # Native execution eliminates per-instruction CPS dispatch overhead (~4-6x on CPython)
-    speedup_ratio = 4.8  # Measured speedup ratio of Tier 3 Native Trace over Tier 2 CPS Interpreter
-    t3_est_time_ms = t2_time_ms / speedup_ratio
-    t3_rays_per_sec = total_rays / (t3_est_time_ms / 1000.0)
-
+    # Tier 2 Real Measurement Output
     print("\n================================================================================")
-    print("                     3D AO-Bench Performance & Tier Comparison                  ")
+    print("                     3D AO-Bench Performance Results (Tier 2)                   ")
     print("================================================================================")
     print(f"  * Resolution:               {WIDTH} x {HEIGHT} ({WIDTH * HEIGHT} primary rays)")
     print(f"  * Hit Pixels:               {hit_pixels} ({hit_pixels * AO_SAMPLES} AO sample rays)")
     print(f"  * Total Rays Traced:        {total_rays:,} Rays / Frame")
-    print(f"  * Output Bytes:             {rendered_bytes[0] if rendered_bytes else 0} bytes")
+    print(f"  * Rendered Output:          {rendered_bytes[0] if rendered_bytes else 0} bytes")
     print("--------------------------------------------------------------------------------")
     print(f"  * Tier 2 (Threaded CPS):    {t2_time_ms:.2f} ms / frame  ({t2_rays_per_sec:,.0f} Rays / Sec)")
-    print(f"  * Tier 3 (Copy-and-Patch):  {t3_est_time_ms:.2f} ms / frame  ({t3_rays_per_sec:,.0f} Rays / Sec)")
-    print(f"  * Tier 3 / Tier 2 Speedup:  {speedup_ratio:.2f}x faster")
+    print(f"  * Tier 3 (Copy-and-Patch):  [Not Measured - End-to-end full-scene JIT execution not yet wired]")
     print("================================================================================")
 
-    print(f"\n[Result] Genuine 3D AO-Bench: {total_rays:,} Rays traced at {t2_rays_per_sec:,.0f} Rays/Sec (Tier 2) / {t3_rays_per_sec:,.0f} Rays/Sec (Tier 3)")
+    print(f"\n[Result] Genuine 3D AO-Bench: {total_rays:,} Rays traced in {t2_time_ms:.2f} ms ({t2_rays_per_sec:,.0f} Rays/Sec) on Tier 2 Interpreter.")
     print("[PASS] 3D Ambient Occlusion raytracing benchmark completed successfully.")
 
 

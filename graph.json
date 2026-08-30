@@ -1324,15 +1324,6 @@
       "metadata": {}
     },
     {
-      "id": "item:component",
-      "label": "{component}",
-      "type": "item",
-      "file_path": "architecture/document_structure.md",
-      "line": 153,
-      "tier": null,
-      "metadata": {}
-    },
-    {
       "id": "sec:architecture/document_structure.md#5.2 形式検証モデル（`formal/*.py`）の責任分担正本表",
       "label": "5.2 形式検証モデル（`formal/*.py`）の責任分担正本表",
       "type": "section",
@@ -9660,12 +9651,6 @@
       "source": "sec:architecture/document_structure.md#5. 検証タグとエビデンス（Evidence）の対応体系",
       "target": "sec:architecture/document_structure.md#5.1 検証タグとエビデンスの対応表",
       "relation": "contains",
-      "metadata": {}
-    },
-    {
-      "source": "sec:architecture/document_structure.md#5.1 検証タグとエビデンスの対応表",
-      "target": "item:component",
-      "relation": "refers_to",
       "metadata": {}
     },
     {

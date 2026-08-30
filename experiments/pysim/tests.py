@@ -22,16 +22,21 @@ import struct
 import sys
 import time
 
-_DOCS_COMPONENTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "docs", "components")
-for _sub in (("tier3_platform", "concepts"), ("tier2_runtime", "concepts"), ("tier1_interface", "concepts"), ("tier1_core", "concepts")):
-    _p = os.path.join(_DOCS_COMPONENTS, *_sub)
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
-
 from hal import FB_CONF_HAL_BUFFER_SIZE, FB_CONF_HAL_MAX_BUFFERS, HalError, ShmBufferPool, ShmTrap, Timer, UartTransport
 from interpreter import Interpreter, Trap
-from ipc_router_concept import IPCMessage, IPCRouter
+from ipc_router import IPCMessage, IPCRouter
 from logger import ConsoleOutput, LogDictionary, Logger, LogLevel
+from platform_memory import (
+    FB_CONF_MEMORY_POOL_SIZE,
+    FB_CONF_PARTITION_SIZE,
+    FB_TASK_ID_FLIGHT,
+    AccessPermission,
+    MemoryManager,
+    PMSAv8MPU,
+    PoolRef,
+    RecoveryAction,
+    SharedBlock,
+)
 from system_containers import (
     BitView,
     FlatMapView,
@@ -42,17 +47,6 @@ from system_containers import (
     StaticFlatSet,
     StaticVector,
     lookup_jit_entry,
-)
-from platform_memory_concept import (
-    FB_CONF_MEMORY_POOL_SIZE,
-    FB_CONF_PARTITION_SIZE,
-    FB_TASK_ID_FLIGHT,
-    AccessPermission,
-    MemoryManager,
-    PMSAv8MPU,
-    PoolRef,
-    RecoveryAction,
-    SharedBlock,
 )
 from recovery import (
     FB_CONF_RETRY_BACKOFF_MS,
@@ -85,7 +79,7 @@ from system import (
     System,
     WasiErrno,
 )
-from vmmio_concept import (
+from vmmio import (
     FC_PASSTHROUGH,
     FC_SHM,
     FC_STATIC_DEVICE,

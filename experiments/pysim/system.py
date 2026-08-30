@@ -41,34 +41,24 @@ from dataclasses import dataclass
 from enum import IntEnum
 
 from hal import ShmBufferPool, ShmHandle, UartTransport
+from ipc_router import IPCMessage, IPCRouter
 from logger import ConsoleOutput, LogDictionary, Logger, LogLevel
+from platform_memory import (
+    FB_CONF_MEMORY_POOL_SIZE,
+    FB_TASK_ID_FLIGHT,
+    MemoryManager,
+    PMSAv8MPU,
+    SharedBlock,
+)
 from runtime_engine import RuntimeEngine
 from scheduler import Scheduler
-
-# --- Reuse the declared-authoritative reference concept implementations ---
-# instead of re-deriving their logic (both docs explicitly say not to keep a
-# second copy of them).
-_DOCS_COMPONENTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "docs", "components")
-for _sub in (("tier3_platform", "concepts"), ("tier2_runtime", "concepts"), ("tier1_interface", "concepts"), ("tier1_core", "concepts")):
-    _p = os.path.join(_DOCS_COMPONENTS, *_sub)
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
-
-from vmmio_concept import (  # noqa: E402
+from vmmio import (
     FC_PASSTHROUGH,
     FC_SHM,
     FC_STATIC_DEVICE,
     TrapCode,
     VmmioAddress,
     VMMIOController,
-)
-from ipc_router_concept import IPCMessage, IPCRouter  # noqa: E402
-from platform_memory_concept import (  # noqa: E402
-    FB_CONF_MEMORY_POOL_SIZE,
-    FB_TASK_ID_FLIGHT,
-    MemoryManager,
-    PMSAv8MPU,
-    SharedBlock,
 )
 
 

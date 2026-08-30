@@ -13,21 +13,13 @@ URI-routed, ownership-transferring message queue. Everything lives in this
 one folder and is wired into one `main.py` run -- no sub-folders, no
 external WASM tooling or runtime library (no wasmtime, wasm3, or anything
 else) anywhere in the import graph. C++ naming/type conventions were set
-aside on purpose so the Python could stay natural; this is not wired into
-the CMake build and is not part of the `docs/**/concepts/*_concept.py`
-corpus `tools/run_all_tests.ps1` executes -- though `system.py` *imports*
-two of those concept modules directly (see below) rather than duplicating
-their logic.
+aside on purpose so the Python could stay natural; this is fully self-contained
+within `experiments/pysim/` and does not import any `docs/**/concepts` files.
 
-`system.py` does not reinvent the vMMIO permission/dispatch mechanism or
-the IPC routing/ownership-handoff mechanism: it imports
-`docs/components/tier2_runtime/concepts/vmmio_concept.py`'s
-`VMMIOController` and `docs/components/tier1_interface/concepts/ipc_router_concept.py`'s
-`IPCRouter` directly (both are declared authoritative reference
-implementations in their respective specs) and only adds what those concept
-modules explicitly leave to the caller: real register/byte-level storage
-behind the vMMIO dispatch decision, and wire-level `u32` handle numbering
-for the IPC router's string-keyed channels.
+`system.py` uses self-contained simulation modules (`vmmio.py`, `ipc_router.py`,
+`platform_memory.py`, `system_containers.py`) that implement the exact
+vMMIO permission/dispatch mechanism, IPC routing/ownership-handoff, and
+physical memory/MPU management in Python.
 
 ## Why it exists
 
@@ -147,10 +139,13 @@ in `interface_wit.md`, not their internal hardware-facing implementations.
 | `hal.py` | `UartTransport` (real `socket.socketpair()`), `ShmBufferPool` (handle+bounds+ownership-checked buffers), `Timer` |
 | `recovery.py` | `{META_RecoveryStrategy}`: ignore/retry/restart/panic, retry/backoff, the retry-exhaustion escalation |
 | `logger.py` | `Logger` (build-time dictionary logging) and `ConsoleOutput` (raw-byte `wasi:cli/stdout`) sharing one transport |
-| `scheduler.py` | COOS-shaped pure round-robin cooperative scheduler with event-keyed (non-polling) wake-up |
-| `system.py` | Wires HAL/logger/recovery together; `BusMaster`/`BusSlave` implement `shm-slice`; the real `fireball_call` ID table (`FbSyscallId`) over a real `VMMIOController` (imported) + `IPCRouter` (imported) + real `WasiErrno` codes |
+| `system_containers.py` | Zero-allocation static system container vocabulary (`FlatMapView`, `FlatSetView`, `RadixBinaryTreeView`, `BitView`, `StaticFlatMap`, `StaticFlatSet`, `RingBuffer`, `StaticVector`) |
+| `vmmio.py` | Self-contained `VMMIOController` (3-tier security gate, 20-bit VPN FlatMap, 16-slot Folding XOR TLB) |
+| `ipc_router.py` | Self-contained `IPCRouter` (3-stage routing, RBAC matrix, zero-copy Revoke/Enqueue/Grant handoff) |
+| `platform_memory.py` | Self-contained `MemoryManager` & `PMSAv8MPU` (fixed-size partition leasing, typed slot pools, RAII `SharedBlock`) |
+| `system.py` | Wires HAL/logger/recovery together; `BusMaster`/`BusSlave` implement `shm-slice`; the real `fireball_call` ID table (`FbSyscallId`) over `VMMIOController` + `IPCRouter` + `MemoryManager` + real `WasiErrno` codes |
 | `main.py` | Runs the HAL/logger/scheduler/recovery demo, then the WASM/JIT demo (a guest reaching `WASI_FD_WRITE` and a real `IPC_LOOKUP`/`SEND`/`RECV` round trip via `fireball_call`), and reports findings |
-| `tests.py` | Invariant tests for the HAL/logger/recovery/scheduler/`fireball_call` layer |
+| `tests.py` | Full invariant test suite (93 tests covering COOS, scheduler, memory, HAL, logger, recovery, JIT, vMMIO, IPC, syscalls, WASI, and containers) |
 | `leb128.py` | LEB128 varint encode/decode |
 | `wasm_module.py` | In-memory parsed-module representation (`FuncType`, `Function`, `Import`, `Export`, `Memory`, `Global`, `Table`, `Element`) |
 | `wasm_opcodes.py` | The one opcode table both the interpreter and the JIT compile against |

@@ -337,19 +337,34 @@ class JITMultiBufferCache:
 class RuntimeEngine:
     """Integrated Tiered Tracing Runtime Engine combining Interpreter and JIT."""
 
-    def __init__(self, jit_compiler: Callable[[int], JITTrace] | None = None, yield_threshold: int = 16):
+    def __init__(self, jit_compiler: Any | None = None, yield_threshold: int = 16):
         self.bitmap = HotspotBitmap()
         self.ring = HistoryRing()
         self.cache = JITMultiBufferCache()
         self.cache.on_evict = self._handle_eviction
         self.jit_compiler = jit_compiler
         self.compile_queue: list[int] = []   # LIFO queue
+        self.blocks: dict[int, BasicBlock] = {}
         self.yield_threshold = yield_threshold
         self.exec_counter = 0
 
     def _handle_eviction(self, purged_pcs: list[int]) -> None:
         for pc in purged_pcs:
             self.bitmap.mark_evicted(pc)
+
+    def register_block(self, block: BasicBlock) -> None:
+        self.blocks[block.head_pc] = block
+
+    def register_module_blocks(self, module: Any) -> None:
+        """Automatically extracts and registers all BasicBlocks from a parsed WASM Module."""
+        from control_flow import extract_basic_blocks
+        n_imports = len(getattr(module, "imports", []))
+        for idx, fn in enumerate(getattr(module, "functions", [])):
+            func_idx = n_imports + idx
+            extracted = extract_basic_blocks(fn.code, func_index=func_idx)
+            for head_pc, (h, ops, next_pc) in extracted.items():
+                if ops:
+                    self.blocks[head_pc] = BasicBlock(head_pc=head_pc, ops=ops, next_pc=next_pc)
 
     def record_block_head(self, pc: int) -> None:
         """Called at each basic-block head by the interpreter."""
@@ -375,11 +390,16 @@ class RuntimeEngine:
             pc = self.compile_queue.pop()
             if self.bitmap.get_state(pc) == CardState.COMPILED:
                 continue
-            if self.jit_compiler:
+            block = self.blocks.get(pc)
+            trace = None
+            if hasattr(self.jit_compiler, "compile_trace") and block is not None:
+                trace = self.jit_compiler.compile_trace(pc, block)
+            elif callable(self.jit_compiler):
                 trace = self.jit_compiler(pc)
-                if self.cache.insert(trace):
-                    self.bitmap.mark_compiled(pc)
-                    compiled_count += 1
+
+            if trace is not None and self.cache.insert(trace):
+                self.bitmap.mark_compiled(pc)
+                compiled_count += 1
         return compiled_count
 
     def drain_compile_queue(self) -> int:

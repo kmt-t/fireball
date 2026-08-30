@@ -24,6 +24,9 @@ from wasm_opcodes import (
     GLOBAL_SET, I32_CONST, I32_LOAD, I32_LOAD8_S, I32_LOAD8_U, I32_LOAD16_S,
     I32_LOAD16_U, I32_STORE, I32_STORE8, I32_STORE16, IF, LOCAL_GET, LOCAL_SET,
     LOCAL_TEE, LOOP, MEMORY_GROW, MEMORY_SIZE, NOP, RETURN, SELECT, UNREACHABLE,
+    I32_ADD, I32_SUB, I32_MUL, I32_DIV_S, I32_DIV_U, I32_AND, I32_OR, I32_XOR,
+    I32_SHL, I32_SHR_S, I32_SHR_U, I32_EQZ, I32_EQ, I32_NE, I32_LT_S, I32_LT_U,
+    I32_GT_S, I32_GT_U, I32_LE_S, I32_LE_U, I32_GE_S, I32_GE_U,
 )
 
 _MEMARG_OPCODES = {I32_LOAD, I32_LOAD8_S, I32_LOAD8_U, I32_LOAD16_S, I32_LOAD16_U,
@@ -130,3 +133,74 @@ def decode_all(code: bytes) -> dict[int, Instr]:
 
 def ordered(instrs: dict[int, Instr]) -> list[Instr]:
     return [instrs[k] for k in sorted(instrs.keys())]
+
+
+OPCODE_NAMES: dict[int, str] = {
+    I32_CONST: "i32.const",
+    I32_ADD: "i32.add",
+    I32_SUB: "i32.sub",
+    I32_MUL: "i32.mul",
+    I32_DIV_S: "i32.div_s",
+    I32_DIV_U: "i32.div_u",
+    I32_AND: "i32.and",
+    I32_OR: "i32.or",
+    I32_XOR: "i32.xor",
+    I32_SHL: "i32.shl",
+    I32_SHR_S: "i32.shr_s",
+    I32_SHR_U: "i32.shr_u",
+    LOCAL_GET: "local.get",
+    LOCAL_SET: "local.set",
+    LOCAL_TEE: "local.tee",
+    GLOBAL_GET: "global.get",
+    GLOBAL_SET: "global.set",
+    I32_EQZ: "i32.eqz",
+    I32_EQ: "i32.eq",
+    I32_NE: "i32.ne",
+    I32_LT_S: "i32.lt_s",
+    I32_LT_U: "i32.lt_u",
+    I32_GT_S: "i32.gt_s",
+    I32_GT_U: "i32.gt_u",
+    I32_LE_S: "i32.le_s",
+    I32_LE_U: "i32.le_u",
+    I32_GE_S: "i32.ge_s",
+    I32_GE_U: "i32.ge_u",
+    DROP: "drop",
+    SELECT: "select",
+    RETURN: "return",
+    CALL: "call",
+}
+
+
+def extract_basic_blocks(code: bytes, func_index: int = 0) -> dict[int, tuple[int, list[tuple[str, Any]], int | None]]:
+    """Extracts straight-line BasicBlocks from WASM bytecode.
+    Returns {pc: (head_pc, [(op_name, arg), ...], next_pc)} where pc = (func_index << 16) | offset."""
+    from wasm_opcodes import BLOCK, LOOP, IF, ELSE, END, BR, BR_IF, RETURN
+    instrs = decode_all(code)
+    sorted_instrs = [instrs[k] for k in sorted(instrs.keys())]
+
+    base_pc = func_index << 16
+    blocks: dict[int, tuple[int, list[tuple[str, Any]], int | None]] = {}
+    cur_ops: list[tuple[str, Any]] = []
+    cur_head: int | None = None
+
+    for ins in sorted_instrs:
+        pc = base_pc | ins.offset
+        if cur_head is None:
+            cur_head = pc
+
+        op_name = OPCODE_NAMES.get(ins.opcode)
+        if op_name is not None:
+            arg = ins.const_value if ins.const_value is not None else ins.operand
+            cur_ops.append((op_name, arg))
+
+        # Check if this instruction ends the basic block
+        if ins.opcode in (BR, BR_IF, RETURN, END, ELSE, LOOP, BLOCK, IF, CALL, CALL_INDIRECT):
+            next_pc = (base_pc | ins.end_offset) if ins.opcode not in (BR, RETURN) else None
+            blocks[cur_head] = (cur_head, list(cur_ops), next_pc)
+            cur_ops.clear()
+            cur_head = None
+
+    if cur_head is not None and cur_ops:
+        blocks[cur_head] = (cur_head, list(cur_ops), None)
+
+    return blocks

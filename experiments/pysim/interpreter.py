@@ -143,7 +143,8 @@ def _do_branch(depth: int, frame: CallFrame) -> int | None:
 
 class Interpreter:
     def __init__(self, module: Module, memory: bytearray | None = None,
-                 host_functions: dict[int, Callable[..., int | None]] | None = None):
+                 host_functions: dict[int, Callable[..., int | None]] | None = None,
+                 runtime_engine: Any | None = None):
         self.module = module
         self.memory = memory
         if self.memory is not None:
@@ -153,6 +154,7 @@ class Interpreter:
         self.tables: list[list[int | None]] = [
             module.table_contents(i) for i in range(len(module.tables))
         ]
+        self.runtime_engine = runtime_engine
         self._env = ExecEnv(module, memory, self.globals, self.tables, self.host_functions, self)
         if self.module.start_function is not None:
             self.call(self.module.start_function, [])
@@ -193,6 +195,30 @@ class Interpreter:
             ip, frame, env, locals_arr = cont
             if ip >= len(frame.code):
                 break
+
+            # Tier 3 JIT Trace check & Tier 2 Card Marking
+            if self.runtime_engine is not None:
+                unified_pc = (func_index << 16) | ip
+                trace = self.runtime_engine.cache.lookup(unified_pc)
+                if trace is not None:
+                    # Execute compiled native x64 JIT Trace
+                    from runtime_engine import WASMContext
+                    w_ctx = WASMContext(locals_values=locals_arr, memory=self.memory)
+                    res = trace.invoke(w_ctx)
+                    for i in range(len(locals_arr)):
+                        locals_arr[i] = w_ctx.locals[i]
+                    if trace.has_return_val and res is not None:
+                        frame.values.append(res & 0xFFFF_FFFF)
+                    next_unified = trace.next_pc
+                    next_ip = (next_unified & 0xFFFF) if next_unified is not None else frame.instrs[ip].end_offset
+                    cont = (next_ip, frame, env, locals_arr)
+                    instr_step += 1
+                    if yield_every > 0 and (instr_step % yield_every == 0):
+                        yield
+                    continue
+                else:
+                    self.runtime_engine.record_block_head(unified_pc)
+
             ins = frame.instrs[ip]
             handler = _HANDLERS[ins.opcode]
             if handler is None:

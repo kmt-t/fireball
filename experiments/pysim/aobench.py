@@ -317,17 +317,21 @@ def run_aobench():
     print(f"    -> Parsed Module: {len(module.functions)} functions, {len(module.exports)} exports")
 
     # 3. Setup System & WASI Context
+    from runtime_engine import RuntimeEngine
+    from x64_jit import TraceCompiler
+
+    # 3. Setup System & WASI Context for Tier 2 Baseline
     sysv = System()
     wasi_ctx = WasiHostContext(sysv)
     host_funcs = wasi_ctx.build_interpreter_host_functions(module)
 
-    # 4. Tier 2: Threaded CPS Interpreter Execution
+    # 4. Tier 2: Pure Threaded CPS Interpreter Execution
     print(f"\n[*] Step 3: Executing on Tier 2 Threaded CPS Interpreter ({WIDTH}x{HEIGHT}, {AO_SAMPLES} samples/hit)...")
-    interp = Interpreter(module, memory=wasi_ctx.guest_memory, host_functions=host_funcs)
+    interp_t2 = Interpreter(module, memory=wasi_ctx.guest_memory, host_functions=host_funcs)
     main_func_idx = module.export_func_index("main")
 
     t0_t2 = time.perf_counter()
-    rendered_bytes = interp.call(main_func_idx, [WIDTH, HEIGHT])
+    rendered_bytes = interp_t2.call(main_func_idx, [WIDTH, HEIGHT])
     t1_t2 = time.perf_counter()
 
     render_output = sysv.transport.drain().decode("utf-8", errors="replace")
@@ -337,16 +341,41 @@ def run_aobench():
 
     t2_time_ms = (t1_t2 - t0_t2) * 1000
 
-    # Calculate actual ray count:
-    # Primary rays = WIDTH * HEIGHT
-    # Secondary rays = hit_pixels * AO_SAMPLES
+    # Calculate actual ray count
     hit_pixels = sum(1 for ch in render_output if ch in ('.', ':', '+', '#', '@'))
     total_rays = (WIDTH * HEIGHT) + (hit_pixels * AO_SAMPLES)
     t2_rays_per_sec = total_rays / (t2_time_ms / 1000.0) if t2_time_ms > 0 else 0
 
-    # Tier 2 Real Measurement Output
+    # 5. Tier 3: Integrated Hybrid Execution with 2-bit Card Marking & idle_hook JIT Compilation
+    print(f"[*] Step 4: Executing on Tier 3 RuntimeEngine (Card-Marking Hotspot Profiler + idle_hook JIT Compiler)...")
+    sysv_t3 = System()
+    wasi_ctx_t3 = WasiHostContext(sysv_t3)
+    host_funcs_t3 = wasi_ctx_t3.build_interpreter_host_functions(module)
+
+    trace_compiler = TraceCompiler()
+    runtime_engine = RuntimeEngine(jit_compiler=trace_compiler, yield_threshold=32)
+    runtime_engine.register_module_blocks(module)
+
+    interp_t3 = Interpreter(module, memory=wasi_ctx_t3.guest_memory, host_functions=host_funcs_t3, runtime_engine=runtime_engine)
+
+    # Run cooperatively on COOS scheduler, draining compile queue via idle_hook on yields
+    t0_t3 = time.perf_counter()
+    coro = interp_t3.call_coroutine(main_func_idx, [WIDTH, HEIGHT], yield_every=64)
+    try:
+        while True:
+            next(coro)
+            # COOS idle_hook: drain compile queue and batch-compile hot basic blocks
+            runtime_engine.idle_hook(budget=4)
+    except StopIteration:
+        pass
+    t1_t3 = time.perf_counter()
+
+    t3_time_ms = (t1_t3 - t0_t3) * 1000
+    t3_rays_per_sec = total_rays / (t3_time_ms / 1000.0) if t3_time_ms > 0 else 0
+    speedup_ratio = t2_time_ms / t3_time_ms if t3_time_ms > 0 else 1.0
+
     print("\n================================================================================")
-    print("                     3D AO-Bench Performance Results (Tier 2)                   ")
+    print("                     3D AO-Bench Performance Results (Genuine Measured)         ")
     print("================================================================================")
     print(f"  * Resolution:               {WIDTH} x {HEIGHT} ({WIDTH * HEIGHT} primary rays)")
     print(f"  * Hit Pixels:               {hit_pixels} ({hit_pixels * AO_SAMPLES} AO sample rays)")
@@ -354,10 +383,12 @@ def run_aobench():
     print(f"  * Rendered Output:          {rendered_bytes[0] if rendered_bytes else 0} bytes")
     print("--------------------------------------------------------------------------------")
     print(f"  * Tier 2 (Threaded CPS):    {t2_time_ms:.2f} ms / frame  ({t2_rays_per_sec:,.0f} Rays / Sec)")
-    print(f"  * Tier 3 (Copy-and-Patch):  [Not Measured - End-to-end full-scene JIT execution not yet wired]")
+    print(f"  * Tier 3 (Hybrid + JIT):    {t3_time_ms:.2f} ms / frame  ({t3_rays_per_sec:,.0f} Rays / Sec)")
+    print(f"  * Measured Speedup Ratio:   {speedup_ratio:.2f}x faster")
+    print(f"  * JIT Traces Compiled:      {len(runtime_engine.cache.active.traces)} traces in Active cache bank")
     print("================================================================================")
 
-    print(f"\n[Result] Genuine 3D AO-Bench: {total_rays:,} Rays traced in {t2_time_ms:.2f} ms ({t2_rays_per_sec:,.0f} Rays/Sec) on Tier 2 Interpreter.")
+    print(f"\n[Result] Genuine 3D AO-Bench: {total_rays:,} Rays traced in {t2_time_ms:.2f} ms (Tier 2) vs {t3_time_ms:.2f} ms (Tier 3), Speedup: {speedup_ratio:.2f}x.")
     print("[PASS] 3D Ambient Occlusion raytracing benchmark completed successfully.")
 
 

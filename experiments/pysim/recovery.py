@@ -1,18 +1,30 @@
-"""
+﻿"""
 experiments/pysim/recovery.py
 
-{META_RecoveryStrategy} -- docs/components/tier1_interface/interface_wit.md 3.2.
+{META_RecoveryStrategy} & {Errorcode_To_Strategy}
+Reference Implementation of the Fireball Recovery Engine without exceptions.
+Mirroring docs/components/tier1_interface/interface_wit.md §3.2,
+docs/components/tier1_core/os_coos.md §4.2, and
+docs/components/tier1_core/system_config.md §3.3.7.
 
-Every fallible host-side operation returns one of four strategies instead of
-a bare error code, so the caller always has an actionable next step:
-ignore / retry / restart / panic.
+Recovery Strategy Classification:
+  0. IGNORE: Harmless or transient notification, caller continues execution.
+  1. RETRY: Transient contention/timeout. Re-execute after FB_CONF_RETRY_BACKOFF_MS (10ms), up to 3 times.
+  2. RESTART: Module/task context corrupted or retry exhausted. Reset TCB/heap/context and restart.
+  3. PANIC: Fatal safety violation (MPU fault, double free, RBAC violation). Halt system safely.
 """
 
 from __future__ import annotations
 
 import time
 from enum import IntEnum
-from typing import Callable
+from typing import Any, Callable, Generic, TypeVar
+
+T = TypeVar("T")
+E = TypeVar("E")
+
+FB_CONF_RETRY_BACKOFF_MS = 10   # docs/components/tier1_core/system_config.md 3.3.7
+RETRY_MAX_ATTEMPTS = 3          # interface_wit.md 3.2 retry invariant
 
 
 class RecoveryStrategy(IntEnum):
@@ -22,62 +34,125 @@ class RecoveryStrategy(IntEnum):
     PANIC = 3
 
 
-FB_CONF_RETRY_BACKOFF_MS = 10   # docs/components/tier1_core/system_config.md 3.3.7
-RETRY_MAX_ATTEMPTS = 3          # interface_wit.md 3.2's retry invariant
+class Result(Generic[T, E]):
+    """Zero-exception Result container representing success or failure with actionable recovery strategy."""
+
+    __slots__ = ("is_ok", "value", "error", "strategy")
+
+    def __init__(self, is_ok: bool, value: T | None = None, error: E | None = None,
+                 strategy: RecoveryStrategy = RecoveryStrategy.IGNORE):
+        self.is_ok = is_ok
+        self.value = value
+        self.error = error
+        self.strategy = strategy
+
+    @classmethod
+    def ok(cls, value: T) -> Result[T, Any]:
+        return cls(is_ok=True, value=value, error=None, strategy=RecoveryStrategy.IGNORE)
+
+    @classmethod
+    def err(cls, error: E, strategy: RecoveryStrategy = RecoveryStrategy.RETRY) -> Result[Any, E]:
+        return cls(is_ok=False, value=None, error=error, strategy=strategy)
+
+    def unwrap(self) -> T:
+        if not self.is_ok:
+            return None  # No exception raised
+        return self.value
 
 
-class Panic(Exception):
-    """A `panic` recovery-strategy decision. In the real system this halts
-    the whole kernel and dumps state; here it stands in for that."""
+def classify_error_strategy(errno_or_trap: int | str) -> RecoveryStrategy:
+    """Deterministic mapping from low-level errno / trap string to {META_RecoveryStrategy}."""
+    # 1. String traps from vMMIO / interpreter / MPU
+    if isinstance(errno_or_trap, str):
+        trap = errno_or_trap.upper()
+        if "OUT_OF_BOUNDS" in trap or "ACCESS_VIOLATION" in trap or "OWNER_MISMATCH" in trap or "MPU" in trap:
+            return RecoveryStrategy.PANIC
+        if "UNDEFINED_FC" in trap:
+            return RecoveryStrategy.PANIC
+        if "UNREGISTERED_PAGE" in trap or "UNINITIALIZED" in trap:
+            return RecoveryStrategy.RESTART
+        if "QUEUE_FULL" in trap or "BUSY" in trap or "AGAIN" in trap:
+            return RecoveryStrategy.RETRY
+        return RecoveryStrategy.RESTART
+
+    # 2. WASI errno integers (wasi::errno)
+    errno = int(errno_or_trap)
+    if errno == 0:  # SUCCESS
+        return RecoveryStrategy.IGNORE
+    if errno in (6, 73, 76):  # EAGAIN (6), ETIMEDOUT (73), ENOMEM (76)
+        return RecoveryStrategy.RETRY
+    if errno in (28, 44, 8):  # EINVAL (28), ENOENT (44), EBADF (8)
+        return RecoveryStrategy.RESTART
+    if errno in (63, 21):  # EPERM (63), EFAULT (21)
+        return RecoveryStrategy.PANIC
+
+    return RecoveryStrategy.RESTART
 
 
-class RetryExhausted(Exception):
-    """Raised when an operation still fails after RETRY_MAX_ATTEMPTS attempts.
+class RecoveryManager:
+    """Manages layered execution, retries, escalations, and reset/panic recovery actions without exceptions."""
 
-    FINDING: interface_wit.md's invariant only states that retries "must not
-    exceed 3" -- it never says what happens on the 3rd failure. This concept
-    escalates to RESTART (the caller's TCB/heap gets reset) as the only sane
-    default, since silently retrying forever or silently giving up with no
-    strategy at all both violate {META_RecoveryStrategy}'s "the caller
-    always gets an actionable strategy" design point. The spec should say
-    this explicitly instead of leaving it to be discovered here.
-    """
+    def __init__(self,
+                 max_retries: int = RETRY_MAX_ATTEMPTS,
+                 backoff_ms: int = FB_CONF_RETRY_BACKOFF_MS,
+                 sleep_fn: Callable[[float], None] = time.sleep):
+        self.max_retries = max_retries
+        self.backoff_ms = backoff_ms
+        self.sleep_fn = sleep_fn
+        self.total_retries = 0
+        self.total_restarts = 0
+        self.total_panics = 0
 
-    def __init__(self, attempts: int, escalated_to: RecoveryStrategy = RecoveryStrategy.RESTART):
-        self.attempts = attempts
-        self.escalated_to = escalated_to
-        super().__init__(f"retry exhausted after {attempts} attempts -> escalated to {escalated_to.name}")
+    def execute_with_recovery(
+        self,
+        operation: Callable[[], Result[T, Any]],
+        task_reset_fn: Callable[[], bool] | None = None,
+        panic_fn: Callable[[str], None] | None = None,
+    ) -> Result[T, Any]:
+        """Executes operation with full 4-tier recovery strategy without raising exceptions.
 
+        Workflow:
+          1. Initial attempts with RETRY (up to max_retries with backoff).
+          2. On retry exhaustion: escalate to RESTART.
+          3. RESTART: invoke task_reset_fn() to clean TCB/heap and retry once.
+          4. PANIC: invoke panic_fn() to safely halt kernel and return PANIC result.
+        """
+        # Tier 1: Initial execution and retry loop
+        for attempt in range(1, self.max_retries + 1):
+            res = operation()
+            if res.is_ok:
+                return res
 
-def call_with_retry(
-    operation: Callable[[], bool],
-    max_attempts: int = RETRY_MAX_ATTEMPTS,
-    backoff_ms: int = FB_CONF_RETRY_BACKOFF_MS,
-    sleep: Callable[[float], None] = time.sleep,
-) -> int:
-    """Runs operation() until it returns True or max_attempts is exhausted.
+            strategy = res.strategy
+            if strategy == RecoveryStrategy.IGNORE:
+                return res
 
-    Returns the number of attempts actually made. Raises RetryExhausted
-    (never silently swallows a permanent failure) once max_attempts is hit.
-    """
-    for attempt in range(1, max_attempts + 1):
-        if operation():
-            return attempt
-        if attempt < max_attempts:
-            sleep(backoff_ms / 1000.0)
-    raise RetryExhausted(attempts=max_attempts)
+            if strategy == RecoveryStrategy.PANIC:
+                self.total_panics += 1
+                if panic_fn:
+                    panic_fn(f"Fatal panic triggered by error: {res.error}")
+                return Result.err(error=res.error, strategy=RecoveryStrategy.PANIC)
 
+            if strategy == RecoveryStrategy.RESTART:
+                break  # Directly escalate to task reset
 
-def classify_ipc_enqueue_failure(queue_was_full: bool) -> RecoveryStrategy:
-    """FINDING: interface_wit.md's `ignore` row example text reads "一時的な
-    バッファ空/満杯通知など、データ喪失を伴わず無視可能な事象" (buffer
-    full/empty *notifications*, no data loss). But ipc_router.md 4.1's
-    actual Queue-Full behavior is a failed Enqueue that rolls ownership
-    back to the sender -- the message *is* lost unless the sender retries.
-    That is `retry`'s definition ("再試行により回復可能"), not `ignore`'s.
-    The two docs use the same words ("バッファ...満杯") for what turn out,
-    on inspection, to be two different situations. This function pins down
-    the resolution this concept assumes (queue-full-on-send is RETRY, not
-    IGNORE) instead of silently reproducing the ambiguity.
-    """
-    return RecoveryStrategy.RETRY if queue_was_full else RecoveryStrategy.IGNORE
+            # RETRY strategy: backoff and retry
+            self.total_retries += 1
+            if attempt < self.max_retries:
+                self.sleep_fn(self.backoff_ms / 1000.0)
+
+        # Tier 2: Retry Exhaustion -> Escalate to RESTART
+        self.total_restarts += 1
+        if task_reset_fn is not None:
+            reset_ok = task_reset_fn()
+            if reset_ok:
+                # Re-run after clean task reset
+                post_reset_res = operation()
+                if post_reset_res.is_ok:
+                    return post_reset_res
+
+        # Tier 3: Unrecoverable after restart -> Escalate to PANIC
+        self.total_panics += 1
+        if panic_fn:
+            panic_fn("Unrecoverable error after restart escalation")
+        return Result.err(error="RETRY_EXHAUSTED_ESCALATED_TO_PANIC", strategy=RecoveryStrategy.PANIC)

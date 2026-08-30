@@ -19,7 +19,7 @@ from exec_memory import ExecutableBuffer
 from hal import ShmTrap
 from interpreter import Interpreter
 from logger import LogLevel
-from recovery import RecoveryStrategy, RetryExhausted, call_with_retry
+from recovery import RecoveryManager, RecoveryStrategy, Result
 from scheduler import Scheduler
 from system import FbSyscallId, ShmSlice, System, WasiErrno
 from test_x64_jit import _build_fib_iter, _build_factorial_rec, _python_fib
@@ -92,29 +92,42 @@ def task_hostile_neighbor(sysv: System, my_task_id: int, other_handle):
 
 def task_retry_then_succeed(sysv: System):
     """RETRY strategy: fails twice, then succeeds on the 3rd attempt --
-    exactly RETRY_MAX_ATTEMPTS, so this must NOT raise RetryExhausted."""
-    attempts_made = {"n": 0}
+    managed cleanly by RecoveryManager without exceptions."""
+    mgr = RecoveryManager(sleep_fn=lambda _s: None)
+    attempts_made = [0]
 
-    def flaky_operation() -> bool:
-        attempts_made["n"] += 1
-        return attempts_made["n"] >= 3
+    def flaky_operation() -> Result[str, str]:
+        attempts_made[0] += 1
+        if attempts_made[0] < 3:
+            return Result.err("BUSY", RecoveryStrategy.RETRY)
+        return Result.ok("SUCCESS")
 
-    total = call_with_retry(flaky_operation, sleep=lambda _s: None)
-    print(f"  [retry-then-succeed] succeeded after {total} attempt(s)")
-    assert total == 3
+    res = mgr.execute_with_recovery(flaky_operation)
+    print(f"  [retry-then-succeed] succeeded after {attempts_made[0]} attempt(s): {res.value}")
+    assert attempts_made[0] == 3
+    assert res.is_ok is True
     yield
 
 
 def task_retry_exhausted(sysv: System):
     """An operation that never succeeds: proves the concept's answer to the
-    "what happens after 3 failures" gap (escalate to RESTART) actually
-    fires, instead of retrying forever or failing silently."""
-    try:
-        call_with_retry(lambda: False, sleep=lambda _s: None)
-        findings.append("BUG: an always-failing operation did not raise RetryExhausted")
-    except RetryExhausted as e:
-        print(f"  [retry-exhausted] {e} (strategy={e.escalated_to.name})")
-        assert e.escalated_to == RecoveryStrategy.RESTART
+    "what happens after 3 failures" gap (escalate to RESTART -> PANIC)
+    is handled by RecoveryManager returning a PANIC result without crashing."""
+    mgr = RecoveryManager(sleep_fn=lambda _s: None)
+    reset_performed = [False]
+
+    def failing_op() -> Result[str, str]:
+        return Result.err("RESOURCE_DEADLOCK", RecoveryStrategy.RETRY)
+
+    def on_reset() -> bool:
+        reset_performed[0] = True
+        return False  # Reset failed to clear condition, forces escalation to PANIC
+
+    res = mgr.execute_with_recovery(failing_op, task_reset_fn=on_reset)
+    print(f"  [retry-exhausted] recovery ended with strategy={res.strategy.name} (error={res.error})")
+    assert res.is_ok is False
+    assert res.strategy == RecoveryStrategy.PANIC
+    assert reset_performed[0] is True
     yield
 
 
@@ -291,7 +304,7 @@ def main() -> None:
 
     # bus-owner already ran and its two handles were acquired against task_id=100;
     # spawn the hostile neighbor now that a real handle exists to attack.
-    (tx_handle, _rx_handle) = next(iter(sysv.pool._handles.values())), None
+    tx_handle = next(s for s in sysv.pool._slots if s is not None)
     print("\n== pysim: a second task attacks the first task's SHM handle ==")
     for gen in [task_hostile_neighbor(sysv, my_task_id=200, other_handle=tx_handle)]:
         sched.spawn("hostile-neighbor", gen)

@@ -53,7 +53,14 @@ from platform_memory_concept import (
     RecoveryAction,
     SharedBlock,
 )
-from recovery import RecoveryStrategy, RetryExhausted, call_with_retry, classify_ipc_enqueue_failure
+from recovery import (
+    FB_CONF_RETRY_BACKOFF_MS,
+    RETRY_MAX_ATTEMPTS,
+    RecoveryManager,
+    RecoveryStrategy,
+    Result,
+    classify_error_strategy,
+)
 from runtime_engine import CardState, HistoryRing, HotspotBitmap, JITMultiBufferCache, JITTrace, RuntimeEngine
 from scheduler import FB_CONF_MAX_TASKS, Scheduler, TaskState, WaitDir
 from system import (
@@ -528,14 +535,90 @@ def test_log_02_logger_ring_buffer_overwrites():
         t.close()
 
 
-def test_recovery_retry_and_escalation():
-    calls = {"n": 0}
-    def flaky():
-        calls["n"] += 1
-        return calls["n"] >= 2
+def test_recovery_01_retry_success_within_limit():
+    """RECOVERY-01: Transient failure succeeds within 3 retries (10ms backoff) without exceptions."""
+    mgr = RecoveryManager(sleep_fn=lambda _s: None)
+    attempts = [0]
 
-    assert call_with_retry(flaky, sleep=lambda _s: None) == 2
-    assert classify_ipc_enqueue_failure(queue_was_full=True) == RecoveryStrategy.RETRY
+    def op() -> Result[str, str]:
+        attempts[0] += 1
+        if attempts[0] < 3:
+            return Result.err("BUSY", RecoveryStrategy.RETRY)
+        return Result.ok("SUCCESS_DATA")
+
+    res = mgr.execute_with_recovery(op)
+    assert res.is_ok is True
+    assert res.value == "SUCCESS_DATA"
+    assert attempts[0] == 3
+    assert mgr.total_retries == 2
+    assert mgr.total_restarts == 0
+    assert mgr.total_panics == 0
+
+
+def test_recovery_02_retry_exhaustion_escalates_to_restart():
+    """RECOVERY-02: 3-attempt retry exhaustion automatically escalates to RESTART."""
+    mgr = RecoveryManager(sleep_fn=lambda _s: None)
+    attempts = [0]
+    reset_called = [False]
+
+    def failing_op() -> Result[str, str]:
+        attempts[0] += 1
+        if reset_called[0]:
+            return Result.ok("RECOVERED_AFTER_RESET")
+        return Result.err("RESOURCE_EXHAUSTED", RecoveryStrategy.RETRY)
+
+    def do_reset() -> bool:
+        reset_called[0] = True
+        return True
+
+    res = mgr.execute_with_recovery(failing_op, task_reset_fn=do_reset)
+    assert res.is_ok is True
+    assert res.value == "RECOVERED_AFTER_RESET"
+    assert attempts[0] == 4  # 3 initial retries + 1 post-reset run
+    assert reset_called[0] is True
+    assert mgr.total_restarts == 1
+    assert mgr.total_panics == 0
+
+
+def test_recovery_03_panic_triggers_immediate_failsafe():
+    """RECOVERY-03: Fatal safety violation (MPU fault/permission) triggers PANIC immediately without retry."""
+    mgr = RecoveryManager(sleep_fn=lambda _s: None)
+    panic_msg = []
+
+    def fatal_op() -> Result[str, str]:
+        return Result.err("TRAP_ACCESS_VIOLATION", RecoveryStrategy.PANIC)
+
+    def panic_hook(msg: str) -> None:
+        panic_msg.append(msg)
+
+    res = mgr.execute_with_recovery(fatal_op, panic_fn=panic_hook)
+    assert res.is_ok is False
+    assert res.strategy == RecoveryStrategy.PANIC
+    assert len(panic_msg) == 1
+    assert "TRAP_ACCESS_VIOLATION" in panic_msg[0]
+    assert mgr.total_panics == 1
+    assert mgr.total_retries == 0
+
+
+def test_recovery_04_errorcode_to_strategy_mapping():
+    """RECOVERY-04: Error code to RecoveryStrategy mapping matches {Errorcode_To_Strategy} spec."""
+    # WASI Errno mappings
+    assert classify_error_strategy(0) == RecoveryStrategy.IGNORE    # SUCCESS
+    assert classify_error_strategy(6) == RecoveryStrategy.RETRY     # EAGAIN
+    assert classify_error_strategy(73) == RecoveryStrategy.RETRY    # ETIMEDOUT
+    assert classify_error_strategy(76) == RecoveryStrategy.RETRY    # ENOMEM
+    assert classify_error_strategy(28) == RecoveryStrategy.RESTART  # EINVAL
+    assert classify_error_strategy(44) == RecoveryStrategy.RESTART  # ENOENT
+    assert classify_error_strategy(8) == RecoveryStrategy.RESTART   # EBADF
+    assert classify_error_strategy(63) == RecoveryStrategy.PANIC    # EPERM
+    assert classify_error_strategy(21) == RecoveryStrategy.PANIC    # EFAULT
+
+    # String traps
+    assert classify_error_strategy("TRAP_MEMORY_OUT_OF_BOUNDS") == RecoveryStrategy.PANIC
+    assert classify_error_strategy("TRAP_ACCESS_VIOLATION") == RecoveryStrategy.PANIC
+    assert classify_error_strategy("TRAP_OWNER_MISMATCH") == RecoveryStrategy.PANIC
+    assert classify_error_strategy("TRAP_UNDEFINED_FC") == RecoveryStrategy.PANIC
+    assert classify_error_strategy("TRAP_UNREGISTERED_PAGE") == RecoveryStrategy.RESTART
 
 
 # ===========================================================================

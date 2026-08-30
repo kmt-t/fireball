@@ -1,15 +1,15 @@
 {
-  "generated_at": "2026-08-30T11:33:08.175907+00:00",
-  "backend": "sakura",
+  "generated_at": "2026-08-30T12:00:56.530230+00:00",
+  "backend": "heuristic",
   "total_evaluated": 15,
-  "formal_candidates_count": 10,
+  "formal_candidates_count": 3,
   "llm_candidates_count": 2,
-  "sections_scanned": 814,
+  "sections_scanned": 822,
   "max_sections": 15,
   "doc_hashes": {
     "architecture/architecture_overview.md": "08d57f68cd61c9f1aedca2a5c0c839221f5e3a664529cf0dace0da9ee8b8798b",
     "architecture/document_structure.md": "b92815934116d54de31e86aacc1276a42865f04c7a069d94db9a6ba9c8d2fb25",
-    "architecture/integration_test_scenarios.md": "0f85d48ceb75fbdb0099abe91318daa56c90bf03e57c86141a7f13cd274802dc",
+    "architecture/integration_test_scenarios.md": "4a47bdf6889d1c07365d4b54d8c770b646bac00e6a4732b9ffa5a132abdc76ff",
     "components/tier1_core/os_coos.md": "4b325d9925c8daf835fd0954d6364ec2ff14f4eee8caedf64a8f58a76f834b3e",
     "components/tier1_core/os_scheduler.md": "bd7ea187d80f2de56b5fafd2fe7df9ee127275a8fc623b261cad7baa199a72ec",
     "components/tier1_core/system_config.md": "ab4043bc8aa9b803d4fb494a36724f584d886b0a153fe0a8bacd1968b4f6a46e",
@@ -33,7 +33,7 @@
     "components/tier2_runtime/runtime_loader.md": "cc8b0a04e1a0d27ca8a7c833a780b9dcf641e816fbdf03845ce183889a0891c7",
     "components/tier2_runtime/runtime_vmmio.md": "98e638cdbd857178451e9838d116365eab254f1454016f00040891d153ced37f",
     "components/tier2_runtime/runtime_vsoc.md": "60faf62e3c39234ca73846cffd672507ed48cbf60448fb8cdcffc84262055169",
-    "components/tier2_runtime/tests/debug_manager_test_spec.md": "bdabdc6ddc0b669b1b68fb35a88a0dd941c2aa4532dc2c157ec2c56d870bfbe3",
+    "components/tier2_runtime/tests/debug_manager_test_spec.md": "fa9c904d2f60b7c6f2b921c29ca16535aa99582bca4bd7537e31d0770751705e",
     "components/tier2_runtime/tests/runtime_interpreter_test_spec.md": "fd267aa23255891645ae0c8b9f1a2a803f35527764d4bc1859343c98cb8ec2d6",
     "components/tier2_runtime/tests/runtime_loader_test_spec.md": "e1c3316978a7a003591e145b90c2b50fa36363c9b16c248f70cdded7a916bc27",
     "components/tier2_runtime/tests/runtime_vmmio_test_spec.md": "6e391447e67fafff8123c97748d1c727a56bab1b23fa9db6f1d033546176586a",
@@ -63,40 +63,26 @@
       "file_path": "components/tier2_runtime/runtime_interpreter.md",
       "heading": "4.1 アルゴリズム",
       "tier": 2,
-      "complexity_score": 4,
-      "risk_score": 4,
-      "formal_needed": true,
-      "recommended_verification": "pyModelChecking",
-      "suggested_tags": [
-        "{VERIFY_FORMAL}"
-      ],
-      "risk_factors": [
-        "Manual stack management and TOS/NOS cache coherence across JIT/interpreter boundaries risk memory corruption if dirty state or sp_offset is not correctly written back.",
-        "Lazy JIT switching and exec_trace pointer updates lack explicit consistency guarantees, risking stale trace execution or control flow desynchronization.",
-        "Direct tail jumps (musttail, BX) bypass standard call/return mechanisms, eliminating built-in stack frame validation and error recovery paths.",
-        "Stack pruning logic must precisely match WASM arity semantics; any mismatch causes stack underflow/overflow or incorrect operand handling."
-      ],
-      "summary": "High complexity due to low-level register-based CPS threading, manual single-stack frame management, and tight JIT/interpreter interop. Design risk is elevated by manual state synchronization, cache coherence requirements, and direct control flow transfers that bypass standard safety mechanisms. Formal verification is strongly recommended to prove invariants around stack consistency, cross-boundary state preservation, and lazy JIT switching correctness."
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '4.1 アルゴリズム'."
     },
     {
       "section_id": "sec:components/tier2_runtime/runtime_vmmio.md#1. コンセプト",
       "file_path": "components/tier2_runtime/runtime_vmmio.md",
       "heading": "1. コンセプト",
       "tier": 2,
-      "complexity_score": 3,
-      "risk_score": 4,
+      "complexity_score": 2,
+      "risk_score": 2,
       "formal_needed": false,
-      "recommended_verification": "LLM_Judge",
-      "suggested_tags": [
-        "{VERIFY_LLM}"
-      ],
-      "risk_factors": [
-        "Incomplete specification: Text cuts off mid-sentence at the Bit 31 == 1 vMMIO routing path, leaving critical logic undefined.",
-        "TLB Coherency Gap: Missing policy for invalidating or updating the 16-entry software TLB when PTEs in the static FlatMap change.",
-        "Granularity Mismatch: Potential boundary check errors due to mixed page sizes (WASM 64KB, sub-64KB RAM, vMMIO 4KB) without explicit alignment rules.",
-        "Trap State Restoration: Fallback to interpreter and task termination lack detailed state preservation/rollback semantics, risking undefined guest behavior."
-      ],
-      "summary": "The section outlines a unified vMMIO access layer with a fast RAM bypass and TLB-accelerated FlatMap routing. Complexity is moderate, but design risk is elevated due to incomplete specification, missing TLB coherency policies, and mixed memory granularity handling. Formal verification is not required for this conceptual overview; semantic LLM auditing is recommended to ensure cross-tier compliance and precise trap/memory contract alignment."
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '1. コンセプト'."
     },
     {
       "section_id": "sec:components/tier1_core/system_containers.md#1. コンセプト",
@@ -108,31 +94,21 @@
       "formal_needed": false,
       "recommended_verification": "Static",
       "suggested_tags": [],
-      "risk_factors": [
-        "Lifetime/aliasing violations if non-owning views outlive their backing static arrays",
-        "Incorrect boundary conditions in radix or binary search implementations may cause out-of-bounds memory access"
-      ],
-      "summary": "This section defines a static, non-owning container vocabulary with zero-cost abstractions. Complexity and risk are low as it specifies declarative type contracts and algorithmic access patterns without dynamic state, concurrency, or ownership management. Verification is limited to static compliance checks."
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '1. コンセプト'."
     },
     {
       "section_id": "sec:components/tier1_core/os_coos.md#1. コンセプト",
       "file_path": "components/tier1_core/os_coos.md",
       "heading": "1. コンセプト",
       "tier": 1,
-      "complexity_score": 4,
-      "risk_score": 4,
-      "formal_needed": true,
-      "recommended_verification": "pyModelChecking",
-      "suggested_tags": [
-        "{VERIFY_FORMAL}"
-      ],
-      "risk_factors": [
-        "Coroutine suspension/resumption state management in a single-threaded cooperative environment",
-        "CSP channel ownership transfer and zero-copy message lifetime management risks",
-        "Potential starvation or blocking due to cooperative yielding without preemption",
-        "Interrupt wakeup integration with coroutine scheduling and channel state transitions"
-      ],
-      "summary": "High architectural complexity involving C++20 coroutines, Hoare CSP channels, and zero-copy ownership transfer. Significant design risks around coroutine state lifecycle, channel invariants, and cooperative scheduling starvation. Requires formal verification to mathematically prove deadlock freedom, race elimination, and liveness properties."
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '1. コンセプト'."
     },
     {
       "section_id": "sec:components/tier1_core/os_scheduler.md#6. 設計判断 (ADR)",
@@ -140,73 +116,55 @@
       "heading": "6. 設計判断 (ADR)",
       "tier": 1,
       "complexity_score": 3,
-      "risk_score": 4,
-      "formal_needed": true,
-      "recommended_verification": "pyModelChecking",
+      "risk_score": 3,
+      "formal_needed": false,
+      "recommended_verification": "LLM_Judge",
       "suggested_tags": [
-        "{VERIFY_FORMAL}"
+        "{VERIFY_LLM}"
       ],
       "risk_factors": [
-        "Interrupt-driven wake queue operations may race with scheduler list updates if interrupt masking strategies are not explicitly defined.",
-        "Intrusive linked list manipulation lacks explicit corruption recovery or bounds checking, risking memory corruption on task failure.",
-        "Pure cooperative round-robin scheduling may cause starvation or unbounded blocking if tasks fail to yield or if event queues overflow."
+        "Architectural trade-off or natural language design decision"
       ],
-      "summary": "The scheduler design uses static intrusive lists and cooperative round-robin scheduling to minimize memory and overhead, aligning with non-RTOS constraints. While this reduces complexity compared to preemptive RTOS designs, the interaction between interrupt-driven wake events and cooperative state transitions introduces moderate concurrency risks. Formal verification is recommended to prove liveness, absence of deadlocks, and correct state transitions under interrupt preemption."
+      "summary": "Independent heuristic evaluation for '6. 設計判断 (ADR)'."
     },
     {
       "section_id": "sec:components/tier2_runtime/debug_manager.md#1. コンセプト",
       "file_path": "components/tier2_runtime/debug_manager.md",
       "heading": "1. コンセプト",
       "tier": 2,
-      "complexity_score": 4,
-      "risk_score": 4,
-      "formal_needed": true,
-      "recommended_verification": "pyModelChecking",
-      "suggested_tags": [
-        "{VERIFY_FORMAL}"
-      ],
-      "risk_factors": [
-        "JIT cache coherency race condition triggered by debugger memory writes",
-        "Potential deadlock or starvation in debug_command queue processing under concurrent profiling/tracing interrupts",
-        "Unspecified error recovery for malformed RSP packets or HAL transport failures",
-        "Risk of violating MemoryIsolation invariants during dynamic register/memory assertions"
-      ],
-      "summary": "The debug manager defines a stateful, concurrent architecture combining RSP command processing, conditional JIT cache invalidation, and integrated profiling/tracing. Complexity and risk are elevated due to cache coherency constraints, queue execution control, and isolation invariants. Formal verification is required to mathematically prove safety and liveness properties of the command state machine and resource handoffs."
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '1. コンセプト'."
     },
     {
       "section_id": "sec:components/tier1_core/system_config.md#1. コンセプト",
       "file_path": "components/tier1_core/system_config.md",
       "heading": "1. コンセプト",
       "tier": 1,
-      "complexity_score": 1,
-      "risk_score": 1,
+      "complexity_score": 2,
+      "risk_score": 2,
       "formal_needed": false,
       "recommended_verification": "Static",
       "suggested_tags": [],
-      "risk_factors": [
-        "Static configuration limits runtime adaptability to changing hardware or workload demands.",
-        "Incorrect constexpr/macro definitions may cause compile-time failures or unsafe memory layout assumptions."
-      ],
-      "summary": "This section defines a static, compile-time configuration philosophy with zero runtime overhead. It contains no dynamic state, concurrency, or hardware interaction logic, resulting in minimal complexity and design risk. Formal verification is not required; static analysis suffices."
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '1. コンセプト'."
     },
     {
       "section_id": "sec:components/tier3_jit/jit_runtime.md#1. コンセプト",
       "file_path": "components/tier3_jit/jit_runtime.md",
       "heading": "1. コンセプト",
       "tier": 3,
-      "complexity_score": 4,
-      "risk_score": 4,
-      "formal_needed": true,
-      "recommended_verification": "pyModelChecking",
-      "suggested_tags": [
-        "{VERIFY_FORMAL}"
-      ],
-      "risk_factors": [
-        "Cache coherence failure during 3-plane rotation may lead to execution of stale or unmapped native code.",
-        "Race conditions between card-marking updates and JIT entry searches could cause false negatives/positives in the O(1) pre-check.",
-        "Inadequate hotspot detection/promotion logic may cause cache thrashing or starvation of cold code blocks."
-      ],
-      "summary": "The section describes a high-performance, multi-stage JIT cache management pipeline with complex state transitions, cache rotation, and low-latency search algorithms. High complexity and design risk stem from concurrent cache lifecycle management, card-table synchronization, and rotation invariants, necessitating formal verification to prove safety and liveness properties."
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '1. コンセプト'."
     },
     {
       "section_id": "sec:components/tier1_interface/ipc_router.md#4.1 アルゴリズム",
@@ -221,11 +179,9 @@
         "{VERIFY_FORMAL}"
       ],
       "risk_factors": [
-        "Concurrent ownership state transitions (Revoke/Grant) across asynchronous task boundaries may cause race conditions or double-free if synchronization boundaries are ambiguous.",
-        "Queue full rollback and async destination kill (Drop Handler) create complex failure paths that could lead to resource leaks or deadlock if state cleanup isn't strictly ordered.",
-        "Explicit IPC queue starvation risk due to unbounded sender retry/backpressure mechanisms during enqueue failures."
+        "Stateful concurrent protocol or hardware safety invariant identified"
       ],
-      "summary": "The algorithm implements a zero-copy IPC ownership transfer with concurrent sender/receiver state management and async failure recovery. Complexity and risk are elevated due to precise synchronization requirements for Revoke/Grant transitions, queue full rollback logic, and Drop Handler cleanup. Formal verification is required to prove safety (no leaks/double-frees), liveness (no starvation), and deadlock freedom across asynchronous task boundaries."
+      "summary": "Independent heuristic evaluation for '4.1 アルゴリズム'."
     },
     {
       "section_id": "sec:components/tier3_jit/jit_compiler.md#1. コンセプト",
@@ -237,30 +193,21 @@
       "formal_needed": false,
       "recommended_verification": "Static",
       "suggested_tags": [],
-      "risk_factors": [
-        "Tight memory constraints (32-64KB RAM) increase risk of buffer overflows during copy-and-patch operations if bounds checking is omitted.",
-        "Position-independent code generation requires precise address relocation handling to prevent execution faults on constrained embedded targets."
-      ],
-      "summary": "This section outlines a high-level, stateless JIT architecture concept focused on low-latency copy-and-patch compilation for constrained embedded environments. Complexity and risk are low at the conceptual level, as no concurrent state transitions or dynamic resource management are specified. Verification should focus on static compliance and semantic alignment rather than formal model checking."
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '1. コンセプト'."
     },
     {
       "section_id": "sec:components/tier2_runtime/runtime_vsoc.md#4.1 アルゴリズム",
       "file_path": "components/tier2_runtime/runtime_vsoc.md",
       "heading": "4.1 アルゴリズム",
       "tier": 2,
-      "complexity_score": 4,
-      "risk_score": 4,
-      "formal_needed": true,
-      "recommended_verification": "pyModelChecking",
-      "suggested_tags": [
-        "{VERIFY_FORMAL}"
-      ],
-      "risk_factors": [
-        "Race condition between JIT cache flush and active native execution, risking instruction corruption or use-after-free.",
-        "Unresolved yield threshold mechanics may lead to task starvation or unpredictable coroutine scheduling.",
-        "Safepoint hook reliability depends on timer/flag synchronization; missed checks could block async breakpoint handling."
-      ],
-      "summary": "High complexity due to mixed interpreter/JIT execution, async safepoints, and multi-bank cache management. Significant design risks include race conditions during JIT cache invalidation, unresolved yield starvation, and safepoint synchronization gaps. Requires formal verification to prove safety and liveness properties."
+      "complexity_score": 2,
+      "risk_score": 2,
+      "formal_needed": false,
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '4.1 アルゴリズム'."
     },
     {
       "section_id": "sec:components/tier1_core/system_containers.md#4.1 アルゴリズム",
@@ -270,23 +217,17 @@
       "complexity_score": 2,
       "risk_score": 2,
       "formal_needed": false,
-      "recommended_verification": "LLM_Judge",
-      "suggested_tags": [
-        "{VERIFY_LLM}"
-      ],
-      "risk_factors": [
-        "Off-by-one errors in bit indexing and byte shifting calculations",
-        "Potential cross-byte memory access if Bits divisibility assumption is violated",
-        "Assertion stripping in release builds may remove bounds validation"
-      ],
-      "summary": "Stateless, deterministic data structure operations with low complexity. Risks are confined to bitwise arithmetic correctness and bounds validation. No concurrency or stateful transitions exist, eliminating the need for mathematical formal verification. Semantic auditing is recommended to verify API contracts and bitwise logic consistency."
+      "recommended_verification": "Static",
+      "suggested_tags": [],
+      "risk_factors": [],
+      "summary": "Independent heuristic evaluation for '4.1 アルゴリズム'."
     },
     {
       "section_id": "sec:components/tier1_core/os_coos.md#4.2 状態遷移図 (SMD: COOS システムレベル)",
       "file_path": "components/tier1_core/os_coos.md",
       "heading": "4.2 状態遷移図 (SMD: COOS システムレベル)",
       "tier": 1,
-      "complexity_score": 3,
+      "complexity_score": 4,
       "risk_score": 4,
       "formal_needed": true,
       "recommended_verification": "pyModelChecking",
@@ -294,11 +235,9 @@
         "{VERIFY_FORMAL}"
       ],
       "risk_factors": [
-        "Potential deadlock or starvation in Idle/RunningTask transitions due to missed interrupts, improper task blocking/unblocking logic, or race conditions in the 'all tasks BLOCKED' global condition.",
-        "Recovery state inconsistency risk: The 'reset task queue' and TCB/heap reinitialization during Recovery->Ready may race with pending hardware exceptions or asynchronous events, leading to undefined behavior.",
-        "CSP Handoff and Direct Context Switch synchronization hazards: Rapid context switches or shared state handoffs could violate memory isolation boundaries or cause data races if invariants are not strictly enforced."
+        "Stateful concurrent protocol or hardware safety invariant identified"
       ],
-      "summary": "The system-level state machine is moderately complex, covering initialization, normal operation, idle detection, context switching, and fault recovery. Design risks center on concurrency hazards in task scheduling, potential deadlocks during idle/running transitions, and recovery state consistency under hardware exceptions. Formal verification is required to prove liveness (no deadlock/starvation), safety (invariant preservation during recovery and context switches), and correct handling of asynchronous interrupts."
+      "summary": "Independent heuristic evaluation for '4.2 状態遷移図 (SMD: COOS システムレベル)'."
     },
     {
       "section_id": "sec:components/tier1_core/os_coos.md#4.1 アルゴリズム",
@@ -313,31 +252,26 @@
         "{VERIFY_FORMAL}"
       ],
       "risk_factors": [
-        "Race condition between ISR bounded queue posting and scheduler yield-point draining",
-        "Deadlock or starvation risk due to unsynchronized CSP handoff bypassing standard scheduler synchronization primitives",
-        "State inconsistency in Idle Detection from concurrent timer expiration, log buffer writes, and task wakeups",
-        "Memory safety vulnerability from direct context switch bypassing standard stack/heap boundary and protection checks"
+        "Stateful concurrent protocol or hardware safety invariant identified"
       ],
-      "summary": "High complexity due to direct task handoffs, zero-copy CSP semantics, and interrupt-driven scheduler bypass. Significant design risks include race conditions in queue draining, potential deadlocks from unsynchronized handoffs, and state inconsistency in idle detection. Mathematical formal verification is required to prove liveness, absence of deadlocks, and invariant preservation across concurrent state transitions."
+      "summary": "Independent heuristic evaluation for '4.1 アルゴリズム'."
     },
     {
       "section_id": "sec:components/tier3_jit/jit_compiler.md#8. 設計判断 (ADR)",
       "file_path": "components/tier3_jit/jit_compiler.md",
       "heading": "8. 設計判断 (ADR)",
       "tier": 3,
-      "complexity_score": 4,
-      "risk_score": 4,
-      "formal_needed": true,
-      "recommended_verification": "pyModelChecking",
+      "complexity_score": 3,
+      "risk_score": 3,
+      "formal_needed": false,
+      "recommended_verification": "LLM_Judge",
       "suggested_tags": [
-        "{VERIFY_FORMAL}"
+        "{VERIFY_LLM}"
       ],
       "risk_factors": [
-        "Dirty R4/R5 register synchronization at JIT trace boundaries may cause stack state corruption if write-back ordering or exception handling is violated.",
-        "Lazy chaining across heterogeneous trace variants relies on canonical memory addresses; unhandled trace exits or misaligned state transitions could break safety invariants.",
-        "Missing specification for {ADR_SafeQueuingOnHotMiss} introduces ambiguity in concurrent cache miss handling, queue state management, and potential starvation/deadlock scenarios."
+        "Architectural trade-off or natural language design decision"
       ],
-      "summary": "The section defines a high-complexity asymmetric TOS/NOS caching strategy requiring strict state synchronization at JIT trace boundaries. Design risks center on dirty register write-back ordering, lazy chaining safety across trace variants, and undefined hot-miss queuing logic. Mathematical formal verification via pyModelChecking is required to prove trace exit invariants and state transition safety, while the offset scaling decision remains static and declarative."
+      "summary": "Independent heuristic evaluation for '8. 設計判断 (ADR)'."
     }
   ]
 }

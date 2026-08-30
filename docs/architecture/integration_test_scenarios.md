@@ -31,6 +31,40 @@
 | **Tier 3 JIT** | [`jit_compiler.md`](../components/tier3_jit/jit_compiler.md) | Copy-and-Patch JIT 生成、PIC トレース、差分検証 | Scenario 4, 5, 8 |
 | | [`jit_runtime.md`](../components/tier3_jit/jit_runtime.md) | 3面キャッシュ代謝、2-bit Card Marking、UnifiedPC + bswap32 | Scenario 4, 5 |
 
+### 1.2 仕様キーワード・不変条件カバレッジ追跡表 (Requirements Traceability Matrix: RTM)
+
+各コンポーネント設計書に定義されている仕様キーワード、アーキテクチャ不変条件（Invariants）、およびエッジケース要件に対する結合テスト（Scenario 1〜11）の実動網羅状況：
+
+| 仕様キーワード / 不変条件 | 定義元設計書 | 仕様上の定義・要件 | カバーテスト ID | 実装実証 |
+| :--- | :--- | :--- | :--- | :---: |
+| `RadixBinaryTreeView_bswap32` | `system_containers.md`, `jit_runtime.md` | UnifiedPC（`func_idx << 20 \| pc`）の bswap32 によるリトルエンディアン上位集約インデックス検索 | `INT-40`, `INT-41` | ✅ PASS |
+| `FlatMapView_BinarySearch` | `system_containers.md`, `ipc_router.md` | 静的ソート配列に対する $O(\log N)$ バイナリサーチ（動的割当なし） | `INT-01`, `INT-80` | ✅ PASS |
+| `RingBuffer_Overwrite` | `system_containers.md`, `system_logging.md` | 静的容量リングバッファ、満杯時の最古エントリ自動上書き | `INT-82` | ✅ PASS |
+| `BitView_CardMarking` | `system_containers.md`, `jit_runtime.md` | 2-bit カードマーキング（UNEXEC $\to$ EXEC $\to$ HOT $\to$ COMPILED） | `INT-30`, `INT-31` | ✅ PASS |
+| `DirectSwitch` | `os_coos.md`, `os_scheduler.md` | コンテキストスイッチスタック退避なしの CPS 関数呼び出し継続 | `INT-50`, `INT-51` | ✅ PASS |
+| `FuelExhaustion_Yield` | `os_scheduler.md`, `os_coos.md` | Fuel 枯渇（`yield_every` 境界）での決定論的コルーチン中断と再開 | `INT-50` | ✅ PASS |
+| `DictionaryBasedIPC` | `system_logging.md` | 静的 LogDictionary、危険書式（`%s` / `%p`）の登録時静的拒絶 | `INT-82` | ✅ PASS |
+| `BufferedLogging` | `system_logging.md` | 実行時リングバッファ蓄積 $\to$ COOS `idle_hook` での一括 UART フラッシュ | `INT-82` | ✅ PASS |
+| `WASI_ScatteredIO` | `system_syscall.md`, `interface_wit.md` | 分散ギャザー `fd_write` / スキャッター `fd_read` による多要素 iovec 転送 | `INT-10`, `INT-104` | ✅ PASS |
+| `Syscall_ProcExit` | `system_syscall.md` | `proc_exit` システムコールによるゲストタスク停止および終了コード伝播 | `INT-11` | ✅ PASS |
+| `ThreeStageRouting` | `ipc_router.md` | Stage 1 URI検索 $\to$ Stage 2 RBAC判定 $\to$ Stage 3 Zero-Copy 所有権移譲 | `INT-80`, `INT-81` | ✅ PASS |
+| `QueueFullRollback` | `ipc_router.md` | キュー満杯時の送信元ロールバック（所有権保持） | `INT-81` | ✅ PASS |
+| `TargetFaultDropHandler` | `ipc_router.md` | 宛先サービス死亡・フォールト時の `RECLAIMED_BY_DROP` 安全回収 | `INT-81` | ✅ PASS |
+| `RAM_Bypass_Bit31` | `runtime_vmmio.md` | Bit 31 == 0 アドレスに対するページテーブル不使用 $O(1)$ 高速バイパス | `INT-90` | ✅ PASS |
+| `DirectMappedTLB16` | `runtime_vmmio.md` | 20-bit VPN の 4-bit Folding XOR Hash による Direct-Mapped TLB キャッシュ | `INT-92` | ✅ PASS |
+| `OwnerMismatchTrap` | `runtime_vmmio.md` | タスク間共有メモリ（FC=0xE）の所有権不一致時 `TRAP_OWNER_MISMATCH` 遮断 | `INT-93` | ✅ PASS |
+| `ActiveDataSegments` | `runtime_loader.md` | モジュールロード時のアクティブデータセグメント自動リニアメモリ展開 | `INT-01` | ✅ PASS |
+| `CPS_4Args` | `runtime_interpreter.md` | `ip, stack_bot, env, local_base` 4引数による CPS 関数ポインタディスパッチ | `INT-01`〜`INT-105` | ✅ PASS |
+| `SignZeroExtension` | `runtime_interpreter.md` | 8/16/32-bit メモリ読み書きにおける符号付き・符号なしゼロ/符号拡張の完全性 | `INT-70` | ✅ PASS |
+| `ControlFrameCleanup` | `runtime_interpreter.md` | `br_table` / `block` / `loop` / `if` 偽分岐時のスタックフレーム不変性・リーク防止 | `INT-20`, `INT-22` | ✅ PASS |
+| `RSPMinimalSet` | `debug_manager.md`, `gdb_rsp_protocol.md` | GDB RSP 最小コマンドセット（`?`, `g/G`, `m/M`, `Z0/z0`, `s`, `c`）の実ソケット対話 | `INT-60`〜`INT-64` | ✅ PASS |
+| `Debugger_Jit_Flush` | `debug_manager.md`, `jit_runtime.md` | デバッガからのメモリ書き込み（`M` パケット）時の JIT キャッシュ全バンク即時無効化 | `INT-62`, `INT-72` | ✅ PASS |
+| `HAL_PeripheralDrivers` | `platform_hal.md` | GPIO（入出力・エッジIRQ）、I2C（LM75）、SPI（EEPROM）、Timer | `INT-100`〜`INT-102` | ✅ PASS |
+| `WASI_InMemVFS` | `interface_wit.md`, `system_syscall.md` | WASI In-Memory VFS（`fd_seek`, `fd_read`, `fd_write`, `random_get`, `clock_time_get`） | `INT-103`〜`INT-105` | ✅ PASS |
+| `CopyAndPatch_JIT` | `jit_compiler.md` | ステンシル展開による高速 Copy-and-Patch JIT コード生成 | `INT-30`, `INT-40` | ✅ PASS |
+| `TraceBoundaryInvariant` | `jit_compiler.md` | トレース境界でのスタック自己完結性、メモリ同期、およびフォールバック | `INT-31`, `INT-41` | ✅ PASS |
+| `ThreeBankCacheEviction` | `jit_runtime.md` | Active / Warm / Oldest 3面バンク代謝と Oldest ヒット時の Active 昇格 | `INT-31`, `INT-41` | ✅ PASS |
+
 ---
 
 ## 2. 結合テストシナリオ一覧

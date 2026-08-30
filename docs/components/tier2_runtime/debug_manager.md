@@ -116,7 +116,6 @@ sequenceDiagram
 ### 5.1 公開API
 外部から利用可能なオブジェクト指向APIを定義する。
 
-
 #### デバッガ接続 (`attach`)
 
 <!-- traceability: {Debug_Standard_Env} -->

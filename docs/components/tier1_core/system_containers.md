@@ -193,7 +193,6 @@ import bisect
 
 ALLOWED_BITS = (1, 2, 4)
 
-
 class BitView:
     """bit_view<Bits>: a dense, index-addressed table of sub-byte states.
 
@@ -206,7 +205,7 @@ class BitView:
         assert bits in ALLOWED_BITS, "Bits must be 1, 2 or 4"
         self.storage = storage
         self.bits = bits
-        self.origin = origin          # bit offset of logical element 0
+        self.origin = origin  # bit offset of logical element 0
         self.count = count
 
     def size(self):
@@ -233,9 +232,9 @@ class BitView:
         """Narrow by index. The bit origin absorbs the remainder, so `first`
         does not have to land on a byte boundary."""
         assert 0 <= first <= last <= self.count, "a view may only ever shrink"
-        return BitView(self.storage, self.bits,
-                       self.origin + first * self.bits, last - first)
-
+        return BitView(
+            self.storage, self.bits, self.origin + first * self.bits, last - first
+        )
 
 class _SortedWindow:
     """Shared narrowing behaviour of the two sparse views."""
@@ -252,13 +251,14 @@ class _SortedWindow:
         return self.size() == 0
 
     def _bounds(self, lo, hi):
-        return (bisect.bisect_left(self.keys, lo, self.first, self.last),
-                bisect.bisect_right(self.keys, hi, self.first, self.last))
+        return (
+            bisect.bisect_left(self.keys, lo, self.first, self.last),
+            bisect.bisect_right(self.keys, hi, self.first, self.last),
+        )
 
     def _locate(self, key):
         i = bisect.bisect_left(self.keys, key, self.first, self.last)
         return i if i < self.last and self.keys[i] == key else None
-
 
 class FlatMapView(_SortedWindow):
     """flat_map_view<Key, Value>: sorted keys, narrow-then-search, returns a value."""
@@ -279,7 +279,6 @@ class FlatMapView(_SortedWindow):
         i = self._locate(key)
         return None if i is None else self.values[i]
 
-
 class FlatSetView(_SortedWindow):
     """flat_set_view<Key>: sorted keys only, answers membership.
 
@@ -297,11 +296,14 @@ class FlatSetView(_SortedWindow):
     def contains(self, key):
         return self._locate(key) is not None
 
-
 def bswap32(v: int) -> int:
     """32-bit byte-order reversal for maximizing Radix table distribution on UnifiedPC."""
-    return (((v & 0xFF) << 24) | ((v & 0xFF00) << 8) | ((v >> 8) & 0xFF00) | ((v >> 24) & 0xFF))
-
+    return (
+        ((v & 0xFF) << 24)
+        | ((v & 0xFF00) << 8)
+        | ((v >> 8) & 0xFF00)
+        | ((v >> 24) & 0xFF)
+    )
 
 class RadixBinaryTreeView:
     """fireball::radix_binary_tree_view<Key, Value, RadixShift, KeyProjection>:
@@ -310,9 +312,14 @@ class RadixBinaryTreeView:
     Bucket bounds are: first = radix_table[prefix], last = radix_table[prefix + 1].
     """
 
-    def __init__(self, keys: Sequence[int], values: Sequence[Any],
-                 radix_table: Sequence[int], radix_shift: int,
-                 key_transform: Any = None):
+    def __init__(
+        self,
+        keys: Sequence[int],
+        values: Sequence[Any],
+        radix_table: Sequence[int],
+        radix_shift: int,
+        key_transform: Any = None,
+    ):
         self.map_view = FlatMapView(keys, values)
         self.radix_table = radix_table  # pure scalar offsets array [0, 3, 6, ...]
         self.radix_shift = radix_shift
@@ -329,10 +336,16 @@ class RadixBinaryTreeView:
             return None
         return self.map_view.slice(first, last).find(key)
 
-
 # --- 本プロジェクトでの用途 ---
 
-def lookup_jit_entry(view: FlatMapView | RadixBinaryTreeView, card_table: BitView, entry_group_bounds: dict[int, tuple[int, int]], pc: int, card_shift: int, group_shift: int):
+def lookup_jit_entry(
+    view: FlatMapView | RadixBinaryTreeView,
+    card_table: BitView,
+    entry_group_bounds: dict[int, tuple[int, int]],
+    pc: int,
+    card_shift: int,
+    group_shift: int,
+):
     """JIT entry lookup:
     1. O(1) card marking pre-filter: verify card state == 3 (COMPILED).
     2. O(1) Radix Table prefix lookup: slice to group bounds [first, last].
@@ -349,7 +362,6 @@ def lookup_jit_entry(view: FlatMapView | RadixBinaryTreeView, card_table: BitVie
         return None
     return view.slice(*bounds).find(pc)
 
-
 def card_marking_table(storage: bytearray, card_count: int) -> BitView:
     """The 2-bit per-card state table: 4 cards per byte instead of one.
 
@@ -357,7 +369,6 @@ def card_marking_table(storage: bytearray, card_count: int) -> BitView:
     by the index, never searched for.
     """
     return BitView(storage, bits=2, origin=0, count=card_count)
-
 
 def breakpoint_set(sorted_pcs) -> FlatSetView:
     """Debugger breakpoints: the interpreter asks 'is this PC a breakpoint?',

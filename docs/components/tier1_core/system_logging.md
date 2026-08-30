@@ -126,7 +126,6 @@ sequenceDiagram
 ### 5.1 公開API
 外部から利用可能なオブジェクト指向APIを定義する。
 
-
 #### ログイベント記録 (`log_event`)
 
 <!-- traceability: {BufferedLogging} {META_ZeroOverhead} -->

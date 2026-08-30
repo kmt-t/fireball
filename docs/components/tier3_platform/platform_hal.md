@@ -98,7 +98,6 @@ sequenceDiagram
 ### 5.1 公開API
 外部から利用可能なオブジェクト指向APIを定義する。
 
-
 #### データの読み出し
 
 <!-- traceability: {HAL_Interface} -->

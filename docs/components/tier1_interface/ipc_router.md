@@ -121,21 +121,31 @@ class OwnershipState:
     RECEIVER_OWNS = "RECEIVER_OWNS"
     RECLAIMED_BY_DROP = "RECLAIMED_BY_DROP"
 
-
 class IPCMessage:
     def __init__(self, resource_id: str, payload: dict):
         self.resource_id = resource_id
         self.payload = payload
         self.ownership = OwnershipState.SENDER_OWNS
 
-
 class IPCRouter:
     def __init__(self):
         # Stage 1: Static Flat Map registry (URI -> Service Descriptor)
         self.registry = {
-            "fireball://core/coos/0": {"role": "CORE_SERVICE", "channel_id": "ch_coos", "max_queue": 2},
-            "fireball://hal/gpio/0": {"role": "PLATFORM_HAL", "channel_id": "ch_gpio", "max_queue": 2},
-            "fireball://dbg/manager/0": {"role": "DEBUGGER", "channel_id": "ch_dbg", "max_queue": 1},
+            "fireball://core/coos/0": {
+                "role": "CORE_SERVICE",
+                "channel_id": "ch_coos",
+                "max_queue": 2,
+            },
+            "fireball://hal/gpio/0": {
+                "role": "PLATFORM_HAL",
+                "channel_id": "ch_gpio",
+                "max_queue": 2,
+            },
+            "fireball://dbg/manager/0": {
+                "role": "DEBUGGER",
+                "channel_id": "ch_dbg",
+                "max_queue": 1,
+            },
         }
 
         # Stage 2: Role-based Access Control Matrix (sender_role, target_role) -> bool
@@ -150,7 +160,9 @@ class IPCRouter:
 
         self.queues = {"ch_coos": [], "ch_gpio": [], "ch_dbg": []}
 
-    def route_message(self, sender_role: str, uri: str, message: IPCMessage) -> tuple[str, str]:
+    def route_message(
+        self, sender_role: str, uri: str, message: IPCMessage
+    ) -> tuple[str, str]:
         """3-stage IPC routing pipeline with Zero-Copy Handoff & Rollback."""
         assert message.ownership == OwnershipState.SENDER_OWNS
 
@@ -165,7 +177,10 @@ class IPCRouter:
 
         # Stage 2: Access Control
         if not self.role_matrix.get((sender_role, target_role), False):
-            return ("ERR_PERMISSION_DENIED", f"Forbidden: {sender_role} -> {target_role}")
+            return (
+                "ERR_PERMISSION_DENIED",
+                f"Forbidden: {sender_role} -> {target_role}",
+            )
 
         # Stage 3: Zero-Copy Handoff
         target_queue = self.queues[channel_id]
@@ -204,8 +219,6 @@ class IPCRouter:
 ```
 
 ※ 所有権移譲プロトコルの二重所有不在および有限解決性は、`formal/csp_handoff_model.py` により変異検査付き形式モデルとして検証される。トポロジレベルのデッドロック不在は、非循環チャネル依存規律（クライアント・サーバ規律）に基づき `spec-integrator` Topology Gate (`TopologyVerifier`) により静的閉路検出検証される。
-
-
 
 ### 4.1.1 名前解決パイプラインとアクセス制御フロー
 <!-- traceability: {LowLatencyLookup} {META_AccessDictionary} {META_FlatMapIndexed} {RoleBasedAccessControl} -->
@@ -570,8 +583,6 @@ interrupt_flags: bitmask
 - `len(channel_queue) ≤ QUEUE_SIZE` (キュー有界性)
 
 ※ CSP 所有権移譲プロトコルの二重所有不在および有限解決性は `formal/csp_handoff_model.py` により変異検査付きモデル検査を実施する。
-
-
 
 ### 6.4 既知の制限
 

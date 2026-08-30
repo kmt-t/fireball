@@ -60,8 +60,8 @@ def build_model(*, guards: bool = True) -> Kripke:
     S0 = {"s_interp"}
     R = [
         # 通常実行サイクル
-        ("s_interp", "s_exec_fresh"),      # lookup ヒット ➔ 現行世代トレースへ
-        ("s_exec_fresh", "s_interp"),      # トレース脱出
+        ("s_interp", "s_exec_fresh"),  # lookup ヒット ➔ 現行世代トレースへ
+        ("s_exec_fresh", "s_interp"),  # トレース脱出
         # 3面リングローテーション（Oldest の Purge と回収は不可分に行う）
         ("s_interp", "s_rotate"),
         ("s_rotate", "s_reclaimed"),
@@ -103,7 +103,12 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_dbg_write": {"dirty", "debug_pending", "gen_consistent"},
         "s_safepoint": {"dirty", "safepoint", "gen_consistent"},
         "s_flushing": {"dirty", "flushing", "gen_consistent"},
-        "s_flushed": {"flushed", "cache_empty", "gen_consistent", "all_banks_accounted"},
+        "s_flushed": {
+            "flushed",
+            "cache_empty",
+            "gen_consistent",
+            "all_banks_accounted",
+        },
         # --- 違反状態のラベル ---
         "s_exec_stale": {"executing", "stale_code", "dirty"},
         "s_gen_regressed": {"gen_regressed"},
@@ -164,6 +169,7 @@ def properties():
 
 if __name__ == "__main__":
     from pyModelChecking.CTL import modelcheck
+
     km = build_model(guards=True)
     for prop in properties():
         res = modelcheck(km, prop["formula"])

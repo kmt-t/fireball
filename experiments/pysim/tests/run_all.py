@@ -12,12 +12,18 @@ TEST_DIR = Path(__file__).resolve().parent
 PYSIM_ROOT = TEST_DIR.parent
 REPO_ROOT = PYSIM_ROOT.parent.parent
 
-for p in [PYSIM_ROOT, PYSIM_ROOT / 'core', PYSIM_ROOT / 'runtime', PYSIM_ROOT / 'jit', PYSIM_ROOT / 'platforms',
-          REPO_ROOT / 'docs' / 'components' / 'tier1_core' / 'concepts',
-          REPO_ROOT / 'docs' / 'components' / 'tier1_interface' / 'concepts',
-          REPO_ROOT / 'docs' / 'components' / 'tier2_runtime' / 'concepts',
-          REPO_ROOT / 'docs' / 'components' / 'tier3_jit' / 'concepts',
-          REPO_ROOT / 'docs' / 'components' / 'tier3_platform' / 'concepts']:
+for p in [
+    PYSIM_ROOT,
+    PYSIM_ROOT / "core",
+    PYSIM_ROOT / "runtime",
+    PYSIM_ROOT / "jit",
+    PYSIM_ROOT / "platforms",
+    REPO_ROOT / "docs" / "components" / "tier1_core" / "concepts",
+    REPO_ROOT / "docs" / "components" / "tier1_interface" / "concepts",
+    REPO_ROOT / "docs" / "components" / "tier2_runtime" / "concepts",
+    REPO_ROOT / "docs" / "components" / "tier3_jit" / "concepts",
+    REPO_ROOT / "docs" / "components" / "tier3_platform" / "concepts",
+]:
     sp = str(p)
     if sp not in sys.path:
         sys.path.insert(0, sp)
@@ -37,7 +43,9 @@ TEST_FILES = [
 
 def run_all_tests():
     print("=" * 80)
-    print("      Fireball pysim Unit Test Suite                                            ")
+    print(
+        "      Fireball pysim Unit Test Suite                                            "
+    )
     print("=" * 80)
 
     total_start = time.perf_counter()
@@ -47,7 +55,12 @@ def run_all_tests():
     for name, script_path in TEST_FILES:
         print(f"\n>>> Running {name} ({script_path.name})...")
         t0 = time.perf_counter()
-        res = subprocess.run([sys.executable, str(script_path)], capture_output=True, text=True, cwd=str(REPO_ROOT))
+        res = subprocess.run(
+            [sys.executable, str(script_path)],
+            capture_output=True,
+            text=True,
+            cwd=str(REPO_ROOT),
+        )
         t1 = time.perf_counter()
         elapsed_ms = (t1 - t0) * 1000
 
@@ -63,7 +76,9 @@ def run_all_tests():
 
     total_elapsed_ms = (time.perf_counter() - total_start) * 1000
     print("\n" + "=" * 80)
-    print(f" Unit Test Summary: {passed}/{len(TEST_FILES)} Passed, {failed} Failed ({total_elapsed_ms:.2f} ms total)")
+    print(
+        f" Unit Test Summary: {passed}/{len(TEST_FILES)} Passed, {failed} Failed ({total_elapsed_ms:.2f} ms total)"
+    )
     print("=" * 80)
 
     if failed > 0:

@@ -29,8 +29,16 @@ def build_model(*, guards: bool = True) -> Kripke:
     """
     S = [
         "s_guest_running",
-        "s_a_trap", "s_a_args", "s_a_dispatch", "s_a_retset", "s_a_resumed",
-        "s_b_trap", "s_b_args", "s_b_dispatch", "s_b_retset", "s_b_resumed",
+        "s_a_trap",
+        "s_a_args",
+        "s_a_dispatch",
+        "s_a_retset",
+        "s_a_resumed",
+        "s_b_trap",
+        "s_b_args",
+        "s_b_dispatch",
+        "s_b_retset",
+        "s_b_resumed",
         "s_premature_resume",
         "s_stuck_trap",
     ]
@@ -56,18 +64,27 @@ def build_model(*, guards: bool = True) -> Kripke:
     if not guards:
         # ガード無効時（変異検査）:
         # 1. 「RET 設定 → 復帰」の同期規律を外すと、ハンドラ完了前にゲストが再開してしまう
-        R = R + [("s_a_dispatch", "s_premature_resume"), ("s_b_dispatch", "s_premature_resume")]
+        R = R + [
+            ("s_a_dispatch", "s_premature_resume"),
+            ("s_b_dispatch", "s_premature_resume"),
+        ]
         # 2. ホストハンドラの完了保証を外すと、トラップが永久に完了しない経路が生じる
         R = R + [("s_a_dispatch", "s_stuck_trap"), ("s_b_dispatch", "s_stuck_trap")]
 
     L = {
         "s_guest_running": {"running"},
-        "s_a_trap": {"in_trap"}, "s_a_args": {"in_trap"},
-        "s_a_dispatch": {"in_trap"}, "s_a_retset": {"in_trap"}, "s_a_resumed": {"resumed"},
-        "s_b_trap": {"in_trap"}, "s_b_args": {"in_trap"},
-        "s_b_dispatch": {"in_trap"}, "s_b_retset": {"in_trap"}, "s_b_resumed": {"resumed"},
-        "s_premature_resume": {"premature"},   # 違反状態
-        "s_stuck_trap": {"stuck"},              # 違反状態
+        "s_a_trap": {"in_trap"},
+        "s_a_args": {"in_trap"},
+        "s_a_dispatch": {"in_trap"},
+        "s_a_retset": {"in_trap"},
+        "s_a_resumed": {"resumed"},
+        "s_b_trap": {"in_trap"},
+        "s_b_args": {"in_trap"},
+        "s_b_dispatch": {"in_trap"},
+        "s_b_retset": {"in_trap"},
+        "s_b_resumed": {"resumed"},
+        "s_premature_resume": {"premature"},  # 違反状態
+        "s_stuck_trap": {"stuck"},  # 違反状態
     }
     return Kripke(S=S, S0=S0, R=R, L=L)
 
@@ -99,6 +116,7 @@ def properties():
 
 if __name__ == "__main__":
     from pyModelChecking.CTL import modelcheck
+
     km = build_model(guards=True)
     for prop in properties():
         res = modelcheck(km, prop["formula"])

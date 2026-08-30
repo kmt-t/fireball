@@ -27,7 +27,7 @@ class BitView:
         assert bits in ALLOWED_BITS, "Bits must be 1, 2 or 4"
         self.storage = storage
         self.bits = bits
-        self.origin = origin          # bit offset of logical element 0
+        self.origin = origin  # bit offset of logical element 0
         self.count = count
 
     def size(self):
@@ -54,8 +54,9 @@ class BitView:
         """Narrow by index. The bit origin absorbs the remainder, so `first`
         does not have to land on a byte boundary."""
         assert 0 <= first <= last <= self.count, "a view may only ever shrink"
-        return BitView(self.storage, self.bits,
-                       self.origin + first * self.bits, last - first)
+        return BitView(
+            self.storage, self.bits, self.origin + first * self.bits, last - first
+        )
 
 
 class _SortedWindow:
@@ -73,8 +74,10 @@ class _SortedWindow:
         return self.size() == 0
 
     def _bounds(self, lo, hi):
-        return (bisect.bisect_left(self.keys, lo, self.first, self.last),
-                bisect.bisect_right(self.keys, hi, self.first, self.last))
+        return (
+            bisect.bisect_left(self.keys, lo, self.first, self.last),
+            bisect.bisect_right(self.keys, hi, self.first, self.last),
+        )
 
     def _locate(self, key):
         i = bisect.bisect_left(self.keys, key, self.first, self.last)
@@ -126,8 +129,13 @@ class RadixBinaryTreeView:
     Bucket bounds are: first = radix_table[prefix], last = radix_table[prefix + 1].
     """
 
-    def __init__(self, keys: Sequence[int], values: Sequence[Any],
-                 radix_table: Sequence[int], radix_shift: int):
+    def __init__(
+        self,
+        keys: Sequence[int],
+        values: Sequence[Any],
+        radix_table: Sequence[int],
+        radix_shift: int,
+    ):
         self.map_view = FlatMapView(keys, values)
         self.radix_table = radix_table  # pure scalar offsets array [0, 3, 6, ...]
         self.radix_shift = radix_shift
@@ -143,7 +151,14 @@ class RadixBinaryTreeView:
         return self.map_view.slice(first, last).find(key)
 
 
-def lookup_jit_entry(view: FlatMapView | RadixBinaryTreeView, card_table: BitView, entry_group_bounds: dict[int, tuple[int, int]], pc: int, card_shift: int, group_shift: int):
+def lookup_jit_entry(
+    view: FlatMapView | RadixBinaryTreeView,
+    card_table: BitView,
+    entry_group_bounds: dict[int, tuple[int, int]],
+    pc: int,
+    card_shift: int,
+    group_shift: int,
+):
     """JIT entry lookup:
     1. O(1) card marking pre-filter: verify card state == 3 (COMPILED).
     2. O(1) Radix Table prefix lookup: slice to group bounds [first, last].
@@ -180,10 +195,11 @@ def breakpoint_set(sorted_pcs) -> FlatSetView:
 # Simulation / Verification Tests
 # ==============================================================================
 
+
 def test_two_bit_card_marking_packs_four_cards_per_byte():
     """A 2-bit card state table must cost 2 bits per card, not 8. This is the
     whole reason bit_view exists: at RAM 32KB a byte-per-card table is waste."""
-    store = bytearray(4)                      # 4 bytes -> 16 cards at 2 bits each
+    store = bytearray(4)  # 4 bytes -> 16 cards at 2 bits each
     cards = card_marking_table(store, card_count=16)
 
     assert cards.size() == 16
@@ -200,7 +216,9 @@ def test_packed_write_does_not_disturb_neighbours():
         cards.put(i, i % 4)
 
     cards.put(5, 3)
-    assert cards.at(4) == 0 and cards.at(5) == 3 and cards.at(6) == 2,         "writing one element corrupted an adjacent one in the same byte"
+    assert cards.at(4) == 0 and cards.at(5) == 3 and cards.at(6) == 2, (
+        "writing one element corrupted an adjacent one in the same byte"
+    )
 
 
 def test_slice_does_not_require_byte_alignment():
@@ -210,7 +228,7 @@ def test_slice_does_not_require_byte_alignment():
     for i in range(16):
         cards.put(i, i % 4)
 
-    window = cards.slice(5, 9)                # starts mid-byte
+    window = cards.slice(5, 9)  # starts mid-byte
     assert window.size() == 4
     assert [window.at(i) for i in range(4)] == [1, 2, 3, 0]
     assert window.slice(1, 3).at(0) == 2, "a nested slice lost its bit origin"
@@ -273,11 +291,29 @@ def test_card_marking_prefilter_and_jit_entry_group_narrowing_lookup():
     # pc=60 -> card_idx = 60 >> 3 = 7
     card_table.put(3, 3)  # card 3 (covers pc 24-31) -> 3: COMPILED
     card_table.put(7, 3)  # card 7 (covers pc 56-63) -> 3: COMPILED
-    entry_group_bounds = {0: (0, 3), 1: (3, 6)}  # group 0: entries 0..2, group 1: entries 3..5
+    entry_group_bounds = {
+        0: (0, 3),
+        1: (3, 6),
+    }  # group 0: entries 0..2, group 1: entries 3..5
 
-    assert lookup_jit_entry(view, card_table, entry_group_bounds, pc=30, card_shift=3, group_shift=5) == 3
-    assert lookup_jit_entry(view, card_table, entry_group_bounds, pc=60, card_shift=3, group_shift=5) == 6
-    assert lookup_jit_entry(view, card_table, entry_group_bounds, pc=99, card_shift=3, group_shift=5) is None
+    assert (
+        lookup_jit_entry(
+            view, card_table, entry_group_bounds, pc=30, card_shift=3, group_shift=5
+        )
+        == 3
+    )
+    assert (
+        lookup_jit_entry(
+            view, card_table, entry_group_bounds, pc=60, card_shift=3, group_shift=5
+        )
+        == 6
+    )
+    assert (
+        lookup_jit_entry(
+            view, card_table, entry_group_bounds, pc=99, card_shift=3, group_shift=5
+        )
+        is None
+    )
 
 
 def test_bits_must_divide_a_byte():

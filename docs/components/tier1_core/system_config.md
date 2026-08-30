@@ -173,4 +173,3 @@ assert FB_CONF_MAX_TASKS <= 254, "FB_CONF_MAX_TASKS must be <= 254"
 ### 5.2 安全性制約と方策
 <!-- traceability: {META_ConfigurableSystem} -->
 - **方策**: `{META_ConfigurableSystem}` システム構成定数はすべて `constexpr` / `const` として ROM / Flash（`.rodata`）に静的配置され、実行時の不正な書き換えから保護される。
-

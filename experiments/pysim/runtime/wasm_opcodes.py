@@ -15,9 +15,22 @@ silently disagree about what a byte means.
 import sys
 from pathlib import Path
 
-_PYSIM_DIR = Path(__file__).resolve().parents[1] if any(d in str(Path(__file__)) for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")) else Path(__file__).resolve().parent
+_PYSIM_DIR = (
+    Path(__file__).resolve().parents[1]
+    if any(
+        d in str(Path(__file__))
+        for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")
+    )
+    else Path(__file__).resolve().parent
+)
 
-for _p in [_PYSIM_DIR, _PYSIM_DIR / 'core', _PYSIM_DIR / 'runtime', _PYSIM_DIR / 'jit', _PYSIM_DIR / 'platforms']:
+for _p in [
+    _PYSIM_DIR,
+    _PYSIM_DIR / "core",
+    _PYSIM_DIR / "runtime",
+    _PYSIM_DIR / "jit",
+    _PYSIM_DIR / "platforms",
+]:
     _sp = str(_p)
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
@@ -25,7 +38,6 @@ for _p in [_PYSIM_DIR, _PYSIM_DIR / 'core', _PYSIM_DIR / 'runtime', _PYSIM_DIR /
 import sys
 
 from pathlib import Path
-
 
 
 UNREACHABLE = 0x00
@@ -59,7 +71,6 @@ DROP = 0x1A
 SELECT = 0x1B
 
 
-
 LOCAL_GET = 0x20
 
 LOCAL_SET = 0x21
@@ -69,7 +80,6 @@ LOCAL_TEE = 0x22
 GLOBAL_GET = 0x23
 
 GLOBAL_SET = 0x24
-
 
 
 I32_LOAD = 0x28
@@ -93,9 +103,7 @@ MEMORY_SIZE = 0x3F
 MEMORY_GROW = 0x40
 
 
-
 I32_CONST = 0x41
-
 
 
 I32_EQZ = 0x45
@@ -121,13 +129,11 @@ I32_GE_S = 0x4E
 I32_GE_U = 0x4F
 
 
-
 I32_CLZ = 0x67
 
 I32_CTZ = 0x68
 
 I32_POPCNT = 0x69
-
 
 
 I32_ADD = 0x6A
@@ -159,7 +165,6 @@ I32_SHR_U = 0x76
 I32_ROTL = 0x77
 
 I32_ROTR = 0x78
-
 
 
 # blocktype byte used by block/loop/if when there is no result value (the

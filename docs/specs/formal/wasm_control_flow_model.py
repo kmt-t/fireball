@@ -26,12 +26,12 @@ def build_model(*, guards: bool = True) -> Kripke:
     S = ["s_depth0", "s_depth1", "s_depth2", "s_underflow", "s_invalid_branch"]
     S0 = {"s_depth0"}
     R = [
-        ("s_depth0", "s_depth1"),      # block/loop/if: プッシュ
-        ("s_depth1", "s_depth2"),      # ネストしたblock/loop/if: プッシュ
-        ("s_depth1", "s_depth0"),      # end: ポップ
-        ("s_depth2", "s_depth1"),      # end: ポップ
-        ("s_depth1", "s_depth1"),      # br/br_if: 現在の深度内への有効な分岐
-        ("s_depth2", "s_depth2"),      # br/br_if: 現在の深度内への有効な分岐
+        ("s_depth0", "s_depth1"),  # block/loop/if: プッシュ
+        ("s_depth1", "s_depth2"),  # ネストしたblock/loop/if: プッシュ
+        ("s_depth1", "s_depth0"),  # end: ポップ
+        ("s_depth2", "s_depth1"),  # end: ポップ
+        ("s_depth1", "s_depth1"),  # br/br_if: 現在の深度内への有効な分岐
+        ("s_depth2", "s_depth2"),  # br/br_if: 現在の深度内への有効な分岐
         # 違反状態の自己ループ（Kripke 構造は全域的でなければならない）
         ("s_underflow", "s_underflow"),
         ("s_invalid_branch", "s_invalid_branch"),
@@ -48,7 +48,7 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_depth0": {"depth0"},
         "s_depth1": {"depth1"},
         "s_depth2": {"depth2"},
-        "s_underflow": {"underflow"},          # 違反状態
+        "s_underflow": {"underflow"},  # 違反状態
         "s_invalid_branch": {"invalid_branch"},  # 違反状態
     }
     return Kripke(S=S, S0=S0, R=R, L=L)
@@ -79,6 +79,7 @@ def properties():
 
 if __name__ == "__main__":
     from pyModelChecking.CTL import modelcheck
+
     km = build_model(guards=True)
     for prop in properties():
         res = modelcheck(km, prop["formula"])

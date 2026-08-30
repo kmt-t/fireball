@@ -102,11 +102,11 @@ vMMIO
 class VmmioAddress:
     def __init__(self, raw: int):
         self.raw = raw & 0xFFFFFFFF
-        
+
     def is_linear(self) -> bool:
         # 最上位ビット(Bit 31)が0ならゲストRAM
         return (self.raw & 0x80000000) == 0
-        
+
     def fc(self) -> int:
         # Function Code: [31:28]
         return (self.raw >> 28) & 0xF
@@ -114,11 +114,11 @@ class VmmioAddress:
     def syscall_metadata(self) -> int:
         # Syscall Metadata / Syscall ID: [27:16]
         return (self.raw >> 16) & 0xFFF
-        
+
     def offset(self) -> int:
         # Offset: [11:0]
         return self.raw & 0xFFF
-        
+
     def vpn(self) -> int:
         # 20-bit Virtual Page Number (VPN) for TLB and FlatMap Key
         return self.raw >> 12
@@ -127,17 +127,17 @@ def lookup_tlb(addr: VmmioAddress) -> int:
     vpn = addr.vpn()
     # 20-bit VPN の Folding XOR Hash（全ビットを4ビット幅に拡散）
     tlb_idx = (vpn ^ (vpn >> 4) ^ (vpn >> 8) ^ (vpn >> 12) ^ (vpn >> 16)) & 15
-    
-    if vmmio_tlb_cache[tlb_idx]['vpn'] == vpn:
-        return vmmio_tlb_cache[tlb_idx]['pte']  # TLB Hit!
-        
+
+    if vmmio_tlb_cache[tlb_idx]["vpn"] == vpn:
+        return vmmio_tlb_cache[tlb_idx]["pte"]  # TLB Hit!
+
     # TLB Miss: FlatMap ルックアップを実行
     pte = vmmio_ptes.get(vpn)
     if pte is None:
         raise Exception("UNREGISTERED_PAGE")
-        
+
     # TLB をリフィル
-    vmmio_tlb_cache[tlb_idx] = {'vpn': vpn, 'pte': pte}
+    vmmio_tlb_cache[tlb_idx] = {"vpn": vpn, "pte": pte}
     return pte
 
 def access_vmmio(addr: VmmioAddress, is_write: bool):
@@ -146,7 +146,7 @@ def access_vmmio(addr: VmmioAddress, is_write: bool):
         # Tier 1 ゲストRAMアクセス（vMMIOバイパス）
         access_guest_ram(addr.raw, is_write)
         return
-        
+
     # 2. TLB / ページテーブルルックアップ
     pte = lookup_tlb(addr)
 
@@ -161,7 +161,7 @@ def access_vmmio(addr: VmmioAddress, is_write: bool):
         raise Exception("ACCESS_VIOLATION_WRITE")
     if not is_write and not read_allowed:
         raise Exception("ACCESS_VIOLATION_READ")
-    
+
     # 4. タイプ別アクセス実行
     is_passthrough = (pte >> 8) & 1
     if is_passthrough == 0:
@@ -174,7 +174,7 @@ def access_vmmio(addr: VmmioAddress, is_write: bool):
             owner_id = pte & 0xFF
             if owner_id != current_task_id:
                 raise Exception("ACCESS_VIOLATION_NOT_OWNED")
-                
+
         phys_page = (pte >> 12) & 0xFFFFF
         phys_addr = (phys_page << 12) | addr.offset()
         access_memory(phys_addr, is_write)
@@ -308,7 +308,6 @@ FlatMap ページテーブル、ダイレクトマップ
    - `std::memcpy` または HAL経由のDMAを用いて一括転送を実行。
 4. **完了**: 転送完了後、必要に応じてゲストに仮想割り込み（`IRQ_VDMA_DONE`）を通知する。
 
-
 ### 4.3 仮想デバイスマップ
 <!-- traceability: {VDMA} -->
 各領域は 4KB 単位で割り当てられる。`vMMIO_BASE = 0x8000_0000` 以上の領域を対象とする。
@@ -405,7 +404,6 @@ Tier 3 アクセス（FC=14/15）において毎回 FlatMap の二分探索を�
 
 ### 5.1 公開API
 外部から利用可能なオブジェクト指向APIを定義する。
-
 
 #### フック登録 (`register-hook`)
 

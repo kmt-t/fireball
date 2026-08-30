@@ -52,7 +52,9 @@ class LogRingBuffer:
     """
 
     def __init__(self, capacity: int = 8):
-        assert (capacity & (capacity - 1)) == 0 and capacity > 0, "Capacity must be power of 2"
+        assert (capacity & (capacity - 1)) == 0 and capacity > 0, (
+            "Capacity must be power of 2"
+        )
         self.capacity = capacity
         self.mask = capacity - 1
         self.buffer: list[LogEntry | None] = [None] * capacity
@@ -172,7 +174,9 @@ class Logger:
         status = self.log_event(level, dict_offset, arg0, arg1, arg2, arg3)
         return {"status": "SUCCESS", "detail": status}
 
-    def flush(self, max_batch: int = 32, interrupt_pending: Callable[[], bool] | None = None) -> int:
+    def flush(
+        self, max_batch: int = 32, interrupt_pending: Callable[[], bool] | None = None
+    ) -> int:
         """Flushes buffered logs to HAL transport during COOS idle_hook."""
         flushed_count = 0
         batch: list[str] = []
@@ -202,21 +206,26 @@ class Logger:
 # Unit & Integration Tests
 # ==============================================================================
 
+
 def test_logger_dictionary_formatting():
-    dictionary = LogDictionary({
-        0x01: "System booted in %d ms (RAM free: %d bytes)",
-        0x02: "Task %d created with priority %d",
-        0x03: "IPC channel '%d' transfer error code: 0x%08X",
-    })
+    dictionary = LogDictionary(
+        {
+            0x01: "System booted in %d ms (RAM free: %d bytes)",
+            0x02: "Task %d created with priority %d",
+            0x03: "IPC channel '%d' transfer error code: 0x%08X",
+        }
+    )
     msg = dictionary.format(0x01, 42, 21504, 0, 0)
     assert msg == "System booted in 42 ms (RAM free: 21504 bytes)"
 
 
 def test_logger_buffering_and_idle_flush():
-    dictionary = LogDictionary({
-        0x10: "Task %d yield count: %d",
-        0x20: "vMMIO read access to addr: 0x%08X (val: 0x%08X)",
-    })
+    dictionary = LogDictionary(
+        {
+            0x10: "Task %d yield count: %d",
+            0x20: "vMMIO read access to addr: 0x%08X (val: 0x%08X)",
+        }
+    )
     transport = MockHALTransport()
     logger = Logger(transport, dictionary, min_level=LogLevel.INFO, buffer_capacity=4)
 
@@ -228,13 +237,18 @@ def test_logger_buffering_and_idle_flush():
     assert flushed == 2
     assert len(transport.output_log) == 2
     assert "[INFO][tick:1] Task 1 yield count: 100" in transport.output_log[0]
-    assert "[WARN][tick:2] vMMIO read access to addr: 0x80000000 (val: 0x00001234)" in transport.output_log[1]
+    assert (
+        "[WARN][tick:2] vMMIO read access to addr: 0x80000000 (val: 0x00001234)"
+        in transport.output_log[1]
+    )
 
 
 def test_logger_overwrite_on_buffer_full():
-    dictionary = LogDictionary({
-        0x01: "Event #%d",
-    })
+    dictionary = LogDictionary(
+        {
+            0x01: "Event #%d",
+        }
+    )
     transport = MockHALTransport()
     logger = Logger(transport, dictionary, min_level=LogLevel.DEBUG, buffer_capacity=4)
 
@@ -274,12 +288,14 @@ def test_logger_ipc_message_handling():
     transport = MockHALTransport()
     logger = Logger(transport, dictionary, min_level=LogLevel.INFO, buffer_capacity=8)
 
-    resp = logger.handle_ipc_message({
-        "level": int(LogLevel.ERROR),
-        "dict_offset": 0x50,
-        "arg0": 1,
-        "arg1": 3,
-    })
+    resp = logger.handle_ipc_message(
+        {
+            "level": int(LogLevel.ERROR),
+            "dict_offset": 0x50,
+            "arg0": 1,
+            "arg1": 3,
+        }
+    )
     assert resp["status"] == "SUCCESS"
     assert resp["detail"] == "QUEUED"
 

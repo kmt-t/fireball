@@ -1,17 +1,28 @@
 import sys
 from pathlib import Path
 
-_PYSIM_DIR = Path(__file__).resolve().parents[1] if any(d in str(Path(__file__)) for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")) else Path(__file__).resolve().parent
+_PYSIM_DIR = (
+    Path(__file__).resolve().parents[1]
+    if any(
+        d in str(Path(__file__))
+        for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")
+    )
+    else Path(__file__).resolve().parent
+)
 
-for _p in [_PYSIM_DIR, _PYSIM_DIR / 'core', _PYSIM_DIR / 'runtime', _PYSIM_DIR / 'jit', _PYSIM_DIR / 'platforms']:
+for _p in [
+    _PYSIM_DIR,
+    _PYSIM_DIR / "core",
+    _PYSIM_DIR / "runtime",
+    _PYSIM_DIR / "jit",
+    _PYSIM_DIR / "platforms",
+]:
     _sp = str(_p)
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
 import sys
 from pathlib import Path
-
-
 
 
 """Integration Scenario 5: Multiple Functions, UnifiedPC & bswap32 Radix Tree.
@@ -106,7 +117,9 @@ def test_scenario_multimodule_unified_pc():
     sysv_t2 = System()
     wasi_t2 = WasiHostContext(sysv_t2)
     funcs_t2 = wasi_t2.build_interpreter_host_functions(module)
-    interp_t2 = Interpreter(module, memory=wasi_t2.guest_memory, host_functions=funcs_t2)
+    interp_t2 = Interpreter(
+        module, memory=wasi_t2.guest_memory, host_functions=funcs_t2
+    )
 
     res_t2 = interp_t2.call(fn_idx, [ITERS])
 
@@ -119,7 +132,12 @@ def test_scenario_multimodule_unified_pc():
     runtime_engine = RuntimeEngine(jit_compiler=trace_compiler, yield_threshold=16)
     runtime_engine.register_module_blocks(module)
 
-    interp_t3 = Interpreter(module, memory=wasi_t3.guest_memory, host_functions=funcs_t3, runtime_engine=runtime_engine)
+    interp_t3 = Interpreter(
+        module,
+        memory=wasi_t3.guest_memory,
+        host_functions=funcs_t3,
+        runtime_engine=runtime_engine,
+    )
 
     coro = interp_t3.call_coroutine(fn_idx, [ITERS], yield_every=32)
     try:
@@ -133,7 +151,9 @@ def test_scenario_multimodule_unified_pc():
     assert len(runtime_engine.cache.active.traces) > 0, "No JIT traces compiled"
 
     # 3. Verify that traces belong to multiple distinct functions via UnifiedPC
-    func_indices_in_jit = set((pc >> 16) for pc, _ in runtime_engine.cache.active.traces)
+    func_indices_in_jit = set(
+        (pc >> 16) for pc, _ in runtime_engine.cache.active.traces
+    )
     print(f"    -> Compiled JIT traces belong to functions: {func_indices_in_jit}")
     assert len(func_indices_in_jit) >= 2, "Traces should span across multiple functions"
 
@@ -160,7 +180,9 @@ def test_scenario_multimodule_unified_pc():
         found = radix_tree.find(k)
         assert found is v, f"RadixBinaryTreeView lookup failed for UnifiedPC 0x{k:08X}"
 
-    print(f"    [PASS] Scenario 5 (Multi-Function UnifiedPC) verified with {len(runtime_engine.cache.active.traces)} traces.")
+    print(
+        f"    [PASS] Scenario 5 (Multi-Function UnifiedPC) verified with {len(runtime_engine.cache.active.traces)} traces."
+    )
 
 
 if __name__ == "__main__":

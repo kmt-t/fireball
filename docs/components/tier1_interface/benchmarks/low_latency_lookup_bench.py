@@ -16,7 +16,9 @@ import time
 
 sys.path.insert(
     0,
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "tier1_core", "concepts"),
+    os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "..", "..", "tier1_core", "concepts"
+    ),
 )
 from flat_view_concept import FlatMapView  # noqa: E402
 
@@ -50,7 +52,9 @@ def main() -> None:
         probe = keys[n // 2]  # a worst-case-depth-representative middle key
 
         t_flat = time_lookup(lambda: view.find(probe), n_calls)
-        t_linear = time_lookup(lambda: linear_scan(keys, values, probe), max(1, n_calls // 20))
+        t_linear = time_lookup(
+            lambda: linear_scan(keys, values, probe), max(1, n_calls // 20)
+        )
         # linear_scan is O(n) per call and gets very slow at large n; fewer calls,
         # normalized back to a fair per-call comparison below.
         t_linear_per_call = t_linear / max(1, n_calls // 20)
@@ -58,9 +62,13 @@ def main() -> None:
 
         flat_times.append(t_flat_per_call)
         linear_times.append(t_linear_per_call)
-        speedup = t_linear_per_call / t_flat_per_call if t_flat_per_call > 0 else float("inf")
-        print(f"{n:<8} | {t_flat_per_call * 1e6:>10.3f} us              | "
-              f"{t_linear_per_call * 1e6:>10.3f} us | {speedup:>6.1f}x")
+        speedup = (
+            t_linear_per_call / t_flat_per_call if t_flat_per_call > 0 else float("inf")
+        )
+        print(
+            f"{n:<8} | {t_flat_per_call * 1e6:>10.3f} us              | "
+            f"{t_linear_per_call * 1e6:>10.3f} us | {speedup:>6.1f}x"
+        )
 
     # Empirical O(log N) check: going from the smallest to the largest N (a 1000x
     # increase), flat_map_view's per-call time should grow far slower than linear --
@@ -68,15 +76,19 @@ def main() -> None:
     # over the same range grows ~1000x by construction.
     growth_flat = flat_times[-1] / flat_times[0]
     growth_linear = linear_times[-1] / linear_times[0]
-    print(f"\n[MEASURED] {sizes[0]}->{sizes[-1]} ({sizes[-1] // sizes[0]}x more keys): "
-          f"flat_map_view grew {growth_flat:.1f}x, linear scan grew {growth_linear:.1f}x")
+    print(
+        f"\n[MEASURED] {sizes[0]}->{sizes[-1]} ({sizes[-1] // sizes[0]}x more keys): "
+        f"flat_map_view grew {growth_flat:.1f}x, linear scan grew {growth_linear:.1f}x"
+    )
 
     assert growth_flat < growth_linear / 5, (
         "flat_map_view's lookup time scaled with N too closely to linear scan's -- "
         "the O(log N) claim is not supported by this measurement"
     )
-    print("[PASS] flat_map_view's lookup cost grows far slower than linear scan's as N grows, "
-          "consistent with O(log N).")
+    print(
+        "[PASS] flat_map_view's lookup cost grows far slower than linear scan's as N grows, "
+        "consistent with O(log N)."
+    )
 
 
 if __name__ == "__main__":

@@ -10,9 +10,22 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-_PYSIM_DIR = Path(__file__).resolve().parents[1] if any(d in str(Path(__file__)) for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")) else Path(__file__).resolve().parent
+_PYSIM_DIR = (
+    Path(__file__).resolve().parents[1]
+    if any(
+        d in str(Path(__file__))
+        for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")
+    )
+    else Path(__file__).resolve().parent
+)
 
-for _p in [_PYSIM_DIR, _PYSIM_DIR / 'core', _PYSIM_DIR / 'runtime', _PYSIM_DIR / 'jit', _PYSIM_DIR / 'platforms']:
+for _p in [
+    _PYSIM_DIR,
+    _PYSIM_DIR / "core",
+    _PYSIM_DIR / "runtime",
+    _PYSIM_DIR / "jit",
+    _PYSIM_DIR / "platforms",
+]:
     _sp = str(_p)
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
@@ -43,7 +56,16 @@ PAIRWISE_CASES = [
     ("PAIR-11", "hybrid", "warm", "32bit", "globals", "wasi_vfs", "noint", "inspect"),
     ("PAIR-12", "interp", "cold", "32bit", "shm", "wasi_vfs", "yield", "active"),
     ("PAIR-13", "interp", "flush", "8bit", "locals", "hal", "multi", "inspect"),
-    ("PAIR-14", "interp", "evict", "grow", "globals", "wasi_console", "yield", "detached"),
+    (
+        "PAIR-14",
+        "interp",
+        "evict",
+        "grow",
+        "globals",
+        "wasi_console",
+        "yield",
+        "detached",
+    ),
     ("PAIR-15", "hybrid", "warm", "16bit", "ram", "ipc", "multi", "active"),
     ("PAIR-16", "hybrid", "evict", "16bit", "shm", "hal", "yield", "detached"),
     ("PAIR-17", "hybrid", "flush", "16bit", "globals", "hal", "noint", "active"),
@@ -101,31 +123,49 @@ from hal_dummy_drivers import DummyGpioDriver, PinMode
 
 
 def run_single_pairwise_case(case_tuple: tuple) -> None:
-    case_id, engine_mode, cache_mode, mem_width, storage_mode, host_mode, sched_mode, dbg_mode = case_tuple
-    
+    (
+        case_id,
+        engine_mode,
+        cache_mode,
+        mem_width,
+        storage_mode,
+        host_mode,
+        sched_mode,
+        dbg_mode,
+    ) = case_tuple
+
     # 1. Setup host system and services
     sysv = System()
     wasi_ctx = WasiHostContext(sysv)
     wasi_dummy = WasiDummyContext()
     gpio = DummyGpioDriver(pin_count=16)
     gpio.set_pin_mode(1, PinMode.OUTPUT)
-    
+
     # 2. Parse WASM Module
     wasm_bytes = bytes(wasmtime.wat2wasm(WAT_TEMPLATE))
     module = parse(wasm_bytes)
     fn_idx = module.export_func_index("main")
-    
+
     # Build host imports
     host_funcs = wasi_ctx.build_interpreter_host_functions(module)
-    
+
     # 3. Setup Runtime Engine & JIT
     trace_compiler = TraceCompiler() if engine_mode in ("jit", "hybrid") else None
-    runtime_engine = RuntimeEngine(jit_compiler=trace_compiler, yield_threshold=4) if engine_mode in ("jit", "hybrid") else None
+    runtime_engine = (
+        RuntimeEngine(jit_compiler=trace_compiler, yield_threshold=4)
+        if engine_mode in ("jit", "hybrid")
+        else None
+    )
     if runtime_engine:
         runtime_engine.register_module_blocks(module)
-    
-    interp = Interpreter(module, memory=wasi_ctx.guest_memory, host_functions=host_funcs, runtime_engine=runtime_engine)
-    
+
+    interp = Interpreter(
+        module,
+        memory=wasi_ctx.guest_memory,
+        host_functions=host_funcs,
+        runtime_engine=runtime_engine,
+    )
+
     # Setup Debugger if needed
     dbg_mgr = None
     if dbg_mode in ("inspect", "active"):
@@ -133,7 +173,7 @@ def run_single_pairwise_case(case_tuple: tuple) -> None:
         dbg_mgr.attach()
         if dbg_mode == "active":
             dbg_mgr.add_breakpoint(0x0010)
-    
+
     # 4. Apply Cache mode
     if runtime_engine and cache_mode == "flush":
         runtime_engine.cache.flush_all()
@@ -141,17 +181,17 @@ def run_single_pairwise_case(case_tuple: tuple) -> None:
         # Rotate banks
         runtime_engine.cache.rotate()
         runtime_engine.cache.rotate()
-    
+
     # 5. Apply Memory width / grow
     if mem_width == "grow":
         wasi_ctx.guest_memory.extend(b"\x00" * 65536)
         assert len(wasi_ctx.guest_memory) >= 65536 * 2
-    
+
     # 6. Apply Storage mode
     if storage_mode == "shm":
         # Register vMMIO SHM page (FC=14 -> vpn=0x0E000)
         sysv.vmmio.map_shm_page(0x0E000, 1, 1)
-    
+
     # 7. Execute according to Scheduler mode
     n_iters = 8
     if sched_mode == "noint":
@@ -166,22 +206,24 @@ def run_single_pairwise_case(case_tuple: tuple) -> None:
                     runtime_engine.idle_hook(budget=2)
         except StopIteration as e:
             res = e.value
-    
+
     # 8. Verify Result
     assert res is not None, f"Execution failed for {case_id}"
     expected_acc = n_iters
     expected_gacc = 100 + (n_iters * 2)
-    assert res[0] == expected_acc + expected_gacc, f"{case_id} result mismatch: got {res[0]}, expected {expected_acc + expected_gacc}"
-    
+    assert res[0] == expected_acc + expected_gacc, (
+        f"{case_id} result mismatch: got {res[0]}, expected {expected_acc + expected_gacc}"
+    )
+
     # 9. Verify Invariants
     # Invariant A: Memory consistency
     assert wasi_ctx.guest_memory[10] == (n_iters & 0xFF)
     assert wasi_ctx.guest_memory[20] == (n_iters & 0xFF)
     assert wasi_ctx.guest_memory[30] == (n_iters & 0xFF)
-    
+
     # Invariant B: Global state persistence
     assert interp.globals[0] == expected_gacc
-    
+
     # Invariant C: Host call integrity
     if host_mode == "wasi_console":
         # write out to wasi
@@ -201,7 +243,9 @@ def test_all_pairwise_combinations():
         case_id = case_tuple[0]
         run_single_pairwise_case(case_tuple)
         print(f"    [PASS] {case_id}: {case_tuple[1:]}")
-    print(f"[PASS] All {len(PAIRWISE_CASES)} Pairwise Combinations passed with 100% 2-way interaction coverage.")
+    print(
+        f"[PASS] All {len(PAIRWISE_CASES)} Pairwise Combinations passed with 100% 2-way interaction coverage."
+    )
 
 
 if __name__ == "__main__":

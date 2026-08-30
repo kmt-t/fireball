@@ -72,18 +72,22 @@ graph TD
 # CSPチャネルの送受信処理 (概念コード: 純粋同期ランデブー + Symmetric Transfer 規約)
 # チャネルは値を保持しない。待機者は最大1タスク（ADR_RendezvousChannel）。
 
-def channel_send(channel: Channel, sender_task: Task, value: CoValue) -> CoroutineHandle:
+def channel_send(
+    channel: Channel, sender_task: Task, value: CoValue
+) -> CoroutineHandle:
     if channel.waiter_dir == RECV:
         # 受信側が待機中: 値を直接移譲してランデブー成立
         receiver = channel.take_waiter()
-        receiver.value = value              # 所有権はここで sender -> receiver へ移る
+        receiver.value = value  # 所有権はここで sender -> receiver へ移る
         sender_task.state = READY
         receiver.state = READY
-        return handoff_or_yield(receiver)   # CSP Handoff (スタックレス対称遷移)
+        return handoff_or_yield(receiver)  # CSP Handoff (スタックレス対称遷移)
     else:
         # 相手不在: 値は sender_task のフレーム上に留めたまま待機する。
         # チャネルはバッファを持たないため overflow もロールバックも存在しない。
-        assert channel.waiter_dir != SEND, "1チャネル1待機者: 送信待機の重複はチャネル分割で回避する"
+        assert channel.waiter_dir != SEND, (
+            "1チャネル1待機者: 送信待機の重複はチャネル分割で回避する"
+        )
         channel.set_waiter(sender_task, SEND)
         sender_task.state = SUSPENDED_CSP
         return scheduler_handle
@@ -93,12 +97,14 @@ def channel_recv(channel: Channel, receiver_task: Task) -> CoroutineHandle:
         # 送信側が待機中: 送信側フレームから値を引き取ってランデブー成立
         sender = channel.take_waiter()
         receiver_task.value = sender.value  # 所有権はここで sender -> receiver へ移る
-        sender.value = None                 # 二重所有を作らない
+        sender.value = None  # 二重所有を作らない
         sender.state = READY
         receiver_task.state = READY
         return handoff_or_yield(sender)
     else:
-        assert channel.waiter_dir != RECV, "1チャネル1待機者: 受信待機の重複はチャネル分割で回避する"
+        assert channel.waiter_dir != RECV, (
+            "1チャネル1待機者: 受信待機の重複はチャネル分割で回避する"
+        )
         channel.set_waiter(receiver_task, RECV)
         receiver_task.state = SUSPENDED_CSP
         return scheduler_handle
@@ -108,9 +114,9 @@ def handoff_or_yield(target: Task) -> CoroutineHandle:
     この上限が {MainLoopReturnGuarantee}（AF(main_loop)）の根拠である。"""
     if sched.consecutive_handoffs < FB_CONF_MAX_CONSECUTIVE_HANDOFFS:
         sched.consecutive_handoffs += 1
-        return target.coroutine_handle      # 直接対称遷移
+        return target.coroutine_handle  # 直接対称遷移
     sched.consecutive_handoffs = 0
-    sched.ready_queue.append(target)        # 上限到達: スケジューラへ返す
+    sched.ready_queue.append(target)  # 上限到達: スケジューラへ返す
     return scheduler_handle
 ```
 
@@ -133,12 +139,10 @@ class TaskState:
     SUSPENDED_CSP = "SUSPENDED_CSP"
     TERMINATED = "TERMINATED"
 
-
 class WaitDir:
     NONE = "NONE"
     SEND = "SEND"
     RECV = "RECV"
-
 
 class Channel:
     """Bufferless synchronous CSP rendezvous channel (ADR_RendezvousChannel).
@@ -147,11 +151,11 @@ class Channel:
     own frame, so overflow and rollback cannot occur and the value always has
     exactly one owner. At most one waiter per channel.
     """
+
     def __init__(self, channel_id: str):
         self.channel_id = channel_id
         self.waiter_task = None
         self.waiter_dir = WaitDir.NONE
-
 
 class COOSKernel:
     def __init__(self, max_consecutive_handoffs: int = 4):
@@ -183,8 +187,9 @@ class COOSKernel:
 
         # No peer yet: the value stays in the sender's own frame. The channel holds
         # nothing, so there is no buffer to overflow and no send to roll back.
-        assert ch.waiter_dir != WaitDir.SEND, \
+        assert ch.waiter_dir != WaitDir.SEND, (
             "one waiter per channel: concurrent senders must use separate channels"
+        )
         ch.waiter_task, ch.waiter_dir = sender, WaitDir.SEND
         self.tasks[sender]["pending_val"] = data
         self.tasks[sender]["state"] = TaskState.SUSPENDED_CSP
@@ -207,8 +212,9 @@ class COOSKernel:
             self.tasks[receiver]["state"] = TaskState.READY
             return self._handoff_or_yield(sender)
 
-        assert ch.waiter_dir != WaitDir.RECV, \
+        assert ch.waiter_dir != WaitDir.RECV, (
             "one waiter per channel: concurrent receivers must use separate channels"
+        )
         ch.waiter_task, ch.waiter_dir = receiver, WaitDir.RECV
         self.tasks[receiver]["state"] = TaskState.SUSPENDED_CSP
         return ("BLOCK", None)
@@ -233,7 +239,10 @@ class COOSKernel:
             irq_id = self.interrupt_event_queue.pop(0)
             waiters = self.irq_waiters.pop(irq_id, [])
             for t_id in waiters:
-                if self.tasks[t_id]["state"] in (TaskState.BLOCKED, TaskState.SUSPENDED_CSP):
+                if self.tasks[t_id]["state"] in (
+                    TaskState.BLOCKED,
+                    TaskState.SUSPENDED_CSP,
+                ):
                     self.tasks[t_id]["state"] = TaskState.READY
                     self.ready_queue.append(t_id)
 
@@ -365,7 +374,9 @@ stateDiagram-v2
 ```python
 # システムハーネスによる依存性注入パターン
 class CoosHarness:
-    def __init__(self, scheduler: "Scheduler", csp: "CspEngine", memory: "MemoryManager"):
+    def __init__(
+        self, scheduler: "Scheduler", csp: "CspEngine", memory: "MemoryManager"
+    ):
         # 各サブコンポーネントへの参照を保持し、結合テストやモックの差し替えを容易にする
         self.scheduler = scheduler
         self.csp = csp

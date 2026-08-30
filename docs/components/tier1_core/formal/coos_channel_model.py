@@ -83,7 +83,7 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_handoff_1": {"in_handoff_chain", "running"},
         "s_handoff_max": {"in_handoff_chain", "at_max_limit"},
         "s_forced_yield": {"yielding"},
-        "s_deadlock": {"deadlock"},      # 違反状態
+        "s_deadlock": {"deadlock"},  # 違反状態
         "s_double_owned": {"double_owned"},  # 違反状態
         # 違反状態: 上限到達済み (at_max_limit) のままメインループへ到達しない
         "s_handoff_livelock": {"in_handoff_chain", "at_max_limit", "handoff_livelock"},
@@ -131,6 +131,7 @@ def properties():
 
 if __name__ == "__main__":
     from pyModelChecking.CTL import modelcheck
+
     km = build_model(guards=True)
     for prop in properties():
         res = modelcheck(km, prop["formula"])

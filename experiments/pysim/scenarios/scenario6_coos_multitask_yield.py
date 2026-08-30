@@ -1,17 +1,28 @@
 import sys
 from pathlib import Path
 
-_PYSIM_DIR = Path(__file__).resolve().parents[1] if any(d in str(Path(__file__)) for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")) else Path(__file__).resolve().parent
+_PYSIM_DIR = (
+    Path(__file__).resolve().parents[1]
+    if any(
+        d in str(Path(__file__))
+        for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")
+    )
+    else Path(__file__).resolve().parent
+)
 
-for _p in [_PYSIM_DIR, _PYSIM_DIR / 'core', _PYSIM_DIR / 'runtime', _PYSIM_DIR / 'jit', _PYSIM_DIR / 'platforms']:
+for _p in [
+    _PYSIM_DIR,
+    _PYSIM_DIR / "core",
+    _PYSIM_DIR / "runtime",
+    _PYSIM_DIR / "jit",
+    _PYSIM_DIR / "platforms",
+]:
     _sp = str(_p)
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
 import sys
 from pathlib import Path
-
-
 
 
 """Integration Scenario 6: COOS Cooperative Multitasking & Coroutine Interleaving.
@@ -85,7 +96,9 @@ def test_scenario_coos_multitask():
     sysv = System()
     wasi_ctx = WasiHostContext(sysv)
     host_funcs = wasi_ctx.build_interpreter_host_functions(module)
-    interp = Interpreter(module, memory=wasi_ctx.guest_memory, host_functions=host_funcs)
+    interp = Interpreter(
+        module, memory=wasi_ctx.guest_memory, host_functions=host_funcs
+    )
 
     fn_prod = module.export_func_index("producer_task")
     fn_cons = module.export_func_index("consumer_task")
@@ -123,9 +136,13 @@ def test_scenario_coos_multitask():
             cons_res = e.value
             cons_done = True
 
-    assert cons_res == [50500], f"Consumer task sum mismatch: expected 50500, got {cons_res}"
+    assert cons_res == [50500], (
+        f"Consumer task sum mismatch: expected 50500, got {cons_res}"
+    )
     assert cons_yields > 0, "Consumer should have yielded multiple times"
-    print(f"    -> Consumer yielded {cons_yields} times and computed expected sum: {cons_res[0]}.")
+    print(
+        f"    -> Consumer yielded {cons_yields} times and computed expected sum: {cons_res[0]}."
+    )
 
     print("    [PASS] Scenario 6 (COOS Cooperative Multitasking) succeeded seamlessly.")
 

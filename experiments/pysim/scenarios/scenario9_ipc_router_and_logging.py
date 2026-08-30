@@ -3,17 +3,28 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-_PYSIM_DIR = Path(__file__).resolve().parents[1] if any(d in str(Path(__file__)) for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")) else Path(__file__).resolve().parent
+_PYSIM_DIR = (
+    Path(__file__).resolve().parents[1]
+    if any(
+        d in str(Path(__file__))
+        for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")
+    )
+    else Path(__file__).resolve().parent
+)
 
-for _p in [_PYSIM_DIR, _PYSIM_DIR / 'core', _PYSIM_DIR / 'runtime', _PYSIM_DIR / 'jit', _PYSIM_DIR / 'platforms']:
+for _p in [
+    _PYSIM_DIR,
+    _PYSIM_DIR / "core",
+    _PYSIM_DIR / "runtime",
+    _PYSIM_DIR / "jit",
+    _PYSIM_DIR / "platforms",
+]:
     _sp = str(_p)
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
 import sys
 from pathlib import Path
-
-
 
 
 """Integration Scenario 9: Tier 1 Interface IPC Router & Structured System Logging.
@@ -40,7 +51,9 @@ def test_scenario_ipc_router_and_logging():
     router = IPCRouter()
 
     # 1. Successful routing: SENDER_OWNS -> IN_FLIGHT -> receive -> RECEIVER_OWNS
-    msg1 = IPCMessage(resource_id="res_01", payload={"cmd": "START_TASK", "task_id": 10})
+    msg1 = IPCMessage(
+        resource_id="res_01", payload={"cmd": "START_TASK", "task_id": 10}
+    )
     status, detail = router.route_message("CLIENT_APP", "fireball://core/coos/0", msg1)
     assert status == "OK_ENQUEUED"
     assert msg1.ownership == OwnershipState.IN_FLIGHT
@@ -50,18 +63,26 @@ def test_scenario_ipc_router_and_logging():
     rcv_msg = router.receive_message("ch_coos")
     assert rcv_msg is msg1
     assert msg1.ownership == OwnershipState.RECEIVER_OWNS
-    print("    [Phase 1.1] IPC Routing & Zero-Copy Ownership Handoff -> OK_ENQUEUED & RECEIVER_OWNS [PASS]")
+    print(
+        "    [Phase 1.1] IPC Routing & Zero-Copy Ownership Handoff -> OK_ENQUEUED & RECEIVER_OWNS [PASS]"
+    )
 
     # 2. RBAC Permission Denied
     msg2 = IPCMessage(resource_id="res_02", payload={"cmd": "KILL"})
-    status, reason = router.route_message("CLIENT_APP", "fireball://dbg/manager/0", msg2)
+    status, reason = router.route_message(
+        "CLIENT_APP", "fireball://dbg/manager/0", msg2
+    )
     assert status == "ERR_PERMISSION_DENIED"
     assert msg2.ownership == OwnershipState.SENDER_OWNS
-    print("    [Phase 1.2] IPC RBAC Check (CLIENT_APP -> DEBUGGER) -> ERR_PERMISSION_DENIED [PASS]")
+    print(
+        "    [Phase 1.2] IPC RBAC Check (CLIENT_APP -> DEBUGGER) -> ERR_PERMISSION_DENIED [PASS]"
+    )
 
     # 3. URI Not Found
     msg3 = IPCMessage(resource_id="res_03", payload={})
-    status, reason = router.route_message("CLIENT_APP", "fireball://unknown/service", msg3)
+    status, reason = router.route_message(
+        "CLIENT_APP", "fireball://unknown/service", msg3
+    )
     assert status == "ERR_NOT_FOUND"
     print("    [Phase 1.3] IPC URI Lookup (Unknown URI) -> ERR_NOT_FOUND [PASS]")
 
@@ -69,19 +90,29 @@ def test_scenario_ipc_router_and_logging():
     msg_q1 = IPCMessage(resource_id="res_q1", payload={})
     msg_q2 = IPCMessage(resource_id="res_q2", payload={})
     msg_q3 = IPCMessage(resource_id="res_q3", payload={})
-    assert router.route_message("CLIENT_APP", "fireball://hal/gpio/0", msg_q1)[0] == "OK_ENQUEUED"
-    assert router.route_message("CLIENT_APP", "fireball://hal/gpio/0", msg_q2)[0] == "OK_ENQUEUED"
+    assert (
+        router.route_message("CLIENT_APP", "fireball://hal/gpio/0", msg_q1)[0]
+        == "OK_ENQUEUED"
+    )
+    assert (
+        router.route_message("CLIENT_APP", "fireball://hal/gpio/0", msg_q2)[0]
+        == "OK_ENQUEUED"
+    )
     status_over, _ = router.route_message("CLIENT_APP", "fireball://hal/gpio/0", msg_q3)
     assert status_over == "ERR_QUEUE_FULL"
     assert msg_q3.ownership == OwnershipState.SENDER_OWNS
-    print("    [Phase 1.4] IPC Queue Capacity Overflow & Rollback -> ERR_QUEUE_FULL [PASS]")
+    print(
+        "    [Phase 1.4] IPC Queue Capacity Overflow & Rollback -> ERR_QUEUE_FULL [PASS]"
+    )
 
     # 5. Target Fault Drop Handler (Fault Recovery)
     reclaimed = router.trigger_drop_handler("ch_gpio")
     assert reclaimed == ["res_q1", "res_q2"]
     assert msg_q1.ownership == OwnershipState.RECLAIMED_BY_DROP
     assert msg_q2.ownership == OwnershipState.RECLAIMED_BY_DROP
-    print("    [Phase 1.5] IPC Target Service Fault Drop Handler Recovery -> RECLAIMED [PASS]")
+    print(
+        "    [Phase 1.5] IPC Target Service Fault Drop Handler Recovery -> RECLAIMED [PASS]"
+    )
 
     # -------------------------------------------------------------------------
     # Phase 2: Structured System Logging & LogDictionary Safety
@@ -100,12 +131,16 @@ def test_scenario_ipc_router_and_logging():
     except ValueError:
         rejected = True
     assert rejected, "LogDictionary must reject %s pointer specifier"
-    print("    [Phase 2.1] LogDictionary Pointer Specifier Rejection (%s) -> REJECTED [PASS]")
+    print(
+        "    [Phase 2.1] LogDictionary Pointer Specifier Rejection (%s) -> REJECTED [PASS]"
+    )
 
     # 3. Emit structured logs via Logger
     logger = Logger(transport=transport, dictionary=log_dict, min_level=LogLevel.INFO)
     assert logger.log_event(LogLevel.INFO, 0x100, 1, 5) == "QUEUED"
-    assert logger.log_event(LogLevel.DEBUG, 0x104, 0x12345678) == "FILTERED"  # Filtered out
+    assert (
+        logger.log_event(LogLevel.DEBUG, 0x104, 0x12345678) == "FILTERED"
+    )  # Filtered out
     assert logger.log_event(LogLevel.ERROR, 0x104, 0xDEADBEEF) == "QUEUED"
 
     # Flush buffered logs to UART (simulating COOS idle_hook flush)
@@ -117,9 +152,13 @@ def test_scenario_ipc_router_and_logging():
     assert "TASK_INIT: id=1 priority=5" in emitted
     assert "0x12345678" not in emitted  # DEBUG filtered
     assert "COOS_STATE: state=0xDEADBEEF" in emitted
-    print("    [Phase 2.2] Buffered Logging & COOS Idle Flush -> 2 Entries Flushed [PASS]")
+    print(
+        "    [Phase 2.2] Buffered Logging & COOS Idle Flush -> 2 Entries Flushed [PASS]"
+    )
 
-    print("    [PASS] Scenario 9 (IPC Router & Structured Logging) verified completely.")
+    print(
+        "    [PASS] Scenario 9 (IPC Router & Structured Logging) verified completely."
+    )
 
 
 if __name__ == "__main__":

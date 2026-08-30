@@ -29,9 +29,15 @@ def build_model(*, guards: bool = True) -> Kripke:
     """
     S = [
         "s_task_running",
-        "s_fd_open", "s_io_call", "s_io_performed",
-        "s_fd_closed", "s_io_call_on_closed", "s_io_call_bogus", "s_badf_error",
-        "s_proc_exit_called", "s_task_terminated",
+        "s_fd_open",
+        "s_io_call",
+        "s_io_performed",
+        "s_fd_closed",
+        "s_io_call_on_closed",
+        "s_io_call_bogus",
+        "s_badf_error",
+        "s_proc_exit_called",
+        "s_task_terminated",
         "s_io_performed_on_invalid",
         "s_phantom_return",
     ]
@@ -68,14 +74,16 @@ def build_model(*, guards: bool = True) -> Kripke:
     L = {
         "s_task_running": {"running"},
         "s_fd_open": {"open"},
-        "s_io_call": {"open"}, "s_io_performed": {"open"},
-        "s_fd_closed": {"closed"}, "s_io_call_on_closed": {"closed"},
+        "s_io_call": {"open"},
+        "s_io_performed": {"open"},
+        "s_fd_closed": {"closed"},
+        "s_io_call_on_closed": {"closed"},
         "s_io_call_bogus": {"bogus"},
         "s_badf_error": {"badf"},
         "s_proc_exit_called": {"exiting"},
         "s_task_terminated": {"terminated"},
-        "s_io_performed_on_invalid": {"io_on_invalid"},   # 違反状態
-        "s_phantom_return": {"phantom_return"},            # 違反状態
+        "s_io_performed_on_invalid": {"io_on_invalid"},  # 違反状態
+        "s_phantom_return": {"phantom_return"},  # 違反状態
     }
     return Kripke(S=S, S0=S0, R=R, L=L)
 
@@ -105,6 +113,7 @@ def properties():
 
 if __name__ == "__main__":
     from pyModelChecking.CTL import modelcheck
+
     km = build_model(guards=True)
     for prop in properties():
         res = modelcheck(km, prop["formula"])

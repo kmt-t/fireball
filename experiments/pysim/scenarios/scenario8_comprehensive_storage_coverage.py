@@ -3,17 +3,28 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-_PYSIM_DIR = Path(__file__).resolve().parents[1] if any(d in str(Path(__file__)) for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")) else Path(__file__).resolve().parent
+_PYSIM_DIR = (
+    Path(__file__).resolve().parents[1]
+    if any(
+        d in str(Path(__file__))
+        for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")
+    )
+    else Path(__file__).resolve().parent
+)
 
-for _p in [_PYSIM_DIR, _PYSIM_DIR / 'core', _PYSIM_DIR / 'runtime', _PYSIM_DIR / 'jit', _PYSIM_DIR / 'platforms']:
+for _p in [
+    _PYSIM_DIR,
+    _PYSIM_DIR / "core",
+    _PYSIM_DIR / "runtime",
+    _PYSIM_DIR / "jit",
+    _PYSIM_DIR / "platforms",
+]:
     _sp = str(_p)
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
 import sys
 from pathlib import Path
-
-
 
 
 """Integration Scenario 8: Comprehensive Full-Coverage Storage & Debugger Integration.
@@ -161,7 +172,7 @@ class GDBClientHelper:
         if "$" in buf and "#" in buf:
             dollar_idx = buf.index("$")
             hash_idx = buf.find("#", dollar_idx)
-            response_payload = buf[dollar_idx + 1:hash_idx]
+            response_payload = buf[dollar_idx + 1 : hash_idx]
             self.sock.sendall(b"+")
             return response_payload
 
@@ -169,7 +180,9 @@ class GDBClientHelper:
 
 
 def test_scenario_comprehensive_storage_and_debugger():
-    print("[*] Running Scenario 8: Comprehensive Storage (Globals/Locals/Memory) & GDB Debugger...")
+    print(
+        "[*] Running Scenario 8: Comprehensive Storage (Globals/Locals/Memory) & GDB Debugger..."
+    )
 
     wasm_bytes = bytes(wasmtime.wat2wasm(SCENARIO8_WAT))
     module = parse(wasm_bytes)
@@ -180,13 +193,17 @@ def test_scenario_comprehensive_storage_and_debugger():
     sysv = System()
     wasi_ctx = WasiHostContext(sysv)
     host_funcs = wasi_ctx.build_interpreter_host_functions(module)
-    interp = Interpreter(module, memory=wasi_ctx.guest_memory, host_functions=host_funcs)
+    interp = Interpreter(
+        module, memory=wasi_ctx.guest_memory, host_functions=host_funcs
+    )
 
     fn_mem_test = module.export_func_index("test_memory_widths")
     res_mem = interp.call(fn_mem_test, [])
     # 254 (u8) + (-2 s8) + 65520 (u16) + (-16 s16) + 1 (eq) = 252 + 65504 + 1 = 65757
     assert res_mem == [65757], f"Memory width calculation mismatch: {res_mem}"
-    print("    [Phase 1] Memory Widths (8-bit/16-bit/32-bit load/store sign/zero ext) -> 65757 [PASS]")
+    print(
+        "    [Phase 1] Memory Widths (8-bit/16-bit/32-bit load/store sign/zero ext) -> 65757 [PASS]"
+    )
 
     # -------------------------------------------------------------------------
     # Phase 2: Globals & Pipeline Process Verification
@@ -196,18 +213,24 @@ def test_scenario_comprehensive_storage_and_debugger():
     base_ptr = 200
     for idx, val in enumerate([10, 20, 30, 40, 50]):
         offset = base_ptr + idx * 4
-        interp.memory[offset:offset + 4] = val.to_bytes(4, "little")
+        interp.memory[offset : offset + 4] = val.to_bytes(4, "little")
 
     fn_pipeline = module.export_func_index("pipeline_process")
     res_pipe1 = interp.call(fn_pipeline, [5, base_ptr])
     assert res_pipe1 == [550], f"Pipeline process mismatch: {res_pipe1}"
-    assert interp.globals[0] == 550, f"Global counter was not updated: {interp.globals[0]}"
-    print("    [Phase 2] Globals & Local Storage Pipeline -> Acc=550 (Global mutated to 550) [PASS]")
+    assert interp.globals[0] == 550, (
+        f"Global counter was not updated: {interp.globals[0]}"
+    )
+    print(
+        "    [Phase 2] Globals & Local Storage Pipeline -> Acc=550 (Global mutated to 550) [PASS]"
+    )
 
     # Second run with same global state: 550 + 450 = 1000
     res_pipe2 = interp.call(fn_pipeline, [5, base_ptr])
     assert res_pipe2 == [1000] and interp.globals[0] == 1000
-    print("    [Phase 2.1] Global Mutation Persistence Across Invocations -> Acc=1000 [PASS]")
+    print(
+        "    [Phase 2.1] Global Mutation Persistence Across Invocations -> Acc=1000 [PASS]"
+    )
 
     # -------------------------------------------------------------------------
     # Phase 3: Interactive GDB RSP Socket Debugging Session on Live Storage
@@ -215,17 +238,15 @@ def test_scenario_comprehensive_storage_and_debugger():
     block100 = BasicBlock(
         head_pc=0x100,
         ops=[("local.get", 0), ("i32.const", 1), ("i32.add", None), ("local.set", 0)],
-        next_pc=0x110
+        next_pc=0x110,
     )
     block110 = BasicBlock(
         head_pc=0x110,
         ops=[("local.get", 0), ("i32.const", 10), ("i32.mul", None), ("local.set", 1)],
-        next_pc=0x120
+        next_pc=0x120,
     )
     block120 = BasicBlock(
-        head_pc=0x120,
-        ops=[("local.get", 1), ("local.set", 2)],
-        next_pc=None
+        head_pc=0x120, ops=[("local.get", 1), ("local.set", 2)], next_pc=None
     )
     blocks = {0x100: block100, 0x110: block110, 0x120: block120}
 
@@ -290,8 +311,12 @@ def test_scenario_comprehensive_storage_and_debugger():
         assert client.send_raw_packet("c") == "W00"
         assert ctx.locals[2] == 150
 
-        print("    [Phase 3] Live GDB Socket Debugging on Full Storage (Locals/Memory) -> OK [PASS]")
-        print("    [PASS] Scenario 8 (Comprehensive Storage & Debugger Integration) verified completely.")
+        print(
+            "    [Phase 3] Live GDB Socket Debugging on Full Storage (Locals/Memory) -> OK [PASS]"
+        )
+        print(
+            "    [PASS] Scenario 8 (Comprehensive Storage & Debugger Integration) verified completely."
+        )
 
     finally:
         client.close()

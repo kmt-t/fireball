@@ -21,12 +21,21 @@ class WASMTrap(Exception):
 # 1. Unified Stack Frame & Execution Context Data Structures
 # ==============================================================================
 
+
 class CallFrame:
     """
     Call frame resident inline on the unified stack buffer.
     `{ContextPointerRegister}` `{PositionIndependentCode}`
     """
-    def __init__(self, parent_offset: int, return_pc: int, local_base: int, saved_sp: int, func_idx: int):
+
+    def __init__(
+        self,
+        parent_offset: int,
+        return_pc: int,
+        local_base: int,
+        saved_sp: int,
+        func_idx: int,
+    ):
         self.parent_offset = parent_offset
         self.return_pc = return_pc
         self.local_base = local_base
@@ -39,7 +48,15 @@ class ControlFrame:
     Control block/loop/if frame resident inline on the unified stack buffer.
     `{ThreadedInterpreter}`
     """
-    def __init__(self, parent_offset: int, label_pc: int, saved_sp: int, result_arity: int, is_loop: bool):
+
+    def __init__(
+        self,
+        parent_offset: int,
+        label_pc: int,
+        saved_sp: int,
+        result_arity: int,
+        is_loop: bool,
+    ):
         self.parent_offset = parent_offset
         self.label_pc = label_pc
         self.saved_sp = saved_sp
@@ -53,9 +70,10 @@ class ExecutionContext:
     WASM execution state resident at Stack Bottom (offset 0).
     `{ContextPointerRegister}` `{EnvironmentPointer}` `{MemoryBoundaryCheck}`
     """
+
     def __init__(self, memory_size: int = 65536, stack_capacity: int = 1024):
         self.stack: list[Any] = [0] * stack_capacity  # Unified stack buffer
-        self.sp_offset: int = 0                       # Operand stack growth length
+        self.sp_offset: int = 0  # Operand stack growth length
         self.call_frame_stack: list[CallFrame] = []
         self.control_frame_stack: list[ControlFrame] = []
         self.globals: list[Any] = [0] * 32
@@ -97,11 +115,14 @@ class ExecutionContext:
 # 2. WASM Interpreter Engine (CPS Dispatch)
 # ==============================================================================
 
+
 class WASMInterpreter:
     def __init__(self):
         pass
 
-    def execute_function(self, ctx: ExecutionContext, func_idx: int, args: list[Any]) -> Any:
+    def execute_function(
+        self, ctx: ExecutionContext, func_idx: int, args: list[Any]
+    ) -> Any:
         """
         Pushes a new CallFrame on the unified stack and executes function bytecode.
         """
@@ -115,7 +136,7 @@ class WASMInterpreter:
             return_pc=0,
             local_base=local_base,
             saved_sp=local_base,
-            func_idx=func_idx
+            func_idx=func_idx,
         )
         ctx.call_frame_stack.append(frame)
 
@@ -128,7 +149,9 @@ class WASMInterpreter:
             return res
         return None
 
-    def execute_bytecode(self, ctx: ExecutionContext, bytecode: list[tuple[str, Any]]) -> str:
+    def execute_bytecode(
+        self, ctx: ExecutionContext, bytecode: list[tuple[str, Any]]
+    ) -> str:
         """
         Direct-Threaded CPS execution loop over WASM MVP opcodes via _DISPATCH_TABLE.
         """
@@ -149,17 +172,25 @@ class WASMInterpreter:
 # 3. Direct-Threaded Discrete Opcode Handlers (Zero opcode if-statements)
 # ==============================================================================
 
-_DISPATCH_TABLE: dict[str, Callable[[ExecutionContext, Any, int, WASMInterpreter], tuple[Optional[str], Optional[int]]]] = {}
+_DISPATCH_TABLE: dict[
+    str,
+    Callable[
+        [ExecutionContext, Any, int, WASMInterpreter],
+        tuple[Optional[str], Optional[int]],
+    ],
+] = {}
 
 
 def _op_handler(op_name: str):
     def decorator(fn):
         _DISPATCH_TABLE[op_name] = fn
         return fn
+
     return decorator
 
 
 # --- 3.1 Control Flow Handlers ---
+
 
 @_op_handler("unreachable")
 def _h_unreachable(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
@@ -179,7 +210,7 @@ def _h_block(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
         label_pc=end_pc,
         saved_sp=ctx.sp_offset,
         result_arity=arity,
-        is_loop=False
+        is_loop=False,
     )
     ctx.control_frame_stack.append(ctrl)
     return (None, None)
@@ -193,7 +224,7 @@ def _h_loop(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
         label_pc=start_pc,
         saved_sp=ctx.sp_offset,
         result_arity=arity,
-        is_loop=True
+        is_loop=True,
     )
     ctx.control_frame_stack.append(ctrl)
     return (None, None)
@@ -208,7 +239,7 @@ def _h_if(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
         label_pc=end_pc,
         saved_sp=ctx.sp_offset,
         result_arity=arity,
-        is_loop=False
+        is_loop=False,
     )
     ctx.control_frame_stack.append(ctrl)
     if cond == 0:
@@ -308,6 +339,7 @@ def _h_call_indirect(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInter
 
 # --- 3.2 Parametric Handlers ---
 
+
 @_op_handler("drop")
 def _h_drop(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
     ctx.pop()
@@ -324,6 +356,7 @@ def _h_select(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter)
 
 
 # --- 3.3 Variable Access Handlers ---
+
 
 @_op_handler("local.get")
 def _h_local_get(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
@@ -360,12 +393,13 @@ def _h_global_set(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpre
 
 # --- 3.4 Memory Access Handlers ---
 
+
 @_op_handler("i32.load")
 def _h_i32_load(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
     addr = ctx.pop()
     if addr + 4 > len(ctx.memory):
         raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
-    ctx.push(struct.unpack("<I", ctx.memory[addr:addr+4])[0])
+    ctx.push(struct.unpack("<I", ctx.memory[addr : addr + 4])[0])
     return (None, None)
 
 
@@ -374,7 +408,7 @@ def _h_i64_load(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterprete
     addr = ctx.pop()
     if addr + 8 > len(ctx.memory):
         raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
-    ctx.push(struct.unpack("<Q", ctx.memory[addr:addr+8])[0])
+    ctx.push(struct.unpack("<Q", ctx.memory[addr : addr + 8])[0])
     return (None, None)
 
 
@@ -401,7 +435,7 @@ def _h_i32_load16_s(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterp
     addr = ctx.pop()
     if addr + 2 > len(ctx.memory):
         raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
-    ctx.push(struct.unpack("<h", ctx.memory[addr:addr+2])[0])
+    ctx.push(struct.unpack("<h", ctx.memory[addr : addr + 2])[0])
     return (None, None)
 
 
@@ -410,7 +444,7 @@ def _h_i32_load16_u(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterp
     addr = ctx.pop()
     if addr + 2 > len(ctx.memory):
         raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
-    ctx.push(struct.unpack("<H", ctx.memory[addr:addr+2])[0])
+    ctx.push(struct.unpack("<H", ctx.memory[addr : addr + 2])[0])
     return (None, None)
 
 
@@ -437,7 +471,7 @@ def _h_i64_load16_s(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterp
     addr = ctx.pop()
     if addr + 2 > len(ctx.memory):
         raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
-    ctx.push(struct.unpack("<h", ctx.memory[addr:addr+2])[0])
+    ctx.push(struct.unpack("<h", ctx.memory[addr : addr + 2])[0])
     return (None, None)
 
 
@@ -446,7 +480,7 @@ def _h_i64_load16_u(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterp
     addr = ctx.pop()
     if addr + 2 > len(ctx.memory):
         raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
-    ctx.push(struct.unpack("<H", ctx.memory[addr:addr+2])[0])
+    ctx.push(struct.unpack("<H", ctx.memory[addr : addr + 2])[0])
     return (None, None)
 
 
@@ -455,7 +489,7 @@ def _h_i64_load32_s(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterp
     addr = ctx.pop()
     if addr + 4 > len(ctx.memory):
         raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
-    ctx.push(struct.unpack("<i", ctx.memory[addr:addr+4])[0])
+    ctx.push(struct.unpack("<i", ctx.memory[addr : addr + 4])[0])
     return (None, None)
 
 
@@ -464,7 +498,7 @@ def _h_i64_load32_u(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterp
     addr = ctx.pop()
     if addr + 4 > len(ctx.memory):
         raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
-    ctx.push(struct.unpack("<I", ctx.memory[addr:addr+4])[0])
+    ctx.push(struct.unpack("<I", ctx.memory[addr : addr + 4])[0])
     return (None, None)
 
 
@@ -474,7 +508,7 @@ def _h_i32_store(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpret
     addr = ctx.pop()
     if addr + 4 > len(ctx.memory):
         raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
-    ctx.memory[addr:addr+4] = struct.pack("<I", val & 0xFFFF_FFFF)
+    ctx.memory[addr : addr + 4] = struct.pack("<I", val & 0xFFFF_FFFF)
     return (None, None)
 
 
@@ -484,7 +518,7 @@ def _h_i64_store(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpret
     addr = ctx.pop()
     if addr + 8 > len(ctx.memory):
         raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
-    ctx.memory[addr:addr+8] = struct.pack("<Q", val & 0xFFFF_FFFF_FFFF_FFFF)
+    ctx.memory[addr : addr + 8] = struct.pack("<Q", val & 0xFFFF_FFFF_FFFF_FFFF)
     return (None, None)
 
 
@@ -514,7 +548,7 @@ def _h_i32_store16(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpr
     addr = ctx.pop()
     if addr + 2 > len(ctx.memory):
         raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
-    ctx.memory[addr:addr+2] = struct.pack("<H", val & 0xFFFF)
+    ctx.memory[addr : addr + 2] = struct.pack("<H", val & 0xFFFF)
     return (None, None)
 
 
@@ -524,7 +558,7 @@ def _h_i64_store16(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpr
     addr = ctx.pop()
     if addr + 2 > len(ctx.memory):
         raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
-    ctx.memory[addr:addr+2] = struct.pack("<H", val & 0xFFFF)
+    ctx.memory[addr : addr + 2] = struct.pack("<H", val & 0xFFFF)
     return (None, None)
 
 
@@ -534,18 +568,22 @@ def _h_i64_store32(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpr
     addr = ctx.pop()
     if addr + 4 > len(ctx.memory):
         raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
-    ctx.memory[addr:addr+4] = struct.pack("<I", val & 0xFFFF_FFFF)
+    ctx.memory[addr : addr + 4] = struct.pack("<I", val & 0xFFFF_FFFF)
     return (None, None)
 
 
 @_op_handler("memory.size")
-def _h_memory_size_op(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+def _h_memory_size_op(
+    ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter
+):
     ctx.push(ctx.mem_pages)
     return (None, None)
 
 
 @_op_handler("memory.grow")
-def _h_memory_grow_op(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+def _h_memory_grow_op(
+    ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter
+):
     delta = ctx.pop()
     old_pages = ctx.mem_pages
     ctx.memory.extend(bytearray(delta * 65536))
@@ -555,6 +593,7 @@ def _h_memory_grow_op(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInte
 
 
 # --- 3.5 Constants ---
+
 
 @_op_handler("i32.const")
 def _h_i32_const(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
@@ -569,6 +608,7 @@ def _h_i64_const(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpret
 
 
 # --- 3.6 32-bit Integer ALU & Logic Handlers ---
+
 
 @_op_handler("i32.eqz")
 def _h_i32_eqz(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
@@ -658,7 +698,7 @@ def _h_i32_ge_u(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterprete
 def _h_i32_clz(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
     a = ctx.pop() & 0xFFFF_FFFF
     bits = bin(a)[2:].zfill(32)
-    ctx.push(len(bits) - len(bits.lstrip('0')))
+    ctx.push(len(bits) - len(bits.lstrip("0")))
     return (None, None)
 
 
@@ -666,13 +706,13 @@ def _h_i32_clz(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter
 def _h_i32_ctz(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
     a = ctx.pop() & 0xFFFF_FFFF
     bits = bin(a)[2:].zfill(32)
-    ctx.push(len(bits) - len(bits.rstrip('0')))
+    ctx.push(len(bits) - len(bits.rstrip("0")))
     return (None, None)
 
 
 @_op_handler("i32.popcnt")
 def _h_i32_popcnt(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
-    ctx.push(bin(ctx.pop() & 0xFFFF_FFFF).count('1'))
+    ctx.push(bin(ctx.pop() & 0xFFFF_FFFF).count("1"))
     return (None, None)
 
 
@@ -801,6 +841,7 @@ def _h_i32_rotr(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterprete
 
 # --- 3.7 64-bit Integer ALU & Logic Handlers ---
 
+
 @_op_handler("i64.eqz")
 def _h_i64_eqz(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
     ctx.push(1 if ctx.pop() == 0 else 0)
@@ -889,7 +930,7 @@ def _h_i64_ge_u(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterprete
 def _h_i64_clz(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
     a = ctx.pop() & 0xFFFF_FFFF_FFFF_FFFF
     bits = bin(a)[2:].zfill(64)
-    ctx.push(len(bits) - len(bits.lstrip('0')))
+    ctx.push(len(bits) - len(bits.lstrip("0")))
     return (None, None)
 
 
@@ -897,13 +938,13 @@ def _h_i64_clz(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter
 def _h_i64_ctz(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
     a = ctx.pop() & 0xFFFF_FFFF_FFFF_FFFF
     bits = bin(a)[2:].zfill(64)
-    ctx.push(len(bits) - len(bits.rstrip('0')))
+    ctx.push(len(bits) - len(bits.rstrip("0")))
     return (None, None)
 
 
 @_op_handler("i64.popcnt")
 def _h_i64_popcnt(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
-    ctx.push(bin(ctx.pop() & 0xFFFF_FFFF_FFFF_FFFF).count('1'))
+    ctx.push(bin(ctx.pop() & 0xFFFF_FFFF_FFFF_FFFF).count("1"))
     return (None, None)
 
 
@@ -1032,6 +1073,7 @@ def _h_i64_rotr(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterprete
 
 # --- 3.8 Type Conversion Handlers ---
 
+
 @_op_handler("i32.wrap_i64")
 def _h_i32_wrap_i64(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
     ctx.push(ctx.pop() & 0xFFFF_FFFF)
@@ -1039,7 +1081,9 @@ def _h_i32_wrap_i64(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterp
 
 
 @_op_handler("i64.extend_i32_s")
-def _h_i64_extend_i32_s(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+def _h_i64_extend_i32_s(
+    ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter
+):
     val32 = ctx.pop() & 0xFFFF_FFFF
     signed32 = struct.unpack(">i", struct.pack(">I", val32))[0]
     ctx.push(struct.unpack(">Q", struct.pack(">q", signed32))[0])
@@ -1047,7 +1091,9 @@ def _h_i64_extend_i32_s(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMIn
 
 
 @_op_handler("i64.extend_i32_u")
-def _h_i64_extend_i32_u(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter):
+def _h_i64_extend_i32_u(
+    ctx: ExecutionContext, arg: Any, pc: int, interp: WASMInterpreter
+):
     val32 = ctx.pop() & 0xFFFF_FFFF
     ctx.push(val32)
     return (None, None)
@@ -1056,6 +1102,7 @@ def _h_i64_extend_i32_u(ctx: ExecutionContext, arg: Any, pc: int, interp: WASMIn
 # ==============================================================================
 # Simulation / Verification Tests
 # ==============================================================================
+
 
 def test_full_wasm_recursive_factorial():
     """Test CallFrame invocation, local variables, and recursion."""
@@ -1068,18 +1115,18 @@ def test_full_wasm_recursive_factorial():
         ("local.get", 0),
         ("i32.const", 1),
         ("i32.le_s", None),
-        ("if", (7, 14, 1)),      # if cond == 0, jump to 7 (else)
+        ("if", (7, 14, 1)),  # if cond == 0, jump to 7 (else)
         ("i32.const", 1),
         ("return", None),
         ("else", 14),
-        ("local.get", 0),        # 7
+        ("local.get", 0),  # 7
         ("local.get", 0),
         ("i32.const", 1),
         ("i32.sub", None),
-        ("call", 0),             # recursive call fact(n - 1)
+        ("call", 0),  # recursive call fact(n - 1)
         ("i32.mul", None),
         ("return", None),
-        ("end", None),           # 14
+        ("end", None),  # 14
     ]
 
     ctx.funcs = [fact_bytecode]
@@ -1099,10 +1146,10 @@ def test_block_loop_and_stack_pruning():
     #   br 0 (prunes 10, keeps 42)
     # end
     pruning_bytecode = [
-        ("block", (5, 1)),       # block result i32
+        ("block", (5, 1)),  # block result i32
         ("i32.const", 10),
         ("i32.const", 42),
-        ("br", 0),               # prune stack and exit block
+        ("br", 0),  # prune stack and exit block
         ("i32.const", 99),
         ("end", None),
         ("return", None),
@@ -1123,7 +1170,7 @@ def test_64bit_integer_arithmetic():
         ("i64.const", 0x2_0000_0000),
         ("i64.add", None),
         ("i64.const", 3),
-        ("i64.mul", None),       # 0x9_0000_0000
+        ("i64.mul", None),  # 0x9_0000_0000
         ("i32.wrap_i64", None),  # 0
         ("i64.extend_i32_u", None),
         ("i64.const", 100),
@@ -1203,25 +1250,25 @@ def test_br_table_and_parametric():
     #   i32.add
     # end
     br_table_bytecode = [
-        ("block", (17, 1)),      # depth 2: outer block (end at 17)
-        ("block", (8, 0)),       # depth 1: middle block (end at 8)
-        ("block", (5, 0)),       # depth 0: inner block (end at 5)
-        ("i32.const", 1),        # 3: index 1
-        ("br_table", ([0, 1], 2)), # 4: target depth 1 -> jumps to 8
-        ("end", None),           # 5
-        ("i32.const", 10),       # 6
-        ("return", None),        # 7
-        ("end", None),           # 8: depth 1 target -> jumps here
-        ("i32.const", 42),       # 9
-        ("i32.const", 99),       # 10
-        ("drop", None),          # 11: drops 99, keeps 42
-        ("i32.const", 100),      # 12: val1
-        ("i32.const", 200),      # 13: val2
-        ("i32.const", 1),        # 14: cond 1 -> select val1 (100)
-        ("select", None),        # 15
-        ("i32.add", None),       # 16: 42 + 100 = 142
-        ("end", None),           # 17
-        ("return", None),        # 18
+        ("block", (17, 1)),  # depth 2: outer block (end at 17)
+        ("block", (8, 0)),  # depth 1: middle block (end at 8)
+        ("block", (5, 0)),  # depth 0: inner block (end at 5)
+        ("i32.const", 1),  # 3: index 1
+        ("br_table", ([0, 1], 2)),  # 4: target depth 1 -> jumps to 8
+        ("end", None),  # 5
+        ("i32.const", 10),  # 6
+        ("return", None),  # 7
+        ("end", None),  # 8: depth 1 target -> jumps here
+        ("i32.const", 42),  # 9
+        ("i32.const", 99),  # 10
+        ("drop", None),  # 11: drops 99, keeps 42
+        ("i32.const", 100),  # 12: val1
+        ("i32.const", 200),  # 13: val2
+        ("i32.const", 1),  # 14: cond 1 -> select val1 (100)
+        ("select", None),  # 15
+        ("i32.add", None),  # 16: 42 + 100 = 142
+        ("end", None),  # 17
+        ("return", None),  # 18
     ]
 
     ctx.funcs = [br_table_bytecode]
@@ -1249,17 +1296,17 @@ def test_signed_memory_and_division_clz_popcnt():
         # Load signed 16-bit from addr 4 -> -1000
         ("i32.const", 4),
         ("i32.load16_s", None),
-        ("i32.add", None),       # -5 + -1000 = -1005
+        ("i32.add", None),  # -5 + -1000 = -1005
         # Bit counting on 0b0000_1111 (15)
         ("i32.const", 15),
-        ("i32.clz", None),       # 32 - 4 = 28
+        ("i32.clz", None),  # 32 - 4 = 28
         ("i32.const", 16),
-        ("i32.ctz", None),       # 4
+        ("i32.ctz", None),  # 4
         ("i32.const", 7),
-        ("i32.popcnt", None),    # 3
+        ("i32.popcnt", None),  # 3
         ("i32.add", None),
-        ("i32.add", None),       # 28 + 4 + 3 = 35
-        ("i32.add", None),       # -1005 + 35 = -970
+        ("i32.add", None),  # 28 + 4 + 3 = 35
+        ("i32.add", None),  # -1005 + 35 = -970
         ("return", None),
     ]
 
@@ -1278,13 +1325,13 @@ def test_globals_and_memory_grow():
         ("i32.const", 777),
         ("global.set", 0),
         ("global.get", 0),
-        ("memory.size", None),   # 1 page (64KB)
-        ("i32.const", 2),        # grow 2 pages
-        ("memory.grow", None),   # returns old size: 1
-        ("memory.size", None),   # new size: 3
-        ("i32.add", None),       # 1 + 3 = 4
-        ("i32.add", None),       # 1 + 4 = 5
-        ("i32.add", None),       # 777 + 5 = 782
+        ("memory.size", None),  # 1 page (64KB)
+        ("i32.const", 2),  # grow 2 pages
+        ("memory.grow", None),  # returns old size: 1
+        ("memory.size", None),  # new size: 3
+        ("i32.add", None),  # 1 + 3 = 4
+        ("i32.add", None),  # 1 + 4 = 5
+        ("i32.add", None),  # 777 + 5 = 782
         ("return", None),
     ]
 

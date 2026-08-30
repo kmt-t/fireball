@@ -22,17 +22,18 @@ T = TypeVar("T")
 # -----------------------------------------------------------------------------
 
 FB_CONF_MEMORY_POOL_SIZE = 2 * 1024 * 1024  # 2MB physical pool
-FB_CONF_PARTITION_SIZE = 64 * 1024          # 64KB fixed partition per task
+FB_CONF_PARTITION_SIZE = 64 * 1024  # 64KB fixed partition per task
 FB_CONF_MAX_TASKS = 16
 FB_CONF_MAX_SHM_PAGES = 32
-FB_PAGE_SIZE = 4096                         # 4KB SHM page size
-FB_WASM_PAGE_SIZE = 65536                   # 64KB WASM page size
-FB_TASK_ID_FLIGHT = 0xFFFF                  # Flight sentinel during IPC transfer
+FB_PAGE_SIZE = 4096  # 4KB SHM page size
+FB_WASM_PAGE_SIZE = 65536  # 64KB WASM page size
+FB_TASK_ID_FLIGHT = 0xFFFF  # Flight sentinel during IPC transfer
 FB_TASK_ID_KERNEL = 0x0000
 
 # -----------------------------------------------------------------------------
 # Error & Recovery Strategy Types
 # -----------------------------------------------------------------------------
+
 
 class RecoveryAction(Enum):
     RETRY = auto()
@@ -80,9 +81,11 @@ class Result(Generic[T]):
 # Memory Views & Handles (Tier 1 os_coos.md Contract Compliant)
 # -----------------------------------------------------------------------------
 
+
 @dataclass
 class PartitionView:
     """Fixed-size non-owning partition view leased to a specific task."""
+
     owner: int
     base_address: int
     size: int
@@ -95,6 +98,7 @@ class PartitionView:
 @dataclass
 class PoolRef(Generic[T]):
     """Typed slot reference within static pool."""
+
     owner: int
     slot_idx: int
     instance: T
@@ -103,6 +107,7 @@ class PoolRef(Generic[T]):
 # -----------------------------------------------------------------------------
 # vMMIO FC=14 PTE Registry (Simulated Hardware & Subsystem Coordination)
 # -----------------------------------------------------------------------------
+
 
 @dataclass
 class VMMIOPTE:
@@ -114,6 +119,7 @@ class VMMIOPTE:
 
 class VMMIOPTERegistry:
     """Simulates Tier 2 runtime_vmmio.md FC=14 SHM page owner tracking."""
+
     def __init__(self):
         self.ptes: dict[int, VMMIOPTE] = {}
 
@@ -122,7 +128,7 @@ class VMMIOPTERegistry:
             page_idx=page_idx,
             owner_id=owner_id,
             physical_addr=physical_addr,
-            is_valid=True
+            is_valid=True,
         )
 
     def update_owner(self, page_idx: int, new_owner_id: int) -> bool:
@@ -144,8 +150,10 @@ class VMMIOPTERegistry:
 # RAII SharedBlock (Zero-Copy Transfer)
 # -----------------------------------------------------------------------------
 
+
 class SharedBlock:
     """RAII-managed shared memory block for zero-copy IPC."""
+
     def __init__(
         self,
         shm_id: int,
@@ -189,7 +197,9 @@ class SharedBlock:
         """RAII drop handler: automatically deallocates physical buffer if still owned."""
         if self._is_active:
             self._is_active = False
-            self._manager._deallocate_shared_slot(self.page_idx, self.slot_idx, self.owner)
+            self._manager._deallocate_shared_slot(
+                self.page_idx, self.slot_idx, self.owner
+            )
         elif self._is_in_flight:
             pass
 
@@ -206,6 +216,7 @@ class SharedBlock:
 # -----------------------------------------------------------------------------
 # PMSAv8 MPU Protection & W^X Switching (§9)
 # -----------------------------------------------------------------------------
+
 
 class AccessPermission(Enum):
     NO_ACCESS = 0
@@ -235,6 +246,7 @@ class MPURegion:
 
 class PMSAv8MPU:
     """Cortex-M33 PMSAv8 8-region Memory Protection Unit simulator."""
+
     def __init__(self, pool_base: int):
         self.regions: list[MPURegion] = []
         self.dsb_count = 0
@@ -247,21 +259,73 @@ class PMSAv8MPU:
         # All base/limit adhere to 32-byte alignment
         self.regions = [
             # Region 0: Flash / Kernel Code (RO + X)
-            MPURegion(0, "Flash_KernelCode", 0x00000000, 0x0007FFE0, AccessPermission.RO, xn=False),
+            MPURegion(
+                0,
+                "Flash_KernelCode",
+                0x00000000,
+                0x0007FFE0,
+                AccessPermission.RO,
+                xn=False,
+            ),
             # Region 1: Kernel Data & BSS (RW + XN)
-            MPURegion(1, "Kernel_DataBSS",   0x20000000, 0x20007FE0, AccessPermission.RW, xn=True),
+            MPURegion(
+                1,
+                "Kernel_DataBSS",
+                0x20000000,
+                0x20007FE0,
+                AccessPermission.RW,
+                xn=True,
+            ),
             # Region 2: Kernel Pool / Heap (RW + XN)
-            MPURegion(2, "Kernel_PoolHeap",  0x20008000, 0x2001FFE0, AccessPermission.RW, xn=True),
+            MPURegion(
+                2,
+                "Kernel_PoolHeap",
+                0x20008000,
+                0x2001FFE0,
+                AccessPermission.RW,
+                xn=True,
+            ),
             # Region 3: Guest WASM RAM (RW + XN, 64KB aligned)
-            MPURegion(3, "Guest_WasmRAM",    pool_base, pool_base + 0x000FFE0, AccessPermission.RW, xn=True),
+            MPURegion(
+                3,
+                "Guest_WasmRAM",
+                pool_base,
+                pool_base + 0x000FFE0,
+                AccessPermission.RW,
+                xn=True,
+            ),
             # Region 4: JIT Code Cache (RO + X default)
-            MPURegion(4, "JIT_CodeCache",    0x20040000, 0x2007FFE0, AccessPermission.RO, xn=False),
+            MPURegion(
+                4,
+                "JIT_CodeCache",
+                0x20040000,
+                0x2007FFE0,
+                AccessPermission.RO,
+                xn=False,
+            ),
             # Region 5: Peripheral MMIO (RW + XN, Device)
-            MPURegion(5, "Peripheral_MMIO",  0x40000000, 0x4003FFE0, AccessPermission.RW, xn=True, is_device=True),
+            MPURegion(
+                5,
+                "Peripheral_MMIO",
+                0x40000000,
+                0x4003FFE0,
+                AccessPermission.RW,
+                xn=True,
+                is_device=True,
+            ),
             # Region 6: Shared Memory Buffers (RW + XN)
-            MPURegion(6, "Shared_Memory",    0x20080000, 0x200BFFE0, AccessPermission.RW, xn=True),
+            MPURegion(
+                6, "Shared_Memory", 0x20080000, 0x200BFFE0, AccessPermission.RW, xn=True
+            ),
             # Region 7: Stack Guard Band (No Access)
-            MPURegion(7, "Stack_Guard",      0x200C0000, 0x200C0020, AccessPermission.NO_ACCESS, xn=True),
+            MPURegion(
+                7,
+                "Stack_Guard",
+                0x200C0000,
+                0x200C0020,
+                AccessPermission.NO_ACCESS,
+                xn=True,
+            ),
         ]
 
     def begin_jit_patch(self):
@@ -288,13 +352,15 @@ class PMSAv8MPU:
         """Verify the strict invariant: No region is ever RW and X simultaneously."""
         for r in self.regions:
             if r.enabled:
-                assert not (r.is_writable and r.is_executable), \
+                assert not (r.is_writable and r.is_executable), (
                     f"Invariant violation: Region {r.region_no} ({r.name}) has RWX permissions"
+                )
 
 
 # -----------------------------------------------------------------------------
 # Consolidated Physical Memory Manager Component
 # -----------------------------------------------------------------------------
+
 
 class MemoryManager:
     """Tier 3 Consolidated Physical Memory Manager (platform_memory.md)."""
@@ -315,8 +381,9 @@ class MemoryManager:
 
     def init_manager(self, pool_base: int, pool_size: int) -> Result[bool]:
         """Initialize physical pool with 64KB WASM page alignment."""
-        assert pool_base % FB_WASM_PAGE_SIZE == 0, \
+        assert pool_base % FB_WASM_PAGE_SIZE == 0, (
             f"pool_base 0x{pool_base:X} must be 64KB aligned (WasmPageAlignment)"
+        )
         self.pool_base = pool_base
         self.pool_size = pool_size
         self.total_allocated_bytes = 0
@@ -328,16 +395,25 @@ class MemoryManager:
     def acquire_partition(self, owner: int) -> Result[PartitionView]:
         """Lease a fixed-size partition to a task (NOT a general-purpose heap allocator)."""
         if owner in self.partition_owners:
-            return Result(error=MemoryErrorResult(
-                "ERR_ALREADY_ACQUIRED",
-                RecoveryStrategy(RecoveryAction.RETRY, f"Task {owner} already has an active partition")
-            ))
+            return Result(
+                error=MemoryErrorResult(
+                    "ERR_ALREADY_ACQUIRED",
+                    RecoveryStrategy(
+                        RecoveryAction.RETRY,
+                        f"Task {owner} already has an active partition",
+                    ),
+                )
+            )
 
         if self.total_allocated_bytes + FB_CONF_PARTITION_SIZE > self.pool_size:
-            return Result(error=MemoryErrorResult(
-                "ERR_POOL_EXHAUSTED",
-                RecoveryStrategy(RecoveryAction.DEGRADE, "Physical memory pool exhausted")
-            ))
+            return Result(
+                error=MemoryErrorResult(
+                    "ERR_POOL_EXHAUSTED",
+                    RecoveryStrategy(
+                        RecoveryAction.DEGRADE, "Physical memory pool exhausted"
+                    ),
+                )
+            )
 
         offset = len(self.partition_owners) * FB_CONF_PARTITION_SIZE
         base_addr = self.pool_base + offset
@@ -345,7 +421,7 @@ class MemoryManager:
             owner=owner,
             base_address=base_addr,
             size=FB_CONF_PARTITION_SIZE,
-            data=bytearray(FB_CONF_PARTITION_SIZE)
+            data=bytearray(FB_CONF_PARTITION_SIZE),
         )
         self.partition_owners[owner] = pv
         self.total_allocated_bytes += FB_CONF_PARTITION_SIZE
@@ -364,10 +440,14 @@ class MemoryManager:
         """Lease a pre-allocated typed slot from static pool."""
         slot_size = getattr(cls, "__size__", 256)
         if self.total_allocated_bytes + slot_size > self.pool_size:
-            return Result(error=MemoryErrorResult(
-                "ERR_SLOT_EXHAUSTED",
-                RecoveryStrategy(RecoveryAction.DEGRADE, "Slot allocation pool exhausted")
-            ))
+            return Result(
+                error=MemoryErrorResult(
+                    "ERR_SLOT_EXHAUSTED",
+                    RecoveryStrategy(
+                        RecoveryAction.DEGRADE, "Slot allocation pool exhausted"
+                    ),
+                )
+            )
 
         instance = cls()
         slot_idx = len(self.typed_slots.get(cls, []))
@@ -392,16 +472,24 @@ class MemoryManager:
         """Allocate an IPC shared memory buffer with RAII ownership."""
         assert caller_task_id != 0, "Shared block must be owned by an explicit task"
         if size <= 0 or size > FB_PAGE_SIZE:
-            return Result(error=MemoryErrorResult(
-                "ERR_INVALID_SIZE",
-                RecoveryStrategy(RecoveryAction.RETRY, "Requested SHM size out of bounds")
-            ))
+            return Result(
+                error=MemoryErrorResult(
+                    "ERR_INVALID_SIZE",
+                    RecoveryStrategy(
+                        RecoveryAction.RETRY, "Requested SHM size out of bounds"
+                    ),
+                )
+            )
 
         if self.total_allocated_bytes + FB_PAGE_SIZE > self.pool_size:
-            return Result(error=MemoryErrorResult(
-                "ERR_SHM_EXHAUSTED",
-                RecoveryStrategy(RecoveryAction.DEGRADE, "No free SHM pages in physical pool")
-            ))
+            return Result(
+                error=MemoryErrorResult(
+                    "ERR_SHM_EXHAUSTED",
+                    RecoveryStrategy(
+                        RecoveryAction.DEGRADE, "No free SHM pages in physical pool"
+                    ),
+                )
+            )
 
         page_idx = len(self.shm_slots)
         slot_idx = 0
@@ -416,7 +504,7 @@ class MemoryManager:
             "size": size,
             "owner": caller_task_id,
             "base_address": base_addr,
-            "allocated": True
+            "allocated": True,
         }
         self.total_allocated_bytes += FB_PAGE_SIZE
 
@@ -427,7 +515,7 @@ class MemoryManager:
             size=size,
             owner=caller_task_id,
             base_address=base_addr,
-            manager=self
+            manager=self,
         )
         return Result(value=sb)
 
@@ -435,20 +523,28 @@ class MemoryManager:
         """Claim a shared memory block after Grant phase is completed."""
         slot = self.shm_slots.get(shm_id)
         if not slot or not slot["allocated"]:
-            return Result(error=MemoryErrorResult(
-                "ERR_INVALID_SHM_ID",
-                RecoveryStrategy(RecoveryAction.RETRY, "Invalid or deallocated SHM ID")
-            ))
+            return Result(
+                error=MemoryErrorResult(
+                    "ERR_INVALID_SHM_ID",
+                    RecoveryStrategy(
+                        RecoveryAction.RETRY, "Invalid or deallocated SHM ID"
+                    ),
+                )
+            )
 
         page_idx = slot["page_idx"]
         current_owner = self.vmmio_registry.get_owner(page_idx)
 
         # Precondition check: Grant must be established in vMMIO PTE
         if current_owner != receiver_task_id:
-            return Result(error=MemoryErrorResult(
-                "ERR_GRANT_NOT_COMPLETED",
-                RecoveryStrategy(RecoveryAction.RETRY, "Grant phase incomplete in vMMIO PTE")
-            ))
+            return Result(
+                error=MemoryErrorResult(
+                    "ERR_GRANT_NOT_COMPLETED",
+                    RecoveryStrategy(
+                        RecoveryAction.RETRY, "Grant phase incomplete in vMMIO PTE"
+                    ),
+                )
+            )
 
         slot["owner"] = receiver_task_id
         sb = SharedBlock(
@@ -458,7 +554,7 @@ class MemoryManager:
             size=slot["size"],
             owner=receiver_task_id,
             base_address=slot["base_address"],
-            manager=self
+            manager=self,
         )
         return Result(value=sb)
 
@@ -490,8 +586,10 @@ class MemoryManager:
 # HAL Integration Wrapper (platform_hal.md §5.1 Delegation)
 # -----------------------------------------------------------------------------
 
+
 class HALBufferManager:
     """Simulates platform_hal.md acquire_buffer delegating to allocate_shared."""
+
     def __init__(self, memory_manager: MemoryManager):
         self.mem = memory_manager
 
@@ -503,6 +601,7 @@ class HALBufferManager:
 # Test Suite: platform_memory_test_spec.md (MEM-01 ~ MEM-25)
 # =============================================================================
 
+
 def test_mem_01_acquire_partition_fixed_size():
     """MEM-01: acquire-partition provides task-specific fixed partition (no arbitrary size)."""
     mm = MemoryManager()
@@ -510,22 +609,30 @@ def test_mem_01_acquire_partition_fixed_size():
 
     # Signature must only take owner (task_id), NOT a size parameter
     sig = inspect.signature(mm.acquire_partition)
-    assert list(sig.parameters.keys()) == ["owner"], "acquire_partition must only take 'owner' parameter"
+    assert list(sig.parameters.keys()) == ["owner"], (
+        "acquire_partition must only take 'owner' parameter"
+    )
 
     res = mm.acquire_partition(owner=1)
     assert res.is_ok
     pv = res.unwrap()
-    assert pv.size == FB_CONF_PARTITION_SIZE, f"Must return fixed size partition {FB_CONF_PARTITION_SIZE}"
+    assert pv.size == FB_CONF_PARTITION_SIZE, (
+        f"Must return fixed size partition {FB_CONF_PARTITION_SIZE}"
+    )
     assert pv.owner == 1
 
     # Verify no arbitrary allocate(size, category) API exists
-    assert not hasattr(mm, "allocate"), "Generic heap allocate(size, category) must not exist"
+    assert not hasattr(mm, "allocate"), (
+        "Generic heap allocate(size, category) must not exist"
+    )
 
 
 def test_mem_01b_acquire_slot_typed():
     """MEM-01b: acquire-slot<T> leases a typed handle."""
+
     class TCB:
         __size__ = 128
+
         def __init__(self):
             self.state = "READY"
 
@@ -593,7 +700,9 @@ def test_mem_05_release_and_deallocate_owner_only():
 
     # Rogue task 4 attempts to release task 3's partition
     mm.release_partition(caller_task_id=4)
-    assert 3 in mm.partition_owners, "Rogue task must not be able to release another task's partition"
+    assert 3 in mm.partition_owners, (
+        "Rogue task must not be able to release another task's partition"
+    )
 
     # Owner task 3 releases its partition
     mm.release_partition(caller_task_id=3)
@@ -709,7 +818,9 @@ def test_mem_10c_route_message_rollback_restores_owner_id():
 
     # Send failed with ERR_QUEUE_FULL -> Rollback
     mm.rollback_transfer(original_sender_id=1, shm_id=shm_id)
-    assert mm.vmmio_registry.get_owner(sb.page_idx) == 1, "PTE owner must be restored to Task 1"
+    assert mm.vmmio_registry.get_owner(sb.page_idx) == 1, (
+        "PTE owner must be restored to Task 1"
+    )
 
 
 def test_mem_11_shared_block_raii_auto_deallocate():
@@ -817,9 +928,12 @@ def test_mem_25_pmsav8_32byte_alignment():
     """MEM-25: All MPU base and limit addresses adhere to 32-byte alignment."""
     mpu = PMSAv8MPU(pool_base=0x20020000)
     for r in mpu.regions:
-        assert r.base_address % 32 == 0, f"Region {r.region_no} base must be 32-byte aligned"
-        assert (r.limit_address + 32) % 32 == 0 or r.limit_address % 32 == 0, \
+        assert r.base_address % 32 == 0, (
+            f"Region {r.region_no} base must be 32-byte aligned"
+        )
+        assert (r.limit_address + 32) % 32 == 0 or r.limit_address % 32 == 0, (
             f"Region {r.region_no} limit must be 32-byte aligned"
+        )
 
 
 # =============================================================================
@@ -849,4 +963,6 @@ if __name__ == "__main__":
     test_mem_23_rwx_state_permanently_eliminated()
     test_mem_24_transaction_batching_barrier_efficiency()
     test_mem_25_pmsav8_32byte_alignment()
-    print("[PASS] All platform memory concept tests (MEM-01 ~ MEM-25) passed successfully.")
+    print(
+        "[PASS] All platform memory concept tests (MEM-01 ~ MEM-25) passed successfully."
+    )

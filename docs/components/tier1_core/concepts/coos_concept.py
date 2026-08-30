@@ -33,6 +33,7 @@ class Channel:
     At most one task may wait on a channel; concurrent peers are expressed by
     splitting the channel per service URI rather than by a waiting queue.
     """
+
     def __init__(self, channel_id: str):
         self.channel_id = channel_id
         self.waiter_task: str | None = None
@@ -86,8 +87,9 @@ class COOSKernel:
 
         # No peer yet: the value stays in the sender's own frame. The channel holds
         # nothing, so there is no buffer to overflow and no send to roll back.
-        assert ch.waiter_dir != WaitDir.SEND, \
+        assert ch.waiter_dir != WaitDir.SEND, (
             "one waiter per channel: concurrent senders must use separate channels"
+        )
         ch.waiter_task, ch.waiter_dir = sender, WaitDir.SEND
         self.tasks[sender]["pending_val"] = data
         self.tasks[sender]["state"] = TaskState.SUSPENDED_CSP
@@ -111,8 +113,9 @@ class COOSKernel:
             self.tasks[receiver]["state"] = TaskState.READY
             return self._handoff_or_yield(sender)
 
-        assert ch.waiter_dir != WaitDir.RECV, \
+        assert ch.waiter_dir != WaitDir.RECV, (
             "one waiter per channel: concurrent receivers must use separate channels"
+        )
         ch.waiter_task, ch.waiter_dir = receiver, WaitDir.RECV
         self.tasks[receiver]["state"] = TaskState.SUSPENDED_CSP
         return ("BLOCK", None)
@@ -147,7 +150,10 @@ class COOSKernel:
             irq_id = self.interrupt_event_queue.pop(0)
             waiters = self.irq_waiters.pop(irq_id, [])
             for t_id in waiters:
-                if self.tasks[t_id]["state"] in (TaskState.BLOCKED, TaskState.SUSPENDED_CSP):
+                if self.tasks[t_id]["state"] in (
+                    TaskState.BLOCKED,
+                    TaskState.SUSPENDED_CSP,
+                ):
                     self.tasks[t_id]["state"] = TaskState.READY
                     self.ready_queue.append(t_id)
 
@@ -170,7 +176,9 @@ class COOSKernel:
         self.drain_interrupts()
 
         # Check for active tasks
-        active_tasks = [t for t in self.tasks.values() if t["state"] != TaskState.TERMINATED]
+        active_tasks = [
+            t for t in self.tasks.values() if t["state"] != TaskState.TERMINATED
+        ]
         if not active_tasks:
             return False
 
@@ -209,6 +217,7 @@ class COOSKernel:
 # ==============================================================================
 # Simulation / Verification Tests
 # ==============================================================================
+
 
 def test_coos_synchronous_rendezvous():
     kernel = COOSKernel()
@@ -273,8 +282,9 @@ def test_value_has_exactly_one_owner_across_a_rendezvous():
     # Receiver arrives: ownership transfers, and the sender's copy is gone.
     kernel.run_step()
     assert kernel.tasks["receiver"]["received_val"] == 42
-    assert "pending_val" not in kernel.tasks["sender"], \
+    assert "pending_val" not in kernel.tasks["sender"], (
         "sender must not retain the value after the rendezvous (double ownership)"
+    )
 
 
 def test_one_waiter_per_channel_is_enforced():

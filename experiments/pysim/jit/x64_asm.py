@@ -33,9 +33,22 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-_PYSIM_DIR = Path(__file__).resolve().parents[1] if any(d in str(Path(__file__)) for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")) else Path(__file__).resolve().parent
+_PYSIM_DIR = (
+    Path(__file__).resolve().parents[1]
+    if any(
+        d in str(Path(__file__))
+        for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")
+    )
+    else Path(__file__).resolve().parent
+)
 
-for _p in [_PYSIM_DIR, _PYSIM_DIR / 'core', _PYSIM_DIR / 'runtime', _PYSIM_DIR / 'jit', _PYSIM_DIR / 'platforms']:
+for _p in [
+    _PYSIM_DIR,
+    _PYSIM_DIR / "core",
+    _PYSIM_DIR / "runtime",
+    _PYSIM_DIR / "jit",
+    _PYSIM_DIR / "platforms",
+]:
     _sp = str(_p)
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
@@ -45,23 +58,26 @@ import sys
 from pathlib import Path
 
 
-
 # name -> (needs_rex_extension_bit, low_3_bits_of_the_register_number)
 
 REG_INFO: dict[str, tuple[int, int]] = {
-
-    "rax": (0, 0), "rcx": (0, 1), "rdx": (0, 2), "rbx": (0, 3),
-
-    "rsp": (0, 4), "rbp": (0, 5), "rsi": (0, 6), "rdi": (0, 7),
-
-    "r8": (1, 0), "r9": (1, 1), "r10": (1, 2), "r11": (1, 3),
-
-    "r12": (1, 4), "r13": (1, 5), "r14": (1, 6), "r15": (1, 7),
-
+    "rax": (0, 0),
+    "rcx": (0, 1),
+    "rdx": (0, 2),
+    "rbx": (0, 3),
+    "rsp": (0, 4),
+    "rbp": (0, 5),
+    "rsi": (0, 6),
+    "rdi": (0, 7),
+    "r8": (1, 0),
+    "r9": (1, 1),
+    "r10": (1, 2),
+    "r11": (1, 3),
+    "r12": (1, 4),
+    "r13": (1, 5),
+    "r14": (1, 6),
+    "r15": (1, 7),
 }
-
-
-
 
 
 def push_reg(name: str) -> bytes:
@@ -73,9 +89,6 @@ def push_reg(name: str) -> bytes:
     return prefix + bytes((0x50 + lo,))
 
 
-
-
-
 def pop_reg(name: str) -> bytes:
 
     ext, lo = REG_INFO[name]
@@ -85,25 +98,20 @@ def pop_reg(name: str) -> bytes:
     return prefix + bytes((0x58 + lo,))
 
 
-
-
-
 def mov_reg_reg(dst: str, src: str) -> bytes:
-
     """mov dst, src (64-bit)."""
 
     dst_ext, dst_lo = REG_INFO[dst]
 
     src_ext, src_lo = REG_INFO[src]
 
-    rex = 0x48 | (0x04 if src_ext else 0) | (0x01 if dst_ext else 0)   # W | R(src) | B(dst)
+    rex = (
+        0x48 | (0x04 if src_ext else 0) | (0x01 if dst_ext else 0)
+    )  # W | R(src) | B(dst)
 
     modrm = 0xC0 | (src_lo << 3) | dst_lo
 
     return bytes((rex, 0x89, modrm))
-
-
-
 
 
 def mov_reg_imm64(dst: str, imm64: int) -> bytes:
@@ -117,29 +125,21 @@ def mov_reg_imm64(dst: str, imm64: int) -> bytes:
     return bytes((rex, opcode)) + (imm64 & 0xFFFFFFFFFFFFFFFF).to_bytes(8, "little")
 
 
-
-
-
 def mov_store_rsp_disp32(disp: int, src: str) -> bytes:
-
     """mov [rsp+disp32], src (64-bit store, no index)."""
 
     src_ext, src_lo = REG_INFO[src]
 
-    rex = 0x48 | (0x04 if src_ext else 0)   # W | R(src); base rsp never needs B
+    rex = 0x48 | (0x04 if src_ext else 0)  # W | R(src); base rsp never needs B
 
-    modrm = 0x80 | (src_lo << 3) | 0x04      # mod=10, reg=src, rm=100 (SIB follows)
+    modrm = 0x80 | (src_lo << 3) | 0x04  # mod=10, reg=src, rm=100 (SIB follows)
 
-    sib = 0x24                                # scale=00, index=100 (none), base=100 (rsp)
+    sib = 0x24  # scale=00, index=100 (none), base=100 (rsp)
 
     return bytes((rex, 0x89, modrm, sib)) + (disp & 0xFFFFFFFF).to_bytes(4, "little")
 
 
-
-
-
 def mov_load_rsp_disp32(dst: str, disp: int) -> bytes:
-
     """mov dst, [rsp+disp32] (64-bit load, no index)."""
 
     dst_ext, dst_lo = REG_INFO[dst]
@@ -153,17 +153,10 @@ def mov_load_rsp_disp32(dst: str, disp: int) -> bytes:
     return bytes((rex, 0x8B, modrm, sib)) + (disp & 0xFFFFFFFF).to_bytes(4, "little")
 
 
-
-
-
 def and_rsp_imm8(imm8: int) -> bytes:
-
     """and rsp, imm8 (sign-extended) -- used as `and rsp, -16` to align down."""
 
     return bytes((0x48, 0x83, 0xE4, imm8 & 0xFF))
-
-
-
 
 
 def sub_rsp_imm8(imm8: int) -> bytes:
@@ -173,17 +166,11 @@ def sub_rsp_imm8(imm8: int) -> bytes:
     return bytes((0x48, 0x83, 0xEC, imm8))
 
 
-
-
-
 def add_rsp_imm8(imm8: int) -> bytes:
 
     assert 0 <= imm8 <= 127
 
     return bytes((0x48, 0x83, 0xC4, imm8))
-
-
-
 
 
 def call_reg(reg: str) -> bytes:
@@ -197,25 +184,15 @@ def call_reg(reg: str) -> bytes:
     return prefix + bytes((0xFF, modrm))
 
 
-
-
-
 def ret() -> bytes:
 
     return bytes((0xC3,))
 
 
-
-
-
 _SCALE_BITS = {1: 0, 2: 1, 4: 2, 8: 3}
 
 
-
-
-
 def mov_load_scaled(dst: str, base: str, index: str, scale: int) -> bytes:
-
     """mov dst, [base + index*scale] (64-bit load). `index` may not be
 
     "rsp" (that encoding means "no index" instead); `base` being "rbp" or
@@ -224,7 +201,9 @@ def mov_load_scaled(dst: str, base: str, index: str, scale: int) -> bytes:
 
     stack-pointer-relative helpers above."""
 
-    assert index != "rsp", 'rsp cannot be a SIB index register (that encoding means "no index")'
+    assert index != "rsp", (
+        'rsp cannot be a SIB index register (that encoding means "no index")'
+    )
 
     dst_ext, dst_lo = REG_INFO[dst]
 
@@ -232,13 +211,20 @@ def mov_load_scaled(dst: str, base: str, index: str, scale: int) -> bytes:
 
     index_ext, index_lo = REG_INFO[index]
 
-    rex = 0x48 | (0x04 if dst_ext else 0) | (0x02 if index_ext else 0) | (0x01 if base_ext else 0)
+    rex = (
+        0x48
+        | (0x04 if dst_ext else 0)
+        | (0x02 if index_ext else 0)
+        | (0x01 if base_ext else 0)
+    )
 
-    needs_disp8 = base_lo == 5   # rbp/r13 as SIB base always needs an explicit displacement
+    needs_disp8 = (
+        base_lo == 5
+    )  # rbp/r13 as SIB base always needs an explicit displacement
 
     mod = 0x40 if needs_disp8 else 0x00
 
-    modrm = mod | (dst_lo << 3) | 0x04   # rm=100 => SIB follows
+    modrm = mod | (dst_lo << 3) | 0x04  # rm=100 => SIB follows
 
     sib = (_SCALE_BITS[scale] << 6) | (index_lo << 3) | base_lo
 
@@ -247,11 +233,7 @@ def mov_load_scaled(dst: str, base: str, index: str, scale: int) -> bytes:
     return bytes((rex, 0x8B, modrm, sib)) + tail
 
 
-
-
-
 def cmp_dword_scaled_imm32(base: str, index: str, scale: int, imm32: int) -> bytes:
-
     """cmp dword [base + index*scale], imm32 (32-bit compare, no REX.W)."""
 
     assert index != "rsp"
@@ -268,36 +250,35 @@ def cmp_dword_scaled_imm32(base: str, index: str, scale: int, imm32: int) -> byt
 
     mod = 0x40 if needs_disp8 else 0x00
 
-    modrm = mod | (0x07 << 3) | 0x04   # reg=111 (the /7 CMP extension), rm=100 => SIB follows
+    modrm = (
+        mod | (0x07 << 3) | 0x04
+    )  # reg=111 (the /7 CMP extension), rm=100 => SIB follows
 
     sib = (_SCALE_BITS[scale] << 6) | (index_lo << 3) | base_lo
 
     tail = bytes((0x00,)) if needs_disp8 else b""
 
-    return prefix + bytes((0x81, modrm, sib)) + tail + (imm32 & 0xFFFFFFFF).to_bytes(4, "little")
-
-
-
+    return (
+        prefix
+        + bytes((0x81, modrm, sib))
+        + tail
+        + (imm32 & 0xFFFFFFFF).to_bytes(4, "little")
+    )
 
 
 def test_reg_reg(reg: str) -> bytes:
-
     """test reg, reg (64-bit) -- sets ZF iff reg == 0."""
 
     ext, lo = REG_INFO[reg]
 
-    rex = 0x48 | (0x05 if ext else 0)   # both R and B extend the same register here
+    rex = 0x48 | (0x05 if ext else 0)  # both R and B extend the same register here
 
     modrm = 0xC0 | (lo << 3) | lo
 
     return bytes((rex, 0x85, modrm))
 
 
-
-
-
 def cmp_reg_imm32(reg: str, imm32: int) -> bytes:
-
     """cmp reg32, imm32 (32-bit compare against any register, not just eax's short form)."""
 
     ext, lo = REG_INFO[reg]
@@ -309,11 +290,7 @@ def cmp_reg_imm32(reg: str, imm32: int) -> bytes:
     return prefix + bytes((0x81, modrm)) + (imm32 & 0xFFFFFFFF).to_bytes(4, "little")
 
 
-
-
-
 def jmp_rel32_placeholder() -> tuple[bytes, int]:
-
     """Returns (bytes, reloc_offset): an unconditional near jump with its
 
     4-byte displacement zeroed, ready for x64_jit.py's _patch_rel32."""
@@ -321,11 +298,7 @@ def jmp_rel32_placeholder() -> tuple[bytes, int]:
     return bytes((0xE9, 0x00, 0x00, 0x00, 0x00)), 1
 
 
-
-
-
 def jcc_rel32_placeholder(condition: str) -> tuple[bytes, int]:
-
     """Returns (bytes, reloc_offset) for a near Jcc. `condition` is the
 
     mnemonic suffix: "e"/"z" (equal/zero), "ne"/"nz", "a" (above,
@@ -333,11 +306,14 @@ def jcc_rel32_placeholder(condition: str) -> tuple[bytes, int]:
     unsigned), "ae", "b", "be" -- the ones this codebase's glue code uses."""
 
     opcode = {
-
-        "e": 0x84, "z": 0x84, "ne": 0x85, "nz": 0x85,
-
-        "a": 0x87, "ae": 0x83, "b": 0x82, "be": 0x86,
-
+        "e": 0x84,
+        "z": 0x84,
+        "ne": 0x85,
+        "nz": 0x85,
+        "a": 0x87,
+        "ae": 0x83,
+        "b": 0x82,
+        "be": 0x86,
     }[condition]
 
     return bytes((0x0F, opcode, 0x00, 0x00, 0x00, 0x00)), 2

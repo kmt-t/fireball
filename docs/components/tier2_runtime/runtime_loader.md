@@ -130,7 +130,6 @@ ROM上のデータストリームを管理し、LEB128可変長整数やプリ�
 - **メモリセクション検証**: Memory Section をパースし、論理ページサイズ（64KB単位）および初期要求ページ数を取得。物理割当が部分ページ（例: 8KB）の場合や複数ページ（`N * 64KB`）の場合でも、モジュール初期ページ要求とシステム物理予算（`FB_CONF_MAX_WASM_PAGES`）を照合し、実行時境界判定へ引き渡す。
 - **アンロード**: `unload` はmodule_registryからモジュールを削除する。bump_allocatorのLIFO制約により、メモリの完全な回収はロード逆順のアンロード時のみ。
 
-
 ### 4.2 メモリ制約
 <!-- traceability: {META_ConfigurableSystem} -->
 `module_view` と関連構造の最大サイズ。すべてコンパイル時固定。 `{META_ConfigurableSystem}`
@@ -194,7 +193,6 @@ sequenceDiagram
 ### 5.1 公開API
 外部から利用可能なオブジェクト指向APIを定義する。
 
-
 #### 準備（prepare）
 
 | 項目 | 内容 |
@@ -253,7 +251,6 @@ sequenceDiagram
 | 引数 | `stype`: 取得対象のセクション定数 |
 | 戻り値 | `wasm-section-view` (オフセットとサイズ) |
 | 事前条件 | モジュールが `prepare` 済みであること。 |
-
 
 #### `lookup-export-func`
 

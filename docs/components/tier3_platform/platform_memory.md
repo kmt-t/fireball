@@ -33,7 +33,6 @@ WITインターフェース名は kebab-case で定義されるが、C++の公�
 
 <!-- traceability: {GLOBAL_Policy_Memory} {GLOBAL_StrictMemoryLimit} {Size_15KLOC} -->
 
-
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | メモリマネージャを初期化する。 |
@@ -99,7 +98,6 @@ IPC転送のための共有メモリブロック確保は、上記の `acquire-p
 | シグネチャ | `deallocate(addr: address) -> void` |
 | 引数 | `addr`: 解放するメモリアドレス |
 | 補足 | 共有メモリは `shared-block` のデストラクタで自動解放される。 |
-
 
 ## 6. 所有権追跡
 <!-- traceability: {GLOBAL_Policy_Memory} -->
@@ -191,4 +189,3 @@ Copy-and-Patch の各命令パッチごとに個別 MPU 切替を行うとバリ
 
 - **PMSAv8 アライメント**: PMSAv7 と異なり、$2^n$ 乗サイズ境界制約は存在しない。Base アドレス（`RBAR`）および Limit アドレス（`RLAR`）は **32 バイトアライメント**（下位 5 ビットが `0`）を満たせば任意サイズで設定可能。
 - **WASM ページ境界**: ゲスト RAM (Region 3) は WASM ページサイズである **64KB アライメント**（`0x10000` 境界）に配置し、vMMIO 高速アドレス判定 (`FastAddressCheck`) と PMSAv8 リージョン境界を完全一致させる。 `{WasmPageAlignment}`
-

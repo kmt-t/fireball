@@ -195,9 +195,9 @@ def properties():
 
 if __name__ == "__main__":
     from pyModelChecking.CTL import modelcheck
+
     km = build_model(guards=True)
     for prop in properties():
         res = modelcheck(km, prop["formula"])
         passed = km.S0.issubset(res)
         print(f"[{'PASS' if passed == prop['expect'] else 'FAIL'}] {prop['name']}")
-

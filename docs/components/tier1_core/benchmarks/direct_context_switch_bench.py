@@ -15,11 +15,15 @@ import os
 import sys
 import time
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "concepts"))
+sys.path.insert(
+    0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "concepts")
+)
 from coos_concept import COOSKernel  # noqa: E402
 
 
-def count_queue_ops_for_n_handoffs(n: int, max_consecutive_handoffs: int) -> tuple[int, int]:
+def count_queue_ops_for_n_handoffs(
+    n: int, max_consecutive_handoffs: int
+) -> tuple[int, int]:
     """Returns (direct_switch_count, queue_op_count) for n handoff decisions."""
     kernel = COOSKernel(max_consecutive_handoffs=max_consecutive_handoffs)
     direct = 0
@@ -59,12 +63,20 @@ def main() -> None:
     per_call_ns = (elapsed / n) * 1e9
 
     print(f"[MEASURED] {n} handoff decisions (consecutive_handoffs bound={bound}):")
-    print(f"           {direct} DIRECT_SWITCH (queue bypassed), {queue_ops} queued "
-          f"({avoided_fraction:.1%} of handoffs skip the READY-queue append/pop pair)")
-    print(f"           {per_call_ns:.1f} ns/decision (Python interpreter overhead, "
-          f"not representative of Cortex-M cycles -- see {{DirectContextSwitch}})")
-    assert avoided_fraction > 0.5, "most handoffs should bypass the queue, or the claim is false"
-    print("[PASS] DIRECT_SWITCH measurably bypasses the READY-queue for the documented majority of handoffs.")
+    print(
+        f"           {direct} DIRECT_SWITCH (queue bypassed), {queue_ops} queued "
+        f"({avoided_fraction:.1%} of handoffs skip the READY-queue append/pop pair)"
+    )
+    print(
+        f"           {per_call_ns:.1f} ns/decision (Python interpreter overhead, "
+        f"not representative of Cortex-M cycles -- see {{DirectContextSwitch}})"
+    )
+    assert avoided_fraction > 0.5, (
+        "most handoffs should bypass the queue, or the claim is false"
+    )
+    print(
+        "[PASS] DIRECT_SWITCH measurably bypasses the READY-queue for the documented majority of handoffs."
+    )
 
 
 if __name__ == "__main__":

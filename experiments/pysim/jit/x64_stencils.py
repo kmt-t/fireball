@@ -55,9 +55,22 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-_PYSIM_DIR = Path(__file__).resolve().parents[1] if any(d in str(Path(__file__)) for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")) else Path(__file__).resolve().parent
+_PYSIM_DIR = (
+    Path(__file__).resolve().parents[1]
+    if any(
+        d in str(Path(__file__))
+        for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")
+    )
+    else Path(__file__).resolve().parent
+)
 
-for _p in [_PYSIM_DIR, _PYSIM_DIR / 'core', _PYSIM_DIR / 'runtime', _PYSIM_DIR / 'jit', _PYSIM_DIR / 'platforms']:
+for _p in [
+    _PYSIM_DIR,
+    _PYSIM_DIR / "core",
+    _PYSIM_DIR / "runtime",
+    _PYSIM_DIR / "jit",
+    _PYSIM_DIR / "platforms",
+]:
     _sp = str(_p)
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
@@ -67,7 +80,6 @@ import sys
 from pathlib import Path
 
 
-
 import sys
 
 from dataclasses import dataclass, field
@@ -75,17 +87,11 @@ from dataclasses import dataclass, field
 from typing import Generator, Iterable
 
 
-
 IS_WINDOWS = sys.platform == "win32"
 
 
-
-
-
 @dataclass(frozen=True)
-
 class Stencil:
-
     name: str
 
     code: bytes
@@ -94,14 +100,9 @@ class Stencil:
 
     relocs: dict[str, int] = field(default_factory=dict)
 
-
-
     def __len__(self) -> int:
 
         return len(self.code)
-
-
-
 
 
 #: Sentinel byte patterns used only by the multi-relocation stencils below
@@ -135,25 +136,17 @@ _SENTINEL_DISP = bytes((0xA3, 0xA3, 0xA3, 0xA3))
 _SENTINEL_ADDR64 = bytes((0xA4,) * 8)
 
 
-
 _RELOC_SENTINELS = {
-
     "max_addr": _SENTINEL_MAX_ADDR,
-
     "trap": _SENTINEL_TRAP,
-
     "disp": _SENTINEL_DISP,
-
     "addr": _SENTINEL_ADDR64,
-
 }
 
 
-
-
-
-def _materialize_auto(name: str, gen: Generator[int, None, None] | Iterable[int]) -> "Stencil":
-
+def _materialize_auto(
+    name: str, gen: Generator[int, None, None] | Iterable[int]
+) -> "Stencil":
     """Like _materialize(), but discovers every relocation slot in `gen`'s
 
     output by locating the sentinel patterns in `_RELOC_SENTINELS`, instead
@@ -165,41 +158,32 @@ def _materialize_auto(name: str, gen: Generator[int, None, None] | Iterable[int]
     relocs: dict[str, int] = {}
 
     for reloc_name, sentinel in _RELOC_SENTINELS.items():
-
         idx = code.find(sentinel)
 
         if idx == -1:
-
             continue
 
         assert code.find(sentinel, idx + 1) == -1, (
-
             f"stencil {name!r}: sentinel for {reloc_name!r} appears more than once"
-
         )
 
         relocs[reloc_name] = idx
 
-        code[idx:idx + len(sentinel)] = bytes(len(sentinel))
+        code[idx : idx + len(sentinel)] = bytes(len(sentinel))
 
     return Stencil(name=name, code=bytes(code), relocs=relocs)
 
 
-
-
-
-def _materialize(name: str, gen: Generator[int, None, dict[str, int]] | Iterable[int],
-
-                  relocs: dict[str, int] | None = None) -> Stencil:
-
+def _materialize(
+    name: str,
+    gen: Generator[int, None, dict[str, int]] | Iterable[int],
+    relocs: dict[str, int] | None = None,
+) -> Stencil:
     """Drains a stencil generator exactly once ("compile time") into a
 
     frozen Stencil. Called only at module load, never per-JIT-compilation."""
 
     return Stencil(name=name, code=bytes(gen), relocs=dict(relocs or {}))
-
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -219,7 +203,6 @@ def _materialize(name: str, gen: Generator[int, None, dict[str, int]] | Iterable
 # ordinary runtime function assembling a bytes object.
 
 # ---------------------------------------------------------------------------
-
 
 
 def _gen_prologue() -> Generator[int, None, None]:
@@ -246,10 +229,7 @@ def _gen_prologue() -> Generator[int, None, None]:
 
     yield from (0x41, 0x57)
 
-
-
     if IS_WINDOWS:
-
         # Microsoft x64 ABI: arg0=rcx (locals), arg1=rdx (mem)
 
         # push rdi            57
@@ -269,7 +249,6 @@ def _gen_prologue() -> Generator[int, None, None]:
         yield from (0x49, 0x89, 0xD3)
 
     else:
-
         # System V AMD64 ABI (Linux): arg0=rdi (locals), arg1=rsi (mem)
 
         # push rbp            55
@@ -289,9 +268,6 @@ def _gen_prologue() -> Generator[int, None, None]:
         yield from (0x49, 0x89, 0xF3)
 
 
-
-
-
 def _gen_epilogue_return_i32() -> Generator[int, None, None]:
 
     # pop rax             58
@@ -305,9 +281,6 @@ def _gen_epilogue_return_i32() -> Generator[int, None, None]:
     yield from _gen_restore_callee_saved_and_ret()
 
 
-
-
-
 def _gen_epilogue_return_void() -> Generator[int, None, None]:
 
     # xor eax, eax        31 C0
@@ -315,9 +288,6 @@ def _gen_epilogue_return_void() -> Generator[int, None, None]:
     yield from (0x31, 0xC0)
 
     yield from _gen_restore_callee_saved_and_ret()
-
-
-
 
 
 def _gen_restore_callee_saved_and_ret() -> Generator[int, None, None]:
@@ -328,10 +298,7 @@ def _gen_restore_callee_saved_and_ret() -> Generator[int, None, None]:
 
     yield from _gen_restore_unwind_only()
 
-    yield 0xC3                 # ret
-
-
-
+    yield 0xC3  # ret
 
 
 def _gen_local_get() -> Generator[int, None, None]:
@@ -349,9 +316,6 @@ def _gen_local_get() -> Generator[int, None, None]:
     yield 0x50
 
 
-
-
-
 def _gen_local_set() -> Generator[int, None, None]:
 
     # pop rax                     58
@@ -363,9 +327,6 @@ def _gen_local_set() -> Generator[int, None, None]:
     yield from (0x41, 0x89, 0x82, 0x00, 0x00, 0x00, 0x00)
 
 
-
-
-
 def _gen_local_tee() -> Generator[int, None, None]:
 
     # mov rax, [rsp]              48 8B 04 24     (peek without popping)
@@ -375,9 +336,6 @@ def _gen_local_tee() -> Generator[int, None, None]:
     # mov [r10 + disp32], eax     41 89 82 xx xx xx xx
 
     yield from (0x41, 0x89, 0x82, 0x00, 0x00, 0x00, 0x00)
-
-
-
 
 
 def _gen_i32_const() -> Generator[int, None, None]:
@@ -393,47 +351,38 @@ def _gen_i32_const() -> Generator[int, None, None]:
     yield 0x50
 
 
-
-
-
 def _gen_binop(mnemonic_bytes: bytes) -> bytes:
-
     """pop rbx; pop rax; <op eax, ebx>; push rax -- the shared shape of
 
     every i32 binary operator stencil (second operand popped first is `b`,
 
     first popped after is `a`, matching WASM's a-then-b push order)."""
 
-    prefix = bytes((0x5B, 0x58))   # pop rbx ; pop rax
+    prefix = bytes((0x5B, 0x58))  # pop rbx ; pop rax
 
-    suffix = bytes((0x50,))         # push rax
+    suffix = bytes((0x50,))  # push rax
 
     return prefix + mnemonic_bytes + suffix
 
 
-
-
-
 def _gen_cmp_setcc(setcc_opcode: int) -> bytes:
-
     """pop rbx; pop rax; cmp eax, ebx; set<cc> al; movzx eax, al; push rax."""
 
-    return bytes((
-
-        0x5B, 0x58,             # pop rbx ; pop rax
-
-        0x39, 0xD8,             # cmp eax, ebx
-
-        0x0F, setcc_opcode, 0xC0,  # set<cc> al
-
-        0x0F, 0xB6, 0xC0,        # movzx eax, al
-
-        0x50,                    # push rax
-
-    ))
-
-
-
+    return bytes(
+        (
+            0x5B,
+            0x58,  # pop rbx ; pop rax
+            0x39,
+            0xD8,  # cmp eax, ebx
+            0x0F,
+            setcc_opcode,
+            0xC0,  # set<cc> al
+            0x0F,
+            0xB6,
+            0xC0,  # movzx eax, al
+            0x50,  # push rax
+        )
+    )
 
 
 def _gen_i32_eqz() -> Generator[int, None, None]:
@@ -443,17 +392,11 @@ def _gen_i32_eqz() -> Generator[int, None, None]:
     yield from (0x58, 0x85, 0xC0, 0x0F, 0x94, 0xC0, 0x0F, 0xB6, 0xC0, 0x50)
 
 
-
-
-
 def _gen_i32_div_s() -> Generator[int, None, None]:
 
     # pop rbx (divisor); pop rax (dividend); cdq; idiv ebx; push rax
 
     yield from (0x5B, 0x58, 0x99, 0xF7, 0xFB, 0x50)
-
-
-
 
 
 def _gen_i32_div_u() -> Generator[int, None, None]:
@@ -463,17 +406,11 @@ def _gen_i32_div_u() -> Generator[int, None, None]:
     yield from (0x5B, 0x58, 0x31, 0xD2, 0xF7, 0xF3, 0x50)
 
 
-
-
-
 def _gen_i32_rem_s() -> Generator[int, None, None]:
 
     # pop rbx; pop rax; cdq; idiv ebx; push rdx (remainder)
 
     yield from (0x5B, 0x58, 0x99, 0xF7, 0xFB, 0x52)
-
-
-
 
 
 def _gen_i32_rem_u() -> Generator[int, None, None]:
@@ -483,25 +420,19 @@ def _gen_i32_rem_u() -> Generator[int, None, None]:
     yield from (0x5B, 0x58, 0x31, 0xD2, 0xF7, 0xF3, 0x52)
 
 
-
-
-
 def _gen_shift(shift_opcode_ext: int) -> bytes:
-
     """pop rcx (shift amount); pop rax; shl/sar/shr eax, cl; push rax.
 
     shift_opcode_ext selects the /reg field of D3 (SHL=4, SAR=7, SHR=5)."""
 
     modrm = 0xC0 | (shift_opcode_ext << 3)  # ModRM for "D3 /ext, eax"
 
-    return bytes((0x59, 0x58, 0xD3, modrm, 0x50))  # pop rcx; pop rax; D3 /ext eax,cl; push rax
-
-
-
+    return bytes(
+        (0x59, 0x58, 0xD3, modrm, 0x50)
+    )  # pop rcx; pop rax; D3 /ext eax,cl; push rax
 
 
 def _gen_bounds_check() -> Generator[int, None, None]:
-
     """wasm_instruction_set.md 3.4 mandates a "比較+トラップ" (compare +
 
     trap) bounds check before every memory access. `max_addr` is
@@ -533,9 +464,6 @@ def _gen_bounds_check() -> Generator[int, None, None]:
     yield from _SENTINEL_TRAP
 
 
-
-
-
 def _gen_i32_load() -> Generator[int, None, None]:
 
     # pop rax (address, zero-extended u32 already on stack as such)
@@ -561,9 +489,6 @@ def _gen_i32_load() -> Generator[int, None, None]:
     yield 0x50
 
 
-
-
-
 def _gen_i32_load8_u() -> Generator[int, None, None]:
 
     yield 0x58
@@ -579,9 +504,6 @@ def _gen_i32_load8_u() -> Generator[int, None, None]:
     yield 0x50
 
 
-
-
-
 def _gen_i32_load8_s() -> Generator[int, None, None]:
 
     yield 0x58
@@ -594,12 +516,9 @@ def _gen_i32_load8_s() -> Generator[int, None, None]:
 
     yield from _SENTINEL_DISP
 
-    yield from (0x48, 0x63, 0xC0)   # movsxd rax, eax
+    yield from (0x48, 0x63, 0xC0)  # movsxd rax, eax
 
     yield 0x50
-
-
-
 
 
 def _gen_i32_load16_u() -> Generator[int, None, None]:
@@ -615,9 +534,6 @@ def _gen_i32_load16_u() -> Generator[int, None, None]:
     yield from _SENTINEL_DISP
 
     yield 0x50
-
-
-
 
 
 def _gen_i32_load16_s() -> Generator[int, None, None]:
@@ -637,9 +553,6 @@ def _gen_i32_load16_s() -> Generator[int, None, None]:
     yield 0x50
 
 
-
-
-
 def _gen_i32_store() -> Generator[int, None, None]:
 
     # pop rbx (value); pop rax (address)
@@ -655,9 +568,6 @@ def _gen_i32_store() -> Generator[int, None, None]:
     yield from _SENTINEL_DISP
 
 
-
-
-
 def _gen_i32_store8() -> Generator[int, None, None]:
 
     yield from (0x5B, 0x58)
@@ -669,9 +579,6 @@ def _gen_i32_store8() -> Generator[int, None, None]:
     yield from (0x41, 0x88, 0x9C, 0x03)
 
     yield from _SENTINEL_DISP
-
-
-
 
 
 def _gen_i32_store16() -> Generator[int, None, None]:
@@ -689,17 +596,11 @@ def _gen_i32_store16() -> Generator[int, None, None]:
     yield from _SENTINEL_DISP
 
 
-
-
-
 def _gen_drop() -> Generator[int, None, None]:
 
     # add rsp, 8   48 83 C4 08
 
     yield from (0x48, 0x83, 0xC4, 0x08)
-
-
-
 
 
 def _gen_select() -> Generator[int, None, None]:
@@ -709,9 +610,6 @@ def _gen_select() -> Generator[int, None, None]:
     yield from (0x59, 0x5B, 0x58, 0x85, 0xC9, 0x48, 0x0F, 0x44, 0xC3, 0x50)
 
 
-
-
-
 def _gen_br() -> Generator[int, None, None]:
 
     # jmp rel32   E9 xx xx xx xx   (relocated)
@@ -719,9 +617,6 @@ def _gen_br() -> Generator[int, None, None]:
     yield 0xE9
 
     yield from (0x00, 0x00, 0x00, 0x00)
-
-
-
 
 
 def _gen_br_if() -> Generator[int, None, None]:
@@ -737,9 +632,6 @@ def _gen_br_if() -> Generator[int, None, None]:
     yield from (0x00, 0x00, 0x00, 0x00)
 
 
-
-
-
 def _gen_call() -> Generator[int, None, None]:
 
     # call rel32   E8 xx xx xx xx   (relocated to the callee's final address)
@@ -749,19 +641,12 @@ def _gen_call() -> Generator[int, None, None]:
     yield from (0x00, 0x00, 0x00, 0x00)
 
 
-
-
-
 def _gen_unreachable() -> Generator[int, None, None]:
 
     yield from _gen_trap()
 
 
-
-
-
 def _gen_trap() -> Generator[int, None, None]:
-
     """Deliberate null-pointer dereference: on Windows this reliably
 
     raises a real, catchable access violation (Python's ctypes surfaces it
@@ -803,11 +688,7 @@ def _gen_trap() -> Generator[int, None, None]:
     yield from (0x48, 0x89, 0x00)
 
 
-
-
-
 def _gen_restore_unwind_only() -> Generator[int, None, None]:
-
     """Same register-restore sequence as _gen_restore_callee_saved_and_ret,
 
     minus the trailing `ret` -- shared by TRAP, which needs the stack
@@ -815,25 +696,20 @@ def _gen_restore_unwind_only() -> Generator[int, None, None]:
     unwound but must fall through into the crash instead of returning."""
 
     if IS_WINDOWS:
-
-        yield 0x5F                 # pop rdi
+        yield 0x5F  # pop rdi
 
     else:
+        yield 0x5D  # pop rbp
 
-        yield 0x5D                 # pop rbp
+    yield from (0x41, 0x5F)  # pop r15
 
-    yield from (0x41, 0x5F)   # pop r15
+    yield from (0x41, 0x5E)  # pop r14
 
-    yield from (0x41, 0x5E)   # pop r14
+    yield from (0x41, 0x5D)  # pop r13
 
-    yield from (0x41, 0x5D)   # pop r13
+    yield from (0x41, 0x5C)  # pop r12
 
-    yield from (0x41, 0x5C)   # pop r12
-
-    yield 0x5B                 # pop rbx
-
-
-
+    yield 0x5B  # pop rbx
 
 
 def _gen_i32_clz() -> Generator[int, None, None]:
@@ -851,9 +727,6 @@ def _gen_i32_clz() -> Generator[int, None, None]:
     yield 0x50
 
 
-
-
-
 def _gen_i32_ctz() -> Generator[int, None, None]:
 
     # pop rax; tzcnt eax, eax; push rax  (TZCNT(0) == 32, matching WASM)
@@ -865,9 +738,6 @@ def _gen_i32_ctz() -> Generator[int, None, None]:
     yield 0x50
 
 
-
-
-
 def _gen_i32_popcnt() -> Generator[int, None, None]:
 
     yield 0x58
@@ -877,11 +747,7 @@ def _gen_i32_popcnt() -> Generator[int, None, None]:
     yield 0x50
 
 
-
-
-
 def _gen_rotate(rotate_opcode_ext: int) -> bytes:
-
     """pop rcx (amount); pop rax; rol/ror eax, cl; push rax -- same D3 /ext
 
     shape as _gen_shift, ROL=/0, ROR=/1."""
@@ -891,11 +757,7 @@ def _gen_rotate(rotate_opcode_ext: int) -> bytes:
     return bytes((0x59, 0x58, 0xD3, modrm, 0x50))
 
 
-
-
-
 def _gen_global_get() -> Generator[int, None, None]:
-
     """Reads through an absolute address baked in at JIT-compile time
 
     (base-of-globals-array + index*8, both known once the globals buffer
@@ -925,9 +787,6 @@ def _gen_global_get() -> Generator[int, None, None]:
     yield 0x50
 
 
-
-
-
 def _gen_global_set() -> Generator[int, None, None]:
 
     # pop rbx (value)        5B
@@ -945,15 +804,11 @@ def _gen_global_set() -> Generator[int, None, None]:
     yield from (0x89, 0x18)
 
 
-
-
-
 # ---------------------------------------------------------------------------
 
 # Stencil table -- every generator above is drained exactly once here.
 
 # ---------------------------------------------------------------------------
-
 
 
 PROLOGUE = _materialize("prologue", _gen_prologue())
@@ -963,7 +818,6 @@ EPILOGUE_RETURN_I32 = _materialize("epilogue_return_i32", _gen_epilogue_return_i
 EPILOGUE_RETURN_VOID = _materialize("epilogue_return_void", _gen_epilogue_return_void())
 
 
-
 LOCAL_GET = _materialize("local_get", _gen_local_get(), {"disp": 3})
 
 LOCAL_SET = _materialize("local_set", _gen_local_set(), {"disp": 4})
@@ -971,23 +825,22 @@ LOCAL_SET = _materialize("local_set", _gen_local_set(), {"disp": 4})
 LOCAL_TEE = _materialize("local_tee", _gen_local_tee(), {"disp": 7})
 
 
-
 I32_CONST = _materialize("i32_const", _gen_i32_const(), {"imm": 1})
 
 
+I32_ADD = _materialize("i32_add", _gen_binop(bytes((0x01, 0xD8))))  # add eax, ebx
 
-I32_ADD = _materialize("i32_add", _gen_binop(bytes((0x01, 0xD8))))   # add eax, ebx
+I32_SUB = _materialize("i32_sub", _gen_binop(bytes((0x29, 0xD8))))  # sub eax, ebx
 
-I32_SUB = _materialize("i32_sub", _gen_binop(bytes((0x29, 0xD8))))   # sub eax, ebx
+I32_MUL = _materialize(
+    "i32_mul", _gen_binop(bytes((0x0F, 0xAF, 0xC3)))
+)  # imul eax, ebx
 
-I32_MUL = _materialize("i32_mul", _gen_binop(bytes((0x0F, 0xAF, 0xC3))))  # imul eax, ebx
+I32_AND = _materialize("i32_and", _gen_binop(bytes((0x21, 0xD8))))  # and eax, ebx
 
-I32_AND = _materialize("i32_and", _gen_binop(bytes((0x21, 0xD8))))   # and eax, ebx
+I32_OR = _materialize("i32_or", _gen_binop(bytes((0x09, 0xD8))))  # or eax, ebx
 
-I32_OR = _materialize("i32_or", _gen_binop(bytes((0x09, 0xD8))))     # or eax, ebx
-
-I32_XOR = _materialize("i32_xor", _gen_binop(bytes((0x31, 0xD8))))   # xor eax, ebx
-
+I32_XOR = _materialize("i32_xor", _gen_binop(bytes((0x31, 0xD8))))  # xor eax, ebx
 
 
 I32_DIV_S = _materialize("i32_div_s", _gen_i32_div_s())
@@ -999,7 +852,6 @@ I32_REM_S = _materialize("i32_rem_s", _gen_i32_rem_s())
 I32_REM_U = _materialize("i32_rem_u", _gen_i32_rem_u())
 
 
-
 I32_SHL = _materialize("i32_shl", _gen_shift(4))
 
 I32_SHR_S = _materialize("i32_shr_s", _gen_shift(7))
@@ -1007,12 +859,11 @@ I32_SHR_S = _materialize("i32_shr_s", _gen_shift(7))
 I32_SHR_U = _materialize("i32_shr_u", _gen_shift(5))
 
 
-
 I32_EQZ = _materialize("i32_eqz", _gen_i32_eqz())
 
-I32_EQ = _materialize("i32_eq", _gen_cmp_setcc(0x94))   # sete
+I32_EQ = _materialize("i32_eq", _gen_cmp_setcc(0x94))  # sete
 
-I32_NE = _materialize("i32_ne", _gen_cmp_setcc(0x95))   # setne
+I32_NE = _materialize("i32_ne", _gen_cmp_setcc(0x95))  # setne
 
 I32_LT_S = _materialize("i32_lt_s", _gen_cmp_setcc(0x9C))  # setl
 
@@ -1029,7 +880,6 @@ I32_LE_U = _materialize("i32_le_u", _gen_cmp_setcc(0x96))  # setbe
 I32_GE_S = _materialize("i32_ge_s", _gen_cmp_setcc(0x9D))  # setge
 
 I32_GE_U = _materialize("i32_ge_u", _gen_cmp_setcc(0x93))  # setae
-
 
 
 I32_LOAD = _materialize_auto("i32_load", _gen_i32_load())
@@ -1049,7 +899,6 @@ I32_STORE8 = _materialize_auto("i32_store8", _gen_i32_store8())
 I32_STORE16 = _materialize_auto("i32_store16", _gen_i32_store16())
 
 
-
 I32_CLZ = _materialize("i32_clz", _gen_i32_clz())
 
 I32_CTZ = _materialize("i32_ctz", _gen_i32_ctz())
@@ -1061,11 +910,9 @@ I32_ROTL = _materialize("i32_rotl", _gen_rotate(0))
 I32_ROTR = _materialize("i32_rotr", _gen_rotate(1))
 
 
-
 GLOBAL_GET = _materialize_auto("global_get", _gen_global_get())
 
 GLOBAL_SET = _materialize_auto("global_set", _gen_global_set())
-
 
 
 DROP = _materialize("drop", _gen_drop())
@@ -1073,13 +920,11 @@ DROP = _materialize("drop", _gen_drop())
 SELECT = _materialize("select", _gen_select())
 
 
-
 BR = _materialize("br", _gen_br(), {"rel32": 1})
 
 BR_IF = _materialize("br_if", _gen_br_if(), {"rel32": 5})
 
 CALL = _materialize("call", _gen_call(), {"rel32": 1})
-
 
 
 UNREACHABLE = _materialize("unreachable", _gen_unreachable())

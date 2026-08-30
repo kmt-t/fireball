@@ -39,7 +39,7 @@ class WASMTrap(Exception):
     pass
 
 
-MAX_CACHED = 2          # R4, R5
+MAX_CACHED = 2  # R4, R5
 
 
 class Variant:
@@ -63,11 +63,19 @@ class Variant:
 # NOS in R5. Entering a variant that would exceed MAX_CACHED spills first.
 STENCILS: dict[str, dict[int, Variant]] = {
     "i32.const": {
-        0: Variant(["MOVW R4, #{imm_lo}", "MOVT R4, #{imm_hi}"], 1, ("imm_lo", "imm_hi")),
-        1: Variant(["MOV R5, R4", "MOVW R4, #{imm_lo}", "MOVT R4, #{imm_hi}"], 2,
-                   ("imm_lo", "imm_hi")),
-        2: Variant(["PUSH R5", "MOV R5, R4", "MOVW R4, #{imm_lo}", "MOVT R4, #{imm_hi}"], 2,
-                   ("imm_lo", "imm_hi")),
+        0: Variant(
+            ["MOVW R4, #{imm_lo}", "MOVT R4, #{imm_hi}"], 1, ("imm_lo", "imm_hi")
+        ),
+        1: Variant(
+            ["MOV R5, R4", "MOVW R4, #{imm_lo}", "MOVT R4, #{imm_hi}"],
+            2,
+            ("imm_lo", "imm_hi"),
+        ),
+        2: Variant(
+            ["PUSH R5", "MOV R5, R4", "MOVW R4, #{imm_lo}", "MOVT R4, #{imm_hi}"],
+            2,
+            ("imm_lo", "imm_hi"),
+        ),
     },
     "local.get": {
         0: Variant(["LDR R4, [R3, #{slot}]"], 1, ("slot",)),
@@ -92,8 +100,11 @@ STENCILS: dict[str, dict[int, Variant]] = {
         2: Variant(["CMP R5, R9", "BHS __trap_oob", "STR R4, [R8, R5]"], 0),
     },
     "backedge": {
-        d: Variant(["LDR R12, [R10, #SAFEPOINT]", "CBNZ R12, __safepoint", "B #{target}"],
-                   d, ("target",))
+        d: Variant(
+            ["LDR R12, [R10, #SAFEPOINT]", "CBNZ R12, __safepoint", "B #{target}"],
+            d,
+            ("target",),
+        )
         for d in (0, 1, 2)
     },
 }
@@ -102,7 +113,7 @@ STENCILS: dict[str, dict[int, Variant]] = {
 REFILL = {
     (0, 1): ["POP R4"],
     (0, 2): ["POP R5", "POP R4"],
-    (1, 2): ["POP R5", "MOV R5, R4", "MOV R4, R5"],   # conceptual; see _refill
+    (1, 2): ["POP R5", "MOV R5, R4", "MOV R4, R5"],  # conceptual; see _refill
 }
 
 
@@ -111,8 +122,9 @@ class StackCachingCompiler:
 
     BYTES_PER_INSTRUCTION = 4
 
-    def compile_block(self, ops: list[tuple[str, Any]],
-                      loops_to: int | None = None) -> tuple[list[str], int]:
+    def compile_block(
+        self, ops: list[tuple[str, Any]], loops_to: int | None = None
+    ) -> tuple[list[str], int]:
         """Returns (native listing, final cache depth)."""
         listing: list[str] = []
         depth = 0
@@ -122,7 +134,7 @@ class StackCachingCompiler:
             if table is None:
                 raise WASMTrap(f"NO_STENCIL_FOR: {op}")
 
-            need = min(k for k in table)          # smallest depth this op supports
+            need = min(k for k in table)  # smallest depth this op supports
             if depth < need:
                 listing += self._refill(depth, need)
                 depth = need
@@ -155,7 +167,7 @@ class StackCachingCompiler:
         if cur == 0 and need == 2:
             return ["POP R5", "POP R4"]
         if cur == 1 and need == 2:
-            return ["MOV R5, R4", "POP R4"]     # old TOS becomes NOS
+            return ["MOV R5, R4", "POP R4"]  # old TOS becomes NOS
         return []
 
     @staticmethod
@@ -171,13 +183,27 @@ class StackCachingCompiler:
 # Tiny machine over the emitted listing, so a wrong stencil produces a wrong result
 # ==============================================================================
 
-def execute(listing: list[str], locals_: list[int], memory: bytearray | None = None,
-            mem_size: int = 8192,
-            interrupt: bool = False) -> tuple[list[int], str]:
+
+def execute(
+    listing: list[str],
+    locals_: list[int],
+    memory: bytearray | None = None,
+    mem_size: int = 8192,
+    interrupt: bool = False,
+) -> tuple[list[int], str]:
     R = {
-        "R0": 0, "R1": 0, "R2": 0, "R3": 0,
-        "R4": 0, "R5": 0, "R6": 0, "R7": 0,
-        "R8": 0, "R9": mem_size, "R10": 0, "R12": 0,
+        "R0": 0,
+        "R1": 0,
+        "R2": 0,
+        "R3": 0,
+        "R4": 0,
+        "R5": 0,
+        "R6": 0,
+        "R7": 0,
+        "R8": 0,
+        "R9": mem_size,
+        "R10": 0,
+        "R12": 0,
     }
     stack: list[int] = []
     mem = memory if memory is not None else bytearray(mem_size)
@@ -201,8 +227,9 @@ def execute(listing: list[str], locals_: list[int], memory: bytearray | None = N
         elif head in ("ADD", "SUB", "MUL"):
             d, a, b = ins.replace(",", "").split()[1:4]
             x, y = R[a], R[b]
-            R[d] = ((x + y) if head == "ADD" else
-                    (x - y) if head == "SUB" else (x * y)) & 0xFFFF_FFFF
+            R[d] = (
+                (x + y) if head == "ADD" else (x - y) if head == "SUB" else (x * y)
+            ) & 0xFFFF_FFFF
         elif head == "LDR":
             if "SAFEPOINT" in ins:
                 R["R12"] = 1 if interrupt else 0
@@ -213,7 +240,7 @@ def execute(listing: list[str], locals_: list[int], memory: bytearray | None = N
                 R["R4"] = locals_[slot]
             elif "[R8" in ins:
                 a = R["R4"]
-                R["R4"] = int.from_bytes(mem[a:a + 4], "little")
+                R["R4"] = int.from_bytes(mem[a : a + 4], "little")
         elif head == "STR":
             if "[R3" in ins:
                 slot = int(ins.split("#")[1].rstrip("]")) // 4
@@ -222,7 +249,7 @@ def execute(listing: list[str], locals_: list[int], memory: bytearray | None = N
                 locals_[slot] = R["R4"]
             elif "[R8" in ins:
                 a = R["R5"]
-                mem[a:a + 4] = (R["R4"] & 0xFFFF_FFFF).to_bytes(4, "little")
+                mem[a : a + 4] = (R["R4"] & 0xFFFF_FFFF).to_bytes(4, "little")
         elif head == "CMP":
             reg, limit_reg = ins.replace(",", "").split()[1:3]
             R["_bhs"] = (R[reg] & 0xFFFF_FFFF) >= (R[limit_reg] & 0xFFFF_FFFF)
@@ -243,13 +270,25 @@ def execute(listing: list[str], locals_: list[int], memory: bytearray | None = N
 # Verification tests
 # ==============================================================================
 
-LOOP_OPS = [("local.get", 1), ("local.get", 0), ("i32.mul", None), ("local.set", 1),
-            ("local.get", 0), ("i32.const", 1), ("i32.sub", None), ("local.set", 0),
-            ("local.get", 0)]
+LOOP_OPS = [
+    ("local.get", 1),
+    ("local.get", 0),
+    ("i32.mul", None),
+    ("local.set", 1),
+    ("local.get", 0),
+    ("i32.const", 1),
+    ("i32.sub", None),
+    ("local.set", 0),
+    ("local.get", 0),
+]
 
 NAIVE = {
-    "i32.const": 3, "i32.add": 4, "i32.sub": 4, "i32.mul": 4,
-    "local.get": 2, "local.set": 2,
+    "i32.const": 3,
+    "i32.add": 4,
+    "i32.sub": 4,
+    "i32.mul": 4,
+    "local.get": 2,
+    "local.set": 2,
 }
 
 
@@ -263,7 +302,8 @@ def test_stack_caching_cuts_memory_traffic():
 
 def test_binary_op_is_a_single_instruction():
     listing, depth = StackCachingCompiler().compile_block(
-        [("local.get", 0), ("local.get", 1), ("i32.add", None)])
+        [("local.get", 0), ("local.get", 1), ("i32.add", None)]
+    )
     assert listing[-1] == "ADD R4, R5, R4", listing
     assert depth == 1
 
@@ -279,14 +319,16 @@ def test_spill_only_when_the_cache_overflows():
 
 def test_memory_access_carries_the_bound_check():
     listing, _ = StackCachingCompiler().compile_block(
-        [("local.get", 0), ("i32.load", None)])
+        [("local.get", 0), ("i32.load", None)]
+    )
     assert "CMP R4, R9" in listing and "BHS __trap_oob" in listing, listing
 
 
 def test_out_of_bounds_load_traps():
     listing, _ = StackCachingCompiler().compile_block(
-        [("local.get", 0), ("i32.load", None)])
-    _, st = execute(listing, [0x4000])          # 0x4000 > 8KB
+        [("local.get", 0), ("i32.load", None)]
+    )
+    _, st = execute(listing, [0x4000])  # 0x4000 > 8KB
     assert st == "TRAP_OOB", st
     _, st = execute(listing, [0x100])
     assert st == "COMPLETED", st
@@ -307,6 +349,7 @@ def test_emitted_code_computes_the_right_answer():
 def test_a_broken_stencil_is_detected():
     """Mutating MUL->ADD must change the computed result."""
     import copy
+
     saved = copy.deepcopy(STENCILS["i32.mul"])
     STENCILS["i32.mul"] = {2: Variant(["ADD R4, R5, R4"], 1)}
     try:
@@ -335,5 +378,7 @@ if __name__ == "__main__":
     cached, _ = StackCachingCompiler().compile_block(LOOP_OPS)
     print("[PASS] All stack-caching stencil tests passed.")
     print(f"       naive stencils : {naive_total} native instructions")
-    print(f"       stack-cached   : {len(cached)} native instructions "
-          f"({naive_total / len(cached):.2f}x fewer)")
+    print(
+        f"       stack-cached   : {len(cached)} native instructions "
+        f"({naive_total / len(cached):.2f}x fewer)"
+    )

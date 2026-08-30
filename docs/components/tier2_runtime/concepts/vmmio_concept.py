@@ -23,9 +23,9 @@ class TrapCode:
 
 
 # Function Codes (bits[31:28]) — see runtime_vmmio.md "アドレス分解の対応関係"
-FC_STATIC_DEVICE = 0xC   # 0xC000_0000: SYSCTL / IPCR / VDMA (Tier 2, syscall dispatch)
-FC_SHM = 0xE              # 0xE000_0000: Shared Memory (Tier 3, owner-checked)
-FC_PASSTHROUGH = 0xF      # 0xF000_0000: Physical passthrough (Tier 3)
+FC_STATIC_DEVICE = 0xC  # 0xC000_0000: SYSCTL / IPCR / VDMA (Tier 2, syscall dispatch)
+FC_SHM = 0xE  # 0xE000_0000: Shared Memory (Tier 3, owner-checked)
+FC_PASSTHROUGH = 0xF  # 0xF000_0000: Physical passthrough (Tier 3)
 
 FB_TASK_ID_INVALID = 0x00
 FB_TASK_ID_FLIGHT = 0xFF
@@ -58,8 +58,14 @@ class VmmioAddress:
 
 class StaticDevicePTE:
     """FC=12 (Static Device). Holds permission flags and optional handler."""
-    def __init__(self, handler: Callable[[int, int, bool], None] | None = None,
-                 read: bool = True, write: bool = True, cacheable: bool = False):
+
+    def __init__(
+        self,
+        handler: Callable[[int, int, bool], None] | None = None,
+        read: bool = True,
+        write: bool = True,
+        cacheable: bool = False,
+    ):
         self.handler = handler
         self.read = read
         self.write = write
@@ -70,8 +76,16 @@ class Tier3PTE:
     """FC=14/15 (SHM / PASSTHROUGH). 32-bit layout, no bit overlap:
     [31:12] PPN(20) | [11] VALID | [10] READ | [9] WRITE | [8] EXEC | [7:0] Owner ID
     """
-    def __init__(self, phys_page: int, valid: bool = True, read: bool = True,
-                 write: bool = True, exec_: bool = False, owner_id: int = FB_TASK_ID_INVALID):
+
+    def __init__(
+        self,
+        phys_page: int,
+        valid: bool = True,
+        read: bool = True,
+        write: bool = True,
+        exec_: bool = False,
+        owner_id: int = FB_TASK_ID_INVALID,
+    ):
         self.phys_page = phys_page
         self.valid = valid
         self.read = read
@@ -85,7 +99,7 @@ class VMMIOController:
     TLB hits provide O(1) hot-path access, while TLB misses look up the FlatMap.
     """
 
-    def __init__(self, guest_ram_size: int = 8192):     # FB_CONF_GUEST_RAM_SIZE
+    def __init__(self, guest_ram_size: int = 8192):  # FB_CONF_GUEST_RAM_SIZE
         # `{FastAddressCheck}`: a direct size comparison (addr >= guest_ram_size), not a
         # mask. This is still O(1) and branch-predictable, and unlike a mask it places
         # no power-of-two constraint on guest_ram_size and never silently wraps an
@@ -104,21 +118,39 @@ class VMMIOController:
 
     # --- Static & Dynamic PTE Registration (FlatMap) ---
 
-    def map_static_device(self, vpn: int,
-                          handler: Callable[[int, int, bool], None] | None = None,
-                          read: bool = True, write: bool = True):
+    def map_static_device(
+        self,
+        vpn: int,
+        handler: Callable[[int, int, bool], None] | None = None,
+        read: bool = True,
+        write: bool = True,
+    ):
         """Registers a Tier 2 static device page (FC=12) into FlatMap."""
         self.ptes[vpn] = StaticDevicePTE(handler=handler, read=read, write=write)
 
     def map_shm_page(self, vpn: int, phys_page: int, owner_id: int):
         """Registers a Tier 3 SHM page (FC=14) into FlatMap."""
-        self.ptes[vpn] = Tier3PTE(phys_page=phys_page, valid=True, read=True,
-                                  write=True, exec_=False, owner_id=owner_id)
+        self.ptes[vpn] = Tier3PTE(
+            phys_page=phys_page,
+            valid=True,
+            read=True,
+            write=True,
+            exec_=False,
+            owner_id=owner_id,
+        )
 
-    def map_passthrough_page(self, vpn: int, phys_page: int, read: bool = True, write: bool = True):
+    def map_passthrough_page(
+        self, vpn: int, phys_page: int, read: bool = True, write: bool = True
+    ):
         """Registers a Tier 3 Passthrough page (FC=15) into FlatMap."""
-        self.ptes[vpn] = Tier3PTE(phys_page=phys_page, valid=True, read=read,
-                                  write=write, exec_=True, owner_id=0)
+        self.ptes[vpn] = Tier3PTE(
+            phys_page=phys_page,
+            valid=True,
+            read=read,
+            write=write,
+            exec_=True,
+            owner_id=0,
+        )
 
     def revoke_shm_owner(self, vpn: int):
         """IPC Router Revoke phase: mark the page in-flight and invalidate its TLB entry."""
@@ -158,8 +190,9 @@ class VMMIOController:
         self.tlb[tlb_idx] = {"vpn": vpn, "pte": pte}
         return pte
 
-    def access(self, raw_addr: int, is_write: bool, current_task_id: int = 0
-               ) -> tuple[str, str]:
+    def access(
+        self, raw_addr: int, is_write: bool, current_task_id: int = 0
+    ) -> tuple[str, str]:
         """
         Full dispatch: RAM bypass -> TLB/FlatMap -> permission check (always,
         TLB hit or not) -> syscall dispatch or physical access.
@@ -170,9 +203,11 @@ class VMMIOController:
         # 1. Fast RAM bypass (Tier 1) — O(1), never touches the page table.
         if addr.is_linear():
             if addr.raw >= self.guest_ram_size:
-                return (TrapCode.OUT_OF_BOUNDS,
-                        f"guest address {addr.raw:#010x} exceeds "
-                        f"FB_CONF_GUEST_RAM_SIZE ({self.guest_ram_size})")
+                return (
+                    TrapCode.OUT_OF_BOUNDS,
+                    f"guest address {addr.raw:#010x} exceeds "
+                    f"FB_CONF_GUEST_RAM_SIZE ({self.guest_ram_size})",
+                )
             return ("OK_GUEST_RAM", "bypassed to linear guest RAM")
 
         # 2. TLB / FlatMap lookup.
@@ -180,7 +215,10 @@ class VMMIOController:
         if pte is None:
             # Check known valid FCs for proper trap classification
             if addr.fc() not in (FC_STATIC_DEVICE, FC_SHM, FC_PASSTHROUGH):
-                return (TrapCode.UNDEFINED_FC, f"FC {addr.fc():#x} is not a valid vMMIO region")
+                return (
+                    TrapCode.UNDEFINED_FC,
+                    f"FC {addr.fc():#x} is not a valid vMMIO region",
+                )
             return (TrapCode.UNREGISTERED_PAGE, f"no PTE at VPN {addr.vpn():#x}")
 
         # 3. Permission check — runs unconditionally, TLB hit or miss.
@@ -203,10 +241,15 @@ class VMMIOController:
 
         if addr.fc() == FC_SHM:
             if pte.owner_id == FB_TASK_ID_FLIGHT:
-                return (TrapCode.OWNER_MISMATCH, "page is in-flight (ownership transfer)")
+                return (
+                    TrapCode.OWNER_MISMATCH,
+                    "page is in-flight (ownership transfer)",
+                )
             if pte.owner_id != current_task_id:
-                return (TrapCode.OWNER_MISMATCH,
-                       f"owner={pte.owner_id} != requester={current_task_id}")
+                return (
+                    TrapCode.OWNER_MISMATCH,
+                    f"owner={pte.owner_id} != requester={current_task_id}",
+                )
 
         phys_addr = (pte.phys_page << 12) | addr.offset()
         return ("OK_PHYSICAL", f"physical access at {phys_addr:#010x}")
@@ -215,6 +258,7 @@ class VMMIOController:
 # ==============================================================================
 # Simulation / Verification Tests
 # ==============================================================================
+
 
 def test_ram_bypass_never_touches_page_table():
     ctrl = VMMIOController()
@@ -227,8 +271,9 @@ def test_static_device_syscall_dispatch():
     ctrl = VMMIOController()
     dispatched = []
     vpn = (0xC000_0000 | (0x042 << 16)) >> 12
-    ctrl.map_static_device(vpn=vpn,
-                           handler=lambda sys_id, off, w: dispatched.append((sys_id, off, w)))
+    ctrl.map_static_device(
+        vpn=vpn, handler=lambda sys_id, off, w: dispatched.append((sys_id, off, w))
+    )
 
     addr = 0xC042_0004
     status, _ = ctrl.access(addr, is_write=True)
@@ -252,7 +297,9 @@ def test_tlb_hit_after_first_walk():
 
 def test_undefined_fc_traps():
     ctrl = VMMIOController()
-    status, _ = ctrl.access(0x8000_0000 | (0xD << 28), is_write=False)  # FC=13, reserved
+    status, _ = ctrl.access(
+        0x8000_0000 | (0xD << 28), is_write=False
+    )  # FC=13, reserved
     assert status == TrapCode.UNDEFINED_FC
 
 
@@ -297,8 +344,9 @@ def test_linear_ram_is_bounds_checked_not_waved_through():
         st, _ = ctrl.access(bad, is_write=True)
         assert st == TrapCode.OUT_OF_BOUNDS, f"{bad:#x} is past the 8KB allocation"
 
-    assert ctrl.tlb_hits == 0 and ctrl.tlb_misses == 0, \
+    assert ctrl.tlb_hits == 0 and ctrl.tlb_misses == 0, (
         "the Tier 1 path must never touch the page table"
+    )
 
 
 def test_linear_ram_bound_check_works_for_non_power_of_two_size():
@@ -311,7 +359,9 @@ def test_linear_ram_bound_check_works_for_non_power_of_two_size():
     assert ok == "OK_GUEST_RAM", "last in-range byte (size-1) must be accepted"
 
     st, _ = ctrl.access(12288, is_write=False)
-    assert st == TrapCode.OUT_OF_BOUNDS, "the first byte past the real 12KB boundary must trap"
+    assert st == TrapCode.OUT_OF_BOUNDS, (
+        "the first byte past the real 12KB boundary must trap"
+    )
 
 
 def test_tlb_index_separates_function_codes():
@@ -336,8 +386,9 @@ def test_interleaved_syscall_and_shm_keep_hitting_the_tlb():
         ctrl.access(shm, is_write=True, current_task_id=1)
 
     total = ctrl.tlb_hits + ctrl.tlb_misses
-    assert ctrl.tlb_hits / total >= 0.9, \
+    assert ctrl.tlb_hits / total >= 0.9, (
         f"expected >=90% hit rate, got {ctrl.tlb_hits}/{total}"
+    )
 
 
 def test_flatmap_pte_registration_and_tlb_caching():
@@ -354,7 +405,10 @@ def test_flatmap_pte_registration_and_tlb_caching():
         addr = 0xE000_0000 | (p << 12) | 0x10
         st, msg = ctrl.access(addr, is_write=False, current_task_id=42)
         assert st == "OK_PHYSICAL"
-        assert f"0x{0x1000010 + (p << 12):08x}" in msg or f"0x{(0x1000 + p) << 12 | 0x10:08x}" in msg
+        assert (
+            f"0x{0x1000010 + (p << 12):08x}" in msg
+            or f"0x{(0x1000 + p) << 12 | 0x10:08x}" in msg
+        )
 
     # Repeated access to a hot working set of 8 pages achieves 100% TLB hits
     for p in range(8):
@@ -368,7 +422,9 @@ def test_flatmap_pte_registration_and_tlb_caching():
             st, _ = ctrl.access(addr, is_write=False, current_task_id=42)
             assert st == "OK_PHYSICAL"
 
-    assert ctrl.tlb_hits == before_hits + 80, "working set in TLB must achieve 100% hit rate"
+    assert ctrl.tlb_hits == before_hits + 80, (
+        "working set in TLB must achieve 100% hit rate"
+    )
 
 
 if __name__ == "__main__":
@@ -384,4 +440,3 @@ if __name__ == "__main__":
     test_interleaved_syscall_and_shm_keep_hitting_the_tlb()
     test_flatmap_pte_registration_and_tlb_caching()
     print("[PASS] All vMMIO concept tests passed successfully.")
-

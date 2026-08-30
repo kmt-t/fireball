@@ -102,4 +102,3 @@ stateDiagram-v2
 ### 6.2 メモリ制約
 <!-- traceability: {JIT_MultiBuffer_Cache} -->
 - **方策**: `{JIT_MultiBuffer_Cache}` による 3面循環バッファと最古限定昇格により、断片化を防ぎつつ、実行頻度の低いコードを自然に破棄（代謝）させる。
-

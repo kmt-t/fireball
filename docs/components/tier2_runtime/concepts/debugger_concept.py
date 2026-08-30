@@ -21,9 +21,13 @@ class WASMTrap(Exception):
 # 1. Unified Stack & Execution Context Model
 # ==============================================================================
 
+
 class CallFrame:
     """Inline CallFrame placed on the unified stack."""
-    def __init__(self, parent_offset: int, return_pc: int, func_idx: int, local_base: int):
+
+    def __init__(
+        self, parent_offset: int, return_pc: int, func_idx: int, local_base: int
+    ):
         self.parent_offset = parent_offset
         self.return_pc = return_pc
         self.func_idx = func_idx
@@ -35,10 +39,11 @@ class ExecutionContext:
     Execution Context resident at Stack Bottom (offset 0).
     `{ContextPointerRegister}`
     """
+
     def __init__(self, memory_size: int = 65536, stack_capacity: int = 512):
         self.pc: int = 0
         self.stack: list[int] = [0] * stack_capacity  # Unified stack buffer
-        self.sp_offset: int = 0                       # Current stack growth length
+        self.sp_offset: int = 0  # Current stack growth length
         self.current_frame: Optional[CallFrame] = None
         self.memory: bytearray = bytearray(memory_size)
         self.is_debug_mode: bool = False
@@ -49,6 +54,7 @@ class ExecutionContext:
 # ==============================================================================
 # 2. WASM Interpreter Engine (with Step & Debug Hook)
 # ==============================================================================
+
 
 class WASMInterpreter:
     def __init__(self):
@@ -127,20 +133,24 @@ class WASMInterpreter:
 # 3. Debugger Manager & Integrated Profiler Engine
 # ==============================================================================
 
+
 class DebuggerManager:
     """
     Debugger Controller managing GDB RSP, Breakpoints, and Interpreter Fallback.
     `{RSPMinimalSet}` `{DebuggerLabelTableSwitch}` `{Debug_Integrated}`
     """
+
     def __init__(self, ctx: ExecutionContext, interpreter: WASMInterpreter):
         self.ctx = ctx
         self.interpreter = interpreter
         self.breakpoints: set[int] = set()
         self.attached: bool = False
-        
+
         # Integrated Profiler & Test Tool statistics ({Debug_Integrated})
         self.pc_sample_counts: dict[int, int] = {}
-        self.memory_assertions: list[tuple[int, int, str]] = []  # (addr, expected_val, desc)
+        self.memory_assertions: list[
+            tuple[int, int, str]
+        ] = []  # (addr, expected_val, desc)
         self.assertion_violations: list[str] = []
 
     def attach(self):
@@ -229,11 +239,13 @@ class DebuggerManager:
 # 4. Minimal GDB RSP (Remote Serial Protocol) Parser
 # ==============================================================================
 
+
 class GDBRspProtocol:
     """
     GDB RSP Protocol Packet Formatter & Dispatcher.
     `{RSPMinimalSet}`
     """
+
     def __init__(self, dbg: DebuggerManager):
         self.dbg = dbg
 
@@ -251,7 +263,7 @@ class GDBRspProtocol:
         Parses an incoming GDB RSP packet (e.g. '$?#3f', '$g#67', '$s#73') and returns response packet.
         """
         if packet.startswith("$") and "#" in packet:
-            payload = packet[1:packet.rfind("#")]
+            payload = packet[1 : packet.rfind("#")]
         else:
             payload = packet
 
@@ -270,6 +282,7 @@ class GDBRspProtocol:
             sp = self.dbg.ctx.sp_offset
             lr = 0
             fp = 0
+
             # 32-bit registers formatted as 8 hex chars (little-endian)
             def to_hex32(val: int) -> str:
                 b = val.to_bytes(4, byteorder="little")
@@ -285,7 +298,7 @@ class GDBRspProtocol:
                 addr = int(parts[0], 16)
                 length = int(parts[1], 16)
                 if addr + length <= len(self.dbg.ctx.memory):
-                    mem_slice = self.dbg.ctx.memory[addr:addr + length]
+                    mem_slice = self.dbg.ctx.memory[addr : addr + length]
                     return self.format_packet(mem_slice.hex())
                 else:
                     return self.format_packet("E01")  # Memory boundary check error
@@ -299,7 +312,7 @@ class GDBRspProtocol:
             length = int(len_str, 16)
             data_bytes = bytes.fromhex(data_hex)
             if addr + length <= len(self.dbg.ctx.memory):
-                self.dbg.ctx.memory[addr:addr + length] = data_bytes
+                self.dbg.ctx.memory[addr : addr + length] = data_bytes
                 return self.format_packet("OK")
             else:
                 return self.format_packet("E01")
@@ -336,6 +349,7 @@ class GDBRspProtocol:
 # 5. Simulation & Verification Tests
 # ==============================================================================
 
+
 def test_debugger_step_and_registers():
     ctx = ExecutionContext()
     interp = WASMInterpreter()
@@ -346,7 +360,7 @@ def test_debugger_step_and_registers():
         ("i32.const", 42),
         ("i32.const", 8),
         ("i32.add", None),
-        ("return", None)
+        ("return", None),
     ]
 
     dbg.attach()
@@ -388,17 +402,17 @@ def test_debugger_breakpoint_and_continue():
     ctx.sp_offset = 2
 
     bytecode = [
-        ("local.get", 0),          # PC 0
-        ("local.get", 1),          # PC 1
-        ("i32.add", None),         # PC 2
-        ("local.set", 1),          # PC 3: sum += counter
-        ("local.get", 0),          # PC 4
-        ("i32.const", 1),          # PC 5
-        ("i32.sub", None),         # PC 6
-        ("local.set", 0),          # PC 7: counter -= 1
-        ("local.get", 0),          # PC 8: check counter != 0
-        ("br_if", 0),              # PC 9: loop back to PC 0 if counter > 0
-        ("return", None)           # PC 10
+        ("local.get", 0),  # PC 0
+        ("local.get", 1),  # PC 1
+        ("i32.add", None),  # PC 2
+        ("local.set", 1),  # PC 3: sum += counter
+        ("local.get", 0),  # PC 4
+        ("i32.const", 1),  # PC 5
+        ("i32.sub", None),  # PC 6
+        ("local.set", 0),  # PC 7: counter -= 1
+        ("local.get", 0),  # PC 8: check counter != 0
+        ("br_if", 0),  # PC 9: loop back to PC 0 if counter > 0
+        ("return", None),  # PC 10
     ]
 
     dbg.attach()
@@ -412,7 +426,7 @@ def test_debugger_breakpoint_and_continue():
     resp = rsp.handle_packet("$c#63", bytecode)
     assert resp == "$S05#b8"
     assert ctx.pc == 3
-    assert ctx.stack[0] == 5   # counter
+    assert ctx.stack[0] == 5  # counter
     assert interp.peek(ctx) == 5  # sum add result on stack top
 
     # Read registers ($g)
@@ -432,7 +446,7 @@ def test_debugger_integrated_profiler():
         ("local.set", 0),
         ("local.get", 0),
         ("br_if", 0),
-        ("return", None)
+        ("return", None),
     ]
     ctx.stack[0] = 10  # loop 10 times
 

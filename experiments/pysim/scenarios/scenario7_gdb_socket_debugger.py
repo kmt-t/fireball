@@ -3,17 +3,28 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-_PYSIM_DIR = Path(__file__).resolve().parents[1] if any(d in str(Path(__file__)) for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")) else Path(__file__).resolve().parent
+_PYSIM_DIR = (
+    Path(__file__).resolve().parents[1]
+    if any(
+        d in str(Path(__file__))
+        for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")
+    )
+    else Path(__file__).resolve().parent
+)
 
-for _p in [_PYSIM_DIR, _PYSIM_DIR / 'core', _PYSIM_DIR / 'runtime', _PYSIM_DIR / 'jit', _PYSIM_DIR / 'platforms']:
+for _p in [
+    _PYSIM_DIR,
+    _PYSIM_DIR / "core",
+    _PYSIM_DIR / "runtime",
+    _PYSIM_DIR / "jit",
+    _PYSIM_DIR / "platforms",
+]:
     _sp = str(_p)
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
 import sys
 from pathlib import Path
-
-
 
 
 """Integration Scenario 7: GDB Remote Serial Protocol (RSP) Socket Debugger.
@@ -73,7 +84,7 @@ class GDBClientHelper:
         if "$" in buf and "#" in buf:
             dollar_idx = buf.index("$")
             hash_idx = buf.find("#", dollar_idx)
-            response_payload = buf[dollar_idx + 1:hash_idx]
+            response_payload = buf[dollar_idx + 1 : hash_idx]
             # Send ACK for response
             self.sock.sendall(b"+")
             return response_payload
@@ -88,17 +99,17 @@ def test_scenario_gdb_socket_debugger():
     block10 = BasicBlock(
         head_pc=0x10,
         ops=[("local.get", 0), ("i32.const", 10), ("i32.add", None), ("local.set", 0)],
-        next_pc=0x20
+        next_pc=0x20,
     )
     block20 = BasicBlock(
         head_pc=0x20,
         ops=[("local.get", 0), ("i32.const", 5), ("i32.mul", None), ("local.set", 1)],
-        next_pc=0x30
+        next_pc=0x30,
     )
     block30 = BasicBlock(
         head_pc=0x30,
         ops=[("local.get", 1), ("i32.const", 2), ("i32.sub", None), ("local.set", 1)],
-        next_pc=None
+        next_pc=None,
     )
     blocks = {0x10: block10, 0x20: block20, 0x30: block30}
 
@@ -171,7 +182,9 @@ def test_scenario_gdb_socket_debugger():
         resp = client.send_raw_packet("c")
         assert resp == "W00" and ctx.locals[1] == 498
 
-        print("    [PASS] Scenario 7 (GDB Socket Debugger Session) succeeded seamlessly.")
+        print(
+            "    [PASS] Scenario 7 (GDB Socket Debugger Session) succeeded seamlessly."
+        )
 
     finally:
         client.close()

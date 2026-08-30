@@ -28,9 +28,14 @@ def build_model(*, guards: bool = True) -> Kripke:
     """
     S = [
         "s_idle",
-        "s_resource_active", "s_op_call", "s_op_performed",
-        "s_resource_dropped", "s_op_call_on_dropped", "s_op_rejected",
-        "s_interrupt_triggered", "s_pollable_ready",
+        "s_resource_active",
+        "s_op_call",
+        "s_op_performed",
+        "s_resource_dropped",
+        "s_op_call_on_dropped",
+        "s_op_rejected",
+        "s_interrupt_triggered",
+        "s_pollable_ready",
         "s_op_performed_on_dropped",
         "s_notification_lost",
     ]
@@ -61,12 +66,16 @@ def build_model(*, guards: bool = True) -> Kripke:
 
     L = {
         "s_idle": {"idle"},
-        "s_resource_active": {"active"}, "s_op_call": {"active"}, "s_op_performed": {"active"},
-        "s_resource_dropped": {"dropped"}, "s_op_call_on_dropped": {"dropped"}, "s_op_rejected": {"rejected"},
+        "s_resource_active": {"active"},
+        "s_op_call": {"active"},
+        "s_op_performed": {"active"},
+        "s_resource_dropped": {"dropped"},
+        "s_op_call_on_dropped": {"dropped"},
+        "s_op_rejected": {"rejected"},
         "s_interrupt_triggered": {"triggered"},
         "s_pollable_ready": {"ready"},
-        "s_op_performed_on_dropped": {"op_on_dropped"},   # 違反状態
-        "s_notification_lost": {"lost"},                    # 違反状態
+        "s_op_performed_on_dropped": {"op_on_dropped"},  # 違反状態
+        "s_notification_lost": {"lost"},  # 違反状態
     }
     return Kripke(S=S, S0=S0, R=R, L=L)
 
@@ -98,6 +107,7 @@ def properties():
 
 if __name__ == "__main__":
     from pyModelChecking.CTL import modelcheck
+
     km = build_model(guards=True)
     for prop in properties():
         res = modelcheck(km, prop["formula"])

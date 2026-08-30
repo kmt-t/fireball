@@ -23,7 +23,6 @@ vMMIOアドレス空間（Tier 2/3）に対しては、どちらのパスも最�
 <!-- traceability: {WIT_Interface_Spec} -->
 `fireball_call`のWIT (WebAssembly Interface Type) 定義は以下の通りである。詳細は `docs/components/tier1_interface/interface_wit.md` を参照のこと。 `{WIT_Interface_Spec}`
 
-
 ```wit
 package fireball:host;
 
@@ -236,10 +235,7 @@ namespace fireball {
 # ゲスト側での trigger.set_pin の実装例 (Shim) `{Fast_Path_GPIO}`
 def fireball_trigger_set_pin(pin: int, value: bool):
     __fireball_call(
-        fb_syscall_id.FB_SYSCALL_TRIGGER_SET_PIN,
-        pin,
-        int(value),
-        0, 0, 0, 0
+        fb_syscall_id.FB_SYSCALL_TRIGGER_SET_PIN, pin, int(value), 0, 0, 0, 0
     )
 ```
 > [!IMPORTANT]
@@ -257,7 +253,6 @@ def fireball_trigger_set_pin(pin: int, value: bool):
 - **同期WASI と 非同期IPC のブリッジ**: `{WASI_Async_Bridge}`
     - 同期的な WASI 呼び出しを Fireball の非同期 IPC へマッピングする際、ラッパー内の `wait_for_ipc_response` が内部で `co_yield()` を発行する。
     - この `co_yield` を VSoC / COOS が適切にハンドリングし、I/O 完了までタスクをサスペンド状態にする密結合な連携が必要。
-
 
 ## 8. ホストからゲストへの非同期通知メカニズム
 <!-- traceability: {Asynchronous_Notification} -->

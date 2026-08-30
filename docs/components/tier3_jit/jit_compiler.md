@@ -271,7 +271,6 @@ JITサブシステムは、以下の2つの独立した設計書に責務を分�
 ### 6.1 公開API
 外部から利用可能なオブジェクト指向APIを定義する。
 
-
 #### 初期化（initialize）
 <!-- traceability: {META_ConfigurableSystem} -->
 

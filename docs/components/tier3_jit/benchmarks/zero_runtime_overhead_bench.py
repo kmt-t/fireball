@@ -18,7 +18,9 @@ as a side effect of an unrelated test run.
 import os
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "concepts"))
+sys.path.insert(
+    0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "concepts")
+)
 from stack_cache_concept import LOOP_OPS, NAIVE, StackCachingCompiler  # noqa: E402
 
 
@@ -31,11 +33,17 @@ def main() -> None:
     reduction = 1 - (cached_count / naive_count)
 
     print(f"[MEASURED] workload: {len(LOOP_OPS)} WASM ops ({LOOP_OPS})")
-    print(f"           naive (always-memory) stencils : {naive_count} native instructions")
-    print(f"           stack-cached (constexpr variant): {cached_count} native instructions "
-          f"({naive_count / cached_count:.2f}x fewer)")
-    print(f"           spill/reload instructions emitted mid-block: {mem_ops} "
-          f"(0 means the abstraction added no runtime memory traffic for this block)")
+    print(
+        f"           naive (always-memory) stencils : {naive_count} native instructions"
+    )
+    print(
+        f"           stack-cached (constexpr variant): {cached_count} native instructions "
+        f"({naive_count / cached_count:.2f}x fewer)"
+    )
+    print(
+        f"           spill/reload instructions emitted mid-block: {mem_ops} "
+        f"(0 means the abstraction added no runtime memory traffic for this block)"
+    )
 
     assert cached_count < naive_count, (
         "the variant-selecting compiler must beat the naive always-memory stencil set, "
@@ -45,9 +53,11 @@ def main() -> None:
         f"expected no mid-block spill for this workload, got {mem_ops} -- the abstraction "
         "is not actually free here"
     )
-    print(f"[PASS] Stencil-variant selection reduced instruction count by {reduction:.0%} with "
-          "zero mid-block memory traffic -- the abstraction cost is paid in ROM (variant table "
-          "entries), not in emitted runtime instructions.")
+    print(
+        f"[PASS] Stencil-variant selection reduced instruction count by {reduction:.0%} with "
+        "zero mid-block memory traffic -- the abstraction cost is paid in ROM (variant table "
+        "entries), not in emitted runtime instructions."
+    )
 
 
 if __name__ == "__main__":

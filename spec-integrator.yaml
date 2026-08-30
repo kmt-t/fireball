@@ -210,4 +210,3 @@ fake_decision_detector:
   # 藁人形判定の閾値
   strawman_min_ratio: 0.35
   strawman_abs_chars: 40
-

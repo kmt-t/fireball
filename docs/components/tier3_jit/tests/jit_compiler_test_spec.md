@@ -73,4 +73,3 @@ Copy-and-Patchエンジンによるネイティブコード生成、`__fastcall`
 ## 4. 未検証・スコープ外
 
 - Thumb-2/RISC-V 実機ターゲットでの `constexpr` アセンブラ生成バイナリの実機検証。
-

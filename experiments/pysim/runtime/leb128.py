@@ -17,9 +17,22 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-_PYSIM_DIR = Path(__file__).resolve().parents[1] if any(d in str(Path(__file__)) for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")) else Path(__file__).resolve().parent
+_PYSIM_DIR = (
+    Path(__file__).resolve().parents[1]
+    if any(
+        d in str(Path(__file__))
+        for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")
+    )
+    else Path(__file__).resolve().parent
+)
 
-for _p in [_PYSIM_DIR, _PYSIM_DIR / 'core', _PYSIM_DIR / 'runtime', _PYSIM_DIR / 'jit', _PYSIM_DIR / 'platforms']:
+for _p in [
+    _PYSIM_DIR,
+    _PYSIM_DIR / "core",
+    _PYSIM_DIR / "runtime",
+    _PYSIM_DIR / "jit",
+    _PYSIM_DIR / "platforms",
+]:
     _sp = str(_p)
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
@@ -29,9 +42,7 @@ import sys
 from pathlib import Path
 
 
-
 def decode_unsigned(data: bytes, offset: int) -> tuple[int, int]:
-
     """Returns (value, new_offset)."""
 
     result = 0
@@ -39,7 +50,6 @@ def decode_unsigned(data: bytes, offset: int) -> tuple[int, int]:
     shift = 0
 
     while True:
-
         byte = data[offset]
 
         offset += 1
@@ -47,17 +57,12 @@ def decode_unsigned(data: bytes, offset: int) -> tuple[int, int]:
         result |= (byte & 0x7F) << shift
 
         if byte & 0x80 == 0:
-
             return result, offset
 
         shift += 7
 
 
-
-
-
 def decode_signed(data: bytes, offset: int) -> tuple[int, int]:
-
     """Returns (value, new_offset). Used for i32.const/i64.const (sleb128)."""
 
     result = 0
@@ -65,7 +70,6 @@ def decode_signed(data: bytes, offset: int) -> tuple[int, int]:
     shift = 0
 
     while True:
-
         byte = data[offset]
 
         offset += 1
@@ -75,15 +79,10 @@ def decode_signed(data: bytes, offset: int) -> tuple[int, int]:
         shift += 7
 
         if byte & 0x80 == 0:
-
             if byte & 0x40 and shift < 64:
-
                 result |= -(1 << shift)
 
             return result, offset
-
-
-
 
 
 def encode_unsigned(value: int) -> bytes:
@@ -93,23 +92,17 @@ def encode_unsigned(value: int) -> bytes:
     out = bytearray()
 
     while True:
-
         byte = value & 0x7F
 
         value >>= 7
 
         if value != 0:
-
             out.append(byte | 0x80)
 
         else:
-
             out.append(byte)
 
             return bytes(out)
-
-
-
 
 
 def encode_signed(value: int) -> bytes:
@@ -119,17 +112,14 @@ def encode_signed(value: int) -> bytes:
     more = True
 
     while more:
-
         byte = value & 0x7F
 
         value >>= 7
 
         if (value == 0 and (byte & 0x40) == 0) or (value == -1 and (byte & 0x40) != 0):
-
             more = False
 
         else:
-
             byte |= 0x80
 
         out.append(byte)

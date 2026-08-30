@@ -113,6 +113,7 @@ class RoundRobinScheduler:
 # Simulation / Verification Tests
 # ==============================================================================
 
+
 def test_round_robin_fairness():
     sched = RoundRobinScheduler(max_tasks=4)
     exec_order = []
@@ -135,7 +136,9 @@ def test_round_robin_fairness():
     while sched.run_cycle():
         pass
 
-    assert exec_order == ["A1", "B1", "A2", "B2"], f"Unexpected execution order: {exec_order}"
+    assert exec_order == ["A1", "B1", "A2", "B2"], (
+        f"Unexpected execution order: {exec_order}"
+    )
     assert sched.tasks["A"]["state"] == TaskState.TERMINATED
     assert sched.tasks["B"]["state"] == TaskState.TERMINATED
     assert sched.total_dispatches == 6

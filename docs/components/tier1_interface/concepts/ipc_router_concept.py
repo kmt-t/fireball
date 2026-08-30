@@ -15,7 +15,9 @@ from typing import Any
 
 sys.path.insert(
     0,
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "tier1_core", "concepts"),
+    os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "..", "..", "tier1_core", "concepts"
+    ),
 )
 from flat_view_concept import FlatMapView  # noqa: E402
 
@@ -40,18 +42,37 @@ class IPCRouter:
         # construction time as a sorted array and searched via FlatMapView's
         # binary search -- matching {LowLatencyLookup}/{META_FlatMapIndexed}'s
         # O(log N) claim for real, not just in the design prose.
-        entries = sorted({
-            "fireball://core/coos/0": {"role": "CORE_SERVICE", "channel_id": "ch_coos", "max_queue": 2},
-            "fireball://hal/gpio/0": {"role": "PLATFORM_HAL", "channel_id": "ch_gpio", "max_queue": 2},
-            "fireball://dbg/manager/0": {"role": "DEBUGGER", "channel_id": "ch_dbg", "max_queue": 1},
-        }.items())
-        self.registry = FlatMapView([uri for uri, _ in entries], [desc for _, desc in entries])
+        entries = sorted(
+            {
+                "fireball://core/coos/0": {
+                    "role": "CORE_SERVICE",
+                    "channel_id": "ch_coos",
+                    "max_queue": 2,
+                },
+                "fireball://hal/gpio/0": {
+                    "role": "PLATFORM_HAL",
+                    "channel_id": "ch_gpio",
+                    "max_queue": 2,
+                },
+                "fireball://dbg/manager/0": {
+                    "role": "DEBUGGER",
+                    "channel_id": "ch_dbg",
+                    "max_queue": 1,
+                },
+            }.items()
+        )
+        self.registry = FlatMapView(
+            [uri for uri, _ in entries], [desc for _, desc in entries]
+        )
 
         # Stage 2: Role-based Access Control Matrix (sender_role, target_role) -> bool
         self.role_matrix: dict[tuple[str, str], bool] = {
             ("CLIENT_APP", "CORE_SERVICE"): True,
             ("CLIENT_APP", "PLATFORM_HAL"): True,
-            ("CLIENT_APP", "DEBUGGER"): False,  # Client app cannot directly access debugger
+            (
+                "CLIENT_APP",
+                "DEBUGGER",
+            ): False,  # Client app cannot directly access debugger
             ("CORE_SERVICE", "PLATFORM_HAL"): True,
             ("DEBUGGER", "CORE_SERVICE"): True,
             ("DEBUGGER", "PLATFORM_HAL"): True,
@@ -64,12 +85,16 @@ class IPCRouter:
             "ch_dbg": [],
         }
 
-    def route_message(self, sender_role: str, uri: str, message: IPCMessage) -> tuple[str, str]:
+    def route_message(
+        self, sender_role: str, uri: str, message: IPCMessage
+    ) -> tuple[str, str]:
         """
         Executes the 3-stage IPC routing pipeline.
         Returns (status_code, detail_message).
         """
-        assert message.ownership == OwnershipState.SENDER_OWNS, "Sender must own resource before routing"
+        assert message.ownership == OwnershipState.SENDER_OWNS, (
+            "Sender must own resource before routing"
+        )
 
         # --- Stage 1: URI Lookup (binary search over the sorted registry) ---
         entry = self.registry.find(uri)
@@ -83,7 +108,10 @@ class IPCRouter:
         # --- Stage 2: Access Control Check ---
         allowed = self.role_matrix.get((sender_role, target_role), False)
         if not allowed:
-            return ("ERR_PERMISSION_DENIED", f"Role {sender_role} not allowed to access {target_role}")
+            return (
+                "ERR_PERMISSION_DENIED",
+                f"Role {sender_role} not allowed to access {target_role}",
+            )
 
         # --- Stage 3: Zero-Copy Ownership Handoff ---
         target_queue = self.queues[channel_id]
@@ -109,7 +137,9 @@ class IPCRouter:
             return None
 
         message = queue.pop(0)
-        assert message.ownership == OwnershipState.IN_FLIGHT, "Message must be in-flight before grant"
+        assert message.ownership == OwnershipState.IN_FLIGHT, (
+            "Message must be in-flight before grant"
+        )
 
         # 3. Grant receiver ownership
         message.ownership = OwnershipState.RECEIVER_OWNS
@@ -125,7 +155,9 @@ class IPCRouter:
 
         while queue:
             msg = queue.pop(0)
-            assert msg.ownership == OwnershipState.IN_FLIGHT, "Only in-flight messages can be dropped"
+            assert msg.ownership == OwnershipState.IN_FLIGHT, (
+                "Only in-flight messages can be dropped"
+            )
             msg.ownership = OwnershipState.RECLAIMED_BY_DROP
             reclaimed_ids.append(msg.resource_id)
 
@@ -136,13 +168,15 @@ class IPCRouter:
 # Simulation / Verification Tests
 # ==============================================================================
 
+
 def test_registry_is_a_real_flat_map_view_not_a_dict():
     """{LowLatencyLookup}/{META_FlatMapIndexed}: Stage 1 URI lookup must actually be the
     sorted-array + binary-search flat_map_view, not a plain dict wearing its name. This
     closes the gap ipc_router.md 4.3.1 used to admit as a known divergence."""
     router = IPCRouter()
-    assert isinstance(router.registry, FlatMapView), \
+    assert isinstance(router.registry, FlatMapView), (
         "registry must be a real FlatMapView so the O(log N) claim is backed by the actual mechanism"
+    )
     assert not isinstance(router.registry, dict)
 
     # Binary search finds a registered URI...
@@ -154,7 +188,9 @@ def test_registry_is_a_real_flat_map_view_not_a_dict():
 def test_unregistered_uri_is_rejected():
     router = IPCRouter()
     msg = IPCMessage("shm_buf_x", {"cmd": "NOOP"})
-    status, detail = router.route_message("CLIENT_APP", "fireball://nonexistent/service/0", msg)
+    status, detail = router.route_message(
+        "CLIENT_APP", "fireball://nonexistent/service/0", msg
+    )
     assert status == "ERR_NOT_FOUND"
     assert msg.ownership == OwnershipState.SENDER_OWNS
 
@@ -191,8 +227,14 @@ def test_queue_full_rollback():
     msg2 = IPCMessage("buf_2", {"d": 2})
     msg3 = IPCMessage("buf_3", {"d": 3})
 
-    assert router.route_message("CLIENT_APP", "fireball://hal/gpio/0", msg1)[0] == "OK_ENQUEUED"
-    assert router.route_message("CLIENT_APP", "fireball://hal/gpio/0", msg2)[0] == "OK_ENQUEUED"
+    assert (
+        router.route_message("CLIENT_APP", "fireball://hal/gpio/0", msg1)[0]
+        == "OK_ENQUEUED"
+    )
+    assert (
+        router.route_message("CLIENT_APP", "fireball://hal/gpio/0", msg2)[0]
+        == "OK_ENQUEUED"
+    )
 
     # 3rd message exceeds max_queue=2 -> Rollback
     status, _ = router.route_message("CLIENT_APP", "fireball://hal/gpio/0", msg3)

@@ -53,9 +53,22 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-_PYSIM_DIR = Path(__file__).resolve().parents[1] if any(d in str(Path(__file__)) for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")) else Path(__file__).resolve().parent
+_PYSIM_DIR = (
+    Path(__file__).resolve().parents[1]
+    if any(
+        d in str(Path(__file__))
+        for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")
+    )
+    else Path(__file__).resolve().parent
+)
 
-for _p in [_PYSIM_DIR, _PYSIM_DIR / 'core', _PYSIM_DIR / 'runtime', _PYSIM_DIR / 'jit', _PYSIM_DIR / 'platforms']:
+for _p in [
+    _PYSIM_DIR,
+    _PYSIM_DIR / "core",
+    _PYSIM_DIR / "runtime",
+    _PYSIM_DIR / "jit",
+    _PYSIM_DIR / "platforms",
+]:
     _sp = str(_p)
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
@@ -63,7 +76,6 @@ for _p in [_PYSIM_DIR, _PYSIM_DIR / 'core', _PYSIM_DIR / 'runtime', _PYSIM_DIR /
 import sys
 
 from pathlib import Path
-
 
 
 import socket
@@ -77,27 +89,16 @@ import uuid
 from dataclasses import dataclass, field
 
 
-
-
-
 class HalError(Exception):
-
     """Base class for HAL-level failures that must map to a recovery-strategy-category."""
 
 
-
-
-
 class ShmTrap(HalError):
-
     """A guest touched a shared-memory handle it does not own, or a slice
 
     escaped the handle's acquired bounds. Mirrors runtime_vmmio.md 4.6's
 
     vMMIO PTE ownership trap -- a real MMU would fault here."""
-
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -107,9 +108,7 @@ class ShmTrap(HalError):
 # ---------------------------------------------------------------------------
 
 
-
 class UartTransport:
-
     """One physical serial line, modeled as a real duplex OS socket pair.
 
 
@@ -124,8 +123,6 @@ class UartTransport:
 
     """
 
-
-
     def __init__(self):
 
         self.device_sock, self.host_sock = socket.socketpair()
@@ -138,60 +135,43 @@ class UartTransport:
 
         self.bytes_written = 0
 
-
-
     def write(self, data: bytes) -> int:
-
         """Physical transmit: blocks on the real socket buffer if full."""
 
         with self._lock:
-
             n = self.device_sock.send(data)
 
             self.bytes_written += n
 
             return n
 
-
-
     def drain(self) -> bytes:
-
         """Host-side read of everything currently sitting on the wire."""
 
         chunks: list[bytes] = []
 
         try:
-
             while True:
-
                 chunk = self.host_sock.recv(4096)
 
                 if not chunk:
-
                     break
 
                 chunks.append(chunk)
 
                 if len(chunk) < 4096:
-
                     break
 
         except (BlockingIOError, socket.timeout):
-
             pass
 
         return b"".join(chunks)
-
-
 
     def close(self) -> None:
 
         self.device_sock.close()
 
         self.host_sock.close()
-
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -201,19 +181,13 @@ class UartTransport:
 # ---------------------------------------------------------------------------
 
 
+FB_CONF_HAL_BUFFER_SIZE = 256  # docs/components/tier1_core/system_config.md 3.3.3
 
-FB_CONF_HAL_BUFFER_SIZE = 256   # docs/components/tier1_core/system_config.md 3.3.3
-
-FB_CONF_HAL_MAX_BUFFERS = 4     # docs/components/tier1_core/system_config.md 3.3.3
-
-
-
+FB_CONF_HAL_MAX_BUFFERS = 4  # docs/components/tier1_core/system_config.md 3.3.3
 
 
 @dataclass
-
 class ShmHandle:
-
     """What acquire_buffer() actually returns: an opaque *name*, not a
 
     pointer. Handing this value to code running as a different owner is
@@ -233,11 +207,7 @@ class ShmHandle:
     _storage: bytearray = field(repr=False, compare=False)
 
 
-
-
-
 class ShmBufferPool:
-
     """`acquire_buffer()` backed by FB_CONF_HAL_MAX_BUFFERS fixed-size slots
 
     of at most FB_CONF_HAL_BUFFER_SIZE bytes each: a static pool, not a
@@ -246,59 +216,46 @@ class ShmBufferPool:
 
     """
 
-
-
     def __init__(self):
 
         self._slots: list[ShmHandle | None] = [None] * FB_CONF_HAL_MAX_BUFFERS
 
-
-
     def acquire_buffer(self, task_id: int, size: int) -> ShmHandle:
 
         if size <= 0 or size > FB_CONF_HAL_BUFFER_SIZE:
-
             raise ValueError(
-
                 f"acquire_buffer(size={size}) exceeds FB_CONF_HAL_BUFFER_SIZE={FB_CONF_HAL_BUFFER_SIZE}"
-
             )
 
         slot_idx = -1
 
         for i, s in enumerate(self._slots):
-
             if s is None:
-
                 slot_idx = i
 
                 break
 
         if slot_idx < 0:
-
             raise HalError("HAL buffer pool exhausted (FB_CONF_HAL_MAX_BUFFERS)")
-
-
 
         name = f"fb_shm_{uuid.uuid4().hex[:12]}"
 
-        handle = ShmHandle(name=name, owner_task=task_id, capacity=size, _storage=bytearray(size))
+        handle = ShmHandle(
+            name=name, owner_task=task_id, capacity=size, _storage=bytearray(size)
+        )
 
         self._slots[slot_idx] = handle
 
         return handle
 
-
-
     def release_buffer(self, task_id: int, handle: ShmHandle) -> None:
 
         for i, s in enumerate(self._slots):
-
             if s is not None and s.name == handle.name:
-
                 if s.owner_task != task_id:
-
-                    raise ShmTrap(f"task {task_id} cannot release {handle.name}: not the owner")
+                    raise ShmTrap(
+                        f"task {task_id} cannot release {handle.name}: not the owner"
+                    )
 
                 self._slots[i] = None
 
@@ -306,40 +263,28 @@ class ShmBufferPool:
 
         raise ShmTrap(f"task {task_id} cannot release {handle.name}: not found")
 
-
-
     def _resolve(self, task_id: int, handle: ShmHandle) -> ShmHandle:
 
         for s in self._slots:
-
             if s is not None and s.name == handle.name:
-
                 if s.owner_task != task_id:
-
                     raise ShmTrap(
-
                         f"task {task_id} does not own {handle.name} (owner={s.owner_task}); "
-
                         "no linear-memory pointer would ever bypass this check"
-
                     )
 
                 return s
 
         raise ShmTrap(f"handle {handle.name} does not exist (stale, or never acquired)")
 
-
-
     def close_all(self) -> None:
 
         for i in range(len(self._slots)):
-
             self._slots[i] = None
 
-
-
-    def view(self, task_id: int, handle: ShmHandle, offset: int, length: int) -> memoryview:
-
+    def view(
+        self, task_id: int, handle: ShmHandle, offset: int, length: int
+    ) -> memoryview:
         """Resolves a bounds-checked (offset, length) window inside `handle`.
 
 
@@ -353,19 +298,12 @@ class ShmBufferPool:
         record = self._resolve(task_id, handle)
 
         if offset < 0 or length < 0 or offset + length > record.capacity:
-
             raise ShmTrap(
-
                 f"shm-slice(offset={offset}, len={length}) escapes {handle.name}'s "
-
                 f"acquired capacity ({record.capacity} bytes)"
-
             )
 
-        return memoryview(record._storage)[offset: offset + length]
-
-
-
+        return memoryview(record._storage)[offset : offset + length]
 
 
 # ---------------------------------------------------------------------------
@@ -375,18 +313,12 @@ class ShmBufferPool:
 # ---------------------------------------------------------------------------
 
 
-
 class Timer:
-
     """wasi:clocks/monotonic-clock, backed by the real system clock."""
-
-
 
     def get_now_ns(self) -> int:
 
         return time.monotonic_ns()
-
-
 
     def subscribe(self, nanos: int, callback) -> threading.Timer:
 

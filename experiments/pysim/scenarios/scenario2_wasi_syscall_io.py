@@ -1,17 +1,28 @@
 import sys
 from pathlib import Path
 
-_PYSIM_DIR = Path(__file__).resolve().parents[1] if any(d in str(Path(__file__)) for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")) else Path(__file__).resolve().parent
+_PYSIM_DIR = (
+    Path(__file__).resolve().parents[1]
+    if any(
+        d in str(Path(__file__))
+        for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")
+    )
+    else Path(__file__).resolve().parent
+)
 
-for _p in [_PYSIM_DIR, _PYSIM_DIR / 'core', _PYSIM_DIR / 'runtime', _PYSIM_DIR / 'jit', _PYSIM_DIR / 'platforms']:
+for _p in [
+    _PYSIM_DIR,
+    _PYSIM_DIR / "core",
+    _PYSIM_DIR / "runtime",
+    _PYSIM_DIR / "jit",
+    _PYSIM_DIR / "platforms",
+]:
     _sp = str(_p)
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
 import sys
 from pathlib import Path
-
-
 
 
 """Integration Scenario 2: Tier 2 Runtime + System Call & WASI IO.
@@ -81,15 +92,21 @@ def test_scenario_wasi_syscall():
     sysv = System()
     wasi_ctx = WasiHostContext(sysv)
     host_funcs = wasi_ctx.build_interpreter_host_functions(module)
-    interp = Interpreter(module, memory=wasi_ctx.guest_memory, host_functions=host_funcs)
+    interp = Interpreter(
+        module, memory=wasi_ctx.guest_memory, host_functions=host_funcs
+    )
 
     # 1. Execute scatter-gather fd_write
     fn_write = module.export_func_index("test_scatter_write")
     res_written = interp.call(fn_write, [])
-    assert res_written == [23], f"Expected 23 bytes written (10 + 13), got {res_written}"
+    assert res_written == [23], (
+        f"Expected 23 bytes written (10 + 13), got {res_written}"
+    )
 
     output_str = sysv.transport.drain().decode("utf-8")
-    assert output_str == "HELLO-WASI [SYSTEM_OK]\n", f"WASI stdout mismatch: {repr(output_str)}"
+    assert output_str == "HELLO-WASI [SYSTEM_OK]\n", (
+        f"WASI stdout mismatch: {repr(output_str)}"
+    )
 
     # 2. Test proc_exit
     fn_exit = module.export_func_index("test_exit")

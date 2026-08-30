@@ -58,8 +58,8 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_active_full": {"pending"},
         "s_idle_flushing": {"flushing"},
         "s_flush_done": {"flushed"},
-        "s_blocked_caller": {"blocked"},          # 違反状態
-        "s_never_flushed": {"never_flushed"},     # 違反状態
+        "s_blocked_caller": {"blocked"},  # 違反状態
+        "s_never_flushed": {"never_flushed"},  # 違反状態
     }
     return Kripke(S=S, S0=S0, R=R, L=L)
 
@@ -93,6 +93,7 @@ def properties():
 
 if __name__ == "__main__":
     from pyModelChecking.CTL import modelcheck
+
     km = build_model(guards=True)
     for prop in properties():
         res = modelcheck(km, prop["formula"])

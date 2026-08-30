@@ -23,8 +23,14 @@ from jit_copy_patch_concept import CopyPatchJITEngine  # noqa: E402
 
 from unicorn import Uc, UC_ARCH_ARM, UC_MODE_THUMB, UC_ERR_EXCEPTION, UcError  # noqa: E402
 from unicorn.arm_const import (  # noqa: E402
-    UC_ARM_REG_R2, UC_ARM_REG_R3, UC_ARM_REG_R4, UC_ARM_REG_R5, UC_ARM_REG_R6,
-    UC_ARM_REG_R8, UC_ARM_REG_R9, UC_ARM_REG_R12,
+    UC_ARM_REG_R2,
+    UC_ARM_REG_R3,
+    UC_ARM_REG_R4,
+    UC_ARM_REG_R5,
+    UC_ARM_REG_R6,
+    UC_ARM_REG_R8,
+    UC_ARM_REG_R9,
+    UC_ARM_REG_R12,
 )
 
 CODE_BASE = 0x8000
@@ -41,9 +47,18 @@ def _to_s32(x: int) -> int:
     return x - (1 << 32) if x & 0x8000_0000 else x
 
 
-def run_stencil(hex_bytes: str, r2: int = 0, r3: int = 0, r4: int = 0, r5: int = 0, r6: int = 0,
-                r8: int = 0, r9: int = 0, r12: int = 0,
-                mem_writes: dict[int, bytes] | None = None) -> dict:
+def run_stencil(
+    hex_bytes: str,
+    r2: int = 0,
+    r3: int = 0,
+    r4: int = 0,
+    r5: int = 0,
+    r6: int = 0,
+    r8: int = 0,
+    r9: int = 0,
+    r12: int = 0,
+    mem_writes: dict[int, bytes] | None = None,
+) -> dict:
     """Execute a stencil's raw bytes (+ a BKPT sentinel) and return final registers and memory."""
     code = bytes.fromhex(hex_bytes.replace(" ", "")) + bytes.fromhex("00BE")  # BKPT #0
     mu = Uc(UC_ARCH_ARM, UC_MODE_THUMB)
@@ -153,17 +168,17 @@ CMP_CASES = [
     ("i32_eq_d2", 5, 4, 0),
     ("i32_ne_d2", 5, 4, 1),
     ("i32_ne_d2", 5, 5, 0),
-    ("i32_lt_s_d2", 5, 4, 1),   # r5(4) < r4(5)
+    ("i32_lt_s_d2", 5, 4, 1),  # r5(4) < r4(5)
     ("i32_lt_s_d2", 4, 5, 0),
     ("i32_lt_u_d2", 5, 4, 1),
-    ("i32_gt_s_d2", 4, 5, 1),   # r5(5) > r4(4)
+    ("i32_gt_s_d2", 4, 5, 1),  # r5(5) > r4(4)
     ("i32_gt_u_d2", 4, 5, 1),
     ("i32_le_s_d2", 5, 5, 1),
-    ("i32_le_s_d2", 4, 5, 0),   # r5(5) <= r4(4) is false
-    ("i32_le_s_d2", 5, 4, 1),   # r5(4) <= r4(5) is true
+    ("i32_le_s_d2", 4, 5, 0),  # r5(5) <= r4(4) is false
+    ("i32_le_s_d2", 5, 4, 1),  # r5(4) <= r4(5) is true
     ("i32_ge_s_d2", 5, 5, 1),
-    ("i32_ge_s_d2", 5, 4, 0),   # r5(4) >= r4(5) is false
-    ("i32_ge_s_d2", 4, 5, 1),   # r5(5) >= r4(4) is true
+    ("i32_ge_s_d2", 5, 4, 0),  # r5(4) >= r4(5) is false
+    ("i32_ge_s_d2", 4, 5, 1),  # r5(5) >= r4(4) is true
 ]
 
 
@@ -214,8 +229,9 @@ def main() -> None:
     st_load = engine.stencils["i32_load_r8"]
     res_load = run_stencil(
         st_load.hex_bytes,
-        r8=mem_base, r4=0x0004,
-        mem_writes={mem_base + 0x0004: (0xDEADBEEF).to_bytes(4, "little")}
+        r8=mem_base,
+        r4=0x0004,
+        mem_writes={mem_base + 0x0004: (0xDEADBEEF).to_bytes(4, "little")},
     )
     total += 1
     if _to_u32(res_load["r4"]) != 0xDEADBEEF:
@@ -225,12 +241,16 @@ def main() -> None:
     st_store = engine.stencils["i32_store_r8"]
     res_store = run_stencil(
         st_store.hex_bytes,
-        r8=mem_base, r4=0xCAFEBABE, r5=0x0008,
+        r8=mem_base,
+        r4=0xCAFEBABE,
+        r5=0x0008,
     )
     total += 1
     stored_val = int.from_bytes(res_store["mem_read"](mem_base + 0x0008, 4), "little")
     if stored_val != 0xCAFEBABE:
-        failures.append(f"i32_store_r8: stored val={stored_val:#x}, expected 0xCAFEBABE")
+        failures.append(
+            f"i32_store_r8: stored val={stored_val:#x}, expected 0xCAFEBABE"
+        )
 
     # --- Global Get / Set Stencils via vsoc_runtime.globals-base (env + 0x08) ---
     env_addr = DATA_BASE + 0x10000
@@ -244,20 +264,23 @@ def main() -> None:
         mem_writes={
             env_addr + 0x08: globals_addr.to_bytes(4, "little"),
             globals_addr + 0x00: (0x12345678).to_bytes(4, "little"),
-        }
+        },
     )
     total += 1
     if _to_u32(res_gget["r4"]) != 0x12345678:
-        failures.append(f"global_get_d0: got r4={res_gget['r4']:#x}, expected 0x12345678")
+        failures.append(
+            f"global_get_d0: got r4={res_gget['r4']:#x}, expected 0x12345678"
+        )
 
     # Test global_set_d1: env + 0x08 -> globals_addr -> writes global[0]
     st_gset = engine.stencils["global_set_d1"]
     res_gset = run_stencil(
         st_gset.hex_bytes,
-        r2=env_addr, r4=0x87654321,
+        r2=env_addr,
+        r4=0x87654321,
         mem_writes={
             env_addr + 0x08: globals_addr.to_bytes(4, "little"),
-        }
+        },
     )
     total += 1
     g_stored = int.from_bytes(res_gset["mem_read"](globals_addr + 0x00, 4), "little")
@@ -265,7 +288,9 @@ def main() -> None:
         failures.append(f"global_set_d1: stored val={g_stored:#x}, expected 0x87654321")
 
     stencil_count = len(set(c[0] for c in ALU_CASES + REM_CASES + CMP_CASES)) + 4
-    print(f"Executed {total} case(s) across {stencil_count} stencils on a real ARMv8-M Thumb emulator.")
+    print(
+        f"Executed {total} case(s) across {stencil_count} stencils on a real ARMv8-M Thumb emulator."
+    )
     if failures:
         print(f"[FAIL] {len(failures)} case(s) computed the wrong result:")
         for f in failures:

@@ -72,7 +72,6 @@ class TaskState:
     BLOCKED = "BLOCKED"
     TERMINATED = "TERMINATED"
 
-
 class RoundRobinScheduler:
     def __init__(self, max_tasks: int = 16):
         self.max_tasks = max_tasks
@@ -210,7 +209,6 @@ stateDiagram-v2
 
 <!-- traceability: {ConceptHarnessDI} -->
 
-
 | 項目 | 内容 | 型分類 |
 | :--- | :--- | :--- |
 | 機能概要 | C++20/23 Conceptsを用いたコンパイル時テンプレート解決により、スケジューラに必要な依存コンポーネント（メモリプール等）を静的に注入する。 | 操作定義 |
@@ -223,7 +221,6 @@ stateDiagram-v2
 #### タスク生成 (`spawn`)
 
 <!-- traceability: {COOS_Scheduling_Refine} -->
-
 
 | 項目 | 内容 | 型分類 |
 | :--- | :--- | :--- |

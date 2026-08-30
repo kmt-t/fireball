@@ -1,17 +1,28 @@
 import sys
 from pathlib import Path
 
-_PYSIM_DIR = Path(__file__).resolve().parents[1] if any(d in str(Path(__file__)) for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")) else Path(__file__).resolve().parent
+_PYSIM_DIR = (
+    Path(__file__).resolve().parents[1]
+    if any(
+        d in str(Path(__file__))
+        for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")
+    )
+    else Path(__file__).resolve().parent
+)
 
-for _p in [_PYSIM_DIR, _PYSIM_DIR / 'core', _PYSIM_DIR / 'runtime', _PYSIM_DIR / 'jit', _PYSIM_DIR / 'platforms']:
+for _p in [
+    _PYSIM_DIR,
+    _PYSIM_DIR / "core",
+    _PYSIM_DIR / "runtime",
+    _PYSIM_DIR / "jit",
+    _PYSIM_DIR / "platforms",
+]:
     _sp = str(_p)
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
 import sys
 from pathlib import Path
-
-
 
 
 """Integration Scenario 3: Tier 2 Interpreter + Recursion & Indirect Table Dispatch.
@@ -97,7 +108,9 @@ def test_scenario_recursion_and_tables():
     sysv = System()
     wasi_ctx = WasiHostContext(sysv)
     host_funcs = wasi_ctx.build_interpreter_host_functions(module)
-    interp = Interpreter(module, memory=wasi_ctx.guest_memory, host_functions=host_funcs)
+    interp = Interpreter(
+        module, memory=wasi_ctx.guest_memory, host_functions=host_funcs
+    )
 
     # 1. Test Recursive Fibonacci (fib(12) = 144)
     fn_fib = module.export_func_index("fib")
@@ -109,7 +122,9 @@ def test_scenario_recursion_and_tables():
     assert interp.call(fn_dispatch, [0, 40, 2]) == [42], "call_indirect (add) failed"
     assert interp.call(fn_dispatch, [1, 50, 8]) == [42], "call_indirect (sub) failed"
     assert interp.call(fn_dispatch, [2, 6, 7]) == [42], "call_indirect (mul) failed"
-    assert interp.call(fn_dispatch, [3, 0x55, 0x7F]) == [0x2A], "call_indirect (xor) failed"
+    assert interp.call(fn_dispatch, [3, 0x55, 0x7F]) == [0x2A], (
+        "call_indirect (xor) failed"
+    )
 
     # 3. Test br_table switch
     fn_br_table = module.export_func_index("test_br_table")

@@ -72,8 +72,8 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_verified_bad": {"settled"},
         "s_executable": {"settled", "executable"},
         "s_rejected": {"settled"},
-        "s_executing_unverified": {"executing_unverified"},   # 違反状態
-        "s_stuck_verifying": {"stuck"},                        # 違反状態
+        "s_executing_unverified": {"executing_unverified"},  # 違反状態
+        "s_stuck_verifying": {"stuck"},  # 違反状態
     }
     return Kripke(S=S, S0=S0, R=R, L=L)
 
@@ -105,6 +105,7 @@ def properties():
 
 if __name__ == "__main__":
     from pyModelChecking.CTL import modelcheck
+
     km = build_model(guards=True)
     for prop in properties():
         res = modelcheck(km, prop["formula"])

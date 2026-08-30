@@ -1,17 +1,28 @@
 import sys
 from pathlib import Path
 
-_PYSIM_DIR = Path(__file__).resolve().parents[1] if any(d in str(Path(__file__)) for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")) else Path(__file__).resolve().parent
+_PYSIM_DIR = (
+    Path(__file__).resolve().parents[1]
+    if any(
+        d in str(Path(__file__))
+        for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")
+    )
+    else Path(__file__).resolve().parent
+)
 
-for _p in [_PYSIM_DIR, _PYSIM_DIR / 'core', _PYSIM_DIR / 'runtime', _PYSIM_DIR / 'jit', _PYSIM_DIR / 'platforms']:
+for _p in [
+    _PYSIM_DIR,
+    _PYSIM_DIR / "core",
+    _PYSIM_DIR / "runtime",
+    _PYSIM_DIR / "jit",
+    _PYSIM_DIR / "platforms",
+]:
     _sp = str(_p)
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
 import sys
 from pathlib import Path
-
-
 
 
 """Integration Scenario 4: Tier 2 Runtime + Tier 3 JIT Hybrid Compilation.
@@ -108,7 +119,9 @@ def test_scenario_hybrid_jit():
     sysv_t2 = System()
     wasi_t2 = WasiHostContext(sysv_t2)
     funcs_t2 = wasi_t2.build_interpreter_host_functions(module)
-    interp_t2 = Interpreter(module, memory=wasi_t2.guest_memory, host_functions=funcs_t2)
+    interp_t2 = Interpreter(
+        module, memory=wasi_t2.guest_memory, host_functions=funcs_t2
+    )
 
     res_t2 = interp_t2.call(fn_idx, [LIMIT])
     assert res_t2 == [168], f"Tier 2 prime count mismatch: expected 168, got {res_t2}"
@@ -122,7 +135,12 @@ def test_scenario_hybrid_jit():
     runtime_engine = RuntimeEngine(jit_compiler=trace_compiler, yield_threshold=16)
     runtime_engine.register_module_blocks(module)
 
-    interp_t3 = Interpreter(module, memory=wasi_t3.guest_memory, host_functions=funcs_t3, runtime_engine=runtime_engine)
+    interp_t3 = Interpreter(
+        module,
+        memory=wasi_t3.guest_memory,
+        host_functions=funcs_t3,
+        runtime_engine=runtime_engine,
+    )
 
     coro = interp_t3.call_coroutine(fn_idx, [LIMIT], yield_every=32)
     try:
@@ -136,7 +154,9 @@ def test_scenario_hybrid_jit():
     assert res_t2 == res_t3, "Tier 2 and Tier 3 calculation diverged!"
     assert len(runtime_engine.cache.active.traces) > 0, "No JIT traces were compiled"
 
-    print(f"    [PASS] Scenario 4 (Hybrid JIT) verified with {len(runtime_engine.cache.active.traces)} hot JIT traces.")
+    print(
+        f"    [PASS] Scenario 4 (Hybrid JIT) verified with {len(runtime_engine.cache.active.traces)} hot JIT traces."
+    )
 
 
 if __name__ == "__main__":

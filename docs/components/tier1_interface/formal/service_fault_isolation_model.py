@@ -28,8 +28,14 @@ def build_model(*, guards: bool = True) -> Kripke:
     """
     S = [
         "s_all_running",
-        "s_a_crashed", "s_a_isolated", "s_a_rebooting", "s_a_recovered",
-        "s_b_crashed", "s_b_isolated", "s_b_rebooting", "s_b_recovered",
+        "s_a_crashed",
+        "s_a_isolated",
+        "s_a_rebooting",
+        "s_a_recovered",
+        "s_b_crashed",
+        "s_b_isolated",
+        "s_b_rebooting",
+        "s_b_recovered",
         "s_corrupted",
         "s_stuck",
     ]
@@ -59,12 +65,16 @@ def build_model(*, guards: bool = True) -> Kripke:
 
     L = {
         "s_all_running": {"up"},
-        "s_a_crashed": {"down"}, "s_a_isolated": {"down"},
-        "s_a_rebooting": {"down"}, "s_a_recovered": {"up"},
-        "s_b_crashed": {"down"}, "s_b_isolated": {"down"},
-        "s_b_rebooting": {"down"}, "s_b_recovered": {"up"},
-        "s_corrupted": {"corrupted"},   # 違反状態
-        "s_stuck": {"stuck"},           # 違反状態
+        "s_a_crashed": {"down"},
+        "s_a_isolated": {"down"},
+        "s_a_rebooting": {"down"},
+        "s_a_recovered": {"up"},
+        "s_b_crashed": {"down"},
+        "s_b_isolated": {"down"},
+        "s_b_rebooting": {"down"},
+        "s_b_recovered": {"up"},
+        "s_corrupted": {"corrupted"},  # 違反状態
+        "s_stuck": {"stuck"},  # 違反状態
     }
     return Kripke(S=S, S0=S0, R=R, L=L)
 
@@ -96,6 +106,7 @@ def properties():
 
 if __name__ == "__main__":
     from pyModelChecking.CTL import modelcheck
+
     km = build_model(guards=True)
     for prop in properties():
         res = modelcheck(km, prop["formula"])

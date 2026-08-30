@@ -1323,7 +1323,6 @@ DLMALLOC_EXPORT mspace create_mspace_with_base(void* base, size_t capacity, int 
 */
 DLMALLOC_EXPORT int mspace_track_large_chunks(mspace msp, int enable);
 
-
 /*
   mspace_malloc behaves as malloc, but operates within
   the given space.
@@ -1388,7 +1387,6 @@ DLMALLOC_EXPORT size_t mspace_footprint(mspace msp);
   system for this space.
 */
 DLMALLOC_EXPORT size_t mspace_max_footprint(mspace msp);
-
 
 #if !NO_MALLINFO
 /*
@@ -1637,7 +1635,6 @@ unsigned char _BitScanReverse(unsigned long *index, unsigned long mask);
    using so many "#if"s.
 */
 
-
 /* MORECORE and MMAP must return MFAIL on failure */
 #define MFAIL                ((void*)(MAX_SIZE_T))
 #define CMFAIL               ((char*)(MFAIL)) /* defined for convenience */
@@ -1776,7 +1773,6 @@ static FORCEINLINE int win32munmap(void* ptr, size_t size) {
 
 /* segment bit set in create_mspace_with_base */
 #define EXTERN_BIT            (8U)
-
 
 /* --------------------------- Lock preliminaries ------------------------ */
 
@@ -2239,7 +2235,6 @@ typedef unsigned int flag_t;           /* The type of various bit flag sets */
 #define request2size(req) \
   (((req) < MIN_REQUEST)? MIN_CHUNK_SIZE : pad_request(req))
 
-
 /* ------------------ Operations on head and foot fields ----------------- */
 
 /*
@@ -2681,7 +2676,6 @@ static struct malloc_state _gm_;
   (((S) + (mparams.granularity - SIZE_T_ONE))\
    & ~(mparams.granularity - SIZE_T_ONE))
 
-
 /* For mmap, use granularity alignment on windows, else page-align */
 #ifdef WIN32
 #define mmap_align(S) granularity_align(S)
@@ -2737,7 +2731,6 @@ static int has_segment_link(mstate m, msegmentptr ss) {
 #define TOP_FOOT_SIZE\
   (align_offset(chunk2mem(0))+pad_request(sizeof(struct malloc_segment))+MIN_CHUNK_SIZE)
 
-
 /* -------------------------------  Hooks -------------------------------- */
 
 /*
@@ -2791,7 +2784,6 @@ static void reset_on_error(mstate m);
 #endif /* USAGE_ERROR_ACTION */
 
 #endif /* PROCEED_ON_ERROR */
-
 
 /* -------------------------- Debugging setup ---------------------------- */
 
@@ -2915,7 +2907,6 @@ static size_t traverse_and_check(mstate m);
    ((SIZE_T_ONE << (((i) >> 1) + TREEBIN_SHIFT)) |  \
    (((size_t)((i) & SIZE_T_ONE)) << (((i) >> 1) + TREEBIN_SHIFT - 1)))
 
-
 /* ------------------------ Operations on bin maps ----------------------- */
 
 /* bit corresponding to given index */
@@ -2981,7 +2972,6 @@ static size_t traverse_and_check(mstate m);
   I = (bindex_t)(N + Y);\
 }
 #endif /* GNUC */
-
 
 /* ----------------------- Runtime Check Support ------------------------- */
 
@@ -3454,7 +3444,6 @@ static size_t traverse_and_check(mstate m) {
   return sum;
 }
 
-
 /* Check all properties of malloc_state. */
 static void do_check_malloc_state(mstate m) {
   bindex_t i;
@@ -3798,7 +3787,6 @@ static void internal_malloc_stats(mstate m) {
   if (is_small(S)) unlink_small_chunk(M, P, S)\
   else { tchunkptr TP = (tchunkptr)(P); unlink_large_chunk(M, TP); }
 
-
 /* Relays to internal calls to malloc/free from realloc, memalign etc */
 
 #if ONLY_MSPACES
@@ -3892,7 +3880,6 @@ static mchunkptr mmap_resize(mstate m, mchunkptr oldp, size_t nb, int flags) {
   }
   return 0;
 }
-
 
 /* -------------------------- mspace management -------------------------- */
 
@@ -5976,7 +5963,6 @@ int mspace_mallopt(int param_number, int value) {
 
 #endif /* MSPACES */
 
-
 /* -------------------- Alternative MORECORE functions ------------------- */
 
 /*
@@ -6067,7 +6053,6 @@ int mspace_mallopt(int param_number, int value) {
   }
 
 */
-
 
 /* -----------------------------------------------------------------------
 History:

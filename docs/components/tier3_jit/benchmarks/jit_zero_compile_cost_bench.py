@@ -18,7 +18,9 @@ import os
 import sys
 import time
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "concepts"))
+sys.path.insert(
+    0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "concepts")
+)
 from jit_copy_patch_concept import CopyPatchJITEngine  # noqa: E402
 
 
@@ -49,16 +51,20 @@ def main() -> None:
     # optimization pass (register allocation, scheduling) would.
     ratio_n = sizes[-1] / sizes[-2]
     ratio_t = times[-1] / times[-2]
-    print(f"\n[MEASURED] {sizes[-2]}->{sizes[-1]} ops ({ratio_n:.0f}x more): "
-          f"compile time grew {ratio_t:.2f}x")
+    print(
+        f"\n[MEASURED] {sizes[-2]}->{sizes[-1]} ops ({ratio_n:.0f}x more): "
+        f"compile time grew {ratio_t:.2f}x"
+    )
 
     assert ratio_t < ratio_n * 3, (
         f"compile time grew {ratio_t:.2f}x for a {ratio_n:.0f}x larger trace -- "
         "that is super-linear enough to suggest a hidden expensive pass, not "
         "Copy-and-Patch's claimed proportional-to-length cost"
     )
-    print("[PASS] compile_trace() cost scales linearly (not super-linearly) with trace length, "
-          "consistent with a stencil-copy compiler that does no optimization search.")
+    print(
+        "[PASS] compile_trace() cost scales linearly (not super-linearly) with trace length, "
+        "consistent with a stencil-copy compiler that does no optimization search."
+    )
 
 
 if __name__ == "__main__":

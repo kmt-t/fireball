@@ -26,8 +26,11 @@ def build_model(*, guards: bool = True) -> Kripke:
     """
     S = [
         "s_trace_entry",
-        "s_trace_dirty", "s_trace_clean_noop", "s_epilogue_flush",
-        "s_prologue_push", "s_epilogue_pop",
+        "s_trace_dirty",
+        "s_trace_clean_noop",
+        "s_epilogue_flush",
+        "s_prologue_push",
+        "s_epilogue_pop",
         "s_exit_dirty",
         "s_return_unbalanced",
     ]
@@ -60,8 +63,8 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_epilogue_flush": {"flushed"},
         "s_prologue_push": {"pushed"},
         "s_epilogue_pop": {"popped"},
-        "s_exit_dirty": {"exit_dirty"},           # 違反状態
-        "s_return_unbalanced": {"unbalanced"},     # 違反状態
+        "s_exit_dirty": {"exit_dirty"},  # 違反状態
+        "s_return_unbalanced": {"unbalanced"},  # 違反状態
     }
     return Kripke(S=S, S0=S0, R=R, L=L)
 
@@ -91,6 +94,7 @@ def properties():
 
 if __name__ == "__main__":
     from pyModelChecking.CTL import modelcheck
+
     km = build_model(guards=True)
     for prop in properties():
         res = modelcheck(km, prop["formula"])

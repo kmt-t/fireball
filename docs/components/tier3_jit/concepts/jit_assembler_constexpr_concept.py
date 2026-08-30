@@ -19,6 +19,7 @@ import struct
 # 1. Type-Safe Enums and Validation Constants
 # ==============================================================================
 
+
 class Reg(IntEnum):
     R0 = 0
     R1 = 1
@@ -27,12 +28,12 @@ class Reg(IntEnum):
     R4 = 4
     R5 = 5
     R6 = 6
-    R7 = 7   # Frame Pointer (AAPCS)
+    R7 = 7  # Frame Pointer (AAPCS)
     R8 = 8
     R9 = 9
     R10 = 10
     R11 = 11
-    R12 = 12 # IP (Intra-procedure scratch)
+    R12 = 12  # IP (Intra-procedure scratch)
     SP = 13  # R13
     LR = 14  # R14
     PC = 15  # R15
@@ -66,26 +67,34 @@ class AssemblerError(Exception):
 # 2. Instruction Encoding Helpers & Static Validation
 # ==============================================================================
 
+
 def _check_low_reg(reg: Reg, msg: str = "Register must be R0-R7 (Low Register)"):
     if reg > Reg.R7:
         raise AssemblerError(f"COMPILE-TIME ERROR: {msg}, got {reg.name}")
 
 
-def _check_imm(val: int, bits: int, signed: bool = False, msg: str = "Immediate out of range"):
+def _check_imm(
+    val: int, bits: int, signed: bool = False, msg: str = "Immediate out of range"
+):
     if signed:
         min_v = -(1 << (bits - 1))
         max_v = (1 << (bits - 1)) - 1
         if not (min_v <= val <= max_v):
-            raise AssemblerError(f"COMPILE-TIME ERROR: {msg} (signed {bits}-bit: {min_v}..{max_v}, got {val})")
+            raise AssemblerError(
+                f"COMPILE-TIME ERROR: {msg} (signed {bits}-bit: {min_v}..{max_v}, got {val})"
+            )
     else:
         max_v = (1 << bits) - 1
         if not (0 <= val <= max_v):
-            raise AssemblerError(f"COMPILE-TIME ERROR: {msg} (unsigned {bits}-bit: 0..{max_v}, got {val})")
+            raise AssemblerError(
+                f"COMPILE-TIME ERROR: {msg} (unsigned {bits}-bit: 0..{max_v}, got {val})"
+            )
 
 
 # ==============================================================================
 # 3. Full-Set Thumb-2 constexpr Assembler DSL Class
 # ==============================================================================
+
 
 class Thumb2Assembler:
     """
@@ -203,7 +212,9 @@ class Thumb2Assembler:
         architecture reference this encoding is UNPREDICTABLE if both Rn and Rm
         are low registers (use cmp_reg/T1 for that case) or if either is PC."""
         assert rn != Reg.PC and rm != Reg.PC, "CMP (T2) does not accept PC"
-        assert not (rn < Reg.R8 and rm < Reg.R8), "use cmp_reg (T1) when both operands are low registers"
+        assert not (rn < Reg.R8 and rm < Reg.R8), (
+            "use cmp_reg (T1) when both operands are low registers"
+        )
         n = 1 if rn >= Reg.R8 else 0
         code = 0x4500 | (n << 7) | (rm << 3) | (rn & 7)
         return struct.pack("<H", code)
@@ -222,7 +233,9 @@ class Thumb2Assembler:
         _check_low_reg(rt)
         _check_low_reg(rn)
         if imm_offset % 4 != 0:
-            raise AssemblerError(f"Immediate offset must be multiple of 4, got {imm_offset}")
+            raise AssemblerError(
+                f"Immediate offset must be multiple of 4, got {imm_offset}"
+            )
         imm5 = imm_offset // 4
         _check_imm(imm5, 5)
         code = 0x6800 | (imm5 << 6) | (rn << 3) | rt
@@ -234,7 +247,9 @@ class Thumb2Assembler:
         _check_low_reg(rt)
         _check_low_reg(rn)
         if imm_offset % 4 != 0:
-            raise AssemblerError(f"Immediate offset must be multiple of 4, got {imm_offset}")
+            raise AssemblerError(
+                f"Immediate offset must be multiple of 4, got {imm_offset}"
+            )
         imm5 = imm_offset // 4
         _check_imm(imm5, 5)
         code = 0x6000 | (imm5 << 6) | (rn << 3) | rt
@@ -484,6 +499,7 @@ class Thumb2Assembler:
 # 4. Simulation & Verification Tests (Verification against Stencil Catalog)
 # ==============================================================================
 
+
 def _hex(b: bytes) -> str:
     return " ".join(f"{x:02X}" for x in b)
 
@@ -526,12 +542,30 @@ def test_known_thumb2_encoding_reference_values():
 
     # STENCIL_PROLOGUE_FULL: push {r4-r6, r8-r11, lr} -> 2D E9 70 4F
     # r4-r6 (mask 0x0070) | r8-r11 (mask 0x0F00) = 0x0F70, lr = True (bit 14: 0x4000) -> 0x4F70
-    prologue = asm.push_w(reg_mask=(1<<4)|(1<<5)|(1<<6)|(1<<8)|(1<<9)|(1<<10)|(1<<11), push_lr=True)
+    prologue = asm.push_w(
+        reg_mask=(1 << 4)
+        | (1 << 5)
+        | (1 << 6)
+        | (1 << 8)
+        | (1 << 9)
+        | (1 << 10)
+        | (1 << 11),
+        push_lr=True,
+    )
     assert _hex(prologue) == "2D E9 70 4F", f"Got {_hex(prologue)}"
 
     # STENCIL_EPILOGUE_RETURN: pop {r4-r6, r8-r11, pc} -> BD E8 70 8F
     # r4-r6 | r8-r11 = 0x0F70, pc = True (bit 15: 0x8000) -> 0x8F70
-    epilogue = asm.pop_w(reg_mask=(1<<4)|(1<<5)|(1<<6)|(1<<8)|(1<<9)|(1<<10)|(1<<11), pop_pc=True)
+    epilogue = asm.pop_w(
+        reg_mask=(1 << 4)
+        | (1 << 5)
+        | (1 << 6)
+        | (1 << 8)
+        | (1 << 9)
+        | (1 << 10)
+        | (1 << 11),
+        pop_pc=True,
+    )
     assert _hex(epilogue) == "BD E8 70 8F", f"Got {_hex(epilogue)}"
 
     # STENCIL_I32_ADD_D2: adds r4, r5, r4 -> 2C 19
@@ -589,4 +623,6 @@ def test_known_thumb2_encoding_reference_values():
 if __name__ == "__main__":
     test_compile_time_range_validation()
     test_known_thumb2_encoding_reference_values()
-    print("[PASS] All Full-Set constexpr Thumb-2 Assembler tests and reference-value checks passed successfully.")
+    print(
+        "[PASS] All Full-Set constexpr Thumb-2 Assembler tests and reference-value checks passed successfully."
+    )

@@ -48,6 +48,13 @@ graph TD
 <!-- traceability: {LowLatencyJIT} {SimpleJITArchitecture} {PositionIndependentCode} -->
 - **関数/モジュール一括コンパイルの完全禁止**: 極小リソース環境（RAM 32KB〜64KB）におけるコンパイル遅延とメモリ消費をゼロ化するため、関数全体やモジュール全体の事前一括コンパイルは一切行わない。
 - **純粋ベーシックブロック/トレース単位コンパイル**: 2-bit カードテーブル（カードマーキング表）で HOT（`10`）に達した直線命令列（基本ブロック / トレース）のみを、スケジューラのアイドル時（`idle_hook` 等）に Copy-and-Patch により 1 トレースずつオンデマンド生成する。
+- **複雑命令のハンドラ直接委譲ポリシー (`{JIT_RuntimeAPI_Fallback}`)**:
+  - **インライン展開対象（Primitive Inline Ops）**: `i32.const`, `local.get`, `local.set`, `i32` 算術・論理・シフト・単純比較など、固定長ステンシルで完結する高頻度・低複雑度の直線演算のみを JIT ステンシルとしてキャッシュに展開する。
+  - **ハンドラ直接呼び出し/フォールバック対象（Complex Delegated Ops）**:
+    1. 制御フロー・フレーム遷移: `BR`, `BR_IF`, `BR_TABLE`, `IF`, `ELSE`, `CALL`, `CALL_INDIRECT`, `RETURN`
+    2. メモリ操作・システム連携: `memory.grow`, `memory.copy`, `memory.fill`, WASI/ホストシステムコール
+    3. 複雑演算・例外検査: `f32`/`f64` 浮動小数点、64-bit 複雑数学、トラップ検査を伴う境界処理
+    これら実装・検証が複雑化する命令は JIT 側で独自生成せず、**インタープリタの命令ハンドラ（`_HANDLERS[opcode]`）を直接呼び出すか、インタープリタへフォールバックして委譲**する。これにより JIT ROM サイズを極小化（数KB）し、保守性と堅牢性を最大化する。
 - **ハンドラ互換ディスパッチ**: JIT トレースエントリポイントは、インタープリタの命令ハンドラ（`opcode_handler`）と完全に同一の C/C++ 関数シグネチャを持ち、ディスパッチテーブルから直接呼び出しが可能である。
 
 #### コピーアンドパッチエンジン（CopyAndPatchEngine）クラス

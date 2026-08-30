@@ -16,6 +16,7 @@ Run with:  uv run python experiments/pysim/tests.py
 
 from __future__ import annotations
 
+import ctypes
 import os
 import struct
 import sys
@@ -89,9 +90,12 @@ from vmmio_concept import (
     VmmioAddress,
     VMMIOController,
 )
+from exec_memory import ExecutableBuffer
+from wasi import WasiHostContext
 from wasm_builder import ModuleBuilder
 from wasm_module import I32
 from wasm_reader import WasmParseError, WasmUnsupportedFeatureError, parse
+from x64_jit import ModuleJIT
 
 
 # ===========================================================================
@@ -1659,6 +1663,234 @@ def test_tier_01_interpreter_to_jit_cooperative_flow():
     wire = sysv.transport.drain().decode("utf-8")
     assert "wasm iteration=0" in wire
     assert "wasm iteration=4" in wire
+
+
+# ===========================================================================
+# Guest-Side WASI & Host-Call Execution (Interpreter & x64 JIT)
+# ===========================================================================
+
+def test_guest_wasi_01_interpreter_fd_write():
+    """GUEST-WASI-01: WASM guest invoking wasi_snapshot_preview1.fd_write in Interpreter outputs to host UART."""
+    builder = ModuleBuilder()
+    # import fd_write: (fd: i32, iovs_ptr: i32, iovs_len: i32, nwritten_ptr: i32) -> i32
+    fd_write_idx = builder.add_import("wasi_snapshot_preview1", "fd_write", (I32, I32, I32, I32), (I32,))
+
+    # main() -> i32: calls fd_write(1, 0, 1, 32)
+    fb = builder.add_function(params=(), results=(I32,), export_name="main")
+    fb.i32_const(1)   # stdout fd=1
+    fb.i32_const(0)   # iovs_ptr = 0
+    fb.i32_const(1)   # iovs_len = 1
+    fb.i32_const(32)  # nwritten_ptr = 32
+    fb.call(fd_write_idx)
+    fb.end()
+
+    mod = parse(builder.build())
+    sysv = System()
+    try:
+        ctx = WasiHostContext(sysv)
+        # Set up guest memory:
+        # offset 0: iov { buf: 16, len: 12 }
+        # offset 16: "hello guest\n"
+        msg = b"hello guest\n"
+        struct.pack_into("<II", ctx.guest_memory, 0, 16, len(msg))
+        ctx.guest_memory[16:16 + len(msg)] = msg
+
+        host_funcs = ctx.build_interpreter_host_functions(mod)
+        interp = Interpreter(mod, memory=ctx.guest_memory, host_functions=host_funcs)
+
+        res = interp.call(mod.export_func_index("main"), [])
+        assert res == [0], f"Expected WASI SUCCESS (0), got {res}"
+        assert sysv.transport.drain() == msg
+        nwritten = struct.unpack_from("<I", ctx.guest_memory, 32)[0]
+        assert nwritten == len(msg)
+    finally:
+        sysv.shutdown()
+
+
+def test_guest_wasi_02_interpreter_clock_and_random():
+    """GUEST-WASI-02: WASM guest invoking clock_time_get and random_get stores valid data in guest memory."""
+    builder = ModuleBuilder()
+    clock_idx = builder.add_import("wasi_snapshot_preview1", "clock_time_get", (I32, I32, I32), (I32,))
+    rand_idx = builder.add_import("wasi_snapshot_preview1", "random_get", (I32, I32), (I32,))
+
+    fb = builder.add_function(params=(), results=(I32,), export_name="main")
+    # clock_time_get(0, 0, 16)
+    fb.i32_const(0)
+    fb.i32_const(0)
+    fb.i32_const(16)
+    fb.call(clock_idx)
+    fb.drop()
+
+    # random_get(32, 16)
+    fb.i32_const(32)
+    fb.i32_const(16)
+    fb.call(rand_idx)
+    fb.end()
+
+    mod = parse(builder.build())
+    sysv = System()
+    try:
+        ctx = WasiHostContext(sysv)
+        host_funcs = ctx.build_interpreter_host_functions(mod)
+        interp = Interpreter(mod, memory=ctx.guest_memory, host_functions=host_funcs)
+
+        res = interp.call(mod.export_func_index("main"), [])
+        assert res == [0]
+        t = struct.unpack_from("<Q", ctx.guest_memory, 16)[0]
+        assert t > 0
+        rand_data = bytes(ctx.guest_memory[32:48])
+        assert len(rand_data) == 16
+        assert rand_data != bytes(16)
+    finally:
+        sysv.shutdown()
+
+
+def test_guest_wasi_03_interpreter_proc_exit():
+    """GUEST-WASI-03: WASM guest invoking proc_exit(99) halts the host system with exit code."""
+    builder = ModuleBuilder()
+    exit_idx = builder.add_import("wasi_snapshot_preview1", "proc_exit", (I32,), ())
+
+    fb = builder.add_function(params=(), results=(), export_name="main")
+    fb.i32_const(99)
+    fb.call(exit_idx)
+    fb.end()
+
+    mod = parse(builder.build())
+    sysv = System()
+    try:
+        ctx = WasiHostContext(sysv)
+        host_funcs = ctx.build_interpreter_host_functions(mod)
+        interp = Interpreter(mod, memory=ctx.guest_memory, host_functions=host_funcs)
+
+        assert sysv.halted is False
+        interp.call(mod.export_func_index("main"), [])
+        assert sysv.halted is True
+        assert sysv.exit_code == 99
+    finally:
+        sysv.shutdown()
+
+
+def test_guest_wasi_04_jit_fd_write_native():
+    """GUEST-WASI-04: JIT-compiled WASM guest executes native machine code calling wasi_snapshot_preview1.fd_write."""
+    builder = ModuleBuilder()
+    builder.add_memory(min_pages=1)
+    fd_write_idx = builder.add_import("wasi_snapshot_preview1", "fd_write", (I32, I32, I32, I32), (I32,))
+
+    fb = builder.add_function(params=(), results=(I32,), export_name="entry")
+    fb.i32_const(1)   # stdout fd=1
+    fb.i32_const(0)   # iovs_ptr = 0
+    fb.i32_const(1)   # iovs_len = 1
+    fb.i32_const(48)  # nwritten_ptr = 48
+    fb.call(fd_write_idx)
+    fb.end()
+
+    mod = parse(builder.build())
+    sysv = System()
+    try:
+        ctx = WasiHostContext(sysv)
+        msg = b"HELLO FROM JIT WASI GUEST!\n"
+        struct.pack_into("<II", ctx.guest_memory, 0, 16, len(msg))
+        ctx.guest_memory[16:16 + len(msg)] = msg
+
+        trampolines = ctx.build_jit_trampolines(mod)
+        jit = ModuleJIT(mod, mem_size_bytes=len(ctx.guest_memory), host_trampolines=trampolines)
+        blob = jit.compile_all()
+
+        buf = ExecutableBuffer(max(len(blob), 64))
+        try:
+            buf.write(0, blob)
+            entry_idx = mod.export_func_index("entry")
+            fn = buf.function_at(jit.func_offsets[entry_idx], ctypes.c_int64, [ctypes.c_void_p, ctypes.c_void_p])
+
+            c_mem = (ctypes.c_char * len(ctx.guest_memory)).from_buffer(ctx.guest_memory)
+            mem_ptr = ctypes.addressof(c_mem)
+            layout = mod.locals_layout(entry_idx)
+            locals_arr = (ctypes.c_int64 * max(len(layout), 1))()
+
+            result = fn(ctypes.cast(locals_arr, ctypes.c_void_p), ctypes.c_void_p(mem_ptr))
+            assert result == 0, f"Expected WASI SUCCESS 0, got {result}"
+            assert sysv.transport.drain() == msg
+            nwritten = struct.unpack_from("<I", ctx.guest_memory, 48)[0]
+            assert nwritten == len(msg)
+        finally:
+            buf.close()
+    finally:
+        sysv.shutdown()
+
+
+def test_guest_wasi_05_jit_fireball_call_ipc_messaging():
+    """GUEST-WASI-05: JIT-compiled WASM guest calls fireball_call to perform IPC lookup, send, and recv."""
+    builder = ModuleBuilder()
+    builder.add_memory(min_pages=1)
+    fb_call_idx = builder.add_import("fireball", "fireball_call", (I32, I32, I32, I32, I32, I32, I32), (I32,))
+
+    # fn guest_ipc() -> recv_len
+    fb = builder.add_function(params=(), results=(I32,), export_name="guest_ipc")
+    fb.declare_local(I32)
+    # 1. Lookup URI: fireball_call(0x42, 0, 21, 0, 0, 0, 0)
+    fb.i32_const(0x42)  # IPC_LOOKUP
+    fb.i32_const(0)     # uri_offset
+    fb.i32_const(21)    # len("fireball://hal/gpio/0")
+    fb.i32_const(0)
+    fb.i32_const(0)
+    fb.i32_const(0)
+    fb.i32_const(0)
+    fb.call(fb_call_idx)  # returns handle (1)
+    fb.local_set(0)
+
+    # 2. Send Message: fireball_call(0x40, handle, 32, 8, 0, 0, 0)
+    fb.i32_const(0x40)  # IPC_SEND
+    fb.local_get(0)     # handle
+    fb.i32_const(32)    # msg_offset
+    fb.i32_const(8)     # msg_len ("SET_HIGH")
+    fb.i32_const(0)
+    fb.i32_const(0)
+    fb.i32_const(0)
+    fb.call(fb_call_idx)
+    fb.drop()
+
+    # 3. Recv Message: fireball_call(0x41, handle, 64, 32, 0, 0, 0) -> recv_len
+    fb.i32_const(0x41)  # IPC_RECV
+    fb.local_get(0)     # handle
+    fb.i32_const(64)    # buf_offset
+    fb.i32_const(32)    # buf_len
+    fb.i32_const(0)
+    fb.i32_const(0)
+    fb.i32_const(0)
+    fb.call(fb_call_idx)
+    fb.end()
+
+    mod = parse(builder.build())
+    sysv = System()
+    try:
+        ctx = WasiHostContext(sysv)
+        uri = b"fireball://hal/gpio/0"
+        payload = b"SET_HIGH"
+        ctx.guest_memory[0:len(uri)] = uri
+        ctx.guest_memory[32:32 + len(payload)] = payload
+
+        trampolines = ctx.build_jit_trampolines(mod)
+        jit = ModuleJIT(mod, mem_size_bytes=len(ctx.guest_memory), host_trampolines=trampolines)
+        blob = jit.compile_all()
+
+        buf = ExecutableBuffer(max(len(blob), 64))
+        try:
+            buf.write(0, blob)
+            entry_idx = mod.export_func_index("guest_ipc")
+            fn = buf.function_at(jit.func_offsets[entry_idx], ctypes.c_int64, [ctypes.c_void_p, ctypes.c_void_p])
+
+            c_mem = (ctypes.c_char * len(ctx.guest_memory)).from_buffer(ctx.guest_memory)
+            mem_ptr = ctypes.addressof(c_mem)
+            layout = mod.locals_layout(entry_idx)
+            locals_arr = (ctypes.c_int64 * max(len(layout), 1))()
+
+            recv_len = fn(ctypes.cast(locals_arr, ctypes.c_void_p), ctypes.c_void_p(mem_ptr))
+            assert recv_len == len(payload), f"Expected recv_len {len(payload)}, got {recv_len}"
+            assert bytes(ctx.guest_memory[64:64 + recv_len]) == payload
+        finally:
+            buf.close()
+    finally:
+        sysv.shutdown()
 
 
 # ===========================================================================

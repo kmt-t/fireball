@@ -298,7 +298,7 @@ sequenceDiagram
 ---
 
 ## 8. アーキテクチャスタイルと設計判断 (ADR)
-<!-- traceability: {ADR_IntrusiveTcbList} {ADR_CoosPureRoundRobin} {ADR_EventDrivenWakeQueue} -->
+<!-- traceability: {ADR_IntrusiveTcbList} {ADR_CoosPureRoundRobin} {ADR_EventDrivenWakeQueue} {ADR_SharedBlockRaii} {ADR_MemoryManagerMinimalSurface} -->
 
 | 設計課題 | 採用スタイル | 選択理由 |
 | :--- | :--- | :--- |
@@ -311,4 +311,6 @@ sequenceDiagram
 | **TCB連結方式** (`{ADR_IntrusiveTcbList}`) | **侵入型リスト** | ノード確保が不要で `{GLOBAL_Policy_Memory}` に適合。詳細は [os_scheduler.md §6](../components/tier1_core/os_scheduler.md#6-設計判断-adr) |
 | **スケジューリングアルゴリズム** (`{ADR_CoosPureRoundRobin}`) | **純粋な協調型ラウンドロビン（優先度なし）** | 優先度逆転を根本排除し、`{NotRTOS}` 方針と整合。詳細は [os_scheduler.md §6](../components/tier1_core/os_scheduler.md#6-設計判断-adr) |
 | **BLOCKEDタスク起床方式** (`{ADR_EventDrivenWakeQueue}`) | **イベントドリブン起床キュー** | 線形スキャンによる $O(n)$ ポーリングを排除し、O(1) コンテキストスイッチを維持。詳細は [os_scheduler.md §6](../components/tier1_core/os_scheduler.md#6-設計判断-adr) |
+| **IPC共有メモリの所有権表現** (`{ADR_SharedBlockRaii}`) | **RAII所有権を持つ`shared-block`リソース** | 単なる整数IDでは防げないダングリング参照・解放忘れを型で排除。`release`/`claim`が`ipc_router.md`のRevoke/Grantと対応。詳細は [platform_memory.md §8](../components/tier3_platform/platform_memory.md#8-設計判断-adr) |
+| **メモリマネージャの問い合わせAPI** (`{ADR_MemoryManagerMinimalSurface}`) | **`query`/`check-ownership`を持たない最小公開面** | 情報は`shared_block`側や呼び出し元が既に保持しており、二重の問い合わせ経路を作らない。詳細は [platform_memory.md §8](../components/tier3_platform/platform_memory.md#8-設計判断-adr) |
 

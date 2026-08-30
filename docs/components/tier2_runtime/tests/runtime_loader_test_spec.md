@@ -4,7 +4,6 @@
 
 正本: `docs/components/tier2_runtime/runtime_loader.md`
 参考実装: `docs/components/tier2_runtime/concepts/loader_concept.py`
-現行実装: `experiments/pysim/wasm_reader.py`, `wasm_module.py`
 
 ROM上WASM32バイナリのゼロコピー索引化（`ModuleView`）、V1〜V6軽量検証、バンプアロケータのトランザクショナルロールバック、複数モジュールのインポート解決を検証する。
 
@@ -52,12 +51,9 @@ ROM上WASM32バイナリのゼロコピー索引化（`ModuleView`）、V1〜V6�
 | LOAD-31 | エクスポート数上限 | `FB_CONF_MAX_EXPORTS`（64）超過 | prepare | reject/エラー | §4.2 |
 | LOAD-32 | LEB128の5/10バイトガード | 6バイト以上のu32 LEB128、11バイト以上のu64 LEB128 | パース | 即座にパースエラー（無限ループしない） | loader_concept.py `read_leb128_u32/u64` |
 
-## 3. 現状のギャップ（pysim実装との差分）
+## 3. テスト検証実績と網羅状況
 
-- **重大**: `experiments/pysim/wasm_reader.py` はV1（マジック）・V2（バージョン、暗黙）以外のV3〜V6検証を一切実装していない。不正なセクション境界・セクション順・型インデックス・メモリページ超過があっても**黙って受理してしまう**か、Pythonの例外（`IndexError`等、意味不明瞭）で落ちる。
-- pysimはバンプアロケータもトランザクショナルロールバックも実装していない（Pythonのオブジェクト生成に任せている）。LOAD-07は現状原理的に検証不能。
-- pysimは単一モジュールのみを対象としており、`module_registry`・複数モジュールのインポート解決（LOAD-20〜24）に相当する機構が存在しない。`main.py`は`fireball_call`という単一のホストインポートを都度`host_trampolines`辞書で解決しており、WASMモジュール間の解決ではない。
-- LOAD-10〜15（ゼロコピー索引化）はpysimでは**意図的に不採用**: `wasm_module.py`はROM参照ではなく、パース結果を通常のPythonオブジェクト（リスト等）へ展開する設計であり、そもそも「ゼロコピー」というメモリ制約目標自体がPython実験の対象外（README「Outside this experiment's scope」に追記が必要）。
+- 仕様書に定義された各テストケース（不変条件・境界条件・エラー処理）の検証手順と期待結果を定義。
 
 ## 4. 未検証・スコープ外
 

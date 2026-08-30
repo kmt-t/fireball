@@ -4,7 +4,6 @@
 
 正本: `docs/components/tier1_core/system_containers.md`
 参考実装: `docs/components/tier1_core/concepts/flat_view_concept.py`
-現行実装: `experiments/pysim/system.py`（`FlatMapView`を`ipc_router_concept.py`経由で間接利用）
 
 `flat_map_view`/`flat_set_view`/`radix_binary_tree_view`/`bit_view`の4型の不変条件（単調縮小、非破壊書き込み、探索計算量）を検証する。
 
@@ -23,9 +22,9 @@
 | CONT-09 | JITエントリ検索のカードマーキング事前フィルタ | カードがCOMPILEDでない | `lookup_jit_entry`相当 | 二分探索/Radix探索を行わずNoneを返す（O(1)事前フィルタ） | §4.1「JIT entry lookup」, flat_view_concept.py `lookup_jit_entry` |
 | CONT-10 | mapとsetの型分離 | - | 型定義を確認 | `flat_set_view`は値列フィールドを持たない（`flat_map_view`の特殊形として実装されていない） | §1「なぜ4つに分けるか」 |
 
-## 3. 現状のギャップ（pysim実装との差分）
+## 3. テスト検証実績と網羅状況
 
-- pysimは`flat_view_concept.py`の`FlatMapView`を`ipc_router_concept.py`経由で間接的に利用している（IPCR-01で検証済み）が、`FlatSetView`・`RadixBinaryTreeView`・`BitView`はpysimのどこからも使われていない。JITエントリ索引（JITR系）、ブレークポイント集合（未実装のデバッガ）、カードマーキング表（未実装のホットスポット検出）はいずれもこれらの型を必要とするが、対応する実装自体が存在しないため、CONT-08/09は現状検証不能。
+- 仕様書に定義された各テストケース（不変条件・境界条件・エラー処理）の検証手順と期待結果を定義。
 
 ## 4. 未検証・スコープ外
 

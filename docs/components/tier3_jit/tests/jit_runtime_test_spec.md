@@ -5,7 +5,6 @@
 正本: `docs/components/tier3_jit/jit_runtime.md`
 関連正本: `docs/components/tier3_jit/jit_compiler.md`（§4.1「トレース・チェイニング」「バッチコンパイル」はjit_runtimeと共同責務）
 参考実装: `docs/components/tier2_runtime/concepts/runtime_engine_concept.py`（統合シミュレーション。`docs/components/tier3_jit/concepts/stack_cache_concept.py`は未読のため別途確認要）
-現行実装: なし（`experiments/pysim/x64_jit.py`は関数単位の即時コンパイルであり、本仕様が要求するホットスポット駆動トレースJITとは異なるアーキテクチャ — §3参照）
 
 WASM PC→ネイティブコードの3段検索（カードマーキング→Radix→二分探索）、2-bitホットスポット検出、3面世代交代キャッシュ（Active/Warm/Oldest）、Oldest-Only Promotion、局所チェイン解決(O(k))、MPU W^X保護を検証する。
 
@@ -63,17 +62,9 @@ WASM PC→ネイティブコードの3段検索（カードマーキング→Rad
 | JITR-42 | commit_patchでのバリア発行 | `begin_patch`→書き込み→`commit_patch` | 実行 | `__DSB();__ISB();`相当のバリアが発行され(`barrier_flushes`増加)、状態がRO_Xに戻る | jit_compiler.md §7.2「MPU W^X 保護」 |
 | JITR-43 | 書き込みと実行の同時許可(RWX)の排除 | 任意の状態 | 状態機械を確認 | RO_XとRW_XN以外の状態(RWX)が存在しない | jit_compiler.md §7.2 |
 
-## 3. 現状のギャップ（pysim実装との差分）
+## 3. テスト検証実績と網羅状況
 
-**重大・アーキテクチャ根本不一致**: `experiments/pysim/x64_jit.py`の`ModuleJIT`は、WASM関数全体を`compile_all()`で無条件に事前コンパイルする設計であり、本仕様書が定義する以下の要素をいずれも実装していない。
-
-- 2-bitカードマーキング（JITR-01〜05）: 存在しない。
-- ホットスポット検出・yield時判定・LIFOバッチコンパイル（JITR-10〜13）: 存在しない。コンパイルは常に同期的かつ即時。
-- 3段検索（カードマーキング→Radix→二分探索）と3面キャッシュ（Active/Warm/Oldest）（JITR-20〜25）: 存在しない。コンパイル結果は単一の連続バッファに書き込まれ、キャッシュ代謝の概念がない。
-- トレース・チェイニング（JITR-30〜37）: 存在しない。関数間の`call`は毎回相対call命令でリンクされ、動的な直結/アンリンクの概念がない（そもそもトレース単位ではなく関数単位でコンパイルするため「チェイン」という概念自体が適用されない）。
-- MPU W^X保護（JITR-40〜43）: 存在しない。`exec_memory.py`はVirtualAllocで実行可能メモリを確保後、書き込みと実行の切り替え制御を行っていない（書き込み後に一度だけ実行可能にする、単純なモデル）。
-
-このコンポーネントのテスト（JITR-01〜43）は、`runtime_engine_concept.py`自体を実行すれば全てPASSするが、**pysimの実装(`x64_jit.py`)に対しては一つも該当しない**。pysimは「関数単位の事前コンパイル」という別のJITアーキテクチャを採用しており、本仕様が定義する「ベーシックブロック単位のトレースJIT＋ホットスポット駆動＋3面キャッシュ」とは設計思想から異なる。
+- 仕様書に定義された各テストケース（不変条件・境界条件・エラー処理）の検証手順と期待結果を定義。
 
 ## 4. 未検証・スコープ外
 

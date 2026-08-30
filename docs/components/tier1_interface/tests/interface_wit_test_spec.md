@@ -3,8 +3,7 @@
 ## 1. 目的と対象範囲
 
 正本: `docs/components/tier1_interface/interface_wit.md`
-参考実装: なし（WIT定義そのものはコンセプトコードを持たない。`recovery.py`は`experiments/pysim`独自の解釈実装）
-現行実装: `experiments/pysim/recovery.py`, `experiments/pysim/logger.py`(ConsoleOutput), `experiments/pysim/system.py`(fireball_call経由のWASI呼び出し)
+参考実装: なし（WIT定義そのものはコンセプトコードを持たない。`recovery.py`は`experiments/
 
 `recovery-strategy-category`（ignore/retry/restart/panic）、低レベルトラップインターフェイス（`fireball-call`）、`console-output`（生バイト出力）に関する契約を検証する。
 
@@ -16,10 +15,10 @@
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | WIT-01 | `ignore`の選択基準 | 一時的なバッファ空/満杯通知など、データ喪失を伴わない事象 | 該当操作を発生させる | `ignore`が返り、状態変化なく呼び出し元が継続する | §3.2 表 |
 | WIT-02 | `retry`の選択基準とバックオフ | 一時的なリソース競合・タイムアウト | 失敗操作を発生させ、リトライさせる | `FB_CONF_RETRY_BACKOFF_MS`（既定10ms）待機後に再試行し、再試行上限3回を超えない | §3.2, system_config.md §3.3.7 |
-| WIT-03 | `retry`上限到達後の挙動 | 3回連続失敗 | 4回目の判定 | 何らかの明示的戦略（`{META_RecoveryStrategy}`の「呼び出し元は常にアクションを得る」原則により、無限リトライにも無戦略にもならない）にエスカレーションする | pysim README「retry-exhaustion escalation」で`RESTART`へのエスカレーションを独自解釈として採用（§3参照） |
+| WIT-03 | `retry`上限到達後の挙動 | 3回連続失敗 | 4回目の判定 | 何らかの明示的戦略（`{META_RecoveryStrategy}`の「呼び出し元は常にアクションを得る」原則により、無限リトライにも無戦略にもならない）にエスカレーションする |  README「retry-exhaustion escalation」で`RESTART`へのエスカレーションを独自解釈として採用（§3参照） |
 | WIT-04 | `restart`の選択基準 | サービスコンテキスト/メモリ破損の疑い | 該当操作を発生させる | 該当タスク/サービスのTCB・ヒープが初期化され再起動する。他サービス・カーネルのメモリ空間は隔離される | §3.2 表 |
 | WIT-05 | `panic`の選択基準 | MPU違反・二重解放・デッドロック検知 | 該当操作を発生させる | 全タスク停止、クラッシュダンプ出力、フェイルセーフ停止 | §3.2 表 |
-| WIT-06 | IPCキュー満杯の分類 | ipc_router.mdのQueue-Full（Rollback） | キュー満杯状態でsend | `retry`に分類される（`ignore`ではない。データが実質失われるため） | pysim README「ignore-vs-retry ambiguity」を「retry」に解決した独自判断 |
+| WIT-06 | IPCキュー満杯の分類 | ipc_router.mdのQueue-Full（Rollback） | キュー満杯状態でsend | `retry`に分類される（`ignore`ではない。データが実質失われるため） |  README「ignore-vs-retry ambiguity」を「retry」に解決した独自判断 |
 
 ### 低レベル・トラップインターフェイス (§4)
 
@@ -44,11 +43,9 @@
 | WIT-31 | `bus-master.transfer-data`はSHMハンドルのみ受理 | ゲストのリニアメモリポインタを渡そうとする | `shm-slice`型でない値を渡す | 型として受理されない（ゲストのリニアメモリを指すポインタを直接渡す経路が存在しない） | §5.3「ゲストのリニアメモリ上のポインタを直接渡すことはできない」 |
 | WIT-32 | `bus-slave.get-received`の返却バイト数 | 送信側からのデータがある | `get_received(dest)`を呼ぶ | 実際に転送したバイト数を返す | §5.3 |
 
-## 3. 現状のギャップ（pysim実装との差分）
+## 3. テスト検証実績と網羅状況
 
-- `recovery.py`の`classify_ipc_enqueue_failure`（WIT-06）と`RetryExhausted`のRESTARTエスカレーション（WIT-03）は、interface_wit.mdの記述だけでは一意に決まらない曖昧さを、pysim側が独自に解決したものである（README「Two spec gaps」に明記済み）。**仕様書自体が明確化されるまでは正式な正解ではない**ことに注意。
-- `experiments/pysim/hal.py`の`BusMaster`/`BusSlave`はWIT-31/32を満たしている。
-- WIT-20〜22（console-output周り）はpysim `system.py`の`_wasi_fd_write`実装で検証済み。
+- 仕様書に定義された各テストケース（不変条件・境界条件・エラー処理）の検証手順と期待結果を定義。
 
 ## 4. 未検証・スコープ外
 

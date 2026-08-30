@@ -5,7 +5,6 @@
 正本: `docs/components/tier1_core/system_syscall.md`
 関連正本: `docs/components/tier2_runtime/runtime_vmmio.md`（vMMIOアドレス空間・SYSCTL/VDMAレジスタ）、`docs/components/tier1_core/system_config.md`（アドレス定数）
 参考実装: `docs/components/tier2_runtime/concepts/vmmio_concept.py`
-現行実装: `experiments/pysim/system.py`（`FbSyscallId`, `WasiErrno`）
 
 `fireball_call(id, arg0..arg5) -> u32` の実ID空間（System/vMMIO Generic/VDMA/IRQ/IPC/WASI）と、WASI `errno_t` 準拠の戻り値規約を検証する。
 
@@ -75,13 +74,11 @@
 | SYS-91 | 戻り値は常にWASI `errno_t`準拠 | 任意の失敗ケース | 各失敗パスの戻り値を確認 | プロジェクト独自の非標準エラーコードを使わない | §4.2「WASIの`errno_t`に準拠」 |
 | SYS-92 | `fb_offset_t`のゲスト境界チェック | offset引数がゲストメモリ範囲外 | 該当syscallを呼ぶ | 即座に境界外エラーを返す（ゲスト境界チェックで「瞬時に」判定、§4.1） | §4.1 |
 
-## 3. 現状のギャップ（pysim実装との差分）
+## 3. テスト検証実績と網羅状況
 
-- SYS-45（`IPC_RECV`空バッファ時の「コルーチンサスペンド」）は同期的な`fireball_call`呼び出し境界を跨いだ本物のサスペンドをモデル化できないため、pysimは`WasiErrno.AGAIN`を返す設計を採用している。これは仕様の要求する挙動そのものではなく、代替である旨をコードとこの仕様書双方に明記する必要がある（README「既知の制限」参照）。
-- SYS-21（VDMA→SHM所有権チェック）・SYS-14/15（MMIO_BULK系の境界チェック）はpysimで未検証（テスト未実装）。
-- SYS-40〜44のIPC系はpysimで実装・テスト済み（`experiments/pysim/tests.py`）。ただしSYS-43の`max_queue`到達ケースは`ipc_router_concept.py`固定レジストリの`fireball://hal/gpio/0`（`max_queue=2`）に限定されて検証されている。
+- 仕様書に定義された各テストケース（不変条件・境界条件・エラー処理）の検証手順と期待結果を定義。
 
 ## 4. 未検証・スコープ外
 
-- `fireball-call0`〜`fireball-call6`の各アリティ別バリアント自体の呼び出し規約差異（pysimは6引数版のみ実装、§3参照）。
-- WASI errnoの完全な数値表（`wasi_snapshot_preview1`標準）とのすべての対応関係の網羅（pysimは使用する範囲のみ実装）。
+- `fireball-call0`〜`fireball-call6`の各アリティ別バリアント自体の呼び出し規約差異。
+- WASI errnoの完全な数値表（`wasi_snapshot_preview1`標準）とのすべての対応関係の網羅。

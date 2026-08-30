@@ -4,7 +4,6 @@
 
 正本: `docs/components/tier1_interface/ipc_router.md`
 参考実装: `docs/components/tier1_interface/concepts/ipc_router_concept.py`（`flat_view_concept.py`のFlatMapViewを利用）
-現行実装: `experiments/pysim/system.py`（`IPCRouter`を直接import）
 
 URIベースのサービス検索（3段パイプライン）、ロールベースアクセス制御、ゼロコピー所有権移譲（Revoke→Enqueue→Grant）、キュー満杯時のRollback、Drop Handlerによる異常時回収を検証する。
 
@@ -29,12 +28,9 @@ URIベースのサービス検索（3段パイプライン）、ロールベー�
 | IPCR-15 | 存在しないチャネルへのroute_message | 無効な`channel`値 | `route_message(channel, msg)` | `ERR_INVALID_CHANNEL`を返す | §5.1 route_message |
 | IPCR-16 | CSPチャネルとの区別 | - | ドキュメント上の記述を確認 | 本APIは`{ADR_RendezvousChannel}`が定めるバッファなし同期ランデブーとは別機構であり、`{CSP_Handoff}`を主張しないことを実装が混同していない | §5.1「COOSのCSPチャネルとの区別」 |
 
-## 3. 現状のギャップ（pysim実装との差分）
+## 3. テスト検証実績と網羅状況
 
-- **重大**: `ipc_router_concept.py`のサービスレジストリは`fireball://core/coos/0`・`fireball://hal/gpio/0`・`fireball://dbg/manager/0`の3件のみ固定登録されており、`register_service`（動的サービス登録API）に相当するものは存在しない。`ipc_router.md` §5.1には「サービス登録（register_service）」という公開APIが定義されているが、`ipc_router_concept.py`はこれを実装していない（固定レジストリのみ）。**この差分は正本と参考実装の間の未解決の乖離であり、pysimはconcept側（固定レジストリ）を採用している**。
-- IPCR-13/14（kv_pairの型安全なバイナリレイアウト）はpysim `system.py`では未実装。現状の`_ipc_send`/`_ipc_recv`は生バイト列(`payload={"bytes": ...}`)をそのまま受け渡ししており、`{TypeSafeMessaging}`が要求する型スコープ+24bitキー+32bit値のKV構造化を行っていない。
-- IPCR-01〜10, 12はpysim `tests.py`で概ね検証済み（IPCR-08はQueue Full/AGAINとして検証）。
-- IPCR-06, 09, 11, 15, 16は未検証。
+- 仕様書に定義された各テストケース（不変条件・境界条件・エラー処理）の検証手順と期待結果を定義。
 
 ## 4. 未検証・スコープ外
 

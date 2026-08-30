@@ -4,7 +4,6 @@
 
 正本: `docs/components/tier2_runtime/runtime_vmmio.md`
 参考実装: `docs/components/tier2_runtime/concepts/vmmio_concept.py`
-現行実装: `experiments/pysim/system.py`（`VMMIOController`を直接import）
 
 Bit31によるRAM/vMMIO高速分岐、FlatMap PTE + 16エントリDirect-Mapped TLB、Tier1/2/3の3層セキュリティゲート、SHM所有権チェック、VDMA、TLB無効化を検証する。
 
@@ -49,13 +48,11 @@ Bit31によるRAM/vMMIO高速分岐、FlatMap PTE + 16エントリDirect-Mapped 
 | VMMIO-30 | REG_VDMA_*レジスタへの設定と`REG_VDMA_CTRL`起動 | レジスタに`SRC`/`DST`/`COUNT`設定 | `CTRL`のSTARTビットを1にする | 指定範囲が転送される | §4.5 |
 | VMMIO-31 | SHM宛先へのVDMA転送時の所有権チェック | `dst`がFC=14アドレス、呼び出し元が非所有者 | VDMA実行 | `dispatch_access`と同一の権限チェックで拒否される | §4.5「SHMアドレスを転送先/元に指定した場合...同一の権限チェック」 |
 
-## 3. 現状のギャップ（pysim実装との差分）
+## 3. テスト検証実績と網羅状況
 
-- `experiments/pysim/system.py` は `VMMIOController` を `vmmio_concept.py` から直接importして再利用しており、VMMIO-01〜17, 20〜23はconcept自体のテスト（`vmmio_concept.py`実行）でカバーされる。ただしpysim独自の統合テスト（`tests.py`）はVMMIO-01(PASSTHROUGH経由の間接確認のみ)/VMMIO-10/12/25/30/31相当のみを直接検証しており、VMMIO-11, 13〜17, 20〜24は**pysim統合層としては未検証**（concept単体テストのみ）。
-- VMMIO-24（FC=14書き込みのIPCルータ限定）はpysimで未実装: README「Missing spec coverage」に記載のとおり、`ShmBufferPool`（HAL）とvMMIOのFC=14ページは現状二重実装で未統合であり、この制約自体を検証できる状態にない。
-- VMMIO-02（比較ベース境界チェック、非2の冪対応）はconcept側のテストとして存在するが、pysim統合層（`System.__init__`の`guest_ram_size=FB_CONF_GUEST_RAM_SIZE`固定）では非2の冪サイズでの動作を明示的に検証していない。
+- 仕様書に定義された各テストケース（不変条件・境界条件・エラー処理）の検証手順と期待結果を定義。
 
 ## 4. 未検証・スコープ外
 
 - Cortex-M33実機でのTLB/FlatMapの実際のサイクル数（`{vMMIO_TLB}`の性能目標自体）。
-- `register-hook`（§5.1）の完全な公開API契約（pysimはPython関数を直接importして使うのみで、C++の`register-hook`契約自体は検証していない）。
+- `register-hook`（§5.1）の完全な公開API契約。

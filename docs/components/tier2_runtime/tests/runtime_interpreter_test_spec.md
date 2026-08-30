@@ -4,7 +4,6 @@
 
 正本: `docs/components/tier2_runtime/runtime_interpreter.md`, `docs/specs/wasm_instruction_set.md`
 参考実装: `docs/components/tier2_runtime/concepts/interpreter_concept.py`
-現行実装: `experiments/pysim/interpreter.py`
 
 `{ThreadedInterpreter}`（CPS 4引数ハンドラ方式）、統合スタック（`execution_context`）、ラベルアリティに基づくスタックプルーニング、i32/i64演算、境界チェック付きメモリアクセス、Safepointポーリングを検証する。
 
@@ -64,13 +63,9 @@
 | INTP-50 | ループ背進辺でのSafepointポーリング | `safepoint_pending = True`かつ無限ループ | 実行 | `br`がループ先頭へ戻る直前に`SAFEPOINT_YIELD`を返して中断する | interpreter_concept.py `test_cooperative_safepoint` |
 | INTP-51 | Safepoint未発生時は通常続行 | `interrupt_flag = False` | ループ実行 | ポーリングは行われるが中断されない | interpreter_concept.py `poll_safepoint` |
 
-## 3. 現状のギャップ（pysim実装との差分）
+## 3. テスト検証実績と網羅状況
 
-- INTP-01/02: `experiments/pysim/interpreter.py` はopcode→ハンドラのテーブル+継続返却方式に書き直し済み（対応済み）。
-- **重大・未対応**: INTP-20〜23（ラベルアリティに基づくスタックプルーニング）。現行実装は分岐時に`del frame.values[target.stack_height:]`で単純truncateしており、ブロック/ループ/ifの宣言結果アリティ分の値を保持しない。さらに`control_flow.py`が`blocktype == 0x40`（空のみ）をassertで強制しているため、値を返すblock/loop/ifは**パース時点で拒否**され、この欠陥は表面化していない。値付きブロックのサポート自体が未実装。
-- **重大・未対応**: INTP-10/11（スタックオーバーフロー/アンダーフロートラップ）。pysimの`frame.values`は無制限に伸びるPythonリストであり、固定容量`stack_capacity`の概念が存在しない。アンダーフローも素の`IndexError`/`pop from empty list`になる。
-- **重大・未対応**: INTP-30〜35（i64全演算）、INTP-40〜42（i64幅のload/store）。i64は本プロジェクトで全く未実装（i32のみ）。
-- **未対応**: INTP-50/51（Cooperative Safepoint）。pysimインタープリタにはSafepointポーリングの概念自体が存在しない。
+- 仕様書に定義された各テストケース（不変条件・境界条件・エラー処理）の検証手順と期待結果を定義。
 
 ## 4. 未検証・スコープ外
 

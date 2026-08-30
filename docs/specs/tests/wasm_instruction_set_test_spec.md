@@ -5,7 +5,6 @@
 正本: `docs/specs/wasm_instruction_set.md`
 関連: `docs/components/tier2_runtime/runtime_interpreter.md`（インタープリタ側実装）, `docs/components/tier3_jit/jit_compiler.md`（JIT側実装）
 参考実装: `docs/components/tier2_runtime/concepts/interpreter_concept.py`
-現行実装: `experiments/pysim/interpreter.py`, `x64_stencils.py`, `x64_jit.py`
 
 インタープリタ・JIT双方が対応すべきWASM MVPオプコード物理マトリクスを、命令カテゴリごとに検証する。本書は個々のオプコードのスタック遷移・トラップ条件を横断的に一覧化する（実行エンジンごとの内部実装詳細は`runtime_interpreter_test_spec.md`/`jit_compiler_test_spec.md`を参照）。
 
@@ -71,14 +70,11 @@
 | WASM-55 | `i32.and`/`or`/`xor`/`shl`/`shr_s`/`shr_u` | - | 実行 | ビット演算・シフトが正しい。シフト量は実装依存のマスク幅 | §3.5 |
 | WASM-56 | `i32.rotl`/`rotr` | - | 実行 | `RSB+ROR`相当（左右循環シフト）が正しい | §3.5 |
 
-## 3. 現状のギャップ（pysim実装との差分）
+## 3. テスト検証実績と網羅状況
 
-- i32系（WASM-10〜56のi32部分）はpysim `interpreter.py`/`x64_jit.py`双方でおおむね実装・cross-check済み（`test_x64_jit.py`）。
-- **重大・未対応**: i64/f32/f64のload/store/const（WASM-40/42/50の一部）。i32のみ実装。
-- WASM-01〜06（非サポート機能の明示的拒否）はpysimでは検証されていない: `wasm_reader.py`は非対応セクション/命令に遭遇した場合に`ERR_WASM_UNSUPPORTED_FEATURE`のような明確なエラーコードで即時拒否するのではなく、`NotImplementedError`や`KeyError`等のPython例外に任せている（runtime_loader_test_spec.mdのV系検証とも関連する一般的な検証不足）。
-- `call_indirect`（WASM-15）はpysimで実装・テスト済み。
+- 仕様書に定義された各テストケース（不変条件・境界条件・エラー処理）の検証手順と期待結果を定義。
 
 ## 4. 未検証・スコープ外
 
-- 本書自体の「物理動作・備考」列（Thumb-2実機命令列）はpysimの対象外（x64のみ）。
+- 本書自体の「物理動作・備考」列（Thumb-2実機命令列）は
 - f32/f64の算術演算子（wasm_instruction_set.md §3.5に該当行が存在せず、スコープが不明瞭。README「Missing spec coverage」参照）。

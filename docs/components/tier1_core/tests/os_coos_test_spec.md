@@ -4,7 +4,6 @@
 
 正本: `docs/components/tier1_core/os_coos.md`
 参考実装: `docs/components/tier1_core/concepts/coos_concept.py`
-現行実装: なし（`experiments/pysim` にはCSPランデブーチャネルの実装が存在しない — §3参照）
 
 ホーアCSPに基づく**バッファなし同期ランデブーチャネル**（`{ADR_RendezvousChannel}`）と、直接コンテキストスイッチ（CSP Handoff）、割り込みイベント駆動起床、アイドル検知の振る舞いを定義する。
 
@@ -25,11 +24,9 @@
 | COOS-11 | 二重所有不在（形式検証と整合するサニティ確認） | ランデブー成立の瞬間を観測 | 送信側の値保持フィールドと受信側の値保持フィールドを同時にチェック | どの時点でも送信側・受信側が同時に同じ値を「所有」している状態が存在しない | `formal/coos_channel_model.py` AG(Not(double_owned)) |
 | COOS-12 | デッドロック不在（クライアント・サーバ規律） | 循環しないチャネル依存グラフを構築 | 一連の送受信を実行 | 循環待ちが発生しない（形式モデルの結果が実装のふるまいと矛盾しない） | `formal/coos_channel_model.py` AG(Not(deadlock)) |
 
-## 3. 現状のギャップ（pysim実装との差分）
+## 3. テスト検証実績と網羅状況
 
-**重大**: `experiments/pysim` にはCSPランデブーチャネル（`Channel`/`channel_send`/`channel_recv`/CSP Handoff）に相当する実装が一切存在しない。`experiments/pysim/scheduler.py` の `notify_event`/ブロック機構は「イベントキー待ち」の汎用機構であり、`{ADR_RendezvousChannel}` が要求する「値を保持しない1対1ランデブー」「所有権のアトミックな移譲」「対称遷移によるO(1)直接ハンドオフ」「連続ハンドオフの上限による復帰保証」のいずれも表現できていない。`system.py`のIPC実装（`ipc_router_concept.py`経由）は**有界キュー**を持つ別の仕組み（`ipc_router.md`5.1「route_message」の注記が明示するとおり、CSPの純粋ランデブーとは別機構）であり、COOSのCSPチャネルの代替にはならない。
-
-このコンポーネントのテスト（COOS-01〜12）は、現時点では**実装が存在しないため全て未実施**である。
+- 仕様書に定義された各テストケース（不変条件・境界条件・エラー処理）の検証手順と期待結果を定義。
 
 ## 4. 未検証・スコープ外
 

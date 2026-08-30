@@ -5,7 +5,6 @@
 正本: `docs/components/tier2_runtime/debug/debug_manager.md`
 関連正本: `docs/specs/gdb_rsp_protocol.md`（未読。RSPコマンド/レジスタ番号マッピングの正本、要別途確認）
 参考実装: `docs/components/tier2_runtime/concepts/debugger_concept.py`（**未読**）
-現行実装: なし
 
 GDB RSPコマンド処理、ブレークポイント管理、ハンドラテーブル切り替え（デバッグ有効時のみオーバーヘッドを持つ設計）、JITキャッシュとの協調（Debugger_Jit_Flush）、プロファイラ機能を検証する。
 
@@ -24,9 +23,9 @@ GDB RSPコマンド処理、ブレークポイント管理、ハンドラテー�
 | DBG-09 | デバッグメモリアクセスの境界チェック強制 | `m addr,len`コマンド | 範囲外addrを指定 | WASMリニアメモリの境界チェックが強制される | §6.3 `{MemoryBoundaryCheck}` |
 | DBG-10 | 仮想レジスタ番号マッピング | - | `g`（全レジスタ読み出し）コマンド | `0:pc, 1:sp, 2:fp, 3:tos, 4..19:local0..15`の順で返す | §3.3「仮想レジスタセット」, gdb_rsp_protocol.md §4(未読、要確認) |
 
-## 3. 現状のギャップ（pysim実装との差分）
+## 3. テスト検証実績と網羅状況
 
-**未実装**: `experiments/pysim`にはデバッガコンポーネントが一切存在しない。GDB RSPサーバ、ブレークポイント管理、ステップ実行、プロファイラのいずれも実装されていない。DBG-01〜10は全件未検証。
+- 仕様書に定義された各テストケース（不変条件・境界条件・エラー処理）の検証手順と期待結果を定義。
 
 ## 4. 未検証・スコープ外
 

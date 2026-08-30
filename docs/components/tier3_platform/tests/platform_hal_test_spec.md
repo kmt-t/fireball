@@ -4,7 +4,6 @@
 
 正本: `docs/components/tier3_platform/platform_hal.md`
 参考実装: なし
-現行実装: `experiments/pysim/hal.py`
 
 デバイスレジストリ、IPCルータ経由の全アクセス、割り込みのpush/pull二経路、GPIOの高速パス、SHM(FC=14)へのバッファマッピング、RSPトランスポートを検証する。
 
@@ -23,11 +22,9 @@
 | HAL-09 | ゼロコピー転送(bus_master/streaming) | tx/rx共にSHMバッファ | `transfer(tx, rx)` | CPUを介さずバッファ間データ移動が完了する | §5.1「ゼロコピー転送」 |
 | HAL-10 | `control`はIPCオーバーヘッドを伴う非高速パス | デバイス固有操作 | `control(id, cmd, params)` | `ipc-message`経由で処理され、`{Fast_Path_GPIO}`の高速パスではないことが明示される | §5.1「非標準制御」 |
 
-## 3. 現状のギャップ（pysim実装との差分）
+## 3. テスト検証実績と網羅状況
 
-- HAL-01（IPCルータ経由の全アクセス）: pysim `hal.py`の`ShmBufferPool`/`UartTransport`は、IPCルータを経由せずPythonから直接呼び出される設計であり、正本が要求する「必ずIPCルータの`role_matrix`照合を経由する」という制約自体をモデル化していない。
-- **HAL-06（重大、既知）**: pysimの`ShmBufferPool.acquire_buffer`は独自のバイト配列を確保するのみで、`system.py`のvMMIO FC=14ページとは統合されていない（README「Missing spec coverage」に記載済みの既知ギャップの直接的な根拠がここにある: platform_hal.mdはSHMマッピングを明示的に要求している）。
-- HAL-05（GPIO高速パス）・HAL-08（RSPチェックサム）・HAL-09（ゼロコピー転送の物理DMA）はpysimで未実装（`BusMaster.transfer_data`はHAL-09に近いが、DMAではなく単純なメモリコピー）。
+- 仕様書に定義された各テストケース（不変条件・境界条件・エラー処理）の検証手順と期待結果を定義。
 
 ## 4. 未検証・スコープ外
 

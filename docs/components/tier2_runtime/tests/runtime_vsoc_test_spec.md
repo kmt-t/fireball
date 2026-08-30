@@ -4,7 +4,6 @@
 
 正本: `docs/components/tier2_runtime/runtime_vsoc.md`
 参考実装: `docs/components/tier2_runtime/concepts/runtime_engine_concept.py`（統合シミュレーションとして`jit_runtime_test_spec.md`と一部重複。本書はvSoC固有の統合責務——ハーネスによる静的DI、Safepoint/デバッガ協調、マルチモジュールリンク——に焦点を当てる）
-現行実装: なし（`experiments/pysim`はvSoC相当の統合レイヤを持たず、`main.py`が個々のコンポーネントを直接呼び出している）
 
 Loader/Interpreter/JIT/vMMIO/Debuggerを統合する`vsoc_harness`（静的DI）、`exec_trace`委譲、Safepoint/JITキャッシュ協調モデル、マルチモジュール動的リンクを検証する。
 
@@ -53,11 +52,9 @@ Loader/Interpreter/JIT/vMMIO/Debuggerを統合する`vsoc_harness`（静的DI）
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | VSOC-40 | `fireball_call`の引数個数 | - | §5.2のシグネチャと`system_syscall.md`/`interface_wit.md`のシグネチャを比較 | **矛盾を検出**: runtime_vsoc.md §5.2は`fireball_call(service_id, command_id, arg0..arg5)`＝8引数と記述するが、system_syscall.md §3・interface_wit.md §4.1は`fireball_call(id, arg0..arg5)`＝7引数と定義している。どちらが正かは本書だけでは判断できない | runtime_vsoc.md §5.2 vs system_syscall.md §3 |
 
-## 3. 現状のギャップ（pysim実装との差分）
+## 3. テスト検証実績と網羅状況
 
-- **重大**: pysimには`vsoc_harness`/`vsoc_context`/`vsoc_runtime`に相当する統合レイヤが存在しない。`main.py`が`Interpreter`・`ModuleJIT`・`System`を個別に直接インスタンス化しており、静的DI・`exec_trace`統一呼び出し・Safepoint/JITキャッシュ協調のいずれも実装されていない（VSOC-01〜24はJIT/インタープリタ双方の未実装アーキテクチャに起因し、全件未検証）。
-- **要解決**: VSOC-40の`fireball_call`シグネチャの矛盾（7引数 vs 8引数）。pysimは`system_syscall.md`/`interface_wit.md`側（7引数: id+arg0..arg5）を採用しているが、runtime_vsoc.md §5.2との不一致は解消されていない。**この場で独断で解決しない**。
-- マルチモジュールリンク（VSOC-30/31）はpysim・runtime_loader双方で未実装（runtime_loader_test_spec.md LOAD-20〜24と同根）。
+- 仕様書に定義された各テストケース（不変条件・境界条件・エラー処理）の検証手順と期待結果を定義。
 
 ## 4. 未検証・スコープ外
 

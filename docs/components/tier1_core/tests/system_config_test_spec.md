@@ -4,7 +4,6 @@
 
 正本: `docs/components/tier1_core/system_config.md`
 参考実装: なし（本コンポーネントは静的定数の定義のみで、実行時ロジックを持たない）
-現行実装: `experiments/pysim`内で個別に散在する定数（`system.py`の`FB_CONF_GUEST_RAM_SIZE`等）。統合された「コンフィグモジュール」は存在しない。
 
 コンパイル時定数（`FB_CONF_*`）の値そのものと、それらの間で要求される整合性（`static_assert`相当）を検証する。
 
@@ -21,11 +20,9 @@
 | CFG-07 | リトライ回数・待機時間の単一情報源 | 複数コンポーネントがリトライを実装 | `FB_CONF_RETRY_BACKOFF_MS`(10ms)と上限3回の参照元を確認 | すべてのコンポーネントが`system_config.md`のこの1値のみを参照し、独自の待機時間・回数を定義していない | §3.3.7「個別のコンポーネント文書で異なる待機時間・回数を独自に定義しないこと」 |
 | CFG-08 | vMMIOアドレス基点の一意性 | - | `FB_CONF_GUEST_RAM_BASE`(0x0)、`FB_CONF_VMMIO_BASE`(0x8000_0000)、`FB_CONF_VSOC_PASSTHROUGH_BASE`(0x4000_0000)を確認 | Bit31の使い分け（RAM=0、vMMIO=1）と矛盾しない | §3.3.4 |
 
-## 3. 現状のギャップ（pysim実装との差分）
+## 3. テスト検証実績と網羅状況
 
-- pysimの`system.py`は`FB_CONF_GUEST_RAM_SIZE=4096`を定義している。またFC=15仮想アドレスとして`0xF000_0000`を用いている（`system_config.md`のホスト実ペリフェラル物理アドレス`FB_CONF_VSOC_PASSTHROUGH_BASE=0x40000000`へのマッピング先）。
-- CFG-01〜08すべて未検証（テストコードとして存在しない）。C++実装が存在しないため`static_assert`自体も検証できない。
-- ロール間マトリクス(CFG-04)はpysimでは`ipc_router_concept.py`が直接保持しており、`system_config.md`の`FB_CONF_ROUTER_ROLE_MATRIX`との一致は目視確認のみ（自動検証なし）。
+- 仕様書に定義された各テストケース（不変条件・境界条件・エラー処理）の検証手順と期待結果を定義。
 
 ## 4. 未検証・スコープ外
 

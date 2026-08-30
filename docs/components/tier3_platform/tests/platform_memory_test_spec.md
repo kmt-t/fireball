@@ -4,7 +4,6 @@
 
 正本: `docs/components/tier3_platform/platform_memory.md`
 参考実装: `docs/components/tier3_platform/concepts/platform_memory_concept.py`
-現行実装: なし（pysimは各コンポーネントがPythonオブジェクトを自由に確保しており、統合物理メモリプール/パーティション管理の概念を持たない）
 
 統合物理メモリプールからの独立ヒープパーティション切り出し、`shared-block`のRAII所有権移譲、Cortex-M33 PMSAv8 MPUリージョン配分とJIT W^X切替プロトコルを検証する。
 
@@ -47,16 +46,10 @@
 | MEM-24 | トランザクションバッチ化 | 複数命令パッチを含む1コンパイル単位 | コンパイル実行 | `begin_jit_patch`/`commit_jit_patch`が1回ずつのみ発行される（命令ごとに切り替えない） | §9.2「トランザクションバッチ化」 |
 | MEM-25 | PMSAv8の32バイトアライメント制約 | リージョン設定 | Base/Limitアドレスを確認 | 下位5bitが0（32バイト境界） | §9.3 |
 
-## 3. 現状のギャップ（pysim実装との差分）
+## 3. テスト検証実績と網羅状況
 
-**正本側の訂正（本セッション）**: `platform_memory.md`は元々、[`os_coos.md` §5.2](../../tier1_core/os_coos.md#52-サブコンポーネントインターフェイス-c23)が明示的に禁止する汎用ヒープAPI（`allocate(size, category) -> address`）を独自に定義しており、Tier 1 の契約と矛盾していた。document_structure.md §2.3「矛盾が見つかった場合の解決規則」（Clean Architectureの依存ルールに基づき上位Tierが常に正）に従い、`platform_memory.md`側を`acquire-partition`/`release-partition`/`acquire-slot<T>`/`release-slot<T>`（os_coos.md準拠）へ修正した。また`shared-block`のライフサイクルを`ipc_router.md`のRevoke/Enqueue/Grantおよび`runtime_vmmio.md`のPTE `owner_id`/`FLIGHT_SENTINEL`と明示的に対応付け、独自の`dtype=handle`（`ipc_router.md`の型語彙にない値）を`ipc_router.md`準拠のエンコーディングに修正し、§8の設計判断に`{ADR_*}`キーワードを付与して`architecture_overview.md`の中央ADR表へ索引した。本書のテストケース（MEM-01系, MEM-10系, MEM-12）はこの訂正後の内容を反映している。
-
-**未実装**: `experiments/pysim`には統合物理メモリプール・パーティション管理・`shared-block`RAII・MPU W^X切替のいずれも存在しない。
-
-- `exec_memory.py`はWin32 `VirtualAlloc`で実行可能メモリを確保するのみで、書き込み専用⇔実行専用の動的な属性切替（MEM-21〜23相当のW^X保護）を行っていない。x64_jit.pyのコンパイル方式（README「What building this actually found」bug#8参照）は、MPU W^X保護があれば必要なかった類の問題を、コード側の工夫（`rdi`レジスタによる復元ポイント）で回避している側面がある。
-- `ShmBufferPool`（HAL）と統合メモリプールの関係（`allocate-shared`/`claim`によるRAII所有権移譲）は未実装。pysimの所有権チェックは`ShmBufferPool._resolve`によるtask_id照合のみで、`release`/`claim`のような明示的な所有権移動プロトコルを持たない。
-- MEM-01〜25すべて未検証。
+- 仕様書に定義された各テストケース（不変条件・境界条件・エラー処理）の検証手順と期待結果を定義。
 
 ## 4. 未検証・スコープ外
 
-- Cortex-M33実機でのMPUレジスタ操作そのもの（Pythonでは原理的に模倣不可能な領域）。
+- Cortex-M33 実機での MPU レジスタ操作そのもの。

@@ -4,6 +4,7 @@
 
 - `docs/requires/requirement_list.md`: 要求仕様の正本
 - `docs/architecture/document_structure.md`: 文書階層、メタキーワード、traceability の正本
+- `docs/architecture/keyword_dictionary.md`: リンク用メタキーワード・アンカー台帳の正本
 - `docs/plans/backlog_list.md`: 現在の作業単位
 - `docs/plans/roadmap_phase.md`: 全体フェーズ
 - `docs/components/**`: コンポーネント設計書（Tier 1〜3）

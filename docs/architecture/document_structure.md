@@ -35,7 +35,7 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
   · Platform (platform_hal, platform_memory)
 
 [ Meta: 横断的メタ設計・開発計画 (Cross-cutting / Meta) ] ─ (全Tier横断)
-  · Architecture (architecture_overview, document_structure, integration_test_scenarios)
+  · Architecture (architecture_overview, document_structure, integration_test_scenarios, keyword_dictionary)
   · Plans (roadmap_phase, backlog_list, backlog_archive)
 
 [ Specs: 横串物理仕様・規格マトリクス (Cross-cutting Physical Specs & Catalogs) ] ─ (全Tier横断・具象規格)

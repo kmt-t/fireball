@@ -4,31 +4,19 @@ experiments/pysim/system.py
 Wires HAL + Logger/ConsoleOutput + the recovery-strategy engine + the real
 fireball_call syscall surface into one running system.
 
-fireball_call's ID space, register layout and error-code convention are
-NOT reinvented here: `docs/components/tier1_core/system_syscall.md` §5
-defines the real ID table, `docs/components/tier2_runtime/runtime_vmmio.md`
-defines the real vMMIO address/register layout, and both
-`docs/components/tier2_runtime/concepts/vmmio_concept.py` and
-`docs/components/tier1_interface/concepts/ipc_router_concept.py` are
-declared authoritative reference implementations for the FlatMap/TLB
-permission dispatch and the URI-routed, ownership-transferring message
-queue respectively. This module imports and reuses those two concept
-modules directly instead of re-deriving their logic, and fills in only
-what they explicitly leave to the caller: the actual register/byte-level
-read-write effects `VMMIOController.access()` stops short of (see its
-module docstring), and the wire-level u32 handle numbering
-`IPCRouter` has no concept of.
+fireball_call's ID space, register layout and error-code convention adhere
+strictly to the architectural specifications:
+- `docs/components/tier1_core/system_syscall.md` §5 defines the real ID table
+- `docs/components/tier2_runtime/runtime_vmmio.md` defines the vMMIO address/register layout
+- `docs/components/tier1_interface/ipc_router.md` defines the URI-routed, zero-copy message queue
 
-FINDING (this file's previous version): it invented `FB_SYSCALL_LOG=1` and
-`FB_SYSCALL_IPC_SEND=2` without checking them against system_syscall.md's
-real ID table -- `0x01` there is already `SYS_YIELD`, and IPC_SEND is
-`0x40`, not `2`. Worse, system_logging.md 1 explicitly scopes the
-dictionary logger to "build-time-registered internal state logs only" and
-calls out `wasi:cli/stdout`/`stderr` (interface_wit.md 5.5's
-`console-output`) as the *only* guest-facing text-output path -- there
-never was a legitimate "guest calls the dictionary logger" syscall for
-`FB_SYSCALL_LOG` to model. Both are fixed below by adopting the real ID
-table and routing guest output through `WASI_FD_WRITE` instead.
+This module uses self-contained simulation modules (`vmmio.py`, `ipc_router.py`,
+`platform_memory.py`) mirroring the authoritative concept models, and provides
+the actual register/byte-level storage and wire-level u32 handle numbering
+required for end-to-end execution.
+
+All guest output routes through WASI_FD_WRITE (console-output) to adhere strictly
+to system_logging.md and interface_wit.md §5.5 (dictionary logger is internal-only).
 """
 
 from __future__ import annotations

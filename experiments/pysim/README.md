@@ -161,6 +161,7 @@ in `interface_wit.md`, not their internal hardware-facing implementations.
 | `test_x64_stencils.py` | Every stencil, executed as real machine code and checked against Python-computed expected values |
 | `test_x64_jit.py` | End-to-end: build real `.wasm` bytes -> parse -> JIT -> execute -> cross-check vs. the interpreter |
 | `test_host_call.py` | The `fireball_call` bridge in isolation: every arity 0-7, register+stack marshalling, ABI alignment |
+| `test_concept_differential.py` | Differential equivalence test suite asserting 100% behavioral identity between `experiments/pysim` and `docs/**/concepts` |
 
 ## No existing WASM tooling
 
@@ -193,6 +194,7 @@ hand-counting the *first* four bugs below is exactly what this replaced.
 ```bash
 # from this directory, with any Python 3.11+ (stdlib + ctypes only)
 python tests.py
+python test_concept_differential.py
 python test_x64_asm.py
 python test_x64_stencils.py
 python test_x64_jit.py

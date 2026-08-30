@@ -1,4 +1,4 @@
-﻿"""
+"""
 experiments/pysim/wasi.py
 
 WASI Preview 1 and Fireball Host Interface Bridge for Guest WASM Execution.
@@ -11,7 +11,9 @@ from __future__ import annotations
 import ctypes
 from typing import Any, Callable
 
+from loader import fnv1a_32
 from system import FbSyscallId, System, WasiErrno
+from system_containers import RadixBinaryTreeView
 from wasm_module import Module
 
 
@@ -24,6 +26,54 @@ class WasiHostContext:
         self.guest_memory = guest_memory if guest_memory is not None else bytearray(64 * 1024)
         self.sysv.bind_guest(self.guest_memory, task_id=self.task_id)
         self._keepalive_trampolines: list[Any] = []
+
+        # Build static host import table via RadixBinaryTreeView
+        host_entries: list[tuple[str, str, Callable[..., int]]] = [
+            ("wasi_snapshot_preview1", "fd_write", self.fd_write),
+            ("wasi_snapshot_preview1", "fd_read", self.fd_read),
+            ("wasi_snapshot_preview1", "fd_close", self.fd_close),
+            ("wasi_snapshot_preview1", "clock_time_get", self.clock_time_get),
+            ("wasi_snapshot_preview1", "proc_exit", self.proc_exit),
+            ("wasi_snapshot_preview1", "random_get", self.random_get),
+            ("wasi_unstable", "fd_write", self.fd_write),
+            ("wasi_unstable", "fd_read", self.fd_read),
+            ("wasi_unstable", "fd_close", self.fd_close),
+            ("wasi_unstable", "clock_time_get", self.clock_time_get),
+            ("wasi_unstable", "proc_exit", self.proc_exit),
+            ("wasi_unstable", "random_get", self.random_get),
+            ("fireball", "fireball_call", self.fireball_call),
+            ("fireball", "fd_write", self.fd_write),
+            ("env", "fireball_call", self.fireball_call),
+            ("env", "fd_write", self.fd_write),
+        ]
+
+        hashed_entries: list[tuple[int, tuple[str, str, Callable[..., int]]]] = []
+        for mod, field, handler in host_entries:
+            h = fnv1a_32(f"{mod}::{field}")
+            hashed_entries.append((h, (mod, field, handler)))
+        hashed_entries.sort(key=lambda x: x[0])
+
+        keys = [x[0] for x in hashed_entries]
+        values = [x[1] for x in hashed_entries]
+
+        # Build radix_table for O(1) prefix lookup + binary search
+        radix_shift = 16
+        if keys:
+            max_prefix = max(keys) >> radix_shift
+            radix_table = [(0, 0)] * (max_prefix + 1)
+            current_prefix = 0
+            first_idx = 0
+            for idx, k in enumerate(keys):
+                prefix = k >> radix_shift
+                while current_prefix < prefix:
+                    radix_table[current_prefix] = (first_idx, idx)
+                    current_prefix += 1
+                    first_idx = idx
+            radix_table[current_prefix] = (first_idx, len(keys))
+        else:
+            radix_table = []
+
+        self._import_tree = RadixBinaryTreeView(keys, values, radix_table, radix_shift=radix_shift)
 
     def fd_write(self, fd: int, iovs_ptr: int, iovs_len: int, nwritten_ptr: int) -> int:
         return int(self.sysv.fireball_call(FbSyscallId.WASI_FD_WRITE, fd, iovs_ptr, iovs_len, nwritten_ptr, 0, 0))
@@ -47,25 +97,13 @@ class WasiHostContext:
         return int(self.sysv.fireball_call(sys_id, a0, a1, a2, a3, a4, a5))
 
     def get_handler_for_import(self, module_name: str, field_name: str) -> Callable[..., int] | None:
-        """Resolves an import name to the corresponding host function callable."""
-        if module_name in ("wasi_snapshot_preview1", "wasi_unstable"):
-            if field_name == "fd_write":
-                return self.fd_write
-            if field_name == "fd_read":
-                return self.fd_read
-            if field_name == "fd_close":
-                return self.fd_close
-            if field_name == "clock_time_get":
-                return self.clock_time_get
-            if field_name == "proc_exit":
-                return self.proc_exit
-            if field_name == "random_get":
-                return self.random_get
-        elif module_name in ("fireball", "env"):
-            if field_name == "fireball_call":
-                return self.fireball_call
-            if field_name == "fd_write":
-                return self.fd_write
+        """Resolves an import name to the corresponding host function callable via RadixBinaryTreeView."""
+        h = fnv1a_32(f"{module_name}::{field_name}")
+        candidate = self._import_tree.find(h)
+        if candidate is not None:
+            mod, field, handler = candidate
+            if mod == module_name and field == field_name:
+                return handler
         return None
 
     def build_interpreter_host_functions(self, module: Module) -> dict[int, Callable[..., int]]:

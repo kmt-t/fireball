@@ -334,6 +334,27 @@ def test_diff_debugger_manager_gdb_rsp():
     assert (0x20 not in c_dbg_mgr.breakpoints) and (not p_dbg_mgr.has_breakpoint(0x20))
 
 
+def test_diff_wasi_host_context_radix_binary_tree_imports():
+    """Validates that WasiHostContext.get_handler_for_import resolves via RadixBinaryTreeView in O(k)."""
+    import system as p_sys
+    import wasi as p_wasi
+
+    sysv = p_sys.System()
+    ctx = p_wasi.WasiHostContext(sysv)
+
+    # 1. Successful resolutions
+    assert ctx.get_handler_for_import("wasi_snapshot_preview1", "fd_write") == ctx.fd_write
+    assert ctx.get_handler_for_import("wasi_snapshot_preview1", "clock_time_get") == ctx.clock_time_get
+    assert ctx.get_handler_for_import("wasi_snapshot_preview1", "proc_exit") == ctx.proc_exit
+    assert ctx.get_handler_for_import("wasi_unstable", "fd_read") == ctx.fd_read
+    assert ctx.get_handler_for_import("fireball", "fireball_call") == ctx.fireball_call
+    assert ctx.get_handler_for_import("env", "fd_write") == ctx.fd_write
+
+    # 2. Non-existent imports
+    assert ctx.get_handler_for_import("wasi_snapshot_preview1", "nonexistent") is None
+    assert ctx.get_handler_for_import("unknown_module", "fd_write") is None
+
+
 ALL_DIFF_TESTS = [
     test_diff_system_containers_flat_map_view,
     test_diff_system_containers_radix_binary_tree_view,
@@ -343,6 +364,7 @@ ALL_DIFF_TESTS = [
     test_diff_platform_memory_manager_and_mpu,
     test_diff_wasm_loader_symbol_hashing_and_indexing,
     test_diff_debugger_manager_gdb_rsp,
+    test_diff_wasi_host_context_radix_binary_tree_imports,
 ]
 
 if __name__ == "__main__":

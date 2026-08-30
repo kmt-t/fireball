@@ -162,12 +162,13 @@ in `interface_wit.md`, not their internal hardware-facing implementations.
 | `test_x64_jit.py` | End-to-end: build real `.wasm` bytes -> parse -> JIT -> execute -> cross-check vs. the interpreter |
 | `test_host_call.py` | The `fireball_call` bridge in isolation: every arity 0-7, register+stack marshalling, ABI alignment |
 | `test_concept_differential.py` | Differential equivalence test suite asserting 100% behavioral identity between `experiments/pysim` and `docs/**/concepts` |
+| `aobench.py` | Full 3D Raytracing Ambient Occlusion Benchmark (AO-Bench) running via WASM, JIT trace execution, and WASI `fd_write` |
 
 ## No existing WASM tooling
 
 There is no `wat2wasm` and wasmtime is explicitly off-limits in this
 sandbox, so `wasm_builder.py` is a small from-scratch *encoder* used only
-to synthesize test `.wasm` binaries -- it is test-fixture tooling, not part
+to synthesize test fixtures (see below) -- it is test-fixture tooling, not part
 of the design under test. `wasm_reader.py` (the real parser) only ever
 sees genuine binary-format bytes produced by it, and `main.py`'s demo
 writes a module built this way to an actual file on disk and reads the raw
@@ -199,6 +200,7 @@ python test_x64_asm.py
 python test_x64_stencils.py
 python test_x64_jit.py
 python test_host_call.py
+python aobench.py
 python main.py
 ```
 

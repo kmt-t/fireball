@@ -73,6 +73,42 @@ from wasm_opcodes import (
     DROP,
     ELSE,
     END,
+    F32_ABS,
+    F32_ADD,
+    F32_CONST,
+    F32_CONVERT_I32_S,
+    F32_CONVERT_I32_U,
+    F32_DEMOTE_F64,
+    F32_DIV,
+    F32_EQ,
+    F32_GE,
+    F32_GT,
+    F32_LE,
+    F32_LOAD,
+    F32_LT,
+    F32_MAX,
+    F32_MIN,
+    F32_MUL,
+    F32_NE,
+    F32_NEG,
+    F32_SQRT,
+    F32_STORE,
+    F32_SUB,
+    F64_ABS,
+    F64_ADD,
+    F64_CONST,
+    F64_CONVERT_I32_S,
+    F64_CONVERT_I32_U,
+    F64_DIV,
+    F64_EQ,
+    F64_LOAD,
+    F64_MUL,
+    F64_NE,
+    F64_NEG,
+    F64_PROMOTE_F32,
+    F64_SQRT,
+    F64_STORE,
+    F64_SUB,
     GLOBAL_GET,
     GLOBAL_SET,
     I32_ADD,
@@ -112,7 +148,22 @@ from wasm_opcodes import (
     I32_STORE8,
     I32_STORE16,
     I32_SUB,
+    I32_TRUNC_F32_S,
+    I32_TRUNC_F64_S,
     I32_XOR,
+    I64_ADD,
+    I64_CONST,
+    I64_DIV_S,
+    I64_DIV_U,
+    I64_EQ,
+    I64_EQZ,
+    I64_LOAD,
+    I64_LT_S,
+    I64_LT_U,
+    I64_MUL,
+    I64_NE,
+    I64_STORE,
+    I64_SUB,
     IF,
     LOCAL_GET,
     LOCAL_SET,
@@ -277,7 +328,7 @@ class Interpreter:
         layout = self.module.locals_layout(func_index)
         locals_arr = [0] * len(layout)
         for i, a in enumerate(args):
-            locals_arr[i] = _to_i32(a)
+            locals_arr[i] = a if isinstance(a, float) else _to_i32(a)
 
         instrs = decode_all(fn.code)
         frame = CallFrame(instrs, fn.code, [])
@@ -895,4 +946,431 @@ def _h_i32_rotr(ip, frame, env, local_base):
     n = _to_u32(b) & 31
     v = _to_u32(a)
     frame.values.append(_to_i32(((v >> n) | (v << (32 - n))) & I32_MASK if n else v))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+import math
+import struct
+
+# Helper conversion utilities
+I64_MASK = 0xFFFF_FFFF_FFFF_FFFF
+
+
+def _to_i64(v: int) -> int:
+    v &= I64_MASK
+    return v - (1 << 64) if v & 0x8000_0000_0000_0000 else v
+
+
+def _to_u64(v: int) -> int:
+    return v & I64_MASK
+
+
+# --- i64 / f32 / f64 Memory Handlers ---
+
+
+@_handler(I64_LOAD)
+def _h_i64_load(ip, frame, env, local_base):
+    ins = frame.instrs[ip]
+    _, offset = ins.memarg
+    addr = _to_u32(frame.values.pop()) + offset
+    if env.memory is None or addr + 8 > len(env.memory):
+        raise Trap("out of bounds memory access")
+    val = struct.unpack("<q", env.memory[addr : addr + 8])[0]
+    frame.values.append(val)
+    return (ins.end_offset, frame, env, local_base)
+
+
+@_handler(I64_STORE)
+def _h_i64_store(ip, frame, env, local_base):
+    ins = frame.instrs[ip]
+    _, offset = ins.memarg
+    val = frame.values.pop()
+    addr = _to_u32(frame.values.pop()) + offset
+    if env.memory is None or addr + 8 > len(env.memory):
+        raise Trap("out of bounds memory access")
+    env.memory[addr : addr + 8] = struct.pack("<q", int(val))
+    return (ins.end_offset, frame, env, local_base)
+
+
+@_handler(F32_LOAD)
+def _h_f32_load(ip, frame, env, local_base):
+    ins = frame.instrs[ip]
+    _, offset = ins.memarg
+    addr = _to_u32(frame.values.pop()) + offset
+    if env.memory is None or addr + 4 > len(env.memory):
+        raise Trap("out of bounds memory access")
+    val = struct.unpack("<f", env.memory[addr : addr + 4])[0]
+    frame.values.append(val)
+    return (ins.end_offset, frame, env, local_base)
+
+
+@_handler(F32_STORE)
+def _h_f32_store(ip, frame, env, local_base):
+    ins = frame.instrs[ip]
+    _, offset = ins.memarg
+    val = float(frame.values.pop())
+    addr = _to_u32(frame.values.pop()) + offset
+    if env.memory is None or addr + 4 > len(env.memory):
+        raise Trap("out of bounds memory access")
+    env.memory[addr : addr + 4] = struct.pack("<f", val)
+    return (ins.end_offset, frame, env, local_base)
+
+
+@_handler(F64_LOAD)
+def _h_f64_load(ip, frame, env, local_base):
+    ins = frame.instrs[ip]
+    _, offset = ins.memarg
+    addr = _to_u32(frame.values.pop()) + offset
+    if env.memory is None or addr + 8 > len(env.memory):
+        raise Trap("out of bounds memory access")
+    val = struct.unpack("<d", env.memory[addr : addr + 8])[0]
+    frame.values.append(val)
+    return (ins.end_offset, frame, env, local_base)
+
+
+@_handler(F64_STORE)
+def _h_f64_store(ip, frame, env, local_base):
+    ins = frame.instrs[ip]
+    _, offset = ins.memarg
+    val = float(frame.values.pop())
+    addr = _to_u32(frame.values.pop()) + offset
+    if env.memory is None or addr + 8 > len(env.memory):
+        raise Trap("out of bounds memory access")
+    env.memory[addr : addr + 8] = struct.pack("<d", val)
+    return (ins.end_offset, frame, env, local_base)
+
+
+# --- Const Handlers ---
+
+
+@_handler(I64_CONST)
+def _h_i64_const(ip, frame, env, local_base):
+    frame.values.append(_to_i64(frame.instrs[ip].const_value))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(F32_CONST)
+def _h_f32_const(ip, frame, env, local_base):
+    frame.values.append(float(frame.instrs[ip].const_value))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(F64_CONST)
+def _h_f64_const(ip, frame, env, local_base):
+    frame.values.append(float(frame.instrs[ip].const_value))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+# --- i64 Comparison & Arithmetic Handlers ---
+
+
+@_handler(I64_EQZ)
+def _h_i64_eqz(ip, frame, env, local_base):
+    v = frame.values.pop()
+    frame.values.append(1 if v == 0 else 0)
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(I64_EQ)
+def _h_i64_eq(ip, frame, env, local_base):
+    b, a = frame.values.pop(), frame.values.pop()
+    frame.values.append(1 if _to_i64(a) == _to_i64(b) else 0)
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(I64_NE)
+def _h_i64_ne(ip, frame, env, local_base):
+    b, a = frame.values.pop(), frame.values.pop()
+    frame.values.append(1 if _to_i64(a) != _to_i64(b) else 0)
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(I64_LT_S)
+def _h_i64_lt_s(ip, frame, env, local_base):
+    b, a = frame.values.pop(), frame.values.pop()
+    frame.values.append(1 if _to_i64(a) < _to_i64(b) else 0)
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(I64_LT_U)
+def _h_i64_lt_u(ip, frame, env, local_base):
+    b, a = frame.values.pop(), frame.values.pop()
+    frame.values.append(1 if _to_u64(a) < _to_u64(b) else 0)
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(I64_ADD)
+def _h_i64_add(ip, frame, env, local_base):
+    b, a = frame.values.pop(), frame.values.pop()
+    frame.values.append(_to_i64(a + b))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(I64_SUB)
+def _h_i64_sub(ip, frame, env, local_base):
+    b, a = frame.values.pop(), frame.values.pop()
+    frame.values.append(_to_i64(a - b))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(I64_MUL)
+def _h_i64_mul(ip, frame, env, local_base):
+    b, a = frame.values.pop(), frame.values.pop()
+    frame.values.append(_to_i64(a * b))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(I64_DIV_S)
+def _h_i64_div_s(ip, frame, env, local_base):
+    b = _to_i64(frame.values.pop())
+    a = _to_i64(frame.values.pop())
+    if b == 0:
+        raise Trap("integer divide by zero")
+    if a == -0x8000_0000_0000_0000 and b == -1:
+        raise Trap("integer overflow")
+    q = abs(a) // abs(b)
+    frame.values.append(_to_i64(-q if (a < 0) != (b < 0) else q))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(I64_DIV_U)
+def _h_i64_div_u(ip, frame, env, local_base):
+    b = _to_u64(frame.values.pop())
+    a = _to_u64(frame.values.pop())
+    if b == 0:
+        raise Trap("integer divide by zero")
+    frame.values.append(_to_i64(a // b))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+# --- f32 Arithmetic Handlers ---
+
+
+@_handler(F32_ADD)
+def _h_f32_add(ip, frame, env, local_base):
+    b, a = frame.values.pop(), frame.values.pop()
+    frame.values.append(float(a + b))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(F32_SUB)
+def _h_f32_sub(ip, frame, env, local_base):
+    b, a = frame.values.pop(), frame.values.pop()
+    frame.values.append(float(a - b))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(F32_MUL)
+def _h_f32_mul(ip, frame, env, local_base):
+    b, a = frame.values.pop(), frame.values.pop()
+    frame.values.append(float(a * b))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(F32_DIV)
+def _h_f32_div(ip, frame, env, local_base):
+    b, a = frame.values.pop(), frame.values.pop()
+    frame.values.append(float(a / b if b != 0 else float("inf")))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(F32_SQRT)
+def _h_f32_sqrt(ip, frame, env, local_base):
+    a = frame.values.pop()
+    frame.values.append(float(math.sqrt(a) if a >= 0 else float("nan")))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(F32_MIN)
+def _h_f32_min(ip, frame, env, local_base):
+    b, a = frame.values.pop(), frame.values.pop()
+    frame.values.append(float(min(a, b)))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(F32_MAX)
+def _h_f32_max(ip, frame, env, local_base):
+    b, a = frame.values.pop(), frame.values.pop()
+    frame.values.append(float(max(a, b)))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(F32_LT)
+def _h_f32_lt(ip, frame, env, local_base):
+    b, a = frame.values.pop(), frame.values.pop()
+    frame.values.append(1 if a < b else 0)
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(F32_LE)
+def _h_f32_le(ip, frame, env, local_base):
+    b, a = frame.values.pop(), frame.values.pop()
+    frame.values.append(1 if a <= b else 0)
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(F32_GT)
+def _h_f32_gt(ip, frame, env, local_base):
+    b, a = frame.values.pop(), frame.values.pop()
+    frame.values.append(1 if a > b else 0)
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(F32_GE)
+def _h_f32_ge(ip, frame, env, local_base):
+    b, a = frame.values.pop(), frame.values.pop()
+    frame.values.append(1 if a >= b else 0)
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+# --- f64 Arithmetic Handlers ---
+
+
+@_handler(F64_ADD)
+def _h_f64_add(ip, frame, env, local_base):
+    b, a = frame.values.pop(), frame.values.pop()
+    frame.values.append(float(a + b))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(F64_SUB)
+def _h_f64_sub(ip, frame, env, local_base):
+    b, a = frame.values.pop(), frame.values.pop()
+    frame.values.append(float(a - b))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(F64_MUL)
+def _h_f64_mul(ip, frame, env, local_base):
+    b, a = frame.values.pop(), frame.values.pop()
+    frame.values.append(float(a * b))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(F64_DIV)
+def _h_f64_div(ip, frame, env, local_base):
+    b, a = frame.values.pop(), frame.values.pop()
+    frame.values.append(float(a / b if b != 0 else float("inf")))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(F64_SQRT)
+def _h_f64_sqrt(ip, frame, env, local_base):
+    a = frame.values.pop()
+    frame.values.append(float(math.sqrt(a) if a >= 0 else float("nan")))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+# --- Conversion Handlers ---
+
+
+@_handler(I32_TRUNC_F32_S)
+def _h_i32_trunc_f32_s(ip, frame, env, local_base):
+    a = frame.values.pop()
+    frame.values.append(int(a) & I32_MASK)
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(I32_TRUNC_F64_S)
+def _h_i32_trunc_f64_s(ip, frame, env, local_base):
+    a = frame.values.pop()
+    frame.values.append(int(a) & I32_MASK)
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(F32_CONVERT_I32_S)
+def _h_f32_convert_i32_s(ip, frame, env, local_base):
+    a = _to_i32(frame.values.pop())
+    frame.values.append(float(a))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(F32_CONVERT_I32_U)
+def _h_f32_convert_i32_u(ip, frame, env, local_base):
+    a = _to_u32(frame.values.pop())
+    frame.values.append(float(a))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(F64_CONVERT_I32_S)
+def _h_f64_convert_i32_s(ip, frame, env, local_base):
+    a = _to_i32(frame.values.pop())
+    frame.values.append(float(a))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(F64_CONVERT_I32_U)
+def _h_f64_convert_i32_u(ip, frame, env, local_base):
+    a = _to_u32(frame.values.pop())
+    frame.values.append(float(a))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(F64_PROMOTE_F32)
+def _h_f64_promote_f32(ip, frame, env, local_base):
+    a = frame.values.pop()
+    frame.values.append(float(a))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(F32_DEMOTE_F64)
+def _h_f32_demote_f64(ip, frame, env, local_base):
+    a = frame.values.pop()
+    frame.values.append(float(a))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(F32_ABS)
+def _h_f32_abs(ip, frame, env, local_base):
+    a = frame.values.pop()
+    frame.values.append(float(abs(a)))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(F32_NEG)
+def _h_f32_neg(ip, frame, env, local_base):
+    a = frame.values.pop()
+    frame.values.append(float(-a))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(F64_ABS)
+def _h_f64_abs(ip, frame, env, local_base):
+    a = frame.values.pop()
+    frame.values.append(float(abs(a)))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(F64_NEG)
+def _h_f64_neg(ip, frame, env, local_base):
+    a = frame.values.pop()
+    frame.values.append(float(-a))
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(F32_EQ)
+def _h_f32_eq(ip, frame, env, local_base):
+    b, a = frame.values.pop(), frame.values.pop()
+    frame.values.append(1 if a == b else 0)
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(F32_NE)
+def _h_f32_ne(ip, frame, env, local_base):
+    b, a = frame.values.pop(), frame.values.pop()
+    frame.values.append(1 if a != b else 0)
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(F64_EQ)
+def _h_f64_eq(ip, frame, env, local_base):
+    b, a = frame.values.pop(), frame.values.pop()
+    frame.values.append(1 if a == b else 0)
+    return (frame.instrs[ip].end_offset, frame, env, local_base)
+
+
+@_handler(F64_NE)
+def _h_f64_ne(ip, frame, env, local_base):
+    b, a = frame.values.pop(), frame.values.pop()
+    frame.values.append(1 if a != b else 0)
     return (frame.instrs[ip].end_offset, frame, env, local_base)

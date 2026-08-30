@@ -49,6 +49,103 @@ from wasm_reader import parse
 # Genuine 3D Raytracing Ambient Occlusion WAT (Fixed-point Q8.8: 1.0 = 256)
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Genuine 3D Raytracing Ambient Occlusion WAT (Standard IEEE 754 float32)
+# ---------------------------------------------------------------------------
+
+GENUINE_AO_FLOAT_WAT = r"""
+(module
+  (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
+  (memory (export "memory") 1 16)
+
+  ;; Ray-Sphere 3D intersection in float32: b^2 - c
+  (func $ray_sphere_f32 (param $ox f32) (param $oy f32) (param $oz f32)
+                        (param $dx f32) (param $dy f32) (param $dz f32)
+                        (param $cx f32) (param $cy f32) (param $cz f32)
+                        (param $rsq f32) (result f32)
+    (local $vx f32) (local $vy f32) (local $vz f32)
+    (local $b f32) (local $c f32) (local $disc f32) (local $sq f32) (local $t f32)
+    (local.set $vx (f32.sub (local.get $ox) (local.get $cx)))
+    (local.set $vy (f32.sub (local.get $oy) (local.get $cy)))
+    (local.set $vz (f32.sub (local.get $oz) (local.get $cz)))
+    (local.set $b
+      (f32.add
+        (f32.mul (local.get $vx) (local.get $dx))
+        (f32.add
+          (f32.mul (local.get $vy) (local.get $dy))
+          (f32.mul (local.get $vz) (local.get $dz))
+        )
+      )
+    )
+    (local.set $c
+      (f32.sub
+        (f32.add
+          (f32.mul (local.get $vx) (local.get $vx))
+          (f32.add
+            (f32.mul (local.get $vy) (local.get $vy))
+            (f32.mul (local.get $vz) (local.get $vz))
+          )
+        )
+        (local.get $rsq)
+      )
+    )
+    (local.set $disc (f32.sub (f32.mul (local.get $b) (local.get $b)) (local.get $c)))
+    (if (f32.lt (local.get $disc) (f32.const 0.0))
+      (then (return (f32.const -1.0)))
+    )
+    (local.set $sq (f32.sqrt (local.get $disc)))
+    (local.set $t (f32.sub (f32.neg (local.get $b)) (local.get $sq)))
+    (if (f32.gt (local.get $t) (f32.const 0.01))
+      (then (return (local.get $t)))
+    )
+    (f32.const -1.0)
+  )
+
+  ;; Quick float benchmark entrypoint
+  (func $run_ao_float (param $w i32) (param $h i32) (result i32)
+    (local $x i32) (local $y i32) (local $hit_count i32)
+    (local $ox f32) (local $oy f32) (local $oz f32)
+    (local $dx f32) (local $dy f32) (local $dz f32)
+    (local $t f32)
+    (local.set $hit_count (i32.const 0))
+    (local.set $y (i32.const 0))
+    (block $by
+      (loop $ly
+        (br_if $by (i32.ge_s (local.get $y) (local.get $h)))
+        (local.set $x (i32.const 0))
+        (block $bx
+          (loop $lx
+            (br_if $bx (i32.ge_s (local.get $x) (local.get $w)))
+            ;; Primary ray: Origin (0, 0, 0), Direction (px, py, -1.0)
+            (local.set $ox (f32.const 0.0))
+            (local.set $oy (f32.const 0.0))
+            (local.set $oz (f32.const 0.0))
+            (local.set $dx (f32.div (f32.sub (f32.convert_i32_s (local.get $x)) (f32.const 16.0)) (f32.const 16.0)))
+            (local.set $dy (f32.div (f32.sub (f32.convert_i32_s (local.get $y)) (f32.const 16.0)) (f32.const 16.0)))
+            (local.set $dz (f32.const -1.0))
+            ;; Sphere at (0, 0, -4), r=1.0 (rsq=1.0)
+            (local.set $t (call $ray_sphere_f32 (local.get $ox) (local.get $oy) (local.get $oz)
+                                                (local.get $dx) (local.get $dy) (local.get $dz)
+                                                (f32.const 0.0) (f32.const 0.0) (f32.const -4.0)
+                                                (f32.const 1.0)))
+            (if (f32.gt (local.get $t) (f32.const 0.0))
+              (then (local.set $hit_count (i32.add (local.get $hit_count) (i32.const 1))))
+            )
+            (local.set $x (i32.add (local.get $x) (i32.const 1)))
+            (br $lx)
+          )
+        )
+        (local.set $y (i32.add (local.get $y) (i32.const 1)))
+        (br $ly)
+      )
+    )
+    (local.get $hit_count)
+  )
+  (export "run_ao_float" (func $run_ao_float))
+  (export "render" (func $run_ao_float))
+)
+"""
+
 GENUINE_AO_WAT = r"""
 (module
   (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
@@ -401,4 +498,14 @@ def run_aobench():
 
 
 if __name__ == "__main__":
+    # Verify Float32 Ambient Occlusion Raytracer
+    print("[*] Running Float32 Ambient Occlusion Benchmark...")
+    wasm_float_bytes = wasmtime.wat2wasm(GENUINE_AO_FLOAT_WAT)
+    module_float = parse(wasm_float_bytes)
+    interp_float = Interpreter(module_float)
+    hits = interp_float.call(module_float.export_func_index("run_ao_float"), [32, 32])
+    print(
+        f"    [PASS] Float32 Raytracer executed successfully: {hits[0]} primary sphere hits on 32x32 grid."
+    )
+
     run_aobench()

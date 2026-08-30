@@ -23,7 +23,7 @@
 | `{META_3TierSeparation}` | 🟢 PASS | Mock evaluation passed. | 0 |
 | `{META_RecoveryStrategy}` | 🟢 PASS | Mock evaluation passed. | 0 |
 | `{JIT_CopyAndPatch}` | 🟢 PASS | Mock evaluation passed. | 0 |
-| `{META_BinarySearch}` | 🟢 PASS | Mock evaluation passed. | 0 |
 | `{ThreadedInterpreter}` | 🟢 PASS | Mock evaluation passed. | 0 |
+| `{META_BinarySearch}` | 🟢 PASS | Mock evaluation passed. | 0 |
 | `{META_AccessDictionary}` | 🟢 PASS | Mock evaluation passed. | 0 |
-| `{MemoryBoundaryCheck}` | 🟢 PASS | Mock evaluation passed. | 0 |
+| `{JIT_RuntimeAPI_Fallback}` | 🟢 PASS | Mock evaluation passed. | 0 |

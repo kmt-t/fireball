@@ -144,7 +144,7 @@ WASM オプコードごとのスタック遷移およびハンドラ実装マト
   - JIT コンパイラが生成するネイティブトレース（`exec_trace`）も、インタープリタと全く同一の `__fastcall` CPS 4引数シグネチャ（R0=IP, R1=stack_bot, R2=ENV, R3=local_base）に従う。
   - **インタープリタ $\to$ JIT 遷移**: インタープリタから JIT コードへ移行する際、レジスタ上の `(ip, stack_bot, env, local_base)` をそのまま渡して `exec_trace` へ直接ジャンプする。インタープリタは TOS/NOS をレジスタに保持しないため、JIT 側が入口でスタックメモリから `R4`/`R5` をロードする（`{ADR_TosCacheAsymmetry}`）。
   - **JIT $\to$ インタープリタ フォールバック (OSR / Exit)**: JIT トレース内で未サポート命令、トラップ、またはトレース終端に達した場合、レジスタ上の `(ip, stack_bot, env, local_base)` をそのまま次のオプコードハンドラに渡して末尾ジャンプ（`BX`）する。**コンテキストの再構築（構造体への退避・復元、レジスタ再配置）は一切発生しない**。ただし JIT 側のみが保持するスタックトップキャッシュ `R4`/`R5`（ダーティな場合）および更新された `sp_offset` については、統合スタック／コンテキスト構造体へ 2〜3 命令（`STR`）で書き戻す。これが JIT ↔ インタープリタ遷移の唯一の極小コストである。 `{JIT_RuntimeAPI_Fallback}` `{LowLatencyJIT}` `{ADR_TosCacheAsymmetry}`
-- **WASM命令とRuntime APIの1対1対応**: 各命令ハンドラはスタックボトム相対でオペランド/スタック長を更新し、必要に応じてランタイムAPIを呼び出す。 `{JIT_RuntimeAPI_Fallback}`
+- **WASM命令とRuntime API / Libgcc ヘルパー連携 (`{Libgcc_Runtime_Helper}`)**: 各命令ハンドラはスタックボトム相対でオペランド/スタック長を更新する。特に 32-bit MCU でハードウェア支援がない 64-bit 整数演算（除算・剰余・シフト）や単精度/倍精度浮動小数点（`f32`/`f64`）演算は、`libgcc` ヘルパー関数（`__divdi3`, `__adddf3` 等）を呼び出す専用ランタイムヘルパー（`fireball_rt_*`）経由で実行し、FPU の有無や soft-float 差異を透過的に吸収する。 `{Libgcc_Runtime_Helper}` `{JIT_RuntimeAPI_Fallback}`
 - **ジャンプの高速化 (exec_trace)**: 制御命令（`br`, `br_if` 等）によるジャンプ先を `control_frame` 内の `exec_trace` に保持する。
 - **スタック Pruning (Label Arity対応)**: `br` 命令等の実行時、ジャンプ先の `control_frame` に記録された `結果アリティ` に基づき、スタック上のオペランドを残してスタック長を `保存済みスタック長` まで巻き戻す。これにより、Wasm 規定のスタック整合性を保証する。
 - **JIT更新戦略**: 
@@ -358,3 +358,17 @@ sequenceDiagram
   3. **有界レイテンシ**: 組み込み WASM の基本ブロック長は通常数命令〜数十命令（サブマイクロ秒〜数マイクロ秒）であり、トレース境界での yield であってもリアルタイム応答性の要件を十分に満たす。
 - **影響範囲**:
   - `runtime_interpreter.md`, `runtime_vsoc.md`, `os_coos.md`, `jit_compiler.md`
+
+### ADR-INTERP-02: i64 / f32 / f64 の Libgcc ランタイムヘルパー連携 (`{Libgcc_Runtime_Helper}`)
+
+- **ステータス**: 承認 (Approved)
+- **コンテキスト**:
+  32-bit 組み込み CPU（Cortex-M33 / M4 / M0+ 等）において、64-bit 整数演算（乗除算・剰余・ビットシフト）および浮動小数点（`f32`/`f64`）演算を実行する際、FPU 非搭載環境での soft-float や 64-bit 算術のためにコンパイラ組み込みランタイムライブラリ（`libgcc`）のヘルパー関数（`__divdi3`, `__udivdi3`, `__adddf3`, `__muldf3`, `__fixdfsi` 等）を呼び出す必要がある。
+- **決定事項**:
+  `i64`, `f32`, `f64` 演算命令は、インタープリタおよび JIT の双方において、**独立したランタイムヘルパー関数 / 専用ハンドラ（`fireball_rt_*`）経由で実行（`{Libgcc_Runtime_Helper}`）** する。
+- **根拠とトレードオフ**:
+  1. **JIT ステンシルの軽量化**: 複雑な 64-bit 除算や soft-float ルーチンを JIT ステンシル内にインライン展開せず、ランタイムヘルパースタブ呼び出し（`{JIT_RuntimeAPI_Fallback}`）に委譲することで、JIT ROM サイズ予算（8KB）を厳格に維持する。
+  2. **ターゲット FPU 差異の完全隠蔽**: FPU 搭載時（ハードウェア単精度/倍精度）と非搭載時（soft-float）のビルド切り替えをランタイムヘルパーの実装内に局所化し、インタープリタおよび JIT のディスパッチャ本体をハードウェア差異から完全に疎結合にする。
+  3. **保守性と検証容易性**: `libgcc` との ABI 境界（レジスタ・スタックアライメント）がハンドラ単位で隔離され、単体テストおよび形式検証が容易になる。
+- **影響範囲**:
+  - `runtime_interpreter.md`, `jit_compiler.md`, `wasm_instruction_set.md`, `jit_stencil_catalog.md`

@@ -1,17 +1,17 @@
 {
-  "generated_at": "2026-08-30T15:45:20.863180+00:00",
+  "generated_at": "2026-08-30T15:57:42.161596+00:00",
   "backend": "heuristic",
   "total_evaluated": 15,
   "formal_candidates_count": 3,
   "llm_candidates_count": 2,
-  "sections_scanned": 838,
+  "sections_scanned": 841,
   "max_sections": 15,
   "doc_hashes": {
     "architecture/architecture_overview.md": "709f5700b0c8c1204ea1dafdcaace6b5d246041d6b652544ae727eced52da25a",
     "architecture/combinatorial_test_spec.md": "8820aee063e8195b2df170fe3fd465662801b0b80edc1321ca73b96bb51746af",
     "architecture/document_structure.md": "25567a8b8ca8a954d21778bf66d69e8ad637a802e1a0c6eca26eb86488429208",
     "architecture/integration_test_scenarios.md": "efa9fbe6d3539d350d8ca83c7263277f3313d0bb375612adf8350951db4becae",
-    "architecture/keyword_dictionary.md": "1d901c59580cdf9fab776af41cb9d51655eeb8553b2696a13a6785ebfb3c35f1",
+    "architecture/keyword_dictionary.md": "bca4d3f5b661d5b8d4e9f87b85aca405272f4745acaf829159aae82121337078",
     "components/tier1_core/os_coos.md": "31201995316a833b63be0df7a13f7caf7414743351eca65ad78f2ccb896320a3",
     "components/tier1_core/os_scheduler.md": "25f9110360d14c0b4dd234e4957bb5a2ad38232c267b119715b81fae45535179",
     "components/tier1_core/system_config.md": "174192e8c19d07b08be99c7b96abf4d0b881662a5a0a9c7516f2bfa354918143",
@@ -31,7 +31,7 @@
     "components/tier1_interface/tests/ipc_router_test_spec.md": "4427d1c68bbcc44a7feba9f6c91ab27d0cfc790c80946df4d3179c3f89f27af7",
     "components/tier1_interface/tests/system_service_test_spec.md": "b8041bcf84e001fa8337cfb9c25c0e81f4b39680117f8942005ae21222590348",
     "components/tier2_runtime/debug_manager.md": "9ffbd2b16205d99d33462c32a2dfeca1ac6d93af7d19c712c0a873e8cf7a7143",
-    "components/tier2_runtime/runtime_interpreter.md": "542320512d2557671b7b0c3d7d17315e208f01bd3c75d81841c044f1a41181b7",
+    "components/tier2_runtime/runtime_interpreter.md": "57a1e6d8c2820ef7c7cc26897854bdf10649652d8b9b8c2cb70d0a8bb489c467",
     "components/tier2_runtime/runtime_loader.md": "3a360d3c8f0e2a3a945e23d7128998894fc3aa8dce6b14939ceefc9115b7cb60",
     "components/tier2_runtime/runtime_vmmio.md": "0e7272d6da965656b2b9ccab57ffe3caf6d52848a0aa32b7d06ce151348f574b",
     "components/tier2_runtime/runtime_vsoc.md": "f8d52995ecb259211f90c0f0821adedd9d220bf10aeb71470b800b1717aaac57",
@@ -41,7 +41,7 @@
     "components/tier2_runtime/tests/runtime_vmmio_test_spec.md": "6e391447e67fafff8123c97748d1c727a56bab1b23fa9db6f1d033546176586a",
     "components/tier2_runtime/tests/runtime_vsoc_test_spec.md": "5a5aff1550f7b7121101bc1fdc46ea3c09e25e25d75963707025134b00423bf1",
     "components/tier3_jit/concepts/README.md": "2de732ac1ea826587fefebcc0d1ed83ae8f8addb376f904f545920b63ac0a5be",
-    "components/tier3_jit/jit_compiler.md": "96a4af197f90d90c1f0ca94ee03d6968985f199486b4c004993c37dcba96a2fd",
+    "components/tier3_jit/jit_compiler.md": "d911a59f08d36f1f518300a1545832be46e5781777183f654c365895bde56b31",
     "components/tier3_jit/jit_runtime.md": "19a5ae5ae4b0d029341e7822ca6496d9bb05b7bda05c84a4f4e39f05ca647d3c",
     "components/tier3_jit/tests/jit_compiler_test_spec.md": "3c9e0084a1206b682efdc51df2fab6f33411fe156c8c6bd5b70b0527881cd701",
     "components/tier3_jit/tests/jit_runtime_test_spec.md": "276ef44821ff9182327f16eada2ce74a96d375fac19411d2145ec7b1484a6eea",
@@ -54,10 +54,10 @@
     "plans/roadmap_phase.md": "0268cb6b36e49e74aee76a93833c207faa83a7495082fe796d833577b6ee243a",
     "requires/requirement_list.md": "0b287ef5c3747d595b55eb71dfb0fa59abf7f265aa59eb62e79fe6f010d64f2f",
     "specs/gdb_rsp_protocol.md": "f1bf5afcbe01b72cd1f88353d95b67171d62239e865d9298880c8d9682d540cd",
-    "specs/jit_stencil_catalog.md": "7478285b80e4e535f2acf9db0da4c70998db843ff6d9c71234ee0de1639fe2f3",
+    "specs/jit_stencil_catalog.md": "007b712e600cfbfb75c3b2308bcbd228a0c3bb7d395e26a1b58b8d338d845c3a",
     "specs/tests/wasm_instruction_set_test_spec.md": "ac05afe3220c1e4a66e1a85ccf877c8ed09a8924fb2207ec2c05b3972ccd82f4",
     "specs/wasi_preview1_abi.md": "36ea99358a502842ae22b9d04b92511522f063d81b496e32ded38db3e75fdcb2",
-    "specs/wasm_instruction_set.md": "ec2ee12f7c9def4328381a74af81b78e473b85551b5e8aaf2676ea8518fbb929"
+    "specs/wasm_instruction_set.md": "8cc9662f41eee64dab23577e48c9bde1b7097208d5b22ccdfefee10fb4b5da9a"
   },
   "assessments": [
     {

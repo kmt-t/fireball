@@ -94,16 +94,16 @@ class TraceCompiler:
     PIC code starting at offset 0x10.
     """
 
-    def __init__(self, host_trampolines: dict[int, int] | None = None):
-        self.host_trampolines = host_trampolines or {}
+    def __init__(self, host_trampolines: Any = None):
+        self.host_trampolines = host_trampolines or []
 
-    SUPPORTED_OPS = {
+    SUPPORTED_OPS: tuple[str, ...] = (
         "i32.const", "i32.add", "i32.sub", "i32.mul", "i32.and", "i32.or", "i32.xor",
         "i32.shl", "i32.shr_u", "i32.shr_s", "i32.div_s", "i32.div_u", "i32.rem_s",
         "i32.rem_u", "i32.eqz", "i32.eq", "i32.ne", "i32.lt_s", "i32.lt_u",
         "i32.gt_s", "i32.gt_u", "i32.le_s", "i32.le_u", "i32.ge_s", "i32.ge_u",
-        "drop", "local.get", "local.set", "call_host"
-    }
+        "drop", "local.get", "local.set", "call_host",
+    )
 
     def compile_trace(self, head_pc: int, block: BasicBlock) -> JITTrace | None:
         """Compiles a single BasicBlock into a PIC native JITTrace."""

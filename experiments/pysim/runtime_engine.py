@@ -344,7 +344,7 @@ class RuntimeEngine:
         self.cache.on_evict = self._handle_eviction
         self.jit_compiler = jit_compiler
         self.compile_queue: list[int] = []   # LIFO queue
-        self.blocks: dict[int, BasicBlock] = {}
+        self.blocks: list[tuple[int, BasicBlock]] = []  # Flat slot list instead of dynamic dict
         self.yield_threshold = yield_threshold
         self.exec_counter = 0
 
@@ -353,7 +353,17 @@ class RuntimeEngine:
             self.bitmap.mark_evicted(pc)
 
     def register_block(self, block: BasicBlock) -> None:
-        self.blocks[block.head_pc] = block
+        for i, (pc, _) in enumerate(self.blocks):
+            if pc == block.head_pc:
+                self.blocks[i] = (block.head_pc, block)
+                return
+        self.blocks.append((block.head_pc, block))
+
+    def get_block(self, pc: int) -> BasicBlock | None:
+        for b_pc, block in self.blocks:
+            if b_pc == pc:
+                return block
+        return None
 
     def register_module_blocks(self, module: Any) -> None:
         """Automatically extracts and registers all BasicBlocks from a parsed WASM Module."""
@@ -362,9 +372,9 @@ class RuntimeEngine:
         for idx, fn in enumerate(getattr(module, "functions", [])):
             func_idx = n_imports + idx
             extracted = extract_basic_blocks(fn.code, func_index=func_idx)
-            for head_pc, (h, ops, next_pc) in extracted.items():
+            for head_pc, ops, next_pc in extracted:
                 if ops:
-                    self.blocks[head_pc] = BasicBlock(head_pc=head_pc, ops=ops, next_pc=next_pc)
+                    self.register_block(BasicBlock(head_pc=head_pc, ops=ops, next_pc=next_pc))
 
     def record_block_head(self, pc: int) -> None:
         """Called at each basic-block head by the interpreter."""
@@ -390,7 +400,7 @@ class RuntimeEngine:
             pc = self.compile_queue.pop()
             if self.bitmap.get_state(pc) == CardState.COMPILED:
                 continue
-            block = self.blocks.get(pc)
+            block = self.get_block(pc)
             trace = None
             if hasattr(self.jit_compiler, "compile_trace") and block is not None:
                 trace = self.jit_compiler.compile_trace(pc, block)
@@ -548,7 +558,7 @@ class IntegratedHybridEngine:
         self.yield_threshold = yield_threshold
         self.exec_counter = 0
 
-        self.blocks: dict[int, BasicBlock] = {}
+        self.blocks: list[tuple[int, BasicBlock]] = []  # Flat slot list instead of dynamic dict
         self.interp_blocks = 0
         self.jit_traces = 0
         self.compilations = 0
@@ -576,7 +586,17 @@ class IntegratedHybridEngine:
         self._dispatch = self._dispatch_normal
 
     def register_block(self, block: BasicBlock) -> None:
-        self.blocks[block.head_pc] = block
+        for i, (pc, _) in enumerate(self.blocks):
+            if pc == block.head_pc:
+                self.blocks[i] = (block.head_pc, block)
+                return
+        self.blocks.append((block.head_pc, block))
+
+    def get_block(self, pc: int) -> BasicBlock | None:
+        for b_pc, block in self.blocks:
+            if b_pc == pc:
+                return block
+        return None
 
     def on_yield(self) -> None:
         """Promotes HOT cards in history ring to LIFO compile queue."""
@@ -589,14 +609,15 @@ class IntegratedHybridEngine:
         compiled = 0
         while self.compile_queue and compiled < budget:
             head_pc = self.compile_queue.pop()
-            block = self.blocks.get(head_pc)
+            block = self.get_block(head_pc)
             if block is None:
                 continue
             trace = self.compiler.compile_trace(head_pc, block)
-            self.cache.insert(trace)
-            self.bitmap.mark_compiled(head_pc)
-            self.compilations += 1
-            compiled += 1
+            if trace is not None:
+                self.cache.insert(trace)
+                self.bitmap.mark_compiled(head_pc)
+                self.compilations += 1
+                compiled += 1
         return compiled
 
     def _interpret_block(self, block: BasicBlock, ctx: WASMContext) -> None:
@@ -681,7 +702,7 @@ class IntegratedHybridEngine:
     def run_step(self, pc: int, ctx: WASMContext) -> int | None:
         """Executes a single basic block by directly calling the active handler table dispatcher.
         Zero overhead when debugger is detached ({DebuggerLabelTableSwitch})."""
-        block = self.blocks.get(pc)
+        block = self.get_block(pc)
         if block is None:
             return None
         return self._dispatch(pc, block, ctx)

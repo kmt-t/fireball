@@ -140,12 +140,7 @@ def run_single_pairwise_case(case_tuple: tuple) -> None:
     if runtime_engine:
         runtime_engine.register_module_blocks(module)
 
-    interp = Interpreter(
-        module,
-        memory=wasi_ctx.guest_memory,
-        host_functions=host_funcs,
-        runtime_engine=runtime_engine,
-    )
+    interp = Interpreter(module, memory=wasi_ctx.guest_memory, host_functions=host_funcs)
     # Setup Debugger if needed
     dbg_mgr = None
     if dbg_mode in ("inspect", "active"):
@@ -177,15 +172,13 @@ def run_single_pairwise_case(case_tuple: tuple) -> None:
     if sched_mode == "noint":
         res = interp.call(fn_idx, [n_iters])
     elif sched_mode in ("yield", "multi"):
-        coro = interp.call_coroutine(fn_idx, [n_iters], yield_every=2)
-        res = None
-        try:
-            while True:
-                next(coro)
-                if runtime_engine:
-                    runtime_engine.idle_hook(budget=2)
-        except StopIteration as e:
-            res = e.value
+        if runtime_engine:
+            res = runtime_engine.run(interp, fn_idx, [n_iters], quantum=2, idle_budget=2)
+        else:
+            call_state = interp.start(fn_idx, [n_iters])
+            while not call_state.finished:
+                call_state = interp.step(call_state, quantum=2)
+            res = call_state.results
 
     # 8. Verify Result
     assert res is not None, f"Execution failed for {case_id}"

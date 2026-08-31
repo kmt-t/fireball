@@ -66,25 +66,10 @@ def run_aobench() -> dict[str, float]:
     trace_compiler = TraceCompiler()
     runtime_engine = RuntimeEngine(jit_compiler=trace_compiler, yield_threshold=16)
     runtime_engine.register_module_blocks(module)
-    interp_t3 = Interpreter(
-        module,
-        memory=wasi_ctx_t3.guest_memory,
-        host_functions=funcs_t3,
-        runtime_engine=runtime_engine,
-    )
+    interp_t3 = Interpreter(module, memory=wasi_ctx_t3.guest_memory, host_functions=funcs_t3)
 
     t0_t3 = time.perf_counter()
-    coro = interp_t3.call_coroutine(
-        main_fn,
-        [WIDTH, HEIGHT],
-        yield_every=16,
-    )
-    try:
-        while True:
-            next(coro)
-            runtime_engine.idle_hook(budget=4)
-    except StopIteration:
-        pass
+    runtime_engine.run(interp_t3, main_fn, [WIDTH, HEIGHT], quantum=16)
     t1_t3 = time.perf_counter()
     render_output_t3 = sysv_t3.transport.drain().decode("utf-8", errors="replace")
     t3_time_ms = (t1_t3 - t0_t3) * 1000

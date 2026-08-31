@@ -1680,18 +1680,15 @@ def test_coop_01_wasm_coroutine_yields_on_quantum():
         return
     mod = parse(wasm_bytes)
     interp = Interpreter(mod)
-    # Execute with yield every 10 instructions
-    coro = interp.call_coroutine(mod.export_func_index("busy_loop"), [0], yield_every=10)
-    yield_count = 0
-    result = None
-    try:
-        while True:
-            next(coro)
-            yield_count += 1
-    except StopIteration as e:
-        result = e.value
+    # Step in quanta of 10 instructions
+    call_state = interp.start(mod.export_func_index("busy_loop"), [0])
+    step_count = 0
+    while not call_state.finished:
+        call_state = interp.step(call_state, quantum=10)
+        step_count += 1
+    result = call_state.results
 
-    assert yield_count >= 10, f"Expected multiple cooperative yields, got {yield_count}"
+    assert step_count >= 10, f"Expected multiple quantum steps, got {step_count}"
     assert result == [100]
 
 

@@ -590,11 +590,11 @@ class System:
             return WasiErrno.FAULT
         msg = IPCMessage.from_bytes(bytes(payload))
         # The guest task's own execution *is* this call: system_syscall.md
-        # models a host call as running inside the calling task's coroutine
-        # (exactly like Interpreter.call_coroutine's cooperative yields), so
-        # waiting for a receiver is this task waiting, via the scheduler's
-        # ordinary sleep/wake queue -- not a separate mechanism, and never a
-        # queue/EAGAIN (ipc_router.md §5.1).
+        # models a host call as running inside the calling task's own
+        # coroutine (the runtime task, never the Interpreter itself -- it
+        # only ever executes-and-returns), so waiting for a receiver is this
+        # task waiting, via the scheduler's ordinary sleep/wake queue -- not
+        # a separate mechanism, and never a queue/EAGAIN (ipc_router.md §5.1).
         task = self.scheduler.get_task(self._current_task_id)
         self.scheduler.current_task = task
         # The sender here is this runtime task -- the hypervisor-side

@@ -85,38 +85,28 @@ def test_scenario_coos_multitask():
     fn_prod = module.export_func_index("producer_task")
     fn_cons = module.export_func_index("consumer_task")
     N = 100  # 100 items: sum(1..100) * 10 = 5050 * 10 = 50500
-    # 1. Run Producer as a coroutine yielding every 16 ops
-    prod_coro = interp.call_coroutine(fn_prod, [N], yield_every=16)
-    prod_done = False
-    prod_yields = 0
-    prod_res = None
-    while not prod_done:
-        try:
-            next(prod_coro)
-            prod_yields += 1
-        except StopIteration as e:
-            prod_res = e.value
-            prod_done = True
+    # 1. Run Producer in quanta of 16 ops
+    prod_state = interp.start(fn_prod, [N])
+    prod_steps = 0
+    while not prod_state.finished:
+        prod_state = interp.step(prod_state, quantum=16)
+        prod_steps += 1
+    prod_res = prod_state.results
 
     assert prod_res == [100], f"Producer task failed: {prod_res}"
-    assert prod_yields > 0, "Producer should have yielded multiple times"
-    print(f"    -> Producer yielded {prod_yields} times and produced 100 items.")
-    # 2. Run Consumer as a coroutine yielding every 16 ops
-    cons_coro = interp.call_coroutine(fn_cons, [N], yield_every=16)
-    cons_done = False
-    cons_yields = 0
-    cons_res = None
-    while not cons_done:
-        try:
-            next(cons_coro)
-            cons_yields += 1
-        except StopIteration as e:
-            cons_res = e.value
-            cons_done = True
+    assert prod_steps > 0, "Producer should have taken multiple quantum steps"
+    print(f"    -> Producer ran in {prod_steps} step(s) and produced 100 items.")
+    # 2. Run Consumer in quanta of 16 ops
+    cons_state = interp.start(fn_cons, [N])
+    cons_steps = 0
+    while not cons_state.finished:
+        cons_state = interp.step(cons_state, quantum=16)
+        cons_steps += 1
+    cons_res = cons_state.results
 
     assert cons_res == [50500], f"Consumer task sum mismatch: expected 50500, got {cons_res}"
-    assert cons_yields > 0, "Consumer should have yielded multiple times"
-    print(f"    -> Consumer yielded {cons_yields} times and computed expected sum: {cons_res[0]}.")
+    assert cons_steps > 0, "Consumer should have taken multiple quantum steps"
+    print(f"    -> Consumer ran in {cons_steps} step(s) and computed expected sum: {cons_res[0]}.")
     print("    [PASS] Scenario 6 (COOS Cooperative Multitasking) succeeded seamlessly.")
 
 

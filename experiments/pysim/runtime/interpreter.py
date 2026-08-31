@@ -35,7 +35,7 @@ argument outside the declared signature.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from control_flow import Instr, decode_all
@@ -194,7 +194,6 @@ class ExecEnv:
     globals: list[int]
     tables: list[list[int | None]]
     host_functions: list[Callable[..., int | None] | None]
-    interp: Interpreter
 
 
 class CallFrame:
@@ -253,13 +252,52 @@ def _do_branch(depth: int, frame: CallFrame) -> int | None:
     return target.match_end + 1
 
 
+@dataclass
+class InterpreterCall:
+    """
+    Resumable state for one in-progress `Interpreter.call()`, stepped by
+    `Interpreter.step()`. Crosses the interpreter/runtime boundary as plain
+    data -- never as a Python coroutine -- so the runtime decides on its own
+    terms what happens between steps.
+
+    `call_stack` holds every caller frame currently suspended on a WASM
+    `call`/`call_indirect` that has not yet returned, as `(func_index,
+    resume_cont)` pairs, deepest-caller-last. Entering or returning from a
+    nested WASM call is always a mandatory `step()` boundary (regardless of
+    `quantum`): the interpreter hands the callee's freshly-entered frame
+    straight back to the runtime rather than running it itself, so a JIT
+    trace cache gets exactly the same chance to intercept a nested call as
+    it gets for the outermost one -- tiering never depends on call depth.
+    """
+
+    func_index: int
+    cont: _Cont
+    call_stack: list[tuple[int, _Cont]] = field(default_factory=list)
+    finished: bool = False
+    results: list[int] | None = None
+
+    def current_pc(self) -> int | None:
+        """
+        This call's unified `(func_index, ip)` address, or `None` if it has
+        already finished, or is about to (fallen off the end of the code --
+        the next `step()` will notice and finish it). A runtime driving a
+        tiered JIT cache checks this between steps; the interpreter itself
+        never looks at it.
+        """
+        if self.cont is None:
+            return None
+        ip, frame, _, _ = self.cont
+        if ip >= len(frame.code):
+            return None
+        return (self.func_index << 16) | ip
+
+
 class Interpreter:
     def __init__(
         self,
         module: Module,
         memory: bytearray | None = None,
         host_functions: list[Callable[..., int | None] | None] | None = None,
-        runtime_engine: Any | None = None,
     ):
         self.module = module
         self.memory = memory
@@ -273,9 +311,8 @@ class Interpreter:
         self.tables: list[list[int | None]] = [
             module.table_contents(i) for i in range(len(module.tables))
         ]
-        self.runtime_engine = runtime_engine
         self.debugger: Any | None = None
-        self._env = ExecEnv(module, memory, self.globals, self.tables, self.host_functions, self)
+        self._env = ExecEnv(module, memory, self.globals, self.tables, self.host_functions)
         if self.module.start_function is not None:
             self.call(self.module.start_function, [])
 
@@ -293,38 +330,46 @@ class Interpreter:
         self.debugger = None
 
     def flush_jit_cache(self) -> None:
-        """Invalidates the backing JIT cache, if this interpreter runs with hybrid JIT tiering."""
-        if self.runtime_engine is not None:
-            self.runtime_engine.cache.flush_all()
+        """
+        No-op: a bare `Interpreter` never owns a JIT cache -- only a
+        `RuntimeEngine` wrapping one does. Exists so `DebuggerManager` can
+        treat an `Interpreter` and an `IntegratedHybridEngine` uniformly.
+        """
 
     def call(self, func_index: int, args: list[int]) -> list[int]:
-        gen = self.call_coroutine(func_index, args, yield_every=0)
-        try:
-            while True:
-                next(gen)
-        except StopIteration as e:
-            return e.value or []
+        """Runs a function to completion in one step (no cooperative slicing)."""
+        call_state = self.start(func_index, args)
+        while not call_state.finished:
+            call_state = self.step(call_state, quantum=0)
+        return call_state.results
 
-    def call_coroutine(self, func_index: int, args: list[int], yield_every: int = 64):
+    def start(self, func_index: int, args: list[int]) -> InterpreterCall:
         """
-        Executes a WASM function cooperatively as a Python generator.
-                Yields every `yield_every` executed instructions (Fuel/Quantum),
-                enabling Hoare CSP green-thread multitasking on COOS without starving other tasks.
+        Sets up a resumable call, to be driven by repeated `step()` calls.
+                A host import has nothing to step through: it resolves synchronously
+                right here, so the returned call is already finished.
         """
-
         if self.module.is_import(func_index):
-            handler = (
-                self.host_functions[func_index] if func_index < len(self.host_functions) else None
-            )
-            if handler is None:
-                imp = self.module.imports[func_index]
-                raise NotImplementedError(
-                    f"no host handler registered for import {imp.module}.{imp.name}"
-                )
+            results = self._call_import(func_index, args)
+            return InterpreterCall(func_index, cont=None, finished=True, results=results)
 
-            result = handler(*[_to_i32(a) for a in args])
-            ft = self.module.func_type(func_index)
-            return [_to_i32(result)] if ft.results else []
+        frame, locals_arr = self._build_frame(func_index, args)
+        return InterpreterCall(func_index, cont=(0, frame, self._env, locals_arr))
+
+    def _call_import(self, func_index: int, args: list[int]) -> list[int]:
+        """Resolves a host import synchronously -- there is no bytecode to step through."""
+        handler = self.host_functions[func_index] if func_index < len(self.host_functions) else None
+        if handler is None:
+            imp = self.module.imports[func_index]
+            raise NotImplementedError(
+                f"no host handler registered for import {imp.module}.{imp.name}"
+            )
+        result = handler(*[_to_i32(a) for a in args])
+        ft = self.module.func_type(func_index)
+        return [_to_i32(result)] if ft.results else []
+
+    def _build_frame(self, func_index: int, args: list[int]) -> tuple[CallFrame, list[int]]:
+        """Builds the initial frame + locals for a WASM (non-import) function activation."""
         fn = self.module.functions[func_index - len(self.module.imports)]
         layout = self.module.locals_layout(func_index)
         locals_arr = [0] * len(layout)
@@ -333,69 +378,124 @@ class Interpreter:
 
         instrs = decode_all(fn.code)
         frame = CallFrame(instrs, fn.code, [])
-        cont = (0, frame, self._env, locals_arr)
+        return frame, locals_arr
+
+    def step(self, call_state: InterpreterCall, quantum: int = 64) -> InterpreterCall:
+        """
+        Executes up to `quantum` boundary instructions (Fuel/Quantum; 0 runs
+                to completion in one call) and returns `call_state`, mutated in place:
+                still `finished == False` with a resumable `.cont` if the quantum ran
+                out, or `finished == True` with `.results` set once the outermost call
+                actually returns. Entering or returning from a nested WASM call is
+                always an immediate, mandatory return regardless of `quantum` -- see
+                `InterpreterCall.call_stack`. The interpreter only ever executes-and-
+                returns here -- it has no notion of a JIT cache or a scheduler at all;
+                deciding what happens between non-finished returns (checking a JIT
+                trace cache, a cooperative yield, draining a compile queue, or
+                nothing at all) is entirely the runtime's job.
+        """
         instr_step = 0
-        while cont is not None:
-            ip, frame, env, locals_arr = cont
-            if ip >= len(frame.code):
-                break
-            # Tier 3 JIT Trace check & Tier 2 Card Marking
-            if self.runtime_engine is not None:
-                unified_pc = (func_index << 16) | ip
-                trace = self.runtime_engine.cache.lookup(unified_pc)
-                if trace is not None:
-                    # Execute compiled native x64 JIT Trace
-                    from runtime_engine import WASMContext
-
-                    w_ctx = WASMContext(locals_values=locals_arr, memory=self.memory)
-                    res = trace.invoke(w_ctx)
-                    for i in range(len(locals_arr)):
-                        locals_arr[i] = w_ctx.locals[i]
-
-                    if trace.has_return_val and res is not None:
-                        frame.values.append(res & 0xFFFF_FFFF)
-
-                    next_unified = trace.next_pc
-                    next_ip = (
-                        (next_unified & 0xFFFF)
-                        if next_unified is not None
-                        else frame.instrs[ip].end_offset
-                    )
-                    cont = (next_ip, frame, env, locals_arr)
-                    instr_step += 1
-                    if yield_every > 0 and (instr_step % yield_every == 0):
-                        yield
+        while True:
+            ip, frame, env, locals_arr = call_state.cont
+            if ip < len(frame.code):
+                ins = frame.instrs[ip]
+                if ins.opcode in (CALL, CALL_INDIRECT):
+                    return self._enter_or_resolve_call(call_state, ins, frame, env, locals_arr)
+                is_boundary = ins.opcode in (
+                    BLOCK,
+                    LOOP,
+                    IF,
+                    ELSE,
+                    END,
+                    BR,
+                    BR_IF,
+                    BR_TABLE,
+                    RETURN,
+                )
+                handler = _HANDLERS[ins.opcode]
+                if handler is None:
+                    raise NotImplementedError(f"interpreter: unhandled opcode 0x{ins.opcode:02X}")
+                call_state.cont = handler(ip, frame, env, locals_arr)
+                if call_state.cont is not None:
+                    if is_boundary:
+                        instr_step += 1
+                        if quantum > 0 and instr_step % quantum == 0:
+                            return call_state
                     continue
-                else:
-                    self.runtime_engine.record_block_head(unified_pc)
+                # cont is None: this frame just ended (RETURN, or a branch
+                # past the outermost block) -- always handle it immediately
+                # below, never defer it behind a quantum-exhaustion return.
 
-            ins = frame.instrs[ip]
-            is_boundary = ins.opcode in (
-                BLOCK,
-                LOOP,
-                IF,
-                ELSE,
-                END,
-                BR,
-                BR_IF,
-                BR_TABLE,
-                RETURN,
-                CALL,
-                CALL_INDIRECT,
-            )
-            handler = _HANDLERS[ins.opcode]
-            if handler is None:
-                raise NotImplementedError(f"interpreter: unhandled opcode 0x{ins.opcode:02X}")
-            cont = handler(ip, frame, env, locals_arr)
-            if is_boundary:
-                instr_step += 1
-                if yield_every > 0 and (instr_step % yield_every == 0):
-                    yield  # Cooperative yield to COOS scheduler at trace boundary {ADR_TraceBoundaryYield}
+            ft = self.module.func_type(call_state.func_index)
+            results = [frame.values.pop()] if ft.results else []
+            if not call_state.call_stack:
+                call_state.cont = None
+                call_state.finished = True
+                call_state.results = results
+                return call_state
+            # Return to the suspended caller frame -- always a mandatory
+            # boundary, so the runtime gets the same chance to check its JIT
+            # trace cache here as it does entering any other frame.
+            parent_func_index, parent_cont = call_state.call_stack.pop()
+            _, parent_frame, _, _ = parent_cont
+            parent_frame.values.extend(results)
+            call_state.func_index = parent_func_index
+            call_state.cont = parent_cont
+            return call_state
 
-        ft = self.module.func_type(func_index)
-        if ft.results:
-            return [frame.values.pop()]
-        return []
+    def _enter_or_resolve_call(
+        self,
+        call_state: InterpreterCall,
+        ins: Instr,
+        frame: CallFrame,
+        env: ExecEnv,
+        locals_arr: list[int],
+    ) -> InterpreterCall:
+        """
+        Resolves the callee of a `call`/`call_indirect` and either invokes a
+        host import synchronously (there is nothing to step through) or
+        pushes this frame onto `call_state.call_stack` and hands control to
+        the callee's freshly-built entry frame -- a mandatory boundary
+        return, since the runtime must get a chance to check its JIT trace
+        cache for the callee before this interpreter runs a single one of
+        its instructions.
+        """
+        if ins.opcode == CALL:
+            callee_func_index = ins.operand
+            callee_ft = self.module.func_type(callee_func_index)
+        else:
+            table = env.tables[ins.table_index]
+            table_slot = _to_u32(frame.values.pop())
+            if table_slot >= len(table):
+                raise Trap(
+                    f"call_indirect: table index {table_slot} out of bounds (size {len(table)})"
+                )
+            callee_func_index = table[table_slot]
+            if callee_func_index is None:
+                raise Trap(f"call_indirect: table slot {table_slot} is uninitialized")
+            declared_type = self.module.types[ins.operand]
+            actual_type = self.module.func_type(callee_func_index)
+            if declared_type != actual_type:
+                raise Trap(
+                    f"call_indirect: type mismatch (declared {declared_type}, "
+                    f"actual {actual_type} at table slot {table_slot})"
+                )
+            callee_ft = declared_type
+
+        call_args = [frame.values.pop() for _ in range(len(callee_ft.params))][::-1]
+        resume_cont = (ins.end_offset, frame, env, locals_arr)
+
+        if self.module.is_import(callee_func_index):
+            results = self._call_import(callee_func_index, call_args)
+            frame.values.extend(results)
+            call_state.cont = resume_cont
+            return call_state
+
+        callee_frame, callee_locals = self._build_frame(callee_func_index, call_args)
+        call_state.call_stack.append((call_state.func_index, resume_cont))
+        call_state.func_index = callee_func_index
+        call_state.cont = (0, callee_frame, self._env, callee_locals)
+        return call_state
 
 
 # ---------------------------------------------------------------------------
@@ -491,38 +591,11 @@ def _h_return(ip, frame, env, local_base):
     return None
 
 
-@_handler(CALL)
-def _h_call(ip, frame, env, local_base):
-    ins = frame.instrs[ip]
-    callee_ft = env.module.func_type(ins.operand)
-    call_args = [frame.values.pop() for _ in range(len(callee_ft.params))][::-1]
-    results = env.interp.call(ins.operand, call_args)
-    frame.values.extend(results)
-    return (ins.end_offset, frame, env, local_base)
-
-
-@_handler(CALL_INDIRECT)
-def _h_call_indirect(ip, frame, env, local_base):
-    ins = frame.instrs[ip]
-    table = env.tables[ins.table_index]
-    table_slot = _to_u32(frame.values.pop())
-    if table_slot >= len(table):
-        raise Trap(f"call_indirect: table index {table_slot} out of bounds (size {len(table)})")
-    func_index = table[table_slot]
-    if func_index is None:
-        raise Trap(f"call_indirect: table slot {table_slot} is uninitialized")
-    declared_type = env.module.types[ins.operand]
-    actual_type = env.module.func_type(func_index)
-    if declared_type != actual_type:
-        raise Trap(
-            f"call_indirect: type mismatch (declared {declared_type}, "
-            f"actual {actual_type} at table slot {table_slot})"
-        )
-
-    call_args = [frame.values.pop() for _ in range(len(declared_type.params))][::-1]
-    results = env.interp.call(func_index, call_args)
-    frame.values.extend(results)
-    return (ins.end_offset, frame, env, local_base)
+# CALL and CALL_INDIRECT are not in `_HANDLERS`: entering or returning from a
+# nested WASM call is always a mandatory `step()` boundary (see
+# `InterpreterCall.call_stack`), so `Interpreter.step()` intercepts both
+# opcodes itself, before the generic dispatch table lookup, via
+# `_enter_or_resolve_call()`.
 
 
 @_handler(DROP)

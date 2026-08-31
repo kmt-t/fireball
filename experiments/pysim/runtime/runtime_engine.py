@@ -23,6 +23,7 @@ import ctypes
 from collections.abc import Callable
 from typing import Any
 
+from interpreter import Interpreter, InterpreterCall
 from system_containers import BitView, RingBuffer
 from wasm_module import Module
 
@@ -464,7 +465,7 @@ class RuntimeEngine:
                     self.register_block(BasicBlock(head_pc=head_pc, ops=ops, next_pc=next_pc))
 
     def record_block_head(self, pc: int) -> None:
-        """Called at each basic-block head by the interpreter."""
+        """Called by `run()` at each basic-block head that has no compiled trace yet."""
         self.ring.record(pc)
         self.exec_counter += 1
         if self.exec_counter >= self.yield_threshold:
@@ -503,23 +504,60 @@ class RuntimeEngine:
     def drain_compile_queue(self) -> int:
         return self.idle_hook(budget=len(self.compile_queue) or 1000)
 
-    def run_wasm_coroutine(
-        self, interp: Any, func_index: int, args: list[int], yield_every: int = 64
-    ):
+    def run(
+        self,
+        interp: Interpreter,
+        func_index: int,
+        args: list[int],
+        quantum: int = 64,
+        idle_budget: int = 4,
+    ) -> list[int]:
         """
-        Runs a WASM function as a cooperative coroutine on COOS.
-                Yields every `yield_every` instructions, draining history ring to compile queue on each yield.
+        Drives `interp` to completion. Before every basic block, checks this
+                engine's JIT trace cache and invokes a compiled trace directly when
+                one exists (`{ADR_TraceBoundaryYield}`); otherwise records the block
+                head for hotspot tracking and falls back to `interp.step()` for that
+                one block. Runs `idle_hook` every `quantum` blocks to batch-compile
+                any HOT blocks queued since the last check. The interpreter itself
+                never sees any of this -- it has no notion of a JIT cache, and this
+                is the runtime's job alone.
         """
+        call_state = interp.start(func_index, args)
+        blocks_run = 0
+        while not call_state.finished:
+            pc = call_state.current_pc()
+            trace = self.cache.lookup(pc) if pc is not None else None
+            if trace is not None:
+                call_state = self._invoke_trace(interp, call_state, trace)
+            else:
+                if pc is not None:
+                    self.record_block_head(pc)
+                call_state = interp.step(call_state, quantum=1)
+            blocks_run += 1
+            if blocks_run % quantum == 0:
+                self.idle_hook(budget=idle_budget)
+        self.idle_hook(budget=idle_budget)
+        return call_state.results
 
-        gen = interp.call_coroutine(func_index, args, yield_every=yield_every)
-        try:
-            while True:
-                next(gen)
-                self.on_yield()
-                yield  # Cooperative yield to scheduler
-        except StopIteration as e:
-            self.on_yield()
-            return e.value or []
+    def _invoke_trace(
+        self, interp: Interpreter, call_state: InterpreterCall, trace: JITTrace
+    ) -> InterpreterCall:
+        """Executes one compiled native x64 JIT trace and advances `call_state` past it."""
+        ip, frame, env, locals_arr = call_state.cont
+        w_ctx = WASMContext(locals_values=locals_arr, memory=interp.memory)
+        res = trace.invoke(w_ctx)
+        for i in range(len(locals_arr)):
+            locals_arr[i] = w_ctx.locals[i]
+
+        if trace.has_return_val and res is not None:
+            frame.values.append(res & 0xFFFF_FFFF)
+
+        next_unified = trace.next_pc
+        next_ip = (
+            (next_unified & 0xFFFF) if next_unified is not None else frame.instrs[ip].end_offset
+        )
+        call_state.cont = (next_ip, frame, env, locals_arr)
+        return call_state
 
 
 class WASMContext:

@@ -111,19 +111,8 @@ def test_scenario_multimodule_unified_pc():
     trace_compiler = TraceCompiler()
     runtime_engine = RuntimeEngine(jit_compiler=trace_compiler, yield_threshold=16)
     runtime_engine.register_module_blocks(module)
-    interp_t3 = Interpreter(
-        module,
-        memory=wasi_t3.guest_memory,
-        host_functions=funcs_t3,
-        runtime_engine=runtime_engine,
-    )
-    coro = interp_t3.call_coroutine(fn_idx, [ITERS], yield_every=32)
-    try:
-        while True:
-            next(coro)
-            runtime_engine.idle_hook(budget=4)
-    except StopIteration as e:
-        res_t3 = e.value
+    interp_t3 = Interpreter(module, memory=wasi_t3.guest_memory, host_functions=funcs_t3)
+    res_t3 = runtime_engine.run(interp_t3, fn_idx, [ITERS], quantum=32)
 
     assert res_t2 == res_t3, f"Calculations diverged: T2={res_t2} vs T3={res_t3}"
     assert len(runtime_engine.cache.active.traces) > 0, "No JIT traces compiled"

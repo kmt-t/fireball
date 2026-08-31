@@ -109,21 +109,15 @@ class JITCompilerBenchmark:
         # Tier 3 Native JIT run
         runtime_engine = RuntimeEngine(jit_compiler=self.compiler, yield_threshold=16)
         runtime_engine.register_module_blocks(module)
-        interp_jit = Interpreter(module, runtime_engine=runtime_engine)
+        interp_jit = Interpreter(module)
 
         # Warmup and compile HOT traces
-        coro = interp_jit.call_coroutine(fn_idx, [100], yield_every=16)
-        try:
-            while True:
-                next(coro)
-                runtime_engine.idle_hook(budget=4)
-        except StopIteration:
-            pass
+        runtime_engine.run(interp_jit, fn_idx, [100], quantum=16)
         runtime_engine.idle_hook(budget=10)
 
         # Run compiled native execution
         t0 = time.perf_counter()
-        res_jit = interp_jit.call(fn_idx, [LOOP_COUNT])
+        res_jit = runtime_engine.run(interp_jit, fn_idx, [LOOP_COUNT], quantum=16)
         t1 = time.perf_counter()
         jit_time_ms = (t1 - t0) * 1000
 

@@ -42,7 +42,7 @@
 | `RingBuffer_Overwrite` | `system_containers.md`, `system_logging.md` | 静的容量リングバッファ、満杯時の最古エントリ自動上書き | `INT-82` | ✅ PASS |
 | `BitView_CardMarking` | `system_containers.md`, `jit_runtime.md` | 関数ごと 8バイト/カード 2-bit カードマーキング（UNEXEC $\to$ EXEC $\to$ HOT $\to$ COMPILED） | `INT-30`, `INT-31` | ✅ PASS |
 | `DirectSwitch` | `os_coos.md`, `os_scheduler.md` | コンテキストスイッチスタック退避なしの CPS 関数呼び出し継続 | `INT-50`, `INT-51` | ✅ PASS |
-| `FuelExhaustion_Yield` | `os_scheduler.md`, `os_coos.md` | Fuel 枯渇（`yield_every` 境界）での決定論的コルーチン中断と再開 | `INT-50` | ✅ PASS |
+| `FuelExhaustion_Yield` | `os_scheduler.md`, `os_coos.md` | Fuel 枯渇（トレース境界での `quantum` 判定）での決定論的な中断と再開——判定・発行は駆動する側の責務 | `INT-50` | ✅ PASS |
 | `DictionaryBasedIPC` | `system_logging.md` | 静的 LogDictionary、危険書式（`%s` / `%p`）の登録時静的拒絶 | `INT-82` | ✅ PASS |
 | `BufferedLogging` | `system_logging.md` | 実行時リングバッファ蓄積 $\to$ COOS `idle_hook` での一括 UART フラッシュ | `INT-82` | ✅ PASS |
 | `WASI_ScatteredIO` | `system_syscall.md`, `interface_wit.md` | 分散ギャザー `fd_write` / スキャッター `fd_read` による多要素 iovec 転送 | `INT-10`, `INT-104` | ✅ PASS |
@@ -147,17 +147,17 @@
 
 ---
 
-### シナリオ 6: COOS Cooperative Multitasking & Coroutines
+### シナリオ 6: COOS Cooperative Multitasking & Fuel-Limited Quantum Stepping
 - **スクリプト**: [`experiments/pysim/scenarios/scenario6_coos_multitask_yield.py`](file:///x:/hotspot/workspace/mysrc/fireball/experiments/pysim/scenarios/scenario6_coos_multitask_yield.py)
 - **対象コンポーネント**: `os_scheduler`, `os_coos`, `runtime_interpreter`
 - **WAT シナリオ**:
   - プロデューサ・タスク（メモリへ 100 件のデータ書き込み）
   - コンシューマ・タスク（メモリから 100 件のデータを読み込み合計 50,500 を算出）
-  - Fuel 制限（`yield_every=16`）による協調的中断（`yield`）と再開（`resume`）の繰り返し
+  - Fuel 制限（`quantum=16`）による決定論的な中断の繰り返し。中断・再開の意思決定はランタイム側の責務であり、pysim の `Interpreter` 自身はコルーチンではない——`step()` は境界に達するたびに値を返すだけで、そのつど中断するかどうかを決めるのは呼び出し側（ランタイム）である
 
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| INT-50 | コルーチン協調中断と状態保持 | `yield_every=16` 設定 | `next(coro)` を反復実行 | 途中で複数回中断しながらも、ローカル変数やスタック状態を保持して完走する | `CooperativeMultitasking`, `FuelExhaustion_Yield` |
+| INT-50 | Fuel 境界での決定論的中断と状態保持 | `quantum=16` 設定 | `Interpreter.step()` を `finished` になるまで反復実行 | 途中で複数回中断しながらも、ローカル変数やスタック状態を保持して完走する | `CooperativeMultitasking`, `FuelExhaustion_Yield` |
 | INT-51 | 共有メモリを介したタスク間データ受け渡し | 同一 ExecEnv 共有 | プロデューサ完走後にコンシューマ実行 | プロデューサが書き込んだデータが正しく読み取られ、合計値 `50500` が得られる | `CooperativeMultitasking`, `DirectContextSwitch` |
 
 ---

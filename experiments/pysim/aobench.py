@@ -440,22 +440,9 @@ def run_aobench():
     trace_compiler = TraceCompiler()
     runtime_engine = RuntimeEngine(jit_compiler=trace_compiler, yield_threshold=16)
     runtime_engine.register_module_blocks(module)
-    interp_t3 = Interpreter(
-        module,
-        memory=wasi_ctx_t3.guest_memory,
-        host_functions=host_funcs_t3,
-        runtime_engine=runtime_engine,
-    )
-    # Run cooperatively on COOS scheduler, draining compile queue via idle_hook on yields
+    interp_t3 = Interpreter(module, memory=wasi_ctx_t3.guest_memory, host_functions=host_funcs_t3)
     t0_t3 = time.perf_counter()
-    coro = interp_t3.call_coroutine(main_func_idx, [WIDTH, HEIGHT], yield_every=32)
-    try:
-        while True:
-            next(coro)
-            # COOS idle_hook: drain compile queue and batch-compile hot basic blocks
-            runtime_engine.idle_hook(budget=4)
-    except StopIteration:
-        pass
+    runtime_engine.run(interp_t3, main_func_idx, [WIDTH, HEIGHT], quantum=32)
     t1_t3 = time.perf_counter()
     render_output_t3 = sysv_t3.transport.drain().decode("utf-8", errors="replace")
     t3_time_ms = (t1_t3 - t0_t3) * 1000

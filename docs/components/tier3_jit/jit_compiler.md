@@ -200,42 +200,46 @@ stateDiagram-v2
 ### 4.3 内部シーケンス
 <!-- traceability: {JIT_LazyChaining} {JIT_ReverseCompilationOrder} {GLOBAL_PeriodicTask} {GLOBAL_IdleDetection} -->
 #### JITコンパイルおよび検索シーケンス
+サイクル全体を駆動するのは常に vSoC (V) であり、Interpreter (I) はディスパッチされた側の実行エンジンとして現れるだけで、履歴処理やキャッシュ検索を自ら開始することはない（`{Interpreter_LazyJITSwitch}`）。
 ```mermaid
 sequenceDiagram
-    participant I as Interpreter
+    participant V as vSoC
     participant D as Detector
     participant E as Engine
     participant C as Cache
     participant S as JIT Searcher
+    participant I as Interpreter
 
-    Note over I, S: co_yield 時のバッチ処理
-    I->>D: Process History Buffer
+    Note over V, S: co_yield 時のバッチ処理（vSoC が駆動）
+    V->>D: Process History Buffer
     D->>D: Update card marking table
     D->>E: Push HOT PC to Queue
     E->>C: Copy Template & Patch
     E->>S: Register Entry (PC, Offset)
     
-    Note over I, S: 実行時の検索
-    I->>S: Lookup(PC)
+    Note over V, S: 実行時の検索（vSoC の step() から毎回呼び出す）
+    V->>S: Lookup(PC)
     alt Card state != COMPILED
-        S-->>I: Fallback to Interpreter (Fast Exit)
+        S-->>V: Fallback (Fast Exit)
+        V->>I: exec_trace(pc) -- インタープリタへディスパッチ
     else Card state == COMPILED
         S->>S: Search Bank 0 (Active)
         alt Active Hit
-            S-->>I: Native Code Address
+            S-->>V: Native Code Address
         else Active Miss
             S->>S: Search Bank 1 (Warm)
             alt Warm Hit
                 Note over S: Observation window - no promotion copy
-                S-->>I: Native Code Address
+                S-->>V: Native Code Address
             else Warm Miss
                 S->>S: Search Bank 2 (Oldest)
                 alt Oldest Hit
                     S->>S: Promote to new Active (Copy)
-                    S-->>I: Native Code Address
+                    S-->>V: Native Code Address
                 else Oldest Miss
                     S->>S: Enqueue PC in LIFO queue, card stays COMPILED
-                    S-->>I: Fallback to Interpreter (Return NULL)
+                    S-->>V: Fallback (Return NULL)
+                    V->>I: exec_trace(pc) -- インタープリタへディスパッチ
                 end
             end
         end
@@ -318,11 +322,11 @@ JITサブシステムは、以下の2つの独立した設計書に責務を分�
 
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | インタープリタが収集した履歴を基にコンパイルを実行する。 |
+| 機能概要 | vSoC が収集した履歴を基にコンパイルを実行する。 |
 | シグネチャ | `process_batch_compile(ctx: 可変参照, harness: 構造体への参照) -> void` |
 | 引数 | `ctx`: JITコンテキスト への可変参照<br>`harness`: JITハーネス への参照 |
 | 戻り値 | void |
-| 補足 | `executor` 実装内で `co_yield` 発生時に呼び出され、アイドル時間等を活用して処理される。 |
+| 補足 | vSoC が `co_yield` を発行する際に呼び出され、アイドル時間等を活用して処理される（`co_yield` の判定・発行はインタープリタや `executor` 自身ではなく vSoC が行う）。 |
 
 ### 6.2 URI/IPCインターフェイス
 <!-- traceability: {META_ConfigurableSystem} -->

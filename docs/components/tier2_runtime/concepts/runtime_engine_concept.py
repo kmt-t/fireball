@@ -2,13 +2,22 @@
 docs/components/tier2_runtime/concepts/runtime_engine_concept.py
 Reference Concept Implementation: Integrated WASM Tiered Tracing Runtime Engine
 
-Execution model (per jit_compiler.md §4.1 / runtime_interpreter.md §4.1):
+Execution model (per jit_compiler.md §4.1 / runtime_interpreter.md §4.1,
+ADR-INTERP-01 {ADR_TraceBoundaryYield}): the Interpreter is never a coroutine
+and never touches the JIT cache or history ring itself -- it only executes
+and returns a PC. vSoC (this RuntimeEngine, driving `step()`) owns all of
+the below.
 
-  Interpreter loop
-    -> at each BASIC BLOCK HEAD only: record card index into the history ring
-       (there is no branch inside a basic block, so intermediate PCs carry
-        no scheduling information and are not recorded)
-    -> trace counter reaches `yield_threshold` -> co_yield
+  vSoC's step() loop, driving the Interpreter
+    -> calls exec_trace(pc); the Interpreter/JIT trace runs until the next
+       basic block head and returns control here -- a plain function
+       return, never a yield issued by the callee itself
+    -> at each BASIC BLOCK HEAD returned to it: records card index into the
+       history ring (there is no branch inside a basic block, so
+       intermediate PCs carry no scheduling information and are not
+       recorded)
+    -> trace counter reaches `yield_threshold` -> vSoC itself decides to
+       co_yield {Interpreter_LazyJITSwitch}
          -> at yield: scan history ring, promote cards to HOT,
             push their trace-head PCs onto the LIFO compile queue
     -> at idle / periodic: drain the LIFO queue and batch-compile
@@ -17,7 +26,7 @@ Execution model (per jit_compiler.md §4.1 / runtime_interpreter.md §4.1):
   JIT trace execution
     -> trace tail holds `chain_next`, defaulting to the interpreter-return stub
     -> backward edges inside a JIT trace carry a Safepoint (async interrupt only,
-       distinct from the cooperative yield of the interpreter)
+       distinct from vSoC's own cooperative yield decision above)
 
 The compilation unit is a TRACE identified by its head WASM PC. This is a
 tracing JIT: there is no function/method-level unit anywhere in the design.

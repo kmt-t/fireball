@@ -37,7 +37,7 @@
 | `{ControlFrame_Layout}` | `architecture_overview.md` | `runtime_interpreter.md` | `control_frame` 16バイト統合スタックインライン物理配置 | Scenario 3 |
 | `{AAPCS_FastCall}` | `architecture_overview.md` | `runtime_interpreter.md` | CPS 4引数 AAPCS レジスタマッピング規約 (`R0`〜`R3`) | Scenario 1〜11 |
 | `{VsocRuntime_Layout}` | `architecture_overview.md` | `runtime_vsoc.md` | `vsoc_runtime` 12バイト物理実行環境配置 | Scenario 1〜11 |
-| `{ADR_TraceBoundaryYield}` | `runtime_interpreter.md` | `runtime_interpreter.md` | インタープリタ/JIT の協調的 Yield をトレース境界（切れ目）に限定する設計判断 | Scenario 6 (`INT-50`) |
+| `{ADR_TraceBoundaryYield}` | `runtime_interpreter.md` | `runtime_interpreter.md` | インタープリタの命令ハンドラが vSoC へ制御を返す頻度をトレース境界（切れ目）に限定する設計判断——`co_yield` の判定・発行は常に vSoC 側が行い、インタープリタ自身はコルーチンではない | Scenario 6 (`INT-50`) |
 | `{Libgcc_Runtime_Helper}` | `runtime_interpreter.md` | `runtime_interpreter.md` | i64 / f32 / f64 の libgcc 依存演算をランタイムヘルパー関数経由で実行する設計 | Scenario 1, 8 |
 
 ---
@@ -48,7 +48,7 @@
 | :--- | :--- | :--- | :--- | :--- |
 | `{CooperativeMultitasking}` | `requirement_list.md` | `os_coos.md` | コルーチン協調型マルチタスク実行エンジン | Scenario 6 (`INT-50`) |
 | `{DirectContextSwitch}` | `requirement_list.md` | `os_scheduler.md` | READYキューを経由しないコルーチン直接ジャンプ超低レイテンシ遷移 | Scenario 6, 9 (`INT-50`, `INT-80`) |
-| `{FuelExhaustion_Yield}` | `os_scheduler.md` | `os_scheduler.md` | Fuel 枯渇（`yield_every` 境界）での決定論的コルーチン協調中断と再開 | Scenario 6 (`INT-50`) |
+| `{FuelExhaustion_Yield}` | `os_scheduler.md` | `os_scheduler.md` | Fuel 枯渇（トレース境界での `quantum` 判定）での決定論的な中断と再開——判定・`co_yield` の発行は常にタスクを駆動する側（vSoC 等）が行い、駆動される側（インタープリタ等）はコルーチンではない | Scenario 6 (`INT-50`) |
 | `{MainLoopReturnGuarantee}` | `os_coos.md` | `os_coos.md` | 連続ハンドオフ上限到達時のメインループ強制復帰形式保証 | Scenario 6 |
 | `{CSPCommunication}` | `requirement_list.md` | `ipc_router.md` | ホーアCSPに基づく所有権移譲ゼロコピーメッセージパッシング | Scenario 9 (`INT-80`) |
 | `{ThreeStageRouting}` | `ipc_router.md` | `ipc_router.md` | Stage 1 URI検索 $\to$ Stage 2 RBAC判定 $\to$ Stage 3 Zero-Copy CSP Rendezvous 所有権移譲 | Scenario 9 (`INT-80`, `INT-81`) |

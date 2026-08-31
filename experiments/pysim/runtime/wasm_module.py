@@ -13,29 +13,6 @@ the Code section's implicit numbering are all in this unified space.
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-_PYSIM_DIR = (
-    Path(__file__).resolve().parents[1]
-    if any(
-        d in str(Path(__file__))
-        for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")
-    )
-    else Path(__file__).resolve().parent
-)
-
-for _p in [
-    _PYSIM_DIR,
-    _PYSIM_DIR / "core",
-    _PYSIM_DIR / "runtime",
-    _PYSIM_DIR / "jit",
-    _PYSIM_DIR / "platforms",
-]:
-    _sp = str(_p)
-    if _sp not in sys.path:
-        sys.path.insert(0, _sp)
-
 from dataclasses import dataclass, field
 
 # WASM value types we support (MVP i32 only for now; i64/f32/f64 are parsed

@@ -3,14 +3,9 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-_PYSIM_DIR = (
-    Path(__file__).resolve().parents[1]
-    if any(
-        d in str(Path(__file__))
-        for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")
-    )
-    else Path(__file__).resolve().parent
-)
+_PYSIM_DIR = Path(__file__).resolve().parent
+while not (_PYSIM_DIR / "core").is_dir():
+    _PYSIM_DIR = _PYSIM_DIR.parent
 
 for _p in [
     _PYSIM_DIR,
@@ -26,63 +21,110 @@ for _p in [
 """Integration Scenario 9: Tier 1 Interface IPC Router & Structured System Logging.
 
 Tests:
-- 3-Stage IPC Router pipeline (Static URI FlatMapView lookup, RBAC role check, Zero-copy ownership handoff)
-- Queue capacity overflow handling & fault rollback
+- 3-Stage IPC Router pipeline (Static URI FlatMapView lookup, RBAC role check,
+  bufferless synchronous CSP handoff via scheduler.Channel)
+- Message KV-pair static buffer limit (ERR_MSG_TOO_LARGE)
 - Dictionary-based structured logging (LogDictionary, LogLevel filtering, UART transport emission)
 - Safety check rejecting unsafe format specifiers (%s/%p) at dictionary registration
 """
 
 from hal import UartTransport
-from ipc_router import IPCMessage, IPCRouter, OwnershipState
+from ipc_router import (
+    DataType,
+    IPCMessage,
+    IPCRouter,
+    IpcStatus,
+    OwnershipState,
+    Role,
+    ScopeKind,
+    pack_key32,
+)
 from logger import LogDictionary, Logger, LogLevel
+from scheduler import Scheduler
+
+# kv_pair key_ids (ipc_router.md §3.3): Functional scope, UINT32 values.
+_KEY_CMD = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=1)
+_KEY_TASK_ID = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=2)
+_CMD_START_TASK = 1
+_CMD_KILL = 2
 
 
 def test_scenario_ipc_router_and_logging():
     print("[*] Running Scenario 9: Tier 1 Interface IPC Router & Structured Logging...")
     # -------------------------------------------------------------------------
-    # Phase 1: IPC Router 3-Stage Routing Pipeline
+    # Phase 1: IPC Router 3-Stage Pipeline (URI lookup -> RBAC -> CSP handoff)
     # -------------------------------------------------------------------------
-    router = IPCRouter()
-    # 1. Successful routing: SENDER_OWNS -> IN_FLIGHT -> receive -> RECEIVER_OWNS
-    msg1 = IPCMessage(resource_id="res_01", payload={"cmd": "START_TASK", "task_id": 10})
-    status, detail = router.route_message("CLIENT_APP", "fireball://core/coos/0", msg1)
-    assert status == "OK_ENQUEUED"
-    assert msg1.ownership == OwnershipState.IN_FLIGHT
-    assert len(router.queues["ch_coos"]) == 1
-    # Receive message
-    rcv_msg = router.receive_message("ch_coos")
-    assert rcv_msg is msg1
-    assert msg1.ownership == OwnershipState.RECEIVER_OWNS
-    print(
-        "    [Phase 1.1] IPC Routing & Zero-Copy Ownership Handoff -> OK_ENQUEUED & RECEIVER_OWNS [PASS]"
+    sched = Scheduler()
+    router = IPCRouter(sched)
+
+    # IPC is inter-*task* communication: both parties below are genuine
+    # scheduler tasks, each performing its own sequence of sends/recvs as its
+    # own coroutine -- never a bare top-level function call.
+    sent: list[tuple[str, IpcStatus, IPCMessage]] = []
+
+    def client_app_task():
+        # 1. Full CSP rendezvous with coos_receiver (spawned alongside this
+        #    task below): whichever of the two runs first genuinely blocks,
+        #    and the other's matching call completes the handoff.
+        msg1 = IPCMessage(pairs=[(_KEY_CMD, _CMD_START_TASK), (_KEY_TASK_ID, 10)])
+        status, _ = yield from router.send(Role.RUNTIME, "fireball://core/coos/0", msg1)
+        sent.append(("1_rendezvous", status, msg1))
+
+        # 2. RBAC Permission Denied: no RUNTIME -> DEBUGGER edge exists.
+        msg2 = IPCMessage(pairs=[(_KEY_CMD, _CMD_KILL)])
+        status, _ = yield from router.send(Role.RUNTIME, "fireball://dbg/manager/0", msg2)
+        sent.append(("2_permission_denied", status, msg2))
+
+        # 3. URI Not Found
+        msg3 = IPCMessage()
+        status, _ = yield from router.send(Role.RUNTIME, "fireball://unknown/service", msg3)
+        sent.append(("3_not_found", status, msg3))
+
+        # 4. Message exceeds the static 8 kv_pair buffer (ipc_router.md §3.3/§5.1).
+        oversized = IPCMessage(pairs=[(i, i) for i in range(9)])
+        status, _ = yield from router.send(Role.RUNTIME, "fireball://core/coos/0", oversized)
+        sent.append(("4_too_large", status, oversized))
+
+    received: list[IPCMessage] = []
+
+    def coos_receiver():
+        # recv() selects across every allowed incoming edge (RUNTIME and
+        # DEBUGGER may both legitimately send to CORE_SERVICE) rather than
+        # committing to just one sender_role upfront.
+        status, msg = yield from router.recv("fireball://core/coos/0")
+        received.append(msg)
+
+    sched.spawn("coos_receiver", coos_receiver())
+    sched.spawn("client_app", client_app_task())
+    sched.run_until_idle()
+
+    results = {name: (status, msg) for name, status, msg in sent}
+    status1, msg1 = results["1_rendezvous"]
+    assert status1 == IpcStatus.COMPLETED
+    assert msg1.ownership == OwnershipState.RECEIVER_OWNS, (
+        "ownership transfers atomically the instant the rendezvous completes"
     )
-    # 2. RBAC Permission Denied
-    msg2 = IPCMessage(resource_id="res_02", payload={"cmd": "KILL"})
-    status, reason = router.route_message("CLIENT_APP", "fireball://dbg/manager/0", msg2)
-    assert status == "ERR_PERMISSION_DENIED"
+    assert received == [msg1]
+    assert received[0][_KEY_CMD] == _CMD_START_TASK
+    assert received[0][_KEY_TASK_ID] == 10
+    print(
+        "    [Phase 1.1] IPC CSP Rendezvous (blocking recv -> sender handoff) -> RECEIVER_OWNS [PASS]"
+    )
+
+    status2, msg2 = results["2_permission_denied"]
+    assert status2 == IpcStatus.ERR_PERMISSION_DENIED
     assert msg2.ownership == OwnershipState.SENDER_OWNS
-    print("    [Phase 1.2] IPC RBAC Check (CLIENT_APP -> DEBUGGER) -> ERR_PERMISSION_DENIED [PASS]")
-    # 3. URI Not Found
-    msg3 = IPCMessage(resource_id="res_03", payload={})
-    status, reason = router.route_message("CLIENT_APP", "fireball://unknown/service", msg3)
-    assert status == "ERR_NOT_FOUND"
+    print("    [Phase 1.2] IPC RBAC Check (RUNTIME -> DEBUGGER) -> ERR_PERMISSION_DENIED [PASS]")
+
+    status3, _ = results["3_not_found"]
+    assert status3 == IpcStatus.ERR_NOT_FOUND
     print("    [Phase 1.3] IPC URI Lookup (Unknown URI) -> ERR_NOT_FOUND [PASS]")
-    # 4. Queue Overflow & Rollback (fireball://hal/gpio/0 has max_queue 2)
-    msg_q1 = IPCMessage(resource_id="res_q1", payload={})
-    msg_q2 = IPCMessage(resource_id="res_q2", payload={})
-    msg_q3 = IPCMessage(resource_id="res_q3", payload={})
-    assert router.route_message("CLIENT_APP", "fireball://hal/gpio/0", msg_q1)[0] == "OK_ENQUEUED"
-    assert router.route_message("CLIENT_APP", "fireball://hal/gpio/0", msg_q2)[0] == "OK_ENQUEUED"
-    status_over, _ = router.route_message("CLIENT_APP", "fireball://hal/gpio/0", msg_q3)
-    assert status_over == "ERR_QUEUE_FULL"
-    assert msg_q3.ownership == OwnershipState.SENDER_OWNS
-    print("    [Phase 1.4] IPC Queue Capacity Overflow & Rollback -> ERR_QUEUE_FULL [PASS]")
-    # 5. Target Fault Drop Handler (Fault Recovery)
-    reclaimed = router.trigger_drop_handler("ch_gpio")
-    assert reclaimed == ["res_q1", "res_q2"]
-    assert msg_q1.ownership == OwnershipState.RECLAIMED_BY_DROP
-    assert msg_q2.ownership == OwnershipState.RECLAIMED_BY_DROP
-    print("    [Phase 1.5] IPC Target Service Fault Drop Handler Recovery -> RECLAIMED [PASS]")
+
+    status4, msg4 = results["4_too_large"]
+    assert status4 == IpcStatus.ERR_MSG_TOO_LARGE
+    assert msg4.ownership == OwnershipState.SENDER_OWNS
+    print("    [Phase 1.4] IPC Message KV-pair Limit (9 > 8) -> ERR_MSG_TOO_LARGE [PASS]")
+
     # -------------------------------------------------------------------------
     # Phase 2: Structured System Logging & LogDictionary Safety
     # -------------------------------------------------------------------------

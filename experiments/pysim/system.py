@@ -17,29 +17,6 @@ to system_logging.md and interface_wit.md §5.5 (dictionary logger is internal-o
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-_PYSIM_DIR = (
-    Path(__file__).resolve().parents[1]
-    if any(
-        d in str(Path(__file__))
-        for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")
-    )
-    else Path(__file__).resolve().parent
-)
-
-for _p in [
-    _PYSIM_DIR,
-    _PYSIM_DIR / "core",
-    _PYSIM_DIR / "runtime",
-    _PYSIM_DIR / "jit",
-    _PYSIM_DIR / "platforms",
-]:
-    _sp = str(_p)
-    if _sp not in sys.path:
-        sys.path.insert(0, _sp)
-
 import os
 import struct
 import time
@@ -48,14 +25,14 @@ from enum import IntEnum
 from typing import Any
 
 from hal import ShmBufferPool, ShmHandle, UartTransport
-from ipc_router import IPCMessage, IPCRouter
+from ipc_router import IPCMessage, IPCRouter, IpcStatus, Role
 from logger import ConsoleOutput, LogDictionary, Logger, LogLevel
 from memory import (
     FB_CONF_MEMORY_POOL_SIZE,
     MemoryManager,
 )
 from runtime_engine import RuntimeEngine
-from scheduler import Scheduler
+from scheduler import Scheduler, TaskState
 from system_containers import RadixBinaryTreeView
 from vmmio import (
     FC_STATIC_DEVICE,
@@ -235,9 +212,9 @@ class System:
         # Physical Memory Manager (platform_memory.md) with 64KB aligned pool
         self.memory_manager = MemoryManager()
         self.memory_manager.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
-        self.ipc = IPCRouter()
-        # Direct 1-based index mapping over sorted self.ipc.registry.keys array (no dynamic dict)
         self.scheduler = Scheduler()
+        self.ipc = IPCRouter(self.scheduler)
+        # Direct 1-based index mapping over sorted self.ipc.registry.keys array (no dynamic dict)
         self.runtime_engine = RuntimeEngine()
         self.scheduler.set_idle_hook(self._on_idle)
         self.halted = False
@@ -373,6 +350,13 @@ class System:
         """
         self._guest_memory = memory
         self._current_task_id = task_id
+        # fireball_call's IPC_SEND/IPC_RECV delegate to scheduler.Channel,
+        # which rendezvous on registered Task objects, not bare task_id ints.
+        # This task is driven directly by fireball_call, never by the
+        # scheduler's own run_until_idle() loop, so it must not sit in READY.
+        if self.scheduler.get_task(task_id) is None:
+            self.scheduler.spawn(name=f"guest_task_{task_id}", task_id=task_id)
+            self.scheduler.detach(self.scheduler.get_task(task_id))
 
     # --- fireball_call ------------------------------------------------
     def fireball_call(
@@ -480,7 +464,7 @@ class System:
         # vmmio_concept.access() itself already computed internally, from
         # the same public PTE fields it exposes (self.vmmio.ptes is a
         # public FlatMap, not a hidden implementation detail).
-        pte = self.vmmio.ptes.get(a.vpn())
+        pte = self.vmmio.ptes.find(a.vpn())
         phys_addr = (pte.phys_page << 12) | a.offset()
         return None, self.phys_mem, phys_addr
 
@@ -583,7 +567,7 @@ class System:
         flags = struct.unpack_from("<I", self.sysctl_regs, REG_IRQ_FLAGS)[0]
         struct.pack_into("<I", self.sysctl_regs, REG_IRQ_FLAGS, (flags | mask) & 0xFFFF_FFFF)
 
-    # --- IPC (real IPCRouter: URI lookup, RBAC, bounded-queue handoff) ---
+    # --- IPC (real IPCRouter: URI lookup, RBAC, CSP rendezvous handoff) ---
     def _ipc_lookup(self, uri_offset: int, uri_len: int) -> int:
         raw = self._read_guest(uri_offset, uri_len)
         if raw is None:
@@ -604,19 +588,30 @@ class System:
         payload = self._read_guest(msg_offset, msg_len)
         if payload is None:
             return WasiErrno.FAULT
-        msg = IPCMessage(
-            resource_id=f"guest_task_{self._current_task_id}_msg",
-            payload={"bytes": bytes(payload)},
-        )
-        # ipc_router_concept.py's fixed role matrix has no multi-role guest
-        # model -- every fireball_call-issuing guest in this experiment is
-        # CLIENT_APP, the only role a guest task could plausibly hold.
-        status, _ = self.ipc.route_message("CLIENT_APP", uri, msg)
-        if status == "OK_ENQUEUED":
+        msg = IPCMessage.from_bytes(bytes(payload))
+        # The guest task's own execution *is* this call: system_syscall.md
+        # models a host call as running inside the calling task's coroutine
+        # (exactly like Interpreter.call_coroutine's cooperative yields), so
+        # waiting for a receiver is this task waiting, via the scheduler's
+        # ordinary sleep/wake queue -- not a separate mechanism, and never a
+        # queue/EAGAIN (ipc_router.md §5.1).
+        task = self.scheduler.get_task(self._current_task_id)
+        self.scheduler.current_task = task
+        # The sender here is this runtime task -- the hypervisor-side
+        # execution context hosting the guest across the fireball_call trap
+        # boundary -- acting with the RUNTIME role on the guest's behalf;
+        # it is not the guest's own (untrusted) code reaching into IPC
+        # directly. ipc_router_concept.py's fixed role matrix has no
+        # multi-role guest model, so RUNTIME is the only role this
+        # runtime task ever sends as.
+        task.coro = self.ipc.send(Role.RUNTIME, uri, msg)
+        self.scheduler.attach(task)
+        while task.state != TaskState.TERMINATED:
+            self.scheduler.run_until_idle()
+        status, _ = task.result
+        if status == IpcStatus.COMPLETED:
             return WasiErrno.SUCCESS
-        if status == "ERR_QUEUE_FULL":
-            return WasiErrno.AGAIN
-        if status == "ERR_PERMISSION_DENIED":
+        if status == IpcStatus.ERR_PERMISSION_DENIED:
             return WasiErrno.PERM
         return WasiErrno.NOENT
 
@@ -624,16 +619,19 @@ class System:
         if handle_id < 1 or handle_id > len(self.ipc.registry.keys):
             return int(WasiErrno.BADF)
         uri = self.ipc.registry.keys[handle_id - 1]
-        entry = self.ipc.registry.find(uri)
-        msg = self.ipc.receive_message(entry["channel_id"])
-        if msg is None:
-            # ipc_router.md: an empty queue suspends the coroutine. This
-            # synchronous fireball_call boundary cannot suspend a native
-            # call mid-flight -- EAGAIN ({Errorcode_To_Strategy}'s `retry`)
-            # is the real, standard "would block" signal WASI already
-            # defines for exactly this situation, not a stand-in for it.
-            return int(WasiErrno.AGAIN)
-        data = msg.payload["bytes"]
+        # See _ipc_send: this task's own coroutine *is* the recv() call.
+        # recv() itself selects across every sender_role this URI's service
+        # role may legitimately be sent from -- the guest never states one.
+        task = self.scheduler.get_task(self._current_task_id)
+        self.scheduler.current_task = task
+        task.coro = self.ipc.recv(uri)
+        self.scheduler.attach(task)
+        while task.state != TaskState.TERMINATED:
+            self.scheduler.run_until_idle()
+        status, msg = task.result
+        if status in (IpcStatus.ERR_NOT_FOUND, IpcStatus.ERR_PERMISSION_DENIED):
+            return int(WasiErrno.NOENT)
+        data = msg.raw_payload or b""
         n = min(len(data), buf_len)
         if not self._write_guest(buf_offset, data[:n]):
             return int(WasiErrno.FAULT)

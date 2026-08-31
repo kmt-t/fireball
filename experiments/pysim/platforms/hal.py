@@ -23,34 +23,38 @@ something has to really run.
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-_PYSIM_DIR = (
-    Path(__file__).resolve().parents[1]
-    if any(
-        d in str(Path(__file__))
-        for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")
-    )
-    else Path(__file__).resolve().parent
-)
-
-for _p in [
-    _PYSIM_DIR,
-    _PYSIM_DIR / "core",
-    _PYSIM_DIR / "runtime",
-    _PYSIM_DIR / "jit",
-    _PYSIM_DIR / "platforms",
-]:
-    _sp = str(_p)
-    if _sp not in sys.path:
-        sys.path.insert(0, _sp)
-
 import socket
 import threading
 import time
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass, field
+from typing import Any
+
+from ipc_router import DataType, ScopeKind, pack_key32
+from system_containers import FlatMapView, FlatSetView
+
+# platform_hal.md §4.2's kv_pair command arguments: each is a packed
+# (ScopeKind.FUNCTIONAL, DataType.UINT32, key_id) key per ipc_router.md §3.3,
+# never a string name -- a string key has no C++ counterpart once RTTI is
+# disabled, and the doc's argument names ("pin_no", "val", ...) are only the
+# human-readable label for a given key_id, not the wire key itself.
+ARG_QUERY_CMD_ID = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=1)
+ARG_SHM_HANDLE = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=2)
+ARG_OFFSET = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=3)
+ARG_LENGTH = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=4)
+ARG_MAX_LEN = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=5)
+ARG_NANOS = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=6)
+ARG_PIN_NO = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=7)
+ARG_VAL = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=8)
+ARG_MODE = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=9)
+ARG_EDGE_TYPE = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=10)
+ARG_TX_SHM_HANDLE = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=11)
+ARG_RX_SHM_HANDLE = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=12)
+ARG_CLOCK_HZ = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=13)
+ARG_SLAVE_ADDR = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=14)
+ARG_TASK_ID = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=15)
+ARG_FD = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=16)
 
 
 class HalError(Exception):
@@ -189,6 +193,20 @@ class ShmBufferPool:
         for i in range(len(self._slots)):
             self._slots[i] = None
 
+    def can_view(self, task_id: int, handle: ShmHandle, offset: int, length: int) -> bool:
+        """
+        Non-throwing precondition check for view(): same ownership/bounds
+        rules, but a bool return instead of raising ShmTrap, for callers
+        that must not depend on catching an exception (exceptions disabled
+        in the target C++ build).
+        """
+        for s in self._slots:
+            if s is not None and s.name == handle.name:
+                if s.owner_task != task_id:
+                    return False
+                return 0 <= offset and 0 <= length and offset + length <= s.capacity
+        return False
+
     def view(self, task_id: int, handle: ShmHandle, offset: int, length: int) -> memoryview:
         """
         Resolves a bounds-checked (offset, length) window inside `handle`.
@@ -221,3 +239,149 @@ class Timer:
         t.daemon = True
         t.start()
         return t
+
+
+# ---------------------------------------------------------------------------
+# HAL Drivers with WASI 0.3p IPC Command Dispatch & Capability Query
+# ---------------------------------------------------------------------------
+
+
+class HalDriver:
+    """
+    Base class for HAL device drivers supporting WASI 0.3p IPC Commands.
+    Matches platform_hal.md §5.1's `control(id, cmd, params: ipc-message)`:
+    exactly one statically-typed params argument, always a FlatMapView over
+    packed kv_pair keys (ipc_router.md §3.3) -- no kwargs escape hatch, no
+    runtime inspection of what was passed (C++ has neither RTTI nor
+    reflection to do that with).
+    """
+
+    def __init__(self, uri: str, supported_commands: Sequence[int] = ()):
+        self.uri = uri
+        # CMD_QUERY_CAPS (0x00) is always supported.
+        self.supported_commands = FlatSetView(sorted({0x00, *supported_commands}))
+
+    def is_supported(self, cmd_id: int) -> int:
+        """Checks if this driver supports the given command ID (1=True, 0=False)."""
+        return 1 if cmd_id in self.supported_commands else 0
+
+    def dispatch(self, cmd_id: int, params: FlatMapView) -> Any:
+        """Dispatches an IPC command to the driver handler."""
+        if cmd_id == 0x00:  # CMD_QUERY_CAPS
+            query_cmd = params.find(ARG_QUERY_CMD_ID)
+            return self.is_supported(0 if query_cmd is None else query_cmd)
+
+        return self._handle_command(cmd_id, params)
+
+    def _handle_command(self, cmd_id: int, params: FlatMapView) -> Any:
+        raise NotImplementedError(f"Command {cmd_id} not implemented for {self.uri}")
+
+
+class DummyUartDriver(HalDriver):
+    """Dummy UART Driver supporting Stream Read/Write via SHM."""
+
+    def __init__(
+        self, uri: str = "fireball://device/uart/0", transport: UartTransport | None = None
+    ):
+        super().__init__(
+            uri,
+            supported_commands=(
+                0x01,  # CMD_STREAM_WRITE_SHM
+                0x02,  # CMD_STREAM_READ_SHM
+                0x03,  # CMD_STREAM_FLUSH
+                0x04,  # CMD_STREAM_CLOSE
+            ),
+        )
+        self.transport = transport or UartTransport()
+
+    def _handle_command(self, cmd_id: int, params: FlatMapView) -> Any:
+        if cmd_id == 0x01:  # STREAM_WRITE_SHM
+            # platform_hal.md §4.2: shm_handle/offset/len resolve a zero-copy
+            # SHM slice; this dummy has no pool reference to resolve one
+            # against, so it stands in with the slice length only.
+            length = params.find(ARG_LENGTH)
+            return 0 if length is None else length
+        elif cmd_id == 0x02:  # STREAM_READ_SHM
+            return self.transport.drain()
+        elif cmd_id in (0x03, 0x04):
+            return 0
+        return None
+
+
+class DummyGpioDriver(HalDriver):
+    """Dummy GPIO Driver supporting Pin R/W, Configuration, and Edge IRQ."""
+
+    # platform_hal.md doesn't fix a pin count; a real MCU GPIO port is a
+    # small, bounded set, so a fixed-size array (not a dict) models it.
+    _MAX_PINS = 64
+
+    def __init__(self, uri: str = "fireball://device/gpio/0"):
+        super().__init__(
+            uri,
+            supported_commands=(
+                0x20,  # CMD_GPIO_SET_PIN
+                0x21,  # CMD_GPIO_GET_PIN
+                0x22,  # CMD_GPIO_CONFIG_PIN
+                0x23,  # CMD_GPIO_SUBSCRIBE_EDGE
+            ),
+        )
+        self.pins: list[bool] = [False] * self._MAX_PINS
+        self.modes: list[int] = [0] * self._MAX_PINS
+
+    def _handle_command(self, cmd_id: int, params: FlatMapView) -> Any:
+        pin = params.find(ARG_PIN_NO) or 0
+        if cmd_id == 0x20:  # SET_PIN
+            self.pins[pin] = bool(params.find(ARG_VAL))
+            return 0
+        elif cmd_id == 0x21:  # GET_PIN
+            return 1 if self.pins[pin] else 0
+        elif cmd_id == 0x22:  # CONFIG_PIN
+            self.modes[pin] = params.find(ARG_MODE) or 0
+            return 0
+        elif cmd_id == 0x23:  # SUBSCRIBE_EDGE
+            return 1  # pollable handle
+        return None
+
+
+class DummyTimerDriver(HalDriver):
+    """Dummy Timer Driver supporting Monotonic Clock and Subscriptions."""
+
+    def __init__(self, uri: str = "fireball://device/timer/0"):
+        super().__init__(
+            uri,
+            supported_commands=(
+                0x10,  # CMD_CLOCK_GET_NOW
+                0x11,  # CMD_CLOCK_SUBSCRIBE
+                0x12,  # CMD_CLOCK_GET_RES
+            ),
+        )
+        self.timer = Timer()
+
+    def _handle_command(self, cmd_id: int, params: FlatMapView) -> Any:
+        if cmd_id == 0x10:  # CLOCK_GET_NOW
+            return self.timer.get_now_ns()
+        elif cmd_id == 0x11:  # CLOCK_SUBSCRIBE
+            return 1  # pollable handle
+        elif cmd_id == 0x12:  # CLOCK_GET_RES
+            return 1_000_000  # 1ms
+        return None
+
+
+class DummyBusDriver(HalDriver):
+    """Dummy I2C/SPI Bus Driver supporting Zero-Copy SHM Transfer."""
+
+    def __init__(self, uri: str = "fireball://device/i2c/0"):
+        super().__init__(
+            uri,
+            supported_commands=(
+                0x30,  # CMD_BUS_TRANSFER_SHM
+                0x31,  # CMD_BUS_CONFIG
+            ),
+        )
+
+    def _handle_command(self, cmd_id: int, params: FlatMapView) -> Any:
+        if cmd_id == 0x30:  # BUS_TRANSFER_SHM
+            return params.find(ARG_LENGTH) or 0
+        elif cmd_id == 0x31:  # BUS_CONFIG
+            return 0
+        return None

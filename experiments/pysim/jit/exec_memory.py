@@ -7,30 +7,8 @@ Conforms strictly to docs/components/tier3_platform/platform_memory.md §9.2 and
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-_PYSIM_DIR = (
-    Path(__file__).resolve().parents[1]
-    if any(
-        d in str(Path(__file__))
-        for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")
-    )
-    else Path(__file__).resolve().parent
-)
-
-for _p in [
-    _PYSIM_DIR,
-    _PYSIM_DIR / "core",
-    _PYSIM_DIR / "runtime",
-    _PYSIM_DIR / "jit",
-    _PYSIM_DIR / "platforms",
-]:
-    _sp = str(_p)
-    if _sp not in sys.path:
-        sys.path.insert(0, _sp)
-
 import ctypes
+import sys
 
 # Platform detection
 IS_WINDOWS = sys.platform == "win32"
@@ -94,6 +72,10 @@ class ExecutableBuffer:
     """
 
     def __init__(self, size: int):
+        # Set before any allocation attempt: if VirtualAlloc/mmap below raises,
+        # close()/__del__ can still run safely on this partially-constructed
+        # instance without needing a defensive getattr() to check.
+        self.base: int | None = None
         self.size = size
         self.patch_in_progress = True
         self.dsb_count = 0
@@ -199,7 +181,7 @@ class ExecutableBuffer:
         return self.base + offset
 
     def close(self) -> None:
-        if getattr(self, "base", None):
+        if self.base is not None:
             if IS_WINDOWS:
                 _kernel32.VirtualFree(self.base, 0, MEM_RELEASE)
             else:

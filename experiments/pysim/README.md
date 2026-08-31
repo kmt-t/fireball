@@ -4,6 +4,16 @@
 
 仕様書（`docs/components/**`）で策定されたアーキテクチャ・状態機械・メモリレイアウト・ABI 規約が、実際に結合して正しく動作することを C++23 実装前に事前実証（Pressure-test）することを目的としています。
 
+### C++ 移植可能性の制約（本ディレクトリのみ）
+
+`experiments/pysim/` 配下のコードは、この事前実証としての性質上、`.agents/rules/embedded_cpp.md` / `stdlib_policy.md` が定める組み込み C++（ヒープ割り当て・例外・RTTI 無効、`std::vector`/`std::map`/`std::unordered_map` 等の動的コンテナ禁止）の制約を型として引き継ぎます。具体的には：
+
+- Python の `dict`/`set` を実装の型として使わない。固定長配列、`FlatMapView`/`FlatSetView`/`RadixBinaryTreeView`/`BitView`（`core/system_containers.py`）、または `StaticFlatMap`/`StaticFlatSet` のような固定容量コンテナに置き換える。
+- `isinstance`/`type()`/`hasattr`/`getattr` によるランタイム型検査を行わない（RTTI・リフレクション無効）。
+- 例外を制御フローに使わない。失敗は戻り値（`None`、`Result`型、enumステータス等）で表現する。
+
+**この制約は `experiments/pysim/` のみに適用され、`docs/components/**/concepts/*.py` の参考実装コードには適用されません。** concept コードは仕様の意図を伝えるための説明的なスニペットであり、可読性を優先して `dict` などの通常の Python イディオムを使ってよいものとします。
+
 ---
 
 ## 1. ディレクトリ構成 (Tier 階層準拠)
@@ -90,7 +100,7 @@ experiments/pysim/
 8. **Scenario 8: Storage Coverage & GDB Debugger (`scenarios/scenario8_comprehensive_storage_coverage.py`)**:
    - メモリ全幅（8/16/32-bit 符号/ゼロ拡張）、グローバル・ローカル変数の永続性、および稼働中の GDB ソケットデバッグ統合。
 9. **Scenario 9: IPC Router & Structured Logging (`scenarios/scenario9_ipc_router_and_logging.py`)**:
-   - 3段階ルーティング（Stage 1 URI検索 → Stage 2 RBAC判定 → Stage 3 Zero-Copy 所有権移譲）、キュー満杯ロールバック、サービスフォールト回収（`RECLAIMED_BY_DROP`）、構造化ログのアイドルフラッシュ。
+   - 3段階ルーティング（Stage 1 URI検索 → Stage 2 RBAC判定 → Stage 3 Zero-Copy CSP Rendezvous 所有権移譲）、RBAC拒否・メッセージサイズ超過の事前拒絶、構造化ログのアイドルフラッシュ。
 10. **Scenario 10: vMMIO Virtual Devices & Address Translation (`scenarios/scenario10_vmmio_virtual_devices.py`)**:
     - 2段階ダイレクトデコードページテーブル、Bit 31 ゲスト RAM バイパス、Direct-Mapped ソフトウェア TLB（Folding XOR Hash）、タスク間共有メモリ（FC=0xE）の所有権検証と `TRAP_OWNER_MISMATCH` 遮断、パススルー物理アクセス。
 11. **Scenario 11: HAL & WASI Dummy Drivers (`scenarios/scenario11_hal_and_wasi_drivers.py`)**:

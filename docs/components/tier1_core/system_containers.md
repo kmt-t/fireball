@@ -35,7 +35,7 @@
 
 ### 3.1 データ構造
 <!-- traceability: {META_FlatMapIndexed} {META_BinarySearch} {FlatViewNarrowing} {PackedBitView} {GLOBAL_StaticScalability} -->
-- **`flat_map_view<Key, Value>`**: 昇順ソート済みのキー列と、それに添字対応する値列を指す非所有ビュー。粗索引で区間を狭めてから二分探索する。 `{META_BinarySearch}` `{FlatViewNarrowing}`
+- **`flat_map_view<Key, Value>`**: 昇順ソート済みのキー列と、それに添字対応する値列を指す非所有ビュー。**原則として数値型（例: `uint64_t`、`uint32_t`）の単一ソート配列内にキーと値がビットパックされた構造（Packed Entry Array: 例 `(Key << 32) | Value`）**、またはキー区間と値区間のペアに対するゼロコピーな $O(\log N)$ 二分探索・範囲絞り込みを提供する。 `{META_BinarySearch}` `{FlatViewNarrowing}`
 - **`flat_set_view<Key>`**: 昇順ソート済みのキー列のみを指す非所有ビュー。所属判定を行う。 `{META_BinarySearch}` `{FlatViewNarrowing}`
 - **`radix_binary_tree_view<Key, Value, RadixShift>`**: 基数テーブル（Radix Table / $O(1)$ スカラー開始インデックス配列：サイズ $K+1$、バケット $p$ の区間は `[table[p], table[p+1]]`）とソート済みエントリ配列の局所二分探索をカプセル化した多段索引ビュー。 `{META_BinarySearch}` `{FlatViewNarrowing}`
 - **`bit_view<Bits>`**: 1 要素が 1 バイト未満の密なビット詰め表を指す非所有ビュー。添字で直接読み書きする。 `{PackedBitView}`
@@ -74,13 +74,12 @@ graph LR
 ### 3.3 主要なクラス・構造体・配列・定数
 
 #### 疎マップビュー（flat_map_view）
-<!-- traceability: {META_BinarySearch} {META_ZeroCostAbstraction} {FlatViewNarrowing} -->
-ソート済みキー列と対応する値列に対する非所有ビュー。粗索引による範囲絞り込みと二分探索を合成する。 `{META_BinarySearch}` `{FlatViewNarrowing}`
+<!-- traceability: {META_BinarySearch} {META_ZeroCostAbstraction} {FlatViewNarrowing} {META_FlatMapIndexed} -->
+キーと値がビットパックされた単一のソート済み数値配列（`uint64_t` 等）に対する非所有ビュー。粗索引による範囲絞り込みと二分探索を合成し、$O(\log N)$ でパック値を取り出す。 `{META_BinarySearch}` `{FlatViewNarrowing}` `{META_FlatMapIndexed}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| キー区間 | 対象区間のキーへの読み取り専用ビュー | データ範囲 | `std::span<const Key>` |
-| 値区間 | キー区間と添字対応する値への読み取り専用ビュー | データ範囲 | `std::span<const Value>` |
+| パックエントリ配列 | キー（上位ビット）と値（下位ビット）がパックされたソート済み数値配列への読み取り専用ビュー | データ範囲 | `std::span<const uint64_t>` |
 
 #### 疎集合ビュー（flat_set_view）
 <!-- traceability: {META_BinarySearch} {META_ZeroCostAbstraction} {FlatViewNarrowing} -->

@@ -7,31 +7,9 @@ ACK/NACK negotiation, and execution dispatch to GDBRspProtocol.
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-_PYSIM_DIR = (
-    Path(__file__).resolve().parents[1]
-    if any(
-        d in str(Path(__file__))
-        for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")
-    )
-    else Path(__file__).resolve().parent
-)
-
-for _p in [
-    _PYSIM_DIR,
-    _PYSIM_DIR / "core",
-    _PYSIM_DIR / "runtime",
-    _PYSIM_DIR / "jit",
-    _PYSIM_DIR / "platforms",
-]:
-    _sp = str(_p)
-    if _sp not in sys.path:
-        sys.path.insert(0, _sp)
-
 import socket
 import threading
+from collections.abc import Mapping
 
 from debugger import DebuggerManager, GDBRspProtocol
 from runtime_engine import BasicBlock, WASMContext
@@ -51,7 +29,7 @@ class GDBServer:
         self._running = False
         self.actual_port: int = 0
 
-    def start(self, current_pc: int, ctx: WASMContext, blocks: dict[int, BasicBlock]) -> int:
+    def start(self, current_pc: int, ctx: WASMContext, blocks: Mapping[int, BasicBlock]) -> int:
         """Starts TCP listener in a background thread and returns bound port."""
         self._server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -84,7 +62,9 @@ class GDBServer:
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=1.0)
 
-    def _server_loop(self, start_pc: int, ctx: WASMContext, blocks: dict[int, BasicBlock]) -> None:
+    def _server_loop(
+        self, start_pc: int, ctx: WASMContext, blocks: Mapping[int, BasicBlock]
+    ) -> None:
         """Accepts a client connection and processes RSP packets until disconnected."""
         try:
             self._server_sock.settimeout(2.0)

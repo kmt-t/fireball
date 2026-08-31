@@ -13,38 +13,22 @@ Implements:
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-_PYSIM_DIR = (
-    Path(__file__).resolve().parents[1]
-    if any(
-        d in str(Path(__file__))
-        for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")
-    )
-    else Path(__file__).resolve().parent
-)
-
-for _p in [
-    _PYSIM_DIR,
-    _PYSIM_DIR / "core",
-    _PYSIM_DIR / "runtime",
-    _PYSIM_DIR / "jit",
-    _PYSIM_DIR / "platforms",
-]:
-    _sp = str(_p)
-    if _sp not in sys.path:
-        sys.path.insert(0, _sp)
-
 import bisect
+from collections.abc import Mapping
 
+from interpreter import Interpreter
 from runtime_engine import BasicBlock, IntegratedHybridEngine, WASMContext
+from system_containers import StaticFlatMap
+
+# docs/components/tier1_core/system_config.md {Debug_Integrated}
+# {META_NoStdVector}: max PC-sampling entries the profiler buffer holds.
+FB_CONF_DEBUG_MAX_PC_SAMPLES = 64
 
 
 class DebuggerManager:
     """Manages debug state, breakpoint sets, execution stepping, and integrated profiling."""
 
-    def __init__(self, engine: IntegratedHybridEngine | None = None):
+    def __init__(self, engine: IntegratedHybridEngine | Interpreter | None = None):
         self.engine = engine
         self.attached: bool = False
         self.halted: bool = False
@@ -52,7 +36,9 @@ class DebuggerManager:
         # Sorted breakpoint list (flat_set_view semantics with O(log N) binary search)
         self._breakpoints: list[int] = []
         # Integrated Profiler & Test Tool ({Debug_Integrated})
-        self.pc_sample_counts: dict[int, int] = {}
+        self.pc_sample_counts: StaticFlatMap[int, int] = StaticFlatMap(
+            capacity=FB_CONF_DEBUG_MAX_PC_SAMPLES
+        )
         self.memory_assertions: list[tuple[int, int, str]] = []
         self.assertion_violations: list[str] = []
 
@@ -61,14 +47,14 @@ class DebuggerManager:
         self.attached = True
         self.halted = True
         self.stop_signal = 5
-        if self.engine and hasattr(self.engine, "attach_debugger"):
+        if self.engine is not None:
             self.engine.attach_debugger(self)
 
     def detach(self) -> None:
         """Detaches debugger and restores normal zero-overhead execution."""
         self.attached = False
         self.halted = False
-        if self.engine and hasattr(self.engine, "detach_debugger"):
+        if self.engine is not None:
             self.engine.detach_debugger()
 
     def add_breakpoint(self, pc: int) -> None:
@@ -94,7 +80,8 @@ class DebuggerManager:
 
     def sample_pc(self, pc: int) -> None:
         """Samples PC execution frequency ({Debug_Integrated})."""
-        self.pc_sample_counts[pc] = self.pc_sample_counts.get(pc, 0) + 1
+        count = self.pc_sample_counts.find(pc)
+        self.pc_sample_counts.insert(pc, 1 if count is None else count + 1)
 
     def verify_assertions(self, memory: bytearray | None) -> None:
         """Verifies memory assertions against current guest memory ({Debug_Integrated})."""
@@ -110,8 +97,8 @@ class DebuggerManager:
 
     def flush_jit_cache(self) -> None:
         """Invalidates all JIT cache banks when memory is rewritten by debugger ({Debugger_Jit_Flush})."""
-        if self.engine and hasattr(self.engine, "cache"):
-            self.engine.cache.flush_all()
+        if self.engine is not None:
+            self.engine.flush_jit_cache()
 
     def read_virtual_registers(self, pc: int, ctx: WASMContext) -> list[int]:
         """Returns 20 virtual registers: 0:pc, 1:sp, 2:fp, 3:tos, 4..19:local0..15."""
@@ -151,7 +138,7 @@ class GDBRspProtocol:
         packet: str,
         current_pc: int,
         ctx: WASMContext,
-        blocks: dict[int, BasicBlock],
+        blocks: Mapping[int, BasicBlock],
     ) -> tuple[str, int]:
         """Handles an RSP packet payload and returns (response_packet, new_pc)."""
         # Strip framing if present

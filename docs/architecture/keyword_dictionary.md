@@ -51,9 +51,8 @@
 | `{FuelExhaustion_Yield}` | `os_scheduler.md` | `os_scheduler.md` | Fuel 枯渇（`yield_every` 境界）での決定論的コルーチン協調中断と再開 | Scenario 6 (`INT-50`) |
 | `{MainLoopReturnGuarantee}` | `os_coos.md` | `os_coos.md` | 連続ハンドオフ上限到達時のメインループ強制復帰形式保証 | Scenario 6 |
 | `{CSPCommunication}` | `requirement_list.md` | `ipc_router.md` | ホーアCSPに基づく所有権移譲ゼロコピーメッセージパッシング | Scenario 9 (`INT-80`) |
-| `{ThreeStageRouting}` | `ipc_router.md` | `ipc_router.md` | Stage 1 URI検索 $\to$ Stage 2 RBAC判定 $\to$ Stage 3 Zero-Copy 所有権移譲 | Scenario 9 (`INT-80`, `INT-81`) |
-| `{QueueFullRollback}` | `ipc_router.md` | `ipc_router.md` | キュー満杯時の送信元ロールバック（所有権保持） | Scenario 9 (`INT-81`) |
-| `{TargetFaultDropHandler}` | `ipc_router.md` | `ipc_router.md` | 宛先サービス死亡・フォールト時の `RECLAIMED_BY_DROP` 安全回収 | Scenario 9 (`INT-81`) |
+| `{ThreeStageRouting}` | `ipc_router.md` | `ipc_router.md` | Stage 1 URI検索 $\to$ Stage 2 RBAC判定 $\to$ Stage 3 Zero-Copy CSP Rendezvous 所有権移譲 | Scenario 9 (`INT-80`, `INT-81`) |
+| `{PreflightRejection}` | `ipc_router.md` | `ipc_router.md` | Revoke前の静的チェック（RBAC拒否・メッセージサイズ超過）失敗時、所有権は送信側から一度も動かない | Scenario 9 (`INT-81`) |
 
 ---
 

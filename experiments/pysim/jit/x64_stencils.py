@@ -25,40 +25,24 @@ the real x64 hardware stack (PUSH/POP), one 8-byte slot per WASM value.
 from __future__ import annotations
 
 import sys
-from pathlib import Path
-
-_PYSIM_DIR = (
-    Path(__file__).resolve().parents[1]
-    if any(
-        d in str(Path(__file__))
-        for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")
-    )
-    else Path(__file__).resolve().parent
-)
-
-for _p in [
-    _PYSIM_DIR,
-    _PYSIM_DIR / "core",
-    _PYSIM_DIR / "runtime",
-    _PYSIM_DIR / "jit",
-    _PYSIM_DIR / "platforms",
-]:
-    _sp = str(_p)
-    if _sp not in sys.path:
-        sys.path.insert(0, _sp)
-
 from collections.abc import Generator, Iterable
 from dataclasses import dataclass, field
 
+from system_containers import FlatMapView
+
 IS_WINDOWS = sys.platform == "win32"
+
+_EMPTY_RELOCS: FlatMapView[str, int] = FlatMapView([], [])
 
 
 @dataclass(frozen=True)
 class Stencil:
     name: str
     code: bytes
-    # name -> byte offset within `code` of a 4-byte little-endian relocation slot.
-    relocs: dict[str, int] = field(default_factory=dict)
+    # name -> byte offset within `code` of a 4-byte little-endian relocation
+    # slot: a sorted flat_map_view over a small, fixed reloc-name vocabulary
+    # ("disp", "imm", "rel32", "max_addr", "trap", "addr"), never a dict.
+    relocs: FlatMapView[str, int] = field(default_factory=lambda: _EMPTY_RELOCS)
 
     def __len__(self) -> int:
         return len(self.code)
@@ -79,12 +63,12 @@ _SENTINEL_MAX_ADDR = bytes((0xA1, 0xA1, 0xA1, 0xA1))
 _SENTINEL_TRAP = bytes((0xA2, 0xA2, 0xA2, 0xA2))
 _SENTINEL_DISP = bytes((0xA3, 0xA3, 0xA3, 0xA3))
 _SENTINEL_ADDR64 = bytes((0xA4,) * 8)
-_RELOC_SENTINELS = {
-    "max_addr": _SENTINEL_MAX_ADDR,
-    "trap": _SENTINEL_TRAP,
-    "disp": _SENTINEL_DISP,
-    "addr": _SENTINEL_ADDR64,
-}
+_RELOC_SENTINELS: tuple[tuple[str, bytes], ...] = (
+    ("max_addr", _SENTINEL_MAX_ADDR),
+    ("trap", _SENTINEL_TRAP),
+    ("disp", _SENTINEL_DISP),
+    ("addr", _SENTINEL_ADDR64),
+)
 
 
 def _materialize_auto(name: str, gen: Generator[int, None, None] | Iterable[int]) -> Stencil:
@@ -95,30 +79,37 @@ def _materialize_auto(name: str, gen: Generator[int, None, None] | Iterable[int]
     """
 
     code = bytearray(gen)
-    relocs: dict[str, int] = {}
-    for reloc_name, sentinel in _RELOC_SENTINELS.items():
+    entries: list[tuple[str, int]] = []
+    for reloc_name, sentinel in _RELOC_SENTINELS:
         idx = code.find(sentinel)
         if idx == -1:
             continue
         assert code.find(sentinel, idx + 1) == -1, (
             f"stencil {name!r}: sentinel for {reloc_name!r} appears more than once"
         )
-        relocs[reloc_name] = idx
+        entries.append((reloc_name, idx))
         code[idx : idx + len(sentinel)] = bytes(len(sentinel))
+    entries.sort(key=lambda e: e[0])
+    relocs = FlatMapView([k for k, _ in entries], [v for _, v in entries])
     return Stencil(name=name, code=bytes(code), relocs=relocs)
 
 
 def _materialize(
     name: str,
-    gen: Generator[int, None, dict[str, int]] | Iterable[int],
-    relocs: dict[str, int] | None = None,
+    gen: Generator[int, None, None] | Iterable[int],
+    **relocs: int,
 ) -> Stencil:
     """
     Drains a stencil generator exactly once ("compile time") into a
         frozen Stencil. Called only at module load, never per-JIT-compilation.
+        Relocations are passed as keyword arguments (disp=3, imm=1, ...) --
+        Python's own calling convention, not a dict this code chose as
+        storage -- and converted immediately into a sorted flat_map_view.
     """
 
-    return Stencil(name=name, code=bytes(gen), relocs=dict(relocs or {}))
+    entries = sorted(relocs.items(), key=lambda e: e[0])
+    reloc_view = FlatMapView([k for k, _ in entries], [v for _, v in entries])
+    return Stencil(name=name, code=bytes(gen), relocs=reloc_view)
 
 
 # ---------------------------------------------------------------------------
@@ -526,10 +517,10 @@ def _gen_global_set() -> Generator[int, None, None]:
 PROLOGUE = _materialize("prologue", _gen_prologue())
 EPILOGUE_RETURN_I32 = _materialize("epilogue_return_i32", _gen_epilogue_return_i32())
 EPILOGUE_RETURN_VOID = _materialize("epilogue_return_void", _gen_epilogue_return_void())
-LOCAL_GET = _materialize("local_get", _gen_local_get(), {"disp": 3})
-LOCAL_SET = _materialize("local_set", _gen_local_set(), {"disp": 4})
-LOCAL_TEE = _materialize("local_tee", _gen_local_tee(), {"disp": 7})
-I32_CONST = _materialize("i32_const", _gen_i32_const(), {"imm": 1})
+LOCAL_GET = _materialize("local_get", _gen_local_get(), disp=3)
+LOCAL_SET = _materialize("local_set", _gen_local_set(), disp=4)
+LOCAL_TEE = _materialize("local_tee", _gen_local_tee(), disp=7)
+I32_CONST = _materialize("i32_const", _gen_i32_const(), imm=1)
 I32_ADD = _materialize("i32_add", _gen_binop(bytes((0x01, 0xD8))))  # add eax, ebx
 I32_SUB = _materialize("i32_sub", _gen_binop(bytes((0x29, 0xD8))))  # sub eax, ebx
 I32_MUL = _materialize("i32_mul", _gen_binop(bytes((0x0F, 0xAF, 0xC3))))  # imul eax, ebx
@@ -572,8 +563,8 @@ GLOBAL_GET = _materialize_auto("global_get", _gen_global_get())
 GLOBAL_SET = _materialize_auto("global_set", _gen_global_set())
 DROP = _materialize("drop", _gen_drop())
 SELECT = _materialize("select", _gen_select())
-BR = _materialize("br", _gen_br(), {"rel32": 1})
-BR_IF = _materialize("br_if", _gen_br_if(), {"rel32": 5})
-CALL = _materialize("call", _gen_call(), {"rel32": 1})
+BR = _materialize("br", _gen_br(), rel32=1)
+BR_IF = _materialize("br_if", _gen_br_if(), rel32=5)
+CALL = _materialize("call", _gen_call(), rel32=1)
 UNREACHABLE = _materialize("unreachable", _gen_unreachable())
 TRAP = _materialize("trap", _gen_trap())

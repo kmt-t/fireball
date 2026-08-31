@@ -103,8 +103,8 @@ Fireball の実行コアは、以下の 6 つの物理メカニズムによっ�
 |  [Pillar 5] 折りたたみXOR TLB ＆ 平坦ページ表 (Folding XOR TLB & FlatMap Page Table)               |
 |             └─ 20-bit VPN Folding XOR (16 entries) + flat_map_view PTE FlatMap                    |
 +---------------------------------------------------------------------------------------------------+
-|  [Pillar 6] 有界ゼロコピー・ランデブー・メールボックス (Bounded Zero-Copy Rendezvous Mailbox)     |
-|             └─ Revoke -> Enqueue -> Grant (TCBポインタ置換によるゼロコピー所有権移転)              |
+|  [Pillar 6] ゼロコピー CSP ランデブー・ハンドオフ (Zero-Copy CSP Rendezvous Handoff)               |
+|             └─ Revoke -> Rendezvous -> Grant (TCBポインタ置換によるゼロコピー所有権移転)           |
 +---------------------------------------------------------------------------------------------------+
 ```
 
@@ -142,9 +142,9 @@ Fireball の実行コアは、以下の 6 つの物理メカニズムによっ�
 - **Fast-path (Bit 31 = 0)**: ゲストRAMアクセス。ベースポインタ加算と単一のサイズ比較命令（`CMP addr, mem_size`、マスクなし）による高速変換・境界保護。
 - **vMMIO-path (Bit 31 = 1)**: VPN（20 bits）に対し 4-bit Folding XOR を計算し、16エントリ TLB を直接参照。ミス時は `flat_map_view` を二分探索。 `{FastAddressCheck}` `{LowLatencyLookup}`
 
-### 3.6 Pillar 6: 有界ゼロコピー・ランデブー・メールボックス (Bounded Zero-Copy Rendezvous Mailbox)
-<!-- traceability: {IPC_ZeroCopy} {TypeSafeMessaging} {Challenge_IpcQueueStarvation} -->
-- **所有権移転シーケンス**: `Revoke`（送信元の所有権無効化） $\to$ `Enqueue`（メールボックス登録） $\to$ `Grant`（受信側へ所有権付与）。メモリコピーを排除し、TCBポインタ置換のみで通信。 `{IPC_ZeroCopy}`
+### 3.6 Pillar 6: ゼロコピー CSP ランデブー・ハンドオフ (Zero-Copy CSP Rendezvous Handoff)
+<!-- traceability: {IPC_ZeroCopy} {TypeSafeMessaging} {ADR_RendezvousChannel} -->
+- **所有権移転シーケンス**: `Revoke`（送信元の所有権無効化） $\to$ `Rendezvous`（`(sender_role, target_role)` エッジ専用のバッファなし同期CSPチャネル上でのハンドオフ） $\to$ `Grant`（受信側へ所有権付与）。メモリコピーを排除し、TCBポインタ置換のみで通信。値を保持するバッファを持たないため、キュー満杯に相当する状態は存在しない。 `{IPC_ZeroCopy}` `{ADR_RendezvousChannel}`
 
 ---
 

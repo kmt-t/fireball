@@ -7,7 +7,7 @@ Fireball is a lightweight WebAssembly (WASM) hypervisor designed for resource-co
 The design of Fireball is built on three core pillars:
 
 - **Safe Cooperative Multitasking**: Data races are prevented through FIFO Round-Robin scheduling by COOS (Cooperative OS) and Hoare CSP rendezvous message passing. Interrupts are posted asynchronously to ring buffers and processed cleanly at trace boundary yield points (`{ADR_TraceBoundaryYield}`).
-- **Ownership-Aware Zero-Copy IPC**: By combining explicit ownership transfer (Revoke -> Enqueue -> Grant) with shared memory management by the IPC Router, memory and channels can be safely passed between subsystems without copying data.
+- **Ownership-Aware Zero-Copy IPC**: By combining explicit ownership transfer (Revoke -> Rendezvous -> Grant) over a bufferless synchronous CSP channel with shared memory management by the IPC Router, memory and channels can be safely passed between subsystems without copying data.
 - **Predictable Behavior & Safety**: Heap and buffer sizes are fixed upfront through header-based static configurations (`constexpr`). JIT code cache enforces MPU W^X separation (RW+XN during compilation, RO+X during execution with `__DSB()/__ISB()` barriers).
 
 ## Key Components (3-Tier Architecture)

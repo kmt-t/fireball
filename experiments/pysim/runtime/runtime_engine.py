@@ -19,34 +19,12 @@ Execution model:
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-_PYSIM_DIR = (
-    Path(__file__).resolve().parents[1]
-    if any(
-        d in str(Path(__file__))
-        for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")
-    )
-    else Path(__file__).resolve().parent
-)
-
-for _p in [
-    _PYSIM_DIR,
-    _PYSIM_DIR / "core",
-    _PYSIM_DIR / "runtime",
-    _PYSIM_DIR / "jit",
-    _PYSIM_DIR / "platforms",
-]:
-    _sp = str(_p)
-    if _sp not in sys.path:
-        sys.path.insert(0, _sp)
-
 import ctypes
 from collections.abc import Callable
 from typing import Any
 
 from system_containers import BitView, RingBuffer
+from wasm_module import Module
 
 
 class CardState:
@@ -257,24 +235,12 @@ class JITTrace:
                 (uint32_t ip, void* stack_bot, void* env, void* local_base)
         """
 
-        try:
-            # 4-argument call
-            return self.fn(ip_or_locals, stack_bot_or_mem, env, local_base)
-        except TypeError:
-            # 2-argument fallback
-            return self.fn(ip_or_locals, stack_bot_or_mem)
+        return self.fn(ip_or_locals, stack_bot_or_mem, env, local_base)
 
     def invoke(self, ctx: Any) -> int:
         """Helper to invoke trace directly on WASMContext via CPS 4-argument calling convention."""
-        try:
-            res = self.fn(self.head_pc, ctx.stack_bot_ptr, ctx.mem_ptr, ctx.locals_ptr)
-        except TypeError:
-            try:
-                res = self.fn(ctx.locals_ptr, ctx.mem_ptr)
-            except TypeError:
-                res = self.fn(ctx)
-
-        if self.has_return_val and isinstance(res, int):
+        res = self.fn(self.head_pc, ctx.stack_bot_ptr, ctx.mem_ptr, ctx.locals_ptr)
+        if self.has_return_val:
             ctx.push(res & 0xFFFF_FFFF)
         return res
 
@@ -438,6 +404,22 @@ class JITMultiBufferCache:
                 self.on_evict(purged)
 
 
+class PcOnlyCompiler:
+    """
+    Adapts a simple `(pc) -> JITTrace | None` callable into the
+    `compile_trace(pc, block)` shape RuntimeEngine.idle_hook() always calls,
+    so idle_hook never has to branch on what shape `jit_compiler` is. For
+    callers (typically tests) that compile straight from a pc with no
+    registered BasicBlock.
+    """
+
+    def __init__(self, fn: Callable[[int], "JITTrace | None"]):
+        self._fn = fn
+
+    def compile_trace(self, pc: int, block: "BasicBlock | None") -> "JITTrace | None":
+        return self._fn(pc)
+
+
 class RuntimeEngine:
     """Integrated Tiered Tracing Runtime Engine combining Interpreter and JIT."""
 
@@ -469,12 +451,12 @@ class RuntimeEngine:
                 return block
         return None
 
-    def register_module_blocks(self, module: Any) -> None:
+    def register_module_blocks(self, module: Module) -> None:
         """Automatically extracts and registers all BasicBlocks from a parsed WASM Module."""
         from control_flow import extract_basic_blocks
 
-        n_imports = len(getattr(module, "imports", []))
-        for idx, fn in enumerate(getattr(module, "functions", [])):
+        n_imports = len(module.imports)
+        for idx, fn in enumerate(module.functions):
             func_idx = n_imports + idx
             extracted = extract_basic_blocks(fn.code, func_index=func_idx)
             for head_pc, ops, next_pc in extracted:
@@ -508,12 +490,10 @@ class RuntimeEngine:
             pc = self.compile_queue.pop()
             if self.bitmap.get_state(pc) == CardState.COMPILED:
                 continue
-            block = self.get_block(pc)
             trace = None
-            if hasattr(self.jit_compiler, "compile_trace") and block is not None:
+            if self.jit_compiler is not None:
+                block = self.get_block(pc)
                 trace = self.jit_compiler.compile_trace(pc, block)
-            elif callable(self.jit_compiler):
-                trace = self.jit_compiler(pc)
 
             if trace is not None and self.cache.insert(trace):
                 self.bitmap.mark_compiled(pc)
@@ -719,6 +699,10 @@ class IntegratedHybridEngine:
         """Restores handler table pointer to normal fast dispatch ({DebuggerLabelTableSwitch})."""
         self.debugger = None
         self._dispatch = self._dispatch_normal
+
+    def flush_jit_cache(self) -> None:
+        """Invalidates all JIT cache banks ({Debugger_Jit_Flush})."""
+        self.cache.flush_all()
 
     def register_block(self, block: BasicBlock) -> None:
         for i, (pc, _) in enumerate(self.blocks):

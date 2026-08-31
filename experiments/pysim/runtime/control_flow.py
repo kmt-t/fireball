@@ -13,34 +13,12 @@ without hitting Python's recursion limit.
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-_PYSIM_DIR = (
-    Path(__file__).resolve().parents[1]
-    if any(
-        d in str(Path(__file__))
-        for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")
-    )
-    else Path(__file__).resolve().parent
-)
-
-for _p in [
-    _PYSIM_DIR,
-    _PYSIM_DIR / "core",
-    _PYSIM_DIR / "runtime",
-    _PYSIM_DIR / "jit",
-    _PYSIM_DIR / "platforms",
-]:
-    _sp = str(_p)
-    if _sp not in sys.path:
-        sys.path.insert(0, _sp)
-
 import struct
 from dataclasses import dataclass
 from typing import Any
 
 from leb128 import decode_signed, decode_unsigned
+from system_containers import FlatMapView
 from wasm_opcodes import (
     BLOCK,
     BR,
@@ -387,14 +365,17 @@ class Instr:
     table_index: int | None = None  # CALL_INDIRECT's tableidx
 
 
-def decode_all(code: bytes) -> dict[int, Instr]:
+def decode_all(code: bytes) -> FlatMapView[int, Instr]:
     """
     Decodes every instruction in `code` and resolves block nesting.
-        Returns {offset: Instr}, so callers can do random-access lookups (the
+        Returns a flat_map_view<offset, Instr> (offsets are visited strictly
+        increasing in this single forward pass, so the two arrays it wraps
+        come out pre-sorted), so callers can do random-access lookups (the
         JIT needs this for branch targets; the interpreter walks it in order).
     """
 
-    instrs: dict[int, Instr] = {}
+    keys: list[int] = []
+    values: list[Instr] = []
     open_stack: list[Instr] = []  # BLOCK/LOOP/IF instrs still awaiting their END
     off = 0
     n = len(code)
@@ -460,7 +441,8 @@ def decode_all(code: bytes) -> dict[int, Instr]:
             br_table_labels=br_table_labels,
             table_index=table_index,
         )
-        instrs[start] = instr
+        keys.append(start)
+        values.append(instr)
         if opcode in _BLOCK_OPENERS:
             open_stack.append(instr)
         elif opcode == ELSE:
@@ -474,11 +456,11 @@ def decode_all(code: bytes) -> dict[int, Instr]:
                 instr.match_offset = opener.offset  # END also points back to its opener
 
     assert not open_stack, "unterminated block/loop/if (missing END)"
-    return instrs
+    return FlatMapView(keys, values)
 
 
-def ordered(instrs: dict[int, Instr]) -> list[Instr]:
-    return [instrs[k] for k in sorted(instrs.keys())]
+def ordered(instrs: FlatMapView[int, Instr]) -> list[Instr]:
+    return list(instrs.values)
 
 
 _OPCODE_TABLE: list[str | None] = [None] * 256
@@ -561,7 +543,7 @@ def extract_basic_blocks(
     from wasm_opcodes import BLOCK, BR, BR_IF, ELSE, END, IF, LOOP, RETURN
 
     instrs = decode_all(code)
-    sorted_instrs = [instrs[k] for k in sorted(instrs.keys())]
+    sorted_instrs = list(instrs.values)
     base_pc = func_index << 16
     blocks: list[tuple[int, list[tuple[str, Any]], int | None]] = []
     cur_ops: list[tuple[str, Any]] = []

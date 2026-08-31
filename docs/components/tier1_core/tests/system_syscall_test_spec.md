@@ -50,10 +50,10 @@
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | SYS-40 | `IPC_LOOKUP`成功 | URIが登録済み | `fireball_call(0x42, uri_offset, uri_len,...)` | `handle_id`(u32)を返す | §5.6, `{IPC_HandleBased}` |
 | SYS-41 | `IPC_LOOKUP`未登録URI | URI未登録 | 同上 | errno相当を返す | §5.6 |
-| SYS-42 | `IPC_SEND`成功 | 有効なhandle_id、キューに空きあり | `fireball_call(0x40, handle_id, msg_offset, msg_len,...)` | `0`を返す | §5.6, ipc_router.md |
-| SYS-43 | `IPC_SEND`キュー満杯 | キューが`max_queue`に到達 | 同上 | errno相当（Rollback、ipc_router.md `ERR_QUEUE_FULL`対応）を返す | ipc_router.md 4.1 |
-| SYS-44 | `IPC_RECV`成功 | キューにメッセージあり | `fireball_call(0x41, handle_id, buf_offset, buf_len,...)` | `recv_len`(u32)を返し、`buf_offset`にメッセージがコピーされる | §5.6 |
-| SYS-45 | `IPC_RECV`空バッファ | キューが空 | 同上 | 本来はコルーチンサスペンドが要求されるが、`fireball_call`は同期呼び出しであるため即時に何らかのerrnoを返す（実装依存点。§3参照） | §5.6「バッファが空の場合はコルーチンがサスペンドされる」 |
+| SYS-42 | `IPC_SEND`成功 | 有効なhandle_id | `fireball_call(0x40, handle_id, msg_offset, msg_len,...)` | 受信側が既に待機していれば即座に、まだ到達していなければ呼び出し元タスクのコルーチンが協調スケジューラ上でブロックし、受信側到達後に`0`を返す（キューは存在しないため、待機はブロックのみで失敗経路はない） | §5.6, ipc_router.md |
+| SYS-43 | `IPC_SEND`宛先未登録／RBAC拒否／サイズ超過 | 未登録URIから得たhandle_id、または許可されないロール、または9個以上のkv_pair | 同上 | errno相当（`ERR_NOT_FOUND`/`ERR_PERMISSION_DENIED`/`ERR_MSG_TOO_LARGE`のいずれかに対応）を即座に返す。所有権は最初から送信側のまま動いていない | ipc_router.md §4.1, §5.1 |
+| SYS-44 | `IPC_RECV`成功 | 送信側が既に到達している、または有効なhandle_id | `fireball_call(0x41, handle_id, buf_offset, buf_len,...)` | 送信側が既に待機していれば即座に、まだ到達していなければブロックして待ち、到達後に`recv_len`(u32)を返し、`buf_offset`にメッセージがコピーされる | §5.6 |
+| SYS-45 | `IPC_RECV`相手未到達 | 送信側がまだ到達していない | 同上 | `fireball_call`の呼び出し元タスクのコルーチンが協調スケジューラ上でブロックし、送信側が到達するまで再開しない（EAGAINのような即時errnoは返さない。ブロックがCSPランデブーの本来の意味論であり、実装依存の妥協ではない） | §5.6「バッファが空の場合はコルーチンがサスペンドされる」, `experiments/pysim/system.py` `_ipc_recv` |
 
 ### WASI (`0x80`-`0xBF`)
 

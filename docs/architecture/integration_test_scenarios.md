@@ -47,9 +47,8 @@
 | `BufferedLogging` | `system_logging.md` | 実行時リングバッファ蓄積 $\to$ COOS `idle_hook` での一括 UART フラッシュ | `INT-82` | ✅ PASS |
 | `WASI_ScatteredIO` | `system_syscall.md`, `interface_wit.md` | 分散ギャザー `fd_write` / スキャッター `fd_read` による多要素 iovec 転送 | `INT-10`, `INT-104` | ✅ PASS |
 | `Syscall_ProcExit` | `system_syscall.md` | `proc_exit` システムコールによるゲストタスク停止および終了コード伝播 | `INT-11` | ✅ PASS |
-| `ThreeStageRouting` | `ipc_router.md` | Stage 1 URI検索 $\to$ Stage 2 RBAC判定 $\to$ Stage 3 Zero-Copy 所有権移譲 | `INT-80`, `INT-81` | ✅ PASS |
-| `QueueFullRollback` | `ipc_router.md` | キュー満杯時の送信元ロールバック（所有権保持） | `INT-81` | ✅ PASS |
-| `TargetFaultDropHandler` | `ipc_router.md` | 宛先サービス死亡・フォールト時の `RECLAIMED_BY_DROP` 安全回収 | `INT-81` | ✅ PASS |
+| `ThreeStageRouting` | `ipc_router.md` | Stage 1 URI検索 $\to$ Stage 2 RBAC判定 $\to$ Stage 3 Zero-Copy CSP Rendezvous 所有権移譲 | `INT-80`, `INT-81` | ✅ PASS |
+| `PreflightRejection` | `ipc_router.md` | Revoke前の静的チェック（RBAC拒否・メッセージサイズ超過）失敗時、所有権は送信側から一度も動かない | `INT-81` | ✅ PASS |
 | `RAM_Bypass_Bit31` | `runtime_vmmio.md` | Bit 31 == 0 アドレスに対するページテーブル不使用 $O(1)$ 高速バイパス | `INT-90` | ✅ PASS |
 | `DirectMappedTLB16` | `runtime_vmmio.md` | 20-bit VPN の 4-bit Folding XOR Hash による Direct-Mapped TLB キャッシュ | `INT-92` | ✅ PASS |
 | `OwnerMismatchTrap` | `runtime_vmmio.md` | タスク間共有メモリ（FC=0xE）の所有権不一致時 `TRAP_OWNER_MISMATCH` 遮断 | `INT-93` | ✅ PASS |
@@ -212,8 +211,8 @@
 
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| INT-80 | IPC 3段階ルーティングと所有権移譲 | 送信元 `CLIENT_APP` | `route_message` 実行後 `receive_message` | 所有権が `SENDER_OWNS` $\to$ `IN_FLIGHT` $\to$ `RECEIVER_OWNS` へ遷移する | `ThreeStageRouting` |
-| INT-81 | RBAC 権限拒絶とキュー溢れ Rollback | 未許可ロール / キュー満杯 | メッセージ送信 | `ERR_PERMISSION_DENIED` / `ERR_QUEUE_FULL` で安全に拒絶され送信元へロールバック | `QueueFullRollback`, `TargetFaultDropHandler` |
+| INT-80 | IPC 3段階ルーティングと所有権移譲 | 送信元 `RUNTIME` | `send` 実行後 `receive` | 所有権が `SENDER_OWNS` $\to$ `IN_FLIGHT` $\to$ `RECEIVER_OWNS` へ遷移する | `ThreeStageRouting` |
+| INT-81 | RBAC 権限拒絶とメッセージサイズ超過 | 未許可ロール / kv_pair数が8個を超過 | メッセージ送信 | `ERR_PERMISSION_DENIED` / `ERR_MSG_TOO_LARGE` で安全に拒絶され、所有権は送信側のまま維持される | `PreflightRejection` |
 | INT-82 | 構造化ロギングと安全書式検証 | LogDictionary 登録 | `log_event` 後 `flush()` | 不正書式 `%s` が拒絶され、ログレベルフィルタを経て UART へ正常出力される | `DictionaryBasedIPC`, `BufferedLogging` |
 
 ---

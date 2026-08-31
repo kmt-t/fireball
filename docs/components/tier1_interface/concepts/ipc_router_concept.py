@@ -1,17 +1,19 @@
 """
 docs/components/tier1_interface/concepts/ipc_router_concept.py
 Reference Concept Implementation: IPC Router & Zero-Copy Ownership Handoff
-- Stage 1: Static URI Lookup to Service Descriptor via fireball::flat_map_view
+- Stage 1: Static URI Lookup to Service Role via fireball::flat_map_view
   (sorted-array + binary search, imported from flat_view_concept.py rather than
   reimplemented, so this cannot silently drift from the real container vocabulary)
-- Stage 2: Bitmask Role-Based Access Control (RBAC)
-- Stage 3: Zero-Copy Ownership Handoff (Revoke -> Enqueue -> Grant)
-- Fault Recovery: Queue Full Rollback & Drop Handler on Target Fault
+- Stage 2: Role-Based Access Control (RBAC) via a 4x4 constexpr matrix
+- Stage 3: Zero-Copy Ownership Handoff (Revoke -> CSP Rendezvous -> Grant)
+  over a bufferless synchronous channel per RBAC edge ({ADR_RendezvousChannel})
+  -- there is no bounded mailbox here, so no ERR_QUEUE_FULL/Rollback and no
+  Drop Handler: a message that never completes a rendezvous never leaves its
+  sender's hands (ipc_router.md §5.1's distinction from a buffered mailbox).
 """
 
 import os
 import sys
-from typing import Any
 
 sys.path.insert(
     0,
@@ -20,129 +22,138 @@ sys.path.insert(
 from flat_view_concept import FlatMapView
 
 
+class Role:
+    RUNTIME = 0
+    CORE_SERVICE = 1
+    PLATFORM_HAL = 2
+    DEBUGGER = 3
+
+
+_ROLE_NAMES = ("RUNTIME", "CORE_SERVICE", "PLATFORM_HAL", "DEBUGGER")
+
+
 class OwnershipState:
     SENDER_OWNS = "SENDER_OWNS"
     IN_FLIGHT = "IN_FLIGHT"
     RECEIVER_OWNS = "RECEIVER_OWNS"
-    RECLAIMED_BY_DROP = "RECLAIMED_BY_DROP"
 
 
 class IPCMessage:
-    def __init__(self, resource_id: str, payload: dict[str, Any]):
-        self.resource_id = resource_id
-        self.payload = payload
+    """A message is only ever its kv_pair map (ipc_router.md §3.3's entire
+    field set) -- no resource_id, no free-form dict payload."""
+
+    def __init__(self, pairs: list[tuple[int, int]] | None = None):
+        sorted_pairs = sorted(pairs or [], key=lambda kv: kv[0])
+        self.keys = [k for k, _ in sorted_pairs]
+        self.values = [v for _, v in sorted_pairs]
         self.ownership = OwnershipState.SENDER_OWNS
+
+
+class Channel:
+    """
+    Bufferless synchronous CSP rendezvous ({ADR_RendezvousChannel}): a
+    single in-flight slot, never a bounded queue -- so there is no "queue
+    full" state to roll back from. A real cooperative scheduler additionally
+    suspends the caller here until the counterpart arrives; this concept
+    stays a plain sequential demonstration of the rendezvous *result*, not
+    the scheduler integration (see core/scheduler.py's Channel for that).
+    """
+
+    def __init__(self):
+        self._in_flight: IPCMessage | None = None
+
+    def send(self, message: IPCMessage) -> None:
+        assert self._in_flight is None, (
+            "one waiter per channel: a second sender must wait for the first handoff"
+        )
+        self._in_flight = message
+
+    def recv(self) -> IPCMessage | None:
+        message = self._in_flight
+        self._in_flight = None
+        return message
+
+
+# Stage 1: registry (URI -> role), a sorted array searched via flat_map_view --
+# {LowLatencyLookup}/{META_FlatMapIndexed}'s O(log N) claim, backed for real.
+_REGISTRY_ENTRIES = sorted(
+    [
+        ("fireball://core/coos/0", Role.CORE_SERVICE),
+        ("fireball://hal/gpio/0", Role.PLATFORM_HAL),
+        ("fireball://dbg/manager/0", Role.DEBUGGER),
+    ]
+)
+_REGISTRY = FlatMapView(
+    [uri for uri, _ in _REGISTRY_ENTRIES], [role for _, role in _REGISTRY_ENTRIES]
+)
+
+# Stage 2: FB_CONF_ROUTER_ROLE_MATRIX (4x4, rows=sender, cols=target); every
+# DENY cell is listed explicitly, matching the C++ constexpr array exactly.
+_ROLE_MATRIX = (
+    (False, True, True, False),  # from RUNTIME
+    (False, False, True, False),  # from CORE_SERVICE
+    (False, False, False, False),  # from PLATFORM_HAL
+    (False, True, True, False),  # from DEBUGGER
+)
 
 
 class IPCRouter:
     def __init__(self):
-        # Stage 1: Static registry (URI -> Service Descriptor), built once at
-        # construction time as a sorted array and searched via FlatMapView's
-        # binary search -- matching {LowLatencyLookup}/{META_FlatMapIndexed}'s
-        # O(log N) claim for real, not just in the design prose.
-        entries = sorted(
-            {
-                "fireball://core/coos/0": {
-                    "role": "CORE_SERVICE",
-                    "channel_id": "ch_coos",
-                    "max_queue": 2,
-                },
-                "fireball://hal/gpio/0": {
-                    "role": "PLATFORM_HAL",
-                    "channel_id": "ch_gpio",
-                    "max_queue": 2,
-                },
-                "fireball://dbg/manager/0": {
-                    "role": "DEBUGGER",
-                    "channel_id": "ch_dbg",
-                    "max_queue": 1,
-                },
-            }.items()
+        # Stage 3: one dedicated CSP channel per ALLOW edge of the RBAC
+        # matrix -- a Channel is a strict 1:1 pairing, so distinct senders
+        # to the same target role cannot share one.
+        self._channels: tuple[tuple["Channel | None", ...], ...] = tuple(
+            tuple(Channel() if allowed else None for allowed in row) for row in _ROLE_MATRIX
         )
-        self.registry = FlatMapView([uri for uri, _ in entries], [desc for _, desc in entries])
-        # Stage 2: Role-based Access Control Matrix (sender_role, target_role) -> bool
-        self.role_matrix: dict[tuple[str, str], bool] = {
-            ("CLIENT_APP", "CORE_SERVICE"): True,
-            ("CLIENT_APP", "PLATFORM_HAL"): True,
-            (
-                "CLIENT_APP",
-                "DEBUGGER",
-            ): False,  # Client app cannot directly access debugger
-            ("CORE_SERVICE", "PLATFORM_HAL"): True,
-            ("DEBUGGER", "CORE_SERVICE"): True,
-            ("DEBUGGER", "PLATFORM_HAL"): True,
-        }
-        # Target message queues (channel_id -> [IPCMessage])
-        self.queues: dict[str, list[IPCMessage]] = {
-            "ch_coos": [],
-            "ch_gpio": [],
-            "ch_dbg": [],
-        }
 
-    def route_message(self, sender_role: str, uri: str, message: IPCMessage) -> tuple[str, str]:
+    def send(self, sender_role: int, uri: str, message: IPCMessage) -> tuple[str, str]:
         """
-        Executes the 3-stage IPC routing pipeline.
+        3-stage IPC send: URI lookup -> RBAC -> CSP rendezvous handoff.
         Returns (status_code, detail_message).
         """
         assert message.ownership == OwnershipState.SENDER_OWNS, (
-            "Sender must own resource before routing"
+            "Sender must own the message before sending"
         )
         # --- Stage 1: URI Lookup (binary search over the sorted registry) ---
-        entry = self.registry.find(uri)
-        if not entry:
+        target_role = _REGISTRY.find(uri)
+        if target_role is None:
             return ("ERR_NOT_FOUND", f"URI not registered: {uri}")
-        target_role = entry["role"]
-        channel_id = entry["channel_id"]
-        max_queue = entry["max_queue"]
+
         # --- Stage 2: Access Control Check ---
-        allowed = self.role_matrix.get((sender_role, target_role), False)
-        if not allowed:
+        channel = self._channels[sender_role][target_role]
+        if channel is None:
             return (
                 "ERR_PERMISSION_DENIED",
-                f"Role {sender_role} not allowed to access {target_role}",
+                f"Forbidden: {_ROLE_NAMES[sender_role]} -> {_ROLE_NAMES[target_role]}",
             )
 
-        # --- Stage 3: Zero-Copy Ownership Handoff ---
-        target_queue = self.queues[channel_id]
-        # Check queue capacity (Rollback on full)
-        if len(target_queue) >= max_queue:
-            # Rollback: restore ownership to sender immediately
-            message.ownership = OwnershipState.SENDER_OWNS
-            return ("ERR_QUEUE_FULL", "Queue full, rolled back to sender")
-        # 1. Revoke sender ownership -> IN_FLIGHT
+        # --- Stage 3: Zero-Copy CSP Handoff ---
+        # Revoke: commit to the handoff. No queue exists to be full, so this
+        # cannot fail the way a bounded mailbox's Enqueue could.
         message.ownership = OwnershipState.IN_FLIGHT
-        # 2. Enqueue into target queue
-        target_queue.append(message)
-        return ("OK_ENQUEUED", f"Message in-flight on {channel_id}")
-
-    def receive_message(self, channel_id: str) -> IPCMessage | None:
-        """Target service dequeues message and acquires ownership (Grant)."""
-        queue = self.queues.get(channel_id)
-        if not queue:
-            return None
-        message = queue.pop(0)
-        assert message.ownership == OwnershipState.IN_FLIGHT, (
-            "Message must be in-flight before grant"
+        channel.send(message)
+        return (
+            "COMPLETED",
+            f"{_ROLE_NAMES[sender_role]}->{_ROLE_NAMES[target_role]}: in-flight",
         )
-        # 3. Grant receiver ownership
-        message.ownership = OwnershipState.RECEIVER_OWNS
-        return message
 
-    def trigger_drop_handler(self, channel_id: str) -> list[str]:
+    def receive(self, target_role: int) -> IPCMessage | None:
         """
-        Fault Recovery: Target service was killed/faulted.
-        Drop handler forcibly reclaims all in-flight resources in the queue.
+        Guarded external choice (select): checks every ALLOW edge into
+        target_role in order and returns the first one with a message
+        ready, never committing to one sender_role upfront -- CORE_SERVICE,
+        for example, may legitimately be sent to by both RUNTIME and
+        DEBUGGER. Grant happens on whichever edge actually has a message.
         """
-        queue = self.queues.get(channel_id, [])
-        reclaimed_ids = []
-        while queue:
-            msg = queue.pop(0)
-            assert msg.ownership == OwnershipState.IN_FLIGHT, (
-                "Only in-flight messages can be dropped"
-            )
-            msg.ownership = OwnershipState.RECLAIMED_BY_DROP
-            reclaimed_ids.append(msg.resource_id)
-        return reclaimed_ids
+        for sender_role in range(len(_ROLE_MATRIX)):
+            channel = self._channels[sender_role][target_role]
+            if channel is None:
+                continue
+            message = channel.recv()
+            if message is not None:
+                message.ownership = OwnershipState.RECEIVER_OWNS
+                return message
+        return None
 
 
 # ==============================================================================
@@ -152,79 +163,84 @@ class IPCRouter:
 
 def test_registry_is_a_real_flat_map_view_not_a_dict():
     """{LowLatencyLookup}/{META_FlatMapIndexed}: Stage 1 URI lookup must actually be the
-    sorted-array + binary-search flat_map_view, not a plain dict wearing its name. This
-    closes the gap ipc_router.md 4.3.1 used to admit as a known divergence."""
-    router = IPCRouter()
-    assert isinstance(router.registry, FlatMapView), (
+    sorted-array + binary-search flat_map_view, not a plain dict wearing its name."""
+    assert isinstance(_REGISTRY, FlatMapView), (
         "registry must be a real FlatMapView so the O(log N) claim is backed by the actual mechanism"
     )
-    assert not isinstance(router.registry, dict)
-    # Binary search finds a registered URI...
-    assert router.registry.find("fireball://hal/gpio/0")["channel_id"] == "ch_gpio"
-    # ...and correctly reports absence for one that was never registered.
-    assert router.registry.find("fireball://nonexistent/service/0") is None
+    assert not isinstance(_REGISTRY, dict)
+    assert _REGISTRY.find("fireball://hal/gpio/0") == Role.PLATFORM_HAL
+    assert _REGISTRY.find("fireball://nonexistent/service/0") is None
 
 
 def test_unregistered_uri_is_rejected():
     router = IPCRouter()
-    msg = IPCMessage("shm_buf_x", {"cmd": "NOOP"})
-    status, detail = router.route_message("CLIENT_APP", "fireball://nonexistent/service/0", msg)
+    msg = IPCMessage([(1, 42)])
+    status, _ = router.send(Role.RUNTIME, "fireball://nonexistent/service/0", msg)
     assert status == "ERR_NOT_FOUND"
     assert msg.ownership == OwnershipState.SENDER_OWNS
 
 
-def test_successful_zero_copy_handoff():
-    router = IPCRouter()
-    msg = IPCMessage("shm_buf_1", {"cmd": "SET_GPIO", "pin": 5, "val": 1})
-    # Step 1: ClientApp routes message to HAL GPIO
-    status, _ = router.route_message("CLIENT_APP", "fireball://hal/gpio/0", msg)
-    assert status == "OK_ENQUEUED"
-    assert msg.ownership == OwnershipState.IN_FLIGHT
-    # Step 2: PlatformHAL receives message and acquires ownership
-    received = router.receive_message("ch_gpio")
-    assert received is not None
-    assert received.resource_id == "shm_buf_1"
-    assert received.ownership == OwnershipState.RECEIVER_OWNS
-
-
 def test_permission_denied():
     router = IPCRouter()
-    msg = IPCMessage("shm_buf_2", {"cmd": "READ_MEM"})
-    # ClientApp trying to access Debugger directly (Forbidden)
-    status, _ = router.route_message("CLIENT_APP", "fireball://dbg/manager/0", msg)
+    msg = IPCMessage([(1, 7)])
+    # RUNTIME trying to access Debugger directly (Forbidden)
+    status, _ = router.send(Role.RUNTIME, "fireball://dbg/manager/0", msg)
     assert status == "ERR_PERMISSION_DENIED"
     assert msg.ownership == OwnershipState.SENDER_OWNS  # Ownership not modified
 
 
-def test_queue_full_rollback():
+def test_successful_zero_copy_handoff():
     router = IPCRouter()
-    msg1 = IPCMessage("buf_1", {"d": 1})
-    msg2 = IPCMessage("buf_2", {"d": 2})
-    msg3 = IPCMessage("buf_3", {"d": 3})
-    assert router.route_message("CLIENT_APP", "fireball://hal/gpio/0", msg1)[0] == "OK_ENQUEUED"
-    assert router.route_message("CLIENT_APP", "fireball://hal/gpio/0", msg2)[0] == "OK_ENQUEUED"
-    # 3rd message exceeds max_queue=2 -> Rollback
-    status, _ = router.route_message("CLIENT_APP", "fireball://hal/gpio/0", msg3)
-    assert status == "ERR_QUEUE_FULL"
-    assert msg3.ownership == OwnershipState.SENDER_OWNS
-
-
-def test_drop_handler_recovery():
-    router = IPCRouter()
-    msg = IPCMessage("shm_buf_leak_prevent", {"data": 999})
-    router.route_message("CLIENT_APP", "fireball://hal/gpio/0", msg)
+    msg = IPCMessage([(1, 5)])
+    # Step 1: RUNTIME sends to HAL GPIO. Revoke commits the send; Grant
+    # only happens once the receiver actually calls receive().
+    status, _ = router.send(Role.RUNTIME, "fireball://hal/gpio/0", msg)
+    assert status == "COMPLETED"
     assert msg.ownership == OwnershipState.IN_FLIGHT
-    # Target service faults before dequeue -> Drop handler cleans up
-    reclaimed = router.trigger_drop_handler("ch_gpio")
-    assert reclaimed == ["shm_buf_leak_prevent"]
-    assert msg.ownership == OwnershipState.RECLAIMED_BY_DROP
+    # Step 2: PlatformHAL receives message and acquires ownership (Grant)
+    received = router.receive(Role.PLATFORM_HAL)
+    assert received is msg
+    assert received.ownership == OwnershipState.RECEIVER_OWNS
+
+
+def test_receive_selects_whichever_allowed_sender_is_ready():
+    """receive() must not commit to one sender_role upfront: CORE_SERVICE is
+    reachable from both RUNTIME and DEBUGGER, and a receiver has to pick up
+    whichever of them actually sent, in RBAC row order."""
+    router = IPCRouter()
+    msg = IPCMessage([(1, 42)])
+    status, _ = router.send(Role.DEBUGGER, "fireball://core/coos/0", msg)
+    assert status == "COMPLETED"
+    received = router.receive(Role.CORE_SERVICE)
+    assert received is msg
+    assert received.ownership == OwnershipState.RECEIVER_OWNS
+    # The RUNTIME->CORE_SERVICE edge was never touched, so it is still free.
+    assert router.receive(Role.CORE_SERVICE) is None
+
+
+def test_no_queue_full_state_exists():
+    """Unlike a bounded mailbox, a CSP channel has no max_queue/ERR_QUEUE_FULL --
+    a second send before the first is received is a programming error (one
+    waiter per channel), not a recoverable Rollback condition."""
+    router = IPCRouter()
+    msg1 = IPCMessage([(1, 1)])
+    router.send(Role.RUNTIME, "fireball://hal/gpio/0", msg1)
+    msg2 = IPCMessage([(1, 2)])
+    raised = False
+    try:
+        router.send(Role.RUNTIME, "fireball://hal/gpio/0", msg2)
+    except AssertionError:
+        raised = True
+    assert raised, (
+        "a second concurrent sender on the same edge must be a hard error, not ERR_QUEUE_FULL"
+    )
 
 
 if __name__ == "__main__":
     test_registry_is_a_real_flat_map_view_not_a_dict()
     test_unregistered_uri_is_rejected()
-    test_successful_zero_copy_handoff()
     test_permission_denied()
-    test_queue_full_rollback()
-    test_drop_handler_recovery()
+    test_successful_zero_copy_handoff()
+    test_receive_selects_whichever_allowed_sender_is_ready()
+    test_no_queue_full_state_exists()
     print("[PASS] All IPC Router concept tests passed successfully.")

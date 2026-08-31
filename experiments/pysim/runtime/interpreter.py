@@ -34,35 +34,13 @@ argument outside the declared signature.
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-_PYSIM_DIR = (
-    Path(__file__).resolve().parents[1]
-    if any(
-        d in str(Path(__file__))
-        for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")
-    )
-    else Path(__file__).resolve().parent
-)
-
-for _p in [
-    _PYSIM_DIR,
-    _PYSIM_DIR / "core",
-    _PYSIM_DIR / "runtime",
-    _PYSIM_DIR / "jit",
-    _PYSIM_DIR / "platforms",
-]:
-    _sp = str(_p)
-    if _sp not in sys.path:
-        sys.path.insert(0, _sp)
-
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
 from control_flow import Instr, decode_all
-from wasm_module import Module
+from system_containers import FlatMapView
+from wasm_module import F32, F64, Module
 from wasm_opcodes import (
     BLOCK,
     BR,
@@ -215,7 +193,7 @@ class ExecEnv:
     memory: bytearray | None
     globals: list[int]
     tables: list[list[int | None]]
-    host_functions: dict[int, Callable[..., int | None]]
+    host_functions: list[Callable[..., int | None] | None]
     interp: Interpreter
 
 
@@ -229,7 +207,7 @@ class CallFrame:
 
     __slots__ = ("code", "frames", "instrs", "values")
 
-    def __init__(self, instrs: dict[int, Instr], code: bytes, values: list[int]):
+    def __init__(self, instrs: FlatMapView[int, Instr], code: bytes, values: list[int]):
         self.values = values
         self.frames: list[_Frame] = []
         self.instrs = instrs
@@ -280,7 +258,7 @@ class Interpreter:
         self,
         module: Module,
         memory: bytearray | None = None,
-        host_functions: dict[int, Callable[..., int | None]] | None = None,
+        host_functions: list[Callable[..., int | None] | None] | None = None,
         runtime_engine: Any | None = None,
     ):
         self.module = module
@@ -288,15 +266,36 @@ class Interpreter:
         if self.memory is not None:
             self.module.init_memory_data(self.memory)
 
-        self.host_functions = host_functions or {}
+        self.host_functions = (
+            host_functions if host_functions is not None else [None] * len(module.imports)
+        )
         self.globals: list[int] = [g.init_value for g in module.globals]
         self.tables: list[list[int | None]] = [
             module.table_contents(i) for i in range(len(module.tables))
         ]
         self.runtime_engine = runtime_engine
+        self.debugger: Any | None = None
         self._env = ExecEnv(module, memory, self.globals, self.tables, self.host_functions, self)
         if self.module.start_function is not None:
             self.call(self.module.start_function, [])
+
+    def attach_debugger(self, debugger: Any) -> None:
+        """
+        Records the attached debugger. Unlike IntegratedHybridEngine's
+        {DebuggerLabelTableSwitch}, the threaded interpreter's `_HANDLERS`
+        dispatch table is a single fixed table with no separate debug/normal
+        variant to switch between -- breakpoint/step behavior for
+        interpreter-only execution is driven by DebuggerManager itself.
+        """
+        self.debugger = debugger
+
+    def detach_debugger(self) -> None:
+        self.debugger = None
+
+    def flush_jit_cache(self) -> None:
+        """Invalidates the backing JIT cache, if this interpreter runs with hybrid JIT tiering."""
+        if self.runtime_engine is not None:
+            self.runtime_engine.cache.flush_all()
 
     def call(self, func_index: int, args: list[int]) -> list[int]:
         gen = self.call_coroutine(func_index, args, yield_every=0)
@@ -314,7 +313,9 @@ class Interpreter:
         """
 
         if self.module.is_import(func_index):
-            handler = self.host_functions.get(func_index)
+            handler = (
+                self.host_functions[func_index] if func_index < len(self.host_functions) else None
+            )
             if handler is None:
                 imp = self.module.imports[func_index]
                 raise NotImplementedError(
@@ -328,7 +329,7 @@ class Interpreter:
         layout = self.module.locals_layout(func_index)
         locals_arr = [0] * len(layout)
         for i, a in enumerate(args):
-            locals_arr[i] = a if isinstance(a, float) else _to_i32(a)
+            locals_arr[i] = a if layout[i] in (F32, F64) else _to_i32(a)
 
         instrs = decode_all(fn.code)
         frame = CallFrame(instrs, fn.code, [])

@@ -14,48 +14,37 @@ re-derive it" discipline that caught four bugs in x64_stencils.py.
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-_PYSIM_DIR = (
-    Path(__file__).resolve().parents[1]
-    if any(
-        d in str(Path(__file__))
-        for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")
-    )
-    else Path(__file__).resolve().parent
-)
-
-for _p in [
-    _PYSIM_DIR,
-    _PYSIM_DIR / "core",
-    _PYSIM_DIR / "runtime",
-    _PYSIM_DIR / "jit",
-    _PYSIM_DIR / "platforms",
-]:
-    _sp = str(_p)
-    if _sp not in sys.path:
-        sys.path.insert(0, _sp)
+from system_containers import FlatMapView
 
 # name -> (needs_rex_extension_bit, low_3_bits_of_the_register_number)
-REG_INFO: dict[str, tuple[int, int]] = {
-    "rax": (0, 0),
-    "rcx": (0, 1),
-    "rdx": (0, 2),
-    "rbx": (0, 3),
-    "rsp": (0, 4),
-    "rbp": (0, 5),
-    "rsi": (0, 6),
-    "rdi": (0, 7),
-    "r8": (1, 0),
-    "r9": (1, 1),
-    "r10": (1, 2),
-    "r11": (1, 3),
-    "r12": (1, 4),
-    "r13": (1, 5),
-    "r14": (1, 6),
-    "r15": (1, 7),
-}
+# A sorted flat_map_view<std::string_view, ...> (system_containers.md
+# explicitly names string_view as a valid Key type), never a dict -- this
+# is a fixed 16-entry table known at compile time, exactly the shape a
+# `constexpr std::array` lookup keyed by register name would have.
+_REG_ENTRIES: list[tuple[str, tuple[int, int]]] = sorted(
+    [
+        ("rax", (0, 0)),
+        ("rcx", (0, 1)),
+        ("rdx", (0, 2)),
+        ("rbx", (0, 3)),
+        ("rsp", (0, 4)),
+        ("rbp", (0, 5)),
+        ("rsi", (0, 6)),
+        ("rdi", (0, 7)),
+        ("r8", (1, 0)),
+        ("r9", (1, 1)),
+        ("r10", (1, 2)),
+        ("r11", (1, 3)),
+        ("r12", (1, 4)),
+        ("r13", (1, 5)),
+        ("r14", (1, 6)),
+        ("r15", (1, 7)),
+    ],
+    key=lambda e: e[0],
+)
+REG_INFO: FlatMapView[str, tuple[int, int]] = FlatMapView(
+    [k for k, _ in _REG_ENTRIES], [v for _, v in _REG_ENTRIES]
+)
 
 
 def push_reg(name: str) -> bytes:

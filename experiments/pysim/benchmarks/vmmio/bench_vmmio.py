@@ -10,7 +10,9 @@ import sys
 import time
 from pathlib import Path
 
-_PYSIM_DIR = Path(__file__).resolve().parents[2]
+_PYSIM_DIR = Path(__file__).resolve().parent
+while not (_PYSIM_DIR / "core").is_dir():
+    _PYSIM_DIR = _PYSIM_DIR.parent
 for _p in [
     _PYSIM_DIR,
     _PYSIM_DIR / "core",

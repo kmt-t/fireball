@@ -12,29 +12,6 @@ docs/components/tier1_core/os_coos.md ({ADR_RendezvousChannel}, {CSP_Handoff}).
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-_PYSIM_DIR = (
-    Path(__file__).resolve().parents[1]
-    if any(
-        d in str(Path(__file__))
-        for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")
-    )
-    else Path(__file__).resolve().parent
-)
-
-for _p in [
-    _PYSIM_DIR,
-    _PYSIM_DIR / "core",
-    _PYSIM_DIR / "runtime",
-    _PYSIM_DIR / "jit",
-    _PYSIM_DIR / "platforms",
-]:
-    _sp = str(_p)
-    if _sp not in sys.path:
-        sys.path.insert(0, _sp)
-
 from collections import deque
 from collections.abc import Callable, Generator
 from enum import Enum, auto
@@ -59,6 +36,20 @@ class WaitDir(Enum):
     RECV = auto()
 
 
+class SelectGroup:
+    """
+    Tracks one receiver's pending guarded external choice (select) across
+    several channels at once (ADR_RendezvousChannel): at most one of
+    `channels` can ever resolve the wait, after which the receiver's
+    registration is cleared from every other member.
+    """
+
+    __slots__ = ("channels",)
+
+    def __init__(self, channels: "list[Channel]"):
+        self.channels = channels
+
+
 class Channel:
     """Bufferless synchronous CSP rendezvous channel (ADR_RendezvousChannel)."""
 
@@ -66,6 +57,9 @@ class Channel:
         self.channel_id = channel_id
         self.waiter_task: Task | None = None
         self.waiter_dir: WaitDir = WaitDir.NONE
+        # Set only while waiter_task is a receiver waiting via
+        # channel_select_recv(); None for a plain single-channel wait.
+        self.waiter_group: SelectGroup | None = None
 
 
 class Task:
@@ -76,6 +70,7 @@ class Task:
         self.state = TaskState.READY
         self.pending_val: Any = None
         self.received_val: Any = None
+        self.result: Any = None
 
 
 class Scheduler:
@@ -88,7 +83,6 @@ class Scheduler:
         self.max_handoffs = max_handoffs
         self.consecutive_handoffs = 0
         self._ready: deque[Task] = deque()
-        self._blocked_by_event: list[tuple[Any, list[Task]]] = []
         self._all: list[Task] = []
         self._channels: list[Channel] = []
         self.current_task: Task | None = None
@@ -113,16 +107,48 @@ class Scheduler:
         """Spawn a new task within FB_CONF_MAX_TASKS bounds."""
         if len(self._all) >= self.max_tasks:
             raise RuntimeError(f"Task capacity exceeded (max {self.max_tasks})")
-        assigned_id = task_id if task_id is not None else self._next_id
-        if self.get_task(assigned_id) is not None:
-            raise ValueError(f"Task with ID {assigned_id} already exists")
-        if task_id is None:
+        if task_id is not None:
+            assigned_id = task_id
+            if self.get_task(assigned_id) is not None:
+                raise ValueError(f"Task with ID {assigned_id} already exists")
+        else:
+            # Skip past any ID already taken (explicit or auto) without ever
+            # inspecting what type that ID is: no isinstance/type() on a
+            # primitive, matching the target build's RTTI-disabled C++.
+            while self.get_task(self._next_id) is not None:
+                self._next_id += 1
+            assigned_id = self._next_id
             self._next_id += 1
 
         task = Task(assigned_id, name, coro)
         self._all.append(task)
         self._ready.append(task)
         return task.task_id
+
+    def detach(self, task: Task) -> None:
+        """
+        Removes a task from the READY queue so it will never be picked up by
+                run_until_idle(). For a task with no coroutine (or one driven
+                directly by a caller rather than the scheduler loop, e.g. a
+                fireball_call bridge), leaving it in READY is a bug: a coro=None
+                task re-appends itself every sweep (see run_until_idle), spinning
+                forever instead of ever going idle.
+        """
+        try:
+            self._ready.remove(task)
+        except ValueError:
+            pass
+
+    def attach(self, task: Task) -> None:
+        """
+        Puts a task in the READY queue (READY state, not already present) so
+                run_until_idle() will pick it up and drive `task.coro` -- the
+                counterpart of detach(). Used when a caller (e.g. a fireball_call
+                bridge) hands a task a fresh coroutine to run as its own action.
+        """
+        task.state = TaskState.READY
+        if task not in self._ready:
+            self._ready.append(task)
 
     def get_channel(self, channel_id: str) -> Channel | None:
         for ch in self._channels:
@@ -149,7 +175,18 @@ class Scheduler:
         if ch.waiter_dir == WaitDir.RECV:
             receiver = ch.waiter_task
             assert receiver is not None
-            ch.waiter_task, ch.waiter_dir = None, WaitDir.NONE
+            group = ch.waiter_group
+            ch.waiter_task, ch.waiter_dir, ch.waiter_group = None, WaitDir.NONE, None
+            if group is not None:
+                # This receiver was select()-waiting on several channels;
+                # this one won, so clear its registration from the rest.
+                for other in group.channels:
+                    if other is not ch and other.waiter_task is receiver:
+                        other.waiter_task, other.waiter_dir, other.waiter_group = (
+                            None,
+                            WaitDir.NONE,
+                            None,
+                        )
             receiver.received_val = data
             receiver.state = TaskState.READY
             sender.state = TaskState.READY
@@ -183,7 +220,45 @@ class Scheduler:
         assert ch.waiter_dir != WaitDir.RECV, (
             "one waiter per channel: concurrent receivers must use separate channels"
         )
-        ch.waiter_task, ch.waiter_dir = receiver, WaitDir.RECV
+        ch.waiter_task, ch.waiter_dir, ch.waiter_group = receiver, WaitDir.RECV, None
+        receiver.state = TaskState.SUSPENDED_CSP
+        return ("BLOCK", None)
+
+    def channel_select_recv(self, channel_ids: list[str]) -> tuple[str, Any]:
+        """
+        Guarded external choice (receive-only select, {ADR_RendezvousChannel}):
+        waits on whichever of `channel_ids` gets a matching sender first. If
+        a sender is already waiting on any of them, completes immediately
+        with that one (first match in the given order -- deterministic,
+        since at most one sender can be legitimately waiting per channel at
+        a time). Otherwise registers this task as the receiver-waiter on
+        every one of them at once; whichever channel's channel_send()
+        arrives first completes the rendezvous and clears this task's
+        registration from the rest (see channel_send()'s SelectGroup
+        cleanup), preserving the one-waiter-per-channel invariant.
+        """
+        receiver = self.current_task
+        assert receiver is not None, "channel_select_recv requires active running task"
+        channels = [self.get_channel(cid) or self.create_channel(cid) for cid in channel_ids]
+
+        for ch in channels:
+            if ch.waiter_dir == WaitDir.SEND:
+                sender = ch.waiter_task
+                assert sender is not None
+                val = sender.pending_val
+                sender.pending_val = None
+                ch.waiter_task, ch.waiter_dir = None, WaitDir.NONE
+                receiver.received_val = val
+                sender.state = TaskState.READY
+                receiver.state = TaskState.READY
+                return self._handoff_or_yield(sender)
+
+        group = SelectGroup(channels)
+        for ch in channels:
+            assert ch.waiter_dir != WaitDir.RECV, (
+                "one waiter per channel: concurrent receivers must use separate channels"
+            )
+            ch.waiter_task, ch.waiter_dir, ch.waiter_group = receiver, WaitDir.RECV, group
         receiver.state = TaskState.SUSPENDED_CSP
         return ("BLOCK", None)
 
@@ -237,23 +312,8 @@ class Scheduler:
     def set_idle_hook(self, fn: Callable[[], None]) -> None:
         self.idle_hooks.append(fn)
 
-    def notify_event(self, event_key: Any) -> None:
-        woken = []
-        for i, (k, tlist) in enumerate(self._blocked_by_event):
-            if k == event_key:
-                woken = tlist
-                self._blocked_by_event.pop(i)
-                break
-        for task in woken:
-            task.state = TaskState.READY
-            self._ready.append(task)
-
     def pending_task_count(self) -> int:
-        return (
-            len(self._ready)
-            + sum(len(w) for _, w in self._blocked_by_event)
-            + sum(len(w) for _, w in self.irq_waiters)
-        )
+        return len(self._ready) + sum(len(w) for _, w in self.irq_waiters)
 
     def run_until_idle(self) -> None:
         """Runs one full round-robin sweep, then fires idle hooks once READY queue drains."""
@@ -268,25 +328,17 @@ class Scheduler:
                 continue
             try:
                 wait_on = next(task.coro)
-            except StopIteration:
+            except StopIteration as e:
+                task.result = e.value
                 task.state = TaskState.TERMINATED
                 self.current_task = None
                 continue
             if wait_on is None:
                 task.state = TaskState.READY
                 self._ready.append(task)
-            elif isinstance(wait_on, tuple) and wait_on[0] == "BLOCK":
-                pass
-            else:
-                task.state = TaskState.BLOCKED
-                found = False
-                for k, tlist in self._blocked_by_event:
-                    if k == wait_on:
-                        tlist.append(task)
-                        found = True
-                        break
-                if not found:
-                    self._blocked_by_event.append((wait_on, [task]))
+            # else: a ("BLOCK", None) CSP wait -- channel_send()/channel_recv()
+            # already parked the task (TaskState.SUSPENDED_CSP) and record who
+            # will wake it; there is nothing left for this loop to do.
 
             self.current_task = None
 
@@ -296,7 +348,7 @@ class Scheduler:
     def run_to_completion(self, max_sweeps: int = 1000) -> None:
         for _ in range(max_sweeps):
             self.run_until_idle()
-            if not self._ready and not self._blocked_by_event and not self.irq_waiters:
+            if not self._ready and not self.irq_waiters:
                 return
         raise RuntimeError(
             f"scheduler did not reach idle within {max_sweeps} sweeps "

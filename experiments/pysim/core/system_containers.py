@@ -15,29 +15,6 @@ docs/components/tier1_core/system_containers.md:
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-_PYSIM_DIR = (
-    Path(__file__).resolve().parents[1]
-    if any(
-        d in str(Path(__file__))
-        for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")
-    )
-    else Path(__file__).resolve().parent
-)
-
-for _p in [
-    _PYSIM_DIR,
-    _PYSIM_DIR / "core",
-    _PYSIM_DIR / "runtime",
-    _PYSIM_DIR / "jit",
-    _PYSIM_DIR / "platforms",
-]:
-    _sp = str(_p)
-    if _sp not in sys.path:
-        sys.path.insert(0, _sp)
-
 import bisect
 from collections.abc import Callable, Iterator, Sequence
 from typing import Generic, TypeVar
@@ -142,6 +119,13 @@ class _SortedWindow(Generic[KeyT]):
 # ---------------------------------------------------------------------------
 # 3. FlatMapView (fireball::flat_map_view<Key, Value>)
 # ---------------------------------------------------------------------------
+# docs/components/tier1_core/system_containers.md {3.3}: a non-owning view
+# over a sorted key span plus a parallel value span (or, where Key/Value are
+# both numeric, a single packed span) -- Key and Value are template
+# parameters, so no key-type inspection happens in this class at all: a
+# caller supplies whatever comparable Key the concrete usage needs
+# (std::string_view for the IPC registry, uint32_t hashes for radix-indexed
+# lookups, ...) and comparisons are just `<`/`==` on that type.
 
 
 class FlatMapView(_SortedWindow[KeyT], Generic[KeyT, ValT]):
@@ -177,6 +161,12 @@ class FlatMapView(_SortedWindow[KeyT], Generic[KeyT, ValT]):
         if val is None:
             raise KeyError(key)
         return val
+
+    def __contains__(self, key: KeyT) -> bool:
+        return self._locate(key) is not None
+
+    def __len__(self) -> int:
+        return self.size()
 
 
 # ---------------------------------------------------------------------------
@@ -250,8 +240,14 @@ class RadixBinaryTreeView(Generic[ValT]):
         return self.map_view.slice(first, last).find(key)
 
 
-def lookup_jit_entry(
-    view: FlatMapView[int, ValT] | RadixBinaryTreeView[ValT],
+def _card_compiled(card_table: BitView, pc: int, card_shift: int) -> bool:
+    """O(1) card marking pre-filter: True only once card state == 3 (COMPILED)."""
+    card_idx = pc >> card_shift
+    return card_idx < card_table.size() and card_table.at(card_idx) == 3
+
+
+def lookup_jit_entry_flatmap(
+    view: FlatMapView[int, ValT],
     card_table: BitView,
     entry_group_bounds: Sequence[tuple[int, int]],
     pc: int,
@@ -259,17 +255,15 @@ def lookup_jit_entry(
     group_shift: int = 6,
 ) -> ValT | None:
     """
-    JIT entry lookup:
-        1. O(1) card marking pre-filter: verify card state == 3 (COMPILED).
-        2. O(1) Radix Table prefix lookup: slice to group bounds [first, last].
-        3. Bounded local binary search on narrowed FlatMapView.
+    JIT entry lookup over a plain FlatMapView, narrowed via caller-supplied
+    group bounds:
+        1. O(1) card marking pre-filter.
+        2. O(1) group-bounds slice (caller-computed, e.g. a separate Radix Table).
+        3. Bounded local binary search on the narrowed FlatMapView.
     """
 
-    card_idx = pc >> card_shift
-    if card_idx >= card_table.size() or card_table.at(card_idx) != 3:  # 3 = COMPILED
+    if not _card_compiled(card_table, pc, card_shift):
         return None
-    if isinstance(view, RadixBinaryTreeView):
-        return view.find(pc)
     group_idx = pc >> group_shift
     if group_idx >= len(entry_group_bounds):
         return None
@@ -277,6 +271,24 @@ def lookup_jit_entry(
     if first >= last:
         return None
     return view.slice(first, last).find(pc)
+
+
+def lookup_jit_entry_radix(
+    view: RadixBinaryTreeView[ValT],
+    card_table: BitView,
+    pc: int,
+    card_shift: int = 8,
+) -> ValT | None:
+    """
+    JIT entry lookup over a RadixBinaryTreeView, which narrows to its group
+    bounds internally via its own Radix Table:
+        1. O(1) card marking pre-filter.
+        2. O(1) Radix Table prefix lookup + bounded local binary search (view.find()).
+    """
+
+    if not _card_compiled(card_table, pc, card_shift):
+        return None
+    return view.find(pc)
 
 
 # ---------------------------------------------------------------------------
@@ -308,6 +320,15 @@ class StaticFlatMap(Generic[KeyT, ValT]):
         if idx < len(self._keys) and self._keys[idx] == key:
             return self._values[idx]
         return None
+
+    def __contains__(self, key: KeyT) -> bool:
+        return self.find(key) is not None
+
+    def __getitem__(self, key: KeyT) -> ValT:
+        val = self.find(key)
+        if val is None:
+            raise KeyError(key)
+        return val
 
     def insert(self, key: KeyT, value: ValT) -> bool:
         idx = bisect.bisect_left(self._keys, key)

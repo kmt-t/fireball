@@ -757,14 +757,13 @@ def test_mem_10b_shared_block_vmmio_pte_flight_and_claim():
     assert claimed_sb.get_owner() == 2
 
 
-def test_mem_10c_route_message_rollback_restores_owner_id():
-    """MEM-10c: Rollback on queue full restores PTE owner_id to sender (not left as FLIGHT)."""
+def test_mem_10c_rollback_transfer_restores_owner_id():
+    """MEM-10c: rollback_transfer() restores PTE owner_id to sender (not left as FLIGHT)."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     sb = mm.allocate_shared(caller_task_id=1, size=1024).unwrap()
     shm_id = sb.release()
     assert mm.vmmio_registry.get_owner(sb.page_idx) == FB_TASK_ID_FLIGHT
-    # Send failed with ERR_QUEUE_FULL -> Rollback
     mm.rollback_transfer(original_sender_id=1, shm_id=shm_id)
     assert mm.vmmio_registry.get_owner(sb.page_idx) == 1, "PTE owner must be restored to Task 1"
 
@@ -886,7 +885,7 @@ if __name__ == "__main__":
     test_mem_09_hal_acquire_buffer_delegates_to_allocate_shared()
     test_mem_10_shared_block_ownership_transfer()
     test_mem_10b_shared_block_vmmio_pte_flight_and_claim()
-    test_mem_10c_route_message_rollback_restores_owner_id()
+    test_mem_10c_rollback_transfer_restores_owner_id()
     test_mem_11_shared_block_raii_auto_deallocate()
     test_mem_12_shm_id_kv_pair_encoding()
     test_mem_13_query_and_check_ownership_are_removed()

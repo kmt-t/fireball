@@ -14,36 +14,15 @@ CPS 4-argument calling convention:
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-_PYSIM_DIR = (
-    Path(__file__).resolve().parents[1]
-    if any(
-        d in str(Path(__file__))
-        for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")
-    )
-    else Path(__file__).resolve().parent
-)
-
-for _p in [
-    _PYSIM_DIR,
-    _PYSIM_DIR / "core",
-    _PYSIM_DIR / "runtime",
-    _PYSIM_DIR / "jit",
-    _PYSIM_DIR / "platforms",
-]:
-    _sp = str(_p)
-    if _sp not in sys.path:
-        sys.path.insert(0, _sp)
-
 import ctypes
+import sys
 from typing import Any
 
 import x64_asm as asm
 import x64_stencils as st
 from exec_memory import ExecutableBuffer
 from runtime_engine import BasicBlock, JITTrace, JITTraceHeader
+from system_containers import FlatMapView
 
 IS_WINDOWS = sys.platform == "win32"
 I32_MASK = 0xFFFFFFFF
@@ -148,42 +127,55 @@ class TraceCompiler:
         "local.set",
         "call_host",
     )
-    # (pops, pushes) stack effect per opcode
-    STACK_EFFECTS: dict[str, tuple[int, int]] = {
-        "i32.const": (0, 1),
-        "local.get": (0, 1),
-        "local.set": (1, 0),
-        "drop": (1, 0),
-        "i32.eqz": (1, 1),
-        "i32.add": (2, 1),
-        "i32.sub": (2, 1),
-        "i32.mul": (2, 1),
-        "i32.div_s": (2, 1),
-        "i32.div_u": (2, 1),
-        "i32.rem_s": (2, 1),
-        "i32.rem_u": (2, 1),
-        "i32.and": (2, 1),
-        "i32.or": (2, 1),
-        "i32.xor": (2, 1),
-        "i32.shl": (2, 1),
-        "i32.shr_s": (2, 1),
-        "i32.shr_u": (2, 1),
-        "i32.eq": (2, 1),
-        "i32.ne": (2, 1),
-        "i32.lt_s": (2, 1),
-        "i32.lt_u": (2, 1),
-        "i32.gt_s": (2, 1),
-        "i32.gt_u": (2, 1),
-        "i32.le_s": (2, 1),
-        "i32.le_u": (2, 1),
-        "i32.ge_s": (2, 1),
-        "i32.ge_u": (2, 1),
-        "call_host": (0, 1),
-    }
+    # (pops, pushes) stack effect per opcode: a sorted flat_map_view over a
+    # fixed, compile-time-known opcode-name vocabulary, never a dict.
+    _STACK_EFFECT_ENTRIES: tuple[tuple[str, tuple[int, int]], ...] = tuple(
+        sorted(
+            [
+                ("i32.const", (0, 1)),
+                ("local.get", (0, 1)),
+                ("local.set", (1, 0)),
+                ("drop", (1, 0)),
+                ("i32.eqz", (1, 1)),
+                ("i32.add", (2, 1)),
+                ("i32.sub", (2, 1)),
+                ("i32.mul", (2, 1)),
+                ("i32.div_s", (2, 1)),
+                ("i32.div_u", (2, 1)),
+                ("i32.rem_s", (2, 1)),
+                ("i32.rem_u", (2, 1)),
+                ("i32.and", (2, 1)),
+                ("i32.or", (2, 1)),
+                ("i32.xor", (2, 1)),
+                ("i32.shl", (2, 1)),
+                ("i32.shr_s", (2, 1)),
+                ("i32.shr_u", (2, 1)),
+                ("i32.eq", (2, 1)),
+                ("i32.ne", (2, 1)),
+                ("i32.lt_s", (2, 1)),
+                ("i32.lt_u", (2, 1)),
+                ("i32.gt_s", (2, 1)),
+                ("i32.gt_u", (2, 1)),
+                ("i32.le_s", (2, 1)),
+                ("i32.le_u", (2, 1)),
+                ("i32.ge_s", (2, 1)),
+                ("i32.ge_u", (2, 1)),
+                ("call_host", (0, 1)),
+            ],
+            key=lambda e: e[0],
+        )
+    )
+    STACK_EFFECTS: FlatMapView[str, tuple[int, int]] = FlatMapView(
+        [k for k, _ in _STACK_EFFECT_ENTRIES], [v for _, v in _STACK_EFFECT_ENTRIES]
+    )
 
-    def compile_trace(self, head_pc: int, block: BasicBlock) -> JITTrace | None:
+    def compile_trace(self, head_pc: int, block: BasicBlock | None) -> JITTrace | None:
         """Compiles a single BasicBlock into a PIC native JITTrace."""
-        if not block.ops or any(op not in self.SUPPORTED_OPS for op, _ in block.ops):
+        if (
+            block is None
+            or not block.ops
+            or any(op not in self.SUPPORTED_OPS for op, _ in block.ops)
+        ):
             return None
         # Trace Boundary Invariant: Verify block is self-contained (stack depth never drops below 0)
         sim_depth = 0

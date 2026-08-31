@@ -1,14 +1,9 @@
 import sys
 from pathlib import Path
 
-_PYSIM_DIR = (
-    Path(__file__).resolve().parents[1]
-    if any(
-        d in str(Path(__file__))
-        for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")
-    )
-    else Path(__file__).resolve().parent
-)
+_PYSIM_DIR = Path(__file__).resolve().parent
+while not (_PYSIM_DIR / "core").is_dir():
+    _PYSIM_DIR = _PYSIM_DIR.parent
 
 for _p in [
     _PYSIM_DIR,

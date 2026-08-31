@@ -126,7 +126,6 @@ graph LR
 | `{COOS_Scheduling_Refine}` | スケジューリングアルゴリズムの継続的な改善と最適化。 | 中 | レビュー |
 | `{vMMIO_TLB}` | ソフトウェアTLBによるvMMIOアクセスの高速化。 | 中 | レビュー |
 | `{ZeroCopyIndexing}` | LoaderによるWASMセクションのゼロコピー索引化。 | 高 | テスト |
-| `{IPC_DropHandler}` | In-flightリソース回収用のDropハンドラ。 | 高 | テスト |
 | `{JIT_Safepoint}` | JITコード内の非同期割込チェックポイント。 | 中 | レビュー |
 | `{Debugger_Jit_Flush}` | 介入時のJITキャッシュフラッシュ。 | 高 | レビュー |
 | `{WASI_Async_Bridge}` | 同期WASIと非同期IPCの連携ブリッジ。 | 高 | テスト |
@@ -193,8 +192,7 @@ graph LR
 | `{Challenge_WasiFdWriteLoop}` | WASI `fd_write` の実装レイヤー分離とバッファ管理。 → Shim側でベクタをループし1ベクタごとに `fireball_call` を発行する設計を採用（`system_syscall.md` §7.1）。 | 決定済 |
 | `{Challenge_SyscallMemorySafety}` | ゲストメモリアクセス時のセキュリティゲート（vMMIO許可テーブル）の有効性。 → 統一vMMIOモデルの許可テーブルで十分とし、別途の `vsoc_validate_ptr` は導入しない（`system_syscall.md` §9）。 | 決定済 |
 | `{Challenge_CoosBlockedList}` | `BLOCKED` タスクリストの管理コストとリアルタイム性のトレードオフ。 → `{ADR_EventDrivenWakeQueue}` として決定。 | 決定済 |
-| `{Challenge_CspHandoffStarvation}` | COOS の CSP Handoff 連鎖が特定のタスクセット間で閉じ、他タスクが実行機会を失うスターベーションリスク。緩和策は `FB_CONF_MAX_CONSECUTIVE_HANDOFFS` による連鎖の有界化。 | 検討中 |
-| `{Challenge_IpcQueueStarvation}` | IPCルータの有界メールボックスにおいて、特定の送信側がスロット獲得競争に繰り返し敗れて Rollback を受け続けるスターベーションリスク。CSP Handoffとは別機構の課題であり、緩和策はキュー長・再送方針の調整。 | 検討中 |
+| `{Challenge_CspHandoffStarvation}` | COOS の CSP Handoff 連鎖（IPCルータ含む）が特定のタスクセット間で閉じ、他タスクが実行機会を失うスターベーションリスク。緩和策は `FB_CONF_MAX_CONSECUTIVE_HANDOFFS` による連鎖の有界化。 | 検討中 |
 | `{Challenge_DebuggerResource}` | 極小メモリ環境でのデバッグ用バッファ確保とJIT併用の制約。 | 検討中 |
 | `{ADR_ScalableCodeOffset}` | コードキャッシュ拡張時の 16 ビット `code_offset` 上限（64KB）を越えるための表現形式決定。 | 決定済 |
 | `{ADR_SafeQueuingOnHotMiss}` | ホットスポット検出時の二重コンパイル要求防止策。 | 決定済 |

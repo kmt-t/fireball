@@ -75,16 +75,13 @@
       "sec:requires/requirement_list.md#4. 設計課題・制約追跡 (Design Challenges & ADRs)": "6c17b9aefe1578b6059cdbadfd702a15a38dd2f30112f0ce88c67c87adbaa179"
     },
     "Challenge_CspHandoffStarvation": {
-      "sec:requires/requirement_list.md#4. 設計課題・制約追跡 (Design Challenges & ADRs)": "a04776e9ae9efbd03be1085320b9e07d3df26269b91d50638101ea02d1901029"
+      "sec:requires/requirement_list.md#4. 設計課題・制約追跡 (Design Challenges & ADRs)": "dd9dc8b10794ca1d4251bea3a3f08ac948e61a01c25bab7a76985e9ca40cf025"
     },
     "Challenge_DebuggerResource": {
       "sec:requires/requirement_list.md#4. 設計課題・制約追跡 (Design Challenges & ADRs)": "1e050c6653cc155b479de89290576f0cf6afd27509904ed0eba1b66a236ae997"
     },
     "Challenge_InterruptSafety": {
       "sec:requires/requirement_list.md#4. 設計課題・制約追跡 (Design Challenges & ADRs)": "9c882b12664ee272d214c8c9dc82b48eddbe5502d5e52f672c81ed5c2cb8a697"
-    },
-    "Challenge_IpcQueueStarvation": {
-      "sec:requires/requirement_list.md#4. 設計課題・制約追跡 (Design Challenges & ADRs)": "524f86a3b1050dbd15f95b4e98871e8de1f7da71f89f46378045c769c0eaaf27"
     },
     "Challenge_JITCacheEfficiency": {
       "sec:requires/requirement_list.md#4. 設計課題・制約追跡 (Design Challenges & ADRs)": "569090bf651be7a5342f50ec97c7022a70b07e09c24045d08239465cfdb39cc7"
@@ -238,9 +235,6 @@
     },
     "IPCRouter": {
       "sec:requires/requirement_list.md#3.1.3 システム連携 (IPC/HAL/WIT)": "9f19b1b30b7455d7bcf3cb9530fbac564beaba21fbf28795c7e611f9c87d4f26"
-    },
-    "IPC_DropHandler": {
-      "sec:requires/requirement_list.md#3.1.5 共通基盤・実装パターン": "e08ef0db5101751aaf67a71ef28afa2f562bdede9d667fab8308b8a5b211adc1"
     },
     "IPC_HandleBased": {
       "sec:requires/requirement_list.md#3.1.3 システム連携 (IPC/HAL/WIT)": "1116f6a69a2c71b06dced92db0907127092644e7bc0ae202d6d7da23f342ccba"
@@ -412,8 +406,8 @@
     "PositionIndependentCode": {
       "sec:requires/requirement_list.md#3.1.1 WASM実行 (vSoC)": "6ab26b2ee36f7456414c49a110ab9d4042ca965a397d55cd75cd398d43f3ba7e"
     },
-    "QueueFullRollback": {
-      "sec:architecture/keyword_dictionary.md#2.2 タスク管理・スケジューリング・通信 (COOS / Scheduler / IPC)": "5dfc3c053ac3c0206918484e950b4838e6c1047378d52540d90be1890de45f32"
+    "PreflightRejection": {
+      "sec:architecture/keyword_dictionary.md#2.2 タスク管理・スケジューリング・通信 (COOS / Scheduler / IPC)": "b72b9793cf5bff8cf808b01c776c7c3291fc9cd552df7a63ecb78c44a5e3c092"
     },
     "RAM_Bypass_Bit31": {
       "sec:architecture/keyword_dictionary.md#2.1 WASM実行 & ランタイム (vSoC / Interpreter / Loader / vMMIO)": "2a73dc56e2cc4ca8af59fd8c883f075acd63495f2f88c70ba045bbc89bc0719c"
@@ -471,9 +465,6 @@
     "Syscall_Return_Value": {
       "sec:requires/requirement_list.md#3.1.3 システム連携 (IPC/HAL/WIT)": "9862a5882098c7a925cc502a07b5265fb40398870b8da3b451d90c4c691923d8"
     },
-    "TargetFaultDropHandler": {
-      "sec:architecture/keyword_dictionary.md#2.2 タスク管理・スケジューリング・通信 (COOS / Scheduler / IPC)": "bcb1e165363ac479eb1a78135009b51909ebee7af453040ed92208d468caff10"
-    },
     "TaskPollInterruptFlag": {
       "sec:requires/requirement_list.md#3.1.2 タスク管理・通信 (COOS)": "c4d2787b41487e601f3f3344502ff29535f2a0d7ad2f16109eecb5d3aa8dd5c4"
     },
@@ -485,7 +476,7 @@
       "sec:architecture/keyword_dictionary.md#2.3 JIT コンパイラ & ランタイム (JIT Compiler / Runtime)": "b66c237cfa798d5321b31e30cb028aafe9602e18e1c558c4dc19f4a26cb205df"
     },
     "ThreeStageRouting": {
-      "sec:architecture/keyword_dictionary.md#2.2 タスク管理・スケジューリング・通信 (COOS / Scheduler / IPC)": "260c83f8a118fba8d19827ac27ca68b2b9d44e5ca33a8aeeb52dafa244cd6d71"
+      "sec:architecture/keyword_dictionary.md#2.2 タスク管理・スケジューリング・通信 (COOS / Scheduler / IPC)": "e81eba082130ad185f2895433346cd78e8261c7500e5edb2d4d4d7f07a8b063d"
     },
     "TraceBoundaryInvariant": {
       "sec:architecture/keyword_dictionary.md#2.3 JIT コンパイラ & ランタイム (JIT Compiler / Runtime)": "e60e5704ca35a69a05f9d5ab2231e6128e754045507a47b630ce07f07bb87e60"
@@ -588,12 +579,20 @@
     ],
     "ADR_RendezvousChannel": [
       "sec:architecture/architecture_overview.md#3.4 Pillar 4: 対称直接ハンドオフ・エンジン (Symmetric Direct Handoff Engine)",
+      "sec:architecture/architecture_overview.md#3.6 Pillar 6: ゼロコピー CSP ランデブー・ハンドオフ (Zero-Copy CSP Rendezvous Handoff)",
       "sec:components/tier1_core/os_coos.md#3.1 データ構造",
       "sec:components/tier1_core/os_coos.md#6.2 直交表: CSP通信と状態遷移",
       "sec:components/tier1_core/os_coos.md#CSPチャネル（channel）",
       "sec:components/tier1_core/os_scheduler.md#4.2 状態遷移図 (SysML SMD: Scheduler 視点)",
       "sec:components/tier1_core/tests/os_coos_test_spec.md#1. 目的と対象範囲",
+      "sec:components/tier1_interface/interface_wit.md#設計判断",
+      "sec:components/tier1_interface/ipc_router.md#4.1 アルゴリズム",
+      "sec:components/tier1_interface/ipc_router.md#4.3 メッセージライフサイクルと所有権管理 (SysML Parametric Diagram 相当)",
+      "sec:components/tier1_interface/ipc_router.md#6.1 検証対象の不変条件",
       "sec:components/tier1_interface/ipc_router.md#メッセージルーティング（route_message）",
+      "sec:components/tier1_interface/ipc_router.md#メッセージ受信（receive_message）",
+      "sec:components/tier1_interface/ipc_router.md#レジストリエントリ（registry_entry）",
+      "sec:components/tier1_interface/tests/ipc_router_test_spec.md#1. 目的と対象範囲",
       "sec:components/tier1_interface/tests/ipc_router_test_spec.md#2. テストケース一覧",
       "sec:specs/wasi_preview1_abi.md#3.3 プロセス制御 & 乱数 & スケジューラ API (Process, Random & Scheduler)"
     ],
@@ -635,7 +634,7 @@
       "sec:components/tier1_core/system_syscall.md#8.1. 仮想割り込み",
       "sec:components/tier1_core/system_syscall.md#8.1.1. 仮想割り込みID",
       "sec:components/tier1_core/system_syscall.md#8.1.2. 仮想割り込みペイロード",
-      "sec:components/tier1_interface/interface_wit.md#3.1 基礎インターフェイス",
+      "sec:components/tier1_interface/interface_wit.md#3.1 基礎インターフェイス & IPC URI Resolver",
       "sec:components/tier1_interface/interface_wit.md#6. 非同期通知メカニズム"
     ],
     "BufferedLogging": [
@@ -713,17 +712,7 @@
     "Challenge_InterruptSafety": [
       "sec:components/tier2_runtime/runtime_vsoc.md#Safepoint の動作メカニズム",
       "sec:components/tier3_platform/platform_hal.md#1. コンセプト",
-      "sec:components/tier3_platform/platform_hal.md#6.3 安全性制約と方策"
-    ],
-    "Challenge_IpcQueueStarvation": [
-      "sec:architecture/architecture_overview.md#3.6 Pillar 6: 有界ゼロコピー・ランデブー・メールボックス (Bounded Zero-Copy Rendezvous Mailbox)",
-      "sec:components/tier1_interface/ipc_router.md#4.1 アルゴリズム",
-      "sec:components/tier1_interface/ipc_router.md#4.2 状態遷移図 (SysML SMD: IPC Router ルーティングフロー)",
-      "sec:components/tier1_interface/ipc_router.md#4.2.1 所有権移譲状態機械 (Ownership Transfer State Machine)",
-      "sec:components/tier1_interface/ipc_router.md#4.4 内部シーケンス図",
-      "sec:components/tier1_interface/ipc_router.md#6.1 検証対象の不変条件",
-      "sec:components/tier1_interface/ipc_router.md#メッセージルーティング（route_message）",
-      "sec:specs/wasi_preview1_abi.md#1. 概要と基本思想"
+      "sec:components/tier3_platform/platform_hal.md#8.3 安全性制約と方策"
     ],
     "Challenge_JITCacheEfficiency": [
       "sec:components/tier2_runtime/runtime_vsoc.md#4.2.1 Safepoint と JIT キャッシュ協調モデル",
@@ -787,10 +776,11 @@
       "sec:components/tier1_core/system_syscall.md#5.2. System (`0x00`-`0x0F`)",
       "sec:components/tier1_core/system_syscall.md#5.5. IRQ (`0x30`-`0x3F`)",
       "sec:components/tier1_core/tests/system_syscall_test_spec.md#System (`0x00`-`0x0F`)",
-      "sec:components/tier1_interface/interface_wit.md#3.1 基礎インターフェイス",
+      "sec:components/tier1_interface/interface_wit.md#3.1 基礎インターフェイス & IPC URI Resolver",
       "sec:components/tier3_platform/platform_memory.md#パーティションの貸与（acquire-partition）"
     ],
     "Debug_Integrated": [
+      "sec:components/tier1_core/system_config.md#3.3.5 ロギング・デバッガ",
       "sec:components/tier2_runtime/debug_manager.md#1. コンセプト",
       "sec:components/tier2_runtime/debug_manager.md#3.1 データ構造",
       "sec:components/tier2_runtime/debug_manager.md#4.1 アルゴリズム",
@@ -906,7 +896,6 @@
       "sec:components/tier1_core/system_syscall.md#6.2. 高応答 Trigger のマッピング例",
       "sec:components/tier2_runtime/runtime_vmmio.md#1. コンセプト",
       "sec:components/tier3_platform/platform_hal.md#1. コンセプト",
-      "sec:components/tier3_platform/platform_hal.md#非標準制御 (control)",
       "sec:components/tier3_platform/tests/platform_hal_test_spec.md#2. テストケース一覧"
     ],
     "FaultTolerant": [
@@ -971,9 +960,8 @@
       "sec:components/tier1_core/tests/os_scheduler_test_spec.md#2. テストケース一覧",
       "sec:components/tier1_interface/ipc_router.md#ロール間通信許可マトリクス (FB_CONF_ROUTER_ROLE_MATRIX)",
       "sec:components/tier2_runtime/runtime_vsoc.md#6.1 検証対象の不変条件",
-      "sec:components/tier3_platform/platform_hal.md#4.1 アルゴリズム",
-      "sec:components/tier3_platform/platform_hal.md#4.2 状態遷移図",
-      "sec:components/tier3_platform/platform_hal.md#4.3 内部シーケンス"
+      "sec:components/tier3_platform/platform_hal.md#6.1 アルゴリズム",
+      "sec:components/tier3_platform/platform_hal.md#6.2 状態遷移図"
     ],
     "GLOBAL_PeriodicTask": [
       "sec:components/tier1_core/os_coos.md#1. コンセプト",
@@ -1046,11 +1034,9 @@
       "sec:components/tier1_core/os_scheduler.md#1. コンセプト"
     ],
     "HAL_Interface": [
-      "sec:components/tier3_platform/platform_hal.md#5.3 URI/IPCインターフェイス",
-      "sec:components/tier3_platform/platform_hal.md#データの書き込み (write)",
-      "sec:components/tier3_platform/platform_hal.md#データの読み出し",
-      "sec:components/tier3_platform/platform_hal.md#バッファの確保",
-      "sec:components/tier3_platform/platform_hal.md#非標準制御 (control)",
+      "sec:components/tier3_platform/platform_hal.md#4.2 WASI 0.3p IPC ドライバ通信コマンド仕様",
+      "sec:components/tier3_platform/platform_hal.md#7.1 公開 API",
+      "sec:components/tier3_platform/platform_hal.md#バッファの確保 (`acquire_buffer`)",
       "sec:components/tier3_platform/platform_memory.md#`allocate-shared` (IPC転送データ専用)"
     ],
     "HistoryBuffer": [
@@ -1082,17 +1068,8 @@
       "sec:components/tier1_interface/system_service.md#6.1 性能制約と方策",
       "sec:components/tier1_interface/system_service.md#WASI呼び出しシーケンス",
       "sec:components/tier3_platform/platform_hal.md#1. コンセプト",
-      "sec:components/tier3_platform/platform_hal.md#2. アーキテクチャ分類"
-    ],
-    "IPC_DropHandler": [
-      "sec:components/tier1_interface/ipc_router.md#4.1 アルゴリズム",
-      "sec:components/tier1_interface/ipc_router.md#4.2 状態遷移図 (SysML SMD: IPC Router ルーティングフロー)",
-      "sec:components/tier1_interface/ipc_router.md#4.2.1 所有権移譲状態機械 (Ownership Transfer State Machine)",
-      "sec:components/tier1_interface/ipc_router.md#4.3 メッセージライフサイクルと所有権管理 (SysML Parametric Diagram 相当)",
-      "sec:components/tier1_interface/ipc_router.md#4.4 内部シーケンス図",
-      "sec:components/tier1_interface/ipc_router.md#6.1 検証対象の不変条件",
-      "sec:components/tier1_interface/ipc_router.md#6.2 検証対象のプロパティ",
-      "sec:components/tier1_interface/tests/ipc_router_test_spec.md#2. テストケース一覧"
+      "sec:components/tier3_platform/platform_hal.md#2. アーキテクチャ分類",
+      "sec:components/tier3_platform/platform_hal.md#4.1 階層型 URI 命名規則 (Hierarchical URI Scheme)"
     ],
     "IPC_HandleBased": [
       "sec:components/tier1_core/system_syscall.md#5.1. カテゴリ一覧",
@@ -1105,7 +1082,7 @@
       "sec:components/tier1_interface/ipc_router.md#1. コンセプト"
     ],
     "IPC_ZeroCopy": [
-      "sec:architecture/architecture_overview.md#3.6 Pillar 6: 有界ゼロコピー・ランデブー・メールボックス (Bounded Zero-Copy Rendezvous Mailbox)",
+      "sec:architecture/architecture_overview.md#3.6 Pillar 6: ゼロコピー CSP ランデブー・ハンドオフ (Zero-Copy CSP Rendezvous Handoff)",
       "sec:components/tier1_core/system_config.md#3.3.1 メモリ管理",
       "sec:components/tier1_core/system_config.md#3.3.2 IPCルータ",
       "sec:components/tier1_interface/interface_wit.md#5.3 `fireball:host/bus` (Master/Slave Bus)",
@@ -1117,7 +1094,11 @@
       "sec:components/tier1_interface/ipc_router.md#6.1 検証対象の不変条件",
       "sec:components/tier1_interface/ipc_router.md#6.2 検証対象のプロパティ",
       "sec:components/tier1_interface/ipc_router.md#メッセージルーティング（route_message）",
-      "sec:components/tier3_platform/platform_hal.md#バッファの確保",
+      "sec:components/tier1_interface/ipc_router.md#メッセージ受信（receive_message）",
+      "sec:components/tier3_platform/platform_hal.md#1. コンセプト",
+      "sec:components/tier3_platform/platform_hal.md#4.2 WASI 0.3p IPC ドライバ通信コマンド仕様",
+      "sec:components/tier3_platform/platform_hal.md#7.1 公開 API",
+      "sec:components/tier3_platform/platform_hal.md#バッファの確保 (`acquire_buffer`)",
       "sec:components/tier3_platform/platform_memory.md#7. 共有メモリ (shared-block) のライフサイクル"
     ],
     "InterpreterContextStackless": [
@@ -1444,8 +1425,8 @@
       "sec:components/tier3_jit/jit_compiler.md#バッチコンパイル処理（process_batch_compile）",
       "sec:components/tier3_jit/jit_compiler.md#初期化（initialize）",
       "sec:components/tier3_jit/jit_compiler.md#検索範囲取得（get_search_range）",
-      "sec:components/tier3_platform/platform_hal.md#6.1 性能制約と方策",
-      "sec:components/tier3_platform/platform_hal.md#6.2 メモリ制約と方策",
+      "sec:components/tier3_platform/platform_hal.md#8.1 性能制約と方策",
+      "sec:components/tier3_platform/platform_hal.md#8.2 メモリ制約と方策",
       "sec:components/tier3_platform/platform_hal.md#HAL構成（hal_config）"
     ],
     "META_FaultIsolation": [
@@ -1470,6 +1451,7 @@
       "sec:components/tier1_core/system_containers.md#3.1 データ構造",
       "sec:components/tier1_core/system_containers.md#3.2 内部ブロック図",
       "sec:components/tier1_core/system_containers.md#5.3 利用箇所",
+      "sec:components/tier1_core/system_containers.md#疎マップビュー（flat_map_view）",
       "sec:components/tier1_interface/ipc_router.md#3.1 データ構造",
       "sec:components/tier1_interface/ipc_router.md#3.2 内部ブロック図",
       "sec:components/tier1_interface/ipc_router.md#3.3 主要なクラス・構造体・配列・定数",
@@ -1490,6 +1472,7 @@
     ],
     "META_NoStdVector": [
       "sec:components/tier1_core/os_coos.md#2. 公開 API インターフェイス",
+      "sec:components/tier1_core/system_config.md#3.3.5 ロギング・デバッガ",
       "sec:components/tier1_core/system_containers.md#1. コンセプト",
       "sec:components/tier1_core/system_containers.md#6.2 メモリ制約と方策",
       "sec:components/tier2_runtime/debug_manager.md#6.2 メモリ制約と方策",
@@ -1526,6 +1509,8 @@
       "sec:components/tier1_core/system_syscall.md#5.3. vMMIO Generic (`0x10`-`0x1F`)",
       "sec:components/tier1_core/system_syscall.md#5.5. IRQ (`0x30`-`0x3F`)",
       "sec:components/tier1_core/tests/system_syscall_test_spec.md#vMMIO Generic (`0x10`-`0x1F`)",
+      "sec:components/tier1_interface/interface_wit.md#2. アーキテクチャ原則",
+      "sec:components/tier1_interface/interface_wit.md#3.1 基礎インターフェイス & IPC URI Resolver",
       "sec:components/tier2_runtime/benchmarks/linear_memory_bench_spec.md#1. 目的と対象範囲",
       "sec:components/tier2_runtime/benchmarks/linear_memory_bench_spec.md#2. ベンチマーク測定項目一覧",
       "sec:components/tier2_runtime/benchmarks/vmmio_bench_spec.md#1. 目的と対象範囲",
@@ -1582,6 +1567,7 @@
       "sec:components/tier1_core/system_containers.md#疎集合ビュー（flat_set_view）",
       "sec:components/tier1_core/tests/system_containers_test_spec.md#4. 未検証・スコープ外",
       "sec:components/tier3_jit/jit_compiler.md#`constexpr_assembler` (DSL)",
+      "sec:components/tier3_platform/platform_hal.md#5.2 WASI 0.1p (`wasi_snapshot_preview1`) 互換ラッパー",
       "sec:specs/gdb_rsp_protocol.md#1. 概要と基本思想",
       "sec:specs/jit_stencil_catalog.md#1. 概要と基本思想",
       "sec:specs/jit_stencil_catalog.md#3.5 整数算術 & 論理演算ステンシル (32-bit Integer Arithmetic & Logic)",
@@ -1649,7 +1635,7 @@
       "sec:components/tier1_core/os_scheduler.md#6. 設計判断 (ADR)"
     ],
     "OwnerMismatchTrap": [
-      "sec:components/tier3_platform/platform_hal.md#バッファの確保",
+      "sec:components/tier3_platform/platform_hal.md#バッファの確保 (`acquire_buffer`)",
       "sec:components/tier3_platform/platform_memory.md#7. 共有メモリ (shared-block) のライフサイクル",
       "sec:components/tier3_platform/platform_memory.md#`allocate-shared` (IPC転送データ専用)"
     ],
@@ -1663,6 +1649,7 @@
       "sec:components/tier1_interface/ipc_router.md#6.1 検証対象の不変条件",
       "sec:components/tier1_interface/ipc_router.md#7.3 安全性制約と方策",
       "sec:components/tier1_interface/ipc_router.md#メッセージルーティング（route_message）",
+      "sec:components/tier1_interface/ipc_router.md#メッセージ受信（receive_message）",
       "sec:components/tier1_interface/tests/ipc_router_test_spec.md#2. テストケース一覧",
       "sec:components/tier2_runtime/runtime_vmmio.md#4.6 共有メモリマッピング (FC=14)",
       "sec:components/tier2_runtime/runtime_vmmio.md#4.8 ソフトウェアTLB",
@@ -1689,9 +1676,7 @@
     "PhysicalPassthrough": [
       "sec:components/tier2_runtime/benchmarks/vmmio_bench_spec.md#1. 目的と対象範囲",
       "sec:components/tier2_runtime/runtime_vmmio.md#1. コンセプト",
-      "sec:components/tier3_platform/platform_hal.md#5.2 Tier 3 リソースインターフェイス",
-      "sec:components/tier3_platform/platform_hal.md#ゼロコピー転送 (bus_master/streaming)",
-      "sec:components/tier3_platform/platform_hal.md#非標準制御 (control)"
+      "sec:components/tier3_platform/platform_hal.md#ゼロコピー転送 (`transfer`)"
     ],
     "PositionIndependentCode": [
       "sec:components/tier2_runtime/runtime_interpreter.md#コールフレーム（call_frame @ 統合スタックインライン）",
@@ -1731,14 +1716,14 @@
       "sec:components/tier2_runtime/debug_manager.md#仮想レジスタセット（virtual_register_set）",
       "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#GDB RSP プロトコル & 仮想レジスタ (§3.3, §4.1, gdb_rsp_protocol.md)",
       "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#実行制御 & ブレークポイント (§3.3, §4.1)",
-      "sec:components/tier3_platform/platform_hal.md#1. コンセプト"
+      "sec:components/tier3_platform/platform_hal.md#1. コンセプト",
+      "sec:components/tier3_platform/platform_hal.md#4.3 RSP (Remote Serial Protocol) パーサとデバッグキュー仕様"
     ],
     "RSP_Transport_Selectable": [
       "sec:components/tier2_runtime/debug_manager.md#1. コンセプト",
-      "sec:components/tier3_platform/platform_hal.md#4.1 アルゴリズム",
-      "sec:components/tier3_platform/platform_hal.md#4.2 状態遷移図",
-      "sec:components/tier3_platform/platform_hal.md#4.3 内部シーケンス",
-      "sec:components/tier3_platform/platform_hal.md#5.4 RSPトランスポート構成"
+      "sec:components/tier3_platform/platform_hal.md#4.3 RSP (Remote Serial Protocol) パーサとデバッグキュー仕様",
+      "sec:components/tier3_platform/platform_hal.md#6.1 アルゴリズム",
+      "sec:components/tier3_platform/platform_hal.md#6.2 状態遷移図"
     ],
     "Resource_Estimation_Model": [
       "sec:architecture/architecture_overview.md#6. リソース予算 (RAM/ROM/SLOC) とスケーラビリティ",
@@ -1811,9 +1796,8 @@
     ],
     "TaskPollInterruptFlag": [
       "sec:components/tier3_platform/platform_hal.md#1. コンセプト",
-      "sec:components/tier3_platform/platform_hal.md#4.1 アルゴリズム",
-      "sec:components/tier3_platform/platform_hal.md#4.2 状態遷移図",
-      "sec:components/tier3_platform/platform_hal.md#4.3 内部シーケンス"
+      "sec:components/tier3_platform/platform_hal.md#6.1 アルゴリズム",
+      "sec:components/tier3_platform/platform_hal.md#6.2 状態遷移図"
     ],
     "ThreadedInterpreter": [
       "sec:architecture/architecture_overview.md#3.1 Pillar 1: 統合スタックフレーム・モデル (Unified Stack Frame Model)",
@@ -1840,7 +1824,6 @@
       "sec:specs/wasm_instruction_set.md#3.6 64ビット整数・浮動小数点命令と Libgcc ランタイムヘルパー"
     ],
     "ThreeStageRouting": [
-      "sec:components/tier3_platform/platform_hal.md#5.3 URI/IPCインターフェイス",
       "sec:components/tier3_platform/platform_memory.md#7. 共有メモリ (shared-block) のライフサイクル",
       "sec:components/tier3_platform/platform_memory.md#`allocate-shared` (IPC転送データ専用)",
       "sec:components/tier3_platform/platform_memory.md#所有権要求（claim）"
@@ -1852,13 +1835,15 @@
       "sec:components/tier1_core/system_syscall.md#トラップ高速パスとレジスタ直接マッピング"
     ],
     "TypeSafeMessaging": [
-      "sec:architecture/architecture_overview.md#3.6 Pillar 6: 有界ゼロコピー・ランデブー・メールボックス (Bounded Zero-Copy Rendezvous Mailbox)",
+      "sec:architecture/architecture_overview.md#3.6 Pillar 6: ゼロコピー CSP ランデブー・ハンドオフ (Zero-Copy CSP Rendezvous Handoff)",
       "sec:components/tier1_interface/ipc_router.md#5.2 URI/IPCインターフェイス",
       "sec:components/tier1_interface/ipc_router.md#5.3 サービスファサード",
       "sec:components/tier1_interface/ipc_router.md#IPCメッセージ（message）",
+      "sec:components/tier1_interface/ipc_router.md#スコープ定義",
       "sec:components/tier1_interface/ipc_router.md#レジストリエントリ（registry_entry）",
-      "sec:components/tier3_platform/platform_hal.md#5.5 メッセージ形式",
-      "sec:components/tier3_platform/platform_hal.md#非標準制御 (control)",
+      "sec:components/tier3_platform/platform_hal.md#1. コンセプト",
+      "sec:components/tier3_platform/platform_hal.md#4.2 WASI 0.3p IPC ドライバ通信コマンド仕様",
+      "sec:components/tier3_platform/platform_hal.md#5.2 WASI 0.1p (`wasi_snapshot_preview1`) 互換ラッパー",
       "sec:specs/wasi_preview1_abi.md#1. 概要と基本思想",
       "sec:specs/wasi_preview1_abi.md#3.1 文字入出力 & ストリーム API (I/O & Streams)"
     ],
@@ -1877,11 +1862,17 @@
     "URIAbstraction": [
       "sec:architecture/architecture_overview.md#1. アーキテクチャコンセプトと基本思想",
       "sec:components/tier1_core/os_coos.md#CSPチャネル（channel）",
+      "sec:components/tier1_interface/interface_wit.md#1. 目的",
+      "sec:components/tier1_interface/interface_wit.md#2. アーキテクチャ原則",
+      "sec:components/tier1_interface/interface_wit.md#3.1 基礎インターフェイス & IPC URI Resolver",
       "sec:components/tier1_interface/ipc_router.md#1. コンセプト",
       "sec:components/tier1_interface/ipc_router.md#2. アーキテクチャ分類",
+      "sec:components/tier1_interface/ipc_router.md#スコープ定義",
       "sec:components/tier1_interface/system_service.md#2. アーキテクチャ分類",
+      "sec:components/tier3_platform/platform_hal.md#1. コンセプト",
       "sec:components/tier3_platform/platform_hal.md#2. アーキテクチャ分類",
-      "sec:components/tier3_platform/platform_hal.md#5.3 URI/IPCインターフェイス"
+      "sec:components/tier3_platform/platform_hal.md#4.1 階層型 URI 命名規則 (Hierarchical URI Scheme)",
+      "sec:components/tier3_platform/platform_hal.md#5.1 「HAL ＝ WASI 0.3p」統合アーキテクチャ"
     ],
     "UnifiedAccessModel": [
       "sec:components/tier1_core/system_syscall.md#2. 背景",
@@ -1915,7 +1906,8 @@
       "sec:components/tier1_core/system_syscall.md#5.7. WASI (`0x80`-`0xBF`)",
       "sec:components/tier1_interface/interface_wit.md#5.3 `fireball:host/bus` (Master/Slave Bus)",
       "sec:components/tier1_interface/interface_wit.md#5.4 `fireball:host/streaming` (wasi:io 準拠)",
-      "sec:components/tier1_interface/interface_wit.md#5.6. WASI標準APIの実装仕様 (WASI Standard API Implementation Specification)"
+      "sec:components/tier1_interface/interface_wit.md#5.6. WASI標準APIの実装仕様 (WASI Standard API Implementation Specification)",
+      "sec:components/tier3_platform/platform_hal.md#5.1 「HAL ＝ WASI 0.3p」統合アーキテクチャ"
     ],
     "WIT_Common_Types": [
       "sec:components/tier1_interface/interface_wit.md#1. 目的"
@@ -1979,13 +1971,13 @@
     "sec:architecture/architecture_overview.md#2. 静的構造とレイヤー構成": "2fcf9d7be3b4d67d121e3da671cc690ffa7132999394cad5c9b24fb0d48fb9d1",
     "sec:architecture/architecture_overview.md#2.1 レイヤー構成": "423dcff85d7307eb5d80c8dae242e1e224117c4a3d07251211512c6ef2bc8e49",
     "sec:architecture/architecture_overview.md#2.2 コンポーネント定義図 (BDD)": "58cc4526ce4f8a9575113f9331ef4f65aa1b16973172193a364bdd82da6640e6",
-    "sec:architecture/architecture_overview.md#3. 6大物理コアメカニズム (The 6 Physical Pillars)": "ec297aaf34a7c8db1fd1ff6db88a2273aeb0dc7be6416ba5389b86b9bc6a2a9c",
+    "sec:architecture/architecture_overview.md#3. 6大物理コアメカニズム (The 6 Physical Pillars)": "6655558ea392e71893faa8ccde5c7bee99abc99546ad276ad9d0885b36bd0981",
     "sec:architecture/architecture_overview.md#3.1 Pillar 1: 統合スタックフレーム・モデル (Unified Stack Frame Model)": "7f75b6e65acc7b09c7a49e663800ba16bf1475e3d8982454cb369efc8e2bbf70",
     "sec:architecture/architecture_overview.md#3.2 Pillar 2: 3段直接 JIT 検索パイプライン (3-Stage Direct JIT Lookup Pipeline)": "4689a963727a133bf355320fdc0377bee496543879ec4d3a156c8e29a353e6a3",
     "sec:architecture/architecture_overview.md#3.3 Pillar 3: 3面世代交代回転コードキャッシュ (3-Bank Generational Rotating Code Cache)": "263209035794afdd45d7efbe655f9f13854c45cf89aa6ead14ee6013d7a90d67",
     "sec:architecture/architecture_overview.md#3.4 Pillar 4: 対称直接ハンドオフ・エンジン (Symmetric Direct Handoff Engine)": "2b0e05d9bf07b3009f1b2bd93601a07622c90c5467dd13bba260fc3d534a5345",
     "sec:architecture/architecture_overview.md#3.5 Pillar 5: 折りたたみXOR TLB ＆ 平坦ページ表 (Folding XOR TLB & FlatMap Page Table)": "78d1ca82ff8733cf00667ed6ae542adf087f16144dbe73f0560d04a702334910",
-    "sec:architecture/architecture_overview.md#3.6 Pillar 6: 有界ゼロコピー・ランデブー・メールボックス (Bounded Zero-Copy Rendezvous Mailbox)": "21e61aa8407832c59f54bb37a09f403d91b85675359738cd7a561cd2a434c1f0",
+    "sec:architecture/architecture_overview.md#3.6 Pillar 6: ゼロコピー CSP ランデブー・ハンドオフ (Zero-Copy CSP Rendezvous Handoff)": "e0e8de64bbbc9b99d4eb2764b850b51b16623699ed85906f07894a24638f3776",
     "sec:architecture/architecture_overview.md#4. 物理レジスタ＆ABI規約 (Physical Register & ABI Map)": "2cb980a0f623c96c7eadefde0358d5530aeab645d3114f275ecabce035a1d149",
     "sec:architecture/architecture_overview.md#4.1 メモリ常駐構造体の物理バイトオフセット": "70a54ea80225832b784738ff5829bf69bab2ea318a79e6aee856b3d4729c72ec",
     "sec:architecture/architecture_overview.md#5. Conceptベース・ハーネス設計 (Concept Harness)": "0a7d6af48ff5682d94d1cd6008247c36dbdc3043bf2dcfc6179edafe21a4dff0",
@@ -2022,7 +2014,7 @@
     "sec:architecture/document_structure.md#Fireball ドキュメント体系定義書 (Document Structure & Metadata)": "65f04ec24037b24e5ff2dc29bf26fe5634f6d29caaaa5290b3985444f0cff142",
     "sec:architecture/integration_test_scenarios.md#1. 目的と対象範囲": "cb43342e36181717e95cf6281050101c7a260f026576739f7ee853f326f788e5",
     "sec:architecture/integration_test_scenarios.md#1.1 コンポーネント × 結合テストシナリオ カバレッジマトリクス (Coverage Matrix)": "c64f51b183f4ebc2489aca98941e30ce16deeb3a5d69dd86ed8cfe569caace63",
-    "sec:architecture/integration_test_scenarios.md#1.2 仕様キーワード・不変条件カバレッジ追跡表 (Requirements Traceability Matrix: RTM)": "a3542caf0bc4e3167c92b0dc7145b33c931815ab13b5f993d5fd68b9d5238785",
+    "sec:architecture/integration_test_scenarios.md#1.2 仕様キーワード・不変条件カバレッジ追跡表 (Requirements Traceability Matrix: RTM)": "6ce81a46b85b3002c93a19ad5c433991f6833221fc53ae21f2022a91b97ec351",
     "sec:architecture/integration_test_scenarios.md#2. 結合テストシナリオ一覧": "1f6087a34a80c742fab45802b188183b0b6383b1fe1f18a1380b34f7c1d4206d",
     "sec:architecture/integration_test_scenarios.md#3. 実行方法と検証結果": "f05a3a3b3d9b2d040efd1eb71a47d5cdf03e001aed29b14d43e2f2755d42bcb9",
     "sec:architecture/integration_test_scenarios.md#コンポーネント間 結合テスト仕様書 (Integration Test Specification)": "60c70a2509ca63895563cac5411b044e865ab82a7d0c6bf879643c84e3cc729f",
@@ -2036,12 +2028,12 @@
     "sec:architecture/integration_test_scenarios.md#シナリオ 6: COOS Cooperative Multitasking & Coroutines": "3a6e6fe62d70bd0104b2a6b8f299b0f46a35462657d351f9bb877e67a44d1cbb",
     "sec:architecture/integration_test_scenarios.md#シナリオ 7: GDB Remote Serial Protocol (RSP) Socket Debugger": "f5d2ff0e554cf3b392eee4c4283dfaf468c98d3e853a287364e890830fb23c79",
     "sec:architecture/integration_test_scenarios.md#シナリオ 8: Storage Coverage (Globals / Locals / Memory Full-Width) & GDB Debugger": "ca63a0597b449a9549cd8275a93120b89854f8357cf0f53bcb3e40a30b122bdd",
-    "sec:architecture/integration_test_scenarios.md#シナリオ 9: Tier 1 Interface IPC Router & Structured Logging": "40cb547cbfa4150b459093374ac9f049fed1963571407b42a1e6c834cdb79f7f",
+    "sec:architecture/integration_test_scenarios.md#シナリオ 9: Tier 1 Interface IPC Router & Structured Logging": "d4ff1df7da7b0df65ec87146695fc100d548c48c83708f5ca2c8a27895131b59",
     "sec:architecture/integration_test_scenarios.md#検証実績": "a829deb445eb7a0f34f6b2e47159ba9ea7ec5f09ce9ae26824cc27532aedb2be",
     "sec:architecture/keyword_dictionary.md#1. リンクキーワードの運用ルール": "1920a8c9397b9831fb2a9e5660bb34e3bb102c80303e9213179ed449ad8bcf15",
     "sec:architecture/keyword_dictionary.md#2. カテゴリ別 リンクキーワード台帳": "3e7482e011c124a23ae770d3d7f39b4738b9e08fbcd1027912eb4d64167e282a",
     "sec:architecture/keyword_dictionary.md#2.1 WASM実行 & ランタイム (vSoC / Interpreter / Loader / vMMIO)": "96bd3febf8957a8945af0043116e86d827960985b3ac1e299a2a4f8105a36a7d",
-    "sec:architecture/keyword_dictionary.md#2.2 タスク管理・スケジューリング・通信 (COOS / Scheduler / IPC)": "3f5ca6b932072ba03d7d8e9892310765af5ecafa5015fddf67b56ae1bc07c42b",
+    "sec:architecture/keyword_dictionary.md#2.2 タスク管理・スケジューリング・通信 (COOS / Scheduler / IPC)": "3bd424e686b61bbffed1c5b034bae6bd745619b7c40c056f2a1429bd66995b57",
     "sec:architecture/keyword_dictionary.md#2.3 JIT コンパイラ & ランタイム (JIT Compiler / Runtime)": "6b7ef298f08313480efbd31e9ff2b6de2b726ae459a7a47ab23c40831dca71e3",
     "sec:architecture/keyword_dictionary.md#2.4 デバッガ & システムコア & プラットフォーム (Debug / Syscall / Logging / HAL)": "076f075d9480e10b18ad4c3036bf635ca95314a00294712a53cb6dcb4ec2918d",
     "sec:architecture/keyword_dictionary.md#3. システム横断 メタキーワード (Meta & Global Keywords)": "b342bfe139ae7210894b67cdba0abf5bdefe3ec8e99de04dcf6b8c3aa0e56256",
@@ -2100,10 +2092,10 @@
     "sec:components/tier1_core/system_config.md#3.2 内部ブロック図": "d2958dca7e8982e9688930506b53f200b84527ea8676abbc66cd91d8d14616e7",
     "sec:components/tier1_core/system_config.md#3.3 コンフィグマクロ一覧・定義": "7c958d0084128f0b42f9f7db8c525eca637105e02cb8562bab66a43ee312823e",
     "sec:components/tier1_core/system_config.md#3.3.1 メモリ管理": "be80c92f4d61e7cd44b8dc7466de24684a79f245d7a90f771acedc67b50d8759",
-    "sec:components/tier1_core/system_config.md#3.3.2 IPCルータ": "5a740a0a8a36f664ec47fd66834ade96a6686c71fbc28f1126a6af9a30ac7c4e",
+    "sec:components/tier1_core/system_config.md#3.3.2 IPCルータ": "f97f4bc411cad07e277eb95da07f8681c07c3a83a81e2fb99822313387898e8b",
     "sec:components/tier1_core/system_config.md#3.3.3 HAL": "f5d229525296c5a6b36ee26f4c2b898452b6e1373c58d1e382bf0fe7ddf0fb1f",
     "sec:components/tier1_core/system_config.md#3.3.4 vSoC / vMMIO": "764e4350e57228de03277d68d5104c4df5d76b984f87de52b51110764590bc74",
-    "sec:components/tier1_core/system_config.md#3.3.5 ロギング・デバッガ": "b78a183eb75e6299780cf4672594e630e3ffda7819cd3cefab9baf974c1d8672",
+    "sec:components/tier1_core/system_config.md#3.3.5 ロギング・デバッガ": "848ac5d350937d644b259d10be7c494ae4806c34a9ecea3d50c0f536e1399959",
     "sec:components/tier1_core/system_config.md#3.3.6 タスクID型・予約値": "ad830f6876c91dfc7ab2224b7cf59a4fccad1aa49314b286eebd53a0c8e435fc",
     "sec:components/tier1_core/system_config.md#3.3.7 リカバリー戦略": "820afc9a332fd60b04ff47d1d2ed2add4a6db57b856ca9e044bb81612896959c",
     "sec:components/tier1_core/system_config.md#4. 動的モデル": "341dff8c7275b6011b54ff1bbf2ddf06f6c8faa457638ff164c4b2df64ef68f0",
@@ -2116,7 +2108,7 @@
     "sec:components/tier1_core/system_containers.md#1. コンセプト": "166e3c575b9768d7c735562c662ce9b196c4a99109ed172a5f1158a8a6c6ff5d",
     "sec:components/tier1_core/system_containers.md#2. アーキテクチャ分類": "bd0dbe0f4c9301a55fea39cc545d754e0a3c5b880129d8a88047c54e72ea72bd",
     "sec:components/tier1_core/system_containers.md#3. 静的モデル": "459903c009123dfac68cdcb823db2cc6942f63d0c494c2127f2dbd07be7268f6",
-    "sec:components/tier1_core/system_containers.md#3.1 データ構造": "0698a38e46c9706971bd5435f45866f129865eaa5ce82cbd3d202ac20f62c4bb",
+    "sec:components/tier1_core/system_containers.md#3.1 データ構造": "83eb20c11c9257288d09aeb7f1b0619450acf05e7a4353a50024a64545dd30ae",
     "sec:components/tier1_core/system_containers.md#3.2 内部ブロック図": "79b91bb9f0c492ef17b69c1657f8e63e8449c19a0555d3e2271161c2c79710f6",
     "sec:components/tier1_core/system_containers.md#3.3 主要なクラス・構造体・配列・定数": "343760f0b594de0591386397610b0f816a7706c6df4f44c8f027a01d6c1e01a0",
     "sec:components/tier1_core/system_containers.md#4. 動的モデル": "341dff8c7275b6011b54ff1bbf2ddf06f6c8faa457638ff164c4b2df64ef68f0",
@@ -2138,7 +2130,7 @@
     "sec:components/tier1_core/system_containers.md#所属判定（contains）": "8fbe8a77bdb76ad6fb252ceceee1f9351eea0a8eeaa85425e224aa73d70f6bad",
     "sec:components/tier1_core/system_containers.md#添字による状態参照（at / put）": "b123b7aa0b7bdc6ac1e26173fb23d85a396faf5b9098d951381120aceffea601",
     "sec:components/tier1_core/system_containers.md#添字区間による絞り込み（slice）": "f2ee0198cc340abc861d04bbb0c3c0aeec342accecef679062937e907e06523a",
-    "sec:components/tier1_core/system_containers.md#疎マップビュー（flat_map_view）": "2ef5d41012ddb1b15f62d4cf40369d8ecb8e3181ea4a877916507e1fb8c01e98",
+    "sec:components/tier1_core/system_containers.md#疎マップビュー（flat_map_view）": "285efaf07b624d4bdf22481a53ffb55af3a60782aaa441dc8d4a22d0074ea4ae",
     "sec:components/tier1_core/system_containers.md#疎集合ビュー（flat_set_view）": "c7a409eaa7f3e798c1893d3cde31808f69d2d9fae7c6e4b92bb2bdd23529fcc4",
     "sec:components/tier1_core/system_containers.md#静的コンテナ語彙 コンポーネント設計書 {VERIFY_BENCHMARK} {VERIFY_LLM}": "1cc9342515a293fb580a1c92ada0a24982425c1b6d8fc18cb206441aac061984",
     "sec:components/tier1_core/system_logging.md#1. コンセプト": "9ef96afe0ab4fd74195324c2b55f25ea89f95d5a9f70ba93dfe6f7b148af260a",
@@ -2207,7 +2199,7 @@
     "sec:components/tier1_core/tests/os_scheduler_test_spec.md#4. 未検証・スコープ外": "ce6c99d8e110fd7855fb6590e5df1423b22bb1db5ee3996e45f4eb854bcf1e41",
     "sec:components/tier1_core/tests/os_scheduler_test_spec.md#COOSスケジューラ テスト仕様書 (Test Specification)": "84b2f15971a11c51a9e94ec06d1cd06c6a1c051535e3260f3c78310c32a8ca93",
     "sec:components/tier1_core/tests/system_config_test_spec.md#1. 目的と対象範囲": "2f2c95aec9ac5d72942382afd4f36a7b126c782f863716a682b11e613f1c7c16",
-    "sec:components/tier1_core/tests/system_config_test_spec.md#2. テストケース一覧": "fb81235dda2900ef3acc2d3418fb57b89ce2f55962c6b93c8595a0f566199f51",
+    "sec:components/tier1_core/tests/system_config_test_spec.md#2. テストケース一覧": "59f962527c0a35911e74f0aa3ea1305284e8de437f670b1f1a6ea5116235e684",
     "sec:components/tier1_core/tests/system_config_test_spec.md#3. テスト検証実績と網羅状況": "4aa107b40564b94e2ba33b0048fa6114b9d200db45ace4adfac27292aa7882f5",
     "sec:components/tier1_core/tests/system_config_test_spec.md#4. 未検証・スコープ外": "fa2c377f6305182e98d3e04d92f656759bf9e2d965730451e2dd937e0923ab1d",
     "sec:components/tier1_core/tests/system_config_test_spec.md#システムコンフィグ テスト仕様書 (Test Specification)": "95af56b30fb9dc4eb2281892ea8c86d1d8d213ef30626cf17454406342bddec4",
@@ -2225,7 +2217,7 @@
     "sec:components/tier1_core/tests/system_syscall_test_spec.md#2. テストケース一覧": "07c66dedc5007761a55d09a950d8038e2eda29cba4b06ba0f50031507dc98675",
     "sec:components/tier1_core/tests/system_syscall_test_spec.md#3. テスト検証実績と網羅状況": "4aa107b40564b94e2ba33b0048fa6114b9d200db45ace4adfac27292aa7882f5",
     "sec:components/tier1_core/tests/system_syscall_test_spec.md#4. 未検証・スコープ外": "1ac3ac43363e74d15375350feb5e385acf9552427f05611a43344e996c85a2f9",
-    "sec:components/tier1_core/tests/system_syscall_test_spec.md#IPC (`0x40`-`0x4F`)": "58cd8dbc496527b111a5903e5ede455d3b27cf1ca4739b7a40e1a09d634ba179",
+    "sec:components/tier1_core/tests/system_syscall_test_spec.md#IPC (`0x40`-`0x4F`)": "c96a36e27282ca285ff9771779f89e113806ddb418b0e847e6882e810211f062",
     "sec:components/tier1_core/tests/system_syscall_test_spec.md#IRQ (`0x30`-`0x3F`)": "3e5b2c9a2caa8efa8bc2ee9246f7ab5743cbaeaa87214f37a5a7c9063b1aba91",
     "sec:components/tier1_core/tests/system_syscall_test_spec.md#System (`0x00`-`0x0F`)": "20498259ebf6b2fc4016cbcb80455fe6b90eb28cf89b5029ec51587c15136026",
     "sec:components/tier1_core/tests/system_syscall_test_spec.md#VDMA (`0x20`-`0x2F`)": "5ad3a3522fed037237dac45e7b1166903f64ead65152b4fe9a7f229fbf1baf08",
@@ -2233,11 +2225,11 @@
     "sec:components/tier1_core/tests/system_syscall_test_spec.md#vMMIO Generic (`0x10`-`0x1F`)": "45e7318132efcc0f65ded984afb7956612e282876641def55fb70fc7b64a13dc",
     "sec:components/tier1_core/tests/system_syscall_test_spec.md#システムコール (`fireball_call`) テスト仕様書 (Test Specification)": "0f7f3bda93b34c76de48b5ae9e1d2eb43a8ef1c5854ac86bfa772f43744cd4a1",
     "sec:components/tier1_core/tests/system_syscall_test_spec.md#共通・エラー処理": "1b6523358b205eb8f0b88e98fba850705052883718dfe12247c6ee488ff798f3",
-    "sec:components/tier1_interface/interface_wit.md#1. 目的": "d232d08b93444196909510e06bf95c5365625788bb28635981669338666a7254",
-    "sec:components/tier1_interface/interface_wit.md#2. アーキテクチャ原則": "79cd45b0b37244e7d86b31b40701bcbe26b13c2d62b01c1fdede1aad4978a02d",
+    "sec:components/tier1_interface/interface_wit.md#1. 目的": "5e81b9fcb6009fd0f7563f69430a41a7d959052a3b3e96c93b1b68c54f4e1a2c",
+    "sec:components/tier1_interface/interface_wit.md#2. アーキテクチャ原則": "a8c38e6420d708627f891775118483daf64f453f1569f860d7cc5e4ff95ab2b4",
     "sec:components/tier1_interface/interface_wit.md#3. 共通データ構造": "be7474df74c6a621778a36dc1660d042c96f049b955be43b8b56b053a356c9f4",
-    "sec:components/tier1_interface/interface_wit.md#3.1 基礎インターフェイス": "6c7535a6f10f04f8fbf12c8c55fb3f793d77d9efad0c62f5a65cb9a3c6be4e43",
-    "sec:components/tier1_interface/interface_wit.md#3.2 リカバリー戦略とエラーハンドリング": "1aefd5d90c860414105e96cb5a83628821d15ac61143948326422d2105236f78",
+    "sec:components/tier1_interface/interface_wit.md#3.1 基礎インターフェイス & IPC URI Resolver": "7d58e9720b89c9735cf82cf3ef7a498e53f4c93eb6c6f0a54c700ad8f62cbde8",
+    "sec:components/tier1_interface/interface_wit.md#3.2 リカバリー戦略とエラーハンドリング": "a04b75f9d507274cec772fadd88940bc0fae3353092ed891d4fca3d2ead67d80",
     "sec:components/tier1_interface/interface_wit.md#4. 低レベル・トラップ・インターフェイス": "146fae629d67cb64b75aba6073a8685f8ac8a510fcb23432b156d7c2adf5b459",
     "sec:components/tier1_interface/interface_wit.md#4.1. `fireball:host/trap` の定義": "970ba466eb29b7b592949d7ecf506e092c6c73a98bf228c71abe181aac3e657c",
     "sec:components/tier1_interface/interface_wit.md#4.2. 高応答トラインターフェイス": "55e256d3353f3791130740d91d827c33eaf2d44a90f94214ae2484997ef5f546",
@@ -2253,47 +2245,48 @@
     "sec:components/tier1_interface/interface_wit.md#8.1 設計上の留意点": "542e91dd2ea4fef65f2502ec290c4264500866cd83c1474131a32eb51980ad58",
     "sec:components/tier1_interface/interface_wit.md#WIT インターフェイス仕様書 (WASI 準拠版) {VERIFY_WIT} {VERIFY_LLM} {VERIFY_FORMAL}": "55194ca4c2d77d661c48853be93c6278240c8ea3fd16ac06b00008eda8672f11",
     "sec:components/tier1_interface/interface_wit.md#リカバリー戦略の事前・事後条件と不変条件": "cfb6f83a4db8195b1307b01cf6ea855016d7053031d430e11663ff513316b135",
-    "sec:components/tier1_interface/interface_wit.md#設計判断": "2ea42544021d7fb62429966e5b5926c3c36f7ab59d10623c372e96d92264ec70",
+    "sec:components/tier1_interface/interface_wit.md#設計判断": "c2fe0a5f0c9493033a87c3895905470a7ff1112f21f4e0190e2a16e752d8550c",
     "sec:components/tier1_interface/ipc_router.md#1. コンセプト": "70a0d8c09442eaeccbbf24881c7eaad0187f518454e66c95b43c68048c89f79d",
     "sec:components/tier1_interface/ipc_router.md#2. アーキテクチャ分類": "3c0fbf13bd39d2e26cd816c86bc28887fa05a9b67aaebb6ab63125f48af9c918",
     "sec:components/tier1_interface/ipc_router.md#3. 静的モデル": "459903c009123dfac68cdcb823db2cc6942f63d0c494c2127f2dbd07be7268f6",
     "sec:components/tier1_interface/ipc_router.md#3.1 データ構造": "53734939263c00109fff4849997db0f67a64010079bb5f8109e71cc3c342cf7f",
-    "sec:components/tier1_interface/ipc_router.md#3.2 内部ブロック図": "ab242d355f0b6d0a297e6f5619d9638f0f68bff02109b022d9d510693d75454f",
+    "sec:components/tier1_interface/ipc_router.md#3.2 内部ブロック図": "62042e4d6680cc1e21d2e49416c7fb77894b9906c2e6bcdec24868e450e83513",
     "sec:components/tier1_interface/ipc_router.md#3.3 主要なクラス・構造体・配列・定数": "b325ca33c3eb770c7ea2d0abca5f73274d8647192fb009bfea313f1ff96a55f9",
     "sec:components/tier1_interface/ipc_router.md#4. 動的モデル": "341dff8c7275b6011b54ff1bbf2ddf06f6c8faa457638ff164c4b2df64ef68f0",
-    "sec:components/tier1_interface/ipc_router.md#4.1 アルゴリズム": "36e61137f3e5556ac70f60b0298d9979c9dae5dc3a02b169bdbc3e238941325a",
-    "sec:components/tier1_interface/ipc_router.md#4.1.1 名前解決パイプラインとアクセス制御フロー": "e611bdcbb55364c84ce56316729ebf5b4c816278ebec27eade8d3185805bb9af",
-    "sec:components/tier1_interface/ipc_router.md#4.2 状態遷移図 (SysML SMD: IPC Router ルーティングフロー)": "e0174f14e836a298292938369014e7420a8d15f138036072825902b0b3adf20e",
-    "sec:components/tier1_interface/ipc_router.md#4.2.1 所有権移譲状態機械 (Ownership Transfer State Machine)": "ffb12c965d23ecf607ebfe85d6891c95da04af085dad9b0c990ef6df10e675f9",
-    "sec:components/tier1_interface/ipc_router.md#4.3 メッセージライフサイクルと所有権管理 (SysML Parametric Diagram 相当)": "2b61b220564428a1bf1a30a548fd733e5cae2b45bb7b5ccc294dc24f25dcb76f",
+    "sec:components/tier1_interface/ipc_router.md#4.1 アルゴリズム": "23449d4108fffb1f7f37ab53483c02adc8a46e5f20c3650f7af0e79fbd351c87",
+    "sec:components/tier1_interface/ipc_router.md#4.1.1 名前解決パイプラインとアクセス制御フロー": "d6494a545fa8e59b30cb4e872cd2e8a68655d70606c0ba45c24d8cd38aa15ab2",
+    "sec:components/tier1_interface/ipc_router.md#4.2 状態遷移図 (SysML SMD: IPC Router ルーティングフロー)": "02e7de8198dbe96604d6d4a1c36ce9cc3f5a2bbce20b4d4912da7c88e78edf8b",
+    "sec:components/tier1_interface/ipc_router.md#4.2.1 所有権移譲状態機械 (Ownership Transfer State Machine)": "dff709ec183328d018dfcc8112647b17dc914df1cc37f788c432737b98e29eb2",
+    "sec:components/tier1_interface/ipc_router.md#4.3 メッセージライフサイクルと所有権管理 (SysML Parametric Diagram 相当)": "3fafb791c232f1e1cbfcf73cc1b660bdcf2345b9dbf0fa9deba87aa9aab10e2f",
     "sec:components/tier1_interface/ipc_router.md#4.3.1 二分探索による O(log N) 低遅延ルックアップ": "90913d54a5c1923e1ce289a4bb0b5983a48b51447192dba0a76dfab665bbb1a4",
-    "sec:components/tier1_interface/ipc_router.md#4.3.2 CSP Handoff スターベーション防止対策": "cbf4158d7a9ed499e09b67dc24ba1368b0257f3a5cbdc1fb5b4d9b8507f91d71",
-    "sec:components/tier1_interface/ipc_router.md#4.4 内部シーケンス図": "7f54f0f520217e4ebd40cdef3b5e02a2679a45c16b52029d39ae5fa9aa9fee69",
+    "sec:components/tier1_interface/ipc_router.md#4.3.2 CSP Handoff スターベーション防止対策": "dfbfc326c93488e030cb3c7917d3d783a5b3e63770f0ea743ce18e26f2750f60",
+    "sec:components/tier1_interface/ipc_router.md#4.4 内部シーケンス図": "6ba187d6e8e52f09550cb3be908e3a5325e02ebd378f9d59a1ed31f5068a8707",
     "sec:components/tier1_interface/ipc_router.md#5. インターフェイス定義": "7fb2c3f821c8108eaeee550240364da2e99fa84646a9aedec1b6dc4e18c54849",
     "sec:components/tier1_interface/ipc_router.md#5.1 公開API": "509e41a7803750e8b757cfca597a499cacfa66391da02a83f6bc5e08e6dccecf",
     "sec:components/tier1_interface/ipc_router.md#5.2 URI/IPCインターフェイス": "9512da707169e039f274ff043c09c18e3376f621b2b73e243a667dd884a7252f",
     "sec:components/tier1_interface/ipc_router.md#5.3 サービスファサード": "8cdb015a742d3ef446d22f9d73ec833ef8154a3f1a5371e711171d097f29b5c5",
     "sec:components/tier1_interface/ipc_router.md#6. 形式検証（pyModelChecking / 直交表）": "38321e6cf975c1902e55b90064d6578bae51397964c01508123b0bc5b6aad140",
-    "sec:components/tier1_interface/ipc_router.md#6.1 検証対象の不変条件": "8dff39263d276d3a050acebc55cbdc9ed0e786f72859a04477498e0e8e50b863",
-    "sec:components/tier1_interface/ipc_router.md#6.2 検証対象のプロパティ": "fb66ba7d9d38bf4f3c8d5c690265f4845dd591a71f6cb89f95084eaa2fd13238",
-    "sec:components/tier1_interface/ipc_router.md#6.3 検証モデル概要": "bcb199bc16469dae5b9dce2f747505b2acc47efbff670b01f55bf17cbfb963ae",
-    "sec:components/tier1_interface/ipc_router.md#6.4 既知の制限": "b2dc1c7a837aa65ae5b910cf2800e7a921ec98e7dd0bc2f996fb80d824dcff4e",
+    "sec:components/tier1_interface/ipc_router.md#6.1 検証対象の不変条件": "89dcb929569e51e330376e4a7ae5db6755fe86e22532eb0ec2dd802ef19c1a04",
+    "sec:components/tier1_interface/ipc_router.md#6.2 検証対象のプロパティ": "7d50ddb9ce2866eee1441d3de3accdd3eadd170c8e0ff267aae86c5f3a7216fc",
+    "sec:components/tier1_interface/ipc_router.md#6.3 検証モデル概要": "d4256b888f78aca9ac372d194f1a0b880bb23532c0918c43104ef5275a52ffe1",
+    "sec:components/tier1_interface/ipc_router.md#6.4 既知の制限": "f8f309bcc20a760fd7fe6258c92bf07136e0b4f9c0828655697afc357dab7b8e",
     "sec:components/tier1_interface/ipc_router.md#7. 制約達成の方策": "247d83c640293e1b640c4891a38d0614ff58f8c93b5b25f3fe0fe7d13c756d78",
     "sec:components/tier1_interface/ipc_router.md#7.1 性能制約と方策": "6e6cf096ac5b34b0ec6c6b7492af83be746f1a6f47ddfa9e36aca87f68b5645b",
     "sec:components/tier1_interface/ipc_router.md#7.2 メモリ制約と方策": "fabc525e392d27df0fb1689f6a3dc1549cb903abce0c9a62bb05f661573d6c76",
     "sec:components/tier1_interface/ipc_router.md#7.3 安全性制約と方策": "6853ff673afdffecd01b75293e344318fbd53120932a01f9f1e455bebda12aa0",
-    "sec:components/tier1_interface/ipc_router.md#IPC ルータ フルセット・コンセプトコード (`concepts/ipc_router_concept.py`)": "46b22dc3d4dc11198136cdcff5a07a66c969d79e96368d307525ee36acc88911",
+    "sec:components/tier1_interface/ipc_router.md#IPC ルータ フルセット・コンセプトコード (`concepts/ipc_router_concept.py`)": "040c0392506e7c747d8d9019c2d59e20fe01b611cf7090e871c3cfbff7fce4fe",
     "sec:components/tier1_interface/ipc_router.md#IPCメッセージ（message）": "233e25fc0670adeb00a7dc3965f83b12c95c18692c7cfe3a37cb93c530071ff1",
     "sec:components/tier1_interface/ipc_router.md#IPCルータ コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM} {VERIFY_BENCHMARK}": "7e116f25a2fcaf27c4bc0360893f1f8709abdfeed125e7b77fb765b1a6cdb9c4",
     "sec:components/tier1_interface/ipc_router.md#Key-Valueペア（kv_pair）": "7b9ac48d56de7e57bef1eaa1f64d751b5a19a7b1f566ffcf9e9271208afb59c1",
-    "sec:components/tier1_interface/ipc_router.md#サービス検索と接続フロー": "692bcd505bfc2f0d1ab98ba880af37d2224cf2be4ff3db4f106d60de1f3ec7df",
+    "sec:components/tier1_interface/ipc_router.md#サービス検索と接続フロー": "c3b0ed57f4a557894ecf902323e6ab7aa81866a61c81dd188b725630fdc244ca",
     "sec:components/tier1_interface/ipc_router.md#サービス検索（lookup_service）": "2e4a0d96f43bf19d54f011c49da894bb12ceef63472168ef0da24a43f564a269",
     "sec:components/tier1_interface/ipc_router.md#サービス登録（register_service）": "1920c939afb20ee86e6bc1551665dfec822037691cb2e452f3943de02bb4498f",
-    "sec:components/tier1_interface/ipc_router.md#スコープ定義": "3761f13df5bd89d12b1e4862133aaa2878e4d3a1d76eb3c1371f3e15a7cf943a",
-    "sec:components/tier1_interface/ipc_router.md#メッセージルーティング（route_message）": "7666c9596ed1bdcfe60b904aeb962c72434d34e8c53cd92ab5d9cdc40a451c0e",
-    "sec:components/tier1_interface/ipc_router.md#レジストリエントリ（registry_entry）": "101f8265f8081cd77f4e8b066faf1b63d8ad1d4d89cc4381937ebe44a9639e11",
-    "sec:components/tier1_interface/ipc_router.md#ロール間通信許可マトリクス (FB_CONF_ROUTER_ROLE_MATRIX)": "c91dcb70d99d8c02359e20c6dbe0d60e0ce30e0830400f76b05d3200829d383f",
-    "sec:components/tier1_interface/ipc_router.md#所有権移譲フロー (Zero-Copy Handoff)": "967e64140465e2d899afd9cbf62c02e4dec8652b2ea50f361c96aa006b30a3a2",
+    "sec:components/tier1_interface/ipc_router.md#スコープ定義": "15eae80f1a1c36a98bcf697fbd1b7f4c7873d8032b9d1d0513e2667c6af943f8",
+    "sec:components/tier1_interface/ipc_router.md#メッセージルーティング（route_message）": "f05656a66ceee71ff3486b292f10b349284e7c639a60d61dcb5ee476383664f3",
+    "sec:components/tier1_interface/ipc_router.md#メッセージ受信（receive_message）": "8b5214cf515284a782cf697532a4c76aaf53c983d9b76a71b1cbffec40559c04",
+    "sec:components/tier1_interface/ipc_router.md#レジストリエントリ（registry_entry）": "bae085b2f67cf1177a45b891c64b4355307385011311cca966e69512a1329ed8",
+    "sec:components/tier1_interface/ipc_router.md#ロール間通信許可マトリクス (FB_CONF_ROUTER_ROLE_MATRIX)": "296432831b61146f106d730e494fec5314305df0c1471e6bb2a5fa6a60efec0f",
+    "sec:components/tier1_interface/ipc_router.md#所有権移譲フロー (Zero-Copy CSP Handoff)": "08796a58cf5193c7aa72f9c27679a9e1869b1d4813b0388797a77ea29a515b2d",
     "sec:components/tier1_interface/system_service.md#1. コンセプト": "dcfde4c787368c3d2050fd3524d4115d6de55d3bc438b10cbfe4dae5b87907cf",
     "sec:components/tier1_interface/system_service.md#2. アーキテクチャ分類": "da2571df2689cb47f80dac1d09a0c45d017ab4f2c4d8ae5d8ca701f3efff3330",
     "sec:components/tier1_interface/system_service.md#3. 静的モデル": "459903c009123dfac68cdcb823db2cc6942f63d0c494c2127f2dbd07be7268f6",
@@ -2331,8 +2324,8 @@
     "sec:components/tier1_interface/tests/interface_wit_test_spec.md#`console-output` (§5.5)": "36f505a277d3ba1e50c07758d70185908898107fd3fd19d5263f5c086e7b48c3",
     "sec:components/tier1_interface/tests/interface_wit_test_spec.md#リカバリー戦略 (§3.2)": "f2313f9cd459ef50a4872102c6dbb2ca084e001d74c6d86e7981eae85f000a16",
     "sec:components/tier1_interface/tests/interface_wit_test_spec.md#低レベル・トラップインターフェイス (§4)": "5ec15da3f7ae6d06a1372275a870cf24abd9ea6c268dbcd98cde5088ca28e7d6",
-    "sec:components/tier1_interface/tests/ipc_router_test_spec.md#1. 目的と対象範囲": "f7da1eed54b4859452c7ff84b95a3208966e04263e84d9dc73a2f79b96ce1dbf",
-    "sec:components/tier1_interface/tests/ipc_router_test_spec.md#2. テストケース一覧": "86a0ac1f17f115661679da8b33f589d22d327e7734f29788ab28fb89141a77b0",
+    "sec:components/tier1_interface/tests/ipc_router_test_spec.md#1. 目的と対象範囲": "e2ff1c55a0361de587b87ed4c61d3deea9b2feba61454ac744b2115d561948ac",
+    "sec:components/tier1_interface/tests/ipc_router_test_spec.md#2. テストケース一覧": "84786be6a4498de3d4a307620ee3d62942ce139864a06927eb1329c90d46aa19",
     "sec:components/tier1_interface/tests/ipc_router_test_spec.md#3. テスト検証実績と網羅状況": "4aa107b40564b94e2ba33b0048fa6114b9d200db45ace4adfac27292aa7882f5",
     "sec:components/tier1_interface/tests/ipc_router_test_spec.md#4. 未検証・スコープ外": "a0a09a4d8dad89c61afb011a3281c3801b182f9484921d4c2fa524fcdd4a612d",
     "sec:components/tier1_interface/tests/ipc_router_test_spec.md#IPCルータ テスト仕様書 (Test Specification)": "77ae27e740d8421ab173eb60b39bccda51295840cec2174e962397832dd3af18",
@@ -2370,10 +2363,11 @@
     "sec:components/tier2_runtime/debug_manager.md#コマンド処理 (`poll_commands`)": "cb0c5adc28c97ec0d65fdf7097338145b02757d26ad42de307b95186a7f45a3d",
     "sec:components/tier2_runtime/debug_manager.md#デバッガ・インタープリタ結合コンセプトコード (`concepts/debugger_concept.py`)": "b88a4732b774e638680fde4bc6e157f3f07db27c84718a48f8b3ddc9388cf8cb",
     "sec:components/tier2_runtime/debug_manager.md#デバッガ接続 (`attach`)": "97b6e10e774668737419684f1609d93696062e2dffd88831ad674952e173e844",
-    "sec:components/tier2_runtime/debug_manager.md#デバッガ（Debugger）クラス": "8e7338ddeef942d645d3077f4ab8a331dbce478d45f3b152a20b7f9832678401",
+    "sec:components/tier2_runtime/debug_manager.md#デバッガ（Debugger）クラス": "3edd428c343b1a6db692518b019a52c8e6a93f56197c66a8629318395a32d406",
     "sec:components/tier2_runtime/debug_manager.md#デバッグコマンド処理シーケンス": "303d3d3498615e3dca772af40d3a2a80b990d0f1383b1c9e40f51a1865c23716",
     "sec:components/tier2_runtime/debug_manager.md#仮想レジスタセット（virtual_register_set）": "be49a6fdbaf433a238d37835cde33d5dfed8f8cbf9f167d0a27dbb01d9ff5028",
     "sec:components/tier2_runtime/debug_manager.md#命令ステップ実行 (`step_instruction`)": "907e7b20caa605995d9a8c209ffb6acd47968dc336186beef0a06c748d6e64ec",
+    "sec:components/tier2_runtime/runtime_interpreter.md#(Overview)": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "sec:components/tier2_runtime/runtime_interpreter.md#1. コンセプト": "b645ae1fc5d76eab78587c9c0930248010c5425276e43c26395834e3b866944e",
     "sec:components/tier2_runtime/runtime_interpreter.md#2. アーキテクチャ分類": "e7025e54f5c21ad66c17ee1035685fd15b531a392fc56a287fe660392c1507ad",
     "sec:components/tier2_runtime/runtime_interpreter.md#3. 静的モデル": "459903c009123dfac68cdcb823db2cc6942f63d0c494c2127f2dbd07be7268f6",
@@ -2396,18 +2390,18 @@
     "sec:components/tier2_runtime/runtime_interpreter.md#8. 設計判断 (ADR)": "e12929a1c1babfc33f165e058a65fd8b8753af890ae58417a171a10575d2c763",
     "sec:components/tier2_runtime/runtime_interpreter.md#ADR-INTERP-01: トレース境界での協調的 Yield (`{ADR_TraceBoundaryYield}`)": "00faeeae2bfba31594c0ff30f65af9c41cbfbddfb240daa2d671d04be56787a8",
     "sec:components/tier2_runtime/runtime_interpreter.md#ADR-INTERP-02: i64 / f32 / f64 の Libgcc ランタイムヘルパー連携 (`{Libgcc_Runtime_Helper}`)": "e2ff1c6aa8912d8624628272c34abe6c6d1f4da52c249101823d3595ef535050",
-    "sec:components/tier2_runtime/runtime_interpreter.md#Interpreter コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}": "633dc2662a0bd4d9da8ad1ee2df841dcb371df8a4d498b8ee07327d49267e6eb",
+    "sec:components/tier2_runtime/runtime_interpreter.md#Interpreter コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}": "33a78047b3ef37f330bfea57c7a452f6ec54e86a9ba3a567a586ac53c5402f4a",
     "sec:components/tier2_runtime/runtime_interpreter.md#Interpreter 実行シーケンス": "0f78a71d0bf59af6e7e5274967dff4dd51afaed98eedeb26233dfdf37176fa85",
     "sec:components/tier2_runtime/runtime_interpreter.md#WASM インタプリタ フルセット・コンセプトコード (`concepts/interpreter_concept.py`)": "8222c2d6d8929a484778c3a33b8bbb824880471ca20fc38865d78756c2102d91",
     "sec:components/tier2_runtime/runtime_interpreter.md#インタプリタ構成（interpreter_config）": "b018a19d28bdf5cf086fdc1affd5af904f35fe217a1cc6c5905f645ea4a33858",
     "sec:components/tier2_runtime/runtime_interpreter.md#インタプリタ（Interpreter）クラス": "fe22477f7cd52a915e7c434675390262a0597a256127d342dc35849dd3b5c966",
     "sec:components/tier2_runtime/runtime_interpreter.md#オプコードハンドラ / トレース実行（opcode_handler / exec_trace）": "b075b4d50283254f980df140bec120060d77e9ede967b680116c8552684fb59a",
-    "sec:components/tier2_runtime/runtime_interpreter.md#コールフレーム（call_frame @ 統合スタックインライン）": "cbb1917c262b1f932e44ef06963cb40f6954745cac22e72213b0b53b8b45dd8e",
+    "sec:components/tier2_runtime/runtime_interpreter.md#コールフレーム（call_frame @ 統合スタックインライン）": "1ed0c3d8d9390a6a9181fb93bb5dbaa86968f714cc6585869927fba9de88f8e1",
     "sec:components/tier2_runtime/runtime_interpreter.md#初期化（initialize）": "ad242ef32f8dbb2aa5b1bb6f0fee25ebd20adb4dc9ebe1b1e3af2dc7491363db",
     "sec:components/tier2_runtime/runtime_interpreter.md#制御フレーム整合性とリーク防止不変条件 (Control Frame Integrity Invariant)": "e30dae169d036b7f2d1113b235e6c1d36fa5fb8ea1e8f4a761be4ac87fe5adba",
-    "sec:components/tier2_runtime/runtime_interpreter.md#制御フレーム（control_frame @ 統合スタックインライン）": "f1e143e7a130a70af1dee1c3fcb887f181a7d205cb0ef6aa3033e4ddb7db57ec",
+    "sec:components/tier2_runtime/runtime_interpreter.md#制御フレーム（control_frame @ 統合スタックインライン）": "733e25df8e817181c806dc81aafbed677e804ddffa33b5d613282a4013397a87",
     "sec:components/tier2_runtime/runtime_interpreter.md#割り込み同期 (`sync_interrupts`)": "21fecfc305b7bfbf70ef9908e7c25d14db83627072c064e1ba971ac24306f4c2",
-    "sec:components/tier2_runtime/runtime_interpreter.md#実行コンテキスト（execution_context @ スタックボトム）": "5e7dbd61761032f807abb95a9aec79c6ebb83b6170a75ac4c0bf0f77930a8494",
+    "sec:components/tier2_runtime/runtime_interpreter.md#実行コンテキスト（execution_context @ スタックボトム）": "ec337b2a3a6ed20102b7b015d91e598c6b94d5135b928cafab69d3400572ded0",
     "sec:components/tier2_runtime/runtime_interpreter.md#実行ステップ (`run_step`)": "14b612537a87b2414ed31901a6d1c6b7b76a9db98787e00861a5061e41aa210f",
     "sec:components/tier2_runtime/runtime_interpreter.md#統合 Tiered ランタイムエンジン・コンセプトコード (`concepts/runtime_engine_concept.py`)": "7d04beadc02aa4db67b4813176aedb91b93d20f4b017811c7671d30b7721496a",
     "sec:components/tier2_runtime/runtime_loader.md#1. コンセプト": "4ed35a3d39f7923426806e5979b7ea6739328fdbd6eaa2f8b0f8cbd82d6e3a9f",
@@ -2476,7 +2470,7 @@
     "sec:components/tier2_runtime/runtime_vmmio.md#コントローラ群 (VmmioController)": "5dd9a8b7fb4f0ef18a8a0d307c3abfdbddb6f66408e86a639676cdd763a841ea",
     "sec:components/tier2_runtime/runtime_vmmio.md#ハンドラ定義 (vmmio_handler)": "8bfc34115f4dad6e42c5ab3924af6b12a9c30311627c6a4956c50bcee37235fe",
     "sec:components/tier2_runtime/runtime_vmmio.md#フック登録 (`register-hook`)": "dc41f7c9c574f4a2fe13b3d2a7d29875b4602c8ce7a7b4c26993beb8c9d19d80",
-    "sec:components/tier2_runtime/runtime_vmmio.md#ライフサイクル（ipc_router.md §4.1 に従属）": "a4a2d0994c87d664288999c3edb13ef2f3c143bf9f07fe941db849bf28e84ba9",
+    "sec:components/tier2_runtime/runtime_vmmio.md#ライフサイクル（ipc_router.md §4.1 に従属）": "8fed3978b6817ef696ab831ac2b4d87d2a2eae9f2f5ef88cbb6d34ee5e3adca3",
     "sec:components/tier2_runtime/runtime_vmmio.md#静的デバイスページテーブルエントリ (vmmio_pte_static)": "6ee44d082577bce23614e72f701a8aa21da81c11124170b59c282f820926441b",
     "sec:components/tier2_runtime/runtime_vsoc.md#1. コンセプト": "a945423c1cd9a8986e014e91d4bd7924873781071601b51c2290df15062d45ac",
     "sec:components/tier2_runtime/runtime_vsoc.md#2. アーキテクチャ分類": "f30641cd5c4c16438815fe8b9a7c0a6297f625539472e3f6cc92e6086e2fd7fb",
@@ -2531,7 +2525,7 @@
     "sec:components/tier2_runtime/tests/runtime_interpreter_test_spec.md#1. 目的と対象範囲": "7bc5962e7cc1cbe2aae79f178a1ff4f7fefb3edce45bfb2e7aa53ab608040f14",
     "sec:components/tier2_runtime/tests/runtime_interpreter_test_spec.md#2. テストケース一覧": "07c66dedc5007761a55d09a950d8038e2eda29cba4b06ba0f50031507dc98675",
     "sec:components/tier2_runtime/tests/runtime_interpreter_test_spec.md#3. テスト検証実績と網羅状況": "bb86309b2a7363409d9c001aab8bf6da3d11796ce49d94ba02ff95b488ef090f",
-    "sec:components/tier2_runtime/tests/runtime_interpreter_test_spec.md#4. 未検証・スコープ外": "4c50e212a7a0da01e6a72b68722849bbea584df44caf1ae2a93f5252ffc6c1fe",
+    "sec:components/tier2_runtime/tests/runtime_interpreter_test_spec.md#4. 未検証・スコープ外": "875bd78b1321742abaa8ce64bdc2057780060e75fcccddc5407f1ae5b8796b8c",
     "sec:components/tier2_runtime/tests/runtime_interpreter_test_spec.md#CPSディスパッチ方式そのもの (§1, interpreter_concept.py冒頭)": "9fd7d804c5b1f85461b8962d06822af1e0ea7d4c2a1a9ccd67b27e07ac08141d",
     "sec:components/tier2_runtime/tests/runtime_interpreter_test_spec.md#Cooperative Safepoint (interpreter_concept.py §末尾)": "b3c508af34b9f016543c314c9d1a53b3ed309163d78a22eea85d4c56e758b7a5",
     "sec:components/tier2_runtime/tests/runtime_interpreter_test_spec.md#WASMインタープリタ テスト仕様書 (Test Specification)": "524b20bc2bb24d2ac6a3a15c7964d8e020f905f627a959fae054570a1f67dd56",
@@ -2658,39 +2652,35 @@
     "sec:components/tier3_jit/tests/jit_runtime_test_spec.md#MPU W^X保護 (jit_compiler.md §7.2)": "7cc9dd4c491eaf4fb25608eb9b5bb459d5800e0453e9c79bfd3f9462c84cc215",
     "sec:components/tier3_jit/tests/jit_runtime_test_spec.md#トレース・チェイニング (jit_compiler.md §4.1「トレース・チェイニング」)": "3193aca399286a244d826dae78964b142d9da914574f2b88bead231f6d4106db",
     "sec:components/tier3_jit/tests/jit_runtime_test_spec.md#ホットスポット判定 (yield時) と バッチコンパイル (§4.1)": "02e56fdf6d03e4c52205d4a6dc1bc288ee87e84ce7c21db1e1d9da255bd8f862",
-    "sec:components/tier3_platform/platform_hal.md#1. コンセプト": "37595576b25328efe9268ebcd9232235ebcadd2e225b1bbbbbad6d85bb2d491c",
-    "sec:components/tier3_platform/platform_hal.md#2. アーキテクチャ分類": "0fc852e49988da4fadf379444c0ca0d3df888a0c2da16eb60a657cf6494e03be",
+    "sec:components/tier3_platform/platform_hal.md#1. コンセプト": "9d2348ecb981406c1cfff220a7ed835ef4a0442d69011f9d7225efcc6136caec",
+    "sec:components/tier3_platform/platform_hal.md#2. アーキテクチャ分類": "9fdd0101a2178336ec9db5810aff4f4dcec04af223338980e8b4c8b6f076c270",
     "sec:components/tier3_platform/platform_hal.md#3. 静的モデル": "459903c009123dfac68cdcb823db2cc6942f63d0c494c2127f2dbd07be7268f6",
     "sec:components/tier3_platform/platform_hal.md#3.1 データ構造": "d30b8101f9506d8614c44b1bdeae01f8602cc3534f669ecca8e21a41a7462756",
-    "sec:components/tier3_platform/platform_hal.md#3.2 内部ブロック図": "2157d434eee62f5c5e8a9a70b6f9ef9f5a15cbd564d4097251315e1b64ff0863",
+    "sec:components/tier3_platform/platform_hal.md#3.2 内部ブロック図": "3761f7471a9e0a22d5fa981a049e6f5188a18818c322a393b3b8084bcb80bb11",
     "sec:components/tier3_platform/platform_hal.md#3.3 主要なクラス・構造体・配列・定数": "343760f0b594de0591386397610b0f816a7706c6df4f44c8f027a01d6c1e01a0",
-    "sec:components/tier3_platform/platform_hal.md#4. 動的モデル": "341dff8c7275b6011b54ff1bbf2ddf06f6c8faa457638ff164c4b2df64ef68f0",
-    "sec:components/tier3_platform/platform_hal.md#4.1 アルゴリズム": "18ff31f87472ca00e978e6029c2d7c46aa44d7f4bdc03e2f9fb0f463d6b5ff40",
-    "sec:components/tier3_platform/platform_hal.md#4.2 状態遷移図": "b713fae6ee3e483da8c00c4812bf13257d99dd95537aaa8c1e2e2a2bf12bd697",
-    "sec:components/tier3_platform/platform_hal.md#4.3 内部シーケンス": "178e3c25c0f5796349b1f3af888c9eab3ef46bf24902d113d0bfef0e82f5002b",
-    "sec:components/tier3_platform/platform_hal.md#5. インターフェイス定義": "7fb2c3f821c8108eaeee550240364da2e99fa84646a9aedec1b6dc4e18c54849",
-    "sec:components/tier3_platform/platform_hal.md#5.1 公開API": "509e41a7803750e8b757cfca597a499cacfa66391da02a83f6bc5e08e6dccecf",
-    "sec:components/tier3_platform/platform_hal.md#5.2 Tier 3 リソースインターフェイス": "b09ea9265093b408281743c8513c6cf050283edc6eaf54302128d305451e424f",
-    "sec:components/tier3_platform/platform_hal.md#5.3 URI/IPCインターフェイス": "3a5226f4ac4bd2eaacce8e2dfd152bb5172e329a9f117e3f3e5c0210b38fa355",
-    "sec:components/tier3_platform/platform_hal.md#5.4 RSPトランスポート構成": "b29cbf0652a6e993420b56d78632a1186093820df1f51fd1d5dca8a886bd8dde",
-    "sec:components/tier3_platform/platform_hal.md#5.5 メッセージ形式": "971053ecb5e8eabe1279a9d80e26f852f6c8d0b8fdb71a55e24d96eb6228ce53",
-    "sec:components/tier3_platform/platform_hal.md#6. 制約達成の方策": "5acaaba7ad9942c23b7e3c4759fa7c7d7fb7216af923c775a85650f32a44f294",
-    "sec:components/tier3_platform/platform_hal.md#6.1 性能制約と方策": "ccec1e5eae02169063c3b05f34a203e2a63d47382cf0567ef6e871e94e5932d6",
-    "sec:components/tier3_platform/platform_hal.md#6.2 メモリ制約と方策": "1bd7a82dbd190fe4ab908b34f0702aff5ae13bcf3b1d22081fb4dec54aee16b6",
-    "sec:components/tier3_platform/platform_hal.md#6.3 安全性制約と方策": "abb83fec07eba197004dc8111fa3b2ed0f25f3370d0404319123d4283ade4959",
+    "sec:components/tier3_platform/platform_hal.md#4. IPC 通信仕様 (IPC Driver & RSP Protocol)": "91b821c854439a051e029a36e6e8942481206ac50ef19dd428f5732cbe34cf64",
+    "sec:components/tier3_platform/platform_hal.md#4.1 階層型 URI 命名規則 (Hierarchical URI Scheme)": "4cb0701b2714b87e9f0f9e5828f6d7b9c1df4d38bd4f4c56f8212140382596a3",
+    "sec:components/tier3_platform/platform_hal.md#4.2 WASI 0.3p IPC ドライバ通信コマンド仕様": "9356cfc3563948b2d4f690ab548d040aa088a26d763535ba89d71c9ed852677c",
+    "sec:components/tier3_platform/platform_hal.md#4.3 RSP (Remote Serial Protocol) パーサとデバッグキュー仕様": "e7de8b8b35ab220261bcf4b7583bbc739c2e68e5fd35a68b2586a496c3a7aeb3",
+    "sec:components/tier3_platform/platform_hal.md#5. WASI サポート体系 (WASI 0.3p Core & 0.1p Wrapper)": "79154ead48d98751b7a7ac631ee2c4ae01a00f837c019d1310030e51bebd93bd",
+    "sec:components/tier3_platform/platform_hal.md#5.1 「HAL ＝ WASI 0.3p」統合アーキテクチャ": "be7e5d71b226a384ba38cbcac6c610ef946bd5b8cb5073b55187aa2922eee5b8",
+    "sec:components/tier3_platform/platform_hal.md#5.2 WASI 0.1p (`wasi_snapshot_preview1`) 互換ラッパー": "1dadef4ce932f7a42956ef1952c94cb547ca9d06224f1942475b02aa477eaa78",
+    "sec:components/tier3_platform/platform_hal.md#6. 動的モデル": "ccf9cce7ed2af4d080c9596c28b376dccb66a074d8128109efed312c36dec07e",
+    "sec:components/tier3_platform/platform_hal.md#6.1 アルゴリズム": "534bdfc35db736b145eae2d1e3721f72996a51cc5d95bc1e91022d1eaa2a93b8",
+    "sec:components/tier3_platform/platform_hal.md#6.2 状態遷移図": "837e48f5d980f6590ed2670e53ebee676aa55f4a41e5bc050c0f71f1e0026a5d",
+    "sec:components/tier3_platform/platform_hal.md#7. インターフェイス定義": "366d2269621aab3c31a0db04fd75d05dfabdff2540982d3e8fdff074c2ae30fc",
+    "sec:components/tier3_platform/platform_hal.md#7.1 公開 API": "5913194fc05e1e658d40a23a29b904d99d37650522768302166a51b63b853c45",
+    "sec:components/tier3_platform/platform_hal.md#8. 制約達成の方策": "23ea1c8214d9a57d4ae68dc4394c4eb6ffce163684eb3bb014ba56ab2ba5dbde",
+    "sec:components/tier3_platform/platform_hal.md#8.1 性能制約と方策": "49e78920be762bf910357fba90ac798fab107f5e121ade7fb772a288bde9f6e1",
+    "sec:components/tier3_platform/platform_hal.md#8.2 メモリ制約と方策": "f630208ed6f882571b8e342c01eed0509c0580ce2a20f857c91e07ddaead58da",
+    "sec:components/tier3_platform/platform_hal.md#8.3 安全性制約と方策": "e3472cc75fbfa10e72b0337ba9de8c27cb9387263bbcdeaf6b7c5fe04f76ea03",
     "sec:components/tier3_platform/platform_hal.md#HAL コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}": "3b36c435ff658abb7223e77df881ffe0a622b11a24e697814dd7c63c6b597872",
-    "sec:components/tier3_platform/platform_hal.md#HAL構成（hal_config）": "c33cea855fe0a1c9eb133625bf240111e171b3ea5dee996c3946b4623b009681",
-    "sec:components/tier3_platform/platform_hal.md#RSPパケット受信とコマンド供給シーケンス": "11748d6e5f70553930481074df81935fbadbbd49af09b0ca2af97fd7450092b2",
-    "sec:components/tier3_platform/platform_hal.md#`bus-master` / `bus-slave` (I2C/SPI通信)": "ee5197a4e4b5f40e26f2941adb356535eb678366865acc6988f2b886c1496cb6",
-    "sec:components/tier3_platform/platform_hal.md#`debug-server` (GDB RSP サーバ)": "1733593cecd5dca8de41161dd84bcf194319ed1cf375f19225977f8897fc7a95",
-    "sec:components/tier3_platform/platform_hal.md#`gpio-controller` (物理GPIO制御)": "6f93e2d7d07b28bebad3203cc658402f20729d890d34a1316a97015bb166273c",
-    "sec:components/tier3_platform/platform_hal.md#`periodic-timer` (時刻とタイマー)": "97289bf0dcd4d355b3d791a930de04f0690b20810554e93359409e86c7c95aab",
-    "sec:components/tier3_platform/platform_hal.md#ゼロコピー転送 (bus_master/streaming)": "400c602c05c138ffab36682c375688537e647cdeda1c66ab0bce390b34eb2223",
-    "sec:components/tier3_platform/platform_hal.md#デバイス情報（device）": "6a3fdf0bd36bd9f3d1bd750657fff5e38527f566525558f88fd0f70b4ca1ab8f",
-    "sec:components/tier3_platform/platform_hal.md#データの書き込み (write)": "f451ae235801d1da41ca7528d894316659be19d262d2ae3332190bbf5267c258",
-    "sec:components/tier3_platform/platform_hal.md#データの読み出し": "7bb56ee85b97c7608f07f4d93efa52a5a7de27014e635e79957d38f6efb9d414",
-    "sec:components/tier3_platform/platform_hal.md#バッファの確保": "8e2cab9c4160a5dab811031b817572235523b8a6ac218192a9fde0cc60a6951e",
-    "sec:components/tier3_platform/platform_hal.md#非標準制御 (control)": "4203b0b3d411115d93982f56f68bcb3c72ddeefc4251ce33d1e28cc361455e62",
+    "sec:components/tier3_platform/platform_hal.md#HAL構成（hal_config）": "026ffaf5f57a7793262a501b47a00a1d10e56810399cde3f6a43ec97795b129c",
+    "sec:components/tier3_platform/platform_hal.md#ゼロコピー転送 (`transfer`)": "917e0116bcdb6a2b71e53a75a3388c75e7a181f38c7a3371ab02ea3d8d570553",
+    "sec:components/tier3_platform/platform_hal.md#デバイス情報（device）": "3dc4b960ab219b7cafb8332ee42280da77f311757c0e14428ec58d59f9ac5571",
+    "sec:components/tier3_platform/platform_hal.md#データの書き込み (`write`)": "2d3e9c141eca7cb38b52ece985038d3aa740f67322e3f37d17f68a656b0ef0f8",
+    "sec:components/tier3_platform/platform_hal.md#データの読み出し (`read`)": "cba5210d110a68c0dd41a1e09801fdebfaba0f0c5e48dd6e36c6243ce2e8d5a9",
+    "sec:components/tier3_platform/platform_hal.md#バッファの確保 (`acquire_buffer`)": "c931b4474af167dd921ebafa6453c211f1fdaa3250b4fbbe49b8b01da3d6f7d1",
     "sec:components/tier3_platform/platform_memory.md#1. コンセプト": "058d8005657d1b0c545af6b747eb8e186be9d546c74edf63c0903a78b585b23e",
     "sec:components/tier3_platform/platform_memory.md#2. アーキテクチャ分類": "763ec3cef58b29a3a456a30f695281a3696ab94ed6e7b9bfb73588eac9a653cd",
     "sec:components/tier3_platform/platform_memory.md#3. 静的モデル": "459903c009123dfac68cdcb823db2cc6942f63d0c494c2127f2dbd07be7268f6",
@@ -2698,14 +2688,14 @@
     "sec:components/tier3_platform/platform_memory.md#3.2 依存関係 (Zero-cost DI)": "f5680057b8f37337c4ecc3d155c4c6852b527f2ed5152581dcfbca26840c33e8",
     "sec:components/tier3_platform/platform_memory.md#4. インターフェイス設計": "9f6c21e20b1cceecb001f2a43cd7c5897d7034bf88d09a9d3b6e676804ea26af",
     "sec:components/tier3_platform/platform_memory.md#6. 所有権追跡": "c1f95a32568d5beef50c3fad7640fe153bda7111541452de8377b32c25de5202",
-    "sec:components/tier3_platform/platform_memory.md#7. 共有メモリ (shared-block) のライフサイクル": "d8c819b9df435eed2b4e7d36f3f495c08ae5cce7b90b2315f20f5d9b3d06e3d3",
+    "sec:components/tier3_platform/platform_memory.md#7. 共有メモリ (shared-block) のライフサイクル": "1ed098a28c645e61cb4ad8245b810c8c2ba218a23ee2d9da1089e28d5642d74b",
     "sec:components/tier3_platform/platform_memory.md#8. 設計判断 (ADR)": "cb684186b0bef5fc306ad670f1f9351f1a3ad4e7b3222da0f6c22d83526d2a7c",
     "sec:components/tier3_platform/platform_memory.md#9. ハードウェアメモリ保護 (MPU) & W^X 設計": "73c9f88914da335aba7f6c29af75e0e61f5bab52182d97151286a24068c6586f",
     "sec:components/tier3_platform/platform_memory.md#9.1 Cortex-M33 PMSAv8 MPU リージョン配分": "1d19942a8cd855fde9f72d99cd75b7d1ba3d4b63085e1326e953e2a0676322cc",
     "sec:components/tier3_platform/platform_memory.md#9.2 JIT W^X (Write XOR Execute) 切替プロトコル": "7444cafb61479f283e8077b12c8cd7037679d0c0f3fa35da5b6cd35d9b324c11",
     "sec:components/tier3_platform/platform_memory.md#9.3 アライメントおよび境界制約 (PMSAv8)": "076e7dcbf72916fba833b6602436e3805fbacd731f0f60dc319bb0fb114aba1a",
     "sec:components/tier3_platform/platform_memory.md#COOS メモリマネージャ コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}": "0e1747cdfcec2299de711e5fba1bc8dbf41a0e7db78d0ccf4ae2ee41433539b9",
-    "sec:components/tier3_platform/platform_memory.md#`allocate-shared` (IPC転送データ専用)": "90d62f37b3685b9f0df51c2cc0e5fd9d8184ad5c8e41163d6828ed2d90aa8f5c",
+    "sec:components/tier3_platform/platform_memory.md#`allocate-shared` (IPC転送データ専用)": "c58aba73ddb736f080cb8d296ea576cbca7865d5a81d5e410f87414b03f5fa1a",
     "sec:components/tier3_platform/platform_memory.md#トランザクションバッチ化によるレイテンシ両立": "e4a651a5caf646929310fb67d542ad65ef9c93d5f6f6dc165055a88868217c96",
     "sec:components/tier3_platform/platform_memory.md#パーティションの貸与（acquire-partition）": "6e35719100751787980fc71f1b010e699284547dd19b3a8bf8aa48a9eb462e8a",
     "sec:components/tier3_platform/platform_memory.md#パーティションの返却（release-partition）": "ee41b4db9588c94c2ee10ce13e97b0070667ac6d837fd3b8bb12edfa543133a0",
@@ -2724,7 +2714,7 @@
     "sec:components/tier3_platform/tests/platform_memory_test_spec.md#3. テスト検証実績と網羅状況": "4aa107b40564b94e2ba33b0048fa6114b9d200db45ace4adfac27292aa7882f5",
     "sec:components/tier3_platform/tests/platform_memory_test_spec.md#4. 未検証・スコープ外": "dc6746af1a24d92f94ba211ed402e09d5f3702e5ac9956239d4817d3ded484c1",
     "sec:components/tier3_platform/tests/platform_memory_test_spec.md#MPU / W^X (§9)": "3a37f3253dcf00a85b47431794607e0f2ebd37d1c6b90a5f459744463ec993c5",
-    "sec:components/tier3_platform/tests/platform_memory_test_spec.md#`shared-block`ライフサイクル (§7-8)": "754f36d1331321ca333722579597871ac4dd0c8ef3d546b6aca520ff3c710dae",
+    "sec:components/tier3_platform/tests/platform_memory_test_spec.md#`shared-block`ライフサイクル (§7-8)": "49106d824ef853dce7511940aef971cd5a86479680aa4926baabbdf745136af3",
     "sec:components/tier3_platform/tests/platform_memory_test_spec.md#パーティション管理 (§1, §4-6)": "6e55f97b80cb9b39734b17ab94d874653e6f24c05baf89dfa72196f177733e61",
     "sec:components/tier3_platform/tests/platform_memory_test_spec.md#物理メモリ (COOSメモリマネージャ) テスト仕様書 (Test Specification)": "5a626ed1aa5e7ed2c933a6da17dd295a2ecfd273831135482e44e0bbe826e024",
     "sec:plans/backlog_archive.md#Phase 0.75: Constexpr Verification & Code Gen Enhancement [DONE]": "e345bd840c3e3cbe821ead6f33bdde42d203d137075218708037274fcd1614be",
@@ -2758,12 +2748,12 @@
     "sec:requires/requirement_list.md#3.1.2 タスク管理・通信 (COOS)": "14aa137f6fbbf8e142ad128ce219e540a788c25c4620e699c05592a4fdf33147",
     "sec:requires/requirement_list.md#3.1.3 システム連携 (IPC/HAL/WIT)": "256dc7ca42938eba7d2d8f39eaab46d5eee9a5f585ed9b0def6f5c419ab17fa2",
     "sec:requires/requirement_list.md#3.1.4 デバッグ・運用": "9ca401f9ef83d167291deda4988181340efd3a54b948f906b807ff355978da7c",
-    "sec:requires/requirement_list.md#3.1.5 共通基盤・実装パターン": "230a96906cf6ce38624b0984baea9b886b8565343d07855e07f727397e6ad02d",
+    "sec:requires/requirement_list.md#3.1.5 共通基盤・実装パターン": "f6f09425dadafbc0527342a8589db7fb3c6122141249d6a6e6014203ad00a374",
     "sec:requires/requirement_list.md#3.2 非機能要求": "61a52f29f23e353e1561516bab1afbda76e226af657a21aade76d84a31786ae5",
     "sec:requires/requirement_list.md#3.2.1 パフォーマンス・効率": "021c8b15a117d580e042aefb62e5146ab4a418fc74c6e9a351dcfb8317ec7054",
     "sec:requires/requirement_list.md#3.2.2 開発方針・品質": "574a874f768046713bd8d9f9a65b5fba51e21e3894bd76a854e8a1cc3596826d",
     "sec:requires/requirement_list.md#3.2.3 移植性・互換性": "acc37bad8c909bce9aa4cdcd43f0344852b7b1d3ee9e6913fa72f60698f45740",
-    "sec:requires/requirement_list.md#4. 設計課題・制約追跡 (Design Challenges & ADRs)": "67a763dbec51d80bbce2f7c8a5632f04c2256943213e24d4431a4d943b552c25",
+    "sec:requires/requirement_list.md#4. 設計課題・制約追跡 (Design Challenges & ADRs)": "ffdab355ff2e81f29ed9bcb01b24f92bca4837ac2955ab4e9d15caf924f663d7",
     "sec:requires/requirement_list.md#5. 制約事項": "61c3b6fad10f3b79049b99fce401e39a559ec8e4c50aad226b3755b652268eb1",
     "sec:requires/requirement_list.md#6. 用語定義": "dbc14639ad86b5fe90937a58aa103cb76fb40956664c37e57bc3ba19f4791a4e",
     "sec:requires/requirement_list.md#Fireball システム要求仕様書": "675d0d5f7d988600286906d513a0bcf3859e5bd054200e51221b44c14c435d9c",
@@ -2818,7 +2808,7 @@
     "sec:specs/tests/wasm_instruction_set_test_spec.md#変数アクセス (§3.3)": "0488cf76051641997e3b13e5bc10c14134c05deaa9ab57ce332780e1abf50721",
     "sec:specs/tests/wasm_instruction_set_test_spec.md#整数算術・論理・比較 (§3.5)": "3526158901daa3ef63c9ab15dcac4176ed2342dbc5c06bf5cf7bcebd8d6a4113",
     "sec:specs/tests/wasm_instruction_set_test_spec.md#非サポート機能の拒否 (§2)": "875f62e533bd8049d7bc49d17ea86369ace18e715bfe31516db1a9f212afd051",
-    "sec:specs/wasi_preview1_abi.md#1. 概要と基本思想": "8baa834b2d09416bf4e89c9b62e675cace8026d52f51c0d960106b67ee49c4ce",
+    "sec:specs/wasi_preview1_abi.md#1. 概要と基本思想": "f0c69a53c14c44d49ad424961c59b66e21caf9ea0145ff3a9e3bc064fec342b7",
     "sec:specs/wasi_preview1_abi.md#2. WASI 型定義と物理レイアウト (WASI Type Vocabulary)": "b1652d037eb89f13ebe97ee0c7cbf20778dd11f6ae1b35f43ffed12897f4ad91",
     "sec:specs/wasi_preview1_abi.md#3. WASI Preview 1 サポート API マトリクス": "ac24861aaeed329cd281ac2caad6f9635b490020cce48038142062f1ff9be447",
     "sec:specs/wasi_preview1_abi.md#3.1 文字入出力 & ストリーム API (I/O & Streams)": "da1b97f386380310196d294ee14d6c5198e6b8464393f34872e4581119e7b363",

@@ -7,29 +7,47 @@
 
 ## 1. 目的
 
-<!-- traceability: {WIT_Interface_Purpose} {WIT_First} {WIT_Common_Types} -->
-本ドキュメントは、Fireballプロジェクトにおいてゲスト（WASM）環境に公開されるシステムコールおよびHAL（Hardware Abstraction Layer）のインターフェイス仕様を、WASI (WebAssembly System Interface) 0.2 以降の設計パターン（Component Model, Resources, Streams）に準拠して定義する。
+<!-- traceability: {WIT_Interface_Purpose} {WIT_First} {WIT_Common_Types} {URIAbstraction} -->
+本ドキュメントは、Fireballプロジェクトにおいてゲスト（WASM）環境に公開されるシステムコールおよびハードウェア抽象化層（HAL）のインターフェイス仕様を定義する。
+HAL は WASI 0.3 Preview (WASI 0.3p / Component Model, Resources, Streams, Async) に準拠して提供され、URI からインターフェースを動的に取得する URI Resolver を備える。また、レガシーな WASI 0.1p (`wasi_snapshot_preview1`) ABI は、WASI 0.3p / HAL リソースを背後で呼び出す薄いアダプタ/ラッパーレイヤーとして完全サポートする。
 
 ## 2. アーキテクチャ原則
 
-<!-- traceability: {CleanArchitecture} {META_SpecificationFirst} {META_Risk_Tiering} -->
-- **WASI 0.2 パターン採用**: ハンドル管理に `resource`、非同期処理に `pollable`、I/Oに `stream` を使用する。
-- **Tier 1 分離**: システム境界は WASI 標準および Fireball 固有のインターフェイスとして定義される。
+<!-- traceability: {CleanArchitecture} {META_SpecificationFirst} {META_Risk_Tiering} {URIAbstraction} -->
+- **WASI 0.3p 準拠**: GPIO、タイマー、バス通信、ストリーム等のすべてのハードウェア・周辺入出力プリミティブを WASI 0.3p のリソース・ストリーム体系として定義・公開する。
+- **URI Resolver メソッド**: `resolver.get-interface(uri: string)` により、URI 文字列からインターフェースハンドルを取得可能とする。
+- **WASI 0.1p 互換ラッパー (Adapter Pattern)**: 既存の WASI Preview 1 (`fd_write`, `fd_read`, `clock_time_get`, `proc_exit` 等) は、WASI 0.3p の `output-stream` や `monotonic-clock` リソースを呼び出すラッパーとして機能する。
+- **IPC 宛先 URI と階層命名規則**: WASI 0.3p でインターフェースを取得する URI は、`fireball://<domain>/<type>/<instance>`（例: `fireball://device/uart/0`, `fireball://device/gpio/0`, `fireball://device/timer/0`, `fireball://device/i2c/0`, `fireball://service/stdout/0`）の**階層型 URI 命名規則**に従い、**IPC ルータ（`ipc_router`）でデバイスやサービスと通信するための宛先 URI** として機能する。
+- **共有メモリ（SHM）ゼロコピー I/O**: データのリード・ライトは、vMMIO FC=14 の共有メモリ領域（`shm-slice`）を通じてゼロコピー／極低レイテンシで実行される。 `{URIAbstraction}` `{META_RestrictedPhysicalAccess}`
 - **Stateless Interface**: リソースハンドルを通じた操作を行い、ホスト側で状態を管理する。
 
 ## 3. 共通データ構造
 
-### 3.1 基礎インターフェイス
-<!-- traceability: {CooperativeMultitasking} {Asynchronous_Notification} -->
-WASI 0.2 の標準パターンに従い、以下の基礎コンポーネントを想定する。
+### 3.1 基礎インターフェイス & IPC URI Resolver
+<!-- traceability: {CooperativeMultitasking} {Asynchronous_Notification} {URIAbstraction} {META_RestrictedPhysicalAccess} -->
+WASI 0.3p の標準パターンに従い、以下の基礎コンポーネントを提供する。
 
+- `resolver`: 階層型 IPC 宛先 URI（`fireball://device/<type>/<instance>`, `fireball://service/<type>/<instance>`）から通信チャネルハンドルおよび共有メモリ（`shm-slice`）を取得・管理するリゾルバ。 `{URIAbstraction}` `{META_RestrictedPhysicalAccess}`
 - `pollable`: 非同期イベントの待機用リソース。 `{CooperativeMultitasking}` `{Asynchronous_Notification}`
-- `input-stream` / `output-stream`: ストリーミングデータ転送用リソース。
+- `streaming` / `bus`: 共有メモリ（`shm-slice`）を用いた高速な `read-shm` / `write-shm` / `transfer-data` を提供するストリーミング・バスリソース。
+
+```mermaid
+graph TD
+    Guest[Guest WASM Application] -->|1. resolver.get-interface URI: fireball://device/uart/0| Res[URI Resolver / IPC Router]
+    Guest -->|2. resolver.acquire-shm size| SHM[Shared Memory Pool FC=14]
+    Guest -->|3. streaming.write-shm / read-shm| W3Core[WASI 0.3p HAL Drivers]
+    W1Wrap[WASI 0.1p Adapter Layer] -->|Delegates fd_write/read via SHM| W3Core
+    W3Core --> UART[fireball://device/uart/0]
+    W3Core --> GPIO[fireball://device/gpio/0]
+    W3Core --> Timer[fireball://device/timer/0]
+    W3Core --> I2C[fireball://device/i2c/0]
+```
 
 ### 3.2 リカバリー戦略とエラーハンドリング
 <!-- traceability: {META_RecoveryStrategy} {Errorcode_To_Strategy} -->
 
 本プロジェクトでは、エラーコードではなくリカバリー戦略を返すことで、呼び出し側が具体的なアクション（リトライ/諦める）を取れるようにする。低レイヤー（Syscall）の `errno` は、Shim層でこの戦略に変換される。 `{META_RecoveryStrategy}` `{Errorcode_To_Strategy}`
+※なお、ホスト内部で各デバイスドライバと通信する低レイヤーの IPC コマンドプロトコルおよび RSP デバッグ仕様は、HAL（Tier 3）コンポーネント設計書を正本とする。
 
 ```wit
 /// Recovery strategy for operation failures.
@@ -66,7 +84,7 @@ type routing-result = result<_, recovery-strategy-category>;
 - **実装詳細の分離**: `hardware-error`や`timeout`は実装の内部状態であり、クリーンアーキテクチャの内側が知るべきではない。
 - **アクション指向**: リカバリー戦略により、呼び出し側は具体的なアクション（リトライ/エラーログ出力して諦める）を決定できる。
 - **リトライ上限到達時の段階的エスカレーション (Retry Exhaustion Escalation)**: `retry` 戦略で `RETRY_MAX_ATTEMPTS`（3回）を超過した場合、呼び出し元は自動的に `restart`（タスクコンテキスト再初期化・再起動）へエスカレーションする。再起動後もエラーが回復不能な場合は最終的に `panic` へエスカレーションし、システム安全性を担保する。
-- **IPC キュー満杯時の一時競合と所有権ロールバック**: IPC 送信時に宛先キューが満杯（`ERR_QUEUE_FULL`）となった場合、送信側には `Result::Err(ERR_QUEUE_FULL, Strategy::RETRY)` が返却され、共有メモリブロックの所有権は自動的に送信元タスクへロールバック（保持）される。送信元はバックオフ後に再送または安全回収を行える。
+- **IPC は所有権ロールバックを必要としない**: IPC ルータ（`ipc_router.md`）はバッファなし同期 CSP チャネル（`{ADR_RendezvousChannel}`）であり、宛先ごとの有界キューを持たない。したがって `ERR_QUEUE_FULL` のような一時的な資源競合は原理的に発生せず、`Revoke` 後の所有権ロールバックという回復処理も存在しない——送信は相手タスクの到達を待つのみで、失敗して差し戻る経路がない。
 - **デバッグ情報の分離**: 失敗の詳細理由はログシステムで確認する。インターフェースには含めない。
 
 ## 4. 低レベル・トラップ・インターフェイス

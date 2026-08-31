@@ -75,14 +75,14 @@ static_assert(FB_CONF_GUEST_RAM_SIZE == FB_CONF_TASK_HEAP_SIZE);
 | マクロ名 | 説明 | デフォルト値 | 導出元 |
 | :--- | :--- | :--- | :--- |
 | `FB_CONF_IPC_MAX_SERVICES` | 登録可能な最大サービス数 | `16` | `{META_ConfigurableSystem}` |
-| `FB_CONF_IPC_MAX_QUEUED_MESSAGES` | 単一チャネルあたりの最大キューイングメッセージ数 | `8` | `{META_ConfigurableSystem}` |
+| `FB_CONF_ROUTER_MAX_KV_PAIRS` | 1メッセージが保持できるkv_pairの最大数（`ipc_router.md` §3.3） | `8` | `{META_ConfigurableSystem}` |
 | `FB_CONF_MAX_CONSECUTIVE_HANDOFFS` | スケジューラ復帰なしでの最大連続CSPハンドオフ回数 | `4` | `{Challenge_CspHandoffStarvation}` |
 
 ```cpp
 namespace fireball::config {
     // ロール定義
     enum class router_role : uint8_t {
-        CLIENT_APP = 0,
+        RUNTIME = 0,
         CORE_SERVICE = 1,
         PLATFORM_HAL = 2,
         DEBUGGER = 3,
@@ -91,8 +91,8 @@ namespace fireball::config {
 
     // ロール間通信許可マトリクス (4x4 static bool table)
     inline constexpr std::array<std::array<bool, 4>, 4> FB_CONF_ROUTER_ROLE_MATRIX {{
-        // Target:  CLIENT_APP, CORE_SERVICE, PLATFORM_HAL, DEBUGGER
-        /* CLIENT_APP   */ {false, true,  true,  false},
+        // Target:  RUNTIME, CORE_SERVICE, PLATFORM_HAL, DEBUGGER
+        /* RUNTIME   */ {false, true,  true,  false},
         /* CORE_SERVICE */ {false, false, true,  false},
         /* PLATFORM_HAL */ {false, false, false, false},
         /* DEBUGGER     */ {false, true,  true,  false},
@@ -135,6 +135,7 @@ namespace fireball::config {
 | `FB_CONF_LOG_BUFFER_SIZE` | ログメッセージ保持用のバッファサイズ (Bytes) | `512` | `{BufferedLogging}` |
 | `FB_CONF_DEBUG_MAX_BREAKPOINTS` | 最大ブレークポイント数 | `8` | `{META_ConfigurableSystem}` |
 | `FB_CONF_DEBUG_PACKET_SIZE` | RSPパケットバッファサイズ | `1024` | `{Challenge_DebuggerResource}` |
+| `FB_CONF_DEBUG_MAX_PC_SAMPLES` | プロファイラバッファに保持可能なPCサンプリングエントリの最大件数 | `64` | `{Debug_Integrated}` `{META_NoStdVector}` |
 
 #### 3.3.6 タスクID型・予約値
 <!-- traceability: {GLOBAL_StaticScalability} -->

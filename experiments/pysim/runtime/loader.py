@@ -14,33 +14,12 @@ Implements:
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-_PYSIM_DIR = (
-    Path(__file__).resolve().parents[1]
-    if any(
-        d in str(Path(__file__))
-        for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")
-    )
-    else Path(__file__).resolve().parent
-)
-
-for _p in [
-    _PYSIM_DIR,
-    _PYSIM_DIR / "core",
-    _PYSIM_DIR / "runtime",
-    _PYSIM_DIR / "jit",
-    _PYSIM_DIR / "platforms",
-]:
-    _sp = str(_p)
-    if _sp not in sys.path:
-        sys.path.insert(0, _sp)
-
 import bisect
 import struct
 from collections.abc import Sequence
 from typing import Any
+
+from system_containers import StaticFlatMap
 
 # Configuration Constants
 FB_CONF_MAX_MODULES = 4
@@ -96,15 +75,10 @@ class ExternalKind:
     GLOBAL = 0x03
 
 
-def fnv1a_32(data: str | bytes) -> int:
+def fnv1a_32(data: str) -> int:
     """FNV-1a 32-bit hash for fast zero-copy symbol lookup."""
-    if isinstance(data, str):
-        raw = data.encode("utf-8")
-    else:
-        raw = bytes(data)
-
     h = 0x811C9DC5
-    for b in raw:
+    for b in data.encode("utf-8"):
         h = ((h ^ b) * 0x01000193) & 0xFFFFFFFF
     return h
 
@@ -120,6 +94,9 @@ class FlatMapView:
     def size(self) -> int:
         return len(self.keys)
 
+    def __len__(self) -> int:
+        return len(self.keys)
+
     def slice(self, first: int, last: int) -> FlatMapView:
         assert 0 <= first <= last <= len(self.keys)
         return FlatMapView(self.keys[first:last], self.values[first:last])
@@ -129,6 +106,9 @@ class FlatMapView:
         if idx < len(self.keys) and self.keys[idx] == key:
             return self.values[idx]
         return None
+
+    def __contains__(self, key: Any) -> bool:
+        return self.find(key) is not None
 
 
 class RadixBinaryTreeView:
@@ -169,16 +149,19 @@ class RadixBinaryTreeView:
             return None
         return self.map_view.slice(first, last).find(key)
 
-    def find_interval(self, offset: int) -> Any | None:
-        """Range lookup for interval keys [start, end) stored as DecodedEntity."""
+    def find_interval(self, offset: int) -> "DecodedEntity | None":
+        """
+        Range lookup for interval keys [start, end) -- only ever called on a
+        RadixBinaryTreeView built over DecodedEntity values (see
+        entity_offset_tree), never the export/import trees.
+        """
         if not self.keys:
             return None
         idx = bisect.bisect_right(self.keys, offset) - 1
         if 0 <= idx < len(self.values):
-            entity = self.values[idx]
-            if hasattr(entity, "start_offset") and hasattr(entity, "end_offset"):
-                if entity.start_offset <= offset < entity.end_offset:
-                    return entity
+            entity: DecodedEntity = self.values[idx]
+            if entity.start_offset <= offset < entity.end_offset:
+                return entity
         return None
 
 
@@ -305,9 +288,7 @@ class FuncType:
         self.params = params
         self.results = results
 
-    def __eq__(self, other: object) -> bool:
-        if not isinstance(other, FuncType):
-            return False
+    def __eq__(self, other: "FuncType") -> bool:
         return self.params == other.params and self.results == other.results
 
 
@@ -450,7 +431,10 @@ class ModuleView:
     def __init__(self, module_name: str, rom_binary: bytes | bytearray | memoryview):
         self.module_name = module_name
         self.rom_binary = memoryview(rom_binary)
-        self.sections: dict[int, SectionView] = {}
+        # Section IDs are SectionID.CUSTOM(0)..DATA_COUNT(12): a fixed, dense
+        # WASM-spec-defined range, so a fixed-size array indexed by ID -- not
+        # a dict -- is the direct fit.
+        self.sections: list[SectionView | None] = [None] * (SectionID.DATA_COUNT + 1)
         self.types: list[FuncType] = []
         self.imports: list[ImportEntry] = []
         self.functions: list[int] = []
@@ -460,7 +444,7 @@ class ModuleView:
         self.exports_dict: list[ExportEntry] = []
         self.code_offsets: list[tuple[int, int]] = []
         self.start_func_idx: int | None = None
-        self.resolved_imports: dict[str, Any] = {}
+        self.resolved_imports: FlatMapView = FlatMapView([], [])
         self.is_ready: bool = False
         # Decoded entity registry & RadixBinaryTreeView indexes ({META_BinarySearch})
         self.entity_registry: list[DecodedEntity] = []
@@ -567,12 +551,12 @@ class WasmLoader:
         max_wasm_pages: int = FB_CONF_MAX_WASM_PAGES,
     ):
         self.allocator = allocator or BumpAllocator()
-        self.registry: dict[str, ModuleView] = {}
+        self.registry: StaticFlatMap[str, ModuleView] = StaticFlatMap(capacity=max_modules)
         self.max_modules = max_modules
         self.max_wasm_pages = max_wasm_pages
 
     def lookup(self, name: str) -> ModuleView | None:
-        return self.registry.get(name)
+        return self.registry.find(name)
 
     def prepare(self, module_name: str, wasm_binary: bytes | bytearray | memoryview) -> ModuleView:
         if len(self.registry) >= self.max_modules:
@@ -658,7 +642,7 @@ class WasmLoader:
             if not view.imports:
                 view.is_ready = True
 
-            self.registry[module_name] = view
+            self.registry.insert(module_name, view)
             return view
         except Exception:
             self.allocator.restore(watermark)
@@ -764,6 +748,7 @@ class WasmLoader:
                 stream.seek(body_start + body_size)
 
     def resolve_imports(self, module: ModuleView) -> bool:
+        entries: list[tuple[str, ExportEntry]] = []
         for imp in module.imports:
             target_mod = self.lookup(imp.module_name)
             if target_mod is None:
@@ -771,13 +756,15 @@ class WasmLoader:
             export_entry = target_mod.lookup_export(imp.field_name)
             if export_entry is None or export_entry.kind != imp.kind:
                 raise WasmLinkError(f"Unresolved import '{imp.module_name}.{imp.field_name}'")
-            module.resolved_imports[f"{imp.module_name}.{imp.field_name}"] = export_entry
+            entries.append((f"{imp.module_name}.{imp.field_name}", export_entry))
 
+        entries.sort(key=lambda e: e[0])
+        module.resolved_imports = FlatMapView([k for k, _ in entries], [v for _, v in entries])
         module.is_ready = True
         return True
 
     def unload(self, module: ModuleView) -> bool:
         if module.module_name in self.registry:
-            del self.registry[module.module_name]
+            self.registry.remove(module.module_name)
             return True
         return False

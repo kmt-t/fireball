@@ -1,7 +1,6 @@
-# Interpreter コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}
+# Interpreter コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}
 <!-- evidence:
      formal: formal/vsoc_state_model.py
-     wit: wit/execution_context.wit
      concept: concepts/interpreter_concept.py
      test: tests/runtime_interpreter_test_spec.md
 -->
@@ -68,7 +67,7 @@ ARM Cortex-M ターゲットにおいて、`execution_context` は **WASM スタ
 | 有効命令ハンドラ | 現在使用されているハンドラ（通常用/デバッグ用）への参照 | テーブルポインタ | `opcode_handler` の配列 (`[R1, #0x0C]`) |
 | 環境ポインタ | 実行に必要な環境（vSoC等）への参照 `{EnvironmentPointer}` | 構造体への参照 | [`vsoc_runtime`](runtime_vsoc.md) (`env`: R2) |
 
-`execution_context` は `sp_offset` / `frame_offset` / `sp_boundary` / `handler_table` の4フィールド（計16バイト、`[R1, #0x00]`〜`[R1, #0x0F]`）のみを保持する。リニアメモリ基底・サイズは `execution_context` ではなく **`vsoc_runtime`（`env`: R2）が所有** する——`memory.grow` によって動的に伸長するメモリの実体は複数モジュールにまたがる「環境」側の責務であり、`execution_context` はトレース／ハンドラ呼び出しごとに軽量な統一スタックフレーム情報のみを保持する設計とする。完全な構造体定義（フィールド型と並び順）は正本として [`wit/execution_context.wit`](wit/execution_context.wit) に、バイトオフセットの物理配置は `{ExecutionContext_Layout}` に記載する。
+`execution_context` は `sp_offset` / `frame_offset` / `sp_boundary` / `handler_table` の4フィールド（計16バイト、`[R1, #0x00]`〜`[R1, #0x0F]`）のみを保持する。リニアメモリ基底・サイズは `execution_context` ではなく **`vsoc_runtime`（`env`: R2）が所有** する——`memory.grow` によって動的に伸長するメモリの実体は複数モジュールにまたがる「環境」側の責務であり、`execution_context` はトレース／ハンドラ呼び出しごとに軽量な統一スタックフレーム情報のみを保持する設計とする。バイトオフセットの物理配置は `{ExecutionContext_Layout}` に記載する。
 
 #### コールフレーム（call_frame @ 統合スタックインライン）
 <!-- traceability: {PositionIndependentCode} {ContextPointerRegister} {MemoryBoundaryCheck} {EnvironmentPointer} -->
@@ -82,7 +81,7 @@ ARM Cortex-M ターゲットにおいて、`execution_context` は **WASM スタ
 | 関数インデックス | 現在実行中の関数の管理番号 | 関数インデックス | 32bit符号なし (`+0x0C`) |
 | 保存済みスタック長 | 関数呼び出し時点のスタック長（復元用） | 長さ | 32bit符号なし (`+0x10`) |
 
-`call_frame` は計20バイト（`+0x00`〜`+0x13`）で、統合スタック上の各フレーム先頭からの相対オフセットを持つ（絶対オフセットは呼び出し深さごとに異なる——{ADR_TosCacheAsymmetry} 参照）。正本は [`wit/execution_context.wit`](wit/execution_context.wit)、物理配置は `{CallFrame_Layout}`。
+`call_frame` は計20バイト（`+0x00`〜`+0x13`）で、統合スタック上の各フレーム先頭からの相対オフセットを持つ（絶対オフセットは呼び出し深さごとに異なる——{ADR_TosCacheAsymmetry} 参照）。物理配置は `{CallFrame_Layout}`。
 
 #### 制御フレーム（control_frame @ 統合スタックインライン）
 <!-- traceability: {PositionIndependentCode} {ContextPointerRegister} {MemoryBoundaryCheck} {EnvironmentPointer} -->
@@ -96,7 +95,7 @@ ARM Cortex-M ターゲットにおいて、`execution_context` は **WASM スタ
 | 結果アリティ | このブロックが戻す値の数（スタック Pruning に使用） | 整数 | 16bit符号なし (`+0x0C`) |
 | ループフラグ | 現在の構造が `loop` かどうかを示す | ブール値 | 8bit (`+0x0E`)。`+0x0F` は4バイトアライメントのための予約バイト |
 
-`control_frame` は計16バイト（`+0x00`〜`+0x0F`）。正本は [`wit/execution_context.wit`](wit/execution_context.wit)、物理配置は `{ControlFrame_Layout}`。
+`control_frame` は計16バイト（`+0x00`〜`+0x0F`）。物理配置は `{ControlFrame_Layout}`。
 
 #### 制御フレーム整合性とリーク防止不変条件 (Control Frame Integrity Invariant)
 <!-- traceability: {InterpreterContextStackless} {PositionIndependentCode} -->

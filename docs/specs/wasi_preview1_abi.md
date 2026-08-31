@@ -4,10 +4,10 @@
 -->
 
 ## 1. 概要と基本思想
-<!-- traceability: {Type_Vocabulary} {TypeSafeMessaging} {Challenge_IpcQueueStarvation} {META_ZeroCostAbstraction} -->
-本仕様書は、Fireball Hypervisor が WASM ゲストアプリケーションに対して提供する **WASI Preview 1 (`wasi_snapshot_preview1`)** インターフェイスの物理 ABI マッピング、サポート API セット、およびエラーコード規約を定義する正本である。
+<!-- traceability: {Type_Vocabulary} {TypeSafeMessaging} {META_ZeroCostAbstraction} -->
+本仕様書は、Fireball Hypervisor が WASM ゲストアプリケーションに対して提供する **WASI Preview 1 (`wasi_snapshot_preview1`, WASI 0.1p)** インターフェイスの物理 ABI マッピング、サポート API セット、およびエラーコード規約を定義する正本である。
 
-組込みマイコン環境（Cortex-M33, RAM 32KB〜64KB）における極小フットプリントを維持するため、ファイルシステムやネットワーク等の重厚な OS 機能は排除または制限し、文字入出力（UART）、ハードウェア時刻（SysTick/Timer）、乱数（TRNG）、および COOS スケジューラ連携に特化したスリムなサブセットを提供する。 `{Type_Vocabulary}` `{TypeSafeMessaging}` `{META_ZeroCostAbstraction}`
+Fireball ではネイティブなシステム基盤として **WASI 0.3 Preview (WASI 0.3p / HAL)** を採用しており、本 WASI Preview 1 ABI は、内部で WASI 0.3p のストリーム（`wasi:io/streams`）、タイマー（`wasi:clocks/monotonic-clock`）、コンソール出力（`wasi:cli/stdout`）を呼び出す**薄いアダプタ/ラッパーレイヤー（Adapter Pattern）**として動作する。これにより、既存の WASI 0.1p 向けコンパイル済みバイナリとの完全な下位互換性をゼロコストで維持する。 `{Type_Vocabulary}` `{TypeSafeMessaging}` `{META_ZeroCostAbstraction}`
 
 ---
 

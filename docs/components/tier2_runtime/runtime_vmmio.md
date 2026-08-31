@@ -371,10 +371,10 @@ graph LR
 <!-- traceability: {OwnershipTransfer} -->
 
 1. **Alloc**: COOS が SHM 物理ページを確保し、IPCルータに登録する。`owner_id` = 送信タスクID。
-2. **Revoke**: IPCルータが送信タスクの権限を無効化する。`owner_id` を `FLIGHT_SENTINEL` にセットし、TLB の該当エントリを無効化する。
-3. **Enqueue**: IPCルータが受信チャネルへハンドルを含むメッセージを Push する。キュー満杯時は Rollback し、`owner_id` を送信タスクIDに復元する。
-4. **Grant**: 受信タスクがデキューした瞬間、IPCルータが `owner_id` を受信タスクIDにセットする。
-5. **Drop**: 受信先が Kill された場合、Drop Handler が IPCルータに通知し、`owner_id` をクリアしてリソースを回収する。
+2. **Revoke**: IPCルータが送信タスクの権限を無効化する。`owner_id` を `FLIGHT_SENTINEL` にセットし、TLB の該当エントリを無効化する。この時点で送信は完了確約となる。
+3. **Rendezvous**: IPCルータが `(sender_role, target_role)` エッジ専用の CSP チャネル上でハンドルを含むメッセージのバッファなし同期ハンドオフを試みる。受信タスクが既に待機していれば即座に、まだ到達していなければ送信タスクが協調スケジューラ上でブロックする。キューが存在しないため、満杯によるRollbackは発生しない。
+4. **Grant**: ランデブーが成立した瞬間、IPCルータが `owner_id` を受信タスクIDにセットする。
+5. **相手タスクの生存**: 受信タスクが永久に到達しない場合、送信タスクはブロックし続ける。回収すべき「キュー内滞留リソース」は存在しないため、Drop Handler に相当する機構はない——送信側タスク自身の終了処理がそのまま資源の後始末を兼ねる。
 
 ### 4.7 仮想割り込みマッピング
 <!-- traceability: {META_ConfigurableSystem} -->

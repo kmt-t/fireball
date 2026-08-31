@@ -5,12 +5,13 @@
 -->
 
 ## 1. コンセプト
-<!-- traceability: {IPCRouter} {Challenge_InterruptSafety} {TaskPollInterruptFlag} {RSPMinimalSet} {Fast_Path_GPIO} -->
-HAL (Hardware Abstraction Layer) は、ハードウェアへのアクセスを抽象化し、vSoCやサービスに対して統一されたインターフェイスを提供する。また、デバッグ用のGDB Remote Serial Protocol (RSP) のパケット解析（RSP Parser）を担い、解析済みコマンドをデバッガへ供給する。すべてのアクセスはIPCルータを経由し、割り込みはフラグ通知とタスクウェイクアップによって安全に処理される。 `{IPCRouter}` `{Challenge_InterruptSafety}` `{TaskPollInterruptFlag}` `{RSPMinimalSet}` `{Fast_Path_GPIO}`
+<!-- traceability: {IPCRouter} {Challenge_InterruptSafety} {TaskPollInterruptFlag} {RSPMinimalSet} {Fast_Path_GPIO} {URIAbstraction} {TypeSafeMessaging} {IPC_ZeroCopy} -->
+HAL (Hardware Abstraction Layer) は、物理ハードウェアおよび仮想ペリフェラルへのアクセスを抽象化し、WASI 0.3 Preview (WASI 0.3p) に準拠したインターフェイスを提供する。ペリフェラル・ストリーム・GPIO 等は階層型 URI（`fireball://device/<driver-type>/<instance-id>`）経由で動的にバインド・解決される。
+各ドライバは IPC ルータ（`ipc_router`）から WASI 0.3p ドライバ通信コマンド（`CMD_STREAM_*`, `CMD_CLOCK_*`, `CMD_GPIO_*`, `CMD_BUS_*`）を受信し、vMMIO FC=14 の共有メモリ（`shm-slice`）を介してゼロコピーで高速データ転送を実行する。また、デバッグ用の GDB Remote Serial Protocol (RSP) のパケット解析（RSP Parser）を担い、解析済みデバッグコマンドを `debug_command_queue` へ供給する。割り込みはフラグ通知とタスクウェイクアップによって安全に処理される。 `{IPCRouter}` `{Challenge_InterruptSafety}` `{TaskPollInterruptFlag}` `{RSPMinimalSet}` `{Fast_Path_GPIO}` `{URIAbstraction}` `{TypeSafeMessaging}` `{IPC_ZeroCopy}`
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {IPCRouter} {URIAbstraction} {META_StaticDI} -->
-本コンポーネントは **Tier 3 (プラットフォーム / リーフコンポーネント: Leaf Component)** に属し、ハードウェアとハイパーバイザの物理境界を抽象化して上位層に対するデバイスアクセスプリミティブを提供する。 `{META_3TierSeparation}` `{IPCRouter}` `{URIAbstraction}` `{META_StaticDI}`
+本コンポーネントは **Tier 3 (プラットフォーム / リーフコンポーネント: Leaf Component)** に属し、ハードウェアとハイパーバイザの物理境界を抽象化して WASI 0.3p / HAL インターフェースとして上位層に対するデバイスアクセスプリミティブを提供する。 `{META_3TierSeparation}` `{IPCRouter}` `{URIAbstraction}` `{META_StaticDI}`
 
 ## 3. 静的モデル
 
@@ -22,14 +23,16 @@ HAL (Hardware Abstraction Layer) は、ハードウェアへのアクセスを�
 ### 3.2 内部ブロック図
 ```mermaid
 graph TD
-    IPCR[IPC Router] --> HAL[HAL Subsystem]
-    HAL --> UART[UART Driver]
-    HAL --> RTT[RTT Driver]
-    HAL --> GPIO[GPIO Driver]
-    HAL --> I2C[I2C Driver]
-    HAL --> Timer[Timer Driver]
+    IPCR[IPC Router] -->|WASI 0.3p Driver Commands / SHM Slices| HAL[HAL Subsystem]
+    HAL --> UART[UART Driver: fireball://device/uart/0]
+    HAL --> RTT[RTT Driver: fireball://device/rtt/0]
+    HAL --> GPIO[GPIO Driver: fireball://device/gpio/0]
+    HAL --> I2C[I2C Driver: fireball://device/i2c/0]
+    HAL --> SPI[SPI Driver: fireball://device/spi/0]
+    HAL --> Timer[Timer Driver: fireball://device/timer/0]
     HAL --> RSP[RSP Parser]
     RSP --> Queue[debug_command_queue]
+    Queue --> Debugger[Debugger Task]
 ```
 
 ### 3.3 主要なクラス・構造体・配列・定数
@@ -41,6 +44,7 @@ graph TD
 | :--- | :--- | :--- | :--- |
 | デバイス識別子 | システム全体で重複しない、デバイスごとの管理番号 | ID値 | `device_id` |
 | デバイス名 | 人間が識別可能なデバイスの名称 | 固定長配列 | 16bytes |
+| 階層URI | IPC ルータに登録される正規化 URI | 文字列 | `fireball://device/<type>/<instance>` |
 | デバイス種別 | 入出力の特性（ブロック/ストリーム等）を識別する | 列挙型 | - |
 | 転送単位 | デバイスが扱う最小のデータブロックサイズ | バイト数 | - |
 | 予約ページ数 | vMMIO DYNAMIC領域に確保するページ数 (`reserved_pages`) | ページ数 | デフォルト0 |
@@ -55,16 +59,116 @@ HAL全体の制限値を定義する。 `{META_ConfigurableSystem}`
 | 最大バッファ数 | 通信に使用する内部バッファの予約数 | エントリ数 | 1-255 |
 | `buffer_size` | 単一バッファに割り当てられる固定バイト数 | バイト数 | - |
 
-## 4. 動的モデル
+---
 
-### 4.1 アルゴリズム
+## 4. IPC 通信仕様 (IPC Driver & RSP Protocol)
+
+### 4.1 階層型 URI 命名規則 (Hierarchical URI Scheme)
+<!-- traceability: {URIAbstraction} {IPCRouter} -->
+HAL が管轄するすべてのハードウェアドライバおよびコンソール出力は、以下の階層型 URI で IPC レジストリへ登録される：
+
+- `fireball://device/uart/0`: UART シリアル入出力ドライバ（ストリーム）
+- `fireball://device/gpio/0`: GPIO ポートドライバ（ピン入出力・エッジトリガ）
+- `fireball://device/timer/0`: ハードウェアタイマードライバ（単調増加時刻・非同期イベント）
+- `fireball://device/i2c/0`: I2C バスマスタ／スレーブドライバ
+- `fireball://device/spi/0`: SPI バスマスタ／スレーブドライバ
+- `fireball://device/rtt/0`: SEGGER RTT デバッグ通信ドライバ
+- `fireball://service/stdout/0`: 標準出力コンソールストリーム
+
+### 4.2 WASI 0.3p IPC ドライバ通信コマンド仕様
+<!-- traceability: {TypeSafeMessaging} {IPC_ZeroCopy} {HAL_Interface} -->
+各ドライバは IPC ルータ経由で以下の `kv_pair` コマンドを受信し、共有メモリ（`shm-slice`）と連携してハードウェア処理を実行する：
+
+| 分類 | コマンド名 | コマンド ID | 引数 (`kv_pair` / SHM) | 戻り値 | 説明 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **共通 (Capability)** | `CMD_QUERY_CAPS` | `0x00` | `query_cmd_id` (16bit) | `is_supported` (1=対応, 0=非対応) | ドライバが指定コマンドをサポートしているか確認 |
+| **Stream (UART/Stdout)** | `CMD_STREAM_WRITE_SHM` | `0x01` | `shm_handle`, `offset`, `len` | `written_bytes` | 共有メモリ（FC=14）上のデータをデバイスへ送信 |
+| | `CMD_STREAM_READ_SHM` | `0x02` | `shm_handle`, `offset`, `max_len` | `read_bytes` | デバイスから共有メモリへデータを読み込み |
+| | `CMD_STREAM_FLUSH` | `0x03` | なし | `0` (SUCCESS) | デバイス送信バッファのフラッシュ |
+| | `CMD_STREAM_CLOSE` | `0x04` | なし | `0` (SUCCESS) | ストリームチャネルのクローズ |
+| **Clock/Timer** | `CMD_CLOCK_GET_NOW` | `0x10` | なし | `now_ns` (64bit) | 単調増加時刻（SysTick/Timer ナノ秒）を取得 |
+| | `CMD_CLOCK_SUBSCRIBE` | `0x11` | `nanos` (64bit) | `pollable_handle` | 指定ナノ秒後に発火する非同期イベントを予約 |
+| | `CMD_CLOCK_GET_RES` | `0x12` | なし | `resolution_ns` | クロック分解能（ナノ秒）を取得 |
+| **GPIO/Trigger** | `CMD_GPIO_SET_PIN` | `0x20` | `pin_no`, `val` (0/1) | `0` (SUCCESS) | GPIO ピンの出力レベルを設定 |
+| | `CMD_GPIO_GET_PIN` | `0x21` | `pin_no` | `pin_val` (0/1) | GPIO ピンの入力レベルを取得 |
+| | `CMD_GPIO_CONFIG_PIN`| `0x22` | `pin_no`, `mode` (In/Out/Pull) | `0` (SUCCESS) | GPIO ピンの方向・プル構成を設定 |
+| | `CMD_GPIO_SUBSCRIBE_EDGE` | `0x23` | `pin_no`, `edge_type` | `pollable_handle` | エッジ検出時に発火するイベントを登録 |
+| **Bus (I2C/SPI)** | `CMD_BUS_TRANSFER_SHM` | `0x30` | `tx_shm_handle`, `rx_shm_handle`, `len` | `transferred_bytes` | TX/RX 共有メモリ間の全二重/半二重転送 |
+| | `CMD_BUS_CONFIG` | `0x31` | `clock_hz`, `slave_addr`, `mode` | `0` (SUCCESS) | 通信速度・スレーブアドレス・転送モード設定 |
+
+### 4.3 RSP (Remote Serial Protocol) パーサとデバッグキュー仕様
+<!-- traceability: {RSPMinimalSet} {RSP_Transport_Selectable} -->
+HAL は、ホスト PC 上の GDB / LLDB / VSCode デバッガと通信するための GDB RSP パケット処理を担当する：
+
+1. **RSP パケット受信**: UART または RTT ドライバ経由でシリアルデータ（`$<packet-data>#<checksum>`）を受信する。 `{RSP_Transport_Selectable}`
+2. **パケット検証 & ACK**: 2桁の 16進チェックサムを検証し、一致すれば `+`（ACK）、不一致なら `-`（NACK）を即座に応答する。
+3. **コマンド解析 (RSP Parser)**:
+   - `$g` / `$G`: レジスタ一括読み出し / 書き込み
+   - `$m<addr>,<len>` / `$M<addr>,<len>:<data>`: ゲストメモリ読み出し / 書き込み
+   - `$s` / `$c`: シングルステップ実行 / 実行再開（Continue）
+   - `$Z0,<addr>,<kind>` / `$z0,<addr>,<kind>`: ソフトウェアブレークポイント設定 / 解除
+   - `$?`: 停止理由問い合わせ (Stop Reply)
+4. **デバッグコマンドキュー投入**: 解析済みコマンドを `debug_command` 構造体に変換し、`debug_command_queue` へ Push。デバッガタスクがこれを Pop して vSoC / インタープリタ / JIT の実行を制御する。 `{RSPMinimalSet}`
+
+```mermaid
+sequenceDiagram
+    participant Host as GDB / VSCode
+    participant UART as UART/RTT Driver
+    participant RSP as RSP Parser (HAL)
+    participant Q as debug_command_queue
+    participant Dbg as Debugger Task (Tier 2)
+
+    Host->>UART: Send "$g#67" (Read Registers)
+    UART->>RSP: Raw Packet Bytes
+    RSP->>RSP: Verify Checksum & Parse
+    RSP-->>Host: Send "+" (ACK)
+    RSP->>Q: Push(CMD_READ_REGISTERS)
+    Note over Q,Dbg: IPC Notification / Task Wakeup
+    Dbg->>Q: Pop Command & Read CPU Context
+    Dbg->>UART: Send "$<reg-values>#<cksum>"
+```
+
+---
+
+## 5. WASI サポート体系 (WASI 0.3p Core & 0.1p Wrapper)
+
+### 5.1 「HAL ＝ WASI 0.3p」統合アーキテクチャ
+<!-- traceability: {WASI_Implementation} {URIAbstraction} -->
+Fireball ではハードウェア制御のプリミティブを WASI 0.3p のリソース・ストリーム体系として直接実装する：
+
+- **動的インターフェース解決 (`resolver.get-interface`)**:
+  ゲスト WASM アプリケーションは、`resolver.get-interface("fireball://device/uart/0")` 等を呼び出すことで、対応するデバイスへの IPC チャネルハンドルを動的に取得できる。
+- **共有メモリベースのデータ転送**:
+  WASI 0.3p の `streaming` / `bus` インターフェースは、`acquire-shm` で取得した共有メモリハンドル（`shm-slice`）を受け渡しすることで、生ポインタ dereference を完全に排除した安全・ゼロコピーな転送を行う。
+
+### 5.2 WASI 0.1p (`wasi_snapshot_preview1`) 互換ラッパー
+<!-- traceability: {TypeSafeMessaging} {META_ZeroCostAbstraction} -->
+既存の WASI Preview 1 向けコンパイル済みバイナリとの互換性をゼロコストで提供するため、以下の Preview 1 ABI を WASI 0.3p / HAL リソースへのアダプタとしてルーティングする：
+
+- **`fd_write`**:
+  - `fd=1` (stdout) / `fd=2` (stderr): `wasi:cli/stdout` または `fireball://device/uart/0` の `CMD_STREAM_WRITE_SHM` へ委譲。
+  - `fd>=3`: IPC チャネル経由のパケット送信へ委譲。
+- **`fd_read`**:
+  - `fd=0` (stdin): `fireball://device/uart/0` の `CMD_STREAM_READ_SHM` へ委譲。
+  - `fd>=3`: IPC チャネルからのパケット受信へ委譲。
+- **`clock_time_get`**:
+  - `fireball://device/timer/0` の `CMD_CLOCK_GET_NOW`（単調ナノ秒時刻）へ委譲。
+- **`proc_exit`**:
+  - ハイパーバイザのシステム停止・終了コード設定へ委譲。
+- **`random_get`**:
+  - ハードウェア TRNG（True Random Number Generator）ドライバへ委譲。
+
+---
+
+## 6. 動的モデル
+
+### 6.1 アルゴリズム
 <!-- traceability: {RSP_Transport_Selectable} {TaskPollInterruptFlag} {GLOBAL_InterruptWakeup} -->
-- **コマンドルーティング**: IPCで受信したコマンド（read/write等）を、デバイスIDに基づいて適切なドライバへ振り分ける。
-- **RSPパケット解析**: UARTまたはRTTから受信したRSPパケットを解析し、`debug_command` 構造体へ変換してコマンドキューへ投入する。 `{RSP_Transport_Selectable}`
+- **コマンドルーティング**: IPCで受信したコマンド（read/write/control）を、デバイスIDに基づいて適切なドライバへ振り分ける。
 - **割り込み通知（push）**: 物理割り込み発生時、ISR は COOS の `notify_interrupt(irq_id)` を呼び、INT イベントを有界キューへ投函するのみとする。**ISR がタスク状態を直接書き換えることはない。**実際の READY 遷移は、スケジューラが yield 点でキューをドレインする際に行われる（`{GLOBAL_InterruptWakeup}` を正本とする）。この非同期境界の分離が vSoC 実行状態モデルの安全性検証項目 `irq_jit_race_freedom_proof`（形式検証モデルの CTL 安全性検証 `AG(Not(handling_irq & jit_mode))` として証明されている）性質である。
 - **割り込み確認（pull）**: `{TaskPollInterruptFlag}` が定義するもう一方の経路として、ゲスト実行エンジン（JIT/インタープリタ）は Safepoint で `vsoc_context.interrupt_flags` を自ら確認する。この pull 側の実装（Safepoint 埋め込み位置、フラグ構造）は HAL の管轄外であり、`{TaskPollInterruptFlag}` を正本とする。 `{TaskPollInterruptFlag}` `{GLOBAL_InterruptWakeup}`
 
-### 4.2 状態遷移図
+### 6.2 状態遷移図
 <!-- traceability: {RSP_Transport_Selectable} {TaskPollInterruptFlag} {GLOBAL_InterruptWakeup} -->
 ```mermaid
 stateDiagram-v2
@@ -76,137 +180,46 @@ stateDiagram-v2
     Error --> Ready: reset
 ```
 
-### 4.3 内部シーケンス
-<!-- traceability: {RSP_Transport_Selectable} {TaskPollInterruptFlag} {GLOBAL_InterruptWakeup} -->
-#### RSPパケット受信とコマンド供給シーケンス
-```mermaid
-sequenceDiagram
-    participant Host as VSCode/GDB
-    participant UART as UART Driver
-    participant RSP as RSP Parser
-    participant Q as Command Queue
-    
-    Host->>UART: Send "$g#67"
-    UART->>RSP: Raw Data
-    RSP->>RSP: Verify Checksum
-    RSP->>Q: Push(READ_REG)
-    Note over Q: Debugger will Pop and execute
-```
+---
 
-## 5. インターフェイス定義
+## 7. インターフェイス定義
 
-### 5.1 公開API
-外部から利用可能なオブジェクト指向APIを定義する。
-
-#### データの読み出し
-
-<!-- traceability: {HAL_Interface} -->
-
-| 項目 | 内容 |
-| :--- | :--- |
-| 機能概要 | 指定された物理デバイスからデータを取得し、共有バッファ（`shm-id`）へ格納する。`write` と同一のバッファ機構を用い、生ポインタ渡しは行わない。 |
-| シグネチャ | `read(id: device-id, dst: shm-id) -> operation-result` |
-| 引数 | `id`: 対象デバイスID<br>`dst`: 読み出し先の共有メモリハンドル（`acquire_buffer` で確保） |
-| 戻り値 | 操作結果（成功時は読み出しバイト数、失敗時は `recovery-strategy`） |
-| 期待する結果 | 正常系：バッファに要求したデータが書き込まれる。 |
-
-#### データの書き込み (write)
-
-<!-- traceability: {HAL_Interface} -->
-
-| 項目 | 内容 |
-| :--- | :--- |
-| 機能概要 | 共有バッファ（`shm-id`）内のデータを指定された物理デバイスへ送信する。 |
-| シグネチャ | `write(id: device-id, src: shm-id) -> operation-result` |
-| 引数 | `id`: 対象デバイスID<br>`src`: 送信データが格納された共有メモリハンドル |
-
-#### ゼロコピー転送 (bus_master/streaming)
-<!-- traceability: {PhysicalPassthrough} -->
-
-| 項目 | 内容 |
-| :--- | :--- |
-| 機能概要 | アプリケーションの共有メモリバッファを直接DMAエンジン等へ渡し、コピーなしでの高速転送を実現する。 |
-| シグネチャ | `transfer(tx_buffer: shm_id, rx_buffer: shm_id) -> operation-result` |
-| 期待する結果 | 正常：CPUを介さずバッファ間のデータ移動が完了する。 `{PhysicalPassthrough}` |
-
-#### 非標準制御 (control)
-<!-- traceability: {HAL_Interface} {TypeSafeMessaging} -->
-
-| 項目 | 内容 |
-| :--- | :--- |
-| 機能概要 | read/write で表現できないデバイス固有の操作（ボーレート設定、ピン制御等）を行う。 |
-| シグネチャ | `control(id: device-id, cmd: command-id, params: ipc-message) -> operation-result` |
-| 引数 | `id`: デバイスID<br>`cmd`: コマンド識別子<br>`params`: コマンド固有引数(Key-Valueメッセージ) |
-| 戻り値 | 操作結果 |
-| 補足 | 本APIは `ipc-message` を経由するため IPC のオーバーヘッドを伴い、`{PhysicalPassthrough}` の高速パスではない。レイテンシに敏感なピン操作は `{Fast_Path_GPIO}` の経路を用いること。 `{HAL_Interface}` |
-
-#### バッファの確保
+### 7.1 公開 API
 <!-- traceability: {HAL_Interface} {IPC_ZeroCopy} -->
 
-| 項目 | 内容 |
-| :--- | :--- |
-| 機能概要 | デバイス通信に使用する静的固定長バッファプールからスロットを一つ確保する。**確保されたバッファは vMMIO の共有メモリ領域（SHM領域: `0xE000_0000`〜、静的アロケーション）のスロットにマッピングされる。** このアドレス範囲・ページ単位のレイアウトは `{OwnerMismatchTrap}` を正本とする。 |
-| シグネチャ | `acquire_buffer(size: バイト数) -> result<shm-id, recovery-strategy>` |
-| 引数 | `size`: 必要なバイト数 |
-| 戻り値 | 成功時は共有メモリアイデンティファイア (`shm-id`) `{IPC_ZeroCopy}` |
+#### データの読み出し (`read`)
+- **シグネチャ**: `read(id: device-id, dst: shm-id) -> operation-result`
+- **機能**: 指定された物理デバイスからデータを取得し、共有バッファ（`shm-id`）へ格納する。生ポインタ渡しは行わない。
 
-### 5.2 Tier 3 リソースインターフェイス
+#### データの書き込み (`write`)
+- **シグネチャ**: `write(id: device-id, src: shm-id) -> operation-result`
+- **機能**: 共有バッファ（`shm-id`）内のデータを指定された物理デバイスへ送信する。
+
+#### ゼロコピー転送 (`transfer`)
 <!-- traceability: {PhysicalPassthrough} -->
+- **シグネチャ**: `transfer(tx_buffer: shm_id, rx_buffer: shm_id) -> operation-result`
+- **機能**: アプリケーションの共有メモリバッファを直接DMAエンジン等へ渡し、CPUコピーなしで高速転送する。 `{PhysicalPassthrough}`
 
-#### `gpio-controller` (物理GPIO制御)
-| プロトタイプ | 内容 |
-| :--- | :--- |
-| `set-pin(pin, value)` | ピンの出力レベルを設定する。 |
-| `get-pin(pin)` | ピンの入力レベルを取得する。 |
+#### バッファの確保 (`acquire_buffer`)
+<!-- traceability: {HAL_Interface} {IPC_ZeroCopy} -->
+- **シグネチャ**: `acquire_buffer(size: uint32) -> result<shm-id, recovery-strategy>`
+- **機能**: vMMIO の共有メモリ領域（SHM領域: `0xE000_0000`〜）から固定長バッファスロットを確保する。 `{OwnerMismatchTrap}`
 
-#### `periodic-timer` (時刻とタイマー)
-| プロトタイプ | 内容 |
-| :--- | :--- |
-| `get-now()` | システム時間（ナノ秒）を取得する。 |
-| `subscribe-timer(nanos)` | 指定時刻に割り込みを予約する。 |
+---
 
-#### `bus-master` / `bus-slave` (I2C/SPI通信)
-| プロトタイプ | 内容 |
-| :--- | :--- |
-| `transfer(tx, rx)` | 共有メモリを用いたゼロコピー通信を行う。 |
+## 8. 制約達成の方策
 
-#### `debug-server` (GDB RSP サーバ)
-| プロトタイプ | 内容 |
-| :--- | :--- |
-| `poll-packet()` | RSPパケットの受信確認を行う。 |
-| `get-parsed-command()` | 解析済みコマンドの取得を行う。 |
-
-### 5.3 URI/IPCインターフェイス
-<!-- traceability: {HAL_Interface} {URIAbstraction} -->
-- **URI**: `fireball://hal/<device_name>/<instance_id>`
-- **`device-id` との対応**: `device-id` は HAL 自身のデバイスレジストリ（3.1「デバイス識別子」）が静的に払い出す管理番号であり、初期化時に各デバイスドライバがその `device-id` を `channel` として `fireball://hal/<device_name>/<instance_id>` の URI で IPC ルータへ `register_service`（`{ThreeStageRouting}` を正本とする）する。以後の `read`/`write`/`control` 呼び出しは、URI 文字列ではなくこの `device-id` を渡すが、これは Stage 1（URI 文字列の二分探索）を省略するためのキャッシュ済み参照キーに過ぎない。1章「すべてのアクセスはIPCルータを経由し」の通り、呼び出しは必ず IPC ルータの `role_matrix[sender_role][target_role]` 照合（`{ThreeStageRouting}` を正本とする）を経由する設計であり、**`device-id` へのキャッシュはこの照合を代替・省略しない**。
-
-### 5.4 RSPトランスポート構成
-<!-- traceability: {RSP_Transport_Selectable} -->
-RSPパケットの送受信に使用する物理層を選択可能とする。 `{RSP_Transport_Selectable}`
-
-| 項目名 | 機能と役割 | 備考（制約、型など） |
-| :--- | :--- | :--- |
-| **UART** | 標準的な非同期シリアル通信によるRSPパケット伝送 | 汎用性が高く、安価なアダプタで利用可能 |
-| **RTT** | J-Link の RTT 技術を用いた高速なパケット伝送 | ピンを専有せず、J-Link 経由でデバッグ中に併用可能 |
-
-### 5.5 メッセージ形式
-<!-- traceability: {TypeSafeMessaging} -->
-Key-Valueプロトコル。 `device_id`, `command`, `shared_mem_id` 等を含む。 `{TypeSafeMessaging}`
-
-## 6. 制約達成の方策
-
-### 6.1 性能制約と方策
+### 8.1 性能制約と方策
 <!-- traceability: {META_ConfigurableSystem} -->
 - **目標**: ハードウェアアクセスのレイテンシを最小化する。
 - **方策**: `{META_ConfigurableSystem}` デバイス構成をコンパイル時に固定し、実行時の動的な探索オーバーヘッドを排除する。
 
-### 6.2 メモリ制約と方策
+### 8.2 メモリ制約と方策
 <!-- traceability: {META_ConfigurableSystem} -->
 - **目標**: 通信バッファによるメモリ圧迫を防止する。
 - **方策**: `{META_ConfigurableSystem}` バッファ数とサイズをコンパイル時に固定し、**vMMIOの動的領域 (`DYNAMIC`)** に配置する。
 
-### 6.3 安全性制約と方策
+### 8.3 安全性制約と方策
 <!-- traceability: {Challenge_InterruptSafety} -->
 - **目標**: 割り込みによる実行コンテキストの破壊を防止する。
 - **方策**: `{Challenge_InterruptSafety}` 割り込みハンドラ内ではフラグセットのみを行い、実際のデータ処理はタスクのコンテキストで実行する。

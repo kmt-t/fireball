@@ -9,32 +9,11 @@ COOS Memory Manager & PMSAv8 MPU simulation.
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-_PYSIM_DIR = (
-    Path(__file__).resolve().parents[1]
-    if any(
-        d in str(Path(__file__))
-        for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")
-    )
-    else Path(__file__).resolve().parent
-)
-
-for _p in [
-    _PYSIM_DIR,
-    _PYSIM_DIR / "core",
-    _PYSIM_DIR / "runtime",
-    _PYSIM_DIR / "jit",
-    _PYSIM_DIR / "platforms",
-]:
-    _sp = str(_p)
-    if _sp not in sys.path:
-        sys.path.insert(0, _sp)
-
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Any, Generic, TypeVar
+from typing import Generic, TypeVar
+
+from system_containers import StaticFlatMap
 
 T = TypeVar("T")
 
@@ -105,12 +84,15 @@ class PartitionView:
 
 
 @dataclass
-class PoolRef(Generic[T]):
-    """Typed slot reference within static pool."""
+class ShmSlot:
+    """One allocated shared-memory page's bookkeeping record."""
 
-    owner: int
+    page_idx: int
     slot_idx: int
-    instance: T
+    size: int
+    owner: int
+    base_address: int
+    allocated: bool
 
 
 @dataclass
@@ -123,11 +105,19 @@ class VMMIOPTE:
     is_valid: bool = True
 
 
+_FB_CONF_MAX_VMMIO_PAGES = FB_CONF_MEMORY_POOL_SIZE // FB_PAGE_SIZE
+
+
 class VMMIOPTERegistry:
-    """vMMIO Tier 3 PTE Registry mock for memory manager integration."""
+    """
+    vMMIO Tier 3 PTE Registry mock for memory manager integration.
+    `page_idx` ranges over the physical pool's fixed page count
+    (FB_CONF_MEMORY_POOL_SIZE / FB_PAGE_SIZE), so a fixed-size array indexed
+    directly by page_idx is the direct fit -- not a dict.
+    """
 
     def __init__(self):
-        self.ptes: dict[int, VMMIOPTE] = {}
+        self.ptes: list[VMMIOPTE | None] = [None] * _FB_CONF_MAX_VMMIO_PAGES
 
     def register_page(self, page_idx: int, owner_id: int, physical_addr: int):
         self.ptes[page_idx] = VMMIOPTE(
@@ -138,18 +128,20 @@ class VMMIOPTERegistry:
         )
 
     def update_owner(self, page_idx: int, new_owner_id: int) -> bool:
-        if page_idx not in self.ptes or not self.ptes[page_idx].is_valid:
+        pte = self.ptes[page_idx]
+        if pte is None or not pte.is_valid:
             return False
-        self.ptes[page_idx].owner_id = new_owner_id
+        pte.owner_id = new_owner_id
         return True
 
     def get_owner(self, page_idx: int) -> int | None:
-        pte = self.ptes.get(page_idx)
-        return pte.owner_id if pte and pte.is_valid else None
+        pte = self.ptes[page_idx]
+        return pte.owner_id if pte is not None and pte.is_valid else None
 
     def unregister_page(self, page_idx: int):
-        if page_idx in self.ptes:
-            self.ptes[page_idx].is_valid = False
+        pte = self.ptes[page_idx]
+        if pte is not None:
+            pte.is_valid = False
 
 
 class SharedBlock:
@@ -344,9 +336,16 @@ class MemoryManager:
         self.total_allocated_bytes: int = 0
         self.vmmio_registry = VMMIOPTERegistry()
         self.mpu: PMSAv8MPU | None = None
-        self.partition_owners: dict[int, PartitionView] = {}
-        self.typed_slots: dict[type, list[PoolRef]] = {}
-        self.shm_slots: dict[int, dict[str, Any]] = {}
+        # Both bounded by real fixed capacities (max concurrent tasks; max
+        # concurrent SHM pages), so a StaticFlatMap -- fixed-capacity, no
+        # dynamic reallocation -- fits directly; a dict would allow either
+        # to silently grow past the hardware limit it represents.
+        self.partition_owners: StaticFlatMap[int, PartitionView] = StaticFlatMap(
+            capacity=FB_CONF_MAX_TASKS
+        )
+        self.shm_slots: StaticFlatMap[int, ShmSlot] = StaticFlatMap(
+            capacity=_FB_CONF_MAX_VMMIO_PAGES
+        )
 
     def init_manager(self, pool_base: int, pool_size: int) -> Result[bool]:
         assert pool_base % FB_WASM_PAGE_SIZE == 0, (
@@ -386,41 +385,15 @@ class MemoryManager:
             size=FB_CONF_PARTITION_SIZE,
             data=bytearray(FB_CONF_PARTITION_SIZE),
         )
-        self.partition_owners[owner] = pv
+        self.partition_owners.insert(owner, pv)
         self.total_allocated_bytes += FB_CONF_PARTITION_SIZE
         return Result(value=pv)
 
     def release_partition(self, caller_task_id: int):
         if caller_task_id not in self.partition_owners:
             return
-        del self.partition_owners[caller_task_id]
+        self.partition_owners.remove(caller_task_id)
         self.total_allocated_bytes -= FB_CONF_PARTITION_SIZE
-
-    def acquire_slot(self, owner: int, cls: type[T]) -> Result[PoolRef[T]]:
-        slot_size = getattr(cls, "__size__", 256)
-        if self.total_allocated_bytes + slot_size > self.pool_size:
-            return Result(
-                error=MemoryErrorResult(
-                    "ERR_SLOT_EXHAUSTED",
-                    RecoveryStrategy(RecoveryAction.DEGRADE, "Slot allocation pool exhausted"),
-                )
-            )
-
-        instance = cls()
-        slot_idx = len(self.typed_slots.get(cls, []))
-        ref = PoolRef(owner=owner, slot_idx=slot_idx, instance=instance)
-        self.typed_slots.setdefault(cls, []).append(ref)
-        self.total_allocated_bytes += slot_size
-        return Result(value=ref)
-
-    def release_slot(self, caller_task_id: int, ref: PoolRef[T]):
-        if ref.owner != caller_task_id:
-            return
-        cls = type(ref.instance)
-        if cls in self.typed_slots and ref in self.typed_slots[cls]:
-            self.typed_slots[cls].remove(ref)
-            slot_size = getattr(cls, "__size__", 256)
-            self.total_allocated_bytes -= slot_size
 
     def allocate_shared(self, caller_task_id: int, size: int) -> Result[SharedBlock]:
         assert caller_task_id != 0, "Shared block must be owned by an explicit task"
@@ -445,14 +418,17 @@ class MemoryManager:
         shm_id = (page_idx << 8) | slot_idx
         base_addr = 0x20080000 + (page_idx * FB_PAGE_SIZE)
         self.vmmio_registry.register_page(page_idx, caller_task_id, base_addr)
-        self.shm_slots[shm_id] = {
-            "page_idx": page_idx,
-            "slot_idx": slot_idx,
-            "size": size,
-            "owner": caller_task_id,
-            "base_address": base_addr,
-            "allocated": True,
-        }
+        self.shm_slots.insert(
+            shm_id,
+            ShmSlot(
+                page_idx=page_idx,
+                slot_idx=slot_idx,
+                size=size,
+                owner=caller_task_id,
+                base_address=base_addr,
+                allocated=True,
+            ),
+        )
         self.total_allocated_bytes += FB_PAGE_SIZE
         sb = SharedBlock(
             shm_id=shm_id,
@@ -466,8 +442,8 @@ class MemoryManager:
         return Result(value=sb)
 
     def claim(self, receiver_task_id: int, shm_id: int) -> Result[SharedBlock]:
-        slot = self.shm_slots.get(shm_id)
-        if not slot or not slot["allocated"]:
+        slot = self.shm_slots.find(shm_id)
+        if slot is None or not slot.allocated:
             return Result(
                 error=MemoryErrorResult(
                     "ERR_INVALID_SHM_ID",
@@ -475,7 +451,7 @@ class MemoryManager:
                 )
             )
 
-        page_idx = slot["page_idx"]
+        page_idx = slot.page_idx
         current_owner = self.vmmio_registry.get_owner(page_idx)
         if current_owner != receiver_task_id:
             return Result(
@@ -485,29 +461,29 @@ class MemoryManager:
                 )
             )
 
-        slot["owner"] = receiver_task_id
+        slot.owner = receiver_task_id
         sb = SharedBlock(
             shm_id=shm_id,
             page_idx=page_idx,
-            slot_idx=slot["slot_idx"],
-            size=slot["size"],
+            slot_idx=slot.slot_idx,
+            size=slot.size,
             owner=receiver_task_id,
-            base_address=slot["base_address"],
+            base_address=slot.base_address,
             manager=self,
         )
         return Result(value=sb)
 
     def rollback_transfer(self, original_sender_id: int, shm_id: int):
-        """Rollback transfer on queue full: restore original owner in vMMIO PTE."""
-        slot = self.shm_slots.get(shm_id)
-        if slot:
-            page_idx = slot["page_idx"]
-            self.vmmio_registry.update_owner(page_idx, original_sender_id)
-            slot["owner"] = original_sender_id
+        """Restores a shared block's original owner in the vMMIO PTE."""
+        slot = self.shm_slots.find(shm_id)
+        if slot is not None:
+            self.vmmio_registry.update_owner(slot.page_idx, original_sender_id)
+            slot.owner = original_sender_id
 
     def deallocate(self, caller_task_id: int, addr: int):
         """Deallocate local static partition or slot. Owner enforced."""
-        for owner, pv in list(self.partition_owners.items()):
+        owners_view = self.partition_owners.view()
+        for owner, pv in list(zip(owners_view.keys, owners_view.values, strict=False)):
             if pv.base_address == addr:
                 if owner == caller_task_id:
                     self.release_partition(caller_task_id)
@@ -516,6 +492,6 @@ class MemoryManager:
     def _deallocate_shared_slot(self, page_idx: int, slot_idx: int, owner: int):
         shm_id = (page_idx << 8) | slot_idx
         if shm_id in self.shm_slots:
-            del self.shm_slots[shm_id]
+            self.shm_slots.remove(shm_id)
             self.vmmio_registry.unregister_page(page_idx)
             self.total_allocated_bytes -= FB_PAGE_SIZE

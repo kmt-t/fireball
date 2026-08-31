@@ -33,9 +33,8 @@ graph TB
         end
         
         subgraph "Routing & Ownership"
-            R["Router<br/>Request routing<br/>Channel dispatch"]
-            OM["OwnershipManager<br/>Revoke/Enqueue/Grant<br/>Zero-copy handoff"]
-            DH["DropHandler<br/>In-flight cleanup<br/>on receiver kill"]
+            R["Router<br/>Request routing<br/>Edge channel dispatch"]
+            OM["OwnershipManager<br/>Revoke/Rendezvous/Grant<br/>Zero-copy CSP handoff"]
         end
         
         subgraph "Message Processing"
@@ -47,8 +46,7 @@ graph TB
     Reg --> AC
     AC --> R
     R --> MH
-    MH --> OM
-    OM --> DH
+MH --> OM
 ```
 
 ### 3.3 主要なクラス・構造体・配列・定数
@@ -78,8 +76,9 @@ IPC通信の最小単位。1つのメッセージで8個のペアを送信でき
 | | `0b00100` | `fb_offset_t` / ゲストメモリ相対オフセット |
 
 ##### スコープ定義
-- **機能的IPC**: キーを、受信側が定義する関数やリクエスト種類を特定する識別子として使用する。
+- **機能的IPC**: キーを、受信側が定義する関数やリクエスト種類（WASI 0.3p ドライバ通信コマンド `CMD_STREAM_*`, `CMD_CLOCK_*`, `CMD_GPIO_*`, `CMD_BUS_*` 等）を特定する識別子として使用する。 `{TypeSafeMessaging}`
 - **辞書参照IPC**: キーを、受信側が保持する静的な辞書内の文字列オフセットとして解釈する。 `{DictionaryBasedIPC}`
+- **階層URIルーティング**: 各デバイスおよびサービスは `fireball://<domain>/<type>/<instance>`（例: `fireball://device/uart/0`, `fireball://device/gpio/0`, `fireball://device/timer/0`, `fireball://device/i2c/0`）の正規化されたURIで登録され、IPCルータを介して $O(\log N)$ でディスパッチされる。 `{URIAbstraction}`
 
 #### IPCメッセージ（message）
 <!-- traceability: {TypeSafeMessaging} {META_FlatMapIndexed} -->
@@ -96,126 +95,143 @@ Key-Valueペアを複数集約した通信の基本単位。内部的に、動�
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
 | サービスURI | サービスを一意に特定するための正規化された文字列 | 文字列ビュー | - |
-| セキュリティロール | サービスに割り当てられた権限レベル。アクセス制御に利用 | ビットフラグ | - |
-| 待ち受けチャネル | サービスがメッセージを待機している通信路の識別子 | ID値 | `channel_id` |
+| セキュリティロール | サービスに割り当てられた権限レベル。アクセス制御と CSP チャネル選択の両方に利用 | ビットフラグ | - |
+
+※ 待ち受けチャネルはレジストリエントリに個別の ID として保持しない。`FB_CONF_ROUTER_ROLE_MATRIX`（4x4）の ALLOW セル 1 つにつき、専用の CSP チャネル（`fireball::channel<ipc_message>`、バッファなし・単一送受信ペアのランデブー）が 1 本ずつ静的に対応付けられ、`(sender_role, target_role)` の組から一意に導出される。1 本のチャネルは 1 対の送受信方向にしか使えないため（`{ADR_RendezvousChannel}`）、同一の受信ロールへ複数の送信ロールから送る場合でも、エッジごとに別々のチャネルを持つ。
 
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
-<!-- traceability: {LowLatencyLookup} {META_AccessDictionary} {META_FlatMapIndexed} {OwnershipTransfer} {IPC_ZeroCopy} {Challenge_IpcQueueStarvation} {IPC_DropHandler} -->
+<!-- traceability: {LowLatencyLookup} {META_AccessDictionary} {META_FlatMapIndexed} {OwnershipTransfer} {IPC_ZeroCopy} -->
 - **サービス検索**: `fireball::flat_map_view` を用いて、URI文字列からチャンネルIDを $O(\log N)$ で取得する。 `{LowLatencyLookup}`
 - **メッセージ内検索**: メッセージ本体をソート済み配列とし `fireball::flat_map_view` で引くことで、受信側でのパラメータ検索を高速化する。 `{META_AccessDictionary}` `{META_FlatMapIndexed}`
-- **所有権移譲 (Zero-Copy Handoff)**: `{OwnershipTransfer}` `{IPC_ZeroCopy}`
-    1. **Revoke**: 送信側タスクの権限を無効化し、リソースを `In-flight` 状態にする。
-    2. **Enqueue**: 受信側チャネルのキューへ Push。
-        - **Rollback**: キュー満杯時は送信失敗とし、所有権を直ちに送信側に返却（Restore）する。 `{Challenge_IpcQueueStarvation}`
-    3. **Grant**: 受信側タスクがメッセージをデキューした瞬間に権限を付与。
-- **異常時リカバリ (Drop Handler)**: `{IPC_DropHandler}`
-    - メッセージがキュー内で滞留中に送信先が Kill された場合、キューのデストラクタ（Dropハンドラ）が In-flight リソースを強制回収し、リークを防止する。
+- **所有権移譲 (Zero-Copy CSP Handoff)**: `{OwnershipTransfer}` `{IPC_ZeroCopy}` `{ADR_RendezvousChannel}`
+    1. **Revoke**: URI 検索・RBAC 判定・サイズ制限チェックをすべて通過した後、送信側タスクの権限を無効化し、リソースを `In-flight` 状態にする。この時点で送信は完了確約状態（committed）となる——キューがないため「満杯で差し戻す」という失敗状態は原理的に存在しない。
+    2. **Rendezvous**: 送信側は `(sender_role, target_role)` エッジ専用の CSP チャネル 1 本上でバッファなし同期ハンドオフを行う。受信側は自らのロールへの ALLOW エッジ全てを同時に待ち受けるガード付き外部選択（select、§5.1「receive_message」参照）であり、`sender_role` 1 つに事前コミットしない。相手側が既に待機していれば即座に、まだ到達していなければ協調スケジューラ上でブロックし、相手が到達した瞬間にハンドオフが成立する。バッファに値を保持しないため、キュー満杯 (`ERR_QUEUE_FULL`) に相当する状態はそもそも発生しない。
+    3. **Grant**: ランデブー成立の瞬間に受信側タスクへ権限を付与する。
+- **送信前チェックの失敗**: URI 未登録 (`ERR_NOT_FOUND`)、RBAC 拒否 (`ERR_PERMISSION_DENIED`)、KV ペア数超過 (`ERR_MSG_TOO_LARGE`) はいずれも Revoke より前段の静的チェックであり、これらで失敗した場合メッセージの所有権は最初から一度も送信側から動いていない（Rollback や Drop Handler のような事後的な回復処理を必要としない）。
 
 #### IPC ルータ フルセット・コンセプトコード (`concepts/ipc_router_concept.py`)
 ```python
+class Role:
+    RUNTIME = 0
+    CORE_SERVICE = 1
+    PLATFORM_HAL = 2
+    DEBUGGER = 3
+
+
+_ROLE_NAMES = ("RUNTIME", "CORE_SERVICE", "PLATFORM_HAL", "DEBUGGER")
+
+
 class OwnershipState:
     SENDER_OWNS = "SENDER_OWNS"
     IN_FLIGHT = "IN_FLIGHT"
     RECEIVER_OWNS = "RECEIVER_OWNS"
-    RECLAIMED_BY_DROP = "RECLAIMED_BY_DROP"
 
 
 class IPCMessage:
-    def __init__(self, resource_id: str, payload: dict):
-        self.resource_id = resource_id
-        self.payload = payload
+    """A message is only ever its kv_pair map (§3.3's entire field set) --
+    no resource_id, no free-form dict payload."""
+
+    def __init__(self, pairs: list[tuple[int, int]] | None = None):
+        sorted_pairs = sorted(pairs or [], key=lambda kv: kv[0])
+        self.keys = [k for k, _ in sorted_pairs]
+        self.values = [v for _, v in sorted_pairs]
         self.ownership = OwnershipState.SENDER_OWNS
+
+
+class Channel:
+    """Bufferless synchronous CSP rendezvous (`{ADR_RendezvousChannel}`): a
+    single in-flight slot, never a bounded queue, so there is no "queue
+    full" state to roll back from. (A real cooperative scheduler
+    additionally suspends the caller here until the counterpart arrives;
+    this concept stays a plain sequential demonstration of the rendezvous
+    result.)"""
+
+    def __init__(self):
+        self._in_flight: IPCMessage | None = None
+
+    def send(self, message: IPCMessage) -> None:
+        assert self._in_flight is None, (
+            "one waiter per channel: a second sender must wait for the first handoff"
+        )
+        self._in_flight = message
+
+    def recv(self) -> IPCMessage | None:
+        message = self._in_flight
+        self._in_flight = None
+        return message
+
+
+# Stage 1: registry (URI -> role), a sorted array searched via flat_map_view.
+_REGISTRY_ENTRIES = sorted(
+    [
+        ("fireball://core/coos/0", Role.CORE_SERVICE),
+        ("fireball://hal/gpio/0", Role.PLATFORM_HAL),
+        ("fireball://dbg/manager/0", Role.DEBUGGER),
+    ]
+)
+_REGISTRY = FlatMapView(
+    [uri for uri, _ in _REGISTRY_ENTRIES], [role for _, role in _REGISTRY_ENTRIES]
+)
+
+# Stage 2: FB_CONF_ROUTER_ROLE_MATRIX (4x4, rows=sender, cols=target); every
+# DENY cell is listed explicitly, matching the C++ constexpr array exactly.
+_ROLE_MATRIX = (
+    (False, True, True, False),  # from RUNTIME
+    (False, False, True, False),  # from CORE_SERVICE
+    (False, False, False, False),  # from PLATFORM_HAL
+    (False, True, True, False),  # from DEBUGGER
+)
 
 
 class IPCRouter:
     def __init__(self):
-        # Stage 1: Static Flat Map registry (URI -> Service Descriptor)
-        self.registry = {
-            "fireball://core/coos/0": {
-                "role": "CORE_SERVICE",
-                "channel_id": "ch_coos",
-                "max_queue": 2,
-            },
-            "fireball://hal/gpio/0": {
-                "role": "PLATFORM_HAL",
-                "channel_id": "ch_gpio",
-                "max_queue": 2,
-            },
-            "fireball://dbg/manager/0": {
-                "role": "DEBUGGER",
-                "channel_id": "ch_dbg",
-                "max_queue": 1,
-            },
-        }
+        # Stage 3: one dedicated CSP channel per ALLOW edge of the RBAC matrix.
+        self._channels: tuple[tuple["Channel | None", ...], ...] = tuple(
+            tuple(Channel() if allowed else None for allowed in row) for row in _ROLE_MATRIX
+        )
 
-        # Stage 2: Role-based Access Control Matrix (sender_role, target_role) -> bool
-        self.role_matrix = {
-            ("CLIENT_APP", "CORE_SERVICE"): True,
-            ("CLIENT_APP", "PLATFORM_HAL"): True,
-            ("CLIENT_APP", "DEBUGGER"): False,
-            ("CORE_SERVICE", "PLATFORM_HAL"): True,
-            ("DEBUGGER", "CORE_SERVICE"): True,
-            ("DEBUGGER", "PLATFORM_HAL"): True,
-        }
-
-        self.queues = {"ch_coos": [], "ch_gpio": [], "ch_dbg": []}
-
-    def route_message(self, sender_role: str, uri: str, message: IPCMessage) -> tuple[str, str]:
-        """3-stage IPC routing pipeline with Zero-Copy Handoff & Rollback."""
+    def send(self, sender_role: int, uri: str, message: IPCMessage) -> tuple[str, str]:
+        """3-stage IPC send: URI lookup -> RBAC -> CSP rendezvous handoff."""
         assert message.ownership == OwnershipState.SENDER_OWNS
 
         # Stage 1: URI Lookup
-        entry = self.registry.get(uri)
-        if not entry:
+        target_role = _REGISTRY.find(uri)
+        if target_role is None:
             return ("ERR_NOT_FOUND", f"URI not registered: {uri}")
 
-        target_role = entry["role"]
-        channel_id = entry["channel_id"]
-        max_queue = entry["max_queue"]
-
         # Stage 2: Access Control
-        if not self.role_matrix.get((sender_role, target_role), False):
+        channel = self._channels[sender_role][target_role]
+        if channel is None:
             return (
                 "ERR_PERMISSION_DENIED",
-                f"Forbidden: {sender_role} -> {target_role}",
+                f"Forbidden: {_ROLE_NAMES[sender_role]} -> {_ROLE_NAMES[target_role]}",
             )
 
-        # Stage 3: Zero-Copy Handoff
-        target_queue = self.queues[channel_id]
-        if len(target_queue) >= max_queue:
-            # Rollback: restore ownership to sender immediately
-            message.ownership = OwnershipState.SENDER_OWNS
-            return ("ERR_QUEUE_FULL", "Queue full, rolled back to sender")
-
-        # 1. Revoke sender ownership -> IN_FLIGHT
+        # Stage 3: Zero-Copy CSP Handoff -- Revoke commits the send; there is
+        # no queue to overflow, so ERR_QUEUE_FULL/Rollback do not exist here.
         message.ownership = OwnershipState.IN_FLIGHT
-        # 2. Enqueue into target queue
-        target_queue.append(message)
-        return ("OK_ENQUEUED", f"Message in-flight on {channel_id}")
+        channel.send(message)
+        return ("COMPLETED", f"{_ROLE_NAMES[sender_role]}->{_ROLE_NAMES[target_role]}: in-flight")
 
-    def receive_message(self, channel_id: str) -> IPCMessage | None:
-        """Target service dequeues message and acquires ownership (Grant)."""
-        queue = self.queues.get(channel_id, [])
-        if not queue:
-            return None
-        message = queue.pop(0)
-        assert message.ownership == OwnershipState.IN_FLIGHT
-        # 3. Grant receiver ownership
-        message.ownership = OwnershipState.RECEIVER_OWNS
-        return message
-
-    def trigger_drop_handler(self, channel_id: str) -> list[str]:
-        """Drop handler forcibly reclaims all in-flight resources upon target fault."""
-        queue = self.queues.get(channel_id, [])
-        reclaimed_ids = []
-        while queue:
-            msg = queue.pop(0)
-            assert msg.ownership == OwnershipState.IN_FLIGHT
-            msg.ownership = OwnershipState.RECLAIMED_BY_DROP
-            reclaimed_ids.append(msg.resource_id)
-        return reclaimed_ids
+    def receive(self, target_role: int) -> IPCMessage | None:
+        """
+        Guarded external choice (select): checks every ALLOW edge into
+        target_role in order and returns the first one with a message
+        ready, never committing to one sender_role upfront -- CORE_SERVICE,
+        for example, may legitimately be sent to by both RUNTIME and
+        DEBUGGER. Grant happens on whichever edge actually has a message.
+        """
+        for sender_role in range(len(_ROLE_MATRIX)):
+            channel = self._channels[sender_role][target_role]
+            if channel is None:
+                continue
+            message = channel.recv()
+            if message is not None:
+                message.ownership = OwnershipState.RECEIVER_OWNS
+                return message
+        return None
 ```
 
 ※ 所有権移譲プロトコルの二重所有不在および有限解決性は、`formal/csp_handoff_model.py` により変異検査付き形式モデルとして検証される。トポロジレベルのデッドロック不在は、非循環チャネル依存規律（クライアント・サーバ規律）により設計上保証される（自動検証ツールでの機械的な閉路検査は行っておらず、設計レビューによる担保）。
@@ -241,7 +257,7 @@ graph TD
     
     Error2["<b>Error: Access Denied</b><br/>─ Insufficient privilege<br/>─ Return recovery-strategy: panic"]
     
-    Success["<b>Success</b><br/>─ Ownership transfer starts<br/>─ Revoke/Enqueue/Grant"]
+    Success["<b>Success</b><br/>─ Ownership transfer starts<br/>─ Revoke/Rendezvous/Grant"]
     
     Client --> Lookup
     Lookup -->|found| ACCheck
@@ -265,28 +281,28 @@ graph TD
 | :--- | :--- | :--- | :--- |
 | **URI Lookup** | `fireball::flat_map_view` による二分探索 | O(log N) | N = サービス数（通常 ≤ 16）。動的確保なし。 |
 | **Access Control** | ロールマトリックス参照 `role_matrix[sender][receiver]` | O(1) | 事前計算済みの2次元配列による静的検査。 |
-| **Channel Grant** | サービスの待受チャネル ID を取得、準備完了判定 | O(1) | チャネル状態確認および送信権限の確定。 |
+| **Channel Grant** | `(sender_role, target_role)` エッジに対応する専用 CSP チャネルを選択 | O(1) | チャネルはロールの組から直接導出（4x4 配列参照）、レジストリに個別保存しない。 |
 
 #### ロール間通信許可マトリクス (FB_CONF_ROUTER_ROLE_MATRIX)
 <!-- traceability: {RoleBasedAccessControl} -->
 
 本表は `{META_ConfigurableSystem}` の `FB_CONF_ROUTER_ROLE_MATRIX` (4x4 `constexpr` 配列) を**そのまま**表現したものであり、全 DENY の行・列も省略しない。省略すると「そのロールの権限が未定義」と読めてしまい、C++ 定義との差分が生じるためである。
 
-| 送信元ロール (Sender) \ 送信先ロール (Target) | CLIENT_APP | CORE_SERVICE | PLATFORM_HAL | DEBUGGER |
+| 送信元ロール (Sender) \ 送信先ロール (Target) | RUNTIME | CORE_SERVICE | PLATFORM_HAL | DEBUGGER |
 | :--- | :---: | :---: | :---: | :---: |
-| **CLIENT_APP** | DENY | ALLOW | ALLOW | DENY |
+| **RUNTIME** | DENY | ALLOW | ALLOW | DENY |
 | **CORE_SERVICE** | DENY | DENY | ALLOW | DENY |
 | **PLATFORM_HAL** | DENY | DENY | DENY | DENY |
 | **DEBUGGER** | DENY | ALLOW | ALLOW | DENY |
 
 **全 DENY 行・列の意味**:
 - **PLATFORM_HAL 行が全 DENY**: HAL は通信グラフの葉であり、自発的な送信を一切行わない。デバイス側の事象は ISR による割り込み通知（`{GLOBAL_InterruptWakeup}`）として上位へ伝わり、IPC の送信としては表現されない。
-- **CLIENT_APP 列が全 DENY**: ゲストアプリを宛先とする IPC は存在しない。ゲストへの応答は、ゲスト自身が発した要求に対する返信としてのみ返る。
+- **RUNTIME 列が全 DENY**: RUNTIME（ゲスト実行をホストするランタイムタスク。ゲスト自身のコードが直接 IPC に触れるわけではない）を宛先とする IPC は存在しない。RUNTIME への応答は、RUNTIME 自身が発した要求に対する返信としてのみ返る。
 
-※ 送信許可（ALLOW）の関係から構築される通信有向グラフ（`CLIENT_APP -> CORE_SERVICE`, `CLIENT_APP -> PLATFORM_HAL`, `CORE_SERVICE -> PLATFORM_HAL`, `DEBUGGER -> CORE_SERVICE`, `DEBUGGER -> PLATFORM_HAL`）は非循環（DAG）であり、循環通信待機（Circular Wait）によるデッドロックがトポロジ層で原理的に排除される。
+※ 送信許可（ALLOW）の関係から構築される通信有向グラフ（`RUNTIME -> CORE_SERVICE`, `RUNTIME -> PLATFORM_HAL`, `CORE_SERVICE -> PLATFORM_HAL`, `DEBUGGER -> CORE_SERVICE`, `DEBUGGER -> PLATFORM_HAL`）は非循環（DAG）であり、循環通信待機（Circular Wait）によるデッドロックがトポロジ層で原理的に排除される。
 
 ### 4.2 状態遷移図 (SysML SMD: IPC Router ルーティングフロー)
-<!-- traceability: {LowLatencyLookup} {META_AccessDictionary} {META_FlatMapIndexed} {OwnershipTransfer} {IPC_ZeroCopy} {Challenge_IpcQueueStarvation} {IPC_DropHandler} -->
+<!-- traceability: {LowLatencyLookup} {META_AccessDictionary} {META_FlatMapIndexed} {OwnershipTransfer} {IPC_ZeroCopy} -->
 
 IPC ルータの各ルーティング操作における状態遷移を以下に示す。
 
@@ -308,19 +324,14 @@ stateDiagram-v2
     
     %% Message Routing → Ownership Transfer Pipeline
     MessageRouting --> Revoke: begin send
-    Revoke --> Enqueue: mark In-flight
+    Revoke --> Rendezvous: mark In-flight
     
-    %% Enqueue branch: success or failure
-    Enqueue --> Grant: queue_has_space
-    Enqueue --> QueueFull: queue_full
+    %% Rendezvous: blocks until the counterpart arrives, then always completes
+    Rendezvous --> Grant: peer arrived (immediate or after a CSP block)
     
     %% Success path
     Grant --> Complete: grant to receiver
     Complete --> Idle: done
-    
-    %% Error paths → Rollback
-    QueueFull --> Rollback: restore ownership
-    Rollback --> Idle: recovery complete
     
     %% Error handling → Idle
     ServiceNotFound --> Idle: error reported
@@ -334,18 +345,16 @@ stateDiagram-v2
 | **Idle** | 初期待機状態 | - |
 | **Service Lookup** | URI文字列をレジストリで検索 | `fireball::flat_map_view` による $O(\log N)$ 二分探索 |
 | **Permission Check** | 送信側ロールと受信側ロールのマトリックスで許可判定 | ロールマトリックス参照 |
-| **Message Routing** | 送信メッセージの転送処理 | チャネルへの Enqueue |
-| **Ownership Transfer** | ゼロコピーハンドオフの所有権移譲フロー | 3段階：Revoke → Enqueue → Grant |
-| **Revoke** | 送信側の権限を無効化、In-flight 状態へ遷移 | リソースロック設定 |
-| **Enqueue** | メッセージをキューに追加 | キュー容量チェック |
+| **Message Routing** | 送信メッセージの転送処理 | エッジ専用 CSP チャネルへのディスパッチ |
+| **Ownership Transfer** | ゼロコピー CSP ハンドオフの所有権移譲フロー | 3段階：Revoke → Rendezvous → Grant |
+| **Revoke** | 送信側の権限を無効化、In-flight 状態へ遷移 | リソースロック設定（この時点で送信は完了確約） |
+| **Rendezvous** | バッファなし同期ハンドオフ。相手が既に待機していれば即座に、いなければ協調スケジューラ上でブロックして待つ | CSP チャネル上での 1 対 1 ハンドオフ（キューは存在しないため満杯状態も存在しない） |
 | **Grant** | 受信側にリソースの権限を付与 | 所有権ハンドシェイク完了 |
 | **Complete** | ルーティング完了 | メッセージ処理の次ステップへ |
 | **Service Not Found** | 指定 URI が未登録 | エラー応答を呼び出し側に返却 |
-| **Queue Full** | 受信側のメッセージキューが満杯 | **Rollback**: 送信側に所有権をロールバック（保持）し `Result::Err(ERR_QUEUE_FULL, Strategy::RETRY)` を返却 |
-| **Rollback & Recovery** | キュー満杯からの復帰処理 | 送信側へ所有権を復元、呼び出し元はバックオフ後に再試行可能 |
 
 ### 4.2.1 所有権移譲状態機械 (Ownership Transfer State Machine)
-<!-- traceability: {OwnershipTransfer} {IPC_ZeroCopy} {Challenge_IpcQueueStarvation} {IPC_DropHandler} -->
+<!-- traceability: {OwnershipTransfer} {IPC_ZeroCopy} -->
 
 メッセージの所有権は、送信側 → ルータ → 受信側という 3 段階で遷移する。以下の状態機械は、所有権の状態を形式的に定義する。
 
@@ -358,21 +367,14 @@ stateDiagram-v2
     SenderOwned --> RevokePhase: send(msg) / initiate transfer
     
     RevokePhase --> InFlight: revoke_sender_access / mark in-flight
-    InFlight --> InFlight: in_transit
     
-    InFlight --> EnqueuePhase: queue_has_space / ready to enqueue
-    EnqueuePhase --> ReceiverQueued: enqueue_success / message buffered
+    InFlight --> RendezvousWait: no peer waiting yet / block on CSP channel
+    RendezvousWait --> GrantPhase: peer arrives / handoff completes
+    InFlight --> GrantPhase: peer already waiting / immediate handoff
     
-    InFlight --> RollbackPhase: queue_full / restore ownership
-    RollbackPhase --> SenderOwned: restore_sender_access / recovery complete
-    
-    ReceiverQueued --> GrantPhase: receiver_dequeue / begin handoff
     GrantPhase --> ReceiverOwned: grant_receiver_access / ownership transfer complete
     
     ReceiverOwned --> [*]: receiver_drop / cleanup
-    
-    ReceiverQueued --> DropHandlerPhase: receiver_killed / emergency cleanup
-    DropHandlerPhase --> [*]: force_cleanup / in-flight resource freed
 ```
 
 **所有権状態の説明:**
@@ -380,14 +382,11 @@ stateDiagram-v2
 | 状態 | 所有者 | アクセス権 | リソース状態 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
 | **SenderOwned** | Sender | Full (R/W) | 安定 | 送信側が完全な制御を持つ |
-| **RevokePhase** | (移譲中) | Sender ロック中 | 遷移中 | 所有権を剥奪（Revoke）中 |
-| **InFlight** | Router | Read-Only | 仲介中 | ルータが一時保管、送受信側いずれもアクセス禁止 |
-| **EnqueuePhase** | (移譲中) | In-flight 継続 | 遷移中 | キュー追加準備、成功/失敗の分岐点 |
-| **RollbackPhase** | (復帰中) | Sender リリース中 | 遷移中 | キュー満杯時に所有権を送信側へ返却 |
-| **ReceiverQueued** | Router | Read-Only | キュー中 | メッセージがキューで待機、受信側未処理 |
+| **RevokePhase** | (移譲中) | Sender ロック中 | 遷移中 | 所有権を剥奪（Revoke）中。この時点で送信は完了確約（committed）となる |
+| **InFlight** | Router | Read-Only | 仲介中 | チャネルが一時保管、送受信側いずれもアクセス禁止。バッファではなく単一のランデブー・スロットであり、滞留（キュー）はしない |
+| **RendezvousWait** | (移譲中) | In-flight 継続 | 協調ブロック中 | 相手側タスクがまだ到達しておらず、協調スケジューラ上でブロック中。タイムアウトや失敗はなく、相手の到達を待つのみ |
 | **GrantPhase** | (移譲中) | Receiver 取得中 | 遷移中 | 受信側にアクセス権を付与 |
 | **ReceiverOwned** | Receiver | Full (R/W) | 安定 | 受信側が完全な制御を持つ |
-| **DropHandlerPhase** | (緊急処理) | Router 強制管理 | リカバリ | 受信側キル時に In-flight リソース強制回収 |
 
 ### 4.3 メッセージライフサイクルと所有権管理 (SysML Parametric Diagram 相当)
 
@@ -396,15 +395,14 @@ stateDiagram-v2
 | フェーズ | メッセージ状態 | 所有権 | 送信側 | 受信側 | リソース保護 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **初期** | 送信側で生成 | 送信側が所有 | RUNNING | BLOCKED/READY | なし |
-| **Revoke** | ルータへ到達 | In-flight に昇格 | **ロック（アクセス禁止）** | 待機中 | リソースロック |
-| **Enqueue** | キューに追加 | In-flight 継続 | **ロック継続** | 待機中 | キュー管理 |
-| **Grant（成功）** | キューから取得 | 受信側へ移譲 | リリース | **所有権取得** | ハンドシェイク完了 |
-| **Rollback（失敗）** | キュー削除 | 送信側へ復帰 | リリース → **復帰** | 戻す | 復帰メカニズム |
+| **Revoke** | チャネルへ到達、送信確約 | In-flight に昇格 | **ロック（アクセス禁止）** | 待機中または未到達 | リソースロック |
+| **Rendezvous** | 相手の到達を待機（即座または協調ブロック） | In-flight 継続 | **ロック継続** | 到達済みなら即完了、未到達ならブロック中 | 単一スロットのハンドオフ管理（キューなし） |
+| **Grant（成功）** | ランデブー成立 | 受信側へ移譲 | リリース | **所有権取得** | ハンドシェイク完了 |
 
 **注記:**
-- **In-flight 状態**: メッセージがルータで処理中で、送信側は操作できない状態。ダングリング参照を防止。
+- **In-flight 状態**: メッセージがチャネル上でランデブー成立待ちの状態で、送信側は操作できない状態。ダングリング参照を防止。
 - **所有権移譲とゼロコピー (`IPC_ZeroCopy`)**: チャネルの所有権移譲（Grant）が行われる際、メモリデータの物理コピーは一切発生せず、ゲストRAM上のメッセージバッファを指す相対オフセットポインタの所有権（TCB所有フラグ）を送信側から受信側へ移転させることで、極小レイテンシかつゼロコピーのデータ転送を実現する。 `{IPC_ZeroCopy}`
-- **Drop Handler によるリーク防止 (`IPC_DropHandler`)**: 送信中（In-flight状態）に受信側タスクが Kill された場合、キューのデストラクタである `IPC_DropHandler` が作動し、キュー内の未受領メッセージが参照するすべてのリソースハンドルや一時バッファを安全に強制回収・解放し、メモリリークを防止する。 `{IPC_DropHandler}`
+- **キューが存在しないことの帰結**: 本 API はバッファなし同期ランデブー（`{ADR_RendezvousChannel}`）であるため、受信側が Kill された場合に回収すべき「キュー内の未受領メッセージ」は存在しない——In-flight 状態のメッセージは常に送信側タスク自身のスタック上（ブロック中のコルーチン）に留まり、送信側タスクの終了処理がそのまま資源回収を兼ねる。受信側が永久に到達しない場合、送信側タスクはブロックし続ける（協調スケジューラのタスクキル/タイムアウト機構による救済は本コンポーネントの範囲外）。
 
 ### 4.3.1 二分探索による O(log N) 低遅延ルックアップ
 <!-- traceability: {LowLatencyLookup} {META_AccessDictionary} {META_FlatMapIndexed} -->
@@ -415,10 +413,10 @@ stateDiagram-v2
 <!-- traceability: {Challenge_CspHandoffStarvation} -->
 CSP Handoff による直接のコンテキストスイッチを伴うメッセージ移譲において、特定の送受信タスクのペアが CPU 実行時間を占有して他のタスクがスターベーション（実行飢餓）に陥るのを防ぐため、以下のガード条件を適用する。
 1. **最大連続ハンドオフ回数の制限**: 直接の実行権移譲（Handoff）が連続して `FB_CONF_MAX_CONSECUTIVE_HANDOFFS` 回に達した場合、強制的に READY キュー末尾へ自タスクを yield させ、一度スケジューラによるラウンドロビン巡回（メインループ復帰）をトリガーする。
-2. **タイムスライス閾値監視**: タイマードライバの Tick カウントに基づき、前回のスケジュールから一定時間（例: 10ms）以上経過している場合は、直接スイッチを拒否し通常のキューイング転送へとフォールバックする。 `{Challenge_CspHandoffStarvation}`
+2. **タイムスライス閾値監視**: タイマードライバの Tick カウントに基づき、前回のスケジュールから一定時間（例: 10ms）以上経過している場合は、直接スイッチを行わず、いったんスケジューラの通常のラウンドロビン巡回に自タスクを戻す。CSP チャネル自体にはキューが存在しないため、これは「別経路（キュー）へのフォールバック」ではなく、同じランデブーを次の巡回で改めて試みるだけの単純な yield である。 `{Challenge_CspHandoffStarvation}`
 
 ### 4.4 内部シーケンス図
-<!-- traceability: {LowLatencyLookup} {META_AccessDictionary} {META_FlatMapIndexed} {OwnershipTransfer} {IPC_ZeroCopy} {Challenge_IpcQueueStarvation} {IPC_DropHandler} -->
+<!-- traceability: {LowLatencyLookup} {META_AccessDictionary} {META_FlatMapIndexed} {OwnershipTransfer} {IPC_ZeroCopy} -->
 
 #### サービス検索と接続フロー
 <!-- traceability: {LowLatencyLookup} {META_AccessDictionary} {RoleBasedAccessControl} {IPCRouter} -->
@@ -437,16 +435,16 @@ sequenceDiagram
         R-->>C: channel_id
         C->>S: co_csp::send(channel_id, msg)
     else Denied
-        R-->>C: ERR_ACCESS_DENIED
+        R-->>C: ERR_PERMISSION_DENIED
     end
 ```
 
-#### 所有権移譲フロー (Zero-Copy Handoff)
+#### 所有権移譲フロー (Zero-Copy CSP Handoff)
 ```mermaid
 sequenceDiagram
     participant Tx as <<block>> Sender Task
     participant R as <<block>> IPC Router
-    participant Q as <<block>> Receiver Queue
+    participant Ch as <<block>> CSP Channel (edge)
     participant Rx as <<block>> Receiver Task
     
     activate Tx
@@ -457,26 +455,26 @@ sequenceDiagram
     R->>R: Mark message "In-flight"
     R->>R: Lock sender's resource access
     
-    Note over R: [Enqueue Phase]
-    alt Queue has space
-        R->>Q: enqueue(msg)
-        activate Q
-        Note over Q: Message buffered<br/>(ownership in escrow)
-    else Queue full (Rollback)
-        R->>R: Restore sender ownership
-        R-->>Tx: ERROR_QUEUE_FULL
-        deactivate Q
+    Note over R: [Rendezvous Phase]
+    R->>Ch: channel_send(msg)
+    activate Ch
+    alt Receiver already waiting
+        Ch-->>R: handoff completes immediately
+    else No receiver yet
+        Ch-->>Tx: suspend sender task (cooperative block)
+        Note over Tx: Sender task yields,<br/>scheduler runs other tasks
     end
+    deactivate Ch
     
     deactivate R
     deactivate Tx
     
-    Note over Rx: [Receiver dequeues]
+    Note over Rx: [Receiver arrives]
     activate Rx
-    Rx->>Q: dequeue()
-    activate Q
-    Q-->>Rx: return msg
-    deactivate Q
+    Rx->>Ch: channel_recv()
+    activate Ch
+    Ch-->>Rx: return msg (rendezvous completes,<br/>sender task resumed if it was blocked)
+    deactivate Ch
     
     Note over R: [Grant Phase]
     R->>Rx: Grant ownership to receiver
@@ -487,10 +485,9 @@ sequenceDiagram
 ```
 
 **フロー説明:**
-1. **Revoke**: メッセージをルータが接収した瞬間に、メッセージ状態を「In-flight」に変更し、送信側からのアクセス権（読み書き権限）を無効化（ロック）する。これにより、送信側からのダングリング参照や二重操作を防ぐ。
-2. **Enqueue**: メッセージが受信キューに追加される。所有権はカーネルのキュー管理下に置かれ、仲介状態（In-flight状態を維持）となる。
-   - キューが満杯の場合は **Rollback** が発生する：メッセージをキューから削除し、送信側に所有権を返却して In-flight 状態を解除（アクセス権を復元）する。
-3. **Grant**: 受信側がメッセージを取得（デキュー）した瞬間に、受信側に対して所有権（アクセス権）を付与（有効化）し、メッセージの In-flight 状態を解除して送信側ロックを物理的にリリースする。
+1. **Revoke**: 送信側がルータへ到達した瞬間（URI 検索・RBAC・サイズチェックをすべて通過した後）に、メッセージ状態を「In-flight」に変更し、送信側からのアクセス権（読み書き権限）を無効化（ロック）する。これにより送信は完了確約状態となり、キュー満杯のような事後的な失敗は原理的に存在しない。
+2. **Rendezvous**: `(sender_role, target_role)` エッジ専用の CSP チャネル上でバッファなしの同期ハンドオフを試みる。受信側タスクが既に待機していれば即座に完了し、まだ到達していなければ送信側タスクは協調スケジューラ上でブロックし、受信側が到達した瞬間にランデブーが成立する。メッセージはバッファに滞留しない——値を保持するのは「相手が既に待っているか」という 1 ビットの状態のみである。
+3. **Grant**: ランデブーが成立した瞬間に、受信側に対して所有権（アクセス権）を付与（有効化）し、メッセージの In-flight 状態を解除して送信側ロックを物理的にリリースする。
 
 ## 5. インターフェイス定義
 
@@ -521,17 +518,30 @@ sequenceDiagram
 | 補足 | `{IPC_HandleBased}` のため、クライアントはこのIDをキャッシュして利用することが推奨される。 |
 
 #### メッセージルーティング（route_message）
-<!-- traceability: {OwnershipTransfer} {IPC_ZeroCopy} {Challenge_IpcQueueStarvation} -->
+<!-- traceability: {OwnershipTransfer} {IPC_ZeroCopy} {ADR_RendezvousChannel} -->
 
-**COOS の CSP チャネルとの区別**: 本 API が扱うのはサービス単位の**有界メッセージキュー**（メールボックス）であり、`{ADR_RendezvousChannel}` が定めるバッファなし同期ランデブーとは別の機構である。前者はキュー満杯 (`ERR_QUEUE_FULL`) が起こりうるため Rollback を持ち、後者は値を保持しないため満杯状態が原理的に存在しない。両者を混同しないよう、本 API は `{CSP_Handoff}` を主張しない。
+**COOS の CSP チャネルと同一の機構**: 本 API は `{ADR_RendezvousChannel}` が定めるバッファなし同期ランデブーそのものであり、`(sender_role, target_role)` の RBAC エッジ 1 本につき専用の CSP チャネルを持つ。値を保持するバッファが存在しないため、有界キューにおける「満杯」状態は原理的に発生しない。本 API は `{CSP_Handoff}` を主張する。
 
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | 送信先サービスの有界キューへメッセージを転送し、リソースの所有権を Revoke/Enqueue/Grant の順で移譲する。キュー満杯時は Rollback する。 `{OwnershipTransfer}` `{IPC_ZeroCopy}` `{Challenge_IpcQueueStarvation}` |
+| 機能概要 | 送信先サービスの `(sender_role, target_role)` エッジ専用 CSP チャネル上で、リソースの所有権を Revoke/Rendezvous/Grant の順で移譲する。相手が未到達の場合は協調スケジューラ上でブロックし、相手到達時に必ず完了する（キューが存在しないため失敗して差し戻る経路はない）。 `{OwnershipTransfer}` `{IPC_ZeroCopy}` `{ADR_RendezvousChannel}` |
 | シグネチャ | `route_message(channel: ID値, msg: ipc-message) -> operation-result` |
 | 引数 | `channel`: 送信先ID<br>`msg`: 送信メッセージ (`ipc-message`) |
-| 戻り値 | 操作結果を示す `operation-result`（成功時は `SUCCESS` を返し、メッセージのKey-Valueペア数が8個の静的制限を超えている場合は `ERR_MSG_TOO_LARGE`、送信先チャネルが存在しない場合は `ERR_INVALID_CHANNEL`、キュー満杯時は `ERR_QUEUE_FULL` を返す） |
-| エラー時の挙動 | 送信失敗時は上記のエラーコードを返し、所有権の移譲を即座に中止（Rollback）して、送信元のメッセージ所有権を維持（アクセスロックを解除）する。 |
+| 戻り値 | 操作結果を示す `operation-result`（成功時は `COMPLETED` を返し、メッセージのKey-Valueペア数が8個の静的制限を超えている場合は `ERR_MSG_TOO_LARGE`、送信先URIが未登録の場合は `ERR_NOT_FOUND`、RBAC で拒否された場合は `ERR_PERMISSION_DENIED` を返す） |
+| エラー時の挙動 | `ERR_MSG_TOO_LARGE`/`ERR_NOT_FOUND`/`ERR_PERMISSION_DENIED` はいずれも Revoke より前段の静的チェックであり、これらで失敗した場合メッセージの所有権は送信側から一度も動いていない（Rollback のような事後的な回復処理を必要としない）。Revoke 後は失敗経路が存在せず、相手の到達を待つのみである。 |
+
+#### メッセージ受信（receive_message）
+<!-- traceability: {OwnershipTransfer} {IPC_ZeroCopy} {ADR_RendezvousChannel} -->
+
+**ガード付き外部選択（Guarded External Choice / Select）**: 受信側は自らの URI が持つロールへの全 ALLOW エッジ（RBAC マトリックスの該当列）を同時に待ち受け、最初に到達した送信側とランデブーする。1 つの `sender_role` に事前にコミットしない——例えば `CORE_SERVICE` は `RUNTIME` と `DEBUGGER` の双方から正当に送信され得るため、受信側がどちらか一方だけを待つ設計は現実のサービスとして機能しない。複数チャネルへの同時登録は、成立した瞬間に他の全チャネルから解除される（`experiments/pysim/core/scheduler.py` の `channel_select_recv` / `SelectGroup` 参照）ため、1 チャネル 1 待機者の不変条件は破られない。
+
+| 項目 | 内容 |
+| :--- | :--- |
+| 機能概要 | 呼び出し元自身の URI が解決するロールへの、RBAC で許可された全エッジの専用 CSP チャネルに対してガード付き外部選択を行い、最初に到達した送信側とランデブーする（Grant）。相手がまだ誰も到達していなければ協調スケジューラ上でブロックし、いずれかの送信側到達時に必ず完了する。 `{OwnershipTransfer}` `{IPC_ZeroCopy}` `{ADR_RendezvousChannel}` |
+| シグネチャ | `receive_message(uri: 文字列ビュー) -> result<ipc-message, operation-result>` |
+| 引数 | `uri`: 自らが提供するサービスの URI（送信元は指定しない——許可された送信元のいずれからでも受信できる） |
+| 戻り値 | 成功時は受信した `ipc-message`（所有権は呼び出し元に移譲済み）。失敗時は `operation-result`（送信先URIが未登録の場合は `ERR_NOT_FOUND`、RBAC 上どの送信元からも許可されていない場合は `ERR_PERMISSION_DENIED`） |
+| エラー時の挙動 | `ERR_NOT_FOUND`/`ERR_PERMISSION_DENIED` はチャネル選択より前段の静的チェックであり、これらで失敗した場合はブロックすら発生しない。 |
 
 ### 5.2 URI/IPCインターフェイス
 <!-- traceability: {TypeSafeMessaging} -->
@@ -546,22 +556,22 @@ IPCのプリミティブ性を隠蔽し、依存性の逆転 (IoC) を実現す�
 
 ### 6.1 検証対象の不変条件
 
-<!-- traceability: {IPC_ZeroCopy} {Challenge_IpcQueueStarvation} {IPC_DropHandler} -->
+<!-- traceability: {IPC_ZeroCopy} -->
 
 | 不変条件 | 説明 | 検証方法 |
 | :--- | :--- | :--- |
 | **所有権単調性** | リソース所有権が Sender → In-flight → Receiver と一方向に移譲され、二重所有が発生しないこと。`{OwnershipTransfer}` `{IPC_ZeroCopy}` | `formal/csp_handoff_model.py` CTL 安全性検証 (`AG(Not(sender_owns & receiver_owns))` ➔ True) |
 | **デッドロック不在** | クライアント・サーバ規律（非循環チャネル依存）により、Send/Recv の循環待ちデッドロックが発生しないこと。`{RoleBasedAccessControl}` | 設計レビュー（自動の機械的閉路検査ツールは無し） |
-| **In-flight 有限解決性** | In-flight 状態のリソースは、Grant / Drop回収 / Rollback のいずれかにより必ず有限ステップで解決すること。`{IPC_DropHandler}` | `formal/csp_handoff_model.py` CTL 進行性検証 (`AG(in_flight -> AF(not in_flight))` ➔ True) |
-| **メッセージ順序** | 同一チャネル上のメッセージは FIFO 順で処理されること。 | 静的 FIFO SPSC キュー構造 |
+| **In-flight 有限解決性** | In-flight 状態のリソースは、相手タスクが到達し Rendezvous/Grant が成立することで必ず解決すること（相手が永久に到達しない場合を除く——本コンポーネントはタスクの生存を保証しない）。`{ADR_RendezvousChannel}` | `formal/csp_handoff_model.py` CTL 進行性検証 (`AG(in_flight -> AF(not in_flight))` ➔ True、相手タスクが有限時間内に到達するという公正性仮定の下で) |
+| **単一待機者制約** | 1 本の CSP チャネルは同時に高々 1 つの送信待機または受信待機しか保持しない（キューではない）こと。 | `formal/csp_handoff_model.py` 不変式検証（二重待機の禁止） |
 
 ### 6.2 検証対象のプロパティ
 
 - **Safety**: 
   - 二重所有不在（所有権競合不在）`{IPC_ZeroCopy}`
-  - メモリリーク不在（Drop Handler による In-flight 回収）`{IPC_DropHandler}`
+  - 単一待機者制約（1 チャネルにつき送信待機・受信待機のいずれか高々 1 つ、キュー化されない）
 - **Liveness**: 
-  - In-flight 状態の有限解決性（Revoke/Enqueue/Grant または Drop/Rollback）
+  - In-flight 状態の有限解決性（相手タスクの到達による Rendezvous/Grant）
 
 ### 6.3 検証モデル概要
 
@@ -569,24 +579,25 @@ IPCのプリミティブ性を隠蔽し、依存性の逆転 (IoC) を実現す�
 ```
 sender_ownership: {OWNED, REVOKED, IN_FLIGHT}
 receiver_ownership: {NOTOWNED, IN_FLIGHT, OWNED}
-channel_queue: sequence[message]
+channel_slot: message | None       # 高々1件、キューではない
+waiter_dir: {NONE, SEND, RECV}     # そのチャネルで待機中の方向
 interrupt_flags: bitmask
 ```
 
-**初期状態:** sender_ownership=OWNED, receiver_ownership=NOTOWNED, channel_queue=<>, interrupt_flags=0
+**初期状態:** sender_ownership=OWNED, receiver_ownership=NOTOWNED, channel_slot=None, waiter_dir=NONE, interrupt_flags=0
 
-**遷移:** Send → Revoke → Enqueue → Grant または Drop / Rollback
+**遷移:** Send → Revoke → Rendezvous（相手待機中なら即時 Grant、未到達ならブロックして相手の Recv/Send 到達を待つ）→ Grant
 
 **不変式:** 
 - `sender_ownership != OWNED ∨ receiver_ownership != OWNED` (二重所有不在)
-- `len(channel_queue) ≤ QUEUE_SIZE` (キュー有界性)
+- `waiter_dir != SEND ∨ waiter_dir != RECV`（同時に両方向の待機者を持たない。値は排他的な列挙のため常に真——ある瞬間のチャネルは NONE/SEND/RECV のいずれか一状態のみ）
 
 ※ CSP 所有権移譲プロトコルの二重所有不在および有限解決性は `formal/csp_handoff_model.py` により変異検査付きモデル検査を実施する。
 
 ### 6.4 既知の制限
 
 - **マルチプロセッサ同期**: 現在、シングルプロセッサを仮定。マルチコア環境ではメモリバリア追加が必要。
-- **タイムアウト機構**: キューイング時のタイムアウトは非形式検証（手動テスト）に依存。
+- **相手タスクの生存**: 受信側（または送信側）タスクが永久に到達しない場合、相手はブロックし続ける。本コンポーネントはタスクの生存監視やタイムアウトによる強制解除を提供しない——必要であれば呼び出し側の上位レイヤ（ウォッチドッグ等）が担う。
 
 ## 7. 制約達成の方策
 

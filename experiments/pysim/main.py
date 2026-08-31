@@ -12,14 +12,9 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-_PYSIM_DIR = (
-    Path(__file__).resolve().parents[1]
-    if any(
-        d in str(Path(__file__))
-        for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")
-    )
-    else Path(__file__).resolve().parent
-)
+_PYSIM_DIR = Path(__file__).resolve().parent
+while not (_PYSIM_DIR / "core").is_dir():
+    _PYSIM_DIR = _PYSIM_DIR.parent
 
 for _p in [
     _PYSIM_DIR,
@@ -36,6 +31,7 @@ import ctypes
 import struct
 
 from hal import ShmTrap
+from ipc_router import IPCMessage, Role
 from logger import LogLevel
 from recovery import RecoveryManager, RecoveryStrategy, Result
 from runtime_engine import BasicBlock, IntegratedHybridEngine, WASMContext
@@ -244,15 +240,40 @@ def run_wasm_demo(sysv: System) -> None:
     ctx_wasi.guest_memory[URI_OFF : URI_OFF + len(uri)] = uri
     ctx_wasi.guest_memory[PAYLOAD_OFF : PAYLOAD_OFF + len(payload)] = payload
 
+    # IPC is inter-*task* communication: the guest (RUNTIME) sending and the
+    # guest recv()-ing back are two different edges, each needing its own
+    # already-waiting counterpart task, or fireball_call (running as the
+    # guest task's own coroutine) would genuinely and correctly block
+    # forever with nobody to rendezvous with. hal_receiver pins itself to
+    # exactly the RUNTIME edge (bypassing recv()'s select-across-every-
+    # allowed-sender behavior) so it can never accidentally steal
+    # debugger_sender's message meant for the guest's own later IPC_RECV.
+    def hal_receiver():
+        channel_id = sysv.ipc.channel_id_for_edge(Role.RUNTIME, Role.PLATFORM_HAL)
+        action, _ = sysv.scheduler.channel_recv(channel_id)
+        if action == "BLOCK":
+            yield ("BLOCK", None)
+
+    def debugger_sender():
+        yield from sysv.ipc.send(
+            Role.DEBUGGER, "fireball://hal/gpio/0", IPCMessage.from_bytes(payload)
+        )
+
+    sysv.scheduler.spawn("hal_receiver", hal_receiver())
+    sysv.scheduler.spawn("debugger_sender", debugger_sender())
+    sysv.scheduler.run_until_idle()
+
     # Compile and execute WASI guest trace
     def host_wasi_roundtrip():
         # 1. fd_write
         ctx_wasi.fd_write(1, MSG_IOV, 1, NWRITTEN)
         # 2. IPC lookup
         h = ctx_wasi.fireball_call(FbSyscallId.IPC_LOOKUP, URI_OFF, len(uri), 0, 0, 0, 0)
-        # 3. IPC send
+        # 3. IPC send (consumed by hal_receiver above, so this does not block)
         ctx_wasi.fireball_call(FbSyscallId.IPC_SEND, h, PAYLOAD_OFF, len(payload), 0, 0, 0)
-        # 4. IPC recv
+        # 4. IPC recv: selects across every edge allowed into this URI's own
+        # role (PLATFORM_HAL) -- RUNTIME's edge was already consumed above,
+        # so this receives debugger_sender's message on the DEBUGGER edge.
         return ctx_wasi.fireball_call(FbSyscallId.IPC_RECV, h, RECV_BUF, len(payload), 0, 0, 0)
 
     t = ctypes.CFUNCTYPE(ctypes.c_uint32)(host_wasi_roundtrip)
@@ -319,10 +340,9 @@ def main() -> None:
 
         raise SystemExit(1)
     print("  No behavioral bugs found: every enforced invariant held under real execution.")
-    print("  (See recovery.py/logger.py source comments for two spec gaps this build")
-    print("   had to resolve by assumption -- retry-exhaustion escalation, and the")
-    print("   ignore-vs-retry ambiguity on IPC queue-full -- neither is a code bug,")
-    print("   both are places interface_wit.md should say more than it currently does.)")
+    print("  (See recovery.py's retry-exhaustion comment for one spec gap this build had")
+    print("   to resolve by assumption -- not a code bug, a place interface_wit.md should")
+    print("   say more than it currently does.)")
 
 
 if __name__ == "__main__":

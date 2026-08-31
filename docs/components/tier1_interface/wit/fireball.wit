@@ -31,7 +31,19 @@ interface types {
     }
 }
 
-/// 高速トリガ (GPIO) インターフェイス
+/// WASI 0.3p / IPC 動的インターフェース取得・共有メモリ解決 (URI Resolver)
+interface resolver {
+    use types.{shm-slice, operation-result, recovery-strategy-category};
+
+    /// IPC 宛先 URI (e.g. "fireball://device/uart/0", "fireball://device/gpio/0", "fireball://device/timer/0", "fireball://device/i2c/0", "fireball://service/stdout/0") から通信チャネルハンドルを取得
+    get-interface: func(uri: string) -> result<u32, recovery-strategy-category>;
+    /// 共有メモリ（SHM）バッファの確保
+    acquire-shm: func(size-bytes: u32) -> result<shm-slice, recovery-strategy-category>;
+    /// 共有メモリ（SHM）バッファの解放
+    release-shm: func(slice: shm-slice) -> operation-result;
+}
+
+/// 高速トリガ (GPIO / fireball:hal/gpio 準拠) インターフェイス
 interface trigger {
     use types.{operation-result, recovery-strategy-category};
 
@@ -47,7 +59,7 @@ interface timer {
     }
 }
 
-/// バス通信 (I2C/SPI マスタ・スレーブ) インターフェイス
+/// バス通信 (I2C/SPI マスタ・スレーブ / 共有メモリゼロコピー転送) インターフェイス
 interface bus {
     use types.{shm-slice, operation-result, recovery-strategy-category};
 
@@ -62,18 +74,22 @@ interface bus {
     }
 }
 
-/// ストリーミング I/O インターフェイス
+/// ストリーミング I/O (wasi:io/streams 準拠 / 共有メモリリードライト) インターフェイス
 interface streaming {
+    use types.{shm-slice, recovery-strategy-category};
+
     resource streaming-master {
         write-stream: func(data: list<u8>) -> u32;
+        write-shm: func(slice: shm-slice) -> result<u32, recovery-strategy-category>;
     }
 
     resource streaming-slave {
         read-stream: func(max-bytes: u32) -> list<u8>;
+        read-shm: func(dest-slice: shm-slice) -> result<u32, recovery-strategy-category>;
     }
 }
 
-/// コンソール生バイト出力インターフェイス (wasi:cli/stdout, stderr)
+/// コンソール生バイト出力 (wasi:cli/stdout, stderr 準拠) インターフェイス
 interface console {
     use types.{recovery-strategy-category};
 
@@ -87,9 +103,10 @@ interface trap {
     fireball-call: func(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32, arg4: u32, arg5: u32) -> u32;
 }
 
-/// Fireball ハイパーバイザ Host World
+/// Fireball ハイパーバイザ Host World (HAL = WASI 0.3p Core World)
 world fireball {
     import types;
+    import resolver;
     import trigger;
     import timer;
     import bus;
@@ -97,6 +114,7 @@ world fireball {
     import console;
     import trap;
 
+    export resolver;
     export trigger;
     export timer;
     export bus;

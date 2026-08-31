@@ -3,14 +3,9 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-_PYSIM_DIR = (
-    Path(__file__).resolve().parents[1]
-    if any(
-        d in str(Path(__file__))
-        for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")
-    )
-    else Path(__file__).resolve().parent
-)
+_PYSIM_DIR = Path(__file__).resolve().parent
+while not (_PYSIM_DIR / "core").is_dir():
+    _PYSIM_DIR = _PYSIM_DIR.parent
 
 for _p in [
     _PYSIM_DIR,
@@ -89,7 +84,7 @@ def test_scenario_vmmio_virtual_devices():
     print("    [Phase 3.2] vMMIO Device Page Write & Syscall Dispatch -> OK_SYSCALL [PASS]")
     # 3.3 TLB Hit Verification (4-bit Folding XOR Hash)
     tlb_idx = controller.tlb_index(dev_vpn)
-    assert controller.tlb[tlb_idx]["vpn"] == dev_vpn
+    assert controller.tlb[tlb_idx].vpn == dev_vpn
     initial_hits = controller.tlb_hits
     status_dev_r, _ = controller.access(raw_addr=0xC000_1010, is_write=False, current_task_id=1)
     assert status_dev_r == "OK_SYSCALL"

@@ -14,29 +14,6 @@ Recovery Strategy Classification:
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-_PYSIM_DIR = (
-    Path(__file__).resolve().parents[1]
-    if any(
-        d in str(Path(__file__))
-        for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")
-    )
-    else Path(__file__).resolve().parent
-)
-
-for _p in [
-    _PYSIM_DIR,
-    _PYSIM_DIR / "core",
-    _PYSIM_DIR / "runtime",
-    _PYSIM_DIR / "jit",
-    _PYSIM_DIR / "platforms",
-]:
-    _sp = str(_p)
-    if _sp not in sys.path:
-        sys.path.insert(0, _sp)
-
 import time
 from collections.abc import Callable
 from enum import IntEnum
@@ -86,27 +63,27 @@ class Result(Generic[T, E]):
         return self.value
 
 
-def classify_error_strategy(errno_or_trap: int | str) -> RecoveryStrategy:
-    """Deterministic mapping from low-level errno / trap string to {META_RecoveryStrategy}."""
-    # 1. String traps from vMMIO / interpreter / MPU
-    if isinstance(errno_or_trap, str):
-        trap = errno_or_trap.upper()
-        if (
-            "OUT_OF_BOUNDS" in trap
-            or "ACCESS_VIOLATION" in trap
-            or "OWNER_MISMATCH" in trap
-            or "MPU" in trap
-        ):
-            return RecoveryStrategy.PANIC
-        if "UNDEFINED_FC" in trap:
-            return RecoveryStrategy.PANIC
-        if "UNREGISTERED_PAGE" in trap or "UNINITIALIZED" in trap:
-            return RecoveryStrategy.RESTART
-        if "QUEUE_FULL" in trap or "BUSY" in trap or "AGAIN" in trap:
-            return RecoveryStrategy.RETRY
+def classify_trap_strategy(trap: str) -> RecoveryStrategy:
+    """Deterministic mapping from a vMMIO / interpreter / MPU trap string to {META_RecoveryStrategy}."""
+    trap = trap.upper()
+    if (
+        "OUT_OF_BOUNDS" in trap
+        or "ACCESS_VIOLATION" in trap
+        or "OWNER_MISMATCH" in trap
+        or "MPU" in trap
+    ):
+        return RecoveryStrategy.PANIC
+    if "UNDEFINED_FC" in trap:
+        return RecoveryStrategy.PANIC
+    if "UNREGISTERED_PAGE" in trap or "UNINITIALIZED" in trap:
         return RecoveryStrategy.RESTART
-    # 2. WASI errno integers (wasi::errno)
-    errno = int(errno_or_trap)
+    if "BUSY" in trap or "AGAIN" in trap:
+        return RecoveryStrategy.RETRY
+    return RecoveryStrategy.RESTART
+
+
+def classify_errno_strategy(errno: int) -> RecoveryStrategy:
+    """Deterministic mapping from a WASI errno (wasi::errno) to {META_RecoveryStrategy}."""
     if errno == 0:  # SUCCESS
         return RecoveryStrategy.IGNORE
     if errno in (6, 73, 76):  # EAGAIN (6), ETIMEDOUT (73), ENOMEM (76)

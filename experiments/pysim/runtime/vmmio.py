@@ -13,30 +13,14 @@ vMMIO FlatMap Page Table & Direct-Mapped TLB simulation.
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-_PYSIM_DIR = (
-    Path(__file__).resolve().parents[1]
-    if any(
-        d in str(Path(__file__))
-        for d in ("tests", "scenarios", "core", "runtime", "jit", "platforms")
-    )
-    else Path(__file__).resolve().parent
-)
-
-for _p in [
-    _PYSIM_DIR,
-    _PYSIM_DIR / "core",
-    _PYSIM_DIR / "runtime",
-    _PYSIM_DIR / "jit",
-    _PYSIM_DIR / "platforms",
-]:
-    _sp = str(_p)
-    if _sp not in sys.path:
-        sys.path.insert(0, _sp)
-
 from collections.abc import Callable
+from dataclasses import dataclass
+
+from system_containers import StaticFlatMap
+
+# docs/components/tier1_core/system_config.md {META_FlatMapIndexed}: max PTE
+# count the FlatMap page table can hold.
+FB_CONF_VMMIO_MAX_PTES = 32
 
 
 class TrapCode:
@@ -119,6 +103,12 @@ class Tier3PTE:
         self.owner_id = owner_id
 
 
+@dataclass
+class TLBSlot:
+    vpn: int = 0xFFFF_FFFF
+    pte: StaticDevicePTE | Tier3PTE | None = None
+
+
 class VMMIOController:
     """
     FlatMap Page Table (vpn -> PTE) with a direct-mapped 16-entry software TLB.
@@ -130,10 +120,14 @@ class VMMIOController:
         if guest_ram_size <= 0:
             raise ValueError("guest RAM size must be positive")
         self.guest_ram_size = guest_ram_size
-        # FlatMap PTE storage: vpn (20-bit) -> PTE
-        self.ptes: dict[int, object] = {}
+        # FlatMap PTE storage: vpn (20-bit) -> PTE, capacity-bounded per
+        # system_config.md's FB_CONF_VMMIO_MAX_PTES (a fixed static array in
+        # C++, so a StaticFlatMap here, never a dict).
+        self.ptes: StaticFlatMap[int, StaticDevicePTE | Tier3PTE] = StaticFlatMap(
+            capacity=FB_CONF_VMMIO_MAX_PTES
+        )
         # Direct-mapped TLB: 16 slots, keyed by 4-bit Folding XOR Hash over 20-bit VPN.
-        self.tlb: list[dict] = [{"vpn": 0xFFFF_FFFF, "pte": None} for _ in range(16)]
+        self.tlb: list[TLBSlot] = [TLBSlot() for _ in range(16)]
         self.tlb_hits = 0
         self.tlb_misses = 0
 
@@ -146,47 +140,57 @@ class VMMIOController:
         write: bool = True,
     ):
         """Registers a Tier 2 static device page (FC=12) into FlatMap."""
-        self.ptes[vpn] = StaticDevicePTE(handler=handler, read=read, write=write)
+        self.ptes.insert(vpn, StaticDevicePTE(handler=handler, read=read, write=write))
 
     def map_shm_page(self, vpn: int, phys_page: int, owner_id: int):
         """Registers a Tier 3 SHM page (FC=14) into FlatMap."""
-        self.ptes[vpn] = Tier3PTE(
-            phys_page=phys_page,
-            valid=True,
-            read=True,
-            write=True,
-            exec_=False,
-            owner_id=owner_id,
+        self.ptes.insert(
+            vpn,
+            Tier3PTE(
+                phys_page=phys_page,
+                valid=True,
+                read=True,
+                write=True,
+                exec_=False,
+                owner_id=owner_id,
+            ),
         )
 
     def map_passthrough_page(self, vpn: int, phys_page: int, read: bool = True, write: bool = True):
         """Registers a Tier 3 Passthrough page (FC=15) into FlatMap."""
-        self.ptes[vpn] = Tier3PTE(
-            phys_page=phys_page,
-            valid=True,
-            read=read,
-            write=write,
-            exec_=True,
-            owner_id=0,
+        self.ptes.insert(
+            vpn,
+            Tier3PTE(
+                phys_page=phys_page,
+                valid=True,
+                read=read,
+                write=write,
+                exec_=True,
+                owner_id=0,
+            ),
         )
 
     def revoke_shm_owner(self, vpn: int):
         """IPC Router Revoke phase: mark the page in-flight and invalidate its TLB entry."""
-        pte = self.ptes.get(vpn)
-        if pte is not None and isinstance(pte, Tier3PTE):
+        pte = self.ptes.find(vpn)
+        # SHM/PASSTHROUGH FC (bits [19:16] of the VPN) is Tier3PTE by
+        # construction (map_shm_page/map_passthrough_page are the only
+        # writers for that FC range) -- checked structurally from the VPN's
+        # own encoding, not via isinstance (no RTTI in the target build).
+        if pte is not None and ((vpn >> 16) & 0xF) in (FC_SHM, FC_PASSTHROUGH):
             pte.owner_id = FB_TASK_ID_FLIGHT
 
         tlb_idx = self.tlb_index(vpn)
-        if self.tlb[tlb_idx]["vpn"] == vpn:
-            self.tlb[tlb_idx] = {"vpn": 0xFFFF_FFFF, "pte": None}
+        if self.tlb[tlb_idx].vpn == vpn:
+            self.tlb[tlb_idx] = TLBSlot()
 
     def flush_tlb(self) -> None:
-        self.tlb = [{"vpn": 0xFFFF_FFFF, "pte": None} for _ in range(16)]
+        self.tlb = [TLBSlot() for _ in range(16)]
 
     def flush_tlb_entry(self, vpn: int) -> None:
         tlb_idx = self.tlb_index(vpn)
-        if self.tlb[tlb_idx]["vpn"] == vpn:
-            self.tlb[tlb_idx] = {"vpn": 0xFFFF_FFFF, "pte": None}
+        if self.tlb[tlb_idx].vpn == vpn:
+            self.tlb[tlb_idx] = TLBSlot()
 
     # --- Hot path: TLB lookup + FlatMap fallback ---
     @staticmethod
@@ -203,16 +207,16 @@ class VMMIOController:
         vpn = addr.vpn()
         tlb_idx = self.tlb_index(vpn)
         slot = self.tlb[tlb_idx]
-        if slot["vpn"] == vpn:
+        if slot.vpn == vpn:
             self.tlb_hits += 1
-            return slot["pte"]
+            return slot.pte
         self.tlb_misses += 1
         # FlatMap lookup
-        pte = self.ptes.get(vpn)
+        pte = self.ptes.find(vpn)
         if pte is None:
             return None
         # Refill: direct-mapped, unconditional overwrite (O(1), no eviction search).
-        self.tlb[tlb_idx] = {"vpn": vpn, "pte": pte}
+        self.tlb[tlb_idx] = TLBSlot(vpn=vpn, pte=pte)
         return pte
 
     def access(self, raw_addr: int, is_write: bool, current_task_id: int = 0) -> tuple[str, str]:
@@ -243,7 +247,10 @@ class VMMIOController:
                 )
             return (TrapCode.UNREGISTERED_PAGE, f"no PTE at VPN {addr.vpn():#x}")
         # 3. Permission check — runs unconditionally, TLB hit or miss.
-        if isinstance(pte, StaticDevicePTE):
+        # The FC already at hand (from the address itself, decoded before
+        # any table lookup) determines the PTE's shape -- checked from that,
+        # not via isinstance (no RTTI in the target build).
+        if addr.fc() == FC_STATIC_DEVICE:
             if is_write and not pte.write:
                 return (TrapCode.ACCESS_VIOLATION, "static device: write not permitted")
             if not is_write and not pte.read:

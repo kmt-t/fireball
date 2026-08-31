@@ -7,7 +7,7 @@
 <!-- traceability: {JIT_CopyAndPatch} {JIT_ZeroCompileCostTheorem} {JIT_RegisterMapping} {META_ZeroCostAbstraction} -->
 本仕様書は、Fireball Copy-and-Patch JIT コンパイラが実行時にコード結合およびパッチ適用を行うための **事前コンパイル済み Thumb-2 ネイティブ命令テンプレート（Stencil）** の完全な物理カタログである。
 
-ビルド時に Clang 17（`-target arm-none-eabi -mcpu=cortex-m33 -mthumb -O2`）で生成されたバイナリ列とプレースホルダ（穴: Relocation Slots）のオフセット、および多次元レジスタバリアント（スタックキャッシュ深度 TOS/NOS、`R3` local_base、`R8`/`R9` mem_base/mem_size ピン留め、Callee-saved 任意割当プール `R4-R6, R8-R11`、AAPCS 準拠 Frame Pointer `R7`）を一意に定義する。 `{JIT_CopyAndPatch}` `{JIT_ZeroCompileCostTheorem}` `{JIT_RegisterMapping}` `{META_ZeroCostAbstraction}`
+ビルド時に Clang 17（`-target arm-none-eabi -mcpu=cortex-m33 -mthumb -O2`）で生成されたバイナリ列とプレースホルダ（穴: Relocation Slots）のオフセット、および多次元レジスタバリアント（スタックキャッシュ深度 `R4=TOS / R5=NOS`、`R3=local_base`、`R8=mem_base / R9=mem_size` ピン留め、`R10=context_ptr / R11=sp_offset`、および AAPCS 準拠 Callee-saved 退避 `R4-R6, R8-R11`、Frame Pointer `R7`）を一意に定義する。 `{JIT_CopyAndPatch}` `{JIT_ZeroCompileCostTheorem}` `{JIT_RegisterMapping}` `{META_ZeroCostAbstraction}`
 
 ---
 
@@ -76,9 +76,9 @@
 #### `STENCIL_EXTERNAL_CALL_STUB` (外部 AAPCS C/C++ 関数呼出境界)
 - **Thumb-2 命令列**:
   ```asm
-  push {r0-r3, r12, lr}   ; [Offset 0x00] Caller-saved 退避
-  bl   0x00000000         ; [Offset 0x04] RELOC_REL24_BRANCH (外部C関数)
-  pop  {r0-r3, r12, lr}   ; [Offset 0x08] Caller-saved 復元
+  push.w {r0-r3, r12, lr} ; [Offset 0x00] 32-bit Caller-saved 退避 (4 Bytes)
+  bl     0x00000000       ; [Offset 0x04] RELOC_REL24_BRANCH (外部C関数, 4 Bytes)
+  pop.w  {r0-r3, r12, lr} ; [Offset 0x08] 32-bit Caller-saved 復元 (4 Bytes)
   ```
 - **バイナリ列 (12 Bytes)**: `2D E9 0F 50 00 F0 00 F8 BD E8 0F 50`
 
@@ -128,7 +128,7 @@
 ### 3.3 定数ロード系ステンシル (Constants)
 <!-- traceability: {JIT_CopyAndPatch} {ADR_TosCacheAsymmetry} -->
 
-#### `STENCIL_I32_CONST_D0` (`0x41` Depth 0 $\to$ R4)
+#### `STENCIL_I32_CONST_D0` (`0x41` i32.const バリアント: スタック空 Depth 0 $\to$ R4)
 - **Thumb-2 命令列**:
   ```asm
   movw r4, #0x0000        ; [Offset 0x00] RELOC_IMM32_MOVW_MOVT (LO)
@@ -136,7 +136,7 @@
   ```
 - **バイナリ列 (8 Bytes)**: `40 F2 00 04 C0 F2 00 04`
 
-#### `STENCIL_I32_CONST_D1` (`0x41` Depth 1 $\to$ R5=旧TOS, R4=新TOS)
+#### `STENCIL_I32_CONST_D1` (`0x41` i32.const バリアント: 既存TOS退避 Depth 1 $\to$ R5=旧TOS, R4=新TOS)
 - **Thumb-2 命令列**:
   ```asm
   mov  r5, r4             ; [Offset 0x00] 旧TOSをNOSへ退避
@@ -145,7 +145,7 @@
   ```
 - **バイナリ列 (10 Bytes)**: `A5 46 40 F2 00 04 C0 F2 00 04`
 
-#### `STENCIL_I64_CONST_D0` (`0x42` 64-bit 即値 $\to$ R4:R5)
+#### `STENCIL_I64_CONST_D0` (`0x42` i64.const 64-bit 即値 $\to$ R4:R5)
 - **Thumb-2 命令列**:
   ```asm
   movw r4, #0x0000        ; [Offset 0x00] RELOC_IMM32_MOVW_MOVT (LO32 LO)
@@ -163,23 +163,23 @@
 #### `STENCIL_LOCAL_GET_D0` (`0x20` Depth 0 $\to$ R4)
 - **Thumb-2 命令列**:
   ```asm
-  ldr  r4, [r1, #0x00]    ; [Offset 0x00] RELOC_IMM8_OFFSET (local_offset)
+  ldr  r4, [r3, #0x00]    ; [Offset 0x00] RELOC_IMM8_OFFSET (local_base R3 からロード)
   ```
-- **バイナリ列 (2 Bytes)**: `0C 68`
+- **バイナリ列 (2 Bytes)**: `1C 68`
 
 #### `STENCIL_LOCAL_SET_D1` (`0x21` R4 $\to$ Local)
 - **Thumb-2 命令列**:
   ```asm
-  str  r4, [r1, #0x00]    ; [Offset 0x00] RELOC_IMM8_OFFSET
+  str  r4, [r3, #0x00]    ; [Offset 0x00] RELOC_IMM8_OFFSET (local_base R3 へストア)
   ```
-- **バイナリ列 (2 Bytes)**: `0C 60`
+- **バイナリ列 (2 Bytes)**: `1C 60`
 
 #### `STENCIL_LOCAL_TEE_D1` (`0x22` R4 $\to$ Local, R4 維持)
 - **Thumb-2 命令列**:
   ```asm
-  str  r4, [r1, #0x00]    ; [Offset 0x00] RELOC_IMM8_OFFSET (TOSはR4に残す)
+  str  r4, [r3, #0x00]    ; [Offset 0x00] RELOC_IMM8_OFFSET (local_base R3 へストア、TOSはR4に残す)
   ```
-- **バイナリ列 (2 Bytes)**: `0C 60`
+- **バイナリ列 (2 Bytes)**: `1C 60`
 
 #### `STENCIL_GLOBAL_GET_D0` (`0x23` Env globals_base 経由ロード)
 - **Thumb-2 命令列**（`R12` は AAPCS Intra-call スクラッチで、この1ステンシル内でのみ globals_base ポインタを保持する）:

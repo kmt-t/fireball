@@ -7,7 +7,7 @@
 
 ## 1. コンセプト
 <!-- traceability: {META_RestrictedPhysicalAccess} {vMMIO_TrapAndEmulate} {PhysicalPassthrough} {DynamicMmap} {UnifiedAccessModel} {FastAddressCheck} {Fast_Path_GPIO} {META_FlatMapIndexed} -->
-vMMIO (Virtual Memory-Mapped I/O) は、ホストが仲介するリソース（物理レジスタ（GPIO等）、共有メモリ、システムコール用バッファなど）へのアクセスを統一的に扱うアクセス層である。ホスト-ゲスト間境界を横切るアクセスのうち、vMMIOアドレス空間（Bit 31 == 1、下記 Tier 2/3）を経由するものはすべてこの層で仲介される。一方、ゲスト専用RAM（Tier 1, Bit 31 == 0）はvMMIO管理対象外とし、境界チェックのみで完結する高速バイパス経路を別途持つ（詳細は後述）。
+vMMIO (Virtual Memory-Mapped I/O) は、ホストが仲介するリソース（物理レジスタ（GPIO等）、共有メモリ、システムコール用バッファなど）へのアクセスを統一的に扱うアクセス層である。ホスト-ゲスト間境界を横切るアクセスのうち、vMMIOアドレス空間（Bit 31 == 1、下記 Stage 2/3）を経由するものはすべてこの層で仲介される。一方、ゲスト専用RAM（Stage 1: Bit 31 == 0）はvMMIO管理対象外とし、境界チェックのみで完結する高速バイパス経路を別途持つ（詳細は後述）。
 
 WASM ゲストのリニアメモリは、WebAssembly 標準仕様に準拠して **64KB ページ単位 (65,536 bytes)** でページング・管理・拡張（`memory.grow`）される論理空間（`N * 64KB`）である。ただし、RAM < 64KB の極小組込み環境（Cortex-M 等）に適合するため、物理実装としては **64KB に満たない部分ページ（Sub-64KB / Partial Page: 例 8KB, 16KB）** の割り当てを許容し、境界超過アクセスを即座にトラップする設計をとる。一方、ホスト/デバイス側の vMMIO 領域は **1ページ（4KB）** 単位で管理される。 `{META_RestrictedPhysicalAccess}` `{vMMIO_TrapAndEmulate}` `{PhysicalPassthrough}` `{DynamicMmap}` `{UnifiedAccessModel}`
 
@@ -18,7 +18,7 @@ WASM ゲストのリニアメモリは、WebAssembly 標準仕様に準拠して
 FlatMap 単体での探索は $O(\log N)$（またはハッシュ探索）となるが、本アーキテクチャでは手前に **「ダイレクトマップ方式のソフトウェアTLB（16エントリ、完全 $O(1)$ キャッシュ）」** を配置する。JIT 実行やホットな共有メモリ操作などのクリティカルパスでは、大半のアクセス（目標 90% 以上）が TLB キャッシュヒット（$O(1)$）で高速解決されるため、FlatMap 化に伴うテーブル探索の遅延は十分に吸収・容認される。
 
 1. **リニアアドレス空間フィルタ（高速バイパス & 境界チェック）**:
-   32ビットゲストアドレスの最上位ビット（Bit 31）が `0` の場合、そのアドレスは vMMIO 管理対象外として、Tier 1（ゲストRAM）への直接アクセスとして高速バイパス（O(1) 処理）を実行する。 `{FastAddressCheck}`
+   32ビットゲストアドレスの最上位ビット（Bit 31）が `0` の場合、そのアドレスは vMMIO 管理対象外として、Stage 1（ゲストRAM）への直接アクセスとして高速バイパス（O(1) 処理）を実行する。 `{FastAddressCheck}`
    - **統一境界チェック**: `{FastAddressCheck}` は比較命令ベースの単一の高速境界チェックである（マスクは用いない）。`guest_ram_size`（`vsoc_runtime.mem-size`）と直接比較し、`addr >= guest_ram_size` なら境界外として即座に `ERR_OUT_OF_BOUNDS` トラップを発生させる（Thumb-2: 単一の境界チェック比較命令 `CMP addr, mem_size` とトラップ分岐 `BHS.W __trap`）。マスク方式と異なり `guest_ram_size` に2の冪の制約はなく、部分ページ（例: 8KB, 12KB, 16KB）・単一 64KB ページ・複数 64KB ページ（`N * 64KB`）のいずれも同一の比較一つで判定できる（`vmmio_concept.py` の `VMMIOController.access` を正本とする）。トラップは必須であり、境界外アドレスを黙ってラップアラウンドさせて処理を継続することは許容されない。JIT トレース側（`jit_stencil_catalog.md` §3.7, `jit_copy_patch_concept.py`）も同一の比較+トラップ方式を採り、トラップ発生時はインタープリタへフォールバックする。インタープリタが復旧不能と判断した場合はゲストタスクを停止してよい。
 2. **FlatMap PTE 管理**:
    最上位ビット（Bit 31）が `1` のアドレス空間を vMMIO 領域（`0x8000_0000` – `0xFFFF_FFFF`）とする。
@@ -29,11 +29,11 @@ FlatMap 単体での探索は $O(\log N)$（またはハッシュ探索）とな
    - 仮想ページ番号（20-bit: `vpn = raw >> 12`）の全ビットを 4-bit（16スロット）に均等拡散する Folding XOR Hash `tlb_idx = (vpn ^ (vpn >> 4) ^ (vpn >> 8) ^ (vpn >> 12) ^ (vpn >> 16)) & 15` を算出し、TLBに一撃でアクセスする。ヒット時は権限チェックを通過した後に即時実行する。 `{META_RestrictedPhysicalAccess}`
    - **全ビット拡散**: FC[31:28] や中間ページ番号ビット、下位ページ番号ビットのすべてが 4-bit 幅で折り畳まれるため、FC 間やページ番号の変動に対して TLB スロットが均等に分散する。
 
-vMMIO領域（Tier 2/3）のセキュリティモデルは**PTEに埋め込まれた権限フィールドがゲート**である。アクセス権限は PTE に保持され、ルックアップと権限チェックを1パスで完結させる。ゲストRAM（Tier 1）はPTEを経由せず、`FastAddressCheck` による境界チェックのみをゲートとする別経路である。アクセス特性に応じてセキュリティゲートを以下の3層に階層化する。 `{META_RestrictedPhysicalAccess}`
+vMMIO領域（Stage 2/3）のセキュリティモデルは**PTEに埋め込まれた権限フィールドがゲート**である。アクセス権限は PTE に保持され、ルックアップと権限チェックを1パスで完結させる。ゲストRAM（Stage 1）はPTEを経由せず、`FastAddressCheck` による境界チェックのみをゲートとする別経路である。アクセス特性に応じてセキュリティゲートを以下の3段階に階層化する。 `{META_RestrictedPhysicalAccess}`
 
-1. **Tier 1 (ゲストRAM)**: ゲスト専用RAM領域（Bit 31 == 0）。`addr >= guest_ram_size` による比較ベースの単一の高速境界チェック（`FastAddressCheck`）のみで高速処理し、境界外は即座にトラップする。
-2. **Tier 2 (静的vMMIO, FC=12)**: コンパイル時にアドレスが確定するコアデバイス（SYSCTL, IPCR, VDMA等）。アドレス `0xC000_0000` は FC=12 に位置する。JIT生成時に許可チェックを行い、許可済みならネイティブコードに直接デバイスキーを埋め込む。
-3. **Tier 3 (動的vMMIO, FC=14-15)**: SHM（FC=14, `0xE000_0000`）、PASSTHROUGH（FC=15, `0xF000_0000`）領域のアクセス。TLB または FlatMap を経由して PTE を解決し、エントリの権限フィールドで可否を判定する。
+1. **Stage 1 (ゲストRAMバイパス)**: ゲスト専用RAM領域（Bit 31 == 0、FC=0..7）。`addr >= guest_ram_size` による比較ベースの単一の高速境界チェック（`FastAddressCheck`）のみで高速処理し、境界外は即座にトラップする。
+2. **Stage 2 (静的vMMIO, FC=12)**: コンパイル時にアドレスが確定するコアデバイス（SYSCTL, IPCR, VDMA等）。アドレス `0xC000_0000` は FC=12 に位置する。JIT生成時に許可チェックを行い、許可済みならネイティブコードに直接デバイスキーを埋め込む。
+3. **Stage 3 (動的vMMIO, FC=14-15)**: SHM（FC=14, `0xE000_0000`）、PASSTHROUGH（FC=15, `0xF000_0000`）領域のアクセス。TLB または FlatMap を経由して PTE を解決し、エントリの権限フィールドで可否を判定する。
 
 IPC経由のデータ交換は行わない — GPIOのようなsub-µs応答が必要な周辺機器はIPCレイテンシに耐えられないため、このダイレクトアクセスモデルが採用されている。 `{Fast_Path_GPIO}`
 

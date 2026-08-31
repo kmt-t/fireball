@@ -100,7 +100,7 @@ if [ "$LEVEL" = "sync" ]; then
         echo "✖ Baseline sync: FAILED"
         exit 1
     fi
-    echo "  Commit spec-consistency.lock together with the spec changes."
+    echo "  Commit the updated consistency baseline together with the spec changes."
     exit 0
 fi
 
@@ -108,7 +108,7 @@ RUN_LLM=0
 EXHAUSTIVE=0
 MAX_KEYWORDS=15
 MAX_SUBGRAPHS=10
-MAX_DOCUMENTS=15
+MAX_DOCUMENTS=25
 if [ "$LEVEL" = "2" ] || [ "$LEVEL" = "3" ]; then
     RUN_LLM=1
 fi

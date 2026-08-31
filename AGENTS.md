@@ -33,6 +33,7 @@
 ## 検証・フォーマット
 
 - 具体的な検証コマンドは `tools/README.md` および `.agents/skills/document-validation/` を正本とする。
+- **回帰テストは関係あるファイルのみに絞る**：変更したファイルおよび直接関連する単体テスト・概念コードのみを実行する。
 - **コード自動フォーマット（コミット前実行）**：
   - Windows: `powershell tools/format_all.ps1`
   - Linux/WSL: `./tools/format_all.sh`

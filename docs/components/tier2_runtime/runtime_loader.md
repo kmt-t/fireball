@@ -7,7 +7,7 @@
 
 ## 1. コンセプト
 <!-- traceability: {ROMParsing} {META_AccessDictionary} {META_BumpAllocator} {META_BinarySearch} -->
-WASMローダは、ROM上のWASM32バイナリをパースし、実行環境が参照しやすい索引構造（ModuleView）を生成する。RAMへの全展開を避け、ROM上のデータを直接参照することでメモリ消費を極小化する。デコードされた各種メタデータ・要素（セクション、関数コード、グローバル、データセグメント）は内部レジストリ（`decoded_entity_registry`）に格納され、**WASMファイル内のバイト位置（データオフセット）をキーとして `RadixBinaryTreeView`（`fireball::radix_binary_tree_view`）により $O(k)$ 高速検索** できる。さらに、**インポートテーブルおよびエクスポートシンボルの検索も、文字列比較ではなくシンボル名ハッシュ（FNV-1a 32-bit）をキーとした `RadixBinaryTreeView` により $O(k)$ で瞬時に解決・引き当てる**。 `{ROMParsing}` `{META_AccessDictionary}` `{META_BumpAllocator}` `{META_BinarySearch}`
+WASMローダは、ROM上のWASM32バイナリをパースし、実行環境が参照しやすい索引構造（ModuleView）を生成する。RAMへの全展開を避け、ROM上のデータを直接参照することでメモリ消費を極小化する。デコードされた各種メタデータ・要素（セクション、関数コード、グローバル、データセグメント）は内部レジストリ（`decoded_entity_registry`）に格納され、**WASMファイル内のバイト位置（データオフセット）をキーとして `RadixBinaryTreeView`（`fireball::radix_binary_tree_view`）により粗粒度インデックス $O(1)$ ＋ 狭域2分探索 $O(\log n)$（全体で $O(\log N)$ 確定時間）で高速検索** できる。さらに、**インポートテーブルおよびエクスポートシンボルの検索も、文字列比較ではなくシンボル名ハッシュ（FNV-1a 32-bit）をキーとした `RadixBinaryTreeView` により $O(1) + O(\log n)$ で瞬時に解決・引き当てる**。 `{ROMParsing}` `{META_AccessDictionary}` `{META_BumpAllocator}` `{META_BinarySearch}`
 本設計の動作モデルおよび軽量検証スコープ（V1〜V6）、ハッシュ＋RadixBinaryTreeView によるシンボル・インポート検索、RadixBinaryTreeView によるファイル位置逆引き、バンプアロケータによるトランザクション保護（`save`/`restore`）は、コンセプトコード（[`concepts/loader_concept.py`](concepts/loader_concept.py)）によって動作検証されている。
 
 ## 2. アーキテクチャ分類
@@ -22,8 +22,8 @@ WASMローダは、ROM上のWASM32バイナリをパースし、実行環境が�
 - **`module_view`**: ROM上のバイナリデータへの参照と、構築された索引群を保持する読み取り専用の構造体。
 - **`module_registry`**: ロード済みの `module_view` を名前で管理するための内部リスト。 `{MultiModule_Support}`
 - **`decoded_entity_registry`**: デコードされた各エンティティ（セクション、関数コード、グローバル、データセグメント）を保持するレジストリ。
-- **`entity_offset_tree` (`radix_binary_tree_view`)**: ファイル内のバイト位置（開始オフセット）をキーとしてデコード済みエンティティへ $O(k)$ / $O(\log n)$ でマッピングする基数2進木索引。
-- **`import_tree` / `export_tree` (`radix_binary_tree_view`)**: シンボル名（インポート名・エクスポート名）のハッシュ値をキーとして各エントリへ $O(k)$ でマッピングする基数2進木索引。
+- **`entity_offset_tree` (`radix_binary_tree_view`)**: ファイル内のバイト位置（開始オフセット）をキーとしてデコード済みエンティティへ $O(1) + O(\log n)$ でマッピングする基数2進木索引。
+- **`import_tree` / `export_tree` (`radix_binary_tree_view`)**: シンボル名（インポート名・エクスポート名）のハッシュ値をキーとして各エントリへ $O(1) + O(\log n)$ でマッピングする基数2進木索引。
 
 ### 3.2 内部ブロック図
 <!-- traceability: {MultiModule_Support} -->

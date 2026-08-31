@@ -104,7 +104,7 @@ $runLLM = $level -in @("2", "3")
 $exhaustive = $level -eq "3"
 $maxKeywords = if ($exhaustive) { 0 } else { 15 }
 $maxSubgraphs = if ($exhaustive) { 0 } else { 10 }
-$maxDocuments = if ($exhaustive) { 0 } else { 15 }
+$maxDocuments = if ($exhaustive) { 0 } else { 25 }
 
 # ---------------------------------------------------------------------------
 # Phase 1: Risk Assessment — establishes the verification obligations

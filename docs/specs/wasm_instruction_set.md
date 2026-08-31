@@ -41,9 +41,8 @@
 | `0x0C` | `br` | `[] -> []` | 指定深度のラベルへ無条件ジャンプ | あり (Branch) | `B.W <target_label>` |
 | `0x0D` | `br_if` | `[i32] -> []` | TOS $\ne 0$ ならラベルへジャンプ | あり (Branch Cond) | `CMP r4, #0; BNE.W <target>` |
 | `0x0E` | `br_table` | `[i32] -> []` | テーブルインデックス分岐 | あり (Jump Table) | `TBB` / `TBH` テーブル分岐 |
-| `0x0F` | `return` | `[t*] -> [t*]` | 関数コールフレームをポップして復帰 | あり (Epilogue & Return) | `POP {r4-r6, r8-r11, pc}` (JITプール復元、R7 FP除外) |
-| `0x10` | `call` | `[t1*] -> [t2*]`| `call_frame` を積んで関数呼出 | あり (Direct Call / BL) | インラインまたは `BL` |
-| `0x11` | `call_indirect`| `[t1*, i32] -> [t2*]`| 関数テーブル照合 $\to$ 間接呼出 | あり (Indirect Call) | 型シグネチャ照合＋ `BLX` |
+| `0x10` | `call` | `[t1*] -> [t2*]`| `call_frame` を積んで関数呼出 | フォールバック (Runtime API / Interp Fallback) | JIT 複雑度低減のため `vsoc_call_function` へ委譲 |
+| `0x11` | `call_indirect`| `[t1*, i32] -> [t2*]`| 関数テーブル照合 $\to$ 間接呼出 | フォールバック (Runtime API / Interp Fallback) | 型シグネチャ照合＋ `vsoc_call_indirect` へ委譲 |
 
 ---
 

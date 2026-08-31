@@ -108,7 +108,7 @@ graph TD
 | **5. WIT Gate** | `WIT-*` | `wit/*.wit` の構文・型整合性・エラー回復戦略契約の検証。 |
 | **6. Evidence Gate** | `EVIDENCE-*` | `<!-- evidence: ... -->` で主張されたベンチマークや実装ファイルの実在性とアサーション検証。 |
 | **7. Obligation Gate** | `OBLIG-*` | Phase 1 のリスク評価で導出された検証義務（形式検証・LLM監査等）が **100% 履行** されているかの検証。 |
-| **8. Consistency Gate** | `CONSIST-*` | `spec-consistency.lock` と比較し、仕様変更時の修正漏れ・シンボル値ズレ（`FB_CONF_*`）を機械検出。 |
+| **8. Consistency Gate** | `CONSIST-*` | 一貫性ベースライン（キャッシュ DB 記録値）と比較し、仕様変更時の修正漏れ・シンボル値ズレ（`FB_CONF_*`）を機械検出。 |
 
 ---
 
@@ -121,12 +121,12 @@ graph TD
   # 通常の再計算（クラウド LLM、既定バックエンドを使用）:
   powershell tools/run_all_tests.ps1 -level 2
   # または、ローカルの Ollama があればコスト0で:
-  uv run --system-certs --project tools/spec-integrator python -m spec_integrator.cli llm-assess --backend ollama -a --include-reqs --include-meta --max-keywords 0
+  uv run --system-certs --project tools/spec-integrator python -m spec_integrator.cli llm-assess --backend ollama -a --max-keywords 0
   ```
 
 ### Q2. `CONSIST-COCHANGE-STALE` または `CONSIST-SYMBOL-DRIFT` で失敗する
 - **原因**: キーワード定義や `FB_CONF_*` 定数を変更した際、それを参照している別コンポーネントの記述が更新されていません。
-- **対処**: レポート（`reports/doc_report.md`）に示された該当箇所を修正した後、`powershell tools/run_all_tests.ps1 -level sync` または `./tools/run_all_tests.sh --level sync` を実行してロックファイルを更新します。
+- **対処**: レポート（`reports/doc_report.md`）に示された該当箇所を修正した後、`powershell tools/run_all_tests.ps1 -level sync` または `./tools/run_all_tests.sh --level sync` を実行して一貫性ベースラインを更新します。
 
 ### Q3. Python コードの Lint / フォーマットエラーで Phase 0 が失敗する
 - **原因**: PEP8 フォーマット違反、未使用インポート、未定義シンボル等が存在します。

@@ -10,34 +10,37 @@ Fireball のドキュメント品質、トレーサビリティ、形式モデ�
 ## 段階的運用手順 (Workflow & Levels)
 
 > [!IMPORTANT]
-> **エージェント実行原則（コスト・課金制御）**:
-> - **普段（日常の編集・実装・コミット前）**: 必ず **Level 0（個別単体テスト）** または **Level 1（ローカル静的ゲート `powershell tools/run_all_tests.ps1` / コスト 0）** の簡易テストのみを実行すること。
-> - **フルテスト / クラウド LLM 監査（Level 2 / Level 3）**: クラウド API 課金が発生するため、**ユーザーから明示的な指示（「フルテストやって」「LLM監査して」等）があった場合のみ** 実行すること。エージェントが自発的・コミットごとに自動実行してはならない。
+> **エージェント実行原則（コスト・所要時間・課金制御）**:
+> - **回帰テストは関係あるファイルだけに絞る**: 全体テストを無差別に走らせず、**変更したファイルおよび直接関連するコンポーネント・単体テストのみ**を実行すること。
+> - **普段（日常の編集・実装・コミット前）**: 必ず **Level 0（関連する個別単体テスト）** または **Level 1（ローカル静的ゲート `powershell tools/run_all_tests.ps1` / コスト 0）** の簡易テストのみを実行すること。
+> - **フルテスト / クラウド LLM 監査（Level 2 / Level 3）**: 所要時間が長くクラウド API 課金が発生するため、**ユーザーから明示的な指示（「フルテストやって」「LLM監査して」等）があった場合のみ** 実行すること。エージェントが自発的・コミットごとに自動実行してはならない。
 
-日常の編集からリリース判定まで、`run_all_tests` が公開する唯一のオプション `-level`（PowerShell）/ `--level`（Bash）で最適な深さの検証を実行し、無駄な全件監査や待機時間・API課金を排除します。バックエンド・モデル・コンポーネント選択などの微調整はレベルに含めず、`spec-integrator` 本体の CLI を直接叩きます（各セクション参照）。
+日常の編集からリリース判定まで、必要最小限のスコープで検証を実行し、無駄な全件監査や待機時間・API課金を排除します。
 
 ```mermaid
 graph TD
-    L0[Level 0: 単体コード実行<br/>秒速・コスト0] -->|編集・実装中| L0
-    L0 -->|コミット前| L1["Level 1 (既定): 静的ゲート<br/>5〜10秒・コスト0"]
-    L1 -.->|【ユーザー明示指示時のみ】<br/>仕様・ADR変更時| L2[Level 2: マイルストーン LLM 意味監査<br/>30秒〜1分]
-    L2 -.->|【ユーザー明示指示時のみ】<br/>PR・リリース前| L3[Level 3: 完全全量監査<br/>CI / リリースゲート]
+    L0["Level 0: 関連ファイルの単体実行<br/>（変更箇所のみ・秒速・コスト0）"] -->|編集・実装中| L0
+    L0 -->|コミット前| L1["Level 1 (既定): 静的ゲート<br/>（全体静的リンク/形式検証・5〜10秒・コスト0）"]
+    L1 -.->|【ユーザー明示指示時のみ】<br/>仕様・ADR変更時| L2["Level 2: マイルストーン LLM 意味監査<br/>（要件サブグラフ・文書一貫性）"]
+    L2 -.->|【ユーザー明示指示時のみ】<br/>PR・リリース前| L3["Level 3: 完全全量監査<br/>（CI / リリースゲート）"]
     Sync["--level sync: 整合性ベースライン更新<br/>（検証レベルではない、書き込み専用）"]
 ```
 
-### Level 0: 日常の編集・個別検証 (Inner Loop / 0.1秒〜数秒)
-編集中のコンポーネントに付随する Python 概念コード、形式検証モデル、ベンチマークのみを直接実行します。
+### Level 0: 日常の編集・関連ファイル個別検証 (Inner Loop / 0.1秒〜数秒)
+**回帰テストは変更に関係のあるファイルのみを直接実行します。**
 
 ```powershell
-# 概念コードの単体実行
-uv run python docs/components/tier1_core/concepts/flat_view_concept.py
+# 変更した概念コードのみを実行
 uv run python docs/components/tier1_core/concepts/logging_concept.py
 
-# 形式検証モデルの単体実行（pyModelChecking）
+# 変更した形式検証モデルのみを実行（pyModelChecking）
 uv run python docs/components/tier1_core/formal/coos_channel_model.py
 
-# ベンチマークの単体実行
+# 変更したベンチマークのみを実行
 uv run python docs/components/tier1_core/benchmarks/direct_context_switch_bench.py
+
+# 変更した spec-integrator 単体テストのみを実行
+uv run --project tools/spec-integrator pytest tools/spec-integrator/tests/test_db.py
 ```
 
 ### --level sync: 仕様変更後のベースライン更新
@@ -89,13 +92,18 @@ powershell -ExecutionPolicy Bypass -File tools/run_all_tests.ps1 -level 3
 | **7. Obligation Gate** | リスク評価（Assess）から導出された全検証義務（100%）の充足監査 | **ERROR** (Exit 1) |
 | **8. Consistency Gate** | `spec-consistency.lock` との差分・波及漏れの検知 | **ERROR** (Exit 1) |
 
-### 設計 -> テスト仕様 -> テストコード 3層一貫性監査 (`llm-judge`)
-設計書（`docs/components/**/*.md`）、テスト仕様書（`docs/components/**/tests/*_test_spec.md`）、および結合テストコード（`docs/architecture/integration_test_scenarios.md`）の3層トレーサビリティと意味的一貫性を LLM as a Judge で検証します。`llm-judge` は要求サブグラフの意味監査とこの3層監査を常に両方実行するため、専用フラグは不要です。`run_all_tests -level 2` 以上で自動実行されますが、特定コンポーネントだけを見たい場合や `--backend`/`--model` を明示したい場合は直接呼び出します。
+### `llm-judge` の3つの監査（キーワードサブグラフ・ドキュメント単位・3層トレーサビリティ）
+`llm-judge` は1回の実行で常に3つの監査をまとめて行います。どれか一つだけ選ぶオプションは無く、Obligation Gate は3つとも同等に検証義務の充足判定に使います:
+1. **キーワードサブグラフ意味監査**: `{Keyword}` の定義セクションと参照セクション間の矛盾・記述漏れを検証。
+2. **ドキュメント単位の自己一貫性監査**: 1文書全体を対象に、サブグラフをまたぐ矛盾ではなく文書内部の矛盾・未裏付け主張を検証（サブグラフ監査が1つのキーワードだけをきっかけに文書をカバーしてしまい、文書全体としては一度も監査されない、という抜け穴を塞ぐ）。
+3. **設計 -> テスト仕様 -> テストコード 3層一貫性監査**: 設計書（`docs/components/**/*.md`）、テスト仕様書（`docs/components/**/tests/*_test_spec.md`）、結合テストコード（`docs/architecture/integration_test_scenarios.md`）間のトレーサビリティと意味的一貫性を検証。
+
+`run_all_tests -level 2` 以上で自動実行されますが、特定コンポーネントだけを見たい場合や `--backend`/`--model` を明示したい場合は直接呼び出します。
 ```powershell
-# 特定コンポーネントの3層監査
+# 特定コンポーネントの3層監査（キーワードサブグラフ・ドキュメント単位監査は既定の候補選定で実行）
 uv run --system-certs --project tools/spec-integrator python -m spec_integrator.cli llm-judge --component jit_compiler --backend sakura
 
-# 全コンポーネントの3層監査（意味監査も併せて網羅的に実行）
+# 全サブグラフ・全ドキュメント・全コンポーネントを網羅的に実行
 uv run --system-certs --project tools/spec-integrator python -m spec_integrator.cli llm-judge --all --backend sakura
 ```
 

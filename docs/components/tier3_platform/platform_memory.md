@@ -109,7 +109,7 @@ IPC転送のための共有メモリブロック確保は、上記の `acquire-p
 
 ## 7. 共有メモリ (shared-block) のライフサイクル
 <!-- traceability: {META_FaultIsolation} {OwnershipTransfer} -->
-`shared-block` リソースが物理メモリ側での所有権の単位である。ただし所有権の実体（誰が読み書きしてよいか）を最終的に判定するのは、`{OwnerMismatchTrap}` のTier 3ゲート（vMMIO FC=14のPTE `owner_id`/`FLIGHT_SENTINEL`）である。`shared-block`の`release()`/`claim()`は、`{ThreeStageRouting}` のRevoke→Enqueue→Grantと1対1で対応する物理層の操作であり、独立した二重の所有権管理を行うものではない: `release()`はRevokeフェーズで対応するvMMIO PTEの`owner_id`を`FB_TASK_ID_FLIGHT`（移譲中）にし、Grant成立時に`claim()`が呼ばれて`owner_id`を受信タスクへ更新する。 `{META_FaultIsolation}` `{OwnershipTransfer}`
+`shared-block` リソースが物理メモリ側での所有権の単位である。ただし所有権の実体（誰が読み書きしてよいか）を最終的に判定するのは、`{OwnerMismatchTrap}` のTier 3ゲート（vMMIO FC=14のPTE `owner_id`/`FLIGHT_SENTINEL`）である。`shared-block`の`release()`/`claim()`は、`{ThreeStageRouting}` のRevoke→Enqueue→Grantと1対1で対応する物理層の操作であり、独立した二重の所有権管理を行うものではない: `release()`はRevokeフェーズで対応するvMMIO PTEの`owner_id`を`FB_TASK_ID_FLIGHT`（移譲中）にし、IPCルータのGrantフェーズ成立によって`owner_id`が受信タスクへ更新された後、受信側で`claim()`が呼ばれて有効な`shared-block`ハンドルを取得する。 `{META_FaultIsolation}` `{OwnershipTransfer}`
 
 大きなデータを転送する場合、`shm-id` をkv_pairの `value` フィールドに格納し、通常のIPCメッセージとして送信する。kv_pairの型スコープは `{IPC_ZeroCopy}` が定義する語彙の範囲内で表現する: `shm-id`はハードウェア記述子ではなく物理メモリ側のハンドルであるため、上位3bitは `0b010`（リソース）ではなく `0b000`（機能的、`{IPC_HandleBased}`が定義するハンドル値として解釈）を用い、下位5bitは既定の `0b00001`（`uint32_t`/32bit即値）とする。新規の型値追加が必要であれば上位側の拡張として提案すること。本書側で独自の`dtype=handle`を勝手に定義しない。
 
@@ -118,8 +118,8 @@ IPC転送のための共有メモリブロック確保は、上記の `acquire-p
 3. `shm.release()` → `shm-id` を取得。リソースはA側で無効化。対応するvMMIO PTEの`owner_id`が`FB_TASK_ID_FLIGHT`になる（Revoke相当）
 4. `shm-id` を kv_pair (`scope=functional, type=u32, key=任意, value=shm-id`) に格納
 5. `ipc.send(chan, message(kv_pairs))` で送信。Enqueueフェーズに対応する（キュー満杯時は`ERR_QUEUE_FULL`でロールバックし、A側の`owner_id`が復元される）
-6. タスクBが `ipc.recv(chan)` → kv_pair から `shm-id` を取り出す
-7. `claim(shm-id)` → 新 `shared-block` リソースを取得（Grant相当。対応するvMMIO PTEの`owner_id`がB側タスクIDへ更新される）
+6. タスクBが `ipc.recv(chan)` → kv_pair から `shm-id` を取り出す（IPCルータがGrantフェーズでPTEの`owner_id`をB側タスクIDへ更新）
+7. `claim(shm-id)` → B側の新 `shared-block` リソースを取得
 8. `shm.get-address()` でデータを読み取り
 9. B側の `shared-block` が drop されるとメモリ自動解放
 
@@ -133,7 +133,7 @@ IPC転送のための共有メモリブロック確保は、上記の `acquire-p
     - 案1: `shm-id`を単なる整数IDとし、明示的な`release_shm(id)`/`acquire_shm(id)`関数で操作する。実装は単純だが、解放忘れやダングリング参照を型システムで防げない。
     - 案2: `shm-id`をRAII所有権を持つ`shared-block`リソースとして設計し、`release()`/`claim()`で所有権移動を明示し、デストラクタで自動解放する。
   - **結論**: 案2を採用する。
-  - **理由**: `release()`で送信側が無効化、`claim()`で受信側が取得する設計により、ダングリングポインタを構造的に防止できる。デストラクタでの自動解放により手動`deallocate`忘れも排除できる。`to-shm`/`to-address`のような対称的な変換名より`release`/`claim`の方が所有権移動という意図を明確に表す。この所有権移動は独立した機構ではなく、`ipc_router.md`のRevoke/Grantおよび`runtime_vmmio.md`のPTE `owner_id`更新と対応させる（§7）。
+  - **理由**: `release()`で送信側が無効化、`claim()`で受信側が取得する設計により、ダングリングポインタを構造的に防止できる。デストラクタでの自動解放により手動`deallocate`忘れも排除できる。`to-shm`/`to-address`のような対称的な変換名より`release`/`claim`の方が所有権移動という意図を明確に表す。この所有権移動は独立した機構ではなく、`ipc_router.md`のRevoke/Grant（PTE `owner_id`更新）と完全連動する（§7）。
 
 - **決定事項**: `{ADR_MemoryManagerMinimalSurface}` (2026-02-17)
   - **背景**: メモリマネージャのAPIに、確保済みブロックの情報を問い合わせる`query(addr) -> memory-info`と、所有権を確認する`check-ownership(addr, task-id) -> bool`を含めるかどうかを決定する必要があった。

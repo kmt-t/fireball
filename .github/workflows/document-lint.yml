@@ -29,7 +29,7 @@ jobs:
 
     - name: Ensure script execution permissions
       run: |
-        chmod +x tools/run_all_tests.sh
+        chmod +x tools/run_all_tests.sh tools/format_all.sh
 
     - name: Run Mechanical & Quality Gates
       run: |

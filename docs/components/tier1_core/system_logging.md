@@ -86,19 +86,21 @@ COOSスケジューラの `set_idle_hook` で `logger.flush()` を登録する�
 
 1. COOSスケジューラがREADYタスクがないことを検出
 2. `idle_hook()` を呼び出し → `logger.flush()` が実行
-3. リングバッファの全エントリを物理トランスポートへ転送
-4. バッファ空になったら制御を返す
+3. リングバッファの連続ブロックをバッチとして物理トランスポート（UART/DMA）へ転送開始
+4. DMA転送完了割り込みで次のブロックを順次排出し、バッファが空になったら制御を返す
 
 ### 4.4 状態遷移図
 <!-- traceability: {DictionaryBasedIPC} {BufferedLogging} {GLOBAL_IdleDetection} -->
 ```mermaid
 stateDiagram-v2
     [*] --> Idle
-    Idle --> Buffering: log_received
-    Buffering --> DictTranslation: check dictionary offset
-    DictTranslation --> Buffering: translation completed / enqueue (overwrite oldest on full)
-    Buffering --> Flushing: buffer_not_empty / idle_hook
-    Flushing --> Idle: buffer_empty
+    Idle --> Validating: log_received(dict_id, args)
+    Validating --> Enqueuing: id_within_bounds / store raw entry (overwrite oldest on full)
+    Enqueuing --> Idle: enqueued
+    Idle --> Flushing: buffer_not_empty / idle_hook
+    Flushing --> DrainingBatch: start_dma_batch
+    DrainingBatch --> Flushing: dma_complete / buffer_not_empty
+    DrainingBatch --> Idle: buffer_empty
 ```
 
 ### 4.5 内部シーケンス
@@ -111,14 +113,15 @@ sequenceDiagram
     participant RB as Ring Buffer
     participant HW as UART/DMA
     
-    C->>L: IPC(dict_offset, args)
-    L->>RB: push(entry) / overwrite if full
+    C->>L: IPC(dict_id, args)
+    L->>L: Validate dict_id bounds (no string formatting)
+    L->>RB: push(raw_entry) / overwrite if full
     L-->>C: reply(OK)
-    Note over L,HW: Background Process
-    RB->>L: pop(entry)
-    L->>L: Format message from dictionary
-    L->>HW: Start DMA Transfer
-    HW-->>L: Transfer Complete
+    Note over L,HW: COOS Idle Flush (Batch DMA Transfer)
+    L->>RB: get_contiguous_block()
+    L->>HW: Start DMA Batch Transfer(raw_entries)
+    HW-->>L: Transfer Complete Interrupt
+    L->>RB: advance_read_ptr(transferred_count)
 ```
 
 ## 5. インターフェイス定義

@@ -25,6 +25,7 @@ Testing/
 # real judge verdict, so any {VERIFY_LLM}-tagged document would fail
 # OBLIG-JUDGE-MISSING regardless of whether the audit had ever actually run.
 doc_report.md
+spec_report.md
 doc_graph.json
 
 # Compiled objects and binaries

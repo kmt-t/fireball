@@ -856,6 +856,7 @@
       "sec:components/tier1_core/os_coos.md#4.2 状態遷移図 (SMD: COOS システムレベル)"
     ],
     "DynamicMmap": [
+      "sec:components/tier2_runtime/benchmarks/vmmio_bench_spec.md#1. 目的と対象範囲",
       "sec:components/tier2_runtime/runtime_vmmio.md#1. コンセプト"
     ],
     "EliminateDataRace": [
@@ -890,6 +891,8 @@
       "sec:architecture/architecture_overview.md#3.5 Pillar 5: 折りたたみXOR TLB ＆ 平坦ページ表 (Folding XOR TLB & FlatMap Page Table)",
       "sec:components/tier1_core/system_config.md#1. コンセプト",
       "sec:components/tier1_core/system_config.md#3.3.4 vSoC / vMMIO",
+      "sec:components/tier2_runtime/benchmarks/linear_memory_bench_spec.md#1. 目的と対象範囲",
+      "sec:components/tier2_runtime/benchmarks/linear_memory_bench_spec.md#2. ベンチマーク測定項目一覧",
       "sec:components/tier2_runtime/runtime_vmmio.md#1. コンセプト",
       "sec:components/tier2_runtime/runtime_vmmio.md#6.1 性能制約と方策",
       "sec:components/tier2_runtime/runtime_vsoc.md#vSoCランタイム環境（vsoc_runtime）",
@@ -1023,6 +1026,7 @@
       "sec:components/tier1_core/system_containers.md#6.2 メモリ制約と方策",
       "sec:components/tier1_core/system_containers.md#ビット詰めビュー（bit_view）",
       "sec:components/tier1_core/system_containers.md#添字による状態参照（at / put）",
+      "sec:components/tier2_runtime/benchmarks/linear_memory_bench_spec.md#1. 目的と対象範囲",
       "sec:components/tier3_platform/platform_memory.md#初期化",
       "sec:specs/gdb_rsp_protocol.md#5. 非サポートコマンド (Explicit Non-Goals)",
       "sec:specs/wasi_preview1_abi.md#4. 非サポート API 一覧 (Explicit Non-Goals)",
@@ -1050,6 +1054,7 @@
       "sec:components/tier3_platform/platform_memory.md#`allocate-shared` (IPC転送データ専用)"
     ],
     "HistoryBuffer": [
+      "sec:components/tier3_jit/benchmarks/jit_cache_metabolism_bench_spec.md#1. 目的と対象範囲",
       "sec:components/tier3_jit/jit_runtime.md#1. コンセプト",
       "sec:components/tier3_jit/jit_runtime.md#3.1 データ構造",
       "sec:components/tier3_jit/jit_runtime.md#JITエントリインデックス（JitEntryIndex）クラス"
@@ -1136,6 +1141,9 @@
       "sec:components/tier2_runtime/runtime_vsoc.md#4.2 状態遷移図 (SysML SMD: vSoC Engine ライフサイクル)",
       "sec:components/tier2_runtime/runtime_vsoc.md#4.3 内部シーケンス",
       "sec:components/tier2_runtime/runtime_vsoc.md#WASM実行およびJIT遷移シーケンス",
+      "sec:components/tier3_jit/benchmarks/aobench_spec.md#1. 目的と対象範囲",
+      "sec:components/tier3_jit/benchmarks/jit_runtime_bench_spec.md#1. 目的と対象範囲",
+      "sec:components/tier3_jit/benchmarks/jit_runtime_bench_spec.md#2. ベンチマーク測定項目一覧",
       "sec:components/tier3_jit/concepts/README.md#Tier 3 JIT — コンセプトコード & 検証スクリプト",
       "sec:components/tier3_jit/jit_compiler.md#1. コンセプト",
       "sec:components/tier3_jit/jit_compiler.md#2. アーキテクチャ分類",
@@ -1180,6 +1188,8 @@
       "sec:components/tier1_core/system_config.md#3.3.1 メモリ管理",
       "sec:components/tier1_core/system_config.md#3.3.4 vSoC / vMMIO",
       "sec:components/tier2_runtime/runtime_vsoc.md#7.2 メモリ制約と方策",
+      "sec:components/tier3_jit/benchmarks/jit_cache_metabolism_bench_spec.md#1. 目的と対象範囲",
+      "sec:components/tier3_jit/benchmarks/jit_cache_metabolism_bench_spec.md#2. コーナーケース・測定項目一覧",
       "sec:components/tier3_jit/jit_compiler.md#5.1 直交表: 検索・昇格・代謝",
       "sec:components/tier3_jit/jit_compiler.md#5.2 内部コンポーネントのデコンポジション",
       "sec:components/tier3_jit/jit_compiler.md#JIT トレース検索 & 3面キャッシュ代謝オーケストレーション",
@@ -1193,6 +1203,8 @@
     "JIT_OldestOnly_Promote": [
       "sec:architecture/architecture_overview.md#3.3 Pillar 3: 3面世代交代回転コードキャッシュ (3-Bank Generational Rotating Code Cache)",
       "sec:components/tier1_core/system_config.md#3.3.4 vSoC / vMMIO",
+      "sec:components/tier3_jit/benchmarks/jit_cache_metabolism_bench_spec.md#1. 目的と対象範囲",
+      "sec:components/tier3_jit/benchmarks/jit_cache_metabolism_bench_spec.md#2. コーナーケース・測定項目一覧",
       "sec:components/tier3_jit/jit_compiler.md#5.1 直交表: 検索・昇格・代謝",
       "sec:components/tier3_jit/jit_compiler.md#JIT トレース検索 & 3面キャッシュ代謝オーケストレーション",
       "sec:components/tier3_jit/jit_runtime.md#1. コンセプト",
@@ -1251,6 +1263,8 @@
       "sec:components/tier2_runtime/runtime_vsoc.md#Safepoint の動作メカニズム"
     ],
     "JIT_ZeroCompileCostTheorem": [
+      "sec:components/tier3_jit/benchmarks/jit_runtime_bench_spec.md#1. 目的と対象範囲",
+      "sec:components/tier3_jit/benchmarks/jit_runtime_bench_spec.md#2. ベンチマーク測定項目一覧",
       "sec:components/tier3_jit/jit_compiler.md#1. コンセプト",
       "sec:specs/jit_stencil_catalog.md#1. 概要と基本思想"
     ],
@@ -1277,6 +1291,11 @@
       "sec:components/tier2_runtime/runtime_vsoc.md#1. コンセプト",
       "sec:components/tier2_runtime/runtime_vsoc.md#7.1 性能制約と方策",
       "sec:components/tier2_runtime/runtime_vsoc.md#Active/Warm/Oldest 3面マルチバッファとキャッシュローテーション",
+      "sec:components/tier3_jit/benchmarks/aobench_spec.md#1. 目的と対象範囲",
+      "sec:components/tier3_jit/benchmarks/aobench_spec.md#2. ベンチマーク測定項目一覧",
+      "sec:components/tier3_jit/benchmarks/jit_cache_metabolism_bench_spec.md#1. 目的と対象範囲",
+      "sec:components/tier3_jit/benchmarks/jit_runtime_bench_spec.md#1. 目的と対象範囲",
+      "sec:components/tier3_jit/benchmarks/jit_runtime_bench_spec.md#2. ベンチマーク測定項目一覧",
       "sec:components/tier3_jit/jit_compiler.md#1. コンセプト",
       "sec:components/tier3_jit/jit_compiler.md#8. 設計判断 (ADR)",
       "sec:components/tier3_jit/jit_compiler.md#コンパイル単位とインタープリタ協調方針",
@@ -1354,6 +1373,8 @@
       "sec:components/tier2_runtime/runtime_loader.md#6.1 性能制約と方策",
       "sec:components/tier2_runtime/runtime_loader.md#`lookup-by-file-offset`",
       "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#ゼロコピー索引化 (§4.1)",
+      "sec:components/tier3_jit/benchmarks/jit_cache_metabolism_bench_spec.md#1. 目的と対象範囲",
+      "sec:components/tier3_jit/benchmarks/jit_runtime_bench_spec.md#1. 目的と対象範囲",
       "sec:components/tier3_jit/jit_runtime.md#1. コンセプト",
       "sec:plans/backlog_list.md#Phase 1.1: WASM 32-bit Binary Loader (`runtime_loader`)",
       "sec:plans/roadmap_phase.md#Phase 1: vSoC First（C++23 実装 / 約3ヶ月）"
@@ -1376,6 +1397,8 @@
       "sec:components/tier2_runtime/runtime_loader.md#`lookup-by-file-offset`",
       "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#ゼロコピー索引化 (§4.1)",
       "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#ファイル内データ位置 & シンボルハッシュ RadixBinaryTreeView 索引 (§1, §3.1, §4.1, §5.1, {META_BinarySearch})",
+      "sec:components/tier3_jit/benchmarks/jit_runtime_bench_spec.md#1. 目的と対象範囲",
+      "sec:components/tier3_jit/benchmarks/jit_runtime_bench_spec.md#2. ベンチマーク測定項目一覧",
       "sec:components/tier3_jit/jit_compiler.md#検索範囲取得（get_search_range）",
       "sec:components/tier3_jit/jit_runtime.md#1. コンセプト"
     ],
@@ -1457,6 +1480,8 @@
       "sec:components/tier1_interface/ipc_router.md#4.4 内部シーケンス図",
       "sec:components/tier1_interface/ipc_router.md#IPCメッセージ（message）",
       "sec:components/tier1_interface/ipc_router.md#レジストリエントリ（registry_entry）",
+      "sec:components/tier2_runtime/benchmarks/vmmio_bench_spec.md#1. 目的と対象範囲",
+      "sec:components/tier2_runtime/benchmarks/vmmio_bench_spec.md#2. ベンチマーク測定項目一覧",
       "sec:components/tier2_runtime/runtime_vmmio.md#1. コンセプト",
       "sec:components/tier2_runtime/runtime_vmmio.md#3.1 データ構造",
       "sec:components/tier2_runtime/runtime_vmmio.md#6.2 メモリ制約と方策",
@@ -1501,6 +1526,10 @@
       "sec:components/tier1_core/system_syscall.md#5.3. vMMIO Generic (`0x10`-`0x1F`)",
       "sec:components/tier1_core/system_syscall.md#5.5. IRQ (`0x30`-`0x3F`)",
       "sec:components/tier1_core/tests/system_syscall_test_spec.md#vMMIO Generic (`0x10`-`0x1F`)",
+      "sec:components/tier2_runtime/benchmarks/linear_memory_bench_spec.md#1. 目的と対象範囲",
+      "sec:components/tier2_runtime/benchmarks/linear_memory_bench_spec.md#2. ベンチマーク測定項目一覧",
+      "sec:components/tier2_runtime/benchmarks/vmmio_bench_spec.md#1. 目的と対象範囲",
+      "sec:components/tier2_runtime/benchmarks/vmmio_bench_spec.md#2. ベンチマーク測定項目一覧",
       "sec:components/tier2_runtime/runtime_vmmio.md#1. コンセプト",
       "sec:components/tier2_runtime/runtime_vmmio.md#6.3 安全性制約と方策",
       "sec:components/tier2_runtime/runtime_vsoc.md#7.3 安全性制約と方策"
@@ -1570,6 +1599,8 @@
     ],
     "MemoryBoundaryCheck": [
       "sec:architecture/architecture_overview.md#3.1 Pillar 1: 統合スタックフレーム・モデル (Unified Stack Frame Model)",
+      "sec:components/tier2_runtime/benchmarks/linear_memory_bench_spec.md#1. 目的と対象範囲",
+      "sec:components/tier2_runtime/benchmarks/linear_memory_bench_spec.md#2. ベンチマーク測定項目一覧",
       "sec:components/tier2_runtime/debug_manager.md#6.3 安全性制約と方策",
       "sec:components/tier2_runtime/runtime_interpreter.md#6.3 安全性制約と方策",
       "sec:components/tier2_runtime/runtime_interpreter.md#コールフレーム（call_frame @ 統合スタックインライン）",
@@ -1656,6 +1687,7 @@
       "sec:architecture/combinatorial_test_spec.md#システム全体 ペアワイズ組み合わせテスト仕様書 (Combinatorial Test Specification)"
     ],
     "PhysicalPassthrough": [
+      "sec:components/tier2_runtime/benchmarks/vmmio_bench_spec.md#1. 目的と対象範囲",
       "sec:components/tier2_runtime/runtime_vmmio.md#1. コンセプト",
       "sec:components/tier3_platform/platform_hal.md#5.2 Tier 3 リソースインターフェイス",
       "sec:components/tier3_platform/platform_hal.md#ゼロコピー転送 (bus_master/streaming)",
@@ -1747,6 +1779,7 @@
       "sec:components/tier2_runtime/runtime_interpreter.md#4.1 アルゴリズム",
       "sec:components/tier2_runtime/runtime_interpreter.md#4.2 状態遷移図",
       "sec:components/tier2_runtime/runtime_interpreter.md#4.3 内部シーケンス",
+      "sec:components/tier3_jit/benchmarks/jit_cache_metabolism_bench_spec.md#1. 目的と対象範囲",
       "sec:components/tier3_jit/jit_compiler.md#1. コンセプト",
       "sec:components/tier3_jit/jit_compiler.md#5.2 内部コンポーネントのデコンポジション",
       "sec:components/tier3_jit/jit_compiler.md#7.2 安全性制約と方策",
@@ -1796,6 +1829,9 @@
       "sec:components/tier2_runtime/runtime_vsoc.md#4.3 内部シーケンス",
       "sec:components/tier2_runtime/runtime_vsoc.md#7.1 性能制約と方策",
       "sec:components/tier2_runtime/tests/runtime_interpreter_test_spec.md#1. 目的と対象範囲",
+      "sec:components/tier3_jit/benchmarks/aobench_spec.md#1. 目的と対象範囲",
+      "sec:components/tier3_jit/benchmarks/aobench_spec.md#2. ベンチマーク測定項目一覧",
+      "sec:components/tier3_jit/benchmarks/jit_runtime_bench_spec.md#1. 目的と対象範囲",
       "sec:plans/backlog_list.md#Phase 1.2: WASM Stackless Fast Interpreter (`runtime_interpreter`)",
       "sec:plans/roadmap_phase.md#Phase 1: vSoC First（C++23 実装 / 約3ヶ月）",
       "sec:specs/jit_stencil_catalog.md#3.2 制御フロー系ステンシル (Control Flow)",
@@ -1849,6 +1885,7 @@
     ],
     "UnifiedAccessModel": [
       "sec:components/tier1_core/system_syscall.md#2. 背景",
+      "sec:components/tier2_runtime/benchmarks/vmmio_bench_spec.md#1. 目的と対象範囲",
       "sec:components/tier2_runtime/runtime_vmmio.md#1. コンセプト",
       "sec:plans/backlog_list.md#Phase 2: Integration（周辺サブシステム統合 / 次期予定）"
     ],
@@ -1895,6 +1932,8 @@
     ],
     "Wasm32Only": [
       "sec:components/tier2_runtime/runtime_loader.md#6.3 安全性制約と方策",
+      "sec:components/tier3_jit/benchmarks/aobench_spec.md#1. 目的と対象範囲",
+      "sec:components/tier3_jit/benchmarks/aobench_spec.md#2. ベンチマーク測定項目一覧",
       "sec:specs/tests/wasm_instruction_set_test_spec.md#非サポート機能の拒否 (§2)",
       "sec:specs/wasi_preview1_abi.md#2. WASI 型定義と物理レイアウト (WASI Type Vocabulary)",
       "sec:specs/wasm_instruction_set.md#1. 概要と適用方針",
@@ -1926,6 +1965,7 @@
       "sec:components/tier2_runtime/tests/runtime_vmmio_test_spec.md#4. 未検証・スコープ外"
     ],
     "vMMIO_TrapAndEmulate": [
+      "sec:components/tier2_runtime/benchmarks/vmmio_bench_spec.md#1. 目的と対象範囲",
       "sec:components/tier2_runtime/runtime_vmmio.md#1. コンセプト",
       "sec:components/tier2_runtime/runtime_vmmio.md#フック登録 (`register-hook`)",
       "sec:components/tier2_runtime/runtime_vsoc.md#5.4 URI/IPCインターフェイス",
@@ -2301,6 +2341,14 @@
     "sec:components/tier1_interface/tests/system_service_test_spec.md#3. テスト検証実績と網羅状況": "4aa107b40564b94e2ba33b0048fa6114b9d200db45ace4adfac27292aa7882f5",
     "sec:components/tier1_interface/tests/system_service_test_spec.md#4. 未検証・スコープ外": "6ea3ddded2083b6a70eb34e6ea7d38c18035b50c91d11293bf5d4de180b2e491",
     "sec:components/tier1_interface/tests/system_service_test_spec.md#サービス テスト仕様書 (Test Specification)": "00f34b809819c2a06556cc048b226a634efbdc2b6ac21cf5d2e89dd4a6e0bacf",
+    "sec:components/tier2_runtime/benchmarks/linear_memory_bench_spec.md#1. 目的と対象範囲": "2f1ffe5001ba540febba0eced40915158ac6adb782cf2ef6370af7d344acd5e6",
+    "sec:components/tier2_runtime/benchmarks/linear_memory_bench_spec.md#2. ベンチマーク測定項目一覧": "92df983237829942ef14017d9b60a90dcb1d38cac87af06a62506717f96c5b19",
+    "sec:components/tier2_runtime/benchmarks/linear_memory_bench_spec.md#3. 測定手順と計算式": "a99e47f9fb68ffd28fd76dd6e2459111c7ce72c5b246b6d2315d507e26f45fa2",
+    "sec:components/tier2_runtime/benchmarks/linear_memory_bench_spec.md#リニアメモリ ベンチマーク仕様書 (Linear Memory Benchmark Specification)": "00af5655be3f72acd0db0525e2427973cfccc49b1a1c543807c7a1a1ba7f8c30",
+    "sec:components/tier2_runtime/benchmarks/vmmio_bench_spec.md#1. 目的と対象範囲": "0a52331d3b056907276433a45e2f4c6346b99000d874ece572c48878782c20be",
+    "sec:components/tier2_runtime/benchmarks/vmmio_bench_spec.md#2. ベンチマーク測定項目一覧": "a68d4253e7564537942cb9ad7bffdaa6e359e566bc5e00d07c478fa946f2cd06",
+    "sec:components/tier2_runtime/benchmarks/vmmio_bench_spec.md#3. 測定手順": "5d9a4b4b55b2d2fa1d573c1eee9ba918d62a09ef95d75bfaa3947227fc989e39",
+    "sec:components/tier2_runtime/benchmarks/vmmio_bench_spec.md#vMMIO アドレス変換 ベンチマーク仕様書 (vMMIO Benchmark Specification)": "4d386db377e14ba86c23e046f8ab87e3372971cd09709b941e452f0c37f2066a",
     "sec:components/tier2_runtime/debug_manager.md#1. コンセプト": "29c2e1932dc2a81700cd9fe2bbe3d559539a31cfbfe46a70346a6d9fdb8df99f",
     "sec:components/tier2_runtime/debug_manager.md#2. アーキテクチャ分類": "64c3996bd8899a2e73347ee6ed3adc83b4afca96fd6991fb20f920503a4df0ce",
     "sec:components/tier2_runtime/debug_manager.md#3. 静的モデル": "459903c009123dfac68cdcb823db2cc6942f63d0c494c2127f2dbd07be7268f6",
@@ -2521,6 +2569,18 @@
     "sec:components/tier2_runtime/tests/runtime_vsoc_test_spec.md#vSoC Engineライフサイクル (§4.2)": "fa5f471292785cad0bfcdb6d52a7c8c9c3acf804f15a42378816349e9be73795",
     "sec:components/tier2_runtime/tests/runtime_vsoc_test_spec.md#ハーネス統合 (§3, §5.1)": "9de3b1d8449d011474c0bd8080a71900074d326f04b2dbe6e0f7609627163417",
     "sec:components/tier2_runtime/tests/runtime_vsoc_test_spec.md#マルチモジュール動的リンク (§5.3, §4.3)": "ad503c2b47c606c45e1b4cf1d5a6c6323a1504afb041018b1382d7060429b5d3",
+    "sec:components/tier3_jit/benchmarks/aobench_spec.md#1. 目的と対象範囲": "c53bdfaa510317749c33589cf8fe2f1b4e31a36ade174a5221632090652dcf10",
+    "sec:components/tier3_jit/benchmarks/aobench_spec.md#2. ベンチマーク測定項目一覧": "2a7f09817f1898a5311054846a84965e8ace6ea14e7720fe9e71e1e30cbcc792",
+    "sec:components/tier3_jit/benchmarks/aobench_spec.md#3. 測定手順": "936aaa99d2b2c76d170060fcc1f89df397e954a8416d6221d933c9dae0c50f85",
+    "sec:components/tier3_jit/benchmarks/aobench_spec.md#3D レイトレーシング (AO-Bench) ベンチマーク仕様書 (AO-Bench Specification)": "3086e5487dc29f9c489544554976bc4b77b9781feb3740e98139494c2b54f120",
+    "sec:components/tier3_jit/benchmarks/jit_cache_metabolism_bench_spec.md#1. 目的と対象範囲": "570c6b687a86981f59940dd804462c581cca00549f94069efb3ed6a4d1d41ed9",
+    "sec:components/tier3_jit/benchmarks/jit_cache_metabolism_bench_spec.md#2. コーナーケース・測定項目一覧": "297d33f25ae716c806edace492b7e9b8f857ce498ea4e9bcd7b3d9b1388f8819",
+    "sec:components/tier3_jit/benchmarks/jit_cache_metabolism_bench_spec.md#3. 測定手順と判定基準": "4a8307c2409f8fb3c4ffb0832b133b73697748995333c9778a64b46a3555aa6c",
+    "sec:components/tier3_jit/benchmarks/jit_cache_metabolism_bench_spec.md#JIT キャッシュ代謝 & コーナーケース ベンチマーク仕様書 (JIT Cache Metabolism Benchmark Specification)": "7470f9c69dbba0f4f27dea61f42ad47762cd5603eeb47f260ba06767ca4c7ca0",
+    "sec:components/tier3_jit/benchmarks/jit_runtime_bench_spec.md#1. 目的と対象範囲": "bcad15b95bcd89edbeed196bf8a4feb40bdff7d511b7617f41cd6f3ecdf3e9ef",
+    "sec:components/tier3_jit/benchmarks/jit_runtime_bench_spec.md#2. ベンチマーク測定項目一覧": "524568f7fff0a46bf9cdabc63ee9bc099e772f1944b624ad24a79dd88dd10967",
+    "sec:components/tier3_jit/benchmarks/jit_runtime_bench_spec.md#3. 測定手順": "9c1ddad3040fdf0bde306d8767be974b5520cb5b549c16b617d1820487acad24",
+    "sec:components/tier3_jit/benchmarks/jit_runtime_bench_spec.md#JIT コンパイラ & ランタイム ベンチマーク仕様書 (JIT Runtime Benchmark Specification)": "3f611172bc968c03c85abe82a74d05f552c3fe8667d22a4b7f7d0f8b00948790",
     "sec:components/tier3_jit/concepts/README.md#Tier 3 JIT — コンセプトコード & 検証スクリプト": "195091587a0a16243634a31d2b9bc424ac76a73c9f163764df463d118a1ba75f",
     "sec:components/tier3_jit/jit_compiler.md#1. コンセプト": "474e06874a0a48f240cff03a712a5053e509a85c88680dafc7f1c115a06ccc9f",
     "sec:components/tier3_jit/jit_compiler.md#2. アーキテクチャ分類": "333c3464a76e275c054df07af994b27a500617bc82b1cab2d9cd565d3e9cf728",

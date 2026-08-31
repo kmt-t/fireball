@@ -39,7 +39,11 @@ for _p in [
 
 import time
 
-import wasmtime
+try:
+    import wasmtime
+except ImportError:
+    wasmtime = None
+
 from interpreter import Interpreter
 from system import System
 from wasi import WasiHostContext
@@ -386,14 +390,21 @@ def run_aobench():
     WIDTH = 32
     HEIGHT = 16
     AO_SAMPLES = 4
-    # 1. Compile 3D AO-Bench WAT to standard WASM binary using external toolchain
-    print("\n[*] Step 1: Compiling Q8.8 3D AO-Bench WAT via `wasmtime.wat2wasm`...")
-    wasm_bytes = bytes(wasmtime.wat2wasm(GENUINE_AO_WAT))
-    wasm_path = "experiments/pysim/aobench.wasm"
-    with open(wasm_path, "wb") as f:
-        f.write(wasm_bytes)
-
-    print(f"    -> Generated external WASM binary ({len(wasm_bytes)} bytes) -> {wasm_path}")
+    # 1. Compile 3D AO-Bench WAT to standard WASM binary using external toolchain if available
+    wasm_path = Path(_PYSIM_DIR) / "aobench.wasm"
+    if wasmtime is not None:
+        print("\n[*] Step 1: Compiling Q8.8 3D AO-Bench WAT via `wasmtime.wat2wasm`...")
+        wasm_bytes = bytes(wasmtime.wat2wasm(GENUINE_AO_WAT))
+        with open(wasm_path, "wb") as f:
+            f.write(wasm_bytes)
+        print(f"    -> Generated external WASM binary ({len(wasm_bytes)} bytes) -> {wasm_path}")
+    else:
+        print(
+            f"\n[*] Step 1: Loading pre-compiled Q8.8 3D AO-Bench WASM binary from {wasm_path}..."
+        )
+        with open(wasm_path, "rb") as f:
+            wasm_bytes = f.read()
+        print(f"    -> Loaded pre-compiled binary ({len(wasm_bytes)} bytes)")
     # 2. Parse using Fireball's pure Python parser
     print("\n[*] Step 2: Parsing binary with Fireball wasm_reader...")
     module = parse(wasm_bytes)
@@ -498,14 +509,15 @@ def run_aobench():
 
 
 if __name__ == "__main__":
-    # Verify Float32 Ambient Occlusion Raytracer
-    print("[*] Running Float32 Ambient Occlusion Benchmark...")
-    wasm_float_bytes = wasmtime.wat2wasm(GENUINE_AO_FLOAT_WAT)
-    module_float = parse(wasm_float_bytes)
-    interp_float = Interpreter(module_float)
-    hits = interp_float.call(module_float.export_func_index("run_ao_float"), [32, 32])
-    print(
-        f"    [PASS] Float32 Raytracer executed successfully: {hits[0]} primary sphere hits on 32x32 grid."
-    )
+    # Verify Float32 Ambient Occlusion Raytracer if wasmtime is available
+    if wasmtime is not None:
+        print("[*] Running Float32 Ambient Occlusion Benchmark...")
+        wasm_float_bytes = wasmtime.wat2wasm(GENUINE_AO_FLOAT_WAT)
+        module_float = parse(wasm_float_bytes)
+        interp_float = Interpreter(module_float)
+        hits = interp_float.call(module_float.export_func_index("run_ao_float"), [32, 32])
+        print(
+            f"    [PASS] Float32 Raytracer executed successfully: {hits[0]} primary sphere hits on 32x32 grid."
+        )
 
     run_aobench()

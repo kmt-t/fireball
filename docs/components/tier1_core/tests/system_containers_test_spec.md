@@ -11,7 +11,7 @@
 
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| CONT-01 | `flat_map_view.find`はO(log n)二分探索 | ソート済みキー列 | `find(key)` | 存在すれば値、なければ空を返す。区間長nに対し比較回数がO(log n) | §5.1 find |
+| CONT-01 | `flat_map_view.find`はO(log n)二分探索 (SoA構造) | ソート済みキー列と値列のSoA | `find(key)` | キー列上のみを二分探索し、存在すれば添字対応する値を返し、なければ空を返す。区間長nに対し比較回数がO(log n) | §5.1 find, §3.1 SoA |
 | CONT-02 | `narrow`の単調縮小性 | 任意のビュー | `narrow(lo, hi)`を連続適用 | 各段の区間が前段の部分集合になる（決して広がらない） | §5.1 narrow 不変条件 |
 | CONT-03 | `slice`の単調縮小性・境界クランプ | 任意のビュー | 区間外のfirst/lastを指定 | デバッグ時はassert、リリース相当では現在区間へクランプ | §5.1 slice |
 | CONT-04 | `flat_set_view.contains`は値を返さない | 集合ビュー | `contains(key)` | bool のみを返し、値列を保持しない | §5.1 contains |

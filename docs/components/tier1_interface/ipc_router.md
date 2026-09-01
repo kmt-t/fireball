@@ -82,11 +82,11 @@ IPC通信の最小単位。1つのメッセージで8個のペアを送信でき
 
 #### IPCメッセージ（message）
 <!-- traceability: {TypeSafeMessaging} {META_FlatMapIndexed} -->
-Key-Valueペアを複数集約した通信の基本単位。内部的に、動的メモリ確保を一切伴わない静的バッファ上のソート済み配列と `fireball::flat_map_view` による二分探索を採用し、メッセージ内のキー検索を $O(\log N)$ で行う。 `{TypeSafeMessaging}` `{META_FlatMapIndexed}`
+Key-Valueペアを複数集約した通信の基本単位。内部的に、動的メモリ確保を一切伴わない静的バッファ上のSoA（キー配列 `keys` と値配列 `values` の分離ソート配列）と `fireball::flat_map_view` による二分探索を採用し、メッセージ内のキー検索を $O(\log N)$ で行う。 `{TypeSafeMessaging}` `{META_FlatMapIndexed}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| KVマップ | メッセージ内容を構成するKey-Valueペアの集合 | ソート済み固定長配列 + `fireball::flat_map_view` | 8個固定（静的バッファ） |
+| KVマップ (SoA) | メッセージ内容を構成するSoAキー列・値列 | ソート済み固定長SoA配列 + `fireball::flat_map_view` | 8個固定（静的バッファ） |
 
 #### レジストリエントリ（registry_entry）
 <!-- traceability: {DictionaryBasedIPC} {TypeSafeMessaging} {META_FlatMapIndexed} -->

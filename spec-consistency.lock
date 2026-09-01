@@ -2765,7 +2765,7 @@
     "sec:specs/gdb_rsp_protocol.md#1. 概要と基本思想": "0de0268e3aeb6bfdce6ed1e696b203dd8023f195dfd3a03218d520bee4f828df",
     "sec:specs/gdb_rsp_protocol.md#2. パケット構造とチェックサム規約": "6e240d0e79be99db3ba8811cbae2bc1f54d302797d603c23201e761d5af82509",
     "sec:specs/gdb_rsp_protocol.md#3. サポートコマンド・マトリクス (GDB RSP Commands)": "b9ff5722e4ce7522b765634f0de991c5da14bbe1b1c68270cd30d328c48edd49",
-    "sec:specs/gdb_rsp_protocol.md#4. WASM 仮想レジスタ番号マッピング (GDB Target XML Map)": "515eef3e112ea7f5d18b087758cc73ce1ef4666a42aca5eaa84d9f62c89bad7a",
+    "sec:specs/gdb_rsp_protocol.md#4. WASM 仮想レジスタ番号マッピング (GDB Target XML Map)": "722209effcb6b7c444ae3aebee7c999069d291d205f0b0275081a91e3bcc8a00",
     "sec:specs/gdb_rsp_protocol.md#5. 非サポートコマンド (Explicit Non-Goals)": "5839f6be36201e062c596eac7bd85da72f3e86eaa735f44cbde2b0b7794abe30",
     "sec:specs/gdb_rsp_protocol.md#GDB Remote Serial Protocol 物理仕様書 (Supported GDB RSP Protocol) {VERIFY_LLM}": "94232cf939d59c165d632838326871c22da73d0f9b12f12bc1fb1e731a4619f9",
     "sec:specs/jit_stencil_catalog.md#1. 概要と基本思想": "6c9becb987905c80857af2f3c24c240e687b5fcbe1121aef13cf38bcc8384f24",

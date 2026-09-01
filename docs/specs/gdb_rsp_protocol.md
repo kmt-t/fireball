@@ -53,9 +53,9 @@ GDB クライアントが参照するレジスタ番号（Target Description XML
 | GDB レジスタ番号 | レジスタ名 | ビット幅 | 物理ソース（スタックボトム `execution_context` / 統合スタック） |
 | :--- | :--- | :--- | :--- |
 | **`0`** | `pc` | 32-bit | `R0 (ip)` (現在実行中の WASM バイトコードオフセット / PC) |
-| **`1`** | `sp` | 32-bit | `execution_context.sp_offset` (スタックボトムからのオペランド頂点オフセット) |
+| **`1`** | `sp` | 32-bit | `execution_context.sp_offset` (スタックボトムから見た、現在積まれているオペランドスタックの成長長——次の空きスロットへのオフセット。`runtime_interpreter.md` §3.1「スタックの成長した長さ」と同一の量) |
 | **`2`** | `fp` | 32-bit | `execution_context.frame_offset` (カレントコールフレームの開始オフセット) |
-| **`3`** | `tos` | 32-bit | オペランドスタック最上位の値（`[stack_bot + sp_offset - 4]`） |
+| **`3`** | `tos` | 32-bit | オペランドスタック最上位の値（`sp_offset` は次の空きスロットを指すため、最上位要素はその1つ手前: `[stack_bot + sp_offset - 4]`） |
 | **`4`** | `local0` | 32-bit | カレント関数のローカル変数 0 (`[stack_bot + frame.local_offset + 0]`) |
 | **`5`** | `local1` | 32-bit | カレント関数のローカル変数 1 (`[stack_bot + frame.local_offset + 4]`) |
 | **`6`** | `local2` | 32-bit | カレント関数のローカル変数 2 (`[stack_bot + frame.local_offset + 8]`) |

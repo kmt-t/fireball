@@ -22,7 +22,7 @@
 | CONT-09 | JITエントリ検索のカードマーキング事前フィルタ | カードがCOMPILEDでない | `lookup_jit_entry`相当 | 二分探索/Radix探索を行わずNoneを返す（O(1)事前フィルタ） | §4.1「JIT entry lookup」, flat_view_concept.py `lookup_jit_entry` |
 | CONT-10 | mapとsetの型分離 | - | 型定義を確認 | `flat_set_view`は値列フィールドを持たない（`flat_map_view`の特殊形として実装されていない） | §1「なぜ4つに分けるか」 |
 | CONT-11 | 配列データ所有権と非所有Viewの完全分離 | ストレージ配列構築 | `storage.view()` | ストレージ（Owner）が実体配列を所有し、Viewは所有権を持たず借用参照する（多重生成しても同一配列参照） | §1「所有コンテナは定義しない」, §3.3 |
-| CONT-12 | `FlatMapStorage`の連動ソート（constexpr対応） | 未ソートのキー列・値列 | `storage.sort()` または `sort=True` | キーの昇順でキーと値が連動ソートされ、`is_sorted()`がTrueになり、`view().find()`で全要素が正しく探索可能 | §3.3 `flat_map_storage::sort` |
+| CONT-12 | `FlatMapStorage`の連動ヒープソート（O(N log N)、constexpr対応） | 未ソートのキー列・値列 | `storage.sort()` または `sort=True` | バブルソート等のO(N^2)を排し、最悪O(N log N)保証の連動ヒープソート（再帰なしスタックO(1)）でキーの昇順に連動ソートされ、`is_sorted()`がTrueになり`view().find()`で全要素探索可能 | §3.3, §4.1 `flat_map_storage::sort` |
 | CONT-13 | `FlatMapStorage`のソート維持挿入・削除 | 構築済みストレージ | `insert(k, v)` / `remove(k)` / `erase(k)` | 任意順序での挿入・削除後も常に昇順ソート状態が維持され、二分探索の不変条件が保たれる | §3.3 `flat_map_storage::insert/erase` |
 
 ## 3. テスト検証実績と網羅状況

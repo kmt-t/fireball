@@ -182,7 +182,7 @@ struct flat_map_storage {
   std::array<Value, Capacity> values{};
   std::size_t count{0};
 
-  // constexpr インプレース連動ソート（挿入ソートで keys と values を同時に並び替え）
+  // constexpr インプレース連動ヒープソート（O(N log N)、再帰なしスタックO(1)で keys と values を同時に並び替え）
   constexpr auto sort() noexcept -> flat_map_storage&;
   // ソート順序を維持したまま要素を挿入（既存キーなら値更新: false、新規キーなら挿入: true）
   constexpr auto insert(const Key& k, const Value& v) noexcept -> bool;
@@ -209,6 +209,7 @@ constexpr auto make_sorted_flat_map_storage(std::array<Key, N> keys,
 - **絞り込み後二分探索 (Narrow-then-Search)**: 粗い索引で対象区間を先に狭め、狭めた区間に対してのみ二分探索を行う。全体の件数を $N$、絞り込み後を $n$ とすると計算量は $O(\log n)$ となり、$n$ が $N$ より十分小さい限り全体探索より少ない比較回数で済む。加えて、走査するキーが連続した狭い範囲に収まるため参照局所性が改善する。map / set の双方に適用される。 `{FlatViewNarrowing}` `{META_BinarySearch}` `{LowLatencyLookup}`
 - **絞り込みの合成**: 絞り込み操作の戻り値は同じビュー型であるため、複数段の索引を順に適用できる。各段は区間を単調に狭めるのみで、区間外の要素を再び含めることはない。
 - **ビット詰めアクセス**: 論理添字 $i$ に対する物理位置は `bit = origin + i * Bits` として求まり、`byte = bit >> 3`、`shift = bit & 7` となる。`Bits` が 8 の約数であるため 1 要素がバイトを跨ぐことはなく、単一バイトのロードとシフト・マスクで読み出しが完結する。 `{PackedBitView}` `{GLOBAL_StrictMemoryLimit}`
+- **SoA 連動ヒープソート (In-place Co-heapsort)**: バブルソート等の $O(N^2)$ 初等ソートを避け、最悪・平均ともに $O(N \log N)$ が保証される連動ヒープソートを採用する。キー配列と値配列を常に同期して要素交換（swap）し、再帰を用いないボトムアップ型ヒープ構築と sift-down ループにより、追加ヒープメモリ $0$ かつスタック消費 $O(1)$ を達成する。これにより C++20/C++23 の `constexpr` 下でもスタックオーバーフローなく安全にコンパイル時ソートを実行できる。 `{META_ZeroCostAbstraction}` `{GLOBAL_StrictMemoryLimit}`
 
 実行可能な参照実装と検証テストは [`concepts/flat_view_concept.py`](concepts/flat_view_concept.py) を参照。ビット詰めの近傍非破壊性、非バイト境界での `slice`、絞り込みの単調縮小性、集合の所属判定、JIT 検索経路をテストで固定している。
 

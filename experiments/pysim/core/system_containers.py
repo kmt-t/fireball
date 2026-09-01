@@ -215,19 +215,41 @@ class FlatMapStorage(Generic[KeyT, ValT]):
 
     def sort(self) -> FlatMapStorage[KeyT, ValT]:
         """
-        Sorts keys and values in-place by key in ascending order (co-sort).
-        Matches the C++ constexpr in-place co-insertion sort algorithm.
+        Sorts keys and values in-place by key in ascending order (co-sort) in O(N log N) time.
+        Matches the C++ constexpr in-place co-heapsort algorithm (O(1) extra space, no recursion).
         """
-        for i in range(1, len(self._keys)):
-            k_cur = self._keys[i]
-            v_cur = self._values[i]
-            j = i
-            while j > 0 and self._keys[j - 1] > k_cur:
-                self._keys[j] = self._keys[j - 1]
-                self._values[j] = self._values[j - 1]
-                j -= 1
-            self._keys[j] = k_cur
-            self._values[j] = v_cur
+        n = len(self._keys)
+        if n <= 1:
+            return self
+
+        def _sift_down(start: int, end: int) -> None:
+            root = start
+            while True:
+                child = 2 * root + 1
+                if child > end:
+                    break
+                if child + 1 <= end and self._keys[child] < self._keys[child + 1]:
+                    child += 1
+                if self._keys[root] < self._keys[child]:
+                    self._keys[root], self._keys[child] = self._keys[child], self._keys[root]
+                    self._values[root], self._values[child] = (
+                        self._values[child],
+                        self._values[root],
+                    )
+                    root = child
+                else:
+                    break
+
+        # Build max-heap bottom-up: O(N)
+        for start in range((n - 2) // 2, -1, -1):
+            _sift_down(start, n - 1)
+
+        # Extract elements from heap: O(N log N)
+        for end in range(n - 1, 0, -1):
+            self._keys[0], self._keys[end] = self._keys[end], self._keys[0]
+            self._values[0], self._values[end] = self._values[end], self._values[0]
+            _sift_down(0, end - 1)
+
         return self
 
     def insert(self, key: KeyT, value: ValT) -> bool:

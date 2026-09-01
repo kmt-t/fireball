@@ -128,17 +128,34 @@ class FlatMapStorage:
         return all(self.keys[i] <= self.keys[i + 1] for i in range(len(self.keys) - 1))
 
     def sort(self) -> FlatMapStorage:
-        """In-place co-insertion sort matching C++ constexpr algorithm."""
-        for i in range(1, len(self.keys)):
-            k = self.keys[i]
-            v = self.values[i]
-            j = i
-            while j > 0 and self.keys[j - 1] > k:
-                self.keys[j] = self.keys[j - 1]
-                self.values[j] = self.values[j - 1]
-                j -= 1
-            self.keys[j] = k
-            self.values[j] = v
+        """In-place co-heapsort matching C++ constexpr algorithm (O(N log N) time, O(1) space)."""
+        n = len(self.keys)
+        if n <= 1:
+            return self
+
+        def _sift_down(start: int, end: int) -> None:
+            root = start
+            while True:
+                child = 2 * root + 1
+                if child > end:
+                    break
+                if child + 1 <= end and self.keys[child] < self.keys[child + 1]:
+                    child += 1
+                if self.keys[root] < self.keys[child]:
+                    self.keys[root], self.keys[child] = self.keys[child], self.keys[root]
+                    self.values[root], self.values[child] = self.values[child], self.values[root]
+                    root = child
+                else:
+                    break
+
+        for start in range((n - 2) // 2, -1, -1):
+            _sift_down(start, n - 1)
+
+        for end in range(n - 1, 0, -1):
+            self.keys[0], self.keys[end] = self.keys[end], self.keys[0]
+            self.values[0], self.values[end] = self.values[end], self.values[0]
+            _sift_down(0, end - 1)
+
         return self
 
     def insert(self, key: Any, value: Any) -> bool:

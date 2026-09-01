@@ -31,7 +31,6 @@ You need Clang, CMake, Ninja, and Python with `uv` to build and verify the proje
 - Ninja
 - Python 3.11+ / 3.14+ (`uv` recommended)
 - `pyModelChecking` (Formal model verification via CTL/LTL)
-- `wit-bindgen` (WIT interface validation)
 
 ### 2. Verification & Quality Gates
 Fireball enforces an automated verification pipeline (`spec-integrator`) ensuring static formatting, keyword traceability, tier hierarchy encapsulation, pyModelChecking formal verification (13 models), WIT interface types, evidence backing, verification obligations, and consistency baselines:

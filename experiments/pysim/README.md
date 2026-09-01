@@ -139,9 +139,9 @@ experiments/pysim/
   * Output Verified:          528 bytes (Exact match: 33 B x 16 rows, 0 NULs)
   * Differential Check:       PASS (Tier 2 & Tier 3 match byte-for-byte)
 --------------------------------------------------------------------------------
-  * Tier 2 (Threaded CPS):    3886.07 ms / frame  (412 Rays / Sec)
-  * Tier 3 (Hybrid + JIT):    6225.99 ms / frame  (257 Rays / Sec)
-  * Measured Speedup Ratio:   0.62x (Python Simulation FFI Overhead)
+  * Tier 2 (Threaded CPS):    4211.73 ms / frame  (380 Rays / Sec)
+  * Tier 3 (Hybrid + JIT):    6126.91 ms / frame  (261 Rays / Sec)
+  * Measured Speedup Ratio:   0.69x (Python Simulation FFI Overhead)
   * JIT Traces Compiled:      8 traces in Active cache bank
 ================================================================================
 ```
@@ -154,7 +154,7 @@ experiments/pysim/
    - Tier 2 インタープリタと Tier 3 JIT のレンダリング出力（528 バイト）が **1 バイトの狂いもなく完全一致**。
    - IEEE 754 単精度浮動小数点（Float32）版でも 32x32 グリッド（1,024 rays）の球体交差判定が正常に完走。
 
-### 4.3 シミュレータ性能特性 (Speedup 0.62x) の技術的分析
+### 4.3 シミュレータ性能特性 (Speedup 0.69x) の技術的分析
 
 Python シミュレータ上において JIT 側が見かけ上遅くなっている理由は、**Python 特有のシミュレーション・オーバーヘッド**に起因するものです：
 

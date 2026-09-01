@@ -210,7 +210,7 @@
 | `i32.rem_s` (`0x6F`) | `STENCIL_I32_REM_S_D2` | R4=TOS, R5=NOS | R4=TOS | `cbz r4, <trap>; sdiv r12, r5, r4; mls r4, r12, r4, r5` (ARM MLS: $Rd(r4) = Ra(r5) - Rn(r12) \times Rm(r4)$) | `00 B1 95 FB F4 FC 0C FB 14 54` |
 | `i32.rem_u` (`0x70`) | `STENCIL_I32_REM_U_D2` | R4=TOS, R5=NOS | R4=TOS | `cbz r4, <trap>; udiv r12, r5, r4; mls r4, r12, r4, r5` (ARM MLS: $Rd(r4) = Ra(r5) - Rn(r12) \times Rm(r4)$) | `00 B1 B5 FB F4 FC 0C FB 14 54` |
 
-※ ARMv8-M Architecture Reference Manual 規定：`MLS Rd, Rn, Rm, Ra` 命令の動作は $Rd = Ra - (Rn \times Rm)$ である。したがって `mls r4, r12, r4, r5` は $Rd(r4) = Ra(r5) - Rn(r12) \times Rm(r4)$（$被除数 - 商 \times 除数 = 剰余$）を正しく算出する。
+※ ARMv8-M Architecture Reference Manual 規定：`MLS Rd, Rn, Rm, Ra` 命令の動作は $Rd = Ra - (Rn \times Rm)$ である。したがって `mls r4, r12, r4, r5` は $Rd(r4) = Ra(r5) - Rn(r12) \times Rm(r4)$（$被除数 - 商 \times 除数 = 剰余$）を正しく算出する（検証仕様: [JIT コンパイラ テスト仕様書](../components/tier3_jit/tests/jit_compiler_test_spec.md) `JITC-GOTCHA-06` を参照）。
 ※ 16-bit Thumb-2 命令（`adds r4, r5, r4` 等）はリトルエンディアンバイト列（`2C 19` 等）として格納される。実機エミュレータ検証（[`thumb2_stencil_semantic_verifier.py`](../components/tier3_jit/concepts/thumb2_stencil_semantic_verifier.py)）にて全ステンシルの動作整合性を検証済みである。
 | `i32.and` (`0x71`) | `STENCIL_I32_AND_D2` | R4=TOS, R5=NOS | R4=TOS | `ands r4, r5, r4` | `2C 40` |
 | `i32.or` (`0x72`) | `STENCIL_I32_OR_D2` | R4=TOS, R5=NOS | R4=TOS | `orrs r4, r5, r4` | `2C 43` |
@@ -249,7 +249,7 @@
 
 すべてのロード/ストア命令は、`R9 = mem_size`（`execution_context.mem-size` [R1, #0x14] からロード。`{FastAddressCheck}` が要求するのはサイズ比較の単一命令であり、マスクではない — `requirement_list.md` 参照）に対する `CMP` + `BHS.W` の境界チェックを経て、`R8 = mem_base` ピン留めバリアントによりアクセスされる（`R2`/`R3` ではない——`R2` は `local_base`、`R3` は `tos`）。`CMP addr, r9` の直後の `BHS.W <trap>` は、アドレスが `mem_size` 以上（符号なし）ならトレースのトラップテール（インタープリタへのフォールバック）へ即座に分岐する——実際のロード/ストアはこの分岐が不成立の場合にのみ実行される。境界チェックはロード/ストアの副作用（メモリアクセスそのもの）より必ず先に評価されるため、トラップ経路には巻き戻すべき副作用が存在しない。`mem_size` に2の冪の制約はなく、部分ページ（例: 8KB, 12KB, 16KB）・単一 64KB ページ・複数 64KB ページ（`N * 64KB`）のいずれも同一の比較一つで判定できる。
 
-`BHS.W` の分岐先オフセットはコンパイル時には未確定（トレースのトラップテールは、通常の出口エピローグの後にレイアウトされるため、エピローグ全体が生成し終わるまでアドレスが決まらない）。JIT エンジン（`jit_copy_patch_concept.py` の `compile_trace()`）はプレースホルダのオフセット `0` で `BHS.W` を発行しつつ、その命令のバイト位置を記録しておき、トレース末尾にトラップテール（ダーティスピルのフラッシュ + `fallback_interp`）を生成し終えた後、記録しておいた全ての `BHS.W` を実アドレスへバックパッチする（2パス発行 + バックパッチ）。
+`BHS.W` の分岐先オフセットはコンパイル時には未確定（トレースのトラップテールは、通常の出口エピローグの後にレイアウトされるため、エピローグ全体が生成し終わるまでアドレスが決まらない）。JIT エンジン（`jit_copy_patch_concept.py` の `compile_trace()`）はプレースホルダのオフセット `0` で `BHS.W` を発行しつつ、その命令のバイト位置を記録しておき、トレース末尾にトラップテール（ダーティスピルのフラッシュ + `fallback_interp`）を生成し終えた後、記録しておいた全ての `BHS.W` を実アドレスへバックパッチする（2パス発行 + バックパッチ。検証仕様: [JIT コンパイラ テスト仕様書](../components/tier3_jit/tests/jit_compiler_test_spec.md) `JITC-GOTCHA-04`, `JITC-GOTCHA-05` を参照）。
 
 > [!NOTE]
 > **JITホットパスとインタープリタ/vMMIO経路の境界チェックは統一されている**: JITステンシル（本節）とインタープリタ/vMMIO側（[`runtime_vmmio.md`](../components/tier2_runtime/runtime_vmmio.md)）は、どちらも同一の比較ベース境界チェック（マスクなし）を用い、境界外アクセスは必ずトラップしてインタープリタへフォールバックする。境界外アドレスを黙って範囲内へ折り畳んで処理を継続する（Address Wrapping）ことは許容されない。インタープリタがトラップ元の WASM PC から復旧できないと判断した場合は、ゲストタスクを停止してよい。`{MemoryBoundaryCheck}` `{vMMIO_TrapAndEmulate}`
@@ -264,7 +264,7 @@
 | `i32.store` (`0x36`) | `STENCIL_I32_STORE_R8` | R4=val, R5=addr | (なし) | `cmp r5, r9; bhs.w <trap>; str.w r4, [r8, r5]` | `4D 45` + `BHS.W`(reloc) + `48 F8 05 40` |
 | `i32.store8` (`0x3A`) | `STENCIL_I32_STORE8_R8` | R4=val, R5=addr | (なし) | `cmp r5, r9; bhs.w <trap>; strb.w r4, [r8, r5]` | `4D 45` + `BHS.W`(reloc) + `08 F8 05 40` |
 | `i32.store16` (`0x3B`)| `STENCIL_I32_STORE16_R8` | R4=val, R5=addr | (なし) | `cmp r5, r9; bhs.w <trap>; strh.w r4, [r8, r5]` | `4D 45` + `BHS.W`(reloc) + `28 F8 05 40` |
-| `memory.size` (`0x3F`)| `STENCIL_MEM_SIZE_D0` | (なし) | R4=pages | `ldr.w r4, [r2, #0x04]` (`env->mem_size`) | `D2 F8 04 40` |
+| `memory.size` (`0x3F`)| `STENCIL_MEM_SIZE_D0` | (なし) | R4=pages | `ldr.w r4, [r1, #0x14]` (`execution_context.mem_size`) | `D1 F8 14 40` |
 
 `cmp r4, r9`/`cmp r5, r9` のバイト列（`4C 45`/`4D 45`）は 16-bit Thumb-2 `CMP Rn, Rm` **T2** エンコーディング（`0x4500 | (N << 7) | (rm << 3) | (rn & 7)`、`N`は`rn`がR8以上のときに1）から導出する——`R9`はハイレジスタのため、低レジスタ同士でしか使えないT1エンコーディング（`0x4280 | (rm << 3) | rn`）は使えない（`jit_assembler_constexpr_concept.py` の `cmp_reg_t2` を正本とする）。`BHS.W <trap>` は 32-bit Thumb-2 条件分岐（`Cond.HS = 0b0010`）で、オフセットはバックパッチされるまで確定しないためリテラルのバイト列を持たない（`jit_copy_patch_concept.py` の `_MEMORY_OP_ADDR_REG` / `oob_branch_fixups` を正本とする）。
 
@@ -285,7 +285,7 @@
 
 #### ローカル変数アクセスの基底ポインタと静的オフセット畳み込み (`ContextPointerRegister`)
 <!-- traceability: {ContextPointerRegister} -->
-ローカル変数アクセス（`local.get`/`local.set`/`local.tee`）は、統合スタックボトム（`R1 = stack_bot`）からのコンパイル時定数オフセット（`[R1, #offset]`）、または JIT 専用のローカル変数基底レジスタ（`R3 = local_base`）経由（`[R3, #offset]`）として解決される。スタックボトム基底ポインタ `{ContextPointerRegister}` により、追加のベースレジスタを消費することなく極小フットプリントで実行可能である。`R3` は `local_base`（`local_param`）として JIT トレース内で固定される役割レジスタであり、`mem_base`/`mem_size`（`R8`/`R9`）と同様に他ステンシルのスクラッチ用途と衝突させない（`jit_copy_patch_concept.py` を正本とする）。
+ローカル変数アクセス（`local.get`/`local.set`/`local.tee`）は、統合スタックボトム（`R1 = stack_bot`）からのコンパイル時定数オフセット（`[R1, #offset]`）、または JIT 専用のローカル変数基底レジスタ（`R2 = local_base`）経由（`[R2, #offset]`）として解決される。スタックボトム基底ポインタ `{ContextPointerRegister}` により、追加のベースレジスタを消費することなく極小フットプリントで実行可能である。`R2` は `local_base`（`local_param`）として JIT トレース内で固定される役割レジスタであり、`R3 = tos` および `mem_base`/`mem_size`（`R8`/`R9`）と同様に他ステンシルのスクラッチ用途と衝突させない（`jit_copy_patch_concept.py` を正本とする。※レジスタ分離検証は [JIT コンパイラ テスト仕様書](../components/tier3_jit/tests/jit_compiler_test_spec.md) `JITC-GOTCHA-01` を参照）。
 
 > [!NOTE]
 > **現状は静的割当であり、動的なバリアント選択はまだ実装されていない**: `jit_copy_patch_concept.py` の `compile_trace()` は WASM 命令ごとに1つの固定ステンシルしか持たず（例: `i32.const` は常に特別処理で `R4` へ直接書き込み、`i32_const_d0`/`i32_const_d1` のどちらのステンシルも実際には参照しない）、実行時のキャッシュ深度に応じて `_d0`/`_d1`/`_d2` を動的に選び分けるロジックはまだ存在しない。したがって同一トレース内で連続する命令のレジスタ配置が食い違う状況も現状は発生しない。上表の `variant_id` は、(1) 将来その動的選択を実装する際の ID 体系、および (2) その際に必要となる命令間引き継ぎ互換性判定・グルー挿入（`_order_register_moves`/`emit_variant_reconciliation_glue` を参照、`jit_copy_patch_concept.py` 内の再利用可能なユーティリティとして検証済み実装が既に存在する）の両方に使われる、正本の割当表である。

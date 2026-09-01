@@ -30,6 +30,13 @@ URIベースのサービス検索（3段パイプライン）、ロールベー�
 | IPCR-17 | 受信側のガード付き外部選択（select）: 複数エッジからの受信 | `CORE_SERVICE`は`RUNTIME`と`DEBUGGER`の双方からALLOW（RBACマトリックス） | 受信側を先にブロックさせた後、`DEBUGGER`から送信 | `sender_role`を事前指定せずに`DEBUGGER`からのメッセージを受信できる（`RUNTIME`エッジを待つ必要がない） | §4.1「Rendezvous」, §5.1「receive_message」, ipc_router_concept.py `test_receive_selects_whichever_allowed_sender_is_ready`, `experiments/pysim/core/scheduler.py` `channel_select_recv` |
 | IPCR-18 | select解決後の敗退エッジの解除（1チャネル1待機者の維持） | IPCR-17の状態で`DEBUGGER`エッジが成立した直後 | 成立しなかった`RUNTIME`→`CORE_SERVICE`エッジの状態を確認し、続けて新規の受信側・送信側でそのエッジを使用する | 敗退エッジの待機者登録が解除されており（`waiter_dir == NONE`）、後続の`RUNTIME`→`CORE_SERVICE`ランデブーが独立して正常に成立する（stale waiterとして残らない） | `experiments/pysim/core/scheduler.py` `channel_send`のSelectGroup解除処理, `experiments/pysim/tests/test_instructions.py` `test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group` |
 
+### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
+
+| ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| IPCR-GOTCHA-01 | 単一待機者制約とキュー完全不在 | 同一 CSP エッジへ1件送信中（受信待ち状態） | 同一エッジへさらに `send` を試行 | `ERR_QUEUE_FULL` のような差し戻しエラーではなく、即座にアサーション違反（プログラミングエラー）で停止する。**実装の勘所**: CSP ランデブーチャネルにはバッファもキューも存在しないため、「キュー溢れ」というエラー状態を設けてはならず、2重送信は呼び出し元の論理破綻として検出する | `ipc_router.md` §4.1, `{ADR_RendezvousChannel}` |
+| IPCR-GOTCHA-02 | Preflight Rejection による所有権保全 | RBAC 拒否エッジまたは未登録 URI 宛のメッセージ送信 | `send` を実行 | 権限・URI・サイズ検証がメッセージ Revoke（所有権剥奪）の前に先行して行われ、エラー時は所有権が `SENDER_OWNS` のまま1ミリも動かない。**実装の勘所**: 先にリソースを Revoke してから送信先を検証すると、エラー時にリソースが孤立（in-flight リーク）する | `ipc_router.md` §4.1.1, `{OwnershipTransfer}` |
+
 ## 3. テスト検証実績と網羅状況
 
 - 仕様書に定義された各テストケース（不変条件・境界条件・エラー処理）の検証手順と期待結果を定義。

@@ -13,9 +13,9 @@
 
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| INTP-01 | ハンドラのシグネチャがCPS 4引数(`ip, stack_bot, env, local_base`)である | 実装コードを確認 | 各opcodeハンドラの引数を確認 | すべてのハンドラが同一の4引数シグネチャを持ち、次の継続を自ら返す（中央のswitch/if-elifループが「次に何をするか」を決定しない） | wasm_instruction_set.md §1, interpreter_concept.py冒頭 |
+| INTP-01 | ハンドラのシグネチャがCPS 4引数(`ip, stack_bot, local_base, tos`)である | 実装コードを確認 | 各opcodeハンドラの引数を確認 | すべてのハンドラが同一の4引数シグネチャを持ち、次の継続を自ら返す（中央のswitch/if-elifループが「次に何をするか」を決定しない） | wasm_instruction_set.md §1, runtime_interpreter.md §3.3 |
 | INTP-02 | ハンドラテーブルによるディスパッチ | - | ディスパッチ機構を確認 | opcode→ハンドラ関数のテーブル参照で分岐し、線形if-elif連鎖ではない | 同上 |
-| INTP-03 | インタープリタとJITトレースのCPS 4引数規約完全一致 | JITトレース生成 | JITエントリとハンドラシグネチャを比較 | `int64_t (*)(uint32_t ip, void* stack_bot, void* env, void* local_base)` で完全一致し、ディスパッチテーブルから直接 C 呼び出し可能 | `{ContextPointerRegister}` `{EnvironmentPointer}` `{PositionIndependentCode}` |
+| INTP-03 | インタープリタとJITトレースのCPS 4引数規約完全一致 | JITトレース生成 | JITエントリとハンドラシグネチャを比較 | `int64_t (*)(uint32_t ip, void* stack_bot, void* local_base, uint32_t tos)` で完全一致し、ディスパッチテーブルから直接 C 呼び出し可能 | `{ContextPointerRegister}` `{AAPCS_FastCall}` `{PositionIndependentCode}` |
 | INTP-04 | JITトレースからインタープリタへのシームレスフォールバック | 未コンパイルのブロックへ分岐 | トレース実行完了 | トレース末尾でインタープリタへスムーズに復帰し、後続ブロックをインタープリタが継続実行する | `{JIT_LazyChaining}` `{JIT_RuntimeAPI_Fallback}` |
 
 ### 統合スタック・関数呼び出し (interpreter_concept.py §1)
@@ -76,6 +76,15 @@
 | INTP-63 | 統合プロファイラフック（PCサンプリング） | プロファイラ有効 | 命令実行 | デバッグハンドラ経由で命令が実行されるたびに実行中PCがサンプリングされ、頻度統計が正確に集計される | §4.1「デバッグ・プロファイラフック」 `{Debug_Integrated}` |
 | INTP-64 | 動的メモリアサーションフック | メモリアサーション登録 | 命令実行 | 命令実行後にメモリフックが呼び出され、期待値と異なる値が検知された場合にアサーション違反が記録される | §4.1「デバッグ・プロファイラフック」 `{Debug_Integrated}` |
 | INTP-65 | デバッグアタッチ時のJITバイパス（インタープリタフォールバック） | JITキャッシュにトレースが存在 | デバッグアタッチ下で実行 | JIT直接ジャンプをバイパスし、インタープリタのデバッグハンドラで1命令ずつ安全にステップ制御される | §4.1 `{DebuggerLabelTableSwitch}` |
+
+### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
+
+| ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| INTP-GOTCHA-01 | CPS第4引数 `tos`（R3）とスタックメモリの境界同期 | スタック空状態から複数回の push/pop | `i32.const` および二項演算を連続実行 | スタック空時は `tos=0`、値 push 時は旧 `tos` がスタックメモリへ退避され新値が `tos` に格納、値 pop 時はスタックメモリから次段値が `tos` に復元される。**実装の勘所**: `tos` は第4引数レジスタ `R3` に保持されるため、スタックメモリ（`[R1, #sp_offset]`）上の深さは「全オペランド数 - 1」となり、スタック空の境界条件でアンダーフロー誤検知や未定義値を発生させてはならない | `runtime_interpreter.md` §3.3「実行コンテキスト」, `{AAPCS_FastCall}` |
+| INTP-GOTCHA-02 | Label Arity スタック巻き戻し時の TOS 復元 | `block (result i32)` 内で値を push 後に `br 0` | ブロック脱出を実行 | ブロック開始時の深さまでスタックが巻き戻され、宣言アリティ分の結果値のうち最上位値が正しく `R3: tos` レジスタへ復元されて次ハンドラへ渡る。**実装の勘所**: スタックメモリを巻き戻しただけで `tos` レジスタを更新し忘れると、脱出前の破棄された値が `tos` に残り後続命令で不正計算となる | `runtime_interpreter.md` §4.1「スタック Pruning」 |
+| INTP-GOTCHA-03 | if 条件偽（else節なし）での制御フレームリーク防止 | `if (cond=0)` で else 節なし | `if` 命令を実行 | `match_offset + 1` へジャンプする際、`_Frame("if")` がスタックに残らずフレームスタックの深さが不変に保たれる。**実装の勘所**: 条件成立時と同様にフレームを積んでからジャンプすると、対応する `END` 命令をスキップした際にフレームが回収されずスタックリークとなる | `runtime_interpreter.md` §3.3「制御フレーム整合性」 |
+| INTP-GOTCHA-04 | UnifiedPC による多重モジュール空間の衝突防止 | 複数モジュールがロードされ、同一オフセット（例: 0x0010）を持つ関数が存在 | 各モジュールの関数を実行 | JIT キャッシュ引き当てやデバッグブレークポイント判定において、`(func_index << 16) \| bytecode_offset` の32bit表現で一意に区別され、他モジュールの同一オフセットと決して誤衝突しない | `runtime_interpreter.md` §3.3, `{PositionIndependentCode}` |
 
 ## 3. テスト検証実績と網羅状況
 

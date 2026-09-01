@@ -23,6 +23,12 @@
 | SCHED-10 | 重複task_idの拒否 | 既存のtask_idを再度spawn | 同一IDでspawn | 拒否される | scheduler_concept.py `assert task_id not in self.tasks` |
 | SCHED-11 | run_until_idle/run_to_completionの停止性 | 相互にnotifyし合わないBLOCKEDタスクが残る | run_to_completionを実行 | 無限ループにならず、上限到達で明示的なエラーを返す | 実装固有の安全策 |
 
+### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
+
+| ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| SCHED-GOTCHA-01 | 連続直接ハンドオフ上限とメインループ強制復帰 | 2つのタスクが CSP Rendezvous で互いにピンポン通信を継続 | 連続ハンドオフ上限（既定8回）まで通信を実行 | 上限到達時に直接遷移が打ち切られ、タスクが READY キュー末尾へ戻されてスケジューラのメイン巡回ループへ強制復帰する。**実装の勘所**: 直接ハンドオフを無制限に許可すると、特定タスクペアが CPU を独占して他の READY タスク（タイマーや監視など）が永久に餓死（Starvation）する | `os_scheduler.md` §3.3, `{Challenge_CspHandoffStarvation}` |
+
 ## 3. テスト検証実績と網羅状況
 
 - 仕様書に定義された各テストケース（不変条件・境界条件・エラー処理）の検証手順と期待結果を定義。

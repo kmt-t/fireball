@@ -48,6 +48,14 @@ Bit31によるRAM/vMMIO高速分岐、FlatMap PTE + 16エントリDirect-Mapped 
 | VMMIO-30 | REG_VDMA_*レジスタへの設定と`REG_VDMA_CTRL`起動 | レジスタに`SRC`/`DST`/`COUNT`設定 | `CTRL`のSTARTビットを1にする | 指定範囲が転送される | §4.5 |
 | VMMIO-31 | SHM宛先へのVDMA転送時の所有権チェック | `dst`がFC=14アドレス、呼び出し元が非所有者 | VDMA実行 | `dispatch_access`と同一の権限チェックで拒否される | §4.5「SHMアドレスを転送先/元に指定した場合...同一の権限チェック」 |
 
+### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
+
+| ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| VMMIO-GOTCHA-01 | Bit 31 RAM 高速バイパスのテーブル完全非参照 | `addr < 0x8000_0000` の任意のアドレス | `access(addr)` を実行 | ページテーブル走査（FlatMap walk）および TLB 検索・更新を一切行わず即座に `OK_GUEST_RAM` を返す（`tlb_hits` / `tlb_misses` が不変）。**実装の勘所**: ゲスト RAM アクセス時に誤って TLB 検索フックを挟むと、実行時メモリアクセスの最頻パスで深刻な性能低下を引き起こす | `runtime_vmmio.md` §1, §3.3 |
+| VMMIO-GOTCHA-02 | Direct-Mapped TLB の 4-bit Folding XOR Hash | 同一下位ページ番号を持つ異なる FC（FC=12 静的, FC=14 SHM, FC=15 パススルー） | 各ページの `tlb_index` を算出 | 単純な下位4bitマスクではなく `(vpn ^ (vpn >> 4) ^ (vpn >> 8) ^ (vpn >> 12)) & 0x0F` により、異なる FC の同一下位ページが互いに異なるスロットへ分散する。**実装の勘所**: 単純な下位マスクを用いると、Syscall（FC=12）と SHM（FC=14）の同一番号ページが同一スロットで常に衝突・スラッシングを起こす | `runtime_vmmio.md` §1「ダイレクトマップ方式ソフトウェアTLB」 |
+| VMMIO-GOTCHA-03 | SHM Revoke 後の in-flight 遮断と TLB 即時破棄 | SHM ページ（FC=14）が TLB にキャッシュされた状態 | `revoke_shm_owner(vpn)` を実行 | 対象 TLB スロットが無効化され、送信元・受信先双方からのアクセスが即座に `TRAP_OWNER_MISMATCH` で拒絶される。**実装の勘所**: PTE の所有者フラグのみを更新して TLB の該当スロットをフラッシュし忘れると、旧所有者が in-flight 中（ランデブー待ち）にデータを不正読み書きできる重大な脆弱性となる | `runtime_vmmio.md` §4.6「Revoke」 |
+
 ## 3. テスト検証実績と網羅状況
 
 - 仕様書に定義された各テストケース（不変条件・境界条件・エラー処理）の検証手順と期待結果を定義。

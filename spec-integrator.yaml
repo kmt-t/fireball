@@ -98,9 +98,9 @@ llm_judge:
 terminology:
   enabled: true
   embedding_model: "multilingual-e5-large"
-  similarity_threshold: 0.90
-  confidence_threshold: 0.70
-  max_terms: 500
+  similarity_threshold: 0.80
+  confidence_threshold: 0.60
+  max_terms: 1000
   stopwords:
     # 形式名詞・指示代名詞
     - "これ"

@@ -43,7 +43,7 @@ interface resolver {
     release-shm: func(slice: shm-slice) -> operation-result;
 }
 
-/// 高速トリガ (GPIO / fireball:hal/gpio 準拠) インターフェイス
+/// 高速トリガ (GPIO / fireball:hal/gpio 準拠) インターフェース
 interface trigger {
     use types.{operation-result, recovery-strategy-category};
 
@@ -51,7 +51,7 @@ interface trigger {
     get-pin: func(pin: u32) -> result<bool, recovery-strategy-category>;
 }
 
-/// タイマー (wasi:clocks/monotonic-clock 準拠) インターフェイス
+/// タイマー (wasi:clocks/monotonic-clock 準拠) インターフェース
 interface timer {
     resource periodic-timer {
         get-now: func() -> u64;
@@ -59,7 +59,7 @@ interface timer {
     }
 }
 
-/// バス通信 (I2C/SPI マスタ・スレーブ / 共有メモリゼロコピー転送) インターフェイス
+/// バス通信 (I2C/SPI マスタ・スレーブ / 共有メモリゼロコピー転送) インターフェース
 interface bus {
     use types.{shm-slice, operation-result, recovery-strategy-category};
 
@@ -74,7 +74,7 @@ interface bus {
     }
 }
 
-/// ストリーミング I/O (wasi:io/streams 準拠 / 共有メモリリードライト) インターフェイス
+/// ストリーミング I/O (wasi:io/streams 準拠 / 共有メモリリードライト) インターフェース
 interface streaming {
     use types.{shm-slice, recovery-strategy-category};
 
@@ -89,7 +89,7 @@ interface streaming {
     }
 }
 
-/// コンソール生バイト出力 (wasi:cli/stdout, stderr 準拠) インターフェイス
+/// コンソール生バイト出力 (wasi:cli/stdout, stderr 準拠) インターフェース
 interface console {
     use types.{recovery-strategy-category};
 
@@ -98,7 +98,7 @@ interface console {
     }
 }
 
-/// 低レベル・トラップ・インターフェイス
+/// 低レベル・トラップ・インターフェース
 interface trap {
     fireball-call: func(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32, arg4: u32, arg5: u32) -> u32;
 }

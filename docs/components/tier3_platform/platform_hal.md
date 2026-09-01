@@ -6,7 +6,7 @@
 
 ## 1. コンセプト
 <!-- traceability: {IPCRouter} {Challenge_InterruptSafety} {TaskPollInterruptFlag} {RSPMinimalSet} {Fast_Path_GPIO} {URIAbstraction} {TypeSafeMessaging} {IPC_ZeroCopy} -->
-HAL (Hardware Abstraction Layer) は、物理ハードウェアおよび仮想ペリフェラルへのアクセスを抽象化し、WASI 0.3 Preview (WASI 0.3p) に準拠したインターフェイスを提供する。ペリフェラル・ストリーム・GPIO 等は階層型 URI（`fireball://device/<driver-type>/<instance-id>`）経由で動的にバインド・解決される。
+HAL (Hardware Abstraction Layer) は、物理ハードウェアおよび仮想ペリフェラルへのアクセスを抽象化し、WASI 0.3 Preview (WASI 0.3p) に準拠したインターフェースを提供する。ペリフェラル・ストリーム・GPIO 等は階層型 URI（`fireball://device/<driver-type>/<instance-id>`）経由で動的にバインド・解決される。
 各ドライバは IPC ルータ（`ipc_router`）から WASI 0.3p ドライバ通信コマンド（`CMD_STREAM_*`, `CMD_CLOCK_*`, `CMD_GPIO_*`, `CMD_BUS_*`）を受信し、vMMIO FC=14 の共有メモリ（`shm-slice`）を介してゼロコピーで高速データ転送を実行する。また、デバッグ用の GDB Remote Serial Protocol (RSP) のパケット解析（RSP Parser）を担い、解析済みデバッグコマンドを `debug_command_queue` へ供給する。割り込みはフラグ通知とタスクウェイクアップによって安全に処理される。 `{IPCRouter}` `{Challenge_InterruptSafety}` `{TaskPollInterruptFlag}` `{RSPMinimalSet}` `{Fast_Path_GPIO}` `{URIAbstraction}` `{TypeSafeMessaging}` `{IPC_ZeroCopy}`
 
 ## 2. アーキテクチャ分類
@@ -182,7 +182,7 @@ stateDiagram-v2
 
 ---
 
-## 7. インターフェイス定義
+## 7. インターフェース定義
 
 ### 7.1 公開 API
 <!-- traceability: {HAL_Interface} {IPC_ZeroCopy} -->

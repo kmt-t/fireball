@@ -6,7 +6,7 @@
 
 ## 1. 目的
 <!-- traceability: {NativeAPI_Export} -->
-本ドキュメントは、WebAssemblyゲスト環境からホストの提供するサービスを呼び出すための汎用システムコール `fireball_call` のインターフェイス仕様を定義する。特に、WASI (WebAssembly System Interface) 呼び出しを `fireball_call` にマッピングするための規約、および関連するShimライブラリとWASIホスト側実装の役割に焦点を当てる。 `{NativeAPI_Export}`
+本ドキュメントは、WebAssemblyゲスト環境からホストの提供するサービスを呼び出すための汎用システムコール `fireball_call` のインターフェース仕様を定義する。特に、WASI (WebAssembly System Interface) 呼び出しを `fireball_call` にマッピングするための規約、および関連するShimライブラリとWASIホスト側実装の役割に焦点を当てる。 `{NativeAPI_Export}`
 
 ## 2. 背景
 <!-- traceability: {UnifiedAccessModel} -->
@@ -40,7 +40,7 @@ interface trap {
 
 world fireball {
   import trap;
-  // 他の高レベル・インターフェイス（timer, bus, streams等）は、{Syscall_Mapping} においてリソース型として定義され、WASIバインディング経由で接続される。
+  // 他の高レベル・インターフェース（timer, bus, streams等）は、{Syscall_Mapping} においてリソース型として定義され、WASIバインディング経由で接続される。
 }
 ```
 
@@ -53,7 +53,7 @@ world fireball {
 ### 4.1. 引数のパッキング
 <!-- traceability: {Type_Vocabulary} -->
 
-`fireball_call` は、後述の「型のエイリアス定義」で定義された型エイリアス（`fb_id_t`, `fb_val_t`, `fb_offset_t`）および規定の語彙セットに従って引数をパッキングする。物理的にはシステムコールID（`id`）と、6つの汎用引数（`arg0`〜`arg5`）の合計7つの `u32` 表現で構成され、インターフェイスの型安全性を担保する。WASI関数がこれらの引数よりも多くのパラメータを持つ場合、ゲストメモリの物理ベースアドレスからの相対オフセット（`fb_offset_t`）を渡す。絶対アドレスではなく相対オフセットに制限することで、ゲスト境界チェックを瞬時に行う。
+`fireball_call` は、後述の「型のエイリアス定義」で定義された型エイリアス（`fb_id_t`, `fb_val_t`, `fb_offset_t`）および規定の語彙セットに従って引数をパッキングする。物理的にはシステムコールID（`id`）と、6つの汎用引数（`arg0`〜`arg5`）の合計7つの `u32` 表現で構成され、インターフェースの型安全性を担保する。WASI関数がこれらの引数よりも多くのパラメータを持つ場合、ゲストメモリの物理ベースアドレスからの相対オフセット（`fb_offset_t`）を渡す。絶対アドレスではなく相対オフセットに制限することで、ゲスト境界チェックを瞬時に行う。
 
 ##### 型のエイリアス定義 (Type Vocabulary) `{Type_Vocabulary}`
 本インターフェースで受け渡される引数はすべて物理的には `u32` であるが、その意味論的な解釈を定義するため、以下の型語彙（エイリアス）を使用する。
@@ -237,7 +237,7 @@ def fireball_trigger_set_pin(pin: int, value: bool):
     __fireball_call(fb_syscall_id.FB_SYSCALL_TRIGGER_SET_PIN, pin, int(value), 0, 0, 0, 0)
 ```
 > [!IMPORTANT]
-> WASI 0.2 標準のリソース（`output-stream` 等）は、対応する WIT インターフェイスの実装関数を通じて呼び出される。`fireball_call`はvMMIO機能全体の代理実行ラッパーであり、GPIOのような物理アクセスもMMIO Generic経由で行える。
+> WASI 0.2 標準のリソース（`output-stream` 等）は、対応する WIT インターフェースの実装関数を通じて呼び出される。`fireball_call`はvMMIO機能全体の代理実行ラッパーであり、GPIOのような物理アクセスもMMIO Generic経由で行える。
 
 ## 7. WASIホスト側実装
 

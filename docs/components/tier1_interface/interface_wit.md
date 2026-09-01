@@ -1,4 +1,4 @@
-# WIT インターフェイス仕様書 (WASI 準拠版) {VERIFY_WIT} {VERIFY_LLM} {VERIFY_FORMAL}
+# WIT インターフェース仕様書 (WASI 準拠版) {VERIFY_WIT} {VERIFY_LLM} {VERIFY_FORMAL}
 <!-- evidence:
      wit: wit/fireball.wit
      formal: formal/wit_resource_lifecycle_model.py
@@ -8,7 +8,7 @@
 ## 1. 目的
 
 <!-- traceability: {WIT_Interface_Purpose} {WIT_First} {WIT_Common_Types} {URIAbstraction} -->
-本ドキュメントは、Fireballプロジェクトにおいてゲスト（WASM）環境に公開されるシステムコールおよびハードウェア抽象化層（HAL）のインターフェイス仕様を定義する。
+本ドキュメントは、Fireballプロジェクトにおいてゲスト（WASM）環境に公開されるシステムコールおよびハードウェア抽象化層（HAL）のインターフェース仕様を定義する。
 HAL は WASI 0.3 Preview (WASI 0.3p / Component Model, Resources, Streams, Async) に準拠して提供され、URI からインターフェースを動的に取得する URI Resolver を備える。また、レガシーな WASI 0.1p (`wasi_snapshot_preview1`) ABI は、WASI 0.3p / HAL リソースを背後で呼び出す薄いアダプタ/ラッパーレイヤーとして完全サポートする。
 
 ## 2. アーキテクチャ原則
@@ -23,7 +23,7 @@ HAL は WASI 0.3 Preview (WASI 0.3p / Component Model, Resources, Streams, Async
 
 ## 3. 共通データ構造
 
-### 3.1 基礎インターフェイス & IPC URI Resolver
+### 3.1 基礎インターフェース & IPC URI Resolver
 <!-- traceability: {CooperativeMultitasking} {Asynchronous_Notification} {URIAbstraction} {META_RestrictedPhysicalAccess} -->
 WASI 0.3p の標準パターンに従い、以下の基礎コンポーネントを提供する。
 
@@ -87,7 +87,7 @@ type routing-result = result<_, recovery-strategy-category>;
 - **IPC は所有権ロールバックを必要としない**: IPC ルータ（`ipc_router.md`）はバッファなし同期 CSP チャネル（`{ADR_RendezvousChannel}`）であり、宛先ごとの有界キューを持たない。したがって `ERR_QUEUE_FULL` のような一時的な資源競合は原理的に発生せず、`Revoke` 後の所有権ロールバックという回復処理も存在しない——送信は相手タスクの到達を待つのみで、失敗して差し戻る経路がない。
 - **デバッグ情報の分離**: 失敗の詳細理由はログシステムで確認する。インターフェースには含めない。
 
-## 4. 低レベル・トラップ・インターフェイス
+## 4. 低レベル・トラップ・インターフェース
 <!-- traceability: {Syscall_Mapping} -->
 WASI標準には存在しない、Fireball固有の高速システムコール。実体は `../tier1_core/system_syscall.md` で定義される `fireball::fireball_call` である。このインターフェース設計を通じて、低レベルなシステムコールがWITの世界とマッピングされる（`{Syscall_Mapping}`）。
 
@@ -97,7 +97,7 @@ WIT内では `fireball-call` という kebab-case 名で定義されるが、C++
 
 - `fireball-call(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32, arg4: u32, arg5: u32) -> u32`
 
-### 4.2. 高応答トラインターフェイス
+### 4.2. 高応答トリガーインターフェース
 <!-- traceability: {Syscall_Mapping} -->
 Trigger (GPIO) は、割り込み応答性およびビットバンギング等の要求から、一般のリソースハンドルを介さず、`fireball-call` に直接マッピングされた ID を通じて操作するものとする。
 
@@ -105,14 +105,14 @@ Trigger (GPIO) は、割り込み応答性およびビットバンギング等�
 - **実装例**: `FB_SYSCALL_TRIGGER_SET_PIN` ID を直接指定（`{Syscall_Mapping}`）。
 
 ```wit
-// インターフェイスとしては定義するが、Shim層では直接トラップを叩く
+// インターフェースとしては定義するが、Shim層では直接トラップを叩く
 interface trigger-controller {
     set-pin: func(pin: u32, value: bool) -> operation-result;
     get-pin: func(pin: u32) -> result<bool, recovery-strategy-category>;
 }
 ```
 
-## 5. HAL インターフェイス
+## 5. HAL インターフェース
 
 ### 5.1 `fireball:host/timer` (wasi:clocks 準拠)
 `wasi:clocks/monotonic-clock` のサブセットとして定義。
@@ -205,7 +205,7 @@ WASIでは割り込みを直接扱うのではなく、`pollable` を通じた�
 ## 7. フィードバック：WASI 準拠における制約事項
 WASI仕様と HAL の乖離および考慮点は以下の通り：
 
-1. **GPIO/Bus の不在**: WASI (CLI/Cloud) には GPIO や I2C/SPI の標準インターフェイスがない。これらは WASI リソースモデルに従った「Fireball 独自プロポーザル」として実装する必要がある。
+1. **GPIO/Bus の不在**: WASI (CLI/Cloud) には GPIO や I2C/SPI の標準インターフェースがない。これらは WASI リソースモデルに従った「Fireball 独自プロポーザル」として実装する必要がある。
 2. **リアルタイム性**: WASI 0.2 の `poll` モデルは非同期イベントの集約には優れるが、極めて高速なリアルタイム応答が必要な場合、`fireball_call` (Trap) を併用する方が効率的である可能性がある。
 3. **リソース管理のオーバーヘッド**: `resource` の生成・破棄（ハンドル管理）は、単純な `u32` ID渡しよりもホスト側のオーバーヘッドが増えるため、64KB RAM 環境ではハンドル数を制限するなどの対策が必要。
 

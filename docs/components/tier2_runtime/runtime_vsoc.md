@@ -18,7 +18,7 @@ vSoC (Virtual System-on-Chip) は、WASM実行環境の統合マネージャで�
 
 ### 3.1 データ構造
 <!-- traceability: {META_StaticDI} -->
-- **`vsoc_harness`**: vSoCが依存する各種エンジン（Loader, Interpreter, JIT等）のインターフェイスを集約した構造体。 `{META_StaticDI}`
+- **`vsoc_harness`**: vSoCが依存する各種エンジン（Loader, Interpreter, JIT等）のインターフェースを集約した構造体。 `{META_StaticDI}`
 - **`vsoc_context`**: 現在の実行状態、仮想割り込み、JITキャッシュの管理状態など、可変なランタイム状態。
 - **`vsoc_config`**: メモリ割り当てやJIT有効化フラグなどの不変な構成情報。
 
@@ -53,7 +53,7 @@ graph TD
 <!-- traceability: {META_StaticDI} -->
 
 #### vSoCハーネス（vsoc_harness）
-各エンジンへのインターフェイスを集約する。PODとして扱い、メンバに末尾アンダースコアは付与しない。
+各エンジンへのインターフェースを集約する。PODとして扱い、メンバに末尾アンダースコアは付与しない。
 
 | 項目名 | 機能と役割 | 備考（制約、型など） |
 | :--- | :--- | :--- |
@@ -101,7 +101,7 @@ vSoCの動作パラメータを定義する。 `{META_ConfigurableSystem}`
 | RAM開始アドレス | ゲストから見たRAMの仮想アドレス空間上の開始位置。 | `0x0000_0000` (Bit 31 == 0) |
 | RAM容量 | ゲストに割り当てられるRAMの有効バイト数（64KBまたは8KB等の部分ページ）。 | `FB_CONF_GUEST_RAM_SIZE` |
 | vMMIO基点アドレス | 仮想デバイスレジスタおよび共有メモリ空間の開始位置（2段階ダイレクトデコード）。 | `0x8000_0000` (Bit 31 == 1) |
-| パススルー基点アドレス | ゲスト仮想 PASSTHROUGH 領域（FC=15, `0xF000_0000`〜`0xFFFF_FFFF`）がマッピングされるホスト実物理ペリフェラル空間の開始アドレス。`物理addr = passthrough_base + (vmmio_addr - 0xF000_0000)`。 | `FB_CONF_VSOC_PASSTHROUGH_BASE` (Cortex-M デフォルト: `0x4000_0000`) |
+| パススルー基点アドレス | ゲスト仮想 PASSTHROUGH 領域（FC=15, `0xF000_0000`〜`0xFFFF_FFFF`）がマッピングされるホスト実物理ペリフェラル空間の開始アドレス。`物理addr = passthrough_base + (vmmio_addr - 0xF000_0000)`。 | `FB_CONF_VSOC_PASSTHROUGH_BASE` (Cortex-M デフォルト値: `0x4000_0000`) |
 
 ## 4. 動的モデル
 
@@ -224,8 +224,8 @@ JIT コードキャッシュ（合計 6KB `FB_CONF_JIT_CACHE_SIZE`）を 2KB x 3
 | フェーズ | 状態 | 説明 | アクション |
 | :--- | :--- | :--- | :--- |
 | **Normal (JitRun)** | Active が書込・実行中、Warm/Oldest が観測 | 新規 JIT コンパイルが Active へ追加 | 既存コードは保持 |
-| **co_yield (Rotation)** | 世代ローテーション | Active → Warm → Oldest へスライド | 中間 Warm では無償観測 |
-| **Oldest Evaluation** | 最古バッファ到達判定 | 破棄直前の Oldest で Hot コードのみ新 Active へ昇格 | Cold コードは Purge 破棄 |
+| **co_yield (Rotation)** | 世代ローテーション | Active → Warm → Oldest へスライド | Warm バンクでは無償観測 |
+| **Oldest Evaluation** | Oldest 到達・昇格判定 | 破棄直前の Oldest で Hot コードのみ新 Active へ昇格 | 未ヒット（Cold）コードは Purge 破棄 |
 | **Debugger Flush** | Interrupt Flag[2] 検出 | デバッガメモリ変更を検知 | 全バッファ（Active/Warm/Oldest）を無効化 |
 
 **メモリレイアウト:**
@@ -238,7 +238,7 @@ JIT Code Cache (6 KB total: FB_CONF_JIT_CACHE_SIZE)
 │  Warm Buffer Bank    │  2 KB (Bank 1: observation window)
 │  - Generation[1]     │  - Retained without copying
 ├──────────────────────┤
-│  Oldest Buffer Bank  │  2 KB (Bank 2: oldest buffer)
+│  Oldest Buffer Bank  │  2 KB (Bank 2: oldest bank)
 │  - Generation[2]     │  - Promoted if hot, else purged
 └──────────────────────┘
 ```
@@ -314,7 +314,7 @@ sequenceDiagram
     L-->>V: load_complete
 ```
 
-## 5. インターフェイス定義
+## 5. インターフェース定義
 
 ### 5.1 公開API
 外部から利用可能なオブジェクト指向APIを定義する。
@@ -375,7 +375,7 @@ sequenceDiagram
 ### 5.2 ネイティブAPI エクスポート
 <!-- traceability: {NativeAPI_Export} -->
 
-WASMゲストからホストサービスを呼び出すための最小限のインターフェイスを提供する。 `{NativeAPI_Export}`
+WASMゲストからホストサービスを呼び出すための最小限のインターフェースを提供する。 `{NativeAPI_Export}`
 
 Fireballでは、ホスト側のコードサイズを極限まで削減するため、標準的なWASIの実装をホストから排除し、単一のトラップ命令とvMMIOレジスタによるサービス提供を行う。
 
@@ -391,7 +391,7 @@ Fireballでは、ホスト側のコードサイズを極限まで削減するた
 - **Module Registry**: ロード済みのモジュールを名前で管理する。
 - **Dynamic Linking**: インポートセクションに基づき、他モジュールのエクスポートを解決する。
 
-### 5.4 URI/IPCインターフェイス
+### 5.4 URI/IPCインターフェース
 <!-- traceability: {META_RecoveryStrategy} {vMMIO_TrapAndEmulate} {NativeAPI_Export} {MultiModule_Support} -->
 - **URI**: `fireball://vsoc/control/<instance_id>`
 - **メッセージ形式**: 実行制御、状態取得用のKey-Valueプロトコル。詳細定義は IPCルータの仕様に準ずる。

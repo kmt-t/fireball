@@ -267,7 +267,7 @@
 uv run --system-certs --with wasmtime python experiments/pysim/scenarios/run_all.py
 ```
 
-### 検証実績
+### テスト検証実績と網羅状況
 - **全 11 シナリオ**: **11/11 PASSED** (約 6.3 秒)
 - **全 18 コンポーネント 100% カバレッジ**: Tier 1 Core、Tier 1 Interface、Tier 2 Runtime、Tier 3 Platform & JIT の全コンポーネントを実動検証。
 - **完全差分検証**: 全シナリオにおいて、純粋インタープリタ実行と JIT 実行の出力がバイト単位・値単位で 100% 一致。

@@ -60,7 +60,7 @@ graph LR
 | `{JIT_RuntimeAPI_Fallback}` | 複雑な命令をランタイムAPI呼び出しにフォールバックさせ、JITエンジンの複雑さを抑える。 | 高 | レビュー |
 | `{InterpreterContextStackless}` | Cスタックを使わないスタックレスなインタープリタ実行。 | 高 | レビュー |
 | `{SinglePassCompilation}` | 中間表現を介さず、1パスでバイナリを生成する。 | 高 | レビュー |
-| `{JIT_OldestOnly_Promote}` | 最も古いエントリのみを上位バッファへ昇格させるキャッシュ追い出しポリシー。 | 高 | レビュー |
+| `{JIT_OldestOnly_Promote}` | 3面循環コードキャッシュにおいて Oldest バンクでヒットしたコードのみを Active バンクへ昇格させるキャッシュ追い出し・代謝ポリシー（Oldest 限定昇格）。 | 高 | レビュー |
 
 #### 3.1.2 タスク管理・通信 (COOS)
 | キーワード | 内容 | 優先度 | 検証方法 |
@@ -116,7 +116,7 @@ graph LR
 | `{RSPMinimalSet}` | VSCodeデバッグに必要な最小限のGDB RSPコマンドセットのみを実装する。 | 高 | デモ |
 | `{BufferedLogging}` | ログ出力をリングバッファに一時保存し、アイドル時にまとめて物理ポートへ転送する。 | 中 | テスト |
 | `{RSP_Transport_Selectable}` | RSPパケットのトランスポート層（UART/RTT等）を選択可能とする。 | 高 | テスト |
-| `{DebuggerLabelTableSwitch}` | デバッグ時にインタプリタのハンドラテーブルをデバッグ用に切り替える。 | 高 | レビュー |
+| `{DebuggerLabelTableSwitch}` | デバッグ時にインタープリタのハンドラテーブルをデバッグ用に切り替える。 | 高 | レビュー |
 
 #### 3.1.5 共通基盤・実装パターン
 | キーワード | 内容 | 優先度 | 検証方法 |

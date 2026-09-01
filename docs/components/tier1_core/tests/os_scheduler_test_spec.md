@@ -16,7 +16,7 @@
 | SCHED-03 | yield はREADYキュー末尾へ移動 | 単一タスクが2回yield | yieldごとに状態を観測 | yield直後はREADY、次サイクルで再度RUNNINGに戻る | 4.2 状態遷移図 |
 | SCHED-04 | block/unblockサイクル | タスクがBLOCKされる原因(reason)付きでblock | block直後にunblock_taskを呼ぶ | BLOCKED→READYに遷移し、READYキュー末尾に追加される | 4.2 状態遷移図 |
 | SCHED-05 | 終了(StopIteration)でTERMINATED | コルーチンが正常終了 | run_cycle/run_until_idle を実行 | タスク状態がTERMINATEDになり、以後READYキューにもBLOCKEDリストにも現れない | 5.1 terminate |
-| SCHED-06 | 全タスクBLOCKEDでアイドル検知 | 全タスクをblock | 1サイクル実行 | schedule_nextがNoneを返す（または | 4.1 アイドル状態の検知 |
+| SCHED-06 | 全タスクBLOCKEDでアイドル検出 | 全タスクをblock | 1サイクル実行 | schedule_nextがNoneを返す（または | 4.1 アイドル状態の検出 |
 | SCHED-07 | 割り込み通知によるREADY復帰 | タスクがirq_id待ちでBLOCKED | `notify_interrupt(irq_id)` 相当のイベント発火 | 対象タスクのみREADYキュー末尾に追加される（他のBLOCKEDタスクは無関係） | `{GLOBAL_InterruptWakeup}` |
 | SCHED-08 | イベント駆動起床はO(1)（線形スキャン禁止） | 多数のBLOCKEDタスクが異なるevent_keyで待機 | 1つのevent_keyのみnotify | notifyされたevent_keyのタスクのみが起床し、他のBLOCKEDタスクの状態には一切触れない（実装が全BLOCKEDタスクを走査していないことをコード/モックで確認） | `{ADR_EventDrivenWakeQueue}` |
 | SCHED-09 | 最大タスク数の上限 | `FB_CONF_MAX_TASKS`（既定16）に達するまでspawn | 上限+1個目をspawn | 拒否される（アサーション相当のエラー） | scheduler_concept.py `assert len(self.tasks) < self.max_tasks` |

@@ -153,7 +153,7 @@ def wasi_fd_write(fd: int, iovs: std.span[WasiIov], iovs_len: int, nwritten_ptr:
 - **共有メモリアクセスのセキュリティ境界**: `SCOPE_GUEST_MEM_PTR` で送ったゲストメモリ上のポインタを、HAL側（UARTドライバ等）が読み書きする際の境界チェック責任（ラッパー側での事前検証への依存性）。
 - **仮想FDテーブルの所有権**: WebAssembly仕様の `wasi_fd_t` から内部チャネルへのマッピング状態（VFS）に、タスク間で競合が発生しないこと。
 
-## 5. インターフェイス定義
+## 5. インターフェース定義
 
 ### 5.1 エラーハンドリング戦略
 <!-- traceability: {META_RecoveryStrategy} -->
@@ -196,7 +196,7 @@ enum class service_load_result_t : uint32_t {
 ```
 サービスロード処理において `IGNORE` は非適用（ロード失敗を無視して未初期化のまま続行することは許容されない）であり、`SUCCESS` または 3 つのエラーリカバリー戦略（`RETRY`, `RESTART`, `PANIC`）のいずれかを返却する。各ステータスに応じて、呼び出し側（システムマネージャなど）は 5.1節 で定義したリカバリーアクションを決定し、実行する。 `{META_RecoveryStrategy}`
 
-### 5.3 URI/IPCインターフェイス
+### 5.3 URI/IPCインターフェース
 <!-- traceability: {META_RecoveryStrategy} -->
 - **URI規則**: `fireball://<subsystem_id>/<service_name>/<instance_id>` に準拠する（例: `fireball://services/wasi/0`）。
 - **メッセージ形式**: 64ビットのKey-Value値を最大8個含むパケット。

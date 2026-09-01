@@ -399,7 +399,7 @@ sequenceDiagram
     V-->>C: value or empty
 ```
 
-## 5. インターフェイス定義
+## 5. インターフェース定義
 
 ### 5.1 公開API
 外部コンポーネントから利用する型語彙の契約を定義する。
@@ -464,9 +464,9 @@ sequenceDiagram
 | 事前条件 | 添字が区間内であること。`put` の値が `Bits` に収まること（デバッグビルドでアサート） |
 | 不変条件 | 隣接要素のビットを破壊しないこと。`put` は読み出し・マスク・書き戻しを 1 バイト内で完結させる |
 
-### 5.2 URI/IPCインターフェイス
+### 5.2 URI/IPCインターフェース
 <!-- traceability: {Type_Vocabulary} -->
-本コンポーネントはヘッダオンリーの型語彙であり、IPCインターフェイスを持たない。
+本コンポーネントはヘッダオンリーの型語彙であり、IPCインターフェースを持たない。
 
 ### 5.3 利用箇所
 <!-- traceability: {Type_Vocabulary} {META_FlatMapIndexed} {PackedBitView} {GLOBAL_StrictMemoryLimit} -->
@@ -502,6 +502,6 @@ sequenceDiagram
 | 名称 | 参照先URL/文献名 | 採用/考慮する理由 |
 | :--- | :--- | :--- |
 | Radix Tree & Static Binary Search Tree | アルゴリズム定石 (Knuth TAOCP Vol.3) | 基数プレフィックス粗索引＋ソート済み配列二分探索の合成モデルの参照元 |
-| C++23 `std::flat_map` / `std::flat_set` | ISO/IEC 14882:2024 | 疎ビューのインターフェイス設計の参照元。所有責務と下位コンテナ `std::vector` が本プロジェクトに不適合 |
+| C++23 `std::flat_map` / `std::flat_set` | ISO/IEC 14882:2024 | 疎ビューのインターフェース設計の参照元。所有責務と下位コンテナ `std::vector` が本プロジェクトに不適合 |
 | `std::span` | ISO/IEC 14882:2020 | 非所有ビューの設計定石として。8ビット以上の密な表には本型をそのまま用いる |
 | `std::bitset` / `std::vector<bool>` | ISO/IEC 14882:2020 | ビット詰め表現の先行例。固定長・非所有・多値状態のいずれも満たさないため直接は採用しない |

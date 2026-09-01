@@ -273,7 +273,7 @@ JITサブシステムは、以下の2つの独立した設計書に責務を分�
 - **[JIT Compiler (コード生成コア)](jit_compiler.md)**: 命令テンプレートを用いたネイティブコード生成（Copy-and-Patch Engine）および静的な命令エンコード DSL（constexpr Assembler）。 `{JIT_Encoder}` `{JIT_CopyAndPatch}`
 - **[JIT Runtime (ランタイム管理)](jit_runtime.md)**: 実行履歴監視・ホットスポット判定（Hotspot Detector）、PC-アドレス変換検索（JIT Entry Index）、および 3面キャッシュローテーション。 `{SimpleJITArchitecture}` `{JIT_MultiBuffer_Cache}`
 
-## 6. インターフェイス定義
+## 6. インターフェース定義
 
 ### 6.1 公開API
 外部から利用可能なオブジェクト指向APIを定義する。
@@ -331,9 +331,9 @@ JITサブシステムは、以下の2つの独立した設計書に責務を分�
 | 戻り値 | void |
 | 補足 | vSoC が `co_yield` を発行する際に呼び出され、アイドル時間等を活用して処理される（`co_yield` の判定・発行はインタープリタや `executor` 自身ではなく vSoC が行う）。 |
 
-### 6.2 URI/IPCインターフェイス
+### 6.2 URI/IPCインターフェース
 <!-- traceability: {META_ConfigurableSystem} -->
-本コンポーネントは vSoC の内部ライブラリであり、直接のIPCインターフェイスは持たない。
+本コンポーネントは vSoC の内部ライブラリであり、直接のIPCインターフェースは持たない。
 
 ## 7. 制約達成の方策
 

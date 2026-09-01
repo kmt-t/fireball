@@ -1,6 +1,6 @@
 """
 docs/components/tier1_interface/formal/wit_resource_lifecycle_model.py
-pyModelChecking による WIT インターフェイスの
+pyModelChecking による WIT インターフェースの
 (1) `resource`（bus-master/streaming 等）はハンドルが drop された後、決して操作が実行されないこと
 (2) ホストがトリガーした仮想割り込みは、対応する `pollable` が必ずいずれ ready になり届くこと
 の形式検証（証明・変異検査対応）モデル

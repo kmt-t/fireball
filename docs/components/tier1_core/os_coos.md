@@ -358,7 +358,7 @@ stateDiagram-v2
   - **Wait Interrupt**: ハードウェアからの仮想割り込み（ISRによる `notify_interrupt`）を待機。
 - **Terminated**: タスクの実行が終了し、静的に確保されたTCBスロットおよびパーティションメモリが再利用可能（解放）となった状態。
 
-## 5. インターフェイス設計
+## 5. インターフェース設計
 <!-- traceability: {META_StaticDI} -->
 各コンポーネントの公開仕様を定義する。 `{META_StaticDI}`
 
@@ -385,7 +385,7 @@ class CoosHarness:
         self.memory = memory
 ```
 
-### 5.2 サブコンポーネント・インターフェイス (C++23)
+### 5.2 サブコンポーネント・インターフェース (C++23)
 <!-- traceability: {META_StaticDI} -->
 
 C++23/20 コルーチンおよび静的アロケーションを前提とした、サブコンポーネントのC++ API定義を示す。
@@ -408,7 +408,7 @@ struct CoValue {
 };
 ```
 
-#### 2. 公開 API インターフェイス
+#### 2. 公開 API インターフェース
 
 | コンポーネント | C++ API プロトタイプ定義 | 説明 |
 | :--- | :--- | :--- |

@@ -5,7 +5,7 @@
 
 ## 1. 概要と基本思想
 <!-- traceability: {Type_Vocabulary} {TypeSafeMessaging} {META_ZeroCostAbstraction} -->
-本仕様書は、Fireball Hypervisor が WASM ゲストアプリケーションに対して提供する **WASI Preview 1 (`wasi_snapshot_preview1`, WASI 0.1p)** インターフェイスの物理 ABI マッピング、サポート API セット、およびエラーコード規約を定義する正本である。
+本仕様書は、Fireball Hypervisor が WASM ゲストアプリケーションに対して提供する **WASI Preview 1 (`wasi_snapshot_preview1`, WASI 0.1p)** インターフェースの物理 ABI マッピング、サポート API セット、およびエラーコード規約を定義する正本である。
 
 Fireball ではネイティブなシステム基盤として **WASI 0.3 Preview (WASI 0.3p / HAL)** を採用しており、本 WASI Preview 1 ABI は、内部で WASI 0.3p のストリーム（`wasi:io/streams`）、タイマー（`wasi:clocks/monotonic-clock`）、コンソール出力（`wasi:cli/stdout`）を呼び出す**薄いアダプタ/ラッパーレイヤー（Adapter Pattern）**として動作する。これにより、既存の WASI 0.1p 向けコンパイル済みバイナリとの完全な下位互換性をゼロコストで維持する。 `{Type_Vocabulary}` `{TypeSafeMessaging}` `{META_ZeroCostAbstraction}`
 

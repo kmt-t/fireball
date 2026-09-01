@@ -64,6 +64,7 @@
 | `{TraceBoundaryInvariant}` | `jit_compiler.md` | `jit_compiler.md` | トレース境界でのスタック自己完結性、メモリ同期、およびフォールバック | Scenario 4, 5 (`INT-31`, `INT-41`) |
 | `{JitBranchChainingHandler}` | `jit_compiler.md` | `jit_compiler.md` | JIT 専用チェイニングハンドラと純粋インタープリタ分岐ハンドラの分離 | Scenario 4, 5 |
 | `{JIT_MultiBuffer_Cache}` | `requirement_list.md` | `jit_runtime.md` | Active / Warm / Oldest 3面バンク循環キャッシュ管理 | Scenario 4, 5 (`INT-31`) |
+| `{JIT_OldestOnly_Promote}` | `requirement_list.md` | `jit_runtime.md` | 3面キャッシュにおいて Oldest バンクでヒットしたコードのみを Active バンクへ昇格させる Oldest 限定昇格ポリシー | Scenario 4, 5 (`INT-31`, `INT-41`) |
 | `{ThreeBankCacheEviction}` | `jit_runtime.md` | `jit_runtime.md` | 3面バンク代謝と Oldest ヒット時の Active 昇格・局所アンリンク | Scenario 4, 5 (`INT-31`, `INT-41`) |
 | `{RadixBinaryTreeView_bswap32}` | `system_containers.md` | `jit_runtime.md` | UnifiedPC（`func_idx << 20 \| pc`）の bswap32 による Radix 検索 | Scenario 5 (`INT-40`, `INT-41`) |
 | `{BitView_CardMarking}` | `system_containers.md` | `jit_runtime.md` | 関数ごと 8バイト/カード 2-bit カードマーキング Hotspot 検出（UNEXEC $\to$ EXEC $\to$ HOT $\to$ COMPILED） | Scenario 4 (`INT-30`) |

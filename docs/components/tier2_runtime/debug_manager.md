@@ -111,7 +111,7 @@ sequenceDiagram
     Ctrl->>HAL: Send Response (via IPC/Callback)
 ```
 
-## 5. インターフェイス定義
+## 5. インターフェース定義
 
 ### 5.1 公開API
 外部から利用可能なオブジェクト指向APIを定義する。
@@ -147,7 +147,7 @@ sequenceDiagram
 | シグネチャ | `step_instruction() -> void` |
 | 期待する結果 | 正常：一命令実行後に再び `Stopped` 状態になる。 |
 
-### 5.2 URI/IPCインターフェイス
+### 5.2 URI/IPCインターフェース
 - **コマンド入力**: HAL層からの内部関数呼び出し、または共有メモリ上のキュー経由。
 - **レスポンス出力**: HAL層のRSPトランスポートへ解析結果を返却。
 

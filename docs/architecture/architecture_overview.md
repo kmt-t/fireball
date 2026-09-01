@@ -5,7 +5,7 @@
 
 Fireballは、リソース制限の厳しい小規模組み込みデバイス（ARM Cortex-M33、RISC-V等）向けに設計された軽量WASMハイパーバイザである。以下のコア設計思想を採用し、極小リソース環境での柔軟性と高性能・安全性を両立させる。
 
-- **クリーンアーキテクチャと静的DI**: URIベースの抽象化とIPCルータによる依存性の注入により、コンポーネント間の結合度を下げ、移植性を向上させる。「内側 (Inner)」= Kernel Layer（COOS, IPC Router）、「外側 (Outer)」= Subsystem/Driver/Hardware Layer（HAL, Logging, 物理デバイス）と定義し、内側は外側の具象実装を一切 `#include` しない。外側が内側の定義するインターフェイスを実装することで依存性の逆転を実現する。 `{CleanArchitecture}` `{URIAbstraction}` `{IPCDI}`
+- **クリーンアーキテクチャと静的DI**: URIベースの抽象化とIPCルータによる依存性の注入により、コンポーネント間の結合度を下げ、移植性を向上させる。「内側 (Inner)」= Kernel Layer（COOS, IPC Router）、「外側 (Outer)」= Subsystem/Driver/Hardware Layer（HAL, Logging, 物理デバイス）と定義し、内側は外側の具象実装を一切 `#include` しない。外側が内側の定義するインターフェースを実装することで依存性の逆転を実現する。 `{CleanArchitecture}` `{URIAbstraction}` `{IPCDI}`
 - **協調型マルチタスク (COOS)**: C++20/23コルーチンベースのスタックレス・タスク構造を採用し、低オーバーヘッドな切り替えを実現する。ホーアCSPモデルに基づき、所有権移譲によるゼロコピーメッセージパッシングによりデータ競合を原理的に排除する。 `{LowOverhead}` `{ServiceSelfReboot}` `{FaultTolerant}`
 - **高速JIT (Copy-and-Patch)**: コンパイルレイテンシを最小化し、小規模なコードキャッシュ（2KB x 3面 = 6KB）を循環活用する。
 - **Conceptベース・コンポーネントハーネス**: vSoC等の複合コンポーネントを独立したサブコンポーネントの集合体として定義し、C++20 Conceptsとハーネス構造体（`vsoc_harness`, `coos_harness`）による静的DIで結合する。仮想関数（vtable）のオーバーヘッドをゼロにする。 `{GLOBAL_ComponentHarness}` `{META_StaticDI}`
@@ -59,7 +59,7 @@ graph TD
     end
 
     %% 実線 = 直接依存 (uses)
-    %% 破線 = インターフェイス実装 (realizes)
+    %% 破線 = インターフェース実装 (realizes)
     App -->|"uses: execute()"| vSoC
     Svc -->|"uses: syscall(uri)"| vSoC
     
@@ -75,7 +75,7 @@ graph TD
 
 #### 依存性ルール
 - **Inner / Outer の定義**: 「内側 (Inner)」= Kernel Layer（COOS, IPCR）。「外側 (Outer)」= Guest/Runtime/Subsystem/Driver/Hardware Layer（App, Svc, vSoC, HAL, Log, HW）。内側は外側の具象実装に一切依存してはならない。
-- **実線 (uses) と 破線 (realizes)**: 実線は呼び出し側が対象のシグネチャを直接知る通常の依存。破線は下位が上位のインターフェイスを実装する関係。内側は相手の具象型を知らない。
+- **実線 (uses) と 破線 (realizes)**: 実線は呼び出し側が対象のシグネチャを直接知る通常の依存。破線は下位が上位のインターフェースを実装する関係。内側は相手の具象型を知らない。
 - **URIベースの疎結合**: コンポーネント間の具体的な依存は `fireball://` URI を介したルックアップにより解決される。
 
 ---
@@ -95,7 +95,7 @@ Fireball の実行コアは、以下の 6 つの物理メカニズムによっ�
 |             └─ Card Marking (O(1)) -> Entry Group Index (O(1)) -> flat_map_view Binary Search     |
 +---------------------------------------------------------------------------------------------------+
 |  [Pillar 3] 3面世代交代回転コードキャッシュ (3-Bank Generational Rotating Code Cache)             |
-|             └─ Bank 0 (Active) <-> Bank 1 (Warm) <-> Bank 2 (Oldest) + 最古限定昇格 + MPU W^X     |
+|             └─ Bank 0 (Active) <-> Bank 1 (Warm) <-> Bank 2 (Oldest) + Oldest限定昇格 + MPU W^X   |
 +---------------------------------------------------------------------------------------------------+
 |  [Pillar 4] 対称直接ハンドオフ・エンジン (Symmetric Direct Handoff Engine)                        |
 |             └─ 純粋同期ランデブー (容量0) + スケジューラバイパス 対称遷移 (Symmetric Transfer)     |
@@ -153,7 +153,7 @@ Fireball の実行コアは、以下の 6 つの物理メカニズムによっ�
 
 ARM Cortex-M33 (ARMv8-M Mainline) における物理レジスタの厳格な役割分担（`{AAPCS_FastCall}`）：
 
-| 物理レジスタ | AAPCS 規約 | Fireball インタープリタ | Fireball JIT トレース (トレース単位任意割当) | 役割と不変条件 |
+| 物理レジスタ | AAPCS 規約 | Fireball インタープリタ | Fireball JIT トレース (役割任意割当レジスタ) | 役割と不変条件 |
 | :--- | :--- | :--- | :--- | :--- |
 | **`R0`** | Argument 1 / Scratch | `ip` (WASM PC) | `ip` (WASM PC) | 継続渡し（CPS）第1引数。現在実行中のバイトコード位置。 |
 | **`R1`** | Argument 2 / Scratch | `stack_bot` | `stack_bot` | 継続渡し（CPS）第2引数。統合スタックボトム基底ポインタ `{ContextPointerRegister}`。 |

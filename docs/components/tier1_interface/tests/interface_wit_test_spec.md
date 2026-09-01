@@ -1,11 +1,11 @@
-# WITインターフェイス / リカバリー戦略 テスト仕様書 (Test Specification)
+# WITインターフェース / リカバリー戦略 テスト仕様書 (Test Specification)
 
 ## 1. 目的と対象範囲
 
 正本: `docs/components/tier1_interface/interface_wit.md`
 参考実装: なし（WIT定義そのものはコンセプトコードを持たない。`recovery-strategy-category` の実験的実装はバージョン管理外の `experiments/pysim` ディレクトリに置かれているが、本書の検証対象外である）。
 
-`recovery-strategy-category`（ignore/retry/restart/panic）、低レベルトラップインターフェイス（`fireball-call`）、`console-output`（生バイト出力）に関する契約を検証する。
+`recovery-strategy-category`（ignore/retry/restart/panic）、低レベルトラップインターフェース（`fireball-call`）、`console-output`（生バイト出力）に関する契約を検証する。
 
 ## 2. テストケース一覧
 
@@ -20,7 +20,7 @@
 | WIT-05 | `panic`の選択基準 | MPU違反・二重解放・デッドロック検知 | 該当操作を発生させる | 全タスク停止、クラッシュダンプ出力、フェイルセーフ停止 | §3.2 表 |
 | WIT-06 | IPCキュー満杯の分類 | ipc_router.mdのQueue-Full（Rollback） | キュー満杯状態でsend | `retry`に分類される（`ignore`ではない。データが実質失われるため） |  README「ignore-vs-retry ambiguity」を「retry」に解決した独自判断 |
 
-### 低レベル・トラップインターフェイス (§4)
+### 低レベル・トラップインターフェース (§4)
 
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -35,7 +35,7 @@
 | WIT-21 | 内部ロガーとの排他性なし（インターリーブ許容） | 内部ロガーのflushとconsole-outputのwriteが同時期に発生 | 両方を実行 | 出力順序の保証はされない（インターリーブし得る）ことを仕様として確認する（バグではない） | §5.5 末尾 |
 | WIT-22 | WASI_FD_WRITE→console-outputの自動ルーティング | ゲストの`print`/`eprint` | `fireball_call(WASI_FD_WRITE,...)`を発行 | 自動的に`console-output.write`にルーティングされる | §5.6-3 |
 
-### HALインターフェイス (§5.1, 5.3, 5.4)
+### HALインターフェース (§5.1, 5.3, 5.4)
 
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |

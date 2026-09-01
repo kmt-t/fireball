@@ -66,10 +66,10 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
 - [ ] **ARM Thumb-2 / x86_64 ネイティブパッチステンシル (`inc/jit/stencils.hxx`)**:
   - `__fastcall` CPS 4引数レジスタ規約（R0=IP, R1=stack_bot, R2=ENV, R3=local_base）準拠の事前コンパイル済みネイティブバイト列（RO-Data）とリロケーションテーブル。R4=TOS / R5=NOS はトレース内部に閉じたキャッシュとし、入口で `LDR`×2、脱出時に `STR`×2 で統合スタックと同期する `{JIT_CopyAndPatch}` `{ADR_TosCacheAsymmetry}`
 - [ ] **トリプルバッファ キャッシュマネージャ (`src/jit/cache_manager.cxx`)**:
-  - 2KB × 3面 の代謝（`JIT_OldestOnly_Promote` / 最古破棄）制御 `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}`
+  - 2KB × 3面 の代謝（`JIT_OldestOnly_Promote` / Oldest 破棄・昇格）制御 `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}`
   - MPU W^X トランザクション管理（書き込み時 RW / 実行時 RX）
 - [ ] **Safepoint 協調 & 透過的インタープリタ切り替え (`src/jit/safepoint.cxx`)**:
-  - JIT $\leftrightarrow$ インタープリタ間の Low-Overhead フォールバック（コンテキスト再構築ゼロ、有界極小コスト）およびホットスポット検知 `{JIT_LazyChaining}` `{Interpreter_LazyJITSwitch}` `{JIT_RuntimeAPI_Fallback}`
+  - JIT $\leftrightarrow$ インタープリタ間の Low-Overhead フォールバック（コンテキスト再構築ゼロ、有界極小コスト）およびホットスポット検出 `{JIT_LazyChaining}` `{Interpreter_LazyJITSwitch}` `{JIT_RuntimeAPI_Fallback}`
 - [ ] **JIT 単体テストスイート (`tests/test_jit.cxx`)**:
   - ホットスポットループの JIT トレース生成・実行・フォールバック検証
 

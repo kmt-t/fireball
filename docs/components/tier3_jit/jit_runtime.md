@@ -23,7 +23,7 @@ JIT ランタイム管理は、WASM PC とネイティブコードの紐付け�
     - **下位 16-bit (`bytecode_offset`)**: 当該関数のバイトコード内オフセット（0 〜 65,535 バイト）。
   - **役割**: 複数関数を含む WASM モジュールにおいて、HotspotBitmap、HistoryRing、JITTraceHeader、JITCacheLookup、Trace Chaining 全域で関数間の PC 衝突を防止し、一意な追跡とディスパッチを保証する。
 - **`JitEntryIndex`**: WASMオフセットとネイティブコードの対応付け、および 3 段高速検索ロジックをカプセル化した主要クラス。
-- **カードマーキング表 (Card Marking Table)**: 関数ごとのコード領域を 8 バイト単位のカードで分割管理する 2 ビット状態表。密ビュー `fireball::bit_view<2>` として参照（1 バイトあたり 4 カード = 32 バイト分のコード領域）。`card_idx = bytecode_offset >> FB_CONF_JIT_CARD_SHIFT`（デフォルト: `3`）。
+- **カードマーキング表 (Card Marking Table)**: 関数ごとのコード領域を 8 バイト単位のカードで分割管理する 2 ビット状態表。密ビュー `fireball::bit_view<2>` として参照（1 バイトあたり 4 カード = 32 バイト分のコード領域）。`card_idx = bytecode_offset >> FB_CONF_JIT_CARD_SHIFT`（デフォルト値: `3`）。
   - `0: UNEXECUTED` (未実行)
   - `1: EXECUTED` (実行済み)
   - `2: HOT` (コンパイル要求中)
@@ -81,7 +81,7 @@ stateDiagram-v2
 
 Eviction resets to `UNEXECUTED`, not `EXECUTED`（`jit_runtime_test_spec.md` JITR-04）。
 
-## 5. インターフェイス定義
+## 5. インターフェース定義
 
 ### 5.1 公開API
 
@@ -104,5 +104,5 @@ Eviction resets to `UNEXECUTED`, not `EXECUTED`（`jit_runtime_test_spec.md` JIT
 - **方策**: カードマーキング表 (`bit_view<2>`) による $O(1)$ 事前判定、JITエントリグループインデックスによる $O(1)$ 範囲絞り込み、およびソート済みエントリ配列（`radix_binary_tree_view`）の二分探索（$O(\log n)$）の多段合成により、極めて高速な検索を維持する。
 
 ### 6.2 メモリ制約
-<!-- traceability: {JIT_MultiBuffer_Cache} -->
-- **方策**: `{JIT_MultiBuffer_Cache}` による 3面循環バッファと最古限定昇格により、断片化を防ぎつつ、実行頻度の低いコードを自然に破棄（代謝）させる。
+<!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} -->
+- **方策**: `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}` 3面循環バッファと Oldest 限定昇格により、断片化を防ぎつつ、実行頻度の低いコードを自然に破棄（代謝）させる。

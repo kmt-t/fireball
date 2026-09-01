@@ -1,4 +1,5 @@
-# Interpreter コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}
+
+# Interpreter コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}
 <!-- evidence:
      formal: formal/vsoc_state_model.py
      concept: concepts/interpreter_concept.py
@@ -42,7 +43,7 @@ graph TD
 
 ### 3.3 主要なクラス・構造体・配列・定数
 
-#### インタプリタ（Interpreter）クラス
+#### インタープリタ（Interpreter）クラス
 依存関係（vSoC環境等）と実行に必要なテーブルをカプセル化する。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
@@ -107,7 +108,7 @@ ARM Cortex-M ターゲットにおいて、`execution_context` は **WASM スタ
    - `br / br_if / br_table` で `depth` 個のフレームを脱出する際、対象フレームより外側のフレームを確実にポップし、オペランドスタック長を対象フレームの `stack_height` に巻き戻す。
    - 脱出先が `loop` の場合はループ本体先頭（`target.start + 2`）へ巻き戻してフレームを維持し、`block / if` の場合はフレームをポップして `target.match_end + 1` へ遷移する。
 
-#### インタプリタ構成（interpreter_config）
+#### インタープリタ構成（interpreter_config）
 <!-- traceability: {META_ConfigurableSystem} -->
 インタープリタの動作パラメータを定義する。 `{META_ConfigurableSystem}`
 
@@ -153,7 +154,7 @@ WASM オプコードごとのスタック遷移およびハンドラ実装マト
 - **トレース境界での協調的Yield (`{ADR_TraceBoundaryYield}`)**: インタープリタは命令ごとに精密なステップカウンタや割り込みフラグを評価・中断したりしない——**トレースの切れ目（基本ブロック末尾、ループ境界、関数呼出/復帰、または JIT トレース脱出境界）でのみ、インタープリタの命令ハンドラが呼び出し元（vSoC）へ制御を返す**。`yield_threshold` の判定と `co_yield` の発行は、この戻り値を受け取った vSoC 自身が行う（`runtime_vsoc.md` §4.1「概算Yield」）——インタープリタは `co_yield` を発行するコルーチンではなく、ただの `__fastcall` 関数である。命令単位の検査オーバーヘッドを完全排除して `[[clang::musttail]]` 直結ディスパッチを最速化しつつ、トレース境界でレジスタとスタックが自然に整合するためステート退避を極小化する。 `{ADR_TraceBoundaryYield}` `{Challenge_ApproximateYield}`
 - **デバッグ・プロファイラフック**: 命令実行前後でブレークポイント判定、実行時PC頻度サンプリング（プロファイラ統合）、およびメモリ/レジスタの動的アサーション検証を行い、Debugger/Profiler に制御を委譲する。 `{Debug_Integrated}`
 
-#### WASM インタプリタ フルセット・コンセプトコード (`concepts/interpreter_concept.py`)
+#### WASM インタープリタ フルセット・コンセプトコード (`concepts/interpreter_concept.py`)
 ```python
 class WASMTrap(Exception):
     pass
@@ -257,7 +258,7 @@ sequenceDiagram
     D-->>I: continue
 ```
 
-## 5. インターフェイス定義
+## 5. インターフェース定義
 
 ### 5.1 公開API
 外部から利用可能なオブジェクト指向APIを定義する。
@@ -303,9 +304,9 @@ sequenceDiagram
 | エラー時の挙動 | 未登録の `irq_id` やキュー満杯時は `recovery-strategy: ignore`（またはログ出力してドロップ）とし、ゲスト実行コンテキストの破壊を防ぐ。 `{META_RecoveryStrategy}` |
 | 補足 | vSoC からの通知を仲介する役割を持つ。 |
 
-### 5.2 URI/IPCインターフェイス
+### 5.2 URI/IPCインターフェース
 <!-- traceability: {META_RecoveryStrategy} -->
-本コンポーネントは vSoC の内部ライブラリとして利用され、直接のIPCインターフェイスは持たない。
+本コンポーネントは vSoC の内部ライブラリとして利用され、直接のIPCインターフェースは持たない。
 
 ### 5.3 関連コンポーネントとの連携
 <!-- traceability: {META_RecoveryStrategy} -->
@@ -321,7 +322,7 @@ sequenceDiagram
 ### 6.1 性能制約と方策
 <!-- traceability: {ThreadedInterpreter} -->
 - **目標**: WAMRインタープリタを上回る実行速度。
-- **方策**: `{ThreadedInterpreter}` による分岐削減と、ホットスポット検知による JIT 移行を組み合わせる。
+- **方策**: `{ThreadedInterpreter}` による分岐削減と、ホットスポット検出による JIT 移行を組み合わせる。
 
 ### 6.2 メモリ制約と方策
 <!-- traceability: {ThreadedInterpreter} -->

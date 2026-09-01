@@ -489,7 +489,7 @@ sequenceDiagram
 2. **Rendezvous**: `(sender_role, target_role)` エッジ専用の CSP チャネル上でバッファなしの同期ハンドオフを試みる。受信側タスクが既に待機していれば即座に完了し、まだ到達していなければ送信側タスクは協調スケジューラ上でブロックし、受信側が到達した瞬間にランデブーが成立する。メッセージはバッファに滞留しない——値を保持するのは「相手が既に待っているか」という 1 ビットの状態のみである。
 3. **Grant**: ランデブーが成立した瞬間に、受信側に対して所有権（アクセス権）を付与（有効化）し、メッセージの In-flight 状態を解除して送信側ロックを物理的にリリースする。
 
-## 5. インターフェイス定義
+## 5. インターフェース定義
 
 ### 5.1 公開API
 外部から利用可能なオブジェクト指向APIを定義する。
@@ -543,7 +543,7 @@ sequenceDiagram
 | 戻り値 | 成功時は受信した `ipc-message`（所有権は呼び出し元に移譲済み）。失敗時は `operation-result`（送信先URIが未登録の場合は `ERR_NOT_FOUND`、RBAC 上どの送信元からも許可されていない場合は `ERR_PERMISSION_DENIED`） |
 | エラー時の挙動 | `ERR_NOT_FOUND`/`ERR_PERMISSION_DENIED` はチャネル選択より前段の静的チェックであり、これらで失敗した場合はブロックすら発生しない。 |
 
-### 5.2 URI/IPCインターフェイス
+### 5.2 URI/IPCインターフェース
 <!-- traceability: {TypeSafeMessaging} -->
 - **URI形式**: `fireball://<subsystem_id>/<stream>/<instance_id>`
 - **メッセージ形式**: `fireball::flat_map_view` を用いた、最大8要素の型安全なKey-Value構造。定数や識別キーの型安全なパッキングをサポートし、動的なアロケーションを行うことなく動作する。 `{TypeSafeMessaging}`

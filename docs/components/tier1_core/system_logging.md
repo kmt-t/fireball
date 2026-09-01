@@ -13,7 +13,7 @@
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->
-本コンポーネントは **Tier 1 (主要システムコンポーネント: Primary Component)** に属し、システム共通のリングバッファロギングおよびアイドル検知フックに基づく遅延出力を担当する。 `{META_3TierSeparation}`
+本コンポーネントは **Tier 1 (主要システムコンポーネント: Primary Component)** に属し、システム共通のリングバッファロギングおよびアイドル検出フックに基づく遅延出力を担当する。 `{META_3TierSeparation}`
 
 ## 3. 静的モデル
 
@@ -124,7 +124,7 @@ sequenceDiagram
     L->>RB: advance_read_ptr(transferred_count)
 ```
 
-## 5. インターフェイス定義
+## 5. インターフェース定義
 
 ### 5.1 公開API
 外部から利用可能なオブジェクト指向APIを定義する。
@@ -150,7 +150,7 @@ sequenceDiagram
 | 戻り値 | `log_result_t` (成功時は `SUCCESS`、物理トランスポートがDMA転送中かつ出力バッファが空でないといったハードウェアビジー状態の失敗時には `ERR_TRANSPORTER_BUSY` を返す) |
 | 補足 | COOS の `set_idle_hook` により、システムアイドル時に呼び出される。物理転送中に割り込み（INTイベント、例：WASIタイマー等）が発生した場合は、現在のDMA転送の完了待機を中止してバックグラウンドDMAに任せ、次のログバッファのフラッシュ処理をスキップして速やかに制御をスケジューラに戻す。 |
 
-### 5.2 URI/IPCインターフェイス
+### 5.2 URI/IPCインターフェース
 <!-- traceability: {DictionaryBasedIPC} -->
 - **URI**: `fireball://logging/system/0`
 - **メッセージ形式**: Key-Valueプロトコル。 `level`, `dict_offset`, `arg0`〜`arg3` を含む。 `{DictionaryBasedIPC}`

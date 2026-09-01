@@ -5,6 +5,6 @@
 - [`stack_cache_concept.py`](stack_cache_concept.py): `{JIT_RegisterMapping}` スタックトップキャッシング版ステンシル（素朴ステンシル 23 命令 $\to$ 12 命令に削減）。
 - [`thumb2_stencil_semantic_verifier.py`](thumb2_stencil_semantic_verifier.py): Unicorn ARMv8-M エミュレータによるステンシルバイナリの実機意味論検証。
 - [`jit_trace_execution_verifier.py`](jit_trace_execution_verifier.py): Unicorn ARMv8-M 上での JIT トレース出力マシンコード実実行検証。
-- 統合ランタイム（インタプリタ + トレーシング JIT + 3面キャッシュ + MPU W^X）の正本は
+- 統合ランタイム（インタープリタ + トレーシング JIT + 3面キャッシュ + MPU W^X）の正本は
   [`../../tier2_runtime/concepts/runtime_engine_concept.py`](../../tier2_runtime/concepts/runtime_engine_concept.py) に置く。
   実行モデル全体を跨ぐため Tier 2 Runtime 側を単一の正本とし、ここでは複製しない。

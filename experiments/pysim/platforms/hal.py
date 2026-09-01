@@ -440,7 +440,7 @@ class HalTask:
             self.processed_count += 1
             cmd_id = msg.get(ARG_CMD_ID)
             if cmd_id is None:
-                cmd_id = msg.get(ARG_QUERY_CMD_ID, 0x01 if msg.raw_payload else 0x00)
+                cmd_id = msg.get(ARG_QUERY_CMD_ID, 0x00)
 
             # Dispatch to appropriate driver based on command ID hierarchy
             target_driver = None
@@ -468,11 +468,10 @@ class HalTask:
 def make_hal_ipc_message(
     cmd_id: int,
     params: Sequence[tuple[int, Any]] = (),
-    raw_payload: bytes | None = None,
 ) -> IPCMessage:
     """Builds a standardized IPCMessage for communicating with HalTask."""
     entries = list(params)
     entries.append((ARG_CMD_ID, cmd_id))
     sorted_entries = sorted(entries, key=lambda kv: kv[0])
     storage = FlatMapStorage(sorted_entries)
-    return IPCMessage(storage=storage, raw_payload=raw_payload)
+    return IPCMessage(storage=storage)

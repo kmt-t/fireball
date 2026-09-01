@@ -31,7 +31,7 @@ import ctypes
 import struct
 
 from hal import ShmTrap
-from ipc_router import IPCMessage, Role
+from ipc_router import IPCMessage, Role, bytes_to_kv_storage
 from logger import LogLevel
 from recovery import RecoveryManager, RecoveryStrategy, Result
 from runtime_engine import BasicBlock, IntegratedHybridEngine, WASMContext
@@ -256,7 +256,7 @@ def run_wasm_demo(sysv: System) -> None:
 
     def debugger_sender():
         yield from sysv.ipc.send(
-            Role.DEBUGGER, "fireball://hal/gpio/0", IPCMessage(raw_payload=payload)
+            Role.DEBUGGER, "fireball://hal/gpio/0", IPCMessage(storage=bytes_to_kv_storage(payload))
         )
 
     sysv.scheduler.spawn("hal_receiver", hal_receiver())

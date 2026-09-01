@@ -25,7 +25,14 @@ from enum import IntEnum
 from typing import Any
 
 from hal import ShmBufferPool, ShmHandle, UartTransport
-from ipc_router import IPCMessage, IPCRouter, IpcStatus, Role
+from ipc_router import (
+    IPCMessage,
+    IPCRouter,
+    IpcStatus,
+    Role,
+    bytes_to_kv_storage,
+    kv_entries_to_bytes,
+)
 from logger import ConsoleOutput, LogDictionary, Logger, LogLevel
 from memory import (
     FB_CONF_MEMORY_POOL_SIZE,
@@ -594,7 +601,7 @@ class System:
         payload = self._read_guest(msg_offset, msg_len)
         if payload is None:
             return WasiErrno.FAULT
-        msg = IPCMessage(raw_payload=bytes(payload))
+        msg = IPCMessage(storage=bytes_to_kv_storage(payload))
         # The guest task's own execution *is* this call: system_syscall.md
         # models a host call as running inside the calling task's own
         # coroutine (the runtime task, never the Interpreter itself -- it
@@ -637,9 +644,9 @@ class System:
         status, msg = task.result
         if status in (IpcStatus.ERR_NOT_FOUND, IpcStatus.ERR_PERMISSION_DENIED):
             return int(WasiErrno.NOENT)
-        data = msg.raw_payload or b""
-        n = min(len(data), buf_len)
-        if not self._write_guest(buf_offset, data[:n]):
+        data = kv_entries_to_bytes(msg.entries, max_len=buf_len)
+        n = len(data)
+        if not self._write_guest(buf_offset, data):
             return int(WasiErrno.FAULT)
         return n
 

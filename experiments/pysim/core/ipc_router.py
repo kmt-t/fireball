@@ -128,20 +128,17 @@ class IPCMessage:
     no other field is specified there).
 
     A bulk byte body (e.g. a guest buffer) does not fit a 32-bit value slot at
-    all -- a real implementation would pass it by shm-slice handle rather than
-    inlining it, so it is carried here as a separate `raw_payload`, not as a
-    kv_pair.
+    all -- per the Fireball architecture, bulk data is passed via shm-slice handle
+    (ARG_SHM_HANDLE) or packed AoS kv_pairs, preserving the zero-copy model.
     """
 
     def __init__(
         self,
         storage: FlatMapStorage | None = None,
-        raw_payload: bytes | None = None,
     ):
         self.ownership = OwnershipState.SENDER_OWNS
         self.storage: FlatMapStorage = storage if storage is not None else _EMPTY_IPC_STORAGE
         self.payload: FlatMapView = self.storage.view()
-        self.raw_payload: bytes | None = bytes(raw_payload) if raw_payload is not None else None
 
     @property
     def entries(self) -> Sequence[tuple[Any, Any]]:
@@ -178,6 +175,33 @@ class IPCMessage:
 
     def __len__(self) -> int:
         return len(self.storage.entries)
+
+
+def bytes_to_kv_storage(data: bytes) -> FlatMapStorage:
+    """Packs arbitrary byte buffer into AoS (key32, val32) entries with length metadata."""
+    entries = [(0, len(data))]
+    for i in range(0, len(data), 4):
+        chunk = data[i : i + 4]
+        v = int.from_bytes(chunk, "little")
+        entries.append((i // 4 + 1, v))
+    return FlatMapStorage(sorted(entries, key=lambda kv: kv[0]))
+
+
+def kv_entries_to_bytes(entries: Sequence[tuple[int, int]], max_len: int | None = None) -> bytes:
+    """Unpacks AoS (key32, val32) entries back into raw bytes using length metadata."""
+    entries_dict = dict(entries)
+    total_len = entries_dict.get(0, 0)
+    if max_len is not None:
+        total_len = min(total_len, max_len)
+
+    buf = bytearray()
+    idx = 1
+    while len(buf) < total_len:
+        v = entries_dict.get(idx, 0)
+        chunk = v.to_bytes(4, "little")
+        buf.extend(chunk)
+        idx += 1
+    return bytes(buf[:total_len])
 
 
 # Static service table: ipc_router.md §3.1 -- a ROM-resident constexpr sorted

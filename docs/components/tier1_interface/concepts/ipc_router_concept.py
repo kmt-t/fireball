@@ -48,11 +48,9 @@ class IPCMessage:
     def __init__(
         self,
         storage: FlatMapStorage | None = None,
-        raw_payload: bytes | None = None,
     ):
         self.storage = storage if storage is not None else _EMPTY_STORAGE
         self.payload = self.storage.view()
-        self.raw_payload = bytes(raw_payload) if raw_payload is not None else None
         self.ownership = OwnershipState.SENDER_OWNS
 
     @property

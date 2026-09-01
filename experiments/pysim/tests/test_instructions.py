@@ -53,6 +53,8 @@ from ipc_router import (
     OwnershipState,
     Role,
     ScopeKind,
+    bytes_to_kv_storage,
+    kv_entries_to_bytes,
     pack_key32,
 )
 from logger import LogDictionary, Logger, LogLevel
@@ -1289,7 +1291,7 @@ def test_syscall_06_ipc_lookup_send_recv():
             sysv.fireball_call(FbSyscallId.IPC_SEND, handle, 64, len(payload), 0, 0, 0)
             == WasiErrno.SUCCESS
         )
-        assert sent and sent[0].raw_payload == payload
+        assert sent and kv_entries_to_bytes(sent[0].entries, max_len=len(payload)) == payload
 
         # -- IPC_RECV: a DEBUGGER sender coroutine blocks first, so the
         # guest's IPC_RECV completes the rendezvous the instant it calls in.
@@ -1301,7 +1303,7 @@ def test_syscall_06_ipc_lookup_send_recv():
 
         def debugger_sender():
             status, _ = yield from sysv.ipc.send(
-                Role.DEBUGGER, core_uri, IPCMessage(raw_payload=reply)
+                Role.DEBUGGER, core_uri, IPCMessage(storage=bytes_to_kv_storage(reply))
             )
             sent_status.append(status)
 
@@ -2348,7 +2350,9 @@ def test_guest_wasi_05_jit_fireball_call_ipc_messaging():
 
         def debugger_sender():
             yield from sysv.ipc.send(
-                Role.DEBUGGER, "fireball://hal/gpio/0", IPCMessage(raw_payload=payload)
+                Role.DEBUGGER,
+                "fireball://hal/gpio/0",
+                IPCMessage(storage=bytes_to_kv_storage(payload)),
             )
 
         sysv.scheduler.spawn("hal_receiver", hal_receiver())

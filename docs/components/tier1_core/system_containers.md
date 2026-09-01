@@ -35,7 +35,7 @@
 
 ### 3.1 データ構造
 <!-- traceability: {META_FlatMapIndexed} {META_BinarySearch} {FlatViewNarrowing} {PackedBitView} {GLOBAL_StaticScalability} -->
-- **`flat_map_view<Key, Value>`**: **SoA（Structure of Arrays）構造**を採用し、昇順ソート済みのキー配列（`std::span<const Key>`）と、それに添字対応する値配列（`std::span<const Value>`）の2組の非所有ビューで構成される疎マップ。二分探索時に値配列がCPUキャッシュラインを消費しないため、高い参照局所性と高速な $O(\log N)$ 二分探索・範囲絞り込み（`narrow` / `slice`）を提供する。 `{META_BinarySearch}` `{FlatViewNarrowing}` `{META_FlatMapIndexed}`
+- **`flat_map_view<Key, Value>`**: **AoS（Array of Structures）構造**を採用し、昇順ソート済みのエントリ配列（`std::span<const flat_map_entry<Key, Value>>`）の非所有ビューで構成される疎マップ。キーと値のペアを単一配列で連続保持し、C++ 標準の `std::sort`（`constexpr` 対応）や `std::lower_bound` をそのまま利用できる。保持メンバは単一スパン（ポインタと長さの計 2 ワード = 1組）のみであり、レジスタ渡しに最適化されている。 `{META_BinarySearch}` `{FlatViewNarrowing}` `{META_FlatMapIndexed}`
 - **`flat_set_view<Key>`**: 昇順ソート済みのキー列のみを指す非所有ビュー。所属判定を行う。 `{META_BinarySearch}` `{FlatViewNarrowing}`
 - **`radix_binary_tree_view<Key, Value, RadixShift>`**: 基数テーブル（Radix Table / $O(1)$ スカラー開始インデックス配列：サイズ $K+1$、バケット $p$ の区間は `[table[p], table[p+1]]`）とソート済みエントリ配列の局所二分探索をカプセル化した多段索引ビュー。 `{META_BinarySearch}` `{FlatViewNarrowing}`
 - **`bit_view<Bits>`**: 1 要素が 1 バイト未満の密なビット詰め表を指す非所有ビュー。添字で直接読み書きする。 `{PackedBitView}`
@@ -79,8 +79,7 @@ SoA（Structure of Arrays）構造に基づく、昇順ソート済みのキー�
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| キー列区間 | 昇順ソート済みのキー配列への読み取り専用ビュー（二分探索対象） | データ範囲 | `std::span<const Key>` |
-| 値列区間 | キー列に添字対応する値配列への読み取り専用ビュー | データ範囲 | `std::span<const Value>` |
+| エントリ配列区間 | 昇順ソート済みの (Key, Value) ペア配列への読み取り専用ビュー（二分探索対象） | データ範囲 | `std::span<const flat_map_entry<Key, Value>>` |
 
 #### 疎集合ビュー（flat_set_view）
 <!-- traceability: {META_BinarySearch} {META_ZeroCostAbstraction} {FlatViewNarrowing} -->
@@ -93,7 +92,7 @@ SoA（Structure of Arrays）構造に基づく、昇順ソート済みのキー�
 **共通の不変条件（map / set）**: キー区間の要素は狭義単調増加であり、重複キーは存在しない。この不変条件が二分探索の正当性を与える。ビューの生成元がこれを破った場合の挙動は未定義である。
 
 **共通の設計上の性質（map / set）**:
-- **ゼロコスト**: 実体はポインタと長さのみ（map は 2 組、set は 1 組）。所有も確保も行わず、AAPCS の引数レジスタに載る大きさに収まる。 `{META_ZeroCostAbstraction}`
+- **ゼロコスト**: 実体はポインタと長さのみ（map も set も 1 組 = 2ワード）。所有も確保も行わず、AAPCS の引数レジスタに載る大きさに収まる。 `{META_ZeroCostAbstraction}`
 - **合成可能**: 絞り込み操作は同じビュー型を返すため、粗索引による絞り込みを多段に重ねられる。
 - **添字の取り違えを型で防ぐ**: 生の開始・終了インデックス対を返す設計では、呼び出し側が誤った配列と組み合わせても検出できない。ビューは区間を 1 つの値として束ねるため、この誤りが表現できない。
 
@@ -125,12 +124,24 @@ RAM 32KB という制約下では、数値しか取らない状態表を 1 バ�
 // inc/fireball_containers.hxx での定義形式 (C++23)
 namespace fireball {
 
-// 疎マップ: ソート済みキー列に対する絞り込みと二分探索。値を返す。
+template <class Key, class Value>
+struct flat_map_entry {
+  Key key;
+  Value value;
+  constexpr auto operator<=>(const flat_map_entry& other) const noexcept {
+    return key <=> other.key;
+  }
+  constexpr auto operator==(const flat_map_entry& other) const noexcept -> bool {
+    return key == other.key;
+  }
+};
+
+// 疎マップ: ソート済みペア列（AoS）に対する絞り込みと二分探索。値を返す。
 template <class Key, class Value>
 class flat_map_view {
  public:
-  constexpr explicit flat_map_view(std::span<const Key> keys,
-                                  std::span<const Value> values) noexcept;
+  constexpr explicit flat_map_view(
+      std::span<const flat_map_entry<Key, Value>> entries) noexcept;
   constexpr auto narrow(const Key& lo, const Key& hi) const noexcept -> flat_map_view;
   constexpr auto slice(std::size_t first, std::size_t last) const noexcept -> flat_map_view;
   constexpr auto find(const Key& k) const noexcept -> std::optional<Value>;
@@ -175,14 +186,13 @@ class bit_view {
   constexpr auto size() const noexcept -> std::size_t;
 };
 
-// 固定容量 SoA 実体ストレージ: constexpr 連動ソート、ソート維持挿入・削除、非所有ビュー生成
+// 固定容量 AoS 実体ストレージ: constexpr 標準ソート、ソート維持挿入・削除、非所有ビュー生成
 template <class Key, class Value, std::size_t Capacity>
 struct flat_map_storage {
-  std::array<Key, Capacity> keys{};
-  std::array<Value, Capacity> values{};
+  std::array<flat_map_entry<Key, Value>, Capacity> entries{};
   std::size_t count{0};
 
-  // constexpr インプレース連動ヒープソート（O(N log N)、再帰なしスタックO(1)で keys と values を同時に並び替え）
+  // constexpr 標準ソート（std::sort で entries をキー昇順に並び替え）
   constexpr auto sort() noexcept -> flat_map_storage&;
   // ソート順序を維持したまま要素を挿入（既存キーなら値更新: false、新規キーなら挿入: true）
   constexpr auto insert(const Key& k, const Value& v) noexcept -> bool;
@@ -195,8 +205,8 @@ struct flat_map_storage {
 };
 
 template <class Key, class Value, std::size_t N>
-constexpr auto make_sorted_flat_map_storage(std::array<Key, N> keys,
-                                            std::array<Value, N> values) noexcept
+constexpr auto make_sorted_flat_map_storage(
+    std::array<flat_map_entry<Key, Value>, N> entries) noexcept
     -> flat_map_storage<Key, Value, N>;
 
 }  // namespace fireball
@@ -209,7 +219,7 @@ constexpr auto make_sorted_flat_map_storage(std::array<Key, N> keys,
 - **絞り込み後二分探索 (Narrow-then-Search)**: 粗い索引で対象区間を先に狭め、狭めた区間に対してのみ二分探索を行う。全体の件数を $N$、絞り込み後を $n$ とすると計算量は $O(\log n)$ となり、$n$ が $N$ より十分小さい限り全体探索より少ない比較回数で済む。加えて、走査するキーが連続した狭い範囲に収まるため参照局所性が改善する。map / set の双方に適用される。 `{FlatViewNarrowing}` `{META_BinarySearch}` `{LowLatencyLookup}`
 - **絞り込みの合成**: 絞り込み操作の戻り値は同じビュー型であるため、複数段の索引を順に適用できる。各段は区間を単調に狭めるのみで、区間外の要素を再び含めることはない。
 - **ビット詰めアクセス**: 論理添字 $i$ に対する物理位置は `bit = origin + i * Bits` として求まり、`byte = bit >> 3`、`shift = bit & 7` となる。`Bits` が 8 の約数であるため 1 要素がバイトを跨ぐことはなく、単一バイトのロードとシフト・マスクで読み出しが完結する。 `{PackedBitView}` `{GLOBAL_StrictMemoryLimit}`
-- **SoA 連動ヒープソート (In-place Co-heapsort)**: バブルソート等の $O(N^2)$ 初等ソートを避け、最悪・平均ともに $O(N \log N)$ が保証される連動ヒープソートを採用する。キー配列と値配列を常に同期して要素交換（swap）し、再帰を用いないボトムアップ型ヒープ構築と sift-down ループにより、追加ヒープメモリ $0$ かつスタック消費 $O(1)$ を達成する。これにより C++20/C++23 の `constexpr` 下でもスタックオーバーフローなく安全にコンパイル時ソートを実行できる。 `{META_ZeroCostAbstraction}` `{GLOBAL_StrictMemoryLimit}`
+- **AoS 標準ソートと二分探索 (Standard Sort & Binary Search)**: 自前のソート関数（連動ヒープソート等）の車輪の再発明を排し、C++ 標準の `std::sort`（C++20 `constexpr` 対応）および射影付き `std::lower_bound` をそのまま利用する。小規模組み込み（$N \le 64$）においてデータ全体が 1〜2 本のキャッシュライン（32〜64 バイト）に収まるため、AoS でキャッシュミスは発生せず、標準ライブラリの極限まで最適化されたアルゴリズムの恩恵を最大化できる。 `{META_ZeroCostAbstraction}` `{GLOBAL_StrictMemoryLimit}`
 
 実行可能な参照実装と検証テストは [`concepts/flat_view_concept.py`](concepts/flat_view_concept.py) を参照。ビット詰めの近傍非破壊性、非バイト境界での `slice`、絞り込みの単調縮小性、集合の所属判定、JIT 検索経路をテストで固定している。
 

@@ -83,97 +83,113 @@ class _SortedWindow:
         return i if i < self.last and self.keys[i] == key else None
 
 
-class FlatMapView(_SortedWindow):
-    """flat_map_view<Key, Value>: sorted keys, narrow-then-search, returns a value."""
+class FlatMapView:
+    """flat_map_view<Key, Value>: sorted pairs array (AoS), narrow-then-search, returns a value."""
 
-    def __init__(self, keys, values, first=0, last=None):
-        super().__init__(keys, first, last)
-        self.values = values
+    __slots__ = ("entries", "first", "last")
+
+    def __init__(self, entries, values=None, first=0, last=None):
+        if values is not None:
+            self.entries = list(zip(entries, values, strict=False))
+        else:
+            self.entries = entries
+        self.first = first
+        self.last = len(self.entries) if last is None else last
+
+    @property
+    def keys(self):
+        return [k for k, _ in self.entries[self.first : self.last]]
+
+    @property
+    def values(self):
+        return [v for _, v in self.entries[self.first : self.last]]
+
+    def size(self):
+        return self.last - self.first
+
+    def empty(self):
+        return self.size() == 0
+
+    def _bounds(self, lo, hi):
+        sub = self.entries[self.first : self.last]
+        left = bisect.bisect_left(sub, lo, key=lambda e: e[0])
+        right = bisect.bisect_right(sub, hi, key=lambda e: e[0])
+        return (self.first + left, self.first + right)
+
+    def _locate(self, key):
+        sub = self.entries[self.first : self.last]
+        idx = bisect.bisect_left(sub, key, key=lambda e: e[0])
+        if idx < len(sub) and sub[idx][0] == key:
+            return self.first + idx
+        return None
 
     def slice(self, first, last):
         assert self.first <= first <= last <= self.last, "a view may only ever shrink"
-        return FlatMapView(self.keys, self.values, first, last)
+        return FlatMapView(self.entries, None, first, last)
 
     def narrow(self, lo, hi):
-        return FlatMapView(self.keys, self.values, *self._bounds(lo, hi))
+        return FlatMapView(self.entries, None, *self._bounds(lo, hi))
 
     def find(self, key):
         """Binary search inside the current window only."""
         i = self._locate(key)
-        return None if i is None else self.values[i]
+        return None if i is None else self.entries[i][1]
 
 
 class FlatMapStorage:
     """
-    Owning storage container for sorted keys and values arrays (SoA).
+    Owning storage container for sorted (key, value) pair entries (AoS).
     Provides non-owning FlatMapView via .view().
-    Supports constexpr-equivalent in-place co-sorting, sorted insertion, and sorted removal.
+    Leverages standard sorting algorithms and binary search.
     """
 
-    __slots__ = ("keys", "values")
+    __slots__ = ("entries",)
 
     def __init__(
         self,
-        keys: Sequence[Any] = (),
-        values: Sequence[Any] = (),
+        entries: Sequence[Any] = (),
+        values: Sequence[Any] | None = None,
         sort: bool = False,
     ):
-        self.keys = list(keys)
-        self.values = list(values)
-        assert len(self.keys) == len(self.values), "keys and values must have same length"
+        if values is not None:
+            self.entries = list(zip(entries, values, strict=False))
+        else:
+            self.entries = list(entries)
         if sort:
             self.sort()
 
+    @property
+    def keys(self) -> list[Any]:
+        return [k for k, _ in self.entries]
+
+    @property
+    def values(self) -> list[Any]:
+        return [v for _, v in self.entries]
+
     def is_sorted(self) -> bool:
-        return all(self.keys[i] <= self.keys[i + 1] for i in range(len(self.keys) - 1))
+        return all(
+            self.entries[i][0] <= self.entries[i + 1][0] for i in range(len(self.entries) - 1)
+        )
 
     def sort(self) -> FlatMapStorage:
-        """In-place co-heapsort matching C++ constexpr algorithm (O(N log N) time, O(1) space)."""
-        n = len(self.keys)
-        if n <= 1:
-            return self
-
-        def _sift_down(start: int, end: int) -> None:
-            root = start
-            while True:
-                child = 2 * root + 1
-                if child > end:
-                    break
-                if child + 1 <= end and self.keys[child] < self.keys[child + 1]:
-                    child += 1
-                if self.keys[root] < self.keys[child]:
-                    self.keys[root], self.keys[child] = self.keys[child], self.keys[root]
-                    self.values[root], self.values[child] = self.values[child], self.values[root]
-                    root = child
-                else:
-                    break
-
-        for start in range((n - 2) // 2, -1, -1):
-            _sift_down(start, n - 1)
-
-        for end in range(n - 1, 0, -1):
-            self.keys[0], self.keys[end] = self.keys[end], self.keys[0]
-            self.values[0], self.values[end] = self.values[end], self.values[0]
-            _sift_down(0, end - 1)
-
+        """Sorts entries in-place by key using standard sort (C++ std::sort equivalent)."""
+        self.entries.sort(key=lambda e: e[0])
         return self
 
     def insert(self, key: Any, value: Any) -> bool:
         """Inserts maintaining ascending key order."""
-        idx = bisect.bisect_left(self.keys, key)
-        if idx < len(self.keys) and self.keys[idx] == key:
-            self.values[idx] = value
+        idx = bisect.bisect_left(self.entries, key, key=lambda e: e[0])
+        if idx < len(self.entries) and self.entries[idx][0] == key:
+            self.entries[idx] = (key, value)
             return False
-        self.keys.insert(idx, key)
-        self.values.insert(idx, value)
+        self.entries.insert(idx, (key, value))
         return True
 
     def remove(self, key: Any) -> bool:
         """Removes key and its value maintaining sorted order."""
-        idx = bisect.bisect_left(self.keys, key)
-        if idx < len(self.keys) and self.keys[idx] == key:
-            self.keys.pop(idx)
-            self.values.pop(idx)
+        idx = bisect.bisect_left(self.entries, key, key=lambda e: e[0])
+        if idx < len(self.entries) and self.entries[idx][0] == key:
+            self.entries.pop(idx)
             return True
         return False
 
@@ -181,10 +197,10 @@ class FlatMapStorage:
         return self.remove(key)
 
     def view(self) -> FlatMapView:
-        return FlatMapView(self.keys, self.values)
+        return FlatMapView(self.entries)
 
     def __len__(self) -> int:
-        return len(self.keys)
+        return len(self.entries)
 
 
 class FlatSetView(_SortedWindow):

@@ -11,7 +11,7 @@
 
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| CONT-01 | `flat_map_view.find`はO(log n)二分探索 (SoA構造) | ソート済みキー列と値列のSoA | `find(key)` | キー列上のみを二分探索し、存在すれば添字対応する値を返し、なければ空を返す。区間長nに対し比較回数がO(log n) | §5.1 find, §3.1 SoA |
+| CONT-01 | `flat_map_view.find`はO(log n)二分探索 (AoS構造) | ソート済み (key, value) ペア配列のAoS | `find(key)` | キーを二分探索し、存在すればペアの値を返し、なければ空を返す。区間長nに対し比較回数がO(log n) | §5.1 find, §3.1 AoS |
 | CONT-02 | `narrow`の単調縮小性 | 任意のビュー | `narrow(lo, hi)`を連続適用 | 各段の区間が前段の部分集合になる（決して広がらない） | §5.1 narrow 不変条件 |
 | CONT-03 | `slice`の単調縮小性・境界クランプ | 任意のビュー | 区間外のfirst/lastを指定 | デバッグ時はassert、リリース相当では現在区間へクランプ | §5.1 slice |
 | CONT-04 | `flat_set_view.contains`は値を返さない | 集合ビュー | `contains(key)` | bool のみを返し、値列を保持しない | §5.1 contains |
@@ -21,9 +21,9 @@
 | CONT-08 | `radix_binary_tree_view`のO(1)粗索引 | Radix Table構築済み | `find(key)` | プレフィックスで範囲を即座に絞り込み、範囲内のみ二分探索する | §3.1 radix_binary_tree_view, flat_view_concept.py `RadixBinaryTreeView.find` |
 | CONT-09 | JITエントリ検索のカードマーキング事前フィルタ | カードがCOMPILEDでない | `lookup_jit_entry`相当 | 二分探索/Radix探索を行わずNoneを返す（O(1)事前フィルタ） | §4.1「JIT entry lookup」, flat_view_concept.py `lookup_jit_entry` |
 | CONT-10 | mapとsetの型分離 | - | 型定義を確認 | `flat_set_view`は値列フィールドを持たない（`flat_map_view`の特殊形として実装されていない） | §1「なぜ4つに分けるか」 |
-| CONT-11 | 配列データ所有権と非所有Viewの完全分離 | ストレージ配列構築 | `storage.view()` | ストレージ（Owner）が実体配列を所有し、Viewは所有権を持たず借用参照する（多重生成しても同一配列参照） | §1「所有コンテナは定義しない」, §3.3 |
-| CONT-12 | `FlatMapStorage`の連動ヒープソート（O(N log N)、constexpr対応） | 未ソートのキー列・値列 | `storage.sort()` または `sort=True` | バブルソート等のO(N^2)を排し、最悪O(N log N)保証の連動ヒープソート（再帰なしスタックO(1)）でキーの昇順に連動ソートされ、`is_sorted()`がTrueになり`view().find()`で全要素探索可能 | §3.3, §4.1 `flat_map_storage::sort` |
-| CONT-13 | `FlatMapStorage`のソート維持挿入・削除 | 構築済みストレージ | `insert(k, v)` / `remove(k)` / `erase(k)` | 任意順序での挿入・削除後も常に昇順ソート状態が維持され、二分探索の不変条件が保たれる | §3.3 `flat_map_storage::insert/erase` |
+| CONT-11 | ペア配列データ所有権と非所有Viewの完全分離 | ストレージ配列構築 | `storage.view()` | ストレージ（Owner）が実体ペア配列を所有し、Viewは所有権を持たず単一スパンとして借用参照する（多重生成しても同一配列参照） | §1「所有コンテナは定義しない」, §3.3 |
+| CONT-12 | `FlatMapStorage`の標準ソート（AoS、constexpr対応） | 未ソートのペア配列 | `storage.sort()` または `sort=True` | C++標準の`std::sort`相当でキー昇順にソートされ、自前ソート関数を抱えずに`is_sorted()`がTrueになり`view().find()`で全要素探索可能 | §3.3, §4.1 `flat_map_storage::sort` |
+| CONT-13 | `FlatMapStorage`のソート維持挿入・削除 | 構築済みストレージ | `insert(k, v)` / `remove(k)` / `erase(k)` | 任意順序での挿入・削除後も常にペア配列の昇順ソート状態が維持され、二分探索の不変条件が保たれる | §3.3 `flat_map_storage::insert/erase` |
 
 ## 3. テスト検証実績と網羅状況
 

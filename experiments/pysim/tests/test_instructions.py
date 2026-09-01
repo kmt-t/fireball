@@ -1161,18 +1161,17 @@ def test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group():
 
 
 def test_ipc_05_message_storage_ownership_separation():
-    """IPC-05: IPCMessage borrows array storage from FlatMapStorage without owning it."""
-    storage = FlatMapStorage([10, 20], [100, 200])
+    """IPC-05: IPCMessage borrows array storage from FlatMapStorage without owning it (AoS)."""
+    storage = FlatMapStorage([(10, 100), (20, 200)])
     msg = IPCMessage(storage)
 
     assert msg.storage is storage
-    assert msg.payload.keys is storage.keys
-    assert msg.payload.values is storage.values
+    assert msg.payload.entries is storage.entries
     assert msg.get(10) == 100
     assert msg.get(20) == 200
 
     # Mutating external storage directly reflects in msg view (borrowed reference)
-    storage.values[0] = 999
+    storage.entries[0] = (10, 999)
     assert msg.get(10) == 999
 
 
@@ -1830,34 +1829,33 @@ def test_cont_10_container_type_separation():
 
 
 def test_cont_11_storage_and_view_ownership_separation():
-    """CONT-11: Data storage ownership is strictly separated from non-owning views."""
-    keys = [10, 20, 30]
-    vals = ["A", "B", "C"]
-    storage = FlatMapStorage(keys, vals)
+    """CONT-11: Data storage ownership is strictly separated from non-owning views (AoS)."""
+    entries = [(10, "A"), (20, "B"), (30, "C")]
+    storage = FlatMapStorage(entries)
     v1 = storage.view()
     v2 = storage.view()
 
-    # Views borrow the same underlying arrays without taking ownership
+    # Views borrow the same underlying entries array without taking ownership
     assert v1.find(20) == "B"
     assert v2.find(30) == "C"
-    assert v1.keys is storage.keys
-    assert v1.values is storage.values
-    assert v2.keys is storage.keys
-    assert v2.values is storage.values
+    assert v1.entries == storage.entries
+    assert v2.entries == storage.entries
+    assert v1.keys == [10, 20, 30]
+    assert v1.values == ["A", "B", "C"]
 
 
-def test_cont_12_flat_map_storage_co_sort():
-    """CONT-12: FlatMapStorage in-place co-sorts keys and values by key in ascending order."""
-    keys = [50, 10, 40, 20, 30]
-    vals = ["E", "A", "D", "B", "C"]
-    storage = FlatMapStorage(keys, vals)
+def test_cont_12_flat_map_storage_standard_sort():
+    """CONT-12: FlatMapStorage in-place sorts entries by key using standard sort (AoS)."""
+    entries = [(50, "E"), (10, "A"), (40, "D"), (20, "B"), (30, "C")]
+    storage = FlatMapStorage(entries)
     assert not storage.is_sorted()
 
-    # In-place co-sort
+    # In-place standard sort
     storage.sort()
     assert storage.is_sorted()
     assert storage.keys == [10, 20, 30, 40, 50]
     assert storage.values == ["A", "B", "C", "D", "E"]
+    assert storage.entries == [(10, "A"), (20, "B"), (30, "C"), (40, "D"), (50, "E")]
 
     # View correctly finds via binary search
     v = storage.view()
@@ -1866,7 +1864,7 @@ def test_cont_12_flat_map_storage_co_sort():
     assert v.find(50) == "E"
     assert v.find(99) is None
 
-    # Automatic sorting via sort=True
+    # Automatic sorting via sort=True with backwards-compatible (keys, values)
     s_auto = FlatMapStorage([3, 1, 2], ["three", "one", "two"], sort=True)
     assert s_auto.is_sorted()
     assert s_auto.keys == [1, 2, 3]

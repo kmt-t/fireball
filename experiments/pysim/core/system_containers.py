@@ -128,37 +128,75 @@ class _SortedWindow(Generic[KeyT]):
 # lookups, ...) and comparisons are just `<`/`==` on that type.
 
 
-class FlatMapView(_SortedWindow[KeyT], Generic[KeyT, ValT]):
+class FlatMapView(Generic[KeyT, ValT]):
     """
-    flat_map_view<Key, Value>: non-owning view over an externally owned sorted key span
-    plus parallel value span. Narrow-then-search returns a value with O(log N) binary search.
-    The view holds only borrowed references to the storage and NEVER owns the underlying arrays.
+    flat_map_view<Key, Value>: non-owning view over an externally owned sorted array of (key, value) pairs (AoS).
+    Narrow-then-search returns a value with O(log N) binary search on the entry key.
+    The view holds only a borrowed reference to the entries sequence (span of 1 range, 2 words in C++).
     """
 
-    __slots__ = ("values",)
+    __slots__ = ("_entries", "first", "last")
 
     def __init__(
         self,
-        keys: Sequence[KeyT],
-        values: Sequence[ValT],
+        entries: Sequence[tuple[KeyT, ValT]] | Sequence[KeyT],
+        values: Sequence[ValT] | None = None,
         first: int = 0,
         last: int | None = None,
     ):
-        super().__init__(keys, first, last)
-        self.values = values
+        if values is not None:
+            # Backwards-compatible (keys, values) input: zip into AoS entries
+            self._entries: Sequence[tuple[KeyT, ValT]] = list(zip(entries, values, strict=True))  # type: ignore[arg-type]
+        else:
+            self._entries = entries  # type: ignore[assignment]
+        self.first = first
+        self.last = len(self._entries) if last is None else last
+
+    @property
+    def entries(self) -> Sequence[tuple[KeyT, ValT]]:
+        if self.first == 0 and self.last == len(self._entries):
+            return self._entries
+        return self._entries[self.first : self.last]
+
+    @property
+    def keys(self) -> list[KeyT]:
+        return [k for k, _ in self._entries[self.first : self.last]]
+
+    @property
+    def values(self) -> list[ValT]:
+        return [v for _, v in self._entries[self.first : self.last]]
+
+    def size(self) -> int:
+        return self.last - self.first
+
+    def empty(self) -> bool:
+        return self.size() == 0
+
+    def _bounds(self, lo: KeyT, hi: KeyT) -> tuple[int, int]:
+        sub = self._entries[self.first : self.last]
+        left = bisect.bisect_left(sub, lo, key=lambda e: e[0])
+        right = bisect.bisect_right(sub, hi, key=lambda e: e[0])
+        return (self.first + left, self.first + right)
+
+    def _locate(self, key: KeyT) -> int | None:
+        sub = self._entries[self.first : self.last]
+        idx = bisect.bisect_left(sub, key, key=lambda e: e[0])
+        if idx < len(sub) and sub[idx][0] == key:
+            return self.first + idx
+        return None
 
     def slice(self, first: int, last: int) -> FlatMapView[KeyT, ValT]:
         if not (self.first <= first <= last <= self.last):
             raise ValueError("a view may only ever shrink")
-        return FlatMapView(self.keys, self.values, first, last)
+        return FlatMapView(self._entries, None, first, last)
 
     def narrow(self, lo: KeyT, hi: KeyT) -> FlatMapView[KeyT, ValT]:
-        return FlatMapView(self.keys, self.values, *self._bounds(lo, hi))
+        return FlatMapView(self._entries, None, *self._bounds(lo, hi))
 
     def find(self, key: KeyT) -> ValT | None:
-        """Binary search inside the current window only."""
+        """Binary search inside the current window only (O(log N))."""
         i = self._locate(key)
-        return None if i is None else self.values[i]
+        return None if i is None else self._entries[i][1]
 
     def __getitem__(self, key: KeyT) -> ValT:
         val = self.find(key)
@@ -175,81 +213,57 @@ class FlatMapView(_SortedWindow[KeyT], Generic[KeyT, ValT]):
 
 class FlatMapStorage(Generic[KeyT, ValT]):
     """
-    Owning storage container for sorted keys and values arrays (SoA).
+    Owning storage container for sorted (key, value) pair entries (AoS).
     Explicitly separates array data ownership from non-owning views (FlatMapView).
-    Supports constexpr-equivalent in-place co-sorting, sorted insertion, and sorted removal.
+    Leverages standard sorting algorithms and binary search.
     """
 
-    __slots__ = ("_capacity", "_keys", "_values")
+    __slots__ = ("_capacity", "_entries")
 
     def __init__(
         self,
-        keys: Sequence[KeyT] = (),
-        values: Sequence[ValT] = (),
+        entries: Sequence[tuple[KeyT, ValT]] | Sequence[KeyT] = (),
+        values: Sequence[ValT] | None = None,
         sort: bool = False,
         capacity: int | None = None,
     ):
-        self._keys = list(keys)
-        self._values = list(values)
-        if len(self._keys) != len(self._values):
-            raise ValueError(
-                f"keys and values must have the same length (got {len(self._keys)} and {len(self._values)})"
-            )
+        if values is not None:
+            # Backwards-compatible (keys, values) input
+            self._entries: list[tuple[KeyT, ValT]] = list(zip(entries, values, strict=True))  # type: ignore[arg-type]
+        else:
+            self._entries = list(entries)  # type: ignore[arg-type]
         self._capacity = capacity
-        if self._capacity is not None and len(self._keys) > self._capacity:
-            raise OverflowError(f"initial size {len(self._keys)} exceeds capacity {self._capacity}")
+        if self._capacity is not None and len(self._entries) > self._capacity:
+            raise OverflowError(
+                f"initial size {len(self._entries)} exceeds capacity {self._capacity}"
+            )
         if sort:
             self.sort()
 
     @property
+    def entries(self) -> list[tuple[KeyT, ValT]]:
+        return self._entries
+
+    @property
     def keys(self) -> list[KeyT]:
-        return self._keys
+        return [k for k, _ in self._entries]
 
     @property
     def values(self) -> list[ValT]:
-        return self._values
+        return [v for _, v in self._entries]
 
     def is_sorted(self) -> bool:
-        """Returns True if keys are sorted in strictly non-decreasing order."""
-        return all(self._keys[i] <= self._keys[i + 1] for i in range(len(self._keys) - 1))
+        """Returns True if entries are sorted by key in ascending order."""
+        return all(
+            self._entries[i][0] <= self._entries[i + 1][0] for i in range(len(self._entries) - 1)
+        )
 
     def sort(self) -> FlatMapStorage[KeyT, ValT]:
         """
-        Sorts keys and values in-place by key in ascending order (co-sort) in O(N log N) time.
-        Matches the C++ constexpr in-place co-heapsort algorithm (O(1) extra space, no recursion).
+        Sorts entries in-place by key in ascending order using standard sort.
+        In C++, this maps directly to std::sort(entries.begin(), entries.end()).
         """
-        n = len(self._keys)
-        if n <= 1:
-            return self
-
-        def _sift_down(start: int, end: int) -> None:
-            root = start
-            while True:
-                child = 2 * root + 1
-                if child > end:
-                    break
-                if child + 1 <= end and self._keys[child] < self._keys[child + 1]:
-                    child += 1
-                if self._keys[root] < self._keys[child]:
-                    self._keys[root], self._keys[child] = self._keys[child], self._keys[root]
-                    self._values[root], self._values[child] = (
-                        self._values[child],
-                        self._values[root],
-                    )
-                    root = child
-                else:
-                    break
-
-        # Build max-heap bottom-up: O(N)
-        for start in range((n - 2) // 2, -1, -1):
-            _sift_down(start, n - 1)
-
-        # Extract elements from heap: O(N log N)
-        for end in range(n - 1, 0, -1):
-            self._keys[0], self._keys[end] = self._keys[end], self._keys[0]
-            self._values[0], self._values[end] = self._values[end], self._values[0]
-            _sift_down(0, end - 1)
-
+        self._entries.sort(key=lambda e: e[0])
         return self
 
     def insert(self, key: KeyT, value: ValT) -> bool:
@@ -259,25 +273,23 @@ class FlatMapStorage(Generic[KeyT, ValT]):
         If key is new, inserts at the sorted index and returns True.
         Raises OverflowError if capacity is exceeded.
         """
-        idx = bisect.bisect_left(self._keys, key)
-        if idx < len(self._keys) and self._keys[idx] == key:
-            self._values[idx] = value
+        idx = bisect.bisect_left(self._entries, key, key=lambda e: e[0])
+        if idx < len(self._entries) and self._entries[idx][0] == key:
+            self._entries[idx] = (key, value)
             return False
-        if self._capacity is not None and len(self._keys) >= self._capacity:
+        if self._capacity is not None and len(self._entries) >= self._capacity:
             raise OverflowError(f"FlatMapStorage exceeded capacity {self._capacity}")
-        self._keys.insert(idx, key)
-        self._values.insert(idx, value)
+        self._entries.insert(idx, (key, value))
         return True
 
     def remove(self, key: KeyT) -> bool:
         """
-        Removes key and its corresponding value maintaining sorted order.
+        Removes key and its corresponding entry maintaining sorted order.
         Returns True if found and removed, False otherwise.
         """
-        idx = bisect.bisect_left(self._keys, key)
-        if idx < len(self._keys) and self._keys[idx] == key:
-            self._keys.pop(idx)
-            self._values.pop(idx)
+        idx = bisect.bisect_left(self._entries, key, key=lambda e: e[0])
+        if idx < len(self._entries) and self._entries[idx][0] == key:
+            self._entries.pop(idx)
             return True
         return False
 
@@ -286,11 +298,11 @@ class FlatMapStorage(Generic[KeyT, ValT]):
         return self.remove(key)
 
     def view(self) -> FlatMapView[KeyT, ValT]:
-        """Returns a non-owning FlatMapView borrowing the owned keys and values arrays."""
-        return FlatMapView(self._keys, self._values)
+        """Returns a non-owning FlatMapView borrowing the owned entries array."""
+        return FlatMapView(self._entries)
 
     def __len__(self) -> int:
-        return len(self._keys)
+        return len(self._entries)
 
     def __getitem__(self, key: KeyT) -> ValT:
         return self.view()[key]

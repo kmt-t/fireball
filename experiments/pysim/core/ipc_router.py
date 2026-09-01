@@ -133,29 +133,10 @@ class IPCMessage:
     kv_pair.
     """
 
-    def __init__(
-        self,
-        storage: FlatMapStorage | Sequence[tuple[int, int]] | None = None,
-        pairs: Sequence[tuple[int, int]] | None = None,
-    ):
+    def __init__(self, storage: FlatMapStorage | None = None):
         self.ownership = OwnershipState.SENDER_OWNS
         self.raw_payload: bytes | None = None
-        if isinstance(storage, FlatMapStorage):
-            self.storage: FlatMapStorage = storage
-        elif storage is not None:
-            sorted_pairs = sorted(storage, key=lambda kv: kv[0])
-            self.storage = FlatMapStorage(
-                [k for k, _ in sorted_pairs],
-                [v for _, v in sorted_pairs],
-            )
-        elif pairs is not None:
-            sorted_pairs = sorted(pairs, key=lambda kv: kv[0])
-            self.storage = FlatMapStorage(
-                [k for k, _ in sorted_pairs],
-                [v for _, v in sorted_pairs],
-            )
-        else:
-            self.storage = _EMPTY_IPC_STORAGE
+        self.storage: FlatMapStorage = storage if storage is not None else _EMPTY_IPC_STORAGE
         self._view = self.storage.view()
         self.payload = self._view
 
@@ -166,11 +147,6 @@ class IPCMessage:
     @property
     def _values(self) -> list[Any] | tuple[Any, ...]:
         return self.storage.values
-
-    @classmethod
-    def from_storage(cls, storage: FlatMapStorage) -> IPCMessage:
-        """Constructs an IPCMessage referencing an externally owned FlatMapStorage."""
-        return cls(storage=storage)
 
     @classmethod
     def from_bytes(cls, data: bytes) -> IPCMessage:

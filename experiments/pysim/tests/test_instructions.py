@@ -1017,13 +1017,13 @@ def test_ipc_01_uri_lookup_and_permission_matrix():
     # scheduler.Channel's own tests (test_coos_01 etc.) to observe the
     # CSP block directly instead of driving it to a rendezvous that will
     # never come.
-    msg1 = IPCMessage(pairs=[(_KEY_CMD, _CMD_PIN_HIGH)])
+    msg1 = IPCMessage(FlatMapStorage([_KEY_CMD], [_CMD_PIN_HIGH]))
     gen = router.send(Role.RUNTIME, "fireball://hal/gpio/0", msg1)
     assert next(gen) == ("BLOCK", None)
     assert msg1.ownership == OwnershipState.IN_FLIGHT
 
     # PLATFORM_HAL has no outgoing edges at all (role matrix row is all-DENY).
-    msg2 = IPCMessage(pairs=[(_KEY_CMD, _CMD_PIN_HIGH)])
+    msg2 = IPCMessage(FlatMapStorage([_KEY_CMD], [_CMD_PIN_HIGH]))
     status_bad, _ = _run_immediate(router.send(Role.PLATFORM_HAL, "fireball://hal/gpio/0", msg2))
     assert status_bad == IpcStatus.ERR_PERMISSION_DENIED
     assert msg2.ownership == OwnershipState.SENDER_OWNS
@@ -1045,7 +1045,7 @@ def test_ipc_02_e2e_shared_block_transfer():
         # IPC is inter-*task* communication: both the RUNTIME sender and
         # the PLATFORM_HAL receiver are genuine scheduler tasks, each
         # performing its own send()/recv() as its own coroutine.
-        msg = IPCMessage(pairs=[(_KEY_SHM_ID, shm_id)])
+        msg = IPCMessage(FlatMapStorage([_KEY_SHM_ID], [shm_id]))
         sent: list[IpcStatus] = []
 
         def client_app_task():
@@ -1075,12 +1075,12 @@ def test_ipc_02_e2e_shared_block_transfer():
 
 
 def test_ipc_03_send_failure_restores_owner():
-    """IPC-03: A rejected send (no CSP rendezvous ever occurs) rolls back SharedBlock ownership."""
+    """IPC-03: If IPC send is rejected (e.g. RBAC denial), sender can rollback."""
     sysv = System()
     try:
         sb = sysv.memory_manager.allocate_shared(caller_task_id=1, size=256).unwrap()
         shm_id = sb.release()
-        msg = IPCMessage(pairs=[(_KEY_SHM_ID, shm_id)])
+        msg = IPCMessage(FlatMapStorage([_KEY_SHM_ID], [shm_id]))
         # PLATFORM_HAL has no outgoing edges: rejected at Stage 2 before ever
         # touching a channel, so this never actually blocks.
         status, _ = _run_immediate(sysv.ipc.send(Role.PLATFORM_HAL, "fireball://hal/gpio/0", msg))
@@ -1112,7 +1112,7 @@ def test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group():
 
     def debugger_sender():
         status, _ = yield from router.send(
-            Role.DEBUGGER, "fireball://core/coos/0", IPCMessage(pairs=[(1, 99)])
+            Role.DEBUGGER, "fireball://core/coos/0", IPCMessage(FlatMapStorage([1], [99]))
         )
         assert status == IpcStatus.COMPLETED
 
@@ -1148,7 +1148,7 @@ def test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group():
 
     def runtime_sender():
         status, _ = yield from router.send(
-            Role.RUNTIME, "fireball://core/coos/0", IPCMessage(pairs=[(1, 7)])
+            Role.RUNTIME, "fireball://core/coos/0", IPCMessage(FlatMapStorage([1], [7]))
         )
         assert status == IpcStatus.COMPLETED
 
@@ -1163,7 +1163,7 @@ def test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group():
 def test_ipc_05_message_storage_ownership_separation():
     """IPC-05: IPCMessage borrows array storage from FlatMapStorage without owning it."""
     storage = FlatMapStorage([10, 20], [100, 200])
-    msg = IPCMessage.from_storage(storage)
+    msg = IPCMessage(storage)
 
     assert msg.storage is storage
     assert msg.payload.keys is storage.keys

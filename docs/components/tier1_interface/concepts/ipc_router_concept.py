@@ -45,27 +45,8 @@ class IPCMessage:
     its kv_pair map via non-owning FlatMapView (ipc_router.md §3.3) -- no
     resource_id, no free-form dict payload."""
 
-    def __init__(
-        self,
-        storage: FlatMapStorage | list[tuple[int, int]] | None = None,
-        pairs: list[tuple[int, int]] | None = None,
-    ):
-        if isinstance(storage, FlatMapStorage):
-            self.storage = storage
-        elif storage is not None:
-            sorted_pairs = sorted(storage, key=lambda kv: kv[0])
-            self.storage = FlatMapStorage(
-                [k for k, _ in sorted_pairs],
-                [v for _, v in sorted_pairs],
-            )
-        elif pairs is not None:
-            sorted_pairs = sorted(pairs, key=lambda kv: kv[0])
-            self.storage = FlatMapStorage(
-                [k for k, _ in sorted_pairs],
-                [v for _, v in sorted_pairs],
-            )
-        else:
-            self.storage = _EMPTY_STORAGE
+    def __init__(self, storage: FlatMapStorage | None = None):
+        self.storage = storage if storage is not None else _EMPTY_STORAGE
         self.payload = self.storage.view()
         self.keys = self.storage.keys
         self.values = self.storage.values
@@ -197,7 +178,7 @@ def test_registry_is_a_real_flat_map_view_not_a_dict():
 
 def test_unregistered_uri_is_rejected():
     router = IPCRouter()
-    msg = IPCMessage([(1, 42)])
+    msg = IPCMessage(FlatMapStorage([1], [42]))
     status, _ = router.send(Role.RUNTIME, "fireball://nonexistent/service/0", msg)
     assert status == "ERR_NOT_FOUND"
     assert msg.ownership == OwnershipState.SENDER_OWNS
@@ -205,7 +186,7 @@ def test_unregistered_uri_is_rejected():
 
 def test_permission_denied():
     router = IPCRouter()
-    msg = IPCMessage([(1, 7)])
+    msg = IPCMessage(FlatMapStorage([1], [7]))
     # RUNTIME trying to access Debugger directly (Forbidden)
     status, _ = router.send(Role.RUNTIME, "fireball://dbg/manager/0", msg)
     assert status == "ERR_PERMISSION_DENIED"
@@ -214,7 +195,7 @@ def test_permission_denied():
 
 def test_successful_zero_copy_handoff():
     router = IPCRouter()
-    msg = IPCMessage([(1, 5)])
+    msg = IPCMessage(FlatMapStorage([1], [5]))
     # Step 1: RUNTIME sends to HAL GPIO. Revoke commits the send; Grant
     # only happens once the receiver actually calls receive().
     status, _ = router.send(Role.RUNTIME, "fireball://hal/gpio/0", msg)
@@ -231,7 +212,7 @@ def test_receive_selects_whichever_allowed_sender_is_ready():
     reachable from both RUNTIME and DEBUGGER, and a receiver has to pick up
     whichever of them actually sent, in RBAC row order."""
     router = IPCRouter()
-    msg = IPCMessage([(1, 42)])
+    msg = IPCMessage(FlatMapStorage([1], [42]))
     status, _ = router.send(Role.DEBUGGER, "fireball://core/coos/0", msg)
     assert status == "COMPLETED"
     received = router.receive(Role.CORE_SERVICE)
@@ -246,9 +227,9 @@ def test_no_queue_full_state_exists():
     a second send before the first is received is a programming error (one
     waiter per channel), not a recoverable Rollback condition."""
     router = IPCRouter()
-    msg1 = IPCMessage([(1, 1)])
+    msg1 = IPCMessage(FlatMapStorage([1], [1]))
     router.send(Role.RUNTIME, "fireball://hal/gpio/0", msg1)
-    msg2 = IPCMessage([(1, 2)])
+    msg2 = IPCMessage(FlatMapStorage([1], [2]))
     raised = False
     try:
         router.send(Role.RUNTIME, "fireball://hal/gpio/0", msg2)

@@ -134,25 +134,8 @@ class IPCMessage:
     its kv_pair map via non-owning FlatMapView (§3.3) -- no resource_id,
     no free-form dict payload."""
 
-    def __init__(
-        self,
-        storage: FlatMapStorage | list[tuple[int, int]] | None = None,
-        pairs: list[tuple[int, int]] | None = None,
-    ):
-        if isinstance(storage, FlatMapStorage):
-            self.storage = storage
-        elif storage is not None:
-            sorted_pairs = sorted(storage, key=lambda kv: kv[0])
-            self.storage = FlatMapStorage(
-                [k for k, _ in sorted_pairs], [v for _, v in sorted_pairs]
-            )
-        elif pairs is not None:
-            sorted_pairs = sorted(pairs, key=lambda kv: kv[0])
-            self.storage = FlatMapStorage(
-                [k for k, _ in sorted_pairs], [v for _, v in sorted_pairs]
-            )
-        else:
-            self.storage = FlatMapStorage([], [])
+    def __init__(self, storage: FlatMapStorage | None = None):
+        self.storage = storage if storage is not None else FlatMapStorage([], [])
         self.payload = self.storage.view()
         self.keys = self.storage.keys
         self.values = self.storage.values

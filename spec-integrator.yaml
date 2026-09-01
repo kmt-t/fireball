@@ -287,3 +287,13 @@ terminology:
     - "val"
     - "value"
 
+semantic_topic:
+  enabled: true
+  similarity_threshold: 0.85
+  unlinked_warning_threshold: 0.88
+  duplicate_warning_threshold: 0.93
+  max_pairs: 1000
+  embedding_model: "multilingual-e5-large"
+  backend: "sakura"
+  batch_size: 16
+

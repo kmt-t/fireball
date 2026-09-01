@@ -19,6 +19,7 @@ Execution model:
 
 from __future__ import annotations
 
+import bisect
 import ctypes
 from collections.abc import Callable
 from typing import Any
@@ -116,13 +117,19 @@ class HotspotBitmap:
         view.put(card, CardState.COMPILED)
 
     def mark_evicted(self, pc: int) -> None:
-        """Evicted trace resets card state to EXECUTED (01)."""
+        """
+        Evicted trace resets card state to UNEXECUTED (00), not EXECUTED:
+        the trace fell out of cache favor once already, so it must re-earn
+        hotness through the full warm-up cycle again rather than jumping
+        straight back to HOT after a single touch -- otherwise a
+        marginally-hot card would thrash between compile and evict forever.
+        """
         func_idx, offset = self._split_pc(pc)
         if func_idx < len(self.func_tables) and self.func_tables[func_idx] is not None:
             view = self.func_tables[func_idx]
             card = offset >> self.card_shift
             if card < view.size():  # type: ignore[union-attr]
-                view.put(card, CardState.EXECUTED)  # type: ignore[union-attr]
+                view.put(card, CardState.UNEXECUTED)  # type: ignore[union-attr]
 
 
 class HistoryRing:
@@ -247,33 +254,61 @@ class JITTrace:
 
 
 class JITCacheBank:
+    """
+    Sorted head_pc -> JITTrace store (jit_runtime.md §3.3's JitEntryIndex is
+    a flat_map_view over a sorted array). Removal is a tombstone (a live
+    key's value slot set to None), never a physical shift: within one bank,
+    inserts and removes are never interleaved mid-operation, and the whole
+    bank is wiped by `clear()` a few rotations after it starts filling up
+    regardless, so tombstones never accumulate beyond one bank's short
+    lifetime. Re-inserting an already-present (live or tombstoned) key
+    reuses its existing slot in O(log n); only a genuinely new key ever
+    pays the O(n) shift a sorted array requires.
+    """
+
     def __init__(self, bank_id: int, capacity_bytes: int = 2048):
         self.bank_id = bank_id
         self.capacity_bytes = capacity_bytes
         self.used_bytes = 0
-        # Flat list of (head_pc, JITTrace) pairs instead of dynamic dict
-        self.traces: list[tuple[int, JITTrace]] = []
+        self._keys: list[int] = []
+        self._values: list[JITTrace | None] = []  # None marks a tombstoned slot
         self.inbound_sources: list[int] = []
 
-    def get_trace(self, head_pc: int) -> JITTrace | None:
-        for pc, trace in self.traces:
-            if pc == head_pc:
-                return trace
+    def _live_index(self, head_pc: int) -> int | None:
+        idx = bisect.bisect_left(self._keys, head_pc)
+        if idx < len(self._keys) and self._keys[idx] == head_pc and self._values[idx] is not None:
+            return idx
         return None
+
+    @property
+    def traces(self) -> list[tuple[int, JITTrace]]:
+        return [
+            (pc, trace)
+            for pc, trace in zip(self._keys, self._values, strict=True)
+            if trace is not None
+        ]
+
+    def get_trace(self, head_pc: int) -> JITTrace | None:
+        idx = self._live_index(head_pc)
+        return self._values[idx] if idx is not None else None
 
     def has_trace(self, head_pc: int) -> bool:
-        return self.get_trace(head_pc) is not None
+        return self._live_index(head_pc) is not None
 
     def remove_trace(self, head_pc: int) -> JITTrace | None:
-        for i, (pc, trace) in enumerate(self.traces):
-            if pc == head_pc:
-                self.traces.pop(i)
-                return trace
-        return None
+        idx = self._live_index(head_pc)
+        if idx is None:
+            return None
+        trace = self._values[idx]
+        self._values[idx] = None
+        return trace
 
     def clear(self) -> list[int]:
-        purged = [pc for pc, _ in self.traces]
-        self.traces.clear()
+        purged = [
+            pc for pc, trace in zip(self._keys, self._values, strict=True) if trace is not None
+        ]
+        self._keys.clear()
+        self._values.clear()
         self.inbound_sources.clear()
         self.used_bytes = 0
         return purged
@@ -283,10 +318,12 @@ class JITCacheBank:
         delta = trace.size_bytes - (prev.size_bytes if prev else 0)
         if self.used_bytes + delta > self.capacity_bytes:
             return False
-        if prev is not None:
-            self.remove_trace(trace.head_pc)
-
-        self.traces.append((trace.head_pc, trace))
+        idx = bisect.bisect_left(self._keys, trace.head_pc)
+        if idx < len(self._keys) and self._keys[idx] == trace.head_pc:
+            self._values[idx] = trace  # reuse the existing (live or tombstoned) slot
+        else:
+            self._keys.insert(idx, trace.head_pc)
+            self._values.insert(idx, trace)
         self.used_bytes += delta
         return True
 
@@ -341,13 +378,36 @@ class JITMultiBufferCache:
         trace = self.oldest.get_trace(head_pc)
         if trace is None:
             return None
-        # Oldest bank hit: promote to Active bank immediately
-        self.oldest.remove_trace(head_pc)
-        self.oldest.used_bytes -= trace.size_bytes
+        # Oldest bank hit: promote to Active bank immediately.
+        old_oldest = self.oldest
+        old_oldest.remove_trace(head_pc)
+        old_oldest.used_bytes -= trace.size_bytes
         trace.flags |= JITTraceHeader.FLAG_PROMOTED
+        # Any inbound chain sources registered against the bank this trace
+        # used to live in must follow it to wherever it lands -- captured
+        # now, before a possible rotate() below clears old_oldest's own
+        # inbound_sources as a side effect of purging a *different* bank's
+        # worth of traces into it. Without this, a later rotate() looks for
+        # these sources in the bank that used to hold the promoted trace,
+        # never finds them there anymore, and never unlinks them to the
+        # interpreter fallback once this trace is eventually purged for real.
+        following_sources = []
+        for src_pc in old_oldest.inbound_sources:
+            src_trace = self.find_trace(src_pc)
+            if src_trace is not None and src_trace.chain_next == head_pc:
+                following_sources.append(src_pc)
+        for src_pc in following_sources:
+            old_oldest.inbound_sources.remove(src_pc)
+
         if not self.active.allocate(trace):
             self.rotate()
             self.active.allocate(trace)
+
+        target_bank = self.find_bank(head_pc)
+        if target_bank is not None:
+            for src_pc in following_sources:
+                if src_pc not in target_bank.inbound_sources:
+                    target_bank.inbound_sources.append(src_pc)
 
         self.promotions += 1
         return trace
@@ -424,8 +484,14 @@ class PcOnlyCompiler:
 class RuntimeEngine:
     """Integrated Tiered Tracing Runtime Engine combining Interpreter and JIT."""
 
-    def __init__(self, jit_compiler: Any | None = None, yield_threshold: int = 16):
-        self.bitmap = HotspotBitmap()
+    def __init__(
+        self,
+        jit_compiler: Any | None = None,
+        yield_threshold: int = 16,
+        card_shift: int = 3,
+        min_trace_bytes: int | None = None,
+    ):
+        self.bitmap = HotspotBitmap(card_shift=card_shift)
         self.ring = HistoryRing()
         self.cache = JITMultiBufferCache()
         self.cache.on_evict = self._handle_eviction
@@ -434,6 +500,17 @@ class RuntimeEngine:
         self.blocks: list[tuple[int, BasicBlock]] = []  # Flat slot list instead of dynamic dict
         self.yield_threshold = yield_threshold
         self.exec_counter = 0
+        # A card's 2-bit state can only ever describe ONE block: if two
+        # distinct block heads shared a card, compiling one would falsely
+        # read back as "already compiled" for the other (or evicting one
+        # would falsely reset the other's still-resident COMPILED state).
+        # Never tracking a block shorter than one card's worth of bytes
+        # guarantees every tracked block's next sibling starts at least a
+        # full card away, so no two tracked blocks can ever land on the
+        # same card -- and it also skips JIT-compiling blocks so short that
+        # the interpreter is already faster than a compiled-trace dispatch
+        # would be.
+        self.min_trace_bytes = min_trace_bytes if min_trace_bytes is not None else (1 << card_shift)
 
     def _handle_eviction(self, purged_pcs: list[int]) -> None:
         for pc in purged_pcs:
@@ -465,7 +542,14 @@ class RuntimeEngine:
                     self.register_block(BasicBlock(head_pc=head_pc, ops=ops, next_pc=next_pc))
 
     def record_block_head(self, pc: int) -> None:
-        """Called by `run()` at each basic-block head that has no compiled trace yet."""
+        """
+        Called by `run()` at each basic-block head that has no compiled
+        trace yet. Blocks shorter than `min_trace_bytes` are never recorded
+        here at all -- see the invariant this protects in `__init__`.
+        """
+        block = self.get_block(pc)
+        if block is None or block.next_pc is None or (block.next_pc - pc) < self.min_trace_bytes:
+            return
         self.ring.record(pc)
         self.exec_counter += 1
         if self.exec_counter >= self.yield_threshold:
@@ -491,6 +575,13 @@ class RuntimeEngine:
             pc = self.compile_queue.pop()
             if self.bitmap.get_state(pc) == CardState.COMPILED:
                 continue
+            if self.cache.find_trace(pc) is not None:
+                # Already resident under this exact pc (e.g. queued twice
+                # before the first compile's mark_compiled() landed) -- the
+                # cache, not the coarse per-card bitmap, is the authority on
+                # whether *this* pc specifically already has a trace.
+                self.bitmap.mark_compiled(pc)
+                continue
             trace = None
             if self.jit_compiler is not None:
                 block = self.get_block(pc)
@@ -513,20 +604,25 @@ class RuntimeEngine:
         idle_budget: int = 4,
     ) -> list[int]:
         """
-        Drives `interp` to completion. Before every basic block, checks this
-                engine's JIT trace cache and invokes a compiled trace directly when
-                one exists (`{ADR_TraceBoundaryYield}`); otherwise records the block
-                head for hotspot tracking and falls back to `interp.step()` for that
-                one block. Runs `idle_hook` every `quantum` blocks to batch-compile
-                any HOT blocks queued since the last check. The interpreter itself
-                never sees any of this -- it has no notion of a JIT cache, and this
-                is the runtime's job alone.
+        Drives `interp` to completion. Before every basic block, checks the
+                O(1) card bitmap first (`{ADR_TraceBoundaryYield}`) -- most blocks
+                are never compiled, so this must reject them without ever touching
+                the cache's per-bank search, or the miss penalty on the overwhelmingly
+                common path would dwarf the win a hit gets. Only once the card reads
+                COMPILED does this look the trace up and invoke it; otherwise it
+                records the block head for hotspot tracking and falls back to
+                `interp.step()` for that one block. Runs `idle_hook` every `quantum`
+                blocks to batch-compile any HOT blocks queued since the last check.
+                The interpreter itself never sees any of this -- it has no notion of
+                a JIT cache, and this is the runtime's job alone.
         """
         call_state = interp.start(func_index, args)
         blocks_run = 0
         while not call_state.finished:
             pc = call_state.current_pc()
-            trace = self.cache.lookup(pc) if pc is not None else None
+            trace = None
+            if pc is not None and self.bitmap.get_state(pc) == CardState.COMPILED:
+                trace = self.cache.lookup(pc)
             if trace is not None:
                 call_state = self._invoke_trace(interp, call_state, trace)
             else:
@@ -705,7 +801,13 @@ class IntegratedHybridEngine:
         Cooperative Yield -> Idle-Hook Batch Compilation -> Trace Chaining -> JIT execution.
     """
 
-    def __init__(self, yield_threshold: int = 4, card_shift: int = 4, compiler: Any = None):
+    def __init__(
+        self,
+        yield_threshold: int = 4,
+        card_shift: int = 4,
+        compiler: Any = None,
+        min_trace_bytes: int | None = None,
+    ):
         self.bitmap = HotspotBitmap(card_shift=card_shift)
         self.history = HistoryRing(capacity=32)
         self.cache = JITMultiBufferCache()
@@ -713,6 +815,12 @@ class IntegratedHybridEngine:
         self.compile_queue: list[int] = []
         self.yield_threshold = yield_threshold
         self.exec_counter = 0
+        # See RuntimeEngine.min_trace_bytes: a card's 2-bit state can only
+        # ever describe one block, so a block shorter than one card's worth
+        # of bytes is never touched/tracked here at all -- this guarantees
+        # every tracked block's next sibling starts at least a full card
+        # away, so no two tracked blocks can ever land on the same card.
+        self.min_trace_bytes = min_trace_bytes if min_trace_bytes is not None else (1 << card_shift)
         self.blocks: list[tuple[int, BasicBlock]] = []  # Flat slot list instead of dynamic dict
         self.interp_blocks = 0
         self.jit_traces = 0
@@ -766,6 +874,15 @@ class IntegratedHybridEngine:
         compiled = 0
         while self.compile_queue and compiled < budget:
             head_pc = self.compile_queue.pop()
+            if self.bitmap.get_state(head_pc) == CardState.COMPILED:
+                continue
+            if self.cache.find_trace(head_pc) is not None:
+                # Already resident under this exact pc (e.g. queued twice
+                # before the first compile's mark_compiled() landed) -- the
+                # cache, not the coarse per-card bitmap, is the authority on
+                # whether *this* pc specifically already has a trace.
+                self.bitmap.mark_compiled(head_pc)
+                continue
             block = self.get_block(head_pc)
             if block is None:
                 continue
@@ -809,7 +926,11 @@ class IntegratedHybridEngine:
 
     def _dispatch_normal(self, pc: int, block: BasicBlock, ctx: WASMContext) -> int | None:
         """Normal handler table: Pure zero-overhead execution (JIT or Fast Interpreter)."""
-        trace = self.cache.lookup(pc)
+        # O(1) card check first: most blocks are never compiled, so this
+        # must reject them without ever touching the cache's per-bank
+        # search, or the miss penalty on the overwhelmingly common path
+        # would dwarf the win a hit gets.
+        trace = self.cache.lookup(pc) if self.bitmap.get_state(pc) == CardState.COMPILED else None
         if trace is not None:
             # Tier 3 JIT Trace Direct C-Call via ctypes
             self.jit_traces += 1
@@ -819,9 +940,14 @@ class IntegratedHybridEngine:
                 trace.chain_next if trace.chain_next is not None else self._next_pc(block, ctx)
             )
         else:
-            # Tier 2 Interpreter Execution with 2-bit hotspot tracking
-            self.bitmap.touch(pc)
-            self.history.record(pc)
+            # Tier 2 Interpreter Execution with 2-bit hotspot tracking.
+            # Blocks shorter than min_trace_bytes are never tracked (see
+            # __init__): compiling them would cost more than the
+            # interpreter dispatch it replaces, and it keeps every tracked
+            # block's card unambiguously single-owned.
+            if block.next_pc is not None and (block.next_pc - pc) >= self.min_trace_bytes:
+                self.bitmap.touch(pc)
+                self.history.record(pc)
             self.interp_blocks += 1
             self._interpret_block(block, ctx)
             next_pc = self._next_pc(block, ctx)

@@ -65,7 +65,9 @@ graph TD
    - `radix_key = bswap32(pc)` に対し基数シフト（`prefix = radix_key >> radix_shift`）を行い、コンパクトな開始インデックス配列から `first = radix_table[prefix]`, `last = radix_table[prefix + 1]` を $O(1)$ で取得（ペア保持が不要でメモリフットプリント半減）。下位ビットの分散により偏りを抑えた区間検索を実現する。
 3. **有界二分探索 ($O(\log n)$)**: `radix_binary_tree_view` 内の有界区間から対象の命令オフセットを二分探索し、ヒットした場合はネイティブコードのアドレス（`exec_trace`）を返す。
 4. **ホットスポット昇格判定**: yield 時等に履歴バッファを走査し、実行頻度が閾値に達したカードを `HOT` $\to$ `COMPILED` に遷移させてコンパイル待ち列へ登録。
-5. **3面世代交代ローテーション＆局所アンリンク ($O(k)$)**: Active バンク満杯時、`Oldest` バンクをパージして新 `Active` に再利用する直前に、該当バンクの被チェイン逆引きテーブルに登録されたソースエントリ（$k$ 件）のみを参照し、昇格済みなら再チェイニング、完全破棄なら復帰スタブへアンパッチする。全件走査を行わない。 `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}`
+5. **最小トレース長フィルタ**: 推定コンパイル後サイズが 1 カード分（`1 << card_shift`）未満のベーシックブロックは、履歴記録・`touch`・コンパイル待ち列登録のいずれの対象にもしない（`jit_runtime_test_spec.md` JITR-06）。
+6. **3面世代交代ローテーション＆局所アンリンク ($O(k)$)**: Active バンク満杯時、`Oldest` バンクをパージして新 `Active` に再利用する直前に、該当バンクの被チェイン逆引きテーブルに登録されたソースエントリ（$k$ 件）のみを参照し、昇格済みなら再チェイニング、完全破棄なら復帰スタブへアンパッチする。全件走査を行わない。Oldest ヒットによる Promotion 時も、被チェイン登録は昇格先のバンクへ引き継ぐ（`jit_runtime_test_spec.md` JITR-09）。 `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}`
+7. **キュー処理時のキャッシュ再確認**: コンパイル待ち列から取り出したPCが既にキャッシュへ常駐済みであれば再コンパイルを行わず、カード状態のみ`COMPILED`へ同期する（`jit_runtime_test_spec.md` JITR-07）。
 
 ### 4.2 状態遷移図
 ```mermaid
@@ -74,8 +76,10 @@ stateDiagram-v2
     UNEXECUTED --> EXECUTED: First execution
     EXECUTED --> HOT: Threshold reached
     HOT --> COMPILED: Compilation done
-    COMPILED --> EXECUTED: Cache evicted
+    COMPILED --> UNEXECUTED: Cache evicted
 ```
+
+Eviction resets to `UNEXECUTED`, not `EXECUTED`（`jit_runtime_test_spec.md` JITR-04）。
 
 ## 5. インターフェイス定義
 

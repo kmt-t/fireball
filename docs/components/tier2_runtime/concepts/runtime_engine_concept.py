@@ -176,13 +176,19 @@ class HotspotBitmap:
         view.put(card, CardState.COMPILED)
 
     def mark_evicted(self, pc: int):
-        """Trace was purged from the cache: the card becomes EXECUTED (01)."""
+        """
+        Trace was purged from the cache: the card becomes UNEXECUTED (00),
+        not EXECUTED -- it fell out of cache favor once already, so it must
+        re-earn hotness through the full warm-up cycle again rather than
+        jumping straight back to HOT after a single touch, or a
+        marginally-hot card would thrash between compile and evict forever.
+        """
         func_idx, offset = self._split_pc(pc)
         if func_idx < len(self.func_tables) and self.func_tables[func_idx] is not None:
             view = self.func_tables[func_idx]
             card = offset >> self.card_shift
             if card < view.size():  # type: ignore[union-attr]
-                view.put(card, CardState.EXECUTED)  # type: ignore[union-attr]
+                view.put(card, CardState.UNEXECUTED)  # type: ignore[union-attr]
 
 
 class HistoryRing:
@@ -332,16 +338,35 @@ class JITMultiBufferCache:
         trace = self.oldest.traces.get(head_pc)
         if trace is None:
             return None
-        # Oldest-Only Promotion: a hit in Oldest promotes immediately to Active
+        # Oldest-Only Promotion: a hit in Oldest promotes immediately to Active.
+        old_oldest = self.oldest
         self.begin_patch()
         try:
-            if self.active.allocate(trace):
-                del self.oldest.traces[head_pc]
-                self.oldest.used_bytes -= trace.size_bytes
-                self.promotions += 1
-                # No re-link needed here: promotion only ever ADDS a pc to
-                # the Active bank, so it can never invalidate a link that
-                # was valid as of the last rotate(). `{JIT_LazyChaining}`
+            del old_oldest.traces[head_pc]
+            old_oldest.used_bytes -= trace.size_bytes
+            # Any inbound chain sources registered against the bank this
+            # trace used to live in must follow it to wherever it lands --
+            # captured now, before a possible rotate() below clears
+            # old_oldest's own inbound_sources as a side effect of purging a
+            # *different* bank's worth of traces into it. Without this, a
+            # later rotate() looks for these sources in the bank that used
+            # to hold the promoted trace, never finds them there anymore,
+            # and never unlinks them to the interpreter fallback once this
+            # trace is eventually purged for real.
+            following_sources = set()
+            for src_pc in old_oldest.inbound_sources:
+                src_trace = self.find_trace(src_pc)
+                if src_trace is not None and src_trace.chain_next == head_pc:
+                    following_sources.add(src_pc)
+            old_oldest.inbound_sources -= following_sources
+
+            if not self.active.allocate(trace):
+                self.rotate()
+                self.active.allocate(trace)
+            target_bank = self.find_bank(head_pc)
+            if target_bank is not None:
+                target_bank.inbound_sources.update(following_sources)
+            self.promotions += 1
         finally:
             self.commit_patch()
         return trace
@@ -598,7 +623,12 @@ class BasicBlock:
 class IntegratedRuntimeEngine:
     """Interpreter -> card history -> yield-time triage -> LIFO batch compile -> JIT."""
 
-    def __init__(self, yield_threshold: int = 8, card_shift: int = 3):
+    def __init__(
+        self,
+        yield_threshold: int = 8,
+        card_shift: int = 3,
+        min_trace_bytes: int | None = None,
+    ):
         self.bitmap = HotspotBitmap(card_shift=card_shift)
         self.history = HistoryRing(capacity=32)
         self.cache = JITMultiBufferCache()
@@ -613,6 +643,17 @@ class IntegratedRuntimeEngine:
         self.yields = 0
         # Purged traces must make their cards re-compilable again.
         self.cache.on_evict = lambda pcs: [self.bitmap.mark_evicted(pc) for pc in pcs]
+        # A card's 2-bit state can only ever describe ONE block: if two
+        # distinct block heads shared a card, compiling one would falsely
+        # read back as "already compiled" for the other, and evicting one
+        # would falsely reset the other's still-resident COMPILED state.
+        # Never tracking a block shorter than one card's worth of bytes
+        # guarantees every tracked block's next sibling starts at least a
+        # full card away, so no two tracked blocks can ever land on the
+        # same card -- and it also skips JIT-compiling blocks so short that
+        # the interpreter is already faster than a compiled-trace dispatch
+        # would be.
+        self.min_trace_bytes = min_trace_bytes if min_trace_bytes is not None else (1 << card_shift)
 
     def register_block(self, block: BasicBlock):
         self.blocks[block.head_pc] = block
@@ -645,6 +686,15 @@ class IntegratedRuntimeEngine:
         try:
             while self.compile_queue and compiled < budget:
                 head_pc = self.compile_queue.pop()  # LIFO
+                if self.bitmap.get_state(head_pc) == CardState.COMPILED:
+                    continue
+                if self.cache.find_trace(head_pc) is not None:
+                    # Already resident under this exact pc (e.g. queued
+                    # twice before the first compile's mark_compiled()
+                    # landed) -- the cache, not the coarse per-card bitmap,
+                    # is the authority on whether *this* pc has a trace.
+                    self.bitmap.mark_compiled(head_pc)
+                    continue
                 block = self.blocks.get(head_pc)
                 if block is None:
                     continue
@@ -681,7 +731,13 @@ class IntegratedRuntimeEngine:
             block = self.blocks.get(pc)
             if block is None:
                 raise WASMTrap(f"NO_BLOCK_AT_PC: {pc}")
-            trace = self.cache.lookup(pc)
+            # O(1) card check first: most blocks are never compiled, so this
+            # must reject them without ever touching the cache's per-bank
+            # search, or the miss penalty on the overwhelmingly common path
+            # would dwarf the win a hit gets.
+            trace = (
+                self.cache.lookup(pc) if self.bitmap.get_state(pc) == CardState.COMPILED else None
+            )
             if trace is not None:
                 self.cache.require_executable()
                 self.jit_traces += 1
@@ -691,9 +747,16 @@ class IntegratedRuntimeEngine:
                 # chain_next is None -> return to the interpreter (dispatcher stub)
                 pc = trace.chain_next if trace.chain_next is not None else self._next_pc(block, ctx)
             else:
-                # Record ONLY the basic-block head. `{HistoryBuffer}`
-                self.bitmap.touch(pc)
-                self.history.record(pc)
+                # Record ONLY the basic-block head. `{HistoryBuffer}` Blocks
+                # shorter than min_trace_bytes are never tracked at all --
+                # see the invariant this protects in __init__. Estimated in
+                # the same units `CopyPatchCompiler.compile_trace` itself
+                # uses for a compiled trace's `size_bytes`, since that is
+                # what actually determines whether compiling is worthwhile.
+                est_bytes = len(block.ops) * CopyPatchCompiler.BYTES_PER_INSTRUCTION
+                if est_bytes >= self.min_trace_bytes:
+                    self.bitmap.touch(pc)
+                    self.history.record(pc)
                 self.interp_blocks += 1
                 self._interpret(block, ctx)
                 pc = self._next_pc(block, ctx)
@@ -944,9 +1007,65 @@ def test_eviction_makes_the_card_recompilable():
     eng.cache.rotate()  # Oldest purged
     eng.cache.commit_patch()
     assert 0x100 not in eng.cache.active.traces
-    assert eng.bitmap.get_state(0x100) == CardState.EXECUTED, (
-        "card must be re-compilable after its trace was purged"
+    assert eng.bitmap.get_state(0x100) == CardState.UNEXECUTED, (
+        "card must be re-compilable after its trace was purged, starting a full "
+        "re-warm-up rather than jumping straight back to HOT after one touch"
     )
+
+
+def test_short_blocks_never_tracked_avoiding_card_aliasing():
+    """
+    A card's 2-bit state can only ever describe one block. Two distinct
+    block heads sharing a card would otherwise let compiling one falsely
+    read back as "already compiled" for the other, or let evicting one
+    falsely reset the other's still-resident COMPILED state. Blocks whose
+    estimated compiled size is under one card's worth of bytes must never
+    be recorded at all, so two tracked blocks can never land on the same
+    card.
+    """
+    eng = IntegratedRuntimeEngine(card_shift=6)  # min_trace_bytes == 64
+    assert eng.bitmap.card_of(0x100) == eng.bitmap.card_of(0x120), "same 64-byte card"
+    # A single i32.const emits 3 native instructions * 4 bytes == 12 bytes, well under 64.
+    eng.register_block(BasicBlock(0x100, [("i32.const", 1)], next_pc=0x120))
+    eng.register_block(BasicBlock(0x120, [("i32.const", 2)], next_pc=0x140))
+    ctx = WASMContext()
+    for _ in range(eng.yield_threshold * 2):
+        eng.run(0x100, ctx, max_blocks=1)
+        eng.run(0x120, ctx, max_blocks=1)
+    assert eng.bitmap.get_state(0x100) == CardState.UNEXECUTED
+    assert eng.bitmap.get_state(0x120) == CardState.UNEXECUTED
+    assert eng.compile_queue == [], "short blocks must never reach the compile queue"
+
+
+def test_idle_hook_skips_recompiling_an_already_resident_trace():
+    """
+    If a pc is queued for compilation while a trace already resides in the
+    cache under that exact pc (e.g. re-queued before an earlier compile's
+    mark_compiled() landed), idle_hook must trust the cache -- the
+    authority on whether *this* pc has a trace -- over the coarse per-card
+    bitmap, and skip recompiling it.
+    """
+    eng = IntegratedRuntimeEngine()
+    eng.register_block(BasicBlock(0x100, [("i32.const", 1)] * 4, next_pc=None))
+    eng.cache.begin_patch()
+    eng.cache.insert(JITTrace(0x100, lambda ctx: "COMPLETED", 64))
+    eng.cache.commit_patch()
+    eng.compile_queue = [0x100]
+
+    compile_calls = []
+    real = eng.compiler.compile_trace
+
+    def spy(head_pc, block):
+        compile_calls.append(head_pc)
+        return real(head_pc, block)
+
+    eng.compiler.compile_trace = spy
+
+    compiled = eng.idle_hook()
+
+    assert compiled == 0, "a pc already resident in the cache must not be recompiled"
+    assert compile_calls == []
+    assert eng.bitmap.get_state(0x100) == CardState.COMPILED
 
 
 def test_used_bytes_does_not_leak_on_overwrite():
@@ -979,7 +1098,7 @@ def test_warm_hit_does_not_promote_but_oldest_hit_does():
 
 
 def test_hotspot_bitmap_pure_2bit_state_transitions():
-    """Pure 2-bit FSM: UNEXECUTED -> EXECUTED -> HOT -> COMPILED -> EXECUTED (evict)."""
+    """Pure 2-bit FSM: UNEXECUTED -> EXECUTED -> HOT -> COMPILED -> UNEXECUTED (evict)."""
     bm = HotspotBitmap(card_shift=6)
     assert bm.get_state(0x100) == CardState.UNEXECUTED
     assert bm.touch(0x100) == CardState.EXECUTED
@@ -990,7 +1109,9 @@ def test_hotspot_bitmap_pure_2bit_state_transitions():
     assert bm.get_state(0x100) == CardState.COMPILED
     assert bm.touch(0x100) == CardState.COMPILED
     bm.mark_evicted(0x100)
-    assert bm.get_state(0x100) == CardState.EXECUTED
+    assert bm.get_state(0x100) == CardState.UNEXECUTED, (
+        "eviction must force a full re-warm-up, not just one touch back to HOT"
+    )
 
 
 def test_mpu_wx_is_enforced_in_both_directions():

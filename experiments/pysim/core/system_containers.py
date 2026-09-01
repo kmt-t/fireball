@@ -352,6 +352,10 @@ class StaticFlatMap(Generic[KeyT, ValT]):
         self._keys.clear()
         self._values.clear()
 
+    def items(self) -> Iterator[tuple[KeyT, ValT]]:
+        """Key-sorted (key, value) pairs -- always consistent with `view()`'s ordering."""
+        return zip(self._keys, self._values, strict=True)
+
 
 # ---------------------------------------------------------------------------
 # 7. StaticFlatSet (fixed-capacity owning flat sorted set)

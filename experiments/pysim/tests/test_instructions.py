@@ -78,6 +78,7 @@ from runtime_engine import (
     HistoryRing,
     HotspotBitmap,
     IntegratedHybridEngine,
+    JITCacheBank,
     JITMultiBufferCache,
     JITTrace,
     JITTraceHeader,
@@ -716,6 +717,115 @@ def test_hotspot_04_3bank_cache_oldest_only_promotion():
     assert (t1.flags & JITTraceHeader.FLAG_PROMOTED) != 0
 
 
+def test_jitr_cache_bank_traces_always_sorted_by_head_pc():
+    """
+    JITCacheBank.traces backs jit_runtime.md §3.3's JitEntryIndex (a
+    flat_map_view over a sorted array): insertion order must never leak
+    into iteration order, or the O(log n) binary-search claim over it
+    would be false. Removal tombstones the slot in place rather than
+    shifting the array; a later re-insert of that same key must reuse the
+    tombstoned slot (not append a second entry) and the trace it returns
+    must be the new one, not the tombstoned original.
+    """
+    bank = JITCacheBank(0, capacity_bytes=2048)
+    for pc in (0x300, 0x100, 0x500, 0x200, 0x400):
+        bank.allocate(JITTrace(head_pc=pc, native_fn=lambda: 0, size_bytes=64))
+    assert [pc for pc, _ in bank.traces] == [0x100, 0x200, 0x300, 0x400, 0x500]
+    bank.remove_trace(0x300)
+    assert [pc for pc, _ in bank.traces] == [0x100, 0x200, 0x400, 0x500]
+    assert bank.get_trace(0x300) is None
+    replacement = JITTrace(head_pc=0x300, native_fn=lambda: 1, size_bytes=64)
+    bank.allocate(replacement)
+    assert [pc for pc, _ in bank.traces] == [0x100, 0x200, 0x300, 0x400, 0x500]
+    assert bank.get_trace(0x300) is replacement, "re-insert must reuse the tombstoned slot"
+
+
+def test_jitr_promote_transfers_inbound_sources_avoiding_dangling_chain():
+    """
+    Promoting a trace out of Oldest must carry its inbound chain-source
+    registrations to wherever it lands. Without this, a later rotate()
+    looks for them on the bank the trace used to live in -- which no
+    longer holds it -- and never unlinks a source chained into it once the
+    trace is genuinely purged from its new bank, leaving a dangling
+    `chain_next`.
+    """
+    cache = JITMultiBufferCache(bank_capacity=512)
+    t2 = JITTrace(head_pc=0x200, native_fn=lambda: 2, size_bytes=64)
+    cache.insert(t2)  # t2 -> Active
+    cache.rotate()  # t2's bank -> Warm
+    t1 = JITTrace(head_pc=0x100, native_fn=lambda: 1, size_bytes=64, next_pc=0x200)
+    cache.insert(t1)  # t1 -> new Active, chains into Warm-resident t2
+    assert t1.chain_next == 0x200
+    old_bank = cache.find_bank(0x200)
+    assert 0x100 in old_bank.inbound_sources
+
+    cache.rotate()  # t2's bank -> Oldest
+    promoted = cache.lookup(0x200)  # promote t2 out of Oldest
+    assert promoted is t2
+    new_bank = cache.find_bank(0x200)
+    assert new_bank is not old_bank
+    assert 0x100 not in old_bank.inbound_sources, (
+        "stale registration must not remain on the bank the trace left"
+    )
+    assert 0x100 in new_bank.inbound_sources, "the inbound source must follow the promoted trace"
+
+
+def test_jitr_bitmap_checked_before_cache_lookup():
+    """
+    RuntimeEngine.run() must check the O(1) card bitmap before ever calling
+    cache.lookup(): most blocks are never compiled, so a miss must be
+    rejected in O(1) without touching the cache's per-bank search, or the
+    miss penalty on the overwhelmingly common path would dwarf the win a
+    hit gets.
+    """
+    wat = """
+    (module
+      (func (export "sum_to") (param $n i32) (result i32)
+        (local $i i32) (local $acc i32)
+        (block $exit
+          (loop $top
+            (br_if $exit (i32.ge_s (local.get $i) (local.get $n)))
+            (local.set $acc (i32.add (local.get $acc) (local.get $i)))
+            (local.set $i (i32.add (local.get $i) (i32.const 1)))
+            (br $top)
+          )
+        )
+        (local.get $acc)
+      )
+    )
+    """
+    wasm_bytes = wat_to_wasm(wat)
+    if not wasm_bytes:
+        print(
+            "    [SKIP] wasmtime not installed, skipping test_jitr_bitmap_checked_before_cache_lookup"
+        )
+        return
+    module = parse(wasm_bytes)
+    fn_idx = module.export_func_index("sum_to")
+    engine = RuntimeEngine(jit_compiler=TraceCompiler(), yield_threshold=8)
+    engine.register_module_blocks(module)
+    interp = Interpreter(module)
+
+    lookup_calls = []
+    real_lookup = engine.cache.lookup
+
+    def spy(pc):
+        lookup_calls.append((pc, engine.bitmap.get_state(pc)))
+        return real_lookup(pc)
+
+    engine.cache.lookup = spy
+    engine.run(interp, fn_idx, [50], quantum=8)
+
+    assert lookup_calls, (
+        "the loop must have gotten hot enough to compile and hit the cache at least once"
+    )
+    for pc, state in lookup_calls:
+        assert state == CardState.COMPILED, (
+            f"cache.lookup({pc:#x}) was called while its card was {state}, not COMPILED -- "
+            "the bitmap must be checked first so a miss never reaches the cache search"
+        )
+
+
 def test_jitr_31_to_35_trace_chaining_and_ok_unlinking():
     """JITR-31..35: Direct chaining into resident Active/Warm successors and O(k) unlinking on Oldest purge."""
     cache = JITMultiBufferCache(bank_capacity=512)
@@ -756,7 +866,7 @@ def test_jitc_20_trace_header_16byte_physical_layout():
 
 
 def test_hotspot_05_3bank_cache_rotation_and_eviction_resets_card():
-    """HOTSPOT-05: Oldest bank eviction unlinks inbound sources and resets card state to EXECUTED."""
+    """HOTSPOT-05: Oldest bank eviction unlinks inbound sources and resets card state to UNEXECUTED."""
     bitmap = HotspotBitmap()
     cache = JITMultiBufferCache(bank_capacity=256)
     cache.on_evict = lambda pcs: [bitmap.mark_evicted(p) for p in pcs]
@@ -768,9 +878,58 @@ def test_hotspot_05_3bank_cache_rotation_and_eviction_resets_card():
     cache.rotate()
     cache.rotate()
     cache.rotate()
-    assert bitmap.get_state(0x50) == CardState.EXECUTED, (
-        "Evicted trace must revert card state to EXECUTED (01)"
+    assert bitmap.get_state(0x50) == CardState.UNEXECUTED, (
+        "Evicted trace must revert card state to UNEXECUTED (00), forcing a full "
+        "re-warm-up rather than jumping straight back to HOT after one touch"
     )
+
+
+def test_hotspot_06_short_blocks_never_tracked_avoiding_card_aliasing():
+    """
+    HOTSPOT-06: a card's 2-bit state can only ever describe one block. Two
+    distinct block heads sharing a card would otherwise let compiling one
+    falsely read back as "already compiled" for the other, or let evicting
+    one falsely reset the other's still-resident COMPILED state. Blocks
+    shorter than one card's worth of bytes must never be recorded at all,
+    so two tracked blocks can never land on the same card.
+    """
+    engine = RuntimeEngine(jit_compiler=PcOnlyCompiler(lambda pc: None), card_shift=3)
+    assert engine.min_trace_bytes == 8
+    # Two 2-byte blocks, both inside card 2 (0x10>>3 == 0x12>>3 == 2).
+    engine.register_block(BasicBlock(head_pc=0x10, ops=[("nop", None)], next_pc=0x12))
+    engine.register_block(BasicBlock(head_pc=0x12, ops=[("nop", None)], next_pc=0x14))
+    for _ in range(engine.yield_threshold * 2):
+        engine.record_block_head(0x10)
+        engine.record_block_head(0x12)
+    assert engine.bitmap.get_state(0x10) == CardState.UNEXECUTED
+    assert engine.bitmap.get_state(0x12) == CardState.UNEXECUTED
+    assert engine.compile_queue == [], "short blocks must never reach the compile queue"
+
+
+def test_hotspot_07_idle_hook_skips_recompiling_an_already_resident_trace():
+    """
+    HOTSPOT-07: if a pc is queued for compilation while a trace already
+    resides in the cache under that exact pc (e.g. re-queued before an
+    earlier compile's mark_compiled() landed), idle_hook must trust the
+    cache -- the authority on whether *this* pc has a trace -- over the
+    coarse per-card bitmap, and skip recompiling it.
+    """
+    compile_calls = []
+
+    def fake_compile(pc):
+        compile_calls.append(pc)
+        return JITTrace(pc, lambda: 0, size_bytes=64)
+
+    engine = RuntimeEngine(jit_compiler=PcOnlyCompiler(fake_compile), card_shift=3)
+    engine.register_block(BasicBlock(head_pc=0x100, ops=[("nop", None)] * 8, next_pc=0x110))
+    engine.cache.insert(JITTrace(0x100, lambda: 0, size_bytes=64))
+    engine.compile_queue.append(0x100)
+
+    compiled = engine.idle_hook(budget=4)
+
+    assert compiled == 0, "a pc already resident in the cache must not be recompiled"
+    assert compile_calls == []
+    assert engine.bitmap.get_state(0x100) == CardState.COMPILED
 
 
 # ===========================================================================

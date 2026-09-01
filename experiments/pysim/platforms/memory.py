@@ -24,8 +24,8 @@ FB_CONF_MAX_TASKS = 16
 FB_CONF_MAX_SHM_PAGES = 32
 FB_PAGE_SIZE = 4096  # 4KB SHM page size
 FB_WASM_PAGE_SIZE = 65536  # 64KB WASM page size
-FB_TASK_ID_FLIGHT = 0xFFFF  # Flight sentinel during IPC transfer
-FB_TASK_ID_KERNEL = 0x0000
+FB_TASK_ID_FLIGHT = 0xFF  # Flight sentinel during IPC transfer (8-bit PTE owner_id compliant)
+FB_TASK_ID_KERNEL = 0x00
 
 
 class RecoveryAction(Enum):

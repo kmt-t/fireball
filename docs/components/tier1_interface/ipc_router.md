@@ -106,10 +106,10 @@ Key-Valueペアを複数集約した通信の基本単位。内部的に、動�
 - **サービス検索**: `fireball::flat_map_view` を用いて、URI文字列からチャンネルIDを $O(\log N)$ で取得する。 `{LowLatencyLookup}`
 - **メッセージ内検索**: メッセージ本体をソート済み配列とし `fireball::flat_map_view` で引くことで、受信側でのパラメータ検索を高速化する。 `{META_AccessDictionary}` `{META_FlatMapIndexed}`
 - **所有権移譲 (Zero-Copy CSP Handoff)**: `{OwnershipTransfer}` `{IPC_ZeroCopy}` `{ADR_RendezvousChannel}`
-    1. **Revoke**: URI 検索・RBAC 判定・サイズ制限チェックをすべて通過した後、送信側タスクの権限を無効化し、リソースを `In-flight` 状態にする。この時点で送信は完了確約状態（committed）となる——キューがないため「満杯で差し戻す」という失敗状態は原理的に存在しない。
+    1. **Revoke**: URI 検索・RBAC 判定・サイズ制限チェックをすべて通過した後、送信側タスクの権限を無効化し、リソースを `IN_FLIGHT` 状態にする。この時点で送信は完了確約状態（committed）となる——キューがないため「満杯で差し戻す」という失敗状態は原理的に存在しない。共有メモリ（SHM）転送時は、送信側物理操作 `shm.release()` と連動して対応する vMMIO PTE の `owner_id` が `FB_TASK_ID_FLIGHT`（`0xFF`）に更新され、双方がアクセス禁止となる。
     2. **Rendezvous**: 送信側は `(sender_role, target_role)` エッジ専用の CSP チャネル 1 本上でバッファなし同期ハンドオフを行う。受信側は自らのロールへの ALLOW エッジ全てを同時に待ち受けるガード付き外部選択（select、§5.1「receive_message」参照）であり、`sender_role` 1 つに事前コミットしない。相手側が既に待機していれば即座に、まだ到達していなければ協調スケジューラ上でブロックし、相手が到達した瞬間にハンドオフが成立する。バッファに値を保持しないため、キュー満杯 (`ERR_QUEUE_FULL`) に相当する状態はそもそも発生しない。
-    3. **Grant**: ランデブー成立の瞬間に受信側タスクへ権限を付与する。
-- **送信前チェックの失敗**: URI 未登録 (`ERR_NOT_FOUND`)、RBAC 拒否 (`ERR_PERMISSION_DENIED`)、KV ペア数超過 (`ERR_MSG_TOO_LARGE`) はいずれも Revoke より前段の静的チェックであり、これらで失敗した場合メッセージの所有権は最初から一度も送信側から動いていない（Rollback や Drop Handler のような事後的な回復処理を必要としない）。
+    3. **Grant**: ランデブー成立の瞬間に受信側タスクへ権限を付与し、状態を `RECEIVER_OWNS` へ遷移させる。共有メモリ転送時は PTE `owner_id` が受信タスクIDへアトミックに更新され、受信側での `claim(shm-id)` 物理操作が解禁される。
+- **送信前チェックの失敗とロールバック境界**: URI 未登録 (`ERR_NOT_FOUND`)、RBAC 拒否 (`ERR_PERMISSION_DENIED`)、KV ペア数超過 (`ERR_MSG_TOO_LARGE`) はいずれも Revoke より前段の静的チェックであり、これらで失敗した場合メッセージの所有権は最初から一度も送信側から動いていない（`SENDER_OWNS` のまま保持され、回復処理を必要としない）。なお、IPC メッセージパッシング自体は CSP ランデブーのためロールバック経路を持たないが、共有メモリ等の物理リソース転送中に相手タスクが異常終了した場合は、物理メモリ層の回復機構（`rollback_transfer()`、§`platform_memory.md`）が連動して PTE `owner_id` を送信元タスクIDへ復元する。
 
 #### IPC ルータ フルセット・コンセプトコード (`concepts/ipc_router_concept.py`)
 ```python
@@ -379,25 +379,25 @@ stateDiagram-v2
 
 **所有権状態の説明:**
 
-| 状態 | 所有者 | アクセス権 | リソース状態 | 説明 |
+| 状態 (State) | 所有者 (Owner) | アクセス権 | リソース状態 | 説明（共有メモリ連携含む） |
 | :--- | :--- | :--- | :--- | :--- |
-| **SenderOwned** | Sender | Full (R/W) | 安定 | 送信側が完全な制御を持つ |
-| **RevokePhase** | (移譲中) | Sender ロック中 | 遷移中 | 所有権を剥奪（Revoke）中。この時点で送信は完了確約（committed）となる |
-| **InFlight** | Router | Read-Only | 仲介中 | チャネルが一時保管、送受信側いずれもアクセス禁止。バッファではなく単一のランデブー・スロットであり、滞留（キュー）はしない |
+| **SenderOwned** (`SENDER_OWNS`) | Sender | Full (R/W) | 安定 | 送信側が完全な制御を持つ。SHM: PTE `owner_id = sender_id` |
+| **RevokePhase** | (移譲中) | Sender ロック中 | 遷移中 | 所有権を剥奪（Revoke）中。この時点で送信は完了確約（committed）となる。SHM: `shm.release()` 実行中 |
+| **InFlight** (`IN_FLIGHT`) | Router / チャネル | いずれもアクセス禁止 | 仲介中 | チャネルが一時保管、送受信側いずれもアクセス禁止。SHM: PTE `owner_id = FB_TASK_ID_FLIGHT` (0xFF) |
 | **RendezvousWait** | (移譲中) | In-flight 継続 | 協調ブロック中 | 相手側タスクがまだ到達しておらず、協調スケジューラ上でブロック中。タイムアウトや失敗はなく、相手の到達を待つのみ |
-| **GrantPhase** | (移譲中) | Receiver 取得中 | 遷移中 | 受信側にアクセス権を付与 |
-| **ReceiverOwned** | Receiver | Full (R/W) | 安定 | 受信側が完全な制御を持つ |
+| **GrantPhase** | (移譲中) | Receiver 取得中 | 遷移中 | 受信側にアクセス権を付与中。SHM: PTE `owner_id = receiver_id` へのアトミック更新中 |
+| **ReceiverOwned** (`RECEIVER_OWNS`) | Receiver | Full (R/W) | 安定 | 受信側が完全な制御を持つ。SHM: 受信側で `claim(shm-id)` 完了 |
 
 ### 4.3 メッセージライフサイクルと所有権管理 (SysML Parametric Diagram 相当)
 
 メッセージが IPC ルータを通じて送信されてから受信されるまでの各段階と、所有権の状態遷移を以下の表で定義する。
 
-| フェーズ | メッセージ状態 | 所有権 | 送信側 | 受信側 | リソース保護 |
+| フェーズ | メッセージ状態 | 所有権 (Ownership) | 送信側タスク | 受信側タスク | リソース保護（SHM連動） |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **初期** | 送信側で生成 | 送信側が所有 | RUNNING | BLOCKED/READY | なし |
-| **Revoke** | チャネルへ到達、送信確約 | In-flight に昇格 | **ロック（アクセス禁止）** | 待機中または未到達 | リソースロック |
-| **Rendezvous** | 相手の到達を待機（即座または協調ブロック） | In-flight 継続 | **ロック継続** | 到達済みなら即完了、未到達ならブロック中 | 単一スロットのハンドオフ管理（キューなし） |
-| **Grant（成功）** | ランデブー成立 | 受信側へ移譲 | リリース | **所有権取得** | ハンドシェイク完了 |
+| **初期** | 送信側で生成 | 送信側所有 (`SENDER_OWNS`) | RUNNING | BLOCKED/READY | PTE `owner_id = sender_id` |
+| **Revoke** | チャネルへ到達、送信確約 | 移譲中 (`IN_FLIGHT`) へ遷移 | **アクセス権剥奪（送信ロック）** | 待機中または未到達 | `shm.release()` 連動、PTE `owner_id = FB_TASK_ID_FLIGHT` |
+| **Rendezvous** | 相手の到達を待機（即座または協調ブロック） | 移譲中 (`IN_FLIGHT`) 継続 | **送信ロック継続** | 到達済みなら即完了、未到達ならブロック中 | 単一スロットのハンドオフ管理（キューなし、両者アクセス禁止） |
+| **Grant（成功）** | ランデブー成立 | 受信側へ移譲 (`RECEIVER_OWNS`) | **送信ロック解除（手放し完了）** | **所有権付与（受信完了）** | PTE `owner_id = receiver_id`、受信側 `claim()` 解禁 |
 
 **注記:**
 - **In-flight 状態**: メッセージがチャネル上でランデブー成立待ちの状態で、送信側は操作できない状態。ダングリング参照を防止。

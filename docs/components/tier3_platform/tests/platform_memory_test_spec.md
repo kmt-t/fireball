@@ -30,7 +30,7 @@
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | MEM-10 | `allocate-shared`→`release`→`claim`の所有権移動 | タスクAが`allocate-shared`済み | §7手順1-7を実行 | `release`後はA側で無効化され、`claim`後はB側が所有権を得る（二重所有なし） | §7ライフサイクル手順 |
 | MEM-10b | `release()`/`claim()`とvMMIO PTE `owner_id`の対応 | 同上 | `release()`直後・`claim()`直後それぞれでvMMIO PTEを確認 | `release()`直後は`owner_id == FB_TASK_ID_FLIGHT`、`claim()`直後は`owner_id`が受信タスクIDに一致する（`shared-block`が独立した所有権状態を並行して持たない） | §7（本セッションでの訂正後）, runtime_vmmio.md §4.6 |
-| MEM-10c | `rollback_transfer()`によるowner_idの復元 | `release()`済みで`owner_id == FB_TASK_ID_FLIGHT` | `rollback_transfer(original_sender_id, shm_id)`を実行 | 対応するvMMIO PTEの`owner_id`が送信元タスクIDへ復元される（`FLIGHT`のまま放置されない） | ipc_router.md §4.1 |
+| MEM-10c | `rollback_transfer()`によるowner_idの復元 | `release()`済みで`owner_id == FB_TASK_ID_FLIGHT` | `rollback_transfer(original_sender_id, shm_id)`を実行 | 対応するvMMIO PTEの`owner_id`が送信元タスクIDへ復元される（`FB_TASK_ID_FLIGHT`のまま放置されない） | ipc_router.md §4.1 |
 | MEM-11 | `shared-block`のRAII自動解放 | Bがdropする | drop実行 | メモリが自動解放される（明示的`deallocate`不要） | §7手順9, §8「ADR_SharedBlockRaii」 |
 | MEM-12 | `shm-id`のkv_pairエンコーディング | IPC送信 | メッセージ構築 | 型スコープ上位3bit=`0b000`（機能的）、下位5bit=`0b00001`（u32）のkv_pairとして格納される。`ipc_router.md`の型語彙表にない独自の`dtype=handle`は使わない | §7「大きなデータを転送する場合」（本セッションでの訂正後）, ipc_router.md §3.3 |
 | MEM-13 | `query()`/`check_ownership()`が削除されている | - | APIサーフェスを確認 | これらのAPIは存在しない（`shared_block.get_size()`/`get_owner()`で代替） | §8 ADR_MemoryManagerMinimalSurface |

@@ -364,17 +364,17 @@ graph LR
     Guest[Guest App] -- Load/Store addr=0xExxx_xxxx --> vMMIO
     vMMIO -- FlatMap / TLB lookup --> Entry[vmmio_pte_tier3\nowner_id]
     Entry -- owner_id == current_task_id --> Phys[Physical Shared Memory]
-    Entry -- FLIGHT_SENTINEL or mismatch --> Trap[Trap/Exception]
+    Entry -- FB_TASK_ID_FLIGHT or mismatch --> Trap[Trap/Exception]
 ```
 
 #### ライフサイクル（ipc_router.md §4.1 に従属）
 <!-- traceability: {OwnershipTransfer} -->
 
-1. **Alloc**: COOS が SHM 物理ページを確保し、IPCルータに登録する。`owner_id` = 送信タスクID。
-2. **Revoke**: IPCルータが送信タスクの権限を無効化する。`owner_id` を `FLIGHT_SENTINEL` にセットし、TLB の該当エントリを無効化する。この時点で送信は完了確約となる。
-3. **Rendezvous**: IPCルータが `(sender_role, target_role)` エッジ専用の CSP チャネル上でハンドルを含むメッセージのバッファなし同期ハンドオフを試みる。受信タスクが既に待機していれば即座に、まだ到達していなければ送信タスクが協調スケジューラ上でブロックする。キューが存在しないため、満杯によるRollbackは発生しない。
-4. **Grant**: ランデブーが成立した瞬間、IPCルータが `owner_id` を受信タスクIDにセットする。
-5. **相手タスクの生存**: 受信タスクが永久に到達しない場合、送信タスクはブロックし続ける。回収すべき「キュー内滞留リソース」は存在しないため、Drop Handler に相当する機構はない——送信側タスク自身の終了処理がそのまま資源の後始末を兼ねる。
+1. **Alloc (`allocate-shared`)**: COOS / 物理メモリマネージャが SHM 物理ページを確保し、`owner_id` = 送信タスクID で vMMIO に登録する。
+2. **Revoke (`shm.release()`)**: 送信側がリソースを手放し、IPCルータが送信タスクの権限を無効化する。`owner_id` を `FB_TASK_ID_FLIGHT`（`0xFF`、移譲中センチネル）にセットし、TLB の該当エントリを無効化する。この時点で送信は完了確約となる。
+3. **Rendezvous**: IPCルータが `(sender_role, target_role)` エッジ専用の CSP チャネル上でハンドルを含むメッセージのバッファなし同期ハンドオフを試みる。受信タスクが既に待機していれば即座に、まだ到達していなければ送信タスクが協調スケジューラ上でブロックする。キューが存在しないため、キュー満杯による差し戻しは発生しない。
+4. **Grant (`claim(shm-id)`)**: ランデブーが成立した瞬間、IPCルータが `owner_id` を受信タスクIDにセットする。受信タスク側で `claim()` を呼び出すことで有効な `shared-block` ハンドルが取得可能となる。
+5. **障害時回復 (`rollback_transfer`)**: 相手タスクが永久に到達しない場合、送信タスクはブロックし続ける。タスク異常終了やタイムアウト等によるフォールト発生時は、物理メモリ層の `rollback_transfer()` により `owner_id` を送信元タスクIDへ復元し、リソースの回収・再利用を行う。
 
 ### 4.7 仮想割り込みマッピング
 <!-- traceability: {META_ConfigurableSystem} -->

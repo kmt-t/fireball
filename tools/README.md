@@ -27,10 +27,11 @@ graph TD
 | ツール / スクリプト | 種別 | 対象 | 主な役割 |
 | :--- | :--- | :--- | :--- |
 | `tools/format_all.ps1`<br>`tools/format_all.sh` | フォーマッタ | `experiments/`<br>`tools/`<br>`docs/` | **ワンタッチ自動整形**。Ruff による PEP8 準拠フォーマット & Lint エラー自動修復（`--fix`）を一発適用。 |
+| `tools/check_terminology.ps1`<br>`tools/check_terminology.sh` | 表記揺れ検査 | `docs/` | **ワンタッチ表記揺れ検査**。静的レーベンシュタイン距離、TF-IDF、エンベディング、さくらのAIによる文脈判定を一括実行。 |
 | `tools/run_all_tests.ps1`<br>`tools/run_all_tests.sh` | 統合ランナー | 全体 | **統合検証パイプライン**。Phase 0〜4 の全品質ゲート、形式検証、概念コード、シミュレータテストを包括実行。 |
 | `experiments/pysim/tests/run_all.py` | 単体テスト | `experiments/pysim` | シミュレータ単体テスト（全9スイート: 命令網羅、ローダ、Syscall、GDB、JIT、All-Pairs等）。 |
 | `experiments/pysim/scenarios/run_all.py` | 結合テスト | `experiments/pysim` | 実機同等ユースケース結合シナリオテスト（全11シナリオ）。 |
-| `tools/spec-integrator/` | 検証エンジン | `docs/`, `inc/` | 文書トポロジー解析、形式検証、WIT検証、一貫性追跡、LLM as a Judge。 |
+| `tools/spec-integrator/` | 検証エンジン | `docs/`, `inc/` | 文書トポロジー解析、形式検証、WIT検証、一貫性追跡、表記揺れ判定、LLM as a Judge。 |
 
 ---
 
@@ -43,6 +44,7 @@ graph TD
 | 開発ステージ | タイミング | 実行コマンド（Windows / Linux） | コスト・所要時間 |
 | :--- | :--- | :--- | :--- |
 | **0. 自動フォーマット** | コード編集後・コミット前 | `powershell tools/format_all.ps1`<br>`./tools/format_all.sh` | 0円 / 1〜2秒 |
+| **表記揺れチェック** | 用語統一度の確認・執筆時 | `powershell tools/check_terminology.ps1`<br>`./tools/check_terminology.sh`（高速版: `-quick`） | 0円〜課金 / 2秒〜30秒 |
 | **仕様変更同期** | 仕様書編集後・他レベルの前 | `powershell tools/run_all_tests.ps1 -level sync`<br>`./tools/run_all_tests.sh --level sync` | 0円 / 2〜3秒 |
 | **Level 1 (既定・日常)** | コミット前の標準確認 | `powershell tools/run_all_tests.ps1`<br>`./tools/run_all_tests.sh` | 0円 / 5〜10秒 |
 | **Level 2 (明示指示のみ)** | ADR 追加・大規模仕様変更時 | `powershell tools/run_all_tests.ps1 -level 2`<br>`./tools/run_all_tests.sh --level 2` | 課金 / 30秒〜1分 |
@@ -101,14 +103,14 @@ graph TD
 
 | ゲート名 | ルール | 検査内容 |
 | :--- | :--- | :--- |
-| **1. Format Gate** | `FORMAT-*` | Markdown 内部リンク切れ、見出しアンカー切れ、不正記法の検出。 |
+| **1. Format Gate** | `FMT-*` | Markdown 内部リンク切れ、見出しアンカー切れ、Mermaid構文、**レーベンシュタイン距離による静的タイポ・表記揺れ（`FMT-LEVENSHTEIN-TYPO`）** の検出。 |
 | **2. Traceability Gate** | `TRACE-*` | 未定義キーワードの参照、未参照の要求仕様、孤立ノードの検出。 |
 | **3. Hierarchy Gate** | `HIERARCHY-*` | Tier（0:要求 $\to$ 1:主要 $\to$ 2:サブ $\to$ 3:リーフ）間の逆流参照・カプセル化違反の検出。 |
 | **4. Formal Gate** | `FORMAL-*` | `docs/**/formal/*.py`（pyModelChecking）の実行、LTL/CTL 検証、`BACKS` 契約の検証。 |
 | **5. WIT Gate** | `WIT-*` | `wit/*.wit` の構文・型整合性・エラー回復戦略契約の検証。 |
 | **6. Evidence Gate** | `EVIDENCE-*` | `<!-- evidence: ... -->` で主張されたベンチマークや実装ファイルの実在性とアサーション検証。 |
 | **7. Obligation Gate** | `OBLIG-*` | Phase 1 のリスク評価で導出された検証義務（形式検証・LLM監査等）が **100% 履行** されているかの検証。 |
-| **8. Consistency Gate** | `CONSIST-*` | 一貫性ベースライン（キャッシュ DB 記録値）と比較し、仕様変更時の修正漏れ・シンボル値ズレ（`FB_CONF_*`）を機械検出。 |
+| **8. Consistency Gate** | `CONSIST-*`<br>`TERM_VARIANCE` | 一貫性ベースライン（キャッシュ DB 記録値）との差分・シンボル値ズレ、および **TF-IDF + さくらのAI エンベディング・LLM文脈監査による用語表記揺れ（`TERM_VARIANCE`）** の警告。 |
 
 ---
 

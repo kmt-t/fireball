@@ -37,6 +37,9 @@
 - **コード自動フォーマット（コミット前実行）**：
   - Windows: `powershell tools/format_all.ps1`
   - Linux/WSL: `./tools/format_all.sh`
+- **表記揺れチェック（特出しスクリプト）**：
+  - Windows: `powershell tools/check_terminology.ps1` （高速・静的版: `-quick`）
+  - Linux/WSL: `./tools/check_terminology.sh` （高速・静的版: `--quick`）
 - **普段（コミット前など）は簡易テスト（コスト0）のみ実行する**：
   - Windows: `powershell tools/run_all_tests.ps1` または単体 Python 実行
   - Linux/WSL: `./tools/run_all_tests.sh`

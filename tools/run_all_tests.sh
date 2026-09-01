@@ -165,6 +165,15 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# Terminology Embedding & Similarity Indexing (Sakura AI) — Level 1+
+# ---------------------------------------------------------------------------
+echo ""
+echo ">>> Terminology Embedding & Similarity Indexing (Sakura AI)..."
+if ! uv "${SPEC_INT[@]}" term-index --config spec-integrator.yaml; then
+    echo "! Terminology indexing reported a warning (non-fatal)"
+fi
+
+# ---------------------------------------------------------------------------
 # Phase 3: Concept Code Verification — the reference implementations under
 # docs/**/concepts/*_concept.py are not test_*.py, so pytest silently collects
 # zero tests from them and no other phase ever imports or executes them. This

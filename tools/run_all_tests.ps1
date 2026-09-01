@@ -153,6 +153,15 @@ if ($runLLM) {
 }
 
 # ---------------------------------------------------------------------------
+# Terminology Embedding & Similarity Indexing (Sakura AI) — Level 1+
+# ---------------------------------------------------------------------------
+Write-Host "`n>>> Terminology Embedding & Similarity Indexing (Sakura AI)..." -ForegroundColor Yellow
+& uv @($specInt + @("term-index", "--config", "spec-integrator.yaml"))
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "! Terminology indexing reported a warning (non-fatal)" -ForegroundColor DarkYellow
+}
+
+# ---------------------------------------------------------------------------
 # Phase 3: Concept Code Verification — the reference implementations under
 # docs/**/concepts/*_concept.py are not test_*.py, so pytest silently collects
 # zero tests from them and no other phase ever imports or executes them. This

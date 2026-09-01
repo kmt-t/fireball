@@ -173,17 +173,14 @@ class FlatMapView(Generic[KeyT, ValT]):
         return self.size() == 0
 
     def _bounds(self, lo: KeyT, hi: KeyT) -> tuple[int, int]:
-        sub = self._entries[self.first : self.last]
-        left = bisect.bisect_left(sub, lo, key=lambda e: e[0])
-        right = bisect.bisect_right(sub, hi, key=lambda e: e[0])
-        return (self.first + left, self.first + right)
+        return (
+            bisect.bisect_left(self._entries, lo, self.first, self.last, key=lambda e: e[0]),
+            bisect.bisect_right(self._entries, hi, self.first, self.last, key=lambda e: e[0]),
+        )
 
     def _locate(self, key: KeyT) -> int | None:
-        sub = self._entries[self.first : self.last]
-        idx = bisect.bisect_left(sub, key, key=lambda e: e[0])
-        if idx < len(sub) and sub[idx][0] == key:
-            return self.first + idx
-        return None
+        i = bisect.bisect_left(self._entries, key, self.first, self.last, key=lambda e: e[0])
+        return i if i < self.last and self._entries[i][0] == key else None
 
     def slice(self, first: int, last: int) -> FlatMapView[KeyT, ValT]:
         if not (self.first <= first <= last <= self.last):

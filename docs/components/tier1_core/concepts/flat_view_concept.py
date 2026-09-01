@@ -111,17 +111,14 @@ class FlatMapView:
         return self.size() == 0
 
     def _bounds(self, lo, hi):
-        sub = self.entries[self.first : self.last]
-        left = bisect.bisect_left(sub, lo, key=lambda e: e[0])
-        right = bisect.bisect_right(sub, hi, key=lambda e: e[0])
-        return (self.first + left, self.first + right)
+        return (
+            bisect.bisect_left(self.entries, lo, self.first, self.last, key=lambda e: e[0]),
+            bisect.bisect_right(self.entries, hi, self.first, self.last, key=lambda e: e[0]),
+        )
 
     def _locate(self, key):
-        sub = self.entries[self.first : self.last]
-        idx = bisect.bisect_left(sub, key, key=lambda e: e[0])
-        if idx < len(sub) and sub[idx][0] == key:
-            return self.first + idx
-        return None
+        i = bisect.bisect_left(self.entries, key, self.first, self.last, key=lambda e: e[0])
+        return i if i < self.last and self.entries[i][0] == key else None
 
     def slice(self, first, last):
         assert self.first <= first <= last <= self.last, "a view may only ever shrink"

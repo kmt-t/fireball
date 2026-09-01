@@ -4,6 +4,16 @@ Fireball Hypervisor の品質保証、コードフォーマット、静的トレ
 
 Windows（PowerShell）および Linux / WSL（Bash）の双方で完全透過に同一のコマンドライン操作が可能です。
 
+### 前提パッケージのインストール (Prerequisites)
+プロジェクトのルート直下にある [requirements.txt](../requirements.txt) を用いて、必要な Python モジュールを一括インストールします：
+```bash
+# uv を使用する場合 (推奨・高速):
+uv pip install -r requirements.txt
+
+# 通常の pip を使用する場合:
+pip install -r requirements.txt
+```
+
 ---
 
 ## 1. ツール・スクリプト一覧 (Tool Architecture)

@@ -1,0 +1,25 @@
+# Fireball Hypervisor - Python Dependencies
+# Install with: pip install -r requirements.txt (or: uv pip install -r requirements.txt)
+
+# ==============================================================================
+# 1. Document Quality & Formal Verification Pipeline (spec-integrator)
+# ==============================================================================
+pyModelChecking>=1.3.4       # Formal model verification via CTL/LTL temporal logic
+mistune>=3.0.0               # High-performance Markdown AST parser
+pyyaml>=6.0                  # YAML configuration and baseline loader
+requests>=2.31.0             # HTTP client for LLM / Sakura AI Embedding API
+urllib3>=2.0.0               # TLS / SSL connection handling
+mermaidx>=0.9.4              # Mermaid diagram syntax and topology validator
+
+# ==============================================================================
+# 2. Python Reference Simulator & JIT Machine Code Verification (experiments/pysim)
+# ==============================================================================
+wasmtime>=14.0.0             # WebAssembly reference runtime for differential testing
+unicorn>=2.0.0               # CPU emulator for Thumb-2/ARM instruction trace verification
+
+# ==============================================================================
+# 3. Testing, Linting & Code Formatting
+# ==============================================================================
+pytest>=8.0.0                # Unit and integration test framework
+pytest-cov>=4.1.0            # Test coverage reporting
+ruff>=0.8.0                  # Fast Python linter and code formatter (format_all)

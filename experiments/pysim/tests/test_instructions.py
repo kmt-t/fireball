@@ -543,6 +543,18 @@ def test_log_02_logger_ring_buffer_overwrites():
         t.close()
 
 
+def test_log_03_dictionary_storage_ownership_separation():
+    """LOG-03: LogDictionary borrows FlatMapStorage without owning/duplicating it."""
+    storage = FlatMapStorage([(0x01, "event #%d"), (0x02, "value %d %d")])
+    d = LogDictionary(storage=storage)
+
+    # Ownership separation assertion
+    assert d.storage is storage
+    assert d.payload.entries is storage.entries
+    assert d.format(0x01, (42, 0, 0, 0)) == "event #42"
+    assert d.format(0x02, (10, 20, 0, 0)) == "value 10 20"
+
+
 def test_recovery_01_retry_success_within_limit():
     """RECOVERY-01: Transient failure succeeds within 3 retries (10ms backoff) without exceptions."""
     mgr = RecoveryManager(sleep_fn=lambda _s: None)

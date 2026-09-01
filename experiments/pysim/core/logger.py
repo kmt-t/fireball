@@ -17,6 +17,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from enum import IntEnum
+from typing import Sequence
 
 from hal import UartTransport
 
@@ -36,17 +37,28 @@ class LogLevel(IntEnum):
 
 _DISALLOWED_SPECIFIERS = ("%s", "%p", "%c")
 
-from system_containers import FlatMapView, StaticFlatMap
+from system_containers import FlatMapStorage, FlatMapView
+
+_EMPTY_LOG_STORAGE: FlatMapStorage[int, str] = FlatMapStorage([])
 
 
 class LogDictionary:
     """
-    ROM-resident, build-time-only format string table (system_logging.md 4.2)
-        backed by FlatMapView vocabulary.
+    ROM-resident, build-time-only format string table (system_logging.md 4.2).
+    Storage ownership is separated: LogDictionary borrows FlatMapStorage
+    and presents format strings via non-owning FlatMapView (AoS).
     """
 
-    def __init__(self, capacity: int = 128):
-        self._map: StaticFlatMap[int, str] = StaticFlatMap(capacity)
+    def __init__(
+        self,
+        storage: FlatMapStorage[int, str] | None = None,
+        capacity: int = 128,
+    ):
+        self.storage: FlatMapStorage[int, str] = (
+            storage if storage is not None else FlatMapStorage([])
+        )
+        self._view: FlatMapView[int, str] = self.storage.view()
+        self.payload: FlatMapView[int, str] = self._view
 
     def register(self, offset: int, fmt: str) -> None:
         for bad in _DISALLOWED_SPECIFIERS:
@@ -56,10 +68,16 @@ class LogDictionary:
                     "backed by a u32 argument without reading it as a pointer"
                 )
 
-        self._map.insert(offset, fmt)
+        self.storage.insert(offset, fmt)
+        self._view = self.storage.view()
+        self.payload = self._view
 
     def view(self) -> FlatMapView[int, str]:
-        return self._map.view()
+        return self._view
+
+    @property
+    def entries(self) -> Sequence[tuple[int, str]]:
+        return self.storage.entries
 
     def format(self, offset: int, args: tuple[int, int, int, int]) -> str:
         """
@@ -74,7 +92,7 @@ class LogDictionary:
                 present so behavior matches C's variadic semantics instead of
                 Python's stricter one.
         """
-        fmt = self._map.find(offset)
+        fmt = self._view.find(offset)
         if fmt is None:
             return f"<UNKNOWN_DICT_OFFSET_0x{offset:X}>"
         n = sum(1 for m in _SPECIFIER_RE.finditer(fmt) if m.group() != "%%")

@@ -32,14 +32,39 @@ class LogEntry:
     timestamp_tick: int = 0
 
 
-class LogDictionary:
-    """Simulates ROM-resident static format string dictionary (DictionaryBasedIPC)."""
+import sys
+from pathlib import Path
 
-    def __init__(self, entries: dict[int, str]):
-        self._entries = entries
+_DIR = Path(__file__).resolve().parent
+if str(_DIR) not in sys.path:
+    sys.path.insert(0, str(_DIR))
+
+from flat_view_concept import FlatMapStorage, FlatMapView
+
+
+class LogDictionary:
+    """Simulates ROM-resident static format string dictionary (DictionaryBasedIPC).
+    Storage ownership is separated: borrows FlatMapStorage and performs lookup
+    via non-owning FlatMapView (AoS).
+    """
+
+    def __init__(self, storage: FlatMapStorage | dict[int, str] | None = None):
+        if isinstance(storage, FlatMapStorage):
+            self.storage = storage
+        elif isinstance(storage, dict):
+            entries = sorted(storage.items(), key=lambda kv: kv[0])
+            self.storage = FlatMapStorage(entries)
+        elif storage is None:
+            self.storage = FlatMapStorage([])
+        else:
+            self.storage = storage
+
+        self.payload: FlatMapView = self.storage.view()
 
     def format(self, offset: int, arg0: int, arg1: int, arg2: int, arg3: int) -> str:
-        fmt = self._entries.get(offset, f"UNKNOWN_FORMAT_OFFSET_{offset}: %d %d %d %d")
+        fmt = self.payload.find(offset)
+        if fmt is None:
+            fmt = f"UNKNOWN_FORMAT_OFFSET_{offset}: %d %d %d %d"
         try:
             return fmt % (arg0, arg1, arg2, arg3)
         except TypeError:
@@ -307,6 +332,22 @@ def test_logger_flush_interruption():
     assert logger.ring_buffer.count == 2
 
 
+def test_logger_storage_ownership_separation():
+    # Storage is owned externally in ROM / static buffer
+    storage = FlatMapStorage([(0x10, "External format: %d"), (0x20, "Status code: %d")])
+    dictionary = LogDictionary(storage)
+
+    # Ownership assertion: LogDictionary does not own or clone storage
+    assert dictionary.storage is storage
+    assert dictionary.payload.entries is storage.entries
+
+    transport = MockHALTransport()
+    logger = Logger(transport, dictionary)
+    logger.log_event(LogLevel.INFO, 0x10, 100)
+    logger.flush()
+    assert "External format: 100" in transport.output_log[0]
+
+
 if __name__ == "__main__":
     test_logger_dictionary_formatting()
     test_logger_buffering_and_idle_flush()
@@ -314,4 +355,5 @@ if __name__ == "__main__":
     test_logger_level_filtering()
     test_logger_ipc_message_handling()
     test_logger_flush_interruption()
+    test_logger_storage_ownership_separation()
     print("[PASS] All Logger concept tests passed successfully.")

@@ -756,10 +756,10 @@ class WASMTraceCompiler:
         ops = list(block.ops)
         has_ret = any(op.startswith("i32.") for op, _ in ops)
 
-        def trace_fn(ip: int, stack_bot: Any, env: Any, local_base: Any) -> int:
-            # Emulated handler matching CPS 4-argument C signature
-            c_arr = ctypes.cast(local_base, ctypes.POINTER(ctypes.c_int64))
-            stk: list[int] = []
+        def trace_fn(ip: int, stack_bot: Any, local_base: Any, tos: int) -> int:
+            # Emulated handler matching CPS 4-argument C signature (ip, stack_bot, local_base, tos)
+            c_arr = ctypes.cast(local_base, ctypes.POINTER(ctypes.c_int64)) if local_base else None
+            stk: list[int] = [tos] if tos else []
             for op, arg in ops:
                 if op == "i32.const":
                     stk.append(arg)
@@ -773,9 +773,11 @@ class WASMTraceCompiler:
                     b, a = stk.pop(), stk.pop()
                     stk.append((a * b) & 0xFFFF_FFFF)
                 elif op == "local.get":
-                    stk.append(c_arr[arg] & 0xFFFF_FFFF)
+                    stk.append((c_arr[arg] if c_arr else 0) & 0xFFFF_FFFF)
                 elif op == "local.set":
-                    c_arr[arg] = stk.pop() & 0xFFFF_FFFF
+                    val = stk.pop() & 0xFFFF_FFFF
+                    if c_arr:
+                        c_arr[arg] = val
             return stk[-1] if stk else 0
 
         c_fn = ctypes.CFUNCTYPE(
@@ -783,7 +785,7 @@ class WASMTraceCompiler:
             ctypes.c_uint32,
             ctypes.c_void_p,
             ctypes.c_void_p,
-            ctypes.c_void_p,
+            ctypes.c_uint32,
         )(trace_fn)
         trace = JITTrace(
             head_pc=head_pc,

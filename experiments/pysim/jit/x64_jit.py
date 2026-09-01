@@ -163,8 +163,10 @@ class TraceCompiler:
             key=lambda e: e[0],
         )
     )
+    _STACK_EFFECT_KEYS: tuple[str, ...] = tuple(k for k, _ in _STACK_EFFECT_ENTRIES)
+    _STACK_EFFECT_VALS: tuple[tuple[int, int], ...] = tuple(v for _, v in _STACK_EFFECT_ENTRIES)
     STACK_EFFECTS: FlatMapView[str, tuple[int, int]] = FlatMapView(
-        [k for k, _ in _STACK_EFFECT_ENTRIES], [v for _, v in _STACK_EFFECT_ENTRIES]
+        _STACK_EFFECT_KEYS, _STACK_EFFECT_VALS
     )
 
     def compile_trace(self, head_pc: int, block: BasicBlock | None) -> JITTrace | None:

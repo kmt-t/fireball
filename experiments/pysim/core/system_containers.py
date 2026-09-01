@@ -129,7 +129,11 @@ class _SortedWindow(Generic[KeyT]):
 
 
 class FlatMapView(_SortedWindow[KeyT], Generic[KeyT, ValT]):
-    """flat_map_view<Key, Value>: sorted keys, narrow-then-search, returns a value."""
+    """
+    flat_map_view<Key, Value>: non-owning view over an externally owned sorted key span
+    plus parallel value span. Narrow-then-search returns a value with O(log N) binary search.
+    The view holds only borrowed references to the storage and NEVER owns the underlying arrays.
+    """
 
     __slots__ = ("values",)
 
@@ -167,6 +171,40 @@ class FlatMapView(_SortedWindow[KeyT], Generic[KeyT, ValT]):
 
     def __len__(self) -> int:
         return self.size()
+
+
+class FlatMapStorage(Generic[KeyT, ValT]):
+    """
+    Owning storage container for sorted keys and values arrays.
+    Explicitly separates array data ownership from non-owning views (FlatMapView).
+    """
+
+    __slots__ = ("_keys", "_values")
+
+    def __init__(self, keys: Sequence[KeyT], values: Sequence[ValT]):
+        self._keys = list(keys)
+        self._values = list(values)
+
+    @property
+    def keys(self) -> list[KeyT]:
+        return self._keys
+
+    @property
+    def values(self) -> list[ValT]:
+        return self._values
+
+    def view(self) -> FlatMapView[KeyT, ValT]:
+        """Returns a non-owning FlatMapView borrowing the owned keys and values arrays."""
+        return FlatMapView(self._keys, self._values)
+
+    def __len__(self) -> int:
+        return len(self._keys)
+
+    def __getitem__(self, key: KeyT) -> ValT:
+        return self.view()[key]
+
+    def find(self, key: KeyT) -> ValT | None:
+        return self.view().find(key)
 
 
 # ---------------------------------------------------------------------------

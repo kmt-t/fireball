@@ -201,6 +201,10 @@ _SERVICE_TABLE: list[tuple[str, "ServiceDescriptor"]] = sorted(
     key=lambda entry: entry[0],
 )
 
+# Static ROM arrays owning the service table entries ({META_BinarySearch})
+_SERVICE_KEYS: tuple[str, ...] = tuple(uri for uri, _ in _SERVICE_TABLE)
+_SERVICE_DESCS: tuple["ServiceDescriptor", ...] = tuple(desc for _, desc in _SERVICE_TABLE)
+
 # ipc_router.md §4.1.1's FB_CONF_ROUTER_ROLE_MATRIX (4x4 constexpr array,
 # rows = sender, columns = target); every DENY cell is listed explicitly, per
 # the spec's own note that an absent cell must not be read as "undefined".
@@ -249,10 +253,8 @@ class IPCRouter:
 
     def __init__(self, scheduler: Scheduler):
         self.scheduler = scheduler
-        self.registry = FlatMapView(
-            [uri for uri, _ in _SERVICE_TABLE],
-            [desc for _, desc in _SERVICE_TABLE],
-        )
+        # Non-owning view borrowing ROM-resident storage arrays (_SERVICE_KEYS, _SERVICE_DESCS)
+        self.registry = FlatMapView(_SERVICE_KEYS, _SERVICE_DESCS)
 
     def find_service(self, uri: str) -> ServiceDescriptor | None:
         """Finds service descriptor via flat_map_view binary search over the URI string."""

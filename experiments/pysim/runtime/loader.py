@@ -444,7 +444,11 @@ class ModuleView:
         self.exports_dict: list[ExportEntry] = []
         self.code_offsets: list[tuple[int, int]] = []
         self.start_func_idx: int | None = None
-        self.resolved_imports: FlatMapView = FlatMapView([], [])
+        self._resolved_imports_keys: tuple[str, ...] = ()
+        self._resolved_imports_values: tuple[Any, ...] = ()
+        self.resolved_imports: FlatMapView = FlatMapView(
+            self._resolved_imports_keys, self._resolved_imports_values
+        )
         self.is_ready: bool = False
         # Decoded entity registry & RadixBinaryTreeView indexes ({META_BinarySearch})
         self.entity_registry: list[DecodedEntity] = []
@@ -759,7 +763,11 @@ class WasmLoader:
             entries.append((f"{imp.module_name}.{imp.field_name}", export_entry))
 
         entries.sort(key=lambda e: e[0])
-        module.resolved_imports = FlatMapView([k for k, _ in entries], [v for _, v in entries])
+        module._resolved_imports_keys = tuple(k for k, _ in entries)
+        module._resolved_imports_values = tuple(v for _, v in entries)
+        module.resolved_imports = FlatMapView(
+            module._resolved_imports_keys, module._resolved_imports_values
+        )
         module.is_ready = True
         return True
 

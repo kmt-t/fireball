@@ -176,7 +176,11 @@ class Wasi03pEngine:
             ("fireball://service/logger/0", logger_iface),
         ]
         entries.sort(key=lambda e: e[0])
-        self._interfaces = FlatMapView([uri for uri, _ in entries], [iface for _, iface in entries])
+        self._interface_keys: tuple[str, ...] = tuple(uri for uri, _ in entries)
+        self._interface_values: tuple[WasiInterfaceVTable, ...] = tuple(
+            iface for _, iface in entries
+        )
+        self._interfaces = FlatMapView(self._interface_keys, self._interface_values)
 
     def get_interface(self, uri: str) -> WasiInterfaceVTable | None:
         """Resolves an interface descriptor by its Hierarchical IPC communication URI."""
@@ -401,7 +405,15 @@ class WasiHostContext:
         else:
             radix_table = [0]
 
-        self._import_tree = RadixBinaryTreeView(keys, values, radix_table, radix_shift=radix_shift)
+        self._import_keys = list(keys)
+        self._import_values = list(values)
+        self._import_radix_table = list(radix_table)
+        self._import_tree = RadixBinaryTreeView(
+            self._import_keys,
+            self._import_values,
+            self._import_radix_table,
+            radix_shift=radix_shift,
+        )
 
     # --------------------------------------------------------------------------
     # WASI 0.3p URI Resolver Entry Point

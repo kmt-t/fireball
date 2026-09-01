@@ -32,13 +32,17 @@ from system_containers import FlatMapView
 
 IS_WINDOWS = sys.platform == "win32"
 
-_EMPTY_RELOCS: FlatMapView[str, int] = FlatMapView([], [])
+_EMPTY_RELOC_KEYS: tuple[str, ...] = ()
+_EMPTY_RELOC_VALS: tuple[int, ...] = ()
+_EMPTY_RELOCS: FlatMapView[str, int] = FlatMapView(_EMPTY_RELOC_KEYS, _EMPTY_RELOC_VALS)
 
 
 @dataclass(frozen=True)
 class Stencil:
     name: str
     code: bytes
+    reloc_keys: tuple[str, ...] = field(default_factory=lambda: _EMPTY_RELOC_KEYS)
+    reloc_vals: tuple[int, ...] = field(default_factory=lambda: _EMPTY_RELOC_VALS)
     # name -> byte offset within `code` of a 4-byte little-endian relocation
     # slot: a sorted flat_map_view over a small, fixed reloc-name vocabulary
     # ("disp", "imm", "rel32", "max_addr", "trap", "addr"), never a dict.
@@ -90,8 +94,43 @@ def _materialize_auto(name: str, gen: Generator[int, None, None] | Iterable[int]
         entries.append((reloc_name, idx))
         code[idx : idx + len(sentinel)] = bytes(len(sentinel))
     entries.sort(key=lambda e: e[0])
-    relocs = FlatMapView([k for k, _ in entries], [v for _, v in entries])
-    return Stencil(name=name, code=bytes(code), relocs=relocs)
+    reloc_keys = tuple(k for k, _ in entries)
+    reloc_vals = tuple(v for _, v in entries)
+    relocs = FlatMapView(reloc_keys, reloc_vals)
+    return Stencil(
+        name=name, code=bytes(code), reloc_keys=reloc_keys, reloc_vals=reloc_vals, relocs=relocs
+    )
+
+
+def _cut(
+    name: str,
+    gen: Generator[int, None, None] | Iterable[int],
+    **sentinels: bytes,
+) -> Stencil:
+    """
+    Drains a stencil generator into a mutable bytearray, finds each
+    named sentinel byte-pattern, records its offset as a relocation, and
+    zeroes the sentinel bytes so the template sits with a clean placeholder.
+    """
+
+    code = bytearray(gen)
+    entries: list[tuple[str, int]] = []
+    for reloc_name, sentinel in sentinels.items():
+        idx = code.find(sentinel)
+        if idx == -1:
+            continue
+        assert code.find(sentinel, idx + 1) == -1, (
+            f"stencil {name!r}: sentinel for {reloc_name!r} appears more than once"
+        )
+        entries.append((reloc_name, idx))
+        code[idx : idx + len(sentinel)] = bytes(len(sentinel))
+    entries.sort(key=lambda e: e[0])
+    reloc_keys = tuple(k for k, _ in entries)
+    reloc_vals = tuple(v for _, v in entries)
+    relocs = FlatMapView(reloc_keys, reloc_vals)
+    return Stencil(
+        name=name, code=bytes(code), reloc_keys=reloc_keys, reloc_vals=reloc_vals, relocs=relocs
+    )
 
 
 def _materialize(
@@ -108,8 +147,12 @@ def _materialize(
     """
 
     entries = sorted(relocs.items(), key=lambda e: e[0])
-    reloc_view = FlatMapView([k for k, _ in entries], [v for _, v in entries])
-    return Stencil(name=name, code=bytes(gen), relocs=reloc_view)
+    reloc_keys = tuple(k for k, _ in entries)
+    reloc_vals = tuple(v for _, v in entries)
+    reloc_view = FlatMapView(reloc_keys, reloc_vals)
+    return Stencil(
+        name=name, code=bytes(gen), reloc_keys=reloc_keys, reloc_vals=reloc_vals, relocs=reloc_view
+    )
 
 
 # ---------------------------------------------------------------------------

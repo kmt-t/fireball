@@ -95,6 +95,7 @@ from system import (
 )
 from system_containers import (
     BitView,
+    FlatMapStorage,
     FlatMapView,
     FlatSetView,
     RadixBinaryTreeView,
@@ -1810,6 +1811,23 @@ def test_cont_10_container_type_separation():
     assert not isinstance(s, FlatMapView)
     assert hasattr(m, "values")
     assert not hasattr(s, "values")
+
+
+def test_cont_11_storage_and_view_ownership_separation():
+    """CONT-11: Data storage ownership is strictly separated from non-owning views."""
+    keys = [10, 20, 30]
+    vals = ["A", "B", "C"]
+    storage = FlatMapStorage(keys, vals)
+    v1 = storage.view()
+    v2 = storage.view()
+
+    # Views borrow the same underlying arrays without taking ownership
+    assert v1.find(20) == "B"
+    assert v2.find(30) == "C"
+    assert v1.keys is storage.keys
+    assert v1.values is storage.values
+    assert v2.keys is storage.keys
+    assert v2.values is storage.values
 
 
 # ===========================================================================

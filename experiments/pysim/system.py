@@ -325,8 +325,14 @@ class System:
             current_prefix += 1
             radix_table[current_prefix] = len(keys)
 
+        self._syscall_keys = tuple(keys)
+        self._syscall_values = tuple(values)
+        self._syscall_radix_table = tuple(radix_table)
         self._syscall_dispatch_tree = RadixBinaryTreeView(
-            keys, values, radix_table, radix_shift=radix_shift
+            self._syscall_keys,
+            self._syscall_values,
+            self._syscall_radix_table,
+            radix_shift=radix_shift,
         )
 
     def _on_idle(self) -> None:

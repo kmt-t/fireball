@@ -39,7 +39,6 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from control_flow import Instr, decode_all
-from system_containers import FlatMapView
 from wasm_module import F32, F64, Module
 from wasm_opcodes import (
     BLOCK,
@@ -204,18 +203,19 @@ class CallFrame:
         table, and raw code.
     """
 
-    __slots__ = ("code", "env", "frames", "instrs", "values")
+    __slots__ = ("code", "env", "frames", "instr_table", "instrs", "values")
 
     def __init__(
         self,
-        instrs: FlatMapView[int, Instr],
+        instrs: Any,
         code: bytes,
         values: list[int],
         env: ExecEnv | None = None,
     ):
         self.values = values
         self.frames: list[_Frame] = []
-        self.instrs = instrs
+        self.instr_table = instrs if hasattr(instrs, "keys") else None
+        self.instrs = instrs.view() if hasattr(instrs, "view") else instrs
         self.code = code
         self.env = env
 

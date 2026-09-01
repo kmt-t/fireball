@@ -14,6 +14,7 @@ without hitting Python's recursion limit.
 from __future__ import annotations
 
 import struct
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -456,10 +457,47 @@ def decode_all(code: bytes) -> FlatMapView[int, Instr]:
                 instr.match_offset = opener.offset  # END also points back to its opener
 
     assert not open_stack, "unterminated block/loop/if (missing END)"
-    return FlatMapView(keys, values)
+    return InstructionTable(keys, values)
 
 
-def ordered(instrs: FlatMapView[int, Instr]) -> list[Instr]:
+class InstructionTable:
+    """
+    Owning storage container for decoded WASM instructions.
+    Explicitly owns the keys and values arrays, and provides non-owning FlatMapView via .view().
+    `{Type_Vocabulary}` `{META_BinarySearch}`
+    """
+
+    __slots__ = ("_view", "keys", "values")
+
+    def __init__(self, keys: Sequence[int], values: Sequence[Instr]):
+        self.keys = list(keys)
+        self.values = list(values)
+        self._view = FlatMapView(self.keys, self.values)
+
+    def view(self) -> FlatMapView[int, Instr]:
+        """Returns a non-owning FlatMapView borrowing the keys and values storage."""
+        return self._view
+
+    def find(self, offset: int) -> Instr | None:
+        return self._view.find(offset)
+
+    def slice(self, first: int, last: int) -> FlatMapView[int, Instr]:
+        return self._view.slice(first, last)
+
+    def narrow(self, lo: int, hi: int) -> FlatMapView[int, Instr]:
+        return self._view.narrow(lo, hi)
+
+    def __getitem__(self, offset: int) -> Instr:
+        return self._view[offset]
+
+    def __contains__(self, offset: int) -> bool:
+        return offset in self._view
+
+    def __len__(self) -> int:
+        return len(self.keys)
+
+
+def ordered(instrs: InstructionTable | FlatMapView[int, Instr]) -> list[Instr]:
     return list(instrs.values)
 
 

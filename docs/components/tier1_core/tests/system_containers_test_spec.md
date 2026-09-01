@@ -21,6 +21,7 @@
 | CONT-08 | `radix_binary_tree_view`のO(1)粗索引 | Radix Table構築済み | `find(key)` | プレフィックスで範囲を即座に絞り込み、範囲内のみ二分探索する | §3.1 radix_binary_tree_view, flat_view_concept.py `RadixBinaryTreeView.find` |
 | CONT-09 | JITエントリ検索のカードマーキング事前フィルタ | カードがCOMPILEDでない | `lookup_jit_entry`相当 | 二分探索/Radix探索を行わずNoneを返す（O(1)事前フィルタ） | §4.1「JIT entry lookup」, flat_view_concept.py `lookup_jit_entry` |
 | CONT-10 | mapとsetの型分離 | - | 型定義を確認 | `flat_set_view`は値列フィールドを持たない（`flat_map_view`の特殊形として実装されていない） | §1「なぜ4つに分けるか」 |
+| CONT-11 | 配列データ所有権と非所有Viewの完全分離 | ストレージ配列構築 | `storage.view()` | ストレージ（Owner）が実体配列を所有し、Viewは所有権を持たず借用参照する（多重生成しても同一配列参照） | §1「所有コンテナは定義しない」, §3.3 |
 
 ## 3. テスト検証実績と網羅状況
 

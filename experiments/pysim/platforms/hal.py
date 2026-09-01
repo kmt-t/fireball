@@ -259,7 +259,8 @@ class HalDriver:
     def __init__(self, uri: str, supported_commands: Sequence[int] = ()):
         self.uri = uri
         # CMD_QUERY_CAPS (0x00) is always supported.
-        self.supported_commands = FlatSetView(sorted({0x00, *supported_commands}))
+        self._supported_commands_storage = sorted({0x00, *supported_commands})
+        self.supported_commands = FlatSetView(self._supported_commands_storage)
 
     def is_supported(self, cmd_id: int) -> int:
         """Checks if this driver supports the given command ID (1=True, 0=False)."""

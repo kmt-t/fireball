@@ -594,7 +594,7 @@ class System:
         payload = self._read_guest(msg_offset, msg_len)
         if payload is None:
             return WasiErrno.FAULT
-        msg = IPCMessage.from_bytes(bytes(payload))
+        msg = IPCMessage(raw_payload=bytes(payload))
         # The guest task's own execution *is* this call: system_syscall.md
         # models a host call as running inside the calling task's own
         # coroutine (the runtime task, never the Interpreter itself -- it

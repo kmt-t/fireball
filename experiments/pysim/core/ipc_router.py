@@ -133,44 +133,25 @@ class IPCMessage:
     kv_pair.
     """
 
-    def __init__(self, storage: FlatMapStorage | None = None):
+    def __init__(
+        self,
+        storage: FlatMapStorage | None = None,
+        raw_payload: bytes | None = None,
+    ):
         self.ownership = OwnershipState.SENDER_OWNS
-        self.raw_payload: bytes | None = None
         self.storage: FlatMapStorage = storage if storage is not None else _EMPTY_IPC_STORAGE
-        self._view = self.storage.view()
-        self.payload = self._view
+        self.payload: FlatMapView = self.storage.view()
+        self.raw_payload: bytes | None = bytes(raw_payload) if raw_payload is not None else None
 
     @property
-    def _keys(self) -> list[Any] | tuple[Any, ...]:
-        return self.storage.keys
-
-    @property
-    def _values(self) -> list[Any] | tuple[Any, ...]:
-        return self.storage.values
-
-    @classmethod
-    def from_bytes(cls, data: bytes) -> IPCMessage:
-        """Builds a message carrying only a raw byte body, no kv_pair entries."""
-        msg = cls()
-        msg.raw_payload = bytes(data)
-        return msg
-
-    @classmethod
-    def from_entries64(cls, entries_64: Sequence[int]) -> IPCMessage:
-        """Builds a message from pre-packed 64-bit kv_pair entries (see pack_kv64)."""
-        pairs = [(e >> 32, e & 0xFFFFFFFF) for e in entries_64]
-        sorted_pairs = sorted(pairs, key=lambda kv: kv[0])
-        storage = FlatMapStorage([k for k, _ in sorted_pairs], [v for _, v in sorted_pairs])
-        return cls(storage=storage)
-
-    def to_entries64(self) -> list[int]:
-        """Reconstructs the sorted packed 64-bit kv_pair array (see pack_kv64)."""
-        return [(k << 32) | v for k, v in zip(self.storage.keys, self.storage.values, strict=True)]
+    def entries(self) -> Sequence[tuple[Any, Any]]:
+        """Returns the sorted AoS (key, value) entries."""
+        return self.storage.entries
 
     @property
     def flat_map_view(self) -> FlatMapView:
         """Returns the non-owning FlatMapView for zero-copy binary search access."""
-        return self._view
+        return self.payload
 
     def get_by_key_id(
         self,
@@ -179,11 +160,11 @@ class IPCMessage:
         data_type: int = DataType.UINT32,
     ) -> int | None:
         """Looks up a value by (scope_kind, data_type, key_id), i.e. pack_key32(...)."""
-        return self._view.find(pack_key32(scope_kind, data_type, key_id))
+        return self.payload.find(pack_key32(scope_kind, data_type, key_id))
 
     def get(self, key: int, default: Any = None) -> Any:
         """Retrieves a value via flat_map_view binary search."""
-        val = self._view.find(key)
+        val = self.payload.find(key)
         return default if val is None else val
 
     def __getitem__(self, key: int) -> Any:
@@ -193,10 +174,10 @@ class IPCMessage:
         return val
 
     def __contains__(self, key: int) -> bool:
-        return key in self._view
+        return key in self.payload
 
     def __len__(self) -> int:
-        return len(self._keys)
+        return len(self.storage.entries)
 
 
 # Static service table: ipc_router.md §3.1 -- a ROM-resident constexpr sorted

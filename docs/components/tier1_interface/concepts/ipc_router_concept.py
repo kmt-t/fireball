@@ -42,15 +42,25 @@ class OwnershipState:
 
 class IPCMessage:
     """A message references an externally owned FlatMapStorage and presents
-    its kv_pair map via non-owning FlatMapView (ipc_router.md §3.3) -- no
+    its AoS entries via non-owning FlatMapView (ipc_router.md §3.3) -- no
     resource_id, no free-form dict payload."""
 
-    def __init__(self, storage: FlatMapStorage | None = None):
+    def __init__(
+        self,
+        storage: FlatMapStorage | None = None,
+        raw_payload: bytes | None = None,
+    ):
         self.storage = storage if storage is not None else _EMPTY_STORAGE
         self.payload = self.storage.view()
-        self.keys = self.storage.keys
-        self.values = self.storage.values
+        self.raw_payload = bytes(raw_payload) if raw_payload is not None else None
         self.ownership = OwnershipState.SENDER_OWNS
+
+    @property
+    def entries(self):
+        return self.storage.entries
+
+    def __len__(self) -> int:
+        return len(self.storage.entries)
 
 
 class Channel:

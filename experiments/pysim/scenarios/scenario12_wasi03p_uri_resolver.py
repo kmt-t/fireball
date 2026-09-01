@@ -211,6 +211,7 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
 
     # 2) 64-bit KV Pair Array (Specification §3.3 Bit Assignment)
     from ipc_router import DataType, IPCMessage, ScopeKind, pack_kv64, unpack_kv64
+    from system_containers import FlatMapStorage
 
     # Pack 64-bit KV pairs:
     #   Entry 1: Functional Scope, UINT32, key_id=0x01 (STREAM_WRITE_SHM), val=len(msg)
@@ -226,13 +227,17 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
     sk, dt, kid, val = unpack_kv64(kv1)
     assert sk == ScopeKind.FUNCTIONAL and dt == DataType.UINT32 and kid == 0x01 and val == len(msg)
 
-    ipc_msg_64 = IPCMessage.from_entries64([kv1, kv2])
+    pairs = sorted(
+        [(kv1 >> 32, kv1 & 0xFFFFFFFF), (kv2 >> 32, kv2 & 0xFFFFFFFF)], key=lambda p: p[0]
+    )
+    storage_64 = FlatMapStorage(pairs)
+    ipc_msg_64 = IPCMessage(storage=storage_64)
     assert len(ipc_msg_64) == 2
     assert ipc_msg_64.get_by_key_id(0x01, ScopeKind.FUNCTIONAL) == len(msg)
     assert ipc_msg_64.get_by_key_id(0x14, ScopeKind.RESOURCE) == shm_slot_id
     print(
-        "    [IPC 64-bit KV Array DISPATCH] Successfully verified uint64_t[]: "
-        f"{ipc_msg_64.to_entries64()}"
+        "    [IPC 64-bit KV Array DISPATCH] Successfully verified AoS entries: "
+        f"{ipc_msg_64.entries}"
     )
 
     # 7. Test WASI 0.1p Wrapper Delegation

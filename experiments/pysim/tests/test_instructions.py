@@ -1289,7 +1289,7 @@ def test_syscall_06_ipc_lookup_send_recv():
 
         def debugger_sender():
             status, _ = yield from sysv.ipc.send(
-                Role.DEBUGGER, core_uri, IPCMessage.from_bytes(reply)
+                Role.DEBUGGER, core_uri, IPCMessage(raw_payload=reply)
             )
             sent_status.append(status)
 
@@ -2313,7 +2313,7 @@ def test_guest_wasi_05_jit_fireball_call_ipc_messaging():
 
         def debugger_sender():
             yield from sysv.ipc.send(
-                Role.DEBUGGER, "fireball://hal/gpio/0", IPCMessage.from_bytes(payload)
+                Role.DEBUGGER, "fireball://hal/gpio/0", IPCMessage(raw_payload=payload)
             )
 
         sysv.scheduler.spawn("hal_receiver", hal_receiver())

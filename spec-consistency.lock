@@ -2086,7 +2086,7 @@
     "sec:components/tier1_core/os_coos.md#6. 形式検証（pyModelChecking / 直交表）": "38321e6cf975c1902e55b90064d6578bae51397964c01508123b0bc5b6aad140",
     "sec:components/tier1_core/os_coos.md#6.1 検証対象の不変条件": "e1066c7525945f532d428f4937c876e6bb26842b13beb7b9888cc55f5d0394bc",
     "sec:components/tier1_core/os_coos.md#6.2 直交表: CSP通信と状態遷移": "7781f88605cddd40cf898a1058e9666131e7ac588481c88f8ff83f1c8d694582",
-    "sec:components/tier1_core/os_coos.md#COOS フルセット・コンセプトコード (`concepts/coos_concept.py`)": "62605c1d7bf09c81958204c233a85b45cf32acf4c58d03329f8d6100679b4c1e",
+    "sec:components/tier1_core/os_coos.md#COOS フルセット・コンセプトコード (`concepts/coos_concept.py`)": "e55b2914b049ddb3292fcb1df5a3ecb99a118eb1db77fcdad02d4ea90c19e37b",
     "sec:components/tier1_core/os_coos.md#CSPチャネル（channel）": "243c9af76685d35125c604800a96664cbc89699a0c2cb0e9558d875bd2c48f3e",
     "sec:components/tier1_core/os_coos.md#チャネル送受信動作の挙動定義": "7241892f36e9417b02ba8b98fbb531499a800d5ffc86902086bf8515170bd756",
     "sec:components/tier1_core/os_coos.md#ハーネスによる依存性注入パターン": "b5957ff248570ea526e454c6b38ea03ec7e4bdd9381d9ece95f3fd5b47a9f3f0",

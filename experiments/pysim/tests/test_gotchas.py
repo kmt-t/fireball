@@ -42,7 +42,7 @@ from runtime_engine import (
     RuntimeEngine,
     WASMContext,
 )
-from scheduler import Scheduler, WaitDir
+from scheduler import ChannelAction, Scheduler, WaitDir
 from system_containers import FlatMapStorage
 from vmmio import TrapCode, VMMIOController
 from wasm_reader import parse
@@ -485,14 +485,14 @@ def test_sched_gotcha_01_handoff_limit_forces_return_to_main_loop():
     sched.channel_send("ch1", 1)
     sched.current_task = t2
     act1, _ = sched.channel_recv("ch1")
-    assert act1 == "DIRECT_SWITCH"
+    assert act1 == ChannelAction.DIRECT_SWITCH
     assert sched.consecutive_handoffs == 1
 
     sched.current_task = t1
     sched.channel_send("ch2", 2)
     sched.current_task = t2
     act2, _ = sched.channel_recv("ch2")
-    assert act2 == "DIRECT_SWITCH"
+    assert act2 == ChannelAction.DIRECT_SWITCH
     assert sched.consecutive_handoffs == 2
 
     sched.current_task = t1

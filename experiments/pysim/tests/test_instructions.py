@@ -88,7 +88,7 @@ from runtime_engine import (
     RuntimeEngine,
     WASMContext,
 )
-from scheduler import Scheduler, TaskState, WaitDir
+from scheduler import ChannelAction, Scheduler, TaskState, WaitDir
 from system import (
     FB_CONF_VSOC_PASSTHROUGH_BASE,
     FbSyscallId,
@@ -152,7 +152,7 @@ def test_coos_02_recv_after_send_completes_rendezvous():
     sched.channel_send("ch_test", "DATA_PAYLOAD")
     sched.current_task = t2
     action, _ = sched.channel_recv("ch_test")
-    assert action in ("DIRECT_SWITCH", "YIELD")
+    assert action in (ChannelAction.DIRECT_SWITCH, ChannelAction.YIELD)
     assert t2.received_val == "DATA_PAYLOAD"
     assert t1.pending_val is None, "Pending value must be cleared on sender (no double-ownership)"
     assert t1.state == TaskState.READY
@@ -166,7 +166,7 @@ def test_coos_03_recv_first_suspends_csp():
     t2 = sched.get_task(sched.spawn("t2"))
     sched.current_task = t2
     action, _ = sched.channel_recv("ch_test")
-    assert action == "BLOCK"
+    assert action == ChannelAction.BLOCK
     assert t2.state == TaskState.SUSPENDED_CSP
     assert ch.waiter_task == t2
     assert ch.waiter_dir == WaitDir.RECV
@@ -182,7 +182,7 @@ def test_coos_04_send_after_recv_completes_rendezvous():
     sched.channel_recv("ch_test")
     sched.current_task = t1
     action, _ = sched.channel_send("ch_test", 12345)
-    assert action in ("DIRECT_SWITCH", "YIELD")
+    assert action in (ChannelAction.DIRECT_SWITCH, ChannelAction.YIELD)
     assert t2.received_val == 12345
     assert t1.state == TaskState.READY
     assert t2.state == TaskState.READY
@@ -214,7 +214,7 @@ def test_coos_06_csp_handoff_direct_switch():
     sched.channel_send("ch_test", 99)
     sched.current_task = t2
     action, target_id = sched.channel_recv("ch_test")
-    assert action == "DIRECT_SWITCH"
+    assert action == ChannelAction.DIRECT_SWITCH
     assert target_id == t1.task_id
     assert sched._ready[0] == t1, "Target task must be placed at front of READY queue"
 
@@ -231,19 +231,21 @@ def test_coos_07_consecutive_handoff_limit_yields():
     sched.channel_send("ch1", 1)
     sched.current_task = t2
     act1, _ = sched.channel_recv("ch1")
-    assert act1 == "DIRECT_SWITCH"
+    assert act1 == ChannelAction.DIRECT_SWITCH
     assert sched.consecutive_handoffs == 1
     sched.current_task = t1
     sched.channel_send("ch2", 2)
     sched.current_task = t2
     act2, _ = sched.channel_recv("ch2")
-    assert act2 == "DIRECT_SWITCH"
+    assert act2 == ChannelAction.DIRECT_SWITCH
     assert sched.consecutive_handoffs == 2
     sched.current_task = t1
     sched.channel_send("ch3", 3)
     sched.current_task = t2
     act3, _ = sched.channel_recv("ch3")
-    assert act3 == "YIELD", "Must yield back to scheduler when consecutive handoffs reach threshold"
+    assert act3 == ChannelAction.YIELD, (
+        "Must yield back to scheduler when consecutive handoffs reach threshold"
+    )
     assert sched.consecutive_handoffs == 0
 
 

@@ -25,6 +25,12 @@ class WaitDir:
     RECV = "RECV"
 
 
+class ChannelAction:
+    BLOCK = "BLOCK"
+    DIRECT_SWITCH = "DIRECT_SWITCH"
+    YIELD = "YIELD"
+
+
 class Channel:
     """Bufferless synchronous CSP rendezvous channel (ADR_RendezvousChannel).
     The channel never holds a value. A sender that arrives first keeps the value
@@ -89,7 +95,7 @@ class COOSKernel:
         ch.waiter_task, ch.waiter_dir = sender, WaitDir.SEND
         self.tasks[sender]["pending_val"] = data
         self.tasks[sender]["state"] = TaskState.SUSPENDED_CSP
-        return ("BLOCK", None)
+        return (ChannelAction.BLOCK, None)
 
     def channel_recv(self, channel_id: str) -> tuple[str, Any]:
         """Receive value from CSP channel."""
@@ -111,7 +117,7 @@ class COOSKernel:
         )
         ch.waiter_task, ch.waiter_dir = receiver, WaitDir.RECV
         self.tasks[receiver]["state"] = TaskState.SUSPENDED_CSP
-        return ("BLOCK", None)
+        return (ChannelAction.BLOCK, None)
 
     def _handoff_or_yield(self, target: str) -> tuple[str, Any]:
         """Bounds the handoff chain so the scheduler main loop stays reachable.
@@ -119,10 +125,10 @@ class COOSKernel:
         proves via AG(at_max_limit -> AF(main_loop))."""
         if self.consecutive_handoffs < self.max_consecutive_handoffs:
             self.consecutive_handoffs += 1
-            return ("DIRECT_SWITCH", target)
+            return (ChannelAction.DIRECT_SWITCH, target)
         self.consecutive_handoffs = 0
         self.ready_queue.append(target)
-        return ("YIELD", None)
+        return (ChannelAction.YIELD, None)
 
     def get_received_value(self) -> Any:
         task_id = self.current_task

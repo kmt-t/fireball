@@ -36,6 +36,14 @@ class WaitDir(Enum):
     RECV = auto()
 
 
+class ChannelAction(str, Enum):
+    """Action returned by channel_send, channel_recv, and channel_select_recv."""
+
+    BLOCK = "BLOCK"
+    DIRECT_SWITCH = "DIRECT_SWITCH"
+    YIELD = "YIELD"
+
+
 class SelectGroup:
     """
     Tracks one receiver's pending guarded external choice (select) across
@@ -164,7 +172,7 @@ class Scheduler:
         self._channels.append(ch)
         return ch
 
-    def channel_send(self, channel_id: str, data: Any) -> tuple[str, Any]:
+    def channel_send(self, channel_id: str, data: Any) -> tuple[ChannelAction, Any]:
         """Synchronous CSP send with atomic ownership handoff."""
         ch = self.get_channel(channel_id)
         if ch is None:
@@ -197,9 +205,9 @@ class Scheduler:
         ch.waiter_task, ch.waiter_dir = sender, WaitDir.SEND
         sender.pending_val = data
         sender.state = TaskState.SUSPENDED_CSP
-        return ("BLOCK", None)
+        return (ChannelAction.BLOCK, None)
 
-    def channel_recv(self, channel_id: str) -> tuple[str, Any]:
+    def channel_recv(self, channel_id: str) -> tuple[ChannelAction, Any]:
         """Synchronous CSP recv with atomic ownership handoff."""
         ch = self.get_channel(channel_id)
         if ch is None:
@@ -222,9 +230,9 @@ class Scheduler:
         )
         ch.waiter_task, ch.waiter_dir, ch.waiter_group = receiver, WaitDir.RECV, None
         receiver.state = TaskState.SUSPENDED_CSP
-        return ("BLOCK", None)
+        return (ChannelAction.BLOCK, None)
 
-    def channel_select_recv(self, channel_ids: list[str]) -> tuple[str, Any]:
+    def channel_select_recv(self, channel_ids: list[str]) -> tuple[ChannelAction, Any]:
         """
         Guarded external choice (receive-only select, {ADR_RendezvousChannel}):
         waits on whichever of `channel_ids` gets a matching sender first. If
@@ -260,9 +268,9 @@ class Scheduler:
             )
             ch.waiter_task, ch.waiter_dir, ch.waiter_group = receiver, WaitDir.RECV, group
         receiver.state = TaskState.SUSPENDED_CSP
-        return ("BLOCK", None)
+        return (ChannelAction.BLOCK, None)
 
-    def _handoff_or_yield(self, target_task: Task) -> tuple[str, Any]:
+    def _handoff_or_yield(self, target_task: Task) -> tuple[ChannelAction, Any]:
         """CSP direct handoff or scheduler yield upon consecutive threshold."""
         if self.consecutive_handoffs < self.max_handoffs:
             self.consecutive_handoffs += 1
@@ -270,9 +278,9 @@ class Scheduler:
                 self._ready.remove(target_task)
 
             self._ready.appendleft(target_task)
-            return ("DIRECT_SWITCH", target_task.task_id)
+            return (ChannelAction.DIRECT_SWITCH, target_task.task_id)
         self.consecutive_handoffs = 0
-        return ("YIELD", None)
+        return (ChannelAction.YIELD, None)
 
     def notify_interrupt(self, irq_id: int) -> bool:
         """Non-blocking ISR notification to event queue."""

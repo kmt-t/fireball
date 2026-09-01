@@ -175,15 +175,31 @@ class FlatMapView(_SortedWindow[KeyT], Generic[KeyT, ValT]):
 
 class FlatMapStorage(Generic[KeyT, ValT]):
     """
-    Owning storage container for sorted keys and values arrays.
+    Owning storage container for sorted keys and values arrays (SoA).
     Explicitly separates array data ownership from non-owning views (FlatMapView).
+    Supports constexpr-equivalent in-place co-sorting, sorted insertion, and sorted removal.
     """
 
-    __slots__ = ("_keys", "_values")
+    __slots__ = ("_capacity", "_keys", "_values")
 
-    def __init__(self, keys: Sequence[KeyT], values: Sequence[ValT]):
+    def __init__(
+        self,
+        keys: Sequence[KeyT] = (),
+        values: Sequence[ValT] = (),
+        sort: bool = False,
+        capacity: int | None = None,
+    ):
         self._keys = list(keys)
         self._values = list(values)
+        if len(self._keys) != len(self._values):
+            raise ValueError(
+                f"keys and values must have the same length (got {len(self._keys)} and {len(self._values)})"
+            )
+        self._capacity = capacity
+        if self._capacity is not None and len(self._keys) > self._capacity:
+            raise OverflowError(f"initial size {len(self._keys)} exceeds capacity {self._capacity}")
+        if sort:
+            self.sort()
 
     @property
     def keys(self) -> list[KeyT]:
@@ -192,6 +208,60 @@ class FlatMapStorage(Generic[KeyT, ValT]):
     @property
     def values(self) -> list[ValT]:
         return self._values
+
+    def is_sorted(self) -> bool:
+        """Returns True if keys are sorted in strictly non-decreasing order."""
+        return all(self._keys[i] <= self._keys[i + 1] for i in range(len(self._keys) - 1))
+
+    def sort(self) -> FlatMapStorage[KeyT, ValT]:
+        """
+        Sorts keys and values in-place by key in ascending order (co-sort).
+        Matches the C++ constexpr in-place co-insertion sort algorithm.
+        """
+        for i in range(1, len(self._keys)):
+            k_cur = self._keys[i]
+            v_cur = self._values[i]
+            j = i
+            while j > 0 and self._keys[j - 1] > k_cur:
+                self._keys[j] = self._keys[j - 1]
+                self._values[j] = self._values[j - 1]
+                j -= 1
+            self._keys[j] = k_cur
+            self._values[j] = v_cur
+        return self
+
+    def insert(self, key: KeyT, value: ValT) -> bool:
+        """
+        Inserts a key-value pair maintaining ascending key order.
+        If key already exists, updates value and returns False (no size increase).
+        If key is new, inserts at the sorted index and returns True.
+        Raises OverflowError if capacity is exceeded.
+        """
+        idx = bisect.bisect_left(self._keys, key)
+        if idx < len(self._keys) and self._keys[idx] == key:
+            self._values[idx] = value
+            return False
+        if self._capacity is not None and len(self._keys) >= self._capacity:
+            raise OverflowError(f"FlatMapStorage exceeded capacity {self._capacity}")
+        self._keys.insert(idx, key)
+        self._values.insert(idx, value)
+        return True
+
+    def remove(self, key: KeyT) -> bool:
+        """
+        Removes key and its corresponding value maintaining sorted order.
+        Returns True if found and removed, False otherwise.
+        """
+        idx = bisect.bisect_left(self._keys, key)
+        if idx < len(self._keys) and self._keys[idx] == key:
+            self._keys.pop(idx)
+            self._values.pop(idx)
+            return True
+        return False
+
+    def erase(self, key: KeyT) -> bool:
+        """Alias for remove() matching C++ naming."""
+        return self.remove(key)
 
     def view(self) -> FlatMapView[KeyT, ValT]:
         """Returns a non-owning FlatMapView borrowing the owned keys and values arrays."""

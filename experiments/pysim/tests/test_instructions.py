@@ -1846,6 +1846,87 @@ def test_cont_11_storage_and_view_ownership_separation():
     assert v2.values is storage.values
 
 
+def test_cont_12_flat_map_storage_co_sort():
+    """CONT-12: FlatMapStorage in-place co-sorts keys and values by key in ascending order."""
+    keys = [50, 10, 40, 20, 30]
+    vals = ["E", "A", "D", "B", "C"]
+    storage = FlatMapStorage(keys, vals)
+    assert not storage.is_sorted()
+
+    # In-place co-sort
+    storage.sort()
+    assert storage.is_sorted()
+    assert storage.keys == [10, 20, 30, 40, 50]
+    assert storage.values == ["A", "B", "C", "D", "E"]
+
+    # View correctly finds via binary search
+    v = storage.view()
+    assert v.find(10) == "A"
+    assert v.find(30) == "C"
+    assert v.find(50) == "E"
+    assert v.find(99) is None
+
+    # Automatic sorting via sort=True
+    s_auto = FlatMapStorage([3, 1, 2], ["three", "one", "two"], sort=True)
+    assert s_auto.is_sorted()
+    assert s_auto.keys == [1, 2, 3]
+    assert s_auto.values == ["one", "two", "three"]
+
+
+def test_cont_13_flat_map_storage_sorted_insert_remove():
+    """CONT-13: FlatMapStorage maintains sorted order across arbitrary insert and remove/erase calls."""
+    storage = FlatMapStorage()
+    assert len(storage) == 0
+
+    # Insert elements out of order
+    assert storage.insert(30, "thirty") is True
+    assert storage.insert(10, "ten") is True
+    assert storage.insert(50, "fifty") is True
+    assert storage.insert(20, "twenty") is True
+    assert storage.insert(40, "forty") is True
+
+    # Maintained sorted order at all times
+    assert storage.is_sorted()
+    assert storage.keys == [10, 20, 30, 40, 50]
+    assert storage.values == ["ten", "twenty", "thirty", "forty", "fifty"]
+
+    # Updating existing key replaces value, returns False (no size increase)
+    assert storage.insert(30, "THIRTY_UPDATED") is False
+    assert len(storage) == 5
+    assert storage.keys == [10, 20, 30, 40, 50]
+    assert storage.values == ["ten", "twenty", "THIRTY_UPDATED", "forty", "fifty"]
+
+    # Removal maintains sorted order
+    # Remove head
+    assert storage.remove(10) is True
+    assert storage.keys == [20, 30, 40, 50]
+    assert storage.values == ["twenty", "THIRTY_UPDATED", "forty", "fifty"]
+    assert storage.is_sorted()
+
+    # Erase middle
+    assert storage.erase(30) is True
+    assert storage.keys == [20, 40, 50]
+    assert storage.values == ["twenty", "forty", "fifty"]
+    assert storage.is_sorted()
+
+    # Erase tail
+    assert storage.erase(50) is True
+    assert storage.keys == [20, 40]
+    assert storage.values == ["twenty", "forty"]
+    assert storage.is_sorted()
+
+    # Remove nonexistent returns False
+    assert storage.remove(999) is False
+    assert len(storage) == 2
+
+    # View remains valid and functional
+    v = storage.view()
+    assert v.find(20) == "twenty"
+    assert v.find(40) == "forty"
+    assert v.find(10) is None
+    assert v.find(30) is None
+
+
 # ===========================================================================
 # Cooperative Multitasking & Idle-Hook Integration (YIELD / IDLE / TIER)
 # ===========================================================================

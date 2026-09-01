@@ -105,18 +105,69 @@ class FlatMapView(_SortedWindow):
 
 class FlatMapStorage:
     """
-    Owning storage container for sorted keys and values.
+    Owning storage container for sorted keys and values arrays (SoA).
     Provides non-owning FlatMapView via .view().
+    Supports constexpr-equivalent in-place co-sorting, sorted insertion, and sorted removal.
     """
 
     __slots__ = ("keys", "values")
 
-    def __init__(self, keys: Sequence[Any], values: Sequence[Any]):
+    def __init__(
+        self,
+        keys: Sequence[Any] = (),
+        values: Sequence[Any] = (),
+        sort: bool = False,
+    ):
         self.keys = list(keys)
         self.values = list(values)
+        assert len(self.keys) == len(self.values), "keys and values must have same length"
+        if sort:
+            self.sort()
+
+    def is_sorted(self) -> bool:
+        return all(self.keys[i] <= self.keys[i + 1] for i in range(len(self.keys) - 1))
+
+    def sort(self) -> FlatMapStorage:
+        """In-place co-insertion sort matching C++ constexpr algorithm."""
+        for i in range(1, len(self.keys)):
+            k = self.keys[i]
+            v = self.values[i]
+            j = i
+            while j > 0 and self.keys[j - 1] > k:
+                self.keys[j] = self.keys[j - 1]
+                self.values[j] = self.values[j - 1]
+                j -= 1
+            self.keys[j] = k
+            self.values[j] = v
+        return self
+
+    def insert(self, key: Any, value: Any) -> bool:
+        """Inserts maintaining ascending key order."""
+        idx = bisect.bisect_left(self.keys, key)
+        if idx < len(self.keys) and self.keys[idx] == key:
+            self.values[idx] = value
+            return False
+        self.keys.insert(idx, key)
+        self.values.insert(idx, value)
+        return True
+
+    def remove(self, key: Any) -> bool:
+        """Removes key and its value maintaining sorted order."""
+        idx = bisect.bisect_left(self.keys, key)
+        if idx < len(self.keys) and self.keys[idx] == key:
+            self.keys.pop(idx)
+            self.values.pop(idx)
+            return True
+        return False
+
+    def erase(self, key: Any) -> bool:
+        return self.remove(key)
 
     def view(self) -> FlatMapView:
         return FlatMapView(self.keys, self.values)
+
+    def __len__(self) -> int:
+        return len(self.keys)
 
 
 class FlatSetView(_SortedWindow):

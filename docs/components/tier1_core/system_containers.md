@@ -175,6 +175,30 @@ class bit_view {
   constexpr auto size() const noexcept -> std::size_t;
 };
 
+// 固定容量 SoA 実体ストレージ: constexpr 連動ソート、ソート維持挿入・削除、非所有ビュー生成
+template <class Key, class Value, std::size_t Capacity>
+struct flat_map_storage {
+  std::array<Key, Capacity> keys{};
+  std::array<Value, Capacity> values{};
+  std::size_t count{0};
+
+  // constexpr インプレース連動ソート（挿入ソートで keys と values を同時に並び替え）
+  constexpr auto sort() noexcept -> flat_map_storage&;
+  // ソート順序を維持したまま要素を挿入（既存キーなら値更新: false、新規キーなら挿入: true）
+  constexpr auto insert(const Key& k, const Value& v) noexcept -> bool;
+  // ソート順序を維持したまま要素を削除（存在すれば削除: true、なければ: false）
+  constexpr auto erase(const Key& k) noexcept -> bool;
+  constexpr auto is_sorted() const noexcept -> bool;
+  constexpr auto view() const noexcept -> flat_map_view<Key, Value>;
+  constexpr auto size() const noexcept -> std::size_t { return count; }
+  constexpr auto capacity() const noexcept -> std::size_t { return Capacity; }
+};
+
+template <class Key, class Value, std::size_t N>
+constexpr auto make_sorted_flat_map_storage(std::array<Key, N> keys,
+                                            std::array<Value, N> values) noexcept
+    -> flat_map_storage<Key, Value, N>;
+
 }  // namespace fireball
 ```
 

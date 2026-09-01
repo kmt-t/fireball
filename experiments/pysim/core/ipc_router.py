@@ -18,7 +18,9 @@ from enum import Enum, IntEnum
 from typing import Any
 
 from scheduler import Scheduler
-from system_containers import FlatMapView
+from system_containers import FlatMapStorage, FlatMapView
+
+_EMPTY_IPC_STORAGE: FlatMapStorage = FlatMapStorage((), ())
 
 # ipc_router.md {3.3}: a message is a static, fixed-size buffer of at most 8
 # kv_pair entries.
@@ -131,14 +133,44 @@ class IPCMessage:
     kv_pair.
     """
 
-    def __init__(self, pairs: Sequence[tuple[int, int]] = ()):
+    def __init__(
+        self,
+        storage: FlatMapStorage | Sequence[tuple[int, int]] | None = None,
+        pairs: Sequence[tuple[int, int]] | None = None,
+    ):
         self.ownership = OwnershipState.SENDER_OWNS
         self.raw_payload: bytes | None = None
-        sorted_pairs = sorted(pairs, key=lambda kv: kv[0])
-        self._keys = [k for k, _ in sorted_pairs]
-        self._values = [v for _, v in sorted_pairs]
-        self._view = FlatMapView(self._keys, self._values)
+        if isinstance(storage, FlatMapStorage):
+            self.storage: FlatMapStorage = storage
+        elif storage is not None:
+            sorted_pairs = sorted(storage, key=lambda kv: kv[0])
+            self.storage = FlatMapStorage(
+                [k for k, _ in sorted_pairs],
+                [v for _, v in sorted_pairs],
+            )
+        elif pairs is not None:
+            sorted_pairs = sorted(pairs, key=lambda kv: kv[0])
+            self.storage = FlatMapStorage(
+                [k for k, _ in sorted_pairs],
+                [v for _, v in sorted_pairs],
+            )
+        else:
+            self.storage = _EMPTY_IPC_STORAGE
+        self._view = self.storage.view()
         self.payload = self._view
+
+    @property
+    def _keys(self) -> list[Any] | tuple[Any, ...]:
+        return self.storage.keys
+
+    @property
+    def _values(self) -> list[Any] | tuple[Any, ...]:
+        return self.storage.values
+
+    @classmethod
+    def from_storage(cls, storage: FlatMapStorage) -> IPCMessage:
+        """Constructs an IPCMessage referencing an externally owned FlatMapStorage."""
+        return cls(storage=storage)
 
     @classmethod
     def from_bytes(cls, data: bytes) -> IPCMessage:
@@ -150,11 +182,14 @@ class IPCMessage:
     @classmethod
     def from_entries64(cls, entries_64: Sequence[int]) -> IPCMessage:
         """Builds a message from pre-packed 64-bit kv_pair entries (see pack_kv64)."""
-        return cls(pairs=[(e >> 32, e & 0xFFFFFFFF) for e in entries_64])
+        pairs = [(e >> 32, e & 0xFFFFFFFF) for e in entries_64]
+        sorted_pairs = sorted(pairs, key=lambda kv: kv[0])
+        storage = FlatMapStorage([k for k, _ in sorted_pairs], [v for _, v in sorted_pairs])
+        return cls(storage=storage)
 
     def to_entries64(self) -> list[int]:
         """Reconstructs the sorted packed 64-bit kv_pair array (see pack_kv64)."""
-        return [(k << 32) | v for k, v in zip(self._keys, self._values, strict=True)]
+        return [(k << 32) | v for k, v in zip(self.storage.keys, self.storage.values, strict=True)]
 
     @property
     def flat_map_view(self) -> FlatMapView:

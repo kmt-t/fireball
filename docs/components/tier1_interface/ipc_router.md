@@ -130,13 +130,32 @@ class OwnershipState:
 
 
 class IPCMessage:
-    """A message is only ever its kv_pair map (§3.3's entire field set) --
-    no resource_id, no free-form dict payload."""
+    """A message references an externally owned FlatMapStorage and presents
+    its kv_pair map via non-owning FlatMapView (§3.3) -- no resource_id,
+    no free-form dict payload."""
 
-    def __init__(self, pairs: list[tuple[int, int]] | None = None):
-        sorted_pairs = sorted(pairs or [], key=lambda kv: kv[0])
-        self.keys = [k for k, _ in sorted_pairs]
-        self.values = [v for _, v in sorted_pairs]
+    def __init__(
+        self,
+        storage: FlatMapStorage | list[tuple[int, int]] | None = None,
+        pairs: list[tuple[int, int]] | None = None,
+    ):
+        if isinstance(storage, FlatMapStorage):
+            self.storage = storage
+        elif storage is not None:
+            sorted_pairs = sorted(storage, key=lambda kv: kv[0])
+            self.storage = FlatMapStorage(
+                [k for k, _ in sorted_pairs], [v for _, v in sorted_pairs]
+            )
+        elif pairs is not None:
+            sorted_pairs = sorted(pairs, key=lambda kv: kv[0])
+            self.storage = FlatMapStorage(
+                [k for k, _ in sorted_pairs], [v for _, v in sorted_pairs]
+            )
+        else:
+            self.storage = FlatMapStorage([], [])
+        self.payload = self.storage.view()
+        self.keys = self.storage.keys
+        self.values = self.storage.values
         self.ownership = OwnershipState.SENDER_OWNS
 
 

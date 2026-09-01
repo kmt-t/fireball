@@ -103,6 +103,22 @@ class FlatMapView(_SortedWindow):
         return None if i is None else self.values[i]
 
 
+class FlatMapStorage:
+    """
+    Owning storage container for sorted keys and values.
+    Provides non-owning FlatMapView via .view().
+    """
+
+    __slots__ = ("keys", "values")
+
+    def __init__(self, keys: Sequence[Any], values: Sequence[Any]):
+        self.keys = list(keys)
+        self.values = list(values)
+
+    def view(self) -> FlatMapView:
+        return FlatMapView(self.keys, self.values)
+
+
 class FlatSetView(_SortedWindow):
     """
     flat_set_view<Key>: sorted keys only, answers membership.

@@ -1160,6 +1160,22 @@ def test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group():
     assert received2[0][1].get(1) == 7
 
 
+def test_ipc_05_message_storage_ownership_separation():
+    """IPC-05: IPCMessage borrows array storage from FlatMapStorage without owning it."""
+    storage = FlatMapStorage([10, 20], [100, 200])
+    msg = IPCMessage.from_storage(storage)
+
+    assert msg.storage is storage
+    assert msg.payload.keys is storage.keys
+    assert msg.payload.values is storage.values
+    assert msg.get(10) == 100
+    assert msg.get(20) == 200
+
+    # Mutating external storage directly reflects in msg view (borrowed reference)
+    storage.values[0] = 999
+    assert msg.get(10) == 999
+
+
 # ===========================================================================
 # 9. fireball_call Full Syscall Surface (system_syscall_test_spec.md)
 # ===========================================================================

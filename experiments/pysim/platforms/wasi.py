@@ -305,6 +305,30 @@ class Wasi03pEngine:
 
         return None
 
+    def send_ipc_command(self, uri: str, cmd_id: int, params: FlatMapView) -> Any:
+        """
+        Sends an IPC Driver Command to the HAL Server Task via IPCRouter ({platform_hal.md}).
+        HAL operates as a distinct task and communicates strictly over IPC rendezvous.
+        """
+        from hal import make_hal_ipc_message
+        from ipc_router import Role
+
+        # Ensure HAL task is spawned on the scheduler
+        if hasattr(self.sysv, "spawn_hal_task"):
+            self.sysv.spawn_hal_task()
+
+        msg = make_hal_ipc_message(cmd_id, params.entries)
+
+        def sender_coro():
+            yield from self.sysv.ipc.send(Role.RUNTIME, uri, msg)
+
+        self.sysv.scheduler.spawn("wasi_ipc_sender", sender_coro())
+        self.sysv.scheduler.run_until_idle()
+
+        if hasattr(self.sysv, "hal_task") and self.sysv.hal_task is not None:
+            return self.sysv.hal_task.last_result
+        return None
+
     # Resource Methods
     def _stream_write(self, fd: int, data: bytes) -> int:
         if fd in (1, 2):

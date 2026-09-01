@@ -1320,6 +1320,29 @@ def test_syscall_06_ipc_lookup_send_recv():
         sysv.shutdown()
 
 
+def test_hal_task_ipc_communication():
+    """HAL-01: HAL operates as a distinct task on COOS and handles commands via IPC rendezvous."""
+    from hal import ARG_LENGTH, ARG_OFFSET
+    from wasi import Wasi03pEngine, WasiIpcCmd
+
+    sysv = System()
+    try:
+        sysv.spawn_hal_task()
+        engine = Wasi03pEngine(sysv)
+        # Send command via IPC
+        nwritten = engine.send_ipc_command(
+            "fireball://device/uart/0",
+            WasiIpcCmd.STREAM_WRITE_SHM,
+            FlatMapView([ARG_LENGTH, ARG_OFFSET], [128, 0]),
+        )
+        assert nwritten == 128
+        assert sysv.hal_task.processed_count == 1
+        assert sysv.hal_task.last_handled_uri == "fireball://device/uart/0"
+        assert sysv.hal_task.last_handled_cmd == WasiIpcCmd.STREAM_WRITE_SHM
+    finally:
+        sysv.shutdown()
+
+
 def test_syscall_07_wasi_fd_write():
     """SYS-80: WASI_FD_WRITE writes single iovec to UART stdout and reports written bytes."""
     sysv = System()

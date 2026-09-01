@@ -699,6 +699,30 @@ class System:
             return WasiErrno.FAULT
         return WasiErrno.SUCCESS
 
+    def spawn_hal_task(self) -> int:
+        """Spawns the HAL Server Task on the COOS scheduler (platform_hal.md).
+        HAL communicates strictly via IPC, never raw direct method calls.
+        """
+        if hasattr(self, "_hal_task_id") and self._hal_task_id is not None:
+            return self._hal_task_id
+
+        from hal import DummyBusDriver, DummyGpioDriver, DummyTimerDriver, DummyUartDriver, HalTask
+
+        self.hal_drivers = [
+            DummyUartDriver("fireball://device/uart/0", transport=self.transport),
+            DummyUartDriver("fireball://service/stdout/0", transport=self.transport),
+            DummyGpioDriver("fireball://device/gpio/0"),
+            DummyGpioDriver("fireball://hal/gpio/0"),
+            DummyTimerDriver("fireball://device/timer/0"),
+            DummyBusDriver("fireball://device/i2c/0"),
+            DummyBusDriver("fireball://device/spi/0"),
+        ]
+        self.hal_task = HalTask(self.ipc, drivers=self.hal_drivers)
+        self._hal_task_id = self.scheduler.spawn("hal_task", self.hal_task.run())
+        return self._hal_task_id
+
     def shutdown(self) -> None:
+        if hasattr(self, "hal_task") and self.hal_task is not None:
+            self.hal_task.running = False
         self.pool.close_all()
         self.transport.close()

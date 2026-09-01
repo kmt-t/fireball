@@ -209,6 +209,19 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
     assert out_uart_fmap == "IPC-CMD-SHM-STREAM-OK!"
     print(f"    [IPC FlatMapView DISPATCH] Written {nwritten_fmap} bytes -> {out_uart_fmap}")
 
+    # 6.c Test Full HAL Task IPC Rendezvous Communication (Task-to-Task CSP)
+    sysv.spawn_hal_task()
+    ipc_res = engine.send_ipc_command(
+        "fireball://device/uart/0",
+        WasiIpcCmd.STREAM_WRITE_SHM,
+        _params((ARG_LENGTH, len(msg)), (ARG_OFFSET, 0)),
+    )
+    assert ipc_res == len(msg)
+    assert sysv.hal_task.processed_count >= 1
+    print(
+        f"    [HAL Task IPC Rendezvous] Successfully received and dispatched command via HAL task (count={sysv.hal_task.processed_count})"
+    )
+
     # 2) 64-bit KV Pair Array (Specification §3.3 Bit Assignment)
     from ipc_router import DataType, IPCMessage, ScopeKind, pack_kv64, unpack_kv64
     from system_containers import FlatMapStorage

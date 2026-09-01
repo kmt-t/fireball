@@ -188,7 +188,13 @@ _SERVICE_TABLE: list[tuple[str, "ServiceDescriptor"]] = sorted(
     [
         ("fireball://core/coos/0", ServiceDescriptor(Role.CORE_SERVICE)),
         ("fireball://dbg/manager/0", ServiceDescriptor(Role.DEBUGGER)),
+        ("fireball://device/gpio/0", ServiceDescriptor(Role.PLATFORM_HAL)),
+        ("fireball://device/i2c/0", ServiceDescriptor(Role.PLATFORM_HAL)),
+        ("fireball://device/spi/0", ServiceDescriptor(Role.PLATFORM_HAL)),
+        ("fireball://device/timer/0", ServiceDescriptor(Role.PLATFORM_HAL)),
+        ("fireball://device/uart/0", ServiceDescriptor(Role.PLATFORM_HAL)),
         ("fireball://hal/gpio/0", ServiceDescriptor(Role.PLATFORM_HAL)),
+        ("fireball://service/stdout/0", ServiceDescriptor(Role.PLATFORM_HAL)),
     ],
     key=lambda entry: entry[0],
 )

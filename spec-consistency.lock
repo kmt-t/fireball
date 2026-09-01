@@ -1085,7 +1085,8 @@
       "sec:components/tier1_interface/system_service.md#WASI呼び出しシーケンス",
       "sec:components/tier3_platform/platform_hal.md#1. コンセプト",
       "sec:components/tier3_platform/platform_hal.md#2. アーキテクチャ分類",
-      "sec:components/tier3_platform/platform_hal.md#4.1 階層型 URI 命名規則 (Hierarchical URI Scheme)"
+      "sec:components/tier3_platform/platform_hal.md#4.1 階層型 URI 命名規則 (Hierarchical URI Scheme)",
+      "sec:components/tier3_platform/platform_hal.md#HAL サーバタスク（hal_task）"
     ],
     "IPC_HandleBased": [
       "sec:components/tier1_core/system_syscall.md#5.1. カテゴリ一覧",
@@ -1351,6 +1352,7 @@
       "sec:components/tier3_jit/jit_compiler.md#2. アーキテクチャ分類",
       "sec:components/tier3_jit/jit_runtime.md#2. アーキテクチャ分類",
       "sec:components/tier3_platform/platform_hal.md#2. アーキテクチャ分類",
+      "sec:components/tier3_platform/platform_hal.md#HAL サーバタスク（hal_task）",
       "sec:components/tier3_platform/platform_memory.md#1. コンセプト",
       "sec:components/tier3_platform/platform_memory.md#2. アーキテクチャ分類",
       "sec:plans/backlog_list.md#Phase 2: Integration（周辺サブシステム統合 / 次期予定）"
@@ -2687,11 +2689,11 @@
     "sec:components/tier3_jit/tests/jit_runtime_test_spec.md#トレース・チェイニング (jit_compiler.md §4.1「トレース・チェイニング」)": "3193aca399286a244d826dae78964b142d9da914574f2b88bead231f6d4106db",
     "sec:components/tier3_jit/tests/jit_runtime_test_spec.md#ホットスポット判定 (yield時) と バッチコンパイル (§4.1)": "02e56fdf6d03e4c52205d4a6dc1bc288ee87e84ce7c21db1e1d9da255bd8f862",
     "sec:components/tier3_jit/tests/jit_runtime_test_spec.md#実装の勘所・不変条件（Gotchas & Implementation Invariants）": "560bca45e649ea54eae9f67c9e444f40326cf4af0c9134cd7180410d9373ca8f",
-    "sec:components/tier3_platform/platform_hal.md#1. コンセプト": "a9e424ff57be90eec90e9990e7842516e524f0f6b343a5eaa86f9bbc5b4455f6",
+    "sec:components/tier3_platform/platform_hal.md#1. コンセプト": "fa7748868092daf5bebae9143d36a205060633854679cdcdb5ee663f8ad0f1ee",
     "sec:components/tier3_platform/platform_hal.md#2. アーキテクチャ分類": "9fdd0101a2178336ec9db5810aff4f4dcec04af223338980e8b4c8b6f076c270",
     "sec:components/tier3_platform/platform_hal.md#3. 静的モデル": "459903c009123dfac68cdcb823db2cc6942f63d0c494c2127f2dbd07be7268f6",
     "sec:components/tier3_platform/platform_hal.md#3.1 データ構造": "d30b8101f9506d8614c44b1bdeae01f8602cc3534f669ecca8e21a41a7462756",
-    "sec:components/tier3_platform/platform_hal.md#3.2 内部ブロック図": "3761f7471a9e0a22d5fa981a049e6f5188a18818c322a393b3b8084bcb80bb11",
+    "sec:components/tier3_platform/platform_hal.md#3.2 内部ブロック図": "ded6e16edc3491233414f9f8e75e891adba256836e41e9e1a099dcf9824dfe8c",
     "sec:components/tier3_platform/platform_hal.md#3.3 主要なクラス・構造体・配列・定数": "343760f0b594de0591386397610b0f816a7706c6df4f44c8f027a01d6c1e01a0",
     "sec:components/tier3_platform/platform_hal.md#4. IPC 通信仕様 (IPC Driver & RSP Protocol)": "91b821c854439a051e029a36e6e8942481206ac50ef19dd428f5732cbe34cf64",
     "sec:components/tier3_platform/platform_hal.md#4.1 階層型 URI 命名規則 (Hierarchical URI Scheme)": "4cb0701b2714b87e9f0f9e5828f6d7b9c1df4d38bd4f4c56f8212140382596a3",
@@ -2710,6 +2712,7 @@
     "sec:components/tier3_platform/platform_hal.md#8.2 メモリ制約と方策": "f630208ed6f882571b8e342c01eed0509c0580ce2a20f857c91e07ddaead58da",
     "sec:components/tier3_platform/platform_hal.md#8.3 安全性制約と方策": "e3472cc75fbfa10e72b0337ba9de8c27cb9387263bbcdeaf6b7c5fe04f76ea03",
     "sec:components/tier3_platform/platform_hal.md#HAL コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}": "3b36c435ff658abb7223e77df881ffe0a622b11a24e697814dd7c63c6b597872",
+    "sec:components/tier3_platform/platform_hal.md#HAL サーバタスク（hal_task）": "b959019747238a169a60bd6475cd33e61a662fda53ed5193aa90f77ce3827473",
     "sec:components/tier3_platform/platform_hal.md#HAL構成（hal_config）": "026ffaf5f57a7793262a501b47a00a1d10e56810399cde3f6a43ec97795b129c",
     "sec:components/tier3_platform/platform_hal.md#ゼロコピー転送 (`transfer`)": "917e0116bcdb6a2b71e53a75a3388c75e7a181f38c7a3371ab02ea3d8d570553",
     "sec:components/tier3_platform/platform_hal.md#デバイス情報（device）": "3dc4b960ab219b7cafb8332ee42280da77f311757c0e14428ec58d59f9ac5571",

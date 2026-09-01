@@ -31,14 +31,15 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from ipc_router import DataType, ScopeKind, pack_key32
-from system_containers import FlatMapView, FlatSetView
+from ipc_router import DataType, IPCMessage, IPCRouter, IpcStatus, ScopeKind, pack_key32
+from system_containers import FlatMapStorage, FlatMapView, FlatSetView
 
 # platform_hal.md §4.2's kv_pair command arguments: each is a packed
 # (ScopeKind.FUNCTIONAL, DataType.UINT32, key_id) key per ipc_router.md §3.3,
 # never a string name -- a string key has no C++ counterpart once RTTI is
 # disabled, and the doc's argument names ("pin_no", "val", ...) are only the
 # human-readable label for a given key_id, not the wire key itself.
+ARG_CMD_ID = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=0)
 ARG_QUERY_CMD_ID = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=1)
 ARG_SHM_HANDLE = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=2)
 ARG_OFFSET = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=3)
@@ -386,3 +387,92 @@ class DummyBusDriver(HalDriver):
         elif cmd_id == 0x31:  # BUS_CONFIG
             return 0
         return None
+
+
+ARG_RESULT = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=0xFF)
+
+
+class HalTask:
+    """
+    COOS Task for the Hardware Abstraction Layer ({META_3TierSeparation}, {platform_hal.md}).
+    HAL operates as an independent cooperative task on COOS.
+    All communications with HAL (from Runtime, Debugger, Core Services) occur
+    strictly via IPC messages across CSP rendezvous channels.
+    HalTask listens for incoming IPC messages directed to HAL device URIs,
+    dispatches them to the corresponding registered HalDriver,
+    and records execution results.
+    """
+
+    def __init__(
+        self,
+        ipc: IPCRouter,
+        drivers: Sequence[HalDriver] | None = None,
+    ):
+        self.ipc = ipc
+        self.drivers: dict[str, HalDriver] = {}
+        if drivers:
+            for d in drivers:
+                self.register_driver(d)
+        self.running = True
+        self.last_handled_uri: str | None = None
+        self.last_handled_cmd: int | None = None
+        self.last_result: Any = None
+        self.processed_count: int = 0
+
+    def register_driver(self, driver: HalDriver) -> None:
+        self.drivers[driver.uri] = driver
+
+    def get_driver(self, uri: str) -> HalDriver | None:
+        return self.drivers.get(uri)
+
+    def run(self):
+        """
+        Coroutine body of the HAL server task.
+        Runs continuously in COOS, listening on registered device URIs via CSP rendezvous.
+        """
+        while self.running:
+            default_uri = next(iter(self.drivers.keys()), "fireball://device/uart/0")
+            status, msg = yield from self.ipc.recv(default_uri)
+            if status != IpcStatus.COMPLETED or msg is None:
+                yield ("BLOCK", None)
+                continue
+
+            self.processed_count += 1
+            cmd_id = msg.get(ARG_CMD_ID)
+            if cmd_id is None:
+                cmd_id = msg.get(ARG_QUERY_CMD_ID, 0x01 if msg.raw_payload else 0x00)
+
+            # Dispatch to appropriate driver based on command ID hierarchy
+            target_driver = None
+            if 0x01 <= cmd_id <= 0x04:
+                target_driver = self.drivers.get("fireball://device/uart/0")
+            elif 0x10 <= cmd_id <= 0x12:
+                target_driver = self.drivers.get("fireball://device/timer/0")
+            elif 0x20 <= cmd_id <= 0x23:
+                target_driver = self.drivers.get("fireball://device/gpio/0")
+            elif 0x30 <= cmd_id <= 0x31:
+                target_driver = self.drivers.get("fireball://device/i2c/0")
+            else:
+                target_driver = self.drivers.get(default_uri)
+
+            result = None
+            if target_driver is not None:
+                result = target_driver.dispatch(cmd_id, msg.payload)
+
+            self.last_handled_uri = default_uri
+            self.last_handled_cmd = cmd_id
+            self.last_result = result
+            yield ("YIELD", None)
+
+
+def make_hal_ipc_message(
+    cmd_id: int,
+    params: Sequence[tuple[int, Any]] = (),
+    raw_payload: bytes | None = None,
+) -> IPCMessage:
+    """Builds a standardized IPCMessage for communicating with HalTask."""
+    entries = list(params)
+    entries.append((ARG_CMD_ID, cmd_id))
+    sorted_entries = sorted(entries, key=lambda kv: kv[0])
+    storage = FlatMapStorage(sorted_entries)
+    return IPCMessage(storage=storage, raw_payload=raw_payload)

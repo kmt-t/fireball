@@ -6,8 +6,8 @@
 
 ## 1. コンセプト
 <!-- traceability: {IPCRouter} {Challenge_InterruptSafety} {TaskPollInterruptFlag} {RSPMinimalSet} {Fast_Path_GPIO} {URIAbstraction} {TypeSafeMessaging} {IPC_ZeroCopy} -->
-HAL (Hardware Abstraction Layer) は、物理ハードウェアおよび仮想ペリフェラルへのアクセスを抽象化し、WASI 0.3 Preview (WASI 0.3p) に準拠したインターフェースを提供する。ペリフェラル・ストリーム・GPIO 等は階層型 URI（`fireball://device/<driver-type>/<instance-id>`）経由で動的にバインド・解決される。
-各ドライバは IPC ルータ（`ipc_router`）から WASI 0.3p ドライバ通信コマンド（`CMD_STREAM_*`, `CMD_CLOCK_*`, `CMD_GPIO_*`, `CMD_BUS_*`）を受信し、vMMIO FC=14 の共有メモリ（`shm-slice`）を介してゼロコピーで高速データ転送を実行する。また、デバッグ用の GDB Remote Serial Protocol (RSP) のパケット解析（RSP Parser）を担い、解析済みデバッグコマンドを `debug_command_queue` へ供給する。割り込みはフラグ通知とタスクウェイクアップによって安全に処理される。 `{IPCRouter}` `{Challenge_InterruptSafety}` `{TaskPollInterruptFlag}` `{RSPMinimalSet}` `{Fast_Path_GPIO}` `{URIAbstraction}` `{TypeSafeMessaging}` `{IPC_ZeroCopy}`
+HAL (Hardware Abstraction Layer) は、COOS 上で稼働する独立したタスク（`hal_task`）として常駐し、物理ハードウェアおよび仮想ペリフェラルへのアクセスを抽象化して提供する。上位層（Runtime, Debugger, Guest 等）からの直接関数呼び出しは行わず、通信はすべて IPC ルータ（`ipc_router`）を介した CSP rendezvous メッセージパッシングによって行われる。ペリフェラル・ストリーム・GPIO 等は階層型 URI（`fireball://device/<driver-type>/<instance-id>`）経由で動的にバインド・解決される。
+HAL タスクは IPC ルータ（`ipc_router`）から WASI 0.3p ドライバ通信コマンド（`CMD_STREAM_*`, `CMD_CLOCK_*`, `CMD_GPIO_*`, `CMD_BUS_*`）を受信し、vMMIO FC=14 の共有メモリ（`shm-slice`）を介してゼロコピーで高速データ転送を実行する。また、デバッグ用の GDB Remote Serial Protocol (RSP) のパケット解析（RSP Parser）を担い、解析済みデバッグコマンドを `debug_command_queue` へ供給する。割り込みはフラグ通知とタスクウェイクアップによって安全に処理される。 `{IPCRouter}` `{Challenge_InterruptSafety}` `{TaskPollInterruptFlag}` `{RSPMinimalSet}` `{Fast_Path_GPIO}` `{URIAbstraction}` `{TypeSafeMessaging}` `{IPC_ZeroCopy}`
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {IPCRouter} {URIAbstraction} {META_StaticDI} -->
@@ -23,19 +23,33 @@ HAL (Hardware Abstraction Layer) は、物理ハードウェアおよび仮想�
 ### 3.2 内部ブロック図
 ```mermaid
 graph TD
-    IPCR[IPC Router] -->|WASI 0.3p Driver Commands / SHM Slices| HAL[HAL Subsystem]
-    HAL --> UART[UART Driver: fireball://device/uart/0]
-    HAL --> RTT[RTT Driver: fireball://device/rtt/0]
-    HAL --> GPIO[GPIO Driver: fireball://device/gpio/0]
-    HAL --> I2C[I2C Driver: fireball://device/i2c/0]
-    HAL --> SPI[SPI Driver: fireball://device/spi/0]
-    HAL --> Timer[Timer Driver: fireball://device/timer/0]
-    HAL --> RSP[RSP Parser]
+    Client[Runtime / Guest / Debugger Task] -->|IPC send| IPCR[IPC Router]
+    IPCR -->|CSP Rendezvous| HALT[HAL Task: hal_task on COOS]
+    subgraph HALT [HAL Server Task]
+        HAL[HAL Dispatcher]
+        HAL --> UART[UART Driver: fireball://device/uart/0]
+        HAL --> RTT[RTT Driver: fireball://device/rtt/0]
+        HAL --> GPIO[GPIO Driver: fireball://device/gpio/0]
+        HAL --> I2C[I2C Driver: fireball://device/i2c/0]
+        HAL --> SPI[SPI Driver: fireball://device/spi/0]
+        HAL --> Timer[Timer Driver: fireball://device/timer/0]
+        HAL --> RSP[RSP Parser]
+    end
     RSP --> Queue[debug_command_queue]
     Queue --> Debugger[Debugger Task]
 ```
 
 ### 3.3 主要なクラス・構造体・配列・定数
+
+#### HAL サーバタスク（hal_task）
+<!-- traceability: {META_3TierSeparation} {IPCRouter} -->
+COOS 上で独立して実行される協調タスク。上位層からの直接関数呼び出しを禁止し、IPC ルータ（`fireball://device/...`）経由で CSP rendezvous 受信ループ（`ipc.recv`）を実行してコマンドをディスパッチする。
+
+| 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
+| :--- | :--- | :--- | :--- |
+| タスクコルーチン | COOS スケジューラ上で IPC 受信を待機・処理する実行体 | コルーチン | 単一タスクスロット |
+| ドライバマップ | 階層 URI に対応するドライバインスタンス | 配列/FlatMap | 固定長 |
+| セキュリティロール | IPC ルータで検証される権限ロール | ロール | `Role.PLATFORM_HAL` |
 
 #### デバイス情報（device）
 個別のデバイスの属性と状態を管理する。

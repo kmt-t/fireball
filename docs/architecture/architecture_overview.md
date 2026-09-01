@@ -156,17 +156,17 @@ ARM Cortex-M33 (ARMv8-M Mainline) における物理レジスタの厳格な役�
 | 物理レジスタ | AAPCS 規約 | Fireball インタープリタ | Fireball JIT トレース (役割任意割当レジスタ) | 役割と不変条件 |
 | :--- | :--- | :--- | :--- | :--- |
 | **`R0`** | Argument 1 / Scratch | `ip` (WASM PC) | `ip` (WASM PC) | 継続渡し（CPS）第1引数。現在実行中のバイトコード位置。 |
-| **`R1`** | Argument 2 / Scratch | `stack_bot` | `stack_bot` | 継続渡し（CPS）第2引数。統合スタックボトム基底ポインタ `{ContextPointerRegister}`。 |
-| **`R2`** | Argument 3 / Scratch | `env` | `env` | 継続渡し（CPS）第3引数。ランタイム環境ポインタ `{EnvironmentPointer}`。 |
-| **`R3`** | Argument 4 / Scratch | `local_base` | `local_base` | 継続渡し（CPS）第4引数。ローカル変数基底ポインタ `{ContextPointerRegister}` `{JIT_RegisterMapping}`。 |
-| **`R4`** | Callee-saved | (保全) | **`Assignable Pool 0` (TOS等)** | **役割任意割当レジスタ 0**。スタックトップキャッシュ (TOS) 等。 |
-| **`R5`** | Callee-saved | (保全) | **`Assignable Pool 1` (NOS等)** | **役割任意割当レジスタ 1**。スタック次段キャッシュ (NOS) 等。 |
-| **`R6`** | Callee-saved | (保全) | **`Assignable Pool 2`** | **役割任意割当レジスタ 2**。`select` 使用時は NNOS。 |
+| **`R1`** | Argument 2 / Scratch | `stack_bot` (`ctx`) | `stack_bot` (`ctx`) | 継続渡し（CPS）第2引数。統合コンテキスト基底ポインタ `{ContextPointerRegister}`。 |
+| **`R2`** | Argument 3 / Scratch | `local_base` | `local_base` | 継続渡し（CPS）第3引数。ローカル変数基底ポインタ `{ContextPointerRegister}` `{JIT_RegisterMapping}`。 |
+| **`R3`** | Argument 4 / Scratch | `tos` (Top of Stack) | `tos` (Top of Stack) | 継続渡し（CPS）第4引数。スタックトップ値（最上位オペランド値）。 |
+| **`R4`** | Callee-saved | (保全) | **`Assignable Pool 0` (NOS)** | **スタック次段キャッシュ (NOS)**。元々TOSに割り当てられていたR4を解放し次段に再割当。 |
+| **`R5`** | Callee-saved | (保全) | **`Assignable Pool 1` (NNOS等)** | **スタック第3段キャッシュ (NNOS)**、または一時演算スクラッチ。 |
+| **`R6`** | Callee-saved | (保全) | **`Assignable Pool 2`** | 汎用一時レジスタ（`select` 条件値等）。 |
 | **`R7`** | **Frame Pointer (FP)** | **FP (不可侵)** | **FP (不可侵)** | **AAPCS 標準フレームポインタ**。デバッガ・アンワインドのため不変。 |
-| **`R8`** | Callee-saved | (保全) | **`Assignable Pool 3` (mem_base)** | **役割任意割当レジスタ 3**。メモリアクセス時は `mem_base`。 |
-| **`R9`** | Callee-saved | (保全) | **`Assignable Pool 4` (mem_size)** | **役割任意割当レジスタ 4**。メモリアクセス時は `mem_size`（境界チェック比較用）。 |
-| **`R10`** | Callee-saved | (保全) | **`Assignable Pool 5` (safepoint)** | **役割任意割当レジスタ 5**。セーフポイント監視フラグ等。 |
-| **`R11`** | Callee-saved | (保全) | **`Assignable Pool 6`** | **役割任意割当レジスタ 6**。拡張レジスタキャッシュ。 |
+| **`R8`** | Callee-saved | (保全) | **`Assignable Pool 3` (mem_base)** | メモリアクセス時のピン留めメモリ基底ポインタ（`[R1, #0x10]` よりロード）。 |
+| **`R9`** | Callee-saved | (保全) | **`Assignable Pool 4` (mem_size)** | メモリアクセス時のピン留めメモリ境界サイズ（`[R1, #0x14]` よりロード、比較境界チェック用）。 |
+| **`R10`** | Callee-saved | (保全) | **`Assignable Pool 5` (safepoint)** | セーフポイント監視フラグ / ポーリング用レジスタ。 |
+| **`R11`** | Callee-saved | (保全) | **`Assignable Pool 6`** | 拡張レジスタキャッシュ。 |
 | **`R12 (IP)`**| Intra-Call Scratch | scratch | **一時スクラッチ** | リンカ・スタブ用スクラッチ、使い捨て一時値、インタープリタ復帰 `BX r12`。 |
 | **`R13 (SP)`**| Stack Pointer | C++ Core SP | C++ Core SP | C++ コア実行用スタックポインタ（8バイト境界整列）。 |
 | **`R14 (LR)`**| Link Register | Return Address | Return Address | 関数呼び出し戻り先アドレス。 |
@@ -174,10 +174,15 @@ ARM Cortex-M33 (ARMv8-M Mainline) における物理レジスタの厳格な役�
 
 ### 4.1 メモリ常駐構造体の物理バイトオフセット
 
-- **`execution_context`（`R1: stack_bot` 起点、計16バイト）**:
-  - `+0x00`: `sp_offset` (u32), `+0x04`: `frame_offset` (u32), `+0x08`: `sp_boundary` (u32), `+0x0C`: `handler_table` (u32)
-- **`vsoc_runtime`（`R2: env` 起点、計12バイト）**:
-  - `+0x00`: `mem_base` (u32), `+0x04`: `mem_size` (u32), `+0x08`: `globals_base` (u32)
+- **`execution_context`（`R1: stack_bot` 起点、計28バイト）**:
+  - `+0x00`: `sp_offset` (u32) — オペランドスタック現在オフセット
+  - `+0x04`: `frame_offset` (u32) — カレントコールフレームオフセット
+  - `+0x08`: `sp_boundary` (u32) — スタック上限境界オフセット
+  - `+0x0C`: `handler_table` (u32) — 命令ディスパッチテーブル参照
+  - `+0x10`: `mem_base` (u32) — ゲストリニアメモリ開始アドレス（旧 `vsoc_runtime.mem_base` を統合）
+  - `+0x14`: `mem_size` (u32) — ゲストリニアメモリ有効バイト数（旧 `vsoc_runtime.mem_size` を統合、境界チェック比較用）
+  - `+0x18`: `globals_base` (u32) — WASM global 配列基底アドレス（旧 `vsoc_runtime.globals_base` を統合）
+  - ※ 従来 `R2: env` に割り当てられていた `vsoc_runtime`（12バイト）は `execution_context` 内に完全内包され、独立した引数レジスタは不要化。空いた `R2` を `local_base`、`R3` を `tos` に再編。 `{ExecutionContext_Layout}` `{AAPCS_FastCall}`
 
 ---
 

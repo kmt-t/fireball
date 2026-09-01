@@ -139,10 +139,10 @@ experiments/pysim/
   * Output Verified:          528 bytes (Exact match: 33 B x 16 rows, 0 NULs)
   * Differential Check:       PASS (Tier 2 & Tier 3 match byte-for-byte)
 --------------------------------------------------------------------------------
-  * Tier 2 (Threaded CPS):    2514.73 ms / frame  (636 Rays / Sec)
-  * Tier 3 (Hybrid + JIT):    9195.19 ms / frame  (174 Rays / Sec)
-  * Measured Speedup Ratio:   0.27x (Python Simulation FFI Overhead)
-  * JIT Traces Compiled:      11 traces in Active cache bank
+  * Tier 2 (Threaded CPS):    3886.07 ms / frame  (412 Rays / Sec)
+  * Tier 3 (Hybrid + JIT):    6225.99 ms / frame  (257 Rays / Sec)
+  * Measured Speedup Ratio:   0.62x (Python Simulation FFI Overhead)
+  * JIT Traces Compiled:      8 traces in Active cache bank
 ================================================================================
 ```
 
@@ -154,7 +154,7 @@ experiments/pysim/
    - Tier 2 インタープリタと Tier 3 JIT のレンダリング出力（528 バイト）が **1 バイトの狂いもなく完全一致**。
    - IEEE 754 単精度浮動小数点（Float32）版でも 32x32 グリッド（1,024 rays）の球体交差判定が正常に完走。
 
-### 4.3 シミュレータ性能特性 (Speedup 0.27x) の技術的分析
+### 4.3 シミュレータ性能特性 (Speedup 0.62x) の技術的分析
 
 Python シミュレータ上において JIT 側が見かけ上遅くなっている理由は、**Python 特有のシミュレーション・オーバーヘッド**に起因するものです：
 
@@ -169,12 +169,12 @@ Python シミュレータ上において JIT 側が見かけ上遅くなって�
 実機 C++23 実装（Phase 1 以降）では、このボトルネックが原理的に消滅します：
 
 1. **FFI コストのゼロ化（同一アドレス空間・同一レジスタ規約）**:
-   - インタープリタのハンドラと JIT トレースは、全く同一の `__fastcall` CPS 4引数レジスタ規約（`R0: ip`, `R1: stack_bot`, `R2: env`, `R3: local_base`）で直結します。
+   - インタープリタのハンドラと JIT トレースは、全く同一の `__fastcall` CPS 4引数レジスタ規約（`R0: ip`, `R1: stack_bot`, `R2: local_base`, `R3: tos`）で直結します。
    - `[[clang::musttail]]` または単一のジャンプ命令（`BX` / `JMP`）で遷移するため、言語間境界の FFI オーバーヘッドは 0 サイクル（単一ジャンプ）となります。
 2. **予測される実機高速化**:
    - トレース境界でのみ協調的 Yield（`{ADR_TraceBoundaryYield}`）を行うため、ホットループ内のダイレクト実行により、実機上では **JIT がインタープリタに対して 3x〜8x の実測高速化を達成**する見込みです。
 3. **リソース効率**:
-   - 3D レイトレーシングのような計算集約型タスクであっても、生成された JIT トレースはわずか **11 トレース（約 2〜3 KB）** でループのコアパスを完全に網羅しており、RAM 32KB（JIT キャッシュ予算 6.63KB）の範囲に余裕を持って収まることが確認されました。
+   - 3D レイトレーシングのような計算集約型タスクであっても、生成された JIT トレースはわずか **8 トレース（約 2〜3 KB）** でループのコアパスを完全に網羅しており、RAM 32KB（JIT キャッシュ予算 6.63KB）の範囲に余裕を持って収まることが確認されました。
 
 ---
 

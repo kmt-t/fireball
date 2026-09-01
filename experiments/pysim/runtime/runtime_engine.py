@@ -235,19 +235,20 @@ class JITTrace:
         self,
         ip_or_locals: Any,
         stack_bot_or_mem: Any = 0,
-        env: Any = 0,
         local_base: Any = 0,
+        tos: Any = 0,
     ) -> int:
         """
         Invokes the native JIT trace directly via ctypes CPS 4-argument calling convention:
-                (uint32_t ip, void* stack_bot, void* env, void* local_base)
+                (uint32_t ip, void* stack_bot, void* local_base, uint32_t tos)
         """
 
-        return self.fn(ip_or_locals, stack_bot_or_mem, env, local_base)
+        return self.fn(ip_or_locals, stack_bot_or_mem, local_base, tos)
 
     def invoke(self, ctx: Any) -> int:
         """Helper to invoke trace directly on WASMContext via CPS 4-argument calling convention."""
-        res = self.fn(self.head_pc, ctx.stack_bot_ptr, ctx.mem_ptr, ctx.locals_ptr)
+        tos = ctx.pop() if ctx.stack else 0
+        res = self.fn(self.head_pc, ctx.stack_bot_ptr, ctx.locals_ptr, tos)
         if self.has_return_val:
             ctx.push(res & 0xFFFF_FFFF)
         return res
@@ -639,7 +640,7 @@ class RuntimeEngine:
         self, interp: Interpreter, call_state: InterpreterCall, trace: JITTrace
     ) -> InterpreterCall:
         """Executes one compiled native x64 JIT trace and advances `call_state` past it."""
-        ip, frame, env, locals_arr = call_state.cont
+        ip, frame, locals_arr, tos = call_state.cont
         w_ctx = WASMContext(locals_values=locals_arr, memory=interp.memory)
         res = trace.invoke(w_ctx)
         for i in range(len(locals_arr)):
@@ -652,7 +653,8 @@ class RuntimeEngine:
         next_ip = (
             (next_unified & 0xFFFF) if next_unified is not None else frame.instrs[ip].end_offset
         )
-        call_state.cont = (next_ip, frame, env, locals_arr)
+        new_tos = frame.values[-1] if frame.values else 0
+        call_state.cont = (next_ip, frame, locals_arr, new_tos)
         return call_state
 
 

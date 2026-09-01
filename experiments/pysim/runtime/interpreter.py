@@ -198,32 +198,48 @@ class ExecEnv:
 
 class CallFrame:
     """
-    R1 (`stack_bot`): the combined operand-value + control-frame region
-        for one function activation, plus that activation's own decoded
-        instruction table and raw code (needed to fetch the instruction at a
-        given `ip`).
+    R1 (`stack_bot` / execution_context): the combined operand-value +
+        control-frame region for one function activation, including the embedded
+        runtime environment (memory, globals, tables, etc.), decoded instruction
+        table, and raw code.
     """
 
-    __slots__ = ("code", "frames", "instrs", "values")
+    __slots__ = ("code", "env", "frames", "instrs", "values")
 
-    def __init__(self, instrs: FlatMapView[int, Instr], code: bytes, values: list[int]):
+    def __init__(
+        self,
+        instrs: FlatMapView[int, Instr],
+        code: bytes,
+        values: list[int],
+        env: ExecEnv | None = None,
+    ):
         self.values = values
         self.frames: list[_Frame] = []
         self.instrs = instrs
         self.code = code
+        self.env = env
 
 
-# A handler's continuation: (next_ip, stack_bot, env, local_base), or None
+# A handler's continuation: (next_ip, stack_bot, local_base, tos), or None
 # to end this call (RETURN, or branching past the outermost implicit block).
-_Cont = "tuple[int, CallFrame, ExecEnv, list[int]] | None"
+_Cont = "tuple[int, CallFrame, list[int], int] | None"
 
 # Fixed 256-slot direct-indexed dispatch table for WASM byte opcodes (0x00..0xFF)
-_HANDLERS: list[Callable[[int, CallFrame, ExecEnv, list[int]], object] | None] = [None] * 256
+_HANDLERS: list[Callable[[int, CallFrame, list[int], int], object] | None] = [None] * 256
 
 
 def _handler(opcode: int):
     def register(fn):
-        _HANDLERS[opcode] = fn
+        def wrapper(ip: int, frame: CallFrame, local_base: list[int], tos: int):
+            env = frame.env
+            res = fn(ip, frame, env, local_base)
+            if res is None:
+                return None
+            next_ip, r_frame, _, r_locals = res
+            r_tos = r_frame.values[-1] if r_frame.values else 0
+            return (next_ip, r_frame, r_locals, r_tos)
+
+        _HANDLERS[opcode] = wrapper
         return fn
 
     return register
@@ -354,7 +370,8 @@ class Interpreter:
             return InterpreterCall(func_index, cont=None, finished=True, results=results)
 
         frame, locals_arr = self._build_frame(func_index, args)
-        return InterpreterCall(func_index, cont=(0, frame, self._env, locals_arr))
+        tos = frame.values[-1] if frame.values else 0
+        return InterpreterCall(func_index, cont=(0, frame, locals_arr, tos))
 
     def _call_import(self, func_index: int, args: list[int]) -> list[int]:
         """Resolves a host import synchronously -- there is no bytecode to step through."""
@@ -377,7 +394,7 @@ class Interpreter:
             locals_arr[i] = a if layout[i] in (F32, F64) else _to_i32(a)
 
         instrs = decode_all(fn.code)
-        frame = CallFrame(instrs, fn.code, [])
+        frame = CallFrame(instrs, fn.code, [], env=self._env)
         return frame, locals_arr
 
     def step(self, call_state: InterpreterCall, quantum: int = 64) -> InterpreterCall:
@@ -396,11 +413,11 @@ class Interpreter:
         """
         instr_step = 0
         while True:
-            ip, frame, env, locals_arr = call_state.cont
+            ip, frame, locals_arr, tos = call_state.cont
             if ip < len(frame.code):
                 ins = frame.instrs[ip]
                 if ins.opcode in (CALL, CALL_INDIRECT):
-                    return self._enter_or_resolve_call(call_state, ins, frame, env, locals_arr)
+                    return self._enter_or_resolve_call(call_state, ins, frame, locals_arr, tos)
                 is_boundary = ins.opcode in (
                     BLOCK,
                     LOOP,
@@ -415,7 +432,7 @@ class Interpreter:
                 handler = _HANDLERS[ins.opcode]
                 if handler is None:
                     raise NotImplementedError(f"interpreter: unhandled opcode 0x{ins.opcode:02X}")
-                call_state.cont = handler(ip, frame, env, locals_arr)
+                call_state.cont = handler(ip, frame, locals_arr, tos)
                 if call_state.cont is not None:
                     if is_boundary:
                         instr_step += 1
@@ -439,8 +456,10 @@ class Interpreter:
             parent_func_index, parent_cont = call_state.call_stack.pop()
             _, parent_frame, _, _ = parent_cont
             parent_frame.values.extend(results)
+            p_ip, p_frame, p_locals, _ = parent_cont
+            p_tos = p_frame.values[-1] if p_frame.values else 0
             call_state.func_index = parent_func_index
-            call_state.cont = parent_cont
+            call_state.cont = (p_ip, p_frame, p_locals, p_tos)
             return call_state
 
     def _enter_or_resolve_call(
@@ -448,8 +467,8 @@ class Interpreter:
         call_state: InterpreterCall,
         ins: Instr,
         frame: CallFrame,
-        env: ExecEnv,
         locals_arr: list[int],
+        tos: int,
     ) -> InterpreterCall:
         """
         Resolves the callee of a `call`/`call_indirect` and either invokes a
@@ -464,7 +483,7 @@ class Interpreter:
             callee_func_index = ins.operand
             callee_ft = self.module.func_type(callee_func_index)
         else:
-            table = env.tables[ins.table_index]
+            table = frame.env.tables[ins.table_index]
             table_slot = _to_u32(frame.values.pop())
             if table_slot >= len(table):
                 raise Trap(
@@ -483,18 +502,21 @@ class Interpreter:
             callee_ft = declared_type
 
         call_args = [frame.values.pop() for _ in range(len(callee_ft.params))][::-1]
-        resume_cont = (ins.end_offset, frame, env, locals_arr)
+        resume_tos = frame.values[-1] if frame.values else 0
+        resume_cont = (ins.end_offset, frame, locals_arr, resume_tos)
 
         if self.module.is_import(callee_func_index):
             results = self._call_import(callee_func_index, call_args)
             frame.values.extend(results)
-            call_state.cont = resume_cont
+            r_tos = frame.values[-1] if frame.values else 0
+            call_state.cont = (ins.end_offset, frame, locals_arr, r_tos)
             return call_state
 
         callee_frame, callee_locals = self._build_frame(callee_func_index, call_args)
         call_state.call_stack.append((call_state.func_index, resume_cont))
         call_state.func_index = callee_func_index
-        call_state.cont = (0, callee_frame, self._env, callee_locals)
+        callee_tos = callee_frame.values[-1] if callee_frame.values else 0
+        call_state.cont = (0, callee_frame, callee_locals, callee_tos)
         return call_state
 
 

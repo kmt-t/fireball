@@ -58,13 +58,13 @@ def test_trace_compiler_cps_4arg_and_pic():
     # 1. 16-byte header verification
     assert trace.header.head_wasm_pc == 0x100
     assert trace.size_bytes >= 16
-    # 2. Direct call via CPS 4-argument C function pointer fn(ip, stack_bot, env, local_base)
+    # 2. Direct call via CPS 4-argument C function pointer fn(ip, stack_bot, local_base, tos)
     locals_arr = (ctypes.c_int64 * 8)(5, 0)
     res = trace.fn(
         0x100,
         ctypes.c_void_p(0),
-        ctypes.c_void_p(0),
         ctypes.cast(locals_arr, ctypes.c_void_p),
+        0,
     )
     assert res == 0
     assert locals_arr[1] == 40
@@ -78,14 +78,14 @@ def test_trace_compiler_cps_4arg_and_pic():
         pic_fn = reloc_buf.function_at(
             reloc_offset + 16,  # Entry at +0x10 past 16-byte header
             ctypes.c_int64,
-            [ctypes.c_uint32, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p],
+            [ctypes.c_uint32, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint32],
         )
         locals_arr_pic = (ctypes.c_int64 * 8)(10, 0)
         pic_fn(
             0x100,
             ctypes.c_void_p(0),
-            ctypes.c_void_p(0),
             ctypes.cast(locals_arr_pic, ctypes.c_void_p),
+            0,
         )
         # (10 + 10) * 3 - 5 = 55
         assert locals_arr_pic[1] == 55, "PIC trace failed when relocated in memory"

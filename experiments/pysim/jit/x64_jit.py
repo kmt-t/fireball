@@ -8,8 +8,8 @@ docs/components/tier2_runtime/runtime_interpreter.md.
 CPS 4-argument calling convention:
   RCX (R0): uint32_t ip          -- WASM PC
   RDX (R1): void* stack_bot      -- execution_context
-  R8  (R2): void* env            -- vsoc_runtime (memory_base)
-  R9  (R3): void* local_base     -- locals array pointer
+  R8  (R2): void* local_base     -- locals array pointer
+  R9  (R3): uint32_t tos         -- stack top value
 """
 
 from __future__ import annotations
@@ -32,8 +32,8 @@ TRACE_FN_TYPE = ctypes.CFUNCTYPE(
     ctypes.c_int64,
     ctypes.c_uint32,  # arg0: ip
     ctypes.c_void_p,  # arg1: stack_bot
-    ctypes.c_void_p,  # arg2: env
-    ctypes.c_void_p,  # arg3: local_base
+    ctypes.c_void_p,  # arg2: local_base
+    ctypes.c_uint32,  # arg3: tos
 )
 
 
@@ -56,9 +56,9 @@ def gen_pic_prologue() -> bytes:
     Generates the PIC CPS 4-argument prologue for Windows or Linux:
         Saves callee-saved registers and maps arguments to execution registers:
           R10 = local_base
-          R11 = env
           R12 = stack_bot
           R13 = ip
+          (tos passed in arg3: R9 on Win64, RCX on SysV)
     """
     code = bytearray()
     code += bytes((0x53,))  # push rbx
@@ -67,19 +67,17 @@ def gen_pic_prologue() -> bytes:
     code += bytes((0x41, 0x56))  # push r14
     code += bytes((0x41, 0x57))  # push r15
     if IS_WINDOWS:
-        # Windows x64 ABI: (RCX=ip, RDX=stack_bot, R8=env, R9=local_base)
+        # Windows x64 ABI: (RCX=ip, RDX=stack_bot, R8=local_base, R9=tos)
         code += bytes((0x57,))  # push rdi
         code += bytes((0x48, 0x89, 0xE7))  # mov rdi, rsp
-        code += bytes((0x4D, 0x89, 0xCA))  # mov r10, r9   (R10 = local_base)
-        code += bytes((0x4D, 0x89, 0xC3))  # mov r11, r8   (R11 = env / memory_base)
+        code += bytes((0x4D, 0x89, 0xC2))  # mov r10, r8   (R10 = local_base)
         code += bytes((0x49, 0x89, 0xD4))  # mov r12, rdx  (R12 = stack_bot)
         code += bytes((0x49, 0x89, 0xCD))  # mov r13, rcx  (R13 = ip)
     else:
-        # System V AMD64 ABI (Linux): (RDI=ip, RSI=stack_bot, RDX=env, RCX=local_base)
+        # System V AMD64 ABI (Linux): (RDI=ip, RSI=stack_bot, RDX=local_base, RCX=tos)
         code += bytes((0x55,))  # push rbp
         code += bytes((0x48, 0x89, 0xE5))  # mov rbp, rsp
-        code += bytes((0x49, 0x89, 0xCA))  # mov r10, rcx  (R10 = local_base)
-        code += bytes((0x49, 0x89, 0xD3))  # mov r11, rdx  (R11 = env / memory_base)
+        code += bytes((0x49, 0x89, 0xD2))  # mov r10, rdx  (R10 = local_base)
         code += bytes((0x49, 0x89, 0xF4))  # mov r12, rsi  (R12 = stack_bot)
         code += bytes((0x49, 0x89, 0xFD))  # mov r13, rdi  (R13 = ip)
     return bytes(code)
@@ -309,11 +307,11 @@ class TraceCompiler:
         buf.write(0, bytes(full_blob))
         # Direct ctypes C function entry at +0x10 (past the 16-byte header)
         # Signature matches interpreter opcode handler:
-        # int64_t (*)(uint32_t ip, void* stack_bot, void* env, void* local_base)
+        # int64_t (*)(uint32_t ip, void* stack_bot, void* local_base, uint32_t tos)
         fn = buf.function_at(
             16,
             ctypes.c_int64,
-            [ctypes.c_uint32, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p],
+            [ctypes.c_uint32, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint32],
         )
         trace = JITTrace(
             head_pc=head_pc,

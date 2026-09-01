@@ -1,13 +1,13 @@
 package fireball:vsoc@0.1.0;
 
-/// exec_trace（インタープリタ/JIT共通の継続渡しシグネチャ）の第3引数（env: R2）として
-/// 全ハンドラ・全JITトレースへ渡される、単一の呼び出しコンテキストを超えて生存する環境実体。
+/// execution_context（R1: stack_bot）の +0x10〜+0x18 にインライン内包され、
+/// 全ハンドラ・全JITトレースから直接アクセスされる、単一の呼び出しコンテキストを超えて生存する環境実体。
 /// 正本: docs/components/tier2_runtime/runtime_vsoc.md 3.3
-/// 物理配置（バイトオフセット）: docs/architecture/architecture_overview.md 3.3
+/// 物理配置（バイトオフセット）: docs/architecture/architecture_overview.md 4.1
 interface environment {
-    /// vsoc_runtime: memory.grow で動的に伸長するリニアメモリの実体や、モジュール横断で
-    /// 共有されるグローバル変数配列など、execution_context（R1）より長く生存する状態を保持する。
-    /// 計12バイト。
+    /// vsoc-runtime: memory.grow で動的に伸長するリニアメモリの実体や、モジュール横断で
+    /// 共有されるグローバル変数配列など、execution-context（R1）内に保持される環境状態。
+    /// 計12バイト（execution-context オフセット +0x10〜+0x1B）。
     record vsoc-runtime {
         /// ゲストリニアメモリの開始アドレス（memory.grow で再割当されうる）。+0x00
         mem-base: u32,

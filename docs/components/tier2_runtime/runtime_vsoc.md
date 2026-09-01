@@ -8,7 +8,7 @@
 
 ## 1. コンセプト
 <!-- traceability: {LowLatencyJIT} {MemoryIsolation} {META_FaultIsolation} {EnvironmentPointer} -->
-vSoC (Virtual System-on-Chip) は、WASM実行環境の統合マネージャであり、Loader、Interpreter、JIT、vMMIO、Debugger を統括して実行制御を行う。各サブコンポーネントを統合する「環境」としての役割を持ち、`vsoc_runtime` を `execution_context` から参照される Environment として提供する。 `{LowLatencyJIT}` `{MemoryIsolation}` `{META_FaultIsolation}` `{EnvironmentPointer}`
+vSoC (Virtual System-on-Chip) は、WASM実行環境の統合マネージャであり、Loader、Interpreter、JIT、vMMIO、Debugger を統括して実行制御を行う。各サブコンポーネントを統合する「環境」としての役割を持ち、`execution_context` 内に統合されたリニアメモリ情報・グローバル変数テーブル（`vsoc_runtime` 領域）を介して実行環境を提供する。 `{LowLatencyJIT}` `{MemoryIsolation}` `{META_FaultIsolation}` `{EnvironmentPointer}`
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {GLOBAL_ComponentHarness} {META_StaticDI} -->
@@ -74,20 +74,20 @@ vSoC全体の可変な実行時状態を保持する構造体。
 | WASMモジュール参照 | 現在ロードされているWASMモジュールのインスタンスへのポインタ。 | `WasmModule*` |
 
 #### vSoCランタイム環境（vsoc_runtime）
-<!-- traceability: {ContextPointerRegister} {EnvironmentPointer} {MemoryBoundaryCheck} -->
-JIT トレース実行時およびインタープリタの各命令ハンドラが最速実行ループ内で **レジスタ `R2`（`env`）** を介して直接間接参照（`[R2, #offset]`）する物理メモリ環境構造体。`execution_context`（R1）とは異なり、`vsoc_runtime` は **`memory.grow` で動的に伸長するリニアメモリの実体や、モジュール横断で共有されるグローバル変数配列など、単一の呼び出しコンテキストを超えて生存する状態** を保持する。 `{EnvironmentPointer}` `{MemoryBoundaryCheck}`
+<!-- traceability: {ContextPointerRegister} {EnvironmentPointer} {MemoryBoundaryCheck} {ExecutionContext_Layout} -->
+`execution_context`（R1: `stack_bot`）の `+0x10`〜`+0x18` にインライン配置され、JIT トレース実行時およびインタープリタの各命令ハンドラが直接参照する物理メモリ環境構造体。従来は独立レジスタ `R2: env` で引き回されていたが、CPS 引数レジスタを解放して第4引数 `R3` を `tos`（スタックトップ）とするため、`execution_context` 内に統合された。`memory.grow` で動的に伸長するリニアメモリの実体や、モジュール横断で共有されるグローバル変数配列など、単一の呼び出しコンテキストを超えて生存する状態を保持する。 `{EnvironmentPointer}` `{MemoryBoundaryCheck}` `{ExecutionContext_Layout}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| リニアメモリ基底 | ゲストリニアメモリ（`memory.grow` で再割当されうる）の開始アドレス | アドレス値 | 32bit符号なし (`+0x00`) |
-| リニアメモリサイズ | ゲストリニアメモリの現在の有効バイト数。`{FastAddressCheck}` の境界比較（`CMP addr, mem_size; BHS __trap`）に直接使う——マスクは使わないため2の冪制約もない `{MemoryBoundaryCheck}` | バイト数 | 32bit符号なし (`+0x04`) |
-| グローバル変数基底 | WASM `global` 配列（4バイト単位でインデックス付け）の開始アドレス | アドレス値 | 32bit符号なし (`+0x08`) |
+| リニアメモリ基底 | ゲストリニアメモリ（`memory.grow` で再割当されうる）の開始アドレス | アドレス値 | 32bit符号なし (`[R1, #0x10]`) |
+| リニアメモリサイズ | ゲストリニアメモリの現在の有効バイト数。`{FastAddressCheck}` の境界比較（`CMP addr, mem_size; BHS __trap`）に直接使う——マスクは使わないため2の冪制約もない `{MemoryBoundaryCheck}` | バイト数 | 32bit符号なし (`[R1, #0x14]`) |
+| グローバル変数基底 | WASM `global` 配列（4バイト単位でインデックス付け）の開始アドレス | アドレス値 | 32bit符号なし (`[R1, #0x18]`) |
 
-`vsoc_runtime` は計12バイト（`+0x00`〜`+0x0B`）。正本は [`wit/vsoc_runtime.wit`](wit/vsoc_runtime.wit)、物理配置は `{VsocRuntime_Layout}`。
+`vsoc_runtime` メンバを含む `execution_context` は計28バイト（`+0x00`〜`+0x1B`）。正本は [`wit/vsoc_runtime.wit`](wit/vsoc_runtime.wit)、物理配置は `{ExecutionContext_Layout}`。
 
 > [!NOTE]
 > **構造体の役割分離**:
-> - **`vsoc_runtime` (R2: env)**: JIT トレースおよびインタープリタハンドラが実行ループ内で直接参照する**極小の物理実行環境（12バイト）**。最速パス上でのレジスタ間接アクセス（`[R2, #0x00]`〜`#0x08`）に特化。
+> - **`execution_context` 内 `vsoc_runtime` 領域 (`[R1, #0x10]`〜`#0x18`)**: JIT トレースおよびインタープリタハンドラが実行ループ内で直接参照する**極小の物理実行環境（12バイト）**。最速パス上でのベース間接アクセスに特化。
 > - **`vsoc_context`**: タスク全体のライフサイクル、仮想割り込みフラグ、WASM モジュール構造体へのポインタを管理する**上位マネージャ層の制御構造体**。実行ループ外でのタスク切り替えやデバッガ連携時に参照される。両者は明確に役割分離して維持する。
 
 #### vSoC構成（vsoc_config）
@@ -107,7 +107,7 @@ vSoCの動作パラメータを定義する。 `{META_ConfigurableSystem}`
 
 ### 4.1 アルゴリズム
 <!-- traceability: {ThreadedInterpreter} {JIT_CopyAndPatch} {Challenge_ApproximateYield} {JIT_Safepoint} {Debugger_Jit_Flush} {ContextPointerRegister} -->
-- **実行エンジン委譲 (exec_trace)**: vSoCは `step()` で現在のPCに対応する `exec_trace`（`void __fastcall (const uint8_t* ip, execution_context* stack_bot, vsoc_runtime* env, uint32_t* local_base)`）を呼び出す。 `exec_trace` はインタープリタのディスパッチャまたはJITコードを指し、`__fastcall` 呼び出し規約（R0=IP, R1=stack_bot, R2=ENV, R3=local_base）によってレジスタ上で高速に実行エンジンへ制御を委譲する。呼び出し側は実行エンジンの種別を意識する必要がない。インタープリタ／JITトレースの側はこの `step()` を呼び戻すことも JIT キャッシュを参照することもなく、次に実行すべき PC を返すだけである——JIT キャッシュの参照・再判定（`{Interpreter_LazyJITSwitch}`）は、`exec_trace` から制御が戻ってくるたびに vSoC 自身がこの `step()` の中で行う。 `{ThreadedInterpreter}` `{JIT_CopyAndPatch}` `{ContextPointerRegister}`
+- **実行エンジン委譲 (exec_trace)**: vSoCは `step()` で現在のPCに対応する `exec_trace`（`void __fastcall (const uint8_t* ip, execution_context* stack_bot, uint32_t* local_base, uint32_t tos)`）を呼び出す。 `exec_trace` はインタープリタのディスパッチャまたはJITコードを指し、`__fastcall` 呼び出し規約（R0=IP, R1=stack_bot, R2=local_base, R3=tos）によってレジスタ上で高速に実行エンジンへ制御を委譲する。呼び出し側は実行エンジンの種別を意識する必要がない。インタープリタ／JITトレースの側はこの `step()` を呼び戻すことも JIT キャッシュを参照することもなく、次に実行すべき PC を返すだけである——JIT キャッシュの参照・再判定（`{Interpreter_LazyJITSwitch}`）は、`exec_trace` から制御が戻ってくるたびに vSoC 自身がこの `step()` の中で行う。 `{ThreadedInterpreter}` `{JIT_CopyAndPatch}` `{ContextPointerRegister}` `{AAPCS_FastCall}`
 - **概算Yield**: vSoC は `exec_trace` から制御が戻るたび（`runtime_interpreter.md` `{ADR_TraceBoundaryYield}` のトレース境界）に、監視対象の `yield_threshold` を基準として自ら `co_yield` を発行するかどうかを判定する——`co_yield` を発行する主体は常に vSoC であり、インタープリタや JIT トレース自身がコルーチンとして中断することはない。閾値のスコープ（タスク単位/グローバル）、精度キャリブレーション、スターベーション対策は `{Challenge_ApproximateYield}` の定義どおり「検討中」の未解決課題である。 `{Challenge_ApproximateYield}`
 - **デバッグ連携**: `step()` 前後で Debugger を呼び出し、HAL層からのコマンドを処理する。
 - **JIT Safepoint (非同期割込対応)**: `{JIT_Safepoint}`

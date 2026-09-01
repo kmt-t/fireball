@@ -33,7 +33,6 @@ from unicorn import (
 )
 from unicorn.arm_const import (
     UC_ARM_REG_R1,
-    UC_ARM_REG_R2,
     UC_ARM_REG_R4,
     UC_ARM_REG_R5,
     UC_ARM_REG_R12,
@@ -125,13 +124,16 @@ def _run_memory_access_trace(guest_addr: int, mem_size: int) -> dict:
     mu.mem_map(GUEST_RAM_BASE, 0x1000)  # guest RAM: exactly one page, nothing beyond it mapped
     mu.mem_write(CODE_BASE, code)
     mu.mem_write(SENTINEL_ADDR, bytes.fromhex("00BE"))  # BKPT sentinel to stop on
-    mu.mem_write(ENV_BASE + 0x00, GUEST_RAM_BASE.to_bytes(4, "little"))  # vsoc_runtime.mem-base
-    mu.mem_write(ENV_BASE + 0x04, mem_size.to_bytes(4, "little"))  # vsoc_runtime.mem-size
+    mu.mem_write(
+        WASM_STACK_BASE + 0x10, GUEST_RAM_BASE.to_bytes(4, "little")
+    )  # execution_context.mem_base
+    mu.mem_write(
+        WASM_STACK_BASE + 0x14, mem_size.to_bytes(4, "little")
+    )  # execution_context.mem_size
     # Sentinel word at the fixed in-bounds offset the in-bounds test's guest_addr targets.
     # The OOB test's guest_addr lands outside the mapped page entirely, so it never reads this.
     mu.mem_write(GUEST_RAM_BASE + 0x10, (0xAABBCCDD).to_bytes(4, "little"))
     mu.reg_write(UC_ARM_REG_R1, WASM_STACK_BASE)
-    mu.reg_write(UC_ARM_REG_R2, ENV_BASE)
     mu.reg_write(UC_ARM_REG_R12, SENTINEL_ADDR)
     mu.reg_write(UC_ARM_REG_SP, CSTACK_TOP)
     try:

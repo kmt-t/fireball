@@ -7,7 +7,7 @@
 <!-- traceability: {JIT_CopyAndPatch} {JIT_ZeroCompileCostTheorem} {JIT_RegisterMapping} {META_ZeroCostAbstraction} -->
 本仕様書は、Fireball Copy-and-Patch JIT コンパイラが実行時にコード結合およびパッチ適用を行うための **事前コンパイル済み Thumb-2 ネイティブ命令テンプレート（Stencil）** の完全な物理カタログである。
 
-ビルド時に Clang 17（`-target arm-none-eabi -mcpu=cortex-m33 -mthumb -O2`）で生成されたバイナリ列とプレースホルダ（穴: Relocation Slots）のオフセット、および多次元レジスタバリアント（スタックキャッシュ深度 `R4=TOS / R5=NOS`、`R3=local_base`、`R8=mem_base / R9=mem_size` ピン留め、`R10=context_ptr / R11=sp_offset`、および AAPCS 準拠 Callee-saved 退避 `R4-R6, R8-R11`、Frame Pointer `R7`）を一意に定義する。 `{JIT_CopyAndPatch}` `{JIT_ZeroCompileCostTheorem}` `{JIT_RegisterMapping}` `{META_ZeroCostAbstraction}`
+ビルド時に Clang 17（`-target arm-none-eabi -mcpu=cortex-m33 -mthumb -O2`）で生成されたバイナリ列とプレースホルダ（穴: Relocation Slots）のオフセット、および多次元レジスタバリアント（スタックキャッシュ深度 `R3=TOS / R4=NOS / R5=NNOS`、`R2=local_base`、`R8=mem_base / R9=mem_size` ピン留め、`R10=safepoint`、および AAPCS 準拠 Callee-saved 退避 `R4-R6, R8-R11`、Frame Pointer `R7`）を一意に定義する。 `{JIT_CopyAndPatch}` `{JIT_ZeroCompileCostTheorem}` `{JIT_RegisterMapping}` `{META_ZeroCostAbstraction}`
 
 ---
 
@@ -28,7 +28,7 @@
 ### 3.1 プロローグ & エピローグ・ステンシル (Prologue, Epilogue & Spill Flush)
 <!-- traceability: {ContextPointerRegister} {EnvironmentPointer} {JIT_RuntimeAPI_Fallback} {ADR_TosCacheAsymmetry} -->
 
-エピローグおよびインタープリタ脱出（フォールバック）では、トレース実行中にレジスタへバインドされた値のうち、**ダーティ（変更済み）なスタックキャッシュ（`R4`/`R5`: TOS/NOS）および更新された `sp_offset` を統合スタックメモリ／コンテキスト構造体へ `STR` で確実に書き戻した（Flush / Writeback）上で**、Callee-saved レジスタを `POP` 復元してジャンプする。
+エピローグおよびインタープリタ脱出（フォールバック）では、トレース実行中にレジスタへバインドされた値のうち、**スタックトップ（`R3: tos`）は CPS 引数レジスタとしてそのまま引き渡し、スタック次段キャッシュ（`R4: NOS`）および更新された `sp_offset` を統合スタックメモリ／コンテキスト構造体へ `STR` で確実に書き戻した（Flush / Writeback）上で**、Callee-saved レジスタを `POP` 復元してジャンプする。
 
 #### `STENCIL_PROLOGUE_FULL` (Callee-saved 全域退避 + LR)
 - **Thumb-2 命令列**:
@@ -37,22 +37,20 @@
   ```
 - **バイナリ列 (4 Bytes)**: `2D E9 70 4F`
 
-#### `STENCIL_EPILOGUE_FLUSH_D1` (TOS 書き戻し + Callee-saved 復元 & リターン)
+#### `STENCIL_EPILOGUE_FLUSH_D1` (TOS保持 + Callee-saved 復元 & リターン)
 - **Thumb-2 命令列**:
   ```asm
-  str   r4, [r1, #0x00]    ; [Offset 0x00] RELOC_IMM8_OFFSET (TOS 書き戻し)
+  pop.w {r4-r6, r8-r11, pc} ; [Offset 0x00] TOS は R3 のまま保持し Callee-saved 復元 & リターン
+  ```
+- **バイナリ列 (4 Bytes)**: `BD E8 70 8F`
+
+#### `STENCIL_EPILOGUE_FLUSH_D2` (NOS 書き戻し + Callee-saved 復元 & リターン)
+- **Thumb-2 命令列**:
+  ```asm
+  str   r4, [r1, #0x00]    ; [Offset 0x00] RELOC_IMM8_OFFSET (NOS 書き戻し、TOSはR3に保持)
   pop.w {r4-r6, r8-r11, pc} ; [Offset 0x02] Callee-saved 復元 & リターン
   ```
 - **バイナリ列 (6 Bytes)**: `0C 60 BD E8 70 8F`
-
-#### `STENCIL_EPILOGUE_FLUSH_D2` (TOS & NOS 書き戻し + Callee-saved 復元 & リターン)
-- **Thumb-2 命令列**:
-  ```asm
-  str   r4, [r1, #0x00]    ; [Offset 0x00] RELOC_IMM8_OFFSET (TOS 書き戻し)
-  str   r5, [r1, #0x04]    ; [Offset 0x02] RELOC_IMM8_OFFSET (NOS 書き戻し)
-  pop.w {r4-r6, r8-r11, pc} ; [Offset 0x04] Callee-saved 復元 & リターン
-  ```
-- **バイナリ列 (8 Bytes)**: `0C 60 4D 60 BD E8 70 8F`
 
 #### `STENCIL_FALLBACK_FLUSH_D1` (TOS 書き戻し + Callee-saved 復元 $\to$ インタープリタ末尾ジャンプ)
 - **Thumb-2 命令列**:
@@ -163,14 +161,14 @@
 #### `STENCIL_LOCAL_GET_D0` (`0x20` Depth 0 $\to$ R4)
 - **Thumb-2 命令列**:
   ```asm
-  ldr  r4, [r3, #0x00]    ; [Offset 0x00] RELOC_IMM8_OFFSET (local_base R3 からロード)
+  ldr  r3, [r2, #0x00]    ; [Offset 0x00] RELOC_IMM8_OFFSET (local_base R2 からロード -> R3: tos)
   ```
 - **バイナリ列 (2 Bytes)**: `1C 68`
 
 #### `STENCIL_LOCAL_SET_D1` (`0x21` R4 $\to$ Local)
 - **Thumb-2 命令列**:
   ```asm
-  str  r4, [r3, #0x00]    ; [Offset 0x00] RELOC_IMM8_OFFSET (local_base R3 へストア)
+  str  r3, [r2, #0x00]    ; [Offset 0x00] RELOC_IMM8_OFFSET (local_base R2 へストア)
   ```
 - **バイナリ列 (2 Bytes)**: `1C 60`
 
@@ -181,21 +179,21 @@
   ```
 - **バイナリ列 (2 Bytes)**: `1C 60`
 
-#### `STENCIL_GLOBAL_GET_D0` (`0x23` Env globals_base 経由ロード)
+#### `STENCIL_GLOBAL_GET_D0` (`0x23` execution_context globals_base 経由ロード)
 - **Thumb-2 命令列**（`R12` は AAPCS Intra-call スクラッチで、この1ステンシル内でのみ globals_base ポインタを保持する）:
   ```asm
-  ldr.w r12, [r2, #0x08]  ; [Offset 0x00] env->globals_base ロード (vsoc_runtime +0x08)
-  ldr.w r4, [r12, #0x00]  ; [Offset 0x04] RELOC_IMM8_OFFSET (global[N] ロード)
+  ldr.w r12, [r1, #0x18]  ; [Offset 0x00] ctx->globals_base ロード (execution_context +0x18)
+  ldr.w r3, [r12, #0x00]  ; [Offset 0x04] RELOC_IMM8_OFFSET (global[N] ロード -> R3: tos)
   ```
-- **バイナリ列 (8 Bytes)**: `D2 F8 08 C0 DC F8 00 40`
+- **バイナリ列 (8 Bytes)**: `D1 F8 18 C0 DC F8 00 30`
 
-#### `STENCIL_GLOBAL_SET_D1` (`0x24` Env globals_base 経由ストア)
+#### `STENCIL_GLOBAL_SET_D1` (`0x24` execution_context globals_base 経由ストア)
 - **Thumb-2 命令列**:
   ```asm
-  ldr.w r12, [r2, #0x08]  ; [Offset 0x00] env->globals_base ロード (vsoc_runtime +0x08)
-  str.w r4, [r12, #0x00]  ; [Offset 0x04] RELOC_IMM8_OFFSET (global[N] ストア)
+  ldr.w r12, [r1, #0x18]  ; [Offset 0x00] ctx->globals_base ロード (execution_context +0x18)
+  str.w r3, [r12, #0x00]  ; [Offset 0x04] RELOC_IMM8_OFFSET (R3: tos -> global[N] ストア)
   ```
-- **バイナリ列 (8 Bytes)**: `D2 F8 08 C0 CC F8 00 40`
+- **バイナリ列 (8 Bytes)**: `D1 F8 18 C0 CC F8 00 30`
 
 ---
 
@@ -249,7 +247,7 @@
 ### 3.7 メモリアクセス系ステンシル (Linear Memory Load & Store with Boundary Protection)
 <!-- traceability: {MemoryBoundaryCheck} {FastAddressCheck} {JIT_RegisterMapping} -->
 
-すべてのロード/ストア命令は、`R9 = mem_size`（`vsoc_runtime.mem-size`。`{FastAddressCheck}` が要求するのはサイズ比較の単一命令であり、マスクではない — `requirement_list.md` 参照）に対する `CMP` + `BHS.W` の境界チェックを経て、`R8 = mem_base` ピン留めバリアントによりアクセスされる（`R3`/`R6` ではない——`R3` は `local_base`、`3.8` 参照）。`CMP addr, r9` の直後の `BHS.W <trap>` は、アドレスが `mem_size` 以上（符号なし）ならトレースのトラップテール（インタープリタへのフォールバック）へ即座に分岐する——実際のロード/ストアはこの分岐が不成立の場合にのみ実行される。境界チェックはロード/ストアの副作用（メモリアクセスそのもの）より必ず先に評価されるため、トラップ経路には巻き戻すべき副作用が存在しない。`mem_size` に2の冪の制約はなく、部分ページ（例: 8KB, 12KB, 16KB）・単一 64KB ページ・複数 64KB ページ（`N * 64KB`）のいずれも同一の比較一つで判定できる。
+すべてのロード/ストア命令は、`R9 = mem_size`（`execution_context.mem-size` [R1, #0x14] からロード。`{FastAddressCheck}` が要求するのはサイズ比較の単一命令であり、マスクではない — `requirement_list.md` 参照）に対する `CMP` + `BHS.W` の境界チェックを経て、`R8 = mem_base` ピン留めバリアントによりアクセスされる（`R2`/`R3` ではない——`R2` は `local_base`、`R3` は `tos`）。`CMP addr, r9` の直後の `BHS.W <trap>` は、アドレスが `mem_size` 以上（符号なし）ならトレースのトラップテール（インタープリタへのフォールバック）へ即座に分岐する——実際のロード/ストアはこの分岐が不成立の場合にのみ実行される。境界チェックはロード/ストアの副作用（メモリアクセスそのもの）より必ず先に評価されるため、トラップ経路には巻き戻すべき副作用が存在しない。`mem_size` に2の冪の制約はなく、部分ページ（例: 8KB, 12KB, 16KB）・単一 64KB ページ・複数 64KB ページ（`N * 64KB`）のいずれも同一の比較一つで判定できる。
 
 `BHS.W` の分岐先オフセットはコンパイル時には未確定（トレースのトラップテールは、通常の出口エピローグの後にレイアウトされるため、エピローグ全体が生成し終わるまでアドレスが決まらない）。JIT エンジン（`jit_copy_patch_concept.py` の `compile_trace()`）はプレースホルダのオフセット `0` で `BHS.W` を発行しつつ、その命令のバイト位置を記録しておき、トレース末尾にトラップテール（ダーティスピルのフラッシュ + `fallback_interp`）を生成し終えた後、記録しておいた全ての `BHS.W` を実アドレスへバックパッチする（2パス発行 + バックパッチ）。
 

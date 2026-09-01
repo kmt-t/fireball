@@ -49,7 +49,7 @@ graph LR
 | `{VDMA}` | 仮想DMAにより、ゲストリニアメモリと仮想・物理アドレス間の高速転送を実現する。 | 中 | テスト |
 | `{JIT_ReverseCompilationOrder}` | キューを逆順（LIFO）で処理し、コンパイル直後の即時チェイニング率を向上させる。 | 高 | レビュー |
 | `{DynamicMmap}` | 共有メモリIDを指定し、外部バッファをvMMIO空間に一時的にマッピングする。 | 高 | テスト |
-| `{EnvironmentPointer}` | 周辺コンポーネントへの参照を環境ポインタ (`vsoc_runtime*`) 経由で型安全に行う。 | 高 | レビュー |
+| `{EnvironmentPointer}` | 周辺コンポーネント・リニアメモリへの参照を `execution_context` 内の環境フィールド（`vsoc_runtime` 領域）経由で型安全に行う。 | 高 | レビュー |
 | `{ROMParsing}` | WASMモジュールをRAMに展開せず、ROM上のデータを直接解析・実行する (Zero Copy Loading)。 | 高 | テスト |
 | `{MemoryBoundaryCheck}` | メモリアクセス時の境界チェックを強制し、隔離性を保証する。 | 高 | テスト |
 | `{WasmPageAlignment}` | メモリ割り当てをWASMページ単位（64KB）で行い、アドレス変換を効率化する。 | 中 | レビュー |

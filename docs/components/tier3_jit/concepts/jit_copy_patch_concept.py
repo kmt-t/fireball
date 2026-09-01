@@ -485,16 +485,13 @@ class CopyPatchJITEngine:
         # 3. Emit Full Callee-saved Prologue
         emit_stencil(self.stencils["prologue_full"])
         # 3b. If the trace touches linear memory, pin R8=mem_base and R9=mem_size for the
-        # lifetime of the trace (vsoc_runtime: mem-base @+0x00, mem-size @+0x04 -- see
-        # docs/components/tier2_runtime/wit/vsoc_runtime.wit). Loaded once here rather than
-        # per-access since neither value can change mid-trace. R3 is deliberately NOT used
-        # here -- it's local_base (docs/specs/jit_stencil_catalog.md 3.8), and pinning
-        # mem_base/mem_size on R8/R9 instead means a trace can use linear memory and a
-        # non-foldable local_base at the same time without the two colliding.
+        # lifetime of the trace (execution_context: mem_base @+0x10, mem_size @+0x14 -- see
+        # docs/architecture/architecture_overview.md 4.1). Loaded once here rather than
+        # per-access since neither value can change mid-trace.
         has_memory_ops = any(op in _MEMORY_OP_ADDR_REG for op, _ in wasm_ops)
         if has_memory_ops:
-            emit("LDR.W r8, [r2, #0x00]", asm.ldr_w_imm12(Reg.R8, Reg.R2, 0x00))
-            emit("LDR.W r9, [r2, #0x04]", asm.ldr_w_imm12(Reg.R9, Reg.R2, 0x04))
+            emit("LDR.W r8, [r1, #0x10]", asm.ldr_w_imm12(Reg.R8, Reg.R1, 0x10))
+            emit("LDR.W r9, [r1, #0x14]", asm.ldr_w_imm12(Reg.R9, Reg.R1, 0x14))
 
         # Byte addresses of BHS.W trap branches emitted below, patched once the trace's
         # trap tail (see step 5b) is known.
@@ -934,8 +931,8 @@ def test_arithmetic_and_logic_traces():
     # ops include i32.load/i32.store, so the prologue also pins R8=mem_base/R9=mem_size,
     # and the trace grows a trap tail (FastAddressCheck fallback to the interpreter) after
     # the normal return path.
-    assert code[1] == "LDR.W r8, [r2, #0x00]"
-    assert code[2] == "LDR.W r9, [r2, #0x04]"
+    assert code[1] == "LDR.W r8, [r1, #0x10]"
+    assert code[2] == "LDR.W r9, [r1, #0x14]"
     assert "MOVW r4, #100" in code[3]
     assert "POP.W {r4-r6, r8-r11, pc}" in code
     assert code[-1] == "BX r12"

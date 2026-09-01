@@ -32,11 +32,11 @@
 | `{OwnerMismatchTrap}` | `runtime_vmmio.md` | `runtime_vmmio.md` | タスク間共有メモリ（FC=0xE）の所有権不一致時 `TRAP_OWNER_MISMATCH` 遮断 | Scenario 10 (`INT-93`) |
 | `{vMMIO_TrapAndEmulate}` | `requirement_list.md` | `runtime_vmmio.md` | 仮想デバイスアクセス時のトラップ・ホストフック代理ディスパッチ | Scenario 10 (`INT-91`) |
 | `{DynamicMmap}` | `requirement_list.md` | `runtime_vmmio.md` | 共有メモリID指定による外部バッファの動的 vMMIO マッピング | Scenario 10 |
-| `{ExecutionContext_Layout}` | `architecture_overview.md` | `runtime_interpreter.md` | `execution_context` 16バイト物理フィールド配置 | Scenario 1〜11 |
+| `{ExecutionContext_Layout}` | `architecture_overview.md` | `runtime_interpreter.md` | `execution_context` 28バイト物理フィールド配置（リニアメモリ情報・グローバル基底内包） | Scenario 1〜11 |
 | `{CallFrame_Layout}` | `architecture_overview.md` | `runtime_interpreter.md` | `call_frame` 20バイト統合スタックインライン物理配置 | Scenario 3, 8 |
 | `{ControlFrame_Layout}` | `architecture_overview.md` | `runtime_interpreter.md` | `control_frame` 16バイト統合スタックインライン物理配置 | Scenario 3 |
-| `{AAPCS_FastCall}` | `architecture_overview.md` | `runtime_interpreter.md` | CPS 4引数 AAPCS レジスタマッピング規約 (`R0`〜`R3`) | Scenario 1〜11 |
-| `{VsocRuntime_Layout}` | `architecture_overview.md` | `runtime_vsoc.md` | `vsoc_runtime` 12バイト物理実行環境配置 | Scenario 1〜11 |
+| `{AAPCS_FastCall}` | `architecture_overview.md` | `runtime_interpreter.md` | CPS 4引数 AAPCS レジスタマッピング規約 (`R0=ip, R1=stack_bot, R2=local_base, R3=tos`) | Scenario 1〜11 |
+| `{VsocRuntime_Layout}` | `architecture_overview.md` | `runtime_vsoc.md` | `execution_context` 内包 `vsoc_runtime` 12バイト物理実行環境配置 (`+0x10`〜`+0x1B`) | Scenario 1〜11 |
 | `{ADR_TraceBoundaryYield}` | `runtime_interpreter.md` | `runtime_interpreter.md` | インタープリタの命令ハンドラが vSoC へ制御を返す頻度をトレース境界（切れ目）に限定する設計判断——`co_yield` の判定・発行は常に vSoC 側が行い、インタープリタ自身はコルーチンではない | Scenario 6 (`INT-50`) |
 | `{Libgcc_Runtime_Helper}` | `runtime_interpreter.md` | `runtime_interpreter.md` | i64 / f32 / f64 の libgcc 依存演算をランタイムヘルパー関数経由で実行する設計 | Scenario 1, 8 |
 

@@ -68,9 +68,9 @@ graph TD
 // (ARM R4-R6, R8-R11 / RISC-V s1-s7) とは物理レジスタが重ならない別の割り当てである。
 typedef int64_t (*opcode_handler_t)(
     uint32_t ip,            // ARM R0 / RISC-V a0 / x86-64 RCX: WASM プログラムカウンタ (head_pc)
-    void*    stack_bot,     // ARM R1 / RISC-V a1 / x86-64 RDX: 実行コンテキスト (execution_context @ stack bottom)
-    void*    env,           // ARM R2 / RISC-V a2 / x86-64 R8:  ランタイム環境 (vsoc_runtime*, リニアメモリ基底)
-    void*    local_base     // ARM R3 / RISC-V a3 / x86-64 R9:  ローカル変数配列基底ポインタ
+    void*    stack_bot,     // ARM R1 / RISC-V a1 / x86-64 RDX: 実行コンテキスト (execution_context @ stack bottom, mem_base/size内包)
+    void*    local_base,    // ARM R2 / RISC-V a2 / x86-64 R8:  ローカル変数配列基底ポインタ
+    uint32_t tos            // ARM R3 / RISC-V a3 / x86-64 R9:  スタックトップ値 (Top of Stack)
 );
 ```
 
@@ -78,8 +78,8 @@ typedef int64_t (*opcode_handler_t)(
 | :--- | :--- | :--- | :--- |
 | テンプレート辞書 | WASM命令に対応するJITテンプレートの検索索引 | アクセス辞書 | `jit_template_map` |
 | 命令テンプレート | WASM命令に対応するネイティブバイナリの雛形 | バイナリビュー | ROM参照（[JIT ステンシルカタログ](../../specs/jit_stencil_catalog.md) 準拠。Thumb-2 のみを収録し、RISC-V の物理ステンシルは別カタログとして今後定義する） |
-| レジスタ規約（実機 ARM Thumb-2 / RISC-V、`jit_stencil_catalog.md` §正本はARMのみ） | JIT トレースとインタープリタ間で共有される物理レジスタ規約。トレース境界を跨いで呼び出される `opcode_handler`/`exec_trace` の CPS 4引数とは異なる物理レジスタを assignable pool に使うため、両者は競合しない。 | 規約定義 | **ARM**: `R0-R3: CPS (ip, stack_bot, env, local_base)`, `R4-R6, R8-R11: assignable pool (R4=TOS, R5=NOS, R6=NNOS, R8=mem_base, R9=mem_size, R10=context_ptr, R11=sp_offset)`, `R7: FP (不可侵)`。**RISC-V**（標準 ABI 呼称、callee-saved の `s` レジスタを assignable pool に充てる点は ARM の Callee-saved `R4-R6,R8-R11` 方針と同じ）: `a0-a3 (x10-x13): CPS (ip, stack_bot, env, local_base)`, `s1-s7 (x9, x18-x23): assignable pool (s1=TOS, s2=NOS, s3=NNOS, s4=mem_base, s5=mem_size, s6=context_ptr, s7=sp_offset)`, `s0/fp (x8): FP (不可侵、RISC-V ABI 標準のフレームポインタ用途とそのまま一致)`。x86-64 ホストシミュレータ上の `__fastcall` 呼び出し規約（`RCX,RDX,R8,R9` が ARM `R0-R3` / RISC-V `a0-a3` に対応）は CPS 引数の受け渡しにのみ関わり、この assignable pool（トレース本体内部の一時レジスタ）とは無関係——両者を同一の "R8"/"R9" という記号で混同しないこと。 |
-| 位置独立性 (PIC) | 任意アドレス・キャッシュバンクで再コンパイル不要で動作 | 設計制約 | 絶対アドレス埋め込み禁止。`local_base` 相対、`env` 相対、`rel32` 相対分岐のみ `{PositionIndependentCode}` |
+| レジスタ規約（実機 ARM Thumb-2 / RISC-V、`jit_stencil_catalog.md` §正本はARMのみ） | JIT トレースとインタープリタ間で共有される物理レジスタ規約。トレース境界を跨いで呼び出される `opcode_handler`/`exec_trace` の CPS 4引数とは異なる物理レジスタを assignable pool に使うため、両者は競合しない。 | 規約定義 | **ARM**: `R0-R3: CPS (ip, stack_bot, local_base, tos)`, `R4-R6, R8-R11: assignable pool (R4=NOS, R5=NNOS, R6=Assignable 0, R8=mem_base, R9=mem_size, R10=safepoint, R11=Assignable 1)`, `R7: FP (不可侵)`。**RISC-V**（標準 ABI 呼称、callee-saved の `s` レジスタを assignable pool に充てる点は ARM の Callee-saved `R4-R6,R8-R11` 方針と同じ）: `a0-a3 (x10-x13): CPS (ip, stack_bot, local_base, tos)`, `s1-s7 (x9, x18-x23): assignable pool (s1=NOS, s2=NNOS, s3=Assignable 0, s4=mem_base, s5=mem_size, s6=safepoint, s7=Assignable 1)`, `s0/fp (x8): FP (不可侵、RISC-V ABI 標準のフレームポインタ用途とそのまま一致)`。x86-64 ホストシミュレータ上の `__fastcall` 呼び出し規約（`RCX,RDX,R8,R9` が ARM `R0-R3` / RISC-V `a0-a3` に対応）は CPS 引数の受け渡しにのみ関わり、この assignable pool（トレース本体内部の一時レジスタ）とは無関係——両者を同一の "R8"/"R9" という記号で混同しないこと。 |
+| 位置独立性 (PIC) | 任意アドレス・キャッシュバンクで再コンパイル不要で動作 | 設計制約 | 絶対アドレス埋め込み禁止。`local_base` 相対、`stack_bot` 相対、`rel32` 相対分岐のみ `{PositionIndependentCode}` |
 
 #### トレース境界不変条件とスタックフレーム整合性 (Trace Boundary Invariants)
 <!-- traceability: {LowLatencyJIT} {PositionIndependentCode} {JIT_RuntimeAPI_Fallback} -->
@@ -89,7 +89,7 @@ JIT トレースとインタープリタが同一の UnifiedStack 上でシー�
    - JIT コンパイル対象とする BasicBlock は、**命令走査中の累積スタック深さが 0 未満（`stack_depth < 0`）に落ちない自己完結ブロックのみ**とする。
    - 先頭で `local.set` や二項演算が先行し、呼び出し元のオペランドスタック上の値を前提とするブロックは JIT 化せず、インタープリタがスタック整合性を保持して安全に実行する。
 2. **トレース境界でのメモリ同期不変条件 (Memory Synchronization at Trace Boundary)**:
-   - トレース境界（トレース終了時、分岐時、ハンドラ呼び出し時、Safepoint 到達時）では、レジスタ上のキャッシュされた値（TOS/NOS `R4/R5`）および更新されたローカル変数を確実にメモリ（`stack_bot` / `local_base` 配列）へスピル（書き戻し）し、未確定のレジスタ状態を次のブロックやインタープリタへ持ち越さない。
+   - トレース境界（トレース終了時、分岐時、ハンドラ呼び出し時、Safepoint 到達時）では、レジスタ上のキャッシュされた値のうちスタックトップ `R3: tos` は CPS 引数としてそのまま引き渡され、スタック次段キャッシュ（NOS `R4`）および更新されたローカル変数を確実にメモリ（`stack_bot` / `local_base` 配列）へスピル（書き戻し）し、未確定のレジスタ状態を次のブロックやインタープリタへ持ち越さない。
 3. **制御フロー・コール境界のインタープリタ委譲不変条件 (Control & Call Delegation Invariant)**:
    - `BR`, `BR_IF`, `BR_TABLE`, `IF`, `CALL`, `CALL_INDIRECT`, `RETURN` 等の制御命令は JIT トレース内に含めず、その直前で BasicBlock を終端する。スタック巻き戻し（`_do_branch`）やコールフレーム（`call_frame`）生成はインタープリタ（または専用チェイニングハンドラ）に委譲する。
 

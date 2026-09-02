@@ -19,7 +19,10 @@ The design of Fireball is built on three core pillars:
 
 ## Development Environment and Build
 
-Fireball uses standard CMake and Ninja build systems. C23 and C++23 code (leveraging C++23 coroutines, concepts, `constexpr`, and `[[clang::musttail]]`) is compiled with Clang 17+, with primary targets for Cortex-M33 (ARMv8-M Mainline with TrustZone and MPU), RISC-V/32, and host development environments (x86_64 / Linux).
+Fireball uses standard CMake and Ninja build systems. C23 and C++23 code (leveraging C++23 coroutines, concepts, `constexpr`, and `[[clang::musttail]]`) is compiled with **Clang 17+**, with primary targets for Cortex-M33 (ARMv8-M Mainline with TrustZone and MPU), RISC-V/32, and host development environments (x86_64 / Linux).
+
+> [!IMPORTANT]
+> **Clang is strictly required**. Fireball's interpreter dispatch and execution engine rely on `[[clang::musttail]]` for zero-stack overhead direct tail calls. GCC and MSVC are not supported.
 
 ## Setup
 
@@ -27,7 +30,7 @@ You need Clang, CMake, Ninja, and Python (with `uv` recommended) to build and ve
 
 ### 1. Prerequisites
 - **Toolchain & Build**:
-  - Clang (17+)
+  - Clang (17+ mandatory: `clang` / `clang++`)
   - CMake (3.25+)
   - Ninja
 - **Python Runtime & Package Management**:
@@ -71,15 +74,15 @@ powershell -ExecutionPolicy Bypass -File tools/run_all_tests.ps1 -level 3   # fu
 ```bash
 mkdir cmake-build
 cd cmake-build
-cmake -G Ninja ..
+cmake -G Ninja -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ ..
 ninja
 ```
 
-### 2. Embedded Target (ARM Cortex-M33 Cross-Compilation)
+### 2. Embedded Target (ARM Cortex-M33 Cross-Compilation with Clang)
 ```bash
 mkdir cmake-build-m33
 cd cmake-build-m33
-cmake -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/arm-none-eabi-gcc.cmake -DTARGET_CPU=cortex-m33 ..
+cmake -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/arm-clang.cmake -DTARGET_CPU=cortex-m33 ..
 ninja
 ```
 

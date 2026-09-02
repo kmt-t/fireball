@@ -60,16 +60,14 @@ from system import System
 from system_containers import FlatMapStorage, FlatMapView
 from wasi import Wasi03pEngine, WasiHostContext, WasiIpcCmd
 
-_EMPTY_KEYS: tuple[int, ...] = ()
-_EMPTY_VALS: tuple[object, ...] = ()
-_EMPTY_PARAMS = FlatMapView(_EMPTY_KEYS, _EMPTY_VALS)
+_EMPTY_PARAMS = FlatMapView(())
 
 
 def _params(*pairs: tuple[int, object]) -> FlatMapView:
     """Builds a params FlatMapView from packed (key, value) pairs, matching
     platform_hal.md §5.1's control(id, cmd, params: ipc-message)."""
     sorted_pairs = sorted(pairs, key=lambda kv: kv[0])
-    storage = FlatMapStorage([k for k, _ in sorted_pairs], [v for _, v in sorted_pairs])
+    storage = FlatMapStorage(sorted_pairs)
     return storage.view()
 
 

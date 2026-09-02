@@ -176,11 +176,8 @@ class Wasi03pEngine:
             ("fireball://service/logger/0", logger_iface),
         ]
         entries.sort(key=lambda e: e[0])
-        self._interface_keys: tuple[str, ...] = tuple(uri for uri, _ in entries)
-        self._interface_values: tuple[WasiInterfaceVTable, ...] = tuple(
-            iface for _, iface in entries
-        )
-        self._interfaces = FlatMapView(self._interface_keys, self._interface_values)
+        self._interface_entries = tuple(entries)
+        self._interfaces = FlatMapView(self._interface_entries)
 
     def get_interface(self, uri: str) -> WasiInterfaceVTable | None:
         """Resolves an interface descriptor by its Hierarchical IPC communication URI."""

@@ -579,7 +579,7 @@ def test_log_04_coos_and_ipc_diagnostic_logging():
             sysv.scheduler.notify_interrupt(irq_idx)
 
         # 3. IPC Unknown URI -> 0x0202
-        msg = IPCMessage(FlatMapStorage([1], [10]))
+        msg = IPCMessage(FlatMapStorage([(1, 10)]))
 
         def bad_uri_task():
             yield from sysv.ipc.send(Role.RUNTIME, "fireball://unknown/service", msg)
@@ -588,7 +588,7 @@ def test_log_04_coos_and_ipc_diagnostic_logging():
         sysv.scheduler.run_until_idle()
 
         # 4. IPC RBAC Denied -> 0x0201
-        msg2 = IPCMessage(FlatMapStorage([1], [20]))
+        msg2 = IPCMessage(FlatMapStorage([(1, 20)]))
 
         def rbac_denied_task():
             # RUNTIME sending to DEBUGGER is DENIED
@@ -599,7 +599,7 @@ def test_log_04_coos_and_ipc_diagnostic_logging():
 
         # 5. IPC Message Too Large -> 0x0203
         too_large_msg = IPCMessage(
-            FlatMapStorage(list(range(1, 10)), list(range(1, 10)))  # 9 pairs > 8
+            FlatMapStorage([(i, i) for i in range(1, 10)])  # 9 pairs > 8
         )
 
         def too_large_task():
@@ -1096,13 +1096,13 @@ def test_ipc_01_uri_lookup_and_permission_matrix():
     # scheduler.Channel's own tests (test_coos_01 etc.) to observe the
     # CSP block directly instead of driving it to a rendezvous that will
     # never come.
-    msg1 = IPCMessage(FlatMapStorage([_KEY_CMD], [_CMD_PIN_HIGH]))
+    msg1 = IPCMessage(FlatMapStorage([(_KEY_CMD, _CMD_PIN_HIGH)]))
     gen = router.send(Role.RUNTIME, "fireball://hal/gpio/0", msg1)
     assert next(gen) == (ChannelAction.BLOCK, None)
     assert msg1.ownership == OwnershipState.IN_FLIGHT
 
     # PLATFORM_HAL has no outgoing edges at all (role matrix row is all-DENY).
-    msg2 = IPCMessage(FlatMapStorage([_KEY_CMD], [_CMD_PIN_HIGH]))
+    msg2 = IPCMessage(FlatMapStorage([(_KEY_CMD, _CMD_PIN_HIGH)]))
     status_bad, _ = _run_immediate(router.send(Role.PLATFORM_HAL, "fireball://hal/gpio/0", msg2))
     assert status_bad == IpcStatus.ERR_PERMISSION_DENIED
     assert msg2.ownership == OwnershipState.SENDER_OWNS
@@ -1124,7 +1124,7 @@ def test_ipc_02_e2e_shared_block_transfer():
         # IPC is inter-*task* communication: both the RUNTIME sender and
         # the PLATFORM_HAL receiver are genuine scheduler tasks, each
         # performing its own send()/recv() as its own coroutine.
-        msg = IPCMessage(FlatMapStorage([_KEY_SHM_ID], [shm_id]))
+        msg = IPCMessage(FlatMapStorage([(_KEY_SHM_ID, shm_id)]))
         sent: list[IpcStatus] = []
 
         def client_app_task():
@@ -1159,7 +1159,7 @@ def test_ipc_03_send_failure_restores_owner():
     try:
         sb = sysv.memory_manager.allocate_shared(caller_task_id=1, size=256).unwrap()
         shm_id = sb.release()
-        msg = IPCMessage(FlatMapStorage([_KEY_SHM_ID], [shm_id]))
+        msg = IPCMessage(FlatMapStorage([(_KEY_SHM_ID, shm_id)]))
         # PLATFORM_HAL has no outgoing edges: rejected at Stage 2 before ever
         # touching a channel, so this never actually blocks.
         status, _ = _run_immediate(sysv.ipc.send(Role.PLATFORM_HAL, "fireball://hal/gpio/0", msg))
@@ -1191,7 +1191,7 @@ def test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group():
 
     def debugger_sender():
         status, _ = yield from router.send(
-            Role.DEBUGGER, "fireball://core/coos/0", IPCMessage(FlatMapStorage([1], [99]))
+            Role.DEBUGGER, "fireball://core/coos/0", IPCMessage(FlatMapStorage([(1, 99)]))
         )
         assert status == IpcStatus.COMPLETED
 
@@ -1228,7 +1228,7 @@ def test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group():
 
     def runtime_sender():
         status, _ = yield from router.send(
-            Role.RUNTIME, "fireball://core/coos/0", IPCMessage(FlatMapStorage([1], [7]))
+            Role.RUNTIME, "fireball://core/coos/0", IPCMessage(FlatMapStorage([(1, 7)]))
         )
         assert status == IpcStatus.COMPLETED
 
@@ -1275,7 +1275,7 @@ def test_ipc_06_router_create_channel_authorization():
     assert ch_denied is None, "PLATFORM_HAL -> DEBUGGER must be denied by RBAC"
 
     # Communication over the authorized channel
-    msg = IPCMessage(FlatMapStorage([1], [42]))
+    msg = IPCMessage(FlatMapStorage([(1, 42)]))
     sched.current_task = sched.get_task(runtime_task_id)
     action, _ = ch_hal.send(msg)
     assert action == ChannelAction.BLOCK
@@ -1428,7 +1428,7 @@ def test_hal_task_ipc_communication():
         nwritten = engine.send_ipc_command(
             "fireball://device/uart/0",
             WasiIpcCmd.STREAM_WRITE_SHM,
-            FlatMapView([ARG_LENGTH, ARG_OFFSET], [128, 0]),
+            FlatMapView([(ARG_LENGTH, 128), (ARG_OFFSET, 0)]),
         )
         assert nwritten == 128
         assert sysv.hal_task.processed_count == 1
@@ -1838,9 +1838,8 @@ def test_wasm_50_to_56_integer_arithmetic_and_bitwise():
 
 def test_cont_01_flat_map_view_find_binary_search():
     """CONT-01: flat_map_view.find performs O(log n) binary search returning value or None."""
-    keys = [10, 20, 30, 40, 50, 60]
-    values = [100, 200, 300, 400, 500, 600]
-    view = FlatMapView(keys, values)
+    entries = [(10, 100), (20, 200), (30, 300), (40, 400), (50, 500), (60, 600)]
+    view = FlatMapView(entries)
     assert view.find(30) == 300
     assert view.find(10) == 100
     assert view.find(60) == 600
@@ -1853,9 +1852,8 @@ def test_cont_01_flat_map_view_find_binary_search():
 
 def test_cont_02_narrow_monotonic_shrinkage():
     """CONT-02: narrow(lo, hi) produces monotonic sub-window subset."""
-    keys = [10, 20, 30, 40, 50, 60, 70, 80]
-    values = [1, 2, 3, 4, 5, 6, 7, 8]
-    v0 = FlatMapView(keys, values)
+    entries = [(10, 1), (20, 2), (30, 3), (40, 4), (50, 5), (60, 6), (70, 7), (80, 8)]
+    v0 = FlatMapView(entries)
     v1 = v0.narrow(20, 60)
     assert v1.size() == 5  # 20, 30, 40, 50, 60
     assert v1.find(20) == 2
@@ -1871,9 +1869,8 @@ def test_cont_02_narrow_monotonic_shrinkage():
 
 def test_cont_03_slice_monotonic_shrinkage_and_bounds():
     """CONT-03: slice must only ever shrink within parent view bounds."""
-    keys = [10, 20, 30, 40, 50]
-    values = [1, 2, 3, 4, 5]
-    v0 = FlatMapView(keys, values)
+    entries = [(10, 1), (20, 2), (30, 3), (40, 4), (50, 5)]
+    v0 = FlatMapView(entries)
     v1 = v0.slice(1, 4)
     assert v1.size() == 3
     assert v1.find(20) == 2
@@ -1991,7 +1988,8 @@ def test_cont_10_container_type_separation():
     """CONT-10: flat_map_view and flat_set_view have strictly separated type responsibilities."""
     keys = [1, 2, 3]
     vals = [10, 20, 30]
-    m = FlatMapView(keys, vals)
+    entries = list(zip(keys, vals, strict=False))
+    m = FlatMapView(entries)
     s = FlatSetView(keys)
     assert type(m) is FlatMapView
     assert type(s) is FlatSetView
@@ -2036,8 +2034,8 @@ def test_cont_12_flat_map_storage_standard_sort():
     assert v.find(50) == "E"
     assert v.find(99) is None
 
-    # Automatic sorting via sort=True with backwards-compatible (keys, values)
-    s_auto = FlatMapStorage([3, 1, 2], ["three", "one", "two"], sort=True)
+    # Automatic sorting via sort=True with AoS (key, value) pairs
+    s_auto = FlatMapStorage([(3, "three"), (1, "one"), (2, "two")], sort=True)
     assert s_auto.is_sorted()
     assert s_auto.keys == [1, 2, 3]
     assert s_auto.values == ["one", "two", "three"]

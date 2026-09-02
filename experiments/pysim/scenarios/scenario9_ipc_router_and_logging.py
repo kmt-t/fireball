@@ -67,13 +67,13 @@ def test_scenario_ipc_router_and_logging():
         # 1. Full CSP rendezvous with coos_receiver (spawned alongside this
         #    task below): whichever of the two runs first genuinely blocks,
         #    and the other's matching call completes the handoff.
-        s1 = FlatMapStorage([_KEY_CMD, _KEY_TASK_ID], [_CMD_START_TASK, 10])
+        s1 = FlatMapStorage([(_KEY_CMD, _CMD_START_TASK), (_KEY_TASK_ID, 10)])
         msg1 = IPCMessage(s1)
         status, _ = yield from router.send(Role.RUNTIME, "fireball://core/coos/0", msg1)
         sent.append(("1_rendezvous", status, msg1))
 
         # 2. RBAC Permission Denied: no RUNTIME -> DEBUGGER edge exists.
-        s2 = FlatMapStorage([_KEY_CMD], [_CMD_KILL])
+        s2 = FlatMapStorage([(_KEY_CMD, _CMD_KILL)])
         msg2 = IPCMessage(s2)
         status, _ = yield from router.send(Role.RUNTIME, "fireball://dbg/manager/0", msg2)
         sent.append(("2_permission_denied", status, msg2))
@@ -84,7 +84,7 @@ def test_scenario_ipc_router_and_logging():
         sent.append(("3_not_found", status, msg3))
 
         # 4. Message exceeds the static 8 kv_pair buffer (ipc_router.md §3.3/§5.1).
-        s_oversized = FlatMapStorage(list(range(9)), list(range(9)))
+        s_oversized = FlatMapStorage([(i, i) for i in range(9)])
         oversized = IPCMessage(s_oversized)
         status, _ = yield from router.send(Role.RUNTIME, "fireball://core/coos/0", oversized)
         sent.append(("4_too_large", status, oversized))

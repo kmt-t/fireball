@@ -139,16 +139,11 @@ class FlatMapView(Generic[KeyT, ValT]):
 
     def __init__(
         self,
-        entries: Sequence[tuple[KeyT, ValT]] | Sequence[KeyT],
-        values: Sequence[ValT] | None = None,
+        entries: Sequence[tuple[KeyT, ValT]],
         first: int = 0,
         last: int | None = None,
     ):
-        if values is not None:
-            # Backwards-compatible (keys, values) input: zip into AoS entries
-            self._entries: Sequence[tuple[KeyT, ValT]] = list(zip(entries, values, strict=True))  # type: ignore[arg-type]
-        else:
-            self._entries = entries  # type: ignore[assignment]
+        self._entries = entries
         self.first = first
         self.last = len(self._entries) if last is None else last
 
@@ -185,10 +180,11 @@ class FlatMapView(Generic[KeyT, ValT]):
     def slice(self, first: int, last: int) -> FlatMapView[KeyT, ValT]:
         if not (self.first <= first <= last <= self.last):
             raise ValueError("a view may only ever shrink")
-        return FlatMapView(self._entries, None, first, last)
+        return FlatMapView(self._entries, first, last)
 
     def narrow(self, lo: KeyT, hi: KeyT) -> FlatMapView[KeyT, ValT]:
-        return FlatMapView(self._entries, None, *self._bounds(lo, hi))
+        lo_idx, hi_idx = self._bounds(lo, hi)
+        return FlatMapView(self._entries, lo_idx, hi_idx)
 
     def find(self, key: KeyT) -> ValT | None:
         """Binary search inside the current window only (O(log N))."""
@@ -224,16 +220,11 @@ class FlatMapStorage(Generic[KeyT, ValT]):
 
     def __init__(
         self,
-        entries: Sequence[tuple[KeyT, ValT]] | Sequence[KeyT] = (),
-        values: Sequence[ValT] | None = None,
+        entries: Sequence[tuple[KeyT, ValT]] = (),
         sort: bool = False,
         capacity: int | None = None,
     ):
-        if values is not None:
-            # Backwards-compatible (keys, values) input
-            self._entries: list[tuple[KeyT, ValT]] = list(zip(entries, values, strict=True))  # type: ignore[arg-type]
-        else:
-            self._entries = list(entries)  # type: ignore[arg-type]
+        self._entries: list[tuple[KeyT, ValT]] = list(entries)
         self._capacity = capacity
         if self._capacity is not None and len(self._entries) > self._capacity:
             raise OverflowError(
@@ -367,7 +358,7 @@ class RadixBinaryTreeView(Generic[ValT]):
         radix_shift: int,
         key_transform: Callable[[int], int] | None = None,
     ):
-        self.map_view = FlatMapView(keys, values)
+        self.map_view = FlatMapView(list(zip(keys, values, strict=False)))
         self.radix_table = radix_table  # pure scalar offsets array [0, 3, 6, ...]
         self.radix_shift = radix_shift
         self.key_transform = key_transform
@@ -441,28 +432,27 @@ def lookup_jit_entry_radix(
 
 
 class StaticFlatMap(Generic[KeyT, ValT]):
-    """Fixed-capacity sorted map stored in parallel arrays without dynamic reallocation."""
+    """Fixed-capacity sorted map stored in an AoS entry array without dynamic reallocation."""
 
-    __slots__ = ("_keys", "_values", "capacity")
+    __slots__ = ("_entries", "capacity")
 
     def __init__(self, capacity: int = 32):
         self.capacity = capacity
-        self._keys: list[KeyT] = []
-        self._values: list[ValT] = []
+        self._entries: list[tuple[KeyT, ValT]] = []
 
     def size(self) -> int:
-        return len(self._keys)
+        return len(self._entries)
 
     def __len__(self) -> int:
-        return len(self._keys)
+        return len(self._entries)
 
     def view(self) -> FlatMapView[KeyT, ValT]:
-        return FlatMapView(self._keys, self._values)
+        return FlatMapView(self._entries)
 
     def find(self, key: KeyT) -> ValT | None:
-        idx = bisect.bisect_left(self._keys, key)
-        if idx < len(self._keys) and self._keys[idx] == key:
-            return self._values[idx]
+        idx = bisect.bisect_left(self._entries, key, key=lambda e: e[0])
+        if idx < len(self._entries) and self._entries[idx][0] == key:
+            return self._entries[idx][1]
         return None
 
     def __contains__(self, key: KeyT) -> bool:
@@ -475,30 +465,27 @@ class StaticFlatMap(Generic[KeyT, ValT]):
         return val
 
     def insert(self, key: KeyT, value: ValT) -> bool:
-        idx = bisect.bisect_left(self._keys, key)
-        if idx < len(self._keys) and self._keys[idx] == key:
-            self._values[idx] = value
+        idx = bisect.bisect_left(self._entries, key, key=lambda e: e[0])
+        if idx < len(self._entries) and self._entries[idx][0] == key:
+            self._entries[idx] = (key, value)
             return True
-        if len(self._keys) >= self.capacity:
+        if len(self._entries) >= self.capacity:
             return False
-        self._keys.insert(idx, key)
-        self._values.insert(idx, value)
+        self._entries.insert(idx, (key, value))
         return True
 
     def remove(self, key: KeyT) -> ValT | None:
-        idx = bisect.bisect_left(self._keys, key)
-        if idx < len(self._keys) and self._keys[idx] == key:
-            self._keys.pop(idx)
-            return self._values.pop(idx)
+        idx = bisect.bisect_left(self._entries, key, key=lambda e: e[0])
+        if idx < len(self._entries) and self._entries[idx][0] == key:
+            return self._entries.pop(idx)[1]
         return None
 
     def clear(self) -> None:
-        self._keys.clear()
-        self._values.clear()
+        self._entries.clear()
 
     def items(self) -> Iterator[tuple[KeyT, ValT]]:
         """Key-sorted (key, value) pairs -- always consistent with `view()`'s ordering."""
-        return zip(self._keys, self._values, strict=True)
+        return iter(self._entries)
 
 
 # ---------------------------------------------------------------------------

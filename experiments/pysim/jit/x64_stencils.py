@@ -32,17 +32,15 @@ from system_containers import FlatMapView
 
 IS_WINDOWS = sys.platform == "win32"
 
-_EMPTY_RELOC_KEYS: tuple[str, ...] = ()
-_EMPTY_RELOC_VALS: tuple[int, ...] = ()
-_EMPTY_RELOCS: FlatMapView[str, int] = FlatMapView(_EMPTY_RELOC_KEYS, _EMPTY_RELOC_VALS)
+_EMPTY_RELOC_ENTRIES: tuple[tuple[str, int], ...] = ()
+_EMPTY_RELOCS: FlatMapView[str, int] = FlatMapView(_EMPTY_RELOC_ENTRIES)
 
 
 @dataclass(frozen=True)
 class Stencil:
     name: str
     code: bytes
-    reloc_keys: tuple[str, ...] = field(default_factory=lambda: _EMPTY_RELOC_KEYS)
-    reloc_vals: tuple[int, ...] = field(default_factory=lambda: _EMPTY_RELOC_VALS)
+    reloc_entries: tuple[tuple[str, int], ...] = field(default_factory=lambda: _EMPTY_RELOC_ENTRIES)
     # name -> byte offset within `code` of a 4-byte little-endian relocation
     # slot: a sorted flat_map_view over a small, fixed reloc-name vocabulary
     # ("disp", "imm", "rel32", "max_addr", "trap", "addr"), never a dict.
@@ -94,12 +92,9 @@ def _materialize_auto(name: str, gen: Generator[int, None, None] | Iterable[int]
         entries.append((reloc_name, idx))
         code[idx : idx + len(sentinel)] = bytes(len(sentinel))
     entries.sort(key=lambda e: e[0])
-    reloc_keys = tuple(k for k, _ in entries)
-    reloc_vals = tuple(v for _, v in entries)
-    relocs = FlatMapView(reloc_keys, reloc_vals)
-    return Stencil(
-        name=name, code=bytes(code), reloc_keys=reloc_keys, reloc_vals=reloc_vals, relocs=relocs
-    )
+    reloc_entries = tuple(entries)
+    relocs = FlatMapView(reloc_entries)
+    return Stencil(name=name, code=bytes(code), reloc_entries=reloc_entries, relocs=relocs)
 
 
 def _cut(
@@ -125,12 +120,9 @@ def _cut(
         entries.append((reloc_name, idx))
         code[idx : idx + len(sentinel)] = bytes(len(sentinel))
     entries.sort(key=lambda e: e[0])
-    reloc_keys = tuple(k for k, _ in entries)
-    reloc_vals = tuple(v for _, v in entries)
-    relocs = FlatMapView(reloc_keys, reloc_vals)
-    return Stencil(
-        name=name, code=bytes(code), reloc_keys=reloc_keys, reloc_vals=reloc_vals, relocs=relocs
-    )
+    reloc_entries = tuple(entries)
+    relocs = FlatMapView(reloc_entries)
+    return Stencil(name=name, code=bytes(code), reloc_entries=reloc_entries, relocs=relocs)
 
 
 def _materialize(
@@ -140,19 +132,16 @@ def _materialize(
 ) -> Stencil:
     """
     Drains a stencil generator exactly once ("compile time") into a
-        frozen Stencil. Called only at module load, never per-JIT-compilation.
-        Relocations are passed as keyword arguments (disp=3, imm=1, ...) --
-        Python's own calling convention, not a dict this code chose as
-        storage -- and converted immediately into a sorted flat_map_view.
+    frozen Stencil. Called only at module load, never per-JIT-compilation.
+    Relocations are passed as keyword arguments (disp=3, imm=1, ...) --
+    Python's own calling convention, not a dict this code chose as
+    storage -- and converted immediately into a sorted flat_map_view.
     """
 
     entries = sorted(relocs.items(), key=lambda e: e[0])
-    reloc_keys = tuple(k for k, _ in entries)
-    reloc_vals = tuple(v for _, v in entries)
-    reloc_view = FlatMapView(reloc_keys, reloc_vals)
-    return Stencil(
-        name=name, code=bytes(gen), reloc_keys=reloc_keys, reloc_vals=reloc_vals, relocs=reloc_view
-    )
+    reloc_entries = tuple(entries)
+    reloc_view = FlatMapView(reloc_entries)
+    return Stencil(name=name, code=bytes(gen), reloc_entries=reloc_entries, relocs=reloc_view)
 
 
 # ---------------------------------------------------------------------------

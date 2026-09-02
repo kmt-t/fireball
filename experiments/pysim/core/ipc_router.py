@@ -27,7 +27,7 @@ from logger import (
 from scheduler import Channel, ChannelAction, Scheduler
 from system_containers import FlatMapStorage, FlatMapView
 
-_EMPTY_IPC_STORAGE: FlatMapStorage = FlatMapStorage((), ())
+_EMPTY_IPC_STORAGE: FlatMapStorage = FlatMapStorage(())
 
 # ipc_router.md {3.3}: a message is a static, fixed-size buffer of at most 8
 # kv_pair entries.
@@ -230,9 +230,8 @@ _SERVICE_TABLE: list[tuple[str, "ServiceDescriptor"]] = sorted(
     key=lambda entry: entry[0],
 )
 
-# Static ROM arrays owning the service table entries ({META_BinarySearch})
-_SERVICE_KEYS: tuple[str, ...] = tuple(uri for uri, _ in _SERVICE_TABLE)
-_SERVICE_DESCS: tuple["ServiceDescriptor", ...] = tuple(desc for _, desc in _SERVICE_TABLE)
+# Static ROM array owning the service table entries as (URI, ServiceDescriptor) pairs (AoS)
+_SERVICE_ENTRIES: tuple[tuple[str, "ServiceDescriptor"], ...] = tuple(_SERVICE_TABLE)
 
 # ipc_router.md §4.1.1's FB_CONF_ROUTER_ROLE_MATRIX (4x4 constexpr array,
 # rows = sender, columns = target); every DENY cell is listed explicitly, per
@@ -271,8 +270,8 @@ class IPCRouter:
     def __init__(self, scheduler: Scheduler, logger: Any = None):
         self.scheduler = scheduler
         self.logger = logger
-        # Non-owning view borrowing ROM-resident storage arrays (_SERVICE_KEYS, _SERVICE_DESCS)
-        self.registry = FlatMapView(_SERVICE_KEYS, _SERVICE_DESCS)
+        # Non-owning view borrowing ROM-resident AoS storage array (_SERVICE_ENTRIES)
+        self.registry = FlatMapView(_SERVICE_ENTRIES)
 
         # Pre-allocate one dedicated CSP rendezvous channel per allowed edge in the RBAC matrix
         self._edge_channels: tuple[tuple[Channel | None, ...], ...] = tuple(
@@ -286,8 +285,8 @@ class IPCRouter:
 
     def get_service_descriptor(self, service_handle: int) -> ServiceDescriptor | None:
         """O(1) direct ROM array lookup of service descriptor by handle."""
-        if 0 <= service_handle < len(_SERVICE_DESCS):
-            return _SERVICE_DESCS[service_handle]
+        if 0 <= service_handle < len(_SERVICE_ENTRIES):
+            return _SERVICE_ENTRIES[service_handle][1]
         return None
 
     def find_service(self, uri: str) -> ServiceDescriptor | None:

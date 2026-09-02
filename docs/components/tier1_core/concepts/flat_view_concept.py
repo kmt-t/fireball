@@ -88,11 +88,8 @@ class FlatMapView:
 
     __slots__ = ("entries", "first", "last")
 
-    def __init__(self, entries, values=None, first=0, last=None):
-        if values is not None:
-            self.entries = list(zip(entries, values, strict=False))
-        else:
-            self.entries = entries
+    def __init__(self, entries, first=0, last=None):
+        self.entries = entries
         self.first = first
         self.last = len(self.entries) if last is None else last
 
@@ -122,10 +119,11 @@ class FlatMapView:
 
     def slice(self, first, last):
         assert self.first <= first <= last <= self.last, "a view may only ever shrink"
-        return FlatMapView(self.entries, None, first, last)
+        return FlatMapView(self.entries, first, last)
 
     def narrow(self, lo, hi):
-        return FlatMapView(self.entries, None, *self._bounds(lo, hi))
+        lo_idx, hi_idx = self._bounds(lo, hi)
+        return FlatMapView(self.entries, lo_idx, hi_idx)
 
     def find(self, key):
         """Binary search inside the current window only."""
@@ -145,13 +143,9 @@ class FlatMapStorage:
     def __init__(
         self,
         entries: Sequence[Any] = (),
-        values: Sequence[Any] | None = None,
         sort: bool = False,
     ):
-        if values is not None:
-            self.entries = list(zip(entries, values, strict=False))
-        else:
-            self.entries = list(entries)
+        self.entries = list(entries)
         if sort:
             self.sort()
 

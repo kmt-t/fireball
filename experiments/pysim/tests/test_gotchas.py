@@ -163,7 +163,7 @@ def test_intp_gotcha_04_unified_pc_multi_module():
 
     keys = sorted([pc_fn0, pc_fn1])
     vals = [100 if k == pc_fn0 else 200 for k in keys]
-    storage = FlatMapStorage(keys, vals)
+    storage = FlatMapStorage(list(zip(keys, vals, strict=False)))
     view = storage.view()
 
     assert view.find(pc_fn0) == 100
@@ -445,7 +445,7 @@ def test_ipcr_gotcha_01_no_queue_assertion_on_duplicate_send():
     sender_id = sched.spawn("sender")
     sched.current_task = sched.get_task(sender_id)
 
-    msg1 = IPCMessage(FlatMapStorage([1], [100]))
+    msg1 = IPCMessage(FlatMapStorage([(1, 100)]))
     gen1 = router.send(Role.RUNTIME, "fireball://hal/gpio/0", msg1)
     assert next(gen1) == (ChannelAction.BLOCK, None)
     assert msg1.ownership == OwnershipState.IN_FLIGHT
@@ -463,7 +463,7 @@ def test_ipcr_gotcha_02_preflight_rejection_preserves_sender_ownership():
     sender_id = sched.spawn("sender_hal")
     sched.current_task = sched.get_task(sender_id)
 
-    msg = IPCMessage(FlatMapStorage([1], [99]))
+    msg = IPCMessage(FlatMapStorage([(1, 99)]))
     try:
         gen = router.send(Role.PLATFORM_HAL, "fireball://debugger/control", msg)
         next(gen)

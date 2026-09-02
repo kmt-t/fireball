@@ -42,9 +42,8 @@ _REG_ENTRIES: list[tuple[str, tuple[int, int]]] = sorted(
     ],
     key=lambda e: e[0],
 )
-_REG_KEYS: tuple[str, ...] = tuple(k for k, _ in _REG_ENTRIES)
-_REG_VALS: tuple[tuple[int, int], ...] = tuple(v for _, v in _REG_ENTRIES)
-REG_INFO: FlatMapView[str, tuple[int, int]] = FlatMapView(_REG_KEYS, _REG_VALS)
+_REG_ENTRIES_TUPLE: tuple[tuple[str, tuple[int, int]], ...] = tuple(_REG_ENTRIES)
+REG_INFO: FlatMapView[str, tuple[int, int]] = FlatMapView(_REG_ENTRIES_TUPLE)
 
 
 def push_reg(name: str) -> bytes:

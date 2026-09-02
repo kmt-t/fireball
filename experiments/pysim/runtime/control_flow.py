@@ -463,19 +463,26 @@ def decode_all(code: bytes) -> FlatMapView[int, Instr]:
 class InstructionTable:
     """
     Owning storage container for decoded WASM instructions.
-    Explicitly owns the keys and values arrays, and provides non-owning FlatMapView via .view().
+    Explicitly owns the entries array, and provides non-owning FlatMapView via .view().
     `{Type_Vocabulary}` `{META_BinarySearch}`
     """
 
-    __slots__ = ("_view", "keys", "values")
+    __slots__ = ("_view", "entries")
 
     def __init__(self, keys: Sequence[int], values: Sequence[Instr]):
-        self.keys = list(keys)
-        self.values = list(values)
-        self._view = FlatMapView(self.keys, self.values)
+        self.entries = list(zip(keys, values, strict=False))
+        self._view = FlatMapView(self.entries)
+
+    @property
+    def keys(self) -> list[int]:
+        return [k for k, _ in self.entries]
+
+    @property
+    def values(self) -> list[Instr]:
+        return [v for _, v in self.entries]
 
     def view(self) -> FlatMapView[int, Instr]:
-        """Returns a non-owning FlatMapView borrowing the keys and values storage."""
+        """Returns a non-owning FlatMapView borrowing the entries storage."""
         return self._view
 
     def find(self, offset: int) -> Instr | None:

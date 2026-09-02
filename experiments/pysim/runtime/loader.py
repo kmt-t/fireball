@@ -17,7 +17,12 @@ from __future__ import annotations
 import struct
 from typing import Any
 
-from system_containers import FlatMapView, RadixBinaryTreeView, StaticFlatMap
+from system_containers import (
+    FlatMapView,
+    RadixBinaryTreeView,
+    StaticFlatMap,
+    build_radix_table,
+)
 
 # Configuration Constants
 FB_CONF_MAX_MODULES = 4
@@ -384,11 +389,20 @@ class ModuleView:
     def build_indexes(self) -> None:
         """Constructs RadixBinaryTreeView indexes for exports, imports, and entity offsets."""
         exp_keys = [fnv1a_32(exp.name) for exp in self.exports_dict]
-        self.export_tree = RadixBinaryTreeView(exp_keys, self.exports_dict, radix_shift=28)
+        exp_table = build_radix_table(exp_keys, radix_shift=28)
+        self.export_tree = RadixBinaryTreeView(
+            exp_keys, self.exports_dict, exp_table, radix_shift=28
+        )
+
         imp_keys = [fnv1a_32(f"{imp.module_name}::{imp.field_name}") for imp in self.imports]
-        self.import_tree = RadixBinaryTreeView(imp_keys, self.imports, radix_shift=28)
+        imp_table = build_radix_table(imp_keys, radix_shift=28)
+        self.import_tree = RadixBinaryTreeView(imp_keys, self.imports, imp_table, radix_shift=28)
+
         ent_keys = [e.start_offset for e in self.entity_registry]
-        self.entity_offset_tree = RadixBinaryTreeView(ent_keys, self.entity_registry, radix_shift=4)
+        ent_table = build_radix_table(ent_keys, radix_shift=4)
+        self.entity_offset_tree = RadixBinaryTreeView(
+            ent_keys, self.entity_registry, ent_table, radix_shift=4
+        )
 
     def lookup_export(self, name: str) -> ExportEntry | None:
         """Hash + RadixBinaryTreeView symbol lookup with zero-copy string verification in O(k)."""

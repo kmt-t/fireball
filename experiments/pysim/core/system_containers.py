@@ -220,7 +220,7 @@ class FlatMapStorage(Generic[KeyT, ValT]):
 
     def __init__(
         self,
-        entries: Sequence[tuple[KeyT, ValT]] = (),
+        entries: Sequence[tuple[KeyT, ValT]],
         sort: bool = False,
         capacity: int | None = None,
     ):
@@ -343,6 +343,37 @@ def bswap32(v: int) -> int:
 FB_CONF_MAX_RADIX_TABLE_SIZE = 256  # Embedded constraint: max 8-bit radix prefix
 
 
+def build_radix_table(
+    keys: Sequence[int],
+    radix_shift: int,
+    key_transform: Callable[[int], int] | None = None,
+) -> list[int]:
+    """
+    Constructs a scalar radix offset table for radix_binary_tree_view.
+    Prefix bounds: bucket p is [table[p], table[p+1]).
+    Strictly bounded by FB_CONF_MAX_RADIX_TABLE_SIZE.
+    """
+    if not keys:
+        return [0, 0]
+    sorted_keys = sorted(keys)
+    transformed = [key_transform(k) if key_transform is not None else k for k in sorted_keys]
+    max_prefix = max(transformed) >> radix_shift
+    table_size = max_prefix + 2
+    assert table_size <= FB_CONF_MAX_RADIX_TABLE_SIZE, (
+        f"Radix table size ({table_size}) exceeds embedded limit {FB_CONF_MAX_RADIX_TABLE_SIZE}! Adjust radix_shift."
+    )
+    table = [0] * table_size
+    current_prefix = 0
+    for idx, k in enumerate(transformed):
+        prefix = k >> radix_shift
+        while current_prefix < prefix:
+            current_prefix += 1
+            table[current_prefix] = idx
+    for p in range(current_prefix + 1, table_size):
+        table[p] = len(keys)
+    return table
+
+
 class RadixBinaryTreeView(Generic[ValT]):
     """
     fireball::radix_binary_tree_view<Key, Value, RadixShift, KeyProjection>:
@@ -357,39 +388,20 @@ class RadixBinaryTreeView(Generic[ValT]):
         self,
         keys: Sequence[int],
         values: Sequence[ValT],
-        radix_table: Sequence[int] | None = None,
-        radix_shift: int = 28,
+        radix_table: Sequence[int],
+        radix_shift: int,
         key_transform: Callable[[int], int] | None = None,
     ):
+        assert len(radix_table) <= FB_CONF_MAX_RADIX_TABLE_SIZE, (
+            f"Radix table size ({len(radix_table)}) exceeds embedded limit {FB_CONF_MAX_RADIX_TABLE_SIZE}!"
+        )
         paired = sorted(zip(keys, values, strict=False), key=lambda p: p[0])
         self.keys = [p[0] for p in paired]
         self.values = [p[1] for p in paired]
         self.map_view = FlatMapView(paired)
+        self.radix_table = radix_table
         self.radix_shift = radix_shift
         self.key_transform = key_transform
-
-        if radix_table is not None:
-            self.radix_table = list(radix_table)
-        elif self.keys:
-            transformed_keys = [
-                key_transform(k) if key_transform is not None else k for k in self.keys
-            ]
-            max_prefix = max(transformed_keys) >> radix_shift
-            assert max_prefix + 2 <= FB_CONF_MAX_RADIX_TABLE_SIZE, (
-                f"Radix table size ({max_prefix + 2}) exceeds embedded limit {FB_CONF_MAX_RADIX_TABLE_SIZE}! Adjust radix_shift."
-            )
-            table = [0] * (max_prefix + 2)
-            current_prefix = 0
-            for idx, k in enumerate(transformed_keys):
-                prefix = k >> radix_shift
-                while current_prefix < prefix:
-                    current_prefix += 1
-                    table[current_prefix] = idx
-            for p in range(current_prefix + 1, len(table)):
-                table[p] = len(self.keys)
-            self.radix_table = table
-        else:
-            self.radix_table = []
 
     def find(self, key: int) -> ValT | None:
         rk = self.key_transform(key) if self.key_transform is not None else key

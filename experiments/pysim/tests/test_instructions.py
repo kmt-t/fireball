@@ -2248,7 +2248,7 @@ def test_cont_12_flat_map_storage_standard_sort():
 
 def test_cont_13_flat_map_storage_sorted_insert_remove():
     """CONT-13: FlatMapStorage maintains sorted order across arbitrary insert and remove/erase calls."""
-    storage = FlatMapStorage()
+    storage = FlatMapStorage([])
     assert len(storage) == 0
 
     # Insert elements out of order

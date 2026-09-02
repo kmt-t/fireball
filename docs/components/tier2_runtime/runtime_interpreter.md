@@ -113,6 +113,36 @@ ARM Cortex-M ターゲットにおいて、`execution_context` は **WASM スタ
    - `br / br_if / br_table` で `depth` 個のフレームを脱出する際、対象フレームより外側のフレームを確実にポップし、オペランドスタック長を対象フレームの開始時スタック高（`stack_height`）に厳格に巻き戻す。
    - **設計理由と不変条件**: ブロックが戻り値を持つ場合、分岐命令実行時にオペランドスタック最上位に積まれていた戻り値のみを退避し、プルーニング完了後に正確にスタック頂点（TOS レジスタ）へ復元しなければならない。脱出先が `loop` の場合はループ本体先頭へ巻き戻してフレームを維持し、`block / if` の場合はフレームをポップしてブロック終端直後へ遷移する。
 
+
+#### 分岐脱出時のフレームプルーニングと TOS 復元手順（手順アクティビティ図）
+<!-- traceability: {INTP-GOTCHA-01} {INTP-GOTCHA-02} {INTP-GOTCHA-03} {CallFrame_Layout} -->
+`br / br_if` 命令によるネスト脱出時に、中間フレームを確実に破棄しつつ戻り値を TOS レジスタへ正確に復元する決定論的手順を示す。
+
+```mermaid
+flowchart TD
+    Start(["Execute br / br_if depth"]) --> CheckCond{"Is condition TRUE? (br_if only)"}
+    CheckCond -- "No" --> NextPC(["Advance to next PC instruction"])
+    CheckCond -- "Yes / Unconditional" --> FetchTarget["Locate Target Control Frame at depth"]
+
+    FetchTarget --> CheckArity{"Target Block Arity > 0 (Has Return Value)?"}
+    CheckArity -- "Yes" --> SaveVal["Save Return Value from Operand Stack top / TOS"]
+    CheckArity -- "No" --> Prune["Pop 'depth' Intermediate Control Frames"]
+
+    SaveVal --> Prune
+    Prune --> RewindStack["Rewind Operand Stack Height to Target Frame's Saved Height"]
+    RewindStack --> CheckLoop{"Is Target Frame a LOOP?"}
+
+    CheckLoop -- "Yes" --> LoopBranch["Set PC = Loop Body Header (Keep Frame)"]
+    CheckLoop -- "No" --> BlockBranch["Pop Target Frame & Set PC = Block END Instruction"]
+
+    LoopBranch --> RestoreVal{"Was Return Value saved?"}
+    BlockBranch --> RestoreVal
+
+    RestoreVal -- "Yes" --> SetTOS["Restore Saved Value to TOS Register / Stack Top"]
+    RestoreVal -- "No" --> Dispatch
+    SetTOS --> Dispatch(["Dispatch Next Instruction via [[clang::musttail]]"])
+```
+
 #### インタープリタ構成（interpreter_config）
 <!-- traceability: {META_ConfigurableSystem} -->
 インタープリタの動作パラメータを定義する。 `{META_ConfigurableSystem}`

@@ -119,6 +119,43 @@ vSoCの動作パラメータを定義する。 `{META_ConfigurableSystem}`
 - **デバッガ介入時キャッシュ一貫性 (Cache Flush)**: `{Debugger_Jit_Flush}`
     - デバッガがメモリ上の変数を書き換えた場合、該当タスクに関連するJITキャッシュ（Active/Warm/Oldest 全バンク）をすべて無効化（Flush）し、インタープリタ実行からやり直すことで整合性を維持する。
 
+
+#### vSoC 実行エンジン委譲とトレース境界イールド判定（責務シーケンス図）
+<!-- traceability: {VSOC-GOTCHA-01} {VSOC-GOTCHA-02} {ADR_TraceBoundaryYield} {ThreadedInterpreter} {JIT_CopyAndPatch} -->
+COOS Scheduler、vSoC Engine、Execution Engine（Interpreter / JIT）、HAL/Debugger 間の実行委譲と、トレース境界での一括タイムスライス判定を示す。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Sched as COOS Scheduler
+    participant vSoC as vSoC Engine (vsoc_context)
+    participant Exec as Execution Engine (Interpreter / JIT Trace)
+    participant Debug as Debugger / Profiler
+
+    Sched->>vSoC: step() (Dispatch active Task)
+    Note over vSoC: Check Debugger attach status
+    opt Debugger Attached
+        vSoC->>Debug: Check breakpoints & single-step flags
+    end
+
+    vSoC->>vSoC: Lookup exec_trace for current PC
+    Note over vSoC,Exec: VSOC-GOTCHA-01: Pass (R0=IP, R1=stack_bot, R2=local_base, R3=TOS)
+    vSoC->>Exec: Call exec_trace via __fastcall (Stateless Plain Function)
+
+    Note over Exec: Executes instructions in pure C++ musttail / Native JIT
+    Exec-->>vSoC: Return next PC at Trace Boundary (ADR_TraceBoundaryYield)
+
+    Note over vSoC: VSOC-GOTCHA-02: Batch Timeslice & Approximate Yield Check
+    vSoC->>vSoC: executed_instructions += trace_length
+    alt Timeslice Expired (executed_instructions >= yield_threshold)
+        vSoC->>vSoC: executed_instructions = 0
+        vSoC-->>Sched: co_yield (Voluntary yield at clean trace boundary)
+        Note over Sched: Scheduler switches to next READY task
+    else Timeslice Remaining
+        Note over vSoC: Continue directly to next step() without coroutine overhead
+    end
+```
+
 ### 4.2 状態遷移図 (SysML SMD: vSoC Engine ライフサイクル)
 <!-- traceability: {VSOC_Lifecycle} {ThreadedInterpreter} {JIT_CopyAndPatch} {Challenge_ApproximateYield} {JIT_Safepoint} {Debugger_Jit_Flush} -->
 

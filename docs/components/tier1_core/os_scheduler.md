@@ -67,6 +67,27 @@ graph TD
 - **アイドル状態の検知**: 全ての管理タスクが「待機状態（BLOCKED/SUSPENDED_CSP）」となった場合にアイドル・ハンドラ（Periodic Task、ログフラッシュ、JITバッチコンパイル等）を実行する。 `{GLOBAL_IdleDetection}` `{GLOBAL_PeriodicTask}`
 - **割り込み処理**: HALからの割り込み通知（`notify_interrupt(irq_id)`）を受信し、INTイベントキューから回収して対象タスクを READY キュー末尾に追加する。 `{GLOBAL_InterruptWakeup}`
 
+
+#### 連続直接ハンドオフ上限判定とメインループ復帰手順（手順アクティビティ図）
+<!-- traceability: {SCHED-GOTCHA-01} {Challenge_CspHandoffStarvation} {CSP_Handoff} -->
+高頻度ピンポン通信による CPU 独占・他タスク餓死を防止し、メインループへの有界復帰を保証する制御フローを示す。
+
+```mermaid
+flowchart TD
+    Start(["CSP Rendezvous Established"]) --> Req["Request Symmetric Transfer to Peer Task"]
+    Req --> CheckCount{"consecutive_handoffs < MAX_CONSECUTIVE_HANDOFFS (4)?"}
+
+    CheckCount -- "Yes (Within Limit)" --> Inc["consecutive_handoffs++"]
+    Inc --> SymTransfer["Return CoroutineHandle of Peer Task (Symmetric Transfer)"]
+    SymTransfer --> ExecPeer(["Peer Task Resumes Execution (Zero Dispatch Overhead)"])
+
+    CheckCount -- "No (Limit Reached)" --> Reset["Reset consecutive_handoffs = 0"]
+    Reset --> Enqueue["Enqueue Peer Task to READY Ring Queue (Tail)"]
+    Enqueue --> ForceYield["Yield to COOS Scheduler Main Loop (Forced Yield)"]
+    ForceYield --> DispatchRR["Scheduler dispatches next candidate from READY Ring"]
+    DispatchRR --> FairExec(["Fair execution of other ready tasks / background monitors"])
+```
+
 #### スケジューラ フルセット・コンセプトコード (`concepts/scheduler_concept.py`)
 ```python
 class TaskState:

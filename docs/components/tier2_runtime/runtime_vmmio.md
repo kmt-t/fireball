@@ -243,7 +243,67 @@ inline VmmioPteView  vmmio_ptes{vmmio_pte_store}; // VPN -> PTE ビュー
 
 ## 4. 動的モデル
 
-### 4.1 アルゴリズム: アクセスディスパッチ
+### 4.1 アルゴリズム
+
+#### 多段アドレスデコード & TLB ルックアップ（手順アクティビティ図）
+<!-- traceability: {VMMIO-GOTCHA-01} {VMMIO-GOTCHA-02} {META_Static_Resolution} -->
+32ビットゲストアドレスの Guest RAM 高速バイパス、20-bit VPN の Folding XOR による 16 エントリ TLB 探索、および PTE 二分探索の手順を示す。
+
+```mermaid
+flowchart TD
+    Start(["32-bit Guest Virtual Address"]) --> CheckBit31{"Address Bit 31 == 0?"}
+
+    CheckBit31 -- "Yes (Bit 31 == 0)" --> RAMBypass["VMMIO-GOTCHA-01: Guest RAM Bypass (Tier 1)"]
+    RAMBypass --> CalcRAM["Physical Address = guest_ram_base + addr"]
+    CalcRAM --> DirectAccess(["Direct O(1) Memory Access (Zero MMU Overhead)"])
+
+    CheckBit31 -- "No (Bit 31 == 1)" --> ExtractVPN["Extract 20-bit VPN (raw >> 12) & Offset (raw & 0xFFF)"]
+    ExtractVPN --> FoldingXOR["VMMIO-GOTCHA-02: Hash = ((VPN >> 12) ^ (VPN >> 6) ^ VPN) & 0x0F"]
+    FoldingXOR --> ProbeTLB["Probe Direct-Mapped TLB at index [Hash]"]
+
+    ProbeTLB --> TLBHit{"TLB Entry.vpn == VPN?"}
+    TLBHit -- "Yes (TLB Hit)" --> ExecHandler["Execute Cached PTE Handler / Offset Add (O(1))"]
+    ExecHandler --> Complete(["Memory Access Completed"])
+
+    TLBHit -- "No (TLB Miss)" --> FlatMapWalk["Binary Search VPN in Sorted vmmio_ptes FlatMap (O(log N))"]
+    FlatMapWalk --> WalkFound{"PTE Found?"}
+    WalkFound -- "No" --> Fault(["Trap: VMMIO Page Fault / Access Denied"])
+    WalkFound -- "Yes" --> RefillTLB["Refill TLB Slot [Hash] with Resolved PTE"]
+    RefillTLB --> ExecHandler
+```
+
+#### 共有メモリ権限剥奪と TLB 即時無効化（責務シーケンス図）
+<!-- traceability: {VMMIO-GOTCHA-03} {MEM-GOTCHA-03} {OwnershipTransfer} -->
+タスク間共有メモリ転送における、Sender Task、MemoryManager、vMMIO Controller、Receiver Task の責務分離と TLB 即時フラッシュを示す。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Sender as Sender Task
+    participant Mem as MemoryManager
+    participant vMMIO as vMMIO Controller (PTE & TLB)
+    actor Receiver as Receiver Task
+
+    Sender->>Mem: release_shared(shm_id)
+    Note over Sender: Relinquishes local ownership
+    Mem->>vMMIO: Set PTE.owner_id = FB_TASK_ID_FLIGHT (0xFF)
+    vMMIO->>vMMIO: VMMIO-GOTCHA-03: Immediate TLB Flush for Page
+    Note over vMMIO: Invalidate TLB slot matching VPN
+    vMMIO-->>Mem: Ownership revoked
+    Mem-->>Sender: Release committed
+
+    opt Stale access attempt by Sender
+        Sender->>vMMIO: Access old memory address
+        vMMIO->>vMMIO: TLB Miss -> PTE lookup
+        vMMIO-->>Sender: TRAP: Access Denied (owner == FLIGHT)
+    end
+
+    Receiver->>Mem: claim_shared(shm_id)
+    Mem->>vMMIO: Set PTE.owner_id = Receiver Task ID
+    vMMIO-->>Receiver: Shared memory accessible
+    Note over Receiver: Safe zero-copy access granted
+```
+: アクセスディスパッチ
 
 ゲストのアドレスアクセスは以下のロジックで解決される。
 

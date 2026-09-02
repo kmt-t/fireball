@@ -71,6 +71,64 @@ graph TD
 
 連続ハンドオフは `FB_CONF_MAX_CONSECUTIVE_HANDOFFS` で有界化する。この上限は `{MainLoopReturnGuarantee}` の形式証明が依拠する前提であり、実装は必ずこのカウンタを備えなければならない。
 
+
+#### 同期ランデブー通信プロトコル（責務シーケンス図）
+<!-- traceability: {CSP_Handoff} {OwnershipTransfer} {ADR_RendezvousChannel} -->
+値スロット不在・直接手渡しの対称ハンドオフにおける、Sender、COOS Channel、Receiver、COOS Scheduler の相互作用と責務分離を示す。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Sender as Sender Task
+    participant Ch as COOS Channel (No Buffer)
+    actor Receiver as Receiver Task
+    participant Sched as COOS Scheduler
+
+    alt Receiver is already waiting
+        Receiver->>Ch: channel_recv() (suspended in channel)
+        Note over Receiver,Ch: Receiver is SUSPENDED_CSP
+        Sender->>Ch: channel_send(value)
+        Note over Sender,Ch: Rendezvous matched!
+        Ch->>Receiver: Direct handoff value (sender frame -> receiver)
+        Ch-->>Sender: Symmetric transfer target: Receiver
+        Sender->>Receiver: Coroutine symmetric transfer (O(1) stack)
+        Note over Receiver: Resumes execution immediately
+    else Receiver is absent (Sender waits)
+        Sender->>Ch: channel_send(value)
+        Note over Sender,Ch: Value stays on Sender frame (no copy)
+        Ch-->>Sender: Return scheduler_handle
+        Sender->>Sched: co_await suspend (state: SUSPENDED_CSP)
+        Note over Sched: Dispatches next READY task
+        Receiver->>Ch: channel_recv()
+        Note over Receiver,Ch: Rendezvous matched!
+        Ch->>Sender: Extract value from Sender frame
+        Ch-->>Sched: Wake Sender -> mark READY
+        Ch-->>Receiver: Return value & continue execution
+    end
+```
+
+#### ISR 遅延起床アルゴリズム（手順アクティビティ図）
+<!-- traceability: {GLOBAL_InterruptWakeup} {drain_interrupts} -->
+ハードウェア割り込み発生から、非ブロッキング ISR キューイング、およびスケジューラ yield 境界での安全な遅延起床までの決定論的手順を示す。
+
+```mermaid
+flowchart TD
+    Start(["Hardware Interrupt Triggered"]) --> ISR["HAL ISR: interrupt_handler()"]
+    ISR --> Post["Enqueue irq_id into lock-free Ring Buffer"]
+    Post --> RetISR(["Return from Interrupt (Non-blocking)"])
+
+    subgraph COOS Main Loop / Yield Point
+        YieldPoint["Current Task calls co_yield() or blocks"] --> Drain["COOS Scheduler: drain_interrupts()"]
+        Drain --> CheckRing{"Is Ring Buffer empty?"}
+        CheckRing -- "No (IRQ Pending)" --> Pop["Pop irq_id from Ring Buffer"]
+        Pop --> Lookup["Lookup Task waiting for irq_id in Registry"]
+        Lookup --> Wake["Mark Target Task as READY in Ring Queue"]
+        Wake --> CheckRing
+        CheckRing -- "Yes" --> SchedNext["Dispatch next READY Task via Round-Robin"]
+    end
+    RetISR -.-> YieldPoint
+```
+
 ```python
 # CSPチャネルの送受信処理 (概念コード: 純粋同期ランデブー + Symmetric Transfer 規約)
 # チャネルは値を保持しない。待機者は最大1タスク（ADR_RendezvousChannel）。

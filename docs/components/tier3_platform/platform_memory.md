@@ -154,6 +154,58 @@ Cortex-M33 MPU および vMMIO のハードウェア保護機構において、�
     送信開始（`release()`）から受信完了（`claim()`）までの間、ブロック所有者は一時的に `FB_TASK_ID_FLIGHT`（`0xFF`）に設定され、TLB エントリが即座にフラッシュされる。この保護状態により、中継中に送信側がデータを書き換えたり受信側が許可前にフライングアクセスすることを構造的に防止する。
 12. **障害時回復**: Rendezvous中に相手タスクが異常終了した場合や通信が中断された場合、物理メモリマネージャの `rollback_transfer(original_sender_id, shm_id)` により、PTE `owner_id` が送信元タスクIDへ復元され、TLB がフラッシュされ、リソースが回収可能となる。
 
+
+#### ページ単位権限分離と共有メモリ移譲プロトコル（責務シーケンス図）
+<!-- traceability: {PageGranularPermissionIsolation} {OwnershipTransfer} {VmmioShmDelegation} -->
+Task A、MemoryManager、vMMIO Controller、Task B 間での専用 4KB 物理ページ切り出しと所有権遷移（A $	o$ FLIGHT $	o$ B）の責務分離を示す。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor TaskA as Task A (Sender)
+    participant Mem as MemoryManager
+    participant vMMIO as vMMIO Controller (PTE & TLB)
+    actor TaskB as Task B (Receiver)
+
+    TaskA->>Mem: allocate_shared(size)
+    Note over Mem: MEM-GOTCHA-01: Page-Granular Isolation
+    Mem->>Mem: Allocate fresh dedicated 4KB Physical Page for Task A
+    Mem->>vMMIO: Register PTE: VPN -> PPN, owner_id = Task A
+    Mem-->>TaskA: Return shared_block (local handle)
+
+    TaskA->>TaskA: Write data into shared buffer
+    TaskA->>Mem: release() (Revoke phase)
+    Note over Mem,vMMIO: MEM-GOTCHA-03: Set owner_id = FB_TASK_ID_FLIGHT (0xFF)
+    Mem->>vMMIO: Set PTE.owner_id = 0xFF & Invalidate TLB
+    vMMIO-->>Mem: TLB flushed
+    Mem-->>TaskA: Return shm_id (access revoked)
+
+    Note over TaskA,TaskB: IPC Router CSP Rendezvous (Zero-copy handoff shm_id)
+
+    TaskB->>Mem: claim(shm_id) (Grant phase)
+    Mem->>vMMIO: Verify & Set PTE.owner_id = Task B & Invalidate TLB
+    vMMIO-->>Mem: Access granted
+    Mem-->>TaskB: Return new shared_block handle
+    TaskB->>TaskB: Read data safely (PTE.owner_id == Task B)
+```
+
+#### JIT W^X バッチ切り替えトランザクション手順（手順アクティビティ図）
+<!-- traceability: {MEM-GOTCHA-04} {GLOBAL_Policy_Memory} {META_RestrictedPhysicalAccess} -->
+JIT コンパイル時の MPU 属性切り替え（RW+XN $	o$ RO+X）と CPU キャッシュコヒーレンシバリア発行の決定論的手順を示す。
+
+```mermaid
+flowchart TD
+    Start(["JIT Compiler: Begin Trace Generation"]) --> MPU_RW["MPU: Switch Active Bank to RW+XN (Writeable, Execute-Never)"]
+    MPU_RW --> CopyPatch["Copy Stencil Machine Code & Apply Immediate/Register Patches"]
+    CopyPatch --> Complete{"Trace generation complete?"}
+
+    Complete -- "Yes" --> CleanD["ARM CMSIS: SCB_CleanDCache_by_Addr(trace_addr, size)"]
+    CleanD --> InvalI["ARM CMSIS: SCB_InvalidateICache_by_Addr(trace_addr, size)"]
+    InvalI --> Barrier["Issue DSB (Data Synchronization) & ISB (Instruction Synchronization)"]
+    Barrier --> MPU_RO["MPU: Switch Active Bank to RO+X (Read-Only, Executable)"]
+    MPU_RO --> CommitTrace(["Trace Committed: Safe Native Execution Enabled"])
+```
+
 ### 7.4 JIT Code Cache の W^X メモリ保護切り替えトランザクション
 <!-- traceability: {GLOBAL_Policy_Memory} {META_RestrictedPhysicalAccess} -->
 JIT コンパイラがネイティブコードを生成する Code Cache 領域において、W^X（Write XOR Execute: 書き込み可能かつ実行可能の同時禁止）原則を厳格に適用する。

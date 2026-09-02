@@ -81,12 +81,12 @@ IPC通信の最小単位。1つのメッセージで8個のペアを送信でき
 
 #### IPCメッセージ（message）
 <!-- traceability: {TypeSafeMessaging} {META_FlatMapIndexed} {OwnershipTransfer} {ADR_SharedBlockRaii} -->
-Key-Valueペアを複数集約した通信の基本単位。メッセージ自身が共有メモリ（`fireball::shared_block`）上に実体化され、内部の `uint64_t` 配列（`uint64_t[]`）をストレージとして直接利用する。動的メモリ確保を一切伴わない物理メモリ上のAoS（Key-Valueペアの `uint64_t` エントリ配列：上位32ビットがキー、下位32ビットが値）と `fireball::flat_map_view` による二分探索を採用し、メッセージ内のキー検索を $O(\log N)$ で行う。エントリやペイロードへのアクセス時には所有権（`SENDER_OWNS` または `RECEIVER_OWNS`）を強制検証する（`IN_FLIGHT` 中のアクセスは禁止）。また、タスクを跨ぐ大きなバルクデータは別の共有メモリ（`fireball::shared_block`）の `shm_id` をエントリの値（`ScopeKind.RESOURCE`）に格納して伝送でき、IPCルータのランデブー完了時に自動で vMMIO PTE の権限付け替え（`grant_shared`）が行われる。 `{TypeSafeMessaging}` `{META_FlatMapIndexed}` `{ADR_SharedBlockRaii}`
+Key-Valueペアを複数集約した通信の基本単位。メッセージ自身が共有メモリ（`fireball::shared_block`）上に実体化され、内部の `uint64_t` 配列（`uint64_t[]`）をストレージとして直接利用する。動的メモリ確保を一切伴わない物理メモリ上のKey-Valueペア配列（ `uint64_t` エントリ配列：上位32ビットがキー、下位32ビットが値）と `fireball::flat_map_view` による二分探索を採用し、メッセージ内のキー検索を $O(\log N)$ で行う。エントリやペイロードへのアクセス時には所有権（`SENDER_OWNS` または `RECEIVER_OWNS`）を強制検証する（`IN_FLIGHT` 中のアクセスは禁止）。また、タスクを跨ぐ大きなバルクデータは別の共有メモリ（`fireball::shared_block`）の `shm_id` をエントリの値（`ScopeKind.RESOURCE`）に格納して伝送でき、IPCルータのランデブー完了時に自動で vMMIO PTE の権限付け替え（`grant_shared`）が行われる。 `{TypeSafeMessaging}` `{META_FlatMapIndexed}` `{ADR_SharedBlockRaii}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
 | メッセージ本体ブロック | メッセージ自身を格納する共有メモリブロック。内部は `uint64_t` 配列 | `fireball::shared_block` | 1個（固定長） |
-| KVマップ (AoS) | 共有メモリ上に配置されるKey-Valueペアの `uint64_t` 配列。自前で所有しアクセス時に所有権検証 | ソート済み固定長 `uint64_t` 配列 + `fireball::flat_map_view` | 最大8個固定（1エントリ `uint64_t` 1要素） |
+| KVマップ (Key-Valueペア配列) | 共有メモリ上に配置されるKey-Valueペアの `uint64_t` 配列。自前で所有しアクセス時に所有権検証 | ソート済み固定長 `uint64_t` 配列 + `fireball::flat_map_view` | 最大8個固定（1エントリ `uint64_t` 1要素） |
 | リソース共有メモリ | エントリ値（`ScopeKind.RESOURCE`）に埋め込まれるタスク間バルク転送用RAII共有メモリ。チャネルが所有権を自動Grant | `fireball::shared_block` (オプション) | 任意個数（エントリの値） |
 
 #### レジストリエントリ（registry_entry）
@@ -112,6 +112,47 @@ Key-Valueペアを複数集約した通信の基本単位。メッセージ自�
     3. **Grant**: ランデブー成立の瞬間に受信側タスクへ権限を付与し、状態を `RECEIVER_OWNS` へ遷移させる。共有メモリ転送時は PTE `owner_id` が受信タスクIDへアトミックに更新され、受信側での `claim(shm-id)` 物理操作が解禁される。
 - **送信前チェックの失敗とロールバック境界**: URI 未登録 (`ERR_NOT_FOUND`)、RBAC 拒否 (`ERR_PERMISSION_DENIED`)、KV ペア数超過 (`ERR_MSG_TOO_LARGE`) はいずれも Revoke より前段の静的チェックであり、これらで失敗した場合メッセージの所有権は最初から一度も送信側から動いていない（`SENDER_OWNS` のまま保持され、回復処理を必要としない）。なお、IPC メッセージパッシング自体は CSP ランデブーのためロールバック経路を持たないが、共有メモリ等の物理リソース転送中に相手タスクが異常終了した場合は、物理メモリ層の回復機構（`rollback_transfer()`、§`platform_memory.md`）が連動して PTE `owner_id` を送信元タスクIDへ復元する。
 
+
+#### 3段階 IPC ルーティング & 所有権移譲プロトコル（責務シーケンス図）
+<!-- traceability: {OwnershipTransfer} {IPC_ZeroCopy} {ADR_RendezvousChannel} {URIAbstraction} -->
+Caller、IPC Router、COOS Channel、vMMIO/MemoryManager、Callee の各責務と 3 段階ルーティング（URI探索 $	o$ RBAC $	o$ CSPランデブー/権限移譲）を示す。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Caller as Caller Task
+    participant Router as IPC Router
+    participant Mem as MemoryManager / vMMIO
+    participant Ch as COOS Channel (Role Edge)
+    actor Callee as Callee Task
+
+    Caller->>Router: send_message(URI, msg_block, [shm_id])
+    Note over Caller,Router: Stage 1: URI Lookup via FlatMapView O(log N)
+    Router->>Router: Lookup Target Role & Channel from Registry
+
+    Note over Router: Stage 2: RBAC Preflight Inspection
+    alt Preflight Check Failed (URI not found or RBAC denied)
+        Router-->>Caller: ERR_PERMISSION_DENIED / ERR_NOT_FOUND
+        Note over Caller: Ownership remains SENDER_OWNS (Zero Leak)
+    else Preflight Check Passed
+        Note over Router,Mem: Stage 3: Revoke & Ownership Transition
+        Router->>Caller: Revoke access (msg.ownership = IN_FLIGHT)
+        opt Bulk Shared Memory Transfer
+            Router->>Mem: release_shared(shm_id)
+            Mem->>Mem: Set PTE.owner_id = FB_TASK_ID_FLIGHT (0xFF)
+            Mem->>Mem: Flush TLB for Caller page
+        end
+        Router->>Ch: channel_send(msg_block)
+        Ch->>Callee: Synchronous CSP Rendezvous (Direct Handoff)
+        opt Bulk Shared Memory Transfer
+            Ch->>Mem: grant_shared(shm_id, callee_task_id)
+            Mem->>Mem: Set PTE.owner_id = Callee Task ID
+        end
+        Ch->>Callee: Grant access (msg.ownership = RECEIVER_OWNS)
+        Note over Callee: Callee reads parameters safely via FlatMapView
+    end
+```
+
 #### IPC ルータ フルセット・コンセプトコード (`concepts/ipc_router_concept.py`)
 ```python
 class Role:
@@ -131,12 +172,12 @@ class OwnershipState(IntEnum):
 
 
 class IPCMessage:
-    """A message owns its sorted (key, value) entries (AoS) and presents
+    """A message owns its sorted (key, value) entries and presents
     them via non-owning FlatMapView (§3.3) -- no resource_id,
     no free-form dict payload."""
 
     def __init__(self, entries=None):
-        # 32-bit key-value pairs (AoS)
+        # 32-bit key-value pairs
         self._entries = sorted(entries, key=lambda e: e[0]) if entries is not None else []
         self.ownership = OwnershipState.SENDER_OWNS
 

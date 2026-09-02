@@ -187,6 +187,31 @@ graph TD
 2. **コンパイル実行**: 後続のトレースを先にコンパイルすることで、先行するトレースのリンク時（Patching 時）にターゲットが既にキャッシュ内に存在する確率を上げ、即時チェイニングを実現する。
 3. **補足**: COOSの `register_periodic_callback` または `set_idle_hook` により実行される。これにより、実行スレッドのブロッキング時間を抑える。 `{GLOBAL_PeriodicTask}` `{GLOBAL_IdleDetection}`
 
+
+#### Copy-and-Patch ステンシル結合 & バックパッチング手順（手順アクティビティ図）
+<!-- traceability: {JITC-GOTCHA-01} {JITC-GOTCHA-02} {JITC-GOTCHA-05} {JIT_CopyAndPatch} -->
+BasicBlock 走査、事前コンパイル済みステンシルのコピー、即値・レジスタパッチ、およびトレース末尾バックパッチングの決定論的手順を示す。
+
+```mermaid
+flowchart TD
+    Start(["Begin JIT Compilation of BasicBlock"]) --> InitEmit["Emit 16-byte jit_trace_header at trace_base"]
+    InitEmit --> LoopOps["Fetch Next WASM Opcode in Block"]
+
+    LoopOps --> SelectStencil["Select Precompiled Thumb-2 Stencil from ROM Catalog"]
+    SelectStencil --> CopyBytes["Copy Stencil Binary Bytes to JIT Code Cache"]
+    CopyBytes --> RelocImm{"Stencil has Relocation Holes (Immediates / Offsets)?"}
+
+    RelocImm -- "Yes" --> PatchReloc["In-place Patch Constants (e.g. imm_lo, imm_hi, slot_offset)"]
+    RelocImm -- "No" --> CheckLast{"Last Opcode in BasicBlock?"}
+    PatchReloc --> CheckLast
+
+    CheckLast -- "No" --> LoopOps
+    CheckLast -- "Yes" --> EmitExit["Emit Trace Boundary Guard & Register Spill Sequence"]
+    EmitExit --> Backpatch["Backpatch Relative Branch Offsets (B/BL/BX) to Exit Stub"]
+    Backpatch --> FinalizeSize["Write total trace_byte_size into Header (+0x04)"]
+    FinalizeSize --> Complete(["JIT Machine Code Ready for W^X Commit"])
+```
+
 ### 4.2 状態遷移図
 <!-- traceability: {JIT_LazyChaining} {JIT_ReverseCompilationOrder} {GLOBAL_PeriodicTask} {GLOBAL_IdleDetection} -->
 ```mermaid

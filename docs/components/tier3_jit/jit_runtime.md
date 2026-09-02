@@ -75,6 +75,61 @@ graph TD
    コンパイル待ち列から取り出した PC が、既に 3 面キャッシュ（Active / Warm / Oldest）のいずれかに常駐済みであれば再コンパイルを行わず、カード状態のみ `COMPILED` へ同期する。
    **設計理由と不変条件**: 複数回のアイドル走査や非同期イベントにより同一 PC に対するコンパイル要求が重複してエンキューされた場合でも、二重コンパイルによる貴重なキャッシュ容量の浪費と CPU 時間の損失を完全に防止する。
 
+
+#### 3段高速検索パイプライン手順（手順アクティビティ図）
+<!-- traceability: {JIT_MultiBuffer_Cache} {LowLatencyJIT} {META_BinarySearch} -->
+実行時 PC からネイティブ `exec_trace` アドレスを極小オーバーヘッドで特定する 3 段階探索パイプラインを示す。
+
+```mermaid
+flowchart TD
+    Start(["Input UnifiedPC: (func_index << 16) | bytecode_offset"]) --> Stage1["[Stage 1] Card Marking: Check bit_view<2>[pc >> card_shift] (O(1))"]
+    Stage1 --> CheckCompiled{"Card State == COMPILED?"}
+
+    CheckCompiled -- "No" --> ExitInterp(["Fast Exit: Dispatch to Interpreter Handler (Zero Overhead)"])
+    CheckCompiled -- "Yes" --> Stage2["[Stage 2] Radix Key: radix_key = bswap32(pc)"]
+
+    Stage2 --> LookupRadix["prefix = radix_key >> radix_shift; first = table[prefix], last = table[prefix+1] (O(1))"]
+    LookupRadix --> Stage3["[Stage 3] Bounded Binary Search in radix_binary_tree_view [first, last] (O(log n))"]
+
+    Stage3 --> Hit{"JIT Entry found?"}
+    Hit -- "Yes" --> ReturnTrace(["Return Native Code Entry: exec_trace (O(1) execution)"])
+    Hit -- "No (False Positive / Evicted)" --> ExitInterp
+```
+
+#### 3面世代交代ローテーションと被チェイン局所アンリンク（責務シーケンス図）
+<!-- traceability: {JITR-GOTCHA-02} {JITR-GOTCHA-03} {JIT_MultiBuffer_Cache} {JIT_LazyChaining} -->
+Active バンク満杯時の世代交代において、Oldest バンクをパージし新 Active として再利用する際の、JIT Runtime、Inbound Table、Source Traces 間の局所アンリンク・再チェイニング連携を示す。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Active as Active Cache Bank (Full)
+    participant Mgr as JIT Cache Manager
+    participant Inbound as Inbound Chain Table (Oldest Bank)
+    participant Source as Preceding JIT Traces (Source)
+    participant Oldest as Oldest Cache Bank (Purged)
+
+    Active->>Mgr: Allocation request exceeds bank capacity
+    Note over Mgr: JITR-GOTCHA-03: Trigger 3-Bank Rotation
+    Note over Mgr: Shift roles: Oldest -> New Active, Warm -> Oldest, Active -> Warm
+
+    Mgr->>Inbound: Inspect registered inbound source traces (k entries)
+    loop For each source trace index in Inbound Table
+        Inbound->>Source: Inspect target trace promotion status
+        alt Target was Promoted to Active/Warm (JITR-GOTCHA-02)
+            Source->>Source: Re-chain: Update chain_target_addr to Promoted Address
+            Source->>Mgr: Transfer inbound registration to new Bank
+            Note over Source: Direct native jump maintained!
+        else Target was Evicted (Not Promoted)
+            Source->>Source: Unlink: Patch chain_target_addr to Interpreter Fallback Stub
+            Note over Source: Safely reverts to interpreter on next branch
+        end
+    end
+
+    Mgr->>Oldest: Clear metadata & wipe allocation offset = 0
+    Note over Oldest: Oldest bank recycled as fresh Active bank in O(k) time!
+```
+
 ### 4.2 状態遷移図
 ```mermaid
 stateDiagram-v2

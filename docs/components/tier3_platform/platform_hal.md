@@ -182,6 +182,30 @@ Fireball ではハードウェア制御のプリミティブを WASI 0.3p のリ
 - **割り込み通知（push）**: 物理割り込み発生時、ISR は COOS の `notify_interrupt(irq_id)` を呼び、INT イベントを有界キューへ投函するのみとする。**ISR がタスク状態を直接書き換えることはない。**実際の READY 遷移は、スケジューラが yield 点でキューをドレインする際に行われる（`{GLOBAL_InterruptWakeup}` を正本とする）。この非同期境界の分離が vSoC 実行状態モデルの安全性検証項目 `irq_jit_race_freedom_proof`（形式検証モデルの CTL 安全性検証 `AG(Not(handling_irq & jit_mode))` として証明されている）性質である。
 - **割り込み確認（pull）**: `{TaskPollInterruptFlag}` が定義するもう一方の経路として、ゲスト実行エンジン（JIT/インタープリタ）は Safepoint で `vsoc_context.interrupt_flags` を自ら確認する。この pull 側の実装（Safepoint 埋め込み位置、フラグ構造）は HAL の管轄外であり、`{TaskPollInterruptFlag}` を正本とする。 `{TaskPollInterruptFlag}` `{GLOBAL_InterruptWakeup}`
 
+#### ShmBufferPool バッファ確保・境界検査手順（手順アクティビティ図）
+<!-- traceability: {HAL-GOTCHA-01} {HAL_Interface} {IPC_ZeroCopy} -->
+デバイス通信用バッファスロットの固定長境界検証、タスク所有権照合、および不正アクセス防御手順を示す。
+
+```mermaid
+flowchart TD
+    Start(["HAL Driver: acquire_buffer(size)"]) --> CheckSize{"Requested size <= SHM_SLOT_SIZE (256B)?"}
+
+    CheckSize -- "No (> 256B)" --> RejectSize(["Reject with ValueError: Dynamic resizing prohibited"])
+    CheckSize -- "Yes" --> AllocSlot["Find Free Slot in Fixed-Capacity ShmBufferPool (16 slots)"]
+    AllocSlot --> SlotFound{"Available slot found?"}
+
+    SlotFound -- "No" --> RejectFull(["Reject: Pool Exhausted (ERR_NO_RESOURCE)"])
+    SlotFound -- "Yes" --> MarkSlot["Mark Slot Active & Set slot.owner_id = caller_task_id"]
+    MarkSlot --> ReturnHandle(["Return shm_id Handle to Caller"])
+
+    subgraph Buffer Release / Destruction
+        RelStart(["HAL Driver: release_buffer(shm_id)"]) --> VerifyOwner{"caller_task_id == slot.owner_id?"}
+        VerifyOwner -- "No (Unauthorized Task!)" --> TrapOwner(["HAL-GOTCHA-01 Trap: ShmTrap / ERR_PERMISSION_DENIED"])
+        VerifyOwner -- "Yes" --> ClearSlot["Zero slot memory & Reset slot.owner_id = 0"]
+        ClearSlot --> ReturnPool(["Slot returned to Free Pool"])
+    end
+```
+
 ### 6.2 状態遷移図
 <!-- traceability: {RSP_Transport_Selectable} {TaskPollInterruptFlag} {GLOBAL_InterruptWakeup} -->
 ```mermaid

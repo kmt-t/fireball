@@ -136,6 +136,56 @@ ROM上のデータストリームを管理し、LEB128可変長整数やプリ�
   `unload` は module_registry からモジュールを削除する。
   **設計理由と不変条件**: 本システムは動的フリーリスト管理によるメモリ断片化や管理オーバーヘッドを完全に排除するため、決定論的静的バンプアロケータを採用している。したがって、モジュールが使用していた物理 RAM を完全に回収して再利用可能とするためには、モジュールのアンロードは「ロード順の厳格な逆順（LIFO: Last-In First-Out）」で実行されなければならない。途中のモジュールをアンロードした場合はレジストリからの論理削除のみが行われ、最上位のモジュールがアンロードされた時点で初めてバンプポインタが安全に巻き戻される。
 
+
+#### トランザクション的パース & ロールバック手順（手順アクティビティ図）
+<!-- traceability: {LOAD-GOTCHA-02} {LightweightVerifier} {META_BumpAllocator} -->
+WASM バイナリパース中の軽量検証（V1-V6）判定と、エラー発生時のバンプアロケータ完全ロールバックによるメモリリーク防止手順を示す。
+
+```mermaid
+flowchart TD
+    Start(["Load WASM Binary from ROM"]) --> Save["bump_allocator::save() (Snapshot bump pointer)"]
+    Save --> V1{"V1: Magic == '\0asm'?"}
+
+    V1 -- "No" --> Rollback["bump_allocator::restore() (Full Rollback)"]
+    V1 -- "Yes" --> V2{"V2: Version == 1?"}
+
+    V2 -- "No" --> Rollback
+    V2 -- "Yes" --> V3{"V3: Section sizes valid & within bounds?"}
+
+    V3 -- "No" --> Rollback
+    V3 -- "Yes" --> V4{"V4: Section IDs ascending?"}
+
+    V4 -- "No" --> Rollback
+    V4 -- "Yes" --> V5{"V5: Function & Type signatures within limits?"}
+
+    V5 -- "No" --> Rollback
+    V5 -- "Yes" --> V6{"V6: Resource budgets <= system limits?"}
+
+    V6 -- "No" --> Rollback
+    V6 -- "Yes" --> Commit["Commit module_view to Registry"]
+    Commit --> Success(["Module Loaded: Executable State (Settled)"])
+
+    Rollback --> Reject(["Module Rejected: Zero RAM Leaked (Settled)"])
+```
+
+#### FNV-1a シンボル検索 & 生文字列完全一致照合（手順アクティビティ図）
+<!-- traceability: {LOAD-GOTCHA-01} {META_AccessDictionary} {META_BinarySearch} -->
+32-bit FNV-1a ハッシュ探索の高速性と、万一のハッシュ衝突によるシンボル誤認を完全に排除する照合手順を示す。
+
+```mermaid
+flowchart TD
+    Start(["Symbol Lookup Request: target_name"]) --> Hash["Compute 32-bit FNV-1a Hash of target_name"]
+    Hash --> BSearch["Bounded Binary Search in export_tree (O(k))"]
+    BSearch --> Found{"Candidate Entry found by Hash?"}
+
+    Found -- "No" --> NotFound(["Symbol Not Found (ERR_NOT_FOUND)"])
+    Found -- "Yes" --> Compare["Exact String Match: candidate.name == target_name (ROM string_view)"]
+    Compare --> Match{"Strings strictly identical?"}
+
+    Match -- "Yes" --> Resolve(["Symbol Resolved: return function_index"])
+    Match -- "No (Hash Collision Caught!)" --> RejectCollision(["Reject Resolution: Hash Collision Detected (ERR_COLLISION)"])
+```
+
 ### 4.2 メモリ制約
 <!-- traceability: {META_ConfigurableSystem} -->
 `module_view` と関連構造の最大サイズ。すべてコンパイル時固定。 `{META_ConfigurableSystem}`

@@ -94,6 +94,37 @@ GDB等の外部クライアントに提示する WASM 仮想レジスタ番号�
 デバッガとインタープリタの結合、GDB RSP パケット処理、統一スタック検査、プロファイラサンプリングの参照実装：
 [`concepts/debugger_concept.py`](concepts/debugger_concept.py)
 
+
+#### GDB メモリ書き換え時の JIT キャッシュ即時フラッシュ（責務シーケンス図）
+<!-- traceability: {DBG-GOTCHA-01} {DBG-GOTCHA-03} {Debugger_Jit_Flush} {RSPChecksumVerify} -->
+GDB ホストからのチェックサム検証付きパケット受信、ゲストメモリ更新、および JIT キャッシュ全バンク即時フラッシュの責務連携を示す。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Host as GDB Host Client
+    participant HAL as HAL UART (RSP Framer)
+    participant Dbg as DebuggerManager
+    participant RAM as Guest RAM / Flash
+    participant JIT as JIT Code Cache (Active/Warm/Oldest)
+
+    Host->>HAL: '$M<addr>,<len>:<data>#<chksum>'
+    Note over HAL: DBG-GOTCHA-03: Compute 2-digit Hex Checksum
+    alt Checksum Mismatch
+        HAL-->>Host: '-' (NAK: request retransmission)
+    else Checksum Valid
+        HAL-->>Host: '+' (ACK)
+        HAL->>Dbg: Push verified command (WRITE_MEMORY, addr, data)
+        Dbg->>RAM: Write new bytes into Guest RAM
+        Note over Dbg,JIT: DBG-GOTCHA-01: Memory modified -> Stale JIT traces invalid!
+        Dbg->>JIT: invalidate_all_banks()
+        Note over JIT: Increment generation cookie & wipe Active/Warm/Oldest
+        JIT-->>Dbg: Cache flushed: fallback to Interpreter
+        Dbg-->>HAL: PacketResponse('OK')
+        HAL-->>Host: '$OK#9a'
+    end
+```
+
 ### 4.2 状態遷移図
 ```mermaid
 stateDiagram-v2

@@ -559,6 +559,69 @@ def test_log_03_dictionary_storage_ownership_separation():
     assert d.format(0x02, (10, 20, 0, 0)) == "value 10 20"
 
 
+def test_log_04_coos_and_ipc_diagnostic_logging():
+    """LOG-04: COOS and IPC emit strict diagnostic log events upon anomalies/boundary conditions."""
+    sysv = System()
+    try:
+        # 1. COOS Duplicate Task ID -> 0x0103
+        def dummy_coro():
+            return
+            yield
+
+        try:
+            sysv.scheduler.spawn("dup_task", dummy_coro(), task_id="task_dup")
+            sysv.scheduler.spawn("dup_task_2", dummy_coro(), task_id="task_dup")
+        except ValueError:
+            pass
+
+        # 2. COOS IRQ Queue Overflow -> 0x0104
+        for irq_idx in range(20):
+            sysv.scheduler.notify_interrupt(irq_idx)
+
+        # 3. IPC Unknown URI -> 0x0202
+        msg = IPCMessage(FlatMapStorage([1], [10]))
+
+        def bad_uri_task():
+            yield from sysv.ipc.send(Role.RUNTIME, "fireball://unknown/service", msg)
+
+        sysv.scheduler.spawn("bad_uri_task", bad_uri_task())
+        sysv.scheduler.run_until_idle()
+
+        # 4. IPC RBAC Denied -> 0x0201
+        msg2 = IPCMessage(FlatMapStorage([1], [20]))
+
+        def rbac_denied_task():
+            # RUNTIME sending to DEBUGGER is DENIED
+            yield from sysv.ipc.send(Role.RUNTIME, "fireball://dbg/manager/0", msg2)
+
+        sysv.scheduler.spawn("rbac_denied_task", rbac_denied_task())
+        sysv.scheduler.run_until_idle()
+
+        # 5. IPC Message Too Large -> 0x0203
+        too_large_msg = IPCMessage(
+            FlatMapStorage(list(range(1, 10)), list(range(1, 10)))  # 9 pairs > 8
+        )
+
+        def too_large_task():
+            yield from sysv.ipc.send(Role.RUNTIME, "fireball://hal/gpio/0", too_large_msg)
+
+        sysv.scheduler.spawn("too_large_task", too_large_task())
+        sysv.scheduler.run_until_idle()
+
+        # Flush logger to UART (in addition to idle hooks)
+        sysv.logger.flush()
+        wire = sysv.transport.drain().decode()
+
+        # Verify all diagnostic strings were formatted and transmitted
+        assert "COOS: duplicate task id rejected" in wire
+        assert "COOS: irq queue overflow dropped" in wire
+        assert "IPC: unknown uri routing failed" in wire
+        assert "IPC: rbac denied" in wire
+        assert "IPC: message too large" in wire
+    finally:
+        sysv.shutdown()
+
+
 def test_recovery_01_retry_success_within_limit():
     """RECOVERY-01: Transient failure succeeds within 3 retries (10ms backoff) without exceptions."""
     mgr = RecoveryManager(sleep_fn=lambda _s: None)

@@ -17,7 +17,14 @@ from collections.abc import Sequence
 from enum import Enum, IntEnum
 from typing import Any
 
-from scheduler import Scheduler
+from logger import (
+    LOG_EVT_IPC_INVALID_OWNERSHIP,
+    LOG_EVT_IPC_MSG_TOO_LARGE,
+    LOG_EVT_IPC_RBAC_DENIED,
+    LOG_EVT_IPC_UNKNOWN_URI,
+    LogLevel,
+)
+from scheduler import ChannelAction, Scheduler
 from system_containers import FlatMapStorage, FlatMapView
 
 _EMPTY_IPC_STORAGE: FlatMapStorage = FlatMapStorage((), ())
@@ -273,8 +280,9 @@ class IPCRouter:
     (Stage 3, delegated to scheduler.Channel via _EDGE_CHANNEL_NAMES).
     """
 
-    def __init__(self, scheduler: Scheduler):
+    def __init__(self, scheduler: Scheduler, logger: Any = None):
         self.scheduler = scheduler
+        self.logger = logger
         # Non-owning view borrowing ROM-resident storage arrays (_SERVICE_KEYS, _SERVICE_DESCS)
         self.registry = FlatMapView(_SERVICE_KEYS, _SERVICE_DESCS)
 
@@ -309,10 +317,25 @@ class IPCRouter:
         `yield from` it from within another task's own coroutine (see
         scenario9's client_app_task). There is no separate "blocked" status.
         """
-        assert message.ownership == OwnershipState.SENDER_OWNS, (
-            "sender must own the message before sending"
-        )
+        if message.ownership != OwnershipState.SENDER_OWNS:
+            if self.logger is not None:
+                cur_state = message.ownership.value if hasattr(message.ownership, "value") else 0
+                self.logger.log_event(
+                    LogLevel.ERROR, LOG_EVT_IPC_INVALID_OWNERSHIP, cur_state, 1, 0, 0
+                )
+            assert message.ownership == OwnershipState.SENDER_OWNS, (
+                "sender must own the message before sending"
+            )
         if len(message) > FB_CONF_ROUTER_MAX_KV_PAIRS:
+            if self.logger is not None:
+                self.logger.log_event(
+                    LogLevel.ERROR,
+                    LOG_EVT_IPC_MSG_TOO_LARGE,
+                    len(message),
+                    FB_CONF_ROUTER_MAX_KV_PAIRS,
+                    0,
+                    0,
+                )
             return (
                 IpcStatus.ERR_MSG_TOO_LARGE,
                 f"message has {len(message)} KV pairs, exceeds {FB_CONF_ROUTER_MAX_KV_PAIRS}",
@@ -320,10 +343,16 @@ class IPCRouter:
 
         desc = self.find_service(uri)
         if desc is None:
+            if self.logger is not None:
+                self.logger.log_event(LogLevel.WARN, LOG_EVT_IPC_UNKNOWN_URI, 0, 0, 0, 0)
             return (IpcStatus.ERR_NOT_FOUND, f"URI {uri} is not registered")
 
         channel_id = _EDGE_CHANNEL_NAMES[sender_role][desc.role]
         if channel_id is None:
+            if self.logger is not None:
+                s_role = sender_role.value if hasattr(sender_role, "value") else int(sender_role)
+                t_role = desc.role.value if hasattr(desc.role, "value") else int(desc.role)
+                self.logger.log_event(LogLevel.WARN, LOG_EVT_IPC_RBAC_DENIED, s_role, t_role, 0, 0)
             return (
                 IpcStatus.ERR_PERMISSION_DENIED,
                 f"Role {sender_role.name} not allowed to access {desc.role.name}",
@@ -333,7 +362,7 @@ class IPCRouter:
         # receiver is already waiting on the other side.
         message.ownership = OwnershipState.IN_FLIGHT
         action, target = self.scheduler.channel_send(channel_id, message)
-        if action == "BLOCK":
+        if action in ("BLOCK", ChannelAction.BLOCK):
             yield ("BLOCK", None)
             # Resumed only once _handoff_or_yield() woke us, which only the
             # matching channel_recv() ever does for a blocked sender -- the

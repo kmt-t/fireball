@@ -17,9 +17,10 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Sequence
+from typing import TYPE_CHECKING, Sequence
 
-from hal import UartTransport
+if TYPE_CHECKING:
+    from hal import UartTransport
 
 # Matches a printf-style numeric conversion (%d, %08X, %u, ...) but not a
 # literal "%%". Deliberately excludes %s/%p/%c: LogDictionary.register()
@@ -39,6 +40,30 @@ _DISALLOWED_SPECIFIERS = ("%s", "%p", "%c")
 
 from system_containers import FlatMapStorage, FlatMapView
 
+# Standard Diagnostic Log Event IDs (system_logging.md §4.2.1)
+LOG_EVT_COOS_HANDOFF_LIMIT = 0x0101
+LOG_EVT_COOS_TASK_CAPACITY = 0x0102
+LOG_EVT_COOS_DUPLICATE_TASK = 0x0103
+LOG_EVT_COOS_IRQ_OVERFLOW = 0x0104
+
+LOG_EVT_IPC_RBAC_DENIED = 0x0201
+LOG_EVT_IPC_UNKNOWN_URI = 0x0202
+LOG_EVT_IPC_MSG_TOO_LARGE = 0x0203
+LOG_EVT_IPC_INVALID_OWNERSHIP = 0x0204
+LOG_EVT_IPC_CHANNEL_COLLISION = 0x0205
+
+STANDARD_DIAGNOSTIC_EVENTS: list[tuple[int, str]] = [
+    (LOG_EVT_COOS_HANDOFF_LIMIT, "COOS: handoff limit reached (task=%d, count=%d)"),
+    (LOG_EVT_COOS_TASK_CAPACITY, "COOS: task capacity exceeded (max=%d, attempted=%d)"),
+    (LOG_EVT_COOS_DUPLICATE_TASK, "COOS: duplicate task id rejected (task=%d)"),
+    (LOG_EVT_COOS_IRQ_OVERFLOW, "COOS: irq queue overflow dropped (irq=%d, dropped_total=%d)"),
+    (LOG_EVT_IPC_RBAC_DENIED, "IPC: rbac denied (sender_role=%d, target_role=%d)"),
+    (LOG_EVT_IPC_UNKNOWN_URI, "IPC: unknown uri routing failed (uri_handle=%d)"),
+    (LOG_EVT_IPC_MSG_TOO_LARGE, "IPC: message too large (kv_count=%d, max=%d)"),
+    (LOG_EVT_IPC_INVALID_OWNERSHIP, "IPC: invalid ownership state (current_state=%d, op=%d)"),
+    (LOG_EVT_IPC_CHANNEL_COLLISION, "IPC: channel waiter collision (channel=%d, dir=%d)"),
+]
+
 _EMPTY_LOG_STORAGE: FlatMapStorage[int, str] = FlatMapStorage([])
 
 
@@ -53,10 +78,14 @@ class LogDictionary:
         self,
         storage: FlatMapStorage[int, str] | None = None,
         capacity: int = 128,
+        include_diagnostic_events: bool = True,
     ):
-        self.storage: FlatMapStorage[int, str] = (
-            storage if storage is not None else FlatMapStorage([])
-        )
+        if storage is not None:
+            self.storage = storage
+        elif include_diagnostic_events:
+            self.storage = FlatMapStorage(sorted(STANDARD_DIAGNOSTIC_EVENTS, key=lambda x: x[0]))
+        else:
+            self.storage = FlatMapStorage([])
         self._view: FlatMapView[int, str] = self.storage.view()
         self.payload: FlatMapView[int, str] = self._view
 

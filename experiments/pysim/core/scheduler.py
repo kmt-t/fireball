@@ -17,6 +17,14 @@ from collections.abc import Callable, Generator
 from enum import Enum, auto
 from typing import Any
 
+from logger import (
+    LOG_EVT_COOS_DUPLICATE_TASK,
+    LOG_EVT_COOS_HANDOFF_LIMIT,
+    LOG_EVT_COOS_IRQ_OVERFLOW,
+    LOG_EVT_COOS_TASK_CAPACITY,
+    LogLevel,
+)
+
 FB_CONF_MAX_TASKS = 16
 FB_CONF_MAX_CONSECUTIVE_HANDOFFS = 4
 FB_CONF_INTERRUPT_QUEUE_SIZE = 16
@@ -66,12 +74,21 @@ class Channel:
         self.waiter_task: Task | None = None
         self.waiter_dir: WaitDir = WaitDir.NONE
         # Set only while waiter_task is a receiver waiting via
-        # channel_select_recv(); None for a plain single-channel wait.
+        # channel_select_recv(). When this channel completes the wait, it
+        # walks group.channels to clear waiter_task from the non-winning
+        # channels, preserving the one-waiter-per-channel invariant.
         self.waiter_group: SelectGroup | None = None
 
 
 class Task:
-    def __init__(self, task_id: int | str, name: str, coro: Generator[Any, None, None] | None):
+    """A single coroutine-based task with explicit cooperative lifecycle state."""
+
+    def __init__(
+        self,
+        task_id: int | str,
+        name: str,
+        coro: Generator[Any, None, None] | None = None,
+    ):
         self.task_id = task_id
         self.name = name
         self.coro = coro
@@ -86,9 +103,11 @@ class Scheduler:
         self,
         max_tasks: int = FB_CONF_MAX_TASKS,
         max_handoffs: int = FB_CONF_MAX_CONSECUTIVE_HANDOFFS,
+        logger: Any = None,
     ):
         self.max_tasks = max_tasks
         self.max_handoffs = max_handoffs
+        self.logger = logger
         self.consecutive_handoffs = 0
         self._ready: deque[Task] = deque()
         self._all: list[Task] = []
@@ -114,10 +133,29 @@ class Scheduler:
     ) -> int | str:
         """Spawn a new task within FB_CONF_MAX_TASKS bounds."""
         if len(self._all) >= self.max_tasks:
+            if self.logger is not None:
+                self.logger.log_event(
+                    LogLevel.ERROR,
+                    LOG_EVT_COOS_TASK_CAPACITY,
+                    self.max_tasks,
+                    len(self._all) + 1,
+                    0,
+                    0,
+                )
             raise RuntimeError(f"Task capacity exceeded (max {self.max_tasks})")
         if task_id is not None:
             assigned_id = task_id
             if self.get_task(assigned_id) is not None:
+                if self.logger is not None:
+                    tid = assigned_id if isinstance(assigned_id, int) else 0
+                    self.logger.log_event(
+                        LogLevel.ERROR,
+                        LOG_EVT_COOS_DUPLICATE_TASK,
+                        tid,
+                        0,
+                        0,
+                        0,
+                    )
                 raise ValueError(f"Task with ID {assigned_id} already exists")
         else:
             # Skip past any ID already taken (explicit or auto) without ever
@@ -279,6 +317,16 @@ class Scheduler:
 
             self._ready.appendleft(target_task)
             return (ChannelAction.DIRECT_SWITCH, target_task.task_id)
+        if self.logger is not None:
+            tid = target_task.task_id if isinstance(target_task.task_id, int) else 0
+            self.logger.log_event(
+                LogLevel.WARN,
+                LOG_EVT_COOS_HANDOFF_LIMIT,
+                tid,
+                self.consecutive_handoffs,
+                0,
+                0,
+            )
         self.consecutive_handoffs = 0
         return (ChannelAction.YIELD, None)
 
@@ -286,6 +334,15 @@ class Scheduler:
         """Non-blocking ISR notification to event queue."""
         if len(self.interrupt_event_queue) >= FB_CONF_INTERRUPT_QUEUE_SIZE:
             self.dropped_irqs += 1
+            if self.logger is not None:
+                self.logger.log_event(
+                    LogLevel.WARN,
+                    LOG_EVT_COOS_IRQ_OVERFLOW,
+                    irq_id,
+                    self.dropped_irqs,
+                    0,
+                    0,
+                )
             return False
         self.interrupt_event_queue.append(irq_id)
         return True
@@ -354,15 +411,20 @@ class Scheduler:
         return task
 
     def run_until_idle(self) -> None:
-        """Runs one full round-robin sweep, then fires idle hooks once READY queue drains."""
+        """Runs cooperative tasks until all coroutines block, yield or terminate, then fires idle hooks."""
         self.drain_interrupts()
-        while self._ready:
+        budget = len(self._ready) * 4 + 16
+        while self._ready and budget > 0:
+            budget -= 1
+            if all(t.coro is None for t in self._ready):
+                break
             task = self._ready.popleft()
             self.current_task = task
             task.state = TaskState.RUNNING
             if task.coro is None:
                 task.state = TaskState.READY
                 self._ready.append(task)
+                self.current_task = None
                 continue
             try:
                 wait_on = next(task.coro)
@@ -371,11 +433,14 @@ class Scheduler:
                 task.state = TaskState.TERMINATED
                 self.current_task = None
                 continue
-            if wait_on is None or (
-                isinstance(wait_on, tuple) and wait_on[0] in ("YIELD", ChannelAction.YIELD)
-            ):
+            if wait_on is None:
                 task.state = TaskState.READY
                 self._ready.append(task)
+            elif isinstance(wait_on, tuple) and wait_on[0] in ("YIELD", ChannelAction.YIELD):
+                task.state = TaskState.READY
+                self._ready.append(task)
+                if all(t.coro is None for t in self._ready):
+                    break
             # else: a ("BLOCK", None) CSP wait -- channel_send()/channel_recv()
             # already parked the task (TaskState.SUSPENDED_CSP) and record who
             # will wake it; there is nothing left for this loop to do.

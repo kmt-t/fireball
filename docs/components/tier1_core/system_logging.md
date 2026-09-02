@@ -88,6 +88,22 @@ ROM上に固定配置されたフォーマット文字列配列の非所有ア�
 | 引数スライス規則 | フォーマット文字列に含まれる指定子数 $n$（$0 \le n \le 4$）に対し、渡された4引数タプルの先頭 $n$ 個（`args[0..n]`）のみが展開時に参照され、未使用スロットは安全に無視される |
 | 登録時期 | ビルド時 (実行時の追加は不可) |
 
+### 4.2.1 COOS / IPC 診断ログイベント仕様
+<!-- traceability: {DictionaryBasedIPC} {BufferedLogging} -->
+COOS および IPC において、デバッグ時に重大な不整合・境界超過・通信遮断を検知するための診断ログイベントを定義する。ログのオーバーヘッドを最小化するため、常時ログは出力せず、異常系・境界値到達時のみに厳選して発行する。 `{DictionaryBasedIPC}` `{BufferedLogging}`
+
+| イベントID | 分類 | レベル | フォーマット文字列 | 引数構成 (args[0..3]) | 発生条件 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `0x0101` | COOS | `WARN` | `COOS: handoff limit reached (task=%d, count=%d)` | `task_id`, `handoff_count`, 0, 0 | 連続ハンドオフ上限（4回）に到達し強制 YIELD |
+| `0x0102` | COOS | `ERROR` | `COOS: task capacity exceeded (max=%d, attempted=%d)` | `max_tasks`, `attempted_count`, 0, 0 | タスク上限（16）超過によるタスク spawn 拒否 |
+| `0x0103` | COOS | `ERROR` | `COOS: duplicate task id rejected (task=%d)` | `task_id`, 0, 0, 0 | 既存タスクと同一 ID の spawn 試行の拒絶 |
+| `0x0104` | COOS | `WARN` | `COOS: irq queue overflow dropped (irq=%d, dropped_total=%d)` | `irq_id`, `dropped_count`, 0, 0 | 割込通知キュー（16）溢れによるイベント破棄 |
+| `0x0201` | IPC | `WARN` | `IPC: rbac denied (sender_role=%d, target_role=%d)` | `sender_role`, `target_role`, 0, 0 | RBAC 権限マトリクス違反によるメッセージ遮断 |
+| `0x0202` | IPC | `WARN` | `IPC: unknown uri routing failed (uri_handle=%d)` | `uri_handle`, 0, 0, 0 | サービスレジストリ未登録の URI への送信試行 |
+| `0x0203` | IPC | `ERROR` | `IPC: message too large (kv_count=%d, max=%d)` | `kv_count`, `max_kv_pairs`, 0, 0 | 許可された最大 KV ペア数（8）を超過したメッセージ |
+| `0x0204` | IPC | `ERROR` | `IPC: invalid ownership state (current_state=%d, op=%d)` | `ownership_state`, `operation`, 0, 0 | 送信側が所有権を持たないメッセージの送信試行 |
+| `0x0205` | IPC | `ERROR` | `IPC: channel waiter collision (channel=%d, dir=%d)` | `channel_idx`, `wait_dir`, 0, 0 | 1チャネル1待機タスクの不変条件に対する重複待機試行 |
+
 ### 4.3 COOS Idle Hook 連携 (Flush Protocol)
 <!-- traceability: {GLOBAL_IdleDetection} -->
 COOSスケジューラの `set_idle_hook` で `logger.flush()` を登録する。 `{GLOBAL_IdleDetection}`

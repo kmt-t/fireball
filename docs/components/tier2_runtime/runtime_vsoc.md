@@ -201,7 +201,7 @@ stateDiagram-v2
 | **Uninitialized** | 初期化前 | - |
 | **Loading** | WASM モジュール読み込み・リンク中 | パーサ実行、セクション検証 |
 | **Ready** | 実行準備完了 | `step()` で Interpreter または JIT へ遷移 |
-| **InterpreterRun** | インタープリタによるバイトコード逐次実行 | オペコード実行、ホットスポット検出 |
+| **InterpreterRun** | インタープリタによるバイトコード逐次実行 | オプコード実行、ホットスポット検出 |
 | **JitRun** | JIT生成ネイティブコード実行 | ネイティブコード直接実行、Safepoint チェック |
 | **SafepointCheck** | JIT 実行中の割り込み確認ポイント | フラグチェック、中断判定 |
 | **Debugging** | デバッガによる停止中 | メモリ検査、変数書き換え、キャッシュ flush |
@@ -221,7 +221,7 @@ stateDiagram-v2
 | SafepointCheck → Ready | [interrupt pending] | 割り込みフラグ有り | インタープリタ フォールバック | Ready |
 | (any) → Debugging | breakpoint [debugger] | RSP ブレークポイント | デバッガコマンド待ち | Debugging |
 | Debugging → InterpreterRun | resume(interp) | 再開要求（インタープリタ） | JIT キャッシュ flush、PC 保持 | InterpreterRun |
-| (any) → Error | trap() | ページフォルト / 不正オペコード | トラップハンドラ実行 | Error |
+| (any) → Error | trap() | ページフォルト / 不正オプコード | トラップハンドラ実行 | Error |
 | Error → Ready | recover() | リカバリ可能 | コンテキストリセット | Ready |
 
 **重要な設計ポイント:**

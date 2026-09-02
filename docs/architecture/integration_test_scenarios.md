@@ -256,7 +256,7 @@
 | INT-102 | HAL SPI 4KB EEPROM 書き込み・読み出し | SPI ドライバ初期化 | WREN $\to$ Write $\to$ Read | 指定アドレスに書き込んだバイト列が 100% 一致して読み出される | `HAL_PeripheralDrivers` |
 | INT-103 | WASI In-Memory VFS シークと読み書き | 仮想 FD 3 (config.ini) | `fd_seek` 後 `fd_read`/`fd_write` | ファイルポインタが移動し、指定位置から正確に読み書きできる | `WASI_InMemVFS` |
 | INT-104 | WASI 標準ストリームバッファリング | stdin にデータ充填 | `fd_read(fd=0)` 実行 | ストリームバッファから指定バイト数が正しく読み込まれる | `WASI_ScatteredIO` |
-| INT-105 | WASI 乱数取得 & 高精度クロック | ゲストメモリ指定 | `random_get`, `clock_time_get` | 乱数バッファが充填され、単調増加ナノ秒タイムスタンプが得られる | `WASI_InMemVFS` |
+| INT-105 | WASI 乱数取得 & 高精度クロック | ゲストリニアメモリ指定 | `random_get`, `clock_time_get` | 乱数バッファが充填され、単調増加ナノ秒タイムスタンプが得られる | `WASI_InMemVFS` |
 
 ---
 

@@ -46,7 +46,7 @@ world fireball {
 
 ##### トラップ高速パスとレジスタ直接マッピング
 <!-- traceability: {Trap_Interface} -->
-`fireball_call` は、実行環境のJIT/Interpreterが提供するインポート関数呼び出しをインターセプトし、ホスト側の仮想レジスタ `REG_SYSCALL_*` に引数を直接複写（レジスタマッピング）することで、トラップ（`ecall` / `svc` 等）の処理オーバヘッドを極限まで削減する高速パスを提供する。 `{Trap_Interface}`
+`fireball_call` は、実行環境のJIT/Interpreterが提供するインポート関数呼び出しをインターセプトし、ホスト側の仮想レジスタ `REG_SYSCALL_*` に引数を直接複写（レジスタマッピング）することで、トラップ（`ecall` / `svc` 等）の処理オーバーヘッドを極限まで削減する高速パスを提供する。 `{Trap_Interface}`
 
 ## 4. `fireball_call` 呼び出し規約
 

@@ -301,58 +301,42 @@ class IPCRouter:
 
     def create_channel(
         self,
-        destination: str | Role | int,
+        destination_uri: str,
         sender_role: Role | None = None,
     ) -> Channel | None:
         """
-        Opens a communication channel to the destination task/service.
+        Opens a communication channel to the destination service URI.
         Binds current running task's role (or explicit sender_role), performs
-        Stage 1 URI/Role lookup and Stage 2 RBAC authorization, and returns
+        Stage 1 URI lookup and Stage 2 RBAC authorization, and returns
         the dedicated Channel instance if permitted (or None if denied/not found).
         """
-        # 1. Determine sender role from current running task if not explicitly provided
         if sender_role is None:
             current = self.scheduler.current_task
-            if current is not None and getattr(current, "role", None) is not None:
-                sender_role = current.role
-            else:
-                sender_role = Role.RUNTIME
+            sender_role = Role(current.role) if current is not None else Role.RUNTIME
 
-        # 2. Resolve target role from destination
-        if isinstance(destination, Role):
-            target_role = destination
-        elif type(destination) is int:
-            desc = self.get_service_descriptor(destination)
-            if desc is None:
-                return None
-            target_role = desc.role
-        else:
-            handle = self.lookup_service_handle(destination)
-            desc = self.get_service_descriptor(handle)
-            if desc is None:
-                return None
-            target_role = desc.role
+        handle = self.lookup_service_handle(destination_uri)
+        desc = self.get_service_descriptor(handle)
+        if desc is None:
+            return None
 
-        # 3. RBAC authorization check
-        if not FB_CONF_ROUTER_ROLE_MATRIX[int(sender_role)][int(target_role)]:
+        if not FB_CONF_ROUTER_ROLE_MATRIX[int(sender_role)][int(desc.role)]:
             if self.logger is not None:
                 self.logger.log_event(
                     LogLevel.WARN,
                     LOG_EVT_IPC_RBAC_DENIED,
                     int(sender_role),
-                    int(target_role),
+                    int(desc.role),
                     0,
                     0,
                 )
             return None
 
-        # 4. Return authorized Channel instance
-        return self._edge_channels[int(sender_role)][int(target_role)]
+        return self._edge_channels[int(sender_role)][int(desc.role)]
 
-    def send(self, sender_role: Role, destination: str | int, message: IPCMessage):
+    def send(self, sender_role: Role, destination_uri: str, message: IPCMessage):
         """
         Stage 1 (lookup handle) + Stage 2 (RBAC check), then Stage 3: synchronous
-        CSP send on the integer channel ID.
+        CSP send on the dedicated Channel.
         Zero-copy: `message` itself is never duplicated, only its `ownership`
         flag and reference move.
         """
@@ -384,20 +368,18 @@ class IPCRouter:
                 f"message has {len(message)} KV pairs, exceeds {FB_CONF_ROUTER_MAX_KV_PAIRS}",
             )
 
-        # 1. Resolve URI to integer handle first (no dict!)
-        handle = (
-            destination if type(destination) is int else self.lookup_service_handle(destination)
-        )
+        # 1. Resolve URI to integer handle via binary search (no dict!)
+        handle = self.lookup_service_handle(destination_uri)
         desc = self.get_service_descriptor(handle)
         if desc is None:
             if self.logger is not None:
                 self.logger.log_event(
                     LogLevel.WARN, LOG_EVT_IPC_UNKNOWN_URI, handle if handle >= 0 else 0, 0, 0, 0
                 )
-            return (IpcStatus.ERR_NOT_FOUND, f"Destination {destination} is not registered")
+            return (IpcStatus.ERR_NOT_FOUND, f"Destination {destination_uri} is not registered")
 
         # 2. Lookup authorized Channel for destination via create_channel
-        channel = self.create_channel(destination, sender_role=sender_role)
+        channel = self.create_channel(destination_uri, sender_role=sender_role)
         if channel is None:
             return (
                 IpcStatus.ERR_PERMISSION_DENIED,
@@ -412,12 +394,12 @@ class IPCRouter:
         message.ownership = OwnershipState.RECEIVER_OWNS
         return (IpcStatus.COMPLETED, target)
 
-    def recv(self, source: str | int):
+    def recv(self, service_uri: str):
         """
         Stage 1 in reverse: resolves service handle, then guarded external choice
         (select) across every incoming Channel allowed for that role.
         """
-        handle = source if type(source) is int else self.lookup_service_handle(source)
+        handle = self.lookup_service_handle(service_uri)
         desc = self.get_service_descriptor(handle)
         if desc is None:
             return (IpcStatus.ERR_NOT_FOUND, None)

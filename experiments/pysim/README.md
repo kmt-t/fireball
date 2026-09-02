@@ -6,11 +6,17 @@
 
 ### C++ 移植可能性の制約（本ディレクトリのみ）
 
-`experiments/pysim/` 配下のコードは、この事前実証としての性質上、`.agents/rules/embedded_cpp.md` / `stdlib_policy.md` が定める組み込み C++（ヒープ割り当て・例外・RTTI 無効、`std::vector`/`std::map`/`std::unordered_map` 等の動的コンテナ禁止）の制約を型として引き継ぎます。具体的には：
+`experiments/pysim/` 配下のコードは、この事前実証としての性質上、`.agents/rules/embedded_cpp.md` / `stdlib_policy.md` が定める組み込み C++（ヒープ割り当て・例外・RTTI 無効、`std::vector`/`std::map`/`std::unordered_map` 等の動的コンテナ禁止）の制約を型として引き継ぎます。**pysim は「RTTI（実行時型情報）のない静的型付け言語（C++）」だと思って記述してください。** 具体的には：
 
-- Python の `dict`/`set` を実装の型として使わない。固定長配列、`FlatMapView`/`FlatSetView`/`RadixBinaryTreeView`/`BitView`（`core/system_containers.py`）、または `StaticFlatMap`/`StaticFlatSet` のような固定容量コンテナに置き換える。
-- `isinstance`/`type()`/`hasattr`/`getattr` によるランタイム型検査を行わない（RTTI・リフレクション無効）。
-- 例外を制御フローに使わない。失敗は戻り値（`None`、`Result`型、enumステータス等）で表現する。
+- **動的型検査・リフレクションの完全禁止（No RTTI）**:
+  - `isinstance`, `type()`, `hasattr`, `getattr` 等のランタイム型検査やリフレクションを一切使用しない。
+  - `Union` 型や「型が両対応（引数が `str | Role | int` など）」の動的ディスパッチコードを書かない。シグネチャは単一の具象型に一本化し、別の型を扱う場合は別名関数として明確に分離する。
+- **動的コンテナの禁止**:
+  - Python の `dict`/`set` を実装の型として使わない。固定長配列、`FlatMapView`/`FlatSetView`/`RadixBinaryTreeView`/`BitView`（`core/system_containers.py`）、または `StaticFlatMap`/`StaticFlatSet` のような固定容量コンテナに置き換える。
+- **例外制御フローの禁止**:
+  - 例外を制御フローに使わない。失敗は戻り値（`None`、`Result`型、`IntEnum` ステータス等）で表現する。
+- **厳格な整数型・Enum の使用**:
+  - 文字列による状態・ID 比較を行わない。すべて `IntEnum` または整数インデックスで扱う。
 
 **この制約は `experiments/pysim/` のみに適用され、`docs/components/**/concepts/*.py` の参考実装コードには適用されません。** concept コードは仕様の意図を伝えるための説明的なスニペットであり、可読性を優先して `dict` などの通常の Python イディオムを使ってよいものとします。
 

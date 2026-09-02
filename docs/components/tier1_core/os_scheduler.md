@@ -58,10 +58,13 @@ graph TD
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
-<!-- traceability: {GLOBAL_IdleDetection} {GLOBAL_PeriodicTask} {GLOBAL_InterruptWakeup} -->
+<!-- traceability: {GLOBAL_IdleDetection} {GLOBAL_PeriodicTask} {GLOBAL_InterruptWakeup} {Challenge_CspHandoffStarvation} {CSP_Handoff} -->
 - **スケジューリング**: ラウンドロビン方式。
     - スケジューラ・コンテキスト内の「実行可能タスク列」を固定長リングキューで管理し、定数時間 $O(1)$ でのタスク切り替えを実現する。
-- **アイドル状態の検知**: 全ての管理タスクが「待機状態（BLOCKED）」となった場合にアイドル・ハンドラ（Periodic Task等）を実行する。 `{GLOBAL_IdleDetection}` `{GLOBAL_PeriodicTask}`
+- **連続直接ハンドオフ上限とメインループ強制復帰 (`SCHED-GOTCHA-01`, `{Challenge_CspHandoffStarvation}`)**:
+    - CSP通信のランデブー成立時、呼び出し元と呼び出し先は C++20 コルーチンの対称遷移（Symmetric Transfer）によりスケジューラをバイパスして直接遷移（`{CSP_Handoff}`）を行う。
+    - **設計理由と不変条件**: 直接ハンドオフを無制限に許可すると、例えば2つの高頻度通信タスクが互いにメッセージをピンポン送受信し続けた場合に CPU を独占し、READY キュー内に待機している他のタスク（タイマー処理、システム監視、低優先度タスク等）が永久にディスパッチされず餓死（Starvation）に陥る。これを防ぐため、スケジューラは連続直接遷移カウンタ（`consecutive_handoffs`）を保持し、設定された上限（既定 4〜8 回）に到達した瞬間に直接遷移を強制打ち切りとし、相手タスクを READY キュー末尾へ投入した上で `YIELD` を返却してスケジューラのメイン巡回ループへ強制復帰させる。これにより、いかなる通信パターンであっても全タスクへの公平な実行機会と有界な応答時間を形式的に保証する。
+- **アイドル状態の検知**: 全ての管理タスクが「待機状態（BLOCKED/SUSPENDED_CSP）」となった場合にアイドル・ハンドラ（Periodic Task、ログフラッシュ、JITバッチコンパイル等）を実行する。 `{GLOBAL_IdleDetection}` `{GLOBAL_PeriodicTask}`
 - **割り込み処理**: HALからの割り込み通知（`notify_interrupt(irq_id)`）を受信し、INTイベントキューから回収して対象タスクを READY キュー末尾に追加する。 `{GLOBAL_InterruptWakeup}`
 
 #### スケジューラ フルセット・コンセプトコード (`concepts/scheduler_concept.py`)

@@ -164,10 +164,14 @@ class IPCMessage:
 class Channel:
     """Bufferless synchronous CSP rendezvous (`{ADR_RendezvousChannel}`): a
     single in-flight slot, never a bounded queue, so there is no "queue
-    full" state to roll back from. (A real cooperative scheduler
-    additionally suspends the caller here until the counterpart arrives;
-    this concept stays a plain sequential demonstration of the rendezvous
-    result.)"""
+    full" state to roll back from (`IPCR-GOTCHA-01`).
+
+    同一 CSP エッジへ送信待機中の状態でさらに別の送信要求が重なった場合、
+    ルータは ERR_QUEUE_FULL のような差し戻しエラーを返さず、即座に
+    アサーション違反（プログラミングエラー）で停止させる。CSP ランデブー
+    チャネルにはキューが一切存在しないため、「キュー溢れ」というエラー状態を
+    設けてはならず、2重送信は呼び出し元の論理破綻として検出する。
+    """
 
     def __init__(self):
         self._in_flight: IPCMessage | None = None
@@ -235,7 +239,15 @@ class IPCRouter:
         return self._channels[sender_role][target_role]
 
     def send(self, sender_role: int, uri: str, message: IPCMessage) -> tuple[IpcStatus, str]:
-        """3-stage IPC send: URI lookup -> RBAC -> CSP rendezvous handoff."""
+        """3-stage IPC send: URI lookup -> RBAC -> CSP rendezvous handoff.
+
+        事前検証拒否による所有権保全 (IPCR-GOTCHA-02):
+        権限・URI・サイズ検証などの事前検査（Preflight Check）は、
+        メッセージの所有権剥奪（IN_FLIGHT への遷移）の前に先行して行われる。
+        検証エラー時はメッセージ所有権が送信元（SENDER_OWNS）のまま保全される。
+        先にリソースを剥奪してから送信先を検証すると、エラー時にリソースが
+        孤立（in-flight リーク）するためである。
+        """
         assert message.ownership == OwnershipState.SENDER_OWNS
 
         channel = self.create_channel(uri, sender_role=sender_role)

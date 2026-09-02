@@ -379,26 +379,29 @@ class RadixBinaryTreeView:
 def lookup_jit_entry(
     view: FlatMapView | RadixBinaryTreeView,
     card_table: BitView,
-    entry_group_bounds: dict[int, tuple[int, int]],
+    entry_group_bounds: Sequence[int],
     pc: int,
     card_shift: int,
     group_shift: int,
 ):
     """JIT entry lookup:
     1. O(1) card marking pre-filter: verify card state == 3 (COMPILED).
-    2. O(1) Radix Table prefix lookup: slice to group bounds [first, last].
+    2. O(1) Radix Table prefix lookup: slice to group bounds [bounds[i], bounds[i+1]].
     3. Bounded local binary search on narrowed FlatMapView (RadixBinaryTree index model).
     """
     card_idx = pc >> card_shift
     if card_idx >= card_table.size() or card_table.at(card_idx) != 3:  # 3 = COMPILED
         return None
-    if isinstance(view, RadixBinaryTreeView):
+    if hasattr(view, "radix_table"):
         return view.find(pc)
     group_idx = pc >> group_shift
-    bounds = entry_group_bounds.get(group_idx)
-    if bounds is None:
+    if group_idx < 0 or group_idx + 1 >= len(entry_group_bounds):
         return None
-    return view.slice(*bounds).find(pc)
+    first = entry_group_bounds[group_idx]
+    last = entry_group_bounds[group_idx + 1]
+    if first >= last:
+        return None
+    return view.slice(first, last).find(pc)
 
 
 def card_marking_table(storage: bytearray, card_count: int) -> BitView:

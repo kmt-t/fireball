@@ -384,7 +384,7 @@ def _card_compiled(card_table: BitView, pc: int, card_shift: int) -> bool:
 def lookup_jit_entry_flatmap(
     view: FlatMapView[int, ValT],
     card_table: BitView,
-    entry_group_bounds: Sequence[tuple[int, int]],
+    entry_group_bounds: Sequence[int],
     pc: int,
     card_shift: int = 3,
     group_shift: int = 6,
@@ -393,16 +393,17 @@ def lookup_jit_entry_flatmap(
     JIT entry lookup over a plain FlatMapView, narrowed via caller-supplied
     group bounds:
         1. O(1) card marking pre-filter (8 bytes per card, card_shift=3).
-        2. O(1) group-bounds slice (caller-computed, e.g. a separate Radix Table).
+        2. O(1) group-bounds slice (pure scalar offsets array where group i is [bounds[i], bounds[i+1])).
         3. Bounded local binary search on the narrowed FlatMapView.
     """
 
     if not _card_compiled(card_table, pc, card_shift):
         return None
     group_idx = pc >> group_shift
-    if group_idx >= len(entry_group_bounds):
+    if group_idx < 0 or group_idx + 1 >= len(entry_group_bounds):
         return None
-    first, last = entry_group_bounds[group_idx]
+    first = entry_group_bounds[group_idx]
+    last = entry_group_bounds[group_idx + 1]
     if first >= last:
         return None
     return view.slice(first, last).find(pc)

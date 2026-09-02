@@ -226,7 +226,7 @@ class RadixBinaryTreeView:
         radix_table: Sequence[int],
         radix_shift: int,
     ):
-        self.map_view = FlatMapView(keys, values)
+        self.map_view = FlatMapView(list(zip(keys, values)))
         self.radix_table = radix_table  # pure scalar offsets array [0, 3, 6, ...]
         self.radix_shift = radix_shift
 
@@ -244,7 +244,7 @@ class RadixBinaryTreeView:
 def lookup_jit_entry(
     view: FlatMapView | RadixBinaryTreeView,
     card_table: BitView,
-    entry_group_bounds: dict[int, tuple[int, int]],
+    entry_group_bounds: Sequence[int],
     pc: int,
     card_shift: int,
     group_shift: int,
@@ -257,13 +257,16 @@ def lookup_jit_entry(
     card_idx = pc >> card_shift
     if card_idx >= card_table.size() or card_table.at(card_idx) != 3:  # 3 = COMPILED
         return None
-    if isinstance(view, RadixBinaryTreeView):
+    if hasattr(view, "radix_table"):
         return view.find(pc)
     group_idx = pc >> group_shift
-    bounds = entry_group_bounds.get(group_idx)
-    if bounds is None:
+    if group_idx < 0 or group_idx + 1 >= len(entry_group_bounds):
         return None
-    return view.slice(*bounds).find(pc)
+    first = entry_group_bounds[group_idx]
+    last = entry_group_bounds[group_idx + 1]
+    if first >= last:
+        return None
+    return view.slice(first, last).find(pc)
 
 
 def card_marking_table(storage: bytearray, card_count: int) -> BitView:
@@ -332,7 +335,7 @@ def test_bit_view_offers_no_search():
 
 
 def _map_fixture():
-    return FlatMapView([10, 20, 30, 40, 50, 60], [1, 2, 3, 4, 5, 6])
+    return FlatMapView([(10, 1), (20, 2), (30, 3), (40, 4), (50, 5), (60, 6)])
 
 
 def test_narrowing_only_ever_shrinks_and_composes():
@@ -376,10 +379,7 @@ def test_card_marking_prefilter_and_jit_entry_group_narrowing_lookup():
     # pc=60 -> card_idx = 60 >> 3 = 7
     card_table.put(3, 3)  # card 3 (covers pc 24-31) -> 3: COMPILED
     card_table.put(7, 3)  # card 7 (covers pc 56-63) -> 3: COMPILED
-    entry_group_bounds = {
-        0: (0, 3),
-        1: (3, 6),
-    }  # group 0: entries 0..2, group 1: entries 3..5
+    entry_group_bounds = [0, 3, 6]  # group 0: [0, 3), group 1: [3, 6)
     assert (
         lookup_jit_entry(view, card_table, entry_group_bounds, pc=30, card_shift=3, group_shift=5)
         == 3

@@ -33,7 +33,6 @@ tracing JIT: there is no function/method-level unit anywhere in the design.
 """
 
 from collections.abc import Callable
-from typing import Any
 
 # ==============================================================================
 # 1. Hardware protection & traps
@@ -439,7 +438,7 @@ class Stencil:
         self.code = code
         self.holes = holes
 
-    def emit(self, **patch: Any) -> list[str]:
+    def emit(self, **patch: object) -> list[str]:
         for h in self.holes:
             if h not in patch:
                 raise KeyError(f"stencil '{self.name}' requires relocation '{h}'")
@@ -610,7 +609,7 @@ class BasicBlock:
     def __init__(
         self,
         head_pc: int,
-        ops: list[tuple[str, Any]],
+        ops: list[tuple[str, object]],
         next_pc: int | None = None,
         loops_to: int | None = None,
     ):

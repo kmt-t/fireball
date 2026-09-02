@@ -16,7 +16,6 @@ from __future__ import annotations
 import struct
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
 
 from leb128 import decode_signed, decode_unsigned
 from system_containers import FlatMapView
@@ -582,7 +581,7 @@ _OPCODE_TABLE[I32_STORE16] = "i32.store16"
 
 def extract_basic_blocks(
     code: bytes, func_index: int = 0
-) -> list[tuple[int, list[tuple[str, Any]], int | None]]:
+) -> list[tuple[int, list[tuple[str, object]], int | None]]:
     """Extracts straight-line BasicBlocks from WASM bytecode as a flat list.
     Returns [(head_pc, [(op_name, arg), ...], next_pc), ...] where head_pc = (func_index << 16) | offset."""
     from wasm_opcodes import BLOCK, BR, BR_IF, ELSE, END, IF, LOOP, RETURN
@@ -590,8 +589,8 @@ def extract_basic_blocks(
     instrs = decode_all(code)
     sorted_instrs = list(instrs.values)
     base_pc = func_index << 16
-    blocks: list[tuple[int, list[tuple[str, Any]], int | None]] = []
-    cur_ops: list[tuple[str, Any]] = []
+    blocks: list[tuple[int, list[tuple[str, object]], int | None]] = []
+    cur_ops: list[tuple[str, object]] = []
     cur_head: int | None = None
     for ins in sorted_instrs:
         pc = base_pc | ins.offset

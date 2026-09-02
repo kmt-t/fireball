@@ -34,9 +34,8 @@ argument outside the declared signature.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Any
 
 from control_flow import Instr, decode_all
 from wasm_module import F32, F64, Module
@@ -207,7 +206,7 @@ class CallFrame:
 
     def __init__(
         self,
-        instrs: Any,
+        instrs: Sequence[tuple[str, object]],
         code: bytes,
         values: list[int],
         env: ExecEnv | None = None,
@@ -327,12 +326,12 @@ class Interpreter:
         self.tables: list[list[int | None]] = [
             module.table_contents(i) for i in range(len(module.tables))
         ]
-        self.debugger: Any | None = None
+        self.debugger: object | None = None
         self._env = ExecEnv(module, memory, self.globals, self.tables, self.host_functions)
         if self.module.start_function is not None:
             self.call(self.module.start_function, [])
 
-    def attach_debugger(self, debugger: Any) -> None:
+    def attach_debugger(self, debugger: object) -> None:
         """
         Records the attached debugger. Unlike IntegratedHybridEngine's
         {DebuggerLabelTableSwitch}, the threaded interpreter's `_HANDLERS`

@@ -10,8 +10,6 @@ Architecture:
 - Integrated Profiler & Test Tool: PC sampling counter and memory/register assertion hooks ({Debug_Integrated}).
 """
 
-from typing import Any
-
 
 class WASMTrap(Exception):
     pass
@@ -75,7 +73,7 @@ class WASMInterpreter:
             raise WASMTrap("STACK_UNDERFLOW")
         return ctx.stack[ctx.sp_offset - 1]
 
-    def step(self, ctx: ExecutionContext, bytecode: list[tuple[str, Any]]) -> str:
+    def step(self, ctx: ExecutionContext, bytecode: list[tuple[str, object]]) -> str:
         """
         Executes exactly one WASM bytecode instruction.
         Returns: "CONTINUE", "RETURN", "TRAP", or raises WASMTrap.
@@ -183,7 +181,7 @@ class DebuggerManager:
                     msg = f"ASSERTION_FAILED: addr 0x{addr:X} expected {expected} but got {val} ({desc})"
                     self.assertion_violations.append(msg)
 
-    def step_instruction(self, bytecode: list[tuple[str, Any]]) -> str:
+    def step_instruction(self, bytecode: list[tuple[str, object]]) -> str:
         """Single-steps one instruction via Interpreter Fallback."""
         if not self.attached:
             raise RuntimeError("Debugger not attached")
@@ -194,7 +192,7 @@ class DebuggerManager:
         self.ctx.stop_signal = 5  # SIGTRAP
         return res
 
-    def continue_execution(self, bytecode: list[tuple[str, Any]]) -> str:
+    def continue_execution(self, bytecode: list[tuple[str, object]]) -> str:
         """Resumes execution until a breakpoint, termination, or trap is hit."""
         if not self.attached:
             raise RuntimeError("Debugger not attached")
@@ -242,7 +240,7 @@ class GDBRspProtocol:
     def format_packet(cls, payload: str) -> str:
         return f"${payload}#{cls.calculate_checksum(payload)}"
 
-    def handle_packet(self, packet: str, bytecode: list[tuple[str, Any]]) -> str:
+    def handle_packet(self, packet: str, bytecode: list[tuple[str, object]]) -> str:
         """
         Parses an incoming GDB RSP packet (e.g. '$?#3f', '$g#67', '$s#73') and returns response packet.
         """

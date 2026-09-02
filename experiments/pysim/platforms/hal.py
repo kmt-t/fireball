@@ -29,7 +29,7 @@ import time
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from memory import MemoryManager
@@ -271,7 +271,7 @@ class HalDriver:
         """Checks if this driver supports the given command ID (1=True, 0=False)."""
         return 1 if cmd_id in self.supported_commands else 0
 
-    def dispatch(self, cmd_id: int, params: FlatMapView) -> Any:
+    def dispatch(self, cmd_id: int, params: FlatMapView) -> object:
         """Dispatches an IPC command to the driver handler."""
         if cmd_id == 0x00:  # CMD_QUERY_CAPS
             query_cmd = params.find(ARG_QUERY_CMD_ID)
@@ -279,7 +279,7 @@ class HalDriver:
 
         return self._handle_command(cmd_id, params)
 
-    def _handle_command(self, cmd_id: int, params: FlatMapView) -> Any:
+    def _handle_command(self, cmd_id: int, params: FlatMapView) -> object:
         raise NotImplementedError(f"Command {cmd_id} not implemented for {self.uri}")
 
 
@@ -300,7 +300,7 @@ class DummyUartDriver(HalDriver):
         )
         self.transport = transport or UartTransport()
 
-    def _handle_command(self, cmd_id: int, params: FlatMapView) -> Any:
+    def _handle_command(self, cmd_id: int, params: FlatMapView) -> object:
         if cmd_id == 0x01:  # STREAM_WRITE_SHM
             # platform_hal.md §4.2: shm_handle/offset/len resolve a zero-copy
             # SHM slice; this dummy has no pool reference to resolve one
@@ -334,7 +334,7 @@ class DummyGpioDriver(HalDriver):
         self.pins: list[bool] = [False] * self._MAX_PINS
         self.modes: list[int] = [0] * self._MAX_PINS
 
-    def _handle_command(self, cmd_id: int, params: FlatMapView) -> Any:
+    def _handle_command(self, cmd_id: int, params: FlatMapView) -> object:
         pin = params.find(ARG_PIN_NO) or 0
         if cmd_id == 0x20:  # SET_PIN
             self.pins[pin] = bool(params.find(ARG_VAL))
@@ -363,7 +363,7 @@ class DummyTimerDriver(HalDriver):
         )
         self.timer = Timer()
 
-    def _handle_command(self, cmd_id: int, params: FlatMapView) -> Any:
+    def _handle_command(self, cmd_id: int, params: FlatMapView) -> object:
         if cmd_id == 0x10:  # CLOCK_GET_NOW
             return self.timer.get_now_ns()
         elif cmd_id == 0x11:  # CLOCK_SUBSCRIBE
@@ -385,7 +385,7 @@ class DummyBusDriver(HalDriver):
             ),
         )
 
-    def _handle_command(self, cmd_id: int, params: FlatMapView) -> Any:
+    def _handle_command(self, cmd_id: int, params: FlatMapView) -> object:
         if cmd_id == 0x30:  # BUS_TRANSFER_SHM
             return params.find(ARG_LENGTH) or 0
         elif cmd_id == 0x31:  # BUS_CONFIG
@@ -420,7 +420,7 @@ class HalTask:
         self.running = True
         self.last_handled_uri: str | None = None
         self.last_handled_cmd: int | None = None
-        self.last_result: Any = None
+        self.last_result: object = None
         self.processed_count: int = 0
 
     def register_driver(self, driver: HalDriver) -> None:

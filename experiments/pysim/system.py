@@ -22,7 +22,7 @@ import struct
 import time
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Callable
 
 from hal import ShmBufferPool, ShmHandle, UartTransport
 from ipc_router import (
@@ -35,8 +35,10 @@ from ipc_router import (
 )
 
 if TYPE_CHECKING:
+    from debugger import DebuggerManager
     from gdb_server import GDBServer
     from hal import HalTask
+    from interpreter import BasicBlock, WASMContext
 
 from logger import ConsoleOutput, LogDictionary, Logger, LogLevel
 from memory import (
@@ -240,7 +242,7 @@ class System:
         self.gdb_server: GDBServer | None = None
         self._gdb_task_id: int | None = None
         # Build fireball_call dispatch table via RadixBinaryTreeView
-        syscall_handlers: list[tuple[int, Any]] = [
+        syscall_handlers: list[tuple[int, Callable[[int, int, int, int, int, int], int]]] = [
             (
                 FbSyscallId.SYS_YIELD,
                 lambda a0, a1, a2, a3, a4, a5: int(self._apply_sys_control(SYS_CONTROL_YIELD)),
@@ -744,10 +746,10 @@ class System:
 
     def spawn_gdbserver_task(
         self,
-        dbg: Any,
+        dbg: DebuggerManager,
         start_pc: int = 0,
-        ctx: Any = None,
-        blocks: Any = None,
+        ctx: WASMContext | None = None,
+        blocks: list[BasicBlock] | None = None,
         host: str = "127.0.0.1",
         port: int = 0,
     ) -> tuple[int, int]:

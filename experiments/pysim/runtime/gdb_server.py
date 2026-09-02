@@ -10,7 +10,6 @@ from __future__ import annotations
 import socket
 import threading
 from collections.abc import Generator, Mapping
-from typing import Any
 
 from debugger import DebuggerManager, GDBRspProtocol
 from runtime_engine import BasicBlock, WASMContext
@@ -56,7 +55,7 @@ class GDBServer:
 
     def run_task(
         self, start_pc: int, ctx: WASMContext, blocks: Mapping[int, BasicBlock]
-    ) -> Generator[tuple[str, Any], None, None]:
+    ) -> Generator[tuple[str, object], None, None]:
         """
         COOS cooperative task coroutine for GDBServer.
         Listens and processes RSP packets asynchronously using non-blocking socket

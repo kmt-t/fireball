@@ -22,7 +22,6 @@ from __future__ import annotations
 import bisect
 import ctypes
 from collections.abc import Callable
-from typing import Any
 
 from interpreter import Interpreter, InterpreterCall
 from system_containers import BitView, RingBuffer
@@ -201,13 +200,13 @@ class JITTrace:
     def __init__(
         self,
         head_pc: int,
-        fn: Any = None,
+        fn: Callable[[int, object, object, int], int] | None = None,
         size_bytes: int = 64,
         next_pc: int | None = None,
         loops_to: int | None = None,
         has_return_val: bool = False,
-        buf: Any = None,
-        native_fn: Any = None,
+        buf: object = None,
+        native_fn: Callable[[int, object, object, int], int] | None = None,
     ):
         self.head_pc = head_pc
         self.fn = fn or native_fn  # Direct ctypes CFUNCTYPE function pointer or callable
@@ -220,7 +219,7 @@ class JITTrace:
         self._exec_buf = buf  # Keeps executable buffer alive in memory
 
     @property
-    def native_fn(self) -> Any:
+    def native_fn(self) -> Callable[..., int] | None:
         return self.fn
 
     @property
@@ -233,10 +232,10 @@ class JITTrace:
 
     def __call__(
         self,
-        ip_or_locals: Any,
-        stack_bot_or_mem: Any = 0,
-        local_base: Any = 0,
-        tos: Any = 0,
+        ip_or_locals: int | list[int],
+        stack_bot_or_mem: int | object = 0,
+        local_base: int = 0,
+        tos: int = 0,
     ) -> int:
         """
         Invokes the native JIT trace directly via ctypes CPS 4-argument calling convention:
@@ -245,7 +244,7 @@ class JITTrace:
 
         return self.fn(ip_or_locals, stack_bot_or_mem, local_base, tos)
 
-    def invoke(self, ctx: Any) -> int:
+    def invoke(self, ctx: object) -> int:
         """Helper to invoke trace directly on WASMContext via CPS 4-argument calling convention."""
         tos = ctx.pop() if ctx.stack else 0
         res = self.fn(self.head_pc, ctx.stack_bot_ptr, ctx.locals_ptr, tos)
@@ -487,7 +486,7 @@ class RuntimeEngine:
 
     def __init__(
         self,
-        jit_compiler: Any | None = None,
+        jit_compiler: object | None = None,
         yield_threshold: int = 16,
         card_shift: int = 3,
         min_trace_bytes: int | None = None,
@@ -739,7 +738,7 @@ class BasicBlock:
     def __init__(
         self,
         head_pc: int,
-        ops: list[tuple[str, Any]],
+        ops: list[tuple[str, object]],
         next_pc: int | None = None,
         loops_to: int | None = None,
     ):
@@ -756,7 +755,7 @@ class WASMTraceCompiler:
         ops = list(block.ops)
         has_ret = any(op.startswith("i32.") for op, _ in ops)
 
-        def trace_fn(ip: int, stack_bot: Any, local_base: Any, tos: int) -> int:
+        def trace_fn(ip: int, stack_bot: object, local_base: object, tos: int) -> int:
             # Emulated handler matching CPS 4-argument C signature (ip, stack_bot, local_base, tos)
             c_arr = ctypes.cast(local_base, ctypes.POINTER(ctypes.c_int64)) if local_base else None
             stk: list[int] = [tos] if tos else []
@@ -809,7 +808,7 @@ class IntegratedHybridEngine:
         self,
         yield_threshold: int = 4,
         card_shift: int = 4,
-        compiler: Any = None,
+        compiler: object | None = None,
         min_trace_bytes: int | None = None,
     ):
         self.bitmap = HotspotBitmap(card_shift=card_shift)
@@ -832,7 +831,7 @@ class IntegratedHybridEngine:
         self.yields = 0
         # Handler table dispatch pointer ({DebuggerLabelTableSwitch})
         # Default is normal zero-overhead handler table.
-        self.debugger: Any | None = None
+        self.debugger: object | None = None
         self._dispatch = self._dispatch_normal
         self.cache.on_evict = lambda pcs: [self.bitmap.mark_evicted(pc) for pc in pcs]
 
@@ -840,7 +839,7 @@ class IntegratedHybridEngine:
     def handler_table(self) -> str:
         return "debug" if self._dispatch == self._dispatch_debug else "normal"
 
-    def attach_debugger(self, debugger: Any) -> None:
+    def attach_debugger(self, debugger: object) -> None:
         """Switches handler table pointer to debug dispatch with ZERO per-step overhead in normal mode ({DebuggerLabelTableSwitch})."""
         self.debugger = debugger
         self._dispatch = self._dispatch_debug

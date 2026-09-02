@@ -11,7 +11,6 @@ Reference Concept Implementation: WASM Loader & Zero-Copy Indexing Engine
 
 import bisect
 import struct
-from typing import Any
 
 # ==============================================================================
 # 0. Configuration Constants & Error Definitions
@@ -419,7 +418,7 @@ def fnv1a_32(data: str | bytes) -> int:
 class FlatMapView:
     """fireball::flat_map_view<Key, Value>: Sorted key-value slice with O(log n) binary search."""
 
-    def __init__(self, keys: list[Any], values: list[Any]):
+    def __init__(self, keys: list[object], values: list[object]):
         assert len(keys) == len(values)
         self.keys = keys
         self.values = values
@@ -431,7 +430,7 @@ class FlatMapView:
         assert 0 <= first <= last <= len(self.keys)
         return FlatMapView(self.keys[first:last], self.values[first:last])
 
-    def find(self, key: Any) -> Any | None:
+    def find(self, key: object) -> object | None:
         idx = bisect.bisect_left(self.keys, key)
         if idx < len(self.keys) and self.keys[idx] == key:
             return self.values[idx]
@@ -444,7 +443,7 @@ class RadixBinaryTreeView:
     System container combining O(1) Radix Table prefix lookup with bounded binary search ({META_BinarySearch}).
     """
 
-    def __init__(self, keys: list[int], values: list[Any], radix_shift: int = 28):
+    def __init__(self, keys: list[int], values: list[object], radix_shift: int = 28):
         paired = sorted(zip(keys, values, strict=False), key=lambda p: p[0])
         self.keys = [p[0] for p in paired]
         self.values = [p[1] for p in paired]
@@ -466,7 +465,7 @@ class RadixBinaryTreeView:
         else:
             self.radix_table = [0]
 
-    def find(self, key: int) -> Any | None:
+    def find(self, key: int) -> object | None:
         prefix = key >> self.radix_shift
         if prefix < 0 or prefix + 1 >= len(self.radix_table):
             return None
@@ -476,7 +475,7 @@ class RadixBinaryTreeView:
             return None
         return self.map_view.slice(first, last).find(key)
 
-    def find_interval(self, offset: int) -> Any | None:
+    def find_interval(self, offset: int) -> object | None:
         """Range lookup for interval keys [start, end) stored as DecodedEntity."""
         if not self.keys:
             return None
@@ -499,8 +498,8 @@ class DecodedEntity:
         kind: str,
         start_offset: int,
         end_offset: int,
-        name_or_idx: Any,
-        payload: Any,
+        name_or_idx: object,
+        payload: object,
     ):
         self.kind = kind  # "SECTION", "FUNCTION", "GLOBAL", "DATA"
         self.start_offset = start_offset
@@ -536,7 +535,7 @@ class ModuleView:
         self.exports_dict: list[ExportEntry] = []  # Export entries
         self.code_offsets: list[tuple[int, int]] = []  # (payload_offset, payload_size) per func
         self.start_func_idx: int | None = None
-        self.resolved_imports: dict[str, Any] = {}
+        self.resolved_imports: dict[str, object] = {}
         self.is_ready: bool = False
         # Decoded entity registry & RadixBinaryTreeView indexes ({META_BinarySearch})
         self.entity_registry: list[DecodedEntity] = []
@@ -549,8 +548,8 @@ class ModuleView:
         kind: str,
         start_offset: int,
         end_offset: int,
-        name_or_idx: Any,
-        payload: Any,
+        name_or_idx: object,
+        payload: object,
     ) -> DecodedEntity:
         entity = DecodedEntity(kind, start_offset, end_offset, name_or_idx, payload)
         self.entity_registry.append(entity)

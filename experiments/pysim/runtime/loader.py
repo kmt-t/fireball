@@ -15,7 +15,6 @@ Implements:
 from __future__ import annotations
 
 import struct
-from typing import Any
 
 from system_containers import (
     FlatMapView,
@@ -333,8 +332,8 @@ class DecodedEntity:
         kind: str,
         start_offset: int,
         end_offset: int,
-        name_or_idx: Any,
-        payload: Any,
+        name_or_idx: str | int,
+        payload: bytes | object,
     ):
         self.kind = kind  # "SECTION", "FUNCTION", "GLOBAL", "DATA"
         self.start_offset = start_offset
@@ -378,8 +377,8 @@ class ModuleView:
         kind: str,
         start_offset: int,
         end_offset: int,
-        name_or_idx: Any,
-        payload: Any,
+        name_or_idx: str | int,
+        payload: bytes | object,
     ) -> DecodedEntity:
 
         entity = DecodedEntity(kind, start_offset, end_offset, name_or_idx, payload)

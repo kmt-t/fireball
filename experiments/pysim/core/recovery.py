@@ -17,7 +17,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from enum import IntEnum
-from typing import Any, Generic, TypeVar
+from typing import Generic, Never, TypeVar
 
 T = TypeVar("T")
 E = TypeVar("E")
@@ -50,11 +50,11 @@ class Result(Generic[T, E]):
         self.strategy = strategy
 
     @classmethod
-    def ok(cls, value: T) -> Result[T, Any]:
+    def ok(cls, value: T) -> Result[T, Never]:
         return cls(is_ok=True, value=value, error=None, strategy=RecoveryStrategy.IGNORE)
 
     @classmethod
-    def err(cls, error: E, strategy: RecoveryStrategy = RecoveryStrategy.RETRY) -> Result[Any, E]:
+    def err(cls, error: E, strategy: RecoveryStrategy = RecoveryStrategy.RETRY) -> Result[Never, E]:
         return cls(is_ok=False, value=None, error=error, strategy=strategy)
 
     def unwrap(self) -> T:
@@ -113,10 +113,10 @@ class RecoveryManager:
 
     def execute_with_recovery(
         self,
-        operation: Callable[[], Result[T, Any]],
+        operation: Callable[[], Result[T, E]],
         task_reset_fn: Callable[[], bool] | None = None,
         panic_fn: Callable[[str], None] | None = None,
-    ) -> Result[T, Any]:
+    ) -> Result[T, E]:
         """
         Executes operation with full 4-tier recovery strategy without raising exceptions.
                 Workflow:

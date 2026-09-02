@@ -32,8 +32,8 @@ ALLOWED_BITS = (1, 2, 4)
 class BitView:
     """
     bit_view<Bits>: a dense, index-addressed table of sub-byte states.
-        Deliberately offers NO search: index IS the query (e.g. Card Marking table).
-        Bits must divide 8 (1, 2, or 4) so an element never straddles a byte.
+        CONT-GOTCHA-01: Bits must strictly divide 8 (1, 2, or 4) so that an element
+        never straddles a byte boundary, ensuring atomic single-byte load/mask.
     """
 
     __slots__ = ("bits", "count", "origin", "storage")

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import ctypes
 import sys
-from typing import Any
+from collections.abc import Sequence
 
 import x64_asm as asm
 import x64_stencils as st
@@ -91,7 +91,7 @@ class TraceCompiler:
         PIC code starting at offset 0x10.
     """
 
-    def __init__(self, host_trampolines: Any = None):
+    def __init__(self, host_trampolines: Sequence[int] | None = None):
         self.host_trampolines = host_trampolines or []
 
     SUPPORTED_OPS: tuple[str, ...] = (

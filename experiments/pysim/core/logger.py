@@ -1,25 +1,23 @@
 """
-experiments/pysim/logger.py
-Two independently-addressable output paths sharing one physical transport,
-per docs/components/tier1_core/system_logging.md and the interface_wit.md
-5.5 fix added this session:
-- Logger: {DictionaryBasedIPC} structured logging. Can only ever emit a
-  message whose *format string* was registered before this process started.
-  There is no code path here that accepts an arbitrary runtime string --
-  log_event()'s signature has no str parameter at all.
-- ConsoleOutput: {WASI_ConsoleRawOutput}. Backs wasi:cli/stdout/stderr and
-  carries whatever bytes the guest computed at runtime, bypassing the
-  dictionary and the ring buffer entirely.
+experiments/pysim/core/logger.py
+Fireball System Logging Engine mirroring docs/components/tier1_core/system_logging.md:
+- LOG-GOTCHA-01: Format strings are registered statically in LogDictionary. Log API accepts
+  only scalar u32 arguments, completely eliminating runtime string pointers and Use-After-Free.
+- LOG-GOTCHA-02: Bounded ring buffer safely overwrites oldest entries on full, maintaining
+  system non-blocking invariant and preventing log-induced deadlocks.
+- LOG-GOTCHA-03: Log flush loops check interrupt_pending per entry, allowing immediate
+  preemption by high-priority interrupts.
 """
 
 from __future__ import annotations
 
+import bisect
 import re
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import TYPE_CHECKING, Sequence
 
-from system_containers import RingBuffer
+from system_containers import FlatMapView, RingBuffer
 
 if TYPE_CHECKING:
     from hal import UartTransport
@@ -38,11 +36,7 @@ class LogLevel(IntEnum):
     FATAL = 4
 
 
-import bisect
-
 _DISALLOWED_SPECIFIERS = ("%s", "%p", "%c")
-
-from system_containers import FlatMapView
 
 # Standard Diagnostic Log Event IDs (system_logging.md §4.2.1)
 LOG_EVT_COOS_HANDOFF_LIMIT = 0x0101

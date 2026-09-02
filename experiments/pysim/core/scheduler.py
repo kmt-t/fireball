@@ -1,13 +1,17 @@
 """
-experiments/pysim/scheduler.py
-A cooperative round-robin scheduler and Hoare CSP rendezvous engine, mirroring
-docs/components/tier1_core/os_scheduler.md ({ADR_CoosPureRoundRobin}) and
-docs/components/tier1_core/os_coos.md ({ADR_RendezvousChannel}, {CSP_Handoff}).
-- Pure round-robin FIFO dispatch (no priority).
-- Fixed capacity check: FB_CONF_MAX_TASKS = 16.
-- Bufferless synchronous Hoare CSP channels with single-waiter enforcement.
-- Direct symmetric context switch with consecutive handoff bound (FB_CONF_MAX_CONSECUTIVE_HANDOFFS = 4).
-- Asynchronous ISR interrupt notification queue and drain wake-up.
+experiments/pysim/core/scheduler.py
+Cooperative round-robin scheduler and Hoare CSP rendezvous engine, mirroring
+docs/components/tier1_core/os_scheduler.md and docs/components/tier1_core/os_coos.md.
+
+Implementation Invariants & Gotchas:
+- COOS-GOTCHA-01: Channel has no internal value buffer (ADR_RendezvousChannel).
+  Values stay in sender frame until receiver handoff, eliminating double-ownership.
+- COOS-GOTCHA-02: 1-channel-1-waiter constraint triggers assertion on duplicate wait
+  direction (no queues, no priority inversion, no dynamic allocation).
+- COOS-GOTCHA-03: ISR interrupt notification queue is non-blocking (drain_interrupts
+  wakes tasks deterministically at scheduler yield points).
+- SCHED-GOTCHA-01: Consecutive direct handoff bound (FB_CONF_MAX_CONSECUTIVE_HANDOFFS)
+  forces yield back to main loop to guarantee fair round-robin and prevent starvation.
 """
 
 from __future__ import annotations
@@ -15,7 +19,10 @@ from __future__ import annotations
 from collections import deque
 from collections.abc import Callable, Generator
 from enum import IntEnum
-from typing import Any
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from logger import Logger
 
 from logger import (
     LOG_EVT_COOS_DUPLICATE_TASK,
@@ -84,12 +91,12 @@ class Channel:
         # channels, preserving the one-waiter-per-channel invariant.
         self.waiter_group: SelectGroup | None = None
 
-    def send(self, data: Any) -> tuple[ChannelAction, Any]:
+    def send(self, data: object) -> tuple[ChannelAction, object]:
         """Synchronous CSP send on this channel."""
         assert self.scheduler is not None, "Channel not attached to a scheduler"
         return self.scheduler.channel_send(self, data)
 
-    def recv(self) -> tuple[ChannelAction, Any]:
+    def recv(self) -> tuple[ChannelAction, object]:
         """Synchronous CSP recv on this channel."""
         assert self.scheduler is not None, "Channel not attached to a scheduler"
         return self.scheduler.channel_recv(self)
@@ -102,7 +109,7 @@ class Task:
         self,
         task_id: int,
         name: str,
-        coro: Generator[Any, None, None] | None = None,
+        coro: Generator[object, None, None] | None = None,
         role: int = 0,
     ):
         self.task_id = task_id
@@ -110,9 +117,9 @@ class Task:
         self.coro = coro
         self.role = role
         self.state = TaskState.READY
-        self.pending_val: Any = None
-        self.received_val: Any = None
-        self.result: Any = None
+        self.pending_val: object = None
+        self.received_val: object = None
+        self.result: object = None
 
 
 class Scheduler:
@@ -120,7 +127,7 @@ class Scheduler:
         self,
         max_tasks: int = FB_CONF_MAX_TASKS,
         max_handoffs: int = FB_CONF_MAX_CONSECUTIVE_HANDOFFS,
-        logger: Any = None,
+        logger: Logger | None = None,
     ):
         self.max_tasks = max_tasks
         self.max_handoffs = max_handoffs
@@ -144,7 +151,7 @@ class Scheduler:
     def spawn(
         self,
         name: str,
-        coro: Generator[Any, None, None] | None = None,
+        coro: Generator[object, None, None] | None = None,
         task_id: int | None = None,
         role: int = 0,
     ) -> int:
@@ -216,7 +223,7 @@ class Scheduler:
         """
         return Channel(scheduler=self)
 
-    def channel_send(self, channel: Channel, data: Any) -> tuple[ChannelAction, Any]:
+    def channel_send(self, channel: Channel, data: object) -> tuple[ChannelAction, object]:
         """Synchronous CSP send with atomic ownership handoff directly on Channel."""
         ch = channel
         sender = self.current_task
@@ -248,7 +255,7 @@ class Scheduler:
         sender.state = TaskState.SUSPENDED_CSP
         return (ChannelAction.BLOCK, None)
 
-    def channel_recv(self, channel: Channel) -> tuple[ChannelAction, Any]:
+    def channel_recv(self, channel: Channel) -> tuple[ChannelAction, object]:
         """Synchronous CSP recv with atomic ownership handoff directly on Channel."""
         ch = channel
         receiver = self.current_task
@@ -270,7 +277,7 @@ class Scheduler:
         receiver.state = TaskState.SUSPENDED_CSP
         return (ChannelAction.BLOCK, None)
 
-    def channel_select_recv(self, channels: list[Channel]) -> tuple[ChannelAction, Any]:
+    def channel_select_recv(self, channels: list[Channel]) -> tuple[ChannelAction, object]:
         """
         Guarded external choice (receive-only select, {ADR_RendezvousChannel}):
         waits on whichever of `channels` gets a matching sender first.
@@ -299,7 +306,7 @@ class Scheduler:
         receiver.state = TaskState.SUSPENDED_CSP
         return (ChannelAction.BLOCK, None)
 
-    def _handoff_or_yield(self, target_task: Task) -> tuple[ChannelAction, Any]:
+    def _handoff_or_yield(self, target_task: Task) -> tuple[ChannelAction, object]:
         """CSP direct handoff or scheduler yield upon consecutive threshold."""
         if self.consecutive_handoffs < self.max_handoffs:
             self.consecutive_handoffs += 1

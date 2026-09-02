@@ -1,14 +1,13 @@
 """
-experiments/pysim/ipc_router.py
+experiments/pysim/core/ipc_router.py
 Fireball IPC Router: URI/RBAC front-end over the CSP rendezvous engine.
 - Stage 1: Static URI Lookup to Service Descriptor via FlatMapView (binary search)
 - Stage 2: Role-Based Access Control (RBAC)
-- Stage 3: Bufferless synchronous CSP handoff (scheduler.Channel), one dedicated
-  channel per (sender_role, target_role) edge of the communication DAG --
-  ownership transfer is atomic (Channel enforces single-waiter-per-direction),
-  so there is no separate in-flight/queued state and nothing to roll back or
-  drop-recover: a message that never completes a rendezvous never leaves its
-  sender's hands, per ipc_router.md §5.1's distinction from a buffered mailbox.
+- Stage 3: Bufferless synchronous CSP handoff (scheduler.Channel).
+  - IPCR-GOTCHA-01: Duplicate send on a waiting channel triggers assertion error
+    (no queue overflow error, as queue does not exist).
+  - IPCR-GOTCHA-02: Preflight validation failure preserves sender ownership
+    (never revoke ownership before target and permissions are verified).
 """
 
 from __future__ import annotations

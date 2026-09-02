@@ -20,7 +20,6 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Any
 
 from hal import (
     ARG_CLOCK_HZ,
@@ -89,23 +88,23 @@ class WasiInterfaceVTable:
     than via `in`/`.get()` (dict-only APIs with no C++ counterpart).
     """
 
-    write: Callable[..., Any] | None = None
-    read: Callable[..., Any] | None = None
-    close: Callable[..., Any] | None = None
-    write_shm: Callable[..., Any] | None = None
-    read_shm: Callable[..., Any] | None = None
-    flush: Callable[..., Any] | None = None
-    get_now: Callable[..., Any] | None = None
-    get_resolution: Callable[..., Any] | None = None
-    subscribe: Callable[..., Any] | None = None
-    set_pin: Callable[..., Any] | None = None
-    get_pin: Callable[..., Any] | None = None
-    config_pin: Callable[..., Any] | None = None
-    subscribe_edge: Callable[..., Any] | None = None
-    transfer: Callable[..., Any] | None = None
-    transfer_shm: Callable[..., Any] | None = None
-    config: Callable[..., Any] | None = None
-    log: Callable[..., Any] | None = None
+    write: Callable[..., object] | None = None
+    read: Callable[..., object] | None = None
+    close: Callable[..., object] | None = None
+    write_shm: Callable[..., object] | None = None
+    read_shm: Callable[..., object] | None = None
+    flush: Callable[..., object] | None = None
+    get_now: Callable[..., object] | None = None
+    get_resolution: Callable[..., object] | None = None
+    subscribe: Callable[..., object] | None = None
+    set_pin: Callable[..., object] | None = None
+    get_pin: Callable[..., object] | None = None
+    config_pin: Callable[..., object] | None = None
+    subscribe_edge: Callable[..., object] | None = None
+    transfer: Callable[..., object] | None = None
+    transfer_shm: Callable[..., object] | None = None
+    config: Callable[..., object] | None = None
+    log: Callable[..., object] | None = None
 
 
 class Wasi03pEngine:
@@ -183,7 +182,7 @@ class Wasi03pEngine:
         """Resolves an interface descriptor by its Hierarchical IPC communication URI."""
         return self._interfaces.find(uri)
 
-    def dispatch_command(self, uri: str, cmd_id: int, params: FlatMapView) -> Any:
+    def dispatch_command(self, uri: str, cmd_id: int, params: FlatMapView) -> object:
         """
         Dispatches a WASI 0.3p IPC Driver Command to the resolved device
         interface. Matches platform_hal.md §5.1's `control(id, cmd, params:
@@ -195,7 +194,7 @@ class Wasi03pEngine:
         if iface is None:
             return None
 
-        def _get_val(key_packed: int, default: Any = None) -> Any:
+        def _get_val(key_packed: int, default: object = None) -> object:
             val = params.find(key_packed)
             return default if val is None else val
 
@@ -302,7 +301,7 @@ class Wasi03pEngine:
 
         return None
 
-    def send_ipc_command(self, uri: str, cmd_id: int, params: FlatMapView) -> Any:
+    def send_ipc_command(self, uri: str, cmd_id: int, params: FlatMapView) -> object:
         """
         Sends an IPC Driver Command to the HAL Server Task via IPCRouter ({platform_hal.md}).
         HAL operates as a distinct task and communicates strictly over IPC rendezvous.
@@ -338,7 +337,7 @@ class Wasi03pEngine:
     def _stream_close(self, fd: int) -> int:
         return 0
 
-    def _write_shm(self, task_id: int, handle: Any, offset: int, length: int) -> int:
+    def _write_shm(self, task_id: int, handle: object, offset: int, length: int) -> int:
         """Writes data from shared memory (FC=14) to device transport."""
         if not self.sysv.pool.can_view(task_id, handle, offset, length):
             return 0
@@ -346,11 +345,11 @@ class Wasi03pEngine:
         self.sysv.transport.write(bytes(view))
         return len(view)
 
-    def _read_shm(self, task_id: int, handle: Any, offset: int, max_len: int) -> int:
+    def _read_shm(self, task_id: int, handle: object, offset: int, max_len: int) -> int:
         """Reads data from device transport into shared memory (FC=14)."""
         return 0
 
-    def _transfer_shm(self, tx_handle: Any, rx_handle: Any, length: int) -> int:
+    def _transfer_shm(self, tx_handle: object, rx_handle: object, length: int) -> int:
         """Transfers data between shared memory buffers via DMA/Bus."""
         return length
 
@@ -377,7 +376,7 @@ class WasiHostContext:
         self.guest_memory = guest_memory if guest_memory is not None else bytearray(64 * 1024)
         self.sysv.bind_guest(self.guest_memory, task_id=self.task_id)
         self.core03p = Wasi03pEngine(sysv)
-        self._keepalive_trampolines: list[Any] = []
+        self._keepalive_trampolines: list[object] = []
 
         # Build static host import table via RadixBinaryTreeView
         host_entries: list[tuple[str, str, Callable[..., int]]] = [

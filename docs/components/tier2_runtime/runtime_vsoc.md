@@ -107,8 +107,12 @@ vSoCの動作パラメータを定義する。 `{META_ConfigurableSystem}`
 
 ### 4.1 アルゴリズム
 <!-- traceability: {ThreadedInterpreter} {JIT_CopyAndPatch} {Challenge_ApproximateYield} {JIT_Safepoint} {Debugger_Jit_Flush} {ContextPointerRegister} -->
-- **実行エンジン委譲 (exec_trace)**: vSoCは `step()` で現在のPCに対応する `exec_trace`（`void __fastcall (const uint8_t* ip, execution_context* stack_bot, uint32_t* local_base, uint32_t tos)`）を呼び出す。 `exec_trace` はインタープリタのディスパッチャまたはJITコードを指し、`__fastcall` 呼び出し規約（R0=IP, R1=stack_bot, R2=local_base, R3=tos）によってレジスタ上で高速に実行エンジンへ制御を委譲する。呼び出し側は実行エンジンの種別を意識する必要がない。インタープリタ／JITトレースの側はこの `step()` を呼び戻すことも JIT キャッシュを参照することもなく、次に実行すべき PC を返すだけである——JIT キャッシュの参照・再判定（`{Interpreter_LazyJITSwitch}`）は、`exec_trace` から制御が戻ってくるたびに vSoC 自身がこの `step()` の中で行う。 `{ThreadedInterpreter}` `{JIT_CopyAndPatch}` `{ContextPointerRegister}` `{AAPCS_FastCall}`
-- **概算Yield**: vSoC は `exec_trace` から制御が戻るたび（`runtime_interpreter.md` `{ADR_TraceBoundaryYield}` のトレース境界）に、監視対象の `yield_threshold` を基準として自ら `co_yield` を発行するかどうかを判定する——`co_yield` を発行する主体は常に vSoC であり、インタープリタや JIT トレース自身がコルーチンとして中断することはない。閾値のスコープ（タスク単位/グローバル）、精度キャリブレーション、スターベーション対策は `{Challenge_ApproximateYield}` の定義どおり「検討中」の未解決課題である。 `{Challenge_ApproximateYield}`
+- **実行エンジン委譲とステートレス化 (`VSOC-GOTCHA-01`, `{ThreadedInterpreter}`, `{JIT_CopyAndPatch}`)**:
+  vSoCは `step()` で現在のPCに対応する `exec_trace`（`void __fastcall (const uint8_t* ip, execution_context* stack_bot, uint32_t* local_base, uint32_t tos)`）を呼び出す。 `exec_trace` はインタープリタのディスパッチャまたはJITコードを指し、`__fastcall` 呼び出し規約（R0=IP, R1=stack_bot, R2=local_base, R3=tos）によってレジスタ上で高速に実行エンジンへ制御を委譲する。
+  **設計理由と不変条件**: インタープリタおよび JIT トレース自身を C++20 コルーチン化することは厳禁とする。コルーチン化すると命令ディスパッチごとにコルーチンフレームの割り当てや退避・復帰が発生し、コンパイラによる末尾呼び出し最適化（`[[clang::musttail]]`）が阻害されてスタックを急速に消費してしまう。そのため、インタープリタは完全ステートレスなプレーン関数として設計し、次に実行すべき PC を返却して vSoC のメインループへ戻る規約とする。
+- **概算Yield と明示的イールド点 (`VSOC-GOTCHA-02`, `{Challenge_ApproximateYield}`)**:
+  vSoC は `exec_trace` から制御が戻るたび（`runtime_interpreter.md` `{ADR_TraceBoundaryYield}` のトレース境界）に、監視対象の `yield_threshold` を基準として自ら `co_yield` を発行するかどうかを判定する。
+  **設計理由と不変条件**: 命令実行ハンドラの内部に命令数カウンタのインクリメントやイールド判定を埋め込むと、最速パスのホットループに不要な条件分岐とレジスタ退避が加わり、JIT やインタープリタの実行性能が著しく低下する。そのため、イールド判定はトレース境界（ブロック末尾や基本ブロックの切れ目）でのみ vSoC が一括して行い、タイムスライス消費時に初めて協調的 yield を発行する。
 - **デバッグ連携**: `step()` 前後で Debugger を呼び出し、HAL層からのコマンドを処理する。
 - **JIT Safepoint (非同期割込対応)**: `{JIT_Safepoint}`
     - JIT生成されるネイティブコードのループバック点（バックエッジ）に、ソフトウェアフラグ（またはタイマ割込状況）をチェックし、必要に応じて `executor_loop` へ強制フォールバックするフック（Safepoint）を埋め込む。これにより、JIT実行中の非同期ブレークポイント（Ctrl+C等）への応答性を担保する。

@@ -196,36 +196,54 @@ _ROLE_MATRIX = (
 
 
 class IPCRouter:
-    def __init__(self):
+    def __init__(self, scheduler=None):
+        self.scheduler = scheduler
         # Stage 3: one dedicated CSP channel per ALLOW edge of the RBAC matrix.
         self._channels: tuple[tuple["Channel | None", ...], ...] = tuple(
             tuple(Channel() if allowed else None for allowed in row) for row in _ROLE_MATRIX
         )
 
+    def create_channel(
+        self, destination: str | int, sender_role: int | None = None
+    ) -> "Channel | None":
+        """
+        Binds current task, resolves destination role via FlatMapView,
+        authorizes access via RBAC matrix, and returns dedicated Channel.
+        """
+        if sender_role is None:
+            current = getattr(self.scheduler, "current_task", None)
+            sender_role = getattr(current, "role", Role.RUNTIME)
+
+        handle = destination if isinstance(destination, int) else _REGISTRY.find_index(destination)
+        if handle < 0:
+            return None
+        target_role = _SERVICE_DESCRIPTORS[handle].role
+
+        if not _ROLE_MATRIX[sender_role][target_role]:
+            return None
+        return self._channels[sender_role][target_role]
+
     def send(self, sender_role: int, uri: str, message: IPCMessage) -> tuple[IpcStatus, str]:
         """3-stage IPC send: URI lookup -> RBAC -> CSP rendezvous handoff."""
         assert message.ownership == OwnershipState.SENDER_OWNS
 
-        # Stage 1: Lookup service handle (integer) via flat_map_view
-        handle = _REGISTRY.find_index(uri)
-        if handle < 0:
-            return (IpcStatus.ERR_NOT_FOUND, f"URI not registered: {uri}")
-        target_role = _SERVICE_DESCRIPTORS[handle].role
-
-        # Stage 2: Access Control & Channel ID
-        channel_id = _EDGE_CHANNEL_IDS[sender_role][target_role]
-        if channel_id < 0:
+        channel = self.create_channel(uri, sender_role=sender_role)
+        if channel is None:
+            handle = _REGISTRY.find_index(uri)
+            if handle < 0:
+                return (IpcStatus.ERR_NOT_FOUND, f"URI not registered: {uri}")
+            target_role = _SERVICE_DESCRIPTORS[handle].role
             return (
                 IpcStatus.ERR_PERMISSION_DENIED,
                 f"Forbidden: {_ROLE_NAMES[sender_role]} -> {_ROLE_NAMES[target_role]}",
             )
 
-        # Stage 3: Zero-Copy CSP Handoff over integer channel ID
+        # Stage 3: Zero-Copy CSP Handoff directly on authorized Channel
         message.ownership = OwnershipState.IN_FLIGHT
-        self._channels[channel_id].send(message)
+        channel.send(message)
         return (
             IpcStatus.COMPLETED,
-            f"{_ROLE_NAMES[sender_role]}->{_ROLE_NAMES[target_role]}: in-flight",
+            f"{_ROLE_NAMES[sender_role]}: in-flight",
         )
 
     def receive(self, target_role: int) -> IPCMessage | None:

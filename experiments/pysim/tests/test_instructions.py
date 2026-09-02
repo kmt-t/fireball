@@ -1255,6 +1255,33 @@ def test_ipc_05_message_storage_ownership_separation():
     assert msg.get(10) == 999
 
 
+def test_ipc_06_router_create_channel_authorization():
+    """IPC-06: router.create_channel() resolves destination, binds current task, checks RBAC, and returns Channel."""
+    sched = Scheduler()
+    router = IPCRouter(sched)
+
+    # Task with Role.RUNTIME can open channel to HAL (ALLOWED)
+    runtime_task_id = sched.spawn("runtime_task", role=Role.RUNTIME)
+    sched.current_task = sched.get_task(runtime_task_id)
+
+    ch_hal = router.create_channel("fireball://hal/gpio/0")
+    assert ch_hal is not None, "RUNTIME -> PLATFORM_HAL must be allowed"
+
+    # Task with Role.PLATFORM_HAL cannot open channel to DEBUGGER (DENIED)
+    hal_task_id = sched.spawn("hal_task", role=Role.PLATFORM_HAL)
+    sched.current_task = sched.get_task(hal_task_id)
+
+    ch_denied = router.create_channel("fireball://debugger/control")
+    assert ch_denied is None, "PLATFORM_HAL -> DEBUGGER must be denied by RBAC"
+
+    # Communication over the authorized channel
+    msg = IPCMessage(FlatMapStorage([1], [42]))
+    sched.current_task = sched.get_task(runtime_task_id)
+    action, _ = ch_hal.send(msg)
+    assert action == ChannelAction.BLOCK
+    assert ch_hal.waiter_dir == WaitDir.SEND
+
+
 # ===========================================================================
 # 9. fireball_call Full Syscall Surface (system_syscall_test_spec.md)
 # ===========================================================================

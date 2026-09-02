@@ -103,10 +103,12 @@ class Task:
         task_id: int,
         name: str,
         coro: Generator[Any, None, None] | None = None,
+        role: Any = None,
     ):
         self.task_id = task_id
         self.name = name
         self.coro = coro
+        self.role = role
         self.state = TaskState.READY
         self.pending_val: Any = None
         self.received_val: Any = None
@@ -144,6 +146,7 @@ class Scheduler:
         name: str,
         coro: Generator[Any, None, None] | None = None,
         task_id: int | None = None,
+        role: Any = None,
     ) -> int:
         """Spawn a new task within FB_CONF_MAX_TASKS bounds."""
         if len(self._all) >= self.max_tasks:
@@ -176,7 +179,7 @@ class Scheduler:
             assigned_id = self._next_id
             self._next_id += 1
 
-        task = Task(assigned_id, name, coro)
+        task = Task(assigned_id, name, coro, role=role)
         self._all.append(task)
         self._ready.append(task)
         return task.task_id

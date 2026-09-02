@@ -299,6 +299,56 @@ class IPCRouter:
         """The dedicated CSP Channel for one specific (sender_role, target_role) RBAC edge."""
         return self._edge_channels[int(sender_role)][int(target_role)]
 
+    def create_channel(
+        self,
+        destination: str | Role | int,
+        sender_role: Role | None = None,
+    ) -> Channel | None:
+        """
+        Opens a communication channel to the destination task/service.
+        Binds current running task's role (or explicit sender_role), performs
+        Stage 1 URI/Role lookup and Stage 2 RBAC authorization, and returns
+        the dedicated Channel instance if permitted (or None if denied/not found).
+        """
+        # 1. Determine sender role from current running task if not explicitly provided
+        if sender_role is None:
+            current = self.scheduler.current_task
+            if current is not None and getattr(current, "role", None) is not None:
+                sender_role = current.role
+            else:
+                sender_role = Role.RUNTIME
+
+        # 2. Resolve target role from destination
+        if isinstance(destination, Role):
+            target_role = destination
+        elif type(destination) is int:
+            desc = self.get_service_descriptor(destination)
+            if desc is None:
+                return None
+            target_role = desc.role
+        else:
+            handle = self.lookup_service_handle(destination)
+            desc = self.get_service_descriptor(handle)
+            if desc is None:
+                return None
+            target_role = desc.role
+
+        # 3. RBAC authorization check
+        if not FB_CONF_ROUTER_ROLE_MATRIX[int(sender_role)][int(target_role)]:
+            if self.logger is not None:
+                self.logger.log_event(
+                    LogLevel.WARN,
+                    LOG_EVT_IPC_RBAC_DENIED,
+                    int(sender_role),
+                    int(target_role),
+                    0,
+                    0,
+                )
+            return None
+
+        # 4. Return authorized Channel instance
+        return self._edge_channels[int(sender_role)][int(target_role)]
+
     def send(self, sender_role: Role, destination: str | int, message: IPCMessage):
         """
         Stage 1 (lookup handle) + Stage 2 (RBAC check), then Stage 3: synchronous
@@ -346,18 +396,9 @@ class IPCRouter:
                 )
             return (IpcStatus.ERR_NOT_FOUND, f"Destination {destination} is not registered")
 
-        # 2. Lookup dedicated Channel for edge
-        channel = self.channel_for_edge(sender_role, desc.role)
+        # 2. Lookup authorized Channel for destination via create_channel
+        channel = self.create_channel(destination, sender_role=sender_role)
         if channel is None:
-            if self.logger is not None:
-                self.logger.log_event(
-                    LogLevel.WARN,
-                    LOG_EVT_IPC_RBAC_DENIED,
-                    int(sender_role),
-                    int(desc.role),
-                    0,
-                    0,
-                )
             return (
                 IpcStatus.ERR_PERMISSION_DENIED,
                 f"Role {sender_role.name} not allowed to access {desc.role.name}",

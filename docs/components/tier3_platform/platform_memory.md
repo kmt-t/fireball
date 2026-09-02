@@ -148,7 +148,18 @@ Cortex-M33 MPU および vMMIO のハードウェア保護機構において、�
 7. `claim(shm-id)` → B側の新 `shared-block` リソースを取得（PTE `owner_id == TaskB` の検証にパス）
 8. `shm.read_*` でデータを読み取り
 9. B側の `shared-block` が drop されるとメモリ自動解放（PTE が無効化され、TLB エントリがフラッシュされる）
-10. **障害時回復**: Rendezvous中に相手タスクが異常終了した場合や通信が中断された場合、物理メモリマネージャの `rollback_transfer(original_sender_id, shm_id)` により、PTE `owner_id` が送信元タスクIDへ復元され、TLB がフラッシュされ、リソースが回収可能となる。
+10. **非所有タスク操作の完全遮断 (`MEM-GOTCHA-02`)**:
+    共有メモリブロックの解放・書き込み・読み取り操作時、ブロックの所有タスク ID を厳格に照合する。非所有タスクが `release()` や解放を試みた場合は即座にアサーション違反またはトラップ（`ShmTrap` / `ERR_PERMISSION_DENIED`）により拒絶し、不正解放による Use-After-Free や別タスクデータ破壊を完全に遮断する。
+11. **送信中ブロックの保護状態 (`MEM-GOTCHA-03`)**:
+    送信開始（`release()`）から受信完了（`claim()`）までの間、ブロック所有者は一時的に `FB_TASK_ID_FLIGHT`（`0xFF`）に設定され、TLB エントリが即座にフラッシュされる。この保護状態により、中継中に送信側がデータを書き換えたり受信側が許可前にフライングアクセスすることを構造的に防止する。
+12. **障害時回復**: Rendezvous中に相手タスクが異常終了した場合や通信が中断された場合、物理メモリマネージャの `rollback_transfer(original_sender_id, shm_id)` により、PTE `owner_id` が送信元タスクIDへ復元され、TLB がフラッシュされ、リソースが回収可能となる。
+
+### 7.4 JIT Code Cache の W^X メモリ保護切り替えトランザクション
+<!-- traceability: {GLOBAL_Policy_Memory} {META_RestrictedPhysicalAccess} -->
+JIT コンパイラがネイティブコードを生成する Code Cache 領域において、W^X（Write XOR Execute: 書き込み可能かつ実行可能の同時禁止）原則を厳格に適用する。
+- **バッチ化トランザクション (`MEM-GOTCHA-04`)**:
+  **設計理由と不変条件**: 1 命令の書き込みごとに MPU 属性の切り替え（実行不可・書き込み可 $\to$ 書き込み不可・実行可）を行うと、その都度 ARM D-Cache クリーン、I-Cache インバリデート、および DSB/ISB メモリバリア命令を発行する必要があり、パイプラインフラッシュの累積により JIT コンパイル性能が致命的に悪化する。そのため、W^X 切り替えは必ず「1 トレースまたは 1 バッチ」単位でトランザクション化し、トレース全体の生成完了後に一括してキャッシュクリーンとバリアを発行して実行可能属性へ遷移させる。
+
 
 ## 8. 設計判断 (ADR)
 <!-- traceability: {ADR_SharedBlockRaii} {ADR_MemoryManagerMinimalSurface} {ADR_PageGranularPermissionIsolation} -->

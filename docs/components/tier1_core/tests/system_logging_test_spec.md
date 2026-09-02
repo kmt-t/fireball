@@ -21,7 +21,7 @@
 | LOG-08 | tick（timestamp）の単調増加 | 複数回log_event | 各エントリのtimestamp_tickを確認 | 呼び出し順に単調増加する | LogEntry.timestamp_tick |
 | LOG-09 | ダングリングポインタ（実行時文字列）の禁止 | 実行時に構築した任意長文字列をdict_offset経由で渡そうとする | ログAPIの引数型を確認 | ログAPIは固定オフセット+u32引数4個のみを受け付け、任意長文字列やポインタ相当の値を安全に埋め込む手段が存在しないことを確認する（`{DictionaryBasedIPC}`の「実行時の辞書追加は不可」の裏付け） |  README `test_logger_cannot_carry_a_runtime_string_but_console_can` |
 | LOG-10 | IPC経由でのログ要求（`fireball://logging/system/0`） | IPCルータに`logging`宛のルートが存在する状態（**§3のギャップ参照**） | `handle_ipc_message`相当のペイロード（level/dict_offset/arg0-3のdict）でIPC_SENDする | ログが`log_event`と同じ結果でキューイングされる | logging_concept.py `handle_ipc_message`, `test_logger_ipc_message_handling` |
-| LOG-11 | ログ辞書ストレージ所有権分離 | 外部で実体ペア配列（ROM/静的バッファ）を定義 | `LogDictionary(storage)`を初期化 | `LogDictionary`および`FlatMapView`が外部ストレージを参照し、自己所有・複製しない | logging_concept.py `test_logger_storage_ownership_separation` |
+| LOG-11 | ログ辞書ストレージ所有権分離 | 外部で実体ペア配列（ROM/静的バッファ）を定義 | ログ辞書初期化 | ログ辞書および非所有ビューが外部ストレージを参照し、実体を自己所有・複製しない | logging_concept.py `test_logger_storage_ownership_separation` |
 
 ## 3. テスト検証実績と網羅状況
 

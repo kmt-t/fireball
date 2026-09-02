@@ -11,7 +11,10 @@ from __future__ import annotations
 
 import bisect
 from collections.abc import Sequence
-from typing import Any
+from typing import Generic, TypeVar
+
+KeyT = TypeVar("KeyT")
+ValT = TypeVar("ValT")
 
 ALLOWED_BITS = (1, 2, 4)
 
@@ -131,7 +134,7 @@ class FlatMapView:
         return None if i is None else self.entries[i][1]
 
 
-class StaticFlatMap:
+class StaticFlatMap(Generic[KeyT, ValT]):
     """
     Fixed-capacity owning sorted map stored in an AoS entry array (C++ std::array).
     Provides non-owning FlatMapView via .view().
@@ -142,7 +145,7 @@ class StaticFlatMap:
 
     def __init__(self, capacity: int = 32):
         self.capacity = capacity
-        self._entries: list[tuple[Any, Any]] = []
+        self._entries: list[tuple[KeyT, ValT]] = []
 
     def size(self) -> int:
         return len(self._entries)
@@ -151,15 +154,15 @@ class StaticFlatMap:
         return len(self._entries)
 
     @property
-    def entries(self) -> list[tuple[Any, Any]]:
+    def entries(self) -> list[tuple[KeyT, ValT]]:
         return self._entries
 
     @property
-    def keys(self) -> list[Any]:
+    def keys(self) -> list[KeyT]:
         return [k for k, _ in self._entries]
 
     @property
-    def values(self) -> list[Any]:
+    def values(self) -> list[ValT]:
         return [v for _, v in self._entries]
 
     def is_sorted(self) -> bool:
@@ -167,11 +170,11 @@ class StaticFlatMap:
             self._entries[i][0] <= self._entries[i + 1][0] for i in range(len(self._entries) - 1)
         )
 
-    def sort(self) -> StaticFlatMap:
+    def sort(self) -> StaticFlatMap[KeyT, ValT]:
         self._entries.sort(key=lambda e: e[0])
         return self
 
-    def insert(self, key: Any, value: Any) -> bool:
+    def insert(self, key: KeyT, value: ValT) -> bool:
         idx = bisect.bisect_left(self._entries, key, key=lambda e: e[0])
         if idx < len(self._entries) and self._entries[idx][0] == key:
             self._entries[idx] = (key, value)
@@ -180,23 +183,23 @@ class StaticFlatMap:
         self._entries.insert(idx, (key, value))
         return True
 
-    def remove(self, key: Any) -> bool:
+    def remove(self, key: KeyT) -> bool:
         idx = bisect.bisect_left(self._entries, key, key=lambda e: e[0])
         if idx < len(self._entries) and self._entries[idx][0] == key:
             self._entries.pop(idx)
             return True
         return False
 
-    def erase(self, key: Any) -> bool:
+    def erase(self, key: KeyT) -> bool:
         return self.remove(key)
 
     def view(self) -> FlatMapView:
         return FlatMapView(self._entries)
 
-    def find(self, key: Any) -> Any | None:
+    def find(self, key: KeyT) -> ValT | None:
         return self.view().find(key)
 
-    def __contains__(self, key: Any) -> bool:
+    def __contains__(self, key: KeyT) -> bool:
         return self.view().find(key) is not None
 
 
@@ -218,7 +221,7 @@ class FlatSetView(_SortedWindow):
         return self._locate(key) is not None
 
 
-class RadixBinaryTreeView:
+class RadixBinaryTreeView(Generic[ValT]):
     """fireball::radix_binary_tree_view<Key, Value, RadixShift>:
     Container combining an O(1) Radix Table (pure scalar start-index array)
     with bounded binary search on a sorted key-value array.
@@ -228,7 +231,7 @@ class RadixBinaryTreeView:
     def __init__(
         self,
         keys: Sequence[int],
-        values: Sequence[Any],
+        values: Sequence[ValT],
         radix_table: Sequence[int],
         radix_shift: int,
     ):
@@ -236,7 +239,7 @@ class RadixBinaryTreeView:
         self.radix_table = radix_table  # pure scalar offsets array [0, 3, 6, ...]
         self.radix_shift = radix_shift
 
-    def find(self, key: int) -> Any | None:
+    def find(self, key: int) -> ValT | None:
         prefix = key >> self.radix_shift
         if prefix < 0 or prefix + 1 >= len(self.radix_table):
             return None

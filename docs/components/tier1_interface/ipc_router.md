@@ -135,10 +135,8 @@ class IPCMessage:
     them via non-owning FlatMapView (§3.3) -- no resource_id,
     no free-form dict payload."""
 
-    def __init__(
-        self,
-        entries: Sequence[tuple[Any, Any]] | None = None,
-    ):
+    def __init__(self, entries=None):
+        # 32-bit key-value pairs (AoS)
         self._entries = sorted(entries, key=lambda e: e[0]) if entries is not None else []
         self.ownership = OwnershipState.SENDER_OWNS
 
@@ -149,12 +147,12 @@ class IPCMessage:
         ), f"Cannot access IPCMessage entries while ownership is {self.ownership.name}!"
 
     @property
-    def entries(self) -> list[tuple[Any, Any]]:
+    def entries(self):
         self._check_ownership()
         return self._entries
 
     @property
-    def payload(self) -> FlatMapView:
+    def payload(self):
         self._check_ownership()
         return FlatMapView(self._entries)
 

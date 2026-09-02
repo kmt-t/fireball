@@ -10,7 +10,6 @@ Reference Concept Implementation: Fireball Logger Component
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Any
 
 
 class LogLevel(IntEnum):
@@ -180,7 +179,7 @@ class Logger:
         overwritten = self.ring_buffer.push(entry)
         return "OVERWRITTEN" if overwritten else "QUEUED"
 
-    def handle_ipc_message(self, message_payload: dict[str, Any]) -> dict[str, Any]:
+    def handle_ipc_message(self, message_payload: dict[str, int]) -> dict[str, str]:
         """Handles fireball://logging/system/0 IPC requests."""
         level = LogLevel(message_payload.get("level", int(LogLevel.INFO)))
         dict_offset = int(message_payload.get("dict_offset", 0))

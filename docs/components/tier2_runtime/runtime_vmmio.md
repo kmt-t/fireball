@@ -216,7 +216,7 @@ Static Devices (Tier 2) 向け。PTE には Device Type やパーミッション
 [15:0]  Reserved
 ```
 
-**FC=14 (SHM) エントリの仮想化マッピングは、Tier 3 共有メモリマネージャ（`MemoryManager`）の `PageMappingCallbacks` リスナー登録を通じて自律的に駆動される（`{VmmioShmDelegation}`）。vMMIO コントローラは `MemoryManager.register_page_mapping_callbacks` にリスナー（`on_map_page`, `on_update_owner`, `on_revoke`, `on_unmap_page`）を登録し、物理ページイベント通知を受けて自身の VPN（`(0xE000_0000 >> 12) + page_idx`）に対する PTE 登録・所有権更新・TLB フラッシュを実行する。メモリマネージャ側が vMMIO の内部実装やアドレス体系を直接操作することはなく、クリーンアーキテクチャ（DIP）が維持される。**
+**FC=14 (SHM) エントリの仮想化マッピングは、Tier 3 共有メモリマネージャが発火する物理ページイベントの購読を通じて自律的に駆動される（`{VmmioShmDelegation}`）。vMMIO コントローラは共有メモリマネージャにイベントリスナーを登録し、物理ページのライフサイクル通知（割り当て、所有権更新、Revoke、解放）を受けて自身の仮想アドレス空間（VPN: `(0xE000_0000 >> 12) + page_idx`）に対応する PTE 登録・所有権更新・TLB フラッシュを実行する。メモリマネージャ側が vMMIO の内部実装やアドレス体系を直接操作することはなく、クリーンアーキテクチャ（DIP）が維持される。**
 
 #### FlatMap ページテーブル定義
 <!-- traceability: {META_FlatMapIndexed} {vMMIO_Isolation} -->

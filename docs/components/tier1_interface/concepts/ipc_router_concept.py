@@ -16,7 +16,6 @@ import os
 import sys
 from collections.abc import Sequence
 from enum import IntEnum
-from typing import Any
 
 sys.path.insert(
     0,
@@ -24,7 +23,7 @@ sys.path.insert(
 )
 from flat_view_concept import FlatMapView
 
-_EMPTY_ENTRIES: list[tuple[Any, Any]] = []
+_EMPTY_ENTRIES: list[tuple[int, int]] = []
 
 
 class Role(IntEnum):
@@ -49,7 +48,7 @@ class IPCMessage:
 
     def __init__(
         self,
-        entries: Sequence[tuple[Any, Any]] | None = None,
+        entries: Sequence[tuple[int, int]] | None = None,
     ):
         if entries is not None:
             self._entries = sorted(entries, key=lambda e: e[0])
@@ -64,7 +63,7 @@ class IPCMessage:
         ), f"Cannot access IPCMessage entries while ownership is {self.ownership.name}!"
 
     @property
-    def entries(self) -> list[tuple[Any, Any]]:
+    def entries(self) -> list[tuple[int, int]]:
         self._check_ownership()
         return self._entries
 

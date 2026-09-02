@@ -239,9 +239,9 @@ class BitView:
     byte, which keeps a read down to a single load plus a shift and a mask.
     """
 
-    def __init__(self, storage: "std::span<uint8_t>", bits: int, origin: int = 0, count: int = 0):
+    def __init__(self, storage, bits: int, origin: int = 0, count: int = 0):
         assert bits in ALLOWED_BITS, "Bits must be 1, 2 or 4"
-        self.storage = storage
+        self.storage = storage  # 外部所有バイト列（C++ std::span<uint8_t> 相当）
         self.bits = bits
         self.origin = origin  # bit offset of logical element 0
         self.count = count
@@ -351,17 +351,17 @@ class RadixBinaryTreeView:
     def __init__(
         self,
         keys: Sequence[int],
-        values: Sequence[Any],
+        values,
         radix_table: Sequence[int],
         radix_shift: int,
-        key_transform: Any = None,
+        key_transform=None,
     ):
-        self.map_view = FlatMapView(keys, values)
+        self.map_view = FlatMapView(list(zip(keys, values)))
         self.radix_table = radix_table  # pure scalar offsets array [0, 3, 6, ...]
         self.radix_shift = radix_shift
         self.key_transform = key_transform
 
-    def find(self, key: int) -> Any | None:
+    def find(self, key: int):
         rk = self.key_transform(key) if self.key_transform is not None else key
         prefix = rk >> self.radix_shift
         if prefix < 0 or prefix + 1 >= len(self.radix_table):
@@ -404,7 +404,7 @@ def lookup_jit_entry(
     return view.slice(first, last).find(pc)
 
 
-def card_marking_table(storage: "std::span<uint8_t>", card_count: int) -> BitView:
+def card_marking_table(storage, card_count: int) -> BitView:
     """The 2-bit per-card state table: 4 cards per byte instead of one.
 
     Note this returns a BitView, not a FlatMapView -- card marking is answered

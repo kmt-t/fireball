@@ -112,14 +112,14 @@ IPC転送のための共有メモリブロック確保は、上記の `acquire-p
 
 ### 7.1 共有メモリマッピングと仮想化リスナーへのコールバック委譲
 <!-- traceability: {VmmioShmDelegation} {OwnerMismatchTrap} -->
-物理メモリマネージャ（`MemoryManager`）はクリーンアーキテクチャ（依存性逆転の原則: DIP）に従い、特定の下位／上位仮想化ハードウェア（vMMIO 等）の識別子や仮想アドレス体系（`0xE000_0000`）を一切直接参照しない。
-代わりに、物理ページマッピングイベントを通知するコールバックインターフェース（`PageMappingCallbacks`）を提供し、仮想化層（vMMIO コントローラ等）がリスナーとして登録する設計とする。 `{VmmioShmDelegation}`
-- **`PageMappingCallbacks`**:
-  - `on_map_page(page_idx, phys_addr, owner_id, read_only)`: 物理ページの割り当て時
-  - `on_update_owner(page_idx, new_owner_id)`: 所有権の移譲・変更時（Grant 等）
-  - `on_revoke(page_idx)`: 所有権の一時回収時（`FB_TASK_ID_FLIGHT` 設定および TLB フラッシュ）
-  - `on_unmap_page(page_idx)`: 物理ページの解放時
-- `MemoryManager` は物理ページ（4KB）の割り当て・状態遷移・解放時にこのコールバックを呼び出し、仮想化層側が自身の仮想アドレス空間（VPN）の PTE テーブル更新や TLB エントリフラッシュ（`flush_tlb_entry(vpn)`）を自律的に実施する。 `{OwnerMismatchTrap}`
+物理メモリマネージャは、クリーンアーキテクチャ（依存性逆転の原則: DIP）に従い、特定の上位仮想化ハードウェア（vMMIO 等）の内部シンボルや特定の仮想アドレス体系（`0xE000_0000`）に直接依存しない。
+物理メモリマネージャは物理ページマッピングのライフサイクルイベントを通知するイベント通知インターフェース（リスナー機構）を提供し、仮想化層（vMMIO コントローラ等）がこれを購読・登録する設計とする。 `{VmmioShmDelegation}`
+- **通知されるライフサイクルイベント**:
+  - **ページ割り当て**: 物理ページの確保と初期所有者・読み書き権限の確定時
+  - **所有権移譲**: タスク間でのブロック受け渡し（Grant 等）に伴う所有タスクIDの変更時
+  - **所有権回収（Revoke）**: メッセージ送信開始等に伴う所有権の一時無効化（移譲中状態の設定およびTLBフラッシュ契機）
+  - **ページ解放**: 共有ブロック破棄に伴う物理ページの解放時
+- 物理メモリマネージャは物理ページ（4KB）のライフサイクル変化時にこの通知を発火し、仮想化層側が自身の仮想アドレス空間（VPN）に対応するページテーブル（PTE）更新や TLB エントリフラッシュを自律的に実施する。 `{OwnerMismatchTrap}`
 
 ### 7.2 ページ単位権限分離仕様（Page-Granular Permission Isolation）
 <!-- traceability: {PageGranularPermissionIsolation} {META_FaultIsolation} -->

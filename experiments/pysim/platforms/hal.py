@@ -33,7 +33,7 @@ from typing import Any
 
 from ipc_router import DataType, IPCMessage, IPCRouter, IpcStatus, ScopeKind, pack_key32
 from scheduler import ChannelAction
-from system_containers import FlatMapStorage, FlatMapView, FlatSetView
+from system_containers import FlatMapView, FlatSetView
 
 # platform_hal.md §4.2's kv_pair command arguments: each is a packed
 # (ScopeKind.FUNCTIONAL, DataType.UINT32, key_id) key per ipc_router.md §3.3,
@@ -469,10 +469,11 @@ class HalTask:
 def make_hal_ipc_message(
     cmd_id: int,
     params: Sequence[tuple[int, Any]] = (),
+    memory_manager: Any | None = None,
+    task_id: int = 1,
 ) -> IPCMessage:
     """Builds a standardized IPCMessage for communicating with HalTask."""
     entries = list(params)
     entries.append((ARG_CMD_ID, cmd_id))
     sorted_entries = sorted(entries, key=lambda kv: kv[0])
-    storage = FlatMapStorage(sorted_entries)
-    return IPCMessage(storage=storage)
+    return IPCMessage.from_entries(sorted_entries, memory_manager=memory_manager, task_id=task_id)

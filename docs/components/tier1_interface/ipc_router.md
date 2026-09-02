@@ -81,12 +81,13 @@ IPC通信の最小単位。1つのメッセージで8個のペアを送信でき
 
 #### IPCメッセージ（message）
 <!-- traceability: {TypeSafeMessaging} {META_FlatMapIndexed} {OwnershipTransfer} {ADR_SharedBlockRaii} -->
-Key-Valueペアを複数集約した通信の基本単位。内部的に、動的メモリ確保を一切伴わない静的バッファ上のAoS（Key-Valueペアのエントリ配列）と `fireball::flat_map_view` による二分探索を採用し、メッセージ内のキー検索を $O(\log N)$ で行う。メッセージ自身がストレージ（固定長AoSエントリ配列）を所有し、エントリやペイロードへのアクセス時には所有権（`SENDER_OWNS` または `RECEIVER_OWNS`）を強制検証する（`IN_FLIGHT` 中のアクセスは禁止）。タスクを跨ぐ大きなデータは共有メモリ（`SharedBlock`）を保持し、内部の `shm_id` を完全隠蔽する。 `{TypeSafeMessaging}` `{META_FlatMapIndexed}` `{ADR_SharedBlockRaii}`
+Key-Valueペアを複数集約した通信の基本単位。メッセージ自身が共有メモリ（`SharedBlock`）上に実体化され、内部の物理バイト配列（`bytearray`）をストレージとして直接利用する。動的メモリ確保を一切伴わない物理メモリ上のAoS（Key-Valueペアのエントリ配列：1エントリ8バイト）と `fireball::flat_map_view` による二分探索を採用し、メッセージ内のキー検索を $O(\log N)$ で行う。エントリやペイロードへのアクセス時には所有権（`SENDER_OWNS` または `RECEIVER_OWNS`）を強制検証する（`IN_FLIGHT` 中のアクセスは禁止）。また、タスクを跨ぐ大きなバルクデータは別の共有メモリ（`SharedBlock`）の `shm_id` をエントリのバリュー（`ScopeKind.RESOURCE`）に格納して伝送でき、IPCルータのランデブー完了時に自動で vMMIO PTE の権限付け替え（`grant_shared`）が行われる。 `{TypeSafeMessaging}` `{META_FlatMapIndexed}` `{ADR_SharedBlockRaii}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| KVマップ (AoS) | メッセージ内容を構成するKey-Valueペアエントリ配列。自前で所有しアクセス時に所有権検証 | ソート済み固定長AoS配列 + `fireball::flat_map_view` | 8個固定（静的バッファ） |
-| 共有メモリブロック | タスク間バルク転送用RAII共有メモリ。内部の `shm_id` を完全隠蔽 | `fireball::shared_block` (オプション) | 0または1個 |
+| メッセージ本体ブロック | メッセージ自身を格納する共有メモリブロック。`bytearray` に対する固定長バイナリアクセッサで操作 | `fireball::shared_block` | 1個（256バイト固定等） |
+| KVマップ (AoS) | 共有メモリバイト配列上に配置されるKey-Valueペアエントリ配列。自前で所有しアクセス時に所有権検証 | ソート済み固定長AoSバイナリ配列 + `fireball::flat_map_view` | 最大8個固定（1エントリ8バイト） |
+| リソース共有メモリ | エントリ値（`ScopeKind.RESOURCE`）に埋め込まれるタスク間バルク転送用RAII共有メモリ。チャネルが所有権を自動Grant | `fireball::shared_block` (オプション) | 任意個数（エントリのバリュー） |
 
 #### レジストリエントリ（registry_entry）
 <!-- traceability: {DictionaryBasedIPC} {TypeSafeMessaging} {META_FlatMapIndexed} -->

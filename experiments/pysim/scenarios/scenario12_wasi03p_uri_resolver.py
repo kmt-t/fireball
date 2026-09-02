@@ -233,7 +233,7 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
     val2 = shm_slot_id
 
     pairs = sorted([(k1, val1), (k2, val2)], key=lambda p: p[0])
-    ipc_msg_64 = IPCMessage(entries=pairs)
+    ipc_msg_64 = IPCMessage.from_entries(pairs)
     assert len(ipc_msg_64) == 2
     assert ipc_msg_64.get_by_key_id(0x01, ScopeKind.FUNCTIONAL) == len(msg)
     assert ipc_msg_64.get_by_key_id(0x14, ScopeKind.RESOURCE) == shm_slot_id

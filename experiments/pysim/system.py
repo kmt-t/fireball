@@ -229,6 +229,10 @@ class System:
         self.exit_code: int | None = None
         self._guest_memory: bytearray | None = None
         self._current_task_id = 0
+        self.hal_task: Any | None = None
+        self._hal_task_id: int | None = None
+        self.gdb_server: Any | None = None
+        self._gdb_task_id: int | None = None
         # Build fireball_call dispatch table via RadixBinaryTreeView
         syscall_handlers: list[tuple[int, Any]] = [
             (
@@ -601,7 +605,11 @@ class System:
         payload = self._read_guest(msg_offset, msg_len)
         if payload is None:
             return WasiErrno.FAULT
-        msg = IPCMessage(storage=bytes_to_kv_storage(payload))
+        msg = IPCMessage.from_entries(
+            bytes_to_kv_storage(payload),
+            memory_manager=self.memory_manager,
+            task_id=self._current_task_id,
+        )
         # The guest task's own execution *is* this call: system_syscall.md
         # models a host call as running inside the calling task's own
         # coroutine (the runtime task, never the Interpreter itself -- it
@@ -710,7 +718,7 @@ class System:
         """Spawns the HAL Server Task on the COOS scheduler (platform_hal.md).
         HAL communicates strictly via IPC, never raw direct method calls.
         """
-        if hasattr(self, "_hal_task_id") and self._hal_task_id is not None:
+        if self._hal_task_id is not None:
             return self._hal_task_id
 
         from hal import DummyBusDriver, DummyGpioDriver, DummyTimerDriver, DummyUartDriver, HalTask
@@ -754,9 +762,9 @@ class System:
         return (task_id, bound_port)
 
     def shutdown(self) -> None:
-        if hasattr(self, "gdb_server") and self.gdb_server is not None:
+        if self.gdb_server is not None:
             self.gdb_server.stop()
-        if hasattr(self, "hal_task") and self.hal_task is not None:
+        if self.hal_task is not None:
             self.hal_task.running = False
         self.pool.close_all()
         self.transport.close()

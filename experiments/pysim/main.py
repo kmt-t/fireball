@@ -257,7 +257,11 @@ def run_wasm_demo(sysv: System) -> None:
 
     def debugger_sender():
         yield from sysv.ipc.send(
-            Role.DEBUGGER, "fireball://hal/gpio/0", IPCMessage(storage=bytes_to_kv_storage(payload))
+            Role.DEBUGGER,
+            "fireball://hal/gpio/0",
+            IPCMessage.from_entries(
+                bytes_to_kv_storage(payload), memory_manager=sysv.memory_manager
+            ),
         )
 
     sysv.scheduler.spawn("hal_receiver", hal_receiver())

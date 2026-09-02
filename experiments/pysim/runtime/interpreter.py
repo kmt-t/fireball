@@ -214,8 +214,8 @@ class CallFrame:
     ):
         self.values = values
         self.frames: list[_Frame] = []
-        self.instr_table = instrs if hasattr(instrs, "keys") else None
-        self.instrs = instrs.view() if hasattr(instrs, "view") else instrs
+        self.instr_table = instrs
+        self.instrs = instrs
         self.code = code
         self.env = env
 

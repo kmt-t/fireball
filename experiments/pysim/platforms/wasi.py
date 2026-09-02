@@ -311,10 +311,9 @@ class Wasi03pEngine:
         from ipc_router import Role
 
         # Ensure HAL task is spawned on the scheduler
-        if hasattr(self.sysv, "spawn_hal_task"):
-            self.sysv.spawn_hal_task()
+        self.sysv.spawn_hal_task()
 
-        msg = make_hal_ipc_message(cmd_id, params.entries)
+        msg = make_hal_ipc_message(cmd_id, params.entries, memory_manager=self.sysv.memory_manager)
 
         def sender_coro():
             yield from self.sysv.ipc.send(Role.RUNTIME, uri, msg)
@@ -322,7 +321,7 @@ class Wasi03pEngine:
         self.sysv.scheduler.spawn("wasi_ipc_sender", sender_coro())
         self.sysv.scheduler.run_until_idle()
 
-        if hasattr(self.sysv, "hal_task") and self.sysv.hal_task is not None:
+        if self.sysv.hal_task is not None:
             return self.sysv.hal_task.last_result
         return None
 

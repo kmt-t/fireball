@@ -9,7 +9,8 @@ COOS Memory Manager & PMSAv8 MPU simulation.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import struct
+from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Generic, TypeVar
 
@@ -93,6 +94,7 @@ class ShmSlot:
     owner: int
     base_address: int
     allocated: bool
+    data: bytearray = field(default_factory=bytearray)
 
 
 @dataclass
@@ -156,6 +158,7 @@ class SharedBlock:
         owner: int,
         base_address: int,
         manager: MemoryManager,
+        data: bytearray | None = None,
     ):
         self.shm_id = shm_id
         self.page_idx = page_idx
@@ -166,6 +169,7 @@ class SharedBlock:
         self._manager = manager
         self._is_active = True
         self._is_in_flight = False
+        self.data: bytearray = data if data is not None else bytearray(size)
 
     def get_address(self) -> int:
         assert self._is_active, "Cannot access released or dropped SharedBlock"
@@ -177,19 +181,85 @@ class SharedBlock:
     def get_owner(self) -> int:
         return self.owner
 
+    def _check_access(self, offset: int, length: int = 1) -> None:
+        assert self._is_active, "Cannot access released or dropped SharedBlock"
+        assert not self._is_in_flight, "Cannot access in-flight SharedBlock"
+        assert 0 <= offset and offset + length <= self.size, (
+            f"Access out of bounds: offset {offset} + len {length} > size {self.size}"
+        )
+
+    def get_bytearray(self) -> bytearray:
+        """Returns the underlying shared memory bytearray."""
+        assert self._is_active and not self._is_in_flight, (
+            "Cannot access inactive or in-flight SharedBlock bytearray"
+        )
+        return self.data
+
+    def read_u8(self, offset: int) -> int:
+        self._check_access(offset, 1)
+        return self.data[offset]
+
+    def write_u8(self, offset: int, val: int) -> None:
+        self._check_access(offset, 1)
+        self.data[offset] = val & 0xFF
+
+    def read_u16(self, offset: int) -> int:
+        self._check_access(offset, 2)
+        return struct.unpack_from("<H", self.data, offset)[0]
+
+    def write_u16(self, offset: int, val: int) -> None:
+        self._check_access(offset, 2)
+        struct.pack_into("<H", self.data, offset, val & 0xFFFF)
+
+    def read_u32(self, offset: int) -> int:
+        self._check_access(offset, 4)
+        return struct.unpack_from("<I", self.data, offset)[0]
+
+    def write_u32(self, offset: int, val: int) -> None:
+        self._check_access(offset, 4)
+        struct.pack_into("<I", self.data, offset, val & 0xFFFFFFFF)
+
+    def read_i32(self, offset: int) -> int:
+        self._check_access(offset, 4)
+        return struct.unpack_from("<i", self.data, offset)[0]
+
+    def write_i32(self, offset: int, val: int) -> None:
+        self._check_access(offset, 4)
+        struct.pack_into("<i", self.data, offset, val)
+
+    def read_bytes(self, offset: int, length: int) -> bytes:
+        self._check_access(offset, length)
+        return bytes(self.data[offset : offset + length])
+
+    def write_bytes(self, offset: int, src: bytes | bytearray) -> None:
+        self._check_access(offset, len(src))
+        self.data[offset : offset + len(src)] = src
+
+    def read_kv(self, offset: int) -> tuple[int, int]:
+        """Reads 64-bit kv_pair (uint32 key, uint32 value) from bytearray."""
+        self._check_access(offset, 8)
+        return struct.unpack_from("<II", self.data, offset)
+
+    def write_kv(self, offset: int, key: int, val: int) -> None:
+        """Writes 64-bit kv_pair (uint32 key, uint32 value) into bytearray."""
+        self._check_access(offset, 8)
+        struct.pack_into("<II", self.data, offset, key & 0xFFFFFFFF, val & 0xFFFFFFFF)
+
     def release(self) -> int:
         """Revoke sender access and prepare for transfer (marks FLIGHT)."""
         assert self._is_active, "Cannot release inactive SharedBlock"
-        self._is_active = False
-        self._is_in_flight = True
-        self._manager.vmmio_registry.update_owner(self.page_idx, FB_TASK_ID_FLIGHT)
+        if self._manager is not None:
+            self._is_active = False
+            self._is_in_flight = True
+            self._manager.vmmio_registry.update_owner(self.page_idx, FB_TASK_ID_FLIGHT)
         return self.shm_id
 
     def drop(self):
         """RAII drop handler: automatically deallocates physical buffer if still owned."""
         if self._is_active:
             self._is_active = False
-            self._manager._deallocate_shared_slot(self.page_idx, self.slot_idx, self.owner)
+            if self._manager is not None:
+                self._manager._deallocate_shared_slot(self.page_idx, self.slot_idx, self.owner)
         elif self._is_in_flight:
             pass
 
@@ -395,7 +465,11 @@ class MemoryManager:
         self.partition_owners.remove(caller_task_id)
         self.total_allocated_bytes -= FB_CONF_PARTITION_SIZE
 
-    def allocate_shared(self, caller_task_id: int, size: int) -> Result[SharedBlock]:
+    def allocate_shared(
+        self,
+        caller_task_id: int,
+        size: int,
+    ) -> Result[SharedBlock]:
         assert caller_task_id != 0, "Shared block must be owned by an explicit task"
         if size <= 0 or size > FB_PAGE_SIZE:
             return Result(
@@ -418,6 +492,7 @@ class MemoryManager:
         shm_id = (page_idx << 8) | slot_idx
         base_addr = 0x20080000 + (page_idx * FB_PAGE_SIZE)
         self.vmmio_registry.register_page(page_idx, caller_task_id, base_addr)
+        raw_data = bytearray(size)
         self.shm_slots.insert(
             shm_id,
             ShmSlot(
@@ -427,6 +502,7 @@ class MemoryManager:
                 owner=caller_task_id,
                 base_address=base_addr,
                 allocated=True,
+                data=raw_data,
             ),
         )
         self.total_allocated_bytes += FB_PAGE_SIZE
@@ -438,6 +514,7 @@ class MemoryManager:
             owner=caller_task_id,
             base_address=base_addr,
             manager=self,
+            data=raw_data,
         )
         return Result(value=sb)
 
@@ -478,6 +555,7 @@ class MemoryManager:
             owner=receiver_task_id,
             base_address=slot.base_address,
             manager=self,
+            data=slot.data,
         )
         return Result(value=sb)
 

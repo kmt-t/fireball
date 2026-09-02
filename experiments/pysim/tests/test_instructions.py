@@ -404,16 +404,54 @@ def test_mem_10_shared_block_ownership_transfer():
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     sb_a = mm.allocate_shared(caller_task_id=1, size=1024).unwrap()
     assert sb_a.get_owner() == 1
+
+    # Verify bytearray accessors on active SharedBlock
+    sb_a.write_u8(0, 0xAB)
+    assert sb_a.read_u8(0) == 0xAB
+
+    sb_a.write_u16(2, 0x1234)
+    assert sb_a.read_u16(2) == 0x1234
+
+    sb_a.write_u32(4, 0xCAFEBABE)
+    assert sb_a.read_u32(4) == 0xCAFEBABE
+
+    sb_a.write_i32(8, -42)
+    assert sb_a.read_i32(8) == -42
+
+    sb_a.write_bytes(16, b"Hello Fireball SHM")
+    assert sb_a.read_bytes(16, 18) == b"Hello Fireball SHM"
+
+    sb_a.write_kv(40, 0x1000, 0x2000)
+    assert sb_a.read_kv(40) == (0x1000, 0x2000)
+
+    # Underlying bytearray direct accessor
+    raw_ba = sb_a.get_bytearray()
+    assert isinstance(raw_ba, bytearray)
+    assert raw_ba[0] == 0xAB
+
     page_idx = sb_a.page_idx
     shm_id = sb_a.release()
     assert not sb_a._is_active
     assert mm.vmmio_registry.get_owner(page_idx) == FB_TASK_ID_FLIGHT
+
+    # Access during in-flight must raise AssertionError
+    try:
+        sb_a.read_u32(4)
+        raise AssertionError("Expected access error while in-flight")
+    except AssertionError:
+        pass
+
     # Simulate IPC Router Grant phase
     mm.vmmio_registry.update_owner(page_idx, 2)
     sb_b = mm.claim(receiver_task_id=2, shm_id=shm_id).unwrap()
     assert sb_b.get_owner() == 2
     assert sb_b._is_active
     assert mm.vmmio_registry.get_owner(page_idx) == 2
+
+    # Receiver can read everything sender wrote into the bytearray!
+    assert sb_b.read_u32(4) == 0xCAFEBABE
+    assert sb_b.read_bytes(16, 18) == b"Hello Fireball SHM"
+    assert sb_b.read_kv(40) == (0x1000, 0x2000)
 
 
 def test_mem_10c_rollback_transfer_restores_owner_id():
@@ -579,7 +617,7 @@ def test_log_04_coos_and_ipc_diagnostic_logging():
             sysv.scheduler.notify_interrupt(irq_idx)
 
         # 3. IPC Unknown URI -> 0x0202
-        msg = IPCMessage([(1, 10)])
+        msg = IPCMessage.from_entries([(1, 10)], memory_manager=sysv.memory_manager)
 
         def bad_uri_task():
             yield from sysv.ipc.send(Role.RUNTIME, "fireball://unknown/service", msg)
@@ -588,7 +626,7 @@ def test_log_04_coos_and_ipc_diagnostic_logging():
         sysv.scheduler.run_until_idle()
 
         # 4. IPC RBAC Denied -> 0x0201
-        msg2 = IPCMessage([(1, 20)])
+        msg2 = IPCMessage.from_entries([(1, 20)], memory_manager=sysv.memory_manager)
 
         def rbac_denied_task():
             # RUNTIME sending to DEBUGGER is DENIED
@@ -598,8 +636,9 @@ def test_log_04_coos_and_ipc_diagnostic_logging():
         sysv.scheduler.run_until_idle()
 
         # 5. IPC Message Too Large -> 0x0203
-        too_large_msg = IPCMessage(
-            [(i, i) for i in range(1, 10)]  # 9 pairs > 8
+        too_large_msg = IPCMessage.from_entries(
+            [(i, i) for i in range(1, 10)],  # 9 pairs > 8
+            memory_manager=sysv.memory_manager,
         )
 
         def too_large_task():
@@ -1096,13 +1135,13 @@ def test_ipc_01_uri_lookup_and_permission_matrix():
     # scheduler.Channel's own tests (test_coos_01 etc.) to observe the
     # CSP block directly instead of driving it to a rendezvous that will
     # never come.
-    msg1 = IPCMessage([(_KEY_CMD, _CMD_PIN_HIGH)])
+    msg1 = IPCMessage.from_entries([(_KEY_CMD, _CMD_PIN_HIGH)])
     gen = router.send(Role.RUNTIME, "fireball://hal/gpio/0", msg1)
     assert next(gen) == (ChannelAction.BLOCK, None)
     assert msg1.ownership == OwnershipState.IN_FLIGHT
 
     # PLATFORM_HAL has no outgoing edges at all (role matrix row is all-DENY).
-    msg2 = IPCMessage([(_KEY_CMD, _CMD_PIN_HIGH)])
+    msg2 = IPCMessage.from_entries([(_KEY_CMD, _CMD_PIN_HIGH)])
     status_bad, _ = _run_immediate(router.send(Role.PLATFORM_HAL, "fireball://hal/gpio/0", msg2))
     assert status_bad == IpcStatus.ERR_PERMISSION_DENIED
     assert msg2.ownership == OwnershipState.SENDER_OWNS
@@ -1118,8 +1157,12 @@ def test_ipc_02_e2e_shared_block_transfer():
         addr = sb.get_address()
         assert addr >= 0x20020000
 
-        # Sender encapsulates SharedBlock in IPCMessage ({ADR_SharedBlockRaii})
-        msg = IPCMessage(shared_block=sb)
+        # Sender puts shm_id directly in the message entry's value inside shared memory!
+        msg = IPCMessage.from_entries(
+            [(_KEY_SHM_ID, sb.shm_id)],
+            memory_manager=sysv.memory_manager,
+            task_id=2,
+        )
         sent: list[IpcStatus] = []
 
         def client_app_task():
@@ -1139,9 +1182,13 @@ def test_ipc_02_e2e_shared_block_transfer():
 
         assert sent == [IpcStatus.COMPLETED]
         assert received and received[0] is msg
-        # Channel automatically granted and claimed SharedBlock for receiver task (task 1)!
-        recv_sb = received[0].shared_block
-        assert recv_sb is not None
+        recv_msg = received[0]
+
+        # Channel automatically granted ownership of entry's shm_id to receiver task (task 1)!
+        recv_shm_id = recv_msg[_KEY_SHM_ID]
+        assert recv_shm_id == sb.shm_id
+
+        recv_sb = sysv.memory_manager.claim(receiver_task_id=1, shm_id=recv_shm_id).unwrap()
         assert recv_sb.get_owner() == 1
         assert recv_sb.get_address() == addr
     finally:
@@ -1154,7 +1201,11 @@ def test_ipc_03_send_failure_restores_owner():
     try:
         sb = sysv.memory_manager.allocate_shared(caller_task_id=1, size=256).unwrap()
         shm_id = sb.release()
-        msg = IPCMessage([(_KEY_SHM_ID, shm_id)])
+        msg = IPCMessage.from_entries(
+            [(_KEY_SHM_ID, shm_id)],
+            memory_manager=sysv.memory_manager,
+            task_id=1,
+        )
         # PLATFORM_HAL has no outgoing edges: rejected at Stage 2 before ever
         # touching a channel, so this never actually blocks.
         status, _ = _run_immediate(sysv.ipc.send(Role.PLATFORM_HAL, "fireball://hal/gpio/0", msg))
@@ -1186,7 +1237,7 @@ def test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group():
 
     def debugger_sender():
         status, _ = yield from router.send(
-            Role.DEBUGGER, "fireball://core/coos/0", IPCMessage([(1, 99)])
+            Role.DEBUGGER, "fireball://core/coos/0", IPCMessage.from_entries([(1, 99)])
         )
         assert status == IpcStatus.COMPLETED
 
@@ -1223,7 +1274,7 @@ def test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group():
 
     def runtime_sender():
         status, _ = yield from router.send(
-            Role.RUNTIME, "fireball://core/coos/0", IPCMessage([(1, 7)])
+            Role.RUNTIME, "fireball://core/coos/0", IPCMessage.from_entries([(1, 7)])
         )
         assert status == IpcStatus.COMPLETED
 
@@ -1239,7 +1290,7 @@ def test_ipc_05_message_storage_ownership_and_access_check():
     """IPC-05: IPCMessage owns its FlatMapStorage and enforces ownership checks upon access."""
     from ipc_router import OwnershipState
 
-    msg = IPCMessage(entries=[(10, 100), (20, 200)])
+    msg = IPCMessage.from_entries([(10, 100), (20, 200)])
     assert msg.ownership == OwnershipState.SENDER_OWNS
     assert msg.get(10) == 100
     assert msg.get(20) == 200
@@ -1294,11 +1345,80 @@ def test_ipc_06_router_create_channel_authorization():
     assert ch_denied is None, "PLATFORM_HAL -> DEBUGGER must be denied by RBAC"
 
     # Communication over the authorized channel
-    msg = IPCMessage([(1, 42)])
+    msg = IPCMessage.from_entries([(1, 42)])
     sched.current_task = sched.get_task(runtime_task_id)
     action, _ = ch_hal.send(msg)
     assert action == ChannelAction.BLOCK
     assert ch_hal.waiter_dir == WaitDir.SEND
+
+
+def test_ipc_07_message_in_shm_and_payload_shm_transfer():
+    """IPC-07: The message is resident in shared memory, and can carry another payload SHM ID inside its entries."""
+    from ipc_router import DataType, ScopeKind, pack_key32
+
+    sysv = System()
+    try:
+        sender_id = 2
+        receiver_id = 1
+
+        # 1. Allocate SharedBlock for the message itself (message is shared memory!)
+        msg_sb = sysv.memory_manager.allocate_shared(caller_task_id=sender_id, size=256).unwrap()
+        assert msg_sb.get_owner() == sender_id
+
+        # 2. Allocate another SharedBlock for payload bulk data
+        payload_sb = sysv.memory_manager.allocate_shared(
+            caller_task_id=sender_id, size=1024
+        ).unwrap()
+        assert payload_sb.get_owner() == sender_id
+        payload_shm_id = payload_sb.shm_id
+
+        # 3. Embed payload SHM ID into the message's KV entries (in the memory block!)
+        k_payload_id = pack_key32(ScopeKind.RESOURCE, DataType.UINT32, key_id=0x14)
+        k_payload_len = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=0x01)
+        entries = [(k_payload_id, payload_shm_id), (k_payload_len, 1024)]
+
+        # Construct message backed by msg_sb and write entries into its memory block!
+        msg = IPCMessage(msg_sb)
+        msg.write_entries(entries)
+        assert msg.block is msg_sb
+        assert msg[k_payload_id] == payload_shm_id
+
+        sent: list[IpcStatus] = []
+
+        def client_sender():
+            status, _ = yield from sysv.ipc.send(Role.RUNTIME, "fireball://hal/gpio/0", msg)
+            sent.append(status)
+
+        received: list[IPCMessage] = []
+
+        def hal_receiver():
+            status, recv_msg = yield from sysv.ipc.recv("fireball://hal/gpio/0")
+            received.append(recv_msg)
+
+        # Receiver is task 1, Sender is task 2
+        sysv.scheduler.spawn("hal_receiver", hal_receiver())
+        sysv.scheduler.spawn("client_sender", client_sender())
+        sysv.scheduler.run_until_idle()
+
+        assert sent == [IpcStatus.COMPLETED]
+        assert received and received[0] is msg
+        recv_msg = received[0]
+
+        # 1. Message's own SHM block is granted to receiver!
+        assert recv_msg.block is not None
+        assert recv_msg.block.get_owner() == receiver_id
+
+        # 2. Payload SHM ID in entries was also automatically granted to receiver!
+        retrieved_shm_id = recv_msg.get_by_key_id(0x14, ScopeKind.RESOURCE)
+        assert retrieved_shm_id == payload_shm_id
+
+        # Receiver claims the payload SharedBlock
+        recv_payload_sb = recv_msg.claim_resource(sysv.memory_manager, receiver_id, key_id=0x14)
+        assert recv_payload_sb is not None
+        assert recv_payload_sb.get_owner() == receiver_id
+        assert recv_payload_sb.shm_id == payload_shm_id
+    finally:
+        sysv.shutdown()
 
 
 # ===========================================================================
@@ -1415,7 +1535,11 @@ def test_syscall_06_ipc_lookup_send_recv():
 
         def debugger_sender():
             status, _ = yield from sysv.ipc.send(
-                Role.DEBUGGER, core_uri, IPCMessage(storage=bytes_to_kv_storage(reply))
+                Role.DEBUGGER,
+                core_uri,
+                IPCMessage.from_entries(
+                    bytes_to_kv_storage(reply), memory_manager=sysv.memory_manager
+                ),
             )
             sent_status.append(status)
 
@@ -2505,7 +2629,9 @@ def test_guest_wasi_05_jit_fireball_call_ipc_messaging():
             yield from sysv.ipc.send(
                 Role.DEBUGGER,
                 "fireball://hal/gpio/0",
-                IPCMessage(storage=bytes_to_kv_storage(payload)),
+                IPCMessage.from_entries(
+                    bytes_to_kv_storage(payload), memory_manager=sysv.memory_manager
+                ),
             )
 
         sysv.scheduler.spawn("hal_receiver", hal_receiver())

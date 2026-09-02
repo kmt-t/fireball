@@ -2,74 +2,94 @@
 
 Fireball Hypervisor の現行作業および次期フェーズのタスク一覧。
 全体の開発ロードマップは `docs/plans/roadmap_phase.md` を参照。
-品質ゲートおよび形式検証の最新結果は `reports/doc_report.md` を参照。
+品質課題および検証結果は `reports/doc_report.md` を正本とする。
 
 ---
 
-## Phase 0.8: 仕様レビュー・バジェット再見積・クラス設計 【進行中 / ACTIVE】
+## Phase 0: Quality Gate & Early Validation 【進行中 / ACTIVE】
 <!-- traceability: {META_SpecificationFirst} {META_Risk_Tiering} {Resource_Estimation_Model} -->
 
-機械的な品質ゲート（静的解析・pyModelChecking 13モデル形式検証・WIT契約・LLM意味監査）はすべて合格（0 Errors, 0 Warnings）。
-さらに、Python 完全実行可能シミュレータ（`experiments/pysim`）により全 11 統合シナリオの実証を完了。
-現在、**オーナー（アーキテクト）による最終仕様精読、RAM/ROM バジェットの厳密な再見積もり、および C++23 クラス・構造体メモリレイアウト設計の確定** を実施中。
+盆栽デザイン（Bonsai Design）に基づき、仕様策定（Step 0）、早期検証・形式検証（Step 1）を完了。
+現在は **Step 2（シミュレータコード品質向上、実装の勘所・Gotchas抽出、テスト設計・コードへの還元）** を集中的に推進中。
 
-### Phase 0 達成実績 & 現在進行中のタスク
-- [x] **1. 形式検証・WIT契約・Python シミュレータ実証 (DONE)**:
-  - pyModelChecking 13モデル形式検証合格（CSPデッドロックフリー、W^X分離、PTE状態遷移等） `{GLOBAL_UseCpp20Coroutine}` `{CSP_Handoff}` `{JIT_MultiBuffer_Cache}` `{Debugger_Jit_Flush}`
-  - WIT インターフェース契約 & 4つのリカバリー戦略（`ignore`, `retry`, `restart`, `panic`）確定 `{META_RecoveryStrategy}`
-  - Python 実機シミュレータ (`experiments/pysim`) 全11シナリオ完走実証
-- [ ] **2. 物理リソース予算（RAM 32KB / ROM 96KB）の厳密な再見積もり (進行中)**:
-  - **RAM (32KB)**: JITキャッシュ 6.63KB, 統合スタック 2.02KB, WASMリニアメモリ 4.0KB, vSoCメタデータ 1.13KB, COOS 1.31KB, IPC/vMMIO 1.38KB, サブシステム 1.75KB, C++ Core/MSPスタック 3.0KB $\to$ 静的合計 **21.20 KB** (安全余白 10.80 KB / 33.7%) の実機適合確認 `{Resource_Estimation_Model}`
-  - **ROM (96KB)**: JITステンシル 8.0KB, Interpreter 14.0KB, Loader 6.0KB, COOS/IPC 10.0KB, vMMIO 5.5KB, HAL/WASI 12.0KB, GDB 4.5KB, 内蔵WASM 20.0KB, スタートアップ 4.0KB $\to$ 静的合計 **84.0 KB** (安全余白 12.0 KB / 12.5%) の確認
-- [ ] **3. C++23 クラス・構造体メモリレイアウト & constexpr 設計 (進行中)**:
-  - `inc/core/`: `TaskControlBlock`, `CoosChannel`, `SchedulerContext`
-  - `inc/interface/`: `IpcRouter`, `SharedBlockView`, `WitResourceTable`
-  - `inc/runtime/`: `ExecutionContext` (16B), `ModuleView` (ゼロコピー索引), `OpcodeHandlerTable` (`[[clang::musttail]]`), `VmmioPageTable`
-  - `inc/jit/`: `JitCacheManager` (2KB×3面), `Thumb2StencilTable`, `SafepointController`
-  - `inc/platform/`: `ConsolidatedMemoryManager`, `PMSAv8MPUController`, `HalDriverHarness`
-  - POD ハーネスと C++20/23 Concepts によるゼロオーバーヘッド静的 DI のヘッダ定義 `{META_StaticDI}` `{GLOBAL_ComponentHarness}`
-- [ ] **4. オーナー（人間）による最終仕様精読 & GO 判定**:
-  - 仕様・バジェット・クラス設計を Freeze し、C++23 実装フェーズ（Phase 1）への移行を最終承認 `{META_SpecificationFirst}`
+### 1. 完了実績 (DONE)
+- [x] **Step 0: 仕様策定・動的図解・ルール体系刷新 (DONE)**:
+  - 全 13 コンポーネント設計書における静的・動的ペアリングの徹底
+  - 複雑な動的アルゴリズムに対するシーケンス図（責務重視）およびアクティビティ図（手順重視）の体系的配備
+  - `.agents/rules/` の 4 コア体系（docs, cpp, python, dev/antipatterns）への再編および Claude Code 互換 YAML frontmatter 付与
+- [x] **Step 1: コンセプトコード・初期テスト仕様・形式検証 (DONE)**:
+  - 全 16 コンセプトコードの実装および最新仕様同期（`typing.Any` 完全排除、具体型・代数的データ型徹底）
+  - 全 10 形式検証モデル（`pyModelChecking`）の CTL 論理式証明および `guards=False` 変異検査による反証性担保（28/28 変異検出）
+  - 全 22 ユニットテストスイート（`test_gotchas.py` 含む 22/22 PASS）
 
 ---
 
-## Phase 1: vSoC First 実装（約3ヶ月） 【オーナー GO 判定後に着手】
+### 2. 現在進行中のタスク (ACTIVE: Step 2 推進中)
+- [ ] **Step 2.1: pysim シミュレータコードの品質向上 & リファクタリング**:
+  - `experiments/pysim/` 配下の各モジュール（Loader, Interpreter, JIT, COOS, vMMIO, HAL, GDB）のコード品質向上
+  - 可読性・保守性・モジュール分離の洗練、不要・重複コードの排除、最新設計思想に沿った自然言語コメントの徹底
+  - エラーハンドリング・境界検査の堅牢化
+- [ ] **Step 2.2: 実装の勘所（Gotchas・不変条件）の網羅的抽出とテスト設計への還元**:
+  - シミュレータの実行・リファクタリングから得られる新たな実装の勘所（Gotchas）やシステム不変条件（Invariants）の継続的抽出
+  - コンポーネント別テスト仕様書（`tests/*_test_spec.md`）への Gotchas 固有識別子および設計理由の追記・拡充
+  - 仕様書（自然言語記述）とテスト仕様書の完全同期
+- [ ] **Step 2.3: ユニットテストコードの網羅性・品質強化**:
+  - エッジケース・異常系・直交表組み合わせテストの拡充
+  - テストランナー（`run_all.py`）による全 22+ スイートの高速・高信頼実行の維持
+- [ ] **Step 2.4: 物理リソース予算（RAM 32KB / ROM 96KB）の厳密な再見積もり**:
+  - **RAM (32KB)**: JITキャッシュ 6.63KB, 統合スタック 2.02KB, WASMリニアメモリ 4.0KB, vSoCメタデータ 1.13KB, COOS 1.31KB, IPC/vMMIO 1.38KB, サブシステム 1.75KB, C++ Core/MSPスタック 3.0KB $	o$ 静的合計 **21.20 KB** (安全余白 10.80 KB / 33.7%) の実機適合確認 `{Resource_Estimation_Model}`
+  - **ROM (96KB)**: JITステンシル 8.0KB, Interpreter 14.0KB, Loader 6.0KB, COOS/IPC 10.0KB, vMMIO 5.5KB, HAL/WASI 12.0KB, GDB 4.5KB, 内蔵WASM 20.0KB, スタートアップ 4.0KB $	o$ 静的合計 **84.0 KB** (安全余白 12.0 KB / 12.5%) の確認
+- [ ] **Step 2.5: オーナー（人間）による最終品質レビュー & Phase 1 GO 判定**:
+  - 仕様・シミュレータコード・テスト設計・バジェットを Freeze し、C++23 実装フェーズ（Phase 1）への移行を最終承認 `{META_SpecificationFirst}`
+
+---
+
+## Phase 1: vSoC First 実装（約3ヶ月） 【待機中 / オーナー GO 判定後に着手】
 <!-- traceability: {META_AI_Native_Dev} {PositionIndependentCode} {JIT_CopyAndPatch} {ROMParsing} -->
 
 スタンドアロン vSoC コア（Loader, Interpreter, JIT）を C++23 で実装し、ホストハーネス上で WAMR 比較ベンチマークを実施する。
+**前提コンパイラ: Clang 17+ 必須（`[[clang::musttail]]` 前提、GCC/MSVC 非サポート）**。
+
+### Phase 1.0: Core Utilities (`inc/common/`)
+- [ ] **固定 SBO 多相関数ラッパー (`inc/common/economic_function.hxx`)**:
+  - 16〜32B インラインバッファ内包、動的ヒープ確保排除、超過時コンパイル/アサート停止
+- [ ] **バンプアロケータ (`inc/common/bump_allocator.hxx`)**:
+  - 一括確保・スコープ終了時一括解放（Reset）による断片化ゼロアロケータ
+- [ ] **エラー伝播 & ビュー (`inc/common/result.hxx`, `inc/common/binary_view.hxx`)**:
+  - `result<T, E>`（例外フリー戻り値伝播）および `void*` を排除した `std::span` 型付きビュー
 
 ### Phase 1.1: WASM 32-bit Binary Loader (`runtime_loader`)
 - [ ] **`BinaryStream` / LEB128 デコーダ (`inc/runtime/loader.hxx`, `src/runtime/loader.cxx`)**:
   - ROM バイト列に対するゼロコピー uleb128 / sleb128 デコーダ・文字列リーダー `{ROMParsing}`
 - [ ] **`module_view` 索引生成**:
-  - ROM 上のセクション（Type, Import, Function, Table, Memory, Global, Export, Element, Code, Data）直接参照構造体の構築 `{META_AccessDictionary}`
-- [ ] **WASM バリデータ (V1〜V6)**:
-  - マジックナンバー、バージョン、セクション順序、型シグネチャ、Memory Section（64KB ページ / 8KB 部分ページ）の検証 `{LightweightVerifier}`
+  - ROM 上のセクション直接参照構造体の構築 `{META_AccessDictionary}`
+- [ ] **WASM バリデータ (V1〜V6) & ロールバック**:
+  - マジックナンバー、バージョン、セクション順序、型シグネチャの検証 `{LightweightVerifier}`
+  - 検証失敗時のバンプポインタ完全ロールバック (`LOAD-GOTCHA-02`)
 - [ ] **Loader 単体テストスイート (`tests/test_loader.cxx`)**:
   - 正常系 WASM バイナリおよび各種不正バイナリの拒絶テスト
 
 ### Phase 1.2: WASM Stackless Fast Interpreter (`runtime_interpreter`)
 - [ ] **`execution_context` & 統合スタック (`inc/runtime/interpreter.hxx`)**:
-  - スタックボトム配置と単一スタック上への CallFrame/ControlFrame インライン統合（Android ART スタイル）・ローカル変数基底 R3 渡し `{ContextPointerRegister}`
+  - スタックボトム配置と単一スタック上への CallFrame/ControlFrame インライン統合（ART スタイル）・ローカル変数基底 R3 渡し `{ContextPointerRegister}`
 - [ ] **コア命令ハンドラ群 (`src/runtime/opcode_handlers.cxx`)**:
   - `__fastcall` 継続渡し（CPS）4引数シグネチャ（R0=IP, R1=stack_bot, R2=ENV, R3=local_base） `{ThreadedInterpreter}`
-  - 算術演算 (i32/i64 add, sub, mul, clz, ctz, popcnt, rotl, rotr 等)
-  - 比較・変換演算 (i32/i64 eq, ne, lt_s, lt_u, extend, wrap, reinterpret 等)
-  - 制御フロー (block, loop, br, br_if, br_table, return, call, call_indirect)
-  - メモリ操作 (i32/i64 load/store 8/16/32/64) と `MemoryBoundaryCheck` トラップ `{MemoryBoundaryCheck}`
+  - 算術・比較・変換・制御・メモリ操作ハンドラと `MemoryBoundaryCheck` トラップ `{MemoryBoundaryCheck}`
+  - 分岐脱出時のフレームプルーニングと TOS 復元 (`INTR-GOTCHA-02`)
 - [ ] **スレッド化ディスパッチャ (`src/runtime/dispatch.cxx`)**:
   - `[[clang::musttail]]` によるダイレクトスレッド実行と JIT レジスタ整合 `{ThreadedInterpreter}`
 - [ ] **Interpreter 単体テストスイート (`tests/test_interpreter.cxx`)**:
   - WebAssembly 公式 Core テストスイート（Spec Tests）サブセットのパス確認
 
-### Phase 1.3: Copy-and-Patch JIT Compiler (`jit_compiler`)
+### Phase 1.3: Copy-and-Patch JIT Compiler & Runtime (`jit_compiler`, `jit_runtime`)
 - [ ] **ARM Thumb-2 / x86_64 ネイティブパッチステンシル (`inc/jit/stencils.hxx`)**:
-  - `__fastcall` CPS 4引数レジスタ規約（R0=IP, R1=stack_bot, R2=ENV, R3=local_base）準拠の事前コンパイル済みネイティブバイト列（RO-Data）とリロケーションテーブル。R4=TOS / R5=NOS はトレース内部に閉じたキャッシュとし、入口で `LDR`×2、脱出時に `STR`×2 で統合スタックと同期する `{JIT_CopyAndPatch}` `{ADR_TosCacheAsymmetry}`
+  - `__fastcall` CPS 4引数レジスタ規約準拠の事前コンパイル済みネイティブバイト列（RO-Data）とリロケーションテーブル `{JIT_CopyAndPatch}` `{ADR_TosCacheAsymmetry}`
 - [ ] **トリプルバッファ キャッシュマネージャ (`src/jit/cache_manager.cxx`)**:
-  - 2KB × 3面 の代謝（`JIT_OldestOnly_Promote` / Oldest 破棄・昇格）制御 `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}`
-  - MPU W^X トランザクション管理（書き込み時 RW / 実行時 RX）
+  - 2KB × 3面 の代謝（Oldest 破棄・昇格）制御 `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}`
+  - MPU W^X バッチトランザクション管理（書き込み時 RW+XN / 実行時 RO+X）
+  - 3段高速検索パイプライン（カードマーキング $	o$ 基数テーブル $	o$ 二分探索）
 - [ ] **Safepoint 協調 & 透過的インタープリタ切り替え (`src/jit/safepoint.cxx`)**:
-  - JIT $\leftrightarrow$ インタープリタ間の Low-Overhead フォールバック（コンテキスト再構築ゼロ、有界極小コスト）およびホットスポット検出 `{JIT_LazyChaining}` `{Interpreter_LazyJITSwitch}` `{JIT_RuntimeAPI_Fallback}`
+  - JIT $\leftrightarrow$ インタープリタ間の Low-Overhead フォールバックおよびホットスポット検出 `{JIT_LazyChaining}` `{Interpreter_LazyJITSwitch}` `{JIT_RuntimeAPI_Fallback}`
 - [ ] **JIT 単体テストスイート (`tests/test_jit.cxx`)**:
   - ホットスポットループの JIT トレース生成・実行・フォールバック検証
 
@@ -84,11 +104,11 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
 ## Phase 2: Integration（周辺サブシステム統合 / 次期予定）
 <!-- traceability: {META_3TierSeparation} {GLOBAL_UseCpp20Coroutine} {UnifiedAccessModel} -->
 
-- [ ] **COOS カーネル (`inc/core/os_coos.hxx`)**: スタックレス C++20 コルーチンスケジューラ (`os_scheduler.md`, `os_coos.md`)
-- [ ] **IPC ルータ (`inc/interface/ipc_router.hxx`)**: ゼロコピー CSP チャネル & RAII 所有権移譲 (`ipc_router.md`)
-- [ ] **vMMIO コントローラ (`inc/runtime/vmmio.hxx`)**: 2段階ダイレクトデコードページテーブル & ソフトウェア TLB (`runtime_vmmio.md`)
-- [ ] **HAL & WASI ドライバ (`inc/platform/hal.hxx`, `inc/platform/wasi.hxx`)**: GPIO / I2C / SPI / Timer / WASI Preview 1 (`platform_hal.md`)
-- [ ] **GDB Server (`inc/runtime/debugger.hxx`)**: GDB リモートシリアルプロトコル（RSP）サーバー (`debug_manager.md`)
+- [ ] **COOS カーネル (`inc/core/os_coos.hxx`)**: スタックレス C++20 コルーチンスケジューラ、対称ハンドオフ (`COOS-GOTCHA-01`〜`03`)
+- [ ] **IPC ルータ (`inc/interface/ipc_router.hxx`)**: 3段階ルーティング、ゼロコピー CSP チャネル & RAII 所有権移譲 (`IPCR-GOTCHA-01`〜`03`)
+- [ ] **vMMIO コントローラ (`inc/runtime/vmmio.hxx`)**: 多段ダイレクトデコードページテーブル & ソフトウェア TLB (`VMMIO-GOTCHA-01`〜`03`)
+- [ ] **HAL & WASI ドライバ (`inc/platform/hal.hxx`, `inc/platform/wasi.hxx`)**: GPIO / I2C / SPI / Timer / WASI Preview 1、`ShmBufferPool` (`HAL-GOTCHA-01`〜`03`)
+- [ ] **GDB Server (`inc/runtime/debugger.hxx`)**: GDB リモートシリアルプロトコル（RSP）サーバー、メモリ書き換え時 JIT キャッシュフラッシュ (`DBG-GOTCHA-01`〜`03`)
 
 ---
 
@@ -99,8 +119,6 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
 
 ---
 
-## Phase 4: OSS & Production（継続予定）
+## Phase 4: OSS & Production（継続）
 
-- [ ] **OSS リリース整備**: MIT ライセンス、ドキュメンテーション Web サイト、チュートリアル
-- [ ] **CMake / Meson ビルド設定ジェネレータ**: ターゲットボード別ワンコマンドビルド設定
-- [ ] **エコシステム対応**: WIT ツールチェーン統合、WASI libc 適合、デバッグ環境整備
+- [ ] **OSS リリース準備**: ビルド手順、ドキュメント公開、サンプルプログラム

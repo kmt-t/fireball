@@ -648,8 +648,8 @@
       "sec:components/tier3_jit/tests/jit_compiler_test_spec.md#1. 目的と対象範囲",
       "sec:components/tier3_jit/tests/jit_compiler_test_spec.md#Copy-and-Patchエンジン (§3.1, §4.1)",
       "sec:components/tier3_jit/tests/jit_compiler_test_spec.md#実装の勘所・不変条件（Gotchas & Implementation Invariants）",
-      "sec:plans/backlog_list.md#Phase 1.3: Copy-and-Patch JIT Compiler (`jit_compiler`)",
-      "sec:plans/roadmap_phase.md#Phase 1: vSoC First（C++23 実装 / 約3ヶ月）",
+      "sec:plans/backlog_list.md#Phase 1.3: Copy-and-Patch JIT Compiler & Runtime (`jit_compiler`, `jit_runtime`)",
+      "sec:plans/roadmap_phase.md#Phase 1: vSoC First（C++23 実装 / 約3ヶ月）【待機中 / オーナー GO 待ち】",
       "sec:specs/jit_stencil_catalog.md#3.1 プロローグ & エピローグ・ステンシル (Prologue, Epilogue & Spill Flush)",
       "sec:specs/jit_stencil_catalog.md#3.3 定数ロード系ステンシル (Constants)"
     ],
@@ -716,8 +716,7 @@
       "sec:components/tier1_core/tests/os_coos_test_spec.md#2. テストケース一覧",
       "sec:components/tier1_interface/ipc_router.md#メッセージルーティング（route_message）",
       "sec:components/tier1_interface/tests/ipc_router_test_spec.md#2. テストケース一覧",
-      "sec:plans/backlog_list.md#Phase 0 達成実績 & 現在進行中のタスク",
-      "sec:plans/roadmap_phase.md#Phase 2: Integration（約4ヶ月）",
+      "sec:plans/roadmap_phase.md#Phase 2: Integration（周辺サブシステム統合 / 約4ヶ月）",
       "sec:specs/wasi_preview1_abi.md#3.3 プロセス制御 & 乱数 & スケジューラ API (Process, Random & Scheduler)"
     ],
     "CallFrame_Layout": [
@@ -796,7 +795,7 @@
       "sec:components/tier3_jit/jit_compiler.md#コピーアンドパッチエンジン（CopyAndPatchEngine）クラス",
       "sec:components/tier3_jit/tests/jit_compiler_test_spec.md#レジスタ規約とTOS/NOS非対称性 (§3.3, §8 ADR_TosCacheAsymmetry)",
       "sec:plans/backlog_list.md#Phase 1.2: WASM Stackless Fast Interpreter (`runtime_interpreter`)",
-      "sec:plans/roadmap_phase.md#Phase 1: vSoC First（C++23 実装 / 約3ヶ月）",
+      "sec:plans/roadmap_phase.md#Phase 1: vSoC First（C++23 実装 / 約3ヶ月）【待機中 / オーナー GO 待ち】",
       "sec:specs/gdb_rsp_protocol.md#4. WASM 仮想レジスタ番号マッピング (GDB Target XML Map)",
       "sec:specs/jit_stencil_catalog.md#3.1 プロローグ & エピローグ・ステンシル (Prologue, Epilogue & Spill Flush)",
       "sec:specs/jit_stencil_catalog.md#3.4 変数アクセス系ステンシル (Local & Global Variables)",
@@ -873,8 +872,7 @@
       "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#3. テスト検証実績と網羅状況",
       "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#GDB RSP プロトコル & 仮想レジスタ (§3.3, §4.1, gdb_rsp_protocol.md)",
       "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#実ソケット GDB RSP リモート接続・対話セッション (§4.1, gdb_rsp_protocol.md)",
-      "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#実装の勘所・不変条件（Gotchas & Implementation Invariants）",
-      "sec:plans/backlog_list.md#Phase 0 達成実績 & 現在進行中のタスク"
+      "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#実装の勘所・不変条件（Gotchas & Implementation Invariants）"
     ],
     "DeterministicRingBuffer": [
       "sec:components/tier1_core/tests/system_logging_test_spec.md#実装の勘所・不変条件（Gotchas & Implementation Invariants）"
@@ -944,7 +942,7 @@
       "sec:components/tier3_jit/jit_compiler.md#7.2 安全性制約と方策",
       "sec:components/tier3_jit/tests/jit_compiler_test_spec.md#安全性制約 (§7.2)",
       "sec:components/tier3_jit/tests/jit_compiler_test_spec.md#実装の勘所・不変条件（Gotchas & Implementation Invariants）",
-      "sec:plans/roadmap_phase.md#Phase 2: Integration（約4ヶ月）",
+      "sec:plans/roadmap_phase.md#Phase 2: Integration（周辺サブシステム統合 / 約4ヶ月）",
       "sec:specs/jit_stencil_catalog.md#3.7 メモリアクセス系ステンシル (Linear Memory Load & Store with Boundary Protection)",
       "sec:specs/wasm_instruction_set.md#3.4 メモリアクセス命令 (Memory Access - 32-bit Linear Memory)"
     ],
@@ -981,8 +979,7 @@
       "sec:components/tier1_core/os_coos.md#2.1 構成要素",
       "sec:components/tier1_core/os_coos.md#5.1 `coos_harness` (システムハーネス)",
       "sec:components/tier1_core/os_coos.md#ハーネスによる依存性注入パターン",
-      "sec:components/tier2_runtime/runtime_vsoc.md#2. アーキテクチャ分類",
-      "sec:plans/backlog_list.md#Phase 0 達成実績 & 現在進行中のタスク"
+      "sec:components/tier2_runtime/runtime_vsoc.md#2. アーキテクチャ分類"
     ],
     "GLOBAL_IdleDetection": [
       "sec:components/tier1_core/os_coos.md#1. コンセプト",
@@ -1085,9 +1082,8 @@
       "sec:components/tier1_core/os_coos.md#6.1 検証対象の不変条件",
       "sec:components/tier1_core/os_scheduler.md#1. コンセプト",
       "sec:components/tier1_core/os_scheduler.md#タスク生成（spawn_task - ネイティブタスク用）",
-      "sec:plans/backlog_list.md#Phase 0 達成実績 & 現在進行中のタスク",
       "sec:plans/backlog_list.md#Phase 2: Integration（周辺サブシステム統合 / 次期予定）",
-      "sec:plans/roadmap_phase.md#Phase 2: Integration（約4ヶ月）"
+      "sec:plans/roadmap_phase.md#Phase 2: Integration（周辺サブシステム統合 / 約4ヶ月）"
     ],
     "GLOBAL_UseCpp23Library": [
       "sec:components/tier1_core/os_coos.md#1. コンセプト",
@@ -1190,8 +1186,8 @@
       "sec:components/tier2_runtime/runtime_vsoc.md#WASM実行およびJIT遷移シーケンス",
       "sec:components/tier2_runtime/tests/runtime_vsoc_test_spec.md#実装の勘所・不変条件（Gotchas & Implementation Invariants）",
       "sec:components/tier3_jit/jit_compiler.md#JITコンパイルおよび検索シーケンス",
-      "sec:plans/backlog_list.md#Phase 1.3: Copy-and-Patch JIT Compiler (`jit_compiler`)",
-      "sec:plans/roadmap_phase.md#Phase 1: vSoC First（C++23 実装 / 約3ヶ月）"
+      "sec:plans/backlog_list.md#Phase 1.3: Copy-and-Patch JIT Compiler & Runtime (`jit_compiler`, `jit_runtime`)",
+      "sec:plans/roadmap_phase.md#Phase 1: vSoC First（C++23 実装 / 約3ヶ月）【待機中 / オーナー GO 待ち】"
     ],
     "InterruptibleFlush": [
       "sec:components/tier1_core/tests/system_logging_test_spec.md#実装の勘所・不変条件（Gotchas & Implementation Invariants）"
@@ -1231,9 +1227,9 @@
       "sec:components/tier3_jit/jit_compiler.md#5.2 内部コンポーネントのデコンポジション",
       "sec:components/tier3_jit/jit_compiler.md#7.1 性能制約と方策",
       "sec:components/tier3_jit/jit_compiler.md#Copy-and-Patch ステンシル結合 & バックパッチング手順（手順アクティビティ図）",
-      "sec:plans/backlog_list.md#Phase 1.3: Copy-and-Patch JIT Compiler (`jit_compiler`)",
-      "sec:plans/backlog_list.md#Phase 1: vSoC First 実装（約3ヶ月） 【オーナー GO 判定後に着手】",
-      "sec:plans/roadmap_phase.md#Phase 1: vSoC First（C++23 実装 / 約3ヶ月）",
+      "sec:plans/backlog_list.md#Phase 1.3: Copy-and-Patch JIT Compiler & Runtime (`jit_compiler`, `jit_runtime`)",
+      "sec:plans/backlog_list.md#Phase 1: vSoC First 実装（約3ヶ月） 【待機中 / オーナー GO 判定後に着手】",
+      "sec:plans/roadmap_phase.md#Phase 1: vSoC First（C++23 実装 / 約3ヶ月）【待機中 / オーナー GO 待ち】",
       "sec:specs/jit_stencil_catalog.md#1. 概要と基本思想",
       "sec:specs/jit_stencil_catalog.md#2. プレースホルダ（穴 / Relocations）の種類とパッチ規約",
       "sec:specs/jit_stencil_catalog.md#3.3 定数ロード系ステンシル (Constants)",
@@ -1260,8 +1256,8 @@
       "sec:components/tier3_jit/jit_runtime.md#3面世代交代ローテーションと被チェイン局所アンリンク（責務シーケンス図）",
       "sec:components/tier3_jit/tests/jit_compiler_test_spec.md#トレース境界不変条件とハンドラ委譲 (§3.3, §4.1)",
       "sec:components/tier3_jit/tests/jit_compiler_test_spec.md#安全性制約 (§7.2)",
-      "sec:plans/backlog_list.md#Phase 1.3: Copy-and-Patch JIT Compiler (`jit_compiler`)",
-      "sec:plans/roadmap_phase.md#Phase 1: vSoC First（C++23 実装 / 約3ヶ月）",
+      "sec:plans/backlog_list.md#Phase 1.3: Copy-and-Patch JIT Compiler & Runtime (`jit_compiler`, `jit_runtime`)",
+      "sec:plans/roadmap_phase.md#Phase 1: vSoC First（C++23 実装 / 約3ヶ月）【待機中 / オーナー GO 待ち】",
       "sec:specs/jit_stencil_catalog.md#3.8 トレース内レジスタバリアント (Register Variants) と `variant_id`"
     ],
     "JIT_MultiBuffer_Cache": [
@@ -1280,9 +1276,8 @@
       "sec:components/tier3_jit/jit_runtime.md#3面世代交代ローテーションと被チェイン局所アンリンク（責務シーケンス図）",
       "sec:components/tier3_jit/jit_runtime.md#4.1 アルゴリズム",
       "sec:components/tier3_jit/jit_runtime.md#6.2 メモリ制約",
-      "sec:plans/backlog_list.md#Phase 0 達成実績 & 現在進行中のタスク",
-      "sec:plans/backlog_list.md#Phase 1.3: Copy-and-Patch JIT Compiler (`jit_compiler`)",
-      "sec:plans/roadmap_phase.md#Phase 1: vSoC First（C++23 実装 / 約3ヶ月）"
+      "sec:plans/backlog_list.md#Phase 1.3: Copy-and-Patch JIT Compiler & Runtime (`jit_compiler`, `jit_runtime`)",
+      "sec:plans/roadmap_phase.md#Phase 1: vSoC First（C++23 実装 / 約3ヶ月）【待機中 / オーナー GO 待ち】"
     ],
     "JIT_OldestOnly_Promote": [
       "sec:architecture/architecture_overview.md#3.3 Pillar 3: 3面世代交代回転コードキャッシュ (3-Bank Generational Rotating Code Cache)",
@@ -1295,8 +1290,8 @@
       "sec:components/tier3_jit/jit_runtime.md#4.1 アルゴリズム",
       "sec:components/tier3_jit/jit_runtime.md#6.2 メモリ制約",
       "sec:components/tier3_jit/tests/jit_runtime_test_spec.md#3段検索・3面キャッシュ (jit_compiler.md §5.1直交表)",
-      "sec:plans/backlog_list.md#Phase 1.3: Copy-and-Patch JIT Compiler (`jit_compiler`)",
-      "sec:plans/roadmap_phase.md#Phase 1: vSoC First（C++23 実装 / 約3ヶ月）"
+      "sec:plans/backlog_list.md#Phase 1.3: Copy-and-Patch JIT Compiler & Runtime (`jit_compiler`, `jit_runtime`)",
+      "sec:plans/roadmap_phase.md#Phase 1: vSoC First（C++23 実装 / 約3ヶ月）【待機中 / オーナー GO 待ち】"
     ],
     "JIT_RegisterMapping": [
       "sec:architecture/architecture_overview.md#3.1 Pillar 1: 統合スタックフレーム・モデル (Unified Stack Frame Model)",
@@ -1333,8 +1328,8 @@
       "sec:components/tier3_jit/jit_compiler.md#トレース境界不変条件とスタックフレーム整合性 (Trace Boundary Invariants)",
       "sec:components/tier3_jit/tests/jit_compiler_test_spec.md#Copy-and-Patchエンジン (§3.1, §4.1)",
       "sec:components/tier3_jit/tests/jit_compiler_test_spec.md#安全性制約 (§7.2)",
-      "sec:plans/backlog_list.md#Phase 1.3: Copy-and-Patch JIT Compiler (`jit_compiler`)",
-      "sec:plans/roadmap_phase.md#Phase 1: vSoC First（C++23 実装 / 約3ヶ月）",
+      "sec:plans/backlog_list.md#Phase 1.3: Copy-and-Patch JIT Compiler & Runtime (`jit_compiler`, `jit_runtime`)",
+      "sec:plans/roadmap_phase.md#Phase 1: vSoC First（C++23 実装 / 約3ヶ月）【待機中 / オーナー GO 待ち】",
       "sec:specs/jit_stencil_catalog.md#3.1 プロローグ & エピローグ・ステンシル (Prologue, Epilogue & Spill Flush)",
       "sec:specs/jit_stencil_catalog.md#3.2 制御フロー系ステンシル (Control Flow)",
       "sec:specs/jit_stencil_catalog.md#3.9 64ビット整数・浮動小数点のランタイムヘルパー委譲方針",
@@ -1375,7 +1370,7 @@
       "sec:components/tier2_runtime/runtime_loader.md#トランザクション的パース & ロールバック手順（手順アクティビティ図）",
       "sec:components/tier2_runtime/runtime_loader.md#検証結果（verification_result）",
       "sec:plans/backlog_list.md#Phase 1.1: WASM 32-bit Binary Loader (`runtime_loader`)",
-      "sec:plans/roadmap_phase.md#Phase 1: vSoC First（C++23 実装 / 約3ヶ月）"
+      "sec:plans/roadmap_phase.md#Phase 1: vSoC First（C++23 実装 / 約3ヶ月）【待機中 / オーナー GO 待ち】"
     ],
     "LowLatencyJIT": [
       "sec:components/tier2_runtime/runtime_interpreter.md#1. コンセプト",
@@ -1455,8 +1450,8 @@
     ],
     "META_AI_Native_Dev": [
       "sec:architecture/architecture_overview.md#1. アーキテクチャコンセプトと基本思想",
-      "sec:plans/backlog_list.md#Phase 1: vSoC First 実装（約3ヶ月） 【オーナー GO 判定後に着手】",
-      "sec:plans/roadmap_phase.md#Phase 1: vSoC First（C++23 実装 / 約3ヶ月）"
+      "sec:plans/backlog_list.md#Phase 1: vSoC First 実装（約3ヶ月） 【待機中 / オーナー GO 判定後に着手】",
+      "sec:plans/roadmap_phase.md#Phase 1: vSoC First（C++23 実装 / 約3ヶ月）【待機中 / オーナー GO 待ち】"
     ],
     "META_AccessDictionary": [
       "sec:components/tier1_core/system_containers.md#ビット詰めビュー（bit_view）",
@@ -1480,7 +1475,7 @@
       "sec:components/tier3_jit/benchmarks/jit_runtime_bench_spec.md#1. 目的と対象範囲",
       "sec:components/tier3_jit/jit_runtime.md#1. コンセプト",
       "sec:plans/backlog_list.md#Phase 1.1: WASM 32-bit Binary Loader (`runtime_loader`)",
-      "sec:plans/roadmap_phase.md#Phase 1: vSoC First（C++23 実装 / 約3ヶ月）"
+      "sec:plans/roadmap_phase.md#Phase 1: vSoC First（C++23 実装 / 約3ヶ月）【待機中 / オーナー GO 待ち】"
     ],
     "META_BinarySearch": [
       "sec:architecture/architecture_overview.md#3.2 Pillar 2: 3段直接 JIT 検索パイプライン (3-Stage Direct JIT Lookup Pipeline)",
@@ -1627,8 +1622,7 @@
       "sec:components/tier2_runtime/runtime_vsoc.md#5.4 URI/IPCインターフェース",
       "sec:components/tier2_runtime/runtime_vsoc.md#5.5 関連コンポーネントとの連携",
       "sec:components/tier2_runtime/runtime_vsoc.md#`notify-interrupt`",
-      "sec:components/tier2_runtime/runtime_vsoc.md#ステップ実行（step）",
-      "sec:plans/backlog_list.md#Phase 0 達成実績 & 現在進行中のタスク"
+      "sec:components/tier2_runtime/runtime_vsoc.md#ステップ実行（step）"
     ],
     "META_RestrictedPhysicalAccess": [
       "sec:architecture/architecture_overview.md#3.5 Pillar 5: 折りたたみXOR TLB ＆ 平坦ページ表 (Folding XOR TLB & FlatMap Page Table)",
@@ -1651,14 +1645,14 @@
     ],
     "META_Risk_Tiering": [
       "sec:components/tier1_interface/interface_wit.md#2. アーキテクチャ原則",
-      "sec:plans/backlog_list.md#Phase 0.8: 仕様レビュー・バジェット再見積・クラス設計 【進行中 / ACTIVE】",
-      "sec:plans/roadmap_phase.md#Phase 0: Quality Gate & Prototype（DONE）"
+      "sec:plans/backlog_list.md#Phase 0: Quality Gate & Early Validation 【進行中 / ACTIVE】",
+      "sec:plans/roadmap_phase.md#Phase 0: Quality Gate & Early Validation（進行中 / ACTIVE）"
     ],
     "META_SpecificationFirst": [
       "sec:components/tier1_interface/interface_wit.md#2. アーキテクチャ原則",
-      "sec:plans/backlog_list.md#Phase 0 達成実績 & 現在進行中のタスク",
-      "sec:plans/backlog_list.md#Phase 0.8: 仕様レビュー・バジェット再見積・クラス設計 【進行中 / ACTIVE】",
-      "sec:plans/roadmap_phase.md#Phase 0: Quality Gate & Prototype（DONE）"
+      "sec:plans/backlog_list.md#2. 現在進行中のタスク (ACTIVE: Step 2 推進中)",
+      "sec:plans/backlog_list.md#Phase 0: Quality Gate & Early Validation 【進行中 / ACTIVE】",
+      "sec:plans/roadmap_phase.md#Phase 0: Quality Gate & Early Validation（進行中 / ACTIVE）"
     ],
     "META_StaticDI": [
       "sec:architecture/architecture_overview.md#1. アーキテクチャコンセプトと基本思想",
@@ -1672,8 +1666,7 @@
       "sec:components/tier2_runtime/runtime_vsoc.md#3.3 主要なクラス・構造体・配列・定数",
       "sec:components/tier2_runtime/tests/runtime_vsoc_test_spec.md#ハーネス統合 (§3, §5.1)",
       "sec:components/tier3_platform/platform_hal.md#2. アーキテクチャ分類",
-      "sec:components/tier3_platform/platform_memory.md#4. インターフェース設計",
-      "sec:plans/backlog_list.md#Phase 0 達成実績 & 現在進行中のタスク"
+      "sec:components/tier3_platform/platform_memory.md#4. インターフェース設計"
     ],
     "META_Static_Resolution": [
       "sec:architecture/architecture_overview.md#1. アーキテクチャコンセプトと基本思想",
@@ -1735,7 +1728,7 @@
       "sec:components/tier3_jit/tests/jit_compiler_test_spec.md#安全性制約 (§7.2)",
       "sec:components/tier3_jit/tests/jit_compiler_test_spec.md#実装の勘所・不変条件（Gotchas & Implementation Invariants）",
       "sec:plans/backlog_list.md#Phase 1.2: WASM Stackless Fast Interpreter (`runtime_interpreter`)",
-      "sec:plans/roadmap_phase.md#Phase 1: vSoC First（C++23 実装 / 約3ヶ月）",
+      "sec:plans/roadmap_phase.md#Phase 1: vSoC First（C++23 実装 / 約3ヶ月）【待機中 / オーナー GO 待ち】",
       "sec:specs/jit_stencil_catalog.md#3.7 メモリアクセス系ステンシル (Linear Memory Load & Store with Boundary Protection)",
       "sec:specs/wasi_preview1_abi.md#3.1 文字入出力 & ストリーム API (I/O & Streams)",
       "sec:specs/wasm_instruction_set.md#3.4 メモリアクセス命令 (Memory Access - 32-bit Linear Memory)"
@@ -1849,7 +1842,7 @@
       "sec:components/tier3_jit/jit_compiler.md#トレース境界不変条件とスタックフレーム整合性 (Trace Boundary Invariants)",
       "sec:components/tier3_jit/tests/jit_compiler_test_spec.md#1. 目的と対象範囲",
       "sec:components/tier3_jit/tests/jit_compiler_test_spec.md#安全性制約 (§7.2)",
-      "sec:plans/backlog_list.md#Phase 1: vSoC First 実装（約3ヶ月） 【オーナー GO 判定後に着手】",
+      "sec:plans/backlog_list.md#Phase 1: vSoC First 実装（約3ヶ月） 【待機中 / オーナー GO 判定後に着手】",
       "sec:specs/jit_stencil_catalog.md#2. プレースホルダ（穴 / Relocations）の種類とパッチ規約",
       "sec:specs/wasm_instruction_set.md#3.4 メモリアクセス命令 (Memory Access - 32-bit Linear Memory)"
     ],
@@ -1861,8 +1854,8 @@
       "sec:components/tier2_runtime/runtime_loader.md#モジュールビュー（module_view）",
       "sec:components/tier2_runtime/runtime_loader.md#関数アクセサ（function_accessor）",
       "sec:plans/backlog_list.md#Phase 1.1: WASM 32-bit Binary Loader (`runtime_loader`)",
-      "sec:plans/backlog_list.md#Phase 1: vSoC First 実装（約3ヶ月） 【オーナー GO 判定後に着手】",
-      "sec:plans/roadmap_phase.md#Phase 1: vSoC First（C++23 実装 / 約3ヶ月）"
+      "sec:plans/backlog_list.md#Phase 1: vSoC First 実装（約3ヶ月） 【待機中 / オーナー GO 判定後に着手】",
+      "sec:plans/roadmap_phase.md#Phase 1: vSoC First（C++23 実装 / 約3ヶ月）【待機中 / オーナー GO 待ち】"
     ],
     "RSPChecksumVerify": [
       "sec:components/tier2_runtime/debug_manager.md#GDB メモリ書き換え時の JIT キャッシュ即時フラッシュ（責務シーケンス図）"
@@ -1889,8 +1882,8 @@
       "sec:architecture/architecture_overview.md#6. リソース予算 (RAM/ROM/SLOC) とスケーラビリティ",
       "sec:components/tier1_core/system_config.md#3.1 データ構造",
       "sec:components/tier1_core/system_config.md#3.2 内部ブロック図",
-      "sec:plans/backlog_list.md#Phase 0 達成実績 & 現在進行中のタスク",
-      "sec:plans/backlog_list.md#Phase 0.8: 仕様レビュー・バジェット再見積・クラス設計 【進行中 / ACTIVE】",
+      "sec:plans/backlog_list.md#2. 現在進行中のタスク (ACTIVE: Step 2 推進中)",
+      "sec:plans/backlog_list.md#Phase 0: Quality Gate & Early Validation 【進行中 / ACTIVE】",
       "sec:plans/roadmap_phase.md#フェーズ概要"
     ],
     "RoleBasedAccessControl": [
@@ -1981,7 +1974,7 @@
       "sec:components/tier3_jit/benchmarks/aobench_spec.md#2. ベンチマーク測定項目一覧",
       "sec:components/tier3_jit/benchmarks/jit_runtime_bench_spec.md#1. 目的と対象範囲",
       "sec:plans/backlog_list.md#Phase 1.2: WASM Stackless Fast Interpreter (`runtime_interpreter`)",
-      "sec:plans/roadmap_phase.md#Phase 1: vSoC First（C++23 実装 / 約3ヶ月）",
+      "sec:plans/roadmap_phase.md#Phase 1: vSoC First（C++23 実装 / 約3ヶ月）【待機中 / オーナー GO 待ち】",
       "sec:specs/jit_stencil_catalog.md#3.2 制御フロー系ステンシル (Control Flow)",
       "sec:specs/wasm_instruction_set.md#1. 概要と適用方針",
       "sec:specs/wasm_instruction_set.md#3.1 制御フロー命令 (Control Flow)",
@@ -2949,23 +2942,25 @@
     "sec:plans/backlog_archive.md#Phase 0.75: Constexpr Verification & Code Gen Enhancement [DONE]": "e345bd840c3e3cbe821ead6f33bdde42d203d137075218708037274fcd1614be",
     "sec:plans/backlog_archive.md#Phase 0.7: Static DI & Build System [DONE]": "3aab9ac84b6f7add460ef38998ef93ef1161581b1ec62b562f1b9ab0690f09cc",
     "sec:plans/backlog_archive.md#バックログアーカイブ": "f4bb25ad5c007b5db021f474d8a902a50dbb82aeed6e08ec2f224225276855d7",
-    "sec:plans/backlog_list.md#Fireball アクティブバックログ": "ae8bdf8d9dd6402062cdc28c4f4c204c9210fd92da39853962f446aa825f1662",
-    "sec:plans/backlog_list.md#Phase 0 達成実績 & 現在進行中のタスク": "aaecc563ca2d4ffa15ac400724b047116f04bd8b306a143df08f7d55af82003c",
-    "sec:plans/backlog_list.md#Phase 0.8: 仕様レビュー・バジェット再見積・クラス設計 【進行中 / ACTIVE】": "a3aa614316eeae6a45b31063284a931fc473f1643bd0f975b5834569392eb192",
-    "sec:plans/backlog_list.md#Phase 1.1: WASM 32-bit Binary Loader (`runtime_loader`)": "7593e1e020506d8129ecdac448e15892218f69cb7deed7ccdfcfee26a2df5f94",
-    "sec:plans/backlog_list.md#Phase 1.2: WASM Stackless Fast Interpreter (`runtime_interpreter`)": "37b5acc6f472e6f78656721ffa29af6b1dd151beb17e5721750c6faf51836924",
-    "sec:plans/backlog_list.md#Phase 1.3: Copy-and-Patch JIT Compiler (`jit_compiler`)": "2964b2774c8c6d02239549445ef7a71fc0a277376acef5939c171ca15b7956b6",
+    "sec:plans/backlog_list.md#1. 完了実績 (DONE)": "cc4d04ddf1a97e8ec6d09fc32fe460da01ef3289cbe9293364edef05dc09eb3a",
+    "sec:plans/backlog_list.md#2. 現在進行中のタスク (ACTIVE: Step 2 推進中)": "a457097f3348a78f44471b8def25cf2a52a2d2332fd81b8bbc0347b8c42be970",
+    "sec:plans/backlog_list.md#Fireball アクティブバックログ": "a36f01a64a081cacaac464b5fb880111f4d324254cd990317b70b72e7c7dedc0",
+    "sec:plans/backlog_list.md#Phase 0: Quality Gate & Early Validation 【進行中 / ACTIVE】": "44185b2244da0bbed8c8d39c17852dfc2cfc0fd91a13eb3dcbc3caa2cb71b737",
+    "sec:plans/backlog_list.md#Phase 1.0: Core Utilities (`inc/common/`)": "b1117d5dde14acc5cf45a059a4ceab09f17baf1a9561296f74502a51f5a3833d",
+    "sec:plans/backlog_list.md#Phase 1.1: WASM 32-bit Binary Loader (`runtime_loader`)": "29e84eca1453b6957b5208cb6586fc15434d1d48ab001b8ee20095632062de7f",
+    "sec:plans/backlog_list.md#Phase 1.2: WASM Stackless Fast Interpreter (`runtime_interpreter`)": "ce9fcb0e37cf043a9bdb86fadf5852052689991ca2df712461c2f3330fe87032",
+    "sec:plans/backlog_list.md#Phase 1.3: Copy-and-Patch JIT Compiler & Runtime (`jit_compiler`, `jit_runtime`)": "b0244e526202e374bc42fb2624466e2e664c5684ce3f78145adf1a4fba55e66c",
     "sec:plans/backlog_list.md#Phase 1.4: Standalone vSoC Harness & WAMR Benchmark (`runtime_vsoc`)": "c89b2ef62e4a0e889d30e2877793214ccd9bbebff7f48b1078e06f0c0effc0be",
-    "sec:plans/backlog_list.md#Phase 1: vSoC First 実装（約3ヶ月） 【オーナー GO 判定後に着手】": "b1deca0027f7731420bc4ee8e9d5cb199fd66530431b6477de36a313ad9e2542",
-    "sec:plans/backlog_list.md#Phase 2: Integration（周辺サブシステム統合 / 次期予定）": "ee4d6bf6590715351b1f7ead8fc22d51b5e4bc84487cea39e12325ab3c553ef3",
+    "sec:plans/backlog_list.md#Phase 1: vSoC First 実装（約3ヶ月） 【待機中 / オーナー GO 判定後に着手】": "45581957d4418e663a22787011a6f9911299652d2a5bee8b05ac238463978d31",
+    "sec:plans/backlog_list.md#Phase 2: Integration（周辺サブシステム統合 / 次期予定）": "f6b3c0371d7099c2bf5b57b0b7e77ba366fd3712c516814b549ce854e1296d5c",
     "sec:plans/backlog_list.md#Phase 3: PoC（ターゲットボード移植 / 将来予定）": "106cf9352f16d380bba6f6b2515584ef81790b42420e11c5d43ff87f38da62aa",
-    "sec:plans/backlog_list.md#Phase 4: OSS & Production（継続予定）": "6357688efa8d5d48fddf57ca5e5b123d398fa8e76b41d80a56748ad0c35f3ef4",
-    "sec:plans/roadmap_phase.md#Phase 0: Quality Gate & Prototype（DONE）": "be4410237ccb5ade54e3e5c2087cdf144c7498a0cfbc022055b2e90e2a32c586",
-    "sec:plans/roadmap_phase.md#Phase 1: vSoC First（C++23 実装 / 約3ヶ月）": "be593ea51560fd5d95b4ed17578ed28d5a89d7d775efd971fa89d22613aa396b",
-    "sec:plans/roadmap_phase.md#Phase 2: Integration（約4ヶ月）": "50b6b6798f7fa76208336c951d99fb77a8a4438500b5a658509acd112db2975a",
-    "sec:plans/roadmap_phase.md#Phase 3: PoC（約2ヶ月）": "8904934b8dc38a03f7f2e10c4ed6823b83cb4d017f23606b296d68905a9c6c99",
-    "sec:plans/roadmap_phase.md#Phase 4: OSS & Production（継続）": "7b009f3284031f6e0824b61c8157974b4169905cd30c8494ccc32c52fb46f73a",
-    "sec:plans/roadmap_phase.md#フェーズ概要": "3d33b60f3381fabba0614f9ae8b52d8f5f9e3d7d45816e35b14f9c59e94274be",
+    "sec:plans/backlog_list.md#Phase 4: OSS & Production（継続）": "70381143031617694e4de0df3b8ce6673ebb73e83add0b75e624416a45c96b2c",
+    "sec:plans/roadmap_phase.md#Phase 0: Quality Gate & Early Validation（進行中 / ACTIVE）": "6e65612924a09711b3d87b1fa306c5577783a531f4065b4dd5a09b75ca74aa19",
+    "sec:plans/roadmap_phase.md#Phase 1: vSoC First（C++23 実装 / 約3ヶ月）【待機中 / オーナー GO 待ち】": "f48a0cabddcdec1e1354957a52ab033146b9fbfbf512607dbbbbd5ec797fb603",
+    "sec:plans/roadmap_phase.md#Phase 2: Integration（周辺サブシステム統合 / 約4ヶ月）": "1c78f3a4fed8dbabaa97c686eea2549b57976209d9685c33404e76a002ae499b",
+    "sec:plans/roadmap_phase.md#Phase 3: PoC（実機移植・評価 / 約2ヶ月）": "e6ebace923e7b36dcdf0f39c1348b8870559113b65626622db782d6ee490d169",
+    "sec:plans/roadmap_phase.md#Phase 4: OSS & Production（継続）": "894ed097de3779dd5510ccde033e96e6c77d408147272c0a8b54e5f0eb55c03d",
+    "sec:plans/roadmap_phase.md#フェーズ概要": "eb8ee50d5ebccf2aaf7289d9d640111b43820f7905febd86d8384d7af24f5f65",
     "sec:plans/roadmap_phase.md#開発ロードマップ": "e6aff1eb73435cf5918d8667a1b4df1b4aa97975754efce110a778a9a7af7968",
     "sec:requires/requirement_list.md#1. 概要": "7dcc5fd055d26a5c78c1915edd81f87235e3645919a604109d42ac9fe19e25b6",
     "sec:requires/requirement_list.md#2. ユースケース": "60a46647e4cb8162a895df575393f2af255b661777bc8c1febb9eb4c258227b3",

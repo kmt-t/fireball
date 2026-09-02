@@ -14,12 +14,10 @@ Implements:
 
 from __future__ import annotations
 
-import bisect
 import struct
-from collections.abc import Sequence
 from typing import Any
 
-from system_containers import StaticFlatMap
+from system_containers import FlatMapView, RadixBinaryTreeView, StaticFlatMap
 
 # Configuration Constants
 FB_CONF_MAX_MODULES = 4
@@ -81,88 +79,6 @@ def fnv1a_32(data: str) -> int:
     for b in data.encode("utf-8"):
         h = ((h ^ b) * 0x01000193) & 0xFFFFFFFF
     return h
-
-
-class FlatMapView:
-    """fireball::flat_map_view<Key, Value>: Sorted key-value slice with O(log n) binary search."""
-
-    def __init__(self, keys: Sequence[Any], values: Sequence[Any]):
-        assert len(keys) == len(values)
-        self.keys = list(keys)
-        self.values = list(values)
-
-    def size(self) -> int:
-        return len(self.keys)
-
-    def __len__(self) -> int:
-        return len(self.keys)
-
-    def slice(self, first: int, last: int) -> FlatMapView:
-        assert 0 <= first <= last <= len(self.keys)
-        return FlatMapView(self.keys[first:last], self.values[first:last])
-
-    def find(self, key: Any) -> Any | None:
-        idx = bisect.bisect_left(self.keys, key)
-        if idx < len(self.keys) and self.keys[idx] == key:
-            return self.values[idx]
-        return None
-
-    def __contains__(self, key: Any) -> bool:
-        return self.find(key) is not None
-
-
-class RadixBinaryTreeView:
-    """
-    fireball::radix_binary_tree_view<Key, Value, RadixShift>:
-    System container combining O(1) Radix Table prefix lookup with bounded binary search ({META_BinarySearch}).
-    """
-
-    def __init__(self, keys: Sequence[int], values: Sequence[Any], radix_shift: int = 16):
-        paired = sorted(zip(keys, values, strict=False), key=lambda p: p[0])
-        self.keys = [p[0] for p in paired]
-        self.values = [p[1] for p in paired]
-        self.map_view = FlatMapView(self.keys, self.values)
-        self.radix_shift = radix_shift
-        if self.keys:
-            max_prefix = max(self.keys) >> radix_shift
-            table_size = max_prefix + 1
-            self.radix_table: list[tuple[int, int]] = [(0, 0)] * table_size
-            current_prefix = 0
-            first_idx = 0
-            for idx, k in enumerate(self.keys):
-                prefix = k >> radix_shift
-                while current_prefix < prefix:
-                    self.radix_table[current_prefix] = (first_idx, idx)
-                    current_prefix += 1
-                    first_idx = idx
-
-            self.radix_table[current_prefix] = (first_idx, len(self.keys))
-        else:
-            self.radix_table = []
-
-    def find(self, key: int) -> Any | None:
-        prefix = key >> self.radix_shift
-        if prefix < 0 or prefix >= len(self.radix_table):
-            return None
-        first, last = self.radix_table[prefix]
-        if first >= last:
-            return None
-        return self.map_view.slice(first, last).find(key)
-
-    def find_interval(self, offset: int) -> "DecodedEntity | None":
-        """
-        Range lookup for interval keys [start, end) -- only ever called on a
-        RadixBinaryTreeView built over DecodedEntity values (see
-        entity_offset_tree), never the export/import trees.
-        """
-        if not self.keys:
-            return None
-        idx = bisect.bisect_right(self.keys, offset) - 1
-        if 0 <= idx < len(self.values):
-            entity: DecodedEntity = self.values[idx]
-            if entity.start_offset <= offset < entity.end_offset:
-                return entity
-        return None
 
 
 class BumpAllocator:
@@ -444,11 +360,7 @@ class ModuleView:
         self.exports_dict: list[ExportEntry] = []
         self.code_offsets: list[tuple[int, int]] = []
         self.start_func_idx: int | None = None
-        self._resolved_imports_keys: tuple[str, ...] = ()
-        self._resolved_imports_values: tuple[Any, ...] = ()
-        self.resolved_imports: FlatMapView = FlatMapView(
-            self._resolved_imports_keys, self._resolved_imports_values
-        )
+        self.resolved_imports: FlatMapView[str, ExportEntry] = FlatMapView([])
         self.is_ready: bool = False
         # Decoded entity registry & RadixBinaryTreeView indexes ({META_BinarySearch})
         self.entity_registry: list[DecodedEntity] = []
@@ -472,9 +384,9 @@ class ModuleView:
     def build_indexes(self) -> None:
         """Constructs RadixBinaryTreeView indexes for exports, imports, and entity offsets."""
         exp_keys = [fnv1a_32(exp.name) for exp in self.exports_dict]
-        self.export_tree = RadixBinaryTreeView(exp_keys, self.exports_dict, radix_shift=16)
+        self.export_tree = RadixBinaryTreeView(exp_keys, self.exports_dict, radix_shift=28)
         imp_keys = [fnv1a_32(f"{imp.module_name}::{imp.field_name}") for imp in self.imports]
-        self.import_tree = RadixBinaryTreeView(imp_keys, self.imports, radix_shift=16)
+        self.import_tree = RadixBinaryTreeView(imp_keys, self.imports, radix_shift=28)
         ent_keys = [e.start_offset for e in self.entity_registry]
         self.entity_offset_tree = RadixBinaryTreeView(ent_keys, self.entity_registry, radix_shift=4)
 
@@ -763,11 +675,7 @@ class WasmLoader:
             entries.append((f"{imp.module_name}.{imp.field_name}", export_entry))
 
         entries.sort(key=lambda e: e[0])
-        module._resolved_imports_keys = tuple(k for k, _ in entries)
-        module._resolved_imports_values = tuple(v for _, v in entries)
-        module.resolved_imports = FlatMapView(
-            module._resolved_imports_keys, module._resolved_imports_values
-        )
+        module.resolved_imports = FlatMapView(entries)
         module.is_ready = True
         return True
 

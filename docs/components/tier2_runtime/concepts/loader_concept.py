@@ -444,7 +444,7 @@ class RadixBinaryTreeView:
     System container combining O(1) Radix Table prefix lookup with bounded binary search ({META_BinarySearch}).
     """
 
-    def __init__(self, keys: list[int], values: list[Any], radix_shift: int = 16):
+    def __init__(self, keys: list[int], values: list[Any], radix_shift: int = 28):
         paired = sorted(zip(keys, values, strict=False), key=lambda p: p[0])
         self.keys = [p[0] for p in paired]
         self.values = [p[1] for p in paired]
@@ -560,10 +560,10 @@ class ModuleView:
         """Constructs RadixBinaryTreeView indexes for exports, imports, and entity offsets."""
         # 1. Export symbol RadixBinaryTreeView (Hash -> ExportEntry)
         exp_keys = [fnv1a_32(exp.name) for exp in self.exports_dict]
-        self.export_tree = RadixBinaryTreeView(exp_keys, self.exports_dict, radix_shift=16)
+        self.export_tree = RadixBinaryTreeView(exp_keys, self.exports_dict, radix_shift=28)
         # 2. Import symbol RadixBinaryTreeView (Hash -> ImportEntry)
         imp_keys = [fnv1a_32(f"{imp.module_name}::{imp.field_name}") for imp in self.imports]
-        self.import_tree = RadixBinaryTreeView(imp_keys, self.imports, radix_shift=16)
+        self.import_tree = RadixBinaryTreeView(imp_keys, self.imports, radix_shift=28)
         # 3. Entity file offset RadixBinaryTreeView (start_offset -> DecodedEntity)
         ent_keys = [e.start_offset for e in self.entity_registry]
         self.entity_offset_tree = RadixBinaryTreeView(ent_keys, self.entity_registry, radix_shift=4)

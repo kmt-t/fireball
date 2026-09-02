@@ -340,6 +340,9 @@ def bswap32(v: int) -> int:
     return ((v & 0xFF) << 24) | ((v & 0xFF00) << 8) | ((v >> 8) & 0xFF00) | ((v >> 24) & 0xFF)
 
 
+FB_CONF_MAX_RADIX_TABLE_SIZE = 256  # Embedded constraint: max 8-bit radix prefix
+
+
 class RadixBinaryTreeView(Generic[ValT]):
     """
     fireball::radix_binary_tree_view<Key, Value, RadixShift, KeyProjection>:
@@ -348,20 +351,45 @@ class RadixBinaryTreeView(Generic[ValT]):
         (such as bswap32) to project high-entropy lower bytes to radix prefix.
     """
 
-    __slots__ = ("key_transform", "map_view", "radix_shift", "radix_table")
+    __slots__ = ("key_transform", "keys", "map_view", "radix_shift", "radix_table", "values")
 
     def __init__(
         self,
         keys: Sequence[int],
         values: Sequence[ValT],
-        radix_table: Sequence[int],
-        radix_shift: int,
+        radix_table: Sequence[int] | None = None,
+        radix_shift: int = 28,
         key_transform: Callable[[int], int] | None = None,
     ):
-        self.map_view = FlatMapView(list(zip(keys, values, strict=False)))
-        self.radix_table = radix_table  # pure scalar offsets array [0, 3, 6, ...]
+        paired = sorted(zip(keys, values, strict=False), key=lambda p: p[0])
+        self.keys = [p[0] for p in paired]
+        self.values = [p[1] for p in paired]
+        self.map_view = FlatMapView(paired)
         self.radix_shift = radix_shift
         self.key_transform = key_transform
+
+        if radix_table is not None:
+            self.radix_table = list(radix_table)
+        elif self.keys:
+            transformed_keys = [
+                key_transform(k) if key_transform is not None else k for k in self.keys
+            ]
+            max_prefix = max(transformed_keys) >> radix_shift
+            assert max_prefix + 2 <= FB_CONF_MAX_RADIX_TABLE_SIZE, (
+                f"Radix table size ({max_prefix + 2}) exceeds embedded limit {FB_CONF_MAX_RADIX_TABLE_SIZE}! Adjust radix_shift."
+            )
+            table = [0] * (max_prefix + 2)
+            current_prefix = 0
+            for idx, k in enumerate(transformed_keys):
+                prefix = k >> radix_shift
+                while current_prefix < prefix:
+                    current_prefix += 1
+                    table[current_prefix] = idx
+            for p in range(current_prefix + 1, len(table)):
+                table[p] = len(self.keys)
+            self.radix_table = table
+        else:
+            self.radix_table = []
 
     def find(self, key: int) -> ValT | None:
         rk = self.key_transform(key) if self.key_transform is not None else key
@@ -373,6 +401,22 @@ class RadixBinaryTreeView(Generic[ValT]):
         if first >= last:
             return None
         return self.map_view.slice(first, last).find(key)
+
+    def find_interval(self, offset: int) -> ValT | None:
+        """
+        Range lookup for interval keys [start, end) -- finds entity where entity.start_offset <= offset < entity.end_offset.
+        """
+        if not self.keys:
+            return None
+        idx = bisect.bisect_right(self.keys, offset) - 1
+        if 0 <= idx < len(self.values):
+            entity = self.values[idx]
+            try:
+                if entity.start_offset <= offset < entity.end_offset:
+                    return entity
+            except AttributeError:
+                pass
+        return None
 
 
 def _card_compiled(card_table: BitView, pc: int, card_shift: int) -> bool:
@@ -595,6 +639,13 @@ class RingBuffer(Generic[T]):
 
     def __len__(self) -> int:
         return self.count
+
+    def is_empty(self) -> bool:
+        return self.count == 0
+
+    @property
+    def overwrite_count(self) -> int:
+        return self.dropped
 
 
 # ---------------------------------------------------------------------------

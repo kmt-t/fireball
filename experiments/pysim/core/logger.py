@@ -19,6 +19,8 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import TYPE_CHECKING, Sequence
 
+from system_containers import RingBuffer
+
 if TYPE_CHECKING:
     from hal import UartTransport
 
@@ -136,43 +138,6 @@ class LogEntry:
     tick: int
 
 
-class RingBuffer:
-    """Fixed-capacity, overwrite-oldest-on-full (system_logging.md 4.1 "FINALIZED: Overwrite")."""
-
-    def __init__(self, capacity: int = 16):
-        assert capacity & (capacity - 1) == 0, "capacity must be a power of two"
-        self._buf: list[LogEntry | None] = [None] * capacity
-        self._mask = capacity - 1
-        self._head = 0
-        self._tail = 0
-        self._count = 0
-        self.overwrite_count = 0
-
-    def push(self, entry: LogEntry) -> bool:
-        overwritten = self._count == len(self._buf)
-        if overwritten:
-            self._tail = (self._tail + 1) & self._mask
-            self._count -= 1
-            self.overwrite_count += 1
-
-        self._buf[self._head] = entry
-        self._head = (self._head + 1) & self._mask
-        self._count += 1
-        return overwritten
-
-    def pop(self) -> LogEntry | None:
-        if self._count == 0:
-            return None
-        entry = self._buf[self._tail]
-        self._buf[self._tail] = None
-        self._tail = (self._tail + 1) & self._mask
-        self._count -= 1
-        return entry
-
-    def is_empty(self) -> bool:
-        return self._count == 0
-
-
 class Logger:
     """{BufferedLogging}: buffer now, flush during COOS idle_hook."""
 
@@ -186,7 +151,7 @@ class Logger:
         self.transport = transport
         self.dictionary = dictionary
         self.min_level = min_level
-        self.ring = RingBuffer(capacity)
+        self.ring: RingBuffer[LogEntry] = RingBuffer(capacity)
         self._tick = 0
 
     def log_event(

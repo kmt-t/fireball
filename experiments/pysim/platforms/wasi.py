@@ -409,7 +409,8 @@ class WasiHostContext:
         hashed_entries.sort(key=lambda x: x[0])
         keys = [x[0] for x in hashed_entries]
         values = [x[1] for x in hashed_entries]
-        radix_shift = 16
+        # 32-bit FNV-1a hash prefix: 4 bits (16 buckets, max table size 17)
+        radix_shift = 28
         if keys:
             max_prefix = max(keys) >> radix_shift
             radix_table = [0] * (max_prefix + 2)

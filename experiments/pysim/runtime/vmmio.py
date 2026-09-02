@@ -15,8 +15,12 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from system_containers import StaticFlatMap
+
+if TYPE_CHECKING:
+    from memory import MemoryManager
 
 # docs/components/tier1_core/system_config.md {META_FlatMapIndexed}: max PTE
 # count the FlatMap page table can hold.
@@ -199,6 +203,26 @@ class VMMIOController:
         if pte is not None and ((vpn >> 16) & 0xF) in (FC_SHM, FC_PASSTHROUGH):
             pte.valid = False
             self.flush_tlb_entry(vpn)
+
+    def register_to_memory_manager(self, memory_manager: MemoryManager) -> None:
+        """Registers vMMIO FC=14 SHM page table listeners into MemoryManager."""
+        from memory import PageMappingCallbacks
+
+        def _to_vpn(page_idx: int) -> int:
+            return (0xE000_0000 >> 12) + page_idx
+
+        memory_manager.register_page_mapping_callbacks(
+            PageMappingCallbacks(
+                on_map_page=lambda page_idx, _addr, owner_id: self.map_shm_page(
+                    _to_vpn(page_idx), phys_page=page_idx, owner_id=owner_id
+                ),
+                on_update_owner=lambda page_idx, _addr, new_owner_id: self.update_shm_owner(
+                    _to_vpn(page_idx), new_owner_id
+                ),
+                on_revoke=lambda page_idx, _addr: self.revoke_shm_owner(_to_vpn(page_idx)),
+                on_unmap_page=lambda page_idx, _addr: self.unmap_shm_page(_to_vpn(page_idx)),
+            )
+        )
 
     def flush_tlb(self) -> None:
         self.tlb = [TLBSlot() for _ in range(16)]

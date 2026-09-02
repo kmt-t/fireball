@@ -3,23 +3,36 @@ experiments/pysim/platforms/memory.py
 COOS Memory Manager & PMSAv8 MPU simulation.
 - Consolidated physical memory pool and fixed-size partition leasing
 - Typed slot pools with zero dynamic void* heap
-- RAII SharedBlock zero-copy ownership transfer linked with vMMIO FC=14 PTEs
+- RAII SharedBlock zero-copy ownership transfer linked with page table listeners
 - Cortex-M33 PMSAv8 8-region MPU allocation and JIT W^X transaction switching
 """
 
 from __future__ import annotations
 
 import struct
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import TYPE_CHECKING, Generic, TypeVar
+from typing import Generic, TypeVar
 
 from system_containers import StaticFlatMap
 
-if TYPE_CHECKING:
-    from vmmio import VMMIOController
-
 T = TypeVar("T")
+
+
+@dataclass(slots=True)
+class PageMappingCallbacks:
+    """Decoupled callbacks for external page table / MMU listeners."""
+
+    on_map_page: Callable[
+        [int, int, int], None
+    ]  # (page_idx: int, phys_addr: int, owner_id: int) -> None
+    on_update_owner: Callable[
+        [int, int, int], None
+    ]  # (page_idx: int, phys_addr: int, new_owner_id: int) -> None
+    on_revoke: Callable[[int, int], None]  # (page_idx: int, phys_addr: int) -> None
+    on_unmap_page: Callable[[int, int], None]  # (page_idx: int, phys_addr: int) -> None
+
 
 # Configuration & Constants (FB_CONF_*)
 FB_CONF_MEMORY_POOL_SIZE = 2 * 1024 * 1024  # 2MB physical pool
@@ -113,8 +126,8 @@ class ShmSlot:
 
 
 @dataclass
-class VMMIOPTE:
-    """vMMIO FC=14 Page Table Entry representation."""
+class ShmPagePTE:
+    """Shared memory page table entry representation."""
 
     page_idx: int
     owner_id: int
@@ -122,22 +135,22 @@ class VMMIOPTE:
     is_valid: bool = True
 
 
-_FB_CONF_MAX_VMMIO_PAGES = FB_CONF_MEMORY_POOL_SIZE // FB_PAGE_SIZE
+_FB_CONF_MAX_SHM_PHYS_PAGES = FB_CONF_MEMORY_POOL_SIZE // FB_PAGE_SIZE
 
 
-class VMMIOPTERegistry:
+class ShmPageRegistry:
     """
-    vMMIO Tier 3 PTE Registry mock for memory manager integration.
+    Shared memory page table registry for physical memory manager.
     `page_idx` ranges over the physical pool's fixed page count
     (FB_CONF_MEMORY_POOL_SIZE / FB_PAGE_SIZE), so a fixed-size array indexed
     directly by page_idx is the direct fit -- not a dict.
     """
 
     def __init__(self):
-        self.ptes: list[VMMIOPTE | None] = [None] * _FB_CONF_MAX_VMMIO_PAGES
+        self.ptes: list[ShmPagePTE | None] = [None] * _FB_CONF_MAX_SHM_PHYS_PAGES
 
     def register_page(self, page_idx: int, owner_id: int, physical_addr: int):
-        self.ptes[page_idx] = VMMIOPTE(
+        self.ptes[page_idx] = ShmPagePTE(
             page_idx=page_idx,
             owner_id=owner_id,
             physical_addr=physical_addr,
@@ -300,12 +313,11 @@ class SharedBlock:
         if self._manager is not None:
             self._is_active = False
             self._is_in_flight = True
-            self._manager.vmmio_registry.update_owner(self.page_idx, FB_TASK_ID_FLIGHT)
+            self._manager.page_registry.update_owner(self.page_idx, FB_TASK_ID_FLIGHT)
             if self.page_idx < len(self._manager.shm_pages):
                 self._manager.shm_pages[self.page_idx].owner_id = FB_TASK_ID_FLIGHT
-            if self._manager.vmmio is not None:
-                vpn = (0xE000_0000 >> 12) + self.page_idx
-                self._manager.vmmio.revoke_shm_owner(vpn)
+            if self._manager._page_mapping_callbacks is not None:
+                self._manager._page_mapping_callbacks.on_revoke(self.page_idx, self.base_address)
         return self.shm_id
 
     def drop(self):
@@ -458,24 +470,27 @@ class MemoryManager:
         self.pool_base: int = 0
         self.pool_size: int = 0
         self.total_allocated_bytes: int = 0
-        self.vmmio_registry = VMMIOPTERegistry()
-        self.vmmio: VMMIOController | None = None
+        self.page_registry = ShmPageRegistry()
+        self._page_mapping_callbacks: PageMappingCallbacks | None = None
         self.mpu: PMSAv8MPU | None = None
         self.partition_owners: StaticFlatMap[int, PartitionView] = StaticFlatMap(
             capacity=FB_CONF_MAX_TASKS
         )
         self.shm_slots: StaticFlatMap[int, ShmSlot] = StaticFlatMap(
-            capacity=_FB_CONF_MAX_VMMIO_PAGES
+            capacity=_FB_CONF_MAX_SHM_PHYS_PAGES
         )
         # Page-granular permission isolation: each 4KB physical page tracks its exclusive owner_id
         self.shm_pages: list[ShmPageInfo] = [
             ShmPageInfo(page_idx=i, owner_id=0, allocated=False, allocated_bytes=0, slot_count=0)
-            for i in range(_FB_CONF_MAX_VMMIO_PAGES)
+            for i in range(_FB_CONF_MAX_SHM_PHYS_PAGES)
         ]
 
-    def attach_vmmio(self, vmmio: VMMIOController) -> None:
-        """Attaches the vMMIO controller to drive FC=14 SHM page mappings and TLB invalidation."""
-        self.vmmio = vmmio
+    def register_page_mapping_callbacks(
+        self,
+        callbacks: PageMappingCallbacks,
+    ) -> None:
+        """Registers external page table / MMU listener callbacks for SHM page events."""
+        self._page_mapping_callbacks = callbacks
 
     def init_manager(self, pool_base: int, pool_size: int) -> Result[bool]:
         assert pool_base % FB_WASM_PAGE_SIZE == 0, (
@@ -579,13 +594,12 @@ class MemoryManager:
             target_page.slot_count = 0
             self.total_allocated_bytes += FB_PAGE_SIZE
 
-            # Register in vMMIO FC=14
+            # Register in page registry and notify listener
             base_addr = 0x20080000 + (target_page.page_idx * FB_PAGE_SIZE)
-            self.vmmio_registry.register_page(target_page.page_idx, caller_task_id, base_addr)
-            if self.vmmio is not None:
-                vpn = (0xE000_0000 >> 12) + target_page.page_idx
-                self.vmmio.map_shm_page(
-                    vpn, phys_page=target_page.page_idx, owner_id=caller_task_id
+            self.page_registry.register_page(target_page.page_idx, caller_task_id, base_addr)
+            if self._page_mapping_callbacks is not None:
+                self._page_mapping_callbacks.on_map_page(
+                    target_page.page_idx, base_addr, caller_task_id
                 )
 
         # Allocate slot inside target_page
@@ -623,17 +637,18 @@ class MemoryManager:
         return Result(value=sb)
 
     def grant_shared(self, shm_id: int, new_owner_task_id: int) -> bool:
-        """Grants in-flight SHM block to the receiver task in vMMIO PTE (Grant phase)."""
+        """Grants in-flight SHM block to the receiver task in page table (Grant phase)."""
         slot = self.shm_slots.find(shm_id)
         if slot is None or not slot.allocated:
             return False
         slot.owner = new_owner_task_id
         if slot.page_idx < len(self.shm_pages):
             self.shm_pages[slot.page_idx].owner_id = new_owner_task_id
-        self.vmmio_registry.update_owner(slot.page_idx, new_owner_task_id)
-        if self.vmmio is not None:
-            vpn = (0xE000_0000 >> 12) + slot.page_idx
-            self.vmmio.update_shm_owner(vpn, new_owner_task_id)
+        self.page_registry.update_owner(slot.page_idx, new_owner_task_id)
+        if self._page_mapping_callbacks is not None:
+            self._page_mapping_callbacks.on_update_owner(
+                slot.page_idx, slot.base_address, new_owner_task_id
+            )
         return True
 
     def claim(self, receiver_task_id: int, shm_id: int) -> Result[SharedBlock]:
@@ -647,12 +662,12 @@ class MemoryManager:
             )
 
         page_idx = slot.page_idx
-        current_owner = self.vmmio_registry.get_owner(page_idx)
+        current_owner = self.page_registry.get_owner(page_idx)
         if current_owner != receiver_task_id:
             return Result(
                 error=MemoryErrorResult(
                     "ERR_GRANT_NOT_COMPLETED",
-                    RecoveryStrategy(RecoveryAction.RETRY, "Grant phase incomplete in vMMIO PTE"),
+                    RecoveryStrategy(RecoveryAction.RETRY, "Grant phase incomplete in page table"),
                 )
             )
 
@@ -670,16 +685,17 @@ class MemoryManager:
         return Result(value=sb)
 
     def rollback_transfer(self, original_sender_id: int, shm_id: int):
-        """Restores a shared block's original owner in the vMMIO PTE."""
+        """Restores a shared block's original owner in the page table."""
         slot = self.shm_slots.find(shm_id)
         if slot is not None:
             slot.owner = original_sender_id
             if slot.page_idx < len(self.shm_pages):
                 self.shm_pages[slot.page_idx].owner_id = original_sender_id
-            self.vmmio_registry.update_owner(slot.page_idx, original_sender_id)
-            if self.vmmio is not None:
-                vpn = (0xE000_0000 >> 12) + slot.page_idx
-                self.vmmio.update_shm_owner(vpn, original_sender_id)
+            self.page_registry.update_owner(slot.page_idx, original_sender_id)
+            if self._page_mapping_callbacks is not None:
+                self._page_mapping_callbacks.on_update_owner(
+                    slot.page_idx, slot.base_address, original_sender_id
+                )
 
     def deallocate(self, caller_task_id: int, addr: int):
         """Deallocate local static partition or slot. Owner enforced."""
@@ -708,8 +724,8 @@ class MemoryManager:
                 page.allocated_bytes = 0
                 page.slot_count = 0
                 page.owner_id = 0
-                self.vmmio_registry.unregister_page(page_idx)
-                if self.vmmio is not None:
-                    vpn = (0xE000_0000 >> 12) + page_idx
-                    self.vmmio.unmap_shm_page(vpn)
+                self.page_registry.unregister_page(page_idx)
+                if self._page_mapping_callbacks is not None:
+                    base_addr = 0x20080000 + (page_idx * FB_PAGE_SIZE)
+                    self._page_mapping_callbacks.on_unmap_page(page_idx, base_addr)
                 self.total_allocated_bytes -= FB_PAGE_SIZE

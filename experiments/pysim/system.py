@@ -223,7 +223,7 @@ class System:
 
         # Physical Memory Manager (platform_memory.md) with 64KB aligned pool
         self.memory_manager = MemoryManager()
-        self.memory_manager.attach_vmmio(self.vmmio)
+        self.vmmio.register_to_memory_manager(self.memory_manager)
         self.memory_manager.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
         self.scheduler = Scheduler(logger=self.logger)
         self.ipc = IPCRouter(self.scheduler, logger=self.logger, memory_manager=self.memory_manager)

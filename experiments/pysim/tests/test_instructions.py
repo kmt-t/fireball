@@ -440,7 +440,7 @@ def test_mem_10_shared_block_ownership_transfer():
     page_idx = sb_a.page_idx
     shm_id = sb_a.release()
     assert not sb_a._is_active
-    assert mm.vmmio_registry.get_owner(page_idx) == FB_TASK_ID_FLIGHT
+    assert mm.page_registry.get_owner(page_idx) == FB_TASK_ID_FLIGHT
 
     # Access during in-flight must raise AssertionError
     try:
@@ -450,11 +450,11 @@ def test_mem_10_shared_block_ownership_transfer():
         pass
 
     # Simulate IPC Router Grant phase
-    mm.vmmio_registry.update_owner(page_idx, 2)
+    mm.page_registry.update_owner(page_idx, 2)
     sb_b = mm.claim(receiver_task_id=2, shm_id=shm_id).unwrap()
     assert sb_b.get_owner() == 2
     assert sb_b._is_active
-    assert mm.vmmio_registry.get_owner(page_idx) == 2
+    assert mm.page_registry.get_owner(page_idx) == 2
 
     # Receiver can read everything sender wrote into the uint64_t array!
     assert sb_b.read_u32(4) == 0xCAFEBABE
@@ -470,9 +470,9 @@ def test_mem_10c_rollback_transfer_restores_owner_id():
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     sb = mm.allocate_shared(caller_task_id=1, size=1024).unwrap()
     shm_id = sb.release()
-    assert mm.vmmio_registry.get_owner(sb.page_idx) == FB_TASK_ID_FLIGHT
+    assert mm.page_registry.get_owner(sb.page_idx) == FB_TASK_ID_FLIGHT
     mm.rollback_transfer(original_sender_id=1, shm_id=shm_id)
-    assert mm.vmmio_registry.get_owner(sb.page_idx) == 1
+    assert mm.page_registry.get_owner(sb.page_idx) == 1
 
 
 def test_mem_11_shared_block_raII_auto_deallocate():
@@ -512,7 +512,7 @@ def test_mem_15_vmmio_fc14_tlb_sync():
 
     vmmio = VMMIOController(guest_ram_size=8192)
     mm = MemoryManager()
-    mm.attach_vmmio(vmmio)
+    vmmio.register_to_memory_manager(mm)
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
 
     sb = mm.allocate_shared(caller_task_id=1, size=512).unwrap()
@@ -1275,7 +1275,7 @@ def test_ipc_03_send_failure_restores_owner():
         assert msg.ownership == OwnershipState.SENDER_OWNS
         # Rollback
         sysv.memory_manager.rollback_transfer(original_sender_id=1, shm_id=shm_id)
-        assert sysv.memory_manager.vmmio_registry.get_owner(sb.page_idx) == 1
+        assert sysv.memory_manager.page_registry.get_owner(sb.page_idx) == 1
     finally:
         sysv.shutdown()
 

@@ -509,7 +509,7 @@ class IPCRouter:
                 if sk == ScopeKind.RESOURCE and val >= 0:
                     slot = self.memory_manager.shm_slots.find(val)
                     if slot is not None and slot.allocated:
-                        self.memory_manager.vmmio_registry.update_owner(
+                        self.memory_manager.page_registry.update_owner(
                             slot.page_idx, FB_TASK_ID_FLIGHT
                         )
 

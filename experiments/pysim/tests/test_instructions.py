@@ -424,6 +424,14 @@ def test_mem_10_shared_block_ownership_transfer():
     sb_a.write_kv(40, 0x1000, 0x2000)
     assert sb_a.read_kv(40) == (0x1000, 0x2000)
 
+    # uint64_t array accessors (treating shared block as uint64_t[])
+    assert sb_a.u64_capacity() == 128
+    sb_a.write_u64(10, 0x1122334455667788)
+    assert sb_a.read_u64(10) == 0x1122334455667788
+
+    sb_a.write_entry(11, key=0x12345678, val=0x9ABCDEF0)
+    assert sb_a.read_entry(11) == (0x12345678, 0x9ABCDEF0)
+
     # Underlying bytearray direct accessor
     raw_ba = sb_a.get_bytearray()
     assert isinstance(raw_ba, bytearray)
@@ -448,10 +456,12 @@ def test_mem_10_shared_block_ownership_transfer():
     assert sb_b._is_active
     assert mm.vmmio_registry.get_owner(page_idx) == 2
 
-    # Receiver can read everything sender wrote into the bytearray!
+    # Receiver can read everything sender wrote into the uint64_t array!
     assert sb_b.read_u32(4) == 0xCAFEBABE
     assert sb_b.read_bytes(16, 18) == b"Hello Fireball SHM"
     assert sb_b.read_kv(40) == (0x1000, 0x2000)
+    assert sb_b.read_u64(10) == 0x1122334455667788
+    assert sb_b.read_entry(11) == (0x12345678, 0x9ABCDEF0)
 
 
 def test_mem_10c_rollback_transfer_restores_owner_id():

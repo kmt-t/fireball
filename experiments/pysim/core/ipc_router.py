@@ -159,26 +159,25 @@ class IPCMessage:
 
     def _read_entries(self) -> list[tuple[int, int]]:
         self._check_ownership()
-        if self._block is None or self._block.get_size() < 4:
+        if self._block is None or self._block.u64_capacity() < 1:
             return []
-        count = self._block.read_u32(0)
+        count = self._block.read_u64(0)
         count = min(count, FB_CONF_ROUTER_MAX_KV_PAIRS)
         res = []
         for i in range(count):
-            offset = 4 + i * 8
-            if offset + 8 <= self._block.get_size():
-                k, v = self._block.read_kv(offset)
+            if i + 1 < self._block.u64_capacity():
+                k, v = self._block.read_entry(i + 1)
                 res.append((k, v))
         return res
 
     def write_entries(self, entries: Sequence[tuple[int, int]]) -> None:
-        """Writes a batch of (key, value) pairs into the backing shared memory block."""
+        """Writes a batch of (key, value) pairs into the backing uint64_t shared memory array."""
         self._check_ownership()
         assert self._block is not None, "Cannot write entries without a backing SharedBlock"
         sorted_entries = sorted(entries, key=lambda e: e[0])
-        self._block.write_u32(0, len(sorted_entries))
+        self._block.write_u64(0, len(sorted_entries))
         for i, (k, v) in enumerate(sorted_entries):
-            self._block.write_kv(4 + i * 8, k, v)
+            self._block.write_entry(i + 1, k, v)
 
     def append(self, key: int, value: int) -> None:
         """Appends an entry (key32, value32) into the shared memory block, keeping it sorted."""
@@ -283,9 +282,9 @@ class IPCMessage:
 
     def __len__(self) -> int:
         self._check_ownership()
-        if self._block is None or self._block.get_size() < 4:
+        if self._block is None or self._block.u64_capacity() < 1:
             return 0
-        return self._block.read_u32(0)
+        return self._block.read_u64(0)
 
 
 def bytes_to_kv_entries(data: bytes) -> list[tuple[int, int]]:

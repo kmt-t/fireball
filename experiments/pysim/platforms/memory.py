@@ -245,6 +245,40 @@ class SharedBlock:
         self._check_access(offset, 8)
         struct.pack_into("<II", self.data, offset, key & 0xFFFFFFFF, val & 0xFFFFFFFF)
 
+    def u64_capacity(self) -> int:
+        """Returns the number of uint64_t elements available in this shared memory array."""
+        return self.size // 8
+
+    def read_u64(self, index: int) -> int:
+        """Reads a 64-bit unsigned integer (uint64_t) from the shared memory array at element index."""
+        offset = index * 8
+        self._check_access(offset, 8)
+        return struct.unpack_from("<Q", self.data, offset)[0]
+
+    def write_u64(self, index: int, val: int) -> None:
+        """Writes a 64-bit unsigned integer (uint64_t) to the shared memory array at element index."""
+        offset = index * 8
+        self._check_access(offset, 8)
+        struct.pack_into("<Q", self.data, offset, val & 0xFFFFFFFFFFFFFFFF)
+
+    def read_entry(self, index: int) -> tuple[int, int]:
+        """
+        Reads one kv_pair (uint32 key, uint32 value) from the uint64_t array at element index.
+        In uint64_t layout: key in upper 32 bits, value in lower 32 bits.
+        """
+        raw = self.read_u64(index)
+        key = (raw >> 32) & 0xFFFFFFFF
+        val = raw & 0xFFFFFFFF
+        return (key, val)
+
+    def write_entry(self, index: int, key: int, val: int) -> None:
+        """
+        Writes one kv_pair (uint32 key, uint32 value) into the uint64_t array at element index.
+        In uint64_t layout: packs key into upper 32 bits and value into lower 32 bits.
+        """
+        packed = ((key & 0xFFFFFFFF) << 32) | (val & 0xFFFFFFFF)
+        self.write_u64(index, packed)
+
     def release(self) -> int:
         """Revoke sender access and prepare for transfer (marks FLIGHT)."""
         assert self._is_active, "Cannot release inactive SharedBlock"

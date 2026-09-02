@@ -81,13 +81,13 @@ IPC通信の最小単位。1つのメッセージで8個のペアを送信でき
 
 #### IPCメッセージ（message）
 <!-- traceability: {TypeSafeMessaging} {META_FlatMapIndexed} {OwnershipTransfer} {ADR_SharedBlockRaii} -->
-Key-Valueペアを複数集約した通信の基本単位。メッセージ自身が共有メモリ（`SharedBlock`）上に実体化され、内部の物理バイト配列（`bytearray`）をストレージとして直接利用する。動的メモリ確保を一切伴わない物理メモリ上のAoS（Key-Valueペアのエントリ配列：1エントリ8バイト）と `fireball::flat_map_view` による二分探索を採用し、メッセージ内のキー検索を $O(\log N)$ で行う。エントリやペイロードへのアクセス時には所有権（`SENDER_OWNS` または `RECEIVER_OWNS`）を強制検証する（`IN_FLIGHT` 中のアクセスは禁止）。また、タスクを跨ぐ大きなバルクデータは別の共有メモリ（`SharedBlock`）の `shm_id` をエントリのバリュー（`ScopeKind.RESOURCE`）に格納して伝送でき、IPCルータのランデブー完了時に自動で vMMIO PTE の権限付け替え（`grant_shared`）が行われる。 `{TypeSafeMessaging}` `{META_FlatMapIndexed}` `{ADR_SharedBlockRaii}`
+Key-Valueペアを複数集約した通信の基本単位。メッセージ自身が共有メモリ（`fireball::shared_block`）上に実体化され、内部の `uint64_t` 配列（`uint64_t[]`）をストレージとして直接利用する。動的メモリ確保を一切伴わない物理メモリ上のAoS（Key-Valueペアの `uint64_t` エントリ配列：上位32ビットがキー、下位32ビットが値）と `fireball::flat_map_view` による二分探索を採用し、メッセージ内のキー検索を $O(\log N)$ で行う。エントリやペイロードへのアクセス時には所有権（`SENDER_OWNS` または `RECEIVER_OWNS`）を強制検証する（`IN_FLIGHT` 中のアクセスは禁止）。また、タスクを跨ぐ大きなバルクデータは別の共有メモリ（`fireball::shared_block`）の `shm_id` をエントリの値（`ScopeKind.RESOURCE`）に格納して伝送でき、IPCルータのランデブー完了時に自動で vMMIO PTE の権限付け替え（`grant_shared`）が行われる。 `{TypeSafeMessaging}` `{META_FlatMapIndexed}` `{ADR_SharedBlockRaii}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| メッセージ本体ブロック | メッセージ自身を格納する共有メモリブロック。`bytearray` に対する固定長バイナリアクセッサで操作 | `fireball::shared_block` | 1個（256バイト固定等） |
-| KVマップ (AoS) | 共有メモリバイト配列上に配置されるKey-Valueペアエントリ配列。自前で所有しアクセス時に所有権検証 | ソート済み固定長AoSバイナリ配列 + `fireball::flat_map_view` | 最大8個固定（1エントリ8バイト） |
-| リソース共有メモリ | エントリ値（`ScopeKind.RESOURCE`）に埋め込まれるタスク間バルク転送用RAII共有メモリ。チャネルが所有権を自動Grant | `fireball::shared_block` (オプション) | 任意個数（エントリのバリュー） |
+| メッセージ本体ブロック | メッセージ自身を格納する共有メモリブロック。内部は `uint64_t` 配列 | `fireball::shared_block` | 1個（固定長） |
+| KVマップ (AoS) | 共有メモリ上に配置されるKey-Valueペアの `uint64_t` 配列。自前で所有しアクセス時に所有権検証 | ソート済み固定長 `uint64_t` 配列 + `fireball::flat_map_view` | 最大8個固定（1エントリ `uint64_t` 1要素） |
+| リソース共有メモリ | エントリ値（`ScopeKind.RESOURCE`）に埋め込まれるタスク間バルク転送用RAII共有メモリ。チャネルが所有権を自動Grant | `fireball::shared_block` (オプション) | 任意個数（エントリの値） |
 
 #### レジストリエントリ（registry_entry）
 <!-- traceability: {DictionaryBasedIPC} {TypeSafeMessaging} {META_FlatMapIndexed} -->

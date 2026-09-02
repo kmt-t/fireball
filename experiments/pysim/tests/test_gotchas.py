@@ -43,7 +43,7 @@ from runtime_engine import (
     WASMContext,
 )
 from scheduler import ChannelAction, Scheduler, WaitDir
-from system_containers import FlatMapStorage
+from system_containers import FlatMapView
 from vmmio import TrapCode, VMMIOController
 from wasm_reader import parse
 from x64_jit import TraceCompiler
@@ -163,8 +163,8 @@ def test_intp_gotcha_04_unified_pc_multi_module():
 
     keys = sorted([pc_fn0, pc_fn1])
     vals = [100 if k == pc_fn0 else 200 for k in keys]
-    storage = FlatMapStorage(list(zip(keys, vals, strict=False)))
-    view = storage.view()
+    entries = list(zip(keys, vals, strict=False))
+    view = FlatMapView(entries)
 
     assert view.find(pc_fn0) == 100
     assert view.find(pc_fn1) == 200

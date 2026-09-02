@@ -38,9 +38,11 @@ class LogLevel(IntEnum):
     FATAL = 4
 
 
+import bisect
+
 _DISALLOWED_SPECIFIERS = ("%s", "%p", "%c")
 
-from system_containers import FlatMapStorage, FlatMapView
+from system_containers import FlatMapView
 
 # Standard Diagnostic Log Event IDs (system_logging.md §4.2.1)
 LOG_EVT_COOS_HANDOFF_LIMIT = 0x0101
@@ -66,29 +68,27 @@ STANDARD_DIAGNOSTIC_EVENTS: list[tuple[int, str]] = [
     (LOG_EVT_IPC_CHANNEL_COLLISION, "IPC: channel waiter collision (channel=%d, dir=%d)"),
 ]
 
-_EMPTY_LOG_STORAGE: FlatMapStorage[int, str] = FlatMapStorage([])
-
 
 class LogDictionary:
     """
     ROM-resident, build-time-only format string table (system_logging.md 4.2).
-    Storage ownership is separated: LogDictionary borrows FlatMapStorage
+    Storage ownership is separated: LogDictionary borrows entries storage
     and presents format strings via non-owning FlatMapView (AoS).
     """
 
     def __init__(
         self,
-        storage: FlatMapStorage[int, str] | None = None,
+        storage: list[tuple[int, str]] | None = None,
         capacity: int = 128,
         include_diagnostic_events: bool = True,
     ):
         if storage is not None:
             self.storage = storage
         elif include_diagnostic_events:
-            self.storage = FlatMapStorage(sorted(STANDARD_DIAGNOSTIC_EVENTS, key=lambda x: x[0]))
+            self.storage = sorted(STANDARD_DIAGNOSTIC_EVENTS, key=lambda x: x[0])
         else:
-            self.storage = FlatMapStorage([])
-        self._view: FlatMapView[int, str] = self.storage.view()
+            self.storage = []
+        self._view: FlatMapView[int, str] = FlatMapView(self.storage)
         self.payload: FlatMapView[int, str] = self._view
 
     def register(self, offset: int, fmt: str) -> None:
@@ -99,8 +99,12 @@ class LogDictionary:
                     "backed by a u32 argument without reading it as a pointer"
                 )
 
-        self.storage.insert(offset, fmt)
-        self._view = self.storage.view()
+        idx = bisect.bisect_left(self.storage, offset, key=lambda e: e[0])
+        if idx < len(self.storage) and self.storage[idx][0] == offset:
+            self.storage[idx] = (offset, fmt)
+        else:
+            self.storage.insert(idx, (offset, fmt))
+        self._view = FlatMapView(self.storage)
         self.payload = self._view
 
     def view(self) -> FlatMapView[int, str]:
@@ -108,7 +112,7 @@ class LogDictionary:
 
     @property
     def entries(self) -> Sequence[tuple[int, str]]:
-        return self.storage.entries
+        return self.storage
 
     def format(self, offset: int, args: tuple[int, int, int, int]) -> str:
         """

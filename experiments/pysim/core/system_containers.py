@@ -209,101 +209,6 @@ class FlatMapView(Generic[KeyT, ValT]):
         return self.size()
 
 
-class FlatMapStorage(Generic[KeyT, ValT]):
-    """
-    Owning storage container for sorted (key, value) pair entries (AoS).
-    Explicitly separates array data ownership from non-owning views (FlatMapView).
-    Leverages standard sorting algorithms and binary search.
-    """
-
-    __slots__ = ("_capacity", "_entries")
-
-    def __init__(
-        self,
-        entries: Sequence[tuple[KeyT, ValT]],
-        sort: bool = False,
-        capacity: int | None = None,
-    ):
-        self._entries: list[tuple[KeyT, ValT]] = list(entries)
-        self._capacity = capacity
-        if self._capacity is not None and len(self._entries) > self._capacity:
-            raise OverflowError(
-                f"initial size {len(self._entries)} exceeds capacity {self._capacity}"
-            )
-        if sort:
-            self.sort()
-
-    @property
-    def entries(self) -> list[tuple[KeyT, ValT]]:
-        return self._entries
-
-    @property
-    def keys(self) -> list[KeyT]:
-        return [k for k, _ in self._entries]
-
-    @property
-    def values(self) -> list[ValT]:
-        return [v for _, v in self._entries]
-
-    def is_sorted(self) -> bool:
-        """Returns True if entries are sorted by key in ascending order."""
-        return all(
-            self._entries[i][0] <= self._entries[i + 1][0] for i in range(len(self._entries) - 1)
-        )
-
-    def sort(self) -> FlatMapStorage[KeyT, ValT]:
-        """
-        Sorts entries in-place by key in ascending order using standard sort.
-        In C++, this maps directly to std::sort(entries.begin(), entries.end()).
-        """
-        self._entries.sort(key=lambda e: e[0])
-        return self
-
-    def insert(self, key: KeyT, value: ValT) -> bool:
-        """
-        Inserts a key-value pair maintaining ascending key order.
-        If key already exists, updates value and returns False (no size increase).
-        If key is new, inserts at the sorted index and returns True.
-        Raises OverflowError if capacity is exceeded.
-        """
-        idx = bisect.bisect_left(self._entries, key, key=lambda e: e[0])
-        if idx < len(self._entries) and self._entries[idx][0] == key:
-            self._entries[idx] = (key, value)
-            return False
-        if self._capacity is not None and len(self._entries) >= self._capacity:
-            raise OverflowError(f"FlatMapStorage exceeded capacity {self._capacity}")
-        self._entries.insert(idx, (key, value))
-        return True
-
-    def remove(self, key: KeyT) -> bool:
-        """
-        Removes key and its corresponding entry maintaining sorted order.
-        Returns True if found and removed, False otherwise.
-        """
-        idx = bisect.bisect_left(self._entries, key, key=lambda e: e[0])
-        if idx < len(self._entries) and self._entries[idx][0] == key:
-            self._entries.pop(idx)
-            return True
-        return False
-
-    def erase(self, key: KeyT) -> bool:
-        """Alias for remove() matching C++ naming."""
-        return self.remove(key)
-
-    def view(self) -> FlatMapView[KeyT, ValT]:
-        """Returns a non-owning FlatMapView borrowing the owned entries array."""
-        return FlatMapView(self._entries)
-
-    def __len__(self) -> int:
-        return len(self._entries)
-
-    def __getitem__(self, key: KeyT) -> ValT:
-        return self.view()[key]
-
-    def find(self, key: KeyT) -> ValT | None:
-        return self.view().find(key)
-
-
 # ---------------------------------------------------------------------------
 # 4. FlatSetView (fireball::flat_set_view<Key>)
 # ---------------------------------------------------------------------------
@@ -543,6 +448,23 @@ class StaticFlatMap(Generic[KeyT, ValT]):
     def items(self) -> Iterator[tuple[KeyT, ValT]]:
         """Key-sorted (key, value) pairs -- always consistent with `view()`'s ordering."""
         return iter(self._entries)
+
+    @property
+    def entries(self) -> list[tuple[KeyT, ValT]]:
+        return self._entries
+
+    @property
+    def keys(self) -> list[KeyT]:
+        return [k for k, _ in self._entries]
+
+    @property
+    def values(self) -> list[ValT]:
+        return [v for _, v in self._entries]
+
+    def is_sorted(self) -> bool:
+        return all(
+            self._entries[i][0] <= self._entries[i + 1][0] for i in range(len(self._entries) - 1)
+        )
 
 
 # ---------------------------------------------------------------------------

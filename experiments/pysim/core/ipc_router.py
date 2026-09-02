@@ -29,9 +29,7 @@ from logger import (
     LogLevel,
 )
 from scheduler import Channel, ChannelAction, Scheduler
-from system_containers import FlatMapStorage, FlatMapView
-
-_EMPTY_IPC_STORAGE: FlatMapStorage = FlatMapStorage(())
+from system_containers import FlatMapView
 
 # ipc_router.md {3.3}: a message is a static, fixed-size buffer of at most 8
 # kv_pair entries.
@@ -230,11 +228,6 @@ class IPCMessage:
     def flat_map_view(self) -> FlatMapView:
         """Returns the non-owning FlatMapView for zero-copy binary search access."""
         return self.payload
-
-    @property
-    def storage(self) -> FlatMapStorage:
-        self._check_ownership()
-        return FlatMapStorage(self._read_entries())
 
     def claim_resource(
         self,

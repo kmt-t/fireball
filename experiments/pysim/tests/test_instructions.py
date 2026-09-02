@@ -97,10 +97,10 @@ from system import (
 )
 from system_containers import (
     BitView,
-    FlatMapStorage,
     FlatMapView,
     FlatSetView,
     RadixBinaryTreeView,
+    StaticFlatMap,
     lookup_jit_entry_radix,
 )
 from vmmio import (
@@ -648,13 +648,13 @@ def test_log_02_logger_ring_buffer_overwrites():
 
 
 def test_log_03_dictionary_storage_ownership_separation():
-    """LOG-03: LogDictionary borrows FlatMapStorage without owning/duplicating it."""
-    storage = FlatMapStorage([(0x01, "event #%d"), (0x02, "value %d %d")])
+    """LOG-03: LogDictionary borrows entries storage without owning/duplicating it."""
+    storage = [(0x01, "event #%d"), (0x02, "value %d %d")]
     d = LogDictionary(storage=storage)
 
     # Ownership separation assertion
     assert d.storage is storage
-    assert d.payload.entries is storage.entries
+    assert d.payload.entries is storage
     assert d.format(0x01, (42, 0, 0, 0)) == "event #42"
     assert d.format(0x02, (10, 20, 0, 0)) == "value 10 20"
 
@@ -1349,7 +1349,7 @@ def test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group():
 
 
 def test_ipc_05_message_storage_ownership_and_access_check():
-    """IPC-05: IPCMessage owns its FlatMapStorage and enforces ownership checks upon access."""
+    """IPC-05: IPCMessage owns its SharedBlock storage and enforces ownership checks upon access."""
     from ipc_router import OwnershipState
 
     msg = IPCMessage.from_entries([(10, 100), (20, 200)])
@@ -2205,50 +2205,42 @@ def test_cont_10_container_type_separation():
 
 def test_cont_11_storage_and_view_ownership_separation():
     """CONT-11: Data storage ownership is strictly separated from non-owning views (AoS)."""
-    entries = [(10, "A"), (20, "B"), (30, "C")]
-    storage = FlatMapStorage(entries)
-    v1 = storage.view()
-    v2 = storage.view()
+    storage = [(10, "A"), (20, "B"), (30, "C")]
+    v1 = FlatMapView(storage)
+    v2 = FlatMapView(storage)
 
     # Views borrow the same underlying entries array without taking ownership
     assert v1.find(20) == "B"
     assert v2.find(30) == "C"
-    assert v1.entries == storage.entries
-    assert v2.entries == storage.entries
+    assert v1.entries is storage
+    assert v2.entries is storage
     assert v1.keys == [10, 20, 30]
     assert v1.values == ["A", "B", "C"]
 
 
-def test_cont_12_flat_map_storage_standard_sort():
-    """CONT-12: FlatMapStorage in-place sorts entries by key using standard sort (AoS)."""
+def test_cont_12_static_flat_map_storage_standard_sort():
+    """CONT-12: StaticFlatMap manages fixed-capacity sorted entries (AoS) and presents FlatMapView."""
     entries = [(50, "E"), (10, "A"), (40, "D"), (20, "B"), (30, "C")]
-    storage = FlatMapStorage(entries)
-    assert not storage.is_sorted()
-
-    # In-place standard sort
-    storage.sort()
-    assert storage.is_sorted()
-    assert storage.keys == [10, 20, 30, 40, 50]
-    assert storage.values == ["A", "B", "C", "D", "E"]
-    assert storage.entries == [(10, "A"), (20, "B"), (30, "C"), (40, "D"), (50, "E")]
+    sorted_entries = sorted(entries, key=lambda x: x[0])
+    map_storage = StaticFlatMap(capacity=8)
+    for k, v in sorted_entries:
+        map_storage.insert(k, v)
+    assert map_storage.is_sorted()
+    assert map_storage.keys == [10, 20, 30, 40, 50]
+    assert map_storage.values == ["A", "B", "C", "D", "E"]
+    assert map_storage.entries == [(10, "A"), (20, "B"), (30, "C"), (40, "D"), (50, "E")]
 
     # View correctly finds via binary search
-    v = storage.view()
+    v = map_storage.view()
     assert v.find(10) == "A"
     assert v.find(30) == "C"
     assert v.find(50) == "E"
     assert v.find(99) is None
 
-    # Automatic sorting via sort=True with AoS (key, value) pairs
-    s_auto = FlatMapStorage([(3, "three"), (1, "one"), (2, "two")], sort=True)
-    assert s_auto.is_sorted()
-    assert s_auto.keys == [1, 2, 3]
-    assert s_auto.values == ["one", "two", "three"]
 
-
-def test_cont_13_flat_map_storage_sorted_insert_remove():
-    """CONT-13: FlatMapStorage maintains sorted order across arbitrary insert and remove/erase calls."""
-    storage = FlatMapStorage([])
+def test_cont_13_static_flat_map_sorted_insert_remove():
+    """CONT-13: StaticFlatMap maintains sorted order across arbitrary insert and remove calls."""
+    storage = StaticFlatMap(capacity=16)
     assert len(storage) == 0
 
     # Insert elements out of order
@@ -2263,33 +2255,29 @@ def test_cont_13_flat_map_storage_sorted_insert_remove():
     assert storage.keys == [10, 20, 30, 40, 50]
     assert storage.values == ["ten", "twenty", "thirty", "forty", "fifty"]
 
-    # Updating existing key replaces value, returns False (no size increase)
-    assert storage.insert(30, "THIRTY_UPDATED") is False
+    # Updating existing key replaces value, returns True (size stays 5)
+    assert storage.insert(30, "THIRTY_UPDATED") is True
     assert len(storage) == 5
     assert storage.keys == [10, 20, 30, 40, 50]
     assert storage.values == ["ten", "twenty", "THIRTY_UPDATED", "forty", "fifty"]
 
     # Removal maintains sorted order
-    # Remove head
-    assert storage.remove(10) is True
+    assert storage.remove(10) == "ten"
     assert storage.keys == [20, 30, 40, 50]
     assert storage.values == ["twenty", "THIRTY_UPDATED", "forty", "fifty"]
     assert storage.is_sorted()
 
-    # Erase middle
-    assert storage.erase(30) is True
+    assert storage.remove(30) == "THIRTY_UPDATED"
     assert storage.keys == [20, 40, 50]
     assert storage.values == ["twenty", "forty", "fifty"]
     assert storage.is_sorted()
 
-    # Erase tail
-    assert storage.erase(50) is True
+    assert storage.remove(50) == "fifty"
     assert storage.keys == [20, 40]
     assert storage.values == ["twenty", "forty"]
     assert storage.is_sorted()
 
-    # Remove nonexistent returns False
-    assert storage.remove(999) is False
+    assert storage.remove(999) is None
     assert len(storage) == 2
 
     # View remains valid and functional

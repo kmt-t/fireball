@@ -14,6 +14,13 @@ JIT Compiler は、WASMバイトコードを実行時にネイティブコード
 <!-- traceability: {META_3TierSeparation} {JIT_CopyAndPatch} -->
 本コンポーネントは **Tier 3 (詳細リーフコンポーネント: Leaf Component)** に属し、vSoC (`runtime_vsoc.md`) から分解された JIT コンパイルパイプライン、事前生成テンプレートのコピー＆パッチ結合、および C++ `constexpr` 命令エンコードを担当する。ランタイム側のエントリ検索・キャッシュ管理・ホットスポット検出は [`jit_runtime.md`](jit_runtime.md) が担当する。 `{META_3TierSeparation}` `{JIT_CopyAndPatch}`
 
+### 2.1 JIT サブシステムのデコンポジション
+<!-- traceability: {JIT_Encoder} {JIT_CopyAndPatch} -->
+JITサブシステムは、以下の2つの独立した設計書に責務を分離して構成される。
+
+- **[JIT Compiler (コード生成コア)](jit_compiler.md)**: 命令テンプレートを用いたネイティブコード生成（Copy-and-Patch Engine）および静的な命令エンコード DSL（constexpr Assembler）。 `{JIT_Encoder}` `{JIT_CopyAndPatch}`
+- **[JIT Runtime (ランタイム管理)](jit_runtime.md)**: 実行履歴監視・ホットスポット判定（Hotspot Detector）、PC-アドレス変換検索（JIT Entry Index）、および 3面キャッシュローテーション。 `{SimpleJITArchitecture}` `{JIT_MultiBuffer_Cache}`
+
 ## 3. 静的モデル
 
 ### 3.1 データ構造
@@ -83,8 +90,29 @@ typedef int64_t (*opcode_handler_t)(
 | :--- | :--- | :--- | :--- |
 | テンプレート辞書 | WASM命令に対応するJITテンプレートの検索索引 | アクセス辞書 | `jit_template_map` |
 | 命令テンプレート | WASM命令に対応するネイティブバイナリの雛形 | バイナリビュー | ROM参照（[JIT ステンシルカタログ](../../specs/jit_stencil_catalog.md) 準拠。Thumb-2 のみを収録し、RISC-V の物理ステンシルは別カタログとして今後定義する） |
-| レジスタ規約（実機 ARM Thumb-2 / RISC-V、`jit_stencil_catalog.md` §正本はARMのみ） | JIT トレースとインタープリタ間で共有される物理レジスタ規約。トレース境界を跨いで呼び出される `opcode_handler`/`exec_trace` の CPS 4引数とは異なる物理レジスタを assignable pool に使うため、両者は競合しない。 | 規約定義 | **ARM**: `R0-R3: CPS (ip, stack_bot, local_base, tos)`, `R4-R6, R8-R11: assignable pool (R4=NOS, R5=NNOS, R6=Assignable 0, R8=mem_base, R9=mem_size, R10=safepoint, R11=Assignable 1)`, `R7: FP (不可侵)`。**RISC-V**: `a0-a3: CPS (ip, stack_bot, local_base, tos)`, `s1-s7: assignable pool (s1=NOS, s2=NNOS, s3=Assignable 0, s4=mem_base, s5=mem_size, s6=safepoint, s7=Assignable 1)`, `s0/fp: FP (不可侵)`。※ホストシミュレータ等のレジスタ記号との混同防止および分離検証は [JIT コンパイラ テスト仕様書](tests/jit_compiler_test_spec.md) `JITC-GOTCHA-01` を参照。 |
 | 位置独立性 (PIC) | 任意アドレス・キャッシュバンクで再コンパイル不要で動作 | 設計制約 | 絶対アドレス埋め込み禁止。`local_base` 相対、`stack_bot` 相対、`rel32` 相対分岐のみ `{PositionIndependentCode}` |
+
+##### 物理レジスタマッピング一覧表
+<!-- traceability: {JIT_RegisterMapping} {AAPCS_FastCall} -->
+JIT トレースとインタープリタは呼び出し境界において CPS 4引数規約を共有し、トレース内部では assignable pool を用いることで物理競合を防止する（`JITC-GOTCHA-01`）。
+
+| アーキテクチャ | 物理レジスタ | 規約上の役割 / CPS引数 | トレース内部での用途 | 退避・保護責務 |
+| :--- | :--- | :--- | :--- | :--- |
+| **ARM (Thumb-2)** | `R0` | `ip` (WASM PC) | 呼び出し境界引数 | Caller-saved |
+| | `R1` | `stack_bot` (実行コンテキスト) | 呼び出し境界引数（`mem_base/size` ピン留め起点） | Caller-saved |
+| | `R2` | `local_base` (ローカル配列基底) | 呼び出し境界引数 | Caller-saved |
+| | `R3` | `tos` (Top of Stack) | スタックトップ値キャッシュ | Caller-saved |
+| | `R4` | - | `NOS` (Next on Stack 次段キャッシュ) | Callee-saved (境界でメモリへ同期) |
+| | `R5` | - | `NNOS` (次々段スタックキャッシュ) | Callee-saved |
+| | `R6` | - | 汎用アサイナブルレジスタ 0 | Callee-saved |
+| | `R7` | `FP` (フレームポインタ) | 不可侵 | システム固定 |
+| | `R8` | - | `mem_base` (ゲストリニアメモリ基底) | Callee-saved |
+| | `R9` | - | `mem_size` (ゲストリニアメモリ長) | Callee-saved |
+| | `R10` | - | `safepoint` (ポーリングフラグ) | Callee-saved |
+| | `R11` | - | 汎用アサイナブルレジスタ 1 | Callee-saved |
+| **RISC-V** | `a0`〜`a3` | `ip, stack_bot, local_base, tos` | 呼び出し境界引数 (CPS 4引数) | Caller-saved |
+| | `s1`〜`s7` | - | トレース内部アサイナブルプール (`s1: NOS`, `s4: mem_base`, `s5: mem_size`) | Callee-saved |
+| | `s0/fp` | `FP` (フレームポインタ) | 不可侵 | システム固定 |
 
 #### トレース境界不変条件とスタックフレーム整合性 (Trace Boundary Invariants)
 <!-- traceability: {LowLatencyJIT} {PositionIndependentCode} {JIT_RuntimeAPI_Fallback} -->
@@ -102,19 +130,15 @@ JIT トレースとインタープリタが同一の UnifiedStack 上でシー�
 <!-- traceability: {JIT_LazyChaining} {SimpleJITArchitecture} {PositionIndependentCode} -->
 JIT キャッシュ内に書き込まれる各トレースは、**先頭に 16 バイト固定長のメタデータヘッダを持ち、直後（`+0x10`）からネイティブ命令列（PIC Code Stream）が展開される**。エントリポイントは `trace_base + 0x10`。
 
-```text
-+---------------------------------------------------------------------------------------------------+
-| [Trace Header] (固定長 16 Bytes: sizeof(jit_trace_header))                                        |
-|  +0x00: uint32_t head_wasm_pc      -- トレース開始 UnifiedPC: (func_index << 16) | bytecode_offset |
-|  +0x04: uint16_t trace_byte_size   -- ヘッダ含むトレース全体の総物理バイトサイズ                  |
-|  +0x06: uint8_t  flags             -- 状態フラグ (0x01: PROMOTED, 0x02: LOOP_HEADER)              |
-|  +0x07: uint8_t  variant_id        -- ステンシルバリアント/TOSレジスタ割り当て状態 ID             |
-|  +0x08: uint32_t chain_next_pc     -- 直結チェイン先 UnifiedPC                                     |
-|  +0x0C: uint32_t chain_target_addr -- チェイン先ネイティブアドレス (初期値: 復帰スタブ)           |
-+---------------------------------------------------------------------------------------------------+
-| [Native Thumb-2 Code Stream] (+0x10 〜 trace_byte_size)                                           |
-+---------------------------------------------------------------------------------------------------+
-```
+| オフセット | フィールド名 | 型 | 説明 |
+| :--- | :--- | :--- | :--- |
+| `+0x00` | `head_wasm_pc` | `uint32_t` | トレース開始 UnifiedPC（`(func_index << 16) \| bytecode_offset`） |
+| `+0x04` | `trace_byte_size` | `uint16_t` | ヘッダ含むトレース全体の総物理バイトサイズ |
+| `+0x06` | `flags` | `uint8_t` | 状態フラグ（`0x01: PROMOTED`, `0x02: LOOP_HEADER`） |
+| `+0x07` | `variant_id` | `uint8_t` | ステンシルバリアント／TOSレジスタ割り当て状態 ID |
+| `+0x08` | `chain_next_pc` | `uint32_t` | 直結チェイン先 UnifiedPC |
+| `+0x0C` | `chain_target_addr` | `uint32_t` | チェイン先ネイティブアドレス（初期値: 復帰スタブ） |
+| `+0x10` | コードストリーム | 可変長 | ネイティブ Thumb-2 / RISC-V 命令列（PIC Code Stream） |
 
 #### `constexpr_assembler` (DSL)
 <!-- traceability: {JIT_Encoder} {META_ZeroCostAbstraction} -->
@@ -279,33 +303,9 @@ sequenceDiagram
     end
 ```
 
-## 5. 検証
+## 5. インターフェース定義
 
-### 5.1 直交表: 検索・昇格・代謝
-<!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} {ADR_SafeQueuingOnHotMiss} -->
-JITトレース検索時の内部状態と期待される挙動を検証する。3面バンク（Active / Warm / Oldest）を独立した列として扱う。
-
-| ケース | カードマーキング状態 | Active | Warm | Oldest | 期待される動作 |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| 1 | UNEXECUTED (0) | - | - | - | 事前フィルタで即時終了、インタープリタ実行継続 |
-| 2 | EXECUTED (1) | - | - | - | 事前フィルタで即時終了、インタープリタ実行継続 |
-| 3 | HOT (2) | - | - | - | インタープリタ継続（コンパイル待ち列に投入済み） |
-| 4 | COMPILED (3) | **hit** | - | - | **JITコード実行**（昇格なし） |
-| 5 | COMPILED (3) | miss | **hit** | - | **昇格せず** Warm 上のコードをそのまま実行（無償観測期間） `{JIT_OldestOnly_Promote}` |
-| 6 | COMPILED (3) | miss | miss | **hit** | **新 Active へ昇格 (Copy)** してから JIT 実行 `{JIT_OldestOnly_Promote}` |
-| 7 | COMPILED (3) | miss | miss | miss | NULL 返却 + コンパイル待ち列へ投入。**カード状態は COMPILED のまま変更しない** `{ADR_SafeQueuingOnHotMiss}` |
-| 8 | (書き込み時) | **満杯** | - | - | 3面リングローテーション: Oldest を Purge して新 Active に、Active→Warm、Warm→Oldest。同時に `chain_next` のダングリング掃引を行う |
-
-### 5.2 内部コンポーネントのデコンポジション
-<!-- traceability: {JIT_Encoder} {JIT_CopyAndPatch} -->
-JITサブシステムは、以下の2つの独立した設計書に責務を分離して構成される。
-
-- **[JIT Compiler (コード生成コア)](jit_compiler.md)**: 命令テンプレートを用いたネイティブコード生成（Copy-and-Patch Engine）および静的な命令エンコード DSL（constexpr Assembler）。 `{JIT_Encoder}` `{JIT_CopyAndPatch}`
-- **[JIT Runtime (ランタイム管理)](jit_runtime.md)**: 実行履歴監視・ホットスポット判定（Hotspot Detector）、PC-アドレス変換検索（JIT Entry Index）、および 3面キャッシュローテーション。 `{SimpleJITArchitecture}` `{JIT_MultiBuffer_Cache}`
-
-## 6. インターフェース定義
-
-### 6.1 公開API
+### 5.1 公開API
 外部から利用可能なオブジェクト指向APIを定義する。
 
 #### 初期化（initialize）
@@ -361,13 +361,13 @@ JITサブシステムは、以下の2つの独立した設計書に責務を分�
 | 戻り値 | void |
 | 補足 | vSoC が `co_yield` を発行する際に呼び出され、アイドル時間等を活用して処理される（`co_yield` の判定・発行はインタープリタや `executor` 自身ではなく vSoC が行う）。 |
 
-### 6.2 URI/IPCインターフェース
+### 5.2 URI/IPCインターフェース
 <!-- traceability: {META_ConfigurableSystem} -->
 本コンポーネントは vSoC の内部ライブラリであり、直接のIPCインターフェースは持たない。
 
-## 7. 制約達成の方策
+## 6. 制約達成の方策
 
-### 7.1 性能制約と方策
+### 6.1 性能制約と方策
 <!-- traceability: {JIT_CopyAndPatch} {JIT_RegisterMapping} -->
 - **目標**: コンパイルレイテンシを最小化し、WAMRインタープリタを上回る実行速度を実現。
 - **方策**: 
@@ -375,7 +375,7 @@ JITサブシステムは、以下の2つの独立した設計書に責務を分�
     - `{JIT_RegisterMapping}`: `Context`, `StackTop`, `WASM_PC` を物理レジスタに固定し、メモリアクセスを削減。
     - `Card Marking (O(1)) + Binary Search`: カードマーキング表による $O(1)$ 事前フィルタと二分探索により、高速な検索を実現。
 
-### 7.2 安全性制約と方策
+### 6.2 安全性制約と方策
 <!-- traceability: {PositionIndependentCode} {MemoryBoundaryCheck} {FastAddressCheck} {SimpleJITArchitecture} -->
 - **目標**: 不正なコード実行および W^X 違反の防止。
 - **方策**: 
@@ -383,6 +383,16 @@ JITサブシステムは、以下の2つの独立した設計書に責務を分�
     - `Cache Capacity Check`: コード生成時にキャッシュ溢れを厳密にチェックし、溢れた場合は 3面リングローテーションにより Oldest バンクを破棄して再利用する。これはキャッシュ容量管理であり、`{MemoryBoundaryCheck}`（ゲストメモリアクセスの隔離）とは別の関心事である。 `{SimpleJITArchitecture}`
     - `{MemoryBoundaryCheck}`: 生成コードに埋め込むゲストメモリアクセスの境界チェック。`FastAddressCheck` のサイズ比較命令（`CMP addr, mem_size; BHS.W <trap>`、マスクは使わない）により、ゲストリニアメモリ範囲外へのロード/ストアを検出した時点でインタープリタへのフォールバックへトラップする（境界外アドレスを黙って折り畳んで継続することはない）。 `{MemoryBoundaryCheck}` `{FastAddressCheck}`
     - `MPU W^X 保護`: Cortex-M33 PMSAv8 MPU を用い、JIT パッチ書き込み時は `RW+XN`、ネイティブ実行時は `RO+X` に切り替え、`__DSB(); __ISB();` メモリ・命令同期バリアを発行する。書き込みと実行の同時許可（RWX）を物理的に排除する。`formal/jit_cache_model.py` により変異検査付き形式モデルとして検証。
+
+## 7. 形式検証・テスト仕様との対応
+
+### 7.1 検証対象の不変条件
+- **位置独立性 (PIC)**: 生成された Thumb-2 / RISC-V バイナリが絶対アドレスに依存せず、任意のキャッシュバンクで再コンパイル不要で動作すること（`INT-40`, `JITC-40`）。
+- **トレース境界メモリ同期**: トレース脱出時にスタック次段キャッシュ（NOS `R4`）およびローカル変数がメモリへ確実に同期されること（`INT-41`, `JITC-52`）。
+- **W^X メモリ保護**: JIT パッチ書き込み時の `RW+XN` と実行時の `RO+X` の分離（`jit_cache_model.py`, `JITC-42`）。
+
+### 7.2 テスト仕様書との連携
+本コンポーネントの単体テストケース（JITC-01〜JITC-53, JITC-GOTCHA-01〜06）は、[`tests/jit_compiler_test_spec.md`](tests/jit_compiler_test_spec.md) を正本として定義する。なお、3面キャッシュの検索・昇格・代謝の組み合わせ直交表は、ランタイム管理のテスト仕様書 [`tests/jit_runtime_test_spec.md`](tests/jit_runtime_test_spec.md) を正本とする。
 
 ## 8. 設計判断 (ADR)
 <!-- traceability: {ADR_ScalableCodeOffset} {ADR_SafeQueuingOnHotMiss} {ADR_TosCacheAsymmetry} {JIT_LazyChaining} -->

@@ -186,6 +186,17 @@ def handoff_or_yield(target: Task) -> CoroutineHandle:
 
 ### 4.1 アルゴリズム
 <!-- traceability: {CSP_Handoff} {DirectContextSwitch} {GLOBAL_IdleDetection} {GLOBAL_StrictMemoryLimit} {GLOBAL_IndependentHeap} {GLOBAL_InterruptWakeup} -->
+
+COOS の動的スケジューリングおよび同期通信の基本アルゴリズムを以下に定義する。
+
+| アルゴリズム / 機構 | 契機・条件 | 動作内容 | 目的・安全性不変条件 | 関連キーワード |
+| :--- | :--- | :--- | :--- | :--- |
+| **CSP Handoff** | `send`/`recv` 時に相手タスクが待機中 | スケジューラをバイパスして即座に相手タスクへ直接対称遷移 | ディスパッチオーバーヘッドの極小化 | `{CSP_Handoff}` |
+| **直接コンテキストスイッチ (Direct Context Switch)** | コルーチンの対称遷移 | コールスタックを消費せず相手タスクのコルーチンハンドルへ直接ジャンプ | 2KB極小スタックでのスタックオーバーフロー完全防止 | `{DirectContextSwitch}` |
+| **割り込みウェイクアップ (Interrupt Wakeup)** | 外部ハードウェア割り込み発生 | ISRは有界リングバッファへINTイベントを投函するのみ。スケジューラがyield点でドレインしてタスクをREADY化 | ISRクリティカルセクション極小化・多重割り込みロック競合防止（`COOS-GOTCHA-03`） | `{GLOBAL_InterruptWakeup}` |
+| **Idle Detection** | 全タスクがBLOCKEDかつイベントキュー空 | 未出力ログ存在時または10ms経過時にバックグラウンド処理（フラッシュ等）を専用Idleタスクで実行 | CPU省電力化および低優先度保守タスクの安全実行 | `{GLOBAL_IdleDetection}` |
+| **Memory Management** | タスク生成時 | コンパイル時固定プールから独立したメモリパーティションを切り出して貸与 | タスク間ヒープ干渉の物理排除 | `{GLOBAL_StrictMemoryLimit}` `{GLOBAL_IndependentHeap}` |
+
 - **CSP Handoff (直接スイッチ)**: `send`/`recv` 時に相手タスクが既に待機状態であった場合、スケジューラを介さず即座に相手タスクへ実行権を移譲する。 `{CSP_Handoff}`
 - **直接コンテキストスイッチ (Direct Context Switch)**: コルーチンの対称遷移（Symmetric Transfer）により、コールスタックを消費せずに相手タスクのコルーチンハンドルへ直接ジャンプする。OSスケジューラのキュー処理オーバーヘッドを完全にバイパスし、極小スタック（2KB）環境下でもスタックオーバーフローを起こさない決定論的 $O(1)$ スイッチを実現する。実測は [`benchmarks/direct_context_switch_bench.py`](benchmarks/direct_context_switch_bench.py) を参照。 `{DirectContextSwitch}`
 - **割り込みウェイクアップ (Interrupt Wakeup)**: 外部割り込みが発生した際、割り込みサービスルーチン（ISR）から `notify_interrupt` が呼び出され、INT イベントを有界キューに投函する。**実装の勘所と設計理由 (`COOS-GOTCHA-03`)**: ISR コンテキスト内ではタスク状態や優先度キューを一切直接書き換えない。ISR で直接キュー操作やコルーチン起床を行うと、ハードウェア割り込み無効化区間（クリティカルセクション）が肥大化し、最高優先度割り込みの応答レイテンシが劣化するだけでなく、多重割り込み時のロック競合を引き起こす。そのため、ISR はリングバッファへの原子的なイベント記録のみを行い、スケジューラが各 yield 点（`run_step` 開始時）でこれをドレイン（`drain_interrupts`）して初めて、特定の割り込みベクトル（`irq_id`）に登録されて待機しているタスクを READY 状態へ遷移させて実行可能キュー末尾に投入する。 `{GLOBAL_InterruptWakeup}`

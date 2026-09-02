@@ -221,18 +221,12 @@ Static Devices (Tier 2) 向け。PTE には Device Type やパーミッション
 #### FlatMap ページテーブル定義
 <!-- traceability: {META_FlatMapIndexed} {vMMIO_Isolation} -->
 システム全体の共通ポリシー（`{META_FlatMapIndexed}`）に準拠し、PTE の保存には `fireball::flat_map_view<uint32_t, uint32_t>`（キー: VPN = `raw >> 12`、値: 32bit PTE）を採用する。 `{vMMIO_Isolation}`
+| 構造体・型定義名 | 構成要素 | 型分類 | 役割と不変条件 |
+| :--- | :--- | :--- | :--- |
+| `pte_entry` | `vpn` (Key: 仮想ページ番号: 20bit)<br>`pte` (Value: 32bit PTE属性) | 構造体 | ソート済みページテーブルの1レコード |
+| `VmmioPteStore` | `std::array<pte_entry, FB_CONF_VMMIO_MAX_PTES>` | 固定長配列 | コンパイル時に静的確保されるPTE実体ストレージ（動的確保ゼロ） |
+| `VmmioPteView` | `fireball::flat_map_view<uint32_t, uint32_t>` | ビュー | 二分探索索引を提供する軽量ゼロコピービュー |
 
-```cpp
-// FlatMap ページテーブル定義 (C++23)
-struct pte_entry {
-  uint32_t vpn;  // Key: 仮想ページ番号 (VPN)
-  uint32_t pte;  // Value: 32bit PTE属性
-};
-using VmmioPteStore = std::array<pte_entry, FB_CONF_VMMIO_MAX_PTES>;  // 実体 (静的確保)
-using VmmioPteView  = fireball::flat_map_view<uint32_t, uint32_t>;     // 参照用ビュー
-inline VmmioPteStore vmmio_pte_store; // 静的PTE配列
-inline VmmioPteView  vmmio_ptes{vmmio_pte_store}; // VPN -> PTE ビュー
-```
 
 #### ハンドラ定義 (vmmio_handler)
 読み書きアクセス発生時に呼び出される関数の共通インターフェース。
@@ -303,7 +297,7 @@ sequenceDiagram
     vMMIO-->>Receiver: Shared memory accessible
     Note over Receiver: Safe zero-copy access granted
 ```
-: アクセスディスパッチ
+#### アクセスディスパッチシーケンス
 
 ゲストのアドレスアクセスは以下のロジックで解決される。
 

@@ -180,47 +180,33 @@ WASI 0.2標準仕様に適合するように、各システムコールはShim�
 > [!NOTE]
 > GPIOアクセスはMMIO Generic (`MMIO_READ32`/`MMIO_WRITE32`) でPASSTHROUGH領域経由。専用syscallは不要。
 
-```cpp
-// inc/fireball_syscalls.hxx
-namespace fireball {
-    enum class fb_syscall_id : uint32_t {
-        reserved          = 0x00,
+##### システムコール ID 定義一覧表 (`fb_syscall_id`)
+<!-- traceability: {Syscall_Mapping} -->
 
-        // System
-        sys_yield         = 0x01,
-        sys_halt          = 0x02,
-        sys_reset         = 0x03,
-
-        // vMMIO Generic
-        mmio_read32       = 0x10,
-        mmio_write32      = 0x11,
-        mmio_read8        = 0x12,
-        mmio_write8       = 0x13,
-        mmio_bulk_read    = 0x14,
-        mmio_bulk_write   = 0x15,
-
-        // VDMA
-        vdma_start        = 0x20,
-
-        // IRQ
-        irq_read_flags    = 0x30,
-        irq_clear         = 0x31,
-
-        // IPC
-        ipc_send          = 0x40,
-        ipc_recv          = 0x41,
-        ipc_lookup        = 0x42,
-
-        // WASI
-        wasi_fd_write     = 0x80,
-        wasi_fd_read      = 0x81,
-        wasi_fd_close     = 0x82,
-        wasi_clock_time_get = 0x83,
-        wasi_proc_exit    = 0x84,
-        wasi_random_get   = 0x85,
-    };
-}
-```
+| グループ | 識別子名 | 値 (ID) | 説明 |
+| :--- | :--- | :--- | :--- |
+| **Reserved** | `reserved` | `0x00` | 予約済み |
+| **System** | `sys_yield` | `0x01` | スケジューラへ協調的制御譲渡 |
+| | `sys_halt` | `0x02` | システム停止 |
+| | `sys_reset` | `0x03` | システムリセット |
+| **vMMIO Generic** | `mmio_read32` | `0x10` | 32-bit MMIO 読み出し |
+| | `mmio_write32` | `0x11` | 32-bit MMIO 書き込み |
+| | `mmio_read8` | `0x12` | 8-bit MMIO 読み出し |
+| | `mmio_write8` | `0x13` | 8-bit MMIO 書き込み |
+| | `mmio_bulk_read` | `0x14` | 一括 MMIO 読み出し |
+| | `mmio_bulk_write`| `0x15` | 一括 MMIO 書き込み |
+| **VDMA** | `vdma_start` | `0x20` | 仮想 DMA 転送開始 |
+| **IRQ** | `irq_read_flags` | `0x30` | 割り込みフラグ読み取り |
+| | `irq_clear` | `0x31` | 割り込みクリア |
+| **IPC** | `ipc_send` | `0x40` | IPC メッセージ送信 |
+| | `ipc_recv` | `0x41` | IPC メッセージ受信 |
+| | `ipc_lookup` | `0x42` | サービス/デバイス URI 検索 |
+| **WASI** | `wasi_fd_write` | `0x80` | ファイルディスクリプタ書き込み |
+| | `wasi_fd_read` | `0x81` | ファイルディスクリプタ読み込み |
+| | `wasi_fd_close` | `0x82` | ファイルディスクリプタ破棄 |
+| | `wasi_clock_time_get` | `0x83` | 単調時刻取得 |
+| | `wasi_proc_exit` | `0x84` | プロセス終了 |
+| | `wasi_random_get` | `0x85` | 乱数取得 |
 
 ## 6. Fireball Shim (`libfireball_shim`)
 
@@ -254,12 +240,10 @@ def fireball_trigger_set_pin(pin: int, value: bool):
 <!-- traceability: {Challenge_WasiFdWriteLoop} {WASI_Async_Bridge} -->
 `fireball_call` を捕捉し、`id` に基づいて適切なハンドラにディスパッチする。WASI関連の呼び出しに対しては、対応するサービスや下位レイヤーのハードウェアHAL（Zephyr/SoC SDKなど）の操作を実行する。
 
-- **WASI `fd_write` の処理例 (Scatter/Gather)**: `{Challenge_WasiFdWriteLoop}`
-    - WASI の `fd_write` は `ciovec` 配列による一括書き込みを要求する。
-    - **Shim側ループ設計**: ホストを極小に保つため、Shim（ゲスト側ライブラリ）でベクタをループし、1ベクタごとに `fireball_call` を発行する設計を基本方針とする。ホスト側はシンプルなディスパッチに徹し、無駄な状態を持たない。
-- **同期WASI と 非同期IPC のブリッジ**: `{WASI_Async_Bridge}`
-    - 同期的な WASI 呼び出しを Fireball の非同期 IPC へマッピングする際、ラッパー内の `wait_for_ipc_response` が内部で `co_yield()` を発行する。
-    - この `co_yield` を VSoC / COOS が適切にハンドリングし、I/O 完了までタスクをサスペンド状態にする密結合な連携が必要。
+| 機構名 | 課題と背景 | 解決方針・設計構造 | 関連キーワード |
+| :--- | :--- | :--- | :--- |
+| **Scatter/Gather 分割処理** | WASI `fd_write` は `ciovec` 配列による一括書き込みを要求するが、ホスト側でベクタ解析ループを抱えるとホスト実装が肥大化する | **Shim 側ループ設計**: ゲスト側 Shim ライブラリがベクタを反復し、1 ベクタごとに `fireball_call` を発行する。ホスト側はステートレスな単一ブロックディスパッチに専念する | `{Challenge_WasiFdWriteLoop}` |
+| **同期WASI・非同期IPC ブリッジ** | ゲスト側の同期 WASI 呼び出しと Fireball の非同期 CSP IPC の実行モデル不一致 | **コルーチン Yield 連動**: ラッパー内の `wait_for_ipc_response` が内部で `co_yield()` を発行し、VSoC/COOS が I/O 完了までタスクを安全にサスペンドする | `{WASI_Async_Bridge}` |
 
 ## 8. ホストからゲストへの非同期通知メカニズム
 <!-- traceability: {Asynchronous_Notification} -->
@@ -270,23 +254,16 @@ def fireball_trigger_set_pin(pin: int, value: bool):
 <!-- traceability: {Asynchronous_Notification} -->
 ホストは、ゲストに対して**仮想割り込み**をトリガーすることで、イベントの発生を通知する。これはvSoCの`notify_virtual_interrupt`機能を利用する。
 
-#### 8.1.1. 仮想割り込みID
-
+#### 8.1.1. 仮想割り込みID 一覧表
 <!-- traceability: {Asynchronous_Notification} -->
 これらのIDは、WASI 0.2 の `pollable` リソースをホスト側で ready 状態にするためのトリガーとして使用される。
 
-例:
-```cpp
-// inc/fireball_virtual_interrupts.hxx
-namespace fireball {
-    enum class fb_virtual_interrupt_id : uint32_t {
-        reserved          = 0,
-        trigger_event     = 1, // 高速トリガーイベント
-        timer_expired     = 2, // WASI Clocks 用
-        stream_ready      = 3,  // WASI I/O 用
-    };
-}
-```
+| 仮想割り込み識別子名 | 値 (ID) | 説明 | 主な用途 |
+| :--- | :--- | :--- | :--- |
+| `reserved` | `0x00` | 予約済み | システム内部 |
+| `trigger_event` | `0x01` | 高速トリガーイベント | GPIO / エッジ通知 |
+| `timer_expired` | `0x02` | タイマー満了 | WASI Clocks 用 |
+| `stream_ready` | `0x03` | ストリーム準備完了 | WASI I/O 用 |
 
 #### 8.1.2. 仮想割り込みペイロード
 <!-- traceability: {Asynchronous_Notification} -->

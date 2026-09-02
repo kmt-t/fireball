@@ -107,6 +107,16 @@ vSoCの動作パラメータを定義する。 `{META_ConfigurableSystem}`
 
 ### 4.1 アルゴリズム
 <!-- traceability: {ThreadedInterpreter} {JIT_CopyAndPatch} {Challenge_ApproximateYield} {JIT_Safepoint} {Debugger_Jit_Flush} {ContextPointerRegister} -->
+
+vSoC コアエンジンの実行委譲、協調イールド、および外部介入制御の基本アルゴリズムを以下に定義する。
+
+| アルゴリズム / 機構 | 契機・条件 | 動作内容 | 目的・安全性不変条件 | 関連キーワード |
+| :--- | :--- | :--- | :--- | :--- |
+| **実行エンジン委譲とステートレス化** | `step()` 実行時 | `exec_trace`（`__fastcall` CPS 4引数）によりプレーン関数としてディスパッチ | コルーチン化禁止による `[[clang::musttail]]` 阻害・スタック消費の防止（`VSOC-GOTCHA-01`） | `{ThreadedInterpreter}` `{JIT_CopyAndPatch}` |
+| **概算Yield (Approximate Yield)** | トレース境界脱出時 | `yield_threshold` を基準に vSoC が一括して `co_yield` 判定 | 命令ハンドラ内カウンタ埋め込みを排除し最速ホットパスを維持（`VSOC-GOTCHA-02`） | `{Challenge_ApproximateYield}` |
+| **JIT Safepoint** | ループバック（バックエッジ）到達時 | ソフトウェアフラグ（割り込み・ブレークポイント）をポーリングし、必要時フォールバック | JIT実行中の非同期イベント・Ctrl+Cへの即時応答性担保 | `{JIT_Safepoint}` |
+| **デバッガ介入時キャッシュフラッシュ** | デバッガによるメモリ/変数書き換え時 | 該当タスクの JIT キャッシュ（Active/Warm/Oldest 全面）を一括無効化 | JIT コードと変更後メモリの整合性完全維持 | `{Debugger_Jit_Flush}` |
+
 - **実行エンジン委譲とステートレス化 (`VSOC-GOTCHA-01`, `{ThreadedInterpreter}`, `{JIT_CopyAndPatch}`)**:
   vSoCは `step()` で現在のPCに対応する `exec_trace`（`void __fastcall (const uint8_t* ip, execution_context* stack_bot, uint32_t* local_base, uint32_t tos)`）を呼び出す。 `exec_trace` はインタープリタのディスパッチャまたはJITコードを指し、`__fastcall` 呼び出し規約（R0=IP, R1=stack_bot, R2=local_base, R3=tos）によってレジスタ上で高速に実行エンジンへ制御を委譲する。
   **設計理由と不変条件**: インタープリタおよび JIT トレース自身を C++20 コルーチン化することは厳禁とする。コルーチン化すると命令ディスパッチごとにコルーチンフレームの割り当てや退避・復帰が発生し、コンパイラによる末尾呼び出し最適化（`[[clang::musttail]]`）が阻害されてスタックを急速に消費してしまう。そのため、インタープリタは完全ステートレスなプレーン関数として設計し、次に実行すべき PC を返却して vSoC のメインループへ戻る規約とする。

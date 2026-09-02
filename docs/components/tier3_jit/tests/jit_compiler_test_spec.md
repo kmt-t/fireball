@@ -43,13 +43,13 @@ Copy-and-Patchエンジンによるネイティブコード生成、`__fastcall`
 | JITC-30 | code_offsetはアライメントシフト保持 | エントリテーブル | `code_offset`の格納方式を確認 | `actual_offset >> code_align_shift`で16bitに収めている（32bit化していない） | §8 ADR_ScalableCodeOffset 結論 |
 | JITC-31 | 最大キャッシュサイズの計算 | `code_align_shift`設定値 | 最大アドレス可能範囲を確認 | `65535 << code_align_shift`が理論上限と一致する | 同上 |
 
-### 安全性制約 (§7.2)
+### 安全性制約 (§6.2)
 
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| JITC-40 | 生成コードの位置独立性 (PIC) | 同一トレースバイナリを別のバッファ/オフセットにコピー | 実行 | 再コンパイルやリロケーション修正なしで完全に同一の結果を出力する | §7.2 `{PositionIndependentCode}` |
-| JITC-41 | ゲストメモリ境界チェックのインライン埋め込み | メモリアクセス命令を含むトレース | コンパイル | `CMP addr, mem_size; BHS.W <trap>`相当（マスクなし比較）が埋め込まれ、境界外で安全にトラップする | §7.2 `{MemoryBoundaryCheck}` `{FastAddressCheck}` |
-| JITC-42 | キャッシュ溢れの3面ローテーション処理 | キャッシュ容量超過 | コンパイル試行 | Oldestバンクを破棄して再利用し、破棄されたトレースへのインバウンドチェインをO(k)でアンリンクする | §7.2「Cache Capacity Check」, `{JIT_LazyChaining}` |
+| JITC-40 | 生成コードの位置独立性 (PIC) | 同一トレースバイナリを別のバッファ/オフセットにコピー | 実行 | 再コンパイルやリロケーション修正なしで完全に同一の結果を出力する | §6.2 `{PositionIndependentCode}` |
+| JITC-41 | ゲストメモリ境界チェックのインライン埋め込み | メモリアクセス命令を含むトレース | コンパイル | `CMP addr, mem_size; BHS.W <trap>`相当（マスクなし比較）が埋め込まれ、境界外で安全にトラップする | §6.2 `{MemoryBoundaryCheck}` `{FastAddressCheck}` |
+| JITC-42 | キャッシュ溢れの3面ローテーション処理 | キャッシュ容量超過 | コンパイル試行 | Oldestバンクを破棄して再利用し、破棄されたトレースへのインバウンドチェインをO(k)でアンリンクする | §6.2「Cache Capacity Check」, `{JIT_LazyChaining}` |
 | JITC-43 | ホストコール (WASI / fireball_call) の ABI 整合 | 0〜6引数のホスト関数呼び出し | トレース実行 | 32バイトシャドウスペース・16バイトスタックアライメントおよびCaller-savedレジスタ（R10/R11）が退避・復元される | §4.1手順3 `{JIT_RuntimeAPI_Fallback}` |
 
 ### トレース境界不変条件とハンドラ委譲 (§3.3, §4.1)
@@ -68,7 +68,7 @@ Copy-and-Patchエンジンによるネイティブコード生成、`__fastcall`
 | JITC-GOTCHA-01 | CPS引数レジスタとJIT内部一時レジスタの物理競合防止 | トレース生成 | 各ステンシルのレジスタ割り当てを走査 | CPS引数レジスタ（R0-R3）は呼び出し境界でのみ用いられ、JIT内部一時レジスタ（assignable pool: R4-R6, R8-R11）と物理的に一切重複しない。**実装の勘所**: x86-64 等のホストシミュレータ上で `__fastcall` 引数（RCX, RDX, R8, R9）と実機 Thumb-2 の R8/R9（mem_base/mem_size）を混同して同一レジスタとして扱ってはならない | `jit_compiler.md` §3.3「レジスタ規約」, `{JIT_RegisterMapping}` |
 | JITC-GOTCHA-02 | メモリ基底・サイズのロード起点（`execution_context` 統合） | メモリアクセス命令を含むトレース | プロローグ命令列を検証 | `mem_base` と `mem_size` は旧規約の R2 からではなく、R1（`stack_bot`）の `[R1, #0x10]` および `[R1, #0x14]` から一度だけ `LDR.W` でピン留めロードされる。**実装の勘所**: 独立した `env` 引数レジスタ（旧 R2）は廃止されており、`execution_context` 内包オフセットから取得しなければ不正メモリアクセスとなる | `jit_compiler.md` §3.3, `jit_stencil_catalog.md` §3.7 |
 | JITC-GOTCHA-03 | Caller-saved TOS（R3）の無退避性 | トレースエピローグ生成 | エピローグ命令列を検証 | スタックトップ値 `R3: tos` は AAPCS Caller-saved であるためエピローグでスタック書き戻し（`STR`）や `POP` 復元を行わずレジスタで直接保持し、スタック次段キャッシュ `R4: NOS`（ダーティな場合）のみが `STR` でスタックメモリへ書き戻される。**実装の勘所**: R3 を無駄にスタック退避・復元するとトレース境界のゼロコスト受け渡し利点が失われる | `jit_compiler.md` §3.3, `{ADR_TosCacheAsymmetry}` |
-| JITC-GOTCHA-04 | 境界チェック先行性と副作用ゼロ（Wrapping禁止） | メモリアクセス命令 | アドレス≧`mem_size` でトレース実行 | メモリアクセス（LDR/STR）前に必ず `CMP addr, r9; BHS.W <trap>` が評価され、境界外時はメモリ書き込みや値更新の副作用が一切発生せず即座にトラップテールへ分岐する。**実装の勘所**: マスク等でアドレスを巡回（Wrapping）させて継続実行することは安全上絶対に許容されない | `jit_compiler.md` §7.2, `{MemoryBoundaryCheck}` `{FastAddressCheck}` |
+| JITC-GOTCHA-04 | 境界チェック先行性と副作用ゼロ（Wrapping禁止） | メモリアクセス命令 | アドレス≧`mem_size` でトレース実行 | メモリアクセス（LDR/STR）前に必ず `CMP addr, r9; BHS.W <trap>` が評価され、境界外時はメモリ書き込みや値更新の副作用が一切発生せず即座にトラップテールへ分岐する。**実装の勘所**: マスク等でアドレスを巡回（Wrapping）させて継続実行することは安全上絶対に許容されない | `jit_compiler.md` §6.2, `{MemoryBoundaryCheck}` `{FastAddressCheck}` |
 | JITC-GOTCHA-05 | トラップ分岐（`BHS.W`）の2パスバックパッチ | トレース生成 | トラップ分岐命令のパッチ履歴を検証 | `BHS.W` の発行時点ではトラップテールのアドレスが未確定なため、オフセット0で仮発行した上で位置を記録し、エピローグ・トラップテール生成後に実アドレスへバックパッチされる。**実装の勘所**: 1パスで未確定アドレスへ分岐命令を発行すると未定義ジャンプを引き起こす | `jit_stencil_catalog.md` §3.7 |
 | JITC-GOTCHA-06 | ARM MLS 命令のオペランド順序 | `i32.rem_s` / `i32.rem_u` を含むトレース | 生成されたネイティブコードを実行 | `mls r4, r12, r4, r5` が $Rd(r4) = Ra(r5) - Rn(r12) \times Rm(r4)$（被除数 - 商×除数 = 剰余）を算出する。**実装の勘所**: ARM MLS 命令は $Rd = Ra - (Rn \times Rm)$ という引数順序規約を持ち、$Ra - Rn \times Rm$ の順序を逆にすると負の剰余値を出力するバグとなる | `jit_stencil_catalog.md` §3.5 |
 

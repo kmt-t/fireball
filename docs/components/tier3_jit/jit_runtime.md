@@ -167,3 +167,13 @@ Eviction resets to `UNEXECUTED`, not `EXECUTED`（`jit_runtime_test_spec.md` JIT
 ### 6.2 メモリ制約
 <!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} -->
 - **方策**: `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}` 3面循環バッファと Oldest 限定昇格により、断片化を防ぎつつ、実行頻度の低いコードを自然に破棄（代謝）させる。
+
+## 7. 形式検証・テスト仕様との対応
+
+### 7.1 検証対象の不変条件
+- **3面キャッシュ代謝の有界性**: 循環ローテーションによる Oldest パージと新 Active 再利用。
+- **局所アンリンク安全性**: パージされるバンクに登録された被チェインソース（$k$ 件）のみを $O(k)$ でアンパッチ・再チェイン。
+- **カード状態単調性**: `UNEXECUTED` $\to$ `EXECUTED` $\to$ `HOT` $\to$ `COMPILED`、パージ時のみ `UNEXECUTED` へのリセット。
+
+### 7.2 テスト仕様書との連携
+本コンポーネントのテストケースおよび検索・昇格・代謝の組み合わせ直交表は、[`tests/jit_runtime_test_spec.md`](tests/jit_runtime_test_spec.md) を正本として定義する。形式検証モデルは `formal/jit_cache_model.py` を参照。

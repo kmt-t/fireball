@@ -99,21 +99,44 @@ IPC転送のための共有メモリブロック確保は、上記の `acquire-p
 | 引数 | `addr`: 解放するメモリアドレス |
 | 補足 | 共有メモリは `shared-block` のデストラクタで自動解放される。 |
 
-## 6. 所有権追跡
-<!-- traceability: {GLOBAL_Policy_Memory} -->
-各メモリブロックは `memory-info.owner` で割り当て元task-idを追跡する。本コンポーネントが提供する `acquire-partition`/`acquire-slot`/`deallocate` や `RAII`/`drop` による解放は、実行時の動的ヒープ確保・解放を意味するものではなく、コンパイル時に固定確保された静的メモリプールから領域を論理的に切り出して貸し出し、使用後にプールへ返却（Placement new およびデストラクタ明示的呼び出しによるバッファ再利用）する「静的パーティショニング」を指す。 `{GLOBAL_Policy_Memory}`
+## 5. 制約達成の方策
+<!-- traceability: {GLOBAL_Policy_Memory} {GLOBAL_StrictMemoryLimit} {WasmPageAlignment} {META_BumpAllocator} {META_FaultIsolation} -->
 
-- `acquire-partition` / `acquire-slot` / `allocate-shared` 時に呼び出し元タスクIDが自動設定
-- kernel/task: `deallocate`（`release-partition`/`release-slot`相当）は所有者タスクのみが実行可能
-- shared: `shared-block` リソースのRAII / drop による自動返却（プールへの返却）
+### 5.1 性能制約と不変条件
+- **目標**: 決定論的 $O(1)$ のメモリ割り当て・解放および高速な境界判定。
+- **方策**:
+  - `{META_BumpAllocator}`: 固定長パーティションおよび型付きプールスロットによる断片化なき高速貸与。
+  - `{WasmPageAlignment}`: ゲスト RAM（Region 3）を WASM ページサイズである **64KB アライメント**（`0x10000` 境界）に配置し、単一の比較命令による $O(1)$ 高速境界検査（`FastAddressCheck`）と PMSAv8 リージョン境界を完全一致させる。
 
-## 7. 共有メモリ (shared-block) のライフサイクルと vMMIO 権限管理
-<!-- traceability: {META_FaultIsolation} {OwnershipTransfer} {PageGranularPermissionIsolation} {VmmioShmDelegation} -->
+### 5.2 メモリ制約と方策
+<!-- traceability: {GLOBAL_StrictMemoryLimit} {GLOBAL_IndependentHeap} -->
+- **目標**: 総メモリ消費を有界化し、タスク間のヒープ干渉を完全に防止。
+- **方策**:
+  - `{GLOBAL_StrictMemoryLimit}`: システム全体の総割当量をコンパイル時定数 `FB_CONF_MEMORY_POOL_SIZE` 以内に厳格制限。
+  - `{GLOBAL_IndependentHeap}`: 各タスクに独立した静的パーティションを割り当て、共有メモリは 4KB ページ単位で完全に分離する。
 
-### 7.1 共有メモリマッピングと仮想化リスナーへのコールバック委譲
+### 5.3 安全性制約と方策
+<!-- traceability: {META_FaultIsolation} {PageGranularPermissionIsolation} -->
+- **目標**: ハードウェア MPU および vMMIO による不正アクセス・二重解放の完全排除。
+- **方策**:
+  - `{PageGranularPermissionIsolation}`: 4KB 物理ページ単位で所有権と権限を分離し、異種タスクの同一ページ相乗りを禁止。
+  - `{META_FaultIsolation}`: 非所有タスクからの操作をトラップで即座に拒絶。
+
+## 6. 所有権追跡と共有メモリライフサイクル
+<!-- traceability: {GLOBAL_Policy_Memory} {META_FaultIsolation} {OwnershipTransfer} {PageGranularPermissionIsolation} {VmmioShmDelegation} -->
+
+### 6.1 所有権追跡仕様
+各メモリブロックは `memory-info.owner` で割り当て元 task-id を追跡する。本コンポーネントが提供する `acquire-partition`/`acquire-slot`/`deallocate` や `RAII`/`drop` による解放は、実行時の動的ヒープ確保・解放を意味するものではなく、コンパイル時に固定確保された静的メモリプールから領域を論理的に切り出して貸し出し、使用後にプールへ返却（Placement new およびデストラクタ明示的呼び出しによるバッファ再利用）する「静的パーティショニング」を指す。 `{GLOBAL_Policy_Memory}`
+
+- **自動設定**: `acquire-partition` / `acquire-slot` / `allocate-shared` 時に呼び出し元タスクIDが自動設定される。
+- **所有者限定操作**: `deallocate`（`release-partition`/`release-slot` 相当）は所有者タスクのみが実行可能。
+- **RAII自動返却**: `shared-block` リソースの RAII / drop によるプールへの自動返却。
+
+### 6.2 共有メモリマッピングと仮想化リスナーへのコールバック委譲
 <!-- traceability: {VmmioShmDelegation} {OwnerMismatchTrap} -->
 物理メモリマネージャは、クリーンアーキテクチャ（依存性逆転の原則: DIP）に従い、特定の上位仮想化ハードウェア（vMMIO 等）の内部シンボルや特定の仮想アドレス体系（`0xE000_0000`）に直接依存しない。
 物理メモリマネージャは物理ページマッピングのライフサイクルイベントを通知するイベント通知インターフェース（リスナー機構）を提供し、仮想化層（vMMIO コントローラ等）がこれを購読・登録する設計とする。 `{VmmioShmDelegation}`
+
 - **通知されるライフサイクルイベント**:
   - **ページ割り当て**: 物理ページの確保と初期所有者・読み書き権限の確定時
   - **所有権移譲**: タスク間でのブロック受け渡し（Grant 等）に伴う所有タスクIDの変更時
@@ -121,7 +144,7 @@ IPC転送のための共有メモリブロック確保は、上記の `acquire-p
   - **ページ解放**: 共有ブロック破棄に伴う物理ページの解放時
 - 物理メモリマネージャは物理ページ（4KB）のライフサイクル変化時にこの通知を発火し、仮想化層側が自身の仮想アドレス空間（VPN）に対応するページテーブル（PTE）更新や TLB エントリフラッシュを自律的に実施する。 `{OwnerMismatchTrap}`
 
-### 7.2 ページ単位権限分離仕様（Page-Granular Permission Isolation）
+### 6.3 ページ単位権限分離仕様（Page-Granular Permission Isolation）
 <!-- traceability: {PageGranularPermissionIsolation} {META_FaultIsolation} -->
 Cortex-M33 MPU および vMMIO のハードウェア保護機構において、アクセス権限（`owner_id`、読み書き許可ビット）は **4KB 物理ページ（`FB_PAGE_SIZE = 4096`）単位**でのみ設定可能である。
 したがって、システム全体のメモリ保護を完全にするため、**「権限（所有タスク ID およびアクセス権限）ごとに物理ページを完全に分離する」** ことを不変条件として強制する。 `{PageGranularPermissionIsolation}`
@@ -133,26 +156,26 @@ Cortex-M33 MPU および vMMIO のハードウェア保護機構において、�
    - IPC 転送時、所有権の移譲（Revoke $\to$ Grant）はページ全体を単位として連動する。
    - ページ内の全スロットは常に同一の所有者（または `FB_TASK_ID_FLIGHT`）であり、一部のスロットのみが別タスクへ移譲されてページ内で所有者が分裂する状態は生じない。
 
-### 7.3 共有メモリライフサイクルと権限遷移プロトコル
+### 6.4 共有メモリライフサイクルと権限遷移プロトコル
 <!-- traceability: {OwnershipTransfer} {META_FaultIsolation} -->
-`shared-block` リソースが物理メモリ側での所有権の単位である。ただし所有権の実体（誰が読み書きしてよいか）を最終的に判定するのは、`{OwnerMismatchTrap}` のTier 3ゲート（vMMIO FC=14のPTE `owner_id`/`FB_TASK_ID_FLIGHT`（`0xFF`））である。`shared-block`の`release()`/`claim()`は、`{ThreeStageRouting}` のRevoke→Rendezvous→Grantと1対1で対応する物理層の操作であり、独立した二重の所有権管理を行うものではない: `release()`はRevokeフェーズで対応するvMMIO PTEの`owner_id`を`FB_TASK_ID_FLIGHT`（移譲中センチネル: `0xFF`）にし、IPCルータのGrantフェーズ成立によって`owner_id`が受信タスクへ更新された後、受信側で`claim()`が呼ばれて有効な`shared-block`ハンドルを取得する。 `{META_FaultIsolation}` `{OwnershipTransfer}`
+`shared-block` リソースが物理メモリ側での所有権の単位である。ただし所有権の実体（誰が読み書きしてよいか）を最終的に判定するのは、`{OwnerMismatchTrap}` のTier 3ゲート（vMMIO FC=14のPTE `owner_id`/`FB_TASK_ID_FLIGHT`（`0xFF`））である。`shared-block`の`release()`/`claim()`は、`{ThreeStageRouting}` のRevoke→Rendezvous→Grantと1対1で対応する物理層の操作であり、独立した二重の所有権管理を行うものではない。 `{META_FaultIsolation}` `{OwnershipTransfer}`
 
-大きなデータを転送する場合、`shm-id` をkv_pairの `value` フィールド（`ScopeKind.RESOURCE`）に格納し、通常のIPCメッセージとして送信する。
+##### ライフサイクルフェーズ遷移表
+| ステップ | フェーズ | 実行API / イベント | 送信元(Task A) | 受信先(Task B) | vMMIO PTE `owner_id` & TLB 挙動 |
+| :---: | :--- | :--- | :--- | :--- | :--- |
+| 1 | 確保 | `allocate_shared(size)` | 所有 (`TaskA`) | - | `owner_id = TaskA`、4KB 専用物理ページ確保 |
+| 2 | 書込 | `shm.write_*` | 書込可能 | - | 正常アクセス |
+| 3 | 送信開始 | `shm.release()` | **無効化** (ハンドル返却) | - | `owner_id = FB_TASK_ID_FLIGHT` (0xFF)、**TLB 即時フラッシュ** (Revoke) |
+| 4 | メッセージ化 | `shm-id` を kv_pair に格納 | - | - | スコープ: `RESOURCE` |
+| 5 | ランデブー | `ipc.send(chan, msg)` | サスペンド待機 | - | 送受信マッチング待ち (Rendezvous) |
+| 6 | 認可・受信 | `ipc.recv(chan)` | 待機解除 | 受信完了 | `owner_id = TaskB`、**TLB 即時フラッシュ** (Grant) |
+| 7 | 所有権取得 | `claim(shm-id)` | - | **所有** (`TaskB`) | `owner_id == TaskB` 検証成功、新ハンドル取得 |
+| 8 | 読出 | `shm.read_*` | - | 読出可能 | 正常アクセス |
+| 9 | 自動解放 | `shared-block` の RAII drop | - | **解放** | PTE 無効化、TLB フラッシュ、ページプール返却 |
 
-1. タスクAが `allocate-shared(size)` → `shared-block` リソースを取得（PTE `owner_id = TaskA`、送信側所有。専用の 4KB 物理ページが割り当てられる）
-2. `shm.write_*` でデータを書き込み
-3. `shm.release()` → `shm-id` を取得。リソースはA側で無効化。対応するvMMIO PTEの`owner_id`が`FB_TASK_ID_FLIGHT`になり、TLB エントリがフラッシュされる（IPCの **Revoke** フェーズ連動）
-4. `shm-id` を kv_pair (`scope=resource, type=u32, key=任意, value=shm-id`) に格納
-5. `ipc.send(chan, message(kv_pairs))` で送信。IPCの **Rendezvous** フェーズに対応する
-6. タスクBが `ipc.recv(chan)` → kv_pair から `shm-id` を取り出す（IPCルータが **Grant** フェーズでPTEの`owner_id`をB側タスクIDへアトミック更新し、TLB エントリをフラッシュ）
-7. `claim(shm-id)` → B側の新 `shared-block` リソースを取得（PTE `owner_id == TaskB` の検証にパス）
-8. `shm.read_*` でデータを読み取り
-9. B側の `shared-block` が drop されるとメモリ自動解放（PTE が無効化され、TLB エントリがフラッシュされる）
-10. **非所有タスク操作の完全遮断 (`MEM-GOTCHA-02`)**:
-    共有メモリブロックの解放・書き込み・読み取り操作時、ブロックの所有タスク ID を厳格に照合する。非所有タスクが `release()` や解放を試みた場合は即座にアサーション違反またはトラップ（`ShmTrap` / `ERR_PERMISSION_DENIED`）により拒絶し、不正解放による Use-After-Free や別タスクデータ破壊を完全に遮断する。
-11. **送信中ブロックの保護状態 (`MEM-GOTCHA-03`)**:
-    送信開始（`release()`）から受信完了（`claim()`）までの間、ブロック所有者は一時的に `FB_TASK_ID_FLIGHT`（`0xFF`）に設定され、TLB エントリが即座にフラッシュされる。この保護状態により、中継中に送信側がデータを書き換えたり受信側が許可前にフライングアクセスすることを構造的に防止する。
-12. **障害時回復**: Rendezvous中に相手タスクが異常終了した場合や通信が中断された場合、物理メモリマネージャの `rollback_transfer(original_sender_id, shm_id)` により、PTE `owner_id` が送信元タスクIDへ復元され、TLB がフラッシュされ、リソースが回収可能となる。
+- **非所有タスク操作の完全遮断 (`MEM-GOTCHA-02`)**: 共有メモリブロックの操作時、ブロックの所有タスク ID を厳格に照合し、非所有タスクからの操作は即座にトラップ（`ShmTrap` / `ERR_PERMISSION_DENIED`）で遮断する。
+- **送信中ブロックの保護状態 (`MEM-GOTCHA-03`)**: 送信開始（`release()`）から受信完了（`claim()`）までの間、`owner_id` を一時的に `FB_TASK_ID_FLIGHT`（`0xFF`）に設定し、TLB を即時フラッシュすることで TOCTOU 競合や不正アクセスを構造的に排除する。
+- **障害時回復**: Rendezvous中に通信が中断された場合、`rollback_transfer(original_sender_id, shm_id)` により `owner_id` を送信元タスクIDへ復元し、リソースのダングリングを防止する。
 
 
 #### ページ単位権限分離と共有メモリ移譲プロトコル（責務シーケンス図）
@@ -214,6 +237,53 @@ JIT コンパイラがネイティブコードを生成する Code Cache 領域�
 
 
 ## 8. 設計判断 (ADR)
+## 7. ハードウェアメモリ保護 (MPU) & W^X 設計
+<!-- traceability: {META_FaultIsolation} {WasmPageAlignment} {LowLatencyJIT} {VERIFY_FORMAL} -->
+
+### 7.1 Cortex-M33 PMSAv8 MPU リージョン配分
+Cortex-M33 (ARMv8-M Mainline) の PMSAv8 (Protected Memory System Architecture) に準拠し、ハードウェア MPU の 8 リージョン（最小標準構成）を以下のように静的に配分・構成する。 `{META_FaultIsolation}`
+
+| Region # | 対象領域 | 物理メモリ種別 | デフォルト属性 | 特権アクセス | ユーザーアクセス | 役割と保護目的 |
+| :---: | :--- | :--- | :---: | :---: | :---: | :--- |
+| **0** | Flash / Kernel Code | Flash (ROM) | `RO + X` | RO, Exec | なし | カーネルテキスト・不変定数の改ざん防止 |
+| **1** | Kernel Data & BSS | SRAM (Internal) | `RW + XN` | RW, NoExec | なし | カーネル静的変数・スタック領域 |
+| **2** | Kernel Pool / Heap | SRAM (Internal) | `RW + XN` | RW, NoExec | なし | タスク管理・IPC 内部制御構造体 |
+| **3** | Guest WASM RAM | SRAM (Internal) | `RW + XN` | RW, NoExec | RW, NoExec | ゲスト WASM リニアメモリ（64KB 境界配置） |
+| **4** | **JIT Code Cache** | SRAM (Internal) | **`RO + X`** | **RO, Exec** (パッチ時 `RW+XN`) | なし | JIT 生成ネイティブコード（W^X 保護対象） |
+| **5** | Peripheral MMIO | Device Memory | `RW + XN` | RW, NoExec | なし | ペリフェラルレジスタ（Device 属性） |
+| **6** | Shared Memory Buffers | SRAM (Internal) | `RW + XN` | RW, NoExec | RW, NoExec | IPC ゼロコピー共有バッファ領域 |
+| **7** | Stack Guard Band | - | `No Access` | 不可 | 不可 | スタックオーバーフロー検出用ガードバンド |
+
+### 7.2 JIT W^X (Write XOR Execute) 切替プロトコル
+JIT コードキャッシュ（Region 4）は、実行可能（Execute）と書き込み可能（Write）が同時に有効化される状態（`RWX`）をハードウェアレベルで恒常的に排除する。 `{LowLatencyJIT}`
+
+#### 属性切替シーケンス
+JIT コンパイル開始から完了までの属性切替ステップを示す。ハードウェアレジスタ操作と目的を構造化して定義する。
+
+| ステップ | 操作名 | レジスタ設定内容 | 属性 / バリア | 目的と安全性不変条件 |
+| :---: | :--- | :--- | :--- | :--- |
+| 1 | パッチ生成開始 (`begin_jit_patch`) | `RNR = 4`<br>`RLAR.EN = 0`<br>`RBAR.AP = RW`, `RBAR.XN = 1`<br>`RLAR.EN = 1` | `RW + XN`<br>`__DSB(); __ISB();` | リージョン4を書き込み可能・実行不可へ移行し、パイプラインを同期。実行を禁止して改ざん時暴走を防止。 |
+| 2 | Copy-and-Patch 生成 | テンプレートコピー & 即値パッチ | `RW + XN` | 生成中は安全にメモリ書き込みのみを行う。 |
+| 3 | パッチ生成完了 (`commit_jit_patch`) | `RNR = 4`<br>`RLAR.EN = 0`<br>`RBAR.AP = RO`, `RBAR.XN = 0`<br>`RLAR.EN = 1` | `RO + X`<br>`__DSB(); __ISB();` | リージョン4を読み取り専用・実行可能へ復元し、命令キャッシュ・プリフェッチをフラッシュしてネイティブ実行を有効化。 |
+
+#### トランザクションバッチ化によるレイテンシ両立
+Copy-and-Patch の各命令パッチごとに個別 MPU 切替を行うとバリアオーバーヘッドが増大するため、JIT コンパイル単位（WASM 関数または基本ブロック単位）で `begin_jit_patch()` と `commit_jit_patch()` を 1 回ずつ発行する**トランザクションバッチ化**を適用する。これにより、属性切替コストをコンパイルあたり 1 回のバリアに抑え、`{LowLatencyJIT}` のリアルタイム制約を達成する。
+
+### 7.3 アライメントおよび境界制約 (PMSAv8)
+- **PMSAv8 アライメント**: PMSAv7 と異なり、$2^n$ 乗サイズ境界制約は存在しない。Base アドレス（`RBAR`）および Limit アドレス（`RLAR`）は **32 バイトアライメント**（下位 5 ビットが `0`）を満たせば任意サイズで設定可能。
+- **WASM ページ境界**: ゲスト RAM (Region 3) は WASM ページサイズである **64KB アライメント**（`0x10000` 境界）に配置し、vMMIO 高速アドレス判定 (`FastAddressCheck`) と PMSAv8 リージョン境界を完全一致させる。 `{WasmPageAlignment}`
+
+## 8. 形式検証・テスト仕様との対応
+
+### 8.1 検証対象の不変条件
+- **ページ単位権限分離**: 4KB 物理ページ内に異種タスクのスロットが共存しないこと（`MEM-14`, `MEM-GOTCHA-01`）。
+- **非所有者アクセストラップ**: 所有権未取得スロットへのアクセスが `TRAP_OWNER_MISMATCH` で拒絶されること（`MEM-16`, `MEM-GOTCHA-02`）。
+- **W^X 不変条件**: JIT キャッシュ領域で `RWX` が同時に許可される状態が存在しないこと（`formal/jit_cache_model.py`, `MEM-23`）。
+
+### 8.2 テスト仕様書との連携
+本コンポーネントのテストケース（MEM-01〜MEM-25, MEM-GOTCHA-01〜04）は、[`tests/platform_memory_test_spec.md`](tests/platform_memory_test_spec.md) を正本として定義する。
+
+## 9. 設計判断 (ADR)
 <!-- traceability: {ADR_SharedBlockRaii} {ADR_MemoryManagerMinimalSurface} {ADR_PageGranularPermissionIsolation} -->
 このコンポーネントのADRは `{ADR_SharedBlockRaii}` および `{ADR_PageGranularPermissionIsolation}` のキーワードで参照される。詳細な背景・選択肢の比較検討は以下に記録する。
 
@@ -231,7 +301,7 @@ JIT コンパイラがネイティブコードを生成する Code Cache 領域�
     - 案1: `shm-id`を単なる整数IDとし、明示的な`release_shm(id)`/`acquire_shm(id)`関数で操作する。実装は単純だが、解放忘れやダングリング参照を型システムで防げない。
     - 案2: `shm-id`をRAII所有権を持つ`shared-block`リソースとして設計し、`release()`/`claim()`で所有権移動を明示し、デストラクタで自動解放する。
   - **結論**: 案2を採用する。
-  - **理由**: `release()`で送信側が無効化、`claim()`で受信側が取得する設計により、ダングリングポインタを構造的に防止できる。デストラクタでの自動解放により手動`deallocate`忘れも排除できる。`to-shm`/`to-address`のような対称的な変換名より`release`/`claim`の方が所有権移動という意図を明確に表す。この所有権移動は独立した機構ではなく、`ipc_router.md`のRevoke/Grant（PTE `owner_id`更新）と完全連動する（§7）。
+  - **理由**: `release()`で送信側が無効化、`claim()`で受信側が取得する設計により、ダングリングポインタを構造的に防止できる。デストラクタでの自動解放により手動`deallocate`忘れも排除できる。`to-shm`/`to-address`のような対称的な変換名より`release`/`claim`の方が所有権移動という意図を明確に表す。この所有権移動は独立した機構ではなく、`ipc_router.md`のRevoke/Grant（PTE `owner_id`更新）と完全連動する（§6.4）。
 
 - **決定事項**: `{ADR_MemoryManagerMinimalSurface}` (2026-02-17)
   - **背景**: メモリマネージャのAPIに、確保済みブロックの情報を問い合わせる`query(addr) -> memory-info`と、所有権を確認する`check-ownership(addr, task-id) -> bool`を含めるかどうかを決定する必要があった。
@@ -240,50 +310,3 @@ JIT コンパイラがネイティブコードを生成する Code Cache 領域�
     - 案2: 両APIを削除する。サイズはkernel/task用途では呼び出し側（`allocate`時に記録済み）が、shared用途では`shared_block.get_size()`/`get_owner()`が代替する。
   - **結論**: 案2を採用する。
   - **理由**: `query()`は`allocate`時に呼び出し側がサイズを記録すれば冗長であり、`check-ownership()`は`shared_block.get_owner()`で代替可能かつ、vMMIO側の許可チェック（ソート済みPTEに対する二分探索、`runtime_vmmio.md`正本）と二重の判定経路を作らずに済む。生ポインタを直接やり取りする経路が存在しない設計（すべて`shared_block`リソース経由）とも整合する。
-
-## 9. ハードウェアメモリ保護 (MPU) & W^X 設計
-
-<!-- traceability: {META_FaultIsolation} {WasmPageAlignment} {LowLatencyJIT} {VERIFY_FORMAL} -->
-
-### 9.1 Cortex-M33 PMSAv8 MPU リージョン配分
-
-Cortex-M33 (ARMv8-M Mainline) の PMSAv8 (Protected Memory System Architecture) に準拠し、ハードウェア MPU の 8 リージョン（最小標準構成）を以下のように静的に配分・構成する。 `{META_FaultIsolation}`
-
-| Region # | 対象領域 | 物理メモリ種別 | デフォルト属性 | 特権アクセス | ユーザーアクセス | 役割と保護目的 |
-| :---: | :--- | :--- | :---: | :---: | :---: | :--- |
-| **0** | Flash / Kernel Code | Flash (ROM) | `RO + X` | RO, Exec | なし | カーネルテキスト・不変定数の改ざん防止 |
-| **1** | Kernel Data & BSS | SRAM (Internal) | `RW + XN` | RW, NoExec | なし | カーネル静的変数・スタック領域 |
-| **2** | Kernel Pool / Heap | SRAM (Internal) | `RW + XN` | RW, NoExec | なし | タスク管理・IPC 内部制御構造体 |
-| **3** | Guest WASM RAM | SRAM (Internal) | `RW + XN` | RW, NoExec | RW, NoExec | ゲスト WASM リニアメモリ（64KB 境界配置） |
-| **4** | **JIT Code Cache** | SRAM (Internal) | **`RO + X`** | **RO, Exec** (パッチ時 `RW+XN`) | なし | JIT 生成ネイティブコード（W^X 保護対象） |
-| **5** | Peripheral MMIO | Device Memory | `RW + XN` | RW, NoExec | なし | ペリフェラルレジスタ（Device 属性） |
-| **6** | Shared Memory Buffers | SRAM (Internal) | `RW + XN` | RW, NoExec | RW, NoExec | IPC ゼロコピー共有バッファ領域 |
-| **7** | Stack Guard Band | - | `No Access` | 不可 | 不可 | スタックオーバーフロー検出用ガードバンド |
-
-### 9.2 JIT W^X (Write XOR Execute) 切替プロトコル
-
-JIT コードキャッシュ（Region 4）は、実行可能（Execute）と書き込み可能（Write）が同時に有効化される状態（`RWX`）をハードウェアレベルで恒常的に排除する。 `{LowLatencyJIT}`
-
-#### 属性切替シーケンス
-1. **パッチ生成開始 (`begin_jit_patch`)**:
-   - `MPU->RNR = 4;` (JIT Cache リージョン選択)
-   - `MPU->RLAR &= ~MPU_RLAR_EN_Msk;` (リージョン一時無効化)
-   - `MPU->RBAR = (cache_base & MPU_RBAR_BASE_Msk) | MPU_RBAR_AP_RW | MPU_RBAR_XN;` (`RW + XN` 属性設定)
-   - `MPU->RLAR |= MPU_RLAR_EN_Msk;` (リージョン有効化)
-   - `__DSB(); __ISB();` (メモリ・命令パイプライン同期バリア発行)
-2. **Copy-and-Patch 生成**:
-   - テンプレートコードのコピーおよび即値リロケーションパッチ書き込み（`RW+XN` のため安全に書き込み可能、実行は禁止）。
-3. **パッチ生成完了 (`commit_jit_patch`)**:
-   - `MPU->RNR = 4;`
-   - `MPU->RLAR &= ~MPU_RLAR_EN_Msk;`
-   - `MPU->RBAR = (cache_base & MPU_RBAR_BASE_Msk) | MPU_RBAR_AP_RO;` (`RO + X` 属性復元、`XN=0`)
-   - `MPU->RLAR |= MPU_RLAR_EN_Msk;`
-   - `__DSB(); __ISB();` (命令キャッシュ・プリフェッチフラッシュ)
-
-#### トランザクションバッチ化によるレイテンシ両立
-Copy-and-Patch の各命令パッチごとに個別 MPU 切替を行うとバリアオーバーヘッドが増大するため、JIT コンパイル単位（WASM 関数または基本ブロック単位）で `begin_jit_patch()` と `commit_jit_patch()` を 1 回ずつ発行する**トランザクションバッチ化**を適用する。これにより、属性切替コストをコンパイルあたり 1 回のバリアに抑え、`{LowLatencyJIT}` のリアルタイム制約を達成する。
-
-### 9.3 アライメントおよび境界制約 (PMSAv8)
-
-- **PMSAv8 アライメント**: PMSAv7 と異なり、$2^n$ 乗サイズ境界制約は存在しない。Base アドレス（`RBAR`）および Limit アドレス（`RLAR`）は **32 バイトアライメント**（下位 5 ビットが `0`）を満たせば任意サイズで設定可能。
-- **WASM ページ境界**: ゲスト RAM (Region 3) は WASM ページサイズである **64KB アライメント**（`0x10000` 境界）に配置し、vMMIO 高速アドレス判定 (`FastAddressCheck`) と PMSAv8 リージョン境界を完全一致させる。 `{WasmPageAlignment}`

@@ -32,18 +32,34 @@ WASM PC→ネイティブコードの3段検索（カードマーキング→Rad
 | JITR-10 | 検出とコンパイルは非同期（実行をブロックしない） | カードがHOTになる | 実行継続中にコンパイル回数を確認 | yield/idle前は`compilations == 0`（インライン同期コンパイルをしない） | jit_compiler.md ADR_SafeQueuingOnHotMiss, runtime_engine_concept.py `test_compilation_is_deferred_to_the_yield_and_idle_hook` |
 | JITR-11 | yield時に履歴を走査しHOTカードをキューへ | HOTなカードのPCが履歴に記録済み | `on_yield`相当を呼ぶ | 該当PCがコンパイル待ち列(LIFO)に追加される | jit_compiler.md §4.1「ホットスポット判定」 |
 | JITR-12 | LIFO順でのバッチコンパイル | キューに複数PC | idle_hookを実行 | 後入れのPCから先にコンパイルされる | `{JIT_ReverseCompilationOrder}`, runtime_engine_concept.py `test_lifo_compile_queue_order` |
-| JITR-13 | コンパイル待ち列投入後もカード状態はCOMPILEDのまま変えない(検索ミス時) | COMPILED状態でActive/Warm/Oldestすべてmiss | 検索を実行 | NULL返却＋キュー投入されるが、カード状態はCOMPILEDから変化しない | jit_compiler.md §5.1 ケース7, `{ADR_SafeQueuingOnHotMiss}` |
+| JITR-13 | コンパイル待ち列投入後もカード状態はCOMPILEDのまま変えない(検索ミス時) | COMPILED状態でActive/Warm/Oldestすべてmiss | 検索を実行 | NULL返却＋キュー投入されるが、カード状態はCOMPILEDから変化しない | 下記直交表 ケース7, `{ADR_SafeQueuingOnHotMiss}` |
 
-### 3段検索・3面キャッシュ (jit_compiler.md §5.1直交表)
+### 3段検索・3面キャッシュ 直交表マトリクス (`jit_runtime.md` §4.1, §7)
+<!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} {ADR_SafeQueuingOnHotMiss} -->
+
+JITトレース検索時の内部状態と期待される挙動を検証する組み合わせ直交表マトリクス。3面バンク（Active / Warm / Oldest）を独立した列として扱う。
+
+| ケース | カードマーキング状態 | Active | Warm | Oldest | 期待される動作 | 対応テストID |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| 1 | UNEXECUTED (0) | - | - | - | 事前フィルタで即時終了、インタープリタ実行継続 | JITR-20 |
+| 2 | EXECUTED (1) | - | - | - | 事前フィルタで即時終了、インタープリタ実行継続 | JITR-20 |
+| 3 | HOT (2) | - | - | - | インタープリタ継続（コンパイル待ち列に投入済み） | JITR-20 |
+| 4 | COMPILED (3) | **hit** | - | - | **JITコード実行**（昇格なし） | JITR-21 |
+| 5 | COMPILED (3) | miss | **hit** | - | **昇格せず** Warm 上のコードをそのまま実行（無償観測期間） `{JIT_OldestOnly_Promote}` | JITR-22 |
+| 6 | COMPILED (3) | miss | miss | **hit** | **新 Active へ昇格 (Copy)** してから JIT 実行 `{JIT_OldestOnly_Promote}` | JITR-23 |
+| 7 | COMPILED (3) | miss | miss | miss | NULL 返却 + コンパイル待ち列へ投入。**カード状態は COMPILED のまま変更しない** `{ADR_SafeQueuingOnHotMiss}` | JITR-24 |
+| 8 | (書き込み時) | **満杯** | - | - | 3面リングローテーション: Oldest を Purge して新 Active に、Active→Warm、Warm→Oldest。同時に `chain_next` のダングリング掃引を行う | JITR-25 |
+
+#### 3段検索テストケース一覧
 
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| JITR-20 | UNEXECUTED/EXECUTED/HOTは即座にインタープリタ継続 | カード状態がCOMPILED未満 | lookup | 事前フィルタで即終了、キャッシュ検索を行わない | §5.1 ケース1-3 |
-| JITR-21 | Activeヒット | トレースがActiveに存在 | lookup | 昇格なしでネイティブコード実行 | §5.1 ケース4 |
-| JITR-22 | Warmヒット（無償観測、昇格なし） | トレースがWarmに存在 | lookup | Warmのままコピーせず実行される。`promotions`カウンタは変化しない | §5.1 ケース5, runtime_engine_concept.py `test_warm_hit_does_not_promote_but_oldest_hit_does` |
-| JITR-23 | Oldestヒットで即座にActiveへ昇格 | トレースがOldestに存在 | lookup | Active領域へコピーされてから実行、`promotions`が増加 | §5.1 ケース6, `{JIT_OldestOnly_Promote}` |
-| JITR-24 | 全ミスでNULL返却＋キュー投入 | Active/Warm/Oldestいずれにも存在しない、カードはCOMPILED | lookup | NULLを返し、カード状態は変更しない | §5.1 ケース7 |
-| JITR-25 | キャッシュ満杯時の3面ローテーション | Active満杯 | 新規insert | Oldestをpurgeして新Activeにし、Active→Warm、Warm→Oldestへスライド。同時にchain_nextのダングリング掃引 | §5.1 ケース8 |
+| JITR-20 | UNEXECUTED/EXECUTED/HOTは即座にインタープリタ継続 | カード状態がCOMPILED未満 | lookup | 事前フィルタで即終了、キャッシュ検索を行わない | 直交表 ケース1-3 |
+| JITR-21 | Activeヒット | トレースがActiveに存在 | lookup | 昇格なしでネイティブコード実行 | 直交表 ケース4 |
+| JITR-22 | Warmヒット（無償観測、昇格なし） | トレースがWarmに存在 | lookup | Warmのままコピーせず実行される。`promotions`カウンタは変化しない | 直交表 ケース5, runtime_engine_concept.py `test_warm_hit_does_not_promote_but_oldest_hit_does` |
+| JITR-23 | Oldestヒットで即座にActiveへ昇格 | トレースがOldestに存在 | lookup | Active領域へコピーされてから実行、`promotions`が増加 | 直交表 ケース6, `{JIT_OldestOnly_Promote}` |
+| JITR-24 | 全ミスでNULL返却＋キュー投入 | Active/Warm/Oldestいずれにも存在しない、カードはCOMPILED | lookup | NULLを返し、カード状態は変更しない | 直交表 ケース7 |
+| JITR-25 | キャッシュ満杯時の3面ローテーション | Active満杯 | 新規insert | Oldestをpurgeして新Activeにし、Active→Warm、Warm→Oldestへスライド。同時にchain_nextのダングリング掃引 | 直交表 ケース8 |
 
 ### トレース・チェイニング (jit_compiler.md §4.1「トレース・チェイニング」)
 
@@ -58,14 +74,14 @@ WASM PC→ネイティブコードの3段検索（カードマーキング→Rad
 | JITR-36 | Warm→Oldest遷移だけではアンリンクしない | ターゲットがWarmからOldestへ移動（まだ生存） | rotate | チェインは維持される（Oldestでもまだ実行可能なコードとして常駐） | runtime_engine_concept.py `test_rotate_unlinks_chains_when_oldest_is_purged`の中間アサーション |
 | JITR-37 | O(k)有界: 全走査をしない | 大量のトレースがキャッシュに存在 | rotate時の被チェイン解決を計測/確認 | purgeされるOldestバンクの`inbound_sources`に登録されたソース(k件)のみを参照する実装になっている | jit_compiler.md §4.1「全走査オーバーヘッドO(N)を完全排除」 |
 
-### MPU W^X保護 (jit_compiler.md §7.2)
+### MPU W^X保護 (`jit_compiler.md` §6.2, `platform_memory.md` §7)
 
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | JITR-40 | RO_X状態での書き込みは違反 | `mpu_attr == RO_X`（既定） | insert等の書き込み操作を試みる | `MPUFault("W^X VIOLATION")` | runtime_engine_concept.py `test_mpu_wx_is_enforced_in_both_directions` |
 | JITR-41 | RW_XN状態での実行は違反 | `begin_patch()`後 | `require_executable()` | `MPUFault("W^X VIOLATION")` | 同上 |
-| JITR-42 | commit_patchでのバリア発行 | `begin_patch`→書き込み→`commit_patch` | 実行 | `__DSB();__ISB();`相当のバリアが発行され(`barrier_flushes`増加)、状態がRO_Xに戻る | jit_compiler.md §7.2「MPU W^X 保護」 |
-| JITR-43 | 書き込みと実行の同時許可(RWX)の排除 | 任意の状態 | 状態機械を確認 | RO_XとRW_XN以外の状態(RWX)が存在しない | jit_compiler.md §7.2 |
+| JITR-42 | commit_patchでのバリア発行 | `begin_patch`→書き込み→`commit_patch` | 実行 | `__DSB();__ISB();`相当のバリアが発行され(`barrier_flushes`増加)、状態がRO_Xに戻る | jit_compiler.md §6.2「MPU W^X 保護」 |
+| JITR-43 | 書き込みと実行の同時許可(RWX)の排除 | 任意の状態 | 状態機械を確認 | RO_XとRW_XN以外の状態(RWX)が存在しない | jit_compiler.md §6.2 |
 
 ### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
 

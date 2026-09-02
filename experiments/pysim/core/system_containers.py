@@ -195,6 +195,11 @@ class FlatMapView(Generic[KeyT, ValT]):
         i = self._locate(key)
         return None if i is None else self._entries[i][1]
 
+    def find_index(self, key: KeyT) -> int:
+        """Binary search returning index of key or -1 if not found (O(log N))."""
+        i = self._locate(key)
+        return -1 if i is None else i
+
     def __getitem__(self, key: KeyT) -> ValT:
         val = self.find(key)
         if val is None:

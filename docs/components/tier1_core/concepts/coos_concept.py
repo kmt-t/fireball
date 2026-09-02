@@ -8,42 +8,45 @@ Reference Concept Implementation: COOS (Cooperative OS)
 """
 
 from collections.abc import Generator
+from enum import IntEnum
 from typing import Any
 
 
-class TaskState:
-    READY = "READY"
-    RUNNING = "RUNNING"
-    BLOCKED = "BLOCKED"
-    SUSPENDED_CSP = "SUSPENDED_CSP"
-    TERMINATED = "TERMINATED"
+class TaskState(IntEnum):
+    READY = 1
+    RUNNING = 2
+    BLOCKED = 3
+    SUSPENDED_CSP = 4
+    TERMINATED = 5
 
 
-class WaitDir:
-    NONE = "NONE"
-    SEND = "SEND"
-    RECV = "RECV"
+class WaitDir(IntEnum):
+    NONE = 0
+    SEND = 1
+    RECV = 2
 
 
-class ChannelAction:
-    BLOCK = "BLOCK"
-    DIRECT_SWITCH = "DIRECT_SWITCH"
-    YIELD = "YIELD"
+class ChannelAction(IntEnum):
+    BLOCK = 1
+    DIRECT_SWITCH = 2
+    YIELD = 3
 
 
 class Channel:
-    """Bufferless synchronous CSP rendezvous channel (ADR_RendezvousChannel).
-    The channel never holds a value. A sender that arrives first keeps the value
-    in its own task frame until a receiver shows up, so channel overflow and
-    send-rollback cannot occur, and the value has exactly one owner at all times.
-    At most one task may wait on a channel; concurrent peers are expressed by
-    splitting the channel per service URI rather than by a waiting queue.
-    """
+    """Bufferless synchronous CSP rendezvous channel (ADR_RendezvousChannel)."""
 
-    def __init__(self, channel_id: str):
-        self.channel_id = channel_id
+    def __init__(self, kernel: "COOSKernel | None" = None):
+        self.kernel = kernel
         self.waiter_task: str | None = None
-        self.waiter_dir: str = WaitDir.NONE
+        self.waiter_dir: int = WaitDir.NONE
+
+    def send(self, data: Any) -> tuple[ChannelAction, Any]:
+        assert self.kernel is not None
+        return self.kernel.channel_send(self, data)
+
+    def recv(self) -> tuple[ChannelAction, Any]:
+        assert self.kernel is not None
+        return self.kernel.channel_recv(self)
 
 
 class COOSKernel:
@@ -68,25 +71,26 @@ class COOSKernel:
         }
         self.ready_queue.append(task_id)
 
-    def create_channel(self, channel_id: str) -> Channel:
-        ch = Channel(channel_id)
-        self.channels[channel_id] = ch
-        return ch
+    def create_channel(self) -> Channel:
+        return Channel(kernel=self)
 
     # --- Synchronous Hoare CSP Rendezvous ---
-    def channel_send(self, channel_id: str, data: Any) -> tuple[str, Any]:
-        """Send value over CSP channel."""
-        ch = self.channels[channel_id]
+    def channel_send(self, channel: Channel, data: Any) -> tuple[ChannelAction, Any]:
+        """Synchronously send value into CSP channel.
+        If a receiver is waiting: rendezvous matches immediately, data transfers,
+        and scheduler either hands off directly or forces a yield.
+        If no receiver is waiting: sender suspends into SUSPENDED_CSP."""
+        ch = channel
         sender = self.current_task
         assert sender is not None
         if ch.waiter_dir == WaitDir.RECV:
-            # Rendezvous matched: ownership moves sender -> receiver right here
             receiver = ch.waiter_task
             ch.waiter_task, ch.waiter_dir = None, WaitDir.NONE
             self.tasks[receiver]["received_val"] = data
-            self.tasks[receiver]["state"] = TaskState.READY
             self.tasks[sender]["state"] = TaskState.READY
+            self.tasks[receiver]["state"] = TaskState.READY
             return self._handoff_or_yield(receiver)
+
         # No peer yet: the value stays in the sender's own frame. The channel holds
         # nothing, so there is no buffer to overflow and no send to roll back.
         assert ch.waiter_dir != WaitDir.SEND, (
@@ -97,9 +101,9 @@ class COOSKernel:
         self.tasks[sender]["state"] = TaskState.SUSPENDED_CSP
         return (ChannelAction.BLOCK, None)
 
-    def channel_recv(self, channel_id: str) -> tuple[str, Any]:
+    def channel_recv(self, channel: Channel) -> tuple[ChannelAction, Any]:
         """Receive value from CSP channel."""
-        ch = self.channels[channel_id]
+        ch = channel
         receiver = self.current_task
         assert receiver is not None
         if ch.waiter_dir == WaitDir.SEND:
@@ -119,7 +123,7 @@ class COOSKernel:
         self.tasks[receiver]["state"] = TaskState.SUSPENDED_CSP
         return (ChannelAction.BLOCK, None)
 
-    def _handoff_or_yield(self, target: str) -> tuple[str, Any]:
+    def _handoff_or_yield(self, target: str) -> tuple[ChannelAction, Any]:
         """Bounds the handoff chain so the scheduler main loop stays reachable.
         This bound is exactly what os_coos.md 6.1 'main loop return guarantee'
         proves via AG(at_max_limit -> AF(main_loop))."""
@@ -185,10 +189,10 @@ class COOSKernel:
         task_entry["state"] = TaskState.RUNNING
         try:
             action, arg = task_entry["coro"].send(None)
-            if action == "YIELD":
+            if action == ChannelAction.YIELD:
                 task_entry["state"] = TaskState.READY
                 self.ready_queue.append(task_id)
-            elif action == "DIRECT_SWITCH":
+            elif action == ChannelAction.DIRECT_SWITCH:
                 next_task = arg
                 task_entry["state"] = TaskState.READY
                 # Re-queue current task and immediately switch to target (head of queue)
@@ -196,7 +200,7 @@ class COOSKernel:
                 if next_task in self.ready_queue:
                     self.ready_queue.remove(next_task)
                 self.ready_queue.insert(0, next_task)
-            elif action in ("BLOCK", "BLOCK_IRQ"):
+            elif action == ChannelAction.BLOCK or action == "BLOCK_IRQ":
                 pass  # Task already in SUSPENDED_CSP or BLOCKED state
         except StopIteration:
             task_entry["state"] = TaskState.TERMINATED
@@ -212,25 +216,25 @@ class COOSKernel:
 
 def test_coos_synchronous_rendezvous():
     kernel = COOSKernel()
-    kernel.create_channel("ch_data")
+    ch = kernel.create_channel()
     received_log = []
 
     def sender():
         # Send first message (42)
-        action, arg = kernel.channel_send("ch_data", 42)
+        action, arg = ch.send(42)
         yield (action, arg)
         # Send second message (100)
-        action, arg = kernel.channel_send("ch_data", 100)
+        action, arg = ch.send(100)
         yield (action, arg)
 
     def receiver():
         # Receive first message
-        action, arg = kernel.channel_recv("ch_data")
+        action, arg = ch.recv()
         yield (action, arg)
         val1 = kernel.get_received_value()
         received_log.append(val1)
         # Receive second message
-        action, arg = kernel.channel_recv("ch_data")
+        action, arg = ch.recv()
         yield (action, arg)
         val2 = kernel.get_received_value()
         received_log.append(val2)
@@ -251,13 +255,13 @@ def test_value_has_exactly_one_owner_across_a_rendezvous():
     sender's frame; after the rendezvous it lives only in the receiver's. It is
     never reachable from the channel, and never from both tasks at once."""
     kernel = COOSKernel()
-    ch = kernel.create_channel("ch_data")
+    ch = kernel.create_channel()
 
     def sender():
-        yield kernel.channel_send("ch_data", 42)
+        yield ch.send(42)
 
     def receiver():
-        yield kernel.channel_recv("ch_data")
+        yield ch.recv()
 
     kernel.register_task("sender", sender())
     kernel.register_task("receiver", receiver())
@@ -278,14 +282,14 @@ def test_one_waiter_per_channel_is_enforced():
     """Two senders on one channel is a design violation, not a runtime condition
     to be queued -- the orthogonal table marks it unreachable by construction."""
     kernel = COOSKernel()
-    kernel.create_channel("ch_data")
+    ch = kernel.create_channel()
     kernel.tasks["a"] = {"id": "a", "coro": None, "state": TaskState.RUNNING}
     kernel.tasks["b"] = {"id": "b", "coro": None, "state": TaskState.RUNNING}
     kernel.current_task = "a"
-    kernel.channel_send("ch_data", 1)
+    ch.send(1)
     kernel.current_task = "b"
     try:
-        kernel.channel_send("ch_data", 2)
+        ch.send(2)
         raise AssertionError("second sender on the same channel must assert")
     except AssertionError as e:
         assert "separate channels" in str(e)

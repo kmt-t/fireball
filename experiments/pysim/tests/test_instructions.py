@@ -130,12 +130,12 @@ def wat_to_wasm(wat_text: str) -> bytes:
 def test_coos_01_send_first_suspends_csp():
     """COOS-01: Sender arriving first transitions to SUSPENDED_CSP; value stays in frame."""
     sched = Scheduler()
-    ch = sched.create_channel("ch_test")
+    ch = sched.create_channel()
     t1_id = sched.spawn("t1")
     t1 = sched.get_task(t1_id)
     sched.current_task = t1
-    action, _ = sched.channel_send("ch_test", 42)
-    assert action == "BLOCK"
+    action, _ = ch.send(42)
+    assert action == ChannelAction.BLOCK
     assert t1.state == TaskState.SUSPENDED_CSP
     assert t1.pending_val == 42
     assert ch.waiter_task == t1
@@ -145,13 +145,13 @@ def test_coos_01_send_first_suspends_csp():
 def test_coos_02_recv_after_send_completes_rendezvous():
     """COOS-02: Receiver arriving second completes rendezvous and takes ownership."""
     sched = Scheduler()
-    sched.create_channel("ch_test")
+    ch = sched.create_channel()
     t1 = sched.get_task(sched.spawn("t1"))
     t2 = sched.get_task(sched.spawn("t2"))
     sched.current_task = t1
-    sched.channel_send("ch_test", "DATA_PAYLOAD")
+    ch.send("DATA_PAYLOAD")
     sched.current_task = t2
-    action, _ = sched.channel_recv("ch_test")
+    action, _ = ch.recv()
     assert action in (ChannelAction.DIRECT_SWITCH, ChannelAction.YIELD)
     assert t2.received_val == "DATA_PAYLOAD"
     assert t1.pending_val is None, "Pending value must be cleared on sender (no double-ownership)"
@@ -162,10 +162,10 @@ def test_coos_02_recv_after_send_completes_rendezvous():
 def test_coos_03_recv_first_suspends_csp():
     """COOS-03: Receiver arriving first transitions to SUSPENDED_CSP."""
     sched = Scheduler()
-    ch = sched.create_channel("ch_test")
+    ch = sched.create_channel()
     t2 = sched.get_task(sched.spawn("t2"))
     sched.current_task = t2
-    action, _ = sched.channel_recv("ch_test")
+    action, _ = ch.recv()
     assert action == ChannelAction.BLOCK
     assert t2.state == TaskState.SUSPENDED_CSP
     assert ch.waiter_task == t2
@@ -175,13 +175,13 @@ def test_coos_03_recv_first_suspends_csp():
 def test_coos_04_send_after_recv_completes_rendezvous():
     """COOS-04: Sender arriving second completes rendezvous and transfers ownership."""
     sched = Scheduler()
-    sched.create_channel("ch_test")
+    ch = sched.create_channel()
     t1 = sched.get_task(sched.spawn("t1"))
     t2 = sched.get_task(sched.spawn("t2"))
     sched.current_task = t2
-    sched.channel_recv("ch_test")
+    ch.recv()
     sched.current_task = t1
-    action, _ = sched.channel_send("ch_test", 12345)
+    action, _ = ch.send(12345)
     assert action in (ChannelAction.DIRECT_SWITCH, ChannelAction.YIELD)
     assert t2.received_val == 12345
     assert t1.state == TaskState.READY
@@ -191,14 +191,14 @@ def test_coos_04_send_after_recv_completes_rendezvous():
 def test_coos_05_one_waiter_per_channel_enforced():
     """COOS-05: Only one waiter per channel direction; second waiter asserts."""
     sched = Scheduler()
-    sched.create_channel("ch_test")
+    ch = sched.create_channel()
     t1 = sched.get_task(sched.spawn("t1"))
     t2 = sched.get_task(sched.spawn("t2"))
     sched.current_task = t1
-    sched.channel_send("ch_test", 1)
+    ch.send(1)
     sched.current_task = t2
     try:
-        sched.channel_send("ch_test", 2)
+        ch.send(2)
         raise AssertionError("Expected AssertionError for second sender on same channel")
     except AssertionError as e:
         assert "separate channels" in str(e)
@@ -207,13 +207,13 @@ def test_coos_05_one_waiter_per_channel_enforced():
 def test_coos_06_csp_handoff_direct_switch():
     """COOS-06: Rendezvous completion performs direct symmetric handoff to head of READY queue."""
     sched = Scheduler()
-    sched.create_channel("ch_test")
+    ch = sched.create_channel()
     t1 = sched.get_task(sched.spawn("t1"))
     t2 = sched.get_task(sched.spawn("t2"))
     sched.current_task = t1
-    sched.channel_send("ch_test", 99)
+    ch.send(99)
     sched.current_task = t2
-    action, target_id = sched.channel_recv("ch_test")
+    action, target_id = ch.recv()
     assert action == ChannelAction.DIRECT_SWITCH
     assert target_id == t1.task_id
     assert sched._ready[0] == t1, "Target task must be placed at front of READY queue"
@@ -222,27 +222,27 @@ def test_coos_06_csp_handoff_direct_switch():
 def test_coos_07_consecutive_handoff_limit_yields():
     """COOS-07: Consecutive handoff limit (4) forces yield back to main loop."""
     sched = Scheduler(max_handoffs=2)
-    sched.create_channel("ch1")
-    sched.create_channel("ch2")
-    sched.create_channel("ch3")
+    ch1 = sched.create_channel()
+    ch2 = sched.create_channel()
+    ch3 = sched.create_channel()
     t1 = sched.get_task(sched.spawn("t1"))
     t2 = sched.get_task(sched.spawn("t2"))
     sched.current_task = t1
-    sched.channel_send("ch1", 1)
+    ch1.send(1)
     sched.current_task = t2
-    act1, _ = sched.channel_recv("ch1")
+    act1, _ = ch1.recv()
     assert act1 == ChannelAction.DIRECT_SWITCH
     assert sched.consecutive_handoffs == 1
     sched.current_task = t1
-    sched.channel_send("ch2", 2)
+    ch2.send(2)
     sched.current_task = t2
-    act2, _ = sched.channel_recv("ch2")
+    act2, _ = ch2.recv()
     assert act2 == ChannelAction.DIRECT_SWITCH
     assert sched.consecutive_handoffs == 2
     sched.current_task = t1
-    sched.channel_send("ch3", 3)
+    ch3.send(3)
     sched.current_task = t2
-    act3, _ = sched.channel_recv("ch3")
+    act3, _ = ch3.recv()
     assert act3 == ChannelAction.YIELD, (
         "Must yield back to scheduler when consecutive handoffs reach threshold"
     )
@@ -256,7 +256,7 @@ def test_coos_08_interrupt_notification_and_drain():
 
     def irq_handler():
         sched.wait_for_interrupt(16)
-        yield ("BLOCK", None)
+        yield (ChannelAction.BLOCK, None)
         woken.append("IRQ_PROCESSED")
 
     sched.spawn("handler", irq_handler())
@@ -569,8 +569,8 @@ def test_log_04_coos_and_ipc_diagnostic_logging():
             yield
 
         try:
-            sysv.scheduler.spawn("dup_task", dummy_coro(), task_id="task_dup")
-            sysv.scheduler.spawn("dup_task_2", dummy_coro(), task_id="task_dup")
+            sysv.scheduler.spawn("dup_task", dummy_coro(), task_id=99)
+            sysv.scheduler.spawn("dup_task_2", dummy_coro(), task_id=99)
         except ValueError:
             pass
 
@@ -1098,7 +1098,7 @@ def test_ipc_01_uri_lookup_and_permission_matrix():
     # never come.
     msg1 = IPCMessage(FlatMapStorage([_KEY_CMD], [_CMD_PIN_HIGH]))
     gen = router.send(Role.RUNTIME, "fireball://hal/gpio/0", msg1)
-    assert next(gen) == ("BLOCK", None)
+    assert next(gen) == (ChannelAction.BLOCK, None)
     assert msg1.ownership == OwnershipState.IN_FLIGHT
 
     # PLATFORM_HAL has no outgoing edges at all (role matrix row is all-DENY).
@@ -1200,8 +1200,9 @@ def test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group():
     assert sched.get_task(recv_id).state == TaskState.SUSPENDED_CSP
     # Selecting on both edges must not double-register: each channel still
     # has exactly one waiter, this same receiver task.
-    runtime_ch = sched.get_channel(router.channel_id_for_edge(Role.RUNTIME, Role.CORE_SERVICE))
-    debugger_ch = sched.get_channel(router.channel_id_for_edge(Role.DEBUGGER, Role.CORE_SERVICE))
+    runtime_ch = router.channel_for_edge(Role.RUNTIME, Role.CORE_SERVICE)
+    debugger_ch = router.channel_for_edge(Role.DEBUGGER, Role.CORE_SERVICE)
+    assert runtime_ch is not None and debugger_ch is not None
     assert runtime_ch.waiter_dir == WaitDir.RECV
     assert debugger_ch.waiter_dir == WaitDir.RECV
     assert runtime_ch.waiter_task is debugger_ch.waiter_task
@@ -1607,7 +1608,7 @@ def test_intp_01_02_cps_handlers_and_dispatch_table():
     from interpreter import _HANDLERS
 
     # Direct 256-element array table (no dynamic dict lookup)
-    assert isinstance(_HANDLERS, list)
+    assert type(_HANDLERS) is list
     assert len(_HANDLERS) == 256
     # Every registered handler must accept exactly 4 arguments and return next continuation
     registered_count = 0
@@ -1965,9 +1966,9 @@ def test_cont_10_container_type_separation():
     vals = [10, 20, 30]
     m = FlatMapView(keys, vals)
     s = FlatSetView(keys)
-    assert isinstance(m, FlatMapView)
-    assert isinstance(s, FlatSetView)
-    assert not isinstance(s, FlatMapView)
+    assert type(m) is FlatMapView
+    assert type(s) is FlatSetView
+    assert type(s) is not FlatMapView
     assert hasattr(m, "values")
     assert not hasattr(s, "values")
 
@@ -2450,10 +2451,11 @@ def test_guest_wasi_05_jit_fireball_call_ipc_messaging():
         # never accidentally steal debugger_sender's message meant for the
         # guest's own later IPC_RECV.
         def hal_receiver():
-            channel_id = sysv.ipc.channel_id_for_edge(Role.RUNTIME, Role.PLATFORM_HAL)
-            action, _ = sysv.scheduler.channel_recv(channel_id)
-            if action == "BLOCK":
-                yield ("BLOCK", None)
+            channel = sysv.ipc.channel_for_edge(Role.RUNTIME, Role.PLATFORM_HAL)
+            assert channel is not None
+            action, _ = channel.recv()
+            if action == ChannelAction.BLOCK:
+                yield (ChannelAction.BLOCK, None)
 
         def debugger_sender():
             yield from sysv.ipc.send(

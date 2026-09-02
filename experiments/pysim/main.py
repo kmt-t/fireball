@@ -35,7 +35,7 @@ from ipc_router import IPCMessage, Role, bytes_to_kv_storage
 from logger import LogLevel
 from recovery import RecoveryManager, RecoveryStrategy, Result
 from runtime_engine import BasicBlock, IntegratedHybridEngine, WASMContext
-from scheduler import Scheduler
+from scheduler import ChannelAction, Scheduler
 from system import FbSyscallId, ShmSlice, System
 from wasi import WasiHostContext
 from x64_jit import TraceCompiler
@@ -249,10 +249,11 @@ def run_wasm_demo(sysv: System) -> None:
     # allowed-sender behavior) so it can never accidentally steal
     # debugger_sender's message meant for the guest's own later IPC_RECV.
     def hal_receiver():
-        channel_id = sysv.ipc.channel_id_for_edge(Role.RUNTIME, Role.PLATFORM_HAL)
-        action, _ = sysv.scheduler.channel_recv(channel_id)
-        if action == "BLOCK":
-            yield ("BLOCK", None)
+        channel = sysv.ipc.channel_for_edge(Role.RUNTIME, Role.PLATFORM_HAL)
+        assert channel is not None
+        action, _ = channel.recv()
+        if action == ChannelAction.BLOCK:
+            yield (ChannelAction.BLOCK, None)
 
     def debugger_sender():
         yield from sysv.ipc.send(

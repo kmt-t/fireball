@@ -447,10 +447,11 @@ def test_ipcr_gotcha_01_no_queue_assertion_on_duplicate_send():
 
     msg1 = IPCMessage(FlatMapStorage([1], [100]))
     gen1 = router.send(Role.RUNTIME, "fireball://hal/gpio/0", msg1)
-    assert next(gen1) == ("BLOCK", None)
+    assert next(gen1) == (ChannelAction.BLOCK, None)
     assert msg1.ownership == OwnershipState.IN_FLIGHT
 
-    ch = sched.get_channel(router.channel_id_for_edge(Role.RUNTIME, Role.PLATFORM_HAL))
+    ch = router.channel_for_edge(Role.RUNTIME, Role.PLATFORM_HAL)
+    assert ch is not None
     assert ch.waiter_task is not None
     assert ch.waiter_dir == WaitDir.SEND
 
@@ -475,31 +476,33 @@ def test_ipcr_gotcha_02_preflight_rejection_preserves_sender_ownership():
 def test_sched_gotcha_01_handoff_limit_forces_return_to_main_loop():
     """SCHED-GOTCHA-01: Direct CSP handoff limit forces return to main scheduling loop to prevent starvation."""
     sched = Scheduler(max_handoffs=2)
-    sched.create_channel("ch1")
-    sched.create_channel("ch2")
-    sched.create_channel("ch3")
+    ch1 = sched.create_channel()
+    ch2 = sched.create_channel()
+    ch3 = sched.create_channel()
     t1 = sched.get_task(sched.spawn("t1"))
     t2 = sched.get_task(sched.spawn("t2"))
 
     sched.current_task = t1
-    sched.channel_send("ch1", 1)
+    ch1.send(1)
     sched.current_task = t2
-    act1, _ = sched.channel_recv("ch1")
+    act1, _ = ch1.recv()
     assert act1 == ChannelAction.DIRECT_SWITCH
     assert sched.consecutive_handoffs == 1
 
     sched.current_task = t1
-    sched.channel_send("ch2", 2)
+    ch2.send(2)
     sched.current_task = t2
-    act2, _ = sched.channel_recv("ch2")
+    act2, _ = ch2.recv()
     assert act2 == ChannelAction.DIRECT_SWITCH
     assert sched.consecutive_handoffs == 2
 
     sched.current_task = t1
-    sched.channel_send("ch3", 3)
+    ch3.send(3)
     sched.current_task = t2
-    act3, _ = sched.channel_recv("ch3")
-    assert act3 == "YIELD", "Must yield back to scheduler when consecutive handoffs reach threshold"
+    act3, _ = ch3.recv()
+    assert act3 == ChannelAction.YIELD, (
+        "Must yield back to scheduler when consecutive handoffs reach threshold"
+    )
     assert sched.consecutive_handoffs == 0
 
 

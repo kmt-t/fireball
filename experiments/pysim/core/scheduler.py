@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from collections import deque
 from collections.abc import Callable, Generator
-from enum import Enum, auto
+from enum import IntEnum
 from typing import Any
 
 from logger import (
@@ -30,26 +30,26 @@ FB_CONF_MAX_CONSECUTIVE_HANDOFFS = 4
 FB_CONF_INTERRUPT_QUEUE_SIZE = 16
 
 
-class TaskState(Enum):
-    READY = auto()
-    RUNNING = auto()
-    BLOCKED = auto()
-    SUSPENDED_CSP = auto()
-    TERMINATED = auto()
+class TaskState(IntEnum):
+    READY = 1
+    RUNNING = 2
+    BLOCKED = 3
+    SUSPENDED_CSP = 4
+    TERMINATED = 5
 
 
-class WaitDir(Enum):
-    NONE = auto()
-    SEND = auto()
-    RECV = auto()
+class WaitDir(IntEnum):
+    NONE = 0
+    SEND = 1
+    RECV = 2
 
 
-class ChannelAction(str, Enum):
+class ChannelAction(IntEnum):
     """Action returned by channel_send, channel_recv, and channel_select_recv."""
 
-    BLOCK = "BLOCK"
-    DIRECT_SWITCH = "DIRECT_SWITCH"
-    YIELD = "YIELD"
+    BLOCK = 1
+    DIRECT_SWITCH = 2
+    YIELD = 3
 
 
 class SelectGroup:
@@ -67,10 +67,15 @@ class SelectGroup:
 
 
 class Channel:
-    """Bufferless synchronous CSP rendezvous channel (ADR_RendezvousChannel)."""
+    """Bufferless synchronous CSP rendezvous channel (ADR_RendezvousChannel).
 
-    def __init__(self, channel_id: str):
-        self.channel_id = channel_id
+    Fields defined in os_coos.md 3.3:
+    - waiter_task: Task | None (single waiting task or None)
+    - waiter_dir: WaitDir (NONE, SEND, RECV)
+    """
+
+    def __init__(self, scheduler: "Scheduler | None" = None):
+        self.scheduler = scheduler
         self.waiter_task: Task | None = None
         self.waiter_dir: WaitDir = WaitDir.NONE
         # Set only while waiter_task is a receiver waiting via
@@ -79,13 +84,23 @@ class Channel:
         # channels, preserving the one-waiter-per-channel invariant.
         self.waiter_group: SelectGroup | None = None
 
+    def send(self, data: Any) -> tuple[ChannelAction, Any]:
+        """Synchronous CSP send on this channel."""
+        assert self.scheduler is not None, "Channel not attached to a scheduler"
+        return self.scheduler.channel_send(self, data)
+
+    def recv(self) -> tuple[ChannelAction, Any]:
+        """Synchronous CSP recv on this channel."""
+        assert self.scheduler is not None, "Channel not attached to a scheduler"
+        return self.scheduler.channel_recv(self)
+
 
 class Task:
     """A single coroutine-based task with explicit cooperative lifecycle state."""
 
     def __init__(
         self,
-        task_id: int | str,
+        task_id: int,
         name: str,
         coro: Generator[Any, None, None] | None = None,
     ):
@@ -111,7 +126,6 @@ class Scheduler:
         self.consecutive_handoffs = 0
         self._ready: deque[Task] = deque()
         self._all: list[Task] = []
-        self._channels: list[Channel] = []
         self.current_task: Task | None = None
         self._next_id = 1
         self.idle_hooks: list[Callable[[], None]] = []
@@ -119,7 +133,7 @@ class Scheduler:
         self.irq_waiters: list[tuple[int, list[Task]]] = []
         self.dropped_irqs = 0
 
-    def get_task(self, task_id: int | str) -> Task | None:
+    def get_task(self, task_id: int) -> Task | None:
         for t in self._all:
             if t.task_id == task_id:
                 return t
@@ -129,8 +143,8 @@ class Scheduler:
         self,
         name: str,
         coro: Generator[Any, None, None] | None = None,
-        task_id: int | str | None = None,
-    ) -> int | str:
+        task_id: int | None = None,
+    ) -> int:
         """Spawn a new task within FB_CONF_MAX_TASKS bounds."""
         if len(self._all) >= self.max_tasks:
             if self.logger is not None:
@@ -147,20 +161,16 @@ class Scheduler:
             assigned_id = task_id
             if self.get_task(assigned_id) is not None:
                 if self.logger is not None:
-                    tid = assigned_id if isinstance(assigned_id, int) else 0
                     self.logger.log_event(
                         LogLevel.ERROR,
                         LOG_EVT_COOS_DUPLICATE_TASK,
-                        tid,
+                        assigned_id,
                         0,
                         0,
                         0,
                     )
                 raise ValueError(f"Task with ID {assigned_id} already exists")
         else:
-            # Skip past any ID already taken (explicit or auto) without ever
-            # inspecting what type that ID is: no isinstance/type() on a
-            # primitive, matching the target build's RTTI-disabled C++.
             while self.get_task(self._next_id) is not None:
                 self._next_id += 1
             assigned_id = self._next_id
@@ -196,26 +206,16 @@ class Scheduler:
         if task not in self._ready:
             self._ready.append(task)
 
-    def get_channel(self, channel_id: str) -> Channel | None:
-        for ch in self._channels:
-            if ch.channel_id == channel_id:
-                return ch
-        return None
+    def create_channel(self) -> Channel:
+        """
+        Creates an unbuffered synchronous CSP rendezvous channel (ADR_RendezvousChannel).
+        Call channel.send(data) or channel.recv() directly on the returned Channel.
+        """
+        return Channel(scheduler=self)
 
-    def create_channel(self, channel_id: str) -> Channel:
-        existing = self.get_channel(channel_id)
-        if existing is not None:
-            return existing
-        ch = Channel(channel_id)
-        self._channels.append(ch)
-        return ch
-
-    def channel_send(self, channel_id: str, data: Any) -> tuple[ChannelAction, Any]:
-        """Synchronous CSP send with atomic ownership handoff."""
-        ch = self.get_channel(channel_id)
-        if ch is None:
-            ch = self.create_channel(channel_id)
-
+    def channel_send(self, channel: Channel, data: Any) -> tuple[ChannelAction, Any]:
+        """Synchronous CSP send with atomic ownership handoff directly on Channel."""
+        ch = channel
         sender = self.current_task
         assert sender is not None, "channel_send requires active running task"
         if ch.waiter_dir == WaitDir.RECV:
@@ -245,12 +245,9 @@ class Scheduler:
         sender.state = TaskState.SUSPENDED_CSP
         return (ChannelAction.BLOCK, None)
 
-    def channel_recv(self, channel_id: str) -> tuple[ChannelAction, Any]:
-        """Synchronous CSP recv with atomic ownership handoff."""
-        ch = self.get_channel(channel_id)
-        if ch is None:
-            ch = self.create_channel(channel_id)
-
+    def channel_recv(self, channel: Channel) -> tuple[ChannelAction, Any]:
+        """Synchronous CSP recv with atomic ownership handoff directly on Channel."""
+        ch = channel
         receiver = self.current_task
         assert receiver is not None, "channel_recv requires active running task"
         if ch.waiter_dir == WaitDir.SEND:
@@ -270,22 +267,13 @@ class Scheduler:
         receiver.state = TaskState.SUSPENDED_CSP
         return (ChannelAction.BLOCK, None)
 
-    def channel_select_recv(self, channel_ids: list[str]) -> tuple[ChannelAction, Any]:
+    def channel_select_recv(self, channels: list[Channel]) -> tuple[ChannelAction, Any]:
         """
         Guarded external choice (receive-only select, {ADR_RendezvousChannel}):
-        waits on whichever of `channel_ids` gets a matching sender first. If
-        a sender is already waiting on any of them, completes immediately
-        with that one (first match in the given order -- deterministic,
-        since at most one sender can be legitimately waiting per channel at
-        a time). Otherwise registers this task as the receiver-waiter on
-        every one of them at once; whichever channel's channel_send()
-        arrives first completes the rendezvous and clears this task's
-        registration from the rest (see channel_send()'s SelectGroup
-        cleanup), preserving the one-waiter-per-channel invariant.
+        waits on whichever of `channels` gets a matching sender first.
         """
         receiver = self.current_task
         assert receiver is not None, "channel_select_recv requires active running task"
-        channels = [self.get_channel(cid) or self.create_channel(cid) for cid in channel_ids]
 
         for ch in channels:
             if ch.waiter_dir == WaitDir.SEND:
@@ -318,11 +306,10 @@ class Scheduler:
             self._ready.appendleft(target_task)
             return (ChannelAction.DIRECT_SWITCH, target_task.task_id)
         if self.logger is not None:
-            tid = target_task.task_id if isinstance(target_task.task_id, int) else 0
             self.logger.log_event(
                 LogLevel.WARN,
                 LOG_EVT_COOS_HANDOFF_LIMIT,
-                tid,
+                target_task.task_id,
                 self.consecutive_handoffs,
                 0,
                 0,
@@ -401,9 +388,7 @@ class Scheduler:
             self.current_task = None
             return task
 
-        if wait_on is None or (
-            isinstance(wait_on, tuple) and wait_on[0] in ("YIELD", ChannelAction.YIELD)
-        ):
+        if wait_on is None or wait_on[0] == ChannelAction.YIELD:
             task.state = TaskState.READY
             self._ready.append(task)
 
@@ -436,12 +421,12 @@ class Scheduler:
             if wait_on is None:
                 task.state = TaskState.READY
                 self._ready.append(task)
-            elif isinstance(wait_on, tuple) and wait_on[0] in ("YIELD", ChannelAction.YIELD):
+            elif wait_on[0] == ChannelAction.YIELD:
                 task.state = TaskState.READY
                 self._ready.append(task)
                 if all(t.coro is None for t in self._ready):
                     break
-            # else: a ("BLOCK", None) CSP wait -- channel_send()/channel_recv()
+            # else: a (ChannelAction.BLOCK, None) CSP wait -- channel_send()/channel_recv()
             # already parked the task (TaskState.SUSPENDED_CSP) and record who
             # will wake it; there is nothing left for this loop to do.
 

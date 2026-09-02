@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ipc_router import DataType, IPCMessage, IPCRouter, IpcStatus, ScopeKind, pack_key32
+from scheduler import ChannelAction
 from system_containers import FlatMapStorage, FlatMapView, FlatSetView
 
 # platform_hal.md §4.2's kv_pair command arguments: each is a packed
@@ -434,7 +435,7 @@ class HalTask:
             default_uri = next(iter(self.drivers.keys()), "fireball://device/uart/0")
             status, msg = yield from self.ipc.recv(default_uri)
             if status != IpcStatus.COMPLETED or msg is None:
-                yield ("BLOCK", None)
+                yield (ChannelAction.BLOCK, None)
                 continue
 
             self.processed_count += 1
@@ -462,7 +463,7 @@ class HalTask:
             self.last_handled_uri = default_uri
             self.last_handled_cmd = cmd_id
             self.last_result = result
-            yield ("YIELD", None)
+            yield (ChannelAction.YIELD, None)
 
 
 def make_hal_ipc_message(

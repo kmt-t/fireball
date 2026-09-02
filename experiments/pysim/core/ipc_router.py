@@ -14,7 +14,7 @@ Fireball IPC Router: URI/RBAC front-end over the CSP rendezvous engine.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from enum import Enum, IntEnum
+from enum import IntEnum
 from typing import Any
 
 from logger import (
@@ -24,7 +24,7 @@ from logger import (
     LOG_EVT_IPC_UNKNOWN_URI,
     LogLevel,
 )
-from scheduler import ChannelAction, Scheduler
+from scheduler import Channel, ChannelAction, Scheduler
 from system_containers import FlatMapStorage, FlatMapView
 
 _EMPTY_IPC_STORAGE: FlatMapStorage = FlatMapStorage((), ())
@@ -113,7 +113,7 @@ class ServiceDescriptor(tuple):
         return self[0]
 
 
-class OwnershipState:
+class OwnershipState(IntEnum):
     """
     Tracks who may touch this exact message object (ipc_router.md {IPC_ZeroCopy}):
     the object itself is never copied -- only this flag and the reference move
@@ -121,9 +121,9 @@ class OwnershipState:
     sender's own binding to the message must not be used again.
     """
 
-    SENDER_OWNS = "SENDER_OWNS"
-    IN_FLIGHT = "IN_FLIGHT"
-    RECEIVER_OWNS = "RECEIVER_OWNS"
+    SENDER_OWNS = 1
+    IN_FLIGHT = 2
+    RECEIVER_OWNS = 3
 
 
 class IPCMessage:
@@ -246,20 +246,8 @@ FB_CONF_ROUTER_ROLE_MATRIX: tuple[tuple[bool, ...], ...] = (
     (False, True, True, False),  # from DEBUGGER
 )
 
-# Each ALLOW edge of that matrix gets its own dedicated CSP channel name (a
-# Channel is a strict 1:1 pairing, so distinct senders to the same target
-# cannot share one channel). Same 4x4 shape as the role matrix, indexed by
-# Role; a DENY edge has no channel (None).
-_EDGE_CHANNEL_NAMES: tuple[tuple[str | None, ...], ...] = tuple(
-    tuple(
-        f"ch_ipc_{Role(sender).name}_to_{Role(target).name}".lower() if allowed else None
-        for target, allowed in enumerate(row)
-    )
-    for sender, row in enumerate(FB_CONF_ROUTER_ROLE_MATRIX)
-)
 
-
-class IpcStatus(Enum):
+class IpcStatus(IntEnum):
     """
     Outcome of IPCRouter.send()/recv(). Blocking is never part of this
     vocabulary: send()/recv() are generators that wait out a CSP block
@@ -268,16 +256,16 @@ class IpcStatus(Enum):
     block" any more than a normal blocking syscall makes its caller ask that.
     """
 
-    COMPLETED = "COMPLETED"
-    ERR_NOT_FOUND = "ERR_NOT_FOUND"
-    ERR_PERMISSION_DENIED = "ERR_PERMISSION_DENIED"
-    ERR_MSG_TOO_LARGE = "ERR_MSG_TOO_LARGE"
+    COMPLETED = 0
+    ERR_NOT_FOUND = 1
+    ERR_PERMISSION_DENIED = 2
+    ERR_MSG_TOO_LARGE = 3
 
 
 class IPCRouter:
     """
     URI/RBAC front-end (Stage 1 + Stage 2) over the CSP rendezvous engine
-    (Stage 3, delegated to scheduler.Channel via _EDGE_CHANNEL_NAMES).
+    (Stage 3, delegated to scheduler.Channel via integer edge handles).
     """
 
     def __init__(self, scheduler: Scheduler, logger: Any = None):
@@ -286,42 +274,47 @@ class IPCRouter:
         # Non-owning view borrowing ROM-resident storage arrays (_SERVICE_KEYS, _SERVICE_DESCS)
         self.registry = FlatMapView(_SERVICE_KEYS, _SERVICE_DESCS)
 
+        # Pre-allocate one dedicated CSP rendezvous channel per allowed edge in the RBAC matrix
+        self._edge_channels: tuple[tuple[Channel | None, ...], ...] = tuple(
+            tuple(self.scheduler.create_channel() if allowed else None for allowed in row)
+            for row in FB_CONF_ROUTER_ROLE_MATRIX
+        )
+
+    def lookup_service_handle(self, uri: str) -> int:
+        """Resolves URI to integer service handle via FlatMapView binary search (O(log N))."""
+        return self.registry.find_index(uri)
+
+    def get_service_descriptor(self, service_handle: int) -> ServiceDescriptor | None:
+        """O(1) direct ROM array lookup of service descriptor by handle."""
+        if 0 <= service_handle < len(_SERVICE_DESCS):
+            return _SERVICE_DESCS[service_handle]
+        return None
+
     def find_service(self, uri: str) -> ServiceDescriptor | None:
         """Finds service descriptor via flat_map_view binary search over the URI string."""
-        return self.registry.find(uri)
+        handle = self.lookup_service_handle(uri)
+        return self.get_service_descriptor(handle)
 
-    def channel_id_for_edge(self, sender_role: Role, target_role: Role) -> str | None:
-        """
-        The dedicated CSP channel name for one specific (sender_role,
-        target_role) RBAC edge, or None if that edge is DENY. recv() itself
-        never needs this (it selects across every edge into its own role at
-        once); it exists for callers that must address one exact edge, such
-        as a test harness standing in for a single specific counterpart task.
-        """
-        return _EDGE_CHANNEL_NAMES[sender_role][target_role]
+    def channel_for_edge(self, sender_role: Role, target_role: Role) -> Channel | None:
+        """The dedicated CSP Channel for one specific (sender_role, target_role) RBAC edge."""
+        return self._edge_channels[int(sender_role)][int(target_role)]
 
-    def send(self, sender_role: Role, uri: str, message: IPCMessage):
+    def send(self, sender_role: Role, destination: str | int, message: IPCMessage):
         """
-        Stage 1 (URI lookup) + Stage 2 (RBAC), then Stage 3: synchronous CSP
-        send on the (sender_role, target_role) edge's dedicated channel.
+        Stage 1 (lookup handle) + Stage 2 (RBAC check), then Stage 3: synchronous
+        CSP send on the integer channel ID.
         Zero-copy: `message` itself is never duplicated, only its `ownership`
-        flag and the reference move -- the sender must not touch it again
-        once this returns.
-
-        A generator: if nobody is receiving yet, it `yield`s ("BLOCK", None)
-        exactly once and, once resumed, the rendezvous has already completed
-        -- callers only ever see the final (IpcStatus, target) via `return`.
-        IPC is inter-*task* communication, so the caller is always a task:
-        install this generator as `scheduler.current_task.coro` and run
-        run_until_idle() until it terminates (see system.py's _ipc_send), or
-        `yield from` it from within another task's own coroutine (see
-        scenario9's client_app_task). There is no separate "blocked" status.
+        flag and reference move.
         """
         if message.ownership != OwnershipState.SENDER_OWNS:
             if self.logger is not None:
-                cur_state = message.ownership.value if hasattr(message.ownership, "value") else 0
                 self.logger.log_event(
-                    LogLevel.ERROR, LOG_EVT_IPC_INVALID_OWNERSHIP, cur_state, 1, 0, 0
+                    LogLevel.ERROR,
+                    LOG_EVT_IPC_INVALID_OWNERSHIP,
+                    int(message.ownership),
+                    1,
+                    0,
+                    0,
                 )
             assert message.ownership == OwnershipState.SENDER_OWNS, (
                 "sender must own the message before sending"
@@ -341,60 +334,61 @@ class IPCRouter:
                 f"message has {len(message)} KV pairs, exceeds {FB_CONF_ROUTER_MAX_KV_PAIRS}",
             )
 
-        desc = self.find_service(uri)
+        # 1. Resolve URI to integer handle first (no dict!)
+        handle = (
+            destination if type(destination) is int else self.lookup_service_handle(destination)
+        )
+        desc = self.get_service_descriptor(handle)
         if desc is None:
             if self.logger is not None:
-                self.logger.log_event(LogLevel.WARN, LOG_EVT_IPC_UNKNOWN_URI, 0, 0, 0, 0)
-            return (IpcStatus.ERR_NOT_FOUND, f"URI {uri} is not registered")
+                self.logger.log_event(
+                    LogLevel.WARN, LOG_EVT_IPC_UNKNOWN_URI, handle if handle >= 0 else 0, 0, 0, 0
+                )
+            return (IpcStatus.ERR_NOT_FOUND, f"Destination {destination} is not registered")
 
-        channel_id = _EDGE_CHANNEL_NAMES[sender_role][desc.role]
-        if channel_id is None:
+        # 2. Lookup dedicated Channel for edge
+        channel = self.channel_for_edge(sender_role, desc.role)
+        if channel is None:
             if self.logger is not None:
-                s_role = sender_role.value if hasattr(sender_role, "value") else int(sender_role)
-                t_role = desc.role.value if hasattr(desc.role, "value") else int(desc.role)
-                self.logger.log_event(LogLevel.WARN, LOG_EVT_IPC_RBAC_DENIED, s_role, t_role, 0, 0)
+                self.logger.log_event(
+                    LogLevel.WARN,
+                    LOG_EVT_IPC_RBAC_DENIED,
+                    int(sender_role),
+                    int(desc.role),
+                    0,
+                    0,
+                )
             return (
                 IpcStatus.ERR_PERMISSION_DENIED,
                 f"Role {sender_role.name} not allowed to access {desc.role.name}",
             )
 
-        # Revoke sender access now: committed to the handoff whether or not a
-        # receiver is already waiting on the other side.
+        # 3. Synchronous CSP send directly on the Channel endpoint
         message.ownership = OwnershipState.IN_FLIGHT
-        action, target = self.scheduler.channel_send(channel_id, message)
-        if action in ("BLOCK", ChannelAction.BLOCK):
-            yield ("BLOCK", None)
-            # Resumed only once _handoff_or_yield() woke us, which only the
-            # matching channel_recv() ever does for a blocked sender -- the
-            # rendezvous is complete.
+        action, target = channel.send(message)
+        if action == ChannelAction.BLOCK:
+            yield (ChannelAction.BLOCK, None)
         message.ownership = OwnershipState.RECEIVER_OWNS
         return (IpcStatus.COMPLETED, target)
 
-    def recv(self, uri: str):
+    def recv(self, source: str | int):
         """
-        Stage 1 in reverse (resolve this service's own role from its URI),
-        then a guarded external choice (select) across every incoming RBAC
-        edge that role allows -- receiving from whichever permitted sender
-        arrives first, without committing to one sender_role upfront. This
-        matters for real services: e.g. CORE_SERVICE may legitimately be
-        sent to by both RUNTIME and DEBUGGER, and must not pin itself to
-        just one of them to receive from the other. A generator like send():
-        the only outcomes a caller ever observes are
-        (IpcStatus.COMPLETED, message) or a Stage 1/2 rejection.
+        Stage 1 in reverse: resolves service handle, then guarded external choice
+        (select) across every incoming Channel allowed for that role.
         """
-        desc = self.find_service(uri)
+        handle = source if type(source) is int else self.lookup_service_handle(source)
+        desc = self.get_service_descriptor(handle)
         if desc is None:
             return (IpcStatus.ERR_NOT_FOUND, None)
 
-        channel_ids = [edge for row in _EDGE_CHANNEL_NAMES if (edge := row[desc.role]) is not None]
-        if not channel_ids:
+        channels = [ch for row in self._edge_channels if (ch := row[int(desc.role)]) is not None]
+        if not channels:
             return (IpcStatus.ERR_PERMISSION_DENIED, None)
 
         receiver = self.scheduler.current_task
-        action, target = self.scheduler.channel_select_recv(channel_ids)
-        if action == "BLOCK":
-            yield ("BLOCK", None)
-        # By construction, send() only ever puts an IPCMessage into a channel.
+        action, target = self.scheduler.channel_select_recv(channels)
+        if action == ChannelAction.BLOCK:
+            yield (ChannelAction.BLOCK, None)
         message: IPCMessage = receiver.received_val
         receiver.received_val = None
         message.ownership = OwnershipState.RECEIVER_OWNS

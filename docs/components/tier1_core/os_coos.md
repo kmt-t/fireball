@@ -147,10 +147,10 @@ class WaitDir:
     RECV = "RECV"
 
 
-class ChannelAction:
-    BLOCK = "BLOCK"
-    DIRECT_SWITCH = "DIRECT_SWITCH"
-    YIELD = "YIELD"
+class ChannelAction(IntEnum):
+    BLOCK = 1
+    DIRECT_SWITCH = 2
+    YIELD = 3
 
 
 class Channel:
@@ -161,10 +161,16 @@ class Channel:
     exactly one owner. At most one waiter per channel.
     """
 
-    def __init__(self, channel_id: str):
-        self.channel_id = channel_id
+    def __init__(self, kernel=None):
+        self.kernel = kernel
         self.waiter_task = None
         self.waiter_dir = WaitDir.NONE
+
+    def send(self, data) -> tuple[ChannelAction, str | None]:
+        return self.kernel.channel_send(self, data)
+
+    def recv(self) -> tuple[ChannelAction, str | None]:
+        return self.kernel.channel_recv(self)
 
 
 class COOSKernel:
@@ -172,16 +178,18 @@ class COOSKernel:
         self.tasks = {}
         self.ready_queue = []
         self.current_task = None
-        self.channels = {}
         self.interrupt_event_queue = []
         self.irq_waiters = {}
         self.max_consecutive_handoffs = max_consecutive_handoffs
         self.consecutive_handoffs = 0
         self.idle_hook_called = False
 
-    def channel_send(self, channel_id: str, data) -> tuple[str, str | None]:
+    def create_channel(self) -> Channel:
+        return Channel(kernel=self)
+
+    def channel_send(self, channel: Channel, data) -> tuple[ChannelAction, str | None]:
         """Synchronous CSP send with direct symmetric context switch."""
-        ch = self.channels[channel_id]
+        ch = channel
         sender = self.current_task
         assert sender is not None
 
@@ -205,9 +213,9 @@ class COOSKernel:
         self.tasks[sender]["state"] = TaskState.SUSPENDED_CSP
         return (ChannelAction.BLOCK, None)
 
-    def channel_recv(self, channel_id: str) -> tuple[str, str | None]:
+    def channel_recv(self, channel: Channel) -> tuple[ChannelAction, str | None]:
         """Synchronous CSP recv with direct symmetric context switch."""
-        ch = self.channels[channel_id]
+        ch = channel
         receiver = self.current_task
         assert receiver is not None
 
@@ -229,7 +237,7 @@ class COOSKernel:
         self.tasks[receiver]["state"] = TaskState.SUSPENDED_CSP
         return (ChannelAction.BLOCK, None)
 
-    def _handoff_or_yield(self, target: str) -> tuple[str, str | None]:
+    def _handoff_or_yield(self, target: str) -> tuple[ChannelAction, str | None]:
         """Bounds the handoff chain so the scheduler main loop stays reachable.
         This bound is what 6.1 'main loop return guarantee' formally proves."""
         if self.consecutive_handoffs < self.max_consecutive_handoffs:

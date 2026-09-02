@@ -202,28 +202,31 @@ class IPCRouter:
             tuple(Channel() if allowed else None for allowed in row) for row in _ROLE_MATRIX
         )
 
-    def send(self, sender_role: int, uri: str, message: IPCMessage) -> tuple[str, str]:
+    def send(self, sender_role: int, uri: str, message: IPCMessage) -> tuple[IpcStatus, str]:
         """3-stage IPC send: URI lookup -> RBAC -> CSP rendezvous handoff."""
         assert message.ownership == OwnershipState.SENDER_OWNS
 
-        # Stage 1: URI Lookup
-        target_role = _REGISTRY.find(uri)
-        if target_role is None:
-            return ("ERR_NOT_FOUND", f"URI not registered: {uri}")
+        # Stage 1: Lookup service handle (integer) via flat_map_view
+        handle = _REGISTRY.find_index(uri)
+        if handle < 0:
+            return (IpcStatus.ERR_NOT_FOUND, f"URI not registered: {uri}")
+        target_role = _SERVICE_DESCRIPTORS[handle].role
 
-        # Stage 2: Access Control
-        channel = self._channels[sender_role][target_role]
-        if channel is None:
+        # Stage 2: Access Control & Channel ID
+        channel_id = _EDGE_CHANNEL_IDS[sender_role][target_role]
+        if channel_id < 0:
             return (
-                "ERR_PERMISSION_DENIED",
+                IpcStatus.ERR_PERMISSION_DENIED,
                 f"Forbidden: {_ROLE_NAMES[sender_role]} -> {_ROLE_NAMES[target_role]}",
             )
 
-        # Stage 3: Zero-Copy CSP Handoff -- Revoke commits the send; there is
-        # no queue to overflow, so ERR_QUEUE_FULL/Rollback do not exist here.
+        # Stage 3: Zero-Copy CSP Handoff over integer channel ID
         message.ownership = OwnershipState.IN_FLIGHT
-        channel.send(message)
-        return ("COMPLETED", f"{_ROLE_NAMES[sender_role]}->{_ROLE_NAMES[target_role]}: in-flight")
+        self._channels[channel_id].send(message)
+        return (
+            IpcStatus.COMPLETED,
+            f"{_ROLE_NAMES[sender_role]}->{_ROLE_NAMES[target_role]}: in-flight",
+        )
 
     def receive(self, target_role: int) -> IPCMessage | None:
         """

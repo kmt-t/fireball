@@ -14,6 +14,7 @@ from typing import Any
 
 from debugger import DebuggerManager, GDBRspProtocol
 from runtime_engine import BasicBlock, WASMContext
+from scheduler import ChannelAction
 
 
 class GDBServer:
@@ -77,7 +78,7 @@ class GDBServer:
                     self.dbg.attach()
                     break
                 except (BlockingIOError, TimeoutError):
-                    yield ("YIELD", None)
+                    yield (ChannelAction.YIELD, None)
 
             # 2. Main packet dispatch loop
             while self._running and self._client_sock is not None:
@@ -87,7 +88,7 @@ class GDBServer:
                         break
                     buffer += data.decode("latin1")
                 except (BlockingIOError, TimeoutError):
-                    yield ("YIELD", None)
+                    yield (ChannelAction.YIELD, None)
                     continue
                 except Exception:
                     break
@@ -108,7 +109,7 @@ class GDBServer:
                     )
                     if response:
                         self._client_sock.sendall(response.encode("latin1"))
-                yield ("YIELD", None)
+                yield (ChannelAction.YIELD, None)
         finally:
             self.stop()
 

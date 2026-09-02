@@ -1,8 +1,13 @@
+---
+name: coding-standards-cpp
+description: 極小組み込み環境向け C23/C++23 コーディング標準（Clang 17+ 必須、[[clang::musttail]]、動的メモリ/例外/RTTI禁止、STLポリシー、独自ユーティリティ）
+globs: ["src/**", "inc/**", "tests/**/*.cxx", "tests/**/*.hxx"]
+scope: GLOBAL
+---
+
 # Fireball 組み込み C++23 コーディング標準 (C++ Coding Standards)
 
 本ドキュメントは、極小リソース環境（RAM 32KB - 64KB）で動作する Fireball ランタイムの C23 / C++23 実装規約を定義する。
-globs: ["src/**", "inc/**"]
-scope: GLOBAL
 
 ## 1. コンパイラ要件 (Compiler Prerequisites)
 

@@ -1,8 +1,14 @@
+---
+name: development-policy
+description: Fireball プロジェクトの開発プロセス（盆栽デザイン）、ライフサイクル、運用原則
+globs: ["**/*"]
+scope: GLOBAL
+---
+
 # Fireball 開発ガイド (Development Guide)
 
 Fireball プロジェクトにおける開発方針、プロセス、および各種ルールをここに集約する。
 文書階層、メタキーワード、traceability の正本は `docs/architecture/document_structure.md`、要求仕様の正本は `docs/requires/requirement_list.md` とする。
-scope: GLOBAL
 
 ## 1. 開発方針 (Development Policy)
 

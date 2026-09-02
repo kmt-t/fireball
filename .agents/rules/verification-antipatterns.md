@@ -1,7 +1,13 @@
+---
+name: verification-antipatterns
+description: 形式検証・シミュレータ・物理仕様における検証サボりアンチパターン（A〜J）と検出法カタログ
+globs: ["docs/**", "verify/**", "experiments/**", "tests/**"]
+scope: GLOBAL
+---
+
 # 検証の「サボり」アンチパターン・カタログ (Verification Slacking Antipattern Catalog)
 
 このドキュメントは、形式検証・コンセプトコード・物理仕様・シミュレータの各層で実際に発見された「検証の体裁はあるが中身がない」事象からパターンを抽出し、体系化したものである。新しい検証コード・検証ゲートを書く、またはレビューする際は本カタログのマトリクスを確認し、該当しないか厳格に検査すること。
-scope: GLOBAL
 
 ## 1. パターン一覧
 

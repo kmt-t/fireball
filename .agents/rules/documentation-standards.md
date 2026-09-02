@@ -1,8 +1,14 @@
+---
+name: documentation-standards
+description: Fireball 仕様書・ドキュメント標準（自然言語仕様、静的・動的ペアリング、Mermaid図使い分け、トレーサビリティ）
+globs: ["docs/**"]
+scope: GLOBAL
+---
+
 # Fireball 仕様書・ドキュメント標準 (Documentation Standards)
 
 本ドキュメントは、Fireball プロジェクトにおける要求仕様書・アーキテクチャ設計書・コンポーネント設計書の記述形式、構造、および図解の規約を定義する。
 文書階層、メタキーワード、traceability の正本は `docs/architecture/document_structure.md` とする。
-scope: GLOBAL
 
 ## 1. 基本原則 (Core Principles)
 

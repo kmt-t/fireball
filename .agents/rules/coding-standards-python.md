@@ -1,8 +1,13 @@
+---
+name: coding-standards-python
+description: Python コーディング標準（pysim、コンセプトコード、形式検証、テストコード共通: typing.Any 完全禁止、Gotchas同期、変異検査義務化）
+globs: ["experiments/**", "docs/**/concepts/**", "docs/**/formal/**", "tools/**", "tests/**/*.py"]
+scope: GLOBAL
+---
+
 # Fireball Python コーディング標準 (Python Coding Standards)
 
 本ドキュメントは、Fireball プロジェクトにおける参照シミュレータ（`experiments/pysim`）、コンセプトコード（`docs/**/concepts/`）、形式検証モデル（`docs/**/formal/`）、およびテストコードの Python 実装規約を定義する。
-globs: ["experiments/**", "docs/**/concepts/**", "docs/**/formal/**", "tools/**"]
-scope: GLOBAL
 
 ## 1. 型安全性と `Any` 完全禁止規約 (Strict Type Safety)
 

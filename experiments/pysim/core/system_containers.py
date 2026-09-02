@@ -386,13 +386,13 @@ def lookup_jit_entry_flatmap(
     card_table: BitView,
     entry_group_bounds: Sequence[tuple[int, int]],
     pc: int,
-    card_shift: int = 8,
+    card_shift: int = 3,
     group_shift: int = 6,
 ) -> ValT | None:
     """
     JIT entry lookup over a plain FlatMapView, narrowed via caller-supplied
     group bounds:
-        1. O(1) card marking pre-filter.
+        1. O(1) card marking pre-filter (8 bytes per card, card_shift=3).
         2. O(1) group-bounds slice (caller-computed, e.g. a separate Radix Table).
         3. Bounded local binary search on the narrowed FlatMapView.
     """
@@ -412,12 +412,12 @@ def lookup_jit_entry_radix(
     view: RadixBinaryTreeView[ValT],
     card_table: BitView,
     pc: int,
-    card_shift: int = 8,
+    card_shift: int = 3,
 ) -> ValT | None:
     """
     JIT entry lookup over a RadixBinaryTreeView, which narrows to its group
     bounds internally via its own Radix Table:
-        1. O(1) card marking pre-filter.
+        1. O(1) card marking pre-filter (8 bytes per card, card_shift=3).
         2. O(1) Radix Table prefix lookup + bounded local binary search (view.find()).
     """
 

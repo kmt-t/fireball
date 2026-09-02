@@ -1969,19 +1969,19 @@ def test_cont_08_radix_binary_tree_view_coarse_radix_lookup():
 
 
 def test_cont_09_jit_entry_lookup_card_table_prefilter():
-    """CONT-09: lookup_jit_entry performs O(1) Card Marking check before searching."""
+    """CONT-09: lookup_jit_entry performs O(1) Card Marking check before searching (card_shift=3, 8B/card)."""
     card_storage = bytearray(4)
     card_table = BitView(card_storage, bits=2, origin=0, count=16)
-    keys = [0x0100, 0x0200]
-    values = ["NATIVE_0100", "NATIVE_0200"]
+    keys = [0x0010, 0x0020]
+    values = ["NATIVE_0010", "NATIVE_0020"]
     # Prefix 0: empty [0, 0), Prefix 1: [0, 1), Prefix 2: [1, 2)
     radix_table = [0, 0, 1, 2]
-    tree = RadixBinaryTreeView(keys, values, radix_table, radix_shift=8)
-    # PC 0x0100 is card 1 (shift=8). Currently UNEXECUTED (0) -> lookup returns None without search
-    assert lookup_jit_entry_radix(tree, card_table, pc=0x0100, card_shift=8) is None
-    # Mark card 1 as COMPILED (3)
-    card_table.put(1, 3)
-    assert lookup_jit_entry_radix(tree, card_table, pc=0x0100, card_shift=8) == "NATIVE_0100"
+    tree = RadixBinaryTreeView(keys, values, radix_table, radix_shift=4)
+    # PC 0x0010 (16) is card 2 (16 >> 3). Currently UNEXECUTED (0) -> lookup returns None without search
+    assert lookup_jit_entry_radix(tree, card_table, pc=0x0010, card_shift=3) is None
+    # Mark card 2 as COMPILED (3)
+    card_table.put(2, 3)
+    assert lookup_jit_entry_radix(tree, card_table, pc=0x0010, card_shift=3) == "NATIVE_0010"
 
 
 def test_cont_10_container_type_separation():

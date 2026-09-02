@@ -29,7 +29,7 @@ URIベースのサービス検索（3段パイプライン）、ロールベー�
 | IPCR-16 | CSPチャネルとの同一性 | - | ドキュメント上の記述を確認 | 本APIは`{ADR_RendezvousChannel}`が定めるバッファなし同期ランデブーそのものであり、`{CSP_Handoff}`を主張することを実装が正しく反映している（キューを介した別機構ではない） | §5.1「COOSのCSPチャネルと同一の機構」 |
 | IPCR-17 | 受信側のガード付き外部選択（select）: 複数エッジからの受信 | `CORE_SERVICE`は`RUNTIME`と`DEBUGGER`の双方からALLOW（RBACマトリックス） | 受信側を先にブロックさせた後、`DEBUGGER`から送信 | `sender_role`を事前指定せずに`DEBUGGER`からのメッセージを受信できる（`RUNTIME`エッジを待つ必要がない） | §4.1「Rendezvous」, §5.1「receive_message」, ipc_router_concept.py `test_receive_selects_whichever_allowed_sender_is_ready`, `experiments/pysim/core/scheduler.py` `channel_select_recv` |
 | IPCR-18 | select解決後の敗退エッジの解除（1チャネル1待機者の維持） | IPCR-17の状態で`DEBUGGER`エッジが成立した直後 | 成立しなかった`RUNTIME`→`CORE_SERVICE`エッジの状態を確認し、続けて新規の受信側・送信側でそのエッジを使用する | 敗退エッジの待機者登録が解除されており（`waiter_dir == NONE`）、後続の`RUNTIME`→`CORE_SERVICE`ランデブーが独立して正常に成立する（stale waiterとして残らない） | `experiments/pysim/core/scheduler.py` `channel_send`のSelectGroup解除処理, `experiments/pysim/tests/test_instructions.py` `test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group` |
-| IPCR-19 | メッセージ配列データ所有権の完全分離 | ストレージ構築 | `IPCMessage.from_storage(storage)` | IPCMessageは配列実体を自己所有せず、FlatMapStorageの参照を保持し、非所有FlatMapViewでペイロードを提供する | §3.3「IPCメッセージ」, `test_ipc_05_message_storage_ownership_separation` |
+| IPCR-19 | メッセージ配列データ所有権とビュー提供 | エントリ配列構築 | `IPCMessage(entries)` | IPCMessageはAoSペア配列を所有し、非所有FlatMapViewでペイロードを提供する（共有メモリ連携時はSharedBlockを保持） | §3.3「IPCメッセージ」, `test_ipc_05_message_storage_ownership_separation` |
 
 ### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
 

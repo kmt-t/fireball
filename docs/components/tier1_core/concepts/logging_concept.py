@@ -39,27 +39,22 @@ _DIR = Path(__file__).resolve().parent
 if str(_DIR) not in sys.path:
     sys.path.insert(0, str(_DIR))
 
-from flat_view_concept import FlatMapStorage, FlatMapView
+from flat_view_concept import FlatMapView
 
 
 class LogDictionary:
     """Simulates ROM-resident static format string dictionary (DictionaryBasedIPC).
-    Storage ownership is separated: borrows FlatMapStorage and performs lookup
+    Storage ownership is separated: borrows entries storage and performs lookup
     via non-owning FlatMapView (AoS).
     """
 
-    def __init__(self, storage: FlatMapStorage | dict[int, str] | None = None):
-        if isinstance(storage, FlatMapStorage):
+    def __init__(self, storage: list[tuple[int, str]] | None = None):
+        if storage is not None:
             self.storage = storage
-        elif isinstance(storage, dict):
-            entries = sorted(storage.items(), key=lambda kv: kv[0])
-            self.storage = FlatMapStorage(entries)
-        elif storage is None:
-            self.storage = FlatMapStorage([])
         else:
-            self.storage = storage
+            self.storage = []
 
-        self.payload: FlatMapView = self.storage.view()
+        self.payload: FlatMapView = FlatMapView(self.storage)
 
     def format(self, offset: int, arg0: int, arg1: int, arg2: int, arg3: int) -> str:
         fmt = self.payload.find(offset)
@@ -227,11 +222,11 @@ class Logger:
 
 def test_logger_dictionary_formatting():
     dictionary = LogDictionary(
-        {
-            0x01: "System booted in %d ms (RAM free: %d bytes)",
-            0x02: "Task %d created with priority %d",
-            0x03: "IPC channel '%d' transfer error code: 0x%08X",
-        }
+        [
+            (0x01, "System booted in %d ms (RAM free: %d bytes)"),
+            (0x02, "Task %d created with priority %d"),
+            (0x03, "IPC channel '%d' transfer error code: 0x%08X"),
+        ]
     )
     msg = dictionary.format(0x01, 42, 21504, 0, 0)
     assert msg == "System booted in 42 ms (RAM free: 21504 bytes)"
@@ -239,10 +234,10 @@ def test_logger_dictionary_formatting():
 
 def test_logger_buffering_and_idle_flush():
     dictionary = LogDictionary(
-        {
-            0x10: "Task %d yield count: %d",
-            0x20: "vMMIO read access to addr: 0x%08X (val: 0x%08X)",
-        }
+        [
+            (0x10, "Task %d yield count: %d"),
+            (0x20, "vMMIO read access to addr: 0x%08X (val: 0x%08X)"),
+        ]
     )
     transport = MockHALTransport()
     logger = Logger(transport, dictionary, min_level=LogLevel.INFO, buffer_capacity=4)
@@ -261,9 +256,9 @@ def test_logger_buffering_and_idle_flush():
 
 def test_logger_overwrite_on_buffer_full():
     dictionary = LogDictionary(
-        {
-            0x01: "Event #%d",
-        }
+        [
+            (0x01, "Event #%d"),
+        ]
     )
     transport = MockHALTransport()
     logger = Logger(transport, dictionary, min_level=LogLevel.DEBUG, buffer_capacity=4)
@@ -282,7 +277,7 @@ def test_logger_overwrite_on_buffer_full():
 
 
 def test_logger_level_filtering():
-    dictionary = LogDictionary({0x01: "Log message"})
+    dictionary = LogDictionary([(0x01, "Log message")])
     transport = MockHALTransport()
     logger = Logger(transport, dictionary, min_level=LogLevel.WARN, buffer_capacity=8)
     assert logger.log_event(LogLevel.DEBUG, 0x01) == "FILTERED"
@@ -295,7 +290,7 @@ def test_logger_level_filtering():
 
 
 def test_logger_ipc_message_handling():
-    dictionary = LogDictionary({0x50: "Guest VM %d trap occurred (cause: %d)"})
+    dictionary = LogDictionary([(0x50, "Guest VM %d trap occurred (cause: %d)")])
     transport = MockHALTransport()
     logger = Logger(transport, dictionary, min_level=LogLevel.INFO, buffer_capacity=8)
     resp = logger.handle_ipc_message(
@@ -314,7 +309,7 @@ def test_logger_ipc_message_handling():
 
 
 def test_logger_flush_interruption():
-    dictionary = LogDictionary({0x01: "Message %d"})
+    dictionary = LogDictionary([(0x01, "Message %d")])
     transport = MockHALTransport()
     logger = Logger(transport, dictionary, min_level=LogLevel.INFO, buffer_capacity=8)
     for i in range(4):
@@ -334,12 +329,12 @@ def test_logger_flush_interruption():
 
 def test_logger_storage_ownership_separation():
     # Storage is owned externally in ROM / static buffer
-    storage = FlatMapStorage([(0x10, "External format: %d"), (0x20, "Status code: %d")])
+    storage = [(0x10, "External format: %d"), (0x20, "Status code: %d")]
     dictionary = LogDictionary(storage)
 
     # Ownership assertion: LogDictionary does not own or clone storage
     assert dictionary.storage is storage
-    assert dictionary.payload.entries is storage.entries
+    assert dictionary.payload.entries is storage
 
     transport = MockHALTransport()
     logger = Logger(transport, dictionary)

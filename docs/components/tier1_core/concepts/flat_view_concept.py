@@ -131,56 +131,59 @@ class FlatMapView:
         return None if i is None else self.entries[i][1]
 
 
-class FlatMapStorage:
+class StaticFlatMap:
     """
-    Owning storage container for sorted (key, value) pair entries (AoS).
+    Fixed-capacity owning sorted map stored in an AoS entry array (C++ std::array).
     Provides non-owning FlatMapView via .view().
     Leverages standard sorting algorithms and binary search.
     """
 
-    __slots__ = ("entries",)
+    __slots__ = ("_entries", "capacity")
 
-    def __init__(
-        self,
-        entries: Sequence[Any] = (),
-        sort: bool = False,
-    ):
-        self.entries = list(entries)
-        if sort:
-            self.sort()
+    def __init__(self, capacity: int = 32):
+        self.capacity = capacity
+        self._entries: list[tuple[Any, Any]] = []
+
+    def size(self) -> int:
+        return len(self._entries)
+
+    def __len__(self) -> int:
+        return len(self._entries)
+
+    @property
+    def entries(self) -> list[tuple[Any, Any]]:
+        return self._entries
 
     @property
     def keys(self) -> list[Any]:
-        return [k for k, _ in self.entries]
+        return [k for k, _ in self._entries]
 
     @property
     def values(self) -> list[Any]:
-        return [v for _, v in self.entries]
+        return [v for _, v in self._entries]
 
     def is_sorted(self) -> bool:
         return all(
-            self.entries[i][0] <= self.entries[i + 1][0] for i in range(len(self.entries) - 1)
+            self._entries[i][0] <= self._entries[i + 1][0] for i in range(len(self._entries) - 1)
         )
 
-    def sort(self) -> FlatMapStorage:
-        """Sorts entries in-place by key using standard sort (C++ std::sort equivalent)."""
-        self.entries.sort(key=lambda e: e[0])
+    def sort(self) -> StaticFlatMap:
+        self._entries.sort(key=lambda e: e[0])
         return self
 
     def insert(self, key: Any, value: Any) -> bool:
-        """Inserts maintaining ascending key order."""
-        idx = bisect.bisect_left(self.entries, key, key=lambda e: e[0])
-        if idx < len(self.entries) and self.entries[idx][0] == key:
-            self.entries[idx] = (key, value)
+        idx = bisect.bisect_left(self._entries, key, key=lambda e: e[0])
+        if idx < len(self._entries) and self._entries[idx][0] == key:
+            self._entries[idx] = (key, value)
             return False
-        self.entries.insert(idx, (key, value))
+        assert len(self._entries) < self.capacity, "StaticFlatMap capacity exceeded"
+        self._entries.insert(idx, (key, value))
         return True
 
     def remove(self, key: Any) -> bool:
-        """Removes key and its value maintaining sorted order."""
-        idx = bisect.bisect_left(self.entries, key, key=lambda e: e[0])
-        if idx < len(self.entries) and self.entries[idx][0] == key:
-            self.entries.pop(idx)
+        idx = bisect.bisect_left(self._entries, key, key=lambda e: e[0])
+        if idx < len(self._entries) and self._entries[idx][0] == key:
+            self._entries.pop(idx)
             return True
         return False
 
@@ -188,10 +191,13 @@ class FlatMapStorage:
         return self.remove(key)
 
     def view(self) -> FlatMapView:
-        return FlatMapView(self.entries)
+        return FlatMapView(self._entries)
 
-    def __len__(self) -> int:
-        return len(self.entries)
+    def find(self, key: Any) -> Any | None:
+        return self.view().find(key)
+
+    def __contains__(self, key: Any) -> bool:
+        return self.view().find(key) is not None
 
 
 class FlatSetView(_SortedWindow):
@@ -422,6 +428,21 @@ def test_radix_binary_tree_view():
     assert rbt_view.find(100) is None
 
 
+def test_static_flat_map_operations():
+    m = StaticFlatMap(capacity=16)
+    assert m.insert(30, 300)
+    assert m.insert(10, 100)
+    assert m.insert(20, 200)
+    assert m.is_sorted()
+    assert m.entries == [(10, 100), (20, 200), (30, 300)]
+    assert m.find(20) == 200
+    assert 20 in m
+    assert 40 not in m
+    assert m.remove(20)
+    assert m.find(20) is None
+    assert m.entries == [(10, 100), (30, 300)]
+
+
 if __name__ == "__main__":
     test_two_bit_card_marking_packs_four_cards_per_byte()
     test_packed_write_does_not_disturb_neighbours()
@@ -432,4 +453,5 @@ if __name__ == "__main__":
     test_card_marking_prefilter_and_jit_entry_group_narrowing_lookup()
     test_radix_binary_tree_view()
     test_bits_must_divide_a_byte()
+    test_static_flat_map_operations()
     print("[PASS] All container vocabulary concept tests passed successfully.")

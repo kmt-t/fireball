@@ -110,11 +110,16 @@ IPC転送のための共有メモリブロック確保は、上記の `acquire-p
 ## 7. 共有メモリ (shared-block) のライフサイクルと vMMIO 権限管理
 <!-- traceability: {META_FaultIsolation} {OwnershipTransfer} {PageGranularPermissionIsolation} {VmmioShmDelegation} -->
 
-### 7.1 vMMIO 共有メモリ（FC=14）マッピングと権限管理の移譲
+### 7.1 共有メモリマッピングと仮想化リスナーへのコールバック委譲
 <!-- traceability: {VmmioShmDelegation} {OwnerMismatchTrap} -->
-vMMIO 仮想アドレス空間の FC=14 共有メモリ領域（`0xE000_0000`〜`0xEFFF_FFFF`）におけるページマッピング（VPN $\leftrightarrow$ 物理ページ）およびアクセス権限（PTE の `owner_id`、読み書き権限、`FB_TASK_ID_FLIGHT` の状態遷移、TLB エントリフラッシュ）の管理責務は、Tier 2 の `VMMIOController` から **Tier 3 の共有メモリマネージャ（`MemoryManager`）へ完全に移譲・一元化**される。 `{VmmioShmDelegation}`
-- `VMMIOController` はアドレスデコードと TLB/PTE キャッシュディスパッチに専念し、FC=14 の PTE テーブルの登録・更新・破棄は `MemoryManager` が直接駆動する。
-- `MemoryManager` は共有ブロックの割り当て・状態遷移・解放時に、対応する vMMIO PTE を同期更新し、VPN の TLB キャッシュ（`flush_tlb_entry(vpn)`）を即座に無効化することで、TLB キャッシュのステイル（不整合）を防止する。
+物理メモリマネージャ（`MemoryManager`）はクリーンアーキテクチャ（依存性逆転の原則: DIP）に従い、特定の下位／上位仮想化ハードウェア（vMMIO 等）の識別子や仮想アドレス体系（`0xE000_0000`）を一切直接参照しない。
+代わりに、物理ページマッピングイベントを通知するコールバックインターフェース（`PageMappingCallbacks`）を提供し、仮想化層（vMMIO コントローラ等）がリスナーとして登録する設計とする。 `{VmmioShmDelegation}`
+- **`PageMappingCallbacks`**:
+  - `on_map_page(page_idx, phys_addr, owner_id, read_only)`: 物理ページの割り当て時
+  - `on_update_owner(page_idx, new_owner_id)`: 所有権の移譲・変更時（Grant 等）
+  - `on_revoke(page_idx)`: 所有権の一時回収時（`FB_TASK_ID_FLIGHT` 設定および TLB フラッシュ）
+  - `on_unmap_page(page_idx)`: 物理ページの解放時
+- `MemoryManager` は物理ページ（4KB）の割り当て・状態遷移・解放時にこのコールバックを呼び出し、仮想化層側が自身の仮想アドレス空間（VPN）の PTE テーブル更新や TLB エントリフラッシュ（`flush_tlb_entry(vpn)`）を自律的に実施する。 `{OwnerMismatchTrap}`
 
 ### 7.2 ページ単位権限分離仕様（Page-Granular Permission Isolation）
 <!-- traceability: {PageGranularPermissionIsolation} {META_FaultIsolation} -->

@@ -165,7 +165,7 @@ class WASMInterpreter:
     def __init__(self, memory_size: int = 65536):
         self.stack = []
         self.locals = []
-        self.memory = bytearray(memory_size)
+        self.memory = [0] * (memory_size // 8)  # std::span<uint64_t> (linear memory backing array)
         self.safepoint_pending = False
         self.safepoints_hit = 0
 

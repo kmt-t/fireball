@@ -239,7 +239,7 @@ class BitView:
     byte, which keeps a read down to a single load plus a shift and a mask.
     """
 
-    def __init__(self, storage: bytearray, bits: int, origin: int = 0, count: int = 0):
+    def __init__(self, storage: "std::span<uint8_t>", bits: int, origin: int = 0, count: int = 0):
         assert bits in ALLOWED_BITS, "Bits must be 1, 2 or 4"
         self.storage = storage
         self.bits = bits
@@ -404,7 +404,7 @@ def lookup_jit_entry(
     return view.slice(first, last).find(pc)
 
 
-def card_marking_table(storage: bytearray, card_count: int) -> BitView:
+def card_marking_table(storage: "std::span<uint8_t>", card_count: int) -> BitView:
     """The 2-bit per-card state table: 4 cards per byte instead of one.
 
     Note this returns a BitView, not a FlatMapView -- card marking is answered

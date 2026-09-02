@@ -124,31 +124,43 @@ class Role:
 _ROLE_NAMES = ("RUNTIME", "CORE_SERVICE", "PLATFORM_HAL", "DEBUGGER")
 
 
-class OwnershipState:
-    SENDER_OWNS = "SENDER_OWNS"
-    IN_FLIGHT = "IN_FLIGHT"
-    RECEIVER_OWNS = "RECEIVER_OWNS"
+class OwnershipState(IntEnum):
+    SENDER_OWNS = 1
+    IN_FLIGHT = 2
+    RECEIVER_OWNS = 3
 
 
 class IPCMessage:
-    """A message references an externally owned FlatMapStorage and presents
-    its AoS entries via non-owning FlatMapView (§3.3) -- no resource_id,
+    """A message owns its sorted (key, value) entries (AoS) and presents
+    them via non-owning FlatMapView (§3.3) -- no resource_id,
     no free-form dict payload."""
 
     def __init__(
         self,
-        storage: FlatMapStorage | None = None,
+        entries: Sequence[tuple[Any, Any]] | None = None,
     ):
-        self.storage = storage if storage is not None else FlatMapStorage([])
-        self.payload = self.storage.view()
+        self._entries = sorted(entries, key=lambda e: e[0]) if entries is not None else []
         self.ownership = OwnershipState.SENDER_OWNS
 
+    def _check_ownership(self) -> None:
+        assert self.ownership in (
+            OwnershipState.SENDER_OWNS,
+            OwnershipState.RECEIVER_OWNS,
+        ), f"Cannot access IPCMessage entries while ownership is {self.ownership.name}!"
+
     @property
-    def entries(self):
-        return self.storage.entries
+    def entries(self) -> list[tuple[Any, Any]]:
+        self._check_ownership()
+        return self._entries
+
+    @property
+    def payload(self) -> FlatMapView:
+        self._check_ownership()
+        return FlatMapView(self._entries)
 
     def __len__(self) -> int:
-        return len(self.storage.entries)
+        self._check_ownership()
+        return len(self._entries)
 
 
 class Channel:

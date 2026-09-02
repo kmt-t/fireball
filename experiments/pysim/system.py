@@ -220,7 +220,7 @@ class System:
         self.memory_manager = MemoryManager()
         self.memory_manager.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
         self.scheduler = Scheduler(logger=self.logger)
-        self.ipc = IPCRouter(self.scheduler, logger=self.logger)
+        self.ipc = IPCRouter(self.scheduler, logger=self.logger, memory_manager=self.memory_manager)
         # Direct 1-based index mapping over sorted self.ipc.registry.keys array (no dynamic dict)
         self.runtime_engine = RuntimeEngine()
         self.scheduler.set_idle_hook(self._on_idle)

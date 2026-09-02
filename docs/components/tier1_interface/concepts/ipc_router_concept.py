@@ -14,6 +14,8 @@ Reference Concept Implementation: IPC Router & Zero-Copy Ownership Handoff
 
 import os
 import sys
+from collections.abc import Sequence
+from typing import Any
 
 sys.path.insert(
     0,
@@ -21,7 +23,7 @@ sys.path.insert(
 )
 from flat_view_concept import FlatMapStorage, FlatMapView
 
-_EMPTY_STORAGE = FlatMapStorage([], [])
+_EMPTY_STORAGE = FlatMapStorage([])
 
 
 class Role:
@@ -47,18 +49,36 @@ class IPCMessage:
 
     def __init__(
         self,
+        entries: Sequence[tuple[Any, Any]] | None = None,
         storage: FlatMapStorage | None = None,
     ):
-        self.storage = storage if storage is not None else _EMPTY_STORAGE
-        self.payload = self.storage.view()
+        if storage is not None:
+            self._storage = storage
+        elif entries is not None:
+            self._storage = FlatMapStorage(sorted(entries, key=lambda e: e[0]))
+        else:
+            self._storage = _EMPTY_STORAGE
         self.ownership = OwnershipState.SENDER_OWNS
+
+    def _check_ownership(self) -> None:
+        assert self.ownership in (
+            OwnershipState.SENDER_OWNS,
+            OwnershipState.RECEIVER_OWNS,
+        ), f"Cannot access IPCMessage entries while ownership is {self.ownership}!"
 
     @property
     def entries(self):
-        return self.storage.entries
+        self._check_ownership()
+        return self._storage.entries
+
+    @property
+    def payload(self):
+        self._check_ownership()
+        return self._storage.view()
 
     def __len__(self) -> int:
-        return len(self.storage.entries)
+        self._check_ownership()
+        return len(self._storage.entries)
 
 
 class Channel:
@@ -95,9 +115,7 @@ _REGISTRY_ENTRIES = sorted(
         ("fireball://dbg/manager/0", Role.DEBUGGER),
     ]
 )
-_REGISTRY = FlatMapView(
-    [uri for uri, _ in _REGISTRY_ENTRIES], [role for _, role in _REGISTRY_ENTRIES]
-)
+_REGISTRY = FlatMapView(_REGISTRY_ENTRIES)
 
 # Stage 2: FB_CONF_ROUTER_ROLE_MATRIX (4x4, rows=sender, cols=target); every
 # DENY cell is listed explicitly, matching the C++ constexpr array exactly.
@@ -186,7 +204,7 @@ def test_registry_is_a_real_flat_map_view_not_a_dict():
 
 def test_unregistered_uri_is_rejected():
     router = IPCRouter()
-    msg = IPCMessage(FlatMapStorage([1], [42]))
+    msg = IPCMessage(entries=[(1, 42)])
     status, _ = router.send(Role.RUNTIME, "fireball://nonexistent/service/0", msg)
     assert status == "ERR_NOT_FOUND"
     assert msg.ownership == OwnershipState.SENDER_OWNS
@@ -194,7 +212,7 @@ def test_unregistered_uri_is_rejected():
 
 def test_permission_denied():
     router = IPCRouter()
-    msg = IPCMessage(FlatMapStorage([1], [7]))
+    msg = IPCMessage(entries=[(1, 7)])
     # RUNTIME trying to access Debugger directly (Forbidden)
     status, _ = router.send(Role.RUNTIME, "fireball://dbg/manager/0", msg)
     assert status == "ERR_PERMISSION_DENIED"
@@ -203,7 +221,7 @@ def test_permission_denied():
 
 def test_successful_zero_copy_handoff():
     router = IPCRouter()
-    msg = IPCMessage(FlatMapStorage([1], [5]))
+    msg = IPCMessage(entries=[(1, 5)])
     # Step 1: RUNTIME sends to HAL GPIO. Revoke commits the send; Grant
     # only happens once the receiver actually calls receive().
     status, _ = router.send(Role.RUNTIME, "fireball://hal/gpio/0", msg)
@@ -220,7 +238,7 @@ def test_receive_selects_whichever_allowed_sender_is_ready():
     reachable from both RUNTIME and DEBUGGER, and a receiver has to pick up
     whichever of them actually sent, in RBAC row order."""
     router = IPCRouter()
-    msg = IPCMessage(FlatMapStorage([1], [42]))
+    msg = IPCMessage(entries=[(1, 42)])
     status, _ = router.send(Role.DEBUGGER, "fireball://core/coos/0", msg)
     assert status == "COMPLETED"
     received = router.receive(Role.CORE_SERVICE)
@@ -235,9 +253,9 @@ def test_no_queue_full_state_exists():
     a second send before the first is received is a programming error (one
     waiter per channel), not a recoverable Rollback condition."""
     router = IPCRouter()
-    msg1 = IPCMessage(FlatMapStorage([1], [1]))
+    msg1 = IPCMessage(entries=[(1, 1)])
     router.send(Role.RUNTIME, "fireball://hal/gpio/0", msg1)
-    msg2 = IPCMessage(FlatMapStorage([1], [2]))
+    msg2 = IPCMessage(entries=[(1, 2)])
     raised = False
     try:
         router.send(Role.RUNTIME, "fireball://hal/gpio/0", msg2)

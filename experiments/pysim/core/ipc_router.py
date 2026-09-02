@@ -49,7 +49,6 @@ class DataType(IntEnum):
     UINT32 = 0b00001  # uint32_t / 32ビット即値
     INT32 = 0b00010  # int32_t / 32ビット符号付き整数
     UINT16 = 0b00011  # uint16_t / 16ビット即値
-    FB_OFFSET = 0b00100  # fb_offset_t / ゲストメモリ相対オフセット
 
 
 def pack_key32(scope_kind: int, data_type: int, key_id: int) -> int:
@@ -61,28 +60,6 @@ def pack_key32(scope_kind: int, data_type: int, key_id: int) -> int:
     """
     type_scope = ((scope_kind & 0x7) << 5) | (data_type & 0x1F)
     return ((type_scope & 0xFF) << 24) | (key_id & 0xFFFFFF)
-
-
-def pack_kv64(scope_kind: int, data_type: int, key_id: int, value_32: int) -> int:
-    """
-    Packs a full 64-bit kv_pair (key32 << 32 | value_32) per ipc_router.md §3.3.
-    scope_kind, data_type, key_id, value_32 are all plain int (or an IntEnum,
-    which behaves as one); this is an internal packing utility, not a system
-    boundary, so it trusts its caller rather than inspecting argument types.
-    """
-    return (pack_key32(scope_kind, data_type, key_id) << 32) | (value_32 & 0xFFFFFFFF)
-
-
-def unpack_kv64(kv64: int) -> tuple[int, int, int, int]:
-    """
-    Unpacks a 64-bit KV pair into (scope_kind, data_type, key_id, value_32).
-    """
-    type_scope = (kv64 >> 56) & 0xFF
-    scope_kind = (type_scope >> 5) & 0x7
-    data_type = type_scope & 0x1F
-    key_id = (kv64 >> 32) & 0xFFFFFF
-    value_32 = kv64 & 0xFFFFFFFF
-    return scope_kind, data_type, key_id, value_32
 
 
 class Role(IntEnum):
@@ -128,34 +105,67 @@ class OwnershipState(IntEnum):
 
 class IPCMessage:
     """
-    Fireball IPC message: a fixed-size (<= FB_CONF_ROUTER_MAX_KV_PAIRS) sorted
-    array of kv_pair entries (32-bit key, 32-bit value -- see pack_key32),
-    searched via flat_map_view. This is the message's entire field set per
-    ipc_router.md §3.3's "IPCメッセージ（message）" table (KV map only --
-    no other field is specified there).
+    Fireball IPC message: an owning container of a fixed-size (<= FB_CONF_ROUTER_MAX_KV_PAIRS)
+    sorted array of kv_pair entries (32-bit key, 32-bit value -- see pack_key32),
+    searched via flat_map_view. The message directly owns its FlatMapStorage.
 
-    A bulk byte body (e.g. a guest buffer) does not fit a 32-bit value slot at
-    all -- per the Fireball architecture, bulk data is passed via shm-slice handle
-    (ARG_SHM_HANDLE) or packed AoS kv_pairs, preserving the zero-copy model.
+    Accessing entries or payload requires that the current task holds ownership
+    (SENDER_OWNS or RECEIVER_OWNS). Access during IN_FLIGHT is strictly prohibited.
+
+    Bulk data across tasks must be passed via RAII SharedBlock (shared_block),
+    encapsulating shm_id entirely per {ADR_SharedBlockRaii}.
     """
 
     def __init__(
         self,
+        entries: Sequence[tuple[int, int]] | None = None,
         storage: FlatMapStorage | None = None,
+        shared_block: Any | None = None,
     ):
         self.ownership = OwnershipState.SENDER_OWNS
-        self.storage: FlatMapStorage = storage if storage is not None else _EMPTY_IPC_STORAGE
-        self.payload: FlatMapView = self.storage.view()
+        if storage is not None:
+            self._storage: FlatMapStorage = storage
+        elif entries is not None:
+            self._storage = FlatMapStorage(sorted(entries, key=lambda e: e[0]))
+        else:
+            self._storage = _EMPTY_IPC_STORAGE
+
+        self._shared_block: Any | None = shared_block
+        self._in_flight_shm_id: int | None = None
+
+    def _check_ownership(self) -> None:
+        """Ensures the caller task/context currently holds ownership of the message."""
+        assert self.ownership in (
+            OwnershipState.SENDER_OWNS,
+            OwnershipState.RECEIVER_OWNS,
+        ), f"Cannot access IPCMessage entries while ownership is {self.ownership.name}!"
+
+    @property
+    def storage(self) -> FlatMapStorage:
+        self._check_ownership()
+        return self._storage
 
     @property
     def entries(self) -> Sequence[tuple[Any, Any]]:
         """Returns the sorted AoS (key, value) entries."""
-        return self.storage.entries
+        self._check_ownership()
+        return self._storage.entries
+
+    @property
+    def payload(self) -> FlatMapView:
+        self._check_ownership()
+        return self._storage.view()
 
     @property
     def flat_map_view(self) -> FlatMapView:
         """Returns the non-owning FlatMapView for zero-copy binary search access."""
         return self.payload
+
+    @property
+    def shared_block(self) -> Any | None:
+        """Returns the RAII SharedBlock if present, encapsulating shm_id."""
+        self._check_ownership()
+        return self._shared_block
 
     def get_by_key_id(
         self,
@@ -164,11 +174,13 @@ class IPCMessage:
         data_type: int = DataType.UINT32,
     ) -> int | None:
         """Looks up a value by (scope_kind, data_type, key_id), i.e. pack_key32(...)."""
-        return self.payload.find(pack_key32(scope_kind, data_type, key_id))
+        self._check_ownership()
+        return self._storage.view().find(pack_key32(scope_kind, data_type, key_id))
 
     def get(self, key: int, default: Any = None) -> Any:
         """Retrieves a value via flat_map_view binary search."""
-        val = self.payload.find(key)
+        self._check_ownership()
+        val = self._storage.view().find(key)
         return default if val is None else val
 
     def __getitem__(self, key: int) -> Any:
@@ -178,10 +190,12 @@ class IPCMessage:
         return val
 
     def __contains__(self, key: int) -> bool:
-        return key in self.payload
+        self._check_ownership()
+        return key in self._storage.view()
 
     def __len__(self) -> int:
-        return len(self.storage.entries)
+        self._check_ownership()
+        return len(self._storage.entries)
 
 
 def bytes_to_kv_storage(data: bytes) -> FlatMapStorage:
@@ -267,9 +281,15 @@ class IPCRouter:
     (Stage 3, delegated to scheduler.Channel via integer edge handles).
     """
 
-    def __init__(self, scheduler: Scheduler, logger: Any = None):
+    def __init__(
+        self,
+        scheduler: Scheduler,
+        logger: Any = None,
+        memory_manager: Any | None = None,
+    ):
         self.scheduler = scheduler
         self.logger = logger
+        self.memory_manager = memory_manager
         # Non-owning view borrowing ROM-resident AoS storage array (_SERVICE_ENTRIES)
         self.registry = FlatMapView(_SERVICE_ENTRIES)
 
@@ -386,11 +406,26 @@ class IPCRouter:
             )
 
         # 3. Synchronous CSP send directly on the Channel endpoint
+        # Revoke phase: prepare SharedBlock for in-flight transfer
+        if message._shared_block is not None:
+            message._in_flight_shm_id = message._shared_block.release()
+            message._shared_block = None
+
         message.ownership = OwnershipState.IN_FLIGHT
         action, target = channel.send(message)
         if action == ChannelAction.BLOCK:
             yield (ChannelAction.BLOCK, None)
         message.ownership = OwnershipState.RECEIVER_OWNS
+
+        # Grant phase: update PTE ownership and claim receiver-side SharedBlock
+        if message._in_flight_shm_id is not None and self.memory_manager is not None:
+            recv_task = self.scheduler.get_task(target) if target is not None else None
+            recv_task_id = recv_task.task_id if recv_task is not None else int(desc.role)
+            self.memory_manager.grant_shared(message._in_flight_shm_id, recv_task_id)
+            res = self.memory_manager.claim(recv_task_id, message._in_flight_shm_id)
+            if not res.is_err:
+                message._shared_block = res.unwrap()
+            message._in_flight_shm_id = None
         return (IpcStatus.COMPLETED, target)
 
     def recv(self, service_uri: str):
@@ -414,4 +449,12 @@ class IPCRouter:
         message: IPCMessage = receiver.received_val
         receiver.received_val = None
         message.ownership = OwnershipState.RECEIVER_OWNS
+
+        # Grant phase: if an in-flight SHM block is attached, bind receiver-side SharedBlock
+        if message._in_flight_shm_id is not None and self.memory_manager is not None:
+            self.memory_manager.grant_shared(message._in_flight_shm_id, receiver.task_id)
+            res = self.memory_manager.claim(receiver.task_id, message._in_flight_shm_id)
+            if not res.is_err:
+                message._shared_block = res.unwrap()
+            message._in_flight_shm_id = None
         return (IpcStatus.COMPLETED, message)

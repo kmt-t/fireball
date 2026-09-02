@@ -220,29 +220,20 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
         f"    [HAL Task IPC Rendezvous] Successfully received and dispatched command via HAL task (count={sysv.hal_task.processed_count})"
     )
 
-    # 2) 64-bit KV Pair Array (Specification §3.3 Bit Assignment)
-    from ipc_router import DataType, IPCMessage, ScopeKind, pack_kv64, unpack_kv64
-    from system_containers import FlatMapStorage
+    # 2) Key-Value Pair Array (Specification §3.3 Bit Assignment)
+    from ipc_router import DataType, IPCMessage, ScopeKind, pack_key32
 
-    # Pack 64-bit KV pairs:
+    # Pack 32-bit keys and 32-bit values:
     #   Entry 1: Functional Scope, UINT32, key_id=0x01 (STREAM_WRITE_SHM), val=len(msg)
     #   Entry 2: Resource Scope, UINT32, key_id=0x14 (SHM_HANDLE), val=shm_handle
-    kv1 = pack_kv64(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=0x01, value_32=len(msg))
-    # ShmHandle (hal.py) is an opaque name, not a raw slot ID -- a real
-    # implementation's kv_pair would carry the small integer slot index the
-    # pool already assigns internally; this stands in with a fixed id since
-    # the dummy pool here never exposes that index.
+    k1 = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=0x01)
+    val1 = len(msg)
     shm_slot_id = 1
-    kv2 = pack_kv64(ScopeKind.RESOURCE, DataType.UINT32, key_id=0x14, value_32=shm_slot_id)
+    k2 = pack_key32(ScopeKind.RESOURCE, DataType.UINT32, key_id=0x14)
+    val2 = shm_slot_id
 
-    sk, dt, kid, val = unpack_kv64(kv1)
-    assert sk == ScopeKind.FUNCTIONAL and dt == DataType.UINT32 and kid == 0x01 and val == len(msg)
-
-    pairs = sorted(
-        [(kv1 >> 32, kv1 & 0xFFFFFFFF), (kv2 >> 32, kv2 & 0xFFFFFFFF)], key=lambda p: p[0]
-    )
-    storage_64 = FlatMapStorage(pairs)
-    ipc_msg_64 = IPCMessage(storage=storage_64)
+    pairs = sorted([(k1, val1), (k2, val2)], key=lambda p: p[0])
+    ipc_msg_64 = IPCMessage(entries=pairs)
     assert len(ipc_msg_64) == 2
     assert ipc_msg_64.get_by_key_id(0x01, ScopeKind.FUNCTIONAL) == len(msg)
     assert ipc_msg_64.get_by_key_id(0x14, ScopeKind.RESOURCE) == shm_slot_id

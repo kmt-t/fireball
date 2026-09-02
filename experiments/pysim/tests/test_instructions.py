@@ -579,7 +579,7 @@ def test_log_04_coos_and_ipc_diagnostic_logging():
             sysv.scheduler.notify_interrupt(irq_idx)
 
         # 3. IPC Unknown URI -> 0x0202
-        msg = IPCMessage(FlatMapStorage([(1, 10)]))
+        msg = IPCMessage([(1, 10)])
 
         def bad_uri_task():
             yield from sysv.ipc.send(Role.RUNTIME, "fireball://unknown/service", msg)
@@ -588,7 +588,7 @@ def test_log_04_coos_and_ipc_diagnostic_logging():
         sysv.scheduler.run_until_idle()
 
         # 4. IPC RBAC Denied -> 0x0201
-        msg2 = IPCMessage(FlatMapStorage([(1, 20)]))
+        msg2 = IPCMessage([(1, 20)])
 
         def rbac_denied_task():
             # RUNTIME sending to DEBUGGER is DENIED
@@ -599,7 +599,7 @@ def test_log_04_coos_and_ipc_diagnostic_logging():
 
         # 5. IPC Message Too Large -> 0x0203
         too_large_msg = IPCMessage(
-            FlatMapStorage([(i, i) for i in range(1, 10)])  # 9 pairs > 8
+            [(i, i) for i in range(1, 10)]  # 9 pairs > 8
         )
 
         def too_large_task():
@@ -1096,13 +1096,13 @@ def test_ipc_01_uri_lookup_and_permission_matrix():
     # scheduler.Channel's own tests (test_coos_01 etc.) to observe the
     # CSP block directly instead of driving it to a rendezvous that will
     # never come.
-    msg1 = IPCMessage(FlatMapStorage([(_KEY_CMD, _CMD_PIN_HIGH)]))
+    msg1 = IPCMessage([(_KEY_CMD, _CMD_PIN_HIGH)])
     gen = router.send(Role.RUNTIME, "fireball://hal/gpio/0", msg1)
     assert next(gen) == (ChannelAction.BLOCK, None)
     assert msg1.ownership == OwnershipState.IN_FLIGHT
 
     # PLATFORM_HAL has no outgoing edges at all (role matrix row is all-DENY).
-    msg2 = IPCMessage(FlatMapStorage([(_KEY_CMD, _CMD_PIN_HIGH)]))
+    msg2 = IPCMessage([(_KEY_CMD, _CMD_PIN_HIGH)])
     status_bad, _ = _run_immediate(router.send(Role.PLATFORM_HAL, "fireball://hal/gpio/0", msg2))
     assert status_bad == IpcStatus.ERR_PERMISSION_DENIED
     assert msg2.ownership == OwnershipState.SENDER_OWNS
@@ -1113,18 +1113,13 @@ def test_ipc_02_e2e_shared_block_transfer():
     sysv = System()
     try:
         # Sender allocates SharedBlock
-        sb = sysv.memory_manager.allocate_shared(caller_task_id=1, size=256).unwrap()
-        assert sb.get_owner() == 1
+        sb = sysv.memory_manager.allocate_shared(caller_task_id=2, size=256).unwrap()
+        assert sb.get_owner() == 2
         addr = sb.get_address()
         assert addr >= 0x20020000
-        # Sender releases to FLIGHT
-        shm_id = sb.release()
-        assert sysv.memory_manager.vmmio_registry.get_owner(sb.page_idx) == FB_TASK_ID_FLIGHT
 
-        # IPC is inter-*task* communication: both the RUNTIME sender and
-        # the PLATFORM_HAL receiver are genuine scheduler tasks, each
-        # performing its own send()/recv() as its own coroutine.
-        msg = IPCMessage(FlatMapStorage([(_KEY_SHM_ID, shm_id)]))
+        # Sender encapsulates SharedBlock in IPCMessage ({ADR_SharedBlockRaii})
+        msg = IPCMessage(shared_block=sb)
         sent: list[IpcStatus] = []
 
         def client_app_task():
@@ -1137,17 +1132,17 @@ def test_ipc_02_e2e_shared_block_transfer():
             status, recv_msg = yield from sysv.ipc.recv("fireball://hal/gpio/0")
             received.append(recv_msg)
 
+        # Spawn receiver (task 1) then sender (task 2)
         sysv.scheduler.spawn("gpio_receiver", gpio_receiver())
         sysv.scheduler.spawn("client_app", client_app_task())
         sysv.scheduler.run_until_idle()
 
         assert sent == [IpcStatus.COMPLETED]
         assert received and received[0] is msg
-        recv_shm_id = received[0][_KEY_SHM_ID]
-        # Grant to task 2 and claim
-        sysv.memory_manager.vmmio_registry.update_owner(sb.page_idx, 2)
-        recv_sb = sysv.memory_manager.claim(receiver_task_id=2, shm_id=recv_shm_id).unwrap()
-        assert recv_sb.get_owner() == 2
+        # Channel automatically granted and claimed SharedBlock for receiver task (task 1)!
+        recv_sb = received[0].shared_block
+        assert recv_sb is not None
+        assert recv_sb.get_owner() == 1
         assert recv_sb.get_address() == addr
     finally:
         sysv.shutdown()
@@ -1159,7 +1154,7 @@ def test_ipc_03_send_failure_restores_owner():
     try:
         sb = sysv.memory_manager.allocate_shared(caller_task_id=1, size=256).unwrap()
         shm_id = sb.release()
-        msg = IPCMessage(FlatMapStorage([(_KEY_SHM_ID, shm_id)]))
+        msg = IPCMessage([(_KEY_SHM_ID, shm_id)])
         # PLATFORM_HAL has no outgoing edges: rejected at Stage 2 before ever
         # touching a channel, so this never actually blocks.
         status, _ = _run_immediate(sysv.ipc.send(Role.PLATFORM_HAL, "fireball://hal/gpio/0", msg))
@@ -1191,7 +1186,7 @@ def test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group():
 
     def debugger_sender():
         status, _ = yield from router.send(
-            Role.DEBUGGER, "fireball://core/coos/0", IPCMessage(FlatMapStorage([(1, 99)]))
+            Role.DEBUGGER, "fireball://core/coos/0", IPCMessage([(1, 99)])
         )
         assert status == IpcStatus.COMPLETED
 
@@ -1228,7 +1223,7 @@ def test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group():
 
     def runtime_sender():
         status, _ = yield from router.send(
-            Role.RUNTIME, "fireball://core/coos/0", IPCMessage(FlatMapStorage([(1, 7)]))
+            Role.RUNTIME, "fireball://core/coos/0", IPCMessage([(1, 7)])
         )
         assert status == IpcStatus.COMPLETED
 
@@ -1240,19 +1235,43 @@ def test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group():
     assert received2[0][1].get(1) == 7
 
 
-def test_ipc_05_message_storage_ownership_separation():
-    """IPC-05: IPCMessage borrows array storage from FlatMapStorage without owning it (AoS)."""
-    storage = FlatMapStorage([(10, 100), (20, 200)])
-    msg = IPCMessage(storage)
+def test_ipc_05_message_storage_ownership_and_access_check():
+    """IPC-05: IPCMessage owns its FlatMapStorage and enforces ownership checks upon access."""
+    from ipc_router import OwnershipState
 
-    assert msg.storage is storage
-    assert msg.payload.entries is storage.entries
+    msg = IPCMessage(entries=[(10, 100), (20, 200)])
+    assert msg.ownership == OwnershipState.SENDER_OWNS
     assert msg.get(10) == 100
     assert msg.get(20) == 200
+    assert len(msg) == 2
+    assert 10 in msg
 
-    # Mutating external storage directly reflects in msg view (borrowed reference)
-    storage.entries[0] = (10, 999)
-    assert msg.get(10) == 999
+    # Transition to IN_FLIGHT (sending): access to entries is strictly prohibited
+    msg.ownership = OwnershipState.IN_FLIGHT
+    try:
+        _ = msg.get(10)
+        raise AssertionError("Accessing entries during IN_FLIGHT must raise AssertionError")
+    except AssertionError as e:
+        assert "Cannot access IPCMessage entries while ownership is IN_FLIGHT" in str(e)
+
+    try:
+        _ = msg.entries
+        raise AssertionError(
+            "Accessing entries property during IN_FLIGHT must raise AssertionError"
+        )
+    except AssertionError as e:
+        assert "Cannot access IPCMessage entries while ownership is IN_FLIGHT" in str(e)
+
+    try:
+        _ = len(msg)
+        raise AssertionError("Calling len() during IN_FLIGHT must raise AssertionError")
+    except AssertionError as e:
+        assert "Cannot access IPCMessage entries while ownership is IN_FLIGHT" in str(e)
+
+    # Transition to RECEIVER_OWNS: access is permitted again
+    msg.ownership = OwnershipState.RECEIVER_OWNS
+    assert msg.get(10) == 100
+    assert msg.get(20) == 200
 
 
 def test_ipc_06_router_create_channel_authorization():
@@ -1275,7 +1294,7 @@ def test_ipc_06_router_create_channel_authorization():
     assert ch_denied is None, "PLATFORM_HAL -> DEBUGGER must be denied by RBAC"
 
     # Communication over the authorized channel
-    msg = IPCMessage(FlatMapStorage([(1, 42)]))
+    msg = IPCMessage([(1, 42)])
     sched.current_task = sched.get_task(runtime_task_id)
     action, _ = ch_hal.send(msg)
     assert action == ChannelAction.BLOCK

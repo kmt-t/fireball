@@ -70,10 +70,9 @@ IPC通信の最小単位。1つのメッセージで8個のペアを送信でき
 | | `0b001` | 辞書参照 (Dictionary) — 静的オフセットによるログメッセージ参照 |
 | | `0b010` | リソース (Resource) — vDMA や GPIO などの物理・仮想ハードウェア記述子 |
 | 下位5ビット（型） | `0b00000` | `void` / 未定義 |
-| | `0b00001` | `uint32_t` / 32ビット即値 |
-| | `0b00010` | `int32_t` / 32ビット符号付き整数 |
+| | `0b00001` | `uint32_t` / 32ビット即値（オフセット等の数値を含む） |
+| | `0b00100` | `int32_t` / 32ビット符号付き整数 |
 | | `0b00011` | `uint16_t` / 16ビット即値 |
-| | `0b00100` | `fb_offset_t` / ゲストメモリ相対オフセット |
 
 ##### スコープ定義
 - **機能的IPC**: キーを、受信側が定義する関数やリクエスト種類（WASI 0.3p ドライバ通信コマンド `CMD_STREAM_*`, `CMD_CLOCK_*`, `CMD_GPIO_*`, `CMD_BUS_*` 等）を特定する識別子として使用する。 `{TypeSafeMessaging}`
@@ -81,12 +80,13 @@ IPC通信の最小単位。1つのメッセージで8個のペアを送信でき
 - **階層URIルーティング**: 各デバイスおよびサービスは `fireball://<domain>/<type>/<instance>`（例: `fireball://device/uart/0`, `fireball://device/gpio/0`, `fireball://device/timer/0`, `fireball://device/i2c/0`）の正規化されたURIで登録され、IPCルータを介して $O(\log N)$ でディスパッチされる。 `{URIAbstraction}`
 
 #### IPCメッセージ（message）
-<!-- traceability: {TypeSafeMessaging} {META_FlatMapIndexed} -->
-Key-Valueペアを複数集約した通信の基本単位。内部的に、動的メモリ確保を一切伴わない静的バッファ上のAoS（Key-Valueペアのエントリ配列）と `fireball::flat_map_view` による二分探索を採用し、メッセージ内のキー検索を $O(\log N)$ で行う。 `{TypeSafeMessaging}` `{META_FlatMapIndexed}`
+<!-- traceability: {TypeSafeMessaging} {META_FlatMapIndexed} {OwnershipTransfer} {ADR_SharedBlockRaii} -->
+Key-Valueペアを複数集約した通信の基本単位。内部的に、動的メモリ確保を一切伴わない静的バッファ上のAoS（Key-Valueペアのエントリ配列）と `fireball::flat_map_view` による二分探索を採用し、メッセージ内のキー検索を $O(\log N)$ で行う。メッセージ自身がストレージ（固定長AoSエントリ配列）を所有し、エントリやペイロードへのアクセス時には所有権（`SENDER_OWNS` または `RECEIVER_OWNS`）を強制検証する（`IN_FLIGHT` 中のアクセスは禁止）。タスクを跨ぐ大きなデータは共有メモリ（`SharedBlock`）を保持し、内部の `shm_id` を完全隠蔽する。 `{TypeSafeMessaging}` `{META_FlatMapIndexed}` `{ADR_SharedBlockRaii}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| KVマップ (AoS) | メッセージ内容を構成するKey-Valueペアエントリ配列 | ソート済み固定長AoS配列 + `fireball::flat_map_view` | 8個固定（静的バッファ） |
+| KVマップ (AoS) | メッセージ内容を構成するKey-Valueペアエントリ配列。自前で所有しアクセス時に所有権検証 | ソート済み固定長AoS配列 + `fireball::flat_map_view` | 8個固定（静的バッファ） |
+| 共有メモリブロック | タスク間バルク転送用RAII共有メモリ。内部の `shm_id` を完全隠蔽 | `fireball::shared_block` (オプション) | 0または1個 |
 
 #### レジストリエントリ（registry_entry）
 <!-- traceability: {DictionaryBasedIPC} {TypeSafeMessaging} {META_FlatMapIndexed} -->

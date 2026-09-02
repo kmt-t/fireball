@@ -226,7 +226,7 @@ class RadixBinaryTreeView:
         radix_table: Sequence[int],
         radix_shift: int,
     ):
-        self.map_view = FlatMapView(list(zip(keys, values)))
+        self.map_view = FlatMapView(list(zip(keys, values, strict=False)))
         self.radix_table = radix_table  # pure scalar offsets array [0, 3, 6, ...]
         self.radix_shift = radix_shift
 

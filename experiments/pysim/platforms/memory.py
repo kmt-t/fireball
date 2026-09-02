@@ -441,6 +441,14 @@ class MemoryManager:
         )
         return Result(value=sb)
 
+    def grant_shared(self, shm_id: int, new_owner_task_id: int) -> bool:
+        """Grants in-flight SHM block to the receiver task in vMMIO PTE (Grant phase)."""
+        slot = self.shm_slots.find(shm_id)
+        if slot is None or not slot.allocated:
+            return False
+        self.vmmio_registry.update_owner(slot.page_idx, new_owner_task_id)
+        return True
+
     def claim(self, receiver_task_id: int, shm_id: int) -> Result[SharedBlock]:
         slot = self.shm_slots.find(shm_id)
         if slot is None or not slot.allocated:

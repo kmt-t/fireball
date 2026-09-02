@@ -22,13 +22,15 @@
 
 ## 主要ルール
 
+- コンパイラは Clang 17+ 必須（`[[clang::musttail]]` による直接末尾呼び出し最適化前提、GCC/MSVC非サポート）。
 - C++ は 2 スペース、100 桁、snake_case を基本にする。
 - 公開 API は `fireball` 名前空間に置く。
 - ヘッダは `.hxx`、C++ は `.cxx`、C は `.c` を使う。
 - 組み込みコードは静的/スタック主体とし、`malloc` / `new` / `void*` / 例外 / RTTI を避ける。
-- ドキュメント本文は日本語、コード名・API 名・キーワード・URI は英語。
-- 図は Mermaid、表は Markdown を優先する。
-- 形式検証は Python `pyModelChecking`（Kripke 構造・CTL/LTL）で記述・実行する。
+- Python（シミュレータ・概念コード・形式検証・テスト）は `typing.Any` を完全禁止し、具体型・代数的データ型を用いる。
+- ドキュメント本文は日本語（自然言語）、コード名・API 名・キーワード・URI は英語。
+- 複雑な動的アルゴリズムの図は、責務重視＝シーケンス図（`sequenceDiagram`）、手順重視＝アクティビティ図（`flowchart TD`）とする。
+- 形式検証は Python `pyModelChecking`（Kripke 構造・CTL/LTL）で記述・実行し、`guards=False` 変異検査を必須とする。
 
 ## 検証・フォーマット
 

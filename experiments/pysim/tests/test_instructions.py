@@ -1347,6 +1347,48 @@ def test_hal_task_ipc_communication():
         sysv.shutdown()
 
 
+def test_gdbserver_task_coos_cooperative_execution():
+    """DBG-01: GDBServer operates as an independent task on COOS and handles RSP packets."""
+    import socket
+
+    from debugger import DebuggerManager
+
+    sysv = System()
+    dbg = DebuggerManager()
+    ctx = WASMContext()
+    ctx.locals = [10, 20]
+    task_id, port = sysv.spawn_gdbserver_task(dbg, start_pc=0x10, ctx=ctx)
+
+    try:
+        # Connect client to the non-blocking gdbserver task
+        client = socket.create_connection(("127.0.0.1", port), timeout=2.0)
+        client.settimeout(2.0)
+
+        # Drive COOS scheduler to accept the connection
+        sysv.scheduler.step()
+
+        # Send '?' halt reason query
+        client.sendall(b"$?#3f")
+        # Step scheduler to process packet
+        sysv.scheduler.step()
+
+        # Read ACK '+' and response
+        resp = client.recv(1024)
+        assert b"+" in resp
+        assert b"$S05#b8" in resp
+
+        # Send 'g' read registers
+        client.sendall(b"+$g#67")
+        sysv.scheduler.step()
+        resp = client.recv(1024)
+        assert b"+" in resp
+        assert b"$" in resp
+
+        client.close()
+    finally:
+        sysv.shutdown()
+
+
 def test_syscall_07_wasi_fd_write():
     """SYS-80: WASI_FD_WRITE writes single iovec to UART stdout and reports written bytes."""
     sysv = System()

@@ -728,7 +728,34 @@ class System:
         self._hal_task_id = self.scheduler.spawn("hal_task", self.hal_task.run())
         return self._hal_task_id
 
+    def spawn_gdbserver_task(
+        self,
+        dbg: Any,
+        start_pc: int = 0,
+        ctx: Any = None,
+        blocks: Any = None,
+        host: str = "127.0.0.1",
+        port: int = 0,
+    ) -> tuple[int, int]:
+        """Spawns the GDB Server Task on the COOS scheduler (debug_manager.md).
+        GDBServer runs as a cooperative task communicating via non-blocking TCP socket.
+        Returns: (task_id, bound_port).
+        """
+        from gdb_server import GDBServer
+
+        gdb_srv = GDBServer(dbg, host=host, port=port)
+        bound_port = gdb_srv.bind_socket()
+        self.gdb_server = gdb_srv
+        task_id = self.scheduler.spawn(
+            "gdbserver_task",
+            gdb_srv.run_task(start_pc, ctx, blocks or {}),
+        )
+        self._gdb_task_id = task_id
+        return (task_id, bound_port)
+
     def shutdown(self) -> None:
+        if hasattr(self, "gdb_server") and self.gdb_server is not None:
+            self.gdb_server.stop()
         if hasattr(self, "hal_task") and self.hal_task is not None:
             self.hal_task.running = False
         self.pool.close_all()

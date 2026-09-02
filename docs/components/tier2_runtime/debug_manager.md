@@ -7,35 +7,44 @@
 
 ## 1. コンセプト
 <!-- traceability: {RSPMinimalSet} {DebuggerLabelTableSwitch} {MemoryIsolation} {Debug_Standard_Env} {RSP_Transport_Selectable} {Debug_Integrated} {Debugger_Jit_Flush} -->
-デバッガは、VSCode等の外部ツールからのデバッグを可能にするため、GDB Remote Serial Protocol (RSP) に基づく実行制御を行う。標準環境として VSCode, UART, J-Link をサポートする。また `{Debug_Integrated}` に準拠し、GDB RSP制御に加えて、**実行時プロファイラ機能（ホットスポットサンプリングや実行頻度計測）** および **動的テストツール機能（命令トレース・実行時メモリ/レジスタアサーション）** を内蔵する。RSPパケットのフレーミング・チェックサム検証はHAL層で行われ、デバッガはHALから供給される`debug_command`キューを消費し、GDBコマンドの構文解析・実行制御・レスポンス生成を行う。JITキャッシュの無効化はアタッチ中常時ではなく、デバッガがメモリを書き換えた場合にのみ発生する（[runtime_vsoc.md §4.2.1](runtime_vsoc.md#421-safepoint-と-jit-キャッシュ協調モデル) の `{Debugger_Jit_Flush}` を正本とする）。 `{RSPMinimalSet}` `{DebuggerLabelTableSwitch}` `{MemoryIsolation}` `{Debug_Standard_Env}` `{RSP_Transport_Selectable}` `{Debug_Integrated}` `{Debugger_Jit_Flush}`
+デバッガおよび GDB Server は、VSCode等の外部ツールからのデバッグを可能にするため、COOS 上の**独立した協調タスク（`gdbserver_task`）**として常駐し、GDB Remote Serial Protocol (RSP) に基づく非同期・協調的な実行制御を行う。標準環境として VSCode, UART, J-Link をサポートする。また `{Debug_Integrated}` に準拠し、GDB RSP制御に加えて、**実行時プロファイラ機能（ホットスポットサンプリングや実行頻度計測）** および **動的テストツール機能（命令トレース・実行時メモリ/レジスタアサーション）** を内蔵する。RSPパケットの送受信待ち時は COOS スケジューラへ `yield` することで、ゲストタスクや HAL タスクの実行を阻害しない。JITキャッシュの無効化はアタッチ中常時ではなく、デバッガがメモリを書き換えた場合にのみ発生する（[runtime_vsoc.md §4.2.1](runtime_vsoc.md#421-safepoint-と-jit-キャッシュ協調モデル) の `{Debugger_Jit_Flush}` を正本とする）。 `{RSPMinimalSet}` `{DebuggerLabelTableSwitch}` `{MemoryIsolation}` `{Debug_Standard_Env}` `{RSP_Transport_Selectable}` `{Debug_Integrated}` `{Debugger_Jit_Flush}`
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {RSPMinimalSet} -->
-本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属し、vSoC (`runtime_vsoc.md`) から分解されたデバッグ状態制御、プロファイラ集計、ブレークポイント管理、および HAL からフレーミング済みで供給される GDB RSP コマンドの構文解析・レスポンス生成を担当する（パケットのフレーミング・チェックサム検証自体は HAL 層の責務）。具象的なプロトコル仕様は [GDB RSP 物理仕様書 (`docs/specs/gdb_rsp_protocol.md`)](../../specs/gdb_rsp_protocol.md) を正本とする。 `{META_3TierSeparation}` `{RSPMinimalSet}`
+本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属し、vSoC (`runtime_vsoc.md`) から分解されたデバッグ状態制御、プロファイラ集計、ブレークポイント管理、および COOS 協調タスクとして稼働する GDB RSP 通信・コマンドディスパッチを担当する。具象的なプロトコル仕様は [GDB RSP 物理仕様書 (`docs/specs/gdb_rsp_protocol.md`)](../../specs/gdb_rsp_protocol.md) を正本とする。 `{META_3TierSeparation}` `{RSPMinimalSet}`
 
 ## 3. 静的モデル
 
 ### 3.1 データ構造
-- **`Debugger`**: GDB RSPプロプライエタリな制御ロジック、デバッグ状態、およびブレークポイント管理をカプセル化した主要クラス。
-- **`RspParser` / `RspSerializer`**: HAL層でフレーミング・チェックサム検証済みの `debug_command` を受け取り、GDBコマンドの構文解析（例: `g`, `m addr,len`, `Z0,addr,kind`）およびレスポンスペイロードの生成を行うクラス。パケットの生バイト受信・フレーミング・チェックサム計算自体は HAL 層 (`platform_hal.md`) の責務であり、本クラスはその対象外である。
+- **`GDBServerTask` / `Debugger`**: COOS 協調タスクとして動作し、GDB RSP プロトコル制御ロジック、デバッグ状態、およびブレークポイント管理をカプセル化した主要クラス。
+- **`RspParser` / `RspSerializer`**: GDB RSP コマンドの構文解析（例: `g`, `m addr,len`, `Z0,addr,kind`）およびレスポンスペイロードの生成を行うクラス。
 - **`Profiler` / `DynamicTestTool`**: 命令実行サンプリングカウンタ、PC実行頻度マップ、および動的アサーションフックテーブル。 `{Debug_Integrated}`
 - **`debug_config`**: 最大ブレークポイント数やポート番号などの不変の設定。
 
 ### 3.2 内部ブロック図
 ```mermaid
 graph TD
-    subgraph Debugger_Layer
+    subgraph COOS_Layer
+        Sched[COOS Scheduler]
+        GdbTask[GDBServer Task]
+        HalTask[HAL Task]
+        GuestTask[Guest Runtime Task]
+    end
+
+    subgraph Debugger_Core
         Engine[Debugger Engine]
         RspParser[GDB Command Parser / Response Serializer]
         Profiler[Profiler & Test Tool Engine]
     end
 
     subgraph External
-        HAL[HAL Transport UART/RTT]
         ECtx[execution_context]
     end
 
-    Engine -- holds references --> HAL
+    Sched -- dispatches --> GdbTask
+    Sched -- dispatches --> HalTask
+    Sched -- dispatches --> GuestTask
+    GdbTask -- drives --> Engine
     Engine -- uses --> RspParser
     Engine -- holds reference --> ECtx
     Engine -- manages --> BP[breakpoint flat_set_view]

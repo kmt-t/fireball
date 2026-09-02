@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import socket
 import threading
-from collections.abc import Mapping
+from collections.abc import Generator, Mapping
+from typing import Any
 
 from debugger import DebuggerManager, GDBRspProtocol
 from runtime_engine import BasicBlock, WASMContext
@@ -29,14 +30,20 @@ class GDBServer:
         self._running = False
         self.actual_port: int = 0
 
+    def bind_socket(self) -> int:
+        """Binds TCP socket and returns bound port."""
+        if self._server_sock is None:
+            self._server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self._server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self._server_sock.bind((self.host, self.port))
+            self._server_sock.listen(1)
+            self.actual_port = self._server_sock.getsockname()[1]
+            self._running = True
+        return self.actual_port
+
     def start(self, current_pc: int, ctx: WASMContext, blocks: Mapping[int, BasicBlock]) -> int:
         """Starts TCP listener in a background thread and returns bound port."""
-        self._server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self._server_sock.bind((self.host, self.port))
-        self._server_sock.listen(1)
-        self.actual_port = self._server_sock.getsockname()[1]
-        self._running = True
+        port = self.bind_socket()
         self._thread = threading.Thread(
             target=self._server_loop,
             args=(current_pc, ctx, blocks),
@@ -44,7 +51,66 @@ class GDBServer:
             name="GDBServerThread",
         )
         self._thread.start()
-        return self.actual_port
+        return port
+
+    def run_task(
+        self, start_pc: int, ctx: WASMContext, blocks: Mapping[int, BasicBlock]
+    ) -> Generator[tuple[str, Any], None, None]:
+        """
+        COOS cooperative task coroutine for GDBServer.
+        Listens and processes RSP packets asynchronously using non-blocking socket
+        and yields execution back to COOS scheduler when waiting for I/O.
+        """
+        self.bind_socket()
+        assert self._server_sock is not None
+        self._server_sock.setblocking(False)
+        current_pc = start_pc
+        buffer = ""
+
+        try:
+            # 1. Accept client non-blockingly
+            while self._running and self._client_sock is None:
+                try:
+                    client, _ = self._server_sock.accept()
+                    client.setblocking(False)
+                    self._client_sock = client
+                    self.dbg.attach()
+                    break
+                except (BlockingIOError, TimeoutError):
+                    yield ("YIELD", None)
+
+            # 2. Main packet dispatch loop
+            while self._running and self._client_sock is not None:
+                try:
+                    data = self._client_sock.recv(4096)
+                    if not data:
+                        break
+                    buffer += data.decode("latin1")
+                except (BlockingIOError, TimeoutError):
+                    yield ("YIELD", None)
+                    continue
+                except Exception:
+                    break
+
+                # Process all complete packets in buffer
+                while "$" in buffer and "#" in buffer:
+                    dollar_idx = buffer.index("$")
+                    hash_idx = buffer.find("#", dollar_idx)
+                    if hash_idx == -1 or len(buffer) < hash_idx + 3:
+                        break
+                    packet_str = buffer[dollar_idx : hash_idx + 3]
+                    buffer = buffer[hash_idx + 3 :]
+                    # Send immediate ACK
+                    self._client_sock.sendall(b"+")
+                    # Handle packet via GDBRspProtocol
+                    response, current_pc = self.rsp.handle_packet(
+                        packet_str, current_pc, ctx, blocks
+                    )
+                    if response:
+                        self._client_sock.sendall(response.encode("latin1"))
+                yield ("YIELD", None)
+        finally:
+            self.stop()
 
     def stop(self) -> None:
         """Stops the TCP server and closes all sockets."""

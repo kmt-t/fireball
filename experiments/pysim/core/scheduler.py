@@ -323,6 +323,36 @@ class Scheduler:
     def pending_task_count(self) -> int:
         return len(self._ready) + sum(len(w) for _, w in self.irq_waiters)
 
+    def step(self) -> Task | None:
+        """Executes a single ready task from the front of the queue."""
+        self.drain_interrupts()
+        if not self._ready:
+            return None
+        task = self._ready.popleft()
+        self.current_task = task
+        task.state = TaskState.RUNNING
+        if task.coro is None:
+            task.state = TaskState.READY
+            self._ready.append(task)
+            self.current_task = None
+            return task
+        try:
+            wait_on = next(task.coro)
+        except StopIteration as e:
+            task.result = e.value
+            task.state = TaskState.TERMINATED
+            self.current_task = None
+            return task
+
+        if wait_on is None or (
+            isinstance(wait_on, tuple) and wait_on[0] in ("YIELD", ChannelAction.YIELD)
+        ):
+            task.state = TaskState.READY
+            self._ready.append(task)
+
+        self.current_task = None
+        return task
+
     def run_until_idle(self) -> None:
         """Runs one full round-robin sweep, then fires idle hooks once READY queue drains."""
         self.drain_interrupts()
@@ -341,7 +371,9 @@ class Scheduler:
                 task.state = TaskState.TERMINATED
                 self.current_task = None
                 continue
-            if wait_on is None:
+            if wait_on is None or (
+                isinstance(wait_on, tuple) and wait_on[0] in ("YIELD", ChannelAction.YIELD)
+            ):
                 task.state = TaskState.READY
                 self._ready.append(task)
             # else: a ("BLOCK", None) CSP wait -- channel_send()/channel_recv()

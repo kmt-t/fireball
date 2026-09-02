@@ -87,6 +87,10 @@
 | `{FlatMapView_BinarySearch}` | `system_containers.md` | `system_containers.md` | 静的ソート配列に対する $O(\log N)$ バイナリサーチ（動的割当なし） | Scenario 1, 9 (`INT-01`, `INT-80`) |
 | `{RingBuffer_Overwrite}` | `system_containers.md` | `system_containers.md` | 静的容量リングバッファ、満杯時の最古エントリ自動上書き | Scenario 9 (`INT-82`) |
 | `{Pairwise_Combinatorial_Testing}` | `combinatorial_test_spec.md` | `combinatorial_test_spec.md` | 7因子288組の全2因子間ペアを100%網羅する All-Pairs 組み合わせテスト | `PAIR-01`〜`PAIR-26` |
+| `{PageGranularPermissionIsolation}` | `platform_memory.md` | `platform_memory.md` | 共有メモリの4KB物理ページ単位での排他所有権（`owner_id`）管理とアクセス権限分離 | `MEM-14` |
+| `{VmmioShmDelegation}` | `runtime_vmmio.md` | `platform_memory.md` | vMMIO FC=14共有メモリマッピングと権限・TLB無効化のメモリマネージャリスナー移譲 | `MEM-15` |
+| `{ADR_PageGranularPermissionIsolation}` | `platform_memory.md` | `platform_memory.md` | アーキテクチャ決定: ページ単位での権限分離とリスナーによる仮想化マッピング移譲 | `MEM-14`, `MEM-15` |
+| `{VSOC_Lifecycle}` | `runtime_vsoc.md` | `runtime_vsoc.md` | vSoC Engine の状態遷移とインタープリタ／JIT切り替えライフサイクル | Scenario 7, 8 |
 
 ---
 

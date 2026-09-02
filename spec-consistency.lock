@@ -15,6 +15,9 @@
     "ADR_MemoryManagerMinimalSurface": {
       "sec:requires/requirement_list.md#4. 設計課題・制約追跡 (Design Challenges & ADRs)": "3ab4c46f8d28accca3fcef757317049ea832af3bb3b4ecdbe46ed5a0b86da7db"
     },
+    "ADR_PageGranularPermissionIsolation": {
+      "sec:architecture/keyword_dictionary.md#2.4 デバッガ & システムコア & プラットフォーム (Debug / Syscall / Logging / HAL)": "6652b686e103199ef0e2949058f74c0feced2bc1abae1d99eb3a83f29b5c9574"
+    },
     "ADR_RendezvousChannel": {
       "sec:requires/requirement_list.md#4. 設計課題・制約追跡 (Design Challenges & ADRs)": "cded10374d97e4709bca01434a338d45014c561a1a49e91fef810252a9406c4c"
     },
@@ -398,6 +401,9 @@
     "PackedBitView": {
       "sec:requires/requirement_list.md#3.1.5 共通基盤・実装パターン": "3d23efee2086a5baf66759527e46561d6f06d2f9176335921d719ff82e41df4a"
     },
+    "PageGranularPermissionIsolation": {
+      "sec:architecture/keyword_dictionary.md#2.4 デバッガ & システムコア & プラットフォーム (Debug / Syscall / Logging / HAL)": "f2dc2e64dd11aba1b9d29123d2642e46d374d351e9506f30cb40ac729bdb5d8f"
+    },
     "Pairwise_Combinatorial_Testing": {
       "sec:architecture/keyword_dictionary.md#2.4 デバッガ & システムコア & プラットフォーム (Debug / Syscall / Logging / HAL)": "263287505578b8d6b8a0d6eb26c3f5190e80e4e56c6c5eb17d9a7a3065c954fa"
     },
@@ -500,6 +506,12 @@
     "VDMA": {
       "sec:requires/requirement_list.md#3.1.1 WASM実行 (vSoC)": "45e401c8310d3659eb57f279862c8c495cac13246e651c12302f016cff05039c"
     },
+    "VSOC_Lifecycle": {
+      "sec:architecture/keyword_dictionary.md#2.4 デバッガ & システムコア & プラットフォーム (Debug / Syscall / Logging / HAL)": "08e0b107604724267a501bc09db408b826bd773f4b2f6c0c1572c104a1cc4926"
+    },
+    "VmmioShmDelegation": {
+      "sec:architecture/keyword_dictionary.md#2.4 デバッガ & システムコア & プラットフォーム (Debug / Syscall / Logging / HAL)": "b8fe9e37a6bc584b8dd6954afc6987e90cc588fe6ea1ec420e6de3e1b555f754"
+    },
     "VsocRuntime_Layout": {
       "sec:architecture/keyword_dictionary.md#2.1 WASM実行 & ランタイム (vSoC / Interpreter / Loader / vMMIO)": "27e368eb9b0d5cb282e086f668f03fbed67d367b0f4eb9f74b99d495a4912932"
     },
@@ -584,6 +596,9 @@
     ],
     "ADR_MemoryManagerMinimalSurface": [
       "sec:architecture/architecture_overview.md#8. アーキテクチャスタイルと設計判断 (ADR)",
+      "sec:components/tier3_platform/platform_memory.md#8. 設計判断 (ADR)"
+    ],
+    "ADR_PageGranularPermissionIsolation": [
       "sec:components/tier3_platform/platform_memory.md#8. 設計判断 (ADR)"
     ],
     "ADR_RendezvousChannel": [
@@ -1095,8 +1110,7 @@
       "sec:components/tier1_core/system_syscall.md#5.1. カテゴリ一覧",
       "sec:components/tier1_core/system_syscall.md#5.6. IPC (`0x40`-`0x4F`)",
       "sec:components/tier1_core/tests/system_syscall_test_spec.md#IPC (`0x40`-`0x4F`)",
-      "sec:components/tier1_interface/ipc_router.md#サービス検索（lookup_service）",
-      "sec:components/tier3_platform/platform_memory.md#7. 共有メモリ (shared-block) のライフサイクル"
+      "sec:components/tier1_interface/ipc_router.md#サービス検索（lookup_service）"
     ],
     "IPC_Resource_Isolation": [
       "sec:components/tier1_interface/ipc_router.md#1. コンセプト"
@@ -1118,8 +1132,7 @@
       "sec:components/tier3_platform/platform_hal.md#1. コンセプト",
       "sec:components/tier3_platform/platform_hal.md#4.2 WASI 0.3p IPC ドライバ通信コマンド仕様",
       "sec:components/tier3_platform/platform_hal.md#7.1 公開 API",
-      "sec:components/tier3_platform/platform_hal.md#バッファの確保 (`acquire_buffer`)",
-      "sec:components/tier3_platform/platform_memory.md#7. 共有メモリ (shared-block) のライフサイクル"
+      "sec:components/tier3_platform/platform_hal.md#バッファの確保 (`acquire_buffer`)"
     ],
     "InterpreterContextStackless": [
       "sec:components/tier2_runtime/runtime_interpreter.md#1. コンセプト",
@@ -1467,7 +1480,9 @@
       "sec:components/tier1_interface/system_service.md#WASI呼び出しシーケンス",
       "sec:components/tier2_runtime/runtime_interpreter.md#6.3 安全性制約と方策",
       "sec:components/tier2_runtime/runtime_vsoc.md#1. コンセプト",
-      "sec:components/tier3_platform/platform_memory.md#7. 共有メモリ (shared-block) のライフサイクル",
+      "sec:components/tier3_platform/platform_memory.md#7. 共有メモリ (shared-block) のライフサイクルと vMMIO 権限管理",
+      "sec:components/tier3_platform/platform_memory.md#7.2 ページ単位権限分離仕様（Page-Granular Permission Isolation）",
+      "sec:components/tier3_platform/platform_memory.md#7.3 共有メモリライフサイクルと権限遷移プロトコル",
       "sec:components/tier3_platform/platform_memory.md#8. 設計判断 (ADR)",
       "sec:components/tier3_platform/platform_memory.md#9. ハードウェアメモリ保護 (MPU) & W^X 設計",
       "sec:components/tier3_platform/platform_memory.md#9.1 Cortex-M33 PMSAv8 MPU リージョン配分"
@@ -1598,6 +1613,7 @@
       "sec:components/tier1_core/tests/system_containers_test_spec.md#4. 未検証・スコープ外",
       "sec:components/tier3_jit/jit_compiler.md#`constexpr_assembler` (DSL)",
       "sec:components/tier3_platform/platform_hal.md#5.2 WASI 0.1p (`wasi_snapshot_preview1`) 互換ラッパー",
+      "sec:components/tier3_platform/platform_memory.md#8. 設計判断 (ADR)",
       "sec:specs/gdb_rsp_protocol.md#1. 概要と基本思想",
       "sec:specs/jit_stencil_catalog.md#1. 概要と基本思想",
       "sec:specs/jit_stencil_catalog.md#3.5 整数算術 & 論理演算ステンシル (32-bit Integer Arithmetic & Logic)",
@@ -1667,7 +1683,8 @@
     ],
     "OwnerMismatchTrap": [
       "sec:components/tier3_platform/platform_hal.md#バッファの確保 (`acquire_buffer`)",
-      "sec:components/tier3_platform/platform_memory.md#7. 共有メモリ (shared-block) のライフサイクル",
+      "sec:components/tier3_platform/platform_memory.md#7.1 vMMIO 共有メモリ（FC=14）マッピングと権限管理の移譲",
+      "sec:components/tier3_platform/platform_memory.md#7.3 共有メモリライフサイクルと権限遷移プロトコル",
       "sec:components/tier3_platform/platform_memory.md#`allocate-shared` (IPC転送データ専用)"
     ],
     "OwnershipTransfer": [
@@ -1688,7 +1705,8 @@
       "sec:components/tier2_runtime/runtime_vmmio.md#4.8 ソフトウェアTLB",
       "sec:components/tier2_runtime/runtime_vmmio.md#6.3 安全性制約と方策",
       "sec:components/tier2_runtime/runtime_vmmio.md#ライフサイクル（ipc_router.md §4.1 に従属）",
-      "sec:components/tier3_platform/platform_memory.md#7. 共有メモリ (shared-block) のライフサイクル",
+      "sec:components/tier3_platform/platform_memory.md#7. 共有メモリ (shared-block) のライフサイクルと vMMIO 権限管理",
+      "sec:components/tier3_platform/platform_memory.md#7.3 共有メモリライフサイクルと権限遷移プロトコル",
       "sec:components/tier3_platform/platform_memory.md#`allocate-shared` (IPC転送データ専用)"
     ],
     "PackedBitView": [
@@ -1702,6 +1720,10 @@
       "sec:components/tier1_core/system_containers.md#ビット詰めビュー（bit_view）",
       "sec:components/tier1_core/system_containers.md#添字による状態参照（at / put）",
       "sec:components/tier1_core/system_containers.md#添字区間による絞り込み（slice）"
+    ],
+    "PageGranularPermissionIsolation": [
+      "sec:components/tier3_platform/platform_memory.md#7. 共有メモリ (shared-block) のライフサイクルと vMMIO 権限管理",
+      "sec:components/tier3_platform/platform_memory.md#7.2 ページ単位権限分離仕様（Page-Granular Permission Isolation）"
     ],
     "Pairwise_Combinatorial_Testing": [
       "sec:architecture/combinatorial_test_spec.md#システム全体 ペアワイズ組み合わせテスト仕様書 (Combinatorial Test Specification)"
@@ -1858,7 +1880,7 @@
       "sec:specs/wasm_instruction_set.md#3.6 64ビット整数・浮動小数点命令と Libgcc ランタイムヘルパー"
     ],
     "ThreeStageRouting": [
-      "sec:components/tier3_platform/platform_memory.md#7. 共有メモリ (shared-block) のライフサイクル",
+      "sec:components/tier3_platform/platform_memory.md#7.3 共有メモリライフサイクルと権限遷移プロトコル",
       "sec:components/tier3_platform/platform_memory.md#`allocate-shared` (IPC転送データ専用)",
       "sec:components/tier3_platform/platform_memory.md#所有権要求（claim）"
     ],
@@ -1922,6 +1944,14 @@
       "sec:components/tier2_runtime/runtime_vmmio.md#4.4 SYSCTL レジスタ詳細 (FC=12)",
       "sec:components/tier2_runtime/runtime_vmmio.md#4.5 VDMA レジスタ詳細 (FC=12)",
       "sec:components/tier2_runtime/runtime_vmmio.md#4.8 ソフトウェアTLB"
+    ],
+    "VSOC_Lifecycle": [
+      "sec:components/tier2_runtime/runtime_vsoc.md#4.2 状態遷移図 (SysML SMD: vSoC Engine ライフサイクル)"
+    ],
+    "VmmioShmDelegation": [
+      "sec:components/tier2_runtime/runtime_vmmio.md#静的デバイスページテーブルエントリ (vmmio_pte_static)",
+      "sec:components/tier3_platform/platform_memory.md#7. 共有メモリ (shared-block) のライフサイクルと vMMIO 権限管理",
+      "sec:components/tier3_platform/platform_memory.md#7.1 vMMIO 共有メモリ（FC=14）マッピングと権限管理の移譲"
     ],
     "VsocRuntime_Layout": [
       "sec:architecture/architecture_overview.md#3.3 Pillar 3: 3面世代交代回転コードキャッシュ (3-Bank Generational Rotating Code Cache)"
@@ -2068,7 +2098,7 @@
     "sec:architecture/keyword_dictionary.md#2.1 WASM実行 & ランタイム (vSoC / Interpreter / Loader / vMMIO)": "88b36b7d6ea98795801bc1a31df7177f32612c742769f06981abcbfb86fa1d25",
     "sec:architecture/keyword_dictionary.md#2.2 タスク管理・スケジューリング・通信 (COOS / Scheduler / IPC)": "a7b75b1a0911fd5217f275c7eda0a44b4b77f6199eb0c7734733ba1c30289fb8",
     "sec:architecture/keyword_dictionary.md#2.3 JIT コンパイラ & ランタイム (JIT Compiler / Runtime)": "80b5b0e313d19b209eed94d6c5c37358ad05fd4dd2eb0af4c9f4df2abb0ce6a8",
-    "sec:architecture/keyword_dictionary.md#2.4 デバッガ & システムコア & プラットフォーム (Debug / Syscall / Logging / HAL)": "076f075d9480e10b18ad4c3036bf635ca95314a00294712a53cb6dcb4ec2918d",
+    "sec:architecture/keyword_dictionary.md#2.4 デバッガ & システムコア & プラットフォーム (Debug / Syscall / Logging / HAL)": "85e61891c92485ed9dc2fe92e38234f06fe8af80d02663150dbdc21dbf356cc8",
     "sec:architecture/keyword_dictionary.md#3. システム横断 メタキーワード (Meta & Global Keywords)": "b342bfe139ae7210894b67cdba0abf5bdefe3ec8e99de04dcf6b8c3aa0e56256",
     "sec:architecture/keyword_dictionary.md#Fireball リンク用キーワード台帳 (Keyword Dictionary & Link Registry)": "e0e2fff0a1834ad2aa17d9521e05938cf488bab7feca0191c2c59fc82e4c8c30",
     "sec:components/tier1_core/os_coos.md#1. コンセプト": "bc2af744712125a2ae56eccf782ca8e2faf3ae9988d61a37fe6aa60aa44346b2",
@@ -2095,7 +2125,7 @@
     "sec:components/tier1_core/os_coos.md#チャネル送受信動作の挙動定義": "7241892f36e9417b02ba8b98fbb531499a800d5ffc86902086bf8515170bd756",
     "sec:components/tier1_core/os_coos.md#ハーネスによる依存性注入パターン": "b5957ff248570ea526e454c6b38ea03ec7e4bdd9381d9ece95f3fd5b47a9f3f0",
     "sec:components/tier1_core/os_coos.md#協調型OS COOS コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM} {VERIFY_BENCHMARK}": "d306bbc45ade0e62d008b991cf233db7e465a5b72422e6a9dbbffb153d207742",
-    "sec:components/tier1_core/os_scheduler.md#1. コンセプト": "21e23b0d1b0c21e6f832c4eca02c07ee17a3884b9b9dd21574a22cb1df6abb8a",
+    "sec:components/tier1_core/os_scheduler.md#1. コンセプト": "435f4180f2607ae2a647a25927092769acc42b76c2c68c05e7a83ea43aeafb1c",
     "sec:components/tier1_core/os_scheduler.md#2. アーキテクチャ分類": "14ac85f7d0b3aedff9acf0504b15067ea518ea7b816b22f42cac99d10d65e051",
     "sec:components/tier1_core/os_scheduler.md#3. 静的モデル": "459903c009123dfac68cdcb823db2cc6942f63d0c494c2127f2dbd07be7268f6",
     "sec:components/tier1_core/os_scheduler.md#3.1 データ構造": "c1c04f8bba4132792237427f8532d1a66817f71ac7503f4bcb549d2ec3646417",
@@ -2311,7 +2341,7 @@
     "sec:components/tier1_interface/ipc_router.md#7.2 メモリ制約と方策": "fabc525e392d27df0fb1689f6a3dc1549cb903abce0c9a62bb05f661573d6c76",
     "sec:components/tier1_interface/ipc_router.md#7.3 安全性制約と方策": "6853ff673afdffecd01b75293e344318fbd53120932a01f9f1e455bebda12aa0",
     "sec:components/tier1_interface/ipc_router.md#IPC ルータ フルセット・コンセプトコード (`concepts/ipc_router_concept.py`)": "6fe1edf3905136f928299b9c6bdc6530343107fd25fdb10a8b2ed2d31575f63a",
-    "sec:components/tier1_interface/ipc_router.md#IPCメッセージ（message）": "9f87b56e8fc6c800185cd0f5e4390310eeb1c0a715c2ca99810440fcf765ebd9",
+    "sec:components/tier1_interface/ipc_router.md#IPCメッセージ（message）": "beabe7fd81b195d4534d0cdece8abd701b2ee8276adbb12fe0f8ace38eb62cf9",
     "sec:components/tier1_interface/ipc_router.md#IPCルータ コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM} {VERIFY_BENCHMARK}": "7e116f25a2fcaf27c4bc0360893f1f8709abdfeed125e7b77fb765b1a6cdb9c4",
     "sec:components/tier1_interface/ipc_router.md#Key-Valueペア（kv_pair）": "3fa61330f2f8de9f90136e8bcea3669b5eb94ead4282e17e744297f80d97b95c",
     "sec:components/tier1_interface/ipc_router.md#サービス検索と接続フロー": "c3b0ed57f4a557894ecf902323e6ab7aa81866a61c81dd188b725630fdc244ca",
@@ -2508,7 +2538,7 @@
     "sec:components/tier2_runtime/runtime_vmmio.md#ハンドラ定義 (vmmio_handler)": "9d267120bdedc30f9e416d12e836c81630cd4cf8c57471f371ce0aab19a6259d",
     "sec:components/tier2_runtime/runtime_vmmio.md#フック登録 (`register-hook`)": "dc41f7c9c574f4a2fe13b3d2a7d29875b4602c8ce7a7b4c26993beb8c9d19d80",
     "sec:components/tier2_runtime/runtime_vmmio.md#ライフサイクル（ipc_router.md §4.1 に従属）": "7266095ceb50902f0b1f9a5adaaf6ce91abd1cbd6b8c8cec1ef844c999cab8f8",
-    "sec:components/tier2_runtime/runtime_vmmio.md#静的デバイスページテーブルエントリ (vmmio_pte_static)": "6ee44d082577bce23614e72f701a8aa21da81c11124170b59c282f820926441b",
+    "sec:components/tier2_runtime/runtime_vmmio.md#静的デバイスページテーブルエントリ (vmmio_pte_static)": "f99c8e5314c187c2f8070f65e38c947c56b6a13194d73147748330df2739d7ae",
     "sec:components/tier2_runtime/runtime_vsoc.md#1. コンセプト": "113cf15811b910e67c5849131a8e1a024f05c0d252ed894c82b32b63d4fa1317",
     "sec:components/tier2_runtime/runtime_vsoc.md#2. アーキテクチャ分類": "f30641cd5c4c16438815fe8b9a7c0a6297f625539472e3f6cc92e6086e2fd7fb",
     "sec:components/tier2_runtime/runtime_vsoc.md#3. 静的モデル": "459903c009123dfac68cdcb823db2cc6942f63d0c494c2127f2dbd07be7268f6",
@@ -2517,7 +2547,7 @@
     "sec:components/tier2_runtime/runtime_vsoc.md#3.3 主要なクラス・構造体・配列・定数": "2b9d645fa7637d370500720b9484a36a156e17dd932c9506c4b8ba475c9c4f0e",
     "sec:components/tier2_runtime/runtime_vsoc.md#4. 動的モデル": "341dff8c7275b6011b54ff1bbf2ddf06f6c8faa457638ff164c4b2df64ef68f0",
     "sec:components/tier2_runtime/runtime_vsoc.md#4.1 アルゴリズム": "76d186ebbb477216eaf4a371dc64bed68e1af269cebe0789251431ebd955616e",
-    "sec:components/tier2_runtime/runtime_vsoc.md#4.2 状態遷移図 (SysML SMD: vSoC Engine ライフサイクル)": "471942d7e7781832239b49d3abe7656cc0931422623c40db1b08a5c14c70906e",
+    "sec:components/tier2_runtime/runtime_vsoc.md#4.2 状態遷移図 (SysML SMD: vSoC Engine ライフサイクル)": "55fe5662be0c991b5eba54251b425113e6861ea850f89cdf77e97721385caa11",
     "sec:components/tier2_runtime/runtime_vsoc.md#4.2.1 Safepoint と JIT キャッシュ協調モデル": "50a0bdf6f1f64f01b31b24b161b38c76e8dcac5a9b56108a38b411b4aea65396",
     "sec:components/tier2_runtime/runtime_vsoc.md#4.3 内部シーケンス": "abb33a4331facbc23252f7f38d5585777e122b633a46c579456570cec888653f",
     "sec:components/tier2_runtime/runtime_vsoc.md#5. インターフェース定義": "fe8bb14bf8620b9e2cf02cce27da01a5e99c1fe46b85e464e38b3c2602e724ed",
@@ -2539,14 +2569,14 @@
     "sec:components/tier2_runtime/runtime_vsoc.md#Debugger 介入時のキャッシュ一貫性": "ef6288f62f79c7bb81bbb8f61f012466c83063dcce547aa9473493977793f33d",
     "sec:components/tier2_runtime/runtime_vsoc.md#Safepoint の動作メカニズム": "b4a1e007778c4ef5eda0f07268f23b6b261f2c047a1dcab2d6d2905ae40ce937",
     "sec:components/tier2_runtime/runtime_vsoc.md#WASM実行およびJIT遷移シーケンス": "8ce79e8960960ccf2695824fa03ed89cd3c007cc35dbd87f2dae5dc32982a570",
-    "sec:components/tier2_runtime/runtime_vsoc.md#`notify-interrupt`": "0394c3df71ea22cd3d60feaae79cd7aa299c759cd8e13c0b24f4dd6d2dd48368",
+    "sec:components/tier2_runtime/runtime_vsoc.md#`notify-interrupt`": "0ef684bb5eccf364b0523a6e1974bf1c1d81b67b4729dbc80c16070fe8cf1479",
     "sec:components/tier2_runtime/runtime_vsoc.md#`register-hook`": "bded6008ca1ba64599217ef222a7728320afec8917d61de3b0b64c4ce8ec17a7",
     "sec:components/tier2_runtime/runtime_vsoc.md#vSoC コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}": "c695bf3ffaae68fdece65b23fefa52b5ba17f9f532a1945cfb95cf433ad9ae7b",
     "sec:components/tier2_runtime/runtime_vsoc.md#vSoCコンテキスト（vsoc_context）": "bcc42ddd695f0c8277e031f213af3bb6cb601b1fdc1010379fa6b9a748a754c1",
     "sec:components/tier2_runtime/runtime_vsoc.md#vSoCハーネス（vsoc_harness）": "b02e31b946fddf524e4ec709c6e5f9aae5721996350af3c519aaa53312c503b6",
     "sec:components/tier2_runtime/runtime_vsoc.md#vSoCランタイム環境（vsoc_runtime）": "b5e004a31fd6c6074f7fbe964c4f0cdde8faf1ce7853e837c46f6cd4a48e6978",
     "sec:components/tier2_runtime/runtime_vsoc.md#vSoC構成（vsoc_config）": "55057756f0f48085f1fa1aff3975e1649d02b72d9583bc61a35844c7a513aeb6",
-    "sec:components/tier2_runtime/runtime_vsoc.md#ステップ実行（step）": "edcb965bb39b8caf6f69b65a883e7409caf8d398cca27769132f752d13bbd931",
+    "sec:components/tier2_runtime/runtime_vsoc.md#ステップ実行（step）": "d4feaa862bba4c3ac6c309d46c306f39e7079b38f0725e08a6c8f422a8d51c20",
     "sec:components/tier2_runtime/runtime_vsoc.md#マルチモジュール動的リンクシーケンス": "fd769b66429dead861cc5f55dc07a422cd2a2736c265b04ff343ce0389e4be3d",
     "sec:components/tier2_runtime/runtime_vsoc.md#形式検証 (pyModelChecking) 検証対象": "440f11b5bc03d362a932130cd8328d6ae92cfd585300e8e6aeaa46ad8e79136f",
     "sec:components/tier2_runtime/runtime_vsoc.md#準備（prepare）": "a6c4343626850683fc9040c5a2c01885993338b50297c7856a06764bc86d154c",
@@ -2731,8 +2761,11 @@
     "sec:components/tier3_platform/platform_memory.md#3.2 依存関係 (Zero-cost DI)": "f5680057b8f37337c4ecc3d155c4c6852b527f2ed5152581dcfbca26840c33e8",
     "sec:components/tier3_platform/platform_memory.md#4. インターフェース設計": "fcdae09a9791d3548db13f699ed8c657cd3b4115514a248ce3e155a1e4977a65",
     "sec:components/tier3_platform/platform_memory.md#6. 所有権追跡": "c1f95a32568d5beef50c3fad7640fe153bda7111541452de8377b32c25de5202",
-    "sec:components/tier3_platform/platform_memory.md#7. 共有メモリ (shared-block) のライフサイクル": "df96f07795a890c21d0a43e5e9089c1d4efa4108108a8acb92a4806e8ac1b28a",
-    "sec:components/tier3_platform/platform_memory.md#8. 設計判断 (ADR)": "cb684186b0bef5fc306ad670f1f9351f1a3ad4e7b3222da0f6c22d83526d2a7c",
+    "sec:components/tier3_platform/platform_memory.md#7. 共有メモリ (shared-block) のライフサイクルと vMMIO 権限管理": "d0dc804ea208f37abf24dadca8747bb3ded59a27613722645c5a0bc5a5f98cad",
+    "sec:components/tier3_platform/platform_memory.md#7.1 vMMIO 共有メモリ（FC=14）マッピングと権限管理の移譲": "1e062068e69b26edac4e0fccc38b42db473988f55e08c13c64bc13608ce7f0fa",
+    "sec:components/tier3_platform/platform_memory.md#7.2 ページ単位権限分離仕様（Page-Granular Permission Isolation）": "de68eab4e64b2f654684ca118e35a0506ca0c2d50f48db8e32e1026078ab47f1",
+    "sec:components/tier3_platform/platform_memory.md#7.3 共有メモリライフサイクルと権限遷移プロトコル": "8855c279095437ef789dacf7bd9cd95171bdd4cf1e362891d19392275d08ff27",
+    "sec:components/tier3_platform/platform_memory.md#8. 設計判断 (ADR)": "35426b93856a421abb3a4aa18d7d54659161e84a3fac0d63501131a1cd2b7291",
     "sec:components/tier3_platform/platform_memory.md#9. ハードウェアメモリ保護 (MPU) & W^X 設計": "73c9f88914da335aba7f6c29af75e0e61f5bab52182d97151286a24068c6586f",
     "sec:components/tier3_platform/platform_memory.md#9.1 Cortex-M33 PMSAv8 MPU リージョン配分": "1d19942a8cd855fde9f72d99cd75b7d1ba3d4b63085e1326e953e2a0676322cc",
     "sec:components/tier3_platform/platform_memory.md#9.2 JIT W^X (Write XOR Execute) 切替プロトコル": "7444cafb61479f283e8077b12c8cd7037679d0c0f3fa35da5b6cd35d9b324c11",
@@ -2757,7 +2790,7 @@
     "sec:components/tier3_platform/tests/platform_memory_test_spec.md#3. テスト検証実績と網羅状況": "4aa107b40564b94e2ba33b0048fa6114b9d200db45ace4adfac27292aa7882f5",
     "sec:components/tier3_platform/tests/platform_memory_test_spec.md#4. 未検証・スコープ外": "dc6746af1a24d92f94ba211ed402e09d5f3702e5ac9956239d4817d3ded484c1",
     "sec:components/tier3_platform/tests/platform_memory_test_spec.md#MPU / W^X (§9)": "3a37f3253dcf00a85b47431794607e0f2ebd37d1c6b90a5f459744463ec993c5",
-    "sec:components/tier3_platform/tests/platform_memory_test_spec.md#`shared-block`ライフサイクル (§7-8)": "13bfdd99d906b292298628f390d096149a2bfa08552168911d478c88e77cdfd3",
+    "sec:components/tier3_platform/tests/platform_memory_test_spec.md#`shared-block`ライフサイクル (§7-8)": "ef0971f9e47a15817c4f8bbf4c79ce1729fee00860dadffd43132f5138ff6a57",
     "sec:components/tier3_platform/tests/platform_memory_test_spec.md#パーティション管理 (§1, §4-6)": "6e55f97b80cb9b39734b17ab94d874653e6f24c05baf89dfa72196f177733e61",
     "sec:components/tier3_platform/tests/platform_memory_test_spec.md#物理メモリ (COOSメモリマネージャ) テスト仕様書 (Test Specification)": "5a626ed1aa5e7ed2c933a6da17dd295a2ecfd273831135482e44e0bbe826e024",
     "sec:plans/backlog_archive.md#Phase 0.75: Constexpr Verification & Code Gen Enhancement [DONE]": "e345bd840c3e3cbe821ead6f33bdde42d203d137075218708037274fcd1614be",

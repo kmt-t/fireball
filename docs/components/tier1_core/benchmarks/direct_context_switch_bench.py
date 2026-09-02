@@ -16,7 +16,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "concepts"))
-from coos_concept import COOSKernel
+from coos_concept import ChannelAction, COOSKernel
 
 
 def count_queue_ops_for_n_handoffs(n: int, max_consecutive_handoffs: int) -> tuple[int, int]:
@@ -26,7 +26,7 @@ def count_queue_ops_for_n_handoffs(n: int, max_consecutive_handoffs: int) -> tup
     queue_ops = 0
     for i in range(n):
         kind, _ = kernel._handoff_or_yield(f"task_{i % 4}")
-        if kind == "DIRECT_SWITCH":
+        if kind == ChannelAction.DIRECT_SWITCH:
             direct += 1
         else:
             queue_ops += 1  # one ready_queue.append() actually happened

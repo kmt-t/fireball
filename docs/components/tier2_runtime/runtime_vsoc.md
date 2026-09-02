@@ -116,9 +116,9 @@ vSoCの動作パラメータを定義する。 `{META_ConfigurableSystem}`
     - デバッガがメモリ上の変数を書き換えた場合、該当タスクに関連するJITキャッシュ（Active/Warm/Oldest 全バンク）をすべて無効化（Flush）し、インタープリタ実行からやり直すことで整合性を維持する。
 
 ### 4.2 状態遷移図 (SysML SMD: vSoC Engine ライフサイクル)
-<!-- traceability: {ThreadedInterpreter} {JIT_CopyAndPatch} {Challenge_ApproximateYield} {JIT_Safepoint} {Debugger_Jit_Flush} -->
+<!-- traceability: {VSOC_Lifecycle} {ThreadedInterpreter} {JIT_CopyAndPatch} {Challenge_ApproximateYield} {JIT_Safepoint} {Debugger_Jit_Flush} -->
 
-vSoC Engine の実行制御と JIT/Interpreter 切り替えの状態遷移を以下に示す。
+vSoC Engine の実行制御と JIT/Interpreter 切り替えの状態遷移（`{VSOC_Lifecycle}`）を以下に示す。
 
 ```mermaid
 stateDiagram-v2
@@ -336,7 +336,7 @@ sequenceDiagram
 <!-- traceability: {META_RecoveryStrategy} -->
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | ゲストのプログラム実行を再開し、コルーチンの `yield` またはトラップが発生するまで継続する。 |
+| 機能概要 | ゲストのプログラム実行を再開し、コルーチンの `yield` またはトラップが発生するまで継続する。内部で [`runtime_interpreter.md`](runtime_interpreter.md) の `run_step` または JIT コードへディスパッチする。 |
 | シグネチャ | `step() -> result<execution-state-category, sys-recovery-strategy>` |
 | 引数 | `ctx`: vsoc_context, `harness`: vsoc_harness |
 | 期待する結果 | 正常：一定期間の実行後に制御が戻る。異常：トラップ発生。 |
@@ -350,7 +350,7 @@ sequenceDiagram
 <!-- traceability: {META_RecoveryStrategy} -->
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | 物理割り込み等の外部イベントをゲストOS/アプリに通知するための仮想フラグを設定する。 |
+| 機能概要 | 物理割り込み等の外部イベントをゲストOS/アプリに通知するための仮想フラグを設定し、[`runtime_interpreter.md`](runtime_interpreter.md) の `sync_interrupts` へ中継する。 |
 | シグネチャ | `notify-interrupt(irq-id: u32) -> void` |
 | 引数 | `ctx`: vsoc_context, `irq-id`: 識別子 |
 | 期待する結果 | 所定のアドレス（SYSCTLレジスタ）にフラグが反映される。 |

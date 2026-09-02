@@ -45,7 +45,8 @@ def main() -> None:
     for n in sizes:
         keys = list(range(n))
         values = [k * 2 for k in keys]
-        view = FlatMapView(keys, values)
+        entries = list(zip(keys, values, strict=False))
+        view = FlatMapView(entries)
         probe = keys[n // 2]  # a worst-case-depth-representative middle key
         t_flat = time_lookup(lambda: view.find(probe), n_calls)
         t_linear = time_lookup(lambda: linear_scan(keys, values, probe), max(1, n_calls // 20))

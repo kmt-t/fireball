@@ -1,10 +1,10 @@
 """
 docs/components/tier1_core/concepts/scheduler_concept.py
 Reference Concept Implementation: COOS Round-Robin Scheduler
-- O(1) deterministic ring queue dispatching
-- Cooperative task yielding & queue tail re-insertion
-- Task state transitions (READY, RUNNING, BLOCKED, TERMINATED)
-- Strict memory bound: fixed task table, zero dynamic allocation
+Implementation Invariants & Gotchas:
+- Pure FIFO round-robin dispatch without priority (ADR_CoosPureRoundRobin).
+- Fixed capacity bounds (FB_CONF_MAX_TASKS = 16) with zero dynamic allocation.
+- SCHED-GOTCHA-01: Round-robin fairness ensures all ready tasks receive deterministic CPU time.
 """
 
 from collections.abc import Generator

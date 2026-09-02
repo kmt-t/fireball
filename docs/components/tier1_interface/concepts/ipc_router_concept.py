@@ -1,15 +1,11 @@
 """
 docs/components/tier1_interface/concepts/ipc_router_concept.py
 Reference Concept Implementation: IPC Router & Zero-Copy Ownership Handoff
-- Stage 1: Static URI Lookup to Service Role via fireball::flat_map_view
-  (sorted-array + binary search, imported from flat_view_concept.py rather than
-  reimplemented, so this cannot silently drift from the real container vocabulary)
-- Stage 2: Role-Based Access Control (RBAC) via a 4x4 constexpr matrix
-- Stage 3: Zero-Copy Ownership Handoff (Revoke -> CSP Rendezvous -> Grant)
-  over a bufferless synchronous channel per RBAC edge ({ADR_RendezvousChannel})
-  -- there is no bounded mailbox here, so no ERR_QUEUE_FULL/Rollback and no
-  Drop Handler: a message that never completes a rendezvous never leaves its
-  sender's hands (ipc_router.md §5.1's distinction from a buffered mailbox).
+Implementation Invariants & Gotchas:
+- IPCR-GOTCHA-01: Duplicate send on an already-waiting CSP channel triggers an assertion
+  error, stopping illegal concurrent access (no queue exists in pure CSP).
+- IPCR-GOTCHA-02: Preflight validation failure preserves sender ownership; permissions
+  and destination must be fully verified before revoking resource ownership.
 """
 
 import os
@@ -43,7 +39,7 @@ class OwnershipState(IntEnum):
 
 
 class IPCMessage:
-    """A message owns its sorted (key, value) entries (AoS) and presents
+    """A message owns its sorted (key, value) entries and presents
     them via non-owning FlatMapView (ipc_router.md §3.3) -- no free-form dict payload."""
 
     def __init__(

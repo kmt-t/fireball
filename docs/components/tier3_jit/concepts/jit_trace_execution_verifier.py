@@ -24,20 +24,26 @@ from jit_copy_patch_concept import (
     CopyPatchJITEngine,
     _order_register_moves,
 )
-from unicorn import (
-    UC_ARCH_ARM,
-    UC_ERR_EXCEPTION,
-    UC_MODE_THUMB,
-    Uc,
-    UcError,
-)
-from unicorn.arm_const import (
-    UC_ARM_REG_R1,
-    UC_ARM_REG_R4,
-    UC_ARM_REG_R5,
-    UC_ARM_REG_R12,
-    UC_ARM_REG_SP,
-)
+
+try:
+    from unicorn import (
+        UC_ARCH_ARM,
+        UC_ERR_EXCEPTION,
+        UC_MODE_THUMB,
+        Uc,
+        UcError,
+    )
+    from unicorn.arm_const import (
+        UC_ARM_REG_R1,
+        UC_ARM_REG_R4,
+        UC_ARM_REG_R5,
+        UC_ARM_REG_R12,
+        UC_ARM_REG_SP,
+    )
+
+    HAVE_UNICORN = True
+except ImportError:
+    HAVE_UNICORN = False
 
 CODE_BASE = 0x08000
 CSTACK_TOP = 0x21000  # native (R13) call stack -- grows down from here
@@ -211,6 +217,9 @@ def test_intra_trace_variant_reconciliation_swap_on_real_hardware():
 
 
 if __name__ == "__main__":
+    if not HAVE_UNICORN:
+        print("[SKIP] unicorn emulator not installed; skipping ARM trace verification.")
+        sys.exit(0)
     test_compiled_trace_runs_on_real_cpu_and_spills_correctly()
     test_in_bounds_memory_access_executes_the_load()
     test_out_of_bounds_memory_access_traps_before_executing_the_load()

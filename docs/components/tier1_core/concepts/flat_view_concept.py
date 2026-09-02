@@ -22,9 +22,8 @@ ALLOWED_BITS = (1, 2, 4)
 class BitView:
     """
     bit_view<Bits>: a dense, index-addressed table of sub-byte states.
-        Deliberately offers no search: this is the card marking shape, where the
-        index *is* the question. Bits must divide 8 so one element never straddles a
-        byte, which keeps a read down to a single load plus a shift and a mask.
+        CONT-GOTCHA-01: Bits must strictly divide 8 (1, 2, or 4) so that an element never
+        straddles a byte boundary, ensuring atomic single-byte load/shift/mask.
     """
 
     def __init__(self, storage: bytearray, bits: int, origin: int = 0, count: int = 0):

@@ -1,14 +1,13 @@
 """
 docs/components/tier2_runtime/concepts/vmmio_concept.py
 Reference Concept Implementation: vMMIO FlatMap Page Table & Direct-Mapped TLB
-- RAM Bypass Flag (Bit 31): O(1) linear-RAM fast path, no table lookup
-- FlatMap PTE storage: maps 20-bit VPN -> PTE
-- Direct-mapped Software TLB[16] keyed by Folding XOR Hash over 20-bit VPN:
-  diffuses all 20 bits (including Function Code) into a 4-bit slot index (0..15)
-- Tier 1 linear RAM: Bit31 bypass PLUS a size-comparison bound check (no mask, no
-  power-of-two constraint on guest_ram_size) — traps to the interpreter on OOB
-- PTE permission check (VALID/READ/WRITE/EXEC + Owner ID) on every access,
-  including on TLB hit — the TLB only skips the table lookup, never the check
+Implementation Invariants & Gotchas:
+- VMMIO-GOTCHA-01: Guest RAM access (Bit 31 == 0) completely bypasses TLB with direct
+  base addition and bound check, preserving peak memory throughput.
+- VMMIO-GOTCHA-02: Folding XOR hash uniformly diffuses all 20 VPN bits across 16 slots,
+  preventing inter-device cache conflict and TLB thrashing.
+- VMMIO-GOTCHA-03: Shared memory revocation sets owner to FB_TASK_ID_FLIGHT and immediately
+  flushes TLB entry, eliminating stale in-flight access.
 """
 
 from collections.abc import Callable

@@ -1,10 +1,15 @@
 """
 docs/components/tier1_core/concepts/coos_concept.py
 Reference Concept Implementation: COOS (Cooperative OS)
-- Synchronous Hoare CSP rendezvous communication
-- Direct symmetric context switch bypassing scheduler queue
-- Non-blocking ISR interrupt notification & task wake-up
-- Strict idle detection and power-saving sleep hook
+Implementation Invariants & Gotchas:
+- COOS-GOTCHA-01: Channel has no internal value slot (ADR_RendezvousChannel). Values stay
+  in sender frame until receiver handoff, preventing double-ownership.
+- COOS-GOTCHA-02: 1-channel-1-waiter constraint enforces single-waiter per direction;
+  concurrent senders or receivers trigger assertion error.
+- COOS-GOTCHA-03: ISR interrupt notification queue is non-blocking; task wake-up is
+  deferred to cooperative drain_interrupts at scheduler yield points.
+- SCHED-GOTCHA-01: Consecutive direct handoff bound forces yield back to main loop to
+  prevent starvation of periodic/monitoring tasks.
 """
 
 from collections.abc import Generator

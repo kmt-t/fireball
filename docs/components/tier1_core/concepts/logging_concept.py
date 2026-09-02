@@ -1,10 +1,13 @@
 """
 docs/components/tier1_core/concepts/logging_concept.py
 Reference Concept Implementation: Fireball Logger Component
-- Dictionary-based IPC logging ({DictionaryBasedIPC}): ROM-based format string dictionary
-- Fixed-capacity circular ring buffer ({BufferedLogging}): Overwrite-oldest on full
-- Deferred DMA output & COOS Idle Hook integration ({GLOBAL_IdleDetection})
-- Memory isolation & zero dynamic allocation ({MemoryIsolation}, {META_ConfigurableSystem})
+Implementation Invariants & Gotchas:
+- LOG-GOTCHA-01: Log API accepts only scalar u32 arguments and static dictionary offsets,
+  completely eliminating runtime string pointers and Use-After-Free hazards.
+- LOG-GOTCHA-02: Ring buffer safely overwrites oldest entries when full, preventing
+  log-induced deadlocks and preserving system availability.
+- LOG-GOTCHA-03: Log flush loops verify interrupt_pending per entry, ensuring immediate
+  preemption for high-priority external interrupts.
 """
 
 from collections.abc import Callable
@@ -44,7 +47,7 @@ from flat_view_concept import FlatMapView
 class LogDictionary:
     """Simulates ROM-resident static format string dictionary (DictionaryBasedIPC).
     Storage ownership is separated: borrows entries storage and performs lookup
-    via non-owning FlatMapView (AoS).
+    via non-owning FlatMapView.
     """
 
     def __init__(self, storage: list[tuple[int, str]] | None = None):

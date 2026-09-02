@@ -1,11 +1,11 @@
 """
 docs/components/tier3_platform/concepts/platform_memory_concept.py
 Reference Concept Implementation & Test Suite: COOS Memory Manager
-- Tier 3 Platform / Leaf Component (platform_memory.md, platform_memory_test_spec.md)
-- Consolidated physical memory pool and fixed-size partition leasing (os_coos.md compliant)
-- Typed slot pools with zero dynamic void* heap
-- RAII SharedBlock zero-copy ownership transfer linked with vMMIO FC=14 PTEs
-- Cortex-M33 PMSAv8 8-region MPU allocation and JIT W^X transaction switching
+Implementation Invariants & Gotchas:
+- MEM-GOTCHA-01: 4KB page granularity permission isolation (different tasks never share a page).
+- MEM-GOTCHA-02: Strict ownership enforcement prevents non-owners from releasing or accessing blocks.
+- MEM-GOTCHA-03: In-flight blocks are owned by FB_TASK_ID_FLIGHT and TLB is flushed immediately.
+- MEM-GOTCHA-04: JIT code cache W^X mode switching is batched per trace to minimize barrier latency.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from __future__ import annotations
 import inspect
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Any, Generic, TypeVar
+from typing import Generic, TypeVar
 
 T = TypeVar("T")
 
@@ -372,7 +372,7 @@ class MemoryManager:
         # Typed slot pools
         self.typed_slots: dict[type, list[PoolRef]] = {}
         # Shared block slots (page_idx -> (slot_idx -> metadata))
-        self.shm_slots: dict[int, dict[str, Any]] = {}
+        self.shm_slots: dict[int, dict[str, object]] = {}
 
     def init_manager(self, pool_base: int, pool_size: int) -> Result[bool]:
         """Initialize physical pool with 64KB WASM page alignment."""

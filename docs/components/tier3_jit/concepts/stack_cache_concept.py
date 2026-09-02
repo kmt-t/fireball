@@ -32,8 +32,6 @@ A stencil declares what it consumes and produces, so the compiler tracks the
 state statically and never emits a spill that is not required.
 """
 
-from typing import Any
-
 
 class WASMTrap(Exception):
     pass
@@ -50,7 +48,7 @@ class Variant:
         self.depth_out = depth_out
         self.holes = holes
 
-    def emit(self, **patch: Any) -> list[str]:
+    def emit(self, **patch: int) -> list[str]:
         for h in self.holes:
             if h not in patch:
                 raise KeyError(f"missing relocation '{h}'")
@@ -121,7 +119,7 @@ class StackCachingCompiler:
     BYTES_PER_INSTRUCTION = 4
 
     def compile_block(
-        self, ops: list[tuple[str, Any]], loops_to: int | None = None
+        self, ops: list[tuple[str, int | None]], loops_to: int | None = None
     ) -> tuple[list[str], int]:
         """Returns (native listing, final cache depth)."""
         listing: list[str] = []
@@ -148,7 +146,7 @@ class StackCachingCompiler:
         return listing, depth
 
     @staticmethod
-    def _emit(op: str, variant: Variant, arg: Any) -> list[str]:
+    def _emit(op: str, variant: Variant, arg: int | None) -> list[str]:
         if op == "i32.const":
             return variant.emit(imm_lo=arg & 0xFFFF, imm_hi=(arg >> 16) & 0xFFFF)
         if op in ("local.get", "local.set"):

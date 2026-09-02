@@ -20,23 +20,29 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from jit_copy_patch_concept import CopyPatchJITEngine
-from unicorn import (
-    UC_ARCH_ARM,
-    UC_ERR_EXCEPTION,
-    UC_MODE_THUMB,
-    Uc,
-    UcError,
-)
-from unicorn.arm_const import (
-    UC_ARM_REG_R2,
-    UC_ARM_REG_R3,
-    UC_ARM_REG_R4,
-    UC_ARM_REG_R5,
-    UC_ARM_REG_R6,
-    UC_ARM_REG_R8,
-    UC_ARM_REG_R9,
-    UC_ARM_REG_R12,
-)
+
+try:
+    from unicorn import (
+        UC_ARCH_ARM,
+        UC_ERR_EXCEPTION,
+        UC_MODE_THUMB,
+        Uc,
+        UcError,
+    )
+    from unicorn.arm_const import (
+        UC_ARM_REG_R2,
+        UC_ARM_REG_R3,
+        UC_ARM_REG_R4,
+        UC_ARM_REG_R5,
+        UC_ARM_REG_R6,
+        UC_ARM_REG_R8,
+        UC_ARM_REG_R9,
+        UC_ARM_REG_R12,
+    )
+
+    HAVE_UNICORN = True
+except ImportError:
+    HAVE_UNICORN = False
 
 CODE_BASE = 0x8000
 DATA_BASE = 0x20000
@@ -297,4 +303,9 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    if not HAVE_UNICORN:
+        print(
+            "[SKIP] unicorn emulator not installed; skipping Thumb-2 stencil semantic verification."
+        )
+        sys.exit(0)
     main()

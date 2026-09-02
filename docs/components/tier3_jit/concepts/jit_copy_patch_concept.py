@@ -11,7 +11,6 @@ Reference Concept Implementation: Full-Set Copy-and-Patch JIT Engine & MPU W^X T
 import os
 import struct
 import sys
-from typing import Any
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from jit_assembler_constexpr_concept import Cond, Reg, Thumb2Assembler
@@ -424,7 +423,7 @@ class CopyPatchJITEngine:
     # --- Full Copy-and-Patch Compilation ---
     def compile_trace(
         self,
-        wasm_ops: list[tuple[str, Any]],
+        wasm_ops: list[tuple[str, object]],
         exit_kind: str = "return",
         dirty_spills: list[tuple[str, int]] | None = None,
         head_wasm_pc: int = 0,

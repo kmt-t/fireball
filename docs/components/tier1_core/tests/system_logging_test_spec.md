@@ -23,6 +23,14 @@
 | LOG-10 | IPC経由でのログ要求（`fireball://logging/system/0`） | IPCルータに`logging`宛のルートが存在する状態（**§3のギャップ参照**） | `handle_ipc_message`相当のペイロード（level/dict_offset/arg0-3のdict）でIPC_SENDする | ログが`log_event`と同じ結果でキューイングされる | logging_concept.py `handle_ipc_message`, `test_logger_ipc_message_handling` |
 | LOG-11 | ログ辞書ストレージ所有権分離 | 外部で実体ペア配列（ROM/静的バッファ）を定義 | ログ辞書初期化 | ログ辞書および非所有ビューが外部ストレージを参照し、実体を自己所有・複製しない | logging_concept.py `test_logger_storage_ownership_separation` |
 
+### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
+
+| ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| LOG-GOTCHA-01 | 実行時文字列ポインタの完全排除（ダングリングポインタ防止） | ログAPI呼び出し | 実行時文字列ポインタの受け渡しを試行 | ログAPIは固定長辞書オフセットと u32 スカラー引数4個のみを受け付け、任意長文字列を直接埋め込む手段が存在しない。**実装の勘所**: ログメッセージにポインタを含めると、対象タスクがクラッシュまたは終了した後にロガーが不正メモリを参照（Use-After-Free）する | `system_logging.md` §3.3, `{DictionaryBasedIPC}` |
+| LOG-GOTCHA-02 | リングバッファ満杯時の最古上書き（システム非ブロック不変条件） | リングバッファが満杯 | さらに `log_event` を実行 | エラーやブロックを起こさず、最も古いエントリを上書きして直近のログを保存する。**実装の勘所**: ログ出力でタスクをブロックさせると、高負荷時や異常発生時にシステム全体がデッドロックに陥る | `system_logging.md` §4.1, `{DeterministicRingBuffer}` |
+| LOG-GOTCHA-03 | 転送ループの割り込み即時応答性 | flush 実行中 | `interrupt_pending()` が True を返す | バッファ全フラッシュを強行せず、現在のエントリ送信完了時点で直ちにループを抜けてスケジューラへ制御を戻す。**実装の勘所**: ログフラッシュをアトミックに実行すると、長大なログ転送中に外部割り込みレイテンシが大幅に悪化する | `system_logging.md` §4.2, `{InterruptibleFlush}` |
+
 ## 3. テスト検証実績と網羅状況
 
 - 仕様書に定義された各テストケース（不変条件・境界条件・エラー処理）の検証手順と期待結果を定義。

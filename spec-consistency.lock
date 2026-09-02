@@ -609,6 +609,7 @@
       "sec:components/tier1_core/os_coos.md#CSPチャネル（channel）",
       "sec:components/tier1_core/os_scheduler.md#4.2 状態遷移図 (SysML SMD: Scheduler 視点)",
       "sec:components/tier1_core/tests/os_coos_test_spec.md#1. 目的と対象範囲",
+      "sec:components/tier1_core/tests/os_coos_test_spec.md#実装の勘所・不変条件（Gotchas & Implementation Invariants）",
       "sec:components/tier1_interface/interface_wit.md#設計判断",
       "sec:components/tier1_interface/ipc_router.md#4.1 アルゴリズム",
       "sec:components/tier1_interface/ipc_router.md#4.3 メッセージライフサイクルと所有権管理 (SysML Parametric Diagram 相当)",
@@ -836,6 +837,7 @@
       "sec:components/tier2_runtime/debug_manager.md#6.1 性能制約と方策",
       "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#3. テスト検証実績と網羅状況",
       "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#デバッガ協調 & 統合プロファイラ (§1, §4.1)",
+      "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#実装の勘所・不変条件（Gotchas & Implementation Invariants）",
       "sec:components/tier2_runtime/tests/runtime_interpreter_test_spec.md#3. テスト検証実績と網羅状況",
       "sec:components/tier2_runtime/tests/runtime_interpreter_test_spec.md#デバッガ・プロファイラ統合とハンドラテーブル切り替え (§3.3, §4.1, {DebuggerLabelTableSwitch}, {Debug_Integrated})",
       "sec:specs/gdb_rsp_protocol.md#1. 概要と基本思想",
@@ -856,7 +858,11 @@
       "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#3. テスト検証実績と網羅状況",
       "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#GDB RSP プロトコル & 仮想レジスタ (§3.3, §4.1, gdb_rsp_protocol.md)",
       "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#実ソケット GDB RSP リモート接続・対話セッション (§4.1, gdb_rsp_protocol.md)",
+      "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#実装の勘所・不変条件（Gotchas & Implementation Invariants）",
       "sec:plans/backlog_list.md#Phase 0 達成実績 & 現在進行中のタスク"
+    ],
+    "DeterministicRingBuffer": [
+      "sec:components/tier1_core/tests/system_logging_test_spec.md#実装の勘所・不変条件（Gotchas & Implementation Invariants）"
     ],
     "DictionaryBasedIPC": [
       "sec:components/tier1_core/system_logging.md#1. コンセプト",
@@ -868,6 +874,7 @@
       "sec:components/tier1_core/system_logging.md#5.2 URI/IPCインターフェース",
       "sec:components/tier1_core/system_logging.md#ログ辞書（LogDictionary）",
       "sec:components/tier1_core/tests/system_logging_test_spec.md#2. テストケース一覧",
+      "sec:components/tier1_core/tests/system_logging_test_spec.md#実装の勘所・不変条件（Gotchas & Implementation Invariants）",
       "sec:components/tier1_interface/interface_wit.md#5.5 `fireball:host/console` (`wasi:cli/stdout` / `stderr` 用の生バイト出力)",
       "sec:components/tier1_interface/ipc_router.md#Key-Valueペア（kv_pair）",
       "sec:components/tier1_interface/ipc_router.md#スコープ定義",
@@ -948,6 +955,7 @@
       "sec:components/tier1_core/system_containers.md#添字区間による絞り込み（slice）",
       "sec:components/tier1_core/system_containers.md#疎マップビュー（flat_map_view）",
       "sec:components/tier1_core/system_containers.md#疎集合ビュー（flat_set_view）",
+      "sec:components/tier1_core/tests/system_containers_test_spec.md#実装の勘所・不変条件（Gotchas & Implementation Invariants）",
       "sec:components/tier2_runtime/debug_manager.md#デバッガ（Debugger）クラス",
       "sec:components/tier3_jit/jit_compiler.md#検索範囲取得（get_search_range）"
     ],
@@ -1134,6 +1142,9 @@
       "sec:components/tier3_platform/platform_hal.md#7.1 公開 API",
       "sec:components/tier3_platform/platform_hal.md#バッファの確保 (`acquire_buffer`)"
     ],
+    "ISR_Safety": [
+      "sec:components/tier1_core/tests/os_coos_test_spec.md#実装の勘所・不変条件（Gotchas & Implementation Invariants）"
+    ],
     "InterpreterContextStackless": [
       "sec:components/tier2_runtime/runtime_interpreter.md#1. コンセプト",
       "sec:components/tier2_runtime/runtime_interpreter.md#制御フレーム整合性とリーク防止不変条件 (Control Frame Integrity Invariant)"
@@ -1149,6 +1160,9 @@
       "sec:components/tier3_jit/jit_compiler.md#JITコンパイルおよび検索シーケンス",
       "sec:plans/backlog_list.md#Phase 1.3: Copy-and-Patch JIT Compiler (`jit_compiler`)",
       "sec:plans/roadmap_phase.md#Phase 1: vSoC First（C++23 実装 / 約3ヶ月）"
+    ],
+    "InterruptibleFlush": [
+      "sec:components/tier1_core/tests/system_logging_test_spec.md#実装の勘所・不変条件（Gotchas & Implementation Invariants）"
     ],
     "IoC": [
       "sec:architecture/architecture_overview.md#2.2 コンポーネント定義図 (BDD)",
@@ -1625,6 +1639,9 @@
       "sec:architecture/architecture_overview.md#5. Conceptベース・ハーネス設計 (Concept Harness)",
       "sec:components/tier1_core/system_logging.md#ログイベント記録 (`log_event`)"
     ],
+    "MPU_WX_Enforcement": [
+      "sec:components/tier3_platform/tests/platform_memory_test_spec.md#実装の勘所・不変条件（Gotchas & Implementation Invariants）"
+    ],
     "MainLoopReturnGuarantee": [
       "sec:components/tier1_core/os_coos.md#6.2 直交表: CSP通信と状態遷移",
       "sec:components/tier1_core/os_coos.md#チャネル送受信動作の挙動定義"
@@ -1681,11 +1698,15 @@
       "sec:components/tier1_core/os_coos.md#1. コンセプト",
       "sec:components/tier1_core/os_scheduler.md#6. 設計判断 (ADR)"
     ],
+    "Orthogonal_Design": [
+      "sec:components/tier1_core/tests/os_coos_test_spec.md#実装の勘所・不変条件（Gotchas & Implementation Invariants）"
+    ],
     "OwnerMismatchTrap": [
       "sec:components/tier3_platform/platform_hal.md#バッファの確保 (`acquire_buffer`)",
       "sec:components/tier3_platform/platform_memory.md#7.1 共有メモリマッピングと仮想化リスナーへのコールバック委譲",
       "sec:components/tier3_platform/platform_memory.md#7.3 共有メモリライフサイクルと権限遷移プロトコル",
-      "sec:components/tier3_platform/platform_memory.md#`allocate-shared` (IPC転送データ専用)"
+      "sec:components/tier3_platform/platform_memory.md#`allocate-shared` (IPC転送データ専用)",
+      "sec:components/tier3_platform/tests/platform_memory_test_spec.md#実装の勘所・不変条件（Gotchas & Implementation Invariants）"
     ],
     "OwnershipTransfer": [
       "sec:components/tier1_interface/interface_wit.md#5.3 `fireball:host/bus` (Master/Slave Bus)",
@@ -1707,7 +1728,8 @@
       "sec:components/tier2_runtime/runtime_vmmio.md#ライフサイクル（ipc_router.md §4.1 に従属）",
       "sec:components/tier3_platform/platform_memory.md#7. 共有メモリ (shared-block) のライフサイクルと vMMIO 権限管理",
       "sec:components/tier3_platform/platform_memory.md#7.3 共有メモリライフサイクルと権限遷移プロトコル",
-      "sec:components/tier3_platform/platform_memory.md#`allocate-shared` (IPC転送データ専用)"
+      "sec:components/tier3_platform/platform_memory.md#`allocate-shared` (IPC転送データ専用)",
+      "sec:components/tier3_platform/tests/platform_memory_test_spec.md#実装の勘所・不変条件（Gotchas & Implementation Invariants）"
     ],
     "PackedBitView": [
       "sec:components/tier1_core/system_containers.md#1. コンセプト",
@@ -1723,7 +1745,8 @@
     ],
     "PageGranularPermissionIsolation": [
       "sec:components/tier3_platform/platform_memory.md#7. 共有メモリ (shared-block) のライフサイクルと vMMIO 権限管理",
-      "sec:components/tier3_platform/platform_memory.md#7.2 ページ単位権限分離仕様（Page-Granular Permission Isolation）"
+      "sec:components/tier3_platform/platform_memory.md#7.2 ページ単位権限分離仕様（Page-Granular Permission Isolation）",
+      "sec:components/tier3_platform/tests/platform_memory_test_spec.md#実装の勘所・不変条件（Gotchas & Implementation Invariants）"
     ],
     "Pairwise_Combinatorial_Testing": [
       "sec:architecture/combinatorial_test_spec.md#システム全体 ペアワイズ組み合わせテスト仕様書 (Combinatorial Test Specification)"
@@ -2258,6 +2281,7 @@
     "sec:components/tier1_core/tests/os_coos_test_spec.md#3. テスト検証実績と網羅状況": "80af80bc70acb269818f47ac8550d58d7e7106f85d3a18bdbcbb0d44ce2c4e3a",
     "sec:components/tier1_core/tests/os_coos_test_spec.md#4. 未検証・スコープ外": "b30f386cc1ea04f3cea67c4a7bdc07e2853f47f7d076f5dcfaf9c0c64efb12ae",
     "sec:components/tier1_core/tests/os_coos_test_spec.md#COOS (CSPチャネル) テスト仕様書 (Test Specification)": "bd8b785f3aae266dfafaaac046bca99d70ffd7a16b212ab9daf35bd9fb11a81f",
+    "sec:components/tier1_core/tests/os_coos_test_spec.md#実装の勘所・不変条件（Gotchas & Implementation Invariants）": "210eb8b4c71aa987b02502adc6054c8439dea5f9a3069f10ea24cb9710e2964e",
     "sec:components/tier1_core/tests/os_scheduler_test_spec.md#1. 目的と対象範囲": "47a4541891d27d11135ece5f07dc1c6e6d599791f858e01727a73bcfe717442f",
     "sec:components/tier1_core/tests/os_scheduler_test_spec.md#2. テストケース一覧": "a14f7ca0cf97c3851e96fb2bbae27af46b3bf21004b5a6df4b7d9007d137686b",
     "sec:components/tier1_core/tests/os_scheduler_test_spec.md#3. テスト検証実績と網羅状況": "4aa107b40564b94e2ba33b0048fa6114b9d200db45ace4adfac27292aa7882f5",
@@ -2273,12 +2297,14 @@
     "sec:components/tier1_core/tests/system_containers_test_spec.md#2. テストケース一覧": "827a228295cf982d3e8681af5f4d3e131696d1a280083ed8b084605d2b112d04",
     "sec:components/tier1_core/tests/system_containers_test_spec.md#3. テスト検証実績と網羅状況": "4aa107b40564b94e2ba33b0048fa6114b9d200db45ace4adfac27292aa7882f5",
     "sec:components/tier1_core/tests/system_containers_test_spec.md#4. 未検証・スコープ外": "9fb6f92f6aa59c752bffeb8c7cf014b09b4805f529cf0ead2917ca9320d9829a",
+    "sec:components/tier1_core/tests/system_containers_test_spec.md#実装の勘所・不変条件（Gotchas & Implementation Invariants）": "1d79a6ec809d5eeaa55004f2555cff9efccb8d1eeeb1352d44dc08e3214d131c",
     "sec:components/tier1_core/tests/system_containers_test_spec.md#静的コンテナ語彙 テスト仕様書 (Test Specification)": "9c813e8e9b15d7795032b68db0280b37795ec8b1807590046330a63d1fcdfb76",
     "sec:components/tier1_core/tests/system_logging_test_spec.md#1. 目的と対象範囲": "2bf629beb02029cee2d8dca9eb50750b961d28bc10c81f5a37cde0a6da77d2f4",
     "sec:components/tier1_core/tests/system_logging_test_spec.md#2. テストケース一覧": "51ef5614a474ace01b732186f8f98467ae851dd7059b176dc7a22978f5d2a59f",
     "sec:components/tier1_core/tests/system_logging_test_spec.md#3. テスト検証実績と網羅状況": "4aa107b40564b94e2ba33b0048fa6114b9d200db45ace4adfac27292aa7882f5",
     "sec:components/tier1_core/tests/system_logging_test_spec.md#4. 未検証・スコープ外": "f35092c12253c5ff9defcb4cf6906c761a35e5596c4253e8cd922d1127eed8bc",
     "sec:components/tier1_core/tests/system_logging_test_spec.md#システムロギング テスト仕様書 (Test Specification)": "fb2de768a9d0896544b70d1ece6667b0f42bec66e79867496d35b919df6838f2",
+    "sec:components/tier1_core/tests/system_logging_test_spec.md#実装の勘所・不変条件（Gotchas & Implementation Invariants）": "a581d67f3b1465af1580dbfba573abe6522ddbe2d179550a000d11642f2e743f",
     "sec:components/tier1_core/tests/system_syscall_test_spec.md#1. 目的と対象範囲": "f87ed1072fb833979bd99d82f0b4da37099fe407e5aa0fd122ccf6fd55c765aa",
     "sec:components/tier1_core/tests/system_syscall_test_spec.md#2. テストケース一覧": "07c66dedc5007761a55d09a950d8038e2eda29cba4b06ba0f50031507dc98675",
     "sec:components/tier1_core/tests/system_syscall_test_spec.md#3. テスト検証実績と網羅状況": "4aa107b40564b94e2ba33b0048fa6114b9d200db45ace4adfac27292aa7882f5",
@@ -2291,6 +2317,7 @@
     "sec:components/tier1_core/tests/system_syscall_test_spec.md#vMMIO Generic (`0x10`-`0x1F`)": "45e7318132efcc0f65ded984afb7956612e282876641def55fb70fc7b64a13dc",
     "sec:components/tier1_core/tests/system_syscall_test_spec.md#システムコール (`fireball_call`) テスト仕様書 (Test Specification)": "0f7f3bda93b34c76de48b5ae9e1d2eb43a8ef1c5854ac86bfa772f43744cd4a1",
     "sec:components/tier1_core/tests/system_syscall_test_spec.md#共通・エラー処理": "1b6523358b205eb8f0b88e98fba850705052883718dfe12247c6ee488ff798f3",
+    "sec:components/tier1_core/tests/system_syscall_test_spec.md#実装の勘所・不変条件（Gotchas & Implementation Invariants）": "c2ba5db2a1fbd13081008784968d9b3aa2e673fb72138f0bd0b721240fd16bb8",
     "sec:components/tier1_interface/interface_wit.md#1. 目的": "f04ce7531745f5f69994b09dfbe73cdd5cd4ff9b57a03d1249794ed934c38625",
     "sec:components/tier1_interface/interface_wit.md#2. アーキテクチャ原則": "a8c38e6420d708627f891775118483daf64f453f1569f860d7cc5e4ff95ab2b4",
     "sec:components/tier1_interface/interface_wit.md#3. 共通データ構造": "be7474df74c6a621778a36dc1660d042c96f049b955be43b8b56b053a356c9f4",
@@ -2589,6 +2616,7 @@
     "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#デバッガ協調 & 統合プロファイラ (§1, §4.1)": "65aab0a3718eeb7211ca540b7379e761d1366dd5b4babd2d5b1697f95a8b9511",
     "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#実ソケット GDB RSP リモート接続・対話セッション (§4.1, gdb_rsp_protocol.md)": "301f9eeca144d12f68b4a5a46f87544f1ae5c6b1e0e1e1cbaaeb6d73dac2a698",
     "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#実行制御 & ブレークポイント (§3.3, §4.1)": "4707da983d115bf40108f3b28a91d0234e2421c1d4320ee8b8deb41420efa7d2",
+    "sec:components/tier2_runtime/tests/debug_manager_test_spec.md#実装の勘所・不変条件（Gotchas & Implementation Invariants）": "d98e0548a4d81484859441fd83cc599a19d57757615d9dd57c465c09039cfe18",
     "sec:components/tier2_runtime/tests/runtime_interpreter_test_spec.md#1. 目的と対象範囲": "7bc5962e7cc1cbe2aae79f178a1ff4f7fefb3edce45bfb2e7aa53ab608040f14",
     "sec:components/tier2_runtime/tests/runtime_interpreter_test_spec.md#2. テストケース一覧": "07c66dedc5007761a55d09a950d8038e2eda29cba4b06ba0f50031507dc98675",
     "sec:components/tier2_runtime/tests/runtime_interpreter_test_spec.md#3. テスト検証実績と網羅状況": "bb86309b2a7363409d9c001aab8bf6da3d11796ce49d94ba02ff95b488ef090f",
@@ -2602,13 +2630,14 @@
     "sec:components/tier2_runtime/tests/runtime_interpreter_test_spec.md#ラベルアリティ・スタックプルーニング (interpreter_concept.py §1, `prune_stack`)": "57ce2c3a3c9ad6a201ae9bdcf33a40b628d00cbe5cf27cc356024939bae61129",
     "sec:components/tier2_runtime/tests/runtime_interpreter_test_spec.md#実装の勘所・不変条件（Gotchas & Implementation Invariants）": "2fc2bd3d137764490a7b447de9ea25991159a8aed69ea32a5eb611ee6db2179f",
     "sec:components/tier2_runtime/tests/runtime_interpreter_test_spec.md#統合スタック・関数呼び出し (interpreter_concept.py §1)": "e3d359713bed7d3e5827a44bc25fa423ef5d5ee994871a2502a1a1ca7294c3d6",
-    "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#(Overview)": "8fe6a1dc02c91aa6ae09e879bef91cc0b0cc0b5ce1ef3c61cd8051f92c011ba5",
     "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#1. 目的と対象範囲": "55e85948984f90b67624dec3fa0a802e51d844f4a49c8d9b7266ccdf1a5fa4b9",
     "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#2. テストケース一覧": "07c66dedc5007761a55d09a950d8038e2eda29cba4b06ba0f50031507dc98675",
     "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#3. テスト検証実績と網羅状況": "a01456f742f88d4dea3b95c0e7fbe708d458004c52250fa6682ad0aed4aba6fe",
     "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#4. 未検証・スコープ外": "a380c54203b6bdfd11e37c83a23440204a2ae1b5edd877bf0532e818df2d429a",
+    "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#WASMローダ テスト仕様書 (Test Specification)": "1e57174253b784684ac3dbf894b1cd785e7816229dd47a1f6bbb407265a7e772",
     "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#ゼロコピー索引化 (§4.1)": "db377106a0ad5b98be8fb36bca9128be5d4d0e33e20f98ac62628e7b6ad4b127",
     "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#ファイル内データ位置 & シンボルハッシュ RadixBinaryTreeView 索引 (§1, §3.1, §4.1, §5.1, {META_BinarySearch})": "66d40512da87f7d19b26a9bdd6441bbba2d0dee6311405940ffe5ddb97c62072",
+    "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#実装の勘所・不変条件（Gotchas & Implementation Invariants）": "25b01ad54ce310fd07a73a4b8198be5b082f3dd32544ec0754349b1847268a85",
     "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#容量制約 (§4.2)": "eb4db8e137a842c3f37372e47794e8e8bb76e2aca7e4295d256ef5f450b677b9",
     "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#複数モジュール・インポート解決 (§4.1「インポートテーブル検索と依存関係解決」)": "74f5773c2c4628998548c28a4541af30ee88573ef4f1b620dc45938e9110b26a",
     "sec:components/tier2_runtime/tests/runtime_loader_test_spec.md#軽量検証 (§4.3 V1-V6)": "b6dc43bfeb7fc03e8062d76a44fcb4557dc84f5f0451e6bd42923fb9d5016fb6",
@@ -2785,6 +2814,7 @@
     "sec:components/tier3_platform/tests/platform_hal_test_spec.md#3. テスト検証実績と網羅状況": "4aa107b40564b94e2ba33b0048fa6114b9d200db45ace4adfac27292aa7882f5",
     "sec:components/tier3_platform/tests/platform_hal_test_spec.md#4. 未検証・スコープ外": "b0b1958fae76e135e54d7d3a1fc0f10b35a482015f02e0189595540ef66b1113",
     "sec:components/tier3_platform/tests/platform_hal_test_spec.md#HAL テスト仕様書 (Test Specification)": "7a1dedfbeec7a31f1251e1e788c3625b237e495c0d3e9b8beb64eb0bb07cbd0a",
+    "sec:components/tier3_platform/tests/platform_hal_test_spec.md#実装の勘所・不変条件（Gotchas & Implementation Invariants）": "be95f57eb49e98fcb4cd33b124f72b0f081fc6e86ecdaf8f6bea8d403ae877cc",
     "sec:components/tier3_platform/tests/platform_memory_test_spec.md#1. 目的と対象範囲": "fb5f3a275e77756d5fddf0a980533b5056c43ff8bd385753519d49c4b496a2fd",
     "sec:components/tier3_platform/tests/platform_memory_test_spec.md#2. テストケース一覧": "07c66dedc5007761a55d09a950d8038e2eda29cba4b06ba0f50031507dc98675",
     "sec:components/tier3_platform/tests/platform_memory_test_spec.md#3. テスト検証実績と網羅状況": "4aa107b40564b94e2ba33b0048fa6114b9d200db45ace4adfac27292aa7882f5",
@@ -2792,6 +2822,7 @@
     "sec:components/tier3_platform/tests/platform_memory_test_spec.md#MPU / W^X (§9)": "3a37f3253dcf00a85b47431794607e0f2ebd37d1c6b90a5f459744463ec993c5",
     "sec:components/tier3_platform/tests/platform_memory_test_spec.md#`shared-block`ライフサイクル (§7-8)": "ef0971f9e47a15817c4f8bbf4c79ce1729fee00860dadffd43132f5138ff6a57",
     "sec:components/tier3_platform/tests/platform_memory_test_spec.md#パーティション管理 (§1, §4-6)": "6e55f97b80cb9b39734b17ab94d874653e6f24c05baf89dfa72196f177733e61",
+    "sec:components/tier3_platform/tests/platform_memory_test_spec.md#実装の勘所・不変条件（Gotchas & Implementation Invariants）": "6a86c763eede7478976c1c6dfcf142b32c62f57b90354105aa36f32c5e5a2177",
     "sec:components/tier3_platform/tests/platform_memory_test_spec.md#物理メモリ (COOSメモリマネージャ) テスト仕様書 (Test Specification)": "5a626ed1aa5e7ed2c933a6da17dd295a2ecfd273831135482e44e0bbe826e024",
     "sec:plans/backlog_archive.md#Phase 0.75: Constexpr Verification & Code Gen Enhancement [DONE]": "e345bd840c3e3cbe821ead6f33bdde42d203d137075218708037274fcd1614be",
     "sec:plans/backlog_archive.md#Phase 0.7: Static DI & Build System [DONE]": "3aab9ac84b6f7add460ef38998ef93ef1161581b1ec62b562f1b9ab0690f09cc",

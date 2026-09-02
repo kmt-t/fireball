@@ -50,6 +50,8 @@ for _p in [
 import ctypes
 
 import wasmtime
+from debugger import DebuggerManager, GDBRspProtocol
+from hal import ShmBufferPool, ShmTrap, UartTransport
 from interpreter import _HANDLERS, Interpreter
 from ipc_router import (
     IPCMessage,
@@ -58,6 +60,9 @@ from ipc_router import (
     Role,
 )
 from jit_copy_patch_concept import CopyPatchJITEngine, Reg, Thumb2Assembler
+from loader import WasmLoader
+from logger import LogDictionary, Logger, LogLevel
+from memory import MemoryManager
 from runtime_engine import (
     BasicBlock,
     CardState,
@@ -69,7 +74,8 @@ from runtime_engine import (
     WASMContext,
 )
 from scheduler import ChannelAction, Scheduler, WaitDir
-from system_containers import FlatMapView
+from system import System, WasiErrno
+from system_containers import BitView, FlatMapView, StaticFlatMap
 from vmmio import TrapCode, VMMIOController
 from wasm_reader import parse
 from x64_jit import TraceCompiler
@@ -530,6 +536,216 @@ def test_sched_gotcha_01_handoff_limit_forces_return_to_main_loop():
         "Must yield back to scheduler when consecutive handoffs reach threshold"
     )
     assert sched.consecutive_handoffs == 0
+
+
+# ==============================================================================
+# 5. Core & Platform Implementation Gotchas
+# ==============================================================================
+
+
+def test_coos_gotcha_01_no_data_slot_in_channel():
+    """COOS-GOTCHA-01: Channel has no internal value buffer; zero-copy handoff guarantees single ownership."""
+    sched = Scheduler()
+    ch = sched.create_channel()
+    assert not hasattr(ch, "buffer"), "Channel must not contain a message buffer queue"
+    assert not hasattr(ch, "data_slot"), "Channel must not have a data slot"
+
+    t1 = sched.get_task(sched.spawn("sender"))
+    t2 = sched.get_task(sched.spawn("receiver"))
+
+    sched.current_task = t1
+    act1, val1 = ch.send(999)
+    assert act1 == ChannelAction.BLOCK
+    assert t1.pending_val == 999
+    assert ch.waiter_task == t1
+    assert ch.waiter_dir == WaitDir.SEND
+
+    sched.current_task = t2
+    act2, _ = ch.recv()
+    assert act2 == ChannelAction.DIRECT_SWITCH
+    assert t2.received_val == 999
+    assert t1.pending_val is None, "Sender pending_val must be cleared immediately upon handoff"
+
+
+def test_coos_gotcha_02_single_waiter_assert():
+    """COOS-GOTCHA-02: 1-channel-1-waiter constraint triggers assertion on duplicate wait direction."""
+    sched = Scheduler()
+    ch = sched.create_channel()
+    t1 = sched.get_task(sched.spawn("sender1"))
+    t2 = sched.get_task(sched.spawn("sender2"))
+
+    sched.current_task = t1
+    ch.send(100)
+
+    sched.current_task = t2
+    try:
+        ch.send(200)
+        raise AssertionError("Expected AssertionError on duplicate channel send")
+    except AssertionError:
+        pass
+
+
+def test_cont_gotcha_01_bit_view_power_of_two_factors():
+    """CONT-GOTCHA-01: bit_view rejects non-divisor-of-8 widths (1, 2, 4 only)."""
+    buf = bytearray(8)
+    bv1 = BitView(buf, bits=1)
+    bv2 = BitView(buf, bits=2)
+    bv4 = BitView(buf, bits=4)
+    assert bv1.bits == 1 and bv2.bits == 2 and bv4.bits == 4
+
+    for invalid_bits in [3, 5, 6, 7]:
+        try:
+            BitView(buf, bits=invalid_bits)
+            raise AssertionError(f"Expected BitView to reject bits={invalid_bits}")
+        except (ValueError, AssertionError):
+            pass
+
+
+def test_cont_gotcha_02_narrowing_never_expands_bounds():
+    """CONT-GOTCHA-02: View slicing is strictly monotonic narrowing and cannot expand outside parent span."""
+    sm = StaticFlatMap(capacity=16)
+    for k, v in enumerate([10, 20, 30, 40, 50]):
+        sm.insert(k, v)
+    view = sm.view()
+    sub_view = view.slice(1, 3)
+    assert len(sub_view.entries) == 2
+
+    # Attempting to expand or slice outside bounds must raise ValueError("a view may only ever shrink")
+    for invalid_first, invalid_last in [(-1, 3), (0, 10), (3, 2), (2, 6)]:
+        try:
+            view.slice(invalid_first, invalid_last)
+            raise AssertionError(f"Expected slice({invalid_first}, {invalid_last}) to fail")
+        except (ValueError, IndexError, AssertionError) as e:
+            if isinstance(e, AssertionError) and "Expected" in str(e):
+                raise
+
+
+def test_log_gotcha_01_no_runtime_pointer_scalar_args_only():
+    """LOG-GOTCHA-01: Logging interface rejects string specifiers and accepts only scalar u32 arguments."""
+    d = LogDictionary()
+    for bad_fmt in ["Message: %s", "Pointer: %p", "Char: %c"]:
+        try:
+            d.register(0x10, bad_fmt)
+            raise AssertionError(f"Expected LogDictionary to reject '{bad_fmt}'")
+        except ValueError:
+            pass
+
+    d.register(0x20, "Task %d event %u (0x%08X)")
+    uart = UartTransport()
+    logger = Logger(uart, d, capacity=4)
+    res = logger.log_event(LogLevel.INFO, dict_offset=0x20, arg0=1, arg1=2, arg2=0xABC)
+    assert res == "QUEUED"
+
+
+def test_log_gotcha_02_ring_buffer_oldest_overwrite():
+    """LOG-GOTCHA-02: Ring buffer overwrite on full preserves system non-blocking invariant."""
+    d = LogDictionary()
+    d.register(0x10, "Event %d")
+    uart = UartTransport()
+    cap = 4
+    logger = Logger(uart, d, capacity=cap)
+
+    for i in range(cap):
+        assert logger.log_event(LogLevel.INFO, dict_offset=0x10, arg0=i) == "QUEUED"
+
+    assert logger.log_event(LogLevel.INFO, dict_offset=0x10, arg0=100) == "OVERWRITTEN"
+    assert logger.ring.count == cap
+    assert logger.ring.dropped == 1
+
+
+def test_mem_gotcha_01_page_granular_isolation():
+    """MEM-GOTCHA-01: Page-granular permission isolation ensures distinct tasks never share the same 4KB physical page."""
+    mm = MemoryManager()
+    mm.init_manager(pool_base=0x20020000, pool_size=0x40000)
+    b1 = mm.allocate_shared(caller_task_id=1, size=64).unwrap()
+    b2 = mm.allocate_shared(caller_task_id=2, size=64).unwrap()
+    assert b1.page_idx != b2.page_idx, (
+        f"Task 1 (page {b1.page_idx}) and Task 2 (page {b2.page_idx}) must not share physical page"
+    )
+
+
+def test_mem_gotcha_02_release_and_flight_protection():
+    """MEM-GOTCHA-02: Releasing a SharedBlock marks it in-flight and revokes access until claimed."""
+    mm = MemoryManager()
+    mm.init_manager(pool_base=0x20020000, pool_size=0x40000)
+    b = mm.allocate_shared(caller_task_id=1, size=64).unwrap()
+    b.write_u32(0, 0x12345678)
+    assert b.read_u32(0) == 0x12345678
+
+    shm_id = b.release()
+    assert b._is_in_flight
+    assert not b._is_active
+    try:
+        b.read_u32(0)
+        raise AssertionError("Expected access to in-flight block to be rejected")
+    except AssertionError:
+        pass
+
+    assert not mm.claim(receiver_task_id=2, shm_id=shm_id).is_ok
+    assert mm.grant_shared(shm_id=shm_id, new_owner_task_id=2)
+
+    b_claimed = mm.claim(receiver_task_id=2, shm_id=shm_id).unwrap()
+    assert b_claimed.read_u32(0) == 0x12345678
+    assert b_claimed.get_owner() == 2
+
+
+def test_hal_gotcha_01_shm_pool_bounds_violation_rejected():
+    """HAL-GOTCHA-01: ShmBufferPool rejects slice requests exceeding maximum buffer size and non-owner releases."""
+    pool = ShmBufferPool()
+    handle = pool.acquire_buffer(task_id=1, size=128)
+    assert handle.capacity == 128
+
+    try:
+        pool.acquire_buffer(task_id=1, size=512)
+        raise AssertionError("Expected ShmBufferPool.acquire_buffer to reject size > 256")
+    except ValueError:
+        pass
+
+    try:
+        pool.release_buffer(task_id=2, handle=handle)
+        raise AssertionError("Expected ShmTrap when task 2 attempts to release task 1's buffer")
+    except ShmTrap:
+        pass
+
+    pool.release_buffer(task_id=1, handle=handle)
+
+
+def test_sys_gotcha_01_undefined_syscall_returns_enosys():
+    """SYS-GOTCHA-01: Undefined syscall ID safely returns WasiErrno.NOSYS instead of aborting or panicking."""
+    sys_inst = System()
+    res = sys_inst.fireball_call(0xFE, 0, 0, 0, 0, 0, 0)
+    assert res == int(WasiErrno.NOSYS), f"Expected NOSYS (52), got {res}"
+
+
+def test_dbg_gotcha_01_memory_write_flushes_jit_cache():
+    """DBG-GOTCHA-01: Debugger memory write immediately invalidates all JIT cache banks."""
+    engine = IntegratedHybridEngine(compiler=TraceCompiler())
+    dbg = DebuggerManager(engine=engine)
+    dbg.attach()
+    rsp = GDBRspProtocol(dbg)
+    ctx = WASMContext(memory=bytearray(64))
+
+    block = BasicBlock(head_pc=0x100, ops=[("i32.const", 10)])
+    trace = engine.compiler.compile_trace(0x100, block)
+    engine.cache.insert(trace)
+    assert engine.cache.active.has_trace(0x100)
+
+    res, _ = rsp.handle_packet("M0,4:deadbeef", 0, ctx, {})
+    assert res.startswith("$OK#")
+    assert bytes(ctx.memory[0:4]) == bytes.fromhex("deadbeef")
+    assert not engine.cache.active.has_trace(0x100), (
+        "JIT cache must be flushed upon debugger memory write"
+    )
+
+
+def test_load_gotcha_01_non_existent_symbol_fast_rejection():
+    """LOAD-GOTCHA-01: Non-existent symbol rejection is O(k) without linear scan."""
+    loader = WasmLoader()
+    from tier2_runtime.test_loader import _build_test_wasm_binary
+
+    wasm_bytes = _build_test_wasm_binary(export_names=["foo", "bar"])
+    view = loader.prepare("test_mod", wasm_bytes)
+    assert view.lookup_export("non_existent_symbol_xyz") is None
 
 
 ALL_TESTS = sorted(

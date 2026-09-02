@@ -1,7 +1,13 @@
 """
 Unit Test Suite Runner for pysim.
-Executes all unit tests under experiments/pysim/tests/.
+Executes all unit tests in strict architectural tier order:
+1. Tier 1 Core & Interface (foundational kernel, containers, logging, IPC)
+2. Tier 2 Runtime (loader, interpreter, syscall, vMMIO, vSoC, debugger)
+3. Tier 3 Platform & JIT (memory MPU, HAL, x64 asm/stencils, JIT compiler/runtime)
+4. Cross-Cutting Verification (pairwise combinations, gotchas & invariants)
 """
+
+from __future__ import annotations
 
 import subprocess
 import sys
@@ -28,29 +34,86 @@ for p in [
     if sp not in sys.path:
         sys.path.insert(0, sp)
 
-TEST_FILES = [
-    ("Instruction Set Coverage", TEST_DIR / "test_instructions.py"),
-    ("WASM Loader & Segments", TEST_DIR / "test_loader.py"),
-    ("Host Call & Syscalls", TEST_DIR / "test_host_call.py"),
-    ("Debugger Core", TEST_DIR / "test_debugger.py"),
-    ("GDB RSP Remote Session", TEST_DIR / "test_gdb_remote_connection.py"),
-    ("x64 Assembler", TEST_DIR / "test_x64_asm.py"),
-    ("x64 Stencils Catalog", TEST_DIR / "test_x64_stencils.py"),
-    ("x64 Copy-and-Patch JIT", TEST_DIR / "test_x64_jit.py"),
-    ("All-Pairs Combinatorial Matrix", TEST_DIR / "test_pairwise_combinations.py"),
-    ("Implementation Gotchas & Invariants", TEST_DIR / "test_gotchas.py"),
+# Ordered test suites reflecting the architecture dependency layers
+TEST_SUITES = [
+    # --- Tier 1: Core ---
+    ("Tier 1 Core", "COOS Rendezvous & Handoff", TEST_DIR / "tier1_core" / "test_coos.py"),
+    ("Tier 1 Core", "Round-Robin Scheduler", TEST_DIR / "tier1_core" / "test_scheduler.py"),
+    ("Tier 1 Core", "System Containers & Views", TEST_DIR / "tier1_core" / "test_containers.py"),
+    ("Tier 1 Core", "System Logging & Ring Buffer", TEST_DIR / "tier1_core" / "test_logging.py"),
+    # --- Tier 1: Interface ---
+    (
+        "Tier 1 Interface",
+        "IPC Router & Shared Memory",
+        TEST_DIR / "tier1_interface" / "test_ipc_router.py",
+    ),
+    # --- Tier 2: Runtime ---
+    ("Tier 2 Runtime", "WASM Loader & Segments", TEST_DIR / "tier2_runtime" / "test_loader.py"),
+    (
+        "Tier 2 Runtime",
+        "WASM Interpreter & Instructions",
+        TEST_DIR / "tier2_runtime" / "test_interpreter.py",
+    ),
+    (
+        "Tier 2 Runtime",
+        "Syscall & WASI Environment",
+        TEST_DIR / "tier2_runtime" / "test_syscall.py",
+    ),
+    ("Tier 2 Runtime", "Virtual MMIO Controller", TEST_DIR / "tier2_runtime" / "test_vmmio.py"),
+    (
+        "Tier 2 Runtime",
+        "Fault Recovery Strategies",
+        TEST_DIR / "tier2_runtime" / "test_recovery.py",
+    ),
+    ("Tier 2 Runtime", "vSoC Multitasking & Pipeline", TEST_DIR / "tier2_runtime" / "test_vsoc.py"),
+    ("Tier 2 Runtime", "Debug Manager Core", TEST_DIR / "tier2_runtime" / "test_debugger.py"),
+    ("Tier 2 Runtime", "GDB RSP Remote Session", TEST_DIR / "tier2_runtime" / "test_gdb_remote.py"),
+    # --- Tier 3: Platform ---
+    (
+        "Tier 3 Platform",
+        "Physical Memory & MPU W^X",
+        TEST_DIR / "tier3_platform" / "test_memory.py",
+    ),
+    ("Tier 3 Platform", "HAL Drivers & ShmPool", TEST_DIR / "tier3_platform" / "test_hal.py"),
+    # --- Tier 3: JIT ---
+    ("Tier 3 JIT", "x64 Assembler", TEST_DIR / "tier3_jit" / "test_x64_asm.py"),
+    ("Tier 3 JIT", "x64 Stencils Catalog", TEST_DIR / "tier3_jit" / "test_x64_stencils.py"),
+    (
+        "Tier 3 JIT",
+        "JIT Hotspot Profiler & 3-Bank Cache",
+        TEST_DIR / "tier3_jit" / "test_jit_runtime.py",
+    ),
+    ("Tier 3 JIT", "x64 Copy-and-Patch JIT", TEST_DIR / "tier3_jit" / "test_x64_jit.py"),
+    ("Tier 3 JIT", "Host Call & Native Dispatch", TEST_DIR / "tier3_jit" / "test_host_call.py"),
+    # --- Cross-Cutting ---
+    (
+        "Cross-Cutting",
+        "All-Pairs Combinatorial Matrix",
+        TEST_DIR / "cross_cutting" / "test_pairwise_combinations.py",
+    ),
+    (
+        "Cross-Cutting",
+        "Implementation Gotchas & Invariants",
+        TEST_DIR / "cross_cutting" / "test_gotchas.py",
+    ),
 ]
 
 
 def run_all_tests():
-    print("=" * 80)
-    print("      Fireball pysim Unit Test Suite                                            ")
-    print("=" * 80)
+    print("=" * 84)
+    print("           Fireball pysim Architectural Unit Test Suite (Tier 1 -> 3)            ")
+    print("=" * 84)
     total_start = time.perf_counter()
     passed = 0
     failed = 0
-    for name, script_path in TEST_FILES:
-        print(f"\n>>> Running {name} ({script_path.name})...")
+    current_tier = None
+
+    for tier, name, script_path in TEST_SUITES:
+        if tier != current_tier:
+            current_tier = tier
+            print(f"\n[{current_tier.upper()}]")
+            print("-" * 84)
+
         t0 = time.perf_counter()
         res = subprocess.run(
             [sys.executable, str(script_path)],
@@ -60,22 +123,27 @@ def run_all_tests():
         )
         t1 = time.perf_counter()
         elapsed_ms = (t1 - t0) * 1000
+
         if res.returncode == 0:
-            print(res.stdout.strip())
-            print(f"    -> [SUCCESS] {name} passed in {elapsed_ms:.2f} ms")
+            status = "[PASS]"
+            print(f"  {status} {name:<42} ({script_path.name:<24}) {elapsed_ms:>8.2f} ms")
             passed += 1
         else:
-            print(f"    -> [FAILURE] {name} failed (exit code {res.returncode}):")
+            status = "[FAIL]"
+            print(f"  {status} {name:<42} ({script_path.name:<24}) {elapsed_ms:>8.2f} ms")
+            print("--- STDOUT ---")
             print(res.stdout)
+            print("--- STDERR ---")
             print(res.stderr)
+            print("-" * 84)
             failed += 1
 
     total_elapsed_ms = (time.perf_counter() - total_start) * 1000
-    print("\n" + "=" * 80)
+    print("\n" + "=" * 84)
     print(
-        f" Unit Test Summary: {passed}/{len(TEST_FILES)} Passed, {failed} Failed ({total_elapsed_ms:.2f} ms total)"
+        f" Unit Test Summary: {passed}/{len(TEST_SUITES)} Passed, {failed} Failed ({total_elapsed_ms:.2f} ms total)"
     )
-    print("=" * 80)
+    print("=" * 84)
     if failed > 0:
         sys.exit(1)
 

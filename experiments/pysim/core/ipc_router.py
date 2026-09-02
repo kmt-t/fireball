@@ -15,7 +15,11 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from enum import IntEnum
-from typing import Any
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from logger import Logger
+    from memory import MemoryManager, SharedBlock
 
 from logger import (
     LOG_EVT_IPC_INVALID_OWNERSHIP,
@@ -133,10 +137,10 @@ class IPCMessage:
 
     def __init__(
         self,
-        block: Any | None = None,
+        block: SharedBlock | None = None,
     ):
         self.ownership = OwnershipState.SENDER_OWNS
-        self._block: Any | None = block
+        self._block: SharedBlock | None = block
         self._in_flight_shm_id: int | None = None
 
     def _check_ownership(self) -> None:
@@ -147,7 +151,7 @@ class IPCMessage:
         ), f"Cannot access IPCMessage entries while ownership is {self.ownership.name}!"
 
     @property
-    def block(self) -> Any | None:
+    def block(self) -> SharedBlock | None:
         """Returns the RAII SharedBlock backing this message itself in shared memory."""
         self._check_ownership()
         return self._block
@@ -189,7 +193,7 @@ class IPCMessage:
     def from_entries(
         cls,
         entries: Sequence[tuple[int, int]] = (),
-        memory_manager: Any | None = None,
+        memory_manager: MemoryManager | None = None,
         task_id: int = 1,
     ) -> IPCMessage:
         """Helper to allocate a SharedBlock memory block and populate it with entries."""
@@ -213,7 +217,7 @@ class IPCMessage:
         return msg
 
     @property
-    def entries(self) -> Sequence[tuple[Any, Any]]:
+    def entries(self) -> Sequence[tuple[int, int]]:
         """Returns the sorted AoS (key, value) entries read from the shared memory block."""
         return self._read_entries()
 
@@ -234,12 +238,12 @@ class IPCMessage:
 
     def claim_resource(
         self,
-        memory_manager: Any,
+        memory_manager: MemoryManager,
         receiver_task_id: int,
         key_id: int,
         scope_kind: int = ScopeKind.RESOURCE,
         data_type: int = DataType.UINT32,
-    ) -> Any | None:
+    ) -> SharedBlock | None:
         """Looks up a shm_id from the message's entries and claims the SharedBlock."""
         self._check_ownership()
         shm_id = self.get_by_key_id(key_id, scope_kind=scope_kind, data_type=data_type)
@@ -259,7 +263,7 @@ class IPCMessage:
         target_k = pack_key32(scope_kind, data_type, key_id)
         return self.get(target_k)
 
-    def get(self, key: int, default: Any = None) -> Any:
+    def get(self, key: int, default: int | None = None) -> int | None:
         """Retrieves a value via flat_map_view binary search over entries in the memory block."""
         self._check_ownership()
         for k, v in self._read_entries():
@@ -267,7 +271,7 @@ class IPCMessage:
                 return v
         return default
 
-    def __getitem__(self, key: int) -> Any:
+    def __getitem__(self, key: int) -> int:
         val = self.get(key)
         if val is None:
             raise KeyError(key)
@@ -378,8 +382,8 @@ class IPCRouter:
     def __init__(
         self,
         scheduler: Scheduler,
-        logger: Any = None,
-        memory_manager: Any | None = None,
+        logger: Logger | None = None,
+        memory_manager: MemoryManager | None = None,
     ):
         self.scheduler = scheduler
         self.logger = logger

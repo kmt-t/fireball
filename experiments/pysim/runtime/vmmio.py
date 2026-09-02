@@ -184,6 +184,22 @@ class VMMIOController:
         if self.tlb[tlb_idx].vpn == vpn:
             self.tlb[tlb_idx] = TLBSlot()
 
+    def update_shm_owner(self, vpn: int, new_owner_id: int) -> bool:
+        """Updates the owner_id of an FC=14 SHM page and flushes its TLB entry."""
+        pte = self.ptes.find(vpn)
+        if pte is not None and ((vpn >> 16) & 0xF) in (FC_SHM, FC_PASSTHROUGH):
+            pte.owner_id = new_owner_id
+            self.flush_tlb_entry(vpn)
+            return True
+        return False
+
+    def unmap_shm_page(self, vpn: int) -> None:
+        """Unregisters an FC=14 SHM page and flushes its TLB entry."""
+        pte = self.ptes.find(vpn)
+        if pte is not None and ((vpn >> 16) & 0xF) in (FC_SHM, FC_PASSTHROUGH):
+            pte.valid = False
+            self.flush_tlb_entry(vpn)
+
     def flush_tlb(self) -> None:
         self.tlb = [TLBSlot() for _ in range(16)]
 

@@ -107,26 +107,55 @@ IPC転送のための共有メモリブロック確保は、上記の `acquire-p
 - kernel/task: `deallocate`（`release-partition`/`release-slot`相当）は所有者タスクのみが実行可能
 - shared: `shared-block` リソースのRAII / drop による自動返却（プールへの返却）
 
-## 7. 共有メモリ (shared-block) のライフサイクル
-<!-- traceability: {META_FaultIsolation} {OwnershipTransfer} -->
+## 7. 共有メモリ (shared-block) のライフサイクルと vMMIO 権限管理
+<!-- traceability: {META_FaultIsolation} {OwnershipTransfer} {PageGranularPermissionIsolation} {VmmioShmDelegation} -->
+
+### 7.1 vMMIO 共有メモリ（FC=14）マッピングと権限管理の移譲
+<!-- traceability: {VmmioShmDelegation} {OwnerMismatchTrap} -->
+vMMIO 仮想アドレス空間の FC=14 共有メモリ領域（`0xE000_0000`〜`0xEFFF_FFFF`）におけるページマッピング（VPN $\leftrightarrow$ 物理ページ）およびアクセス権限（PTE の `owner_id`、読み書き権限、`FB_TASK_ID_FLIGHT` の状態遷移、TLB エントリフラッシュ）の管理責務は、Tier 2 の `VMMIOController` から **Tier 3 の共有メモリマネージャ（`MemoryManager`）へ完全に移譲・一元化**される。 `{VmmioShmDelegation}`
+- `VMMIOController` はアドレスデコードと TLB/PTE キャッシュディスパッチに専念し、FC=14 の PTE テーブルの登録・更新・破棄は `MemoryManager` が直接駆動する。
+- `MemoryManager` は共有ブロックの割り当て・状態遷移・解放時に、対応する vMMIO PTE を同期更新し、VPN の TLB キャッシュ（`flush_tlb_entry(vpn)`）を即座に無効化することで、TLB キャッシュのステイル（不整合）を防止する。
+
+### 7.2 ページ単位権限分離仕様（Page-Granular Permission Isolation）
+<!-- traceability: {PageGranularPermissionIsolation} {META_FaultIsolation} -->
+Cortex-M33 MPU および vMMIO のハードウェア保護機構において、アクセス権限（`owner_id`、読み書き許可ビット）は **4KB 物理ページ（`FB_PAGE_SIZE = 4096`）単位**でのみ設定可能である。
+したがって、システム全体のメモリ保護を完全にするため、**「権限（所有タスク ID およびアクセス権限）ごとに物理ページを完全に分離する」** ことを不変条件として強制する。 `{PageGranularPermissionIsolation}`
+
+1. **他タスクとのページ混在の禁止**:
+   - 異なるタスク（異なる `owner_id`）に属する共有メモリスロットを同一 4KB 物理ページ内に共存（相乗り）させることは厳格に禁止される。
+   - `allocate_shared(caller_task_id, size)` は、既に `caller_task_id` が所有し十分な空き容量のあるページが存在する場合にのみスロットを切り出し、存在しない場合は必ず新規の 4KB 物理ページを `caller_task_id` 専用として割り当てる。
+2. **ページ単位の所有権移譲**:
+   - IPC 転送時、所有権の移譲（Revoke $\to$ Grant）はページ全体を単位として連動する。
+   - ページ内の全スロットは常に同一の所有者（または `FB_TASK_ID_FLIGHT`）であり、一部のスロットのみが別タスクへ移譲されてページ内で所有者が分裂する状態は生じない。
+
+### 7.3 共有メモリライフサイクルと権限遷移プロトコル
+<!-- traceability: {OwnershipTransfer} {META_FaultIsolation} -->
 `shared-block` リソースが物理メモリ側での所有権の単位である。ただし所有権の実体（誰が読み書きしてよいか）を最終的に判定するのは、`{OwnerMismatchTrap}` のTier 3ゲート（vMMIO FC=14のPTE `owner_id`/`FB_TASK_ID_FLIGHT`（`0xFF`））である。`shared-block`の`release()`/`claim()`は、`{ThreeStageRouting}` のRevoke→Rendezvous→Grantと1対1で対応する物理層の操作であり、独立した二重の所有権管理を行うものではない: `release()`はRevokeフェーズで対応するvMMIO PTEの`owner_id`を`FB_TASK_ID_FLIGHT`（移譲中センチネル: `0xFF`）にし、IPCルータのGrantフェーズ成立によって`owner_id`が受信タスクへ更新された後、受信側で`claim()`が呼ばれて有効な`shared-block`ハンドルを取得する。 `{META_FaultIsolation}` `{OwnershipTransfer}`
 
-大きなデータを転送する場合、`shm-id` をkv_pairの `value` フィールドに格納し、通常のIPCメッセージとして送信する。kv_pairの型スコープは `{IPC_ZeroCopy}` が定義する語彙の範囲内で表現する: `shm-id`はハードウェア記述子ではなく物理メモリ側のハンドルであるため、上位3bitは `0b010`（リソース）ではなく `0b000`（機能的、`{IPC_HandleBased}`が定義するハンドル値として解釈）を用い、下位5bitは既定の `0b00001`（`uint32_t`/32bit即値）とする。新規の型値追加が必要であれば上位側の拡張として提案すること。本書側で独自の`dtype=handle`を勝手に定義しない。
+大きなデータを転送する場合、`shm-id` をkv_pairの `value` フィールド（`ScopeKind.RESOURCE`）に格納し、通常のIPCメッセージとして送信する。
 
-1. タスクAが `allocate-shared(size)` → `shared-block` リソースを取得（PTE `owner_id = TaskA`、送信側所有）
-2. `shm.get-address()` でローカルアドレスを取得、データを書き込み
-3. `shm.release()` → `shm-id` を取得。リソースはA側で無効化。対応するvMMIO PTEの`owner_id`が`FB_TASK_ID_FLIGHT`になる（IPCの **Revoke** フェーズ連動）
-4. `shm-id` を kv_pair (`scope=functional, type=u32, key=任意, value=shm-id`) に格納
-5. `ipc.send(chan, message(kv_pairs))` で送信。IPCの **Rendezvous** フェーズに対応する（相手が既に受信待機していれば即座に、まだ到達していなければタスクAが協調スケジューラ上でブロックする）
-6. タスクBが `ipc.recv(chan)` → kv_pair から `shm-id` を取り出す（IPCルータが **Grant** フェーズでPTEの`owner_id`をB側タスクIDへアトミック更新）
+1. タスクAが `allocate-shared(size)` → `shared-block` リソースを取得（PTE `owner_id = TaskA`、送信側所有。専用の 4KB 物理ページが割り当てられる）
+2. `shm.write_*` でデータを書き込み
+3. `shm.release()` → `shm-id` を取得。リソースはA側で無効化。対応するvMMIO PTEの`owner_id`が`FB_TASK_ID_FLIGHT`になり、TLB エントリがフラッシュされる（IPCの **Revoke** フェーズ連動）
+4. `shm-id` を kv_pair (`scope=resource, type=u32, key=任意, value=shm-id`) に格納
+5. `ipc.send(chan, message(kv_pairs))` で送信。IPCの **Rendezvous** フェーズに対応する
+6. タスクBが `ipc.recv(chan)` → kv_pair から `shm-id` を取り出す（IPCルータが **Grant** フェーズでPTEの`owner_id`をB側タスクIDへアトミック更新し、TLB エントリをフラッシュ）
 7. `claim(shm-id)` → B側の新 `shared-block` リソースを取得（PTE `owner_id == TaskB` の検証にパス）
-8. `shm.get-address()` でデータを読み取り
-9. B側の `shared-block` が drop されるとメモリ自動解放
-10. **障害時回復**: Rendezvous中に相手タスクが異常終了した場合や通信が中断された場合、物理メモリマネージャの `rollback_transfer(original_sender_id, shm_id)` により、PTE `owner_id` が送信元タスクIDへ復元され、リソースが回収可能となる。
+8. `shm.read_*` でデータを読み取り
+9. B側の `shared-block` が drop されるとメモリ自動解放（PTE が無効化され、TLB エントリがフラッシュされる）
+10. **障害時回復**: Rendezvous中に相手タスクが異常終了した場合や通信が中断された場合、物理メモリマネージャの `rollback_transfer(original_sender_id, shm_id)` により、PTE `owner_id` が送信元タスクIDへ復元され、TLB がフラッシュされ、リソースが回収可能となる。
 
 ## 8. 設計判断 (ADR)
-<!-- traceability: {ADR_SharedBlockRaii} {ADR_MemoryManagerMinimalSurface} -->
-このコンポーネントのADRは `{ADR_SharedBlockRaii}` のキーワードで参照される。詳細な背景・選択肢の比較検討は以下に記録する。
+<!-- traceability: {ADR_SharedBlockRaii} {ADR_MemoryManagerMinimalSurface} {ADR_PageGranularPermissionIsolation} -->
+このコンポーネントのADRは `{ADR_SharedBlockRaii}` および `{ADR_PageGranularPermissionIsolation}` のキーワードで参照される。詳細な背景・選択肢の比較検討は以下に記録する。
+
+- **決定事項**: `{ADR_PageGranularPermissionIsolation}` (2026-09-02)
+  - **背景**: vMMIO FC=14 の PTE および MPU は 4KB ページ単位でしか権限（`owner_id`、RW許可）を設定できない。同一ページ内に異なるタスクのスロットが混在すると、タスク間のメモリ隔離が破綻し、他タスクのデータが読み書きされる危険があった。
+  - **選択肢と評価**:
+    - 案1: 単一ページ内に複数タスクのスロットを混在させ、メモリアクセス時にソフトウェアでスロット境界とタスクIDを毎回検査する。チェックのオーバーヘッドが大きく、vMMIO のハードウェア PTE / TLB 高速ディスパッチの恩恵を損なう。
+    - 案2: 権限（所有タスクID）ごとに独立した 4KB 物理ページを割り当て、同一ページ内には同一所有者のスロットのみを配置する。メモリ消費はページ単位に量子化されるが、PTE によるページ単位のハードウェア保護（`TRAP_OWNER_MISMATCH`）が完全に成立し、ゼロコストでタスク間隔離が担保される。
+  - **結論**: 案2を採用する。
+  - **理由**: Fireball の最重要方針である `{META_FaultIsolation}`（障害隔離）および `{META_ZeroCostAbstraction}` を実現するため。PTE の `owner_id` チェックを純粋なページ単位検証とし、アクセスパスを最速に保つ。
 
 - **決定事項**: `{ADR_SharedBlockRaii}` (2026-02-17)
   - **背景**: IPC転送用の共有メモリを、単なる`shm-id`（整数）として扱うか、所有権を持つリソース型として扱うかを決定する必要があった。

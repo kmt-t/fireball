@@ -22,7 +22,7 @@ import struct
 import time
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from hal import ShmBufferPool, ShmHandle, UartTransport
 from ipc_router import (
@@ -33,6 +33,11 @@ from ipc_router import (
     bytes_to_kv_storage,
     kv_entries_to_bytes,
 )
+
+if TYPE_CHECKING:
+    from gdb_server import GDBServer
+    from hal import HalTask
+
 from logger import ConsoleOutput, LogDictionary, Logger, LogLevel
 from memory import (
     FB_CONF_MEMORY_POOL_SIZE,
@@ -218,6 +223,7 @@ class System:
 
         # Physical Memory Manager (platform_memory.md) with 64KB aligned pool
         self.memory_manager = MemoryManager()
+        self.memory_manager.attach_vmmio(self.vmmio)
         self.memory_manager.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
         self.scheduler = Scheduler(logger=self.logger)
         self.ipc = IPCRouter(self.scheduler, logger=self.logger, memory_manager=self.memory_manager)
@@ -229,9 +235,9 @@ class System:
         self.exit_code: int | None = None
         self._guest_memory: bytearray | None = None
         self._current_task_id = 0
-        self.hal_task: Any | None = None
+        self.hal_task: HalTask | None = None
         self._hal_task_id: int | None = None
-        self.gdb_server: Any | None = None
+        self.gdb_server: GDBServer | None = None
         self._gdb_task_id: int | None = None
         # Build fireball_call dispatch table via RadixBinaryTreeView
         syscall_handlers: list[tuple[int, Any]] = [

@@ -12,9 +12,12 @@ from __future__ import annotations
 import struct
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Generic, TypeVar
+from typing import TYPE_CHECKING, Generic, TypeVar
 
 from system_containers import StaticFlatMap
+
+if TYPE_CHECKING:
+    from vmmio import VMMIOController
 
 T = TypeVar("T")
 
@@ -82,6 +85,18 @@ class PartitionView:
 
     def is_valid_for(self, task_id: int) -> bool:
         return self.owner == task_id
+
+
+@dataclass
+class ShmPageInfo:
+    """4KB Physical SHM Page bookkeeping for page-granular permission isolation."""
+
+    page_idx: int
+    owner_id: int
+    allocated: bool = False
+    allocated_bytes: int = 0
+    slot_count: int = 0
+    data: bytearray = field(default_factory=lambda: bytearray(FB_PAGE_SIZE))
 
 
 @dataclass
@@ -286,6 +301,11 @@ class SharedBlock:
             self._is_active = False
             self._is_in_flight = True
             self._manager.vmmio_registry.update_owner(self.page_idx, FB_TASK_ID_FLIGHT)
+            if self.page_idx < len(self._manager.shm_pages):
+                self._manager.shm_pages[self.page_idx].owner_id = FB_TASK_ID_FLIGHT
+            if self._manager.vmmio is not None:
+                vpn = (0xE000_0000 >> 12) + self.page_idx
+                self._manager.vmmio.revoke_shm_owner(vpn)
         return self.shm_id
 
     def drop(self):
@@ -439,17 +459,23 @@ class MemoryManager:
         self.pool_size: int = 0
         self.total_allocated_bytes: int = 0
         self.vmmio_registry = VMMIOPTERegistry()
+        self.vmmio: VMMIOController | None = None
         self.mpu: PMSAv8MPU | None = None
-        # Both bounded by real fixed capacities (max concurrent tasks; max
-        # concurrent SHM pages), so a StaticFlatMap -- fixed-capacity, no
-        # dynamic reallocation -- fits directly; a dict would allow either
-        # to silently grow past the hardware limit it represents.
         self.partition_owners: StaticFlatMap[int, PartitionView] = StaticFlatMap(
             capacity=FB_CONF_MAX_TASKS
         )
         self.shm_slots: StaticFlatMap[int, ShmSlot] = StaticFlatMap(
             capacity=_FB_CONF_MAX_VMMIO_PAGES
         )
+        # Page-granular permission isolation: each 4KB physical page tracks its exclusive owner_id
+        self.shm_pages: list[ShmPageInfo] = [
+            ShmPageInfo(page_idx=i, owner_id=0, allocated=False, allocated_bytes=0, slot_count=0)
+            for i in range(_FB_CONF_MAX_VMMIO_PAGES)
+        ]
+
+    def attach_vmmio(self, vmmio: VMMIOController) -> None:
+        """Attaches the vMMIO controller to drive FC=14 SHM page mappings and TLB invalidation."""
+        self.vmmio = vmmio
 
     def init_manager(self, pool_base: int, pool_size: int) -> Result[bool]:
         assert pool_base % FB_WASM_PAGE_SIZE == 0, (
@@ -513,42 +539,86 @@ class MemoryManager:
                 )
             )
 
-        if self.total_allocated_bytes + FB_PAGE_SIZE > self.pool_size:
-            return Result(
-                error=MemoryErrorResult(
-                    "ERR_SHM_EXHAUSTED",
-                    RecoveryStrategy(RecoveryAction.DEGRADE, "No free SHM pages in physical pool"),
-                )
-            )
+        # Page-granular isolation: find an existing page owned by caller_task_id with enough space,
+        # OR find an unallocated page to reserve exclusively for caller_task_id.
+        target_page: ShmPageInfo | None = None
+        for page in self.shm_pages:
+            if page.allocated and page.owner_id == caller_task_id:
+                if FB_PAGE_SIZE - page.allocated_bytes >= size:
+                    target_page = page
+                    break
 
-        page_idx = len(self.shm_slots)
-        slot_idx = 0
-        shm_id = (page_idx << 8) | slot_idx
-        base_addr = 0x20080000 + (page_idx * FB_PAGE_SIZE)
-        self.vmmio_registry.register_page(page_idx, caller_task_id, base_addr)
-        raw_data = bytearray(size)
+        if target_page is None:
+            # Need a new 4KB page
+            if self.total_allocated_bytes + FB_PAGE_SIZE > self.pool_size:
+                return Result(
+                    error=MemoryErrorResult(
+                        "ERR_SHM_EXHAUSTED",
+                        RecoveryStrategy(
+                            RecoveryAction.DEGRADE, "No free SHM pages in physical pool"
+                        ),
+                    )
+                )
+            for page in self.shm_pages:
+                if not page.allocated:
+                    target_page = page
+                    break
+
+            if target_page is None:
+                return Result(
+                    error=MemoryErrorResult(
+                        "ERR_SHM_EXHAUSTED",
+                        RecoveryStrategy(RecoveryAction.DEGRADE, "All SHM page slots exhausted"),
+                    )
+                )
+
+            # Initialize new page exclusively for caller_task_id
+            target_page.allocated = True
+            target_page.owner_id = caller_task_id
+            target_page.allocated_bytes = 0
+            target_page.slot_count = 0
+            self.total_allocated_bytes += FB_PAGE_SIZE
+
+            # Register in vMMIO FC=14
+            base_addr = 0x20080000 + (target_page.page_idx * FB_PAGE_SIZE)
+            self.vmmio_registry.register_page(target_page.page_idx, caller_task_id, base_addr)
+            if self.vmmio is not None:
+                vpn = (0xE000_0000 >> 12) + target_page.page_idx
+                self.vmmio.map_shm_page(
+                    vpn, phys_page=target_page.page_idx, owner_id=caller_task_id
+                )
+
+        # Allocate slot inside target_page
+        slot_idx = target_page.slot_count
+        slot_offset = target_page.allocated_bytes
+        target_page.slot_count += 1
+        target_page.allocated_bytes += size
+
+        shm_id = (target_page.page_idx << 8) | slot_idx
+        base_addr = 0x20080000 + (target_page.page_idx * FB_PAGE_SIZE) + slot_offset
+        slot_data = bytearray(size)
         self.shm_slots.insert(
             shm_id,
             ShmSlot(
-                page_idx=page_idx,
+                page_idx=target_page.page_idx,
                 slot_idx=slot_idx,
                 size=size,
                 owner=caller_task_id,
                 base_address=base_addr,
                 allocated=True,
-                data=raw_data,
+                data=slot_data,
             ),
         )
-        self.total_allocated_bytes += FB_PAGE_SIZE
+
         sb = SharedBlock(
             shm_id=shm_id,
-            page_idx=page_idx,
+            page_idx=target_page.page_idx,
             slot_idx=slot_idx,
             size=size,
             owner=caller_task_id,
             base_address=base_addr,
             manager=self,
-            data=raw_data,
+            data=slot_data,
         )
         return Result(value=sb)
 
@@ -557,7 +627,13 @@ class MemoryManager:
         slot = self.shm_slots.find(shm_id)
         if slot is None or not slot.allocated:
             return False
+        slot.owner = new_owner_task_id
+        if slot.page_idx < len(self.shm_pages):
+            self.shm_pages[slot.page_idx].owner_id = new_owner_task_id
         self.vmmio_registry.update_owner(slot.page_idx, new_owner_task_id)
+        if self.vmmio is not None:
+            vpn = (0xE000_0000 >> 12) + slot.page_idx
+            self.vmmio.update_shm_owner(vpn, new_owner_task_id)
         return True
 
     def claim(self, receiver_task_id: int, shm_id: int) -> Result[SharedBlock]:
@@ -597,8 +673,13 @@ class MemoryManager:
         """Restores a shared block's original owner in the vMMIO PTE."""
         slot = self.shm_slots.find(shm_id)
         if slot is not None:
-            self.vmmio_registry.update_owner(slot.page_idx, original_sender_id)
             slot.owner = original_sender_id
+            if slot.page_idx < len(self.shm_pages):
+                self.shm_pages[slot.page_idx].owner_id = original_sender_id
+            self.vmmio_registry.update_owner(slot.page_idx, original_sender_id)
+            if self.vmmio is not None:
+                vpn = (0xE000_0000 >> 12) + slot.page_idx
+                self.vmmio.update_shm_owner(vpn, original_sender_id)
 
     def deallocate(self, caller_task_id: int, addr: int):
         """Deallocate local static partition or slot. Owner enforced."""
@@ -613,5 +694,22 @@ class MemoryManager:
         shm_id = (page_idx << 8) | slot_idx
         if shm_id in self.shm_slots:
             self.shm_slots.remove(shm_id)
-            self.vmmio_registry.unregister_page(page_idx)
-            self.total_allocated_bytes -= FB_PAGE_SIZE
+
+            # Check if any slots in this page remain allocated
+            page = self.shm_pages[page_idx] if page_idx < len(self.shm_pages) else None
+            has_remaining = False
+            for s in self.shm_slots.view().values:
+                if s.page_idx == page_idx:
+                    has_remaining = True
+                    break
+
+            if not has_remaining and page is not None:
+                page.allocated = False
+                page.allocated_bytes = 0
+                page.slot_count = 0
+                page.owner_id = 0
+                self.vmmio_registry.unregister_page(page_idx)
+                if self.vmmio is not None:
+                    vpn = (0xE000_0000 >> 12) + page_idx
+                    self.vmmio.unmap_shm_page(vpn)
+                self.total_allocated_bytes -= FB_PAGE_SIZE

@@ -487,6 +487,58 @@ def test_mem_11_shared_block_raII_auto_deallocate():
     assert sb.shm_id not in mm.shm_slots
 
 
+def test_mem_14_page_granular_permission_isolation():
+    """MEM-14: Different tasks cannot share the same 4KB page; separate pages allocated."""
+    mm = MemoryManager()
+    mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
+
+    # Task 1 allocates a small block (256 bytes)
+    sb_t1_a = mm.allocate_shared(caller_task_id=1, size=256).unwrap()
+    # Task 1 allocates another small block (256 bytes) -> reuses Task 1's page!
+    sb_t1_b = mm.allocate_shared(caller_task_id=1, size=256).unwrap()
+    assert sb_t1_a.page_idx == sb_t1_b.page_idx
+    assert sb_t1_a.slot_idx != sb_t1_b.slot_idx
+
+    # Task 2 allocates a small block (256 bytes) -> MUST allocate a separate 4KB page!
+    sb_t2 = mm.allocate_shared(caller_task_id=2, size=256).unwrap()
+    assert sb_t2.page_idx != sb_t1_a.page_idx
+    assert mm.shm_pages[sb_t1_a.page_idx].owner_id == 1
+    assert mm.shm_pages[sb_t2.page_idx].owner_id == 2
+
+
+def test_mem_15_vmmio_fc14_tlb_sync():
+    """MEM-15: vMMIO FC=14 mapping, update and TLB flush driven by MemoryManager."""
+    from vmmio import VMMIOController
+
+    vmmio = VMMIOController(guest_ram_size=8192)
+    mm = MemoryManager()
+    mm.attach_vmmio(vmmio)
+    mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
+
+    sb = mm.allocate_shared(caller_task_id=1, size=512).unwrap()
+    raw_addr = 0xE000_0000 + (sb.page_idx * 4096)
+
+    # Verify task 1 can access its own SHM page
+    status, _ = vmmio.access(raw_addr, is_write=False, current_task_id=1)
+    assert status == "OK_PHYSICAL"
+
+    # Task 2 access traps with OWNER_MISMATCH
+    status, _ = vmmio.access(raw_addr, is_write=False, current_task_id=2)
+    assert status == "TRAP_OWNER_MISMATCH"
+
+    # Release puts page in flight -> Task 1 also traps!
+    shm_id = sb.release()
+    status, _ = vmmio.access(raw_addr, is_write=False, current_task_id=1)
+    assert status == "TRAP_OWNER_MISMATCH"
+
+    # Grant to Task 2 -> Task 2 can access, Task 1 cannot!
+    assert mm.grant_shared(shm_id, 2)
+    status, _ = vmmio.access(raw_addr, is_write=False, current_task_id=2)
+    assert status == "OK_PHYSICAL"
+    status, _ = vmmio.access(raw_addr, is_write=False, current_task_id=1)
+    assert status == "TRAP_OWNER_MISMATCH"
+
+
 def test_mem_20_mpu_8_regions_static_allocation():
     """MEM-20: 8 MPU regions match the PMSAv8 static allocation table."""
     mpu = PMSAv8MPU(pool_base=0x20020000)

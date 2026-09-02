@@ -34,6 +34,9 @@
 | MEM-11 | `shared-block`のRAII自動解放 | Bがdropする | drop実行 | メモリが自動解放される（明示的`deallocate`不要） | §7手順9, §8「ADR_SharedBlockRaii」 |
 | MEM-12 | `shm-id`のkv_pairエンコーディング | IPC送信 | メッセージ構築 | 型スコープ上位3bit=`0b000`（機能的）、下位5bit=`0b00001`（u32）のkv_pairとして格納される。`ipc_router.md`の型語彙表にない独自の`dtype=handle`は使わない | §7「大きなデータを転送する場合」（本セッションでの訂正後）, ipc_router.md §3.3 |
 | MEM-13 | `query()`/`check_ownership()`が削除されている | - | APIサーフェスを確認 | これらのAPIは存在しない（`shared_block.get_size()`/`get_owner()`で代替） | §8 ADR_MemoryManagerMinimalSurface |
+| MEM-14 | ページ単位権限分離 | タスク1とタスク2が`allocate-shared`実行 | 割り当てられた`page_idx`を比較 | 異なるタスクのスロットは同一ページに混在せず、必ず別個の4KB物理ページ（異なる`page_idx`）に割り当てられる | §7.2「ページ単位権限分離仕様」, §8「ADR_PageGranularPermissionIsolation」 |
+| MEM-15 | vMMIO FC=14マッピングとTLBフラッシュ連動 | 共有メモリ操作 | `allocate_shared`/`release`/`grant`/`drop`実行 | vMMIO FC=14 PTEの更新と連動して対応VPNのTLBスロットが即座にフラッシュされる | §7.1「vMMIO共有メモリマッピングと権限管理の移譲」 |
+| MEM-16 | 他タスク所有SHMページへのvMMIOアクセス遮断 | タスク1がSHM確保 | タスク2のコンテキストでvMMIO経由アクセス | `TRAP_OWNER_MISMATCH`（アクセス違反）により安全に遮断される | §7.2, runtime_vmmio.md §3.3 |
 
 ### MPU / W^X (§9)
 

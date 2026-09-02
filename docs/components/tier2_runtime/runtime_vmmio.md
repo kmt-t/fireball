@@ -216,7 +216,7 @@ Static Devices (Tier 2) 向け。PTE には Device Type やパーミッション
 [15:0]  Reserved
 ```
 
-**FC=14 (SHM) エントリへの書き込みは IPCルータのみが行う。vMMIO は読み取り・チェック・実行のみ。**
+**FC=14 (SHM) エントリのマッピング（登録・更新・破棄）および権限管理（`owner_id`、RW許可、TLBフラッシュ）は、Tier 3 共有メモリマネージャ（`MemoryManager`）へ完全に移譲される（`{VmmioShmDelegation}`）。vMMIO コントローラは読み取り・チェック・実行に専念し、権限とマッピングは共有メモリマネージャが一元管理する。**
 
 #### FlatMap ページテーブル定義
 <!-- traceability: {META_FlatMapIndexed} {vMMIO_Isolation} -->

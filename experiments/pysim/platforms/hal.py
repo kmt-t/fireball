@@ -29,7 +29,10 @@ import time
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from memory import MemoryManager
 
 from ipc_router import DataType, IPCMessage, IPCRouter, IpcStatus, ScopeKind, pack_key32
 from scheduler import ChannelAction
@@ -468,8 +471,8 @@ class HalTask:
 
 def make_hal_ipc_message(
     cmd_id: int,
-    params: Sequence[tuple[int, Any]] = (),
-    memory_manager: Any | None = None,
+    params: Sequence[tuple[int, int]] = (),
+    memory_manager: MemoryManager | None = None,
     task_id: int = 1,
 ) -> IPCMessage:
     """Builds a standardized IPCMessage for communicating with HalTask."""

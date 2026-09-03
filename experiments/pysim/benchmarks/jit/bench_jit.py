@@ -45,10 +45,10 @@ class JITCompilerBenchmark:
         block = BasicBlock(
             head_pc=0,
             ops=[
-                ("local.get", 0),
-                ("i32.const", 1),
-                ("i32.add", None),
-                ("local.set", 0),
+                (op.LOCAL_GET, 0),
+                (op.I32_CONST, 1),
+                (op.I32_ADD, None),
+                (op.LOCAL_SET, 0),
             ],
             next_pc=8,
         )

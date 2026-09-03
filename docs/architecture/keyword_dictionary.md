@@ -39,6 +39,7 @@
 | `{VsocRuntime_Layout}` | `architecture_overview.md` | `runtime_vsoc.md` | `execution_context` 内包 `vsoc_runtime` 12バイト物理実行環境配置 (`+0x10`〜`+0x1B`) | Scenario 1〜11 |
 | `{ADR_TraceBoundaryYield}` | `runtime_interpreter.md` | `runtime_interpreter.md` | インタープリタの命令ハンドラが vSoC へ制御を返す頻度をトレース境界（切れ目）に限定する設計判断——`co_yield` の判定・発行は常に vSoC 側が行い、インタープリタ自身はコルーチンではない | Scenario 6 (`INT-50`) |
 | `{Libgcc_Runtime_Helper}` | `runtime_interpreter.md` | `runtime_interpreter.md` | i64 / f32 / f64 の libgcc 依存演算をランタイムヘルパー関数経由で実行する設計 | Scenario 1, 8 |
+| `{DirectBytecodeExecution}` | `runtime_interpreter.md` | `runtime_interpreter.md` | ROM/Flash バイトコード直接デコード、命令オブジェクト生成ゼロ、およびポインタ加算（ip + len）によるO(1)命令実行 | Scenario 1〜11 (`INTP-50`) |
 
 ---
 
@@ -68,6 +69,7 @@
 | `{ThreeBankCacheEviction}` | `jit_runtime.md` | `jit_runtime.md` | 3面バンク代謝と Oldest ヒット時の Active 昇格・局所アンリンク | Scenario 4, 5 (`INT-31`, `INT-41`) |
 | `{RadixBinaryTreeView_bswap32}` | `system_containers.md` | `jit_runtime.md` | UnifiedPC（`func_idx << 20 \| pc`）の bswap32 による Radix 検索 | Scenario 5 (`INT-40`, `INT-41`) |
 | `{BitView_CardMarking}` | `system_containers.md` | `jit_runtime.md` | 関数ごと 8バイト/カード 2-bit カードマーキング Hotspot 検出（UNEXEC $\to$ EXEC $\to$ HOT $\to$ COMPILED） | Scenario 4 (`INT-30`) |
+| `{DirectMappedJIT16}` | `jit_runtime.md` | `jit_runtime.md` | 32-bit UnifiedPC の 4-bit Folding XOR Hash による 16エントリ Direct-Mapped JIT キャッシュ一撃検索 | Scenario 4, 5 (`JITR-26`) |
 
 ---
 
@@ -91,6 +93,7 @@
 | `{VmmioShmDelegation}` | `runtime_vmmio.md` | `platform_memory.md` | vMMIO FC=14共有メモリマッピングと権限・TLB無効化のメモリマネージャリスナー移譲 | `MEM-15` |
 | `{ADR_PageGranularPermissionIsolation}` | `platform_memory.md` | `platform_memory.md` | アーキテクチャ決定: ページ単位での権限分離とリスナーによる仮想化マッピング移譲 | `MEM-14`, `MEM-15` |
 | `{VSOC_Lifecycle}` | `runtime_vsoc.md` | `runtime_vsoc.md` | vSoC Engine の状態遷移とインタープリタ／JIT切り替えライフサイクル | Scenario 7, 8 |
+| `{Loader_BasicBlockIndex}` | `runtime_loader.md` | `runtime_loader.md` | WASMローダによる全ベーシックブロックメタ情報（BasicBlock）の不変抽出と RadixBinaryTreeView（bswap32キー）索引の所有・公開 | `LOAD-48`, `test_loader.py` |
 
 ---
 

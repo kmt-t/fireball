@@ -46,6 +46,7 @@ from interpreter import Interpreter
 from runtime_engine import BasicBlock, IntegratedHybridEngine, WASMContext
 from system import System
 from wasi import WasiHostContext
+from wasm_opcodes import I32_ADD, I32_CONST, I32_MUL, LOCAL_GET, LOCAL_SET
 from wasm_reader import parse
 from x64_jit import TraceCompiler
 
@@ -197,15 +198,15 @@ def test_scenario_comprehensive_storage_and_debugger():
     # -------------------------------------------------------------------------
     block100 = BasicBlock(
         head_pc=0x100,
-        ops=[("local.get", 0), ("i32.const", 1), ("i32.add", None), ("local.set", 0)],
+        ops=[(LOCAL_GET, 0), (I32_CONST, 1), (I32_ADD, None), (LOCAL_SET, 0)],
         next_pc=0x110,
     )
     block110 = BasicBlock(
         head_pc=0x110,
-        ops=[("local.get", 0), ("i32.const", 10), ("i32.mul", None), ("local.set", 1)],
+        ops=[(LOCAL_GET, 0), (I32_CONST, 10), (I32_MUL, None), (LOCAL_SET, 1)],
         next_pc=0x120,
     )
-    block120 = BasicBlock(head_pc=0x120, ops=[("local.get", 1), ("local.set", 2)], next_pc=None)
+    block120 = BasicBlock(head_pc=0x120, ops=[(LOCAL_GET, 1), (LOCAL_SET, 2)], next_pc=None)
     blocks = {0x100: block100, 0x110: block110, 0x120: block120}
     engine = IntegratedHybridEngine(compiler=TraceCompiler())
     dbg = DebuggerManager(engine=engine)

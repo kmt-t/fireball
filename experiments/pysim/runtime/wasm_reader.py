@@ -293,4 +293,6 @@ def parse(data: bytes) -> Module:
 
         # else: custom section -- skip its bytes.
         off = sec_end
+
+    module.build_basic_block_index()
     return module

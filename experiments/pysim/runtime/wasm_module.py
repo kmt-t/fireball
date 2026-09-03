@@ -15,6 +15,24 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from system_containers import (
+    RadixBinaryTreeView,
+    ReadOnlyRadixBinaryTreeStorage,
+    bswap32,
+    build_radix_table,
+)
+
+
+@dataclass
+class BasicBlock:
+    """A straight-line sequence of WASM instructions ending with branch/return."""
+
+    head_pc: int
+    ops: list[tuple[int, object]]
+    next_pc: int | None = None
+    loops_to: int | None = None
+
+
 # WASM value types we support (MVP i32 only for now; i64/f32/f64 are parsed
 # but not compiled).
 I32 = "i32"
@@ -43,6 +61,7 @@ class Function:
     locals_extra: list[str]  # declared (non-parameter) locals, in order
     code: bytes  # raw instruction bytes (the function body, sans locals decl)
     name: str = ""
+    control_map: object | None = None
 
 
 @dataclass
@@ -104,6 +123,11 @@ class Module:
     elements: list[Element] = field(default_factory=list)
     data_segments: list[DataSegment] = field(default_factory=list)
     start_function: int | None = None
+    block_storage: ReadOnlyRadixBinaryTreeStorage[BasicBlock] | None = None
+    block_tree: RadixBinaryTreeView[BasicBlock] | None = None
+    control_skip_storage: ReadOnlyRadixBinaryTreeStorage[int] | None = None
+    control_skip_tree: RadixBinaryTreeView[int] | None = None
+    blocks: list[BasicBlock] = field(default_factory=list)
 
     def init_memory_data(self, memory: bytearray) -> None:
         """Initializes memory with active data segments."""
@@ -154,3 +178,71 @@ class Module:
             return list(ft.params)
         local = self.functions[func_index - len(self.imports)]
         return list(ft.params) + list(local.locals_extra)
+
+    def build_basic_block_index(self) -> None:
+        """Extracts basic blocks and builds ReadOnlyRadixBinaryTreeStorage indexes on the loader side."""
+        from control_flow import build_control_skip_storage, extract_basic_blocks
+
+        n_imports = len(self.imports)
+        try:
+            self.control_skip_storage = build_control_skip_storage(
+                self.functions, n_imports=n_imports
+            )
+            self.control_skip_tree = (
+                self.control_skip_storage.view() if self.control_skip_storage is not None else None
+            )
+        except Exception:
+            self.control_skip_storage = None
+            self.control_skip_tree = None
+
+        all_blocks: list[BasicBlock] = []
+        for idx, fn in enumerate(self.functions):
+            func_idx = n_imports + idx
+            try:
+                extracted = extract_basic_blocks(fn.code, func_index=func_idx)
+                for head_pc, ops, next_pc, loops_to in extracted:
+                    if ops:
+                        all_blocks.append(
+                            BasicBlock(head_pc=head_pc, ops=ops, next_pc=next_pc, loops_to=loops_to)
+                        )
+            except Exception:
+                continue
+
+        self.blocks = all_blocks
+        if not all_blocks:
+            self.block_storage = None
+            self.block_tree = None
+            return
+
+        sorted_blocks = sorted(all_blocks, key=lambda b: bswap32(b.head_pc))
+        inv_keys = [bswap32(b.head_pc) for b in sorted_blocks]
+        radix_shift = 28
+        radix_table = build_radix_table(inv_keys, radix_shift=radix_shift)
+        self.block_storage = ReadOnlyRadixBinaryTreeStorage[BasicBlock](
+            keys=inv_keys,
+            values=sorted_blocks,
+            radix_table=radix_table,
+            radix_shift=radix_shift,
+            entries=list(zip(inv_keys, sorted_blocks, strict=False)),
+        )
+        self.block_tree = self.block_storage.view()
+
+    def get_block(self, pc: int) -> BasicBlock | None:
+        """Looks up a BasicBlock by UnifiedPC via the loader's Radix tree (O(1) + O(log n))."""
+        if self.block_tree is None:
+            return None
+        return self.block_tree.find(bswap32(pc))
+
+    @property
+    def total_basic_blocks(self) -> int:
+        """Returns the exact total number of basic blocks across all functions in the module."""
+        if self.blocks:
+            return len(self.blocks)
+        from control_flow import extract_basic_blocks
+
+        n_imports = len(self.imports)
+        count = 0
+        for idx, fn in enumerate(self.functions):
+            extracted = extract_basic_blocks(fn.code, func_index=n_imports + idx)
+            count += sum(1 for _, ops, _, _ in extracted if ops)
+        return count

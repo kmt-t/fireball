@@ -26,13 +26,25 @@ from collections.abc import Callable
 from interpreter import Interpreter, InterpreterCall
 from system_containers import (
     BitView,
+    FlatMapView,
     MutableBitStorage,
+    MutableRadixBinaryTreeStorage,
     RadixBinaryTreeView,
+    ReadOnlyFlatMapStorage,
     ReadOnlyRadixBinaryTreeStorage,
     RingBuffer,
     bswap32,
 )
-from wasm_module import Module
+from wasm_module import BasicBlock, Module
+from wasm_opcodes import (
+    I32_ADD,
+    I32_CONST,
+    I32_MUL,
+    I32_SUB,
+    LOCAL_GET,
+    LOCAL_SET,
+    LOCAL_TEE,
+)
 
 
 class CardState:
@@ -344,7 +356,9 @@ class JITCacheBank:
 
 
 class JITMultiBufferCache:
-    """3-bank rotating JIT code cache: Active / Warm / Oldest with O(k) bounded unlinking."""
+    """3-bank rotating JIT code cache: Active / Warm / Oldest with O(k) bounded unlinking and Direct-Mapped Folding XOR lookup."""
+
+    NUM_FAST_SLOTS = 16
 
     def __init__(self, bank_capacity: int = 2048):
         self.banks = [JITCacheBank(i, bank_capacity) for i in range(3)]
@@ -353,6 +367,12 @@ class JITMultiBufferCache:
         self.evictions = 0
         self.on_evict: Callable[[list[int]], None] | None = None
         self.control_skip_tree: RadixBinaryTreeView[int] | None = None
+        # Direct-mapped 16-slot cache keyed by 4-bit Folding XOR Hash over UnifiedPC
+        self._fast_slots: list[tuple[int, JITTrace] | None] = [None] * self.NUM_FAST_SLOTS
+
+    def _hash_slot(self, pc: int) -> int:
+        """4-bit Folding XOR Hash over 32-bit UnifiedPC."""
+        return ((pc >> 24) ^ (pc >> 16) ^ (pc >> 8) ^ pc) & (self.NUM_FAST_SLOTS - 1)
 
     @property
     def active(self) -> JITCacheBank:
@@ -385,11 +405,18 @@ class JITMultiBufferCache:
             target_bank.inbound_sources.append(source_pc)
 
     def lookup(self, head_pc: int) -> JITTrace | None:
+        slot = self._hash_slot(head_pc)
+        cached = self._fast_slots[slot]
+        if cached is not None and cached[0] == head_pc:
+            return cached[1]
+
         trace = self.active.get_trace(head_pc)
         if trace is not None:
+            self._fast_slots[slot] = (head_pc, trace)
             return trace
         trace = self.warm.get_trace(head_pc)
         if trace is not None:
+            self._fast_slots[slot] = (head_pc, trace)
             return trace
         trace = self.oldest.get_trace(head_pc)
         if trace is None:
@@ -426,6 +453,7 @@ class JITMultiBufferCache:
                     target_bank.inbound_sources.append(src_pc)
 
         self.promotions += 1
+        self._fast_slots[slot] = (head_pc, trace)
         return trace
 
     def insert(self, trace: JITTrace) -> bool:
@@ -454,6 +482,8 @@ class JITMultiBufferCache:
                     if res_succ == trace.head_pc:
                         resident_t.chain_next = trace.head_pc
                         self.register_chain(resident_t.head_pc, trace.head_pc)
+        slot = self._hash_slot(trace.head_pc)
+        self._fast_slots[slot] = (trace.head_pc, trace)
         return True
 
     def rotate(self) -> list[int]:
@@ -484,6 +514,7 @@ class JITMultiBufferCache:
         self.active_idx = new_active
         self.warm_idx = new_warm
         self.oldest_idx = new_oldest
+        self._fast_slots = [None] * self.NUM_FAST_SLOTS
         if self.on_evict and purged_pcs:
             self.on_evict(purged_pcs)
         return purged_pcs
@@ -495,6 +526,7 @@ class JITMultiBufferCache:
             self.evictions += len(purged)
             if self.on_evict and purged:
                 self.on_evict(purged)
+        self._fast_slots = [None] * self.NUM_FAST_SLOTS
 
 
 class PcOnlyCompiler:
@@ -523,6 +555,7 @@ class RuntimeEngine:
         card_shift: int = 2,
         min_trace_bytes: int | None = None,
         compile_queue_capacity: int = 4,
+        block_capacity: int = 64,
     ):
         self.bitmap = HotspotBitmap(card_shift=card_shift)
         self.ring = HistoryRing()
@@ -532,6 +565,14 @@ class RuntimeEngine:
         self.compile_queue_capacity = compile_queue_capacity
         self.compile_queue: list[int] = []  # LIFO queue
         self.blocks: list[tuple[int, BasicBlock]] = []  # Flat slot list instead of dynamic dict
+        self.module: Module | None = None
+        self.block_storage = MutableRadixBinaryTreeStorage[BasicBlock](
+            capacity=block_capacity,
+            key_transform=bswap32,
+            radix_shift=28,
+        )
+        self.block_tree = self.block_storage.view()
+        self._fast_block_slots: list[tuple[int, BasicBlock | None] | None] = [None] * 16
         self.control_skip_storage: ReadOnlyRadixBinaryTreeStorage[int] | None = None
         self.control_skip_tree: RadixBinaryTreeView[int] | None = None
         self.yield_threshold = yield_threshold
@@ -552,37 +593,42 @@ class RuntimeEngine:
         for pc in purged_pcs:
             self.bitmap.mark_evicted(pc)
 
-    def register_block(self, block: BasicBlock) -> None:
-        for i, (pc, _) in enumerate(self.blocks):
-            if pc == block.head_pc:
-                self.blocks[i] = (block.head_pc, block)
-                return
-        self.blocks.append((block.head_pc, block))
+    def load_wasm(self, wasm_bytes: bytes) -> Module:
+        """Parses raw WASM binary and binds all loader-owned basic blocks and Radix trees."""
+        from wasm_reader import parse
+
+        module = parse(wasm_bytes)
+        self.register_module_blocks(module)
+        return module
 
     def get_block(self, pc: int) -> BasicBlock | None:
-        for b_pc, block in self.blocks:
-            if b_pc == pc:
-                return block
-        return None
+        slot = ((pc >> 24) ^ (pc >> 16) ^ (pc >> 8) ^ pc) & 0x0F
+        cached = self._fast_block_slots[slot]
+        if cached is not None and cached[0] == pc:
+            return cached[1]
+        blk = None
+        if self.module is not None:
+            blk = self.module.get_block(pc)
+        elif self.block_tree is not None:
+            blk = self.block_tree.find(bswap32(pc))
+        else:
+            for b_pc, b in self.blocks:
+                if b_pc == pc:
+                    blk = b
+                    break
+        self._fast_block_slots[slot] = (pc, blk)
+        return blk
 
     def register_module_blocks(self, module: Module) -> None:
-        """Automatically extracts and registers all BasicBlocks and control skip Radix tree from a parsed WASM Module."""
-        from control_flow import build_control_skip_storage, extract_basic_blocks
-
-        n_imports = len(module.imports)
-        self.control_skip_storage = build_control_skip_storage(
-            module.functions, n_imports=n_imports
-        )
-        self.control_skip_tree = (
-            self.control_skip_storage.view() if self.control_skip_storage is not None else None
-        )
-        self.cache.control_skip_tree = self.control_skip_tree
-        for idx, fn in enumerate(module.functions):
-            func_idx = n_imports + idx
-            extracted = extract_basic_blocks(fn.code, func_index=func_idx)
-            for head_pc, ops, next_pc in extracted:
-                if ops:
-                    self.register_block(BasicBlock(head_pc=head_pc, ops=ops, next_pc=next_pc))
+        """Binds loader-owned basic blocks and control skip Radix tree from a parsed WASM Module."""
+        if module.block_tree is None:
+            module.build_basic_block_index()
+        self.module = module
+        self.control_skip_storage = module.control_skip_storage
+        self.control_skip_tree = module.control_skip_tree
+        self.cache.control_skip_tree = module.control_skip_tree
+        self.blocks = [(b.head_pc, b) for b in module.blocks]
+        self._fast_block_slots = [None] * 16
 
     def record_block_head(self, pc: int) -> None:
         """
@@ -636,6 +682,9 @@ class RuntimeEngine:
             if trace is not None and self.cache.insert(trace):
                 self.bitmap.mark_compiled(pc)
                 compiled_count += 1
+            else:
+                # Mark as COMPILED in bitmap so uncompilable / failed blocks do not thrash compile_queue
+                self.bitmap.mark_compiled(pc)
         return compiled_count
 
     def drain_compile_queue(self) -> int:
@@ -662,18 +711,21 @@ class RuntimeEngine:
                 The interpreter itself never sees any of this -- it has no notion of
                 a JIT cache, and this is the runtime's job alone.
         """
+        if self.module is None and getattr(interp, "module", None) is not None:
+            self.register_module_blocks(interp.module)
         call_state = interp.start(func_index, args)
         blocks_run = 0
         while not call_state.finished:
             pc = call_state.current_pc()
             trace = None
-            if pc is not None and self.bitmap.get_state(pc) == CardState.COMPILED:
+            is_compiled = pc is not None and self.bitmap.get_state(pc) == CardState.COMPILED
+            if is_compiled:
                 trace = self.cache.lookup(pc)
             if trace is not None:
                 call_state = self._invoke_trace(interp, call_state, trace)
                 blocks_run += 1
             else:
-                if pc is not None:
+                if pc is not None and not is_compiled:
                     self.record_block_head(pc)
                 call_state = interp.step(call_state, quantum=1)
                 blocks_run += 1
@@ -779,51 +831,74 @@ class WASMContext:
         return self.stack.pop()
 
 
-class BasicBlock:
-    """A straight-line sequence of WASM instructions ending with branch/return."""
+def _emu_i32_const(stk: list[int], _arr: object, arg: object) -> None:
+    stk.append(int(arg))  # type: ignore[arg-type]
 
-    def __init__(
-        self,
-        head_pc: int,
-        ops: list[tuple[str, object]],
-        next_pc: int | None = None,
-        loops_to: int | None = None,
-    ):
-        self.head_pc = head_pc
-        self.ops = ops
-        self.next_pc = next_pc
-        self.loops_to = loops_to
+
+def _emu_i32_add(stk: list[int], _arr: object, _arg: object) -> None:
+    b, a = stk.pop(), stk.pop()
+    stk.append((a + b) & 0xFFFF_FFFF)
+
+
+def _emu_i32_sub(stk: list[int], _arr: object, _arg: object) -> None:
+    b, a = stk.pop(), stk.pop()
+    stk.append((a - b) & 0xFFFF_FFFF)
+
+
+def _emu_i32_mul(stk: list[int], _arr: object, _arg: object) -> None:
+    b, a = stk.pop(), stk.pop()
+    stk.append((a * b) & 0xFFFF_FFFF)
+
+
+def _emu_local_get(stk: list[int], arr: object, arg: object) -> None:
+    stk.append((arr[arg] if arr else 0) & 0xFFFF_FFFF)  # type: ignore[index]
+
+
+def _emu_local_set(stk: list[int], arr: object, arg: object) -> None:
+    val = stk.pop() & 0xFFFF_FFFF
+    if arr:
+        arr[arg] = val  # type: ignore[index]
+
+
+def _emu_local_tee(stk: list[int], arr: object, arg: object) -> None:
+    val = stk[-1] & 0xFFFF_FFFF if stk else 0
+    if arr:
+        arr[arg] = val  # type: ignore[index]
+
+
+_EMU_TRACE_STORAGE: ReadOnlyFlatMapStorage[int, Callable[[list[int], object, object], None]] = (
+    ReadOnlyFlatMapStorage.create(
+        [
+            (I32_CONST, _emu_i32_const),
+            (I32_ADD, _emu_i32_add),
+            (I32_SUB, _emu_i32_sub),
+            (I32_MUL, _emu_i32_mul),
+            (LOCAL_GET, _emu_local_get),
+            (LOCAL_SET, _emu_local_set),
+            (LOCAL_TEE, _emu_local_tee),
+        ]
+    )
+)
+_EMU_TRACE_MAP: FlatMapView[int, Callable[[list[int], object, object], None]] = (
+    _EMU_TRACE_STORAGE.view()
+)
 
 
 class WASMTraceCompiler:
-    """Compiles a BasicBlock into a fast callable native JITTrace."""
+    """Compiles a BasicBlock into a fast callable native JITTrace using table dispatch."""
 
     def compile_trace(self, head_pc: int, block: BasicBlock) -> JITTrace:
         ops = list(block.ops)
-        has_ret = any(op.startswith("i32.") for op, _ in ops)
+        has_ret = any(op in (I32_CONST, I32_ADD, I32_SUB, I32_MUL) for op, _ in ops)
 
         def trace_fn(ip: int, stack_bot: object, local_base: object, tos: int) -> int:
             # Emulated handler matching CPS 4-argument C signature (ip, stack_bot, local_base, tos)
             c_arr = ctypes.cast(local_base, ctypes.POINTER(ctypes.c_int64)) if local_base else None
             stk: list[int] = [tos] if tos else []
             for op, arg in ops:
-                if op == "i32.const":
-                    stk.append(arg)
-                elif op == "i32.add":
-                    b, a = stk.pop(), stk.pop()
-                    stk.append((a + b) & 0xFFFF_FFFF)
-                elif op == "i32.sub":
-                    b, a = stk.pop(), stk.pop()
-                    stk.append((a - b) & 0xFFFF_FFFF)
-                elif op == "i32.mul":
-                    b, a = stk.pop(), stk.pop()
-                    stk.append((a * b) & 0xFFFF_FFFF)
-                elif op == "local.get":
-                    stk.append((c_arr[arg] if c_arr else 0) & 0xFFFF_FFFF)
-                elif op == "local.set":
-                    val = stk.pop() & 0xFFFF_FFFF
-                    if c_arr:
-                        c_arr[arg] = val
+                handler = _EMU_TRACE_MAP.find(op)
+                if handler is not None:
+                    handler(stk, c_arr, arg)
             return stk[-1] if stk else 0
 
         c_fn = ctypes.CFUNCTYPE(
@@ -843,6 +918,56 @@ class WASMTraceCompiler:
         )
         trace._keepalive = c_fn
         return trace
+
+
+def _interp_i32_const(ctx: WASMContext, arg: object) -> None:
+    ctx.push(int(arg))  # type: ignore[arg-type]
+
+
+def _interp_i32_add(ctx: WASMContext, _arg: object) -> None:
+    b, a = ctx.pop(), ctx.pop()
+    ctx.push((a + b) & 0xFFFF_FFFF)
+
+
+def _interp_i32_sub(ctx: WASMContext, _arg: object) -> None:
+    b, a = ctx.pop(), ctx.pop()
+    ctx.push((a - b) & 0xFFFF_FFFF)
+
+
+def _interp_i32_mul(ctx: WASMContext, _arg: object) -> None:
+    b, a = ctx.pop(), ctx.pop()
+    ctx.push((a * b) & 0xFFFF_FFFF)
+
+
+def _interp_local_get(ctx: WASMContext, arg: object) -> None:
+    ctx.push(ctx.locals[arg])  # type: ignore[index]
+
+
+def _interp_local_set(ctx: WASMContext, arg: object) -> None:
+    ctx.locals[arg] = ctx.pop()  # type: ignore[index]
+
+
+def _interp_local_tee(ctx: WASMContext, arg: object) -> None:
+    val = ctx.stack[-1] & 0xFFFF_FFFF if ctx.stack else 0
+    ctx.locals[arg] = val  # type: ignore[index]
+
+
+_INTERP_BLOCK_STORAGE: ReadOnlyFlatMapStorage[int, Callable[[WASMContext, object], None]] = (
+    ReadOnlyFlatMapStorage.create(
+        [
+            (I32_CONST, _interp_i32_const),
+            (I32_ADD, _interp_i32_add),
+            (I32_SUB, _interp_i32_sub),
+            (I32_MUL, _interp_i32_mul),
+            (LOCAL_GET, _interp_local_get),
+            (LOCAL_SET, _interp_local_set),
+            (LOCAL_TEE, _interp_local_tee),
+        ]
+    )
+)
+_INTERP_BLOCK_MAP: FlatMapView[int, Callable[[WASMContext, object], None]] = (
+    _INTERP_BLOCK_STORAGE.view()
+)
 
 
 class IntegratedHybridEngine:
@@ -884,24 +1009,23 @@ class IntegratedHybridEngine:
         self._dispatch = self._dispatch_normal
         self.cache.on_evict = lambda pcs: [self.bitmap.mark_evicted(pc) for pc in pcs]
 
-    def register_module_blocks(self, module: Module) -> None:
-        """Automatically extracts and registers all BasicBlocks and control skip Radix tree from a parsed WASM Module."""
-        from control_flow import build_control_skip_storage, extract_basic_blocks
+    def load_wasm(self, wasm_bytes: bytes) -> Module:
+        """Parses raw WASM binary and binds all loader-owned basic blocks and Radix trees."""
+        from wasm_reader import parse
 
-        n_imports = len(module.imports)
-        self.control_skip_storage = build_control_skip_storage(
-            module.functions, n_imports=n_imports
-        )
-        self.control_skip_tree = (
-            self.control_skip_storage.view() if self.control_skip_storage is not None else None
-        )
-        self.cache.control_skip_tree = self.control_skip_tree
-        for idx, fn in enumerate(module.functions):
-            func_idx = n_imports + idx
-            extracted = extract_basic_blocks(fn.code, func_index=func_idx)
-            for head_pc, ops, next_pc in extracted:
-                if ops:
-                    self.register_block(BasicBlock(head_pc=head_pc, ops=ops, next_pc=next_pc))
+        module = parse(wasm_bytes)
+        self.register_module_blocks(module)
+        return module
+
+    def register_module_blocks(self, module: Module) -> None:
+        """Binds loader-owned basic blocks and control skip Radix tree from a parsed WASM Module."""
+        if module.block_tree is None:
+            module.build_basic_block_index()
+        self.module = module
+        self.control_skip_storage = module.control_skip_storage
+        self.control_skip_tree = module.control_skip_tree
+        self.cache.control_skip_tree = module.control_skip_tree
+        self.blocks = [(b.head_pc, b) for b in module.blocks]
 
     @property
     def handler_table(self) -> str:
@@ -921,14 +1045,9 @@ class IntegratedHybridEngine:
         """Invalidates all JIT cache banks ({Debugger_Jit_Flush})."""
         self.cache.flush_all()
 
-    def register_block(self, block: BasicBlock) -> None:
-        for i, (pc, _) in enumerate(self.blocks):
-            if pc == block.head_pc:
-                self.blocks[i] = (block.head_pc, block)
-                return
-        self.blocks.append((block.head_pc, block))
-
     def get_block(self, pc: int) -> BasicBlock | None:
+        if self.module is not None:
+            return self.module.get_block(pc)
         for b_pc, block in self.blocks:
             if b_pc == pc:
                 return block
@@ -967,28 +1086,22 @@ class IntegratedHybridEngine:
 
     def _interpret_block(self, block: BasicBlock, ctx: WASMContext) -> None:
         for op, arg in block.ops:
-            if op == "i32.const":
-                ctx.push(arg)
-            elif op == "i32.add":
-                b, a = ctx.pop(), ctx.pop()
-                ctx.push((a + b) & 0xFFFF_FFFF)
-            elif op == "i32.sub":
-                b, a = ctx.pop(), ctx.pop()
-                ctx.push((a - b) & 0xFFFF_FFFF)
-            elif op == "i32.mul":
-                b, a = ctx.pop(), ctx.pop()
-                ctx.push((a * b) & 0xFFFF_FFFF)
-            elif op == "local.get":
-                ctx.push(ctx.locals[arg])
-            elif op == "local.set":
-                ctx.locals[arg] = ctx.pop()
+            handler = _INTERP_BLOCK_MAP.find(op)
+            if handler is not None:
+                handler(ctx, arg)
 
     def _next_pc(self, block: BasicBlock, ctx: WASMContext) -> int | None:
         if block.loops_to is not None:
             # Condition at TOS: if non-zero, loop back; else fallthrough
             cond = ctx.pop()
-            return block.loops_to if cond != 0 else block.next_pc
-        return block.next_pc
+            target = block.loops_to if cond != 0 else block.next_pc
+        else:
+            target = block.next_pc
+        if target is not None and self.control_skip_tree is not None:
+            skipped = self.control_skip_tree.find(bswap32(target))
+            if skipped is not None:
+                return skipped
+        return target
 
     def run_block_interpret(self, block: BasicBlock, ctx: WASMContext) -> int | None:
         """Executes a single basic block strictly in Interpreter mode (for debugging / fallback)."""

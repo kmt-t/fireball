@@ -24,6 +24,8 @@ WASMローダは、ROM上のWASM32バイナリをパースし、実行環境が�
 - **`decoded_entity_registry`**: デコードされた各エンティティ（セクション、関数コード、グローバル、データセグメント）を保持するレジストリ。
 - **`entity_offset_tree` (`radix_binary_tree_view`)**: ファイル内のバイト位置（開始オフセット）をキーとしてデコード済みエンティティへ $O(1) + O(\log n)$ でマッピングする基数2進木索引。
 - **`import_tree` / `export_tree` (`radix_binary_tree_view`)**: シンボル名（インポート名・エクスポート名）のハッシュ値をキーとして各エントリへ $O(1) + O(\log n)$ でマッピングする基数2進木索引。
+- **`basic_block_tree` (`radix_binary_tree_view`)**: モジュール内の全基本ブロックメタ情報（`BasicBlock`: `head_pc`, `ops`, `next_pc`, `loops_to`）へ UnifiedPC（`bswap32(pc)`）でアクセスする基数2進木索引。ランタイムや JIT コンパイラがブロック探索・メタ情報を再生成することなく、ローダ側の不変（ReadOnly）索引構造から直接 $O(1) + O(\log n)$ でブロック解決する。 `{Loader_BasicBlockIndex}`
+- **`control_skip_tree` (`radix_binary_tree_view`)**: デリミタPCからフォールスルー先ブロック先頭PCへの基数2進木索引。制御フロー終端のジャンプ解決をローダ側で保持・提供する。
 
 ### 3.2 内部ブロック図
 <!-- traceability: {MultiModule_Support} -->

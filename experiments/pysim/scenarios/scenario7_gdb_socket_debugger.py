@@ -36,6 +36,7 @@ import time
 from debugger import DebuggerManager
 from gdb_server import GDBServer
 from runtime_engine import BasicBlock, IntegratedHybridEngine, WASMContext
+from wasm_opcodes import I32_ADD, I32_CONST, I32_MUL, I32_SUB, LOCAL_GET, LOCAL_SET
 from x64_jit import TraceCompiler
 
 
@@ -84,17 +85,17 @@ def test_scenario_gdb_socket_debugger():
     # 1. Setup execution environment with BasicBlocks
     block10 = BasicBlock(
         head_pc=0x10,
-        ops=[("local.get", 0), ("i32.const", 10), ("i32.add", None), ("local.set", 0)],
+        ops=[(LOCAL_GET, 0), (I32_CONST, 10), (I32_ADD, None), (LOCAL_SET, 0)],
         next_pc=0x20,
     )
     block20 = BasicBlock(
         head_pc=0x20,
-        ops=[("local.get", 0), ("i32.const", 5), ("i32.mul", None), ("local.set", 1)],
+        ops=[(LOCAL_GET, 0), (I32_CONST, 5), (I32_MUL, None), (LOCAL_SET, 1)],
         next_pc=0x30,
     )
     block30 = BasicBlock(
         head_pc=0x30,
-        ops=[("local.get", 1), ("i32.const", 2), ("i32.sub", None), ("local.set", 1)],
+        ops=[(LOCAL_GET, 1), (I32_CONST, 2), (I32_SUB, None), (LOCAL_SET, 1)],
         next_pc=None,
     )
     blocks = {0x10: block10, 0x20: block20, 0x30: block30}

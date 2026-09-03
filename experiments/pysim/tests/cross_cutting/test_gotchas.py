@@ -77,6 +77,7 @@ from scheduler import ChannelAction, Scheduler, WaitDir
 from system import System, WasiErrno
 from system_containers import BitView, FlatMapView, MutableFlatMapStorage
 from vmmio import TrapCode, VMMIOController
+from wasm_opcodes import I32_ADD, I32_CONST, I32_SUB, LOCAL_GET, LOCAL_SET, NOP
 from wasm_reader import parse
 from x64_jit import TraceCompiler
 
@@ -214,10 +215,10 @@ def test_jitc_gotcha_01_02_03_conventions():
     block = BasicBlock(
         head_pc=0x200,
         ops=[
-            ("local.get", 0),
-            ("i32.const", 5),
-            ("i32.add", None),
-            ("local.set", 0),
+            (LOCAL_GET, 0),
+            (I32_CONST, 5),
+            (I32_ADD, None),
+            (LOCAL_SET, 0),
         ],
         next_pc=None,
     )
@@ -316,16 +317,19 @@ def test_jitr_gotcha_01_idle_hook_skips_recompiling_already_resident_trace():
         compile_calls.append(pc)
         return JITTrace(pc, lambda: 0, size_bytes=64)
 
+    wat = '(module (func (export "f") i32.const 1 drop i32.const 2 drop return))'
+    wasm_bytes = bytes(wasmtime.wat2wasm(wat))
     engine = RuntimeEngine(jit_compiler=PcOnlyCompiler(fake_compile), card_shift=3)
-    engine.register_block(BasicBlock(head_pc=0x100, ops=[("nop", None)] * 8, next_pc=0x110))
-    engine.cache.insert(JITTrace(0x100, lambda: 0, size_bytes=64))
-    engine.compile_queue.append(0x100)
+    mod = engine.load_wasm(wasm_bytes)
+    pc = mod.blocks[0].head_pc
+    engine.cache.insert(JITTrace(pc, lambda: 0, size_bytes=64))
+    engine.compile_queue.append(pc)
 
     compiled = engine.idle_hook(budget=4)
 
     assert compiled == 0, "a pc already resident in the cache must not be recompiled"
     assert compile_calls == []
-    assert engine.bitmap.get_state(0x100) == CardState.COMPILED
+    assert engine.bitmap.get_state(pc) == CardState.COMPILED
 
 
 def test_jitr_gotcha_02_promotion_transfers_inbound_sources():
@@ -377,29 +381,33 @@ def test_jitr_gotcha_03_lifo_reverse_compilation_order():
 
 def test_vsoc_gotcha_01_02_stateless_interp_and_yield_in_vsoc():
     """VSOC-GOTCHA-01, 02: Interpreter is stateless; JIT check and dispatch occur in vSoC engine."""
-    engine = IntegratedHybridEngine(yield_threshold=3, compiler=TraceCompiler())
-    loop_body = BasicBlock(
-        head_pc=0x100,
-        ops=[
-            ("local.get", 1),
-            ("local.get", 0),
-            ("i32.add", None),
-            ("local.set", 1),
-            ("local.get", 0),
-            ("i32.const", 1),
-            ("i32.sub", None),
-            ("local.set", 0),
-            ("local.get", 0),
-        ],
-        next_pc=0x200,
-        loops_to=0x100,
+    wat = """
+    (module
+      (func (export "sum") (param i32) (result i32)
+        (local i32)
+        (loop $loop
+          local.get 1
+          local.get 0
+          i32.add
+          local.set 1
+          local.get 0
+          i32.const 1
+          i32.sub
+          local.tee 0
+          br_if $loop
+        )
+        local.get 1
+        return
+      )
     )
-    epilogue = BasicBlock(head_pc=0x200, ops=[("local.get", 1)], next_pc=None)
-    engine.register_block(loop_body)
-    engine.register_block(epilogue)
+    """
+    wasm_bytes = bytes(wasmtime.wat2wasm(wat))
+    engine = IntegratedHybridEngine(yield_threshold=3, compiler=TraceCompiler())
+    mod = engine.load_wasm(wasm_bytes)
+    loop_pc = mod.blocks[0].head_pc
 
     ctx = WASMContext(locals_values=[5, 0])
-    pc = 0x100
+    pc = loop_pc
 
     # Iterations 1-3 run in Interpreter (interp is stateless)
     for _ in range(3):
@@ -407,20 +415,22 @@ def test_vsoc_gotcha_01_02_stateless_interp_and_yield_in_vsoc():
 
     assert engine.interp_blocks == 3
     assert engine.jit_traces == 0
-    assert 0x100 in engine.compile_queue
+    assert loop_pc in engine.compile_queue
 
     # idle_hook batch compiles queued trace into Active cache
     compiled = engine.idle_hook()
     assert compiled == 1
-    assert engine.cache.active.has_trace(0x100)
+    assert engine.cache.active.has_trace(loop_pc)
+    assert engine.bitmap.get_state(loop_pc) == CardState.COMPILED
 
-    # Remaining iterations run in JIT Trace dispatched by vSoC engine
+    # Iterations 4-5 run in JIT Trace
     while pc is not None:
         pc = engine.run_step(pc, ctx)
 
-    assert ctx.stack[-1] == 15
+    # Sum of 1..5 = 15
+    assert ctx.locals[1] == 15
     assert engine.jit_traces >= 2
-
+    assert engine.interp_blocks >= 3
 
 # ==============================================================================
 # 4. vMMIO Gotchas (VMMIO-GOTCHA-01 ~ 03)
@@ -725,7 +735,7 @@ def test_dbg_gotcha_01_memory_write_flushes_jit_cache():
     rsp = GDBRspProtocol(dbg)
     ctx = WASMContext(memory=bytearray(64))
 
-    block = BasicBlock(head_pc=0x100, ops=[("i32.const", 10)])
+    block = BasicBlock(head_pc=0x100, ops=[(I32_CONST, 10)])
     trace = engine.compiler.compile_trace(0x100, block)
     engine.cache.insert(trace)
     assert engine.cache.active.has_trace(0x100)

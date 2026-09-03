@@ -50,6 +50,7 @@ graph TD
 #### JITエントリインデックス（JitEntryIndex）クラス
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
+| 高速スロット配列 | 4-bit Folding XOR Hash による Direct-Mapped キャッシュ | 固定長配列 | 16スロット (`{DirectMappedJIT16}`) |
 | エントリ配列 | ソート済みの `jit_entry` 群を保持する | ソート済み配列 | `radix_binary_tree_view` で参照 |
 | エントリグループ索引 | JITエントリグループごとの開始・終了インデックス（Radix Table） | 固定長配列 | $O(1)$ 直接参照 |
 | カードマーキング表 | カードごとの 2-bit 状態表 | 密ビュー | `fireball::bit_view<2>` |
@@ -60,25 +61,28 @@ graph TD
 
 ### 4.1 アルゴリズム
 1. **カードマーキング確認 ($O(1)$)**: カードマーキング表 (`bit_view<2>`) を $O(1)$ で確認し、状態が `COMPILED` でなければ即座に終了。
-2. **Radix Table 絞り込み ($O(1)$)**:
-   - `UnifiedPC`（`(func_index << 16) | bytecode_offset`）の最下位バイト（最も変動頻度が高い `bytecode_offset` 下位ビット）を最上位へ投影するため、**32-bit バイトオーダー逆転（`bswap32(pc)`）** を適用する。
+2. **Direct-Mapped Folding XOR キャッシュ確認 ($O(1)$, `{DirectMappedJIT16}`)**:
+   - `UnifiedPC` に対し 4-bit Folding XOR Hash `slot = ((pc >> 24) ^ (pc >> 16) ^ (pc >> 8) ^ pc) & 0x0F` を計算し、16 スロットの高速テーブルを照合。
+   - スロットのタグが `head_pc` と一致（Hit）した場合、Radix Table および二分探索を完全バイパスし、$O(1)$ でトレースを即時返却。
+3. **Radix Table 絞り込み ($O(1)$)**:
+   - キャッシュミス時、`UnifiedPC`（`(func_index << 16) | bytecode_offset`）の最下位バイト（最も変動頻度が高い `bytecode_offset` 下位ビット）を最上位へ投影するため、**32-bit バイトオーダー逆転（`bswap32(pc)`）** を適用する。
    - `radix_key = bswap32(pc)` に対し基数シフト（`prefix = radix_key >> radix_shift`）を行い、コンパクトな開始インデックス配列から `first = radix_table[prefix]`, `last = radix_table[prefix + 1]` を $O(1)$ で取得（ペア保持が不要でメモリフットプリント半減）。下位ビットの分散により偏りを抑えた区間検索を実現する。
-3. **有界二分探索 ($O(\log n)$)**: `radix_binary_tree_view` 内の有界区間から対象の命令オフセットを二分探索し、ヒットした場合はネイティブコードのアドレス（`exec_trace`）を返す。
-4. **ホットスポット昇格判定**: yield 時等に履歴バッファを走査し、実行頻度が閾値に達したカードを `HOT` $\to$ `COMPILED` に遷移させてコンパイル待ち列へ登録。
-5. **最小トレース長フィルタ**: 推定コンパイル後サイズが 1 カード分（`1 << card_shift`）未満のベーシックブロックは、履歴記録・`touch`・コンパイル待ち列登録のいずれの対象にもしない（`jit_runtime_test_spec.md` JITR-06）。
-6. **3面世代交代ローテーション＆局所アンリンク (`JITR-GOTCHA-03`, `{JIT_MultiBuffer_Cache}`, `{JIT_OldestOnly_Promote}`)**:
-   Active バンク満杯時、`Oldest` バンクをパージして新 `Active` に再利用する直前に、該当バンクの被チェイン逆引きテーブルに登録されたソースエントリ（$k$ 件）のみを参照し、昇格済みなら再チェイニング、完全破棄なら復帰スタブへアンパッチする。全件走査を行わない。
+4. **有界二分探索 ($O(\log n)$)**: `radix_binary_tree_view` 内の有界区間から対象の命令オフセットを二分探索し、ヒットした場合はネイティブコードのアドレス（`exec_trace`）を返し、高速スロットへ次回用として格納（Fill）。
+5. **ホットスポット昇格判定**: yield 時等に履歴バッファを走査し、実行頻度が閾値に達したカードを `HOT` $\to$ `COMPILED` に遷移させてコンパイル待ち列へ登録。
+6. **最小トレース長フィルタ**: 推定コンパイル後サイズが 1 カード分（`1 << card_shift`）未満のベーシックブロックは、履歴記録・`touch`・コンパイル待ち列登録のいずれの対象にもしない（`jit_runtime_test_spec.md` JITR-06）。
+7. **3面世代交代ローテーション＆局所アンリンク (`JITR-GOTCHA-03`, `{JIT_MultiBuffer_Cache}`, `{JIT_OldestOnly_Promote}`)**:
+   Active バンク満杯時、`Oldest` バンクをパージして新 `Active` に再利用する直前に、該当バンクの被チェイン逆引きテーブルに登録されたソースエントリ（$k$ 件）のみを参照し、昇格済みなら再チェイニング、完全破棄なら復帰スタブへアンパッチする。全件走査を行わない。また、`rotate()` および `flush_all()` 実行時には 16 スロットの Folding XOR 高速キャッシュを無効化（クリア）し、古いバンクへの誤参照やダングリングを防止する（`JITR-GOTCHA-05`）。
    **設計理由と不変条件**: 3 面キャッシュの全エントリを線形走査してリンクを解除すると、GC（ガベージコレクション）と同様の実行停止レイテンシ（Stop-the-World）が発生する。被チェイン逆引きテーブルにより影響範囲を定数 $k$ 件に局所化することで、決定論的 $O(k)$ 時間での世代交代を保証する。
-7. **トレース昇格時のインバウンドソース付け替え (`JITR-GOTCHA-02`)**:
+8. **トレース昇格時のインバウンドソース付け替え (`JITR-GOTCHA-02`)**:
    Oldest バンクのトレースが再実行されて新 Active バンクへ昇格（Promotion）した際、当該トレースを指していた先行ブロックのチェインリンク先アドレスを新バンクのアドレスへ不可分に更新し、かつ逆引きテーブルの登録先も新バンクへ確実に付け替える。これにより、古い Oldest バンクがパージされた後に先行ブロックが解放済み領域へ飛び込むダングリングジャンプを完全に防止する。
-8. **キュー処理時のキャッシュ再確認と二重コンパイル抑止 (`JITR-GOTCHA-01`)**:
+9. **キュー処理時のキャッシュ再確認と二重コンパイル抑止 (`JITR-GOTCHA-01`)**:
    コンパイル待ち列から取り出した PC が、既に 3 面キャッシュ（Active / Warm / Oldest）のいずれかに常駐済みであれば再コンパイルを行わず、カード状態のみ `COMPILED` へ同期する。
    **設計理由と不変条件**: 複数回のアイドル走査や非同期イベントにより同一 PC に対するコンパイル要求が重複してエンキューされた場合でも、二重コンパイルによる貴重なキャッシュ容量の浪費と CPU 時間の損失を完全に防止する。
 
 
 #### 3段高速検索パイプライン手順（手順アクティビティ図）
-<!-- traceability: {JIT_MultiBuffer_Cache} {LowLatencyJIT} {META_BinarySearch} -->
-実行時 PC からネイティブ `exec_trace` アドレスを極小オーバーヘッドで特定する 3 段階探索パイプラインを示す。
+<!-- traceability: {JIT_MultiBuffer_Cache} {LowLatencyJIT} {DirectMappedJIT16} {META_BinarySearch} -->
+実行時 PC からネイティブ `exec_trace` アドレスを極小オーバーヘッドで特定する探索パイプラインを示す。
 
 ```mermaid
 flowchart TD
@@ -86,13 +90,17 @@ flowchart TD
     Stage1 --> CheckCompiled{"Card State == COMPILED?"}
 
     CheckCompiled -- "No" --> ExitInterp(["Fast Exit: Dispatch to Interpreter Handler (Zero Overhead)"])
-    CheckCompiled -- "Yes" --> Stage2["[Stage 2] Radix Key: radix_key = bswap32(pc)"]
+    CheckCompiled -- "Yes" --> StageFast["[Stage 1.5] Direct-Mapped Folding XOR JIT Cache[16] (O(1))"]
 
+    StageFast --> FastHit{"Cache Tag == head_pc ?"}
+    FastHit -- "HIT" --> ReturnTrace(["Return Native Code Entry: exec_trace (O(1) Direct)"])
+
+    FastHit -- "MISS" --> Stage2["[Stage 2] Radix Key: radix_key = bswap32(pc)"]
     Stage2 --> LookupRadix["prefix = radix_key >> radix_shift; first = table[prefix], last = table[prefix+1] (O(1))"]
     LookupRadix --> Stage3["[Stage 3] Bounded Binary Search in radix_binary_tree_view [first, last] (O(log n))"]
 
     Stage3 --> Hit{"JIT Entry found?"}
-    Hit -- "Yes" --> ReturnTrace(["Return Native Code Entry: exec_trace (O(1) execution)"])
+    Hit -- "Yes" --> FillSlot["Fill Folding XOR Cache Slot"] --> ReturnTrace
     Hit -- "No (False Positive / Evicted)" --> ExitInterp
 ```
 

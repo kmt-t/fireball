@@ -16,13 +16,45 @@ from __future__ import annotations
 
 import ctypes
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 import x64_asm as asm
 import x64_stencils as st
 from exec_memory import ExecutableBuffer
 from runtime_engine import BasicBlock, JITTrace, JITTraceHeader
-from system_containers import FlatMapView
+from system_containers import FlatMapView, ReadOnlyFlatMapStorage
+from wasm_opcodes import (
+    CALL_HOST,
+    DROP,
+    I32_ADD,
+    I32_AND,
+    I32_CONST,
+    I32_DIV_S,
+    I32_DIV_U,
+    I32_EQ,
+    I32_EQZ,
+    I32_GE_S,
+    I32_GE_U,
+    I32_GT_S,
+    I32_GT_U,
+    I32_LE_S,
+    I32_LE_U,
+    I32_LT_S,
+    I32_LT_U,
+    I32_MUL,
+    I32_NE,
+    I32_OR,
+    I32_REM_S,
+    I32_REM_U,
+    I32_SHL,
+    I32_SHR_S,
+    I32_SHR_U,
+    I32_SUB,
+    I32_XOR,
+    LOCAL_GET,
+    LOCAL_SET,
+    LOCAL_TEE,
+)
 
 IS_WINDOWS = sys.platform == "win32"
 I32_MASK = 0xFFFFFFFF
@@ -83,10 +115,92 @@ def gen_pic_prologue() -> bytes:
     return bytes(code)
 
 
+def _make_fixed_emitter(
+    stencil_bytes: bytes, depth_change: int
+) -> Callable[[bytearray, object], int]:
+    def _emitter(code: bytearray, _arg: object) -> int:
+        code += stencil_bytes
+        return depth_change
+
+    return _emitter
+
+
+def _emit_i32_const(code: bytearray, arg: object) -> int:
+    emit(code, st.I32_CONST, imm=int(arg))  # type: ignore[arg-type]
+    return 1
+
+
+def _emit_local_get(code: bytearray, arg: object) -> int:
+    emit(code, st.LOCAL_GET, disp=int(arg) * 8)  # type: ignore[arg-type]
+    return 1
+
+
+def _emit_local_set(code: bytearray, arg: object) -> int:
+    emit(code, st.LOCAL_SET, disp=int(arg) * 8)  # type: ignore[arg-type]
+    return -1
+
+
+def _emit_local_tee(code: bytearray, arg: object) -> int:
+    emit(code, st.LOCAL_TEE, disp=int(arg) * 8)  # type: ignore[arg-type]
+    return 0
+
+
+def _emit_call_host(code: bytearray, arg: object) -> int:
+    code += asm.push_reg("r10")
+    code += asm.push_reg("r11")
+    code += asm.sub_rsp_imm8(40)
+    code += asm.mov_reg_imm64("rax", int(arg))  # type: ignore[arg-type]
+    code += asm.call_reg("rax")
+    code += asm.add_rsp_imm8(40)
+    code += asm.pop_reg("r11")
+    code += asm.pop_reg("r10")
+    code += asm.push_reg("rax")
+    return 1
+
+
+_EMIT_STORAGE: ReadOnlyFlatMapStorage[int, Callable[[bytearray, object], int]] = (
+    ReadOnlyFlatMapStorage.create(
+        [
+            (I32_CONST, _emit_i32_const),
+            (I32_ADD, _make_fixed_emitter(st.I32_ADD.code, -1)),
+            (I32_SUB, _make_fixed_emitter(st.I32_SUB.code, -1)),
+            (I32_MUL, _make_fixed_emitter(st.I32_MUL.code, -1)),
+            (I32_AND, _make_fixed_emitter(st.I32_AND.code, -1)),
+            (I32_OR, _make_fixed_emitter(st.I32_OR.code, -1)),
+            (I32_XOR, _make_fixed_emitter(st.I32_XOR.code, -1)),
+            (I32_SHL, _make_fixed_emitter(st.I32_SHL.code, -1)),
+            (I32_SHR_U, _make_fixed_emitter(st.I32_SHR_U.code, -1)),
+            (I32_SHR_S, _make_fixed_emitter(st.I32_SHR_S.code, -1)),
+            (I32_DIV_S, _make_fixed_emitter(st.I32_DIV_S.code, -1)),
+            (I32_DIV_U, _make_fixed_emitter(st.I32_DIV_U.code, -1)),
+            (I32_REM_S, _make_fixed_emitter(st.I32_REM_S.code, -1)),
+            (I32_REM_U, _make_fixed_emitter(st.I32_REM_U.code, -1)),
+            (I32_EQZ, _make_fixed_emitter(st.I32_EQZ.code, 0)),
+            (I32_EQ, _make_fixed_emitter(st.I32_EQ.code, -1)),
+            (I32_NE, _make_fixed_emitter(st.I32_NE.code, -1)),
+            (I32_LT_S, _make_fixed_emitter(st.I32_LT_S.code, -1)),
+            (I32_LT_U, _make_fixed_emitter(st.I32_LT_U.code, -1)),
+            (I32_GT_S, _make_fixed_emitter(st.I32_GT_S.code, -1)),
+            (I32_GT_U, _make_fixed_emitter(st.I32_GT_U.code, -1)),
+            (I32_LE_S, _make_fixed_emitter(st.I32_LE_S.code, -1)),
+            (I32_LE_U, _make_fixed_emitter(st.I32_LE_U.code, -1)),
+            (I32_GE_S, _make_fixed_emitter(st.I32_GE_S.code, -1)),
+            (I32_GE_U, _make_fixed_emitter(st.I32_GE_U.code, -1)),
+            (DROP, _make_fixed_emitter(st.DROP.code, -1)),
+            (LOCAL_GET, _emit_local_get),
+            (LOCAL_SET, _emit_local_set),
+            (LOCAL_TEE, _emit_local_tee),
+            (CALL_HOST, _emit_call_host),
+        ]
+    )
+)
+EMIT_MAP: FlatMapView[int, Callable[[bytearray, object], int]] = _EMIT_STORAGE.view()
+
+
 class TraceCompiler:
     """
     True Copy-and-Patch Trace Compiler for BasicBlocks producing Position-Independent Code (PIC).
-        Compiles straight-line instruction sequences into native x64 traces,
+        Appends machine-code stencils into continuous executable memory (`exec_memory.py`),
         emitting 16-byte physical headers (JITTraceHeader) at offset 0x00 and
         PIC code starting at offset 0x10.
     """
@@ -94,82 +208,53 @@ class TraceCompiler:
     def __init__(self, host_trampolines: Sequence[int] | None = None):
         self.host_trampolines = host_trampolines or []
 
-    SUPPORTED_OPS: tuple[str, ...] = (
-        "i32.const",
-        "i32.add",
-        "i32.sub",
-        "i32.mul",
-        "i32.and",
-        "i32.or",
-        "i32.xor",
-        "i32.shl",
-        "i32.shr_u",
-        "i32.shr_s",
-        "i32.div_s",
-        "i32.div_u",
-        "i32.rem_s",
-        "i32.rem_u",
-        "i32.eqz",
-        "i32.eq",
-        "i32.ne",
-        "i32.lt_s",
-        "i32.lt_u",
-        "i32.gt_s",
-        "i32.gt_u",
-        "i32.le_s",
-        "i32.le_u",
-        "i32.ge_s",
-        "i32.ge_u",
-        "drop",
-        "local.get",
-        "local.set",
-        "call_host",
-    )
+    SUPPORTED_OPS: tuple[int, ...] = tuple(EMIT_MAP.keys)
     # (pops, pushes) stack effect per opcode: a sorted flat_map_view over a
-    # fixed, compile-time-known opcode-name vocabulary, never a dict.
-    _STACK_EFFECT_ENTRIES: tuple[tuple[str, tuple[int, int]], ...] = tuple(
+    # fixed, compile-time-known opcode integer vocabulary, never a dict or string.
+    _STACK_EFFECT_ENTRIES: tuple[tuple[int, tuple[int, int]], ...] = tuple(
         sorted(
             [
-                ("i32.const", (0, 1)),
-                ("local.get", (0, 1)),
-                ("local.set", (1, 0)),
-                ("drop", (1, 0)),
-                ("i32.eqz", (1, 1)),
-                ("i32.add", (2, 1)),
-                ("i32.sub", (2, 1)),
-                ("i32.mul", (2, 1)),
-                ("i32.div_s", (2, 1)),
-                ("i32.div_u", (2, 1)),
-                ("i32.rem_s", (2, 1)),
-                ("i32.rem_u", (2, 1)),
-                ("i32.and", (2, 1)),
-                ("i32.or", (2, 1)),
-                ("i32.xor", (2, 1)),
-                ("i32.shl", (2, 1)),
-                ("i32.shr_s", (2, 1)),
-                ("i32.shr_u", (2, 1)),
-                ("i32.eq", (2, 1)),
-                ("i32.ne", (2, 1)),
-                ("i32.lt_s", (2, 1)),
-                ("i32.lt_u", (2, 1)),
-                ("i32.gt_s", (2, 1)),
-                ("i32.gt_u", (2, 1)),
-                ("i32.le_s", (2, 1)),
-                ("i32.le_u", (2, 1)),
-                ("i32.ge_s", (2, 1)),
-                ("i32.ge_u", (2, 1)),
-                ("call_host", (0, 1)),
+                (I32_CONST, (0, 1)),
+                (LOCAL_GET, (0, 1)),
+                (LOCAL_SET, (1, 0)),
+                (LOCAL_TEE, (1, 1)),
+                (DROP, (1, 0)),
+                (I32_EQZ, (1, 1)),
+                (I32_ADD, (2, 1)),
+                (I32_SUB, (2, 1)),
+                (I32_MUL, (2, 1)),
+                (I32_DIV_S, (2, 1)),
+                (I32_DIV_U, (2, 1)),
+                (I32_REM_S, (2, 1)),
+                (I32_REM_U, (2, 1)),
+                (I32_AND, (2, 1)),
+                (I32_OR, (2, 1)),
+                (I32_XOR, (2, 1)),
+                (I32_SHL, (2, 1)),
+                (I32_SHR_S, (2, 1)),
+                (I32_SHR_U, (2, 1)),
+                (I32_EQ, (2, 1)),
+                (I32_NE, (2, 1)),
+                (I32_LT_S, (2, 1)),
+                (I32_LT_U, (2, 1)),
+                (I32_GT_S, (2, 1)),
+                (I32_GT_U, (2, 1)),
+                (I32_LE_S, (2, 1)),
+                (I32_LE_U, (2, 1)),
+                (I32_GE_S, (2, 1)),
+                (I32_GE_U, (2, 1)),
+                (CALL_HOST, (0, 1)),
             ],
             key=lambda e: e[0],
         )
     )
-    _STACK_EFFECT_ENTRIES_TUPLE: tuple[tuple[str, tuple[int, int]], ...] = tuple(
+    _STACK_EFFECT_ENTRIES_TUPLE: tuple[tuple[int, tuple[int, int]], ...] = tuple(
         _STACK_EFFECT_ENTRIES
     )
-    STACK_EFFECTS: FlatMapView[str, tuple[int, int]] = FlatMapView(_STACK_EFFECT_ENTRIES_TUPLE)
+    STACK_EFFECTS: FlatMapView[int, tuple[int, int]] = FlatMapView(_STACK_EFFECT_ENTRIES_TUPLE)
 
     def compile_trace(self, head_pc: int, block: BasicBlock | None) -> JITTrace | None:
-        """Compiles a single BasicBlock into a PIC native JITTrace."""
+        """Compiles a single BasicBlock into a PIC native JITTrace using _EMIT_TABLE dispatch."""
         if (
             block is None
             or not block.ops
@@ -197,100 +282,10 @@ class TraceCompiler:
         code += gen_pic_prologue()
         stack_depth = 0
         for op, arg in block.ops:
-            if op == "i32.const":
-                emit(code, st.I32_CONST, imm=arg)
-                stack_depth += 1
-            elif op == "i32.add":
-                code += st.I32_ADD.code
-                stack_depth -= 1
-            elif op == "i32.sub":
-                code += st.I32_SUB.code
-                stack_depth -= 1
-            elif op == "i32.mul":
-                code += st.I32_MUL.code
-                stack_depth -= 1
-            elif op == "i32.and":
-                code += st.I32_AND.code
-                stack_depth -= 1
-            elif op == "i32.or":
-                code += st.I32_OR.code
-                stack_depth -= 1
-            elif op == "i32.xor":
-                code += st.I32_XOR.code
-                stack_depth -= 1
-            elif op == "i32.shl":
-                code += st.I32_SHL.code
-                stack_depth -= 1
-            elif op == "i32.shr_u":
-                code += st.I32_SHR_U.code
-                stack_depth -= 1
-            elif op == "i32.shr_s":
-                code += st.I32_SHR_S.code
-                stack_depth -= 1
-            elif op == "i32.div_s":
-                code += st.I32_DIV_S.code
-                stack_depth -= 1
-            elif op == "i32.div_u":
-                code += st.I32_DIV_U.code
-                stack_depth -= 1
-            elif op == "i32.rem_s":
-                code += st.I32_REM_S.code
-                stack_depth -= 1
-            elif op == "i32.rem_u":
-                code += st.I32_REM_U.code
-                stack_depth -= 1
-            elif op == "i32.eqz":
-                code += st.I32_EQZ.code
-            elif op == "i32.eq":
-                code += st.I32_EQ.code
-                stack_depth -= 1
-            elif op == "i32.ne":
-                code += st.I32_NE.code
-                stack_depth -= 1
-            elif op == "i32.lt_s":
-                code += st.I32_LT_S.code
-                stack_depth -= 1
-            elif op == "i32.lt_u":
-                code += st.I32_LT_U.code
-                stack_depth -= 1
-            elif op == "i32.gt_s":
-                code += st.I32_GT_S.code
-                stack_depth -= 1
-            elif op == "i32.gt_u":
-                code += st.I32_GT_U.code
-                stack_depth -= 1
-            elif op == "i32.le_s":
-                code += st.I32_LE_S.code
-                stack_depth -= 1
-            elif op == "i32.le_u":
-                code += st.I32_LE_U.code
-                stack_depth -= 1
-            elif op == "i32.ge_s":
-                code += st.I32_GE_S.code
-                stack_depth -= 1
-            elif op == "i32.ge_u":
-                code += st.I32_GE_U.code
-                stack_depth -= 1
-            elif op == "drop":
-                code += st.DROP.code
-                stack_depth -= 1
-            elif op == "local.get":
-                emit(code, st.LOCAL_GET, disp=arg * 8)
-                stack_depth += 1
-            elif op == "local.set":
-                emit(code, st.LOCAL_SET, disp=arg * 8)
-                stack_depth -= 1
-            elif op == "call_host":
-                code += asm.push_reg("r10")
-                code += asm.push_reg("r11")
-                code += asm.sub_rsp_imm8(40)
-                code += asm.mov_reg_imm64("rax", arg)
-                code += asm.call_reg("rax")
-                code += asm.add_rsp_imm8(40)
-                code += asm.pop_reg("r11")
-                code += asm.pop_reg("r10")
-                code += asm.push_reg("rax")
-                stack_depth += 1
+            emitter = EMIT_MAP.find(op)
+            if emitter is None:
+                return None
+            stack_depth += emitter(code, arg)
 
         if stack_depth < 0 or stack_depth > 1:
             # Multi-value stack outputs or underflow are executed safely by Tier 2 Interpreter

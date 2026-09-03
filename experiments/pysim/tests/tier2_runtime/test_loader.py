@@ -375,6 +375,37 @@ def test_load_40_to_47_radix_binary_tree_view_indexes():
     assert view.lookup_export("totally_fake_symbol") is None
 
 
+def test_load_48_loader_basic_block_index():
+    """LOAD-48: Verifies loader owns basic block metadata and ReadOnlyRadixBinaryTreeStorage index."""
+    import wasmtime
+    from wasm_reader import parse
+
+    wat = """(module
+        (func (export "f1") (result i32)
+            (i32.const 10)
+            (return)
+        )
+        (func (export "f2") (result i32)
+            (i32.const 20)
+            (return)
+        )
+    )"""
+    wasm_bytes = bytes(wasmtime.wat2wasm(wat))
+    mod = parse(wasm_bytes)
+
+    # Loader owns basic block storage and index ({Loader_BasicBlockIndex})
+    assert mod.block_storage is not None
+    assert mod.block_tree is not None
+    assert len(mod.blocks) == 2
+    assert mod.total_basic_blocks == 2
+
+    # Lookup basic blocks directly from loader
+    for blk in mod.blocks:
+        found = mod.get_block(blk.head_pc)
+        assert found is blk
+        assert found.head_pc == blk.head_pc
+
+
 ALL_TESTS = sorted(
     (v for k, v in globals().items() if k.startswith("test_") and callable(v)),
     key=lambda fn: fn.__code__.co_firstlineno,

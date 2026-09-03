@@ -37,6 +37,7 @@ import sys
 from pathlib import Path
 
 from runtime_engine import BasicBlock, WASMContext
+from wasm_opcodes import CALL_HOST, LOCAL_SET
 from x64_jit import TraceCompiler
 
 HOST_FUNC_T = ctypes.CFUNCTYPE(ctypes.c_uint32, *([ctypes.c_uint32] * 7))
@@ -58,8 +59,8 @@ def _run_with_host_call(nparams: int, arg_values: list[int]) -> tuple[int, list[
     block = BasicBlock(
         head_pc=0x100,
         ops=[
-            ("call_host", trampoline_addr),
-            ("local.set", 0),
+            (CALL_HOST, trampoline_addr),
+            (LOCAL_SET, 0),
         ],
         next_pc=None,
     )

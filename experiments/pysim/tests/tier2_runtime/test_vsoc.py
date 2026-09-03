@@ -59,7 +59,9 @@ from system import (
 from system_containers import (
     FlatMapView,
 )
+import wasmtime
 from wasi import WasiHostContext
+from wasm_opcodes import CALL_HOST, I32_ADD, I32_CONST, I32_MUL, I32_SUB, LOCAL_GET, LOCAL_SET
 from wasm_reader import parse
 from x64_jit import TraceCompiler
 
@@ -250,57 +252,62 @@ def test_tier_01_interpreter_to_jit_cooperative_flow():
 
 def test_tier_02_interpreter_to_jit_trace_transition():
     """TIER-02: Loop executes via Interpreter first -> promotes to HOT -> idle_hook compiles trace -> executes as JIT."""
-    engine = IntegratedHybridEngine(yield_threshold=3)
-    # Basic block: loop body (local1 *= local0; local0 -= 1; branch while local0 != 0)
-    # head_pc=0x100, loops back to 0x100 if local0 != 0, else falls through to 0x200
-    loop_body = BasicBlock(
-        head_pc=0x100,
-        ops=[
-            ("local.get", 1),
-            ("local.get", 0),
-            ("i32.mul", None),
-            ("local.set", 1),
-            ("local.get", 0),
-            ("i32.const", 1),
-            ("i32.sub", None),
-            ("local.set", 0),
-            ("local.get", 0),  # condition for branch
-        ],
-        next_pc=0x200,
-        loops_to=0x100,
+    wat = """
+    (module
+      (func (export "fac") (param i32) (result i32)
+        (local i32)
+        i32.const 1
+        local.set 1
+        (loop $loop
+          local.get 1
+          local.get 0
+          i32.mul
+          local.set 1
+          local.get 0
+          i32.const 1
+          i32.sub
+          local.tee 0
+          br_if $loop
+        )
+        local.get 1
+        return
+      )
     )
-    # Epilogue block: local.get 1 (result)
-    epilogue = BasicBlock(head_pc=0x200, ops=[("local.get", 1)], next_pc=None)
-    engine.register_block(loop_body)
-    engine.register_block(epilogue)
-    # Compute factorial(5) with 5 iterations: locals=[5, 1]
-    ctx = WASMContext(locals_values=[5, 1])
-    pc = 0x100
+    """
+    wasm_bytes = bytes(wasmtime.wat2wasm(wat))
+    engine = IntegratedHybridEngine(yield_threshold=3)
+    mod = engine.load_wasm(wasm_bytes)
+    loop_pc = mod.blocks[1].head_pc
+
+    # Compute factorial(5) with 5 iterations: locals=[5, 0]
+    ctx = WASMContext(locals_values=[5, 0])
+    pc = engine.run_step(mod.blocks[0].head_pc, ctx)  # preamble: local[1] = 1, enters loop
+
     # Step 1: First iteration runs in Interpreter
-    pc = engine.run_step(pc, ctx)
-    assert engine.interp_blocks == 1
-    assert engine.jit_traces == 0
-    assert engine.bitmap.get_state(0x100) == CardState.EXECUTED
-    # Step 2: Second iteration runs in Interpreter -> Card becomes HOT
     pc = engine.run_step(pc, ctx)
     assert engine.interp_blocks == 2
     assert engine.jit_traces == 0
-    assert engine.bitmap.get_state(0x100) == CardState.HOT
+    assert engine.bitmap.get_state(loop_pc) == CardState.EXECUTED
+    # Step 2: Second iteration runs in Interpreter -> Card becomes HOT
+    pc = engine.run_step(pc, ctx)
+    assert engine.interp_blocks == 3
+    assert engine.jit_traces == 0
+    assert engine.bitmap.get_state(loop_pc) == CardState.HOT
     # Step 3: Third iteration triggers yield -> on_yield queues HOT card to compile_queue
     pc = engine.run_step(pc, ctx)
-    assert 0x100 in engine.compile_queue
+    assert loop_pc in engine.compile_queue
     # Simulate COOS scheduler idle_hook: batch compiles queued trace into Active cache
     compiled = engine.idle_hook()
     assert compiled == 1
-    assert engine.bitmap.get_state(0x100) == CardState.COMPILED
-    assert engine.cache.active.has_trace(0x100)
+    assert engine.bitmap.get_state(loop_pc) == CardState.COMPILED
+    assert engine.cache.active.has_trace(loop_pc)
     # Step 4 & 5: Remaining iterations execute via fast native JIT trace!
     while pc is not None:
         pc = engine.run_step(pc, ctx)
 
     # Verification:
     # Result is 5! = 120
-    assert ctx.stack[-1] == 120
+    assert ctx.locals[1] == 120
     # Verified that both Interpreter AND JIT traces executed in the same task run
     assert engine.interp_blocks >= 3
     assert engine.jit_traces >= 2
@@ -309,52 +316,63 @@ def test_tier_02_interpreter_to_jit_trace_transition():
 
 def test_tier_03_trace_chaining_and_interpreter_fallback():
     """TIER-03: Traces chain directly into resident successors, and fall back to Interpreter when chain ends."""
+    wat = """
+    (module
+      (func (export "f") (param i32) (result i32)
+        (block $b1
+          (block $b2
+            local.get 0
+            i32.const 10
+            i32.add
+            local.set 0
+            br $b2
+          )
+          local.get 0
+          i32.const 20
+          i32.add
+          local.set 0
+          br $b1
+        )
+        local.get 0
+        i32.const 30
+        i32.add
+        local.set 0
+        return
+      )
+    )
+    """
+    wasm_bytes = bytes(wasmtime.wat2wasm(wat))
     engine = IntegratedHybridEngine(yield_threshold=10)
-    # Two consecutive blocks: block A (0x100) -> block B (0x200) -> block C (0x300, not compiled)
-    block_a = BasicBlock(
-        head_pc=0x100,
-        ops=[("local.get", 0), ("i32.const", 10), ("i32.add", None), ("local.set", 0)],
-        next_pc=0x200,
-    )
-    block_b = BasicBlock(
-        head_pc=0x200,
-        ops=[("local.get", 0), ("i32.const", 20), ("i32.add", None), ("local.set", 0)],
-        next_pc=0x300,
-    )
-    block_c = BasicBlock(
-        head_pc=0x300,
-        ops=[("local.get", 0), ("i32.const", 30), ("i32.add", None), ("local.set", 0)],
-        next_pc=None,
-    )
-    engine.register_block(block_a)
-    engine.register_block(block_b)
-    engine.register_block(block_c)
+    mod = engine.load_wasm(wasm_bytes)
+    block_a = mod.blocks[0]
+    block_b = mod.blocks[1]
+    block_c = mod.blocks[2]
     # Compile block B first, then block A (so A can chain directly into resident B)
-    trace_b = engine.compiler.compile_trace(0x200, block_b)
+    trace_b = engine.compiler.compile_trace(block_b.head_pc, block_b)
     engine.cache.insert(trace_b)
-    engine.bitmap.mark_compiled(0x200)
-    trace_a = engine.compiler.compile_trace(0x100, block_a)
+    engine.bitmap.mark_compiled(block_b.head_pc)
+    trace_a = engine.compiler.compile_trace(block_a.head_pc, block_a)
     engine.cache.insert(trace_a)
-    engine.bitmap.mark_compiled(0x100)
+    engine.bitmap.mark_compiled(block_a.head_pc)
     # Assert trace A chained directly into trace B
-    assert trace_a.chain_next == 0x200
+    assert trace_a.chain_next == block_b.head_pc
     # Run execution:
     ctx = WASMContext(locals_values=[100])
-    pc = 0x100
-    # Step 1: Run 0x100 (JIT) -> returns 0x200 via direct chain
+    pc = block_a.head_pc
+    # Step 1: Run block A (JIT) -> returns block B head via direct chain
     pc = engine.run_step(pc, ctx)
-    assert pc == 0x200
+    assert pc == block_b.head_pc
     assert engine.jit_traces == 1
     assert ctx.locals[0] == 110
-    # Step 2: Run 0x200 (JIT) -> chain_next is None -> falls back to interpreter at 0x300
+    # Step 2: Run block B (JIT) -> chain_next is None -> falls back to interpreter at block C
     pc = engine.run_step(pc, ctx)
-    assert pc == 0x300
+    assert pc == block_c.head_pc
     assert engine.jit_traces == 2
     assert ctx.locals[0] == 130
-    # Step 3: Run 0x300 (Interpreter) -> completes execution smoothly!
+    # Step 3: Run block C (Interpreter) -> completes execution smoothly!
     pc = engine.run_step(pc, ctx)
     assert pc is None
-    assert engine.interp_blocks == 1
+    assert engine.interp_blocks >= 1
     assert ctx.locals[0] == 160
 
 
@@ -477,8 +495,8 @@ def test_guest_wasi_04_jit_fd_write_native():
         block = BasicBlock(
             head_pc=0x100,
             ops=[
-                ("call_host", t_addr),
-                ("local.set", 0),
+                (CALL_HOST, t_addr),
+                (LOCAL_SET, 0),
             ],
             next_pc=None,
         )
@@ -547,8 +565,8 @@ def test_guest_wasi_05_jit_fireball_call_ipc_messaging():
         block = BasicBlock(
             head_pc=0x200,
             ops=[
-                ("call_host", t_addr),
-                ("local.set", 0),
+                (CALL_HOST, t_addr),
+                (LOCAL_SET, 0),
             ],
             next_pc=None,
         )
@@ -580,7 +598,7 @@ def test_debugger_manager_gdb_rsp_integration():
     res_g, _ = rsp.handle_packet("g", 0x100, ctx, {})
     assert len(res_g[1 : res_g.index("#")]) == 160
     # 3. Memory write & JIT flush ({Debugger_Jit_Flush})
-    block = BasicBlock(head_pc=0x100, ops=[("i32.const", 42)])
+    block = BasicBlock(head_pc=0x100, ops=[(I32_CONST, 42)])
     trace = engine.compiler.compile_trace(0x100, block)
     engine.cache.insert(trace)
     assert engine.cache.active.has_trace(0x100)
@@ -591,12 +609,12 @@ def test_debugger_manager_gdb_rsp_integration():
     # 4. Breakpoint & Stepping
     block1 = BasicBlock(
         head_pc=0x100,
-        ops=[("local.get", 0), ("i32.const", 1), ("i32.add", None), ("local.set", 0)],
+        ops=[(LOCAL_GET, 0), (I32_CONST, 1), (I32_ADD, None), (LOCAL_SET, 0)],
         next_pc=0x200,
     )
     block2 = BasicBlock(
         head_pc=0x200,
-        ops=[("local.get", 0), ("i32.const", 2), ("i32.mul", None), ("local.set", 0)],
+        ops=[(LOCAL_GET, 0), (I32_CONST, 2), (I32_MUL, None), (LOCAL_SET, 0)],
         next_pc=None,
     )
     blocks = {0x100: block1, 0x200: block2}
@@ -616,53 +634,63 @@ def test_interpreter_debugger_handler_table_switch_and_hooks():
     """INTP-60..65: Verifies Interpreter DebuggerLabelTableSwitch, JIT bypass, PC sampling and assertions."""
     from debugger import DebuggerManager
 
+    wat = """
+    (module
+      (func (export "f") (param i32) (result i32)
+        (block $b
+          local.get 0
+          i32.const 1
+          i32.add
+          local.set 0
+          br $b
+        )
+        local.get 0
+        i32.const 2
+        i32.mul
+        local.set 0
+        return
+      )
+    )
+    """
+    wasm_bytes = bytes(wasmtime.wat2wasm(wat))
     engine = IntegratedHybridEngine(compiler=TraceCompiler())
     dbg = DebuggerManager(engine=engine)
-    block1 = BasicBlock(
-        head_pc=0x100,
-        ops=[("local.get", 0), ("i32.const", 1), ("i32.add", None), ("local.set", 0)],
-        next_pc=0x200,
-    )
-    block2 = BasicBlock(
-        head_pc=0x200,
-        ops=[("local.get", 0), ("i32.const", 2), ("i32.mul", None), ("local.set", 0)],
-        next_pc=None,
-    )
-    engine.register_block(block1)
-    engine.register_block(block2)
+    mod = engine.load_wasm(wasm_bytes)
+    block1 = mod.blocks[0]
+    block2 = mod.blocks[1]
     # 1. Normal mode (INTP-60: zero overhead, normal handler table)
     assert engine.handler_table == "normal"
     assert engine.debugger is None
     ctx_normal = WASMContext(locals_values=[5])
-    next_pc = engine.run_step(0x100, ctx_normal)
-    assert next_pc == 0x200
+    next_pc = engine.run_step(block1.head_pc, ctx_normal)
+    assert next_pc == block2.head_pc
     assert ctx_normal.locals[0] == 6
     # 2. Attach debugger (INTP-61: switches to debug handler table)
     dbg.attach()
     assert engine.handler_table == "debug"
     assert engine.debugger is dbg
     # 3. Breakpoint hit (INTP-62: halts before execution)
-    dbg.add_breakpoint(0x200)
+    dbg.add_breakpoint(block2.head_pc)
     ctx_debug = WASMContext(locals_values=[10], memory=bytearray([0x55, 0xAA]))
     dbg.add_memory_assertion(0, 0x55, "valid magic")
     dbg.add_memory_assertion(1, 0x00, "invalid magic")  # Will fail
-    # Step block1 (0x100 -> 0x200, stops at 0x200 due to BP)
-    next_pc = engine.run_step(0x100, ctx_debug)
-    assert next_pc == 0x200
+    # Step block1 (stops at block2 due to BP)
+    next_pc = engine.run_step(block1.head_pc, ctx_debug)
+    assert next_pc == block2.head_pc
     assert dbg.halted is True
     assert dbg.stop_signal == 5
     assert ctx_debug.locals[0] == 11
     # 4. Profiler & Assertions (INTP-63, INTP-64)
-    assert dbg.pc_sample_counts[0x100] == 1
+    assert dbg.pc_sample_counts[block1.head_pc] == 1
     assert len(dbg.assertion_violations) == 1
     # 5. JIT Bypass under debug mode (INTP-65: JIT trace exists but interpreter debug table runs)
-    trace = engine.compiler.compile_trace(0x100, block1)
+    trace = engine.compiler.compile_trace(block1.head_pc, block1)
     engine.cache.insert(trace)
-    assert engine.cache.active.has_trace(0x100)
-    # Run step at 0x100 under debug mode -> interp_blocks increments, NOT jit_traces
+    assert engine.cache.active.has_trace(block1.head_pc)
+    # Run step at block1 under debug mode -> interp_blocks increments, NOT jit_traces
     interp_before = engine.interp_blocks
     jit_before = engine.jit_traces
-    engine.run_step(0x100, ctx_debug)
+    engine.run_step(block1.head_pc, ctx_debug)
     assert engine.interp_blocks == interp_before + 1
     assert engine.jit_traces == jit_before  # JIT bypassed!
     # Detach

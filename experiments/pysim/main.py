@@ -38,6 +38,7 @@ from runtime_engine import BasicBlock, IntegratedHybridEngine, WASMContext
 from scheduler import ChannelAction, Scheduler
 from system import FbSyscallId, ShmSlice, System
 from wasi import WasiHostContext
+from wasm_opcodes import CALL_HOST, I32_CONST, I32_MUL, I32_SUB, LOCAL_GET, LOCAL_SET
 from x64_jit import TraceCompiler
 
 findings: list[str] = []
@@ -162,10 +163,24 @@ def task_retry_exhausted(sysv: System):
     yield
 
 
-def run_wasm_demo(sysv: System) -> None:
-    """
-    Demonstrates true Tiered Tracing JIT execution:
-        1. Loop begins executing in Tier 2 Interpreter with 2-bit card tracking.
+# Raw WASM binary of factorial compiled from WAT:
+# (module (func (export "fac") (param i32) (result i32) (local i32)
+#   i32.const 1 local.set 1
+#   (loop $loop local.get 1 local.get 0 i32.mul local.set 1
+#               local.get 0 i32.const 1 i32.sub local.tee 0 br_if $loop)
+#   local.get 1 return))
+FACTORIAL_WASM = (
+    b"\x00asm\x01\x00\x00\x00\x01\x06\x01`\x01\x7f\x01\x7f\x03\x02\x01\x00"
+    b"\x07\x07\x01\x03fac\x00\x00\n \x01\x1e\x01\x01\x7fA\x01!\x01\x03@"
+    b" \x01 \x00l!\x01 \x00A\x01k\"\x00\r\x00\x0b \x01\x0f\x0b"
+)
+
+
+def demo_wasmjit_hybrid_execution(sysv: System) -> None:
+    """Demonstrates Tier 2 Interpreter -> 2-bit Card Marking -> Tier 3 JIT trace compilation & execution.
+
+    Flow:
+        1. WASM module begins execution via Tier 2 Interpreter (direct threaded dispatch).
         2. Hot basic-blocks are detected and queued to LIFO compile_queue upon yield.
         3. COOS scheduler idle_hook compiles queued traces into Active JIT cache and chains them.
         4. Execution seamlessly transitions from Interpreter into native JIT traces,
@@ -174,42 +189,29 @@ def run_wasm_demo(sysv: System) -> None:
     """
     print("\n== wasmjit: Tiered Tracing JIT & Interpreter Hybrid Execution ==")
     engine = IntegratedHybridEngine(yield_threshold=3)
-    # Factorial loop: block 0x100 (loop body) -> block 0x200 (epilogue)
-    loop_block = BasicBlock(
-        head_pc=0x100,
-        ops=[
-            ("local.get", 1),
-            ("local.get", 0),
-            ("i32.mul", None),
-            ("local.set", 1),
-            ("local.get", 0),
-            ("i32.const", 1),
-            ("i32.sub", None),
-            ("local.set", 0),
-            ("local.get", 0),  # branch condition
-        ],
-        next_pc=0x200,
-        loops_to=0x100,
-    )
-    epilogue_block = BasicBlock(head_pc=0x200, ops=[("local.get", 1)], next_pc=None)
-    engine.register_block(loop_block)
-    engine.register_block(epilogue_block)
+    mod = engine.load_wasm(FACTORIAL_WASM)
+
     # Run factorial(6) = 720
-    ctx = WASMContext(locals_values=[6, 1])
-    pc = 0x100
+    ctx = WASMContext(locals_values=[6, 0])
+    loop_pc = mod.blocks[1].head_pc  # 0x06 (the loop body)
+    pc = engine.run_step(mod.blocks[0].head_pc, ctx)  # executes preamble block (local[1] = 1)
     print("  [Stage 1] Initial iterations running via Tier 2 Interpreter...")
     for iter_idx in range(1, 4):
         pc = engine.run_step(pc, ctx)
-        state_name = ["UNEXECUTED", "EXECUTED", "HOT", "COMPILED"][engine.bitmap.get_state(0x100)]
-        print(f"    iteration {iter_idx}: executed via Interpreter (card 0x100 state={state_name})")
+        state_name = ["UNEXECUTED", "EXECUTED", "HOT", "COMPILED"][
+            engine.bitmap.get_state(loop_pc)
+        ]
+        print(
+            f"    iteration {iter_idx}: executed via Interpreter (card 0x{loop_pc:x} state={state_name})"
+        )
 
-    assert 0x100 in engine.compile_queue, "HOT block must be enqueued to compile_queue on yield"
+    assert loop_pc in engine.compile_queue, "HOT block must be enqueued to compile_queue on yield"
     print(
         "  [Stage 2] COOS idle_hook triggered: batch-compiling HOT trace into Active JIT cache..."
     )
     compiled = engine.idle_hook()
-    print(f"    idle_hook compiled {compiled} trace(s); card 0x100 state=COMPILED")
-    assert engine.cache.active.has_trace(0x100)
+    print(f"    idle_hook compiled {compiled} trace(s); card 0x{loop_pc:x} state=COMPILED")
+    assert engine.cache.active.has_trace(loop_pc)
     print("  [Stage 3] Remaining iterations executing via Tier 3 Native JIT Trace & chaining...")
     iter_idx = 4
     while pc is not None:
@@ -219,7 +221,7 @@ def run_wasm_demo(sysv: System) -> None:
         print(f"    iteration {iter_idx}: executed via {mode}")
         iter_idx += 1
 
-    result_val = ctx.stack[-1]
+    result_val = ctx.locals[1]
     print(f"  [Result] fact(6) = {result_val} (expected 720) [OK]")
     print(
         f"  [Stats] Total Interp Blocks={engine.interp_blocks}, JIT Traces={engine.jit_traces}, Compilations={engine.compilations}"
@@ -286,8 +288,8 @@ def run_wasm_demo(sysv: System) -> None:
     block = BasicBlock(
         head_pc=0x300,
         ops=[
-            ("call_host", t_addr),
-            ("local.set", 0),
+            (CALL_HOST, t_addr),
+            (LOCAL_SET, 0),
         ],
         next_pc=None,
     )
@@ -336,7 +338,7 @@ def main() -> None:
     for line in on_the_wire.splitlines():
         print(f"    | {line}")
 
-    run_wasm_demo(sysv)
+    demo_wasmjit_hybrid_execution(sysv)
     sysv.shutdown()
     print("\n== pysim: findings ==")
     if findings:

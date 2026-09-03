@@ -53,6 +53,7 @@ docs/components/tier2_runtime/tests/debug_manager_test_spec.md (DBG-01 ~ DBG-15)
 
 from debugger import DebuggerManager, GDBRspProtocol
 from runtime_engine import BasicBlock, IntegratedHybridEngine, WASMContext
+from wasm_opcodes import I32_ADD, I32_CONST, I32_MUL, LOCAL_GET, LOCAL_SET
 from x64_jit import TraceCompiler
 
 
@@ -133,7 +134,7 @@ def test_dbg_06_07_write_memory_flush_jit_and_bounds_check():
     mem = bytearray(64)
     ctx = WASMContext(memory=mem)
     # Populate JIT cache
-    block = BasicBlock(head_pc=0x100, ops=[("i32.const", 10)])
+    block = BasicBlock(head_pc=0x100, ops=[(I32_CONST, 10)])
     trace = engine.compiler.compile_trace(0x100, block)
     engine.cache.insert(trace)
     assert engine.cache.active.has_trace(0x100)
@@ -156,12 +157,12 @@ def test_dbg_08_09_breakpoints_and_hit():
     rsp = GDBRspProtocol(dbg)
     block1 = BasicBlock(
         head_pc=0x100,
-        ops=[("local.get", 0), ("i32.const", 1), ("i32.add", None), ("local.set", 0)],
+        ops=[(LOCAL_GET, 0), (I32_CONST, 1), (I32_ADD, None), (LOCAL_SET, 0)],
         next_pc=0x200,
     )
     block2 = BasicBlock(
         head_pc=0x200,
-        ops=[("local.get", 0), ("i32.const", 2), ("i32.mul", None), ("local.set", 0)],
+        ops=[(LOCAL_GET, 0), (I32_CONST, 2), (I32_MUL, None), (LOCAL_SET, 0)],
         next_pc=None,
     )
     blocks = {0x100: block1, 0x200: block2}
@@ -191,10 +192,10 @@ def test_dbg_10_11_single_step_and_termination():
     rsp = GDBRspProtocol(dbg)
     block1 = BasicBlock(
         head_pc=0x100,
-        ops=[("local.get", 0), ("i32.const", 10), ("i32.add", None), ("local.set", 0)],
+        ops=[(LOCAL_GET, 0), (I32_CONST, 10), (I32_ADD, None), (LOCAL_SET, 0)],
         next_pc=0x200,
     )
-    block2 = BasicBlock(head_pc=0x200, ops=[("local.get", 0)], next_pc=None)
+    block2 = BasicBlock(head_pc=0x200, ops=[(LOCAL_GET, 0)], next_pc=None)
     blocks = {0x100: block1, 0x200: block2}
     ctx = WASMContext(locals_values=[5])
     # Step 1 -> halts at 0x200 with S05
@@ -215,7 +216,7 @@ def test_dbg_12_to_15_integrated_profiler_and_assertions():
     rsp = GDBRspProtocol(dbg)
     mem = bytearray([0x00, 0x42, 0x00])
     ctx = WASMContext(memory=mem)
-    block = BasicBlock(head_pc=0x100, ops=[("i32.const", 1)], next_pc=None)
+    block = BasicBlock(head_pc=0x100, ops=[(I32_CONST, 1)], next_pc=None)
     blocks = {0x100: block}
     # Add memory assertion: address 1 must equal 0x42, address 2 must equal 0xFF (will fail)
     dbg.add_memory_assertion(1, 0x42, "status byte")

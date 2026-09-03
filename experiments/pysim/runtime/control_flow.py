@@ -371,6 +371,75 @@ class Instr:
     table_index: int | None = None  # CALL_INDIRECT's tableidx
 
 
+@dataclass
+class ControlMap:
+    """Pre-indexed block delimiters and br_table labels for direct bytecode interpretation."""
+
+    blocks: dict[int, tuple[int, int | None]]  # opener_ip -> (match_end_ip, else_offset)
+    br_tables: dict[int, tuple[list[int], int]]  # br_table_ip -> (labels, default_label)
+
+
+def build_control_map(code: bytes) -> ControlMap:
+    """Single linear scan over WASM bytecode to resolve block structure and br_tables once per function."""
+    blocks: dict[int, tuple[int, int | None]] = {}
+    br_tables: dict[int, tuple[list[int], int]] = {}
+    open_stack: list[tuple[int, int]] = []  # (opcode, start_offset)
+    else_offsets: dict[int, int] = {}  # opener_start -> else_offset
+
+    off = 0
+    n = len(code)
+    while off < n:
+        start = off
+        opcode = code[off]
+        off += 1
+        if opcode in _BLOCK_OPENERS:
+            blocktype = code[off]
+            off += 1
+            assert blocktype == 0x40, "only the empty blocktype is supported in this experiment"
+            open_stack.append((opcode, start))
+        elif opcode in _LEB_UNSIGNED_OPERAND:
+            _, off = decode_unsigned(code, off)
+        elif opcode in (I32_CONST, I64_CONST):
+            _, off = decode_signed(code, off)
+        elif opcode == F32_CONST:
+            off += 4
+        elif opcode == F64_CONST:
+            off += 8
+        elif opcode in _MEMARG_OPCODES:
+            _, off = decode_unsigned(code, off)
+            _, off = decode_unsigned(code, off)
+        elif opcode in _MEMORY_INDEX_OPCODES:
+            off += 1  # reserved
+        elif opcode == BR_TABLE:
+            n_labels, off = decode_unsigned(code, off)
+            labels = []
+            for _ in range(n_labels):
+                lbl, off = decode_unsigned(code, off)
+                labels.append(lbl)
+            default_lbl, off = decode_unsigned(code, off)
+            br_tables[start] = (labels, default_lbl)
+        elif opcode == CALL_INDIRECT:
+            _, off = decode_unsigned(code, off)
+            _, off = decode_unsigned(code, off)
+        elif opcode == ELSE:
+            opener_op, opener_start = open_stack[-1]
+            assert opener_op == IF, "ELSE without matching IF"
+            else_offsets[opener_start] = start
+        elif opcode == END:
+            if open_stack:
+                opener_op, opener_start = open_stack.pop()
+                blocks[opener_start] = (start, else_offsets.get(opener_start))
+        elif opcode in _NO_OPERAND:
+            pass
+        else:
+            raise WasmUnsupportedFeatureError(
+                f"ERR_WASM_UNSUPPORTED_FEATURE: opcode 0x{opcode:02X} at offset {start} is not supported"
+            )
+
+    assert not open_stack, "unterminated block/loop/if (missing END)"
+    return ControlMap(blocks=blocks, br_tables=br_tables)
+
+
 def decode_all(code: bytes) -> FlatMapView[int, Instr]:
     """
     Decodes every instruction in `code` and resolves block nesting.
@@ -585,33 +654,84 @@ _OPCODE_TABLE[I32_STORE8] = "i32.store8"
 _OPCODE_TABLE[I32_STORE16] = "i32.store16"
 
 
+_IS_BB_OPCODE: list[bool] = [False] * 256
+for _op in (
+    I32_CONST,
+    I32_ADD,
+    I32_SUB,
+    I32_MUL,
+    I32_DIV_S,
+    I32_DIV_U,
+    I32_AND,
+    I32_OR,
+    I32_XOR,
+    I32_SHL,
+    I32_SHR_S,
+    I32_SHR_U,
+    LOCAL_GET,
+    LOCAL_SET,
+    LOCAL_TEE,
+    GLOBAL_GET,
+    GLOBAL_SET,
+    I32_EQZ,
+    I32_EQ,
+    I32_NE,
+    I32_LT_S,
+    I32_LT_U,
+    I32_GT_S,
+    I32_GT_U,
+    I32_LE_S,
+    I32_LE_U,
+    I32_GE_S,
+    I32_GE_U,
+    DROP,
+    SELECT,
+    CALL,
+    I32_LOAD,
+    I32_LOAD8_S,
+    I32_LOAD8_U,
+    I32_LOAD16_S,
+    I32_LOAD16_U,
+    I32_STORE,
+    I32_STORE8,
+    I32_STORE16,
+):
+    _IS_BB_OPCODE[_op] = True
+
+
 def extract_basic_blocks(
     code: bytes, func_index: int = 0
-) -> list[tuple[int, list[tuple[str, object]], int | None]]:
+) -> list[tuple[int, list[tuple[int, object]], int | None, int | None]]:
     """Extracts straight-line BasicBlocks from WASM bytecode as a flat list.
-    Returns [(head_pc, [(op_name, arg), ...], next_pc), ...] where head_pc = (func_index << 16) | offset."""
+    Each BasicBlock consists of: (head_pc, ops, next_pc, loops_to).
+    head_pc = (func_index << 16) | start_offset.
+    """
     from wasm_opcodes import BLOCK, BR, BR_IF, ELSE, END, IF, LOOP, RETURN
 
     instrs = decode_all(code)
     sorted_instrs = list(instrs.values)
     base_pc = func_index << 16
-    blocks: list[tuple[int, list[tuple[str, object]], int | None]] = []
-    cur_ops: list[tuple[str, object]] = []
+    blocks: list[tuple[int, list[tuple[int, object]], int | None, int | None]] = []
+    cur_ops: list[tuple[int, object]] = []
     cur_head: int | None = None
+    active_openers: list[Instr] = []
+
     for ins in sorted_instrs:
         pc = base_pc | ins.offset
         if cur_head is None:
             cur_head = pc
 
-        op_name = _OPCODE_TABLE[ins.opcode] if ins.opcode < 256 else None
-        if op_name is not None:
+        if ins.opcode in _BLOCK_OPENERS:
+            active_openers.append(ins)
+
+        if ins.opcode < 256 and _IS_BB_OPCODE[ins.opcode]:
             if ins.const_value is not None:
                 arg = ins.const_value
             elif ins.memarg is not None:
                 arg = ins.memarg[1]  # static offset
             else:
                 arg = ins.operand
-            cur_ops.append((op_name, arg))
+            cur_ops.append((ins.opcode, arg))
 
         # Check if this instruction ends the basic block
         if ins.opcode in (
@@ -627,13 +747,27 @@ def extract_basic_blocks(
             CALL_INDIRECT,
         ):
             if cur_ops:
-                blocks.append((cur_head, list(cur_ops), base_pc | ins.offset))
+                loops_to = None
+                if (
+                    ins.opcode == BR_IF
+                    and ins.operand is not None
+                    and ins.operand < len(active_openers)
+                ):
+                    target = active_openers[-(ins.operand + 1)]
+                    if target.opcode == LOOP:
+                        loops_to = base_pc | target.end_offset
+
+                next_pc = (base_pc | ins.end_offset) if ins.opcode != RETURN else None
+                blocks.append((cur_head, list(cur_ops), next_pc, loops_to))
                 cur_ops.clear()
 
             cur_head = None
 
+        if ins.opcode == END and active_openers:
+            active_openers.pop()
+
     if cur_head is not None and cur_ops:
-        blocks.append((cur_head, list(cur_ops), None))
+        blocks.append((cur_head, list(cur_ops), None, None))
     return blocks
 
 
@@ -655,7 +789,7 @@ def build_control_skip_storage(
         instrs = decode_all(code)
         blocks = extract_basic_blocks(code, func_index=func_idx)
         heads = {b[0] for b in blocks}
-        for _head_pc, _ops, delim_pc in blocks:
+        for _head_pc, _ops, delim_pc, _loops_to in blocks:
             if delim_pc is not None:
                 offset = delim_pc & 0xFFFF
                 if offset in instrs:

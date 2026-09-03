@@ -295,6 +295,50 @@ def test_wasm_loader_and_radix_binary_tree_view_indexes():
     assert view.lookup_by_file_offset(len(wasm_bytes) + 1000) is None
 
 
+def test_intp_70_to_72_direct_bytecode_execution():
+    """INTP-70..72 & INTP-GOTCHA-05: Direct bytecode decoding without instruction objects or binary search."""
+    wat = """
+    (module
+      (func (export "calc") (param $x i32) (result i32)
+        (local $res i32)
+        (local.set $res (i32.add (local.get $x) (i32.const 10)))
+        (block $b
+          (if (i32.gt_s (local.get $x) (i32.const 5))
+            (then
+              (local.set $res (i32.add (local.get $res) (i32.const 100)))
+            )
+            (else
+              (local.set $res (i32.add (local.get $res) (i32.const 200)))
+            )
+          )
+        )
+        (local.get $res)
+      )
+    )
+    """
+    wasm_bytes = wat_to_wasm(wat)
+    if not wasm_bytes:
+        print("    [SKIP] wasmtime not installed, skipping test_intp_70_to_72")
+        return
+    module = parse(wasm_bytes)
+    interp = Interpreter(module)
+
+    # 1. INTP-70: _build_frame constructs CallFrame with raw code and static control_map
+    frame, locals_arr = interp._build_frame(0, [15])
+    assert frame.code == module.functions[0].code
+    assert frame.control_map is not None
+    assert frame.control_map is module.functions[0].control_map
+
+    # 2. INTP-71 & INTP-72: Execution proceeds by direct byte reading and ip addition
+    res = interp.call(0, [15])
+    # 15 + 10 + 100 = 125
+    assert res == [125]
+
+    res2 = interp.call(0, [3])
+    # 3 + 10 + 200 = 213
+    assert res2 == [213]
+
+
 # ===========================================================================
 # Test Runner
 # ===========================================================================

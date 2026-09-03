@@ -1,4 +1,3 @@
-
 # Interpreter コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}
 <!-- evidence:
      formal: formal/vsoc_state_model.py
@@ -7,8 +6,8 @@
 -->
 
 ## 1. コンセプト
-<!-- traceability: {ThreadedInterpreter} {LowLatencyJIT} {InterpreterContextStackless} {EnvironmentPointer} -->
-Interpreter は、WASM命令をスレッドインタープリタ方式で実行し、低レイテンシかつ小フットプリントでゲストを動作させる。Execution Engine (`executor`) の一部として設計され、JITと実行状態を完全に共有する。周辺コンポーネントへの参照は Environment Pointer (`vsoc_runtime* env`) を介して型安全に行う。 `{ThreadedInterpreter}` `{LowLatencyJIT}` `{InterpreterContextStackless}` `{EnvironmentPointer}`
+<!-- traceability: {ThreadedInterpreter} {LowLatencyJIT} {InterpreterContextStackless} {EnvironmentPointer} {DirectBytecodeExecution} -->
+Interpreter は、WASM命令をスレッドインタープリタ方式で実行し、低レイテンシかつ小フットプリントでゲストを動作させる。Execution Engine (`executor`) の一部として設計され、JITと実行状態を完全に共有する。周辺コンポーネントへの参照は Environment Pointer (`vsoc_runtime* env`) を介して型安全に行う。また、組み込み環境の極小メモリ制約（`{GLOBAL_Policy_Memory}`）を遵守し、WASM命令は Flash / ROM 上のバイト列（`const uint8_t* ip`）から直接フェッチ（`*ip++`）され、中間命令オブジェクト（`Instr`）や命令ごとの二分探索マップ（`FlatMapView`）を一切生成・使用しない。即値（LEB128 等）はその場でポインタから直接デコードされ、次の命令アドレスは単なるポインタ加算（`ip += len`）で決定される。制御構文（`block`, `loop`, `if`）の飛び先はモジュールロード時に一度だけ静的解決された軽量制御表（`control_map`）を参照する。これにより、命令実行に伴うヒープ確保および探索オーバーヘッドを完全ゼロ（$O(1)$）とする（`INTP-GOTCHA-05`, `{DirectBytecodeExecution}`）。 `{ThreadedInterpreter}` `{LowLatencyJIT}` `{InterpreterContextStackless}` `{EnvironmentPointer}` `{DirectBytecodeExecution}`
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->

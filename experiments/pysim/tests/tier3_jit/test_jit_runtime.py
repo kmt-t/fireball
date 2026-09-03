@@ -45,8 +45,15 @@ from runtime_engine import (
     PcOnlyCompiler,
     RuntimeEngine,
 )
-from system_containers import RadixBinaryTreeView, bswap32, build_radix_table
+from system_containers import (
+    RadixBinaryTreeView,
+    ReadOnlyRadixBinaryTreeStorage,
+    bswap32,
+    build_radix_table,
+)
+from wasm_opcodes import NOP
 from wasm_reader import parse
+import wasmtime
 from x64_jit import TraceCompiler
 
 
@@ -320,16 +327,25 @@ def test_hotspot_06_short_blocks_never_tracked_avoiding_card_aliasing():
     shorter than one card's worth of bytes must never be recorded at all,
     so two tracked blocks can never land on the same card.
     """
+    wat = """
+    (module
+      (func (export "f")
+        (block (i32.const 1) (drop) (br 0))
+        (block (i32.const 2) (drop) (br 0))
+      )
+    )
+    """
+    wasm_bytes = bytes(wasmtime.wat2wasm(wat))
     engine = RuntimeEngine(jit_compiler=PcOnlyCompiler(lambda pc: None), card_shift=3)
     assert engine.min_trace_bytes == 8
-    # Two 2-byte blocks, both inside card 2 (0x10>>3 == 0x12>>3 == 2).
-    engine.register_block(BasicBlock(head_pc=0x10, ops=[("nop", None)], next_pc=0x12))
-    engine.register_block(BasicBlock(head_pc=0x12, ops=[("nop", None)], next_pc=0x14))
+    mod = engine.load_wasm(wasm_bytes)
+    h0 = mod.blocks[0].head_pc
+    h1 = mod.blocks[1].head_pc
     for _ in range(engine.yield_threshold * 2):
-        engine.record_block_head(0x10)
-        engine.record_block_head(0x12)
-    assert engine.bitmap.get_state(0x10) == CardState.UNEXECUTED
-    assert engine.bitmap.get_state(0x12) == CardState.UNEXECUTED
+        engine.record_block_head(h0)
+        engine.record_block_head(h1)
+    assert engine.bitmap.get_state(h0) == CardState.UNEXECUTED
+    assert engine.bitmap.get_state(h1) == CardState.UNEXECUTED
     assert engine.compile_queue == [], "short blocks must never reach the compile queue"
 
 
@@ -347,16 +363,19 @@ def test_hotspot_07_idle_hook_skips_recompiling_an_already_resident_trace():
         compile_calls.append(pc)
         return JITTrace(pc, lambda: 0, size_bytes=64)
 
+    wat = '(module (func (export "f") i32.const 1 drop i32.const 2 drop return))'
+    wasm_bytes = bytes(wasmtime.wat2wasm(wat))
     engine = RuntimeEngine(jit_compiler=PcOnlyCompiler(fake_compile), card_shift=3)
-    engine.register_block(BasicBlock(head_pc=0x100, ops=[("nop", None)] * 8, next_pc=0x110))
-    engine.cache.insert(JITTrace(0x100, lambda: 0, size_bytes=64))
-    engine.compile_queue.append(0x100)
+    mod = engine.load_wasm(wasm_bytes)
+    pc = mod.blocks[0].head_pc
+    engine.cache.insert(JITTrace(pc, lambda: 0, size_bytes=64))
+    engine.compile_queue.append(pc)
 
     compiled = engine.idle_hook(budget=4)
 
     assert compiled == 0, "a pc already resident in the cache must not be recompiled"
     assert compile_calls == []
-    assert engine.bitmap.get_state(0x100) == CardState.COMPILED
+    assert engine.bitmap.get_state(pc) == CardState.COMPILED
 
 
 def test_jitr_compile_queue_overflow_compiles_on_the_spot():
@@ -367,28 +386,34 @@ def test_jitr_compile_queue_overflow_compiles_on_the_spot():
         compile_calls.append(pc)
         return JITTrace(pc, lambda: 0, size_bytes=64)
 
+    wat = """
+    (module
+      (func (export "f0") i32.const 1 drop i32.const 2 drop return)
+      (func (export "f1") i32.const 1 drop i32.const 2 drop return)
+      (func (export "f2") i32.const 1 drop i32.const 2 drop return)
+    )
+    """
+    wasm_bytes = bytes(wasmtime.wat2wasm(wat))
     engine = RuntimeEngine(
         jit_compiler=PcOnlyCompiler(fake_compile),
         card_shift=3,
         compile_queue_capacity=3,
     )
-    for i in range(3):
-        pc = 0x100 + i * 0x20
-        engine.register_block(BasicBlock(head_pc=pc, ops=[("nop", None)] * 8, next_pc=pc + 0x10))
+    mod = engine.load_wasm(wasm_bytes)
+    pcs = [b.head_pc for b in mod.blocks]
+    for pc in pcs:
         engine.bitmap.touch(pc)
         engine.bitmap.touch(pc)
         assert engine.bitmap.get_state(pc) == CardState.HOT
 
-    engine.ring.record(0x100)
-    engine.ring.record(0x120)
-    engine.ring.record(0x140)
+    for pc in pcs:
+        engine.ring.record(pc)
     engine.on_yield()
 
     assert len(compile_calls) == 3
     assert len(engine.compile_queue) == 0
-    assert engine.bitmap.get_state(0x100) == CardState.COMPILED
-    assert engine.bitmap.get_state(0x120) == CardState.COMPILED
-    assert engine.bitmap.get_state(0x140) == CardState.COMPILED
+    for pc in pcs:
+        assert engine.bitmap.get_state(pc) == CardState.COMPILED
 
 
 def test_jitr_control_skip_radix_tree_chaining():
@@ -436,6 +461,90 @@ def test_jitr_control_skip_radix_tree_chaining():
     assert trace_a2.chain_next == 0x114
 
 
+def test_jitr_26_direct_mapped_folding_xor_jit_cache():
+    """JITR-26 & JITR-GOTCHA-05: Direct-Mapped Folding XOR JIT Cache[16] O(1) hit and rotation invalidation."""
+    cache = JITMultiBufferCache(bank_capacity=1024)
+    # PC with function index 1, offset 0x20 -> (1 << 16) | 0x20 = 0x00010020
+    pc1 = 0x00010020
+    pc2 = 0x00020020
+    t1 = JITTrace(head_pc=pc1, native_fn=lambda: 10, size_bytes=64)
+    t2 = JITTrace(head_pc=pc2, native_fn=lambda: 20, size_bytes=64)
+
+    # 1. Verify hash slot uniformly folds all 4 bytes
+    h1 = cache._hash_slot(pc1)
+    h2 = cache._hash_slot(pc2)
+    expected_h1 = ((pc1 >> 24) ^ (pc1 >> 16) ^ (pc1 >> 8) ^ pc1) & 0x0F
+    assert h1 == expected_h1
+    assert h1 != h2, "Different function index should produce distinct hash slot"
+
+    # 2. Insert populates fast slot
+    cache.insert(t1)
+    assert cache._fast_slots[h1] == (pc1, t1)
+
+    # 3. Lookup hits fast slot
+    assert cache.lookup(pc1) is t1
+
+    # 4. Rotation invalidates fast slot (JITR-GOTCHA-05)
+    cache.rotate()  # t1 moves to Warm
+    for slot in cache._fast_slots:
+        assert slot is None, (
+            "All fast slots must be cleared on rotate to prevent dangling old bank references"
+        )
+
+    # 5. Lookup refills fast slot from Warm (without promotion)
+    assert cache.lookup(pc1) is t1
+    assert cache.promotions == 0
+    assert cache._fast_slots[h1] == (pc1, t1)
+
+    # 6. Rotate again: t1 moves to Oldest
+    cache.rotate()
+    for slot in cache._fast_slots:
+        assert slot is None
+
+    # 7. Lookup from Oldest: must trigger promotion to Active and update fast slot
+    promoted = cache.lookup(pc1)
+    assert promoted is t1
+    assert cache.promotions == 1
+    assert cache.active.has_trace(pc1)
+    assert cache._fast_slots[h1] == (pc1, t1)
+
+    # 8. Flush all clears fast slots
+    cache.flush_all()
+    for slot in cache._fast_slots:
+        assert slot is None
+
+
+def test_jitr_block_capacity_from_wasm_loader_and_no_set():
+    """JITR: RuntimeEngine takes block capacity from WASM loader and strictly forbids set."""
+    from wasm_reader import parse
+
+    wat = "(module (func (i32.const 42) (return)) (func (i32.const 99) (return)))"
+    wasm_bytes = wat_to_wasm(wat)
+    if not wasm_bytes:
+        return
+    mod = parse(wasm_bytes)
+
+    # 1. WASM loader provides total_basic_blocks metadata and owns block_storage & block_tree
+    assert mod.total_basic_blocks == 2
+    assert mod.block_storage is not None
+    assert len(mod.block_storage.keys) == mod.total_basic_blocks
+    assert isinstance(mod.block_storage, ReadOnlyRadixBinaryTreeStorage)
+    assert mod.block_tree is not None
+    assert len(mod.blocks) == 2
+
+    # 2. RuntimeEngine binds loader-owned blocks and resolves them seamlessly
+    engine = RuntimeEngine()
+    engine.register_module_blocks(mod)
+    first_block = mod.blocks[0]
+    assert engine.get_block(first_block.head_pc) is first_block
+
+    # 3. Strictly verify no python set is used anywhere in engine
+    for attr, val in engine.__dict__.items():
+        assert not isinstance(val, set), (
+            f"Attribute {attr} must not be a set! Use system containers."
+        )
+
+
 # ===========================================================================
 # 7. Tier 2 vMMIO: 3-Tier Gate & FC=14 SHM Ownership (runtime_vmmio_test_spec.md)
 # ===========================================================================
@@ -457,4 +566,6 @@ if __name__ == "__main__":
     test_hotspot_07_idle_hook_skips_recompiling_an_already_resident_trace()
     test_jitr_compile_queue_overflow_compiles_on_the_spot()
     test_jitr_control_skip_radix_tree_chaining()
-    print("[PASS] All 15 JIT Hotspot Profiling & 3-Bank Cache tests passed.")
+    test_jitr_26_direct_mapped_folding_xor_jit_cache()
+    test_jitr_block_capacity_from_wasm_loader_and_no_set()
+    print("[PASS] All 17 JIT Hotspot Profiling & 3-Bank Cache tests passed.")

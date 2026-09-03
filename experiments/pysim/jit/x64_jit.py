@@ -317,6 +317,7 @@ class TraceCompiler:
             loops_to=block.loops_to,
             has_return_val=(stack_depth > 0),
             buf=buf,
+            raw_addr=buf.address_of(16),
         )
         trace.header = header
         return trace

@@ -55,6 +55,11 @@ doc_graph.json
 *.out
 *.app
 *.dwo
+*.exp
+
+# Cython-generated C for optional native accelerators (see
+# experiments/pysim/jit/native_trace_call.pyx, build_native.ps1/.sh)
+experiments/pysim/jit/native_trace_call.c
 
 # Logs and generated state
 *.log

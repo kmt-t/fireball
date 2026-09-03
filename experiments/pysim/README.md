@@ -204,3 +204,13 @@ uv run --system-certs --with wasmtime python experiments/pysim/tests/run_all.py
 ```bash
 uv run --system-certs --with wasmtime python experiments/pysim/aobench.py
 ```
+
+### （任意）JIT トレース呼び出しの Cython ネイティブアクセラレータ
+`RuntimeEngine._invoke_trace` は既定で `ctypes.CFUNCTYPE`（libffi トランポリン、~1.1us/call）経由でコンパイル済みトレースを呼ぶ。`experiments/pysim/jit/native_trace_call.pyx` をビルドすると、同じ CPS 4引数呼び出し規約のまま生の C 関数ポインタ呼び出しに置き換わり、`bench_jit.py` の JIT 対インタープリタ比が実測で ~1.2x → ~1.8x に改善する。未ビルドでも自動的に ctypes 経路へフォールバックするため、素の Python 環境（`.pyd`/`.so` なし）でも通常どおり動作する。
+```bash
+# Windows: clang-cl + Visual Studio Build Tools + Windows SDK が必要
+powershell experiments/pysim/jit/build_native.ps1
+
+# Linux/WSL: clang が必要
+./experiments/pysim/jit/build_native.sh
+```

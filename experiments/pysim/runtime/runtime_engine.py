@@ -46,6 +46,13 @@ from wasm_opcodes import (
     LOCAL_TEE,
 )
 
+try:
+    import native_trace_call as _native_trace_call
+except ImportError:
+    # Optional accelerator (see jit/native_trace_call.pyx, jit/build_native.*):
+    # not built -- _invoke_trace falls back to the ctypes.CFUNCTYPE path below.
+    _native_trace_call = None
+
 
 class CardState:
     UNEXECUTED = 0
@@ -234,9 +241,11 @@ class JITTrace:
         has_return_val: bool = False,
         buf: object = None,
         native_fn: Callable[[int, object, object, int], int] | None = None,
+        raw_addr: int | None = None,
     ):
         self.head_pc = head_pc
         self.fn = fn or native_fn  # Direct ctypes CFUNCTYPE function pointer or callable
+        self.raw_addr = raw_addr  # Entry point as a plain int, for native_trace_call
         self.size_bytes = size_bytes
         self.next_pc = next_pc  # Unconditional fallthrough successor
         self.loops_to = loops_to  # Conditional loop backedge (never auto-chained)
@@ -770,18 +779,23 @@ class RuntimeEngine:
     ) -> InterpreterCall:
         """
         Executes one compiled native x64 JIT trace and advances `call_state`
-        past it. Calls `trace.fn` directly on this frame's cached locals
+        past it. Calls the trace directly on this frame's cached locals
         buffer rather than building a fresh `WASMContext` (ctypes array
         type + instance) per call -- the buffer's address is stable across
         every trace invoked against the same frame, so allocating it once
         and reusing it turns a per-call ctypes array construction into a
         per-call O(locals) value copy on the hot path
-        (`{ADR_TraceBoundaryYield}`'s per-block dispatch). R1 (`stack_bot`)
-        is always null: no currently-compilable op (`x64_jit.SUPPORTED_OPS`
-        has no load/store) ever reads it, matching what `JITTrace.invoke`
-        already passed. `res` is `trace.fn`'s raw `c_int64` return -- WASM
-        results are i64-capable even though this experiment's compiled ops
-        are i32-only, so it is never narrowed before the loops_to /
+        (`{ADR_TraceBoundaryYield}`'s per-block dispatch). When the optional
+        `native_trace_call` accelerator (jit/native_trace_call.pyx) is
+        built, its raw C function pointer call replaces `trace.fn`'s
+        `ctypes.CFUNCTYPE` libffi trampoline, which otherwise dominates this
+        call's cost; the fallback keeps this correct on a plain-Python
+        checkout. R1 (`stack_bot`) is always null: no currently-compilable
+        op (`x64_jit.SUPPORTED_OPS` has no load/store) ever reads it,
+        matching what `JITTrace.invoke` already passed. `res` is the raw
+        `int64_t` return from either call path -- WASM results are
+        i64-capable even though this experiment's compiled ops are
+        i32-only, so it is never narrowed before the loops_to /
         has_return_val branch below decides what to do with it.
         """
         ip, frame, locals_arr, tos = call_state.cont
@@ -792,7 +806,12 @@ class RuntimeEngine:
         c_locals, locals_ptr = frame.jit_locals_buffer(n_locals)
         for i, v in enumerate(locals_arr):
             c_locals[i] = v
-        res = trace.fn(trace.head_pc, ctypes.c_void_p(0), locals_ptr, 0)
+        if _native_trace_call is not None and trace.raw_addr is not None:
+            res = _native_trace_call.invoke_trace(
+                trace.raw_addr, trace.head_pc, locals_ptr.value, 0
+            )
+        else:
+            res = trace.fn(trace.head_pc, ctypes.c_void_p(0), locals_ptr, 0)
         for i in range(len(locals_arr)):
             locals_arr[i] = c_locals[i] & 0xFFFF_FFFF
 

@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Generic, TypeVar
 
-from system_containers import StaticFlatMap
+from system_containers import MutableFlatMapStorage
 
 T = TypeVar("T")
 
@@ -473,10 +473,10 @@ class MemoryManager:
         self.page_registry = ShmPageRegistry()
         self._page_mapping_callbacks: PageMappingCallbacks | None = None
         self.mpu: PMSAv8MPU | None = None
-        self.partition_owners: StaticFlatMap[int, PartitionView] = StaticFlatMap(
+        self.partition_owners: MutableFlatMapStorage[int, PartitionView] = MutableFlatMapStorage(
             capacity=FB_CONF_MAX_TASKS
         )
-        self.shm_slots: StaticFlatMap[int, ShmSlot] = StaticFlatMap(
+        self.shm_slots: MutableFlatMapStorage[int, ShmSlot] = MutableFlatMapStorage(
             capacity=_FB_CONF_MAX_SHM_PHYS_PAGES
         )
         # Page-granular permission isolation: each 4KB physical page tracks its exclusive owner_id

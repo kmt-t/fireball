@@ -18,9 +18,9 @@ import struct
 
 from system_containers import (
     FlatMapView,
+    MutableFlatMapStorage,
     RadixBinaryTreeView,
-    StaticFlatMap,
-    build_radix_table,
+    ReadOnlyRadixBinaryTreeStorage,
 )
 
 # Configuration Constants
@@ -388,20 +388,22 @@ class ModuleView:
     def build_indexes(self) -> None:
         """Constructs RadixBinaryTreeView indexes for exports, imports, and entity offsets."""
         exp_keys = [fnv1a_32(exp.name) for exp in self.exports_dict]
-        exp_table = build_radix_table(exp_keys, radix_shift=28)
-        self.export_tree = RadixBinaryTreeView(
-            exp_keys, self.exports_dict, exp_table, radix_shift=28
+        self.export_storage = ReadOnlyRadixBinaryTreeStorage.create(
+            exp_keys, self.exports_dict, radix_shift=28
         )
+        self.export_tree = self.export_storage.view()
 
         imp_keys = [fnv1a_32(f"{imp.module_name}::{imp.field_name}") for imp in self.imports]
-        imp_table = build_radix_table(imp_keys, radix_shift=28)
-        self.import_tree = RadixBinaryTreeView(imp_keys, self.imports, imp_table, radix_shift=28)
+        self.import_storage = ReadOnlyRadixBinaryTreeStorage.create(
+            imp_keys, self.imports, radix_shift=28
+        )
+        self.import_tree = self.import_storage.view()
 
         ent_keys = [e.start_offset for e in self.entity_registry]
-        ent_table = build_radix_table(ent_keys, radix_shift=4)
-        self.entity_offset_tree = RadixBinaryTreeView(
-            ent_keys, self.entity_registry, ent_table, radix_shift=4
+        self.entity_offset_storage = ReadOnlyRadixBinaryTreeStorage.create(
+            ent_keys, self.entity_registry, radix_shift=4
         )
+        self.entity_offset_tree = self.entity_offset_storage.view()
 
     def lookup_export(self, name: str) -> ExportEntry | None:
         """Hash + RadixBinaryTreeView symbol lookup with zero-copy string verification in O(k)."""
@@ -480,7 +482,9 @@ class WasmLoader:
         max_wasm_pages: int = FB_CONF_MAX_WASM_PAGES,
     ):
         self.allocator = allocator or BumpAllocator()
-        self.registry: StaticFlatMap[str, ModuleView] = StaticFlatMap(capacity=max_modules)
+        self.registry: MutableFlatMapStorage[str, ModuleView] = MutableFlatMapStorage(
+            capacity=max_modules
+        )
         self.max_modules = max_modules
         self.max_wasm_pages = max_wasm_pages
 

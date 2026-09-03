@@ -45,6 +45,7 @@ from runtime_engine import (
     PcOnlyCompiler,
     RuntimeEngine,
 )
+from system_containers import RadixBinaryTreeView, bswap32, build_radix_table
 from wasm_reader import parse
 from x64_jit import TraceCompiler
 
@@ -358,6 +359,83 @@ def test_hotspot_07_idle_hook_skips_recompiling_an_already_resident_trace():
     assert engine.bitmap.get_state(0x100) == CardState.COMPILED
 
 
+def test_jitr_compile_queue_overflow_compiles_on_the_spot():
+    """JITR: When compile_queue reaches capacity, all queued traces are compiled on the spot."""
+    compile_calls = []
+
+    def fake_compile(pc):
+        compile_calls.append(pc)
+        return JITTrace(pc, lambda: 0, size_bytes=64)
+
+    engine = RuntimeEngine(
+        jit_compiler=PcOnlyCompiler(fake_compile),
+        card_shift=3,
+        compile_queue_capacity=3,
+    )
+    for i in range(3):
+        pc = 0x100 + i * 0x20
+        engine.register_block(BasicBlock(head_pc=pc, ops=[("nop", None)] * 8, next_pc=pc + 0x10))
+        engine.bitmap.touch(pc)
+        engine.bitmap.touch(pc)
+        assert engine.bitmap.get_state(pc) == CardState.HOT
+
+    engine.ring.record(0x100)
+    engine.ring.record(0x120)
+    engine.ring.record(0x140)
+    engine.on_yield()
+
+    assert len(compile_calls) == 3
+    assert len(engine.compile_queue) == 0
+    assert engine.bitmap.get_state(0x100) == CardState.COMPILED
+    assert engine.bitmap.get_state(0x120) == CardState.COMPILED
+    assert engine.bitmap.get_state(0x140) == CardState.COMPILED
+
+
+def test_jitr_control_skip_radix_tree_chaining():
+    """JITR: Loader creates a RadixBinaryTreeView with bswap32 keys mapping delimiter PCs
+    to fallthrough basic block head PCs, and JIT chaining successfully resolves successors."""
+    delim_pcs = [0x110, 0x120]
+    fallthrough_pcs = [0x114, 0x124]
+
+    # Stored keys must have byte-order inverted via bswap32
+    inv_keys = [bswap32(k) for k in delim_pcs]
+    sorted_pairs = sorted(zip(inv_keys, fallthrough_pcs, strict=False), key=lambda p: p[0])
+    keys = [p[0] for p in sorted_pairs]
+    vals = [p[1] for p in sorted_pairs]
+
+    radix_shift = 28
+    table = build_radix_table(keys, radix_shift=radix_shift)
+    skip_tree = RadixBinaryTreeView(
+        keys=keys, values=vals, radix_table=table, radix_shift=radix_shift
+    )
+
+    cache = JITMultiBufferCache(bank_capacity=256)
+    cache.control_skip_tree = skip_tree
+
+    trace_c = JITTrace(head_pc=0x124, fn=lambda: 0, size_bytes=64, next_pc=None)
+    trace_b = JITTrace(head_pc=0x114, fn=lambda: 0, size_bytes=64, next_pc=0x120)
+    trace_a = JITTrace(head_pc=0x100, fn=lambda: 0, size_bytes=64, next_pc=0x110)
+
+    # Reverse order insertion (LIFO queue style): C, then B, then A
+    assert cache.insert(trace_c)
+    assert cache.insert(trace_b)
+    assert trace_b.chain_next == 0x124
+
+    assert cache.insert(trace_a)
+    assert trace_a.chain_next == 0x114
+
+    # Test forward chaining: A inserted first, then B
+    cache2 = JITMultiBufferCache(bank_capacity=256)
+    cache2.control_skip_tree = skip_tree
+    trace_a2 = JITTrace(head_pc=0x100, fn=lambda: 0, size_bytes=64, next_pc=0x110)
+    trace_b2 = JITTrace(head_pc=0x114, fn=lambda: 0, size_bytes=64, next_pc=0x120)
+
+    assert cache2.insert(trace_a2)
+    assert trace_a2.chain_next is None
+    assert cache2.insert(trace_b2)
+    assert trace_a2.chain_next == 0x114
+
+
 # ===========================================================================
 # 7. Tier 2 vMMIO: 3-Tier Gate & FC=14 SHM Ownership (runtime_vmmio_test_spec.md)
 # ===========================================================================
@@ -377,4 +455,6 @@ if __name__ == "__main__":
     test_hotspot_05_3bank_cache_rotation_and_eviction_resets_card()
     test_hotspot_06_short_blocks_never_tracked_avoiding_card_aliasing()
     test_hotspot_07_idle_hook_skips_recompiling_an_already_resident_trace()
-    print("[PASS] All 13 JIT Hotspot Profiling & 3-Bank Cache tests passed.")
+    test_jitr_compile_queue_overflow_compiles_on_the_spot()
+    test_jitr_control_skip_radix_tree_chaining()
+    print("[PASS] All 15 JIT Hotspot Profiling & 3-Bank Cache tests passed.")

@@ -62,10 +62,10 @@ class JITCompilerBenchmark:
         results["jit_compile_ns_per_insn"] = (t1 - t0) / (compile_count * 4) * 1e9
 
         # 3.2 2-Bit Card Marking BitView O(1) Check
-        bitmap = HotspotBitmap(card_shift=3, default_func_code_len=256)
+        bitmap = HotspotBitmap(card_shift=2, default_func_code_len=256)
         t0 = time.perf_counter()
         for i in range(iterations):
-            _state = bitmap.get_state(pc=(i * 8) & 0xF8)
+            _state = bitmap.get_state(pc=(i * 4) & 0xFC)
         t1 = time.perf_counter()
         results["card_marking_check_mops"] = iterations / (t1 - t0) / 1e6
         results["card_marking_check_ns"] = (t1 - t0) / iterations * 1e9

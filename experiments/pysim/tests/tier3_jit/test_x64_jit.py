@@ -59,6 +59,7 @@ import ctypes
 
 from exec_memory import ExecutableBuffer
 from runtime_engine import BasicBlock, IntegratedHybridEngine, WASMContext
+from system_containers import ReadOnlyRadixBinaryTreeStorage, bswap32
 from x64_jit import TraceCompiler
 
 
@@ -254,6 +255,84 @@ def test_hybrid_interpreter_to_jit_trace_elevation():
     assert ctx.stack[-1] == 15
     assert engine.jit_traces >= 2
     assert engine.interp_blocks >= 3
+
+
+def test_jit_chaining_with_control_skip_table():
+    """JITC-54: JIT trace chaining resolves fallthrough target via control_skip_tree (bswap32 RadixBinaryTreeView)."""
+    engine = IntegratedHybridEngine(yield_threshold=10, compiler=TraceCompiler())
+
+    # Block A ends at delimiter PC 0x108 (e.g. BLOCK instruction before fallthrough block B at 0x10A)
+    delim_pc = 0x108
+    fallthrough_head_pc = 0x10A
+
+    # Construct control_skip_storage: delimiter PC -> fallthrough head PC with bswap32
+    inv_delim = bswap32(delim_pc)
+    storage = ReadOnlyRadixBinaryTreeStorage.create(
+        keys=[inv_delim], values=[fallthrough_head_pc], radix_shift=28
+    )
+    engine.control_skip_storage = storage
+    engine.control_skip_tree = storage.view()
+    engine.cache.control_skip_tree = engine.control_skip_tree
+
+    block_a = BasicBlock(
+        head_pc=0x100,
+        ops=[("local.get", 0), ("i32.const", 10), ("i32.add", None), ("local.set", 0)],
+        next_pc=delim_pc,  # Next PC is the delimiter PC
+    )
+    block_b = BasicBlock(
+        head_pc=fallthrough_head_pc,
+        ops=[("local.get", 0), ("i32.const", 3), ("i32.mul", None), ("local.set", 0)],
+        next_pc=None,
+    )
+    engine.register_block(block_a)
+    engine.register_block(block_b)
+
+    # 1. Backward chaining: compile B (target) first, then A (source).
+    # When A is inserted, next_pc (delim_pc=0x108) is resolved via control_skip_tree to fallthrough_head_pc (0x10A).
+    # Since 0x10A is already resident in active cache, trace_a.chain_next is set directly to 0x10A!
+    trace_b = engine.compiler.compile_trace(fallthrough_head_pc, block_b)
+    engine.cache.insert(trace_b)
+    engine.bitmap.mark_compiled(fallthrough_head_pc)
+
+    trace_a = engine.compiler.compile_trace(0x100, block_a)
+    engine.cache.insert(trace_a)
+    engine.bitmap.mark_compiled(0x100)
+
+    # chain_next successfully bypassed delimiter 0x108 and connected to block B's head 0x10A!
+    assert trace_a.chain_next == fallthrough_head_pc
+
+    # Execute from A (0x100): chains directly into B (0x10A), (5 + 10) * 3 = 45
+    ctx = WASMContext(locals_values=[5])
+    pc = 0x100
+    pc = engine.run_step(pc, ctx)
+    assert pc == fallthrough_head_pc
+    assert ctx.locals[0] == 15
+    pc = engine.run_step(pc, ctx)
+    assert pc is None
+    assert ctx.locals[0] == 45
+    assert engine.jit_traces == 2
+
+    # 2. Forward chaining test:
+    # Reset engine and compile A first (unresolved next_pc 0x108 -> skipped to 0x10A, not resident yet)
+    engine2 = IntegratedHybridEngine(yield_threshold=10, compiler=TraceCompiler())
+    engine2.control_skip_storage = storage
+    engine2.control_skip_tree = storage.view()
+    engine2.cache.control_skip_tree = engine2.control_skip_tree
+    engine2.register_block(block_a)
+    engine2.register_block(block_b)
+
+    trace_a2 = engine2.compiler.compile_trace(0x100, block_a)
+    engine2.cache.insert(trace_a2)
+    engine2.bitmap.mark_compiled(0x100)
+    assert trace_a2.chain_next is None  # B is not resident yet
+
+    # Now insert B: forward chaining must inspect resident trace A, resolve its 0x108 -> 0x10A,
+    # and patch trace_a2.chain_next = 0x10A!
+    trace_b2 = engine2.compiler.compile_trace(fallthrough_head_pc, block_b)
+    engine2.cache.insert(trace_b2)
+    engine2.bitmap.mark_compiled(fallthrough_head_pc)
+
+    assert trace_a2.chain_next == fallthrough_head_pc
 
 
 ALL_TESTS = sorted(

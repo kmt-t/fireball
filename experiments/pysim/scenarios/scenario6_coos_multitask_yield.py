@@ -107,6 +107,19 @@ def test_scenario_coos_multitask():
     assert cons_res == [50500], f"Consumer task sum mismatch: expected 50500, got {cons_res}"
     assert cons_steps > 0, "Consumer should have taken multiple quantum steps"
     print(f"    -> Consumer ran in {cons_steps} step(s) and computed expected sum: {cons_res[0]}.")
+
+    # 3. Collaborative execution via COOS Scheduler (spawn_wasm_task)
+    interp_coos = Interpreter(module, memory=wasi_ctx.guest_memory, host_functions=host_funcs)
+    t_prod = sysv.scheduler.spawn_wasm_task("producer_task", interp_coos, fn_prod, [N], quantum=16)
+    t_cons = sysv.scheduler.spawn_wasm_task("consumer_task", interp_coos, fn_cons, [N], quantum=16)
+    sysv.scheduler.run_until_idle()
+    prod_task = sysv.scheduler.get_task(t_prod)
+    cons_task = sysv.scheduler.get_task(t_cons)
+    assert prod_task is not None and prod_task.result == [100]
+    assert cons_task is not None and cons_task.result == [50500]
+    print(
+        "    -> COOS Scheduler successfully executed WASM tasks collaboratively via round-robin quanta."
+    )
     print("    [PASS] Scenario 6 (COOS Cooperative Multitasking) succeeded seamlessly.")
 
 

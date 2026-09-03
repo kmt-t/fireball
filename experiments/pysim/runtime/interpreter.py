@@ -192,6 +192,9 @@ class ExecEnv:
     globals: list[int]
     tables: list[list[int | None]]
     host_functions: list[Callable[..., int | None] | None]
+    vmmio: object | None = None
+    task_id: int = 1
+    phys_mem: bytearray | None = None
 
 
 class CallFrame:
@@ -313,6 +316,9 @@ class Interpreter:
         module: Module,
         memory: bytearray | None = None,
         host_functions: list[Callable[..., int | None] | None] | None = None,
+        vmmio: object | None = None,
+        task_id: int = 1,
+        phys_mem: bytearray | None = None,
     ):
         self.module = module
         self.memory = memory
@@ -327,7 +333,19 @@ class Interpreter:
             module.table_contents(i) for i in range(len(module.tables))
         ]
         self.debugger: object | None = None
-        self._env = ExecEnv(module, memory, self.globals, self.tables, self.host_functions)
+        self.vmmio = vmmio
+        self.task_id = task_id
+        self.phys_mem = phys_mem
+        self._env = ExecEnv(
+            module,
+            memory,
+            self.globals,
+            self.tables,
+            self.host_functions,
+            vmmio=vmmio,
+            task_id=task_id,
+            phys_mem=phys_mem,
+        )
         if self.module.start_function is not None:
             self.call(self.module.start_function, [])
 
@@ -670,16 +688,52 @@ def _h_global_set(ip, frame, env, local_base):
     return (frame.instrs[ip].end_offset, frame, env, local_base)
 
 
-# --- Loads (Dedicated per-opcode handlers without if statements) ---
+# --- Loads (Dedicated per-opcode handlers with Bit 31 RAM Bypass) ---
+
+
+def _vmmio_load(env: ExecEnv, addr: int, width: int, signed: bool) -> int:
+    if env.vmmio is None:
+        raise Trap(f"memory access out of bounds at addr={addr:#x} (no vMMIO configured)")
+    status, detail = env.vmmio.access(addr, is_write=False, current_task_id=env.task_id)
+    if status.startswith("TRAP_"):
+        raise Trap(f"vMMIO load trap: {status} ({detail}) at addr={addr:#x}")
+    if status == "OK_PHYSICAL" and env.phys_mem is not None:
+        try:
+            phys_offset = int(detail.split()[-1], 16)
+            if phys_offset + width <= len(env.phys_mem):
+                return int.from_bytes(
+                    env.phys_mem[phys_offset : phys_offset + width], "little", signed=signed
+                )
+        except (ValueError, IndexError):
+            pass
+    return 0
+
+
+def _vmmio_store(env: ExecEnv, addr: int, val_bytes: bytes) -> None:
+    if env.vmmio is None:
+        raise Trap(f"memory access out of bounds at addr={addr:#x} (no vMMIO configured)")
+    status, detail = env.vmmio.access(addr, is_write=True, current_task_id=env.task_id)
+    if status.startswith("TRAP_"):
+        raise Trap(f"vMMIO store trap: {status} ({detail}) at addr={addr:#x}")
+    if status == "OK_PHYSICAL" and env.phys_mem is not None:
+        try:
+            phys_offset = int(detail.split()[-1], 16)
+            if phys_offset + len(val_bytes) <= len(env.phys_mem):
+                env.phys_mem[phys_offset : phys_offset + len(val_bytes)] = val_bytes
+        except (ValueError, IndexError):
+            pass
 
 
 @_handler(I32_LOAD)
 def _h_i32_load(ip, frame, env, local_base):
     ins = frame.instrs[ip]
     addr = _to_u32(frame.values.pop()) + ins.memarg[1]
-    if env.memory is None or addr + 4 > len(env.memory):
-        raise Trap(f"i32.load out of bounds at addr={addr}")
-    frame.values.append(int.from_bytes(env.memory[addr : addr + 4], "little", signed=True))
+    if addr & 0x8000_0000:
+        frame.values.append(_vmmio_load(env, addr, 4, signed=True))
+    else:
+        if env.memory is None or addr + 4 > len(env.memory):
+            raise Trap(f"i32.load out of bounds at addr={addr}")
+        frame.values.append(int.from_bytes(env.memory[addr : addr + 4], "little", signed=True))
     return (ins.end_offset, frame, env, local_base)
 
 
@@ -687,9 +741,12 @@ def _h_i32_load(ip, frame, env, local_base):
 def _h_i32_load8_s(ip, frame, env, local_base):
     ins = frame.instrs[ip]
     addr = _to_u32(frame.values.pop()) + ins.memarg[1]
-    if env.memory is None or addr + 1 > len(env.memory):
-        raise Trap(f"i32.load8_s out of bounds at addr={addr}")
-    frame.values.append(int.from_bytes(env.memory[addr : addr + 1], "little", signed=True))
+    if addr & 0x8000_0000:
+        frame.values.append(_vmmio_load(env, addr, 1, signed=True))
+    else:
+        if env.memory is None or addr + 1 > len(env.memory):
+            raise Trap(f"i32.load8_s out of bounds at addr={addr}")
+        frame.values.append(int.from_bytes(env.memory[addr : addr + 1], "little", signed=True))
     return (ins.end_offset, frame, env, local_base)
 
 
@@ -697,9 +754,12 @@ def _h_i32_load8_s(ip, frame, env, local_base):
 def _h_i32_load8_u(ip, frame, env, local_base):
     ins = frame.instrs[ip]
     addr = _to_u32(frame.values.pop()) + ins.memarg[1]
-    if env.memory is None or addr + 1 > len(env.memory):
-        raise Trap(f"i32.load8_u out of bounds at addr={addr}")
-    frame.values.append(env.memory[addr])
+    if addr & 0x8000_0000:
+        frame.values.append(_vmmio_load(env, addr, 1, signed=False))
+    else:
+        if env.memory is None or addr + 1 > len(env.memory):
+            raise Trap(f"i32.load8_u out of bounds at addr={addr}")
+        frame.values.append(env.memory[addr])
     return (ins.end_offset, frame, env, local_base)
 
 
@@ -707,9 +767,12 @@ def _h_i32_load8_u(ip, frame, env, local_base):
 def _h_i32_load16_s(ip, frame, env, local_base):
     ins = frame.instrs[ip]
     addr = _to_u32(frame.values.pop()) + ins.memarg[1]
-    if env.memory is None or addr + 2 > len(env.memory):
-        raise Trap(f"i32.load16_s out of bounds at addr={addr}")
-    frame.values.append(int.from_bytes(env.memory[addr : addr + 2], "little", signed=True))
+    if addr & 0x8000_0000:
+        frame.values.append(_vmmio_load(env, addr, 2, signed=True))
+    else:
+        if env.memory is None or addr + 2 > len(env.memory):
+            raise Trap(f"i32.load16_s out of bounds at addr={addr}")
+        frame.values.append(int.from_bytes(env.memory[addr : addr + 2], "little", signed=True))
     return (ins.end_offset, frame, env, local_base)
 
 
@@ -717,13 +780,16 @@ def _h_i32_load16_s(ip, frame, env, local_base):
 def _h_i32_load16_u(ip, frame, env, local_base):
     ins = frame.instrs[ip]
     addr = _to_u32(frame.values.pop()) + ins.memarg[1]
-    if env.memory is None or addr + 2 > len(env.memory):
-        raise Trap(f"i32.load16_u out of bounds at addr={addr}")
-    frame.values.append(int.from_bytes(env.memory[addr : addr + 2], "little", signed=False))
+    if addr & 0x8000_0000:
+        frame.values.append(_vmmio_load(env, addr, 2, signed=False))
+    else:
+        if env.memory is None or addr + 2 > len(env.memory):
+            raise Trap(f"i32.load16_u out of bounds at addr={addr}")
+        frame.values.append(int.from_bytes(env.memory[addr : addr + 2], "little", signed=False))
     return (ins.end_offset, frame, env, local_base)
 
 
-# --- Stores (Dedicated per-opcode handlers without if statements) ---
+# --- Stores (Dedicated per-opcode handlers with Bit 31 RAM Bypass) ---
 
 
 @_handler(I32_STORE)
@@ -731,9 +797,13 @@ def _h_i32_store(ip, frame, env, local_base):
     ins = frame.instrs[ip]
     value = _to_i32(frame.values.pop())
     addr = _to_u32(frame.values.pop()) + ins.memarg[1]
-    if env.memory is None or addr + 4 > len(env.memory):
-        raise Trap(f"i32.store out of bounds at addr={addr}")
-    env.memory[addr : addr + 4] = (value & 0xFFFFFFFF).to_bytes(4, "little")
+    raw_val = (value & 0xFFFFFFFF).to_bytes(4, "little")
+    if addr & 0x8000_0000:
+        _vmmio_store(env, addr, raw_val)
+    else:
+        if env.memory is None or addr + 4 > len(env.memory):
+            raise Trap(f"i32.store out of bounds at addr={addr}")
+        env.memory[addr : addr + 4] = raw_val
     return (ins.end_offset, frame, env, local_base)
 
 
@@ -742,9 +812,13 @@ def _h_i32_store8(ip, frame, env, local_base):
     ins = frame.instrs[ip]
     value = frame.values.pop() & 0xFF
     addr = _to_u32(frame.values.pop()) + ins.memarg[1]
-    if env.memory is None or addr + 1 > len(env.memory):
-        raise Trap(f"i32.store8 out of bounds at addr={addr}")
-    env.memory[addr] = value
+    raw_val = bytes([value])
+    if addr & 0x8000_0000:
+        _vmmio_store(env, addr, raw_val)
+    else:
+        if env.memory is None or addr + 1 > len(env.memory):
+            raise Trap(f"i32.store8 out of bounds at addr={addr}")
+        env.memory[addr] = value
     return (ins.end_offset, frame, env, local_base)
 
 
@@ -753,9 +827,13 @@ def _h_i32_store16(ip, frame, env, local_base):
     ins = frame.instrs[ip]
     value = frame.values.pop() & 0xFFFF
     addr = _to_u32(frame.values.pop()) + ins.memarg[1]
-    if env.memory is None or addr + 2 > len(env.memory):
-        raise Trap(f"i32.store16 out of bounds at addr={addr}")
-    env.memory[addr : addr + 2] = value.to_bytes(2, "little")
+    raw_val = value.to_bytes(2, "little")
+    if addr & 0x8000_0000:
+        _vmmio_store(env, addr, raw_val)
+    else:
+        if env.memory is None or addr + 2 > len(env.memory):
+            raise Trap(f"i32.store16 out of bounds at addr={addr}")
+        env.memory[addr : addr + 2] = raw_val
     return (ins.end_offset, frame, env, local_base)
 
 
@@ -1068,9 +1146,12 @@ def _h_i64_load(ip, frame, env, local_base):
     ins = frame.instrs[ip]
     _, offset = ins.memarg
     addr = _to_u32(frame.values.pop()) + offset
-    if env.memory is None or addr + 8 > len(env.memory):
-        raise Trap("out of bounds memory access")
-    val = struct.unpack("<q", env.memory[addr : addr + 8])[0]
+    if addr & 0x8000_0000:
+        val = _vmmio_load(env, addr, 8, signed=True)
+    else:
+        if env.memory is None or addr + 8 > len(env.memory):
+            raise Trap("out of bounds memory access")
+        val = struct.unpack("<q", env.memory[addr : addr + 8])[0]
     frame.values.append(val)
     return (ins.end_offset, frame, env, local_base)
 
@@ -1081,9 +1162,13 @@ def _h_i64_store(ip, frame, env, local_base):
     _, offset = ins.memarg
     val = frame.values.pop()
     addr = _to_u32(frame.values.pop()) + offset
-    if env.memory is None or addr + 8 > len(env.memory):
-        raise Trap("out of bounds memory access")
-    env.memory[addr : addr + 8] = struct.pack("<q", int(val))
+    raw_val = struct.pack("<q", int(val))
+    if addr & 0x8000_0000:
+        _vmmio_store(env, addr, raw_val)
+    else:
+        if env.memory is None or addr + 8 > len(env.memory):
+            raise Trap("out of bounds memory access")
+        env.memory[addr : addr + 8] = raw_val
     return (ins.end_offset, frame, env, local_base)
 
 

@@ -29,12 +29,19 @@ Tests:
 - Static Device syscall dispatch and handler callback
 """
 
+try:
+    import wasmtime
+except ImportError:
+    wasmtime = None
+
+from interpreter import Interpreter, Trap
 from vmmio import (
     FC_STATIC_DEVICE,
     TrapCode,
     VmmioAddress,
     VMMIOController,
 )
+from wasm_reader import parse
 
 
 def test_scenario_vmmio_virtual_devices():
@@ -113,6 +120,68 @@ def test_scenario_vmmio_virtual_devices():
     status_unreg, _ = controller.access(raw_addr=0xC000_9000, is_write=False, current_task_id=1)
     assert status_unreg == TrapCode.UNREGISTERED_PAGE
     print("    [Phase 3.7] Unregistered vMMIO Address Access -> TRAP_UNREGISTERED_PAGE [PASS]")
+
+    # -------------------------------------------------------------------------
+    # Phase 4: WASM Guest i32.load / i32.store Execution via vMMIO (Bit 31 Dispatch)
+    # -------------------------------------------------------------------------
+    if wasmtime is not None:
+        wat = """
+        (module
+          (memory (export "memory") 1)
+          (func (export "dev_write") (param $addr i32) (param $val i32)
+            (i32.store (local.get $addr) (local.get $val))
+          )
+          (func (export "dev_read") (param $addr i32) (result i32)
+            (i32.load (local.get $addr))
+          )
+        )
+        """
+        wasm_bytes = bytes(wasmtime.wat2wasm(wat))
+        module = parse(wasm_bytes)
+        phys_memory = bytearray(0x40000)
+        # Put test pattern in physical memory at 0x30040 (offset 0x40 in page 0x30)
+        phys_memory[0x30040:0x30044] = (0xCAFEBABE).to_bytes(4, "little")
+
+        guest_ram = bytearray(64 * 1024)
+        interp = Interpreter(
+            module,
+            memory=guest_ram,
+            vmmio=controller,
+            task_id=1,
+            phys_mem=phys_memory,
+        )
+
+        fn_w = module.export_func_index("dev_write")
+        fn_r = module.export_func_index("dev_read")
+
+        # 4.1 Normal RAM write (Bit 31 == 0) -> Fast Bypass
+        interp.call(fn_w, [0x1000, 0x11223344])
+        assert int.from_bytes(guest_ram[0x1000:0x1004], "little") == 0x11223344
+        print("    [Phase 4.1] WASM Guest RAM Write (Bit 31 == 0) -> Linear RAM Fast Bypass [PASS]")
+
+        # 4.2 vMMIO Device Write (Bit 31 == 1, FC=0xC) -> Trigger Device Handler
+        prev_events_len = len(handled_events)
+        interp.call(fn_w, [0xC000_1020, 0x55])
+        assert len(handled_events) == prev_events_len + 1
+        assert handled_events[-1] == (0, 0x020, True)
+        print(
+            "    [Phase 4.2] WASM Guest vMMIO Write (Bit 31 == 1) -> Dispatched to Device Handler [PASS]"
+        )
+
+        # 4.3 vMMIO Physical Memory Read (Bit 31 == 1, FC=0xF) -> OK_PHYSICAL read
+        read_res = interp.call(fn_r, [0xF000_3040])
+        assert read_res == [0xCAFEBABE - 0x1_0000_0000 if 0xCAFEBABE >= 0x8000_0000 else 0xCAFEBABE]
+        print("    [Phase 4.3] WASM Guest vMMIO Read (Bit 31 == 1) -> Physical Memory Read [PASS]")
+
+        # 4.4 vMMIO Unregistered Address Trap -> WASM Trap
+        trap_raised = False
+        try:
+            interp.call(fn_w, [0xC000_9000, 0x99])
+        except Trap:
+            trap_raised = True
+        assert trap_raised, "Expected Trap on accessing unregistered vMMIO address"
+        print("    [Phase 4.4] WASM Guest Unregistered vMMIO Address -> Trap Raised [PASS]")
+
     print(
         "    [PASS] Scenario 10 (vMMIO Virtual Devices & Address Translation) verified completely."
     )

@@ -727,6 +727,9 @@
       "sec:components/tier2_runtime/runtime_interpreter.md#コールフレーム（call_frame @ 統合スタックインライン）",
       "sec:components/tier2_runtime/runtime_interpreter.md#分岐脱出時のフレームプルーニングと TOS 復元手順（手順アクティビティ図）"
     ],
+    "Capacity": [
+      "sec:components/tier1_core/system_containers.md#非所有ビューと実体ストレージの体系化マトリクス (Storage & View Matrix)"
+    ],
     "Challenge_ApproximateYield": [
       "sec:components/tier2_runtime/runtime_interpreter.md#4.1 アルゴリズム",
       "sec:components/tier2_runtime/runtime_interpreter.md#4.2 状態遷移図",
@@ -1045,6 +1048,9 @@
       "sec:components/tier1_core/os_scheduler.md#6. 設計判断 (ADR)",
       "sec:components/tier1_core/system_containers.md#1. コンセプト",
       "sec:components/tier1_core/system_containers.md#6.2 メモリ制約と方策",
+      "sec:components/tier1_core/system_containers.md#非所有ビューと実体ストレージの体系化マトリクス (Storage & View Matrix)",
+      "sec:components/tier1_core/tests/system_containers_test_spec.md#2. テストケース一覧",
+      "sec:components/tier1_core/tests/system_containers_test_spec.md#実装の勘所・不変条件（Gotchas & Implementation Invariants）",
       "sec:components/tier2_runtime/runtime_vmmio.md#1. コンセプト",
       "sec:components/tier3_platform/platform_memory.md#1. コンセプト",
       "sec:components/tier3_platform/platform_memory.md#4. インターフェース設計",
@@ -1066,6 +1072,7 @@
       "sec:components/tier1_core/system_containers.md#1. コンセプト",
       "sec:components/tier1_core/system_containers.md#3.1 データ構造",
       "sec:components/tier1_core/system_containers.md#6.2 メモリ制約と方策",
+      "sec:components/tier1_core/system_containers.md#非所有ビューと実体ストレージの体系化マトリクス (Storage & View Matrix)",
       "sec:components/tier1_interface/ipc_router.md#7.2 メモリ制約と方策"
     ],
     "GLOBAL_StrictMemoryLimit": [
@@ -1614,6 +1621,9 @@
       "sec:components/tier1_core/system_config.md#3.3.5 ロギング・デバッガ",
       "sec:components/tier1_core/system_containers.md#1. コンセプト",
       "sec:components/tier1_core/system_containers.md#6.2 メモリ制約と方策",
+      "sec:components/tier1_core/system_containers.md#非所有ビューと実体ストレージの体系化マトリクス (Storage & View Matrix)",
+      "sec:components/tier1_core/tests/system_containers_test_spec.md#2. テストケース一覧",
+      "sec:components/tier1_core/tests/system_containers_test_spec.md#実装の勘所・不変条件（Gotchas & Implementation Invariants）",
       "sec:components/tier2_runtime/debug_manager.md#6.2 メモリ制約と方策",
       "sec:components/tier2_runtime/debug_manager.md#デバッガ（Debugger）クラス",
       "sec:components/tier2_runtime/runtime_loader.md#6.2 メモリ制約と方策",
@@ -2148,6 +2158,9 @@
     "ZeroRuntimeOverhead": [
       "sec:components/tier1_core/system_config.md#1. コンセプト"
     ],
+    "count": [
+      "sec:components/tier1_core/system_containers.md#非所有ビューと実体ストレージの体系化マトリクス (Storage & View Matrix)"
+    ],
     "drain_interrupts": [
       "sec:components/tier1_core/os_coos.md#ISR 遅延起床アルゴリズム（手順アクティビティ図）"
     ],
@@ -2177,7 +2190,7 @@
     "sec:architecture/architecture_overview.md#2.2 コンポーネント定義図 (BDD)": "001e329e9159ac3c57d2f6ae85ee4cb19ace7809dd3bd60eb338d1f1bb33c153",
     "sec:architecture/architecture_overview.md#3. 6大物理コアメカニズム (The 6 Physical Pillars)": "0e88fa6819433b18c6cb6a0c39373e2f036977cb3c9a2b88a9f261878bebe264",
     "sec:architecture/architecture_overview.md#3.1 Pillar 1: 統合スタックフレーム・モデル (Unified Stack Frame Model)": "7f75b6e65acc7b09c7a49e663800ba16bf1475e3d8982454cb369efc8e2bbf70",
-    "sec:architecture/architecture_overview.md#3.2 Pillar 2: 3段直接 JIT 検索パイプライン (3-Stage Direct JIT Lookup Pipeline)": "4689a963727a133bf355320fdc0377bee496543879ec4d3a156c8e29a353e6a3",
+    "sec:architecture/architecture_overview.md#3.2 Pillar 2: 3段直接 JIT 検索パイプライン (3-Stage Direct JIT Lookup Pipeline)": "b956025271f927f6de2470e9d9c698780cd3ceb615e2b2e21b989d4e7c5144aa",
     "sec:architecture/architecture_overview.md#3.3 Pillar 3: 3面世代交代回転コードキャッシュ (3-Bank Generational Rotating Code Cache)": "263209035794afdd45d7efbe655f9f13854c45cf89aa6ead14ee6013d7a90d67",
     "sec:architecture/architecture_overview.md#3.4 Pillar 4: 対称直接ハンドオフ・エンジン (Symmetric Direct Handoff Engine)": "2b0e05d9bf07b3009f1b2bd93601a07622c90c5467dd13bba260fc3d534a5345",
     "sec:architecture/architecture_overview.md#3.5 Pillar 5: 折りたたみXOR TLB ＆ 平坦ページ表 (Folding XOR TLB & FlatMap Page Table)": "78d1ca82ff8733cf00667ed6ae542adf087f16144dbe73f0560d04a702334910",
@@ -2315,7 +2328,7 @@
     "sec:components/tier1_core/system_config.md#5.2 安全性制約と方策": "04fa2c2ba7b467618b7dd9635073708c52f89116e1c59c5072609b4a07f8597f",
     "sec:components/tier1_core/system_config.md#システムコンフィグ コンポーネント設計書 {VERIFY_LLM}": "85690823f12aaac9a46059d49d9411afbea5ddf731bc02a83ece5492fce000b5",
     "sec:components/tier1_core/system_config.md#メモリ総量と個別プールの依存関係": "dc4493b2c914ceb8fc45f2398e78902421facb094ffb8d38a9337056f65f66ae",
-    "sec:components/tier1_core/system_containers.md#1. コンセプト": "166e3c575b9768d7c735562c662ce9b196c4a99109ed172a5f1158a8a6c6ff5d",
+    "sec:components/tier1_core/system_containers.md#1. コンセプト": "985ae91ea0e0039f2f87aebba882e6c194c12780cf115ab2d53684703a2a9f2e",
     "sec:components/tier1_core/system_containers.md#2. アーキテクチャ分類": "bd0dbe0f4c9301a55fea39cc545d754e0a3c5b880129d8a88047c54e72ea72bd",
     "sec:components/tier1_core/system_containers.md#3. 静的モデル": "459903c009123dfac68cdcb823db2cc6942f63d0c494c2127f2dbd07be7268f6",
     "sec:components/tier1_core/system_containers.md#3.1 データ構造": "59f0b4b7c872eb80fa6acdf86a3e6daf895cfae9e2ba3a10659ea23c8370ad35",
@@ -2335,7 +2348,7 @@
     "sec:components/tier1_core/system_containers.md#6.3 安全性制約と方策": "708266f28c4df5a9ad559986f463b43162d46aa6c04251fdff70c52f4260ba07",
     "sec:components/tier1_core/system_containers.md#7. 参考実装リスト": "419794f2bdd23cd123f2ba03502647933b93a95d7f76d3ce7a97aee321c87b7a",
     "sec:components/tier1_core/system_containers.md#キー範囲による絞り込み（narrow）": "bdd938568e5bf07e57451a7a7a32c5bbcd8af9fd6cf3404ba7f9409bbe56aa7d",
-    "sec:components/tier1_core/system_containers.md#ビット詰めビュー（bit_view）": "6324b5c7783e4027ca8ba77e59cceb30f77f53b9854f827773968120974eaa66",
+    "sec:components/tier1_core/system_containers.md#ビット詰めビュー（bit_view）": "8b0f217588b862d99e315e77b9395b9c71d54a2b6c607301ee2e364f0a308365",
     "sec:components/tier1_core/system_containers.md#区間内探索（find）": "c49f4c46404c5edb21090c9879229a62a1073c3e53dfca6d612379c75764bae3",
     "sec:components/tier1_core/system_containers.md#所属判定（contains）": "8fbe8a77bdb76ad6fb252ceceee1f9351eea0a8eeaa85425e224aa73d70f6bad",
     "sec:components/tier1_core/system_containers.md#添字による状態参照（at / put）": "b123b7aa0b7bdc6ac1e26173fb23d85a396faf5b9098d951381120aceffea601",
@@ -2343,6 +2356,7 @@
     "sec:components/tier1_core/system_containers.md#疎マップビュー（flat_map_view）": "18775622b02539cdf5168edb29ef9dc7302359690f432d375e5bb1761536b803",
     "sec:components/tier1_core/system_containers.md#疎集合ビュー（flat_set_view）": "2764ceb04d82dca9c6904f0d33c5e5612c24e5cab194e09300815cbe3f922ebc",
     "sec:components/tier1_core/system_containers.md#静的コンテナ語彙 コンポーネント設計書 {VERIFY_BENCHMARK} {VERIFY_LLM}": "1cc9342515a293fb580a1c92ada0a24982425c1b6d8fc18cb206441aac061984",
+    "sec:components/tier1_core/system_containers.md#非所有ビューと実体ストレージの体系化マトリクス (Storage & View Matrix)": "fc0625079173c3a318778475708343e8e4aad0c42a1427c7348f56729cdde392",
     "sec:components/tier1_core/system_logging.md#1. コンセプト": "9ef96afe0ab4fd74195324c2b55f25ea89f95d5a9f70ba93dfe6f7b148af260a",
     "sec:components/tier1_core/system_logging.md#2. アーキテクチャ分類": "2c9ea1ab53022845ccc27555c3bcef3141fab9f8dedd9846a09404a96f8c67d5",
     "sec:components/tier1_core/system_logging.md#3. 静的モデル": "459903c009123dfac68cdcb823db2cc6942f63d0c494c2127f2dbd07be7268f6",
@@ -2420,10 +2434,10 @@
     "sec:components/tier1_core/tests/system_config_test_spec.md#4. 未検証・スコープ外": "fa2c377f6305182e98d3e04d92f656759bf9e2d965730451e2dd937e0923ab1d",
     "sec:components/tier1_core/tests/system_config_test_spec.md#システムコンフィグ テスト仕様書 (Test Specification)": "95af56b30fb9dc4eb2281892ea8c86d1d8d213ef30626cf17454406342bddec4",
     "sec:components/tier1_core/tests/system_containers_test_spec.md#1. 目的と対象範囲": "cff24f1c0aecae06d3799fcf863829f9b9dfceb8f8e27f15c646911ff1e491d5",
-    "sec:components/tier1_core/tests/system_containers_test_spec.md#2. テストケース一覧": "827a228295cf982d3e8681af5f4d3e131696d1a280083ed8b084605d2b112d04",
+    "sec:components/tier1_core/tests/system_containers_test_spec.md#2. テストケース一覧": "ef9946d3bcb9101c3bb961a88657123a4ebeffdcecb42912df42e3115378d1a5",
     "sec:components/tier1_core/tests/system_containers_test_spec.md#3. テスト検証実績と網羅状況": "4aa107b40564b94e2ba33b0048fa6114b9d200db45ace4adfac27292aa7882f5",
     "sec:components/tier1_core/tests/system_containers_test_spec.md#4. 未検証・スコープ外": "9fb6f92f6aa59c752bffeb8c7cf014b09b4805f529cf0ead2917ca9320d9829a",
-    "sec:components/tier1_core/tests/system_containers_test_spec.md#実装の勘所・不変条件（Gotchas & Implementation Invariants）": "1d79a6ec809d5eeaa55004f2555cff9efccb8d1eeeb1352d44dc08e3214d131c",
+    "sec:components/tier1_core/tests/system_containers_test_spec.md#実装の勘所・不変条件（Gotchas & Implementation Invariants）": "2f6d8504b57fd0e54c220dee7ed358663eb046701a03255900f5016ca873f82e",
     "sec:components/tier1_core/tests/system_containers_test_spec.md#静的コンテナ語彙 テスト仕様書 (Test Specification)": "9c813e8e9b15d7795032b68db0280b37795ec8b1807590046330a63d1fcdfb76",
     "sec:components/tier1_core/tests/system_logging_test_spec.md#1. 目的と対象範囲": "2bf629beb02029cee2d8dca9eb50750b961d28bc10c81f5a37cde0a6da77d2f4",
     "sec:components/tier1_core/tests/system_logging_test_spec.md#2. テストケース一覧": "51ef5614a474ace01b732186f8f98467ae851dd7059b176dc7a22978f5d2a59f",
@@ -2840,7 +2854,7 @@
     "sec:components/tier3_jit/jit_compiler.md#カード状態取得（get_card_state）": "e53f1c40391596802f1fc6fb11290031fa55fba97f6c3ced18bf327af3dacfb6",
     "sec:components/tier3_jit/jit_compiler.md#コピーアンドパッチエンジン（CopyAndPatchEngine）クラス": "1c55dbea0c0b57a260cf561a53cefae2cb0748c68ebd5a57b55043729226018e",
     "sec:components/tier3_jit/jit_compiler.md#コンパイル単位とインタープリタ協調方針": "3597c116c9771b70da14fe243077c4e217695947c6ff7b73b6bb7ef6c05afd10",
-    "sec:components/tier3_jit/jit_compiler.md#トレース・チェイニング（連鎖実行）と専用分岐ハンドラ分離": "6fbb9310393ef55e834d662446a2aee4e999aed76e3d85e8d18f237ccd9b7172",
+    "sec:components/tier3_jit/jit_compiler.md#トレース・チェイニング（連鎖実行）と専用分岐ハンドラ分離": "a87dafaa80f83f2af11d86a6a7406f970bebe1f9f476d1f97c777a6129955b63",
     "sec:components/tier3_jit/jit_compiler.md#トレース境界不変条件とスタックフレーム整合性 (Trace Boundary Invariants)": "4ccb9e4edc442ab7d30209af78446365f1b10f07da6f7236f62dc7512eb0db6e",
     "sec:components/tier3_jit/jit_compiler.md#トレース検索（lookup_trace）": "0050f7dd0d53d25e5d19af7005beb054b93d0edc34207e458b23c6cd89a293a1",
     "sec:components/tier3_jit/jit_compiler.md#バッチコンパイル (周期実行またはアイドル時)": "542e5c840494d2e030c9184a319f08f012491d7bca08a66ccb5715fa85d90ba7",
@@ -2881,7 +2895,7 @@
     "sec:components/tier3_jit/tests/jit_compiler_test_spec.md#Copy-and-Patchエンジン (§3.1, §4.1)": "9cf7bae71c002109101f889c4ffc513ad7bdaa1d1bc9f77d50b94162b135d457",
     "sec:components/tier3_jit/tests/jit_compiler_test_spec.md#JITコンパイラ (コード生成コア) テスト仕様書 (Test Specification)": "84f43c6bc7d793f18e039ba4fda5a812d9b16ac8712079ce88046dcb32659443",
     "sec:components/tier3_jit/tests/jit_compiler_test_spec.md#JITトレースヘッダ (§3.3)": "b90edb3112aff8a9db9291fc0595337902407a4d94a5123089f63ecfcb95641c",
-    "sec:components/tier3_jit/tests/jit_compiler_test_spec.md#トレース境界不変条件とハンドラ委譲 (§3.3, §4.1)": "ec6fc7fa4159d7eadcead50e56ca04694c06849dad8b6262adad892d2409e4f0",
+    "sec:components/tier3_jit/tests/jit_compiler_test_spec.md#トレース境界不変条件とハンドラ委譲 (§3.3, §4.1)": "6e04d956479a3a43a9a237951e8cdbba05e379b693ecc9830a7ab397448660f5",
     "sec:components/tier3_jit/tests/jit_compiler_test_spec.md#レジスタ規約とTOS/NOS非対称性 (§3.3, §8 ADR_TosCacheAsymmetry)": "0fbb764977458175dc649974a2540a956307244b7b1a5f38b934a4e4e1af9789",
     "sec:components/tier3_jit/tests/jit_compiler_test_spec.md#安全性制約 (§6.2)": "e9510ff657bc10182b8c0705a7a5a698baaa934f8e35c4411ae51ac20633dd6a",
     "sec:components/tier3_jit/tests/jit_compiler_test_spec.md#実装の勘所・不変条件（Gotchas & Implementation Invariants）": "02ed43834833e67d46046848a7e201e86ddd75d74c1b9dd9b73170c69c695854",

@@ -24,7 +24,14 @@ import ctypes
 from collections.abc import Callable
 
 from interpreter import Interpreter, InterpreterCall
-from system_containers import BitView, RingBuffer
+from system_containers import (
+    BitView,
+    MutableBitStorage,
+    RadixBinaryTreeView,
+    ReadOnlyRadixBinaryTreeStorage,
+    RingBuffer,
+    bswap32,
+)
 from wasm_module import Module
 
 
@@ -36,31 +43,39 @@ class CardState:
 
 
 class HotspotBitmap:
-    """Per-Function 2-bit state per CARD (8 bytes per card) backed by BitView<2>.
-    `func_tables` is a static list of BitViews indexed by `func_idx` (0 <= func_idx < num_functions).
-    Each function's BitView is sized strictly to its code length at module load time:
-    card_count = (func_code_len + (1 << card_shift) - 1) >> card_shift
-    storage = bytearray((card_count + 3) // 4)
+    """Per-Function 2-bit state per CARD backed by MutableBitStorage and non-owning BitView<2>.
+    `func_storages` owns the backing bit buffers.
+    `func_tables` borrows non-owning BitViews indexed by `func_idx`.
     """
 
-    def __init__(self, card_shift: int = 3, default_func_code_len: int = 64):
+    def __init__(self, card_shift: int = 2, default_func_code_len: int = 64):
         self.card_shift = card_shift
         self.default_func_code_len = default_func_code_len
-        # Static list of BitView indexed directly by func_idx
+        self.func_storages: list[MutableBitStorage | None] = []
         self.func_tables: list[BitView | None] = []
 
     def allocate_functions(self, num_functions: int) -> None:
         """Allocates static slot array for known number of functions at load time."""
         if len(self.func_tables) < num_functions:
-            self.func_tables.extend([None] * (num_functions - len(self.func_tables)))
+            delta = num_functions - len(self.func_tables)
+            self.func_storages.extend([None] * delta)
+            self.func_tables.extend([None] * delta)
 
     def register_function(self, func_idx: int, code_len: int) -> BitView:
-        """Allocates a dedicated BitView<2> matching the exact function code length."""
+        """Allocates a dedicated MutableBitStorage<2> matching the exact function code length."""
         if func_idx >= len(self.func_tables):
-            self.func_tables.extend([None] * (func_idx + 1 - len(self.func_tables)))
+            delta = func_idx + 1 - len(self.func_tables)
+            self.func_storages.extend([None] * delta)
+            self.func_tables.extend([None] * delta)
         card_count = max(1, (code_len + (1 << self.card_shift) - 1) >> self.card_shift)
-        storage = bytearray((card_count + 3) // 4)
-        view = BitView(storage, bits=2, origin=0, count=card_count)
+        storage = MutableBitStorage(count=card_count, bits=2)
+        if self.func_storages[func_idx] is not None:
+            old_buf = self.func_storages[func_idx].buffer
+            storage.buffer[: min(len(storage.buffer), len(old_buf))] = old_buf[
+                : min(len(storage.buffer), len(old_buf))
+            ]
+        view = storage.view()
+        self.func_storages[func_idx] = storage
         self.func_tables[func_idx] = view
         return view
 
@@ -337,6 +352,7 @@ class JITMultiBufferCache:
         self.promotions = 0
         self.evictions = 0
         self.on_evict: Callable[[list[int]], None] | None = None
+        self.control_skip_tree: RadixBinaryTreeView[int] | None = None
 
     @property
     def active(self) -> JITCacheBank:
@@ -419,9 +435,25 @@ class JITMultiBufferCache:
                 return False
         # Chain into active/warm successor if resident (never oldest, never loops_to)
         succ = trace.next_pc
+        if succ is not None and self.control_skip_tree is not None:
+            skipped = self.control_skip_tree.find(bswap32(succ))
+            if skipped is not None:
+                succ = skipped
         if succ is not None and (self.active.has_trace(succ) or self.warm.has_trace(succ)):
             trace.chain_next = succ
             self.register_chain(trace.head_pc, succ)
+        # Forward chaining: check if any resident trace in active/warm can now chain into this trace
+        for b in (self.active, self.warm):
+            for _, resident_t in b.traces:
+                if resident_t.chain_next is None and resident_t.next_pc is not None:
+                    res_succ = resident_t.next_pc
+                    if self.control_skip_tree is not None:
+                        res_skipped = self.control_skip_tree.find(bswap32(res_succ))
+                        if res_skipped is not None:
+                            res_succ = res_skipped
+                    if res_succ == trace.head_pc:
+                        resident_t.chain_next = trace.head_pc
+                        self.register_chain(resident_t.head_pc, trace.head_pc)
         return True
 
     def rotate(self) -> list[int]:
@@ -488,16 +520,20 @@ class RuntimeEngine:
         self,
         jit_compiler: object | None = None,
         yield_threshold: int = 16,
-        card_shift: int = 3,
+        card_shift: int = 2,
         min_trace_bytes: int | None = None,
+        compile_queue_capacity: int = 4,
     ):
         self.bitmap = HotspotBitmap(card_shift=card_shift)
         self.ring = HistoryRing()
         self.cache = JITMultiBufferCache()
         self.cache.on_evict = self._handle_eviction
         self.jit_compiler = jit_compiler
+        self.compile_queue_capacity = compile_queue_capacity
         self.compile_queue: list[int] = []  # LIFO queue
         self.blocks: list[tuple[int, BasicBlock]] = []  # Flat slot list instead of dynamic dict
+        self.control_skip_storage: ReadOnlyRadixBinaryTreeStorage[int] | None = None
+        self.control_skip_tree: RadixBinaryTreeView[int] | None = None
         self.yield_threshold = yield_threshold
         self.exec_counter = 0
         # A card's 2-bit state can only ever describe ONE block: if two
@@ -530,10 +566,17 @@ class RuntimeEngine:
         return None
 
     def register_module_blocks(self, module: Module) -> None:
-        """Automatically extracts and registers all BasicBlocks from a parsed WASM Module."""
-        from control_flow import extract_basic_blocks
+        """Automatically extracts and registers all BasicBlocks and control skip Radix tree from a parsed WASM Module."""
+        from control_flow import build_control_skip_storage, extract_basic_blocks
 
         n_imports = len(module.imports)
+        self.control_skip_storage = build_control_skip_storage(
+            module.functions, n_imports=n_imports
+        )
+        self.control_skip_tree = (
+            self.control_skip_storage.view() if self.control_skip_storage is not None else None
+        )
+        self.cache.control_skip_tree = self.control_skip_tree
         for idx, fn in enumerate(module.functions):
             func_idx = n_imports + idx
             extracted = extract_basic_blocks(fn.code, func_index=func_idx)
@@ -563,6 +606,9 @@ class RuntimeEngine:
             new_state = self.bitmap.touch(pc)
             if new_state == CardState.HOT and pc not in self.compile_queue:
                 self.compile_queue.append(pc)
+                # JIT compile queue overflow: compile all on the spot!
+                if len(self.compile_queue) >= self.compile_queue_capacity:
+                    self.drain_compile_queue()
 
     def idle_hook(self, budget: int = 4) -> int:
         """
@@ -625,11 +671,12 @@ class RuntimeEngine:
                 trace = self.cache.lookup(pc)
             if trace is not None:
                 call_state = self._invoke_trace(interp, call_state, trace)
+                blocks_run += 1
             else:
                 if pc is not None:
                     self.record_block_head(pc)
                 call_state = interp.step(call_state, quantum=1)
-            blocks_run += 1
+                blocks_run += 1
             if blocks_run % quantum == 0:
                 self.idle_hook(budget=idle_budget)
         self.idle_hook(budget=idle_budget)
@@ -807,7 +854,7 @@ class IntegratedHybridEngine:
     def __init__(
         self,
         yield_threshold: int = 4,
-        card_shift: int = 4,
+        card_shift: int = 2,
         compiler: object | None = None,
         min_trace_bytes: int | None = None,
     ):
@@ -825,6 +872,8 @@ class IntegratedHybridEngine:
         # away, so no two tracked blocks can ever land on the same card.
         self.min_trace_bytes = min_trace_bytes if min_trace_bytes is not None else (1 << card_shift)
         self.blocks: list[tuple[int, BasicBlock]] = []  # Flat slot list instead of dynamic dict
+        self.control_skip_storage: ReadOnlyRadixBinaryTreeStorage[int] | None = None
+        self.control_skip_tree: RadixBinaryTreeView[int] | None = None
         self.interp_blocks = 0
         self.jit_traces = 0
         self.compilations = 0
@@ -834,6 +883,25 @@ class IntegratedHybridEngine:
         self.debugger: object | None = None
         self._dispatch = self._dispatch_normal
         self.cache.on_evict = lambda pcs: [self.bitmap.mark_evicted(pc) for pc in pcs]
+
+    def register_module_blocks(self, module: Module) -> None:
+        """Automatically extracts and registers all BasicBlocks and control skip Radix tree from a parsed WASM Module."""
+        from control_flow import build_control_skip_storage, extract_basic_blocks
+
+        n_imports = len(module.imports)
+        self.control_skip_storage = build_control_skip_storage(
+            module.functions, n_imports=n_imports
+        )
+        self.control_skip_tree = (
+            self.control_skip_storage.view() if self.control_skip_storage is not None else None
+        )
+        self.cache.control_skip_tree = self.control_skip_tree
+        for idx, fn in enumerate(module.functions):
+            func_idx = n_imports + idx
+            extracted = extract_basic_blocks(fn.code, func_index=func_idx)
+            for head_pc, ops, next_pc in extracted:
+                if ops:
+                    self.register_block(BasicBlock(head_pc=head_pc, ops=ops, next_pc=next_pc))
 
     @property
     def handler_table(self) -> str:

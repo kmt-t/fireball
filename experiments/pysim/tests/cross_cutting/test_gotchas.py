@@ -75,7 +75,7 @@ from runtime_engine import (
 )
 from scheduler import ChannelAction, Scheduler, WaitDir
 from system import System, WasiErrno
-from system_containers import BitView, FlatMapView, StaticFlatMap
+from system_containers import BitView, FlatMapView, MutableFlatMapStorage
 from vmmio import TrapCode, VMMIOController
 from wasm_reader import parse
 from x64_jit import TraceCompiler
@@ -603,7 +603,7 @@ def test_cont_gotcha_01_bit_view_power_of_two_factors():
 
 def test_cont_gotcha_02_narrowing_never_expands_bounds():
     """CONT-GOTCHA-02: View slicing is strictly monotonic narrowing and cannot expand outside parent span."""
-    sm = StaticFlatMap(capacity=16)
+    sm = MutableFlatMapStorage(capacity=16)
     for k, v in enumerate([10, 20, 30, 40, 50]):
         sm.insert(k, v)
     view = sm.view()

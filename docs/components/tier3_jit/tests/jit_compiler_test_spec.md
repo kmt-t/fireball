@@ -60,6 +60,7 @@ Copy-and-Patchエンジンによるネイティブコード生成、`__fastcall`
 | JITC-51 | 制御フロー命令の直前ブロック終端 | `BR`, `IF`, `CALL` を含む関数 | BasicBlock 抽出 | 制御フロー命令の直前で BasicBlock が終端され、制御フロー自体は JIT トレース外でハンドラへ委譲される | §3.3「制御フロー・コール境界の委譲」 |
 | JITC-52 | トレース境界でのメモリ同期 | JIT トレース実行終了時 | レジスタおよびメモリ確認 | ローカル変数および戻り値（stack_depth 0/1）がメモリ/スタックへ完全に同期され、未確定レジスタが残らない | §3.3「メモリ同期不変条件」 |
 | JITC-53 | JIT専用チェイニングハンドラ分離 | JIT トレース末尾での分岐 | `jit_chain_branch_handler` 実行 | ターゲットが Active/Warm キャッシュにあればインプレースパッチして `BX` tail-call し、未コンパイルならインタープリタへ復帰する | §4.1「専用分岐ハンドラ分離」`{JIT_LazyChaining}` |
+| JITC-54 | 制御コードスキップ表を用いた直接チェイニング | 制御構文デリミタPCを含むブロックとスキップ先後続ブロック | トレース登録とチェイニング実行 | `control_skip_tree`（`bswap32`反転キー `RadixBinaryTreeView`）によりデリミタからフォールスルー先PCが一撃で解決され、Active/Warmキャッシュ間での直接ネイティブチェイニング（`chain_next`）が確立される | §4.1「制御コードスキップ表と直接チェイニング連携」`{JIT_LazyChaining}` |
 
 ### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
 

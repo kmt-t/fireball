@@ -102,7 +102,7 @@ class HotspotBitmap:
     storage = bytearray((card_count + 3) // 4)
     """
 
-    def __init__(self, card_shift: int = 3, default_func_code_len: int = 64):
+    def __init__(self, card_shift: int = 2, default_func_code_len: int = 64):
         self.card_shift = card_shift
         self.default_func_code_len = default_func_code_len
         # Static array of BitView indexed by func_idx
@@ -625,7 +625,7 @@ class IntegratedRuntimeEngine:
     def __init__(
         self,
         yield_threshold: int = 8,
-        card_shift: int = 3,
+        card_shift: int = 2,
         min_trace_bytes: int | None = None,
     ):
         self.bitmap = HotspotBitmap(card_shift=card_shift)

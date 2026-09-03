@@ -12,7 +12,7 @@
   - `isinstance`, `type()`, `hasattr`, `getattr` 等のランタイム型検査やリフレクションを一切使用しない。
   - ユニバーサルな引数型（何でも受け取れる万能型・両対応型）にして内部で動的に型を判定して分岐するコードを書かない。関数のシグネチャは意図された具象型に一本化し、異なる型を扱う場合は別名関数として明確に分離する。
 - **動的コンテナの禁止**:
-  - Python の `dict`/`set` を実装の型として使わない。固定長配列、`FlatMapView`/`FlatSetView`/`RadixBinaryTreeView`/`BitView`（`core/system_containers.py`）、または `StaticFlatMap`/`StaticFlatSet` のような固定容量コンテナに置き換える。
+  - Python の `dict`/`set` を実装の型として使わない。固定長配列、`FlatMapView`/`FlatSetView`/`RadixBinaryTreeView`/`BitView`（`core/system_containers.py`）、または `MutableFlatMapStorage`/`MutableFlatSetStorage` のような固定容量コンテナに置き換える。
 - **例外制御フローの禁止**:
   - 例外を制御フローに使わない。失敗は戻り値（`None`、`Result`型、`IntEnum` ステータス等）で表現する。
 - **厳格な整数型・Enum の使用**:

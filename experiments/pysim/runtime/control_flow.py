@@ -18,7 +18,13 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from leb128 import decode_signed, decode_unsigned
-from system_containers import FlatMapView
+from system_containers import (
+    FlatMapView,
+    RadixBinaryTreeView,
+    ReadOnlyRadixBinaryTreeStorage,
+    bswap32,
+    build_radix_table,
+)
 from wasm_opcodes import (
     BLOCK,
     BR,
@@ -629,3 +635,58 @@ def extract_basic_blocks(
     if cur_head is not None and cur_ops:
         blocks.append((cur_head, list(cur_ops), None))
     return blocks
+
+
+def build_control_skip_storage(
+    functions: Sequence[object], n_imports: int = 0
+) -> ReadOnlyRadixBinaryTreeStorage[int] | None:
+    """Constructs a ReadOnlyRadixBinaryTreeStorage owning delimiter PCs -> fallthrough basic block head PCs.
+
+    Key byte order is inverted using bswap32 to maximize entropy in the upper bits
+    for uniform Radix Table prefix distribution. Backing buffers are owned by this storage.
+    """
+    pairs: list[tuple[int, int]] = []
+    for idx, fn in enumerate(functions):
+        func_idx = n_imports + idx
+        base_pc = func_idx << 16
+        code = getattr(fn, "code", None)
+        if not code:
+            continue
+        instrs = decode_all(code)
+        blocks = extract_basic_blocks(code, func_index=func_idx)
+        heads = {b[0] for b in blocks}
+        for _head_pc, _ops, delim_pc in blocks:
+            if delim_pc is not None:
+                offset = delim_pc & 0xFFFF
+                if offset in instrs:
+                    ins = instrs[offset]
+                    fallthrough_pc = base_pc | ins.end_offset
+                    if fallthrough_pc in heads:
+                        pairs.append((delim_pc, fallthrough_pc))
+
+    if not pairs:
+        return None
+
+    # Key byte order is inverted via bswap32
+    sorted_pairs = sorted(pairs, key=lambda p: bswap32(p[0]))
+    inv_keys = [bswap32(p[0]) for p in sorted_pairs]
+    fallthrough_heads = [p[1] for p in sorted_pairs]
+
+    # Compact 4-bit prefix Radix Table (<= 16 buckets / 17 entries)
+    radix_shift = 28
+    radix_table = build_radix_table(inv_keys, radix_shift=radix_shift)
+    return ReadOnlyRadixBinaryTreeStorage(
+        keys=inv_keys,
+        values=fallthrough_heads,
+        radix_table=radix_table,
+        radix_shift=radix_shift,
+        entries=list(zip(inv_keys, fallthrough_heads, strict=False)),
+    )
+
+
+def build_control_skip_tree(
+    functions: Sequence[object], n_imports: int = 0
+) -> RadixBinaryTreeView[int] | None:
+    """Borrows a non-owning RadixBinaryTreeView over the constructed storage."""
+    storage = build_control_skip_storage(functions, n_imports=n_imports)
+    return storage.view() if storage is not None else None

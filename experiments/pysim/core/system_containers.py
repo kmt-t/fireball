@@ -1,22 +1,27 @@
 """
 experiments/pysim/system_containers.py
 Fireball System Container Vocabulary (Zero-allocation static container vocabulary).
-Implements the 4 fundamental non-owning views and static-capacity containers defined in
-docs/components/tier1_core/system_containers.md:
-  1. FlatMapView: sorted keys + values, O(log N) binary search with narrowing/slicing
-  2. FlatSetView: sorted keys only, O(log N) membership query (no value span)
-  3. RadixBinaryTreeView: O(1) Radix Table + bounded local binary search
-  4. BitView: dense sub-byte state table (1, 2, 4 bits), O(1) index-addressed, non-destructive write
-  5. StaticFlatMap: fixed-capacity sorted key-value store with zero dynamic reallocation
-  6. StaticFlatSet: fixed-capacity sorted key set
-  7. RingBuffer: fixed-capacity ring buffer with overwrite / fifo semantics
-  8. StaticVector: fixed-capacity sequential array
+Implements the 4 fundamental non-owning views and their corresponding ReadOnly & Mutable storages:
+  Views:
+    1. BitView: dense sub-byte state table (1, 2, 4 bits), O(1) index-addressed
+    2. FlatMapView: sorted keys + values, O(log N) binary search with narrowing/slicing
+    3. FlatSetView: sorted keys only, O(log N) membership query (no value span)
+    4. RadixBinaryTreeView: O(1) Radix Table + bounded local binary search
+  Storages:
+    - Bit: ReadOnlyBitStorage, MutableBitStorage
+    - FlatMap: ReadOnlyFlatMapStorage, MutableFlatMapStorage
+    - FlatSet: ReadOnlyFlatSetStorage, MutableFlatSetStorage
+    - RadixBinaryTree: ReadOnlyRadixBinaryTreeStorage, MutableRadixBinaryTreeStorage
+  Others:
+    - RingBuffer: fixed-capacity ring buffer with overwrite / fifo semantics
+    - StaticVector: fixed-capacity sequential array
 """
 
 from __future__ import annotations
 
 import bisect
 from collections.abc import Callable, Iterator, Sequence
+from dataclasses import dataclass
 from typing import Generic, TypeVar
 
 KeyT = TypeVar("KeyT")
@@ -84,18 +89,103 @@ class BitView:
         return BitView(self.storage, self.bits, self.origin + first * self.bits, last - first)
 
 
+class ReadOnlyBitStorage:
+    """
+    fireball::read_only_bit_storage<Bits, Count>:
+    Immutable packed bit storage owning read-only bytes buffer ({Type_Vocabulary}, {GLOBAL_Policy_Memory}).
+    """
+
+    __slots__ = ("_buffer", "bits", "count")
+
+    def __init__(self, buffer: bytes, bits: int, count: int):
+        if bits not in ALLOWED_BITS:
+            raise ValueError(f"Bits must be 1, 2 or 4 (got {bits})")
+        self._buffer = buffer
+        self.bits = bits
+        self.count = count
+
+    @property
+    def buffer(self) -> bytes:
+        return self._buffer
+
+    def view(self, origin: int = 0, count: int | None = None) -> BitView:
+        return BitView(
+            self._buffer, self.bits, origin=origin, count=count if count is not None else self.count
+        )
+
+
+class MutableBitStorage:
+    """
+    fireball::mutable_bit_storage<Bits, Count>:
+    Mutable packed bit storage owning read-write bytearray buffer ({Type_Vocabulary}, {GLOBAL_Policy_Memory}).
+    All element-level mutation operations (put, fill, clear) are performed strictly here, not in the non-owning BitView.
+    """
+
+    __slots__ = ("_buffer", "bits", "count")
+
+    def __init__(self, count: int, bits: int = 1, default: int = 0):
+        if bits not in ALLOWED_BITS:
+            raise ValueError(f"Bits must be 1, 2 or 4 (got {bits})")
+        self.count = count
+        self.bits = bits
+        total_bits = count * bits
+        num_bytes = (total_bits + 7) // 8
+        self._buffer = bytearray(num_bytes)
+        if default != 0:
+            self.fill(default)
+
+    @property
+    def buffer(self) -> bytearray:
+        return self._buffer
+
+    def put(self, i: int, value: int) -> None:
+        mask = (1 << self.bits) - 1
+        if not (0 <= value <= mask):
+            raise ValueError(f"value {value} does not fit in {self.bits} bits (max {mask})")
+        if not (0 <= i < self.count):
+            raise IndexError(f"index {i} outside mutable_bit_storage of size {self.count}")
+        bit = i * self.bits
+        byte_idx, shift = bit >> 3, bit & 7
+        cleared = self._buffer[byte_idx] & ~(mask << shift) & 0xFF
+        self._buffer[byte_idx] = cleared | ((value & mask) << shift)
+
+    def fill(self, value: int) -> None:
+        mask = (1 << self.bits) - 1
+        val = value & mask
+        if self.bits == 1:
+            byte_val = 0xFF if val else 0x00
+        elif self.bits == 2:
+            byte_val = (val << 6) | (val << 4) | (val << 2) | val
+        else:  # 4
+            byte_val = (val << 4) | val
+        for i in range(len(self._buffer)):
+            self._buffer[i] = byte_val
+
+    def clear(self) -> None:
+        self.fill(0)
+
+    def view(self, origin: int = 0, count: int | None = None) -> BitView:
+        return BitView(
+            self._buffer, self.bits, origin=origin, count=count if count is not None else self.count
+        )
+
+
 # ---------------------------------------------------------------------------
 # 2. _SortedWindow: Common base for sorted views
 # ---------------------------------------------------------------------------
 
 
 class _SortedWindow(Generic[KeyT]):
-    __slots__ = ("first", "keys", "last")
+    __slots__ = ("_last", "first", "keys")
 
     def __init__(self, keys: Sequence[KeyT], first: int = 0, last: int | None = None):
         self.keys = keys
         self.first = first
-        self.last = len(keys) if last is None else last
+        self._last = last
+
+    @property
+    def last(self) -> int:
+        return len(self.keys) if self._last is None else min(self._last, len(self.keys))
 
     def size(self) -> int:
         return max(0, self.last - self.first)
@@ -107,13 +197,15 @@ class _SortedWindow(Generic[KeyT]):
         return self.size() == 0
 
     def _bounds(self, lo: KeyT, hi: KeyT) -> tuple[int, int]:
-        first = bisect.bisect_left(self.keys, lo, self.first, self.last)
-        last = bisect.bisect_right(self.keys, hi, self.first, self.last)
+        hi_bound = self.last
+        first = bisect.bisect_left(self.keys, lo, self.first, hi_bound)
+        last = bisect.bisect_right(self.keys, hi, self.first, hi_bound)
         return (first, last)
 
     def _locate(self, key: KeyT) -> int | None:
-        i = bisect.bisect_left(self.keys, key, self.first, self.last)
-        return i if i < self.last and self.keys[i] == key else None
+        hi_bound = self.last
+        i = bisect.bisect_left(self.keys, key, self.first, hi_bound)
+        return i if i < hi_bound and self.keys[i] == key else None
 
 
 # ---------------------------------------------------------------------------
@@ -135,7 +227,7 @@ class FlatMapView(Generic[KeyT, ValT]):
     The view holds only a borrowed reference to the entries sequence (span of 1 range, 2 words in C++).
     """
 
-    __slots__ = ("_entries", "first", "last")
+    __slots__ = ("_entries", "_last", "first")
 
     def __init__(
         self,
@@ -145,7 +237,11 @@ class FlatMapView(Generic[KeyT, ValT]):
     ):
         self._entries = entries
         self.first = first
-        self.last = len(self._entries) if last is None else last
+        self._last = last
+
+    @property
+    def last(self) -> int:
+        return len(self._entries) if self._last is None else min(self._last, len(self._entries))
 
     @property
     def entries(self) -> Sequence[tuple[KeyT, ValT]]:
@@ -209,6 +305,26 @@ class FlatMapView(Generic[KeyT, ValT]):
         return self.size()
 
 
+@dataclass
+class ReadOnlyFlatMapStorage(Generic[KeyT, ValT]):
+    """
+    fireball::read_only_flat_map_storage<Key, Value>:
+    Immutable AoS storage owning sorted (Key, Value) entry array ({Type_Vocabulary}, {GLOBAL_Policy_Memory}).
+    Zero allocation non-owning borrowing via view(). Does not permit insert/remove.
+    """
+
+    entries: tuple[tuple[KeyT, ValT], ...]
+
+    @classmethod
+    def create(cls, entries: Sequence[tuple[KeyT, ValT]]) -> ReadOnlyFlatMapStorage[KeyT, ValT]:
+        sorted_entries = sorted(entries, key=lambda e: e[0])
+        return cls(entries=tuple(sorted_entries))
+
+    def view(self) -> FlatMapView[KeyT, ValT]:
+        """Borrows a non-owning FlatMapView over this immutable storage."""
+        return FlatMapView(self.entries)
+
+
 # ---------------------------------------------------------------------------
 # 4. FlatSetView (fireball::flat_set_view<Key>)
 # ---------------------------------------------------------------------------
@@ -233,6 +349,26 @@ class FlatSetView(_SortedWindow[KeyT], Generic[KeyT]):
 
     def __contains__(self, key: KeyT) -> bool:
         return self.contains(key)
+
+
+@dataclass
+class ReadOnlyFlatSetStorage(Generic[KeyT]):
+    """
+    fireball::read_only_flat_set_storage<Key>:
+    Immutable key set storage owning sorted Key array ({Type_Vocabulary}, {GLOBAL_Policy_Memory}).
+    Zero allocation non-owning borrowing via view(). Does not permit insert/remove.
+    """
+
+    keys: tuple[KeyT, ...]
+
+    @classmethod
+    def create(cls, keys: Sequence[KeyT]) -> ReadOnlyFlatSetStorage[KeyT]:
+        sorted_keys = sorted(set(keys))
+        return cls(keys=tuple(sorted_keys))
+
+    def view(self) -> FlatSetView[KeyT]:
+        """Borrows a non-owning FlatSetView over this immutable storage."""
+        return FlatSetView(self.keys)
 
 
 # ---------------------------------------------------------------------------
@@ -279,12 +415,257 @@ def build_radix_table(
     return table
 
 
+@dataclass
+class ReadOnlyRadixBinaryTreeStorage(Generic[ValT]):
+    """
+    Backing storage for RadixBinaryTreeView.
+    Owns memory buffers for sorted keys, values, and radix_table.
+    Strictly separates storage ownership from non-owning view borrows ({Type_Vocabulary}, {GLOBAL_Policy_Memory}).
+    """
+
+    keys: list[int]
+    values: list[ValT]
+    radix_table: list[int]
+    radix_shift: int
+    entries: list[tuple[int, ValT]]
+    key_transform: Callable[[int], int] | None = None
+
+    @classmethod
+    def create(
+        cls,
+        keys: Sequence[int],
+        values: Sequence[ValT],
+        radix_shift: int = 28,
+        key_transform: Callable[[int], int] | None = None,
+    ) -> ReadOnlyRadixBinaryTreeStorage[ValT]:
+        paired = sorted(zip(keys, values, strict=False), key=lambda p: p[0])
+        s_keys = [p[0] for p in paired]
+        s_vals = [p[1] for p in paired]
+        table = build_radix_table(s_keys, radix_shift=radix_shift, key_transform=key_transform)
+        return cls(
+            keys=s_keys,
+            values=s_vals,
+            radix_table=table,
+            radix_shift=radix_shift,
+            entries=paired,
+            key_transform=key_transform,
+        )
+
+    def view(self) -> RadixBinaryTreeView[ValT]:
+        """Borrows a non-owning RadixBinaryTreeView over this storage without copying."""
+        return RadixBinaryTreeView(
+            keys=self.keys,
+            values=self.values,
+            radix_table=self.radix_table,
+            radix_shift=self.radix_shift,
+            entries=self.entries,
+            key_transform=self.key_transform,
+        )
+
+
+class _MutableRadixKeysView(Sequence[int]):
+    __slots__ = ("_owner",)
+
+    def __init__(self, owner: MutableRadixBinaryTreeStorage[ValT]):
+        self._owner = owner
+
+    def __len__(self) -> int:
+        return self._owner._count
+
+    def __iter__(self) -> Iterator[int]:
+        for i in range(self._owner._count):
+            item = self._owner._buffer[i]
+            if item is not None:
+                yield item[0]
+
+    def __getitem__(self, idx: int | slice) -> int | Sequence[int]:
+        if isinstance(idx, slice):
+            start, stop, step = idx.indices(self._owner._count)
+            return [
+                self._owner._buffer[i][0]
+                for i in range(start, stop, step)
+                if self._owner._buffer[i] is not None
+            ]
+        if not (0 <= idx < self._owner._count):
+            raise IndexError(f"index {idx} out of range (count={self._owner._count})")
+        item = self._owner._buffer[idx]
+        assert item is not None
+        return item[0]
+
+
+class _MutableRadixValuesView(Sequence[ValT], Generic[ValT]):
+    __slots__ = ("_owner",)
+
+    def __init__(self, owner: MutableRadixBinaryTreeStorage[ValT]):
+        self._owner = owner
+
+    def __len__(self) -> int:
+        return self._owner._count
+
+    def __iter__(self) -> Iterator[ValT]:
+        for i in range(self._owner._count):
+            item = self._owner._buffer[i]
+            if item is not None:
+                yield item[1]
+
+    def __getitem__(self, idx: int | slice) -> ValT | Sequence[ValT]:
+        if isinstance(idx, slice):
+            start, stop, step = idx.indices(self._owner._count)
+            return [
+                self._owner._buffer[i][1]
+                for i in range(start, stop, step)
+                if self._owner._buffer[i] is not None
+            ]
+        if not (0 <= idx < self._owner._count):
+            raise IndexError(f"index {idx} out of range (count={self._owner._count})")
+        item = self._owner._buffer[idx]
+        assert item is not None
+        return item[1]
+
+
+class _MutableRadixEntriesView(Sequence[tuple[int, ValT]], Generic[ValT]):
+    __slots__ = ("_owner",)
+
+    def __init__(self, owner: MutableRadixBinaryTreeStorage[ValT]):
+        self._owner = owner
+
+    def __len__(self) -> int:
+        return self._owner._count
+
+    def __iter__(self) -> Iterator[tuple[int, ValT]]:
+        for i in range(self._owner._count):
+            item = self._owner._buffer[i]
+            if item is not None:
+                yield item
+
+    def __getitem__(self, idx: int | slice) -> tuple[int, ValT] | Sequence[tuple[int, ValT]]:
+        if isinstance(idx, slice):
+            start, stop, step = idx.indices(self._owner._count)
+            return [
+                self._owner._buffer[i]
+                for i in range(start, stop, step)
+                if self._owner._buffer[i] is not None
+            ]
+        if not (0 <= idx < self._owner._count):
+            raise IndexError(f"index {idx} out of range (count={self._owner._count})")
+        item = self._owner._buffer[idx]
+        assert item is not None
+        return item
+
+
+class MutableRadixBinaryTreeStorage(Generic[ValT]):
+    """
+    fireball::mutable_radix_binary_tree_storage<Key, Value, RadixShift, KeyProjection>:
+    Mutable storage container with pre-allocated fixed-length array of capacity elements ({GLOBAL_Policy_Memory}, {META_NoStdVector}).
+    Tracks active entry count up to capacity without dynamic reallocation.
+    All element-level mutations (insert, remove, clear) are performed strictly here, not in the non-owning RadixBinaryTreeView.
+    Automatically maintains sorted entry order and updates Radix Table prefix bounds.
+    """
+
+    __slots__ = ("_buffer", "_count", "capacity", "key_transform", "radix_shift", "radix_table")
+
+    def __init__(
+        self,
+        capacity: int = 64,
+        radix_shift: int = 28,
+        key_transform: Callable[[int], int] | None = None,
+    ):
+        self.capacity = capacity
+        self.radix_shift = radix_shift
+        self.key_transform = key_transform
+        self._buffer: list[tuple[int, ValT] | None] = [None] * capacity
+        self._count: int = 0
+        self.radix_table: list[int] = [0, 0]
+
+    def _rebuild_radix_table(self) -> None:
+        if self._count == 0:
+            self.radix_table[:] = [0, 0]
+            return
+        keys = [self._buffer[i][0] for i in range(self._count) if self._buffer[i] is not None]
+        new_table = build_radix_table(
+            keys, radix_shift=self.radix_shift, key_transform=self.key_transform
+        )
+        self.radix_table[:] = new_table
+
+    def insert(self, key: int, value: ValT) -> bool:
+        """Inserts or updates (key, value), maintaining sorted order and updating radix table."""
+        idx = bisect.bisect_left(
+            self._buffer, key, 0, self._count, key=lambda p: p[0] if p is not None else key
+        )
+        if idx < self._count and self._buffer[idx] is not None and self._buffer[idx][0] == key:
+            self._buffer[idx] = (key, value)
+            return True
+        if self._count >= self.capacity:
+            return False
+        for j in range(self._count, idx, -1):
+            self._buffer[j] = self._buffer[j - 1]
+        self._buffer[idx] = (key, value)
+        self._count += 1
+        self._rebuild_radix_table()
+        return True
+
+    def remove(self, key: int) -> ValT | None:
+        """Removes key and returns its value, updating radix table."""
+        idx = bisect.bisect_left(
+            self._buffer, key, 0, self._count, key=lambda p: p[0] if p is not None else key
+        )
+        if idx < self._count and self._buffer[idx] is not None and self._buffer[idx][0] == key:
+            val = self._buffer[idx][1]
+            for j in range(idx, self._count - 1):
+                self._buffer[j] = self._buffer[j + 1]
+            self._buffer[self._count - 1] = None
+            self._count -= 1
+            self._rebuild_radix_table()
+            return val
+        return None
+
+    def clear(self) -> None:
+        for i in range(self._count):
+            self._buffer[i] = None
+        self._count = 0
+        self.radix_table[:] = [0, 0]
+
+    def size(self) -> int:
+        return self._count
+
+    def __len__(self) -> int:
+        return self._count
+
+    @property
+    def count(self) -> int:
+        return self._count
+
+    @property
+    def keys(self) -> list[int]:
+        return [self._buffer[i][0] for i in range(self._count) if self._buffer[i] is not None]
+
+    @property
+    def values(self) -> list[ValT]:
+        return [self._buffer[i][1] for i in range(self._count) if self._buffer[i] is not None]
+
+    @property
+    def entries(self) -> list[tuple[int, ValT]]:
+        return [self._buffer[i] for i in range(self._count) if self._buffer[i] is not None]
+
+    def view(self) -> RadixBinaryTreeView[ValT]:
+        """Borrows a non-owning RadixBinaryTreeView over this mutable storage."""
+        return RadixBinaryTreeView(
+            keys=_MutableRadixKeysView(self),
+            values=_MutableRadixValuesView(self),
+            radix_table=self.radix_table,
+            radix_shift=self.radix_shift,
+            entries=_MutableRadixEntriesView(self),
+            key_transform=self.key_transform,
+        )
+
+
 class RadixBinaryTreeView(Generic[ValT]):
     """
     fireball::radix_binary_tree_view<Key, Value, RadixShift, KeyProjection>:
         Combines an O(1) Radix Table (coarse prefix lookup) with bounded local
         binary search on a sorted key-value array. Supports optional KeyProjection
         (such as bswap32) to project high-entropy lower bytes to radix prefix.
+        Non-owning view: borrows references to external storage without taking ownership.
     """
 
     __slots__ = ("key_transform", "keys", "map_view", "radix_shift", "radix_table", "values")
@@ -295,15 +676,21 @@ class RadixBinaryTreeView(Generic[ValT]):
         values: Sequence[ValT],
         radix_table: Sequence[int],
         radix_shift: int,
+        entries: Sequence[tuple[int, ValT]] | None = None,
         key_transform: Callable[[int], int] | None = None,
     ):
         assert len(radix_table) <= FB_CONF_MAX_RADIX_TABLE_SIZE, (
             f"Radix table size ({len(radix_table)}) exceeds embedded limit {FB_CONF_MAX_RADIX_TABLE_SIZE}!"
         )
-        paired = sorted(zip(keys, values, strict=False), key=lambda p: p[0])
-        self.keys = [p[0] for p in paired]
-        self.values = [p[1] for p in paired]
-        self.map_view = FlatMapView(paired)
+        if entries is not None:
+            self.keys = keys
+            self.values = values
+            self.map_view = FlatMapView(entries)
+        else:
+            paired = sorted(zip(keys, values, strict=False), key=lambda p: p[0])
+            self.keys = [p[0] for p in paired]
+            self.values = [p[1] for p in paired]
+            self.map_view = FlatMapView(paired)
         self.radix_table = radix_table
         self.radix_shift = radix_shift
         self.key_transform = key_transform
@@ -347,13 +734,13 @@ def lookup_jit_entry_flatmap(
     card_table: BitView,
     entry_group_bounds: Sequence[int],
     pc: int,
-    card_shift: int = 3,
+    card_shift: int = 2,
     group_shift: int = 6,
 ) -> ValT | None:
     """
     JIT entry lookup over a plain FlatMapView, narrowed via caller-supplied
     group bounds:
-        1. O(1) card marking pre-filter (8 bytes per card, card_shift=3).
+        1. O(1) card marking pre-filter (4 bytes per card, card_shift=2).
         2. O(1) group-bounds slice (pure scalar offsets array where group i is [bounds[i], bounds[i+1])).
         3. Bounded local binary search on the narrowed FlatMapView.
     """
@@ -374,12 +761,12 @@ def lookup_jit_entry_radix(
     view: RadixBinaryTreeView[ValT],
     card_table: BitView,
     pc: int,
-    card_shift: int = 3,
+    card_shift: int = 2,
 ) -> ValT | None:
     """
     JIT entry lookup over a RadixBinaryTreeView, which narrows to its group
     bounds internally via its own Radix Table:
-        1. O(1) card marking pre-filter (8 bytes per card, card_shift=3).
+        1. O(1) card marking pre-filter (4 bytes per card, card_shift=2).
         2. O(1) Radix Table prefix lookup + bounded local binary search (view.find()).
     """
 
@@ -389,32 +776,73 @@ def lookup_jit_entry_radix(
 
 
 # ---------------------------------------------------------------------------
-# 6. StaticFlatMap (fixed-capacity owning flat sorted map)
+# 6. MutableFlatMapStorage (fixed-capacity owning flat sorted map)
 # ---------------------------------------------------------------------------
 
 
-class StaticFlatMap(Generic[KeyT, ValT]):
-    """Fixed-capacity sorted map stored in an AoS entry array without dynamic reallocation."""
+class _MutableMapBufferView(Sequence[tuple[KeyT, ValT]], Generic[KeyT, ValT]):
+    __slots__ = ("_owner",)
 
-    __slots__ = ("_entries", "capacity")
+    def __init__(self, owner: MutableFlatMapStorage[KeyT, ValT]):
+        self._owner = owner
+
+    def __len__(self) -> int:
+        return self._owner._count
+
+    def __iter__(self) -> Iterator[tuple[KeyT, ValT]]:
+        for i in range(self._owner._count):
+            item = self._owner._buffer[i]
+            if item is not None:
+                yield item
+
+    def __getitem__(self, idx: int | slice) -> tuple[KeyT, ValT] | Sequence[tuple[KeyT, ValT]]:
+        if isinstance(idx, slice):
+            start, stop, step = idx.indices(self._owner._count)
+            return [
+                self._owner._buffer[i]
+                for i in range(start, stop, step)
+                if self._owner._buffer[i] is not None
+            ]
+        if not (0 <= idx < self._owner._count):
+            raise IndexError(f"index {idx} out of range (count={self._owner._count})")
+        item = self._owner._buffer[idx]
+        assert item is not None
+        return item
+
+
+class MutableFlatMapStorage(Generic[KeyT, ValT]):
+    """
+    fireball::mutable_flat_map_storage<Key, Value, Capacity>:
+    Fixed-capacity sorted map stored in a pre-allocated fixed-length array without dynamic reallocation.
+    Tracks active entry count up to capacity ({GLOBAL_Policy_Memory}, {META_NoStdVector}).
+    """
+
+    __slots__ = ("_buffer", "_count", "capacity")
 
     def __init__(self, capacity: int = 32):
         self.capacity = capacity
-        self._entries: list[tuple[KeyT, ValT]] = []
+        self._buffer: list[tuple[KeyT, ValT] | None] = [None] * capacity
+        self._count: int = 0
 
     def size(self) -> int:
-        return len(self._entries)
+        return self._count
 
     def __len__(self) -> int:
-        return len(self._entries)
+        return self._count
+
+    @property
+    def count(self) -> int:
+        return self._count
 
     def view(self) -> FlatMapView[KeyT, ValT]:
-        return FlatMapView(self._entries)
+        return FlatMapView(_MutableMapBufferView(self))
 
     def find(self, key: KeyT) -> ValT | None:
-        idx = bisect.bisect_left(self._entries, key, key=lambda e: e[0])
-        if idx < len(self._entries) and self._entries[idx][0] == key:
-            return self._entries[idx][1]
+        idx = bisect.bisect_left(
+            self._buffer, key, 0, self._count, key=lambda e: e[0] if e is not None else key
+        )
+        if idx < self._count and self._buffer[idx] is not None and self._buffer[idx][0] == key:
+            return self._buffer[idx][1]
         return None
 
     def __contains__(self, key: KeyT) -> bool:
@@ -427,94 +855,165 @@ class StaticFlatMap(Generic[KeyT, ValT]):
         return val
 
     def insert(self, key: KeyT, value: ValT) -> bool:
-        idx = bisect.bisect_left(self._entries, key, key=lambda e: e[0])
-        if idx < len(self._entries) and self._entries[idx][0] == key:
-            self._entries[idx] = (key, value)
+        idx = bisect.bisect_left(
+            self._buffer, key, 0, self._count, key=lambda e: e[0] if e is not None else key
+        )
+        if idx < self._count and self._buffer[idx] is not None and self._buffer[idx][0] == key:
+            self._buffer[idx] = (key, value)
             return True
-        if len(self._entries) >= self.capacity:
+        if self._count >= self.capacity:
             return False
-        self._entries.insert(idx, (key, value))
+        for j in range(self._count, idx, -1):
+            self._buffer[j] = self._buffer[j - 1]
+        self._buffer[idx] = (key, value)
+        self._count += 1
         return True
 
     def remove(self, key: KeyT) -> ValT | None:
-        idx = bisect.bisect_left(self._entries, key, key=lambda e: e[0])
-        if idx < len(self._entries) and self._entries[idx][0] == key:
-            return self._entries.pop(idx)[1]
+        idx = bisect.bisect_left(
+            self._buffer, key, 0, self._count, key=lambda e: e[0] if e is not None else key
+        )
+        if idx < self._count and self._buffer[idx] is not None and self._buffer[idx][0] == key:
+            val = self._buffer[idx][1]
+            for j in range(idx, self._count - 1):
+                self._buffer[j] = self._buffer[j + 1]
+            self._buffer[self._count - 1] = None
+            self._count -= 1
+            return val
         return None
 
     def clear(self) -> None:
-        self._entries.clear()
+        for i in range(self._count):
+            self._buffer[i] = None
+        self._count = 0
 
     def items(self) -> Iterator[tuple[KeyT, ValT]]:
         """Key-sorted (key, value) pairs -- always consistent with `view()`'s ordering."""
-        return iter(self._entries)
+        for i in range(self._count):
+            item = self._buffer[i]
+            if item is not None:
+                yield item
 
     @property
     def entries(self) -> list[tuple[KeyT, ValT]]:
-        return self._entries
+        return [self._buffer[i] for i in range(self._count) if self._buffer[i] is not None]
 
     @property
     def keys(self) -> list[KeyT]:
-        return [k for k, _ in self._entries]
+        return [self._buffer[i][0] for i in range(self._count) if self._buffer[i] is not None]
 
     @property
     def values(self) -> list[ValT]:
-        return [v for _, v in self._entries]
+        return [self._buffer[i][1] for i in range(self._count) if self._buffer[i] is not None]
 
     def is_sorted(self) -> bool:
         return all(
-            self._entries[i][0] <= self._entries[i + 1][0] for i in range(len(self._entries) - 1)
+            self._buffer[i][0] <= self._buffer[i + 1][0]  # type: ignore[index]
+            for i in range(self._count - 1)
         )
 
 
 # ---------------------------------------------------------------------------
-# 7. StaticFlatSet (fixed-capacity owning flat sorted set)
+# 7. MutableFlatSetStorage (fixed-capacity owning flat sorted set)
 # ---------------------------------------------------------------------------
 
 
-class StaticFlatSet(Generic[KeyT]):
-    """Fixed-capacity sorted set stored in a flat array."""
+class _MutableSetBufferView(Sequence[KeyT], Generic[KeyT]):
+    __slots__ = ("_owner",)
 
-    __slots__ = ("_keys", "capacity")
+    def __init__(self, owner: MutableFlatSetStorage[KeyT]):
+        self._owner = owner
+
+    def __len__(self) -> int:
+        return self._owner._count
+
+    def __iter__(self) -> Iterator[KeyT]:
+        for i in range(self._owner._count):
+            item = self._owner._buffer[i]
+            if item is not None:
+                yield item
+
+    def __getitem__(self, idx: int | slice) -> KeyT | Sequence[KeyT]:
+        if isinstance(idx, slice):
+            start, stop, step = idx.indices(self._owner._count)
+            return [
+                self._owner._buffer[i]
+                for i in range(start, stop, step)
+                if self._owner._buffer[i] is not None
+            ]
+        if not (0 <= idx < self._owner._count):
+            raise IndexError(f"index {idx} out of range (count={self._owner._count})")
+        item = self._owner._buffer[idx]
+        assert item is not None
+        return item
+
+
+class MutableFlatSetStorage(Generic[KeyT]):
+    """Fixed-capacity sorted set stored in a pre-allocated flat array."""
+
+    __slots__ = ("_buffer", "_count", "capacity")
 
     def __init__(self, capacity: int = 32):
         self.capacity = capacity
-        self._keys: list[KeyT] = []
+        self._buffer: list[KeyT | None] = [None] * capacity
+        self._count: int = 0
 
     def size(self) -> int:
-        return len(self._keys)
+        return self._count
 
     def __len__(self) -> int:
-        return len(self._keys)
+        return self._count
+
+    @property
+    def count(self) -> int:
+        return self._count
 
     def view(self) -> FlatSetView[KeyT]:
-        return FlatSetView(self._keys)
+        return FlatSetView(_MutableSetBufferView(self))
 
     def contains(self, key: KeyT) -> bool:
-        idx = bisect.bisect_left(self._keys, key)
-        return idx < len(self._keys) and self._keys[idx] == key
+        idx = bisect.bisect_left(
+            self._buffer, key, 0, self._count, key=lambda k: k if k is not None else key
+        )
+        return idx < self._count and self._buffer[idx] == key
 
     def __contains__(self, key: KeyT) -> bool:
         return self.contains(key)
 
     def insert(self, key: KeyT) -> bool:
-        idx = bisect.bisect_left(self._keys, key)
-        if idx < len(self._keys) and self._keys[idx] == key:
+        idx = bisect.bisect_left(
+            self._buffer, key, 0, self._count, key=lambda k: k if k is not None else key
+        )
+        if idx < self._count and self._buffer[idx] == key:
             return True
-        if len(self._keys) >= self.capacity:
+        if self._count >= self.capacity:
             return False
-        self._keys.insert(idx, key)
+        for j in range(self._count, idx, -1):
+            self._buffer[j] = self._buffer[j - 1]
+        self._buffer[idx] = key
+        self._count += 1
         return True
 
     def remove(self, key: KeyT) -> bool:
-        idx = bisect.bisect_left(self._keys, key)
-        if idx < len(self._keys) and self._keys[idx] == key:
-            self._keys.pop(idx)
+        idx = bisect.bisect_left(
+            self._buffer, key, 0, self._count, key=lambda k: k if k is not None else key
+        )
+        if idx < self._count and self._buffer[idx] == key:
+            for j in range(idx, self._count - 1):
+                self._buffer[j] = self._buffer[j + 1]
+            self._buffer[self._count - 1] = None
+            self._count -= 1
             return True
         return False
 
     def clear(self) -> None:
-        self._keys.clear()
+        for i in range(self._count):
+            self._buffer[i] = None
+        self._count = 0
+
+    @property
+    def keys(self) -> list[KeyT]:
+        return [self._buffer[i] for i in range(self._count) if self._buffer[i] is not None]
 
 
 # ---------------------------------------------------------------------------

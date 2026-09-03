@@ -102,6 +102,18 @@ class Channel:
         return self.scheduler.channel_recv(self)
 
 
+def make_wasm_task_coro(
+    interp: object, func_index: int, args: list[int], quantum: int = 16
+) -> Generator[tuple[ChannelAction, None], None, list[int]]:
+    """Wraps an Interpreter execution as a cooperative coroutine for COOS task scheduling."""
+    call_state = interp.start(func_index, args)  # type: ignore[attr-defined]
+    while not call_state.finished:
+        call_state = interp.step(call_state, quantum=quantum)  # type: ignore[attr-defined]
+        if not call_state.finished:
+            yield (ChannelAction.YIELD, None)
+    return call_state.results  # type: ignore[no-any-return]
+
+
 class Task:
     """A single coroutine-based task with explicit cooperative lifecycle state."""
 
@@ -190,6 +202,20 @@ class Scheduler:
         self._all.append(task)
         self._ready.append(task)
         return task.task_id
+
+    def spawn_wasm_task(
+        self,
+        name: str,
+        interp: object,
+        func_index: int,
+        args: list[int],
+        quantum: int = 16,
+        task_id: int | None = None,
+        role: int = 0,
+    ) -> int:
+        """Spawns a WASM execution context as a first-class COOS task."""
+        coro = make_wasm_task_coro(interp, func_index, args, quantum=quantum)
+        return self.spawn(name, coro, task_id=task_id, role=role)
 
     def detach(self, task: Task) -> None:
         """
@@ -405,12 +431,12 @@ class Scheduler:
         self.current_task = None
         return task
 
-    def run_until_idle(self) -> None:
+    def run_until_idle(self, budget: int | None = None) -> None:
         """Runs cooperative tasks until all coroutines block, yield or terminate, then fires idle hooks."""
         self.drain_interrupts()
-        budget = len(self._ready) * 4 + 16
-        while self._ready and budget > 0:
-            budget -= 1
+        step_budget = budget if budget is not None else max(1000, len(self._ready) * 64 + 16)
+        while self._ready and step_budget > 0:
+            step_budget -= 1
             if all(t.coro is None for t in self._ready):
                 break
             task = self._ready.popleft()

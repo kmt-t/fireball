@@ -17,7 +17,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from system_containers import StaticFlatMap
+from system_containers import MutableFlatMapStorage
 
 if TYPE_CHECKING:
     from memory import MemoryManager
@@ -126,8 +126,8 @@ class VMMIOController:
         self.guest_ram_size = guest_ram_size
         # FlatMap PTE storage: vpn (20-bit) -> PTE, capacity-bounded per
         # system_config.md's FB_CONF_VMMIO_MAX_PTES (a fixed static array in
-        # C++, so a StaticFlatMap here, never a dict).
-        self.ptes: StaticFlatMap[int, StaticDevicePTE | Tier3PTE] = StaticFlatMap(
+        # C++, so a MutableFlatMapStorage here, never a dict).
+        self.ptes: MutableFlatMapStorage[int, StaticDevicePTE | Tier3PTE] = MutableFlatMapStorage(
             capacity=FB_CONF_VMMIO_MAX_PTES
         )
         # Direct-mapped TLB: 16 slots, keyed by 4-bit Folding XOR Hash over 20-bit VPN.

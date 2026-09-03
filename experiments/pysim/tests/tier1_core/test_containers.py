@@ -35,8 +35,15 @@ from system_containers import (
     BitView,
     FlatMapView,
     FlatSetView,
+    MutableBitStorage,
+    MutableFlatMapStorage,
+    MutableFlatSetStorage,
+    MutableRadixBinaryTreeStorage,
     RadixBinaryTreeView,
-    StaticFlatMap,
+    ReadOnlyBitStorage,
+    ReadOnlyFlatMapStorage,
+    ReadOnlyFlatSetStorage,
+    ReadOnlyRadixBinaryTreeStorage,
     lookup_jit_entry_radix,
 )
 
@@ -213,25 +220,96 @@ def test_cont_10_container_type_separation():
 
 
 def test_cont_11_storage_and_view_ownership_separation():
-    """CONT-11: Data storage ownership is strictly separated from non-owning views (AoS)."""
-    storage = [(10, "A"), (20, "B"), (30, "C")]
-    v1 = FlatMapView(storage)
-    v2 = FlatMapView(storage)
+    """CONT-11: Data storage ownership is strictly separated from non-owning views (AoS, Set, Radix, Bit).
+    Mutations (insert, remove, put, fill) are performed strictly on Mutable Storages, never on Views."""
+    # 1. FlatMap: ReadOnly vs Mutable Storage vs non-owning View
+    ro_map = ReadOnlyFlatMapStorage.create([(10, "A"), (20, "B"), (30, "C")])
+    v_ro = ro_map.view()
+    assert v_ro.find(20) == "B"
+    assert v_ro.entries is ro_map.entries
+    assert not hasattr(v_ro, "insert")
+    assert not hasattr(v_ro, "remove")
 
-    # Views borrow the same underlying entries array without taking ownership
-    assert v1.find(20) == "B"
-    assert v2.find(30) == "C"
-    assert v1.entries is storage
-    assert v2.entries is storage
-    assert v1.keys == [10, 20, 30]
-    assert v1.values == ["A", "B", "C"]
+    mut_map = MutableFlatMapStorage(capacity=8)
+    assert mut_map.insert(100, "X")
+    assert mut_map.insert(200, "Y")
+    v_mut = mut_map.view()
+    assert v_mut.find(100) == "X"
+    assert v_mut.find(200) == "Y"
+    # Mutation on storage propagates to borrowed view
+    assert mut_map.insert(150, "Z")
+    assert v_mut.find(150) == "Z"
+    assert mut_map.remove(100) == "X"
+    assert v_mut.find(100) is None
+
+    # 2. FlatSet: ReadOnly vs Mutable Storage vs non-owning View
+    ro_set = ReadOnlyFlatSetStorage.create([1, 5, 10])
+    v_set_ro = ro_set.view()
+    assert v_set_ro.contains(5)
+    assert v_set_ro.keys is ro_set.keys
+    assert not hasattr(v_set_ro, "insert")
+    assert not hasattr(v_set_ro, "remove")
+
+    mut_set = MutableFlatSetStorage(capacity=8)
+    assert mut_set.insert(42)
+    assert mut_set.insert(99)
+    v_set_mut = mut_set.view()
+    assert v_set_mut.contains(42)
+    assert mut_set.remove(42)
+    assert not v_set_mut.contains(42)
+
+    # 3. RadixBinaryTree: ReadOnly vs Mutable Storage vs non-owning View
+    ro_radix = ReadOnlyRadixBinaryTreeStorage.create(
+        keys=[10, 20, 30], values=["A", "B", "C"], radix_shift=4
+    )
+    rv1 = ro_radix.view()
+    rv2 = ro_radix.view()
+    assert rv1.find(20) == "B"
+    assert rv2.find(30) == "C"
+    assert rv1.keys is ro_radix.keys
+    assert rv1.values is ro_radix.values
+    assert rv1.radix_table is ro_radix.radix_table
+    assert not hasattr(rv1, "insert")
+    assert not hasattr(rv1, "remove")
+
+    mut_radix = MutableRadixBinaryTreeStorage(capacity=16, radix_shift=4)
+    assert mut_radix.insert(10, "A")
+    assert mut_radix.insert(30, "C")
+    rv_mut = mut_radix.view()
+    assert rv_mut.find(10) == "A"
+    assert rv_mut.find(30) == "C"
+    assert rv_mut.find(20) is None
+    # Dynamic insert on mutable storage automatically updates radix table
+    assert mut_radix.insert(20, "B")
+    assert rv_mut.find(20) == "B"
+    assert mut_radix.remove(10) == "A"
+    assert rv_mut.find(10) is None
+
+    # 4. BitStorage: ReadOnly vs Mutable Storage vs non-owning View
+    ro_bit = ReadOnlyBitStorage(buffer=bytes([0b00001101]), bits=2, count=4)
+    bv_ro = ro_bit.view()
+    assert bv_ro.at(0) == 1
+    assert bv_ro.at(1) == 3
+    assert bv_ro.storage is ro_bit.buffer
+
+    mut_bit = MutableBitStorage(count=16, bits=2, default=0)
+    mut_bit.put(2, 3)
+    mut_bit.put(5, 1)
+    bv_mut = mut_bit.view()
+    assert bv_mut.at(2) == 3
+    assert bv_mut.at(5) == 1
+    assert bv_mut.at(0) == 0
+    # Mutation on storage reflects in view
+    mut_bit.fill(2)
+    assert bv_mut.at(2) == 2
+    assert bv_mut.at(0) == 2
 
 
-def test_cont_12_static_flat_map_storage_standard_sort():
-    """CONT-12: StaticFlatMap manages fixed-capacity sorted entries (AoS) and presents FlatMapView."""
+def test_cont_12_mutable_flat_map_storage_standard_sort():
+    """CONT-12: MutableFlatMapStorage manages fixed-capacity sorted entries (AoS) and presents FlatMapView."""
     entries = [(50, "E"), (10, "A"), (40, "D"), (20, "B"), (30, "C")]
     sorted_entries = sorted(entries, key=lambda x: x[0])
-    map_storage = StaticFlatMap(capacity=8)
+    map_storage = MutableFlatMapStorage(capacity=8)
     for k, v in sorted_entries:
         map_storage.insert(k, v)
     assert map_storage.is_sorted()
@@ -247,9 +325,9 @@ def test_cont_12_static_flat_map_storage_standard_sort():
     assert v.find(99) is None
 
 
-def test_cont_13_static_flat_map_sorted_insert_remove():
-    """CONT-13: StaticFlatMap maintains sorted order across arbitrary insert and remove calls."""
-    storage = StaticFlatMap(capacity=16)
+def test_cont_13_mutable_flat_map_sorted_insert_remove():
+    """CONT-13: MutableFlatMapStorage maintains sorted order across arbitrary insert and remove calls."""
+    storage = MutableFlatMapStorage(capacity=16)
     assert len(storage) == 0
 
     # Insert elements out of order
@@ -297,6 +375,94 @@ def test_cont_13_static_flat_map_sorted_insert_remove():
     assert v.find(30) is None
 
 
+def test_cont_14_mutable_storages_fixed_array_and_entry_count():
+    """CONT-14: Mutable storages allocate fixed-length arrays upfront, track valid entry count,
+
+    and allow insertions up to capacity without dynamic array reallocation.
+    """
+    # 1. MutableFlatMapStorage
+    m: MutableFlatMapStorage[int, str] = MutableFlatMapStorage(capacity=4)
+    assert len(m._buffer) == 4
+    assert m.count == 0
+    assert len(m) == 0
+    assert m._buffer == [None, None, None, None]
+
+    assert m.insert(30, "thirty") is True
+    assert m.insert(10, "ten") is True
+    assert m.insert(40, "forty") is True
+    assert m.insert(20, "twenty") is True
+    assert m.count == 4
+    assert len(m._buffer) == 4  # Array length strictly unchanged
+    assert m.keys == [10, 20, 30, 40]
+
+    # Exceeding capacity returns False without altering storage
+    assert m.insert(50, "fifty") is False
+    assert m.count == 4
+    assert len(m._buffer) == 4
+
+    # In-place key update succeeds without increasing count
+    assert m.insert(30, "THIRTY") is True
+    assert m.count == 4
+    assert m.find(30) == "THIRTY"
+
+    # Removal shifts in-place and zeroes vacated trailing slot
+    assert m.remove(20) == "twenty"
+    assert m.count == 3
+    assert len(m._buffer) == 4
+    assert m._buffer[3] is None
+    assert m.keys == [10, 30, 40]
+
+    # 2. MutableFlatSetStorage
+    s: MutableFlatSetStorage[int] = MutableFlatSetStorage(capacity=3)
+    assert len(s._buffer) == 3
+    assert s.count == 0
+    assert s._buffer == [None, None, None]
+
+    assert s.insert(200) is True
+    assert s.insert(100) is True
+    assert s.insert(300) is True
+    assert s.count == 3
+    assert len(s._buffer) == 3
+
+    # Exceeding capacity returns False
+    assert s.insert(400) is False
+    assert s.count == 3
+
+    # Removal decrements count and sets vacated slot to None
+    assert s.remove(100) is True
+    assert s.count == 2
+    assert len(s._buffer) == 3
+    assert s._buffer[2] is None
+    assert s.keys == [200, 300]
+
+    # 3. MutableRadixBinaryTreeStorage
+    r: MutableRadixBinaryTreeStorage[str] = MutableRadixBinaryTreeStorage(capacity=3, radix_shift=4)
+    assert len(r._buffer) == 3
+    assert r.count == 0
+    assert r._buffer == [None, None, None]
+
+    assert r.insert(30, "C") is True
+    assert r.insert(10, "A") is True
+    assert r.insert(20, "B") is True
+    assert r.count == 3
+    assert len(r._buffer) == 3
+
+    # Exceeding capacity returns False
+    assert r.insert(40, "D") is False
+    assert r.count == 3
+
+    # Removal decrements count
+    assert r.remove(10) == "A"
+    assert r.count == 2
+    assert len(r._buffer) == 3
+    assert r._buffer[2] is None
+    assert r.keys == [20, 30]
+    rv = r.view()
+    assert rv.find(20) == "B"
+    assert rv.find(30) == "C"
+    assert rv.find(10) is None
+
+
 # ===========================================================================
 # Cooperative Multitasking & Idle-Hook Integration (YIELD / IDLE / TIER)
 # ===========================================================================
@@ -314,6 +480,7 @@ if __name__ == "__main__":
     test_cont_09_jit_entry_lookup_card_table_prefilter()
     test_cont_10_container_type_separation()
     test_cont_11_storage_and_view_ownership_separation()
-    test_cont_12_static_flat_map_storage_standard_sort()
-    test_cont_13_static_flat_map_sorted_insert_remove()
-    print("[PASS] All 13 System Containers & Views tests passed.")
+    test_cont_12_mutable_flat_map_storage_standard_sort()
+    test_cont_13_mutable_flat_map_sorted_insert_remove()
+    test_cont_14_mutable_storages_fixed_array_and_entry_count()
+    print("[PASS] All 14 System Containers & Views tests passed.")

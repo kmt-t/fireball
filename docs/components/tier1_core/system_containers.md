@@ -23,9 +23,26 @@
 - **純粋 flat_map と Radix Binary Tree を分ける**: `radix_binary_tree_view` は基数プレフィックスによる $O(1)$ 粗索引境界テーブル（Radix Table）と、境界内に有界化されたソート済みキー列の二分探索を統合した複合ビューである。手動の `slice().find()` を都度組み合わせる代わりに、型として不変条件（$O(1)$ 境界解決 + $O(\log n)$ 局所探索）をカプセル化する。
 - **探索する型と探索しない型を分ける**: `bit_view` は疎なキー空間に対する探索構造ではなく、密な添字空間に対するビット詰め表である。キー列を持たない `flat_map_view` の特殊形として表現することは技術的には可能だが、「`flat_*_view` なら二分探索するもの」という読み手の期待を裏切り、カードマーキング表があたかも探索対象であるかのような誤解を生む。**カードマーキングは探索しない。添字がそのまま問いである。** `{Type_Vocabulary}`
 
-**所有コンテナは定義しない。** 表の実体は既に各コンポーネントが持っている（IPCレジストリは ROM 上の `constexpr` 配列、PTE表・エントリ索引・カードマーキング表は静的に確保された配列である）。所有を担う汎用マップ型を別途設けると、実体の二重管理と余分なブックキーピングを生むだけになる。共有すべきは**それらをどう見るか**という語彙だけであり、本書は非所有ビューのみを定義する。 `{GLOBAL_Policy_Memory}` `{META_NoStdVector}`
+### 非所有ビューと実体ストレージの体系化マトリクス (Storage & View Matrix)
+<!-- traceability: {GLOBAL_Policy_Memory} {META_NoStdVector} {GLOBAL_StaticScalability} -->
+メモリ所有権とビューを厳格に分離し、要素の追加（`insert`）や削除（`remove`）等の変更操作はすべて **可変ストレージ（Mutable Storage）** の責務とする。非所有ビュー（View）は探索・走査に専念し、一切の変更操作を提供しない。また、下位互換用のエイリアスは全廃し、正規のクラス名のみを直接使用する。
 
-標準の `std::flat_map` / `std::flat_set` を採用しない理由も同じ点にある。C++23 のこれらはコンテナアダプタであり、既定の下位コンテナが `std::vector` であるため `{META_NoStdVector}` および `{GLOBAL_Policy_Memory}`（`malloc` / `new` の使用禁止）に抵触する上、本プロジェクトが必要としない所有責務を持ち込む。 `{META_NoStdVector}` `{GLOBAL_Policy_Memory}` `{GLOBAL_StaticScalability}`
+| コンテナ種別 | 非所有ビュー (View)<br/>※探索・絞り込み専用 | 読み取り専用ストレージ (ReadOnly Storage)<br/>※静的イミュータブル実体 | 可変ストレージ (Mutable Storage)<br/>※要素追加(`insert`)・削除(`remove`) | 実体所有権 | 変更操作の責務 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **FlatMap** (疎マップ) | `flat_map_view<K, V>` | `read_only_flat_map_storage<K, V>` | `mutable_flat_map_storage<K, V, Capacity>` | Storage が AoS 配列を完全所有 | **Mutable Storage のみ** (`insert`, `remove`) |
+| **FlatSet** (疎集合) | `flat_set_view<K>` | `read_only_flat_set_storage<K>` | `mutable_flat_set_storage<K, Capacity>` | Storage が キー配列を完全所有 | **Mutable Storage のみ** (`insert`, `remove`) |
+| **RadixBinaryTree** (基数木) | `radix_binary_tree_view<K, V, RadixShift>` | `read_only_radix_binary_tree_storage<V>` | `mutable_radix_binary_tree_storage<V, Capacity>` | Storage が キー・値・Radix表を完全所有 | **Mutable Storage のみ** (`insert`, `remove` + Radix表自動更新) |
+| **BitView** (ビット配列) | `bit_view<Bits>` | `read_only_bit_storage` | `mutable_bit_storage` | Storage が バイトバッファを完全所有 | **Mutable Storage のみ** (`put`, `fill`, `clear`) |
+
+**固定長配列と有効エントリカウント規約 (`{GLOBAL_Policy_Memory}`, `{META_NoStdVector}`)**:
+- **固定長事前確保バッファ**: `mutable_*_storage` は、動的リサイズ（`std::vector` や `list.insert`/`append` 等のヒープ再確保）を完全に禁止する。インスタンス化時に `Capacity` サイズの内部バッファ（`_buffer = [None] * capacity`）を一括して事前確保する。
+- **有効エントリカウンタ (`count`)**: バッファ内に格納されている有効なエントリ数を整数値で追跡する（$0 \le \text{count} \le \text{Capacity}$）。
+- **容量上限到達時の動作**: 未登録キーの `insert` 呼び出し時、$\text{count} \ge \text{Capacity}$ であればメモリ再確保を行わず即座に `false` を返却する。既存キーの更新は `count` を増加させずインプレースで上書きし `true` を返却する。
+- **インプレースシフト削除とスロットクリア**: 要素削除時はバッファ内で要素をインプレースで前方にシフトし、空いた末尾スロットは即座にゼロクリア（`None`）して `count` をデクリメントする。
+- **非所有 View への動的追従**: 借用中の View は、Mutable Storage の内部固定バッファの先頭 $\text{count}$ 要素（有効スパン）をゼロコピーで直接参照するため、Storage 側の追加・削除・シフトが即座に View に反映される。
+
+**標準の `std::flat_map` / `std::flat_set` を採用しない理由**:
+C++23 のこれらはコンテナアダプタであり、既定の下位コンテナが `std::vector` であるため `{META_NoStdVector}` および `{GLOBAL_Policy_Memory}`（`malloc` / `new` の使用禁止）に抵触する上、動的再確保のレイテンシ揺らぎを持ち込む。本アーキテクチャでは、固定長バッファ＋`count` 追跡による決定論的かつゼロアロケーションな静的ストレージを採用する。 `{META_NoStdVector}` `{GLOBAL_Policy_Memory}` `{GLOBAL_StaticScalability}`
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {Type_Vocabulary} -->
@@ -189,28 +206,31 @@ class bit_view {
   constexpr auto size() const noexcept -> std::size_t;
 };
 
-// 固定容量 AoS 実体ストレージ: constexpr 標準ソート、ソート維持挿入・削除、非所有ビュー生成
+// 読み取り専用 AoS 実体ストレージ: 不変ソート済みペア配列を所有、非所有ビュー生成
+template <class Key, class Value, std::size_t N>
+struct read_only_flat_map_storage {
+  std::array<flat_map_entry<Key, Value>, N> entries{};
+  constexpr auto view() const noexcept -> flat_map_view<Key, Value>;
+  constexpr auto size() const noexcept -> std::size_t { return N; }
+};
+
+// 固定容量 AoS 可変実体ストレージ: 固定長事前確保バッファ、エントリカウント追跡、ソート維持挿入・削除
 template <class Key, class Value, std::size_t Capacity>
-struct flat_map_storage {
+struct mutable_flat_map_storage {
   std::array<flat_map_entry<Key, Value>, Capacity> entries{};
   std::size_t count{0};
 
   // constexpr 標準ソート（std::sort で entries をキー昇順に並び替え）
-  constexpr auto sort() noexcept -> flat_map_storage&;
-  // ソート順序を維持したまま要素を挿入（既存キーなら値更新: false、新規キーなら挿入: true）
+  constexpr auto sort() noexcept -> mutable_flat_map_storage&;
+  // ソート順序を維持したまま要素を挿入（既存キーなら更新: true、容量超過なら拒否: false、新規挿入: true）
   constexpr auto insert(const Key& k, const Value& v) noexcept -> bool;
-  // ソート順序を維持したまま要素を削除（存在すれば削除: true、なければ: false）
+  // ソート順序を維持したまま要素をインプレースシフト削除（存在すれば削除: true、なければ: false）
   constexpr auto erase(const Key& k) noexcept -> bool;
   constexpr auto is_sorted() const noexcept -> bool;
   constexpr auto view() const noexcept -> flat_map_view<Key, Value>;
   constexpr auto size() const noexcept -> std::size_t { return count; }
   constexpr auto capacity() const noexcept -> std::size_t { return Capacity; }
 };
-
-template <class Key, class Value, std::size_t N>
-constexpr auto make_sorted_flat_map_storage(
-    std::array<flat_map_entry<Key, Value>, N> entries) noexcept
-    -> flat_map_storage<Key, Value, N>;
 
 }  // namespace fireball
 ```

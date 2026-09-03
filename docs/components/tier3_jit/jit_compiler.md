@@ -195,6 +195,13 @@ graph TD
     - **ターゲットが Oldest-Only Promotion 等により Active/Warm へ昇格（Promote）している場合**: チェインスロットを昇格先のアドレスへ **再チェイニング（Re-chaining）** し、昇格先バンクの `inbound_chains` へ登録を移譲する（インタープリタへフォールバックさせず、ネイティブ直接チェイン実行を維持）。
     - **ターゲットが昇格せず完全にキャッシュアウト（Evict）する場合のみ**: チェインスロットをインタープリタ復帰スタブにアンパッチする。
     これにより、全走査オーバーヘッド $O(N)$ を完全排除しつつ、生存トレース間のネイティブ実行効率を最大化する。 `{JIT_LazyChaining}`
+5. **制御コードスキップ表（Control Skip Table）と直接チェイニング連携**:
+   - **制御構文デリミタの読み飛ばし**: WASM 基本ブロック末尾の制御命令（`BLOCK`, `LOOP`, `IF`, `ELSE`, `END` 等）は、先行ブロックの実行完了と後続ブロックの先頭命令の間に位置する。JIT ネイティブ実行同士を直接チェイニング（`chain_next`）する際、先行ブロック終端 PC（delimiter PC）から制御構文を読み飛ばしたフォールスルー先（fallthrough head PC）を即座に解決する必要がある。
+   - **スキップ表の事前生成と非所有ビュー借用 (`ReadOnlyRadixBinaryTreeStorage` / `RadixBinaryTreeView`)**: モジュールロード時（`prepare_module`）に全関数の基本ブロック境界を走査し、`delimiter_pc -> fallthrough_head_pc` の対応関係を `ReadOnlyRadixBinaryTreeStorage` に格納する。ランタイムエンジンは非所有ビューである `RadixBinaryTreeView`（`control_skip_tree`）をゼロコピーで借用保持する。
+   - **キーのバイトオーダー反転 (`bswap32`) による Radix Table 圧縮**: PC（16bit 関数インデックス + 16bit 命令オフセット）は上位ビットが関数番号に偏るため、キーのバイトオーダーを `bswap32` で反転して命令オフセットの変化を高エントロピーな最上位ビットに射影する。これにより、わずか 17 要素（68 バイト）の極小 Radix Table（`radix_shift = 28`）で $O(1)$ スキップ先境界解決を実現する。
+   - **双方向チェイニング解決フロー**:
+     - **後方チェイニング (Backward Chaining)**: 新規トレース登録時、`succ = trace.next_pc` を `control_skip_tree.find(bswap32(succ))` で解決し、スキップ先が Active/Warm に常駐していれば `trace.chain_next = succ` を即座に接続する。
+     - **前方チェイニング (Forward Chaining)**: キャッシュ常駐トレース `resident_t` の `res_succ = resident_t.next_pc` を同様にスキップ解決し、新登録トレースの `head_pc` と一致すれば `resident_t.chain_next = trace.head_pc` をインプレースパッチする。
 
 #### 統合 Tiered ランタイムエンジン・コンセプトコード (`../tier2_runtime/concepts/runtime_engine_concept.py`)
 インタープリタ実行、2-bit Hotspot 検出、Copy-and-Patch JIT コンパイル、3面マルチバッファキャッシュ（Active/Warm/Oldest）、および MPU W^X 保護プロトコルを統合した自己完結実行シミュレーションは [`../tier2_runtime/concepts/runtime_engine_concept.py`](../tier2_runtime/concepts/runtime_engine_concept.py) を参照。

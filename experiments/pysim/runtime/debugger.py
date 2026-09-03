@@ -18,7 +18,7 @@ from collections.abc import Mapping
 
 from interpreter import Interpreter
 from runtime_engine import BasicBlock, IntegratedHybridEngine, WASMContext
-from system_containers import StaticFlatMap
+from system_containers import MutableFlatMapStorage
 
 # docs/components/tier1_core/system_config.md {Debug_Integrated}
 # {META_NoStdVector}: max PC-sampling entries the profiler buffer holds.
@@ -36,7 +36,7 @@ class DebuggerManager:
         # Sorted breakpoint list (flat_set_view semantics with O(log N) binary search)
         self._breakpoints: list[int] = []
         # Integrated Profiler & Test Tool ({Debug_Integrated})
-        self.pc_sample_counts: StaticFlatMap[int, int] = StaticFlatMap(
+        self.pc_sample_counts: MutableFlatMapStorage[int, int] = MutableFlatMapStorage(
             capacity=FB_CONF_DEBUG_MAX_PC_SAMPLES
         )
         self.memory_assertions: list[tuple[int, int, str]] = []

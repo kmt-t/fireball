@@ -376,6 +376,7 @@ class WasiHostContext:
         self.guest_memory = guest_memory if guest_memory is not None else bytearray(64 * 1024)
         self.sysv.bind_guest(self.guest_memory, task_id=self.task_id)
         self.core03p = Wasi03pEngine(sysv)
+        self.sysv.wasi_context = self
         self._keepalive_trampolines: list[object] = []
 
         # Build static host import table via RadixBinaryTreeView

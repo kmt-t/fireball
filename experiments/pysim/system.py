@@ -241,6 +241,7 @@ class System:
         self._hal_task_id: int | None = None
         self.gdb_server: GDBServer | None = None
         self._gdb_task_id: int | None = None
+        self.wasi_context: object | None = None
         # Build fireball_call dispatch table via RadixBinaryTreeView
         syscall_handlers: list[tuple[int, Callable[[int, int, int, int, int, int], int]]] = [
             (
@@ -618,26 +619,35 @@ class System:
             memory_manager=self.memory_manager,
             task_id=self._current_task_id,
         )
-        # The guest task's own execution *is* this call: system_syscall.md
-        # models a host call as running inside the calling task's own
-        # coroutine (the runtime task, never the Interpreter itself -- it
-        # only ever executes-and-returns), so waiting for a receiver is this
-        # task waiting, via the scheduler's ordinary sleep/wake queue -- not
-        # a separate mechanism, and never a queue/EAGAIN (ipc_router.md §5.1).
         task = self.scheduler.get_task(self._current_task_id)
+        if task is None:
+            task = self.scheduler.get_task(
+                self.scheduler.spawn(
+                    name=f"guest_task_{self._current_task_id}", task_id=self._current_task_id
+                )
+            )
         self.scheduler.current_task = task
-        # The sender here is this runtime task -- the hypervisor-side
-        # execution context hosting the guest across the fireball_call trap
-        # boundary -- acting with the RUNTIME role on the guest's behalf;
-        # it is not the guest's own (untrusted) code reaching into IPC
-        # directly. ipc_router_concept.py's fixed role matrix has no
-        # multi-role guest model, so RUNTIME is the only role this
-        # runtime task ever sends as.
-        task.coro = self.ipc.send(Role.RUNTIME, uri, msg)
-        self.scheduler.attach(task)
-        while task.state != TaskState.TERMINATED:
+
+        gen = self.ipc.send(Role.RUNTIME, uri, msg)
+        try:
+            next(gen)
+            # Counterpart is not ready yet: attach and step cooperatively
+            task.coro = gen
+            self.scheduler.attach(task)
+            while (
+                task.state not in (TaskState.TERMINATED, TaskState.READY) and task.coro is not None
+            ):
+                self.scheduler.step()
+            status, _ = task.result if task.result else (IpcStatus.COMPLETED, None)
+        except StopIteration as e:
+            # Direct O(1) rendezvous handoff (atomic ownership transfer)
+            status, _ = (
+                e.value
+                if (isinstance(e.value, tuple) and len(e.value) == 2)
+                else (IpcStatus.COMPLETED, None)
+            )
             self.scheduler.run_until_idle()
-        status, _ = task.result
+
         if status == IpcStatus.COMPLETED:
             return WasiErrno.SUCCESS
         if status == IpcStatus.ERR_PERMISSION_DENIED:
@@ -648,17 +658,36 @@ class System:
         if handle_id < 1 or handle_id > len(self.ipc.registry.keys):
             return int(WasiErrno.BADF)
         uri = self.ipc.registry.keys[handle_id - 1]
-        # See _ipc_send: this task's own coroutine *is* the recv() call.
-        # recv() itself selects across every sender_role this URI's service
-        # role may legitimately be sent from -- the guest never states one.
         task = self.scheduler.get_task(self._current_task_id)
+        if task is None:
+            task = self.scheduler.get_task(
+                self.scheduler.spawn(
+                    name=f"guest_task_{self._current_task_id}", task_id=self._current_task_id
+                )
+            )
         self.scheduler.current_task = task
-        task.coro = self.ipc.recv(uri)
-        self.scheduler.attach(task)
-        while task.state != TaskState.TERMINATED:
+
+        gen = self.ipc.recv(uri)
+        try:
+            next(gen)
+            # Counterpart is not ready yet: attach and step cooperatively
+            task.coro = gen
+            self.scheduler.attach(task)
+            while (
+                task.state not in (TaskState.TERMINATED, TaskState.READY) and task.coro is not None
+            ):
+                self.scheduler.step()
+            status, msg = task.result if task.result else (IpcStatus.COMPLETED, None)
+        except StopIteration as e:
+            # Direct O(1) rendezvous handoff
+            status, msg = (
+                e.value
+                if (isinstance(e.value, tuple) and len(e.value) == 2)
+                else (IpcStatus.COMPLETED, None)
+            )
             self.scheduler.run_until_idle()
-        status, msg = task.result
-        if status in (IpcStatus.ERR_NOT_FOUND, IpcStatus.ERR_PERMISSION_DENIED):
+
+        if status in (IpcStatus.ERR_NOT_FOUND, IpcStatus.ERR_PERMISSION_DENIED) or msg is None:
             return int(WasiErrno.NOENT)
         data = kv_entries_to_bytes(msg.entries, max_len=buf_len)
         n = len(data)
@@ -668,12 +697,10 @@ class System:
 
     # --- WASI (interface_wit.md §5.5-5.6) --------------------------------
     def _wasi_fd_write(self, fd: int, iovs_ptr: int, iovs_len: int, nwritten_ptr: int) -> WasiErrno:
-        """
-        system_syscall.md §7.1: the Shim already loops per-vector before
-                trapping, so `iovs_len` reaching here is expected to be 1 -- but
-                this loops anyway rather than assuming it, since nothing enforces
-                that at this boundary.
-        """
+        """Dispatches fd_write either via registered WasiHostContext or directly to console."""
+        if self.wasi_context is not None and hasattr(self.wasi_context, "fd_write"):
+            res = self.wasi_context.fd_write(fd, iovs_ptr, iovs_len, nwritten_ptr)
+            return WasiErrno(res) if res in WasiErrno._value2member_map_ else WasiErrno.SUCCESS
 
         if fd not in (1, 2):
             return WasiErrno.BADF

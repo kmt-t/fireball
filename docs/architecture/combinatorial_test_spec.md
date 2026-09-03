@@ -63,7 +63,7 @@
 
 ## 4. テスト実行環境・ランナー構成
 
-- **テスト実装モジュール**: `experiments/pysim/tests/test_pairwise_combinations.py`
+- **テスト実装モジュール**: `experiments/pysim/tests/cross_cutting/test_pairwise_combinations.py`
 - **統合テストランナー**: `experiments/pysim/tests/run_all.py`
 - **実行コマンド**:
   ```bash

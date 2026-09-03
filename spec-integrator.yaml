@@ -42,7 +42,12 @@ keywords:
     pattern: "^GLOBAL_[A-Za-z0-9_]+$"
     defined_in: '(architecture/document_structure|architecture/keyword_dictionary)\.md'
   local:
-    pattern: "^[A-Za-z0-9_]+$"
+    # Allows hyphens: the established GOTCHA-ID convention used throughout
+    # every test spec (SCHED-GOTCHA-01, DBG-GOTCHA-01, LOAD-GOTCHA-01, ...)
+    # is hyphenated, not underscored -- without this, every such keyword is
+    # structurally unable to ever resolve as "defined" regardless of where
+    # it's registered in keyword_dictionary.md.
+    pattern: "^[A-Za-z0-9_-]+$"
     defined_in: '(requires/.*|architecture/keyword_dictionary)\.md'
 
 formal_verification:

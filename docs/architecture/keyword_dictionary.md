@@ -40,6 +40,14 @@
 | `{ADR_TraceBoundaryYield}` | `runtime_interpreter.md` | `runtime_interpreter.md` | インタープリタの命令ハンドラが vSoC へ制御を返す頻度をトレース境界（切れ目）に限定する設計判断——`co_yield` の判定・発行は常に vSoC 側が行い、インタープリタ自身はコルーチンではない | Scenario 6 (`INT-50`) |
 | `{Libgcc_Runtime_Helper}` | `runtime_interpreter.md` | `runtime_interpreter.md` | i64 / f32 / f64 の libgcc 依存演算をランタイムヘルパー関数経由で実行する設計 | Scenario 1, 8 |
 | `{DirectBytecodeExecution}` | `runtime_interpreter.md` | `runtime_interpreter.md` | ROM/Flash バイトコード直接デコード、命令オブジェクト生成ゼロ、およびポインタ加算（ip + len）によるO(1)命令実行 | Scenario 1〜11 (`INTP-50`) |
+| `{INTP-GOTCHA-01}` | `runtime_interpreter_test_spec.md` | `runtime_interpreter.md` | CPS第4引数 `tos`（R3）とスタックメモリの境界同期——スタック空時は `tos=0`、push/pop のたびに `tos` とスタックメモリ間で退避・復元する | `INTP-GOTCHA-01` |
+| `{INTP-GOTCHA-02}` | `runtime_interpreter_test_spec.md` | `runtime_interpreter.md` | Label Arity スタック巻き戻し時、宣言アリティ分の結果値のうち最上位値を `tos` レジスタへ正しく復元する | `INTP-GOTCHA-02` |
+| `{INTP-GOTCHA-03}` | `runtime_interpreter_test_spec.md` | `runtime_interpreter.md` | `if` 条件偽（else節なし）で分岐した際、制御フレームを積まずにジャンプし、フレームスタックの深さを不変に保つ | `INTP-GOTCHA-03` |
+| `{LOAD-GOTCHA-01}` | `runtime_loader_test_spec.md` | `runtime_loader.md` | ハッシュ衝突時のシンボル誤認防止——ハッシュ一致後に ROM 上の文字列を1回比較し完全一致を確認する | `LOAD-GOTCHA-01` |
+| `{LOAD-GOTCHA-02}` | `runtime_loader_test_spec.md` | `runtime_loader.md` | 検証失敗時のバンプアロケータ完全ロールバック——パース失敗時にバンプポインタをロード開始前の位置へ巻き戻しメモリリークを防ぐ | `LOAD-GOTCHA-02` |
+| `{VMMIO-GOTCHA-01}` | `runtime_vmmio_test_spec.md` | `runtime_vmmio.md` | Bit 31 RAM 高速バイパス経路はページテーブル走査・TLB検索を一切行わない | `VMMIO-GOTCHA-01` |
+| `{VMMIO-GOTCHA-02}` | `runtime_vmmio_test_spec.md` | `runtime_vmmio.md` | Direct-Mapped TLB の 4-bit Folding XOR Hash（単純な下位マスクでは異なるFCの同一下位ページが衝突する） | `VMMIO-GOTCHA-02` |
+| `{VMMIO-GOTCHA-03}` | `runtime_vmmio_test_spec.md` | `runtime_vmmio.md` | SHM Revoke 時、対象TLBスロットを即時破棄しin-flightアクセスを `TRAP_OWNER_MISMATCH` で遮断する | `VMMIO-GOTCHA-03` |
 
 ---
 
@@ -54,6 +62,9 @@
 | `{CSPCommunication}` | `requirement_list.md` | `ipc_router.md` | ホーアCSPに基づく所有権移譲ゼロコピーメッセージパッシング | Scenario 9 (`INT-80`) |
 | `{ThreeStageRouting}` | `ipc_router.md` | `ipc_router.md` | Stage 1 URI検索 $\to$ Stage 2 RBAC判定 $\to$ Stage 3 Zero-Copy CSP Rendezvous 所有権移譲 | Scenario 9 (`INT-80`, `INT-81`) |
 | `{PreflightRejection}` | `ipc_router.md` | `ipc_router.md` | Revoke前の静的チェック（RBAC拒否・メッセージサイズ超過）失敗時、所有権は送信側から一度も動かない | Scenario 9 (`INT-81`) |
+| `{SCHED-GOTCHA-01}` | `os_scheduler_test_spec.md` | `os_scheduler.md` | 連続直接ハンドオフ上限到達時、直接遷移を打ち切りタスクをREADYキュー末尾へ戻してメイン巡回ループへ強制復帰する | `SCHED-GOTCHA-01` |
+| `{Orthogonal_Design}` | `os_coos_test_spec.md` | `os_coos.md` | 1チャネル1待機者の強制——多重待機はプログラミングエラーとして即座にアサーション違反で停止する（待機列によるキューイングを設計上排除） | `COOS-GOTCHA-02` |
+| `{ISR_Safety}` | `os_coos_test_spec.md` | `os_coos.md` | ISRコンテキストとスケジューラ境界の分離——ISRはイベントキューへの記録のみ行い、`run_step` 開始時の割り込みドレインで初めてタスクがREADYへ遷移する | `COOS-GOTCHA-03` |
 
 ---
 
@@ -70,6 +81,11 @@
 | `{RadixBinaryTreeView_bswap32}` | `system_containers.md` | `jit_runtime.md` | UnifiedPC（`func_idx << 20 \| pc`）の bswap32 による Radix 検索 | Scenario 5 (`INT-40`, `INT-41`) |
 | `{BitView_CardMarking}` | `system_containers.md` | `jit_runtime.md` | 関数ごと 8バイト/カード 2-bit カードマーキング Hotspot 検出（UNEXEC $\to$ EXEC $\to$ HOT $\to$ COMPILED） | Scenario 4 (`INT-30`) |
 | `{DirectMappedJIT16}` | `jit_runtime.md` | `jit_runtime.md` | 32-bit UnifiedPC の 4-bit Folding XOR Hash による 16エントリ Direct-Mapped JIT キャッシュ一撃検索 | Scenario 4, 5 (`JITR-26`) |
+| `{JITC-GOTCHA-01}` | `jit_compiler_test_spec.md` | `jit_compiler.md` | CPS引数レジスタ（R0-R3）とJIT内部一時レジスタ（R4-R6, R8-R11）が呼び出し境界を越えて物理的に重複しない | `JITC-GOTCHA-01` |
+| `{JITC-GOTCHA-02}` | `jit_compiler_test_spec.md` | `jit_compiler.md` | `mem_base`/`mem_size` は `execution_context`（`[R1, #0x10]`, `[R1, #0x14]`）から一度だけピン留めロードする（独立した `env` 引数レジスタは廃止済み） | `JITC-GOTCHA-02` |
+| `{JITC-GOTCHA-05}` | `jit_compiler_test_spec.md` | `jit_compiler.md` | トラップ分岐（`BHS.W`）はアドレス未確定のままオフセット0で仮発行し、エピローグ生成後に実アドレスへ2パスバックパッチする | `JITC-GOTCHA-05` |
+| `{JITR-GOTCHA-02}` | `jit_runtime_test_spec.md` | `jit_runtime.md` | Oldestバンクからの昇格時、被チェイン登録（`inbound_sources`）を昇格先バンクへ移管しダングリングジャンプを防ぐ | `JITR-GOTCHA-02` |
+| `{JITR-GOTCHA-03}` | `jit_runtime_test_spec.md` | `jit_runtime.md` | LIFO逆順コンパイル（後入れ先出し）により、先行ブロックコンパイル時点で後続ブロックが既にキャッシュ常駐し即時チェイニングが成立する | `JITR-GOTCHA-03` |
 
 ---
 
@@ -80,11 +96,17 @@
 | `{RSPMinimalSet}` | `debug_manager.md` | `debug_manager.md` | GDB RSP 最小コマンドセット（`?`, `g/G`, `m/M`, `Z0/z0`, `s`, `c`）の実ソケット対話 | Scenario 7, 8 (`INT-60`〜`INT-64`) |
 | `{Debugger_Jit_Flush}` | `debug_manager.md` | `debug_manager.md` | デバッガからのメモリ書き込み（`M` パケット）時の JIT キャッシュ全バンク即時無効化 | Scenario 7, 8 (`INT-62`, `INT-72`) |
 | `{DebuggerLabelTableSwitch}` | `debug_manager.md` | `debug_manager.md` | デバッガアタッチ時のインタープリタハンドラテーブル動的切り替え | Scenario 7 |
+| `{DBG-GOTCHA-01}` | `debug_manager_test_spec.md` | `debug_manager.md` | デバッガからのメモリ書き込み（`M` パケット）実行と同時に JIT キャッシュ全バンクを即時無効化する（`{Debugger_Jit_Flush}` の勘所） | `DBG-GOTCHA-01` |
+| `{DBG-GOTCHA-03}` | `debug_manager_test_spec.md` | `debug_manager.md` | GDB RSP チェックサム不一致パケットはサーバーが破棄しNAK（`-`）を返して再送を要求する | `DBG-GOTCHA-03` |
+| `{RSPChecksumVerify}` | `gdb_rsp_protocol.md` | `debug_manager.md` | GDB RSP パケットのチェックサム検証と、不一致時のNAK応答による再送制御ポリシー | `gdb_rsp_protocol.md` §2.1 |
 | `{WASI_ScatteredIO}` | `system_syscall.md` | `system_syscall.md` | 分散ギャザー `fd_write` / スキャッター `fd_read` による多要素 iovec 転送 | Scenario 2, 11 (`INT-10`, `INT-104`) |
 | `{Syscall_ProcExit}` | `system_syscall.md` | `system_syscall.md` | `proc_exit` システムコールによるゲストタスク停止および終了コード伝播 | Scenario 2 (`INT-11`) |
 | `{DictionaryBasedIPC}` | `system_logging.md` | `system_logging.md` | 静的 LogDictionary、危険書式（`%s` / `%p`）の登録時静的拒絶 | Scenario 9 (`INT-82`) |
 | `{BufferedLogging}` | `system_logging.md` | `system_logging.md` | 実行時リングバッファ蓄積 $\to$ COOS `idle_hook` での一括 UART フラッシュ | Scenario 9 (`INT-82`) |
+| `{DeterministicRingBuffer}` | `system_logging_test_spec.md` | `system_logging.md` | リングバッファ満杯時、ブロックやエラーを起こさず最古エントリを上書きして直近ログを保存する非ブロック不変条件 | `LOG-GOTCHA-02` |
+| `{InterruptibleFlush}` | `system_logging_test_spec.md` | `system_logging.md` | flush 実行中に `interrupt_pending()` が真を返した時点で全フラッシュを強行せずループを抜けてスケジューラへ制御を戻す | `LOG-GOTCHA-03` |
 | `{HAL_PeripheralDrivers}` | `platform_hal.md` | `platform_hal.md` | GPIO（入出力・エッジIRQ）、I2C（LM75）、SPI（EEPROM）、Timer ダミードライバ | Scenario 11 (`INT-100`〜`INT-102`) |
+| `{HAL-GOTCHA-01}` | `platform_hal_test_spec.md` | `platform_hal.md` | `ShmBufferPool` は固定サイズを超えるスライス要求を即座にエラー/アサーション違反で拒絶する（隣接バッファ汚染防止） | `HAL-GOTCHA-01` |
 | `{WASI_InMemVFS}` | `interface_wit.md` | `system_service.md` | WASI In-Memory VFS（`fd_seek`, `fd_read`, `fd_write`, `random_get`, `clock_time_get`） | Scenario 11 (`INT-103`〜`INT-105`) |
 | `{FlatMapView_BinarySearch}` | `system_containers.md` | `system_containers.md` | 静的ソート配列に対する $O(\log N)$ バイナリサーチ（動的割当なし） | Scenario 1, 9 (`INT-01`, `INT-80`) |
 | `{RingBuffer_Overwrite}` | `system_containers.md` | `system_containers.md` | 静的容量リングバッファ、満杯時の最古エントリ自動上書き | Scenario 9 (`INT-82`) |
@@ -92,8 +114,13 @@
 | `{PageGranularPermissionIsolation}` | `platform_memory.md` | `platform_memory.md` | 共有メモリの4KB物理ページ単位での排他所有権（`owner_id`）管理とアクセス権限分離 | `MEM-14` |
 | `{VmmioShmDelegation}` | `runtime_vmmio.md` | `platform_memory.md` | vMMIO FC=14共有メモリマッピングと権限・TLB無効化のメモリマネージャリスナー移譲 | `MEM-15` |
 | `{ADR_PageGranularPermissionIsolation}` | `platform_memory.md` | `platform_memory.md` | アーキテクチャ決定: ページ単位での権限分離とリスナーによる仮想化マッピング移譲 | `MEM-14`, `MEM-15` |
+| `{MEM-GOTCHA-03}` | `platform_memory_test_spec.md` | `platform_memory.md` | 送信中状態（`FB_TASK_ID_FLIGHT`）は TLB を即時破棄し送受信双方からのアクセスを遮断する；転送失敗時は `rollback_transfer()` で送信元 `owner_id` へ復元する | `MEM-GOTCHA-03` |
+| `{MEM-GOTCHA-04}` | `platform_memory_test_spec.md` | `platform_memory.md` | W^X 切り替えは命令単位ではなくトランザクションバッチ化し、パッチ完了時に一括で `RO+X` とキャッシュバリア（DSB/ISB）を発行する | `MEM-GOTCHA-04` |
+| `{MPU_WX_Enforcement}` | `platform_memory.md` | `platform_memory.md` | JITコンパイル時のMPU属性切り替え（`RW+XN` ⇔ `RO+X`）とキャッシュコヒーレンシバリア発行のトランザクションバッチ化ポリシー | `platform_memory.md` §7.2 |
 | `{VSOC_Lifecycle}` | `runtime_vsoc.md` | `runtime_vsoc.md` | vSoC Engine の状態遷移とインタープリタ／JIT切り替えライフサイクル | Scenario 7, 8 |
-| `{Loader_BasicBlockIndex}` | `runtime_loader.md` | `runtime_loader.md` | WASMローダによる全ベーシックブロックメタ情報（BasicBlock）の不変抽出と RadixBinaryTreeView（bswap32キー）索引の所有・公開 | `LOAD-48`, `test_loader.py` |
+| `{VSOC-GOTCHA-01}` | `runtime_vsoc_test_spec.md` | `runtime_vsoc.md` | JITキャッシュ再判定の主体分離——インタープリタ自身はJITキャッシュを保持・参照せず、トレース境界で vSoC の `step()` が再判定する | `VSOC-GOTCHA-01` |
+| `{VSOC-GOTCHA-02}` | `runtime_vsoc_test_spec.md` | `runtime_vsoc.md` | 概算Yieldの主体分離——インタープリタ/JITトレース自身は `co_yield` を発行せず、vSoC が戻り値を受けて `yield_threshold` を評価する | `VSOC-GOTCHA-02` |
+| `{Loader_BasicBlockIndex}` | `runtime_loader.md` | `runtime_loader.md` | WASMローダによる全ベーシックブロックメタ情報（BasicBlock）の不変抽出と RadixBinaryTreeView（bswap32キー）索引の所有・公開 | `LOAD-48`, `experiments/pysim/tests/tier2_runtime/test_loader.py` |
 
 ---
 

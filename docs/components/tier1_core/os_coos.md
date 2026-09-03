@@ -108,7 +108,7 @@ sequenceDiagram
 ```
 
 #### ISR 遅延起床アルゴリズム（手順アクティビティ図）
-<!-- traceability: {GLOBAL_InterruptWakeup} {drain_interrupts} -->
+<!-- traceability: {GLOBAL_InterruptWakeup} -->
 ハードウェア割り込み発生から、非ブロッキング ISR キューイング、およびスケジューラ yield 境界での安全な遅延起床までの決定論的手順を示す。
 
 ```mermaid

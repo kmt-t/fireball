@@ -139,14 +139,14 @@ record shm-slice {
 
 resource bus-master {
     // tx-bufのオフセット/サイズを渡し、受信データはrx-buf（事前に確保したSHMスロット）に直接書き込ませ、実際に転送したバイト数を返す
-    transfer-data: func(tx-buf: shm-slice, rx-buf: shm-slice) -> result<u32, recovery-strategy>;
+    transfer-data: func(tx-buf: shm-slice, rx-buf: shm-slice) -> result<u32, recovery-strategy-category>;
 }
 
 resource bus-slave {
     // 送信応答データを設定
     set-response: func(data: shm-slice) -> operation-result;
     // 受信データを指定したSHMスロットに読み出し、実際に取得したバイト数を返す
-    get-received: func(dest-buf: shm-slice) -> result<u32, recovery-strategy>;
+    get-received: func(dest-buf: shm-slice) -> result<u32, recovery-strategy-category>;
     subscribe: func() -> pollable; // マスタからのアクセス通知
 }
 ```

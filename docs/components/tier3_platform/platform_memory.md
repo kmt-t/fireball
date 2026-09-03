@@ -278,7 +278,7 @@ Copy-and-Patch の各命令パッチごとに個別 MPU 切替を行うとバリ
 ### 8.1 検証対象の不変条件
 - **ページ単位権限分離**: 4KB 物理ページ内に異種タスクのスロットが共存しないこと（`MEM-14`, `MEM-GOTCHA-01`）。
 - **非所有者アクセストラップ**: 所有権未取得スロットへのアクセスが `TRAP_OWNER_MISMATCH` で拒絶されること（`MEM-16`, `MEM-GOTCHA-02`）。
-- **W^X 不変条件**: JIT キャッシュ領域で `RWX` が同時に許可される状態が存在しないこと（`formal/jit_cache_model.py`, `MEM-23`）。
+- **W^X 不変条件**: JIT キャッシュ領域で `RWX` が同時に許可される状態が存在しないこと（`docs/components/tier3_jit/formal/jit_cache_model.py`, `MEM-23`）。
 
 ### 8.2 テスト仕様書との連携
 本コンポーネントのテストケース（MEM-01〜MEM-25, MEM-GOTCHA-01〜04）は、[`tests/platform_memory_test_spec.md`](tests/platform_memory_test_spec.md) を正本として定義する。

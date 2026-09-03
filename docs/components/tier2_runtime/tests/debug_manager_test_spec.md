@@ -62,7 +62,7 @@ GDB RSPコマンド処理（`?`, `g/G`, `m/M`, `Z0/z0`, `s`, `c`）、ブレー�
 - **GDB RSP 通信 & 仮想レジスタ (DBG-01〜07)**: `?`, `g`, `G`, `m`, `M`, `Z0`, `z0` のパケット解析・応答およびレジスタ/メモリ操作を検証。
 - **実行制御 (DBG-08〜11)**: ブレークポイント停止、ステップ実行、正常終了通知を検証。
 - **JIT 協調 & プロファイラ (DBG-12〜15)**: メモリ書き換え時の JIT キャッシュ無効化（`{Debugger_Jit_Flush}`）、インタープリタ切り替え（`{DebuggerLabelTableSwitch}`）、PC サンプリングおよびメモリアサーションを検証。
-- **実ソケット GDB リモート対話セッション (DBG-20〜24)**: `experiments/pysim/tests/test_gdb_remote_connection.py` および `experiments/pysim/scenarios/scenario7_gdb_socket_debugger.py` により、実 TCP ソケットを介した 10 ステップの GDB RSP リモート対話デバッグセッションを実証済み。
+- **実ソケット GDB リモート対話セッション (DBG-20〜24)**: `experiments/pysim/tests/tier2_runtime/test_gdb_remote.py` および `experiments/pysim/scenarios/scenario7_gdb_socket_debugger.py` により、実 TCP ソケットを介した 10 ステップの GDB RSP リモート対話デバッグセッションを実証済み。
 
 ## 4. 未検証・スコープ外
 

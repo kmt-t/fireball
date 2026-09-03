@@ -36,10 +36,10 @@
 
 **固定長配列と有効エントリカウント規約 (`{GLOBAL_Policy_Memory}`, `{META_NoStdVector}`)**:
 - **固定長事前確保バッファ**: `mutable_*_storage` は、動的リサイズ（`std::vector` や `list.insert`/`append` 等のヒープ再確保）を完全に禁止する。インスタンス化時に `Capacity` サイズの内部バッファ（`_buffer = [None] * capacity`）を一括して事前確保する。
-- **有効エントリカウンタ (`count`)**: バッファ内に格納されている有効なエントリ数を整数値で追跡する（$0 \le \text{count} \le \text{Capacity}$）。
-- **容量上限到達時の動作**: 未登録キーの `insert` 呼び出し時、$\text{count} \ge \text{Capacity}$ であればメモリ再確保を行わず即座に `false` を返却する。既存キーの更新は `count` を増加させずインプレースで上書きし `true` を返却する。
+- **有効エントリカウンタ (`count`)**: バッファ内に格納されている有効なエントリ数を整数値で追跡する（`0 ≤ count ≤ Capacity`）。
+- **容量上限到達時の動作**: 未登録キーの `insert` 呼び出し時、`count ≥ Capacity` であればメモリ再確保を行わず即座に `false` を返却する。既存キーの更新は `count` を増加させずインプレースで上書きし `true` を返却する。
 - **インプレースシフト削除とスロットクリア**: 要素削除時はバッファ内で要素をインプレースで前方にシフトし、空いた末尾スロットは即座にゼロクリア（`None`）して `count` をデクリメントする。
-- **非所有 View への動的追従**: 借用中の View は、Mutable Storage の内部固定バッファの先頭 $\text{count}$ 要素（有効スパン）をゼロコピーで直接参照するため、Storage 側の追加・削除・シフトが即座に View に反映される。
+- **非所有 View への動的追従**: 借用中の View は、Mutable Storage の内部固定バッファの先頭 `count` 要素（有効スパン）をゼロコピーで直接参照するため、Storage 側の追加・削除・シフトが即座に View に反映される。
 
 **標準の `std::flat_map` / `std::flat_set` を採用しない理由**:
 C++23 のこれらはコンテナアダプタであり、既定の下位コンテナが `std::vector` であるため `{META_NoStdVector}` および `{GLOBAL_Policy_Memory}`（`malloc` / `new` の使用禁止）に抵触する上、動的再確保のレイテンシ揺らぎを持ち込む。本アーキテクチャでは、固定長バッファ＋`count` 追跡による決定論的かつゼロアロケーションな静的ストレージを採用する。 `{META_NoStdVector}` `{GLOBAL_Policy_Memory}` `{GLOBAL_StaticScalability}`
@@ -92,7 +92,7 @@ graph LR
 
 #### 疎マップビュー（flat_map_view）
 <!-- traceability: {META_BinarySearch} {META_ZeroCostAbstraction} {FlatViewNarrowing} {META_FlatMapIndexed} -->
-SoA（Structure of Arrays）構造に基づく、昇順ソート済みのキー配列と値配列に対する非所有ビュー。粗索引による範囲絞り込みと二分探索を合成し、$O(\log N)$ でキーを特定して対応する値を取り出す。二分探索パスではキー列のみがCPUキャッシュラインに高密度に載るため、値のメモリサイズにかかわらずキャッシュミスを最小化する。 `{META_BinarySearch}` `{FlatViewNarrowing}` `{META_FlatMapIndexed}`
+AoS（Array of Structures）構造に基づく、昇順ソート済みの (Key, Value) ペア配列に対する非所有ビュー。粗索引による範囲絞り込みと二分探索を合成し、$O(\log N)$ でキーを特定して対応する値を取り出す。キーと値を単一配列で連続保持するため、値の型やサイズに関わらず保持メンバは単一スパン（ポインタと長さの計2ワード）のみで済み、レジスタ渡しに最適化される。 `{META_BinarySearch}` `{FlatViewNarrowing}` `{META_FlatMapIndexed}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |

@@ -126,12 +126,12 @@ ROM上のデータストリームを管理し、LEB128可変長整数やプリ�
 - **module_view 構築 & デコード値レジストリ登録 (Zero-Copy & Radix-Indexed)**: `{ZeroCopyIndexing}` `{META_BinarySearch}`
     - セクションスキャン時に内容をRAMにコピーせず、ROM上の開始オフセットとサイズを索引化する。
     - 各セクション、関数コードブロック、グローバル変数、データセグメント等のデコード済みエントリを `decoded_entity_registry` に登録する。
-    - 各エントリの開始ファイルオフセット `file_offset` をキーとして、基数2進探索木ビュー（`fireball::radix_binary_tree_view`）を構築する。粗い Radix Table で区間を特定後、有界二分探索により $O(k)$ / $O(\log n)$ でファイル内の任意バイト位置から該当するデコード済みエンティティ（関数メタデータ、セクション、データ定義）を高速逆引きできるようにする。
+    - 各エントリの開始ファイルオフセット `file_offset` をキーとして、基数2進探索木ビュー（`fireball::radix_binary_tree_view`）を構築する。粗い Radix Table で区間を特定後、有界二分探索により $O(1) + O(\log n)$ でファイル内の任意バイト位置から該当するデコード済みエンティティ（関数メタデータ、セクション、データ定義）を高速逆引きできるようにする。
     - エクスポートおよびインポートエントリをパースし、シンボル名の 32-bit ハッシュ値（FNV-1a）を算出。名前文字列は ROM 上のポインタ（`std::string_view`）として RAM コピーゼロで保持しつつ、ハッシュ値をキーとした `export_tree` / `import_tree`（`fireball::radix_binary_tree_view`）を構築する。
 - **シンボル検索とハッシュ衝突完全排除 (`LOAD-GOTCHA-01`, `{META_AccessDictionary}`, `{META_BinarySearch}`)**:
-  文字列比較ループを行わず、シンボル名ハッシュ（FNV-1a 32-bit）をキーとして `export_tree`（`radix_binary_tree_view`）を $O(k)$ で探索。
+  文字列比較ループを行わず、シンボル名ハッシュ（FNV-1a 32-bit）をキーとして `export_tree`（`radix_binary_tree_view`）を $O(1) + O(\log n)$ で探索。
   **設計理由と不変条件**: 32-bit ハッシュ値による探索のみで関数解決を完了させると、万一のハッシュ衝突発生時に誤った関数がディスパッチされ、壊滅的な誤動作を引き起こす。そのため、ハッシュ探索で候補エントリがヒットした際は必ず ROM 上の元のシンボル名文字列と 1 回完全一致照合を行い、ハッシュ衝突によるシンボル誤認を完全に排除する。
-- **インポートテーブル検索と依存関係解決 (resolve_imports)**: インポートテーブルの各エントリに対し、インポート先モジュール名・フィールド名のハッシュ値を用いて対象モジュールの `export_tree`（`radix_binary_tree_view`）を $O(k)$ で直接引き当てる。文字列走査を行わずに $O(k)$ で依存関係を解決し、モジュールを実行可能状態へ遷移させる。 `{MultiModule_Support}` `{META_BinarySearch}`
+- **インポートテーブル検索と依存関係解決 (resolve_imports)**: インポートテーブルの各エントリに対し、インポート先モジュール名・フィールド名のハッシュ値を用いて対象モジュールの `export_tree`（`radix_binary_tree_view`）を $O(1) + O(\log n)$ で直接引き当てる。文字列走査を行わずに $O(1) + O(\log n)$ で依存関係を解決し、モジュールを実行可能状態へ遷移させる。 `{MultiModule_Support}` `{META_BinarySearch}`
 - **ファイル位置逆引き (lookup_by_file_offset)**: 任意のファイル内バイトオフセットから `entity_offset_tree`（`radix_binary_tree_view`）を検索し、そのオフセットを包含するデコード済みエンティティ（セクション、関数、データ等）を即座に特定・返却する。
 - **メモリセクション検証**: Memory Section をパースし、論理ページサイズ（64KB単位）および初期要求ページ数を取得。物理割当が部分ページ（例: 8KB）の場合や複数ページ（`N * 64KB`）の場合でも、モジュール初期ページ要求とシステム物理予算（`FB_CONF_MAX_WASM_PAGES`）を照合し、実行時境界判定へ引き渡す。
 - **アンロードと LIFO メモリ回収制約 (`LOAD-GOTCHA-03`)**:
@@ -177,7 +177,7 @@ flowchart TD
 ```mermaid
 flowchart TD
     Start(["Symbol Lookup Request: target_name"]) --> Hash["Compute 32-bit FNV-1a Hash of target_name"]
-    Hash --> BSearch["Bounded Binary Search in export_tree (O(k))"]
+    Hash --> BSearch["Bounded Binary Search in export_tree (O(1) + O(log n))"]
     BSearch --> Found{"Candidate Entry found by Hash?"}
 
     Found -- "No" --> NotFound(["Symbol Not Found (ERR_NOT_FOUND)"])
@@ -345,7 +345,7 @@ sequenceDiagram
 | シグネチャ | `lookup-by-file-offset(file-offset: u32) -> result<decoded-entity-view, bool>` |
 | 引数 | `file-offset`: WASMバイナリ内のバイト位置 |
 | 戻り値 | 成功時はデコード済みエンティティへのビュー、該当なし時は `false` |
-| 不変条件 | 検索は `radix_binary_tree_view` による基数表＋有界二分探索（$O(k)$ / $O(\log n)$）で行われること。 |
+| 不変条件 | 検索は `radix_binary_tree_view` による基数表＋有界二分探索（$O(1) + O(\log n)$）で行われること。 |
 
 ### 5.2 URI/IPCインターフェース
 本コンポーネントは vSoC 内部で使用されるライブラリであり、直接のIPCインターフェースは持たない。

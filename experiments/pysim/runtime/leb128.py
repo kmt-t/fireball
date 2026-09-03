@@ -7,7 +7,12 @@ sandbox, so binaries used for testing are synthesized directly in Python).
 
 from __future__ import annotations
 
+import cython
 
+
+@cython.locals(
+    offset=cython.Py_ssize_t, result=cython.longlong, shift=cython.int, byte=cython.uchar
+)
 def decode_unsigned(data: bytes, offset: int) -> tuple[int, int]:
     """Returns (value, new_offset)."""
     result = 0
@@ -21,6 +26,9 @@ def decode_unsigned(data: bytes, offset: int) -> tuple[int, int]:
         shift += 7
 
 
+@cython.locals(
+    offset=cython.Py_ssize_t, result=cython.longlong, shift=cython.int, byte=cython.uchar
+)
 def decode_signed(data: bytes, offset: int) -> tuple[int, int]:
     """Returns (value, new_offset). Used for i32.const/i64.const (sleb128)."""
     result = 0

@@ -16,7 +16,7 @@ mermaidx>=0.9.4              # Mermaid diagram syntax and topology validator
 # ==============================================================================
 wasmtime>=14.0.0             # WebAssembly reference runtime for differential testing
 unicorn>=2.0.0               # CPU emulator for Thumb-2/ARM instruction trace verification
-cython>=3.0.0                # Compiled-extension benchmarking for pysim hot paths (requires clang/MSVC toolchain)
+cython>=3.0.0                # Runtime dep (pure-python-mode `import cython` shim) + optional compiled-extension build for pysim hot paths (build requires clang/MSVC toolchain)
 setuptools>=68.0.0           # Build backend for Cython extension compilation
 
 # ==============================================================================

@@ -44,6 +44,7 @@ import struct
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+import cython
 from control_flow import ControlMap, Instr, build_control_map, decode_all
 from leb128 import decode_signed, decode_unsigned
 from system_containers import FlatMapView
@@ -166,11 +167,13 @@ I32_MASK = 0xFFFFFFFF
 PAGE_SIZE = 65536
 
 
+@cython.locals(v=cython.longlong)
 def _to_i32(v: int) -> int:
     v &= I32_MASK
     return v - (1 << 32) if v & 0x8000_0000 else v
 
 
+@cython.locals(v=cython.longlong)
 def _to_u32(v: int) -> int:
     return v & I32_MASK
 
@@ -477,6 +480,7 @@ class Interpreter:
         frame = CallFrame(fn.code, fn.control_map, [], env=self._env)
         return frame, locals_arr
 
+    @cython.locals(instr_step=cython.Py_ssize_t, ip=cython.Py_ssize_t, op=cython.uchar)
     def step(self, call_state: InterpreterCall, quantum: int = 64) -> InterpreterCall:
         """
         Executes up to `quantum` boundary instructions (Fuel/Quantum; 0 runs
@@ -668,6 +672,7 @@ def _h_end(ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
 
 
 @_handler(BR)
+@cython.locals(depth=cython.Py_ssize_t)
 def _h_br(ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]) -> _HandlerResult:
     depth, _ = decode_unsigned(frame.code, ip + 1)
     next_ip = _do_branch(depth, frame)
@@ -675,6 +680,7 @@ def _h_br(ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int])
 
 
 @_handler(BR_IF)
+@cython.locals(depth=cython.Py_ssize_t, next_ip=cython.Py_ssize_t, cond=cython.longlong)
 def _h_br_if(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
 ) -> _HandlerResult:
@@ -731,6 +737,7 @@ def _h_select(
 
 
 @_handler(LOCAL_GET)
+@cython.locals(idx=cython.Py_ssize_t, next_ip=cython.Py_ssize_t)
 def _h_local_get(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
 ) -> _HandlerResult:
@@ -740,6 +747,7 @@ def _h_local_get(
 
 
 @_handler(LOCAL_SET)
+@cython.locals(idx=cython.Py_ssize_t, next_ip=cython.Py_ssize_t)
 def _h_local_set(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
 ) -> _HandlerResult:
@@ -749,6 +757,7 @@ def _h_local_set(
 
 
 @_handler(LOCAL_TEE)
+@cython.locals(idx=cython.Py_ssize_t, next_ip=cython.Py_ssize_t)
 def _h_local_tee(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
 ) -> _HandlerResult:
@@ -758,6 +767,7 @@ def _h_local_tee(
 
 
 @_handler(I32_CONST)
+@cython.locals(val=cython.longlong, next_ip=cython.Py_ssize_t)
 def _h_i32_const(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
 ) -> _HandlerResult:
@@ -1095,6 +1105,7 @@ def _h_i32_le_u(
 
 
 @_handler(I32_GE_S)
+@cython.locals(a=cython.longlong, b=cython.longlong)
 def _h_i32_ge_s(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
 ) -> _HandlerResult:
@@ -1158,6 +1169,7 @@ def _h_i32_popcnt(
 
 
 @_handler(I32_ADD)
+@cython.locals(a=cython.longlong, b=cython.longlong)
 def _h_i32_add(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
 ) -> _HandlerResult:
@@ -1168,6 +1180,7 @@ def _h_i32_add(
 
 
 @_handler(I32_SUB)
+@cython.locals(a=cython.longlong, b=cython.longlong)
 def _h_i32_sub(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
 ) -> _HandlerResult:
@@ -1329,11 +1342,13 @@ import math
 I64_MASK = 0xFFFF_FFFF_FFFF_FFFF
 
 
+@cython.locals(v=cython.ulonglong)
 def _to_i64(v: int) -> int:
     v &= I64_MASK
     return v - (1 << 64) if v & 0x8000_0000_0000_0000 else v
 
 
+@cython.locals(v=cython.ulonglong)
 def _to_u64(v: int) -> int:
     return v & I64_MASK
 

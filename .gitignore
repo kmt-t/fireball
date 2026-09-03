@@ -18,12 +18,16 @@ Testing/
 *~
 
 # spec-integrator cache & reports
-# .spec-integrator/doc_cache.db is committed: it's the actual LLM-audit
-# evidence (risk assessments, judge verdicts) the Obligation Gate reads, not
-# a derived report like doc_report.md/doc_graph.json. Ignoring it meant a
-# fresh checkout (or CI, which never runs an LLM audit) could never see a
-# real judge verdict, so any {VERIFY_LLM}-tagged document would fail
-# OBLIG-JUDGE-MISSING regardless of whether the audit had ever actually run.
+# .spec-integrator/doc_cache.db was previously committed as the actual
+# LLM-audit evidence (risk assessments, judge verdicts) the Obligation Gate
+# reads -- see the superseded rationale this replaces. It repeatedly
+# rewrote as a full ~60-100MB blob per revision (SQLite binaries don't diff),
+# which dominated the repo's .git size; its history was purged separately.
+# It is now untracked and regenerated locally via `spec-integrator sync` /
+# `llm-judge` per tools/README.md -- CI's automatic triggers are disabled
+# accordingly (.github/workflows/document-lint.yml) since a fresh checkout
+# no longer carries pre-existing audit evidence.
+.spec-integrator/doc_cache.db
 doc_report.md
 spec_report.md
 doc_graph.json

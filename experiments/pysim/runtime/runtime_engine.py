@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import bisect
 import ctypes
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 
 from interpreter import Interpreter, InterpreterCall
 from system_containers import (
@@ -588,6 +588,12 @@ class RuntimeEngine:
         # the interpreter is already faster than a compiled-trace dispatch
         # would be.
         self.min_trace_bytes = min_trace_bytes if min_trace_bytes is not None else (1 << card_shift)
+        # Loader-known local counts per function index (params + declared
+        # locals), a fixed table built once in register_module_blocks --
+        # never derived per JIT call via len(locals_arr)/max(): the loader
+        # already knows every function's exact local count at module-load
+        # time, so there is nothing to defensively recompute at runtime.
+        self._n_locals_by_func: list[int] = []
 
     def _handle_eviction(self, purged_pcs: list[int]) -> None:
         for pc in purged_pcs:
@@ -629,15 +635,24 @@ class RuntimeEngine:
         self.cache.control_skip_tree = module.control_skip_tree
         self.blocks = [(b.head_pc, b) for b in module.blocks]
         self._fast_block_slots = [None] * 16
+        total_funcs = len(module.imports) + len(module.functions)
+        self._n_locals_by_func = [
+            max(len(module.locals_layout(idx)), 16) for idx in range(total_funcs)
+        ]
 
     def record_block_head(self, pc: int) -> None:
         """
         Called by `run()` at each basic-block head that has no compiled
         trace yet. Blocks shorter than `min_trace_bytes` are never recorded
-        here at all -- see the invariant this protects in `__init__`.
+        here at all -- see the invariant this protects in `__init__`. Sized
+        by the block's own `byte_span`, never `next_pc - pc`: a loop body
+        that branches backward to its own loop head has `next_pc < pc`,
+        which would read as a large negative "length" and permanently
+        disqualify that block -- usually the function's hottest -- from
+        ever being tracked, let alone compiled.
         """
         block = self.get_block(pc)
-        if block is None or block.next_pc is None or (block.next_pc - pc) < self.min_trace_bytes:
+        if block is None or block.next_pc is None or block.byte_span < self.min_trace_bytes:
             return
         self.ring.record(pc)
         self.exec_counter += 1
@@ -717,6 +732,22 @@ class RuntimeEngine:
         blocks_run = 0
         while not call_state.finished:
             pc = call_state.current_pc()
+            if pc is not None and call_state.cont is not None:
+                block_here = self.get_block(pc)
+                if block_here is not None:
+                    frame_here = call_state.cont[1]
+                    # A JIT jump can resume at a pc whose enclosing
+                    # BLOCK/LOOP/IF frames were pushed onto frame.frames
+                    # during an earlier interp.step()-driven pass but never
+                    # popped -- _invoke_trace's computed jumps bypass
+                    # _h_block/_h_loop/_h_if/_do_branch entirely, so those
+                    # stale frames linger and corrupt the next depth-relative
+                    # br/br_if the interpreter executes. Reconcile to the
+                    # nesting depth this pc was extracted at (a static
+                    # property of the code, independent of how we arrived
+                    # here) before dispatching either path.
+                    if len(frame_here.frames) > block_here.frame_depth:
+                        del frame_here.frames[block_here.frame_depth :]
             trace = None
             is_compiled = pc is not None and self.bitmap.get_state(pc) == CardState.COMPILED
             if is_compiled:
@@ -737,20 +768,55 @@ class RuntimeEngine:
     def _invoke_trace(
         self, interp: Interpreter, call_state: InterpreterCall, trace: JITTrace
     ) -> InterpreterCall:
-        """Executes one compiled native x64 JIT trace and advances `call_state` past it."""
+        """
+        Executes one compiled native x64 JIT trace and advances `call_state`
+        past it. Calls `trace.fn` directly on this frame's cached locals
+        buffer rather than building a fresh `WASMContext` (ctypes array
+        type + instance) per call -- the buffer's address is stable across
+        every trace invoked against the same frame, so allocating it once
+        and reusing it turns a per-call ctypes array construction into a
+        per-call O(locals) value copy on the hot path
+        (`{ADR_TraceBoundaryYield}`'s per-block dispatch). R1 (`stack_bot`)
+        is always null: no currently-compilable op (`x64_jit.SUPPORTED_OPS`
+        has no load/store) ever reads it, matching what `JITTrace.invoke`
+        already passed. `res` is `trace.fn`'s raw `c_int64` return -- WASM
+        results are i64-capable even though this experiment's compiled ops
+        are i32-only, so it is never narrowed before the loops_to /
+        has_return_val branch below decides what to do with it.
+        """
         ip, frame, locals_arr, tos = call_state.cont
-        w_ctx = WASMContext(locals_values=locals_arr, memory=interp.memory)
-        res = trace.invoke(w_ctx)
+        try:
+            n_locals = self._n_locals_by_func[call_state.func_index]
+        except IndexError:
+            n_locals = max(len(locals_arr), 16)
+        c_locals, locals_ptr = frame.jit_locals_buffer(n_locals)
+        for i, v in enumerate(locals_arr):
+            c_locals[i] = v
+        res = trace.fn(trace.head_pc, ctypes.c_void_p(0), locals_ptr, 0)
         for i in range(len(locals_arr)):
-            locals_arr[i] = w_ctx.locals[i]
+            locals_arr[i] = c_locals[i] & 0xFFFF_FFFF
 
-        if trace.has_return_val and res is not None:
-            frame.values.append(res & 0xFFFF_FFFF)
+        if trace.loops_to is not None:
+            # Terminator was BR_IF against a loop backedge: `res` is the
+            # branch condition, consumed here -- it never reaches the WASM
+            # operand stack. Mirrors IntegratedHybridEngine._next_pc.
+            cond = res if res is not None else 0
+            next_unified = trace.loops_to if cond != 0 else trace.next_pc
+        else:
+            if trace.has_return_val and res is not None:
+                frame.values.append(res & 0xFFFF_FFFF)
+            next_unified = trace.next_pc
 
-        next_unified = trace.next_pc
-        next_ip = (
-            (next_unified & 0xFFFF) if next_unified is not None else frame.instrs[ip].end_offset
-        )
+        # next_unified is None only for a JIT-compiled block whose
+        # terminator is RETURN (or the rare malformed-tail case) -- the
+        # function is ending, so signal "past the end of code" via O(1)
+        # `len(frame.code)`, the exact sentinel `current_pc()` already
+        # checks for. This is never `frame.instrs[ip].end_offset`
+        # (`decode_all` at runtime): {DirectBytecodeExecution} bans
+        # runtime instruction-object generation, and the interpreter's own
+        # existing "frame just ended" handling (step(), ip >= len(code))
+        # is what must process the actual return-to-caller mechanics next.
+        next_ip = (next_unified & 0xFFFF) if next_unified is not None else len(frame.code)
         new_tos = frame.values[-1] if frame.values else 0
         call_state.cont = (next_ip, frame, locals_arr, new_tos)
         return call_state
@@ -807,16 +873,16 @@ class WASMContext:
         def __len__(self) -> int:
             return self._ctx._n_locals
 
-        def __iter__(self):
+        def __iter__(self) -> Iterator[int]:
             for i in range(self._ctx._n_locals):
                 yield self._ctx._c_locals[i] & 0xFFFF_FFFF
 
     @property
-    def locals(self):
+    def locals(self) -> WASMContext._LocalsView:
         return self._LocalsView(self)
 
     @locals.setter
-    def locals(self, values: list[int]):
+    def locals(self, values: list[int]) -> None:
         for i, v in enumerate(values):
             self._c_locals[i] = v & 0xFFFF_FFFF
 
@@ -1128,8 +1194,13 @@ class IntegratedHybridEngine:
             # Blocks shorter than min_trace_bytes are never tracked (see
             # __init__): compiling them would cost more than the
             # interpreter dispatch it replaces, and it keeps every tracked
-            # block's card unambiguously single-owned.
-            if block.next_pc is not None and (block.next_pc - pc) >= self.min_trace_bytes:
+            # block's card unambiguously single-owned. Sized by the block's
+            # own byte_span, never `next_pc - pc` -- see
+            # RuntimeEngine.record_block_head's identical fix: a backward
+            # branch (a loop body's own `br` to its loop head) makes
+            # `next_pc - pc` negative and would permanently disqualify that
+            # block from ever compiling.
+            if block.next_pc is not None and block.byte_span >= self.min_trace_bytes:
                 self.bitmap.touch(pc)
                 self.history.record(pc)
             self.interp_blocks += 1

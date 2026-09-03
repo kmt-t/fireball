@@ -1073,7 +1073,7 @@ def _build_test_wasm_binary(
     return bytes(buf)
 
 
-def test_wasm_loader_lifecycle_and_verification():
+def test_wasm_loader_lifecycle_and_verification() -> None:
     loader = WasmLoader()
     # 1. Normal prepare & parse
     valid_wasm = _build_test_wasm_binary(export_names=["zeta", "alpha", "beta"])
@@ -1188,7 +1188,7 @@ def test_wasm_loader_lifecycle_and_verification():
     print("[PASS] All WASM Loader concept tests passed successfully.")
 
 
-def test_wasm_loader_radix_binary_tree_offset_indexing():
+def test_wasm_loader_radix_binary_tree_offset_indexing() -> None:
     """
     Verifies LOAD-40 ~ LOAD-44:
     - Registration of decoded entities in DecodedEntityRegistry
@@ -1229,7 +1229,7 @@ def test_wasm_loader_radix_binary_tree_offset_indexing():
     print("[PASS] RadixBinaryTreeView file offset indexing verified successfully.")
 
 
-def test_wasm_loader_hash_radix_binary_tree_view_symbol_lookup():
+def test_wasm_loader_hash_radix_binary_tree_view_symbol_lookup() -> None:
     """
     Verifies LOAD-13, LOAD-21, LOAD-45 ~ LOAD-47:
     - Hash + RadixBinaryTreeView symbol lookup (O(k))

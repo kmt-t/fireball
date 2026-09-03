@@ -33,6 +33,7 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
+import wasmtime
 from hal import (
     UartTransport,
 )
@@ -59,9 +60,8 @@ from system import (
 from system_containers import (
     FlatMapView,
 )
-import wasmtime
 from wasi import WasiHostContext
-from wasm_opcodes import CALL_HOST, I32_ADD, I32_CONST, I32_MUL, I32_SUB, LOCAL_GET, LOCAL_SET
+from wasm_opcodes import CALL_HOST, I32_ADD, I32_CONST, I32_MUL, LOCAL_GET, LOCAL_SET
 from wasm_reader import parse
 from x64_jit import TraceCompiler
 

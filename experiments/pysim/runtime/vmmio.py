@@ -142,11 +142,11 @@ class VMMIOController:
         handler: Callable[[int, int, bool], None] | None = None,
         read: bool = True,
         write: bool = True,
-    ):
+    ) -> None:
         """Registers a Tier 2 static device page (FC=12) into FlatMap."""
         self.ptes.insert(vpn, StaticDevicePTE(handler=handler, read=read, write=write))
 
-    def map_shm_page(self, vpn: int, phys_page: int, owner_id: int):
+    def map_shm_page(self, vpn: int, phys_page: int, owner_id: int) -> None:
         """Registers a Tier 3 SHM page (FC=14) into FlatMap."""
         self.ptes.insert(
             vpn,
@@ -160,7 +160,9 @@ class VMMIOController:
             ),
         )
 
-    def map_passthrough_page(self, vpn: int, phys_page: int, read: bool = True, write: bool = True):
+    def map_passthrough_page(
+        self, vpn: int, phys_page: int, read: bool = True, write: bool = True
+    ) -> None:
         """Registers a Tier 3 Passthrough page (FC=15) into FlatMap."""
         self.ptes.insert(
             vpn,
@@ -174,7 +176,7 @@ class VMMIOController:
             ),
         )
 
-    def revoke_shm_owner(self, vpn: int):
+    def revoke_shm_owner(self, vpn: int) -> None:
         """IPC Router Revoke phase: mark the page in-flight and invalidate its TLB entry."""
         pte = self.ptes.find(vpn)
         # SHM/PASSTHROUGH FC (bits [19:16] of the VPN) is Tier3PTE by
@@ -242,7 +244,7 @@ class VMMIOController:
 
         return (vpn ^ (vpn >> 4) ^ (vpn >> 8) ^ (vpn >> 12) ^ (vpn >> 16)) & 15
 
-    def _lookup_pte(self, addr: VmmioAddress):
+    def _lookup_pte(self, addr: VmmioAddress) -> StaticDevicePTE | Tier3PTE | None:
         """Returns the PTE from TLB (O(1)) or falls back to FlatMap."""
         vpn = addr.vpn()
         tlb_idx = self.tlb_index(vpn)

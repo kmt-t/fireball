@@ -32,9 +32,9 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
+import wasmtime
 from interpreter import Interpreter
 from runtime_engine import (
-    BasicBlock,
     CardState,
     HistoryRing,
     HotspotBitmap,
@@ -51,9 +51,7 @@ from system_containers import (
     bswap32,
     build_radix_table,
 )
-from wasm_opcodes import NOP
 from wasm_reader import parse
-import wasmtime
 from x64_jit import TraceCompiler
 
 
@@ -550,6 +548,281 @@ def test_jitr_block_capacity_from_wasm_loader_and_no_set():
 # ===========================================================================
 
 
+# ===========================================================================
+# 8. RuntimeEngine._invoke_trace: branch/skip resolution and interpreter
+#    hand-off correctness -- covers the compiled-trace <-> interpreter
+#    boundary that `run_step`/`IntegratedHybridEngine` tests never exercise,
+#    since RuntimeEngine.run() is a separate driver with its own
+#    _invoke_trace (see jit_runtime.md's tiered execution loop).
+# ===========================================================================
+
+
+def test_jitr_br_if_loop_exit_jit_result_correct():
+    """
+    JITR-40: once RuntimeEngine._invoke_trace compiles the loop's br_if
+    exit-condition block, the native trace's boolean result must still
+    decide between looping (trace.next_pc) and exiting (trace.loops_to) --
+    a regression guard for a `_invoke_trace` that always took next_pc and
+    discarded the condition, which never terminates the loop.
+    """
+    wat = """
+    (module
+      (func (export "sum_to") (param $n i32) (result i32)
+        (local $i i32) (local $acc i32)
+        (block $exit
+          (loop $top
+            (br_if $exit (i32.ge_s (local.get $i) (local.get $n)))
+            (local.set $acc (i32.add (local.get $acc) (local.get $i)))
+            (local.set $i (i32.add (local.get $i) (i32.const 1)))
+            (br $top)
+          )
+        )
+        (local.get $acc)
+      )
+    )
+    """
+    wasm_bytes = wat_to_wasm(wat)
+    if not wasm_bytes:
+        print(
+            "    [SKIP] wasmtime not installed, skipping test_jitr_br_if_loop_exit_jit_result_correct"
+        )
+        return
+    module = parse(wasm_bytes)
+    fn_idx = module.export_func_index("sum_to")
+    engine = RuntimeEngine(jit_compiler=TraceCompiler(), yield_threshold=8)
+    engine.register_module_blocks(module)
+    interp = Interpreter(module)
+
+    n = 50
+    results = engine.run(interp, fn_idx, [n], quantum=8)
+    assert results == [sum(range(n))], (
+        f"sum_to({n}) via JIT-driven RuntimeEngine.run() = {results}, "
+        f"expected [{sum(range(n))}] -- the compiled loop-exit trace's "
+        "condition must gate the branch, not be discarded"
+    )
+    assert len(engine.cache.active.traces) > 0, (
+        "the loop must have actually gotten hot enough to compile"
+    )
+
+
+def test_jitr_backward_branch_block_byte_span_not_disqualified():
+    """
+    JITR-41 / JITR-GOTCHA-07: the loop body block (sum/increment, ending in
+    an unconditional `br` back to the loop's own condition-check block) has
+    `next_pc < head_pc` -- a regression guard for `record_block_head` sizing
+    this block via `next_pc - pc` (negative for any backward branch), which
+    reads as "shorter than min_trace_bytes" and permanently disqualifies the
+    function's hottest block from ever compiling. Both of the loop's blocks
+    must end up compiled, not just the forward-only condition check.
+    """
+    wat = """
+    (module
+      (func (export "sum_to") (param $n i32) (result i32)
+        (local $i i32) (local $acc i32)
+        (block $exit
+          (loop $top
+            (br_if $exit (i32.ge_s (local.get $i) (local.get $n)))
+            (local.set $acc (i32.add (local.get $acc) (local.get $i)))
+            (local.set $i (i32.add (local.get $i) (i32.const 1)))
+            (br $top)
+          )
+        )
+        (local.get $acc)
+      )
+    )
+    """
+    wasm_bytes = wat_to_wasm(wat)
+    if not wasm_bytes:
+        print(
+            "    [SKIP] wasmtime not installed, "
+            "skipping test_jitr_backward_branch_block_byte_span_not_disqualified"
+        )
+        return
+    module = parse(wasm_bytes)
+    fn_idx = module.export_func_index("sum_to")
+    engine = RuntimeEngine(jit_compiler=TraceCompiler(), yield_threshold=8)
+    engine.register_module_blocks(module)
+    interp = Interpreter(module)
+
+    n = 50
+    results = engine.run(interp, fn_idx, [n], quantum=8)
+    assert results == [sum(range(n))]
+    compiled_heads = {pc for pc, _ in engine.cache.active.traces}
+    assert len(compiled_heads) >= 2, (
+        f"only {len(compiled_heads)} block(s) compiled ({[hex(pc) for pc in compiled_heads]}) -- "
+        "the backward-branching loop body must compile too, not just the forward condition check"
+    )
+
+
+def test_jitr_if_then_skipped_when_condition_false_after_jit():
+    """
+    JITR-42: once the `if (cond) (then ...)` condition-check block compiles,
+    the then-body must run only when the native trace's condition is true --
+    a regression guard for a `_invoke_trace` that treated IF exactly like an
+    unconditional fallthrough, always executing the then-body regardless of
+    the computed condition.
+    """
+    wat = """
+    (module
+      (func (export "abs_sum") (param $n i32) (result i32)
+        (local $i i32) (local $x i32) (local $acc i32)
+        (block $exit
+          (loop $top
+            (br_if $exit (i32.ge_s (local.get $i) (local.get $n)))
+            (local.set $x (i32.sub (local.get $i) (i32.const 5)))
+            (if (i32.lt_s (local.get $x) (i32.const 0))
+              (then (local.set $x (i32.sub (i32.const 0) (local.get $x))))
+            )
+            (local.set $acc (i32.add (local.get $acc) (local.get $x)))
+            (local.set $i (i32.add (local.get $i) (i32.const 1)))
+            (br $top)
+          )
+        )
+        (local.get $acc)
+      )
+    )
+    """
+    wasm_bytes = wat_to_wasm(wat)
+    if not wasm_bytes:
+        print(
+            "    [SKIP] wasmtime not installed, "
+            "skipping test_jitr_if_then_skipped_when_condition_false_after_jit"
+        )
+        return
+    module = parse(wasm_bytes)
+    fn_idx = module.export_func_index("abs_sum")
+    engine = RuntimeEngine(jit_compiler=TraceCompiler(), yield_threshold=4)
+    engine.register_module_blocks(module)
+    interp = Interpreter(module)
+
+    n = 20
+    results = engine.run(interp, fn_idx, [n], quantum=4)
+    expected = sum(abs(i - 5) for i in range(n))
+    assert results == [expected], (
+        f"abs_sum({n}) via JIT-driven RuntimeEngine.run() = {results}, expected [{expected}] -- "
+        "an unconditionally-taken then-body (or an unconditionally-skipped one) throws this off"
+    )
+    assert len(engine.cache.active.traces) > 0, (
+        "the if-condition-check block must have gotten hot enough to compile"
+    )
+
+
+def test_jitr_nested_loop_in_if_frame_stack_reconciliation():
+    """
+    JITR-42: a loop nested inside an if nested inside an outer loop --
+    RuntimeEngine._invoke_trace's computed jumps bypass _h_block/_h_loop/
+    _h_if entirely, so once the inner loop's exit-condition block compiles,
+    the frame.frames pushed for it during any earlier cold (interpreted)
+    pass are never popped by the interpreter's own _do_branch. A regression
+    guard for exactly that: once the outer loop's own unconditional `br`
+    later resolves via the interpreter, a stale inner frame on top of
+    frame.frames misdirects depth-relative branch resolution.
+    """
+    wat = """
+    (module
+      (func (export "nested") (param $n i32) (result i32)
+        (local $i i32) (local $j i32) (local $count i32)
+        (block $outer_exit
+          (loop $outer
+            (br_if $outer_exit (i32.ge_s (local.get $i) (local.get $n)))
+            (if (i32.eq (i32.rem_u (local.get $i) (i32.const 2)) (i32.const 0))
+              (then
+                (local.set $j (i32.const 0))
+                (block $inner_exit
+                  (loop $inner
+                    (br_if $inner_exit (i32.ge_s (local.get $j) (i32.const 3)))
+                    (local.set $count (i32.add (local.get $count) (i32.const 1)))
+                    (local.set $j (i32.add (local.get $j) (i32.const 1)))
+                    (br $inner)
+                  )
+                )
+              )
+            )
+            (local.set $i (i32.add (local.get $i) (i32.const 1)))
+            (br $outer)
+          )
+        )
+        (local.get $count)
+      )
+    )
+    """
+    wasm_bytes = wat_to_wasm(wat)
+    if not wasm_bytes:
+        print(
+            "    [SKIP] wasmtime not installed, "
+            "skipping test_jitr_nested_loop_in_if_frame_stack_reconciliation"
+        )
+        return
+    module = parse(wasm_bytes)
+    fn_idx = module.export_func_index("nested")
+    engine = RuntimeEngine(jit_compiler=TraceCompiler(), yield_threshold=4)
+    engine.register_module_blocks(module)
+    interp = Interpreter(module)
+
+    n = 20
+    results = engine.run(interp, fn_idx, [n], quantum=4)
+    even_count = sum(1 for i in range(n) if i % 2 == 0)
+    expected = even_count * 3
+    assert results == [expected], (
+        f"nested({n}) via JIT-driven RuntimeEngine.run() = {results}, expected [{expected}] -- "
+        "a desynced frame.frames misresolves the outer loop's `br` once JIT skips the inner "
+        "loop/if exit without popping the frames the interpreter pushed for them"
+    )
+    assert len(engine.cache.active.traces) > 0, (
+        "the inner loop's exit-condition block must have compiled"
+    )
+
+
+def test_jitr_return_terminated_block_jit_result_correct():
+    """
+    JITR-43: a JIT-compiled block whose terminator is RETURN has
+    `trace.next_pc is None` (the function is ending, not falling through to
+    another block). `_invoke_trace` must resolve this via O(1)
+    `len(frame.code)` -- the same "past the end" sentinel `current_pc()`
+    already checks for -- never via a runtime `decode_all` call
+    (`frame.instrs[ip]`), which `{DirectBytecodeExecution}` (INTP-GOTCHA-05)
+    forbids: no instruction-object generation at runtime, ever.
+    """
+    wat = """
+    (module
+      (func (export "f") (param $n i32) (result i32)
+        (local $i i32)
+        (local.set $i (i32.const 0))
+        (block $exit
+          (loop $top
+            (br_if $exit (i32.ge_s (local.get $i) (local.get $n)))
+            (local.set $i (i32.add (local.get $i) (i32.const 1)))
+            (br $top)
+          )
+        )
+        (i32.mul (local.get $i) (i32.const 3))
+        return
+      )
+    )
+    """
+    wasm_bytes = wat_to_wasm(wat)
+    if not wasm_bytes:
+        print(
+            "    [SKIP] wasmtime not installed, "
+            "skipping test_jitr_return_terminated_block_jit_result_correct"
+        )
+        return
+    module = parse(wasm_bytes)
+    fn_idx = module.export_func_index("f")
+    engine = RuntimeEngine(jit_compiler=TraceCompiler(), yield_threshold=2)
+    engine.register_module_blocks(module)
+    interp = Interpreter(module)
+
+    n = 20
+    results = engine.run(interp, fn_idx, [n], quantum=2)
+    assert results == [n * 3], (
+        f"f({n}) via JIT-driven RuntimeEngine.run() = {results}, expected [{n * 3}]"
+    )
+    assert len(engine.cache.active.traces) > 0, (
+        "the RETURN-terminated tail block must have compiled"
+    )
+
+
 if __name__ == "__main__":
     test_hotspot_01_2bit_card_marking_state_transitions()
     test_jitr_01_card_marking_granularity()
@@ -568,4 +841,9 @@ if __name__ == "__main__":
     test_jitr_control_skip_radix_tree_chaining()
     test_jitr_26_direct_mapped_folding_xor_jit_cache()
     test_jitr_block_capacity_from_wasm_loader_and_no_set()
-    print("[PASS] All 17 JIT Hotspot Profiling & 3-Bank Cache tests passed.")
+    test_jitr_br_if_loop_exit_jit_result_correct()
+    test_jitr_backward_branch_block_byte_span_not_disqualified()
+    test_jitr_if_then_skipped_when_condition_false_after_jit()
+    test_jitr_nested_loop_in_if_frame_stack_reconciliation()
+    test_jitr_return_terminated_block_jit_result_correct()
+    print("[PASS] All 22 JIT Hotspot Profiling & 3-Bank Cache tests passed.")

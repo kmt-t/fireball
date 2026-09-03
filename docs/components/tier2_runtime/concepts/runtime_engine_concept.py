@@ -85,7 +85,7 @@ class BitView:
         mask = (1 << self.bits) - 1
         return (self.storage[bit >> 3] >> (bit & 7)) & mask
 
-    def put(self, i: int, value: int):
+    def put(self, i: int, value: int) -> None:
         mask = (1 << self.bits) - 1
         assert 0 <= value <= mask, "value does not fit in 2 bits"
         bit = self._bit_pos(i)
@@ -166,7 +166,7 @@ class HotspotBitmap:
         view.put(card, s)
         return s
 
-    def mark_compiled(self, pc: int):
+    def mark_compiled(self, pc: int) -> None:
         func_idx, offset = self._split_pc(pc)
         view = self._get_or_create_view(func_idx)
         card = offset >> self.card_shift
@@ -174,7 +174,7 @@ class HotspotBitmap:
             view = self.register_function(func_idx, (card + 1) << self.card_shift)
         view.put(card, CardState.COMPILED)
 
-    def mark_evicted(self, pc: int):
+    def mark_evicted(self, pc: int) -> None:
         """
         Trace was purged from the cache: the card becomes UNEXECUTED (00),
         not EXECUTED -- it fell out of cache favor once already, so it must
@@ -202,7 +202,7 @@ class HistoryRing:
         self.buf: list[int] = []
         self.dropped = 0
 
-    def record(self, pc: int):
+    def record(self, pc: int) -> None:
         if len(self.buf) >= self.capacity:
             self.buf.pop(0)
             self.dropped += 1
@@ -301,7 +301,7 @@ class JITMultiBufferCache:
                 return bank.traces[head_pc]
         return None
 
-    def register_chain(self, source_pc: int, target_pc: int):
+    def register_chain(self, source_pc: int, target_pc: int) -> None:
         """
         Registers a direct chain link from source_pc to target_pc.
                 The target's resident bank records source_pc in its inbound_sources table.
@@ -311,19 +311,19 @@ class JITMultiBufferCache:
             target_bank.inbound_sources.add(source_pc)
 
     # --- MPU W^X transaction ---
-    def begin_patch(self):
+    def begin_patch(self) -> None:
         self.mpu_attr = MPUAttribute.RW_XN
 
-    def commit_patch(self):
+    def commit_patch(self) -> None:
         assert self.mpu_attr == MPUAttribute.RW_XN, "commit without begin"
         self.mpu_attr = MPUAttribute.RO_X
         self.barrier_flushes += 1  # __DSB(); __ISB();
 
-    def _require_writable(self):
+    def _require_writable(self) -> None:
         if self.mpu_attr != MPUAttribute.RW_XN:
             raise MPUFault("W^X VIOLATION: write to RO_X JIT cache")
 
-    def require_executable(self):
+    def require_executable(self) -> None:
         if self.mpu_attr != MPUAttribute.RO_X:
             raise MPUFault("W^X VIOLATION: execute on RW_XN JIT cache")
 
@@ -384,7 +384,7 @@ class JITMultiBufferCache:
                 return bank
         return None
 
-    def rotate(self):
+    def rotate(self) -> None:
         """Oldest is purged and becomes the new Active; Active->Warm, Warm->Oldest.
         Resolves incoming chains targeting Oldest in O(k) bounded time via
         Oldest's inbound_sources right before Oldest is cleared and reused as Active:
@@ -404,7 +404,7 @@ class JITMultiBufferCache:
         if purged and self.on_evict:
             self.on_evict(purged)  # let the bitmap mark the cards re-compilable
 
-    def _resolve_bank_inbound(self, bank: JITCacheBank):
+    def _resolve_bank_inbound(self, bank: JITCacheBank) -> None:
         """
         Resolves inbound chains pointing to `bank` right before `bank` is purged.
                 If a target was promoted to Active (or still alive elsewhere), re-chains
@@ -573,7 +573,7 @@ class WASMContext:
         self.interrupt_flag = False  # set by an ISR; polled at Safepoints
         self.safepoints_hit = 0
 
-    def push(self, val: int):
+    def push(self, val: int) -> None:
         if len(self.stack) >= self.MAX_STACK_SLOTS:
             raise WASMTrap("STACK_OVERFLOW")
         self.stack.append(val & 0xFFFF_FFFF)
@@ -583,7 +583,7 @@ class WASMContext:
             raise WASMTrap("STACK_UNDERFLOW")
         return self.stack.pop()
 
-    def raise_interrupt(self):
+    def raise_interrupt(self) -> None:
         self.interrupt_flag = True
 
     def poll_safepoint(self) -> bool:
@@ -654,7 +654,7 @@ class IntegratedRuntimeEngine:
         # would be.
         self.min_trace_bytes = min_trace_bytes if min_trace_bytes is not None else (1 << card_shift)
 
-    def register_block(self, block: BasicBlock):
+    def register_block(self, block: BasicBlock) -> None:
         self.blocks[block.head_pc] = block
 
     # --- Cooperative yield  [runtime_interpreter.md §4.1 概算Yield] ---
@@ -667,7 +667,7 @@ class IntegratedRuntimeEngine:
         self.on_yield()
         return True
 
-    def on_yield(self):
+    def on_yield(self) -> None:
         """Scan the history ring, promote HOT cards, enqueue their head PCs (LIFO)."""
         for pc in self.history.drain():
             if self.bitmap.get_state(pc) == CardState.HOT and pc not in self.compile_queue:
@@ -770,7 +770,7 @@ class IntegratedRuntimeEngine:
             return block.loops_to if ctx.pop() != 0 else block.next_pc
         return block.next_pc
 
-    def _interpret(self, block: BasicBlock, ctx: WASMContext):
+    def _interpret(self, block: BasicBlock, ctx: WASMContext) -> None:
         for op, arg in block.ops:
             if op == "i32.const":
                 ctx.push(arg)
@@ -825,7 +825,7 @@ def _countdown_engine(**kw) -> tuple[IntegratedRuntimeEngine, WASMContext]:
     return eng, ctx
 
 
-def test_only_basic_block_heads_are_recorded():
+def test_only_basic_block_heads_are_recorded() -> None:
     """A block with 9 instructions must contribute exactly one history entry."""
     eng, ctx = _countdown_engine(yield_threshold=1000)
     ctx.locals = [3, 1]
@@ -834,7 +834,7 @@ def test_only_basic_block_heads_are_recorded():
     assert len(eng.history.buf) == eng.interp_blocks
 
 
-def test_card_granularity_not_function_granularity():
+def test_card_granularity_not_function_granularity() -> None:
     """Two distinct head PCs inside one card share a single bitmap slot."""
     bm = HotspotBitmap(card_shift=6)
     assert bm.card_of(0x100) == bm.card_of(0x120), "same 64-byte card"
@@ -844,7 +844,7 @@ def test_card_granularity_not_function_granularity():
     assert bm.get_state(0x100) == CardState.HOT, "state advances per card (2-bit FSM)"
 
 
-def test_compilation_is_deferred_to_the_yield_and_idle_hook():
+def test_compilation_is_deferred_to_the_yield_and_idle_hook() -> None:
     """Detection must not compile inline: the executing task is never blocked."""
     eng, ctx = _countdown_engine(yield_threshold=1000)
     ctx.locals = [6, 1]
@@ -860,7 +860,7 @@ def test_compilation_is_deferred_to_the_yield_and_idle_hook():
     assert eng.bitmap.get_state(0x100) == CardState.COMPILED
 
 
-def test_lifo_compile_queue_order():
+def test_lifo_compile_queue_order() -> None:
     eng = IntegratedRuntimeEngine()
     for pc in (0x100, 0x200, 0x300):
         eng.register_block(BasicBlock(pc, [("i32.const", 1)], next_pc=None))
@@ -868,7 +868,7 @@ def test_lifo_compile_queue_order():
     order: list[int] = []
     real = eng.compiler.compile_trace
 
-    def spy(head_pc, block):
+    def spy(head_pc: int, block: BasicBlock) -> JITTrace:
         order.append(head_pc)
         return real(head_pc, block)
 
@@ -877,7 +877,7 @@ def test_lifo_compile_queue_order():
     assert order == [0x300, 0x200, 0x100], f"LIFO expected, got {order}"
 
 
-def test_jit_result_matches_interpreter_via_native_listing():
+def test_jit_result_matches_interpreter_via_native_listing() -> None:
     """The JIT path executes the emitted native listing, not the WASM ops."""
     eng, ctx = _countdown_engine(yield_threshold=4)
     ctx.locals = [5, 1]
@@ -887,7 +887,7 @@ def test_jit_result_matches_interpreter_via_native_listing():
     assert eng.jit_traces >= 1, "the compiled trace must have been executed"
 
 
-def test_chain_next_defaults_to_interpreter_return():
+def test_chain_next_defaults_to_interpreter_return() -> None:
     eng = IntegratedRuntimeEngine()
     eng.register_block(BasicBlock(0x100, [("i32.const", 7)], next_pc=None))
     eng.compile_queue = [0x100]
@@ -896,7 +896,7 @@ def test_chain_next_defaults_to_interpreter_return():
     assert trace.chain_next is None, "unlinked trace must fall back to the stub"
 
 
-def test_idle_hook_chains_into_a_warm_resident_successor():
+def test_idle_hook_chains_into_a_warm_resident_successor() -> None:
     """Warm is still resident code (only Oldest gets cleared by rotate()),
     so a freshly compiled trace may chain directly into a Warm successor."""
     eng = IntegratedRuntimeEngine()
@@ -915,7 +915,7 @@ def test_idle_hook_chains_into_a_warm_resident_successor():
     assert trace.chain_next == 0x200, "a Warm-resident successor must still be a valid chain target"
 
 
-def test_idle_hook_never_chains_into_the_oldest_bank():
+def test_idle_hook_never_chains_into_the_oldest_bank() -> None:
     """Oldest can be purged by the very next rotate(); a raw chain into it
     would also skip the promotion bookkeeping in `lookup()`."""
     eng = IntegratedRuntimeEngine()
@@ -934,7 +934,7 @@ def test_idle_hook_never_chains_into_the_oldest_bank():
     assert trace.chain_next is None, "Oldest is never a valid chain target"
 
 
-def test_rotate_unlinks_chains_when_oldest_is_purged():
+def test_rotate_unlinks_chains_when_oldest_is_purged() -> None:
     """A link to a target in Warm remains valid when the target moves into Oldest
     (the code is still cached and executable). The link is unlinked only when
     Oldest is purged and rotated into the new Active bank."""
@@ -963,7 +963,7 @@ def test_rotate_unlinks_chains_when_oldest_is_purged():
     )
 
 
-def test_rotate_rechains_when_target_was_promoted_to_active():
+def test_rotate_rechains_when_target_was_promoted_to_active() -> None:
     """If a target in Oldest was promoted to Active before Oldest is purged,
     the inbound chain must be RE-CHAINED to the promoted trace rather than
     unlinked to the interpreter fallback."""
@@ -993,7 +993,7 @@ def test_rotate_rechains_when_target_was_promoted_to_active():
     assert 0x100 in cache.warm.inbound_sources, "inbound tracking must follow the promoted bank"
 
 
-def test_eviction_makes_the_card_recompilable():
+def test_eviction_makes_the_card_recompilable() -> None:
     """Purging a trace must reset its card, or the code is permanently deoptimised."""
     eng = IntegratedRuntimeEngine()
     eng.register_block(BasicBlock(0x100, [("i32.const", 1)], next_pc=None))
@@ -1012,7 +1012,7 @@ def test_eviction_makes_the_card_recompilable():
     )
 
 
-def test_short_blocks_never_tracked_avoiding_card_aliasing():
+def test_short_blocks_never_tracked_avoiding_card_aliasing() -> None:
     """
     A card's 2-bit state can only ever describe one block. Two distinct
     block heads sharing a card would otherwise let compiling one falsely
@@ -1036,7 +1036,7 @@ def test_short_blocks_never_tracked_avoiding_card_aliasing():
     assert eng.compile_queue == [], "short blocks must never reach the compile queue"
 
 
-def test_idle_hook_skips_recompiling_an_already_resident_trace():
+def test_idle_hook_skips_recompiling_an_already_resident_trace() -> None:
     """
     If a pc is queued for compilation while a trace already resides in the
     cache under that exact pc (e.g. re-queued before an earlier compile's
@@ -1054,7 +1054,7 @@ def test_idle_hook_skips_recompiling_an_already_resident_trace():
     compile_calls = []
     real = eng.compiler.compile_trace
 
-    def spy(head_pc, block):
+    def spy(head_pc: int, block: BasicBlock) -> JITTrace:
         compile_calls.append(head_pc)
         return real(head_pc, block)
 
@@ -1067,7 +1067,7 @@ def test_idle_hook_skips_recompiling_an_already_resident_trace():
     assert eng.bitmap.get_state(0x100) == CardState.COMPILED
 
 
-def test_used_bytes_does_not_leak_on_overwrite():
+def test_used_bytes_does_not_leak_on_overwrite() -> None:
     bank = JITCacheBank(0, capacity_bytes=2048)
     for _ in range(5):
         bank.allocate(JITTrace(0x100, lambda ctx: "COMPLETED", 100))
@@ -1075,7 +1075,7 @@ def test_used_bytes_does_not_leak_on_overwrite():
     assert bank.used_bytes == 100, f"overwrite must not accumulate: {bank.used_bytes}"
 
 
-def test_warm_hit_does_not_promote_but_oldest_hit_does():
+def test_warm_hit_does_not_promote_but_oldest_hit_does() -> None:
     cache = JITMultiBufferCache()
     cache.begin_patch()
     cache.insert(JITTrace(0x100, lambda ctx: "COMPLETED", 64))
@@ -1096,7 +1096,7 @@ def test_warm_hit_does_not_promote_but_oldest_hit_does():
     assert 0x100 in cache.active.traces
 
 
-def test_hotspot_bitmap_pure_2bit_state_transitions():
+def test_hotspot_bitmap_pure_2bit_state_transitions() -> None:
     """Pure 2-bit FSM: UNEXECUTED -> EXECUTED -> HOT -> COMPILED -> UNEXECUTED (evict)."""
     bm = HotspotBitmap(card_shift=6)
     assert bm.get_state(0x100) == CardState.UNEXECUTED
@@ -1113,7 +1113,7 @@ def test_hotspot_bitmap_pure_2bit_state_transitions():
     )
 
 
-def test_mpu_wx_is_enforced_in_both_directions():
+def test_mpu_wx_is_enforced_in_both_directions() -> None:
     cache = JITMultiBufferCache()
     try:
         cache.insert(JITTrace(0x100, lambda ctx: "COMPLETED", 64))
@@ -1129,7 +1129,7 @@ def test_mpu_wx_is_enforced_in_both_directions():
         assert "W^X VIOLATION" in str(e)
 
 
-def test_safepoint_is_distinct_from_cooperative_yield():
+def test_safepoint_is_distinct_from_cooperative_yield() -> None:
     """A yield is trace-count driven; a Safepoint is interrupt driven."""
     eng, ctx = _countdown_engine(yield_threshold=2)
     ctx.locals = [50, 1]
@@ -1147,7 +1147,7 @@ def test_safepoint_is_distinct_from_cooperative_yield():
     assert ctx2.safepoints_hit == 1
 
 
-def test_stencil_requires_its_relocation_holes():
+def test_stencil_requires_its_relocation_holes() -> None:
     c = CopyPatchCompiler()
     try:
         c.stencils["i32.const"].emit(imm_lo=1)

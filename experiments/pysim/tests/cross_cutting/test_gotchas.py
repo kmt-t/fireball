@@ -77,7 +77,7 @@ from scheduler import ChannelAction, Scheduler, WaitDir
 from system import System, WasiErrno
 from system_containers import BitView, FlatMapView, MutableFlatMapStorage
 from vmmio import TrapCode, VMMIOController
-from wasm_opcodes import I32_ADD, I32_CONST, I32_SUB, LOCAL_GET, LOCAL_SET, NOP
+from wasm_opcodes import I32_ADD, I32_CONST, LOCAL_GET, LOCAL_SET
 from wasm_reader import parse
 from x64_jit import TraceCompiler
 
@@ -431,6 +431,7 @@ def test_vsoc_gotcha_01_02_stateless_interp_and_yield_in_vsoc():
     assert ctx.locals[1] == 15
     assert engine.jit_traces >= 2
     assert engine.interp_blocks >= 3
+
 
 # ==============================================================================
 # 4. vMMIO Gotchas (VMMIO-GOTCHA-01 ~ 03)

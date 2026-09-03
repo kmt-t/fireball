@@ -83,7 +83,7 @@ vSoC全体の可変な実行時状態を保持する構造体。
 | リニアメモリサイズ | ゲストリニアメモリの現在の有効バイト数。`{FastAddressCheck}` の境界比較（`CMP addr, mem_size; BHS __trap`）に直接使う——マスクは使わないため2の冪制約もない `{MemoryBoundaryCheck}` | バイト数 | 32bit符号なし (`[R1, #0x14]`) |
 | グローバル変数基底 | WASM `global` 配列（4バイト単位でインデックス付け）の開始アドレス | アドレス値 | 32bit符号なし (`[R1, #0x18]`) |
 
-`vsoc_runtime` メンバを含む `execution_context` は計28バイト（`+0x00`〜`+0x1B`）。正本は [`wit/vsoc_runtime.wit`](wit/vsoc_runtime.wit)、物理配置は `{ExecutionContext_Layout}`。
+`vsoc_runtime` メンバを含む `execution_context` は計32バイト（`+0x00`〜`+0x1F`）。`+0x1C` は制御構造専用領域（`control_frame`）の頂点オフセットで、オペランドスタック側とは独立に管理される（`runtime_interpreter.md` §8 ADR-INTERP-03）。正本は [`wit/vsoc_runtime.wit`](wit/vsoc_runtime.wit)、物理配置は `{ExecutionContext_Layout}`。
 
 > [!NOTE]
 > **構造体の役割分離**:

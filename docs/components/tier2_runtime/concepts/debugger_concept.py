@@ -56,7 +56,7 @@ class WASMInterpreter:
     def __init__(self):
         pass
 
-    def push(self, ctx: ExecutionContext, val: int):
+    def push(self, ctx: ExecutionContext, val: int) -> None:
         if ctx.sp_offset >= len(ctx.stack):
             raise WASMTrap("STACK_OVERFLOW")
         ctx.stack[ctx.sp_offset] = val & 0xFFFF_FFFF
@@ -143,7 +143,7 @@ class DebuggerManager:
         self.memory_assertions: list[tuple[int, int, str]] = []  # (addr, expected_val, desc)
         self.assertion_violations: list[str] = []
 
-    def attach(self):
+    def attach(self) -> None:
         """
         Attaches debugger, disables JIT (Interpreter Fallback), and switches to debug table.
         `{DebuggerLabelTableSwitch}`
@@ -153,26 +153,26 @@ class DebuggerManager:
         self.ctx.halted = True
         self.ctx.stop_signal = 5  # SIGTRAP
 
-    def detach(self):
+    def detach(self) -> None:
         self.attached = False
         self.ctx.is_debug_mode = False
         self.ctx.halted = False
 
-    def add_breakpoint(self, pc: int):
+    def add_breakpoint(self, pc: int) -> None:
         self.breakpoints.add(pc)
 
-    def remove_breakpoint(self, pc: int):
+    def remove_breakpoint(self, pc: int) -> None:
         self.breakpoints.discard(pc)
 
-    def add_memory_assertion(self, addr: int, expected: int, desc: str = ""):
+    def add_memory_assertion(self, addr: int, expected: int, desc: str = "") -> None:
         self.memory_assertions.append((addr, expected, desc))
 
-    def _sample_pc(self):
+    def _sample_pc(self) -> None:
         """Records runtime PC execution frequency for profiling ({Debug_Integrated})."""
         pc = self.ctx.pc
         self.pc_sample_counts[pc] = self.pc_sample_counts.get(pc, 0) + 1
 
-    def _verify_assertions(self):
+    def _verify_assertions(self) -> None:
         """Verifies dynamic memory assertions ({Debug_Integrated})."""
         for addr, expected, desc in self.memory_assertions:
             if addr < len(self.ctx.memory):
@@ -322,7 +322,7 @@ class GDBRspProtocol:
 # ==============================================================================
 
 
-def test_debugger_step_and_registers():
+def test_debugger_step_and_registers() -> None:
     ctx = ExecutionContext()
     interp = WASMInterpreter()
     dbg = DebuggerManager(ctx, interp)
@@ -355,7 +355,7 @@ def test_debugger_step_and_registers():
     assert ctx.stack[0] == 50
 
 
-def test_debugger_breakpoint_and_continue():
+def test_debugger_breakpoint_and_continue() -> None:
     ctx = ExecutionContext()
     interp = WASMInterpreter()
     dbg = DebuggerManager(ctx, interp)
@@ -394,7 +394,7 @@ def test_debugger_breakpoint_and_continue():
     assert resp.startswith("$03000000")  # PC = 3 in hex little-endian
 
 
-def test_debugger_integrated_profiler():
+def test_debugger_integrated_profiler() -> None:
     ctx = ExecutionContext()
     interp = WASMInterpreter()
     dbg = DebuggerManager(ctx, interp)

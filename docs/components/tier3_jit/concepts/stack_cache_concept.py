@@ -285,7 +285,7 @@ NAIVE = {
 }
 
 
-def test_stack_caching_cuts_memory_traffic():
+def test_stack_caching_cuts_memory_traffic() -> None:
     listing, _ = StackCachingCompiler().compile_block(LOOP_OPS)
     naive = sum(NAIVE[op] for op, _ in LOOP_OPS)
     mem_ops = sum(1 for i in listing if i.split()[0] in ("PUSH", "POP"))
@@ -293,7 +293,7 @@ def test_stack_caching_cuts_memory_traffic():
     assert mem_ops == 0, f"this block needs no spill at all, got {mem_ops}: {listing}"
 
 
-def test_binary_op_is_a_single_instruction():
+def test_binary_op_is_a_single_instruction() -> None:
     listing, depth = StackCachingCompiler().compile_block(
         [("local.get", 0), ("local.get", 1), ("i32.add", None)]
     )
@@ -301,7 +301,7 @@ def test_binary_op_is_a_single_instruction():
     assert depth == 1
 
 
-def test_spill_only_when_the_cache_overflows():
+def test_spill_only_when_the_cache_overflows() -> None:
     """A third live operand must spill NOS, and only then."""
     c = StackCachingCompiler()
     two, _ = c.compile_block([("local.get", 0), ("local.get", 1)])
@@ -310,12 +310,12 @@ def test_spill_only_when_the_cache_overflows():
     assert sum(1 for i in three if i.startswith("PUSH")) == 1, three
 
 
-def test_memory_access_carries_the_bound_check():
+def test_memory_access_carries_the_bound_check() -> None:
     listing, _ = StackCachingCompiler().compile_block([("local.get", 0), ("i32.load", None)])
     assert "CMP R4, R9" in listing and "BHS __trap_oob" in listing, listing
 
 
-def test_out_of_bounds_load_traps():
+def test_out_of_bounds_load_traps() -> None:
     listing, _ = StackCachingCompiler().compile_block([("local.get", 0), ("i32.load", None)])
     _, st = execute(listing, [0x4000])  # 0x4000 > 8KB
     assert st == "TRAP_OOB", st
@@ -323,7 +323,7 @@ def test_out_of_bounds_load_traps():
     assert st == "COMPLETED", st
 
 
-def test_emitted_code_computes_the_right_answer():
+def test_emitted_code_computes_the_right_answer() -> None:
     """5! via the cached-stencil listing, executed as native instructions."""
     c = StackCachingCompiler()
     loc = [5, 1]
@@ -335,7 +335,7 @@ def test_emitted_code_computes_the_right_answer():
     assert loc[1] == 120, f"expected 120, got {loc[1]}"
 
 
-def test_a_broken_stencil_is_detected():
+def test_a_broken_stencil_is_detected() -> None:
     """Mutating MUL->ADD must change the computed result."""
     import copy
 
@@ -352,7 +352,7 @@ def test_a_broken_stencil_is_detected():
         STENCILS["i32.mul"] = saved
 
 
-def test_backedge_spills_so_the_loop_head_state_is_known():
+def test_backedge_spills_so_the_loop_head_state_is_known() -> None:
     listing, depth = StackCachingCompiler().compile_block(LOOP_OPS, loops_to=0x100)
     assert depth == 0, "cache must be empty across a backward edge"
     assert "CBNZ R12, __safepoint" in listing, "Safepoint at the backward edge"

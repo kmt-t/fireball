@@ -183,7 +183,7 @@ class IPCRouter:
 # ==============================================================================
 
 
-def test_registry_is_a_real_flat_map_view_not_a_dict():
+def test_registry_is_a_real_flat_map_view_not_a_dict() -> None:
     """{LowLatencyLookup}/{META_FlatMapIndexed}: Stage 1 URI lookup must actually be the
     sorted-array + binary-search flat_map_view, not a plain dict wearing its name."""
     assert isinstance(_REGISTRY, FlatMapView), (
@@ -194,7 +194,7 @@ def test_registry_is_a_real_flat_map_view_not_a_dict():
     assert _REGISTRY.find("fireball://nonexistent/service/0") is None
 
 
-def test_unregistered_uri_is_rejected():
+def test_unregistered_uri_is_rejected() -> None:
     router = IPCRouter()
     msg = IPCMessage(entries=[(1, 42)])
     status, _ = router.send(Role.RUNTIME, "fireball://nonexistent/service/0", msg)
@@ -202,7 +202,7 @@ def test_unregistered_uri_is_rejected():
     assert msg.ownership == OwnershipState.SENDER_OWNS
 
 
-def test_permission_denied():
+def test_permission_denied() -> None:
     router = IPCRouter()
     msg = IPCMessage(entries=[(1, 7)])
     # RUNTIME trying to access Debugger directly (Forbidden)
@@ -211,7 +211,7 @@ def test_permission_denied():
     assert msg.ownership == OwnershipState.SENDER_OWNS  # Ownership not modified
 
 
-def test_successful_zero_copy_handoff():
+def test_successful_zero_copy_handoff() -> None:
     router = IPCRouter()
     msg = IPCMessage(entries=[(1, 5)])
     # Step 1: RUNTIME sends to HAL GPIO. Revoke commits the send; Grant
@@ -225,7 +225,7 @@ def test_successful_zero_copy_handoff():
     assert received.ownership == OwnershipState.RECEIVER_OWNS
 
 
-def test_receive_selects_whichever_allowed_sender_is_ready():
+def test_receive_selects_whichever_allowed_sender_is_ready() -> None:
     """receive() must not commit to one sender_role upfront: CORE_SERVICE is
     reachable from both RUNTIME and DEBUGGER, and a receiver has to pick up
     whichever of them actually sent, in RBAC row order."""
@@ -240,7 +240,7 @@ def test_receive_selects_whichever_allowed_sender_is_ready():
     assert router.receive(Role.CORE_SERVICE) is None
 
 
-def test_no_queue_full_state_exists():
+def test_no_queue_full_state_exists() -> None:
     """Unlike a bounded mailbox, a CSP channel has no max_queue/ERR_QUEUE_FULL --
     a second send before the first is received is a programming error (one
     waiter per channel), not a recoverable Rollback condition."""

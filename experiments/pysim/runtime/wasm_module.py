@@ -31,6 +31,8 @@ class BasicBlock:
     ops: list[tuple[int, object]]
     next_pc: int | None = None
     loops_to: int | None = None
+    frame_depth: int = 0
+    byte_span: int = 0
 
 
 # WASM value types we support (MVP i32 only for now; i64/f32/f64 are parsed
@@ -200,10 +202,17 @@ class Module:
             func_idx = n_imports + idx
             try:
                 extracted = extract_basic_blocks(fn.code, func_index=func_idx)
-                for head_pc, ops, next_pc, loops_to in extracted:
+                for head_pc, ops, next_pc, loops_to, frame_depth, byte_span in extracted:
                     if ops:
                         all_blocks.append(
-                            BasicBlock(head_pc=head_pc, ops=ops, next_pc=next_pc, loops_to=loops_to)
+                            BasicBlock(
+                                head_pc=head_pc,
+                                ops=ops,
+                                next_pc=next_pc,
+                                loops_to=loops_to,
+                                frame_depth=frame_depth,
+                                byte_span=byte_span,
+                            )
                         )
             except Exception:
                 continue
@@ -244,5 +253,5 @@ class Module:
         count = 0
         for idx, fn in enumerate(self.functions):
             extracted = extract_basic_blocks(fn.code, func_index=n_imports + idx)
-            count += sum(1 for _, ops, _, _ in extracted if ops)
+            count += sum(1 for _, ops, _, _, _, _ in extracted if ops)
         return count

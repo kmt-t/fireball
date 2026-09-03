@@ -174,15 +174,16 @@ ARM Cortex-M33 (ARMv8-M Mainline) における物理レジスタの厳格な役�
 
 ### 4.1 メモリ常駐構造体の物理バイトオフセット
 
-- **`execution_context`（`R1: stack_bot` 起点、計28バイト）**:
-  - `+0x00`: `sp_offset` (u32) — オペランドスタック現在オフセット
+- **`execution_context`（`R1: stack_bot` 起点、計32バイト）**:
+  - `+0x00`: `sp_offset` (u32) — 呼び出し・値の領域（オペランドスタック）のみの現在オフセット
   - `+0x04`: `frame_offset` (u32) — カレントコールフレームオフセット
-  - `+0x08`: `sp_boundary` (u32) — スタック上限境界オフセット
+  - `+0x08`: `sp_boundary` (u32) — 呼び出し・値の領域側のスタック上限境界オフセット
   - `+0x0C`: `handler_table` (u32) — 命令ディスパッチテーブル参照
   - `+0x10`: `mem_base` (u32) — ゲストリニアメモリ開始アドレス（旧 `vsoc_runtime.mem_base` を統合）
   - `+0x14`: `mem_size` (u32) — ゲストリニアメモリ有効バイト数（旧 `vsoc_runtime.mem_size` を統合、境界チェック比較用）
   - `+0x18`: `globals_base` (u32) — WASM global 配列基底アドレス（旧 `vsoc_runtime.globals_base` を統合）
-  - ※ 従来 `R2: env` に割り当てられていた `vsoc_runtime`（12バイト）は `execution_context` 内に完全内包され、独立した引数レジスタは不要化。空いた `R2` を `local_base`、`R3` を `tos` に再編。 `{ExecutionContext_Layout}` `{AAPCS_FastCall}`
+  - `+0x1C`: `control_frame_top` (u32) — バッファ天井から下へ伸びる、`control_frame` 専用領域の現在の深さ。呼び出し・値の領域とは独立に管理される（ADR-INTERP-03、`runtime_interpreter.md` §8）
+  - ※ 従来 `R2: env` に割り当てられていた `vsoc_runtime`（12バイト）は `execution_context` 内に完全内包され、独立した引数レジスタは不要化。空いた `R2` を `local_base`、`R3` を `tos` に再編。`control_frame` はオペランドスタックと同居させず専用領域へ分離した（ADR-INTERP-03）。 `{ExecutionContext_Layout}` `{AAPCS_FastCall}`
 
 ---
 

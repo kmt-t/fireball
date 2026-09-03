@@ -701,25 +701,57 @@ for _op in (
 
 def extract_basic_blocks(
     code: bytes, func_index: int = 0
-) -> list[tuple[int, list[tuple[int, object]], int | None, int | None]]:
+) -> list[tuple[int, list[tuple[int, object]], int | None, int | None, int, int]]:
     """Extracts straight-line BasicBlocks from WASM bytecode as a flat list.
-    Each BasicBlock consists of: (head_pc, ops, next_pc, loops_to).
-    head_pc = (func_index << 16) | start_offset.
+    Each BasicBlock consists of: (head_pc, ops, next_pc, loops_to, frame_depth,
+    byte_span). head_pc = (func_index << 16) | start_offset. frame_depth is
+    the count of enclosing BLOCK/LOOP/IF frames the interpreter's
+    frame.frames stack must hold once execution resumes at head_pc.
+    byte_span is this block's own instruction-stream length -- deliberately
+    NOT `next_pc - head_pc`, which is negative for a block whose terminator
+    branches backward (a loop body's own `br` to the loop's head), and would
+    wrongly read as "shorter than min_trace_bytes" and permanently disqualify
+    that block -- usually the hottest one in the function -- from JIT.
     """
     from wasm_opcodes import BLOCK, BR, BR_IF, ELSE, END, IF, LOOP, RETURN
 
+    control_map = build_control_map(code)
     instrs = decode_all(code)
     sorted_instrs = list(instrs.values)
+
+    def _skip_trailing_ends(offset: int) -> int:
+        # A branch/if-skip target computed as "one past a matching END" can
+        # itself land exactly on the NEXT enclosing block/loop/if's own
+        # closing END (nested constructs sharing one exit point). None of
+        # those bare structural opcodes were ever entered via _h_block /
+        # _h_loop / _h_if for a JIT-bypassed trace, so walk past every
+        # consecutive END to the first real instruction -- landing on one
+        # would otherwise pop the interpreter's frame stack for a frame
+        # that was never pushed.
+        while offset in instrs and instrs[offset].opcode == END:
+            offset = instrs[offset].end_offset
+        return offset
+
     base_pc = func_index << 16
-    blocks: list[tuple[int, list[tuple[int, object]], int | None, int | None]] = []
+    blocks: list[tuple[int, list[tuple[int, object]], int | None, int | None, int, int]] = []
     cur_ops: list[tuple[int, object]] = []
     cur_head: int | None = None
+    cur_frame_depth = 0
+    cur_span_end = 0  # local offset just past the last op instruction actually in cur_ops
     active_openers: list[Instr] = []
 
     for ins in sorted_instrs:
         pc = base_pc | ins.offset
         if cur_head is None:
             cur_head = pc
+            # The nesting depth (count of enclosing BLOCK/LOOP/IF frames)
+            # that must be active in the interpreter's frame.frames stack
+            # once execution resumes here -- recorded from this single
+            # linear scan, so it stays correct regardless of whether a
+            # given visit at runtime arrives via interp.step() or a JIT
+            # jump that skipped the frame push/pop entirely.
+            cur_frame_depth = len(active_openers)
+            cur_span_end = ins.offset
 
         if ins.opcode in _BLOCK_OPENERS:
             active_openers.append(ins)
@@ -732,6 +764,7 @@ def extract_basic_blocks(
             else:
                 arg = ins.operand
             cur_ops.append((ins.opcode, arg))
+            cur_span_end = ins.end_offset
 
         # Check if this instruction ends the basic block
         if ins.opcode in (
@@ -747,18 +780,72 @@ def extract_basic_blocks(
             CALL_INDIRECT,
         ):
             if cur_ops:
-                loops_to = None
+                branch_target = None
                 if (
-                    ins.opcode == BR_IF
+                    ins.opcode in (BR, BR_IF)
                     and ins.operand is not None
                     and ins.operand < len(active_openers)
                 ):
                     target = active_openers[-(ins.operand + 1)]
                     if target.opcode == LOOP:
-                        loops_to = base_pc | target.end_offset
+                        # Backward continuation: br/br_if taken jumps to the
+                        # loop's own start (re-enter the loop body).
+                        branch_target = base_pc | target.end_offset
+                    else:
+                        # Forward exit: br/br_if taken jumps past the block/if's
+                        # matching END (block/if labels resume after, unlike
+                        # loop labels which resume at the top).
+                        match = control_map.blocks.get(target.offset)
+                        if match is not None:
+                            match_end_ip, _else_offset = match
+                            branch_target = base_pc | _skip_trailing_ends(match_end_ip + 1)
 
-                next_pc = (base_pc | ins.end_offset) if ins.opcode != RETURN else None
-                blocks.append((cur_head, list(cur_ops), next_pc, loops_to))
+                if ins.opcode == BR:
+                    # Unconditional: the branch target is the block's only
+                    # successor, never a "fallthrough" past this instruction.
+                    next_pc = branch_target
+                    loops_to = None
+                elif ins.opcode == RETURN:
+                    next_pc = None
+                    loops_to = None
+                elif ins.opcode == IF:
+                    # Conditional entry: the just-computed condition decides
+                    # between the then-body (right after this IF) and the
+                    # else-body / past-END (condition false, then-body
+                    # skipped entirely) -- reuses the same cond!=0 -> loops_to
+                    # / cond==0 -> next_pc contract as BR_IF.
+                    then_target = base_pc | ins.end_offset
+                    skip_target = then_target
+                    match = control_map.blocks.get(ins.offset)
+                    if match is not None:
+                        match_end_ip, else_offset = match
+                        skip_target = base_pc | (
+                            (else_offset + 1)
+                            if else_offset is not None
+                            else _skip_trailing_ends(match_end_ip + 1)
+                        )
+                    next_pc = skip_target
+                    loops_to = then_target
+                elif ins.opcode == ELSE and active_openers:
+                    # Finished running the then-body: never fall into the
+                    # else-body behind it -- skip straight past the matching
+                    # END.
+                    if_opener = active_openers[-1]
+                    match = control_map.blocks.get(if_opener.offset)
+                    next_pc = (
+                        base_pc | _skip_trailing_ends(match[0] + 1)
+                        if match is not None
+                        else base_pc | ins.end_offset
+                    )
+                    loops_to = None
+                else:
+                    next_pc = base_pc | _skip_trailing_ends(ins.end_offset)
+                    loops_to = branch_target if ins.opcode == BR_IF else None
+
+                byte_span = cur_span_end - (cur_head & 0xFFFF)
+                blocks.append(
+                    (cur_head, list(cur_ops), next_pc, loops_to, cur_frame_depth, byte_span)
+                )
                 cur_ops.clear()
 
             cur_head = None
@@ -767,7 +854,8 @@ def extract_basic_blocks(
             active_openers.pop()
 
     if cur_head is not None and cur_ops:
-        blocks.append((cur_head, list(cur_ops), None, None))
+        byte_span = cur_span_end - (cur_head & 0xFFFF)
+        blocks.append((cur_head, list(cur_ops), None, None, cur_frame_depth, byte_span))
     return blocks
 
 
@@ -789,7 +877,7 @@ def build_control_skip_storage(
         instrs = decode_all(code)
         blocks = extract_basic_blocks(code, func_index=func_idx)
         heads = {b[0] for b in blocks}
-        for _head_pc, _ops, delim_pc, _loops_to in blocks:
+        for _head_pc, _ops, delim_pc, _loops_to, _frame_depth, _byte_span in blocks:
             if delim_pc is not None:
                 offset = delim_pc & 0xFFFF
                 if offset in instrs:

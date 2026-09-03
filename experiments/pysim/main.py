@@ -38,7 +38,7 @@ from runtime_engine import BasicBlock, IntegratedHybridEngine, WASMContext
 from scheduler import ChannelAction, Scheduler
 from system import FbSyscallId, ShmSlice, System
 from wasi import WasiHostContext
-from wasm_opcodes import CALL_HOST, I32_CONST, I32_MUL, I32_SUB, LOCAL_GET, LOCAL_SET
+from wasm_opcodes import CALL_HOST, LOCAL_SET
 from x64_jit import TraceCompiler
 
 findings: list[str] = []
@@ -172,7 +172,7 @@ def task_retry_exhausted(sysv: System):
 FACTORIAL_WASM = (
     b"\x00asm\x01\x00\x00\x00\x01\x06\x01`\x01\x7f\x01\x7f\x03\x02\x01\x00"
     b"\x07\x07\x01\x03fac\x00\x00\n \x01\x1e\x01\x01\x7fA\x01!\x01\x03@"
-    b" \x01 \x00l!\x01 \x00A\x01k\"\x00\r\x00\x0b \x01\x0f\x0b"
+    b' \x01 \x00l!\x01 \x00A\x01k"\x00\r\x00\x0b \x01\x0f\x0b'
 )
 
 
@@ -198,9 +198,7 @@ def demo_wasmjit_hybrid_execution(sysv: System) -> None:
     print("  [Stage 1] Initial iterations running via Tier 2 Interpreter...")
     for iter_idx in range(1, 4):
         pc = engine.run_step(pc, ctx)
-        state_name = ["UNEXECUTED", "EXECUTED", "HOT", "COMPILED"][
-            engine.bitmap.get_state(loop_pc)
-        ]
+        state_name = ["UNEXECUTED", "EXECUTED", "HOT", "COMPILED"][engine.bitmap.get_state(loop_pc)]
         print(
             f"    iteration {iter_idx}: executed via Interpreter (card 0x{loop_pc:x} state={state_name})"
         )

@@ -13,6 +13,7 @@ import struct
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum, auto
+from types import TracebackType
 from typing import Generic, TypeVar
 
 from system_containers import MutableFlatMapStorage
@@ -149,7 +150,7 @@ class ShmPageRegistry:
     def __init__(self):
         self.ptes: list[ShmPagePTE | None] = [None] * _FB_CONF_MAX_SHM_PHYS_PAGES
 
-    def register_page(self, page_idx: int, owner_id: int, physical_addr: int):
+    def register_page(self, page_idx: int, owner_id: int, physical_addr: int) -> None:
         self.ptes[page_idx] = ShmPagePTE(
             page_idx=page_idx,
             owner_id=owner_id,
@@ -168,7 +169,7 @@ class ShmPageRegistry:
         pte = self.ptes[page_idx]
         return pte.owner_id if pte is not None and pte.is_valid else None
 
-    def unregister_page(self, page_idx: int):
+    def unregister_page(self, page_idx: int) -> None:
         pte = self.ptes[page_idx]
         if pte is not None:
             pte.is_valid = False
@@ -320,7 +321,7 @@ class SharedBlock:
                 self._manager._page_mapping_callbacks.on_revoke(self.page_idx, self.base_address)
         return self.shm_id
 
-    def drop(self):
+    def drop(self) -> None:
         """RAII drop handler: automatically deallocates physical buffer if still owned."""
         if self._is_active:
             self._is_active = False
@@ -335,7 +336,12 @@ class SharedBlock:
     def __enter__(self) -> SharedBlock:
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
         self.drop()
 
 
@@ -375,7 +381,7 @@ class PMSAv8MPU:
         self.patch_in_progress = False
         self._setup_static_regions(pool_base)
 
-    def _setup_static_regions(self, pool_base: int):
+    def _setup_static_regions(self, pool_base: int) -> None:
         self.regions = [
             MPURegion(
                 0,
@@ -437,7 +443,7 @@ class PMSAv8MPU:
             ),
         ]
 
-    def begin_jit_patch(self):
+    def begin_jit_patch(self) -> None:
         assert not self.patch_in_progress, "Nested JIT patch transaction is invalid"
         r4 = self.regions[4]
         r4.ap = AccessPermission.RW
@@ -446,7 +452,7 @@ class PMSAv8MPU:
         self.isb_count += 1
         self.patch_in_progress = True
 
-    def commit_jit_patch(self):
+    def commit_jit_patch(self) -> None:
         assert self.patch_in_progress, "Cannot commit without begin_jit_patch"
         r4 = self.regions[4]
         r4.ap = AccessPermission.RO
@@ -455,7 +461,7 @@ class PMSAv8MPU:
         self.isb_count += 1
         self.patch_in_progress = False
 
-    def assert_no_rwx(self):
+    def assert_no_rwx(self) -> None:
         for r in self.regions:
             if r.enabled:
                 assert not (r.is_writable and r.is_executable), (
@@ -534,7 +540,7 @@ class MemoryManager:
         self.total_allocated_bytes += FB_CONF_PARTITION_SIZE
         return Result(value=pv)
 
-    def release_partition(self, caller_task_id: int):
+    def release_partition(self, caller_task_id: int) -> None:
         if caller_task_id not in self.partition_owners:
             return
         self.partition_owners.remove(caller_task_id)
@@ -684,7 +690,7 @@ class MemoryManager:
         )
         return Result(value=sb)
 
-    def rollback_transfer(self, original_sender_id: int, shm_id: int):
+    def rollback_transfer(self, original_sender_id: int, shm_id: int) -> None:
         """Restores a shared block's original owner in the page table."""
         slot = self.shm_slots.find(shm_id)
         if slot is not None:
@@ -697,7 +703,7 @@ class MemoryManager:
                     slot.page_idx, slot.base_address, original_sender_id
                 )
 
-    def deallocate(self, caller_task_id: int, addr: int):
+    def deallocate(self, caller_task_id: int, addr: int) -> None:
         """Deallocate local static partition or slot. Owner enforced."""
         owners_view = self.partition_owners.view()
         for owner, pv in list(zip(owners_view.keys, owners_view.values, strict=False)):
@@ -706,7 +712,7 @@ class MemoryManager:
                     self.release_partition(caller_task_id)
                 return
 
-    def _deallocate_shared_slot(self, page_idx: int, slot_idx: int, owner: int):
+    def _deallocate_shared_slot(self, page_idx: int, slot_idx: int, owner: int) -> None:
         shm_id = (page_idx << 8) | slot_idx
         if shm_id in self.shm_slots:
             self.shm_slots.remove(shm_id)

@@ -60,7 +60,6 @@ import ctypes
 import wasmtime
 from exec_memory import ExecutableBuffer
 from runtime_engine import BasicBlock, IntegratedHybridEngine, WASMContext
-from system_containers import ReadOnlyRadixBinaryTreeStorage, bswap32
 from wasm_opcodes import (
     CALL_HOST,
     I32_ADD,

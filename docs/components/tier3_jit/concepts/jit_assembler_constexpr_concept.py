@@ -66,12 +66,14 @@ class AssemblerError(Exception):
 # ==============================================================================
 
 
-def _check_low_reg(reg: Reg, msg: str = "Register must be R0-R7 (Low Register)"):
+def _check_low_reg(reg: Reg, msg: str = "Register must be R0-R7 (Low Register)") -> None:
     if reg > Reg.R7:
         raise AssemblerError(f"COMPILE-TIME ERROR: {msg}, got {reg.name}")
 
 
-def _check_imm(val: int, bits: int, signed: bool = False, msg: str = "Immediate out of range"):
+def _check_imm(
+    val: int, bits: int, signed: bool = False, msg: str = "Immediate out of range"
+) -> None:
     if signed:
         min_v = -(1 << (bits - 1))
         max_v = (1 << (bits - 1)) - 1
@@ -485,7 +487,7 @@ def _hex(b: bytes) -> str:
     return " ".join(f"{x:02X}" for x in b)
 
 
-def test_compile_time_range_validation():
+def test_compile_time_range_validation() -> None:
     """Verify that illegal registers and immediate overflows trigger compile-time errors."""
     asm = Thumb2Assembler()
     # 1. Low register validation on Thumb-1 instruction
@@ -510,7 +512,7 @@ def test_compile_time_range_validation():
         assert "multiple of 4" in str(e)
 
 
-def test_known_thumb2_encoding_reference_values():
+def test_known_thumb2_encoding_reference_values() -> None:
     """Verify the encoder against known-correct ARMv8-M Thumb-2 bit patterns.
     This only checks the assembler against manually-transcribed literals; it does
     NOT read jit_copy_patch_concept.py's stencil catalog, so it cannot by itself

@@ -378,17 +378,17 @@ class CopyPatchJITEngine:
         }
 
     # --- MPU W^X Transaction Protocol ---
-    def begin_jit_patch(self):
+    def begin_jit_patch(self) -> None:
         """Switches JIT Code Cache MPU attribute to RW + XN."""
         self.mpu_attr = MPUAttribute.RW_XN
 
-    def commit_jit_patch(self):
+    def commit_jit_patch(self) -> None:
         """Restores JIT Code Cache MPU attribute to RO + X with DSB & ISB barriers."""
         assert self.mpu_attr == MPUAttribute.RW_XN, "Must be in patching mode before commit"
         self.mpu_attr = MPUAttribute.RO_X
         self.barrier_flushes += 1
 
-    def write_instruction(self, offset: int, instruction: str):
+    def write_instruction(self, offset: int, instruction: str) -> None:
         """Hardware MPU write protection simulation."""
         if self.mpu_attr != MPUAttribute.RW_XN:
             raise MPUFault("W^X VIOLATION: Attempted write to non-writable code memory")
@@ -402,7 +402,7 @@ class CopyPatchJITEngine:
             )
         return self.code_cache[start_offset : start_offset + num_instructions]
 
-    def _emit_bytes(self, data: bytes):
+    def _emit_bytes(self, data: bytes) -> None:
         """Copies real Thumb-2 machine code into byte_cache, honoring the same W^X gate."""
         if self.mpu_attr != MPUAttribute.RW_XN:
             raise MPUFault("W^X VIOLATION: Attempted write to non-writable code memory")
@@ -465,12 +465,12 @@ class CopyPatchJITEngine:
         code_start_byte_offset = self.byte_write_pos
         code_start_inst_offset = self.current_write_pos
 
-        def emit(inst: str, data: bytes):
+        def emit(inst: str, data: bytes) -> None:
             self.write_instruction(self.current_write_pos, inst)
             self.current_write_pos += 1
             self._emit_bytes(data)
 
-        def emit_stencil(st: "Stencil"):
+        def emit_stencil(st: "Stencil") -> None:
             raw = bytes.fromhex(st.hex_bytes.replace(" ", "")) if st.hex_bytes else b""
             if not st.code:
                 return
@@ -549,7 +549,7 @@ class CopyPatchJITEngine:
                 else:
                     raise ValueError(f"Unsupported stencil opcode: {op}")
 
-        def flush_dirty_spills():
+        def flush_dirty_spills() -> None:
             for reg, stack_off in dirty_spills:
                 reg_enum = _REG_NAME_TO_ENUM[reg.lower()]
                 if reg_enum <= Reg.R7:
@@ -707,7 +707,7 @@ def _order_register_moves(moves: dict[Reg, Reg]) -> list[tuple[Reg, Reg]]:
 # ==============================================================================
 
 
-def test_full_stencil_library_coverage():
+def test_full_stencil_library_coverage() -> None:
     """Verify all opcodes in the stencil catalog have valid Thumb-2 code and hex bytes."""
     engine = CopyPatchJITEngine()
     assert len(engine.stencils) >= 35, f"Expected full stencil library, got {len(engine.stencils)}"
@@ -721,7 +721,7 @@ def test_full_stencil_library_coverage():
             )
 
 
-def test_stencil_variant_ids_match_the_documented_table():
+def test_stencil_variant_ids_match_the_documented_table() -> None:
     """docs/specs/jit_stencil_catalog.md 3.8 is the source of truth for which stencil
     belongs to which trace-boundary register variant (Depth 0..3). Stencil.variant_id
     is derived from the name rather than hand-set per entry precisely so it cannot
@@ -799,7 +799,7 @@ def test_stencil_variant_ids_match_the_documented_table():
             )
 
 
-def test_stencil_catalog_matches_assembler():
+def test_stencil_catalog_matches_assembler() -> None:
     """Cross-file check: catalog hex_bytes must equal the real Thumb2Assembler's output.
     Without this, jit_assembler_constexpr_concept.py and this file each hand-transcribe
     the same bytes independently, and nothing catches them drifting apart if only one
@@ -898,7 +898,7 @@ def test_stencil_catalog_matches_assembler():
     )
 
 
-def test_arithmetic_and_logic_traces():
+def test_arithmetic_and_logic_traces() -> None:
     engine = CopyPatchJITEngine()
     ops = [
         ("i32.const", 100),
@@ -937,7 +937,7 @@ def test_arithmetic_and_logic_traces():
     assert code[-1] == "BX r12"
 
 
-def test_external_aapcs_call_stub():
+def test_external_aapcs_call_stub() -> None:
     """Verify external C/C++ function call preserves Callee-saved while saving Caller-saved."""
     engine = CopyPatchJITEngine()
     ops = [
@@ -953,7 +953,7 @@ def test_external_aapcs_call_stub():
     assert "POP {r0-r3, r12, lr}" in code
 
 
-def test_cps_shared_registers_never_clobbered():
+def test_cps_shared_registers_never_clobbered() -> None:
     """ADR_TosCacheAsymmetry: Shared R0/R1/R2 are never clobbered by trace ALU/loads."""
     engine = CopyPatchJITEngine()
     ops = [("i32.const", 42), ("i32.add", None), ("i32.load", None)]
@@ -982,7 +982,7 @@ def test_cps_shared_registers_never_clobbered():
         )
 
 
-def test_fast_address_check_traps_before_access():
+def test_fast_address_check_traps_before_access() -> None:
     """FastAddressCheck/MemoryBoundaryCheck: OOB address must trap to the interpreter, not wrap.
     Bounds checking is size-comparison based (no mask, no power-of-two constraint on mem-size).
     The check must precede the actual load/store, and the placeholder BHS.W branch emitted for
@@ -1015,7 +1015,7 @@ def test_fast_address_check_traps_before_access():
     assert code[-1] == "BX r12"
 
 
-def test_memory_access_without_bounds_check_is_impossible():
+def test_memory_access_without_bounds_check_is_impossible() -> None:
     """No memory-access stencil is reachable from compile_trace() without the CMP/BHS.W guard --
     i.e. there is no code path left that performs a raw unchecked load/store (the old mask-based
     ANDS design silently wrapped instead of trapping; the design now requires a trap on OOB)."""
@@ -1042,7 +1042,7 @@ def test_memory_access_without_bounds_check_is_impossible():
     del engine
 
 
-def test_variant_reconciliation_glue_same_variant_emits_nothing():
+def test_variant_reconciliation_glue_same_variant_emits_nothing() -> None:
     """Depth 2 -> Depth 2 (the only real transition today) must be a no-op: the next
     stencil already finds TOS/NOS exactly where it left them, no MOVs needed."""
     engine = CopyPatchJITEngine()
@@ -1054,7 +1054,7 @@ def test_variant_reconciliation_glue_same_variant_emits_nothing():
     assert engine.byte_write_pos == start_pos, "identical layouts must not emit any MOV"
 
 
-def test_variant_reconciliation_glue_subset_emits_nothing():
+def test_variant_reconciliation_glue_subset_emits_nothing() -> None:
     """A Depth-2 exit feeding a Depth-1 entry needs no reconciliation either: the
     entry only reads TOS (R4), which the Depth-2 layout already has in R4 too."""
     engine = CopyPatchJITEngine()
@@ -1066,7 +1066,7 @@ def test_variant_reconciliation_glue_subset_emits_nothing():
     assert engine.byte_write_pos == start_pos
 
 
-def test_variant_reconciliation_glue_rejects_missing_value():
+def test_variant_reconciliation_glue_rejects_missing_value() -> None:
     """A Depth-1 exit cannot feed a Depth-2 entry: the entry needs a NOS value the
     predecessor never computed, and no MOV sequence can synthesize a value that was
     never produced. This should never actually arise in a well-formed trace (depth
@@ -1078,7 +1078,7 @@ def test_variant_reconciliation_glue_rejects_missing_value():
     assert ok is False
 
 
-def test_variant_reconciliation_glue_emits_real_swap_bytes():
+def test_variant_reconciliation_glue_emits_real_swap_bytes() -> None:
     """Structural check that a genuine register-layout mismatch (same role set,
     different physical registers -- what a future allocator could produce) emits the
     real cycle-safe MOV sequence, not a placeholder. Semantic correctness on actual
@@ -1100,7 +1100,7 @@ def test_variant_reconciliation_glue_emits_real_swap_bytes():
     assert emitted == expected
 
 
-def test_order_register_moves_breaks_swap_cycle_correctly():
+def test_order_register_moves_breaks_swap_cycle_correctly() -> None:
     """A straight R4<->R5 swap is the classic case a naive move-ordering corrupts: emitting
     MOV r4,r5 then MOV r5,r4 would make r5 end up equal to r4's NEW (already-overwritten)
     value instead of its original one. _order_register_moves must route through R12."""
@@ -1108,7 +1108,7 @@ def test_order_register_moves_breaks_swap_cycle_correctly():
     assert moves == [(Reg.R12, Reg.R4), (Reg.R4, Reg.R5), (Reg.R5, Reg.R12)]
 
 
-def test_epilogue_spill_variable_flush():
+def test_epilogue_spill_variable_flush() -> None:
     """Verify that dirty spill variables (TOS/NOS, registers) are flushed to stack before POP/BX."""
     engine = CopyPatchJITEngine()
     ops = [
@@ -1128,7 +1128,7 @@ def test_epilogue_spill_variable_flush():
     assert "BX r12" in code
 
 
-def test_mpu_wx_protection():
+def test_mpu_wx_protection() -> None:
     engine = CopyPatchJITEngine()
     try:
         engine.write_instruction(0, "ILLEGAL")
@@ -1137,7 +1137,7 @@ def test_mpu_wx_protection():
         assert "W^X VIOLATION" in str(e)
 
 
-def test_jit_trace_header_layout():
+def test_jit_trace_header_layout() -> None:
     """Verify that a 16-byte JITTraceHeader is correctly inlined at the head of every compiled trace."""
     engine = CopyPatchJITEngine()
     ops = [("i32.const", 42), ("local.set", 0)]

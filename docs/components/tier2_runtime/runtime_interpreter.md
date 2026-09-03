@@ -17,23 +17,30 @@ Interpreter は、WASM命令をスレッドインタープリタ方式で実行�
 
 ### 3.1 データ構造
 - **`Interpreter`**: WASM命令の実行、コンテキスト管理、および外部環境（vSoC）との連携をカプセル化した主要クラス。
-- **`execution_context` (スタックボトムコンテキスト)**: スタックバッファの最下部（Bottom）に常駐し、仮想CPUレジスタ、スタックの成長長（`stack_depth` / `sp_offset`）、リニアメモリ情報等を保持する。
-- **`UnifiedStack` (統合スタック)**: 単一のスタックバッファ上に、コンテキスト、`call_frame`、ローカル変数、オペランドスタック、`control_frame` をすべてインラインで積む統合スタックモデル（Android ART の ShadowFrame / ManagedStack スタイル）。
+- **`execution_context` (スタックボトムコンテキスト)**: スタックバッファの最下部（Bottom）に常駐し、仮想CPUレジスタ、両側のスタックの成長長、リニアメモリ情報等を保持する。
+- **`UnifiedStack` (統合スタック)**: 単一の固定サイズバッファを、底から上へ伸びる**呼び出し・値の領域**（コンテキスト、`call_frame`、ローカル変数、オペランドスタックをインラインで積む、Android ART の ShadowFrame / ManagedStack スタイル）と、天井から下へ伸びる**制御構造専用の領域**（`block`/`loop`/`if` の入れ子を管理する `control_frame` 専用）の、互いに独立して伸び縮みする 2 本のスタックで両端から共有するモデル（ADR-INTERP-03）。両者は伸びる向きが逆であるだけで物理的には同一バッファ内に同居するため追加バッファは不要だが、**互いの領域には一切踏み込まず、どちらか一方の成長がもう一方の記録位置をずらすことは絶対にない**。
 - **`interpreter_config`**: スタック総容量やyield閾値などの不変な構成情報。
 
 ### 3.2 内部ブロック図
 ```mermaid
 graph TD
-    subgraph Unified_Stack_Memory
+    subgraph Unified_Stack_Memory["ひとつの固定サイズバッファ"]
         Bot[execution_context @ Stack Bottom]
-        Frame0[CallFrame 0 / Locals / Operands / ControlFrames]
-        Frame1[CallFrame 1 / Locals / Operands / ControlFrames]
+        Frame0[CallFrame 0 / Locals / Operands]
+        Frame1[CallFrame 1 / Locals / Operands]
+        Gap[未使用の空き領域]
+        Ctrl1[ControlFrame ネスト先頭寄り]
+        Ctrl0[ControlFrame ネスト末尾寄り]
     end
 
-    Engine[Interpreter Engine] -- R1: stack_bot (ctx) --> Bot
-    Bot -- manages SP length & frames --> Frame0
+    Engine[Interpreter Engine] -- R1: stack_bot ctx --> Bot
+    Bot -- "下から上へ成長" --> Frame0
     Frame0 -.-> Frame1
+    Frame1 -.-> Gap
+    Gap -.-> Ctrl1
+    Ctrl1 -- "上から下へ成長" --> Ctrl0
 ```
+呼び出し・値の領域（下から上）と制御構造専用の領域（上から下）は互いに向かい合って伸びる別々のスタックであり、両者の間の空き領域が尽きたときにのみオーバーフローとみなす。
 
 ### 3.3 主要なクラス・構造体・配列・定数
 
@@ -50,7 +57,7 @@ graph TD
 WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想CPUレジスタ群として設計する。 `{PositionIndependentCode}` `{ContextPointerRegister}`
 
 **スタックボトム配置と統一スタックフレーム (`{ContextPointerRegister}`)**:
-ARM Cortex-M ターゲットにおいて、`execution_context` は **WASM スタックバッファ（2KB 境界アライン）の最下部（Bottom: offset 0）にインライン配置** され、ハンドラ呼び出しの第2引数（`R1: stack_bot`）として渡される。スタックの成長した長さ（`stack_depth` / `sp_offset`）はコンテキスト内で管理され、`call_frame` や `control_frame`、ローカル変数、オペランドスタックはすべてこの単一スタックバッファ上にインラインで積まれる（Android ART ShadowFrame スタイル）。これにより、`sp` ではなく固定の `stack_bot` をレジスタ渡しすることで、ベース相対ロード（`LDR R0, [R1, #offset]`）による高速アクセスを維持しつつ、**`R2` をローカル変数基底ポインタ `local_base`（第3引数）、`R3` をスタックトップ値 `tos`（第4引数）として直接引き回す**。 `{ContextPointerRegister}` `{JIT_RegisterMapping}` `{AAPCS_FastCall}`
+ARM Cortex-M ターゲットにおいて、`execution_context` は **WASM スタックバッファ（2KB 境界アライン）の最下部（Bottom: offset 0）にインライン配置** され、ハンドラ呼び出しの第2引数（`R1: stack_bot`）として渡される。`call_frame`、ローカル変数、オペランドスタックは、このバッファの底から上へ向かって伸びる側にインラインで積まれる（Android ART ShadowFrame スタイル）。一方で `block`/`loop`/`if` の入れ子を管理する `control_frame` は、同じバッファの天井から下へ向かって伸びる、まったく別の専用の伸び方をする（ADR-INTERP-03）。これにより、`sp` ではなく固定の `stack_bot` をレジスタ渡しすることで、ベース相対ロード（`LDR R0, [R1, #offset]`）による高速アクセスを維持しつつ、**`R2` をローカル変数基底ポインタ `local_base`（第3引数）、`R3` をスタックトップ値 `tos`（第4引数）として直接引き回す**。 `{ContextPointerRegister}` `{JIT_RegisterMapping}` `{AAPCS_FastCall}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
@@ -58,15 +65,16 @@ ARM Cortex-M ターゲットにおいて、`execution_context` は **WASM スタ
 | プログラムカウンタ | 現在実行中の命令を指し示す統一プログラムカウンタ（UnifiedPC: `(func_index << 16) \| bytecode_offset`） | 統一オフセット | 32bit符号なし (`ip`: R0) |
 | ローカル変数基底 | カレントコールフレームのローカル変数配列基底ポインタ | 物理レジスタ | `R2: local_base` (`{AAPCS_FastCall}` 準拠) |
 | スタックトップ (TOS) | オペランドスタック最上位値（スタックトップ）を直接保持するレジスタ | 物理レジスタ | `R3: tos` (`{AAPCS_FastCall}` 準拠) |
-| スタック成長長 (SPオフセット) | スタックボトムからの現在のオペランドスタック頂点オフセット/深さ | 長さ/オフセット | 32bit符号なし (`[R1, #0x00]`) |
+| スタック成長長 (SPオフセット) | スタックボトムからの、呼び出し・値の領域（call_frame・ローカル変数・オペランドスタック）のみの現在の頂点オフセット/深さ。制御構造専用の領域の分は一切含まない | 長さ/オフセット | 32bit符号なし (`[R1, #0x00]`) |
 | カレントフレームオフセット | 現在アクティブな `call_frame` のスタックボトムからの開始オフセット | オフセット | 32bit符号なし (`[R1, #0x04]`) |
-| スタック境界上限 (sp_boundary) | スタックオーバーフロー検知用の上限オフセット | 長さ/オフセット | 32bit符号なし (`[R1, #0x08]`) |
+| スタック境界上限 (sp_boundary) | 呼び出し・値の領域側のスタックオーバーフロー検知用の上限オフセット | 長さ/オフセット | 32bit符号なし (`[R1, #0x08]`) |
 | 有効命令ハンドラ | 現在使用されているハンドラ（通常用/デバッグ用）への参照 | テーブルポインタ | `opcode_handler` の配列 (`[R1, #0x0C]`) |
 | ゲストメモリ基底 (mem_base) | ゲストリニアメモリの開始アドレス（旧 `vsoc_runtime.mem_base` を統合） | メモリアドレス | 32bit符号なし (`[R1, #0x10]`) |
 | ゲストメモリサイズ (mem_size) | ゲストリニアメモリの有効バイト数（境界チェック比較用、旧 `vsoc_runtime.mem_size` を統合） | メモリサイズ | 32bit符号なし (`[R1, #0x14]`) |
 | グローバル配列基底 (globals_base) | WASM global 配列の開始アドレス（旧 `vsoc_runtime.globals_base` を統合） | メモリアドレス | 32bit符号なし (`[R1, #0x18]`) |
+| 制御構造専用領域の頂点オフセット | バッファ天井からの、`control_frame` 専用領域の現在の深さ。呼び出し・値の領域とは完全に独立して管理され、どちらか一方の伸び縮みがもう一方の記録位置へ影響することは絶対にない（ADR-INTERP-03） | 長さ/オフセット | 32bit符号なし (`[R1, #0x1C]`) |
 
-`execution_context` は、従来のスタック制御 4 フィールドに加え、従来 `R2: env`（`vsoc_runtime`）として引き回されていたリニアメモリ基底・サイズ・グローバル配列基底を完全内包した **計28バイト構成（`[R1, #0x00]`〜`[R1, #0x1B]`）** である。これにより、独立した引数レジスタとしての `env`（旧 R2）を廃止し、空いた `R2` を `local_base`、`R3` を `tos`（スタックトップ値）に再割り当てすることで、インタープリタと JIT の双方がレジスタ上でスタックトップ値をゼロオーバーヘッドで引き継ぐ。バイトオフセットの物理配置は `{ExecutionContext_Layout}` に記載する。
+`execution_context` は、従来のスタック制御 4 フィールドに加え、従来 `R2: env`（`vsoc_runtime`）として引き回されていたリニアメモリ基底・サイズ・グローバル配列基底、および制御構造専用領域の頂点オフセットを完全内包した **計32バイト構成（`[R1, #0x00]`〜`[R1, #0x1F]`）** である。これにより、独立した引数レジスタとしての `env`（旧 R2）を廃止し、空いた `R2` を `local_base`、`R3` を `tos`（スタックトップ値）に再割り当てすることで、インタープリタと JIT の双方がレジスタ上でスタックトップ値をゼロオーバーヘッドで引き継ぐ。バイトオフセットの物理配置は `{ExecutionContext_Layout}` に記載する。
 
 **TOS レジスタキャッシングとスタック同期不変条件 (`INTP-GOTCHA-01`)**:
 オペランドスタックの最上位要素（Top-of-Stack: TOS）を常に物理レジスタ `R3: tos` に常駐させることで、メモリアクセス回数を半減させ、スタック操作命令（`i32.add`, `local.get` 等）の実行性能を最大化する。各命令ハンドラの入口において、直前の演算結果は `R3` に保持されており、必要に応じて第2オペランドのみをスタックバッファからポップする。ハンドラを脱出して関数呼び出しや外部システムコール、JIT 遷移を行う境界においては、TOS レジスタの値をメインスタック配列へ書き戻して（フラッシュ）同期させる。
@@ -74,9 +82,9 @@ ARM Cortex-M ターゲットにおいて、`execution_context` は **WASM スタ
 **統一プログラムカウンタによる複数モジュール線形化 (`INTP-GOTCHA-04`)**:
 モジュール間を跨ぐ相互関数呼び出しにおいて、モジュール相対オフセットではなくシステム全体で一意に決定される統一 PC（Unified PC: `(func_index << 16) | bytecode_offset`）を採用する。これにより、複数モジュールが共存する環境下でも PC の単一比較のみで分岐先コードブロックを特定でき、JIT トレースのモジュール横断インライン化を極低オーバーヘッドで実現する。
 
-#### コールフレーム（call_frame @ 統合スタックインライン）
+#### コールフレーム（call_frame @ 呼び出し・値の領域インライン）
 <!-- traceability: {PositionIndependentCode} {ContextPointerRegister} {MemoryBoundaryCheck} {EnvironmentPointer} -->
-関数呼び出し時に統合スタック上にプッシュされ、ローカル変数や戻り先情報を保持する。
+関数呼び出し時に、呼び出し・値の領域（ローカル変数やオペランドスタックと同じ、下から上へ伸びる側）へプッシュされ、ローカル変数や戻り先情報を保持する。`call`/`call_indirect`/関数復帰は常にインタープリタへ制御が戻る境界であり（`jit_compiler.md` §3.3「トレース境界不変条件#3」）、JIT トレースが `call_frame` の push/pop を代行することは決してないため、この領域は従来どおりインラインのままでよい。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
@@ -88,9 +96,9 @@ ARM Cortex-M ターゲットにおいて、`execution_context` は **WASM スタ
 
 `call_frame` は計20バイト（`+0x00`〜`+0x13`）で、統合スタック上の各フレーム先頭からの相対オフセットを持つ（絶対オフセットは呼び出し深さごとに異なる——{ADR_TosCacheAsymmetry} 参照）。物理配置は `{CallFrame_Layout}`。
 
-#### 制御フレーム（control_frame @ 統合スタックインライン）
+#### 制御フレーム（control_frame @ 専用スタック、ADR-INTERP-03）
 <!-- traceability: {PositionIndependentCode} {ContextPointerRegister} {MemoryBoundaryCheck} {EnvironmentPointer} -->
-`block/loop/if` 命令によるネスト構造とジャンプ先を管理するため、スタック上にインラインで積まれる。
+`block/loop/if` 命令によるネスト構造とジャンプ先を管理するため、バッファの天井から下へ伸びる専用の領域へ積まれる。オペランドスタックや `call_frame` とは同居しない。`loop`/`block`/`if` の分岐だけは JIT トレースが `next_pc`/分岐先アドレスとしてインタープリタを介さずに直接解決できてしまうため（`jit_compiler.md` §3.3、pysim 参照実装 `jit_runtime.md` §4.3）、この構文の開始・終了に対応するフレームの積み下ろしを JIT が代行しない場面が生まれる。もし control_frame をオペランドスタックと同じ領域に同居させていると、JIT が代行しなかった積み下ろし分だけ、その領域の中身とオペランドスタックが本来占めるべき位置との対応がずれてしまう。専用の領域を天井から独立に伸ばすことで、オペランドスタック側がどれだけ伸び縮みしようと、control_frame の記録位置は物理的に一切影響を受けない。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
@@ -111,6 +119,9 @@ ARM Cortex-M ターゲットにおいて、`execution_context` は **WASM スタ
 2. **分岐脱出時のフレーム Pruning と TOS 復元 (`INTP-GOTCHA-02`)**:
    - `br / br_if / br_table` で `depth` 個のフレームを脱出する際、対象フレームより外側のフレームを確実にポップし、オペランドスタック長を対象フレームの開始時スタック高（`stack_height`）に厳格に巻き戻す。
    - **設計理由と不変条件**: ブロックが戻り値を持つ場合、分岐命令実行時にオペランドスタック最上位に積まれていた戻り値のみを退避し、プルーニング完了後に正確にスタック頂点（TOS レジスタ）へ復元しなければならない。脱出先が `loop` の場合はループ本体先頭へ巻き戻してフレームを維持し、`block / if` の場合はフレームをポップしてブロック終端直後へ遷移する。
+3. **JIT が代行した分岐脱出でのフレーム残留防止 (`INTP-GOTCHA-06`, ADR-INTERP-03)**:
+   - `loop`/`block`/`if` の脱出条件を JIT トレースがインタープリタを介さずに直接解決した場合、その脱出に対応するフレームの積み下ろしは一切行われない。以前インタープリタが直接その構文を実行していた際に積まれたフレームが、回収されないまま残留することがある。
+   - **設計理由と不変条件**: 次にどの位置を実行するにせよ、その位置が本来持つべきネストの深さまでフレームスタックを巻き戻してから実行を再開しなければならない。この整合は、JIT が代行した脱出のたびに個別に処理するのではなく、実行位置を切り替える直前に必ず一度だけ行う。制御構造専用の領域を独立させておくこと（本節冒頭、ADR-INTERP-03）は、この残留が生じてもオペランドスタック側の記録位置を物理的に一切乱さないための前提条件であり、本項の巻き戻しはその上でなお必要な、フレームが指す「今どこにいるか」という論理的な整合性の回復である。
 
 
 #### 分岐脱出時のフレームプルーニングと TOS 復元手順（手順アクティビティ図）
@@ -172,7 +183,7 @@ WASM オプコードごとのスタック遷移およびハンドラ実装マト
 - **Threaded Dispatch with Continuation Passing Style (CPS)**: 命令ハンドラを連鎖させるテーブルディスパッチ方式で分岐コストを極小化する。
   - ハンドラ関数型を `void __fastcall(const uint8_t* ip, execution_context* stack_bot, uint32_t* local_base, uint32_t tos) noexcept` に統一。
   - `ip` (R0), `stack_bot` (R1 `{ContextPointerRegister}`), `local_base` (R2 `{ContextPointerRegister}` `{JIT_RegisterMapping}`), `tos` (R3 `{AAPCS_FastCall}`) のホットな変数を `__fastcall` 引数レジスタ上で保持・更新。
-  - スタックの成長長（SP長）およびリニアメモリ情報（`mem_base`, `mem_size`, `globals_base`）を `stack_bot`（計28バイト）内で直接管理し、`call_frame` / `control_frame` も単一スタック上にインライン構築（Android ART スタイル）し、`R2` をローカル変数基底ポインタ `local_base`、`R3` をスタックトップ値 `tos` として直接引き回す。 `{ContextPointerRegister}` `{JIT_RegisterMapping}` `{AAPCS_FastCall}`
+  - スタック両側の成長長およびリニアメモリ情報（`mem_base`, `mem_size`, `globals_base`）を `stack_bot`（計32バイト）内で直接管理する。`call_frame` は呼び出し・値の領域へ従来どおり単一スタック上にインライン構築（Android ART スタイル）する一方、`control_frame` はそこには同居させず、天井から下へ伸びる専用領域へ構築する（ADR-INTERP-03）。`R2` をローカル変数基底ポインタ `local_base`、`R3` をスタックトップ値 `tos` として直接引き回す。 `{ContextPointerRegister}` `{JIT_RegisterMapping}` `{AAPCS_FastCall}`
   - 非制御命令では `[[clang::musttail]]` による直接末尾ジャンプ（Direct-Threaded Code）を行い、レジスタ上の引数をそのまま次のハンドラへ継続渡し（CPS）する。 `{ThreadedInterpreter}`
 - **JIT コードとの完全な呼び出し規約整合 (Low-Overhead Interop)**:
   - JIT コンパイラが生成するネイティブトレース（`exec_trace`）も、インタープリタと全く同一の `__fastcall` CPS 4引数シグネチャ（R0=IP, R1=stack_bot, R2=local_base, R3=tos）に従う。
@@ -198,13 +209,15 @@ class WASMInterpreter:
     MAX_STACK_DEPTH = 64
 
     def __init__(self, memory_size: int = 65536):
-        self.stack = []
-        self.locals = []
-        self.memory = [0] * (memory_size // 8)  # std::span<uint64_t> (linear memory backing array)
-        self.safepoint_pending = False
-        self.safepoints_hit = 0
+        self.stack: list[int] = []
+        self.locals: list[int] = []
+        self.memory: list[int] = [0] * (
+            memory_size // 8
+        )  # std::span<uint64_t> (linear memory backing array)
+        self.safepoint_pending: bool = False
+        self.safepoints_hit: int = 0
 
-    def push(self, val: int):
+    def push(self, val: int) -> None:
         if len(self.stack) >= self.MAX_STACK_DEPTH:
             raise WASMTrap("STACK_OVERFLOW")
         self.stack.append(val & 0xFFFF_FFFF)
@@ -221,7 +234,7 @@ class WASMInterpreter:
             return True
         return False
 
-    def execute_block(self, instructions: list[tuple[str, object]]) -> str:
+    def execute_block(self, instructions: list[tuple[str, int]]) -> str:
         """Executes WASM bytecode with stack bounds & safepoint checking."""
         pc = 0
         while pc < len(instructions):
@@ -407,3 +420,18 @@ sequenceDiagram
   3. **保守性と検証容易性**: `libgcc` との ABI 境界（レジスタ・スタックアライメント）がハンドラ単位で隔離され、単体テストおよび形式検証が容易になる。
 - **影響範囲**:
   - `runtime_interpreter.md`, `jit_compiler.md`, `wasm_instruction_set.md`, `jit_stencil_catalog.md`
+
+### ADR-INTERP-03: 制御フレームを専用スタックへ分離（オペランドスタックと同居させない）
+
+- **ステータス**: 承認 (Approved)
+- **コンテキスト**:
+  当初の設計では、`call_frame`・ローカル変数・オペランドスタック・`control_frame` のすべてを、ひとつの統合スタックバッファへインラインで、実行順に混ぜて積む Android ART ShadowFrame スタイルを採用していた。ところが `loop`/`block`/`if` の分岐は、JIT トレースが `jit_runtime.md` §4.3 の仕組みでインタープリタを一切介さずに解決できてしまう（`jit_compiler.md` §3.3 が定める、制御命令をトレースへ含めない不変条件そのものの帰結）。このとき、その分岐に対応するフレームの積み下ろしは代行されない。もし control_frame がオペランドスタックと同じ領域に同居していれば、JIT が代行しなかった積み下ろしの分だけ、その領域の中身とオペランドスタックが本来占めるべき位置との対応がずれ、後から見たオペランドスタックの値そのものを巻き込んで壊しかねない。
+- **決定事項**:
+  `control_frame` を、`call_frame`・ローカル変数・オペランドスタックの領域とは完全に切り離した、専用の伸び縮みをする領域へ移す。ひとつの固定サイズバッファを、底から上へ伸びる呼び出し・値の領域と、天井から下へ伸びる制御構造専用の領域とで、互いに向かい合う形で共有する。両者の伸び縮みを示す値は独立して管理し、どちらか一方の変化がもう一方の記録位置に影響することは絶対にない。
+- **根拠とトレードオフ**:
+  1. **JIT の無関心を安全にする**: JIT トレースは元々 `control_frame` の存在を一切知らずに動作する設計であり、それ自体は変えない。変えるのは、その無関心さが物理的な事故につながらないようにすることである。専用領域へ分離すれば、JIT がどれだけオペランドスタックを伸び縮みさせようと、`control_frame` の記録位置は物理的に一切揺るがない。
+  2. **論理的な整合はなお別途必要**: 専用領域への分離は「オペランドスタックの値が壊れない」ことは保証するが、「JIT が代行しなかった積み下ろし分のフレームが残留する」こと自体は防がない。残留したフレームが、後続の深さ相対な分岐命令に誤った階層を指し示してしまう論理的な不整合は、実行位置を切り替える直前に必ずフレームスタックを正しい深さへ巻き戻すことで別途防ぐ（`INTP-GOTCHA-06`）。この巻き戻しは pysim 参照実装でも独立に検証されている（`jit_runtime.md` §4.3, `JITR-GOTCHA-06`）。
+  3. **メモリオーバーヘッドは増えない**: 追加のバッファは不要で、ひとつの固定サイズバッファの両端を使うだけである。オーバーフロー検知も、両側の頂点が出会う一点を監視するだけでよい。
+  4. **`call_frame` は対象外**: `call`/`call_indirect`/関数復帰は常にインタープリタへ制御が戻る境界であり、JIT が `call_frame` の積み下ろしを代行することは決してない。このリスクは `control_frame`（`loop`/`block`/`if`）に固有であり、`call_frame` は従来どおり呼び出し・値の領域にインラインのままでよい。
+- **影響範囲**:
+  - `runtime_interpreter.md`（§3.1〜3.3 データ構造・execution_context・制御フレーム）, `jit_runtime.md`（§4.3）, `experiments/pysim`（参照実装での論理的整合の検証）

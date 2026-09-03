@@ -33,19 +33,19 @@ class BitView:
         self.origin = origin  # bit offset of logical element 0
         self.count = count
 
-    def size(self):
+    def size(self) -> int:
         return self.count
 
-    def _bit_pos(self, i):
+    def _bit_pos(self, i: int) -> int:
         assert 0 <= i < self.count, "index outside the view"
         return self.origin + i * self.bits
 
-    def at(self, i):
+    def at(self, i: int) -> int:
         bit = self._bit_pos(i)
         mask = (1 << self.bits) - 1
         return (self.storage[bit >> 3] >> (bit & 7)) & mask
 
-    def put(self, i, value):
+    def put(self, i: int, value: int) -> None:
         mask = (1 << self.bits) - 1
         assert 0 <= value <= mask, "value does not fit in Bits"
         bit = self._bit_pos(i)
@@ -53,81 +53,83 @@ class BitView:
         cleared = self.storage[byte] & ~(mask << shift) & 0xFF
         self.storage[byte] = cleared | (value << shift)
 
-    def slice(self, first, last):
+    def slice(self, first: int, last: int) -> BitView:
         """Narrow by index. The bit origin absorbs the remainder, so `first`
         does not have to land on a byte boundary."""
         assert 0 <= first <= last <= self.count, "a view may only ever shrink"
         return BitView(self.storage, self.bits, self.origin + first * self.bits, last - first)
 
 
-class _SortedWindow:
+class _SortedWindow(Generic[KeyT]):
     """Shared narrowing behaviour of the two sparse views."""
 
-    def __init__(self, keys, first=0, last=None):
+    def __init__(self, keys: Sequence[KeyT], first: int = 0, last: int | None = None):
         self.keys = keys
         self.first = first
         self.last = len(keys) if last is None else last
 
-    def size(self):
+    def size(self) -> int:
         return self.last - self.first
 
-    def empty(self):
+    def empty(self) -> bool:
         return self.size() == 0
 
-    def _bounds(self, lo, hi):
+    def _bounds(self, lo: KeyT, hi: KeyT) -> tuple[int, int]:
         return (
             bisect.bisect_left(self.keys, lo, self.first, self.last),
             bisect.bisect_right(self.keys, hi, self.first, self.last),
         )
 
-    def _locate(self, key):
+    def _locate(self, key: KeyT) -> int | None:
         i = bisect.bisect_left(self.keys, key, self.first, self.last)
         return i if i < self.last and self.keys[i] == key else None
 
 
-class FlatMapView:
+class FlatMapView(Generic[KeyT, ValT]):
     """flat_map_view<Key, Value>: sorted pairs array (AoS), narrow-then-search, returns a value."""
 
     __slots__ = ("entries", "first", "last")
 
-    def __init__(self, entries, first=0, last=None):
+    def __init__(
+        self, entries: Sequence[tuple[KeyT, ValT]], first: int = 0, last: int | None = None
+    ):
         self.entries = entries
         self.first = first
         self.last = len(self.entries) if last is None else last
 
     @property
-    def keys(self):
+    def keys(self) -> list[KeyT]:
         return [k for k, _ in self.entries[self.first : self.last]]
 
     @property
-    def values(self):
+    def values(self) -> list[ValT]:
         return [v for _, v in self.entries[self.first : self.last]]
 
-    def size(self):
+    def size(self) -> int:
         return self.last - self.first
 
-    def empty(self):
+    def empty(self) -> bool:
         return self.size() == 0
 
-    def _bounds(self, lo, hi):
+    def _bounds(self, lo: KeyT, hi: KeyT) -> tuple[int, int]:
         return (
             bisect.bisect_left(self.entries, lo, self.first, self.last, key=lambda e: e[0]),
             bisect.bisect_right(self.entries, hi, self.first, self.last, key=lambda e: e[0]),
         )
 
-    def _locate(self, key):
+    def _locate(self, key: KeyT) -> int | None:
         i = bisect.bisect_left(self.entries, key, self.first, self.last, key=lambda e: e[0])
         return i if i < self.last and self.entries[i][0] == key else None
 
-    def slice(self, first, last):
+    def slice(self, first: int, last: int) -> FlatMapView[KeyT, ValT]:
         assert self.first <= first <= last <= self.last, "a view may only ever shrink"
         return FlatMapView(self.entries, first, last)
 
-    def narrow(self, lo, hi):
+    def narrow(self, lo: KeyT, hi: KeyT) -> FlatMapView[KeyT, ValT]:
         lo_idx, hi_idx = self._bounds(lo, hi)
         return FlatMapView(self.entries, lo_idx, hi_idx)
 
-    def find(self, key):
+    def find(self, key: KeyT) -> ValT | None:
         """Binary search inside the current window only."""
         i = self._locate(key)
         return None if i is None else self.entries[i][1]
@@ -192,7 +194,7 @@ class StaticFlatMap(Generic[KeyT, ValT]):
     def erase(self, key: KeyT) -> bool:
         return self.remove(key)
 
-    def view(self) -> FlatMapView:
+    def view(self) -> FlatMapView[KeyT, ValT]:
         return FlatMapView(self._entries)
 
     def find(self, key: KeyT) -> ValT | None:
@@ -202,21 +204,21 @@ class StaticFlatMap(Generic[KeyT, ValT]):
         return self.view().find(key) is not None
 
 
-class FlatSetView(_SortedWindow):
+class FlatSetView(_SortedWindow[KeyT]):
     """
     flat_set_view<Key>: sorted keys only, answers membership.
         Carries no value span at all -- the question is whether the key is present,
         not what is stored against it.
     """
 
-    def slice(self, first, last):
+    def slice(self, first: int, last: int) -> FlatSetView[KeyT]:
         assert self.first <= first <= last <= self.last, "a view may only ever shrink"
         return FlatSetView(self.keys, first, last)
 
-    def narrow(self, lo, hi):
+    def narrow(self, lo: KeyT, hi: KeyT) -> FlatSetView[KeyT]:
         return FlatSetView(self.keys, *self._bounds(lo, hi))
 
-    def contains(self, key):
+    def contains(self, key: KeyT) -> bool:
         return self._locate(key) is not None
 
 
@@ -250,13 +252,13 @@ class RadixBinaryTreeView(Generic[ValT]):
 
 
 def lookup_jit_entry(
-    view: FlatMapView | RadixBinaryTreeView,
+    view: FlatMapView[int, ValT] | RadixBinaryTreeView[ValT],
     card_table: BitView,
     entry_group_bounds: Sequence[int],
     pc: int,
     card_shift: int,
     group_shift: int,
-):
+) -> ValT | None:
     """JIT entry lookup:
     1. O(1) card marking pre-filter: verify card state == 3 (COMPILED).
     2. O(1) Radix Table prefix lookup: slice to group bounds [first, last].
@@ -265,7 +267,7 @@ def lookup_jit_entry(
     card_idx = pc >> card_shift
     if card_idx >= card_table.size() or card_table.at(card_idx) != 3:  # 3 = COMPILED
         return None
-    if hasattr(view, "radix_table"):
+    if isinstance(view, RadixBinaryTreeView):
         return view.find(pc)
     group_idx = pc >> group_shift
     if group_idx < 0 or group_idx + 1 >= len(entry_group_bounds):
@@ -286,7 +288,7 @@ def card_marking_table(storage: bytearray, card_count: int) -> BitView:
     return BitView(storage, bits=2, origin=0, count=card_count)
 
 
-def breakpoint_set(sorted_pcs) -> FlatSetView:
+def breakpoint_set(sorted_pcs: Sequence[int]) -> FlatSetView[int]:
     """Debugger breakpoints: the interpreter asks 'is this PC a breakpoint?',
     which is membership, not a lookup."""
     return FlatSetView(sorted_pcs)
@@ -297,7 +299,7 @@ def breakpoint_set(sorted_pcs) -> FlatSetView:
 # ==============================================================================
 
 
-def test_two_bit_card_marking_packs_four_cards_per_byte():
+def test_two_bit_card_marking_packs_four_cards_per_byte() -> None:
     """A 2-bit card state table must cost 2 bits per card, not 8. This is the
     whole reason bit_view exists: at RAM 32KB a byte-per-card table is waste."""
     store = bytearray(4)  # 4 bytes -> 16 cards at 2 bits each
@@ -309,7 +311,7 @@ def test_two_bit_card_marking_packs_four_cards_per_byte():
     assert len(store) == 4, "16 two-bit cards must fit in 4 bytes"
 
 
-def test_packed_write_does_not_disturb_neighbours():
+def test_packed_write_does_not_disturb_neighbours() -> None:
     """Four cards share a byte, so a write has to read-modify-write within it."""
     cards = card_marking_table(bytearray(4), card_count=16)
     for i in range(16):
@@ -321,7 +323,7 @@ def test_packed_write_does_not_disturb_neighbours():
     )
 
 
-def test_slice_does_not_require_byte_alignment():
+def test_slice_does_not_require_byte_alignment() -> None:
     """The bit origin absorbs the remainder, so a caller may slice at any index
     rather than having to round to a byte boundary."""
     cards = card_marking_table(bytearray(4), card_count=16)
@@ -334,7 +336,7 @@ def test_slice_does_not_require_byte_alignment():
     assert window.slice(1, 3).at(0) == 2, "a nested slice lost its bit origin"
 
 
-def test_bit_view_offers_no_search():
+def test_bit_view_offers_no_search() -> None:
     """Card marking is answered by the index. Exposing find/contains here would
     invite treating a dense state table as something to search."""
     cards = card_marking_table(bytearray(4), card_count=16)
@@ -342,11 +344,11 @@ def test_bit_view_offers_no_search():
     assert not hasattr(cards, "contains"), "bit_view must not offer membership"
 
 
-def _map_fixture():
+def _map_fixture() -> FlatMapView[int, int]:
     return FlatMapView([(10, 1), (20, 2), (30, 3), (40, 4), (50, 5), (60, 6)])
 
 
-def test_narrowing_only_ever_shrinks_and_composes():
+def test_narrowing_only_ever_shrinks_and_composes() -> None:
     """Monotonic shrinking is what makes multi-stage coarse indexes safe to
     compose: no stage can reintroduce an element an earlier stage excluded."""
     view = _map_fixture()
@@ -362,7 +364,7 @@ def test_narrowing_only_ever_shrinks_and_composes():
         assert "shrink" in str(e), e
 
 
-def test_set_view_answers_membership_without_any_value_storage():
+def test_set_view_answers_membership_without_any_value_storage() -> None:
     """flat_set_view exists so a membership table need not allocate a value
     array at all -- the breakpoint list is keys and nothing else."""
     bps = breakpoint_set([0x100, 0x180, 0x240, 0x300])
@@ -376,7 +378,7 @@ def test_set_view_answers_membership_without_any_value_storage():
     assert window.contains(0x300) is False, "a key outside the window must not be found"
 
 
-def test_card_marking_prefilter_and_jit_entry_group_narrowing_lookup():
+def test_card_marking_prefilter_and_jit_entry_group_narrowing_lookup() -> None:
     """The 2-bit card marking table filters uncompiled PCs in O(1), JIT entry
     group index narrows the search slice in O(1), and FlatMapView binary search
     finds the entry in O(log n)."""
@@ -402,7 +404,7 @@ def test_card_marking_prefilter_and_jit_entry_group_narrowing_lookup():
     )
 
 
-def test_bits_must_divide_a_byte():
+def test_bits_must_divide_a_byte() -> None:
     """3-bit elements would straddle bytes and force a two-load read, which the
     design deliberately excludes."""
     try:
@@ -412,7 +414,7 @@ def test_bits_must_divide_a_byte():
         assert "1, 2 or 4" in str(e), e
 
 
-def test_radix_binary_tree_view():
+def test_radix_binary_tree_view() -> None:
     """RadixBinaryTree index model: Radix Table yields O(1) bounded segment [first, last],
     then local binary search finds entry in O(log n).
     Radix table is a compact scalar start-index array where bucket prefix bounds are [table[p], table[p+1]]."""
@@ -430,7 +432,7 @@ def test_radix_binary_tree_view():
     assert rbt_view.find(100) is None
 
 
-def test_static_flat_map_operations():
+def test_static_flat_map_operations() -> None:
     m = StaticFlatMap(capacity=16)
     assert m.insert(30, 300)
     assert m.insert(10, 100)

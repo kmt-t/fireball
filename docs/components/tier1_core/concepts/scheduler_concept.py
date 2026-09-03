@@ -60,7 +60,7 @@ class RoundRobinScheduler:
         self.total_dispatches += 1
         return task_id
 
-    def yield_current(self):
+    def yield_current(self) -> None:
         """Cooperative yield: move current task to the tail of the ready ring."""
         assert self.current_task is not None, "No active task to yield"
         task_id = self.current_task
@@ -69,7 +69,7 @@ class RoundRobinScheduler:
         self.ready_ring.append(task_id)
         self.current_task = None
 
-    def block_current(self, reason: str = "WAIT"):
+    def block_current(self, reason: str = "WAIT") -> None:
         """Block current task on event/IPC: removed from ready ring."""
         assert self.current_task is not None, "No active task to block"
         task_id = self.current_task
@@ -78,7 +78,7 @@ class RoundRobinScheduler:
         tcb.block_reason = reason
         self.current_task = None
 
-    def unblock_task(self, task_id: str):
+    def unblock_task(self, task_id: str) -> None:
         """Unblock task on event arrival: append to ready ring."""
         assert task_id in self.tasks, f"Unknown task {task_id}"
         tcb = self.tasks[task_id]
@@ -87,7 +87,7 @@ class RoundRobinScheduler:
             tcb.block_reason = None
             self.ready_ring.append(task_id)
 
-    def terminate_current(self):
+    def terminate_current(self) -> None:
         """Terminate active task."""
         assert self.current_task is not None
         task_id = self.current_task
@@ -116,17 +116,17 @@ class RoundRobinScheduler:
 # ==============================================================================
 
 
-def test_round_robin_fairness():
+def test_round_robin_fairness() -> None:
     sched = RoundRobinScheduler(max_tasks=4)
     exec_order = []
 
-    def task_a():
+    def task_a() -> Generator[str, None, None]:
         exec_order.append("A1")
         yield "YIELD"
         exec_order.append("A2")
         yield "YIELD"
 
-    def task_b():
+    def task_b() -> Generator[str, None, None]:
         exec_order.append("B1")
         yield "YIELD"
         exec_order.append("B2")
@@ -142,11 +142,11 @@ def test_round_robin_fairness():
     assert sched.total_dispatches == 6
 
 
-def test_block_and_unblock_cycle():
+def test_block_and_unblock_cycle() -> None:
     sched = RoundRobinScheduler(max_tasks=4)
     trace = []
 
-    def worker():
+    def worker() -> Generator[str, None, None]:
         trace.append("W_START")
         yield "BLOCK"
         trace.append("W_RESUMED")

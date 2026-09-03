@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     from gdb_server import GDBServer
     from hal import HalTask
     from interpreter import BasicBlock, WASMContext
+    from wasi import WasiHostContext
 
 from logger import ConsoleOutput, LogDictionary, Logger, LogLevel
 from memory import (
@@ -241,7 +242,7 @@ class System:
         self._hal_task_id: int | None = None
         self.gdb_server: GDBServer | None = None
         self._gdb_task_id: int | None = None
-        self.wasi_context: object | None = None
+        self.wasi_context: WasiHostContext | None = None
         # Build fireball_call dispatch table via RadixBinaryTreeView
         syscall_handlers: list[tuple[int, Callable[[int, int, int, int, int, int], int]]] = [
             (
@@ -464,7 +465,9 @@ class System:
             TrapCode.OWNER_MISMATCH: WasiErrno.PERM,
         }.get(status, WasiErrno.FAULT)
 
-    def _mmio_touch(self, addr: int, is_write: bool):
+    def _mmio_touch(
+        self, addr: int, is_write: bool
+    ) -> tuple[WasiErrno | None, bytearray | None, int | None]:
         """
         Runs the real permission dispatch, then resolves this
                 experiment's own backing storage for the byte-level effect
@@ -547,7 +550,9 @@ class System:
         )
         return self._run_vdma()
 
-    def _vdma_region(self, addr: int, count: int, is_write: bool):
+    def _vdma_region(
+        self, addr: int, count: int, is_write: bool
+    ) -> tuple[bytearray | None, int | None]:
         """
         runtime_vmmio.md §4.5: VDMA src/dst may be guest RAM (Tier 1) or
                 vMMIO FC=14/15 -- resolved through the exact same permission gate
@@ -602,15 +607,21 @@ class System:
             uri = raw.decode("utf-8")
         except UnicodeDecodeError:
             return int(WasiErrno.INVAL)
-        for i, u in enumerate(self.ipc.registry.keys, start=1):
-            if u == uri:
-                return i
-        return int(WasiErrno.NOENT)
+        # O(log N) via the registry's own FlatMapView.find_index, not a
+        # linear rescan of the registry -- ipc_router.py's own
+        # lookup_service_handle() does exactly this same lookup, just
+        # 0-based; this call site's handle IDs are 1-based (see
+        # _ipc_send/_ipc_recv's `keys[handle_id - 1]`).
+        idx = self.ipc.registry.find_index(uri)
+        return idx + 1 if idx >= 0 else int(WasiErrno.NOENT)
 
     def _ipc_send(self, handle_id: int, msg_offset: int, msg_len: int) -> WasiErrno:
-        if handle_id < 1 or handle_id > len(self.ipc.registry.keys):
+        # .size()/.entries are O(1) (the latter borrows the backing array
+        # directly for a full-range view); .keys rebuilds a fresh list on
+        # every access and must never sit on this per-call path.
+        if handle_id < 1 or handle_id > self.ipc.registry.size():
             return WasiErrno.BADF
-        uri = self.ipc.registry.keys[handle_id - 1]
+        uri = self.ipc.registry.entries[handle_id - 1][0]
         payload = self._read_guest(msg_offset, msg_len)
         if payload is None:
             return WasiErrno.FAULT
@@ -655,9 +666,9 @@ class System:
         return WasiErrno.NOENT
 
     def _ipc_recv(self, handle_id: int, buf_offset: int, buf_len: int) -> int:
-        if handle_id < 1 or handle_id > len(self.ipc.registry.keys):
+        if handle_id < 1 or handle_id > self.ipc.registry.size():
             return int(WasiErrno.BADF)
-        uri = self.ipc.registry.keys[handle_id - 1]
+        uri = self.ipc.registry.entries[handle_id - 1][0]
         task = self.scheduler.get_task(self._current_task_id)
         if task is None:
             task = self.scheduler.get_task(
@@ -698,7 +709,7 @@ class System:
     # --- WASI (interface_wit.md §5.5-5.6) --------------------------------
     def _wasi_fd_write(self, fd: int, iovs_ptr: int, iovs_len: int, nwritten_ptr: int) -> WasiErrno:
         """Dispatches fd_write either via registered WasiHostContext or directly to console."""
-        if self.wasi_context is not None and hasattr(self.wasi_context, "fd_write"):
+        if self.wasi_context is not None:
             res = self.wasi_context.fd_write(fd, iovs_ptr, iovs_len, nwritten_ptr)
             return WasiErrno(res) if res in WasiErrno._value2member_map_ else WasiErrno.SUCCESS
 

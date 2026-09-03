@@ -2,7 +2,9 @@
 docs/components/tier2_runtime/concepts/interpreter_concept.py
 Reference Concept Implementation: Exhaustive WASM MVP (v1) Stack Interpreter & Android ART Unified Frame
 - Complete WASM MVP opcode set matching docs/specs/wasm_instruction_set.md
-- Bottom-resident execution_context & unified stack frame (CallFrame + ControlFrame + Locals + Operands)
+- Bottom-resident execution_context: CallFrame + Locals + Operands share one
+  inline growing region; ControlFrame lives in its own dedicated region,
+  never interleaved with it (ADR-INTERP-03, runtime_interpreter.md §8)
 - Direct-Threaded __fastcall Continuation Passing Style (CPS) 4-argument dispatch (ip, stack_bot, env, local_base)
 - Full stack pruning (Label Arity handling) on br / br_if / br_table
 - 64-bit integer arithmetic, memory loads/stores (8/16/32/64-bit), and type conversions
@@ -24,7 +26,10 @@ class WASMTrap(Exception):
 
 class CallFrame:
     """
-    Call frame resident inline on the unified stack buffer.
+    Call frame resident inline on the call/locals/operand region of the
+    stack buffer (never the dedicated control_frame region -- ADR-INTERP-03,
+    since `call`/`call_indirect`/return always round-trip through the
+    interpreter and never need JIT-bypass safety).
     `{ContextPointerRegister}` `{PositionIndependentCode}`
     """
 
@@ -45,7 +50,11 @@ class CallFrame:
 
 class ControlFrame:
     """
-    Control block/loop/if frame resident inline on the unified stack buffer.
+    Control block/loop/if frame resident in its own dedicated region of the
+    stack buffer, never interleaved with the operand stack (ADR-INTERP-03):
+    a JIT trace that resolves a loop/block exit never pops one of these, so
+    letting it share the operand stack's growing region would let that
+    leave the operand stack's own addressing corrupted.
     `{ThreadedInterpreter}`
     """
 
@@ -83,7 +92,7 @@ class ExecutionContext:
         self.safepoints_hit: int = 0
         self.funcs: list[list[tuple[str, int | object]]] = []
 
-    def push(self, val: int):
+    def push(self, val: int) -> None:
         if self.sp_offset >= len(self.stack):
             raise WASMTrap("STACK_OVERFLOW")
         self.stack[self.sp_offset] = val
@@ -100,7 +109,7 @@ class ExecutionContext:
             raise WASMTrap("STACK_UNDERFLOW")
         return self.stack[self.sp_offset - 1]
 
-    def prune_stack(self, saved_sp: int, arity: int):
+    def prune_stack(self, saved_sp: int, arity: int) -> None:
         """
         WASM Label Arity stack pruning: preserves the top `arity` operands,
         rolls back the stack to `saved_sp`, and pushes back the preserved operands.
@@ -177,8 +186,13 @@ _DISPATCH_TABLE: dict[
 ] = {}
 
 
-def _op_handler(op_name: str):
-    def decorator(fn):
+_HandlerFn = Callable[
+    [ExecutionContext, "int | object", int, "WASMInterpreter"], tuple[str | None, int | None]
+]
+
+
+def _op_handler(op_name: str) -> Callable[[_HandlerFn], _HandlerFn]:
+    def decorator(fn: _HandlerFn) -> _HandlerFn:
         _DISPATCH_TABLE[op_name] = fn
         return fn
 
@@ -189,17 +203,23 @@ def _op_handler(op_name: str):
 
 
 @_op_handler("unreachable")
-def _h_unreachable(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_unreachable(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     raise WASMTrap("UNREACHABLE_INSTRUCTION")
 
 
 @_op_handler("nop")
-def _h_nop(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_nop(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     return (None, None)
 
 
 @_op_handler("block")
-def _h_block(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_block(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     end_pc, arity = arg
     ctrl = ControlFrame(
         parent_offset=len(ctx.control_frame_stack),
@@ -213,7 +233,9 @@ def _h_block(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInte
 
 
 @_op_handler("loop")
-def _h_loop(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_loop(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     start_pc, arity = arg
     ctrl = ControlFrame(
         parent_offset=len(ctx.control_frame_stack),
@@ -227,7 +249,9 @@ def _h_loop(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInter
 
 
 @_op_handler("if")
-def _h_if(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_if(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     else_or_end_pc, end_pc, arity = arg
     cond = ctx.pop()
     ctrl = ControlFrame(
@@ -244,20 +268,26 @@ def _h_if(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpr
 
 
 @_op_handler("else")
-def _h_else(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_else(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     end_pc = arg
     return (None, end_pc)
 
 
 @_op_handler("end")
-def _h_end(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_end(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     if ctx.control_frame_stack:
         ctx.control_frame_stack.pop()
     return (None, None)
 
 
 @_op_handler("br")
-def _h_br(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_br(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     depth = int(arg)
     target_ctrl = ctx.control_frame_stack[-(depth + 1)]
     ctx.prune_stack(target_ctrl.saved_sp, target_ctrl.result_arity)
@@ -271,7 +301,9 @@ def _h_br(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpr
 
 
 @_op_handler("br_if")
-def _h_br_if(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_br_if(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     depth = int(arg)
     cond = ctx.pop()
     if cond != 0:
@@ -288,7 +320,9 @@ def _h_br_if(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInte
 
 
 @_op_handler("br_table")
-def _h_br_table(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_br_table(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     targets, default_target = arg
     idx = ctx.pop()
     depth = targets[idx] if 0 <= idx < len(targets) else default_target
@@ -300,12 +334,16 @@ def _h_br_table(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMI
 
 
 @_op_handler("return")
-def _h_return(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_return(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     return ("RETURN", None)
 
 
 @_op_handler("call")
-def _h_call(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_call(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     if isinstance(arg, tuple):
         target_func_idx, num_args = arg
     else:
@@ -319,7 +357,9 @@ def _h_call(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInter
 
 
 @_op_handler("call_indirect")
-def _h_call_indirect(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_call_indirect(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     if isinstance(arg, tuple):
         type_idx, num_args = arg
     else:
@@ -337,13 +377,17 @@ def _h_call_indirect(ctx: ExecutionContext, arg: int | object, pc: int, interp: 
 
 
 @_op_handler("drop")
-def _h_drop(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_drop(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     ctx.pop()
     return (None, None)
 
 
 @_op_handler("select")
-def _h_select(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_select(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     c = ctx.pop()
     v2 = ctx.pop()
     v1 = ctx.pop()
@@ -355,34 +399,44 @@ def _h_select(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInt
 
 
 @_op_handler("local.get")
-def _h_local_get(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_local_get(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     frame = ctx.call_frame_stack[-1]
     ctx.push(ctx.stack[frame.local_base + int(arg)])
     return (None, None)
 
 
 @_op_handler("local.set")
-def _h_local_set(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_local_set(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     frame = ctx.call_frame_stack[-1]
     ctx.stack[frame.local_base + int(arg)] = ctx.pop()
     return (None, None)
 
 
 @_op_handler("local.tee")
-def _h_local_tee(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_local_tee(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     frame = ctx.call_frame_stack[-1]
     ctx.stack[frame.local_base + int(arg)] = ctx.peek()
     return (None, None)
 
 
 @_op_handler("global.get")
-def _h_global_get(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_global_get(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     ctx.push(ctx.globals[int(arg)])
     return (None, None)
 
 
 @_op_handler("global.set")
-def _h_global_set(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_global_set(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     ctx.globals[int(arg)] = ctx.pop()
     return (None, None)
 
@@ -391,7 +445,9 @@ def _h_global_set(ctx: ExecutionContext, arg: int | object, pc: int, interp: WAS
 
 
 @_op_handler("i32.load")
-def _h_i32_load(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i32_load(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     addr = ctx.pop()
     if addr + 4 > len(ctx.memory):
         raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
@@ -400,7 +456,9 @@ def _h_i32_load(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMI
 
 
 @_op_handler("i64.load")
-def _h_i64_load(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_load(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     addr = ctx.pop()
     if addr + 8 > len(ctx.memory):
         raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
@@ -409,7 +467,9 @@ def _h_i64_load(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMI
 
 
 @_op_handler("i32.load8_s")
-def _h_i32_load8_s(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i32_load8_s(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     addr = ctx.pop()
     if addr + 1 > len(ctx.memory):
         raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
@@ -418,7 +478,9 @@ def _h_i32_load8_s(ctx: ExecutionContext, arg: int | object, pc: int, interp: WA
 
 
 @_op_handler("i32.load8_u")
-def _h_i32_load8_u(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i32_load8_u(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     addr = ctx.pop()
     if addr + 1 > len(ctx.memory):
         raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
@@ -427,7 +489,9 @@ def _h_i32_load8_u(ctx: ExecutionContext, arg: int | object, pc: int, interp: WA
 
 
 @_op_handler("i32.load16_s")
-def _h_i32_load16_s(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i32_load16_s(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     addr = ctx.pop()
     if addr + 2 > len(ctx.memory):
         raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
@@ -436,7 +500,9 @@ def _h_i32_load16_s(ctx: ExecutionContext, arg: int | object, pc: int, interp: W
 
 
 @_op_handler("i32.load16_u")
-def _h_i32_load16_u(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i32_load16_u(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     addr = ctx.pop()
     if addr + 2 > len(ctx.memory):
         raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
@@ -445,7 +511,9 @@ def _h_i32_load16_u(ctx: ExecutionContext, arg: int | object, pc: int, interp: W
 
 
 @_op_handler("i64.load8_s")
-def _h_i64_load8_s(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_load8_s(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     addr = ctx.pop()
     if addr + 1 > len(ctx.memory):
         raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
@@ -454,7 +522,9 @@ def _h_i64_load8_s(ctx: ExecutionContext, arg: int | object, pc: int, interp: WA
 
 
 @_op_handler("i64.load8_u")
-def _h_i64_load8_u(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_load8_u(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     addr = ctx.pop()
     if addr + 1 > len(ctx.memory):
         raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
@@ -463,7 +533,9 @@ def _h_i64_load8_u(ctx: ExecutionContext, arg: int | object, pc: int, interp: WA
 
 
 @_op_handler("i64.load16_s")
-def _h_i64_load16_s(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_load16_s(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     addr = ctx.pop()
     if addr + 2 > len(ctx.memory):
         raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
@@ -472,7 +544,9 @@ def _h_i64_load16_s(ctx: ExecutionContext, arg: int | object, pc: int, interp: W
 
 
 @_op_handler("i64.load16_u")
-def _h_i64_load16_u(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_load16_u(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     addr = ctx.pop()
     if addr + 2 > len(ctx.memory):
         raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
@@ -481,7 +555,9 @@ def _h_i64_load16_u(ctx: ExecutionContext, arg: int | object, pc: int, interp: W
 
 
 @_op_handler("i64.load32_s")
-def _h_i64_load32_s(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_load32_s(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     addr = ctx.pop()
     if addr + 4 > len(ctx.memory):
         raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
@@ -490,7 +566,9 @@ def _h_i64_load32_s(ctx: ExecutionContext, arg: int | object, pc: int, interp: W
 
 
 @_op_handler("i64.load32_u")
-def _h_i64_load32_u(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_load32_u(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     addr = ctx.pop()
     if addr + 4 > len(ctx.memory):
         raise WASMTrap("OUT_OF_BOUNDS_MEMORY_ACCESS")
@@ -499,7 +577,9 @@ def _h_i64_load32_u(ctx: ExecutionContext, arg: int | object, pc: int, interp: W
 
 
 @_op_handler("i32.store")
-def _h_i32_store(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i32_store(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     val = ctx.pop()
     addr = ctx.pop()
     if addr + 4 > len(ctx.memory):
@@ -509,7 +589,9 @@ def _h_i32_store(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASM
 
 
 @_op_handler("i64.store")
-def _h_i64_store(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_store(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     val = ctx.pop()
     addr = ctx.pop()
     if addr + 8 > len(ctx.memory):
@@ -519,7 +601,9 @@ def _h_i64_store(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASM
 
 
 @_op_handler("i32.store8")
-def _h_i32_store8(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i32_store8(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     val = ctx.pop()
     addr = ctx.pop()
     if addr + 1 > len(ctx.memory):
@@ -529,7 +613,9 @@ def _h_i32_store8(ctx: ExecutionContext, arg: int | object, pc: int, interp: WAS
 
 
 @_op_handler("i64.store8")
-def _h_i64_store8(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_store8(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     val = ctx.pop()
     addr = ctx.pop()
     if addr + 1 > len(ctx.memory):
@@ -539,7 +625,9 @@ def _h_i64_store8(ctx: ExecutionContext, arg: int | object, pc: int, interp: WAS
 
 
 @_op_handler("i32.store16")
-def _h_i32_store16(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i32_store16(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     val = ctx.pop()
     addr = ctx.pop()
     if addr + 2 > len(ctx.memory):
@@ -549,7 +637,9 @@ def _h_i32_store16(ctx: ExecutionContext, arg: int | object, pc: int, interp: WA
 
 
 @_op_handler("i64.store16")
-def _h_i64_store16(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_store16(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     val = ctx.pop()
     addr = ctx.pop()
     if addr + 2 > len(ctx.memory):
@@ -559,7 +649,9 @@ def _h_i64_store16(ctx: ExecutionContext, arg: int | object, pc: int, interp: WA
 
 
 @_op_handler("i64.store32")
-def _h_i64_store32(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_store32(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     val = ctx.pop()
     addr = ctx.pop()
     if addr + 4 > len(ctx.memory):
@@ -569,13 +661,17 @@ def _h_i64_store32(ctx: ExecutionContext, arg: int | object, pc: int, interp: WA
 
 
 @_op_handler("memory.size")
-def _h_memory_size_op(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_memory_size_op(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     ctx.push(ctx.mem_pages)
     return (None, None)
 
 
 @_op_handler("memory.grow")
-def _h_memory_grow_op(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_memory_grow_op(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     delta = ctx.pop()
     old_pages = ctx.mem_pages
     ctx.memory.extend(bytearray(delta * 65536))
@@ -588,13 +684,17 @@ def _h_memory_grow_op(ctx: ExecutionContext, arg: int | object, pc: int, interp:
 
 
 @_op_handler("i32.const")
-def _h_i32_const(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i32_const(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     ctx.push(int(arg) & 0xFFFF_FFFF)
     return (None, None)
 
 
 @_op_handler("i64.const")
-def _h_i64_const(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_const(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     ctx.push(int(arg) & 0xFFFF_FFFF_FFFF_FFFF)
     return (None, None)
 
@@ -603,27 +703,35 @@ def _h_i64_const(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASM
 
 
 @_op_handler("i32.eqz")
-def _h_i32_eqz(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i32_eqz(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     ctx.push(1 if ctx.pop() == 0 else 0)
     return (None, None)
 
 
 @_op_handler("i32.eq")
-def _h_i32_eq(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i32_eq(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     ctx.push(1 if a == b else 0)
     return (None, None)
 
 
 @_op_handler("i32.ne")
-def _h_i32_ne(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i32_ne(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     ctx.push(1 if a != b else 0)
     return (None, None)
 
 
 @_op_handler("i32.lt_s")
-def _h_i32_lt_s(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i32_lt_s(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     sa = struct.unpack(">i", struct.pack(">I", a & 0xFFFF_FFFF))[0]
     sb = struct.unpack(">i", struct.pack(">I", b & 0xFFFF_FFFF))[0]
@@ -632,14 +740,18 @@ def _h_i32_lt_s(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMI
 
 
 @_op_handler("i32.lt_u")
-def _h_i32_lt_u(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i32_lt_u(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     ctx.push(1 if a < b else 0)
     return (None, None)
 
 
 @_op_handler("i32.gt_s")
-def _h_i32_gt_s(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i32_gt_s(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     sa = struct.unpack(">i", struct.pack(">I", a & 0xFFFF_FFFF))[0]
     sb = struct.unpack(">i", struct.pack(">I", b & 0xFFFF_FFFF))[0]
@@ -648,14 +760,18 @@ def _h_i32_gt_s(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMI
 
 
 @_op_handler("i32.gt_u")
-def _h_i32_gt_u(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i32_gt_u(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     ctx.push(1 if a > b else 0)
     return (None, None)
 
 
 @_op_handler("i32.le_s")
-def _h_i32_le_s(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i32_le_s(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     sa = struct.unpack(">i", struct.pack(">I", a & 0xFFFF_FFFF))[0]
     sb = struct.unpack(">i", struct.pack(">I", b & 0xFFFF_FFFF))[0]
@@ -664,14 +780,18 @@ def _h_i32_le_s(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMI
 
 
 @_op_handler("i32.le_u")
-def _h_i32_le_u(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i32_le_u(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     ctx.push(1 if a <= b else 0)
     return (None, None)
 
 
 @_op_handler("i32.ge_s")
-def _h_i32_ge_s(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i32_ge_s(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     sa = struct.unpack(">i", struct.pack(">I", a & 0xFFFF_FFFF))[0]
     sb = struct.unpack(">i", struct.pack(">I", b & 0xFFFF_FFFF))[0]
@@ -680,14 +800,18 @@ def _h_i32_ge_s(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMI
 
 
 @_op_handler("i32.ge_u")
-def _h_i32_ge_u(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i32_ge_u(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     ctx.push(1 if a >= b else 0)
     return (None, None)
 
 
 @_op_handler("i32.clz")
-def _h_i32_clz(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i32_clz(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     a = ctx.pop() & 0xFFFF_FFFF
     bits = bin(a)[2:].zfill(32)
     ctx.push(len(bits) - len(bits.lstrip("0")))
@@ -695,7 +819,9 @@ def _h_i32_clz(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMIn
 
 
 @_op_handler("i32.ctz")
-def _h_i32_ctz(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i32_ctz(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     a = ctx.pop() & 0xFFFF_FFFF
     bits = bin(a)[2:].zfill(32)
     ctx.push(len(bits) - len(bits.rstrip("0")))
@@ -703,34 +829,44 @@ def _h_i32_ctz(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMIn
 
 
 @_op_handler("i32.popcnt")
-def _h_i32_popcnt(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i32_popcnt(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     ctx.push(bin(ctx.pop() & 0xFFFF_FFFF).count("1"))
     return (None, None)
 
 
 @_op_handler("i32.add")
-def _h_i32_add(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i32_add(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     ctx.push((a + b) & 0xFFFF_FFFF)
     return (None, None)
 
 
 @_op_handler("i32.sub")
-def _h_i32_sub(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i32_sub(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     ctx.push((a - b) & 0xFFFF_FFFF)
     return (None, None)
 
 
 @_op_handler("i32.mul")
-def _h_i32_mul(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i32_mul(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     ctx.push((a * b) & 0xFFFF_FFFF)
     return (None, None)
 
 
 @_op_handler("i32.div_s")
-def _h_i32_div_s(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i32_div_s(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     if b == 0:
         raise WASMTrap("INTEGER_DIVIDE_BY_ZERO")
@@ -741,7 +877,9 @@ def _h_i32_div_s(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASM
 
 
 @_op_handler("i32.div_u")
-def _h_i32_div_u(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i32_div_u(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     if b == 0:
         raise WASMTrap("INTEGER_DIVIDE_BY_ZERO")
@@ -750,7 +888,9 @@ def _h_i32_div_u(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASM
 
 
 @_op_handler("i32.rem_s")
-def _h_i32_rem_s(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i32_rem_s(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     if b == 0:
         raise WASMTrap("INTEGER_DIVIDE_BY_ZERO")
@@ -762,7 +902,9 @@ def _h_i32_rem_s(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASM
 
 
 @_op_handler("i32.rem_u")
-def _h_i32_rem_u(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i32_rem_u(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     if b == 0:
         raise WASMTrap("INTEGER_DIVIDE_BY_ZERO")
@@ -771,35 +913,45 @@ def _h_i32_rem_u(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASM
 
 
 @_op_handler("i32.and")
-def _h_i32_and(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i32_and(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     ctx.push(a & b)
     return (None, None)
 
 
 @_op_handler("i32.or")
-def _h_i32_or(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i32_or(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     ctx.push(a | b)
     return (None, None)
 
 
 @_op_handler("i32.xor")
-def _h_i32_xor(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i32_xor(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     ctx.push(a ^ b)
     return (None, None)
 
 
 @_op_handler("i32.shl")
-def _h_i32_shl(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i32_shl(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     ctx.push((a << (b & 31)) & 0xFFFF_FFFF)
     return (None, None)
 
 
 @_op_handler("i32.shr_s")
-def _h_i32_shr_s(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i32_shr_s(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     sa = struct.unpack(">i", struct.pack(">I", a & 0xFFFF_FFFF))[0]
     ctx.push((sa >> (b & 31)) & 0xFFFF_FFFF)
@@ -807,14 +959,18 @@ def _h_i32_shr_s(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASM
 
 
 @_op_handler("i32.shr_u")
-def _h_i32_shr_u(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i32_shr_u(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     ctx.push(((a & 0xFFFF_FFFF) >> (b & 31)) & 0xFFFF_FFFF)
     return (None, None)
 
 
 @_op_handler("i32.rotl")
-def _h_i32_rotl(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i32_rotl(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     shift = b & 31
     val = ((a << shift) | (a >> (32 - shift))) & 0xFFFF_FFFF
@@ -823,7 +979,9 @@ def _h_i32_rotl(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMI
 
 
 @_op_handler("i32.rotr")
-def _h_i32_rotr(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i32_rotr(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     shift = b & 31
     val = ((a >> shift) | (a << (32 - shift))) & 0xFFFF_FFFF
@@ -835,27 +993,35 @@ def _h_i32_rotr(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMI
 
 
 @_op_handler("i64.eqz")
-def _h_i64_eqz(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_eqz(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     ctx.push(1 if ctx.pop() == 0 else 0)
     return (None, None)
 
 
 @_op_handler("i64.eq")
-def _h_i64_eq(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_eq(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     ctx.push(1 if a == b else 0)
     return (None, None)
 
 
 @_op_handler("i64.ne")
-def _h_i64_ne(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_ne(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     ctx.push(1 if a != b else 0)
     return (None, None)
 
 
 @_op_handler("i64.lt_s")
-def _h_i64_lt_s(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_lt_s(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     sa = struct.unpack(">q", struct.pack(">Q", a & 0xFFFF_FFFF_FFFF_FFFF))[0]
     sb = struct.unpack(">q", struct.pack(">Q", b & 0xFFFF_FFFF_FFFF_FFFF))[0]
@@ -864,14 +1030,18 @@ def _h_i64_lt_s(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMI
 
 
 @_op_handler("i64.lt_u")
-def _h_i64_lt_u(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_lt_u(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     ctx.push(1 if a < b else 0)
     return (None, None)
 
 
 @_op_handler("i64.gt_s")
-def _h_i64_gt_s(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_gt_s(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     sa = struct.unpack(">q", struct.pack(">Q", a & 0xFFFF_FFFF_FFFF_FFFF))[0]
     sb = struct.unpack(">q", struct.pack(">Q", b & 0xFFFF_FFFF_FFFF_FFFF))[0]
@@ -880,14 +1050,18 @@ def _h_i64_gt_s(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMI
 
 
 @_op_handler("i64.gt_u")
-def _h_i64_gt_u(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_gt_u(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     ctx.push(1 if a > b else 0)
     return (None, None)
 
 
 @_op_handler("i64.le_s")
-def _h_i64_le_s(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_le_s(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     sa = struct.unpack(">q", struct.pack(">Q", a & 0xFFFF_FFFF_FFFF_FFFF))[0]
     sb = struct.unpack(">q", struct.pack(">Q", b & 0xFFFF_FFFF_FFFF_FFFF))[0]
@@ -896,14 +1070,18 @@ def _h_i64_le_s(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMI
 
 
 @_op_handler("i64.le_u")
-def _h_i64_le_u(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_le_u(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     ctx.push(1 if a <= b else 0)
     return (None, None)
 
 
 @_op_handler("i64.ge_s")
-def _h_i64_ge_s(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_ge_s(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     sa = struct.unpack(">q", struct.pack(">Q", a & 0xFFFF_FFFF_FFFF_FFFF))[0]
     sb = struct.unpack(">q", struct.pack(">Q", b & 0xFFFF_FFFF_FFFF_FFFF))[0]
@@ -912,14 +1090,18 @@ def _h_i64_ge_s(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMI
 
 
 @_op_handler("i64.ge_u")
-def _h_i64_ge_u(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_ge_u(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     ctx.push(1 if a >= b else 0)
     return (None, None)
 
 
 @_op_handler("i64.clz")
-def _h_i64_clz(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_clz(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     a = ctx.pop() & 0xFFFF_FFFF_FFFF_FFFF
     bits = bin(a)[2:].zfill(64)
     ctx.push(len(bits) - len(bits.lstrip("0")))
@@ -927,7 +1109,9 @@ def _h_i64_clz(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMIn
 
 
 @_op_handler("i64.ctz")
-def _h_i64_ctz(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_ctz(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     a = ctx.pop() & 0xFFFF_FFFF_FFFF_FFFF
     bits = bin(a)[2:].zfill(64)
     ctx.push(len(bits) - len(bits.rstrip("0")))
@@ -935,34 +1119,44 @@ def _h_i64_ctz(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMIn
 
 
 @_op_handler("i64.popcnt")
-def _h_i64_popcnt(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_popcnt(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     ctx.push(bin(ctx.pop() & 0xFFFF_FFFF_FFFF_FFFF).count("1"))
     return (None, None)
 
 
 @_op_handler("i64.add")
-def _h_i64_add(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_add(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     ctx.push((a + b) & 0xFFFF_FFFF_FFFF_FFFF)
     return (None, None)
 
 
 @_op_handler("i64.sub")
-def _h_i64_sub(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_sub(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     ctx.push((a - b) & 0xFFFF_FFFF_FFFF_FFFF)
     return (None, None)
 
 
 @_op_handler("i64.mul")
-def _h_i64_mul(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_mul(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     ctx.push((a * b) & 0xFFFF_FFFF_FFFF_FFFF)
     return (None, None)
 
 
 @_op_handler("i64.div_s")
-def _h_i64_div_s(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_div_s(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     if b == 0:
         raise WASMTrap("INTEGER_DIVIDE_BY_ZERO")
@@ -973,7 +1167,9 @@ def _h_i64_div_s(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASM
 
 
 @_op_handler("i64.div_u")
-def _h_i64_div_u(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_div_u(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     if b == 0:
         raise WASMTrap("INTEGER_DIVIDE_BY_ZERO")
@@ -982,7 +1178,9 @@ def _h_i64_div_u(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASM
 
 
 @_op_handler("i64.rem_s")
-def _h_i64_rem_s(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_rem_s(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     if b == 0:
         raise WASMTrap("INTEGER_DIVIDE_BY_ZERO")
@@ -994,7 +1192,9 @@ def _h_i64_rem_s(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASM
 
 
 @_op_handler("i64.rem_u")
-def _h_i64_rem_u(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_rem_u(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     if b == 0:
         raise WASMTrap("INTEGER_DIVIDE_BY_ZERO")
@@ -1003,35 +1203,45 @@ def _h_i64_rem_u(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASM
 
 
 @_op_handler("i64.and")
-def _h_i64_and(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_and(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     ctx.push(a & b)
     return (None, None)
 
 
 @_op_handler("i64.or")
-def _h_i64_or(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_or(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     ctx.push(a | b)
     return (None, None)
 
 
 @_op_handler("i64.xor")
-def _h_i64_xor(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_xor(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     ctx.push(a ^ b)
     return (None, None)
 
 
 @_op_handler("i64.shl")
-def _h_i64_shl(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_shl(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     ctx.push((a << (b & 63)) & 0xFFFF_FFFF_FFFF_FFFF)
     return (None, None)
 
 
 @_op_handler("i64.shr_s")
-def _h_i64_shr_s(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_shr_s(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     sa = struct.unpack(">q", struct.pack(">Q", a & 0xFFFF_FFFF_FFFF_FFFF))[0]
     ctx.push((sa >> (b & 63)) & 0xFFFF_FFFF_FFFF_FFFF)
@@ -1039,14 +1249,18 @@ def _h_i64_shr_s(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASM
 
 
 @_op_handler("i64.shr_u")
-def _h_i64_shr_u(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_shr_u(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     ctx.push(((a & 0xFFFF_FFFF_FFFF_FFFF) >> (b & 63)) & 0xFFFF_FFFF_FFFF_FFFF)
     return (None, None)
 
 
 @_op_handler("i64.rotl")
-def _h_i64_rotl(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_rotl(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     shift = b & 63
     val = ((a << shift) | (a >> (64 - shift))) & 0xFFFF_FFFF_FFFF_FFFF
@@ -1055,7 +1269,9 @@ def _h_i64_rotl(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMI
 
 
 @_op_handler("i64.rotr")
-def _h_i64_rotr(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_rotr(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     b, a = ctx.pop(), ctx.pop()
     shift = b & 63
     val = ((a >> shift) | (a << (64 - shift))) & 0xFFFF_FFFF_FFFF_FFFF
@@ -1067,13 +1283,17 @@ def _h_i64_rotr(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMI
 
 
 @_op_handler("i32.wrap_i64")
-def _h_i32_wrap_i64(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i32_wrap_i64(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     ctx.push(ctx.pop() & 0xFFFF_FFFF)
     return (None, None)
 
 
 @_op_handler("i64.extend_i32_s")
-def _h_i64_extend_i32_s(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_extend_i32_s(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     val32 = ctx.pop() & 0xFFFF_FFFF
     signed32 = struct.unpack(">i", struct.pack(">I", val32))[0]
     ctx.push(struct.unpack(">Q", struct.pack(">q", signed32))[0])
@@ -1081,7 +1301,9 @@ def _h_i64_extend_i32_s(ctx: ExecutionContext, arg: int | object, pc: int, inter
 
 
 @_op_handler("i64.extend_i32_u")
-def _h_i64_extend_i32_u(ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter):
+def _h_i64_extend_i32_u(
+    ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
+) -> tuple[str | None, int | None]:
     val32 = ctx.pop() & 0xFFFF_FFFF
     ctx.push(val32)
     return (None, None)
@@ -1092,7 +1314,7 @@ def _h_i64_extend_i32_u(ctx: ExecutionContext, arg: int | object, pc: int, inter
 # ==============================================================================
 
 
-def test_full_wasm_recursive_factorial():
+def test_full_wasm_recursive_factorial() -> None:
     """Test CallFrame invocation, local variables, and recursion."""
     ctx = ExecutionContext()
     interp = WASMInterpreter()
@@ -1120,7 +1342,7 @@ def test_full_wasm_recursive_factorial():
     assert res == 120, f"Expected 120, got {res}"
 
 
-def test_block_loop_and_stack_pruning():
+def test_block_loop_and_stack_pruning() -> None:
     """Test block/loop nesting and label arity pruning on br/br_if."""
     ctx = ExecutionContext()
     interp = WASMInterpreter()
@@ -1144,7 +1366,7 @@ def test_block_loop_and_stack_pruning():
     assert res == 42
 
 
-def test_64bit_integer_arithmetic():
+def test_64bit_integer_arithmetic() -> None:
     """Test full 64-bit ALU operations and type conversions."""
     ctx = ExecutionContext()
     interp = WASMInterpreter()
@@ -1165,7 +1387,7 @@ def test_64bit_integer_arithmetic():
     assert res == 100
 
 
-def test_memory_load_store_all_sizes():
+def test_memory_load_store_all_sizes() -> None:
     """Test 8/16/32/64-bit load/store with signed/unsigned extensions."""
     ctx = ExecutionContext()
     interp = WASMInterpreter()
@@ -1188,7 +1410,7 @@ def test_memory_load_store_all_sizes():
     assert res == 0xEF + 0xCDEF
 
 
-def test_cooperative_safepoint():
+def test_cooperative_safepoint() -> None:
     """Test loop header safepoint interruption."""
     ctx = ExecutionContext()
     interp = WASMInterpreter()
@@ -1204,7 +1426,7 @@ def test_cooperative_safepoint():
     assert ctx.safepoints_hit == 1
 
 
-def test_br_table_and_parametric():
+def test_br_table_and_parametric() -> None:
     """Test br_table multi-branching and select/drop parametric opcodes."""
     ctx = ExecutionContext()
     interp = WASMInterpreter()
@@ -1252,7 +1474,7 @@ def test_br_table_and_parametric():
     assert res == 142
 
 
-def test_signed_memory_and_division_clz_popcnt():
+def test_signed_memory_and_division_clz_popcnt() -> None:
     """Test signed 8/16/32/64-bit load/store, division/remainder, clz, ctz, popcnt."""
     ctx = ExecutionContext()
     interp = WASMInterpreter()
@@ -1290,7 +1512,7 @@ def test_signed_memory_and_division_clz_popcnt():
     assert sa == -970
 
 
-def test_globals_and_memory_grow():
+def test_globals_and_memory_grow() -> None:
     """Test global variables and dynamic memory growth."""
     ctx = ExecutionContext()
     interp = WASMInterpreter()

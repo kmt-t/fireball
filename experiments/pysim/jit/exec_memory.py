@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ctypes
 import sys
+from collections.abc import Callable, Sequence
 
 # Platform detection
 IS_WINDOWS = sys.platform == "win32"
@@ -171,7 +172,9 @@ class ExecutableBuffer:
         if self.patch_in_progress:
             self.commit_jit_patch()
 
-    def function_at(self, offset: int, restype, argtypes):
+    def function_at(
+        self, offset: int, restype: type | None, argtypes: Sequence[type]
+    ) -> Callable[..., object]:
         self.finalize()
         func_type = ctypes.CFUNCTYPE(restype, *argtypes)
         return func_type(self.base + offset)

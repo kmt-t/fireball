@@ -222,7 +222,7 @@ class Logger:
 # ==============================================================================
 
 
-def test_logger_dictionary_formatting():
+def test_logger_dictionary_formatting() -> None:
     dictionary = LogDictionary(
         [
             (0x01, "System booted in %d ms (RAM free: %d bytes)"),
@@ -234,7 +234,7 @@ def test_logger_dictionary_formatting():
     assert msg == "System booted in 42 ms (RAM free: 21504 bytes)"
 
 
-def test_logger_buffering_and_idle_flush():
+def test_logger_buffering_and_idle_flush() -> None:
     dictionary = LogDictionary(
         [
             (0x10, "Task %d yield count: %d"),
@@ -256,7 +256,7 @@ def test_logger_buffering_and_idle_flush():
     )
 
 
-def test_logger_overwrite_on_buffer_full():
+def test_logger_overwrite_on_buffer_full() -> None:
     dictionary = LogDictionary(
         [
             (0x01, "Event #%d"),
@@ -278,7 +278,7 @@ def test_logger_overwrite_on_buffer_full():
     assert "Event #6" in transport.output_log[3]
 
 
-def test_logger_level_filtering():
+def test_logger_level_filtering() -> None:
     dictionary = LogDictionary([(0x01, "Log message")])
     transport = MockHALTransport()
     logger = Logger(transport, dictionary, min_level=LogLevel.WARN, buffer_capacity=8)
@@ -291,7 +291,7 @@ def test_logger_level_filtering():
     assert len(transport.output_log) == 2
 
 
-def test_logger_ipc_message_handling():
+def test_logger_ipc_message_handling() -> None:
     dictionary = LogDictionary([(0x50, "Guest VM %d trap occurred (cause: %d)")])
     transport = MockHALTransport()
     logger = Logger(transport, dictionary, min_level=LogLevel.INFO, buffer_capacity=8)
@@ -310,7 +310,7 @@ def test_logger_ipc_message_handling():
     assert "Guest VM 1 trap occurred (cause: 3)" in transport.output_log[0]
 
 
-def test_logger_flush_interruption():
+def test_logger_flush_interruption() -> None:
     dictionary = LogDictionary([(0x01, "Message %d")])
     transport = MockHALTransport()
     logger = Logger(transport, dictionary, min_level=LogLevel.INFO, buffer_capacity=8)
@@ -319,7 +319,7 @@ def test_logger_flush_interruption():
 
     pop_count = 0
 
-    def mock_interrupt():
+    def mock_interrupt() -> bool:
         nonlocal pop_count
         pop_count += 1
         return pop_count > 2
@@ -329,7 +329,7 @@ def test_logger_flush_interruption():
     assert logger.ring_buffer.count == 2
 
 
-def test_logger_storage_ownership_separation():
+def test_logger_storage_ownership_separation() -> None:
     # Storage is owned externally in ROM / static buffer
     storage = [(0x10, "External format: %d"), (0x20, "Status code: %d")]
     dictionary = LogDictionary(storage)

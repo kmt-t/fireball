@@ -12,7 +12,7 @@ Fireball IPC Router: URI/RBAC front-end over the CSP rendezvous engine.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Generator, Sequence
 from enum import IntEnum
 from typing import TYPE_CHECKING
 
@@ -442,7 +442,9 @@ class IPCRouter:
 
         return self._edge_channels[int(sender_role)][int(desc.role)]
 
-    def send(self, sender_role: Role, destination_uri: str, message: IPCMessage):
+    def send(
+        self, sender_role: Role, destination_uri: str, message: IPCMessage
+    ) -> Generator[tuple[ChannelAction, None], None, tuple[IpcStatus, object]]:
         """
         Stage 1 (lookup handle) + Stage 2 (RBAC check), then Stage 3: synchronous
         CSP send on the dedicated Channel.
@@ -538,7 +540,9 @@ class IPCRouter:
 
         return (IpcStatus.COMPLETED, target)
 
-    def recv(self, service_uri: str):
+    def recv(
+        self, service_uri: str
+    ) -> Generator[tuple[ChannelAction, None], None, tuple[IpcStatus, IPCMessage | None]]:
         """
         Stage 1 in reverse: resolves service handle, then guarded external choice
         (select) across every incoming Channel allowed for that role.

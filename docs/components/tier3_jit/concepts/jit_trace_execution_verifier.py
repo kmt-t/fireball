@@ -53,7 +53,7 @@ ENV_BASE = 0x24000  # vsoc_runtime: mem-base @+0x00, mem-size @+0x04
 GUEST_RAM_BASE = 0x25000  # a deliberately small, tightly-mapped guest linear memory region
 
 
-def test_compiled_trace_runs_on_real_cpu_and_spills_correctly():
+def test_compiled_trace_runs_on_real_cpu_and_spills_correctly() -> None:
     engine = CopyPatchJITEngine()
     r4_in, r5_in = (
         0x64,
@@ -151,7 +151,7 @@ def _run_memory_access_trace(guest_addr: int, mem_size: int) -> dict:
     return {"r4_spilled": spilled, "sp": mu.reg_read(UC_ARM_REG_SP)}
 
 
-def test_in_bounds_memory_access_executes_the_load():
+def test_in_bounds_memory_access_executes_the_load() -> None:
     """FastAddressCheck: an in-bounds address must fall through the CMP/BHS.W guard and
     actually perform the load -- the flushed r4 ends up holding the loaded word, not the
     raw address."""
@@ -163,7 +163,7 @@ def test_in_bounds_memory_access_executes_the_load():
     assert result["sp"] == CSTACK_TOP, "prologue/epilogue did not round-trip SP"
 
 
-def test_out_of_bounds_memory_access_traps_before_executing_the_load():
+def test_out_of_bounds_memory_access_traps_before_executing_the_load() -> None:
     """FastAddressCheck/MemoryBoundaryCheck: an out-of-bounds address must take the BHS.W
     trap branch and reach the interpreter fallback WITHOUT executing the faulting load.
     guest_addr (0x2000) lands past mem_size (0x1000) AND past the end of the one-page
@@ -180,7 +180,7 @@ def test_out_of_bounds_memory_access_traps_before_executing_the_load():
     assert result["sp"] == CSTACK_TOP, "trap-tail epilogue did not round-trip SP"
 
 
-def test_intra_trace_variant_reconciliation_swap_on_real_hardware():
+def test_intra_trace_variant_reconciliation_swap_on_real_hardware() -> None:
     """Proves _order_register_moves()'s cycle-safe MOV sequencing -- the primitive
     emit_variant_reconciliation_glue() uses internally -- is correct on a real ARMv8-M
     core, not just structurally plausible Python. This is NOT about chaining between

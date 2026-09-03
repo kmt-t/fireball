@@ -82,7 +82,7 @@ class COOSKernel:
         self.idle_hook_called = False
         self.log_flush_count = 0
 
-    def register_task(self, task_id: str, coroutine: Generator):
+    def register_task(self, task_id: str, coroutine: Generator) -> None:
         assert task_id not in self.tasks, f"Task {task_id} already registered"
         self.tasks[task_id] = TaskControlBlock(task_id, coroutine)
         self.ready_queue.append(task_id)
@@ -161,11 +161,11 @@ class COOSKernel:
         return val
 
     # --- Interrupt Handling ---
-    def notify_interrupt(self, irq_id: int):
+    def notify_interrupt(self, irq_id: int) -> None:
         """Called from ISR context: non-blocking enqueue of IRQ event."""
         self.interrupt_event_queue.append(irq_id)
 
-    def drain_interrupts(self):
+    def drain_interrupts(self) -> None:
         """Called at yield point: wake up tasks waiting on received IRQs."""
         while self.interrupt_event_queue:
             irq_id = self.interrupt_event_queue.pop(0)
@@ -186,7 +186,7 @@ class COOSKernel:
         return ("BLOCK_IRQ", irq_id)
 
     # --- Main Dispatcher & Idle Loop ---
-    def idle_hook(self):
+    def idle_hook(self) -> None:
         """Executed only when all tasks are blocked and event queue is empty."""
         self.idle_hook_called = True
         self.log_flush_count += 1
@@ -233,12 +233,12 @@ class COOSKernel:
 # ==============================================================================
 
 
-def test_coos_synchronous_rendezvous():
+def test_coos_synchronous_rendezvous() -> None:
     kernel = COOSKernel()
     ch = kernel.create_channel()
     received_log = []
 
-    def sender():
+    def sender() -> Generator[tuple[ChannelAction, str | None], None, None]:
         # Send first message (42)
         action, arg = ch.send(42)
         yield (action, arg)
@@ -246,7 +246,7 @@ def test_coos_synchronous_rendezvous():
         action, arg = ch.send(100)
         yield (action, arg)
 
-    def receiver():
+    def receiver() -> Generator[tuple[ChannelAction, str | None], None, None]:
         # Receive first message
         action, arg = ch.recv()
         yield (action, arg)
@@ -269,17 +269,17 @@ def test_coos_synchronous_rendezvous():
     assert kernel.tasks["receiver"].state == TaskState.TERMINATED
 
 
-def test_value_has_exactly_one_owner_across_a_rendezvous():
+def test_value_has_exactly_one_owner_across_a_rendezvous() -> None:
     """ADR_RendezvousChannel: while a sender waits, the value lives only in the
     sender's frame; after the rendezvous it lives only in the receiver's. It is
     never reachable from the channel, and never from both tasks at once."""
     kernel = COOSKernel()
     ch = kernel.create_channel()
 
-    def sender():
+    def sender() -> Generator[tuple[ChannelAction, str | None], None, None]:
         yield ch.send(42)
 
-    def receiver():
+    def receiver() -> Generator[tuple[ChannelAction, str | None], None, None]:
         yield ch.recv()
 
     kernel.register_task("sender", sender())
@@ -297,7 +297,7 @@ def test_value_has_exactly_one_owner_across_a_rendezvous():
     )
 
 
-def test_one_waiter_per_channel_is_enforced():
+def test_one_waiter_per_channel_is_enforced() -> None:
     """Two senders on one channel is a design violation, not a runtime condition
     to be queued -- the orthogonal table marks it unreachable by construction."""
     kernel = COOSKernel()
@@ -316,11 +316,11 @@ def test_one_waiter_per_channel_is_enforced():
         assert "separate channels" in str(e)
 
 
-def test_coos_interrupt_wakeup():
+def test_coos_interrupt_wakeup() -> None:
     kernel = COOSKernel()
     irq_received = []
 
-    def irq_task():
+    def irq_task() -> Generator[tuple[ChannelAction, str | None], None, None]:
         action, arg = kernel.wait_for_interrupt(16)
         yield (action, arg)
         irq_received.append("IRQ_16_PROCESSED")

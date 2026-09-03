@@ -182,9 +182,6 @@ F64_REINTERPRET_I64 = 0xBF
 # implemented).
 BLOCKTYPE_EMPTY = 0x40
 
-# Synthetic host call opcode used in JIT trace tests
-CALL_HOST = 0xFE
-
 OPCODE_NAMES: dict[int, str] = {
     UNREACHABLE: "unreachable",
     NOP: "nop",
@@ -246,7 +243,6 @@ OPCODE_NAMES: dict[int, str] = {
     I32_SHR_U: "i32.shr_u",
     I32_ROTL: "i32.rotl",
     I32_ROTR: "i32.rotr",
-    CALL_HOST: "call_host",
 }
 
 NAME_TO_OPCODE: dict[str, int] = {v: k for k, v in OPCODE_NAMES.items()}

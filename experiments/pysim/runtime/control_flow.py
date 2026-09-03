@@ -25,6 +25,7 @@ from system_containers import (
     bswap32,
     build_radix_table,
 )
+from wasm_module import Function
 from wasm_opcodes import (
     BLOCK,
     BR,
@@ -699,19 +700,62 @@ for _op in (
     _IS_BB_OPCODE[_op] = True
 
 
+def decode_block_ops(code: bytes, head_offset: int, byte_span: int) -> list[tuple[int, object]]:
+    """
+    Re-derives ONE BasicBlock's compilable `(opcode, arg)` op stream directly
+    from raw bytecode, scoped to exactly `[head_offset, head_offset+byte_span)`.
+    Called on demand, at the moment a block is actually compiled or
+    interpreted -- the transient list this returns is never persisted past
+    that one call (see `wasm_module.BasicBlock` / `TraceBlock`). A block's own
+    byte_span, by construction (see `extract_basic_blocks`), spans only
+    BB-opcode instructions, so every instruction decoded in range belongs in
+    the result -- no filtering needed here.
+    """
+    ops: list[tuple[int, object]] = []
+    off = head_offset
+    end = head_offset + byte_span
+    while off < end:
+        start = off
+        opcode = code[off]
+        off += 1
+        if opcode in _LEB_UNSIGNED_OPERAND:
+            operand, off = decode_unsigned(code, off)
+            arg: object = operand
+        elif opcode == I32_CONST:
+            arg, off = decode_signed(code, off)
+        elif opcode in _MEMARG_OPCODES:
+            _align, off = decode_unsigned(code, off)
+            mem_offset, off = decode_unsigned(code, off)
+            arg = mem_offset
+        elif opcode in _NO_OPERAND:
+            arg = None
+        else:
+            raise WasmUnsupportedFeatureError(
+                f"ERR_WASM_UNSUPPORTED_FEATURE: opcode 0x{opcode:02X} at offset {start} "
+                "is not a supported basic-block opcode"
+            )
+        ops.append((opcode, arg))
+    return ops
+
+
 def extract_basic_blocks(
     code: bytes, func_index: int = 0
-) -> list[tuple[int, list[tuple[int, object]], int | None, int | None, int, int]]:
-    """Extracts straight-line BasicBlocks from WASM bytecode as a flat list.
-    Each BasicBlock consists of: (head_pc, ops, next_pc, loops_to, frame_depth,
-    byte_span). head_pc = (func_index << 16) | start_offset. frame_depth is
-    the count of enclosing BLOCK/LOOP/IF frames the interpreter's
-    frame.frames stack must hold once execution resumes at head_pc.
-    byte_span is this block's own instruction-stream length -- deliberately
-    NOT `next_pc - head_pc`, which is negative for a block whose terminator
-    branches backward (a loop body's own `br` to the loop's head), and would
-    wrongly read as "shorter than min_trace_bytes" and permanently disqualify
-    that block -- usually the hottest one in the function -- from JIT.
+) -> list[tuple[int, int | None, int | None, int, int]]:
+    """Extracts straight-line BasicBlock PC ranges from WASM bytecode as a flat list.
+    Each entry is: (head_pc, next_pc, loops_to, frame_depth, byte_span).
+    head_pc = (func_index << 16) | start_offset. frame_depth is the count of
+    enclosing BLOCK/LOOP/IF frames the interpreter's frame.frames stack must
+    hold once execution resumes at head_pc. byte_span is this block's own
+    instruction-stream length -- deliberately NOT `next_pc - head_pc`, which
+    is negative for a block whose terminator branches backward (a loop
+    body's own `br` to the loop's head), and would wrongly read as "shorter
+    than min_trace_bytes" and permanently disqualify that block -- usually
+    the hottest one in the function -- from JIT. Does not return each
+    block's decoded op stream: callers that need it (JIT compilation, block
+    interpretation) derive it on demand via `decode_block_ops`, scoped to
+    just the one block being compiled/interpreted right now -- see
+    `wasm_module.BasicBlock` for why this is never precomputed and stored
+    here for every block up front.
     """
     from wasm_opcodes import BLOCK, BR, BR_IF, ELSE, END, IF, LOOP, RETURN
 
@@ -733,11 +777,11 @@ def extract_basic_blocks(
         return offset
 
     base_pc = func_index << 16
-    blocks: list[tuple[int, list[tuple[int, object]], int | None, int | None, int, int]] = []
-    cur_ops: list[tuple[int, object]] = []
+    blocks: list[tuple[int, int | None, int | None, int, int]] = []
+    cur_op_count = 0  # count only -- the ops themselves are never materialized here
     cur_head: int | None = None
     cur_frame_depth = 0
-    cur_span_end = 0  # local offset just past the last op instruction actually in cur_ops
+    cur_span_end = 0  # local offset just past the last BB-opcode instruction seen
     active_openers: list[Instr] = []
 
     for ins in sorted_instrs:
@@ -757,13 +801,7 @@ def extract_basic_blocks(
             active_openers.append(ins)
 
         if ins.opcode < 256 and _IS_BB_OPCODE[ins.opcode]:
-            if ins.const_value is not None:
-                arg = ins.const_value
-            elif ins.memarg is not None:
-                arg = ins.memarg[1]  # static offset
-            else:
-                arg = ins.operand
-            cur_ops.append((ins.opcode, arg))
+            cur_op_count += 1
             cur_span_end = ins.end_offset
 
         # Check if this instruction ends the basic block
@@ -779,7 +817,7 @@ def extract_basic_blocks(
             CALL,
             CALL_INDIRECT,
         ):
-            if cur_ops:
+            if cur_op_count:
                 branch_target = None
                 if (
                     ins.opcode in (BR, BR_IF)
@@ -843,24 +881,22 @@ def extract_basic_blocks(
                     loops_to = branch_target if ins.opcode == BR_IF else None
 
                 byte_span = cur_span_end - (cur_head & 0xFFFF)
-                blocks.append(
-                    (cur_head, list(cur_ops), next_pc, loops_to, cur_frame_depth, byte_span)
-                )
-                cur_ops.clear()
+                blocks.append((cur_head, next_pc, loops_to, cur_frame_depth, byte_span))
+                cur_op_count = 0
 
             cur_head = None
 
         if ins.opcode == END and active_openers:
             active_openers.pop()
 
-    if cur_head is not None and cur_ops:
+    if cur_head is not None and cur_op_count:
         byte_span = cur_span_end - (cur_head & 0xFFFF)
-        blocks.append((cur_head, list(cur_ops), None, None, cur_frame_depth, byte_span))
+        blocks.append((cur_head, None, None, cur_frame_depth, byte_span))
     return blocks
 
 
 def build_control_skip_storage(
-    functions: Sequence[object], n_imports: int = 0
+    functions: Sequence[Function], n_imports: int = 0
 ) -> ReadOnlyRadixBinaryTreeStorage[int] | None:
     """Constructs a ReadOnlyRadixBinaryTreeStorage owning delimiter PCs -> fallthrough basic block head PCs.
 
@@ -871,13 +907,13 @@ def build_control_skip_storage(
     for idx, fn in enumerate(functions):
         func_idx = n_imports + idx
         base_pc = func_idx << 16
-        code = getattr(fn, "code", None)
+        code = fn.code
         if not code:
             continue
         instrs = decode_all(code)
         blocks = extract_basic_blocks(code, func_index=func_idx)
         heads = {b[0] for b in blocks}
-        for _head_pc, _ops, delim_pc, _loops_to, _frame_depth, _byte_span in blocks:
+        for _head_pc, delim_pc, _loops_to, _frame_depth, _byte_span in blocks:
             if delim_pc is not None:
                 offset = delim_pc & 0xFFFF
                 if offset in instrs:

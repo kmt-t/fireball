@@ -16,15 +16,15 @@ from __future__ import annotations
 
 import ctypes
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 
-import x64_asm as asm
 import x64_stencils as st
+from control_flow import decode_block_ops
 from exec_memory import ExecutableBuffer
 from runtime_engine import BasicBlock, JITTrace, JITTraceHeader
 from system_containers import FlatMapView, ReadOnlyFlatMapStorage
+from wasm_module import TraceBlock
 from wasm_opcodes import (
-    CALL_HOST,
     DROP,
     I32_ADD,
     I32_AND,
@@ -145,19 +145,6 @@ def _emit_local_tee(code: bytearray, arg: object) -> int:
     return 0
 
 
-def _emit_call_host(code: bytearray, arg: object) -> int:
-    code += asm.push_reg("r10")
-    code += asm.push_reg("r11")
-    code += asm.sub_rsp_imm8(40)
-    code += asm.mov_reg_imm64("rax", int(arg))  # type: ignore[arg-type]
-    code += asm.call_reg("rax")
-    code += asm.add_rsp_imm8(40)
-    code += asm.pop_reg("r11")
-    code += asm.pop_reg("r10")
-    code += asm.push_reg("rax")
-    return 1
-
-
 _EMIT_STORAGE: ReadOnlyFlatMapStorage[int, Callable[[bytearray, object], int]] = (
     ReadOnlyFlatMapStorage.create(
         [
@@ -190,7 +177,6 @@ _EMIT_STORAGE: ReadOnlyFlatMapStorage[int, Callable[[bytearray, object], int]] =
             (LOCAL_GET, _emit_local_get),
             (LOCAL_SET, _emit_local_set),
             (LOCAL_TEE, _emit_local_tee),
-            (CALL_HOST, _emit_call_host),
         ]
     )
 )
@@ -204,9 +190,6 @@ class TraceCompiler:
         emitting 16-byte physical headers (JITTraceHeader) at offset 0x00 and
         PIC code starting at offset 0x10.
     """
-
-    def __init__(self, host_trampolines: Sequence[int] | None = None):
-        self.host_trampolines = host_trampolines or []
 
     SUPPORTED_OPS: tuple[int, ...] = tuple(EMIT_MAP.keys)
     # (pops, pushes) stack effect per opcode: a sorted flat_map_view over a
@@ -243,7 +226,6 @@ class TraceCompiler:
                 (I32_LE_U, (2, 1)),
                 (I32_GE_S, (2, 1)),
                 (I32_GE_U, (2, 1)),
-                (CALL_HOST, (0, 1)),
             ],
             key=lambda e: e[0],
         )
@@ -253,8 +235,24 @@ class TraceCompiler:
     )
     STACK_EFFECTS: FlatMapView[int, tuple[int, int]] = FlatMapView(_STACK_EFFECT_ENTRIES_TUPLE)
 
-    def compile_trace(self, head_pc: int, block: BasicBlock | None) -> JITTrace | None:
-        """Compiles a single BasicBlock into a PIC native JITTrace using _EMIT_TABLE dispatch."""
+    def compile_block(self, code: bytes, block: BasicBlock) -> JITTrace | None:
+        """
+        Production entry point: derives this compile's transient `TraceBlock`
+        input from `block`'s PC metadata against the owning function's raw
+        bytecode -- `BasicBlock` itself never stores the op stream (see
+        `wasm_module.BasicBlock`). The derived ops list is discarded once
+        `compile_trace` returns; nothing here is kept past this one call.
+        """
+        ops = decode_block_ops(code, block.head_pc & 0xFFFF, block.byte_span)
+        return self.compile_trace(
+            block.head_pc,
+            TraceBlock(
+                head_pc=block.head_pc, ops=ops, next_pc=block.next_pc, loops_to=block.loops_to
+            ),
+        )
+
+    def compile_trace(self, head_pc: int, block: TraceBlock | None) -> JITTrace | None:
+        """Compiles a single TraceBlock op stream into a PIC native JITTrace using _EMIT_TABLE dispatch."""
         if (
             block is None
             or not block.ops

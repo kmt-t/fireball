@@ -42,7 +42,6 @@ from runtime_engine import (
     JITMultiBufferCache,
     JITTrace,
     JITTraceHeader,
-    PcOnlyCompiler,
     RuntimeEngine,
 )
 from system_containers import (
@@ -51,6 +50,7 @@ from system_containers import (
     bswap32,
     build_radix_table,
 )
+from test_support import PcOnlyCompiler
 from wasm_reader import parse
 from x64_jit import TraceCompiler
 

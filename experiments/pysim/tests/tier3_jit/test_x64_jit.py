@@ -57,11 +57,11 @@ Verifies:
 
 import ctypes
 
-import wasmtime
+from control_flow import extract_basic_blocks
 from exec_memory import ExecutableBuffer
 from runtime_engine import BasicBlock, IntegratedHybridEngine, WASMContext
+from test_support import wat_to_wasm
 from wasm_opcodes import (
-    CALL_HOST,
     I32_ADD,
     I32_AND,
     I32_CONST,
@@ -77,24 +77,36 @@ from x64_jit import TraceCompiler
 def test_trace_compiler_cps_4arg_and_pic():
     """JITC-01: TraceCompiler emits 16-byte header + PIC code callable via CPS 4-arg convention."""
     compiler = TraceCompiler()
-    # Block: local[1] = (local[0] + 10) * 3 - 5
-    block = BasicBlock(
-        head_pc=0x100,
-        ops=[
-            (LOCAL_GET, 0),
-            (I32_CONST, 10),
-            (I32_ADD, None),
-            (I32_CONST, 3),
-            (I32_MUL, None),
-            (I32_CONST, 5),
-            (I32_SUB, None),
-            (LOCAL_SET, 1),
-        ],
-        next_pc=None,
+    # Block: local[1] = (local[0] + 10) * 3 - 5 -- real WASM bytecode, run through
+    # the same extract_basic_blocks + compile_block path production JIT compilation uses.
+    code = bytes(
+        [
+            LOCAL_GET,
+            0,
+            I32_CONST,
+            10,
+            I32_ADD,
+            I32_CONST,
+            3,
+            I32_MUL,
+            I32_CONST,
+            5,
+            I32_SUB,
+            LOCAL_SET,
+            1,
+        ]
     )
-    trace = compiler.compile_trace(0x100, block)
+    head_pc, next_pc, loops_to, frame_depth, byte_span = extract_basic_blocks(code)[0]
+    block = BasicBlock(
+        head_pc=head_pc,
+        next_pc=next_pc,
+        loops_to=loops_to,
+        frame_depth=frame_depth,
+        byte_span=byte_span,
+    )
+    trace = compiler.compile_block(code, block)
     # 1. 16-byte header verification
-    assert trace.header.head_wasm_pc == 0x100
+    assert trace.header.head_wasm_pc == head_pc
     assert trace.size_bytes >= 16
     # 2. Direct call via CPS 4-argument C function pointer fn(ip, stack_bot, local_base, tos)
     locals_arr = (ctypes.c_int64 * 8)(5, 0)
@@ -139,52 +151,38 @@ def test_trace_compiler_cps_4arg_and_pic():
 def test_trace_compiler_bitwise_and_shifts_pic():
     """JITC-02: TraceCompiler compiles bitwise ops into PIC code."""
     compiler = TraceCompiler()
-    block = BasicBlock(
-        head_pc=0x200,
-        ops=[
-            (LOCAL_GET, 0),
-            (LOCAL_GET, 1),
-            (I32_AND, None),
-            (LOCAL_SET, 2),  # local[2] = local[0] & local[1]
-            (LOCAL_GET, 0),
-            (I32_CONST, 2),
-            (I32_SHL, None),
-            (LOCAL_SET, 3),  # local[3] = local[0] << 2
-        ],
-        next_pc=None,
+    # local[2] = local[0] & local[1]; local[3] = local[0] << 2
+    code = bytes(
+        [
+            LOCAL_GET,
+            0,
+            LOCAL_GET,
+            1,
+            I32_AND,
+            LOCAL_SET,
+            2,
+            LOCAL_GET,
+            0,
+            I32_CONST,
+            2,
+            I32_SHL,
+            LOCAL_SET,
+            3,
+        ]
     )
-    trace = compiler.compile_trace(0x200, block)
+    head_pc, next_pc, loops_to, frame_depth, byte_span = extract_basic_blocks(code)[0]
+    block = BasicBlock(
+        head_pc=head_pc,
+        next_pc=next_pc,
+        loops_to=loops_to,
+        frame_depth=frame_depth,
+        byte_span=byte_span,
+    )
+    trace = compiler.compile_block(code, block)
     ctx = WASMContext(locals_values=[0x0F, 0x07, 0, 0])
     trace.invoke(ctx)
     assert ctx.locals[2] == (0x0F & 0x07)
     assert ctx.locals[3] == (0x0F << 2)
-
-
-def test_trace_compiler_host_call_cps():
-    """JITC-03: TraceCompiler executes host function calls via ctypes CPS trampolines."""
-    received = []
-
-    def host_callback():
-        received.append(42)
-        return 999
-
-    c_cb_type = ctypes.CFUNCTYPE(ctypes.c_uint32)
-    t = c_cb_type(host_callback)
-    t_addr = ctypes.cast(t, ctypes.c_void_p).value
-    compiler = TraceCompiler(host_trampolines={1: t_addr})
-    block = BasicBlock(
-        head_pc=0x300,
-        ops=[
-            (CALL_HOST, t_addr),
-            (LOCAL_SET, 0),
-        ],
-        next_pc=None,
-    )
-    trace = compiler.compile_trace(0x300, block)
-    ctx = WASMContext(locals_values=[0])
-    trace.invoke(ctx)
-    assert received == [42]
-    assert ctx.locals[0] == 999
 
 
 def test_trace_chaining_between_traces():
@@ -207,16 +205,20 @@ def test_trace_chaining_between_traces():
       )
     )
     """
-    wasm_bytes = bytes(wasmtime.wat2wasm(wat))
+    wasm_bytes = wat_to_wasm(wat)
     engine = IntegratedHybridEngine(yield_threshold=10, compiler=TraceCompiler())
     mod = engine.load_wasm(wasm_bytes)
     block_a = mod.blocks[0]
     block_b = mod.blocks[1]
     # Compile trace B first, then A (enabling immediate forward chaining)
-    trace_b = engine.compiler.compile_trace(block_b.head_pc, block_b)
+    trace_b = engine.compiler.compile_trace(
+        block_b.head_pc, engine.resolve_trace_block(block_b.head_pc)
+    )
     engine.cache.insert(trace_b)
     engine.bitmap.mark_compiled(block_b.head_pc)
-    trace_a = engine.compiler.compile_trace(block_a.head_pc, block_a)
+    trace_a = engine.compiler.compile_trace(
+        block_a.head_pc, engine.resolve_trace_block(block_a.head_pc)
+    )
     engine.cache.insert(trace_a)
     engine.bitmap.mark_compiled(block_a.head_pc)
     assert trace_a.chain_next == block_b.head_pc
@@ -253,7 +255,7 @@ def test_hybrid_interpreter_to_jit_trace_elevation():
       )
     )
     """
-    wasm_bytes = bytes(wasmtime.wat2wasm(wat))
+    wasm_bytes = wat_to_wasm(wat)
     engine = IntegratedHybridEngine(yield_threshold=3, compiler=TraceCompiler())
     mod = engine.load_wasm(wasm_bytes)
     loop_pc = mod.blocks[0].head_pc
@@ -301,18 +303,22 @@ def test_jit_chaining_with_control_skip_table():
       )
     )
     """
-    wasm_bytes = bytes(wasmtime.wat2wasm(wat))
+    wasm_bytes = wat_to_wasm(wat)
     engine = IntegratedHybridEngine(yield_threshold=10, compiler=TraceCompiler())
     mod = engine.load_wasm(wasm_bytes)
     block_a = mod.blocks[0]
     block_b = mod.blocks[1]
 
     # 1. Backward chaining: compile B (target) first, then A (source).
-    trace_b = engine.compiler.compile_trace(block_b.head_pc, block_b)
+    trace_b = engine.compiler.compile_trace(
+        block_b.head_pc, engine.resolve_trace_block(block_b.head_pc)
+    )
     engine.cache.insert(trace_b)
     engine.bitmap.mark_compiled(block_b.head_pc)
 
-    trace_a = engine.compiler.compile_trace(block_a.head_pc, block_a)
+    trace_a = engine.compiler.compile_trace(
+        block_a.head_pc, engine.resolve_trace_block(block_a.head_pc)
+    )
     engine.cache.insert(trace_a)
     engine.bitmap.mark_compiled(block_a.head_pc)
 
@@ -336,14 +342,18 @@ def test_jit_chaining_with_control_skip_table():
     block_a2 = mod2.blocks[0]
     block_b2 = mod2.blocks[1]
 
-    trace_a2 = engine2.compiler.compile_trace(block_a2.head_pc, block_a2)
+    trace_a2 = engine2.compiler.compile_trace(
+        block_a2.head_pc, engine2.resolve_trace_block(block_a2.head_pc)
+    )
     engine2.cache.insert(trace_a2)
     engine2.bitmap.mark_compiled(block_a2.head_pc)
     assert trace_a2.chain_next is None  # B is not resident yet
 
     # Now insert B: forward chaining must inspect resident trace A, resolve its delimiter,
     # and patch trace_a2.chain_next = block_b2.head_pc!
-    trace_b2 = engine2.compiler.compile_trace(block_b2.head_pc, block_b2)
+    trace_b2 = engine2.compiler.compile_trace(
+        block_b2.head_pc, engine2.resolve_trace_block(block_b2.head_pc)
+    )
     engine2.cache.insert(trace_b2)
     engine2.bitmap.mark_compiled(block_b2.head_pc)
 

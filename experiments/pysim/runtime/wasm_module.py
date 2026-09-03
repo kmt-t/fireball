@@ -25,14 +25,39 @@ from system_containers import (
 
 @dataclass
 class BasicBlock:
-    """A straight-line sequence of WASM instructions ending with branch/return."""
+    """
+    A straight-line run of WASM instructions ending with branch/return, as PC
+    range + control-flow metadata ONLY. Deliberately holds no decoded op
+    stream: `Module.blocks` keeps one of these per basic block in the program
+    for the module's whole lifetime, and a real embedded target (32KB RAM)
+    has no memory to spend on a redundant decoded-instruction copy per block
+    on top of the raw bytecode it already holds. See `TraceBlock` for the
+    transient, decode-on-demand input JIT compilation / block interpretation
+    actually consumes.
+    """
+
+    head_pc: int
+    next_pc: int | None = None
+    loops_to: int | None = None
+    frame_depth: int = 0
+    byte_span: int = 0
+
+
+@dataclass
+class TraceBlock:
+    """
+    Transient compiler/interpreter input: a `(opcode, arg)` op stream for ONE
+    basic block plus its control-flow successors. Never stored per block like
+    `BasicBlock` -- built on demand, either by `control_flow.decode_block_ops`
+    scoped to one block actually being compiled/interpreted right now (production),
+    or directly by tests exercising `TraceCompiler`/`WASMTraceCompiler` in
+    isolation.
+    """
 
     head_pc: int
     ops: list[tuple[int, object]]
     next_pc: int | None = None
     loops_to: int | None = None
-    frame_depth: int = 0
-    byte_span: int = 0
 
 
 # WASM value types we support (MVP i32 only for now; i64/f32/f64 are parsed
@@ -47,8 +72,6 @@ VALTYPE_BYTES = {
     0x7D: F32,
     0x7C: F64,
 }
-
-VALTYPE_CODES = {v: k for k, v in VALTYPE_BYTES.items()}
 
 
 @dataclass(frozen=True)
@@ -156,6 +179,10 @@ class Module:
     def is_import(self, func_index: int) -> bool:
         return func_index < len(self.imports)
 
+    def code_for(self, func_index: int) -> bytes:
+        """Raw bytecode for a locally-defined function, by unified function index."""
+        return self.functions[func_index - len(self.imports)].code
+
     def func_type(self, func_index: int) -> FuncType:
         if self.is_import(func_index):
             return self.types[self.imports[func_index].type_index]
@@ -202,12 +229,11 @@ class Module:
             func_idx = n_imports + idx
             try:
                 extracted = extract_basic_blocks(fn.code, func_index=func_idx)
-                for head_pc, ops, next_pc, loops_to, frame_depth, byte_span in extracted:
-                    if ops:
+                for head_pc, next_pc, loops_to, frame_depth, byte_span in extracted:
+                    if byte_span > 0:
                         all_blocks.append(
                             BasicBlock(
                                 head_pc=head_pc,
-                                ops=ops,
                                 next_pc=next_pc,
                                 loops_to=loops_to,
                                 frame_depth=frame_depth,

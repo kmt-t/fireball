@@ -43,10 +43,9 @@ import wasmtime
 from debugger import DebuggerManager
 from gdb_server import GDBServer
 from interpreter import Interpreter
-from runtime_engine import BasicBlock, IntegratedHybridEngine, WASMContext
+from runtime_engine import IntegratedHybridEngine, WASMContext
 from system import System
 from wasi import WasiHostContext
-from wasm_opcodes import I32_ADD, I32_CONST, I32_MUL, LOCAL_GET, LOCAL_SET
 from wasm_reader import parse
 from x64_jit import TraceCompiler
 
@@ -196,26 +195,44 @@ def test_scenario_comprehensive_storage_and_debugger():
     # -------------------------------------------------------------------------
     # Phase 3: Interactive GDB RSP Socket Debugging Session on Live Storage
     # -------------------------------------------------------------------------
-    block100 = BasicBlock(
-        head_pc=0x100,
-        ops=[(LOCAL_GET, 0), (I32_CONST, 1), (I32_ADD, None), (LOCAL_SET, 0)],
-        next_pc=0x110,
+    # Three real basic blocks split by nested `block`/`end` and loaded through
+    # a real Module -- so run_block_interpret's op-stream derivation (from raw
+    # bytecode) has a function to decode against.
+    # block100: local.get 0, i32.const 1, i32.add, local.set 0 (next: block110)
+    # block110: local.get 0, i32.const 10, i32.mul, local.set 1 (next: block120)
+    # block120: local.get 1, local.set 2 (next: None / exit)
+    debug_wat = """
+    (module
+      (func (export "f") (param i32 i32 i32 i32)
+        (block $b1
+          (block $b2
+            local.get 0
+            i32.const 1
+            i32.add
+            local.set 0
+          )
+          local.get 0
+          i32.const 10
+          i32.mul
+          local.set 1
+        )
+        local.get 1
+        local.set 2
+        return
+      )
     )
-    block110 = BasicBlock(
-        head_pc=0x110,
-        ops=[(LOCAL_GET, 0), (I32_CONST, 10), (I32_MUL, None), (LOCAL_SET, 1)],
-        next_pc=0x120,
-    )
-    block120 = BasicBlock(head_pc=0x120, ops=[(LOCAL_GET, 1), (LOCAL_SET, 2)], next_pc=None)
-    blocks = {0x100: block100, 0x110: block110, 0x120: block120}
+    """
     engine = IntegratedHybridEngine(compiler=TraceCompiler())
+    debug_mod = engine.load_wasm(bytes(wasmtime.wat2wasm(debug_wat)))
+    block100, block110, block120 = debug_mod.blocks[0], debug_mod.blocks[1], debug_mod.blocks[2]
+    blocks = {block100.head_pc: block100, block110.head_pc: block110, block120.head_pc: block120}
     dbg = DebuggerManager(engine=engine)
     server = GDBServer(dbg=dbg, host="127.0.0.1", port=0)
     # Initial context: local0 = 7, memory 256 bytes with header "STORAGE_DATA"
     live_mem = bytearray(256)
     live_mem[0:12] = b"STORAGE_DATA"
     ctx = WASMContext(locals_values=[7, 0, 0, 0], memory=live_mem)
-    port = server.start(current_pc=0x100, ctx=ctx, blocks=blocks)
+    port = server.start(current_pc=block100.head_pc, ctx=ctx, blocks=blocks)
     time.sleep(0.05)
     client = GDBClientHelper("127.0.0.1", port)
     try:
@@ -229,9 +246,9 @@ def test_scenario_comprehensive_storage_and_debugger():
         resp = client.send_raw_packet("g")
         pc = int(resp[0:8], 16)
         l0 = int(resp[32:40], 16)
-        assert pc == 0x100 and l0 == 7
-        # 4. Set breakpoint at PC 0x110
-        resp = client.send_raw_packet("Z0,110,0")
+        assert pc == block100.head_pc and l0 == 7
+        # 4. Set breakpoint at block110's head
+        resp = client.send_raw_packet(f"Z0,{block110.head_pc:x},0")
         assert resp == "OK"
         # 5. Continue to breakpoint
         resp = client.send_raw_packet("c")
@@ -239,22 +256,22 @@ def test_scenario_comprehensive_storage_and_debugger():
         resp_g = client.send_raw_packet("g")
         pc = int(resp_g[0:8], 16)
         l0 = int(resp_g[32:40], 16)
-        assert pc == 0x110 and l0 == 8  # 7 + 1 = 8
+        assert pc == block110.head_pc and l0 == 8  # 7 + 1 = 8
         # 6. Debugger mutation: Mutate local0 to 15, patch memory to "MUTATED_DATA"
-        new_regs = [0x110, 0, 0, 0, 15, 0, 0] + [0] * 13
+        new_regs = [block110.head_pc, 0, 0, 0, 15, 0, 0] + [0] * 13
         g_payload = "G" + "".join(f"{r:08x}" for r in new_regs)
         assert client.send_raw_packet(g_payload) == "OK"
         assert ctx.locals[0] == 15
         assert client.send_raw_packet("M0,c:4d5554415445445f44415441") == "OK"
         assert ctx.memory[0:12] == b"MUTATED_DATA"
-        # 7. Single-step PC 0x110 -> 0x120 (local1 = 15 * 10 = 150)
+        # 7. Single-step block110 -> block120 (local1 = 15 * 10 = 150)
         assert client.send_raw_packet("s") == "S05"
         resp_g = client.send_raw_packet("g")
         pc = int(resp_g[0:8], 16)
         l1 = int(resp_g[40:48], 16)
-        assert pc == 0x120 and l1 == 150
+        assert pc == block120.head_pc and l1 == 150
         # 8. Remove breakpoint & continue to exit
-        assert client.send_raw_packet("z0,110,0") == "OK"
+        assert client.send_raw_packet(f"z0,{block110.head_pc:x},0") == "OK"
         assert client.send_raw_packet("c") == "W00"
         assert ctx.locals[2] == 150
         print(

@@ -5,7 +5,6 @@ Unit tests for Tier 2 Runtime: vSoC Engine & Multitasking Integration
 Traceability: runtime_vsoc_test_spec.md
 """
 
-import ctypes
 import struct
 import sys
 from pathlib import Path
@@ -33,46 +32,31 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-import wasmtime
+from control_flow import extract_basic_blocks
 from hal import (
     UartTransport,
 )
 from interpreter import Interpreter
-from ipc_router import (
-    IPCMessage,
-    Role,
-    bytes_to_kv_storage,
-)
 from logger import LogDictionary, Logger, LogLevel
 from runtime_engine import (
     BasicBlock,
     CardState,
     IntegratedHybridEngine,
     JITTrace,
-    PcOnlyCompiler,
     RuntimeEngine,
     WASMContext,
 )
-from scheduler import ChannelAction
 from system import (
     System,
 )
 from system_containers import (
     FlatMapView,
 )
+from test_support import PcOnlyCompiler, wat_to_wasm
 from wasi import WasiHostContext
-from wasm_opcodes import CALL_HOST, I32_ADD, I32_CONST, I32_MUL, LOCAL_GET, LOCAL_SET
+from wasm_opcodes import I32_CONST
 from wasm_reader import parse
 from x64_jit import TraceCompiler
-
-
-def wat_to_wasm(wat_text: str) -> bytes:
-    try:
-        import wasmtime
-
-        return bytes(wasmtime.wat2wasm(wat_text))
-    except ImportError:
-        return b""
 
 
 def test_hal_task_ipc_communication():
@@ -274,7 +258,7 @@ def test_tier_02_interpreter_to_jit_trace_transition():
       )
     )
     """
-    wasm_bytes = bytes(wasmtime.wat2wasm(wat))
+    wasm_bytes = wat_to_wasm(wat)
     engine = IntegratedHybridEngine(yield_threshold=3)
     mod = engine.load_wasm(wasm_bytes)
     loop_pc = mod.blocks[1].head_pc
@@ -341,17 +325,21 @@ def test_tier_03_trace_chaining_and_interpreter_fallback():
       )
     )
     """
-    wasm_bytes = bytes(wasmtime.wat2wasm(wat))
+    wasm_bytes = wat_to_wasm(wat)
     engine = IntegratedHybridEngine(yield_threshold=10)
     mod = engine.load_wasm(wasm_bytes)
     block_a = mod.blocks[0]
     block_b = mod.blocks[1]
     block_c = mod.blocks[2]
     # Compile block B first, then block A (so A can chain directly into resident B)
-    trace_b = engine.compiler.compile_trace(block_b.head_pc, block_b)
+    trace_b = engine.compiler.compile_trace(
+        block_b.head_pc, engine.resolve_trace_block(block_b.head_pc)
+    )
     engine.cache.insert(trace_b)
     engine.bitmap.mark_compiled(block_b.head_pc)
-    trace_a = engine.compiler.compile_trace(block_a.head_pc, block_a)
+    trace_a = engine.compiler.compile_trace(
+        block_a.head_pc, engine.resolve_trace_block(block_a.head_pc)
+    )
     engine.cache.insert(trace_a)
     engine.bitmap.mark_compiled(block_a.head_pc)
     # Assert trace A chained directly into trace B
@@ -478,109 +466,6 @@ def test_guest_wasi_03_interpreter_proc_exit():
         sysv.shutdown()
 
 
-def test_guest_wasi_04_jit_fd_write_native():
-    """GUEST-WASI-04: JIT trace executes native machine code calling wasi_snapshot_preview1.fd_write."""
-    sysv = System()
-    try:
-        ctx = WasiHostContext(sysv)
-        msg = b"HELLO FROM JIT WASI GUEST!\n"
-        struct.pack_into("<II", ctx.guest_memory, 0, 16, len(msg))
-        ctx.guest_memory[16 : 16 + len(msg)] = msg
-
-        def host_fd_write():
-            return ctx.fd_write(1, 0, 1, 48)
-
-        t = ctypes.CFUNCTYPE(ctypes.c_uint32)(host_fd_write)
-        t_addr = ctypes.cast(t, ctypes.c_void_p).value
-        block = BasicBlock(
-            head_pc=0x100,
-            ops=[
-                (CALL_HOST, t_addr),
-                (LOCAL_SET, 0),
-            ],
-            next_pc=None,
-        )
-        compiler = TraceCompiler(host_trampolines={1: t_addr})
-        trace = compiler.compile_trace(0x100, block)
-        w_ctx = WASMContext(locals_values=[0])
-        trace.invoke(w_ctx)
-        assert w_ctx.locals[0] == 0  # WASI SUCCESS
-        assert sysv.transport.drain() == msg
-        nwritten = struct.unpack_from("<I", ctx.guest_memory, 48)[0]
-        assert nwritten == len(msg)
-    finally:
-        sysv.shutdown()
-
-
-def test_guest_wasi_05_jit_fireball_call_ipc_messaging():
-    """GUEST-WASI-05: JIT trace calls fireball_call to perform IPC lookup, send, and recv."""
-    sysv = System()
-    try:
-        ctx = WasiHostContext(sysv)
-        uri = b"fireball://hal/gpio/0"
-        payload = b"SET_HIGH"
-        ctx.guest_memory[0 : len(uri)] = uri
-        ctx.guest_memory[32 : 32 + len(payload)] = payload
-
-        # IPC is inter-*task* communication: the guest (RUNTIME) sending
-        # and the guest recv()-ing back are two different edges, each
-        # needing its own already-waiting counterpart task, or fireball_call
-        # (running as the guest task's own coroutine) would genuinely and
-        # correctly block forever with nobody to rendezvous with.
-        # hal_receiver pins itself to exactly the RUNTIME edge (bypassing
-        # recv()'s select-across-every-allowed-sender behavior) so it can
-        # never accidentally steal debugger_sender's message meant for the
-        # guest's own later IPC_RECV.
-        def hal_receiver():
-            channel = sysv.ipc.channel_for_edge(Role.RUNTIME, Role.PLATFORM_HAL)
-            assert channel is not None
-            action, _ = channel.recv()
-            if action == ChannelAction.BLOCK:
-                yield (ChannelAction.BLOCK, None)
-
-        def debugger_sender():
-            yield from sysv.ipc.send(
-                Role.DEBUGGER,
-                "fireball://hal/gpio/0",
-                IPCMessage.from_entries(
-                    bytes_to_kv_storage(payload), memory_manager=sysv.memory_manager
-                ),
-            )
-
-        sysv.scheduler.spawn("hal_receiver", hal_receiver())
-        sysv.scheduler.spawn("debugger_sender", debugger_sender())
-        sysv.scheduler.run_until_idle()
-
-        def host_ipc_roundtrip():
-            h = ctx.fireball_call(0x42, 0, len(uri), 0, 0, 0, 0)
-            ctx.fireball_call(0x40, h, 32, len(payload), 0, 0, 0)
-            # IPC_RECV no longer takes a sender_role argument: it selects
-            # across every edge allowed into this URI's own role (here, just
-            # the DEBUGGER edge is still pending; RUNTIME's was already
-            # consumed by hal_receiver above).
-            return ctx.fireball_call(0x41, h, 64, len(payload), 0, 0, 0)
-
-        t = ctypes.CFUNCTYPE(ctypes.c_uint32)(host_ipc_roundtrip)
-        t_addr = ctypes.cast(t, ctypes.c_void_p).value
-        block = BasicBlock(
-            head_pc=0x200,
-            ops=[
-                (CALL_HOST, t_addr),
-                (LOCAL_SET, 0),
-            ],
-            next_pc=None,
-        )
-        compiler = TraceCompiler(host_trampolines={1: t_addr})
-        trace = compiler.compile_trace(0x200, block)
-        w_ctx = WASMContext(locals_values=[0])
-        trace.invoke(w_ctx)
-        recv_len = w_ctx.locals[0]
-        assert recv_len == len(payload)
-        assert bytes(ctx.guest_memory[64 : 64 + recv_len]) == payload
-    finally:
-        sysv.shutdown()
-
-
 def test_debugger_manager_gdb_rsp_integration():
     """DBG-01..15: Verifies Debug Manager GDB RSP protocol, breakpoints, registers and JIT flush."""
     from debugger import DebuggerManager, GDBRspProtocol
@@ -597,35 +482,61 @@ def test_debugger_manager_gdb_rsp_integration():
     # 2. Virtual registers read/write
     res_g, _ = rsp.handle_packet("g", 0x100, ctx, {})
     assert len(res_g[1 : res_g.index("#")]) == 160
-    # 3. Memory write & JIT flush ({Debugger_Jit_Flush})
-    block = BasicBlock(head_pc=0x100, ops=[(I32_CONST, 42)])
-    trace = engine.compiler.compile_trace(0x100, block)
+    # 3. Memory write & JIT flush ({Debugger_Jit_Flush}) -- real WASM bytecode
+    # (`i32.const 42`) run through the same extract_basic_blocks + compile_block
+    # path production JIT compilation uses; the exact head_pc doesn't matter here,
+    # only that inserting a trace and then flushing it round-trips.
+    flush_code = bytes([I32_CONST, 42])
+    fc_head_pc, fc_next_pc, fc_loops_to, fc_frame_depth, fc_byte_span = extract_basic_blocks(
+        flush_code
+    )[0]
+    flush_block = BasicBlock(
+        head_pc=fc_head_pc,
+        next_pc=fc_next_pc,
+        loops_to=fc_loops_to,
+        frame_depth=fc_frame_depth,
+        byte_span=fc_byte_span,
+    )
+    trace = engine.compiler.compile_block(flush_code, flush_block)
     engine.cache.insert(trace)
-    assert engine.cache.active.has_trace(0x100)
+    assert engine.cache.active.has_trace(fc_head_pc)
     res_m, _ = rsp.handle_packet("M0,4:aabbccdd", 0x100, ctx, {})
     assert res_m.startswith("$OK#")
     assert bytes(mem[0:4]) == bytes.fromhex("aabbccdd")
-    assert not engine.cache.active.has_trace(0x100)  # Flushed!
-    # 4. Breakpoint & Stepping
-    block1 = BasicBlock(
-        head_pc=0x100,
-        ops=[(LOCAL_GET, 0), (I32_CONST, 1), (I32_ADD, None), (LOCAL_SET, 0)],
-        next_pc=0x200,
+    assert not engine.cache.active.has_trace(fc_head_pc)  # Flushed!
+    # 4. Breakpoint & Stepping -- two real basic blocks split by a `block`/`end`,
+    # loaded through a real Module so run_block_interpret's op-stream derivation
+    # (from raw bytecode) has a function to decode against.
+    step_wat = """
+    (module
+      (func (export "f") (param i32) (result i32)
+        (block $b
+          local.get 0
+          i32.const 1
+          i32.add
+          local.set 0
+        )
+        local.get 0
+        i32.const 2
+        i32.mul
+        local.set 0
+        local.get 0
+        return
+      )
     )
-    block2 = BasicBlock(
-        head_pc=0x200,
-        ops=[(LOCAL_GET, 0), (I32_CONST, 2), (I32_MUL, None), (LOCAL_SET, 0)],
-        next_pc=None,
-    )
-    blocks = {0x100: block1, 0x200: block2}
-    rsp.handle_packet("Z0,200,0", 0x100, ctx, blocks)
-    res_c, stop_pc = rsp.handle_packet("c", 0x100, ctx, blocks)
+    """
+    mod = engine.load_wasm(wat_to_wasm(step_wat))
+    block1, block2 = mod.blocks[0], mod.blocks[1]
+    blocks = {block1.head_pc: block1, block2.head_pc: block2}
+    ctx.locals[0] = 10
+    rsp.handle_packet(f"Z0,{block2.head_pc:x},0", block1.head_pc, ctx, blocks)
+    res_c, stop_pc = rsp.handle_packet("c", block1.head_pc, ctx, blocks)
     assert res_c.startswith("$S05#")
-    assert stop_pc == 0x200
+    assert stop_pc == block2.head_pc
     assert ctx.locals[0] == 11
     # Remove BP and finish
-    rsp.handle_packet("z0,200,0", 0x200, ctx, blocks)
-    res_c2, _ = rsp.handle_packet("c", 0x200, ctx, blocks)
+    rsp.handle_packet(f"z0,{block2.head_pc:x},0", block2.head_pc, ctx, blocks)
+    res_c2, _ = rsp.handle_packet("c", block2.head_pc, ctx, blocks)
     assert res_c2.startswith("$W00#")
     assert ctx.locals[0] == 22
 
@@ -652,7 +563,7 @@ def test_interpreter_debugger_handler_table_switch_and_hooks():
       )
     )
     """
-    wasm_bytes = bytes(wasmtime.wat2wasm(wat))
+    wasm_bytes = wat_to_wasm(wat)
     engine = IntegratedHybridEngine(compiler=TraceCompiler())
     dbg = DebuggerManager(engine=engine)
     mod = engine.load_wasm(wasm_bytes)
@@ -684,7 +595,9 @@ def test_interpreter_debugger_handler_table_switch_and_hooks():
     assert dbg.pc_sample_counts[block1.head_pc] == 1
     assert len(dbg.assertion_violations) == 1
     # 5. JIT Bypass under debug mode (INTP-65: JIT trace exists but interpreter debug table runs)
-    trace = engine.compiler.compile_trace(block1.head_pc, block1)
+    trace = engine.compiler.compile_trace(
+        block1.head_pc, engine.resolve_trace_block(block1.head_pc)
+    )
     engine.cache.insert(trace)
     assert engine.cache.active.has_trace(block1.head_pc)
     # Run step at block1 under debug mode -> interp_blocks increments, NOT jit_traces
@@ -755,22 +668,3 @@ if __name__ == "__main__":
         print(f"[PASS] {test.__name__}")
 
     print(f"\n[PASS] All {len(ALL_TESTS)} comprehensive pysim invariant tests passed.")
-
-if __name__ == "__main__":
-    test_hal_task_ipc_communication()
-    test_gdbserver_task_coos_cooperative_execution()
-    test_coop_01_wasm_coroutine_yields_on_quantum()
-    test_idle_01_jit_batch_compilation_on_idle()
-    test_idle_02_logging_flush_on_idle()
-    test_tier_01_interpreter_to_jit_cooperative_flow()
-    test_tier_02_interpreter_to_jit_trace_transition()
-    test_tier_03_trace_chaining_and_interpreter_fallback()
-    test_guest_wasi_01_interpreter_fd_write()
-    test_guest_wasi_02_interpreter_clock_and_random()
-    test_guest_wasi_03_interpreter_proc_exit()
-    test_guest_wasi_04_jit_fd_write_native()
-    test_guest_wasi_05_jit_fireball_call_ipc_messaging()
-    test_debugger_manager_gdb_rsp_integration()
-    test_interpreter_debugger_handler_table_switch_and_hooks()
-    test_wasm_loader_and_radix_binary_tree_view_indexes()
-    print("[PASS] All 16 vSoC Engine & Multitasking Integration tests passed.")

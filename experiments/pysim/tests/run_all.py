@@ -84,7 +84,6 @@ TEST_SUITES = [
         TEST_DIR / "tier3_jit" / "test_jit_runtime.py",
     ),
     ("Tier 3 JIT", "x64 Copy-and-Patch JIT", TEST_DIR / "tier3_jit" / "test_x64_jit.py"),
-    ("Tier 3 JIT", "Host Call & Native Dispatch", TEST_DIR / "tier3_jit" / "test_host_call.py"),
     # --- Cross-Cutting ---
     (
         "Cross-Cutting",

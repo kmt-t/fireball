@@ -51,9 +51,11 @@ Strictly implements and verifies all test cases from:
 docs/components/tier2_runtime/tests/debug_manager_test_spec.md (DBG-01 ~ DBG-15).
 """
 
+from control_flow import extract_basic_blocks
 from debugger import DebuggerManager, GDBRspProtocol
 from runtime_engine import BasicBlock, IntegratedHybridEngine, WASMContext
-from wasm_opcodes import I32_ADD, I32_CONST, I32_MUL, LOCAL_GET, LOCAL_SET
+from test_support import wat_to_wasm
+from wasm_opcodes import I32_CONST
 from x64_jit import TraceCompiler
 
 
@@ -133,17 +135,26 @@ def test_dbg_06_07_write_memory_flush_jit_and_bounds_check():
     rsp = GDBRspProtocol(dbg)
     mem = bytearray(64)
     ctx = WASMContext(memory=mem)
-    # Populate JIT cache
-    block = BasicBlock(head_pc=0x100, ops=[(I32_CONST, 10)])
-    trace = engine.compiler.compile_trace(0x100, block)
+    # Populate JIT cache -- real WASM bytecode (`i32.const 10`), run through the
+    # same extract_basic_blocks + compile_block path production JIT compilation uses.
+    code = bytes([I32_CONST, 10])
+    head_pc, next_pc, loops_to, frame_depth, byte_span = extract_basic_blocks(code)[0]
+    block = BasicBlock(
+        head_pc=head_pc,
+        next_pc=next_pc,
+        loops_to=loops_to,
+        frame_depth=frame_depth,
+        byte_span=byte_span,
+    )
+    trace = engine.compiler.compile_block(code, block)
     engine.cache.insert(trace)
-    assert engine.cache.active.has_trace(0x100)
+    assert engine.cache.active.has_trace(head_pc)
     # In-bounds write: "M0,4:deadbeef"
     res, _ = rsp.handle_packet("M0,4:deadbeef", 0, ctx, {})
     assert res.startswith("$OK#")
     assert bytes(ctx.memory[0:4]) == bytes.fromhex("deadbeef")
     # Invariant: JIT cache must be flushed ({Debugger_Jit_Flush})
-    assert not engine.cache.active.has_trace(0x100)
+    assert not engine.cache.active.has_trace(head_pc)
     # Out-of-bounds write -> E01
     res_err, _ = rsp.handle_packet("M1000,4:12345678", 0, ctx, {})
     assert res_err.startswith("$E01#")
@@ -155,31 +166,43 @@ def test_dbg_08_09_breakpoints_and_hit():
     dbg = DebuggerManager(engine=engine)
     dbg.attach()
     rsp = GDBRspProtocol(dbg)
-    block1 = BasicBlock(
-        head_pc=0x100,
-        ops=[(LOCAL_GET, 0), (I32_CONST, 1), (I32_ADD, None), (LOCAL_SET, 0)],
-        next_pc=0x200,
+    # Two real basic blocks split by a `block`/`end`, loaded through a real
+    # Module so run_block_interpret's op-stream derivation (from raw bytecode)
+    # has a function to decode against.
+    wat = """
+    (module
+      (func (export "f") (param i32) (result i32)
+        (block $b
+          local.get 0
+          i32.const 1
+          i32.add
+          local.set 0
+        )
+        local.get 0
+        i32.const 2
+        i32.mul
+        local.set 0
+        return
+      )
     )
-    block2 = BasicBlock(
-        head_pc=0x200,
-        ops=[(LOCAL_GET, 0), (I32_CONST, 2), (I32_MUL, None), (LOCAL_SET, 0)],
-        next_pc=None,
-    )
-    blocks = {0x100: block1, 0x200: block2}
-    # Set breakpoint at 0x200
-    res_z, _ = rsp.handle_packet("Z0,200,0", 0x100, WASMContext(), blocks)
+    """
+    mod = engine.load_wasm(wat_to_wasm(wat))
+    block1, block2 = mod.blocks[0], mod.blocks[1]
+    blocks = {block1.head_pc: block1, block2.head_pc: block2}
+    # Set breakpoint at block2's head
+    res_z, _ = rsp.handle_packet(f"Z0,{block2.head_pc:x},0", block1.head_pc, WASMContext(), blocks)
     assert res_z.startswith("$OK#")
-    assert dbg.has_breakpoint(0x200)
-    # Continue from 0x100 -> should halt at 0x200 with SIGTRAP ($S05)
+    assert dbg.has_breakpoint(block2.head_pc)
+    # Continue from block1 -> should halt at block2 with SIGTRAP ($S05)
     ctx = WASMContext(locals_values=[5])
-    res_c, stop_pc = rsp.handle_packet("c", 0x100, ctx, blocks)
+    res_c, stop_pc = rsp.handle_packet("c", block1.head_pc, ctx, blocks)
     assert res_c.startswith("$S05#")
-    assert stop_pc == 0x200
+    assert stop_pc == block2.head_pc
     assert ctx.locals[0] == 6  # block1 executed
-    # Remove breakpoint at 0x200 and continue to completion
-    rsp.handle_packet("z0,200,0", 0x200, ctx, blocks)
-    assert not dbg.has_breakpoint(0x200)
-    res_c2, stop_pc2 = rsp.handle_packet("c", 0x200, ctx, blocks)
+    # Remove breakpoint at block2 and continue to completion
+    rsp.handle_packet(f"z0,{block2.head_pc:x},0", block2.head_pc, ctx, blocks)
+    assert not dbg.has_breakpoint(block2.head_pc)
+    res_c2, stop_pc2 = rsp.handle_packet("c", block2.head_pc, ctx, blocks)
     assert res_c2.startswith("$W00#")
     assert ctx.locals[0] == 12  # block2 executed
 
@@ -190,21 +213,31 @@ def test_dbg_10_11_single_step_and_termination():
     dbg = DebuggerManager(engine=engine)
     dbg.attach()
     rsp = GDBRspProtocol(dbg)
-    block1 = BasicBlock(
-        head_pc=0x100,
-        ops=[(LOCAL_GET, 0), (I32_CONST, 10), (I32_ADD, None), (LOCAL_SET, 0)],
-        next_pc=0x200,
+    wat = """
+    (module
+      (func (export "f") (param i32) (result i32)
+        (block $b
+          local.get 0
+          i32.const 10
+          i32.add
+          local.set 0
+        )
+        local.get 0
+        return
+      )
     )
-    block2 = BasicBlock(head_pc=0x200, ops=[(LOCAL_GET, 0)], next_pc=None)
-    blocks = {0x100: block1, 0x200: block2}
+    """
+    mod = engine.load_wasm(wat_to_wasm(wat))
+    block1, block2 = mod.blocks[0], mod.blocks[1]
+    blocks = {block1.head_pc: block1, block2.head_pc: block2}
     ctx = WASMContext(locals_values=[5])
-    # Step 1 -> halts at 0x200 with S05
-    res_s1, pc1 = rsp.handle_packet("s", 0x100, ctx, blocks)
+    # Step 1 -> halts at block2 with S05
+    res_s1, pc1 = rsp.handle_packet("s", block1.head_pc, ctx, blocks)
     assert res_s1.startswith("$S05#")
-    assert pc1 == 0x200
+    assert pc1 == block2.head_pc
     assert ctx.locals[0] == 15
     # Step 2 -> ends with W00 (clean termination)
-    res_s2, pc2 = rsp.handle_packet("s", 0x200, ctx, blocks)
+    res_s2, pc2 = rsp.handle_packet("s", block2.head_pc, ctx, blocks)
     assert res_s2.startswith("$W00#")
 
 
@@ -216,15 +249,17 @@ def test_dbg_12_to_15_integrated_profiler_and_assertions():
     rsp = GDBRspProtocol(dbg)
     mem = bytearray([0x00, 0x42, 0x00])
     ctx = WASMContext(memory=mem)
-    block = BasicBlock(head_pc=0x100, ops=[(I32_CONST, 1)], next_pc=None)
-    blocks = {0x100: block}
+    wat = '(module (func (export "f") i32.const 1 drop return))'
+    mod = engine.load_wasm(wat_to_wasm(wat))
+    block = mod.blocks[0]
+    blocks = {block.head_pc: block}
     # Add memory assertion: address 1 must equal 0x42, address 2 must equal 0xFF (will fail)
     dbg.add_memory_assertion(1, 0x42, "status byte")
     dbg.add_memory_assertion(2, 0xFF, "flag byte")
     # Step instruction
-    rsp.handle_packet("s", 0x100, ctx, blocks)
+    rsp.handle_packet("s", block.head_pc, ctx, blocks)
     # 1. PC sampling verification
-    assert dbg.pc_sample_counts[0x100] == 1
+    assert dbg.pc_sample_counts[block.head_pc] == 1
     # 2. Dynamic memory assertion verification
     assert len(dbg.assertion_violations) == 1
     assert "0x2" in dbg.assertion_violations[0]

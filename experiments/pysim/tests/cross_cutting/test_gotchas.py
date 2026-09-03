@@ -49,7 +49,7 @@ for _p in [
 
 import ctypes
 
-import wasmtime
+from control_flow import extract_basic_blocks
 from debugger import DebuggerManager, GDBRspProtocol
 from hal import ShmBufferPool, ShmTrap, UartTransport
 from interpreter import _HANDLERS, Interpreter
@@ -69,22 +69,17 @@ from runtime_engine import (
     IntegratedHybridEngine,
     JITMultiBufferCache,
     JITTrace,
-    PcOnlyCompiler,
     RuntimeEngine,
     WASMContext,
 )
 from scheduler import ChannelAction, Scheduler, WaitDir
 from system import System, WasiErrno
 from system_containers import BitView, FlatMapView, MutableFlatMapStorage
+from test_support import PcOnlyCompiler, wat_to_wasm
 from vmmio import TrapCode, VMMIOController
 from wasm_opcodes import I32_ADD, I32_CONST, LOCAL_GET, LOCAL_SET
 from wasm_reader import parse
 from x64_jit import TraceCompiler
-
-
-def wat_to_wasm(wat_text: str) -> bytes:
-    return bytes(wasmtime.wat2wasm(wat_text))
-
 
 # ==============================================================================
 # 1. Interpreter Gotchas (INTP-GOTCHA-01 ~ 04)
@@ -210,25 +205,26 @@ def test_intp_gotcha_04_unified_pc_multi_module():
 
 def test_jitc_gotcha_01_02_03_conventions():
     """JITC-GOTCHA-01, 02, 03: Verify JIT conforms to CPS 4-arg convention, mem load offsets, and TOS unspilled."""
-    # 1. Test x64 JIT CPS 4-arg invocation
+    # 1. Test x64 JIT CPS 4-arg invocation -- real WASM bytecode for
+    # `local.get 0; i32.const 5; i32.add; local.set 0`, run through the same
+    # extract_basic_blocks + compile_block path production JIT compilation uses.
     compiler = TraceCompiler()
+    code = bytes([LOCAL_GET, 0, I32_CONST, 5, I32_ADD, LOCAL_SET, 0])
+    head_pc, next_pc, loops_to, frame_depth, byte_span = extract_basic_blocks(code)[0]
     block = BasicBlock(
-        head_pc=0x200,
-        ops=[
-            (LOCAL_GET, 0),
-            (I32_CONST, 5),
-            (I32_ADD, None),
-            (LOCAL_SET, 0),
-        ],
-        next_pc=None,
+        head_pc=head_pc,
+        next_pc=next_pc,
+        loops_to=loops_to,
+        frame_depth=frame_depth,
+        byte_span=byte_span,
     )
-    trace = compiler.compile_trace(0x200, block)
-    assert trace.header.head_wasm_pc == 0x200
+    trace = compiler.compile_block(code, block)
+    assert trace.header.head_wasm_pc == head_pc
     assert trace.size_bytes >= 16
 
     locals_arr = (ctypes.c_int64 * 8)(10, 0)
     trace.fn(
-        0x200,
+        head_pc,
         ctypes.c_void_p(0),
         ctypes.cast(locals_arr, ctypes.c_void_p),
         0,
@@ -318,7 +314,7 @@ def test_jitr_gotcha_01_idle_hook_skips_recompiling_already_resident_trace():
         return JITTrace(pc, lambda: 0, size_bytes=64)
 
     wat = '(module (func (export "f") i32.const 1 drop i32.const 2 drop return))'
-    wasm_bytes = bytes(wasmtime.wat2wasm(wat))
+    wasm_bytes = wat_to_wasm(wat)
     engine = RuntimeEngine(jit_compiler=PcOnlyCompiler(fake_compile), card_shift=3)
     mod = engine.load_wasm(wasm_bytes)
     pc = mod.blocks[0].head_pc
@@ -401,7 +397,7 @@ def test_vsoc_gotcha_01_02_stateless_interp_and_yield_in_vsoc():
       )
     )
     """
-    wasm_bytes = bytes(wasmtime.wat2wasm(wat))
+    wasm_bytes = wat_to_wasm(wat)
     engine = IntegratedHybridEngine(yield_threshold=3, compiler=TraceCompiler())
     mod = engine.load_wasm(wasm_bytes)
     loop_pc = mod.blocks[0].head_pc
@@ -736,15 +732,23 @@ def test_dbg_gotcha_01_memory_write_flushes_jit_cache():
     rsp = GDBRspProtocol(dbg)
     ctx = WASMContext(memory=bytearray(64))
 
-    block = BasicBlock(head_pc=0x100, ops=[(I32_CONST, 10)])
-    trace = engine.compiler.compile_trace(0x100, block)
+    code = bytes([I32_CONST, 10])
+    head_pc, next_pc, loops_to, frame_depth, byte_span = extract_basic_blocks(code)[0]
+    block = BasicBlock(
+        head_pc=head_pc,
+        next_pc=next_pc,
+        loops_to=loops_to,
+        frame_depth=frame_depth,
+        byte_span=byte_span,
+    )
+    trace = engine.compiler.compile_block(code, block)
     engine.cache.insert(trace)
-    assert engine.cache.active.has_trace(0x100)
+    assert engine.cache.active.has_trace(head_pc)
 
     res, _ = rsp.handle_packet("M0,4:deadbeef", 0, ctx, {})
     assert res.startswith("$OK#")
     assert bytes(ctx.memory[0:4]) == bytes.fromhex("deadbeef")
-    assert not engine.cache.active.has_trace(0x100), (
+    assert not engine.cache.active.has_trace(head_pc), (
         "JIT cache must be flushed upon debugger memory write"
     )
 

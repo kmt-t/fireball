@@ -27,19 +27,12 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-import ctypes
-import struct
-
 from hal import ShmTrap
-from ipc_router import IPCMessage, Role, bytes_to_kv_storage
 from logger import LogLevel
 from recovery import RecoveryManager, RecoveryStrategy, Result
-from runtime_engine import BasicBlock, IntegratedHybridEngine, WASMContext
-from scheduler import ChannelAction, Scheduler
-from system import FbSyscallId, ShmSlice, System
-from wasi import WasiHostContext
-from wasm_opcodes import CALL_HOST, LOCAL_SET
-from x64_jit import TraceCompiler
+from runtime_engine import IntegratedHybridEngine, WASMContext
+from scheduler import Scheduler
+from system import ShmSlice, System
 
 findings: list[str] = []
 
@@ -227,84 +220,6 @@ def demo_wasmjit_hybrid_execution(sysv: System) -> None:
     assert result_val == 720
     assert engine.interp_blocks >= 3
     assert engine.jit_traces >= 3
-    print("\n== wasmjit: Guest WASM calling WASI fd_write & fireball_call IPC ==")
-    ctx_wasi = WasiHostContext(sysv)
-    message = b"hello from guest WASI_FD_WRITE!\n"
-    uri = b"fireball://hal/gpio/0"
-    payload = b"SET_GPIO"
-    # Layout guest memory
-    MSG_BUF, MSG_IOV, NWRITTEN = 0, 32, 40
-    URI_OFF, PAYLOAD_OFF, RECV_BUF = 64, 128, 160
-    ctx_wasi.guest_memory[MSG_BUF : MSG_BUF + len(message)] = message
-    struct.pack_into("<II", ctx_wasi.guest_memory, MSG_IOV, MSG_BUF, len(message))
-    ctx_wasi.guest_memory[URI_OFF : URI_OFF + len(uri)] = uri
-    ctx_wasi.guest_memory[PAYLOAD_OFF : PAYLOAD_OFF + len(payload)] = payload
-
-    # IPC is inter-*task* communication: the guest (RUNTIME) sending and the
-    # guest recv()-ing back are two different edges, each needing its own
-    # already-waiting counterpart task, or fireball_call (running as the
-    # guest task's own coroutine) would genuinely and correctly block
-    # forever with nobody to rendezvous with. hal_receiver pins itself to
-    # exactly the RUNTIME edge (bypassing recv()'s select-across-every-
-    # allowed-sender behavior) so it can never accidentally steal
-    # debugger_sender's message meant for the guest's own later IPC_RECV.
-    def hal_receiver():
-        channel = sysv.ipc.channel_for_edge(Role.RUNTIME, Role.PLATFORM_HAL)
-        assert channel is not None
-        action, _ = channel.recv()
-        if action == ChannelAction.BLOCK:
-            yield (ChannelAction.BLOCK, None)
-
-    def debugger_sender():
-        yield from sysv.ipc.send(
-            Role.DEBUGGER,
-            "fireball://hal/gpio/0",
-            IPCMessage.from_entries(
-                bytes_to_kv_storage(payload), memory_manager=sysv.memory_manager
-            ),
-        )
-
-    sysv.scheduler.spawn("hal_receiver", hal_receiver())
-    sysv.scheduler.spawn("debugger_sender", debugger_sender())
-    sysv.scheduler.run_until_idle()
-
-    # Compile and execute WASI guest trace
-    def host_wasi_roundtrip():
-        # 1. fd_write
-        ctx_wasi.fd_write(1, MSG_IOV, 1, NWRITTEN)
-        # 2. IPC lookup
-        h = ctx_wasi.fireball_call(FbSyscallId.IPC_LOOKUP, URI_OFF, len(uri), 0, 0, 0, 0)
-        # 3. IPC send (consumed by hal_receiver above, so this does not block)
-        ctx_wasi.fireball_call(FbSyscallId.IPC_SEND, h, PAYLOAD_OFF, len(payload), 0, 0, 0)
-        # 4. IPC recv: selects across every edge allowed into this URI's own
-        # role (PLATFORM_HAL) -- RUNTIME's edge was already consumed above,
-        # so this receives debugger_sender's message on the DEBUGGER edge.
-        return ctx_wasi.fireball_call(FbSyscallId.IPC_RECV, h, RECV_BUF, len(payload), 0, 0, 0)
-
-    t = ctypes.CFUNCTYPE(ctypes.c_uint32)(host_wasi_roundtrip)
-    t_addr = ctypes.cast(t, ctypes.c_void_p).value
-    block = BasicBlock(
-        head_pc=0x300,
-        ops=[
-            (CALL_HOST, t_addr),
-            (LOCAL_SET, 0),
-        ],
-        next_pc=None,
-    )
-    compiler = TraceCompiler(host_trampolines={1: t_addr})
-    trace = compiler.compile_trace(0x300, block)
-    w_ctx = WASMContext(locals_values=[0])
-    trace.invoke(w_ctx)
-    recv_len = w_ctx.locals[0]
-    print(
-        f"  guest_main() -> JIT native IPC round-trip recv_len={recv_len} (expected {len(payload)}) [OK]"
-    )
-    assert recv_len == len(payload)
-    assert bytes(ctx_wasi.guest_memory[RECV_BUF : RECV_BUF + recv_len]) == payload
-    wire = sysv.transport.drain().decode("utf-8", errors="replace")
-    print("  bytes the guest wrote via WASI_FD_WRITE:")
-    for line in wire.splitlines():
-        print(f"    | {line}")
 
 
 def main() -> None:

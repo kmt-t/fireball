@@ -23,6 +23,7 @@ import bisect
 import ctypes
 from collections.abc import Callable, Iterator
 
+from control_flow import decode_block_ops
 from interpreter import Interpreter, InterpreterCall
 from system_containers import (
     BitView,
@@ -35,7 +36,7 @@ from system_containers import (
     RingBuffer,
     bswap32,
 )
-from wasm_module import BasicBlock, Module
+from wasm_module import BasicBlock, Module, TraceBlock
 from wasm_opcodes import (
     I32_ADD,
     I32_CONST,
@@ -538,22 +539,6 @@ class JITMultiBufferCache:
         self._fast_slots = [None] * self.NUM_FAST_SLOTS
 
 
-class PcOnlyCompiler:
-    """
-    Adapts a simple `(pc) -> JITTrace | None` callable into the
-    `compile_trace(pc, block)` shape RuntimeEngine.idle_hook() always calls,
-    so idle_hook never has to branch on what shape `jit_compiler` is. For
-    callers (typically tests) that compile straight from a pc with no
-    registered BasicBlock.
-    """
-
-    def __init__(self, fn: Callable[[int], "JITTrace | None"]):
-        self._fn = fn
-
-    def compile_trace(self, pc: int, block: "BasicBlock | None") -> "JITTrace | None":
-        return self._fn(pc)
-
-
 class RuntimeEngine:
     """Integrated Tiered Tracing Runtime Engine combining Interpreter and JIT."""
 
@@ -634,6 +619,22 @@ class RuntimeEngine:
         self._fast_block_slots[slot] = (pc, blk)
         return blk
 
+    def resolve_trace_block(self, pc: int) -> TraceBlock | None:
+        """
+        Builds this compile's transient `TraceBlock` from the persisted
+        `BasicBlock`'s PC metadata plus the owning function's raw bytecode --
+        `BasicBlock` itself never stores the op stream (see
+        `wasm_module.BasicBlock`); `self.blocks` here only ever comes from a
+        real parsed `Module` (`register_module_blocks`), so `self.module` is
+        always available whenever `get_block` finds something.
+        """
+        block = self.get_block(pc)
+        if block is None or self.module is None:
+            return None
+        code = self.module.code_for(pc >> 16)
+        ops = decode_block_ops(code, pc & 0xFFFF, block.byte_span)
+        return TraceBlock(head_pc=pc, ops=ops, next_pc=block.next_pc, loops_to=block.loops_to)
+
     def register_module_blocks(self, module: Module) -> None:
         """Binds loader-owned basic blocks and control skip Radix tree from a parsed WASM Module."""
         if module.block_tree is None:
@@ -700,8 +701,8 @@ class RuntimeEngine:
                 continue
             trace = None
             if self.jit_compiler is not None:
-                block = self.get_block(pc)
-                trace = self.jit_compiler.compile_trace(pc, block)
+                trace_block = self.resolve_trace_block(pc)
+                trace = self.jit_compiler.compile_trace(pc, trace_block)
 
             if trace is not None and self.cache.insert(trace):
                 self.bitmap.mark_compiled(pc)
@@ -970,9 +971,9 @@ _EMU_TRACE_MAP: FlatMapView[int, Callable[[list[int], object, object], None]] = 
 
 
 class WASMTraceCompiler:
-    """Compiles a BasicBlock into a fast callable native JITTrace using table dispatch."""
+    """Compiles a TraceBlock op stream into a fast callable native JITTrace using table dispatch."""
 
-    def compile_trace(self, head_pc: int, block: BasicBlock) -> JITTrace:
+    def compile_trace(self, head_pc: int, block: TraceBlock) -> JITTrace:
         ops = list(block.ops)
         has_ret = any(op in (I32_CONST, I32_ADD, I32_SUB, I32_MUL) for op, _ in ops)
 
@@ -1158,10 +1159,10 @@ class IntegratedHybridEngine:
                 # whether *this* pc specifically already has a trace.
                 self.bitmap.mark_compiled(head_pc)
                 continue
-            block = self.get_block(head_pc)
-            if block is None:
+            trace_block = self.resolve_trace_block(head_pc)
+            if trace_block is None:
                 continue
-            trace = self.compiler.compile_trace(head_pc, block)
+            trace = self.compiler.compile_trace(head_pc, trace_block)
             if trace is not None:
                 self.cache.insert(trace)
                 self.bitmap.mark_compiled(head_pc)
@@ -1169,8 +1170,27 @@ class IntegratedHybridEngine:
                 compiled += 1
         return compiled
 
+    def resolve_trace_block(self, pc: int) -> TraceBlock | None:
+        """
+        Builds this compile/interpret call's transient `TraceBlock` from the
+        persisted `BasicBlock`'s PC metadata plus the owning function's raw
+        bytecode -- `BasicBlock` itself never stores the op stream (see
+        `wasm_module.BasicBlock`). Decoded fresh every call, never cached:
+        matches `interpreter.py`'s direct-bytecode dispatch, which redecodes
+        LEB128 operands on every step rather than persisting `Instr` objects.
+        """
+        block = self.get_block(pc)
+        if block is None or self.module is None:
+            return None
+        code = self.module.code_for(pc >> 16)
+        ops = decode_block_ops(code, pc & 0xFFFF, block.byte_span)
+        return TraceBlock(head_pc=pc, ops=ops, next_pc=block.next_pc, loops_to=block.loops_to)
+
     def _interpret_block(self, block: BasicBlock, ctx: WASMContext) -> None:
-        for op, arg in block.ops:
+        trace_block = self.resolve_trace_block(block.head_pc)
+        if trace_block is None:
+            return
+        for op, arg in trace_block.ops:
             handler = _INTERP_BLOCK_MAP.find(op)
             if handler is not None:
                 handler(ctx, arg)

@@ -5,7 +5,7 @@ Reference Concept Implementation: Exhaustive WASM MVP (v1) Stack Interpreter & A
 - Bottom-resident execution_context: CallFrame + Locals + Operands share one
   inline growing region; ControlFrame lives in its own dedicated region,
   never interleaved with it (ADR-INTERP-03, runtime_interpreter.md §8)
-- Direct-Threaded __fastcall Continuation Passing Style (CPS) 4-argument dispatch (ip, stack_bot, env, local_base)
+- Direct-Threaded __fastcall Continuation Passing Style (CPS) 4-argument dispatch (ip, stack_bot, local_base, tos)
 - Full stack pruning (Label Arity handling) on br / br_if / br_table
 - 64-bit integer arithmetic, memory loads/stores (8/16/32/64-bit), and type conversions
 - Cooperative safepoint polling at loop headers for deterministic yield

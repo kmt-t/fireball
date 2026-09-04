@@ -47,6 +47,7 @@ from runtime_engine import (
 from system_containers import (
     RadixBinaryTreeView,
     ReadOnlyRadixBinaryTreeStorage,
+    StaticVector,
     bswap32,
     build_radix_table,
 )
@@ -115,7 +116,9 @@ def test_hotspot_03_lifo_compile_queue_batch_drain():
         return t
 
     engine = RuntimeEngine(jit_compiler=PcOnlyCompiler(dummy_compiler))
-    engine.compile_queue = [0x100, 0x200, 0x300]
+    engine.compile_queue = StaticVector.of(
+        [0x100, 0x200, 0x300], capacity=engine.compile_queue_capacity
+    )
     count = engine.idle_hook(budget=2)
     assert count == 2
     assert compiled_traces == [0x300, 0x200], (
@@ -367,7 +370,7 @@ def test_hotspot_07_idle_hook_skips_recompiling_an_already_resident_trace():
     mod = engine.load_wasm(wasm_bytes)
     pc = mod.blocks[0].head_pc
     engine.cache.insert(JITTrace(pc, lambda: 0, size_bytes=64))
-    engine.compile_queue.append(pc)
+    engine.compile_queue.push_back(pc)
 
     compiled = engine.idle_hook(budget=4)
 
@@ -779,9 +782,9 @@ def test_jitr_return_terminated_block_jit_result_correct():
     `trace.next_pc is None` (the function is ending, not falling through to
     another block). `_invoke_trace` must resolve this via O(1)
     `len(frame.code)` -- the same "past the end" sentinel `current_pc()`
-    already checks for -- never via a runtime `decode_all` call
-    (`frame.instrs[ip]`), which `{DirectBytecodeExecution}` (INTP-GOTCHA-05)
-    forbids: no instruction-object generation at runtime, ever.
+    already checks for -- never by decoding an `Instr` at runtime, which
+    `{DirectBytecodeExecution}` (INTP-GOTCHA-05) forbids: no
+    instruction-object generation at runtime, ever.
     """
     wat = """
     (module

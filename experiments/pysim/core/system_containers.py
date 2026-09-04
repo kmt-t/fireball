@@ -1095,6 +1095,16 @@ class StaticVector(Generic[T]):
         self.capacity = capacity
         self._items: list[T] = []
 
+    @classmethod
+    def of(cls, items: Sequence[T], capacity: int | None = None) -> StaticVector[T]:
+        """Builds a StaticVector pre-populated with `items` (test/setup convenience)."""
+        cap = capacity if capacity is not None else len(items)
+        vec: StaticVector[T] = cls(capacity=cap)
+        for item in items:
+            if not vec.push_back(item):
+                raise ValueError(f"StaticVector.of: {len(items)} items exceed capacity {cap}")
+        return vec
+
     def push_back(self, item: T) -> bool:
         if len(self._items) >= self.capacity:
             return False
@@ -1103,6 +1113,17 @@ class StaticVector(Generic[T]):
 
     def pop_back(self) -> T | None:
         return self._items.pop() if self._items else None
+
+    def remove(self, item: T) -> bool:
+        """Removes the first occurrence of `item`, shifting later entries down. False if absent."""
+        try:
+            self._items.remove(item)
+        except ValueError:
+            return False
+        return True
+
+    def clear(self) -> None:
+        self._items.clear()
 
     def at(self, index: int) -> T:
         return self._items[index]
@@ -1116,5 +1137,18 @@ class StaticVector(Generic[T]):
     def __getitem__(self, index: int) -> T:
         return self._items[index]
 
+    def __contains__(self, item: T) -> bool:
+        return item in self._items
+
     def __iter__(self) -> Iterator[T]:
         return iter(self._items)
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, StaticVector):
+            return self._items == other._items
+        if isinstance(other, list):
+            return self._items == other
+        return NotImplemented
+
+    def __repr__(self) -> str:
+        return f"StaticVector(capacity={self.capacity}, items={self._items!r})"

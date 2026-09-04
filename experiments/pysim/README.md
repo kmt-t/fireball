@@ -6,17 +6,26 @@
 
 ### C++ 移植可能性の制約（本ディレクトリのみ）
 
-`experiments/pysim/` 配下のコードは、この事前実証としての性質上、`.agents/rules/embedded_cpp.md` / `stdlib_policy.md` が定める組み込み C++（ヒープ割り当て・例外・RTTI 無効、`std::vector`/`std::map`/`std::unordered_map` 等の動的コンテナ禁止）の制約を型として引き継ぎます。**pysim は「RTTI（実行時型情報）のない静的型付け言語（C++）」だと思って記述してください。** 具体的には：
+`experiments/pysim/` 配下のコードは、この事前実証としての性質上、`.agents/rules/embedded_cpp.md` / `stdlib_policy.md` / `coding-standards-cpp.md` が定める組み込み C++（ヒープ割り当て・例外・RTTI 無効、`std::vector`/`std::map`/`std::unordered_map` 等の動的コンテナ禁止、`{GLOBAL_Policy_Memory}`）の制約を型として引き継ぎます。**pysim は「RTTI（実行時型情報）のない静的型付け言語（C++）」だと思って記述してください。** 具体的には：
 
 - **動的型検査・リフレクションの完全禁止（No RTTI）**:
   - `isinstance`, `type()`, `hasattr`, `getattr` 等のランタイム型検査やリフレクションを一切使用しない。
   - ユニバーサルな引数型（何でも受け取れる万能型・両対応型）にして内部で動的に型を判定して分岐するコードを書かない。関数のシグネチャは意図された具象型に一本化し、異なる型を扱う場合は別名関数として明確に分離する。
-- **動的コンテナの禁止**:
-  - Python の `dict`/`set` を実装の型として使わない。固定長配列、`FlatMapView`/`FlatSetView`/`RadixBinaryTreeView`/`BitView`（`core/system_containers.py`）、または `MutableFlatMapStorage`/`MutableFlatSetStorage` のような固定容量コンテナに置き換える。
+- **動的コンテナの完全禁止（`{GLOBAL_Policy_Memory}`）**:
+  - Python の `dict`/`set` を実装の型として使わない。固定長配列、`BitView`/`FlatMapView`/`FlatSetView`/`RadixBinaryTreeView`（読み取り専用）、または `MutableFlatMapStorage`/`MutableFlatSetStorage`/`MutableRadixBinaryTreeStorage`/`MutableBitStorage`（可変・固定容量）のような `core/system_containers.py` の固定容量コンテナに置き換える。
+  - `.append()`/`.insert()`/`.pop()` で無制限に伸縮する `list` も同様に禁止。伸縮方向が「末尾のみ・容量に上限がある」構造には `StaticVector`（順次アクセス、LIFO push_back/pop_back）を、「先頭から流れ落ちる／上書きされる」構造には `RingBuffer`（FIFO、オーバーフロー時上書き）を使う。どちらも `core/system_containers.py` にあり、容量はコンストラクタ引数として必ず明示し、その値の根拠（既存の上限値と一致させた、または `FB_CONF_*` 定数として新規に定義した、等）をコメントで残す。
+  - どうしても `[None] * N` + 明示カウンタで自前実装する場合（`control_flow.py` の `open_stack`/`active_openers` の `FB_CONF_MAX_NESTING_DEPTH` 等、既存コンテナのAPIでは表現できない特殊なアクセスパターンのみ）も、伸縮は `.append`/`.pop` ではなくインデックス代入とカウンタ増減で行い、上限超過は明示的にエラーとする。
 - **例外制御フローの禁止**:
   - 例外を制御フローに使わない。失敗は戻り値（`None`、`Result`型、`IntEnum` ステータス等）で表現する。
 - **厳格な整数型・Enum の使用**:
   - 文字列による状態・ID 比較を行わない。すべて `IntEnum` または整数インデックスで扱う。
+- **命令列・ブロック内容の非マテリアライズ**:
+  - バイトコードを丸ごとデコードして `Instr` オブジェクトの `list`/`dict` として保持しない。呼び出し側が一度しか消費しないなら、ジェネレータでストリーミングデコードする（`control_flow.iter_scan_instrs`/`iter_block_ops` 等）。
+  - コンパイル済みトレースのように、消費し切ったあとも同じ内容を繰り返し評価する必要がある場合は、既知の上限で容量を決めた `StaticVector` に詰め替えて保持する（`WASMTraceCompiler.compile_trace` が `TraceBlock.byte_span` を容量に使う実例）。
+  - デコードした値のうち呼び出し側が使わないフィールドは、そもそもアンパックせずバイト位置だけ進めて捨てる（未使用の `const_value`/`memarg` 等をデコードしない）。
+- **パース/ロード時に確定する値の実行時再計算禁止**:
+  - 関数やブロックの静的メタデータ（制御構造マップ、ローカル変数レイアウト、JIT コンパイル対象として妥当なブロックか等）は、ロード時に一度だけ計算してキャッシュし、ディスパッチのたびに再導出しない。`Function.control_map`（遅延ビルド後キャッシュ）、`Function.locals_layout_cache`（`list(params) + list(locals_extra)` を初回呼び出し時に1度だけ計算しキャッシュする）、`RuntimeEngine.trackable`（`BlockCardMask`: `next_pc is not None and byte_span >= min_trace_bytes` をロード時に1回だけ判定し1bit/ブロックでマスクする）が実例。
+  - 呼び出し元がすでに解決済みのオブジェクト（例: `BasicBlock`）を持っている場合、それを再度 PC からルックアップし直さない（該当関数に `block: T | None = None` のような省略可能引数を足し、渡された側を優先する）。
 
 **この制約は `experiments/pysim/` のみに適用され、`docs/components/**/concepts/*.py` の参考実装コードには適用されません。** concept コードは仕様の意図を伝えるための説明的なスニペットであり、可読性を優先して `dict` などの通常の Python イディオムを使ってよいものとします。
 

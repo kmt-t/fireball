@@ -41,13 +41,13 @@ from __future__ import annotations
 
 import ctypes
 import struct
-from collections.abc import Callable
+from collections import deque
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 
 import cython
-from control_flow import ControlMap, Instr, build_control_map, decode_all
+from control_flow import ControlMap, build_control_map
 from leb128 import decode_signed, decode_unsigned
-from system_containers import FlatMapView
 from wasm_module import F32, F64, Module
 from wasm_opcodes import (
     BLOCK,
@@ -223,7 +223,17 @@ class CallFrame:
         (memory, globals, tables, etc.), control map, and raw code.
     """
 
-    __slots__ = ("_jit_locals", "code", "control_map", "env", "frames", "values")
+    __slots__ = (
+        "_jit_locals",
+        "_jit_result_slot",
+        "boundary_loops_to",
+        "boundary_next_pc",
+        "code",
+        "control_map",
+        "env",
+        "frames",
+        "values",
+    )
 
     def __init__(
         self,
@@ -238,14 +248,20 @@ class CallFrame:
         self.control_map = control_map
         self.env = env
         self._jit_locals: tuple[int, ctypes.Array[ctypes.c_int64], ctypes.c_void_p] | None = None
-
-    @property
-    def instrs(self) -> FlatMapView[int, Instr]:
-        return decode_all(self.code)
-
-    @property
-    def instr_table(self) -> FlatMapView[int, Instr]:
-        return self.instrs
+        self._jit_result_slot: tuple[ctypes.Array[ctypes.c_int64], ctypes.c_void_p] | None = None
+        # Set by RuntimeEngine.run() right before each interp.step() call,
+        # from that step's BasicBlock's own statically-computed next_pc /
+        # loops_to (extract_basic_blocks -- the same static resolution the
+        # JIT already uses, unified pc format) -- overrides the runtime
+        # frame.frames-based target in _h_br / _h_br_if / _h_else below.
+        # A JIT trace's computed jumps never touch frame.frames, so its
+        # content can desync from reality across a JIT/interpreter boundary
+        # (see RuntimeEngine.run()); the static BasicBlock target this step
+        # is dispatching never can, since it is a pure function of `pc`
+        # alone. Stays None for a bare Interpreter.call() run with no
+        # owning RuntimeEngine, so that path is byte-for-byte unchanged.
+        self.boundary_next_pc: int | None = None
+        self.boundary_loops_to: int | None = None
 
     def jit_locals_buffer(
         self, n_locals: int
@@ -267,6 +283,26 @@ class CallFrame:
         buf = (ctypes.c_int64 * n_locals)()
         ptr = ctypes.cast(buf, ctypes.c_void_p)
         self._jit_locals = (n_locals, buf, ptr)
+        return buf, ptr
+
+    def jit_result_slot(self) -> tuple[ctypes.Array[ctypes.c_int64], ctypes.c_void_p]:
+        """
+        Returns this frame's single-i64 scratch buffer and its `c_void_p`,
+        passed as the CPS `stack_bot` argument to a compiled JIT trace. A
+        trace's result is WASM VM state, not a C return value -- it has no
+        relationship to the callee's own return channel (the real design's
+        return value, where used at all, carries a control-flow signal like
+        the next `ip`, never operand-stack data) -- so a trace with a
+        residual value (`JITTrace.has_return_val`) writes it here via `R12`
+        before returning void, and the caller reads it back from this same
+        buffer instead of from the call's return value.
+        """
+        cached = self._jit_result_slot
+        if cached is not None:
+            return cached
+        buf = (ctypes.c_int64 * 1)()
+        ptr = ctypes.cast(buf, ctypes.c_void_p)
+        self._jit_result_slot = (buf, ptr)
         return buf, ptr
 
 
@@ -425,10 +461,30 @@ class Interpreter:
 
     def call(self, func_index: int, args: list[int]) -> list[int]:
         """Runs a function to completion in one step (no cooperative slicing)."""
+        (call_state,) = deque(self.run_iter(func_index, args, quantum=0), maxlen=1)
+        return call_state.results
+
+    def run_iter(
+        self, func_index: int, args: list[int], quantum: int = 64
+    ) -> Iterator[InterpreterCall]:
+        """
+        Drives a call boundary-instruction-quantum by boundary-instruction-
+        quantum, yielding the (possibly still-unfinished) `call_state` after
+        every `step()` -- including the very first, freshly-`start()`ed one,
+        before anything has run -- and once more after it finishes. A caller
+        that wants to substitute its own execution for the boundary about to
+        run (e.g. `RuntimeEngine.run()` invoking a JIT trace instead of
+        interpreting one) sends the `call_state` it produced back in via
+        `gen.send(replacement)` instead of `next(gen)`; this resumes from
+        that state rather than calling `step()` for the boundary the caller
+        already handled itself. A caller with nothing to inject between
+        boundaries (`Interpreter.call()`) just iterates with a plain `for`.
+        """
         call_state = self.start(func_index, args)
         while not call_state.finished:
-            call_state = self.step(call_state, quantum=0)
-        return call_state.results
+            override = yield call_state
+            call_state = override if override is not None else self.step(call_state, quantum)
+        yield call_state
 
     def start(self, func_index: int, args: list[int]) -> InterpreterCall:
         """
@@ -456,7 +512,9 @@ class Interpreter:
         ft = self.module.func_type(func_index)
         return [_to_i32(result)] if ft.results else []
 
-    def _build_frame(self, func_index: int, args: list[int]) -> tuple[CallFrame, list[int]]:
+    def _build_frame(
+        self, func_index: int, args: list[int], values: list[int] | None = None
+    ) -> tuple[CallFrame, list[int]]:
         """
         Builds the initial frame + locals for a WASM (non-import) function
         activation. `args` -- already popped off the caller's operand stack
@@ -465,6 +523,14 @@ class Interpreter:
         owner after this call, so it's converted and extended in place and
         reused directly as `locals_arr`, rather than copied into a second,
         freshly-allocated list of the same values.
+
+        `values` is the operand stack this new frame will push onto -- the
+        caller's own `frame.values`, shared unchanged, for a nested call via
+        `_enter_or_resolve_call`, or `None` (a fresh empty list) for a new
+        top-level `InterpreterCall`. The operand stack spans the whole call
+        chain rather than resetting per call: a callee's results end up
+        sitting exactly where the caller's own next pop/push already
+        expects them, so returning needs no value copy.
         """
         fn = self.module.functions[func_index - len(self.module.imports)]
         layout = self.module.locals_layout(func_index)
@@ -477,7 +543,9 @@ class Interpreter:
 
         if fn.control_map is None:
             fn.control_map = build_control_map(fn.code)
-        frame = CallFrame(fn.code, fn.control_map, [], env=self._env)
+        frame = CallFrame(
+            fn.code, fn.control_map, values if values is not None else [], env=self._env
+        )
         return frame, locals_arr
 
     @cython.locals(instr_step=cython.Py_ssize_t, ip=cython.Py_ssize_t, op=cython.uchar)
@@ -528,18 +596,20 @@ class Interpreter:
                 # below, never defer it behind a quantum-exhaustion return.
 
             ft = self.module.func_type(call_state.func_index)
-            results = [frame.values.pop()] if ft.results else []
             if not call_state.call_stack:
+                results = [frame.values.pop()] if ft.results else []
                 call_state.cont = None
                 call_state.finished = True
                 call_state.results = results
                 return call_state
             # Return to the suspended caller frame -- always a mandatory
             # boundary, so the runtime gets the same chance to check its JIT
-            # trace cache here as it does entering any other frame.
+            # trace cache here as it does entering any other frame. The
+            # operand stack is shared across this whole call chain (see
+            # _build_frame's `values` sharing in _enter_or_resolve_call), so
+            # the result -- already sitting on top of it -- needs no copy:
+            # the caller's own next pop/push simply continues from here.
             parent_func_index, parent_cont = call_state.call_stack.pop()
-            _, parent_frame, _, _ = parent_cont
-            parent_frame.values.extend(results)
             p_ip, p_frame, p_locals, _ = parent_cont
             p_tos = p_frame.values[-1] if p_frame.values else 0
             call_state.func_index = parent_func_index
@@ -596,7 +666,9 @@ class Interpreter:
             call_state.cont = (next_ip, frame, locals_arr, r_tos)
             return call_state
 
-        callee_frame, callee_locals = self._build_frame(callee_func_index, call_args)
+        callee_frame, callee_locals = self._build_frame(
+            callee_func_index, call_args, values=frame.values
+        )
         call_state.call_stack.append((call_state.func_index, resume_cont))
         call_state.func_index = callee_func_index
         callee_tos = callee_frame.values[-1] if callee_frame.values else 0
@@ -658,9 +730,11 @@ def _h_if(ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int])
 def _h_else(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
 ) -> _HandlerResult:
-    if frame.frames:
-        target = frame.frames.pop()
-        return (target.match_end + 1, frame, env, local_base)
+    popped = frame.frames.pop() if frame.frames else None
+    if frame.boundary_next_pc is not None:
+        return (frame.boundary_next_pc & 0xFFFF, frame, env, local_base)
+    if popped is not None:
+        return (popped.match_end + 1, frame, env, local_base)
     return (ip + 1, frame, env, local_base)
 
 
@@ -674,6 +748,8 @@ def _h_end(ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
 @_handler(BR)
 @cython.locals(depth=cython.Py_ssize_t)
 def _h_br(ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]) -> _HandlerResult:
+    if frame.boundary_next_pc is not None:
+        return (frame.boundary_next_pc & 0xFFFF, frame, env, local_base)
     depth, _ = decode_unsigned(frame.code, ip + 1)
     next_ip = _do_branch(depth, frame)
     return None if next_ip is None else (next_ip, frame, env, local_base)
@@ -686,10 +762,12 @@ def _h_br_if(
 ) -> _HandlerResult:
     depth, next_ip = decode_unsigned(frame.code, ip + 1)
     cond = frame.values.pop()
-    if cond != 0:
-        target_ip = _do_branch(depth, frame)
-        return None if target_ip is None else (target_ip, frame, env, local_base)
-    return (next_ip, frame, env, local_base)
+    if cond == 0:
+        return (next_ip, frame, env, local_base)
+    if frame.boundary_loops_to is not None:
+        return (frame.boundary_loops_to & 0xFFFF, frame, env, local_base)
+    target_ip = _do_branch(depth, frame)
+    return None if target_ip is None else (target_ip, frame, env, local_base)
 
 
 @_handler(BR_TABLE)

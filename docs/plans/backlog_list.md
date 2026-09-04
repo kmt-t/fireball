@@ -70,10 +70,10 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
   - 正常系 WASM バイナリおよび各種不正バイナリの拒絶テスト
 
 ### Phase 1.2: WASM Stackless Fast Interpreter (`runtime_interpreter`)
-- [ ] **`execution_context` & 統合スタック (`inc/runtime/interpreter.hxx`)**:
-  - スタックボトム配置と単一スタック上への CallFrame/ControlFrame インライン統合（ART スタイル）・ローカル変数基底 R3 渡し `{ContextPointerRegister}`
+- [ ] **`execution_context` & 独立3バッファスタック (`inc/runtime/interpreter.hxx`)**:
+  - `OperandStack`/`LocalStack`/`control_frame` 専用領域の独立管理・ローカル変数基底 R2 渡し `{ContextPointerRegister}`
 - [ ] **コア命令ハンドラ群 (`src/runtime/opcode_handlers.cxx`)**:
-  - `__fastcall` 継続渡し（CPS）4引数シグネチャ（R0=IP, R1=stack_bot, R2=ENV, R3=local_base） `{ThreadedInterpreter}`
+  - `__fastcall` 継続渡し（CPS）4引数シグネチャ（R0=IP, R1=stack_bot, R2=local_base, R3=tos） `{ThreadedInterpreter}`
   - 算術・比較・変換・制御・メモリ操作ハンドラと `MemoryBoundaryCheck` トラップ `{MemoryBoundaryCheck}`
   - 分岐脱出時のフレームプルーニングと TOS 復元 (`INTR-GOTCHA-02`)
 - [ ] **スレッド化ディスパッチャ (`src/runtime/dispatch.cxx`)**:

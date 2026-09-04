@@ -51,6 +51,7 @@ from system import (
 )
 from system_containers import (
     FlatMapView,
+    StaticVector,
 )
 from test_support import PcOnlyCompiler, wat_to_wasm
 from wasi import WasiHostContext
@@ -171,7 +172,9 @@ def test_idle_01_jit_batch_compilation_on_idle():
     engine.bitmap.touch(0x100)  # HOT
     engine.bitmap.touch(0x200)
     engine.bitmap.touch(0x200)  # HOT
-    engine.compile_queue = [0x100, 0x200]  # Enqueued
+    engine.compile_queue = StaticVector.of(
+        [0x100, 0x200], capacity=engine.compile_queue_capacity
+    )  # Enqueued
     # COOS idle_hook fires with budget 2
     count = engine.idle_hook(budget=2)
     assert count == 2

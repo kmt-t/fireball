@@ -74,7 +74,7 @@ from runtime_engine import (
 )
 from scheduler import ChannelAction, Scheduler, WaitDir
 from system import System, WasiErrno
-from system_containers import BitView, FlatMapView, MutableFlatMapStorage
+from system_containers import BitView, FlatMapView, MutableFlatMapStorage, StaticVector
 from test_support import PcOnlyCompiler, wat_to_wasm
 from vmmio import TrapCode, VMMIOController
 from wasm_opcodes import I32_ADD, I32_CONST, LOCAL_GET, LOCAL_SET
@@ -106,22 +106,19 @@ def test_intp_gotcha_01_tos_stack_sync():
     assert tos == 0
 
     # Execute instruction 0 (i32.const 10) directly via CPS handler
-    ins0 = frame.instrs[ip]
-    cont = _HANDLERS[ins0.opcode](ip, frame, locals_arr, tos)
+    cont = _HANDLERS[frame.code[ip]](ip, frame, locals_arr, tos)
     ip, frame, locals_arr, tos = cont
     assert tos == 10
     assert frame.values == [10]
 
     # Execute instruction 1 (i32.const 20)
-    ins1 = frame.instrs[ip]
-    cont = _HANDLERS[ins1.opcode](ip, frame, locals_arr, tos)
+    cont = _HANDLERS[frame.code[ip]](ip, frame, locals_arr, tos)
     ip, frame, locals_arr, tos = cont
     assert tos == 20
     assert frame.values == [10, 20]
 
     # Execute instruction 2 (i32.add) -> pops 20 and 10, pushes 30 -> tos=30
-    ins2 = frame.instrs[ip]
-    cont = _HANDLERS[ins2.opcode](ip, frame, locals_arr, tos)
+    cont = _HANDLERS[frame.code[ip]](ip, frame, locals_arr, tos)
     ip, frame, locals_arr, tos = cont
     assert tos == 30
     assert frame.values == [30]
@@ -232,8 +229,8 @@ def test_jitc_gotcha_01_02_03_conventions():
     assert locals_arr[0] == 15
 
     # 2. Test Thumb-2 JIT Copy-Patch Engine: JITC-GOTCHA-01 (register isolation),
-    # JITC-GOTCHA-02 (mem_base/size loaded from [R1, #0x10] and [R1, #0x14]),
-    # and JITC-GOTCHA-03 (Caller-saved R3 is not spilled in epilogue).
+    # JITC-GOTCHA-02 (mem_base/size loaded from [R1, #0x20] and [R1, #0x24]),
+    # and JITC-GOTCHA-03 (Callee-saved TOS (R4) is not spilled in epilogue).
     engine = CopyPatchJITEngine()
     ops = [("i32.const", 42), ("local.set", 4), ("i32.load", None)]
     start_pos, count = engine.compile_trace(ops)
@@ -262,11 +259,12 @@ def test_jitc_gotcha_01_02_03_conventions():
             f"CPS argument register {dest} clobbered by {inst}"
         )
 
-    # JITC-GOTCHA-02: mem_base and mem_size loaded from [R1, #0x10] and [R1, #0x14]
-    assert code[1] == "LDR.W r8, [r1, #0x10]"
-    assert code[2] == "LDR.W r9, [r1, #0x14]"
+    # JITC-GOTCHA-02: mem_base and mem_size loaded from [R1, #0x20] and [R1, #0x24]
+    assert code[1] == "LDR.W r8, [r1, #0x20]"
+    assert code[2] == "LDR.W r9, [r1, #0x24]"
 
-    # JITC-GOTCHA-03: Epilogue pops only callee-saved registers {r4-r6, r8-r11, pc}, R3 (tos) remains in register
+    # JITC-GOTCHA-03: Epilogue pops only callee-saved registers {r4-r6, r8-r11, pc}, R4 (TOS)
+    # remains in register -- no memory round-trip.
     assert "POP.W {r4-r6, r8-r11, pc}" in code
 
 
@@ -319,7 +317,7 @@ def test_jitr_gotcha_01_idle_hook_skips_recompiling_already_resident_trace():
     mod = engine.load_wasm(wasm_bytes)
     pc = mod.blocks[0].head_pc
     engine.cache.insert(JITTrace(pc, lambda: 0, size_bytes=64))
-    engine.compile_queue.append(pc)
+    engine.compile_queue.push_back(pc)
 
     compiled = engine.idle_hook(budget=4)
 
@@ -361,7 +359,9 @@ def test_jitr_gotcha_03_lifo_reverse_compilation_order():
         return t
 
     engine = RuntimeEngine(jit_compiler=PcOnlyCompiler(dummy_compiler))
-    engine.compile_queue = [0x100, 0x200, 0x300]
+    engine.compile_queue = StaticVector.of(
+        [0x100, 0x200, 0x300], capacity=engine.compile_queue_capacity
+    )
     count = engine.idle_hook(budget=2)
     assert count == 2
     assert compiled_traces == [0x300, 0x200], "LIFO compilation order required"

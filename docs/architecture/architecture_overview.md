@@ -88,8 +88,8 @@ Fireball の実行コアは、以下の 6 つの物理メカニズムによっ�
 +---------------------------------------------------------------------------------------------------+
 |                                  FIREBALL MASTER PHYSICAL DESIGN                                  |
 +---------------------------------------------------------------------------------------------------+
-|  [Pillar 1] 統合スタックフレーム・モデル (Unified Stack Frame Model)                              |
-|             └─ 基底 stack_bot (R1), ボトム常駐 execution_context, インラインフレーム/ローカル/オペランド  |
+|  [Pillar 1] 独立3バッファ・スタックモデル (Three Independent Stack Buffers Model)                  |
+|             └─ execution_context (R1), OperandStack / LocalStack / control_frame の3独立バッファ    |
 +---------------------------------------------------------------------------------------------------+
 |  [Pillar 2] 3段直接 JIT 検索パイプライン (3-Stage Direct JIT Lookup Pipeline)                     |
 |             └─ Card Marking (O(1)) -> Entry Group Index (O(1)) -> flat_map_view Binary Search     |
@@ -108,13 +108,15 @@ Fireball の実行コアは、以下の 6 つの物理メカニズムによっ�
 +---------------------------------------------------------------------------------------------------+
 ```
 
-### 3.1 Pillar 1: 統合スタックフレーム・モデル (Unified Stack Frame Model)
+### 3.1 Pillar 1: 独立3バッファ・スタックモデル (Three Independent Stack Buffers Model)
 <!-- traceability: {ContextPointerRegister} {MemoryBoundaryCheck} {ThreadedInterpreter} {ExecutionContext_Layout} {CallFrame_Layout} {ControlFrame_Layout} -->
-- **物理実体**: 単一の連続した固定長メモリバッファ（2KB〜4KB）。 `{ExecutionContext_Layout}` `{CallFrame_Layout}` `{ControlFrame_Layout}`
+- **物理実体**: `OperandStack`・`LocalStack`・`control_frame` 専用領域の、互いに独立した3本の固定長バッファ（計 2KB〜4KB）。 `{ExecutionContext_Layout}` `{CallFrame_Layout}` `{ControlFrame_Layout}`
 - **物理レイアウト**:
-  1. **スタックボトム (`+0x00`)**: `execution_context` 構造体が固定配置される（SP長 `sp_offset`、フレームオフセット `frame_offset`、スタック境界 `sp_boundary`、ハンドラテーブル参照等を保持）。
-  2. **スタック中間〜トップ**: `CallFrame`、`Function Locals`、`Operand Stack`、`ControlFrames` が単一の配列上にインラインで積層される。
-- **レジスタ規約**: `R1: stack_bot` および `R3: local_base` が全ハンドラおよびJITトレースへ渡され、CPS 第1〜第4引数（`ip`, `stack_bot`, `env`, `local_base`）として直接引き継がれる。 `{ContextPointerRegister}` `{JIT_RegisterMapping}`
+  1. **`execution_context`（計44バイト、単体の固定サイズ構造体）**: 3本それぞれの頂点オフセット・境界、`mem_base`/`mem_size`/`globals_base` 等のリニアメモリ情報を保持する。3本のいずれにもインライン配置されない。
+  2. **`OperandStack`**: WASM オペランド値のみを保持し、コールチェーン全体を貫いて連続する（呼び出しを跨いでも作り直されない）。
+  3. **`LocalStack`**: 関数呼び出しごとに `call_frame`（戻り先PC・関数インデックス等）とその関数のローカル変数配列をひとまとめにして push/pop する。
+  4. **`control_frame` 専用領域**: `block`/`loop`/`if` の入れ子を管理する。オペランドスタックとは同居しない（ADR-INTERP-03、`runtime_interpreter.md` §3.1/§8）。
+- **レジスタ規約**: `R1: stack_bot`（`execution_context` を指す）、`R2: local_base`（カレント `call_frame` のローカル変数配列先頭）が全ハンドラおよびJITトレースへ渡され、CPS 第1〜第4引数（`ip`, `stack_bot`, `local_base`, `tos`）として直接引き継がれる。 `{ContextPointerRegister}` `{JIT_RegisterMapping}`
 
 ### 3.2 Pillar 2: 3段直接 JIT 検索パイプライン (3-Stage Direct JIT Lookup Pipeline)
 <!-- traceability: {SimpleJITArchitecture} {JIT_MultiBuffer_Cache} {FlatViewNarrowing} {META_FlatMapIndexed} {META_BinarySearch} -->
@@ -124,7 +126,7 @@ Fireball の実行コアは、以下の 6 つの物理メカニズムによっ�
   - **Stage 3 (有界二分探索) [$O(\log n)$]**: 狭められたソート済みエントリ区間に対してのみ二分探索を実行し、ネイティブ実行アドレスを特定。 `{FlatViewNarrowing}` `{META_BinarySearch}`
 
 ### 3.3 Pillar 3: 3面世代交代回転コードキャッシュ (3-Bank Generational Rotating Code Cache)
-<!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} {SimpleJITArchitecture} {VsocRuntime_Layout} -->
+<!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} {SimpleJITArchitecture} -->
 - **3面の物理的役割**:
   - `Bank 0 (Active)`: 新規JITコンパイルコードおよび Oldest からの昇格コードを格納。 `{VsocRuntime_Layout}`
   - `Bank 1 (Warm)`: 1世代前のコードを保持。無償観測期間として昇格コピーを行わずに実行。
@@ -163,8 +165,8 @@ ARM Cortex-M33 (ARMv8-M Mainline) における物理レジスタの厳格な役�
 | **`R5`** | Callee-saved | (保全) | **`Assignable Pool 1` (NNOS等)** | **スタック第3段キャッシュ (NNOS)**、または一時演算スクラッチ。 |
 | **`R6`** | Callee-saved | (保全) | **`Assignable Pool 2`** | 汎用一時レジスタ（`select` 条件値等）。 |
 | **`R7`** | **Frame Pointer (FP)** | **FP (不可侵)** | **FP (不可侵)** | **AAPCS 標準フレームポインタ**。デバッガ・アンワインドのため不変。 |
-| **`R8`** | Callee-saved | (保全) | **`Assignable Pool 3` (mem_base)** | メモリアクセス時のピン留めメモリ基底ポインタ（`[R1, #0x10]` よりロード）。 |
-| **`R9`** | Callee-saved | (保全) | **`Assignable Pool 4` (mem_size)** | メモリアクセス時のピン留めメモリ境界サイズ（`[R1, #0x14]` よりロード、比較境界チェック用）。 |
+| **`R8`** | Callee-saved | (保全) | **`Assignable Pool 3` (mem_base)** | メモリアクセス時のピン留めメモリ基底ポインタ（`[R1, #0x20]` よりロード）。 |
+| **`R9`** | Callee-saved | (保全) | **`Assignable Pool 4` (mem_size)** | メモリアクセス時のピン留めメモリ境界サイズ（`[R1, #0x24]` よりロード、比較境界チェック用）。 |
 | **`R10`** | Callee-saved | (保全) | **`Assignable Pool 5` (safepoint)** | セーフポイント監視フラグ / ポーリング用レジスタ。 |
 | **`R11`** | Callee-saved | (保全) | **`Assignable Pool 6`** | 拡張レジスタキャッシュ。 |
 | **`R12 (IP)`**| Intra-Call Scratch | scratch | **一時スクラッチ** | リンカ・スタブ用スクラッチ、使い捨て一時値、インタープリタ復帰 `BX r12`。 |
@@ -174,16 +176,19 @@ ARM Cortex-M33 (ARMv8-M Mainline) における物理レジスタの厳格な役�
 
 ### 4.1 メモリ常駐構造体の物理バイトオフセット
 
-- **`execution_context`（`R1: stack_bot` 起点、計32バイト）**:
-  - `+0x00`: `sp_offset` (u32) — 呼び出し・値の領域（オペランドスタック）のみの現在オフセット
-  - `+0x04`: `frame_offset` (u32) — カレントコールフレームオフセット
-  - `+0x08`: `sp_boundary` (u32) — 呼び出し・値の領域側のスタック上限境界オフセット
-  - `+0x0C`: `handler_table` (u32) — 命令ディスパッチテーブル参照
-  - `+0x10`: `mem_base` (u32) — ゲストリニアメモリ開始アドレス（旧 `vsoc_runtime.mem_base` を統合）
-  - `+0x14`: `mem_size` (u32) — ゲストリニアメモリ有効バイト数（旧 `vsoc_runtime.mem_size` を統合、境界チェック比較用）
-  - `+0x18`: `globals_base` (u32) — WASM global 配列基底アドレス（旧 `vsoc_runtime.globals_base` を統合）
-  - `+0x1C`: `control_frame_top` (u32) — バッファ天井から下へ伸びる、`control_frame` 専用領域の現在の深さ。呼び出し・値の領域とは独立に管理される（ADR-INTERP-03、`runtime_interpreter.md` §8）
-  - ※ 従来 `R2: env` に割り当てられていた `vsoc_runtime`（12バイト）は `execution_context` 内に完全内包され、独立した引数レジスタは不要化。空いた `R2` を `local_base`、`R3` を `tos` に再編。`control_frame` はオペランドスタックと同居させず専用領域へ分離した（ADR-INTERP-03）。 `{ExecutionContext_Layout}` `{AAPCS_FastCall}`
+- **`execution_context`（`R1: stack_bot` 起点、計44バイト）**:
+  - `+0x00`: `sp_offset` (u32) — `OperandStack` バッファ先頭からの現在の頂点オフセット。コール境界を跨いでも連続しており、関数呼び出しのたびにリセットされない
+  - `+0x04`: `sp_boundary` (u32) — `OperandStack` バッファ自体のオーバーフロー検知用上限オフセット
+  - `+0x08`: `ls_offset` (u32) — `LocalStack` バッファ先頭からの、次に `call_frame`+ローカル変数ブロックを push する位置のオフセット
+  - `+0x0C`: `frame_offset` (u32) — 現在アクティブな `call_frame` の `LocalStack` バッファ先頭からの開始オフセット
+  - `+0x10`: `ls_boundary` (u32) — `LocalStack` バッファ自体のオーバーフロー検知用上限オフセット
+  - `+0x14`: `cf_offset` (u32) — `control_frame` バッファ先頭からの現在の頂点オフセット/深さ
+  - `+0x18`: `cf_boundary` (u32) — `control_frame` バッファ自体のオーバーフロー検知用上限オフセット
+  - `+0x1C`: `handler_table` (u32) — 命令ディスパッチテーブル参照
+  - `+0x20`: `mem_base` (u32) — ゲストリニアメモリ開始アドレス（`vsoc_runtime.mem_base` を統合）
+  - `+0x24`: `mem_size` (u32) — ゲストリニアメモリ有効バイト数（`vsoc_runtime.mem_size` を統合、境界チェック比較用）
+  - `+0x28`: `globals_base` (u32) — WASM global 配列基底アドレス（`vsoc_runtime.globals_base` を統合）
+  - ※ `OperandStack`・`LocalStack`・`control_frame` は互いに独立した固定容量バッファであり、それぞれ専用の頂点・境界オフセットペアを持つ（ADR-INTERP-03、`runtime_interpreter.md` §3.3）。`vsoc_runtime` は `execution_context` 内に完全内包され、独立した引数レジスタを消費しない。`R2` は `local_base`、`R3` は `tos` として引き回す。 `{ExecutionContext_Layout}` `{AAPCS_FastCall}`
 
 ---
 
@@ -221,7 +226,7 @@ graph TD
 | パーティション | 最小構成 (Bytes) | 最小構成 (KB) | 想定構成 (KB) | 責務 / 縮退方針 |
 | :--- | ---: | ---: | ---: | :--- |
 | **JIT コードキャッシュ** | 6,784 | 6.63 | 6.63 | 2KB×3面 (Active/Warm/Oldest) + メタデータ。**縮退しない** |
-| **統合スタック & コンテキスト** | 2,064 | 2.02 | 4.00 | `execution_context` + CallFrame/オペランド/ローカル変数。縮退しない |
+| **3独立スタック & コンテキスト** | 2,064 | 2.02 | 4.00 | `execution_context` + `OperandStack`/`LocalStack`（`call_frame`含む）/`control_frame`。縮退しない |
 | **WASM ゲストリニアメモリ** | 4,096 | 4.00 | 8.00 | ゲスト作業領域。4KB 部分ページへ縮退 |
 | **vSoC メタデータ & 索引** | 1,152 | 1.13 | 2.00 | モジュール・関数・グローバル・テーブル索引。縮退しない |
 | **COOS スケジューラ** | 1,344 | 1.31 | 2.00 | TCB 16個, READYキュー, CSPチャネル。縮退しない |

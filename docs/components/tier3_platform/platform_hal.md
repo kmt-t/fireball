@@ -69,9 +69,9 @@ HAL全体の制限値を定義する。 `{META_ConfigurableSystem}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| 最大登録デバイス数 | システムが同時に管理可能なデバイスの総数 | エントリ数 | 1-255 |
-| 最大バッファ数 | 通信に使用する内部バッファの予約数 | エントリ数 | 1-255 |
-| `buffer_size` | 単一バッファに割り当てられる固定バイト数 | バイト数 | - |
+| 最大登録デバイス数 | システムが同時に管理可能なデバイスの総数。ビルド時定数 `FB_CONF_HAL_MAX_DEVICES`（現行値 `8`）で設定する | エントリ数 | 1-255 (許容範囲) |
+| 最大バッファ数 | 通信に使用する内部バッファの予約数。ビルド時定数 `FB_CONF_HAL_MAX_BUFFERS`（現行値 `4`）で設定する | エントリ数 | 1-255 (許容範囲) |
+| `buffer_size` | 単一バッファに割り当てられる固定バイト数。ビルド時定数 `FB_CONF_HAL_BUFFER_SIZE`（現行値 `256`）で設定する | バイト数 | - |
 
 ---
 
@@ -80,7 +80,7 @@ HAL全体の制限値を定義する。 `{META_ConfigurableSystem}`
 ### 4.1 アルゴリズム
 <!-- traceability: {RSP_Transport_Selectable} {TaskPollInterruptFlag} {GLOBAL_InterruptWakeup} -->
 - **コマンドルーティング**: IPCで受信したコマンド（read/write/control）を、デバイスIDに基づいて適切なドライバへ振り分ける。
-- **割り込み通知（push）**: 物理割り込み発生時、ISR は COOS の `notify_interrupt(irq_id)` を呼び、INT イベントを有界キューへ投函するのみとする。**ISR がタスク状態を直接書き換えることはない。**実際の READY 遷移は、スケジューラが yield 点でキューをドレインする際に行われる（`{GLOBAL_InterruptWakeup}` を正本とする）。この非同期境界の分離が vSoC 実行状態モデルの安全性検証項目 `irq_jit_race_freedom_proof`（形式検証モデルの CTL 安全性検証 `AG(Not(handling_irq & jit_mode))` として証明されている）性質である。
+- **割り込み通知（push）**: 物理割り込み発生時、ISR は COOS の `notify_interrupt(irq_id)` を呼び、INT イベントを有界キューへ投函するのみとする。**ISR がタスク状態を直接書き換えることはない。**実際の READY 遷移は、スケジューラが yield 点でキューをドレインする際に行われる（`{GLOBAL_InterruptWakeup}` を正本とする）。この非同期境界の分離は、`../tier2_runtime/formal/vsoc_state_model.py` に定義された CTL 安全性検証項目 `irq_jit_race_freedom_proof`（`AG(Not(handling_irq & jit_mode))`）として証明されている性質である。
 - **割り込み確認（pull）**: `{TaskPollInterruptFlag}` が定義するもう一方の経路として、ゲスト実行エンジン（JIT/インタープリタ）は Safepoint で `vsoc_context.interrupt_flags` を自ら確認する。この pull 側の実装（Safepoint 埋め込み位置、フラグ構造）は HAL の管轄外であり、`{TaskPollInterruptFlag}` を正本とする。 `{TaskPollInterruptFlag}` `{GLOBAL_InterruptWakeup}`
 
 #### ShmBufferPool バッファ確保・境界検査手順（手順アクティビティ図）
@@ -89,10 +89,10 @@ HAL全体の制限値を定義する。 `{META_ConfigurableSystem}`
 
 ```mermaid
 flowchart TD
-    Start(["HAL Driver: acquire_buffer(size)"]) --> CheckSize{"Requested size <= SHM_SLOT_SIZE (256B)?"}
+    Start(["HAL Driver: acquire_buffer(size)"]) --> CheckSize{"Requested size <= FB_CONF_HAL_BUFFER_SIZE (256B)?"}
 
     CheckSize -- "No (> 256B)" --> RejectSize(["Reject with ValueError: Dynamic resizing prohibited"])
-    CheckSize -- "Yes" --> AllocSlot["Find Free Slot in Fixed-Capacity ShmBufferPool (16 slots)"]
+    CheckSize -- "Yes" --> AllocSlot["Find Free Slot in Fixed-Capacity ShmBufferPool (FB_CONF_HAL_MAX_BUFFERS = 4 slots)"]
     AllocSlot --> SlotFound{"Available slot found?"}
 
     SlotFound -- "No" --> RejectFull(["Reject: Pool Exhausted (ERR_NO_RESOURCE)"])

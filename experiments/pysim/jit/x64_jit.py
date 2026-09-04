@@ -19,7 +19,7 @@ import sys
 from collections.abc import Callable
 
 import x64_stencils as st
-from control_flow import decode_block_ops
+from control_flow import iter_block_ops
 from exec_memory import ExecutableBuffer
 from runtime_engine import BasicBlock, JITTrace, JITTraceHeader
 from system_containers import FlatMapView, ReadOnlyFlatMapStorage
@@ -191,7 +191,6 @@ class TraceCompiler:
         PIC code starting at offset 0x10.
     """
 
-    SUPPORTED_OPS: tuple[int, ...] = tuple(EMIT_MAP.keys)
     # (pops, pushes) stack effect per opcode: a sorted flat_map_view over a
     # fixed, compile-time-known opcode integer vocabulary, never a dict or string.
     _STACK_EFFECT_ENTRIES: tuple[tuple[int, tuple[int, int]], ...] = tuple(
@@ -243,55 +242,63 @@ class TraceCompiler:
         `wasm_module.BasicBlock`). The derived ops list is discarded once
         `compile_trace` returns; nothing here is kept past this one call.
         """
-        ops = decode_block_ops(code, block.head_pc & 0xFFFF, block.byte_span)
+        ops = iter_block_ops(code, block.head_pc & 0xFFFF, block.byte_span)
         return self.compile_trace(
             block.head_pc,
             TraceBlock(
-                head_pc=block.head_pc, ops=ops, next_pc=block.next_pc, loops_to=block.loops_to
+                head_pc=block.head_pc,
+                ops=ops,
+                next_pc=block.next_pc,
+                loops_to=block.loops_to,
+                byte_span=block.byte_span,
             ),
         )
 
     def compile_trace(self, head_pc: int, block: TraceBlock | None) -> JITTrace | None:
-        """Compiles a single TraceBlock op stream into a PIC native JITTrace using _EMIT_TABLE dispatch."""
-        if (
-            block is None
-            or not block.ops
-            or any(op not in self.SUPPORTED_OPS for op, _ in block.ops)
-        ):
+        """
+        Compiles a single TraceBlock op stream into a PIC native JITTrace
+        using `_EMIT_TABLE` dispatch. `block.ops` is streamed exactly once,
+        never materialized into a list: `EMIT_MAP.find(op)` alone is the
+        single "does this op have stencil support" signal (a `None` result
+        means fall back to Tier 2 interpretation for this block) -- the
+        stack-depth Trace Boundary Invariant is checked and the native code
+        emitted for that same op right after, all within the one pass over
+        the stream.
+        """
+        if block is None:
             return None
-        # Trace Boundary Invariant: Verify block is self-contained (stack depth never drops below 0)
+        header = JITTraceHeader(head_wasm_pc=head_pc)
+        code = bytearray()
+        code += gen_pic_prologue()
         sim_depth = 0
-        for op, _ in block.ops:
+        stack_depth = 0
+        saw_op = False
+        for op, arg in block.ops:
+            saw_op = True
+            emitter = EMIT_MAP.find(op)
+            if emitter is None:
+                return None
+            # Trace Boundary Invariant: block must be self-contained (stack depth never drops below 0)
             pops, pushes = self.STACK_EFFECTS[op]
             sim_depth -= pops
             if sim_depth < 0:
                 # Depends on values on caller's operand stack -> execute safely in interpreter
                 return None
             sim_depth += pushes
-
-        if sim_depth < 0 or sim_depth > 1:
-            # Multi-value stack outputs or underflow are executed safely by Tier 2 Interpreter
-            return None
-        # 1. Physical 16-byte JITTraceHeader at +0x00
-        header = JITTraceHeader(head_wasm_pc=head_pc)
-        header_bytes = header.pack()
-        # 2. PIC Code Stream at +0x10
-        code = bytearray()
-        code += gen_pic_prologue()
-        stack_depth = 0
-        for op, arg in block.ops:
-            emitter = EMIT_MAP.find(op)
-            if emitter is None:
-                return None
             stack_depth += emitter(code, arg)
 
-        if stack_depth < 0 or stack_depth > 1:
-            # Multi-value stack outputs or underflow are executed safely by Tier 2 Interpreter
+        if not saw_op or sim_depth < 0 or sim_depth > 1 or stack_depth < 0 or stack_depth > 1:
+            # Empty block, or multi-value stack outputs / underflow -- executed
+            # safely by Tier 2 Interpreter instead.
             return None
+        header_bytes = header.pack()
+        # A trace's residual value is VM operand-stack state, not a C return
+        # value -- {ExecutionContext_Layout} -- so it is written to memory
+        # (via R12 / stack_bot) rather than returned in RAX; the trace itself
+        # always returns void.
         if stack_depth == 1:
-            code += st.EPILOGUE_RETURN_I32.code
-        else:
-            code += st.EPILOGUE_RETURN_VOID.code
+            code += st.SPILL_RESULT_TO_STACK_BOT.code
+        code += st.EPILOGUE_RETURN_VOID.code
 
         total_size = len(header_bytes) + len(code)
         header.trace_byte_size = total_size

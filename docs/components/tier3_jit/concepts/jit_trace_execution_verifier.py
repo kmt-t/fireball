@@ -48,8 +48,7 @@ except ImportError:
 CODE_BASE = 0x08000
 CSTACK_TOP = 0x21000  # native (R13) call stack -- grows down from here
 WASM_STACK_BASE = 0x22000  # unified stack (R1 / stack_bot)
-SENTINEL_ADDR = 0x23000  # where BX r12 lands on fallback exit
-ENV_BASE = 0x24000  # vsoc_runtime: mem-base @+0x00, mem-size @+0x04
+SENTINEL_ADDR = 0x23000  # where BX r12 (fallback exit) or POP {..,pc} (return exit) lands
 GUEST_RAM_BASE = 0x25000  # a deliberately small, tightly-mapped guest linear memory region
 
 
@@ -131,10 +130,10 @@ def _run_memory_access_trace(guest_addr: int, mem_size: int) -> dict:
     mu.mem_write(CODE_BASE, code)
     mu.mem_write(SENTINEL_ADDR, bytes.fromhex("00BE"))  # BKPT sentinel to stop on
     mu.mem_write(
-        WASM_STACK_BASE + 0x10, GUEST_RAM_BASE.to_bytes(4, "little")
+        WASM_STACK_BASE + 0x20, GUEST_RAM_BASE.to_bytes(4, "little")
     )  # execution_context.mem_base
     mu.mem_write(
-        WASM_STACK_BASE + 0x14, mem_size.to_bytes(4, "little")
+        WASM_STACK_BASE + 0x24, mem_size.to_bytes(4, "little")
     )  # execution_context.mem_size
     # Sentinel word at the fixed in-bounds offset the in-bounds test's guest_addr targets.
     # The OOB test's guest_addr lands outside the mapped page entirely, so it never reads this.
@@ -184,10 +183,9 @@ def test_intra_trace_variant_reconciliation_swap_on_real_hardware() -> None:
     """Proves _order_register_moves()'s cycle-safe MOV sequencing -- the primitive
     emit_variant_reconciliation_glue() uses internally -- is correct on a real ARMv8-M
     core, not just structurally plausible Python. This is NOT about chaining between
-    two separately-compiled traces: trace-boundary chaining ({JIT_LazyChaining}) always
-    goes through memory regardless of variant (jit_compiler.md 8, {ADR_TosCacheAsymmetry}).
-    It's about two consecutive stencils *within one trace* disagreeing on which register
-    holds which role -- what a future per-trace register allocator could produce. Here
+    two separately-compiled traces (see test_chain_branch_preserves_registers_on_real_hardware()
+    below for that). It's about two consecutive stencils *within one trace* disagreeing
+    on which register holds which role -- what a future per-trace register allocator could produce. Here
     that's simulated with a straight R4<->R5 swap (the case a naive move order corrupts),
     executed inline with no branch (matching real intra-trace placement) and followed
     immediately by a BKPT so the reconciled register state is observable.
@@ -216,6 +214,79 @@ def test_intra_trace_variant_reconciliation_swap_on_real_hardware() -> None:
     assert mu.reg_read(UC_ARM_REG_R5) == 0xAAAAAAAA, "R5 must end up with R4's original value"
 
 
+def test_chain_branch_preserves_registers_on_real_hardware() -> None:
+    """Proves the direct chain branch (exit_kind="chain") is what makes chaining a
+    real zero-overhead mechanism, not a documentation label: two independently
+    compiled traces, the second entered through its chain entry point (skipping its
+    own prologue), with R4 crossing the B.W untouched -- no STR/LDR anywhere between
+    the ADD that computes it in trace A and the flush that observes it in trace B.
+
+    Also proves the single-PUSH/single-POP AAPCS invariant this design depends on:
+    trace A's prologue is the only PUSH in the whole run (trace B's chain entry
+    skips its own), and trace B's genuine exit is the only POP -- so SP round-trips
+    exactly once across the full two-trace chain, exactly as it would for a single
+    ordinary trace. See docs/specs/jit_stencil_catalog.md 3.1, {JIT_LazyChaining}.
+    """
+    engine = CopyPatchJITEngine()
+    # Trace B (successor): compiled first so its chain entry offset is known when
+    # patching trace A's branch. Empty body -- it exists only to prove whatever
+    # arrives in R4 is A's live value, by flushing it straight back out.
+    engine.compile_trace([], exit_kind="fallback", dirty_spills=[("r4", 0)], head_wasm_pc=0x200)
+    succ_chain_entry = engine.last_chain_entry_byte_offset
+    succ_start_byte, succ_length = engine.last_trace_byte_range
+    # Trace A (predecessor): computes a value into R4 via a real ALU op, then chains
+    # directly into trace B instead of exiting -- no flush, no epilogue of its own.
+    r4_in, r5_in = 0x30, 0x0D
+    engine.compile_trace(
+        [("i32.add", None)],
+        exit_kind="chain",
+        chain_target_addr=succ_chain_entry,
+        head_wasm_pc=0x100,
+    )
+    pred_start_byte, pred_length = engine.last_trace_byte_range
+    # The two traces sit back-to-back in the shared byte_cache in compile order
+    # (B's header+code, then A's header+code -- B was compiled first), so bytes
+    # from B's header through A's last byte form one contiguous, directly-
+    # executable blob -- exactly like the real JIT cache, where chained traces
+    # are separate allocations linked by address, not copied together.
+    blob_start = succ_start_byte - 16  # trace B's own header
+    blob_end = pred_start_byte + pred_length  # trace A's end
+    code = engine.execute_native_bytes(blob_start, blob_end - blob_start)
+    mu = Uc(UC_ARCH_ARM, UC_MODE_THUMB)
+    mu.mem_map(CODE_BASE, 0x1000)
+    mu.mem_map(0x20000, 0x4000)
+    mu.mem_write(CODE_BASE, code)
+    mu.mem_write(SENTINEL_ADDR, bytes.fromhex("00BE"))
+    mu.reg_write(UC_ARM_REG_R4, r4_in)
+    mu.reg_write(UC_ARM_REG_R5, r5_in)
+    mu.reg_write(UC_ARM_REG_R1, WASM_STACK_BASE)
+    mu.reg_write(UC_ARM_REG_R12, SENTINEL_ADDR)
+    mu.reg_write(UC_ARM_REG_SP, CSTACK_TOP)
+    entry = CODE_BASE + (pred_start_byte - blob_start)
+    try:
+        mu.emu_start(entry | 1, SENTINEL_ADDR)
+    except UcError as e:
+        if e.errno != UC_ERR_EXCEPTION:
+            raise
+    final_sp = mu.reg_read(UC_ARM_REG_SP)
+    assert final_sp == CSTACK_TOP, (
+        f"the chained pair must round-trip SP exactly once (A's single PUSH, B's "
+        f"single POP): started at {CSTACK_TOP:#x}, ended at {final_sp:#x}"
+    )
+    spilled = int.from_bytes(mu.mem_read(WASM_STACK_BASE, 4), "little")
+    expected = (r5_in + r4_in) & 0xFFFFFFFF
+    assert spilled == expected, (
+        f"R4 did not survive the chain branch into trace B's body: "
+        f"stack_bot[0]={spilled:#x}, expected trace A's r5+r4={expected:#x}"
+    )
+    print(
+        f"[OK] chained pair of independently-compiled traces executed as one blob: "
+        f"trace A computed r5+r4={expected:#x} into R4 and B.W'd directly into "
+        f"trace B's chain entry (no flush, no epilogue), trace B observed the same "
+        f"value in R4 with zero memory traffic in between, SP round-tripped once."
+    )
+
+
 if __name__ == "__main__":
     if not HAVE_UNICORN:
         print("[SKIP] unicorn emulator not installed; skipping ARM trace verification.")
@@ -224,4 +295,5 @@ if __name__ == "__main__":
     test_in_bounds_memory_access_executes_the_load()
     test_out_of_bounds_memory_access_traps_before_executing_the_load()
     test_intra_trace_variant_reconciliation_swap_on_real_hardware()
+    test_chain_branch_preserves_registers_on_real_hardware()
     print("[PASS] compile_trace() output is real, executable, and correct Thumb-2 machine code.")

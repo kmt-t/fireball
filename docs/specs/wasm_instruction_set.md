@@ -8,7 +8,7 @@
 <!-- traceability: {ThreadedInterpreter} {JIT_CopyAndPatch} {Wasm32Only} {META_ZeroCostAbstraction} -->
 本仕様書は、Fireball Hypervisor（インタープリタおよび Copy-and-Patch JIT コンパイラ）がサポートする **WASM MVP (v1, 32-bit)** 命令セットの物理マトリクスを定義する正本である。
 
-全バイトコードは Cortex-M33（ARMv8-M）ターゲットにおける `__fastcall` 継続渡し（CPS）4引数シグネチャ（`R0: ip`, `R1: stack_bot`, `R2: env`, `R3: local_base`）ハンドラ、および JIT Stencil テンプレート（Callee-saved 任意割当プール `R4-R6, R8-R11`（メモリアクセス時は `R8`/`R9` を `mem_base`/`mem_size` に固定）、`R3`: `local_base`、`R12`: 一時スクラッチ）へのマッピングを一意に確定する。 `{ThreadedInterpreter}` `{JIT_CopyAndPatch}` `{Wasm32Only}` `{META_ZeroCostAbstraction}`
+全バイトコードは Cortex-M33（ARMv8-M）ターゲットにおける `__fastcall` 継続渡し（CPS）4引数シグネチャ（`R0: ip`, `R1: stack_bot`, `R2: local_base`, `R3: tos`）ハンドラ、および JIT Stencil テンプレート（同じ `R0`〜`R3` の CPS 引数マッピングを共有し、加えて Callee-saved 任意割当プール `R4-R6, R8-R11`（`R4`: TOS 次段キャッシュ NOS、メモリアクセス時は `R8`/`R9` を `mem_base`/`mem_size` に固定）、`R12`: 一時スクラッチ）へのマッピングを一意に確定する。 `{ThreadedInterpreter}` `{JIT_CopyAndPatch}` `{Wasm32Only}` `{META_ZeroCostAbstraction}`
 
 ---
 
@@ -61,11 +61,11 @@
 
 | Opcode | 命令名 | スタック遷移 | インタープリタ実装 | JIT Stencil 提供 | 物理動作・備考 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `0x20` | `local.get` | `[] -> [t]` | ローカル配列 `[local_base + idx]` をロード | あり (Direct LDR / Mov) | `LDR r4, [r3, #offset]` または `LDR r4, [r1, #offset]`（`r3=local_base` または `r1=stack_bot` 起点の静的オフセット畳み込み——`{ContextPointerRegister}` `{JIT_RegisterMapping}` 参照） |
-| `0x21` | `local.set` | `[t] -> []` | ローカル配列 `[local_base + idx]` へストア | あり (Direct STR / Mov) | `STR r4, [r3, #offset]` または `STR r4, [r1, #offset]` |
-| `0x22` | `local.tee` | `[t] -> [t]` | ローカルへ保存しつつスタックに残す | あり (STR & Keep) | `STR r4, [r3, #offset]` または `STR r4, [r1, #offset]` (TOS維持) |
-| `0x23` | `global.get` | `[] -> [t]` | グローバル配列 `[env + globals + idx]` ロード | あり (LDR via Env) | `LDR r4, [r2, #glob_off]` |
-| `0x24` | `global.set` | `[t] -> []` | グローバル配列へストア | あり (STR via Env) | `STR r4, [r2, #glob_off]` |
+| `0x20` | `local.get` | `[] -> [t]` | ローカル配列 `[local_base + idx]` をロード | あり (Direct LDR / Mov) | `LDR r4, [r2, #offset]`（`r2=local_base` 起点の静的オフセット畳み込み——`{ContextPointerRegister}` `{JIT_RegisterMapping}` 参照） |
+| `0x21` | `local.set` | `[t] -> []` | ローカル配列 `[local_base + idx]` へストア | あり (Direct STR / Mov) | `STR r4, [r2, #offset]` |
+| `0x22` | `local.tee` | `[t] -> [t]` | ローカルへ保存しつつスタックに残す | あり (STR & Keep) | `STR r4, [r2, #offset]` (TOS維持) |
+| `0x23` | `global.get` | `[] -> [t]` | グローバル配列 `[execution_context.globals_base + idx]` ロード | あり (LDR via globals_base) | `LDR.W r12, [r1, #0x28]; LDR.W r4, [r12, #glob_off]`（`{ExecutionContext_Layout}` 参照） |
+| `0x24` | `global.set` | `[t] -> []` | グローバル配列へストア | あり (STR via globals_base) | `LDR.W r12, [r1, #0x28]; STR.W r4, [r12, #glob_off]` |
 
 ---
 
@@ -90,7 +90,7 @@
 | `0x39` | `f64.store` | `[i32, f64] -> []` | 境界チェック（比較+トラップ） $\to$ 倍精度メモリストア | あり (VSTR.64) | `CMP r4, r9; BHS.W <trap>; VSTR d0, [r8, r4]` |
 | `0x3A` | `i32.store8` | `[i32, i32] -> []` | 境界チェック（比較+トラップ） $\to$ 8-bit メモリストア | あり (STRB) | `CMP r5, r9; BHS.W <trap>; STRB r4, [r8, r5]` |
 | `0x3B` | `i32.store16`| `[i32, i32] -> []` | 境界チェック（比較+トラップ） $\to$ 16-bit メモリストア | あり (STRH) | `CMP r5, r9; BHS.W <trap>; STRH r4, [r8, r5]` |
-| `0x3F` | `memory.size`| `[] -> [i32]` | 現在のリニアメモリページ数を返す | あり (LDR via Env) | `LDR r4, [r2, #mem_pages]` |
+| `0x3F` | `memory.size`| `[] -> [i32]` | 現在のリニアメモリページ数を返す | あり (LDR via execution_context.mem_size) | `LDR.W r4, [r1, #0x24]` |
 | `0x40` | `memory.grow`| `[i32] -> [i32]` | リニアメモリ拡張 (ランタイムAPI呼出) | あり (Runtime Call) | `BL vsoc_memory_grow` |
 
 ---

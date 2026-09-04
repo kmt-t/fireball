@@ -41,7 +41,12 @@ mistake twice. This is what caught four real REX-byte / relocation-offset
 bugs during development; run this file whenever a stencil changes.
 Each test builds PROLOGUE + <stencil(s) under test, with relocations
 patched> + EPILOGUE_RETURN_I32, executes it via ctypes, and asserts on the
-real return value.
+real return value -- a testing-only convenience for checking one stencil's
+math in isolation. x64_jit.py's actual compile_trace() never uses
+EPILOGUE_RETURN_I32 for a real trace: a trace's residual value is VM
+operand-stack state, not a C return value, so production traces write it to
+`stack_bot` (`SPILL_RESULT_TO_STACK_BOT`) and always return void
+({ADR_TosCacheAsymmetry}, JITC-GOTCHA-07).
 """
 
 import sys

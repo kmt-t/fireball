@@ -24,18 +24,20 @@ ctypedef int64_t (*trace_fn_t)(uint32_t, void*, void*, uint32_t) noexcept nogil
 def invoke_trace(
     unsigned long long fn_addr,
     unsigned int head_pc,
+    unsigned long long stack_bot_addr,
     unsigned long long local_base_addr,
     unsigned int tos,
 ):
     """Calls a compiled trace's native entry point directly as a C function pointer.
 
-    `fn_addr` is the trace's raw entry address (`JITTrace.raw_addr`); R1
-    (`stack_bot`) is always passed null, matching `_invoke_trace`'s ctypes
-    path -- no currently-compilable op reads it.
+    `fn_addr` is the trace's raw entry address (`JITTrace.raw_addr`).
+    `stack_bot_addr` is `frame.jit_result_slot()`'s buffer: a trace with a
+    residual value writes it there (via R12) instead of returning it -- a
+    trace's result is VM operand-stack state, not a C return value, so the
+    return value itself carries nothing and is discarded here.
     """
     cdef trace_fn_t fn = <trace_fn_t><void*><unsigned long long>fn_addr
+    cdef void* stack_bot = <void*><unsigned long long>stack_bot_addr
     cdef void* local_base = <void*><unsigned long long>local_base_addr
-    cdef int64_t res
     with nogil:
-        res = fn(head_pc, <void*>0, local_base, tos)
-    return res
+        fn(head_pc, stack_bot, local_base, tos)

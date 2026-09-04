@@ -106,9 +106,10 @@ def make_wasm_task_coro(
     interp: object, func_index: int, args: list[int], quantum: int = 16
 ) -> Generator[tuple[ChannelAction, None], None, list[int]]:
     """Wraps an Interpreter execution as a cooperative coroutine for COOS task scheduling."""
-    call_state = interp.start(func_index, args)  # type: ignore[attr-defined]
-    while not call_state.finished:
-        call_state = interp.step(call_state, quantum=quantum)  # type: ignore[attr-defined]
+    gen = interp.run_iter(func_index, args, quantum=quantum)  # type: ignore[attr-defined]
+    # The freshly-start()ed state, before any step, is not itself a yield point.
+    call_state = next(gen)
+    for call_state in gen:
         if not call_state.finished:
             yield (ChannelAction.YIELD, None)
     return call_state.results  # type: ignore[no-any-return]

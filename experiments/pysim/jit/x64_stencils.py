@@ -203,6 +203,18 @@ def _gen_epilogue_return_void() -> Generator[int, None, None]:
     yield from _gen_restore_callee_saved_and_ret()
 
 
+def _gen_spill_result_to_stack_bot() -> Generator[int, None, None]:
+    # A compiled trace's residual value is WASM VM state (the operand stack's
+    # top), not a C return value -- it has no relationship to the callee's
+    # own return channel, so it is written to memory (via R12, the CPS
+    # stack_bot argument `gen_pic_prologue` maps it to) rather than left in
+    # RAX for the caller to read as a return value.
+    # pop rax                 58
+    yield 0x58
+    # mov [r12], rax          49 89 04 24
+    yield from (0x49, 0x89, 0x04, 0x24)
+
+
 def _gen_restore_callee_saved_and_ret() -> Generator[int, None, None]:
     # pop rdi / r15 / r14 / r13 / r12 / rbx -- exact reverse of the
     # prologue's push order -- then ret.
@@ -549,6 +561,9 @@ def _gen_global_set() -> Generator[int, None, None]:
 PROLOGUE = _materialize("prologue", _gen_prologue())
 EPILOGUE_RETURN_I32 = _materialize("epilogue_return_i32", _gen_epilogue_return_i32())
 EPILOGUE_RETURN_VOID = _materialize("epilogue_return_void", _gen_epilogue_return_void())
+SPILL_RESULT_TO_STACK_BOT = _materialize(
+    "spill_result_to_stack_bot", _gen_spill_result_to_stack_bot()
+)
 LOCAL_GET = _materialize("local_get", _gen_local_get(), disp=3)
 LOCAL_SET = _materialize("local_set", _gen_local_set(), disp=4)
 LOCAL_TEE = _materialize("local_tee", _gen_local_tee(), disp=7)

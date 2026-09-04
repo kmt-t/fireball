@@ -16,8 +16,8 @@ pre-compiled byte sequences, so the extra table costs ROM, not cycles.
 Register assignment (Cortex-M33 / AAPCS __fastcall convention):
     R0  = ip        (WASM PC / bytecode pointer - Arg 1)
     R1  = stack_bot (stack bottom context pointer `{ContextPointerRegister}` - Arg 2)
-    R2  = env       (runtime environment pointer `{EnvironmentPointer}` - Arg 3)
-    R3  = local_base (WASM local variables base pointer - Arg 4)
+    R2  = local_base (WASM local variables base pointer - Arg 3)
+    R3  = tos       (operand stack top-of-stack value, CPS boundary only - Arg 4)
     R4  = TOS       (operand stack top cache)
     R5  = NOS       (operand stack next-of-top cache)
     R6  = NNOS      (operand stack 3rd cache / select)
@@ -74,13 +74,13 @@ STENCILS: dict[str, dict[int, Variant]] = {
         ),
     },
     "local.get": {
-        0: Variant(["LDR R4, [R3, #{slot}]"], 1, ("slot",)),
-        1: Variant(["MOV R5, R4", "LDR R4, [R3, #{slot}]"], 2, ("slot",)),
-        2: Variant(["PUSH R5", "MOV R5, R4", "LDR R4, [R3, #{slot}]"], 2, ("slot",)),
+        0: Variant(["LDR R4, [R2, #{slot}]"], 1, ("slot",)),
+        1: Variant(["MOV R5, R4", "LDR R4, [R2, #{slot}]"], 2, ("slot",)),
+        2: Variant(["PUSH R5", "MOV R5, R4", "LDR R4, [R2, #{slot}]"], 2, ("slot",)),
     },
     "local.set": {
-        1: Variant(["STR R4, [R3, #{slot}]"], 0, ("slot",)),
-        2: Variant(["STR R4, [R3, #{slot}]", "MOV R4, R5"], 1, ("slot",)),
+        1: Variant(["STR R4, [R2, #{slot}]"], 0, ("slot",)),
+        2: Variant(["STR R4, [R2, #{slot}]", "MOV R4, R5"], 1, ("slot",)),
     },
     # Binary ops consume TOS and NOS, produce one value in TOS.
     "i32.add": {2: Variant(["ADD R4, R5, R4"], 1)},
@@ -226,7 +226,7 @@ def execute(
         elif head == "LDR":
             if "SAFEPOINT" in ins:
                 R["R12"] = 1 if interrupt else 0
-            elif "[R3" in ins:
+            elif "[R2" in ins:
                 slot = int(ins.split("#")[1].rstrip("]")) // 4
                 if not 0 <= slot < len(locals_):
                     raise WASMTrap("LOCAL_INDEX_OUT_OF_RANGE")
@@ -235,7 +235,7 @@ def execute(
                 a = R["R4"]
                 R["R4"] = int.from_bytes(mem[a : a + 4], "little")
         elif head == "STR":
-            if "[R3" in ins:
+            if "[R2" in ins:
                 slot = int(ins.split("#")[1].rstrip("]")) // 4
                 if not 0 <= slot < len(locals_):
                     raise WASMTrap("LOCAL_INDEX_OUT_OF_RANGE")

@@ -30,6 +30,7 @@ try:
         UcError,
     )
     from unicorn.arm_const import (
+        UC_ARM_REG_R1,
         UC_ARM_REG_R2,
         UC_ARM_REG_R3,
         UC_ARM_REG_R4,
@@ -60,6 +61,7 @@ def _to_s32(x: int) -> int:
 
 def run_stencil(
     hex_bytes: str,
+    r1: int = 0,
     r2: int = 0,
     r3: int = 0,
     r4: int = 0,
@@ -80,6 +82,7 @@ def run_stencil(
         for addr, val in mem_writes.items():
             mu.mem_write(addr, val)
 
+    mu.reg_write(UC_ARM_REG_R1, _to_u32(r1))
     mu.reg_write(UC_ARM_REG_R2, _to_u32(r2))
     mu.reg_write(UC_ARM_REG_R3, _to_u32(r3))
     mu.reg_write(UC_ARM_REG_R4, _to_u32(r4))
@@ -94,6 +97,7 @@ def run_stencil(
         if e.errno != UC_ERR_EXCEPTION:
             raise  # anything but our own BKPT sentinel is a real emulation fault
     return {
+        "r1": mu.reg_read(UC_ARM_REG_R1),
         "r2": mu.reg_read(UC_ARM_REG_R2),
         "r3": mu.reg_read(UC_ARM_REG_R3),
         "r4": mu.reg_read(UC_ARM_REG_R4),
@@ -226,7 +230,7 @@ def main() -> None:
             )
 
     # --- Memory Load/Store Stencils (r8=mem_base) ---
-    # r3 is local_base, not mem_base (docs/specs/jit_stencil_catalog.md 3.8), which is
+    # r2 is local_base, not mem_base (docs/specs/jit_stencil_catalog.md 3.8), which is
     # precisely why mem_base/mem_size were moved to r8/r9. The FastAddressCheck bounds
     # check (CMP addr, r9=mem_size; BHS.W <trap>) is no longer part of these stencils --
     # compile_trace() emits it separately with a runtime-patched trap target (see
@@ -258,16 +262,16 @@ def main() -> None:
     if stored_val != 0xCAFEBABE:
         failures.append(f"i32_store_r8: stored val={stored_val:#x}, expected 0xCAFEBABE")
 
-    # --- Global Get / Set Stencils via vsoc_runtime.globals-base (env + 0x08) ---
-    env_addr = DATA_BASE + 0x10000
+    # --- Global Get / Set Stencils via execution_context.globals_base (stack_bot + 0x28) ---
+    stack_bot_addr = DATA_BASE + 0x10000
     globals_addr = DATA_BASE + 0x11000
-    # Test global_get_d0: env + 0x08 -> globals_addr -> reads global[0]
+    # Test global_get_d0: stack_bot + 0x28 -> globals_addr -> reads global[0]
     st_gget = engine.stencils["global_get_d0"]
     res_gget = run_stencil(
         st_gget.hex_bytes,
-        r2=env_addr,
+        r1=stack_bot_addr,
         mem_writes={
-            env_addr + 0x08: globals_addr.to_bytes(4, "little"),
+            stack_bot_addr + 0x28: globals_addr.to_bytes(4, "little"),
             globals_addr + 0x00: (0x12345678).to_bytes(4, "little"),
         },
     )
@@ -275,14 +279,14 @@ def main() -> None:
     if _to_u32(res_gget["r4"]) != 0x12345678:
         failures.append(f"global_get_d0: got r4={res_gget['r4']:#x}, expected 0x12345678")
 
-    # Test global_set_d1: env + 0x08 -> globals_addr -> writes global[0]
+    # Test global_set_d1: stack_bot + 0x28 -> globals_addr -> writes global[0]
     st_gset = engine.stencils["global_set_d1"]
     res_gset = run_stencil(
         st_gset.hex_bytes,
-        r2=env_addr,
+        r1=stack_bot_addr,
         r4=0x87654321,
         mem_writes={
-            env_addr + 0x08: globals_addr.to_bytes(4, "little"),
+            stack_bot_addr + 0x28: globals_addr.to_bytes(4, "little"),
         },
     )
     total += 1

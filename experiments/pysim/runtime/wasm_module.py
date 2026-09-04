@@ -13,6 +13,7 @@ the Code section's implicit numbering are all in this unified space.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 from system_containers import (
@@ -48,16 +49,18 @@ class TraceBlock:
     """
     Transient compiler/interpreter input: a `(opcode, arg)` op stream for ONE
     basic block plus its control-flow successors. Never stored per block like
-    `BasicBlock` -- built on demand, either by `control_flow.decode_block_ops`
-    scoped to one block actually being compiled/interpreted right now (production),
-    or directly by tests exercising `TraceCompiler`/`WASMTraceCompiler` in
-    isolation.
+    `BasicBlock` -- built on demand from `control_flow.iter_block_ops`, a
+    single-use generator. `byte_span` is this block's own byte length (see
+    `BasicBlock.byte_span`): an upper bound on its op count (each op is at
+    least 1 byte), used as the fixed capacity for any consumer that must
+    retain the op stream past one pass (see `WASMTraceCompiler.compile_trace`).
     """
 
     head_pc: int
-    ops: list[tuple[int, object]]
+    ops: Iterable[tuple[int, object]]
     next_pc: int | None = None
     loops_to: int | None = None
+    byte_span: int = 0
 
 
 # WASM value types we support (MVP i32 only for now; i64/f32/f64 are parsed
@@ -87,6 +90,12 @@ class Function:
     code: bytes  # raw instruction bytes (the function body, sans locals decl)
     name: str = ""
     control_map: object | None = None
+    # Params + locals_extra -- a pure function of this Function's own static
+    # fields, lazily built once on first call and reused after, exactly like
+    # control_map above. Without this, Interpreter._build_frame's `layout =
+    # module.locals_layout(func_index)` would rebuild this same list (a
+    # fresh concat allocation) on every single WASM call to this function.
+    locals_layout_cache: list[str] | None = None
 
 
 @dataclass
@@ -206,7 +215,9 @@ class Module:
         if self.is_import(func_index):
             return list(ft.params)
         local = self.functions[func_index - len(self.imports)]
-        return list(ft.params) + list(local.locals_extra)
+        if local.locals_layout_cache is None:
+            local.locals_layout_cache = list(ft.params) + list(local.locals_extra)
+        return local.locals_layout_cache
 
     def build_basic_block_index(self) -> None:
         """Extracts basic blocks and builds ReadOnlyRadixBinaryTreeStorage indexes on the loader side."""
@@ -279,5 +290,8 @@ class Module:
         count = 0
         for idx, fn in enumerate(self.functions):
             extracted = extract_basic_blocks(fn.code, func_index=n_imports + idx)
-            count += sum(1 for _, ops, _, _, _, _ in extracted if ops)
+            # Matches build_basic_block_index's own filter exactly, so this
+            # fallback path (self.blocks not yet built) agrees with the fast
+            # `len(self.blocks)` path above once it has been.
+            count += sum(1 for entry in extracted if entry[4] > 0)
         return count

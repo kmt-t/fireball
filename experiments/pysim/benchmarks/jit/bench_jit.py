@@ -25,7 +25,7 @@ for _p in [
         sys.path.insert(0, _sp)
 
 import wasm_opcodes as op
-from control_flow import decode_block_ops, extract_basic_blocks
+from control_flow import extract_basic_blocks, iter_block_ops
 from interpreter import Interpreter
 from runtime_engine import HotspotBitmap, RuntimeEngine, TraceBlock
 from system_containers import RadixBinaryTreeView, bswap32
@@ -43,21 +43,24 @@ class JITCompilerBenchmark:
         results = {}
 
         # 3.1 Copy-and-Patch Compilation Throughput (Arithmetic Basic Block) --
-        # real WASM bytecode, decoded once via the same extract_basic_blocks +
-        # decode_block_ops path production JIT compilation uses; only the
-        # actual compile_trace() call is inside the timed loop, isolating
-        # Copy-and-Patch stencil-emission cost from decode overhead.
+        # real WASM bytecode, via the same extract_basic_blocks + iter_block_ops
+        # path production JIT compilation uses. iter_block_ops streams its
+        # block's ops rather than returning a materialized list, so each
+        # compile_trace() call needs its own fresh TraceBlock/stream -- the
+        # same one can't be replayed across iterations -- built inside the
+        # timed loop alongside the compile_trace() call itself.
         code = bytes([op.LOCAL_GET, 0, op.I32_CONST, 1, op.I32_ADD, op.LOCAL_SET, 0])
         head_pc, next_pc, loops_to, frame_depth, byte_span = extract_basic_blocks(code)[0]
-        block = TraceBlock(
-            head_pc=head_pc,
-            ops=decode_block_ops(code, head_pc & 0xFFFF, byte_span),
-            next_pc=next_pc,
-            loops_to=loops_to,
-        )
         t0 = time.perf_counter()
         compile_count = 10_000
         for _ in range(compile_count):
+            block = TraceBlock(
+                head_pc=head_pc,
+                ops=iter_block_ops(code, head_pc & 0xFFFF, byte_span),
+                next_pc=next_pc,
+                loops_to=loops_to,
+                byte_span=byte_span,
+            )
             _trace = self.compiler.compile_trace(head_pc=head_pc, block=block)
         t1 = time.perf_counter()
         results["jit_compile_traces_per_sec"] = compile_count / (t1 - t0)

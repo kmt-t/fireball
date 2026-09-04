@@ -64,7 +64,7 @@
 | `DirectMappedTLB16` | `runtime_vmmio.md` | 20-bit VPN の 4-bit Folding XOR Hash による Direct-Mapped TLB キャッシュ | `INT-92` | ✅ PASS |
 | `OwnerMismatchTrap` | `runtime_vmmio.md` | タスク間共有メモリ（FC=0xE）の所有権不一致時 `TRAP_OWNER_MISMATCH` 遮断 | `INT-93` | ✅ PASS |
 | `ActiveDataSegments` | `runtime_loader.md` | モジュールロード時のアクティブデータセグメント自動リニアメモリ展開 | `INT-01` | ✅ PASS |
-| `CPS_4Args` | `runtime_interpreter.md` | `ip, stack_bot, env, local_base` 4引数による CPS 関数ポインタディスパッチ | `INT-01`〜`INT-105` | ✅ PASS |
+| `CPS_4Args` | `runtime_interpreter.md` | `ip, stack_bot, local_base, tos` 4引数による CPS 関数ポインタディスパッチ | `INT-01`〜`INT-105` | ✅ PASS |
 | `SignZeroExtension` | `runtime_interpreter.md` | 8/16/32-bit メモリ読み書きにおける符号付き・符号なしゼロ/符号拡張の完全性 | `INT-70` | ✅ PASS |
 | `ControlFrameCleanup` | `runtime_interpreter.md` | `br_table` / `block` / `loop` / `if` 偽分岐時のスタックフレーム不変性・リーク防止 | `INT-20`, `INT-22` | ✅ PASS |
 | `RSPMinimalSet` | `debug_manager.md`, `gdb_rsp_protocol.md` | GDB RSP 最小コマンドセット（`?`, `g/G`, `m/M`, `Z0/z0`, `s`, `c`）の実ソケット対話 | `INT-60`〜`INT-64` | ✅ PASS |

@@ -33,8 +33,8 @@
 | `{vMMIO_TrapAndEmulate}` | `requirement_list.md` | `runtime_vmmio.md` | 仮想デバイスアクセス時のトラップ・ホストフック代理ディスパッチ | Scenario 10 (`INT-91`) |
 | `{DynamicMmap}` | `requirement_list.md` | `runtime_vmmio.md` | 共有メモリID指定による外部バッファの動的 vMMIO マッピング | Scenario 10 |
 | `{ExecutionContext_Layout}` | `architecture_overview.md` | `runtime_interpreter.md` | `execution_context` 44バイト物理フィールド配置（3独立バッファそれぞれの頂点・境界オフセット、リニアメモリ情報、グローバル基底を内包、ADR-INTERP-03） | Scenario 1〜11 |
-| `{CallFrame_Layout}` | `architecture_overview.md` | `runtime_interpreter.md` | `call_frame` 20バイト統合スタックインライン物理配置 | Scenario 3, 8 |
-| `{ControlFrame_Layout}` | `architecture_overview.md` | `runtime_interpreter.md` | `control_frame` 16バイト統合スタックインライン物理配置 | Scenario 3 |
+| `{CallFrame_Layout}` | `runtime_interpreter.md` | `architecture_overview.md` | `call_frame` 12バイト、`LocalStack` 専用の独立固定容量バッファへのインライン物理配置 | Scenario 3, 8 |
+| `{ControlFrame_Layout}` | `runtime_interpreter.md` | `architecture_overview.md` | `control_frame` 16バイト、`OperandStack`/`LocalStack` とは独立した専用固定容量バッファへの物理配置 | Scenario 3 |
 | `{AAPCS_FastCall}` | `architecture_overview.md` | `runtime_interpreter.md` | CPS 4引数 AAPCS レジスタマッピング規約 (`R0=ip, R1=stack_bot, R2=local_base, R3=tos`) | Scenario 1〜11 |
 | `{VsocRuntime_Layout}` | `architecture_overview.md` | `runtime_vsoc.md` | `execution_context` 内包 `vsoc_runtime` 12バイト物理実行環境配置 (`+0x20`〜`+0x2B`) | Scenario 1〜11 |
 | `{ADR_TraceBoundaryYield}` | `runtime_interpreter.md` | `runtime_interpreter.md` | インタープリタの命令ハンドラが vSoC へ制御を返す頻度をトレース境界（切れ目）に限定する設計判断——`co_yield` の判定・発行は常に vSoC 側が行い、インタープリタ自身はコルーチンではない | Scenario 6 (`INT-50`) |
@@ -100,7 +100,7 @@
 | `{DebuggerLabelTableSwitch}` | `debug_manager.md` | `debug_manager.md` | デバッガアタッチ時のインタープリタハンドラテーブル動的切り替え | Scenario 7 |
 | `{DBG-GOTCHA-01}` | `debug_manager.md` | `debug_manager_test_spec.md` | デバッガからのメモリ書き込み（`M` パケット）実行と同時に JIT キャッシュ全バンクを即時無効化する（`{Debugger_Jit_Flush}` の勘所） | `DBG-GOTCHA-01` |
 | `{DBG-GOTCHA-03}` | `debug_manager.md` | `debug_manager_test_spec.md` | GDB RSP チェックサム不一致パケットはサーバーが破棄しNAK（`-`）を返して再送を要求する | `DBG-GOTCHA-03` |
-| `{RSPChecksumVerify}` | `gdb_rsp_protocol.md` | `debug_manager.md` | GDB RSP パケットのチェックサム検証と、不一致時のNAK応答による再送制御ポリシー | `gdb_rsp_protocol.md` §2.1 |
+| `{RSPChecksumVerify}` | `gdb_rsp_protocol.md` | `debug_manager.md` | GDB RSP パケットのチェックサム検証と、不一致時のNAK応答による再送制御ポリシー | `DBG-GOTCHA-03` |
 | `{WASI_ScatteredIO}` | `system_syscall.md` | `system_syscall.md` | 分散ギャザー `fd_write` / スキャッター `fd_read` による多要素 iovec 転送 | Scenario 2, 11 (`INT-10`, `INT-104`) |
 | `{Syscall_ProcExit}` | `system_syscall.md` | `system_syscall.md` | `proc_exit` システムコールによるゲストタスク停止および終了コード伝播 | Scenario 2 (`INT-11`) |
 | `{DictionaryBasedIPC}` | `system_logging.md` | `system_logging.md` | 静的 LogDictionary、危険書式（`%s` / `%p`）の登録時静的拒絶 | Scenario 9 (`INT-82`) |
@@ -118,7 +118,7 @@
 | `{ADR_PageGranularPermissionIsolation}` | `platform_memory.md` | `platform_memory.md` | アーキテクチャ決定: ページ単位での権限分離とリスナーによる仮想化マッピング移譲 | `MEM-14`, `MEM-15` |
 | `{MEM-GOTCHA-03}` | `platform_memory.md` | `platform_memory_test_spec.md` | 送信中状態（`FB_TASK_ID_FLIGHT`）は TLB を即時破棄し送受信双方からのアクセスを遮断する；転送失敗時は `rollback_transfer()` で送信元 `owner_id` へ復元する | `MEM-GOTCHA-03` |
 | `{MEM-GOTCHA-04}` | `platform_memory.md` | `platform_memory_test_spec.md` | W^X 切り替えは命令単位ではなくトランザクションバッチ化し、パッチ完了時に一括で `RO+X` とキャッシュバリア（DSB/ISB）を発行する | `MEM-GOTCHA-04` |
-| `{MPU_WX_Enforcement}` | `platform_memory.md` | `platform_memory.md` | JITコンパイル時のMPU属性切り替え（`RW+XN` ⇔ `RO+X`）とキャッシュコヒーレンシバリア発行のトランザクションバッチ化ポリシー | `platform_memory.md` §7.2 |
+| `{MPU_WX_Enforcement}` | `platform_memory.md` | `platform_memory.md` | JITコンパイル時のMPU属性切り替え（`RW+XN` ⇔ `RO+X`）とキャッシュコヒーレンシバリア発行のトランザクションバッチ化ポリシー | `MEM-GOTCHA-04` |
 | `{VSOC_Lifecycle}` | `runtime_vsoc.md` | `runtime_vsoc.md` | vSoC Engine の状態遷移とインタープリタ／JIT切り替えライフサイクル | Scenario 7, 8 |
 | `{VSOC-GOTCHA-01}` | `runtime_vsoc.md` | `runtime_vsoc_test_spec.md` | JITキャッシュ再判定の主体分離——インタープリタ自身はJITキャッシュを保持・参照せず、トレース境界で vSoC の `step()` が再判定する | `VSOC-GOTCHA-01` |
 | `{VSOC-GOTCHA-02}` | `runtime_vsoc.md` | `runtime_vsoc_test_spec.md` | 概算Yieldの主体分離——インタープリタ/JITトレース自身は `co_yield` を発行せず、vSoC が戻り値を受けて `yield_threshold` を評価する | `VSOC-GOTCHA-02` |

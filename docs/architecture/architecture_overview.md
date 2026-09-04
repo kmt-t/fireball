@@ -115,7 +115,7 @@ Fireball の実行コアは、以下の 6 つの物理メカニズムによっ�
   1. **`execution_context`（計44バイト、単体の固定サイズ構造体）**: 3本それぞれの頂点オフセット・境界、`mem_base`/`mem_size`/`globals_base` 等のリニアメモリ情報を保持する。3本のいずれにもインライン配置されない。
   2. **`OperandStack`**: WASM オペランド値のみを保持し、コールチェーン全体を貫いて連続する（呼び出しを跨いでも作り直されない）。
   3. **`LocalStack`**: 関数呼び出しごとに `call_frame`（戻り先PC・関数インデックス等）とその関数のローカル変数配列をひとまとめにして push/pop する。
-  4. **`control_frame` 専用領域**: `block`/`loop`/`if` の入れ子を管理する。オペランドスタックとは同居しない（ADR-INTERP-03、`runtime_interpreter.md` §3.1/§8）。
+  4. **`control_frame` 専用領域**: `block`/`loop`/`if` の入れ子を管理する。オペランドスタックとは同居しない（ADR-INTERP-03、`{ControlFrame_Layout}`）。
 - **レジスタ規約**: `R1: stack_bot`（`execution_context` を指す）、`R2: local_base`（カレント `call_frame` のローカル変数配列先頭）が全ハンドラおよびJITトレースへ渡され、CPS 第1〜第4引数（`ip`, `stack_bot`, `local_base`, `tos`）として直接引き継がれる。 `{ContextPointerRegister}` `{JIT_RegisterMapping}`
 
 ### 3.2 Pillar 2: 3段直接 JIT 検索パイプライン (3-Stage Direct JIT Lookup Pipeline)
@@ -188,7 +188,7 @@ ARM Cortex-M33 (ARMv8-M Mainline) における物理レジスタの厳格な役�
   - `+0x20`: `mem_base` (u32) — ゲストリニアメモリ開始アドレス（`vsoc_runtime.mem_base` を統合）
   - `+0x24`: `mem_size` (u32) — ゲストリニアメモリ有効バイト数（`vsoc_runtime.mem_size` を統合、境界チェック比較用）
   - `+0x28`: `globals_base` (u32) — WASM global 配列基底アドレス（`vsoc_runtime.globals_base` を統合）
-  - ※ `OperandStack`・`LocalStack`・`control_frame` は互いに独立した固定容量バッファであり、それぞれ専用の頂点・境界オフセットペアを持つ（ADR-INTERP-03、`runtime_interpreter.md` §3.3）。`vsoc_runtime` は `execution_context` 内に完全内包され、独立した引数レジスタを消費しない。`R2` は `local_base`、`R3` は `tos` として引き回す。 `{ExecutionContext_Layout}` `{AAPCS_FastCall}`
+  - ※ `OperandStack`・`LocalStack`・`control_frame` は互いに独立した固定容量バッファであり、それぞれ専用の頂点・境界オフセットペアを持つ（ADR-INTERP-03）。`vsoc_runtime` は `execution_context` 内に完全内包され、独立した引数レジスタを消費しない。`R2` は `local_base`、`R3` は `tos` として引き回す。 `{ExecutionContext_Layout}` `{AAPCS_FastCall}`
 
 ---
 

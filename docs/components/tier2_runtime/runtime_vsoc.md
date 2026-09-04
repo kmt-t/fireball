@@ -83,7 +83,7 @@ vSoC全体の可変な実行時状態を保持する構造体。
 | リニアメモリサイズ | ゲストリニアメモリの現在の有効バイト数。`{FastAddressCheck}` の境界比較（`CMP addr, mem_size; BHS __trap`）に直接使う——マスクは使わないため2の冪制約もない `{MemoryBoundaryCheck}` | バイト数 | 32bit符号なし (`[R1, #0x24]`) |
 | グローバル変数基底 | WASM `global` 配列（4バイト単位でインデックス付け）の開始アドレス | アドレス値 | 32bit符号なし (`[R1, #0x28]`) |
 
-`vsoc_runtime` メンバを含む `execution_context` は計44バイト（`+0x00`〜`+0x2B`）。`OperandStack`・`LocalStack`・`control_frame` はそれぞれ専用の頂点・境界オフセットペアを持つ独立した固定容量バッファであり、いずれか1本の伸び縮みが他の記録位置へ影響することはない（`runtime_interpreter.md` §3.3 ADR-INTERP-03）。正本は [`wit/vsoc_runtime.wit`](wit/vsoc_runtime.wit)、物理配置は `{ExecutionContext_Layout}`。
+`vsoc_runtime` メンバを含む `execution_context` は計44バイト（`+0x00`〜`+0x2B`）。`OperandStack`・`LocalStack`・`control_frame` はそれぞれ専用の頂点・境界オフセットペアを持つ独立した固定容量バッファであり、いずれか1本の伸び縮みが他の記録位置へ影響することはない（ADR-INTERP-03）。正本は [`wit/vsoc_runtime.wit`](wit/vsoc_runtime.wit)、物理配置は `{ExecutionContext_Layout}`。
 
 > [!NOTE]
 > **構造体の役割分離**:
@@ -431,7 +431,7 @@ WASMゲストからホストサービスを呼び出すための最小限のイ�
 Fireballでは、ホスト側のコードサイズを極限まで削減するため、標準的なWASIの実装をホストから排除し、単一のトラップ命令とvMMIOレジスタによるサービス提供を行う。
 
 - **トラップ命令**: `uint32_t fireball_call(uint32_t id, uint32_t arg0, uint32_t arg1, ... uint32_t arg5)`
-  - ゲストはこの関数をインポートし、統合システムコールID `id`（上位16bit: `service_id`, 下位16bit: `command_id`）および最大6つの汎用引数を指定して呼び出す（`system_syscall.md` §3 を正本とする）。
+  - ゲストはこの関数をインポートし、統合システムコールID `id`（上位16bit: `service_id`, 下位16bit: `command_id`）および最大6つの汎用引数を指定して呼び出す（`{Syscall_Mapping}` を正本とする）。
   - **この2つは同一階層の代替手段ではなく、層が異なる**。上記シグネチャはゲストから見た WASM インポート関数の ABI であり、ゲストは通常の関数呼び出しとして引数を渡す。トラップを受けたホスト側が、その引数を vMMIO の SYSCALL レジスタ群（`REG_SYSCALL_ARG0` 以降、`runtime_vmmio.md` を正本とする）へ転記してサービスへ渡す。戻り値は逆順に `REG_SYSCALL_ARG0` から読み出してゲストへ返る。ゲスト側コードが vMMIO レジスタを直接操作する必要はない。※整合性検証は [vSoC テスト仕様書](tests/runtime_vsoc_test_spec.md) `VSOC-40` を参照。
 - **WASI互換性**: ゲスト側で `wasi-libc` と Fireball専用の Shim ライブラリをリンクすることで実現する。
 

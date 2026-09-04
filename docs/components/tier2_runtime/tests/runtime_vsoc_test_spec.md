@@ -50,14 +50,14 @@ Loader/Interpreter/JIT/vMMIO/Debuggerを統合する`vsoc_harness`（静的DI）
 
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| VSOC-40 | `fireball_call`の引数個数とパッキング | システムコール発行 | 引数のパッキング状態を検証 | `fireball_call(id, arg0..arg5)`（計7引数）として統一され、`id`（上位16bit: service_id, 下位16bit: command_id）および6つの汎用レジスタ引数で正しく低レイヤーへ渡る | `system_syscall.md` §3, `interface_wit.md` §4.1, `runtime_vsoc.md` §5.2 |
+| VSOC-40 | `fireball_call`の引数個数とパッキング | システムコール発行 | 引数のパッキング状態を検証 | `fireball_call(id, arg0..arg5)`（計7引数）として統一され、`id`（上位16bit: service_id, 下位16bit: command_id）および6つの汎用レジスタ引数で正しく低レイヤーへ渡る | `{Syscall_Mapping}` |
 
 ### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
 
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| VSOC-GOTCHA-01 | JITキャッシュ再判定の主体分離（インタープリタ完全ステートレス） | インタープリタ実行中ブロックから次のホットブロックへ遷移 | `step()` の実行ループを確認 | インタープリタ自身は JIT キャッシュを一切保持・参照せず、トレース境界で制御が vSoC に戻るたびに vSoC の `step()` 内でキャッシュを再判定して JIT 実行へ切り替える。**実装の勘所**: インタープリタ内部に JIT キャッシュ参照コードを埋め込むと、ハンドラがステートフルになりデバッグ切り替えやキャッシュフラッシュの同期が破綻する | `runtime_vsoc.md` §4.1, `{Interpreter_LazyJITSwitch}` |
-| VSOC-GOTCHA-02 | 概算Yieldの主体分離（コルーチン責務の局所化） | JIT トレースまたはインタープリタ実行中 | トレース終了時の制御フローを確認 | インタープリタおよび JIT トレース自身は `co_yield` を発行せず単に関数復帰し、戻り値を受け取った vSoC 自身が `yield_threshold` を評価して `co_yield` を発行する。**実装の勘所**: インタープリタをコルーチン化すると命令ディスパッチの `[[clang::musttail]]` 直結が不可能になり性能が崩壊する | `runtime_vsoc.md` §4.1, `{ADR_TraceBoundaryYield}` |
+| VSOC-GOTCHA-01 | JITキャッシュ再判定の主体分離（インタープリタ完全ステートレス） | インタープリタ実行中ブロックから次のホットブロックへ遷移 | `step()` の実行ループを確認 | インタープリタ自身は JIT キャッシュを一切保持・参照せず、トレース境界で制御が vSoC に戻るたびに vSoC の `step()` 内でキャッシュを再判定して JIT 実行へ切り替える。**実装の勘所**: インタープリタ内部に JIT キャッシュ参照コードを埋め込むと、ハンドラがステートフルになりデバッグ切り替えやキャッシュフラッシュの同期が破綻する | `{Interpreter_LazyJITSwitch}` |
+| VSOC-GOTCHA-02 | 概算Yieldの主体分離（コルーチン責務の局所化） | JIT トレースまたはインタープリタ実行中 | トレース終了時の制御フローを確認 | インタープリタおよび JIT トレース自身は `co_yield` を発行せず単に関数復帰し、戻り値を受け取った vSoC 自身が `yield_threshold` を評価して `co_yield` を発行する。**実装の勘所**: インタープリタをコルーチン化すると命令ディスパッチの `[[clang::musttail]]` 直結が不可能になり性能が崩壊する | `{ADR_TraceBoundaryYield}` |
 | VSOC-GOTCHA-03 | `execution_context` 内包レイアウトと委譲シグネチャ | WASM スタック初期化 | コンテキストオフセットを確認 | `vsoc_runtime`（`mem_base` `+0x20`, `mem_size` `+0x24`, `globals_base` `+0x28`）は独立構造体ではなく `execution_context` の末尾に内包され、`exec_trace` 呼び出し時は `(ip, stack_bot, local_base, tos)` の4引数で委譲される。**実装の勘所**: コンテキスト外にポインタを分散させると、レジスタ圧迫とキャッシュミスが増加する | `{ExecutionContext_Layout}` `{EnvironmentPointer}` |
 
 ## 3. テスト検証実績と網羅状況

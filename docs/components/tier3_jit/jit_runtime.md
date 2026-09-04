@@ -32,7 +32,7 @@ JIT ランタイム管理は、WASM PC とネイティブコードの紐付け�
 - **JITエントリグループインデックス**: 二分探索の範囲を $O(1)$ で絞り込むための粗索引配列（固定長配列）。
 - **JITエントリ表**: ソート済みの `jit_entry` 配列。非所有基数木ビュー `fireball::radix_binary_tree_view` として参照される。
 - **JITコードキャッシュ (3面)**: `Bank 0 (Active)`, `Bank 1 (Warm)`, `Bank 2 (Oldest)` の 3 バンク循環バッファ（2KB x 3 = 6KB）。
-- **オンデマンドコンパイルキュー (On-demand Compile Queue)**: `HOT` に達した命令オフセットを保持する固定容量 LIFO キュー（`fireball::static_vector` 相当）。容量に達した時点で §4.1 のバッチコンパイルが即座に実行されて空になるため、この固定容量を上回ることはない。 `{JIT_ReverseCompilationOrder}` `{GLOBAL_Policy_Memory}`
+- **オンデマンドコンパイルキュー (On-demand Compile Queue)**: `HOT` に達した命令オフセットを保持する固定容量 LIFO キュー（`fireball::static_vector` 相当）。容量に達した時点でバッチコンパイルが即座に実行されて空になるため、この固定容量を上回ることはない。 `{JIT_ReverseCompilationOrder}` `{GLOBAL_Policy_Memory}`
 - **バンク別被チェイン逆引きテーブル (Inbound Chain Index Table)**: 各キャッシュバンクへ向けた直接チェインリンク元（ソース）の JIT エントリインデックスを保持する固定長配列。
 - **実行履歴バッファ**: 短期間の実行履歴を一時的に保持するリングバッファ。 `{HistoryBuffer}`
 
@@ -154,7 +154,7 @@ Eviction resets to `UNEXECUTED`, not `EXECUTED`（`jit_runtime_test_spec.md` JIT
 
 ### 4.3 トレース実行時の分岐解決とインタープリタ復帰（pysim参照実装）
 <!-- traceability: {JIT_RuntimeAPI_Fallback} {DirectBytecodeExecution} -->
-`jit_compiler.md` §3.3 の「制御フロー・コール境界のインタープリタ委譲不変条件」を、pysim 参照実装がどのように満たしているかを示す。モジュールロード時に一度だけ行う静的解析で、各基本ブロックに次の付帯情報を持たせておくことで、実行時の分岐解決を定数時間で行える。
+`{TraceBoundaryInvariant}` が定める制御フロー・コール境界のインタープリタ委譲不変条件を、pysim 参照実装がどのように満たしているかを示す。モジュールロード時に一度だけ行う静的解析で、各基本ブロックに次の付帯情報を持たせておくことで、実行時の分岐解決を定数時間で行える。
 
 | 付帯情報 | 意味 |
 | :--- | :--- |

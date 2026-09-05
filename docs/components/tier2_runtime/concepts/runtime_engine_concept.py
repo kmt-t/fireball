@@ -87,7 +87,7 @@ class BitView:
 
     def put(self, i: int, value: int) -> None:
         mask = (1 << self.bits) - 1
-        assert 0 <= value <= mask, "value does not fit in 2 bits"
+        assert 0 <= value <= mask, f"value {value} does not fit in {self.bits} bits"
         bit = self._bit_pos(i)
         byte, shift = bit >> 3, bit & 7
         cleared = self.storage[byte] & ~(mask << shift) & 0xFF
@@ -188,6 +188,221 @@ class HotspotBitmap:
             card = offset >> self.card_shift
             if card < view.size():  # type: ignore[union-attr]
                 view.put(card, CardState.UNEXECUTED)  # type: ignore[union-attr]
+
+
+# ==============================================================================
+# 2.1 Static block eligibility scoring & JIT candidate bitmap  [runtime_loader.md §4.1]
+# ==============================================================================
+
+
+def decode_int4(raw_4bit: int) -> int:
+    """Decodes an unsigned 4-bit nibble (0x0..0xF) to signed int4_t (-8..+7)."""
+    return raw_4bit - 16 if raw_4bit >= 8 else raw_4bit
+
+
+def encode_int4(val: int) -> int:
+    """Encodes a signed int4_t (-8..+7) to an unsigned 4-bit nibble (0x0..0xF)."""
+    assert -8 <= val <= 7, f"val {val} outside int4_t range [-8, +7]"
+    return (val + 16) & 0xF if val < 0 else val & 0xF
+
+
+class OpcodeBenefitTable:
+    """
+    ROM-backed 128-byte lookup table mapping 256 WASM opcodes to 4-bit signed benefit scores (int4_t).
+    `{JIT_StaticBenefitScoring}`
+    1 score unit = ~2 machine instructions saved (branch penalty = 8 instructions).
+    Values: -8 (max penalty/trap) to +7 (max speedup/pure arithmetic).
+    """
+
+    DEFAULT_BENEFITS: dict[str, int] = {
+        # Pure arithmetic/bitwise: +14 instrs saved -> +7 (MAX)
+        "i32.add": 7,
+        "i32.sub": 7,
+        "i32.and": 7,
+        "i32.or": 7,
+        "i32.xor": 7,
+        "i32.shl": 7,
+        "i32.shr_s": 7,
+        "i32.shr_u": 7,
+        # Multiply & comparison: +13 instrs saved -> +6
+        "i32.mul": 6,
+        "i32.eq": 6,
+        "i32.ne": 6,
+        "i32.lt_s": 6,
+        "i32.lt_u": 6,
+        "i32.gt_s": 6,
+        "i32.gt_u": 6,
+        "i32.le_s": 6,
+        "i32.le_u": 6,
+        "i32.ge_s": 6,
+        "i32.ge_u": 6,
+        # Local & constant: +12 instrs saved -> +6
+        "local.get": 6,
+        "local.set": 6,
+        "local.tee": 6,
+        "i32.const": 6,
+        # Memory access: +11 instrs saved -> +5
+        "i32.load": 5,
+        "i32.store": 5,
+        "i32.load8_u": 5,
+        "i32.load16_u": 5,
+        # Branch & control: +11 instrs saved -> +5
+        "br": 5,
+        "br_if": 5,
+        # Stack ops & neutral: +8 instrs saved -> +4
+        "nop": 4,
+        "drop": 4,
+        "select": 4,
+        # Delegated / function call: -2 instrs saved -> -1 (0xF)
+        "call": -1,
+        "call_indirect": -1,
+        # Trap & unbacked: -16 instrs saved -> -8 (0x8)
+        "unreachable": -8,
+    }
+
+    OPCODE_MAP: dict[str, int] = {
+        "unreachable": 0x00,
+        "nop": 0x01,
+        "br": 0x0C,
+        "br_if": 0x0D,
+        "call": 0x10,
+        "call_indirect": 0x11,
+        "drop": 0x1A,
+        "select": 0x1B,
+        "local.get": 0x20,
+        "local.set": 0x21,
+        "local.tee": 0x22,
+        "i32.load": 0x28,
+        "i32.load8_u": 0x2D,
+        "i32.load16_u": 0x2F,
+        "i32.store": 0x36,
+        "i32.const": 0x41,
+        "i32.eq": 0x46,
+        "i32.ne": 0x47,
+        "i32.lt_s": 0x48,
+        "i32.lt_u": 0x49,
+        "i32.gt_s": 0x4A,
+        "i32.gt_u": 0x4B,
+        "i32.le_s": 0x4C,
+        "i32.le_u": 0x4D,
+        "i32.ge_s": 0x4E,
+        "i32.ge_u": 0x4F,
+        "i32.add": 0x6A,
+        "i32.sub": 0x6B,
+        "i32.mul": 0x6C,
+        "i32.and": 0x71,
+        "i32.or": 0x72,
+        "i32.xor": 0x73,
+        "i32.shl": 0x74,
+        "i32.shr_s": 0x75,
+        "i32.shr_u": 0x76,
+    }
+
+    def __init__(self):
+        # 256 opcodes * 4 bits = 1024 bits = 128 bytes
+        self.storage = bytearray(128)
+        self.view = BitView(self.storage, bits=4, origin=0, count=256)
+        # Default all entries to -8 (0x8: unsupported/trap penalty)
+        for i in range(256):
+            self.view.put(i, encode_int4(-8))
+        # Populate known benefits
+        for name, score in self.DEFAULT_BENEFITS.items():
+            opcode = self.OPCODE_MAP.get(name)
+            if opcode is not None:
+                self.view.put(opcode, encode_int4(score))
+
+    def get_score_by_opcode(self, opcode: int) -> int:
+        if not 0 <= opcode < 256:
+            return -8
+        return decode_int4(self.view.at(opcode))
+
+    def get_score(self, op: str | int) -> int:
+        if isinstance(op, int):
+            return self.get_score_by_opcode(op)
+        if op in self.DEFAULT_BENEFITS:
+            return self.DEFAULT_BENEFITS[op]
+        opcode = self.OPCODE_MAP.get(op)
+        if opcode is not None:
+            return self.get_score_by_opcode(opcode)
+        return -8
+
+
+class JITCandidateBitmap:
+    """
+    Per-Function 1-bit state per CARD (BitView<1>) marking basic blocks statically eligible for JIT.
+    `{JIT_CandidateBitmap}`
+    A card bit is 1 iff at least one basic-block head in this card meets or exceeds candidate_threshold.
+    Cards with bit 0 allow the interpreter to skip HotspotBitmap.touch() and history tracking entirely.
+    """
+
+    def __init__(self, card_shift: int = 2, default_func_code_len: int = 64):
+        self.card_shift = card_shift
+        self.default_func_code_len = default_func_code_len
+        self.func_tables: list[BitView | None] = []
+
+    def allocate_functions(self, num_functions: int) -> None:
+        if len(self.func_tables) < num_functions:
+            self.func_tables.extend([None] * (num_functions - len(self.func_tables)))
+
+    def register_function(self, func_idx: int, code_len: int) -> BitView:
+        if func_idx >= len(self.func_tables):
+            self.func_tables.extend([None] * (func_idx + 1 - len(self.func_tables)))
+        card_count = max(1, (code_len + (1 << self.card_shift) - 1) >> self.card_shift)
+        # 1 bit per card -> (card_count + 7) // 8 bytes
+        storage = bytearray((card_count + 7) // 8)
+        view = BitView(storage, bits=1, origin=0, count=card_count)
+        self.func_tables[func_idx] = view
+        return view
+
+    def _get_or_create_view(self, func_idx: int) -> BitView:
+        if func_idx < len(self.func_tables) and self.func_tables[func_idx] is not None:
+            return self.func_tables[func_idx]  # type: ignore[return-value]
+        return self.register_function(func_idx, self.default_func_code_len)
+
+    def _split_pc(self, pc: int) -> tuple[int, int]:
+        if pc > 0xFFFF:
+            func_idx = (pc >> 16) & 0xFFFF
+            offset = pc & 0xFFFF
+        else:
+            func_idx = 0
+            offset = pc
+        return func_idx, offset
+
+    def is_candidate(self, pc: int) -> bool:
+        func_idx, offset = self._split_pc(pc)
+        view = self._get_or_create_view(func_idx)
+        card = offset >> self.card_shift
+        if card >= view.size():
+            return False
+        return view.at(card) == 1
+
+    def mark_candidate(self, pc: int) -> None:
+        func_idx, offset = self._split_pc(pc)
+        view = self._get_or_create_view(func_idx)
+        card = offset >> self.card_shift
+        if card >= view.size():
+            view = self.register_function(func_idx, (card + 1) << self.card_shift)
+        view.put(card, 1)
+
+    def evaluate_block(
+        self,
+        block: "BasicBlock",
+        table: OpcodeBenefitTable,
+        threshold: int = 9,
+    ) -> int:
+        """
+        Statically evaluates basic block instructions using int4_t benefit table.
+        Accumulates score in standard signed int.
+        If total_score >= threshold, marks card in candidate bitmap.
+        Returns total_score.
+        """
+        total_score = 0
+        for item in block.ops:
+            op_name = item[0] if isinstance(item, tuple | list) else str(item)
+            total_score += table.get_score(op_name)
+        if total_score >= threshold:
+            self.mark_candidate(block.head_pc)
+        return total_score
 
 
 class HistoryRing:
@@ -465,6 +680,7 @@ class CopyPatchCompiler:
             "i32.mul": Stencil("i32.mul", ["POP R5", "POP R4", "MUL R4, R4, R5", "PUSH R4"]),
             "local.get": Stencil("local.get", ["LDR R4, [R3, #{slot}]", "PUSH R4"], ("slot",)),
             "local.set": Stencil("local.set", ["POP R4", "STR R4, [R3, #{slot}]"], ("slot",)),
+            "nop": Stencil("nop", ["NOP"]),
             "backedge": Stencil(
                 "backedge",
                 ["LDR R12, [R10, #SAFEPOINT]", "CBNZ R12, __safepoint", "B #{target}"],
@@ -550,8 +766,8 @@ def make_native_executor(listing: list[str]) -> Callable:
                 # Safepoint check emitted at every backward edge. `{JIT_Safepoint}`
                 if ctx.poll_safepoint():
                     return "SAFEPOINT_YIELD"
-            elif head in ("B", "LDR_SAFEPOINT"):
-                pass  # backward branch target handled by the caller loop
+            elif head in ("B", "LDR_SAFEPOINT", "NOP"):
+                pass  # backward branch target or nop handled without action
             i += 1
         return "COMPLETED"
 
@@ -627,8 +843,12 @@ class IntegratedRuntimeEngine:
         yield_threshold: int = 8,
         card_shift: int = 2,
         min_trace_bytes: int | None = None,
+        candidate_threshold: int = 9,
     ):
         self.bitmap = HotspotBitmap(card_shift=card_shift)
+        self.candidate_bitmap = JITCandidateBitmap(card_shift=card_shift)
+        self.benefit_table = OpcodeBenefitTable()
+        self.candidate_threshold = candidate_threshold
         self.history = HistoryRing(capacity=32)
         self.cache = JITMultiBufferCache()
         self.compiler = CopyPatchCompiler()
@@ -654,8 +874,11 @@ class IntegratedRuntimeEngine:
         # would be.
         self.min_trace_bytes = min_trace_bytes if min_trace_bytes is not None else (1 << card_shift)
 
-    def register_block(self, block: BasicBlock) -> None:
+    def register_block(self, block: BasicBlock) -> int:
         self.blocks[block.head_pc] = block
+        return self.candidate_bitmap.evaluate_block(
+            block, self.benefit_table, threshold=self.candidate_threshold
+        )
 
     # --- Cooperative yield  [runtime_interpreter.md §4.1 概算Yield] ---
     def _tick_and_maybe_yield(self) -> bool:
@@ -746,16 +969,14 @@ class IntegratedRuntimeEngine:
                 # chain_next is None -> return to the interpreter (dispatcher stub)
                 pc = trace.chain_next if trace.chain_next is not None else self._next_pc(block, ctx)
             else:
-                # Record ONLY the basic-block head. `{HistoryBuffer}` Blocks
-                # shorter than min_trace_bytes are never tracked at all --
-                # see the invariant this protects in __init__. Estimated in
-                # the same units `CopyPatchCompiler.compile_trace` itself
-                # uses for a compiled trace's `size_bytes`, since that is
-                # what actually determines whether compiling is worthwhile.
-                est_bytes = len(block.ops) * CopyPatchCompiler.BYTES_PER_INSTRUCTION
-                if est_bytes >= self.min_trace_bytes:
-                    self.bitmap.touch(pc)
-                    self.history.record(pc)
+                # O(1) Candidate bitmap check: if candidate_bitmap has not marked this card
+                # as eligible for JIT, bypass touch() and history tracking entirely.
+                # `{JIT_CandidateBitmap}` eliminates hotspot tracking overhead on interpreter-only paths.
+                if self.candidate_bitmap.is_candidate(pc):
+                    est_bytes = len(block.ops) * CopyPatchCompiler.BYTES_PER_INSTRUCTION
+                    if est_bytes >= self.min_trace_bytes:
+                        self.bitmap.touch(pc)
+                        self.history.record(pc)
                 self.interp_blocks += 1
                 self._interpret(block, ctx)
                 pc = self._next_pc(block, ctx)
@@ -791,6 +1012,8 @@ class IntegratedRuntimeEngine:
                 if not 0 <= arg < len(ctx.locals):
                     raise WASMTrap("LOCAL_INDEX_OUT_OF_RANGE")
                 ctx.locals[arg] = ctx.pop()
+            elif op == "nop":
+                pass
             else:
                 raise WASMTrap(f"UNSUPPORTED_OPCODE: {op}")
 
@@ -1154,6 +1377,79 @@ def test_stencil_requires_its_relocation_holes() -> None:
         raise AssertionError("missing relocation must be rejected")
     except KeyError as e:
         assert "imm_hi" in str(e)
+
+
+def test_opcode_benefit_table_int4_decode() -> None:
+    """Verifies int4_t round-trip (-8..+7) and 128-byte BitView<4> table scores."""
+    for v in range(-8, 8):
+        enc = encode_int4(v)
+        assert 0 <= enc <= 0xF
+        assert decode_int4(enc) == v
+
+    table = OpcodeBenefitTable()
+    assert len(table.storage) == 128, "table must be strictly 128 bytes (256 * 4 bits)"
+    assert table.get_score("i32.add") == 7, "pure arithmetic is max speedup (+7)"
+    assert table.get_score("local.get") == 6
+    assert table.get_score("i32.load") == 5
+    assert table.get_score("nop") == 4
+    assert table.get_score("call") == -1, "call incurs register spill/restore penalty (-1)"
+    assert table.get_score("unreachable") == -8, "trap is maximum penalty (-8)"
+    assert table.get_score("nonexistent_opcode") == -8
+
+
+def test_bb_scoring_and_candidate_bitmap() -> None:
+    """Verifies static block scoring and JIT candidate bitmap marking with threshold 9."""
+    table = OpcodeBenefitTable()
+    cand_bm = JITCandidateBitmap(card_shift=2)
+
+    # 1. High benefit arithmetic block: local.get(6) + i32.const(6) + i32.add(7) = 19 >= 9
+    bb_hot = BasicBlock(
+        head_pc=0x100,
+        ops=[("local.get", 0), ("i32.const", 1), ("i32.add", None)],
+    )
+    score_hot = cand_bm.evaluate_block(bb_hot, table, threshold=9)
+    assert score_hot == 19
+    assert cand_bm.is_candidate(0x100) is True
+
+    # 2. Minimal neutral block: nop(4) = 4 < 9
+    bb_cold = BasicBlock(
+        head_pc=0x200,
+        ops=[("nop", None)],
+    )
+    score_cold = cand_bm.evaluate_block(bb_cold, table, threshold=9)
+    assert score_cold == 4
+    assert cand_bm.is_candidate(0x200) is False
+
+    # 3. Call trampoline block: call(-1) + drop(4) = 3 < 9
+    bb_call = BasicBlock(
+        head_pc=0x300,
+        ops=[("call", 0), ("drop", None)],
+    )
+    score_call = cand_bm.evaluate_block(bb_call, table, threshold=9)
+    assert score_call == 3
+    assert cand_bm.is_candidate(0x300) is False
+
+
+def test_interpreter_bypasses_touch_for_non_candidate() -> None:
+    """Verifies that the interpreter bypasses HotspotBitmap.touch() for non-candidate blocks."""
+    eng = IntegratedRuntimeEngine(card_shift=2, candidate_threshold=9)
+    ctx = WASMContext()
+
+    # Register a cold (non-candidate) block at 0x200
+    bb_cold = BasicBlock(
+        head_pc=0x200,
+        ops=[("local.get", 0)],  # score 6 < 9
+        next_pc=None,
+    )
+    eng.register_block(bb_cold)
+    assert eng.candidate_bitmap.is_candidate(0x200) is False
+
+    ctx.locals = [42]
+    eng.run(0x200, ctx, max_blocks=5)
+    # The block ran in the interpreter, but touch() was bypassed!
+    assert eng.bitmap.get_state(0x200) == CardState.UNEXECUTED
+    assert len(eng.history.buf) == 0, "history recording must be bypassed for non-candidate"
+    assert eng.interp_blocks == 1
 
 
 if __name__ == "__main__":

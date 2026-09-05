@@ -64,6 +64,8 @@ ROM上WASM32バイナリのゼロコピー索引化（`ModuleView`）、V1〜V6�
 | LOAD-46 | シンボルハッシュ衝突時の安全な文字列一致検証 | 同一ハッシュ値を持つ異なるシンボル名 | `lookup_export(name)` | ハッシュ一致後に ROM 上の文字列を 1 回照合し、誤ったシンボルの誤認を確実に防ぐ | 「シンボル検索」 |
 | LOAD-47 | 未定義シンボルの高速不存在判定 | 未エクスポートのシンボル名 | `lookup_export(non_existent)` | $O(k)$ のツリー走査で即座に `None` を返し、不要な文字列比較を行わない | - |
 | LOAD-48 | ローダ所有のベーシックブロック索引と不変メタ情報公開 | パース済み WASM モジュール | `mod.get_block(pc)` / `mod.block_tree` | ランタイム側での再構築なしに、ローダが構築した `ReadOnlyRadixBinaryTreeStorage` から $O(1) + O(\log n)$ で `BasicBlock` メタ情報を直接解決できる | `{Loader_BasicBlockIndex}` |
+| LOAD-49 | int4_t スコアリングによる JIT 候補ビットマップ生成 | WASM モジュールロード | `cand_bm.evaluate_block(bb, table, threshold=9)` | 128B BitView<4> テーブルから命令ごとの機械語短縮スコア（int4_t）を積算し、合計9点以上のブロックの head_pc カードビット（1bit）が正確に 1 にセットされる | `{JIT_StaticBenefitScoring}`, `{JIT_CandidateBitmap}` |
+| LOAD-50 | JITCandidateBitmap 非候補ブロックの touch/履歴バイパス | 非候補ブロック（カードビット 0）の実行 | `eng.run(cold_pc, ctx)` | インタープリタ実行は行われるが、HotspotBitmap.touch() および履歴リングへの記録が完全にバイパスされ、カード状態が UNEXECUTED のまま維持される | `{JIT_CandidateBitmap}` |
 
 ### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
 
@@ -80,7 +82,7 @@ ROM上WASM32バイナリのゼロコピー索引化（`ModuleView`）、V1〜V6�
 - **ゼロコピー索引化 (LOAD-10〜15)**: ROM直接参照、ハッシュ＋RadixBinaryTreeView シンボル検索、遅延アクセサ。
 - **複数モジュール・インポート解決 (LOAD-20〜25)**: ハッシュ＋RadixBinaryTreeView による $O(k)$ インポート解決、型照合、レジストリ上限、LIFOアンロード。
 - **容量制約 (LOAD-30〜32)**: 最大数制限およびLEB128ガード。
-- **RadixBinaryTreeView 索引 (LOAD-40〜48)**: デコード済みエンティティ登録、RadixBinaryTreeView によるファイルオフセット逆引き、ハッシュ＋RadixBinaryTreeView によるインポート/エクスポート高速解決、ハッシュ衝突耐性、不存在判定、ローダ所有のベーシックブロック索引（`LOAD-48`）。
+- **RadixBinaryTreeView 索引 & JIT候補判定 (LOAD-40〜50)**: デコード済みエンティティ登録、RadixBinaryTreeView によるファイルオフセット逆引き、ハッシュ＋RadixBinaryTreeView によるインポート/エクスポート高速解決、ハッシュ衝突耐性、不存在判定、ローダ所有のベーシックブロック索引（`LOAD-48`）、`int4_t` スコアリングによる JIT 候補ビットマップ生成（`LOAD-49`）、非候補カードにおける touch/履歴バイパス（`LOAD-50`）。
 
 ## 4. 未検証・スコープ外
 

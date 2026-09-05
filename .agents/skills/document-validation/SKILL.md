@@ -50,86 +50,91 @@ Markdown を編集したら、他の検証を走らせる前にまず一貫性�
 powershell -ExecutionPolicy Bypass -File tools/run_all_tests.ps1 -level sync
 ```
 
-### Level 1 (既定): コミット前・静的ゲート (Pre-Commit / 5〜10秒)
-静的品質ゲート（Format, Traceability, Hierarchy, WIT, Evidence, Consistency）と概念コード・ベンチマークを高速確認します。LLM は呼び出されません。Format Gate ではレーベンシュタイン距離による静的タイポ・表記揺れ（`FMT-LEVENSHTEIN-TYPO`）も自動検査されます。
-
+### 静的チェック・品質ゲート・サボり検証 (コスト0 / 数秒)
+ドキュメントの静的品質ゲート（Format, Traceability, Hierarchy, WIT, Evidence, Obligation, Consistency）およびソースコードの規約・サボり検査（Anti-Sabotage）を高速確認します。LLM は呼び出されません。
 ```powershell
-powershell -ExecutionPolicy Bypass -File tools/run_all_tests.ps1
-# 明示するなら: -level 1
+# ドキュメント 8大品質ゲート検証 (Windows / Linux)
+powershell tools/check-doc.ps1 [files...]
+./tools/check-doc.sh [files...]
+
+# ソースコード サボり・規約・テスト検証 (Windows / Linux)
+powershell tools/check-src.ps1 -group <cpp|python|concepts|formal|pysim|all> [files...]
+./tools/check-src.sh -g <group> [files...]
 ```
 
-### 特出しスクリプト: 表記揺れ専用チェック (Terminology Check)
-全量テストパイプラインを走らせることなく、**表記揺れ・タイポの検査とサマリーレポートのみ**を独立して実行できます。
-
+### 自動フォーマット
 ```powershell
-# 1. 通常実行（静的レーベンシュタイン + エンベディング類似度 + さくらのAIによる文脈判定）
-powershell tools/check_terminology.ps1
+# ドキュメント静的フォーマット (Windows / Linux)
+powershell tools/format-doc.ps1 [files...]
+./tools/format-doc.sh [files...]
 
-# 2. 高速・静的実行（LLM判定スキップ、コスト0・2秒でレーベンシュタイン＆エンベディングキャッシュのみ確認）
-powershell tools/check_terminology.ps1 -quick
+# ソースコード自動フォーマット (Python: Ruff / C++: clang-format)
+powershell tools/format-src.ps1 -group <cpp|python|concepts|formal|pysim|all> [files...]
+./tools/format-src.sh -g <group> [files...]
+```
+
+### ドキュメントDB構築・キーワード抽出 (TF-IDF)
+```powershell
+# Windows
+powershell tools/build.ps1
+# クリーン再構築: powershell tools/build.ps1 -clean
 
 # Linux / WSL
-./tools/check_terminology.sh          # 通常実行
-./tools/check_terminology.sh --quick  # 高速・静的実行
+./tools/build.sh
 ```
 
-### Level 2: マイルストーン・意味監査 (Feature Milestone / 30秒〜1分)
-仕様変更や新しい ADR を追加した際、`spec-integrator.yaml` の `llm_judge.default_backend`（既定: さくらインターネット / Qwen 3.6）を用いてリスク評価、キーワードサブグラフの意味監査、ドキュメント単位の自己一貫性監査、設計仕様→テスト仕様→テストコードの3層一貫性監査、さくらのAIによる文脈表記揺れ判定（`term-judge`）、および pysim テストスイートを実行します。
+### クラウド LLM 監査（API 課金、ユーザー明示指示時のみ）
 
+#### 1. 単語揺れ検査 (`llm-word`)
 ```powershell
-powershell -ExecutionPolicy Bypass -File tools/run_all_tests.ps1 -level 2
+# 通常実行（エンベディング類似度 + LLM文脈判定）
+powershell tools/llm-word.ps1
+
+# 高速・静的実行（LLM判定スキップ、コスト0）
+powershell tools/llm-word.ps1 -quick
+
+# Linux / WSL
+./tools/llm-word.sh
+./tools/llm-word.sh --quick
 ```
 
-### Level 3: リリース前・CI 完全全量監査 (Release Gate / 全件)
-PR 作成時やリリース判定時に、全品質ゲート、全形式検証、全ベンチマーク、ARM エミュレータ、全サブグラフの LLM 意味監査、全ドキュメントの自己一貫性監査、および全コンポーネントの 3 層一貫性監査（下記）をキャッシュなしの `--clean` スキャンで実行します。
-
+#### 2. キーワードリスク評価 (`risk`)
 ```powershell
-powershell -ExecutionPolicy Bypass -File tools/run_all_tests.ps1 -level 3
+# 既定（上位15キーワード）
+powershell tools/risk.ps1
 
-# Linux / CI 環境
-./tools/run_all_tests.sh --level 3
+# 網羅的評価
+powershell tools/risk.ps1 -exhaustive
+
+# Linux / WSL
+./tools/risk.sh
+./tools/risk.sh -a
 ```
 
-特定コンポーネントだけを監査したい、または `--backend`/`--model` を明示的に上書きしたい場合は、`run_all_tests` を介さず `spec-integrator` を直接呼び出します（下記「3層一貫性監査」参照）。
-
----
-
-## 監査される 8 つの品質ゲート (Quality Gates)
-
-| ゲート名 | 検証内容 | 違反時の重要度 |
-| :--- | :--- | :--- |
-| **1. Format Gate** | 壊れた Markdown リンク、無効なアンカー（`#heading`）、Mermaid構文、**レーベンシュタイン距離による静的タイポ・表記揺れ（`FMT-LEVENSHTEIN-TYPO`）** の検知 | **ERROR / WARNING** |
-| **2. Traceability Gate** | 未定義キーワードの参照、Tier 0 要件の未参照検知 | **ERROR** (Exit 1) |
-| **3. Hierarchy Gate** | 上位 Tier から下位 Tier への具象逆流依存の検知 | **ERROR** (Exit 1) |
-| **4. Formal Gate** | `formal/*.py` の pyModelChecking 実行、妥当性監査、および `BACKS` 双方向照合 | **ERROR** (Exit 1) |
-| **5. WIT Gate** | `wit/*.wit` の構文・型定義・契約整合性検証 | **ERROR** (Exit 1) |
-| **6. Evidence Gate** | `<!-- evidence: ... -->` 宣言ファイルの実在性、未裏付け主張（Dangling Ref）の検知 | **ERROR** (Exit 1) |
-| **7. Obligation Gate** | リスク評価（Assess）から導出された全検証義務（100%）の充足監査 | **ERROR** (Exit 1) |
-| **8. Consistency Gate** | `spec-consistency.lock` との差分・波及漏れ、および **TF-IDF + さくらのAI エンベディング・LLM文脈監査による用語表記揺れ（`TERM_VARIANCE`）** の検知 | **ERROR / WARNING** |
-
-### `llm-judge` の4つの監査（キーワードサブグラフ・ドキュメント単位・3層トレーサビリティ・表記揺れ判定）
-`llm-judge` は実行時に包括的な監査を行います:
-1. **キーワードサブグラフ意味監査**: `{Keyword}` の定義セクションと参照セクション間の矛盾・記述漏れを検証。
-2. **ドキュメント単位の自己一貫性監査**: 1文書全体を対象に、サブグラフをまたぐ矛盾ではなく文書内部の矛盾・未裏付け主張を検証。
-3. **設計 -> テスト仕様 -> テストコード 3層一貫性監査**: 設計書（`docs/components/**/*.md`）、テスト仕様書（`docs/components/**/tests/*_test_spec.md`）、結合テストコード（`docs/architecture/integration_test_scenarios.md`）間のトレーサビリティと意味的一貫性を検証。
-4. **表記揺れ文脈判定（`term-judge`）**: エンベディング高類似度ペアの出現セクションを抜き出し、LLMが文脈から同一概念の好ましくないブレ（表記揺れ）であるかを判定。
-
-`run_all_tests -level 2` 以上で自動実行されますが、直接個別に実行することも可能です:
+#### 3. 単体ドキュメント・高リスク島レビュー (`llm-single-review`)
+指定されたファイルまたは全ファイルの全セクション単体、およびそのファイルに含まれる高リスクキーワードのリンクの島に関連するレビューを実行します。
 ```powershell
-# 表記揺れサマリーレポートを直接表示
-uv run --system-certs --project tools/spec-integrator python -m spec_integrator.cli term-report
+# 単一ファイル
+powershell tools/llm-single-review.ps1 -file docs/components/tier1_core/os_scheduler.md
 
-# 表記揺れLLM判定のみを実行（上位20ペア）
-uv run --system-certs --project tools/spec-integrator python -m spec_integrator.cli term-judge --max-pairs 20 --backend sakura
+# 全ファイル
+powershell tools/llm-single-review.ps1 -all
+
+# チェック項目一覧の表示
+powershell tools/llm-single-review.ps1 -listChecks
+
+# プロンプト確認（Dry Run）
+powershell tools/llm-single-review.ps1 -file docs/components/tier1_core/os_scheduler.md -dryRun
 ```
 
-`run_all_tests -level 2` 以上で自動実行されますが、特定コンポーネントだけを見たい場合や `--backend`/`--model` を明示したい場合は直接呼び出します。
+#### 4. 高リスクキーワード島レビュー (`llm-keyword-review`)
+高リスクキーワードを含むドキュメント島の一括レビューを実行します。
 ```powershell
-# 特定コンポーネントの3層監査（キーワードサブグラフ・ドキュメント単位監査は既定の候補選定で実行）
-uv run --system-certs --project tools/spec-integrator python -m spec_integrator.cli llm-judge --component jit_compiler --backend sakura
+# 全高リスクキーワードの島を一括レビュー
+powershell tools/llm-keyword-review.ps1
 
-# 全サブグラフ・全ドキュメント・全コンポーネントを網羅的に実行
-uv run --system-certs --project tools/spec-integrator python -m spec_integrator.cli llm-judge --all --backend sakura
+# 特定キーワードの島のみレビュー
+powershell tools/llm-keyword-review.ps1 -keyword JIT_STENCIL
 ```
 
 ---

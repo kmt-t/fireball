@@ -65,11 +65,10 @@ benchmark_verification:
 
 obligation:
   require_full_coverage: false
+  stale_is_error: false
 
 consistency:
   enabled: true
-  lockfile: "spec-consistency.lock"
-  cochange: true
   symbol_patterns:
     - '\bFB_CONF_[A-Z0-9_]+\b'
     - '\bFB_[A-Z0-9_]+_(?:MAX|MIN|SIZE|BASE|LIMIT)\b'
@@ -94,11 +93,83 @@ llm_judge:
       model: "preview/Qwen3.6-35B-A3B"
     openrouter:
       api_key_env: "OPENROUTER_API_KEY"
-      endpoint: "https://openrouter.ai/api/v1/chat/completions"
-      model: "qwen/qwen3.8-27b"
-    ollama:
-      endpoint: "http://localhost:11434"
-      model: "llama3"
+  checks:
+    - id: "vertical_consistency"
+      name: "Vertical Consistency (Definition vs. Designs)"
+      mode: ["cluster"]
+      enabled: true
+      severity: "ERROR"
+      prompt_file: "tools/spec-integrator/prompts/checks/vertical_consistency.prompt"
+
+    - id: "cross_doc_consistency"
+      name: "Cross-Document Consistency (Pairwise Drift & Mismatches)"
+      mode: ["cluster"]
+      enabled: true
+      severity: "ERROR"
+      prompt_file: "tools/spec-integrator/prompts/checks/cross_doc_consistency.prompt"
+
+    - id: "internal_consistency"
+      name: "Internal Document Consistency"
+      mode: ["single"]
+      enabled: true
+      severity: "ERROR"
+      prompt_file: "tools/spec-integrator/prompts/checks/internal_consistency.prompt"
+
+    - id: "numeric_agreement"
+      name: "Numeric Agreement & Arithmetic"
+      mode: ["single", "cluster"]
+      enabled: true
+      severity: "ERROR"
+      prompt_file: "tools/spec-integrator/prompts/checks/numeric_agreement.prompt"
+
+    - id: "clarity_completeness"
+      name: "Clarity & Unresolved Ambiguity"
+      mode: ["single", "cluster"]
+      enabled: true
+      severity: "ERROR"
+      prompt_file: "tools/spec-integrator/prompts/checks/clarity_completeness.prompt"
+
+    - id: "natural_language_standards"
+      name: "Japanese Natural Language Standard"
+      mode: ["single", "cluster"]
+      enabled: true
+      severity: "WARNING"
+      prompt_file: "tools/spec-integrator/prompts/checks/natural_language_standards.prompt"
+
+    - id: "diagram_standards"
+      name: "Mermaid Diagram Appropriateness"
+      mode: ["single", "cluster"]
+      enabled: true
+      severity: "WARNING"
+      prompt_file: "tools/spec-integrator/prompts/checks/diagram_standards.prompt"
+
+    - id: "claim_substantiation"
+      name: "Claim-Evidence Substantiation & Unbacked Assertions"
+      mode: ["single", "cluster"]
+      enabled: true
+      severity: "ERROR"
+      prompt_file: "tools/spec-integrator/prompts/checks/claim_substantiation.prompt"
+
+    - id: "reference_by_keyword_or_filename"
+      name: "Reference by Keyword or File Path Only (No Fragile Chapter/Section Numbers)"
+      mode: ["single", "cluster"]
+      enabled: true
+      severity: "ERROR"
+      prompt_file: "tools/spec-integrator/prompts/checks/reference_by_keyword_or_filename.prompt"
+
+    - id: "rationale_over_history"
+      name: "Design Rationale Over Chronological History"
+      mode: ["single", "cluster"]
+      enabled: true
+      severity: "WARNING"
+      prompt_file: "tools/spec-integrator/prompts/checks/rationale_over_history.prompt"
+
+    - id: "redundancy_and_duplication"
+      name: "Redundancy & Duplication Audit (Permit Multi-perspective Descriptions)"
+      mode: ["cluster"]
+      enabled: true
+      severity: "WARNING"
+      prompt_file: "tools/spec-integrator/prompts/checks/redundancy_and_duplication.prompt"
 
 terminology:
   enabled: true
@@ -301,4 +372,63 @@ semantic_topic:
   embedding_model: "multilingual-e5-large"
   backend: "sakura"
   batch_size: 16
+
+source_verification:
+  enabled: true
+  groups:
+    cpp:
+      description: "C/C++ core hypervisor and platform code"
+      include_dirs: ["inc", "src"]
+      extensions: [".hxx", ".cxx", ".c", ".h", ".cpp"]
+      formatters: ["clang-format"]
+      checks:
+        - id: "anti_sabotage"
+          enabled: true
+          rules: ["todo_comment", "empty_function", "dummy_return"]
+        - id: "cpp_rules"
+          enabled: true
+          rules: ["forbidden_malloc", "forbidden_new", "forbidden_exceptions", "forbidden_rtti", "fireball_namespace"]
+
+    python_concepts:
+      description: "Python reference concept implementations"
+      include_dirs: ["docs"]
+      patterns: ["*_concept.py"]
+      formatters: ["ruff"]
+      checks:
+        - id: "ruff"
+          enabled: true
+        - id: "anti_sabotage"
+          enabled: true
+          rules: ["forbid_typing_any", "dummy_pass", "todo_comment"]
+        - id: "execute"
+          enabled: true
+
+    python_formal:
+      description: "pyModelChecking formal models"
+      include_dirs: ["docs"]
+      patterns: ["*_model.py", "formal/*.py"]
+      formatters: ["ruff"]
+      checks:
+        - id: "ruff"
+          enabled: true
+        - id: "anti_sabotage"
+          enabled: true
+          rules: ["forbid_typing_any", "mutation_guards_required", "vacuous_property"]
+        - id: "execute_formal"
+          enabled: true
+
+    python_pysim:
+      description: "Python architectural simulator & test suites"
+      include_dirs: ["experiments/pysim"]
+      extensions: [".py"]
+      formatters: ["ruff"]
+      checks:
+        - id: "ruff"
+          enabled: true
+        - id: "anti_sabotage"
+          enabled: true
+          rules: ["forbid_typing_any", "dummy_pass", "todo_comment"]
+        - id: "run_tests"
+          enabled: true
+
 

@@ -18,98 +18,42 @@ pip install -r requirements.txt
 
 ## 1. ツール・スクリプト一覧 (Tool Architecture)
 
-```mermaid
-graph TD
-    Dev[開発者 / AI エージェント] -->|コード整形| F[tools/format_all.ps1 / .sh]
-    Dev -->|統合テスト・検証| R["tools/run_all_tests.ps1 / .sh<br/>-level 1/2/3/sync"]
-    
-    subgraph Pipeline [run_all_tests 実行パイプライン]
-        P0[Phase 0: Ruff Lint & Format 検証] --> P1["Phase 1: Risk Assessment - 義務導出<br/>(Level 2+)"]
-        P1 --> P2["Phase 2: LLM as a Judge<br/>意味監査 + 文書単位監査 + 3層一貫性監査<br/>(Level 2+)"]
-        P2 --> P3[Phase 3: Concept Code & Benchmarks & Verifiers]
-        P3 --> P3_Sim["pysim ユニット・シナリオテスト<br/>(Level 2+)"]
-        P3_Sim --> P4[Phase 4: spec-integrator check - 8大品質ゲート]
-    end
-    
-    R --> Pipeline
-```
+Fireball のツール体系は以下の 9 つの標準コマンド群で構成されています。ドキュメント検証とソースコード検証は完全に分離されており、対象ファイルやグループ（C++, Pythonサブグループ）を明示指定して実行可能です。
+Windows（PowerShell）および Linux / WSL（Bash）の双方で同一の操作が可能です。
 
-| ツール / スクリプト | 種別 | 対象 | 主な役割 |
-| :--- | :--- | :--- | :--- |
-| `tools/format_all.ps1`<br>`tools/format_all.sh` | フォーマッタ | `experiments/`<br>`tools/`<br>`docs/` | **ワンタッチ自動整形**。Ruff による PEP8 準拠フォーマット & Lint エラー自動修復（`--fix`）を一発適用。 |
-| `tools/check_terminology.ps1`<br>`tools/check_terminology.sh` | 表記揺れ検査 | `docs/` | **ワンタッチ表記揺れ検査**。静的レーベンシュタイン距離、TF-IDF、エンベディング、さくらのAIによる文脈判定を一括実行。 |
-| `tools/run_all_tests.ps1`<br>`tools/run_all_tests.sh` | 統合ランナー | 全体 | **統合検証パイプライン**。Phase 0〜4 の全品質ゲート、形式検証、概念コード、シミュレータテストを包括実行。 |
-| `experiments/pysim/tests/run_all.py` | 単体テスト | `experiments/pysim` | シミュレータ単体テスト（全9スイート: 命令網羅、ローダ、Syscall、GDB、JIT、All-Pairs等）。 |
-| `experiments/pysim/scenarios/run_all.py` | 結合テスト | `experiments/pysim` | 実機同等ユースケース結合シナリオテスト（全11シナリオ）。 |
-| `tools/spec-integrator/` | 検証エンジン | `docs/`, `inc/` | 文書トポロジー解析、形式検証、WIT検証、一貫性追跡、表記揺れ判定、LLM as a Judge。 |
+| コマンド | スクリプト (Windows / Linux) | 種別 | 主な役割 |
+| :--- | :--- | :---: | :--- |
+| **build** | `tools/build.ps1`<br>`tools/build.sh` | DB構築 | ドキュメントからデータベース（DocGraph, トポロジー）を構築し、TF-IDFによるキーワード・用語リストを作成。引数で対象Markdown指定可能。 |
+| **format-doc** | `tools/format-doc.ps1`<br>`tools/format-doc.sh` | 静的整形 | Markdown ドキュメントの静的正規化（改行・末尾空白等）を適用。引数で対象Markdown指定可能。 |
+| **check-doc** | `tools/check-doc.ps1`<br>`tools/check-doc.sh` | 静的検査 | ドキュメントの静的検証（8大品質ゲート: Format, Traceability, Hierarchy, Formal, WIT, Evidence, Obligation, Consistency）を実行。引数で対象Markdown指定可能。 |
+| **format-src** | `tools/format-src.ps1`<br>`tools/format-src.sh` | 静的整形 | ソースコードの静的フォーマッタ（Python: Ruff / C++: clang-format）を適用。`-group`（`cpp`, `python`, `concepts`, `formal`, `pysim`, `all`）や個別ファイル指定可能。 |
+| **check-src** | `tools/check-src.ps1`<br>`tools/check-src.sh` | 静的検査 | ソースコードの静的規約・サボり検証（Anti-Sabotage: TODO放置、空関数、typing.Any完全禁止、C++構文制限、形式モデル変異検査 `guards=False` 必須、実機テスト実行）を実行。`-group` や個別ファイル指定可能。 |
+| **risk** | `tools/risk.ps1`<br>`tools/risk.sh` | LLM評価 | LLMによりドキュメントのキーワードの設計複雑度・リスク評価を行う。 |
+| **llm-word** | `tools/llm-word.ps1`<br>`tools/llm-word.sh` | LLM検査 | LLMにより単語揺れチェックを行う（エンベディング類似度 + 文脈判定 + レポート出力）。 |
+| **llm-single-review** | `tools/llm-single-review.ps1`<br>`tools/llm-single-review.sh` | LLM監査 | 指定されたファイルまたは全ファイルの全セクション単体、およびファイルに含まれる高リスクキーワードのリンクの島に関連するレビューを行う。 |
+| **llm-keyword-review** | `tools/llm-keyword-review.ps1`<br>`tools/llm-keyword-review.sh` | LLM監査 | リスクの高いキーワードのリンクの島に関連するレビューを行う。 |
 
 ---
 
 ## 2. 目的別クイックスタート (Workflow by Purpose)
 
-開発フローに応じて最適なコマンドを実行します。
-
-`run_all_tests` が公開するオプションは検証レベル（`-level` / `--level`）ひとつだけです。バックエンドやコンポーネント指定などの微調整は `spec-integrator` 本体の CLI を直接叩きます（§5, §6）。
-
-| 開発ステージ | タイミング | 実行コマンド（Windows / Linux） | コスト・所要時間 |
-| :--- | :--- | :--- | :--- |
-| **0. 自動フォーマット** | コード編集後・コミット前 | `powershell tools/format_all.ps1`<br>`./tools/format_all.sh` | 0円 / 1〜2秒 |
-| **表記揺れチェック** | 用語統一度の確認・執筆時 | `powershell tools/check_terminology.ps1`<br>`./tools/check_terminology.sh`（高速版: `-quick`） | 0円〜課金 / 2秒〜30秒 |
-| **仕様変更同期** | 仕様書編集後・他レベルの前 | `powershell tools/run_all_tests.ps1 -level sync`<br>`./tools/run_all_tests.sh --level sync` | 0円 / 2〜3秒 |
-| **Level 1 (既定・日常)** | コミット前の標準確認 | `powershell tools/run_all_tests.ps1`<br>`./tools/run_all_tests.sh` | 0円 / 5〜10秒 |
-| **Level 2 (明示指示のみ)** | ADR 追加・大規模仕様変更時 | `powershell tools/run_all_tests.ps1 -level 2`<br>`./tools/run_all_tests.sh --level 2` | 課金 / 30秒〜1分 |
-| **Level 3 (明示指示のみ)** | PR 作成・リリース判定時 | `powershell tools/run_all_tests.ps1 -level 3`<br>`./tools/run_all_tests.sh --level 3` | 課金 / 完全全量監査 |
-
----
-
-## 3. パイプライン実行仕様 (`run_all_tests`)
-
-`tools/run_all_tests.ps1`（Windows）および `tools/run_all_tests.sh`（Linux）は完全に同一のフェーズ構成とオプション体系を持ちます。
-
-### 3.1 フェーズ構成 (Execution Phases)
-
-1. **Phase 0: Python Linter & Formatter (`ruff check` & `ruff format --check`)** — 全レベル共通。
-   - リポジトリ全域の Python コード（`experiments`, `tools`, `docs`）の PEP8 準拠性、未定義変数、インポート順を検査。
-   - 違反時は即座に停止し、`format_all` の実行を促します。
-2. **Phase 1: Risk Assessment (`llm-assess`)** — Level 2 以上。
-   - キーワードごとの複雑度・設計リスクをトリアージし、検証義務をキャッシュ DB（`.spec-integrator/doc_cache.db`）に記録。
-   - Level 1 ではスキップし、DB に保存済みの評価を再利用（0円）。
-3. **Phase 2: LLM as a Judge (`llm-judge`)** — Level 2 以上。
-   - キーワードサブグラフの意味監査（ADR の妥当性、要件とコンポーネントの整合性）、ドキュメント単位の自己一貫性監査、
-     設計仕様→テスト仕様→テストコードの 3 層トレーサビリティ監査の3つを、同一コマンドで常に実行。
-   - Level 1 ではスキップ（0円）。
-4. **Phase 3: Concept Code & Benchmarks & Semantic Verifiers** — 全レベル共通。
-   - `docs/**/concepts/*_concept.py`（概念実証コード 14 本）の実行。
-   - `docs/**/benchmarks/*_bench.py`（実測ベンチマーク 4 本）の実行とアサーション検証。
-   - ARMv8-M Thumb2 エミュレータ（Unicorn）による JIT ステンシルの実機マシンコード実行検証。
-   - Level 2 以上では `experiments/pysim` の単体テストスイート（9本）と結合シナリオテスト（11本）も追加実行。
-5. **Phase 4: Quality Gates (`check`)** — 全レベル共通。
-   - 8 大品質ゲート（静的リンク、トレーサビリティ、階層分離、形式モデル、WIT契約、エビデンス、義務充足、一貫性ロック）を評価し、最終合否を出力。
-   - Level 3 ではキャッシュ DB を使わない `--clean` スキャンで実行。
-
-### 3.2 コマンドライン引数一覧
-
-| 引数 (PowerShell) | 引数 (Bash) | 型 | 説明 |
-| :--- | :--- | :---: | :--- |
-| `-level <1\|2\|3\|sync>` | `--level <1\|2\|3\|sync>` | String | 検証レベル（既定: `1`）。`sync` は検証ではなく `spec-consistency.lock` の更新のみ行い終了する。詳細は §3.1・§3.3。 |
-| `-h`, `-help` | `-h`, `--help` | Switch | ヘルプを表示。 |
-
-### 3.3 レベルの内訳
-
-| レベル | 含まれる処理 | コスト |
+| 目的 | コマンド（Windows / Linux） | コスト・所要時間 |
 | :--- | :--- | :--- |
-| `sync` | 一貫性ベースラインの更新のみ（他の処理は行わず終了） | 0円 |
-| `1`（既定） | Phase 0, 3, 4（保存済みのリスク評価・判定結果を再利用） | 0円 |
-| `2` | Level 1 + `llm-assess` + `llm-judge`（意味監査 + 文書単位監査 + 3層一貫性監査）+ pysim スイート | 課金（LLM呼び出し） |
-| `3` | Level 2 + 網羅的評価（`--exhaustive`、上限なし・全コンポーネント）+ `check --clean` | 課金（最大） |
-
-バックエンド・モデル・Tier・コンポーネントの指定は `-level` に含まれません。これらは全コマンドで共通の `spec-integrator.yaml` の `llm_judge.default_backend` が使われるため、個別に上書きしたい場合のみ `spec-integrator` 本体を直接呼び出してください（§5, §6）。
+| **ドキュメントDB・用語インデックス作成** | `powershell tools/build.ps1`<br>`./tools/build.sh` | 0円 / 1〜2秒 |
+| **ドキュメント自動フォーマット** | `powershell tools/format-doc.ps1 [files...]`<br>`./tools/format-doc.sh [files...]` | 0円 / 1秒 |
+| **ドキュメント静的品質ゲート検証** | `powershell tools/check-doc.ps1 [files...]`<br>`./tools/check-doc.sh [files...]` | 0円 / 5〜10秒 |
+| **ソースコード自動フォーマット** | `powershell tools/format-src.ps1 -group <group> [files...]`<br>`./tools/format-src.sh -g <group> [files...]` | 0円 / 1秒 |
+| **ソースコード品質・サボり検査** | `powershell tools/check-src.ps1 -group <group> [files...]`<br>`./tools/check-src.sh -g <group> [files...]` | 0円 / 2〜5秒 |
+| **用語表記揺れの確認** | `powershell tools/llm-word.ps1 -quick`（静的のみ）<br>`powershell tools/llm-word.ps1`（LLM判定込み） | 0円（quick） / 課金 |
+| **キーワードリスク評価 (マイルストーン時)** | `powershell tools/risk.ps1` | 課金 / 30秒〜1分 |
+| **単体ドキュメントのレビュー** | `powershell tools/llm-single-review.ps1 -file docs/components/tier1_core/os_scheduler.md` | 課金 |
+| **高リスクキーワードの島レビュー** | `powershell tools/llm-keyword-review.ps1` | 課金 |
 
 ---
 
-## 4. 品質ゲート詳細 (8 Quality Gates)
+## 3. 品質ゲート詳細 (8 Quality Gates via `check-doc`)
 
-`spec-integrator check` が強制する 8 つの品質ゲートです（1 件でも違反があれば終了コード 1 で失敗）。
+`tools/check-doc.ps1` / `tools/check-doc.sh` が検証する 8 つのドキュメント品質ゲートです（1 件でも違反があれば終了コード 1 で失敗）。
 
 | ゲート名 | ルール | 検査内容 |
 | :--- | :--- | :--- |
@@ -119,33 +63,5 @@ graph TD
 | **4. Formal Gate** | `FORMAL-*` | `docs/**/formal/*.py`（pyModelChecking）の実行、LTL/CTL 検証、`BACKS` 契約の検証。 |
 | **5. WIT Gate** | `WIT-*` | `wit/*.wit` の構文・型整合性・エラー回復戦略契約の検証。 |
 | **6. Evidence Gate** | `EVIDENCE-*` | `<!-- evidence: ... -->` で主張されたベンチマークや実装ファイルの実在性とアサーション検証。 |
-| **7. Obligation Gate** | `OBLIG-*` | Phase 1 のリスク評価で導出された検証義務（形式検証・LLM監査等）が **100% 履行** されているかの検証。 |
-| **8. Consistency Gate** | `CONSIST-*`<br>`TERM_VARIANCE` | 一貫性ベースライン（キャッシュ DB 記録値）との差分・シンボル値ズレ、および **TF-IDF + さくらのAI エンベディング・LLM文脈監査による用語表記揺れ（`TERM_VARIANCE`）** の警告。 |
-
----
-
-## 5. トラブルシューティング (Troubleshooting)
-
-### Q1. `OBLIG-ASSESSMENT-STALE` または `OBLIG-JUDGE-STALE` で失敗する
-- **原因**: ドキュメント本文を編集したため、以前のリスク評価（キャッシュ DB に記録済み）のハッシュ値と不整合が生じています。
-- **対処**:
-  ```bash
-  # 通常の再計算（クラウド LLM、既定バックエンドを使用）:
-  powershell tools/run_all_tests.ps1 -level 2
-  # または、ローカルの Ollama があればコスト0で:
-  uv run --system-certs --project tools/spec-integrator python -m spec_integrator.cli llm-assess --backend ollama -a --max-keywords 0
-  ```
-
-### Q2. `CONSIST-COCHANGE-STALE` または `CONSIST-SYMBOL-DRIFT` で失敗する
-- **原因**: キーワード定義や `FB_CONF_*` 定数を変更した際、それを参照している別コンポーネントの記述が更新されていません。
-- **対処**: レポート（`reports/doc_report.md`）に示された該当箇所を修正した後、`powershell tools/run_all_tests.ps1 -level sync` または `./tools/run_all_tests.sh --level sync` を実行して一貫性ベースラインを更新します。
-
-### Q3. Python コードの Lint / フォーマットエラーで Phase 0 が失敗する
-- **原因**: PEP8 フォーマット違反、未使用インポート、未定義シンボル等が存在します。
-- **対処**:
-  ```bash
-  # Windows:
-  powershell -ExecutionPolicy Bypass -File tools/format_all.ps1
-  # Linux:
-  ./tools/format_all.sh
-  ```
+| **7. Obligation Gate** | `OBLIG-*` | リスク評価（`risk`）で導出された検証義務（形式検証・LLM監査等）が **100% 履行** されているかの検証。 |
+| **8. Consistency Gate** | `CONSIST-*`<br>`TERM_VARIANCE` | 一貫性ベースラインとの差分・シンボル値ズレ、および **TF-IDF + さくらのAI エンベディング・LLM文脈監査による用語表記揺れ（`TERM_VARIANCE`）** の警告。 |

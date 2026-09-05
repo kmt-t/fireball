@@ -5,7 +5,7 @@ Fireball Hypervisor の品質保証、コードフォーマット、静的トレ
 Windows（PowerShell）および Linux / WSL（Bash）の双方で完全透過に同一のコマンドライン操作が可能です。
 
 ### 前提パッケージのインストール (Prerequisites)
-プロジェクトのルート直下にある [requirements.txt](../requirements.txt) を用いて、必要な Python モジュールを一括インストールします：
+プロジェクトのルート直下にある [requirements.txt](requirements.txt) を用いて、必要な Python モジュールを一括インストールします：
 ```bash
 # uv を使用する場合 (推奨・高速):
 uv pip install -r requirements.txt
@@ -57,7 +57,7 @@ Windows（PowerShell）および Linux / WSL（Bash）の双方で同一の操�
 
 | ゲート名 | ルール | 検査内容 |
 | :--- | :--- | :--- |
-| **1. Format Gate** | `FMT-*` | Markdown 内部リンク切れ、見出しアンカー切れ、Mermaid構文、**レーベンシュタイン距離による静的タイポ・表記揺れ（`FMT-LEVENSHTEIN-TYPO`）** の検出。 |
+| **1. Format Gate** | `FMT-*` | Markdown 内部リンク切れ、見出しアンカー切れ、Mermaid構文、**ファイルリンク形式（ベースネーム表記・プロジェクトルート相対パス強制: `FMT-FILE-LINK-FORMAT`）**、**レーベンシュタイン距離による静的タイポ・表記揺れ（`FMT-LEVENSHTEIN-TYPO`）** の検出。 |
 | **2. Traceability Gate** | `TRACE-*` | 未定義キーワードの参照、未参照の要求仕様、孤立ノードの検出。 |
 | **3. Hierarchy Gate** | `HIERARCHY-*` | Tier（0:要求 $\to$ 1:主要 $\to$ 2:サブ $\to$ 3:リーフ）間の逆流参照・カプセル化違反の検出。 |
 | **4. Formal Gate** | `FORMAL-*` | `docs/**/formal/*.py`（pyModelChecking）の実行、LTL/CTL 検証、`BACKS` 契約の検証。 |

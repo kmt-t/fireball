@@ -39,7 +39,7 @@ graph TD
         C_IF[csp]
         M_IF[memory]
     end
-    
+
     S_IF --> TCB[task]
     C_IF --> VAL[co_value]
     M_IF --> PRE[Memory Partition]
@@ -378,21 +378,21 @@ COOS 全体のシステムレベル状態遷移を以下に示す。各タスク
 ```mermaid
 stateDiagram-v2
     [*] --> Uninitialized
-    
+
     Uninitialized --> Ready: init-scheduler() success
     Ready --> RunningTask: spawn() / task enqueued
     RunningTask --> RunningTask: yield() / next task scheduled
     RunningTask --> RunningTask: CSP Handoff / Direct Context Switch (Direct Switch)
     RunningTask --> Idle: all tasks BLOCKED / idle_hook triggered
-    
+
     Idle --> RunningTask: event / interrupt / timeout
-    
+
     RunningTask --> Recovery: task panic / error detected
     Idle --> Recovery: hardware exception / memory fault / resource exhaustion
-    
+
     Recovery --> Ready: recovery complete / reset task queue
     Recovery --> Shutdown: unrecoverable error
-    
+
     Ready --> Shutdown: shutdown() / cleanup
     Shutdown --> [*]: system halt
 ```
@@ -412,25 +412,25 @@ stateDiagram-v2
 ```mermaid
 stateDiagram-v2
     [*] --> NotCreated
-    
+
     NotCreated --> Ready : spawn_and_enqueue
-    
+
     Ready --> Running : scheduler_dispatch
     Running --> Ready : yield_to_tail
-    
+
     Running --> WaitCSP : block_on_ipc
     Running --> WaitEvent : block_on_event
     Running --> WaitInterrupt : block_on_interrupt
-    
+
     WaitCSP --> Ready : csp_handoff
     WaitEvent --> Ready : event_dispatched
     WaitInterrupt --> Ready : interrupt_notified
-    
+
     Running --> Terminated : task_exit
     WaitCSP --> Terminated : task_killed
     WaitEvent --> Terminated : task_killed
     WaitInterrupt --> Terminated : task_killed
-    
+
     Terminated --> [*] : destroyed
 ```
 

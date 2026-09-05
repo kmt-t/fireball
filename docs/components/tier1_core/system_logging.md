@@ -142,7 +142,7 @@ sequenceDiagram
     participant L as Logging Subsystem
     participant RB as Ring Buffer
     participant HW as UART/DMA
-    
+
     C->>L: IPC(dict_id, args)
     L->>L: Validate dict_id bounds (no string formatting)
     L->>RB: push(raw_entry) / overwrite if full

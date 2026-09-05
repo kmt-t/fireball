@@ -174,33 +174,33 @@ vSoC Engine の実行制御と JIT/Interpreter 切り替えの状態遷移（`{V
 ```mermaid
 stateDiagram-v2
     [*] --> Uninitialized
-    
+
     Uninitialized --> Loading: prepare(module) / allocate context
-    
+
     Loading --> Ready: load_ok() / module linked
     Loading --> Error: load_fail() / invalid WASM
-    
+
     Ready --> InterpreterRun: step(pc=interp) / trace is interpreter
     Ready --> JitRun: step(pc=jit) / trace is compiled code
     Ready --> Idle: stop() / cleanup
-    
+
     InterpreterRun --> Ready: yield() / threshold reached
     InterpreterRun --> Debugging: breakpoint_debugger / halt execution
     InterpreterRun --> Error: trap / page fault / invalid opcode
-    
+
     JitRun --> SafepointCheck: loop_back_edge / check interrupt flag
     SafepointCheck --> JitRun: no_interrupt / continue JIT
     SafepointCheck --> Ready: interrupt_pending / fallback to interpreter
     SafepointCheck --> Debugging: breakpoint_hit / halt execution
     SafepointCheck --> Error: safepoint_trap / exception in native code
-    
+
     Debugging --> InterpreterRun: resume() / continue with interpreter
     Debugging --> JitRun: resume(jit_enabled) / continue with JIT
     Debugging --> Ready: continue() / return to scheduler
-    
+
     Error --> Ready: recover() / reset context
     Error --> [*]: fatal() / shutdown
-    
+
     Idle --> [*]: destroyed
 ```
 
@@ -323,7 +323,7 @@ sequenceDiagram
     participant I as Interpreter
     participant J as JIT Compiler
     participant C as JIT Code Cache
-    
+
     S->>V: step()
     loop until yield
         V->>V: get_exec_trace(pc)
@@ -332,11 +332,11 @@ sequenceDiagram
         C-->>V: return (trace end)
     end
     V-->>S: yield
-    
+
     Note over V,J: co_yield processing (Hotspot Detection)
     V->>V: scan_history_buffer()
     V->>J: enqueue_compile_request(pc)
-    
+
     Note over J,C: Background JIT Task (LIFO Order)
     J->>J: dequeue_request_reverse()
     J->>C: write_native_code
@@ -352,7 +352,7 @@ sequenceDiagram
     participant L as Wasm Loader
     participant R as Module Registry
     participant M as Target Module
-    
+
     V->>L: prepare(binary)
     L->>L: parse_import_section()
     loop for each import

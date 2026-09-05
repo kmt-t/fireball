@@ -146,7 +146,7 @@ sequenceDiagram
     participant Q as Command Queue
     participant Ctrl as Debug Controller
     participant vSoC as execution_context
-    
+
     HAL->>Q: Push(READ_REG)
     Ctrl->>Q: Pop()
     Ctrl->>vSoC: Get Registers

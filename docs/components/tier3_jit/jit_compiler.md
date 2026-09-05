@@ -280,7 +280,7 @@ sequenceDiagram
     D->>E: Push HOT PC to Queue
     E->>C: Copy Template & Patch
     E->>S: Register Entry (PC, Offset)
-    
+
     Note over V, S: 実行時の検索（vSoC の step() から毎回呼び出す）
     V->>S: Lookup(PC)
     alt Card state != COMPILED
@@ -377,7 +377,7 @@ sequenceDiagram
 ### 6.1 性能制約と方策
 <!-- traceability: {JIT_CopyAndPatch} {JIT_RegisterMapping} -->
 - **目標**: コンパイルレイテンシを最小化し、WAMRインタープリタを上回る実行速度を実現。
-- **方策**: 
+- **方策**:
     - `{JIT_CopyAndPatch}`: 複雑な最適化を省き、テンプレートコピーのみでコンパイルを完了。
     - `{JIT_RegisterMapping}`: `Context`, `StackTop`, `WASM_PC` を物理レジスタに固定し、メモリアクセスを削減。
     - `Card Marking (O(1)) + Binary Search`: カードマーキング表による $O(1)$ 事前フィルタと二分探索により、高速な検索を実現。
@@ -385,7 +385,7 @@ sequenceDiagram
 ### 6.2 安全性制約と方策
 <!-- traceability: {PositionIndependentCode} {MemoryBoundaryCheck} {FastAddressCheck} {SimpleJITArchitecture} -->
 - **目標**: 不正なコード実行および W^X 違反の防止。
-- **方策**: 
+- **方策**:
     - `{PositionIndependentCode}`: 生成コードを位置独立とし、配置場所の自由度を確保。
     - `Cache Capacity Check`: コード生成時にキャッシュ溢れを厳密にチェックし、溢れた場合は 3面リングローテーションにより Oldest バンクを破棄して再利用する。これはキャッシュ容量管理であり、`{MemoryBoundaryCheck}`（ゲストメモリアクセスの隔離）とは別の関心事である。 `{SimpleJITArchitecture}`
     - `{MemoryBoundaryCheck}`: 生成コードに埋め込むゲストメモリアクセスの境界チェック。`FastAddressCheck` のサイズ比較命令（`CMP addr, mem_size; BHS.W <trap>`、マスクは使わない）により、ゲストリニアメモリ範囲外へのロード/ストアを検出した時点でインタープリタへのフォールバックへトラップする（境界外アドレスを黙って折り畳んで継続することはない）。 `{MemoryBoundaryCheck}` `{FastAddressCheck}`

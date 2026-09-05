@@ -235,7 +235,7 @@ sequenceDiagram
     participant Loader as WasmLoader
     participant Alloc as META_BumpAllocator
     participant ROM as WasmBinary
-    
+
     Client->>Loader: prepare(binary)
     Loader->>Alloc: allocate(module_view)
     Loader->>ROM: read_header

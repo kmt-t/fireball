@@ -188,20 +188,20 @@ class RoundRobinScheduler:
 ```mermaid
 stateDiagram-v2
     [*] --> Ready: spawn(task) / allocate TCB, insert at tail
-    
+
     Ready --> Running: [schedule] ready queue not empty / resume at head
     Running --> Ready: yield() / push to ready queue tail
-    
+
     Running --> CSPWait: send() to empty / push sender to wait
     Running --> CSPWait: recv() no data / push receiver to wait
     Running --> EventWait: wait_event(id) / push to event queue
     Running --> InterruptWait: [interrupt occurs] / ISR posts INT event
-    
+
     CSPWait --> Running: **CSP Handoff** [opposite ready]
     CSPWait --> Ready: [opposite not ready] / wake partner
     EventWait --> Ready: event dispatch / dequeue from wait
     InterruptWait --> Ready: ISR INT event / event loop process
-    
+
     Running --> [*]: exit() / cleanup TCB
     Running --> [*]: error / panic cleanup
 ```

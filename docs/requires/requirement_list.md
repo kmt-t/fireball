@@ -12,7 +12,7 @@ graph LR
     Developer((Developer))
     Operator((Operator))
     GuestApp((Guest App))
-    
+
     Developer --> UC1(Develop & Build WASM)
     Developer --> UC2(Debug Guest App)
     Operator --> UC3(OTA Update)

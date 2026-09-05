@@ -31,17 +31,17 @@ graph TB
             Reg["Registry<br/>URI → channel_id map<br/>FlatMap O(log N)"]
             AC["AccessControl<br/>Role matrix check<br/>sender_role ⊗ receiver_role"]
         end
-        
+
         subgraph "Routing & Ownership"
             R["Router<br/>Request routing<br/>Edge channel dispatch"]
             OM["OwnershipManager<br/>Revoke/Rendezvous/Grant<br/>Zero-copy CSP handoff"]
         end
-        
+
         subgraph "Message Processing"
             MH["MessageHandler<br/>KV-pair processing<br/>FlatMap search"]
         end
     end
-    
+
     R --> Reg
     Reg --> AC
     AC --> R
@@ -339,21 +339,21 @@ IPC ルータの名前解決は、URI からサービスディスクリプタ（
 ```mermaid
 graph TD
     Client["<<block>> Client Task<br/>─ Request: URI + Payload"]
-    
+
     Lookup["<b>Stage 1: URI Lookup</b><br/>─ Input: URI string view<br/>─ Query: flat_map_view<br/>─ Output: registry_entry"]
-    
+
     ACCheck["<b>Stage 2: Access Control</b><br/>─ Input: sender_role, receiver_role<br/>─ Query: role_matrix[sender][receiver]<br/>─ Output: permission (allow or deny)"]
-    
+
     ChGrant["<b>Stage 3: Channel Grant</b><br/>─ Input: channel_id + permission<br/>─ Output: channel handle"]
-    
+
     Router["<<block>> Router<br/>─ Route message to channel"]
-    
+
     Error1["<b>Error: Not Found</b><br/>─ URI unregistered<br/>─ Return recovery-strategy: restart"]
-    
+
     Error2["<b>Error: Access Denied</b><br/>─ Insufficient privilege<br/>─ Return recovery-strategy: panic"]
-    
+
     Success["<b>Success</b><br/>─ Ownership transfer starts<br/>─ Revoke/Rendezvous/Grant"]
-    
+
     Client --> Lookup
     Lookup -->|found| ACCheck
     Lookup -->|not found| Error1
@@ -361,7 +361,7 @@ graph TD
     ACCheck -->|deny| Error2
     ChGrant --> Router
     Router --> Success
-    
+
     style Lookup fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
     style ACCheck fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
     style ChGrant fill:#e8f5e9,stroke:#388e3c,stroke-width:2px
@@ -404,30 +404,30 @@ IPC ルータの各ルーティング操作における状態遷移を以下に�
 ```mermaid
 stateDiagram-v2
     [*] --> Idle
-    
+
     %% Main service flow
     Idle --> ServiceLookup: lookup(uri) / flat_map search
     Idle --> MessageRouting: route_message(channel, msg)
-    
+
     %% Service Lookup branch
     ServiceLookup --> PermissionCheck: [uri found]
     ServiceLookup --> ServiceNotFound: [uri not found]
-    
+
     %% Permission Check branch
     PermissionCheck --> MessageRouting: [access allowed]
     PermissionCheck --> PermissionDenied: [access denied]
-    
+
     %% Message Routing → Ownership Transfer Pipeline
     MessageRouting --> Revoke: begin send
     Revoke --> Rendezvous: mark In-flight
-    
+
     %% Rendezvous: blocks until the counterpart arrives, then always completes
     Rendezvous --> Grant: peer arrived (immediate or after a CSP block)
-    
+
     %% Success path
     Grant --> Complete: grant to receiver
     Complete --> Idle: done
-    
+
     %% Error handling → Idle
     ServiceNotFound --> Idle: error reported
     PermissionDenied --> Idle: error reported
@@ -456,19 +456,19 @@ stateDiagram-v2
 ```mermaid
 stateDiagram-v2
     [*] --> Uninitialized
-    
+
     Uninitialized --> SenderOwned: create_message() / sender allocates
-    
+
     SenderOwned --> RevokePhase: send(msg) / initiate transfer
-    
+
     RevokePhase --> InFlight: revoke_sender_access / mark in-flight
-    
+
     InFlight --> RendezvousWait: no peer waiting yet / block on CSP channel
     RendezvousWait --> GrantPhase: peer arrives / handoff completes
     InFlight --> GrantPhase: peer already waiting / immediate handoff
-    
+
     GrantPhase --> ReceiverOwned: grant_receiver_access / ownership transfer complete
-    
+
     ReceiverOwned --> [*]: receiver_drop / cleanup
 ```
 
@@ -521,7 +521,7 @@ sequenceDiagram
     participant R as IPCRouter
     participant Reg as Registry
     participant S as Server
-    
+
     C->>R: lookup("fireball://hal/uart/0")
     R->>Reg: search(uri)
     Reg-->>R: entry(role, channel_id)
@@ -541,15 +541,15 @@ sequenceDiagram
     participant R as <<block>> IPC Router
     participant Ch as <<block>> CSP Channel (edge)
     participant Rx as <<block>> Receiver Task
-    
+
     activate Tx
     Tx->>R: send(channel_id, msg) with resource ownership
     activate R
-    
+
     Note over R: [Revoke Phase]
     R->>R: Mark message "In-flight"
     R->>R: Lock sender's resource access
-    
+
     Note over R: [Rendezvous Phase]
     R->>Ch: channel_send(msg)
     activate Ch
@@ -560,21 +560,21 @@ sequenceDiagram
         Note over Tx: Sender task yields,<br/>scheduler runs other tasks
     end
     deactivate Ch
-    
+
     deactivate R
     deactivate Tx
-    
+
     Note over Rx: [Receiver arrives]
     activate Rx
     Rx->>Ch: channel_recv()
     activate Ch
     Ch-->>Rx: return msg (rendezvous completes,<br/>sender task resumed if it was blocked)
     deactivate Ch
-    
+
     Note over R: [Grant Phase]
     R->>Rx: Grant ownership to receiver
     R->>Tx: Release sender lock
-    
+
     Rx-->>Rx: Use resource (now owned)
     deactivate Rx
 ```
@@ -662,10 +662,10 @@ IPCのプリミティブ性を隠蔽し、依存性の逆転 (IoC) を実現す�
 
 ### 6.2 検証対象のプロパティ
 
-- **Safety**: 
+- **Safety**:
   - 二重所有不在（所有権競合不在）`{IPC_ZeroCopy}`
   - 単一待機者制約（1 チャネルにつき送信待機・受信待機のいずれか高々 1 つ、キュー化されない）
-- **Liveness**: 
+- **Liveness**:
   - In-flight 状態の有限解決性（相手タスクの到達による Rendezvous/Grant）
 
 ### 6.3 検証モデル概要
@@ -683,7 +683,7 @@ interrupt_flags: bitmask
 
 **遷移:** Send → Revoke → Rendezvous（相手待機中なら即時 Grant、未到達ならブロックして相手の Recv/Send 到達を待つ）→ Grant
 
-**不変式:** 
+**不変式:**
 - `sender_ownership != OWNED ∨ receiver_ownership != OWNED` (二重所有不在)
 - `waiter_dir != SEND ∨ waiter_dir != RECV`（同時に両方向の待機者を持たない。値は排他的な列挙のため常に真——ある瞬間のチャネルは NONE/SEND/RECV のいずれか一状態のみ）
 

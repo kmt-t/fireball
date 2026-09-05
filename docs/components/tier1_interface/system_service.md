@@ -75,7 +75,7 @@ sequenceDiagram
     participant S as WASI Service (Tier 1)
     participant R as IPC Router
     participant H as HAL
-    
+
     G->>S: WASI Call (e.g., fd_write)
     S->>R: lookup("fireball://hal/uart/0")
     R-->>S: channel_id
@@ -105,12 +105,12 @@ WASMゲストが呼び出す同期的な標準インターフェース (WASI) �
 def wasi_fd_write(fd: int, iovs: std.span[WasiIov], iovs_len: int, nwritten_ptr: int) -> int:
     # 1. 環境ポインタ（Context）の取得
     ctx = get_current_execution_context()
-    
+
     # 2. FDからIPCチャネルへの解決 (Virtual File System Lookup)
     target_channel = resolve_wasi_fd_to_channel(ctx, fd)
     if target_channel == INVALID_CHANNEL:
         return WASI_ERRNO_BADF
-    
+
     # 3. メモリ境界チェック (Tier 1 セキュリティゲートへの事前検証)
     if not ctx.memory_bounds_check(iovs, sizeof(WasiIov) * iovs_len):
         return WASI_ERRNO_FAULT
@@ -134,17 +134,17 @@ def wasi_fd_write(fd: int, iovs: std.span[WasiIov], iovs_len: int, nwritten_ptr:
         res = ipc_router.route_message(ctx.task, target_channel, msg)
         if res == ERROR_QUEUE_FULL || res == ERR_ACCESS_DENIED:
             return WASI_ERRNO_IO # 中断
-        
+
         # 6. 完了待機 (COOS yield)
         # 実質的な同期I/Oの模倣。HALが完了通知を返すまでタスクをサスペンドする。
         wait_for_ipc_response(ctx.task, target_channel)
-        
+
         total_written += ctx.task.last_response_message.get_value(KEY_WRITTEN_SIZE)
 
     # 7. 書き戻しと終了
     if ctx.memory_bounds_check(nwritten_ptr, sizeof(int)):
         write_guest_memory(nwritten_ptr, total_written)
-        
+
     return WASI_ERRNO_SUCCESS
 ```
 

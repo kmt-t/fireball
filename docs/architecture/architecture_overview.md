@@ -62,14 +62,14 @@ graph TD
     %% 破線 = インターフェース実装 (realizes)
     App -->|"uses: execute()"| vSoC
     Svc -->|"uses: syscall(uri)"| vSoC
-    
+
     vSoC -->|"uses: yield()"| COOS
     vSoC -->|"uses: lookup(uri) / route(msg)"| IPCR
-    
+
     IPCR -->|"uses: manage task lifecycle"| COOS
     HAL -.->|"realizes: device-handler interface"| IPCR
     Log -.->|"realizes: log-sink interface"| IPCR
-    
+
     HAL -.-|"register / read"| HW
 ```
 
@@ -268,18 +268,18 @@ sequenceDiagram
     participant HAL as <<block>> HAL
     participant IPCR as <<block>> IPC Router
     participant COOS as <<block>> COOS Kernel
-    
+
     activate Boot
     Boot->>HAL: Init Hardware
     activate HAL
     HAL-->>Boot: Success
     deactivate HAL
-    
+
     Boot->>IPCR: Register System Services (URI)
     activate IPCR
     IPCR-->>Boot: Registered
     deactivate IPCR
-    
+
     Boot->>COOS: Initialize Scheduler
     activate COOS
     COOS->>COOS: Start Idle Task
@@ -294,7 +294,7 @@ sequenceDiagram
     participant vSoC as <<block>> vSoC
     participant IPCR as <<block>> IPC Router
     participant Svc as <<block>> Target Service
-    
+
     activate App
     App->>vSoC: System Call(URI)
     activate vSoC
@@ -302,12 +302,12 @@ sequenceDiagram
     activate IPCR
     IPCR-->>vSoC: Handle (Pointer)
     deactivate IPCR
-    
+
     vSoC->>Svc: Send Message(Zero-copy)
     activate Svc
     Svc-->>vSoC: Reply
     deactivate Svc
-    
+
     vSoC-->>App: Return
     deactivate vSoC
     deactivate App

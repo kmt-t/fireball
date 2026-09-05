@@ -112,7 +112,7 @@ graph TD
 sequenceDiagram
     participant A as <<block>> Component A
     participant B as <<block>> Component B
-    
+
     activate A
     A->>B: Synchronous Request (args)
     activate B
@@ -137,16 +137,16 @@ sequenceDiagram
 ```mermaid
 stateDiagram-v2
     [*] --> Idle: 初期化完了
-    
+
     Idle --> Running: 実行開始 [resource available]
     Idle --> Error: エラー発生
-    
+
     Running --> Idle: 完了
     Running --> Suspended: 割り込み受信
-    
+
     Suspended --> Running: 再開コマンド
     Suspended --> Idle: キャンセル
-    
+
     Error --> [*]: 終了
 ```
 

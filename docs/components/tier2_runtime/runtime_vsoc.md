@@ -83,7 +83,7 @@ vSoC全体の可変な実行時状態を保持する構造体。
 | リニアメモリサイズ | ゲストリニアメモリの現在の有効バイト数。`{FastAddressCheck}` の境界比較（`CMP addr, mem_size; BHS __trap`）に直接使う——マスクは使わないため2の冪制約もない `{MemoryBoundaryCheck}` | バイト数 | 32bit符号なし (`[R1, #0x24]`) |
 | グローバル変数基底 | WASM `global` 配列（4バイト単位でインデックス付け）の開始アドレス | アドレス値 | 32bit符号なし (`[R1, #0x28]`) |
 
-`vsoc_runtime` メンバを含む `execution_context` は計44バイト（`+0x00`〜`+0x2B`）。`OperandStack`・`LocalStack`・`control_frame` はそれぞれ専用の頂点・境界オフセットペアを持つ独立した固定容量バッファであり、いずれか1本の伸び縮みが他の記録位置へ影響することはない（ADR-INTERP-03）。正本は [`wit/vsoc_runtime.wit`](wit/vsoc_runtime.wit)、物理配置は `{ExecutionContext_Layout}`。
+`vsoc_runtime` メンバを含む `execution_context` は計44バイト（`+0x00`〜`+0x2B`）。`OperandStack`・`LocalStack`・`control_frame` はそれぞれ専用の頂点・境界オフセットペアを持つ独立した固定容量バッファであり、いずれか1本の伸び縮みが他の記録位置へ影響することはない（ADR-INTERP-03）。正本は [`vsoc_runtime.wit`](docs/components/tier2_runtime/wit/vsoc_runtime.wit)、物理配置は `{ExecutionContext_Layout}`。
 
 > [!NOTE]
 > **構造体の役割分離**:
@@ -387,7 +387,7 @@ sequenceDiagram
 <!-- traceability: {META_RecoveryStrategy} -->
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | ゲストのプログラム実行を再開し、コルーチンの `yield` またはトラップが発生するまで継続する。内部で [`runtime_interpreter.md`](runtime_interpreter.md) の `run_step` または JIT コードへディスパッチする。 |
+| 機能概要 | ゲストのプログラム実行を再開し、コルーチンの `yield` またはトラップが発生するまで継続する。内部で [`runtime_interpreter.md`](docs/components/tier2_runtime/runtime_interpreter.md) の `run_step` または JIT コードへディスパッチする。 |
 | シグネチャ | `step() -> result<execution-state-category, sys-recovery-strategy>` |
 | 引数 | `ctx`: vsoc_context, `harness`: vsoc_harness |
 | 期待する結果 | 正常：一定期間の実行後に制御が戻る。異常：トラップ発生。 |
@@ -401,7 +401,7 @@ sequenceDiagram
 <!-- traceability: {META_RecoveryStrategy} -->
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | 物理割り込み等の外部イベントをゲストOS/アプリに通知するための仮想フラグを設定し、[`runtime_interpreter.md`](runtime_interpreter.md) の `sync_interrupts` へ中継する。 |
+| 機能概要 | 物理割り込み等の外部イベントをゲストOS/アプリに通知するための仮想フラグを設定し、[`runtime_interpreter.md`](docs/components/tier2_runtime/runtime_interpreter.md) の `sync_interrupts` へ中継する。 |
 | シグネチャ | `notify-interrupt(irq-id: u32) -> void` |
 | 引数 | `ctx`: vsoc_context, `irq-id`: 識別子 |
 | 期待する結果 | 所定のアドレス（SYSCTLレジスタ）にフラグが反映される。 |
@@ -413,7 +413,7 @@ sequenceDiagram
 
 #### `register-hook`
 <!-- traceability: {vMMIO_TrapAndEmulate} -->
-本APIは vSoC 層の公開ラッパーであり、`harness.vmmio`（vMMIOコントローラへの参照）越しに [`runtime_vmmio.md`](runtime_vmmio.md) の同名APIへそのまま転送する。実際のレジストリ登録・不変条件・エラー処理は vmmio 層の `register-hook`（`vmmio_context` を引数に取る）が正本であり、本節はその薄いラッパーの引数のみを記述する。
+本APIは vSoC 層の公開ラッパーであり、`harness.vmmio`（vMMIOコントローラへの参照）越しに [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md) の同名APIへそのまま転送する。実際のレジストリ登録・不変条件・エラー処理は vmmio 層の `register-hook`（`vmmio_context` を引数に取る）が正本であり、本節はその薄いラッパーの引数のみを記述する。
 
 | 項目 | 内容 |
 | :--- | :--- |
@@ -421,7 +421,7 @@ sequenceDiagram
 | シグネチャ | `register-hook(hook-id: hook-category, handler-addr: mem-address) -> operation-result` |
 | 引数 | `harness`: vsoc_harness（`harness.vmmio` を通じて転送先を解決）、`hook-id`: 領域識別子, `handler-addr`: ハンドラアドレス |
 | 期待する結果 | 指定範囲へのアクセス時に登録したコールバックが実行されるようになる。 |
-| 補足 | 転送先の事前条件・事後条件・不変条件・エラー処理は [`runtime_vmmio.md`](runtime_vmmio.md) の `register-hook` を正本とする。 `{vMMIO_TrapAndEmulate}` |
+| 補足 | 転送先の事前条件・事後条件・不変条件・エラー処理は [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md) の `register-hook` を正本とする。 `{vMMIO_TrapAndEmulate}` |
 
 ### 5.2 ネイティブAPI エクスポート
 <!-- traceability: {NativeAPI_Export} -->
@@ -432,7 +432,7 @@ Fireballでは、ホスト側のコードサイズを極限まで削減するた
 
 - **トラップ命令**: `uint32_t fireball_call(uint32_t id, uint32_t arg0, uint32_t arg1, ... uint32_t arg5)`
   - ゲストはこの関数をインポートし、統合システムコールID `id`（上位16bit: `service_id`, 下位16bit: `command_id`）および最大6つの汎用引数を指定して呼び出す（`{Syscall_Mapping}` を正本とする）。
-  - **この2つは同一階層の代替手段ではなく、層が異なる**。上記シグネチャはゲストから見た WASM インポート関数の ABI であり、ゲストは通常の関数呼び出しとして引数を渡す。トラップを受けたホスト側が、その引数を vMMIO の SYSCALL レジスタ群（`REG_SYSCALL_ARG0` 以降、`runtime_vmmio.md` を正本とする）へ転記してサービスへ渡す。戻り値は逆順に `REG_SYSCALL_ARG0` から読み出してゲストへ返る。ゲスト側コードが vMMIO レジスタを直接操作する必要はない。※整合性検証は [vSoC テスト仕様書](tests/runtime_vsoc_test_spec.md) `VSOC-40` を参照。
+  - **この2つは同一階層の代替手段ではなく、層が異なる**。上記シグネチャはゲストから見た WASM インポート関数の ABI であり、ゲストは通常の関数呼び出しとして引数を渡す。トラップを受けたホスト側が、その引数を vMMIO の SYSCALL レジスタ群（`REG_SYSCALL_ARG0` 以降、`runtime_vmmio.md` を正本とする）へ転記してサービスへ渡す。戻り値は逆順に `REG_SYSCALL_ARG0` から読み出してゲストへ返る。ゲスト側コードが vMMIO レジスタを直接操作する必要はない。※整合性検証は [runtime_vsoc_test_spec.md](docs/components/tier2_runtime/tests/runtime_vsoc_test_spec.md) `VSOC-40` を参照。
 - **WASI互換性**: ゲスト側で `wasi-libc` と Fireball専用の Shim ライブラリをリンクすることで実現する。
 
 ### 5.3 マルチモジュール対応
@@ -466,12 +466,12 @@ Fireballでは、ホスト側のコードサイズを極限まで削減するた
 
 | 不変条件 | 説明 | 検証モデル / プロパティ名 |
 | :--- | :--- | :--- |
-| **Safepoint応答性** | 実行中のタスクは必ず Safepoint に到達し、割り込みフラグが検出されること。`{JIT_Safepoint}` | [`formal/vsoc_state_model.py`](formal/vsoc_state_model.py) `safepoint_reachable_definitively` |
-| **IRQ/JIT レース不在** | Safepoint 同期を経ずに JIT ネイティブ実行中の割り込み処理が始まらないこと。`{GLOBAL_InterruptWakeup}` | [`formal/vsoc_state_model.py`](formal/vsoc_state_model.py) `irq_jit_race_freedom_proof` |
-| **Debugger安全性** | デバッガがメモリを変更した後、キャッシュ flush が完了するまで旧世代コードが実行されないこと。`{Debugger_Jit_Flush}` | [`formal/vsoc_cache_coherency_model.py`](formal/vsoc_cache_coherency_model.py) `no_stale_code_after_debugger_write` |
-| **キャッシュ整合性** | generation cookie が全バンク一括で更新され、バンク間で世代が逆行・不一致にならないこと。`{Challenge_JITCacheEfficiency}` | [`formal/vsoc_cache_coherency_model.py`](formal/vsoc_cache_coherency_model.py) `cache_generation_never_regresses` |
-| **リソース有界性** | 3面ローテーション時、Purge とエントリ表スロット回収が不可分に行われ、未回収スロットが蓄積しないこと。 | [`formal/vsoc_cache_coherency_model.py`](formal/vsoc_cache_coherency_model.py) `rotation_reclaims_every_bank` |
-| **flush 完了性** | デバッガ介入で dirty になったキャッシュの flush は必ず完了すること。`{Debugger_Jit_Flush}` | [`formal/vsoc_cache_coherency_model.py`](formal/vsoc_cache_coherency_model.py) `debugger_flush_completes` |
+| **Safepoint応答性** | 実行中のタスクは必ず Safepoint に到達し、割り込みフラグが検出されること。`{JIT_Safepoint}` | [`vsoc_state_model.py`](docs/components/tier2_runtime/formal/vsoc_state_model.py) `safepoint_reachable_definitively` |
+| **IRQ/JIT レース不在** | Safepoint 同期を経ずに JIT ネイティブ実行中の割り込み処理が始まらないこと。`{GLOBAL_InterruptWakeup}` | [`vsoc_state_model.py`](docs/components/tier2_runtime/formal/vsoc_state_model.py) `irq_jit_race_freedom_proof` |
+| **Debugger安全性** | デバッガがメモリを変更した後、キャッシュ flush が完了するまで旧世代コードが実行されないこと。`{Debugger_Jit_Flush}` | [`vsoc_cache_coherency_model.py`](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) `no_stale_code_after_debugger_write` |
+| **キャッシュ整合性** | generation cookie が全バンク一括で更新され、バンク間で世代が逆行・不一致にならないこと。`{Challenge_JITCacheEfficiency}` | [`vsoc_cache_coherency_model.py`](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) `cache_generation_never_regresses` |
+| **リソース有界性** | 3面ローテーション時、Purge とエントリ表スロット回収が不可分に行われ、未回収スロットが蓄積しないこと。 | [`vsoc_cache_coherency_model.py`](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) `rotation_reclaims_every_bank` |
+| **flush 完了性** | デバッガ介入で dirty になったキャッシュの flush は必ず完了すること。`{Debugger_Jit_Flush}` | [`vsoc_cache_coherency_model.py`](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) `debugger_flush_completes` |
 | **状態一貫性** | vSoC Engine ライフサイクル（4.2）の各遷移後に状態が整合していること。 | 直交表 / レビュー（形式検証対象外） |
 
 ### 6.2 モデル分割の理由

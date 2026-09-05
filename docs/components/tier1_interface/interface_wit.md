@@ -189,7 +189,7 @@ FireballにおけるWASI 0.2標準APIの具体的なマッピングと実装方�
    - ストリームI/O操作（データの順次読み書き）は、COOSのIPCチャネルを用いたメッセージ通信として実装される。
    - ホスト側のメモリバッファとゲスト（WASM）側のリニアメモリ間で、ゼロコピーまたは最小限のオーバーヘッドでデータ転送を行う。
 3. **`wasi:cli/stdout` / `wasi:cli/stderr`**:
-   - コンソール出力（標準出力・標準エラー出力）は、5.5節の `console-output` リソース経由で `HAL_Transport` へ直接転送される。`system_logging.md` の内部ロガー（辞書ベース）は経由しない。 `{WASI_ConsoleRawOutput}`
+   - コンソール出力（標準出力・標準エラー出力）は、`console-output` リソース経由で `HAL_Transport` へ直接転送される。`system_logging.md` の内部ロガー（辞書ベース）は経由しない。 `{WASI_ConsoleRawOutput}`
    - ゲスト内での `print` や `eprint` は、自動的にシステムコール経由で `console-output.write` にルーティングされる。
 4. **`wasi:filesystem/types` / `wasi:filesystem/preopens`**:
    - Fireballは組み込み向け極小ハイパーバイザであるため、一般的な物理ディスク上のファイルシステムはサポートしない。

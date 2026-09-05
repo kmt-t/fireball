@@ -63,8 +63,8 @@
 
 ## 4. テスト実行環境・ランナー構成
 
-- **テスト実装モジュール**: `experiments/pysim/tests/cross_cutting/test_pairwise_combinations.py`
-- **統合テストランナー**: `experiments/pysim/tests/run_all.py`
+- **テスト実装モジュール**: [`test_pairwise_combinations.py`](experiments/pysim/tests/cross_cutting/test_pairwise_combinations.py)
+- **統合テストランナー**: [`run_all.py`](experiments/pysim/tests/run_all.py)
 - **実行コマンド**:
   ```bash
   uv run --project tools/spec-integrator --with wasmtime python experiments/pysim/tests/run_all.py

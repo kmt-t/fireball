@@ -70,25 +70,34 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 **独立した固定構造体としての配置 (`{ContextPointerRegister}`)**:
 `execution_context` は、`OperandStack`・`LocalStack`・`control_frame` スタック（いずれも互いに独立した固定容量バッファ）のいずれにもインライン配置されない、単体の固定サイズ構造体である。ハンドラ呼び出しの第2引数（`R1: stack_bot`）として渡される。`R2` はカレントの `call_frame`（`LocalStack` 内）のローカル変数配列先頭を指す `local_base`（第3引数）として、`R3` はオペランドスタックのスタックトップ値 `tos`（第4引数）として直接引き回す。3本のスタックそれぞれの現在位置は `execution_context` 内のオフセットフィールドとして保持し、各バッファ自体の物理ベースアドレスはビルド時に固定される静的配列であるため、追加のベースポインタレジスタを消費しない。 `{ContextPointerRegister}` `{JIT_RegisterMapping}` `{AAPCS_FastCall}`
 
-| 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
+##### CPS 4引数 仮想CPUレジスタ（ディスパッチ境界での引数受渡し）
+
+| 項目名 | 機能と役割 | 型分類 | 物理レジスタ |
 | :--- | :--- | :--- | :--- |
+| プログラムカウンタ | 現在実行中の命令を指し示す統一プログラムカウンタ（UnifiedPC: `(func_index << 16) \| bytecode_offset`） | 統一オフセット | `R0: ip` |
 | スタックボトム基底 | `execution_context` 自身へのポインタ | 物理レジスタ | `R1: stack_bot` `{ContextPointerRegister}` |
-| プログラムカウンタ | 現在実行中の命令を指し示す統一プログラムカウンタ（UnifiedPC: `(func_index << 16) \| bytecode_offset`） | 統一オフセット | 32bit符号なし (`ip`: R0) |
 | ローカル変数基底 | カレントコールフレームのローカル変数配列基底ポインタ | 物理レジスタ | `R2: local_base` (`{AAPCS_FastCall}` 準拠) |
 | スタックトップ (TOS) | `OperandStack` 最上位値（スタックトップ）を直接保持するレジスタ | 物理レジスタ | `R3: tos` (`{AAPCS_FastCall}` 準拠) |
-| オペランドスタック頂点オフセット | `OperandStack` バッファ先頭からの現在の頂点オフセット。コール境界を跨いでも連続しており、関数呼び出しのたびにリセットされない | 長さ/オフセット | 32bit符号なし (`[R1, #0x00]`) |
-| オペランドスタック境界上限 | `OperandStack` バッファ自体のオーバーフロー検知用上限オフセット | 長さ/オフセット | 32bit符号なし (`[R1, #0x04]`) |
-| ローカルスタック頂点オフセット | `LocalStack` バッファ先頭からの、次に `call_frame`+ローカル変数ブロックを push する位置のオフセット | オフセット | 32bit符号なし (`[R1, #0x08]`) |
-| カレントフレームオフセット | 現在アクティブな `call_frame` の `LocalStack` バッファ先頭からの開始オフセット | オフセット | 32bit符号なし (`[R1, #0x0C]`) |
-| ローカルスタック境界上限 | `LocalStack` バッファ自体のオーバーフロー検知用上限オフセット | 長さ/オフセット | 32bit符号なし (`[R1, #0x10]`) |
-| 制御フレームスタック頂点オフセット | `control_frame` バッファ先頭からの現在の頂点オフセット/深さ。上記2本とは完全に独立して管理される（ADR-INTERP-03） | 長さ/オフセット | 32bit符号なし (`[R1, #0x14]`) |
-| 制御フレームスタック境界上限 | `control_frame` バッファ自体のオーバーフロー検知用上限オフセット | 長さ/オフセット | 32bit符号なし (`[R1, #0x18]`) |
-| 有効命令ハンドラ | 現在使用されているハンドラ（通常用/デバッグ用）への参照 | テーブルポインタ | `opcode_handler` の配列 (`[R1, #0x1C]`) |
-| ゲストメモリ基底 (mem_base) | ゲストリニアメモリの開始アドレス | メモリアドレス | 32bit符号なし (`[R1, #0x20]`) |
-| ゲストメモリサイズ (mem_size) | ゲストリニアメモリの有効バイト数（境界チェック比較用） | メモリサイズ | 32bit符号なし (`[R1, #0x24]`) |
-| グローバル配列基底 (globals_base) | WASM global 配列の開始アドレス | メモリアドレス | 32bit符号なし (`[R1, #0x28]`) |
 
-`execution_context` は計44バイト（`[R1, #0x00]`〜`[R1, #0x2B]`）である。3本のスタックそれぞれの頂点・境界を独立したフィールドとして持つことで、いずれか1本の伸び縮みが他の記録位置へ影響することは物理的にあり得ない。バイトオフセットの物理配置は `{ExecutionContext_Layout}` に記載する。
+##### `execution_context` 物理メモリレイアウト（11フィールド / 計44バイト）
+
+`[R1, #0x00]`〜`[R1, #0x2B]` に配置される固定構造体メモリフィールド：
+
+| 項目名 | 機能と役割 | 型分類 | サイズ・オフセット |
+| :--- | :--- | :--- | :--- |
+| オペランドスタック頂点オフセット | `OperandStack` バッファ先頭からの現在の頂点オフセット。コール境界を跨いでも連続しており、関数呼び出しのたびにリセットされない | 長さ/オフセット | 4バイト (`[R1, #0x00]`) |
+| オペランドスタック境界上限 | `OperandStack` バッファ自体のオーバーフロー検知用上限オフセット | 長さ/オフセット | 4バイト (`[R1, #0x04]`) |
+| ローカルスタック頂点オフセット | `LocalStack` バッファ先頭からの、次に `call_frame`+ローカル変数ブロックを push する位置のオフセット | オフセット | 4バイト (`[R1, #0x08]`) |
+| カレントフレームオフセット | 現在アクティブな `call_frame` の `LocalStack` バッファ先頭からの開始オフセット | オフセット | 4バイト (`[R1, #0x0C]`) |
+| ローカルスタック境界上限 | `LocalStack` バッファ自体のオーバーフロー検知用上限オフセット | 長さ/オフセット | 4バイト (`[R1, #0x10]`) |
+| 制御フレームスタック頂点オフセット | `control_frame` バッファ先頭からの現在の頂点オフセット/深さ。上記2本とは完全に独立して管理される（ADR-INTERP-03） | 長さ/オフセット | 4バイト (`[R1, #0x14]`) |
+| 制御フレームスタック境界上限 | `control_frame` バッファ自体のオーバーフロー検知用上限オフセット | 長さ/オフセット | 4バイト (`[R1, #0x18]`) |
+| 有効命令ハンドラ | 現在使用されているハンドラ（通常用/デバッグ用）への参照 | テーブルポインタ | 4バイト (`[R1, #0x1C]`) |
+| ゲストメモリ基底 (mem_base) | ゲストリニアメモリの開始アドレス | メモリアドレス | 4バイト (`[R1, #0x20]`) |
+| ゲストメモリサイズ (mem_size) | ゲストリニアメモリの有効バイト数（境界チェック比較用） | メモリサイズ | 4バイト (`[R1, #0x24]`) |
+| グローバル配列基底 (globals_base) | WASM global 配列の開始アドレス | メモリアドレス | 4バイト (`[R1, #0x28]`) |
+
+`execution_context` 構造体実体は上記 11 フィールド（すべて 32bit / 4バイト）から構成され、計44バイト（`[R1, #0x00]`〜`[R1, #0x2B]`）である。3本のスタックそれぞれの頂点・境界を独立したフィールドとして持つことで、いずれか1本の伸び縮みが他の記録位置へ影響することは物理的にあり得ない。バイトオフセットの物理配置は `{ExecutionContext_Layout}` に記載する。
 
 **TOS レジスタキャッシングとスタック同期不変条件 (`INTP-GOTCHA-01`)**:
 オペランドスタックの最上位要素（Top-of-Stack: TOS）を常に物理レジスタ `R3: tos` に常駐させることで、メモリアクセス回数を半減させ、スタック操作命令（`i32.add`, `local.get` 等）の実行性能を最大化する。各命令ハンドラの入口において、直前の演算結果は `R3` に保持されており、必要に応じて第2オペランドのみをスタックバッファからポップする。ハンドラを脱出して関数呼び出しや外部システムコール、JIT 遷移を行う境界においては、TOS レジスタの値をメインスタック配列へ書き戻して（フラッシュ）同期させる。
@@ -281,7 +290,7 @@ class WASMInterpreter:
 ```
 
 #### 統合 Tiered ランタイムエンジン・コンセプトコード (`concepts/runtime_engine_concept.py`)
-インタープリタ実行、2-bit Hotspot 検出、Copy-and-Patch JIT コンパイル、3面マルチバッファキャッシュ（Active/Warm/Oldest）、および MPU W^X 保護プロトコルを統合した自己完結実行シミュレーションは [`concepts/runtime_engine_concept.py`](concepts/runtime_engine_concept.py) を参照。
+インタープリタ実行、2-bit Hotspot 検出、Copy-and-Patch JIT コンパイル、3面マルチバッファキャッシュ（Active/Warm/Oldest）、および MPU W^X 保護プロトコルを統合した自己完結実行シミュレーションは [`runtime_engine_concept.py`](docs/components/tier2_runtime/concepts/runtime_engine_concept.py) を参照。
 
 ### 4.2 状態遷移図
 <!-- traceability: {ThreadedInterpreter} {JIT_RuntimeAPI_Fallback} {Interpreter_LazyJITSwitch} {LowLatencyJIT} {SimpleJITArchitecture} {Challenge_ApproximateYield} {Debug_Integrated} -->
@@ -373,7 +382,7 @@ sequenceDiagram
 <!-- traceability: {META_RecoveryStrategy} -->
 | コンポーネント | 連携内容 | 参照データ構造 |
 | :--- | :--- | :--- |
-| **WASM Loader** | WASMバイナリの索引情報（関数、命令、即値）の提供 | [`module_view`](runtime_loader.md#モジュールビューmodule_view) |
+| **WASM Loader** | WASMバイナリの索引情報（関数、命令、即値）の提供 | [`runtime_loader.md`](docs/components/tier2_runtime/runtime_loader.md#モジュールビューmodule_view) |
 | **JIT Compiler** | ホットスポット情報の共有と実行エンジンの切り替え | `execution_context`, 履歴バッファ |
 | **Debugger** | ブレークポイント判定と実行状態の可視化 | `debug_handler_table`, `execution_context` |
 | **vSoC** | 実行制御（step）と協調型マルチタスク（yield）の管理 | `execution_context` |

@@ -1,7 +1,7 @@
 # Fireball アクティブバックログ
 
 Fireball Hypervisor の現行作業および次期フェーズのタスク一覧。
-全体の開発ロードマップは `docs/plans/roadmap_phase.md` を参照。
+全体の開発ロードマップは [`roadmap_phase.md`](docs/plans/roadmap_phase.md) を参照。
 品質課題および検証結果は `reports/doc_report.md` を正本とする。
 
 ---
@@ -20,7 +20,7 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
 - [x] **Step 1: コンセプトコード・初期テスト仕様・形式検証 (DONE)**:
   - 全 16 コンセプトコードの実装および最新仕様同期（`typing.Any` 完全排除、具体型・代数的データ型徹底）
   - 全 10 形式検証モデル（`pyModelChecking`）の CTL 論理式証明および `guards=False` 変異検査による反証性担保（28/28 変異検出）
-  - 全 22 ユニットテストスイート（`experiments/pysim/tests/cross_cutting/test_gotchas.py` 含む 22/22 PASS）
+  - 全 22 ユニットテストスイート（[`test_gotchas.py`](experiments/pysim/tests/cross_cutting/test_gotchas.py) 含む 22/22 PASS）
 
 ---
 
@@ -35,10 +35,10 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
   - 仕様書（自然言語記述）とテスト仕様書の完全同期
 - [ ] **Step 2.3: ユニットテストコードの網羅性・品質強化**:
   - エッジケース・異常系・直交表組み合わせテストの拡充
-  - テストランナー（`experiments/pysim/tests/run_all.py`）による全 22+ スイートの高速・高信頼実行の維持
+  - テストランナー（[`run_all.py`](experiments/pysim/tests/run_all.py)）による全 22+ スイートの高速・高信頼実行の維持
 - [ ] **Step 2.4: 物理リソース予算（RAM 32KB / ROM 96KB）の厳密な再見積もり**:
-  - **RAM (32KB)**: JITキャッシュ 6.63KB, 統合スタック 2.02KB, WASMリニアメモリ 4.0KB, vSoCメタデータ 1.13KB, COOS 1.31KB, IPC/vMMIO 1.38KB, サブシステム 1.75KB, C++ Core/MSPスタック 3.0KB $	o$ 静的合計 **21.20 KB** (安全余白 10.80 KB / 33.7%) の実機適合確認 `{Resource_Estimation_Model}`
-  - **ROM (96KB)**: JITステンシル 8.0KB, Interpreter 14.0KB, Loader 6.0KB, COOS/IPC 10.0KB, vMMIO 5.5KB, HAL/WASI 12.0KB, GDB 4.5KB, 内蔵WASM 20.0KB, スタートアップ 4.0KB $	o$ 静的合計 **84.0 KB** (安全余白 12.0 KB / 12.5%) の確認
+  - **RAM (32KB)**: JITキャッシュ 6.63KB, 統合スタック 2.02KB, WASMリニアメモリ 4.0KB, vSoCメタデータ 1.13KB, COOS 1.31KB, IPC/vMMIO 1.38KB, サブシステム 1.75KB, C++ Core/MSPスタック 3.0KB $\to$ 静的合計 **21.22 KB** (安全余白 10.78 KB / 33.7%) の実機適合確認 `{Resource_Estimation_Model}`
+  - **ROM (96KB)**: JITステンシル 8.0KB, Interpreter 14.0KB, Loader 6.0KB, COOS/IPC 10.0KB, vMMIO 5.5KB, HAL/WASI 12.0KB, GDB 4.5KB, 内蔵WASM 20.0KB, スタートアップ 4.0KB $\to$ 静的合計 **84.0 KB** (安全余白 12.0 KB / 12.5%) の確認
 - [ ] **Step 2.5: オーナー（人間）による最終品質レビュー & Phase 1 GO 判定**:
   - 仕様・シミュレータコード・テスト設計・バジェットを Freeze し、C++23 実装フェーズ（Phase 1）への移行を最終承認 `{META_SpecificationFirst}`
 

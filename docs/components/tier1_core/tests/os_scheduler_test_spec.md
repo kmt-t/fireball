@@ -2,8 +2,8 @@
 
 ## 1. 目的と対象範囲
 
-正本: `docs/components/tier1_core/os_scheduler.md`
-参考実装: `docs/components/tier1_core/concepts/scheduler_concept.py`
+正本: [`os_scheduler.md`](docs/components/tier1_core/os_scheduler.md)
+参考実装: [`scheduler_concept.py`](docs/components/tier1_core/concepts/scheduler_concept.py)
 
 純粋協調型ラウンドロビンスケジューラ（`{ADR_CoosPureRoundRobin}`）の、タスクライフサイクル・READYキュー・イベント駆動起床（`{ADR_EventDrivenWakeQueue}`）に関する振る舞いを定義する。CSPチャネルによるハンドオフは対象外（`os_coos_test_spec.md` を参照）。
 
@@ -27,7 +27,7 @@
 
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| SCHED-GOTCHA-01 | 連続直接ハンドオフ上限とメインループ強制復帰 | 2つのタスクが CSP Rendezvous で互いにピンポン通信を継続 | 連続ハンドオフ上限（既定8回）まで通信を実行 | 上限到達時に直接遷移が打ち切られ、タスクが READY キュー末尾へ戻されてスケジューラのメイン巡回ループへ強制復帰する。**実装の勘所**: 直接ハンドオフを無制限に許可すると、特定タスクペアが CPU を独占して他の READY タスク（タイマーや監視など）が永久に餓死（Starvation）する | `os_scheduler.md` §3.3, `{Challenge_CspHandoffStarvation}` |
+| SCHED-GOTCHA-01 | 連続直接ハンドオフ上限とメインループ強制復帰 | 2つのタスクが CSP Rendezvous で互いにピンポン通信を継続 | 連続ハンドオフ上限（既定8回）まで通信を実行 | 上限到達時に直接遷移が打ち切られ、タスクが READY キュー末尾へ戻されてスケジューラのメイン巡回ループへ強制復帰する。**実装の勘所**: 直接ハンドオフを無制限に許可すると、特定タスクペアが CPU を独占して他の READY タスク（タイマーや監視など）が永久に餓死（Starvation）する | `os_scheduler.md` , `{Challenge_CspHandoffStarvation}` |
 
 ## 3. テスト検証実績と網羅状況
 

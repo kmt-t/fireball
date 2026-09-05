@@ -71,7 +71,7 @@ WITインターフェース名は kebab-case で定義されるが、C++の公�
 
 #### `allocate-shared` (IPC転送データ専用)
 <!-- traceability: {OwnershipTransfer} -->
-IPC転送のための共有メモリブロック確保は、上記の `acquire-partition`/`acquire-slot` とは別のライフサイクルを持つ。所有権の移動が `{ThreeStageRouting}` の Revoke → Rendezvous → Grant と、`{OwnerMismatchTrap}`（Tier 2、SHM=FC=14 の PTE `owner_id`/`FB_TASK_ID_FLIGHT`）双方に跨るため、`shared-block` はこの2つの上位仕様が管理する状態を物理メモリ側で保持するRAIIラッパーであり、独自の所有権管理を並行して持つものではない。`release()`/`claim()` の呼び出しは、`{ThreeStageRouting}` のRevoke/Grantフェーズおよび対応する vMMIO PTE の `owner_id` 更新と対応する（詳細は §7）。 `{OwnershipTransfer}`
+IPC転送のための共有メモリブロック確保は、上記の `acquire-partition`/`acquire-slot` とは別のライフサイクルを持つ。所有権の移動が `{ThreeStageRouting}` の Revoke → Rendezvous → Grant と、`{OwnerMismatchTrap}`（Tier 2、SHM=FC=14 の PTE `owner_id`/`FB_TASK_ID_FLIGHT`）双方に跨るため、`shared-block` はこの2つの上位仕様が管理する状態を物理メモリ側で保持するRAIIラッパーであり、独自の所有権管理を並行して持つものではない。`release()`/`claim()` の呼び出しは、`{ThreeStageRouting}` のRevoke/Grantフェーズおよび対応する vMMIO PTE の `owner_id` 更新と対応する（詳細は ）。 `{OwnershipTransfer}`
 
 | 項目 | 内容 |
 | :--- | :--- |
@@ -278,10 +278,10 @@ Copy-and-Patch の各命令パッチごとに個別 MPU 切替を行うとバリ
 ### 8.1 検証対象の不変条件
 - **ページ単位権限分離**: 4KB 物理ページ内に異種タスクのスロットが共存しないこと（`MEM-14`, `MEM-GOTCHA-01`）。
 - **非所有者アクセストラップ**: 所有権未取得スロットへのアクセスが `TRAP_OWNER_MISMATCH` で拒絶されること（`MEM-16`, `MEM-GOTCHA-02`）。
-- **W^X 不変条件**: JIT キャッシュ領域で `RWX` が同時に許可される状態が存在しないこと（`docs/components/tier3_jit/formal/jit_cache_model.py`, `MEM-23`）。
+- **W^X 不変条件**: JIT キャッシュ領域で `RWX` が同時に許可される状態が存在しないこと（[`jit_cache_model.py`](docs/components/tier3_jit/formal/jit_cache_model.py), `MEM-23`）。
 
 ### 8.2 テスト仕様書との連携
-本コンポーネントのテストケース（MEM-01〜MEM-25, MEM-GOTCHA-01〜04）は、[`tests/platform_memory_test_spec.md`](tests/platform_memory_test_spec.md) を正本として定義する。
+本コンポーネントのテストケース（MEM-01〜MEM-25, MEM-GOTCHA-01〜04）は、[`platform_memory_test_spec.md`](docs/components/tier3_platform/tests/platform_memory_test_spec.md) を正本として定義する。
 
 ## 9. 設計判断 (ADR)
 <!-- traceability: {ADR_SharedBlockRaii} {ADR_MemoryManagerMinimalSurface} {ADR_PageGranularPermissionIsolation} -->
@@ -301,7 +301,7 @@ Copy-and-Patch の各命令パッチごとに個別 MPU 切替を行うとバリ
     - 案1: `shm-id`を単なる整数IDとし、明示的な`release_shm(id)`/`acquire_shm(id)`関数で操作する。実装は単純だが、解放忘れやダングリング参照を型システムで防げない。
     - 案2: `shm-id`をRAII所有権を持つ`shared-block`リソースとして設計し、`release()`/`claim()`で所有権移動を明示し、デストラクタで自動解放する。
   - **結論**: 案2を採用する。
-  - **理由**: `release()`で送信側が無効化、`claim()`で受信側が取得する設計により、ダングリングポインタを構造的に防止できる。デストラクタでの自動解放により手動`deallocate`忘れも排除できる。`to-shm`/`to-address`のような対称的な変換名より`release`/`claim`の方が所有権移動という意図を明確に表す。この所有権移動は独立した機構ではなく、`ipc_router.md`のRevoke/Grant（PTE `owner_id`更新）と完全連動する（§6.4）。
+  - **理由**: `release()`で送信側が無効化、`claim()`で受信側が取得する設計により、ダングリングポインタを構造的に防止できる。デストラクタでの自動解放により手動`deallocate`忘れも排除できる。`to-shm`/`to-address`のような対称的な変換名より`release`/`claim`の方が所有権移動という意図を明確に表す。この所有権移動は独立した機構ではなく、`ipc_router.md`のRevoke/Grant（PTE `owner_id`更新）と完全連動する（{OwnershipTransfer}）。
 
 - **決定事項**: `{ADR_MemoryManagerMinimalSurface}` (2026-02-17)
   - **背景**: メモリマネージャのAPIに、確保済みブロックの情報を問い合わせる`query(addr) -> memory-info`と、所有権を確認する`check-ownership(addr, task-id) -> bool`を含めるかどうかを決定する必要があった。

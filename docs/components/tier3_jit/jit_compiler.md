@@ -12,21 +12,21 @@ JIT Compiler は、WASMバイトコードを実行時にネイティブコード
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {JIT_CopyAndPatch} -->
-本コンポーネントは **Tier 3 (詳細リーフコンポーネント: Leaf Component)** に属し、vSoC (`runtime_vsoc.md`) から分解された JIT コンパイルパイプライン、事前生成テンプレートのコピー＆パッチ結合、および C++ `constexpr` 命令エンコードを担当する。ランタイム側のエントリ検索・キャッシュ管理・ホットスポット検出は [`jit_runtime.md`](jit_runtime.md) が担当する。 `{META_3TierSeparation}` `{JIT_CopyAndPatch}`
+本コンポーネントは **Tier 3 (詳細リーフコンポーネント: Leaf Component)** に属し、vSoC (`runtime_vsoc.md`) から分解された JIT コンパイルパイプライン、事前生成テンプレートのコピー＆パッチ結合、および C++ `constexpr` 命令エンコードを担当する。ランタイム側のエントリ検索・キャッシュ管理・ホットスポット検出は [`jit_runtime.md`](docs/components/tier3_jit/jit_runtime.md) が担当する。 `{META_3TierSeparation}` `{JIT_CopyAndPatch}`
 
 ### 2.1 JIT サブシステムのデコンポジション
 <!-- traceability: {JIT_Encoder} {JIT_CopyAndPatch} -->
 JITサブシステムは、以下の2つの独立した設計書に責務を分離して構成される。
 
-- **[JIT Compiler (コード生成コア)](jit_compiler.md)**: 命令テンプレートを用いたネイティブコード生成（Copy-and-Patch Engine）および静的な命令エンコード DSL（constexpr Assembler）。 `{JIT_Encoder}` `{JIT_CopyAndPatch}`
-- **[JIT Runtime (ランタイム管理)](jit_runtime.md)**: 実行履歴監視・ホットスポット判定（Hotspot Detector）、PC-アドレス変換検索（JIT Entry Index）、および 3面キャッシュローテーション。 `{SimpleJITArchitecture}` `{JIT_MultiBuffer_Cache}`
+- **[jit_compiler.md](docs/components/tier3_jit/jit_compiler.md)**: 命令テンプレートを用いたネイティブコード生成（Copy-and-Patch Engine）および静的な命令エンコード DSL（constexpr Assembler）。 `{JIT_Encoder}` `{JIT_CopyAndPatch}`
+- **[jit_runtime.md](docs/components/tier3_jit/jit_runtime.md)**: 実行履歴監視・ホットスポット判定（Hotspot Detector）、PC-アドレス変換検索（JIT Entry Index）、および 3面キャッシュローテーション。 `{SimpleJITArchitecture}` `{JIT_MultiBuffer_Cache}`
 
 ## 3. 静的モデル
 
 ### 3.1 データ構造
 - **`CopyAndPatchEngine`**: WASM命令に対応するネイティブ命令テンプレートを選択・コピーし、即値・分岐先・APIポインタをパッチ適用するクラス。
 - **`constexpr_assembler`**: C++の `constexpr` 機能を活用し、ビルド時に Thumb-2 / RISC-V 命令バイナリを型安全に静的生成する DSL。
-- **命令テンプレート (`jit_template`)**: パッチスロットを含むネイティブ命令列の雛形（[JIT ステンシルカタログ](../../specs/jit_stencil_catalog.md) 準拠）。
+- **命令テンプレート (`jit_template`)**: パッチスロットを含むネイティブ命令列の雛形（[jit_stencil_catalog.md](docs/specs/jit_stencil_catalog.md) 準拠）。
 - **JIT トレースヘッダ (`jit_trace_header`)**: キャッシュに書き込まれる各ネイティブトレースの先頭（`+0x00`）に配置される 16 バイト固定長のメタデータ構造体。
 
 ### 3.2 内部ブロック図
@@ -89,7 +89,7 @@ typedef int64_t (*opcode_handler_t)(
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
 | テンプレート辞書 | WASM命令に対応するJITテンプレートの検索索引 | アクセス辞書 | `jit_template_map` |
-| 命令テンプレート | WASM命令に対応するネイティブバイナリの雛形 | バイナリビュー | ROM参照（[JIT ステンシルカタログ](../../specs/jit_stencil_catalog.md) 準拠。Thumb-2 のみを収録し、RISC-V の物理ステンシルは別カタログとして今後定義する） |
+| 命令テンプレート | WASM命令に対応するネイティブバイナリの雛形 | バイナリビュー | ROM参照（[jit_stencil_catalog.md](docs/specs/jit_stencil_catalog.md) 準拠。Thumb-2 のみを収録し、RISC-V の物理ステンシルは別カタログとして今後定義する） |
 | 位置独立性 (PIC) | 任意アドレス・キャッシュバンクで再コンパイル不要で動作 | 設計制約 | 絶対アドレス埋め込み禁止。`local_base` 相対、`stack_bot` 相対、`rel32` 相対分岐のみ `{PositionIndependentCode}` |
 
 ##### 物理レジスタマッピング一覧表
@@ -101,8 +101,8 @@ JIT トレースとインタープリタは呼び出し境界において CPS 4�
 | **ARM (Thumb-2)** | `R0` | `ip` (WASM PC) | 呼び出し境界引数 | Caller-saved |
 | | `R1` | `stack_bot` (実行コンテキスト) | 呼び出し境界引数（`mem_base/size` ピン留め起点） | Caller-saved |
 | | `R2` | `local_base` (ローカル配列基底) | 呼び出し境界引数 | Caller-saved |
-| | `R3` | `tos` (Top of Stack) | 呼び出し境界引数（トレース開始時に一度読まれるのみ）。トレース内部では未使用——VM のオペランドスタックとは無関係 | Caller-saved |
-| | `R4` | - | `TOS` (Top of Stack 最上段キャッシュ) | Callee-saved |
+| | `R3` | `tos` (Top of Stack) | 呼び出し境界引数（CPS 第4引数）。新規エントリ時に `mov r4, r3` により JIT スタックキャッシュ `R4=TOS` へ引き継がれる。エピローグ時は `stack_bot` 相対メモリへ直接フラッシュするため `R3` への逆書き戻しは不要（`JITC-GOTCHA-07`） | Caller-saved |
+| | `R4` | - | `TOS` (Top of Stack 最上段キャッシュ。新規エントリ時はプロローグで `R3` からロード、チェイン時は先行トレースからレジスタ直接引き継ぎ) | Callee-saved |
 | | `R5` | - | `NOS` (Next on Stack 次段キャッシュ) | Callee-saved (境界でメモリへ同期、ダーティな場合) |
 | | `R6` | - | `NNOS` (次々段スタックキャッシュ) | Callee-saved (境界でメモリへ同期、ダーティな場合) |
 | | `R7` | `FP` (フレームポインタ) | 不可侵 | システム固定 |
@@ -204,7 +204,7 @@ graph TD
      - **前方チェイニング (Forward Chaining)**: キャッシュ常駐トレース `resident_t` の `res_succ = resident_t.next_pc` を同様にスキップ解決し、新登録トレースの `head_pc` と一致すれば `resident_t.chain_next = trace.head_pc` をインプレースパッチする。
 
 #### 統合 Tiered ランタイムエンジン・コンセプトコード (`../tier2_runtime/concepts/runtime_engine_concept.py`)
-インタープリタ実行、2-bit Hotspot 検出、Copy-and-Patch JIT コンパイル、3面マルチバッファキャッシュ（Active/Warm/Oldest）、および MPU W^X 保護プロトコルを統合した自己完結実行シミュレーションは [`../tier2_runtime/concepts/runtime_engine_concept.py`](../tier2_runtime/concepts/runtime_engine_concept.py) を参照。
+インタープリタ実行、2-bit Hotspot 検出、Copy-and-Patch JIT コンパイル、3面マルチバッファキャッシュ（Active/Warm/Oldest）、および MPU W^X 保護プロトコルを統合した自己完結実行シミュレーションは [`runtime_engine_concept.py`](docs/components/tier2_runtime/concepts/runtime_engine_concept.py) を参照。
 
 #### ホットスポット判定 (yield 時)
 <!-- traceability: {JIT_LazyChaining} -->
@@ -399,7 +399,7 @@ sequenceDiagram
 - **W^X メモリ保護**: JIT パッチ書き込み時の `RW+XN` と実行時の `RO+X` の分離（`jit_cache_model.py`, `JITC-42`）。
 
 ### 7.2 テスト仕様書との連携
-本コンポーネントの単体テストケース（JITC-01〜JITC-53, JITC-GOTCHA-01〜06）は、[`tests/jit_compiler_test_spec.md`](tests/jit_compiler_test_spec.md) を正本として定義する。なお、3面キャッシュの検索・昇格・代謝の組み合わせ直交表は、ランタイム管理のテスト仕様書 [`tests/jit_runtime_test_spec.md`](tests/jit_runtime_test_spec.md) を正本とする。
+本コンポーネントの単体テストケース（JITC-01〜JITC-53, JITC-GOTCHA-01〜06）は、[`jit_compiler_test_spec.md`](docs/components/tier3_jit/tests/jit_compiler_test_spec.md) を正本として定義する。なお、3面キャッシュの検索・昇格・代謝の組み合わせ直交表は、ランタイム管理のテスト仕様書 [`jit_runtime_test_spec.md`](docs/components/tier3_jit/tests/jit_runtime_test_spec.md) を正本とする。
 
 ## 8. 設計判断 (ADR)
 <!-- traceability: {ADR_ScalableCodeOffset} {ADR_SafeQueuingOnHotMiss} {ADR_TosCacheAsymmetry} {JIT_LazyChaining} {JITC-GOTCHA-07} -->
@@ -412,7 +412,7 @@ sequenceDiagram
     - 案3: 非対称を許容し、JIT トレース内部でのみ `R4`/`R5` を TOS/NOS として使用する。トレース脱出時にダーティ値を統合スタックへ書き戻す。
   - **結論**: 案3を採用する。
   - **評価**: 「低オーバーヘッド」の根拠を **コンテキスト再構築がゼロであること** に限定し、トレース脱出時のダーティな TOS/NOS（`R4`/`R5`）の書き戻し（`STR` × 2）を明示的な有界極小コストとして仕様に記載する。JIT トレースは複数 WASM 命令にまたがるため、この 2 命令はトレース長で償却され、トレース内部で得られる TOS/NOS キャッシュの利得を下回る。インタープリタは `R4`/`R5` について何の不変条件も負わない（callee-saved として通常どおり扱う）ため、ハンドラ実装の複雑度も増えない。
-  - **トレース境界の2種類のエントリと2種類のエグジット**: この設計は現在 `R4-R6, R8-R11`（計7本）のトレース単位任意割当プールへ一般化されているが、境界の性質は「真の脱出/新規進入」と「直接チェイン」の2系統に分かれ、混同してはならない（`docs/specs/jit_stencil_catalog.md` 3.1）。
+  - **トレース境界の2種類のエントリと2種類のエグジット**: この設計は現在 `R4-R6, R8-R11`（計7本）のトレース単位任意割当プールへ一般化されているが、境界の性質は「真の脱出/新規進入」と「直接チェイン」の2系統に分かれ、混同してはならない（[`jit_stencil_catalog.md`](docs/specs/jit_stencil_catalog.md) 3.1）。
     - **新規エントリ / 真の脱出**: インタープリタ・ディスパッチャから初めて呼び出される場合は Callee-saved 全域退避のプロローグを通過する。対応する真の脱出（後続の常駐トレースが存在しない、またはこのトレースがチェインの終端）では、ダーティなスタックキャッシュ（`R4`/`R5`）を `stack_bot` 相対の正準アドレスへ `STR` で書き戻した上で Callee-saved レジスタを `POP` 復元してリターンする。呼び出し規約上の戻り値レジスタは一切経由しない——VM のオペランドスタック状態と C/AAPCS の戻り値には何の関係もない（`{JITC-GOTCHA-07}`）。
     - **チェイン・エントリ / 直接チェイン分岐**: `{JIT_LazyChaining}` によって後続トレースが常駐と解決済みの場合、真の脱出の代わりに後続トレースのチェイン・エントリ（後続トレース自身のプロローグ直後のオフセット）への直接分岐（`B.W`、バックパッチ）を配置する。フラッシュも `POP` も発生せず、レジスタ状態（`R4-R6` のキャッシュ値を含む）は分岐を跨いでそのまま生き続ける。後続側もチェイン・エントリではプロローグを経由しないため、両者を合わせても Callee-saved の退避・復元は連結全体でちょうど1回ずつしか発生しない——1つの通常のトレースと同じ AAPCS 収支に収まる。したがって連結された2トレースが異なるバリアントを選んでいる場合はこの経路を使えず、`{ADR_TosCacheAsymmetry}` の通り真の脱出（メモリ経由の受け渡し）にフォールバックする。
   - **ローカル変数アクセスの静的オフセット畳み込み (`ContextPointerRegister`)**: 各関数フレームにおけるローカル変数のアドレスは、スタックボトムから `frame_offset + local_offset + idx * 4` として定まる。JIT コンパイル（Copy-and-Patch）は同一関数フレームのコンテキスト下で行われるため、この合成オフセットはトレース生成時に即値定数としてステンシルにパッチ（`[R1, #offset]`）される。これにより、実行時に追加のベースレジスタ（`local_base`）を消費することなく、固定のスタックボトム基底ポインタ `{ContextPointerRegister}`（`R1: stack_bot`）から直接1命令でアクセスできる。`sp_offset` はトレース内部で独立したレジスタ役割を持たず、トレース脱出時にのみコンテキスト構造体の `sp_offset` フィールドへ書き戻される。

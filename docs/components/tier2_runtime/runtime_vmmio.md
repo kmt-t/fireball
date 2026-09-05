@@ -19,7 +19,7 @@ FlatMap 単体での探索は $O(\log N)$（またはハッシュ探索）とな
 
 1. **リニアアドレス空間フィルタ（高速バイパス & 境界チェック）**:
    32ビットゲストアドレスの最上位ビット（Bit 31）が `0` の場合、そのアドレスは vMMIO 管理対象外として、Stage 1（ゲストRAM）への直接アクセスとして高速バイパス（O(1) 処理）を実行する。 `{FastAddressCheck}`
-   - **統一境界チェック**: `{FastAddressCheck}` は比較命令ベースの単一の高速境界チェックである（マスクは用いない）。`guest_ram_size`（`vsoc_runtime.mem-size`）と直接比較し、`addr >= guest_ram_size` なら境界外として即座に `ERR_OUT_OF_BOUNDS` トラップを発生させる（Thumb-2: 単一の境界チェック比較命令 `CMP addr, mem_size` とトラップ分岐 `BHS.W __trap`）。マスク方式と異なり `guest_ram_size` に2の冪の制約はなく、部分ページ（例: 8KB, 12KB, 16KB）・単一 64KB ページ・複数 64KB ページ（`N * 64KB`）のいずれも同一の比較一つで判定できる（`vmmio_concept.py` の `VMMIOController.access` を正本とする）。トラップは必須であり、境界外アドレスを黙ってラップアラウンドさせて処理を継続することは許容されない。JIT トレース側（`jit_stencil_catalog.md` §3.7, `jit_copy_patch_concept.py`）も同一の比較+トラップ方式を採り、トラップ発生時はインタープリタへフォールバックする。インタープリタが復旧不能と判断した場合はゲストタスクを停止してよい。
+   - **統一境界チェック**: `{FastAddressCheck}` は比較命令ベースの単一の高速境界チェックである（マスクは用いない）。`guest_ram_size`（`vsoc_runtime.mem-size`）と直接比較し、`addr >= guest_ram_size` なら境界外として即座に `ERR_OUT_OF_BOUNDS` トラップを発生させる（Thumb-2: 単一の境界チェック比較命令 `CMP addr, mem_size` とトラップ分岐 `BHS.W __trap`）。マスク方式と異なり `guest_ram_size` に2の冪の制約はなく、部分ページ（例: 8KB, 12KB, 16KB）・単一 64KB ページ・複数 64KB ページ（`N * 64KB`）のいずれも同一の比較一つで判定できる（`vmmio_concept.py` の `VMMIOController.access` を正本とする）。トラップは必須であり、境界外アドレスを黙ってラップアラウンドさせて処理を継続することは許容されない。JIT トレース側（[`jit_stencil_catalog.md`](docs/specs/jit_stencil_catalog.md) の `{MemoryBoundaryCheck}`, `jit_copy_patch_concept.py`）も同一の比較+トラップ方式を採り、トラップ発生時はインタープリタへフォールバックする。インタープリタが復旧不能と判断した場合はゲストタスクを停止してよい。
 2. **FlatMap PTE 管理**:
    最上位ビット（Bit 31）が `1` のアドレス空間を vMMIO 領域（`0x8000_0000` – `0xFFFF_FFFF`）とする。
    - 仮想ページ番号（VPN = `raw >> 12`）をキーとして、FlatMap（`vmmio_ptes`）に PTE を格納する。
@@ -252,7 +252,7 @@ flowchart TD
     CalcRAM --> DirectAccess(["Direct O(1) Memory Access (Zero MMU Overhead)"])
 
     CheckBit31 -- "No (Bit 31 == 1)" --> ExtractVPN["Extract 20-bit VPN (raw >> 12) & Offset (raw & 0xFFF)"]
-    ExtractVPN --> FoldingXOR["VMMIO-GOTCHA-02: Hash = ((VPN >> 12) ^ (VPN >> 6) ^ VPN) & 0x0F"]
+    ExtractVPN --> FoldingXOR["VMMIO-GOTCHA-02: Hash = (VPN ^ (VPN >> 4) ^ (VPN >> 8) ^ (VPN >> 12) ^ (VPN >> 16)) & 15"]
     FoldingXOR --> ProbeTLB["Probe Direct-Mapped TLB at index [Hash]"]
 
     ProbeTLB --> TLBHit{"TLB Entry.vpn == VPN?"}
@@ -348,7 +348,7 @@ sequenceDiagram
 
 FlatMap ページテーブル、ダイレクトマップ
 ソフトウェアTLB、および PTE 権限・所有権検査を含む実行可能なリファレンス実装は
-[`concepts/vmmio_concept.py`](concepts/vmmio_concept.py) を正本とする。
+[`vmmio_concept.py`](docs/components/tier2_runtime/concepts/vmmio_concept.py) を正本とする。
 仕様書側に複製は置かない（二重管理を避けるため）。
 
 ### 4.2 アルゴリズム: 仮想DMA (VDMA)
@@ -408,7 +408,7 @@ PASSTHROUGH アドレス変換:
 
 ### 4.6 共有メモリマッピング (FC=14)
 <!-- traceability: {OwnershipTransfer} -->
-SHM へのアクセスは **IPCルータ経由でのみ許可される**。ゲストは IPCルータからハンドルを受け取ることによってのみ FC=14 アドレス空間にアクセスできる。SHM の所有権状態は IPCルータが一元管理し（`ipc_router.md` §4.1 所有権移譲モデル準拠）、vMMIO はその状態を執行するのみ。 `{OwnershipTransfer}`
+SHM へのアクセスは **IPCルータ経由でのみ許可される**。ゲストは IPCルータからハンドルを受け取ることによってのみ FC=14 アドレス空間にアクセスできる。SHM の所有権状態は IPCルータが一元管理し（[`ipc_router.md`](docs/components/tier1_interface/ipc_router.md) の `{OwnershipTransfer}` 準拠）、vMMIO はその状態を執行するのみ。 `{OwnershipTransfer}`
 
 - **SHMハンドル**: `(page_idx << 8) | slot_idx` の識別値。
 - **アクセスアドレス**: `0xE000_0000 | (page_idx << 12) | offset_in_page`。
@@ -421,7 +421,7 @@ graph LR
     Entry -- FB_TASK_ID_FLIGHT or mismatch --> Trap[Trap/Exception]
 ```
 
-#### ライフサイクル（ipc_router.md §4.1 に従属）
+#### ライフサイクル（[`ipc_router.md`](docs/components/tier1_interface/ipc_router.md) の `{OwnershipTransfer}` に従属）
 <!-- traceability: {OwnershipTransfer} -->
 
 1. **Alloc (`allocate-shared`)**: COOS / 物理メモリマネージャが SHM 物理ページを確保し、`owner_id` = 送信タスクID で vMMIO に登録する。
@@ -439,7 +439,7 @@ graph LR
 - **コールバック登録**: Phase1+で検討。
 - **設定ファイル**: `vsoc_config` とは分離。`irq_mapping_config` として独立管理。
 
-@see `system_syscall.md` §8.1
+関連仕様: [`system_syscall.md`](docs/components/tier1_core/system_syscall.md) の `{Syscall_Mapping}` を参照。
 
 ### 4.8 ソフトウェアTLB
 <!-- traceability: {VDMA} {OwnershipTransfer} {META_ConfigurableSystem} -->

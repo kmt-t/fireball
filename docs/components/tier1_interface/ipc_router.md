@@ -108,9 +108,9 @@ Key-Valueペアを複数集約した通信の基本単位。メッセージ自�
 - **メッセージ内検索**: メッセージ本体をソート済み配列とし `fireball::flat_map_view` で引くことで、受信側でのパラメータ検索を高速化する。 `{META_AccessDictionary}` `{META_FlatMapIndexed}`
 - **所有権移譲 (Zero-Copy CSP Handoff)**: `{OwnershipTransfer}` `{IPC_ZeroCopy}` `{ADR_RendezvousChannel}`
     1. **Revoke**: URI 検索・RBAC 判定・サイズ制限チェックをすべて通過した後、送信側タスクの権限を無効化し、リソースを `IN_FLIGHT` 状態にする。この時点で送信は完了確約状態（committed）となる——キューがないため「満杯で差し戻す」という失敗状態は原理的に存在しない。共有メモリ（SHM）転送時は、送信側物理操作 `shm.release()` と連動して対応する vMMIO PTE の `owner_id` が `FB_TASK_ID_FLIGHT`（`0xFF`）に更新され、双方がアクセス禁止となる。
-    2. **Rendezvous**: 送信側は `(sender_role, target_role)` エッジ専用の CSP チャネル 1 本上でバッファなし同期ハンドオフを行う。受信側は自らのロールへの ALLOW エッジ全てを同時に待ち受けるガード付き外部選択（select、§5.1「receive_message」参照）であり、`sender_role` 1 つに事前コミットしない。相手側が既に待機していれば即座に、まだ到達していなければ協調スケジューラ上でブロックし、相手が到達した瞬間にハンドオフが成立する。バッファに値を保持しないため、キュー満杯 (`ERR_QUEUE_FULL`) に相当する状態はそもそも発生しない。
+    2. **Rendezvous**: 送信側は `(sender_role, target_role)` エッジ専用の CSP チャネル 1 本上でバッファなし同期ハンドオフを行う。受信側は自らのロールへの ALLOW エッジ全てを同時に待ち受けるガード付き外部選択（select、「receive_message」参照）であり、`sender_role` 1 つに事前コミットしない。相手側が既に待機していれば即座に、まだ到達していなければ協調スケジューラ上でブロックし、相手が到達した瞬間にハンドオフが成立する。バッファに値を保持しないため、キュー満杯 (`ERR_QUEUE_FULL`) に相当する状態はそもそも発生しない。
     3. **Grant**: ランデブー成立の瞬間に受信側タスクへ権限を付与し、状態を `RECEIVER_OWNS` へ遷移させる。共有メモリ転送時は PTE `owner_id` が受信タスクIDへアトミックに更新され、受信側での `claim(shm-id)` 物理操作が解禁される。
-- **送信前チェックの失敗とロールバック境界**: URI 未登録 (`ERR_NOT_FOUND`)、RBAC 拒否 (`ERR_PERMISSION_DENIED`)、KV ペア数超過 (`ERR_MSG_TOO_LARGE`) はいずれも Revoke より前段の静的チェックであり、これらで失敗した場合メッセージの所有権は最初から一度も送信側から動いていない（`SENDER_OWNS` のまま保持され、回復処理を必要としない）。なお、IPC メッセージパッシング自体は CSP ランデブーのためロールバック経路を持たないが、共有メモリ等の物理リソース転送中に相手タスクが異常終了した場合は、物理メモリ層の回復機構（`rollback_transfer()`、§`platform_memory.md`）が連動して PTE `owner_id` を送信元タスクIDへ復元する。
+- **送信前チェックの失敗とロールバック境界**: URI 未登録 (`ERR_NOT_FOUND`)、RBAC 拒否 (`ERR_PERMISSION_DENIED`)、KV ペア数超過 (`ERR_MSG_TOO_LARGE`) はいずれも Revoke より前段の静的チェックであり、これらで失敗した場合メッセージの所有権は最初から一度も送信側から動いていない（`SENDER_OWNS` のまま保持され、回復処理を必要としない）。なお、IPC メッセージパッシング自体は CSP ランデブーのためロールバック経路を持たないが、共有メモリ等の物理リソース転送中に相手タスクが異常終了した場合は、物理メモリ層の回復機構（`rollback_transfer()`、`platform_memory.md`）が連動して PTE `owner_id` を送信元タスクIDへ復元する。
 
 
 #### 3段階 IPC ルーティング & 所有権移譲プロトコル（責務シーケンス図）
@@ -173,7 +173,7 @@ class OwnershipState(IntEnum):
 
 class IPCMessage:
     """A message owns its sorted (key, value) entries and presents
-    them via non-owning FlatMapView (§3.3) -- no resource_id,
+    them via non-owning FlatMapView ({IPC_ZeroCopy}) -- no resource_id,
     no free-form dict payload."""
 
     def __init__(self, entries=None):
@@ -501,7 +501,7 @@ stateDiagram-v2
 
 ### 4.3.1 二分探索による O(log N) 低遅延ルックアップ
 <!-- traceability: {LowLatencyLookup} {META_AccessDictionary} {META_FlatMapIndexed} -->
-* **サービス検索**: サービスレジストリ（URI から channel_id への解決）は、コンパイル時にソートされた URI 文字列スパンに対して二分探索を行うことで、動的なアロケーションを行うことなく $O(\log N)$ の低遅延名前解決を達成する。`ipc_router_concept.py` の `IPCRouter.registry` は `fireball::flat_map_view`（`{META_FlatMapIndexed}` の `FlatMapView`）そのものであり、`find()` による二分探索でルックアップする——辞書ベース実装からの移行は完了している。実測は [`benchmarks/low_latency_lookup_bench.py`](benchmarks/low_latency_lookup_bench.py)（同一の `FlatMapView` を直接計測、線形探索比較付き）を参照。この計測は IPC ルータの実サービス数（通常 ≤ 16）ではなく $O(\log N)$ の漸近的な成長特性そのものを N=1,000〜1,000,000 の範囲で検証するものであり、キー数を1000倍にしても `flat_map_view` のルックアップ時間は約2.0倍（$\log_2(10^6)/\log_2(10^3) = 2$、線形探索は約1,100倍）の増加に留まり、二分探索の理論的計算量と完全に合致することを実測している。 `{LowLatencyLookup}`
+* **サービス検索**: サービスレジストリ（URI から channel_id への解決）は、コンパイル時にソートされた URI 文字列スパンに対して二分探索を行うことで、動的なアロケーションを行うことなく $O(\log N)$ の低遅延名前解決を達成する。`ipc_router_concept.py` の `IPCRouter.registry` は `fireball::flat_map_view`（`{META_FlatMapIndexed}` の `FlatMapView`）そのものであり、`find()` による二分探索でルックアップする——辞書ベース実装からの移行は完了している。実測は [`low_latency_lookup_bench.py`](docs/components/tier1_interface/benchmarks/low_latency_lookup_bench.py)（同一の `FlatMapView` を直接計測、線形探索比較付き）を参照。この計測は IPC ルータの実サービス数（通常 ≤ 16）ではなく $O(\log N)$ の漸近的な成長特性そのものを N=1,000〜1,000,000 の範囲で検証するものであり、キー数を1000倍にしても `flat_map_view` のルックアップ時間は約2.0倍（$\log_2(10^6)/\log_2(10^3) = 2$、線形探索は約1,100倍）の増加に留まり、二分探索の理論的計算量と完全に合致することを実測している。 `{LowLatencyLookup}`
 * **メッセージ内検索**: メッセージの引数（KVマップ）は、キー値を昇順にソートした固定長配列（静的 flat_map 構造）として実装され、受信側でのパラメータ探索に $O(\log N)$ の二分探索を適用し、ゼロコスト抽象化を保証する。 `{META_AccessDictionary}` `{META_FlatMapIndexed}`
 
 ### 4.3.2 CSP Handoff スターベーション防止対策
@@ -628,7 +628,7 @@ sequenceDiagram
 #### メッセージ受信（receive_message）
 <!-- traceability: {OwnershipTransfer} {IPC_ZeroCopy} {ADR_RendezvousChannel} -->
 
-**ガード付き外部選択（Guarded External Choice / Select）**: 受信側は自らの URI が持つロールへの全 ALLOW エッジ（RBAC マトリックスの該当列）を同時に待ち受け、最初に到達した送信側とランデブーする。1 つの `sender_role` に事前にコミットしない——例えば `CORE_SERVICE` は `RUNTIME` と `DEBUGGER` の双方から正当に送信され得るため、受信側がどちらか一方だけを待つ設計は現実のサービスとして機能しない。複数チャネルへの同時登録は、成立した瞬間に他の全チャネルから解除される（`experiments/pysim/core/scheduler.py` の `channel_select_recv` / `SelectGroup` 参照）ため、1 チャネル 1 待機者の不変条件は破られない。
+**ガード付き外部選択（Guarded External Choice / Select）**: 受信側は自らの URI が持つロールへの全 ALLOW エッジ（RBAC マトリックスの該当列）を同時に待ち受け、最初に到達した送信側とランデブーする。1 つの `sender_role` に事前にコミットしない——例えば `CORE_SERVICE` は `RUNTIME` と `DEBUGGER` の双方から正当に送信され得るため、受信側がどちらか一方だけを待つ設計は現実のサービスとして機能しない。複数チャネルへの同時登録は、成立した瞬間に他の全チャネルから解除される（[`scheduler.py`](experiments/pysim/core/scheduler.py) の `channel_select_recv` / `SelectGroup` 参照）ため、1 チャネル 1 待機者の不変条件は破られない。
 
 | 項目 | 内容 |
 | :--- | :--- |

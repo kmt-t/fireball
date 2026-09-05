@@ -12,7 +12,7 @@ JIT ランタイム管理は、WASM PC とネイティブコードの紐付け�
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {SimpleJITArchitecture} -->
-本コンポーネントは **Tier 3 (詳細リーフコンポーネント: Leaf Component)** に属し、JIT サブシステムのうち実行時検索、3面コードキャッシュ管理、局所アンリンク、およびホットスポット検出を担当する。コード生成コアは [`jit_compiler.md`](jit_compiler.md) が担当する。 `{META_3TierSeparation}` `{SimpleJITArchitecture}`
+本コンポーネントは **Tier 3 (詳細リーフコンポーネント: Leaf Component)** に属し、JIT サブシステムのうち実行時検索、3面コードキャッシュ管理、局所アンリンク、およびホットスポット検出を担当する。コード生成コアは [`jit_compiler.md`](docs/components/tier3_jit/jit_compiler.md) が担当する。 `{META_3TierSeparation}` `{SimpleJITArchitecture}`
 
 ## 3. 静的モデル
 
@@ -222,4 +222,4 @@ flowchart TD
 - **カード状態単調性**: `UNEXECUTED` $\to$ `EXECUTED` $\to$ `HOT` $\to$ `COMPILED`、パージ時のみ `UNEXECUTED` へのリセット。
 
 ### 7.2 テスト仕様書との連携
-本コンポーネントのテストケースおよび検索・昇格・代謝の組み合わせ直交表は、[`tests/jit_runtime_test_spec.md`](tests/jit_runtime_test_spec.md) を正本として定義する。形式検証モデルは `formal/jit_cache_model.py` を参照。
+本コンポーネントのテストケースおよび検索・昇格・代謝の組み合わせ直交表は、[`jit_runtime_test_spec.md`](docs/components/tier3_jit/tests/jit_runtime_test_spec.md) を正本として定義する。形式検証モデルは `formal/jit_cache_model.py` を参照。

@@ -244,7 +244,7 @@ struct mutable_flat_map_storage {
 - **ビット詰めアクセス**: 論理添字 $i$ に対する物理位置は `bit = origin + i * Bits` として求まり、`byte = bit >> 3`、`shift = bit & 7` となる。`Bits` が 8 の約数であるため 1 要素がバイトを跨ぐことはなく、単一バイトのロードとシフト・マスクで読み出しが完結する。 `{PackedBitView}` `{GLOBAL_StrictMemoryLimit}`
 - **AoS 標準ソートと二分探索 (Standard Sort & Binary Search)**: 自前のソート関数（連動ヒープソート等）の車輪の再発明を排し、C++ 標準の `std::sort`（C++20 `constexpr` 対応）および射影付き `std::lower_bound` をそのまま利用する。小規模組み込み（$N \le 64$）においてデータ全体が 1〜2 本のキャッシュライン（32〜64 バイト）に収まるため、AoS でキャッシュミスは発生せず、標準ライブラリの極限まで最適化されたアルゴリズムの恩恵を最大化できる。 `{META_ZeroCostAbstraction}` `{GLOBAL_StrictMemoryLimit}`
 
-実行可能な参照実装と検証テストは [`concepts/flat_view_concept.py`](concepts/flat_view_concept.py) を参照。ビット詰めの近傍非破壊性、非バイト境界での `slice`、絞り込みの単調縮小性、集合の所属判定、JIT 検索経路をテストで固定している。
+実行可能な参照実装と検証テストは [`flat_view_concept.py`](docs/components/tier1_core/concepts/flat_view_concept.py) を参照。ビット詰めの近傍非破壊性、非バイト境界での `slice`、絞り込みの単調縮小性、集合の所属判定、JIT 検索経路をテストで固定している。
 
 ```python
 # コンテナ語彙の概念コード (FlatViewNarrowing / PackedBitView)

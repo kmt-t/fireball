@@ -1,13 +1,14 @@
-# COOS スケジューラ コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}
+# COOS スケジューラ コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM} {VERIFY_BENCHMARK}
 <!-- evidence:
      formal: formal/coos_channel_model.py
+     benchmark: benchmarks/direct_context_switch_bench.py
      concept: concepts/scheduler_concept.py
      test: tests/os_scheduler_test_spec.md
 -->
 
 ## 1. コンセプト
 <!-- traceability: {CooperativeMultitasking} {GLOBAL_UseCpp23Library} {GLOBAL_UseCpp20Coroutine} {COOS_Deterministic} {CSPCommunication} {LowOverheadSwitch} -->
-COOSスケジューラは、協調型OS COOS（[`os_coos.md`](os_coos.md)）におけるタスクディスパッチとREADYキューの制御を司る実行制御モジュールである。タスクの実行、一時停止(yield)、および割り込みによる再開を管理し、極小リソース環境での決定論的な実行を提供する。タスク間のCSPチャネル通信に伴うサスペンド・再開制御と連動し、コンテキストスイッチには C++20 コルーチンの**対称遷移（Symmetric Transfer）** を採用する。全汎用レジスタのメモリスタック退避・復帰を排除してフレームポインタとPCのみの交換に最小化することで、数サイクルでの極低オーバーヘッドなタスク遷移を達成する。 `{CooperativeMultitasking}` `{GLOBAL_UseCpp23Library}` `{GLOBAL_UseCpp20Coroutine}` `{COOS_Deterministic}` `{CSPCommunication}` `{LowOverheadSwitch}`
+COOSスケジューラは、協調型OS COOS（[`os_coos.md`](docs/components/tier1_core/os_coos.md)）におけるタスクディスパッチとREADYキューの制御を司る実行制御モジュールである。タスクの実行、一時停止(yield)、および割り込みによる再開を管理し、極小リソース環境での決定論的な実行を提供する。タスク間のCSPチャネル通信に伴うサスペンド・再開制御と連動し、コンテキストスイッチには C++20 コルーチンの**対称遷移（Symmetric Transfer）** を採用する。全汎用レジスタのメモリスタック退避・復帰を排除してフレームポインタとPCのみの交換に最小化することで、数サイクルでの極低オーバーヘッドなタスク遷移を達成する。 `{CooperativeMultitasking}` `{GLOBAL_UseCpp23Library}` `{GLOBAL_UseCpp20Coroutine}` `{COOS_Deterministic}` `{CSPCommunication}` `{LowOverheadSwitch}`
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->
@@ -63,7 +64,7 @@ graph TD
     - スケジューラ・コンテキスト内の「実行可能タスク列」を固定長リングキューで管理し、定数時間 $O(1)$ でのタスク切り替えを実現する。
 - **連続直接ハンドオフ上限とメインループ強制復帰 (`SCHED-GOTCHA-01`, `{Challenge_CspHandoffStarvation}`)**:
     - CSP通信のランデブー成立時、呼び出し元と呼び出し先は C++20 コルーチンの対称遷移（Symmetric Transfer）によりスケジューラをバイパスして直接遷移（`{CSP_Handoff}`）を行う。
-    - **設計理由と不変条件**: 直接ハンドオフを無制限に許可すると、例えば2つの高頻度通信タスクが互いにメッセージをピンポン送受信し続けた場合に CPU を独占し、READY キュー内に待機している他のタスク（タイマー処理、システム監視、低優先度タスク等）が永久にディスパッチされず餓死（Starvation）に陥る。これを防ぐため、スケジューラは連続直接遷移カウンタ（`consecutive_handoffs`）を保持し、設定された上限（既定 4〜8 回）に到達した瞬間に直接遷移を強制打ち切りとし、相手タスクを READY キュー末尾へ投入した上で `YIELD` を返却してスケジューラのメイン巡回ループへ強制復帰させる。これにより、いかなる通信パターンであっても全タスクへの公平な実行機会と有界な応答時間を形式的に保証する。
+    - **設計理由と不変条件**: 直接ハンドオフを無制限に許可すると、例えば2つの高頻度通信タスクが互いにメッセージをピンポン送受信し続けた場合に CPU を独占し、READY キュー内に待機している他のタスク（タイマー処理、システム監視、低優先度タスク等）が永久にディスパッチされず餓死（Starvation）に陥る。これを防ぐため、スケジューラは連続直接遷移カウンタ（`consecutive_handoffs`）を保持し、設定された上限（ビルド時定数 `FB_CONF_SCHED_MAX_CONSECUTIVE_HANDOFFS`、既定値 `4` 回）に到達した瞬間に直接遷移を強制打ち切りとし、相手タスクを READY キュー末尾へ投入した上で `YIELD` を返却してスケジューラのメイン巡回ループへ強制復帰させる。これにより、いかなる通信パターンであっても全タスクへの公平な実行機会と有界な応答時間を形式的に保証する（形式検証モデル `formal/coos_channel_model.py` にて pyModelChecking CTL モデル検査により無餓死性・有界復帰性を証明済み）。 `{SCHED-GOTCHA-01}` `{Challenge_CspHandoffStarvation}` `{CSP_Handoff}`
 - **アイドル状態の検知**: 全ての管理タスクが「待機状態（BLOCKED/SUSPENDED_CSP）」となった場合にアイドル・ハンドラ（Periodic Task、ログフラッシュ、JITバッチコンパイル等）を実行する。 `{GLOBAL_IdleDetection}` `{GLOBAL_PeriodicTask}`
 - **割り込み処理**: HALからの割り込み通知（`notify_interrupt(irq_id)`）を受信し、INTイベントキューから回収して対象タスクを READY キュー末尾に追加する。 `{GLOBAL_InterruptWakeup}`
 
@@ -121,7 +122,10 @@ class RoundRobinScheduler:
         return True
 
     def schedule_next(self) -> str | None:
-        """Selects the next task in O(1) from the ready ring."""
+        """Selects the next task from the ready ring.
+        Note: The actual C++ implementation uses an intrusive circular list ({ADR_IntrusiveTcbList}),
+        achieving true O(1) pointer updates. Python list.pop(0) is used here for conceptual demonstration.
+        """
         if not self.ready_ring:
             return None
 
@@ -252,7 +256,7 @@ stateDiagram-v2
 | 機能概要 | 新しいWASMタスクを生成し、実行可能キューの末尾に追加する。 | 操作定義 |
 | シグネチャ | `auto spawn(const char* name, wasm_entry_t entry) -> result<os_task_id_t, os_result_t>` | 関数プロトタイプ |
 | 引数 | - `name`: タスク名称。生存期間がプログラム起動から終了まで静的に保証されたヌル終端文字列（`const char*`）。動的ヒープ確保を避けるため、内部でのコピーは行わず、ポインタ参照のみを保持する。<br>- `entry`: WASMエントリポイントとなる関数ポインタ型 `wasm_entry_t`（C++での型エイリアス定義は `using wasm_entry_t = void(*)(void*);`。コルーチン生成時に初期コルーチンフレームの起動先として紐付けられる）。 | 引数定義 |
-| 戻り値 | 成功時は静的に割り当てられたタスクIDである `os_task_id_t` を返し、失敗時はエラーコードを示す `os_result_t` （例：`ERR_NO_MEMORY` = TCBプール領域満杯でメモリ確保不可、`ERR_MAX_TASKS_REACHED` = 登録タスク数がシステム上限に到達、`ERR_INVALID_ARG` = 引数不正）を返す `result<os_task_id_t, os_result_t>` 型。動的ヒープ確保は一切行われず、静的メモリ内の固定長配列（`std::array<TCB, FB_CONF_MAX_TASKS>`）から空きスロットが割り当てられる。 | 結果型 |
+| 戻り値 | 成功時は静的に割り当てられたタスクIDである `os_task_id_t` を返し、失敗時はエラーコードを示す `os_result_t` （例：`ERR_NO_MEMORY` = TCBプール領域満杯でメモリ確保不可、`ERR_MAX_TASKS_REACHED` = 登録タスク数がシステム上限に到達、`ERR_INVALID_ARG` = 引数不正）を返す `result<os_task_id_t, os_result_t>` 型。動的ヒープ確保は一切行われず、静的メモリ内の固定長配列（`std::array<TCB, FB_CONF_SCHED_MAX_TASKS>`）から空きスロットが割り当てられる。 | 結果型 |
 | 事前条件 | スケジューラが初期化済みであること。管理タスク数上限（scheduler_config）に達していないこと。 | 条件 |
 | 事後条件 | 新しいタスクが実行可能キューの末尾に追加される。 | 状態変化 |
 | 不変条件 | 生成されたシステムタスクIDはシステム内で一意であること。 | 制約 |
@@ -313,6 +317,15 @@ stateDiagram-v2
 | 事前条件 | `id` が有効なタスクを指していること。 |
 | 事後条件 | タスクに関連するメモリリソース（TCB等）が解放され、全キューから除外される。 |
 
+#### タスク状態可視化（get_task_states）
+| 項目 | 内容 | 型分類 |
+| :--- | :--- | :--- |
+| 機能概要 | 外部から全タスクの待機・実行状態を安全に監視するためのメソッド。ロックフリーな読み取り専用構造（Double Buffering）を採用し、実行中タスクをブロックせずに $O(1)$ で状態スナップショットを取得可能。 | 操作定義 |
+| シグネチャ | `auto get_task_states() const noexcept -> task_state_snapshot_t` | 関数プロトタイプ |
+| 戻り値 | 全タスクの状態スナップショット配列（`std::array<os_task_state_t, FB_CONF_SCHED_MAX_TASKS>`） | 結果型 |
+| 事前条件 | スケジューラが初期化済みであること。 | 条件 |
+| 事後条件 | 実行中タスクの進行に影響を与えない。 | 状態変化 |
+
 ## 6. 設計判断 (ADR)
 <!-- traceability: {ADR_IntrusiveTcbList} {ADR_CoosPureRoundRobin} {ADR_EventDrivenWakeQueue} -->
 
@@ -322,7 +335,7 @@ stateDiagram-v2
   - **背景**: TCBの連結方式を決定する必要がある。`{GLOBAL_Policy_Memory}` により実行時の動的メモリ確保（malloc/new）は禁止されている。
   - **選択肢と評価**:
     - 案1: `std::list` 等のノードベースコンテナで連結する。標準的で扱いやすいが、ノード確保に動的メモリを要求し `{GLOBAL_Policy_Memory}` に抵触する。
-    - 案2: TCB自体に `next` ポインタを持たせる侵入型リストで連結する。追加のノード確保が不要で、静的に確保された TCB プール（`std::array<TCB, FB_CONF_MAX_TASKS>`）の要素をそのまま連結できる。
+    - 案2: TCB自体に `next` ポインタを持たせる侵入型リストで連結する。追加のノード確保が不要で、静的に確保された TCB プール（`std::array<TCB, FB_CONF_SCHED_MAX_TASKS>`）の要素をそのまま連結できる。
   - **結論**: 案2を採用する。
   - **理由**: 動的メモリ確保を排除し、RAM 64KB環境での生存を確実にするため。 `{GLOBAL_Policy_Memory}`
 - **決定事項**: `{ADR_CoosPureRoundRobin}`

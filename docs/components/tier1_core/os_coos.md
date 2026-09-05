@@ -16,11 +16,11 @@ COOSは、シングルスレッド環境向けのホーアCSPベースのグリ�
 
 ### 2.1 構成要素
 <!-- traceability: {META_3TierSeparation} {GLOBAL_ComponentHarness} -->
-- **[`co_sched`](os_scheduler.md)**: スケジューラ。タスクのライフサイクル、READYキュー管理、実行順序制御（詳細は [`os_scheduler.md`](os_scheduler.md) を正本とする）。
+- **[`os_scheduler.md`](docs/components/tier1_core/os_scheduler.md)**: スケジューラ。タスクのライフサイクル、READYキュー管理、実行順序制御（詳細は [`os_scheduler.md`](docs/components/tier1_core/os_scheduler.md) を正本とする）。
 - **`co_csp`**: 通信エンジン。チャネルベースの同期と所有権移譲（本設計書が正本）。
 - **`co_mem`**: メモリマネージャ。タスク独立な静的メモリバッファプール（メモリパーティション）の管理。
 
-ロギングは COOS の構成要素ではなく、独立した Tier 1 コンポーネント [`system_logging`](system_logging.md) が担う。COOS は `set_idle_hook` によりアイドル時のフラッシュ契機のみを提供する。 `{BufferedLogging}` `{GLOBAL_IdleDetection}`
+ロギングは COOS の構成要素ではなく、独立した Tier 1 コンポーネント [`system_logging.md`](docs/components/tier1_core/system_logging.md) が担う。COOS は `set_idle_hook` によりアイドル時のフラッシュ契機のみを提供する。 `{BufferedLogging}` `{GLOBAL_IdleDetection}`
 
 ## 3. 静的モデル
 
@@ -198,7 +198,7 @@ COOS の動的スケジューリングおよび同期通信の基本アルゴリ
 | **Memory Management** | タスク生成時 | コンパイル時固定プールから独立したメモリパーティションを切り出して貸与 | タスク間ヒープ干渉の物理排除 | `{GLOBAL_StrictMemoryLimit}` `{GLOBAL_IndependentHeap}` |
 
 - **CSP Handoff (直接スイッチ)**: `send`/`recv` 時に相手タスクが既に待機状態であった場合、スケジューラを介さず即座に相手タスクへ実行権を移譲する。 `{CSP_Handoff}`
-- **直接コンテキストスイッチ (Direct Context Switch)**: コルーチンの対称遷移（Symmetric Transfer）により、コールスタックを消費せずに相手タスクのコルーチンハンドルへ直接ジャンプする。OSスケジューラのキュー処理オーバーヘッドを完全にバイパスし、極小スタック（2KB）環境下でもスタックオーバーフローを起こさない決定論的 $O(1)$ スイッチを実現する。実測は [`benchmarks/direct_context_switch_bench.py`](benchmarks/direct_context_switch_bench.py) を参照。 `{DirectContextSwitch}`
+- **直接コンテキストスイッチ (Direct Context Switch)**: コルーチンの対称遷移（Symmetric Transfer）により、コールスタックを消費せずに相手タスクのコルーチンハンドルへ直接ジャンプする。OSスケジューラのキュー処理オーバーヘッドを完全にバイパスし、極小スタック（2KB）環境下でもスタックオーバーフローを起こさない決定論的 $O(1)$ スイッチを実現する。実測は [`direct_context_switch_bench.py`](docs/components/tier1_core/benchmarks/direct_context_switch_bench.py) を参照。 `{DirectContextSwitch}`
 - **割り込みウェイクアップ (Interrupt Wakeup)**: 外部割り込みが発生した際、割り込みサービスルーチン（ISR）から `notify_interrupt` が呼び出され、INT イベントを有界キューに投函する。**実装の勘所と設計理由 (`COOS-GOTCHA-03`)**: ISR コンテキスト内ではタスク状態や優先度キューを一切直接書き換えない。ISR で直接キュー操作やコルーチン起床を行うと、ハードウェア割り込み無効化区間（クリティカルセクション）が肥大化し、最高優先度割り込みの応答レイテンシが劣化するだけでなく、多重割り込み時のロック競合を引き起こす。そのため、ISR はリングバッファへの原子的なイベント記録のみを行い、スケジューラが各 yield 点（`run_step` 開始時）でこれをドレイン（`drain_interrupts`）して初めて、特定の割り込みベクトル（`irq_id`）に登録されて待機しているタスクを READY 状態へ遷移させて実行可能キュー末尾に投入する。 `{GLOBAL_InterruptWakeup}`
 - **Idle Detection**: 全ての実行中タスクがブロック状態にあり、かつイベントキューが空（割り込みや外部イベントによる起床待ちのみ）の場合にアイドル状態と判定する。この条件を `idle_hook` のトリガーとし、イベントキューが空かつ全タスクがブロック状態の時のみ、リングバッファ内の未出力ログが1件以上存在する、あるいはイベント待機開始から10ミリ秒以上経過した際に、バックグラウンド処理（リングバッファからロガーを介した物理ストレージや非揮発性メモリへのログ書き出し・フラッシュ処理）をREADYリング外の専用Idleタスクとして呼び出す。 `{GLOBAL_IdleDetection}`
 - **Memory Management**: タスク生成時に独立したメモリパーティションを割り当てる。 `{GLOBAL_StrictMemoryLimit}` `{GLOBAL_IndependentHeap}`
@@ -373,7 +373,7 @@ class COOSKernel:
 ### 4.2 状態遷移図 (SMD: COOS システムレベル)
 <!-- traceability: {CSP_Handoff} {DirectContextSwitch} {GLOBAL_IdleDetection} {GLOBAL_StrictMemoryLimit} {GLOBAL_IndependentHeap} {META_RecoveryStrategy} -->
 
-COOS 全体のシステムレベル状態遷移を以下に示す。各タスクの状態遷移については **[os_scheduler.md](os_scheduler.md#42-状態遷移図-sysml-smd-scheduler-視点)** を参照。
+COOS 全体のシステムレベル状態遷移を以下に示す。各タスクの状態遷移については **[os_scheduler.md](docs/components/tier1_core/os_scheduler.md#42-状態遷移図-sysml-smd-scheduler-視点)** を参照。
 
 ```mermaid
 stateDiagram-v2
@@ -454,7 +454,7 @@ stateDiagram-v2
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| スケジューラ | タスクの実行順序を管理するコンポーネントへの参照 | 構造体への参照 | [`scheduler`](os_scheduler.md) |
+| スケジューラ | タスクの実行順序を管理するコンポーネントへの参照 | 構造体への参照 | [`os_scheduler.md`](docs/components/tier1_core/os_scheduler.md) |
 | 通信エンジン | タスク間のCSP通信を制御するコンポーネントへの参照 | 構造体への参照 | `co_csp` |
 | メモリ管理 | タスク固有の静的パーティションを貸与・返却するコンポーネントへの参照 | 構造体への参照 | `co_mem` |
 

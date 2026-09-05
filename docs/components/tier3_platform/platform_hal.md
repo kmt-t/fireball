@@ -80,7 +80,7 @@ HAL全体の制限値を定義する。 `{META_ConfigurableSystem}`
 ### 4.1 アルゴリズム
 <!-- traceability: {RSP_Transport_Selectable} {TaskPollInterruptFlag} {GLOBAL_InterruptWakeup} -->
 - **コマンドルーティング**: IPCで受信したコマンド（read/write/control）を、デバイスIDに基づいて適切なドライバへ振り分ける。
-- **割り込み通知（push）**: 物理割り込み発生時、ISR は COOS の `notify_interrupt(irq_id)` を呼び、INT イベントを有界キューへ投函するのみとする。**ISR がタスク状態を直接書き換えることはない。**実際の READY 遷移は、スケジューラが yield 点でキューをドレインする際に行われる（`{GLOBAL_InterruptWakeup}` を正本とする）。この非同期境界の分離は、`docs/components/tier2_runtime/formal/vsoc_state_model.py` に定義された CTL 安全性検証項目 `irq_jit_race_freedom_proof`（`AG(Not(handling_irq & jit_mode))`）として証明されている性質である。
+- **割り込み通知（push）**: 物理割り込み発生時、ISR は COOS の `notify_interrupt(irq_id)` を呼び、INT イベントを有界キューへ投函するのみとする。**ISR がタスク状態を直接書き換えることはない。**実際の READY 遷移は、スケジューラが yield 点でキューをドレインする際に行われる（`{GLOBAL_InterruptWakeup}` を正本とする）。この非同期境界の分離は、[`vsoc_state_model.py`](docs/components/tier2_runtime/formal/vsoc_state_model.py) に定義された CTL 安全性検証項目 `irq_jit_race_freedom_proof`（`AG(Not(handling_irq & jit_mode))`）として証明されている性質である。
 - **割り込み確認（pull）**: `{TaskPollInterruptFlag}` が定義するもう一方の経路として、ゲスト実行エンジン（JIT/インタープリタ）は Safepoint で `vsoc_context.interrupt_flags` を自ら確認する。この pull 側の実装（Safepoint 埋め込み位置、フラグ構造）は HAL の管轄外であり、`{TaskPollInterruptFlag}` を正本とする。 `{TaskPollInterruptFlag}` `{GLOBAL_InterruptWakeup}`
 
 #### ShmBufferPool バッファ確保・境界検査手順（手順アクティビティ図）
@@ -271,4 +271,4 @@ UART および SEGGER RTT の双方において同一の RSP パケットエン�
 - **固定長スロット境界保護**: 要求サイズが 256 バイトを超える場合の即時拒絶（`HAL-GOTCHA-01`）。
 
 ### 7.2 テスト仕様書との連携
-本コンポーネントのテストケース（HAL-01〜HAL-10, HAL-GOTCHA-01〜03）は、[`tests/platform_hal_test_spec.md`](tests/platform_hal_test_spec.md) を正本として定義する。
+本コンポーネントのテストケース（HAL-01〜HAL-10, HAL-GOTCHA-01〜03）は、[`platform_hal_test_spec.md`](docs/components/tier3_platform/tests/platform_hal_test_spec.md) を正本として定義する。

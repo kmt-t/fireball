@@ -87,7 +87,7 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 
 各設計書は、システムの一貫性を保つため、以下の静的チェックおよびフォーマットに適合しなければならない。
 
-- **フォーマット適合**: `docs/components/FORMAT.md` に準拠し、C++コードブロックの直接記述の禁止（Pythonで疑似コードを記述）、`####` 見出しにおけるC++識別子のみの表記の禁止（自然言語を添える）等を守ること。
+- **フォーマット適合**: [`FORMAT.md`](docs/components/FORMAT.md) に準拠し、C++コードブロックの直接記述の禁止（Pythonで疑似コードを記述）、`####` 見出しにおけるC++識別子のみの表記の禁止（自然言語を添える）等を守ること。
 - **要求キーワード（Keyword）の紐付け**: 設計書内の各セクションは、末尾に要求キーワード（中括弧で囲まれたもの）を付与し、`requirement_list.md` に定義された要求仕様とのトレーサビリティを維持すること。
 
 ---
@@ -167,8 +167,8 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 
 | 形式検証モデルファイル | 検証・証明する対象性質 | `BACKS` 正本ドキュメント一覧 |
 | :--- | :--- | :--- |
-| [`../components/tier1_core/formal/coos_channel_model.py`](../components/tier1_core/formal/coos_channel_model.py) | - CSP チャネル純粋ランデブー<br>- デッドロック不在・二重所有不在<br>- 連続ハンドオフ有界復帰 | - `components/tier1_core/os_coos.md`<br>- `components/tier1_core/os_scheduler.md`<br>- `components/tier1_core/system_config.md` |
-| [`../components/tier1_interface/formal/csp_handoff_model.py`](../components/tier1_interface/formal/csp_handoff_model.py) | - 所有権移譲と Drop ハンドラによる二重所有・リーク防止 | - `components/tier1_interface/ipc_router.md` |
-| [`../components/tier2_runtime/formal/vsoc_cache_coherency_model.py`](../components/tier2_runtime/formal/vsoc_cache_coherency_model.py) | - vSoC JIT キャッシュ整合性・Debugger 介入安全性・ローテーション有界性 | - `components/tier2_runtime/runtime_vsoc.md`<br>- `components/tier2_runtime/debug_manager.md`<br>- `components/tier3_jit/jit_compiler.md`<br>- `components/tier3_platform/platform_memory.md` |
-| [`../components/tier2_runtime/formal/vsoc_state_model.py`](../components/tier2_runtime/formal/vsoc_state_model.py) | - vSoC 実行状態<br>- Safepoint ポーリング応答性<br>- 割り込み/デバッグフォールバック | - `components/tier2_runtime/runtime_vsoc.md`<br>- `components/tier2_runtime/runtime_vmmio.md`<br>- `components/tier2_runtime/runtime_interpreter.md`<br>- `components/tier2_runtime/debug_manager.md`<br>- `components/tier3_platform/platform_hal.md`<br>- `components/tier1_core/system_config.md` |
-| [`../components/tier3_jit/formal/jit_cache_model.py`](../components/tier3_jit/formal/jit_cache_model.py) | - 3面キャッシュ代謝<br>- MPU W^X 保護<br>- 遅延チェイニング局所アンリンク安全性<br>- 2-bit Hotspot FSM | - `components/tier3_jit/jit_compiler.md`<br>- `components/tier3_jit/jit_runtime.md`<br>- `components/tier3_platform/platform_memory.md` |
+| [`coos_channel_model.py`](docs/components/tier1_core/formal/coos_channel_model.py) | - CSP チャネル純粋ランデブー<br>- デッドロック不在・二重所有不在<br>- 連続ハンドオフ有界復帰 | - `components/tier1_core/os_coos.md`<br>- `components/tier1_core/os_scheduler.md`<br>- `components/tier1_core/system_config.md` |
+| [`csp_handoff_model.py`](docs/components/tier1_interface/formal/csp_handoff_model.py) | - 所有権移譲と Drop ハンドラによる二重所有・リーク防止 | - `components/tier1_interface/ipc_router.md` |
+| [`vsoc_cache_coherency_model.py`](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) | - vSoC JIT キャッシュ整合性・Debugger 介入安全性・ローテーション有界性 | - `components/tier2_runtime/runtime_vsoc.md`<br>- `components/tier2_runtime/debug_manager.md`<br>- `components/tier3_jit/jit_compiler.md`<br>- `components/tier3_platform/platform_memory.md` |
+| [`vsoc_state_model.py`](docs/components/tier2_runtime/formal/vsoc_state_model.py) | - vSoC 実行状態<br>- Safepoint ポーリング応答性<br>- 割り込み/デバッグフォールバック | - `components/tier2_runtime/runtime_vsoc.md`<br>- `components/tier2_runtime/runtime_vmmio.md`<br>- `components/tier2_runtime/runtime_interpreter.md`<br>- `components/tier2_runtime/debug_manager.md`<br>- `components/tier3_platform/platform_hal.md`<br>- `components/tier1_core/system_config.md` |
+| [`jit_cache_model.py`](docs/components/tier3_jit/formal/jit_cache_model.py) | - 3面キャッシュ代謝<br>- MPU W^X 保護<br>- 遅延チェイニング局所アンリンク安全性<br>- 2-bit Hotspot FSM | - `components/tier3_jit/jit_compiler.md`<br>- `components/tier3_jit/jit_runtime.md`<br>- `components/tier3_platform/platform_memory.md` |

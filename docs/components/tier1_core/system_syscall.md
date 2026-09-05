@@ -10,7 +10,7 @@
 
 ## 2. 背景
 <!-- traceability: {UnifiedAccessModel} -->
-`fireball_call` は、vMMIOアドレス空間（`docs/components/tier2_runtime/runtime_vmmio.md` の Tier 2/3、Bit 31 == 1）に対する**代理実行ラッパー**である。直接vMMIOアドレスにアクセスできないゲスト言語のために、シングル・トラップ命令経由でホストがvMMIO操作を代行する。ゲスト専用RAM（Tier 1, Bit 31 == 0）はこの対象外であり、`FastAddressCheck` による別経路の境界チェックのみで完結する。
+`fireball_call` は、vMMIOアドレス空間（[`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md) の Tier 2/3、Bit 31 == 1）に対する**代理実行ラッパー**である。直接vMMIOアドレスにアクセスできないゲスト言語のために、シングル・トラップ命令経由でホストがvMMIO操作を代行する。ゲスト専用RAM（Tier 1, Bit 31 == 0）はこの対象外であり、`FastAddressCheck` による別経路の境界チェックのみで完結する。
 
 ```
 アクセスパスA: guest load/store(vMMIO_addr) → 許可テーブル → 直接物理アクセス
@@ -21,7 +21,7 @@ vMMIOアドレス空間（Tier 2/3）に対しては、どちらのパスも最�
 
 ## 3. `fireball_call` WIT定義
 <!-- traceability: {WIT_Interface_Spec} -->
-`fireball_call`のWIT (WebAssembly Interface Type) 定義は以下の通りである。詳細は `docs/components/tier1_interface/interface_wit.md` を参照のこと。 `{WIT_Interface_Spec}`
+`fireball_call`のWIT (WebAssembly Interface Type) 定義は以下の通りである。詳細は [`interface_wit.md`](docs/components/tier1_interface/interface_wit.md) を参照のこと。 `{WIT_Interface_Spec}`
 
 ```wit
 package fireball:host;
@@ -88,7 +88,7 @@ world fireball {
 
 ### 4.2. 戻り値
 <!-- traceability: {Syscall_Return_Value} {Errorcode_To_Strategy} -->
-`fireball_call`は `u32` 型の値を返す。成功時は `0` を返し、失敗時は非0の定義されたエラーコード（WASIの `errno_t` に準拠）を返す。エラーコードの詳細は 5.7節 および別紙参照。Shim層ではこのエラーコードがWITの `recovery-strategy` に変換されて上位に伝播する。 `{Syscall_Return_Value}` `{Errorcode_To_Strategy}`
+`fireball_call`は `u32` 型の値を返す。成功時は `0` を返し、失敗時は非0の定義されたエラーコード（WASIの `errno_t` に準拠）を返す。エラーコードの詳細は `{Syscall_Mapping}` の各定義および別紙参照。Shim層ではこのエラーコードがWITの `recovery-strategy` に変換されて上位に伝播する。 `{Syscall_Return_Value}` `{Errorcode_To_Strategy}`
 
 **未定義 Syscall ID の非パニック安全復帰 (`SYS-GOTCHA-01`)**:
 未定義または予約済みのシステムコール ID が呼び出された場合、ホスト側はアボートやカーネルパニックを発生させず、WASI 準拠の `WasiErrno.NOSYS`（52）を返却して安全に復帰する。これにより、新機能の有無を動的に問い合わせるゲストランタイムや標準ライブラリ（WASI libc 等）がフォールバック機構を安全に機能させることができる。
@@ -120,7 +120,7 @@ world fireball {
 | `0x03` | `SYS_RESET` | — | `0` | ゲストリセット |
 
 ### 5.3. vMMIO Generic (`0x10`-`0x1F`)
-vMMIOアドレス空間全体への汎用アクセス。SYSCTL/IPCR/VDMA/SHM/DYNAMIC/PASSTHROUGHすべての領域に対応。アクセス可否は、対象物理アドレスが `FB_CONF_VMMIO_ALLOWED_ADDRS`（[`system_config.md`](system_config.md)）の許可範囲に属するかで判定される。この許可判定はタスク単位ではなく物理アドレス単位のグローバルなゲートであり、PTEに埋め込まれた権限フィールドが唯一の検証点となる（`runtime_vmmio.md` を正本とする）。SHM領域（FC=14）等、タスク間で所有権が移動するリソースの排他制御は `{RoleBasedAccessControl}` と IPCルータの所有権移譲によって別途行われ、vMMIOの物理アクセス許可判定とは独立している。 `{META_RestrictedPhysicalAccess}`
+vMMIOアドレス空間全体への汎用アクセス。SYSCTL/IPCR/VDMA/SHM/DYNAMIC/PASSTHROUGHすべての領域に対応。アクセス可否は、対象物理アドレスが `FB_CONF_VMMIO_ALLOWED_ADDRS`（[`system_config.md`](docs/components/tier1_core/system_config.md)）の許可範囲に属するかで判定される。この許可判定はタスク単位ではなく物理アドレス単位のグローバルなゲートであり、PTEに埋め込まれた権限フィールドが唯一の検証点となる（`runtime_vmmio.md` を正本とする）。SHM領域（FC=14）等、タスク間で所有権が移動するリソースの排他制御は `{RoleBasedAccessControl}` と IPCルータの所有権移譲によって別途行われ、vMMIOの物理アクセス許可判定とは独立している。 `{META_RestrictedPhysicalAccess}`
 
 | ID | 名前 | 引数 | 戻り値 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
@@ -178,7 +178,7 @@ WASI 0.2標準仕様に適合するように、各システムコールはShim�
 本カテゴリのIDはすべてWASI 0.2標準仕様に適合するように Shim 側で適切に仲介・処理される。 `{WASI_Implementation}`
 
 > [!NOTE]
-> GPIOアクセスはMMIO Generic (`MMIO_READ32`/`MMIO_WRITE32`) でPASSTHROUGH領域経由。専用syscallは不要。
+> 最速のGPIOアクセスは `{Fast_Path_GPIO}` に従い vMMIO 空間への直接ストア（PASSTHROUGH領域経由、トラップ不要）を用いる。専用syscallは原則不要であるが、WASI互換レイヤ等の互換目的で MMIO Generic または移植性代替 Shim（`FB_SYSCALL_TRIGGER_SET_PIN` 等）を介した呼び出しもサポートされる。
 
 ##### システムコール ID 定義一覧表 (`fb_syscall_id`)
 <!-- traceability: {Syscall_Mapping} -->

@@ -46,7 +46,7 @@ Windows（PowerShell）および Linux / WSL（Bash）の双方で同一の操�
 | **ソースコード品質・サボり検査** | `powershell tools/check-src.ps1 -group <group> [files...]`<br>`./tools/check-src.sh -g <group> [files...]` | 0円 / 2〜5秒 |
 | **用語表記揺れの確認** | `powershell tools/llm-word.ps1 -quick`（静的のみ）<br>`powershell tools/llm-word.ps1`（LLM判定込み） | 0円（quick） / 課金 |
 | **キーワードリスク評価 (マイルストーン時)** | `powershell tools/risk.ps1` | 課金 / 30秒〜1分 |
-| **単体ドキュメントのレビュー** | `powershell tools/llm-single-review.ps1 -file docs/components/tier1_core/os_scheduler.md` | 課金 |
+| **単体ドキュメントのレビュー** | `powershell tools/llm-single-review.ps1 -file docs/components/tier1_core/os_scheduler.md`<br>`powershell tools/llm-single-review.ps1 -tagged`（{VERIFY_LLM}付与文書のみ） | 課金 |
 | **高リスクキーワードの島レビュー** | `powershell tools/llm-keyword-review.ps1` | 課金 |
 
 ---

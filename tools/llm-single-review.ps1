@@ -1,7 +1,10 @@
 # Fireball LLM Single Document & High-Risk Island Reviewer (PowerShell)
 # Reviews single document section-by-section and related high-risk keyword islands.
 param(
+    [Alias("f")]
     [string]$file = "",
+    [Alias("t")]
+    [switch]$tagged,
     [switch]$all,
     [int]$riskThreshold = 0,
     [string]$check = "",
@@ -22,7 +25,8 @@ Usage:
   powershell tools/llm-single-review.ps1 [OPTIONS]
 
 Options:
-  -file <path>        Path to markdown document to review.
+  -file <path>, -f    Path to markdown document to review.
+  -tagged, -t         Review only documents tagged with {VERIFY_LLM}.
   -all                Review all documents in the project.
   -riskThreshold <N>  Override high-risk score threshold (default from config).
   -check <id>         Run only a specific check ID.
@@ -45,6 +49,7 @@ $cmdArgs = @("run", "--system-certs", "--project", "tools/spec-integrator",
              "python", "-m", "spec_integrator.cli", "llm-single-review",
              "--config", $config)
 if ($file) { $cmdArgs += @("--file", $file) }
+if ($tagged) { $cmdArgs += "--tagged" }
 if ($all) { $cmdArgs += "--all" }
 if ($riskThreshold -gt 0) { $cmdArgs += @("--risk-threshold", "$riskThreshold") }
 if ($check) { $cmdArgs += @("--check", $check) }

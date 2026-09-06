@@ -8,6 +8,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
 FILE=""
+TAGGED=""
 ALL=""
 RISK_THRESHOLD=""
 CHECK=""
@@ -25,7 +26,8 @@ Usage:
   ./tools/llm-single-review.sh [OPTIONS]
 
 Options:
-  --file <path>         Path to markdown document to review.
+  -f, --file <path>     Path to markdown document to review.
+  -t, --tagged          Review only documents tagged with {VERIFY_LLM}.
   --all                 Review all documents in the project.
   --risk-threshold <N>  Override high-risk score threshold (default from config).
   --check <id>          Run only a specific check ID.
@@ -41,7 +43,8 @@ EOF
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --file)           FILE="$2"; shift 2 ;;
+        -f|--file)        FILE="$2"; shift 2 ;;
+        -t|--tagged)      TAGGED="--tagged"; shift ;;
         --all)            ALL="--all"; shift ;;
         --risk-threshold) RISK_THRESHOLD="$2"; shift 2 ;;
         --check)          CHECK="$2"; shift 2 ;;
@@ -59,6 +62,7 @@ CMD_ARGS=("run" "--system-certs" "--project" "tools/spec-integrator"
           "python" "-m" "spec_integrator.cli" "llm-single-review"
           "--config" "$CONFIG")
 if [[ -n "$FILE" ]]; then CMD_ARGS+=("--file" "$FILE"); fi
+if [[ -n "$TAGGED" ]]; then CMD_ARGS+=("$TAGGED"); fi
 if [[ -n "$ALL" ]]; then CMD_ARGS+=("$ALL"); fi
 if [[ -n "$RISK_THRESHOLD" ]]; then CMD_ARGS+=("--risk-threshold" "$RISK_THRESHOLD"); fi
 if [[ -n "$CHECK" ]]; then CMD_ARGS+=("--check" "$CHECK"); fi

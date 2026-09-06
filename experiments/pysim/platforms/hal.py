@@ -436,7 +436,7 @@ class HalTask:
         """
         while self.running:
             default_uri = next(iter(self.drivers.keys()), "fireball://device/uart/0")
-            status, msg = yield from self.ipc.recv(default_uri)
+            status, msg = yield from self.ipc.recv()
             if status != IpcStatus.COMPLETED or msg is None:
                 yield (ChannelAction.BLOCK, None)
                 continue

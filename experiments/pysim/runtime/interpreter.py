@@ -1758,7 +1758,19 @@ def _h_f32_div(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
 ) -> _HandlerResult:
     b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(_to_f32(a / b if b != 0 else (float("nan") if a == 0 else math.copysign(float("inf"), a) if b == 0 else float("inf"))))
+    frame.values.append(
+        _to_f32(
+            a / b
+            if b != 0
+            else (
+                float("nan")
+                if a == 0
+                else math.copysign(float("inf"), a)
+                if b == 0
+                else float("inf")
+            )
+        )
+    )
     return (ip + 1, frame, env, local_base)
 
 
@@ -2460,4 +2472,3 @@ def _h_f64_reinterpret_i64(
     d = struct.unpack("<d", struct.pack("<Q", a))[0]
     frame.values.append(float(d))
     return (ip + 1, frame, env, local_base)
-

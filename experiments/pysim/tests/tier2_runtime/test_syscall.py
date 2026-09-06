@@ -143,10 +143,10 @@ def test_syscall_06_ipc_lookup_send_recv():
         sent: list[IPCMessage] = []
 
         def hal_receiver():
-            status, msg = yield from sysv.ipc.recv(uri)
+            status, msg = yield from sysv.ipc.recv()
             sent.append(msg)
 
-        recv_id = sysv.scheduler.spawn("hal_receiver", hal_receiver())
+        recv_id = sysv.scheduler.spawn("hal_receiver", hal_receiver(), role=Role.PLATFORM_HAL)
         sysv.scheduler.run_until_idle()
         assert sysv.scheduler.get_task(recv_id).state.name == "SUSPENDED_CSP"
 
@@ -158,6 +158,11 @@ def test_syscall_06_ipc_lookup_send_recv():
 
         # -- IPC_RECV: a DEBUGGER sender coroutine blocks first, so the
         # guest's IPC_RECV completes the rendezvous the instant it calls in.
+        # Set guest task role to CORE_SERVICE so it is authorized to receive on DEBUGGER->CORE_SERVICE edge
+        guest_task = sysv.scheduler.get_task(1)
+        assert guest_task is not None
+        guest_task.role = Role.CORE_SERVICE
+
         core_uri = "fireball://core/coos/0"
         core_uri_bytes = core_uri.encode()
         guest_mem[32 : 32 + len(core_uri_bytes)] = core_uri_bytes
@@ -165,16 +170,17 @@ def test_syscall_06_ipc_lookup_send_recv():
         sent_status = []
 
         def debugger_sender():
+            status, ch = sysv.ipc.lookup(core_uri)
+            assert status == IpcStatus.COMPLETED and ch is not None
             status, _ = yield from sysv.ipc.send(
-                Role.DEBUGGER,
-                core_uri,
+                ch,
                 IPCMessage.from_entries(
                     bytes_to_kv_storage(reply), memory_manager=sysv.memory_manager
                 ),
             )
             sent_status.append(status)
 
-        sysv.scheduler.spawn("debugger_sender", debugger_sender())
+        sysv.scheduler.spawn("debugger_sender", debugger_sender(), role=Role.DEBUGGER)
         sysv.scheduler.run_until_idle()
 
         core_handle = sysv.fireball_call(

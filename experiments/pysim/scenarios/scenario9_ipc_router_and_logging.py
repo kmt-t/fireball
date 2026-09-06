@@ -52,7 +52,7 @@ _CMD_KILL = 2
 def test_scenario_ipc_router_and_logging():
     print("[*] Running Scenario 9: Tier 1 Interface IPC Router & Structured Logging...")
     # -------------------------------------------------------------------------
-    # Phase 1: IPC Router 3-Stage Pipeline (URI lookup -> RBAC -> CSP handoff)
+    # Stage 1: IPC Router 3-Stage Pipeline (URI lookup -> RBAC -> CSP handoff)
     # -------------------------------------------------------------------------
     sched = Scheduler()
     router = IPCRouter(sched)
@@ -66,24 +66,27 @@ def test_scenario_ipc_router_and_logging():
         # 1. Full CSP rendezvous with coos_receiver (spawned alongside this
         #    task below): whichever of the two runs first genuinely blocks,
         #    and the other's matching call completes the handoff.
+        status1, ch1 = router.lookup("fireball://core/coos/0")
+        assert status1 == IpcStatus.COMPLETED and ch1 is not None
+
         msg1 = IPCMessage.from_entries([(_KEY_CMD, _CMD_START_TASK), (_KEY_TASK_ID, 10)])
-        status, _ = yield from router.send(Role.RUNTIME, "fireball://core/coos/0", msg1)
+        status, _ = yield from router.send(ch1, msg1)
         sent.append(("1_rendezvous", status, msg1))
 
         # 2. RBAC Permission Denied: no RUNTIME -> DEBUGGER edge exists.
         msg2 = IPCMessage.from_entries([(_KEY_CMD, _CMD_KILL)])
-        status, _ = yield from router.send(Role.RUNTIME, "fireball://dbg/manager/0", msg2)
-        sent.append(("2_permission_denied", status, msg2))
+        status2, ch2 = router.lookup("fireball://dbg/manager/0")
+        sent.append(("2_permission_denied", status2, msg2))
 
         # 3. URI Not Found
         msg3 = IPCMessage.from_entries()
-        status, _ = yield from router.send(Role.RUNTIME, "fireball://unknown/service", msg3)
-        sent.append(("3_not_found", status, msg3))
+        status3, ch3 = router.lookup("fireball://unknown/service")
+        sent.append(("3_not_found", status3, msg3))
 
         # 4. Message exceeds the static 8 kv_pair buffer (ipc_router.md §3.3/§5.1).
         oversized = IPCMessage.from_entries([(i, i) for i in range(9)])
-        status, _ = yield from router.send(Role.RUNTIME, "fireball://core/coos/0", oversized)
-        sent.append(("4_too_large", status, oversized))
+        status4, _ = yield from router.send(ch1, oversized)
+        sent.append(("4_too_large", status4, oversized))
 
     received: list[IPCMessage] = []
 
@@ -91,11 +94,11 @@ def test_scenario_ipc_router_and_logging():
         # recv() selects across every allowed incoming edge (RUNTIME and
         # DEBUGGER may both legitimately send to CORE_SERVICE) rather than
         # committing to just one sender_role upfront.
-        status, msg = yield from router.recv("fireball://core/coos/0")
+        status, msg = yield from router.recv()
         received.append(msg)
 
-    sched.spawn("coos_receiver", coos_receiver())
-    sched.spawn("client_app", client_app_task())
+    sched.spawn("coos_receiver", coos_receiver(), role=Role.CORE_SERVICE)
+    sched.spawn("client_app", client_app_task(), role=Role.RUNTIME)
     sched.run_until_idle()
 
     results = {name: (status, msg) for name, status, msg in sent}
@@ -108,25 +111,25 @@ def test_scenario_ipc_router_and_logging():
     assert received[0][_KEY_CMD] == _CMD_START_TASK
     assert received[0][_KEY_TASK_ID] == 10
     print(
-        "    [Phase 1.1] IPC CSP Rendezvous (blocking recv -> sender handoff) -> RECEIVER_OWNS [PASS]"
+        "    [Stage 1.1] IPC CSP Rendezvous (blocking recv -> sender handoff) -> RECEIVER_OWNS [PASS]"
     )
 
     status2, msg2 = results["2_permission_denied"]
     assert status2 == IpcStatus.ERR_PERMISSION_DENIED
     assert msg2.ownership == OwnershipState.SENDER_OWNS
-    print("    [Phase 1.2] IPC RBAC Check (RUNTIME -> DEBUGGER) -> ERR_PERMISSION_DENIED [PASS]")
+    print("    [Stage 1.2] IPC RBAC Check (RUNTIME -> DEBUGGER) -> ERR_PERMISSION_DENIED [PASS]")
 
     status3, _ = results["3_not_found"]
     assert status3 == IpcStatus.ERR_NOT_FOUND
-    print("    [Phase 1.3] IPC URI Lookup (Unknown URI) -> ERR_NOT_FOUND [PASS]")
+    print("    [Stage 1.3] IPC URI Lookup (Unknown URI) -> ERR_NOT_FOUND [PASS]")
 
     status4, msg4 = results["4_too_large"]
     assert status4 == IpcStatus.ERR_MSG_TOO_LARGE
     assert msg4.ownership == OwnershipState.SENDER_OWNS
-    print("    [Phase 1.4] IPC Message KV-pair Limit (9 > 8) -> ERR_MSG_TOO_LARGE [PASS]")
+    print("    [Stage 1.4] IPC Message KV-pair Limit (9 > 8) -> ERR_MSG_TOO_LARGE [PASS]")
 
     # -------------------------------------------------------------------------
-    # Phase 2: Structured System Logging & LogDictionary Safety
+    # Section 2: Structured System Logging & LogDictionary Safety
     # -------------------------------------------------------------------------
     transport = UartTransport()
     log_dict = LogDictionary(capacity=16)
@@ -140,7 +143,7 @@ def test_scenario_ipc_router_and_logging():
     except ValueError:
         rejected = True
     assert rejected, "LogDictionary must reject %s pointer specifier"
-    print("    [Phase 2.1] LogDictionary Pointer Specifier Rejection (%s) -> REJECTED [PASS]")
+    print("    [Section 2.1] LogDictionary Pointer Specifier Rejection (%s) -> REJECTED [PASS]")
     # 3. Emit structured logs via Logger
     logger = Logger(transport=transport, dictionary=log_dict, min_level=LogLevel.INFO)
     assert logger.log_event(LogLevel.INFO, 0x100, 1, 5) == "QUEUED"
@@ -154,7 +157,7 @@ def test_scenario_ipc_router_and_logging():
     assert "TASK_INIT: id=1 priority=5" in emitted
     assert "0x12345678" not in emitted  # DEBUG filtered
     assert "COOS_STATE: state=0xDEADBEEF" in emitted
-    print("    [Phase 2.2] Buffered Logging & COOS Idle Flush -> 2 Entries Flushed [PASS]")
+    print("    [Section 2.2] Buffered Logging & COOS Idle Flush -> 2 Entries Flushed [PASS]")
     print("    [PASS] Scenario 9 (IPC Router & Structured Logging) verified completely.")
 
 

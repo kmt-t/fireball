@@ -408,25 +408,23 @@ class IPCRouter:
         """The dedicated CSP Channel for one specific (sender_role, target_role) RBAC edge."""
         return self._edge_channels[int(sender_role)][int(target_role)]
 
-    def create_channel(
-        self,
-        destination_uri: str,
-        sender_role: Role | None = None,
-    ) -> Channel | None:
+    def lookup(self, destination_uri: str) -> tuple[IpcStatus, Channel | None]:
         """
-        Opens a communication channel to the destination service URI.
-        Binds current running task's role (or explicit sender_role), performs
-        Stage 1 URI lookup and Stage 2 RBAC authorization, and returns
-        the dedicated Channel instance if permitted (or None if denied/not found).
+        Stage 1 URI lookup + Stage 2 RBAC authorization.
+        Derives caller's security role strictly from current_task.role (preventing spoofing).
+        Returns (IpcStatus.COMPLETED, Channel) if permitted, or (error_status, None).
         """
-        if sender_role is None:
-            current = self.scheduler.current_task
-            sender_role = Role(current.role) if current is not None else Role.RUNTIME
+        current = self.scheduler.current_task
+        sender_role = Role(current.role) if current is not None else Role.RUNTIME
 
         handle = self.lookup_service_handle(destination_uri)
         desc = self.get_service_descriptor(handle)
         if desc is None:
-            return None
+            if self.logger is not None:
+                self.logger.log_event(
+                    LogLevel.WARN, LOG_EVT_IPC_UNKNOWN_URI, handle if handle >= 0 else 0, 0, 0, 0
+                )
+            return (IpcStatus.ERR_NOT_FOUND, None)
 
         if not FB_CONF_ROUTER_ROLE_MATRIX[int(sender_role)][int(desc.role)]:
             if self.logger is not None:
@@ -438,19 +436,48 @@ class IPCRouter:
                     0,
                     0,
                 )
-            return None
+            return (IpcStatus.ERR_PERMISSION_DENIED, None)
 
-        return self._edge_channels[int(sender_role)][int(desc.role)]
+        return (IpcStatus.COMPLETED, self._edge_channels[int(sender_role)][int(desc.role)])
+
+    def create_channel(
+        self,
+        destination_uri: str,
+    ) -> Channel | None:
+        """
+        Backward-compatible helper: resolves URI and returns Channel if permitted.
+        Role is always obtained from current_task.role.
+        """
+        status, ch = self.lookup(destination_uri)
+        return ch if status == IpcStatus.COMPLETED else None
 
     def send(
-        self, sender_role: Role, destination_uri: str, message: IPCMessage
+        self, channel: Channel, message: IPCMessage
     ) -> Generator[tuple[ChannelAction, None], None, tuple[IpcStatus, object]]:
         """
-        Stage 1 (lookup handle) + Stage 2 (RBAC check), then Stage 3: synchronous
-        CSP send on the dedicated Channel.
+        Stage 3: synchronous CSP send on the pre-authorized Channel object.
         Zero-copy: `message` itself is never duplicated, only its `ownership`
         flag and reference move.
+        Caller role is verified against the channel's allowed edges.
         """
+        current = self.scheduler.current_task
+        sender_role = Role(current.role) if current is not None else Role.RUNTIME
+        allowed_channels = [ch for ch in self._edge_channels[int(sender_role)] if ch is not None]
+        if channel not in allowed_channels:
+            if self.logger is not None:
+                self.logger.log_event(
+                    LogLevel.WARN,
+                    LOG_EVT_IPC_RBAC_DENIED,
+                    int(sender_role),
+                    0,
+                    0,
+                    0,
+                )
+            return (
+                IpcStatus.ERR_PERMISSION_DENIED,
+                f"Role {sender_role.name} not authorized to send on this channel",
+            )
+
         if message.ownership != OwnershipState.SENDER_OWNS:
             if self.logger is not None:
                 self.logger.log_event(
@@ -479,25 +506,7 @@ class IPCRouter:
                 f"message has {len(message)} KV pairs, exceeds {FB_CONF_ROUTER_MAX_KV_PAIRS}",
             )
 
-        # 1. Resolve URI to integer handle via binary search (no dict!)
-        handle = self.lookup_service_handle(destination_uri)
-        desc = self.get_service_descriptor(handle)
-        if desc is None:
-            if self.logger is not None:
-                self.logger.log_event(
-                    LogLevel.WARN, LOG_EVT_IPC_UNKNOWN_URI, handle if handle >= 0 else 0, 0, 0, 0
-                )
-            return (IpcStatus.ERR_NOT_FOUND, f"Destination {destination_uri} is not registered")
-
-        # 2. Lookup authorized Channel for destination via create_channel
-        channel = self.create_channel(destination_uri, sender_role=sender_role)
-        if channel is None:
-            return (
-                IpcStatus.ERR_PERMISSION_DENIED,
-                f"Role {sender_role.name} not allowed to access {desc.role.name}",
-            )
-
-        # 3. Synchronous CSP send directly on the Channel endpoint
+        # Synchronous CSP send directly on the Channel endpoint
         entries_to_grant = message.entries
 
         # Revoke phase: prepare message's own SharedBlock and any entry-embedded shm_id for transfer
@@ -523,7 +532,7 @@ class IPCRouter:
         # Grant phase: update PTE ownership and claim receiver-side SharedBlock
         if self.memory_manager is not None:
             recv_task = self.scheduler.get_task(target) if target is not None else None
-            recv_task_id = recv_task.task_id if recv_task is not None else int(desc.role)
+            recv_task_id = recv_task.task_id if recv_task is not None else 0
 
             if message._in_flight_shm_id is not None:
                 self.memory_manager.grant_shared(message._in_flight_shm_id, recv_task_id)
@@ -541,22 +550,20 @@ class IPCRouter:
         return (IpcStatus.COMPLETED, target)
 
     def recv(
-        self, service_uri: str
+        self,
     ) -> Generator[tuple[ChannelAction, None], None, tuple[IpcStatus, IPCMessage | None]]:
         """
-        Stage 1 in reverse: resolves service handle, then guarded external choice
-        (select) across every incoming Channel allowed for that role.
+        Guarded external choice (select) across every incoming Channel allowed
+        for current running task's role.
+        URI is never used in the hot transfer path.
         """
-        handle = self.lookup_service_handle(service_uri)
-        desc = self.get_service_descriptor(handle)
-        if desc is None:
-            return (IpcStatus.ERR_NOT_FOUND, None)
+        receiver = self.scheduler.current_task
+        current_role = Role(receiver.role) if receiver is not None else Role.RUNTIME
 
-        channels = [ch for row in self._edge_channels if (ch := row[int(desc.role)]) is not None]
+        channels = [ch for row in self._edge_channels if (ch := row[int(current_role)]) is not None]
         if not channels:
             return (IpcStatus.ERR_PERMISSION_DENIED, None)
 
-        receiver = self.scheduler.current_task
         action, target = self.scheduler.channel_select_recv(channels)
         if action == ChannelAction.BLOCK:
             yield (ChannelAction.BLOCK, None)

@@ -307,17 +307,21 @@ class Wasi03pEngine:
         HAL operates as a distinct task and communicates strictly over IPC rendezvous.
         """
         from hal import make_hal_ipc_message
-        from ipc_router import Role
+        from ipc_router import IpcStatus, Role
 
         # Ensure HAL task is spawned on the scheduler
         self.sysv.spawn_hal_task()
 
         msg = make_hal_ipc_message(cmd_id, params.entries, memory_manager=self.sysv.memory_manager)
 
-        def sender_coro():
-            yield from self.sysv.ipc.send(Role.RUNTIME, uri, msg)
+        status, channel = self.sysv.ipc.lookup(uri)
+        if status != IpcStatus.COMPLETED or channel is None:
+            return None
 
-        self.sysv.scheduler.spawn("wasi_ipc_sender", sender_coro())
+        def sender_coro():
+            yield from self.sysv.ipc.send(channel, msg)
+
+        self.sysv.scheduler.spawn("wasi_ipc_sender", sender_coro(), role=Role.RUNTIME)
         self.sysv.scheduler.run_until_idle()
 
         if self.sysv.hal_task is not None:

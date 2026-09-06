@@ -56,6 +56,7 @@ from interpreter import _HANDLERS, Interpreter
 from ipc_router import (
     IPCMessage,
     IPCRouter,
+    IpcStatus,
     OwnershipState,
     Role,
 )
@@ -481,33 +482,54 @@ def test_ipcr_gotcha_01_no_queue_assertion_on_duplicate_send():
     """IPCR-GOTCHA-01: CSP rendezvous channel has no queue; duplicate send raises assertion, not QUEUE_FULL."""
     sched = Scheduler()
     router = IPCRouter(sched)
-    sender_id = sched.spawn("sender")
+    sender_id = sched.spawn("sender", role=Role.RUNTIME)
     sched.current_task = sched.get_task(sender_id)
 
+    status, ch = router.lookup("fireball://hal/gpio/0")
+    assert status == IpcStatus.COMPLETED and ch is not None
+
     msg1 = IPCMessage.from_entries([(1, 100)])
-    gen1 = router.send(Role.RUNTIME, "fireball://hal/gpio/0", msg1)
+    gen1 = router.send(ch, msg1)
     assert next(gen1) == (ChannelAction.BLOCK, None)
     assert msg1.ownership == OwnershipState.IN_FLIGHT
 
-    ch = router.channel_for_edge(Role.RUNTIME, Role.PLATFORM_HAL)
-    assert ch is not None
     assert ch.waiter_task is not None
     assert ch.waiter_dir == WaitDir.SEND
+
+    # Duplicate send on the busy channel raises assertion (no queue exists)
+    msg2 = IPCMessage.from_entries([(2, 200)])
+    sender2_id = sched.spawn("sender2", role=Role.RUNTIME)
+    sched.current_task = sched.get_task(sender2_id)
+    gen2 = router.send(ch, msg2)
+    try:
+        next(gen2)
+        raise AssertionError("Duplicate send on CSP channel must raise assertion")
+    except AssertionError:
+        pass
 
 
 def test_ipcr_gotcha_02_preflight_rejection_preserves_sender_ownership():
     """IPCR-GOTCHA-02: Preflight rejection (RBAC denial) keeps message in SENDER_OWNS."""
     sched = Scheduler()
     router = IPCRouter(sched)
-    sender_id = sched.spawn("sender_hal")
+    sender_id = sched.spawn("sender_hal", role=Role.PLATFORM_HAL)
     sched.current_task = sched.get_task(sender_id)
 
     msg = IPCMessage.from_entries([(1, 99)])
+    status, ch = router.lookup("fireball://dbg/manager/0")
+    assert status == IpcStatus.ERR_PERMISSION_DENIED
+    assert ch is None
+    assert msg.ownership == OwnershipState.SENDER_OWNS
+
+    # Even if an attacker obtains an unauthorized channel directly, send() rejects it based on TCB role
+    runtime_ch = router.channel_for_edge(Role.RUNTIME, Role.PLATFORM_HAL)
+    assert runtime_ch is not None
     try:
-        gen = router.send(Role.PLATFORM_HAL, "fireball://debugger/control", msg)
+        gen = router.send(runtime_ch, msg)
         next(gen)
-    except (StopIteration, AssertionError):
-        pass
+    except StopIteration as e:
+        status, _ = e.value
+        assert status == IpcStatus.ERR_PERMISSION_DENIED
 
     assert msg.ownership == OwnershipState.SENDER_OWNS
 

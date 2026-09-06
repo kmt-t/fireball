@@ -80,23 +80,35 @@ def test_ipc_01_uri_lookup_and_permission_matrix():
     assert entry is not None
     assert entry.role == Role.PLATFORM_HAL
 
-    sender_id = sched.spawn("sender")
+    sender_id = sched.spawn("sender", role=Role.RUNTIME)
     sched.current_task = sched.get_task(sender_id)
 
-    # RUNTIME has permission, but nothing is receiving yet -> send() itself
-    # genuinely waits (ipc_router.md §5.1), so single-step it exactly like
-    # scheduler.Channel's own tests (test_coos_01 etc.) to observe the
-    # CSP block directly instead of driving it to a rendezvous that will
-    # never come.
+    # RUNTIME has permission to send to PLATFORM_HAL
+    status1, ch1 = router.lookup("fireball://hal/gpio/0")
+    assert status1 == IpcStatus.COMPLETED and ch1 is not None
+
     msg1 = IPCMessage.from_entries([(_KEY_CMD, _CMD_PIN_HIGH)])
-    gen = router.send(Role.RUNTIME, "fireball://hal/gpio/0", msg1)
+    gen = router.send(ch1, msg1)
     assert next(gen) == (ChannelAction.BLOCK, None)
     assert msg1.ownership == OwnershipState.IN_FLIGHT
 
     # PLATFORM_HAL has no outgoing edges at all (role matrix row is all-DENY).
-    msg2 = IPCMessage.from_entries([(_KEY_CMD, _CMD_PIN_HIGH)])
-    status_bad, _ = _run_immediate(router.send(Role.PLATFORM_HAL, "fireball://hal/gpio/0", msg2))
+    hal_task_id = sched.spawn("hal_task", role=Role.PLATFORM_HAL)
+    sched.current_task = sched.get_task(hal_task_id)
+
+    status_bad, ch_bad = router.lookup("fireball://hal/gpio/0")
     assert status_bad == IpcStatus.ERR_PERMISSION_DENIED
+    assert ch_bad is None
+
+    # Anti-spoofing verification: even if PLATFORM_HAL holds ch1 (from RUNTIME),
+    # send() enforces TCB role check and denies transmission.
+    msg2 = IPCMessage.from_entries([(_KEY_CMD, _CMD_PIN_HIGH)])
+    gen_spoof = router.send(ch1, msg2)
+    try:
+        next(gen_spoof)
+    except StopIteration as e:
+        status_spoof, _ = e.value
+        assert status_spoof == IpcStatus.ERR_PERMISSION_DENIED
     assert msg2.ownership == OwnershipState.SENDER_OWNS
 
 
@@ -119,18 +131,20 @@ def test_ipc_02_e2e_shared_block_transfer():
         sent: list[IpcStatus] = []
 
         def client_app_task():
-            status, _ = yield from sysv.ipc.send(Role.RUNTIME, "fireball://hal/gpio/0", msg)
+            status, ch = sysv.ipc.lookup("fireball://hal/gpio/0")
+            assert status == IpcStatus.COMPLETED and ch is not None
+            status, _ = yield from sysv.ipc.send(ch, msg)
             sent.append(status)
 
         received: list[IPCMessage] = []
 
         def gpio_receiver():
-            status, recv_msg = yield from sysv.ipc.recv("fireball://hal/gpio/0")
+            status, recv_msg = yield from sysv.ipc.recv()
             received.append(recv_msg)
 
         # Spawn receiver (task 1) then sender (task 2)
-        sysv.scheduler.spawn("gpio_receiver", gpio_receiver())
-        sysv.scheduler.spawn("client_app", client_app_task())
+        sysv.scheduler.spawn("gpio_receiver", gpio_receiver(), role=Role.PLATFORM_HAL)
+        sysv.scheduler.spawn("client_app", client_app_task(), role=Role.RUNTIME)
         sysv.scheduler.run_until_idle()
 
         assert sent == [IpcStatus.COMPLETED]
@@ -159,10 +173,14 @@ def test_ipc_03_send_failure_restores_owner():
             memory_manager=sysv.memory_manager,
             task_id=1,
         )
+        sender_id = sysv.scheduler.spawn("hal_sender", role=Role.PLATFORM_HAL)
+        sysv.scheduler.current_task = sysv.scheduler.get_task(sender_id)
+
         # PLATFORM_HAL has no outgoing edges: rejected at Stage 2 before ever
-        # touching a channel, so this never actually blocks.
-        status, _ = _run_immediate(sysv.ipc.send(Role.PLATFORM_HAL, "fireball://hal/gpio/0", msg))
+        # touching a channel.
+        status, ch = sysv.ipc.lookup("fireball://hal/gpio/0")
         assert status == IpcStatus.ERR_PERMISSION_DENIED
+        assert ch is None
         assert msg.ownership == OwnershipState.SENDER_OWNS
         # Rollback
         sysv.memory_manager.rollback_transfer(original_sender_id=1, shm_id=shm_id)
@@ -185,16 +203,16 @@ def test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group():
     received: list[tuple[IpcStatus, IPCMessage]] = []
 
     def core_receiver():
-        status, msg = yield from router.recv("fireball://core/coos/0")
+        status, msg = yield from router.recv()
         received.append((status, msg))
 
     def debugger_sender():
-        status, _ = yield from router.send(
-            Role.DEBUGGER, "fireball://core/coos/0", IPCMessage.from_entries([(1, 99)])
-        )
+        status, ch = router.lookup("fireball://core/coos/0")
+        assert status == IpcStatus.COMPLETED and ch is not None
+        status, _ = yield from router.send(ch, IPCMessage.from_entries([(1, 99)]))
         assert status == IpcStatus.COMPLETED
 
-    recv_id = sched.spawn("core_receiver", core_receiver())
+    recv_id = sched.spawn("core_receiver", core_receiver(), role=Role.CORE_SERVICE)
     sched.run_until_idle()
     assert sched.get_task(recv_id).state == TaskState.SUSPENDED_CSP
     # Selecting on both edges must not double-register: each channel still
@@ -206,7 +224,7 @@ def test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group():
     assert debugger_ch.waiter_dir == WaitDir.RECV
     assert runtime_ch.waiter_task is debugger_ch.waiter_task
 
-    sched.spawn("debugger_sender", debugger_sender())
+    sched.spawn("debugger_sender", debugger_sender(), role=Role.DEBUGGER)
     sched.run_until_idle()
 
     assert len(received) == 1
@@ -222,17 +240,17 @@ def test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group():
     received2: list[tuple[IpcStatus, IPCMessage]] = []
 
     def core_receiver2():
-        status, msg = yield from router.recv("fireball://core/coos/0")
+        status, msg = yield from router.recv()
         received2.append((status, msg))
 
     def runtime_sender():
-        status, _ = yield from router.send(
-            Role.RUNTIME, "fireball://core/coos/0", IPCMessage.from_entries([(1, 7)])
-        )
+        status, ch = router.lookup("fireball://core/coos/0")
+        assert status == IpcStatus.COMPLETED and ch is not None
+        status, _ = yield from router.send(ch, IPCMessage.from_entries([(1, 7)]))
         assert status == IpcStatus.COMPLETED
 
-    sched.spawn("core_receiver2", core_receiver2())
-    sched.spawn("runtime_sender", runtime_sender())
+    sched.spawn("core_receiver2", core_receiver2(), role=Role.CORE_SERVICE)
+    sched.spawn("runtime_sender", runtime_sender(), role=Role.RUNTIME)
     sched.run_until_idle()
 
     assert len(received2) == 1
@@ -339,18 +357,20 @@ def test_ipc_07_message_in_shm_and_payload_shm_transfer():
         sent: list[IpcStatus] = []
 
         def client_sender():
-            status, _ = yield from sysv.ipc.send(Role.RUNTIME, "fireball://hal/gpio/0", msg)
+            status, ch = sysv.ipc.lookup("fireball://hal/gpio/0")
+            assert status == IpcStatus.COMPLETED and ch is not None
+            status, _ = yield from sysv.ipc.send(ch, msg)
             sent.append(status)
 
         received: list[IPCMessage] = []
 
         def hal_receiver():
-            status, recv_msg = yield from sysv.ipc.recv("fireball://hal/gpio/0")
+            status, recv_msg = yield from sysv.ipc.recv()
             received.append(recv_msg)
 
         # Receiver is task 1, Sender is task 2
-        sysv.scheduler.spawn("hal_receiver", hal_receiver())
-        sysv.scheduler.spawn("client_sender", client_sender())
+        sysv.scheduler.spawn("hal_receiver", hal_receiver(), role=Role.PLATFORM_HAL)
+        sysv.scheduler.spawn("client_sender", client_sender(), role=Role.RUNTIME)
         sysv.scheduler.run_until_idle()
 
         assert sent == [IpcStatus.COMPLETED]

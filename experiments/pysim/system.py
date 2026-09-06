@@ -47,7 +47,7 @@ from memory import (
     MemoryManager,
 )
 from runtime_engine import RuntimeEngine
-from scheduler import Scheduler, TaskState
+from scheduler import Channel, Scheduler, TaskState
 from system_containers import RadixBinaryTreeView
 from vmmio import (
     FC_STATIC_DEVICE,
@@ -230,6 +230,7 @@ class System:
         self.memory_manager.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
         self.scheduler = Scheduler(logger=self.logger)
         self.ipc = IPCRouter(self.scheduler, logger=self.logger, memory_manager=self.memory_manager)
+        self._channel_table: list[Channel] = []
         # Direct 1-based index mapping over sorted self.ipc.registry.keys array (no dynamic dict)
         self.runtime_engine = RuntimeEngine()
         self.scheduler.set_idle_hook(self._on_idle)
@@ -367,7 +368,9 @@ class System:
     def bus_slave(self, task_id: int) -> BusSlave:
         return BusSlave(self.pool, task_id)
 
-    def bind_guest(self, memory: bytearray | None, task_id: int = 1) -> None:
+    def bind_guest(
+        self, memory: bytearray | None, task_id: int = 1, role: Role = Role.RUNTIME
+    ) -> None:
         """
         Must be called before invoking guest code that will use
                 `fb_offset_t` arguments (IPC_*/WASI_*): those are relative offsets
@@ -381,9 +384,12 @@ class System:
         # which rendezvous on registered Task objects, not bare task_id ints.
         # This task is driven directly by fireball_call, never by the
         # scheduler's own run_until_idle() loop, so it must not sit in READY.
-        if self.scheduler.get_task(task_id) is None:
-            self.scheduler.spawn(name=f"guest_task_{task_id}", task_id=task_id)
+        task = self.scheduler.get_task(task_id)
+        if task is None:
+            self.scheduler.spawn(name=f"guest_task_{task_id}", task_id=task_id, role=role)
             self.scheduler.detach(self.scheduler.get_task(task_id))
+        else:
+            task.role = role
 
     # --- fireball_call ------------------------------------------------
     def fireball_call(
@@ -607,21 +613,26 @@ class System:
             uri = raw.decode("utf-8")
         except UnicodeDecodeError:
             return int(WasiErrno.INVAL)
-        # O(log N) via the registry's own FlatMapView.find_index, not a
-        # linear rescan of the registry -- ipc_router.py's own
-        # lookup_service_handle() does exactly this same lookup, just
-        # 0-based; this call site's handle IDs are 1-based (see
-        # _ipc_send/_ipc_recv's `keys[handle_id - 1]`).
-        idx = self.ipc.registry.find_index(uri)
-        return idx + 1 if idx >= 0 else int(WasiErrno.NOENT)
+        task = self.scheduler.get_task(self._current_task_id)
+        if task is None:
+            task = self.scheduler.get_task(
+                self.scheduler.spawn(
+                    name=f"guest_task_{self._current_task_id}", task_id=self._current_task_id
+                )
+            )
+        self.scheduler.current_task = task
+        status, channel = self.ipc.lookup(uri)
+        if status == IpcStatus.ERR_NOT_FOUND or channel is None:
+            return int(WasiErrno.NOENT)
+        if status == IpcStatus.ERR_PERMISSION_DENIED:
+            return int(WasiErrno.PERM)
+        self._channel_table.append(channel)
+        return len(self._channel_table)
 
     def _ipc_send(self, handle_id: int, msg_offset: int, msg_len: int) -> WasiErrno:
-        # .size()/.entries are O(1) (the latter borrows the backing array
-        # directly for a full-range view); .keys rebuilds a fresh list on
-        # every access and must never sit on this per-call path.
-        if handle_id < 1 or handle_id > self.ipc.registry.size():
+        if handle_id < 1 or handle_id > len(self._channel_table):
             return WasiErrno.BADF
-        uri = self.ipc.registry.entries[handle_id - 1][0]
+        channel = self._channel_table[handle_id - 1]
         payload = self._read_guest(msg_offset, msg_len)
         if payload is None:
             return WasiErrno.FAULT
@@ -639,7 +650,7 @@ class System:
             )
         self.scheduler.current_task = task
 
-        gen = self.ipc.send(Role.RUNTIME, uri, msg)
+        gen = self.ipc.send(channel, msg)
         try:
             next(gen)
             # Counterpart is not ready yet: attach and step cooperatively
@@ -666,9 +677,6 @@ class System:
         return WasiErrno.NOENT
 
     def _ipc_recv(self, handle_id: int, buf_offset: int, buf_len: int) -> int:
-        if handle_id < 1 or handle_id > self.ipc.registry.size():
-            return int(WasiErrno.BADF)
-        uri = self.ipc.registry.entries[handle_id - 1][0]
         task = self.scheduler.get_task(self._current_task_id)
         if task is None:
             task = self.scheduler.get_task(
@@ -678,7 +686,7 @@ class System:
             )
         self.scheduler.current_task = task
 
-        gen = self.ipc.recv(uri)
+        gen = self.ipc.recv()
         try:
             next(gen)
             # Counterpart is not ready yet: attach and step cooperatively
@@ -779,7 +787,9 @@ class System:
             DummyBusDriver("fireball://device/spi/0"),
         ]
         self.hal_task = HalTask(self.ipc, drivers=self.hal_drivers)
-        self._hal_task_id = self.scheduler.spawn("hal_task", self.hal_task.run())
+        self._hal_task_id = self.scheduler.spawn(
+            "hal_task", self.hal_task.run(), role=Role.PLATFORM_HAL
+        )
         return self._hal_task_id
 
     def spawn_gdbserver_task(

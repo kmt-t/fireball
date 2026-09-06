@@ -114,22 +114,22 @@ def test_log_04_coos_and_ipc_diagnostic_logging():
             sysv.scheduler.notify_interrupt(irq_idx)
 
         # 3. IPC Unknown URI -> 0x0202
-        msg = IPCMessage.from_entries([(1, 10)], memory_manager=sysv.memory_manager)
-
         def bad_uri_task():
-            yield from sysv.ipc.send(Role.RUNTIME, "fireball://unknown/service", msg)
+            sysv.ipc.lookup("fireball://unknown/service")
+            return
+            yield
 
-        sysv.scheduler.spawn("bad_uri_task", bad_uri_task())
+        sysv.scheduler.spawn("bad_uri_task", bad_uri_task(), role=Role.RUNTIME)
         sysv.scheduler.run_until_idle()
 
         # 4. IPC RBAC Denied -> 0x0201
-        msg2 = IPCMessage.from_entries([(1, 20)], memory_manager=sysv.memory_manager)
-
         def rbac_denied_task():
             # RUNTIME sending to DEBUGGER is DENIED
-            yield from sysv.ipc.send(Role.RUNTIME, "fireball://dbg/manager/0", msg2)
+            sysv.ipc.lookup("fireball://dbg/manager/0")
+            return
+            yield
 
-        sysv.scheduler.spawn("rbac_denied_task", rbac_denied_task())
+        sysv.scheduler.spawn("rbac_denied_task", rbac_denied_task(), role=Role.RUNTIME)
         sysv.scheduler.run_until_idle()
 
         # 5. IPC Message Too Large -> 0x0203
@@ -139,9 +139,11 @@ def test_log_04_coos_and_ipc_diagnostic_logging():
         )
 
         def too_large_task():
-            yield from sysv.ipc.send(Role.RUNTIME, "fireball://hal/gpio/0", too_large_msg)
+            _, ch = sysv.ipc.lookup("fireball://hal/gpio/0")
+            assert ch is not None
+            yield from sysv.ipc.send(ch, too_large_msg)
 
-        sysv.scheduler.spawn("too_large_task", too_large_task())
+        sysv.scheduler.spawn("too_large_task", too_large_task(), role=Role.RUNTIME)
         sysv.scheduler.run_until_idle()
 
         # Flush logger to UART (in addition to idle hooks)

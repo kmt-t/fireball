@@ -35,7 +35,7 @@
 | **Step 0: Bonsai Design & Documentation** | 静的・動的設計ペアリング、自然言語仕様徹底、Mermaid動的図解（シーケンス図／アクティビティ図）、ルール体系刷新 | **DONE** |
 | **Step 1: Early Validation** | 全16コンセプトコード（`Any`完全排除）、テスト仕様書、pyModelChecking形式検証（CTL論理式＋`guards=False`変異検査） | **DONE** |
 | **Step 2: Reference Simulation & Gotchas Feedback** | `experiments/pysim` シミュレータコードの品質向上・リファクタリング、未検証エッジケース・Gotchasの抽出、テスト仕様書およびユニットテストスイートへの還元 | **進行中 (ACTIVE)** |
-| **Step 2.4: Resource Budget & Header Review** | 物理リソース（RAM 32KB / ROM 96KB）再見積もり・C++23ヘッダレイアウト確認 | **待機中** |
+| **Step 2.4: Resource Budget & Header Review** | 物理リソース（RAM 32KB / ROM 128KB）再見積もり（[`resource_budget_estimation.md`](docs/plans/resource_budget_estimation.md)）・C++23ヘッダレイアウト確認 | **待機中** |
 | **Step 2.5: Gate Review & Go Decision** | オーナー（人間）による最終品質レビュー・Freeze・Phase 1 GO判定 | **待機中** |
 
 ---

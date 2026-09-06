@@ -55,14 +55,112 @@ graph TD
 <!-- traceability: {LowLatencyJIT} {SimpleJITArchitecture} {PositionIndependentCode} -->
 - **関数/モジュール一括コンパイルの完全禁止**: 極小リソース環境（RAM 32KB〜64KB）におけるコンパイル遅延とメモリ消費をゼロ化するため、関数全体やモジュール全体の事前一括コンパイルは一切行わない。
 - **純粋ベーシックブロック/トレース単位コンパイル**: 2-bit カードテーブル（カードマーキング表）で HOT（`10`）に達した直線命令列（基本ブロック / トレース）のみを、スケジューラのアイドル時（`idle_hook` 等）に Copy-and-Patch により 1 トレースずつオンデマンド生成する。
-- **複雑命令のハンドラ直接委譲ポリシー (`{JIT_RuntimeAPI_Fallback}`)**:
-  - **インライン展開対象（Primitive Inline Ops）**: `i32.const`, `local.get`, `local.set`, `i32` 算術・論理・シフト・単純比較など、固定長ステンシルで完結する高頻度・低複雑度の直線演算のみを JIT ステンシルとしてキャッシュに展開する。
-  - **ハンドラ直接呼び出し/フォールバック対象（Complex Delegated Ops）**:
-    1. 制御フロー・フレーム遷移: `BR`, `BR_IF`, `BR_TABLE`, `IF`, `ELSE`, `CALL`, `CALL_INDIRECT`, `RETURN`
-    2. メモリ操作・システム連携: `memory.grow`, `memory.copy`, `memory.fill`, WASI/ホストシステムコール
-    3. 複雑演算・例外検査 (`{Libgcc_Runtime_Helper}`): `f32`/`f64` 浮動小数点、64-bit 複雑数学（`libgcc` の `__divdi3` / `__adddf3` 等）、トラップ検査を伴う境界処理
-    これら実装・検証が複雑化する命令は JIT 側で独自生成せず、**インタープリタの命令ハンドラ（`_HANDLERS[opcode]`）を直接呼び出すか、ランタイムヘルパーへフォールバックして委譲**する。これにより JIT ROM サイズを極小化（数KB）し、保守性と堅牢性を最大化する。
+- **制御フロー・スタック操作・演算の最適インライン展開方針 (`{JIT_RuntimeAPI_Fallback}`)**:
+  - **JIT ネイティブ実行（インライン展開）対象（48命令）**:
+    高頻度な直線演算（定数、変数、算術、論理、比較、リニアメモリアクセス）に加え、**構文デリミタ（0バイト消去・ヘッダ直結）**、および**スタック巻き戻し（即値定数SP更新）を伴う多段分岐（`br`, `br_if`）** を JIT ネイティブ命令としてインライン展開する。
+  - **インタープリタ委譲・ランタイムヘルパー対象（真のJIT境界命令）**:
+    1. 関数間コール・フレーム生成: `call`, `call_indirect` (別フレームアロケーション、シグネチャ照合、WASI/ホスト呼出)
+    2. 動的間接ジャンプテーブル: `br_table` (可変長ターゲット探索)
+    3. システム・OS連携: `memory.grow`, `memory.copy`, `memory.fill`
+    4. ハードウェア非対応演算 (`{Libgcc_Runtime_Helper}`): FPU非搭載時の `f32`/`f64` 浮動小数点、64-bit 複雑除算（`libgcc` の `__divdi3` 等）
+    これら制御境界・システムコール・ハードウェア非対応演算のみをインタープリタの命令ハンドラまたはランタイムヘルパーへ委譲する。
 - **ハンドラ互換ディスパッチ**: JIT トレースエントリポイントは、インタープリタの命令ハンドラ（`opcode_handler`）と完全に同一の C/C++ 関数シグネチャを持ち、ディスパッチテーブルから直接呼び出しが可能である。
+
+##### 3.3.1 制御フローおよびスタック巻き戻しの命令別処理モデル
+<!-- traceability: {JIT_CopyAndPatch} {JIT_LazyChaining} {PositionIndependentCode} -->
+WASM バイトコードにおける制御フロー命令は、その内部動作（スタック操作、フレーム遷移、ジャンプ先解決）の観点から以下の 3 つのモデルに厳密に仕分けられ、JIT ネイティブ展開される。
+
+1. **構文デリミタ・ヘッダ埋め込みモデル（0バイト消去 & トレースヘッダ直結）**:
+   - **対象命令**: `block` (`0x02`), `loop` (`0x03`), `else` (`0x05`), `end` (`0x0B`)
+   - **処理モデル**: これらの命令は実行時の動的処理を一切持たない構文構造境界である。JIT コンパイル（基本ブロック抽出）時に後続の真の実行命令の PC（`fallthrough_head_pc`）を静的に解決し、**ネイティブ命令コードとしては 0 バイト消去（完全除去）** する。後続のフォールスルー先 PC はトレースヘッダ `jit_trace_header.chain_next_pc`（+0x08）に直接埋め込まれ、実行時の Radix 木（`control_skip_tree`）等の検索オーバーヘッドを完全撤廃する。
+2. **スタック巻き戻し即値更新 & 直接ジャンプモデル（Inlined SP Adjustment & Relative Branch）**:
+   - **対象命令**: `br` (`0x0C`), `br_if` (`0x0D`), `return` (`0x0F`)
+   - **スタック巻き戻しの本質**: WASM は検証済み静的型付けバイトコードであり、任意の `br depth` / `br_if depth` における巻き戻し量 $\Delta$（スタック深さの差分: 現在のスタック深さ − 分岐先ラベルの期待スタック深さ）は、**JIT コンパイル時に即値定数として完全確定** している。
+   - **ネイティブ展開コード**: スタック巻き戻しは単なるスタックポインタ（SP）の即値加算であり、インタープリタ委譲は不要である。
+     - `br`: `add sp, #(Δ * 4); b.w <rel_target>` の 2 命令で完結。
+     - `br_if`: `cmp r4, #0; it ne; addne sp, #(Δ * 4); bne.w <rel_target>` の 4 命令（多段脱出 `depth > 0` を含む）で完結。
+     - `return`: トレース末尾エピローグ（`pop.w {r4-r6, r8-r11, pc}`）を直接インライン展開。
+3. **境界トラップモデル（Trap Tail Emission）**:
+   - **対象命令**: `unreachable` (`0x00`)
+   - **処理モデル**: `bkpt #0x00` を直接展開し、ハードウェアフォールトまたはデバッガトラップへ直結させる。
+
+##### 3.3.2 JIT コンパイル対象命令セット仕様台帳（JIT Supported Opcode Specification）
+<!-- traceability: {JIT_CopyAndPatch} {JIT_ZeroCompileCostTheorem} {JIT_RegisterMapping} {PositionIndependentCode} -->
+JIT コンパイラがフォールバックせずにネイティブバイナリとしてインライン展開・生成する命令セット（全 48 命令）の仕様台帳を以下に定める。
+
+| カテゴリ | WASM Opcode (Hex) | 命令名 | JIT ネイティブ展開形式 (Thumb-2) | スタック/レジスタ効果 | 生成バイト数 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **制御・スタック** | `0x00` | `unreachable` | `bkpt #0x00` | トラップ | 2 Bytes |
+| | `0x01` | `nop` | (0 Byte 消去) | なし | 0 Bytes |
+| | `0x0C` | `br` | `add sp, #imm; b.w <target>` | SP巻き戻し + 相対分岐 | 6〜8 Bytes |
+| | `0x0D` | `br_if` | `cmp r4, #0; it ne; addne sp, #imm; bne.w <target>` | 条件判定 + SP巻き戻し + 相対分岐 | 8〜10 Bytes |
+| | `0x0F` | `return` | `pop.w {r4-r6, r8-r11, pc}` | エピローグ展開・復帰 | 4 Bytes |
+| **構文デリミタ** | `0x02` | `block` | (0 Byte 消去・ヘッダ `chain_next_pc` 解決) | なし | 0 Bytes |
+| | `0x03` | `loop` | (0 Byte 消去・ヘッダ `chain_next_pc` 解決) | なし | 0 Bytes |
+| | `0x05` | `else` | (0 Byte 消去・ヘッダ `chain_next_pc` 解決) | なし | 0 Bytes |
+| | `0x0B` | `end` | (0 Byte 消去・ヘッダ `chain_next_pc` 解決) | なし | 0 Bytes |
+| **定数ロード** | `0x41` | `i32.const` | `movw r4, #imm16; movt r4, #imm16` | $\to$ R4 (TOS) | 8 Bytes |
+| | `0x42` | `i64.const` | `movw/movt r4, #imm; movw/movt r5, #imm` | $\to$ R4:R5 (LO:HI) | 16 Bytes |
+| **変数アクセス** | `0x20` | `local.get` | `ldr r4, [r2, #offset]` | $\to$ R4 (TOS) | 2 Bytes |
+| | `0x21` | `local.set` | `str r4, [r2, #offset]` | R4 $\to$ Local | 2 Bytes |
+| | `0x22` | `local.tee` | `str r4, [r2, #offset]` | R4 $\to$ Local (R4維持) | 2 Bytes |
+| | `0x23` | `global.get`| `ldr.w r12, [r1, #0x28]; ldr.w r4, [r12, #offset]` | $\to$ R4 (TOS) | 8 Bytes |
+| | `0x24` | `global.set`| `ldr.w r12, [r1, #0x28]; str.w r4, [r12, #offset]` | R4 $\to$ Global | 8 Bytes |
+| **スタック・選択** | `0x1A` | `drop` | (レジスタキャッシュポインタ破棄 / `pop`) | スタック破棄 | 0〜2 Bytes |
+| | `0x1B` | `select` | `cmp r4, #0; it ne; movne r5, r6; mov r4, r5` | 3値選択 $\to$ R4 | 8 Bytes |
+| **32bit 算術・論理** | `0x6A` | `i32.add` | `adds r4, r5, r4` | R5 + R4 $\to$ R4 | 2 Bytes |
+| | `0x6B` | `i32.sub` | `subs r4, r5, r4` | R5 - R4 $\to$ R4 | 2 Bytes |
+| | `0x6C` | `i32.mul` | `mul r4, r5, r4` | R5 * R4 $\to$ R4 | 4 Bytes |
+| | `0x6D` | `i32.div_s`| `cbz r4, <trap>; cmp r5, #0x80000000; it eq; cmpeq r4, #-1; beq <trap>; sdiv r4, r5, r4` | 符号付除算 | 14 Bytes |
+| | `0x6E` | `i32.div_u`| `cbz r4, <trap>; udiv r4, r5, r4` | 符号無除算 | 6 Bytes |
+| | `0x6F` | `i32.rem_s`| `cbz r4, <trap>; sdiv r12, r5, r4; mls r4, r12, r4, r5` | 符号付剰余 (`JITC-GOTCHA-06`) | 10 Bytes |
+| | `0x70` | `i32.rem_u`| `cbz r4, <trap>; udiv r12, r5, r4; mls r4, r12, r4, r5` | 符号無剰余 (`JITC-GOTCHA-06`) | 10 Bytes |
+| | `0x71` | `i32.and` | `ands r4, r5, r4` | R5 & R4 $\to$ R4 | 2 Bytes |
+| | `0x72` | `i32.or` | `orrs r4, r5, r4` | R5 \| R4 $\to$ R4 | 2 Bytes |
+| | `0x73` | `i32.xor` | `eors r4, r5, r4` | R5 ^ R4 $\to$ R4 | 2 Bytes |
+| | `0x74` | `i32.shl` | `lsl.w r4, r5, r4` | R5 << R4 $\to$ R4 | 4 Bytes |
+| | `0x75` | `i32.shr_s`| `asr.w r4, r5, r4` | R5 >> R4 (算術) $\to$ R4 | 4 Bytes |
+| | `0x76` | `i32.shr_u`| `lsr.w r4, r5, r4` | R5 >> R4 (論理) $\to$ R4 | 4 Bytes |
+| | `0x77` | `i32.rotl` | `rsb r12, r4, #32; ror.w r4, r5, r12` | 左循環シフト $\to$ R4 | 8 Bytes |
+| | `0x78` | `i32.rotr` | `ror.w r4, r5, r4` | 右循環シフト $\to$ R4 | 4 Bytes |
+| | `0x67` | `i32.clz` | `clz r4, r4` | 先頭ゼロカウント | 4 Bytes |
+| | `0x68` | `i32.ctz` | `rbit r4, r4; clz r4, r4` | 末尾ゼロカウント | 8 Bytes |
+| | `0x69` | `i32.popcnt`| `vmov s0, r4; vcnt.8 d0, d0; vpaddl.u8 d0, d0; vpaddl.u16 d0, d0; vmov r4, s0` (またはビット演算展開) | 立っているビット数 | 10〜16 Bytes |
+| **32bit 比較演算** | `0x45` | `i32.eqz` | `cmp r4, #0; it eq; moveq r4, #1; it ne; movne r4, #0` | R4 == 0 | 10 Bytes |
+| | `0x46` | `i32.eq` | `cmp r5, r4; it eq; moveq r4, #1; it ne; movne r4, #0` | R5 == R4 | 10 Bytes |
+| | `0x47` | `i32.ne` | `cmp r5, r4; it ne; movne r4, #1; it eq; moveq r4, #0` | R5 != R4 | 10 Bytes |
+| | `0x48` | `i32.lt_s` | `cmp r5, r4; it lt; movlt r4, #1; it ge; movge r4, #0` | R5 < R4 (符号付) | 10 Bytes |
+| | `0x49` | `i32.lt_u` | `cmp r5, r4; it lo; movlo r4, #1; it hs; movhs r4, #0` | R5 < R4 (符号無) | 10 Bytes |
+| | `0x4A` | `i32.gt_s` | `cmp r5, r4; it gt; movgt r4, #1; it le; movle r4, #0` | R5 > R4 (符号付) | 10 Bytes |
+| | `0x4B` | `i32.gt_u` | `cmp r5, r4; it hi; movhi r4, #1; it ls; movls r4, #0` | R5 > R4 (符号無) | 10 Bytes |
+| | `0x4C` | `i32.le_s` | `cmp r5, r4; it le; movle r4, #1; it gt; movgt r4, #0` | R5 <= R4 (符号付) | 10 Bytes |
+| | `0x4D` | `i32.le_u` | `cmp r5, r4; it ls; movls r4, #1; it hi; movhi r4, #0` | R5 <= R4 (符号無) | 10 Bytes |
+| | `0x4E` | `i32.ge_s` | `cmp r5, r4; it ge; movge r4, #1; it lt; movlt r4, #0` | R5 >= R4 (符号付) | 10 Bytes |
+| | `0x4F` | `i32.ge_u` | `cmp r5, r4; it hs; movhs r4, #1; it lo; movlo r4, #0` | R5 >= R4 (符号無) | 10 Bytes |
+| **リニアメモリアクセス** | `0x28` | `i32.load` | `cmp r4, r9; bhs.w <trap>; ldr.w r4, [r8, r4]` | 32bit ロード (`JITC-GOTCHA-04`) | 10 Bytes |
+| | `0x2C` | `i32.load8_s` | `cmp r4, r9; bhs.w <trap>; ldrsb.w r4, [r8, r4]`| 8bit 符号付ロード | 10 Bytes |
+| | `0x2D` | `i32.load8_u` | `cmp r4, r9; bhs.w <trap>; ldrb.w r4, [r8, r4]` | 8bit 符号無ロード | 10 Bytes |
+| | `0x2E` | `i32.load16_s`| `cmp r4, r9; bhs.w <trap>; ldrsh.w r4, [r8, r4]`| 16bit 符号付ロード | 10 Bytes |
+| | `0x2F` | `i32.load16_u`| `cmp r4, r9; bhs.w <trap>; ldrh.w r4, [r8, r4]` | 16bit 符号無ロード | 10 Bytes |
+| | `0x36` | `i32.store` | `cmp r5, r9; bhs.w <trap>; str.w r4, [r8, r5]` | 32bit ストア (`JITC-GOTCHA-04`) | 10 Bytes |
+| | `0x3A` | `i32.store8` | `cmp r5, r9; bhs.w <trap>; strb.w r4, [r8, r5]` | 8bit ストア | 10 Bytes |
+| | `0x3B` | `i32.store16`| `cmp r5, r9; bhs.w <trap>; strh.w r4, [r8, r5]` | 16bit ストア | 10 Bytes |
+| | `0x3F` | `memory.size`| `ldr.w r4, [r1, #0x24]` | ページ数取得 | 4 Bytes |
+
+##### 3.3.3 インタープリタ委譲命令台帳（Delegated Opcode Specification）
+<!-- traceability: {JIT_RuntimeAPI_Fallback} {Libgcc_Runtime_Helper} -->
+JIT トレース内にインライン展開せず、トレース境界でインタープリタハンドラ（`_HANDLERS[opcode]`）またはランタイムヘルパーへフォールバックして実行を委譲する命令群を以下に定める。
+
+| カテゴリ | WASM Opcode (Hex) | 命令名 | 委譲理由・処理モデル |
+| :--- | :--- | :--- | :--- |
+| **関数呼出・フレーム** | `0x10` | `call` | コールフレーム（`call_frame`）生成、スタック境界検査、引数受け渡しを伴うためインタープリタへ委譲 |
+| | `0x11` | `call_indirect` | テーブル索引、型シグネチャ一致検査、動的ターゲット解決を伴うためインタープリタへ委譲 |
+| **動的分岐** | `0x0E` | `br_table` | 可変長ジャンプターゲットテーブル（ベクトル）の動的インデックス検索を伴うため委譲 |
+| **OS・メモリ管理** | `0x40` | `memory.grow` | ページテーブル再割り当て、MPU 領域再設定、vMMIO 更新を行うシステムサービス呼出のため委譲 |
+| | `0xFC 0x0A` | `memory.copy` | バッファ重なり検査、メモリコピーランタイム呼び出しのため委譲 |
+| | `0xFC 0x0B` | `memory.fill` | メモリフィルランタイム呼び出しのため委譲 |
+| **ハードウェア非対応演算** | - | `f32.*`, `f64.*` | 浮動小数点演算ユニット（FPU）非搭載環境における `libgcc`（`__adddf3` 等）ソフトエミュレーション委譲 |
+| | - | `i64.div_*`, `rem_*`| 64bit 整数除算・剰余における `libgcc`（`__divdi3`, `__moddi3` 等）ランタイムヘルパー委譲 |
 
 **ABI 規約と境界チェック・バックパッチング (`JITC-GOTCHA-01`〜`05`)**:
 - **レジスタ整合性 (`JITC-GOTCHA-01`, `02`, `03`)**: JIT トレースとインタープリタは `__fastcall`（R0=IP, R1=stack_bot, R2=local_base, R3=tos）により共通の物理レジスタ規約を保持する。トレース生成時はホストアーキテクチャ（ARM/x64）の不変条件（呼び出し側退避レジスタの保全、スタックアライメント境界）を厳格に維持する。
@@ -124,7 +222,8 @@ JIT トレースとインタープリタが同一の UnifiedStack 上でシー�
 2. **トレース境界でのメモリ同期不変条件 (Memory Synchronization at Trace Boundary)**:
    - トレース境界（トレース終了時、分岐時、ハンドラ呼び出し時、Safepoint 到達時）では、レジスタ上のキャッシュされた値のうちスタックトップ（TOS `R4`）はそのままレジスタに残し、スタック次段キャッシュ（NOS `R5`）以降のダーティな値および更新されたローカル変数を確実にメモリ（`stack_bot` / `local_base` 配列）へスピル（書き戻し）し、未確定のレジスタ状態を次のブロックやインタープリタへ持ち越さない。
 3. **制御フロー・コール境界のインタープリタ委譲不変条件 (Control & Call Delegation Invariant)**:
-   - `BR`, `BR_IF`, `BR_TABLE`, `IF`, `CALL`, `CALL_INDIRECT`, `RETURN` 等の制御命令は JIT トレース内に含めず、その直前で BasicBlock を終端する。スタック巻き戻し（`_do_branch`）やコールフレーム（`call_frame`）生成はインタープリタ（または専用チェイニングハンドラ）に委譲する。
+   - スタック巻き戻し（SP即値加算）を伴う多段分岐（`BR`, `BR_IF`）、構文デリミタ（`BLOCK`, `LOOP`, `ELSE`, `END`）、および復帰（`RETURN`）は JIT トレース内にインライン展開する。
+   - 一方、新しいコールフレーム生成や動的解決を伴う `CALL`, `CALL_INDIRECT`, `BR_TABLE` に遭遇した場合は、その直前で BasicBlock を終端し、インタープリタまたは専用ランタイムハンドラに委譲する。
 
 #### JIT トレース物理メモリレイアウト (`jit_trace_header`)
 <!-- traceability: {JIT_LazyChaining} {SimpleJITArchitecture} {PositionIndependentCode} -->
@@ -160,7 +259,8 @@ JIT キャッシュ内に書き込まれる各トレースは、**先頭に 16 �
 4. **命令キャッシュ同期**: パッチ完了後、`__DSB()` および `__ISB()` バリアを発行して命令キャッシュを同期する。
 5. **インタープリタ連携とハンドラ直接呼び出し (Low-Overhead Interop & Direct Handler Call)**:
    - JIT トレースとインタープリタの命令ハンドラ（`opcode_handler`）は完全に同一の CPS 4引数呼び出し規約（`R0: ip, R1: stack_bot, R2: local_base, R3: tos`）を共有する。
-   - JIT トレースは直線的な算術・ローカル変数演算に専念し、複雑な制御フロー（`BR`, `BR_IF`, `BR_TABLE`, `CALL`, `RETURN`, `IF`）やホストシステムコールに達した際は、**JIT 内で複雑なジャンプ処理を重複実装せず、直接インタープリタのハンドラテーブル（`handler_table[opcode]`）へ末尾ジャンプ（Tail Jump / `BX`）するか、戻り値 `next_ip` を返却してインタープリタへ即座にフォールバック**する。
+   - JIT トレースは直線的な算術・ローカル変数演算、構文デリミタ消去、および SP 即値巻き戻しを伴う多段分岐（`br`, `br_if`）をネイティブインライン展開する。
+   - コールフレーム生成や動的解決が必要な真の境界命令（`call`, `call_indirect`, `br_table`）やホストシステムコールに達した際は、直接インタープリタのハンドラテーブル（`handler_table[opcode]`）へ末尾ジャンプ（Tail Jump / `BX`）するか、戻り値 `next_ip` を返却してインタープリタへ即座にフォールバックする。
    - レジスタ規約が完全一致しているためコンテキスト再構築コストはゼロであり、JIT の軽量性（Zero Compile Cost）と完全な制御フロー安全性を両立する。 `{JIT_RuntimeAPI_Fallback}` `{ADR_TosCacheAsymmetry}`
 
 #### JIT トレース検索 & 3面キャッシュ代謝オーケストレーション
@@ -195,13 +295,12 @@ graph TD
     - **ターゲットが Oldest-Only Promotion 等により Active/Warm へ昇格（Promote）している場合**: チェインスロットを昇格先のアドレスへ **再チェイニング（Re-chaining）** し、昇格先バンクの `inbound_chains` へ登録を移譲する（インタープリタへフォールバックさせず、ネイティブ直接チェイン実行を維持）。
     - **ターゲットが昇格せず完全にキャッシュアウト（Evict）する場合のみ**: チェインスロットをインタープリタ復帰スタブにアンパッチする。
     これにより、全走査オーバーヘッド $O(N)$ を完全排除しつつ、生存トレース間のネイティブ実行効率を最大化する。 `{JIT_LazyChaining}`
-5. **制御コードスキップ表（Control Skip Table）と直接チェイニング連携**:
-   - **制御構文デリミタの読み飛ばし**: WASM 基本ブロック末尾の制御命令（`BLOCK`, `LOOP`, `IF`, `ELSE`, `END` 等）は、先行ブロックの実行完了と後続ブロックの先頭命令の間に位置する。JIT ネイティブ実行同士を直接チェイニング（`chain_next`）する際、先行ブロック終端 PC（delimiter PC）から制御構文を読み飛ばしたフォールスルー先（fallthrough head PC）を即座に解決する必要がある。
-   - **スキップ表の事前生成と非所有ビュー借用 (`ReadOnlyRadixBinaryTreeStorage` / `RadixBinaryTreeView`)**: モジュールロード時（`prepare_module`）に全関数の基本ブロック境界を走査し、`delimiter_pc -> fallthrough_head_pc` の対応関係を `ReadOnlyRadixBinaryTreeStorage` に格納する。ランタイムエンジンは非所有ビューである `RadixBinaryTreeView`（`control_skip_tree`）をゼロコピーで借用保持する。
-   - **キーのバイトオーダー反転 (`bswap32`) による Radix Table 圧縮**: PC（16bit 関数インデックス + 16bit 命令オフセット）は上位ビットが関数番号に偏るため、キーのバイトオーダーを `bswap32` で反転して命令オフセットの変化を高エントロピーな最上位ビットに射影する。これにより、わずか 17 要素（68 バイト）の極小 Radix Table（`radix_shift = 28`）で $O(1)$ スキップ先境界解決を実現する。
+5. **構文デリミタのトレースヘッダ直接埋め込みと直接チェイニング連携**:
+   - **制御構文デリミタの読み飛ばし**: WASM 基本ブロック末尾の制御命令（`BLOCK`, `LOOP`, `ELSE`, `END` 等）は、先行ブロックの実行完了と後続ブロックの先頭命令の間に位置する。JIT ネイティブ実行同士を直接チェイニング（`chain_next`）する際、先行ブロック終端 PC（delimiter PC）から制御構文を読み飛ばしたフォールスルー先（fallthrough head PC）を解決する必要がある。
+   - **ヘッダ直接埋め込み（Inlined Chaining Header）**: JIT コンパイル（基本ブロック抽出）時に後続のフォールスルー先 PC を静的に先読み解決し、トレースヘッダの `chain_next_pc`（+0x08）に直接埋め込む。これにより、外部の Radix 表（`control_skip_tree`）等の検索データ構造を一切介さず、メモリオーバーヘッドおよび解決レイテンシを完全ゼロ（$O(1)$）で直接チェイニングを確立する。
    - **双方向チェイニング解決フロー**:
-     - **後方チェイニング (Backward Chaining)**: 新規トレース登録時、`succ = trace.next_pc` を `control_skip_tree.find(bswap32(succ))` で解決し、スキップ先が Active/Warm に常駐していれば `trace.chain_next = succ` を即座に接続する。
-     - **前方チェイニング (Forward Chaining)**: キャッシュ常駐トレース `resident_t` の `res_succ = resident_t.next_pc` を同様にスキップ解決し、新登録トレースの `head_pc` と一致すれば `resident_t.chain_next = trace.head_pc` をインプレースパッチする。
+     - **後方チェイニング (Backward Chaining)**: 新規トレース登録時、トレースヘッダに埋め込まれた `succ = trace.chain_next_pc` を参照し、スキップ先が Active/Warm に常駐していれば `trace.chain_target_addr = succ_native_addr` を即座に接続する。
+     - **前方チェイニング (Forward Chaining)**: キャッシュ常駐トレース `resident_t` の `resident_t.chain_next_pc` が新登録トレースの `head_wasm_pc` と一致すれば、`resident_t` の分岐先スロットを新トレースのチェインエントリへインプレースパッチする。
 
 #### 統合 Tiered ランタイムエンジン・コンセプトコード (`../tier2_runtime/concepts/runtime_engine_concept.py`)
 インタープリタ実行、2-bit Hotspot 検出、Copy-and-Patch JIT コンパイル、3面マルチバッファキャッシュ（Active/Warm/Oldest）、および MPU W^X 保護プロトコルを統合した自己完結実行シミュレーションは [`runtime_engine_concept.py`](docs/components/tier2_runtime/concepts/runtime_engine_concept.py) を参照。

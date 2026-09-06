@@ -1,5 +1,5 @@
 """
-experiments/pysim/hal.py
+experiments/pysim/platforms/hal.py
 Real (not mocked) HAL underlayer for the pysim experiment.
 - UartTransport: a genuine OS-level byte pipe (socket.socketpair), standing
   in for the physical UART/ITM line. Bytes written here really cross a

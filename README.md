@@ -50,22 +50,22 @@ You need Clang, CMake, Ninja, and Python (with `uv` recommended) to build and ve
   - **Testing & Code Formatting**: `pytest`, `pytest-cov`, `ruff` (fast linter and formatter).
 
 ### 2. Verification & Quality Gates
-Fireball enforces an automated verification pipeline (`spec-integrator`) ensuring static formatting, keyword traceability, tier hierarchy encapsulation, pyModelChecking formal verification (13 models), WIT interface types, evidence backing, verification obligations, and consistency baselines:
-
-`run_all_tests` exposes a single option, the verification level (`-level` / `--level`; default `1`):
+Fireball enforces an automated verification pipeline (`spec-integrator`) ensuring static formatting, keyword traceability, tier hierarchy encapsulation, pyModelChecking formal verification, WIT interface types, evidence backing, verification obligations, and consistency baselines (see `tools/README.md`):
 
 ```powershell
-# Windows PowerShell (Level 1: Fast Pre-Commit Test, Cost: 0)
-powershell -ExecutionPolicy Bypass -File tools/run_all_tests.ps1
+# Document Quality Gates (8 Gates, Cost: 0)
+powershell -ExecutionPolicy Bypass -File tools/check-doc.ps1   # Windows
+./tools/check-doc.sh                                           # Linux / macOS / WSL
 
-# Linux / macOS / WSL
-./tools/run_all_tests.sh
+# Source Code Quality & Anti-Sabotage Check (Cost: 0)
+powershell -ExecutionPolicy Bypass -File tools/check-src.ps1 -group all   # Windows
+./tools/check-src.sh -g all                                               # Linux / macOS / WSL
 ```
 
 For Cloud LLM Semantic Audit (milestone / release gate — explicit user instruction only):
 ```powershell
-powershell -ExecutionPolicy Bypass -File tools/run_all_tests.ps1 -level 2   # risk assessment + semantic judge + pysim
-powershell -ExecutionPolicy Bypass -File tools/run_all_tests.ps1 -level 3   # full exhaustive audit
+powershell -ExecutionPolicy Bypass -File tools/risk.ps1               # risk assessment
+powershell -ExecutionPolicy Bypass -File tools/llm-keyword-review.ps1 # high-risk island audit
 ```
 
 ## How to Build

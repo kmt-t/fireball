@@ -12,7 +12,7 @@ Fireball のドキュメント品質、トレーサビリティ、形式モデ�
 > [!IMPORTANT]
 > **エージェント実行原則（コスト・所要時間・課金制御）**:
 > - **回帰テストは関係あるファイルだけに絞る**: 全体テストを無差別に走らせず、**変更したファイルおよび直接関連するコンポーネント・単体テストのみ**を実行すること。
-> - **普段（日常の編集・実装・コミット前）**: 必ず **Level 0（関連する個別単体テスト）** または **Level 1（ローカル静的ゲート `powershell tools/run_all_tests.ps1` / コスト 0）** の簡易テストのみを実行すること。
+> - **普段（日常の編集・実装・コミット前）**: 必ず **Level 0（関連する個別単体テスト）** または **Level 1（ローカル静的ゲート `powershell tools/check-doc.ps1` / `powershell tools/check-src.ps1` / コスト 0）** の簡易テストのみを実行すること。
 > - **フルテスト / クラウド LLM 監査（Level 2 / Level 3）**: 所要時間が長くクラウド API 課金が発生するため、**ユーザーから明示的な指示（「フルテストやって」「LLM監査して」等）があった場合のみ** 実行すること。エージェントが自発的・コミットごとに自動実行してはならない。
 
 日常の編集からリリース判定まで、必要最小限のスコープで検証を実行し、無駄な全件監査や待機時間・API課金を排除します。
@@ -43,11 +43,11 @@ uv run python docs/components/tier1_core/benchmarks/direct_context_switch_bench.
 uv run --project tools/spec-integrator pytest tools/spec-integrator/tests/test_db.py
 ```
 
-### --level sync: 仕様変更後のベースライン更新
-Markdown を編集したら、他の検証を走らせる前にまず一貫性ベースラインを更新し、変更した Markdown と一緒に `spec-consistency.lock` をコミットします。「検証レベル」ではなく、書き込み専用の一回限りの操作です。
+### 仕様変更後のドキュメントDB更新
+Markdown を編集したら、ドキュメントDBおよびキーワードインデックスを再構築します：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File tools/run_all_tests.ps1 -level sync
+powershell -ExecutionPolicy Bypass -File tools/build.ps1
 ```
 
 ### 静的チェック・品質ゲート・サボり検証 (コスト0 / 数秒)

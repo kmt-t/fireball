@@ -1,5 +1,5 @@
 """
-experiments/pysim/wasm_reader.py
+experiments/pysim/runtime/wasm_reader.py
 Binary .wasm parser. Supports Type(1), Import(2), Function(3), Table(4),
 Memory(5), Global(6), Export(7), Element(9), Code(10). Data(11) and custom
 sections are skipped by length rather than rejected, so a real-world

@@ -1,5 +1,5 @@
 """
-experiments/pysim/wasm_opcodes.py
+experiments/pysim/runtime/wasm_opcodes.py
 The WASM MVP opcode subset this experiment's interpreter and JIT both
 compile against. Kept as one shared table so the two engines can never
 silently disagree about what a byte means.

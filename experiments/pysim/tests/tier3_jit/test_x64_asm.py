@@ -30,7 +30,7 @@ import sys
 from pathlib import Path
 
 """
-experiments/pysim/test_x64_asm.py
+experiments/pysim/tests/tier3_jit/test_x64_asm.py
 Spec-first tests for x64_asm.py: every encoder is assembled into a real
 executable buffer and run on the CPU, never just re-derived by hand a
 second time. Supports Windows x64 ABI and Linux System V AMD64 ABI.

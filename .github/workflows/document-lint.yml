@@ -32,11 +32,12 @@ jobs:
 
     - name: Ensure script execution permissions
       run: |
-        chmod +x tools/run_all_tests.sh tools/format_all.sh
+        chmod +x tools/*.sh
 
-    - name: Run Mechanical & Quality Gates
+    - name: Run Document & Source Quality Gates
       run: |
-        ./tools/run_all_tests.sh
+        ./tools/check-doc.sh
+        ./tools/check-src.sh -g all
 
     - name: LLM Semantic Audit (changed subgraphs only)
       # PR-only: the comparison needs a base-branch lockfile to diff against.

@@ -1,9 +1,9 @@
 """
-experiments/pysim/runtime_engine.py
+experiments/pysim/runtime/runtime_engine.py
 Integrated WASM Tiered Tracing Runtime Engine for pysim.
 Implements the 2-bit card-marking hotspot profiler, history ring,
 3-bank rotating JIT code cache, and dynamic tiering execution loop
-mirroring docs/components/tier2_runtime/runtime_engine.md and
+mirroring docs/components/tier2_runtime/runtime_vsoc.md and
 docs/components/tier3_jit/jit_compiler.md.
 Execution model:
   Interpreter execution:

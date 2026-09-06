@@ -1,5 +1,5 @@
 """
-experiments/pysim/wasi.py
+experiments/pysim/platforms/wasi.py
 HAL = WASI 0.3p Unified Core Engine and WASI 0.1p Compatibility Adapter.
 Implements docs/components/tier1_interface/interface_wit.md,
 docs/components/tier3_platform/platform_hal.md, and

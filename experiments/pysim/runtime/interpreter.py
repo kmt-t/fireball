@@ -1,5 +1,5 @@
 """
-experiments/pysim/interpreter.py
+experiments/pysim/runtime/interpreter.py
 A minimal reference interpreter for the wasm_opcodes subset, used as the
 correctness oracle the JIT's output is checked against -- mirroring the
 real project's own "interpreter + JIT, cross-checked" architecture

@@ -1,5 +1,5 @@
 """
-experiments/pysim/leb128.py
+experiments/pysim/runtime/leb128.py
 LEB128 varint encode/decode, shared by the binary reader and the test-module
 builder (see wasm_builder.py -- there is no wat2wasm/wasmtime in this
 sandbox, so binaries used for testing are synthesized directly in Python).

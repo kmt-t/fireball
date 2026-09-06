@@ -30,7 +30,7 @@ import sys
 from pathlib import Path
 
 """
-experiments/pysim/test_gdb_remote_connection.py
+experiments/pysim/tests/tier2_runtime/test_gdb_remote.py
 End-to-end integration test for GDB Remote Serial Protocol (RSP) over real TCP socket.
 Simulates a real GDB client session connecting to Fireball GDBServer:
 1. TCP Socket connect & initial handshake

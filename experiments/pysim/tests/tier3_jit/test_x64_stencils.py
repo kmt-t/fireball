@@ -30,7 +30,7 @@ import sys
 from pathlib import Path
 
 """
-experiments/pysim/test_x64_stencils.py
+experiments/pysim/tests/tier3_jit/test_x64_stencils.py
 Spec-first tests for x64_stencils.py: each stencil is assembled into a real
 executable buffer and actually run on the CPU with controlled inputs, and
 the result is checked against a value computed independently in Python from
@@ -135,7 +135,10 @@ def run_i32(
             mem_ptr = ctypes.addressof(c_mem)
 
         fn = buf.function_at(0, ctypes.c_int64, [ctypes.c_void_p, ctypes.c_void_p])
-        return fn(ctypes.cast(locals_arr, ctypes.c_void_p), ctypes.c_void_p(mem_ptr))
+        res = fn(ctypes.cast(locals_arr, ctypes.c_void_p), ctypes.c_void_p(mem_ptr))
+        if res == st.TRAP_SENTINEL:
+            raise st.WasmTrapError("WASM execution trapped (unreachable or out of bounds)")
+        return res
     finally:
         buf.close()
 
@@ -147,10 +150,9 @@ def run_i32_checked(
 ) -> int:
     """
     Like run_i32, but any memory-access stencil's "trap" relocation left
-        unspecified in `body_stencils_with_patches` is wired to a real trap
-        stub placed after the epilogue -- an out-of-bounds access genuinely
-        raises `OSError` (a real access violation) instead of silently landing
-        on whatever bytes happen to follow.
+    unspecified in `body_stencils_with_patches` is wired to a real trap
+    stub placed after the epilogue -- an out-of-bounds access cleanly
+    raises `WasmTrapError` (an OSError subclass) across both Windows and POSIX.
     """
     code = bytearray()
     code += st.PROLOGUE.code
@@ -183,7 +185,10 @@ def run_i32_checked(
             mem_ptr = ctypes.addressof(c_mem)
 
         fn = buf.function_at(0, ctypes.c_int64, [ctypes.c_void_p, ctypes.c_void_p])
-        return fn(ctypes.cast(locals_arr, ctypes.c_void_p), ctypes.c_void_p(mem_ptr))
+        res = fn(ctypes.cast(locals_arr, ctypes.c_void_p), ctypes.c_void_p(mem_ptr))
+        if res == st.TRAP_SENTINEL:
+            raise st.WasmTrapError("WASM execution trapped (out of bounds)")
+        return res
     finally:
         buf.close()
 
@@ -391,7 +396,7 @@ def test_out_of_bounds_load_traps():
     try:
         run_i32_checked(code, memory=memory)
         raise AssertionError("expected an out-of-bounds i32.load to trap")
-    except OSError:
+    except st.WasmTrapError:
         pass
 
 
@@ -401,17 +406,16 @@ def test_out_of_bounds_store_traps():
     try:
         run_i32_checked(code, memory=memory)
         raise AssertionError("expected an out-of-bounds i32.store to trap")
-    except OSError:
+    except st.WasmTrapError:
         pass
 
 
 def test_memarg_static_offset_is_folded_into_the_bounds_check():
     """
     A large memarg.offset can push an in-range-looking address out of
-        bounds; max_addr already accounts for it (mem_size - offset - width),
-        so this must trap without any extra runtime addition.
+    bounds; max_addr already accounts for it (mem_size - offset - width),
+    so this must trap without any extra runtime addition.
     """
-
     memory = bytearray(16)
     # effective address = 8 + offset(8) = 16, one past the end of a 16-byte memory.
     max_addr = 16 - 8 - 4
@@ -419,7 +423,19 @@ def test_memarg_static_offset_is_folded_into_the_bounds_check():
     try:
         run_i32_checked(code, memory=memory)
         raise AssertionError("expected the memarg-offset-adjusted access to trap")
-    except OSError:
+    except st.WasmTrapError:
+        pass
+
+
+def test_unreachable_traps():
+    """
+    WASM unreachable opcode (0x00) must immediately trigger a trap.
+    """
+    code = [(st.UNREACHABLE, {})]
+    try:
+        run_i32(code)
+        raise AssertionError("expected unreachable opcode to trap")
+    except st.WasmTrapError:
         pass
 
 
@@ -536,6 +552,55 @@ def test_fuzz_add_sub_mul_against_python_reference():
         assert run_i32([*push_two(a, b), (st.I32_ADD, {})]) == _to_i32(a + b)
         assert run_i32([*push_two(a, b), (st.I32_SUB, {})]) == _to_i32(a - b)
         assert run_i32([*push_two(a, b), (st.I32_MUL, {})]) == _to_i32(a * b)
+
+
+# ---------------------------------------------------------------------------
+# W^X (Write XOR Execute) lifecycle protection test
+# ---------------------------------------------------------------------------
+
+
+def test_executable_buffer_wx_protection_lifecycle():
+    """
+    Verify strict W^X state machine on host platform (Windows VirtualProtect / Linux mprotect):
+    1. Buffer initializes in RW+XN (patch_in_progress=True).
+    2. Invariant assert_no_rwx() holds at every state.
+    3. Finalize/commit switches buffer to RO+X (patch_in_progress=False).
+    4. Writing in committed state raises AssertionError.
+    5. begin_jit_patch() safely reopens transaction to RW+XN.
+    """
+    buf = ExecutableBuffer(64)
+    try:
+        buf.assert_no_rwx()
+        assert buf.patch_in_progress is True
+
+        # Write is allowed during patch transaction
+        buf.write(0, b"\x90\x90\x90\x90")
+
+        # Commit switches to executable (RO+X)
+        buf.commit_jit_patch()
+        buf.assert_no_rwx()
+        assert buf.patch_in_progress is False
+
+        # Writing after commit must be rejected
+        try:
+            buf.write(0, b"\xcc")
+            raise AssertionError("expected write outside patch transaction to fail")
+        except AssertionError as e:
+            assert "Cannot write to ExecutableBuffer" in str(e)
+
+        # Reopening transaction switches back to RW+XN
+        buf.begin_jit_patch()
+        buf.assert_no_rwx()
+        assert buf.patch_in_progress is True
+        buf.write(0, b"\xc3")  # ret
+        buf.commit_jit_patch()
+        buf.assert_no_rwx()
+
+        # Executing committed buffer succeeds
+        fn = buf.function_at(0, None, [])
+        fn()
+    finally:
+        buf.close()
 
 
 # Discovered by name rather than hand-listed: a hand-maintained list is

@@ -1,5 +1,5 @@
 """
-experiments/pysim/recovery.py
+experiments/pysim/core/recovery.py
 {META_RecoveryStrategy} & {Errorcode_To_Strategy}
 Reference Implementation of the Fireball Recovery Engine without exceptions.
 Mirroring docs/components/tier1_interface/interface_wit.md §3.2,

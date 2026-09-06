@@ -1,5 +1,5 @@
 """
-experiments/pysim/debugger.py
+experiments/pysim/runtime/debugger.py
 Debugger Manager & GDB RSP Protocol Engine for Fireball.
 Conforms strictly to docs/components/tier2_runtime/debug_manager.md
 and docs/specs/gdb_rsp_protocol.md.

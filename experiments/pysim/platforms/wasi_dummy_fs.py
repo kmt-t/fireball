@@ -1,5 +1,5 @@
 """
-experiments/pysim/wasi_dummy_fs.py
+experiments/pysim/platforms/wasi_dummy_fs.py
 Comprehensive In-Memory WASI Preview 1 Dummy Driver for Fireball.
 Provides deterministic virtual file system and environment services:
 - FD 0 (stdin), FD 1 (stdout), FD 2 (stderr)

@@ -1,5 +1,5 @@
 """
-experiments/pysim/hal_dummy_drivers.py
+experiments/pysim/platforms/hal_dummy_drivers.py
 Comprehensive HAL Dummy Drivers for Fireball hardware abstraction testing.
 Provides deterministic dummy peripheral drivers:
 1. DummyGpioDriver: 16-pin GPIO controller with input/output modes and edge IRQ

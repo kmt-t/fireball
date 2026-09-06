@@ -45,7 +45,7 @@ for _p in [
         sys.path.insert(0, _sp)
 
 """
-experiments/pysim/test_debugger.py
+experiments/pysim/tests/tier2_runtime/test_debugger.py
 Comprehensive tests for Debug Manager & GDB RSP Protocol Engine (debugger.py).
 Strictly implements and verifies all test cases from:
 docs/components/tier2_runtime/tests/debug_manager_test_spec.md (DBG-01 ~ DBG-15).

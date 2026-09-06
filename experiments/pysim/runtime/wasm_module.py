@@ -1,5 +1,5 @@
 """
-experiments/pysim/wasm_module.py
+experiments/pysim/runtime/wasm_module.py
 In-memory representation of a parsed WASM module: the MVP binary format
 needed to run real, non-trivial exported functions (arithmetic, locals,
 globals, structured control flow, direct and indirect calls, linear

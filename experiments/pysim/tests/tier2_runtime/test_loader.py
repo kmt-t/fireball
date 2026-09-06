@@ -45,7 +45,7 @@ for _p in [
         sys.path.insert(0, _sp)
 
 """
-experiments/pysim/test_loader.py
+experiments/pysim/tests/tier2_runtime/test_loader.py
 Tests for WASM Loader, Zero-Copy Indexing, and Hash + RadixBinaryTreeView Symbol/Import/Offset Indexes.
 Conforms strictly to docs/components/tier2_runtime/tests/runtime_loader_test_spec.md (LOAD-01 ~ LOAD-47).
 """

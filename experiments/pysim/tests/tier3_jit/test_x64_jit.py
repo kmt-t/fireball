@@ -45,7 +45,7 @@ for _p in [
         sys.path.insert(0, _sp)
 
 """
-experiments/pysim/test_x64_jit.py
+experiments/pysim/tests/tier3_jit/test_x64_jit.py
 Spec-compliant tests for Fireball Trace-based Copy-and-Patch JIT Compiler (x64_jit.py).
 Verifies:
 1. Exact CPS 4-argument calling convention: (uint32_t ip, void* stack_bot, void* env, void* local_base)

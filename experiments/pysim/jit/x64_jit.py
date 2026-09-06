@@ -1,5 +1,5 @@
 """
-experiments/pysim/x64_jit.py
+experiments/pysim/jit/x64_jit.py
 Pure Trace-based Copy-and-Patch JIT Compiler for Fireball.
 Compiles individual HOT BasicBlocks / Traces into Position-Independent Code (PIC)
 with 16-byte fixed headers (JITTraceHeader) and direct trace chaining.

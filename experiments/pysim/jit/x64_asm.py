@@ -1,5 +1,5 @@
 """
-experiments/pysim/x64_asm.py
+experiments/pysim/jit/x64_asm.py
 Generic, register-name-driven x64 encoders for the small set of
 instructions the JIT's calling-convention glue code needs (as opposed to
 x64_stencils.py's fixed, WASM-opcode-keyed Copy-and-Patch templates). Used

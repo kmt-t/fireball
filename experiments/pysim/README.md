@@ -6,7 +6,7 @@
 
 ### C++ 移植可能性の制約（本ディレクトリのみ）
 
-`experiments/pysim/` 配下のコードは、この事前実証としての性質上、`.agents/rules/embedded_cpp.md` / `stdlib_policy.md` / `coding-standards-cpp.md` が定める組み込み C++（ヒープ割り当て・例外・RTTI 無効、`std::vector`/`std::map`/`std::unordered_map` 等の動的コンテナ禁止、`{GLOBAL_Policy_Memory}`）の制約を型として引き継ぎます。**pysim は「RTTI（実行時型情報）のない静的型付け言語（C++）」だと思って記述してください。** 具体的には：
+`experiments/pysim/` 配下のコードは、この事前実証としての性質上、`.agents/rules/coding-standards-cpp.md` が定める組み込み C++（ヒープ割り当て・例外・RTTI 無効、`std::vector`/`std::map`/`std::unordered_map` 等の動的コンテナ禁止、`{GLOBAL_Policy_Memory}`）の制約を型として引き継ぎます。**pysim は「RTTI（実行時型情報）のない静的型付け言語（C++）」だと思って記述してください。** 具体的には：
 
 - **動的型検査・リフレクションの完全禁止（No RTTI）**:
   - `isinstance`, `type()`, `hasattr`, `getattr` 等のランタイム型検査やリフレクションを一切使用しない。
@@ -197,8 +197,8 @@ Python シミュレータ上において JIT 側が見かけ上遅くなって�
 
 ### 全シナリオの実行
 ```bash
-# Windows (PowerShell) — Level 2 以上で pysim スイートも実行される
-powershell tools/run_all_tests.ps1 -level 2
+# Windows (PowerShell) — pysim ソース品質・テストを実行
+powershell tools/check-src.ps1 -group pysim
 
 # Python 直接実行
 uv run --system-certs --with wasmtime python experiments/pysim/scenarios/run_all.py

@@ -1,5 +1,5 @@
 """
-experiments/pysim/x64_stencils.py
+experiments/pysim/jit/x64_stencils.py
 x64 Copy-and-Patch stencils, mirroring the real design's split between
 compile-time template construction and runtime copy+patch
 (docs/components/tier3_jit/jit_compiler.md,
@@ -31,6 +31,15 @@ from dataclasses import dataclass, field
 from system_containers import FlatMapView
 
 IS_WINDOWS = sys.platform == "win32"
+
+# Magic sentinel value loaded into RAX when a WASM trap is triggered.
+# Guaranteed never to collide with any sign-extended 32-bit integer result.
+TRAP_SENTINEL: int = 0x7FFF_DEAD_BEEF_0001
+
+
+class WasmTrapError(OSError):
+    """Raised when WASM execution traps (e.g. out-of-bounds memory access or unreachable)."""
+
 
 _EMPTY_RELOC_ENTRIES: tuple[tuple[str, int], ...] = ()
 _EMPTY_RELOCS: FlatMapView[str, int] = FlatMapView(_EMPTY_RELOC_ENTRIES)
@@ -452,26 +461,25 @@ def _gen_unreachable() -> Generator[int, None, None]:
 
 def _gen_trap() -> Generator[int, None, None]:
     """
-    Deliberate null-pointer dereference: on Windows this reliably
-        raises a real, catchable access violation (Python's ctypes surfaces it
-        as `OSError`) rather than requiring an attached debugger the way `int3`
-        would -- the same trap target `unreachable` and every bounds-checked
-        memory stencil jump to.
-        First snaps rsp back to rdi (the restore point PROLOGUE captured right
-        after its pushes) and unwinds those same 6 registers, exactly like a
-        normal return -- so the fault always occurs at the identical, fixed
-        native stack depth relative to this function's own entry, no matter
-        how deep the WASM operand stack had grown at the trapping instruction.
-        See _gen_prologue's comment for why this consistency is load-bearing:
-        without it, Windows' unwinder only recovers by accident.
+    WASM execution trap handler.
+    First snaps rsp back to the frame anchor captured right after prologue pushes
+    (rdi on Windows, rbp on System V AMD64 / POSIX), unwinds the callee-saved registers,
+    loads the 64-bit TRAP_SENTINEL magic into RAX, and cleanly returns.
+    This provides cross-platform, deterministic trap detection (Windows and Linux/POSIX)
+    without triggering OS-level SIGSEGV / Access Violation crashes or requiring debuggers.
     """
-    # mov rsp, rdi          48 89 FC
-    yield from (0x48, 0x89, 0xFC)
+    if IS_WINDOWS:
+        # mov rsp, rdi          48 89 FC
+        yield from (0x48, 0x89, 0xFC)
+    else:
+        # mov rsp, rbp          48 89 EC
+        yield from (0x48, 0x89, 0xEC)
     yield from _gen_restore_unwind_only()
-    # mov rax, 0            48 C7 C0 00 00 00 00
-    yield from (0x48, 0xC7, 0xC0, 0x00, 0x00, 0x00, 0x00)
-    # mov [rax], rax        48 89 00
-    yield from (0x48, 0x89, 0x00)
+    # movabs rax, imm64(TRAP_SENTINEL)    48 B8 xx*8
+    yield from (0x48, 0xB8)
+    yield from TRAP_SENTINEL.to_bytes(8, "little")
+    # ret                                 C3
+    yield 0xC3
 
 
 def _gen_restore_unwind_only() -> Generator[int, None, None]:

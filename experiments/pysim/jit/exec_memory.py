@@ -1,5 +1,5 @@
 """
-experiments/pysim/exec_memory.py
+experiments/pysim/jit/exec_memory.py
 Cross-platform executable memory with strict W^X (Write XOR Execute) lifecycle protection.
 Supports Windows (VirtualAlloc/VirtualProtect/VirtualFree) and Linux/POSIX (mmap/mprotect/munmap).
 Conforms strictly to docs/components/tier3_platform/platform_memory.md §9.2 and {LowLatencyJIT}.

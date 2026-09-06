@@ -224,8 +224,9 @@ class OpcodeBenefitTable:
         "i32.shl": 7,
         "i32.shr_s": 7,
         "i32.shr_u": 7,
-        # Multiply & comparison: +13 instrs saved -> +6
+        # Multiply, comparison & locals/constants: +12..13 instrs saved -> +6
         "i32.mul": 6,
+        "i32.eqz": 6,
         "i32.eq": 6,
         "i32.ne": 6,
         "i32.lt_s": 6,
@@ -236,26 +237,50 @@ class OpcodeBenefitTable:
         "i32.le_u": 6,
         "i32.ge_s": 6,
         "i32.ge_u": 6,
-        # Local & constant: +12 instrs saved -> +6
+        "i32.clz": 6,
+        "i32.ctz": 6,
+        "i32.popcnt": 6,
         "local.get": 6,
         "local.set": 6,
         "local.tee": 6,
         "i32.const": 6,
-        # Memory access: +11 instrs saved -> +5
+        "i64.const": 6,
+        # Memory access, shifts & control branch: +10..11 instrs saved -> +5
         "i32.load": 5,
-        "i32.store": 5,
+        "i32.load8_s": 5,
         "i32.load8_u": 5,
+        "i32.load16_s": 5,
         "i32.load16_u": 5,
-        # Branch & control: +11 instrs saved -> +5
+        "i32.store": 5,
+        "i32.store8": 5,
+        "i32.store16": 5,
+        "i32.rotl": 5,
+        "i32.rotr": 5,
+        "i32.rem_s": 5,
+        "i32.rem_u": 5,
         "br": 5,
         "br_if": 5,
-        # Stack ops & neutral: +8 instrs saved -> +4
-        "nop": 4,
-        "drop": 4,
+        # Stack ops, global access, memory size & return: +8 instrs saved -> +4
+        "i32.div_s": 4,
+        "i32.div_u": 4,
+        "global.get": 4,
+        "global.set": 4,
+        "memory.size": 4,
         "select": 4,
-        # Delegated / function call: -2 instrs saved -> -1 (0xF)
+        "return": 4,
+        "drop": 4,
+        "nop": 4,
+        # Syntax delimiters: 0 instrs saved (inlined to trace header, 0 bytes) -> 0
+        "block": 0,
+        "loop": 0,
+        "else": 0,
+        "end": 0,
+        # Delegated / function call & dynamic jump: -2 instrs saved -> -1 (0xF)
         "call": -1,
         "call_indirect": -1,
+        "br_table": -1,
+        # OS memory expansion & copy/fill: -4 instrs saved -> -2 (0xE)
+        "memory.grow": -2,
         # Trap & unbacked: -16 instrs saved -> -8 (0x8)
         "unreachable": -8,
     }
@@ -263,8 +288,14 @@ class OpcodeBenefitTable:
     OPCODE_MAP: dict[str, int] = {
         "unreachable": 0x00,
         "nop": 0x01,
+        "block": 0x02,
+        "loop": 0x03,
+        "else": 0x05,
+        "end": 0x0B,
         "br": 0x0C,
         "br_if": 0x0D,
+        "br_table": 0x0E,
+        "return": 0x0F,
         "call": 0x10,
         "call_indirect": 0x11,
         "drop": 0x1A,
@@ -272,11 +303,21 @@ class OpcodeBenefitTable:
         "local.get": 0x20,
         "local.set": 0x21,
         "local.tee": 0x22,
+        "global.get": 0x23,
+        "global.set": 0x24,
         "i32.load": 0x28,
+        "i32.load8_s": 0x2C,
         "i32.load8_u": 0x2D,
+        "i32.load16_s": 0x2E,
         "i32.load16_u": 0x2F,
         "i32.store": 0x36,
+        "i32.store8": 0x3A,
+        "i32.store16": 0x3B,
+        "memory.size": 0x3F,
+        "memory.grow": 0x40,
         "i32.const": 0x41,
+        "i64.const": 0x42,
+        "i32.eqz": 0x45,
         "i32.eq": 0x46,
         "i32.ne": 0x47,
         "i32.lt_s": 0x48,
@@ -287,15 +328,24 @@ class OpcodeBenefitTable:
         "i32.le_u": 0x4D,
         "i32.ge_s": 0x4E,
         "i32.ge_u": 0x4F,
+        "i32.clz": 0x67,
+        "i32.ctz": 0x68,
+        "i32.popcnt": 0x69,
         "i32.add": 0x6A,
         "i32.sub": 0x6B,
         "i32.mul": 0x6C,
+        "i32.div_s": 0x6D,
+        "i32.div_u": 0x6E,
+        "i32.rem_s": 0x6F,
+        "i32.rem_u": 0x70,
         "i32.and": 0x71,
         "i32.or": 0x72,
         "i32.xor": 0x73,
         "i32.shl": 0x74,
         "i32.shr_s": 0x75,
         "i32.shr_u": 0x76,
+        "i32.rotl": 0x77,
+        "i32.rotr": 0x78,
     }
 
     def __init__(self):
@@ -1390,9 +1440,19 @@ def test_opcode_benefit_table_int4_decode() -> None:
     assert len(table.storage) == 128, "table must be strictly 128 bytes (256 * 4 bits)"
     assert table.get_score("i32.add") == 7, "pure arithmetic is max speedup (+7)"
     assert table.get_score("local.get") == 6
+    assert table.get_score("i32.const") == 6
+    assert table.get_score("i32.eqz") == 6
     assert table.get_score("i32.load") == 5
+    assert table.get_score("br") == 5
+    assert table.get_score("br_if") == 5
+    assert table.get_score("i32.div_s") == 4
+    assert table.get_score("return") == 4
     assert table.get_score("nop") == 4
+    assert table.get_score("block") == 0, "syntax delimiters are neutral (0)"
+    assert table.get_score("loop") == 0
+    assert table.get_score("end") == 0
     assert table.get_score("call") == -1, "call incurs register spill/restore penalty (-1)"
+    assert table.get_score("memory.grow") == -2, "system service call incurs penalty (-2)"
     assert table.get_score("unreachable") == -8, "trap is maximum penalty (-8)"
     assert table.get_score("nonexistent_opcode") == -8
 

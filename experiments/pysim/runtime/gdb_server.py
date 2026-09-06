@@ -66,6 +66,15 @@ class GDBServer:
         self._server_sock.setblocking(False)
         current_pc = start_pc
         buffer = ""
+        tx_buffer = bytearray()
+
+        def _try_flush_tx() -> None:
+            if tx_buffer and self._client_sock:
+                try:
+                    n = self._client_sock.send(tx_buffer)
+                    del tx_buffer[:n]
+                except (BlockingIOError, TimeoutError):
+                    pass
 
         try:
             # 1. Accept client non-blockingly
@@ -81,12 +90,16 @@ class GDBServer:
 
             # 2. Main packet dispatch loop
             while self._running and self._client_sock is not None:
+                # Flush any pending outgoing bytes first
+                _try_flush_tx()
+
                 try:
                     data = self._client_sock.recv(4096)
                     if not data:
                         break
                     buffer += data.decode("latin1")
                 except (BlockingIOError, TimeoutError):
+                    _try_flush_tx()
                     yield (ChannelAction.YIELD, None)
                     continue
                 except Exception:
@@ -100,14 +113,17 @@ class GDBServer:
                         break
                     packet_str = buffer[dollar_idx : hash_idx + 3]
                     buffer = buffer[hash_idx + 3 :]
-                    # Send immediate ACK
-                    self._client_sock.sendall(b"+")
+                    # Queue immediate ACK
+                    tx_buffer.extend(b"+")
                     # Handle packet via GDBRspProtocol
                     response, current_pc = self.rsp.handle_packet(
                         packet_str, current_pc, ctx, blocks
                     )
                     if response:
-                        self._client_sock.sendall(response.encode("latin1"))
+                        tx_buffer.extend(response.encode("latin1"))
+
+                # Flush outgoing bytes accumulated from packet processing
+                _try_flush_tx()
                 yield (ChannelAction.YIELD, None)
         finally:
             self.stop()

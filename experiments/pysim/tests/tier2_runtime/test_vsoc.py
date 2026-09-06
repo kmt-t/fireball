@@ -97,8 +97,11 @@ def _recv_rsp_frame(client: socket.socket, sysv: System, max_steps: int = 32) ->
             buf += client.recv(1024)
         except (socket.timeout, BlockingIOError):
             pass
-        if b"#" in buf and len(buf.split(b"#")[-1]) >= 2:
-            return buf
+        if b"$" in buf:
+            dollar_idx = buf.index(b"$")
+            hash_idx = buf.find(b"#", dollar_idx)
+            if hash_idx != -1 and len(buf) >= hash_idx + 3:
+                return buf
     raise AssertionError(f"incomplete RSP frame within {max_steps} scheduler steps: {buf!r}")
 
 

@@ -221,6 +221,8 @@ graph TD
 ## 6. リソース予算 (RAM/ROM/SLOC) とスケーラビリティ
 <!-- traceability: {Resource_Estimation_Model} {GLOBAL_StaticScalability} {GLOBAL_StrictMemoryLimit} {Size_15KLOC} -->
 
+詳細な各サブシステムの C++ 実装行数（LOC）およびバイト単位の物理リソース（RAM/ROM）見積もり正本は [`resource_budget_estimation.md`](docs/architecture/resource_budget_estimation.md) を参照のこと。
+
 ### 6.1 メモリ予算 (RAM: 評価ターゲット 32KB = 32,768 Bytes)
 
 | パーティション | 最小構成 (Bytes) | 最小構成 (KB) | 想定構成 (KB) | 責務 / 縮退方針 |

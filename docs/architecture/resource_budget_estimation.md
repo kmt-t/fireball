@@ -1,9 +1,9 @@
-# 物理リソース予算 & C++ 実装規模見積もり計画書 {Resource_Estimation_Model}
+# 物理リソース予算 & C++ 実装規模見積もり仕様書 {Resource_Estimation_Model}
 
 ## 1. 目的
 
 <!-- traceability: {Resource_Estimation_Model} {Size_15KLOC} {GLOBAL_StrictMemoryLimit} {ConsolidatedHeap} {ROMParsing} {META_ZeroCostAbstraction} -->
-本ドキュメントは、Python リファレンスシミュレータ（`experiments/pysim`）の検証結果および各コンポーネントのアルゴリズムに基づき、Clang 17+ 組み込み C++（静的配置、ゼロ動的アロケーション、AoS `flat_map_view`、`[[clang::musttail]]`）へ本実装した際の**実装規模（LOC）**および**物理リソース予算（ROM / RAM）**の厳密な見積もりを定義する計画書である。 `{Resource_Estimation_Model}`
+本ドキュメントは、Python リファレンスシミュレータ（`experiments/pysim`）の検証結果および各コンポーネントのアルゴリズムに基づき、Clang 17+ 組み込み C++（静的配置、ゼロ動的アロケーション、AoS `flat_map_view`、`[[clang::musttail]]`）へ本実装した際の**実装規模（LOC）**および**物理リソース予算（ROM / RAM）**の厳密な見積もりを定義するアーキテクチャ仕様書である。 `{Resource_Estimation_Model}`
 
 Phase 0 の「Step 2.4: 物理リソース予算の厳密な再見積もり」における正本ドキュメントとして、ROM（`.rodata` / `.text`）に配置可能な不変データと、RAM（SRAM / `.data` / `.bss`）に配置すべき可変状態・バッファ・スタックを厳密に区別して算出する。
 

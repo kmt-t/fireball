@@ -37,7 +37,7 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
   - エッジケース・異常系・直交表組み合わせテストの拡充
   - テストランナー（[`run_all.py`](experiments/pysim/tests/run_all.py)）による全 22+ スイートの高速・高信頼実行の維持
 - [ ] **Step 2.4: 物理リソース予算（RAM 32KB / ROM 128KB）の厳密な再見積もり**:
-  - 詳細正本: [`resource_budget_estimation.md`](docs/plans/resource_budget_estimation.md)
+  - 詳細正本: [`resource_budget_estimation.md`](docs/architecture/resource_budget_estimation.md)
   - **RAM (32KB)**: 統合物理メモリプール 21.5KB + OSスタック/静的変数 ~3.5KB $\to$ 静的合計 **~25.0 KB** (安全余白 ~7.7 KB / 24%) の実機適合確認 `{Resource_Estimation_Model}`
   - **ROM (128KB)**: 不変ルックアップテーブル/辞書 ~8.2KB + 機械語コード ~45〜55KB $\to$ 静的合計 **~53〜63 KB** (空き余白 ~65〜75 KB / 約50%) の確認
 - [ ] **Step 2.5: オーナー（人間）による最終品質レビュー & Phase 1 GO 判定**:

@@ -231,26 +231,28 @@ def test_chain_branch_preserves_registers_on_real_hardware() -> None:
     # Trace B (successor): compiled first so its chain entry offset is known when
     # patching trace A's branch. Empty body -- it exists only to prove whatever
     # arrives in R4 is A's live value, by flushing it straight back out.
-    engine.compile_trace([], exit_kind="fallback", dirty_spills=[("r4", 0)], head_wasm_pc=0x200)
+    engine.compile_trace([], exit_kind="return", dirty_spills=[("r4", 0)], head_wasm_pc=0x200)
     succ_chain_entry = engine.last_chain_entry_byte_offset
     succ_start_byte, succ_length = engine.last_trace_byte_range
     # Trace A (predecessor): computes a value into R4 via a real ALU op, then chains
-    # directly into trace B instead of exiting -- no flush, no epilogue of its own.
+    # directly into trace B via dynamic chain exit.
     r4_in, r5_in = 0x30, 0x0D
     engine.compile_trace(
         [("i32.add", None)],
         exit_kind="chain",
-        chain_target_addr=succ_chain_entry,
         head_wasm_pc=0x100,
     )
+    pred_header_byte = engine.last_trace_header_range[0]
     pred_start_byte, pred_length = engine.last_trace_byte_range
-    # The two traces sit back-to-back in the shared byte_cache in compile order
-    # (B's header+code, then A's header+code -- B was compiled first), so bytes
-    # from B's header through A's last byte form one contiguous, directly-
-    # executable blob -- exactly like the real JIT cache, where chained traces
-    # are separate allocations linked by address, not copied together.
+
     blob_start = succ_start_byte - 16  # trace B's own header
     blob_end = pred_start_byte + pred_length  # trace A's end
+
+    # Dynamically link predecessor to successor by updating ONLY the header metadata!
+    # Thumb bit (| 1) is required for indirect BX r12 branch.
+    succ_native_chain_entry = (CODE_BASE + (succ_chain_entry - blob_start)) | 1
+    engine.set_chain_target(pred_header_byte, succ_native_chain_entry)
+
     code = engine.execute_native_bytes(blob_start, blob_end - blob_start)
     mu = Uc(UC_ARCH_ARM, UC_MODE_THUMB)
     mu.mem_map(CODE_BASE, 0x1000)
@@ -260,8 +262,10 @@ def test_chain_branch_preserves_registers_on_real_hardware() -> None:
     mu.reg_write(UC_ARM_REG_R4, r4_in)
     mu.reg_write(UC_ARM_REG_R5, r5_in)
     mu.reg_write(UC_ARM_REG_R1, WASM_STACK_BASE)
-    mu.reg_write(UC_ARM_REG_R12, SENTINEL_ADDR)
+    mu.reg_write(UC_ARM_REG_R12, 0)
     mu.reg_write(UC_ARM_REG_SP, CSTACK_TOP)
+    from unicorn.arm_const import UC_ARM_REG_LR
+    mu.reg_write(UC_ARM_REG_LR, SENTINEL_ADDR | 1)
     entry = CODE_BASE + (pred_start_byte - blob_start)
     try:
         mu.emu_start(entry | 1, SENTINEL_ADDR)
@@ -280,10 +284,60 @@ def test_chain_branch_preserves_registers_on_real_hardware() -> None:
         f"stack_bot[0]={spilled:#x}, expected trace A's r5+r4={expected:#x}"
     )
     print(
-        f"[OK] chained pair of independently-compiled traces executed as one blob: "
-        f"trace A computed r5+r4={expected:#x} into R4 and B.W'd directly into "
-        f"trace B's chain entry (no flush, no epilogue), trace B observed the same "
-        f"value in R4 with zero memory traffic in between, SP round-tripped once."
+        "[OK] chained pair of independently-compiled traces executed as one blob: "
+        "trace A dynamically loaded B's chain entry from header (+0x0C), bypassed epilogue, "
+        "and BX'd directly into trace B's chain entry (skipping B's prologue). "
+        "Zero self-modifying code, SP round-tripped once."
+    )
+
+
+def test_dynamic_chain_unlinked_falls_through_to_interpreter_on_real_hardware() -> None:
+    """When chain_target_addr is 0 (unlinked / fallback), the dynamic chain exit branch
+    falls through to the epilogue, flushes dirty spills to memory, and POPs PC back
+    to the interpreter without executing any chain jump."""
+    engine = CopyPatchJITEngine()
+    r4_in, r5_in = 0x50, 0x05
+    engine.compile_trace(
+        [("i32.add", None)],
+        exit_kind="chain",
+        dirty_spills=[("r4", 0)],
+        chain_target_addr=0,  # Unlinked!
+        head_wasm_pc=0x100,
+    )
+    pred_header_byte = engine.last_trace_header_range[0]
+    pred_start_byte, pred_length = engine.last_trace_byte_range
+    blob_start = pred_header_byte
+    blob_len = (pred_start_byte + pred_length) - blob_start
+
+    code = engine.execute_native_bytes(blob_start, blob_len)
+    mu = Uc(UC_ARCH_ARM, UC_MODE_THUMB)
+    mu.mem_map(CODE_BASE, 0x1000)
+    mu.mem_map(0x20000, 0x4000)
+    mu.mem_write(CODE_BASE, code)
+    mu.mem_write(SENTINEL_ADDR, bytes.fromhex("00BE"))
+    mu.reg_write(UC_ARM_REG_R4, r4_in)
+    mu.reg_write(UC_ARM_REG_R5, r5_in)
+    mu.reg_write(UC_ARM_REG_R1, WASM_STACK_BASE)
+    mu.reg_write(UC_ARM_REG_R12, 0)
+    mu.reg_write(UC_ARM_REG_SP, CSTACK_TOP)
+    from unicorn.arm_const import UC_ARM_REG_LR
+    mu.reg_write(UC_ARM_REG_LR, SENTINEL_ADDR | 1)
+    entry = CODE_BASE + (pred_start_byte - blob_start)
+    try:
+        mu.emu_start(entry | 1, SENTINEL_ADDR)
+    except UcError as e:
+        if e.errno != UC_ERR_EXCEPTION:
+            raise
+    final_sp = mu.reg_read(UC_ARM_REG_SP)
+    assert final_sp == CSTACK_TOP, f"unlinked fallback epilogue must round-trip SP to {CSTACK_TOP:#x}"
+    spilled = int.from_bytes(mu.mem_read(WASM_STACK_BASE, 4), "little")
+    expected = (r5_in + r4_in) & 0xFFFFFFFF
+    assert spilled == expected, (
+        f"unlinked fallback must flush R4 to stack_bot[0]: got {spilled:#x}, expected {expected:#x}"
+    )
+    print(
+        f"[OK] unlinked dynamic chain correctly fell through to epilogue on real CPU: "
+        f"flushed r5+r4={expected:#x} to stack_bot[0] and POP'd PC back to interpreter sentinel."
     )
 
 
@@ -296,4 +350,5 @@ if __name__ == "__main__":
     test_out_of_bounds_memory_access_traps_before_executing_the_load()
     test_intra_trace_variant_reconciliation_swap_on_real_hardware()
     test_chain_branch_preserves_registers_on_real_hardware()
+    test_dynamic_chain_unlinked_falls_through_to_interpreter_on_real_hardware()
     print("[PASS] compile_trace() output is real, executable, and correct Thumb-2 machine code.")

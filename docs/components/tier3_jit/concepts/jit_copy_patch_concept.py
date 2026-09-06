@@ -176,6 +176,19 @@ class CopyPatchJITEngine:
             "chain_branch": Stencil(
                 "chain_branch", ["B.W 0x00000000"], "00 F0 00 B8", {"target": 0}
             ),
+            "dynamic_chain_exit_d1": Stencil(
+                "dynamic_chain_exit_d1",
+                [
+                    "LDR.W r12, [pc, #-0x18]",
+                    "CMP.W r12, #0",
+                    "BNE.W 0x00000006",
+                    "STR r4, [r1, #0x00]",
+                    "POP.W {r4-r6, r8-r11, pc}",
+                    "BX r12",
+                ],
+                "5F F8 18 C0 BC F1 00 0F 40 F0 03 80 0C 60 BD E8 70 8F 60 47",
+                {"header_target": 0, "skip_epilogue": 2, "spill_off": 3},
+            ),
             "external_call_stub": Stencil(
                 "external_call_stub",
                 ["PUSH {r0-r3, r12, lr}", "BL 0x00000000", "POP {r0-r3, r12, lr}"],
@@ -437,6 +450,20 @@ class CopyPatchJITEngine:
             )
         return bytes(self.byte_cache[start_byte_offset : start_byte_offset + num_bytes])
 
+    def set_chain_target(self, header_byte_offset: int, target_chain_entry_addr: int) -> None:
+        """Atomically updates the chain_target_addr field (+0x0C) in the JITTraceHeader.
+        CRITICAL: This updates METADATA (data bytes), NOT instruction stream code bytes.
+        Therefore, it completely avoids in-place code rewriting, MPU W^X attribute toggling
+        (RO_X <-> RW_XN), and instruction cache invalidation (ISB) barriers.
+        """
+        struct.pack_into("<I", self.byte_cache, header_byte_offset + 12, target_chain_entry_addr)
+
+    def unlink_chain(self, header_byte_offset: int) -> None:
+        """Atomically unlinks chaining by resetting chain_target_addr (+0x0C) to 0.
+        Future executions will fall through to epilogue and return to the interpreter.
+        """
+        self.set_chain_target(header_byte_offset, 0)
+
     # --- Full Copy-and-Patch Compilation ---
     def compile_trace(
         self,
@@ -603,23 +630,42 @@ class CopyPatchJITEngine:
 
         # 5. Emit Exit. "return"/"fallback" are genuine AAPCS exits: every dirty
         # cached value must be flushed to its canonical stack_bot-relative address
-        # first, since nothing preserves R4-R6 past the POP/BX below. "chain" is a
-        # direct backpatched branch to a resident successor's chain entry point
-        # (see 3b above) -- it deliberately skips flush_dirty_spills() entirely,
-        # because the whole point of chaining is that register state survives the
-        # hop untouched; the successor's body expects the same registers this
-        # trace's body was using. See {JIT_LazyChaining}, {ADR_TosCacheAsymmetry}.
+        # first, since nothing preserves R4-R6 past the POP/BX below.
+        # "chain" / "dynamic_chain" is a dynamic header-driven chain exit:
+        # It dynamically checks the header's chain_target_addr (+0x0C).
+        # - If resolved (chain_target_addr != 0): skips epilogue and BX r12 directly
+        #   to the successor trace's chain entry (past its prologue). Neither epilogue
+        #   nor successor prologue executes; registers survive untouched.
+        # - If unresolved (chain_target_addr == 0): falls through, flushes dirty spills,
+        #   and executes epilogue_return (POP {..., pc}) to return to the interpreter.
+        # This completely avoids in-place machine code rewriting ({ADR_TosCacheAsymmetry},
+        # {JIT_LazyChaining}, {JITC-GOTCHA-07}).
         self.last_chain_branch_byte_addr = None
-        if exit_kind == "chain":
-            chain_branch_byte_addr = self.byte_write_pos
-            self.last_chain_branch_byte_addr = chain_branch_byte_addr
-            emit_stencil(self.stencils["chain_branch"])
-            if chain_target_addr:
-                rel_offset = chain_target_addr - (chain_branch_byte_addr + 4)
-                patched = asm.b_w(rel_offset)
-                self.byte_cache[chain_branch_byte_addr : chain_branch_byte_addr + len(patched)] = (
-                    patched
-                )
+        if exit_kind in ("chain", "dynamic_chain"):
+            # 1. Dynamically load chain_target_addr from the inlined trace header (+0x0C)
+            ldr_pos = self.byte_write_pos
+            align_pc = (ldr_pos + 4) & ~3
+            header_target_pos = header_byte_offset + 12
+            rel_offset = header_target_pos - align_pc
+            emit(
+                f"LDR.W r12, [header_target (rel={rel_offset})]",
+                asm.ldr_w_literal(Reg.R12, rel_offset),
+            )
+            # 2. Check if chain_target_addr is resolved (!= 0)
+            emit("CMP.W r12, #0", asm.cmp_w_imm(Reg.R12, 0))
+            # 3. Branch if Not Equal (resolved): skip epilogue directly to BX r12
+            bne_pos = self.byte_write_pos
+            self.last_chain_branch_byte_addr = bne_pos
+            emit("BNE.W <skip_epilogue_to_chain>", asm.b_cond_w(Cond.NE, 0))
+            # 4. Fallthrough path (unresolved): flush dirty spills and POP PC to return
+            flush_dirty_spills()
+            emit_stencil(self.stencils["epilogue_return"])
+            # 5. Chain hop target: BX r12
+            chain_jump_pos = self.byte_write_pos
+            rel_to_chain = chain_jump_pos - (bne_pos + 4)
+            patched_bne = asm.b_cond_w(Cond.NE, rel_to_chain)
+            self.byte_cache[bne_pos : bne_pos + len(patched_bne)] = patched_bne
+            emit("BX r12", asm.bx(Reg.R12))
         else:
             flush_dirty_spills()
             if exit_kind == "return":
@@ -803,6 +849,7 @@ def test_stencil_variant_ids_match_the_documented_table() -> None:
         "local_tee_d1": 1,
         "global_set_d1": 1,
         "br_if_d1": 1,
+        "dynamic_chain_exit_d1": 1,
         "i32_eqz_d1": 1,
         "i32_clz_d1": 1,
         "i32_ctz_d1": 1,
@@ -881,6 +928,14 @@ def test_stencil_catalog_matches_assembler() -> None:
     checks = {
         "prologue_full": asm.push_w(reg_mask=full_mask, push_lr=True),
         "epilogue_return": asm.pop_w(reg_mask=full_mask, pop_pc=True),
+        "dynamic_chain_exit_d1": (
+            asm.ldr_w_literal(Reg.R12, -24)
+            + asm.cmp_w_imm(Reg.R12, 0)
+            + asm.b_cond_w(Cond.NE, 6)
+            + asm.str_imm(Reg.R4, Reg.R1, 0)
+            + asm.pop_w(reg_mask=full_mask, pop_pc=True)
+            + asm.bx(Reg.R12)
+        ),
         "fallback_interp": asm.pop_w(reg_mask=full_mask, pop_lr=True) + asm.bx(Reg.R12),
         "unreachable": asm.bkpt(0),
         "i32_const_d0": asm.movw(Reg.R4, 0) + asm.movt(Reg.R4, 0),
@@ -1212,22 +1267,76 @@ def test_epilogue_flush_d1_before_return() -> None:
 
 
 def test_chain_branch_skips_flush_and_epilogue() -> None:
-    """exit_kind="chain" must NOT flush dirty spills and must NOT emit any
-    prologue/epilogue -- it is a raw B.W into a resident successor's chain entry,
-    carrying live register state across the boundary with zero memory traffic."""
+    """exit_kind="chain" emits a dynamic header-driven exit branch.
+    The instruction sequence contains:
+    1. LDR.W r12 from inlined header (+0x0C)
+    2. CMP.W r12, #0
+    3. BNE.W <skip_epilogue_to_chain> (skips spill flush & POP PC)
+    4. Epilogue fallback: STR (flush) + POP.W (return to interpreter)
+    5. Chain jump: BX r12 (jumps directly to successor's chain_entry past prologue).
+    When chain_target_addr is resolved (!= 0), BNE.W executes and skips the epilogue entirely.
+    When unresolved (== 0), it falls through and executes the epilogue.
+    """
     engine = CopyPatchJITEngine()
     ops = [("i32.const", 10)]
     start_pos, count = engine.compile_trace(
         ops, exit_kind="chain", dirty_spills=[("r4", 0)], chain_target_addr=0
     )
     code = engine.execute_native(start_pos, count)
-    assert not any("STR" in c for c in code), (
-        "chain exit must not flush -- registers survive the hop live"
+    # Both paths are statically in the binary, avoiding in-place machine code patching:
+    assert any("LDR.W r12, [header_target" in c for c in code)
+    assert "CMP.W r12, #0" in code
+    assert "BNE.W <skip_epilogue_to_chain>" in code
+    assert "STR r4, [r1, #0]" in code
+    assert "POP.W {r4-r6, r8-r11, pc}" in code
+    assert "BX r12" in code
+
+    # Verify BNE.W offset lands exactly on BX r12
+    bne_idx = code.index("BNE.W <skip_epilogue_to_chain>")
+    bx_idx = code.index("BX r12")
+    assert bne_idx < bx_idx
+    # Epilogue is strictly between BNE.W and BX r12
+    str_idx = code.index("STR r4, [r1, #0]")
+    pop_idx = code.index("POP.W {r4-r6, r8-r11, pc}")
+    assert bne_idx < str_idx < pop_idx < bx_idx
+
+
+def test_dynamic_chain_header_patch_and_unlink() -> None:
+    """Runtime chaining via set_chain_target and unlink_chain:
+    Updates METADATA (header chain_target_addr +0x0C) without in-place code modification!
+    Code memory remains strictly untouched and RO_X throughout."""
+    engine = CopyPatchJITEngine()
+    # 1. Compile predecessor trace with unresolved chaining (chain_target_addr=0)
+    pred_start, pred_count = engine.compile_trace(
+        [("i32.const", 1)], exit_kind="chain", head_wasm_pc=0x100
     )
-    # The trace still gets its own fresh-entry prologue (PUSH.W) at offset 0 -- that
-    # is unrelated to how it *exits*. Only the epilogue's POP must be absent.
-    assert not any(c.startswith("POP") for c in code), "chain exit has no epilogue at all"
-    assert "B.W 0x00000000" in code
+    pred_header_off, _ = engine.last_trace_header_range
+    pred_code_off, pred_code_len = engine.last_trace_byte_range
+    code_bytes_before = bytes(engine.byte_cache[pred_code_off : pred_code_off + pred_code_len])
+
+    # 2. Compile successor trace and obtain its chain_entry_byte_offset
+    succ_start, succ_count = engine.compile_trace(
+        [("i32.const", 2)], exit_kind="fallback", head_wasm_pc=0x200
+    )
+    succ_chain_entry = engine.last_chain_entry_byte_offset
+
+    # 3. Link predecessor to successor by updating ONLY header metadata
+    engine.set_chain_target(pred_header_off, succ_chain_entry)
+    header = JITTraceHeader.from_bytes(engine.byte_cache, pred_header_off)
+    assert header.chain_target_addr == succ_chain_entry
+
+    # Invariant: Code bytes MUST NOT change at all (Zero self-modifying code!)
+    code_bytes_after = bytes(engine.byte_cache[pred_code_off : pred_code_off + pred_code_len])
+    assert code_bytes_before == code_bytes_after, (
+        "set_chain_target must NOT modify code memory (avoids W^X toggle and ISB barriers)"
+    )
+
+    # 4. Unlink chaining: resets chain_target_addr to 0
+    engine.unlink_chain(pred_header_off)
+    header_unlinked = JITTraceHeader.from_bytes(engine.byte_cache, pred_header_off)
+    assert header_unlinked.chain_target_addr == 0
+    code_bytes_unlinked = bytes(engine.byte_cache[pred_code_off : pred_code_off + pred_code_len])
+    assert code_bytes_before == code_bytes_unlinked
 
 
 def test_chain_entry_offset_is_past_the_prologue() -> None:
@@ -1241,22 +1350,17 @@ def test_chain_entry_offset_is_past_the_prologue() -> None:
     assert engine.last_chain_entry_byte_offset == code_start_byte_offset + 4
 
 
-def test_chain_branch_patched_to_real_successor_reaches_its_chain_entry() -> None:
-    """When the successor's address is already known at compile time, the B.W
-    placeholder must be immediately patched to the successor's chain entry point
-    (not its trace-start address, which would re-run the successor's prologue)."""
+def test_chain_branch_compiled_with_target_sets_header_correctly() -> None:
+    """When chain_target_addr is passed at compile time, the header metadata is initialized
+    directly without requiring a subsequent set_chain_target call."""
     engine = CopyPatchJITEngine()
-    # Compile the successor first so its chain entry offset is known.
     engine.compile_trace([("i32.const", 2)], exit_kind="fallback")
-    succ_chain_entry_byte_addr = engine.last_chain_entry_byte_offset
-    engine.compile_trace(
-        [("i32.const", 1)], exit_kind="chain", chain_target_addr=succ_chain_entry_byte_addr
-    )
-    branch_byte_addr = engine.last_chain_branch_byte_addr
-    asm = Thumb2Assembler()
-    expected_bytes = asm.b_w(succ_chain_entry_byte_addr - (branch_byte_addr + 4))
-    actual_bytes = bytes(engine.byte_cache[branch_byte_addr : branch_byte_addr + 4])
-    assert actual_bytes == expected_bytes
+    succ_chain_entry = engine.last_chain_entry_byte_offset
+
+    engine.compile_trace([("i32.const", 1)], exit_kind="chain", chain_target_addr=succ_chain_entry)
+    header_off, _ = engine.last_trace_header_range
+    header = JITTraceHeader.from_bytes(engine.byte_cache, header_off)
+    assert header.chain_target_addr == succ_chain_entry
 
 
 def test_mpu_wx_protection() -> None:
@@ -1300,8 +1404,9 @@ if __name__ == "__main__":
     test_epilogue_spill_variable_flush()
     test_epilogue_flush_d1_before_return()
     test_chain_branch_skips_flush_and_epilogue()
+    test_dynamic_chain_header_patch_and_unlink()
     test_chain_entry_offset_is_past_the_prologue()
-    test_chain_branch_patched_to_real_successor_reaches_its_chain_entry()
+    test_chain_branch_compiled_with_target_sets_header_correctly()
     test_cps_shared_registers_never_clobbered()
     test_fast_address_check_traps_before_access()
     test_memory_access_without_bounds_check_is_impossible()

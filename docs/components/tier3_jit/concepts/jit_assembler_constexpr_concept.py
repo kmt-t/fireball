@@ -462,6 +462,32 @@ class Thumb2Assembler:
         return struct.pack("<HH", hw1, hw2)
 
     @staticmethod
+    def ldr_w_literal(rt: Reg, offset: int) -> bytes:
+        """LDR.W Rt, [PC, #+/-imm12] (32-bit Thumb-2 literal load, T2 encoding: F85F/F8DF)
+        offset is relative to Align(PC, 4) where PC = inst_addr + 4.
+        Supports -4095 <= offset <= 4095.
+        """
+        if offset >= 0:
+            _check_imm(offset, 12)
+            hw1 = 0xF8DF
+            imm12 = offset
+        else:
+            neg_offset = -offset
+            _check_imm(neg_offset, 12)
+            hw1 = 0xF85F
+            imm12 = neg_offset
+        hw2 = (int(rt) << 12) | imm12
+        return struct.pack("<HH", hw1, hw2)
+
+    @staticmethod
+    def cmp_w_imm(rn: Reg, imm8: int) -> bytes:
+        """CMP.W Rn, #imm8 (32-bit Thumb-2 immediate compare, T2 encoding: F1B0 0F00)"""
+        _check_imm(imm8, 8)
+        hw1 = 0xF1B0 | int(rn)
+        hw2 = 0x0F00 | imm8
+        return struct.pack("<HH", hw1, hw2)
+
+    @staticmethod
     def bl(offset: int) -> bytes:
         """BL offset (32-bit Thumb-2 branch with link)"""
         _check_imm(offset, 25, signed=True)
@@ -573,6 +599,12 @@ def test_known_thumb2_encoding_reference_values() -> None:
     assert _hex(cmp_r4_r9) == "4C 45", f"Got {_hex(cmp_r4_r9)}"
     cmp_r5_r9 = asm.cmp_reg_t2(Reg.R5, Reg.R9)
     assert _hex(cmp_r5_r9) == "4D 45", f"Got {_hex(cmp_r5_r9)}"
+    # STENCIL_DYNAMIC_CHAIN_EXIT: LDR.W r12, [pc, #-24] -> 5F F8 18 C0
+    ldr_neg = asm.ldr_w_literal(Reg.R12, -24)
+    assert _hex(ldr_neg) == "5F F8 18 C0", f"Got {_hex(ldr_neg)}"
+    # STENCIL_DYNAMIC_CHAIN_EXIT: CMP.W r12, #0 -> BC F1 00 0F
+    cmp_r12_0 = asm.cmp_w_imm(Reg.R12, 0)
+    assert _hex(cmp_r12_0) == "BC F1 00 0F", f"Got {_hex(cmp_r12_0)}"
 
 
 if __name__ == "__main__":

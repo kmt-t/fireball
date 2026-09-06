@@ -373,7 +373,9 @@ def test_consecutive_handoff_limit_forces_yield() -> None:
     ch3.send(3)
     kernel.current_task = "t2"
     act3, tgt3 = ch3.recv()
-    assert act3 == ChannelAction.YIELD, "Must yield back to scheduler when handoff threshold reached"
+    assert act3 == ChannelAction.YIELD, (
+        "Must yield back to scheduler when handoff threshold reached"
+    )
     assert tgt3 is None
     assert kernel.consecutive_handoffs == 0
     assert "t1" in kernel.ready_queue, "Target task must be placed at tail of READY queue"

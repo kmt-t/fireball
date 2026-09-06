@@ -15,6 +15,14 @@ interface types {
         owner-task: task-id,
     }
 
+    /// 共有メモリスライスハンドル (16-bit: page_idx << 8 | slot_idx)
+    record shm-handle {
+        handle: u32,
+        base-address: u32,
+        size-bytes: u32,
+        owner-task: task-id,
+    }
+
     /// メモリエラーカテゴリ
     enum memory-error {
         /// メモリ枯渇・パーティション不足
@@ -64,6 +72,22 @@ interface memory {
 
     /// 貸与されたパーティションを返却する
     release-partition: func(owner: task-id) -> result<_, memory-error>;
+}
+
+/// 共有メモリマネージャ (co_shm / platform_memory) サブシステムインターフェース
+/// ゼロコピー IPC 通信および HAL デバイスデータ転送専用の共有メモリプール管理
+/// 所有権遷移（Revoke -> Rendezvous -> Grant）と連動し、vMMIO FC=14 マッピングを駆動する
+interface shared-memory {
+    use types.{task-id, shm-handle, memory-error};
+
+    /// IPC/HAL データ転送用の共有メモリスライスを割り当てる（呼出元タスクが初期所有者）
+    allocate-shared: func(size-bytes: u32) -> result<shm-handle, memory-error>;
+
+    /// IPC 経由で移譲された共有メモリの所有権を自タスクへ確立（Grant）する
+    claim-shared: func(handle: u32) -> result<shm-handle, memory-error>;
+
+    /// 共有メモリスライスを解放しプールへ返却する（所有者タスクのみ実行可能）
+    release-shared: func(handle: u32) -> result<_, memory-error>;
 }
 
 /// CSP 通信エンジン (co_csp) サブシステムインターフェース
@@ -124,6 +148,7 @@ interface logging {
 /// COOS コアワールド
 world coos-kernel {
     export memory;
+    export shared-memory;
     export csp;
     export scheduler;
     export logging;

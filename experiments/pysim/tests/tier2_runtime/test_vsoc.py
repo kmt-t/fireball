@@ -5,6 +5,7 @@ Unit tests for Tier 2 Runtime: vSoC Engine & Multitasking Integration
 Traceability: runtime_vsoc_test_spec.md
 """
 
+import socket
 import struct
 import sys
 from pathlib import Path
@@ -17,6 +18,7 @@ _REPO_ROOT = _PYSIM_DIR.parent.parent
 
 for _p in [
     _TESTS_DIR,
+    _TEST_FILE.parent,
     _PYSIM_DIR,
     _PYSIM_DIR / "core",
     _PYSIM_DIR / "runtime",
@@ -83,10 +85,25 @@ def test_hal_task_ipc_communication():
         sysv.shutdown()
 
 
-def test_gdbserver_task_coos_cooperative_execution():
-    """DBG-01: GDBServer operates as an independent task on COOS and handles RSP packets."""
-    import socket
+def _recv_rsp_frame(client: socket.socket, sysv: System, max_steps: int = 32) -> bytes:
+    """
+    Receives a complete RSP frame '$...#xx' by driving the COOS scheduler
+    across multiple yields. Accumulates chunks until the checksum is received.
+    """
+    buf = b""
+    for _ in range(max_steps):
+        sysv.scheduler.step()
+        try:
+            buf += client.recv(1024)
+        except (socket.timeout, BlockingIOError):
+            pass
+        if b"#" in buf and len(buf.split(b"#")[-1]) >= 2:
+            return buf
+    raise AssertionError(f"incomplete RSP frame within {max_steps} scheduler steps: {buf!r}")
 
+
+def test_gdbserver_task_coos_cooperative_execution():
+    """DBG-01, DBG-GOTCHA-04: GDBServer operates as an independent task on COOS and handles multi-yield RSP packets."""
     from debugger import DebuggerManager
 
     sysv = System()
@@ -96,29 +113,25 @@ def test_gdbserver_task_coos_cooperative_execution():
     task_id, port = sysv.spawn_gdbserver_task(dbg, start_pc=0x10, ctx=ctx)
 
     try:
-        # Connect client to the non-blocking gdbserver task
-        client = socket.create_connection(("127.0.0.1", port), timeout=2.0)
-        client.settimeout(2.0)
+        # Connect client to the non-blocking gdbserver task with short polling timeout
+        client = socket.create_connection(("127.0.0.1", port), timeout=0.1)
+        client.settimeout(0.1)
 
         # Drive COOS scheduler to accept the connection
         sysv.scheduler.step()
 
         # Send '?' halt reason query
         client.sendall(b"$?#3f")
-        # Step scheduler to process packet
-        sysv.scheduler.step()
-
-        # Read ACK '+' and response
-        resp = client.recv(1024)
+        resp = _recv_rsp_frame(client, sysv)
         assert b"+" in resp
         assert b"$S05#b8" in resp
 
-        # Send 'g' read registers
+        # Send 'g' read registers (large payload spanning multiple yields / segments)
         client.sendall(b"+$g#67")
-        sysv.scheduler.step()
-        resp = client.recv(1024)
+        resp = _recv_rsp_frame(client, sysv)
         assert b"+" in resp
         assert b"$" in resp
+        assert b"#" in resp
 
         client.close()
     finally:

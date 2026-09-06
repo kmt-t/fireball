@@ -1,6 +1,6 @@
 # Fireball キーワード台帳 (Keyword Dictionary & Registry)
 
-この文書は、Fireball プロジェクトにおける**全仕様・アーキテクチャ・コンポーネント・リンクキーワード（全 207 件）の正本台帳**である。
+この文書は、Fireball プロジェクトにおける**全仕様・アーキテクチャ・コンポーネント・リンクキーワード（全 208 件）の正本台帳**である。
 
 章節項番号（`§3.3` 等）や見出し文字列、ファイルパスによる直接参照は、仕様改訂やリファクタリングに伴う見出し変更・章番号ズレによって容易に陳腐化・リンク切れを起こす。これを防ぐため、Fireball では中括弧で囲まれた一意なキーワード（`{...}`）をアンカーとして定義し、すべての設計書・テスト仕様書・結合テスト・形式検証モデルを機械的に相互リンクする。
 
@@ -243,7 +243,7 @@ WASM 実行エンジン（`runtime_vsoc`）、CPS スレッドインタープリ
 | `{DebuggerLabelTableSwitch}` | `requirement_list.md` | `debug_manager.md` | デバッガアタッチ時のインタープリタハンドラテーブル動的切り替え | Scenario 7 |
 | `{Debugger_Jit_Flush}` | `requirement_list.md` | `debug_manager.md` | デバッガからのメモリ書き込み（M パケット）時の JIT キャッシュ全バンク即時無効化 | Scenario 7, 8 (INT-62, INT-72) |
 
-#### 4.3.2 Tier 2 Runtime 設計の勘所 (GOTCHA) (12 件)
+#### 4.3.2 Tier 2 Runtime 設計の勘所 (GOTCHA) (13 件)
 
 | キーワード | 定義元正本 | 対象コンポーネント | 仕様概要・検証内容 | 結合テスト / テストID |
 | :--- | :--- | :--- | :--- | :--- |
@@ -259,6 +259,7 @@ WASM 実行エンジン（`runtime_vsoc`）、CPS スレッドインタープリ
 | `{VMMIO-GOTCHA-03}` | `runtime_vmmio.md` | `runtime_vmmio_test_spec.md` | SHM Revoke 時、対象TLBスロットを即時破棄しin-flightアクセスを TRAP_OWNER_MISMATCH で遮断する | VMMIO-GOTCHA-03 |
 | `{DBG-GOTCHA-01}` | `debug_manager.md` | `debug_manager_test_spec.md` | デバッガからのメモリ書き込み（M パケット）実行と同時に JIT キャッシュ全バンクを即時無効化する（{Debugger_Jit_Flush} の勘所） | DBG-GOTCHA-01 |
 | `{DBG-GOTCHA-03}` | `debug_manager.md` | `debug_manager_test_spec.md` | GDB RSP チェックサム不一致パケットはサーバーが破棄しNAK（-）を返して再送を要求する | DBG-GOTCHA-03 |
+| `{DBG-GOTCHA-04}` | `debug_manager.md` | `debug_manager_test_spec.md` | 協調スケジューラ下での RSP 応答分割送出と複数 yield 跨ぎ耐性（長小応答 g の分割バッファ蓄積） | DBG-GOTCHA-04 |
 
 ---
 

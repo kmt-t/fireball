@@ -118,6 +118,25 @@ class Thumb2Assembler:
         return struct.pack("<H", code)
 
     @staticmethod
+    def adds_imm8(rd: Reg, imm8: int) -> bytes:
+        """ADDS Rd, #imm8 (16-bit) -> 3000 | (rd << 8) | imm8"""
+        _check_low_reg(rd)
+        _check_imm(imm8, 8)
+        code = 0x3000 | (rd << 8) | (imm8 & 0xFF)
+        return struct.pack("<H", code)
+
+    @staticmethod
+    def add_w_imm12(rd: Reg, rn: Reg, imm12: int) -> bytes:
+        """ADD.W Rd, Rn, #imm12 (32-bit Thumb-2 immediate add)"""
+        _check_imm(imm12, 12)
+        i = (imm12 >> 11) & 0x1
+        imm3 = (imm12 >> 8) & 0x7
+        imm8 = imm12 & 0xFF
+        hw1 = 0xF200 | (i << 10) | int(rn)
+        hw2 = (imm3 << 12) | (int(rd) << 8) | imm8
+        return struct.pack("<HH", hw1, hw2)
+
+    @staticmethod
     def adds_reg(rd: Reg, rn: Reg, rm: Reg) -> bytes:
         """ADDS Rd, Rn, Rm (16-bit) -> 18xx"""
         _check_low_reg(rd)
@@ -605,6 +624,12 @@ def test_known_thumb2_encoding_reference_values() -> None:
     # STENCIL_DYNAMIC_CHAIN_EXIT: CMP.W r12, #0 -> BC F1 00 0F
     cmp_r12_0 = asm.cmp_w_imm(Reg.R12, 0)
     assert _hex(cmp_r12_0) == "BC F1 00 0F", f"Got {_hex(cmp_r12_0)}"
+    # ADDS r4, #4 -> 04 34
+    adds_4 = asm.adds_imm8(Reg.R4, 4)
+    assert _hex(adds_4) == "04 34", f"Got {_hex(adds_4)}"
+    # ADD.W r12, r12, #16 -> 0C F2 10 0C
+    add_w_16 = asm.add_w_imm12(Reg.R12, Reg.R12, 16)
+    assert _hex(add_w_16) == "0C F2 10 0C", f"Got {_hex(add_w_16)}"
 
 
 if __name__ == "__main__":

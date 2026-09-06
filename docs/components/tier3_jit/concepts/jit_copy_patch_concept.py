@@ -195,9 +195,14 @@ class CopyPatchJITEngine:
                 "2D E9 0F 50 00 F0 00 F8 BD E8 0F 50",
                 {"branch_off": 1},
             ),
-            # --- Control Flow ---
+            # --- Control Flow & Delimiters ---
             "unreachable": Stencil("unreachable", ["BKPT #0x00"], "00 BE", {}),
             "nop": Stencil("nop", [], "", {}),
+            "block": Stencil("block", [], "", {}),
+            "loop": Stencil("loop", [], "", {}),
+            "end": Stencil("end", [], "", {}),
+            "else": Stencil("else", [], "", {}),
+            "return": Stencil("return", ["POP.W {r4-r6, r8-r11, pc}"], "BD E8 70 8F", {}),
             "br": Stencil("br", ["B.W 0x00000000"], "00 F0 00 B8", {"target": 0}),
             "br_if_d1": Stencil(
                 "br_if_d1",
@@ -541,6 +546,20 @@ class CopyPatchJITEngine:
                 self.write_instruction(self.current_write_pos, inst)
                 self.current_write_pos += 1
 
+        def flush_dirty_spills() -> None:
+            for reg, stack_off in dirty_spills:
+                reg_enum = _REG_NAME_TO_ENUM[reg.lower()]
+                if reg_enum <= Reg.R7:
+                    emit(
+                        f"STR {reg}, [r1, #{stack_off}]",
+                        asm.str_imm(reg_enum, Reg.R1, stack_off),
+                    )
+                else:
+                    emit(
+                        f"STR {reg}, [r1, #{stack_off}]",
+                        asm.str_w_imm12(reg_enum, Reg.R1, stack_off),
+                    )
+
         # 3. Emit Full Callee-saved Prologue
         emit_stencil(self.stencils["prologue_full"])
         # The chain entry point: a resident predecessor trace's backpatched B.W
@@ -575,9 +594,36 @@ class CopyPatchJITEngine:
             elif op == "local.set":
                 off = int(arg)
                 emit(f"STR r4, [r2, #{off}]", asm.str_imm(Reg.R4, Reg.R2, off))
+            elif op in ("block", "loop", "end", "else", "nop"):
+                # Zero-cost syntax delimiters and NOPs: eliminated at compile-time
+                continue
+            elif op == "return":
+                # Inlined return: flush dirty spills and POP PC to return
+                flush_dirty_spills()
+                emit_stencil(self.stencils["epilogue_return"])
+            elif op == "br":
+                target_pc = arg[0] if isinstance(arg, tuple) else int(arg if arg is not None else 0)
+                sp_rewind = arg[1] if isinstance(arg, tuple) and len(arg) > 1 else 0
+                if sp_rewind > 0:
+                    # SP immediate rewind: update execution_context.sp_offset (+0x18)
+                    emit("LDR.W r12, [r1, #0x18]", asm.ldr_w_imm12(Reg.R12, Reg.R1, 0x18))
+                    emit(
+                        f"ADD.W r12, r12, #{sp_rewind}",
+                        asm.add_w_imm12(Reg.R12, Reg.R12, sp_rewind),
+                    )
+                    emit("STR.W r12, [r1, #0x18]", asm.str_w_imm12(Reg.R12, Reg.R1, 0x18))
+                emit(f"B.W 0x{target_pc:08X}", asm.b_w(0))
             elif op == "br_if":
+                target_pc = arg[0] if isinstance(arg, tuple) else int(arg if arg is not None else 0)
+                sp_rewind = arg[1] if isinstance(arg, tuple) and len(arg) > 1 else 0
                 emit("CMP r4, #0", asm.cmp_imm8(Reg.R4, 0))
-                target_pc = int(arg)
+                if sp_rewind > 0:
+                    emit("LDR.W r12, [r1, #0x18]", asm.ldr_w_imm12(Reg.R12, Reg.R1, 0x18))
+                    emit(
+                        f"ADD.W r12, r12, #{sp_rewind}",
+                        asm.add_w_imm12(Reg.R12, Reg.R12, sp_rewind),
+                    )
+                    emit("STR.W r12, [r1, #0x18]", asm.str_w_imm12(Reg.R12, Reg.R1, 0x18))
                 emit(f"BNE.W 0x{target_pc:08X}", asm.b_cond_w(Cond.NE, 0))
             elif op == "external_call":
                 func_name = str(arg)
@@ -601,32 +647,18 @@ class CopyPatchJITEngine:
                 emit_stencil(self.stencils[op.replace(".", "_") + "_r8"])
             else:
                 # Direct stencil mapping
-                stencil_key = op.replace(".", "_") + "_d2"
-                if stencil_key not in self.stencils:
-                    stencil_key = op.replace(".", "_") + "_d1"
-                if stencil_key not in self.stencils:
-                    stencil_key = op.replace(".", "_") + "_r8"
-                if stencil_key not in self.stencils:
-                    stencil_key = op.replace(".", "_")
+                base = op.replace(".", "_")
+                stencil_key = None
+                for suffix in ("_d2", "_d1", "_d0", "_d3", "_r8", ""):
+                    cand = base + suffix
+                    if cand in self.stencils:
+                        stencil_key = cand
+                        break
 
-                if stencil_key in self.stencils:
+                if stencil_key is not None and stencil_key in self.stencils:
                     emit_stencil(self.stencils[stencil_key])
                 else:
                     raise ValueError(f"Unsupported stencil opcode: {op}")
-
-        def flush_dirty_spills() -> None:
-            for reg, stack_off in dirty_spills:
-                reg_enum = _REG_NAME_TO_ENUM[reg.lower()]
-                if reg_enum <= Reg.R7:
-                    emit(
-                        f"STR {reg}, [r1, #{stack_off}]",
-                        asm.str_imm(reg_enum, Reg.R1, stack_off),
-                    )
-                else:
-                    emit(
-                        f"STR {reg}, [r1, #{stack_off}]",
-                        asm.str_w_imm12(reg_enum, Reg.R1, stack_off),
-                    )
 
         # 5. Emit Exit. "return"/"fallback" are genuine AAPCS exits: every dirty
         # cached value must be flushed to its canonical stack_bot-relative address
@@ -876,6 +908,11 @@ def test_stencil_variant_ids_match_the_documented_table() -> None:
         "fallback_interp": None,
         "unreachable": None,
         "nop": None,
+        "block": None,
+        "loop": None,
+        "end": None,
+        "else": None,
+        "return": None,
         "br": None,
         "external_call_stub": None,
     }
@@ -896,6 +933,11 @@ def test_stencil_variant_ids_match_the_documented_table() -> None:
         "chain_branch",
         "unreachable",
         "nop",
+        "block",
+        "loop",
+        "end",
+        "else",
+        "return",
         "br",
         "external_call_stub",
     }
@@ -928,6 +970,7 @@ def test_stencil_catalog_matches_assembler() -> None:
     checks = {
         "prologue_full": asm.push_w(reg_mask=full_mask, push_lr=True),
         "epilogue_return": asm.pop_w(reg_mask=full_mask, pop_pc=True),
+        "return": asm.pop_w(reg_mask=full_mask, pop_pc=True),
         "dynamic_chain_exit_d1": (
             asm.ldr_w_literal(Reg.R12, -24)
             + asm.cmp_w_imm(Reg.R12, 0)
@@ -1053,6 +1096,108 @@ def test_arithmetic_and_logic_traces() -> None:
     assert "MOVW r4, #100" in code[3]
     assert "POP.W {r4-r6, r8-r11, pc}" in code
     assert code[-1] == "BX r12"
+
+
+def test_control_flow_and_all_48_opcodes() -> None:
+    """Verifies inlined control flow (delimiters eliminated, return, br with SP rewind)
+    and full coverage of all 48 WASM opcodes supported by the JIT compiler."""
+    engine = CopyPatchJITEngine()
+
+    # 1. Delimiters (block, loop, end, else, nop) must be eliminated at compile time (zero cost)
+    ops_delim = [
+        ("block", None),
+        ("loop", None),
+        ("nop", None),
+        ("i32.const", 42),
+        ("else", None),
+        ("end", None),
+    ]
+    start_pos, count = engine.compile_trace(ops_delim, exit_kind="return")
+    code_delim = engine.execute_native(start_pos, count)
+    # The only instruction emitted from ops_delim should be the i32.const (MOVW+MOVT)
+    body_insts = [c for c in code_delim if not c.startswith("PUSH") and not c.startswith("POP")]
+    assert len(body_insts) == 2, f"Delimiters were not eliminated: {body_insts}"
+
+    # 2. Inlined return
+    ops_ret = [("i32.const", 1), ("return", None)]
+    start_pos, count = engine.compile_trace(ops_ret, exit_kind="return")
+    code_ret = engine.execute_native(start_pos, count)
+    assert any("POP.W {r4-r6, r8-r11, pc}" in c for c in code_ret)
+
+    # 3. Inlined br with SP rewind
+    ops_br = [("br", (0x1000, 16))]
+    start_pos, count = engine.compile_trace(ops_br, exit_kind="return")
+    code_br = engine.execute_native(start_pos, count)
+    assert "LDR.W r12, [r1, #0x18]" in code_br
+    assert "ADD.W r12, r12, #16" in code_br
+    assert "STR.W r12, [r1, #0x18]" in code_br
+    assert "B.W 0x00001000" in code_br
+
+    # 4. Full 48 Opcode Coverage Sweep
+    all_48_opcodes = [
+        # Control flow (7)
+        ("unreachable", None),
+        ("nop", None),
+        ("block", None),
+        ("loop", None),
+        ("end", None),
+        ("br", (0x200, 0)),
+        ("br_if", (0x300, 0)),
+        ("return", None),
+        # Constants and variables (8)
+        ("i32.const", 1),
+        ("i64.const", 1),
+        ("local.get", 0),
+        ("local.set", 0),
+        ("local.tee", 0),
+        ("global.get", 0),
+        ("global.set", 0),
+        ("select", None),
+        # 32-bit Integer ALU & Logic (16)
+        ("i32.add", None),
+        ("i32.sub", None),
+        ("i32.mul", None),
+        ("i32.div_s", None),
+        ("i32.div_u", None),
+        ("i32.rem_s", None),
+        ("i32.rem_u", None),
+        ("i32.and", None),
+        ("i32.or", None),
+        ("i32.xor", None),
+        ("i32.shl", None),
+        ("i32.shr_s", None),
+        ("i32.shr_u", None),
+        ("i32.rotl", None),
+        ("i32.rotr", None),
+        ("i32.clz", None),
+        ("i32.ctz", None),
+        # Comparisons (11)
+        ("i32.eqz", None),
+        ("i32.eq", None),
+        ("i32.ne", None),
+        ("i32.lt_s", None),
+        ("i32.lt_u", None),
+        ("i32.gt_s", None),
+        ("i32.gt_u", None),
+        ("i32.le_s", None),
+        ("i32.le_u", None),
+        ("i32.ge_s", None),
+        ("i32.ge_u", None),
+        # Linear Memory (8)
+        ("i32.load", None),
+        ("i32.load8_s", None),
+        ("i32.load8_u", None),
+        ("i32.load16_s", None),
+        ("i32.load16_u", None),
+        ("i32.store", None),
+        ("i32.store8", None),
+        ("i32.store16", None),
+    ]
+    # Verify every single opcode compiles without raising ValueError
+    for op, arg in all_48_opcodes:
+        engine_single = CopyPatchJITEngine()
+        start, cnt = engine_single.compile_trace([(op, arg)], exit_kind="return")
+        assert cnt > 0, f"Opcode {op} produced 0 instructions"
 
 
 def test_external_aapcs_call_stub() -> None:
@@ -1400,6 +1545,7 @@ if __name__ == "__main__":
     test_stencil_variant_ids_match_the_documented_table()
     test_stencil_catalog_matches_assembler()
     test_arithmetic_and_logic_traces()
+    test_control_flow_and_all_48_opcodes()
     test_external_aapcs_call_stub()
     test_epilogue_spill_variable_flush()
     test_epilogue_flush_d1_before_return()

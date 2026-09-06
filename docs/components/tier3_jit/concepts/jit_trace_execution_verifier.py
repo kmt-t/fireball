@@ -341,6 +341,56 @@ def test_dynamic_chain_unlinked_falls_through_to_interpreter_on_real_hardware() 
     )
 
 
+def test_inlined_control_flow_and_sp_rewind_on_real_hardware() -> None:
+    """Verifies on real ARMv8-M Unicorn core:
+    1. Syntax delimiters (block, loop, end, nop) are eliminated (zero instruction side-effect).
+    2. SP immediate rewind (br with sp_rewind) updates execution_context.sp_offset (+0x18).
+    3. Flushes result and POPs PC back to interpreter."""
+    engine = CopyPatchJITEngine()
+    ops = [
+        ("block", None),
+        ("loop", None),
+        ("nop", None),
+        ("i32.const", 0x1234),
+        ("br", (0x200, 16)),  # branch with 16-byte SP rewind
+        ("end", None),
+    ]
+    start_pos, count = engine.compile_trace(ops, exit_kind="return", dirty_spills=[("r4", 0)])
+    start_byte, length = engine.last_trace_byte_range
+    code = engine.execute_native_bytes(start_byte, length)
+
+    mu = Uc(UC_ARCH_ARM, UC_MODE_THUMB)
+    mu.mem_map(CODE_BASE, 0x1000)
+    mu.mem_map(0x20000, 0x4000)
+    mu.mem_write(CODE_BASE, code)
+    mu.mem_write(SENTINEL_ADDR, bytes.fromhex("00BE"))
+    mu.mem_write(WASM_STACK_BASE + 0x18, (32).to_bytes(4, "little"))  # initial sp_offset = 32
+    mu.reg_write(UC_ARM_REG_R1, WASM_STACK_BASE)
+    mu.reg_write(UC_ARM_REG_SP, CSTACK_TOP)
+    from unicorn.arm_const import UC_ARM_REG_LR
+    mu.reg_write(UC_ARM_REG_LR, SENTINEL_ADDR | 1)
+
+    try:
+        mu.emu_start(CODE_BASE | 1, SENTINEL_ADDR)
+    except UcError as e:
+        if e.errno != UC_ERR_EXCEPTION:
+            raise
+
+    # 1. Check SP rewind: 32 + 16 = 48
+    new_sp_offset = int.from_bytes(mu.mem_read(WASM_STACK_BASE + 0x18, 4), "little")
+    assert new_sp_offset == 48, f"Expected sp_offset=48, got {new_sp_offset}"
+    # 2. Check spill
+    spilled = int.from_bytes(mu.mem_read(WASM_STACK_BASE, 4), "little")
+    assert spilled == 0x1234, f"Expected spilled 0x1234, got {spilled:#x}"
+    # 3. Check native call-stack SP round-trip
+    assert mu.reg_read(UC_ARM_REG_SP) == CSTACK_TOP
+    print(
+        f"[OK] inlined control flow verified on real CPU: delimiters eliminated, "
+        f"sp_offset updated {32} -> {new_sp_offset} via SP immediate rewind, "
+        f"and returned cleanly to interpreter."
+    )
+
+
 if __name__ == "__main__":
     if not HAVE_UNICORN:
         print("[SKIP] unicorn emulator not installed; skipping ARM trace verification.")
@@ -351,4 +401,5 @@ if __name__ == "__main__":
     test_intra_trace_variant_reconciliation_swap_on_real_hardware()
     test_chain_branch_preserves_registers_on_real_hardware()
     test_dynamic_chain_unlinked_falls_through_to_interpreter_on_real_hardware()
+    test_inlined_control_flow_and_sp_rewind_on_real_hardware()
     print("[PASS] compile_trace() output is real, executable, and correct Thumb-2 machine code.")

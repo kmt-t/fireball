@@ -112,11 +112,11 @@ Fireball の実行コアは、以下の 6 つの物理メカニズムによっ�
 <!-- traceability: {ContextPointerRegister} {MemoryBoundaryCheck} {ThreadedInterpreter} {ExecutionContext_Layout} {CallFrame_Layout} {ControlFrame_Layout} -->
 - **物理実体**: `OperandStack`・`LocalStack`・`control_frame` 専用領域の、互いに独立した3本の固定長バッファ（計 2KB〜4KB）。 `{ExecutionContext_Layout}` `{CallFrame_Layout}` `{ControlFrame_Layout}`
 - **物理レイアウト**:
-  1. **`execution_context`（計44バイト、単体の固定サイズ構造体）**: 3本それぞれの頂点オフセット・境界、`mem_base`/`mem_size`/`globals_base` 等のリニアメモリ情報を保持する。3本のいずれにもインライン配置されない。
+  1. **`execution_context`（計60バイト、15フィールドの固定サイズ構造体）**: IP、SP、ローカル変数、コールフレームの領域開始・終端・オフセット、リニアメモリ情報（開始アドレス・サイズ）、グローバル変数領域（開始・終端）、ハンドラテーブルを保持する。
   2. **`OperandStack`**: WASM オペランド値のみを保持し、コールチェーン全体を貫いて連続する（呼び出しを跨いでも作り直されない）。
   3. **`LocalStack`**: 関数呼び出しごとに `call_frame`（戻り先PC・関数インデックス等）とその関数のローカル変数配列をひとまとめにして push/pop する。
   4. **`control_frame` 専用領域**: `block`/`loop`/`if` の入れ子を管理する。オペランドスタックとは同居しない（ADR-INTERP-03、`{ControlFrame_Layout}`）。
-- **レジスタ規約**: `R1: stack_bot`（`execution_context` を指す）、`R2: local_base`（カレント `call_frame` のローカル変数配列先頭）が全ハンドラおよびJITトレースへ渡され、CPS 第1〜第4引数（`ip`, `stack_bot`, `local_base`, `tos`）として直接引き継がれる。 `{ContextPointerRegister}` `{JIT_RegisterMapping}`
+- **レジスタ規約**: `R0: ctx`（`execution_context` 構造体ポインタ）、`R1: SP`（`OperandStack` スタックポインタ）、`R2: local_base`（カレント `call_frame` のローカル変数配列先頭）、`R3: TOS`（最上位オペランド値）が全ハンドラおよびJITトレースへ渡され、CPS 第1〜第4引数（`ctx`, `sp`, `local_base`, `tos`）として直接引き継がれる。基本ブロック末尾で `TOS, NOS, NNOS` をスタック（`[R1, #offset]`）にフラッシュし、コンテキスト `R0` の `ip`（+0x00）および `sp_offset`（+0x0C）を書き戻す。 `{ContextPointerRegister}` `{JIT_RegisterMapping}`
 
 ### 3.2 Pillar 2: 3段直接 JIT 検索パイプライン (3-Stage Direct JIT Lookup Pipeline)
 <!-- traceability: {SimpleJITArchitecture} {JIT_MultiBuffer_Cache} {FlatViewNarrowing} {META_FlatMapIndexed} {META_BinarySearch} -->
@@ -157,16 +157,16 @@ ARM Cortex-M33 (ARMv8-M Mainline) における物理レジスタの厳格な役�
 
 | 物理レジスタ | AAPCS 規約 | Fireball インタープリタ | Fireball JIT トレース (役割任意割当レジスタ) | 役割と不変条件 |
 | :--- | :--- | :--- | :--- | :--- |
-| **`R0`** | Argument 1 / Scratch | `ip` (WASM PC) | `ip` (WASM PC) | 継続渡し（CPS）第1引数。現在実行中のバイトコード位置。 |
-| **`R1`** | Argument 2 / Scratch | `stack_bot` (`ctx`) | `stack_bot` (`ctx`) | 継続渡し（CPS）第2引数。統合コンテキスト基底ポインタ `{ContextPointerRegister}`。 |
+| **`R0`** | Argument 1 / Scratch | `ctx` (`execution_context*`) | `ctx` (`execution_context*`) | 継続渡し（CPS）第1引数。コンテキスト構造体ポインタ `{ContextPointerRegister}`。 |
+| **`R1`** | Argument 2 / Scratch | `sp` (OperandStack SP) | `sp` (OperandStack SP) | 継続渡し（CPS）第2引数。オペランドスタックポインタ。 |
 | **`R2`** | Argument 3 / Scratch | `local_base` | `local_base` | 継続渡し（CPS）第3引数。ローカル変数基底ポインタ `{ContextPointerRegister}` `{JIT_RegisterMapping}`。 |
 | **`R3`** | Argument 4 / Scratch | `tos` (Top of Stack) | `tos` (Top of Stack) | 継続渡し（CPS）第4引数。スタックトップ値（最上位オペランド値）。 |
-| **`R4`** | Callee-saved | (保全) | **`Assignable Pool 0` (NOS)** | **スタック次段キャッシュ (NOS)**。元々TOSに割り当てられていたR4を解放し次段に再割当。 |
-| **`R5`** | Callee-saved | (保全) | **`Assignable Pool 1` (NNOS等)** | **スタック第3段キャッシュ (NNOS)**、または一時演算スクラッチ。 |
-| **`R6`** | Callee-saved | (保全) | **`Assignable Pool 2`** | 汎用一時レジスタ（`select` 条件値等）。 |
+| **`R4`** | Callee-saved | (保全) | **`Assignable Pool 0` (NOS)** | **スタック次段キャッシュ (NOS)**。 |
+| **`R5`** | Callee-saved | (保全) | **`Assignable Pool 1` (NNOS)** | **スタック第3段キャッシュ (NNOS)**。 |
+| **`R6`** | Callee-saved | (保全) | **`Assignable Pool 2` (scratch)** | 汎用一時レジスタ（トレース末尾のIP書き戻し等）。Callee-saved として保全。 |
 | **`R7`** | **Frame Pointer (FP)** | **FP (不可侵)** | **FP (不可侵)** | **AAPCS 標準フレームポインタ**。デバッガ・アンワインドのため不変。 |
-| **`R8`** | Callee-saved | (保全) | **`Assignable Pool 3` (mem_base)** | メモリアクセス時のピン留めメモリ基底ポインタ（`[R1, #0x20]` よりロード）。 |
-| **`R9`** | Callee-saved | (保全) | **`Assignable Pool 4` (mem_size)** | メモリアクセス時のピン留めメモリ境界サイズ（`[R1, #0x24]` よりロード、比較境界チェック用）。 |
+| **`R8`** | Callee-saved | (保全) | **`Assignable Pool 3` (mem_base)** | メモリアクセス時のピン留めメモリ基底ポインタ（`[R0, #0x28]` よりロード）。 |
+| **`R9`** | Callee-saved | (保全) | **`Assignable Pool 4` (mem_size)** | メモリアクセス時のピン留めメモリ境界サイズ（`[R0, #0x2C]` よりロード、比較境界チェック用）。 |
 | **`R10`** | Callee-saved | (保全) | **`Assignable Pool 5` (safepoint)** | セーフポイント監視フラグ / ポーリング用レジスタ。 |
 | **`R11`** | Callee-saved | (保全) | **`Assignable Pool 6`** | 拡張レジスタキャッシュ。 |
 | **`R12 (IP)`**| Intra-Call Scratch | scratch | **一時スクラッチ** | リンカ・スタブ用スクラッチ、使い捨て一時値、インタープリタ復帰 `BX r12`。 |
@@ -176,19 +176,23 @@ ARM Cortex-M33 (ARMv8-M Mainline) における物理レジスタの厳格な役�
 
 ### 4.1 メモリ常駐構造体の物理バイトオフセット
 
-- **`execution_context`（`R1: stack_bot` 起点、計44バイト）**:
-  - `+0x00`: `sp_offset` (u32) — `OperandStack` バッファ先頭からの現在の頂点オフセット。コール境界を跨いでも連続しており、関数呼び出しのたびにリセットされない
-  - `+0x04`: `sp_boundary` (u32) — `OperandStack` バッファ自体のオーバーフロー検知用上限オフセット
-  - `+0x08`: `ls_offset` (u32) — `LocalStack` バッファ先頭からの、次に `call_frame`+ローカル変数ブロックを push する位置のオフセット
-  - `+0x0C`: `frame_offset` (u32) — 現在アクティブな `call_frame` の `LocalStack` バッファ先頭からの開始オフセット
-  - `+0x10`: `ls_boundary` (u32) — `LocalStack` バッファ自体のオーバーフロー検知用上限オフセット
-  - `+0x14`: `cf_offset` (u32) — `control_frame` バッファ先頭からの現在の頂点オフセット/深さ
-  - `+0x18`: `cf_boundary` (u32) — `control_frame` バッファ自体のオーバーフロー検知用上限オフセット
-  - `+0x1C`: `handler_table` (u32) — 命令ディスパッチテーブル参照
-  - `+0x20`: `mem_base` (u32) — ゲストリニアメモリ開始アドレス（`vsoc_runtime.mem_base` を統合）
-  - `+0x24`: `mem_size` (u32) — ゲストリニアメモリ有効バイト数（`vsoc_runtime.mem_size` を統合、境界チェック比較用）
-  - `+0x28`: `globals_base` (u32) — WASM global 配列基底アドレス（`vsoc_runtime.globals_base` を統合）
-  - ※ `OperandStack`・`LocalStack`・`control_frame` は互いに独立した固定容量バッファであり、それぞれ専用の頂点・境界オフセットペアを持つ（ADR-INTERP-03）。`vsoc_runtime` は `execution_context` 内に完全内包され、独立した引数レジスタを消費しない。`R2` は `local_base`、`R3` は `tos` として引き回す。 `{ExecutionContext_Layout}` `{AAPCS_FastCall}`
+- **`execution_context`（`R0: ctx` 起点、計60バイト、15フィールド）**:
+  - `+0x00`: `ip` (u32) — IP（現在または復帰時の WASM PC）
+  - `+0x04`: `sp_base` (u32) — SP領域開始位置（OperandStack バッファ先頭アドレス）
+  - `+0x08`: `sp_limit` (u32) — SP領域終端位置（OperandStack バッファ終端アドレス）
+  - `+0x0C`: `sp_offset` (u32) — SPオフセット / スタックポインタ（現在の OperandStack オフセット / アドレス）
+  - `+0x10`: `local_base_addr` (u32) — ローカル変数領域開始位置（LocalStack バッファ先頭アドレス）
+  - `+0x14`: `local_limit_addr` (u32) — ローカル変数領域終端位置（LocalStack バッファ終端アドレス）
+  - `+0x18`: `local_offset` (u32) — ローカル変数オフセット（現在のアクティブフレーム開始オフセット）
+  - `+0x1C`: `cf_base_addr` (u32) — コールフレーム領域開始位置（control_frame バッファ先頭アドレス）
+  - `+0x20`: `cf_limit_addr` (u32) — コールフレーム領域終了位置（control_frame バッファ終端アドレス）
+  - `+0x24`: `cf_offset` (u32) — コールフレームオフセット（現在の control_frame 深さ/オフセット）
+  - `+0x28`: `mem_base` (u32) — リニアメモリ開始アドレス（ゲストRAM先頭）
+  - `+0x2C`: `mem_size` (u32) — リニアメモリサイズ（境界チェック用バイト数）
+  - `+0x30`: `globals_base` (u32) — グローバル変数領域開始位置（WASM global 配列基底）
+  - `+0x34`: `globals_limit` (u32) — グローバル変数領域終端位置（WASM global 配列終端）
+  - `+0x38`: `handler_table` (u32) — ハンドラテーブル（命令ディスパッチテーブル参照）
+  - ※ 基本ブロック末尾では、スタックがプッシュされた場合に `TOS, NOS, NNOS` をオペランドスタック（`[R1, #offset]`）へフラッシュし、コンテキスト `R0` の `ip`（`+0x00`）および `sp_offset`（`+0x0C`）を書き換えて状態を完全同期する。 `{ExecutionContext_Layout}` `{AAPCS_FastCall}`
 
 ---
 

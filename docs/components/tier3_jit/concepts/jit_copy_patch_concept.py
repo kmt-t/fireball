@@ -118,20 +118,20 @@ class JITTraceHeader:
 
 _REG_NAME_TO_ENUM = {r.name.lower(): r for r in Reg}
 
-# WASM linear-memory ops whose operand register (r4 for a unary load's address,
-# r5 for a store's address -- value stays in r4) must be bounds-checked against
+# WASM linear-memory ops whose operand register (r3 for a unary load's address,
+# r4 for a store's address -- value is in r3) must be bounds-checked against
 # vsoc_runtime.mem-size (pinned in R9) before the access is allowed to execute.
 # See {FastAddressCheck} / {MemoryBoundaryCheck}: trapping to the interpreter is
 # mandatory on out-of-bounds, silent wrapping is not permitted.
 _MEMORY_OP_ADDR_REG = {
-    "i32.load": Reg.R4,
-    "i32.load8_s": Reg.R4,
-    "i32.load8_u": Reg.R4,
-    "i32.load16_s": Reg.R4,
-    "i32.load16_u": Reg.R4,
-    "i32.store": Reg.R5,
-    "i32.store8": Reg.R5,
-    "i32.store16": Reg.R5,
+    "i32.load": Reg.R3,
+    "i32.load8_s": Reg.R3,
+    "i32.load8_u": Reg.R3,
+    "i32.load16_s": Reg.R3,
+    "i32.load16_u": Reg.R3,
+    "i32.store": Reg.R4,
+    "i32.store8": Reg.R4,
+    "i32.store16": Reg.R4,
 }
 
 
@@ -153,12 +153,10 @@ class CopyPatchJITEngine:
         self.barrier_flushes: int = 0
         self.current_write_pos: int = 0
         # Exhaustive Stencil Library (Cortex-M33 AAPCS + JIT Register Map)
-        # R0=ip, R1=stack_bot, R2=local_base, R3=tos, R4=TOS, R5=NOS, R6=NNOS, R7=FP,
+        # R0=ctx (execution_context*), R1=SP (OperandStack pointer), R2=local_base, R3=TOS,
+        # R4=NOS, R5=NNOS, R6=scratch, R7=FP (AAPCS),
         # R8/R9=mem_base/mem_size (pinned only when the trace touches linear memory),
         # R12=intra-call scratch (globals_base pointer, rem/rotl temporaries), R8-R11=assignable pool otherwise
-        # R3 (tos) is the CPS boundary argument/return register only -- no stencil below
-        # writes it mid-trace; every stencil's own cached value lives in R4 (see
-        # VARIANT_REGISTER_MAPS), matching docs/specs/jit_stencil_catalog.md 3.4/3.8.
         self.stencils: dict[str, Stencil] = {
             # --- Prologue, Epilogue & Interop ---
             "prologue_full": Stencil(
@@ -182,11 +180,11 @@ class CopyPatchJITEngine:
                     "LDR.W r12, [pc, #-0x18]",
                     "CMP.W r12, #0",
                     "BNE.W 0x00000006",
-                    "STR r4, [r1, #0x00]",
+                    "STR r3, [r1, #0x00]",
                     "POP.W {r4-r6, r8-r11, pc}",
                     "BX r12",
                 ],
-                "5F F8 18 C0 BC F1 00 0F 40 F0 03 80 0C 60 BD E8 70 8F 60 47",
+                "5F F8 18 C0 BC F1 00 0F 40 F0 03 80 0B 60 BD E8 70 8F 60 47",
                 {"header_target": 0, "skip_epilogue": 2, "spill_off": 3},
             ),
             "external_call_stub": Stencil(
@@ -206,209 +204,194 @@ class CopyPatchJITEngine:
             "br": Stencil("br", ["B.W 0x00000000"], "00 F0 00 B8", {"target": 0}),
             "br_if_d1": Stencil(
                 "br_if_d1",
-                ["CMP r4, #0", "BNE.W 0x00000000"],
-                "00 2C 00 F0 00 80",
+                ["CMP r3, #0", "BNE.W 0x00000000"],
+                "00 2B 40 F0 00 80",
                 {"target": 1},
             ),
             "select_d3": Stencil(
                 "select_d3",
-                ["CMP r4, #0", "IT NE", "MOVNE r5, r6", "MOV r4, r5"],
-                "00 2C 18 BF 35 46 2C 46",
+                ["CMP r3, #0", "IT NE", "MOVNE r4, r5", "MOV r3, r4"],
+                "00 2B 18 BF 2C 46 23 46",
                 {},
             ),
             # --- Constants ---
             "i32_const_d0": Stencil(
                 "i32_const_d0",
-                ["MOVW r4, #0x0000", "MOVT r4, #0x0000"],
-                "40 F2 00 04 C0 F2 00 04",
+                ["MOVW r3, #0x0000", "MOVT r3, #0x0000"],
+                "40 F2 00 03 C0 F2 00 03",
                 {"imm_lo": 0, "imm_hi": 1},
             ),
             "i32_const_d1": Stencil(
                 "i32_const_d1",
-                ["MOV r5, r4", "MOVW r4, #0x0000", "MOVT r4, #0x0000"],
-                "25 46 40 F2 00 04 C0 F2 00 04",
+                ["MOV r4, r3", "MOVW r3, #0x0000", "MOVT r3, #0x0000"],
+                "1C 46 40 F2 00 03 C0 F2 00 03",
                 {"imm_lo": 1, "imm_hi": 2},
             ),
             "i64_const_d0": Stencil(
                 "i64_const_d0",
                 [
+                    "MOVW r3, #0x0000",
+                    "MOVT r3, #0x0000",
                     "MOVW r4, #0x0000",
                     "MOVT r4, #0x0000",
-                    "MOVW r5, #0x0000",
-                    "MOVT r5, #0x0000",
                 ],
-                "40 F2 00 04 C0 F2 00 04 40 F2 00 05 C0 F2 00 05",
+                "40 F2 00 03 C0 F2 00 03 40 F2 00 04 C0 F2 00 04",
                 {"imm32_lo": 0, "imm32_hi": 2},
             ),
             # --- Variables ---
             # local_base (R2) addresses the current call_frame's locals array;
             # see docs/specs/jit_stencil_catalog.md 3.4.
             "local_get_d0": Stencil(
-                "local_get_d0", ["LDR r4, [r2, #0x00]"], "14 68", {"offset": 0}
+                "local_get_d0", ["LDR r3, [r2, #0x00]"], "13 68", {"offset": 0}
             ),
             "local_set_d1": Stencil(
-                "local_set_d1", ["STR r4, [r2, #0x00]"], "14 60", {"offset": 0}
+                "local_set_d1", ["STR r3, [r2, #0x00]"], "13 60", {"offset": 0}
             ),
             "local_tee_d1": Stencil(
-                "local_tee_d1", ["STR r4, [r2, #0x00]"], "14 60", {"offset": 0}
+                "local_tee_d1", ["STR r3, [r2, #0x00]"], "13 60", {"offset": 0}
             ),
-            # globals_base lives inside execution_context (R1: stack_bot) at +0x28, not
+            # globals_base lives inside execution_context (R0: ctx) at +0x30, not
             # behind a separate argument register ({ExecutionContext_Layout}). R12
             # (AAPCS intra-call scratch) holds that pointer only for the duration of
             # this one stencil.
             "global_get_d0": Stencil(
                 "global_get_d0",
-                ["LDR.W r12, [r1, #0x28]", "LDR.W r4, [r12, #0x00]"],
-                "D1 F8 28 C0 DC F8 00 40",
+                ["LDR.W r12, [r0, #0x30]", "LDR.W r3, [r12, #0x00]"],
+                "D0 F8 30 C0 DC F8 00 30",
                 {"offset": 1},
             ),
             "global_set_d1": Stencil(
                 "global_set_d1",
-                ["LDR.W r12, [r1, #0x28]", "STR.W r4, [r12, #0x00]"],
-                "D1 F8 28 C0 CC F8 00 40",
+                ["LDR.W r12, [r0, #0x30]", "STR.W r3, [r12, #0x00]"],
+                "D0 F8 30 C0 CC F8 00 30",
                 {"offset": 1},
             ),
             # --- 32-bit Integer Arithmetic & Logic ---
-            "i32_add_d2": Stencil("i32_add_d2", ["ADDS r4, r5, r4"], "2C 19", {}),
-            "i32_sub_d2": Stencil("i32_sub_d2", ["SUBS r4, r5, r4"], "2C 1B", {}),
-            "i32_mul_d2": Stencil("i32_mul_d2", ["MUL r4, r5, r4"], "05 FB 04 F4", {}),
-            "i32_div_s_d2": Stencil("i32_div_s_d2", ["SDIV r4, r5, r4"], "95 FB F4 F4", {}),
-            "i32_div_u_d2": Stencil("i32_div_u_d2", ["UDIV r4, r5, r4"], "B5 FB F4 F4", {}),
-            # R12 scratch, not R2/R3 -- those are the fixed-role local_base/tos
-            # registers (see i32_rotl_d2 below too).
+            "i32_add_d2": Stencil("i32_add_d2", ["ADDS r3, r4, r3"], "E3 18", {}),
+            "i32_sub_d2": Stencil("i32_sub_d2", ["SUBS r3, r4, r3"], "E3 1A", {}),
+            "i32_mul_d2": Stencil("i32_mul_d2", ["MUL r3, r4, r3"], "04 FB 03 F3", {}),
+            "i32_div_s_d2": Stencil("i32_div_s_d2", ["SDIV r3, r4, r3"], "94 FB F3 F3", {}),
+            "i32_div_u_d2": Stencil("i32_div_u_d2", ["UDIV r3, r4, r3"], "B4 FB F3 F3", {}),
+            # R12 scratch, not R2/R3 -- R2 is local_base, R3 is TOS
             "i32_rem_s_d2": Stencil(
                 "i32_rem_s_d2",
-                ["SDIV r12, r5, r4", "MLS r4, r12, r4, r5"],
-                "95 FB F4 FC 0C FB 14 54",
+                ["SDIV r12, r4, r3", "MLS r3, r12, r3, r4"],
+                "94 FB F3 FC 0C FB 13 43",
                 {},
             ),
             "i32_rem_u_d2": Stencil(
                 "i32_rem_u_d2",
-                ["UDIV r12, r5, r4", "MLS r4, r12, r4, r5"],
-                "B5 FB F4 FC 0C FB 14 54",
+                ["UDIV r12, r4, r3", "MLS r3, r12, r3, r4"],
+                "B4 FB F3 FC 0C FB 13 43",
                 {},
             ),
-            "i32_and_d2": Stencil("i32_and_d2", ["ANDS r4, r5, r4"], "2C 40", {}),
-            "i32_or_d2": Stencil("i32_or_d2", ["ORRS r4, r5, r4"], "2C 43", {}),
-            "i32_xor_d2": Stencil("i32_xor_d2", ["EORS r4, r5, r4"], "6C 40", {}),
-            # NOTE: the 16-bit Thumb-1 2-operand ALU forms (LSLS/ASRS/LSRS/RORS Rdn,Rm)
-            # compute Rdn = Rdn <op> Rm, i.e. dest and first operand MUST be the same
-            # register. That makes "shift NOS by the amount in TOS while writing the
-            # result to TOS" impossible to encode as a single 2-operand instruction
-            # without either clobbering the wrong operand or adding an extra MOV. These
-            # stencils use the 32-bit Thumb-2 3-operand shift-by-register form instead
-            # (LSL.W/LSR.W/ASR.W/ROR.W Rd,Rn,Rm), which keeps Rn (value/NOS) and Rm
-            # (amount/TOS) independent. See {ADR_TosCacheAsymmetry}.
-            "i32_shl_d2": Stencil("i32_shl_d2", ["LSL.W r4, r5, r4"], "05 FA 04 F4", {}),
-            "i32_shr_s_d2": Stencil("i32_shr_s_d2", ["ASR.W r4, r5, r4"], "45 FA 04 F4", {}),
-            "i32_shr_u_d2": Stencil("i32_shr_u_d2", ["LSR.W r4, r5, r4"], "25 FA 04 F4", {}),
+            "i32_and_d2": Stencil("i32_and_d2", ["ANDS r3, r4"], "23 40", {}),
+            "i32_or_d2": Stencil("i32_or_d2", ["ORRS r3, r4"], "23 43", {}),
+            "i32_xor_d2": Stencil("i32_xor_d2", ["EORS r3, r4"], "63 40", {}),
+            # 32-bit variable shifts use 3-register Thumb-2 form
+            "i32_shl_d2": Stencil("i32_shl_d2", ["LSL.W r3, r4, r3"], "04 FA 03 F3", {}),
+            "i32_shr_s_d2": Stencil("i32_shr_s_d2", ["ASR.W r3, r4, r3"], "44 FA 03 F3", {}),
+            "i32_shr_u_d2": Stencil("i32_shr_u_d2", ["LSR.W r3, r4, r3"], "24 FA 03 F3", {}),
             "i32_rotl_d2": Stencil(
                 "i32_rotl_d2",
-                ["RSB r12, r4, #32", "ROR.W r4, r5, r12"],
-                "C4 F1 20 0C 65 FA 0C F4",
+                ["RSB r12, r3, #32", "ROR.W r3, r4, r12"],
+                "C3 F1 20 0C 64 FA 0C F3",
                 {},
             ),
-            "i32_rotr_d2": Stencil("i32_rotr_d2", ["ROR.W r4, r5, r4"], "65 FA 04 F4", {}),
-            "i32_clz_d1": Stencil("i32_clz_d1", ["CLZ r4, r4"], "B4 FA 84 F4", {}),
+            "i32_rotr_d2": Stencil("i32_rotr_d2", ["ROR.W r3, r4, r3"], "64 FA 03 F3", {}),
+            "i32_clz_d1": Stencil("i32_clz_d1", ["CLZ r3, r3"], "B3 FA 83 F3", {}),
             "i32_ctz_d1": Stencil(
                 "i32_ctz_d1",
-                ["RBIT r4, r4", "CLZ r4, r4"],
-                "94 FA A4 F4 B4 FA 84 F4",
+                ["RBIT r3, r3", "CLZ r3, r3"],
+                "93 FA A3 F3 B3 FA 83 F3",
                 {},
             ),
             # --- 32-bit Integer Comparisons ---
             "i32_eqz_d1": Stencil(
                 "i32_eqz_d1",
-                ["CMP r4, #0", "IT EQ", "MOVEQ r4, #1", "IT NE", "MOVNE r4, #0"],
-                "00 2C 08 BF 01 24 18 BF 00 24",
+                ["CMP r3, #0", "IT EQ", "MOVEQ r3, #1", "IT NE", "MOVNE r3, #0"],
+                "00 2B 08 BF 01 23 18 BF 00 23",
                 {},
             ),
             "i32_eq_d2": Stencil(
                 "i32_eq_d2",
-                ["CMP r5, r4", "IT EQ", "MOVEQ r4, #1", "IT NE", "MOVNE r4, #0"],
-                "A5 42 08 BF 01 24 18 BF 00 24",
+                ["CMP r4, r3", "IT EQ", "MOVEQ r3, #1", "IT NE", "MOVNE r3, #0"],
+                "9C 42 08 BF 01 23 18 BF 00 23",
                 {},
             ),
             "i32_ne_d2": Stencil(
                 "i32_ne_d2",
-                ["CMP r5, r4", "IT NE", "MOVNE r4, #1", "IT EQ", "MOVEQ r4, #0"],
-                "A5 42 18 BF 01 24 08 BF 00 24",
+                ["CMP r4, r3", "IT NE", "MOVNE r3, #1", "IT EQ", "MOVNE r3, #0"],
+                "9C 42 18 BF 01 23 08 BF 00 23",
                 {},
             ),
             "i32_lt_s_d2": Stencil(
                 "i32_lt_s_d2",
-                ["CMP r5, r4", "IT LT", "MOVLT r4, #1", "IT GE", "MOVGE r4, #0"],
-                "A5 42 B8 BF 01 24 A8 BF 00 24",
+                ["CMP r4, r3", "IT LT", "MOVLT r3, #1", "IT GE", "MOVGE r3, #0"],
+                "9C 42 B8 BF 01 23 A8 BF 00 23",
                 {},
             ),
             "i32_lt_u_d2": Stencil(
                 "i32_lt_u_d2",
-                ["CMP r5, r4", "IT LO", "MOVLO r4, #1", "IT HS", "MOVHS r4, #0"],
-                "A5 42 38 BF 01 24 28 BF 00 24",
+                ["CMP r4, r3", "IT LO", "MOVLO r3, #1", "IT HS", "MOVHS r3, #0"],
+                "9C 42 38 BF 01 23 28 BF 00 23",
                 {},
             ),
             "i32_gt_s_d2": Stencil(
                 "i32_gt_s_d2",
-                ["CMP r5, r4", "IT GT", "MOVGT r4, #1", "IT LE", "MOVLE r4, #0"],
-                "A5 42 C8 BF 01 24 D8 BF 00 24",
+                ["CMP r4, r3", "IT GT", "MOVGT r3, #1", "IT LE", "MOVLE r3, #0"],
+                "9C 42 C8 BF 01 23 D8 BF 00 23",
                 {},
             ),
             "i32_gt_u_d2": Stencil(
                 "i32_gt_u_d2",
-                ["CMP r5, r4", "IT HI", "MOVHI r4, #1", "IT LS", "MOVLS r4, #0"],
-                "A5 42 88 BF 01 24 98 BF 00 24",
+                ["CMP r4, r3", "IT HI", "MOVHI r3, #1", "IT LS", "MOVLS r3, #0"],
+                "9C 42 88 BF 01 23 98 BF 00 23",
                 {},
             ),
             "i32_le_s_d2": Stencil(
                 "i32_le_s_d2",
-                ["CMP r5, r4", "IT LE", "MOVLE r4, #1", "IT GT", "MOVGT r4, #0"],
-                "A5 42 D8 BF 01 24 C8 BF 00 24",
+                ["CMP r4, r3", "IT LE", "MOVLE r3, #1", "IT GT", "MOVGT r3, #0"],
+                "9C 42 D8 BF 01 23 C8 BF 00 23",
                 {},
             ),
             "i32_le_u_d2": Stencil(
                 "i32_le_u_d2",
-                ["CMP r5, r4", "IT LS", "MOVLS r4, #1", "IT HI", "MOVHI r4, #0"],
-                "A5 42 98 BF 01 24 88 BF 00 24",
+                ["CMP r4, r3", "IT LS", "MOVLS r3, #1", "IT HI", "MOVHI r3, #0"],
+                "9C 42 98 BF 01 23 88 BF 00 23",
                 {},
             ),
             "i32_ge_s_d2": Stencil(
                 "i32_ge_s_d2",
-                ["CMP r5, r4", "IT GE", "MOVGE r4, #1", "IT LT", "MOVLT r4, #0"],
-                "A5 42 A8 BF 01 24 B8 BF 00 24",
+                ["CMP r4, r3", "IT GE", "MOVGE r3, #1", "IT LT", "MOVLT r3, #0"],
+                "9C 42 A8 BF 01 23 B8 BF 00 23",
                 {},
             ),
             "i32_ge_u_d2": Stencil(
                 "i32_ge_u_d2",
-                ["CMP r5, r4", "IT HS", "MOVHS r4, #1", "IT LO", "MOVLO r4, #0"],
-                "A5 42 28 BF 01 24 38 BF 00 24",
+                ["CMP r4, r3", "IT HS", "MOVHS r3, #1", "IT LO", "MOVLO r3, #0"],
+                "9C 42 28 BF 01 23 38 BF 00 23",
                 {},
             ),
             # --- Linear Memory Access (R8 = mem_base) ---
-            # R2 is local_base, not mem_base -- see docs/specs/jit_stencil_catalog.md 3.8.
-            # mem_base/mem_size are pinned in R8/R9 precisely so they never collide with it.
-            # The FastAddressCheck bounds check (CMP addr, r9=mem_size; BHS.W <trap>) is NOT part of
-            # these stencils -- it needs a runtime-patched branch target (the trace's own trap tail),
-            # so it is emitted directly by compile_trace() around whichever of these gets selected,
-            # the same way local.get/local.set are handled rather than being a fixed byte template.
-            "i32_load_r8": Stencil("i32_load_r8", ["LDR.W r4, [r8, r4]"], "58 F8 04 40", {}),
+            "i32_load_r8": Stencil("i32_load_r8", ["LDR.W r3, [r8, r3]"], "58 F8 03 30", {}),
             "i32_load8_s_r8": Stencil(
-                "i32_load8_s_r8", ["LDRSB.W r4, [r8, r4]"], "18 F9 04 40", {}
+                "i32_load8_s_r8", ["LDRSB.W r3, [r8, r3]"], "18 F9 03 30", {}
             ),
-            "i32_load8_u_r8": Stencil("i32_load8_u_r8", ["LDRB.W r4, [r8, r4]"], "18 F8 04 40", {}),
+            "i32_load8_u_r8": Stencil("i32_load8_u_r8", ["LDRB.W r3, [r8, r3]"], "18 F8 03 30", {}),
             "i32_load16_s_r8": Stencil(
-                "i32_load16_s_r8", ["LDRSH.W r4, [r8, r4]"], "38 F9 04 40", {}
+                "i32_load16_s_r8", ["LDRSH.W r3, [r8, r3]"], "38 F9 03 30", {}
             ),
             "i32_load16_u_r8": Stencil(
-                "i32_load16_u_r8", ["LDRH.W r4, [r8, r4]"], "38 F8 04 40", {}
+                "i32_load16_u_r8", ["LDRH.W r3, [r8, r3]"], "38 F8 03 30", {}
             ),
-            "i32_store_r8": Stencil("i32_store_r8", ["STR.W r4, [r8, r5]"], "48 F8 05 40", {}),
-            "i32_store8_r8": Stencil("i32_store8_r8", ["STRB.W r4, [r8, r5]"], "08 F8 05 40", {}),
-            "i32_store16_r8": Stencil("i32_store16_r8", ["STRH.W r4, [r8, r5]"], "28 F8 05 40", {}),
-            # mem_size lives inside execution_context (R1: stack_bot) at +0x24, the same
-            # field the R8/R9 memory-op pinning prologue loads from
+            "i32_store_r8": Stencil("i32_store_r8", ["STR.W r3, [r8, r4]"], "48 F8 04 30", {}),
+            "i32_store8_r8": Stencil("i32_store8_r8", ["STRB.W r3, [r8, r4]"], "08 F8 04 30", {}),
+            "i32_store16_r8": Stencil("i32_store16_r8", ["STRH.W r3, [r8, r4]"], "28 F8 04 30", {}),
+            # mem_size lives inside execution_context (R0: ctx) at +0x2C
             # ({ExecutionContext_Layout}).
             "memory_size_d0": Stencil(
-                "memory_size_d0", ["LDR.W r4, [r1, #0x24]"], "D1 F8 24 40", {}
+                "memory_size_d0", ["LDR.W r3, [r0, #0x2C]"], "D0 F8 2C 30", {}
             ),
         }
 
@@ -546,7 +529,8 @@ class CopyPatchJITEngine:
                 self.write_instruction(self.current_write_pos, inst)
                 self.current_write_pos += 1
 
-        def flush_dirty_spills() -> None:
+        def flush_dirty_spills_and_sync_context() -> None:
+            # 1. Flush dirty stack values (TOS, NOS, NNOS etc.) to stack memory [r1, #offset]
             for reg, stack_off in dirty_spills:
                 reg_enum = _REG_NAME_TO_ENUM[reg.lower()]
                 if reg_enum <= Reg.R7:
@@ -559,22 +543,35 @@ class CopyPatchJITEngine:
                         f"STR {reg}, [r1, #{stack_off}]",
                         asm.str_w_imm12(reg_enum, Reg.R1, stack_off),
                     )
+            # 2. Write back updated SP (r1) to execution_context.sp_offset (+0x0C)
+            emit("STR.W r1, [r0, #0x0C]", asm.str_w_imm12(Reg.R1, Reg.R0, 0x0C))
+            # 3. Write back next WASM PC to execution_context.ip (+0x00).
+            # Uses r6 as scratch: r6 is callee-saved (pushed in prologue, popped in epilogue),
+            # so modifying it here leaves r12 (interp handler / sentinel) intact for BX r12!
+            target_pc = chain_next_pc if chain_next_pc != 0 else head_wasm_pc + len(wasm_ops)
+            emit(f"MOVW r6, #{target_pc & 0xFFFF}", asm.movw(Reg.R6, target_pc & 0xFFFF))
+            if ((target_pc >> 16) & 0xFFFF) != 0:
+                emit(
+                    f"MOVT r6, #{(target_pc >> 16) & 0xFFFF}",
+                    asm.movt(Reg.R6, (target_pc >> 16) & 0xFFFF),
+                )
+            emit("STR.W r6, [r0, #0x00]", asm.str_w_imm12(Reg.R6, Reg.R0, 0x00))
 
         # 3. Emit Full Callee-saved Prologue
         emit_stencil(self.stencils["prologue_full"])
         # The chain entry point: a resident predecessor trace's backpatched B.W
         # (exit_kind="chain") lands exactly here, skipping the prologue above.
-        # Its register state (R4-R6 caches included) is already correct for this
+        # Its register state (R3-R5 caches included) is already correct for this
         # trace's body, so no restore or reload is needed or wanted here.
         chain_entry_byte_offset = self.byte_write_pos
         # 3b. If the trace touches linear memory, pin R8=mem_base and R9=mem_size for the
-        # lifetime of the trace (execution_context: mem_base @+0x20, mem_size @+0x24,
+        # lifetime of the trace (execution_context: mem_base @+0x28, mem_size @+0x2C,
         # {ExecutionContext_Layout}). Loaded once here rather than per-access since
         # neither value can change mid-trace.
         has_memory_ops = any(op in _MEMORY_OP_ADDR_REG for op, _ in wasm_ops)
         if has_memory_ops:
-            emit("LDR.W r8, [r1, #0x20]", asm.ldr_w_imm12(Reg.R8, Reg.R1, 0x20))
-            emit("LDR.W r9, [r1, #0x24]", asm.ldr_w_imm12(Reg.R9, Reg.R1, 0x24))
+            emit("LDR.W r8, [r0, #0x28]", asm.ldr_w_imm12(Reg.R8, Reg.R0, 0x28))
+            emit("LDR.W r9, [r0, #0x2C]", asm.ldr_w_imm12(Reg.R9, Reg.R0, 0x2C))
 
         # Byte addresses of BHS.W trap branches emitted below, patched once the trace's
         # trap tail (see step 5b) is known.
@@ -583,47 +580,51 @@ class CopyPatchJITEngine:
         for op, arg in wasm_ops:
             if op == "i32.const":
                 imm = int(arg) & 0xFFFFFFFF
-                emit(f"MOVW r4, #{imm & 0xFFFF}", asm.movw(Reg.R4, imm & 0xFFFF))
+                emit(f"MOVW r3, #{imm & 0xFFFF}", asm.movw(Reg.R3, imm & 0xFFFF))
                 emit(
-                    f"MOVT r4, #{(imm >> 16) & 0xFFFF}",
-                    asm.movt(Reg.R4, (imm >> 16) & 0xFFFF),
+                    f"MOVT r3, #{(imm >> 16) & 0xFFFF}",
+                    asm.movt(Reg.R3, (imm >> 16) & 0xFFFF),
                 )
             elif op == "local.get":
                 off = int(arg)
-                emit(f"LDR r4, [r2, #{off}]", asm.ldr_imm(Reg.R4, Reg.R2, off))
+                emit(f"LDR r3, [r2, #{off}]", asm.ldr_imm(Reg.R3, Reg.R2, off))
             elif op == "local.set":
                 off = int(arg)
-                emit(f"STR r4, [r2, #{off}]", asm.str_imm(Reg.R4, Reg.R2, off))
+                emit(f"STR r3, [r2, #{off}]", asm.str_imm(Reg.R3, Reg.R2, off))
             elif op in ("block", "loop", "end", "else", "nop"):
                 # Zero-cost syntax delimiters and NOPs: eliminated at compile-time
                 continue
             elif op == "return":
-                # Inlined return: flush dirty spills and POP PC to return
-                flush_dirty_spills()
+                # Inlined return: flush dirty spills, sync context, and POP PC to return
+                flush_dirty_spills_and_sync_context()
                 emit_stencil(self.stencils["epilogue_return"])
             elif op == "br":
                 target_pc = arg[0] if isinstance(arg, tuple) else int(arg if arg is not None else 0)
                 sp_rewind = arg[1] if isinstance(arg, tuple) and len(arg) > 1 else 0
                 if sp_rewind > 0:
-                    # SP immediate rewind: update execution_context.sp_offset (+0x18)
-                    emit("LDR.W r12, [r1, #0x18]", asm.ldr_w_imm12(Reg.R12, Reg.R1, 0x18))
-                    emit(
-                        f"ADD.W r12, r12, #{sp_rewind}",
-                        asm.add_w_imm12(Reg.R12, Reg.R12, sp_rewind),
-                    )
-                    emit("STR.W r12, [r1, #0x18]", asm.str_w_imm12(Reg.R12, Reg.R1, 0x18))
+                    # SP immediate rewind: update SP register (r1) and execution_context.sp_offset (+0x0C)
+                    if sp_rewind <= 255:
+                        emit(f"SUBS r1, #{sp_rewind}", asm.subs_imm8(Reg.R1, sp_rewind))
+                    else:
+                        emit(
+                            f"SUB.W r1, r1, #{sp_rewind}",
+                            asm.sub_w_imm12(Reg.R1, Reg.R1, sp_rewind),
+                        )
+                    emit("STR.W r1, [r0, #0x0C]", asm.str_w_imm12(Reg.R1, Reg.R0, 0x0C))
                 emit(f"B.W 0x{target_pc:08X}", asm.b_w(0))
             elif op == "br_if":
                 target_pc = arg[0] if isinstance(arg, tuple) else int(arg if arg is not None else 0)
                 sp_rewind = arg[1] if isinstance(arg, tuple) and len(arg) > 1 else 0
-                emit("CMP r4, #0", asm.cmp_imm8(Reg.R4, 0))
+                emit("CMP r3, #0", asm.cmp_imm8(Reg.R3, 0))
                 if sp_rewind > 0:
-                    emit("LDR.W r12, [r1, #0x18]", asm.ldr_w_imm12(Reg.R12, Reg.R1, 0x18))
-                    emit(
-                        f"ADD.W r12, r12, #{sp_rewind}",
-                        asm.add_w_imm12(Reg.R12, Reg.R12, sp_rewind),
-                    )
-                    emit("STR.W r12, [r1, #0x18]", asm.str_w_imm12(Reg.R12, Reg.R1, 0x18))
+                    if sp_rewind <= 255:
+                        emit(f"SUBS r1, #{sp_rewind}", asm.subs_imm8(Reg.R1, sp_rewind))
+                    else:
+                        emit(
+                            f"SUB.W r1, r1, #{sp_rewind}",
+                            asm.sub_w_imm12(Reg.R1, Reg.R1, sp_rewind),
+                        )
+                    emit("STR.W r1, [r0, #0x0C]", asm.str_w_imm12(Reg.R1, Reg.R0, 0x0C))
                 emit(f"BNE.W 0x{target_pc:08X}", asm.b_cond_w(Cond.NE, 0))
             elif op == "external_call":
                 func_name = str(arg)
@@ -635,11 +636,7 @@ class CopyPatchJITEngine:
                 emit(f"BL {func_name}", asm.bl(0))  # relocation hole: patched after linking
                 emit("POP {r0-r3, r12, lr}", asm.pop_w(reg_mask=call_mask, pop_lr=True))
             elif op in _MEMORY_OP_ADDR_REG:
-                # FastAddressCheck: CMP the address against mem_size (R9) and take a
-                # placeholder BHS.W to the trace's trap tail (patched in step 5b, once its
-                # address is known) *before* the actual load/store executes, so an
-                # out-of-bounds access never has a side effect to unwind. R9 is a high
-                # register, so the low addr_reg (R4/R5) needs the T2 CMP encoding.
+                # FastAddressCheck: CMP the address (r3 for load, r4 for store) against mem_size (R9)
                 addr_reg = _MEMORY_OP_ADDR_REG[op]
                 emit(f"CMP {addr_reg.name.lower()}, r9", asm.cmp_reg_t2(addr_reg, Reg.R9))
                 oob_branch_fixups.append(self.byte_write_pos)
@@ -690,7 +687,7 @@ class CopyPatchJITEngine:
             self.last_chain_branch_byte_addr = bne_pos
             emit("BNE.W <skip_epilogue_to_chain>", asm.b_cond_w(Cond.NE, 0))
             # 4. Fallthrough path (unresolved): flush dirty spills and POP PC to return
-            flush_dirty_spills()
+            flush_dirty_spills_and_sync_context()
             emit_stencil(self.stencils["epilogue_return"])
             # 5. Chain hop target: BX r12
             chain_jump_pos = self.byte_write_pos
@@ -699,7 +696,7 @@ class CopyPatchJITEngine:
             self.byte_cache[bne_pos : bne_pos + len(patched_bne)] = patched_bne
             emit("BX r12", asm.bx(Reg.R12))
         else:
-            flush_dirty_spills()
+            flush_dirty_spills_and_sync_context()
             if exit_kind == "return":
                 emit_stencil(self.stencils["epilogue_return"])
             elif exit_kind == "fallback":
@@ -715,7 +712,7 @@ class CopyPatchJITEngine:
         if oob_branch_fixups:
             trap_tail_byte_addr = self.byte_write_pos
             self.last_trap_tail_byte_addr = trap_tail_byte_addr
-            flush_dirty_spills()
+            flush_dirty_spills_and_sync_context()
             emit_stencil(self.stencils["fallback_interp"])
             for branch_byte_addr in oob_branch_fixups:
                 rel_offset = trap_tail_byte_addr - (branch_byte_addr + 4)
@@ -803,9 +800,9 @@ class CopyPatchJITEngine:
 
 VARIANT_REGISTER_MAPS: dict[int, dict[str, Reg]] = {
     0: {},
-    1: {"TOS": Reg.R4},
-    2: {"TOS": Reg.R4, "NOS": Reg.R5},
-    3: {"TOS": Reg.R4, "NOS": Reg.R5, "NNOS": Reg.R6},
+    1: {"TOS": Reg.R3},
+    2: {"TOS": Reg.R3, "NOS": Reg.R4},
+    3: {"TOS": Reg.R3, "NOS": Reg.R4, "NNOS": Reg.R5},
 }
 
 
@@ -975,44 +972,44 @@ def test_stencil_catalog_matches_assembler() -> None:
             asm.ldr_w_literal(Reg.R12, -24)
             + asm.cmp_w_imm(Reg.R12, 0)
             + asm.b_cond_w(Cond.NE, 6)
-            + asm.str_imm(Reg.R4, Reg.R1, 0)
+            + asm.str_imm(Reg.R3, Reg.R1, 0)
             + asm.pop_w(reg_mask=full_mask, pop_pc=True)
             + asm.bx(Reg.R12)
         ),
         "fallback_interp": asm.pop_w(reg_mask=full_mask, pop_lr=True) + asm.bx(Reg.R12),
         "unreachable": asm.bkpt(0),
-        "i32_const_d0": asm.movw(Reg.R4, 0) + asm.movt(Reg.R4, 0),
+        "i32_const_d0": asm.movw(Reg.R3, 0) + asm.movt(Reg.R3, 0),
         "i64_const_d0": (
-            asm.movw(Reg.R4, 0) + asm.movt(Reg.R4, 0) + asm.movw(Reg.R5, 0) + asm.movt(Reg.R5, 0)
+            asm.movw(Reg.R3, 0) + asm.movt(Reg.R3, 0) + asm.movw(Reg.R4, 0) + asm.movt(Reg.R4, 0)
         ),
-        "local_get_d0": asm.ldr_imm(Reg.R4, Reg.R2, 0),
-        "local_set_d1": asm.str_imm(Reg.R4, Reg.R2, 0),
-        "local_tee_d1": asm.str_imm(Reg.R4, Reg.R2, 0),
-        "global_get_d0": asm.ldr_w_imm12(Reg.R12, Reg.R1, 0x28)
-        + asm.ldr_w_imm12(Reg.R4, Reg.R12, 0),
-        "global_set_d1": asm.ldr_w_imm12(Reg.R12, Reg.R1, 0x28)
-        + asm.str_w_imm12(Reg.R4, Reg.R12, 0),
-        "memory_size_d0": asm.ldr_w_imm12(Reg.R4, Reg.R1, 0x24),
-        "i32_add_d2": asm.adds_reg(Reg.R4, Reg.R5, Reg.R4),
-        "i32_sub_d2": asm.subs_reg(Reg.R4, Reg.R5, Reg.R4),
-        "i32_mul_d2": asm.mul(Reg.R4, Reg.R5, Reg.R4),
-        "i32_div_s_d2": asm.sdiv(Reg.R4, Reg.R5, Reg.R4),
-        "i32_div_u_d2": asm.udiv(Reg.R4, Reg.R5, Reg.R4),
-        "i32_rem_s_d2": asm.sdiv(Reg.R12, Reg.R5, Reg.R4)
-        + asm.mls(Reg.R4, Reg.R12, Reg.R4, Reg.R5),
-        "i32_rem_u_d2": asm.udiv(Reg.R12, Reg.R5, Reg.R4)
-        + asm.mls(Reg.R4, Reg.R12, Reg.R4, Reg.R5),
-        "i32_and_d2": asm.ands_reg(Reg.R4, Reg.R5),
-        "i32_or_d2": asm.orrs_reg(Reg.R4, Reg.R5),
-        "i32_xor_d2": asm.eors_reg(Reg.R4, Reg.R5),
-        "i32_shl_d2": asm.lsl_w(Reg.R4, Reg.R5, Reg.R4),
-        "i32_shr_s_d2": asm.asr_w(Reg.R4, Reg.R5, Reg.R4),
-        "i32_shr_u_d2": asm.lsr_w(Reg.R4, Reg.R5, Reg.R4),
-        "i32_rotr_d2": asm.ror_w(Reg.R4, Reg.R5, Reg.R4),
-        "i32_clz_d1": asm.clz(Reg.R4, Reg.R4),
-        "i32_ctz_d1": asm.rbit(Reg.R4, Reg.R4) + asm.clz(Reg.R4, Reg.R4),
-        "i32_load_r8": asm.ldr_w_reg(Reg.R4, Reg.R8, Reg.R4),
-        "i32_store_r8": asm.str_w_reg(Reg.R4, Reg.R8, Reg.R5),
+        "local_get_d0": asm.ldr_imm(Reg.R3, Reg.R2, 0),
+        "local_set_d1": asm.str_imm(Reg.R3, Reg.R2, 0),
+        "local_tee_d1": asm.str_imm(Reg.R3, Reg.R2, 0),
+        "global_get_d0": asm.ldr_w_imm12(Reg.R12, Reg.R0, 0x30)
+        + asm.ldr_w_imm12(Reg.R3, Reg.R12, 0),
+        "global_set_d1": asm.ldr_w_imm12(Reg.R12, Reg.R0, 0x30)
+        + asm.str_w_imm12(Reg.R3, Reg.R12, 0),
+        "memory_size_d0": asm.ldr_w_imm12(Reg.R3, Reg.R0, 0x2C),
+        "i32_add_d2": asm.adds_reg(Reg.R3, Reg.R4, Reg.R3),
+        "i32_sub_d2": asm.subs_reg(Reg.R3, Reg.R4, Reg.R3),
+        "i32_mul_d2": asm.mul(Reg.R3, Reg.R4, Reg.R3),
+        "i32_div_s_d2": asm.sdiv(Reg.R3, Reg.R4, Reg.R3),
+        "i32_div_u_d2": asm.udiv(Reg.R3, Reg.R4, Reg.R3),
+        "i32_rem_s_d2": asm.sdiv(Reg.R12, Reg.R4, Reg.R3)
+        + asm.mls(Reg.R3, Reg.R12, Reg.R3, Reg.R4),
+        "i32_rem_u_d2": asm.udiv(Reg.R12, Reg.R4, Reg.R3)
+        + asm.mls(Reg.R3, Reg.R12, Reg.R3, Reg.R4),
+        "i32_and_d2": asm.ands_reg(Reg.R3, Reg.R4),
+        "i32_or_d2": asm.orrs_reg(Reg.R3, Reg.R4),
+        "i32_xor_d2": asm.eors_reg(Reg.R3, Reg.R4),
+        "i32_shl_d2": asm.lsl_w(Reg.R3, Reg.R4, Reg.R3),
+        "i32_shr_s_d2": asm.asr_w(Reg.R3, Reg.R4, Reg.R3),
+        "i32_shr_u_d2": asm.lsr_w(Reg.R3, Reg.R4, Reg.R3),
+        "i32_rotr_d2": asm.ror_w(Reg.R3, Reg.R4, Reg.R3),
+        "i32_clz_d1": asm.clz(Reg.R3, Reg.R3),
+        "i32_ctz_d1": asm.rbit(Reg.R3, Reg.R3) + asm.clz(Reg.R3, Reg.R3),
+        "i32_load_r8": asm.ldr_w_reg(Reg.R3, Reg.R8, Reg.R3),
+        "i32_store_r8": asm.str_w_reg(Reg.R3, Reg.R8, Reg.R4),
     }
     for name, encoded in checks.items():
         catalog_hex = engine.stencils[name].hex_bytes
@@ -1022,7 +1019,7 @@ def test_stencil_catalog_matches_assembler() -> None:
         )
 
     # i32_const_d1 prepends a plain register MOV ahead of the shared MOVW/MOVT pair.
-    const_d1_expected = h(asm.mov_reg(Reg.R5, Reg.R4) + asm.movw(Reg.R4, 0) + asm.movt(Reg.R4, 0))
+    const_d1_expected = h(asm.mov_reg(Reg.R4, Reg.R3) + asm.movw(Reg.R3, 0) + asm.movt(Reg.R3, 0))
     assert const_d1_expected == engine.stencils["i32_const_d1"].hex_bytes, (
         f"Stencil 'i32_const_d1' drifted from the assembler: "
         f"catalog={engine.stencils['i32_const_d1'].hex_bytes!r} assembler={const_d1_expected!r}"
@@ -1038,20 +1035,20 @@ def test_stencil_catalog_matches_assembler() -> None:
     assert call_hex.endswith(pop_expected), (
         f"Stencil 'external_call_stub' POP half drifted: catalog={call_hex!r} expected suffix={pop_expected!r}"
     )
-    # i32_rotl_d2: RSB r12,r4,#32 (amount = 32 - shift) then ROR.W r4,r5,r12. R12 scratch,
-    # not R2/R3 -- those are the fixed-role local_base/tos registers.
-    rotl_expected = h(asm.rsb_imm(Reg.R12, Reg.R4, 32) + asm.ror_w(Reg.R4, Reg.R5, Reg.R12))
+    # i32_rotl_d2: RSB r12,r3,#32 (amount = 32 - shift) then ROR.W r3,r4,r12. R12 scratch,
+    # R2 is local_base, R3 is TOS.
+    rotl_expected = h(asm.rsb_imm(Reg.R12, Reg.R3, 32) + asm.ror_w(Reg.R3, Reg.R4, Reg.R12))
     assert rotl_expected == engine.stencils["i32_rotl_d2"].hex_bytes, (
         f"Stencil 'i32_rotl_d2' drifted from the assembler: "
         f"catalog={engine.stencils['i32_rotl_d2'].hex_bytes!r} assembler={rotl_expected!r}"
     )
-    # i32_eqz_d1: CMP r4,#0 ; IT EQ ; MOVEQ r4,#1 ; IT NE ; MOVNE r4,#0.
+    # i32_eqz_d1: CMP r3,#0 ; IT EQ ; MOVEQ r3,#1 ; IT NE ; MOVNE r3,#0.
     eqz_expected = h(
-        asm.cmp_imm8(Reg.R4, 0)
+        asm.cmp_imm8(Reg.R3, 0)
         + asm.it(Cond.EQ, 0b1000)
-        + asm.movs_imm8(Reg.R4, 1)
+        + asm.movs_imm8(Reg.R3, 1)
         + asm.it(Cond.NE, 0b1000)
-        + asm.movs_imm8(Reg.R4, 0)
+        + asm.movs_imm8(Reg.R3, 0)
     )
     assert eqz_expected == engine.stencils["i32_eqz_d1"].hex_bytes, (
         f"Stencil 'i32_eqz_d1' drifted from the assembler: "
@@ -1088,12 +1085,11 @@ def test_arithmetic_and_logic_traces() -> None:
     assert engine.barrier_flushes == 1
     code = engine.execute_native(start_pos, count)
     assert code[0] == "PUSH.W {r4-r6, r8-r11, lr}"
-    # ops include i32.load/i32.store, so the prologue also pins R8=mem_base/R9=mem_size,
-    # and the trace grows a trap tail (FastAddressCheck fallback to the interpreter) after
-    # the normal return path.
-    assert code[1] == "LDR.W r8, [r1, #0x20]"
-    assert code[2] == "LDR.W r9, [r1, #0x24]"
-    assert "MOVW r4, #100" in code[3]
+    # ops include i32.load/i32.store, so the prologue also pins R8=mem_base/R9=mem_size
+    # from execution_context (R0) at +0x28 and +0x2C
+    assert code[1] == "LDR.W r8, [r0, #0x28]"
+    assert code[2] == "LDR.W r9, [r0, #0x2C]"
+    assert "MOVW r3, #100" in code[3]
     assert "POP.W {r4-r6, r8-r11, pc}" in code
     assert code[-1] == "BX r12"
 
@@ -1115,7 +1111,16 @@ def test_control_flow_and_all_48_opcodes() -> None:
     start_pos, count = engine.compile_trace(ops_delim, exit_kind="return")
     code_delim = engine.execute_native(start_pos, count)
     # The only instruction emitted from ops_delim should be the i32.const (MOVW+MOVT)
-    body_insts = [c for c in code_delim if not c.startswith("PUSH") and not c.startswith("POP")]
+    body_insts = [
+        c
+        for c in code_delim
+        if not c.startswith("PUSH")
+        and not c.startswith("POP")
+        and not c.startswith("STR.W r1, [r0")
+        and not c.startswith("MOVW r6")
+        and not c.startswith("MOVT r6")
+        and not c.startswith("STR.W r6, [r0")
+    ]
     assert len(body_insts) == 2, f"Delimiters were not eliminated: {body_insts}"
 
     # 2. Inlined return
@@ -1128,9 +1133,8 @@ def test_control_flow_and_all_48_opcodes() -> None:
     ops_br = [("br", (0x1000, 16))]
     start_pos, count = engine.compile_trace(ops_br, exit_kind="return")
     code_br = engine.execute_native(start_pos, count)
-    assert "LDR.W r12, [r1, #0x18]" in code_br
-    assert "ADD.W r12, r12, #16" in code_br
-    assert "STR.W r12, [r1, #0x18]" in code_br
+    assert "SUBS r1, #16" in code_br
+    assert "STR.W r1, [r0, #0x0C]" in code_br
     assert "B.W 0x00001000" in code_br
 
     # 4. Full 48 Opcode Coverage Sweep
@@ -1217,8 +1221,8 @@ def test_external_aapcs_call_stub() -> None:
 
 
 def test_cps_shared_registers_never_clobbered() -> None:
-    """ADR_TosCacheAsymmetry: Shared R0/R1/R2/R3 are never clobbered by trace ALU/loads/local
-    access -- every stencil's own cached value lives in R4 (see VARIANT_REGISTER_MAPS)."""
+    """ADR_TosCacheAsymmetry: Shared R0 (ctx) and R2 (local_base) are never clobbered
+    by trace ALU/loads/local access (R3 is TOS cache)."""
     engine = CopyPatchJITEngine()
     ops = [
         ("i32.const", 42),
@@ -1247,8 +1251,8 @@ def test_cps_shared_registers_never_clobbered() -> None:
         ):
             continue
         dest = operands.split(",")[0].strip()
-        assert dest not in ("r0", "r1", "r2", "r3", "R0", "R1", "R2", "R3"), (
-            f"Instruction '{inst}' illegal write to shared CPS register"
+        assert dest not in ("r0", "r2", "R0", "R2"), (
+            f"Instruction '{inst}' illegal write to shared ctx/local_base register"
         )
 
 
@@ -1264,11 +1268,11 @@ def test_fast_address_check_traps_before_access() -> None:
     ops = [("i32.const", 0), ("i32.load", None)]
     start_pos, count = engine.compile_trace(ops)
     code = engine.execute_native(start_pos, count)
-    assert "CMP r4, r9" in code
+    assert "CMP r3, r9" in code
     assert "BHS.W <trap>" in code
-    assert "LDR.W r4, [r8, r4]" in code
+    assert "LDR.W r3, [r8, r3]" in code
     # The bounds check + branch must be emitted strictly before the access it guards.
-    assert code.index("BHS.W <trap>") < code.index("LDR.W r4, [r8, r4]")
+    assert code.index("BHS.W <trap>") < code.index("LDR.W r3, [r8, r3]")
     assert len(engine.last_oob_fixups) == 1
     assert engine.last_trap_tail_byte_addr is not None
     branch_byte_addr = engine.last_oob_fixups[0]
@@ -1326,7 +1330,7 @@ def test_variant_reconciliation_glue_same_variant_emits_nothing() -> None:
 
 def test_variant_reconciliation_glue_subset_emits_nothing() -> None:
     """A Depth-2 exit feeding a Depth-1 entry needs no reconciliation either: the
-    entry only reads TOS (R4), which the Depth-2 layout already has in R4 too."""
+    entry only reads TOS (R3), which the Depth-2 layout already has in R3 too."""
     engine = CopyPatchJITEngine()
     engine.begin_jit_patch()
     start_pos = engine.byte_write_pos
@@ -1355,60 +1359,61 @@ def test_variant_reconciliation_glue_emits_real_swap_bytes() -> None:
     hardware is proven separately in jit_trace_execution_verifier.py (Unicorn)."""
     engine = CopyPatchJITEngine()
     asm = Thumb2Assembler()
-    # A synthetic alt-Depth-2 layout (TOS=R5, NOS=R4) swapped relative to the real one,
+    # A synthetic alt-Depth-2 layout (TOS=R4, NOS=R3) swapped relative to the real one,
     # standing in for a hypothetical future allocator output -- not a real variant_id.
     engine.begin_jit_patch()
     start_pos = engine.byte_write_pos
-    moves = {Reg.R4: Reg.R5, Reg.R5: Reg.R4}
+    moves = {Reg.R3: Reg.R4, Reg.R4: Reg.R3}
     for dst, src in _order_register_moves(moves):
         engine._emit_bytes(asm.mov_reg(dst, src))
     engine.commit_jit_patch()
     emitted = bytes(engine.byte_cache[start_pos : engine.byte_write_pos])
     expected = (
-        asm.mov_reg(Reg.R12, Reg.R4) + asm.mov_reg(Reg.R4, Reg.R5) + asm.mov_reg(Reg.R5, Reg.R12)
+        asm.mov_reg(Reg.R12, Reg.R3) + asm.mov_reg(Reg.R3, Reg.R4) + asm.mov_reg(Reg.R4, Reg.R12)
     )
     assert emitted == expected
 
 
 def test_order_register_moves_breaks_swap_cycle_correctly() -> None:
-    """A straight R4<->R5 swap is the classic case a naive move-ordering corrupts: emitting
-    MOV r4,r5 then MOV r5,r4 would make r5 end up equal to r4's NEW (already-overwritten)
+    """A straight R3<->R4 swap is the classic case a naive move-ordering corrupts: emitting
+    MOV r3,r4 then MOV r4,r3 would make r4 end up equal to r3's NEW (already-overwritten)
     value instead of its original one. _order_register_moves must route through R12."""
-    moves = _order_register_moves({Reg.R4: Reg.R5, Reg.R5: Reg.R4})
-    assert moves == [(Reg.R12, Reg.R4), (Reg.R4, Reg.R5), (Reg.R5, Reg.R12)]
+    moves = _order_register_moves({Reg.R3: Reg.R4, Reg.R4: Reg.R3})
+    assert moves == [(Reg.R12, Reg.R3), (Reg.R3, Reg.R4), (Reg.R4, Reg.R12)]
 
 
 def test_epilogue_spill_variable_flush() -> None:
-    """Verify that dirty spill variables (TOS/NOS, registers) are flushed to stack before POP/BX."""
+    """Verify that dirty spill variables (TOS/NOS, registers) are flushed to stack and context is synced before POP/BX."""
     engine = CopyPatchJITEngine()
     ops = [
         ("i32.const", 10),
         ("local.get", 4),
         ("i32.add", None),
     ]
-    # Compile with dirty spills: R4 (TOS) to stack offset 0, R8 (local[0]) to stack offset 8
+    # Compile with dirty spills: R3 (TOS) to stack offset 0, R4 (NOS) to stack offset 4
     start_pos, count = engine.compile_trace(
-        ops, exit_kind="fallback", dirty_spills=[("r4", 0), ("r8", 8)]
+        ops, exit_kind="fallback", dirty_spills=[("r3", 0), ("r4", 4)]
     )
     code = engine.execute_native(start_pos, count)
     # Check spill flush STR instructions before POP
-    assert "STR r4, [r1, #0]" in code
-    assert "STR r8, [r1, #8]" in code
+    assert "STR r3, [r1, #0]" in code
+    assert "STR r4, [r1, #4]" in code
+    assert "STR.W r1, [r0, #0x0C]" in code
+    assert "STR.W r6, [r0, #0x00]" in code
     assert "POP.W {r4-r6, r8-r11, lr}" in code
     assert "BX r12" in code
 
 
 def test_epilogue_flush_d1_before_return() -> None:
-    """A genuine exit_kind="return" must flush TOS(R4) to its canonical address
-    before POP -- nothing preserves R4 past the POP.W {..., pc} that follows.
-    Matches STENCIL_EPILOGUE_FLUSH_D1 (docs/specs/jit_stencil_catalog.md 3.1)."""
+    """A genuine exit_kind="return" must flush TOS(R3) to its canonical address
+    and sync context before POP -- nothing preserves R3 past the POP.W {..., pc} that follows."""
     engine = CopyPatchJITEngine()
     ops = [("i32.const", 10)]
-    start_pos, count = engine.compile_trace(ops, exit_kind="return", dirty_spills=[("r4", 0)])
+    start_pos, count = engine.compile_trace(ops, exit_kind="return", dirty_spills=[("r3", 0)])
     code = engine.execute_native(start_pos, count)
-    str_idx = code.index("STR r4, [r1, #0]")
+    str_idx = code.index("STR r3, [r1, #0]")
     pop_idx = code.index("POP.W {r4-r6, r8-r11, pc}")
-    assert str_idx < pop_idx, "TOS must be flushed to memory before the POP that destroys R4"
+    assert str_idx < pop_idx, "TOS must be flushed to memory before the POP that destroys R3"
 
 
 def test_chain_branch_skips_flush_and_epilogue() -> None:
@@ -1417,7 +1422,7 @@ def test_chain_branch_skips_flush_and_epilogue() -> None:
     1. LDR.W r12 from inlined header (+0x0C)
     2. CMP.W r12, #0
     3. BNE.W <skip_epilogue_to_chain> (skips spill flush & POP PC)
-    4. Epilogue fallback: STR (flush) + POP.W (return to interpreter)
+    4. Epilogue fallback: STR (flush) + SP/IP sync + POP.W (return to interpreter)
     5. Chain jump: BX r12 (jumps directly to successor's chain_entry past prologue).
     When chain_target_addr is resolved (!= 0), BNE.W executes and skips the epilogue entirely.
     When unresolved (== 0), it falls through and executes the epilogue.
@@ -1425,14 +1430,15 @@ def test_chain_branch_skips_flush_and_epilogue() -> None:
     engine = CopyPatchJITEngine()
     ops = [("i32.const", 10)]
     start_pos, count = engine.compile_trace(
-        ops, exit_kind="chain", dirty_spills=[("r4", 0)], chain_target_addr=0
+        ops, exit_kind="chain", dirty_spills=[("r3", 0)], chain_target_addr=0
     )
     code = engine.execute_native(start_pos, count)
-    # Both paths are statically in the binary, avoiding in-place machine code patching:
     assert any("LDR.W r12, [header_target" in c for c in code)
     assert "CMP.W r12, #0" in code
     assert "BNE.W <skip_epilogue_to_chain>" in code
-    assert "STR r4, [r1, #0]" in code
+    assert "STR r3, [r1, #0]" in code
+    assert "STR.W r1, [r0, #0x0C]" in code
+    assert "STR.W r6, [r0, #0x00]" in code
     assert "POP.W {r4-r6, r8-r11, pc}" in code
     assert "BX r12" in code
 
@@ -1441,7 +1447,7 @@ def test_chain_branch_skips_flush_and_epilogue() -> None:
     bx_idx = code.index("BX r12")
     assert bne_idx < bx_idx
     # Epilogue is strictly between BNE.W and BX r12
-    str_idx = code.index("STR r4, [r1, #0]")
+    str_idx = code.index("STR r3, [r1, #0]")
     pop_idx = code.index("POP.W {r4-r6, r8-r11, pc}")
     assert bne_idx < str_idx < pop_idx < bx_idx
 

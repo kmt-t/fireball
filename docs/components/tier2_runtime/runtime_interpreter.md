@@ -1,4 +1,4 @@
-どきゅめんと# Interpreter コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}
+# Interpreter コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}
 <!-- evidence:
      formal: formal/vsoc_state_model.py
      concept: concepts/interpreter_concept.py
@@ -17,7 +17,7 @@ Interpreter は、WASM命令をスレッドインタープリタ方式で実行�
 
 ### 3.1 データ構造
 - **`Interpreter`**: WASM命令の実行、コンテキスト管理、および外部環境（vSoC）との連携をカプセル化した主要クラス。
-- **`execution_context`**: 仮想CPUレジスタ、下記3本のスタックそれぞれの頂点オフセット・境界、リニアメモリ情報等を保持する固定サイズの構造体。
+- **`execution_context`**: 仮想CPUレジスタ、下記3本のスタックそれぞれの領域開始・終端・オフセット、リニアメモリ情報等を保持する固定サイズの構造体（計60バイト、15フィールド）。
 - **`OperandStack`（オペランドスタック）**: WASM のオペランド値のみを保持する、コールチェーン全体を貫く1本の固定容量スタック。呼び出しごとに区切られたり作り直されたりはせず、呼び出しは「現在の頂点からどれだけ積んだか」を1つ記憶するだけで、関数を跨いでも連続している。
 - **`LocalStack`（ローカル変数スタック）**: 関数呼び出しごとに `call_frame`（戻り先PC・関数インデックス等の呼び出しメタデータ）とその関数のローカル変数配列をひとまとめにした1ブロックを push し、関数復帰時に pop する、コールチェーン全体を貫く1本の固定容量スタック。個々の呼び出しの中では固定サイズだが、呼び出し全体で見れば `OperandStack`・`control_frame` スタックと同じ LIFO の伸び縮みをする。
 - **`control_frame` スタック**: `block`/`loop`/`if` の入れ子を管理する固定容量スタック。
@@ -26,7 +26,7 @@ Interpreter は、WASM命令をスレッドインタープリタ方式で実行�
 ### 3.2 内部ブロック図
 ```mermaid
 graph TD
-    Ctx[execution_context<br/>各スタックの頂点/境界を保持]
+    Ctx[execution_context<br/>各スタックの領域/境界/オフセットを保持]
 
     subgraph Operand_Stack_Memory["OperandStack: 固定容量バッファ1"]
         Op0[Caller's Operands]
@@ -43,10 +43,10 @@ graph TD
         Ctrl1[ControlFrame 1]
     end
 
-    Engine[Interpreter Engine] -- R1: stack_bot --> Ctx
-    Ctx -. "頂点オフセットで参照" .-> Op1
-    Ctx -. "頂点オフセットで参照" .-> Loc1
-    Ctx -. "頂点オフセットで参照" .-> Ctrl1
+    Engine[Interpreter Engine] -- R0: ctx --> Ctx
+    Ctx -. "オフセットで参照" .-> Op1
+    Ctx -. "オフセットで参照" .-> Loc1
+    Ctx -. "オフセットで参照" .-> Ctrl1
     Op0 -- "下から上へ成長・関数を跨いで連続" --> Op1
     Loc0 -- "下から上へ成長" --> Loc1
     Ctrl0 -- "下から上へ成長" --> Ctrl1
@@ -60,7 +60,7 @@ graph TD
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| 統合コンテキスト | 実行コンテキストおよびリニアメモリ情報（stack_bot） | 構造体への参照 | `execution_context` (非所有) |
+| 統合コンテキスト | 実行コンテキストおよびリニアメモリ情報（ctx） | 構造体への参照 | `execution_context` (非所有) |
 | ハンドラテーブル | 命令ハンドラへのジャンプテーブル | テーブルポインタ | 関数ポインタの配列 |
 
 #### 実行コンテキスト（execution_context）
@@ -68,36 +68,40 @@ graph TD
 WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想CPUレジスタ群として設計する。 `{PositionIndependentCode}` `{ContextPointerRegister}`
 
 **独立した固定構造体としての配置 (`{ContextPointerRegister}`)**:
-`execution_context` は、`OperandStack`・`LocalStack`・`control_frame` スタック（いずれも互いに独立した固定容量バッファ）のいずれにもインライン配置されない、単体の固定サイズ構造体である。ハンドラ呼び出しの第2引数（`R1: stack_bot`）として渡される。`R2` はカレントの `call_frame`（`LocalStack` 内）のローカル変数配列先頭を指す `local_base`（第3引数）として、`R3` はオペランドスタックのスタックトップ値 `tos`（第4引数）として直接引き回す。3本のスタックそれぞれの現在位置は `execution_context` 内のオフセットフィールドとして保持し、各バッファ自体の物理ベースアドレスはビルド時に固定される静的配列であるため、追加のベースポインタレジスタを消費しない。 `{ContextPointerRegister}` `{JIT_RegisterMapping}` `{AAPCS_FastCall}`
+`execution_context` は、`OperandStack`・`LocalStack`・`control_frame` スタック（いずれも互いに独立した固定容量バッファ）のいずれにもインライン配置されない、単体の固定サイズ構造体（計60バイト、15フィールド）である。ハンドラ呼び出しの第1引数（`R0: ctx`）として渡される。`R1` はオペランドスタックポインタ（`sp`、第2引数）、`R2` はカレントの `call_frame`（`LocalStack` 内）のローカル変数配列先頭を指す `local_base`（第3引数）として、`R3` はオペランドスタックのスタックトップ値 `tos`（第4引数）として直接引き回す。基本ブロック末尾では、スタックがプッシュされた場合に `TOS, NOS, NNOS` をオペランドスタック（`[R1, #offset]`）へフラッシュし、コンテキスト `R0` の `ip`（`+0x00`）および `sp_offset`（`+0x0C`）を書き換えて状態を完全同期する。 `{ContextPointerRegister}` `{JIT_RegisterMapping}` `{AAPCS_FastCall}`
 
 ##### CPS 4引数 仮想CPUレジスタ（ディスパッチ境界での引数受渡し）
 
 | 項目名 | 機能と役割 | 型分類 | 物理レジスタ |
 | :--- | :--- | :--- | :--- |
-| プログラムカウンタ | 現在実行中の命令を指し示す統一プログラムカウンタ（UnifiedPC: `(func_index << 16) \| bytecode_offset`） | 統一オフセット | `R0: ip` |
-| スタックボトム基底 | `execution_context` 自身へのポインタ | 物理レジスタ | `R1: stack_bot` `{ContextPointerRegister}` |
+| 実行コンテキスト基底 | `execution_context` 構造体自身へのポインタ | 物理レジスタ | `R0: ctx` `{ContextPointerRegister}` |
+| オペランドスタックポインタ | `OperandStack` 現在のスタックトップ位置を指すポインタ | 物理レジスタ | `R1: sp` (`{AAPCS_FastCall}` 準拠) |
 | ローカル変数基底 | カレントコールフレームのローカル変数配列基底ポインタ | 物理レジスタ | `R2: local_base` (`{AAPCS_FastCall}` 準拠) |
 | スタックトップ (TOS) | `OperandStack` 最上位値（スタックトップ）を直接保持するレジスタ | 物理レジスタ | `R3: tos` (`{AAPCS_FastCall}` 準拠) |
 
-##### `execution_context` 物理メモリレイアウト（11フィールド / 計44バイト）
+##### `execution_context` 物理メモリレイアウト（15フィールド / 計60バイト）
 
-`[R1, #0x00]`〜`[R1, #0x2B]` に配置される固定構造体メモリフィールド：
+`[R0, #0x00]`〜`[R0, #0x38]` に配置される固定構造体メモリフィールド：
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・オフセット |
 | :--- | :--- | :--- | :--- |
-| オペランドスタック頂点オフセット | `OperandStack` バッファ先頭からの現在の頂点オフセット。コール境界を跨いでも連続しており、関数呼び出しのたびにリセットされない | 長さ/オフセット | 4バイト (`[R1, #0x00]`) |
-| オペランドスタック境界上限 | `OperandStack` バッファ自体のオーバーフロー検知用上限オフセット | 長さ/オフセット | 4バイト (`[R1, #0x04]`) |
-| ローカルスタック頂点オフセット | `LocalStack` バッファ先頭からの、次に `call_frame`+ローカル変数ブロックを push する位置のオフセット | オフセット | 4バイト (`[R1, #0x08]`) |
-| カレントフレームオフセット | 現在アクティブな `call_frame` の `LocalStack` バッファ先頭からの開始オフセット | オフセット | 4バイト (`[R1, #0x0C]`) |
-| ローカルスタック境界上限 | `LocalStack` バッファ自体のオーバーフロー検知用上限オフセット | 長さ/オフセット | 4バイト (`[R1, #0x10]`) |
-| 制御フレームスタック頂点オフセット | `control_frame` バッファ先頭からの現在の頂点オフセット/深さ。上記2本とは完全に独立して管理される（ADR-INTERP-03） | 長さ/オフセット | 4バイト (`[R1, #0x14]`) |
-| 制御フレームスタック境界上限 | `control_frame` バッファ自体のオーバーフロー検知用上限オフセット | 長さ/オフセット | 4バイト (`[R1, #0x18]`) |
-| 有効命令ハンドラ | 現在使用されているハンドラ（通常用/デバッグ用）への参照 | テーブルポインタ | 4バイト (`[R1, #0x1C]`) |
-| ゲストメモリ基底 (mem_base) | ゲストリニアメモリの開始アドレス | メモリアドレス | 4バイト (`[R1, #0x20]`) |
-| ゲストメモリサイズ (mem_size) | ゲストリニアメモリの有効バイト数（境界チェック比較用） | メモリサイズ | 4バイト (`[R1, #0x24]`) |
-| グローバル配列基底 (globals_base) | WASM global 配列の開始アドレス | メモリアドレス | 4バイト (`[R1, #0x28]`) |
+| プログラムカウンタ (ip) | 現在または復帰時の WASM PC | 統一オフセット | 4バイト (`[R0, #0x00]`) |
+| SP領域開始位置 (sp_base) | `OperandStack` バッファ先頭アドレス | アドレス | 4バイト (`[R0, #0x04]`) |
+| SP領域終端位置 (sp_limit) | `OperandStack` バッファ終端アドレス（オーバーフロー検知用） | アドレス | 4バイト (`[R0, #0x08]`) |
+| SPオフセット (sp_offset) | `OperandStack` 現在の頂点オフセット/アドレス | 長さ/アドレス | 4バイト (`[R0, #0x0C]`) |
+| ローカル変数領域開始位置 (local_base_addr) | `LocalStack` バッファ先頭アドレス | アドレス | 4バイト (`[R0, #0x10]`) |
+| ローカル変数領域終端位置 (local_limit_addr) | `LocalStack` バッファ終端アドレス（オーバーフロー検知用） | アドレス | 4バイト (`[R0, #0x14]`) |
+| ローカル変数オフセット (local_offset) | 現在アクティブな `call_frame` の開始オフセット | オフセット | 4バイト (`[R0, #0x18]`) |
+| コールフレーム領域開始位置 (cf_base_addr) | `control_frame` バッファ先頭アドレス | アドレス | 4バイト (`[R0, #0x1C]`) |
+| コールフレーム領域終了位置 (cf_limit_addr) | `control_frame` バッファ終端アドレス（オーバーフロー検知用） | アドレス | 4バイト (`[R0, #0x20]`) |
+| コールフレームオフセット (cf_offset) | `control_frame` 現在の頂点オフセット/深さ | 長さ/オフセット | 4バイト (`[R0, #0x24]`) |
+| リニアメモリ開始アドレス (mem_base) | ゲストリニアメモリの開始アドレス | メモリアドレス | 4バイト (`[R0, #0x28]`) |
+| リニアメモリサイズ (mem_size) | ゲストリニアメモリの有効バイト数（境界チェック比較用） | メモリサイズ | 4バイト (`[R0, #0x2C]`) |
+| グローバル変数領域開始位置 (globals_base) | WASM global 配列の開始アドレス | メモリアドレス | 4バイト (`[R0, #0x30]`) |
+| グローバル変数領域終端位置 (globals_limit) | WASM global 配列の終端アドレス | メモリアドレス | 4バイト (`[R0, #0x34]`) |
+| ハンドラテーブル (handler_table) | 命令ハンドラへのジャンプテーブルポインタ | テーブルポインタ | 4バイト (`[R0, #0x38]`) |
 
-`execution_context` 構造体実体は上記 11 フィールド（すべて 32bit / 4バイト）から構成され、計44バイト（`[R1, #0x00]`〜`[R1, #0x2B]`）である。3本のスタックそれぞれの頂点・境界を独立したフィールドとして持つことで、いずれか1本の伸び縮みが他の記録位置へ影響することは物理的にあり得ない。バイトオフセットの物理配置は `{ExecutionContext_Layout}` に記載する。
+`execution_context` 構造体実体は上記 15 フィールド（すべて 32bit / 4バイト）から構成され、計60バイト（`[R0, #0x00]`〜`[R0, #0x38]`）である。3本のスタックそれぞれの領域開始・終端・オフセットを対称なフィールドとして持つことで、いずれか1本の伸び縮みが他の記録位置へ影響することは物理的にあり得ない。バイトオフセットの物理配置は `{ExecutionContext_Layout}` に記載する。
 
 **TOS レジスタキャッシングとスタック同期不変条件 (`INTP-GOTCHA-01`)**:
 オペランドスタックの最上位要素（Top-of-Stack: TOS）を常に物理レジスタ `R3: tos` に常駐させることで、メモリアクセス回数を半減させ、スタック操作命令（`i32.add`, `local.get` 等）の実行性能を最大化する。各命令ハンドラの入口において、直前の演算結果は `R3` に保持されており、必要に応じて第2オペランドのみをスタックバッファからポップする。ハンドラを脱出して関数呼び出しや外部システムコール、JIT 遷移を行う境界においては、TOS レジスタの値をメインスタック配列へ書き戻して（フラッシュ）同期させる。
@@ -187,31 +191,31 @@ flowchart TD
 
 #### オプコードハンドラ / トレース実行（opcode_handler / exec_trace）
 <!-- traceability: {JIT_RuntimeAPI_Fallback} {ContextPointerRegister} {EnvironmentPointer} {JIT_RegisterMapping} {ADR_TosCacheAsymmetry} -->
-命令ハンドラおよびJITトレースの共通実行シグネチャ。継続渡し（Continuation Passing Style: CPS）と `__fastcall` 呼び出し規約により、ホットな実行変数を物理レジスタに直接載せてハンドラ間で引き継ぐ。スタックボトム渡し（`stack_bot`）および第4引数ローカル変数基底（`local_base`）渡しにより、4引数シグネチャに統一している。 `{JIT_RuntimeAPI_Fallback}` `{ContextPointerRegister}` `{EnvironmentPointer}` `{JIT_RegisterMapping}`
+命令ハンドラおよびJITトレースの共通実行シグネチャ。継続渡し（Continuation Passing Style: CPS）と `__fastcall` 呼び出し規約により、ホットな実行変数を物理レジスタに直接載せてハンドラ間で引き継ぐ。実行コンテキストポインタ（`ctx`）、オペランドスタックポインタ（`sp`）、ローカル変数基底（`local_base`）、スタックトップ値（`tos`）渡しにより、4引数シグネチャに統一している。 `{JIT_RuntimeAPI_Fallback}` `{ContextPointerRegister}` `{EnvironmentPointer}` `{JIT_RegisterMapping}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| 実行シグネチャ | `__fastcall` による継続渡し（CPS）4引数シグネチャ | 関数ポインタ | `void (__fastcall *)(const uint8_t* __restrict__ ip, execution_context* __restrict__ stack_bot, uint32_t* __restrict__ local_base, uint32_t tos) noexcept` |
-| レジスタ割り当て | ARM AAPCS / `__fastcall` 引数レジスタマッピング | 物理レジスタ | `R0`: `ip`, `R1`: `stack_bot`, `R2`: `local_base`, `R3`: `tos` (`{AAPCS_FastCall}` 準拠) |
+| 実行シグネチャ | `__fastcall` による継続渡し（CPS）4引数シグネチャ | 関数ポインタ | `void (__fastcall *)(execution_context* __restrict__ ctx, uint32_t* __restrict__ sp, uint32_t* __restrict__ local_base, uint32_t tos) noexcept` |
+| レジスタ割り当て | ARM AAPCS / `__fastcall` 引数レジスタマッピング | 物理レジスタ | `R0`: `ctx`, `R1`: `sp`, `R2`: `local_base`, `R3`: `tos` (`{AAPCS_FastCall}` 準拠) |
 
 WASM オプコードごとのスタック遷移およびハンドラ実装マトリクスは `{ThreadedInterpreter}` を参照。
 
 **スタックトップキャッシュ (`R3: tos`) のレジスタ受け渡しと対称性 (`{ADR_TosCacheAsymmetry}`)**:
-`env` は `execution_context`（`R1`）に内包され、独立した引数レジスタを消費しない。空いた **CPS 第4引数 `R3` はスタックトップ値（`tos`）を直接引き渡す**。これにより、インタープリタと JIT はトレース境界において `R3: tos` でスタックトップ値を対称に直接引き渡せ、トレース境界でのメモリ PUSH/POP アクセスを最小化する。JIT トレース内では `R4` が NOS（スタック次段キャッシュ）、`R5` が NNOS（スタック第3段キャッシュ）として割り当てられる。 `{ADR_TosCacheAsymmetry}` `{JIT_RegisterMapping}` `{AAPCS_FastCall}`
+`env` は `execution_context`（`R0`）に内包され、独立した引数レジスタを消費しない。空いた **CPS 第4引数 `R3` はスタックトップ値（`tos`）を直接引き渡す**。これにより、インタープリタと JIT はトレース境界において `R3: tos` でスタックトップ値を対称に直接引き渡せ、トレース境界でのメモリ PUSH/POP アクセスを最小化する。JIT トレース内では `R4` が NOS（スタック次段キャッシュ）、`R5` が NNOS（スタック第3段キャッシュ）として割り当てられる。基本ブロック末尾では、スタックがプッシュされた場合に `TOS, NOS, NNOS` をオペランドスタック（`[R1, #offset]`）へフラッシュし、コンテキスト `R0` の `ip`（`+0x00`）および `sp_offset`（`+0x0C`）を書き換えて状態を完全同期する。 `{ADR_TosCacheAsymmetry}` `{JIT_RegisterMapping}` `{AAPCS_FastCall}`
 
 ## 4. 動的モデル
 
 ### 4.1 アルゴリズム
 <!-- traceability: {ThreadedInterpreter} {JIT_RuntimeAPI_Fallback} {Interpreter_LazyJITSwitch} {LowLatencyJIT} {SimpleJITArchitecture} {Challenge_ApproximateYield} {Debug_Integrated} {ContextPointerRegister} {ADR_TosCacheAsymmetry} -->
 - **Threaded Dispatch with Continuation Passing Style (CPS)**: 命令ハンドラを連鎖させるテーブルディスパッチ方式で分岐コストを極小化する。
-  - ハンドラ関数型を `void __fastcall(const uint8_t* ip, execution_context* stack_bot, uint32_t* local_base, uint32_t tos) noexcept` に統一。
-  - `ip` (R0), `stack_bot` (R1 `{ContextPointerRegister}`), `local_base` (R2 `{ContextPointerRegister}` `{JIT_RegisterMapping}`), `tos` (R3 `{AAPCS_FastCall}`) のホットな変数を `__fastcall` 引数レジスタ上で保持・更新。
-  - `OperandStack`・`LocalStack`・`control_frame` それぞれの頂点/境界オフセット、およびリニアメモリ情報（`mem_base`, `mem_size`, `globals_base`）を `execution_context`（計44バイト）内で直接管理する。3本は互いに独立した固定容量バッファであり、`call_frame` は `LocalStack` へ、`control_frame` はその専用バッファへ、それぞれ独自に構築する。`R2` をローカル変数基底ポインタ `local_base`、`R3` をスタックトップ値 `tos` として直接引き回す。 `{ContextPointerRegister}` `{JIT_RegisterMapping}` `{AAPCS_FastCall}`
+  - ハンドラ関数型を `void __fastcall(execution_context* ctx, uint32_t* sp, uint32_t* local_base, uint32_t tos) noexcept` に統一。
+  - `ctx` (R0 `{ContextPointerRegister}`), `sp` (R1), `local_base` (R2 `{ContextPointerRegister}` `{JIT_RegisterMapping}`), `tos` (R3 `{AAPCS_FastCall}`) のホットな変数を `__fastcall` 引数レジスタ上で保持・更新。
+  - `OperandStack`・`LocalStack`・`control_frame` それぞれの領域開始・終端・オフセット、およびリニアメモリ情報（`mem_base`, `mem_size`, `globals_base`）、ハンドラテーブルを `execution_context`（計60バイト、15フィールド）内で直接管理する。3本は互いに独立した固定容量バッファであり、`call_frame` は `LocalStack` へ、`control_frame` はその専用バッファへ、それぞれ独自に構築する。`R2` をローカル変数基底ポインタ `local_base`、`R3` をスタックトップ値 `tos` として直接引き回す。 `{ContextPointerRegister}` `{JIT_RegisterMapping}` `{AAPCS_FastCall}`
   - 非制御命令では `[[clang::musttail]]` による直接末尾ジャンプ（Direct-Threaded Code）を行い、レジスタ上の引数をそのまま次のハンドラへ継続渡し（CPS）する。 `{ThreadedInterpreter}`
 - **JIT コードとの完全な呼び出し規約整合 (Low-Overhead Interop)**:
-  - JIT コンパイラが生成するネイティブトレース（`exec_trace`）も、インタープリタと全く同一の `__fastcall` CPS 4引数シグネチャ（R0=IP, R1=stack_bot, R2=local_base, R3=tos）に従う。
-  - **インタープリタ $\to$ JIT 遷移**: インタープリタから JIT コードへ移行する際、レジスタ上の `(ip, stack_bot, local_base, tos)` をそのまま渡して `exec_trace` へ直接ジャンプする。インタープリタと JIT は `R3: tos` を共有するため、スタックトップのメモリ経由ロード・ストアが不要化される。JIT 側は必要に応じて次段オペランド（NOS: `R4`）のみをスタックメモリからロードする（`{ADR_TosCacheAsymmetry}`）。
-  - **JIT $\to$ インタープリタ フォールバック (OSR / Exit)**: JIT トレース内で未サポート命令、トラップ、またはトレース終端に達した場合、レジスタ上の `(ip, stack_bot, local_base, tos)` をそのまま次のオプコードハンドラに渡して末尾ジャンプ（`BX`）する。**コンテキストの再構築（構造体への退避・復元、レジスタ再配置）は一切発生しない**。JIT 側が保持するスタック次段キャッシュ `R4`（NOS: ダーティな場合）および更新された `sp_offset` のみを統合スタック／コンテキスト構造体へ書き戻す。これが JIT ↔ インタープリタ遷移の唯一の極小コストである。 `{JIT_RuntimeAPI_Fallback}` `{LowLatencyJIT}` `{ADR_TosCacheAsymmetry}`
+  - JIT コンパイラが生成するネイティブトレース（`exec_trace`）も、インタープリタと全く同一の `__fastcall` CPS 4引数シグネチャ（R0=ctx, R1=SP, R2=local_base, R3=tos）に従う。
+  - **インタープリタ $\to$ JIT 遷移**: インタープリタから JIT コードへ移行する際、レジスタ上の `(ctx, sp, local_base, tos)` をそのまま渡して `exec_trace` へ直接ジャンプする。インタープリタと JIT は `R3: tos` を共有するため、スタックトップのメモリ経由ロード・ストアが不要化される。JIT 側は必要に応じて次段オペランド（NOS: `R4`）のみをスタックメモリからロードする（`{ADR_TosCacheAsymmetry}`）。
+  - **JIT $\to$ インタープリタ フォールバック (OSR / Exit)**: JIT トレース内で未サポート命令、トラップ、またはトレース終端に達した場合、基本ブロック末尾で `TOS, NOS, NNOS` をスタック（`[R1, #offset]`）へフラッシュし、コンテキスト `R0` の `ip`（`+0x00`）および `sp_offset`（`+0x0C`）を書き戻した上で、`BX r12` 等でインタープリタへ末尾ジャンプする。**コンテキストの再構築（構造体への退避・復元、レジスタ再配置）は一切発生しない**。これが JIT ↔ インタープリタ遷移の唯一の極小コストである。 `{JIT_RuntimeAPI_Fallback}` `{LowLatencyJIT}` `{ADR_TosCacheAsymmetry}`
 - **WASM命令とRuntime API / Libgcc ヘルパー連携 (`{Libgcc_Runtime_Helper}`)**: 各命令ハンドラはスタックボトム相対でオペランド/スタック長を更新する。特に 32-bit MCU でハードウェア支援がない 64-bit 整数演算（除算・剰余・シフト）や単精度/倍精度浮動小数点（`f32`/`f64`）演算は、`libgcc` ヘルパー関数（`__divdi3`, `__adddf3` 等）を呼び出す専用ランタイムヘルパー（`fireball_rt_*`）経由で実行し、FPU の有無や soft-float 差異を透過的に吸収する。 `{Libgcc_Runtime_Helper}` `{JIT_RuntimeAPI_Fallback}`
 - **ジャンプの高速化 (exec_trace)**: 制御命令（`br`, `br_if` 等）によるジャンプ先を `control_frame` 内の `exec_trace` に保持する。この値は、その `control_frame` が実際に積まれた時点（`block`/`loop`/`if` 命令自体は JIT トレースへ絶対に含まれないため、必ずインタープリタ経由で積まれる）でベーシックブロック単位の静的解析結果から書き込まれるものであり、深さ相対の分岐命令はその都度フレームを辿り直して分岐先を再計算するのではなく、この事前計算済みの値をそのまま使う（`INTP-GOTCHA-06`）。
 - **スタック Pruning (Label Arity対応)**: `br` 命令等の実行時、ジャンプ先の `control_frame` に記録された `結果アリティ` に基づき、スタック上のオペランドを残してスタック長を `保存済みスタック長` まで巻き戻す。これにより、Wasm 規定のスタック整合性を保証する。

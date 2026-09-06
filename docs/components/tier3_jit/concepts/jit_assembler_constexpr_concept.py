@@ -126,6 +126,14 @@ class Thumb2Assembler:
         return struct.pack("<H", code)
 
     @staticmethod
+    def subs_imm8(rd: Reg, imm8: int) -> bytes:
+        """SUBS Rd, #imm8 (16-bit) -> 3800 | (rd << 8) | imm8"""
+        _check_low_reg(rd)
+        _check_imm(imm8, 8)
+        code = 0x3800 | (rd << 8) | (imm8 & 0xFF)
+        return struct.pack("<H", code)
+
+    @staticmethod
     def add_w_imm12(rd: Reg, rn: Reg, imm12: int) -> bytes:
         """ADD.W Rd, Rn, #imm12 (32-bit Thumb-2 immediate add)"""
         _check_imm(imm12, 12)
@@ -133,6 +141,17 @@ class Thumb2Assembler:
         imm3 = (imm12 >> 8) & 0x7
         imm8 = imm12 & 0xFF
         hw1 = 0xF200 | (i << 10) | int(rn)
+        hw2 = (imm3 << 12) | (int(rd) << 8) | imm8
+        return struct.pack("<HH", hw1, hw2)
+
+    @staticmethod
+    def sub_w_imm12(rd: Reg, rn: Reg, imm12: int) -> bytes:
+        """SUB.W Rd, Rn, #imm12 (32-bit Thumb-2 immediate subtract)"""
+        _check_imm(imm12, 12)
+        i = (imm12 >> 11) & 0x1
+        imm3 = (imm12 >> 8) & 0x7
+        imm8 = imm12 & 0xFF
+        hw1 = 0xF2A0 | (i << 10) | int(rn)
         hw2 = (imm3 << 12) | (int(rd) << 8) | imm8
         return struct.pack("<HH", hw1, hw2)
 
@@ -414,6 +433,48 @@ class Thumb2Assembler:
         _check_imm(lsl, 2)
         hw1 = 0xF840 | rn
         hw2 = (rt << 12) | (lsl << 4) | rm
+        return struct.pack("<HH", hw1, hw2)
+
+    @staticmethod
+    def ldrsb_w(rt: Reg, rn: Reg, rm: Reg) -> bytes:
+        """LDRSB.W Rt, [Rn, Rm] (32-bit Thumb-2: F910 0000)"""
+        hw1 = 0xF910 | rn
+        hw2 = (rt << 12) | rm
+        return struct.pack("<HH", hw1, hw2)
+
+    @staticmethod
+    def ldrb_w(rt: Reg, rn: Reg, rm: Reg) -> bytes:
+        """LDRB.W Rt, [Rn, Rm] (32-bit Thumb-2: F810 0000)"""
+        hw1 = 0xF810 | rn
+        hw2 = (rt << 12) | rm
+        return struct.pack("<HH", hw1, hw2)
+
+    @staticmethod
+    def ldrsh_w(rt: Reg, rn: Reg, rm: Reg) -> bytes:
+        """LDRSH.W Rt, [Rn, Rm] (32-bit Thumb-2: F930 0000)"""
+        hw1 = 0xF930 | rn
+        hw2 = (rt << 12) | rm
+        return struct.pack("<HH", hw1, hw2)
+
+    @staticmethod
+    def ldrh_w(rt: Reg, rn: Reg, rm: Reg) -> bytes:
+        """LDRH.W Rt, [Rn, Rm] (32-bit Thumb-2: F830 0000)"""
+        hw1 = 0xF830 | rn
+        hw2 = (rt << 12) | rm
+        return struct.pack("<HH", hw1, hw2)
+
+    @staticmethod
+    def strb_w(rt: Reg, rn: Reg, rm: Reg) -> bytes:
+        """STRB.W Rt, [Rn, Rm] (32-bit Thumb-2: F800 0000)"""
+        hw1 = 0xF800 | rn
+        hw2 = (rt << 12) | rm
+        return struct.pack("<HH", hw1, hw2)
+
+    @staticmethod
+    def strh_w(rt: Reg, rn: Reg, rm: Reg) -> bytes:
+        """STRH.W Rt, [Rn, Rm] (32-bit Thumb-2: F820 0000)"""
+        hw1 = 0xF820 | rn
+        hw2 = (rt << 12) | rm
         return struct.pack("<HH", hw1, hw2)
 
     @staticmethod

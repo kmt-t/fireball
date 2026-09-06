@@ -9,6 +9,8 @@ pysim コードベース向け静的アンチパターンスキャナ。
 4. 関数引数・戻り値の型注釈欠落 (MISSING_TYPE_ANNOTATION)
 5. RTTI・動的型検査の使用 (NO_RTTI)
 6. bytearray の使用 (MUTABLE_BYTEARRAY)
+7. 実行時クラスでの __slots__ 欠落 (NO_SLOTS)
+8. 到達不能な if 分岐 (DEAD_IF_BRANCH)
 """
 
 from __future__ import annotations
@@ -91,6 +93,37 @@ class PySimASTVisitor(ast.NodeVisitor):
                     arg,
                     f"Parameter '{arg.arg}' of function '{node.name}' is missing type annotation.",
                 )
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        # Check __slots__ definition for non-enum/non-exception classes
+        base_names = [b.id for b in node.bases if isinstance(b, ast.Name)]
+        is_exempt = any(name in ("IntEnum", "Enum", "Exception", "RuntimeError", "ValueError", "TypedDict") for name in base_names)
+        if not is_exempt:
+            has_slots = any(
+                isinstance(stmt, ast.Assign)
+                and any(isinstance(target, ast.Name) and target.id == "__slots__" for target in stmt.targets)
+                for stmt in node.body
+            )
+            if not has_slots:
+                self._add_issue(
+                    "NO_SLOTS",
+                    "WARNING",
+                    node,
+                    f"Class '{node.name}' does not define '__slots__'. Add __slots__ to eliminate dynamic __dict__ RAM overhead.",
+                )
+        self.generic_visit(node)
+
+    def visit_If(self, node: ast.If) -> None:
+        # Check constant falsy condition (dead branch)
+        if isinstance(node.test, ast.Constant):
+            if not node.test.value:
+                self._add_issue(
+                    "DEAD_IF_BRANCH",
+                    "WARNING",
+                    node,
+                    "Unreachable 'if' branch with constant falsy condition detected.",
+                )
+        self.generic_visit(node)
 
     def visit_Dict(self, node: ast.Dict) -> None:
         self._add_issue(

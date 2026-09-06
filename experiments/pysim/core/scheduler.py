@@ -135,6 +135,8 @@ class Channel:
     - waiter_dir: WaitDir (NONE, SEND, RECV)
     """
 
+    __slots__ = ("scheduler", "waiter_dir", "waiter_group", "waiter_task")
+
     def __init__(self, scheduler: "Scheduler | None" = None):
         self.scheduler = scheduler
         self.waiter_task: Task | None = None
@@ -204,6 +206,21 @@ class Task:
 
 
 class Scheduler:
+    __slots__ = (
+        "_all",
+        "_next_id",
+        "_ready",
+        "_ready_coro_count",
+        "consecutive_handoffs",
+        "current_task",
+        "dropped_irqs",
+        "idle_hooks",
+        "interrupt_event_queue",
+        "logger",
+        "max_handoffs",
+        "max_tasks",
+    )
+
     def __init__(
         self,
         max_tasks: int = FB_CONF_MAX_TASKS,

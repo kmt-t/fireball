@@ -16,13 +16,13 @@ Implementation Invariants & Gotchas:
 
 from __future__ import annotations
 
-from collections import deque
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Iterator
 from enum import IntEnum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from logger import Logger
+    from runtime.interpreter import Interpreter
 
 from logger import (
     LOG_EVT_COOS_DUPLICATE_TASK,
@@ -31,10 +31,64 @@ from logger import (
     LOG_EVT_COOS_TASK_CAPACITY,
     LogLevel,
 )
+from system_containers import RingBuffer, StaticVector
 
 FB_CONF_MAX_TASKS = 16
 FB_CONF_MAX_CONSECUTIVE_HANDOFFS = 4
 FB_CONF_INTERRUPT_QUEUE_SIZE = 16
+FB_CONF_MAX_IDLE_HOOKS = 8
+
+
+class BoundedReadyQueue:
+    """Fixed-capacity FIFO/round-robin queue for READY tasks, mirroring intrusive TCB list ({ADR_IntrusiveTcbList})."""
+
+    __slots__ = ("_items", "capacity")
+
+    def __init__(self, capacity: int = FB_CONF_MAX_TASKS):
+        self.capacity = capacity
+        self._items: list[Task] = []
+
+    def append(self, task: Task) -> bool:
+        if len(self._items) >= self.capacity:
+            return False
+        self._items.append(task)
+        return True
+
+    def appendleft(self, task: Task) -> bool:
+        if len(self._items) >= self.capacity:
+            return False
+        self._items.insert(0, task)
+        return True
+
+    def popleft(self) -> Task:
+        if not self._items:
+            raise IndexError("pop from an empty ready queue")
+        return self._items.pop(0)
+
+    def remove(self, task: Task) -> bool:
+        try:
+            self._items.remove(task)
+            return True
+        except ValueError:
+            return False
+
+    def clear(self) -> None:
+        self._items.clear()
+
+    def __len__(self) -> int:
+        return len(self._items)
+
+    def __bool__(self) -> bool:
+        return bool(self._items)
+
+    def __contains__(self, task: Task) -> bool:
+        return task in self._items
+
+    def __iter__(self) -> Iterator[Task]:
+        return iter(self._items)
+
+    def __getitem__(self, index: int) -> Task:
+        return self._items[index]
 
 
 class TaskState(IntEnum):
@@ -103,20 +157,33 @@ class Channel:
 
 
 def make_wasm_task_coro(
-    interp: object, func_index: int, args: list[int], quantum: int = 16
+    interp: Interpreter, func_index: int, args: list[int], quantum: int = 16
 ) -> Generator[tuple[ChannelAction, None], None, list[int]]:
     """Wraps an Interpreter execution as a cooperative coroutine for COOS task scheduling."""
-    gen = interp.run_iter(func_index, args, quantum=quantum)  # type: ignore[attr-defined]
+    gen = interp.run_iter(func_index, args, quantum=quantum)
     # The freshly-start()ed state, before any step, is not itself a yield point.
     call_state = next(gen)
     for call_state in gen:
         if not call_state.finished:
             yield (ChannelAction.YIELD, None)
-    return call_state.results  # type: ignore[no-any-return]
+    results: list[int] = call_state.results
+    return results
 
 
 class Task:
     """A single coroutine-based task with explicit cooperative lifecycle state."""
+
+    __slots__ = (
+        "coro",
+        "name",
+        "pending_val",
+        "received_val",
+        "result",
+        "role",
+        "state",
+        "task_id",
+        "waiting_irq",
+    )
 
     def __init__(
         self,
@@ -133,6 +200,7 @@ class Task:
         self.pending_val: object = None
         self.received_val: object = None
         self.result: object = None
+        self.waiting_irq: int | None = None
 
 
 class Scheduler:
@@ -146,14 +214,18 @@ class Scheduler:
         self.max_handoffs = max_handoffs
         self.logger = logger
         self.consecutive_handoffs = 0
-        self._ready: deque[Task] = deque()
-        self._all: list[Task] = []
+        self._ready: BoundedReadyQueue = BoundedReadyQueue(capacity=self.max_tasks)
+        self._all: StaticVector[Task] = StaticVector(capacity=self.max_tasks)
         self.current_task: Task | None = None
         self._next_id = 1
-        self.idle_hooks: list[Callable[[], None]] = []
-        self.interrupt_event_queue: deque[int] = deque(maxlen=FB_CONF_INTERRUPT_QUEUE_SIZE)
-        self.irq_waiters: list[tuple[int, list[Task]]] = []
+        self.idle_hooks: StaticVector[Callable[[], None]] = StaticVector(
+            capacity=FB_CONF_MAX_IDLE_HOOKS
+        )
+        self.interrupt_event_queue: RingBuffer[int] = RingBuffer(
+            capacity=FB_CONF_INTERRUPT_QUEUE_SIZE
+        )
         self.dropped_irqs = 0
+        self._ready_coro_count = 0
 
     def get_task(self, task_id: int) -> Task | None:
         for t in self._all:
@@ -200,14 +272,16 @@ class Scheduler:
             self._next_id += 1
 
         task = Task(assigned_id, name, coro, role=role)
-        self._all.append(task)
+        self._all.push_back(task)
         self._ready.append(task)
+        if coro is not None:
+            self._ready_coro_count += 1
         return task.task_id
 
     def spawn_wasm_task(
         self,
         name: str,
-        interp: object,
+        interp: Interpreter,
         func_index: int,
         args: list[int],
         quantum: int = 16,
@@ -221,27 +295,21 @@ class Scheduler:
     def detach(self, task: Task) -> None:
         """
         Removes a task from the READY queue so it will never be picked up by
-                run_until_idle(). For a task with no coroutine (or one driven
-                directly by a caller rather than the scheduler loop, e.g. a
-                fireball_call bridge), leaving it in READY is a bug: a coro=None
-                task re-appends itself every sweep (see run_until_idle), spinning
-                forever instead of ever going idle.
+        run_until_idle().
         """
-        try:
+        if task in self._ready:
+            if task.coro is not None:
+                self._ready_coro_count -= 1
             self._ready.remove(task)
-        except ValueError:
-            pass
 
     def attach(self, task: Task) -> None:
         """
-        Puts a task in the READY queue (READY state, not already present) so
-                run_until_idle() will pick it up and drive `task.coro` -- the
-                counterpart of detach(). Used when a caller (e.g. a fireball_call
-                bridge) hands a task a fresh coroutine to run as its own action.
+        Puts an external/detached task back on the READY queue.
         """
-        task.state = TaskState.READY
         if task not in self._ready:
             self._ready.append(task)
+            if task.coro is not None:
+                self._ready_coro_count += 1
 
     def create_channel(self) -> Channel:
         """
@@ -339,6 +407,8 @@ class Scheduler:
             self.consecutive_handoffs += 1
             if target_task in self._ready:
                 self._ready.remove(target_task)
+            elif target_task.coro is not None:
+                self._ready_coro_count += 1
 
             self._ready.appendleft(target_task)
             return (ChannelAction.DIRECT_SWITCH, target_task.task_id)
@@ -352,6 +422,13 @@ class Scheduler:
                 0,
             )
         self.consecutive_handoffs = 0
+        # CRITICAL FIX (SCHED-GOTCHA-01):
+        # When consecutive handoff limit is reached, target_task was woken (state = READY),
+        # but was NOT enqueued into self._ready if it wasn't already there!
+        if target_task not in self._ready:
+            self._ready.append(target_task)
+            if target_task.coro is not None:
+                self._ready_coro_count += 1
         return (ChannelAction.YIELD, None)
 
     def notify_interrupt(self, irq_id: int) -> bool:
@@ -368,41 +445,41 @@ class Scheduler:
                     0,
                 )
             return False
-        self.interrupt_event_queue.append(irq_id)
+        self.interrupt_event_queue.push(irq_id)
         return True
 
     def drain_interrupts(self) -> int:
         """Drain IRQ queue and wake registered tasks."""
         count = 0
-        while self.interrupt_event_queue:
-            irq_id = self.interrupt_event_queue.popleft()
+        while len(self.interrupt_event_queue) > 0:
+            irq_id = self.interrupt_event_queue.pop()
+            if irq_id is None:
+                break
             count += 1
-            waiters = []
-            for i, (qid, wlist) in enumerate(self.irq_waiters):
-                if qid == irq_id:
-                    waiters = wlist
-                    self.irq_waiters.pop(i)
-                    break
-            for task in waiters:
-                task.state = TaskState.READY
-                self._ready.append(task)
+            for task in self._all:
+                if task.waiting_irq == irq_id and task.state == TaskState.BLOCKED:
+                    task.waiting_irq = None
+                    task.state = TaskState.READY
+                    self._ready.append(task)
+                    if task.coro is not None:
+                        self._ready_coro_count += 1
         return count
 
     def wait_for_interrupt(self, irq_id: int) -> None:
         task = self.current_task
         assert task is not None
         task.state = TaskState.BLOCKED
-        for qid, wlist in self.irq_waiters:
-            if qid == irq_id:
-                wlist.append(task)
-                return
-        self.irq_waiters.append((irq_id, [task]))
+        task.waiting_irq = irq_id
 
     def set_idle_hook(self, fn: Callable[[], None]) -> None:
-        self.idle_hooks.append(fn)
+        if not self.idle_hooks.push_back(fn):
+            raise RuntimeError(f"Idle hooks capacity exceeded (max {FB_CONF_MAX_IDLE_HOOKS})")
 
     def pending_task_count(self) -> int:
-        return len(self._ready) + sum(len(w) for _, w in self.irq_waiters)
+        blocked_irq_count = sum(
+            1 for t in self._all if t.waiting_irq is not None and t.state == TaskState.BLOCKED
+        )
+        return len(self._ready) + blocked_irq_count
 
     def step(self) -> Task | None:
         """Executes a single ready task from the front of the queue."""
@@ -410,6 +487,8 @@ class Scheduler:
         if not self._ready:
             return None
         task = self._ready.popleft()
+        if task.coro is not None:
+            self._ready_coro_count -= 1
         self.current_task = task
         task.state = TaskState.RUNNING
         if task.coro is None:
@@ -428,6 +507,8 @@ class Scheduler:
         if wait_on is None or wait_on[0] == ChannelAction.YIELD:
             task.state = TaskState.READY
             self._ready.append(task)
+            if task.coro is not None:
+                self._ready_coro_count += 1
 
         self.current_task = None
         return task
@@ -438,9 +519,11 @@ class Scheduler:
         step_budget = budget if budget is not None else max(1000, len(self._ready) * 64 + 16)
         while self._ready and step_budget > 0:
             step_budget -= 1
-            if all(t.coro is None for t in self._ready):
+            if self._ready_coro_count == 0:
                 break
             task = self._ready.popleft()
+            if task.coro is not None:
+                self._ready_coro_count -= 1
             self.current_task = task
             task.state = TaskState.RUNNING
             if task.coro is None:
@@ -458,10 +541,14 @@ class Scheduler:
             if wait_on is None:
                 task.state = TaskState.READY
                 self._ready.append(task)
+                if task.coro is not None:
+                    self._ready_coro_count += 1
             elif wait_on[0] == ChannelAction.YIELD:
                 task.state = TaskState.READY
                 self._ready.append(task)
-                if all(t.coro is None for t in self._ready):
+                if task.coro is not None:
+                    self._ready_coro_count += 1
+                if self._ready_coro_count == 0:
                     break
             # else: a (ChannelAction.BLOCK, None) CSP wait -- channel_send()/channel_recv()
             # already parked the task (TaskState.SUSPENDED_CSP) and record who
@@ -475,7 +562,10 @@ class Scheduler:
     def run_to_completion(self, max_sweeps: int = 1000) -> None:
         for _ in range(max_sweeps):
             self.run_until_idle()
-            if not self._ready and not self.irq_waiters:
+            has_irq_waiters = any(
+                t.waiting_irq is not None and t.state == TaskState.BLOCKED for t in self._all
+            )
+            if not self._ready and not has_irq_waiters:
                 return
         raise RuntimeError(
             f"scheduler did not reach idle within {max_sweeps} sweeps "

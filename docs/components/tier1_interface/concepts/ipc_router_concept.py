@@ -120,7 +120,8 @@ _ROLE_MATRIX = (
 
 
 class IPCRouter:
-    def __init__(self):
+    def __init__(self, current_task_role: Role = Role.RUNTIME):
+        self.current_task_role = current_task_role
         # Stage 3: one dedicated CSP channel per ALLOW edge of the RBAC
         # matrix -- a Channel is a strict 1:1 pairing, so distinct senders
         # to the same target role cannot share one.
@@ -128,45 +129,48 @@ class IPCRouter:
             tuple(Channel() if allowed else None for allowed in row) for row in _ROLE_MATRIX
         )
 
-    def send(self, sender_role: int, uri: str, message: IPCMessage) -> tuple[str, str]:
+    def lookup(self, uri: str) -> tuple[str, Channel | None]:
         """
-        3-stage IPC send: URI lookup -> RBAC -> CSP rendezvous handoff.
-        Returns (status_code, detail_message).
+        Stage 1 URI lookup + Stage 2 RBAC check.
+        Role is strictly derived from caller's TCB context (current_task_role),
+        preventing self-reported role spoofing. Returns pre-authorized Channel object.
         """
+        target_role = _REGISTRY.find(uri)
+        if target_role is None:
+            return ("ERR_NOT_FOUND", None)
+
+        if not _ROLE_MATRIX[self.current_task_role][target_role]:
+            return ("ERR_PERMISSION_DENIED", None)
+
+        return ("COMPLETED", self._channels[self.current_task_role][target_role])
+
+    def send(self, channel: Channel, message: IPCMessage) -> tuple[str, str]:
+        """
+        Stage 3: Zero-Copy CSP Handoff directly on pre-authorized Channel object.
+        URI is eliminated from this hot transfer path. Caller's TCB role is verified.
+        """
+        allowed_channels = [ch for ch in self._channels[self.current_task_role] if ch is not None]
+        if channel not in allowed_channels:
+            return ("ERR_PERMISSION_DENIED", "Role not authorized on this channel")
+
         assert message.ownership == OwnershipState.SENDER_OWNS, (
             "Sender must own the message before sending"
         )
-        # --- Stage 1: URI Lookup (binary search over the sorted registry) ---
-        target_role = _REGISTRY.find(uri)
-        if target_role is None:
-            return ("ERR_NOT_FOUND", f"URI not registered: {uri}")
 
-        # --- Stage 2: Access Control Check ---
-        channel = self._channels[sender_role][target_role]
-        if channel is None:
-            return (
-                "ERR_PERMISSION_DENIED",
-                f"Forbidden: {_ROLE_NAMES[sender_role]} -> {_ROLE_NAMES[target_role]}",
-            )
-
-        # --- Stage 3: Zero-Copy CSP Handoff ---
-        # Revoke: commit to the handoff. No queue exists to be full, so this
-        # cannot fail the way a bounded mailbox's Enqueue could.
+        # Revoke: commit to the handoff. No queue exists to be full.
         message.ownership = OwnershipState.IN_FLIGHT
         channel.send(message)
-        return (
-            "COMPLETED",
-            f"{_ROLE_NAMES[sender_role]}->{_ROLE_NAMES[target_role]}: in-flight",
-        )
+        return ("COMPLETED", f"{_ROLE_NAMES[self.current_task_role]}: in-flight")
 
-    def receive(self, target_role: int) -> IPCMessage | None:
+    def receive(self) -> IPCMessage | None:
         """
         Guarded external choice (select): checks every ALLOW edge into
-        target_role in order and returns the first one with a message
+        current_task_role in order and returns the first one with a message
         ready, never committing to one sender_role upfront -- CORE_SERVICE,
         for example, may legitimately be sent to by both RUNTIME and
         DEBUGGER. Grant happens on whichever edge actually has a message.
         """
+        target_role = self.current_task_role
         for sender_role in range(len(_ROLE_MATRIX)):
             channel = self._channels[sender_role][target_role]
             if channel is None:
@@ -195,32 +199,47 @@ def test_registry_is_a_real_flat_map_view_not_a_dict() -> None:
 
 
 def test_unregistered_uri_is_rejected() -> None:
-    router = IPCRouter()
+    router = IPCRouter(current_task_role=Role.RUNTIME)
     msg = IPCMessage(entries=[(1, 42)])
-    status, _ = router.send(Role.RUNTIME, "fireball://nonexistent/service/0", msg)
+    status, ch = router.lookup("fireball://nonexistent/service/0")
     assert status == "ERR_NOT_FOUND"
+    assert ch is None
     assert msg.ownership == OwnershipState.SENDER_OWNS
 
 
 def test_permission_denied() -> None:
-    router = IPCRouter()
+    router = IPCRouter(current_task_role=Role.RUNTIME)
     msg = IPCMessage(entries=[(1, 7)])
-    # RUNTIME trying to access Debugger directly (Forbidden)
-    status, _ = router.send(Role.RUNTIME, "fireball://dbg/manager/0", msg)
+    # RUNTIME trying to access Debugger directly (Forbidden by RBAC)
+    status, ch = router.lookup("fireball://dbg/manager/0")
     assert status == "ERR_PERMISSION_DENIED"
+    assert ch is None
     assert msg.ownership == OwnershipState.SENDER_OWNS  # Ownership not modified
+
+    # Spoofing attempt: PLATFORM_HAL cannot send even if holding an authorized channel from RUNTIME
+    status_ok, ch_runtime = router.lookup("fireball://hal/gpio/0")
+    assert status_ok == "COMPLETED" and ch_runtime is not None
+
+    router.current_task_role = Role.PLATFORM_HAL
+    status_spoof, _ = router.send(ch_runtime, msg)
+    assert status_spoof == "ERR_PERMISSION_DENIED"
+    assert msg.ownership == OwnershipState.SENDER_OWNS
 
 
 def test_successful_zero_copy_handoff() -> None:
-    router = IPCRouter()
+    router = IPCRouter(current_task_role=Role.RUNTIME)
     msg = IPCMessage(entries=[(1, 5)])
-    # Step 1: RUNTIME sends to HAL GPIO. Revoke commits the send; Grant
-    # only happens once the receiver actually calls receive().
-    status, _ = router.send(Role.RUNTIME, "fireball://hal/gpio/0", msg)
-    assert status == "COMPLETED"
+    # Step 1: RUNTIME resolves destination to Channel and sends.
+    status, ch = router.lookup("fireball://hal/gpio/0")
+    assert status == "COMPLETED" and ch is not None
+
+    send_status, _ = router.send(ch, msg)
+    assert send_status == "COMPLETED"
     assert msg.ownership == OwnershipState.IN_FLIGHT
+
     # Step 2: PlatformHAL receives message and acquires ownership (Grant)
-    received = router.receive(Role.PLATFORM_HAL)
+    router.current_task_role = Role.PLATFORM_HAL
+    received = router.receive()
     assert received is msg
     assert received.ownership == OwnershipState.RECEIVER_OWNS
 
@@ -229,28 +248,36 @@ def test_receive_selects_whichever_allowed_sender_is_ready() -> None:
     """receive() must not commit to one sender_role upfront: CORE_SERVICE is
     reachable from both RUNTIME and DEBUGGER, and a receiver has to pick up
     whichever of them actually sent, in RBAC row order."""
-    router = IPCRouter()
+    router = IPCRouter(current_task_role=Role.DEBUGGER)
     msg = IPCMessage(entries=[(1, 42)])
-    status, _ = router.send(Role.DEBUGGER, "fireball://core/coos/0", msg)
-    assert status == "COMPLETED"
-    received = router.receive(Role.CORE_SERVICE)
+    status, ch = router.lookup("fireball://core/coos/0")
+    assert status == "COMPLETED" and ch is not None
+
+    send_status, _ = router.send(ch, msg)
+    assert send_status == "COMPLETED"
+
+    router.current_task_role = Role.CORE_SERVICE
+    received = router.receive()
     assert received is msg
     assert received.ownership == OwnershipState.RECEIVER_OWNS
     # The RUNTIME->CORE_SERVICE edge was never touched, so it is still free.
-    assert router.receive(Role.CORE_SERVICE) is None
+    assert router.receive() is None
 
 
 def test_no_queue_full_state_exists() -> None:
     """Unlike a bounded mailbox, a CSP channel has no max_queue/ERR_QUEUE_FULL --
     a second send before the first is received is a programming error (one
     waiter per channel), not a recoverable Rollback condition."""
-    router = IPCRouter()
+    router = IPCRouter(current_task_role=Role.RUNTIME)
+    status, ch = router.lookup("fireball://hal/gpio/0")
+    assert status == "COMPLETED" and ch is not None
+
     msg1 = IPCMessage(entries=[(1, 1)])
-    router.send(Role.RUNTIME, "fireball://hal/gpio/0", msg1)
+    router.send(ch, msg1)
     msg2 = IPCMessage(entries=[(1, 2)])
     raised = False
     try:
-        router.send(Role.RUNTIME, "fireball://hal/gpio/0", msg2)
+        router.send(ch, msg2)
     except AssertionError:
         raised = True
     assert raised, (

@@ -46,8 +46,8 @@ interface router {
     /// 宛先チャネルへ最大8個のKVペアメッセージを送信する（現在実行中タスクからゼロコピー同期CSPハンドオフ）
     route-message: func(channel: u32, entries: list<kv-pair>) -> ipc-status;
 
-    /// 自サービスURI宛ての許可されたエッジからメッセージを受信する（現在実行中タスクによる外部選択・所有権移譲）
-    receive-message: func(uri: string) -> result<list<kv-pair>, ipc-status>;
+    /// 自タスクのロール宛てに許可された全エッジからメッセージを受信する（現在実行中タスクによる外部選択・所有権移譲）
+    receive-message: func() -> result<list<kv-pair>, ipc-status>;
 }
 
 /// IPC サブシステムワールド

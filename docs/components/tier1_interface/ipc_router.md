@@ -126,16 +126,17 @@ sequenceDiagram
     participant Ch as COOS Channel (Role Edge)
     actor Callee as Callee Task
 
-    Caller->>Router: send_message(URI, msg_block, [shm_id])
-    Note over Caller,Router: Stage 1: URI Lookup via FlatMapView O(log N)
-    Router->>Router: Lookup Target Role & Channel from Registry
-
-    Note over Router: Stage 2: RBAC Preflight Inspection
+    Note over Caller,Router: [Discovery Phase] Stage 1 & 2 Preflight
+    Caller->>Router: lookup(URI)
+    Note over Router: Stage 1: FlatMapView O(log N) URI Lookup<br/>Stage 2: RBAC Matrix Check using Caller TCB Role
     alt Preflight Check Failed (URI not found or RBAC denied)
         Router-->>Caller: ERR_PERMISSION_DENIED / ERR_NOT_FOUND
         Note over Caller: Ownership remains SENDER_OWNS (Zero Leak)
     else Preflight Check Passed
-        Note over Router,Mem: Stage 3: Revoke & Ownership Transition
+        Router-->>Caller: Channel Object (Pre-authorized)
+
+        Note over Caller,Mem: [Transfer Phase] Stage 3 Hot Path via Channel Object
+        Caller->>Router: send(Channel, msg_block, [shm_id])
         Router->>Caller: Revoke access (msg.ownership = IN_FLIGHT)
         opt Bulk Shared Memory Transfer
             Router->>Mem: release_shared(shm_id)
@@ -143,7 +144,7 @@ sequenceDiagram
             Mem->>Mem: Flush TLB for Caller page
         end
         Router->>Ch: channel_send(msg_block)
-        Ch->>Callee: Synchronous CSP Rendezvous (Direct Handoff)
+        Ch->>Callee: Synchronous CSP Rendezvous (Direct Handoff to Callee receive())
         opt Bulk Shared Memory Transfer
             Ch->>Mem: grant_shared(shm_id, callee_task_id)
             Mem->>Mem: Set PTE.owner_id = Callee Task ID
@@ -252,72 +253,63 @@ _ROLE_MATRIX = (
 
 
 class IPCRouter:
-    def __init__(self, scheduler=None):
-        self.scheduler = scheduler
-        # Stage 3: one dedicated CSP channel per ALLOW edge of the RBAC matrix.
+    def __init__(self, current_task_role: Role = Role.RUNTIME):
+        self.current_task_role = current_task_role
+        # Stage 3: one dedicated CSP channel per ALLOW edge of the RBAC
+        # matrix -- a Channel is a strict 1:1 pairing, so distinct senders
+        # to the same target role cannot share one.
         self._channels: tuple[tuple["Channel | None", ...], ...] = tuple(
             tuple(Channel() if allowed else None for allowed in row) for row in _ROLE_MATRIX
         )
 
-    def create_channel(
-        self, destination: str | int, sender_role: int | None = None
-    ) -> "Channel | None":
+    def lookup(self, uri: str) -> tuple[str, Channel | None]:
         """
-        Binds current task, resolves destination role via FlatMapView,
-        authorizes access via RBAC matrix, and returns dedicated Channel.
+        Stage 1 URI lookup + Stage 2 RBAC check.
+        Role is strictly derived from caller's TCB context (current_task_role),
+        preventing self-reported role spoofing. Returns pre-authorized Channel object.
         """
-        if sender_role is None:
-            current = getattr(self.scheduler, "current_task", None)
-            sender_role = getattr(current, "role", Role.RUNTIME)
+        target_role = _REGISTRY.find(uri)
+        if target_role is None:
+            return ("ERR_NOT_FOUND", None)
 
-        handle = destination if isinstance(destination, int) else _REGISTRY.find_index(destination)
-        if handle < 0:
-            return None
-        target_role = _SERVICE_DESCRIPTORS[handle].role
+        if not _ROLE_MATRIX[self.current_task_role][target_role]:
+            return ("ERR_PERMISSION_DENIED", None)
 
-        if not _ROLE_MATRIX[sender_role][target_role]:
-            return None
-        return self._channels[sender_role][target_role]
+        return ("COMPLETED", self._channels[self.current_task_role][target_role])
 
-    def send(self, sender_role: int, uri: str, message: IPCMessage) -> tuple[IpcStatus, str]:
-        """3-stage IPC send: URI lookup -> RBAC -> CSP rendezvous handoff.
+    def send(self, channel: Channel, message: IPCMessage) -> tuple[str, str]:
+        """
+        Stage 3: Zero-Copy CSP Handoff directly on pre-authorized Channel object.
+        URI is eliminated from this hot transfer path. Caller's TCB role is verified.
 
         事前検証拒否による所有権保全 (IPCR-GOTCHA-02):
-        権限・URI・サイズ検証などの事前検査（Preflight Check）は、
-        メッセージの所有権剥奪（IN_FLIGHT への遷移）の前に先行して行われる。
-        検証エラー時はメッセージ所有権が送信元（SENDER_OWNS）のまま保全される。
+        権限・URI・サイズ検証などの事前検査（Preflight Check）は lookup 時に先行して行われ、
+        エラー時はメッセージ所有権が送信元（SENDER_OWNS）のまま保全される。
         先にリソースを剥奪してから送信先を検証すると、エラー時にリソースが
         孤立（in-flight リーク）するためである。
         """
-        assert message.ownership == OwnershipState.SENDER_OWNS
+        allowed_channels = [ch for ch in self._channels[self.current_task_role] if ch is not None]
+        if channel not in allowed_channels:
+            return ("ERR_PERMISSION_DENIED", "Role not authorized on this channel")
 
-        channel = self.create_channel(uri, sender_role=sender_role)
-        if channel is None:
-            handle = _REGISTRY.find_index(uri)
-            if handle < 0:
-                return (IpcStatus.ERR_NOT_FOUND, f"URI not registered: {uri}")
-            target_role = _SERVICE_DESCRIPTORS[handle].role
-            return (
-                IpcStatus.ERR_PERMISSION_DENIED,
-                f"Forbidden: {_ROLE_NAMES[sender_role]} -> {_ROLE_NAMES[target_role]}",
-            )
-
-        # Stage 3: Zero-Copy CSP Handoff directly on authorized Channel
-        message.ownership = OwnershipState.IN_FLIGHT
-        channel.send(message)
-        return (
-            IpcStatus.COMPLETED,
-            f"{_ROLE_NAMES[sender_role]}: in-flight",
+        assert message.ownership == OwnershipState.SENDER_OWNS, (
+            "Sender must own the message before sending"
         )
 
-    def receive(self, target_role: int) -> IPCMessage | None:
+        # Revoke: commit to the handoff. No queue exists to be full.
+        message.ownership = OwnershipState.IN_FLIGHT
+        channel.send(message)
+        return ("COMPLETED", f"{_ROLE_NAMES[self.current_task_role]}: in-flight")
+
+    def receive(self) -> IPCMessage | None:
         """
         Guarded external choice (select): checks every ALLOW edge into
-        target_role in order and returns the first one with a message
+        current_task_role in order and returns the first one with a message
         ready, never committing to one sender_role upfront -- CORE_SERVICE,
         for example, may legitimately be sent to by both RUNTIME and
         DEBUGGER. Grant happens on whichever edge actually has a message.
         """
+        target_role = self.current_task_role
         for sender_role in range(len(_ROLE_MATRIX)):
             channel = self._channels[sender_role][target_role]
             if channel is None:
@@ -338,34 +330,31 @@ IPC ルータの名前解決は、URI からサービスディスクリプタ（
 
 ```mermaid
 graph TD
-    Client["<<block>> Client Task<br/>─ Request: URI + Payload"]
+    Client["<<block>> Client Task<br/>─ Discovery: lookup(URI)"]
 
-    Lookup["<b>Stage 1: URI Lookup</b><br/>─ Input: URI string view<br/>─ Query: flat_map_view<br/>─ Output: registry_entry"]
+    Lookup["<b>Stage 1: URI Lookup</b><br/>─ Input: URI string view<br/>─ Query: flat_map_view<br/>─ Output: registry_entry (target_role)"]
 
-    ACCheck["<b>Stage 2: Access Control</b><br/>─ Input: sender_role, receiver_role<br/>─ Query: role_matrix[sender][receiver]<br/>─ Output: permission (allow or deny)"]
+    ACCheck["<b>Stage 2: Access Control</b><br/>─ Input: TCB current_task.role, target_role<br/>─ Query: role_matrix[sender][target]<br/>─ Output: permission (allow or deny)"]
 
-    ChGrant["<b>Stage 3: Channel Grant</b><br/>─ Input: channel_id + permission<br/>─ Output: channel handle"]
+    ChGrant["<b>Stage 3: Channel Grant</b><br/>─ Resolve dedicated CSP Channel object<br/>─ Output: Channel Object"]
 
-    Router["<<block>> Router<br/>─ Route message to channel"]
+    Error1["<b>Error: Not Found</b><br/>─ URI unregistered<br/>─ Return: ERR_NOT_FOUND"]
 
-    Error1["<b>Error: Not Found</b><br/>─ URI unregistered<br/>─ Return recovery-strategy: restart"]
+    Error2["<b>Error: Access Denied</b><br/>─ Role matrix DENY<br/>─ Return: ERR_PERMISSION_DENIED"]
 
-    Error2["<b>Error: Access Denied</b><br/>─ Insufficient privilege<br/>─ Return recovery-strategy: panic"]
-
-    Success["<b>Success</b><br/>─ Ownership transfer starts<br/>─ Revoke/Rendezvous/Grant"]
+    Transfer["<<block>> Transfer Hot Path<br/>─ send(Channel, msg)<br/>─ Ownership: Revoke/Rendezvous/Grant"]
 
     Client --> Lookup
     Lookup -->|found| ACCheck
     Lookup -->|not found| Error1
     ACCheck -->|allow| ChGrant
     ACCheck -->|deny| Error2
-    ChGrant --> Router
-    Router --> Success
+    ChGrant --> Transfer
 
     style Lookup fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
     style ACCheck fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
     style ChGrant fill:#e8f5e9,stroke:#388e3c,stroke-width:2px
-    style Success fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+    style Transfer fill:#fff3e0,stroke:#f57c00,stroke-width:2px
     style Error1 fill:#ffebee,stroke:#c62828,stroke-width:2px
     style Error2 fill:#ffebee,stroke:#c62828,stroke-width:2px
 ```
@@ -374,9 +363,9 @@ graph TD
 
 | ステージ | 処理 | 複雑度 | 制約 |
 | :--- | :--- | :--- | :--- |
-| **URI Lookup** | `fireball::flat_map_view` による二分探索 | O(log N) | N = サービス数（通常 ≤ 16）。動的確保なし。 |
-| **Access Control** | ロールマトリックス参照 `role_matrix[sender][receiver]` | O(1) | 事前計算済みの2次元配列による静的検査。 |
-| **Channel Grant** | `(sender_role, target_role)` エッジに対応する専用 CSP チャネルを選択 | O(1) | チャネルはロールの組から直接導出（4x4 配列参照）、レジストリに個別保存しない。 |
+| **Stage 1: URI Lookup** | `fireball::flat_map_view` による二分探索 | O(log N) | N = サービス数（通常 ≤ 16）。動的確保なし。 |
+| **Stage 2: Access Control** | TCB から取得した送信元ロールと対象ロールのマトリックス参照 `role_matrix[tcb_role][target_role]` | O(1) | 事前計算済みの2次元配列による静的検査。引数による自己申告ロールは完全排除（偽装防止）。 |
+| **Stage 3: Channel Grant** | `(sender_role, target_role)` エッジに対応する専用 CSP チャネルオブジェクトを返却 | O(1) | チャネルはロールの組から直接導出（4x4 配列参照）。送信側はこれを保持して直接 `send(channel, msg)` を実行。 |
 
 #### ロール間通信許可マトリクス (FB_CONF_ROUTER_ROLE_MATRIX)
 <!-- traceability: {RoleBasedAccessControl} -->
@@ -517,18 +506,18 @@ CSP Handoff による直接のコンテキストスイッチを伴うメッセ�
 <!-- traceability: {LowLatencyLookup} {META_AccessDictionary} {RoleBasedAccessControl} {IPCRouter} -->
 ```mermaid
 sequenceDiagram
-    participant C as Client
+    participant C as Client Task
     participant R as IPCRouter
     participant Reg as Registry
-    participant S as Server
+    participant Ch as CSP Channel
 
     C->>R: lookup("fireball://hal/uart/0")
     R->>Reg: search(uri)
-    Reg-->>R: entry(role, channel_id)
-    Note over R: Check Permission
+    Reg-->>R: entry(target_role)
+    Note over R: Check Permission using Client TCB Role
     alt Allowed
-        R-->>C: channel_id
-        C->>S: co_csp::send(channel_id, msg)
+        R-->>C: Channel Object
+        C->>R: send(Channel, msg)
     else Denied
         R-->>C: ERR_PERMISSION_DENIED
     end
@@ -543,7 +532,7 @@ sequenceDiagram
     participant Rx as <<block>> Receiver Task
 
     activate Tx
-    Tx->>R: send(channel_id, msg) with resource ownership
+    Tx->>R: send(Channel, msg) with resource ownership
     activate R
 
     Note over R: [Revoke Phase]
@@ -566,14 +555,17 @@ sequenceDiagram
 
     Note over Rx: [Receiver arrives]
     activate Rx
-    Rx->>Ch: channel_recv()
+    Rx->>R: receive() across all authorized channels
+    activate R
+    R->>Ch: channel_recv()
     activate Ch
-    Ch-->>Rx: return msg (rendezvous completes,<br/>sender task resumed if it was blocked)
+    Ch-->>R: return msg (rendezvous completes,<br/>sender task resumed if it was blocked)
     deactivate Ch
 
     Note over R: [Grant Phase]
-    R->>Rx: Grant ownership to receiver
+    R->>Rx: Grant ownership to receiver (RECEIVER_OWNS)
     R->>Tx: Release sender lock
+    deactivate R
 
     Rx-->>Rx: Use resource (now owned)
     deactivate Rx
@@ -605,38 +597,38 @@ sequenceDiagram
 
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | 指定されたURIに対応する通信用チャネルIDを取得する。同時に送信側の権限チェックを行う。 |
+| 機能概要 | 指定されたURIに対応する認可済み通信チャネルオブジェクトを取得する。呼び出し元の権限チェックはスケジューラの TCB（`current_task.role`）から確定取得して行う（自己申告ロールの偽装を完全排除）。 |
 | シグネチャ | `lookup_service(uri: 文字列ビュー) -> オプショナル値` |
 | 引数 | `uri`: 検索対象のサービスURI |
-| 戻り値 | オプショナル値 (成功時は `channel_id`, 失敗時は空) |
-| エラー時の挙動 | 見つからない場合はエラーを、権限がない場合は拒否を通知する。 |
-| 補足 | `{IPC_HandleBased}` のため、クライアントはこのIDをキャッシュして利用することが推奨される。 |
+| 戻り値 | オプショナル値 (成功時は認可済み `Channel` オブジェクト, 失敗時は空) |
+| エラー時の挙動 | 見つからない場合は `ERR_NOT_FOUND` を、権限がない場合は `ERR_PERMISSION_DENIED` を通知する。 |
+| 補足 | `{IPC_HandleBased}` のため、クライアントはこの認可済みチャネルオブジェクトをキャッシュして利用することが推奨される。 |
 
 #### メッセージルーティング（route_message）
 <!-- traceability: {OwnershipTransfer} {IPC_ZeroCopy} {ADR_RendezvousChannel} -->
 
-**COOS の CSP チャネルと同一の機構**: 本 API は `{ADR_RendezvousChannel}` が定めるバッファなし同期ランデブーそのものであり、`(sender_role, target_role)` の RBAC エッジ 1 本につき専用の CSP チャネルを持つ。値を保持するバッファが存在しないため、有界キューにおける「満杯」状態は原理的に発生しない。本 API は `{CSP_Handoff}` を主張する。
+**COOS の CSP チャネルと同一の機構**: 本 API は `{ADR_RendezvousChannel}` が定めるバッファなし同期ランデブーそのものであり、`(sender_role, target_role)` の RBAC エッジ 1 本につき専用の CSP チャネルを持つ。値を保持するバッファが存在しないため、有界キューにおける「満杯」状態は原理的に発生しない。本 API は `{CSP_Handoff}` を主張する。送信ホットパスから URI 探索を完全に排除し、認可済み `Channel` オブジェクトを直接操作する。
 
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | 送信先サービスの `(sender_role, target_role)` エッジ専用 CSP チャネル上で、リソースの所有権を Revoke/Rendezvous/Grant の順で移譲する。相手が未到達の場合は協調スケジューラ上でブロックし、相手到達時に必ず完了する（キューが存在しないため失敗して差し戻る経路はない）。 `{OwnershipTransfer}` `{IPC_ZeroCopy}` `{ADR_RendezvousChannel}` |
-| シグネチャ | `route_message(channel: ID値, msg: ipc-message) -> operation-result` |
-| 引数 | `channel`: 送信先ID<br>`msg`: 送信メッセージ (`ipc-message`) |
-| 戻り値 | 操作結果を示す `operation-result`（成功時は `COMPLETED` を返し、メッセージのKey-Valueペア数が8個の静的制限を超えている場合は `ERR_MSG_TOO_LARGE`、送信先URIが未登録の場合は `ERR_NOT_FOUND`、RBAC で拒否された場合は `ERR_PERMISSION_DENIED` を返す） |
-| エラー時の挙動 | `ERR_MSG_TOO_LARGE`/`ERR_NOT_FOUND`/`ERR_PERMISSION_DENIED` はいずれも Revoke より前段の静的チェックであり、これらで失敗した場合メッセージの所有権は送信側から一度も動いていない（Rollback のような事後的な回復処理を必要としない）。Revoke 後は失敗経路が存在せず、相手の到達を待つのみである。 |
+| 機能概要 | 事前認可された `Channel` オブジェクト上で、リソースの所有権を Revoke/Rendezvous/Grant の順で移譲する。呼び出し元 TCB ロールがチャネルの送信元エッジと一致することを検証する。相手が未到達の場合は協調スケジューラ上でブロックし、相手到達時に必ず完了する（キューが存在しないため失敗して差し戻る経路はない）。 `{OwnershipTransfer}` `{IPC_ZeroCopy}` `{ADR_RendezvousChannel}` |
+| シグネチャ | `route_message(channel: 通信チャネルオブジェクト, msg: ipc-message) -> operation-result` |
+| 引数 | `channel`: 認可済み通信チャネルオブジェクト<br>`msg`: 送信メッセージ (`ipc-message`) |
+| 戻り値 | 操作結果を示す `operation-result`（成功時は `COMPLETED` を返し、メッセージのKey-Valueペア数が8個の静的制限を超えている場合は `ERR_MSG_TOO_LARGE`、ロール不一致の場合は `ERR_PERMISSION_DENIED` を返す） |
+| エラー時の挙動 | `ERR_MSG_TOO_LARGE`/`ERR_PERMISSION_DENIED` はいずれも Revoke より前段の静的チェックであり、これらで失敗した場合メッセージの所有権は送信側から一度も動いていない（Rollback のような事後的な回復処理を必要としない）。Revoke 後は失敗経路が存在せず、相手の到達を待つのみである。 |
 
 #### メッセージ受信（receive_message）
 <!-- traceability: {OwnershipTransfer} {IPC_ZeroCopy} {ADR_RendezvousChannel} -->
 
-**ガード付き外部選択（Guarded External Choice / Select）**: 受信側は自らの URI が持つロールへの全 ALLOW エッジ（RBAC マトリックスの該当列）を同時に待ち受け、最初に到達した送信側とランデブーする。1 つの `sender_role` に事前にコミットしない——例えば `CORE_SERVICE` は `RUNTIME` と `DEBUGGER` の双方から正当に送信され得るため、受信側がどちらか一方だけを待つ設計は現実のサービスとして機能しない。複数チャネルへの同時登録は、成立した瞬間に他の全チャネルから解除される（[`scheduler.py`](experiments/pysim/core/scheduler.py) の `channel_select_recv` / `SelectGroup` 参照）ため、1 チャネル 1 待機者の不変条件は破られない。
+**ガード付き外部選択（Guarded External Choice / Select）**: 受信側は自タスクのロール宛てへの全 ALLOW エッジ（RBAC マトリックスの該当列）を同時に待ち受け、最初に到達した送信側とランデブーする。自タスクのロールは TCB から確定取得され、URI や送信元ロールの引数指定を必要としない。複数チャネルへの同時登録は、成立した瞬間に他の全チャネルから解除される（[`scheduler.py`](experiments/pysim/core/scheduler.py) の `channel_select_recv` / `SelectGroup` 参照）ため、1 チャネル 1 待機者の不変条件は破られない。
 
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | 呼び出し元自身の URI が解決するロールへの、RBAC で許可された全エッジの専用 CSP チャネルに対してガード付き外部選択を行い、最初に到達した送信側とランデブーする（Grant）。相手がまだ誰も到達していなければ協調スケジューラ上でブロックし、いずれかの送信側到達時に必ず完了する。 `{OwnershipTransfer}` `{IPC_ZeroCopy}` `{ADR_RendezvousChannel}` |
-| シグネチャ | `receive_message(uri: 文字列ビュー) -> result<ipc-message, operation-result>` |
-| 引数 | `uri`: 自らが提供するサービスの URI（送信元は指定しない——許可された送信元のいずれからでも受信できる） |
-| 戻り値 | 成功時は受信した `ipc-message`（所有権は呼び出し元に移譲済み）。失敗時は `operation-result`（送信先URIが未登録の場合は `ERR_NOT_FOUND`、RBAC 上どの送信元からも許可されていない場合は `ERR_PERMISSION_DENIED`） |
-| エラー時の挙動 | `ERR_NOT_FOUND`/`ERR_PERMISSION_DENIED` はチャネル選択より前段の静的チェックであり、これらで失敗した場合はブロックすら発生しない。 |
+| 機能概要 | 呼び出し元自身の TCB ロールへの、RBAC で許可された全エッジの専用 CSP チャネルに対してガード付き外部選択を行い、最初に到達した送信側とランデブーする（Grant）。相手がまだ誰も到達していなければ協調スケジューラ上でブロックし、いずれかの送信側到達時に必ず完了する。 `{OwnershipTransfer}` `{IPC_ZeroCopy}` `{ADR_RendezvousChannel}` |
+| シグネチャ | `receive_message() -> result<ipc-message, operation-result>` |
+| 引数 | なし（自タスクのロール宛てに許可された全チャネルから選択受信） |
+| 戻り値 | 成功時は受信した `ipc-message`（所有権は呼び出し元に移譲済み）。失敗時は `operation-result`（RBAC 上どの送信元からも許可されていない場合は `ERR_PERMISSION_DENIED`） |
+| エラー時の挙動 | `ERR_PERMISSION_DENIED` はチャネル選択より前段の静的チェックであり、許可エッジが存在しない場合はブロックすら発生しない。 |
 
 ### 5.2 URI/IPCインターフェース
 <!-- traceability: {TypeSafeMessaging} -->

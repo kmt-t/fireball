@@ -158,10 +158,10 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 | :--- | :--- | :--- | :--- |
 | `VERIFY_FORMAL` | 形式検証義務 | `formal: formal/*_model.py`<br>（Kripke 構造・CTL/LTL 性質・`BACKS` 宣言） | **Formal Gate** + **Obligation Gate** |
 | `VERIFY_WIT` | インターフェース契約義務 | `wit: wit/*.wit`<br>（型安全・物理バイトオフセット・リカバリー戦略） | **WIT Gate** |
-| `VERIFY_BENCHMARK` | 定量性能・予算実測義務 | `benchmark: benchmarks/*_bench.py`<br>（計算量 $O(1)/O(\log N)$、レイテンシ実測） | **Phase 3 (Benchmarks)** + **Evidence Gate** |
-| `VERIFY_LLM` | 意味的整合性・ADR監査義務 | LLM as a Judge 判定ログ（さくらインターネット / Qwen 3.6） | **Phase 2 (Judge)** + **Obligation Gate** |
-| *(暗黙・全件)* | 実行可能参照実装 | `concept: concepts/*_concept.py` | **Phase 3 (Concepts)** + Unicorn エミュレータ |
-| *(暗黙・全件)* | テスト仕様（振る舞い網羅） | `test: tests/` サブフォルダ内のコンポーネント名を冠したテスト仕様書（`concept`/`formal`/`benchmark` と同じ配置規則: 正本と同じディレクトリ直下の共有 `tests/` サブフォルダに置く） | **Phase 3 (Concepts)** と同格の実行可能参照実装の一部として扱う。`concept`/`formal`/`benchmark` と同様、正本の直下 `<!-- evidence: ... -->` ブロックに宣言すること。テストケースは対象の正本（および対応する `concepts/*_concept.py`）を実際に読んだ上で導出し、実装から逆算しないこと。 |
+| `VERIFY_BENCHMARK` | 定量性能・予算実測義務 | `benchmark: benchmarks/*_bench.py`<br>（計算量 $O(1)/O(\log N)$、レイテンシ実測） | **Evidence Gate** |
+| `VERIFY_LLM` | 意味的整合性・ADR監査義務 | LLM as a Judge 判定ログ（さくらインターネット / Qwen 3.6） | **Obligation Gate** |
+| *(暗黙・全件)* | 実行可能参照実装 | `concept: concepts/*_concept.py` | Unicorn エミュレータ |
+| *(暗黙・全件)* | テスト仕様（振る舞い網羅） | `test: tests/` サブフォルダ内のコンポーネント名を冠したテスト仕様書（`concept`/`formal`/`benchmark` と同じ配置規則: 正本と同じディレクトリ直下の共有 `tests/` サブフォルダに置く） | 実行可能参照実装の一部として扱う。`concept`/`formal`/`benchmark` と同様、正本の直下 `<!-- evidence: ... -->` ブロックに宣言すること。テストケースは対象の正本（および対応する `concepts/*_concept.py`）を実際に読んだ上で導出し、実装から逆算しないこと。 |
 
 ### 5.2 形式検証モデル（`formal/*.py`）の責任分担正本表
 

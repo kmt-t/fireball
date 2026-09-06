@@ -2,7 +2,7 @@
 
 Fireball Hypervisor の現行作業および次期フェーズのタスク一覧。
 全体の開発ロードマップは [`roadmap_phase.md`](docs/plans/roadmap_phase.md) を参照。
-品質課題および検証結果は `reports/doc_report.md` を正本とする。
+品質課題および検証結果は検証パイプライン実行時に生成される `reports/doc_report.md` を参照。
 
 ---
 

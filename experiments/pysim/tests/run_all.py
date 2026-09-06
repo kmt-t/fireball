@@ -56,6 +56,11 @@ TEST_SUITES = [
     ),
     (
         "Tier 2 Runtime",
+        "WASM Differential Oracle (wasmtime)",
+        TEST_DIR / "tier2_runtime" / "test_wasm_differential.py",
+    ),
+    (
+        "Tier 2 Runtime",
         "Syscall & WASI Environment",
         TEST_DIR / "tier2_runtime" / "test_syscall.py",
     ),

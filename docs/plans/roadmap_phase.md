@@ -1,7 +1,7 @@
 # 開発ロードマップ
 
 全体の開発フェーズ・工期・目的を定義する。各フェーズの具体的なタスクは [`backlog_list.md`](docs/plans/backlog_list.md) を参照。
-品質課題および検証結果は `reports/doc_report.md` を正本とする。
+品質課題および検証結果は検証パイプライン実行時に生成される `reports/doc_report.md` を参照。
 
 ## フェーズ概要
 

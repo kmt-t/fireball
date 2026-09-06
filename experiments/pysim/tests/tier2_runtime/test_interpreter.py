@@ -248,6 +248,59 @@ def test_wasm_50_to_56_integer_arithmetic_and_bitwise():
     assert interp.call(mod.export_func_index("bit_ops"), [0x80000001]) == [26]
 
 
+def test_wasm_f32_arithmetic_min_max_and_precision():
+    """WASM-57: F32 single-precision rounding, IEEE 754 min/max with NaNs and signed zeroes."""
+    import math
+
+    wat = """
+    (module
+      (func $f32_add (export "f32_add") (param $a f32) (param $b f32) (result f32)
+        (f32.add (local.get $a) (local.get $b))
+      )
+      (func $f32_min (export "f32_min") (param $a f32) (param $b f32) (result f32)
+        (f32.min (local.get $a) (local.get $b))
+      )
+      (func $f32_max (export "f32_max") (param $a f32) (param $b f32) (result f32)
+        (f32.max (local.get $a) (local.get $b))
+      )
+      (func $f32_demote (export "f32_demote") (param $d f64) (result f32)
+        (f32.demote_f64 (local.get $d))
+      )
+    )
+"""
+    wasm_bytes = wat_to_wasm(wat)
+    if not wasm_bytes:
+        print("    [SKIP] wasmtime not installed, skipping test_wasm_f32_arithmetic")
+        return
+    mod = parse(wasm_bytes)
+    interp = Interpreter(mod)
+
+    # 1. Single precision rounding: 1.0 + 1e-8 in double is > 1.0, but in f32 it rounds to 1.0
+    res = interp.call(mod.export_func_index("f32_add"), [1.0, 1e-8])
+    assert res[0] == 1.0
+
+    # 2. Signed zero min/max: min(-0.0, +0.0) must preserve -0.0
+    res_min = interp.call(mod.export_func_index("f32_min"), [-0.0, 0.0])
+    assert math.copysign(1.0, res_min[0]) == -1.0
+    res_min_rev = interp.call(mod.export_func_index("f32_min"), [0.0, -0.0])
+    assert math.copysign(1.0, res_min_rev[0]) == -1.0
+
+    res_max = interp.call(mod.export_func_index("f32_max"), [-0.0, 0.0])
+    assert math.copysign(1.0, res_max[0]) == 1.0
+    res_max_rev = interp.call(mod.export_func_index("f32_max"), [0.0, -0.0])
+    assert math.copysign(1.0, res_max_rev[0]) == 1.0
+
+    # 3. NaN propagation
+    res_nan = interp.call(mod.export_func_index("f32_min"), [float("nan"), 42.0])
+    assert math.isnan(res_nan[0])
+    res_nan2 = interp.call(mod.export_func_index("f32_max"), [42.0, float("nan")])
+    assert math.isnan(res_nan2[0])
+
+    # 4. f32.demote_f64 rounding
+    demote_res = interp.call(mod.export_func_index("f32_demote"), [1.0000000000000002])
+    assert demote_res[0] == 1.0
+
+
 # ===========================================================================
 # System Containers (CONT-01 .. CONT-10)
 # ===========================================================================
@@ -256,7 +309,7 @@ def test_wasm_50_to_56_integer_arithmetic_and_bitwise():
 def test_wasm_loader_and_radix_binary_tree_view_indexes():
     """LOAD-01..47: Verifies WASM Loader zero-copy indexing, verification, and RadixBinaryTreeView file offset & hash symbol indexes."""
     from loader import WasmLoader, WasmVerifyError
-    from test_loader import _build_test_wasm_binary
+    from tier2_runtime.test_loader import _build_test_wasm_binary
 
     loader = WasmLoader()
     wasm_bytes = _build_test_wasm_binary(export_names=["zeta", "alpha", "beta"])

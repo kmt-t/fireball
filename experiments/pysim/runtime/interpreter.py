@@ -40,6 +40,7 @@ smuggled in as a 5th argument outside the declared signature.
 from __future__ import annotations
 
 import ctypes
+import math
 import struct
 from collections import deque
 from collections.abc import Callable, Iterator
@@ -48,7 +49,7 @@ from dataclasses import dataclass, field
 import cython
 from control_flow import ControlMap, build_control_map
 from leb128 import decode_signed, decode_unsigned
-from wasm_module import F32, F64, Module
+from wasm_module import F32, F64, I64, Module
 from wasm_opcodes import (
     BLOCK,
     BR,
@@ -61,12 +62,15 @@ from wasm_opcodes import (
     END,
     F32_ABS,
     F32_ADD,
+    F32_CEIL,
     F32_CONST,
     F32_CONVERT_I32_S,
     F32_CONVERT_I32_U,
+    F32_COPYSIGN,
     F32_DEMOTE_F64,
     F32_DIV,
     F32_EQ,
+    F32_FLOOR,
     F32_GE,
     F32_GT,
     F32_LE,
@@ -76,25 +80,40 @@ from wasm_opcodes import (
     F32_MIN,
     F32_MUL,
     F32_NE,
+    F32_NEAREST,
     F32_NEG,
+    F32_REINTERPRET_I32,
     F32_SQRT,
     F32_STORE,
     F32_SUB,
+    F32_TRUNC,
     F64_ABS,
     F64_ADD,
+    F64_CEIL,
     F64_CONST,
     F64_CONVERT_I32_S,
     F64_CONVERT_I32_U,
+    F64_COPYSIGN,
     F64_DIV,
     F64_EQ,
+    F64_FLOOR,
+    F64_GE,
+    F64_GT,
+    F64_LE,
     F64_LOAD,
+    F64_LT,
+    F64_MAX,
+    F64_MIN,
     F64_MUL,
     F64_NE,
+    F64_NEAREST,
     F64_NEG,
     F64_PROMOTE_F32,
+    F64_REINTERPRET_I64,
     F64_SQRT,
     F64_STORE,
     F64_SUB,
+    F64_TRUNC,
     GLOBAL_GET,
     GLOBAL_SET,
     I32_ADD,
@@ -123,6 +142,7 @@ from wasm_opcodes import (
     I32_NE,
     I32_OR,
     I32_POPCNT,
+    I32_REINTERPRET_F32,
     I32_REM_S,
     I32_REM_U,
     I32_ROTL,
@@ -135,21 +155,46 @@ from wasm_opcodes import (
     I32_STORE16,
     I32_SUB,
     I32_TRUNC_F32_S,
+    I32_TRUNC_F32_U,
     I32_TRUNC_F64_S,
+    I32_TRUNC_F64_U,
+    I32_WRAP_I64,
     I32_XOR,
     I64_ADD,
+    I64_AND,
+    I64_CLZ,
     I64_CONST,
+    I64_CTZ,
     I64_DIV_S,
     I64_DIV_U,
     I64_EQ,
     I64_EQZ,
+    I64_EXTEND_I32_S,
+    I64_EXTEND_I32_U,
+    I64_GE_S,
+    I64_GE_U,
+    I64_GT_S,
+    I64_GT_U,
+    I64_LE_S,
+    I64_LE_U,
     I64_LOAD,
     I64_LT_S,
     I64_LT_U,
     I64_MUL,
     I64_NE,
+    I64_OR,
+    I64_POPCNT,
+    I64_REINTERPRET_F64,
+    I64_REM_S,
+    I64_REM_U,
+    I64_ROTL,
+    I64_ROTR,
+    I64_SHL,
+    I64_SHR_S,
+    I64_SHR_U,
     I64_STORE,
     I64_SUB,
+    I64_XOR,
     IF,
     LOCAL_GET,
     LOCAL_SET,
@@ -176,6 +221,29 @@ def _to_i32(v: int) -> int:
 @cython.locals(v=cython.longlong)
 def _to_u32(v: int) -> int:
     return v & I32_MASK
+
+
+def _to_f32(v: float) -> float:
+    """Rounds a Python float (double) to IEEE 754 single-precision float32."""
+    return struct.unpack("<f", struct.pack("<f", float(v)))[0]
+
+
+def _f32_min(a: float, b: float) -> float:
+    """WASM f32.min IEEE 754 semantics: NaN propagation and signed zero."""
+    if math.isnan(a) or math.isnan(b):
+        return float("nan")
+    if a == 0.0 and b == 0.0:
+        return a if math.copysign(1.0, a) < 0.0 else b
+    return a if a < b else b
+
+
+def _f32_max(a: float, b: float) -> float:
+    """WASM f32.max IEEE 754 semantics: NaN propagation and signed zero."""
+    if math.isnan(a) or math.isnan(b):
+        return float("nan")
+    if a == 0.0 and b == 0.0:
+        return a if math.copysign(1.0, a) > 0.0 else b
+    return a if a > b else b
 
 
 class Trap(Exception):
@@ -535,7 +603,13 @@ class Interpreter:
         fn = self.module.functions[func_index - len(self.module.imports)]
         layout = self.module.locals_layout(func_index)
         for i in range(len(args)):
-            if layout[i] not in (F32, F64):
+            if layout[i] == I64:
+                args[i] = _to_i64(args[i])
+            elif layout[i] == F32:
+                args[i] = _to_f32(args[i])
+            elif layout[i] == F64:
+                args[i] = float(args[i])
+            else:
                 args[i] = _to_i32(args[i])
         if len(layout) > len(args):
             args.extend([0] * (len(layout) - len(args)))
@@ -1414,8 +1488,6 @@ def _h_i32_rotr(
     return (ip + 1, frame, env, local_base)
 
 
-import math
-
 # Helper conversion utilities
 I64_MASK = 0xFFFF_FFFF_FFFF_FFFF
 
@@ -1659,7 +1731,7 @@ def _h_f32_add(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
 ) -> _HandlerResult:
     b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(float(a + b))
+    frame.values.append(_to_f32(a + b))
     return (ip + 1, frame, env, local_base)
 
 
@@ -1668,7 +1740,7 @@ def _h_f32_sub(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
 ) -> _HandlerResult:
     b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(float(a - b))
+    frame.values.append(_to_f32(a - b))
     return (ip + 1, frame, env, local_base)
 
 
@@ -1677,7 +1749,7 @@ def _h_f32_mul(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
 ) -> _HandlerResult:
     b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(float(a * b))
+    frame.values.append(_to_f32(a * b))
     return (ip + 1, frame, env, local_base)
 
 
@@ -1686,7 +1758,7 @@ def _h_f32_div(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
 ) -> _HandlerResult:
     b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(float(a / b if b != 0 else float("inf")))
+    frame.values.append(_to_f32(a / b if b != 0 else (float("nan") if a == 0 else math.copysign(float("inf"), a) if b == 0 else float("inf"))))
     return (ip + 1, frame, env, local_base)
 
 
@@ -1695,7 +1767,7 @@ def _h_f32_sqrt(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
 ) -> _HandlerResult:
     a = frame.values.pop()
-    frame.values.append(float(math.sqrt(a) if a >= 0 else float("nan")))
+    frame.values.append(_to_f32(math.sqrt(a) if a >= 0 else float("nan")))
     return (ip + 1, frame, env, local_base)
 
 
@@ -1704,7 +1776,7 @@ def _h_f32_min(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
 ) -> _HandlerResult:
     b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(float(min(a, b)))
+    frame.values.append(_to_f32(_f32_min(a, b)))
     return (ip + 1, frame, env, local_base)
 
 
@@ -1713,7 +1785,7 @@ def _h_f32_max(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
 ) -> _HandlerResult:
     b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(float(max(a, b)))
+    frame.values.append(_to_f32(_f32_max(a, b)))
     return (ip + 1, frame, env, local_base)
 
 
@@ -1827,7 +1899,7 @@ def _h_f32_convert_i32_s(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
 ) -> _HandlerResult:
     a = _to_i32(frame.values.pop())
-    frame.values.append(float(a))
+    frame.values.append(_to_f32(float(a)))
     return (ip + 1, frame, env, local_base)
 
 
@@ -1836,7 +1908,7 @@ def _h_f32_convert_i32_u(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
 ) -> _HandlerResult:
     a = _to_u32(frame.values.pop())
-    frame.values.append(float(a))
+    frame.values.append(_to_f32(float(a)))
     return (ip + 1, frame, env, local_base)
 
 
@@ -1872,7 +1944,7 @@ def _h_f32_demote_f64(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
 ) -> _HandlerResult:
     a = frame.values.pop()
-    frame.values.append(float(a))
+    frame.values.append(_to_f32(float(a)))
     return (ip + 1, frame, env, local_base)
 
 
@@ -1881,7 +1953,7 @@ def _h_f32_abs(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
 ) -> _HandlerResult:
     a = frame.values.pop()
-    frame.values.append(float(abs(a)))
+    frame.values.append(_to_f32(abs(a)))
     return (ip + 1, frame, env, local_base)
 
 
@@ -1890,7 +1962,7 @@ def _h_f32_neg(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
 ) -> _HandlerResult:
     a = frame.values.pop()
-    frame.values.append(float(-a))
+    frame.values.append(_to_f32(-a))
     return (ip + 1, frame, env, local_base)
 
 
@@ -1946,3 +2018,446 @@ def _h_f64_ne(
     b, a = frame.values.pop(), frame.values.pop()
     frame.values.append(1 if a != b else 0)
     return (ip + 1, frame, env, local_base)
+
+
+@_handler(I64_REM_S)
+def _h_i64_rem_s(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    b = _to_i64(frame.values.pop())
+    a = _to_i64(frame.values.pop())
+    if b == 0:
+        raise Trap("integer divide by zero")
+    r = abs(a) % abs(b)
+    frame.values.append(_to_i64(-r if a < 0 else r))
+    return (ip + 1, frame, env, local_base)
+
+
+@_handler(I64_REM_U)
+def _h_i64_rem_u(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    b = _to_u64(frame.values.pop())
+    a = _to_u64(frame.values.pop())
+    if b == 0:
+        raise Trap("integer divide by zero")
+    frame.values.append(_to_i64(a % b))
+    return (ip + 1, frame, env, local_base)
+
+
+@_handler(I64_AND)
+def _h_i64_and(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    b, a = frame.values.pop(), frame.values.pop()
+    frame.values.append(_to_i64(a & b))
+    return (ip + 1, frame, env, local_base)
+
+
+@_handler(I64_OR)
+def _h_i64_or(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    b, a = frame.values.pop(), frame.values.pop()
+    frame.values.append(_to_i64(a | b))
+    return (ip + 1, frame, env, local_base)
+
+
+@_handler(I64_XOR)
+def _h_i64_xor(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    b, a = frame.values.pop(), frame.values.pop()
+    frame.values.append(_to_i64(a ^ b))
+    return (ip + 1, frame, env, local_base)
+
+
+@_handler(I64_SHL)
+def _h_i64_shl(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    k = frame.values.pop() % 64
+    v = frame.values.pop()
+    frame.values.append(_to_i64((v << k) & I64_MASK))
+    return (ip + 1, frame, env, local_base)
+
+
+@_handler(I64_SHR_S)
+def _h_i64_shr_s(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    k = frame.values.pop() % 64
+    v = _to_i64(frame.values.pop())
+    frame.values.append(_to_i64(v >> k))
+    return (ip + 1, frame, env, local_base)
+
+
+@_handler(I64_SHR_U)
+def _h_i64_shr_u(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    k = frame.values.pop() % 64
+    v = _to_u64(frame.values.pop())
+    frame.values.append(_to_i64(v >> k))
+    return (ip + 1, frame, env, local_base)
+
+
+@_handler(I64_ROTL)
+def _h_i64_rotl(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    k = frame.values.pop() % 64
+    v = _to_u64(frame.values.pop())
+    rotated = ((v << k) | (v >> (64 - k))) & I64_MASK if k else v
+    frame.values.append(_to_i64(rotated))
+    return (ip + 1, frame, env, local_base)
+
+
+@_handler(I64_ROTR)
+def _h_i64_rotr(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    k = frame.values.pop() % 64
+    v = _to_u64(frame.values.pop())
+    rotated = ((v >> k) | (v << (64 - k))) & I64_MASK if k else v
+    frame.values.append(_to_i64(rotated))
+    return (ip + 1, frame, env, local_base)
+
+
+@_handler(I64_CLZ)
+def _h_i64_clz(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    v = _to_u64(frame.values.pop())
+    if v == 0:
+        frame.values.append(64)
+    else:
+        frame.values.append(64 - v.bit_length())
+    return (ip + 1, frame, env, local_base)
+
+
+@_handler(I64_CTZ)
+def _h_i64_ctz(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    v = _to_u64(frame.values.pop())
+    if v == 0:
+        frame.values.append(64)
+    else:
+        frame.values.append((v & -v).bit_length() - 1)
+    return (ip + 1, frame, env, local_base)
+
+
+@_handler(I64_POPCNT)
+def _h_i64_popcnt(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    v = _to_u64(frame.values.pop())
+    frame.values.append(bin(v).count("1"))
+    return (ip + 1, frame, env, local_base)
+
+
+@_handler(I64_GT_S)
+def _h_i64_gt_s(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    b, a = frame.values.pop(), frame.values.pop()
+    frame.values.append(1 if _to_i64(a) > _to_i64(b) else 0)
+    return (ip + 1, frame, env, local_base)
+
+
+@_handler(I64_GT_U)
+def _h_i64_gt_u(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    b, a = frame.values.pop(), frame.values.pop()
+    frame.values.append(1 if _to_u64(a) > _to_u64(b) else 0)
+    return (ip + 1, frame, env, local_base)
+
+
+@_handler(I64_LE_S)
+def _h_i64_le_s(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    b, a = frame.values.pop(), frame.values.pop()
+    frame.values.append(1 if _to_i64(a) <= _to_i64(b) else 0)
+    return (ip + 1, frame, env, local_base)
+
+
+@_handler(I64_LE_U)
+def _h_i64_le_u(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    b, a = frame.values.pop(), frame.values.pop()
+    frame.values.append(1 if _to_u64(a) <= _to_u64(b) else 0)
+    return (ip + 1, frame, env, local_base)
+
+
+@_handler(I64_GE_S)
+def _h_i64_ge_s(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    b, a = frame.values.pop(), frame.values.pop()
+    frame.values.append(1 if _to_i64(a) >= _to_i64(b) else 0)
+    return (ip + 1, frame, env, local_base)
+
+
+@_handler(I64_GE_U)
+def _h_i64_ge_u(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    b, a = frame.values.pop(), frame.values.pop()
+    frame.values.append(1 if _to_u64(a) >= _to_u64(b) else 0)
+    return (ip + 1, frame, env, local_base)
+
+
+# --- Additional F32 / F64 Math Handlers ---
+
+
+@_handler(F32_CEIL)
+def _h_f32_ceil(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    a = frame.values.pop()
+    frame.values.append(_to_f32(math.ceil(a) if not math.isnan(a) and not math.isinf(a) else a))
+    return (ip + 1, frame, env, local_base)
+
+
+@_handler(F32_FLOOR)
+def _h_f32_floor(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    a = frame.values.pop()
+    frame.values.append(_to_f32(math.floor(a) if not math.isnan(a) and not math.isinf(a) else a))
+    return (ip + 1, frame, env, local_base)
+
+
+@_handler(F32_TRUNC)
+def _h_f32_trunc(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    a = frame.values.pop()
+    frame.values.append(_to_f32(math.trunc(a) if not math.isnan(a) and not math.isinf(a) else a))
+    return (ip + 1, frame, env, local_base)
+
+
+@_handler(F32_NEAREST)
+def _h_f32_nearest(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    a = frame.values.pop()
+    frame.values.append(_to_f32(round(a) if not math.isnan(a) and not math.isinf(a) else a))
+    return (ip + 1, frame, env, local_base)
+
+
+@_handler(F32_COPYSIGN)
+def _h_f32_copysign(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    b, a = frame.values.pop(), frame.values.pop()
+    frame.values.append(_to_f32(math.copysign(a, b)))
+    return (ip + 1, frame, env, local_base)
+
+
+@_handler(F64_CEIL)
+def _h_f64_ceil(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    a = frame.values.pop()
+    frame.values.append(float(math.ceil(a) if not math.isnan(a) and not math.isinf(a) else a))
+    return (ip + 1, frame, env, local_base)
+
+
+@_handler(F64_FLOOR)
+def _h_f64_floor(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    a = frame.values.pop()
+    frame.values.append(float(math.floor(a) if not math.isnan(a) and not math.isinf(a) else a))
+    return (ip + 1, frame, env, local_base)
+
+
+@_handler(F64_TRUNC)
+def _h_f64_trunc(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    a = frame.values.pop()
+    frame.values.append(float(math.trunc(a) if not math.isnan(a) and not math.isinf(a) else a))
+    return (ip + 1, frame, env, local_base)
+
+
+@_handler(F64_NEAREST)
+def _h_f64_nearest(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    a = frame.values.pop()
+    frame.values.append(float(round(a) if not math.isnan(a) and not math.isinf(a) else a))
+    return (ip + 1, frame, env, local_base)
+
+
+@_handler(F64_COPYSIGN)
+def _h_f64_copysign(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    b, a = frame.values.pop(), frame.values.pop()
+    frame.values.append(float(math.copysign(a, b)))
+    return (ip + 1, frame, env, local_base)
+
+
+@_handler(F64_MIN)
+def _h_f64_min(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    b, a = frame.values.pop(), frame.values.pop()
+    if math.isnan(a) or math.isnan(b):
+        res = float("nan")
+    elif a == b == 0.0:
+        res = -0.0 if math.copysign(1.0, a) < 0 or math.copysign(1.0, b) < 0 else 0.0
+    else:
+        res = min(a, b)
+    frame.values.append(float(res))
+    return (ip + 1, frame, env, local_base)
+
+
+@_handler(F64_MAX)
+def _h_f64_max(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    b, a = frame.values.pop(), frame.values.pop()
+    if math.isnan(a) or math.isnan(b):
+        res = float("nan")
+    elif a == b == 0.0:
+        res = 0.0 if math.copysign(1.0, a) > 0 or math.copysign(1.0, b) > 0 else -0.0
+    else:
+        res = max(a, b)
+    frame.values.append(float(res))
+    return (ip + 1, frame, env, local_base)
+
+
+@_handler(F64_LT)
+def _h_f64_lt(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    b, a = frame.values.pop(), frame.values.pop()
+    frame.values.append(1 if a < b else 0)
+    return (ip + 1, frame, env, local_base)
+
+
+@_handler(F64_LE)
+def _h_f64_le(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    b, a = frame.values.pop(), frame.values.pop()
+    frame.values.append(1 if a <= b else 0)
+    return (ip + 1, frame, env, local_base)
+
+
+@_handler(F64_GT)
+def _h_f64_gt(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    b, a = frame.values.pop(), frame.values.pop()
+    frame.values.append(1 if a > b else 0)
+    return (ip + 1, frame, env, local_base)
+
+
+@_handler(F64_GE)
+def _h_f64_ge(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    b, a = frame.values.pop(), frame.values.pop()
+    frame.values.append(1 if a >= b else 0)
+    return (ip + 1, frame, env, local_base)
+
+
+# --- Conversion & Reinterpret Handlers ---
+
+
+@_handler(I32_WRAP_I64)
+def _h_i32_wrap_i64(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    a = frame.values.pop()
+    frame.values.append(_to_i32(a))
+    return (ip + 1, frame, env, local_base)
+
+
+@_handler(I32_TRUNC_F32_U)
+def _h_i32_trunc_f32_u(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    a = frame.values.pop()
+    if math.isnan(a) or a <= -1.0 or a >= 4294967296.0:
+        raise Trap("invalid conversion to integer")
+    frame.values.append(_to_i32(int(a)))
+    return (ip + 1, frame, env, local_base)
+
+
+@_handler(I32_TRUNC_F64_U)
+def _h_i32_trunc_f64_u(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    a = frame.values.pop()
+    if math.isnan(a) or a <= -1.0 or a >= 4294967296.0:
+        raise Trap("invalid conversion to integer")
+    frame.values.append(_to_i32(int(a)))
+    return (ip + 1, frame, env, local_base)
+
+
+@_handler(I64_EXTEND_I32_S)
+def _h_i64_extend_i32_s(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    a = _to_i32(frame.values.pop())
+    frame.values.append(_to_i64(a))
+    return (ip + 1, frame, env, local_base)
+
+
+@_handler(I64_EXTEND_I32_U)
+def _h_i64_extend_i32_u(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    a = _to_u32(frame.values.pop())
+    frame.values.append(_to_i64(a))
+    return (ip + 1, frame, env, local_base)
+
+
+@_handler(I32_REINTERPRET_F32)
+def _h_i32_reinterpret_f32(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    a = frame.values.pop()
+    u = struct.unpack("<i", struct.pack("<f", float(a)))[0]
+    frame.values.append(_to_i32(u))
+    return (ip + 1, frame, env, local_base)
+
+
+@_handler(F32_REINTERPRET_I32)
+def _h_f32_reinterpret_i32(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    a = _to_u32(frame.values.pop())
+    f = struct.unpack("<f", struct.pack("<I", a))[0]
+    frame.values.append(_to_f32(f))
+    return (ip + 1, frame, env, local_base)
+
+
+@_handler(I64_REINTERPRET_F64)
+def _h_i64_reinterpret_f64(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    a = frame.values.pop()
+    u = struct.unpack("<q", struct.pack("<d", float(a)))[0]
+    frame.values.append(_to_i64(u))
+    return (ip + 1, frame, env, local_base)
+
+
+@_handler(F64_REINTERPRET_I64)
+def _h_f64_reinterpret_i64(
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+) -> _HandlerResult:
+    a = _to_u64(frame.values.pop())
+    d = struct.unpack("<d", struct.pack("<Q", a))[0]
+    frame.values.append(float(d))
+    return (ip + 1, frame, env, local_base)
+

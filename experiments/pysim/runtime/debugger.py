@@ -17,8 +17,9 @@ import bisect
 from collections.abc import Mapping
 
 from interpreter import Interpreter
-from runtime_engine import BasicBlock, IntegratedHybridEngine, WASMContext
+from runtime_engine import IntegratedHybridEngine, WASMContext
 from system_containers import MutableFlatMapStorage
+from wasm_module import BasicBlock
 
 # docs/components/tier1_core/system_config.md {Debug_Integrated}
 # {META_NoStdVector}: max PC-sampling entries the profiler buffer holds.

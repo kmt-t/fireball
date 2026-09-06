@@ -436,7 +436,7 @@ graph LR
 
 - **マッピング方式**: 物理IRQ 1: 仮想IRQ 1。集約しない。
 - **ゲスト側確認方式**: ポーリング。ゲストがstep再開時に `REG_IRQ_FLAGS` をチェック。
-- **コールバック登録**: Phase1+で検討。
+- **コールバック登録**: TODO(未決): 仮想割り込みコールバック登録機構の検討。
 - **設定ファイル**: `vsoc_config` とは分離。`irq_mapping_config` として独立管理。
 
 関連仕様: [`system_syscall.md`](docs/components/tier1_core/system_syscall.md) の `{Syscall_Mapping}` を参照。

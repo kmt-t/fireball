@@ -1,18 +1,39 @@
 name: Document Quality & Verification Pipeline
 
 on:
-  # Disabled: doc_cache.db (the committed LLM-audit evidence this pipeline's
-  # Obligation Gate reads) is no longer tracked in git (repo-size cleanup;
-  # its history was purged separately). A fresh CI checkout has no audit
-  # evidence, so `./tools/run_all_tests.sh` would fail every
-  # {VERIFY_LLM}-tagged document with OBLIG-JUDGE-MISSING regardless of
-  # whether the audit ever actually ran. Automatic triggers are removed
-  # until that's addressed; workflow_dispatch is kept for manual runs.
+  push:
+    branches: [main]
+  pull_request:
   workflow_dispatch:
 
 jobs:
+  pysim:
+    name: PySim Quality Gate & Tests (Linux)
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        submodules: true
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v5
+      with:
+        enable-cache: true
+        python-version: '3.11'
+
+    - name: Ensure script execution permissions
+      run: |
+        chmod +x tools/*.sh
+
+    - name: Run PySim Source Quality Gate & Unit Tests
+      run: |
+        ./tools/check-src.sh -g pysim
+
   lint:
-    name: Spec Quality Gates & Verification
+    name: Spec Quality Gates & Verification (Manual)
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
 
     steps:

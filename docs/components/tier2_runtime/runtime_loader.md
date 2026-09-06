@@ -212,7 +212,7 @@ flowchart TD
 
 ### 4.3 軽量検証スコープ
 <!-- traceability: {ZeroCopyIndexing} {META_AccessDictionary} {META_ConfigurableSystem} -->
-以下の項目をロード時に検証する。これ以上の検証（型システムの完全検証、命令の妥当性検証等）はPhase1+で検討。
+以下の項目をロード時に検証する。これ以上の検証（型システムの完全検証、命令の妥当性検証等）は TODO(未決): WASM完全検証の要否評価 で検討。
 
 | # | 検証項目 | 判定基準 | 失敗時 |
 | :--- | :--- | :--- | :--- |

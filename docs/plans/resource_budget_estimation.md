@@ -19,7 +19,7 @@ Python シミュレータ（`experiments/pysim`）の実装行数（実測 12,58
 
 | サブシステム | pysim 実装行数 (実測) | C++23 見積行数 (LOC) | 主な構成要素と C++ 実装設計方針 |
 | :--- | :---: | :---: | :--- |
-| **Tier 1 Core** | **2,575** | **~2,950** | |
+| **Tier 1 Core** | **1,993** | **~2,950** | |
 | - `system_containers` | 1,154 | ~1,200 | `flat_map_view`, `flat_set_view`, `radix_binary_tree_view`, `bit_view`, `mutable_*_storage`（ヘッダオンリー） |
 | - `os_coos` & `os_scheduler` | 483 | ~650 | C++20 コルーチン（対称遷移）、侵入型 READY/WAIT リスト、CSP チャネル同期 |
 | - `system_config` & `recovery` | 163 | ~200 | コンフィグマクロ、`constexpr` 定数群、リカバリー戦略列挙型 |

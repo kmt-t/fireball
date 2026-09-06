@@ -21,9 +21,9 @@ from collections.abc import Callable
 import x64_stencils as st
 from control_flow import iter_block_ops
 from exec_memory import ExecutableBuffer
-from runtime_engine import BasicBlock, JITTrace, JITTraceHeader
+from runtime_engine import JITTrace, JITTraceHeader
 from system_containers import FlatMapView, ReadOnlyFlatMapStorage
-from wasm_module import TraceBlock
+from wasm_module import BasicBlock, TraceBlock
 from wasm_opcodes import (
     DROP,
     I32_ADD,

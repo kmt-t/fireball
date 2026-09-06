@@ -16,3 +16,39 @@ interface environment {
         globals-base: u32,
     }
 }
+
+/// vSoC 仮想実行制御サブシステムインターフェース
+/// ゲスト実行制御・Safepoint ポーリング・仮想割り込み通知
+interface execution {
+    /// vSoC 実行状態
+    enum vsoc-state {
+        stopped,
+        running,
+        paused,
+        breakpoint-hit,
+        trapped,
+    }
+
+    /// 仮想割り込みフラグ通知 (WASI pollable 連動)
+    notify-virtual-irq: func(irq-id: u32);
+
+    /// 現在の実行状態を取得
+    get-execution-state: func() -> vsoc-state;
+}
+
+/// vSoC デバッガ・プロファイラ連携インターフェース
+interface debug {
+    /// ブレークポイント設定・解除
+    set-breakpoint: func(pc: u32) -> bool;
+    clear-breakpoint: func(pc: u32) -> bool;
+
+    /// 実行時プロファイラサンプリング頻度の問い合わせ
+    get-execution-count: func(pc: u32) -> u32;
+}
+
+/// vSoC サブシステムワールド
+world vsoc-subsystem {
+    export environment;
+    export execution;
+    export debug;
+}

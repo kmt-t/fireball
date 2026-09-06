@@ -1,0 +1,130 @@
+package fireball:core@0.1.0;
+
+/// COOS カーネルおよびコアサブシステム共通型定義
+interface types {
+    /// タスク識別子 (0〜15)
+    type task-id = u32;
+
+    /// チャンネル識別子
+    type channel-id = u32;
+
+    /// メモリパーティションスライス（固定長事前確保ブロック）
+    record partition-slice {
+        base-address: u32,
+        size-bytes: u32,
+        owner-task: task-id,
+    }
+
+    /// メモリエラーカテゴリ
+    enum memory-error {
+        /// メモリ枯渇・パーティション不足
+        out-of-memory,
+        /// 不正な所有権・二重解放
+        invalid-owner,
+        /// アドレス境界超過
+        out-of-bounds,
+    }
+
+    /// スケジューラエラーカテゴリ
+    enum scheduler-error {
+        /// タスク上限超過
+        task-capacity-exceeded,
+        /// 重複タスクID
+        duplicate-task,
+        /// 存在しないタスクID
+        task-not-found,
+    }
+
+    /// ログレベル重要度
+    enum log-level {
+        trace,
+        debug,
+        info,
+        warn,
+        error,
+        fatal,
+    }
+
+    /// ログ出力結果
+    enum log-status {
+        /// 正常記録（または満杯時の最古上書き完了）
+        success,
+        /// トランスポートビジー（DMA転送中）
+        transporter-busy,
+    }
+}
+
+/// メモリマネージャ (co_mem) サブシステムインターフェース
+/// システム統合物理メモリプールからタスク独立パーティションを静的貸与・返却する
+interface memory {
+    use types.{task-id, partition-slice, memory-error};
+
+    /// タスク固有の静的メモリパーティションを貸与する
+    acquire-partition: func(owner: task-id) -> result<partition-slice, memory-error>;
+
+    /// 貸与されたパーティションを返却する
+    release-partition: func(owner: task-id) -> result<_, memory-error>;
+}
+
+/// CSP 通信エンジン (co_csp) サブシステムインターフェース
+/// バッファを持たない純粋同期ランデブー通信（値スロット不在・ゼロコピー所有権移譲）
+interface csp {
+    use types.{channel-id};
+
+    /// 同期ランデブー送信時のアクション結果
+    enum channel-action {
+        /// 相手タスク不在のため自タスクがサスペンド（ブロック）
+        block,
+        /// 相手タスクとランデブー成立（直接対称遷移）
+        direct-switch,
+        /// 連続ハンドオフ上限到達によるスケジューラ復帰（イールド）
+        yield-to-scheduler,
+    }
+
+    /// 1チャネルあたりの待機方向
+    enum wait-direction {
+        none,
+        send,
+        recv,
+    }
+
+    /// チャネルの現在待機状態の問い合わせ
+    get-channel-state: func(chan: channel-id) -> wait-direction;
+}
+
+/// COOS スケジューラ (os_scheduler) サブシステムインターフェース
+/// 協調型マルチタスク実行制御・アイドル検出・割り込み通知
+interface scheduler {
+    use types.{task-id, scheduler-error};
+
+    /// 実行権を自発的にスケジューラへ譲渡する
+    yield-task: func();
+
+    /// 外部ハードウェア割り込み通知（ISR コンテキストから有界キューへ投函）
+    notify-interrupt: func(irq-id: u32);
+
+    /// アイドル時フックコールバックの登録（システムアイドル時のログフラッシュ等）
+    trigger-idle: func();
+}
+
+/// システムロギング (system_logging) サブシステムインターフェース
+/// 辞書参照（24-bit offset + スカラー引数）によるゼロアロケーション・遅延出力
+interface logging {
+    use types.{log-level, log-status};
+
+    /// 辞書参照ログイベントをリングバッファに記録する
+    /// offset: ROM辞書内の24-bitオフセット
+    /// args: 最大4個のスカラー引数
+    log-event: func(level: log-level, offset: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32) -> log-status;
+
+    /// 蓄積されたログブロックを物理トランスポートへ一括排出する（アイドル時フック連携）
+    flush: func() -> log-status;
+}
+
+/// COOS コアワールド
+world coos-kernel {
+    export memory;
+    export csp;
+    export scheduler;
+    export logging;
+}

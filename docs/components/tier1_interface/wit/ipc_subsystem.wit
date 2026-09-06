@@ -1,0 +1,56 @@
+package fireball:ipc@0.1.0;
+
+/// IPC サブシステム型定義
+interface types {
+    /// システムセキュリティロール
+    enum role {
+        runtime,
+        core-service,
+        platform-hal,
+        debugger,
+    }
+
+    /// Key-Value ペア（IPC 通信の最小単位、最大8ペア）
+    record kv-pair {
+        /// 型スコープ (8-bit: 上位3ビット種別 + 下位5ビット型)
+        type-scope: u8,
+        /// 識別キー (24-bit: スコープ内で一意)
+        key-id: u32,
+        /// 属性値 (32-bit: 即値またはリソースオフセット)
+        value: u32,
+    }
+
+    /// IPC 送信ステータス
+    enum ipc-status {
+        success,
+        err-not-found,
+        err-permission-denied,
+        err-message-too-large,
+        err-invalid-ownership,
+    }
+}
+
+/// IPC ルータ (ipc_router) サブシステムインターフェース
+/// 階層URIルーティング・RBACアクセス制御・所有権移譲
+/// 呼び出し元の権限ロール（sender_role / receiver_role）は、偽装防止のため
+/// スケジューラが現在実行中の TCB（Task Control Block）から暗黙的・確定的に取得される。
+interface router {
+    use types.{role, kv-pair, ipc-status};
+
+    /// サービス固有のURIと、それを処理するチャネルおよびロールを関連付けて登録する
+    register-service: func(uri: string, service-role: role, channel: u32) -> ipc-status;
+
+    /// 登録サービス/デバイスのURIからチャネルハンドルを解決する（現在実行中タスクのロールでRBAC検証）
+    lookup-service: func(uri: string) -> result<u32, ipc-status>;
+
+    /// 宛先チャネルへ最大8個のKVペアメッセージを送信する（現在実行中タスクからゼロコピー同期CSPハンドオフ）
+    route-message: func(channel: u32, entries: list<kv-pair>) -> ipc-status;
+
+    /// 自サービスURI宛ての許可されたエッジからメッセージを受信する（現在実行中タスクによる外部選択・所有権移譲）
+    receive-message: func(uri: string) -> result<list<kv-pair>, ipc-status>;
+}
+
+/// IPC サブシステムワールド
+world ipc-subsystem {
+    export router;
+}

@@ -30,23 +30,25 @@ Bit31によるRAM/vMMIO高速分岐、FlatMap PTE + 16エントリDirect-Mapped 
 | VMMIO-16 | FlatMap登録件数と検索 | 32件のSHMページを登録 | 全件アクセス | 全件が正しく解決される。ホットな作業集合(8件)への繰り返しアクセスは100%ヒット | vmmio_concept.py `test_flatmap_pte_registration_and_tlb_caching` |
 | VMMIO-17 | TLBヒット時も権限チェックは必ず実施 | TLBにキャッシュ済みのPTE | 権限を後から変更（例:Revoke） | TLBヒットであっても最新の権限判定が適用される（TLBは探索スキップのみを担う） | {META_RestrictedPhysicalAccess}, vmmio_concept.py |
 
-### 3層セキュリティゲート・SHM所有権 ({OwnershipTransfer})
+### 3層セキュリティゲート・SHMマッピング保護 ({OwnershipTransfer})
 
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| VMMIO-20 | SHM所有者のみアクセス許可 | `map_shm_page(owner_id=7)` | `current_task_id=7`でアクセス | `OK_PHYSICAL` | {OwnershipTransfer}, vmmio_concept.py `test_shm_owner_isolation` |
-| VMMIO-21 | SHM非所有者は拒否 | 同上 | `current_task_id=9`でアクセス（TLBに既にキャッシュ済みでも） | `TRAP_OWNER_MISMATCH` | {OwnershipTransfer}, vmmio_concept.py |
-| VMMIO-22 | Revoke時のTLB即時無効化 | SHMページがTLBに常駐 | `revoke_shm_owner(vpn)` | 該当TLBエントリが無効化され、次回アクセスは強制的にFlatMap再walkになる | {OwnershipTransfer}, vmmio_concept.py `test_revoke_invalidates_tlb_and_blocks_access_during_flight` |
-| VMMIO-23 | Revoke後（in-flight中）は誰もアクセス不可 | Revoke直後 | 旧所有者・他タスク双方でアクセス | 両方とも`TRAP_OWNER_MISMATCH`（`FB_TASK_ID_FLIGHT`状態） | {OwnershipTransfer}, vmmio_concept.py |
+| VMMIO-20 | マッピング存在時のみアクセス許可 | `map_shm_page(vpn, phys_page)`済み | 該当アドレスへアクセス | `OK_PHYSICAL` | {OwnershipTransfer}, vmmio_concept.py `test_shm_unmap_isolation` |
+| VMMIO-21 | アンマップ後は即座に拒否 | 同上 | `unmap_shm_page(vpn)`後にアクセス | `TRAP_UNREGISTERED_PAGE`（ホットパスでのowner比較なしにPTE不在で遮断） | {OwnershipTransfer}, vmmio_concept.py `test_shm_unmap_isolation` |
+| VMMIO-22 | Revoke時のTLB即時無効化 | SHMページがTLBに常駐 | `revoke_shm(vpn)` | 該当TLBエントリが無効化され、次回アクセスは強制的にFlatMap再walkになる | {OwnershipTransfer}, vmmio_concept.py `test_revoke_invalidates_tlb_and_blocks_unmapped_access` |
+| VMMIO-23 | Revoke後（in-flight中）は誰もアクセス不可 | Revoke直後 | 送信元・他タスク双方でアクセス | 両方とも`TRAP_UNREGISTERED_PAGE`（未マッピング状態） | {OwnershipTransfer}, vmmio_concept.py `test_revoke_invalidates_tlb_and_blocks_unmapped_access` |
 | VMMIO-24 | FC=14への書き込みはIPCルータのみ | 通常のゲストアクセス | FC=14へ直接書き込もうとする | 「FC=14エントリへの書き込みはIPCルータのみが行う」制約に反する経路が存在しないことを確認 | {OwnershipTransfer}, vmmio_concept.py |
-| VMMIO-25 | PASSTHROUGH(FC=15)の物理アドレス変換 | `map_passthrough_page`済み | アクセス | `phys_addr = (pte.phys_page << 12) | offset`で正しく解決 | {PhysicalPassthrough}, vmmio_concept.py |
+| VMMIO-25 | PASSTHROUGH(FC=15)の物理アドレス変換 | `map_passthrough_page`済み | アクセス | `phys_addr = (pte.phys_page << 12) \| offset`で正しく解決 | {PhysicalPassthrough}, vmmio_concept.py |
+| VMMIO-26 | ビット並列連続ビットマップアロケータ | 32ページの空き仮想空間 | `alloc_consecutive(k)` / `free_consecutive` | $O(1)$で連続$k$ページが確保・解放され、断片化時も正しく探索される | vmmio_concept.py `test_shm_virtual_address_allocator_consecutive` |
+| VMMIO-27 | マルチページ連続マッピングとアクセス | 連続3ページをアロケート・マップ | 3ページすべてのアドレスへアクセス | 全ページが正しい物理アドレスに変換され、一括アンマップ後は全て未登録トラップとなる | vmmio_concept.py `test_vmmio_alloc_and_map_multipage` |
 
 ### VDMA ({VDMA})
 
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | VMMIO-30 | REG_VDMA_*レジスタへの設定と`REG_VDMA_CTRL`起動 | レジスタに`SRC`/`DST`/`COUNT`設定 | `CTRL`のSTARTビットを1にする | 指定範囲が転送される | {VDMA}, vmmio_concept.py |
-| VMMIO-31 | SHM宛先へのVDMA転送時の所有権チェック | `dst`がFC=14アドレス、呼び出し元が非所有者 | VDMA実行 | `dispatch_access`と同一の権限チェックで拒否される | {VDMA}, {OwnershipTransfer} |
+| VMMIO-31 | SHM宛先へのVDMA転送時のマッピングチェック | `dst`が未マッピングのFC=14アドレス | VDMA実行 | `dispatch_access`と同一の権限チェックで拒否される | {VDMA}, {OwnershipTransfer} |
 
 ### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
 
@@ -54,7 +56,7 @@ Bit31によるRAM/vMMIO高速分岐、FlatMap PTE + 16エントリDirect-Mapped 
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | VMMIO-GOTCHA-01 | Bit 31 RAM 高速バイパスのテーブル完全非参照 | `addr < 0x8000_0000` の任意のアドレス | `access(addr)` を実行 | ページテーブル走査（FlatMap walk）および TLB 検索・更新を一切行わず即座に `OK_GUEST_RAM` を返す（`tlb_hits` / `tlb_misses` が不変）。**実装の勘所**: ゲスト RAM アクセス時に誤って TLB 検索フックを挟むと、実行時メモリアクセスの最頻パスで深刻な性能低下を引き起こす | `runtime_vmmio.md` {VMMIO-GOTCHA-01} |
 | VMMIO-GOTCHA-02 | Direct-Mapped TLB の 4-bit Folding XOR Hash | 同一下位ページ番号を持つ異なる FC（FC=12 静的, FC=14 SHM, FC=15 パススルー） | 各ページの `tlb_index` を算出 | 単純な下位4bitマスクではなく `(vpn ^ (vpn >> 4) ^ (vpn >> 8) ^ (vpn >> 12) ^ (vpn >> 16)) & 15` により、異なる FC の同一下位ページが互いに異なるスロットへ分散する。**実装の勘所**: 単純な下位マスクを用いると、Syscall（FC=12）と SHM（FC=14）の同一番号ページが同一スロットで常に衝突・スラッシングを起こす | `runtime_vmmio.md` {VMMIO-GOTCHA-02} |
-| VMMIO-GOTCHA-03 | SHM Revoke 後の in-flight 遮断と TLB 即時破棄 | SHM ページ（FC=14）が TLB にキャッシュされた状態 | `revoke_shm_owner(vpn)` を実行 | 対象 TLB スロットが無効化され、送信元・受信先双方からのアクセスが即座に `TRAP_OWNER_MISMATCH` で拒絶される。**実装の勘所**: PTE の所有者フラグのみを更新して TLB の該当スロットをフラッシュし忘れると、旧所有者が in-flight 中（ランデブー待ち）にデータを不正読み書きできる重大な脆弱性となる | `runtime_vmmio.md` {VMMIO-GOTCHA-03} |
+| VMMIO-GOTCHA-03 | SHM Revoke 後の未マッピング遮断と TLB 即時破棄 | SHM ページ（FC=14）が TLB にキャッシュされた状態 | `revoke_shm(vpn)` を実行 | 対象 TLB スロットが無効化され、FlatMap からも削除されるためアクセスが即座に `TRAP_UNREGISTERED_PAGE` で拒絶される。**実装の勘所**: PTE のアンマップを行っても TLB の該当スロットをフラッシュし忘れると、旧所有者が in-flight 中（ランデブー待ち）に TLB ヒット経由でデータを不正読み書きできる重大な脆弱性となる | `runtime_vmmio.md` {VMMIO-GOTCHA-03} |
 
 ## 3. テスト検証実績と網羅状況
 

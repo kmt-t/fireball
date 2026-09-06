@@ -4,7 +4,7 @@ Reference Concept Implementation & Test Suite: COOS Memory Manager
 Implementation Invariants & Gotchas:
 - MEM-GOTCHA-01: 4KB page granularity permission isolation (different tasks never share a page).
 - MEM-GOTCHA-02: Strict ownership enforcement prevents non-owners from releasing or accessing blocks.
-- MEM-GOTCHA-03: In-flight blocks are owned by FB_TASK_ID_FLIGHT and TLB is flushed immediately.
+- MEM-GOTCHA-03: In-flight blocks are unmapped from vMMIO and TLB is flushed immediately.
 - MEM-GOTCHA-04: JIT code cache W^X mode switching is batched per trace to minimize barrier latency.
 """
 
@@ -113,38 +113,38 @@ class PoolRef(Generic[T]):
 @dataclass
 class VMMIOPTE:
     page_idx: int
-    owner_id: int
     physical_addr: int
     is_valid: bool = True
+    read: bool = True
+    write: bool = True
 
 
 class VMMIOPTERegistry:
-    """Simulates Tier 2 runtime_vmmio.md FC=14 SHM page owner tracking."""
+    """Simulates Tier 2 runtime_vmmio.md FC=14 SHM page table (PTE without owner_id)."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.ptes: dict[int, VMMIOPTE] = {}
 
-    def register_page(self, page_idx: int, owner_id: int, physical_addr: int) -> None:
+    def map_page(
+        self, page_idx: int, physical_addr: int, read: bool = True, write: bool = True
+    ) -> None:
+        """Maps an SHM page into vMMIO page table."""
         self.ptes[page_idx] = VMMIOPTE(
             page_idx=page_idx,
-            owner_id=owner_id,
             physical_addr=physical_addr,
             is_valid=True,
+            read=read,
+            write=write,
         )
 
-    def update_owner(self, page_idx: int, new_owner_id: int) -> bool:
-        if page_idx not in self.ptes or not self.ptes[page_idx].is_valid:
-            return False
-        self.ptes[page_idx].owner_id = new_owner_id
-        return True
-
-    def get_owner(self, page_idx: int) -> int | None:
-        pte = self.ptes.get(page_idx)
-        return pte.owner_id if pte and pte.is_valid else None
-
-    def unregister_page(self, page_idx: int) -> None:
+    def unmap_page(self, page_idx: int) -> None:
+        """Unmaps an SHM page from vMMIO: removes PTE and invalidates TLB entry."""
         if page_idx in self.ptes:
-            self.ptes[page_idx].is_valid = False
+            del self.ptes[page_idx]
+
+    def is_mapped(self, page_idx: int) -> bool:
+        """Checks if a page is currently mapped."""
+        return page_idx in self.ptes and self.ptes[page_idx].is_valid
 
 
 # -----------------------------------------------------------------------------
@@ -186,12 +186,12 @@ class SharedBlock:
         return self.owner
 
     def release(self) -> int:
-        """Revoke sender access and prepare for transfer (marks FLIGHT)."""
+        """Revoke sender access and prepare for transfer (unmaps from vMMIO & flushes TLB)."""
         assert self._is_active, "Cannot release inactive SharedBlock"
         self._is_active = False
         self._is_in_flight = True
-        # Set vMMIO PTE to FLIGHT sentinel (Revoke phase)
-        self._manager.vmmio_registry.update_owner(self.page_idx, FB_TASK_ID_FLIGHT)
+        # Unmap from vMMIO page table and invalidate TLB (Revoke phase)
+        self._manager.vmmio_registry.unmap_page(self.page_idx)
         return self.shm_id
 
     def drop(self) -> None:
@@ -485,8 +485,8 @@ class MemoryManager:
         slot_idx = 0
         shm_id = (page_idx << 8) | slot_idx
         base_addr = 0x20080000 + (page_idx * FB_PAGE_SIZE)
-        # Register page into vMMIO FC=14 table with caller as owner
-        self.vmmio_registry.register_page(page_idx, caller_task_id, base_addr)
+        # Map page into vMMIO FC=14 table
+        self.vmmio_registry.map_page(page_idx, base_addr)
         self.shm_slots[shm_id] = {
             "page_idx": page_idx,
             "slot_idx": slot_idx,
@@ -519,16 +519,8 @@ class MemoryManager:
             )
 
         page_idx = slot["page_idx"]
-        current_owner = self.vmmio_registry.get_owner(page_idx)
-        # Precondition check: Grant must be established in vMMIO PTE
-        if current_owner != receiver_task_id:
-            return Result(
-                error=MemoryErrorResult(
-                    "ERR_GRANT_NOT_COMPLETED",
-                    RecoveryStrategy(RecoveryAction.RETRY, "Grant phase incomplete in vMMIO PTE"),
-                )
-            )
-
+        # Grant phase establishes mapping for receiver
+        self.vmmio_registry.map_page(page_idx, slot["base_address"])
         slot["owner"] = receiver_task_id
         sb = SharedBlock(
             shm_id=shm_id,
@@ -542,18 +534,18 @@ class MemoryManager:
         return Result(value=sb)
 
     def rollback_transfer(self, original_sender_id: int, shm_id: int) -> None:
-        """Rollback transfer on queue full: restore original owner in vMMIO PTE."""
+        """Rollback transfer on queue full: remap to original sender."""
         slot = self.shm_slots.get(shm_id)
         if slot:
             page_idx = slot["page_idx"]
-            self.vmmio_registry.update_owner(page_idx, original_sender_id)
+            self.vmmio_registry.map_page(page_idx, slot["base_address"])
             slot["owner"] = original_sender_id
 
     def _deallocate_shared_slot(self, page_idx: int, slot_idx: int, owner: int) -> None:
         shm_id = (page_idx << 8) | slot_idx
         if shm_id in self.shm_slots:
             del self.shm_slots[shm_id]
-            self.vmmio_registry.unregister_page(page_idx)
+            self.vmmio_registry.unmap_page(page_idx)
             self.total_allocated_bytes -= FB_PAGE_SIZE
 
     def deallocate(self, caller_task_id: int, addr: int) -> None:
@@ -695,26 +687,23 @@ def test_mem_06_guest_ram_64kb_alignment() -> None:
 
 
 def test_mem_07_allocate_shared_registers_vmmio_pte() -> None:
-    """MEM-07: allocate-shared registers corresponding vMMIO FC=14 PTE with caller owner_id."""
+    """MEM-07: allocate-shared maps corresponding vMMIO FC=14 PTE."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     res = mm.allocate_shared(caller_task_id=1, size=2048)
     assert res.is_ok
     sb = res.unwrap()
-    owner = mm.vmmio_registry.get_owner(sb.page_idx)
-    assert owner == 1, "vMMIO PTE must be registered with owner_id = 1"
+    assert mm.vmmio_registry.is_mapped(sb.page_idx), "vMMIO PTE must be mapped upon allocation"
 
 
-def test_mem_08_claim_requires_grant_completion() -> None:
-    """MEM-08: claim fails if Grant phase has not updated vMMIO PTE owner_id."""
+def test_mem_08_claim_requires_valid_shm_id() -> None:
+    """MEM-08: claim fails if shm_id is invalid or deallocated."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
-    sb = mm.allocate_shared(caller_task_id=1, size=1024).unwrap()
-    shm_id = sb.release()
-    # Attempt claim by Task 2 before IPC Router has granted (PTE still FLIGHT)
-    c_res = mm.claim(receiver_task_id=2, shm_id=shm_id)
+    # Attempt claim with non-existent SHM ID
+    c_res = mm.claim(receiver_task_id=2, shm_id=0x9999)
     assert c_res.is_err
-    assert c_res.error.error_code == "ERR_GRANT_NOT_COMPLETED"
+    assert c_res.error.error_code == "ERR_INVALID_SHM_ID"
 
 
 def test_mem_09_hal_acquire_buffer_delegates_to_allocate_shared() -> None:
@@ -726,52 +715,53 @@ def test_mem_09_hal_acquire_buffer_delegates_to_allocate_shared() -> None:
     assert res.is_ok
     sb = res.unwrap()
     assert sb.owner == 10
-    assert mm.vmmio_registry.get_owner(sb.page_idx) == 10
+    assert mm.vmmio_registry.is_mapped(sb.page_idx)
 
 
 def test_mem_10_shared_block_ownership_transfer() -> None:
     """MEM-10: allocate-shared -> release -> claim moves ownership cleanly without double-ownership."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
-    # 1. Task A allocates
+    # 1. Task A allocates: mapped in vMMIO
     sb_a = mm.allocate_shared(caller_task_id=1, size=1024).unwrap()
     assert sb_a.get_owner() == 1
-    # 2. Task A releases (Revoke)
+    assert mm.vmmio_registry.is_mapped(sb_a.page_idx)
+    # 2. Task A releases (Revoke): unmapped and TLB flushed
     shm_id = sb_a.release()
     assert not sb_a._is_active
-    # 3. Simulate IPC Router Grant phase: update vMMIO PTE to Task B
-    mm.vmmio_registry.update_owner(sb_a.page_idx, 2)
-    # 4. Task B claims
+    assert not mm.vmmio_registry.is_mapped(sb_a.page_idx)
+    # 3. Task B claims (Grant): mapped for receiver
     sb_b = mm.claim(receiver_task_id=2, shm_id=shm_id).unwrap()
     assert sb_b.get_owner() == 2
     assert sb_b._is_active
+    assert mm.vmmio_registry.is_mapped(sb_b.page_idx)
 
 
 def test_mem_10b_shared_block_vmmio_pte_flight_and_claim() -> None:
-    """MEM-10b: release() sets PTE to FLIGHT; claim() sets PTE to receiver."""
+    """MEM-10b: release() unmaps PTE; claim() remaps PTE to receiver."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     sb = mm.allocate_shared(caller_task_id=1, size=1024).unwrap()
     page_idx = sb.page_idx
-    assert mm.vmmio_registry.get_owner(page_idx) == 1
+    assert mm.vmmio_registry.is_mapped(page_idx)
     sb.release()
-    assert mm.vmmio_registry.get_owner(page_idx) == FB_TASK_ID_FLIGHT
-    # Simulate Grant
-    mm.vmmio_registry.update_owner(page_idx, 2)
+    # During flight, page is unmapped (blocking stale access)
+    assert not mm.vmmio_registry.is_mapped(page_idx)
     claimed_sb = mm.claim(receiver_task_id=2, shm_id=sb.shm_id).unwrap()
-    assert mm.vmmio_registry.get_owner(page_idx) == 2
+    # Claim remaps the page
+    assert mm.vmmio_registry.is_mapped(page_idx)
     assert claimed_sb.get_owner() == 2
 
 
-def test_mem_10c_rollback_transfer_restores_owner_id() -> None:
-    """MEM-10c: rollback_transfer() restores PTE owner_id to sender (not left as FLIGHT)."""
+def test_mem_10c_rollback_transfer_restores_mapping() -> None:
+    """MEM-10c: rollback_transfer() remaps PTE to original sender."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     sb = mm.allocate_shared(caller_task_id=1, size=1024).unwrap()
     shm_id = sb.release()
-    assert mm.vmmio_registry.get_owner(sb.page_idx) == FB_TASK_ID_FLIGHT
+    assert not mm.vmmio_registry.is_mapped(sb.page_idx)
     mm.rollback_transfer(original_sender_id=1, shm_id=shm_id)
-    assert mm.vmmio_registry.get_owner(sb.page_idx) == 1, "PTE owner must be restored to Task 1"
+    assert mm.vmmio_registry.is_mapped(sb.page_idx), "PTE mapping must be restored to sender"
 
 
 def test_mem_11_shared_block_raii_auto_deallocate() -> None:
@@ -887,11 +877,11 @@ if __name__ == "__main__":
     test_mem_05_release_and_deallocate_owner_only()
     test_mem_06_guest_ram_64kb_alignment()
     test_mem_07_allocate_shared_registers_vmmio_pte()
-    test_mem_08_claim_requires_grant_completion()
+    test_mem_08_claim_requires_valid_shm_id()
     test_mem_09_hal_acquire_buffer_delegates_to_allocate_shared()
     test_mem_10_shared_block_ownership_transfer()
     test_mem_10b_shared_block_vmmio_pte_flight_and_claim()
-    test_mem_10c_rollback_transfer_restores_owner_id()
+    test_mem_10c_rollback_transfer_restores_mapping()
     test_mem_11_shared_block_raii_auto_deallocate()
     test_mem_12_shm_id_kv_pair_encoding()
     test_mem_13_query_and_check_ownership_are_removed()

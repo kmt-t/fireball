@@ -256,7 +256,7 @@ WASM 実行エンジン（`runtime_vsoc`）、CPS スレッドインタープリ
 | `{LOAD-GOTCHA-02}` | `runtime_loader.md` | `runtime_loader_test_spec.md` | 検証失敗時のバンプアロケータ完全ロールバック——パース失敗時にバンプポインタをロード開始前の位置へ巻き戻しメモリリークを防ぐ | LOAD-GOTCHA-02 |
 | `{VMMIO-GOTCHA-01}` | `runtime_vmmio.md` | `runtime_vmmio_test_spec.md` | Bit 31 RAM 高速バイパス経路はページテーブル走査・TLB検索を一切行わない | VMMIO-GOTCHA-01 |
 | `{VMMIO-GOTCHA-02}` | `runtime_vmmio.md` | `runtime_vmmio_test_spec.md` | Direct-Mapped TLB の 4-bit Folding XOR Hash（単純な下位マスクでは異なるFCの同一下位ページが衝突する） | VMMIO-GOTCHA-02 |
-| `{VMMIO-GOTCHA-03}` | `runtime_vmmio.md` | `runtime_vmmio_test_spec.md` | SHM Revoke 時、対象TLBスロットを即時破棄しin-flightアクセスを TRAP_OWNER_MISMATCH で遮断する | VMMIO-GOTCHA-03 |
+| `{VMMIO-GOTCHA-03}` | `runtime_vmmio.md` | `runtime_vmmio_test_spec.md` | SHM Revoke 時、PTEをアンマップし対象TLBスロットを即時破棄してin-flightアクセスを TRAP_UNREGISTERED_PAGE で遮断する | VMMIO-GOTCHA-03 |
 | `{DBG-GOTCHA-01}` | `debug_manager.md` | `debug_manager_test_spec.md` | デバッガからのメモリ書き込み（M パケット）実行と同時に JIT キャッシュ全バンクを即時無効化する（{Debugger_Jit_Flush} の勘所） | DBG-GOTCHA-01 |
 | `{DBG-GOTCHA-03}` | `debug_manager.md` | `debug_manager_test_spec.md` | GDB RSP チェックサム不一致パケットはサーバーが破棄しNAK（-）を返して再送を要求する | DBG-GOTCHA-03 |
 | `{DBG-GOTCHA-04}` | `debug_manager.md` | `debug_manager_test_spec.md` | 協調スケジューラ下での RSP 応答分割送出と複数 yield 跨ぎ耐性（長小応答 g の分割バッファ蓄積） | DBG-GOTCHA-04 |
@@ -375,8 +375,8 @@ Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キ�
 | `{MPU_WX_Enforcement}` | `platform_memory.md` | `platform_memory.md` | JITコンパイル時のMPU属性切り替え（RW+XN ⇔ RO+X）とキャッシュコヒーレンシバリア発行のトランザクションバッチ化ポリシー | MEM-GOTCHA-04 |
 | `{MainLoopReturnGuarantee}` | `os_coos.md` | `os_coos.md` | 連続ハンドオフ上限到達時のメインループ強制復帰形式保証 | Scenario 6 |
 | `{Orthogonal_Design}` | `os_coos.md` | `os_coos_test_spec.md` | 1チャネル1待機者の強制——多重待機はプログラミングエラーとして即座にアサーション違反で停止する（待機列によるキューイングを設計上排除） | COOS-GOTCHA-02 |
-| `{OwnerMismatchTrap}` | `runtime_vmmio.md` | `runtime_vmmio.md` | タスク間共有メモリ（FC=0xE）の所有権不一致時 TRAP_OWNER_MISMATCH 遮断 | Scenario 10 (INT-93) |
-| `{PageGranularPermissionIsolation}` | `platform_memory.md` | `platform_memory.md` | 共有メモリの4KB物理ページ単位での排他所有権（owner_id）管理とアクセス権限分離 | MEM-14 |
+| `{OwnerMismatchTrap}` | `runtime_vmmio.md` | `runtime_vmmio.md` | タスク間共有メモリ（FC=0xE）の所有権移動に伴うアンマップによる未登録ページフォルト（TRAP_UNREGISTERED_PAGE）遮断 | Scenario 10 (INT-93) |
+| `{PageGranularPermissionIsolation}` | `platform_memory.md` | `platform_memory.md` | 共有メモリの4KB物理ページ単位での排他所有権管理とアクセス権限分離 | MEM-14 |
 | `{PreflightRejection}` | `ipc_router.md` | `ipc_router.md` | Revoke前の静的チェック（RBAC拒否・メッセージサイズ超過）失敗時、所有権は送信側から一度も動かない | Scenario 9 (INT-81) |
 | `{RAM_Bypass_Bit31}` | `runtime_vmmio.md` | `runtime_vmmio.md` | Bit 31 == 0 アドレスに対するページテーブル不使用 $O(1)$ 高速バイパス | Scenario 10 (INT-90) |
 | `{RSPChecksumVerify}` | `gdb_rsp_protocol.md` | `debug_manager.md` | GDB RSP パケットのチェックサム検証と、不一致時のNAK応答による再送制御ポリシー | DBG-GOTCHA-03 |

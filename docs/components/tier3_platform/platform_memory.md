@@ -69,9 +69,9 @@ WITインターフェース名は kebab-case で定義されるが、C++の公�
 | シグネチャ | `acquire-slot<T>() -> result<pool-ref<T>, memory-error>`<br>`release-slot<T>(ref: pool-ref<T>) -> void`<br>(C++マッピング: `fireball::co_mem::acquire_slot<T>` / `release_slot<T>`) |
 | 戻り値 | 成功時は `pool-ref<T>`（静的プール内スロットへの型付きハンドル） |
 
-#### `allocate-shared` (IPC転送データ専用)
+##### `allocate-shared` (IPC転送データ専用)
 <!-- traceability: {OwnershipTransfer} -->
-IPC転送のための共有メモリブロック確保は、上記の `acquire-partition`/`acquire-slot` とは別のライフサイクルを持つ。所有権の移動が `{ThreeStageRouting}` の Revoke → Rendezvous → Grant と、`{OwnerMismatchTrap}`（Tier 2、SHM=FC=14 の PTE `owner_id`/`FB_TASK_ID_FLIGHT`）双方に跨るため、`shared-block` はこの2つの上位仕様が管理する状態を物理メモリ側で保持するRAIIラッパーであり、独自の所有権管理を並行して持つものではない。`release()`/`claim()` の呼び出しは、`{ThreeStageRouting}` のRevoke/Grantフェーズおよび対応する vMMIO PTE の `owner_id` 更新と対応する（詳細は ）。 `{OwnershipTransfer}`
+IPC転送のための共有メモリブロック確保は、上記の `acquire-partition`/`acquire-slot` とは別のライフサイクルを持つ。所有権の移動が `{ThreeStageRouting}` の Revoke → Rendezvous → Grant と連動し、`shared-block` はこの上位仕様が管理する状態を物理メモリ側で保持するRAIIラッパーであり、独自の所有権管理を並行して持つものではない。`release()`/`claim()` の呼び出しは、`{ThreeStageRouting}` のRevoke/Grantフェーズおよび対応する vMMIO PTE のアンマップ／再マッピング（および TLB フラッシュ）と連動する。 `{OwnershipTransfer}`
 
 | 項目 | 内容 |
 | :--- | :--- |
@@ -79,7 +79,7 @@ IPC転送のための共有メモリブロック確保は、上記の `acquire-p
 | シグネチャ | `allocate-shared(size: byte-count) -> result<shared-block, recovery-strategy>` |
 | 引数 | `size`: 割り当てサイズ |
 | 戻り値 | 成功時は `shared-block` リソース |
-| 事後条件 | 対応する vMMIO FC=14 ページが `owner_id` = 呼び出し元タスクIDで登録される（`map_shm_page` 相当） |
+| 事後条件 | 対応する vMMIO FC=14 ページが呼び出し元タスクの仮想アドレス空間にマッピング登録される（`map_shm_page` 相当） |
 | 補足 | `{HAL_Interface}` が公開する`acquire_buffer(size)`は、本APIの上にHALのデバイス通信用途を薄くラップしたものである（同じTier 3内の兄弟コンポーネント。両者が別々にSHMページを確保することはない）。 |
 
 #### 所有権要求（claim）
@@ -87,9 +87,9 @@ IPC転送のための共有メモリブロック確保は、上記の `acquire-p
 | :--- | :--- |
 | 機能概要 | IPC経由で受け取った共有メモリIDから、所有権を持つリソースを取得する。 |
 | シグネチャ | `claim(id: shm-id) -> result<shared-block, recovery-strategy>` |
-| 引数 | `id`: 共有メモリID（`{Syscall_Mapping}` の `shm-slice.handle` と同一の `(page_idx << 8) \| slot_idx` 形式） |
+| 引数 | `id`: 共有メモリID（`{Syscall_Mapping}` の `shm-slice.handle` と同一の `(page_idx << 8) | slot_idx` 形式） |
 | 戻り値 | 成功時は `shared-block` リソース |
-| 事前条件 | `{ThreeStageRouting}` のGrantフェーズが完了済み（対応するvMMIO PTEの`owner_id`が呼び出し元タスクIDに更新済み）であること |
+| 事前条件 | `{ThreeStageRouting}` のGrantフェーズが完了済み（対応するvMMIO PTEが受領側タスク空間にマッピング登録済み）であること |
 
 #### 解放（deallocate）
 | 項目 | 内容 |
@@ -146,41 +146,41 @@ IPC転送のための共有メモリブロック確保は、上記の `acquire-p
 
 ### 6.3 ページ単位権限分離仕様（Page-Granular Permission Isolation）
 <!-- traceability: {PageGranularPermissionIsolation} {META_FaultIsolation} -->
-Cortex-M33 MPU および vMMIO のハードウェア保護機構において、アクセス権限（`owner_id`、読み書き許可ビット）は **4KB 物理ページ（`FB_PAGE_SIZE = 4096`）単位**でのみ設定可能である。
+Cortex-M33 MPU および vMMIO のハードウェア保護機構において、マッピングおよびアクセス権限（読み書き許可ビット）は **4KB 物理ページ（`FB_PAGE_SIZE = 4096`）単位**でのみ設定可能である。
 したがって、システム全体のメモリ保護を完全にするため、**「権限（所有タスク ID およびアクセス権限）ごとに物理ページを完全に分離する」** ことを不変条件として強制する。 `{PageGranularPermissionIsolation}`
 
 1. **他タスクとのページ混在の禁止**:
-   - 異なるタスク（異なる `owner_id`）に属する共有メモリスロットを同一 4KB 物理ページ内に共存（相乗り）させることは厳格に禁止される。
+   - 異なるタスクに属する共有メモリスロットを同一 4KB 物理ページ内に共存（相乗り）させることは厳格に禁止される。
    - `allocate_shared(caller_task_id, size)` は、既に `caller_task_id` が所有し十分な空き容量のあるページが存在する場合にのみスロットを切り出し、存在しない場合は必ず新規の 4KB 物理ページを `caller_task_id` 専用として割り当てる。
 2. **ページ単位の所有権移譲**:
    - IPC 転送時、所有権の移譲（Revoke $\to$ Grant）はページ全体を単位として連動する。
-   - ページ内の全スロットは常に同一の所有者（または `FB_TASK_ID_FLIGHT`）であり、一部のスロットのみが別タスクへ移譲されてページ内で所有者が分裂する状態は生じない。
+   - ページ内の全スロットは常に同一の所有者（または移譲中アンマップ状態）であり、一部のスロットのみが別タスクへ移譲されてページ内で所有者が分裂する状態は生じない。
 
 ### 6.4 共有メモリライフサイクルと権限遷移プロトコル
 <!-- traceability: {OwnershipTransfer} {META_FaultIsolation} -->
-`shared-block` リソースが物理メモリ側での所有権の単位である。ただし所有権の実体（誰が読み書きしてよいか）を最終的に判定するのは、`{OwnerMismatchTrap}` のTier 3ゲート（vMMIO FC=14のPTE `owner_id`/`FB_TASK_ID_FLIGHT`（`0xFF`））である。`shared-block`の`release()`/`claim()`は、`{ThreeStageRouting}` のRevoke→Rendezvous→Grantと1対1で対応する物理層の操作であり、独立した二重の所有権管理を行うものではない。 `{META_FaultIsolation}` `{OwnershipTransfer}`
+`shared-block` リソースが物理メモリ側での所有権の単位である。アクセス可否の執行は、マッピング有無（vMMIO FC=14 の PTE 存在・VALID）によって行われる。`shared-block`の`release()`/`claim()`は、`{ThreeStageRouting}` のRevoke→Rendezvous→Grantと1対1で対応する物理層の操作であり、独立した二重の所有権管理を行うものではない。 `{META_FaultIsolation}` `{OwnershipTransfer}`
 
 ##### ライフサイクルフェーズ遷移表
-| ステップ | フェーズ | 実行API / イベント | 送信元(Task A) | 受信先(Task B) | vMMIO PTE `owner_id` & TLB 挙動 |
+| ステップ | フェーズ | 実行API / イベント | 送信元(Task A) | 受信先(Task B) | vMMIO PTE & TLB 挙動 |
 | :---: | :--- | :--- | :--- | :--- | :--- |
-| 1 | 確保 | `allocate_shared(size)` | 所有 (`TaskA`) | - | `owner_id = TaskA`、4KB 専用物理ページ確保 |
+| 1 | 確保 | `allocate_shared(size)` | 所有 (`TaskA`) | - | `TaskA` 用にマッピング登録、4KB 専用物理ページ確保 |
 | 2 | 書込 | `shm.write_*` | 書込可能 | - | 正常アクセス |
-| 3 | 送信開始 | `shm.release()` | **無効化** (ハンドル返却) | - | `owner_id = FB_TASK_ID_FLIGHT` (0xFF)、**TLB 即時フラッシュ** (Revoke) |
+| 3 | 送信開始 | `shm.release()` | **無効化** (ハンドル返却) | - | **vMMIO アンマップ ＆ TLB 即時フラッシュ** (Revoke) |
 | 4 | メッセージ化 | `shm-id` を kv_pair に格納 | - | - | スコープ: `RESOURCE` |
 | 5 | ランデブー | `ipc.send(chan, msg)` | サスペンド待機 | - | 送受信マッチング待ち (Rendezvous) |
-| 6 | 認可・受信 | `ipc.recv(chan)` | 待機解除 | 受信完了 | `owner_id = TaskB`、**TLB 即時フラッシュ** (Grant) |
-| 7 | 所有権取得 | `claim(shm-id)` | - | **所有** (`TaskB`) | `owner_id == TaskB` 検証成功、新ハンドル取得 |
+| 6 | 認可・受信 | `ipc.recv(chan)` | 待機解除 | 受信完了 | 受信タスクへのハンドオフ確約 |
+| 7 | 所有権取得 | `claim(shm-id)` | - | **所有** (`TaskB`) | `TaskB` 用に **マッピング登録** (Grant) |
 | 8 | 読出 | `shm.read_*` | - | 読出可能 | 正常アクセス |
-| 9 | 自動解放 | `shared-block` の RAII drop | - | **解放** | PTE 無効化、TLB フラッシュ、ページプール返却 |
+| 9 | 自動解放 | `shared-block` の RAII drop | - | **解放** | PTE アンマップ、TLB フラッシュ、ページプール返却 |
 
 - **非所有タスク操作の完全遮断 (`MEM-GOTCHA-02`)**: 共有メモリブロックの操作時、ブロックの所有タスク ID を厳格に照合し、非所有タスクからの操作は即座にトラップ（`ShmTrap` / `ERR_PERMISSION_DENIED`）で遮断する。
-- **送信中ブロックの保護状態 (`MEM-GOTCHA-03`)**: 送信開始（`release()`）から受信完了（`claim()`）までの間、`owner_id` を一時的に `FB_TASK_ID_FLIGHT`（`0xFF`）に設定し、TLB を即時フラッシュすることで TOCTOU 競合や不正アクセスを構造的に排除する。
-- **障害時回復**: Rendezvous中に通信が中断された場合、`rollback_transfer(original_sender_id, shm_id)` により `owner_id` を送信元タスクIDへ復元し、リソースのダングリングを防止する。
+- **送信中ブロックの保護状態 (`MEM-GOTCHA-03`)**: 送信開始（`release()`）から受信完了（`claim()`）までの間、vMMIO から PTE をアンマップし、TLB を即時フラッシュすることで、送信元タスクからの旧アドレスアクセスを未登録ページフォルト（`TRAP_UNREGISTERED_PAGE`）として確実に遮断し、TOCTOU 競合や不正アクセスを構造的に排除する。
+- **障害時回復**: Rendezvous中に通信が中断された場合、`rollback_transfer(original_sender_id, shm_id)` により送信元タスクへ PTE を再マッピングし、リソースのダングリングを防止する。
 
 
 #### ページ単位権限分離と共有メモリ移譲プロトコル（責務シーケンス図）
 <!-- traceability: {PageGranularPermissionIsolation} {OwnershipTransfer} {VmmioShmDelegation} -->
-Task A、MemoryManager、vMMIO Controller、Task B 間での専用 4KB 物理ページ切り出しと所有権遷移（A $	o$ FLIGHT $	o$ B）の責務分離を示す。
+Task A、MemoryManager、vMMIO Controller、Task B 間での専用 4KB 物理ページ切り出しと所有権遷移（A $\to$ アンマップ $\to$ B）の責務分離を示す。
 
 ```mermaid
 sequenceDiagram
@@ -193,23 +193,23 @@ sequenceDiagram
     TaskA->>Mem: allocate_shared(size)
     Note over Mem: MEM-GOTCHA-01: Page-Granular Isolation
     Mem->>Mem: Allocate fresh dedicated 4KB Physical Page for Task A
-    Mem->>vMMIO: Register PTE: VPN -> PPN, owner_id = Task A
+    Mem->>vMMIO: Register PTE: VPN -> PPN (mapped for Task A)
     Mem-->>TaskA: Return shared_block (local handle)
 
     TaskA->>TaskA: Write data into shared buffer
     TaskA->>Mem: release() (Revoke phase)
-    Note over Mem,vMMIO: MEM-GOTCHA-03: Set owner_id = FB_TASK_ID_FLIGHT (0xFF)
-    Mem->>vMMIO: Set PTE.owner_id = 0xFF & Invalidate TLB
-    vMMIO-->>Mem: TLB flushed
+    Note over Mem,vMMIO: MEM-GOTCHA-03: Unmap Page & Invalidate TLB
+    Mem->>vMMIO: Unmap Page: unmap_shm_page(vpn) & Flush TLB
+    vMMIO-->>Mem: TLB flushed & PTE removed
     Mem-->>TaskA: Return shm_id (access revoked)
 
     Note over TaskA,TaskB: IPC Router CSP Rendezvous (Zero-copy handoff shm_id)
 
     TaskB->>Mem: claim(shm_id) (Grant phase)
-    Mem->>vMMIO: Verify & Set PTE.owner_id = Task B & Invalidate TLB
-    vMMIO-->>Mem: Access granted
+    Mem->>vMMIO: Map PTE for Task B: map_shm_page(vpn, ppn)
+    vMMIO-->>Mem: Mapping active
     Mem-->>TaskB: Return new shared_block handle
-    TaskB->>TaskB: Read data safely (PTE.owner_id == Task B)
+    TaskB->>TaskB: Read data safely (mapped in Task B)
 ```
 
 #### JIT W^X バッチ切り替えトランザクション手順（手順アクティビティ図）
@@ -277,7 +277,7 @@ Copy-and-Patch の各命令パッチごとに個別 MPU 切替を行うとバリ
 
 ### 8.1 検証対象の不変条件
 - **ページ単位権限分離**: 4KB 物理ページ内に異種タスクのスロットが共存しないこと（`MEM-14`, `MEM-GOTCHA-01`）。
-- **非所有者アクセストラップ**: 所有権未取得スロットへのアクセスが `TRAP_OWNER_MISMATCH` で拒絶されること（`MEM-16`, `MEM-GOTCHA-02`）。
+- **非所有者アクセストラップ**: 所有権未取得（未マッピング）スロットへのアクセスが `TRAP_UNREGISTERED_PAGE` で拒絶されること（`MEM-16`, `MEM-GOTCHA-02`）。
 - **W^X 不変条件**: JIT キャッシュ領域で `RWX` が同時に許可される状態が存在しないこと（[`jit_cache_model.py`](docs/components/tier3_jit/formal/jit_cache_model.py), `MEM-23`）。
 
 ### 8.2 テスト仕様書との連携
@@ -288,12 +288,12 @@ Copy-and-Patch の各命令パッチごとに個別 MPU 切替を行うとバリ
 このコンポーネントのADRは `{ADR_SharedBlockRaii}` および `{ADR_PageGranularPermissionIsolation}` のキーワードで参照される。詳細な背景・選択肢の比較検討は以下に記録する。
 
 - **決定事項**: `{ADR_PageGranularPermissionIsolation}` (2026-09-02)
-  - **背景**: vMMIO FC=14 の PTE および MPU は 4KB ページ単位でしか権限（`owner_id`、RW許可）を設定できない。同一ページ内に異なるタスクのスロットが混在すると、タスク間のメモリ隔離が破綻し、他タスクのデータが読み書きされる危険があった。
+  - **背景**: vMMIO FC=14 の PTE および MPU は 4KB ページ単位でしかマッピング・権限（RW許可）を設定できない。同一ページ内に異なるタスクのスロットが混在すると、タスク間のメモリ隔離が破綻し、他タスクのデータが読み書きされる危険があった。
   - **選択肢と評価**:
     - 案1: 単一ページ内に複数タスクのスロットを混在させ、メモリアクセス時にソフトウェアでスロット境界とタスクIDを毎回検査する。チェックのオーバーヘッドが大きく、vMMIO のハードウェア PTE / TLB 高速ディスパッチの恩恵を損なう。
-    - 案2: 権限（所有タスクID）ごとに独立した 4KB 物理ページを割り当て、同一ページ内には同一所有者のスロットのみを配置する。メモリ消費はページ単位に量子化されるが、PTE によるページ単位のハードウェア保護（`TRAP_OWNER_MISMATCH`）が完全に成立し、ゼロコストでタスク間隔離が担保される。
+    - 案2: 権限（所有タスクID）ごとに独立した 4KB 物理ページを割り当て、同一ページ内には同一所有者のスロットのみを配置する。メモリ消費はページ単位に量子化されるが、ページ単位のマッピング有無による教科書的な仮想記憶保護が完全に成立し、ゼロコストでタスク間隔離が担保される。
   - **結論**: 案2を採用する。
-  - **理由**: Fireball の最重要方針である `{META_FaultIsolation}`（障害隔離）および `{META_ZeroCostAbstraction}` を実現するため。PTE の `owner_id` チェックを純粋なページ単位検証とし、アクセスパスを最速に保つ。
+  - **理由**: Fireball の最重要方針である `{META_FaultIsolation}`（障害隔離）および `{META_ZeroCostAbstraction}` を実現するため。PTE に余計な `owner_id` フィールドを持たせず、マッピング有無による未登録ページ遮断としてアクセスパスを最速に保つ。
 
 - **決定事項**: `{ADR_SharedBlockRaii}` (2026-02-17)
   - **背景**: IPC転送用の共有メモリを、単なる`shm-id`（整数）として扱うか、所有権を持つリソース型として扱うかを決定する必要があった。
@@ -301,7 +301,7 @@ Copy-and-Patch の各命令パッチごとに個別 MPU 切替を行うとバリ
     - 案1: `shm-id`を単なる整数IDとし、明示的な`release_shm(id)`/`acquire_shm(id)`関数で操作する。実装は単純だが、解放忘れやダングリング参照を型システムで防げない。
     - 案2: `shm-id`をRAII所有権を持つ`shared-block`リソースとして設計し、`release()`/`claim()`で所有権移動を明示し、デストラクタで自動解放する。
   - **結論**: 案2を採用する。
-  - **理由**: `release()`で送信側が無効化、`claim()`で受信側が取得する設計により、ダングリングポインタを構造的に防止できる。デストラクタでの自動解放により手動`deallocate`忘れも排除できる。`to-shm`/`to-address`のような対称的な変換名より`release`/`claim`の方が所有権移動という意図を明確に表す。この所有権移動は独立した機構ではなく、`ipc_router.md`のRevoke/Grant（PTE `owner_id`更新）と完全連動する（{OwnershipTransfer}）。
+  - **理由**: `release()`で送信側が無効化、`claim()`で受信側が取得する設計により、ダングリングポインタを構造的に防止できる。デストラクタでの自動解放により手動`deallocate`忘れも排除できる。`to-shm`/`to-address`のような対称的な変換名より`release`/`claim`の方が所有権移動という意図を明確に表す。この所有権移動は独立した機構ではなく、`ipc_router.md`のRevoke/Grant（vMMIO PTE アンマップ／再マッピング）と完全連動する（`{OwnershipTransfer}`）。
 
 - **決定事項**: `{ADR_MemoryManagerMinimalSurface}` (2026-02-17)
   - **背景**: メモリマネージャのAPIに、確保済みブロックの情報を問い合わせる`query(addr) -> memory-info`と、所有権を確認する`check-ownership(addr, task-id) -> bool`を含めるかどうかを決定する必要があった。

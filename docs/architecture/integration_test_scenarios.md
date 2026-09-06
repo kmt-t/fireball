@@ -62,7 +62,7 @@
 | `PreflightRejection` | `ipc_router.md` | Revoke前の静的チェック（RBAC拒否・メッセージサイズ超過）失敗時、所有権は送信側から一度も動かない | `INT-81` | ✅ PASS |
 | `RAM_Bypass_Bit31` | `runtime_vmmio.md` | Bit 31 == 0 アドレスに対するページテーブル不使用 $O(1)$ 高速バイパス | `INT-90` | ✅ PASS |
 | `DirectMappedTLB16` | `runtime_vmmio.md` | 20-bit VPN の 4-bit Folding XOR Hash による Direct-Mapped TLB キャッシュ | `INT-92` | ✅ PASS |
-| `OwnerMismatchTrap` | `runtime_vmmio.md` | タスク間共有メモリ（FC=0xE）の所有権不一致時 `TRAP_OWNER_MISMATCH` 遮断 | `INT-93` | ✅ PASS |
+| `OwnerMismatchTrap` | `runtime_vmmio.md` | タスク間共有メモリ（FC=0xE）の所有権移動に伴うアンマップによる未登録ページフォルト（`TRAP_UNREGISTERED_PAGE`）遮断 | `INT-93` | ✅ PASS |
 | `ActiveDataSegments` | `runtime_loader.md` | モジュールロード時のアクティブデータセグメント自動リニアメモリ展開 | `INT-01` | ✅ PASS |
 | `CPS_4Args` | `runtime_interpreter.md` | `ip, stack_bot, local_base, tos` 4引数による CPS 関数ポインタディスパッチ | `INT-01`〜`INT-105` | ✅ PASS |
 | `SignZeroExtension` | `runtime_interpreter.md` | 8/16/32-bit メモリ読み書きにおける符号付き・符号なしゼロ/符号拡張の完全性 | `INT-70` | ✅ PASS |
@@ -235,14 +235,14 @@
   - Bit 31 RAM Bypass フラグ: ゲストリニア RAM（Bit 31 == 0）の $O(1)$ 高速パス
   - 仮想デバイス（FC=0xC）、共有メモリ（FC=0xE）、物理パススルー（FC=0xF）の PTE マッピング
   - 4-bit Folding XOR Hash による Direct-Mapped Software TLB[16] ヒット/ミス遷移
-  - タスク間共有メモリの所有権分離と `TRAP_OWNER_MISMATCH` 検知
+  - タスク間共有メモリの所有権分離とアンマップによる未登録ページ遮断
 
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | INT-90 | Bit 31 RAM Bypass 高速パス | リニア RAM アドレス | `access()` 実行 | ページテーブルを介さず `OK_GUEST_RAM` で即時バイパスされる | `RAM_Bypass_Bit31` |
 | INT-91 | 仮想デバイス書き込みとハンドラディスパッチ | デバイスページ登録済み | `access()` で書き込み | `OK_SYSCALL` が返り登録ハンドラが呼び出される | `vMMIO_TrapAndEmulate` |
 | INT-92 | 16エントリ Direct-Mapped TLB キャッシュ | 同一ページ反復アクセス | 連続 `access()` | 2回目以降が TLB ヒットとなり `tlb_hits` が増加する | `DirectMappedTLB16` |
-| INT-93 | タスク間共有メモリ所有権分離 | Task 1 が Task 2 SHM アクセス | `access()` 実行 | `TRAP_OWNER_MISMATCH` で安全にトラップ遮断される | `OwnerMismatchTrap` |
+| INT-93 | タスク間共有メモリ所有権分離 | 非所有（未マッピング）タスクのSHMアクセス | `access()` 実行 | `TRAP_UNREGISTERED_PAGE` で安全にトラップ遮断される | `OwnerMismatchTrap` |
 
 ---
 

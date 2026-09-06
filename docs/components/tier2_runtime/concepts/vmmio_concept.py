@@ -6,8 +6,8 @@ Implementation Invariants & Gotchas:
   base addition and bound check, preserving peak memory throughput.
 - VMMIO-GOTCHA-02: Folding XOR hash uniformly diffuses all 20 VPN bits across 16 slots,
   preventing inter-device cache conflict and TLB thrashing.
-- VMMIO-GOTCHA-03: Shared memory revocation sets owner to FB_TASK_ID_FLIGHT and immediately
-  flushes TLB entry, eliminating stale in-flight access.
+- VMMIO-GOTCHA-03: Shared memory revocation unmaps the PTE and immediately
+  flushes TLB entry, blocking subsequent access with TRAP_UNREGISTERED_PAGE.
 """
 
 from collections.abc import Callable
@@ -71,10 +71,75 @@ class StaticDevicePTE:
         self.cacheable = cacheable
 
 
+class ShmVirtualAddressAllocator:
+    """
+    Bit-Parallel Consecutive Bitmap Allocator for SHM Virtual Pages (FC=14).
+    Manages up to 32 virtual pages (128 KB address space: 0xE000_0000 - 0xE001_FFFF).
+    Uses a 32-bit integer bitmap where bit `i` == 1 means page `i` is free.
+    Allocation of consecutive k pages is O(1) via bit-parallel shift-and-AND and ctz.
+    """
+
+    MAX_VPAGES: int = 32
+    BASE_ADDR: int = 0xE000_0000
+    PAGE_SIZE: int = 4096
+
+    def __init__(self, num_vpages: int = 32) -> None:
+        if not (1 <= num_vpages <= 32):
+            raise ValueError("num_vpages must be between 1 and 32")
+        self.num_vpages = num_vpages
+        # 1 means free, 0 means allocated
+        self.free_bitmap: int = (1 << num_vpages) - 1
+
+    def alloc_consecutive(self, k: int) -> int | None:
+        """
+        Allocates k consecutive virtual pages.
+        Returns the starting vpage_idx (0..31), or None if no contiguous run of length k exists.
+        Runs in O(1) time without looping over pages.
+        """
+        if k <= 0 or k > self.num_vpages:
+            return None
+        # Bit-parallel shift & AND: candidate bit i is 1 iff bits i..i+k-1 are all 1
+        candidates = self.free_bitmap
+        for shift in range(1, k):
+            candidates &= self.free_bitmap >> shift
+            if candidates == 0:
+                return None
+
+        # Find lowest set bit (ctz / trailing zeros)
+        vpage_start = (candidates & -candidates).bit_length() - 1
+        # Clear k bits starting at vpage_start
+        mask = ((1 << k) - 1) << vpage_start
+        self.free_bitmap &= ~mask
+        return vpage_start
+
+    def free_consecutive(self, vpage_start: int, k: int) -> None:
+        """Frees k consecutive virtual pages starting at vpage_start."""
+        if (
+            not (0 <= vpage_start < self.num_vpages)
+            or k <= 0
+            or (vpage_start + k > self.num_vpages)
+        ):
+            raise ValueError("Invalid vpage range to free")
+        mask = ((1 << k) - 1) << vpage_start
+        if (self.free_bitmap & mask) != 0:
+            raise ValueError("Double free detected in vpage allocator")
+        self.free_bitmap |= mask
+
+    @staticmethod
+    def vpage_to_addr(vpage_idx: int) -> int:
+        return ShmVirtualAddressAllocator.BASE_ADDR | (vpage_idx << 12)
+
+    @staticmethod
+    def vpage_to_vpn(vpage_idx: int) -> int:
+        return (ShmVirtualAddressAllocator.BASE_ADDR >> 12) | vpage_idx
+
+
 class Tier3PTE:
     """
     FC=14/15 (SHM / PASSTHROUGH). 32-bit layout, no bit overlap:
-        [31:12] PPN(20) | [11] VALID | [10] READ | [9] WRITE | [8] EXEC | [7:0] Owner ID
+        [31:12] PPN(20) | [11] VALID | [10] READ | [9] WRITE | [8] EXEC | [7:0] Reserved (0)
+    Note: owner_id is eliminated from hardware PTE. Access control is enforced
+    purely by page mapping presence (unmapped page -> TRAP_UNREGISTERED_PAGE).
     """
 
     def __init__(
@@ -84,14 +149,12 @@ class Tier3PTE:
         read: bool = True,
         write: bool = True,
         exec_: bool = False,
-        owner_id: int = FB_TASK_ID_INVALID,
     ):
         self.phys_page = phys_page
         self.valid = valid
         self.read = read
         self.write = write
         self.exec_ = exec_
-        self.owner_id = owner_id
 
 
 class TLBSlot(TypedDict):
@@ -106,13 +169,10 @@ class VMMIOController:
     """
 
     def __init__(self, guest_ram_size: int = 8192):  # FB_CONF_GUEST_RAM_SIZE
-        # `{FastAddressCheck}`: a direct size comparison (addr >= guest_ram_size), not a
-        # mask. This is still O(1) and branch-predictable, and unlike a mask it places
-        # no power-of-two constraint on guest_ram_size and never silently wraps an
-        # out-of-bounds address back into range — see `{MemoryBoundaryCheck}`.
         if guest_ram_size <= 0:
             raise ValueError("guest RAM size must be positive")
         self.guest_ram_size = guest_ram_size
+        self.allocator = ShmVirtualAddressAllocator()
         # FlatMap PTE storage: vpn (20-bit) -> PTE
         self.ptes: dict[int, StaticDevicePTE | Tier3PTE] = {}
         # Direct-mapped TLB: 16 slots, keyed by 4-bit Folding XOR Hash over 20-bit VPN.
@@ -131,16 +191,51 @@ class VMMIOController:
         """Registers a Tier 2 static device page (FC=12) into FlatMap."""
         self.ptes[vpn] = StaticDevicePTE(handler=handler, read=read, write=write)
 
-    def map_shm_page(self, vpn: int, phys_page: int, owner_id: int) -> None:
-        """Registers a Tier 3 SHM page (FC=14) into FlatMap."""
+    def map_shm_page(self, vpn: int, phys_page: int, read: bool = True, write: bool = True) -> None:
+        """Registers a Tier 3 SHM page (FC=14) into FlatMap. Pure PTE without owner_id."""
         self.ptes[vpn] = Tier3PTE(
             phys_page=phys_page,
             valid=True,
-            read=True,
-            write=True,
+            read=read,
+            write=write,
             exec_=False,
-            owner_id=owner_id,
         )
+
+    def unmap_shm_page(self, vpn: int) -> None:
+        """Unmaps an SHM page: deletes PTE and invalidates matching TLB entry."""
+        if vpn in self.ptes:
+            del self.ptes[vpn]
+        tlb_idx = self.tlb_index(vpn)
+        if self.tlb[tlb_idx]["vpn"] == vpn:
+            self.tlb[tlb_idx] = TLBSlot(vpn=0xFFFF_FFFF, pte=None)
+
+    def alloc_and_map_shm(
+        self,
+        num_pages: int,
+        phys_pages: list[int],
+        read: bool = True,
+        write: bool = True,
+    ) -> int | None:
+        """
+        Allocates consecutive virtual pages and maps them to physical pages.
+        Returns the base virtual address (0xE000_xxxx) or None if allocation fails.
+        """
+        if len(phys_pages) != num_pages:
+            raise ValueError("Number of physical pages must match num_pages")
+        vpage_start = self.allocator.alloc_consecutive(num_pages)
+        if vpage_start is None:
+            return None
+        for i, phys in enumerate(phys_pages):
+            vpn = self.allocator.vpage_to_vpn(vpage_start + i)
+            self.map_shm_page(vpn, phys, read=read, write=write)
+        return self.allocator.vpage_to_addr(vpage_start)
+
+    def unmap_and_free_shm(self, vpage_start: int, num_pages: int) -> None:
+        """Unmaps consecutive pages and frees them back to the bitmap allocator."""
+        for i in range(num_pages):
+            vpn = self.allocator.vpage_to_vpn(vpage_start + i)
+            self.unmap_shm_page(vpn)
+        self.allocator.free_consecutive(vpage_start, num_pages)
 
     def map_passthrough_page(
         self, vpn: int, phys_page: int, read: bool = True, write: bool = True
@@ -152,17 +247,11 @@ class VMMIOController:
             read=read,
             write=write,
             exec_=True,
-            owner_id=0,
         )
 
-    def revoke_shm_owner(self, vpn: int) -> None:
-        """IPC Router Revoke phase: mark the page in-flight and invalidate its TLB entry."""
-        pte = self.ptes.get(vpn)
-        if pte is not None and isinstance(pte, Tier3PTE):
-            pte.owner_id = FB_TASK_ID_FLIGHT
-        tlb_idx = self.tlb_index(vpn)
-        if self.tlb[tlb_idx]["vpn"] == vpn:
-            self.tlb[tlb_idx] = TLBSlot(vpn=0xFFFF_FFFF, pte=None)
+    def revoke_shm(self, vpn: int) -> None:
+        """IPC Router Revoke phase: unmaps the page and flushes its TLB entry."""
+        self.unmap_shm_page(vpn)
 
     # --- Hot path: TLB lookup + FlatMap fallback ---
     @staticmethod
@@ -190,7 +279,7 @@ class VMMIOController:
         self.tlb[tlb_idx] = TLBSlot(vpn=vpn, pte=pte)
         return pte
 
-    def access(self, raw_addr: int, is_write: bool, current_task_id: int = 0) -> tuple[str, str]:
+    def access(self, raw_addr: int, is_write: bool) -> tuple[str, str]:
         """
         Full dispatch: RAM bypass -> TLB/FlatMap -> permission check (always,
         TLB hit or not) -> syscall dispatch or physical access.
@@ -232,17 +321,6 @@ class VMMIOController:
             return (TrapCode.ACCESS_VIOLATION, "write not permitted")
         if not is_write and not pte.read:
             return (TrapCode.ACCESS_VIOLATION, "read not permitted")
-        if addr.fc() == FC_SHM:
-            if pte.owner_id == FB_TASK_ID_FLIGHT:
-                return (
-                    TrapCode.OWNER_MISMATCH,
-                    "page is in-flight (ownership transfer)",
-                )
-            if pte.owner_id != current_task_id:
-                return (
-                    TrapCode.OWNER_MISMATCH,
-                    f"owner={pte.owner_id} != requester={current_task_id}",
-                )
 
         phys_addr = (pte.phys_page << 12) | addr.offset()
         return ("OK_PHYSICAL", f"physical access at {phys_addr:#010x}")
@@ -291,28 +369,32 @@ def test_undefined_fc_traps() -> None:
     assert status == TrapCode.UNDEFINED_FC
 
 
-def test_shm_owner_isolation() -> None:
+def test_shm_unmap_isolation() -> None:
+    """Access control via mapping presence: unmapped page traps unconditionally."""
     ctrl = VMMIOController()
-    ctrl.map_shm_page(vpn=0xE0002, phys_page=0x1234, owner_id=7)
+    ctrl.map_shm_page(vpn=0xE0002, phys_page=0x1234)
     addr = 0xE000_2000
-    # Owning task may access.
-    status, _ = ctrl.access(addr, is_write=True, current_task_id=7)
+    # Mapped: access succeeds.
+    status, _ = ctrl.access(addr, is_write=True)
     assert status == "OK_PHYSICAL"
-    # A different task must not, even though the PTE was just cached in the TLB.
-    status, _ = ctrl.access(addr, is_write=True, current_task_id=9)
-    assert status == TrapCode.OWNER_MISMATCH
+    # Revoke (ownership transfer / unmap): page is removed from FlatMap & TLB.
+    ctrl.unmap_shm_page(vpn=0xE0002)
+    # Subsequent access traps as unregistered page.
+    status, _ = ctrl.access(addr, is_write=True)
+    assert status == TrapCode.UNREGISTERED_PAGE
 
 
-def test_revoke_invalidates_tlb_and_blocks_access_during_flight() -> None:
+def test_revoke_invalidates_tlb_and_blocks_unmapped_access() -> None:
+    """Revocation immediately purges TLB and triggers UNREGISTERED_PAGE trap."""
     ctrl = VMMIOController()
-    ctrl.map_shm_page(vpn=0xE0003, phys_page=0x5678, owner_id=1)
+    ctrl.map_shm_page(vpn=0xE0003, phys_page=0x5678)
     addr = 0xE000_3000
-    ctrl.access(addr, is_write=False, current_task_id=1)  # warms the TLB
+    ctrl.access(addr, is_write=False)  # warms the TLB
     assert ctrl.tlb_hits == 0 and ctrl.tlb_misses == 1
-    ctrl.revoke_shm_owner(vpn=0xE0003)
-    # In-flight: neither the old owner nor anyone else may access it.
-    status, _ = ctrl.access(addr, is_write=False, current_task_id=1)
-    assert status == TrapCode.OWNER_MISMATCH
+    ctrl.revoke_shm(vpn=0xE0003)
+    # After revocation, PTE is gone: access traps.
+    status, _ = ctrl.access(addr, is_write=False)
+    assert status == TrapCode.UNREGISTERED_PAGE
     # The revoke must have forced a fresh walk (TLB entry was invalidated).
     assert ctrl.tlb_misses == 2
 
@@ -354,12 +436,12 @@ def test_interleaved_syscall_and_shm_keep_hitting_the_tlb() -> None:
     """The IPC pattern (syscall to IPCR, then touch SHM) must not thrash."""
     ctrl = VMMIOController()
     ctrl.map_static_device(vpn=0xC0003, handler=lambda sys_id, o, w: None)
-    ctrl.map_shm_page(vpn=0xE0003, phys_page=0x900, owner_id=1)
+    ctrl.map_shm_page(vpn=0xE0003, phys_page=0x900)
     sysc = 0xC000_3000
     shm = 0xE000_3000
     for _ in range(10):
         ctrl.access(sysc, is_write=True)
-        ctrl.access(shm, is_write=True, current_task_id=1)
+        ctrl.access(shm, is_write=True)
 
     total = ctrl.tlb_hits + ctrl.tlb_misses
     assert ctrl.tlb_hits / total >= 0.9, f"expected >=90% hit rate, got {ctrl.tlb_hits}/{total}"
@@ -370,13 +452,13 @@ def test_flatmap_pte_registration_and_tlb_caching() -> None:
     ctrl = VMMIOController()
     # Register 32 distinct SHM pages
     for p in range(32):
-        ctrl.map_shm_page(vpn=0xE0000 + p, phys_page=0x1000 + p, owner_id=42)
+        ctrl.map_shm_page(vpn=0xE0000 + p, phys_page=0x1000 + p)
 
     assert len(ctrl.ptes) == 32, "all 32 pages must be stored in FlatMap"
     # Access all 32 pages
     for p in range(32):
         addr = 0xE000_0000 | (p << 12) | 0x10
-        st, msg = ctrl.access(addr, is_write=False, current_task_id=42)
+        st, msg = ctrl.access(addr, is_write=False)
         assert st == "OK_PHYSICAL"
         assert (
             f"0x{0x1000010 + (p << 12):08x}" in msg or f"0x{(0x1000 + p) << 12 | 0x10:08x}" in msg
@@ -385,15 +467,59 @@ def test_flatmap_pte_registration_and_tlb_caching() -> None:
     # Repeated access to a hot working set of 8 pages achieves 100% TLB hits
     for p in range(8):
         addr = 0xE000_0000 | (p << 12)
-        ctrl.access(addr, is_write=False, current_task_id=42)
+        ctrl.access(addr, is_write=False)
 
     before_hits = ctrl.tlb_hits
     for _ in range(10):
         for p in range(8):
             addr = 0xE000_0000 | (p << 12)
-            st, _ = ctrl.access(addr, is_write=False, current_task_id=42)
+            st, _ = ctrl.access(addr, is_write=False)
             assert st == "OK_PHYSICAL"
     assert ctrl.tlb_hits == before_hits + 80, "working set in TLB must achieve 100% hit rate"
+
+
+def test_shm_virtual_address_allocator_consecutive() -> None:
+    """Bitmap allocator finds contiguous k pages in O(1) via bit-parallel shift & ctz."""
+    alloc = ShmVirtualAddressAllocator(num_vpages=32)
+    # Allocate 4 consecutive pages
+    v0 = alloc.alloc_consecutive(4)
+    assert v0 == 0
+    # Allocate 8 consecutive pages
+    v1 = alloc.alloc_consecutive(8)
+    assert v1 == 4
+    # Free first 4 pages
+    alloc.free_consecutive(0, 4)
+    # Request 2 pages: should reuse the hole at 0
+    v2 = alloc.alloc_consecutive(2)
+    assert v2 == 0
+    # Request 4 pages: cannot fit at 2..3 (only 2 left), should allocate after v1 (at 12)
+    v3 = alloc.alloc_consecutive(4)
+    assert v3 == 12
+    # Check address calculation
+    assert alloc.vpage_to_addr(0) == 0xE000_0000
+    assert alloc.vpage_to_addr(12) == 0xE000_C000
+    assert alloc.vpage_to_vpn(12) == 0xE000C
+
+
+def test_vmmio_alloc_and_map_multipage() -> None:
+    """Controller allocates consecutive virtual pages and maps them to physical pages."""
+    ctrl = VMMIOController()
+    phys = [0x2000, 0x2001, 0x2002]
+    base_vaddr = ctrl.alloc_and_map_shm(num_pages=3, phys_pages=phys)
+    assert base_vaddr == 0xE000_0000
+    # Access across all 3 pages
+    for i in range(3):
+        vaddr = base_vaddr + (i * 4096) + 0x40
+        st, msg = ctrl.access(vaddr, is_write=True)
+        assert st == "OK_PHYSICAL"
+        expected_phys = (phys[i] << 12) | 0x40
+        assert f"{expected_phys:#010x}" in msg
+
+    # Unmap and free
+    ctrl.unmap_and_free_shm(vpage_start=0, num_pages=3)
+    # Access should now trap as unregistered page
+    st, _ = ctrl.access(base_vaddr, is_write=True)
+    assert st == TrapCode.UNREGISTERED_PAGE
 
 
 if __name__ == "__main__":
@@ -401,11 +527,13 @@ if __name__ == "__main__":
     test_static_device_syscall_dispatch()
     test_tlb_hit_after_first_walk()
     test_undefined_fc_traps()
-    test_shm_owner_isolation()
-    test_revoke_invalidates_tlb_and_blocks_access_during_flight()
+    test_shm_unmap_isolation()
+    test_revoke_invalidates_tlb_and_blocks_unmapped_access()
     test_linear_ram_is_bounds_checked_not_waved_through()
     test_linear_ram_bound_check_works_for_non_power_of_two_size()
     test_tlb_index_separates_function_codes()
     test_interleaved_syscall_and_shm_keep_hitting_the_tlb()
     test_flatmap_pte_registration_and_tlb_caching()
+    test_shm_virtual_address_allocator_consecutive()
+    test_vmmio_alloc_and_map_multipage()
     print("[PASS] All vMMIO concept tests passed successfully.")

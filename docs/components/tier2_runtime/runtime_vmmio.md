@@ -171,12 +171,7 @@ def access_vmmio(addr: VmmioAddress, is_write: bool):
         syscall_id = (addr.raw >> 16) & 0xFFF
         dispatch_syscall(syscall_id, addr.offset(), is_write)
     else:
-        # Tier 3 (SHM / PASSTHROUGH) - 物理アクセスモード
-        if addr.fc() == 14:
-            owner_id = pte & 0xFF
-            if owner_id != current_task_id:
-                raise Exception("ACCESS_VIOLATION_NOT_OWNED")
-
+        # Tier 3 (SHM / PASSTHROUGH) - 物理アクセスモード（マッピング有無により保護）
         phys_page = (pte >> 12) & 0xFFFFF
         phys_addr = (phys_page << 12) | addr.offset()
         access_memory(phys_addr, is_write)
@@ -216,7 +211,30 @@ Static Devices (Tier 2) 向け。PTE には Device Type やパーミッション
 [15:0]  Reserved
 ```
 
-**FC=14 (SHM) エントリの仮想化マッピングは、Tier 3 共有メモリマネージャが発火する物理ページイベントの購読を通じて自律的に駆動される（`{VmmioShmDelegation}`）。vMMIO コントローラは共有メモリマネージャにイベントリスナーを登録し、物理ページのライフサイクル通知（割り当て、所有権更新、Revoke、解放）を受けて自身の仮想アドレス空間（VPN: `(0xE000_0000 >> 12) + page_idx`）に対応する PTE 登録・所有権更新・TLB フラッシュを実行する。メモリマネージャ側が vMMIO の内部実装やアドレス体系を直接操作することはなく、クリーンアーキテクチャ（DIP）が維持される。**
+#### Tier 3 ページテーブルエントリ (vmmio_pte_tier3)
+<!-- traceability: {META_Static_Resolution} {OwnershipTransfer} -->
+SHM (FC=14) および Passthrough (FC=15) 向け。PTE には PPN（物理ページ番号）とハードウェア保護フラグを保持する。PTE に `owner_id` フィールドは存在せず、アクセス制御は「マッピングの存在（PTE 有効）」によって完全に執行される。
+
+```
+32-bit Tier 3 (SHM / Passthrough) PTE:
+[31:12] PPN (Physical Page Number, 20 bits: phys_page)
+[11]    VALID (1 = 有効マッピング)
+[10]    READ (1 = 読み出し許可)
+[9]     WRITE (1 = 書き込み許可)
+[8]     EXEC (1 = 実行許可 — Passthrough で使用)
+[7:0]   Reserved (0)
+```
+
+**FC=14 (SHM) エントリの仮想化マッピングは、Tier 3 共有メモリマネージャが発火する物理ページイベントの購読を通じて自律的に駆動される（`{VmmioShmDelegation}`）。vMMIO コントローラは共有メモリマネージャにイベントリスナーを登録し、物理ページのライフサイクル通知（割り当てマッピング、Revoke アンマップ＆TLBフラッシュ、再マッピング、解放）を受けて自身の仮想アドレス空間（VPN: `(0xE000_0000 >> 12) + page_idx`）に対応する PTE 登録・アンマップ・TLB フラッシュを実行する。メモリマネージャ側が vMMIO の内部実装やアドレス体系を直接操作することはなく、クリーンアーキテクチャ（DIP）が維持される。**
+
+#### 仮想アドレス割り当てアルゴリズム（ビット並列連続ビットマップ方式）
+<!-- traceability: {META_Static_Resolution} -->
+vMMIO SHM 領域（`0xE000_0000`〜`0xE001_FFFF`、最大 32 ページ = 128KB）の仮想ページ割り当てには、完全 $O(1)$ かつ極小フットプリント（32ビット整数 1 個 = 4 バイト）の**ビット並列連続ビットマップ方式（Bit-Parallel Consecutive Bitmap Allocator with `ctz`）**を採用する。
+- **ビットマップ表現**: `uint32_t free_vpage_bitmap`（1 = 空き、0 = 割り当て中）。初期値は `0xFFFF_FFFF`。
+- **連続 $k$ ページ探索 ($O(1)$)**: ビット並列シフト＆AND 演算により、$k$ 連続する空きビットの開始位置を一括検出する。
+  `candidates = free_bitmap & (free_bitmap >> 1) & ... & (free_bitmap >> (k - 1))`
+  `candidates` の最下位立位ビット（`ctz` / `__builtin_ctz`）が割り当て開始ページ番号 `vpage_start` となる。ループによる線形探索を完全排除し、常に数サイクルのビット演算で完了する。
+- **マッピング単位**: ハードウェア MMU / PTE のアドレス変換（下位12ビットのオフセット透過）に完全合致する **4KB ページ単位**。複数ページの割り当ては連続する仮想ページ番号にマッピングすることで透過的に解決する。
 
 #### FlatMap ページテーブル定義
 <!-- traceability: {META_FlatMapIndexed} {vMMIO_Isolation} -->
@@ -280,20 +298,20 @@ sequenceDiagram
 
     Sender->>Mem: release_shared(shm_id)
     Note over Sender: Relinquishes local ownership
-    Mem->>vMMIO: Set PTE.owner_id = FB_TASK_ID_FLIGHT (0xFF)
-    vMMIO->>vMMIO: VMMIO-GOTCHA-03: Immediate TLB Flush for Page
-    Note over vMMIO: Invalidate TLB slot matching VPN
-    vMMIO-->>Mem: Ownership revoked
+    Mem->>vMMIO: Unmap Page: unmap_shm_page(vpn)
+    vMMIO->>vMMIO: VMMIO-GOTCHA-03: Remove PTE & Immediate TLB Flush
+    Note over vMMIO: Delete PTE from FlatMap & Invalidate TLB slot
+    vMMIO-->>Mem: Page unmapped
     Mem-->>Sender: Release committed
 
     opt Stale access attempt by Sender
         Sender->>vMMIO: Access old memory address
-        vMMIO->>vMMIO: TLB Miss -> PTE lookup
-        vMMIO-->>Sender: TRAP: Access Denied (owner == FLIGHT)
+        vMMIO->>vMMIO: TLB Miss -> FlatMap Miss (PTE Absent)
+        vMMIO-->>Sender: TRAP_UNREGISTERED_PAGE (Access Blocked)
     end
 
     Receiver->>Mem: claim_shared(shm_id)
-    Mem->>vMMIO: Set PTE.owner_id = Receiver Task ID
+    Mem->>vMMIO: Map Page for Receiver: map_shm_page(vpn, phys_page)
     vMMIO-->>Receiver: Shared memory accessible
     Note over Receiver: Safe zero-copy access granted
 ```
@@ -404,7 +422,7 @@ PASSTHROUGH アドレス変換:
 | `0x08` | `REG_VDMA_COUNT` | R/W | 転送バイト数 |
 | `0x0C` | `REG_VDMA_CTRL` | W | 制御（Bit0: START） |
 
-`REG_VDMA_SRC` / `REG_VDMA_DST` に指定できるアドレスはゲストRAM（Tier 1）および vMMIO空間（FC=14/15）。SHMアドレス（FC=14）を転送先/元に指定した場合、VDMAハンドラが `dispatch_access` と同一の権限チェック（`owner_id` 検証を含む）を実施する。
+`REG_VDMA_SRC` / `REG_VDMA_DST` に指定できるアドレスはゲストRAM（Tier 1）および vMMIO空間（FC=14/15）。SHMアドレス（FC=14）を転送先/元に指定した場合、VDMAハンドラが `dispatch_access` と同一の権限チェック（PTE のマッピング・パーミッション検証）を実施する。
 
 ### 4.6 共有メモリマッピング (FC=14)
 <!-- traceability: {OwnershipTransfer} -->
@@ -416,19 +434,19 @@ SHM へのアクセスは **IPCルータ経由でのみ許可される**。ゲ�
 ```mermaid
 graph LR
     Guest[Guest App] -- Load/Store addr=0xExxx_xxxx --> vMMIO
-    vMMIO -- FlatMap / TLB lookup --> Entry[vmmio_pte_tier3\nowner_id]
-    Entry -- owner_id == current_task_id --> Phys[Physical Shared Memory]
-    Entry -- FB_TASK_ID_FLIGHT or mismatch --> Trap[Trap/Exception]
+    vMMIO -- FlatMap / TLB lookup --> Entry[vmmio_pte_tier3\nVALID & PPN]
+    Entry -- PTE Present & Valid --> Phys[Physical Shared Memory]
+    Entry -- PTE Absent / Unmapped --> Trap[TRAP_UNREGISTERED_PAGE]
 ```
 
 #### ライフサイクル（[`ipc_router.md`](docs/components/tier1_interface/ipc_router.md) の `{OwnershipTransfer}` に従属）
 <!-- traceability: {OwnershipTransfer} -->
 
-1. **Alloc (`allocate-shared`)**: COOS / 物理メモリマネージャが SHM 物理ページを確保し、`owner_id` = 送信タスクID で vMMIO に登録する。
-2. **Revoke (`shm.release()`)**: 送信側がリソースを手放し、IPCルータが送信タスクの権限を無効化する。`owner_id` を `FB_TASK_ID_FLIGHT`（`0xFF`、移譲中センチネル）にセットし、TLB の該当エントリを無効化する。この時点で送信は完了確約となる。
+1. **Alloc (`allocate-shared`)**: COOS / 物理メモリマネージャが SHM 物理ページを確保し、送信タスク空間の仮想アドレス（VPN）へ vMMIO 経由でマッピング（PTE 登録）する。
+2. **Revoke (`shm.release()`)**: 送信側がリソースを手放し、IPCルータが送信タスクの権限を無効化する。vMMIO から PTE をアンマップ（削除）し、TLB の該当エントリを即時フラッシュする。この時点で送信タスクからの旧アドレスアクセスは即座に `TRAP_UNREGISTERED_PAGE`（未登録ページフォルト）となり安全に遮断される。
 3. **Rendezvous**: IPCルータが `(sender_role, target_role)` エッジ専用の CSP チャネル上でハンドルを含むメッセージのバッファなし同期ハンドオフを試みる。受信タスクが既に待機していれば即座に、まだ到達していなければ送信タスクが協調スケジューラ上でブロックする。キューが存在しないため、キュー満杯による差し戻しは発生しない。
-4. **Grant (`claim(shm-id)`)**: ランデブーが成立した瞬間、IPCルータが `owner_id` を受信タスクIDにセットする。受信タスク側で `claim()` を呼び出すことで有効な `shared-block` ハンドルが取得可能となる。
-5. **障害時回復 (`rollback_transfer`)**: 相手タスクが永久に到達しない場合、送信タスクはブロックし続ける。タスク異常終了やタイムアウト等によるフォールト発生時は、物理メモリ層の `rollback_transfer()` により `owner_id` を送信元タスクIDへ復元し、リソースの回収・再利用を行う。
+4. **Grant (`claim(shm-id)`)**: ランデブーが成立した瞬間、受信タスク側で `claim()` を呼び出すことで受信タスクの仮想アドレス空間へ PTE がマッピングされ、有効な `shared-block` ハンドルが取得可能となる。
+5. **障害時回復 (`rollback_transfer`)**: 相手タスクが永久に到達しない場合、送信タスクはブロックし続ける。タスク異常終了やタイムアウト等によるフォールト発生時は、物理メモリ層の `rollback_transfer()` により送信元タスクの空間へ PTE を再マッピングし、リソースの回収・再利用を行う。
 
 ### 4.7 仮想割り込みマッピング
 <!-- traceability: {META_ConfigurableSystem} -->

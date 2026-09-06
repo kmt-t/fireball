@@ -273,28 +273,26 @@ JIT キャッシュ内に書き込まれる各トレースは、**先頭に 16 �
 
 ```mermaid
 graph TD
-    JITTrace[JIT Trace Exit / Branch] --> JITHdr[JIT-Specific Chaining Handler]
-    JITHdr --> Lookup{Target in JIT Cache?}
-    Lookup -->|Hit: Active/Warm| Patch[In-place Patch chain_target_addr + Tail Call BX]
-    Patch --> TargetTrace[Target JIT Trace Native Exec]
-    Lookup -->|Miss: Uncompiled| Fallback[Record Hotspot + Return to Interpreter Loop]
-
-    Interp[Interpreter Step] --> InterpHdr[Pure Interpreter Branch Handler]
-    InterpHdr --> InterpLoop[Direct _do_branch -> Next Opcode Dispatch]
+    JITTrace[JIT Trace Body Exec] --> CheckHdr[Check chain_target_addr in Trace Header]
+    CheckHdr -->|Target != 0: Resolved| DirectBranch[BX r12: Direct Jump to Successor Body]
+    DirectBranch --> NextTrace[Successor JIT Trace Native Exec Skip Prologue]
+    CheckHdr -->|Target == 0: Unresolved| FallbackStub[Execute Epilogue Flush + POP PC]
+    FallbackStub --> InterpLoop[Return to Interpreter Loop / Record Hotspot]
 ```
 
-1. **ハンドラの責務分離**:
+1. **ハンドラの責務分離とヘッダ参照分岐**:
    - **純粋インタープリタ用ハンドラ (`_h_br` 等)**: 単純にスタックを巻き戻して次の WASM PC を算出し、ディスパッチループへ戻る（JIT 探索やパッチのオーバーヘッドが完全ゼロ）。
-   - **JIT 専用チェイニングハンドラ (`jit_chain_branch_handler`)**: JIT トレースから呼び出され、分岐先 `UnifiedPC` を解決した上で JIT キャッシュを照会する。
-2. **オンデマンド・インプレースパッチ（Lazy Chaining）**:
-   - 分岐先が既にコンパイル済みであれば、呼び出し元トレースの末尾スロット（`chain_target_addr`）をターゲットのネイティブアドレスへ書き換え、被チェイン逆引きテーブル（`inbound_chains`）へ登録する。
-   - インタープリタディスパッチループを介さず、**そのままターゲットのネイティブトレースへ直接 tail-call（`BX`）してネイティブ実行を継続**する。
+   - **JIT トレース末尾のヘッダ参照分岐 (`STENCIL_DYNAMIC_CHAIN_EXIT`)**: トレース末尾ではコード自体の書き換え（インプレースパッチ）を行わず、自身のトレースヘッダ内のデータフィールド `chain_target_addr`（+0x0C）をロードして `CMP` 判定する。
+2. **ヘッダ直接リンク（Header-Driven Chaining without Code Patching）**:
+   - **初期コンパイル時**: トレースヘッダの `chain_target_addr` は `0`（未解決）で初期化される。トレース末尾では `chain_target_addr == 0` を検知してエピローグ（Flush + POP）を実行し、安全にインタープリタへ復帰する。
+   - **後続トレースコンパイル時**: 後続トレースがキャッシュ（Active/Warm）に生成された瞬間、ランタイムは先行トレースのヘッダデータスロット `chain_target_addr` に、後続トレースのプロローグ直後（チェイン入口アドレス）を不可分に書き込む。命令コードキャッシュの MPU W^X 属性切り替えや `__ISB()` 命令同期バリアを発行することなく、完全ゼロオーバーヘッドで直接チェインが確立される。
+   - **チェイン実行時**: 次回先行トレース実行時、`chain_target_addr != 0` が成立するため、エピローグ（Flush/POP）をスキップし、`BX r12` により後続トレースの本体（プロローグスキップ位置）へ直接ジャンプする。
 3. **未コンパイル時の遅延昇格**:
-   - 分岐先が未コンパイルの場合のみ、HistoryRing に分岐先 PC を記録した上でインタープリタ復帰スタブ経由でインタープリタへ戻る。次回以降ホット化してコンパイルされた際にチェイニングが確立される。
+   - 分岐先が未コンパイル（`chain_target_addr == 0`）の場合のみ、HistoryRing に分岐先 PC を記録した上でエピローグ経由でインタープリタへ戻る。次回以降ホット化してコンパイルされた際にヘッダが書き換えられてチェイニングが確立される。
 4. **局所再チェイニングとアンリンク（O(k) Bounded Re-chaining & Unlinking）**: チェイニング確立時にターゲットの属するバンクの **被チェイン逆引きテーブル（`inbound_chains`）** にソースの JIT エントリインデックスを登録する。ターゲットが Active $\to$ Warm $\to$ Oldest へ推移する間はキャッシュ内のコードは依然として有効に常駐しているため、チェイニングは維持され JIT 実行が継続する。**Oldest バンクがパージされ新 Active へローテートするまさにその瞬間**、破棄される Oldest バンクの `inbound_chains` に登録された被チェインエントリ（$k$ 件）のみを直接参照する。
-    - **ターゲットが Oldest-Only Promotion 等により Active/Warm へ昇格（Promote）している場合**: チェインスロットを昇格先のアドレスへ **再チェイニング（Re-chaining）** し、昇格先バンクの `inbound_chains` へ登録を移譲する（インタープリタへフォールバックさせず、ネイティブ直接チェイン実行を維持）。
-    - **ターゲットが昇格せず完全にキャッシュアウト（Evict）する場合のみ**: チェインスロットをインタープリタ復帰スタブにアンパッチする。
-    これにより、全走査オーバーヘッド $O(N)$ を完全排除しつつ、生存トレース間のネイティブ実行効率を最大化する。 `{JIT_LazyChaining}`
+    - **ターゲットが Oldest-Only Promotion 等により Active/Warm へ昇格（Promote）している場合**: 先行トレースヘッダの `chain_target_addr` を昇格先のアドレスへ書き換え、昇格先バンクの `inbound_chains` へ登録を移譲する（インタープリタへフォールバックさせず、ネイティブ直接チェイン実行を維持）。
+    - **ターゲットが昇格せず完全にキャッシュアウト（Evict）する場合のみ**: 先行トレースヘッダの `chain_target_addr` を `0` にリセットする（コード変更なし）。次回実行時は自動的にエピローグ経路へ分岐しインタープリタへ安全にフォールバックする。
+    これにより、全走査オーバーヘッド $O(N)$ およびコード領域 W^X 切り替えコストを完全排除しつつ、生存トレース間のネイティブ実行効率を最大化する。 `{JIT_LazyChaining}`
 5. **構文デリミタのトレースヘッダ直接埋め込みと直接チェイニング連携**:
    - **制御構文デリミタの読み飛ばし**: WASM 基本ブロック末尾の制御命令（`BLOCK`, `LOOP`, `ELSE`, `END` 等）は、先行ブロックの実行完了と後続ブロックの先頭命令の間に位置する。JIT ネイティブ実行同士を直接チェイニング（`chain_next`）する際、先行ブロック終端 PC（delimiter PC）から制御構文を読み飛ばしたフォールスルー先（fallthrough head PC）を解決する必要がある。
    - **ヘッダ直接埋め込み（Inlined Chaining Header）**: JIT コンパイル（基本ブロック抽出）時に後続のフォールスルー先 PC を静的に先読み解決し、トレースヘッダの `chain_next_pc`（+0x08）に直接埋め込む。これにより、外部の Radix 表（`control_skip_tree`）等の検索データ構造を一切介さず、メモリオーバーヘッドおよび解決レイテンシを完全ゼロ（$O(1)$）で直接チェイニングを確立する。

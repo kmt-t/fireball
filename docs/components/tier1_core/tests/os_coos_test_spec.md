@@ -31,7 +31,7 @@
 | COOS-02 | 受信者到着でランデブー成立（送信側視点） | Aが送信待機中(SEND) | タスクBが`channel_recv`を呼ぶ | A・B双方がREADYに遷移し、値の所有権がAからBへ移る。Aの`pending_val`は破棄される（二重所有防止） | 直交表 ケース4 |
 | COOS-03 | 受信が先着した場合はSUSPENDED_CSP | チャネルに待機者なし | タスクBが`channel_recv`を呼ぶ | Bは`SUSPENDED_CSP`に遷移 | 直交表 ケース3 |
 | COOS-04 | 送信者到着でランデブー成立（受信側視点） | Bが受信待機中(RECV) | タスクAが`channel_send`を呼ぶ | A・B双方がREADYに遷移し、値の所有権がAからBへ移る | 直交表 ケース2 |
-| COOS-05 | 1チャネル1待機者の強制（同方向多重待機は不可能） | Aが送信待機中(SEND) | 別タスクCが同じチャネルへ`channel_send` | 到達不能ケースとして`assert`で検出される（設計違反） | 直交表 ケース5/6 |
+| COOS-05 | 1チャネル1待機者の強制（同方向多重待機は不可能） | (1) Aが送信待機中(SEND) または<br>(2) Bが受信待機中(RECV) | (1) 別タスクCが同チャネルへ`channel_send`<br>(2) 別タスクDが同チャネルへ`channel_recv` | 到達不能ケースとして`assert`で即座に検出される（設計違反フェイルファスト） | 直交表 ケース5/6 |
 | COOS-06 | CSP Handoffは対称遷移でREADYキューの先頭に挿入 | ランデブー成立 | `_handoff_or_yield`の返り値を観測 | `consecutive_handoffs < FB_CONF_MAX_CONSECUTIVE_HANDOFFS` の間は`("DIRECT_SWITCH", target)`を返し、target が READYキュー先頭に挿入される | `{CSP_Handoff}` |
 | COOS-07 | 連続ハンドオフの上限でスケジューラへ復帰 | `consecutive_handoffs`が`FB_CONF_MAX_CONSECUTIVE_HANDOFFS`（既定4）に到達 | さらにハンドオフが発生する状況を作る | `consecutive_handoffs`が0にリセットされ、`("YIELD", None)`を返してメインループへ復帰する（対称遷移しない） | 直交表 ケース7, `{Challenge_CspHandoffStarvation}` |
 | COOS-08 | 割り込みは状態を直接変更しない | タスクがirq_id待ち | `notify_interrupt(irq_id)`を呼ぶ | 呼び出し直後はイベントキューに追加されるのみで、タスク状態は変化しない。`drain_interrupts`実行後に初めてREADYへ遷移する | 直交表 ケース8, `{GLOBAL_InterruptWakeup}` |

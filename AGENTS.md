@@ -55,3 +55,4 @@
 
 - エージェント共通のルール正本は `AGENTS.md` および `.agents/rules/**`。
 - 品質検証スキルは `.agents/skills/document-validation/` を参照。
+- ドキュメントレビュースキル（仕様→形式検証→コード→テストの垂直一貫性・サブエージェント監査）は `.agents/skills/document-review/` を参照。

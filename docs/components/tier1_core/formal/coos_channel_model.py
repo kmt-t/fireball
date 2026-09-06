@@ -19,7 +19,9 @@ def build_model(*, guards: bool = True) -> Kripke:
     - s_main_loop: スケジューラのメインループ（READY キュー巡回中）
     - s_task_a_run: タスク A が協調実行中 (running)
     - s_task_b_run: タスク B が協調実行中 (running)
-    - s_blocked_tx_a: タスク A が受信側不在でサスペンド (blocked)
+    - s_blocked_tx_a: タスク A が受信側不在でサスペンド (blocked)。
+      注: 遷移 ("s_blocked_tx_a", "s_main_loop") は、スケジューラによるタスク B ディスパッチ・
+      受信実行・タスク A 起床を状態空間縮約のために 1 遷移にまとめたマクロ遷移。
     - s_handoff_1: タスク間 CSP 直接ハンドオフ実行中 (in_handoff_chain)
     - s_handoff_max: 連続ハンドオフ上限 FB_CONF_MAX_CONSECUTIVE_HANDOFFS 到達 (at_max_limit)
     - s_forced_yield: 上限到達による強制 yield (yielding)
@@ -131,8 +133,18 @@ def properties():
 if __name__ == "__main__":
     from pyModelChecking.CTL import modelcheck
 
+    # 1. ガード有効時: 全特性が満たされることの証明
     km = build_model(guards=True)
     for prop in properties():
         res = modelcheck(km, prop["formula"])
         passed = km.S0.issubset(res)
+        assert passed == prop["expect"], f"Proof failed for {prop['name']}"
         print(f"[{'PASS' if passed == prop['expect'] else 'FAIL'}] {prop['name']}")
+
+    # 2. ガード無効時（変異検査）: 反証可能性（違反状態の検出）の確認
+    km_mut = build_model(guards=False)
+    for prop in properties():
+        res = modelcheck(km_mut, prop["formula"])
+        passed = km_mut.S0.issubset(res)
+        assert not passed, f"Mutation check failed: {prop['name']} was not refuted under guards=False!"
+        print(f"[PASS (Mutated Refuted)] {prop['name']}")

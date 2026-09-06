@@ -203,171 +203,28 @@ COOS の動的スケジューリングおよび同期通信の基本アルゴリ
 - **Idle Detection**: 全ての実行中タスクがブロック状態にあり、かつイベントキューが空（割り込みや外部イベントによる起床待ちのみ）の場合にアイドル状態と判定する。この条件を `idle_hook` のトリガーとし、イベントキューが空かつ全タスクがブロック状態の時のみ、リングバッファ内の未出力ログが1件以上存在する、あるいはイベント待機開始から10ミリ秒以上経過した際に、バックグラウンド処理（リングバッファからロガーを介した物理ストレージや非揮発性メモリへのログ書き出し・フラッシュ処理）をREADYリング外の専用Idleタスクとして呼び出す。 `{GLOBAL_IdleDetection}`
 - **Memory Management**: タスク生成時に独立したメモリパーティションを割り当てる。 `{GLOBAL_StrictMemoryLimit}` `{GLOBAL_IndependentHeap}`
 
-#### COOS フルセット・コンセプトコード (`concepts/coos_concept.py`)
+##### コンセプトコード参照 (Reference Concept Implementation)
+<!-- evidence: concept: concepts/coos_concept.py -->
+
+完全な実行可能コンセプトコード、厳格な型定義（`typing.Any` ゼロ）、および不変条件検証テストスイートは正本 [`coos_concept.py`](docs/components/tier1_core/concepts/coos_concept.py) を参照。
+
 ```python
-class TaskState:
-    READY = "READY"
-    RUNNING = "RUNNING"
-    BLOCKED = "BLOCKED"
-    SUSPENDED_CSP = "SUSPENDED_CSP"
-    TERMINATED = "TERMINATED"
-
-
-class WaitDir:
-    NONE = "NONE"
-    SEND = "SEND"
-    RECV = "RECV"
-
-
-class ChannelAction(IntEnum):
-    BLOCK = 1
-    DIRECT_SWITCH = 2
-    YIELD = 3
-
-
-class Channel:
-    """Bufferless synchronous CSP rendezvous channel (ADR_RendezvousChannel).
-
-    The channel never holds a value: a sender that arrives first keeps it in its
-    own frame, so overflow and rollback cannot occur and the value always has
-    exactly one owner. At most one waiter per channel.
-    """
-
-    def __init__(self, kernel=None):
-        self.kernel = kernel
-        self.waiter_task = None
-        self.waiter_dir = WaitDir.NONE
-
-    def send(self, data) -> tuple[ChannelAction, str | None]:
-        return self.kernel.channel_send(self, data)
-
-    def recv(self) -> tuple[ChannelAction, str | None]:
-        return self.kernel.channel_recv(self)
-
-
-class COOSKernel:
-    def __init__(self, max_consecutive_handoffs: int = 4):
-        self.tasks = {}
-        self.ready_queue = []
-        self.current_task = None
-        self.interrupt_event_queue = []
-        self.irq_waiters = {}
-        self.max_consecutive_handoffs = max_consecutive_handoffs
-        self.consecutive_handoffs = 0
-        self.idle_hook_called = False
-
-    def create_channel(self) -> Channel:
-        return Channel(kernel=self)
-
-    def channel_send(self, channel: Channel, data) -> tuple[ChannelAction, str | None]:
-        """Synchronous CSP send with direct symmetric context switch."""
-        ch = channel
-        sender = self.current_task
-        assert sender is not None
-
-        if ch.waiter_dir == WaitDir.RECV:
-            # Rendezvous matched: ownership moves sender -> receiver right here
-            receiver = ch.waiter_task
-            ch.waiter_task, ch.waiter_dir = None, WaitDir.NONE
-
-            self.tasks[receiver]["received_val"] = data
-            self.tasks[receiver]["state"] = TaskState.READY
-            self.tasks[sender]["state"] = TaskState.READY
-            return self._handoff_or_yield(receiver)
-
-        # No peer yet: the value stays in the sender's own frame. The channel holds
-        # nothing, so there is no buffer to overflow and no send to roll back.
-        assert ch.waiter_dir != WaitDir.SEND, (
-            "one waiter per channel: concurrent senders must use separate channels"
-        )
-        ch.waiter_task, ch.waiter_dir = sender, WaitDir.SEND
-        self.tasks[sender]["pending_val"] = data
-        self.tasks[sender]["state"] = TaskState.SUSPENDED_CSP
-        return (ChannelAction.BLOCK, None)
-
-    def channel_recv(self, channel: Channel) -> tuple[ChannelAction, str | None]:
-        """Synchronous CSP recv with direct symmetric context switch."""
-        ch = channel
-        receiver = self.current_task
-        assert receiver is not None
-
-        if ch.waiter_dir == WaitDir.SEND:
-            # Take the value out of the sender's frame: never two owners at once
-            sender = ch.waiter_task
-            ch.waiter_task, ch.waiter_dir = None, WaitDir.NONE
-            data = self.tasks[sender].pop("pending_val")
-
-            self.tasks[receiver]["received_val"] = data
-            self.tasks[sender]["state"] = TaskState.READY
-            self.tasks[receiver]["state"] = TaskState.READY
-            return self._handoff_or_yield(sender)
-
-        assert ch.waiter_dir != WaitDir.RECV, (
-            "one waiter per channel: concurrent receivers must use separate channels"
-        )
-        ch.waiter_task, ch.waiter_dir = receiver, WaitDir.RECV
-        self.tasks[receiver]["state"] = TaskState.SUSPENDED_CSP
-        return (ChannelAction.BLOCK, None)
-
-    def _handoff_or_yield(self, target: str) -> tuple[ChannelAction, str | None]:
-        """Bounds the handoff chain so the scheduler main loop stays reachable.
-        This bound is what 6.1 'main loop return guarantee' formally proves."""
-        if self.consecutive_handoffs < self.max_consecutive_handoffs:
-            self.consecutive_handoffs += 1
-            return (ChannelAction.DIRECT_SWITCH, target)
-        self.consecutive_handoffs = 0
-        self.ready_queue.append(target)
-        return (ChannelAction.YIELD, None)
-
-    def notify_interrupt(self, irq_id: int):
-        """Non-blocking ISR notification into bounded event queue."""
-        self.interrupt_event_queue.append(irq_id)
-
-    def drain_interrupts(self):
-        """Wake tasks waiting on received IRQs."""
-        while self.interrupt_event_queue:
-            irq_id = self.interrupt_event_queue.pop(0)
-            waiters = self.irq_waiters.pop(irq_id, [])
-            for t_id in waiters:
-                if self.tasks[t_id]["state"] in (
-                    TaskState.BLOCKED,
-                    TaskState.SUSPENDED_CSP,
-                ):
-                    self.tasks[t_id]["state"] = TaskState.READY
-                    self.ready_queue.append(t_id)
-
-    def run_step(self) -> bool:
-        """Executes one cooperative dispatch step with idle detection."""
-        self.drain_interrupts()
-        active = [t for t in self.tasks.values() if t["state"] != TaskState.TERMINATED]
-        if not active:
-            return False
-
-        if not self.ready_queue:
-            self.idle_hook_called = True
-            return True
-
-        task_id = self.ready_queue.pop(0)
-        self.current_task = task_id
-        task_entry = self.tasks[task_id]
-        task_entry["state"] = TaskState.RUNNING
-
-        try:
-            action, target = task_entry["coro"].send(None)
-            if action == "YIELD":
-                task_entry["state"] = TaskState.READY
-                self.ready_queue.append(task_id)
-            elif action == "DIRECT_SWITCH":
-                task_entry["state"] = TaskState.READY
-                self.ready_queue.append(task_id)
-                if target in self.ready_queue:
-                    self.ready_queue.remove(target)
-                self.ready_queue.insert(0, target)
-        except StopIteration:
-            task_entry["state"] = TaskState.TERMINATED
-
-        self.current_task = None
-        return True
+# 中核アルゴリズム要約: バッファレス同期ランデブーと直接ハンドオフ
+def channel_send(self, channel: Channel, data: object) -> tuple[ChannelAction, str | None]:
+    if channel.waiter_dir == WaitDir.RECV:
+        # 受信待機者が存在: ランデブー即時成立、ゼロコピー移譲、ハンドオフ
+        receiver = channel.waiter_task
+        channel.waiter_task, channel.waiter_dir = None, WaitDir.NONE
+        self.tasks[receiver].received_val = data
+        self.tasks[self.current_task].state = TaskState.READY
+        self.tasks[receiver].state = TaskState.READY
+        return self._handoff_or_yield(receiver)
+    # 受信待機者不在: 送信側フレーム内に値を保持したまま SUSPENDED_CSP 遷移
+    assert channel.waiter_dir != WaitDir.SEND, "1-channel-1-waiter constraint"
+    channel.waiter_task, channel.waiter_dir = self.current_task, WaitDir.SEND
+    self.tasks[self.current_task].pending_val = data
+    self.tasks[self.current_task].state = TaskState.SUSPENDED_CSP
+    return (ChannelAction.BLOCK, None)
 ```
 
 ### 4.2 状態遷移図 (SMD: COOS システムレベル)

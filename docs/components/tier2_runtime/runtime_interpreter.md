@@ -151,11 +151,11 @@ WASMゲストの全実行状態を管理する。JIT/Interpreter 共通の仮想
 
 #### 分岐脱出時のフレームプルーニングと TOS 復元手順（手順アクティビティ図）
 <!-- traceability: {INTP-GOTCHA-01} {INTP-GOTCHA-02} {INTP-GOTCHA-03} {CallFrame_Layout} -->
-`br / br_if` 命令によるネスト脱出時に、中間フレームを確実に破棄しつつ戻り値を TOS レジスタへ正確に復元する決定論的手順を示す。ここでの「Locate Target Control Frame at depth」は、フレームスタック自体が信頼できる場合（JIT を介さない純粋なインタープリタ実行、または該当ベーシックブロックの静的解析結果が利用できない場合のフォールバック経路）の手順である。JIT トレースとの境界を跨ぐ場面（`INTP-GOTCHA-06`）では、この深さ相対のフレーム探索そのものを行わず、ベーシックブロック単位で事前解決済みのラベルPC/`exec_trace`を直接使う——両者は排他的な経路であり、後者が使える場面で前者へフォールバックすることはない。
+`br / br_if / br_table` 命令によるネスト脱出時に、中間フレームを確実に破棄しつつ戻り値を TOS レジスタへ正確に復元する決定論的手順を示す。ここでの「Locate Target Control Frame at depth」は、フレームスタック自体が信頼できる場合（JIT を介さない純粋なインタープリタ実行、または該当ベーシックブロックの静的解析結果が利用できない場合のフォールバック経路）の手順である。JIT トレースとの境界を跨ぐ場面（`INTP-GOTCHA-06`）では、この深さ相対のフレーム探索そのものを行わず、ベーシックブロック単位で事前解決済みのラベルPC/`exec_trace`を直接使う——両者は排他的な経路であり、後者が使える場面で前者へフォールバックすることはない。
 
 ```mermaid
 flowchart TD
-    Start(["Execute br / br_if depth"]) --> CheckCond{"Is condition TRUE? (br_if only)"}
+    Start(["Execute br / br_if / br_table depth"]) --> CheckCond{"Is condition TRUE? (br_if only)"}
     CheckCond -- "No" --> NextPC(["Advance to next PC instruction"])
     CheckCond -- "Yes / Unconditional" --> FetchTarget["Locate Target Control Frame at depth"]
 
@@ -320,7 +320,6 @@ sequenceDiagram
     participant R as Runtime API
 
     V->>I: step(exec_ctx)
-    I->>I: record_pc(pc)
     I->>D: pre_check(exec_ctx)
     D-->>I: continue
     I->>I: dispatch(opcode)
@@ -330,6 +329,7 @@ sequenceDiagram
     Note over I: control instruction -> stop tailcall
     I->>D: post_check(exec_ctx)
     D-->>I: continue
+    I-->>V: return start_pc
 ```
 
 ## 5. インターフェース定義

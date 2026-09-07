@@ -24,9 +24,10 @@ graph TD
     Config[fireball_config.hxx] --> Memory[Memory Management]
     Config --> IPCR[IPC Router]
     Config --> HAL[HAL]
-    Config --> Log[Logging]
     Config --> vSoC[vSoC / vMMIO]
-    Config --> Svc[Services]
+    Config --> Log[Logging / Debugger]
+    Config --> Task[Task ID / Reserved Values]
+    Config --> Recovery[Recovery Strategy]
 ```
 
 ### 3.3 コンフィグマクロ一覧・定義

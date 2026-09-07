@@ -28,12 +28,12 @@ IPCルータは、URIベースのサービスディスカバリとロールベ�
 graph TB
     subgraph "IPC Router Layer"
         subgraph "Lookup Pipeline"
-            Reg["Registry<br/>URI → channel_id map<br/>FlatMap O(log N)"]
+            Reg["Registry<br/>URI → role → Registry Entry (security role)<br/>FlatMap O(log N)"]
             AC["AccessControl<br/>Role matrix check<br/>sender_role ⊗ receiver_role"]
         end
 
         subgraph "Routing & Ownership"
-            R["Router<br/>Request routing<br/>Edge channel dispatch"]
+            R["Router<br/>Request routing<br/>Edge channel dispatch<br/>Channel derived from (sender_role, target_role)"]
             OM["OwnershipManager<br/>Revoke/Rendezvous/Grant<br/>Zero-copy CSP handoff"]
         end
 
@@ -435,6 +435,7 @@ stateDiagram-v2
 | **Grant** | 受信側にリソースの権限を付与 | 所有権ハンドシェイク完了 |
 | **Complete** | ルーティング完了 | メッセージ処理の次ステップへ |
 | **Service Not Found** | 指定 URI が未登録 | エラー応答を呼び出し側に返却 |
+| **Permission Denied** | 送信側ロールと受信側ロールの組がロールマトリックスで拒否 | エラー応答（`ERR_PERMISSION_DENIED`）を呼び出し側に返却 |
 
 ### 4.2.1 所有権移譲状態機械 (Ownership Transfer State Machine)
 <!-- traceability: {OwnershipTransfer} {IPC_ZeroCopy} -->
@@ -510,7 +511,7 @@ sequenceDiagram
     participant Reg as Registry
     participant Ch as CSP Channel
 
-    C->>R: lookup("fireball://hal/uart/0")
+    C->>R: lookup("fireball://device/uart/0")
     R->>Reg: search(uri)
     Reg-->>R: entry(target_role)
     Note over R: Check Permission using Client TCB Role

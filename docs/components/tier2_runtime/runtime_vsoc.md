@@ -29,7 +29,6 @@ vSoC (Virtual System-on-Chip) は、WASM実行環境の統合マネージャで�
 graph TD
     subgraph vSoC_Layer
         Harness[vsoc_harness]
-        Manager[vsoc_manager]
         Context[vsoc_context]
     end
 
@@ -41,13 +40,12 @@ graph TD
         Debug[debugger]
     end
 
-    Manager -- uses --> Harness
     Harness -- points to --> Loader
     Harness -- points to --> Interp
     Harness -- points to --> JIT
     Harness -- points to --> vMMIO
     Harness -- points to --> Debug
-    Manager -- operates on --> Context
+    Harness -- operates on --> Context
 ```
 
 ### 3.3 主要なクラス・構造体・配列・定数
@@ -140,7 +138,7 @@ COOS Scheduler、vSoC Engine、Execution Engine（Interpreter / JIT）、HAL/Deb
 sequenceDiagram
     autonumber
     participant Sched as COOS Scheduler
-    participant vSoC as vSoC Engine (vsoc_context)
+    participant vSoC as vSoC
     participant Exec as Execution Engine (Interpreter / JIT Trace)
     participant Debug as Debugger / Profiler
 
@@ -329,9 +327,13 @@ sequenceDiagram
     S->>V: step()
     loop until yield
         V->>V: get_exec_trace(pc)
-        V->>C: call exec_trace(ctx, sp, local_base, tos)
-        Note over C: JIT Code or Interpreter
-        C-->>V: return (trace end)
+        alt exec_trace resolves to Interpreter
+            V->>I: call exec_trace(ctx, sp, local_base, tos)
+            I-->>V: return (trace end)
+        else exec_trace resolves to JIT Code Cache
+            V->>C: call exec_trace(ctx, sp, local_base, tos)
+            C-->>V: return (trace end)
+        end
     end
     V-->>S: yield
 
@@ -350,7 +352,7 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-    participant V as vSoC Manager
+    participant V as vSoC
     participant L as Wasm Loader
     participant R as Module Registry
     participant M as Target Module

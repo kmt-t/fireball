@@ -113,7 +113,7 @@ flowchart TD
 stateDiagram-v2
     [*] --> Uninitialized
     Uninitialized --> Ready: init
-    Ready --> Busy: read / write / ioctl
+    Ready --> Busy: read / write / control
     Busy --> Ready: complete
     Ready --> Error: fault
     Error --> Ready: reset

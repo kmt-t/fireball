@@ -192,8 +192,12 @@ sequenceDiagram
 
     TaskA->>Mem: allocate_shared(size)
     Note over Mem: MEM-GOTCHA-01: Page-Granular Isolation
-    Mem->>Mem: Allocate fresh dedicated 4KB Physical Page for Task A
-    Mem->>vMMIO: Register PTE: VPN -> PPN (mapped for Task A)
+    alt Existing page owned by Task A has sufficient free capacity
+        Mem->>Mem: Carve out slot from existing dedicated Physical Page for Task A
+    else No suitable existing page
+        Mem->>Mem: Allocate fresh dedicated 4KB Physical Page for Task A
+        Mem->>vMMIO: Register PTE: VPN -> PPN (mapped for Task A)
+    end
     Mem-->>TaskA: Return shared_block (local handle)
 
     TaskA->>TaskA: Write data into shared buffer
@@ -210,6 +214,12 @@ sequenceDiagram
     vMMIO-->>Mem: Mapping active
     Mem-->>TaskB: Return new shared_block handle
     TaskB->>TaskB: Read data safely (mapped in Task B)
+
+    Note over TaskB,vMMIO: Automatic Release (shared-block RAII drop)
+    TaskB->>Mem: shared-block RAII drop
+    Mem->>vMMIO: Unmap Page: unmap_shm_page(vpn) & Flush TLB
+    vMMIO-->>Mem: TLB flushed & PTE removed
+    Mem->>Mem: Return Physical Page to Free Pool
 ```
 
 #### JIT W^X バッチ切り替えトランザクション手順（手順アクティビティ図）
@@ -219,7 +229,8 @@ JIT コンパイル時の MPU 属性切り替え（RW+XN $	o$ RO+X）と CPU キ
 ```mermaid
 flowchart TD
     Start(["JIT Compiler: Begin Trace Generation"]) --> MPU_RW["MPU: Switch Active Bank to RW+XN (Writeable, Execute-Never)"]
-    MPU_RW --> CopyPatch["Copy Stencil Machine Code & Apply Immediate/Register Patches"]
+    MPU_RW --> BarrierRW["Issue DSB (Data Synchronization) & ISB (Instruction Synchronization)"]
+    BarrierRW --> CopyPatch["Copy Stencil Machine Code & Apply Immediate/Register Patches"]
     CopyPatch --> Complete{"Trace generation complete?"}
 
     Complete -- "Yes" --> CleanD["ARM CMSIS: SCB_CleanDCache_by_Addr(trace_addr, size)"]

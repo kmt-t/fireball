@@ -385,25 +385,14 @@ sequenceDiagram
         S-->>V: Fallback (Fast Exit)
         V->>I: exec_trace(pc) -- インタープリタへディスパッチ
     else Card state == COMPILED
-        S->>S: Search Bank 0 (Active)
-        alt Active Hit
+        S->>S: Search Active/Warm/Oldest entries (Folding XOR Cache -> Radix Table -> Binary Search)
+        Note over S: 検索アルゴリズムおよび Oldest-Only 昇格規則の詳細はランタイム管理の正本 {JIT_MultiBuffer_Cache} を参照
+        alt Hit
             S-->>V: Native Code Address
-        else Active Miss
-            S->>S: Search Bank 1 (Warm)
-            alt Warm Hit
-                Note over S: Observation window - no promotion copy
-                S-->>V: Native Code Address
-            else Warm Miss
-                S->>S: Search Bank 2 (Oldest)
-                alt Oldest Hit
-                    S->>S: Promote to new Active (Copy)
-                    S-->>V: Native Code Address
-                else Oldest Miss
-                    S->>S: Enqueue PC in LIFO queue, card stays COMPILED
-                    S-->>V: Fallback (Return NULL)
-                    V->>I: exec_trace(pc) -- インタープリタへディスパッチ
-                end
-            end
+        else Miss
+            S->>S: Enqueue PC in LIFO queue, card stays COMPILED
+            S-->>V: Fallback (Return NULL)
+            V->>I: exec_trace(pc) -- インタープリタへディスパッチ
         end
     end
 ```

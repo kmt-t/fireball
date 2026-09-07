@@ -22,8 +22,8 @@ Fireballは、リソース制限の厳しい小規模組み込みデバイス（
 | **ゲストアプリケーション** | WASMバイナリ | ユーザー提供のWASMバイナリアプリケーション。 |
 | **サービス** | WASMプラグイン | システム機能を拡張するWASMサービス。 |
 | **vSoC** | ハーネス (Loader, Interpreter, JIT, vMMIO, Debugger) | WASM実行環境と仮想ハードウェア抽象化をプラグイン形式で提供。 |
-| **COOSカーネル** | スケジューラ, CSP, メモリ | 協調型マルチタスクと安全な通信の基盤。 |
-| **サブシステム** | IPCルータ, HAL, ロギング | システムの共通機能とハードウェア抽象化層。 |
+| **COOSカーネル** | スケジューラ, CSP, メモリ, IPCルータ | 協調型マルチタスクと安全な通信の基盤。 |
+| **サブシステム** | HAL, ロギング | システムの共通機能とハードウェア抽象化層。 |
 | **デバイスドライバ** | 各種ドライバ | 物理デバイス制御（UART, GPIO等）。 |
 | **ハードウェア** | CPU, 周辺機器 | 物理基盤（ARM Cortex-M, RISC-V等）。 |
 
@@ -54,6 +54,10 @@ graph TD
         Log["<b>block: Logging</b><br/>─ 入力: log message<br/>─ 出力: persistent log<br/>─ ポート: log_write()"]:::blockStyle
     end
 
+    subgraph Driver["Driver Layer"]
+        Drv["<b>block: Device Driver</b><br/>─ 入力: read/write/ioctl call<br/>─ 出力: register access result<br/>─ ポート: read()/write()/ioctl()"]:::blockStyle
+    end
+
     subgraph Hardware["Hardware Layer"]
         HW["<b>block: Hardware Platform</b><br/>─ CPU, Memory, Peripherals<br/>─ Cortex-M / RISC-V"]:::hwStyle
     end
@@ -70,7 +74,8 @@ graph TD
     HAL -.->|"realizes: device-handler interface"| IPCR
     Log -.->|"realizes: log-sink interface"| IPCR
 
-    HAL -.-|"register / read"| HW
+    HAL -->|"uses: read()/write()/ioctl()"| Drv
+    Drv -->|"uses: register access"| HW
 ```
 
 #### 依存性ルール

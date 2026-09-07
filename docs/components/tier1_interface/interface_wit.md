@@ -34,7 +34,7 @@ WASI 0.3p の標準パターンに従い、以下の基礎コンポーネント�
 ```mermaid
 graph TD
     Guest[Guest WASM Application] -->|1. resolver.get-interface URI: fireball://device/uart/0| Res[URI Resolver / IPC Router]
-    Guest -->|2. resolver.acquire-shm size| SHM[Shared Memory Pool FC=14]
+    Guest -->|2. resolver.acquire-buffer size| SHM[Shared Memory Pool FC=14]
     Guest -->|3. streaming.write-shm / read-shm| W3Core[WASI 0.3p HAL Drivers]
     W1Wrap[WASI 0.1p Adapter Layer] -->|Delegates fd_write/read via SHM| W3Core
     W3Core --> UART[fireball://device/uart/0]

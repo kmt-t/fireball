@@ -32,7 +32,7 @@ graph TD
     end
 
     subgraph Debugger_Core
-        Engine[Debugger Engine]
+        Engine[Debugger]
         RspParser[GDB Command Parser / Response Serializer]
         Profiler[Profiler & Test Tool Engine]
     end
@@ -104,7 +104,7 @@ sequenceDiagram
     autonumber
     actor Host as GDB Host Client
     participant HAL as HAL UART (RSP Framer)
-    participant Dbg as DebuggerManager
+    participant Dbg as Debugger
     participant RAM as Guest RAM / Flash
     participant JIT as JIT Code Cache (Active/Warm/Oldest)
 
@@ -144,10 +144,10 @@ stateDiagram-v2
 sequenceDiagram
     participant HAL as HAL (RSP Parser)
     participant Q as Command Queue
-    participant Ctrl as Debug Controller
+    participant Ctrl as Debugger
     participant vSoC as execution_context
 
-    HAL->>Q: Push(READ_REG)
+    HAL->>Q: Push(g)
     Ctrl->>Q: Pop()
     Ctrl->>vSoC: Get Registers
     vSoC-->>Ctrl: Reg Data
@@ -165,7 +165,7 @@ sequenceDiagram
 
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | 実行中のWASMエンジンに対してデバッグ機能を有効化し、初期停止状態（Halt）へ移行させる。 |
+| 機能概要 | 実行中のWASMエンジンに対してデバッグ機能を有効化し、初期停止状態（Stopped）へ移行させる。 |
 | シグネチャ | `attach(exec_ctx: 可変参照, transport: 構造体への参照) -> 結果型` |
 | 引数 | `exec_ctx`: 操作対象コンテキスト<br>`transport`: HAL通信路 |
 | 戻り値 | 結果型 |

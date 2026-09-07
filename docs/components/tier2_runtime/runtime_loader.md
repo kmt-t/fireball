@@ -183,10 +183,10 @@ flowchart TD
     V3 -- "Yes" --> V4{"V4: Section IDs ascending?"}
 
     V4 -- "No" --> Rollback
-    V4 -- "Yes" --> V5{"V5: Function & Type signatures within limits?"}
+    V4 -- "Yes" --> V5{"V5: Import/export type indices within Type section range?"}
 
     V5 -- "No" --> Rollback
-    V5 -- "Yes" --> V6{"V6: Resource budgets <= system limits?"}
+    V5 -- "Yes" --> V6{"V6: Initial memory size <= guest RAM physical budget?"}
 
     V6 -- "No" --> Rollback
     V6 -- "Yes" --> Commit["Commit module_view to Registry"]
@@ -258,7 +258,7 @@ stateDiagram-v2
 sequenceDiagram
     participant Client as LoaderClient
     participant Loader as WasmLoader
-    participant Alloc as META_BumpAllocator
+    participant Alloc as bump_allocator
     participant ROM as WasmBinary
 
     Client->>Loader: prepare(binary)

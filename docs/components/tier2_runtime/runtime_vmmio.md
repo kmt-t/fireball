@@ -226,7 +226,7 @@ sequenceDiagram
     participant vMMIO as vMMIO Controller (PTE & TLB)
     actor Receiver as Receiver Task
 
-    Sender->>Mem: release_shared(shm_id)
+    Sender->>Mem: shm.release(shm_id)
     Note over Sender: Relinquishes local ownership
     Mem->>vMMIO: Unmap Page: unmap_shm_page(vpn)
     vMMIO->>vMMIO: VMMIO-GOTCHA-03: Remove PTE & Immediate TLB Flush
@@ -240,7 +240,7 @@ sequenceDiagram
         vMMIO-->>Sender: TRAP_UNREGISTERED_PAGE (Access Blocked)
     end
 
-    Receiver->>Mem: claim_shared(shm_id)
+    Receiver->>Mem: claim(shm_id)
     Mem->>vMMIO: Map Page for Receiver: map_shm_page(vpn, phys_page)
     vMMIO-->>Receiver: Shared memory accessible
     Note over Receiver: Safe zero-copy access granted
@@ -287,9 +287,9 @@ sequenceDiagram
             C-->>G: Trap (Access Violation)
         end
 
-        alt Type == 0 (Syscall)
+        alt FC == 12 (Static Device)
             C->>H: dispatch_syscall(Syscall_ID, Offset, is_write)
-        else Type == 1 (Physical)
+        else FC == 14 or FC == 15 (SHM / Passthrough)
             C->>H: Access physical memory (Phys_addr)
         end
         H-->>C: result

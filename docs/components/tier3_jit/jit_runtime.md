@@ -7,8 +7,8 @@
 -->
 
 ## 1. コンセプト
-<!-- traceability: {SimpleJITArchitecture} {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} {META_AccessDictionary} {META_BinarySearch} {LowLatencyJIT} {HistoryBuffer} {GLOBAL_PeriodicTask} -->
-JIT ランタイム管理は、WASM PC とネイティブコードの紐付け検索、3面世代交代コードキャッシュのローテーション、およびホットスポット検出を一括して担う。インタープリタ実行ループ内の超高頻度パスにおいて、**カードマーキング表 (`bit_view<2>`)** による $O(1)$ 事前判定、**JITエントリグループインデックス** による $O(1)$ 探索区間絞り込み、およびソート済みエントリ配列に対する有界二分探索（`fireball::radix_binary_tree_view`）を組み合わせた 3 段パイプラインにより、動的キャッシュ代謝と低遅延検索を両立する。 `{SimpleJITArchitecture}` `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}` `{META_AccessDictionary}` `{META_BinarySearch}` `{LowLatencyJIT}` `{HistoryBuffer}` `{GLOBAL_PeriodicTask}`
+<!-- traceability: {SimpleJITArchitecture} {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} {META_AccessDictionary} {META_BinarySearch} {LowLatencyJIT} {HistoryBuffer} {GLOBAL_PeriodicTask} {DirectMappedJIT16} -->
+JIT ランタイム管理は、WASM PC とネイティブコードの紐付け検索、3面世代交代コードキャッシュのローテーション、およびホットスポット検出を一括して担う。インタープリタ実行ループ内の超高頻度パスにおいて、**カードマーキング表 (`bit_view<2>`)** による $O(1)$ 事前判定、**Direct-Mapped Folding XOR キャッシュ**（16スロット）による $O(1)$ バイパス、**JITエントリグループインデックス** による $O(1)$ 探索区間絞り込み、およびソート済みエントリ配列に対する有界二分探索（`fireball::radix_binary_tree_view`）を組み合わせた 4 段パイプラインにより、動的キャッシュ代謝と低遅延検索を両立する。 `{SimpleJITArchitecture}` `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}` `{META_AccessDictionary}` `{META_BinarySearch}` `{LowLatencyJIT}` `{HistoryBuffer}` `{GLOBAL_PeriodicTask}` `{DirectMappedJIT16}`
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {SimpleJITArchitecture} -->
@@ -40,11 +40,13 @@ JIT ランタイム管理は、WASM PC とネイティブコードの紐付け�
 ```mermaid
 graph TD
     Search[Search Request WASM PC] --> Stage1[Stage 1: Card Marking bit_view check O1]
-    Stage1 -->|COMPILED| Stage2[Stage 2: JIT Entry Group slice O1]
+    Stage1 -->|COMPILED| Stage2[Stage 2: Direct-Mapped Folding XOR Cache 16 slots O1]
     Stage1 -->|NOT COMPILED| Interp[Interpreter Fast-Exit]
-    Stage2 --> Stage3[Stage 3: Binary Search on radix_binary_tree_view Olog n]
-    Stage3 -->|Hit| Exec[exec_trace native code]
-    Stage3 -->|Miss| Queue[On-demand Compile Queue]
+    Stage2 -->|Hit| Exec[exec_trace native code]
+    Stage2 -->|Miss| Stage3[Stage 3: JIT Entry Group slice Radix Table O1]
+    Stage3 --> Stage4[Stage 4: Binary Search on radix_binary_tree_view Olog n]
+    Stage4 -->|Hit| Exec
+    Stage4 -->|Miss| Queue[On-demand Compile Queue]
 ```
 
 ### 3.3 主要なクラス・構造体・配列・定数
@@ -122,6 +124,9 @@ sequenceDiagram
     Active->>Mgr: Allocation request exceeds bank capacity
     Note over Mgr: JITR-GOTCHA-03: Trigger 3-Bank Rotation
     Note over Mgr: Shift roles: Oldest -> New Active, Warm -> Oldest, Active -> Warm
+
+    Mgr->>Mgr: Invalidate Direct-Mapped Folding XOR Cache (16 slots)
+    Note over Mgr: JITR-GOTCHA-05: Clear fast cache to prevent stale/dangling references to rotated banks
 
     Mgr->>Inbound: Inspect registered inbound source traces (k entries)
     loop For each source trace index in Inbound Table

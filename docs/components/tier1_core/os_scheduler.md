@@ -34,7 +34,6 @@ graph TD
 
     subgraph Dependency_Injection
         I_IF[interrupt_controller]
-        T_IF[timer_driver]
     end
 
     Engine -- static injection --> Dependency_Injection
@@ -216,13 +215,15 @@ stateDiagram-v2
 | :--- | :--- | :--- | :--- | :--- |
 | init → READY | spawn(task) | 静的TCBスロットの空きあり | 静的プールからTCBを割り当て、タスクコンテキスト初期化 | READY |
 | READY → RUNNING | schedule() | READYキュー非空 | `head_task.resume()` 直接呼び出し | RUNNING |
-| RUNNING → CSP_WAIT | send(ch) | 受信側未待機 (`{ADR_RendezvousChannel}`) | 送信側としてチャネルスロットに登録しサスペンド、実行権をスケジューラに戻す | CSP_WAIT |
-| RUNNING → CSP_WAIT | recv(ch) | 送信側未待機 (`{ADR_RendezvousChannel}`) | 受信側としてチャネルスロットに登録しサスペンド、実行権をスケジューラに戻す | CSP_WAIT |
-| CSP_WAIT → RUNNING | **CSP Handoff** | 相手タスク待機中 (Rendezvous成立) | **対称遷移スイッチ: `await_suspend` から `opposite_task.coroutine_handle` 返却（スケジューラ迂回 $O(1)$ スイッチ）** `{CSP_Handoff}` | RUNNING |
-| RUNNING → EVT_WAIT | wait_event(id) | (常に可) | イベントID登録、スケジューラに制御戻す | EVT_WAIT |
-| EVT_WAIT → READY | event dispatch | イベント受信 | イベントループがタスクをREADYへ遷移 | READY |
-| RUNNING → INT_WAIT | [ISR発生] | 割り込みハードウェア | ISRが INT イベントをキューに投入 | INT_WAIT |
-| INT_WAIT → READY | event dispatch | INT イベント処理 | イベントループが対象タスクをREADYへ遷移 | READY |
+| RUNNING → READY | yield() | (常に可) | 実行可能列末尾へ push、実行権をスケジューラに戻す | READY |
+| RUNNING → CSPWait | send(ch) | 受信側未待機 (`{ADR_RendezvousChannel}`) | 送信側としてチャネルスロットに登録しサスペンド、実行権をスケジューラに戻す | CSPWait |
+| RUNNING → CSPWait | recv(ch) | 送信側未待機 (`{ADR_RendezvousChannel}`) | 受信側としてチャネルスロットに登録しサスペンド、実行権をスケジューラに戻す | CSPWait |
+| CSPWait → RUNNING | **CSP Handoff** | 相手タスク待機中 (Rendezvous成立) | **対称遷移スイッチ: `await_suspend` から `opposite_task.coroutine_handle` 返却（スケジューラ迂回 $O(1)$ スイッチ）** `{CSP_Handoff}` | RUNNING |
+| CSPWait → READY | [opposite not ready] | 相手タスク未待機 (Rendezvous不成立) | 相手タスクを起床させREADYキュー末尾へ投入、自身もREADYキューへ復帰 | READY |
+| RUNNING → EventWait | wait_event(id) | (常に可) | イベントID登録、スケジューラに制御戻す | EventWait |
+| EventWait → READY | event dispatch | イベント受信 | イベントループがタスクをREADYへ遷移 | READY |
+| RUNNING → InterruptWait | [ISR発生] | 割り込みハードウェア | ISRが INT イベントをキューに投入 | InterruptWait |
+| InterruptWait → READY | event dispatch | INT イベント処理 | イベントループが対象タスクをREADYへ遷移 | READY |
 | RUNNING → [*] | exit() / error | (常に可) | TCBスロットの返却（再利用化）、静的メモリパーティション回収 | [*] |
 
 **注記:**

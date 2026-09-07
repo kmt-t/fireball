@@ -60,7 +60,14 @@ stateDiagram-v2
     [*] --> Loaded: load_service (static)
     Loaded --> Running: start_guest
     Running --> Stopped: stop_guest
+    Running --> Failed: fault detected
+    Failed --> Loaded: self_reboot (SelfReboot_via_Event)
 ```
+
+図中の各ブロックは以下を指す：
+- **Isolated IPC Service**: IPCルータ経由で隔離実行される、WASI以外の汎用サービス（本節冒頭の「サービス」の実体）。
+- **Console Logging Service**: `system_logging.md` の内部ロガーおよび `interface_wit.md` の `console-output` リソースを介した出力を担うサービス。
+- **HAL Subsystem**: 4.3節で扱うHAL（ハードウェア抽象化層）ドライバ群全体。
 
 WASIおよび独立アイソレーション・サービスは、起動時にそれぞれ独立した物理メモリパーティションを割り当てられ、メモリのハードウェア境界が確立される（障害伝播防止）。すべてのサービスへのアクセスおよびシステムコール呼び出しは、必ずIPCルータ（`IPCRouter`）のルックアップおよびアクセス制御チェックを経由してのみ開始される。 `{META_FaultIsolation}` `{IPCRouter}`
 
@@ -78,7 +85,7 @@ sequenceDiagram
 
     G->>S: WASI Call (e.g., fd_write)
     S->>R: lookup("fireball://hal/uart/0")
-    R-->>S: channel_id
+    R-->>S: Channel Object
     S->>H: send(WRITE, data)
     H-->>S: status
     S-->>G: result

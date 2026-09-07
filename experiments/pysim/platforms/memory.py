@@ -53,13 +53,13 @@ class RecoveryAction(Enum):
     PANIC = auto()
 
 
-@dataclass
+@dataclass(slots=True)
 class RecoveryStrategy:
     action: RecoveryAction
     message: str
 
 
-@dataclass
+@dataclass(slots=True)
 class MemoryErrorResult:
     error_code: str
     recovery: RecoveryStrategy
@@ -68,7 +68,7 @@ class MemoryErrorResult:
         return f"MemoryError({self.error_code}: {self.recovery.message}, action={self.recovery.action.name})"
 
 
-@dataclass
+@dataclass(slots=True)
 class Result(Generic[T]):
     value: T | None = None
     error: MemoryErrorResult | None = None
@@ -88,7 +88,7 @@ class Result(Generic[T]):
         return self.value
 
 
-@dataclass
+@dataclass(slots=True)
 class PartitionView:
     """Fixed-size non-owning partition view leased to a specific task."""
 
@@ -101,7 +101,7 @@ class PartitionView:
         return self.owner == task_id
 
 
-@dataclass
+@dataclass(slots=True)
 class ShmPageInfo:
     """4KB Physical SHM Page bookkeeping for page-granular permission isolation."""
 
@@ -110,10 +110,9 @@ class ShmPageInfo:
     allocated: bool = False
     allocated_bytes: int = 0
     slot_count: int = 0
-    data: bytearray = field(default_factory=lambda: bytearray(FB_PAGE_SIZE))
 
 
-@dataclass
+@dataclass(slots=True)
 class ShmSlot:
     """One allocated shared-memory page's bookkeeping record."""
 
@@ -126,7 +125,7 @@ class ShmSlot:
     data: bytearray = field(default_factory=bytearray)
 
 
-@dataclass
+@dataclass(slots=True)
 class ShmPagePTE:
     """Shared memory page table entry representation."""
 
@@ -146,6 +145,8 @@ class ShmPageRegistry:
     (FB_CONF_MEMORY_POOL_SIZE / FB_PAGE_SIZE), so a fixed-size array indexed
     directly by page_idx is the direct fit -- not a dict.
     """
+
+    __slots__ = ("ptes",)
 
     def __init__(self):
         self.ptes: list[ShmPagePTE | None] = [None] * _FB_CONF_MAX_SHM_PHYS_PAGES
@@ -177,6 +178,19 @@ class ShmPageRegistry:
 
 class SharedBlock:
     """RAII-managed shared memory block for zero-copy IPC."""
+
+    __slots__ = (
+        "_is_active",
+        "_is_in_flight",
+        "_manager",
+        "base_address",
+        "data",
+        "owner",
+        "page_idx",
+        "shm_id",
+        "size",
+        "slot_idx",
+    )
 
     def __init__(
         self,
@@ -336,7 +350,7 @@ class SharedBlock:
             if self.page_idx < len(self._manager.shm_pages):
                 self._manager.shm_pages[self.page_idx].owner_id = new_owner
             if self._manager._page_mapping_callbacks is not None:
-                self._manager._page_mapping_callbacks.on_grant(
+                self._manager._page_mapping_callbacks.on_update_owner(
                     self.page_idx, self.base_address, new_owner
                 )
 
@@ -360,7 +374,7 @@ class SharedBlock:
         elif self._is_in_flight:
             pass
 
-    def __del__(self):
+    def __del__(self) -> None:
         self.drop()
 
     def __enter__(self) -> SharedBlock:
@@ -381,7 +395,7 @@ class AccessPermission(Enum):
     RW = 2
 
 
-@dataclass
+@dataclass(slots=True)
 class MPURegion:
     region_no: int
     name: str
@@ -403,6 +417,8 @@ class MPURegion:
 
 class PMSAv8MPU:
     """Cortex-M33 PMSAv8 8-region Memory Protection Unit simulator."""
+
+    __slots__ = ("dsb_count", "isb_count", "patch_in_progress", "regions")
 
     def __init__(self, pool_base: int = 0x20020000):
         self.regions: list[MPURegion] = []
@@ -501,6 +517,18 @@ class PMSAv8MPU:
 
 class MemoryManager:
     """Tier 3 Consolidated Physical Memory Manager (platform_memory.md)."""
+
+    __slots__ = (
+        "_page_mapping_callbacks",
+        "mpu",
+        "page_registry",
+        "partition_owners",
+        "pool_base",
+        "pool_size",
+        "shm_pages",
+        "shm_slots",
+        "total_allocated_bytes",
+    )
 
     def __init__(self):
         self.pool_base: int = 0
@@ -736,7 +764,9 @@ class MemoryManager:
     def deallocate(self, caller_task_id: int, addr: int) -> None:
         """Deallocate local static partition or slot. Owner enforced."""
         owners_view = self.partition_owners.view()
-        for owner, pv in list(zip(owners_view.keys, owners_view.values, strict=False)):
+        for i in range(len(owners_view.keys)):
+            owner = owners_view.keys[i]
+            pv = owners_view.values[i]
             if pv.base_address == addr:
                 if owner == caller_task_id:
                     self.release_partition(caller_task_id)

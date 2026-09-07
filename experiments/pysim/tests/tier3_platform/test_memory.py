@@ -41,6 +41,7 @@ from memory import (
     RecoveryAction,
 )
 from vmmio import (
+    TrapCode,
     VMMIOController,
 )
 
@@ -247,21 +248,21 @@ def test_mem_15_vmmio_fc14_tlb_sync():
     status, _ = vmmio.access(raw_addr, is_write=False, current_task_id=1)
     assert status == "OK_PHYSICAL"
 
-    # Task 2 access traps with OWNER_MISMATCH
+    # Task 2 access traps with OWNER_MISMATCH (aliased to UNREGISTERED_PAGE)
     status, _ = vmmio.access(raw_addr, is_write=False, current_task_id=2)
-    assert status == "TRAP_OWNER_MISMATCH"
+    assert status == TrapCode.OWNER_MISMATCH
 
     # Release puts page in flight -> Task 1 also traps!
     shm_id = sb.release()
     status, _ = vmmio.access(raw_addr, is_write=False, current_task_id=1)
-    assert status == "TRAP_OWNER_MISMATCH"
+    assert status == TrapCode.OWNER_MISMATCH
 
     # Grant to Task 2 -> Task 2 can access, Task 1 cannot!
     assert mm.grant_shared(shm_id, 2)
     status, _ = vmmio.access(raw_addr, is_write=False, current_task_id=2)
     assert status == "OK_PHYSICAL"
     status, _ = vmmio.access(raw_addr, is_write=False, current_task_id=1)
-    assert status == "TRAP_OWNER_MISMATCH"
+    assert status == TrapCode.OWNER_MISMATCH
 
 
 def test_mem_20_mpu_8_regions_static_allocation():

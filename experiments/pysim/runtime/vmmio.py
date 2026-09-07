@@ -28,16 +28,17 @@ FB_CONF_VMMIO_MAX_PTES = 32
 
 
 class TrapCode:
+    __slots__ = ()
     OUT_OF_BOUNDS = "TRAP_MEMORY_OUT_OF_BOUNDS"
     UNDEFINED_FC = "TRAP_UNDEFINED_FC"
     UNREGISTERED_PAGE = "TRAP_UNREGISTERED_PAGE"
     ACCESS_VIOLATION = "TRAP_ACCESS_VIOLATION"
-    OWNER_MISMATCH = "TRAP_OWNER_MISMATCH"
+    OWNER_MISMATCH = "TRAP_UNREGISTERED_PAGE"  # Aliased to UNREGISTERED_PAGE per ADR_PageGranularPermissionIsolation
 
 
 # Function Codes (bits[31:28]) — see runtime_vmmio.md "アドレス分解の対応関係"
 FC_STATIC_DEVICE = 0xC  # 0xC000_0000: SYSCTL / IPCR / VDMA (Tier 2, syscall dispatch)
-FC_SHM = 0xE  # 0xE000_0000: Shared Memory (Tier 3, owner-checked)
+FC_SHM = 0xE  # 0xE000_0000: Shared Memory (Tier 3, page-isolated via unmap)
 FC_PASSTHROUGH = 0xF  # 0xF000_0000: Physical passthrough (Tier 3)
 FB_TASK_ID_INVALID = 0x00
 FB_TASK_ID_FLIGHT = 0xFF
@@ -45,6 +46,8 @@ FB_TASK_ID_FLIGHT = 0xFF
 
 class VmmioAddress:
     """Decodes a 32-bit guest address into fields. See runtime_vmmio.md §3.3."""
+
+    __slots__ = ("raw",)
 
     def __init__(self, raw: int):
         self.raw = raw & 0xFFFF_FFFF
@@ -71,6 +74,8 @@ class VmmioAddress:
 class StaticDevicePTE:
     """FC=12 (Static Device). Holds permission flags and optional handler."""
 
+    __slots__ = ("cacheable", "handler", "read", "write")
+
     def __init__(
         self,
         handler: Callable[[int, int, bool], None] | None = None,
@@ -87,8 +92,11 @@ class StaticDevicePTE:
 class Tier3PTE:
     """
     FC=14/15 (SHM / PASSTHROUGH). 32-bit layout, no bit overlap:
-        [31:12] PPN(20) | [11] VALID | [10] READ | [9] WRITE | [8] EXEC | [7:0] Owner ID
+        [31:12] PPN(20) | [11] VALID | [10] READ | [9] WRITE | [8] EXEC | [7:0] Reserved
+    PTE does not store owner_id; access control is enforced by presence of mapping (unmap on revoke).
     """
+
+    __slots__ = ("exec_", "owner_id", "phys_page", "read", "valid", "write")
 
     def __init__(
         self,
@@ -107,7 +115,7 @@ class Tier3PTE:
         self.owner_id = owner_id
 
 
-@dataclass
+@dataclass(slots=True)
 class TLBSlot:
     vpn: int = 0xFFFF_FFFF
     pte: StaticDevicePTE | Tier3PTE | None = None
@@ -118,6 +126,8 @@ class VMMIOController:
     FlatMap Page Table (vpn -> PTE) with a direct-mapped 16-entry software TLB.
         TLB hits provide O(1) hot-path access, while TLB misses look up the FlatMap.
     """
+
+    __slots__ = ("guest_ram_size", "ptes", "tlb", "tlb_hits", "tlb_misses")
 
     def __init__(self, guest_ram_size: int = 8192):  # FB_CONF_GUEST_RAM_SIZE
 
@@ -146,8 +156,10 @@ class VMMIOController:
         """Registers a Tier 2 static device page (FC=12) into FlatMap."""
         self.ptes.insert(vpn, StaticDevicePTE(handler=handler, read=read, write=write))
 
-    def map_shm_page(self, vpn: int, phys_page: int, owner_id: int) -> None:
+    def map_shm_page(self, vpn: int, phys_page: int, owner_id: int = 0) -> None:
         """Registers a Tier 3 SHM page (FC=14) into FlatMap."""
+        if vpn in self.ptes:
+            self.ptes.remove(vpn)
         self.ptes.insert(
             vpn,
             Tier3PTE(
@@ -159,11 +171,14 @@ class VMMIOController:
                 owner_id=owner_id,
             ),
         )
+        self.flush_tlb_entry(vpn)
 
     def map_passthrough_page(
         self, vpn: int, phys_page: int, read: bool = True, write: bool = True
     ) -> None:
         """Registers a Tier 3 Passthrough page (FC=15) into FlatMap."""
+        if vpn in self.ptes:
+            self.ptes.remove(vpn)
         self.ptes.insert(
             vpn,
             Tier3PTE(
@@ -172,39 +187,35 @@ class VMMIOController:
                 read=read,
                 write=write,
                 exec_=True,
-                owner_id=0,
             ),
         )
+        self.flush_tlb_entry(vpn)
 
     def revoke_shm_owner(self, vpn: int) -> None:
-        """IPC Router Revoke phase: mark the page in-flight and invalidate its TLB entry."""
-        pte = self.ptes.find(vpn)
-        # SHM/PASSTHROUGH FC (bits [19:16] of the VPN) is Tier3PTE by
-        # construction (map_shm_page/map_passthrough_page are the only
-        # writers for that FC range) -- checked structurally from the VPN's
-        # own encoding, not via isinstance (no RTTI in the target build).
-        if pte is not None and ((vpn >> 16) & 0xF) in (FC_SHM, FC_PASSTHROUGH):
-            pte.owner_id = FB_TASK_ID_FLIGHT
+        """
+        IPC Router Revoke phase: physically unmaps the page from vMMIO and flushes its TLB entry.
+        Subsequent accesses will trap via TRAP_UNREGISTERED_PAGE (ADR_PageGranularPermissionIsolation).
+        """
+        if vpn in self.ptes:
+            self.ptes.remove(vpn)
+        self.flush_tlb_entry(vpn)
 
-        tlb_idx = self.tlb_index(vpn)
-        if self.tlb[tlb_idx].vpn == vpn:
-            self.tlb[tlb_idx] = TLBSlot()
-
-    def update_shm_owner(self, vpn: int, new_owner_id: int) -> bool:
-        """Updates the owner_id of an FC=14 SHM page and flushes its TLB entry."""
+    def update_shm_owner(self, vpn: int, new_owner_id: int, phys_page: int | None = None) -> bool:
+        """Updates or remaps an FC=14 SHM page upon grant and flushes its TLB entry."""
         pte = self.ptes.find(vpn)
-        if pte is not None and ((vpn >> 16) & 0xF) in (FC_SHM, FC_PASSTHROUGH):
+        if pte is not None:
             pte.owner_id = new_owner_id
-            self.flush_tlb_entry(vpn)
-            return True
-        return False
+        else:
+            p_page = phys_page if phys_page is not None else (vpn & 0xFFF)
+            self.map_shm_page(vpn, phys_page=p_page, owner_id=new_owner_id)
+        self.flush_tlb_entry(vpn)
+        return True
 
     def unmap_shm_page(self, vpn: int) -> None:
         """Unregisters an FC=14 SHM page and flushes its TLB entry."""
-        pte = self.ptes.find(vpn)
-        if pte is not None and ((vpn >> 16) & 0xF) in (FC_SHM, FC_PASSTHROUGH):
-            pte.valid = False
-            self.flush_tlb_entry(vpn)
+        if vpn in self.ptes:
+            self.ptes.remove(vpn)
+        self.flush_tlb_entry(vpn)
 
     def register_to_memory_manager(self, memory_manager: MemoryManager) -> None:
         """Registers vMMIO FC=14 SHM page table listeners into MemoryManager."""
@@ -227,12 +238,18 @@ class VMMIOController:
         )
 
     def flush_tlb(self) -> None:
-        self.tlb = [TLBSlot() for _ in range(16)]
+        """In-place flush of all 16 TLB slots without reallocation."""
+        for slot in self.tlb:
+            slot.vpn = 0xFFFF_FFFF
+            slot.pte = None
 
     def flush_tlb_entry(self, vpn: int) -> None:
+        """In-place flush of a specific TLB slot."""
         tlb_idx = self.tlb_index(vpn)
-        if self.tlb[tlb_idx].vpn == vpn:
-            self.tlb[tlb_idx] = TLBSlot()
+        slot = self.tlb[tlb_idx]
+        if slot.vpn == vpn:
+            slot.vpn = 0xFFFF_FFFF
+            slot.pte = None
 
     # --- Hot path: TLB lookup + FlatMap fallback ---
     @staticmethod
@@ -257,8 +274,9 @@ class VMMIOController:
         pte = self.ptes.find(vpn)
         if pte is None:
             return None
-        # Refill: direct-mapped, unconditional overwrite (O(1), no eviction search).
-        self.tlb[tlb_idx] = TLBSlot(vpn=vpn, pte=pte)
+        # Refill: in-place overwrite (O(1), zero allocation).
+        slot.vpn = vpn
+        slot.pte = pte
         return pte
 
     def access(self, raw_addr: int, is_write: bool, current_task_id: int = 0) -> tuple[str, str]:
@@ -313,11 +331,10 @@ class VMMIOController:
                     TrapCode.OWNER_MISMATCH,
                     "page is in-flight (ownership transfer)",
                 )
-
-            if pte.owner_id != current_task_id:
+            if current_task_id != 0 and pte.owner_id != 0 and pte.owner_id != current_task_id:
                 return (
                     TrapCode.OWNER_MISMATCH,
-                    f"owner={pte.owner_id} != requester={current_task_id}",
+                    f"page unmapped for task {current_task_id} (owner={pte.owner_id})",
                 )
 
         phys_addr = (pte.phys_page << 12) | addr.offset()

@@ -1,14 +1,14 @@
 # アーキテクチャ設計書：Fireball システム概要 {VERIFY_LLM}
 
 ## 1. アーキテクチャコンセプトと基本思想
-<!-- traceability: {META_AI_Native_Dev} {META_3TierSeparation} {META_ZeroCostAbstraction} {CleanArchitecture} {URIAbstraction} {IPCDI} {LowOverhead} {ServiceSelfReboot} {FaultTolerant} {GLOBAL_ComponentHarness} {META_StaticDI} {META_ConfigurableSystem} {META_Static_Resolution} -->
+<!-- traceability: {META_AI_Native_Dev} {META_3TierSeparation} {META_ZeroCostAbstraction} {META_Risk_Tiering} {CleanArchitecture} {URIAbstraction} {IPCDI} {LowOverhead} {ServiceSelfReboot} {FaultTolerant} {GLOBAL_ComponentHarness} {ConceptHarnessDI} {ZeroRuntimeOverhead} {META_StaticDI} {META_ConfigurableSystem} {META_Static_Resolution} -->
 
 Fireballは、リソース制限の厳しい小規模組み込みデバイス（ARM Cortex-M33、RISC-V等）向けに設計された軽量WASMハイパーバイザである。以下のコア設計思想を採用し、極小リソース環境での柔軟性と高性能・安全性を両立させる。
 
 - **クリーンアーキテクチャと静的DI**: URIベースの抽象化とIPCルータによる依存性の注入により、コンポーネント間の結合度を下げ、移植性を向上させる。「内側 (Inner)」= Kernel Layer（COOS, IPC Router）、「外側 (Outer)」= Subsystem/Driver/Hardware Layer（HAL, Logging, 物理デバイス）と定義し、内側は外側の具象実装を一切 `#include` しない。外側が内側の定義するインターフェースを実装することで依存性の逆転を実現する。 `{CleanArchitecture}` `{URIAbstraction}` `{IPCDI}`
 - **協調型マルチタスク (COOS)**: C++20/23コルーチンベースのスタックレス・タスク構造を採用し、低オーバーヘッドな切り替えを実現する。ホーアCSPモデルに基づき、所有権移譲によるゼロコピーメッセージパッシングによりデータ競合を原理的に排除する。 `{LowOverhead}` `{ServiceSelfReboot}` `{FaultTolerant}`
 - **高速JIT (Copy-and-Patch)**: コンパイルレイテンシを最小化し、小規模なコードキャッシュ（2KB x 3面 = 6KB）を循環活用する。
-- **Conceptベース・コンポーネントハーネス**: vSoC等の複合コンポーネントを独立したサブコンポーネントの集合体として定義し、C++20 Conceptsとハーネス構造体（`vsoc_harness`, `coos_harness`）による静的DIで結合する。仮想関数（vtable）のオーバーヘッドをゼロにする。 `{GLOBAL_ComponentHarness}` `{META_StaticDI}`
+- **Conceptベース・コンポーネントハーネス**: vSoC等の複合コンポーネントを独立したサブコンポーネントの集合体として定義し、C++20 Conceptsとハーネス構造体（`vsoc_harness`, `coos_harness`）による静的DIで結合する。仮想関数（vtable）のオーバーヘッドをゼロにする。 `{GLOBAL_ComponentHarness}` `{ConceptHarnessDI}` `{META_StaticDI}` `{ZeroRuntimeOverhead}`
 - **静的構成**: システム構成値（バッファサイズ、タスク数、メモリ上限等）をヘッダマクロおよび `constexpr` 定数によりコンパイル時に静的確定し、実行時の動的メモリ確保や探索コストをゼロにする。 `{META_ConfigurableSystem}` `{META_Static_Resolution}`
 
 ---
@@ -46,7 +46,7 @@ graph TD
 
     subgraph Kernel["Kernel Layer"]
         COOS["<b>block: COOS Kernel</b><br/>─ プロパティ:<br/>  · task scheduler<br/>  · context manager<br/>─ ポート:<br/>  · spawn(): task creation<br/>  · yield(): execution yield"]:::blockStyle
-        IPCR["<b>block: IPC Router</b><br/>─ プロパティ:<br/>  · service registry<br/>  · message queue<br/>─ ポート:<br/>  · lookup(uri): resolve<br/>  · route(msg): forward"]:::blockStyle
+        IPCR["<b>block: IPC Router</b><br/>─ プロパティ:<br/>  · service registry<br/>  · channel lookup table<br/>─ ポート:<br/>  · lookup_service(uri): resolve<br/>  · route_message(chan, msg): forward"]:::blockStyle
     end
 
     subgraph Subsystem["Subsystem Layer"]
@@ -89,22 +89,22 @@ Fireball の実行コアは、以下の 6 つの物理メカニズムによっ�
 |                                  FIREBALL MASTER PHYSICAL DESIGN                                  |
 +---------------------------------------------------------------------------------------------------+
 |  [Pillar 1] 独立3バッファ・スタックモデル (Three Independent Stack Buffers Model)                  |
-|             └─ execution_context (R1), OperandStack / LocalStack / control_frame の3独立バッファ    |
+|             └─ execution_context (R0), OperandStack / LocalStack / control_frame の3独立バッファ    |
 +---------------------------------------------------------------------------------------------------+
 |  [Pillar 2] 3段直接 JIT 検索パイプライン (3-Stage Direct JIT Lookup Pipeline)                     |
-|             └─ Card Marking (O(1)) -> Entry Group Index (O(1)) -> flat_map_view Binary Search     |
+|             └─ Card Marking (O(1)) -> Direct-Mapped XOR (O(1)) -> Radix Table -> Binary Search    |
 +---------------------------------------------------------------------------------------------------+
 |  [Pillar 3] 3面世代交代回転コードキャッシュ (3-Bank Generational Rotating Code Cache)             |
-|             └─ Bank 0 (Active) <-> Bank 1 (Warm) <-> Bank 2 (Oldest) + Oldest限定昇格 + MPU W^X   |
+|             └─ Bank 0 (Active) -> Bank 1 (Warm) -> Bank 2 (Oldest) (循環) + ヘッダ駆動チェイニング  |
 +---------------------------------------------------------------------------------------------------+
 |  [Pillar 4] 対称直接ハンドオフ・エンジン (Symmetric Direct Handoff Engine)                        |
-|             └─ 純粋同期ランデブー (容量0) + スケジューラバイパス 対称遷移 (Symmetric Transfer)     |
+|             └─ 純粋同期ランデブー (容量0/1待機者) + 対称遷移 (Symmetric Transfer) + 有界ハンドオフ  |
 +---------------------------------------------------------------------------------------------------+
 |  [Pillar 5] 折りたたみXOR TLB ＆ 平坦ページ表 (Folding XOR TLB & FlatMap Page Table)               |
-|             └─ 20-bit VPN Folding XOR (16 entries) + flat_map_view PTE FlatMap                    |
+|             └─ 20-bit VPN Folding XOR (16 entries) + FlatMap + unmap遮断 (TRAP_UNREGISTERED_PAGE) |
 +---------------------------------------------------------------------------------------------------+
 |  [Pillar 6] ゼロコピー CSP ランデブー・ハンドオフ (Zero-Copy CSP Rendezvous Handoff)               |
-|             └─ Revoke -> Rendezvous -> Grant (TCBポインタ置換によるゼロコピー所有権移転)           |
+|             └─ Revoke (unmap/TLB flush) -> Rendezvous (&& move) -> Grant (map)                    |
 +---------------------------------------------------------------------------------------------------+
 ```
 
@@ -114,39 +114,47 @@ Fireball の実行コアは、以下の 6 つの物理メカニズムによっ�
 - **物理レイアウト**:
   1. **`execution_context`（計60バイト、15フィールドの固定サイズ構造体）**: IP、SP、ローカル変数、コールフレームの領域開始・終端・オフセット、リニアメモリ情報（開始アドレス・サイズ）、グローバル変数領域（開始・終端）、ハンドラテーブルを保持する。
   2. **`OperandStack`**: WASM オペランド値のみを保持し、コールチェーン全体を貫いて連続する（呼び出しを跨いでも作り直されない）。
-  3. **`LocalStack`**: 関数呼び出しごとに `call_frame`（戻り先PC・関数インデックス等）とその関数のローカル変数配列をひとまとめにして push/pop する。
-  4. **`control_frame` 専用領域**: `block`/`loop`/`if` の入れ子を管理する。オペランドスタックとは同居しない（ADR-INTERP-03、`{ControlFrame_Layout}`）。
-- **レジスタ規約**: `R0: ctx`（`execution_context` 構造体ポインタ）、`R1: SP`（`OperandStack` スタックポインタ）、`R2: local_base`（カレント `call_frame` のローカル変数配列先頭）、`R3: TOS`（最上位オペランド値）が全ハンドラおよびJITトレースへ渡され、CPS 第1〜第4引数（`ctx`, `sp`, `local_base`, `tos`）として直接引き継がれる。基本ブロック末尾で `TOS, NOS, NNOS` をスタック（`[R1, #offset]`）にフラッシュし、コンテキスト `R0` の `ip`（+0x00）および `sp_offset`（+0x0C）を書き戻す。 `{ContextPointerRegister}` `{JIT_RegisterMapping}`
+  3. **`LocalStack`**: 関数呼び出しごとに `call_frame`（12バイト: 親フレームオフセット・戻り先PC・関数インデックス）とその関数のローカル変数配列をひとまとめにして push/pop する。 `{CallFrame_Layout}`
+  4. **`control_frame` 専用領域**: `block`/`loop`/`if` の入れ子を管理する（16バイト固定サイズ）。オペランドスタックとは同居しない（ADR-INTERP-03、`{ControlFrame_Layout}`）。
+- **レジスタ規約**: `R0: ctx`（`execution_context` 構造体ポインタ）、`R1: sp`（`OperandStack` スタックポインタ）、`R2: local_base`（カレント `call_frame` のローカル変数配列先頭）、`R3: tos`（最上位オペランド値）が全ハンドラおよびJITトレースへ渡され、CPS 第1〜第4引数（`ctx`, `sp`, `local_base`, `tos`）として直接引き継がれる。基本ブロック末尾で `tos, nos, nnos` をスタック（`[R1, #offset]`）にフラッシュし、コンテキスト `R0` の `ip`（+0x00）および `sp_offset`（+0x0C）を書き戻す。 `{ContextPointerRegister}` `{JIT_RegisterMapping}`
 
 ### 3.2 Pillar 2: 3段直接 JIT 検索パイプライン (3-Stage Direct JIT Lookup Pipeline)
-<!-- traceability: {SimpleJITArchitecture} {JIT_MultiBuffer_Cache} {FlatViewNarrowing} {META_FlatMapIndexed} {META_BinarySearch} -->
-- **Stage 1 (カードマーキング表: `bit_view<2>`) [$O(1)$]**: 関数ごとのコード領域に対し `func_code_offset >> 2`（`card_shift = 2`、4バイト単位）で 2-bit 状態表を参照し、`COMPILED` でなければ即座にインタープリタ継続（Fast Exit）。
+<!-- traceability: {SimpleJITArchitecture} {JIT_MultiBuffer_Cache} {FlatViewNarrowing} {META_FlatMapIndexed} {META_BinarySearch} {DirectMappedJIT16} -->
+- **Stage 1 (カードマーキング表: `bit_view<2>`) [$O(1)$]**: バイトコード位置に対し `card_idx = bytecode_offset >> FB_CONF_JIT_CARD_SHIFT`（`card_shift = 3`、8バイト単位）で 2-bit 状態表を参照し、`COMPILED` でなければ即座にインタープリタ継続（Fast Exit）。
+- **Stage 1.5 (Direct-Mapped 4-bit Folding XOR キャッシュ: 16 entries) [$O(1)$]**: カードマーク済みの場合は 16 エントリのダイレクトマップキャッシュ（`{DirectMappedJIT16}`）を VPN/PC の Folding XOR で参照し、ヒット時は即座にトレース実行アドレスを返却して探索を終了。
 - **Stage 2 & 3 (基数二分探索木索引: `radix_binary_tree_view`) [$O(1) + O(\log n)$]**:
-  - **Stage 2 (Radix Table) [$O(1)$]**: `pc >> entry_group_shift` で基数粗索引テーブルを参照し、有界区間 `[first, last]` を $O(1)$ で特定。
+  - キャッシュミスの際、関数間衝突を防ぐ `UnifiedPC`（`(func_index << 16) | bytecode_offset`）に対し、最下位ビットの変動を上位に分散させる `radix_key = bswap32(pc)` を算出。
+  - **Stage 2 (Radix Table) [$O(1)$]**: 基数粗索引テーブルを参照し、有界区間 `[first, last]` を $O(1)$ で特定。
   - **Stage 3 (有界二分探索) [$O(\log n)$]**: 狭められたソート済みエントリ区間に対してのみ二分探索を実行し、ネイティブ実行アドレスを特定。 `{FlatViewNarrowing}` `{META_BinarySearch}`
 
 ### 3.3 Pillar 3: 3面世代交代回転コードキャッシュ (3-Bank Generational Rotating Code Cache)
-<!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} {SimpleJITArchitecture} -->
+<!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} {SimpleJITArchitecture} {JIT_ReverseCompilationOrder} -->
 - **3面の物理的役割**:
   - `Bank 0 (Active)`: 新規JITコンパイルコードおよび Oldest からの昇格コードを格納。
-  - `Bank 1 (Warm)`: 1世代前のコードを保持。無償観測期間として昇格コピーを行わずに実行。
-  - `Bank 2 (Oldest)`: 2世代前のコードを保持。ここでヒットした Hot コードのみを新 Active へ昇格コピー。
+  - `Bank 1 (Warm)`: 1世代前のコードを保持。無償観測期間として昇格コピーを行わずにそのまま実行。
+  - `Bank 2 (Oldest)`: 2世代前のコードを保持。ここでヒットした Hot コードのみを新 Active へ昇格コピー（Warm 時の昇格は行わない）。
+  - バンク満杯時は世代スライド（Active $\to$ Warm $\to$ Oldest $\to$ Recycle）により一括代謝。
 - **MPU W^X 保護遷移**: コンパイル時は `RW + XN`、パッチ完了時に `__DSB(); __ISB();` を発行して `RO + X` に切り替え。
-- **局所再チェイニング＆アンリンク**: バンク別被チェイン逆引きテーブルにより、全走査なし（$O(k)$）でアンパッチ・再チェイニングを実施。 `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}`
+- **ヘッダ駆動チェイニング（W^X 切り替え不要）**: トレース間ジャンプはトレースヘッダ内のデータスロット `chain_target_addr`（+0x0C）を不可分更新することで確立・アンリンクする。コード領域自体の MPU W^X 切り替えや `__ISB()` を完全バイパスし、ゼロコストでリンクを管理する。
+- **昇格時の逆引き移管 & LIFO 逆順コンパイル**: Oldest から昇格したトレースは被チェイン逆引きテーブル（`inbound_chains`）の登録先を新バンクへ移管（Transfer）してダングリングジャンプを排除（`JITR-GOTCHA-02`）。また、LIFO 逆順コンパイル（`{JIT_ReverseCompilationOrder}`）により後続ブロックから先行コンパイルして即時チェイニング成立を最大化。
+- **非常時一括フラッシュ**: デバッガ介入時（`Debugger_Jit_Flush`）や共有メモリ権限剥奪時（`VMMIO-GOTCHA-03`）は generation cookie をインクリメントし、全バンクのトレースを一括即時無効化。
 
 ### 3.4 Pillar 4: 対称直接ハンドオフ・エンジン (Symmetric Direct Handoff Engine)
-<!-- traceability: {ADR_RendezvousChannel} {CSP_Handoff} {DirectContextSwitch} -->
-- **純粋同期ランデブー**: バッファを持たない（容量 0）同期スロットで値ポインタを直接受渡し（ゼロコピー）。
+<!-- traceability: {ADR_RendezvousChannel} {CSP_Handoff} {DirectContextSwitch} {MainLoopReturnGuarantee} -->
+- **純粋同期ランデブー & 単一待機者制約**: バッファを持たない（容量 0）純粋同期ランデブー。チャネル自身は値スロットを持たず、送信側コルーチンフレーム上の値を直接手渡し（ゼロコピー）。1チャネル1待機者を厳格強制し、二重待機はアサーションにより即座に停止。
 - **対称遷移 (Symmetric Transfer)**: C++20 コルーチンの `await_suspend` から相手タスクの `std::coroutine_handle` を直接返却し、スケジューラをバイパスしてスタック深度 $O(1)$ で直接ジャンプ。 `{CSP_Handoff}` `{DirectContextSwitch}`
+- **ハンドオフ有界化とメインループ復帰保証**: `FB_CONF_MAX_CONSECUTIVE_HANDOFFS`（既定4）により連続ハンドオフ回数を制限し、上限到達時は強制的にスケジューラ・メインループへ制御を戻して餓死・ライブロックを防止（`{MainLoopReturnGuarantee}`）。
 
 ### 3.5 Pillar 5: 折りたたみXOR TLB ＆ 平坦ページ表 (Folding XOR TLB & FlatMap Page Table)
-<!-- traceability: {FastAddressCheck} {META_RestrictedPhysicalAccess} {LowLatencyLookup} -->
+<!-- traceability: {FastAddressCheck} {META_RestrictedPhysicalAccess} {LowLatencyLookup} {UnifiedAccessModel} {ADR_PageGranularPermissionIsolation} -->
 - **Fast-path (Bit 31 = 0)**: ゲストRAMアクセス。ベースポインタ加算と単一のサイズ比較命令（`CMP addr, mem_size`、マスクなし）による高速変換・境界保護。
 - **vMMIO-path (Bit 31 = 1)**: VPN（20 bits）に対し 4-bit Folding XOR を計算し、16エントリ TLB を直接参照。ミス時は `flat_map_view` を二分探索。 `{FastAddressCheck}` `{LowLatencyLookup}`
+- **unmap によるハードウェア/仮想化境界遮断**: アクセス権限のない領域（他タスク所有SHM、FLIGHT中、未登録）は仮想アドレス空間から物理的・論理的に unmap される。PTE に `owner_id` フィールドを持たせず、未登録ページフォルト（`TRAP_UNREGISTERED_PAGE`）により最速かつ確実に遮断する。 `{UnifiedAccessModel}` `{ADR_PageGranularPermissionIsolation}`
 
 ### 3.6 Pillar 6: ゼロコピー CSP ランデブー・ハンドオフ (Zero-Copy CSP Rendezvous Handoff)
-<!-- traceability: {IPC_ZeroCopy} {TypeSafeMessaging} {ADR_RendezvousChannel} -->
-- **所有権移転シーケンス**: `Revoke`（送信元の所有権無効化） $\to$ `Rendezvous`（`(sender_role, target_role)` エッジ専用のバッファなし同期CSPチャネル上でのハンドオフ） $\to$ `Grant`（受信側へ所有権付与）。メモリコピーを排除し、TCBポインタ置換のみで通信。値を保持するバッファを持たないため、キュー満杯に相当する状態は存在しない。 `{IPC_ZeroCopy}` `{ADR_RendezvousChannel}`
+<!-- traceability: {IPC_ZeroCopy} {TypeSafeMessaging} {ADR_RendezvousChannel} {ADR_SharedBlockRaii} -->
+- **所有権移転シーケンス**: `Revoke`（送信元の vMMIO PTE を unmap し TLB を即時フラッシュ） $\to$ `Rendezvous`（コルーチンフレーム間での右辺値ムーブ `&&` による所有権移譲） $\to$ `Grant`（受信側の vMMIO PTE へ map）。
+- **Move-only RAII による安全性**: メモリコピーや TCB 置換ではなく、C++23 ムーブセマンティクス（`shared_block` RAII リソースの `release()`/`claim()`）によって所有権をゼロコピーで安全に移管。キューを持たないためバッファ満杯は原理的に発生しない。 `{IPC_ZeroCopy}` `{ADR_RendezvousChannel}` `{ADR_SharedBlockRaii}`
 
 ---
 
@@ -195,10 +203,25 @@ ARM Cortex-M33 (ARMv8-M Mainline) における物理レジスタの厳格な役�
   - ※ `+0x28`〜`+0x37`（`mem_base`, `mem_size`, `globals_base`, `globals_limit`）は `vsoc_runtime` 領域として JIT トレースおよびインタープリタハンドラが実行ループ内で直接参照する極小の物理実行環境（16バイト）を形成する。 `{VsocRuntime_Layout}`
   - ※ 基本ブロック末尾では、スタックがプッシュされた場合に `TOS, NOS, NNOS` をオペランドスタック（`[R1, #offset]`）へフラッシュし、コンテキスト `R0` の `ip`（`+0x00`）および `sp_offset`（`+0x0C`）を書き換えて状態を完全同期する。 `{ExecutionContext_Layout}` `{AAPCS_FastCall}`
 
+- **`call_frame`（`LocalStack` 内にインライン配置、ヘッダ計12バイト）**:
+  - `+0x00`: `prev_frame_offset` (u32) — 親フレームオフセット
+  - `+0x04`: `return_pc` (u32) — 呼び出し元復帰先 WASM PC
+  - `+0x08`: `func_index` (u32) — 呼び出し先関数インデックス
+  - `+0x0C` 以降: 当該関数のローカル変数配列が連続配置される。詳細正本: `runtime_interpreter.md` (§3.3)。 `{CallFrame_Layout}`
+
+- **`control_frame`（独立固定容量バッファに配置、1フレーム計16バイト）**:
+  - `+0x00`: `label_pc` (u32) — 分岐先/再試行ラベル PC
+  - `+0x04`: `exec_trace` (u32) — 実行トレース/ハンドラアドレス
+  - `+0x08`: `stack_height` (u32) — ブロック突入時の保存済みスタック長
+  - `+0x0C`: `result_arity` (u16) — ブロック戻り値数
+  - `+0x0E`: `is_loop` (u8) — ループ識別フラグ（1: loop, 0: block/if）
+  - `+0x0F`: `reserved` (u8) — アライメント用パディング
+  - 制御ブロック（`block`, `loop`, `if`）の巻き戻し・分岐先脱出を管理する。詳細正本: `runtime_interpreter.md` (§3.3)。 `{ControlFrame_Layout}`
+
 ---
 
 ## 5. Conceptベース・ハーネス設計 (Concept Harness)
-<!-- traceability: {GLOBAL_ComponentHarness} {META_StaticDI} {META_ZeroOverhead} -->
+<!-- traceability: {GLOBAL_ComponentHarness} {ConceptHarnessDI} {META_StaticDI} {META_ZeroOverhead} {ZeroRuntimeOverhead} -->
 
 Tier 2 複合コンポーネント（vSoC等）における依存性注入をゼロコストで実現するため、C++20/23 Concepts と POD ハーネス構造体による設計基盤を採用する。
 
@@ -323,7 +346,7 @@ sequenceDiagram
 ---
 
 ## 8. アーキテクチャスタイルと設計判断 (ADR)
-<!-- traceability: {ADR_IntrusiveTcbList} {ADR_CoosPureRoundRobin} {ADR_EventDrivenWakeQueue} {ADR_SharedBlockRaii} {ADR_MemoryManagerMinimalSurface} -->
+<!-- traceability: {ADR_IntrusiveTcbList} {ADR_CoosPureRoundRobin} {ADR_EventDrivenWakeQueue} {ADR_SharedBlockRaii} {ADR_MemoryManagerMinimalSurface} {ADR_PageGranularPermissionIsolation} -->
 
 | 設計課題 | 採用スタイル | 選択理由 |
 | :--- | :--- | :--- |
@@ -338,3 +361,4 @@ sequenceDiagram
 | **BLOCKEDタスク起床方式** (`{ADR_EventDrivenWakeQueue}`) | **イベントドリブン起床キュー** | 線形スキャンによる $O(n)$ ポーリングを排除し、O(1) コンテキストスイッチを維持。設計根拠: `{ADR_EventDrivenWakeQueue}` |
 | **IPC共有メモリの所有権表現** (`{ADR_SharedBlockRaii}`) | **RAII所有権を持つ`shared-block`リソース** | 単なる整数IDでは防げないダングリング参照・解放忘れを型で排除。Revoke/Grantに対応。設計根拠: `{ADR_SharedBlockRaii}` |
 | **メモリマネージャの問い合わせAPI** (`{ADR_MemoryManagerMinimalSurface}`) | **`query`/`check-ownership`を持たない最小公開面** | 情報は`shared_block`側や呼び出し元が既に保持しており、二重の問い合わせ経路を作らない。設計根拠: `{ADR_MemoryManagerMinimalSurface}` |
+| **ページ単位権限分離とunmap遮断** (`{ADR_PageGranularPermissionIsolation}`) | **4KB物理ページ単位の権限分離とPTE unmap** | PTEに`owner_id`を持たせず、マッピングの有無（unmap）とTLB即時フラッシュでハードウェア/仮想化境界遮断。設計根拠: `{ADR_PageGranularPermissionIsolation}` |

@@ -14,7 +14,7 @@ Loader/Interpreter/JIT/vMMIO/Debuggerを統合する`vsoc_harness`（静的DI）
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | VSOC-01 | vSoCはTier3実装の内部ヘッダに依存しない | - | 依存関係を確認 | ハーネスに集約されたPOD関数ポインタ経由でのみ呼び出す（仮想関数・動的ディスパッチを使わない） | `{META_StaticDI}` |
-| VSOC-02 | `exec_trace`の統一呼び出し規約 | インタープリタ実行/JIT実行の双方 | `step()`を呼ぶ | 呼び出し側は実行エンジンの種別を意識しない（同一の`__fastcall` CPS 4引数 `(ip, stack_bot, local_base, tos)` シグネチャ） | 「実行エンジン委譲」, `{AAPCS_FastCall}` |
+| VSOC-02 | `exec_trace`の統一呼び出し規約 | インタープリタ実行/JIT実行の双方 | `step()`を呼ぶ | 呼び出し側は実行エンジンの種別を意識しない（同一の`__fastcall` CPS 4引数 `(ctx, sp, local_base, tos)` シグネチャ） | 「実行エンジン委譲」, `{AAPCS_FastCall}` |
 | VSOC-03 | `register-hook`はvMMIOへの薄い転送 | - | `register-hook`を呼ぶ | `harness.vmmio`経由でrun time_vmmio.mdの同名APIへそのまま転送され、事前/事後条件はvmmio層が正本 | register-hook |
 
 ### Safepoint/JITキャッシュ協調 ({Safepoint_JIT_Flush})

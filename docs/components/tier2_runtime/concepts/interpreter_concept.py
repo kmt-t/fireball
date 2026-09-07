@@ -126,9 +126,6 @@ class ExecutionContext:
 
 
 class WASMInterpreter:
-    def __init__(self):
-        pass
-
     def execute_function(self, ctx: ExecutionContext, func_idx: int, args: list[int]) -> int:
         """
         Pushes a new CallFrame on the unified stack and executes function bytecode.

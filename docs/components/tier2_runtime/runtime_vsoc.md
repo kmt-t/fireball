@@ -120,7 +120,7 @@ vSoC コアエンジンの実行委譲、協調イールド、および外部介
 | **デバッガ介入時キャッシュフラッシュ** | デバッガによるメモリ/変数書き換え時 | 該当タスクの JIT キャッシュ（Active/Warm/Oldest 全面）を一括無効化 | JIT コードと変更後メモリの整合性完全維持 | `{Debugger_Jit_Flush}` |
 
 - **実行エンジン委譲とステートレス化 (`VSOC-GOTCHA-01`, `{ThreadedInterpreter}`, `{JIT_CopyAndPatch}`)**:
-  vSoCは `step()` で現在のPCに対応する `exec_trace`（`void __fastcall (const uint8_t* ip, execution_context* stack_bot, uint32_t* local_base, uint32_t tos)`）を呼び出す。 `exec_trace` はインタープリタのディスパッチャまたはJITコードを指し、`__fastcall` 呼び出し規約（R0=IP, R1=stack_bot, R2=local_base, R3=tos）によってレジスタ上で高速に実行エンジンへ制御を委譲する。
+  vSoCは `step()` で現在のPCに対応する `exec_trace`（`void __fastcall (execution_context* ctx, uint32_t* sp, uint32_t* local_base, uint32_t tos)`）を呼び出す。 `exec_trace` はインタープリタのディスパッチャまたはJITコードを指し、`__fastcall` 呼び出し規約（R0=ctx, R1=sp, R2=local_base, R3=tos）によってレジスタ上で高速に実行エンジンへ制御を委譲する。
   **設計理由と不変条件**: インタープリタおよび JIT トレース自身を C++20 コルーチン化することは厳禁とする。コルーチン化すると命令ディスパッチごとにコルーチンフレームの割り当てや退避・復帰が発生し、コンパイラによる末尾呼び出し最適化（`[[clang::musttail]]`）が阻害されてスタックを急速に消費してしまう。そのため、インタープリタは完全ステートレスなプレーン関数として設計し、次に実行すべき PC を返却して vSoC のメインループへ戻る規約とする。
 - **概算Yield と明示的イールド点 (`VSOC-GOTCHA-02`, `{Challenge_ApproximateYield}`)**:
   vSoC は `exec_trace` から制御が戻るたび（`runtime_interpreter.md` `{ADR_TraceBoundaryYield}` のトレース境界）に、監視対象の `yield_threshold` を基準として自ら `co_yield` を発行するかどうかを判定する。
@@ -151,7 +151,7 @@ sequenceDiagram
     end
 
     vSoC->>vSoC: Lookup exec_trace for current PC
-    Note over vSoC,Exec: VSOC-GOTCHA-01: Pass (R0=IP, R1=stack_bot, R2=local_base, R3=TOS)
+    Note over vSoC,Exec: VSOC-GOTCHA-01: Pass (R0=ctx, R1=sp, R2=local_base, R3=tos)
     vSoC->>Exec: Call exec_trace via __fastcall (Stateless Plain Function)
 
     Note over Exec: Executes instructions in pure C++ musttail / Native JIT
@@ -329,7 +329,7 @@ sequenceDiagram
     S->>V: step()
     loop until yield
         V->>V: get_exec_trace(pc)
-        V->>C: call exec_trace(ip, stack_bot, local_base, tos)
+        V->>C: call exec_trace(ctx, sp, local_base, tos)
         Note over C: JIT Code or Interpreter
         C-->>V: return (trace end)
     end

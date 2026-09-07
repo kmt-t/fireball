@@ -90,7 +90,7 @@
 | `0x39` | `f64.store` | `[i32, f64] -> []` | 境界チェック（比較+トラップ） $\to$ 倍精度メモリストア | あり (VSTR.64) | `CMP r4, r9; BHS.W <trap>; VSTR d0, [r8, r4]` |
 | `0x3A` | `i32.store8` | `[i32, i32] -> []` | 境界チェック（比較+トラップ） $\to$ 8-bit メモリストア | あり (STRB) | `CMP r5, r9; BHS.W <trap>; STRB r4, [r8, r5]` |
 | `0x3B` | `i32.store16`| `[i32, i32] -> []` | 境界チェック（比較+トラップ） $\to$ 16-bit メモリストア | あり (STRH) | `CMP r5, r9; BHS.W <trap>; STRH r4, [r8, r5]` |
-| `0x3F` | `memory.size`| `[] -> [i32]` | 現在のリニアメモリページ数を返す | あり (LDR via execution_context.mem_size) | `LDR.W r4, [r1, #0x24]` |
+| `0x3F` | `memory.size`| `[] -> [i32]` | 現在のリニアメモリページ数を返す | あり (LDR via execution_context.mem_size) | `LDR.W r3, [r0, #0x2C]` |
 | `0x40` | `memory.grow`| `[i32] -> [i32]` | リニアメモリ拡張 (ランタイムAPI呼出) | あり (Runtime Call) | `BL vsoc_memory_grow` |
 
 ---

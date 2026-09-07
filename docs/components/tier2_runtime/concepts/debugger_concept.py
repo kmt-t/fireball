@@ -53,9 +53,6 @@ class ExecutionContext:
 
 
 class WASMInterpreter:
-    def __init__(self):
-        pass
-
     def push(self, ctx: ExecutionContext, val: int) -> None:
         if ctx.sp_offset >= len(ctx.stack):
             raise WASMTrap("STACK_OVERFLOW")

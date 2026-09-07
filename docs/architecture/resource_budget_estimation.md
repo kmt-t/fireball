@@ -73,7 +73,7 @@ RAM 領域は、主動作用の**統合物理メモリプール（`ConsolidatedH
 | - **ゲスト仮想タスク RAM** (`FB_CONF_TASK_HEAP_SIZE`) | 4,096 B | ゲスト WASM リニアメモリ実体（`0x0000_0000`、FastAddressCheck 対象） |
 | - **カーネルプール** (`FB_CONF_KERNEL_HEAP_SIZE`) | 4,096 B | TCB（16件 $\times$ 96B $\approx$ 1.5KB）、コルーチンフレーム、<br>**共有メモリバッファ (`FB_CONF_SHM_SIZE`: 1,024 B)** を内包 |
 | - **サブシステムプール** (`FB_CONF_SUBSYS_HEAP_SIZE`) | 3,072 B | HAL 通信バッファ（256B $\times$ 4面 = 1KB）、GDB RSP バッファ（1KB）、<br>リングバッファロガー（512B） |
-| - **ランタイムプール** (`FB_CONF_RUNTIME_HEAP_SIZE`) | 2,048 B | `execution_context`（44B）、WASM モジュールインスタンス状態、<br>`HotspotBitmap`（128B）、`JITCandidateBitmap`（128B）、`HistoryRing`（64B） |
+| - **ランタイムプール** (`FB_CONF_RUNTIME_HEAP_SIZE`) | 2,048 B | `execution_context`（60B）、WASM モジュールインスタンス状態、<br>`HotspotBitmap`（128B）、`JITCandidateBitmap`（128B）、`HistoryRing`（64B） |
 | - **インタープリタ統合スタック** (`FB_CONF_INTERP_STACK_SIZE`) | 2,048 B | `OperandStack`（1KB）、`LocalStack`（768B）、`ControlFrame`（256B） |
 | **2. システム静的変数 & OS スタック（プール外）** | **~3,500 B** | |
 | - vMMIO ソフトウェア TLB キャッシュ配列 | 128 B | 16 エントリ $\times$ 8B（VPN + PTE）ダイレクトマップ高速 TLB |

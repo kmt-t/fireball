@@ -54,6 +54,8 @@
 ## エージェント入口
 
 - エージェント共通のルール正本は `AGENTS.md` および `.agents/rules/**`。
-- 品質検証スキルは `.agents/skills/document-validation/` を参照。
-- ドキュメントレビュースキル（仕様→形式検証→コード→テストの垂直一貫性・サブエージェント監査）は `.agents/skills/document-review/` を参照。
+- ドキュメント品質自動検証スキル（8大品質ゲート自動パイプライン）は `.agents/skills/document-validation/` を参照。
+- 最上位アーキテクチャレビュースキル（`architecture_overview.md` ↔ 下位仕様・形式モデル・WITの垂直一貫性・並行サブエージェント監査）は `.agents/skills/architecture-review/` を参照。
+- コンポーネントレビュースキル（各コンポーネントの仕様→形式検証→コード→テストの4層設計チェーン垂直一貫性・並行サブエージェント監査）は `.agents/skills/component-review/` を参照。
 - pysim ソースコードレビュースキル（組み込み C++ 移植性・8大評価軸監査）は `.agents/skills/pysim-review/` を参照。
+

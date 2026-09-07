@@ -1,9 +1,9 @@
 ---
-name: document-review
-description: コンポーネントの「仕様書（Markdown）→ 形式検証（pyModelChecking）→ コンセプトコード（Python）→ 単体テスト仕様・コード」の4層設計チェーンを、専門サブエージェント群を並行活用して徹底監査・レビューするスキル。設計の正しさ、反証可能性、型安全性、および層間一貫性（垂直トレーサビリティ）を評価する際に使用する。
+name: component-review
+description: コンポーネント設計書の「仕様書（Markdown）→ 形式検証（pyModelChecking）→ コンセプトコード（Python）→ 単体テスト仕様・コード」の4層設計チェーンを、専門サブエージェント群を並行活用して徹底監査・レビューするスキル。設計の正しさ、反証可能性、型安全性、および層間一貫性（垂直トレーサビリティ）を評価する際に使用する。
 ---
 
-# Document Review Skill (4-Layer Vertical Verification)
+# Component Review Skill (4-Layer Vertical Verification)
 
 コンポーネント設計書を対象に、**「仕様（Why/What）」→「形式検証（Proof）」→「コンセプトコード（Algorithm）」→「単体テスト（Validation）」** の4層チェーンにおける設計の正しさと階層間一貫性を評価するスキルです。
 
@@ -39,7 +39,7 @@ graph TD
 レビュー対象のコンポーネント名（例: `os_coos`, `runtime_interpreter`, `jit_compiler`）または仕様書パスが指定されたら、付属の収集スクリプトを実行して関連ファイルを取得します。
 
 ```powershell
-uv run python .agents/skills/document-review/scripts/collect_chain.py <component_name> --json
+uv run python .agents/skills/component-review/scripts/collect_chain.py <component_name> --json
 ```
 
 スクリプトにより以下のファイルパスが特定されます：

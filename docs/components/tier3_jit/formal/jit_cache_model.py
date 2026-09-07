@@ -75,7 +75,7 @@ def build_model(*, guards: bool = True) -> Kripke:
         ("c_hot", "c_compiled"),
         ("c_compiled", "s_active_exec"),
         ("c_compiled", "c_evicted"),
-        ("c_evicted", "c_executed"),
+        ("c_evicted", "c_unexecuted"),
         # --- 遅延チェイニング共通遷移 ---
         ("ch_s0_t0_l1", "ch_s1_t1_l1"),
         ("ch_s1_t1_l1", "ch_s2_t2_l0"),
@@ -185,7 +185,7 @@ def properties():
                 )
             ),
             "violation": AtomicProposition("bad_permanent_deopt"),
-            "expect": True,  # キャッシュ破棄(Eviction)後は必ず EXECUTED(再コンパイル可能)へ復帰する
+            "expect": True,  # キャッシュ破棄(Eviction)後は UNEXECUTED を経て EXECUTED(再コンパイル可能)へ復帰する (JITR-04)
         },
     ]
 

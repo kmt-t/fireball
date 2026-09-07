@@ -31,7 +31,6 @@ from system_containers import (
     BitView,
     FlatMapView,
     MutableBitStorage,
-    MutableRadixBinaryTreeStorage,
     RadixBinaryTreeView,
     ReadOnlyFlatMapStorage,
     ReadOnlyRadixBinaryTreeStorage,
@@ -65,6 +64,8 @@ class CardState:
     COMPILED = 3
 
 
+_CARD_STATE_NAMES = ("UNEXECUTED", "EXECUTED", "HOT", "COMPILED")
+
 # Max distinct chain-in predecessor PCs tracked per JITCacheBank
 # (JITCacheBank.inbound_sources), for a StaticVector fixed-capacity bound
 # ({GLOBAL_Policy_Memory}). Not yet spec'd: structured WASM control flow
@@ -81,6 +82,8 @@ class HotspotBitmap:
     `func_storages` owns the backing bit buffers.
     `func_tables` borrows non-owning BitViews indexed by `func_idx`.
     """
+
+    __slots__ = ("card_shift", "default_func_code_len", "func_storages", "func_tables")
 
     def __init__(self, card_shift: int = 2, default_func_code_len: int = 64):
         self.card_shift = card_shift
@@ -189,6 +192,8 @@ class BlockCardMask:
     read-only for the rest of the run.
     """
 
+    __slots__ = ("card_shift", "func_storages", "func_tables")
+
     def __init__(self, card_shift: int = 2):
         self.card_shift = card_shift
         self.func_storages: list[MutableBitStorage | None] = []
@@ -244,6 +249,8 @@ class BlockCardMask:
 class HistoryRing:
     """Fixed-size ring of recently executed basic-block head PCs backed by RingBuffer."""
 
+    __slots__ = ("ring",)
+
     def __init__(self, capacity: int = 32):
         self.ring: RingBuffer[int] = RingBuffer(capacity)
 
@@ -272,6 +279,15 @@ class JITTraceHeader:
         +0x08 chain_next_pc(u32)
         +0x0C chain_target_addr(u32)
     """
+
+    __slots__ = (
+        "chain_next_pc",
+        "chain_target_addr",
+        "flags",
+        "head_wasm_pc",
+        "trace_byte_size",
+        "variant_id",
+    )
 
     FLAG_PROMOTED = 0x01
     FLAG_LOOP_HEADER = 0x02
@@ -307,6 +323,22 @@ class JITTraceHeader:
 class JITTrace:
     """Compiled native trace descriptor backed by JITTraceHeader and native ctypes function pointer."""
 
+    __slots__ = (
+        "__dict__",
+        "_exec_buf",
+        "_keepalive",
+        "chain_next",
+        "exec_count",
+        "fn",
+        "has_return_val",
+        "head_pc",
+        "header",
+        "loops_to",
+        "next_pc",
+        "raw_addr",
+        "size_bytes",
+    )
+
     def __init__(
         self,
         head_pc: int,
@@ -328,6 +360,7 @@ class JITTrace:
         self.has_return_val = has_return_val
         self.header = JITTraceHeader(head_wasm_pc=head_pc, trace_byte_size=size_bytes)
         self.chain_next: int | None = None
+        self.exec_count: int = 0
         self._exec_buf = buf  # Keeps executable buffer alive in memory
 
     @property
@@ -377,6 +410,15 @@ class JITCacheBank:
     reuses its existing slot in O(log n); only a genuinely new key ever
     pays the O(n) shift a sorted array requires.
     """
+
+    __slots__ = (
+        "_keys",
+        "_values",
+        "bank_id",
+        "capacity_bytes",
+        "inbound_sources",
+        "used_bytes",
+    )
 
     def __init__(self, bank_id: int, capacity_bytes: int = 2048):
         self.bank_id = bank_id
@@ -442,6 +484,19 @@ class JITCacheBank:
 
 class JITMultiBufferCache:
     """3-bank rotating JIT code cache: Active / Warm / Oldest with O(k) bounded unlinking and Direct-Mapped Folding XOR lookup."""
+
+    __slots__ = (
+        "__dict__",
+        "_fast_slots",
+        "active_idx",
+        "banks",
+        "control_skip_tree",
+        "evictions",
+        "oldest_idx",
+        "on_evict",
+        "promotions",
+        "warm_idx",
+    )
 
     NUM_FAST_SLOTS = 16
 
@@ -584,9 +639,11 @@ class JITMultiBufferCache:
         # O(k) Unlink inbound chains pointing to traces in the bank being purged
         for src_pc in old_oldest_bank.inbound_sources:
             src_trace = self.find_trace(src_pc)
-            if src_trace is not None and src_trace.chain_next in [
-                pc for pc, _ in old_oldest_bank.traces
-            ]:
+            if (
+                src_trace is not None
+                and src_trace.chain_next is not None
+                and old_oldest_bank.has_trace(src_trace.chain_next)
+            ):
                 # Check if target was promoted to Active
                 target_in_active = self.banks[new_warm].get_trace(
                     src_trace.chain_next
@@ -617,6 +674,29 @@ class JITMultiBufferCache:
 class RuntimeEngine:
     """Integrated Tiered Tracing Runtime Engine combining Interpreter and JIT."""
 
+    __slots__ = (
+        "__dict__",
+        "_fast_block_slots",
+        "_n_locals_by_func",
+        "bitmap",
+        "cache",
+        "compile_queue",
+        "compile_queue_capacity",
+        "control_skip_tree",
+        "debug",
+        "exec_counter",
+        "jit_compiler",
+        "min_trace_bytes",
+        "module",
+        "ring",
+        "stat_chain_hits",
+        "stat_interp_steps",
+        "stat_jit_invocations",
+        "stat_trace_exits_to_interp",
+        "trackable",
+        "yield_threshold",
+    )
+
     def __init__(
         self,
         jit_compiler: object | None = None,
@@ -632,7 +712,6 @@ class RuntimeEngine:
         self.stat_jit_invocations: int = 0
         self.stat_chain_hits: int = 0
         self.stat_trace_exits_to_interp: int = 0
-        self.stat_trace_executions: dict[int, int] = {}
         self.bitmap = HotspotBitmap(card_shift=card_shift)
         self.trackable = BlockCardMask(card_shift=card_shift)
         self.ring = HistoryRing()
@@ -644,16 +723,8 @@ class RuntimeEngine:
         # the moment it reaches compile_queue_capacity, so that's this
         # StaticVector's exact fixed capacity, never exceeded.
         self.compile_queue: StaticVector[int] = StaticVector(capacity=compile_queue_capacity)
-        self.blocks: list[tuple[int, BasicBlock]] = []  # Flat slot list instead of dynamic dict
         self.module: Module | None = None
-        self.block_storage = MutableRadixBinaryTreeStorage[BasicBlock](
-            capacity=block_capacity,
-            key_transform=bswap32,
-            radix_shift=28,
-        )
-        self.block_tree = self.block_storage.view()
         self._fast_block_slots: list[tuple[int, BasicBlock | None] | None] = [None] * 16
-        self.control_skip_storage: ReadOnlyRadixBinaryTreeStorage[int] | None = None
         self.control_skip_tree: RadixBinaryTreeView[int] | None = None
         self.yield_threshold = yield_threshold
         self.exec_counter = 0
@@ -692,16 +763,7 @@ class RuntimeEngine:
         cached = self._fast_block_slots[slot]
         if cached is not None and cached[0] == pc:
             return cached[1]
-        blk = None
-        if self.module is not None:
-            blk = self.module.get_block(pc)
-        elif self.block_tree is not None:
-            blk = self.block_tree.find(bswap32(pc))
-        else:
-            for b_pc, b in self.blocks:
-                if b_pc == pc:
-                    blk = b
-                    break
+        blk = self.module.get_block(pc) if self.module is not None else None
         self._fast_block_slots[slot] = (pc, blk)
         return blk
 
@@ -732,10 +794,8 @@ class RuntimeEngine:
         if module.block_tree is None:
             module.build_basic_block_index()
         self.module = module
-        self.control_skip_storage = module.control_skip_storage
         self.control_skip_tree = module.control_skip_tree
         self.cache.control_skip_tree = module.control_skip_tree
-        self.blocks = [(b.head_pc, b) for b in module.blocks]
         self._fast_block_slots = [None] * 16
         # `next_pc is not None and byte_span >= min_trace_bytes` is a pure
         # function of static BasicBlock properties + this engine's own
@@ -822,7 +882,9 @@ class RuntimeEngine:
         self.stat_jit_invocations = 0
         self.stat_chain_hits = 0
         self.stat_trace_exits_to_interp = 0
-        self.stat_trace_executions.clear()
+        for bank in self.cache.banks:
+            for _, t in bank.traces:
+                t.exec_count = 0
 
     def dump_internal_state(self, file: object | None = None) -> str:
         """
@@ -896,9 +958,8 @@ class RuntimeEngine:
             lines.append(
                 f"  {'-' * 7} {'-' * 10} {'-' * 10} {'-' * 10} {'-' * 10} {'-' * 8} {'-' * 30}"
             )
-            card_names = {0: "UNEXECUTED", 1: "EXECUTED", 2: "HOT", 3: "COMPILED"}
             for bname, t in all_traces:
-                execs = self.stat_trace_executions.get(t.head_pc, 0)
+                execs = t.exec_count
                 h_pc_str = f"0x{t.head_pc:04X}"
                 n_pc_str = f"0x{t.next_pc:04X}" if t.next_pc is not None else "None"
                 l_pc_str = f"0x{t.loops_to:04X}" if t.loops_to is not None else "None"
@@ -939,7 +1000,11 @@ class RuntimeEngine:
                                 diag = f"[UNLINKED] Target 0x{succ:04X} uncompilable (unsupported stencil / non-trackable){skipped_note}"
                             else:
                                 st = self.bitmap.get_state(succ)
-                                st_name = card_names.get(st, f"STATE_{st}")
+                                st_name = (
+                                    _CARD_STATE_NAMES[st]
+                                    if 0 <= st < len(_CARD_STATE_NAMES)
+                                    else f"STATE_{st}"
+                                )
                                 diag = f"[UNLINKED] Target 0x{succ:04X} not compiled ({st_name}){skipped_note}"
 
                 lines.append(
@@ -977,9 +1042,8 @@ class RuntimeEngine:
         target_file = file if file is not None else sys.stderr
         try:
             target_file.write(output_str)  # type: ignore[union-attr]
-            if hasattr(target_file, "flush"):
-                target_file.flush()
-        except Exception:
+            target_file.flush()  # type: ignore[union-attr]
+        except (AttributeError, TypeError):
             pass
         return output_str
 
@@ -994,7 +1058,7 @@ class RuntimeEngine:
         Drives `interp` to completion. Execution proceeds block-by-block for
         interpretation, or in a continuous native loop until chaining ends for JIT traces.
         """
-        if self.module is None and getattr(interp, "module", None) is not None:
+        if self.module is None and interp.module is not None:
             self.register_module_blocks(interp.module)
 
         call_state = interp.start(func_index, args)
@@ -1025,9 +1089,7 @@ class RuntimeEngine:
                         self.stat_chain_hits += 1
                     self.stat_jit_invocations += 1
                     if self.debug:
-                        self.stat_trace_executions[trace.head_pc] = (
-                            self.stat_trace_executions.get(trace.head_pc, 0) + 1
-                        )
+                        trace.exec_count += 1
                     call_state = self._invoke_trace(interp, call_state, trace)
                     pc = call_state.current_pc()
                     if pc is None or call_state.finished:
@@ -1137,6 +1199,17 @@ class RuntimeEngine:
 class WASMContext:
     """Execution context for hybrid Tiered Interpreter/JIT execution with direct ctypes backing."""
 
+    __slots__ = (
+        "_c_locals",
+        "_c_mem",
+        "_c_result",
+        "_cached_locals_view",
+        "_n_locals",
+        "memory",
+        "stack",
+        "stack_capacity",
+    )
+
     def __init__(
         self,
         locals_values: list[int] | None = None,
@@ -1162,6 +1235,7 @@ class WASMContext:
         # writes it here (via R12, the CPS `stack_bot` argument) instead of
         # in the call's return value.
         self._c_result = ctypes.c_int64()
+        self._cached_locals_view = self._LocalsView(self)
 
     @property
     def stack_bot_ptr(self) -> ctypes.c_void_p:
@@ -1178,6 +1252,8 @@ class WASMContext:
         return ctypes.c_void_p(0)
 
     class _LocalsView:
+        __slots__ = ("_ctx",)
+
         def __init__(self, ctx: WASMContext):
             self._ctx = ctx
 
@@ -1196,7 +1272,7 @@ class WASMContext:
 
     @property
     def locals(self) -> WASMContext._LocalsView:
-        return self._LocalsView(self)
+        return self._cached_locals_view
 
     @locals.setter
     def locals(self, values: list[int]) -> None:
@@ -1269,6 +1345,8 @@ _EMU_TRACE_MAP: FlatMapView[int, Callable[[list[int], object, object], None]] = 
 
 class WASMTraceCompiler:
     """Compiles a TraceBlock op stream into a fast callable native JITTrace using table dispatch."""
+
+    __slots__ = ()
 
     def compile_trace(self, head_pc: int, block: TraceBlock) -> JITTrace:
         # `ops` outlives this call, captured by `trace_fn` below for every
@@ -1370,6 +1448,30 @@ class IntegratedHybridEngine:
     Full Tiered Runtime Engine: Interpreter execution -> 2-bit card tracking ->
         Cooperative Yield -> Idle-Hook Batch Compilation -> Trace Chaining -> JIT execution.
     """
+
+    __slots__ = (
+        "__dict__",
+        "_dispatch",
+        "bitmap",
+        "blocks",
+        "cache",
+        "compilations",
+        "compile_queue",
+        "compile_queue_capacity",
+        "compiler",
+        "control_skip_storage",
+        "control_skip_tree",
+        "debugger",
+        "exec_counter",
+        "history",
+        "interp_blocks",
+        "jit_traces",
+        "min_trace_bytes",
+        "module",
+        "trackable",
+        "yield_threshold",
+        "yields",
+    )
 
     def __init__(
         self,

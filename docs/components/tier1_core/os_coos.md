@@ -51,8 +51,8 @@ graph TD
 <!-- traceability: {GLOBAL_Policy_Memory} -->
 
 #### CSPチャネル（channel）
-<!-- traceability: {CSPCommunication} {GLOBAL_Policy_Memory} {ADR_RendezvousChannel} -->
-タスク間の同期と通信を仲介するデータ構造。ホーアCSPの定義どおり **チャネル自身は値を保持しない**（`{ADR_RendezvousChannel}`）。送信側は相手が現れるまで自身のフレーム上で `CoValue` を保持したまま待機し、ランデブー成立の瞬間に所有権が受信側へ移る。動的メモリ確保を排除した `{GLOBAL_Policy_Memory}` に従い、`CoValue` は静的プールから事前割り当てされた実体の参照またはインデックスの受け渡しのみで移譲される（ゼロコピー所有権移譲）。 `{CSPCommunication}` `{GLOBAL_Policy_Memory}` `{ADR_RendezvousChannel}`
+<!-- traceability: {CSPCommunication} {GLOBAL_Policy_Memory} {ADR_RendezvousChannel} {IPC_ZeroCopy} {OwnershipTransfer} {ADR_SharedBlockRaii} -->
+タスク間の同期と通信を仲介するデータ構造。ホーアCSPの定義どおり **チャネル自身は値を保持しない**（`{ADR_RendezvousChannel}`）。送信側は相手が現れるまで自身のフレーム上で転送リソース（`shared_block` 等のムーブ専用オブジェクト）を保持したまま待機し、ランデブー成立の瞬間に所有権が受信側へ移る。動的メモリ確保を排除した `{GLOBAL_Policy_Memory}` に従い、リソースは静的プールから事前割り当てされた実体（共有メモリスライス等）の右辺値ムーブ（`&&`）によってのみ移譲される（ゼロコピー所有権移譲、`{IPC_ZeroCopy}` `{OwnershipTransfer}` `{ADR_SharedBlockRaii}`）。 `{CSPCommunication}` `{GLOBAL_Policy_Memory}` `{ADR_RendezvousChannel}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
@@ -134,9 +134,9 @@ flowchart TD
 # チャネルは値を保持しない。待機者は最大1タスク（ADR_RendezvousChannel）。
 
 
-def channel_send(channel: Channel, sender_task: Task, value: CoValue) -> CoroutineHandle:
+def channel_send(channel: Channel, sender_task: Task, value: object) -> CoroutineHandle:
     if channel.waiter_dir == RECV:
-        # 受信側が待機中: 値を直接移譲してランデブー成立
+        # 受信側が待機中: 値（ムーブ所有権）を直接移譲してランデブー成立
         receiver = channel.take_waiter()
         receiver.value = value  # 所有権はここで sender -> receiver へ移る
         sender_task.state = READY
@@ -333,22 +333,35 @@ class CoosHarness:
 
 C++23/20 コルーチンおよび静的アロケーションを前提とした、サブコンポーネントのC++ API定義を示す。
 
-#### 1. 所有権管理 `CoValue`
-`CoValue` は、動的ヒープを使用せず、ムーブ専用（Move-only）の所有権移譲を保証する構造体である。コピーコンストラクタは削除され、データ競合を防止する。
+#### 1. 所有権管理 `shared_block` (RAII ムーブセマンティクス)
+<!-- traceability: {ADR_SharedBlockRaii} {GLOBAL_Policy_Memory} {IPC_ZeroCopy} {OwnershipTransfer} -->
+タスク間で受け渡される共有メモリブロックやメッセージリソースは、動的ヒープを使用せず、ムーブ専用（Move-only RAII）の所有権移譲を保証する `shared_block`（`{ADR_SharedBlockRaii}`）によりカプセル化される。コピーコンストラクタおよびコピー代入演算子は明示的に削除（`delete`）され、CSPチャネルへの送受信時に右辺値参照（`&&`）を強制することで、コンパイル時に二重所有やデータ競合を完全に排除する。
 
-```text
-struct CoValue {
-  // ムーブセマンティクスのみを許可
-  CoValue() = default;
-  CoValue(const CoValue&) = delete;
-  CoValue& operator=(const CoValue&) = delete;
-  CoValue(CoValue&&) noexcept = default;
-  CoValue& operator=(CoValue&&) noexcept = default;
+```cpp
+namespace fireball {
 
-  uint64_t key;
-  uint64_t value;
-  uint32_t type_id;
+// ムーブセマンティクスのみを許可するRAII共有メモリリソース ({ADR_SharedBlockRaii})
+class shared_block {
+ public:
+  shared_block() noexcept = default;
+  shared_block(const shared_block&) = delete;
+  shared_block& operator=(const shared_block&) = delete;
+  shared_block(shared_block&& other) noexcept;
+  shared_block& operator=(shared_block&& other) noexcept;
+  ~shared_block() noexcept;  // スコープ終了時に自動解放 (MEM-11)
+
+  [[nodiscard]] auto shm_id() const noexcept -> uint32_t;
+  [[nodiscard]] auto size() const noexcept -> uint32_t;
+  [[nodiscard]] auto data() noexcept -> std::span<uint8_t>;
+  [[nodiscard]] auto release() noexcept -> uint32_t;  // 送信時に手放し (IN_FLIGHT遷移)
+
+ private:
+  uint32_t shm_id_{0xFFFFFFFF};
+  uint32_t size_{0};
+  uint8_t* ptr_{nullptr};
 };
+
+}  // namespace fireball
 ```
 
 #### 2. 公開 API インターフェース
@@ -356,7 +369,7 @@ struct CoValue {
 | コンポーネント | C++ API プロトタイプ定義 | 説明 |
 | :--- | :--- | :--- |
 | `scheduler` | `auto spawn(void(*task_entry)(void*), void* arg) -> result<task_id_t, scheduler_error>;`<br>`auto yield() -> void;`<br>`auto exit() -> void;`<br>`auto set_idle_hook(void(*hook)()) -> void;`<br>`auto wake_up_direct(task_id_t task) -> void;`<br>`auto notify_interrupt(uint32_t irq_id) -> void;` | タスクの生成・一時譲渡・終了およびアイドル時コールバックの設定。`wake_up_direct` はCSP Handoffによる即時起床用、`notify_interrupt` はISRコンテキストから割り込み通知をイベントキューに投函する用。動的確保は行わず、静的プールからTCBスロットを割り当てる。 |
-| `csp` | `auto send(channel_id_t chan, CoValue&& val) -> coos::task_coroutine;`<br>`auto receive(channel_id_t chan) -> coos::task_coroutine_recv;` | チャネル経由の同期メッセージ送受信。ムーブセマンティクスによるゼロコピー所有権移譲を行う。 |
+| `csp` | `template <typename T = shared_block>`<br>`auto send(channel_id_t chan, T&& val) -> coos::task_coroutine;`<br>`template <typename T = shared_block>`<br>`auto receive(channel_id_t chan) -> coos::task_coroutine_recv<T>;` | チャネル経由の同期メッセージ送受信。右辺値参照（`&&`）による完全なムーブセマンティクス（ゼロコピー所有権移譲、`{IPC_ZeroCopy}` `{OwnershipTransfer}`）を行う。具象型としては `shared_block`（`{ADR_SharedBlockRaii}`）や `ipc_message` を渡す。 |
 | `memory` | `auto acquire_partition(task_id_t owner) -> result<partition_view, memory_error>;`<br>`auto release_partition(task_id_t owner) noexcept -> void;`<br>`template <class T> auto acquire_slot() -> result<pool_ref<T>, memory_error>;`<br>`template <class T> auto release_slot(pool_ref<T> ref) noexcept -> void;` | タスク固有の静的メモリパーティションの貸与・返却。**汎用ヒープ API ではない**: `size_t` 指定の任意サイズ確保も `void*` も提供せず、コンパイル時に確定した固定長パーティションと型付きプールスロットのみを扱う。`partition_view` は `std::span<std::byte>` 相当、`pool_ref<T>` は静的プール内スロットへの型付きハンドルである。 `{GLOBAL_Policy_Memory}` `{META_NoStdVector}` |
 
 ## 6. 形式検証（pyModelChecking / 直交表）

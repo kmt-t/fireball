@@ -1,6 +1,6 @@
 # Fireball キーワード台帳 (Keyword Dictionary & Registry)
 
-この文書は、Fireball プロジェクトにおける**全仕様・アーキテクチャ・コンポーネント・リンクキーワード（全 208 件）の正本台帳**である。
+この文書は、Fireball プロジェクトにおける**全仕様・アーキテクチャ・コンポーネント・リンクキーワード（全 210 件）の正本台帳**である。
 
 章節項番号（`§3.3` 等）や見出し文字列、ファイルパスによる直接参照は、仕様改訂やリファクタリングに伴う見出し変更・章番号ズレによって容易に陳腐化・リンク切れを起こす。これを防ぐため、Fireball では中括弧で囲まれた一意なキーワード（`{...}`）をアンカーとして定義し、すべての設計書・テスト仕様書・結合テスト・形式検証モデルを機械的に相互リンクする。
 
@@ -143,7 +143,7 @@ Fireball の全体構造、依存性の方向、リソース予算、品質保�
 
 OSスケジューラ（`os_coos`, `os_scheduler`）、システムログ（`system_logging`）、静的コンテナ（`system_containers`）、システムコール（`system_syscall`）、設定基盤（`system_config`）の機能要求と設計の勘所。
 
-#### 4.1.1 Tier 1 Core 要求キーワード (21 件)
+#### 4.1.1 Tier 1 Core 要求キーワード (22 件)
 
 | キーワード | 定義元正本 | 対象コンポーネント | 仕様概要・検証内容 | 結合テスト / テストID |
 | :--- | :--- | :--- | :--- | :--- |
@@ -161,6 +161,7 @@ OSスケジューラ（`os_coos`, `os_scheduler`）、システムログ（`syst
 | `{HistoryBuffer}` | `requirement_list.md` | `system_logging.md` | 直近ログ履歴の固定長循環保持とクラッシュダンプ支援 | - |
 | `{PackedBitView}` | `requirement_list.md` | `system_containers.md` | ビット単位でのパック構造とメモリ効率の高いフラットビットビュー | - |
 | `{FlatViewNarrowing}` | `requirement_list.md` | `system_containers.md` | フラットビューのスコープ限定・スライシングによる安全な部分アクセス | - |
+| `{System_Allocator}` | `requirement_list.md` | `system_containers.md` | システム基盤用 dlmalloc アロケータ。システムコンテナ内部ストレージの動的確保・個別解放 | - |
 | `{LightweightVerifier}` | `requirement_list.md` | `system_config.md` | 実行前バリデーションを行う軽量静的検証エンジン | - |
 | `{ServiceFacade}` | `requirement_list.md` | `system_config.md` | システム共通サービスへのアクセスを一元化するファサード | - |
 | `{ServiceSelfReboot}` | `requirement_list.md` | `system_config.md` | 異常検知時におけるサービス自己再起動シーケンス | - |
@@ -304,11 +305,12 @@ Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キ�
 
 物理メモリマネージャ・MPU W^X 保護（`platform_memory`）およびハードウェア抽象化ドライバ（`platform_hal`）の機能要求と設計の勘所。
 
-#### 4.5.1 Tier 3 Platform 要求キーワード (4 件)
+#### 4.5.1 Tier 3 Platform 要求キーワード (5 件)
 
 | キーワード | 定義元正本 | 対象コンポーネント | 仕様概要・検証内容 |
 | :--- | :--- | :--- | :--- |
 | `{MemoryIsolation}` | `requirement_list.md` | `platform_memory.md` | MPU によるコード領域・スタック領域・共有メモリ領域のハードウェア保護 |
+| `{Shm_Allocator}` | `requirement_list.md` | `platform_memory.md` | IPC 共有メモリ領域（MPU Region 6）用 dlmalloc アロケータ。可変長 shared_block の切り出し・RAII解放時合体 |
 | `{HAL_Interface}` | `requirement_list.md` | `platform_hal.md` | 物理ハードウェアと上位層を抽象化する統一 HAL インターフェース |
 | `{Fast_Path_GPIO}` | `requirement_list.md` | `platform_hal.md` | コンテキストスイッチを介さず直接ポート操作を行う GPIO 高速パス |
 | `{PhysicalPassthrough}` | `requirement_list.md` | `platform_hal.md` | 認可された特定周辺ペリフェラルへのゼロオーバーヘッド直接物理パススルー |

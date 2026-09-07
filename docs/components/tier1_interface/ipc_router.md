@@ -7,8 +7,8 @@
 -->
 
 ## 1. コンセプト
-<!-- traceability: {IPCRouter} {URIAbstraction} {RoleBasedAccessControl} {OwnershipTransfer} {IPCDI} {IPC_Resource_Isolation} -->
-IPCルータは、URIベースのサービスディスカバリとロールベースのアクセス制御を備えたメッセージルーティング層である。コンポーネント間の依存性をURIで抽象化し、所有権移譲を伴う安全なデータ移動とリソースの完全分離を実現する。 `{IPCRouter}` `{URIAbstraction}` `{RoleBasedAccessControl}` `{OwnershipTransfer}` `{IPCDI}` `{IPC_Resource_Isolation}`
+<!-- traceability: {IPCRouter} {URIAbstraction} {RoleBasedAccessControl} {OwnershipTransfer} {IPCDI} {IPC_Resource_Isolation} {System_Allocator} {Shm_Allocator} -->
+IPCルータは、URIベースのサービスディスカバリとロールベースのアクセス制御を備えたメッセージルーティング層である。コンポーネント間の依存性をURIで抽象化し、所有権移譲を伴う安全なデータ移動とリソースの完全分離を実現する。ルータ内部のルーティングテーブルやチャネルレジストリ等のシステムコンテナはシステム用アロケータ（`{System_Allocator}`）から動的に確保され、ゼロコピー転送される共有メモリ（`shared_block`）は共有メモリアロケータ（`{Shm_Allocator}`）から可変長で切り出される。 `{IPCRouter}` `{URIAbstraction}` `{RoleBasedAccessControl}` `{OwnershipTransfer}` `{IPCDI}` `{IPC_Resource_Isolation}` `{System_Allocator}` `{Shm_Allocator}`
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {IPCRouter} {URIAbstraction} -->

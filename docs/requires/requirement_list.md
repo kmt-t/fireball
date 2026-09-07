@@ -60,6 +60,8 @@ graph LR
 | `{JIT_RuntimeAPI_Fallback}` | 複雑な命令をランタイムAPI呼び出しにフォールバックさせ、JITエンジンの複雑さを抑える。 | 高 | レビュー |
 | `{OneRuntimeOneGuest}` | 1つのWASMランタイムは厳密に1つのゲストモジュールのみを担当し、マルチインスタンス実行は共有VM内のスレッドではなく独立した別ランタイムの並行起動とIPC協調によって完全なメモリ・障害隔離を実現する。 | 高 | レビュー |
 | `{Runtime_BumpAllocator}` | 各ランタイムが専用の固定長バンプアロケータ（`bump_allocator`）を所有し、モジュール内のシステムコンテナストレージ確保を一括管理して、アンロード時に個別破棄なしで $O(1)$ 決定論的メモリ解放を行う。 | 高 | テスト |
+| `{System_Allocator}` | カーネル・仮想化基盤（COOS, vMMIO, IPC Router等）が常駐・運用するシステムコンテナの内部ストレージを dlmalloc（`mspace`）により動的アロケートし、個別解放・自動合体によるメモリ再利用を可能にする。 | 高 | レビュー |
+| `{Shm_Allocator}` | IPC 共有メモリ領域（MPU Region 6）から、タスクが要求する可変長（`size`）の `shared_block` バッファを dlmalloc（`mspace`）により切り出し、4KB ページ単位権限分離を維持しつつ RAII 解放時に合体・再利用する。 | 高 | テスト |
 | `{InterpreterContextStackless}` | Cスタックを使わないスタックレスなインタープリタ実行。 | 高 | レビュー |
 | `{SinglePassCompilation}` | 中間表現を介さず、1パスでバイナリを生成する。 | 高 | レビュー |
 | `{JIT_OldestOnly_Promote}` | 3面循環コードキャッシュにおいて Oldest バンクでヒットしたコードのみを Active バンクへ昇格させるキャッシュ追い出し・代謝ポリシー（Oldest 限定昇格）。 | 高 | レビュー |

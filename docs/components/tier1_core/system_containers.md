@@ -6,7 +6,7 @@
 -->
 
 ## 1. コンセプト
-<!-- traceability: {Type_Vocabulary} {META_FlatMapIndexed} {META_BinarySearch} {META_NoStdVector} {GLOBAL_Policy_Memory} {META_ZeroCostAbstraction} {GLOBAL_StaticScalability} {FlatViewNarrowing} {PackedBitView} -->
+<!-- traceability: {Type_Vocabulary} {META_FlatMapIndexed} {META_BinarySearch} {META_NoStdVector} {GLOBAL_Policy_Memory} {META_ZeroCostAbstraction} {GLOBAL_StaticScalability} {FlatViewNarrowing} {PackedBitView} {System_Allocator} -->
 本コンポーネントは、Fireball 全体で共有されるコンテナ語彙を定義する。複数の Tier が同じ参照パターンを必要とするため、各所で個別に説明せず本書を型定義の正本とする。 `{Type_Vocabulary}`
 
 語彙は **4 つの独立した型**からなる。それぞれ答える問いが異なるため、共通のテンプレートに統合しない。
@@ -28,7 +28,7 @@
 メモリ所有権とビューを厳格に分離し、要素の追加（`insert`）や削除（`remove`）等の変更操作はすべて **可変ストレージ（Mutable Storage）** の責務とする。非所有ビュー（View）は探索・走査に専念し、一切の変更操作を提供しない。また、下位互換用のエイリアスは全廃し、正規のクラス名のみを直接使用する。
 
 | コンテナ種別 | 非所有ビュー (View)<br/>※探索・絞り込み専用 | 読み取り専用ストレージ (ReadOnly Storage)<br/>※静的イミュータブル実体 | 可変ストレージ (Mutable Storage)<br/>※要素追加(`insert`)・削除(`remove`) | 実体所有権 | 変更操作の責務 |
-| :--- | :--- | :--- | :--- | :--- | :--- |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **FlatMap** (疎マップ) | `flat_map_view<K, V>` | `read_only_flat_map_storage<K, V>` | `mutable_flat_map_storage<K, V, Capacity>` | Storage が AoS 配列を完全所有 | **Mutable Storage のみ** (`insert`, `remove`) |
 | **FlatSet** (疎集合) | `flat_set_view<K>` | `read_only_flat_set_storage<K>` | `mutable_flat_set_storage<K, Capacity>` | Storage が キー配列を完全所有 | **Mutable Storage のみ** (`insert`, `remove`) |
 | **RadixBinaryTree** (基数木) | `radix_binary_tree_view<K, V, RadixShift>` | `read_only_radix_binary_tree_storage<V>` | `mutable_radix_binary_tree_storage<V, Capacity>` | Storage が キー・値・Radix表を完全所有 | **Mutable Storage のみ** (`insert`, `remove` + Radix表自動更新) |
@@ -40,8 +40,10 @@
 - **容量上限到達時の動作**: 未登録キーの `insert` 呼び出し時、`count ≥ Capacity` であればメモリ再確保を行わず即座に `false` を返却する。既存キーの更新は `count` を増加させずインプレースで上書きし `true` を返却する。
 - **インプレースシフト削除とスロットクリア**: 要素削除時はバッファ内で要素をインプレースで前方にシフトし、空いた末尾スロットは即座にゼロクリア（`None`）して `count` をデクリメントする。
 - **非所有 View への動的追従**: 借用中の View は、Mutable Storage の内部固定バッファの先頭 `count` 要素（有効スパン）をゼロコピーで直接参照するため、Storage 側の追加・削除・シフトが即座に View に反映される。
-- **バンプアロケータからのメモリ供給と一括解放 (`{Runtime_BumpAllocator}`, `{OneRuntimeOneGuest}`)**:
-  各ストレージコンテナは、外部から渡された連続メモリ領域（`std::span` または `bump_allocator::allocate()` で切り出されたバッファスライス）を受け取ってゼロアロケーションで初期化できる。1ランタイム1ゲスト原則（`{OneRuntimeOneGuest}`）のもとで、モジュール生成時に親ランタイムの専用バンプアロケータ（`{Runtime_BumpAllocator}`）から各コンテナの裏打ちストレージが順次切り出され、モジュール破棄時は個別オブジェクトの破棄を要さずアリーナごと $O(1)$ で一括解放される。
+- **アロケータからのメモリ供給とライフサイクル管理 (`{Runtime_BumpAllocator}`, `{OneRuntimeOneGuest}`, `{System_Allocator}`)**:
+  各ストレージコンテナは、外部から渡された連続メモリ領域（`std::span` またはアロケータにより切り出されたバッファスライス）を受け取ってゼロアロケーションで初期化できる。ストレージのメモリ供給とライフサイクルは、使用する層（ゲストまたはシステム基盤）に応じて以下のように直交分離される。
+  - **ゲスト層（WASMモジュール内）**: 1ランタイム1ゲスト原則（`{OneRuntimeOneGuest}`）のもと、モジュールロード時に親ランタイムの専用バンプアロケータ（`{Runtime_BumpAllocator}`）から各コンテナの裏打ちストレージ（RAM/XN）が順次切り出される。モジュール破棄時は個別オブジェクトの破棄走査を行わず、アリーナごと $O(1)$ で一括解放される。
+  - **システム層（カーネル・仮想化基盤）**: COOS カーネル、vMMIO コントローラ、IPC ルータ、メモリマネージャ、デバッガ等のシステム基盤が常駐・運用するシステムコンテナの裏打ちストレージは、固定長システムヒープを管理する dlmalloc ベースのシステム用アロケータ（`{System_Allocator}`）から動的に切り出される。システム稼働中に発生するタスクの登録/終了、PTE マッピングの増減、チャネルの登録/破棄に対して、コンテナやエントリ単位での個別解放（`deallocate`）と断片化の自動合体・再利用を決定論的に実現する。
 
 **標準の `std::flat_map` / `std::flat_set` を採用しない理由**:
 C++23 のこれらはコンテナアダプタであり、既定の下位コンテナが `std::vector` であるため `{META_NoStdVector}` および `{GLOBAL_Policy_Memory}`（`malloc` / `new` の使用禁止）に抵触する上、動的再確保のレイテンシ揺らぎを持ち込む。本アーキテクチャでは、固定長バッファ＋`count` 追跡による決定論的かつゼロアロケーションな静的ストレージを採用する。 `{META_NoStdVector}` `{GLOBAL_Policy_Memory}` `{GLOBAL_StaticScalability}`

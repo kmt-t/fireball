@@ -10,6 +10,7 @@ Fireballは、リソース制限の厳しい小規模組み込みデバイス（
 - **高速JIT (Copy-and-Patch)**: コンパイルレイテンシを最小化し、小規模なコードキャッシュ（2KB x 3面 = 6KB）を循環活用する。
 - **Conceptベース・コンポーネントハーネス**: vSoC等の複合コンポーネントを独立したサブコンポーネントの集合体として定義し、C++20 Conceptsとハーネス構造体（`vsoc_harness`, `coos_harness`）による静的DIで結合する。仮想関数（vtable）のオーバーヘッドをゼロにする。 `{GLOBAL_ComponentHarness}` `{ConceptHarnessDI}` `{META_StaticDI}` `{ZeroRuntimeOverhead}`
 - **1ランタイム1ゲスト原則と専用バンプアロケータ**: 1つの WASM ランタイム（`vSoC`）は厳密に1つのゲストモジュールのみを担当し（`{OneRuntimeOneGuest}`）、各ランタイムが専用の固定長バンプアロケータ（`bump_allocator`）を所有する（`{Runtime_BumpAllocator}`）。モジュール内のシステムコンテナストレージはすべてこのアロケータから確保され、モジュール破棄・アンロード時にアリーナごと $O(1)$ で一括解放される。なお、JIT ネイティブコードキャッシュ（3-Bank）は MPU の W^X（ライト・実行権限排他）制御が適用された専用の実行可能セクションから専用アロケータ（`jit_code_allocator`）によって確保され、データ用バンプアロケータ（RAM/XN）とはハードウェア保護ドメインが厳格に分離される。マルチインスタンスは独立ランタイムの並行起動と CoOS IPC（CSP ランデブーおよびゼロコピー SHM 所有権移譲）により実現し、メモリと障害の完全直交分離を達成する。
+- **システムコンテナ用および共有メモリ用の dlmalloc アロケータ (`{System_Allocator}`, `{Shm_Allocator}`)**: WASM モジュール用のバンプアロケータとは独立して、カーネル・仮想化基盤（COOS, vMMIO, IPC Router, MemoryManager, Debugger 等）が常駐・運用するシステムコンテナの内部ストレージ（PTE表, チャネルテーブル, ブレークポイント等）は dlmalloc（`create_mspace_with_base`）ベースの**システム用アロケータ (`system_allocator`)** により動的確保・個別解放される。また、タスク間 IPC でゼロコピー転送される共有メモリ（MPU Region 6: `Shared Memory Buffers`）は、可変長（`size`）の要求に応じたバッファ切り出しと RAII 解放時の自動合体を提供する**SHM用アロケータ (`shm_allocator`)** により管理される。なお、タスク間メモリ保護のため、同一 4KB 物理ページ内には同一所有タスクの SHM チャンクのみが配置される（`{PageGranularPermissionIsolation}`）。
 - **静的構成**: システム構成値（バッファサイズ、タスク数、メモリ上限等）をヘッダマクロおよび `constexpr` 定数によりコンパイル時に静的確定し、実行時の動的メモリ確保や探索コストをゼロにする。 `{META_ConfigurableSystem}` `{META_Static_Resolution}`
 
 ---
@@ -160,7 +161,7 @@ Fireball の実行コアは、以下の 6 つの物理メカニズムによっ�
 ### 3.6 Pillar 6: ゼロコピー CSP ランデブー・ハンドオフ (Zero-Copy CSP Rendezvous Handoff)
 <!-- traceability: {IPC_ZeroCopy} {TypeSafeMessaging} {ADR_RendezvousChannel} {ADR_SharedBlockRaii} -->
 - **所有権移転シーケンス**: `Revoke`（送信元の vMMIO PTE を unmap し TLB を即時フラッシュ） $\to$ `Rendezvous`（コルーチンフレーム間での右辺値ムーブ `&&` による所有権移譲） $\to$ `Grant`（受信側の vMMIO PTE へ map）。
-- **Move-only RAII による安全性**: メモリコピーや TCB 置換ではなく、C++23 ムーブセマンティクス（`shared_block` RAII リソースの `release()`/`claim()`）によって所有権をゼロコピーで安全に移管。キューを持たないためバッファ満杯は原理的に発生しない。 `{IPC_ZeroCopy}` `{ADR_RendezvousChannel}` `{ADR_SharedBlockRaii}`
+- **Move-only RAII による安全性**: メモリコピーや TCB 置換ではなく、C++23 ムーブセマンティクス（`shared_block` RAII リソースの `release()`/`claim()`）によって所有権をゼロコピーで安全に移管。キューを持たないためバッファ満杯は原理的に発生しない。共有ブロックのバッファは `shm_allocator`（dlmalloc `create_mspace_with_base`）から可変長で切り出され、RAII デストラクタで自動解放・合体される。 `{IPC_ZeroCopy}` `{ADR_RendezvousChannel}` `{ADR_SharedBlockRaii}` `{Shm_Allocator}`
 
 ---
 
@@ -370,3 +371,5 @@ sequenceDiagram
 | **ページ単位権限分離とunmap遮断** (`{ADR_PageGranularPermissionIsolation}`) | **4KB物理ページ単位の権限分離とPTE unmap** | PTEに`owner_id`を持たせず、マッピングの有無（unmap）とTLB即時フラッシュでハードウェア/仮想化境界遮断。設計根拠: `{ADR_PageGranularPermissionIsolation}` |
 | **1ランタイム1ゲスト原則** (`{OneRuntimeOneGuest}`) | **1ランタイム1ゲストの直交分離とIPC協調** | 単一VM内での複数モジュール同居を禁止し、マルチインスタンスは独立ランタイムの並行起動とCoOS IPCで実現。障害・メモリを完全隔離。 |
 | **ランタイム専用バンプアロケータ** (`{Runtime_BumpAllocator}`) | **専用アリーナ所有とアンロード時 $O(1)$ 一括解放（W^Xコード分離）** | 各ランタイムが固定長バンプアロケータを所有し、WASMモジュール内のシステムコンテナストレージ（RAM/XN）確保を一元管理。アンロード時にアリーナごと一括リセットし断片化を根絶。なお、JITコードキャッシュはMPU W^X制御の専用実行可能セクションから専用アロケータで確保され、データアリーナとは厳格にドメイン分離。 |
+| **システムコンテナ用アロケータ** (`{System_Allocator}`) | **dlmalloc による固定長システムヒープアリーナ管理** | システム層（PTE表, チャネル, ブレークポイント等）の動的増減に柔軟対応し、断片化の自動合体を伴う個別解放を可能にする。 |
+| **IPC共有メモリアロケータ** (`{Shm_Allocator}`) | **dlmalloc による共有メモリアリーナ管理（4KBページ分離共存）** | 任意のメッセージサイズに応じた可変長バッファ切り出しと合体解放を実現しつつ、4KB物理ページ単位のハードウェア保護を両立。 |

@@ -6,8 +6,8 @@
 -->
 
 ## 1. コンセプト
-<!-- traceability: {META_3TierSeparation} {GLOBAL_Policy_Memory} {ConsolidatedHeap} {GLOBAL_IndependentHeap} -->
-メモリマネージャ（`memory-manager`）は、システム全体の統合物理メモリプール（`ConsolidatedHeap`）を基礎とし、そこからホスト（WASMランタイム）用のヒープ、および各VM/タスク用のヒープを、それぞれ物理的・領域的に完全に独立した別個のヒープ（`GLOBAL_IndependentHeap`）として切り出して管理する。これにより、特定のVMでのメモリ不足が他のVMやホストランタイムを道連れにしてクラッシュすることを防止する。 `{META_3TierSeparation}` `{GLOBAL_Policy_Memory}` `{ConsolidatedHeap}` `{GLOBAL_IndependentHeap}`
+<!-- traceability: {META_3TierSeparation} {GLOBAL_Policy_Memory} {ConsolidatedHeap} {GLOBAL_IndependentHeap} {System_Allocator} {Shm_Allocator} -->
+メモリマネージャ（`memory-manager`）は、システム全体の統合物理メモリプール（`ConsolidatedHeap`）を基礎とし、そこからホスト（WASMランタイム）用のヒープ、および各VM/タスク用のヒープを、それぞれ物理的・領域的に完全に独立した別個のヒープ（`GLOBAL_IndependentHeap`）として切り出して管理する。これにより、特定のVMでのメモリ不足が他のVMやホストランタイムを道連れにしてクラッシュすることを防止する。さらに、固定長パーティション貸与に加え、システム基盤向けシステムコンテナの動的確保・個別解放を担う**システム用アロケータ (`system_allocator` / `{System_Allocator}`)**、およびタスク間ゼロコピー IPC 転送用の共有メモリ領域（MPU Region 6）から可変長バッファを切り出す**SHM用アロケータ (`shm_allocator` / `{Shm_Allocator}`)** を dlmalloc（`create_mspace_with_base`）により運用する。 `{META_3TierSeparation}` `{GLOBAL_Policy_Memory}` `{ConsolidatedHeap}` `{GLOBAL_IndependentHeap}` `{System_Allocator}` `{Shm_Allocator}`
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {WasmPageAlignment} -->
@@ -18,6 +18,8 @@
 ### 3.1 データ構造
 - **`MemoryManager`**: パーティション管理とアロケーションロジックをカプセル化。
 - **`partition_info`**: パーティションの境界と使用状況の可視化。
+- **`system_allocator`**: dlmalloc（`create_mspace_with_base`）を基盤とする固定長システムヒープアリーナ管理アロケータ。システムコンテナストレージの動的割り当てと個別解放を担当。 `{System_Allocator}`
+- **`shm_allocator`**: dlmalloc（`create_mspace_with_base`）を基盤とする共有メモリ（MPU Region 6）アリーナ管理アロケータ。可変長共有ブロック（`shared_block`）の切り出しと RAII 解放時の合体を担当。 `{Shm_Allocator}`
 
 ### 3.2 依存関係 (Zero-cost DI)
 - `initialize` メソッドにより、管理対象の物理メモリプールの基点アドレスとサイズを受け取る。
@@ -70,17 +72,17 @@ WITインターフェース名は kebab-case で定義されるが、C++の公�
 | 戻り値 | 成功時は `pool-ref<T>`（静的プール内スロットへの型付きハンドル） |
 
 ##### `allocate-shared` (IPC転送データ専用)
-<!-- traceability: {OwnershipTransfer} -->
-IPC転送のための共有メモリブロック確保は、上記の `acquire-partition`/`acquire-slot` とは別のライフサイクルを持つ。所有権の移動が `{ThreeStageRouting}` の Revoke → Rendezvous → Grant と連動し、`shared-block` はこの上位仕様が管理する状態を物理メモリ側で保持するRAIIラッパーであり、独自の所有権管理を並行して持つものではない。`release()`/`claim()` の呼び出しは、`{ThreeStageRouting}` のRevoke/Grantフェーズおよび対応する vMMIO PTE のアンマップ／再マッピング（および TLB フラッシュ）と連動する。 `{OwnershipTransfer}`
+<!-- traceability: {OwnershipTransfer} {Shm_Allocator} -->
+IPC転送のための共有メモリブロック確保は、上記の `acquire-partition`/`acquire-slot` とは別のライフサイクルを持つ。共有メモリ領域（MPU Region 6）を管理する `shm_allocator`（dlmalloc `create_mspace_with_base`）を介して、指定されたバイト数（`size`）の可変長バッファを切り出す。所有権の移動が `{ThreeStageRouting}` の Revoke → Rendezvous → Grant と連動し、`shared-block` はこの上位仕様が管理する状態を物理メモリ側で保持するRAIIラッパーであり、独自の所有権管理を並行して持つものではない。`release()`/`claim()` の呼び出しは、`{ThreeStageRouting}` のRevoke/Grantフェーズおよび対応する vMMIO PTE のアンマップ／再マッピング（および TLB フラッシュ）と連動する。 `{OwnershipTransfer}` `{Shm_Allocator}`
 
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | IPC転送用の共有メモリブロックを割り当て、RAII所有権を持つリソースを返す。 |
+| 機能概要 | IPC転送用の共有メモリブロックを `shm_allocator`（dlmalloc）から割り当て、RAII所有権を持つリソースを返す。 |
 | シグネチャ | `allocate-shared(size: byte-count) -> result<shared-block, recovery-strategy>` |
 | 引数 | `size`: 割り当てサイズ |
 | 戻り値 | 成功時は `shared-block` リソース |
 | 事後条件 | 対応する vMMIO FC=14 ページが呼び出し元タスクの仮想アドレス空間にマッピング登録される（`map_shm_page` 相当） |
-| 補足 | `{HAL_Interface}` が公開する`acquire_buffer(size)`は、本APIの上にHALのデバイス通信用途を薄くラップしたものである（同じTier 3内の兄弟コンポーネント。両者が別々にSHMページを確保することはない）。 |
+| 補足 | `{HAL_Interface}` が公開する`acquire_buffer(size)`は、本APIの上にHALのデバイス通信用途を薄くラップしたものである（同じTier 3内の兄弟コンポーネント。両者が別々にSHMページを確保することはない）。`shared-block` の RAII 解放時に `shm_allocator`（`mspace_free`）へ返却され、断片化は即時合体される。 |
 
 #### 所有権要求（claim）
 | 項目 | 内容 |
@@ -100,21 +102,24 @@ IPC転送のための共有メモリブロック確保は、上記の `acquire-p
 | 補足 | 共有メモリは `shared-block` のデストラクタで自動解放される。 |
 
 ## 5. 制約達成の方策
-<!-- traceability: {GLOBAL_Policy_Memory} {GLOBAL_StrictMemoryLimit} {WasmPageAlignment} {META_BumpAllocator} {META_FaultIsolation} {OneRuntimeOneGuest} {Runtime_BumpAllocator} -->
+<!-- traceability: {GLOBAL_Policy_Memory} {GLOBAL_StrictMemoryLimit} {WasmPageAlignment} {META_BumpAllocator} {META_FaultIsolation} {OneRuntimeOneGuest} {Runtime_BumpAllocator} {System_Allocator} {Shm_Allocator} -->
 
 ### 5.1 性能制約と不変条件
-- **目標**: 決定論的 $O(1)$ のメモリ割り当て・解放および高速な境界判定。
+- **目標**: 決定論的 $O(1)$ または有界 $O(\log n)$ のメモリ割り当て・解放および高速な境界判定。
 - **方策**:
   - `{META_BumpAllocator}`: 固定長パーティションおよび型付きプールスロットによる断片化なき高速貸与。
   - `{Runtime_BumpAllocator}`: 1ランタイム1ゲスト（`{OneRuntimeOneGuest}`）の実行モデルにおいて、各ランタイムに対して固定長 RAM パーティション（データアリーナ: `RW + XN`）を一括貸与する。ランタイム内部のシステムコンテナストレージ確保はすべてこのアリーナから順次切り出され、アンロード時は個別オブジェクトの破棄なしに $O(1)$ でアリーナ全体が回収・リセットされる。なお、JIT ネイティブコードキャッシュ（3-Bank）は MPU の `W^X`（ライト・実行権限排他）制御が適用された専用の実行可能セクションから専用の JIT コードアロケータによって確保され、データ用バンプアロケータ（RAM/XN）とはハードウェア保護ドメインが厳格に分離される。
+  - `{System_Allocator}`: システム層（カーネル、vMMIO、IPC ルータ等）のシステムコンテナストレージ向けに、固定長システムヒープアリーナを dlmalloc（`mspace`）により運用する。システム稼働中の動的な登録・破棄に柔軟対応し、$O(\log n)$ の有界レイテンシで個別解放と断片化の自動合体を提供する。
+  - `{Shm_Allocator}`: 共有メモリ領域（MPU Region 6）を固定長アリーナとして dlmalloc（`mspace`）により運用し、可変長 `allocate_shared(size)` 要求に即座に応じる。RAII 解放時の自動合体により、長時間のゼロコピー IPC 通信下でも断片化を最小化する。
   - `{WasmPageAlignment}`: ゲスト RAM（Region 3）を WASM ページサイズである **64KB アライメント**（`0x10000` 境界）に配置し、単一の比較命令による $O(1)$ 高速境界検査（`FastAddressCheck`）と PMSAv8 リージョン境界を完全一致させる。
 
 ### 5.2 メモリ制約と方策
-<!-- traceability: {GLOBAL_StrictMemoryLimit} {GLOBAL_IndependentHeap} {OneRuntimeOneGuest} -->
+<!-- traceability: {GLOBAL_StrictMemoryLimit} {GLOBAL_IndependentHeap} {OneRuntimeOneGuest} {System_Allocator} {Shm_Allocator} -->
 - **目標**: 総メモリ消費を有界化し、タスク間のヒープ干渉を完全に防止。
 - **方策**:
   - `{GLOBAL_StrictMemoryLimit}`: システム全体の総割当量をコンパイル時定数 `FB_CONF_MEMORY_POOL_SIZE` 以内に厳格制限。
   - `{GLOBAL_IndependentHeap}` `{OneRuntimeOneGuest}`: 各タスク・各ランタイムに独立した静的パーティション（アリーナ）を割り当て、ヒープ干渉を物理的に排除する。共有メモリは 4KB ページ単位で完全に分離する。
+  - `{System_Allocator}` `{Shm_Allocator}`: システムヒープおよび共有メモリヒープの容量を `FB_CONF_SYSTEM_HEAP_SIZE` および `FB_CONF_SHM_POOL_SIZE` でコンパイル時静的確定し、無制限な動的拡張（OS からの再確保）を禁止。
 
 ### 5.3 安全性制約と方策
 <!-- traceability: {META_FaultIsolation} {PageGranularPermissionIsolation} -->
@@ -152,7 +157,7 @@ Cortex-M33 MPU および vMMIO のハードウェア保護機構において、�
 
 1. **他タスクとのページ混在の禁止**:
    - 異なるタスクに属する共有メモリスロットを同一 4KB 物理ページ内に共存（相乗り）させることは厳格に禁止される。
-   - `allocate_shared(caller_task_id, size)` は、既に `caller_task_id` が所有し十分な空き容量のあるページが存在する場合にのみスロットを切り出し、存在しない場合は必ず新規の 4KB 物理ページを `caller_task_id` 専用として割り当てる。
+   - `allocate_shared(caller_task_id, size)` は、`shm_allocator`（dlmalloc `create_mspace_with_base`）を介して可変長バッファを切り出す際、既に `caller_task_id` が所有し十分な空き容量のある 4KB 物理ページ内の領域から割り当てる。存在しない場合は必ず新規の 4KB 物理ページを `caller_task_id` 専用として払い出し、そのページ境界内でメモリを切り出す。これにより、dlmalloc による可変長アロケーションの柔軟性と、4KB ページ単位の unmap ハードウェア保護（`{PageGranularPermissionIsolation}`）を両立させる。 `{Shm_Allocator}`
 2. **ページ単位の所有権移譲**:
    - IPC 転送時、所有権の移譲（Revoke $\to$ Grant）はページ全体を単位として連動する。
    - ページ内の全スロットは常に同一の所有者（または移譲中アンマップ状態）であり、一部のスロットのみが別タスクへ移譲されてページ内で所有者が分裂する状態は生じない。
@@ -248,9 +253,8 @@ JIT コンパイラがネイティブコードを生成する Code Cache 領域�
   **設計理由と不変条件**: 1 命令の書き込みごとに MPU 属性の切り替え（実行不可・書き込み可 $\to$ 書き込み不可・実行可）を行うと、その都度 ARM D-Cache クリーン、I-Cache インバリデート、および DSB/ISB メモリバリア命令を発行する必要があり、パイプラインフラッシュの累積により JIT コンパイル性能が致命的に悪化する。そのため、W^X 切り替えは必ず「1 トレースまたは 1 バッチ」単位でトランザクション化し、トレース全体の生成完了後に一括してキャッシュクリーンとバリアを発行して実行可能属性へ遷移させる。
 
 
-## 8. 設計判断 (ADR)
 ## 7. ハードウェアメモリ保護 (MPU) & W^X 設計
-<!-- traceability: {META_FaultIsolation} {WasmPageAlignment} {LowLatencyJIT} {VERIFY_FORMAL} -->
+<!-- traceability: {META_FaultIsolation} {WasmPageAlignment} {LowLatencyJIT} {VERIFY_FORMAL} {System_Allocator} {Shm_Allocator} -->
 
 ### 7.1 Cortex-M33 PMSAv8 MPU リージョン配分
 Cortex-M33 (ARMv8-M Mainline) の PMSAv8 (Protected Memory System Architecture) に準拠し、ハードウェア MPU の 8 リージョン（最小標準構成）を以下のように静的に配分・構成する。 `{META_FaultIsolation}`
@@ -259,11 +263,11 @@ Cortex-M33 (ARMv8-M Mainline) の PMSAv8 (Protected Memory System Architecture) 
 | :---: | :--- | :--- | :---: | :---: | :---: | :--- |
 | **0** | Flash / Kernel Code | Flash (ROM) | `RO + X` | RO, Exec | なし | カーネルテキスト・不変定数の改ざん防止 |
 | **1** | Kernel Data & BSS | SRAM (Internal) | `RW + XN` | RW, NoExec | なし | カーネル静的変数・スタック領域 |
-| **2** | Kernel Pool / Heap | SRAM (Internal) | `RW + XN` | RW, NoExec | なし | タスク管理・IPC 内部制御構造体 |
+| **2** | Kernel Pool / Heap | SRAM (Internal) | `RW + XN` | RW, NoExec | なし | `system_allocator`（dlmalloc）によるシステムコンテナおよびタスク管理構造体の動的確保 `{System_Allocator}` |
 | **3** | Guest WASM RAM | SRAM (Internal) | `RW + XN` | RW, NoExec | RW, NoExec | ゲスト WASM リニアメモリ（64KB 境界配置） |
 | **4** | **JIT Code Cache** | SRAM (Internal) | **`RO + X`** | **RO, Exec** (パッチ時 `RW+XN`) | なし | JIT 生成ネイティブコード（W^X 保護対象） |
 | **5** | Peripheral MMIO | Device Memory | `RW + XN` | RW, NoExec | なし | ペリフェラルレジスタ（Device 属性） |
-| **6** | Shared Memory Buffers | SRAM (Internal) | `RW + XN` | RW, NoExec | RW, NoExec | IPC ゼロコピー共有バッファ領域 |
+| **6** | Shared Memory Buffers | SRAM (Internal) | `RW + XN` | RW, NoExec | RW, NoExec | `shm_allocator`（dlmalloc）による可変長 shared_block バッファ管理（4KBページ分離） `{Shm_Allocator}` |
 | **7** | Stack Guard Band | - | `No Access` | 不可 | 不可 | スタックオーバーフロー検出用ガードバンド |
 
 ### 7.2 JIT W^X (Write XOR Execute) 切替プロトコル

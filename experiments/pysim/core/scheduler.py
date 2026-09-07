@@ -354,7 +354,8 @@ class Scheduler:
                             WaitDir.NONE,
                             None,
                         )
-            receiver.received_val = data
+            val = data.move_to(receiver.task_id) if hasattr(data, "move_to") else data
+            receiver.received_val = val
             receiver.state = TaskState.READY
             sender.state = TaskState.READY
             return self._handoff_or_yield(receiver)
@@ -377,6 +378,8 @@ class Scheduler:
             val = sender.pending_val
             sender.pending_val = None  # Prevent double ownership
             ch.waiter_task, ch.waiter_dir = None, WaitDir.NONE
+            if hasattr(val, "move_to"):
+                val = val.move_to(receiver.task_id)
             receiver.received_val = val
             sender.state = TaskState.READY
             receiver.state = TaskState.READY
@@ -403,6 +406,8 @@ class Scheduler:
                 val = sender.pending_val
                 sender.pending_val = None
                 ch.waiter_task, ch.waiter_dir = None, WaitDir.NONE
+                if hasattr(val, "move_to"):
+                    val = val.move_to(receiver.task_id)
                 receiver.received_val = val
                 sender.state = TaskState.READY
                 receiver.state = TaskState.READY

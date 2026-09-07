@@ -10,6 +10,8 @@ Implementation Invariants & Gotchas:
   deferred to cooperative drain_interrupts at scheduler yield points.
 - SCHED-GOTCHA-01: Consecutive direct handoff bound forces yield back to main loop to
   prevent starvation of periodic/monitoring tasks.
+- ADR-SharedBlockRaii: Move-only RAII shared memory block guarantees zero-copy ownership transfer
+  via C++23 move semantics (rvalue reference &&), eliminating double-ownership.
 """
 
 from collections.abc import Generator
@@ -41,6 +43,64 @@ class ChannelAction(IntEnum):
     DIRECT_SWITCH = 2
     YIELD = 3
     BLOCK_IRQ = 4
+
+
+class SharedBlock:
+    """Move-only RAII shared memory block for zero-copy IPC ({ADR_SharedBlockRaii}).
+    Enforces move semantics (rvalue transfer in C++23): once moved/released into
+    a channel, sender access is strictly prohibited to prevent double-ownership."""
+
+    __slots__ = ("_data", "_is_active", "_is_moved", "_owner", "_size")
+
+    def __init__(self, size: int, owner: str):
+        self._size = size
+        self._owner = owner
+        self._data = bytearray(size)
+        self._is_active = True
+        self._is_moved = False
+
+    @property
+    def size(self) -> int:
+        return self._size
+
+    @property
+    def owner(self) -> str:
+        return self._owner
+
+    def read(self, offset: int, length: int) -> bytes:
+        self._check_valid()
+        assert 0 <= offset and offset + length <= self._size
+        return bytes(self._data[offset : offset + length])
+
+    def write(self, offset: int, chunk: bytes) -> None:
+        self._check_valid()
+        assert 0 <= offset and offset + len(chunk) <= self._size
+        self._data[offset : offset + len(chunk)] = chunk
+
+    def _check_valid(self) -> None:
+        assert not self._is_moved, "Use-after-move: SharedBlock has already been transferred"
+        assert self._is_active, "Access to dropped or inactive SharedBlock"
+
+    def move_to(self, new_owner: str) -> "SharedBlock":
+        """Simulates C++23 move semantics (std::move / rvalue reference &&).
+        Invalidates the original instance and returns an active handle for the new owner."""
+        self._check_valid()
+        self._is_moved = True
+        self._is_active = False
+
+        transferred = SharedBlock.__new__(SharedBlock)
+        transferred._size = self._size
+        transferred._owner = new_owner
+        transferred._data = self._data
+        transferred._is_active = True
+        transferred._is_moved = False
+        return transferred
+
+    def drop(self) -> None:
+        self._is_active = False
+
+    def __del__(self) -> None:
+        self.drop()
 
 
 class Channel(Generic[MsgT]):
@@ -107,7 +167,8 @@ class COOSKernel:
             receiver = ch.waiter_task
             assert receiver is not None
             ch.waiter_task, ch.waiter_dir = None, WaitDir.NONE
-            self.tasks[receiver].received_val = data
+            val = data.move_to(receiver) if hasattr(data, "move_to") else data
+            self.tasks[receiver].received_val = val
             self.tasks[sender].state = TaskState.READY
             self.tasks[receiver].state = TaskState.READY
             return self._handoff_or_yield(receiver)
@@ -135,7 +196,8 @@ class COOSKernel:
             ch.waiter_task, ch.waiter_dir = None, WaitDir.NONE
             data = self.tasks[sender].pending_val
             self.tasks[sender].pending_val = None
-            self.tasks[receiver].received_val = data
+            val = data.move_to(receiver) if hasattr(data, "move_to") else data
+            self.tasks[receiver].received_val = val
             self.tasks[sender].state = TaskState.READY
             self.tasks[receiver].state = TaskState.READY
             return self._handoff_or_yield(sender)
@@ -409,10 +471,115 @@ def test_coos_interrupt_wakeup() -> None:
     assert kernel.tasks["worker"].state == TaskState.TERMINATED
 
 
+def test_shared_block_move_semantics_across_rendezvous() -> None:
+    """ADR_SharedBlockRaii / IPC_ZeroCopy: Move-only SharedBlock transfer across CSP channel.
+    Upon rendezvous, ownership moves directly from sender to receiver.
+    Sender instance is invalidated (use-after-move triggers assertion),
+    while receiver acquires full ownership of the backing buffer."""
+    kernel = COOSKernel()
+    ch = kernel.create_channel()
+
+    # Create a 64-byte SharedBlock owned by 'sender'
+    sb = SharedBlock(64, owner="sender")
+    sb.write(0, b"Hello Fireball Zero-Copy Move!")
+
+    def sender_coro() -> Generator[tuple[ChannelAction, str | None], None, None]:
+        action, arg = ch.send(sb)
+        yield (action, arg)
+
+    received_blocks: list[SharedBlock] = []
+
+    def receiver_coro() -> Generator[tuple[ChannelAction, str | None], None, None]:
+        action, arg = ch.recv()
+        yield (action, arg)
+        recv_val = kernel.get_received_value()
+        assert isinstance(recv_val, SharedBlock)
+        received_blocks.append(recv_val)
+
+    kernel.register_task("sender", sender_coro())
+    kernel.register_task("receiver", receiver_coro())
+
+    # Step 1: Sender runs and suspends into SUSPENDED_CSP (no receiver yet).
+    kernel.run_step()
+    assert kernel.tasks["sender"].state == TaskState.SUSPENDED_CSP
+    # While waiting, sender can still read (value is in sender frame)
+    assert sb.read(0, 5) == b"Hello"
+
+    # Step 2: Run remaining steps until tasks terminate
+    steps = 0
+    while kernel.run_step() and steps < 10:
+        steps += 1
+
+    assert kernel.tasks["sender"].state == TaskState.TERMINATED
+    assert kernel.tasks["receiver"].state == TaskState.TERMINATED
+    assert len(received_blocks) == 1
+    recv_sb = received_blocks[0]
+
+    # Receiver now owns the block and data matches exactly
+    assert recv_sb.owner == "receiver"
+    assert recv_sb.read(0, 30) == b"Hello Fireball Zero-Copy Move!"
+
+    # Sender instance was invalidated via move semantics (C++23 &&)
+    try:
+        sb.read(0, 5)
+        raise AssertionError("Expected AssertionError: Sender must not access moved SharedBlock")
+    except AssertionError as e:
+        assert "Use-after-move" in str(e)
+
+    try:
+        sb.write(0, b"Fail")
+        raise AssertionError("Expected AssertionError: Sender must not write to moved SharedBlock")
+    except AssertionError as e:
+        assert "Use-after-move" in str(e)
+
+    # Sub-case 2: Receiver waits first, Sender arrives second
+    ch2 = kernel.create_channel()
+    sb2 = SharedBlock(64, owner="sender2")
+    sb2.write(0, b"Subcase 2 Move!")
+
+    def receiver_first() -> Generator[tuple[ChannelAction, str | None], None, None]:
+        action, arg = ch2.recv()
+        yield (action, arg)
+        val = kernel.get_received_value()
+        assert isinstance(val, SharedBlock)
+        received_blocks.append(val)
+
+    def sender_second() -> Generator[tuple[ChannelAction, str | None], None, None]:
+        action, arg = ch2.send(sb2)
+        yield (action, arg)
+
+    kernel.register_task("receiver2", receiver_first())
+    kernel.register_task("sender2", sender_second())
+
+    # Step 1: Receiver2 runs and suspends into SUSPENDED_CSP
+    kernel.run_step()
+    assert kernel.tasks["receiver2"].state == TaskState.SUSPENDED_CSP
+
+    # Step 2: Sender2 arrives and matches rendezvous directly
+    steps = 0
+    while kernel.run_step() and steps < 10:
+        steps += 1
+
+    assert kernel.tasks["receiver2"].state == TaskState.TERMINATED
+    assert kernel.tasks["sender2"].state == TaskState.TERMINATED
+    assert len(received_blocks) == 2
+    recv_sb2 = received_blocks[1]
+    assert recv_sb2.owner == "receiver2"
+    assert recv_sb2.read(0, 15) == b"Subcase 2 Move!"
+
+    # Sender2 was invalidated
+    try:
+        sb2.read(0, 5)
+        raise AssertionError("Expected AssertionError: Sender2 must not access moved SharedBlock")
+    except AssertionError as e:
+        assert "Use-after-move" in str(e)
+
+
 if __name__ == "__main__":
     test_coos_synchronous_rendezvous()
     test_value_has_exactly_one_owner_across_a_rendezvous()
     test_one_waiter_per_channel_is_enforced()
     test_consecutive_handoff_limit_forces_yield()
     test_coos_interrupt_wakeup()
+    test_shared_block_move_semantics_across_rendezvous()
     print("[PASS] All COOS concept tests passed successfully.")

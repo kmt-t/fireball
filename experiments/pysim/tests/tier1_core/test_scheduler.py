@@ -31,7 +31,7 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-from scheduler import Scheduler
+from scheduler import ChannelAction, Scheduler, TaskState
 
 
 def wat_to_wasm(wat_text: str) -> bytes:
@@ -88,8 +88,87 @@ def test_sched_03_duplicate_task_id_rejected():
 # ===========================================================================
 
 
+def test_sched_04_shared_block_move_semantics_csp_rendezvous():
+    """MEM-10 / IPC_ZeroCopy: Move-only SharedBlock transfer across CSP channel.
+    Upon rendezvous, ownership moves directly from sender to receiver.
+    Sender instance is invalidated (use-after-move triggers assertion),
+    while receiver acquires full ownership of the backing buffer."""
+    from memory import FB_CONF_MEMORY_POOL_SIZE, MemoryManager, SharedBlock
+
+    sched = Scheduler()
+    mm = MemoryManager()
+    mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
+    ch = sched.create_channel()
+
+    t1 = sched.get_task(sched.spawn("sender", task_id=1))
+    t2 = sched.get_task(sched.spawn("receiver", task_id=2))
+
+    # Task 1 allocates a SharedBlock
+    sb = mm.allocate_shared(caller_task_id=1, size=64).unwrap()
+    sb.write_bytes(0, b"Hello Fireball CSP Move Semantics!")
+
+    # Step 1: Task 1 sends the SharedBlock directly via channel
+    sched.current_task = t1
+    action_send, _ = ch.send(sb)
+    assert action_send == ChannelAction.BLOCK
+    assert t1.state == TaskState.SUSPENDED_CSP
+    assert t1.pending_val is sb
+    # While waiting, sender can still access
+    assert sb.read_bytes(0, 5) == b"Hello"
+
+    # Step 2: Task 2 arrives and receives
+    sched.current_task = t2
+    action_recv, _ = ch.recv()
+    assert action_recv in (ChannelAction.DIRECT_SWITCH, ChannelAction.YIELD)
+
+    # Receiver acquired the moved SharedBlock
+    recv_sb = t2.received_val
+    assert isinstance(recv_sb, SharedBlock)
+    assert recv_sb.get_owner() == 2
+    assert recv_sb.read_bytes(0, 34) == b"Hello Fireball CSP Move Semantics!"
+
+    # Sender instance was invalidated via move semantics (C++23 std::move / &&)
+    try:
+        sb.read_bytes(0, 5)
+        raise AssertionError("Expected AssertionError: Sender must not access moved SharedBlock")
+    except AssertionError as e:
+        assert "Cannot access released" in str(e) or "inactive" in str(e)
+
+    try:
+        sb.write_bytes(0, b"Fail")
+        raise AssertionError("Expected AssertionError: Sender must not write to moved SharedBlock")
+    except AssertionError as e:
+        assert "Cannot access released" in str(e) or "inactive" in str(e)
+
+    # Sub-case 2: Receiver waits first, Sender arrives second
+    ch2 = sched.create_channel()
+    sb2 = mm.allocate_shared(caller_task_id=1, size=64).unwrap()
+    sb2.write_bytes(0, b"Subcase 2 Move!")
+
+    sched.current_task = t2
+    action_recv2, _ = ch2.recv()
+    assert action_recv2 == ChannelAction.BLOCK
+    assert t2.state == TaskState.SUSPENDED_CSP
+
+    sched.current_task = t1
+    action_send2, _ = ch2.send(sb2)
+    assert action_send2 in (ChannelAction.DIRECT_SWITCH, ChannelAction.YIELD)
+
+    recv_sb2 = t2.received_val
+    assert isinstance(recv_sb2, SharedBlock)
+    assert recv_sb2.get_owner() == 2
+    assert recv_sb2.read_bytes(0, 15) == b"Subcase 2 Move!"
+
+    try:
+        sb2.read_bytes(0, 5)
+        raise AssertionError("Expected AssertionError: Sender must not access moved SharedBlock")
+    except AssertionError as e:
+        assert "Cannot access released" in str(e) or "inactive" in str(e)
+
+
 if __name__ == "__main__":
     test_sched_01_pure_round_robin_fifo()
     test_sched_02_task_capacity_limit()
     test_sched_03_duplicate_task_id_rejected()
-    print("[PASS] All 3 Round-Robin Scheduler tests passed.")
+    test_sched_04_shared_block_move_semantics_csp_rendezvous()
+    print("[PASS] All 4 Round-Robin Scheduler tests passed.")

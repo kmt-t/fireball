@@ -321,6 +321,36 @@ class SharedBlock:
                 self._manager._page_mapping_callbacks.on_revoke(self.page_idx, self.base_address)
         return self.shm_id
 
+    def move_to(self, new_owner: int) -> SharedBlock:
+        """
+        Simulates C++23 move semantics (std::move / rvalue reference &&).
+        Invalidates this SharedBlock handle (disallowing subsequent access from sender)
+        and returns an active SharedBlock handle owned by new_owner.
+        """
+        assert self._is_active, "Cannot move inactive or already moved SharedBlock"
+        self._is_active = False
+        self._is_in_flight = False
+
+        if self._manager is not None:
+            self._manager.page_registry.update_owner(self.page_idx, new_owner)
+            if self.page_idx < len(self._manager.shm_pages):
+                self._manager.shm_pages[self.page_idx].owner_id = new_owner
+            if self._manager._page_mapping_callbacks is not None:
+                self._manager._page_mapping_callbacks.on_grant(
+                    self.page_idx, self.base_address, new_owner
+                )
+
+        return SharedBlock(
+            shm_id=self.shm_id,
+            page_idx=self.page_idx,
+            slot_idx=self.slot_idx,
+            size=self.size,
+            owner=new_owner,
+            base_address=self.base_address,
+            manager=self._manager,
+            data=self.data,
+        )
+
     def drop(self) -> None:
         """RAII drop handler: automatically deallocates physical buffer if still owned."""
         if self._is_active:

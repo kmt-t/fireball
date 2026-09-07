@@ -23,24 +23,24 @@ interface types {
     /// IPCルーティング結果型
     type routing-result = result<_, recovery-strategy-category>;
 
-    /// 共有メモリ（SHM）スライス定義
-    record shm-slice {
+    /// HALバッファプール（vMMIO/DYNAMIC）スライス定義
+    record hal-buffer-slice {
         handle: u32,
         offset: u32,
         len: u32,
     }
 }
 
-/// WASI 0.3p / IPC 動的インターフェース取得・共有メモリ解決 (URI Resolver)
+/// WASI 0.3p / IPC 動的インターフェース取得・HALバッファ解決 (URI Resolver)
 interface resolver {
-    use types.{shm-slice, operation-result, recovery-strategy-category};
+    use types.{hal-buffer-slice, operation-result, recovery-strategy-category};
 
     /// IPC 宛先 URI (e.g. "fireball://device/uart/0", "fireball://device/gpio/0", "fireball://device/timer/0", "fireball://device/i2c/0", "fireball://service/stdout/0") から通信チャネルハンドルを取得
     get-interface: func(uri: string) -> result<u32, recovery-strategy-category>;
-    /// 共有メモリ（SHM）バッファの確保
-    acquire-shm: func(size-bytes: u32) -> result<shm-slice, recovery-strategy-category>;
-    /// 共有メモリ（SHM）バッファの解放
-    release-shm: func(slice: shm-slice) -> operation-result;
+    /// HALバッファプール（vMMIO/DYNAMIC）バッファの確保
+    acquire-buffer: func(size-bytes: u32) -> result<hal-buffer-slice, recovery-strategy-category>;
+    /// HALバッファプール（vMMIO/DYNAMIC）バッファの解放
+    release-buffer: func(slice: hal-buffer-slice) -> operation-result;
 }
 
 /// 高速トリガ (GPIO / fireball:hal/gpio 準拠) インターフェース
@@ -59,33 +59,33 @@ interface timer {
     }
 }
 
-/// バス通信 (I2C/SPI マスタ・スレーブ / 共有メモリゼロコピー転送) インターフェース
+/// バス通信 (I2C/SPI マスタ・スレーブ / HALバッファゼロコピー転送) インターフェース
 interface bus {
-    use types.{shm-slice, operation-result, recovery-strategy-category};
+    use types.{hal-buffer-slice, operation-result, recovery-strategy-category};
 
     resource bus-master {
-        transfer-data: func(tx-buf: shm-slice, rx-buf: shm-slice) -> result<u32, recovery-strategy-category>;
+        transfer-data: func(tx-buf: hal-buffer-slice, rx-buf: hal-buffer-slice) -> result<u32, recovery-strategy-category>;
     }
 
     resource bus-slave {
-        set-response: func(data: shm-slice) -> operation-result;
-        get-received: func(dest-buf: shm-slice) -> result<u32, recovery-strategy-category>;
+        set-response: func(data: hal-buffer-slice) -> operation-result;
+        get-received: func(dest-buf: hal-buffer-slice) -> result<u32, recovery-strategy-category>;
         subscribe: func() -> u32;
     }
 }
 
-/// ストリーミング I/O (wasi:io/streams 準拠 / 共有メモリリードライト) インターフェース
+/// ストリーミング I/O (wasi:io/streams 準拠 / HALバッファリードライト) インターフェース
 interface streaming {
-    use types.{shm-slice, recovery-strategy-category};
+    use types.{hal-buffer-slice, recovery-strategy-category};
 
     resource streaming-master {
         write-stream: func(data: list<u8>) -> u32;
-        write-shm: func(slice: shm-slice) -> result<u32, recovery-strategy-category>;
+        write-buffer: func(slice: hal-buffer-slice) -> result<u32, recovery-strategy-category>;
     }
 
     resource streaming-slave {
         read-stream: func(max-bytes: u32) -> list<u8>;
-        read-shm: func(dest-slice: shm-slice) -> result<u32, recovery-strategy-category>;
+        read-buffer: func(dest-slice: hal-buffer-slice) -> result<u32, recovery-strategy-category>;
     }
 }
 

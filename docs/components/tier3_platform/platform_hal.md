@@ -7,7 +7,7 @@
 ## 1. コンセプト
 <!-- traceability: {IPCRouter} {Challenge_InterruptSafety} {TaskPollInterruptFlag} {RSPMinimalSet} {Fast_Path_GPIO} {URIAbstraction} {TypeSafeMessaging} {IPC_ZeroCopy} -->
 HAL (Hardware Abstraction Layer) は、COOS 上で稼働する独立したタスク（`hal_task`）として常駐し、物理ハードウェアおよび仮想ペリフェラルへのアクセスを抽象化して提供する。上位層（Runtime, Debugger, Guest 等）からの直接関数呼び出しは行わず、通信はすべて IPC ルータ（`ipc_router`）を介した CSP rendezvous メッセージパッシングによって行われる。ペリフェラル・ストリーム・GPIO 等は階層型 URI（`fireball://device/<driver-type>/<instance-id>`）経由で動的にバインド・解決される。
-HAL タスクは IPC ルータ（`ipc_router`）から WASI 0.3p ドライバ通信コマンド（`CMD_STREAM_*`, `CMD_CLOCK_*`, `CMD_GPIO_*`, `CMD_BUS_*`）を受信し、vMMIO FC=14 の共有メモリ（`shm-slice`）を介してゼロコピーで高速データ転送を実行する。また、デバッグ用の GDB Remote Serial Protocol (RSP) のパケット解析（RSP Parser）を担い、解析済みデバッグコマンドを `debug_command_queue` へ供給する。割り込みはフラグ通知とタスクウェイクアップによって安全に処理される。 `{IPCRouter}` `{Challenge_InterruptSafety}` `{TaskPollInterruptFlag}` `{RSPMinimalSet}` `{Fast_Path_GPIO}` `{URIAbstraction}` `{TypeSafeMessaging}` `{IPC_ZeroCopy}`
+HAL タスクは IPC ルータ（`ipc_router`）から WASI 0.3p ドライバ通信コマンド（`CMD_STREAM_*`, `CMD_CLOCK_*`, `CMD_GPIO_*`, `CMD_BUS_*`）を受信し、HALバッファプール（vMMIO/DYNAMIC）のバッファスライス（`hal-buffer-slice`）を介してゼロコピーで高速データ転送を実行する。また、デバッグ用の GDB Remote Serial Protocol (RSP) のパケット解析（RSP Parser）を担い、解析済みデバッグコマンドを `debug_command_queue` へ供給する。割り込みはフラグ通知とタスクウェイクアップによって安全に処理される。 `{IPCRouter}` `{Challenge_InterruptSafety}` `{TaskPollInterruptFlag}` `{RSPMinimalSet}` `{Fast_Path_GPIO}` `{URIAbstraction}` `{TypeSafeMessaging}` `{IPC_ZeroCopy}`
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {IPCRouter} {URIAbstraction} {META_StaticDI} -->
@@ -83,7 +83,7 @@ HAL全体の制限値を定義する。 `{META_ConfigurableSystem}`
 - **割り込み通知（push）**: 物理割り込み発生時、ISR は COOS の `notify_interrupt(irq_id)` を呼び、INT イベントを有界キューへ投函するのみとする。**ISR がタスク状態を直接書き換えることはない。**実際の READY 遷移は、スケジューラが yield 点でキューをドレインする際に行われる（`{GLOBAL_InterruptWakeup}` を正本とする）。この非同期境界の分離は、[`vsoc_state_model.py`](docs/components/tier2_runtime/formal/vsoc_state_model.py) に定義された CTL 安全性検証項目 `irq_jit_race_freedom_proof`（`AG(Not(handling_irq & jit_mode))`）として証明されている性質である。
 - **割り込み確認（pull）**: `{TaskPollInterruptFlag}` が定義するもう一方の経路として、ゲスト実行エンジン（JIT/インタープリタ）は Safepoint で `vsoc_context.interrupt_flags` を自ら確認する。この pull 側の実装（Safepoint 埋め込み位置、フラグ構造）は HAL の管轄外であり、`{TaskPollInterruptFlag}` を正本とする。 `{TaskPollInterruptFlag}` `{GLOBAL_InterruptWakeup}`
 
-#### ShmBufferPool バッファ確保・境界検査手順（手順アクティビティ図）
+#### HalBufferPool バッファ確保・境界検査手順（手順アクティビティ図）
 <!-- traceability: {HAL-GOTCHA-01} {HAL_Interface} {IPC_ZeroCopy} -->
 デバイス通信用バッファスロットの固定長境界検証、タスク所有権照合、および不正アクセス防御手順を示す。
 
@@ -92,16 +92,16 @@ flowchart TD
     Start(["HAL Driver: acquire_buffer(size)"]) --> CheckSize{"Requested size <= FB_CONF_HAL_BUFFER_SIZE (256B)?"}
 
     CheckSize -- "No (> 256B)" --> RejectSize(["Reject with ValueError: Dynamic resizing prohibited"])
-    CheckSize -- "Yes" --> AllocSlot["Find Free Slot in Fixed-Capacity ShmBufferPool (FB_CONF_HAL_MAX_BUFFERS = 4 slots)"]
+    CheckSize -- "Yes" --> AllocSlot["Find Free Slot in Fixed-Capacity HalBufferPool (FB_CONF_HAL_MAX_BUFFERS = 4 slots)"]
     AllocSlot --> SlotFound{"Available slot found?"}
 
     SlotFound -- "No" --> RejectFull(["Reject: Pool Exhausted (ERR_NO_RESOURCE)"])
     SlotFound -- "Yes" --> MarkSlot["Mark Slot Active & Set slot.owner_id = caller_task_id"]
-    MarkSlot --> ReturnHandle(["Return shm_id Handle to Caller"])
+    MarkSlot --> ReturnHandle(["Return hal_buf_id Handle to Caller"])
 
     subgraph Buffer Release / Destruction
-        RelStart(["HAL Driver: release_buffer(shm_id)"]) --> VerifyOwner{"caller_task_id == slot.owner_id?"}
-        VerifyOwner -- "No (Unauthorized Task!)" --> TrapOwner(["HAL-GOTCHA-01 Trap: ShmTrap / ERR_PERMISSION_DENIED"])
+        RelStart(["HAL Driver: release_buffer(hal_buf_id)"]) --> VerifyOwner{"caller_task_id == slot.owner_id?"}
+        VerifyOwner -- "No (Unauthorized Task!)" --> TrapOwner(["HAL-GOTCHA-01 Trap: HalBufferTrap / ERR_PERMISSION_DENIED"])
         VerifyOwner -- "Yes" --> ClearSlot["Zero slot memory & Reset slot.owner_id = 0"]
         ClearSlot --> ReturnPool(["Slot returned to Free Pool"])
     end
@@ -157,26 +157,26 @@ sequenceDiagram
 <!-- traceability: {HAL_Interface} {IPC_ZeroCopy} -->
 
 #### データの読み出し (`read`)
-- **シグネチャ**: `read(id: device-id, dst: shm-id) -> operation-result`
-- **機能**: 指定された物理デバイスからデータを取得し、共有バッファ（`shm-id`）へ格納する。生ポインタ渡しは行わない。
+- **シグネチャ**: `read(id: device-id, dst: hal-buf-id) -> operation-result`
+- **機能**: 指定された物理デバイスからデータを取得し、HALバッファ（`hal-buf-id`）へ格納する。生ポインタ渡しは行わない。
 
 #### データの書き込み (`write`)
-- **シグネチャ**: `write(id: device-id, src: shm-id) -> operation-result`
-- **機能**: 共有バッファ（`shm-id`）内のデータを指定された物理デバイスへ送信する。
+- **シグネチャ**: `write(id: device-id, src: hal-buf-id) -> operation-result`
+- **機能**: HALバッファ（`hal-buf-id`）内のデータを指定された物理デバイスへ送信する。
 
 #### ゼロコピー転送 (`transfer`)
 <!-- traceability: {PhysicalPassthrough} -->
-- **シグネチャ**: `transfer(tx_buffer: shm_id, rx_buffer: shm_id) -> operation-result`
-- **機能**: アプリケーションの共有メモリバッファを直接DMAエンジン等へ渡し、CPUコピーなしで高速転送する。 `{PhysicalPassthrough}`
+- **シグネチャ**: `transfer(tx_buffer: hal-buf-id, rx_buffer: hal-buf-id) -> operation-result`
+- **機能**: アプリケーションのHALバッファを直接DMAエンジン等へ渡し、CPUコピーなしで高速転送する。 `{PhysicalPassthrough}`
 
 #### バッファの確保 (`acquire_buffer`)
 <!-- traceability: {HAL_Interface} {IPC_ZeroCopy} -->
-- **シグネチャ**: `acquire_buffer(size: uint32) -> result<shm-id, recovery-strategy>`
-- **機能**: vMMIO の共有メモリ領域（SHM領域: `0xE000_0000`〜）から固定長バッファスロットを確保する。 `{OwnerMismatchTrap}`
+- **シグネチャ**: `acquire_buffer(size: uint32) -> result<hal-buf-id, recovery-strategy>`
+- **機能**: HALバッファプール（vMMIO DYNAMIC 領域）から固定長バッファスロットを確保する。 `{OwnerMismatchTrap}`
 
 **静的固定長バッファプールの境界厳格検査 (`HAL-GOTCHA-01`)**:
-`acquire_buffer`（`ShmBufferPool`）は、固定サイズスロット（`FB_CONF_HAL_BUFFER_SIZE` = 256 バイト）の静的プールからバッファを切り出す。
-**設計理由と不変条件**: 要求サイズが 256 バイトを超過した場合（`size > FB_CONF_HAL_BUFFER_SIZE`）は即座に `ValueError` で拒絶する。また、バッファ解放時（`release_buffer`）は呼び出し元タスク ID が割り当て時の所有タスク ID と一致することを厳格に検査し、不一致時は `ShmTrap` により即時停止させる。これにより、隣接する固定長スロットの汚染や不正解放を完全に防止する。
+`acquire_buffer`（`HalBufferPool`）は、固定サイズスロット（`FB_CONF_HAL_BUFFER_SIZE` = 256 バイト）の静的プールからバッファを切り出す。
+**設計理由と不変条件**: 要求サイズが 256 バイトを超過した場合（`size > FB_CONF_HAL_BUFFER_SIZE`）は即座に `ValueError` で拒絶する。また、バッファ解放時（`release_buffer`）は呼び出し元タスク ID が割り当て時の所有タスク ID と一致することを厳格に検査し、不一致時は `HalBufferTrap` により即時停止させる。これにより、隣接する固定長スロットの汚染や不正解放を完全に防止する。
 
 **UART トランスポートの双方向独立性 (`HAL-GOTCHA-02`)**:
 UART デバイスドライバにおける送信リングバッファと受信リングバッファは、メモリ領域・ポインタ共に完全に独立したデータ構造として管理される。送受信でバッファや状態変数を不用意に共有・使い回すことを禁止し、全二重シリアル通信時における送受信ポインタ競合やデータ化けを防止する。
@@ -196,13 +196,13 @@ HAL が管轄するすべてのハードウェアドライバおよびコンソ�
 - `fireball://device/rtt/0`: SEGGER RTT デバッグ通信ドライバ
 - `fireball://service/stdout/0`: 標準出力コンソールストリーム
 
-各ドライバは IPC ルータ経由で以下の `kv_pair` コマンドを受信し、共有メモリ（`shm-slice`）と連携してハードウェア処理を実行する：
+各ドライバは IPC ルータ経由で以下の `kv_pair` コマンドを受信し、HALバッファプール（`hal-buffer-slice`）と連携してハードウェア処理を実行する：
 
-| 分類 | コマンド名 | コマンド ID | 引数 (`kv_pair` / SHM) | 戻り値 | 説明 |
+| 分類 | コマンド名 | コマンド ID | 引数 (`kv_pair` / Buffer) | 戻り値 | 説明 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **共通 (Capability)** | `CMD_QUERY_CAPS` | `0x00` | `query_cmd_id` (16bit) | `is_supported` (1=対応, 0=非対応) | ドライバが指定コマンドをサポートしているか確認 |
-| **Stream (UART/Stdout)** | `CMD_STREAM_WRITE_SHM` | `0x01` | `shm_handle`, `offset`, `len` | `written_bytes` | 共有メモリ（FC=14）上のデータをデバイスへ送信 |
-| | `CMD_STREAM_READ_SHM` | `0x02` | `shm_handle`, `offset`, `max_len` | `read_bytes` | デバイスから共有メモリへデータを読み込み |
+| **Stream (UART/Stdout)** | `CMD_STREAM_WRITE_BUFFER` | `0x01` | `buffer_handle`, `offset`, `len` | `written_bytes` | HALバッファプール（vMMIO/DYNAMIC）上のデータをデバイスへ送信 |
+| | `CMD_STREAM_READ_BUFFER` | `0x02` | `buffer_handle`, `offset`, `max_len` | `read_bytes` | デバイスからHALバッファプールへデータを読み込み |
 | | `CMD_STREAM_FLUSH` | `0x03` | なし | `0` (SUCCESS) | デバイス送信バッファのフラッシュ |
 | | `CMD_STREAM_CLOSE` | `0x04` | なし | `0` (SUCCESS) | ストリームチャネルのクローズ |
 | **Clock/Timer** | `CMD_CLOCK_GET_NOW` | `0x10` | なし | `now_ns` (64bit) | 単調増加時刻（SysTick/Timer ナノ秒）を取得 |
@@ -212,7 +212,7 @@ HAL が管轄するすべてのハードウェアドライバおよびコンソ�
 | | `CMD_GPIO_GET_PIN` | `0x21` | `pin_no` | `pin_val` (0/1) | GPIO ピンの入力レベルを取得 |
 | | `CMD_GPIO_CONFIG_PIN`| `0x22` | `pin_no`, `mode` (In/Out/Pull) | `0` (SUCCESS) | GPIO ピンの方向・プル構成を設定 |
 | | `CMD_GPIO_SUBSCRIBE_EDGE` | `0x23` | `pin_no`, `edge_type` | `pollable_handle` | エッジ検出時に発火するイベントを登録 |
-| **Bus (I2C/SPI)** | `CMD_BUS_TRANSFER_SHM` | `0x30` | `tx_shm_handle`, `rx_shm_handle`, `len` | `transferred_bytes` | TX/RX 共有メモリ間の全二重/半二重転送 |
+| **Bus (I2C/SPI)** | `CMD_BUS_TRANSFER_BUFFER` | `0x30` | `tx_buf_handle`, `rx_buf_handle`, `len` | `transferred_bytes` | TX/RX HALバッファ間の全二重/半二重転送 |
 | | `CMD_BUS_CONFIG` | `0x31` | `clock_hz`, `slave_addr`, `mode` | `0` (SUCCESS) | 通信速度・スレーブアドレス・転送モード設定 |
 
 ### 5.3 WASI サポート体系 (WASI 0.3p Core & 0.1p Wrapper)
@@ -223,17 +223,17 @@ Fireball ではハードウェア制御のプリミティブを WASI 0.3p のリ
 
 - **動的インターフェース解決 (`resolver.get-interface`)**:
   ゲスト WASM アプリケーションは、`resolver.get-interface("fireball://device/uart/0")` 等を呼び出すことで、対応するデバイスへの IPC チャネルハンドルを動的に取得できる。
-- **共有メモリベースのデータ転送**:
-  WASI 0.3p の `streaming` / `bus` インターフェースは、`acquire-shm` で取得した共有メモリハンドル（`shm-slice`）を受け渡しすることで、生ポインタ dereference を完全に排除した安全・ゼロコピーな転送を行う。
+- **HALバッファプールベースのデータ転送**:
+  WASI 0.3p の `streaming` / `bus` インターフェースは、`acquire-buffer` で取得したHALバッファハンドル（`hal-buffer-slice`）を受け渡しすることで、生ポインタ dereference を完全に排除した安全・ゼロコピーな転送を行う。
 
 #### WASI 0.1p (`wasi_snapshot_preview1`) 互換ラッパー
 既存の WASI Preview 1 向けコンパイル済みバイナリとの互換性をゼロコストで提供するため、以下の Preview 1 ABI を WASI 0.3p / HAL リソースへのアダプタとしてルーティングする：
 
 - **`fd_write`**:
-  - `fd=1` (stdout) / `fd=2` (stderr): `wasi:cli/stdout` または `fireball://device/uart/0` の `CMD_STREAM_WRITE_SHM` へ委譲。
+  - `fd=1` (stdout) / `fd=2` (stderr): `wasi:cli/stdout` または `fireball://device/uart/0` の `CMD_STREAM_WRITE_BUFFER` へ委譲。
   - `fd>=3`: IPC チャネル経由のパケット送信へ委譲。
 - **`fd_read`**:
-  - `fd=0` (stdin): `fireball://device/uart/0` の `CMD_STREAM_READ_SHM` へ委譲。
+  - `fd=0` (stdin): `fireball://device/uart/0` の `CMD_STREAM_READ_BUFFER` へ委譲。
   - `fd>=3`: IPC チャネルからのパケット受信へ委譲。
 - **`clock_time_get`**:
   - `fireball://device/timer/0` の `CMD_CLOCK_GET_NOW`（単調ナノ秒時刻）へ委譲。
@@ -267,7 +267,7 @@ UART および SEGGER RTT の双方において同一の RSP パケットエン�
 
 ### 7.1 検証対象の不変条件
 - **非同期割り込み境界分離**: ISR からタスク状態を直接変更せずキュー経由で安全にディスパッチすること（`vsoc_state_model.py`）。
-- **ゼロコピー転送安全性**: 生ポインタ渡しを行わず、共有メモリハンドル（`shm-id`）による境界検証を経由すること（`HAL-02`, `HAL-06`）。
+- **ゼロコピー転送安全性**: 生ポインタ渡しを行わず、HALバッファハンドル（`hal-buf-id` / `hal-buffer-slice`）による境界検証を経由すること（`HAL-02`, `HAL-06`）。
 - **固定長スロット境界保護**: 要求サイズが 256 バイトを超える場合の即時拒絶（`HAL-GOTCHA-01`）。
 
 ### 7.2 テスト仕様書との連携

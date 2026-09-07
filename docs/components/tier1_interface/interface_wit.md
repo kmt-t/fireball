@@ -18,7 +18,7 @@ HAL は WASI 0.3 Preview (WASI 0.3p / Component Model, Resources, Streams, Async
 - **URI Resolver メソッド**: `resolver.get-interface(uri: string)` により、URI 文字列からインターフェースハンドルを取得可能とする。
 - **WASI 0.1p 互換ラッパー (Adapter Pattern)**: 既存の WASI Preview 1 (`fd_write`, `fd_read`, `clock_time_get`, `proc_exit` 等) は、WASI 0.3p の `output-stream` や `monotonic-clock` リソースを呼び出すラッパーとして機能する。
 - **IPC 宛先 URI と階層命名規則**: WASI 0.3p でインターフェースを取得する URI は、`fireball://<domain>/<type>/<instance>`（例: `fireball://device/uart/0`, `fireball://device/gpio/0`, `fireball://device/timer/0`, `fireball://device/i2c/0`, `fireball://service/stdout/0`）の**階層型 URI 命名規則**に従い、**IPC ルータ（`ipc_router`）でデバイスやサービスと通信するための宛先 URI** として機能する。
-- **共有メモリ（SHM）ゼロコピー I/O**: データのリード・ライトは、vMMIO FC=14 の共有メモリ領域（`shm-slice`）を通じてゼロコピー／極低レイテンシで実行される。 `{URIAbstraction}` `{META_RestrictedPhysicalAccess}`
+- **HALバッファプール（vMMIO/DYNAMIC）ゼロコピー I/O**: デバイス通信のデータ送受信は、HALバッファプール（vMMIO/DYNAMIC 領域の `hal-buffer-slice`）を通じてゼロコピー／極低レイテンシで実行される。 `{URIAbstraction}` `{META_RestrictedPhysicalAccess}`
 - **Stateless Interface**: リソースハンドルを通じた操作を行い、ホスト側で状態を管理する。
 
 ## 3. 共通データ構造
@@ -27,16 +27,16 @@ HAL は WASI 0.3 Preview (WASI 0.3p / Component Model, Resources, Streams, Async
 <!-- traceability: {CooperativeMultitasking} {Asynchronous_Notification} {URIAbstraction} {META_RestrictedPhysicalAccess} -->
 WASI 0.3p の標準パターンに従い、以下の基礎コンポーネントを提供する。
 
-- `resolver`: 階層型 IPC 宛先 URI（`fireball://device/<type>/<instance>`, `fireball://service/<type>/<instance>`）から通信チャネルハンドルおよび共有メモリ（`shm-slice`）を取得・管理するリゾルバ。 `{URIAbstraction}` `{META_RestrictedPhysicalAccess}`
+- `resolver`: 階層型 IPC 宛先 URI（`fireball://device/<type>/<instance>`, `fireball://service/<type>/<instance>`）から通信チャネルハンドルおよびHALバッファプール（`hal-buffer-slice`）を取得・管理するリゾルバ。 `{URIAbstraction}` `{META_RestrictedPhysicalAccess}`
 - `pollable`: 非同期イベントの待機用リソース。 `{CooperativeMultitasking}` `{Asynchronous_Notification}`
-- `streaming` / `bus`: 共有メモリ（`shm-slice`）を用いた高速な `read-shm` / `write-shm` / `transfer-data` を提供するストリーミング・バスリソース。
+- `streaming` / `bus`: HALバッファプール（`hal-buffer-slice`）を用いた高速な `read-buffer` / `write-buffer` / `transfer-data` を提供するストリーミング・バスリソース。
 
 ```mermaid
 graph TD
     Guest[Guest WASM Application] -->|1. resolver.get-interface URI: fireball://device/uart/0| Res[URI Resolver / IPC Router]
-    Guest -->|2. resolver.acquire-buffer size| SHM[Shared Memory Pool FC=14]
-    Guest -->|3. streaming.write-shm / read-shm| W3Core[WASI 0.3p HAL Drivers]
-    W1Wrap[WASI 0.1p Adapter Layer] -->|Delegates fd_write/read via SHM| W3Core
+    Guest -->|2. resolver.acquire-buffer size| HBP[HAL Buffer Pool vMMIO/DYNAMIC]
+    Guest -->|3. streaming.write-buffer / read-buffer| W3Core[WASI 0.3p HAL Drivers]
+    W1Wrap[WASI 0.1p Adapter Layer] -->|Delegates fd_write/read via HAL Buffer| W3Core
     W3Core --> UART[fireball://device/uart/0]
     W3Core --> GPIO[fireball://device/gpio/0]
     W3Core --> Timer[fireball://device/timer/0]
@@ -126,27 +126,27 @@ resource periodic-timer {
 
 ### 5.3 `fireball:host/bus` (Master/Slave Bus)
 <!-- traceability: {WASI_Implementation} {IPC_ZeroCopy} {OwnershipTransfer} -->
-バス通信も標準WASIにはないため、リソースパターンを適用。DMA等の物理転送に直接渡せるのは所有権管理された共有メモリ（SHM）ハンドルのみであり（`{OwnershipTransfer}` `{IPC_ZeroCopy}`）、ゲストのリニアメモリ上のポインタを直接渡すことはできない。ゲストは事前に `acquire_buffer()` 相当の操作で `shm-id`（ホスト実装の詳細は下位 Tier の設計文書を正本とする）を取得し、その範囲内のオフセットのみを指定できる。
+バス通信も標準WASIにはないため、リソースパターンを適用。DMA等の物理転送に直接渡せるのはドライバ側で管理されるHALバッファプール（vMMIO/DYNAMIC）ハンドルのみであり（`{OwnershipTransfer}` `{IPC_ZeroCopy}`）、ゲストのリニアメモリ上のポインタを直接渡すことはできない。ゲストは事前に `acquire-buffer()` 相当の操作で `hal-buffer-slice`（ホスト実装の詳細は下位 Tier の設計文書を正本とする）を取得し、その範囲内のオフセットのみを指定できる。
 
 ```wit
-// SHM上の範囲を指す。handle は acquire_buffer() が返す shm-id
+// HALバッファプール（vMMIO/DYNAMIC）上の範囲を指す。handle は acquire-buffer() が返すバッファハンドル
 // （`(page_idx << 8) | slot_idx`）であり、ゲストのリニアメモリを指すポインタではない。
-record shm-slice {
+record hal-buffer-slice {
     handle: u32,
     offset: u32,
     len: u32,
 }
 
 resource bus-master {
-    // tx-bufのオフセット/サイズを渡し、受信データはrx-buf（事前に確保したSHMスロット）に直接書き込ませ、実際に転送したバイト数を返す
-    transfer-data: func(tx-buf: shm-slice, rx-buf: shm-slice) -> result<u32, recovery-strategy-category>;
+    // tx-bufのオフセット/サイズを渡し、受信データはrx-buf（事前に確保したHALバッファスロット）に直接書き込ませ、実際に転送したバイト数を返す
+    transfer-data: func(tx-buf: hal-buffer-slice, rx-buf: hal-buffer-slice) -> result<u32, recovery-strategy-category>;
 }
 
 resource bus-slave {
     // 送信応答データを設定
-    set-response: func(data: shm-slice) -> operation-result;
-    // 受信データを指定したSHMスロットに読み出し、実際に取得したバイト数を返す
-    get-received: func(dest-buf: shm-slice) -> result<u32, recovery-strategy-category>;
+    set-response: func(data: hal-buffer-slice) -> operation-result;
+    // 受信データを指定したHALバッファスロットに読み出し、実際に取得したバイト数を返す
+    get-received: func(dest-buf: hal-buffer-slice) -> result<u32, recovery-strategy-category>;
     subscribe: func() -> pollable; // マスタからのアクセス通知
 }
 ```

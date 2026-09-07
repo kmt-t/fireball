@@ -321,7 +321,7 @@ Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キ�
 | :--- | :--- | :--- | :--- | :--- |
 | `{MEM-GOTCHA-03}` | `platform_memory.md` | `platform_memory_test_spec.md` | 送信中状態（FB_TASK_ID_FLIGHT）は TLB を即時破棄し送受信双方からのアクセスを遮断する；転送失敗時は rollback_transfer() で送信元 owner_id へ復元する | MEM-GOTCHA-03 |
 | `{MEM-GOTCHA-04}` | `platform_memory.md` | `platform_memory_test_spec.md` | W^X 切り替えは命令単位ではなくトランザクションバッチ化し、パッチ完了時に一括で RO+X とキャッシュバリア（DSB/ISB）を発行する | MEM-GOTCHA-04 |
-| `{HAL-GOTCHA-01}` | `platform_hal.md` | `platform_hal_test_spec.md` | ShmBufferPool は固定サイズを超えるスライス要求を即座にエラー/アサーション違反で拒絶する（隣接バッファ汚染防止） | HAL-GOTCHA-01 |
+| `{HAL-GOTCHA-01}` | `platform_hal.md` | `platform_hal_test_spec.md` | HalBufferPool は固定サイズを超えるスライス要求を即座にエラー/アサーション違反で拒絶する（隣接バッファ汚染防止） | HAL-GOTCHA-01 |
 
 ---
 

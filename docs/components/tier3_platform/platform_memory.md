@@ -82,14 +82,14 @@ IPC転送のための共有メモリブロック確保は、上記の `acquire-p
 | 引数 | `size`: 割り当てサイズ |
 | 戻り値 | 成功時は `shared-block` リソース |
 | 事後条件 | 対応する vMMIO FC=14 ページが呼び出し元タスクの仮想アドレス空間にマッピング登録される（`map_shm_page` 相当） |
-| 補足 | `{HAL_Interface}` が公開する`acquire_buffer(size)`は、本APIの上にHALのデバイス通信用途を薄くラップしたものである（同じTier 3内の兄弟コンポーネント。両者が別々にSHMページを確保することはない）。`shared-block` の RAII 解放時に `shm_allocator`（`mspace_free`）へ返却され、断片化は即時合体される。 |
+| 補足 | なお、HAL デバイス通信用のバッファは本共有メモリとは直交し、HAL 自身が管轄する固定長の HALバッファプール（vMMIO DYNAMIC 領域）から切り出される。`shared-block` の RAII 解放時に `shm_allocator`（`mspace_free`）へ返却され、断片化は即時合体される。 |
 
 #### 所有権要求（claim）
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | IPC経由で受け取った共有メモリIDから、所有権を持つリソースを取得する。 |
 | シグネチャ | `claim(id: shm-id) -> result<shared-block, recovery-strategy>` |
-| 引数 | `id`: 共有メモリID（`{Syscall_Mapping}` の `shm-slice.handle` と同一の `(page_idx << 8) | slot_idx` 形式） |
+| 引数 | `id`: 共有メモリID（`{Syscall_Mapping}` / `coos_system.wit` の `shm-handle.handle` と同一の `(page_idx << 8) | slot_idx` 形式） |
 | 戻り値 | 成功時は `shared-block` リソース |
 | 事前条件 | `{ThreeStageRouting}` のGrantフェーズが完了済み（対応するvMMIO PTEが受領側タスク空間にマッピング登録済み）であること |
 

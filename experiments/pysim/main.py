@@ -27,12 +27,12 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-from hal import ShmTrap
+from hal import HalBufferTrap
 from logger import LogLevel
 from recovery import RecoveryManager, RecoveryStrategy, Result
 from runtime_engine import IntegratedHybridEngine, WASMContext
 from scheduler import Scheduler
-from system import ShmSlice, System
+from system import HalBufferSlice, System
 
 findings: list[str] = []
 
@@ -64,7 +64,7 @@ def task_console_writer(sysv: System):
 
 def task_bus_owner(sysv: System, task_id: int):
     """
-    Acquires a real SHM buffer, does a zero-copy bus transfer within its
+    Acquires a real HAL buffer, does a zero-copy bus transfer within its
         own ownership, and then tries two things that must fail: handing a
         bounds-violating slice to itself, and touching another task's handle.
     """
@@ -74,15 +74,15 @@ def task_bus_owner(sysv: System, task_id: int):
     rx = sysv.pool.acquire_buffer(task_id, size=64)
     tx_view = sysv.pool.view(task_id, tx, 0, 8)
     tx_view[:8] = b"HELLOHAL"
-    n = master.transfer_data(ShmSlice(tx, 0, 8), ShmSlice(rx, 0, 8))
+    n = master.transfer_data(HalBufferSlice(tx, 0, 8), HalBufferSlice(rx, 0, 8))
     rx_view = sysv.pool.view(task_id, rx, 0, 8)
     print(f"  [bus-owner] handle-resolved zero-copy transfer moved {n} bytes: {bytes(rx_view)!r}")
     assert bytes(rx_view) == b"HELLOHAL"
     try:
-        master.transfer_data(ShmSlice(tx, 0, 999), ShmSlice(rx, 0, 999))
-        findings.append("BUG: an out-of-bounds shm-slice was NOT rejected")
-    except ShmTrap as e:
-        print(f"  [bus-owner] out-of-bounds shm-slice correctly trapped: {e}")
+        master.transfer_data(HalBufferSlice(tx, 0, 999), HalBufferSlice(rx, 0, 999))
+        findings.append("BUG: an out-of-bounds hal-buffer-slice was NOT rejected")
+    except HalBufferTrap as e:
+        print(f"  [bus-owner] out-of-bounds hal-buffer-slice correctly trapped: {e}")
 
     yield
     return tx, rx
@@ -90,18 +90,18 @@ def task_bus_owner(sysv: System, task_id: int):
 
 def task_hostile_neighbor(sysv: System, my_task_id: int, other_handle):
     """
-    A different task trying to use someone else's shm-id -- the direct
+    A different task trying to use someone else's buffer handle -- the direct
         experiment for "can a guest hand HAL something that isn't really a
-        shared-memory handle it owns?" The answer must be no.
+        HAL buffer handle it owns?" The answer must be no.
     """
 
     try:
         sysv.pool.view(my_task_id, other_handle, 0, 8)
         findings.append(
-            f"BUG: task {my_task_id} could read another task's SHM handle {other_handle.name} -- "
+            f"BUG: task {my_task_id} could read another task's HAL buffer handle {other_handle.name} -- "
             "ownership isolation is broken"
         )
-    except ShmTrap as e:
+    except HalBufferTrap as e:
         print(f"  [hostile-neighbor] cross-task access correctly trapped: {e}")
 
     yield

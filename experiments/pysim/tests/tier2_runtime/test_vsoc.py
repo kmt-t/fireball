@@ -74,13 +74,13 @@ def test_hal_task_ipc_communication():
         # Send command via IPC
         nwritten = engine.send_ipc_command(
             "fireball://device/uart/0",
-            WasiIpcCmd.STREAM_WRITE_SHM,
+            WasiIpcCmd.STREAM_WRITE_BUFFER,
             FlatMapView([(ARG_LENGTH, 128), (ARG_OFFSET, 0)]),
         )
         assert nwritten == 128
         assert sysv.hal_task.processed_count == 1
         assert sysv.hal_task.last_handled_uri == "fireball://device/uart/0"
-        assert sysv.hal_task.last_handled_cmd == WasiIpcCmd.STREAM_WRITE_SHM
+        assert sysv.hal_task.last_handled_cmd == WasiIpcCmd.STREAM_WRITE_BUFFER
     finally:
         sysv.shutdown()
 

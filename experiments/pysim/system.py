@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import TYPE_CHECKING, Callable
 
-from hal import ShmBufferPool, ShmHandle, UartTransport
+from hal import HalBufferHandle, HalBufferPool, HalBufferTrap, UartTransport
 from ipc_router import (
     IPCMessage,
     IPCRouter,
@@ -137,14 +137,14 @@ _PASSTHROUGH_TEST_PAGES = 16  # this experiment's own arbitrary backing size,
 # not a spec constant -- real PASSTHROUGH size
 # depends on the host peripherals actually mapped
 @dataclass(frozen=True)
-class ShmSlice:
+class HalBufferSlice:
     """
-    interface_wit.md 5.3's `shm-slice{handle, offset, len}`. There is no
-        field here that could ever carry a guest linear-memory address -- only
-        a handle name the pool must independently recognize and authorize.
+    interface_wit.md §5.3's `hal-buffer-slice{handle, offset, len}`. There is no
+    field here that could ever carry a guest linear-memory address -- only
+    a handle name the pool must independently recognize and authorize.
     """
 
-    handle: ShmHandle
+    handle: HalBufferHandle
     offset: int
     len: int
 
@@ -152,14 +152,14 @@ class ShmSlice:
 class BusMaster:
     """
     `fireball:host/bus`'s `bus-master.transfer-data`, resolved to the
-        real shared-memory pool.
+    real HAL buffer pool.
     """
 
-    def __init__(self, pool: ShmBufferPool, task_id: int):
+    def __init__(self, pool: HalBufferPool, task_id: int):
         self.pool = pool
         self.task_id = task_id
 
-    def transfer_data(self, tx: ShmSlice, rx: ShmSlice) -> int:
+    def transfer_data(self, tx: HalBufferSlice, rx: HalBufferSlice) -> int:
         tx_view = self.pool.view(self.task_id, tx.handle, tx.offset, tx.len)
         rx_view = self.pool.view(self.task_id, rx.handle, rx.offset, rx.len)
         n = min(len(tx_view), len(rx_view))
@@ -170,16 +170,16 @@ class BusMaster:
 class BusSlave:
     """`fireball:host/bus`'s `bus-slave.set-response` / `get-received`."""
 
-    def __init__(self, pool: ShmBufferPool, task_id: int):
+    def __init__(self, pool: HalBufferPool, task_id: int):
         self.pool = pool
         self.task_id = task_id
         self._pending_response: bytes = b""
 
-    def set_response(self, data: ShmSlice) -> None:
+    def set_response(self, data: HalBufferSlice) -> None:
         view = self.pool.view(self.task_id, data.handle, data.offset, data.len)
         self._pending_response = bytes(view)
 
-    def get_received(self, dest: ShmSlice) -> int:
+    def get_received(self, dest: HalBufferSlice) -> int:
         view = self.pool.view(self.task_id, dest.handle, dest.offset, dest.len)
         n = min(len(view), len(self._pending_response))
         view[:n] = self._pending_response[:n]
@@ -188,17 +188,17 @@ class BusSlave:
 
 class System:
     """
-    One running Fireball-shaped host: a single UART line, a single SHM
-        buffer pool, one dictionary logger and one raw console writer sharing
-        that line, a real vMMIO controller (FlatMap PTEs + TLB, reused from
-        vmmio_concept.py) fronted by SYSCTL/IPCR/VDMA static-device registers
-        and a PASSTHROUGH-backed physical memory window, and a real IPC router
-        (reused from ipc_router_concept.py) with its fixed 3-service registry.
+    One running Fireball-shaped host: a single UART line, a single HAL
+    buffer pool, one dictionary logger and one raw console writer sharing
+    that line, a real vMMIO controller (FlatMap PTEs + TLB, reused from
+    vmmio_concept.py) fronted by SYSCTL/IPCR/VDMA static-device registers
+    and a PASSTHROUGH-backed physical memory window, and a real IPC router
+    (reused from ipc_router_concept.py) with its fixed 3-service registry.
     """
 
     def __init__(self):
         self.transport = UartTransport()
-        self.pool = ShmBufferPool()
+        self.pool = HalBufferPool()
         self.dictionary = LogDictionary()
         self.logger = Logger(self.transport, self.dictionary, min_level=LogLevel.DEBUG)
         self.console = ConsoleOutput(self.transport)

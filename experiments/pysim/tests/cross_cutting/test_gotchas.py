@@ -51,7 +51,7 @@ import ctypes
 
 from control_flow import extract_basic_blocks
 from debugger import DebuggerManager, GDBRspProtocol
-from hal import ShmBufferPool, ShmTrap, UartTransport
+from hal import HalBufferPool, HalBufferTrap, UartTransport
 from interpreter import _HANDLERS, Interpreter
 from ipc_router import (
     IPCMessage,
@@ -719,22 +719,22 @@ def test_mem_gotcha_02_release_and_flight_protection():
     assert b_claimed.get_owner() == 2
 
 
-def test_hal_gotcha_01_shm_pool_bounds_violation_rejected():
-    """HAL-GOTCHA-01: ShmBufferPool rejects slice requests exceeding maximum buffer size and non-owner releases."""
-    pool = ShmBufferPool()
+def test_hal_gotcha_01_buffer_pool_bounds_violation_rejected():
+    """HAL-GOTCHA-01: HalBufferPool rejects slice requests exceeding maximum buffer size and non-owner releases."""
+    pool = HalBufferPool()
     handle = pool.acquire_buffer(task_id=1, size=128)
     assert handle.capacity == 128
 
     try:
         pool.acquire_buffer(task_id=1, size=512)
-        raise AssertionError("Expected ShmBufferPool.acquire_buffer to reject size > 256")
+        raise AssertionError("Expected HalBufferPool.acquire_buffer to reject size > 256")
     except ValueError:
         pass
 
     try:
         pool.release_buffer(task_id=2, handle=handle)
-        raise AssertionError("Expected ShmTrap when task 2 attempts to release task 1's buffer")
-    except ShmTrap:
+        raise AssertionError("Expected HalBufferTrap when task 2 attempts to release task 1's buffer")
+    except HalBufferTrap:
         pass
 
     pool.release_buffer(task_id=1, handle=handle)

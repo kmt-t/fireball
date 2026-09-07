@@ -7,8 +7,8 @@
 -->
 
 ## 1. コンセプト
-<!-- traceability: {SimpleJITArchitecture} {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} {META_AccessDictionary} {META_BinarySearch} {LowLatencyJIT} {HistoryBuffer} {GLOBAL_PeriodicTask} {DirectMappedJIT16} -->
-JIT ランタイム管理は、WASM PC とネイティブコードの紐付け検索、3面世代交代コードキャッシュのローテーション、およびホットスポット検出を一括して担う。インタープリタ実行ループ内の超高頻度パスにおいて、**カードマーキング表 (`bit_view<2>`)** による $O(1)$ 事前判定、**Direct-Mapped Folding XOR キャッシュ**（16スロット）による $O(1)$ バイパス、**JITエントリグループインデックス** による $O(1)$ 探索区間絞り込み、およびソート済みエントリ配列に対する有界二分探索（`fireball::radix_binary_tree_view`）を組み合わせた 4 段パイプラインにより、動的キャッシュ代謝と低遅延検索を両立する。 `{SimpleJITArchitecture}` `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}` `{META_AccessDictionary}` `{META_BinarySearch}` `{LowLatencyJIT}` `{HistoryBuffer}` `{GLOBAL_PeriodicTask}` `{DirectMappedJIT16}`
+<!-- traceability: {SimpleJITArchitecture} {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} {META_AccessDictionary} {META_BinarySearch} {LowLatencyJIT} {HistoryBuffer} {GLOBAL_PeriodicTask} {DirectMappedJIT16} {Runtime_BumpAllocator} -->
+JIT ランタイム管理は、WASM PC とネイティブコードの紐付け検索、3面世代交代コードキャッシュのローテーション、およびホットスポット検出を一括して担う。インタープリタ実行ループ内の超高頻度パスにおいて、**カードマーキング表 (`bit_view<2>`)** による $O(1)$ 事前判定、**Direct-Mapped Folding XOR キャッシュ**（16スロット）による $O(1)$ バイパス、**JITエントリグループインデックス** による $O(1)$ 探索区間絞り込み、およびソート済みエントリ配列に対する有界二分探索（`fireball::radix_binary_tree_view`）を組み合わせた 4 段パイプラインにより、動的キャッシュ代謝と低遅延検索を両立する。なお、3面コードキャッシュはデータ用バンプアロケータ（`{Runtime_BumpAllocator}`）が管理するデータ RAM（`RW + XN`）とは異なり、MPU W^X 制御された専用実行可能セクションから専用コードアロケータによって確保され、ハードウェア保護境界が厳格に保たれる。 `{SimpleJITArchitecture}` `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}` `{META_AccessDictionary}` `{META_BinarySearch}` `{LowLatencyJIT}` `{HistoryBuffer}` `{GLOBAL_PeriodicTask}` `{DirectMappedJIT16}` `{Runtime_BumpAllocator}`
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {SimpleJITArchitecture} -->
@@ -31,7 +31,7 @@ JIT ランタイム管理は、WASM PC とネイティブコードの紐付け�
 - **コンパイル対象可否マスク (Trackable Mask)**: `next_pc` を持ち、かつバイト長が `min_trace_bytes` 以上のブロックだけをロード時に一度マークする 1 ビット状態表。密ビュー `fireball::bit_view<1>` として、カードマーキング表とは別の固定長バッファで参照する。実行時のディスパッチはこの 1 ビットを引くだけでカードマーキング表の更新対象か判定でき、ブロックの静的メタデータ（`next_pc`・バイト長）をディスパッチのたびに参照し直す必要がない。 `{TrackableBlockMask}`
 - **JITエントリグループインデックス**: 二分探索の範囲を $O(1)$ で絞り込むための粗索引配列（固定長配列）。
 - **JITエントリ表**: ソート済みの `jit_entry` 配列。非所有基数木ビュー `fireball::radix_binary_tree_view` として参照される。
-- **JITコードキャッシュ (3面)**: `Bank 0 (Active)`, `Bank 1 (Warm)`, `Bank 2 (Oldest)` の 3 バンク循環バッファ（2KB x 3 = 6KB）。
+- **JITコードキャッシュ (3面)**: `Bank 0 (Active)`, `Bank 1 (Warm)`, `Bank 2 (Oldest)` の 3 バンク循環バッファ（2KB x 3 = 6KB）。MPU の `W^X`（ライト・実行権限排他）制御が適用された専用の実行可能セクションから専用の JIT コードアロケータによって確保され、データ用バンプアロケータ（RAM/XN）とはハードウェア保護ドメインが厳格に分離される。
 - **オンデマンドコンパイルキュー (On-demand Compile Queue)**: `HOT` に達した命令オフセットを保持する固定容量 LIFO キュー（`fireball::static_vector` 相当）。容量に達した時点でバッチコンパイルが即座に実行されて空になるため、この固定容量を上回ることはない。 `{JIT_ReverseCompilationOrder}` `{GLOBAL_Policy_Memory}`
 - **バンク別被チェイン逆引きテーブル (Inbound Chain Index Table)**: 各キャッシュバンクへ向けた直接チェインリンク元（ソース）の JIT エントリインデックスを保持する固定長配列。
 - **実行履歴バッファ**: 短期間の実行履歴を一時的に保持するリングバッファ。 `{HistoryBuffer}`

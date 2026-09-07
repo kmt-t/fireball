@@ -75,20 +75,21 @@ vSoC全体の可変な実行時状態を保持する構造体。
 | WASMモジュール参照 | 現在ロードされているWASMモジュールのインスタンスへのポインタ。 | `WasmModule*` |
 
 #### vSoCランタイム環境（vsoc_runtime）
-<!-- traceability: {ContextPointerRegister} {EnvironmentPointer} {MemoryBoundaryCheck} {ExecutionContext_Layout} -->
-`execution_context`（R1: `stack_bot`）の `+0x20`〜`+0x28` にインライン配置され、JIT トレース実行時およびインタープリタの各命令ハンドラが直接参照する物理メモリ環境構造体。独立した引数レジスタを消費せず、CPS 第4引数 `R3` を `tos`（スタックトップ）に充てられる。`memory.grow` で動的に伸長するリニアメモリの実体や、モジュール横断で共有されるグローバル変数配列など、単一の呼び出しコンテキストを超えて生存する状態を保持する。 `{EnvironmentPointer}` `{MemoryBoundaryCheck}` `{ExecutionContext_Layout}`
+<!-- traceability: {ContextPointerRegister} {EnvironmentPointer} {MemoryBoundaryCheck} {ExecutionContext_Layout} {VsocRuntime_Layout} -->
+`execution_context`（R0: `ctx`）の `+0x28`〜`+0x37` にインライン配置され、JIT トレース実行時およびインタープリタの各命令ハンドラが直接参照する物理メモリ環境構造体。独立した引数レジスタを消費せず、CPS 第4引数 `R3` を `tos`（スタックトップ）に充てられる。`memory.grow` で動的に伸長するリニアメモリの実体や、モジュール横断で共有されるグローバル変数配列など、単一の呼び出しコンテキストを超えて生存する状態を保持する。 `{EnvironmentPointer}` `{MemoryBoundaryCheck}` `{ExecutionContext_Layout}` `{VsocRuntime_Layout}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| リニアメモリ基底 | ゲストリニアメモリ（`memory.grow` で再割当されうる）の開始アドレス | アドレス値 | 32bit符号なし (`[R1, #0x20]`) |
-| リニアメモリサイズ | ゲストリニアメモリの現在の有効バイト数。`{FastAddressCheck}` の境界比較（`CMP addr, mem_size; BHS __trap`）に直接使う——マスクは使わないため2の冪制約もない `{MemoryBoundaryCheck}` | バイト数 | 32bit符号なし (`[R1, #0x24]`) |
-| グローバル変数基底 | WASM `global` 配列（4バイト単位でインデックス付け）の開始アドレス | アドレス値 | 32bit符号なし (`[R1, #0x28]`) |
+| リニアメモリ基底 | ゲストリニアメモリ（`memory.grow` で再割当されうる）の開始アドレス | アドレス値 | 32bit符号なし (`[R0, #0x28]`) |
+| リニアメモリサイズ | ゲストリニアメモリの現在の有効バイト数。`{FastAddressCheck}` の境界比較（`CMP addr, mem_size; BHS __trap`）に直接使う——マスクは使わないため2の冪制約もない `{MemoryBoundaryCheck}` | バイト数 | 32bit符号なし (`[R0, #0x2C]`) |
+| グローバル変数基底 | WASM `global` 配列（4バイト単位でインデックス付け）の開始アドレス | アドレス値 | 32bit符号なし (`[R0, #0x30]`) |
+| グローバル変数終端 | WASM `global` 配列の終端アドレス | アドレス値 | 32bit符号なし (`[R0, #0x34]`) |
 
-`vsoc_runtime` メンバを含む `execution_context` は計44バイト（`+0x00`〜`+0x2B`）。`OperandStack`・`LocalStack`・`control_frame` はそれぞれ専用の頂点・境界オフセットペアを持つ独立した固定容量バッファであり、いずれか1本の伸び縮みが他の記録位置へ影響することはない（ADR-INTERP-03）。正本は [`vsoc_runtime.wit`](docs/components/tier2_runtime/wit/vsoc_runtime.wit)、物理配置は `{ExecutionContext_Layout}`。
+`vsoc_runtime` メンバを含む `execution_context` は計60バイト（`+0x00`〜`+0x3B`、15フィールド）。`OperandStack`・`LocalStack`・`control_frame` はそれぞれ専用の頂点・境界オフセットペアを持つ独立した固定容量バッファであり、いずれか1本の伸び縮みが他の記録位置へ影響することはない（ADR-INTERP-03）。正本は [`vsoc_runtime.wit`](docs/components/tier2_runtime/wit/vsoc_runtime.wit)、物理配置は `{ExecutionContext_Layout}` `{VsocRuntime_Layout}`。
 
 > [!NOTE]
 > **構造体の役割分離**:
-> - **`execution_context` 内 `vsoc_runtime` 領域 (`[R1, #0x20]`〜`#0x28`)**: JIT トレースおよびインタープリタハンドラが実行ループ内で直接参照する**極小の物理実行環境（12バイト）**。最速パス上でのベース間接アクセスに特化。
+> - **`execution_context` 内 `vsoc_runtime` 領域 (`[R0, #0x28]`〜`#0x37`)**: JIT トレースおよびインタープリタハンドラが実行ループ内で直接参照する**極小の物理実行環境（16バイト）**。最速パス上でのベース間接アクセスに特化。 `{VsocRuntime_Layout}`
 > - **`vsoc_context`**: タスク全体のライフサイクル、仮想割り込みフラグ、WASM モジュール構造体へのポインタを管理する**上位マネージャ層の制御構造体**。実行ループ外でのタスク切り替えやデバッガ連携時に参照される。両者は明確に役割分離して維持する。
 
 #### vSoC構成（vsoc_config）

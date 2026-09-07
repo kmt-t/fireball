@@ -1,19 +1,21 @@
 package fireball:vsoc@0.1.0;
 
-/// execution_context（R1: stack_bot）の +0x20〜+0x28 にインライン内包され、
+/// execution_context（R0: ctx）の +0x28〜+0x37 にインライン内包され、
 /// 全ハンドラ・全JITトレースから直接アクセスされる、単一の呼び出しコンテキストを超えて生存する環境実体。
-/// {EnvironmentPointer} {ExecutionContext_Layout}
+/// {EnvironmentPointer} {ExecutionContext_Layout} {VsocRuntime_Layout}
 interface environment {
     /// vsoc-runtime: memory.grow で動的に伸長するリニアメモリの実体や、モジュール横断で
-    /// 共有されるグローバル変数配列など、execution-context（R1）内に保持される環境状態。
-    /// 計12バイト（execution-context オフセット +0x20〜+0x2B）。
+    /// 共有されるグローバル変数配列など、execution-context（R0）内に保持される環境状態。
+    /// 計16バイト（execution-context オフセット +0x28〜+0x37）。
     record vsoc-runtime {
-        /// ゲストリニアメモリの開始アドレス（memory.grow で再割当されうる）。+0x00
+        /// ゲストリニアメモリの開始アドレス（memory.grow で再割当されうる）。+0x00 (+0x28)
         mem-base: u32,
-        /// ゲストリニアメモリの現在の有効バイト数。FastAddressCheck の境界比較に直接使用（マスクは使わない）。+0x04
+        /// ゲストリニアメモリの現在の有効バイト数。FastAddressCheck の境界比較に直接使用（マスクは使わない）。+0x04 (+0x2C)
         mem-size: u32,
-        /// WASM global 配列（4バイト単位でインデックス付け）の開始アドレス。+0x08
+        /// WASM global 配列（4バイト単位でインデックス付け）の開始アドレス。+0x08 (+0x30)
         globals-base: u32,
+        /// WASM global 配列の終端アドレス。+0x0C (+0x34)
+        globals-limit: u32,
     }
 }
 

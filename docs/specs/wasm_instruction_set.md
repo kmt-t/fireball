@@ -64,8 +64,8 @@
 | `0x20` | `local.get` | `[] -> [t]` | ローカル配列 `[local_base + idx]` をロード | あり (Direct LDR / Mov) | `LDR r4, [r2, #offset]`（`r2=local_base` 起点の静的オフセット畳み込み——`{ContextPointerRegister}` `{JIT_RegisterMapping}` 参照） |
 | `0x21` | `local.set` | `[t] -> []` | ローカル配列 `[local_base + idx]` へストア | あり (Direct STR / Mov) | `STR r4, [r2, #offset]` |
 | `0x22` | `local.tee` | `[t] -> [t]` | ローカルへ保存しつつスタックに残す | あり (STR & Keep) | `STR r4, [r2, #offset]` (TOS維持) |
-| `0x23` | `global.get` | `[] -> [t]` | グローバル配列 `[execution_context.globals_base + idx]` ロード | あり (LDR via globals_base) | `LDR.W r12, [r1, #0x28]; LDR.W r4, [r12, #glob_off]`（`{ExecutionContext_Layout}` 参照） |
-| `0x24` | `global.set` | `[t] -> []` | グローバル配列へストア | あり (STR via globals_base) | `LDR.W r12, [r1, #0x28]; STR.W r4, [r12, #glob_off]` |
+| `0x23` | `global.get` | `[] -> [t]` | グローバル配列 `[execution_context.globals_base + idx]` ロード | あり (LDR via globals_base) | `LDR.W r12, [r0, #0x30]; LDR.W r4, [r12, #glob_off]`（`{ExecutionContext_Layout}` 参照） |
+| `0x24` | `global.set` | `[t] -> []` | グローバル配列へストア | あり (STR via globals_base) | `LDR.W r12, [r0, #0x30]; STR.W r4, [r12, #glob_off]` |
 
 ---
 

@@ -128,7 +128,7 @@ Fireball の実行コアは、以下の 6 つの物理メカニズムによっ�
 ### 3.3 Pillar 3: 3面世代交代回転コードキャッシュ (3-Bank Generational Rotating Code Cache)
 <!-- traceability: {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} {SimpleJITArchitecture} -->
 - **3面の物理的役割**:
-  - `Bank 0 (Active)`: 新規JITコンパイルコードおよび Oldest からの昇格コードを格納。 `{VsocRuntime_Layout}`
+  - `Bank 0 (Active)`: 新規JITコンパイルコードおよび Oldest からの昇格コードを格納。
   - `Bank 1 (Warm)`: 1世代前のコードを保持。無償観測期間として昇格コピーを行わずに実行。
   - `Bank 2 (Oldest)`: 2世代前のコードを保持。ここでヒットした Hot コードのみを新 Active へ昇格コピー。
 - **MPU W^X 保護遷移**: コンパイル時は `RW + XN`、パッチ完了時に `__DSB(); __ISB();` を発行して `RO + X` に切り替え。
@@ -192,6 +192,7 @@ ARM Cortex-M33 (ARMv8-M Mainline) における物理レジスタの厳格な役�
   - `+0x30`: `globals_base` (u32) — グローバル変数領域開始位置（WASM global 配列基底）
   - `+0x34`: `globals_limit` (u32) — グローバル変数領域終端位置（WASM global 配列終端）
   - `+0x38`: `handler_table` (u32) — ハンドラテーブル（命令ディスパッチテーブル参照）
+  - ※ `+0x28`〜`+0x37`（`mem_base`, `mem_size`, `globals_base`, `globals_limit`）は `vsoc_runtime` 領域として JIT トレースおよびインタープリタハンドラが実行ループ内で直接参照する極小の物理実行環境（16バイト）を形成する。 `{VsocRuntime_Layout}`
   - ※ 基本ブロック末尾では、スタックがプッシュされた場合に `TOS, NOS, NNOS` をオペランドスタック（`[R1, #offset]`）へフラッシュし、コンテキスト `R0` の `ip`（`+0x00`）および `sp_offset`（`+0x0C`）を書き換えて状態を完全同期する。 `{ExecutionContext_Layout}` `{AAPCS_FastCall}`
 
 ---

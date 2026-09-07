@@ -290,7 +290,7 @@ Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キ�
 | キーワード | 定義元正本 | 対象コンポーネント | 仕様概要・検証内容 | 結合テスト / テストID |
 | :--- | :--- | :--- | :--- | :--- |
 | `{JITC-GOTCHA-01}` | `jit_compiler.md` | `jit_compiler_test_spec.md` | CPS引数レジスタ（R0-R3）とJIT内部一時レジスタ（R4-R6, R8-R11）が呼び出し境界を越えて物理的に重複しない | JITC-GOTCHA-01 |
-| `{JITC-GOTCHA-02}` | `jit_compiler.md` | `jit_compiler_test_spec.md` | mem_base/mem_size は execution_context（[R1, #0x20], [R1, #0x24]）から一度だけピン留めロードする（独立した env 引数レジスタは廃止済み） | JITC-GOTCHA-02 |
+| `{JITC-GOTCHA-02}` | `jit_compiler.md` | `jit_compiler_test_spec.md` | mem_base/mem_size は execution_context（[R0, #0x28], [R0, #0x2C]）から一度だけピン留めロードする（独立した env 引数レジスタは廃止済み） | JITC-GOTCHA-02 |
 | `{JITC-GOTCHA-05}` | `jit_compiler.md` | `jit_compiler_test_spec.md` | トラップ分岐（BHS.W）はアドレス未確定のままオフセット0で仮発行し、エピローグ生成後に実アドレスへ2パスバックパッチする | JITC-GOTCHA-05 |
 | `{JITC-GOTCHA-07}` | `jit_compiler.md` | `jit_compiler_test_spec.md` | トレースの残余値（VM オペランドスタック状態）は stack_bot 経由でメモリへ書き込み、トレースは常に void を返す——C/AAPCS の戻り値レジスタとは無関係 | JITC-GOTCHA-07 |
 | `{JITR-GOTCHA-02}` | `jit_runtime.md` | `jit_runtime_test_spec.md` | Oldestバンクからの昇格時、被チェイン登録（inbound_sources）を昇格先バンクへ移管しダングリングジャンプを防ぐ | JITR-GOTCHA-02 |
@@ -331,10 +331,10 @@ Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キ�
 
 | キーワード | 定義元正本 | 対象コンポーネント | 仕様概要・検証内容 | 結合テスト / テストID |
 | :--- | :--- | :--- | :--- | :--- |
-| `{ExecutionContext_Layout}` | `architecture_overview.md` | `runtime_interpreter.md` | execution_context 44バイト物理フィールド配置（3独立バッファそれぞれの頂点・境界オフセット、リニアメモリ情報、グローバル基底を内包、ADR-INTERP-03） | Scenario 1〜11 |
+| `{ExecutionContext_Layout}` | `architecture_overview.md` | `runtime_interpreter.md` | execution_context 60バイト物理フィールド配置（15フィールド、R0起点。3独立バッファ頂点・境界、リニアメモリ情報、グローバル基底・上限、ハンドラテーブルを内包、ADR-INTERP-03） | Scenario 1〜11 |
 | `{CallFrame_Layout}` | `runtime_interpreter.md` | `architecture_overview.md` | call_frame 12バイト、LocalStack 専用の独立固定容量バッファへのインライン物理配置 | Scenario 3, 8 |
 | `{ControlFrame_Layout}` | `runtime_interpreter.md` | `architecture_overview.md` | control_frame 16バイト、OperandStack/LocalStack とは独立した専用固定容量バッファへの物理配置 | Scenario 3 |
-| `{VsocRuntime_Layout}` | `architecture_overview.md` | `runtime_vsoc.md` | execution_context 内包 vsoc_runtime 12バイト物理実行環境配置 (+0x20〜+0x2B) | Scenario 1〜11 |
+| `{VsocRuntime_Layout}` | `architecture_overview.md` | `runtime_vsoc.md` | execution_context 内包 vsoc_runtime 16バイト物理実行環境配置 (+0x28〜+0x37) | Scenario 1〜11 |
 
 ---
 

@@ -93,6 +93,7 @@ invoke_subagent(
   2. 物理レジスタマップ（引数レジスタ、役割任意割当プール、保全レジスタ、スクラッチ等）の役割定義が、JIT トレース生成規約およびインタープリタハンドラ定義と矛盾・競合していないか。
   3. 各フレーム構造体の物理配置、サイズ、およびアンカー定義の整合性。
   4. 過去の検討段階における旧ドラフト設計（旧バイト数、旧引数規約等）の残存がないか。
+  5. 最上位概要の ABI・メモリレイアウト図（Mermaid）と本文記述・下位仕様の完全一致性（図の陳腐化・追随漏れの排除）。
 
 #### サブエージェント 2: JIT パイプライン・キャッシュ・ディスパッチ監査 (`arch-jit-auditor`)
 - **対象**: `architecture_overview.md` §3.2, §3.3 ↔ `jit_runtime.md`, `jit_compiler.md`, `runtime_vsoc.md`, `vsoc_cache_coherency_model.py`, `jit_cache_model.py`
@@ -101,6 +102,7 @@ invoke_subagent(
   2. 多段ディスパッチパイプライン（直前キャッシュ、粗索引、有界探索）の各段の計算量、探索手順、および境界条件の整合性。
   3. MPU W^X 保護遷移プロトコルおよびキャッシュバリア（DSB/ISB）発行タイミングの整合性。
   4. トレースチェイニングおよびコンパイル順序（LIFO逆順コンパイル等）による即時チェイニング成立保証の記述整合性。
+  5. 最上位概要の JIT・キャッシュ・ディスパッチ関連図（Mermaid）と本文記述・下位仕様の完全一致性（図の陳腐化・追随漏れの排除）。
 
 #### サブエージェント 3: CSP 通信・共有メモリ・vMMIO 安全機構監査 (`arch-ipc-mem-auditor`)
 - **対象**: `architecture_overview.md` §3.4, §3.5, §3.6 ↔ `os_coos.md`, `ipc_router.md`, `runtime_vmmio.md`, `platform_memory.md`, `coos_channel_model.py`, `csp_handoff_model.py`
@@ -108,6 +110,7 @@ invoke_subagent(
   1. バッファなし純粋同期ランデブーおよび対称直接ハンドオフ（Symmetric Transfer）の制御プロトコルが、COOS 仕様書および形式検証モデルと完全一致しているか。
   2. 共有メモリ（SHM）の所有権移譲およびムーブセマンティクス（Move-only RAII）が、メモリ管理仕様および IPC ルータ仕様と整合しているか（旧ドラフト概念の混入がないか）。
   3. メモリ保護モデルの整合性: リニアメモリ境界チェック、vMMIO アドレス変換、およびアクセス不可領域のマッピング解除（unmap）によるハードウェア/仮想化境界遮断モデルが正しく記述されているか。
+  4. 最上位概要の CSP・IPC・メモリ保護関連図（Mermaid）と本文記述・下位仕様の完全一致性（図の陳腐化・追随漏れの排除）。
 
 #### サブエージェント 4: 要求・WIT・キーワードトレーサビリティ監査 (`arch-traceability-auditor`)
 - **対象**: `architecture_overview.md` ↔ `requirement_list.md`, `keyword_dictionary.md`, `document_structure.md`, 各 WIT ファイル
@@ -124,7 +127,7 @@ invoke_subagent(
 親エージェントは、4体のサブエージェントからの報告を受け取り、以下を実施します：
 1. **指摘の重要度分類**:
    - `CRITICAL`: 致命的な仕様矛盾・分裂（バイトサイズ、レジスタ競合、メモリレイアウトの不一致）。
-   - `MAJOR`: 設計更新の反映漏れ（unmap機構、ムーブセマンティクス、旧仕様フォールバックの残存）。
+   - `MAJOR`: 設計更新の反映漏れ（unmap機構、ムーブセマンティクス、旧仕様フォールバックの残存、図と本文の乖離）。
    - `MINOR`: 用語の揺れ、フォーマット不備、キーワードアンカーの軽微なズレ。
 2. **総合判定**:
    - `PASS`: 全監査軸で CRITICAL / MAJOR なし。

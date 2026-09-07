@@ -40,6 +40,8 @@
 - **容量上限到達時の動作**: 未登録キーの `insert` 呼び出し時、`count ≥ Capacity` であればメモリ再確保を行わず即座に `false` を返却する。既存キーの更新は `count` を増加させずインプレースで上書きし `true` を返却する。
 - **インプレースシフト削除とスロットクリア**: 要素削除時はバッファ内で要素をインプレースで前方にシフトし、空いた末尾スロットは即座にゼロクリア（`None`）して `count` をデクリメントする。
 - **非所有 View への動的追従**: 借用中の View は、Mutable Storage の内部固定バッファの先頭 `count` 要素（有効スパン）をゼロコピーで直接参照するため、Storage 側の追加・削除・シフトが即座に View に反映される。
+- **バンプアロケータからのメモリ供給と一括解放 (`{Runtime_BumpAllocator}`, `{OneRuntimeOneGuest}`)**:
+  各ストレージコンテナは、外部から渡された連続メモリ領域（`std::span` または `bump_allocator::allocate()` で切り出されたバッファスライス）を受け取ってゼロアロケーションで初期化できる。1ランタイム1ゲスト原則（`{OneRuntimeOneGuest}`）のもとで、モジュール生成時に親ランタイムの専用バンプアロケータ（`{Runtime_BumpAllocator}`）から各コンテナの裏打ちストレージが順次切り出され、モジュール破棄時は個別オブジェクトの破棄を要さずアリーナごと $O(1)$ で一括解放される。
 
 **標準の `std::flat_map` / `std::flat_set` を採用しない理由**:
 C++23 のこれらはコンテナアダプタであり、既定の下位コンテナが `std::vector` であるため `{META_NoStdVector}` および `{GLOBAL_Policy_Memory}`（`malloc` / `new` の使用禁止）に抵触する上、動的再確保のレイテンシ揺らぎを持ち込む。本アーキテクチャでは、固定長バッファ＋`count` 追跡による決定論的かつゼロアロケーションな静的ストレージを採用する。 `{META_NoStdVector}` `{GLOBAL_Policy_Memory}` `{GLOBAL_StaticScalability}`

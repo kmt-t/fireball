@@ -100,20 +100,21 @@ IPC転送のための共有メモリブロック確保は、上記の `acquire-p
 | 補足 | 共有メモリは `shared-block` のデストラクタで自動解放される。 |
 
 ## 5. 制約達成の方策
-<!-- traceability: {GLOBAL_Policy_Memory} {GLOBAL_StrictMemoryLimit} {WasmPageAlignment} {META_BumpAllocator} {META_FaultIsolation} -->
+<!-- traceability: {GLOBAL_Policy_Memory} {GLOBAL_StrictMemoryLimit} {WasmPageAlignment} {META_BumpAllocator} {META_FaultIsolation} {OneRuntimeOneGuest} {Runtime_BumpAllocator} -->
 
 ### 5.1 性能制約と不変条件
 - **目標**: 決定論的 $O(1)$ のメモリ割り当て・解放および高速な境界判定。
 - **方策**:
   - `{META_BumpAllocator}`: 固定長パーティションおよび型付きプールスロットによる断片化なき高速貸与。
+  - `{Runtime_BumpAllocator}`: 1ランタイム1ゲスト（`{OneRuntimeOneGuest}`）の実行モデルにおいて、各ランタイムに対して固定長 RAM パーティション（アリーナ）を一括貸与する。ランタイム内部のシステムコンテナストレージ確保はすべてこのアリーナから順次切り出され、アンロード時は個別オブジェクトの破棄なしに $O(1)$ でアリーナ全体が回収・リセットされる。
   - `{WasmPageAlignment}`: ゲスト RAM（Region 3）を WASM ページサイズである **64KB アライメント**（`0x10000` 境界）に配置し、単一の比較命令による $O(1)$ 高速境界検査（`FastAddressCheck`）と PMSAv8 リージョン境界を完全一致させる。
 
 ### 5.2 メモリ制約と方策
-<!-- traceability: {GLOBAL_StrictMemoryLimit} {GLOBAL_IndependentHeap} -->
+<!-- traceability: {GLOBAL_StrictMemoryLimit} {GLOBAL_IndependentHeap} {OneRuntimeOneGuest} -->
 - **目標**: 総メモリ消費を有界化し、タスク間のヒープ干渉を完全に防止。
 - **方策**:
   - `{GLOBAL_StrictMemoryLimit}`: システム全体の総割当量をコンパイル時定数 `FB_CONF_MEMORY_POOL_SIZE` 以内に厳格制限。
-  - `{GLOBAL_IndependentHeap}`: 各タスクに独立した静的パーティションを割り当て、共有メモリは 4KB ページ単位で完全に分離する。
+  - `{GLOBAL_IndependentHeap}` `{OneRuntimeOneGuest}`: 各タスク・各ランタイムに独立した静的パーティション（アリーナ）を割り当て、ヒープ干渉を物理的に排除する。共有メモリは 4KB ページ単位で完全に分離する。
 
 ### 5.3 安全性制約と方策
 <!-- traceability: {META_FaultIsolation} {PageGranularPermissionIsolation} -->

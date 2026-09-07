@@ -9,6 +9,7 @@ Fireballは、リソース制限の厳しい小規模組み込みデバイス（
 - **協調型マルチタスク (COOS)**: C++20/23コルーチンベースのスタックレス・タスク構造を採用し、低オーバーヘッドな切り替えを実現する。ホーアCSPモデルに基づき、所有権移譲によるゼロコピーメッセージパッシングによりデータ競合を原理的に排除する。 `{LowOverhead}` `{ServiceSelfReboot}` `{FaultTolerant}`
 - **高速JIT (Copy-and-Patch)**: コンパイルレイテンシを最小化し、小規模なコードキャッシュ（2KB x 3面 = 6KB）を循環活用する。
 - **Conceptベース・コンポーネントハーネス**: vSoC等の複合コンポーネントを独立したサブコンポーネントの集合体として定義し、C++20 Conceptsとハーネス構造体（`vsoc_harness`, `coos_harness`）による静的DIで結合する。仮想関数（vtable）のオーバーヘッドをゼロにする。 `{GLOBAL_ComponentHarness}` `{ConceptHarnessDI}` `{META_StaticDI}` `{ZeroRuntimeOverhead}`
+- **1ランタイム1ゲスト原則と専用バンプアロケータ**: 1つの WASM ランタイム（`vSoC`）は厳密に1つのゲストモジュールのみを担当し（`{OneRuntimeOneGuest}`）、各ランタイムが専用の固定長バンプアロケータ（`bump_allocator`）を所有する（`{Runtime_BumpAllocator}`）。モジュール内のシステムコンテナストレージはすべてこのアロケータから確保され、モジュール破棄・アンロード時にアリーナごと $O(1)$ で一括解放される。マルチインスタンスは独立ランタイムの並行起動と CoOS IPC（CSP ランデブーおよびゼロコピー SHM 所有権移譲）により実現し、メモリと障害の完全直交分離を達成する。
 - **静的構成**: システム構成値（バッファサイズ、タスク数、メモリ上限等）をヘッダマクロおよび `constexpr` 定数によりコンパイル時に静的確定し、実行時の動的メモリ確保や探索コストをゼロにする。 `{META_ConfigurableSystem}` `{META_Static_Resolution}`
 
 ---
@@ -367,3 +368,5 @@ sequenceDiagram
 | **IPC共有メモリの所有権表現** (`{ADR_SharedBlockRaii}`) | **RAII所有権を持つ`shared-block`リソース** | 単なる整数IDでは防げないダングリング参照・解放忘れを型で排除。Revoke/Grantに対応。設計根拠: `{ADR_SharedBlockRaii}` |
 | **メモリマネージャの問い合わせAPI** (`{ADR_MemoryManagerMinimalSurface}`) | **`query`/`check-ownership`を持たない最小公開面** | 情報は`shared_block`側や呼び出し元が既に保持しており、二重の問い合わせ経路を作らない。設計根拠: `{ADR_MemoryManagerMinimalSurface}` |
 | **ページ単位権限分離とunmap遮断** (`{ADR_PageGranularPermissionIsolation}`) | **4KB物理ページ単位の権限分離とPTE unmap** | PTEに`owner_id`を持たせず、マッピングの有無（unmap）とTLB即時フラッシュでハードウェア/仮想化境界遮断。設計根拠: `{ADR_PageGranularPermissionIsolation}` |
+| **1ランタイム1ゲスト原則** (`{OneRuntimeOneGuest}`) | **1ランタイム1ゲストの直交分離とIPC協調** | 単一VM内での複数モジュール同居を禁止し、マルチインスタンスは独立ランタイムの並行起動とCoOS IPCで実現。障害・メモリを完全隔離。 |
+| **ランタイム専用バンプアロケータ** (`{Runtime_BumpAllocator}`) | **専用アリーナ所有とアンロード時 $O(1)$ 一括解放** | 各ランタイムが固定長バンプアロケータを所有し、WASMモジュール内のシステムコンテナストレージ確保を一元管理。アンロード時にアリーナごと一括リセットし断片化・ダングリング参照を根絶。 |

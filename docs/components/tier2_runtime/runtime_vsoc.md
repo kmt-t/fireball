@@ -8,36 +8,37 @@
 -->
 
 ## 1. コンセプト
-<!-- traceability: {LowLatencyJIT} {MemoryIsolation} {META_FaultIsolation} {EnvironmentPointer} -->
-vSoC (Virtual System-on-Chip) は、WASM実行環境の統合マネージャであり、Loader、Interpreter、JIT、vMMIO、Debugger を統括して実行制御を行う。各サブコンポーネントを統合する「環境」としての役割を持ち、`execution_context` 内に統合されたリニアメモリ情報・グローバル変数テーブル（`vsoc_runtime` 領域）を介して実行環境を提供する。 `{LowLatencyJIT}` `{MemoryIsolation}` `{META_FaultIsolation}` `{EnvironmentPointer}`
+<!-- traceability: {LowLatencyJIT} {MemoryIsolation} {META_FaultIsolation} {EnvironmentPointer} {OneRuntimeOneGuest} {Runtime_BumpAllocator} -->
+vSoC (Virtual System-on-Chip) は、WASM実行環境の統合マネージャであり、Loader、Interpreter、JIT、vMMIO、Debugger を統括して実行制御を行う。各サブコンポーネントを統合する「環境」としての役割を持ち、`execution_context` 内に統合されたリニアメモリ情報・グローバル変数テーブル（`vsoc_runtime` 領域）を介して実行環境を提供する。さらに、**1ランタイム1ゲストの直交分離原則 (`{OneRuntimeOneGuest}`)** に基づき、各 vSoC インスタンスは厳密に 1 つのゲストモジュールのみを担当する。各ランタイムは**自身専用の固定長バンプアロケータ (`{Runtime_BumpAllocator}`)** を所有し、モジュール内の全システムコンテナストレージの確保を一元管理して、アンロード時に $O(1)$ で一括解放（リセット）することでメモリ断片化とダングリング参照を根本根絶する。 `{LowLatencyJIT}` `{MemoryIsolation}` `{META_FaultIsolation}` `{EnvironmentPointer}` `{OneRuntimeOneGuest}` `{Runtime_BumpAllocator}`
 
 ## 2. アーキテクチャ分類
-<!-- traceability: {META_3TierSeparation} {GLOBAL_ComponentHarness} {META_StaticDI} -->
-本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属し、WASM仮想実行環境として Loader, Interpreter (Tier 2), JIT, vMMIO, Debugger などのサブコンポーネント群を**ハーネスパターン（`vsoc_harness`）による静的依存性逆転（Static Dependency Inversion）**によって統合する。組込みベアメタル環境において仮想関数（vtable）や動的ディスパッチによる仮想化オーバーヘッドは一切容認できないため、Tier 2 の vSoC は Tier 3 具象エンジンの内部ヘッダに依存せず、ハーネスに集約された POD 関数ポインタ・インスタンスを介してゼロオーバーヘッドで制御を委譲する。 `{META_3TierSeparation}` `{GLOBAL_ComponentHarness}` `{META_StaticDI}`
+<!-- traceability: {META_3TierSeparation} {GLOBAL_ComponentHarness} {META_StaticDI} {OneRuntimeOneGuest} -->
+本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属し、WASM仮想実行環境として Loader, Interpreter (Tier 2), JIT, vMMIO, Debugger などのサブコンポーネント群を**ハーネスパターン（`vsoc_harness`）による静的依存性逆転（Static Dependency Inversion）**によって統合する。組込みベアメタル環境において仮想関数（vtable）や動的ディスパッチによる仮想化オーバーヘッドは一切容認できないため、Tier 2 の vSoC は Tier 3 具象エンジンの内部ヘッダに依存せず、ハーネスに集約された POD 関数ポインタ・インスタンスを介してゼロオーバーヘッドで制御を委譲する。また、同一モジュールのマルチインスタンス実行は単一ランタイム内のマルチスレッドではなく、独立した別ランタイムの並行起動（`{OneRuntimeOneGuest}`）と CoOS IPC 通信により直交化する。 `{META_3TierSeparation}` `{GLOBAL_ComponentHarness}` `{META_StaticDI}` `{OneRuntimeOneGuest}`
 
 ## 3. 静的モデル
 
 ### 3.1 データ構造
-<!-- traceability: {META_StaticDI} -->
+<!-- traceability: {META_StaticDI} {Runtime_BumpAllocator} -->
 - **`vsoc_harness`**: vSoCが依存する各種エンジン（Loader, Interpreter, JIT等）のインターフェースを集約した構造体。 `{META_StaticDI}`
-- **`vsoc_context`**: 現在の実行状態、仮想割り込み、JITキャッシュの管理状態など、可変なランタイム状態。
+- **`vsoc_context`**: 現在の実行状態、仮想割り込み、JITキャッシュの管理状態、専用バンプアロケータなど、可変なランタイム状態。 `{Runtime_BumpAllocator}`
 - **`vsoc_config`**: メモリ割り当てやJIT有効化フラグなどの不変な構成情報。
 
 ### 3.2 内部ブロック図
-<!-- traceability: {META_StaticDI} -->
+<!-- traceability: {META_StaticDI} {Runtime_BumpAllocator} -->
 ```mermaid
 graph TD
     subgraph vSoC_Layer
-        Harness[vsoc_harness]
-        Context[vsoc_context]
+        Harness["vsoc_harness"]
+        Context["vsoc_context"]
+        Alloc["bump_allocator (専用アリーナ)"]
     end
 
     subgraph Engines
-        Loader[wasm_loader]
-        Interp[interpreter]
-        JIT[jit_compiler]
-        vMMIO[vmmio_controller]
-        Debug[debugger]
+        Loader["wasm_loader"]
+        Interp["interpreter"]
+        JIT["jit_compiler"]
+        vMMIO["vmmio_controller"]
+        Debug["debugger"]
     end
 
     Harness -- points to --> Loader
@@ -46,10 +47,12 @@ graph TD
     Harness -- points to --> vMMIO
     Harness -- points to --> Debug
     Harness -- operates on --> Context
+    Context -- owns --> Alloc
+    Loader -- allocates from --> Alloc
 ```
 
 ### 3.3 主要なクラス・構造体・配列・定数
-<!-- traceability: {META_StaticDI} -->
+<!-- traceability: {META_StaticDI} {Runtime_BumpAllocator} -->
 
 #### vSoCハーネス（vsoc_harness）
 各エンジンへのインターフェースを集約する。PODとして扱い、メンバに末尾アンダースコアは付与しない。
@@ -71,6 +74,7 @@ vSoC全体の可変な実行時状態を保持する構造体。
 | 仮想割り込みフラグ | ゲストOSまたはタスクに対する保留中の割り込みビットマップ。 | `uint32_t` |
 | JITキャッシュ状態 | 現在アクティブなJITコードキャッシュの管理情報。 | `JitCacheManager` 構造体 |
 | WASMモジュール参照 | 現在ロードされているWASMモジュールのインスタンスへのポインタ。 | `WasmModule*` |
+| 専用バンプアロケータ | モジュール内の全システムコンテナストレージを切り出す専用アロケータ。アンロード時に一括リセットされる。 | `bump_allocator` インスタンス |
 
 #### vSoCランタイム環境（vsoc_runtime）
 <!-- traceability: {ContextPointerRegister} {EnvironmentPointer} {MemoryBoundaryCheck} {ExecutionContext_Layout} {VsocRuntime_Layout} -->
@@ -116,7 +120,10 @@ vSoC コアエンジンの実行委譲、協調イールド、および外部介
 | **概算Yield (Approximate Yield)** | トレース境界脱出時 | `yield_threshold` を基準に vSoC が一括して `co_yield` 判定 | 命令ハンドラ内カウンタ埋め込みを排除し最速ホットパスを維持（`VSOC-GOTCHA-02`） | `{Challenge_ApproximateYield}` |
 | **JIT Safepoint** | ループバック（バックエッジ）到達時 | ソフトウェアフラグ（割り込み・ブレークポイント）をポーリングし、必要時フォールバック | JIT実行中の非同期イベント・Ctrl+Cへの即時応答性担保 | `{JIT_Safepoint}` |
 | **デバッガ介入時キャッシュフラッシュ** | デバッガによるメモリ/変数書き換え時 | 該当タスクの JIT キャッシュ（Active/Warm/Oldest 全面）を一括無効化 | JIT コードと変更後メモリの整合性完全維持 | `{Debugger_Jit_Flush}` |
+| **1ランタイム1ゲスト・専用バンプ一括解放** | ランタイム生成時およびアンロード時 | 専用アリーナからコンテナストレージを確保し、破棄時に $O(1)$ 一括リセット | 完全障害隔離、内部断片化ゼロ、ダングリング参照・チェインの根絶 | `{OneRuntimeOneGuest}` `{Runtime_BumpAllocator}` |
 
+- **1ランタイム1ゲストのライフサイクル管理と専用バンプ一括解放 (`{OneRuntimeOneGuest}`, `{Runtime_BumpAllocator}`)**:
+  vSoC インスタンス生成時、メモリマネージャより固定長 RAM パーティション（アリーナ）の貸与を受け、専用の `bump_allocator` を初期化する。WASM ローダ経由でモジュールコンストラクタにこのアロケータを渡し、モジュール内の全システムコンテナストレージ（`ReadOnlyRadixBinaryTreeStorage`, `MutableBitStorage` 等）を順次切り出す。モジュール実行終了・アンロード時は、JIT キャッシュを無効化した上で、バンプアロケータのアリーナごと $O(1)$ で一括リセット・返還する。個別の `free()` や複雑なオブジェクトデストラクタ走査を一切行わないため、動的メモリ断片化および他モジュールからのダングリングトレースチェインが原理的に根絶される。
 - **実行エンジン委譲とステートレス化 (`VSOC-GOTCHA-01`, `{ThreadedInterpreter}`, `{JIT_CopyAndPatch}`)**:
   vSoCは `step()` で現在のPCに対応する `exec_trace`（`void __fastcall (execution_context* ctx, uint32_t* sp, uint32_t* local_base, uint32_t tos)`）を呼び出す。 `exec_trace` はインタープリタのディスパッチャまたはJITコードを指し、`__fastcall` 呼び出し規約（R0=ctx, R1=sp, R2=local_base, R3=tos）によってレジスタ上で高速に実行エンジンへ制御を委譲する。
   **設計理由と不変条件**: インタープリタおよび JIT トレース自身を C++20 コルーチン化することは厳禁とする。コルーチン化すると命令ディスパッチごとにコルーチンフレームの割り当てや退避・復帰が発生し、コンパイラによる末尾呼び出し最適化（`[[clang::musttail]]`）が阻害されてスタックを急速に消費してしまう。そのため、インタープリタは完全ステートレスなプレーン関数として設計し、次に実行すべき PC を返却して vSoC のメインループへ戻る規約とする。
@@ -128,6 +135,41 @@ vSoC コアエンジンの実行委譲、協調イールド、および外部介
     - JIT生成されるネイティブコードのループバック点（バックエッジ）に、ソフトウェアフラグ（またはタイマ割込状況）をチェックし、必要に応じて `executor_loop` へ強制フォールバックするフック（Safepoint）を埋め込む。これにより、JIT実行中の非同期ブレークポイント（Ctrl+C等）への応答性を担保する。
 - **デバッガ介入時キャッシュ一貫性 (Cache Flush)**: `{Debugger_Jit_Flush}`
     - デバッガがメモリ上の変数を書き換えた場合、該当タスクに関連するJITキャッシュ（Active/Warm/Oldest 全バンク）をすべて無効化（Flush）し、インタープリタ実行からやり直すことで整合性を維持する。
+
+#### ランタイム生成とモジュールアンロードのライフサイクル（責務シーケンス図）
+<!-- traceability: {OneRuntimeOneGuest} {Runtime_BumpAllocator} {META_FaultIsolation} -->
+COOS Scheduler、vSoC Engine、Platform MemoryManager、WASM Loader、WASM Module 間の生成・ストレージ確保と、$O(1)$ 一括解放手順を示す。
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Sched as COOS Scheduler
+    participant vSoC as vSoC Engine
+    participant Mem as MemoryManager
+    participant Alloc as bump_allocator
+    participant Loader as WASM Loader
+    participant Mod as WASM Module
+
+    Note over Sched,Mod: ランタイム生成・モジュールロード手順 ({OneRuntimeOneGuest}, {Runtime_BumpAllocator})
+    Sched->>vSoC: initialize(module_binary)
+    vSoC->>Mem: allocate_partition(partition_id, size)
+    Mem-->>vSoC: Return Dedicated Arena Buffer
+    vSoC->>Alloc: Initialize bump_allocator with Arena
+    vSoC->>Loader: load_module(module_binary, allocator)
+    Loader->>Alloc: allocate(storage_bytes) for container storages
+    Alloc-->>Loader: Memory Slices for Trees, Maps, Bitmaps
+    Loader->>Mod: Construct Module(injected storages)
+    Mod-->>Loader: Module Ready
+    Loader-->>vSoC: Return module_view
+    vSoC-->>Sched: Runtime Ready
+
+    Note over Sched,Mod: ランタイム破棄・モジュールアンロード手順 ($O(1)$ 一括解放)
+    Sched->>vSoC: terminate()
+    vSoC->>vSoC: Invalidate JIT Cache (3-Bank Flush)
+    vSoC->>Alloc: reset() / bulk deallocate arena (O(1))
+    vSoC->>Mem: deallocate(partition_id)
+    vSoC-->>Sched: Teardown Complete (Zero Fragmentation)
+```
 
 
 #### vSoC 実行エンジン委譲とトレース境界イールド判定（責務シーケンス図）

@@ -21,6 +21,10 @@ WASMローダは、ROM上のWASM32バイナリをパースし、実行環境が�
 - **`WasmLoader`**: WASMバイナリのパース、検証、およびロード済みモジュールの管理を一括して行う主要クラス。
 - **`module_view`**: ROM上のバイナリデータへの参照と、構築された索引群を保持する読み取り専用の構造体。
 - **`module_registry`**: ロード済みの `module_view` を名前で管理するための内部リスト。 `{MultiModule_Support}`
+<!-- traceability: {ZeroCopyIndexing} {META_BumpAllocator} {Runtime_BumpAllocator} -->
+- **`ModuleView`**: ROM上のバイナリをゼロコピーで参照するための不変インデックス構造体。
+- **`BinaryStream`**: ROMデータをバイト境界・LEB128ガード付きで読み進めるストリームリーダ。
+- **`WasmLoader`**: バイナリ検証、パース、および `ModuleView` の構築を担うローダクラス。親ランタイムの `bump_allocator` を非所有参照として保持する。 `{Runtime_BumpAllocator}`
 - **`decoded_entity_registry`**: デコードされた各エンティティ（セクション、関数コード、グローバル、データセグメント）を保持するレジストリ。
 - **`entity_offset_tree` (`radix_binary_tree_view`)**: ファイル内のバイト位置（開始オフセット）をキーとしてデコード済みエンティティへ $O(1) + O(\log n)$ でマッピングする基数2進木索引。
 - **`import_tree` / `export_tree` (`radix_binary_tree_view`)**: シンボル名（インポート名・エクスポート名）のハッシュ値をキーとして各エントリへ $O(1) + O(\log n)$ でマッピングする基数2進木索引。
@@ -30,20 +34,20 @@ WASMローダは、ROM上のWASM32バイナリをパースし、実行環境が�
 - **`control_skip_tree` (`radix_binary_tree_view`)**: デリミタPCからフォールスルー先ブロック先頭PCへの基数2進木索引。制御フロー終端のジャンプ解決をローダ側で保持・提供する。
 
 ### 3.2 内部ブロック図
-<!-- traceability: {MultiModule_Support} -->
+<!-- traceability: {ZeroCopyIndexing} {META_BumpAllocator} {Runtime_BumpAllocator} -->
 ```mermaid
 graph TD
-    subgraph Loader_Layer
-        Loader[WasmLoader Engine]
-        Registry[Internal Module Registry]
-        EntityReg[Decoded Entity Registry]
+    subgraph WasmLoader_Component
+        Loader[WasmLoader]
+        Registry[module_registry]
+        EntityReg[decoded_entity_registry]
         RadixTree[RadixBinaryTreeView Offset Index]
         SymbolTree[RadixBinaryTreeView Hash Symbol Index]
     end
 
     subgraph Memory
         ROM[Wasm ROM Binary]
-        Alloc[bump_allocator]
+        Alloc["bump_allocator (親ランタイム所有)"]
     end
 
     Loader -- holds reference --> Alloc
@@ -56,15 +60,15 @@ graph TD
 ```
 
 ### 3.3 主要なクラス・構造体・配列・定数
-<!-- traceability: {MultiModule_Support} -->
+<!-- traceability: {MultiModule_Support} {Runtime_BumpAllocator} -->
 
 #### WASMローダ（WasmLoader）クラス
-依存関係（アロケータ等）と内部レジストリをカプセル化する。
+依存関係（親ランタイムの専用バンプアロケータ等）とモジュール構築をカプセル化する。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| 作業用アロケータ | 索引構築時のメモリ割り当てに使用する（プライベートメンバ） | 構造体への参照 | `bump_allocator` (非所有) |
-| モジュール索引 | ロード済みモジュールを名前で引くための内部管理リスト | アクセス辞書 | `module_registry` |
+| 作業用アロケータ | 親ランタイムから渡される専用バンプアロケータ。索引構築時のシステムコンテナストレージ領域を切り出す。 | 構造体への参照 | `bump_allocator` (非所有) |
+| モジュール索引 | ロード済みモジュールを保持・管理するための参照。 | オブジェクト参照 | `module_registry` |
 
 #### モジュールビュー（module_view）
 <!-- traceability: {ROMParsing} -->
@@ -136,9 +140,9 @@ ROM上のデータストリームを管理し、LEB128可変長整数やプリ�
 - **インポートテーブル検索と依存関係解決 (resolve_imports)**: インポートテーブルの各エントリに対し、インポート先モジュール名・フィールド名のハッシュ値を用いて対象モジュールの `export_tree`（`radix_binary_tree_view`）を $O(1) + O(\log n)$ で直接引き当てる。文字列走査を行わずに $O(1) + O(\log n)$ で依存関係を解決し、モジュールを実行可能状態へ遷移させる。 `{MultiModule_Support}` `{META_BinarySearch}`
 - **ファイル位置逆引き (lookup_by_file_offset)**: 任意のファイル内バイトオフセットから `entity_offset_tree`（`radix_binary_tree_view`）を検索し、そのオフセットを包含するデコード済みエンティティ（セクション、関数、データ等）を即座に特定・返却する。
 - **メモリセクション検証**: Memory Section をパースし、論理ページサイズ（64KB単位）および初期要求ページ数を取得。物理割当が部分ページ（例: 8KB）の場合や複数ページ（`N * 64KB`）の場合でも、モジュール初期ページ要求とシステム物理予算（`FB_CONF_MAX_WASM_PAGES`）を照合し、実行時境界判定へ引き渡す。
-- **アンロードと LIFO メモリ回収制約 (`LOAD-GOTCHA-03`)**:
-  `unload` は module_registry からモジュールを削除する。
-  **設計理由と不変条件**: 本システムは動的フリーリスト管理によるメモリ断片化や管理オーバーヘッドを完全に排除するため、決定論的静的バンプアロケータを採用している。したがって、モジュールが使用していた物理 RAM を完全に回収して再利用可能とするためには、モジュールのアンロードは「ロード順の厳格な逆順（LIFO: Last-In First-Out）」で実行されなければならない。途中のモジュールをアンロードした場合はレジストリからの論理削除のみが行われ、最上位のモジュールがアンロードされた時点で初めてバンプポインタが安全に巻き戻される。
+- **アンロードと専用バンプアロケータ一括回収 (`LOAD-GOTCHA-03`, `{OneRuntimeOneGuest}`, `{Runtime_BumpAllocator}`)**:
+  `unload` はモジュールをアンロードし、親ランタイムの `bump_allocator` を一括リセットまたは返還する。
+  **設計理由と不変条件**: 1ランタイム1ゲストの直交分離原則（`{OneRuntimeOneGuest}`）により、各ランタイムは独立した専用バンプアロケータアリーナ（`{Runtime_BumpAllocator}`）を所有する。したがって、旧来の共有アロケータで必要とされた「他モジュールとの生存競合や LIFO 逆順アンロードの束縛」は完全に撤廃され、モジュールのアンロードは他モジュールに一切の副作用を与えず、任意のタイミングで $O(1)$ でバンプアリーナごと一括リセット・解放される。単一ランタイム内でローダ検証エラーが発生した場合も、`save()` / `restore()` により当該アリーナのみが即座にロールバックされ、断片化ゼロが維持される。
 - **基本ブロック適格性静的評価 & JIT 候補ビットマップ生成 (`{JIT_StaticBenefitScoring}`, `{JIT_CandidateBitmap}`)**:
   WASM コードセクション走査時、各関数の基本ブロック（`BasicBlock`）に含まれる命令列について、ROM 上の `opcode_benefit_table`（`BitView<4>`, 128B）を用いて命令ごとの機械語短縮スコア（`int4_t`: -8〜+7、1スコア＝2命令相当短縮、分岐は8命令換算）を取得し、ブロック単位で符号付き整数（`int`）に累積加算する。
 

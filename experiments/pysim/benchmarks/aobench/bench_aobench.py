@@ -32,7 +32,7 @@ from wasm_reader import parse
 from x64_jit import TraceCompiler
 
 
-def run_aobench() -> dict[str, float]:
+def run_aobench(debug: bool = False) -> dict[str, float]:
     WIDTH = 32
     HEIGHT = 16
     AO_SAMPLES = 4
@@ -64,12 +64,12 @@ def run_aobench() -> dict[str, float]:
     wasi_ctx_t3 = WasiHostContext(sysv_t3)
     funcs_t3 = wasi_ctx_t3.build_interpreter_host_functions(module)
     trace_compiler = TraceCompiler()
-    runtime_engine = RuntimeEngine(jit_compiler=trace_compiler, yield_threshold=16)
+    runtime_engine = RuntimeEngine(jit_compiler=trace_compiler, yield_threshold=16, debug=debug)
     runtime_engine.register_module_blocks(module)
     interp_t3 = Interpreter(module, memory=wasi_ctx_t3.guest_memory, host_functions=funcs_t3)
 
     t0_t3 = time.perf_counter()
-    runtime_engine.run(interp_t3, main_fn, [WIDTH, HEIGHT], quantum=16)
+    runtime_engine.run(interp_t3, main_fn, [WIDTH, HEIGHT])
     t1_t3 = time.perf_counter()
     render_output_t3 = sysv_t3.transport.drain().decode("utf-8", errors="replace")
     t3_time_ms = (t1_t3 - t0_t3) * 1000
@@ -94,10 +94,11 @@ def run_aobench() -> dict[str, float]:
 
 
 def main():
+    debug = "--debug" in sys.argv
     print("=" * 80)
     print("      [Benchmark 4/4] 3D Ambient Occlusion Raytracing (AO-Bench)      ")
     print("=" * 80)
-    res = run_aobench()
+    res = run_aobench(debug=debug)
     print(
         f"  * Resolution:               {res['width']} x {res['height']} ({res['total_rays']:,} total rays)"
     )

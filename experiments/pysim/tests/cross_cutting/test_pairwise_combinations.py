@@ -202,11 +202,11 @@ def run_single_pairwise_case(case_tuple: tuple) -> None:
         res = interp.call(fn_idx, [n_iters])
     elif sched_mode in ("yield", "multi"):
         if runtime_engine:
-            res = runtime_engine.run(interp, fn_idx, [n_iters], quantum=2, idle_budget=2)
+            res = runtime_engine.run(interp, fn_idx, [n_iters], idle_budget=2)
         else:
             call_state = interp.start(fn_idx, [n_iters])
             while not call_state.finished:
-                call_state = interp.step(call_state, quantum=2)
+                call_state = interp.step(call_state)
             res = call_state.results
 
     # 8. Verify Result

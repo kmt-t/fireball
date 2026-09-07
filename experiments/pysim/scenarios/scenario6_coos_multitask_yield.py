@@ -85,33 +85,33 @@ def test_scenario_coos_multitask():
     fn_prod = module.export_func_index("producer_task")
     fn_cons = module.export_func_index("consumer_task")
     N = 100  # 100 items: sum(1..100) * 10 = 5050 * 10 = 50500
-    # 1. Run Producer in quanta of 16 ops
+    # 1. Run Producer block by block
     prod_state = interp.start(fn_prod, [N])
     prod_steps = 0
     while not prod_state.finished:
-        prod_state = interp.step(prod_state, quantum=16)
+        prod_state = interp.step(prod_state)
         prod_steps += 1
     prod_res = prod_state.results
 
     assert prod_res == [100], f"Producer task failed: {prod_res}"
-    assert prod_steps > 0, "Producer should have taken multiple quantum steps"
+    assert prod_steps > 0, "Producer should have taken multiple steps"
     print(f"    -> Producer ran in {prod_steps} step(s) and produced 100 items.")
-    # 2. Run Consumer in quanta of 16 ops
+    # 2. Run Consumer block by block
     cons_state = interp.start(fn_cons, [N])
     cons_steps = 0
     while not cons_state.finished:
-        cons_state = interp.step(cons_state, quantum=16)
+        cons_state = interp.step(cons_state)
         cons_steps += 1
     cons_res = cons_state.results
 
     assert cons_res == [50500], f"Consumer task sum mismatch: expected 50500, got {cons_res}"
-    assert cons_steps > 0, "Consumer should have taken multiple quantum steps"
+    assert cons_steps > 0, "Consumer should have taken multiple steps"
     print(f"    -> Consumer ran in {cons_steps} step(s) and computed expected sum: {cons_res[0]}.")
 
     # 3. Collaborative execution via COOS Scheduler (spawn_wasm_task)
     interp_coos = Interpreter(module, memory=wasi_ctx.guest_memory, host_functions=host_funcs)
-    t_prod = sysv.scheduler.spawn_wasm_task("producer_task", interp_coos, fn_prod, [N], quantum=16)
-    t_cons = sysv.scheduler.spawn_wasm_task("consumer_task", interp_coos, fn_cons, [N], quantum=16)
+    t_prod = sysv.scheduler.spawn_wasm_task("producer_task", interp_coos, fn_prod, [N])
+    t_cons = sysv.scheduler.spawn_wasm_task("consumer_task", interp_coos, fn_cons, [N])
     sysv.scheduler.run_until_idle()
     prod_task = sysv.scheduler.get_task(t_prod)
     cons_task = sysv.scheduler.get_task(t_cons)

@@ -42,7 +42,6 @@ from __future__ import annotations
 import ctypes
 import math
 import struct
-from collections import deque
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 
@@ -439,8 +438,7 @@ class InterpreterCall:
     `call_stack` holds every caller frame currently suspended on a WASM
     `call`/`call_indirect` that has not yet returned, as `(func_index,
     resume_cont)` pairs, deepest-caller-last. Entering or returning from a
-    nested WASM call is always a mandatory `step()` boundary (regardless of
-    `quantum`): the interpreter hands the callee's freshly-entered frame
+    nested WASM call is always a mandatory `step()` boundary: the interpreter hands the callee's freshly-entered frame
     straight back to the runtime rather than running it itself, so a JIT
     trace cache gets exactly the same chance to intercept a nested call as
     it gets for the outermost one -- tiering never depends on call depth.
@@ -528,30 +526,21 @@ class Interpreter:
         """
 
     def call(self, func_index: int, args: list[int]) -> list[int]:
-        """Runs a function to completion in one step (no cooperative slicing)."""
-        (call_state,) = deque(self.run_iter(func_index, args, quantum=0), maxlen=1)
+        """Runs a function to completion in one call."""
+        call_state = self.start(func_index, args)
+        while not call_state.finished:
+            call_state = self.step(call_state)
         return call_state.results
 
-    def run_iter(
-        self, func_index: int, args: list[int], quantum: int = 64
-    ) -> Iterator[InterpreterCall]:
+    def run_iter(self, func_index: int, args: list[int]) -> Iterator[InterpreterCall]:
         """
-        Drives a call boundary-instruction-quantum by boundary-instruction-
-        quantum, yielding the (possibly still-unfinished) `call_state` after
-        every `step()` -- including the very first, freshly-`start()`ed one,
-        before anything has run -- and once more after it finishes. A caller
-        that wants to substitute its own execution for the boundary about to
-        run (e.g. `RuntimeEngine.run()` invoking a JIT trace instead of
-        interpreting one) sends the `call_state` it produced back in via
-        `gen.send(replacement)` instead of `next(gen)`; this resumes from
-        that state rather than calling `step()` for the boundary the caller
-        already handled itself. A caller with nothing to inject between
-        boundaries (`Interpreter.call()`) just iterates with a plain `for`.
+        Drives a call basic-block by basic-block, yielding the (possibly still-unfinished)
+        `call_state` after every `step()` and once more after it finishes.
         """
         call_state = self.start(func_index, args)
         while not call_state.finished:
             override = yield call_state
-            call_state = override if override is not None else self.step(call_state, quantum)
+            call_state = override if override is not None else self.step(call_state)
         yield call_state
 
     def start(self, func_index: int, args: list[int]) -> InterpreterCall:
@@ -622,22 +611,14 @@ class Interpreter:
         )
         return frame, locals_arr
 
-    @cython.locals(instr_step=cython.Py_ssize_t, ip=cython.Py_ssize_t, op=cython.uchar)
-    def step(self, call_state: InterpreterCall, quantum: int = 64) -> InterpreterCall:
+    @cython.locals(ip=cython.Py_ssize_t, op=cython.uchar)
+    def step(self, call_state: InterpreterCall) -> InterpreterCall:
         """
-        Executes up to `quantum` boundary instructions (Fuel/Quantum; 0 runs
-                to completion in one call) and returns `call_state`, mutated in place:
-                still `finished == False` with a resumable `.cont` if the quantum ran
-                out, or `finished == True` with `.results` set once the outermost call
-                actually returns. Entering or returning from a nested WASM call is
-                always an immediate, mandatory return regardless of `quantum` -- see
-                `InterpreterCall.call_stack`. The interpreter only ever executes-and-
-                returns here -- it has no notion of a JIT cache or a scheduler at all;
-                deciding what happens between non-finished returns (checking a JIT
-                trace cache, a cooperative yield, draining a compile queue, or
-                nothing at all) is entirely the runtime's job.
+        Executes one basic block (up to the next boundary instruction) and returns
+        `call_state`, mutated in place: still `finished == False` with a resumable
+        `.cont`, or `finished == True` with `.results` set once the outermost call
+        actually returns.
         """
-        instr_step = 0
         while True:
             ip, frame, locals_arr, tos = call_state.cont
             if ip < len(frame.code):
@@ -661,13 +642,11 @@ class Interpreter:
                 call_state.cont = handler(ip, frame, locals_arr, tos)
                 if call_state.cont is not None:
                     if is_boundary:
-                        instr_step += 1
-                        if quantum > 0 and instr_step % quantum == 0:
-                            return call_state
+                        return call_state
                     continue
                 # cont is None: this frame just ended (RETURN, or a branch
                 # past the outermost block) -- always handle it immediately
-                # below, never defer it behind a quantum-exhaustion return.
+                # below.
 
             ft = self.module.func_type(call_state.func_index)
             if not call_state.call_stack:

@@ -438,11 +438,12 @@ def run_aobench():
     wasi_ctx_t3 = WasiHostContext(sysv_t3)
     host_funcs_t3 = wasi_ctx_t3.build_interpreter_host_functions(module)
     trace_compiler = TraceCompiler()
-    runtime_engine = RuntimeEngine(jit_compiler=trace_compiler, yield_threshold=16)
+    debug = "--debug" in sys.argv
+    runtime_engine = RuntimeEngine(jit_compiler=trace_compiler, yield_threshold=16, debug=debug)
     runtime_engine.register_module_blocks(module)
     interp_t3 = Interpreter(module, memory=wasi_ctx_t3.guest_memory, host_functions=host_funcs_t3)
     t0_t3 = time.perf_counter()
-    runtime_engine.run(interp_t3, main_func_idx, [WIDTH, HEIGHT], quantum=32)
+    runtime_engine.run(interp_t3, main_func_idx, [WIDTH, HEIGHT])
     t1_t3 = time.perf_counter()
     render_output_t3 = sysv_t3.transport.drain().decode("utf-8", errors="replace")
     t3_time_ms = (t1_t3 - t0_t3) * 1000

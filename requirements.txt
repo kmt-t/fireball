@@ -25,3 +25,5 @@ setuptools>=68.0.0           # Build backend for Cython extension compilation
 pytest>=8.0.0                # Unit and integration test framework
 pytest-cov>=4.1.0            # Test coverage reporting
 ruff>=0.8.0                  # Fast Python linter and code formatter (format_all)
+line_profiler>=4.1.0         # Line-by-line profiling for performance hotspots
+

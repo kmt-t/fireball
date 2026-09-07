@@ -21,6 +21,8 @@ from __future__ import annotations
 
 import bisect
 import ctypes
+import os
+import sys
 from collections.abc import Callable, Iterator
 
 from control_flow import iter_block_ops
@@ -224,6 +226,15 @@ class BlockCardMask:
         if card >= view.size():  # type: ignore[union-attr]
             return False
         return view.at(card) != 0  # type: ignore[union-attr]
+
+    def unmark(self, pc: int) -> None:
+        func_idx, offset = self._split_pc(pc)
+        if func_idx >= len(self.func_tables) or self.func_tables[func_idx] is None:
+            return
+        view = self.func_tables[func_idx]
+        card = offset >> self.card_shift
+        if card < view.size():  # type: ignore[union-attr]
+            view.put(card, 0)  # type: ignore[union-attr]
 
     def clear(self) -> None:
         self.func_storages = []
@@ -614,7 +625,14 @@ class RuntimeEngine:
         min_trace_bytes: int | None = None,
         compile_queue_capacity: int = 4,
         block_capacity: int = 64,
+        debug: bool = False,
     ):
+        self.debug = debug or (os.environ.get("FIREBALL_DEBUG", "").lower() in ("1", "true", "yes"))
+        self.stat_interp_steps: int = 0
+        self.stat_jit_invocations: int = 0
+        self.stat_chain_hits: int = 0
+        self.stat_trace_exits_to_interp: int = 0
+        self.stat_trace_executions: dict[int, int] = {}
         self.bitmap = HotspotBitmap(card_shift=card_shift)
         self.trackable = BlockCardMask(card_shift=card_shift)
         self.ring = HistoryRing()
@@ -732,20 +750,23 @@ class RuntimeEngine:
             max(len(module.locals_layout(idx)), 16) for idx in range(total_funcs)
         ]
 
-    def record_block_head(self, pc: int) -> None:
+    def record_block_head(self, pc: int) -> bool:
         """
         Called by `run()` at each basic-block head that has no compiled
         trace yet. Blocks shorter than `min_trace_bytes` (or with no real
         successor) are never recorded here at all -- see the invariant this
         protects in `__init__` -- decided once, in `register_module_blocks`,
         via `self.trackable` rather than re-derived here per call.
+        Returns True if exec_counter reached yield_threshold and triggered on_yield.
         """
         if not self.trackable.is_marked(pc):
-            return
+            return False
         self.ring.record(pc)
         self.exec_counter += 1
         if self.exec_counter >= self.yield_threshold:
             self.on_yield()
+            return True
+        return False
 
     def on_yield(self) -> None:
         """Scans history ring, updates 2-bit card bitmap, and queues HOT traces."""
@@ -786,84 +807,264 @@ class RuntimeEngine:
                 self.bitmap.mark_compiled(pc)
                 compiled_count += 1
             else:
-                # Mark as COMPILED in bitmap so uncompilable / failed blocks do not thrash compile_queue
+                # Mark as COMPILED in bitmap so uncompilable / failed blocks do not thrash compile_queue,
+                # and unmark from trackable so we never pay JIT lookup cost for them again.
                 self.bitmap.mark_compiled(pc)
+                self.trackable.unmark(pc)
         return compiled_count
 
     def drain_compile_queue(self) -> int:
         return self.idle_hook(budget=len(self.compile_queue) or 1000)
+
+    def reset_stats(self) -> None:
+        """Resets execution statistics counters."""
+        self.stat_interp_steps = 0
+        self.stat_jit_invocations = 0
+        self.stat_chain_hits = 0
+        self.stat_trace_exits_to_interp = 0
+        self.stat_trace_executions.clear()
+
+    def dump_internal_state(self, file: object | None = None) -> str:
+        """
+        Dumps runtime internal state including execution stats, JIT cache banks,
+        and chaining diagnostics for all compiled traces.
+        """
+        lines: list[str] = []
+        lines.append("=" * 80)
+        lines.append(
+            "                  RuntimeEngine Internal State & Chaining Dump                  "
+        )
+        lines.append("=" * 80)
+
+        total_blocks = self.stat_interp_steps + self.stat_jit_invocations
+        jit_pct = (self.stat_jit_invocations / total_blocks * 100.0) if total_blocks > 0 else 0.0
+        chain_pct = (
+            (self.stat_chain_hits / self.stat_jit_invocations * 100.0)
+            if self.stat_jit_invocations > 0
+            else 0.0
+        )
+
+        lines.append("[1. Execution Summary]")
+        lines.append(f"  * Total Block Executions:    {total_blocks:,}")
+        lines.append(
+            f"    - Interpreter Steps:       {self.stat_interp_steps:,} ({(100.0 - jit_pct):.1f}%)"
+        )
+        lines.append(
+            f"    - JIT Invocations:         {self.stat_jit_invocations:,} ({jit_pct:.1f}%)"
+        )
+        lines.append("  * JIT Chaining Performance:")
+        lines.append(
+            f"    - Chained Invocations:     {self.stat_chain_hits:,} ({chain_pct:.1f}% of JIT runs)"
+        )
+        lines.append(f"    - Exits to Interpreter:    {self.stat_trace_exits_to_interp:,}")
+        lines.append("")
+
+        lines.append("[2. JIT Multi-Buffer Cache]")
+        lines.append("  * Cache Banks:")
+        for idx, bname in [
+            (self.cache.active_idx, "Active"),
+            (self.cache.warm_idx, "Warm"),
+            (self.cache.oldest_idx, "Oldest"),
+        ]:
+            bank = self.cache.banks[idx]
+            cap = max(bank.capacity_bytes, 1)
+            pct = (bank.used_bytes / cap) * 100.0
+            lines.append(
+                f"    - {bname:<7}: {len(bank.traces):3d} traces, {bank.used_bytes:6,d} / {bank.capacity_bytes:6,d} bytes ({pct:.1f}%), {len(bank.inbound_sources)} inbound sources"
+            )
+        lines.append(f"  * Promotions (Oldest->Active): {self.cache.promotions}")
+        lines.append(f"  * Evictions (Oldest Purges):   {self.cache.evictions}")
+        lines.append("")
+
+        lines.append("[3. Compiled Traces & Chaining Analysis]")
+        all_traces: list[tuple[str, JITTrace]] = []
+        for bname, bank in [
+            ("Active", self.cache.active),
+            ("Warm", self.cache.warm),
+            ("Oldest", self.cache.oldest),
+        ]:
+            for _, t in bank.traces:
+                all_traces.append((bname, t))
+        all_traces.sort(key=lambda x: x[1].head_pc)
+
+        if not all_traces:
+            lines.append("  (No compiled traces resident in JIT cache)")
+        else:
+            lines.append(
+                f"  {'Bank':<7} {'Head PC':<10} {'Next PC':<10} {'LoopsTo':<10} {'ChainNext':<10} {'Execs':<8} {'Chaining Diagnostic'}"
+            )
+            lines.append(
+                f"  {'-' * 7} {'-' * 10} {'-' * 10} {'-' * 10} {'-' * 10} {'-' * 8} {'-' * 30}"
+            )
+            card_names = {0: "UNEXECUTED", 1: "EXECUTED", 2: "HOT", 3: "COMPILED"}
+            for bname, t in all_traces:
+                execs = self.stat_trace_executions.get(t.head_pc, 0)
+                h_pc_str = f"0x{t.head_pc:04X}"
+                n_pc_str = f"0x{t.next_pc:04X}" if t.next_pc is not None else "None"
+                l_pc_str = f"0x{t.loops_to:04X}" if t.loops_to is not None else "None"
+                c_pc_str = f"0x{t.chain_next:04X}" if t.chain_next is not None else "None"
+
+                # Diagnose chaining state
+                if t.chain_next is not None:
+                    target_bank = self.cache.find_bank(t.chain_next)
+                    if target_bank is self.cache.active:
+                        tb_name = "Active"
+                    elif target_bank is self.cache.warm:
+                        tb_name = "Warm"
+                    else:
+                        tb_name = "Oldest"
+                    diag = f"[CHAINED] -> 0x{t.chain_next:04X} in {tb_name}"
+                else:
+                    if t.loops_to is not None and t.next_pc is None:
+                        diag = f"[UNLINKED] Loop backedge only (loops_to=0x{t.loops_to:04X})"
+                    elif t.next_pc is None:
+                        diag = "[UNLINKED] Function Return / Terminal block"
+                    else:
+                        succ = t.next_pc
+                        skipped_note = ""
+                        if self.control_skip_tree is not None:
+                            skipped = self.control_skip_tree.find(bswap32(succ))
+                            if skipped is not None:
+                                skipped_note = f" (skipped to 0x{skipped:04X})"
+                                succ = skipped
+                        target_trace = self.cache.find_trace(succ)
+                        if target_trace is not None:
+                            t_bank = self.cache.find_bank(succ)
+                            if t_bank is self.cache.oldest:
+                                diag = f"[UNLINKED] Target 0x{succ:04X} in Oldest bank (prohibited)"
+                            else:
+                                diag = f"[UNLINKED] Target 0x{succ:04X} resident{skipped_note} but unlinked"
+                        else:
+                            if not self.trackable.is_marked(succ):
+                                diag = f"[UNLINKED] Target 0x{succ:04X} uncompilable (unsupported stencil / non-trackable){skipped_note}"
+                            else:
+                                st = self.bitmap.get_state(succ)
+                                st_name = card_names.get(st, f"STATE_{st}")
+                                diag = f"[UNLINKED] Target 0x{succ:04X} not compiled ({st_name}){skipped_note}"
+
+                lines.append(
+                    f"  {bname:<7} {h_pc_str:<10} {n_pc_str:<10} {l_pc_str:<10} {c_pc_str:<10} {execs:<8,d} {diag}"
+                )
+        lines.append("")
+
+        lines.append("[4. Hotspot Cards & Block Classification]")
+        compiled_cards = 0
+        hot_cards = 0
+        executed_cards = 0
+        unexecuted_cards = 0
+        if self.module is not None:
+            for b in self.module.blocks:
+                st = self.bitmap.get_state(b.head_pc)
+                if st == CardState.COMPILED:
+                    compiled_cards += 1
+                elif st == CardState.HOT:
+                    hot_cards += 1
+                elif st == CardState.EXECUTED:
+                    executed_cards += 1
+                else:
+                    unexecuted_cards += 1
+            lines.append(f"  * Total Blocks in Module:    {len(self.module.blocks)}")
+            trackable_count = sum(
+                1 for b in self.module.blocks if self.trackable.is_marked(b.head_pc)
+            )
+            lines.append(f"  * Trackable JIT Candidates:  {trackable_count}")
+            lines.append(
+                f"  * Card Status Distribution:  COMPILED={compiled_cards}, HOT={hot_cards}, EXECUTED={executed_cards}, UNEXECUTED={unexecuted_cards}"
+            )
+        lines.append("=" * 80)
+
+        output_str = "\n".join(lines) + "\n"
+        target_file = file if file is not None else sys.stderr
+        try:
+            target_file.write(output_str)  # type: ignore[union-attr]
+            if hasattr(target_file, "flush"):
+                target_file.flush()
+        except Exception:
+            pass
+        return output_str
 
     def run(
         self,
         interp: Interpreter,
         func_index: int,
         args: list[int],
-        quantum: int = 64,
         idle_budget: int = 4,
     ) -> list[int]:
         """
-        Drives `interp` to completion. Before every basic block, checks the
-                O(1) card bitmap first (`{ADR_TraceBoundaryYield}`) -- most blocks
-                are never compiled, so this must reject them without ever touching
-                the cache's per-bank search, or the miss penalty on the overwhelmingly
-                common path would dwarf the win a hit gets. Only once the card reads
-                COMPILED does this look the trace up and invoke it; otherwise it
-                records the block head for hotspot tracking and falls back to
-                `interp.step()` for that one block. Runs `idle_hook` every `quantum`
-                blocks to batch-compile any HOT blocks queued since the last check.
-                The interpreter itself never sees any of this -- it has no notion of
-                a JIT cache, and this is the runtime's job alone.
+        Drives `interp` to completion. Execution proceeds block-by-block for
+        interpretation, or in a continuous native loop until chaining ends for JIT traces.
         """
         if self.module is None and getattr(interp, "module", None) is not None:
             self.register_module_blocks(interp.module)
-        # Driven via interp.run_iter() rather than a manual start()+step()
-        # loop: `next(gen)` steps the interpreter for the boundary about to
-        # run, while `gen.send(call_state)` tells it to skip stepping --
-        # this block was already advanced externally, by _invoke_trace below.
-        gen = interp.run_iter(func_index, args, quantum=1)
-        call_state = next(gen)
-        blocks_run = 0
+
+        call_state = interp.start(func_index, args)
+        COMPILED = CardState.COMPILED
+
         while not call_state.finished:
             pc = call_state.current_pc()
             if pc is not None and call_state.cont is not None:
                 block_here = self.get_block(pc)
                 frame_here = call_state.cont[1]
-                # A JIT jump can resume at a pc whose enclosing BLOCK/LOOP/IF
-                # frames were pushed onto frame.frames during an earlier
-                # interp.step()-driven pass but never popped -- _invoke_trace's
-                # computed jumps bypass _h_block/_h_loop/_h_if/_do_branch
-                # entirely, so those stale frames can linger. frame.frames'
-                # CONTENT is never trusted for branch-target resolution here
-                # any more (see boundary_next_pc/loops_to below) -- this only
-                # bounds its SIZE to this pc's statically-known nesting depth,
-                # so it cannot grow without bound across a long JIT-heavy run.
                 if block_here is not None and len(frame_here.frames) > block_here.frame_depth:
                     del frame_here.frames[block_here.frame_depth :]
-                # This step's own resolved branch target(s), straight from
-                # the BasicBlock this pc already denotes -- a pure function
-                # of pc alone, so unlike frame.frames it can never desync
-                # from reality. _h_br / _h_br_if / _h_else consult these
-                # instead of frame.frames when set.
                 frame_here.boundary_next_pc = block_here.next_pc if block_here is not None else None
                 frame_here.boundary_loops_to = (
                     block_here.loops_to if block_here is not None else None
                 )
+
             trace = None
-            is_compiled = pc is not None and self.bitmap.get_state(pc) == CardState.COMPILED
-            if is_compiled:
-                trace = self.cache.lookup(pc)
+            if pc is not None and self.trackable.is_marked(pc):
+                if self.bitmap.get_state(pc) == COMPILED:
+                    trace = self.cache.lookup(pc)
+
             if trace is not None:
-                call_state = self._invoke_trace(interp, call_state, trace)
-                call_state = gen.send(call_state)
-                blocks_run += 1
+                # JIT trace execution: loop until reaching the end of the trace chain
+                in_chain = False
+                while trace is not None:
+                    if in_chain:
+                        self.stat_chain_hits += 1
+                    self.stat_jit_invocations += 1
+                    if self.debug:
+                        self.stat_trace_executions[trace.head_pc] = (
+                            self.stat_trace_executions.get(trace.head_pc, 0) + 1
+                        )
+                    call_state = self._invoke_trace(interp, call_state, trace)
+                    pc = call_state.current_pc()
+                    if pc is None or call_state.finished:
+                        break
+                    if self.trackable.is_marked(pc) and self.bitmap.get_state(pc) == COMPILED:
+                        trace = self.cache.lookup(pc)
+                        in_chain = trace is not None
+                    else:
+                        trace = None
+                        break
+
+                if not call_state.finished:
+                    self.stat_trace_exits_to_interp += 1
+
+                # After trace chain ends, synchronize frame before returning to interpreter
+                if not call_state.finished and pc is not None and call_state.cont is not None:
+                    block_here = self.get_block(pc)
+                    frame_here = call_state.cont[1]
+                    if block_here is not None and len(frame_here.frames) > block_here.frame_depth:
+                        del frame_here.frames[block_here.frame_depth :]
+                    frame_here.boundary_next_pc = (
+                        block_here.next_pc if block_here is not None else None
+                    )
+                    frame_here.boundary_loops_to = (
+                        block_here.loops_to if block_here is not None else None
+                    )
             else:
-                if pc is not None and not is_compiled:
-                    self.record_block_head(pc)
-                call_state = next(gen)
-                blocks_run += 1
-            if blocks_run % quantum == 0:
-                self.idle_hook(budget=idle_budget)
+                self.stat_interp_steps += 1
+                if pc is not None and self.trackable.is_marked(pc):
+                    if self.record_block_head(pc):
+                        self.idle_hook(budget=idle_budget)
+                call_state = interp.step(call_state)
+
         self.idle_hook(budget=idle_budget)
+        if self.debug:
+            self.dump_internal_state()
+
         return call_state.results
 
     def _invoke_trace(

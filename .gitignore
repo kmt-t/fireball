@@ -95,3 +95,4 @@ pip-wheel-metadata/
 .antigravitycli/
 .codex/
 .serena/
+.mcp.json

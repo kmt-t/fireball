@@ -159,10 +159,10 @@ class Channel:
 
 
 def make_wasm_task_coro(
-    interp: Interpreter, func_index: int, args: list[int], quantum: int = 16
+    interp: Interpreter, func_index: int, args: list[int]
 ) -> Generator[tuple[ChannelAction, None], None, list[int]]:
     """Wraps an Interpreter execution as a cooperative coroutine for COOS task scheduling."""
-    gen = interp.run_iter(func_index, args, quantum=quantum)
+    gen = interp.run_iter(func_index, args)
     # The freshly-start()ed state, before any step, is not itself a yield point.
     call_state = next(gen)
     for call_state in gen:
@@ -301,12 +301,11 @@ class Scheduler:
         interp: Interpreter,
         func_index: int,
         args: list[int],
-        quantum: int = 16,
         task_id: int | None = None,
         role: int = 0,
     ) -> int:
         """Spawns a WASM execution context as a first-class COOS task."""
-        coro = make_wasm_task_coro(interp, func_index, args, quantum=quantum)
+        coro = make_wasm_task_coro(interp, func_index, args)
         return self.spawn(name, coro, task_id=task_id, role=role)
 
     def detach(self, task: Task) -> None:

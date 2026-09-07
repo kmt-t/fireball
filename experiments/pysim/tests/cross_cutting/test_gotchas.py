@@ -146,7 +146,7 @@ def test_intp_gotcha_02_label_arity_pruning_restores_tos():
 
     call_state = interp.start(0, [])
     while not call_state.finished:
-        call_state = interp.step(call_state, quantum=1)
+        call_state = interp.step(call_state)
 
     assert call_state.results == [10]
 
@@ -170,14 +170,14 @@ def test_intp_gotcha_03_if_false_no_else_no_frame_leak():
     interp = Interpreter(module)
 
     call_state = interp.start(0, [])
-    call_state = interp.step(call_state, quantum=1)
+    call_state = interp.step(call_state)
     depth_before = len(call_state.cont[1].frames)
-    call_state = interp.step(call_state, quantum=1)
+    call_state = interp.step(call_state)
     depth_after = len(call_state.cont[1].frames)
     assert depth_after == depth_before  # No frame leaked!
 
     while not call_state.finished:
-        call_state = interp.step(call_state, quantum=1)
+        call_state = interp.step(call_state)
     assert call_state.results == [77]
 
 
@@ -230,14 +230,15 @@ def test_jitc_gotcha_01_02_03_conventions():
     assert locals_arr[0] == 15
 
     # 2. Test Thumb-2 JIT Copy-Patch Engine: JITC-GOTCHA-01 (register isolation),
-    # JITC-GOTCHA-02 (mem_base/size loaded from [R1, #0x20] and [R1, #0x24]),
-    # and JITC-GOTCHA-03 (Callee-saved TOS (R4) is not spilled in epilogue).
+    # JITC-GOTCHA-02 (mem_base/size loaded from [R0, #0x28] and [R0, #0x2C]),
+    # and JITC-GOTCHA-03 (Basic block end stack flush & IP/SP context sync).
     engine = CopyPatchJITEngine()
     ops = [("i32.const", 42), ("local.set", 4), ("i32.load", None)]
     start_pos, count = engine.compile_trace(ops)
     code = engine.execute_native(start_pos, count)
 
-    # JITC-GOTCHA-01: Shared R0/R1/R2/R3 are never used as scratch destinations
+    # JITC-GOTCHA-01: Shared CPS argument registers R0/R1/R2 are preserved and never used as scratch
+    # destination registers inside the trace body (R3 is TOS).
     for inst in code:
         mnemonic, _, operands = inst.partition(" ")
         if mnemonic in (
@@ -256,16 +257,16 @@ def test_jitc_gotcha_01_02_03_conventions():
         ):
             continue
         dest = operands.split(",")[0].strip()
-        assert dest not in ("r0", "r1", "r2", "r3"), (
-            f"CPS argument register {dest} clobbered by {inst}"
-        )
+        assert dest not in ("r0", "r1", "r2"), f"CPS argument register {dest} clobbered by {inst}"
 
-    # JITC-GOTCHA-02: mem_base and mem_size loaded from [R1, #0x20] and [R1, #0x24]
-    assert code[1] == "LDR.W r8, [r1, #0x20]"
-    assert code[2] == "LDR.W r9, [r1, #0x24]"
+    # JITC-GOTCHA-02: mem_base and mem_size loaded from [R0, #0x28] and [R0, #0x2C]
+    assert code[1] == "LDR.W r8, [r0, #0x28]"
+    assert code[2] == "LDR.W r9, [r0, #0x2C]"
 
-    # JITC-GOTCHA-03: Epilogue pops only callee-saved registers {r4-r6, r8-r11, pc}, R4 (TOS)
-    # remains in register -- no memory round-trip.
+    # JITC-GOTCHA-03: Basic block end flushes SP and IP to execution_context R0 (+0x0C and +0x00),
+    # and epilogue pops callee-saved registers {r4-r6, r8-r11, pc}.
+    assert "STR.W r1, [r0, #0x0C]" in code
+    assert "STR.W r6, [r0, #0x00]" in code
     assert "POP.W {r4-r6, r8-r11, pc}" in code
 
 
@@ -285,7 +286,7 @@ def test_jitc_gotcha_04_05_boundary_check_and_backpatch():
             cmp_idx = idx
         elif "BHS.W" in inst:
             bhs_idx = idx
-        elif "LDR.W r4, [r8" in inst:
+        elif "LDR.W r3, [r8" in inst or "LDR.W r4, [r8" in inst:
             ldr_idx = idx
 
     assert 0 <= cmp_idx < bhs_idx < ldr_idx, "Boundary check does not precede memory load!"

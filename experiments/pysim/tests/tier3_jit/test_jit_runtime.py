@@ -249,7 +249,7 @@ def test_jitr_bitmap_checked_before_cache_lookup():
         return real_lookup(pc)
 
     engine.cache.lookup = spy
-    engine.run(interp, fn_idx, [50], quantum=8)
+    engine.run(interp, fn_idx, [50])
 
     assert lookup_calls, (
         "the loop must have gotten hot enough to compile and hit the cache at least once"
@@ -597,7 +597,7 @@ def test_jitr_br_if_loop_exit_jit_result_correct():
     interp = Interpreter(module)
 
     n = 50
-    results = engine.run(interp, fn_idx, [n], quantum=8)
+    results = engine.run(interp, fn_idx, [n])
     assert results == [sum(range(n))], (
         f"sum_to({n}) via JIT-driven RuntimeEngine.run() = {results}, "
         f"expected [{sum(range(n))}] -- the compiled loop-exit trace's "
@@ -648,7 +648,7 @@ def test_jitr_backward_branch_block_byte_span_not_disqualified():
     interp = Interpreter(module)
 
     n = 50
-    results = engine.run(interp, fn_idx, [n], quantum=8)
+    results = engine.run(interp, fn_idx, [n])
     assert results == [sum(range(n))]
     compiled_heads = {pc for pc, _ in engine.cache.active.traces}
     assert len(compiled_heads) >= 2, (
@@ -699,7 +699,7 @@ def test_jitr_if_then_skipped_when_condition_false_after_jit():
     interp = Interpreter(module)
 
     n = 20
-    results = engine.run(interp, fn_idx, [n], quantum=4)
+    results = engine.run(interp, fn_idx, [n])
     expected = sum(abs(i - 5) for i in range(n))
     assert results == [expected], (
         f"abs_sum({n}) via JIT-driven RuntimeEngine.run() = {results}, expected [{expected}] -- "
@@ -763,7 +763,7 @@ def test_jitr_nested_loop_in_if_frame_stack_reconciliation():
     interp = Interpreter(module)
 
     n = 20
-    results = engine.run(interp, fn_idx, [n], quantum=4)
+    results = engine.run(interp, fn_idx, [n])
     even_count = sum(1 for i in range(n) if i % 2 == 0)
     expected = even_count * 3
     assert results == [expected], (
@@ -817,7 +817,7 @@ def test_jitr_return_terminated_block_jit_result_correct():
     interp = Interpreter(module)
 
     n = 20
-    results = engine.run(interp, fn_idx, [n], quantum=2)
+    results = engine.run(interp, fn_idx, [n])
     assert results == [n * 3], (
         f"f({n}) via JIT-driven RuntimeEngine.run() = {results}, expected [{n * 3}]"
     )

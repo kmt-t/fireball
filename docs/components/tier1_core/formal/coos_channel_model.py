@@ -146,5 +146,7 @@ if __name__ == "__main__":
     for prop in properties():
         res = modelcheck(km_mut, prop["formula"])
         passed = km_mut.S0.issubset(res)
-        assert not passed, f"Mutation check failed: {prop['name']} was not refuted under guards=False!"
+        assert not passed, (
+            f"Mutation check failed: {prop['name']} was not refuted under guards=False!"
+        )
         print(f"[PASS (Mutated Refuted)] {prop['name']}")

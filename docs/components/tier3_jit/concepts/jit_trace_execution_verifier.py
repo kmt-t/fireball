@@ -40,6 +40,7 @@ try:
         UC_ARM_REG_R2,
         UC_ARM_REG_R3,
         UC_ARM_REG_R4,
+        UC_ARM_REG_R5,
         UC_ARM_REG_R12,
         UC_ARM_REG_SP,
     )
@@ -352,6 +353,75 @@ def test_inlined_control_flow_and_sp_rewind_on_real_hardware() -> None:
     )
 
 
+def test_all_variants_execution_and_flushes_on_real_cpu() -> None:
+    """Verifies that all 4 stack-cache variants (Variant 0..3: Depth 0..3) execute
+    correctly on ARMv8-M:
+    - Variant 0 (Depth 0): Empty stack cache, no flushes to [R1]
+    - Variant 1 (Depth 1): R3 (TOS) flushed to [R1, #0]
+    - Variant 2 (Depth 2): R3 (TOS) flushed to [R1, #0], R4 (NOS) flushed to [R1, #4]
+    - Variant 3 (Depth 3): R3 (TOS) flushed to [R1, #0], R4 (NOS) to [R1, #4], R5 (NNOS) to [R1, #8]
+    All variants must correctly sync execution_context sp_offset (+0x0C) and ip (+0x00).
+    """
+    engine = CopyPatchJITEngine()
+
+    test_configs = [
+        (0, {}, []),
+        (1, {UC_ARM_REG_R3: 0x11111111}, [(0, 0x11111111)]),
+        (2, {UC_ARM_REG_R3: 0x22222222, UC_ARM_REG_R4: 0x33333333}, [(0, 0x22222222), (4, 0x33333333)]),
+        (
+            3,
+            {UC_ARM_REG_R3: 0x44444444, UC_ARM_REG_R4: 0x55555555, UC_ARM_REG_R5: 0x66666666},
+            [(0, 0x44444444), (4, 0x55555555), (8, 0x66666666)],
+        ),
+    ]
+
+    for variant_id, in_regs, expected_stack in test_configs:
+        engine.compile_trace([], exit_kind="return", variant_id=variant_id, head_wasm_pc=0x100)
+        start_byte, length = engine.last_trace_byte_range
+        code = engine.execute_native_bytes(start_byte, length)
+
+        mu = Uc(UC_ARCH_ARM, UC_MODE_THUMB)
+        mu.mem_map(CODE_BASE, 0x1000)
+        mu.mem_map(0x20000, 0x4000)  # covers CSTACK, CTX, WASM_STACK, SENTINEL
+        mu.mem_write(CODE_BASE, code)
+        mu.mem_write(SENTINEL_ADDR, bytes.fromhex("00BE"))
+
+        # Clear WASM stack buffer with sentinel bytes
+        mu.mem_write(WASM_STACK_BASE, b"\x00" * 32)
+
+        mu.reg_write(UC_ARM_REG_R0, CTX_BASE)
+        mu.reg_write(UC_ARM_REG_R1, WASM_STACK_BASE)
+        mu.reg_write(UC_ARM_REG_R2, 0)
+        mu.reg_write(UC_ARM_REG_SP, CSTACK_TOP)
+        mu.reg_write(UC_ARM_REG_LR, SENTINEL_ADDR | 1)
+
+        for reg, val in in_regs.items():
+            mu.reg_write(reg, val)
+
+        try:
+            mu.emu_start(CODE_BASE | 1, SENTINEL_ADDR)
+        except UcError as e:
+            if e.errno != UC_ERR_EXCEPTION:
+                raise
+
+        # Check stack flushes
+        for off, expected_val in expected_stack:
+            actual_val = int.from_bytes(mu.mem_read(WASM_STACK_BASE + off, 4), "little")
+            assert actual_val == expected_val, (
+                f"Variant {variant_id} flush mismatch at offset {off}: "
+                f"got {actual_val:#x}, expected {expected_val:#x}"
+            )
+
+        # Check context sync
+        ctx_sp = int.from_bytes(mu.mem_read(CTX_BASE + 0x0C, 4), "little")
+        assert ctx_sp == WASM_STACK_BASE, f"Variant {variant_id} ctx_sp={ctx_sp:#x} != {WASM_STACK_BASE:#x}"
+        ctx_ip = int.from_bytes(mu.mem_read(CTX_BASE + 0x00, 4), "little")
+        assert ctx_ip == 0x100, f"Variant {variant_id} ctx_ip={ctx_ip:#x} != 0x100"
+        assert mu.reg_read(UC_ARM_REG_SP) == CSTACK_TOP
+
+    print("[OK] verified all 4 stack-cache variants (Variant 0..3) execution and flushes on real ARMv8-M CPU.")
+
+
 if __name__ == "__main__":
     if not HAVE_UNICORN:
         print("[SKIP] unicorn emulator not installed; skipping ARM trace verification.")
@@ -363,4 +433,5 @@ if __name__ == "__main__":
     test_chain_branch_preserves_registers_on_real_hardware()
     test_dynamic_chain_unlinked_falls_through_to_interpreter_on_real_hardware()
     test_inlined_control_flow_and_sp_rewind_on_real_hardware()
+    test_all_variants_execution_and_flushes_on_real_cpu()
     print("[PASS] compile_trace() output is real, executable, and correct Thumb-2 machine code.")

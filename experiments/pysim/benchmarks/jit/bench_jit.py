@@ -118,12 +118,12 @@ class JITCompilerBenchmark:
         interp_jit = Interpreter(module)
 
         # Warmup and compile HOT traces
-        runtime_engine.run(interp_jit, fn_idx, [100], quantum=16)
+        runtime_engine.run(interp_jit, fn_idx, [100])
         runtime_engine.idle_hook(budget=10)
 
         # Run compiled native execution
         t0 = time.perf_counter()
-        res_jit = runtime_engine.run(interp_jit, fn_idx, [LOOP_COUNT], quantum=16)
+        res_jit = runtime_engine.run(interp_jit, fn_idx, [LOOP_COUNT])
         t1 = time.perf_counter()
         jit_time_ms = (t1 - t0) * 1000
 

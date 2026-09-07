@@ -498,7 +498,8 @@ class CopyPatchJITEngine:
         hardcoded.
         """
         start_offset = self.current_write_pos
-        dirty_spills = dirty_spills or []
+        caller_dirty_spills = list(dirty_spills) if dirty_spills is not None else None
+        current_variant = variant_id
         asm = Thumb2Assembler()
         # 1. Begin W^X Transaction (RW + XN)
         self.begin_jit_patch()
@@ -531,7 +532,18 @@ class CopyPatchJITEngine:
 
         def flush_dirty_spills_and_sync_context() -> None:
             # 1. Flush dirty stack values (TOS, NOS, NNOS etc.) to stack memory [r1, #offset]
-            for reg, stack_off in dirty_spills:
+            if caller_dirty_spills is not None:
+                spills = caller_dirty_spills
+            elif current_variant == 1:
+                spills = [("r3", 0)]
+            elif current_variant == 2:
+                spills = [("r3", 0), ("r4", 4)]
+            elif current_variant == 3:
+                spills = [("r3", 0), ("r4", 4), ("r5", 8)]
+            else:
+                spills = []
+
+            for reg, stack_off in spills:
                 reg_enum = _REG_NAME_TO_ENUM[reg.lower()]
                 if reg_enum <= Reg.R7:
                     emit(
@@ -573,6 +585,7 @@ class CopyPatchJITEngine:
             emit("LDR.W r8, [r0, #0x28]", asm.ldr_w_imm12(Reg.R8, Reg.R0, 0x28))
             emit("LDR.W r9, [r0, #0x2C]", asm.ldr_w_imm12(Reg.R9, Reg.R0, 0x2C))
 
+        current_variant = variant_id
         # Byte addresses of BHS.W trap branches emitted below, patched once the trace's
         # trap tail (see step 5b) is known.
         oob_branch_fixups: list[int] = []
@@ -585,12 +598,15 @@ class CopyPatchJITEngine:
                     f"MOVT r3, #{(imm >> 16) & 0xFFFF}",
                     asm.movt(Reg.R3, (imm >> 16) & 0xFFFF),
                 )
+                current_variant = 1
             elif op == "local.get":
                 off = int(arg)
                 emit(f"LDR r3, [r2, #{off}]", asm.ldr_imm(Reg.R3, Reg.R2, off))
+                current_variant = 1
             elif op == "local.set":
                 off = int(arg)
                 emit(f"STR r3, [r2, #{off}]", asm.str_imm(Reg.R3, Reg.R2, off))
+                current_variant = 0
             elif op in ("block", "loop", "end", "else", "nop"):
                 # Zero-cost syntax delimiters and NOPs: eliminated at compile-time
                 continue
@@ -642,18 +658,29 @@ class CopyPatchJITEngine:
                 oob_branch_fixups.append(self.byte_write_pos)
                 emit("BHS.W <trap>", asm.b_cond_w(Cond.HS, 0))
                 emit_stencil(self.stencils[op.replace(".", "_") + "_r8"])
+                current_variant = 1 if "load" in op else 0
             else:
-                # Direct stencil mapping
+                # Direct stencil mapping with dynamic variant selection and reconciliation glue
                 base = op.replace(".", "_")
                 stencil_key = None
-                for suffix in ("_d2", "_d1", "_d0", "_d3", "_r8", ""):
-                    cand = base + suffix
-                    if cand in self.stencils:
-                        stencil_key = cand
-                        break
+                preferred_key = f"{base}_d{current_variant}"
+                if preferred_key in self.stencils:
+                    stencil_key = preferred_key
+                else:
+                    for suffix in ("_d2", "_d1", "_d0", "_d3", "_r8", ""):
+                        cand = base + suffix
+                        if cand in self.stencils:
+                            stencil_key = cand
+                            break
 
                 if stencil_key is not None and stencil_key in self.stencils:
-                    emit_stencil(self.stencils[stencil_key])
+                    target_st = self.stencils[stencil_key]
+                    if target_st.variant_id is not None and target_st.variant_id != current_variant:
+                        self.emit_variant_reconciliation_glue(current_variant, target_st.variant_id)
+                        current_variant = target_st.variant_id
+                    emit_stencil(target_st)
+                    if base in _OP_OUTPUT_DEPTH:
+                        current_variant = _OP_OUTPUT_DEPTH[base]
                 else:
                     raise ValueError(f"Unsupported stencil opcode: {op}")
 
@@ -794,6 +821,10 @@ class CopyPatchJITEngine:
         }
         asm = Thumb2Assembler()
         for dst, src in _order_register_moves(moves):
+            self.write_instruction(
+                self.current_write_pos, f"MOV {dst.name.lower()}, {src.name.lower()}"
+            )
+            self.current_write_pos += 1
             self._emit_bytes(asm.mov_reg(dst, src))
         return True
 
@@ -803,6 +834,50 @@ VARIANT_REGISTER_MAPS: dict[int, dict[str, Reg]] = {
     1: {"TOS": Reg.R3},
     2: {"TOS": Reg.R3, "NOS": Reg.R4},
     3: {"TOS": Reg.R3, "NOS": Reg.R4, "NNOS": Reg.R5},
+}
+
+_OP_OUTPUT_DEPTH: dict[str, int] = {
+    # ALU / Comparison: consumes 2 (Depth 2), produces 1 (Depth 1)
+    "i32_add": 1,
+    "i32_sub": 1,
+    "i32_mul": 1,
+    "i32_div_s": 1,
+    "i32_div_u": 1,
+    "i32_rem_s": 1,
+    "i32_rem_u": 1,
+    "i32_and": 1,
+    "i32_or": 1,
+    "i32_xor": 1,
+    "i32_shl": 1,
+    "i32_shr_s": 1,
+    "i32_shr_u": 1,
+    "i32_rotl": 1,
+    "i32_rotr": 1,
+    "i32_eq": 1,
+    "i32_ne": 1,
+    "i32_lt_s": 1,
+    "i32_lt_u": 1,
+    "i32_gt_s": 1,
+    "i32_gt_u": 1,
+    "i32_le_s": 1,
+    "i32_le_u": 1,
+    "i32_ge_s": 1,
+    "i32_ge_u": 1,
+    # Unary: consumes 1 (Depth 1), produces 1 (Depth 1)
+    "i32_clz": 1,
+    "i32_ctz": 1,
+    "i32_eqz": 1,
+    # Ternary: consumes 3 (Depth 3), produces 1 (Depth 1)
+    "select": 1,
+    # Variables & Constants
+    "i32_const": 1,
+    "i64_const": 1,
+    "local_get": 1,
+    "global_get": 1,
+    "memory_size": 1,
+    "local_tee": 1,
+    "local_set": 0,
+    "global_set": 0,
 }
 
 
@@ -1116,6 +1191,7 @@ def test_control_flow_and_all_48_opcodes() -> None:
         for c in code_delim
         if not c.startswith("PUSH")
         and not c.startswith("POP")
+        and not (c.startswith("STR r") and "[r1" in c)
         and not c.startswith("STR.W r1, [r0")
         and not c.startswith("MOVW r6")
         and not c.startswith("MOVT r6")
@@ -1546,6 +1622,64 @@ def test_jit_trace_header_layout() -> None:
     assert header.chain_target_addr == 0x08001020
 
 
+def test_variant_stack_flush_and_sp_sync() -> None:
+    """Verify that when dirty_spills is None, compile_trace automatically derives
+    stack flushes from variant_id (0..3) and always syncs SP (+0x0C) and IP (+0x00)
+    to execution_context R0 at basic block end."""
+    engine = CopyPatchJITEngine()
+
+    # Variant 0 (Depth 0): No register stack cache, no flush instructions
+    start_v0, count_v0 = engine.compile_trace([], exit_kind="return", variant_id=0)
+    code_v0 = engine.execute_native(start_v0, count_v0)
+    assert not any(c.startswith("STR r3, [r1") for c in code_v0)
+    assert not any(c.startswith("STR r4, [r1") for c in code_v0)
+    assert not any(c.startswith("STR r5, [r1") for c in code_v0)
+    assert "STR.W r1, [r0, #0x0C]" in code_v0
+    assert "STR.W r6, [r0, #0x00]" in code_v0
+
+    # Variant 1 (Depth 1): TOS (R3) in register, flush to [R1, #0]
+    start_v1, count_v1 = engine.compile_trace([], exit_kind="return", variant_id=1)
+    code_v1 = engine.execute_native(start_v1, count_v1)
+    assert "STR r3, [r1, #0]" in code_v1
+    assert not any(c.startswith("STR r4, [r1") for c in code_v1)
+    assert not any(c.startswith("STR r5, [r1") for c in code_v1)
+    assert "STR.W r1, [r0, #0x0C]" in code_v1
+    assert "STR.W r6, [r0, #0x00]" in code_v1
+
+    # Variant 2 (Depth 2): TOS (R3) & NOS (R4) in registers, flush to [R1, #0] & [R1, #4]
+    start_v2, count_v2 = engine.compile_trace([], exit_kind="return", variant_id=2)
+    code_v2 = engine.execute_native(start_v2, count_v2)
+    assert "STR r3, [r1, #0]" in code_v2
+    assert "STR r4, [r1, #4]" in code_v2
+    assert not any(c.startswith("STR r5, [r1") for c in code_v2)
+    assert "STR.W r1, [r0, #0x0C]" in code_v2
+    assert "STR.W r6, [r0, #0x00]" in code_v2
+
+    # Variant 3 (Depth 3): TOS (R3), NOS (R4), NNOS (R5) in registers, flush to [R1, #0], #4, #8
+    start_v3, count_v3 = engine.compile_trace([], exit_kind="return", variant_id=3)
+    code_v3 = engine.execute_native(start_v3, count_v3)
+    assert "STR r3, [r1, #0]" in code_v3
+    assert "STR r4, [r1, #4]" in code_v3
+    assert "STR r5, [r1, #8]" in code_v3
+    assert "STR.W r1, [r0, #0x0C]" in code_v3
+    assert "STR.W r6, [r0, #0x00]" in code_v3
+
+
+def test_dynamic_variant_selection_and_glue() -> None:
+    """Verify that compile_trace selects depth-specific stencils matching current depth
+    and inserts reconciliation glue (MOVs) when required."""
+    engine = CopyPatchJITEngine()
+    # local.get produces Depth 1 (TOS: R3). i32.clz consumes Depth 1 and produces Depth 1.
+    # Preferred i32_clz_d1 should be chosen without reconciliation glue.
+    ops = [("local.get", 0), ("i32.clz", None)]
+    start_pos, count = engine.compile_trace(ops, exit_kind="return", variant_id=0)
+    code = engine.execute_native(start_pos, count)
+    assert any("clz" in c.lower() for c in code)
+    # Trace end flushes Depth 1 (TOS: R3)
+    assert "STR r3, [r1, #0]" in code
+    assert "STR.W r1, [r0, #0x0C]" in code
+
+
 if __name__ == "__main__":
     test_full_stencil_library_coverage()
     test_stencil_variant_ids_match_the_documented_table()
@@ -1567,6 +1701,8 @@ if __name__ == "__main__":
     test_variant_reconciliation_glue_rejects_missing_value()
     test_variant_reconciliation_glue_emits_real_swap_bytes()
     test_order_register_moves_breaks_swap_cycle_correctly()
+    test_variant_stack_flush_and_sp_sync()
+    test_dynamic_variant_selection_and_glue()
     test_mpu_wx_protection()
     test_jit_trace_header_layout()
     print("[PASS] All JIT Copy-and-Patch Full-Set concept tests passed successfully.")

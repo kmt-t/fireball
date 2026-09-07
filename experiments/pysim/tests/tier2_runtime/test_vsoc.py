@@ -167,11 +167,11 @@ def test_coop_01_wasm_coroutine_yields_on_quantum():
     call_state = interp.start(mod.export_func_index("busy_loop"), [0])
     step_count = 0
     while not call_state.finished:
-        call_state = interp.step(call_state, quantum=10)
+        call_state = interp.step(call_state)
         step_count += 1
     result = call_state.results
 
-    assert step_count >= 10, f"Expected multiple quantum steps, got {step_count}"
+    assert step_count >= 10, f"Expected multiple basic block steps, got {step_count}"
     assert result == [100]
 
 

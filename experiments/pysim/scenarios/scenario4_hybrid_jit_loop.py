@@ -114,7 +114,7 @@ def test_scenario_hybrid_jit():
     runtime_engine = RuntimeEngine(jit_compiler=trace_compiler, yield_threshold=16)
     runtime_engine.register_module_blocks(module)
     interp_t3 = Interpreter(module, memory=wasi_t3.guest_memory, host_functions=funcs_t3)
-    res_t3 = runtime_engine.run(interp_t3, fn_idx, [LIMIT], quantum=32)
+    res_t3 = runtime_engine.run(interp_t3, fn_idx, [LIMIT])
 
     assert res_t3 == [168], f"Tier 3 prime count mismatch: expected 168, got {res_t3}"
     assert res_t2 == res_t3, "Tier 2 and Tier 3 calculation diverged!"

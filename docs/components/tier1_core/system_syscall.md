@@ -13,11 +13,11 @@
 `fireball_call` は、vMMIOアドレス空間（[`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md) の Tier 2/3、Bit 31 == 1）に対する**代理実行ラッパー**である。直接vMMIOアドレスにアクセスできないゲスト言語のために、シングル・トラップ命令経由でホストがvMMIO操作を代行する。ゲスト専用RAM（Tier 1, Bit 31 == 0）はこの対象外であり、`FastAddressCheck` による別経路の境界チェックのみで完結する。
 
 ```
-アクセスパスA: guest load/store(vMMIO_addr) → 許可テーブル → 直接物理アクセス
-アクセスパスB: guest fireball_call(id, args) → host代理 → vMMIO → 許可テーブル → 直接物理アクセス
+アクセスパスA: guest load/store(vMMIO_addr) → PTEマッピング解決 (未登録時 TRAP) → 直接物理アクセス
+アクセスパスB: guest fireball_call(id, args) → host代理 → vMMIO → PTEマッピング解決 → 直接物理アクセス
 ```
 
-vMMIOアドレス空間（Tier 2/3）に対しては、どちらのパスも最終的にvMMIO許可テーブルを通る。セキュリティゲートはvMMIO領域内で1箇所に統一される（ゲストRAMのFastAddressCheckとは独立した別ゲート）。 `{UnifiedAccessModel}`
+vMMIOアドレス空間（Tier 2/3）に対しては、どちらのパスも最終的に統一された vMMIO ページマッピング機構（PTE / TLB）を通る。アクセス権限のない領域（他タスク所有の共有メモリや未割当領域）は仮想アドレス空間から物理的に **unmap（マッピング解除）** されており、PTE 不在として未登録ページトラップ（`TRAP_UNREGISTERED_PAGE`）により即座に遮断される。セキュリティ境界は vMMIO のマッピング存在性により 1 箇所に統一される（ゲストRAMのFastAddressCheckとは独立した別ゲート）。 `{UnifiedAccessModel}`
 
 ## 3. `fireball_call` WIT定義
 <!-- traceability: {WIT_Interface_Spec} -->
@@ -270,8 +270,8 @@ def fireball_trigger_set_pin(pin: int, value: bool):
 仮想割り込みに関する詳細な情報（例えば、UARTから受信したデータ、タイマーID、非同期操作の結果コードなど）は、vMMIOレジスタや共有メモリ上の事前に定義された領域を介してゲストに伝達される。ゲストは割り込みハンドラ内でこれらの情報を読み取り、適切な非同期イベント処理を行う。
 
 ## 9. メモリ安全性
-<!-- traceability: {Challenge_SyscallMemorySafety} -->
-`fireball_call`を介してゲストメモリへのポインタが渡される場合、統一vMMIOモデルの許可テーブルがセキュリティゲートとして機能する。別途の `vsoc_validate_ptr` は不要。 `{Challenge_SyscallMemorySafety}`
+<!-- traceability: {Challenge_SyscallMemorySafety} {OwnershipTransfer} {FastAddressCheck} -->
+`fireball_call` を介してゲストメモリへのポインタが渡される場合でも、アクセスしてはならない領域は仮想アドレス空間から物理的に **unmap（マッピング解除）** されている。他タスク所有の SHM 領域や転送中（`IN_FLIGHT`）のページ、未割当領域へのアクセスは、ソフトウェア的な許可チェックを待つまでもなく、PTE / TLB 不在による未登録ページトラップ（`TRAP_UNREGISTERED_PAGE`）としてハードウェア・仮想化境界で即座に遮断される。ゲストRAM（リニアメモリ）も単一の境界比較（`FastAddressCheck`）で保護されるため、ホスト側での二重のポインタ検証（`vsoc_validate_ptr` 等）は完全に不要であり、ゼロオーバーヘッドのメモリ安全性が保証される。 `{Challenge_SyscallMemorySafety}`
 
 ## 10. トラップ状態プロトコル
 <!-- traceability: {Trap_Interface} -->

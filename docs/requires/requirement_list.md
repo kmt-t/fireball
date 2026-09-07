@@ -53,7 +53,7 @@ graph LR
 | `{ROMParsing}` | WASMモジュールをRAMに展開せず、ROM上のデータを直接解析・実行する (Zero Copy Loading)。 | 高 | テスト |
 | `{MemoryBoundaryCheck}` | メモリアクセス時の境界チェックを強制し、隔離性を保証する。 | 高 | テスト |
 | `{WasmPageAlignment}` | メモリ割り当てをWASMページ単位（64KB）で行い、アドレス変換を効率化する。 | 中 | レビュー |
-| `{UnifiedAccessModel}` | 物理・共有メモリへの全アクセスをvMMIO層（PTE許可テーブル）に一本化してセキュリティを標準化する。ゲスト専用RAM（論理メモリ）はレイテンシ最優先のため`FastAddressCheck`による独立した高速境界チェック経路とし、vMMIO層の対象外とする。 | 高 | レビュー |
+| `{UnifiedAccessModel}` | 物理・共有メモリへの全アクセスをvMMIO層（PTEマッピング・unmap機構）に一本化してセキュリティを標準化する。未認可領域は unmap によりアクセス不可とし、ゲスト専用RAM（論理メモリ）はレイテンシ最優先のため`FastAddressCheck`による独立した高速境界チェック経路とし、vMMIO層の対象外とする。 | 高 | レビュー |
 | `{Wasm32Only}` | MVP命令セットのみをサポートし、64-bitアドレス空間（Wasm64）やマルチスレッド等の非組込み拡張を除外してリソースを削減する（F32/F64浮動小数点演算はサポート）。 | 高 | テスト |
 | `{FastAddressCheck}` | ゲストアドレスの境界チェックをサイズ比較の単一命令で高速化し、境界外は即座にトラップする（黙ったラップアラウンドは不可）。 | 中 | レビュー |
 | `{vMMIO_Isolation}` | vMMIO空間へのアクセスのみをデバイスI/Oとして許可し、メモリ安全性を確保する。 | 高 | テスト |
@@ -190,7 +190,7 @@ graph LR
 | `{Challenge_InterruptSafety}` | 割り込みハンドラとタスク間の競合回避と安全なウェイクアップ。 → ISRはフラグセットのみ行い、実処理はタスクコンテキストで実行する方策を採用（`platform_hal.md` `platform_hal.md`）。 | 決定済 |
 | `{Challenge_JITCacheEfficiency}` | 小規模メモリ環境におけるJITキャッシュの代謝とヒット率の最適化。 → 3面リングローテーション（Active/Warm/Oldest）と世代Cookieによる代謝方式を採用し、形式検証済み（`runtime_vsoc.md` {Safepoint_JIT_Flush}, `components/tier2_runtime/formal/vsoc_cache_coherency_model.py`）。 | 決定済 |
 | `{Challenge_WasiFdWriteLoop}` | WASI `fd_write` の実装レイヤー分離とバッファ管理。 → Shim側でベクタをループし1ベクタごとに `fireball_call` を発行する設計を採用（`system_syscall.md` {Syscall_Mapping}）。 | 決定済 |
-| `{Challenge_SyscallMemorySafety}` | ゲストメモリアクセス時のセキュリティゲート（vMMIO許可テーブル）の有効性。 → 統一vMMIOモデルの許可テーブルで十分とし、別途の `vsoc_validate_ptr` は導入しない（`system_syscall.md` {Syscall_Mapping}）。 | 決定済 |
+| `{Challenge_SyscallMemorySafety}` | ゲストメモリアクセス時のセキュリティ保護方式。 → アクセス不可な領域は仮想アドレス空間から物理的に unmap され未マッピングトラップ（`TRAP_UNREGISTERED_PAGE`）で遮断されるため、別途の `vsoc_validate_ptr` は導入しない（`system_syscall.md` {Syscall_Mapping}）。 | 決定済 |
 | `{Challenge_CoosBlockedList}` | `BLOCKED` タスクリストの管理コストとリアルタイム性のトレードオフ。 → `{ADR_EventDrivenWakeQueue}` として決定。 | 決定済 |
 | `{Challenge_CspHandoffStarvation}` | COOS の CSP Handoff 連鎖（IPCルータ含む）が特定のタスクセット間で閉じ、他タスクが実行機会を失うスターベーションリスク。緩和策は `FB_CONF_MAX_CONSECUTIVE_HANDOFFS` による連鎖の有界化。 | 検討中 |
 | `{Challenge_DebuggerResource}` | 極小メモリ環境でのデバッグ用バッファ確保とJIT併用の制約。 | 検討中 |

@@ -197,7 +197,7 @@ sequenceDiagram
 ### 6.2 メモリ制約と方策
 <!-- traceability: {MemoryIsolation} {META_ConfigurableSystem} -->
 - **目標**: ログ機能によるメモリ圧迫を防止する。
-- **方策**: `{MemoryIsolation}` `{META_ConfigurableSystem}` 独立した静的メモリプールを使用し、バッファサイズをコンパイル時に固定する。動的メモリ確保（ヒープ）は一切使用しない。
+- **方策**: `{MemoryIsolation}` `{META_ConfigurableSystem}` 独立したログ専用バッファプールを使用し、バッファサイズをコンパイル時に固定する。バッファフル時は古いログを安全に破棄し、メモリ肥大化を防止する。
 
 ### 6.3 安全性制約と方策
 <!-- traceability: {BufferedLogging} {MemoryIsolation} {META_ConfigurableSystem} -->

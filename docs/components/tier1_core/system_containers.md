@@ -46,7 +46,7 @@
   - **システム層（カーネル・仮想化基盤）**: COOS カーネル、vMMIO コントローラ、IPC ルータ、メモリマネージャ、デバッガ等のシステム基盤が常駐・運用するシステムコンテナの裏打ちストレージは、固定長システムヒープを管理する dlmalloc ベースのシステム用アロケータ（`{System_Allocator}`）から動的に切り出される。システム稼働中に発生するタスクの登録/終了、PTE マッピングの増減、チャネルの登録/破棄に対して、コンテナやエントリ単位での個別解放（`deallocate`）と断片化の自動合体・再利用を決定論的に実現する。
 
 **標準の `std::flat_map` / `std::flat_set` を採用しない理由**:
-C++23 のこれらはコンテナアダプタであり、既定の下位コンテナが `std::vector` であるため `{META_NoStdVector}` および `{GLOBAL_Policy_Memory}`（`malloc` / `new` の使用禁止）に抵触する上、動的再確保のレイテンシ揺らぎを持ち込む。本アーキテクチャでは、固定長バッファ＋`count` 追跡による決定論的かつゼロアロケーションな静的ストレージを採用する。 `{META_NoStdVector}` `{GLOBAL_Policy_Memory}` `{GLOBAL_StaticScalability}`
+C++23 のこれらはコンテナアダプタであり、既定の下位コンテナが `std::vector` であるため `{META_NoStdVector}` および `{GLOBAL_Policy_Memory}`（無制約な動的再確保に伴うレイテンシ揺らぎとメモリ断片化の排除）に抵触する。本アーキテクチャでは、用途別アロケータまたは固定長バッファ＋`count` 追跡による決定論的かつ安全なストレージを採用する。 `{META_NoStdVector}` `{GLOBAL_Policy_Memory}` `{GLOBAL_StaticScalability}`
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {Type_Vocabulary} -->
@@ -558,7 +558,7 @@ sequenceDiagram
 
 ### 6.2 メモリ制約と方策
 <!-- traceability: {GLOBAL_Policy_Memory} {META_NoStdVector} {GLOBAL_StrictMemoryLimit} {GLOBAL_StaticScalability} -->
-- **目標**: 動的メモリ確保を排除し、状態表のメモリ密度を最大化する。
+- **目標**: 無制約な動的メモリ確保を排除し、状態表のメモリ密度を最大化する。
 - **方策**: `{META_NoStdVector}` 所有型を定義せず、実体は各コンポーネントの静的配列または ROM 上の `constexpr` 配列に置く。ビューは非所有であり追加のメモリを消費しない。集合は値列を持たないため、所属判定のみが必要な表でキー列だけを確保できる。加えて `{PackedBitView}` により、2値・4値しか取らない状態表を 1/8〜1/4 のサイズで保持する。 `{GLOBAL_Policy_Memory}` `{GLOBAL_StrictMemoryLimit}` `{GLOBAL_StaticScalability}`
 
 ### 6.3 安全性制約と方策

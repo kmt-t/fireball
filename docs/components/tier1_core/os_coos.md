@@ -46,14 +46,14 @@ graph TD
     M_IF --> PRE["Memory Partition"]
 ```
 
-各サブコンポーネントおよび通信リソースは、動的メモリ確保（`malloc`/`new`）を排除するため、静的アロケータによって領域制限されたメモリ領域（MPUパーティション）に完全に配置される。 `{GLOBAL_Policy_Memory}`
+各サブコンポーネントおよび通信リソースは、専用アロケータによって領域制限されたメモリ領域（MPUパーティション）に完全に配置され、メモリ干渉を防止する。 `{GLOBAL_Policy_Memory}`
 
 ### 3.3 主要なデータ定義
 <!-- traceability: {GLOBAL_Policy_Memory} -->
 
 #### CSPチャネル（channel）
 <!-- traceability: {CSPCommunication} {GLOBAL_Policy_Memory} {ADR_RendezvousChannel} {IPC_ZeroCopy} {OwnershipTransfer} {ADR_SharedBlockRaii} -->
-タスク間の同期と通信を仲介するデータ構造。ホーアCSPの定義どおり **チャネル自身は値を保持しない**（`{ADR_RendezvousChannel}`）。送信側は相手が現れるまで自身のフレーム上で転送リソース（`shared_block` 等のムーブ専用オブジェクト）を保持したまま待機し、ランデブー成立の瞬間に所有権が受信側へ移る。動的メモリ確保を排除した `{GLOBAL_Policy_Memory}` に従い、リソースは静的プールから事前割り当てされた実体（共有メモリスライス等）の右辺値ムーブ（`&&`）によってのみ移譲される（ゼロコピー所有権移譲、`{IPC_ZeroCopy}` `{OwnershipTransfer}` `{ADR_SharedBlockRaii}`）。 `{CSPCommunication}` `{GLOBAL_Policy_Memory}` `{ADR_RendezvousChannel}`
+タスク間の同期と通信を仲介するデータ構造。ホーアCSPの定義どおり **チャネル自身は値を保持しない**（`{ADR_RendezvousChannel}`）。送信側は相手が現れるまで自身のフレーム上で転送リソース（`shared_block` 等のムーブ専用オブジェクト）を保持したまま待機し、ランデブー成立の瞬間に所有権が受信側へ移る。有界かつ安全なメモリ管理を規定する `{GLOBAL_Policy_Memory}` に従い、リソースは共有メモリアリーナから事前割り当てされた実体（共有メモリスライス等）の右辺値ムーブ（`&&`）によってのみ移譲される（ゼロコピー所有権移譲、`{IPC_ZeroCopy}` `{OwnershipTransfer}` `{ADR_SharedBlockRaii}`）。 `{CSPCommunication}` `{GLOBAL_Policy_Memory}` `{ADR_RendezvousChannel}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |

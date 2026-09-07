@@ -132,7 +132,7 @@ IPC転送のための共有メモリブロック確保は、上記の `acquire-p
 <!-- traceability: {GLOBAL_Policy_Memory} {META_FaultIsolation} {OwnershipTransfer} {PageGranularPermissionIsolation} {VmmioShmDelegation} -->
 
 ### 6.1 所有権追跡仕様
-各メモリブロックは `memory-info.owner` で割り当て元 task-id を追跡する。本コンポーネントが提供する `acquire-partition`/`acquire-slot`/`deallocate` や `RAII`/`drop` による解放は、実行時の動的ヒープ確保・解放を意味するものではなく、コンパイル時に固定確保された静的メモリプールから領域を論理的に切り出して貸し出し、使用後にプールへ返却（Placement new およびデストラクタ明示的呼び出しによるバッファ再利用）する「静的パーティショニング」を指す。 `{GLOBAL_Policy_Memory}`
+各メモリブロックは `memory-info.owner` で割り当て元 task-id を追跡する。本コンポーネントが提供する `acquire-partition`/`acquire-slot`/`deallocate` や `RAII`/`drop` による解放は、無秩序なシステム全体の野良ヒープ確保ではなく、用途別に事前確保された独立パーティション（固定長アリーナ）から専用アロケータ（`shm_allocator`, `system_allocator` 等）を用いて有界に切り出し、使用後にアリーナへ返却・合体する安全なメモリ管理を指す。 `{GLOBAL_Policy_Memory}`
 
 - **自動設定**: `acquire-partition` / `acquire-slot` / `allocate-shared` 時に呼び出し元タスクIDが自動設定される。
 - **所有者限定操作**: `deallocate`（`release-partition`/`release-slot` 相当）は所有者タスクのみが実行可能。

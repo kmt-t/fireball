@@ -11,7 +11,7 @@ Fireballは、リソース制限の厳しい小規模組み込みデバイス（
 - **Conceptベース・コンポーネントハーネス**: vSoC等の複合コンポーネントを独立したサブコンポーネントの集合体として定義し、C++20 Conceptsとハーネス構造体（`vsoc_harness`, `coos_harness`）による静的DIで結合する。仮想関数（vtable）のオーバーヘッドをゼロにする。 `{GLOBAL_ComponentHarness}` `{ConceptHarnessDI}` `{META_StaticDI}` `{ZeroRuntimeOverhead}`
 - **1ランタイム1ゲスト原則と専用バンプアロケータ**: 1つの WASM ランタイム（`vSoC`）は厳密に1つのゲストモジュールのみを担当し（`{OneRuntimeOneGuest}`）、各ランタイムが専用の固定長バンプアロケータ（`bump_allocator`）を所有する（`{Runtime_BumpAllocator}`）。モジュール内のシステムコンテナストレージはすべてこのアロケータから確保され、モジュール破棄・アンロード時にアリーナごと $O(1)$ で一括解放される。なお、JIT ネイティブコードキャッシュ（3-Bank）は MPU の W^X（ライト・実行権限排他）制御が適用された専用の実行可能セクションから専用アロケータ（`jit_code_allocator`）によって確保され、データ用バンプアロケータ（RAM/XN）とはハードウェア保護ドメインが厳格に分離される。マルチインスタンスは独立ランタイムの並行起動と CoOS IPC（CSP ランデブーおよびゼロコピー SHM 所有権移譲）により実現し、メモリと障害の完全直交分離を達成する。
 - **システムコンテナ用および共有メモリ用の dlmalloc アロケータ (`{System_Allocator}`, `{Shm_Allocator}`)**: WASM モジュール用のバンプアロケータとは独立して、カーネル・仮想化基盤（COOS, vMMIO, IPC Router, MemoryManager, Debugger 等）が常駐・運用するシステムコンテナの内部ストレージ（PTE表, チャネルテーブル, ブレークポイント等）は dlmalloc（`create_mspace_with_base`）ベースの**システム用アロケータ (`system_allocator`)** により動的確保・個別解放される。また、タスク間 IPC でゼロコピー転送される共有メモリ（MPU Region 6: `Shared Memory Buffers`）は、可変長（`size`）の要求に応じたバッファ切り出しと RAII 解放時の自動合体を提供する**SHM用アロケータ (`shm_allocator`)** により管理される。なお、タスク間メモリ保護のため、同一 4KB 物理ページ内には同一所有タスクの SHM チャンクのみが配置される（`{PageGranularPermissionIsolation}`）。
-- **静的構成**: システム構成値（バッファサイズ、タスク数、メモリ上限等）をヘッダマクロおよび `constexpr` 定数によりコンパイル時に静的確定し、実行時の動的メモリ確保や探索コストをゼロにする。 `{META_ConfigurableSystem}` `{META_Static_Resolution}`
+- **静的構成**: システム構成値（バッファサイズ、タスク数、メモリ上限等）をヘッダマクロおよび `constexpr` 定数によりコンパイル時に静的確定し、実行時のメモリ競合や探索コストを抑制する。 `{META_ConfigurableSystem}` `{META_Static_Resolution}`
 
 ---
 
@@ -361,7 +361,7 @@ sequenceDiagram
 | **通信モデル** | **同期メッセージング** | CSP ハンドオフも IPC ルータ経由も呼び出し側は応答待機。確定的な実行フロー |
 | **タスク制御** | **協調型マルチタスク** | スタックレス coroutine で RAM 削減、`co_yield` による主動的譲渡 |
 | **割り込み処理** | **イベント駆動 (ISR) + ポーリング (処理層)** | ISR は軽量通知のみ、実処理はメインループで安全に処理 |
-| **メモリ管理** | **静的割り当て優先** | 動的ヒープ（malloc/new）を原則禁止し、フラグメンテーションを完全排除 |
+| **メモリ管理** | **パーティション分離と専用アロケータ** | 用途別アリーナ（dlmalloc mspace / bump / W^X）により、メモリ隔離と有界な動的メモリ管理を両立 |
 | **依存関係解決** | **静的 DI (Harness)** | C++20 Concepts と Harness 構造体によりコンパイル時に確定 |
 | **TCB連結方式** (`{ADR_IntrusiveTcbList}`) | **侵入型リスト** | ノード確保が不要で `{GLOBAL_Policy_Memory}` に適合。設計根拠: `{ADR_IntrusiveTcbList}` |
 | **スケジューリングアルゴリズム** (`{ADR_CoosPureRoundRobin}`) | **純粋な協調型ラウンドロビン（優先度なし）** | 優先度逆転を根本排除し、`{NotRTOS}` 方針と整合。設計根拠: `{ADR_CoosPureRoundRobin}` |

@@ -204,7 +204,7 @@ sequenceDiagram
 ### 6.2 メモリ制約と方策
 <!-- traceability: {MemoryIsolation} {META_NoStdVector} -->
 - **目標**: 最小限のRAMでデバッグ機能を提供する。
-- **方策**: `{MemoryIsolation}` `{META_NoStdVector}` デバッガ専用の固定長バッファと配列を使用し、動的メモリ確保を排除する。
+- **方策**: `{MemoryIsolation}` `{META_NoStdVector}` デバッガ専用の独立バッファと配列を使用し、システム本体のメモリを圧迫しない。
 
 ### 6.3 安全性制約と方策
 <!-- traceability: {MemoryBoundaryCheck} -->

@@ -13,7 +13,7 @@ WASM ゲストのリニアメモリは、WebAssembly 標準仕様に準拠して
 
 本アーキテクチャでは、PTE（Page Table Entry）の保存にシステム全体の設計規約（`{META_FlatMapIndexed}`）に準拠した **静的ソート済み配列と、それを引く `fireball::flat_map_view`** を採用し、仮想ページ番号（VPN）から PTE へのマッピングをフラットに保持・管理する。
 
-標準の `std::flat_map` を素のまま用いない理由: C++23 の `std::flat_map` はコンテナアダプタであり、既定の下位コンテナが `std::vector` であるため、そのままでは `{META_NoStdVector}` および `{GLOBAL_Policy_Memory}`（`malloc`/`new` の使用禁止）に抵触する。本プロジェクトは表の実体を静的配列として各コンポーネントが所有し、`fireball::flat_map_view` で引く（`{META_FlatMapIndexed}` を正本とする）。 `{META_NoStdVector}` `{GLOBAL_Policy_Memory}`
+標準の `std::flat_map` を素のまま用いない理由: C++23 の `std::flat_map` はコンテナアダプタであり、既定の下位コンテナが `std::vector` であるため、そのままでは `{META_NoStdVector}` および `{GLOBAL_Policy_Memory}`（無制約な動的再確保に伴うレイテンシ揺らぎとメモリ断片化の排除）に抵触する。本プロジェクトは表の実体を用途別アロケータまたは静的配列から確保し、`fireball::flat_map_view` で引く（`{META_FlatMapIndexed}` を正本とする）。 `{META_NoStdVector}` `{GLOBAL_Policy_Memory}`
 
 FlatMap 単体での探索は $O(\log N)$（またはハッシュ探索）となるが、本アーキテクチャでは手前に **「ダイレクトマップ方式のソフトウェアTLB（16エントリ、完全 $O(1)$ キャッシュ）」** を配置する。JIT 実行やホットな共有メモリ操作などのクリティカルパスでは、大半のアクセス（目標 90% 以上）が TLB キャッシュヒット（$O(1)$）で高速解決されるため、FlatMap 化に伴うテーブル探索の遅延は十分に吸収・容認される。
 

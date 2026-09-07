@@ -68,7 +68,7 @@
 | `{GLOBAL_IndependentHeap}` | `document_structure.md` | `platform_memory.md` | 各コンポーネントが互いに独立したヒープメモリ領域を確保する設計 |
 | `{GLOBAL_InterruptWakeup}` | `document_structure.md` | `os_coos.md` | 割り込み契機による待機タスクのウェイクアップ・復帰処理 |
 | `{GLOBAL_PeriodicTask}` | `document_structure.md` | `os_coos.md` | システムティックまたはアイドルループを利用した周期実行タスク |
-| `{GLOBAL_Policy_Memory}` | `document_structure.md` | `platform_memory.md` | メモリ管理・静的割り当て・バジェットに関する横断共通ポリシー |
+| `{GLOBAL_Policy_Memory}` | `document_structure.md` | `platform_memory.md` | メモリ管理・パーティション分離・専用アロケータに関する横断共通ポリシー |
 | `{GLOBAL_StaticScalability}` | `document_structure.md` | `system_config.md` | テンプレート引数・静的定数によるコンパイル時スケーラビリティ |
 | `{GLOBAL_StrictMemoryLimit}` | `document_structure.md` | `platform_memory.md` | メモリ消費上限が厳格に制限された組み込み動作保証 |
 | `{GLOBAL_UseCpp20Coroutine}` | `document_structure.md` | `os_coos.md` | C++20 コルーチンを活用した言語組み込みコンテキストスイッチ |

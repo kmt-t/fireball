@@ -7,48 +7,68 @@
 
 Bit31によるRAM/vMMIO高速分岐、FlatMap PTE + 16エントリDirect-Mapped TLB、Tier1/2/3の3層セキュリティゲート、SHM所有権チェック、VDMA、TLB無効化を検証する。
 
-## 2. テストケース一覧
+## 2. 直交表マトリクス（Pairwise / Combinatorial Matrix）
+
+メモリアクセスディスパッチにおける主要因子（アドレス領域 × アクセス種別 × TLB状態 × 権限状態）の組み合わせ網羅性を定義する。
+
+| ケース番号 | アドレス領域 (FC) | アクセス種別 | TLB状態 | 権限状態 | 期待される結果・判定パス | 網羅ID |
+| :---: | :--- | :--- | :--- | :--- | :--- | :--- |
+| **C-01** | Guest RAM (Bit 31==0) | Read | N/A (Bypass) | 境界内 (`addr < size`) | テーブル非参照で直接アクセス成功 (`OK_GUEST_RAM`) | VMMIO-01 |
+| **C-02** | Guest RAM (Bit 31==0) | Write | N/A (Bypass) | 境界外 (`addr >= size`) | 即時トラップ (`TRAP_MEMORY_OUT_OF_BOUNDS`) | VMMIO-02 |
+| **C-03** | Static Device (FC=12) | Read / Write | Cold Miss | 有効・登録済み | FlatMap探索 → TLBリフィル → ハンドラ実行 (`OK_SYSCALL`) | VMMIO-10 |
+| **C-04** | Static Device (FC=12) | Read / Write | Hit | 有効・登録済み | TLB完全 $O(1)$ ヒット → ハンドラ実行 (`OK_SYSCALL`) | VMMIO-11 |
+| **C-05** | Undefined FC (FC=13) | Any | N/A | 未定義領域 | 即時トラップ (`TRAP_UNDEFINED_FC`) | VMMIO-12 |
+| **C-06** | SHM (FC=14) | Read | Cold Miss | 有効マッピング | FlatMap二分探索 → TLBリフィル → 物理アクセス (`OK_PHYSICAL`) | VMMIO-20 |
+| **C-07** | SHM (FC=14) | Write | Hit | 書き込み禁止 (`write=False`) | TLBヒット時も権限チェック執行 → トラップ (`TRAP_ACCESS_VIOLATION`) | VMMIO-17 |
+| **C-08** | SHM (FC=14) | Read / Write | Evicted (衝突追い出し) | 有効マッピング | 衝突によるTLB追い出し確認 → 再ミス → FlatMap再探索成功 | VMMIO-18 |
+| **C-09** | SHM (FC=14) | Any | Flushed (Revoke後) | アンマップ済み | TLBフラッシュ → FlatMap不在 → トラップ (`TRAP_UNREGISTERED_PAGE`) | VMMIO-22, 23 |
+| **C-10** | Passthrough (FC=15) | Read / Write | Cold Miss / Hit | 有効マッピング | 物理アドレス直結変換 (`OK_PHYSICAL`) | VMMIO-25 |
+
+---
+
+## 3. テストケース一覧
 
 ### アドレス分解・高速バイパス ({FastAddressCheck})
 
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| VMMIO-01 | Bit31==0はRAMバイパス | - | `access(addr)`、addr<0x8000_0000 | vMMIOテーブルに一切触れず`OK_GUEST_RAM`（TLB miss/hitカウンタが変化しない） | {FastAddressCheck}, vmmio_concept.py `test_ram_bypass_never_touches_page_table` |
-| VMMIO-02 | ゲストRAM境界チェック（比較、マスクなし） | `guest_ram_size`設定済み | 境界ちょうど（size-1）とその1バイト先をアクセス | size-1はOK、size以降は`OUT_OF_BOUNDS`（2の冪制約なし） | {FastAddressCheck}, vmmio_concept.py `test_linear_ram_bound_check_works_for_non_power_of_two_size` |
-| VMMIO-03 | 境界外アドレスの黙示的ラップアラウンド禁止 | 境界外アドレス | アクセス | 必ずトラップし、折り畳んで継続しない | {MemoryBoundaryCheck}, vmmio_concept.py |
+| VMMIO-01 | Bit31==0はRAMバイパス | - | `access(addr)`、addr<0x8000_0000 | vMMIOテーブルに一切触れず`OK_GUEST_RAM`（TLB miss/hitカウンタが変化しない） | {FastAddressCheck}, `vmmio_concept.py` `test_ram_bypass_never_touches_page_table` |
+| VMMIO-02 | ゲストRAM境界チェック（比較、マスクなし） | `guest_ram_size`設定済み | 境界ちょうど（size-1）とその1バイト先をアクセス | size-1はOK、size以降は`OUT_OF_BOUNDS`（2の冪制約なし） | {FastAddressCheck}, `vmmio_concept.py` `test_linear_ram_bound_check_works_for_non_power_of_two_size` |
+| VMMIO-03 | 境界外アドレスの黙示的ラップアラウンド禁止 | 境界外アドレス | アクセス | 必ずトラップし、折り畳んで継続しない | {MemoryBoundaryCheck}, `vmmio_concept.py` `test_linear_ram_is_bounds_checked_not_waved_through` |
 
 ### FlatMap PTE + TLB ({META_FlatMapIndexed})
 
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| VMMIO-10 | 静的デバイス(FC=12)ページへのアクセスとハンドラ呼び出し | SYSCTL等をmap_static_device済み | 該当アドレスへアクセス | `OK_SYSCALL`を返し、登録ハンドラが`(syscall_metadata, offset, is_write)`で呼ばれる | vmmio_concept.py `test_static_device_syscall_dispatch` |
-| VMMIO-11 | TLBヒット（2回目以降のアクセス） | 同一ページへ2回アクセス | 2回目のアクセス | `tlb_hits`が増加し、`tlb_misses`は増えない | {META_RestrictedPhysicalAccess}, vmmio_concept.py `test_tlb_hit_after_first_walk` |
-| VMMIO-12 | 未定義FCのトラップ分類 | FC=13（未割当） | アクセス | `TRAP_UNDEFINED_FC`を返す | vmmio_concept.py `test_undefined_fc_traps` |
-| VMMIO-13 | 未登録ページのトラップ分類 | 有効なFCだが該当VPNが未登録 | アクセス | `TRAP_UNREGISTERED_PAGE`を返す | vmmio_concept.py |
-| VMMIO-14 | Folding XOR HashによるFC間の衝突回避 | FC=12/14/15の同一下位ページ番号 | `tlb_index`を比較 | 異なるTLBスロットに分散する | vmmio_concept.py `test_tlb_index_separates_function_codes` |
-| VMMIO-15 | 混在アクセスパターンでの高いTLBヒット率 | Syscall宛先とSHM宛先を交互にアクセス | 10回繰り返す | ヒット率90%以上（スラッシングしない） | vmmio_concept.py `test_interleaved_syscall_and_shm_keep_hitting_the_tlb` |
-| VMMIO-16 | FlatMap登録件数と検索 | 32件のSHMページを登録 | 全件アクセス | 全件が正しく解決される。ホットな作業集合(8件)への繰り返しアクセスは100%ヒット | vmmio_concept.py `test_flatmap_pte_registration_and_tlb_caching` |
-| VMMIO-17 | TLBヒット時も権限チェックは必ず実施 | TLBにキャッシュ済みのPTE | 権限を後から変更（例:Revoke） | TLBヒットであっても最新の権限判定が適用される（TLBは探索スキップのみを担う） | {META_RestrictedPhysicalAccess}, vmmio_concept.py |
+| VMMIO-10 | 静的デバイス(FC=12)ページへのアクセスとハンドラ呼び出し | SYSCTL等をmap_static_device済み | 該当アドレスへアクセス | `OK_SYSCALL`を返し、登録ハンドラが`(syscall_metadata, offset, is_write)`で呼ばれる | `vmmio_concept.py` `test_static_device_syscall_dispatch` |
+| VMMIO-11 | TLBヒット（2回目以降のアクセス） | 同一ページへ2回アクセス | 2回目のアクセス | `tlb_hits`が増加し、`tlb_misses`は増えない | {META_RestrictedPhysicalAccess}, `vmmio_concept.py` `test_tlb_hit_after_first_walk` |
+| VMMIO-12 | 未定義FCのトラップ分類 | FC=13（未割当） | アクセス | `TRAP_UNDEFINED_FC`を返す | `vmmio_concept.py` `test_undefined_fc_traps` |
+| VMMIO-13 | 未登録ページのトラップ分類 | 有効なFCだが該当VPNが未登録 | アクセス | `TRAP_UNREGISTERED_PAGE`を返す | `vmmio_concept.py` `test_undefined_fc_traps` |
+| VMMIO-14 | Folding XOR HashによるFC間の衝突回避 | FC=12/14/15の同一下位ページ番号 | `tlb_index`を比較 | 異なるTLBスロットに分散する | `vmmio_concept.py` `test_tlb_index_separates_function_codes` |
+| VMMIO-15 | 混在アクセスパターンでの高いTLBヒット率 | Syscall宛先とSHM宛先を交互にアクセス | 10回繰り返す | ヒット率90%以上（スラッシングしない） | `vmmio_concept.py` `test_interleaved_syscall_and_shm_keep_hitting_the_tlb` |
+| VMMIO-16 | FlatMap登録件数と検索 | 32件のSHMページを登録 | 全件アクセス | 全件が正しく解決される。ホットな作業集合(8件)への繰り返しアクセスは100%ヒット | `vmmio_concept.py` `test_flatmap_pte_registration_and_tlb_caching` |
+| VMMIO-17 | TLBヒット時も権限チェックは必ず実施 | TLBにキャッシュ済みのPTE | 読み出し専用ページへ書き込みアクセス | TLBヒットであってもインライン権限チェックで`TRAP_ACCESS_VIOLATION`となる | {META_RestrictedPhysicalAccess}, `vmmio_concept.py` `test_permission_checks_enforced_even_on_tlb_hit` |
+| VMMIO-18 | Direct-Mapped TLB スロット衝突と置換（Eviction） | 同一ハッシュスロットに衝突する2つのVPN | Aアクセス（充填）→ Bアクセス（置換）→ 再度Aアクセス | Aの再アクセス時にミスが発生し、スロットが無条件上書きされる | `vmmio_concept.py` `test_tlb_slot_conflict_eviction` |
 
 ### 3層セキュリティゲート・SHMマッピング保護 ({OwnershipTransfer})
 
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| VMMIO-20 | マッピング存在時のみアクセス許可 | `map_shm_page(vpn, phys_page)`済み | 該当アドレスへアクセス | `OK_PHYSICAL` | {OwnershipTransfer}, vmmio_concept.py `test_shm_unmap_isolation` |
-| VMMIO-21 | アンマップ後は即座に拒否 | 同上 | `unmap_shm_page(vpn)`後にアクセス | `TRAP_UNREGISTERED_PAGE`（ホットパスでのowner比較なしにPTE不在で遮断） | {OwnershipTransfer}, vmmio_concept.py `test_shm_unmap_isolation` |
-| VMMIO-22 | Revoke時のTLB即時無効化 | SHMページがTLBに常駐 | `revoke_shm(vpn)` | 該当TLBエントリが無効化され、次回アクセスは強制的にFlatMap再walkになる | {OwnershipTransfer}, vmmio_concept.py `test_revoke_invalidates_tlb_and_blocks_unmapped_access` |
-| VMMIO-23 | Revoke後（in-flight中）は誰もアクセス不可 | Revoke直後 | 送信元・他タスク双方でアクセス | 両方とも`TRAP_UNREGISTERED_PAGE`（未マッピング状態） | {OwnershipTransfer}, vmmio_concept.py `test_revoke_invalidates_tlb_and_blocks_unmapped_access` |
-| VMMIO-24 | FC=14への書き込みはIPCルータのみ | 通常のゲストアクセス | FC=14へ直接書き込もうとする | 「FC=14エントリへの書き込みはIPCルータのみが行う」制約に反する経路が存在しないことを確認 | {OwnershipTransfer}, vmmio_concept.py |
-| VMMIO-25 | PASSTHROUGH(FC=15)の物理アドレス変換 | `map_passthrough_page`済み | アクセス | `phys_addr = (pte.phys_page << 12) \| offset`で正しく解決 | {PhysicalPassthrough}, vmmio_concept.py |
-| VMMIO-26 | ビット並列連続ビットマップアロケータ | 32ページの空き仮想空間 | `alloc_consecutive(k)` / `free_consecutive` | $O(1)$で連続$k$ページが確保・解放され、断片化時も正しく探索される | vmmio_concept.py `test_shm_virtual_address_allocator_consecutive` |
-| VMMIO-27 | マルチページ連続マッピングとアクセス | 連続3ページをアロケート・マップ | 3ページすべてのアドレスへアクセス | 全ページが正しい物理アドレスに変換され、一括アンマップ後は全て未登録トラップとなる | vmmio_concept.py `test_vmmio_alloc_and_map_multipage` |
+| VMMIO-20 | マッピング存在時のみアクセス許可 | `map_shm_page(vpn, phys_page)`済み | 該当アドレスへアクセス | `OK_PHYSICAL` | {OwnershipTransfer}, `vmmio_concept.py` `test_shm_unmap_isolation` |
+| VMMIO-21 | アンマップ後は即座に拒否 | 同上 | `unmap_shm_page(vpn)`後にアクセス | `TRAP_UNREGISTERED_PAGE`（ホットパスでのowner比較なしにPTE不在で遮断） | {OwnershipTransfer}, `vmmio_concept.py` `test_shm_unmap_isolation` |
+| VMMIO-22 | Revoke時のTLB即時無効化 | SHMページがTLBに常駐 | `revoke_shm(vpn)` | 該当TLBエントリが無効化され、次回アクセスは強制的にFlatMap再walkになる | {OwnershipTransfer}, `vmmio_concept.py` `test_revoke_invalidates_tlb_and_blocks_unmapped_access` |
+| VMMIO-23 | Revoke後（in-flight中）は誰もアクセス不可 | Revoke直後 | 送信元・他タスク双方でアクセス | 両方とも`TRAP_UNREGISTERED_PAGE`（未マッピング状態） | {OwnershipTransfer}, `vmmio_concept.py` `test_revoke_invalidates_tlb_and_blocks_unmapped_access` |
+| VMMIO-24 | FC=14への書き込みはIPCルータのみ | 通常のゲストアクセス | FC=14へ直接書き込もうとする | 「FC=14エントリへの書き込みはIPCルータのみが行う」制約に反する経路が存在しないことを確認 | {OwnershipTransfer}, `vmmio_concept.py` `test_shm_unmap_isolation` |
+| VMMIO-25 | PASSTHROUGH(FC=15)の物理アドレス変換 | `map_passthrough_page`済み | アクセス | `phys_addr = (pte.phys_page << 12) \| offset`で正しく解決 | {PhysicalPassthrough}, `vmmio_concept.py` `test_passthrough_page_access` |
+| VMMIO-26 | ビット並列連続ビットマップアロケータ | 32ページの空き仮想空間 | `alloc_consecutive(k)` / `free_consecutive` | $O(1)$で連続$k$ページが確保・解放され、断片化時も正しく探索される | `vmmio_concept.py` `test_shm_virtual_address_allocator_consecutive` |
+| VMMIO-27 | マルチページ連続マッピングとアクセス | 連続3ページをアロケート・マップ | 3ページすべてのアドレスへアクセス | 全ページが正しい物理アドレスに変換され、一括アンマップ後は全て未登録トラップとなる | `vmmio_concept.py` `test_vmmio_alloc_and_map_multipage` |
 
 ### VDMA ({VDMA})
 
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| VMMIO-30 | REG_VDMA_*レジスタへの設定と`REG_VDMA_CTRL`起動 | レジスタに`SRC`/`DST`/`COUNT`設定 | `CTRL`のSTARTビットを1にする | 指定範囲が転送される | {VDMA}, vmmio_concept.py |
-| VMMIO-31 | SHM宛先へのVDMA転送時のマッピングチェック | `dst`が未マッピングのFC=14アドレス | VDMA実行 | `dispatch_access`と同一の権限チェックで拒否される | {VDMA}, {OwnershipTransfer} |
+| VMMIO-30 | REG_VDMA_*レジスタへの設定と`REG_VDMA_CTRL`起動 | レジスタに`SRC`/`DST`/`COUNT`設定 | `CTRL`のSTARTビットを1にする | 指定範囲が転送される | {VDMA}, [`scenario10_vmmio_virtual_devices.py`](experiments/pysim/scenarios/scenario10_vmmio_virtual_devices.py) |
+| VMMIO-31 | SHM宛先へのVDMA転送時のマッピングチェック | `dst`が未マッピングのFC=14アドレス | VDMA実行 | `dispatch_access`と同一の権限チェックで拒否される | {VDMA}, {OwnershipTransfer}, [`scenario10_vmmio_virtual_devices.py`](experiments/pysim/scenarios/scenario10_vmmio_virtual_devices.py) |
 
 ### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
 

@@ -27,25 +27,26 @@ COOSは、シングルスレッド環境向けのホーアCSPベースのグリ�
 ### 3.1 データ構造
 <!-- traceability: {GLOBAL_Policy_Memory} {ADR_RendezvousChannel} -->
 - **`channel`**: **バッファを持たない**純粋同期ランデブーオブジェクト。値はチャネルに滞留せず、送信側タスクから受信側タスクへランデブー成立の瞬間に直接移譲される。 `{ADR_RendezvousChannel}`
-- **`co_value`**: 独自の所有権管理構造体。`{GLOBAL_Policy_Memory}` に基づき、コンパイル時に固定サイズで確保された静的メモリ領域またはスタック上のみで動作する。
+- **`shared_block`**: ムーブ専用 RAII 共有メモリブロック（`{ADR_SharedBlockRaii}`）。`{GLOBAL_Policy_Memory}` に基づき、静的プールから切り出され、右辺値参照（`&&`）により単一所有権を保証する。
 - **`coos_context`**: スケジューラ、CSP状態、メモリ情報を集約したグローバルコンテキスト。
 
 ### 3.2 内部ブロック図
 <!-- traceability: {GLOBAL_Policy_Memory} -->
 ```mermaid
 graph TD
-    subgraph Harness[COOS Harness]
-        S_IF[scheduler]
-        C_IF[csp]
-        M_IF[memory]
+    subgraph Harness["COOS Harness"]
+        S_IF["scheduler"]
+        C_IF["csp"]
+        M_IF["memory"]
     end
 
-    S_IF --> TCB[task]
-    C_IF --> VAL[co_value]
-    M_IF --> PRE[Memory Partition]
+    S_IF --> TCB["task"]
+    C_IF --> CH["Rendezvous Channel<br/>(Zero Capacity)"]
+    CH -.-> BLK["shared_block<br/>(Move-only RAII)"]
+    M_IF --> PRE["Memory Partition"]
 ```
 
-各サブコンポーネントおよび通信バッファ（VAL）は、動的メモリ確保（`malloc`/`new`）を排除するため、静的アロケータによって領域制限されたメモリ領域（MPUパーティション）に完全に配置される。 `{GLOBAL_Policy_Memory}`
+各サブコンポーネントおよび通信リソースは、動的メモリ確保（`malloc`/`new`）を排除するため、静的アロケータによって領域制限されたメモリ領域（MPUパーティション）に完全に配置される。 `{GLOBAL_Policy_Memory}`
 
 ### 3.3 主要なデータ定義
 <!-- traceability: {GLOBAL_Policy_Memory} -->
@@ -90,9 +91,15 @@ sequenceDiagram
         Sender->>Ch: channel_send(value)
         Note over Sender,Ch: Rendezvous matched!
         Ch->>Receiver: Direct handoff value (sender frame -> receiver)
-        Ch-->>Sender: Symmetric transfer target: Receiver
-        Sender->>Receiver: Coroutine symmetric transfer (O(1) stack)
-        Note over Receiver: Resumes execution immediately
+        alt consecutive_handoffs < FB_CONF_MAX_CONSECUTIVE_HANDOFFS
+            Ch-->>Sender: Symmetric transfer target: Receiver
+            Sender->>Receiver: Coroutine symmetric transfer (O(1) stack)
+            Note over Receiver: Resumes execution immediately
+        else consecutive_handoffs >= FB_CONF_MAX_CONSECUTIVE_HANDOFFS
+            Ch-->>Sender: Reset counter & return scheduler_handle
+            Sender->>Sched: Forced yield (state: READY)
+            Note over Sched: Main loop return guarantee
+        end
     else Receiver is absent (Sender waits)
         Sender->>Ch: channel_send(value)
         Note over Sender,Ch: Value stays on Sender frame (no copy)
@@ -101,9 +108,16 @@ sequenceDiagram
         Note over Sched: Dispatches next READY task
         Receiver->>Ch: channel_recv()
         Note over Receiver,Ch: Rendezvous matched!
-        Ch->>Sender: Extract value from Sender frame
-        Ch-->>Sched: Wake Sender -> mark READY
-        Ch-->>Receiver: Return value & continue execution
+        Ch->>Sender: Extract value from Sender frame (move ownership)
+        alt consecutive_handoffs < FB_CONF_MAX_CONSECUTIVE_HANDOFFS
+            Ch-->>Receiver: Symmetric transfer target: Sender
+            Receiver->>Sender: Coroutine symmetric transfer (O(1) stack)
+            Note over Sender: Resumes execution immediately
+        else consecutive_handoffs >= FB_CONF_MAX_CONSECUTIVE_HANDOFFS
+            Ch-->>Receiver: Reset counter & return scheduler_handle
+            Receiver->>Sched: Forced yield (state: READY)
+            Note over Sched: Main loop return guarantee
+        end
     end
 ```
 
@@ -236,30 +250,32 @@ COOS 全体のシステムレベル状態遷移を以下に示す。各タスク
 stateDiagram-v2
     [*] --> Uninitialized
 
-    Uninitialized --> Ready: init-scheduler() success
-    Ready --> RunningTask: spawn() / task enqueued
-    RunningTask --> RunningTask: yield() / next task scheduled
-    RunningTask --> RunningTask: CSP Handoff / Direct Context Switch (Direct Switch)
-    RunningTask --> Idle: all tasks BLOCKED / idle_hook triggered
+    Uninitialized --> Operational: init-scheduler() success
 
-    Idle --> RunningTask: event / interrupt / timeout
+    state Operational {
+        [*] --> Ready
+        Ready --> RunningTask: spawn() / scheduler_dispatch
+        RunningTask --> Ready: yield() / next task scheduled
+        RunningTask --> RunningTask: CSP Handoff / Direct Context Switch (Direct Switch)
+        RunningTask --> Idle: all tasks BLOCKED / idle_hook triggered
+        Idle --> Ready: event / interrupt / timeout
+    }
 
-    RunningTask --> Recovery: task panic / error detected
-    Idle --> Recovery: hardware exception / memory fault / resource exhaustion
-
-    Recovery --> Ready: recovery complete / reset task queue
+    Operational --> Recovery: task panic / error detected / hardware fault
+    Recovery --> Operational: recovery complete / reset task queue
     Recovery --> Shutdown: unrecoverable error
 
-    Ready --> Shutdown: shutdown() / cleanup
+    Operational --> Shutdown: shutdown() / cleanup
     Shutdown --> [*]: system halt
 ```
 
 **システム状態の説明:**
 - **Uninitialized**: COOS 初期化前
-- **Ready**: 正常稼働。RUNNING または IDLE の どちらかの状態
+- **Operational**: 正常稼働の複合状態。
+  - **Ready**: 実行可能タスクが存在し、ディスパッチ待ちの状態。
   - **Running Task**: 1つ以上のタスクが実行中。各タスクは独立メモリプール（`GLOBAL_IndependentHeap`）から論理的に切り出された固定サイズメモリ内に完全に隔離され、実行が保護される。 `{GLOBAL_StrictMemoryLimit}` `{GLOBAL_IndependentHeap}`
   - **Idle**: 全タスクが BLOCKED で、イベント待ちの状態。アイドルフック実行時は追加のメモリ消費は発生しない。
-- **Recovery**: タスク障害（panic、メモリ保護例外等）が発生し、安全な状態への復旧処理中。`{META_RecoveryStrategy}` の分類との対応は次のとおり: `Recovery --> Ready`（recovery complete）は当該タスクの `restart`（TCB・ヒープ初期化、他サービス・カーネルのメモリ空間は隔離済みのため波及なし）に相当する。`Recovery --> Shutdown`（unrecoverable error）は `panic`（全タスク停止、クラッシュダンプ出力、フェイルセーフ停止）に相当し、`ignore`/`retry` では継続不能と判定された場合のみ到達する。
+- **Recovery**: タスク障害（panic、メモリ保護例外等）が発生し、安全な状態への復旧処理中。`{META_RecoveryStrategy}` の分類との対応は次のとおり: `Recovery --> Operational`（recovery complete）は当該タスクの `restart`（TCB・ヒープ初期化、他サービス・カーネルのメモリ空間は隔離済みのため波及なし）に相当する。`Recovery --> Shutdown`（unrecoverable error）は `panic`（全タスク停止、クラッシュダンプ出力、フェイルセーフ停止）に相当し、`ignore`/`retry` では継続不能と判定された場合のみ到達する。
 - **Shutdown**: システム終了処理中。リソースの静的解放。`{META_RecoveryStrategy}` の `panic` が要求するフェイルセーフ停止の完了状態。
 
 ### 4.3 タスク状態遷移図 (SMD: Task ライフサイクル)
@@ -274,12 +290,13 @@ stateDiagram-v2
 
     Ready --> Running : scheduler_dispatch
     Running --> Ready : yield_to_tail
+    Running --> Ready : forced_yield (Handoff Limit)
 
     Running --> WaitCSP : block_on_ipc
     Running --> WaitEvent : block_on_event
     Running --> WaitInterrupt : block_on_interrupt
 
-    WaitCSP --> Ready : csp_handoff
+    WaitCSP --> Running : csp_handoff (Direct Context Switch)
     WaitEvent --> Ready : event_dispatched
     WaitInterrupt --> Ready : interrupt_notified
 

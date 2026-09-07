@@ -13,6 +13,10 @@ Implementation Invariants & Gotchas:
 from collections.abc import Callable
 from typing import TypedDict
 
+BACKS = [
+    "components/tier2_runtime/runtime_vmmio.md",
+]
+
 
 class TrapCode:
     OUT_OF_BOUNDS = "TRAP_MEMORY_OUT_OF_BOUNDS"
@@ -522,6 +526,71 @@ def test_vmmio_alloc_and_map_multipage() -> None:
     assert st == TrapCode.UNREGISTERED_PAGE
 
 
+def test_passthrough_page_access() -> None:
+    """VMMIO-25: PASSTHROUGH (FC=15) physical address translation."""
+    ctrl = VMMIOController()
+    ctrl.map_passthrough_page(vpn=0xF0005, phys_page=0x9ABC, read=True, write=True)
+    addr = 0xF000_5080
+    status, msg = ctrl.access(addr, is_write=False)
+    assert status == "OK_PHYSICAL"
+    expected_phys = (0x9ABC << 12) | 0x080
+    assert f"{expected_phys:#010x}" in msg
+
+
+def test_permission_checks_enforced_even_on_tlb_hit() -> None:
+    """VMMIO-17: Permission checks run unconditionally even when TLB hits."""
+    ctrl = VMMIOController()
+    # Read-only SHM page
+    ctrl.map_shm_page(vpn=0xE0005, phys_page=0x1111, read=True, write=False)
+    addr = 0xE000_5000
+    # 1. Warm up TLB with read access
+    status, _ = ctrl.access(addr, is_write=False)
+    assert status == "OK_PHYSICAL"
+    assert ctrl.tlb_hits == 0 and ctrl.tlb_misses == 1
+
+    # 2. Subsequent write access hits TLB lookup, but must be blocked by permission check
+    status, msg = ctrl.access(addr, is_write=True)
+    assert status == TrapCode.ACCESS_VIOLATION
+    assert "write not permitted" in msg
+    assert ctrl.tlb_hits == 1  # TLB lookup was a hit, but permission check caught it!
+
+
+def test_tlb_slot_conflict_eviction() -> None:
+    """Tests direct-mapped TLB eviction when two distinct VPNs hash to the same slot."""
+    ctrl = VMMIOController()
+    # Find two distinct VPNs in FC=14 that collide on the same 4-bit hash
+    vpn_a = 0xE0000
+    target_slot = ctrl.tlb_index(vpn_a)
+    vpn_b: int | None = None
+    for cand in range(1, 32):
+        cand_vpn = 0xE0000 + cand
+        if ctrl.tlb_index(cand_vpn) == target_slot:
+            vpn_b = cand_vpn
+            break
+    assert vpn_b is not None, "must find a colliding VPN within 32 pages"
+
+    ctrl.map_shm_page(vpn=vpn_a, phys_page=0x1000)
+    ctrl.map_shm_page(vpn=vpn_b, phys_page=0x2000)
+
+    # 1. Access A: Miss (slot filled with A)
+    ctrl.access(vpn_a << 12, is_write=False)
+    assert ctrl.tlb_misses == 1 and ctrl.tlb_hits == 0
+    slot_entry_a = ctrl.tlb[target_slot]
+    assert slot_entry_a is not None and slot_entry_a["vpn"] == vpn_a
+
+    # 2. Access B: Miss (slot evicted and overwritten with B)
+    ctrl.access(vpn_b << 12, is_write=False)
+    assert ctrl.tlb_misses == 2 and ctrl.tlb_hits == 0
+    slot_entry_b = ctrl.tlb[target_slot]
+    assert slot_entry_b is not None and slot_entry_b["vpn"] == vpn_b
+
+    # 3. Access A again: Miss (because A was evicted by B)
+    ctrl.access(vpn_a << 12, is_write=False)
+    assert ctrl.tlb_misses == 3 and ctrl.tlb_hits == 0
+    slot_entry_re_a = ctrl.tlb[target_slot]
+    assert slot_entry_re_a is not None and slot_entry_re_a["vpn"] == vpn_a
+
+
 if __name__ == "__main__":
     test_ram_bypass_never_touches_page_table()
     test_static_device_syscall_dispatch()
@@ -536,4 +605,7 @@ if __name__ == "__main__":
     test_flatmap_pte_registration_and_tlb_caching()
     test_shm_virtual_address_allocator_consecutive()
     test_vmmio_alloc_and_map_multipage()
+    test_passthrough_page_access()
+    test_permission_checks_enforced_even_on_tlb_hit()
+    test_tlb_slot_conflict_eviction()
     print("[PASS] All vMMIO concept tests passed successfully.")

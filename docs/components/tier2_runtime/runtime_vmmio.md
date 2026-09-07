@@ -1,6 +1,6 @@
 # vMMIO コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}
 <!-- evidence:
-     formal: formal/vsoc_state_model.py
+     formal: formal/vmmio_mapping_model.py
      concept: concepts/vmmio_concept.py
      test: tests/runtime_vmmio_test_spec.md
 -->
@@ -67,25 +67,27 @@ graph TD
         FlatMap["vmmio_ptes (FlatMap)<br/>Key: VPN -> Value: PTE"]
         TLB["Direct-Mapped TLB (16)<br/>Index = Hash(VPN) & 15"]
         Controller["VmmioController"]
+        PermGate{"Permission Check<br/>Valid, R/W"}
     end
 
     Controller -- checks addr --> Filter
-    Filter -- Bit 31 == 0 --> Bypass[Linear RAM Bypass\nTier 1 RAM Access]
+    Filter -- Bit 31 == 0 --> Bypass["Linear RAM Bypass<br/>Tier 1 RAM Access"]
     Filter -- Bit 31 == 1 --> Decoder
     Controller -- checks Cache --> TLB
-    TLB -- TLB Hit (O(1)) --> Handler["PTE Handler\n(Syscall or Phys)"]
+    TLB -- TLB Hit (O(1)) --> PermGate
     TLB -- TLB Miss --> Walk[FlatMap Lookup]
     Walk -- lookup VPN --> FlatMap
     FlatMap -- returns --> WalkResult[Resolved PTE]
     WalkResult -- refills --> TLB
-    WalkResult --> Handler
+    WalkResult --> PermGate
+    PermGate -- "Passed" --> Handler["PTE Handler<br/>(Syscall or Phys)"]
+    PermGate -- "Failed" --> Trap["Trap: Access Violation"]
 ```
 
 ### 3.3 主要なクラス・構造体・配列・定数
 <!-- traceability: {META_Static_Resolution} -->
-vMMIO
 
-#### アドレスフィールド定義 (vmmio_address)
+#### アドレスフィールド定義
 <!-- traceability: {META_Static_Resolution} -->
 32ビットゲストアドレスをフィールドに分割する。
 
@@ -97,85 +99,7 @@ vMMIO
 | VPN (Virtual Page Number) | 仮想ページ番号（FC + Syscall Metadata + Page Index を包含）。FlatMap のキーおよび TLB のマッチタグ。 | ビット[31:12]（20 bits: `raw >> 12`） |
 | Offset | 4KBページ内でのバイトオフセット。PTE 解決後に相対アドレスとして使用。 | ビット[11:0]（12 bits）、4KB |
 
-**アドレスデコード + PTE アクセス擬似コード例**:
-```python
-class VmmioAddress:
-    def __init__(self, raw: int):
-        self.raw = raw & 0xFFFFFFFF
-
-    def is_linear(self) -> bool:
-        # 最上位ビット(Bit 31)が0ならゲストRAM
-        return (self.raw & 0x80000000) == 0
-
-    def fc(self) -> int:
-        # Function Code: [31:28]
-        return (self.raw >> 28) & 0xF
-
-    def syscall_metadata(self) -> int:
-        # Syscall Metadata / Syscall ID: [27:16]
-        return (self.raw >> 16) & 0xFFF
-
-    def offset(self) -> int:
-        # Offset: [11:0]
-        return self.raw & 0xFFF
-
-    def vpn(self) -> int:
-        # 20-bit Virtual Page Number (VPN) for TLB and FlatMap Key
-        return self.raw >> 12
-
-
-def lookup_tlb(addr: VmmioAddress) -> int:
-    vpn = addr.vpn()
-    # 20-bit VPN の Folding XOR Hash（全ビットを4ビット幅に拡散）
-    tlb_idx = (vpn ^ (vpn >> 4) ^ (vpn >> 8) ^ (vpn >> 12) ^ (vpn >> 16)) & 15
-
-    if vmmio_tlb_cache[tlb_idx]["vpn"] == vpn:
-        return vmmio_tlb_cache[tlb_idx]["pte"]  # TLB Hit!
-
-    # TLB Miss: FlatMap ルックアップを実行
-    pte = vmmio_ptes.get(vpn)
-    if pte is None:
-        raise Exception("UNREGISTERED_PAGE")
-
-    # TLB をリフィル
-    vmmio_tlb_cache[tlb_idx] = {"vpn": vpn, "pte": pte}
-    return pte
-
-
-def access_vmmio(addr: VmmioAddress, is_write: bool):
-    # 1. リニアアドレスフィルタ
-    if addr.is_linear():
-        # Tier 1 ゲストRAMアクセス（vMMIOバイパス）
-        access_guest_ram(addr.raw, is_write)
-        return
-
-    # 2. TLB / ページテーブルルックアップ
-    pte = lookup_tlb(addr)
-
-    # 3. 権限チェック (PTE [11:8])
-    is_valid = (pte >> 11) & 1
-    if not is_valid:
-        raise Exception("PAGE_FAULT_INVALID")
-
-    read_allowed = (pte >> 10) & 1
-    write_allowed = (pte >> 9) & 1
-    if is_write and not write_allowed:
-        raise Exception("ACCESS_VIOLATION_WRITE")
-    if not is_write and not read_allowed:
-        raise Exception("ACCESS_VIOLATION_READ")
-
-    # 4. タイプ別アクセス実行
-    is_passthrough = (pte >> 8) & 1
-    if is_passthrough == 0:
-        # Tier 2 (Static Device) - Syscall モード
-        syscall_id = (addr.raw >> 16) & 0xFFF
-        dispatch_syscall(syscall_id, addr.offset(), is_write)
-    else:
-        # Tier 3 (SHM / PASSTHROUGH) - 物理アクセスモード（マッピング有無により保護）
-        phys_page = (pte >> 12) & 0xFFFFF
-        phys_addr = (phys_page << 12) | addr.offset()
-        access_memory(phys_addr, is_write)
-```
+アドレスデコード、TLB 探索、境界検査、および PTE 解決の実行可能なリファレンス実装は [`vmmio_concept.py`](docs/components/tier2_runtime/concepts/vmmio_concept.py) を正本とする。
 
 **アドレス分解の対応関係**
 
@@ -186,7 +110,7 @@ def access_vmmio(addr: VmmioAddress, is_write: bool):
 | `0xE000_0000` – `0xEFFF_FFFF` | 1 | 14 (`0xE`) | SHM（共有メモリ）— Tier 3 |
 | `0xF000_0000` – `0xFFFF_FFFF` | 1 | 15 (`0xF`) | PASSTHROUGH（物理アドレス直結）— Tier 3 |
 
-#### コントローラ群 (VmmioController)
+#### コントローラ群
 <!-- traceability: {META_Static_Resolution} {META_FlatMapIndexed} -->
 アドレスデコード・FlatMap PTE ルックアップ・TLBキャッシュ管理をカプセル化する。
 
@@ -195,7 +119,7 @@ def access_vmmio(addr: VmmioAddress, is_write: bool):
 | FlatMap ページテーブル | 仮想ページ番号 (VPN) → 32bit PTE のマッピング。 | `vmmio_ptes`（`fireball::flat_map_view<uint32_t, uint32_t>`） |
 | ソフトウェアTLB（グローバル） | 仮想ページ番号 (VPN) → PTE マッピングをダイレクトマップハッシュでキャッシュ。ホットパスを完全 O(1) に高速化する。 | `vmmio_tlb_cache[16]`（固定16エントリ、ハッシュ結合） |
 
-#### 静的デバイスページテーブルエントリ (vmmio_pte_static)
+#### 静的デバイスページテーブルエントリ
 <!-- traceability: {META_Static_Resolution} -->
 Static Devices (Tier 2) 向け。PTE には Device Type やパーミッションフラグ、ハンドラ情報を保持する。
 
@@ -211,7 +135,7 @@ Static Devices (Tier 2) 向け。PTE には Device Type やパーミッション
 [15:0]  Reserved
 ```
 
-#### Tier 3 ページテーブルエントリ (vmmio_pte_tier3)
+#### 第3層ページテーブルエントリ
 <!-- traceability: {META_Static_Resolution} {OwnershipTransfer} -->
 SHM (FC=14) および Passthrough (FC=15) 向け。PTE には PPN（物理ページ番号）とハードウェア保護フラグを保持する。PTE に `owner_id` フィールドは存在せず、アクセス制御は「マッピングの存在（PTE 有効）」によって完全に執行される。
 
@@ -246,7 +170,7 @@ vMMIO SHM 領域（`0xE000_0000`〜`0xE001_FFFF`、最大 32 ページ = 128KB�
 | `VmmioPteView` | `fireball::flat_map_view<uint32_t, uint32_t>` | ビュー | 二分探索索引を提供する軽量ゼロコピービュー |
 
 
-#### ハンドラ定義 (vmmio_handler)
+#### ハンドラ定義
 読み書きアクセス発生時に呼び出される関数の共通インターフェース。
 
 | 項目名 | 機能と役割 | 備考（制約、型など） |
@@ -266,7 +190,9 @@ flowchart TD
     Start(["32-bit Guest Virtual Address"]) --> CheckBit31{"Address Bit 31 == 0?"}
 
     CheckBit31 -- "Yes (Bit 31 == 0)" --> RAMBypass["VMMIO-GOTCHA-01: Guest RAM Bypass (Tier 1)"]
-    RAMBypass --> CalcRAM["Physical Address = guest_ram_base + addr"]
+    RAMBypass --> CheckRAMBounds{"addr < guest_ram_size?<br/>(FastAddressCheck CMP)"}
+    CheckRAMBounds -- "No (Out of Bounds)" --> TrapOOB(["Trap: ERR_OUT_OF_BOUNDS"])
+    CheckRAMBounds -- "Yes" --> CalcRAM["Physical Address = guest_ram_base + addr"]
     CalcRAM --> DirectAccess(["Direct O(1) Memory Access (Zero MMU Overhead)"])
 
     CheckBit31 -- "No (Bit 31 == 1)" --> ExtractVPN["Extract 20-bit VPN (raw >> 12) & Offset (raw & 0xFFF)"]
@@ -274,14 +200,18 @@ flowchart TD
     FoldingXOR --> ProbeTLB["Probe Direct-Mapped TLB at index [Hash]"]
 
     ProbeTLB --> TLBHit{"TLB Entry.vpn == VPN?"}
-    TLBHit -- "Yes (TLB Hit)" --> ExecHandler["Execute Cached PTE Handler / Offset Add (O(1))"]
+    TLBHit -- "Yes (TLB Hit)" --> CheckPermHit{"Permission Check<br/>(Valid & Read/Write Permitted?)"}
+    CheckPermHit -- "Failed" --> TrapAccessHit(["Trap: Access Violation"])
+    CheckPermHit -- "Passed" --> ExecHandler["Execute Cached PTE Handler / Offset Add (O(1))"]
     ExecHandler --> Complete(["Memory Access Completed"])
 
     TLBHit -- "No (TLB Miss)" --> FlatMapWalk["Binary Search VPN in Sorted vmmio_ptes FlatMap (O(log N))"]
     FlatMapWalk --> WalkFound{"PTE Found?"}
     WalkFound -- "No" --> Fault(["Trap: VMMIO Page Fault / Access Denied"])
     WalkFound -- "Yes" --> RefillTLB["Refill TLB Slot [Hash] with Resolved PTE"]
-    RefillTLB --> ExecHandler
+    RefillTLB --> CheckPermMiss{"Permission Check<br/>(Valid & Read/Write Permitted?)"}
+    CheckPermMiss -- "Failed" --> TrapAccessMiss(["Trap: Access Violation"])
+    CheckPermMiss -- "Passed" --> ExecHandler
 ```
 
 #### 共有メモリ権限剥奪と TLB 即時無効化（責務シーケンス図）
@@ -330,9 +260,14 @@ sequenceDiagram
     G->>C: dispatch_access(addr, buf, is_write)
     C->>C: Check Bit 31 (is_linear)
     alt Bit 31 == 0 (Linear RAM)
-        C->>H: access_guest_ram(...)
-        H-->>C: data
-        C-->>G: ok
+        C->>C: FastAddressCheck (CMP addr, mem_size)
+        alt addr >= guest_ram_size
+            C-->>G: Trap (ERR_OUT_OF_BOUNDS)
+        else addr < guest_ram_size
+            C->>H: access_guest_ram(...)
+            H-->>C: data
+            C-->>G: ok
+        end
     else Bit 31 == 1 (vMMIO Range)
         C->>C: Decode FC, VPN, Offset
         C->>T: hash_lookup(vpn)
@@ -433,10 +368,10 @@ SHM へのアクセスは **IPCルータ経由でのみ許可される**。ゲ�
 
 ```mermaid
 graph LR
-    Guest[Guest App] -- Load/Store addr=0xExxx_xxxx --> vMMIO
-    vMMIO -- FlatMap / TLB lookup --> Entry[vmmio_pte_tier3\nVALID & PPN]
-    Entry -- PTE Present & Valid --> Phys[Physical Shared Memory]
-    Entry -- PTE Absent / Unmapped --> Trap[TRAP_UNREGISTERED_PAGE]
+    Guest["Guest App"] -- "Load/Store addr=0xExxx_xxxx" --> vMMIO["vMMIO"]
+    vMMIO -- "FlatMap / TLB lookup" --> Entry["vmmio_pte_tier3<br/>VALID & PPN"]
+    Entry -- "PTE Present & Valid" --> Phys["Physical Shared Memory"]
+    Entry -- "PTE Absent / Unmapped" --> Trap["TRAP_UNREGISTERED_PAGE"]
 ```
 
 #### ライフサイクル（[`ipc_router.md`](docs/components/tier1_interface/ipc_router.md) の `{OwnershipTransfer}` に従属）
@@ -492,7 +427,7 @@ Tier 3 アクセス（FC=14/15）において毎回 FlatMap の二分探索を�
 | :--- | :--- |
 | 機能概要 | 既に定義（ROM）されている領域に対して、ホスト側のハンドラの実装アドレスを紐づける。 |
 | シグネチャ | `register-hook(hook-id: hook-category, handler-addr: mem-address) -> operation-result` |
-| 引数と役割 | `ctx`: vmmio_context<br>`hook-id`: 対象の領域カテゴリ（FC/ページ番号等の組み合わせを識別）<br>`handler-addr`: ハンドラ関数の物理アドレス |
+| 引数と役割 | `hook-id`: 対象の領域カテゴリ（FC/ページ番号等の組み合わせを識別）<br>`handler-addr`: ハンドラ関数の物理アドレス |
 | 事前条件 | `hook-id` が `fireball.wit` で定義された有効なIDであること。未登録であること。 |
 | 事後条件 | フックレジストリにエントリが追加される。 |
 | 不変条件 | アドレスマップ定義自体は変更されない。 |
@@ -505,7 +440,7 @@ Tier 3 アクセス（FC=14/15）において毎回 FlatMap の二分探索を�
 | :--- | :--- |
 | 機能概要 | vSoC 実行エンジンからトラップされたメモリアクセスを高速RAMバイパス判定し、vMMIOアドレスの場合はTLB及びFlatMapでPTEを解決しつつ権限検証の上でハンドラや物理レイヤへディスパッチする。 |
 | シグネチャ | `dispatch-access(addr: mem-address, buffer: list<u8>, is-write: bool) -> operation-result` |
-| 引数と役割 | `ctx`: vmmio_context<br>`addr`: アクセス先アドレス（vmmio_address として分解）<br>`buffer`: データバッファ (read時out, write時in)<br>`is-write`: 書き込みフラグ |
+| 引数と役割 | `addr`: アクセス先アドレス（`raw` アドレス）<br>`buffer`: データバッファ (read時out, write時in)<br>`is-write`: 書き込みフラグ |
 | 事前条件 | リニアRAMまたは vMMIO領域（制限空間内）への正常な境界内アクセスであること。 |
 | 事後条件 | 許可アドレス：ハンドラ実行完了 / メモリアクセス完了。非許可アドレス：アクセス違反トラップ。 |
 | 不変条件 | アドレスデコードおよびルックアップの結果は決定論的である。 |

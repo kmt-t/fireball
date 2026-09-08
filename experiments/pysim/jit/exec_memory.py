@@ -2,7 +2,7 @@
 experiments/pysim/jit/exec_memory.py
 Cross-platform executable memory with strict W^X (Write XOR Execute) lifecycle protection.
 Supports Windows (VirtualAlloc/VirtualProtect/VirtualFree) and Linux/POSIX (mmap/mprotect/munmap).
-Conforms strictly to docs/components/tier3_platform/platform_memory.md §9.2 and {LowLatencyJIT}.
+Conforms strictly to docs/components/tier2_runtime/runtime_memory.md §7.2 and {LowLatencyJIT}.
 """
 
 from __future__ import annotations
@@ -66,7 +66,7 @@ else:
 class ExecutableBuffer:
     """
     Owns executable memory with strict W^X (Write XOR Execute) lifecycle protection.
-        Adheres to platform_memory.md §9.2 and {LowLatencyJIT}:
+        Adheres to runtime_memory.md §7.2 and {LowLatencyJIT}:
         - begin_jit_patch(): flips protection from RO+X to RW+XN (PAGE_READWRITE / PROT_READ|PROT_WRITE)
         - commit_jit_patch(): flips protection from RW+XN back to RO+X (PAGE_EXECUTE_READ / PROT_READ|PROT_EXEC)
         - assert_no_rwx(): verifies no state ever permits both write and execution.

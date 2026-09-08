@@ -84,7 +84,7 @@ def test_sched_03_duplicate_task_id_rejected():
 
 
 # ===========================================================================
-# 3. Tier 3 Platform Memory: Partitions & SharedBlock RAII (platform_memory_test_spec.md)
+# 3. Memory Manager: Partitions & SharedBlock RAII (system_memory_test_spec.md / runtime_memory_test_spec.md)
 # ===========================================================================
 
 

@@ -108,7 +108,7 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
 - [ ] **COOS カーネル (`inc/core/os_coos.hxx`)**: スタックレス C++20 コルーチンスケジューラ、対称ハンドオフ (`COOS-GOTCHA-01`〜`03`)
 - [ ] **IPC ルータ (`inc/interface/ipc_router.hxx`)**: 3段階ルーティング、ゼロコピー CSP チャネル & RAII 所有権移譲 (`IPCR-GOTCHA-01`〜`03`)
 - [ ] **vMMIO コントローラ (`inc/runtime/vmmio.hxx`)**: 多段ダイレクトデコードページテーブル & ソフトウェア TLB (`VMMIO-GOTCHA-01`〜`03`)
-- [ ] **HAL & WASI ドライバ (`inc/platform/hal.hxx`, `inc/platform/wasi.hxx`)**: GPIO / I2C / SPI / Timer / WASI Preview 1、`HalBufferPool` (`HAL-GOTCHA-01`〜`03`)
+- [ ] **HAL & WASI ドライバ (`inc/runtime/hal.hxx`, `inc/platform/driver.hxx`, `inc/platform/wasi.hxx`)**: GPIO / I2C / SPI / Timer / WASI Preview 1、`HalBufferPool` (`HAL-GOTCHA-01`〜`03`)
 - [ ] **GDB Server (`inc/runtime/debugger.hxx`)**: GDB リモートシリアルプロトコル（RSP）サーバー、メモリ書き換え時 JIT キャッシュフラッシュ (`DBG-GOTCHA-01`〜`03`)
 
 ---

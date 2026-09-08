@@ -6,8 +6,9 @@ Implementation Invariants & Gotchas:
   completely eliminating runtime string pointers and Use-After-Free hazards.
 - LOG-GOTCHA-02: Ring buffer safely overwrites oldest entries when full, preventing
   log-induced deadlocks and preserving system availability.
-- LOG-GOTCHA-03: Log flush loops verify interrupt_pending per entry, ensuring immediate
-  preemption for high-priority external interrupts.
+- LOG-GOTCHA-03: Log flush groups entries into DMA batches and verifies interrupt_pending
+  only at batch boundaries (after each batch's dma_complete), never mid-batch, since a
+  started DMA transfer cannot be preempted.
 """
 
 from collections.abc import Callable
@@ -194,27 +195,36 @@ class Logger:
         return {"status": "SUCCESS", "detail": status}
 
     def flush(
-        self, max_batch: int = 32, interrupt_pending: Callable[[], bool] | None = None
+        self, batch_size: int = 32, interrupt_pending: Callable[[], bool] | None = None
     ) -> int:
-        """Flushes buffered logs to HAL transport during COOS idle_hook."""
-        flushed_count = 0
-        batch: list[str] = []
-        while not self.ring_buffer.is_empty() and flushed_count < max_batch:
+        """Flushes buffered logs to HAL transport during COOS idle_hook.
+
+        Entries are grouped into DMA batches of up to `batch_size`. A started DMA
+        transfer cannot be preempted, so `interrupt_pending` is checked only after
+        each batch completes (dma_complete), never while a batch is being collected
+        or transmitted (LOG-GOTCHA-03). If interrupt_pending() is true after a batch,
+        remaining entries stay buffered and control returns to the scheduler.
+        """
+        total_flushed = 0
+        while not self.ring_buffer.is_empty():
+            batch: list[str] = []
+            while not self.ring_buffer.is_empty() and len(batch) < batch_size:
+                entry = self.ring_buffer.pop()
+                if entry is None:
+                    break
+                msg = self.dictionary.format(
+                    entry.dict_offset, entry.arg0, entry.arg1, entry.arg2, entry.arg3
+                )
+                batch.append(f"[{entry.level.name}][tick:{entry.timestamp_tick}] {msg}")
+
+            if batch:
+                self.transport.start_dma(batch)
+                total_flushed += len(batch)
+
             if interrupt_pending and interrupt_pending():
                 break
-            entry = self.ring_buffer.pop()
-            if entry is None:
-                break
-            msg = self.dictionary.format(
-                entry.dict_offset, entry.arg0, entry.arg1, entry.arg2, entry.arg3
-            )
-            formatted = f"[{entry.level.name}][tick:{entry.timestamp_tick}] {msg}"
-            batch.append(formatted)
-            flushed_count += 1
 
-        if batch:
-            self.transport.start_dma(batch)
-        return flushed_count
+        return total_flushed
 
 
 # ==============================================================================
@@ -311,22 +321,25 @@ def test_logger_ipc_message_handling() -> None:
 
 
 def test_logger_flush_interruption() -> None:
+    """LOG-GOTCHA-03: interrupt_pending is checked only at batch boundaries
+    (after a batch's dma_complete), never mid-batch or per entry."""
     dictionary = LogDictionary([(0x01, "Message %d")])
     transport = MockHALTransport()
     logger = Logger(transport, dictionary, min_level=LogLevel.INFO, buffer_capacity=8)
     for i in range(4):
         logger.log_event(LogLevel.INFO, 0x01, i)
 
-    pop_count = 0
+    call_count = 0
 
     def mock_interrupt() -> bool:
-        nonlocal pop_count
-        pop_count += 1
-        return pop_count > 2
+        nonlocal call_count
+        call_count += 1
+        return True  # interrupt is already pending once the first batch completes
 
-    flushed = logger.flush(interrupt_pending=mock_interrupt)
-    assert flushed == 2
-    assert logger.ring_buffer.count == 2
+    flushed = logger.flush(batch_size=2, interrupt_pending=mock_interrupt)
+    assert flushed == 2, "only the first batch (2 entries) should be transmitted"
+    assert logger.ring_buffer.count == 2, "the second batch's entries remain buffered"
+    assert call_count == 1, "interrupt_pending must be checked once per batch, not per entry"
 
 
 def test_logger_storage_ownership_separation() -> None:

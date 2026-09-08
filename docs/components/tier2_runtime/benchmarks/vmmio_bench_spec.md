@@ -17,7 +17,7 @@ vMMIO 仮想アドレス空間（Bit 31 == 1, Stage 2/3）における、ダイ�
 | **BENCH-VMMIO-03** | TLB ミス $\to$ FlatMap 探索 & リフィル ($O(\log N)$) | 32ページ循環アクセス (TLB容量超過) | ns/walk, M ops/sec | 二分探索による安定した PTE 解決 | `{META_FlatMapIndexed}` |
 | **BENCH-VMMIO-04** | TLB 加速比 (Hit vs Miss) | TLB ヒット時間 vs FlatMap Walk 時間 | 加速倍率 (Ratio) | TLB ヒットが FlatMap walk より高速であること | [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md) `{META_RestrictedPhysicalAccess}` |
 | **BENCH-VMMIO-05** | 静的デバイス (FC=12) システムコールディスパッチ | `map_static_device` 登録済みハンドラ | ns/dispatch | ハンドラ呼出オーバーヘッドが最小であること | [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md) |
-| **BENCH-VMMIO-06** | RBAC タスク分離・所有権検証コスト | 非所有タスクからの SHM アクセス | ns/check, トラップ率 | `TRAP_OWNER_MISMATCH` を即座に検出し遮断 | `{META_RestrictedPhysicalAccess}` |
+| **BENCH-VMMIO-06** | Revoke後アクセスの未登録ページ検出コスト | Revoke（unmap）済みページへの再アクセス | ns/check, トラップ率 | `TRAP_UNREGISTERED_PAGE` を即座に検出し遮断 | `{META_RestrictedPhysicalAccess}` |
 
 ## 3. 測定手順
 
@@ -26,4 +26,4 @@ vMMIO 仮想アドレス空間（Bit 31 == 1, Stage 2/3）における、ダイ�
 2. **TLB ミス & FlatMap 探索測定**:
    - TLB 容量（16エントリ）を超える 32 ページをストライド走査し、TLB ミスに伴う FlatMap（`vmmio_ptes`）二分探索とリフィルのオーバーヘッドを計測。
 3. **セキュリティゲート測定**:
-   - `caller_task_id` 不一致の不正アクセスを投入し、PTE `owner_id` チェックによる安全なトラップ判定コストを算出。
+   - Revoke（`unmap_shm_page`）済みの SHM ページへ再アクセスを投入し、PTE 不在（マッピング解除済み）による `TRAP_UNREGISTERED_PAGE` 判定コストを算出する。PTE に `owner_id` フィールドは存在せず、アクセス制御はマッピングの存在有無のみで執行される（`runtime_vmmio.md` を正本とする）。

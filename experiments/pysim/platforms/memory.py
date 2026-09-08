@@ -516,7 +516,9 @@ class PMSAv8MPU:
 
 
 class MemoryManager:
-    """Tier 3 Consolidated Physical Memory Manager (platform_memory.md)."""
+    """Consolidated Physical Memory Manager, implementing the Tier 1 co_mem
+    contract (system_memory.md) via the Tier 2 physical realization
+    (runtime_memory.md)."""
 
     __slots__ = (
         "_page_mapping_callbacks",

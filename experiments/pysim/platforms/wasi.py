@@ -2,7 +2,7 @@
 experiments/pysim/platforms/wasi.py
 HAL = WASI 0.3p Unified Core Engine and WASI 0.1p Compatibility Adapter.
 Implements docs/components/tier1_interface/interface_wit.md,
-docs/components/tier3_platform/platform_hal.md, and
+docs/components/tier2_runtime/runtime_hal.md (contract) / docs/components/tier3_platform/platform_driver.md (impl), and
 docs/specs/wasi_preview1_abi.md.
 
 - WASI 0.3p (Core): URI-based dynamic interface resolver (resolver.get-interface),
@@ -22,7 +22,6 @@ from dataclasses import dataclass
 from enum import IntEnum
 
 from hal import (
-    ARG_BUFFER_HANDLE,
     ARG_CLOCK_HZ,
     ARG_EDGE_TYPE,
     ARG_FD,
@@ -33,10 +32,11 @@ from hal import (
     ARG_OFFSET,
     ARG_PIN_NO,
     ARG_QUERY_CMD_ID,
-    ARG_RX_BUF_HANDLE,
+    ARG_RX_SHM_HANDLE,
+    ARG_SHM_HANDLE,
     ARG_SLAVE_ADDR,
     ARG_TASK_ID,
-    ARG_TX_BUF_HANDLE,
+    ARG_TX_SHM_HANDLE,
     ARG_VAL,
 )
 from loader import fnv1a_32
@@ -51,8 +51,8 @@ class WasiIpcCmd(IntEnum):
     # Common Capability Query
     QUERY_CAPS = 0x00
     # Stream (0x01..0x04)
-    STREAM_WRITE_BUFFER = 0x01
-    STREAM_READ_BUFFER = 0x02
+    STREAM_WRITE_SHM = 0x01
+    STREAM_READ_SHM = 0x02
     STREAM_FLUSH = 0x03
     STREAM_CLOSE = 0x04
     # Clock / Timer (0x10..0x12)
@@ -65,7 +65,7 @@ class WasiIpcCmd(IntEnum):
     GPIO_CONFIG_PIN = 0x22
     GPIO_SUBSCRIBE_EDGE = 0x23
     # Bus (0x30..0x31)
-    BUS_TRANSFER_BUFFER = 0x30
+    BUS_TRANSFER_SHM = 0x30
     BUS_CONFIG = 0x31
     # Poll (0x40..0x41)
     POLL_CHECK = 0x40
@@ -80,7 +80,7 @@ class WasiInterfaceVTable:
     """
     One URI's set of WASI 0.3p operations as a fixed-shape struct of
     function-pointer fields -- the C++ analogue of a struct-of-function-
-    pointers vtable. A command *name* ("write-buffer", "get-now", ...) is not
+    pointers vtable. A command *name* ("write-shm", "get-now", ...) is not
     a URI and not log output, so under the POD rule it cannot be a string
     dict key; each name instead becomes one statically-named field,
     resolved at compile time exactly like C++ member access. Unpopulated
@@ -91,8 +91,8 @@ class WasiInterfaceVTable:
     write: Callable[..., object] | None = None
     read: Callable[..., object] | None = None
     close: Callable[..., object] | None = None
-    write_buffer: Callable[..., object] | None = None
-    read_buffer: Callable[..., object] | None = None
+    write_shm: Callable[..., object] | None = None
+    read_shm: Callable[..., object] | None = None
     flush: Callable[..., object] | None = None
     get_now: Callable[..., object] | None = None
     get_resolution: Callable[..., object] | None = None
@@ -102,13 +102,13 @@ class WasiInterfaceVTable:
     config_pin: Callable[..., object] | None = None
     subscribe_edge: Callable[..., object] | None = None
     transfer: Callable[..., object] | None = None
-    transfer_buffer: Callable[..., object] | None = None
+    transfer_shm: Callable[..., object] | None = None
     config: Callable[..., object] | None = None
     log: Callable[..., object] | None = None
 
 
 class Wasi03pEngine:
-    """WASI 0.3p Core Engine providing Hierarchical URI Resolution, IPC Command Dispatch, and HAL Buffer Pool."""
+    """WASI 0.3p Core Engine providing Hierarchical URI Resolution, IPC Command Dispatch, and SHM."""
 
     def __init__(self, sysv: System):
         self.sysv = sysv
@@ -127,8 +127,8 @@ class Wasi03pEngine:
             write=self._stream_write,
             read=self._stream_read,
             close=self._stream_close,
-            write_buffer=self._write_buffer,
-            read_buffer=self._read_buffer,
+            write_shm=self._write_shm,
+            read_shm=self._read_shm,
             flush=lambda: 0,
         )
         timer_iface = WasiInterfaceVTable(
@@ -138,7 +138,7 @@ class Wasi03pEngine:
         )
         console_iface = WasiInterfaceVTable(
             write=self._console_write,
-            write_buffer=self._write_buffer,
+            write_shm=self._write_shm,
         )
         gpio_iface = WasiInterfaceVTable(
             set_pin=lambda pin, val: self.sysv.transport.write(f"[GPIO:{pin}={val}]".encode()),
@@ -148,7 +148,7 @@ class Wasi03pEngine:
         )
         bus_iface = WasiInterfaceVTable(
             transfer=lambda tx, rx: len(tx),
-            transfer_buffer=self._transfer_buffer,
+            transfer_shm=self._transfer_shm,
             config=lambda clock_hz, addr, mode: 0,
         )
         logger_iface = WasiInterfaceVTable(
@@ -185,7 +185,7 @@ class Wasi03pEngine:
     def dispatch_command(self, uri: str, cmd_id: int, params: FlatMapView) -> object:
         """
         Dispatches a WASI 0.3p IPC Driver Command to the resolved device
-        interface. Matches platform_hal.md §5.1's `control(id, cmd, params:
+        interface. Matches runtime_hal.md §5.1's `control(id, cmd, params:
         ipc-message)`: `params` is always a FlatMapView over packed kv_pair
         keys (ipc_router.md §3.3) -- one statically-typed argument, no
         runtime inspection of what was passed.
@@ -204,8 +204,8 @@ class Wasi03pEngine:
             if target_cmd == WasiIpcCmd.QUERY_CAPS:
                 return 1
             # Check Stream Capabilities
-            if target_cmd in (WasiIpcCmd.STREAM_WRITE_BUFFER, WasiIpcCmd.STREAM_READ_BUFFER):
-                return 1 if (iface.write_buffer is not None or iface.read_buffer is not None) else 0
+            if target_cmd in (WasiIpcCmd.STREAM_WRITE_SHM, WasiIpcCmd.STREAM_READ_SHM):
+                return 1 if (iface.write_shm is not None or iface.read_shm is not None) else 0
             # Check Clock Capabilities
             if target_cmd in (
                 WasiIpcCmd.CLOCK_GET_NOW,
@@ -222,30 +222,30 @@ class Wasi03pEngine:
             ):
                 return 1 if iface.set_pin is not None else 0
             # Check Bus Capabilities
-            if target_cmd in (WasiIpcCmd.BUS_TRANSFER_BUFFER, WasiIpcCmd.BUS_CONFIG):
-                return 1 if iface.transfer_buffer is not None else 0
+            if target_cmd in (WasiIpcCmd.BUS_TRANSFER_SHM, WasiIpcCmd.BUS_CONFIG):
+                return 1 if iface.transfer_shm is not None else 0
             # Check Poll Capabilities
             if target_cmd in (WasiIpcCmd.POLL_CHECK, WasiIpcCmd.POLL_WAIT):
                 return 1
             return 0
 
         # 1. Stream Commands
-        if cmd_id == WasiIpcCmd.STREAM_WRITE_BUFFER:
-            if iface.write_buffer is None:
+        if cmd_id == WasiIpcCmd.STREAM_WRITE_SHM:
+            if iface.write_shm is None:
                 return 0
             task_id = _get_val(ARG_TASK_ID, 1)
-            handle = _get_val(ARG_BUFFER_HANDLE)
+            handle = _get_val(ARG_SHM_HANDLE)
             offset = _get_val(ARG_OFFSET, 0)
             length = _get_val(ARG_LENGTH, 0)
-            return iface.write_buffer(task_id, handle, offset, length)
-        elif cmd_id == WasiIpcCmd.STREAM_READ_BUFFER:
-            if iface.read_buffer is None:
+            return iface.write_shm(task_id, handle, offset, length)
+        elif cmd_id == WasiIpcCmd.STREAM_READ_SHM:
+            if iface.read_shm is None:
                 return 0
             task_id = _get_val(ARG_TASK_ID, 1)
-            handle = _get_val(ARG_BUFFER_HANDLE)
+            handle = _get_val(ARG_SHM_HANDLE)
             offset = _get_val(ARG_OFFSET, 0)
             max_len = _get_val(ARG_MAX_LEN, 0)
-            return iface.read_buffer(task_id, handle, offset, max_len)
+            return iface.read_shm(task_id, handle, offset, max_len)
         elif cmd_id == WasiIpcCmd.STREAM_FLUSH:
             return iface.flush() if iface.flush is not None else 0
         elif cmd_id == WasiIpcCmd.STREAM_CLOSE:
@@ -280,11 +280,11 @@ class Wasi03pEngine:
             return iface.subscribe_edge(_get_val(ARG_PIN_NO, 0), _get_val(ARG_EDGE_TYPE, 0))
 
         # 4. Bus Commands
-        elif cmd_id == WasiIpcCmd.BUS_TRANSFER_BUFFER:
-            if iface.transfer_buffer is None:
+        elif cmd_id == WasiIpcCmd.BUS_TRANSFER_SHM:
+            if iface.transfer_shm is None:
                 return None
-            return iface.transfer_buffer(
-                _get_val(ARG_TX_BUF_HANDLE), _get_val(ARG_RX_BUF_HANDLE), _get_val(ARG_LENGTH, 0)
+            return iface.transfer_shm(
+                _get_val(ARG_TX_SHM_HANDLE), _get_val(ARG_RX_SHM_HANDLE), _get_val(ARG_LENGTH, 0)
             )
         elif cmd_id == WasiIpcCmd.BUS_CONFIG:
             if iface.config is None:
@@ -303,7 +303,7 @@ class Wasi03pEngine:
 
     def send_ipc_command(self, uri: str, cmd_id: int, params: FlatMapView) -> object:
         """
-        Sends an IPC Driver Command to the HAL Server Task via IPCRouter ({platform_hal.md}).
+        Sends an IPC Driver Command to the HAL Server Task via IPCRouter ({runtime_hal.md}).
         HAL operates as a distinct task and communicates strictly over IPC rendezvous.
         """
         from hal import make_hal_ipc_message
@@ -341,20 +341,20 @@ class Wasi03pEngine:
     def _stream_close(self, fd: int) -> int:
         return 0
 
-    def _write_buffer(self, task_id: int, handle: object, offset: int, length: int) -> int:
-        """Writes data from HAL buffer (vMMIO DYNAMIC) to device transport."""
+    def _write_shm(self, task_id: int, handle: object, offset: int, length: int) -> int:
+        """Writes data from shared memory (FC=14) to device transport."""
         if not self.sysv.pool.can_view(task_id, handle, offset, length):
             return 0
         view = self.sysv.pool.view(task_id, handle, offset, length)
         self.sysv.transport.write(bytes(view))
         return len(view)
 
-    def _read_buffer(self, task_id: int, handle: object, offset: int, max_len: int) -> int:
-        """Reads data from device transport into HAL buffer (vMMIO DYNAMIC)."""
+    def _read_shm(self, task_id: int, handle: object, offset: int, max_len: int) -> int:
+        """Reads data from device transport into shared memory (FC=14)."""
         return 0
 
-    def _transfer_buffer(self, tx_handle: object, rx_handle: object, length: int) -> int:
-        """Transfers data between HAL buffers via DMA/Bus."""
+    def _transfer_shm(self, tx_handle: object, rx_handle: object, length: int) -> int:
+        """Transfers data between shared memory buffers via DMA/Bus."""
         return length
 
     def _clock_get_now(self) -> int:

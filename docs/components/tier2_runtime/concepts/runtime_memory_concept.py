@@ -1,6 +1,8 @@
 """
-docs/components/tier3_platform/concepts/platform_memory_concept.py
-Reference Concept Implementation & Test Suite: COOS Memory Manager
+docs/components/tier2_runtime/concepts/runtime_memory_concept.py
+Reference Concept Implementation & Test Suite: Memory Manager Implementation
+(system_allocator / shm_allocator), realizing the abstract contract defined in
+docs/components/tier1_core/system_memory.md (co_mem).
 Implementation Invariants & Gotchas:
 - MEM-GOTCHA-01: 4KB page granularity permission isolation (different tasks never share a page).
 - MEM-GOTCHA-02: Strict ownership enforcement prevents non-owners from releasing or accessing blocks.
@@ -79,7 +81,7 @@ class Result(Generic[T]):
 
 
 # -----------------------------------------------------------------------------
-# Memory Views & Handles (Tier 1 os_coos.md Contract Compliant)
+# Memory Views & Handles (system_memory.md Tier 1 co_mem Contract Compliant)
 # -----------------------------------------------------------------------------
 
 
@@ -365,7 +367,9 @@ class PMSAv8MPU:
 
 
 class MemoryManager:
-    """Tier 3 Consolidated Physical Memory Manager (platform_memory.md)."""
+    """Tier 2 physical implementation of the Tier 1 co_mem contract
+    (system_memory.md), realized via system_allocator / shm_allocator
+    (runtime_memory.md)."""
 
     def __init__(self):
         self.pool_base: int = 0
@@ -558,12 +562,12 @@ class MemoryManager:
 
 
 # -----------------------------------------------------------------------------
-# HAL Integration Wrapper (platform_hal.md §5.1 Delegation)
+# HAL Integration Wrapper (runtime_hal.md §5.1 Delegation)
 # -----------------------------------------------------------------------------
 
 
 class HALBufferManager:
-    """Simulates platform_hal.md acquire_buffer delegating to allocate_shared."""
+    """Simulates runtime_hal.md acquire_buffer delegating to allocate_shared."""
 
     def __init__(self, memory_manager: MemoryManager):
         self.mem = memory_manager
@@ -573,7 +577,8 @@ class HALBufferManager:
 
 
 # =============================================================================
-# Test Suite: platform_memory_test_spec.md (MEM-01 ~ MEM-25)
+# Test Suite: system_memory_test_spec.md (MEM-01 ~ MEM-13, contract-level) and
+# runtime_memory_test_spec.md (MEM-14 ~ MEM-25, physical implementation)
 # =============================================================================
 
 
@@ -707,7 +712,7 @@ def test_mem_08_claim_requires_valid_shm_id() -> None:
 
 
 def test_mem_09_hal_acquire_buffer_delegates_to_allocate_shared() -> None:
-    """MEM-09: platform_hal acquire_buffer unifies with memory manager allocate_shared."""
+    """MEM-09: runtime_hal acquire_buffer unifies with memory manager allocate_shared."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     hal = HALBufferManager(mm)
@@ -891,4 +896,4 @@ if __name__ == "__main__":
     test_mem_23_rwx_state_permanently_eliminated()
     test_mem_24_transaction_batching_barrier_efficiency()
     test_mem_25_pmsav8_32byte_alignment()
-    print("[PASS] All platform memory concept tests (MEM-01 ~ MEM-25) passed successfully.")
+    print("[PASS] All runtime memory concept tests (MEM-01 ~ MEM-25) passed successfully.")

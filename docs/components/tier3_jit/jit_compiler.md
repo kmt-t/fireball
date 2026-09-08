@@ -486,7 +486,7 @@ sequenceDiagram
 - **W^X メモリ保護**: JIT パッチ書き込み時の `RW+XN` と実行時の `RO+X` の分離（`jit_cache_model.py`, `JITC-42`）。
 
 ### 7.2 テスト仕様書との連携
-本コンポーネントの単体テストケース（JITC-01〜JITC-53, JITC-GOTCHA-01〜06）は、[`jit_compiler_test_spec.md`](docs/components/tier3_jit/tests/jit_compiler_test_spec.md) を正本として定義する。なお、3面キャッシュの検索・昇格・代謝の組み合わせ直交表は、ランタイム管理のテスト仕様書 [`jit_runtime_test_spec.md`](docs/components/tier3_jit/tests/jit_runtime_test_spec.md) を正本とする。
+本コンポーネントの単体テストケース（JITC-01〜JITC-56, JITC-GOTCHA-01〜06）は、[`jit_compiler_test_spec.md`](docs/components/tier3_jit/tests/jit_compiler_test_spec.md) を正本として定義する。なお、3面キャッシュの検索・昇格・代謝の組み合わせ直交表は、ランタイム管理のテスト仕様書 [`jit_runtime_test_spec.md`](docs/components/tier3_jit/tests/jit_runtime_test_spec.md) を正本とする。
 
 ## 8. 設計判断 (ADR)
 <!-- traceability: {ADR_ScalableCodeOffset} {ADR_SafeQueuingOnHotMiss} {ADR_TosCacheAsymmetry} {JIT_LazyChaining} {JITC-GOTCHA-07} -->

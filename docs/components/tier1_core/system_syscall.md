@@ -10,14 +10,14 @@
 
 ## 2. 背景
 <!-- traceability: {UnifiedAccessModel} -->
-`fireball_call` は、vMMIOアドレス空間（[`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md) の Tier 2/3、Bit 31 == 1）に対する**代理実行ラッパー**である。直接vMMIOアドレスにアクセスできないゲスト言語のために、シングル・トラップ命令経由でホストがvMMIO操作を代行する。ゲスト専用RAM（Tier 1, Bit 31 == 0）はこの対象外であり、`FastAddressCheck` による別経路の境界チェックのみで完結する。
+`fireball_call` は、vMMIOアドレス空間（[`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md) の Stage 2/3、Bit 31 == 1）に対する**代理実行ラッパー**である。直接vMMIOアドレスにアクセスできないゲスト言語のために、シングル・トラップ命令経由でホストがvMMIO操作を代行する。ゲスト専用RAM（Stage 1, Bit 31 == 0）はこの対象外であり、`FastAddressCheck` による別経路の境界チェックのみで完結する。
 
 ```
 アクセスパスA: guest load/store(vMMIO_addr) → PTEマッピング解決 (未登録時 TRAP) → 直接物理アクセス
 アクセスパスB: guest fireball_call(id, args) → host代理 → vMMIO → PTEマッピング解決 → 直接物理アクセス
 ```
 
-vMMIOアドレス空間（Tier 2/3）に対しては、どちらのパスも最終的に統一された vMMIO ページマッピング機構（PTE / TLB）を通る。アクセス権限のない領域（他タスク所有の共有メモリや未割当領域）は仮想アドレス空間から物理的に **unmap（マッピング解除）** されており、PTE 不在として未登録ページトラップ（`TRAP_UNREGISTERED_PAGE`）により即座に遮断される。セキュリティ境界は vMMIO のマッピング存在性により 1 箇所に統一される（ゲストRAMのFastAddressCheckとは独立した別ゲート）。 `{UnifiedAccessModel}`
+vMMIOアドレス空間（Stage 2/3）に対しては、どちらのパスも最終的に統一された vMMIO ページマッピング機構（PTE / TLB）を通る。アクセス権限のない領域（他タスク所有の共有メモリや未割当領域）は仮想アドレス空間から物理的に **unmap（マッピング解除）** されており、PTE 不在として未登録ページトラップ（`TRAP_UNREGISTERED_PAGE`）により即座に遮断される。セキュリティ境界は vMMIO のマッピング存在性により 1 箇所に統一される（ゲストRAMのFastAddressCheckとは独立した別ゲート）。 `{UnifiedAccessModel}`
 
 ## 3. `fireball_call` WIT定義
 <!-- traceability: {WIT_Interface_Spec} -->

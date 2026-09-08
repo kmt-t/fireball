@@ -5,8 +5,8 @@
 -->
 
 ## 1. コンセプト
-<!-- traceability: {META_FaultIsolation} {MemoryIsolation} {IPCRouter} -->
-サービスは、WASMゲストに対してシステム機能（WASI、ロギング、HALデバイス等）を提供するコンポーネントである。IPCルータを経由したゼロコピー通信によってタスク分離を行い、障害隔離とメモリ安全性を確保する。 `{META_FaultIsolation}` `{MemoryIsolation}` `{IPCRouter}`
+<!-- traceability: {META_FaultIsolation} {MemoryIsolation} {IPCRouter} {META_ServiceIsWasmResident} -->
+**サービス（Service）とは、WASM 上で実行される常駐タスクを指す。** ロギングや HAL 等、ネイティブコードとして COOS 上に常駐する基盤機能は**サブシステム（Subsystem）**と呼び、サービスとは明確に区別する（`architecture_overview.md` §2.1 レイヤー構成表を正本とする）。サービスは、IPCルータを経由してサブシステム（WASI、ロギング、HALデバイス等）へのアクセスを仲介し、WASMゲストに対してシステム機能を提供するコンポーネントである。IPCルータを経由したゼロコピー通信によってタスク分離を行い、障害隔離とメモリ安全性を確保する。 `{META_FaultIsolation}` `{MemoryIsolation}` `{IPCRouter}`
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {IPCRouter} {URIAbstraction} -->
@@ -20,10 +20,16 @@
 ### 3.2 内部ブロック図
 ```mermaid
 graph TD
-    Guest[WASM Guest] --> IPCService[Isolated IPC Service]
-    Guest --> WASI[WASI Shim Layer]
-    IPCService --> Console[Console Logging Service]
-    WASI --> HAL[HAL Subsystem]
+    subgraph WasmLayer["WASM 実行層（サービス）"]
+        Guest[WASM Guest] --> IPCService[Isolated IPC Service]
+        Guest --> WASI[WASI Shim Layer]
+    end
+    subgraph NativeLayer["ネイティブ常駐層（サブシステム）"]
+        Logging[Logging Subsystem]
+        HAL[HAL Subsystem]
+    end
+    IPCService --> Logging
+    WASI --> HAL
 ```
 
 ### 3.3 主要なクラス・構造体・配列・定数
@@ -49,8 +55,8 @@ graph TD
 
 ### 4.1 アルゴリズム
 <!-- traceability: {META_FaultIsolation} {IPCRouter} {SelfReboot_via_Event} {ServiceSelfReboot} {FaultTolerant} -->
-- **サービス分離**: 各サービスは独立したタスクとして動作し、IPCルータを介してゼロコピーで通信する。タスク単位の障害局所化（`{META_FaultIsolation}`）と自己再起動（`{SelfReboot_via_Event}`）を組み合わせることで、単一サービスの異常終了が他サービスへ波及せず、かつ自律的に復旧するフォールトトレラント設計を実現する。 `{META_FaultIsolation}` `{FaultTolerant}`
-- **WASI呼び出し**: ゲストからのWASIシステムコールを、HALのIPCコマンドへ変換して転送する。 `{IPCRouter}`
+- **サービス分離**: 各サービスは WASM 上で実行される独立した常駐タスクとして動作し、IPCルータを介してゼロコピーで通信する。タスク単位の障害局所化（`{META_FaultIsolation}`）と自己再起動（`{SelfReboot_via_Event}`）を組み合わせることで、単一サービスの異常終了が他サービスへ波及せず、かつ自律的に復旧するフォールトトレラント設計を実現する。 `{META_FaultIsolation}` `{FaultTolerant}`
+- **WASI呼び出し**: ゲストからのWASIシステムコールを、HALサブシステムのIPCコマンドへ変換して転送する。 `{IPCRouter}`
 - **自己再起動**: 異常終了したサービスは、IPCルータまたは上位マネージャからの障害イベント通知を契機として自律的に初期化・再起動される。TCBスロットの状態をリセットし、当該サービスのみを再初期化する（他サービスやシステム全体への波及はない）。 `{SelfReboot_via_Event}` `{ServiceSelfReboot}`
 
 ### 4.2 状態遷移図
@@ -65,9 +71,10 @@ stateDiagram-v2
 ```
 
 図中の各ブロックは以下を指す：
-- **Isolated IPC Service**: IPCルータ経由で隔離実行される、WASI以外の汎用サービス（本節冒頭の「サービス」の実体）。
-- **Console Logging Service**: `system_logging.md` の内部ロガーおよび `interface_wit.md` の `console-output` リソースを介した出力を担うサービス。
-- **HAL Subsystem**: 4.3節で扱うHAL（ハードウェア抽象化層）ドライバ群全体。
+- **Isolated IPC Service**（サービス）: IPCルータ経由で隔離実行される、WASI以外の汎用サービス（本節冒頭で定義した「サービス」の実体。WASM上で実行される常駐タスクである）。
+- **WASI Shim Layer**（サービス）: ゲストの WASI 呼び出しを HAL/ロギング等のサブシステムへ中継する、WASM上で実行される常駐タスク。
+- **Logging Subsystem**（サブシステム）: `system_logging.md` の内部ロガーおよび `interface_wit.md` の `console-output` リソースを介した出力を担う、ネイティブコードとして常駐する基盤機能。サービスではない。
+- **HAL Subsystem**（サブシステム）: 4.3節で扱うHAL（ハードウェア抽象化層）ドライバ群全体。ネイティブコードとして常駐する基盤機能であり、サービスではない。
 
 WASIおよび独立アイソレーション・サービスは、起動時にそれぞれ独立した物理メモリパーティションを割り当てられ、メモリのハードウェア境界が確立される（障害伝播防止）。すべてのサービスへのアクセスおよびシステムコール呼び出しは、必ずIPCルータ（`IPCRouter`）のルックアップおよびアクセス制御チェックを経由してのみ開始される。 `{META_FaultIsolation}` `{IPCRouter}`
 
@@ -118,7 +125,7 @@ def wasi_fd_write(fd: int, iovs: std.span[WasiIov], iovs_len: int, nwritten_ptr:
     if target_channel == INVALID_CHANNEL:
         return WASI_ERRNO_BADF
 
-    # 3. メモリ境界チェック (Tier 1 セキュリティゲートへの事前検証)
+    # 3. メモリ境界チェック (Stage 1 セキュリティゲートへの事前検証)
     if not ctx.memory_bounds_check(iovs, sizeof(WasiIov) * iovs_len):
         return WASI_ERRNO_FAULT
 
@@ -138,8 +145,10 @@ def wasi_fd_write(fd: int, iovs: std.span[WasiIov], iovs_len: int, nwritten_ptr:
         msg.pairs[2] = make_kv(SCOPE_GUEST_MEM_PTR, KEY_BUFFER_ADDR, current_iov.buf)
 
         # 5. IPCルータを経由してHAL（または上位レイヤ）へ送信 (ノンブロッキング)
+        # route_message はバッファなし同期ランデブーであり、キューが存在しないため
+        # 「キュー満杯」という失敗状態は原理的に発生しない（ipc_router.md 参照）。
         res = ipc_router.route_message(ctx.task, target_channel, msg)
-        if res == ERROR_QUEUE_FULL || res == ERR_ACCESS_DENIED:
+        if res == ERR_MSG_TOO_LARGE || res == ERR_PERMISSION_DENIED:
             return WASI_ERRNO_IO # 中断
 
         # 6. 完了待機 (COOS yield)

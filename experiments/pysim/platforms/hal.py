@@ -5,7 +5,7 @@ Real (not mocked) HAL underlayer for the pysim experiment.
   in for the physical UART/ITM line. Bytes written here really cross a
   kernel-buffered duplex socket, so a full/blocked transport is an actual
   socket condition, not an in-memory flag someone forgot to flip.
-- HalBufferPool: acquire_buffer()/release_buffer() backed by a plain
+- ShmBufferPool: acquire_buffer()/release_buffer() backed by a plain
   bytearray per slot. The point being tested -- "a guest can only touch a
   buffer via a handle the pool has authorized, never via a raw pointer" --
   is a property of the *lookup discipline* (every access goes through
@@ -17,7 +17,7 @@ Real (not mocked) HAL underlayer for the pysim experiment.
 This intentionally sets aside C++ naming/type conventions and is not wired
 into the C++ build. It exists to pressure-test whether the *design* in
 docs/components/tier1_interface/interface_wit.md and
-docs/components/tier3_platform/platform_hal.md actually holds together when
+docs/components/tier2_runtime/runtime_hal.md (contract) / docs/components/tier3_platform/platform_driver.md (impl) actually holds together when
 something has to really run.
 """
 
@@ -38,14 +38,14 @@ from ipc_router import DataType, IPCMessage, IPCRouter, IpcStatus, ScopeKind, pa
 from scheduler import ChannelAction
 from system_containers import FlatMapView, FlatSetView
 
-# platform_hal.md §4.2's kv_pair command arguments: each is a packed
+# runtime_hal.md §4.2's kv_pair command arguments: each is a packed
 # (ScopeKind.FUNCTIONAL, DataType.UINT32, key_id) key per ipc_router.md §3.3,
 # never a string name -- a string key has no C++ counterpart once RTTI is
 # disabled, and the doc's argument names ("pin_no", "val", ...) are only the
 # human-readable label for a given key_id, not the wire key itself.
 ARG_CMD_ID = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=0)
 ARG_QUERY_CMD_ID = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=1)
-ARG_BUFFER_HANDLE = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=2)
+ARG_SHM_HANDLE = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=2)
 ARG_OFFSET = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=3)
 ARG_LENGTH = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=4)
 ARG_MAX_LEN = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=5)
@@ -54,8 +54,8 @@ ARG_PIN_NO = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=7)
 ARG_VAL = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=8)
 ARG_MODE = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=9)
 ARG_EDGE_TYPE = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=10)
-ARG_TX_BUF_HANDLE = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=11)
-ARG_RX_BUF_HANDLE = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=12)
+ARG_TX_SHM_HANDLE = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=11)
+ARG_RX_SHM_HANDLE = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=12)
 ARG_CLOCK_HZ = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=13)
 ARG_SLAVE_ADDR = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=14)
 ARG_TASK_ID = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=15)
@@ -66,11 +66,11 @@ class HalError(Exception):
     """Base class for HAL-level failures that must map to a recovery-strategy-category."""
 
 
-class HalBufferTrap(HalError):
+class ShmTrap(HalError):
     """
-    A guest touched a HAL buffer handle it does not own, or a slice
-    escaped the handle's acquired bounds. Mirrors runtime_vmmio.md §4.6's
-    vMMIO DYNAMIC buffer ownership trap -- a real MMU/MPU would fault here.
+    A guest touched a shared-memory handle it does not own, or a slice
+        escaped the handle's acquired bounds. Mirrors runtime_vmmio.md 4.6's
+        vMMIO PTE ownership trap -- a real MMU would fault here.
     """
 
 
@@ -123,7 +123,7 @@ class UartTransport:
 
 
 # ---------------------------------------------------------------------------
-# HAL buffer pool (the HAL / vMMIO DYNAMIC buffer region)
+# Shared-memory buffer pool (the HAL / vMMIO SHM region)
 # ---------------------------------------------------------------------------
 
 FB_CONF_HAL_BUFFER_SIZE = 256  # docs/components/tier1_core/system_config.md 3.3.3
@@ -131,13 +131,13 @@ FB_CONF_HAL_MAX_BUFFERS = 4  # docs/components/tier1_core/system_config.md 3.3.3
 
 
 @dataclass
-class HalBufferHandle:
+class ShmHandle:
     """
     What acquire_buffer() actually returns: an opaque *name*, not a
-    pointer. Handing this value to code running as a different owner is
-    meaningless -- there is no address inside it that could be dereferenced
-    as guest linear memory, only a lookup key the pool checks against an
-    owner table before it will hand back a byte.
+        pointer. Handing this value to code running as a different owner is
+        meaningless -- there is no address inside it that could be dereferenced
+        as guest linear memory, only a lookup key the pool checks against an
+        owner table before it will hand back a byte.
     """
 
     name: str
@@ -146,17 +146,17 @@ class HalBufferHandle:
     _storage: bytearray = field(repr=False, compare=False)
 
 
-class HalBufferPool:
+class ShmBufferPool:
     """
     `acquire_buffer()` backed by FB_CONF_HAL_MAX_BUFFERS fixed-size slots
-    of at most FB_CONF_HAL_BUFFER_SIZE bytes each: a static pool, not a
-    dynamic allocator (platform_hal.md 5.1's "静的固定長バッファプール").
+        of at most FB_CONF_HAL_BUFFER_SIZE bytes each: a static pool, not a
+        dynamic allocator (runtime_hal.md 5.1's "静的固定長バッファプール").
     """
 
     def __init__(self):
-        self._slots: list[HalBufferHandle | None] = [None] * FB_CONF_HAL_MAX_BUFFERS
+        self._slots: list[ShmHandle | None] = [None] * FB_CONF_HAL_MAX_BUFFERS
 
-    def acquire_buffer(self, task_id: int, size: int) -> HalBufferHandle:
+    def acquire_buffer(self, task_id: int, size: int) -> ShmHandle:
         if size <= 0 or size > FB_CONF_HAL_BUFFER_SIZE:
             raise ValueError(
                 f"acquire_buffer(size={size}) exceeds FB_CONF_HAL_BUFFER_SIZE={FB_CONF_HAL_BUFFER_SIZE}"
@@ -169,39 +169,39 @@ class HalBufferPool:
                 break
         if slot_idx < 0:
             raise HalError("HAL buffer pool exhausted (FB_CONF_HAL_MAX_BUFFERS)")
-        name = f"fb_buf_{uuid.uuid4().hex[:12]}"
-        handle = HalBufferHandle(name=name, owner_task=task_id, capacity=size, _storage=bytearray(size))
+        name = f"fb_shm_{uuid.uuid4().hex[:12]}"
+        handle = ShmHandle(name=name, owner_task=task_id, capacity=size, _storage=bytearray(size))
         self._slots[slot_idx] = handle
         return handle
 
-    def release_buffer(self, task_id: int, handle: HalBufferHandle) -> None:
+    def release_buffer(self, task_id: int, handle: ShmHandle) -> None:
         for i, s in enumerate(self._slots):
             if s is not None and s.name == handle.name:
                 if s.owner_task != task_id:
-                    raise HalBufferTrap(f"task {task_id} cannot release {handle.name}: not the owner")
+                    raise ShmTrap(f"task {task_id} cannot release {handle.name}: not the owner")
                 self._slots[i] = None
                 return
-        raise HalBufferTrap(f"task {task_id} cannot release {handle.name}: not found")
+        raise ShmTrap(f"task {task_id} cannot release {handle.name}: not found")
 
-    def _resolve(self, task_id: int, handle: HalBufferHandle) -> HalBufferHandle:
+    def _resolve(self, task_id: int, handle: ShmHandle) -> ShmHandle:
         for s in self._slots:
             if s is not None and s.name == handle.name:
                 if s.owner_task != task_id:
-                    raise HalBufferTrap(
+                    raise ShmTrap(
                         f"task {task_id} does not own {handle.name} (owner={s.owner_task}); "
                         "no linear-memory pointer would ever bypass this check"
                     )
                 return s
-        raise HalBufferTrap(f"handle {handle.name} does not exist (stale, or never acquired)")
+        raise ShmTrap(f"handle {handle.name} does not exist (stale, or never acquired)")
 
     def close_all(self) -> None:
         for i in range(len(self._slots)):
             self._slots[i] = None
 
-    def can_view(self, task_id: int, handle: HalBufferHandle, offset: int, length: int) -> bool:
+    def can_view(self, task_id: int, handle: ShmHandle, offset: int, length: int) -> bool:
         """
         Non-throwing precondition check for view(): same ownership/bounds
-        rules, but a bool return instead of raising HalBufferTrap, for callers
+        rules, but a bool return instead of raising ShmTrap, for callers
         that must not depend on catching an exception (exceptions disabled
         in the target C++ build).
         """
@@ -212,17 +212,17 @@ class HalBufferPool:
                 return 0 <= offset and 0 <= length and offset + length <= s.capacity
         return False
 
-    def view(self, task_id: int, handle: HalBufferHandle, offset: int, length: int) -> memoryview:
+    def view(self, task_id: int, handle: ShmHandle, offset: int, length: int) -> memoryview:
         """
         Resolves a bounds-checked (offset, length) window inside `handle`.
-        This is what interface_wit.md §5.3's `hal-buffer-slice{handle, offset, len}`
-        actually resolves to at the HAL layer.
+                This is what interface_wit.md 5.3's `shm-slice{handle, offset, len}`
+                actually resolves to at the HAL layer.
         """
 
         record = self._resolve(task_id, handle)
         if offset < 0 or length < 0 or offset + length > record.capacity:
-            raise HalBufferTrap(
-                f"hal-buffer-slice(offset={offset}, len={length}) escapes {handle.name}'s "
+            raise ShmTrap(
+                f"shm-slice(offset={offset}, len={length}) escapes {handle.name}'s "
                 f"acquired capacity ({record.capacity} bytes)"
             )
         return memoryview(record._storage)[offset : offset + length]
@@ -254,7 +254,7 @@ class Timer:
 class HalDriver:
     """
     Base class for HAL device drivers supporting WASI 0.3p IPC Commands.
-    Matches platform_hal.md §5.1's `control(id, cmd, params: ipc-message)`:
+    Matches runtime_hal.md §5.1's `control(id, cmd, params: ipc-message)`:
     exactly one statically-typed params argument, always a FlatMapView over
     packed kv_pair keys (ipc_router.md §3.3) -- no kwargs escape hatch, no
     runtime inspection of what was passed (C++ has neither RTTI nor
@@ -284,7 +284,7 @@ class HalDriver:
 
 
 class DummyUartDriver(HalDriver):
-    """Dummy UART Driver supporting Stream Read/Write via HAL Buffer Pool."""
+    """Dummy UART Driver supporting Stream Read/Write via SHM."""
 
     def __init__(
         self, uri: str = "fireball://device/uart/0", transport: UartTransport | None = None
@@ -292,8 +292,8 @@ class DummyUartDriver(HalDriver):
         super().__init__(
             uri,
             supported_commands=(
-                0x01,  # CMD_STREAM_WRITE_BUFFER
-                0x02,  # CMD_STREAM_READ_BUFFER
+                0x01,  # CMD_STREAM_WRITE_SHM
+                0x02,  # CMD_STREAM_READ_SHM
                 0x03,  # CMD_STREAM_FLUSH
                 0x04,  # CMD_STREAM_CLOSE
             ),
@@ -301,13 +301,13 @@ class DummyUartDriver(HalDriver):
         self.transport = transport or UartTransport()
 
     def _handle_command(self, cmd_id: int, params: FlatMapView) -> object:
-        if cmd_id == 0x01:  # STREAM_WRITE_BUFFER
-            # platform_hal.md §4.2: buffer_handle/offset/len resolve a zero-copy
-            # HAL buffer slice; this dummy has no pool reference to resolve one
+        if cmd_id == 0x01:  # STREAM_WRITE_SHM
+            # runtime_hal.md §4.2: shm_handle/offset/len resolve a zero-copy
+            # SHM slice; this dummy has no pool reference to resolve one
             # against, so it stands in with the slice length only.
             length = params.find(ARG_LENGTH)
             return 0 if length is None else length
-        elif cmd_id == 0x02:  # STREAM_READ_BUFFER
+        elif cmd_id == 0x02:  # STREAM_READ_SHM
             return self.transport.drain()
         elif cmd_id in (0x03, 0x04):
             return 0
@@ -317,7 +317,7 @@ class DummyUartDriver(HalDriver):
 class DummyGpioDriver(HalDriver):
     """Dummy GPIO Driver supporting Pin R/W, Configuration, and Edge IRQ."""
 
-    # platform_hal.md doesn't fix a pin count; a real MCU GPIO port is a
+    # runtime_hal.md doesn't fix a pin count; a real MCU GPIO port is a
     # small, bounded set, so a fixed-size array (not a dict) models it.
     _MAX_PINS = 64
 
@@ -374,19 +374,19 @@ class DummyTimerDriver(HalDriver):
 
 
 class DummyBusDriver(HalDriver):
-    """Dummy I2C/SPI Bus Driver supporting Zero-Copy HAL Buffer Transfer."""
+    """Dummy I2C/SPI Bus Driver supporting Zero-Copy SHM Transfer."""
 
     def __init__(self, uri: str = "fireball://device/i2c/0"):
         super().__init__(
             uri,
             supported_commands=(
-                0x30,  # CMD_BUS_TRANSFER_BUFFER
+                0x30,  # CMD_BUS_TRANSFER_SHM
                 0x31,  # CMD_BUS_CONFIG
             ),
         )
 
     def _handle_command(self, cmd_id: int, params: FlatMapView) -> object:
-        if cmd_id == 0x30:  # BUS_TRANSFER_BUFFER
+        if cmd_id == 0x30:  # BUS_TRANSFER_SHM
             return params.find(ARG_LENGTH) or 0
         elif cmd_id == 0x31:  # BUS_CONFIG
             return 0
@@ -398,7 +398,7 @@ ARG_RESULT = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=0xFF)
 
 class HalTask:
     """
-    COOS Task for the Hardware Abstraction Layer ({META_3TierSeparation}, {platform_hal.md}).
+    COOS Task for the Hardware Abstraction Layer ({META_3TierSeparation}, {runtime_hal.md}).
     HAL operates as an independent cooperative task on COOS.
     All communications with HAL (from Runtime, Debugger, Core Services) occur
     strictly via IPC messages across CSP rendezvous channels.

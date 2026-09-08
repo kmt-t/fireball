@@ -17,7 +17,7 @@
 | SVC-04 | 無効なfdは`WASI_ERRNO_BADF` | `resolve_wasi_fd_to_channel`が`INVALID_CHANNEL`を返す | 同上 | `WASI_ERRNO_BADF`を返す | - |
 | SVC-05 | ゲストメモリ境界チェック（iovs自体） | iovsポインタが範囲外 | 同上 | `WASI_ERRNO_FAULT` | - |
 | SVC-06 | ゲストメモリ境界チェック（各iovの`buf`） | 個々のbufが範囲外 | 同上 | `WASI_ERRNO_FAULT` | - |
-| SVC-07 | キュー満杯/アクセス拒否時の中断 | `route_message`が`ERROR_QUEUE_FULL`または`ERR_ACCESS_DENIED` | 同上 | `WASI_ERRNO_IO`を返し中断する | - |
+| SVC-07 | メッセージ超過/アクセス拒否時の中断 | `route_message`が`ERR_MSG_TOO_LARGE`または`ERR_PERMISSION_DENIED`を返す（ipc_router.mdはキューを持たないため「キュー満杯」は発生しない） | 同上 | `WASI_ERRNO_IO`を返し中断する | - |
 | SVC-08 | 完了待機（co_yield相当のサスペンド） | 正常送信後 | `wait_for_ipc_response`相当 | HALからの完了通知までタスクがサスペンドする（同期I/Oの模倣） | - |
 | SVC-09 | サービス障害の自己再起動 | サービスが異常終了 | 障害イベント通知 | TCBスロットがリセットされ、当該サービスのみ再初期化される（他サービス波及なし） | 「自己再起動」`{SelfReboot_via_Event}` |
 | SVC-10 | メッセージ形式のヘッダ/ペイロード分離 | - | メッセージ構築 | `arg0`=コマンドID, `arg1`=リカバリー戦略カテゴリ, `arg2`〜`arg5`=固有引数 | - |
@@ -29,4 +29,4 @@
 ## 4. 未検証・スコープ外
 
 - `service_load_result_t`のC++列挙型そのもの。
-- 物理メモリパーティション分離の実効性（`platform_memory.md`側）。
+- 物理メモリパーティション分離の実効性（`system_memory.md`/`runtime_memory.md`側）。

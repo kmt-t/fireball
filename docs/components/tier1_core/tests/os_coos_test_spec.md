@@ -54,5 +54,5 @@
 
 ## 4. 未検証・スコープ外
 
-- `co_mem`（メモリパーティション貸与）はこの仕様書の対象外（platform_memory.md側）。
+- `co_mem`（メモリパーティション貸与）はこの仕様書の対象外（`system_memory.md`/`runtime_memory.md`側）。
 - C++20コルーチンの対称遷移そのもののレイテンシ特性は `../benchmarks/direct_context_switch_bench.py` が正本。

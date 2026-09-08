@@ -71,7 +71,7 @@ graph TD
     end
 
     Controller -- checks addr --> Filter
-    Filter -- Bit 31 == 0 --> Bypass["Linear RAM Bypass<br/>Tier 1 RAM Access"]
+    Filter -- Bit 31 == 0 --> Bypass["Linear RAM Bypass<br/>Stage 1 RAM Access"]
     Filter -- Bit 31 == 1 --> Decoder
     Controller -- checks Cache --> TLB
     TLB -- TLB Hit (O(1)) --> PermGate
@@ -93,7 +93,7 @@ graph TD
 
 | 項目名 | 機能と役割 | 備考（制約、型など） |
 | :--- | :--- | :--- |
-| RAM Bypass Flag | Bit 31 が 0 のときはゲストRAMアクセス（Tier 1）とし、vMMIOを高速バイパス。 | ビット[31]（1 bit） |
+| RAM Bypass Flag | Bit 31 が 0 のときはゲストRAMアクセス（Stage 1）とし、vMMIOを高速バイパス。 | ビット[31]（1 bit） |
 | Function Code | vMMIO 領域時の機能種別（FC）。`vpn >> 16` でも抽出可能。 | ビット[31:28]（4 bits）、16種別 |
 | Syscall Metadata / ID | 静的デバイス・Syscall 領域（FC=12）における Syscall ID / サービス識別メタデータ。 | ビット[27:16]（12 bits: `0..4095`） |
 | VPN (Virtual Page Number) | 仮想ページ番号（FC + Syscall Metadata + Page Index を包含）。FlatMap のキーおよび TLB のマッチタグ。 | ビット[31:12]（20 bits: `raw >> 12`） |
@@ -105,10 +105,10 @@ graph TD
 
 | アドレス範囲 | MSB | FC | 割り当て用途 |
 | :--- | :--- | :--- | :--- |
-| `0x0000_0000` – `0x7FFF_FFFF` | 0 | - | ゲスト RAM（WASM線形メモリ）— Tier 1 |
-| `0xC000_0000` – `0xC000_FFFF` | 1 | 12 (`0xC`) | Static Devices（SYSCTL, IPCR, VDMA）— Tier 2 |
-| `0xE000_0000` – `0xEFFF_FFFF` | 1 | 14 (`0xE`) | SHM（共有メモリ）— Tier 3 |
-| `0xF000_0000` – `0xFFFF_FFFF` | 1 | 15 (`0xF`) | PASSTHROUGH（物理アドレス直結）— Tier 3 |
+| `0x0000_0000` – `0x7FFF_FFFF` | 0 | - | ゲスト RAM（WASM線形メモリ）— Stage 1 |
+| `0xC000_0000` – `0xC000_FFFF` | 1 | 12 (`0xC`) | Static Devices（SYSCTL, IPCR, VDMA）— Stage 2 |
+| `0xE000_0000` – `0xEFFF_FFFF` | 1 | 14 (`0xE`) | SHM（共有メモリ）— Stage 3 |
+| `0xF000_0000` – `0xFFFF_FFFF` | 1 | 15 (`0xF`) | PASSTHROUGH（物理アドレス直結）— Stage 3 |
 
 #### コントローラ群
 <!-- traceability: {META_Static_Resolution} {META_FlatMapIndexed} -->
@@ -121,7 +121,7 @@ graph TD
 
 #### 静的デバイスページテーブルエントリ
 <!-- traceability: {META_Static_Resolution} -->
-Static Devices (Tier 2) 向け。PTE には Device Type やパーミッションフラグ、ハンドラ情報を保持する。
+Static Devices (Stage 2) 向け。PTE には Device Type やパーミッションフラグ、ハンドラ情報を保持する。
 
 ```
 32-bit Static Device PTE:
@@ -135,12 +135,12 @@ Static Devices (Tier 2) 向け。PTE には Device Type やパーミッション
 [15:0]  Reserved
 ```
 
-#### 第3層ページテーブルエントリ
+#### Stage 3 ページテーブルエントリ
 <!-- traceability: {META_Static_Resolution} {OwnershipTransfer} -->
 SHM (FC=14) および Passthrough (FC=15) 向け。PTE には PPN（物理ページ番号）とハードウェア保護フラグを保持する。PTE に `owner_id` フィールドは存在せず、アクセス制御は「マッピングの存在（PTE 有効）」によって完全に執行される。
 
 ```
-32-bit Tier 3 (SHM / Passthrough) PTE:
+32-bit Stage 3 (SHM / Passthrough) PTE:
 [31:12] PPN (Physical Page Number, 20 bits: phys_page)
 [11]    VALID (1 = 有効マッピング)
 [10]    READ (1 = 読み出し許可)
@@ -189,7 +189,7 @@ vMMIO SHM 領域（`0xE000_0000`〜`0xE001_FFFF`、最大 32 ページ = 128KB�
 flowchart TD
     Start(["32-bit Guest Virtual Address"]) --> CheckBit31{"Address Bit 31 == 0?"}
 
-    CheckBit31 -- "Yes (Bit 31 == 0)" --> RAMBypass["VMMIO-GOTCHA-01: Guest RAM Bypass (Tier 1)"]
+    CheckBit31 -- "Yes (Bit 31 == 0)" --> RAMBypass["VMMIO-GOTCHA-01: Guest RAM Bypass (Stage 1)"]
     RAMBypass --> CheckRAMBounds{"addr < guest_ram_size?<br/>(FastAddressCheck CMP)"}
     CheckRAMBounds -- "No (Out of Bounds)" --> TrapOOB(["Trap: ERR_OUT_OF_BOUNDS"])
     CheckRAMBounds -- "Yes" --> CalcRAM["Physical Address = guest_ram_base + addr"]
@@ -357,7 +357,7 @@ PASSTHROUGH アドレス変換:
 | `0x08` | `REG_VDMA_COUNT` | R/W | 転送バイト数 |
 | `0x0C` | `REG_VDMA_CTRL` | W | 制御（Bit0: START） |
 
-`REG_VDMA_SRC` / `REG_VDMA_DST` に指定できるアドレスはゲストRAM（Tier 1）および vMMIO空間（FC=14/15）。SHMアドレス（FC=14）を転送先/元に指定した場合、VDMAハンドラが `dispatch_access` と同一の権限チェック（PTE のマッピング・パーミッション検証）を実施する。
+`REG_VDMA_SRC` / `REG_VDMA_DST` に指定できるアドレスはゲストRAM（Stage 1）および vMMIO空間（FC=14/15）。SHMアドレス（FC=14）を転送先/元に指定した場合、VDMAハンドラが `dispatch_access` と同一の権限チェック（PTE のマッピング・パーミッション検証）を実施する。
 
 ### 4.6 共有メモリマッピング (FC=14)
 <!-- traceability: {OwnershipTransfer} -->
@@ -396,7 +396,7 @@ graph LR
 
 ### 4.8 ソフトウェアTLB
 <!-- traceability: {VDMA} {OwnershipTransfer} {META_ConfigurableSystem} -->
-Tier 3 アクセス（FC=14/15）において毎回 FlatMap の二分探索を走らせる遅延を排除するため、仮想ページ番号（VPN = `raw >> 12`）に基づくマッピングを16エントリのダイレクトマップキャッシュに保持する。
+Stage 3 アクセス（FC=14/15）において毎回 FlatMap の二分探索を走らせる遅延を排除するため、仮想ページ番号（VPN = `raw >> 12`）に基づくマッピングを16エントリのダイレクトマップキャッシュに保持する。
 
 - **Guest RAM アクセス時の TLB 完全バイパス (`VMMIO-GOTCHA-01`)**:
   **設計理由と不変条件**: 最上位ビットが 0 のアドレス空間（`0x0000_0000`〜`0x7FFF_FFFF`）はゲスト RAM 専用領域である。全メモリアクセスの 99% 以上を占める最頻パスにおいて毎回 TLB ルックアップやハッシュ計算を行うと、実行性能が致命的に劣化する。そのため、最上位ビットが 0 のアクセスは TLB を一切参照せず、直接ゲストベースアドレス加算＋サイズ境界検査のみで即時メモリアクセスを完結させる。TLB は最上位ビットが 1 の vMMIO / ペリフェラル領域にのみ適用される。
@@ -455,7 +455,7 @@ Tier 3 アクセス（FC=14/15）において毎回 FlatMap の二分探索を�
 - **目標**: MMIOアクセスのオーバーヘッドを最小化する。
 - **方策1**: `{META_ConfigurableSystem}` コアデバイス（SYSCTL等）をFC=12に配置し、配列/ハッシュ参照のみで即時解決できるようにする。
 - **方策2**: `{FastAddressCheck}` アドレス空間を RAM Bypass（最上位ビット=0）と vMMIO領域（最上位ビット=1）に分割し、探索とデコードのホットパス探索コストを削減する。
-- **方策3**: `{vMMIO_TLB}` ダイレクトマップ型 Software TLB により、Tier 3 の繰り返しアクセスを完全 O(1) で超高速キャッシュ解決する。
+- **方策3**: `{vMMIO_TLB}` ダイレクトマップ型 Software TLB により、Stage 3 の繰り返しアクセスを完全 O(1) で超高速キャッシュ解決する。
 
 ### 6.2 メモリ制約と方策
 <!-- traceability: {META_ConfigurableSystem} {META_FlatMapIndexed} -->

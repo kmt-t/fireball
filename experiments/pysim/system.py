@@ -8,7 +8,7 @@ strictly to the architectural specifications:
 - `docs/components/tier2_runtime/runtime_vmmio.md` defines the vMMIO address/register layout
 - `docs/components/tier1_interface/ipc_router.md` defines the URI-routed, zero-copy message queue
 This module uses self-contained simulation modules (`vmmio.py`, `ipc_router.py`,
-`platform_memory.py`) mirroring the authoritative concept models, and provides
+`platforms/memory.py`) mirroring the authoritative concept models, and provides
 the actual register/byte-level storage and wire-level u32 handle numbering
 required for end-to-end execution.
 All guest output routes through WASI_FD_WRITE (console-output) to adhere strictly
@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import TYPE_CHECKING, Callable
 
-from hal import HalBufferHandle, HalBufferPool, HalBufferTrap, UartTransport
+from hal import ShmBufferPool, ShmHandle, UartTransport
 from ipc_router import (
     IPCMessage,
     IPCRouter,
@@ -137,14 +137,14 @@ _PASSTHROUGH_TEST_PAGES = 16  # this experiment's own arbitrary backing size,
 # not a spec constant -- real PASSTHROUGH size
 # depends on the host peripherals actually mapped
 @dataclass(frozen=True)
-class HalBufferSlice:
+class ShmSlice:
     """
-    interface_wit.md §5.3's `hal-buffer-slice{handle, offset, len}`. There is no
-    field here that could ever carry a guest linear-memory address -- only
-    a handle name the pool must independently recognize and authorize.
+    interface_wit.md 5.3's `shm-slice{handle, offset, len}`. There is no
+        field here that could ever carry a guest linear-memory address -- only
+        a handle name the pool must independently recognize and authorize.
     """
 
-    handle: HalBufferHandle
+    handle: ShmHandle
     offset: int
     len: int
 
@@ -152,14 +152,14 @@ class HalBufferSlice:
 class BusMaster:
     """
     `fireball:host/bus`'s `bus-master.transfer-data`, resolved to the
-    real HAL buffer pool.
+        real shared-memory pool.
     """
 
-    def __init__(self, pool: HalBufferPool, task_id: int):
+    def __init__(self, pool: ShmBufferPool, task_id: int):
         self.pool = pool
         self.task_id = task_id
 
-    def transfer_data(self, tx: HalBufferSlice, rx: HalBufferSlice) -> int:
+    def transfer_data(self, tx: ShmSlice, rx: ShmSlice) -> int:
         tx_view = self.pool.view(self.task_id, tx.handle, tx.offset, tx.len)
         rx_view = self.pool.view(self.task_id, rx.handle, rx.offset, rx.len)
         n = min(len(tx_view), len(rx_view))
@@ -170,16 +170,16 @@ class BusMaster:
 class BusSlave:
     """`fireball:host/bus`'s `bus-slave.set-response` / `get-received`."""
 
-    def __init__(self, pool: HalBufferPool, task_id: int):
+    def __init__(self, pool: ShmBufferPool, task_id: int):
         self.pool = pool
         self.task_id = task_id
         self._pending_response: bytes = b""
 
-    def set_response(self, data: HalBufferSlice) -> None:
+    def set_response(self, data: ShmSlice) -> None:
         view = self.pool.view(self.task_id, data.handle, data.offset, data.len)
         self._pending_response = bytes(view)
 
-    def get_received(self, dest: HalBufferSlice) -> int:
+    def get_received(self, dest: ShmSlice) -> int:
         view = self.pool.view(self.task_id, dest.handle, dest.offset, dest.len)
         n = min(len(view), len(self._pending_response))
         view[:n] = self._pending_response[:n]
@@ -188,17 +188,17 @@ class BusSlave:
 
 class System:
     """
-    One running Fireball-shaped host: a single UART line, a single HAL
-    buffer pool, one dictionary logger and one raw console writer sharing
-    that line, a real vMMIO controller (FlatMap PTEs + TLB, reused from
-    vmmio_concept.py) fronted by SYSCTL/IPCR/VDMA static-device registers
-    and a PASSTHROUGH-backed physical memory window, and a real IPC router
-    (reused from ipc_router_concept.py) with its fixed 3-service registry.
+    One running Fireball-shaped host: a single UART line, a single SHM
+        buffer pool, one dictionary logger and one raw console writer sharing
+        that line, a real vMMIO controller (FlatMap PTEs + TLB, reused from
+        vmmio_concept.py) fronted by SYSCTL/IPCR/VDMA static-device registers
+        and a PASSTHROUGH-backed physical memory window, and a real IPC router
+        (reused from ipc_router_concept.py) with its fixed 3-service registry.
     """
 
     def __init__(self):
         self.transport = UartTransport()
-        self.pool = HalBufferPool()
+        self.pool = ShmBufferPool()
         self.dictionary = LogDictionary()
         self.logger = Logger(self.transport, self.dictionary, min_level=LogLevel.DEBUG)
         self.console = ConsoleOutput(self.transport)
@@ -224,7 +224,7 @@ class System:
                 vpn=(FB_CONF_VSOC_PASSTHROUGH_BASE >> 12) + i, phys_page=i
             )
 
-        # Physical Memory Manager (platform_memory.md) with 64KB aligned pool
+        # Physical Memory Manager (system_memory.md contract / runtime_memory.md impl) with 64KB aligned pool
         self.memory_manager = MemoryManager()
         self.vmmio.register_to_memory_manager(self.memory_manager)
         self.memory_manager.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
@@ -769,7 +769,7 @@ class System:
         return WasiErrno.SUCCESS
 
     def spawn_hal_task(self) -> int:
-        """Spawns the HAL Server Task on the COOS scheduler (platform_hal.md).
+        """Spawns the HAL Server Task on the COOS scheduler (runtime_hal.md).
         HAL communicates strictly via IPC, never raw direct method calls.
         """
         if self._hal_task_id is not None:

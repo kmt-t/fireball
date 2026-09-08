@@ -15,7 +15,7 @@
   - アーキテクチャの早期妥当性確認、状態遷移の探索、および Gotchas（実装上の勘所・不変条件）の抽出を目的とした Python 製の参照シミュレータ（`experiments/pysim`）。
   - 各シナリオには、この参照実装上で動作する実行可能なリファレンススクリプト（`experiments/pysim/scenarios/`）が提供されており、仕様が実行可能（Executable Specification）であることを実証している。
 
-- **対象 Tier**: Tier 1 Core (`os_coos`, `os_scheduler`, `system_config`, `system_containers`, `system_logging`, `system_syscall`), Tier 1 Interface (`interface_wit`, `ipc_router`, `system_service`), Tier 2 Runtime (`runtime_vsoc`, `runtime_loader`, `runtime_interpreter`, `runtime_vmmio`, `debug_manager`), Tier 3 Platform & JIT (`platform_hal`, `platform_memory`, `jit_compiler`, `jit_runtime`)
+- **対象 Tier**: Tier 1 Core (`os_coos`, `os_scheduler`, `system_config`, `system_containers`, `system_logging`, `system_syscall`, `system_memory`), Tier 1 Interface (`interface_wit`, `ipc_router`, `system_service`), Tier 2 Runtime (`runtime_vsoc`, `runtime_loader`, `runtime_interpreter`, `runtime_vmmio`, `debug_manager`, `runtime_memory`), Tier 3 Platform & JIT (`platform_driver`, `jit_compiler`, `jit_runtime`)
 - **参照実装テストスイート**: `experiments/pysim/scenarios/`
 - **参照テストランナー**: [`run_all.py`](experiments/pysim/scenarios/run_all.py)
 
@@ -37,8 +37,8 @@
 | | [`runtime_interpreter.md`](docs/components/tier2_runtime/runtime_interpreter.md) | CPS 4引数ディスパッチ、全幅メモリ、深い再帰、制御フレーム | Scenario 1〜11 |
 | | [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md) | Bit 31 RAM Bypass、FlatMap PTE、TLB[16]、仮想デバイス | Scenario 10 |
 | | [`debug_manager.md`](docs/components/tier2_runtime/debug_manager.md) | GDB RSP TCP ソケット接続、ブレークポイント、レジスタ/メモリ改変 | Scenario 7, 8 |
-| **Tier 3 Platform** | [`platform_hal.md`](docs/components/tier3_platform/platform_hal.md) | GPIO, I2C, SPI, Timer, UartTransport | Scenario 2, 7, 9, 11 |
-| | [`platform_memory.md`](docs/components/tier3_platform/platform_memory.md) | リニアメモリページ拡張（`memory.grow`）、MPU 領域保護 | Scenario 1, 4, 8, 10 |
+| | [`runtime_memory.md`](docs/components/tier2_runtime/runtime_memory.md) | リニアメモリページ拡張（`memory.grow`）、MPU 領域保護 | Scenario 1, 4, 8, 10 |
+| **Tier 3 Platform** | [`platform_driver.md`](docs/components/tier3_platform/platform_driver.md) | GPIO, I2C, SPI, Timer, UartTransport | Scenario 2, 7, 9, 11 |
 | **Tier 3 JIT** | [`jit_compiler.md`](docs/components/tier3_jit/jit_compiler.md) | Copy-and-Patch JIT 生成、PIC トレース、差分検証 | Scenario 4, 5, 8 |
 | | [`jit_runtime.md`](docs/components/tier3_jit/jit_runtime.md) | 3面キャッシュ代謝、2-bit Card Marking、UnifiedPC + bswap32 | Scenario 4, 5 |
 
@@ -69,7 +69,7 @@
 | `ControlFrameCleanup` | `runtime_interpreter.md` | `br_table` / `block` / `loop` / `if` 偽分岐時のスタックフレーム不変性・リーク防止 | `INT-20`, `INT-22` | ✅ PASS |
 | `RSPMinimalSet` | `debug_manager.md`, `gdb_rsp_protocol.md` | GDB RSP 最小コマンドセット（`?`, `g/G`, `m/M`, `Z0/z0`, `s`, `c`）の実ソケット対話 | `INT-60`〜`INT-64` | ✅ PASS |
 | `Debugger_Jit_Flush` | `debug_manager.md`, `jit_runtime.md` | デバッガからのメモリ書き込み（`M` パケット）時の JIT キャッシュ全バンク即時無効化 | `INT-62`, `INT-72` | ✅ PASS |
-| `HAL_PeripheralDrivers` | `platform_hal.md` | GPIO（入出力・エッジIRQ）、I2C（LM75）、SPI（EEPROM）、Timer | `INT-100`〜`INT-102` | ✅ PASS |
+| `HAL_PeripheralDrivers` | `platform_driver.md` | GPIO（入出力・エッジIRQ）、I2C（LM75）、SPI（EEPROM）、Timer | `INT-100`〜`INT-102` | ✅ PASS |
 | `WASI_InMemVFS` | `interface_wit.md`, `system_syscall.md` | WASI In-Memory VFS（`fd_seek`, `fd_read`, `fd_write`, `random_get`, `clock_time_get`） | `INT-103`〜`INT-105` | ✅ PASS |
 | `CopyAndPatch_JIT` | `jit_compiler.md` | ステンシル展開による高速 Copy-and-Patch JIT コード生成 | `INT-30`, `INT-40` | ✅ PASS |
 | `TraceBoundaryInvariant` | `jit_compiler.md` | トレース境界でのスタック自己完結性、メモリ同期、およびフォールバック | `INT-31`, `INT-41` | ✅ PASS |
@@ -213,7 +213,7 @@
 ---
 
 ### シナリオ 9: Tier 1 Interface IPC Router & Structured Logging
-- **対象コンポーネント**: `ipc_router`, `system_logging`, `system_containers`, `platform_hal`
+- **対象コンポーネント**: `ipc_router`, `system_logging`, `system_containers`, `platform_driver`
 - **参照実装スクリプト (Reference Script)**: [`scenario9_ipc_router_and_logging.py`](experiments/pysim/scenarios/scenario9_ipc_router_and_logging.py)
 - **検証シナリオ**:
   - 3段階ルーティングパイプライン: FlatMapView URI 検索、RBAC ロール権限判定、Zero-Copy 所有権移譲
@@ -229,7 +229,7 @@
 ---
 
 ### シナリオ 10: Tier 2 Runtime vMMIO Virtual Devices & Address Translation
-- **対象コンポーネント**: `runtime_vmmio`, `system_syscall`, `platform_memory`, `system_config`
+- **対象コンポーネント**: `runtime_vmmio`, `system_syscall`, `runtime_memory`, `system_config`
 - **参照実装スクリプト (Reference Script)**: [`scenario10_vmmio_virtual_devices.py`](experiments/pysim/scenarios/scenario10_vmmio_virtual_devices.py)
 - **検証シナリオ**:
   - Bit 31 RAM Bypass フラグ: ゲストリニア RAM（Bit 31 == 0）の $O(1)$ 高速パス
@@ -247,7 +247,7 @@
 ---
 
 ### シナリオ 11: HAL Peripheral Drivers & WASI Preview 1 Full Dummy Stack
-- **対象コンポーネント**: `platform_hal`, `interface_wit`, `system_service`, `system_syscall`, `runtime_interpreter`
+- **対象コンポーネント**: `platform_driver`, `interface_wit`, `system_service`, `system_syscall`, `runtime_interpreter`
 - **参照実装スクリプト (Reference Script)**: [`scenario11_hal_and_wasi_drivers.py`](experiments/pysim/scenarios/scenario11_hal_and_wasi_drivers.py)
 - **検証シナリオ**:
   - **HAL 周辺機器ダミードライバ**:

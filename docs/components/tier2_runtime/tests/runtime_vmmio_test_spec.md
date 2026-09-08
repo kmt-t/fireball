@@ -5,7 +5,7 @@
 正本: [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md)
 参考実装: [`vmmio_concept.py`](docs/components/tier2_runtime/concepts/vmmio_concept.py)
 
-Bit31によるRAM/vMMIO高速分岐、FlatMap PTE + 16エントリDirect-Mapped TLB、Tier1/2/3の3層セキュリティゲート、SHM所有権チェック、VDMA、TLB無効化を検証する。
+Bit31によるRAM/vMMIO高速分岐、FlatMap PTE + 16エントリDirect-Mapped TLB、Stage1/2/3の3段階セキュリティゲート、SHM所有権チェック、VDMA、TLB無効化を検証する。
 
 ## 2. 直交表マトリクス（Pairwise / Combinatorial Matrix）
 
@@ -50,7 +50,7 @@ Bit31によるRAM/vMMIO高速分岐、FlatMap PTE + 16エントリDirect-Mapped 
 | VMMIO-17 | TLBヒット時も権限チェックは必ず実施 | TLBにキャッシュ済みのPTE | 読み出し専用ページへ書き込みアクセス | TLBヒットであってもインライン権限チェックで`TRAP_ACCESS_VIOLATION`となる | {META_RestrictedPhysicalAccess}, `vmmio_concept.py` `test_permission_checks_enforced_even_on_tlb_hit` |
 | VMMIO-18 | Direct-Mapped TLB スロット衝突と置換（Eviction） | 同一ハッシュスロットに衝突する2つのVPN | Aアクセス（充填）→ Bアクセス（置換）→ 再度Aアクセス | Aの再アクセス時にミスが発生し、スロットが無条件上書きされる | `vmmio_concept.py` `test_tlb_slot_conflict_eviction` |
 
-### 3層セキュリティゲート・SHMマッピング保護 ({OwnershipTransfer})
+### 3段階セキュリティゲート・SHMマッピング保護 ({OwnershipTransfer})
 
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |

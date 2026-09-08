@@ -36,7 +36,7 @@ WASI 32-bit (wasm32) における物理データ型およびメモリレイア�
 
 | API 名 | シグネチャ | 物理実装・ルーティング | 戻り値 / エラー |
 | :--- | :--- | :--- | :--- |
-| **`fd_write`** | `(fd: fd_t, iovs: ptr, iovs_len: size_t, nwritten: ptr) -> errno_t` | `fd=1/2`: UART HAL (`platform_hal`) または デバッグリングバッファへ文字出力。<br>`fd>=3`: IPC チャネル (`ipc_router`) へパケット送信。 | `SUCCESS` (0)<br>`EBADF` (不正なFD)<br>`EFAULT` (メモリ境界外) |
+| **`fd_write`** | `(fd: fd_t, iovs: ptr, iovs_len: size_t, nwritten: ptr) -> errno_t` | `fd=1/2`: UART HAL (`platform_driver`) または デバッグリングバッファへ文字出力。<br>`fd>=3`: IPC チャネル (`ipc_router`) へパケット送信。 | `SUCCESS` (0)<br>`EBADF` (不正なFD)<br>`EFAULT` (メモリ境界外) |
 | **`fd_read`** | `(fd: fd_t, iovs: ptr, iovs_len: size_t, nread: ptr) -> errno_t` | `fd=0`: UART RX バッファから文字読み出し。<br>`fd>=3`: IPC チャネルからメッセージ受信。 | `SUCCESS` (0)<br>`EAGAIN` (データ未着)<br>`EBADF` |
 | **`fd_close`** | `(fd: fd_t) -> errno_t` | `fd>=3` の IPC 接続チャネルをクローズ。`fd=0..2` のクローズは無視して成功。 | `SUCCESS` (0)<br>`EBADF` |
 | **`fd_seek`** | `(fd: fd_t, offset: int64, whence: uint8, newoffset: ptr) -> errno_t` | ストリーム型デバイスのため非サポート。 | `ESPIPE` (パイプ/ストリームのためシーク不可) |

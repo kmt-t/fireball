@@ -12,7 +12,7 @@ BACKS = [
     "components/tier2_runtime/runtime_vsoc.md",
     "components/tier2_runtime/debug_manager.md",
     "components/tier3_jit/jit_compiler.md",
-    "components/tier3_platform/platform_memory.md",
+    "components/tier2_runtime/runtime_memory.md",
 ]
 
 

@@ -1,6 +1,6 @@
 # Fireball キーワード台帳 (Keyword Dictionary & Registry)
 
-この文書は、Fireball プロジェクトにおける**全仕様・アーキテクチャ・コンポーネント・リンクキーワード（全 210 件）の正本台帳**である。
+この文書は、Fireball プロジェクトにおける**全仕様・アーキテクチャ・コンポーネント・リンクキーワード（全 211 件）の正本台帳**である。
 
 章節項番号（`§3.3` 等）や見出し文字列、ファイルパスによる直接参照は、仕様改訂やリファクタリングに伴う見出し変更・章番号ズレによって容易に陳腐化・リンク切れを起こす。これを防ぐため、Fireball では中括弧で囲まれた一意なキーワード（`{...}`）をアンカーとして定義し、すべての設計書・テスト仕様書・結合テスト・形式検証モデルを機械的に相互リンクする。
 
@@ -30,7 +30,7 @@
 
 ## 2. システム横断 メタ & グローバルキーワード (META / GLOBAL)
 
-### 2.1 メタキーワード (`{META_*}`) (18 件)
+### 2.1 メタキーワード (`{META_*}`) (19 件)
 
 システム全体の非機能要件、アーキテクチャ方針、C++20/23 ゼロコスト抽象化の設計基準を定義する。
 
@@ -38,16 +38,17 @@
 | :--- | :--- | :--- | :--- |
 | `{META_3TierSeparation}` | `document_structure.md` | `architecture_overview.md` | 設計複雑度に応じた3階層のデコンポジション（分解）とカプセル化された依存関係管理 |
 | `{META_AI_Native_Dev}` | `document_structure.md` | `architecture_overview.md` | 定型的な実装はLLMを活用し、設計と形式検証の品質を重視する開発方針 |
+| `{META_ServiceIsWasmResident}` | `document_structure.md` | `architecture_overview.md` | 「サービス」はWASM上で実行される常駐タスクを指し、HAL・ロギング等のネイティブ常駐基盤機能（サブシステム）とは区別する |
 | `{META_AccessDictionary}` | `document_structure.md` | `jit_runtime.md` | データの索引化と、それを用いたランタイムアクセスの最適化 |
 | `{META_BinarySearch}` | `document_structure.md` | `system_containers.md` | 静的ソート済み配列に対する $O(\log N)$ の高速二分探索 |
-| `{META_BumpAllocator}` | `document_structure.md` | `platform_memory.md` | メモリ断片化を防ぎ高速な領域確保と一括解放を行うバンプアロケータ |
+| `{META_BumpAllocator}` | `document_structure.md` | `runtime_memory.md` | メモリ断片化を防ぎ高速な領域確保と一括解放を行うバンプアロケータ |
 | `{META_CompileTimeValidation}` | `document_structure.md` | `system_containers.md` | 静的な型チェックや constexpr によるコンパイル時不正検知 |
 | `{META_ConfigurableSystem}` | `document_structure.md` | `system_config.md` | ヘッダマクロ定義および constexpr 定数によるシステムパラメータの静的確定 |
-| `{META_FaultIsolation}` | `document_structure.md` | `platform_memory.md` | メモリパーティションによるコンポーネント間の障害伝播防止 |
+| `{META_FaultIsolation}` | `document_structure.md` | `runtime_memory.md` | メモリパーティションによるコンポーネント間の障害伝播防止 |
 | `{META_FlatMapIndexed}` | `document_structure.md` | `runtime_vmmio.md` | ソート済み配列や二段テーブルを用いた順序維持・省メモリ高速検索 |
 | `{META_NoStdVector}` | `document_structure.md` | `system_containers.md` | 動的ヒープ再配置を行う std::vector の禁止と固定長カスタムコンテナの強制 |
 | `{META_RecoveryStrategy}` | `document_structure.md` | `interface_wit.md` | エラーコードの代わりに自己修復リカバリー動作（Retry/Panic等）を返す |
-| `{META_RestrictedPhysicalAccess}` | `document_structure.md` | `platform_hal.md` | 物理ハードウェアリソースへの直接アクセスを許可テーブルで厳格に制限 |
+| `{META_RestrictedPhysicalAccess}` | `document_structure.md` | `platform_driver.md` | 物理ハードウェアリソースへの直接アクセスを許可テーブルで厳格に制限 |
 | `{META_Risk_Tiering}` | `document_structure.md` | `architecture_overview.md` | リスクベースの設計階層化。重要度・不確実性に応じた検証レベル調整 |
 | `{META_SpecificationFirst}` | `document_structure.md` | `interface_wit.md` | 実装に先立ち形式仕様や契約を先行定義する仕様駆動開発方針 |
 | `{META_StaticDI}` | `document_structure.md` | `ipc_router.md` | コンパイル時設定・静的バインディングによる依存性の注入（DI） |
@@ -65,12 +66,12 @@
 | :--- | :--- | :--- | :--- |
 | `{GLOBAL_ComponentHarness}` | `document_structure.md` | `architecture_overview.md` | テスト・検証・サブコンポーネント統合のための共通ハーネスパターン |
 | `{GLOBAL_IdleDetection}` | `document_structure.md` | `os_coos.md` | アイドル状態の検出とログフラッシュ・バックグラウンド処理制御 |
-| `{GLOBAL_IndependentHeap}` | `document_structure.md` | `platform_memory.md` | 各コンポーネントが互いに独立したヒープメモリ領域を確保する設計 |
+| `{GLOBAL_IndependentHeap}` | `document_structure.md` | `system_memory.md` | 各コンポーネントが互いに独立したヒープメモリ領域を確保する設計 |
 | `{GLOBAL_InterruptWakeup}` | `document_structure.md` | `os_coos.md` | 割り込み契機による待機タスクのウェイクアップ・復帰処理 |
 | `{GLOBAL_PeriodicTask}` | `document_structure.md` | `os_coos.md` | システムティックまたはアイドルループを利用した周期実行タスク |
-| `{GLOBAL_Policy_Memory}` | `document_structure.md` | `platform_memory.md` | メモリ管理・パーティション分離・専用アロケータに関する横断共通ポリシー |
+| `{GLOBAL_Policy_Memory}` | `document_structure.md` | `system_memory.md` | メモリ管理・パーティション分離・専用アロケータに関する横断共通ポリシー |
 | `{GLOBAL_StaticScalability}` | `document_structure.md` | `system_config.md` | テンプレート引数・静的定数によるコンパイル時スケーラビリティ |
-| `{GLOBAL_StrictMemoryLimit}` | `document_structure.md` | `platform_memory.md` | メモリ消費上限が厳格に制限された組み込み動作保証 |
+| `{GLOBAL_StrictMemoryLimit}` | `document_structure.md` | `system_memory.md` | メモリ消費上限が厳格に制限された組み込み動作保証 |
 | `{GLOBAL_UseCpp20Coroutine}` | `document_structure.md` | `os_coos.md` | C++20 コルーチンを活用した言語組み込みコンテキストスイッチ |
 | `{GLOBAL_UseCpp23Library}` | `document_structure.md` | `system_containers.md` | C++23 標準ライブラリ語彙（std::span 等）の活用方針 |
 
@@ -86,7 +87,7 @@ Fireball の全体構造、依存性の方向、リソース予算、品質保�
 | :--- | :--- | :--- | :--- | :--- |
 | `{CleanArchitecture}` | `requirement_list.md` | `architecture_overview.md` | Clean Architecture の依存ルールに基づく内側への単方向依存・上位Tier優先原則 | - |
 | `{ConceptHarnessDI}` | `requirement_list.md` | `architecture_overview.md` | テスト・形式検証容易性のための依存性注入ハーネス設計 | - |
-| `{ConsolidatedHeap}` | `requirement_list.md` | `platform_memory.md` | システム全体の静的統合ヒープ管理によるメモリ枯渇の排除 | - |
+| `{ConsolidatedHeap}` | `requirement_list.md` | `system_memory.md` | システム全体の静的統合ヒープ管理によるメモリ枯渇の排除 | - |
 | `{EliminateDataRace}` | `requirement_list.md` | `os_coos.md` | シングルスレッド協調マルチタスクによるデータ競合の構造的排除 | - |
 | `{Errorcode_To_Strategy}` | `requirement_list.md` | `interface_wit.md` | 数値エラーコードを廃止し、呼び出し側が判断可能な自己修復ストラテジを返却 | - |
 | `{FaultTolerant}` | `requirement_list.md` | `architecture_overview.md` | 部分障害の局所化・安全停止・自動再起動によるフォールトトレラント性 | - |
@@ -109,12 +110,12 @@ Fireball の全体構造、依存性の方向、リソース予算、品質保�
 | `{ADR_CoosPureRoundRobin}` | `requirement_list.md` | `os_scheduler.md` | COOS スケジューラにおける純粋ラウンドロビン方式の採用（複雑な動的優先度を排除） | - |
 | `{ADR_EventDrivenWakeQueue}` | `requirement_list.md` | `os_coos.md` | ポーリングを排しイベントドリブンなウェイクアップキューへの分離 | - |
 | `{ADR_IntrusiveTcbList}` | `requirement_list.md` | `os_scheduler.md` | 動的アロケーションを排除するための侵入型 TCB（Task Control Block）リスト構造 | - |
-| `{ADR_MemoryManagerMinimalSurface}` | `requirement_list.md` | `platform_memory.md` | メモリマネージャの公開インターフェース最小化・内部詳細のカプセル化 | - |
-| `{ADR_PageGranularPermissionIsolation}` | `platform_memory.md` | `platform_memory.md` | 共有メモリの4KB物理ページ単位での排他所有権（owner_id）管理とアクセス権限分離 | MEM-14, MEM-15 |
+| `{ADR_MemoryManagerMinimalSurface}` | `requirement_list.md` | `system_memory.md` | メモリマネージャの公開インターフェース最小化・内部詳細のカプセル化 | - |
+| `{ADR_PageGranularPermissionIsolation}` | `runtime_memory.md` | `runtime_memory.md` | 共有メモリの4KB物理ページ単位での排他所有権管理とアクセス権限分離（owner_idフィールドは持たず、マッピング有無で判定） | MEM-14, MEM-15 |
 | `{ADR_RendezvousChannel}` | `requirement_list.md` | `os_coos.md` | チャネル通信における純粋ランデブー方式（バッファリングなし即時所有権移譲）採用 | - |
 | `{ADR_SafeQueuingOnHotMiss}` | `requirement_list.md` | `jit_runtime.md` | JIT キャッシュミス時の安全なキューイングとインタープリタ実行継続 | - |
 | `{ADR_ScalableCodeOffset}` | `requirement_list.md` | `jit_compiler.md` | 可変長コードオフセットによる Thumb-2 / AArch64 ジャンプ命令最適化 | - |
-| `{ADR_SharedBlockRaii}` | `requirement_list.md` | `platform_memory.md` | RAII ガードによる共有メモリブロックの安全かつ確実なスコープ解放 | - |
+| `{ADR_SharedBlockRaii}` | `requirement_list.md` | `system_memory.md` | RAII ガードによる共有メモリブロックの安全かつ確実なスコープ解放 | - |
 | `{ADR_TosCacheAsymmetry}` | `requirement_list.md` | `runtime_interpreter.md` | トップ・オブ・スタック（TOS）レジスタキャッシュの非対称同期アーキテクチャ | - |
 | `{ADR_TraceBoundaryYield}` | `runtime_interpreter.md` | `runtime_interpreter.md` | インタープリタの命令ハンドラが vSoC へ制御を返す頻度をトレース境界に限定する設計判断 | Scenario 6 (INT-50) |
 
@@ -197,15 +198,15 @@ OSスケジューラ（`os_coos`, `os_scheduler`）、システムログ（`syst
 | `{LowLatencyLookup}` | `requirement_list.md` | `ipc_router.md` | ハッシュ/フラットマップによるURIルーティングの低レイテンシルックアップ |
 | `{Asynchronous_Notification}` | `requirement_list.md` | `ipc_router.md` | 非同期イベント通知とタスクウェイクアップの連携 |
 | `{IPCRegistry}` | `requirement_list.md` | `ipc_router.md` | コンパイル時または初期化時に確定する静的サービスレジストリ |
-| `{WASI_Implementation}` | `requirement_list.md` | `system_service.md` | WASI (Preview 1) システムインターフェースの最小サブセット実装 |
-| `{WASI_ConsoleRawOutput}` | `requirement_list.md` | `system_service.md` | コンソール（stdout/stderr）への生バイト列直接出力サポート |
-| `{WASI_Async_Bridge}` | `requirement_list.md` | `system_service.md` | WASI 同期I/O呼び出しとCOOS協調マルチタスクの非同期ブリッジ |
+| `{WASI_Implementation}` | `requirement_list.md` | `interface_wit.md` | WASI (Preview 1) システムインターフェースの最小サブセット実装 |
+| `{WASI_ConsoleRawOutput}` | `requirement_list.md` | `interface_wit.md` | コンソール（stdout/stderr）への生バイト列直接出力サポート |
+| `{WASI_Async_Bridge}` | `requirement_list.md` | `interface_wit.md` | WASI 同期I/O呼び出しとCOOS協調マルチタスクの非同期ブリッジ |
 | `{WIT_Interface_Spec}` | `requirement_list.md` | `interface_wit.md` | WebAssembly Component Model WIT形式による型安全インターフェース定義 |
 | `{WIT_Common_Types}` | `requirement_list.md` | `interface_wit.md` | コンポーネント間で共通利用される標準型語彙定義 |
 | `{WIT_Interface_Purpose}` | `requirement_list.md` | `interface_wit.md` | 明確なインターフェース責務定義と自己修復ストラテジの結合 |
 | `{WIT_First}` | `requirement_list.md` | `interface_wit.md` | 実装コードに先行してWITインターフェース契約を定義する開発スタンス |
 | `{Type_Vocabulary}` | `requirement_list.md` | `interface_wit.md` | システム全体で整合した標準型ボキャブラリの策定 |
-| `{TypeSafeMessaging}` | `requirement_list.md` | `interface_wit.md` | メッセージペイロードの静的型安全性とアライメント保証 |
+| `{TypeSafeMessaging}` | `requirement_list.md` | `ipc_router.md` | メッセージペイロードの静的型安全性とアライメント保証 |
 
 ---
 
@@ -213,7 +214,7 @@ OSスケジューラ（`os_coos`, `os_scheduler`）、システムログ（`syst
 
 WASM 実行エンジン（`runtime_vsoc`）、CPS スレッドインタープリタ（`runtime_interpreter`）、ゼロコピーローダ（`runtime_loader`）、仮想メモリ管理（`runtime_vmmio`）、GDB RSP デバッガ（`debug_manager`）の機能要求と設計の勘所。
 
-#### 4.3.1 Tier 2 Runtime 要求キーワード (28 件)
+#### 4.3.1 Tier 2 Runtime 要求キーワード (31 件)
 
 | キーワード | 定義元正本 | 対象コンポーネント | 仕様概要・検証内容 | 結合テスト / テストID |
 | :--- | :--- | :--- | :--- | :--- |
@@ -245,8 +246,11 @@ WASM 実行エンジン（`runtime_vsoc`）、CPS スレッドインタープリ
 | `{RSP_Transport_Selectable}` | `requirement_list.md` | `debug_manager.md` | UART/TCP 等のトランスポート層を切り替え可能な GDB RSP 設計 | - |
 | `{DebuggerLabelTableSwitch}` | `requirement_list.md` | `debug_manager.md` | デバッガアタッチ時のインタープリタハンドラテーブル動的切り替え | Scenario 7 |
 | `{Debugger_Jit_Flush}` | `requirement_list.md` | `debug_manager.md` | デバッガからのメモリ書き込み（M パケット）時の JIT キャッシュ全バンク即時無効化 | Scenario 7, 8 (INT-62, INT-72) |
+| `{MemoryIsolation}` | `requirement_list.md` | `runtime_memory.md` | MPU によるコード領域・スタック領域・共有メモリ領域のハードウェア保護 | - |
+| `{Shm_Allocator}` | `requirement_list.md` | `runtime_memory.md` | IPC 共有メモリ領域（MPU Region 6）用 dlmalloc アロケータ。可変長 shared_block の切り出し・RAII解放時合体 | - |
+| `{HAL_Interface}` | `requirement_list.md` | `runtime_hal.md` | 物理ハードウェアと上位層を抽象化する統一 HAL インターフェース | - |
 
-#### 4.3.2 Tier 2 Runtime 設計の勘所 (GOTCHA) (13 件)
+#### 4.3.2 Tier 2 Runtime 設計の勘所 (GOTCHA) (15 件)
 
 | キーワード | 定義元正本 | 対象コンポーネント | 仕様概要・検証内容 | 結合テスト / テストID |
 | :--- | :--- | :--- | :--- | :--- |
@@ -263,6 +267,8 @@ WASM 実行エンジン（`runtime_vsoc`）、CPS スレッドインタープリ
 | `{DBG-GOTCHA-01}` | `debug_manager.md` | `debug_manager_test_spec.md` | デバッガからのメモリ書き込み（M パケット）実行と同時に JIT キャッシュ全バンクを即時無効化する（{Debugger_Jit_Flush} の勘所） | DBG-GOTCHA-01 |
 | `{DBG-GOTCHA-03}` | `debug_manager.md` | `debug_manager_test_spec.md` | GDB RSP チェックサム不一致パケットはサーバーが破棄しNAK（-）を返して再送を要求する | DBG-GOTCHA-03 |
 | `{DBG-GOTCHA-04}` | `debug_manager.md` | `debug_manager_test_spec.md` | 協調スケジューラ下での RSP 応答分割送出と複数 yield 跨ぎ耐性（長小応答 g の分割バッファ蓄積） | DBG-GOTCHA-04 |
+| `{MEM-GOTCHA-03}` | `runtime_memory.md` | `runtime_memory_test_spec.md` | 送信中状態（FB_TASK_ID_FLIGHT）は TLB を即時破棄し送受信双方からのアクセスを遮断する；転送失敗時は rollback_transfer() で送信元 owner_id へ復元する | MEM-GOTCHA-03 |
+| `{MEM-GOTCHA-04}` | `runtime_memory.md` | `runtime_memory_test_spec.md` | W^X 切り替えは命令単位ではなくトランザクションバッチ化し、パッチ完了時に一括で RO+X とキャッシュバリア（DSB/ISB）を発行する | MEM-GOTCHA-04 |
 
 ---
 
@@ -301,27 +307,22 @@ Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キ�
 
 ---
 
-### 4.5 Tier 3 Platform: メモリ管理 & HAL
+### 4.5 Tier 3 Platform: HAL ドライバ実装
 
-物理メモリマネージャ・MPU W^X 保護（`platform_memory`）およびハードウェア抽象化ドライバ（`platform_hal`）の機能要求と設計の勘所。
+ハードウェア抽象化ドライバの機能要求と設計の勘所。契約/実装分割パターン（`document_structure.md` §2.1-4）により、抽象化層（URI Resolver、コマンドプロトコル）は Tier 2（`runtime_hal.md`）、物理ドライバ実装は Tier 3（`platform_driver.md`）に配置される。メモリマネージャも同パターンにより Tier 1（`system_memory.md`）と Tier 2（`runtime_memory.md`）へ移設済みのため、§4.1・§4.3 を参照。
 
-#### 4.5.1 Tier 3 Platform 要求キーワード (5 件)
+#### 4.5.1 Tier 3 Platform 要求キーワード (2 件)
 
 | キーワード | 定義元正本 | 対象コンポーネント | 仕様概要・検証内容 |
 | :--- | :--- | :--- | :--- |
-| `{MemoryIsolation}` | `requirement_list.md` | `platform_memory.md` | MPU によるコード領域・スタック領域・共有メモリ領域のハードウェア保護 |
-| `{Shm_Allocator}` | `requirement_list.md` | `platform_memory.md` | IPC 共有メモリ領域（MPU Region 6）用 dlmalloc アロケータ。可変長 shared_block の切り出し・RAII解放時合体 |
-| `{HAL_Interface}` | `requirement_list.md` | `platform_hal.md` | 物理ハードウェアと上位層を抽象化する統一 HAL インターフェース |
-| `{Fast_Path_GPIO}` | `requirement_list.md` | `platform_hal.md` | コンテキストスイッチを介さず直接ポート操作を行う GPIO 高速パス |
-| `{PhysicalPassthrough}` | `requirement_list.md` | `platform_hal.md` | 認可された特定周辺ペリフェラルへのゼロオーバーヘッド直接物理パススルー |
+| `{Fast_Path_GPIO}` | `requirement_list.md` | `platform_driver.md` | コンテキストスイッチを介さず直接ポート操作を行う GPIO 高速パス |
+| `{PhysicalPassthrough}` | `requirement_list.md` | `platform_driver.md` | 認可された特定周辺ペリフェラルへのゼロオーバーヘッド直接物理パススルー |
 
-#### 4.5.2 Tier 3 Platform 設計の勘所 (GOTCHA) (3 件)
+#### 4.5.2 Tier 3 Platform 設計の勘所 (GOTCHA) (1 件)
 
 | キーワード | 定義元正本 | 対象コンポーネント | 仕様概要・検証内容 | 結合テスト / テストID |
 | :--- | :--- | :--- | :--- | :--- |
-| `{MEM-GOTCHA-03}` | `platform_memory.md` | `platform_memory_test_spec.md` | 送信中状態（FB_TASK_ID_FLIGHT）は TLB を即時破棄し送受信双方からのアクセスを遮断する；転送失敗時は rollback_transfer() で送信元 owner_id へ復元する | MEM-GOTCHA-03 |
-| `{MEM-GOTCHA-04}` | `platform_memory.md` | `platform_memory_test_spec.md` | W^X 切り替えは命令単位ではなくトランザクションバッチ化し、パッチ完了時に一括で RO+X とキャッシュバリア（DSB/ISB）を発行する | MEM-GOTCHA-04 |
-| `{HAL-GOTCHA-01}` | `platform_hal.md` | `platform_hal_test_spec.md` | HalBufferPool は固定サイズを超えるスライス要求を即座にエラー/アサーション違反で拒絶する（隣接バッファ汚染防止） | HAL-GOTCHA-01 |
+| `{HAL-GOTCHA-01}` | `platform_driver.md` | `platform_driver_test_spec.md` | HalBufferPool は固定サイズを超えるスライス要求を即座にエラー/アサーション違反で拒絶する（隣接バッファ汚染防止） | HAL-GOTCHA-01 |
 
 ---
 
@@ -368,7 +369,7 @@ Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キ�
 | `{DirectMappedTLB16}` | `runtime_vmmio.md` | `runtime_vmmio.md` | 20-bit VPN の 4-bit Folding XOR Hash による Direct-Mapped TLB | Scenario 10 (INT-92) |
 | `{FlatMapView_BinarySearch}` | `system_containers.md` | `system_containers.md` | 静的ソート配列に対する $O(\log N)$ バイナリサーチ（動的割当なし） | Scenario 1, 9 (INT-01, INT-80) |
 | `{FuelExhaustion_Yield}` | `os_scheduler.md` | `os_scheduler.md` | Fuel 枯渇（トレース境界での quantum 判定）での決定論的な中断と再開 | Scenario 6 (INT-50) |
-| `{HAL_PeripheralDrivers}` | `platform_hal.md` | `platform_hal.md` | GPIO（入出力・エッジIRQ）、I2C（LM75）、SPI（EEPROM）、Timer ダミードライバ | Scenario 11 (INT-100〜INT-102) |
+| `{HAL_PeripheralDrivers}` | `platform_driver.md` | `platform_driver.md` | GPIO（入出力・エッジIRQ）、I2C（LM75）、SPI（EEPROM）、Timer ダミードライバ | Scenario 11 (INT-100〜INT-102) |
 | `{ISR_Safety}` | `os_coos.md` | `os_coos_test_spec.md` | ISRコンテキストとスケジューラ境界の分離——ISRはイベントキューへの記録のみ行い、run_step 開始時の割り込みドレインで初めてタスクがREADYへ遷移する | COOS-GOTCHA-03 |
 | `{InterruptibleFlush}` | `system_logging.md` | `system_logging_test_spec.md` | flush 実行中に interrupt_pending() が真を返した時点で全フラッシュを強行せずループを抜けてスケジューラへ制御を戻す | LOG-GOTCHA-03 |
 | `{JIT_CandidateBitmap}` | `runtime_loader.md` | `runtime_loader.md` | WASMロード時にJITコンパイル対象と判定された基本ブロックをCard単位1bitでマーキングするJIT候補ビットマップ（非候補カードでのtouchスキップ連携） | LOAD-49, LOAD-50 |
@@ -376,11 +377,11 @@ Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キ�
 | `{JitBranchChainingHandler}` | `jit_compiler.md` | `jit_compiler.md` | JIT 専用チェイニングハンドラと純粋インタープリタ分岐ハンドラの分離 | Scenario 4, 5 |
 | `{Libgcc_Runtime_Helper}` | `runtime_interpreter.md` | `runtime_interpreter.md` | i64 / f32 / f64 の libgcc 依存演算をランタイムヘルパー関数経由で実行する設計 | Scenario 1, 8 |
 | `{Loader_BasicBlockIndex}` | `runtime_loader.md` | `runtime_loader.md` | WASMローダによる全ベーシックブロックメタ情報（BasicBlock）の不変抽出と RadixBinaryTreeView（bswap32キー）索引の所有・公開 | LOAD-48 |
-| `{MPU_WX_Enforcement}` | `platform_memory.md` | `platform_memory.md` | JITコンパイル時のMPU属性切り替え（RW+XN ⇔ RO+X）とキャッシュコヒーレンシバリア発行のトランザクションバッチ化ポリシー | MEM-GOTCHA-04 |
+| `{MPU_WX_Enforcement}` | `runtime_memory.md` | `runtime_memory.md` | JITコンパイル時のMPU属性切り替え（RW+XN ⇔ RO+X）とキャッシュコヒーレンシバリア発行のトランザクションバッチ化ポリシー | MEM-GOTCHA-04 |
 | `{MainLoopReturnGuarantee}` | `os_coos.md` | `os_coos.md` | 連続ハンドオフ上限到達時のメインループ強制復帰形式保証 | Scenario 6 |
 | `{Orthogonal_Design}` | `os_coos.md` | `os_coos_test_spec.md` | 1チャネル1待機者の強制——多重待機はプログラミングエラーとして即座にアサーション違反で停止する（待機列によるキューイングを設計上排除） | COOS-GOTCHA-02 |
 | `{OwnerMismatchTrap}` | `runtime_vmmio.md` | `runtime_vmmio.md` | タスク間共有メモリ（FC=0xE）の所有権移動に伴うアンマップによる未登録ページフォルト（TRAP_UNREGISTERED_PAGE）遮断 | Scenario 10 (INT-93) |
-| `{PageGranularPermissionIsolation}` | `platform_memory.md` | `platform_memory.md` | 共有メモリの4KB物理ページ単位での排他所有権管理とアクセス権限分離 | MEM-14 |
+| `{PageGranularPermissionIsolation}` | `runtime_memory.md` | `runtime_memory.md` | 共有メモリの4KB物理ページ単位での排他所有権管理とアクセス権限分離 | MEM-14 |
 | `{PreflightRejection}` | `ipc_router.md` | `ipc_router.md` | Revoke前の静的チェック（RBAC拒否・メッセージサイズ超過）失敗時、所有権は送信側から一度も動かない | Scenario 9 (INT-81) |
 | `{RAM_Bypass_Bit31}` | `runtime_vmmio.md` | `runtime_vmmio.md` | Bit 31 == 0 アドレスに対するページテーブル不使用 $O(1)$ 高速バイパス | Scenario 10 (INT-90) |
 | `{RSPChecksumVerify}` | `gdb_rsp_protocol.md` | `debug_manager.md` | GDB RSP パケットのチェックサム検証と、不一致時のNAK応答による再送制御ポリシー | DBG-GOTCHA-03 |
@@ -393,6 +394,6 @@ Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キ�
 | `{TraceBoundaryInvariant}` | `jit_compiler.md` | `jit_compiler.md` | トレース境界でのスタック自己完結性、メモリ同期、およびフォールバック | Scenario 4, 5 (INT-31, INT-41) |
 | `{TrackableBlockMask}` | `jit_runtime.md` | `jit_runtime.md` | ロード時に一度だけ確定する 1-bit ブロック追跡可否マスク。カードマーキング表の更新対象かをディスパッチ時に $O(1)$ 判定 | Scenario 4, 5 (JITR-GOTCHA-07) |
 | `{VSOC_Lifecycle}` | `runtime_vsoc.md` | `runtime_vsoc.md` | vSoC Engine の状態遷移とインタープリタ／JIT切り替えライフサイクル | Scenario 7, 8 |
-| `{VmmioShmDelegation}` | `runtime_vmmio.md` | `platform_memory.md` | vMMIO FC=14共有メモリマッピングと権限・TLB無効化のメモリマネージャリスナー移譲 | MEM-15 |
+| `{VmmioShmDelegation}` | `runtime_vmmio.md` | `runtime_memory.md` | vMMIO FC=14共有メモリマッピングと権限・TLB無効化のメモリマネージャリスナー移譲 | MEM-15 |
 | `{WASI_InMemVFS}` | `interface_wit.md` | `system_service.md` | WASI In-Memory VFS（fd_seek, fd_read, fd_write, random_get, clock_time_get） | Scenario 11 (INT-103〜INT-105) |
 | `{WASI_ScatteredIO}` | `system_syscall.md` | `system_syscall.md` | 分散ギャザー fd_write / スキャッター fd_read による多要素 iovec 転送 | Scenario 2, 11 (INT-10, INT-104) |

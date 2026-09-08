@@ -40,8 +40,8 @@ Python シミュレータ（`experiments/pysim`）の実装行数（実測 12,58
 | - Stencil カタログ (Thumb-2) | 617 | ~700 | `constexpr` Thumb-2 機械語バイナリテンプレート配列 |
 | - JIT コードキャッシュ代謝 | 197 | ~300 | 3面世代交代（Active/Warm/Oldest）、Oldest限定昇格、MPU $W \oplus X$ 制御 |
 | **Tier 3 Platform & HAL** | **2,109** | **~1,800** | |
-| - `platform_memory` | 737 | ~700 | 統合物理プール（ConsolidatedHeap）、静的パーティショニング、SHM マネージャ |
-| - `platform_hal` & Drivers | 611 | ~600 | 協調 HAL タスク、UART/RTT/GPIO/I2C/SPI ドライバ、ISR リングバッファ |
+| - `system_memory` / `runtime_memory` | 737 | ~700 | 統合物理プール（ConsolidatedHeap）、静的パーティショニング、SHM マネージャ |
+| - `runtime_hal` / `platform_driver` | 611 | ~600 | 協調 HAL タスク、UART/RTT/GPIO/I2C/SPI ドライバ、ISR リングバッファ |
 | - WASI Preview 1 Adapter | 760 | ~500 | `fd_write`, `fd_read`, `clock_time_get` 等の薄い HAL ラッパー |
 | **合計** | **12,580** | **~14,500 LOC** | **`{Size_15KLOC}` (15,000 LOC 以内) を完全に達成** |
 

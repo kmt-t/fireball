@@ -29,6 +29,8 @@ Fireballは、リソース制限の厳しい小規模組み込みデバイス（
 | **デバイスドライバ** | 各種ドライバ | 物理デバイス制御（UART, GPIO等）。 |
 | **ハードウェア** | CPU, 周辺機器 | 物理基盤（ARM Cortex-M, RISC-V等）。 |
 
+**サービスとサブシステムの区別 (`{META_ServiceIsWasmResident}`)**: 「サービス」は WASM 上で実行される常駐タスクを指す（例: `system_service.md` が扱う独立アイソレーション・サービス）。一方、HAL・ロギング等のネイティブコードとして COOS 上に常駐する基盤機能は「サブシステム」と呼び、サービスとは明確に区別する。コンポーネント設計書やダイアグラム上でサブシステムを「〜Service」と命名してはならない。 `{META_ServiceIsWasmResident}`
+
 ### 2.2 コンポーネント定義図 (BDD)
 <!-- traceability: {CleanArchitecture} {IoC} -->
 

@@ -21,25 +21,28 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
   · COOS (os_coos, os_scheduler)
   · Interface (ipc_router, system_service, interface_wit)
   · System Core (system_config, system_logging, system_syscall, system_containers)
+  · Memory Contract (system_memory) — パーティション貸与ポリシー・独立ヒープ不変条件の抽象契約（`co_mem`）
            │
-           │  複雑な状態空間・機能のサブシステム分解
+           │  複雑な状態空間・機能のサブシステム分解 / 契約と実装の意図的分割
            ▼
 [ Tier 2: 分解されたサブコンポーネント (Decomposed Subcomponents) ] ─ (How - Subsystem)
   · vSoC Subsystem (runtime_vsoc, runtime_loader, runtime_interpreter, runtime_vmmio)
   · Debug Subsystem (debug_manager)
+  · Memory Implementation (runtime_memory) — `system_memory` 契約を実装する `system_allocator`/`shm_allocator`（dlmalloc アリーナ）
+  · HAL Abstraction (runtime_hal) — URI Resolver・トランスポート抽象、`{IPCRouter}` 経由のデバイス仲介
            │
            │  深層コンポーネント・プラットフォーム具象化への分解
            ▼
 [ Tier 3: リーフ / プラットフォームコンポーネント (Leaf & Platform Components) ] ─ (How - Leaf / Physical)
   · JIT Subsystem (jit_compiler, jit_runtime) — vSoC の実行エンジンから分解された JIT コアおよびランタイム
-  · Platform (platform_hal, platform_memory)
+  · Platform (platform_driver) — ドライバ物理実装（UART/SEGGER RTT 物理レジスタ操作、RSPエンコード/デコード）のみ
 
 [ Meta: 横断的メタ設計・開発計画 (Cross-cutting / Meta) ] ─ (全Tier横断)
   · Architecture (architecture_overview, combinatorial_test_spec, document_structure, integration_test_scenarios, keyword_dictionary, resource_budget_estimation)
   · Plans (roadmap_phase, backlog_list, backlog_archive)
 
-[ Specs: 横串物理仕様・規格マトリクス (Cross-cutting Physical Specs & Catalogs) ] ─ (全Tier横断・具象規格)
-  · Specs (wasm_instruction_set, wasi_preview1_abi, gdb_rsp_protocol, jit_stencil_catalog)
+[ Specs: 横串物理仕様・規格マトリクス (Cross-cutting Physical Specs & Catalogs) ] ─ (全Tier横断・具象規格、個々のファイルにTierラベルを明示)
+  · Specs (wasm_instruction_set, wasi_preview1_abi [Tier3], gdb_rsp_protocol, jit_stencil_catalog, wasi_preview03p_component_model [Tier3])
 ```
 
 ### 1.1 各 Tier の定義と配置ディレクトリ
@@ -47,10 +50,10 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 | レイヤー | ディレクトリ | 定義される設計書 | 複雑度・責務の範囲 |
 | :--- | :--- | :--- | :--- |
 | **Tier 0** | `docs/requires/` | システム要求仕様書 (`requirement_list.md`) | **最上位要求 (Why)**<br>システム全体が満たすべき受入基準・機能要求。 |
-| **Tier 1** | `docs/components/tier1_core/`<br>`docs/components/tier1_interface/` | スケジューラ、チャネル通信、システムサービス、IPCルータ、共有静的コンテナ語彙等のコア仕様書 | **粗粒度主要コンポーネント (What)**<br>要求（Tier 0）を直接受け取る。単一仕様書で状態遷移・ポリシーを自己完結して記述可能なシステム要素。 |
-| **Tier 2** | `docs/components/tier2_runtime/` | WASMインタープリタ、WASMローダー、vMMIO、デバッグマネージャ等のサブコンポーネント仕様書 | **分解されたサブコンポーネント (How - Subsystem)**<br>Tier 1 で扱うには状態空間やアルゴリズムが複雑化するため、独立した責務としてブレークダウンされた要素。 |
-| **Tier 3** | `docs/components/tier3_platform/`<br>`docs/components/tier3_jit/` | HAL実装、物理メモリ管理、JITコンパイラ一式（コード生成コア `jit_compiler.md`、ランタイム管理 `jit_runtime.md`）| **詳細リーフ / 物理コンポーネント (How - Leaf)**<br>Tier 2 からさらに責務が切り出された具象コンポーネント、またはハードウェア抽象化層。 |
-| **Specs** | `docs/specs/` | WASM命令セット、WASI API、GDB RSP、JITステンシルカタログ等の規格マトリクス | **横串物理規格・具象カタログ (How - Physical Specs)**<br>コンポーネントを横断して統一される具象バイナリ列、ABI、パケット形式、命令セットマトリクス。 |
+| **Tier 1** | `docs/components/tier1_core/`<br>`docs/components/tier1_interface/` | スケジューラ、チャネル通信、システムサービス、IPCルータ、共有静的コンテナ語彙、メモリマネージャ抽象契約（`system_memory.md`）等のコア仕様書 | **粗粒度主要コンポーネント (What)**<br>要求（Tier 0）を直接受け取る。単一仕様書で状態遷移・ポリシーを自己完結して記述可能なシステム要素。契約/実装分割パターン（§2.1-4）では抽象契約側を担う。 |
+| **Tier 2** | `docs/components/tier2_runtime/` | WASMインタープリタ、WASMローダー、vMMIO、デバッグマネージャ、メモリマネージャ実装（`runtime_memory.md`）、HAL抽象化層（`runtime_hal.md`）等のサブコンポーネント仕様書 | **分解されたサブコンポーネント (How - Subsystem)**<br>Tier 1 で扱うには状態空間やアルゴリズムが複雑化するため、独立した責務としてブレークダウンされた要素。契約/実装分割パターン（§2.1-4）では実装側を担う場合がある。 |
+| **Tier 3** | `docs/components/tier3_platform/`<br>`docs/components/tier3_jit/` | HALドライバ実装（`platform_driver.md`）、JITコンパイラ一式（コード生成コア `jit_compiler.md`、ランタイム管理 `jit_runtime.md`）| **詳細リーフ / 物理コンポーネント (How - Leaf)**<br>Tier 2 からさらに責務が切り出された具象コンポーネント、またはハードウェア抽象化層の最終物理実装。 |
+| **Specs** | `docs/specs/` | WASM命令セット、WASI Preview 1 ABI、WASI 0.3p コンポーネントモデル、GDB RSP、JITステンシルカタログ等の規格マトリクス | **横串物理規格・具象カタログ (How - Physical Specs)**<br>コンポーネントを横断して統一される具象バイナリ列、ABI、パケット形式、命令セットマトリクス。各ファイル冒頭にアーキテクチャ分類（Tierラベル）を明示する。 |
 | **Meta** | `docs/architecture/`<br>`docs/plans/` | 全体アーキテクチャ、設計方針、開発計画 | **全Tier横断メタ設計**<br>Hypervisor の機能コンポーネント自体には属さない共通ポリシー・計画。 |
 
 ---
@@ -64,6 +67,9 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
    - 判定基準は「単一仕様書に自己完結して書けるか」であり、「親から分解された」という記述の有無ではない。vSoC の Interpreter/vMMIO/Loader は vSoC から分解されたと書きつつも各々 1 ファイルに自己完結するため Tier 2 のまま（vSoC の Tier 2 サブコンポーネント群の一員）。JIT は実行時コード生成の責務分離として、コード生成コア（`jit_compiler.md`）とランタイム制御（`jit_runtime.md`）の 2 ファイルで Tier 3 に位置する。
 2. **検証可能性（Verification Tractability）の維持**: 形式検証（pyModelChecking等）において状態空間が爆発しない単位に状態遷移モデルを区切る。
 3. **親コンポーネントのカプセル化**: 分解元（上位Tier）は、分解先（下位Tier）の内部実装パラメータに依存せず、抽象インターフェースのみで統合する。
+4. **契約（Interface / What）と実装（Implementation / How）の意図的分割**: 上記1〜3とは独立した、意図的な分割基準として、単一コンポーネントが「上位Tierが定義すべき抽象契約（インターフェース仕様、ポリシー、不変条件）」と「下位Tierが担うべき物理実装（具体的なアルゴリズム・データ構造・アロケータ実装）」の双方を含む場合、これらを別ファイル・別Tierへ明示的に分割する。判定基準は「単一仕様書に自己完結して書けるか」（項目1）ではなく、「契約と実装が異なる抽象度を持ち、クリーンアーキテクチャの依存方向規則と準同型にすることで実装詳細の変更が契約に波及しない構造を作れるか」である。
+   - 例: メモリマネージャは、パーティション貸与ポリシー・独立ヒープ不変条件という抽象契約（`co_mem`）を Tier 1（`system_memory.md`）に、`system_allocator`/`shm_allocator` の dlmalloc アリーナ実装を Tier 2（`runtime_memory.md`）に分割する。
+   - 例: HAL は、URI Resolver・トランスポート抽象という抽象化層を Tier 2（`runtime_hal.md`）に、UART/SEGGER RTT 等の物理ドライバ実装を Tier 3（`platform_driver.md`）に分割する。
 
 ### 2.2 依存方向のルール
 1. **下り方向の依存（詳細化・具体化）**:
@@ -72,13 +78,14 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 2. **上り方向の依存禁止（カプセル化・逆流禁止）**:
    - 上位 Tier (N) が、より下位の Tier (N+1, N+2) の内部具象構造や下位パラメータに直接依存してはならない。
    - 上位コンポーネントが下位の機能を束ねる場合（例: vSoC ハーネス）、必ず定義されたインターフェース（Stateless Interface / Harness）を介して統合すること。
+3. **契約/実装分割ペアの参照関係**: §2.1-4 の契約/実装分割パターンを適用したコンポーネント（例: `system_memory.md` ↔ `runtime_memory.md`、HAL の抽象化層 ↔ ドライバ実装）では、実装側ファイルが契約側ファイルを冒頭の `<!-- evidence: ... -->` またはトレーサビリティコメントで明示的に参照し、「どの上位契約を実装しているか」を宣言すること。契約側ファイルは実装側の具象データ構造・アロケータ実装詳細を記述しない（項目2の逆流禁止に従う）。
 
 ### 2.3 矛盾が見つかった場合の解決規則（Clean Architecture の依存ルールに基づく）
 
 下位 Tier の文書が、それが参照・具体化しているはずの上位 Tier の文書と矛盾している場合、**常に上位 Tier 側が正**である。Clean Architecture の依存ルールにおいて、方針（policy）は内側の層が定義し、詳細（detail）は外側の層がそれに従って実装するのであって、逆向きに詳細が方針を決めることはない。本プロジェクトの Tier 構造ではこれが「上位 Tier ほど粗粒度の方針を、下位 Tier ほど具体化された詳細を記述する」という配置（§1）に対応するため、下位が上位と食い違うのは常に**下位側の記述誤り・追随漏れ**であり、上位側を下位に合わせて書き換えることはしない。
 
 - 矛盾を見つけた場合は、上位 Tier の記述（インターフェース名・シグネチャ・状態モデル・語彙）に下位 Tier 側を合わせて修正する。
-- 同一 Tier 内の文書同士が食い違う場合（例: Tier 3 の `platform_hal.md` と `platform_memory.md`）は上下関係がないため、両者が同じ下位機構（例: 同じ vMMIO アドレス空間）を指しているかを確認し、矛盾なく整合させる。判断がつかない場合は解決を断定せず、両文書に矛盾として明記した上でどちらかの正本化を提案する。
+- 同一 Tier 内の文書同士が食い違う場合（例: Tier 2 の `runtime_vmmio.md` と `runtime_memory.md`）は上下関係がないため、両者が同じ下位機構（例: 同じ vMMIO アドレス空間）を指しているかを確認し、矛盾なく整合させる。判断がつかない場合は解決を断定せず、両文書に矛盾として明記した上でどちらかの正本化を提案する。
 - 「上位 Tier の記述が古い／実装しづらい」という理由で下位 Tier 側の記述を正として上位を書き換えることはしない。上位を変更すべきだとコンポーネント作業者が判断した場合は、それ自体を独立した提案として明示し、黙って下位からの逆流で上書きしない（§2.2「上り方向の依存禁止」）。
 
 ---
@@ -117,6 +124,7 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 | `{META_RestrictedPhysicalAccess}` | 物理リソースへのアクセスを許可テーブルで厳格に制限する。 |
 | `{META_StaticDI}` | コンパイル時の設定・静的バインディングにより依存性を注入する。 |
 | `{META_AI_Native_Dev}` | 定型的な実装はLLMを活用し、設計と検証の品質を重視する。 |
+| `{META_ServiceIsWasmResident}` | 「サービス」はWASM上で実行される常駐タスクを指し、HAL・ロギング等のネイティブ常駐基盤機能（サブシステム）とは区別する。 |
 | `{META_Risk_Tiering}` | リスクベースの設計階層化。重要度や不確実性に応じて検証レベルを調整する。 |
 | `{META_SpecificationFirst}` | 実装に先立ち、形式仕様や契約を定義する開発スタンス。 |
 | `{META_ZeroOverhead}` | ゼロコスト抽象化。高性能組み込み向けC++デザイン。 |
@@ -148,6 +156,17 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 
 ---
 
+### 4.4 上位/下位キーワード表記規約
+
+中括弧表記のメタキーワードについて、定義元コンポーネント（上位Tier）と参照側コンポーネント（下位Tier）とで記述箇所を区別する。
+
+- **定義元コンポーネント（上位Tier）**: 当該キーワードをセクション見出し（`###`/`####`）に明示する。
+- **参照側コンポーネント（下位Tier）**: 本文インラインで当該キーワードを引用する。
+
+契約/実装分割パターン（§2.1-4）で分割されたコンポーネント対（例: `system_memory.md` が定義元、`runtime_memory.md` が参照側）に特に適用される。既存の慣行（定義側・参照側ともに本文インライン記述）から変更となるため、移行は契約/実装分割の対象キーワードから段階的に行い、`spec-integrator` のキーワード抽出ロジックが見出し形式のキーワードも正しく解釈できることを確認しながら適用範囲を広げる。
+
+---
+
 ## 5. 検証タグとエビデンス（Evidence）の対応体系
 
 各設計書は、タイトル行で検証種別（`{VERIFY_*}`）を明示し、直下に `<!-- evidence: ... -->` コメントブロックを配置して機械検証可能なエビデンスファイルを宣言する。
@@ -169,6 +188,6 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 | :--- | :--- | :--- |
 | [`coos_channel_model.py`](docs/components/tier1_core/formal/coos_channel_model.py) | - CSP チャネル純粋ランデブー<br>- デッドロック不在・二重所有不在<br>- 連続ハンドオフ有界復帰 | - `components/tier1_core/os_coos.md`<br>- `components/tier1_core/os_scheduler.md`<br>- `components/tier1_core/system_config.md` |
 | [`csp_handoff_model.py`](docs/components/tier1_interface/formal/csp_handoff_model.py) | - 所有権移譲と Drop ハンドラによる二重所有・リーク防止 | - `components/tier1_interface/ipc_router.md` |
-| [`vsoc_cache_coherency_model.py`](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) | - vSoC JIT キャッシュ整合性・Debugger 介入安全性・ローテーション有界性 | - `components/tier2_runtime/runtime_vsoc.md`<br>- `components/tier2_runtime/debug_manager.md`<br>- `components/tier3_jit/jit_compiler.md`<br>- `components/tier3_platform/platform_memory.md` |
-| [`vsoc_state_model.py`](docs/components/tier2_runtime/formal/vsoc_state_model.py) | - vSoC 実行状態<br>- Safepoint ポーリング応答性<br>- 割り込み/デバッグフォールバック | - `components/tier2_runtime/runtime_vsoc.md`<br>- `components/tier2_runtime/runtime_vmmio.md`<br>- `components/tier2_runtime/runtime_interpreter.md`<br>- `components/tier2_runtime/debug_manager.md`<br>- `components/tier3_platform/platform_hal.md`<br>- `components/tier1_core/system_config.md` |
-| [`jit_cache_model.py`](docs/components/tier3_jit/formal/jit_cache_model.py) | - 3面キャッシュ代謝<br>- MPU W^X 保護<br>- 遅延チェイニング局所アンリンク安全性<br>- 2-bit Hotspot FSM | - `components/tier3_jit/jit_compiler.md`<br>- `components/tier3_jit/jit_runtime.md`<br>- `components/tier3_platform/platform_memory.md` |
+| [`vsoc_cache_coherency_model.py`](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) | - vSoC JIT キャッシュ整合性・Debugger 介入安全性・ローテーション有界性 | - `components/tier2_runtime/runtime_vsoc.md`<br>- `components/tier2_runtime/debug_manager.md`<br>- `components/tier3_jit/jit_compiler.md`<br>- `components/tier2_runtime/runtime_memory.md` |
+| [`vsoc_state_model.py`](docs/components/tier2_runtime/formal/vsoc_state_model.py) | - vSoC 実行状態<br>- Safepoint ポーリング応答性<br>- 割り込み/デバッグフォールバック | - `components/tier2_runtime/runtime_vsoc.md`<br>- `components/tier2_runtime/runtime_vmmio.md`<br>- `components/tier2_runtime/runtime_interpreter.md`<br>- `components/tier2_runtime/debug_manager.md`<br>- `components/tier3_platform/platform_driver.md`<br>- `components/tier1_core/system_config.md` |
+| [`jit_cache_model.py`](docs/components/tier3_jit/formal/jit_cache_model.py) | - 3面キャッシュ代謝<br>- MPU W^X 保護<br>- 遅延チェイニング局所アンリンク安全性<br>- 2-bit Hotspot FSM | - `components/tier3_jit/jit_compiler.md`<br>- `components/tier3_jit/jit_runtime.md`<br>- `components/tier2_runtime/runtime_memory.md` |

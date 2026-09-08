@@ -23,13 +23,12 @@ class TrapCode:
     UNDEFINED_FC = "TRAP_UNDEFINED_FC"
     UNREGISTERED_PAGE = "TRAP_UNREGISTERED_PAGE"
     ACCESS_VIOLATION = "TRAP_ACCESS_VIOLATION"
-    OWNER_MISMATCH = "TRAP_OWNER_MISMATCH"
 
 
 # Function Codes (bits[31:28]) — see runtime_vmmio.md "アドレス分解の対応関係"
-FC_STATIC_DEVICE = 0xC  # 0xC000_0000: SYSCTL / IPCR / VDMA (Tier 2, syscall dispatch)
-FC_SHM = 0xE  # 0xE000_0000: Shared Memory (Tier 3, owner-checked)
-FC_PASSTHROUGH = 0xF  # 0xF000_0000: Physical passthrough (Tier 3)
+FC_STATIC_DEVICE = 0xC  # 0xC000_0000: SYSCTL / IPCR / VDMA (Stage 2, syscall dispatch)
+FC_SHM = 0xE  # 0xE000_0000: Shared Memory (Stage 3, mapping-checked, no owner_id)
+FC_PASSTHROUGH = 0xF  # 0xF000_0000: Physical passthrough (Stage 3)
 FB_TASK_ID_INVALID = 0x00
 FB_TASK_ID_FLIGHT = 0xFF
 
@@ -41,7 +40,7 @@ class VmmioAddress:
         self.raw = raw & 0xFFFF_FFFF
 
     def is_linear(self) -> bool:
-        # Bit[31] == 0 -> guest RAM (Tier 1), fast-bypass vMMIO entirely.
+        # Bit[31] == 0 -> guest RAM (Stage 1), fast-bypass vMMIO entirely.
         return (self.raw & 0x8000_0000) == 0
 
     def fc(self) -> int:
@@ -138,7 +137,7 @@ class ShmVirtualAddressAllocator:
         return (ShmVirtualAddressAllocator.BASE_ADDR >> 12) | vpage_idx
 
 
-class Tier3PTE:
+class Stage3PTE:
     """
     FC=14/15 (SHM / PASSTHROUGH). 32-bit layout, no bit overlap:
         [31:12] PPN(20) | [11] VALID | [10] READ | [9] WRITE | [8] EXEC | [7:0] Reserved (0)
@@ -163,7 +162,7 @@ class Tier3PTE:
 
 class TLBSlot(TypedDict):
     vpn: int
-    pte: StaticDevicePTE | Tier3PTE | None
+    pte: StaticDevicePTE | Stage3PTE | None
 
 
 class VMMIOController:
@@ -178,7 +177,7 @@ class VMMIOController:
         self.guest_ram_size = guest_ram_size
         self.allocator = ShmVirtualAddressAllocator()
         # FlatMap PTE storage: vpn (20-bit) -> PTE
-        self.ptes: dict[int, StaticDevicePTE | Tier3PTE] = {}
+        self.ptes: dict[int, StaticDevicePTE | Stage3PTE] = {}
         # Direct-mapped TLB: 16 slots, keyed by 4-bit Folding XOR Hash over 20-bit VPN.
         self.tlb: list[TLBSlot] = [TLBSlot(vpn=0xFFFF_FFFF, pte=None) for _ in range(16)]
         self.tlb_hits = 0
@@ -192,12 +191,12 @@ class VMMIOController:
         read: bool = True,
         write: bool = True,
     ) -> None:
-        """Registers a Tier 2 static device page (FC=12) into FlatMap."""
+        """Registers a Stage 2 static device page (FC=12) into FlatMap."""
         self.ptes[vpn] = StaticDevicePTE(handler=handler, read=read, write=write)
 
     def map_shm_page(self, vpn: int, phys_page: int, read: bool = True, write: bool = True) -> None:
-        """Registers a Tier 3 SHM page (FC=14) into FlatMap. Pure PTE without owner_id."""
-        self.ptes[vpn] = Tier3PTE(
+        """Registers a Stage 3 SHM page (FC=14) into FlatMap. Pure PTE without owner_id."""
+        self.ptes[vpn] = Stage3PTE(
             phys_page=phys_page,
             valid=True,
             read=read,
@@ -244,8 +243,8 @@ class VMMIOController:
     def map_passthrough_page(
         self, vpn: int, phys_page: int, read: bool = True, write: bool = True
     ) -> None:
-        """Registers a Tier 3 Passthrough page (FC=15) into FlatMap."""
-        self.ptes[vpn] = Tier3PTE(
+        """Registers a Stage 3 Passthrough page (FC=15) into FlatMap."""
+        self.ptes[vpn] = Stage3PTE(
             phys_page=phys_page,
             valid=True,
             read=read,
@@ -266,7 +265,7 @@ class VMMIOController:
         """
         return (vpn ^ (vpn >> 4) ^ (vpn >> 8) ^ (vpn >> 12) ^ (vpn >> 16)) & 15
 
-    def _lookup_pte(self, addr: VmmioAddress) -> StaticDevicePTE | Tier3PTE | None:
+    def _lookup_pte(self, addr: VmmioAddress) -> StaticDevicePTE | Stage3PTE | None:
         """Returns the PTE from TLB (O(1)) or falls back to FlatMap."""
         vpn = addr.vpn()
         tlb_idx = self.tlb_index(vpn)
@@ -290,7 +289,7 @@ class VMMIOController:
         Returns (status_code, detail).
         """
         addr = VmmioAddress(raw_addr)
-        # 1. Fast RAM bypass (Tier 1) — O(1), never touches the page table.
+        # 1. Fast RAM bypass (Stage 1) — O(1), never touches the page table.
         if addr.is_linear():
             if addr.raw >= self.guest_ram_size:
                 return (
@@ -318,7 +317,7 @@ class VMMIOController:
             if pte.handler is not None:
                 pte.handler(addr.syscall_metadata(), addr.offset(), is_write)
             return ("OK_SYSCALL", "dispatched to static device handler")
-        # Tier3PTE (SHM / PASSTHROUGH)
+        # Stage3PTE (SHM / PASSTHROUGH)
         if not pte.valid:
             return (TrapCode.ACCESS_VIOLATION, "page marked invalid")
         if is_write and not pte.write:
@@ -412,7 +411,7 @@ def test_linear_ram_is_bounds_checked_not_waved_through() -> None:
         st, _ = ctrl.access(bad, is_write=True)
         assert st == TrapCode.OUT_OF_BOUNDS, f"{bad:#x} is past the 8KB allocation"
     assert ctrl.tlb_hits == 0 and ctrl.tlb_misses == 0, (
-        "the Tier 1 path must never touch the page table"
+        "the Stage 1 path must never touch the page table"
     )
 
 

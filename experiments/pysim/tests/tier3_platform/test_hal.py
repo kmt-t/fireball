@@ -2,7 +2,7 @@ from __future__ import annotations
 
 """
 Unit tests for Tier 3 Platform: HAL Drivers & ShmPool
-Traceability: platform_hal_test_spec.md
+Traceability: runtime_hal_test_spec.md / platform_driver_test_spec.md
 """
 
 import sys
@@ -35,8 +35,8 @@ for _p in [
 from hal import (
     FB_CONF_HAL_BUFFER_SIZE,
     FB_CONF_HAL_MAX_BUFFERS,
-    HalBufferPool,
-    HalBufferTrap,
+    ShmBufferPool,
+    ShmTrap,
     Timer,
     UartTransport,
 )
@@ -75,8 +75,8 @@ def test_hal_02_timer_monotonic_ns():
     assert t2 > t1
 
 
-def test_hal_03_buffer_pool_rejects_oversized():
-    pool = HalBufferPool()
+def test_hal_03_shm_pool_rejects_oversized():
+    pool = ShmBufferPool()
     try:
         try:
             pool.acquire_buffer(1, size=FB_CONF_HAL_BUFFER_SIZE + 1)
@@ -89,16 +89,16 @@ def test_hal_03_buffer_pool_rejects_oversized():
         pool.close_all()
 
 
-def test_hal_04_buffer_slice_bounds_and_ownership():
-    pool = HalBufferPool()
+def test_hal_04_shm_slice_bounds_and_ownership():
+    pool = ShmBufferPool()
     try:
         h = pool.acquire_buffer(task_id=1, size=16)
         view = pool.view(1, h, 0, 16)
         assert len(view) == 16
         try:
             pool.view(2, h, 0, 16)
-            raise AssertionError("expected HalBufferTrap: task 2 does not own handle")
-        except HalBufferTrap:
+            raise AssertionError("expected ShmTrap: task 2 does not own handle")
+        except ShmTrap:
             pass
     finally:
         pool.close_all()
@@ -121,13 +121,13 @@ def test_hal_task_ipc_communication():
         # Send command via IPC
         nwritten = engine.send_ipc_command(
             "fireball://device/uart/0",
-            WasiIpcCmd.STREAM_WRITE_BUFFER,
+            WasiIpcCmd.STREAM_WRITE_SHM,
             FlatMapView([(ARG_LENGTH, 128), (ARG_OFFSET, 0)]),
         )
         assert nwritten == 128
         assert sysv.hal_task.processed_count == 1
         assert sysv.hal_task.last_handled_uri == "fireball://device/uart/0"
-        assert sysv.hal_task.last_handled_cmd == WasiIpcCmd.STREAM_WRITE_BUFFER
+        assert sysv.hal_task.last_handled_cmd == WasiIpcCmd.STREAM_WRITE_SHM
     finally:
         sysv.shutdown()
 
@@ -135,7 +135,7 @@ def test_hal_task_ipc_communication():
 if __name__ == "__main__":
     test_hal_01_uart_transport_is_real_pipe()
     test_hal_02_timer_monotonic_ns()
-    test_hal_03_buffer_pool_rejects_oversized()
-    test_hal_04_buffer_slice_bounds_and_ownership()
+    test_hal_03_shm_pool_rejects_oversized()
+    test_hal_04_shm_slice_bounds_and_ownership()
     test_hal_task_ipc_communication()
-    print("[PASS] All 5 HAL Drivers & HalBufferPool tests passed.")
+    print("[PASS] All 5 HAL Drivers & ShmPool tests passed.")

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 """
-Unit tests for Tier 3 Platform: Physical Memory & MPU W^X
-Traceability: platform_memory_test_spec.md
+Unit tests for Physical Memory Manager (system_memory.md contract / runtime_memory.md impl) & MPU W^X
+Traceability: system_memory_test_spec.md / runtime_memory_test_spec.md
 """
 
 import sys
@@ -288,7 +288,7 @@ def test_mem_21_jit_code_cache_wx_switch_and_restore():
 
 
 # ===========================================================================
-# 4. Tier 3 Platform HAL & UART / Timer (platform_hal_test_spec.md)
+# 4. HAL & UART / Timer (runtime_hal_test_spec.md / platform_driver_test_spec.md)
 # ===========================================================================
 
 

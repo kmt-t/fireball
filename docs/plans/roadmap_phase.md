@@ -77,7 +77,7 @@
 - **COOS カーネル**: スタックレス C++20 コルーチンスケジューラ、対称ハンドオフ (`os_scheduler.hxx`, `os_coos.hxx`) `{GLOBAL_UseCpp20Coroutine}`
 - **IPC ルータ**: 3段階ルーティング、ゼロコピー CSP チャネル & RAII 所有権移譲 (`ipc_router.hxx`) `{CSP_Handoff}`
 - **vMMIO コントローラ**: 多段ダイレクトデコードページテーブル & ソフトウェア TLB (`runtime_vmmio.hxx`) `{FastAddressCheck}`
-- **HAL & WASI ドライバ**: GPIO / I2C / SPI / Timer / WASI Preview 1、`HalBufferPool` (`platform_hal.hxx`, `platform_wasi.hxx`)
+- **HAL & WASI ドライバ**: GPIO / I2C / SPI / Timer / WASI Preview 1、`HalBufferPool` (`runtime_hal.hxx`, `platform_driver.hxx`, `platform_wasi.hxx`)
 - **GDB Server**: GDB リモートシリアルプロトコル（RSP）デバッガ、メモリ書き換え時 JIT キャッシュフラッシュ (`runtime_debugger.hxx`)
 
 ---

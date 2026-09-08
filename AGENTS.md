@@ -50,6 +50,7 @@
   - キーワードリスク評価: `powershell tools/risk.ps1`
   - 単体ドキュメントレビュー: `powershell tools/llm-single-review.ps1 -file <path>`
   - 高リスク島レビュー: `powershell tools/llm-keyword-review.ps1`
+  - `{VERIFY_LLM}` 義務の履行（Obligation Gate、判定をハッシュ固定してDB永続化）: `powershell tools/llm-judge.ps1`
 
 ## エージェント入口
 

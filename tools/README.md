@@ -18,7 +18,7 @@ pip install -r requirements.txt
 
 ## 1. ツール・スクリプト一覧 (Tool Architecture)
 
-Fireball のツール体系は以下の 9 つの標準コマンド群で構成されています。ドキュメント検証とソースコード検証は完全に分離されており、対象ファイルやグループ（C++, Pythonサブグループ）を明示指定して実行可能です。
+Fireball のツール体系は以下の 10 の標準コマンド群で構成されています。ドキュメント検証とソースコード検証は完全に分離されており、対象ファイルやグループ（C++, Pythonサブグループ）を明示指定して実行可能です。
 Windows（PowerShell）および Linux / WSL（Bash）の双方で同一の操作が可能です。
 
 | コマンド | スクリプト (Windows / Linux) | 種別 | 主な役割 |
@@ -32,6 +32,7 @@ Windows（PowerShell）および Linux / WSL（Bash）の双方で同一の操�
 | **llm-word** | `tools/llm-word.ps1`<br>`tools/llm-word.sh` | LLM検査 | LLMにより単語揺れチェックを行う（エンベディング類似度 + 文脈判定 + レポート出力）。 |
 | **llm-single-review** | `tools/llm-single-review.ps1`<br>`tools/llm-single-review.sh` | LLM監査 | 指定されたファイルまたは全ファイルの全セクション単体、およびファイルに含まれる高リスクキーワードのリンクの島に関連するレビューを行う。 |
 | **llm-keyword-review** | `tools/llm-keyword-review.ps1`<br>`tools/llm-keyword-review.sh` | LLM監査 | リスクの高いキーワードのリンクの島に関連するレビューを行う。 |
+| **llm-judge** | `tools/llm-judge.ps1`<br>`tools/llm-judge.sh` | LLM監査 | `{VERIFY_LLM}` を付与した全文書を対象に、文書単体レビューと関連文書の島レビューを実行し、判定結果をハッシュ固定してキャッシュDBへ永続化する。**Obligation Gate（`OBLIG-JUDGE-*` / `OBLIG-DOC-JUDGE-*`）を履行する唯一のコマンド**であり、`llm-single-review` / `llm-keyword-review`（結果は標準出力のみで DB に固定されない）とは異なる。 |
 
 ---
 
@@ -48,6 +49,7 @@ Windows（PowerShell）および Linux / WSL（Bash）の双方で同一の操�
 | **キーワードリスク評価 (マイルストーン時)** | `powershell tools/risk.ps1` | 課金 / 30秒〜1分 |
 | **単体ドキュメントのレビュー** | `powershell tools/llm-single-review.ps1 -file docs/components/tier1_core/os_scheduler.md`<br>`powershell tools/llm-single-review.ps1 -tagged`（{VERIFY_LLM}付与文書のみ） | 課金 |
 | **高リスクキーワードの島レビュー** | `powershell tools/llm-keyword-review.ps1` | 課金 |
+| **`{VERIFY_LLM}` 義務の履行（Obligation Gate）** | `powershell tools/llm-judge.ps1`<br>`./tools/llm-judge.sh` | 課金 |
 
 ---
 
@@ -63,5 +65,5 @@ Windows（PowerShell）および Linux / WSL（Bash）の双方で同一の操�
 | **4. Formal Gate** | `FORMAL-*` | `docs/**/formal/*.py`（pyModelChecking）の実行、LTL/CTL 検証、`BACKS` 契約の検証。 |
 | **5. WIT Gate** | `WIT-*` | `wit/*.wit` の構文・型整合性・エラー回復戦略契約の検証。 |
 | **6. Evidence Gate** | `EVIDENCE-*` | `<!-- evidence: ... -->` で主張されたベンチマークや実装ファイルの実在性とアサーション検証。 |
-| **7. Obligation Gate** | `OBLIG-*` | リスク評価（`risk`）で導出された検証義務（形式検証・LLM監査等）が **100% 履行** されているかの検証。 |
+| **7. Obligation Gate** | `OBLIG-*` | リスク評価（`risk`）で導出された検証義務、および `{VERIFY_LLM}` タグが要求する意味監査義務（`llm-judge` でハッシュ固定・DB永続化）が **100% 履行** されているかの検証。 |
 | **8. Consistency Gate** | `CONSIST-*`<br>`TERM_VARIANCE` | 一貫性ベースラインとの差分・シンボル値ズレ、および **TF-IDF + さくらのAI エンベディング・LLM文脈監査による用語表記揺れ（`TERM_VARIANCE`）** の警告。 |

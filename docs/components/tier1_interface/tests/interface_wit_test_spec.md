@@ -5,7 +5,7 @@
 正本: [`interface_wit.md`](docs/components/tier1_interface/interface_wit.md)
 参考実装: なし（WIT定義そのものはコンセプトコードを持たない。`recovery-strategy-category` の実験的実装はバージョン管理外の `experiments/pysim` ディレクトリに置かれているが、本書の検証対象外である）。
 
-`recovery-strategy-category`（ignore/retry/restart/panic）、低レベルトラップインターフェース（`fireball-call`）、`console-output`（生バイト出力）に関する契約を検証する。
+`recovery-strategy-category`（ignore/retry/restart/panic）、低レベルトラップインターフェース（`fireball-call`）、コンソール生バイト出力経路に関する契約を検証する。個別デバイスのIPCコマンドID実装（GPIO/タイマー/バス等）は [`runtime_hal_test_spec.md`](docs/components/tier2_runtime/tests/runtime_hal_test_spec.md) / [`platform_driver_test_spec.md`](docs/components/tier3_platform/tests/platform_driver_test_spec.md) の責務とする。
 
 ## 2. テストケース一覧
 
@@ -26,21 +26,13 @@
 | WIT-10 | `fireball-call`のkebab-case→snake_caseマッピング | - | C++バインディング生成物を確認 | `fireball_call`として公開される | {WIT_Interface_Spec} |
 | WIT-11 | Trigger(GPIO)の直接マッピング | `FB_SYSCALL_TRIGGER_SET_PIN`等 | `fireball_call`に直接該当IDを渡す | ハンドルルックアップを経由せず直接操作される | {WIT_Interface_Spec} |
 
-### `console-output`
+### コンソール生バイト出力経路 (`fireball://service/stdout/0`)
 
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| WIT-20 | 任意長生バイト列の出力 | ゲストが`print`/`eprint`相当を実行 | `console-output.write(data)`を呼ぶ | `data`がそのまま`HAL_Transport`へ渡される（辞書変換もリングバッファ構造化もされない） | - |
-| WIT-21 | 内部ロガーとの排他性なし（インターリーブ許容） | 内部ロガーのflushとconsole-outputのwriteが同時期に発生 | 両方を実行 | 出力順序の保証はされない（インターリーブし得る）ことを仕様として確認する（バグではない） | 末尾 |
-| WIT-22 | WASI_FD_WRITE→console-outputの自動ルーティング | ゲストの`print`/`eprint` | `fireball_call(WASI_FD_WRITE,...)`を発行 | 自動的に`console-output.write`にルーティングされる | -3 |
-
-### HALインターフェース
-
-| ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| WIT-30 | `periodic-timer.get-now`の単位 | - | 呼び出す | ナノ秒単位のu64を返す | - |
-| WIT-31 | `bus-master.transfer-data`はHALバッファハンドルのみ受理 | ゲストのリニアメモリポインタを渡そうとする | `hal-buffer-slice`型でない値を渡す | 型として受理されない（ゲストのリニアメモリを指すポインタを直接渡す経路が存在しない） | 「ゲストのリニアメモリ上のポインタを直接渡すことはできない」 |
-| WIT-32 | `bus-slave.get-received`の返却バイト数 | 送信側からのデータがある | `get_received(dest)`を呼ぶ | 実際に転送したバイト数を返す | - |
+| WIT-20 | 任意長生バイト列の出力 | ゲストが`print`/`eprint`相当を実行 | `resolver.get-interface("fireball://service/stdout/0")`で解決後、`acquire-buffer`で確保した`hal-buffer-slice`へ書き込み`CMD_STREAM_WRITE_BUFFER`を発行 | データがそのまま`HAL_Transport`へ渡される（辞書変換もリングバッファ構造化もされない） | - |
+| WIT-21 | 内部ロガーとの排他性なし（インターリーブ許容） | 内部ロガーのflushとコンソール出力経路の書き込みが同時期に発生 | 両方を実行 | 出力順序の保証はされない（インターリーブし得る）ことを仕様として確認する（バグではない） | 末尾 |
+| WIT-22 | WASI_FD_WRITE→コンソール出力経路への自動ルーティング | ゲストの`print`/`eprint` | `fireball_call(WASI_FD_WRITE,...)`を発行 | 自動的に`fireball://service/stdout/0`宛の`CMD_STREAM_WRITE_BUFFER`にルーティングされる | -3 |
 
 ## 3. テスト検証実績と網羅状況
 
@@ -48,5 +40,6 @@
 
 ## 4. 未検証・スコープ外
 
-- `pollable`/`input-stream`/`output-stream`の詳細な非同期セマンティクス（wasi:io標準への準拠度）。
+- 個別デバイス（GPIO/タイマー/バス/ストリーム）のIPCコマンドID実装は [`runtime_hal_test_spec.md`](docs/components/tier2_runtime/tests/runtime_hal_test_spec.md) / [`platform_driver_test_spec.md`](docs/components/tier3_platform/tests/platform_driver_test_spec.md) を参照。
+- `input-stream`/`output-stream`の詳細な非同期セマンティクス（wasi:io標準への準拠度）。
 - `wasi:filesystem`のPASSTHROUGH/SHM「事前オープン済み仮想ファイル記述子」エミュレーション（-4）。

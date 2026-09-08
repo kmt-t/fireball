@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import TYPE_CHECKING, Callable
 
-from hal import ShmBufferPool, ShmHandle, UartTransport
+from hal import HalBufferPool, HalBufferHandle, UartTransport
 from ipc_router import (
     IPCMessage,
     IPCRouter,
@@ -144,7 +144,7 @@ class ShmSlice:
         a handle name the pool must independently recognize and authorize.
     """
 
-    handle: ShmHandle
+    handle: HalBufferHandle
     offset: int
     len: int
 
@@ -155,7 +155,7 @@ class BusMaster:
         real shared-memory pool.
     """
 
-    def __init__(self, pool: ShmBufferPool, task_id: int):
+    def __init__(self, pool: HalBufferPool, task_id: int):
         self.pool = pool
         self.task_id = task_id
 
@@ -170,7 +170,7 @@ class BusMaster:
 class BusSlave:
     """`fireball:host/bus`'s `bus-slave.set-response` / `get-received`."""
 
-    def __init__(self, pool: ShmBufferPool, task_id: int):
+    def __init__(self, pool: HalBufferPool, task_id: int):
         self.pool = pool
         self.task_id = task_id
         self._pending_response: bytes = b""
@@ -198,7 +198,7 @@ class System:
 
     def __init__(self):
         self.transport = UartTransport()
-        self.pool = ShmBufferPool()
+        self.pool = HalBufferPool()
         self.dictionary = LogDictionary()
         self.logger = Logger(self.transport, self.dictionary, min_level=LogLevel.DEBUG)
         self.console = ConsoleOutput(self.transport)

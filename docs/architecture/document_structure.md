@@ -42,7 +42,7 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
   · Plans (roadmap_phase, backlog_list, backlog_archive)
 
 [ Specs: 横串物理仕様・規格マトリクス (Cross-cutting Physical Specs & Catalogs) ] ─ (全Tier横断・具象規格、個々のファイルにTierラベルを明示)
-  · Specs (wasm_instruction_set, wasi_preview1_abi [Tier3], gdb_rsp_protocol, jit_stencil_catalog, wasi_preview03p_component_model [Tier3])
+  · Specs (wasm_instruction_set, wasi_preview1_abi [Tier3], gdb_rsp_protocol, jit_stencil_catalog)
 ```
 
 ### 1.1 各 Tier の定義と配置ディレクトリ
@@ -53,7 +53,7 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 | **Tier 1** | `docs/components/tier1_core/`<br>`docs/components/tier1_interface/` | スケジューラ、チャネル通信、システムサービス、IPCルータ、共有静的コンテナ語彙、メモリマネージャ抽象契約（`system_memory.md`）等のコア仕様書 | **粗粒度主要コンポーネント (What)**<br>要求（Tier 0）を直接受け取る。単一仕様書で状態遷移・ポリシーを自己完結して記述可能なシステム要素。契約/実装分割パターン（§2.1-4）では抽象契約側を担う。 |
 | **Tier 2** | `docs/components/tier2_runtime/` | WASMインタープリタ、WASMローダー、vMMIO、デバッグマネージャ、メモリマネージャ実装（`runtime_memory.md`）、HAL抽象化層（`runtime_hal.md`）等のサブコンポーネント仕様書 | **分解されたサブコンポーネント (How - Subsystem)**<br>Tier 1 で扱うには状態空間やアルゴリズムが複雑化するため、独立した責務としてブレークダウンされた要素。契約/実装分割パターン（§2.1-4）では実装側を担う場合がある。 |
 | **Tier 3** | `docs/components/tier3_platform/`<br>`docs/components/tier3_jit/` | HALドライバ実装（`platform_driver.md`）、JITコンパイラ一式（コード生成コア `jit_compiler.md`、ランタイム管理 `jit_runtime.md`）| **詳細リーフ / 物理コンポーネント (How - Leaf)**<br>Tier 2 からさらに責務が切り出された具象コンポーネント、またはハードウェア抽象化層の最終物理実装。 |
-| **Specs** | `docs/specs/` | WASM命令セット、WASI Preview 1 ABI、WASI 0.3p コンポーネントモデル、GDB RSP、JITステンシルカタログ等の規格マトリクス | **横串物理規格・具象カタログ (How - Physical Specs)**<br>コンポーネントを横断して統一される具象バイナリ列、ABI、パケット形式、命令セットマトリクス。各ファイル冒頭にアーキテクチャ分類（Tierラベル）を明示する。 |
+| **Specs** | `docs/specs/` | WASM命令セット、WASI Preview 1 ABI、GDB RSP、JITステンシルカタログ等の規格マトリクス | **横串物理規格・具象カタログ (How - Physical Specs)**<br>コンポーネントを横断して統一される具象バイナリ列、ABI、パケット形式、命令セットマトリクス。各ファイル冒頭にアーキテクチャ分類（Tierラベル）を明示する。 |
 | **Meta** | `docs/architecture/`<br>`docs/plans/` | 全体アーキテクチャ、設計方針、開発計画 | **全Tier横断メタ設計**<br>Hypervisor の機能コンポーネント自体には属さない共通ポリシー・計画。 |
 
 ---

@@ -3,6 +3,10 @@
      formal: formal/wasi_lifecycle_model.py
 -->
 
+## 0. アーキテクチャ分類
+<!-- traceability: {META_3TierSeparation} -->
+本仕様書は **Tier 3（横串物理仕様・具象カタログ: Cross-cutting Physical Specs & Catalogs）** に分類される（`document_structure.md` §1.1 を正本とする）。WASI 0.1p ABI はホスト実装の物理的なアダプタ層であり、ディレクトリ配置は `docs/specs/` のまま変更しない。Fireball のネイティブ実行基盤である WASI 0.3p / Component Model は、専用の WIT リソース型ではなく URI Resolver + HAL バッファプール + IPC コマンドID による汎用機構として実現される。定義は Tier 1 の [`interface_wit.md`](docs/components/tier1_interface/interface_wit.md)（契約）および Tier 2 の [`runtime_hal.md`](docs/components/tier2_runtime/runtime_hal.md)（IPC コマンドID カタログ）を正本とする。 `{META_3TierSeparation}`
+
 ## 1. 概要と基本思想
 <!-- traceability: {Type_Vocabulary} {TypeSafeMessaging} {META_ZeroCostAbstraction} -->
 本仕様書は、Fireball Hypervisor が WASM ゲストアプリケーションに対して提供する **WASI Preview 1 (`wasi_snapshot_preview1`, WASI 0.1p)** インターフェースの物理 ABI マッピング、サポート API セット、およびエラーコード規約を定義する正本である。

@@ -43,81 +43,22 @@ interface resolver {
     release-buffer: func(slice: hal-buffer-slice) -> operation-result;
 }
 
-/// 高速トリガ (GPIO / fireball:hal/gpio 準拠) インターフェース
-interface trigger {
-    use types.{operation-result, recovery-strategy-category};
-
-    set-pin: func(pin: u32, value: bool) -> operation-result;
-    get-pin: func(pin: u32) -> result<bool, recovery-strategy-category>;
-}
-
-/// タイマー (wasi:clocks/monotonic-clock 準拠) インターフェース
-interface timer {
-    resource periodic-timer {
-        get-now: func() -> u64;
-        subscribe-timer: func(nanos: u64) -> u32;
-    }
-}
-
-/// バス通信 (I2C/SPI マスタ・スレーブ / HALバッファゼロコピー転送) インターフェース
-interface bus {
-    use types.{hal-buffer-slice, operation-result, recovery-strategy-category};
-
-    resource bus-master {
-        transfer-data: func(tx-buf: hal-buffer-slice, rx-buf: hal-buffer-slice) -> result<u32, recovery-strategy-category>;
-    }
-
-    resource bus-slave {
-        set-response: func(data: hal-buffer-slice) -> operation-result;
-        get-received: func(dest-buf: hal-buffer-slice) -> result<u32, recovery-strategy-category>;
-        subscribe: func() -> u32;
-    }
-}
-
-/// ストリーミング I/O (wasi:io/streams 準拠 / HALバッファリードライト) インターフェース
-interface streaming {
-    use types.{hal-buffer-slice, recovery-strategy-category};
-
-    resource streaming-master {
-        write-stream: func(data: list<u8>) -> u32;
-        write-buffer: func(slice: hal-buffer-slice) -> result<u32, recovery-strategy-category>;
-    }
-
-    resource streaming-slave {
-        read-stream: func(max-bytes: u32) -> list<u8>;
-        read-buffer: func(dest-slice: hal-buffer-slice) -> result<u32, recovery-strategy-category>;
-    }
-}
-
-/// コンソール生バイト出力 (wasi:cli/stdout, stderr 準拠) インターフェース
-interface console {
-    use types.{recovery-strategy-category};
-
-    resource console-output {
-        write: func(data: list<u8>) -> result<u32, recovery-strategy-category>;
-    }
-}
-
 /// 低レベル・トラップ・インターフェース
 interface trap {
     fireball-call: func(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32, arg4: u32, arg5: u32) -> u32;
 }
 
 /// Fireball ハイパーバイザ Host World (HAL = WASI 0.3p Core World)
+///
+/// GPIO・タイマー・バス・ストリーム・コンソール個別の WIT リソースは定義しない。
+/// HAL = WASI 0.3p であるため、`resolver.get-interface(uri)` で対象デバイス/サービスを
+/// 解決し、`acquire-buffer`/`release-buffer` で得た `hal-buffer-slice` に対して
+/// IPC コマンドID（`runtime_hal.md` §5.2 を正本とする）を発行することで、
+/// あらゆる WASI 0.3p 相当の読み書き・バス転送・非同期通知（poll）を一本化して表現する。
 world fireball {
     import types;
     import resolver;
-    import trigger;
-    import timer;
-    import bus;
-    import streaming;
-    import console;
     import trap;
 
     export resolver;
-    export trigger;
-    export timer;
-    export bus;
-    export streaming;
-    export console;
 }

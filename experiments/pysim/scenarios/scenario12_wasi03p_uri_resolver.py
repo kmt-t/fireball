@@ -1,10 +1,10 @@
 """
 experiments/pysim/scenarios/scenario12_wasi03p_uri_resolver.py
-Integration Scenario 12: WASI 0.3p Hierarchical URI Resolver, IPC Driver Command Protocol, Capability Query & SHM.
+Integration Scenario 12: WASI 0.3p Hierarchical URI Resolver, IPC Driver Command Protocol, Capability Query & HAL buffer pool.
 
 Tests:
 1. Hierarchical IPC URI interface resolution via `resolver.get-interface`:
-   - "fireball://device/uart/0" (UART character stream via SHM)
+   - "fireball://device/uart/0" (UART character stream via HAL buffer pool)
    - "fireball://device/gpio/0" (Fast-path GPIO trigger)
    - "fireball://device/timer/0" (Monotonic hardware timer)
    - "fireball://device/i2c/0" (I2C bus master/slave zero-copy)
@@ -15,11 +15,11 @@ Tests:
 2. Driver Capability Query Protocol (`CMD_QUERY_CAPS` = 0x00):
    - Querying supported / unsupported commands on UART, GPIO, Timer, Bus drivers.
 3. WASI 0.3p IPC Driver Command Protocol dispatching via `dispatch_command`:
-   - Stream: `CMD_STREAM_WRITE_SHM`
+   - Stream: `CMD_STREAM_WRITE_BUFFER`
    - Clock: `CMD_CLOCK_GET_NOW`
    - GPIO: `CMD_GPIO_SET_PIN`
-   - Bus: `CMD_BUS_TRANSFER_SHM`
-4. WASI 0.1p (`wasi_snapshot_preview1`) adapter delegating to WASI 0.3p SHM streams and clocks
+   - Bus: `CMD_BUS_TRANSFER_BUFFER`
+4. WASI 0.1p (`wasi_snapshot_preview1`) adapter delegating to WASI 0.3p buffer-pool streams and clocks
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ from hal import (
     ARG_OFFSET,
     ARG_PIN_NO,
     ARG_QUERY_CMD_ID,
-    ARG_SHM_HANDLE,
+    ARG_BUFFER_HANDLE,
     ARG_TASK_ID,
     ARG_VAL,
     DummyBusDriver,
@@ -102,14 +102,14 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
     uart_supports_stream = engine.dispatch_command(
         "fireball://device/uart/0",
         WasiIpcCmd.QUERY_CAPS,
-        _params((ARG_QUERY_CMD_ID, WasiIpcCmd.STREAM_WRITE_SHM)),
+        _params((ARG_QUERY_CMD_ID, WasiIpcCmd.STREAM_WRITE_BUFFER)),
     )
     uart_supports_gpio = engine.dispatch_command(
         "fireball://device/uart/0",
         WasiIpcCmd.QUERY_CAPS,
         _params((ARG_QUERY_CMD_ID, WasiIpcCmd.GPIO_SET_PIN)),
     )
-    assert uart_supports_stream == 1, "UART must support STREAM_WRITE_SHM"
+    assert uart_supports_stream == 1, "UART must support STREAM_WRITE_BUFFER"
     assert uart_supports_gpio == 0, "UART must NOT support GPIO_SET_PIN"
 
     # GPIO capability check
@@ -121,10 +121,10 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
     gpio_supports_stream = engine.dispatch_command(
         "fireball://device/gpio/0",
         WasiIpcCmd.QUERY_CAPS,
-        _params((ARG_QUERY_CMD_ID, WasiIpcCmd.STREAM_WRITE_SHM)),
+        _params((ARG_QUERY_CMD_ID, WasiIpcCmd.STREAM_WRITE_BUFFER)),
     )
     assert gpio_supports_gpio == 1, "GPIO must support GPIO_SET_PIN"
-    assert gpio_supports_stream == 0, "GPIO must NOT support STREAM_WRITE_SHM"
+    assert gpio_supports_stream == 0, "GPIO must NOT support STREAM_WRITE_BUFFER"
 
     # Timer capability check
     timer_supports_clock = engine.dispatch_command(
@@ -135,10 +135,10 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
     timer_supports_bus = engine.dispatch_command(
         "fireball://device/timer/0",
         WasiIpcCmd.QUERY_CAPS,
-        _params((ARG_QUERY_CMD_ID, WasiIpcCmd.BUS_TRANSFER_SHM)),
+        _params((ARG_QUERY_CMD_ID, WasiIpcCmd.BUS_TRANSFER_BUFFER)),
     )
     assert timer_supports_clock == 1, "Timer must support CLOCK_GET_NOW"
-    assert timer_supports_bus == 0, "Timer must NOT support BUS_TRANSFER_SHM"
+    assert timer_supports_bus == 0, "Timer must NOT support BUS_TRANSFER_BUFFER"
 
     print("    [CAPABILITY QUERY] All driver capability checks passed successfully.")
 
@@ -171,18 +171,18 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
     assert out_gpio == "[GPIO:15=True]", f"GPIO output mismatch: {out_gpio}"
     print(f"    [IPC CMD:GPIO_SET_PIN] Verified output: {out_gpio}")
 
-    # 6. Test WASI 0.3p IPC Command Protocol: Stream Write via SHM (0x01)
-    shm_handle = sysv.pool.acquire_buffer(task_id=1, size=64)
-    shm_view = sysv.pool.view(task_id=1, handle=shm_handle, offset=0, length=24)
+    # 6. Test WASI 0.3p IPC Command Protocol: Stream Write via HAL buffer (0x01)
+    buffer_handle = sysv.pool.acquire_buffer(task_id=1, size=64)
+    buffer_view = sysv.pool.view(task_id=1, handle=buffer_handle, offset=0, length=24)
     msg = b"IPC-CMD-SHM-STREAM-OK!"
-    shm_view[0 : len(msg)] = msg
+    buffer_view[0 : len(msg)] = msg
 
     nwritten = engine.dispatch_command(
         "fireball://device/uart/0",
-        WasiIpcCmd.STREAM_WRITE_SHM,
+        WasiIpcCmd.STREAM_WRITE_BUFFER,
         _params(
             (ARG_TASK_ID, 1),
-            (ARG_SHM_HANDLE, shm_handle),
+            (ARG_BUFFER_HANDLE, buffer_handle),
             (ARG_OFFSET, 0),
             (ARG_LENGTH, len(msg)),
         ),
@@ -190,16 +190,16 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
     assert nwritten == len(msg)
     out_uart = sysv.transport.drain().decode("utf-8")
     assert out_uart == "IPC-CMD-SHM-STREAM-OK!", f"UART SHM output mismatch: {out_uart}"
-    print(f"    [IPC CMD:STREAM_WRITE_SHM] Written {nwritten} bytes -> {out_uart}")
+    print(f"    [IPC CMD:STREAM_WRITE_BUFFER] Written {nwritten} bytes -> {out_uart}")
 
     # 6.b Test Dispatch with a directly-built params FlatMapView, matching
     # dispatch_command's single statically-typed argument exactly (no
     # secondary "IPCMessage vs FlatMapView" shape to infer at the callee).
     fmap_view = _params(
-        (ARG_LENGTH, len(msg)), (ARG_OFFSET, 0), (ARG_SHM_HANDLE, shm_handle), (ARG_TASK_ID, 1)
+        (ARG_LENGTH, len(msg)), (ARG_OFFSET, 0), (ARG_BUFFER_HANDLE, buffer_handle), (ARG_TASK_ID, 1)
     )
     nwritten_fmap = engine.dispatch_command(
-        "fireball://device/uart/0", WasiIpcCmd.STREAM_WRITE_SHM, fmap_view
+        "fireball://device/uart/0", WasiIpcCmd.STREAM_WRITE_BUFFER, fmap_view
     )
     assert nwritten_fmap == len(msg)
     out_uart_fmap = sysv.transport.drain().decode("utf-8")
@@ -210,7 +210,7 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
     sysv.spawn_hal_task()
     ipc_res = engine.send_ipc_command(
         "fireball://device/uart/0",
-        WasiIpcCmd.STREAM_WRITE_SHM,
+        WasiIpcCmd.STREAM_WRITE_BUFFER,
         _params((ARG_LENGTH, len(msg)), (ARG_OFFSET, 0)),
     )
     assert ipc_res == len(msg)
@@ -223,8 +223,8 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
     from ipc_router import DataType, IPCMessage, ScopeKind, pack_key32
 
     # Pack 32-bit keys and 32-bit values:
-    #   Entry 1: Functional Scope, UINT32, key_id=0x01 (STREAM_WRITE_SHM), val=len(msg)
-    #   Entry 2: Resource Scope, UINT32, key_id=0x14 (SHM_HANDLE), val=shm_handle
+    #   Entry 1: Functional Scope, UINT32, key_id=0x01 (STREAM_WRITE_BUFFER), val=len(msg)
+    #   Entry 2: Resource Scope, UINT32, key_id=0x14 (BUFFER_HANDLE), val=buffer_handle
     k1 = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=0x01)
     val1 = len(msg)
     shm_slot_id = 1

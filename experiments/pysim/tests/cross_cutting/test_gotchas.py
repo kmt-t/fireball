@@ -719,7 +719,7 @@ def test_mem_gotcha_02_release_and_flight_protection():
     assert b_claimed.get_owner() == 2
 
 
-def test_hal_gotcha_01_buffer_pool_bounds_violation_rejected():
+def test_hal_gotcha_01_hal_buffer_pool_bounds_violation_rejected():
     """HAL-GOTCHA-01: HalBufferPool rejects slice requests exceeding maximum buffer size and non-owner releases."""
     pool = HalBufferPool()
     handle = pool.acquire_buffer(task_id=1, size=128)

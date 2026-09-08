@@ -1,8 +1,10 @@
 """
 docs/components/tier1_interface/formal/wit_resource_lifecycle_model.py
 pyModelChecking による WIT インターフェースの
-(1) `resource`（bus-master/streaming 等）はハンドルが drop された後、決して操作が実行されないこと
-(2) ホストがトリガーした仮想割り込みは、対応する `pollable` が必ずいずれ ready になり届くこと
+(1) `hal-buffer-slice`（`resolver.acquire-buffer`/`release-buffer` で貸与・返却されるハンドル）は
+    release された後、決して操作が実行されないこと
+(2) ホストがトリガーした仮想割り込みは、対応する汎用ポーリングハンドル（`POLL_CHECK`/`POLL_WAIT`
+    で ready 確認する u32 ハンドル）が必ずいずれ ready になり届くこと
 の形式検証（証明・変異検査対応）モデル
 """
 
@@ -15,16 +17,16 @@ BACKS = ["components/tier1_interface/interface_wit.md"]
 def build_model(*, guards: bool = True) -> Kripke:
     """
     WIT リソースライフサイクル・非同期通知の変異検査対応保護証明モデル
-    - s_idle: ゲストが待機中（リソース未生成、割り込みなし）
-    - s_resource_active: `resource`（bus-master/streaming 等）ハンドルが生成・有効
-    - s_op_call / s_op_performed: 有効なハンドルへの操作（`transfer-data` 等）呼び出し・実行
-    - s_resource_dropped: ハンドルが drop 済み
-    - s_op_call_on_dropped: drop 済みハンドルへの操作呼び出し
-    - s_op_rejected: 操作が正しく拒否される（実行されない）
+    - s_idle: ゲストが待機中（バッファ未確保、割り込みなし）
+    - s_resource_active: `acquire-buffer` により `hal-buffer-slice` ハンドルが確保・有効
+    - s_op_call / s_op_performed: 有効なハンドルへの操作（IPCコマンドID発行）呼び出し・実行
+    - s_resource_dropped: `release-buffer` によりハンドルが返却済み
+    - s_op_call_on_dropped: 返却済みハンドルへの操作呼び出し
+    - s_op_rejected: 操作が正しく拒否される（実行されない、`HalBufferTrap` 相当）
     - s_interrupt_triggered: ホストが仮想割り込みをトリガー
-    - s_pollable_ready: 対応する `pollable` が ready 状態になりゲストへ届く
-    - s_op_performed_on_dropped: 違反状態（drop 済みハンドルへの操作が実際に実行された）
-    - s_notification_lost: 違反状態（トリガーされた割り込みの pollable が ready にならない）
+    - s_pollable_ready: 対応する汎用ポーリングハンドルが `POLL_CHECK` で ready 状態になりゲストへ届く
+    - s_op_performed_on_dropped: 違反状態（返却済みハンドルへの操作が実際に実行された）
+    - s_notification_lost: 違反状態（トリガーされた割り込みが ready にならない）
     """
     S = [
         "s_idle",

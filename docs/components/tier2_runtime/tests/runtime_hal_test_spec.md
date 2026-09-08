@@ -16,6 +16,9 @@ IPCルータ経由の全アクセス契約、`hal-buf-id`による生ポイン�
 | HAL-04 | 割り込みpull経路: Safepointでの自己確認（契約上の役割分担） | ゲスト実行エンジンが動作中 | Safepoint到達 | `vsoc_context.interrupt_flags`を自ら確認する（本コンポーネントの管轄外、`runtime_vsoc.md`が正本という契約上の境界） | 「割り込み確認（pull）」 |
 | HAL-09 | ゼロコピー転送(bus_master/streaming)の契約保証 | tx/rx共にHALバッファ | `transfer(tx, rx)` | CPUを介さずバッファ間データ移動が完了する契約が保たれる（物理DMA実装は platform_driver 側） | 「ゼロコピー転送」 |
 | HAL-10 | `control`はIPCオーバーヘッドを伴う非高速パス | デバイス固有操作 | `control(id, cmd, params)` | `ipc-message`経由で処理され、`{Fast_Path_GPIO}`の高速パスではないことが明示される | 「非標準制御」 |
+| HAL-11 | `CMD_CLOCK_GET_NOW`の単位契約 | - | 発行する | ナノ秒単位のu64を返す契約であることを確認する | interface_wit.md §6 |
+| HAL-12 | `CMD_BUS_TRANSFER_BUFFER`はHALバッファハンドルのみ受理 | ゲストのリニアメモリポインタを渡そうとする | `hal-buffer-slice`型でない値を渡す | 型として受理されない（ゲストのリニアメモリを指すポインタを直接渡す経路が存在しない） | 「ゲストのリニアメモリ上のポインタを直接渡すことはできない」 |
+| HAL-13 | バス受信コマンドの返却バイト数契約 | 送信側からのデータがある | 受信コマンドを発行する | 実際に転送したバイト数を返す契約であることを確認する | - |
 
 ## 3. テスト検証実績と網羅状況
 

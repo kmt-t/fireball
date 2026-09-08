@@ -5,7 +5,7 @@ Real (not mocked) HAL underlayer for the pysim experiment.
   in for the physical UART/ITM line. Bytes written here really cross a
   kernel-buffered duplex socket, so a full/blocked transport is an actual
   socket condition, not an in-memory flag someone forgot to flip.
-- ShmBufferPool: acquire_buffer()/release_buffer() backed by a plain
+- HalBufferPool: acquire_buffer()/release_buffer() backed by a plain
   bytearray per slot. The point being tested -- "a guest can only touch a
   buffer via a handle the pool has authorized, never via a raw pointer" --
   is a property of the *lookup discipline* (every access goes through
@@ -29,6 +29,7 @@ import time
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from enum import IntEnum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -45,7 +46,7 @@ from system_containers import FlatMapView, FlatSetView
 # human-readable label for a given key_id, not the wire key itself.
 ARG_CMD_ID = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=0)
 ARG_QUERY_CMD_ID = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=1)
-ARG_SHM_HANDLE = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=2)
+ARG_BUFFER_HANDLE = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=2)
 ARG_OFFSET = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=3)
 ARG_LENGTH = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=4)
 ARG_MAX_LEN = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=5)
@@ -54,21 +55,48 @@ ARG_PIN_NO = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=7)
 ARG_VAL = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=8)
 ARG_MODE = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=9)
 ARG_EDGE_TYPE = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=10)
-ARG_TX_SHM_HANDLE = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=11)
-ARG_RX_SHM_HANDLE = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=12)
+ARG_TX_BUFFER_HANDLE = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=11)
+ARG_RX_BUFFER_HANDLE = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=12)
 ARG_CLOCK_HZ = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=13)
 ARG_SLAVE_ADDR = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=14)
 ARG_TASK_ID = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=15)
 ARG_FD = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=16)
 
 
+class WasiIpcCmd(IntEnum):
+    """WASI 0.3p IPC Driver Command Protocol IDs (runtime_hal.md §5.2)."""
+
+    # Common Capability Query
+    QUERY_CAPS = 0x00
+    # Stream (0x01..0x04)
+    STREAM_WRITE_BUFFER = 0x01
+    STREAM_READ_BUFFER = 0x02
+    STREAM_FLUSH = 0x03
+    STREAM_CLOSE = 0x04
+    # Clock / Timer (0x10..0x12)
+    CLOCK_GET_NOW = 0x10
+    CLOCK_SUBSCRIBE = 0x11
+    CLOCK_GET_RES = 0x12
+    # GPIO / Trigger (0x20..0x23)
+    GPIO_SET_PIN = 0x20
+    GPIO_GET_PIN = 0x21
+    GPIO_CONFIG_PIN = 0x22
+    GPIO_SUBSCRIBE_EDGE = 0x23
+    # Bus (0x30..0x31)
+    BUS_TRANSFER_BUFFER = 0x30
+    BUS_CONFIG = 0x31
+    # Poll (0x40..0x41)
+    POLL_CHECK = 0x40
+    POLL_WAIT = 0x41
+
+
 class HalError(Exception):
     """Base class for HAL-level failures that must map to a recovery-strategy-category."""
 
 
-class ShmTrap(HalError):
+class HalBufferTrap(HalError):
     """
-    A guest touched a shared-memory handle it does not own, or a slice
+    A guest touched a HAL buffer-pool handle it does not own, or a slice
         escaped the handle's acquired bounds. Mirrors runtime_vmmio.md 4.6's
         vMMIO PTE ownership trap -- a real MMU would fault here.
     """
@@ -123,7 +151,7 @@ class UartTransport:
 
 
 # ---------------------------------------------------------------------------
-# Shared-memory buffer pool (the HAL / vMMIO SHM region)
+# HAL buffer pool (static buffers MMIO'd into the vMMIO DYNAMIC region)
 # ---------------------------------------------------------------------------
 
 FB_CONF_HAL_BUFFER_SIZE = 256  # docs/components/tier1_core/system_config.md 3.3.3
@@ -131,7 +159,7 @@ FB_CONF_HAL_MAX_BUFFERS = 4  # docs/components/tier1_core/system_config.md 3.3.3
 
 
 @dataclass
-class ShmHandle:
+class HalBufferHandle:
     """
     What acquire_buffer() actually returns: an opaque *name*, not a
         pointer. Handing this value to code running as a different owner is
@@ -146,17 +174,23 @@ class ShmHandle:
     _storage: bytearray = field(repr=False, compare=False)
 
 
-class ShmBufferPool:
+class HalBufferPool:
     """
     `acquire_buffer()` backed by FB_CONF_HAL_MAX_BUFFERS fixed-size slots
         of at most FB_CONF_HAL_BUFFER_SIZE bytes each: a static pool, not a
-        dynamic allocator (runtime_hal.md 5.1's "静的固定長バッファプール").
+        dynamic allocator (runtime_hal.md 5.1's "静的固定長バッファプール"),
+        MMIO'd into the vMMIO DYNAMIC region. Multiple client tasks may
+        contend for the same device, so acquire_buffer() is the ownership-
+        taking call a client must make before it may touch a slot at all --
+        every other method re-checks that ownership before honoring a
+        request (HAL-GOTCHA-01).
     """
 
     def __init__(self):
-        self._slots: list[ShmHandle | None] = [None] * FB_CONF_HAL_MAX_BUFFERS
+        self._slots: list[HalBufferHandle | None] = [None] * FB_CONF_HAL_MAX_BUFFERS
 
-    def acquire_buffer(self, task_id: int, size: int) -> ShmHandle:
+    def acquire_buffer(self, task_id: int, size: int) -> HalBufferHandle:
+        """Claims ownership of one free static slot for `task_id` (HAL-GOTCHA-01)."""
         if size <= 0 or size > FB_CONF_HAL_BUFFER_SIZE:
             raise ValueError(
                 f"acquire_buffer(size={size}) exceeds FB_CONF_HAL_BUFFER_SIZE={FB_CONF_HAL_BUFFER_SIZE}"
@@ -169,39 +203,43 @@ class ShmBufferPool:
                 break
         if slot_idx < 0:
             raise HalError("HAL buffer pool exhausted (FB_CONF_HAL_MAX_BUFFERS)")
-        name = f"fb_shm_{uuid.uuid4().hex[:12]}"
-        handle = ShmHandle(name=name, owner_task=task_id, capacity=size, _storage=bytearray(size))
+        name = f"fb_hal_buf_{uuid.uuid4().hex[:12]}"
+        handle = HalBufferHandle(
+            name=name, owner_task=task_id, capacity=size, _storage=bytearray(size)
+        )
         self._slots[slot_idx] = handle
         return handle
 
-    def release_buffer(self, task_id: int, handle: ShmHandle) -> None:
+    def release_buffer(self, task_id: int, handle: HalBufferHandle) -> None:
         for i, s in enumerate(self._slots):
             if s is not None and s.name == handle.name:
                 if s.owner_task != task_id:
-                    raise ShmTrap(f"task {task_id} cannot release {handle.name}: not the owner")
+                    raise HalBufferTrap(
+                        f"task {task_id} cannot release {handle.name}: not the owner"
+                    )
                 self._slots[i] = None
                 return
-        raise ShmTrap(f"task {task_id} cannot release {handle.name}: not found")
+        raise HalBufferTrap(f"task {task_id} cannot release {handle.name}: not found")
 
-    def _resolve(self, task_id: int, handle: ShmHandle) -> ShmHandle:
+    def _resolve(self, task_id: int, handle: HalBufferHandle) -> HalBufferHandle:
         for s in self._slots:
             if s is not None and s.name == handle.name:
                 if s.owner_task != task_id:
-                    raise ShmTrap(
+                    raise HalBufferTrap(
                         f"task {task_id} does not own {handle.name} (owner={s.owner_task}); "
                         "no linear-memory pointer would ever bypass this check"
                     )
                 return s
-        raise ShmTrap(f"handle {handle.name} does not exist (stale, or never acquired)")
+        raise HalBufferTrap(f"handle {handle.name} does not exist (stale, or never acquired)")
 
     def close_all(self) -> None:
         for i in range(len(self._slots)):
             self._slots[i] = None
 
-    def can_view(self, task_id: int, handle: ShmHandle, offset: int, length: int) -> bool:
+    def can_view(self, task_id: int, handle: HalBufferHandle, offset: int, length: int) -> bool:
         """
         Non-throwing precondition check for view(): same ownership/bounds
-        rules, but a bool return instead of raising ShmTrap, for callers
+        rules, but a bool return instead of raising HalBufferTrap, for callers
         that must not depend on catching an exception (exceptions disabled
         in the target C++ build).
         """
@@ -212,17 +250,17 @@ class ShmBufferPool:
                 return 0 <= offset and 0 <= length and offset + length <= s.capacity
         return False
 
-    def view(self, task_id: int, handle: ShmHandle, offset: int, length: int) -> memoryview:
+    def view(self, task_id: int, handle: HalBufferHandle, offset: int, length: int) -> memoryview:
         """
         Resolves a bounds-checked (offset, length) window inside `handle`.
-                This is what interface_wit.md 5.3's `shm-slice{handle, offset, len}`
+                This is what interface_wit.md 5.3's `hal-buffer-slice{handle, offset, len}`
                 actually resolves to at the HAL layer.
         """
 
         record = self._resolve(task_id, handle)
         if offset < 0 or length < 0 or offset + length > record.capacity:
-            raise ShmTrap(
-                f"shm-slice(offset={offset}, len={length}) escapes {handle.name}'s "
+            raise HalBufferTrap(
+                f"hal-buffer-slice(offset={offset}, len={length}) escapes {handle.name}'s "
                 f"acquired capacity ({record.capacity} bytes)"
             )
         return memoryview(record._storage)[offset : offset + length]
@@ -263,8 +301,8 @@ class HalDriver:
 
     def __init__(self, uri: str, supported_commands: Sequence[int] = ()):
         self.uri = uri
-        # CMD_QUERY_CAPS (0x00) is always supported.
-        self._supported_commands_storage = sorted({0x00, *supported_commands})
+        # QUERY_CAPS is always supported.
+        self._supported_commands_storage = sorted({WasiIpcCmd.QUERY_CAPS, *supported_commands})
         self.supported_commands = FlatSetView(self._supported_commands_storage)
 
     def is_supported(self, cmd_id: int) -> int:
@@ -273,7 +311,7 @@ class HalDriver:
 
     def dispatch(self, cmd_id: int, params: FlatMapView) -> object:
         """Dispatches an IPC command to the driver handler."""
-        if cmd_id == 0x00:  # CMD_QUERY_CAPS
+        if cmd_id == WasiIpcCmd.QUERY_CAPS:
             query_cmd = params.find(ARG_QUERY_CMD_ID)
             return self.is_supported(0 if query_cmd is None else query_cmd)
 
@@ -292,24 +330,24 @@ class DummyUartDriver(HalDriver):
         super().__init__(
             uri,
             supported_commands=(
-                0x01,  # CMD_STREAM_WRITE_SHM
-                0x02,  # CMD_STREAM_READ_SHM
-                0x03,  # CMD_STREAM_FLUSH
-                0x04,  # CMD_STREAM_CLOSE
+                WasiIpcCmd.STREAM_WRITE_BUFFER,
+                WasiIpcCmd.STREAM_READ_BUFFER,
+                WasiIpcCmd.STREAM_FLUSH,
+                WasiIpcCmd.STREAM_CLOSE,
             ),
         )
         self.transport = transport or UartTransport()
 
     def _handle_command(self, cmd_id: int, params: FlatMapView) -> object:
-        if cmd_id == 0x01:  # STREAM_WRITE_SHM
-            # runtime_hal.md §4.2: shm_handle/offset/len resolve a zero-copy
-            # SHM slice; this dummy has no pool reference to resolve one
+        if cmd_id == WasiIpcCmd.STREAM_WRITE_BUFFER:
+            # runtime_hal.md §4.2: buffer_handle/offset/len resolve a zero-copy
+            # HAL buffer slice; this dummy has no pool reference to resolve one
             # against, so it stands in with the slice length only.
             length = params.find(ARG_LENGTH)
             return 0 if length is None else length
-        elif cmd_id == 0x02:  # STREAM_READ_SHM
+        elif cmd_id == WasiIpcCmd.STREAM_READ_BUFFER:
             return self.transport.drain()
-        elif cmd_id in (0x03, 0x04):
+        elif cmd_id in (WasiIpcCmd.STREAM_FLUSH, WasiIpcCmd.STREAM_CLOSE):
             return 0
         return None
 
@@ -325,10 +363,10 @@ class DummyGpioDriver(HalDriver):
         super().__init__(
             uri,
             supported_commands=(
-                0x20,  # CMD_GPIO_SET_PIN
-                0x21,  # CMD_GPIO_GET_PIN
-                0x22,  # CMD_GPIO_CONFIG_PIN
-                0x23,  # CMD_GPIO_SUBSCRIBE_EDGE
+                WasiIpcCmd.GPIO_SET_PIN,
+                WasiIpcCmd.GPIO_GET_PIN,
+                WasiIpcCmd.GPIO_CONFIG_PIN,
+                WasiIpcCmd.GPIO_SUBSCRIBE_EDGE,
             ),
         )
         self.pins: list[bool] = [False] * self._MAX_PINS
@@ -336,15 +374,15 @@ class DummyGpioDriver(HalDriver):
 
     def _handle_command(self, cmd_id: int, params: FlatMapView) -> object:
         pin = params.find(ARG_PIN_NO) or 0
-        if cmd_id == 0x20:  # SET_PIN
+        if cmd_id == WasiIpcCmd.GPIO_SET_PIN:
             self.pins[pin] = bool(params.find(ARG_VAL))
             return 0
-        elif cmd_id == 0x21:  # GET_PIN
+        elif cmd_id == WasiIpcCmd.GPIO_GET_PIN:
             return 1 if self.pins[pin] else 0
-        elif cmd_id == 0x22:  # CONFIG_PIN
+        elif cmd_id == WasiIpcCmd.GPIO_CONFIG_PIN:
             self.modes[pin] = params.find(ARG_MODE) or 0
             return 0
-        elif cmd_id == 0x23:  # SUBSCRIBE_EDGE
+        elif cmd_id == WasiIpcCmd.GPIO_SUBSCRIBE_EDGE:
             return 1  # pollable handle
         return None
 
@@ -356,19 +394,19 @@ class DummyTimerDriver(HalDriver):
         super().__init__(
             uri,
             supported_commands=(
-                0x10,  # CMD_CLOCK_GET_NOW
-                0x11,  # CMD_CLOCK_SUBSCRIBE
-                0x12,  # CMD_CLOCK_GET_RES
+                WasiIpcCmd.CLOCK_GET_NOW,
+                WasiIpcCmd.CLOCK_SUBSCRIBE,
+                WasiIpcCmd.CLOCK_GET_RES,
             ),
         )
         self.timer = Timer()
 
     def _handle_command(self, cmd_id: int, params: FlatMapView) -> object:
-        if cmd_id == 0x10:  # CLOCK_GET_NOW
+        if cmd_id == WasiIpcCmd.CLOCK_GET_NOW:
             return self.timer.get_now_ns()
-        elif cmd_id == 0x11:  # CLOCK_SUBSCRIBE
+        elif cmd_id == WasiIpcCmd.CLOCK_SUBSCRIBE:
             return 1  # pollable handle
-        elif cmd_id == 0x12:  # CLOCK_GET_RES
+        elif cmd_id == WasiIpcCmd.CLOCK_GET_RES:
             return 1_000_000  # 1ms
         return None
 
@@ -380,15 +418,15 @@ class DummyBusDriver(HalDriver):
         super().__init__(
             uri,
             supported_commands=(
-                0x30,  # CMD_BUS_TRANSFER_SHM
-                0x31,  # CMD_BUS_CONFIG
+                WasiIpcCmd.BUS_TRANSFER_BUFFER,
+                WasiIpcCmd.BUS_CONFIG,
             ),
         )
 
     def _handle_command(self, cmd_id: int, params: FlatMapView) -> object:
-        if cmd_id == 0x30:  # BUS_TRANSFER_SHM
+        if cmd_id == WasiIpcCmd.BUS_TRANSFER_BUFFER:
             return params.find(ARG_LENGTH) or 0
-        elif cmd_id == 0x31:  # BUS_CONFIG
+        elif cmd_id == WasiIpcCmd.BUS_CONFIG:
             return 0
         return None
 
@@ -448,13 +486,13 @@ class HalTask:
 
             # Dispatch to appropriate driver based on command ID hierarchy
             target_driver = None
-            if 0x01 <= cmd_id <= 0x04:
+            if WasiIpcCmd.STREAM_WRITE_BUFFER <= cmd_id <= WasiIpcCmd.STREAM_CLOSE:
                 target_driver = self.drivers.get("fireball://device/uart/0")
-            elif 0x10 <= cmd_id <= 0x12:
+            elif WasiIpcCmd.CLOCK_GET_NOW <= cmd_id <= WasiIpcCmd.CLOCK_GET_RES:
                 target_driver = self.drivers.get("fireball://device/timer/0")
-            elif 0x20 <= cmd_id <= 0x23:
+            elif WasiIpcCmd.GPIO_SET_PIN <= cmd_id <= WasiIpcCmd.GPIO_SUBSCRIBE_EDGE:
                 target_driver = self.drivers.get("fireball://device/gpio/0")
-            elif 0x30 <= cmd_id <= 0x31:
+            elif WasiIpcCmd.BUS_TRANSFER_BUFFER <= cmd_id <= WasiIpcCmd.BUS_CONFIG:
                 target_driver = self.drivers.get("fireball://device/i2c/0")
             else:
                 target_driver = self.drivers.get(default_uri)

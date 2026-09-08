@@ -73,7 +73,7 @@ stateDiagram-v2
 図中の各ブロックは以下を指す：
 - **Isolated IPC Service**（サービス）: IPCルータ経由で隔離実行される、WASI以外の汎用サービス（本節冒頭で定義した「サービス」の実体。WASM上で実行される常駐タスクである）。
 - **WASI Shim Layer**（サービス）: ゲストの WASI 呼び出しを HAL/ロギング等のサブシステムへ中継する、WASM上で実行される常駐タスク。
-- **Logging Subsystem**（サブシステム）: `system_logging.md` の内部ロガーおよび `interface_wit.md` の `console-output` リソースを介した出力を担う、ネイティブコードとして常駐する基盤機能。サービスではない。
+- **Logging Subsystem**（サブシステム）: `system_logging.md` の内部ロガーおよび `interface_wit.md` §5 のコンソール生バイト出力経路（`fireball://service/stdout/0`）を介した出力を担う、ネイティブコードとして常駐する基盤機能。サービスではない。
 - **HAL Subsystem**（サブシステム）: 4.3節で扱うHAL（ハードウェア抽象化層）ドライバ群全体。ネイティブコードとして常駐する基盤機能であり、サービスではない。
 
 WASIおよび独立アイソレーション・サービスは、起動時にそれぞれ独立した物理メモリパーティションを割り当てられ、メモリのハードウェア境界が確立される（障害伝播防止）。すべてのサービスへのアクセスおよびシステムコール呼び出しは、必ずIPCルータ（`IPCRouter`）のルックアップおよびアクセス制御チェックを経由してのみ開始される。 `{META_FaultIsolation}` `{IPCRouter}`

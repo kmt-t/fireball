@@ -29,6 +29,7 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
   - `experiments/pysim/` 配下の各モジュール（Loader, Interpreter, JIT, COOS, vMMIO, HAL, GDB）のコード品質向上
   - 可読性・保守性・モジュール分離の洗練、不要・重複コードの排除、最新設計思想に沿った自然言語コメントの徹底
   - エラーハンドリング・境界検査の堅牢化
+  - `Blocked` タスクの外部強制終了（`task_killed`）の実装: チャネル待機者参照（`Channel.waiter_task`／チャネルグループ）およびイベント/割り込み待機キューからの登録解除を伴う設計が必要（[`os_coos.md`](docs/components/tier1_core/os_coos.md) §4.3 参照、現状は `Running` からの自然終了 `task_exit` のみ実装）
 - [ ] **Step 2.2: 実装の勘所（Gotchas・不変条件）の網羅的抽出とテスト設計への還元**:
   - シミュレータの実行・リファクタリングから得られる新たな実装の勘所（Gotchas）やシステム不変条件（Invariants）の継続的抽出
   - コンポーネント別テスト仕様書（`tests/*_test_spec.md`）への Gotchas 固有識別子および設計理由の追記・拡充

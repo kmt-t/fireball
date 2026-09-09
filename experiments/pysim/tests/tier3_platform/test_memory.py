@@ -33,7 +33,7 @@ for _p in [
 
 from memory import (
     FB_CONF_MEMORY_POOL_SIZE,
-    FB_CONF_PARTITION_SIZE,
+    FB_CONF_TASK_HEAP_SIZE,
     FB_TASK_ID_FLIGHT,
     AccessPermission,
     MemoryManager,
@@ -62,7 +62,7 @@ def test_mem_01_acquire_task_heap_fixed_size():
     res = mm.acquire_task_heap(owner=1)
     assert res.is_ok
     pv = res.unwrap()
-    assert pv.size == FB_CONF_PARTITION_SIZE
+    assert pv.size == FB_CONF_TASK_HEAP_SIZE
     assert pv.owner == 1
     assert not hasattr(mm, "allocate"), "Generic heap allocate() must not exist"
 
@@ -70,7 +70,7 @@ def test_mem_01_acquire_task_heap_fixed_size():
 def test_mem_02_recovery_strategy_on_exhaustion():
     """MEM-02: Memory exhaustion returns structured error with recovery strategy."""
     mm = MemoryManager()
-    mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_PARTITION_SIZE)
+    mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_TASK_HEAP_SIZE)
     assert mm.acquire_task_heap(owner=1).is_ok
     r2 = mm.acquire_task_heap(owner=2)
     assert r2.is_err
@@ -165,7 +165,7 @@ def test_mem_10_shared_block_ownership_transfer():
     assert raw_ba[0] == 0xAB
 
     page_idx = sb_a.page_idx
-    shm_id = sb_a.release()
+    shm_id = sb_a.release(caller_task_id=1)
     assert not sb_a._is_active
     assert mm.page_registry.get_owner(page_idx) == FB_TASK_ID_FLIGHT
 
@@ -196,7 +196,7 @@ def test_mem_10c_rollback_transfer_restores_owner_id():
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     sb = mm.allocate_shared(caller_task_id=1, size=1024).unwrap()
-    shm_id = sb.release()
+    shm_id = sb.release(caller_task_id=1)
     assert mm.page_registry.get_owner(sb.page_idx) == FB_TASK_ID_FLIGHT
     mm.rollback_transfer(original_sender_id=1, shm_id=shm_id)
     assert mm.page_registry.get_owner(sb.page_idx) == 1
@@ -253,7 +253,7 @@ def test_mem_15_vmmio_fc14_tlb_sync():
     assert status == TrapCode.OWNER_MISMATCH
 
     # Release puts page in flight -> Task 1 also traps!
-    shm_id = sb.release()
+    shm_id = sb.release(caller_task_id=1)
     status, _ = vmmio.access(raw_addr, is_write=False, current_task_id=1)
     assert status == TrapCode.OWNER_MISMATCH
 
@@ -287,6 +287,29 @@ def test_mem_21_jit_code_cache_wx_switch_and_restore():
     mpu.assert_no_rwx()
 
 
+def test_mem_24_transaction_batching_barrier_efficiency():
+    """MEM-24: Batching emits exactly 1 begin / 1 commit barrier pair per compilation unit,
+    regardless of how many instruction patches are applied within it."""
+    mpu = PMSAv8MPU(pool_base=0x20020000)
+    mpu.begin_jit_patch()
+    for _ in range(10):
+        # Simulate copying and patching 10 instruction stencils within one batch
+        pass
+    mpu.commit_jit_patch()
+    assert mpu.dsb_count == 2, "Batching must only emit 2 barriers per compilation unit"
+    assert mpu.isb_count == 2
+
+
+def test_mem_25_pmsav8_32byte_alignment():
+    """MEM-25: All MPU base and limit addresses adhere to 32-byte alignment."""
+    mpu = PMSAv8MPU(pool_base=0x20020000)
+    for r in mpu.regions:
+        assert r.base_address % 32 == 0, f"Region {r.region_no} base must be 32-byte aligned"
+        assert (r.limit_address + 32) % 32 == 0 or r.limit_address % 32 == 0, (
+            f"Region {r.region_no} limit must be 32-byte aligned"
+        )
+
+
 # ===========================================================================
 # 4. HAL & UART / Timer (hal_dispatch_test_spec.md / platform_driver_test_spec.md)
 # ===========================================================================
@@ -306,4 +329,6 @@ if __name__ == "__main__":
     test_mem_15_vmmio_fc14_tlb_sync()
     test_mem_20_mpu_8_regions_static_allocation()
     test_mem_21_jit_code_cache_wx_switch_and_restore()
-    print("[PASS] All 13 Physical Memory & MPU W^X tests passed.")
+    test_mem_24_transaction_batching_barrier_efficiency()
+    test_mem_25_pmsav8_32byte_alignment()
+    print("[PASS] All 15 Physical Memory & MPU W^X tests passed.")

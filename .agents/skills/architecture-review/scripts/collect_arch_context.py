@@ -141,7 +141,7 @@ DOMAINS = {
             "docs/requires/requirement_list.md",
         ],
         "wit_files": [
-            "docs/components/tier1_interface/wit/ipc_subsystem.wit",
+            "docs/components/tier1_interface/wit/ipc_router.wit",
             "docs/components/tier2_runtime/wit/vsoc_runtime.wit",
         ],
     },

@@ -21,8 +21,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from hal import (
-    ARG_CLOCK_HZ,
     ARG_BUFFER_HANDLE,
+    ARG_CLOCK_HZ,
     ARG_EDGE_TYPE,
     ARG_FD,
     ARG_LENGTH,
@@ -257,7 +257,9 @@ class Wasi03pEngine:
             if iface.transfer_buffer is None:
                 return None
             return iface.transfer_buffer(
-                _get_val(ARG_TX_BUFFER_HANDLE), _get_val(ARG_RX_BUFFER_HANDLE), _get_val(ARG_LENGTH, 0)
+                _get_val(ARG_TX_BUFFER_HANDLE),
+                _get_val(ARG_RX_BUFFER_HANDLE),
+                _get_val(ARG_LENGTH, 0),
             )
         elif cmd_id == WasiIpcCmd.BUS_CONFIG:
             if iface.config is None:

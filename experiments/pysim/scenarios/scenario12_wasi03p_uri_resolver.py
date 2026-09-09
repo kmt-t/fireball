@@ -44,11 +44,11 @@ for _p in [
         sys.path.insert(0, _sp)
 
 from hal import (
+    ARG_BUFFER_HANDLE,
     ARG_LENGTH,
     ARG_OFFSET,
     ARG_PIN_NO,
     ARG_QUERY_CMD_ID,
-    ARG_BUFFER_HANDLE,
     ARG_TASK_ID,
     ARG_VAL,
     DummyBusDriver,
@@ -196,7 +196,10 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
     # dispatch_command's single statically-typed argument exactly (no
     # secondary "IPCMessage vs FlatMapView" shape to infer at the callee).
     fmap_view = _params(
-        (ARG_LENGTH, len(msg)), (ARG_OFFSET, 0), (ARG_BUFFER_HANDLE, buffer_handle), (ARG_TASK_ID, 1)
+        (ARG_LENGTH, len(msg)),
+        (ARG_OFFSET, 0),
+        (ARG_BUFFER_HANDLE, buffer_handle),
+        (ARG_TASK_ID, 1),
     )
     nwritten_fmap = engine.dispatch_command(
         "fireball://device/uart/0", WasiIpcCmd.STREAM_WRITE_BUFFER, fmap_view

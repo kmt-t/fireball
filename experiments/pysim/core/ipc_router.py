@@ -213,7 +213,7 @@ class IPCMessage:
         if memory_manager is not None:
             sb = memory_manager.allocate_shared(caller_task_id=task_id, size=256).unwrap()
         else:
-            from memory import SharedBlock
+            from memory import FB_CONF_MPU_R6_SHARED_MEMORY_BASE, SharedBlock
 
             sb = SharedBlock(
                 shm_id=0,
@@ -221,7 +221,7 @@ class IPCMessage:
                 slot_idx=0,
                 size=256,
                 owner=task_id,
-                base_address=0x20080000,
+                base_address=FB_CONF_MPU_R6_SHARED_MEMORY_BASE,
                 manager=None,
             )
         msg = cls(sb)
@@ -557,7 +557,9 @@ class IPCRouter:
         # Revoke phase: prepare message's own SharedBlock and any entry-embedded shm_id for transfer
         if self.memory_manager is not None:
             if message._block is not None:
-                message._in_flight_shm_id = message._block.release()
+                message._in_flight_shm_id = message._block.release(
+                    caller_task_id=message._block.owner
+                )
 
             for k, val in entries_to_grant:
                 sk, _, _ = unpack_key32(k)

@@ -31,7 +31,7 @@ graph TD
 
 ```powershell
 # 変更した概念コードのみを実行
-uv run python docs/components/tier1_core/concepts/logging_concept.py
+uv run python docs/components/tier2_runtime/concepts/logging_concept.py
 
 # 変更した形式検証モデルのみを実行（pyModelChecking）
 uv run python docs/components/tier1_core/formal/coos_channel_model.py

@@ -100,7 +100,7 @@ def test_ipc_01_uri_lookup_and_permission_matrix():
     assert status_bad == IpcStatus.ERR_PERMISSION_DENIED
     assert ch_bad is None
 
-    # Anti-spoofing verification: even if HAL_UART holds ch1 (from RUNTIME),
+    # Anti-spoofing verification: even if HAL_GPIO holds ch1 (from RUNTIME),
     # send() enforces TCB role check and denies transmission.
     msg2 = IPCMessage.from_entries([(_KEY_CMD, _CMD_PIN_HIGH)])
     gen_spoof = router.send(ch1, msg2)
@@ -119,7 +119,7 @@ def test_ipc_02_e2e_shared_block_transfer():
         # Sender allocates SharedBlock
         sb = sysv.memory_manager.allocate_shared(caller_task_id=2, size=256).unwrap()
         assert sb.get_owner() == 2
-        addr = sb.get_address()
+        addr = sb.get_address(caller_task_id=2)
         assert addr >= 0x20020000
 
         # Sender puts shm_id directly in the message entry's value inside shared memory!
@@ -157,7 +157,7 @@ def test_ipc_02_e2e_shared_block_transfer():
 
         recv_sb = sysv.memory_manager.claim(receiver_task_id=1, shm_id=recv_shm_id).unwrap()
         assert recv_sb.get_owner() == 1
-        assert recv_sb.get_address() == addr
+        assert recv_sb.get_address(caller_task_id=1) == addr
     finally:
         sysv.shutdown()
 
@@ -167,7 +167,7 @@ def test_ipc_03_send_failure_restores_owner():
     sysv = System()
     try:
         sb = sysv.memory_manager.allocate_shared(caller_task_id=1, size=256).unwrap()
-        shm_id = sb.release()
+        shm_id = sb.release(caller_task_id=1)
         msg = IPCMessage.from_entries(
             [(_KEY_SHM_ID, shm_id)],
             memory_manager=sysv.memory_manager,

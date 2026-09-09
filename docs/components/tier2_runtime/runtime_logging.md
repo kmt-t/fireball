@@ -100,15 +100,15 @@ COOS および IPC において、デバッグ時に重大な不整合・境界�
 
 | イベントID | 分類 | レベル | フォーマット文字列 | 引数構成 (args[0..3]) | 発生条件 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `0x0101` | COOS | `WARN` | `COOS: handoff limit reached (task=%d, count=%d)` | `task_id`, `handoff_count`, 0, 0 | 連続ハンドオフ上限（4回）に到達し強制 YIELD |
-| `0x0102` | COOS | `ERROR` | `COOS: task capacity exceeded (max=%d, attempted=%d)` | `max_tasks`, `attempted_count`, 0, 0 | タスク上限（16）超過によるタスク spawn 拒否 |
+| `0x0101` | COOS | `WARN` | `COOS: handoff limit reached (task=%d, count=%d)` | `task_id`, `handoff_count`, 0, 0 | 連続ハンドオフ上限（`FB_CONF_MAX_CONSECUTIVE_HANDOFFS`、`system_config.md` 正本）到達（詳細は `os_coos.md` 正本） |
+| `0x0102` | COOS | `ERROR` | `COOS: task capacity exceeded (max=%d, attempted=%d)` | `max_tasks`, `attempted_count`, 0, 0 | タスク上限（`FB_CONF_MAX_TASKS`、`system_config.md` 正本）超過によるタスク spawn 拒否 |
 | `0x0103` | COOS | `ERROR` | `COOS: duplicate task id rejected (task=%d)` | `task_id`, 0, 0, 0 | 既存タスクと同一 ID の spawn 試行の拒絶 |
-| `0x0104` | COOS | `WARN` | `COOS: irq queue overflow dropped (irq=%d, dropped_total=%d)` | `irq_id`, `dropped_count`, 0, 0 | 割込通知キュー（16）溢れによるイベント破棄 |
-| `0x0201` | IPC | `WARN` | `IPC: rbac denied (sender_role=%d, target_role=%d)` | `sender_role`, `target_role`, 0, 0 | RBAC 権限マトリクス違反によるメッセージ遮断 |
+| `0x0104` | COOS | `WARN` | `COOS: irq queue overflow dropped (irq=%d, dropped_total=%d)` | `irq_id`, `dropped_count`, 0, 0 | 割込通知キュー上限溢れによるイベント破棄（詳細は `os_coos.md` 正本） |
+| `0x0201` | IPC | `WARN` | `IPC: rbac denied (sender_role=%d, target_role=%d)` | `sender_role`, `target_role`, 0, 0 | RBAC 権限マトリクス違反によるメッセージ遮断（詳細は `ipc_router.md` 正本） |
 | `0x0202` | IPC | `WARN` | `IPC: unknown uri routing failed (uri_handle=%d)` | `uri_handle`, 0, 0, 0 | サービスレジストリ未登録の URI への送信試行 |
-| `0x0203` | IPC | `ERROR` | `IPC: message too large (kv_count=%d, max=%d)` | `kv_count`, `max_kv_pairs`, 0, 0 | 許可された最大 KV ペア数（8）を超過したメッセージ |
+| `0x0203` | IPC | `ERROR` | `IPC: message too large (kv_count=%d, max=%d)` | `kv_count`, `max_kv_pairs`, 0, 0 | 許可された最大 KV ペア数（`FB_CONF_ROUTER_MAX_KV_PAIRS`、`system_config.md` 正本）を超過したメッセージ |
 | `0x0204` | IPC | `ERROR` | `IPC: invalid ownership state (current_state=%d, op=%d)` | `ownership_state`, `operation`, 0, 0 | 送信側が所有権を持たないメッセージの送信試行 |
-| `0x0205` | IPC | `ERROR` | `IPC: channel waiter collision (channel=%d, dir=%d)` | `channel_idx`, `wait_dir`, 0, 0 | 1チャネル1待機タスクの不変条件に対する重複待機試行 |
+| `0x0205` | IPC | `ERROR` | `IPC: channel waiter collision (channel=%d, dir=%d)` | `channel_idx`, `wait_dir`, 0, 0 | チャネル待機不変条件違反（詳細は `ipc_router.md` 正本） |
 
 ### 4.3 COOS Idle Hook 連携 (Flush Protocol)
 <!-- traceability: {GLOBAL_IdleDetection} -->

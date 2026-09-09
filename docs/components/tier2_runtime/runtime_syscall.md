@@ -54,7 +54,7 @@ world fireball {
 
 ## 5. `fireball_call` 呼び出し規約
 
-### 4.1. 引数のパッキング
+### 5.1. 引数のパッキング
 <!-- traceability: {Type_Vocabulary} -->
 
 `fireball_call` は、後述の「型のエイリアス定義」で定義された型エイリアス（`fb_id_t`, `fb_val_t`, `fb_offset_t`）および規定の語彙セットに従って引数をパッキングする。物理的にはシステムコールID（`id`）と、6つの汎用引数（`arg0`〜`arg5`）の合計7つの `u32` 表現で構成され、インターフェースの型安全性を担保する。WASI関数がこれらの引数よりも多くのパラメータを持つ場合、ゲストメモリの物理ベースアドレスからの相対オフセット（`fb_offset_t`）を渡す。絶対アドレスではなく相対オフセットに制限することで、ゲスト境界チェックを瞬時に行う。
@@ -75,7 +75,7 @@ world fireball {
 | `arg4` | `fb_offset_t \| fb_val_t` | 汎用引数4、またはゲストメモリ内構造体の相対オフセット |
 | `arg5` | `fb_offset_t \| fb_val_t` | 汎用引数5、またはゲストメモリ内構造体の相対オフセット |
 
-#### 4.1.1. ゲストメモリ内構造体のレイアウト規則
+#### 5.1.1. ゲストメモリ内構造体のレイアウト規則
 `arg0`〜`arg5` にゲストメモリ上のポインタ（`iovs_ptr` 等）を渡す場合、データ構造は以下の制約に従って配置されなければならない。
 
 * **アライメント**: すべての構造体およびそのメンバは **4バイトアライメント** に配置されなければならない。
@@ -90,7 +90,7 @@ world fireball {
 **WASI iovec 散在ギャザーの全要素事前検証 (`SYS-GOTCHA-03`)**:
 散在ギャザー（iovec 配列）の各バッファ要素（`buf + len`）は、実際の出力ストリームへの書き込みを開始する前に全数事前検証される。途中の要素に境界外アドレスが含まれている場合、先行する正常要素であっても 1 バイトも出力ストリームへ書き込まず即座に `EFAULT` を返却する。これにより、異常終了時に中途半端なデータが出力先に漏洩・残存することを防止する。
 
-### 4.2. 戻り値
+### 5.2. 戻り値
 <!-- traceability: {Syscall_Return_Value} {Errorcode_To_Strategy} -->
 `fireball_call`は `u32` 型の値を返す。成功時は `0` を返し、失敗時は非0の定義されたエラーコード（WASIの `errno_t` に準拠）を返す。エラーコードの詳細は `{Syscall_Mapping}` の各定義および別紙参照。Shim層ではこのエラーコードがWITの `recovery-strategy` に変換されて上位に伝播する。 `{Syscall_Return_Value}` `{Errorcode_To_Strategy}`
 
@@ -100,7 +100,7 @@ world fireball {
 ## 6. システムコールID
 システムコールIDは、`fireball_call`が実行する特定の操作を識別し、vMMIOの全機能をカバーする。カテゴリ別に管理される。
 
-### 5.1. カテゴリ一覧
+### 6.1. カテゴリ一覧
 
 <!-- traceability: {Type_Vocabulary} {IPC_HandleBased} {CSPCommunication} -->
 
@@ -113,7 +113,7 @@ world fireball {
 | IPC | `0x40`-`0x4F` | ハンドル解決およびCSPメッセージ通信 `{IPC_HandleBased}` `{CSPCommunication}` |
 | WASI | `0x80`-`0xBF` | WASI互換レイヤー |
 
-### 5.2. System (`0x00`-`0x0F`)
+### 6.2. System (`0x00`-`0x0F`)
 <!-- traceability: {CooperativeMultitasking} -->
 
 | ID | 名前 | 引数 | 戻り値 | 説明 |
@@ -123,7 +123,7 @@ world fireball {
 | `0x02` | `SYS_HALT` | — | — | システム停止 |
 | `0x03` | `SYS_RESET` | — | `0` | ゲストリセット |
 
-### 5.3. vMMIO Generic (`0x10`-`0x1F`)
+### 6.3. vMMIO Generic (`0x10`-`0x1F`)
 vMMIOアドレス空間全体への汎用アクセス。SYSCTL/IPCR/VDMA/SHM/DYNAMIC/PASSTHROUGHすべての領域に対応。アクセス可否は、対象物理アドレスが `FB_CONF_VMMIO_ALLOWED_ADDRS`（[`system_config.md`](docs/components/tier1_core/system_config.md)）の許可範囲に属するかで判定される。この許可判定はタスク単位ではなく物理アドレス単位のグローバルなゲートであり、PTEに埋め込まれた権限フィールドが唯一の検証点となる（`runtime_vmmio.md` を正本とする）。SHM領域（FC=14）等、タスク間で所有権が移動するリソースの排他制御は `{RoleBasedAccessControl}` と IPCルータの所有権移譲によって別途行われ、vMMIOの物理アクセス許可判定とは独立している。 `{META_RestrictedPhysicalAccess}`
 
 | ID | 名前 | 引数 | 戻り値 | 説明 |
@@ -134,9 +134,9 @@ vMMIOアドレス空間全体への汎用アクセス。SYSCTL/IPCR/VDMA/SHM/DYN
 | `0x13` | `MMIO_WRITE8` | `addr` (`fb_val_t`: 物理アドレス), `value` (`fb_val_t`: 8bit値) | `0` (エラー時は `ERR_OUT_OF_BOUNDS` または `ERR_ACCESS_DENIED`) | 8bit書き込み |
 | `0x14` | `MMIO_BULK_READ` | `addr` (`fb_val_t`: 物理アドレス), `dest_offset` (`fb_offset_t`: ゲスト物理ベース相対), `byte_count` (`fb_val_t`: 転送バイト数) | `0` (エラー時は `ERR_OUT_OF_BOUNDS`, `ERR_ACCESS_DENIED` または `ERR_INVALID_SIZE`) | バルク読み出し（ゲストメモリへコピー） `{META_RestrictedPhysicalAccess}` |
 | `0x15` | `MMIO_BULK_WRITE` | `addr` (`fb_val_t`: 物理アドレス), `src_offset` (`fb_offset_t`: ゲスト物理ベース相対), `byte_count` (`fb_val_t`: 転送バイト数) | `0` (エラー時は `ERR_OUT_OF_BOUNDS`, `ERR_ACCESS_DENIED` または `ERR_INVALID_SIZE`) | バルク書き込み（ゲストメモリから書込） `{META_RestrictedPhysicalAccess}` |
-| `0x16` | `TRIGGER_SET_PIN` | `pin` (`fb_val_t`), `value` (`fb_val_t`: 0/1) | `0` (エラー時は `ERR_OUT_OF_BOUNDS` または `ERR_ACCESS_DENIED`) | GPIOピン出力設定（`{Fast_Path_GPIO}` vMMIO直接ストアの移植性代替 Shim 経路、`FB_SYSCALL_TRIGGER_SET_PIN`） |
+| `0x16` | `TRIGGER_SET_PIN` | `pin` (`fb_val_t`), `value` (`fb_val_t`: 0/1) | `0` (エラー時は `ERR_OUT_OF_BOUNDS` または `ERR_ACCESS_DENIED`) | GPIOピン出力設定（`{Fast_Path_GPIO}` vMMIO直接ストアの移植性代替 Shim 経路、`FB_SYSCALL_TRIGGER_SET_PIN`）。**pysim実験実装での状態**: 専用のGPIO vMMIOレジスタ配線が未実装のため、`fireball_call` ディスパッチテーブルには未登録であり、呼び出すと `SYS-GOTCHA-01` の規定通り安全に `WasiErrno.NOSYS` を返す（GPIOはこの実験では IPC 経由の `fireball://device/gpio/0` デバイスとして到達可能）。実機ターゲットでの本ID実装は別途 vMMIO GPIO レジスタ配線を前提とする。 |
 
-### 5.4. VDMA (`0x20`-`0x2F`)
+### 6.4. VDMA (`0x20`-`0x2F`)
 <!-- traceability: {VDMA} -->
 仮想DMA操作のセマンティックラッパー。内部的にvMMIO VDMAレジスタへの書き込みに変換される。
 
@@ -144,7 +144,7 @@ vMMIOアドレス空間全体への汎用アクセス。SYSCTL/IPCR/VDMA/SHM/DYN
 | :--- | :--- | :--- | :--- | :--- |
 | `0x20` | `VDMA_START` | `src`, `dst`, `byte_count` | `0` | DMA転送開始 `{VDMA}` |
 
-### 5.5. IRQ (`0x30`-`0x3F`)
+### 6.5. IRQ (`0x30`-`0x3F`)
 <!-- traceability: {CooperativeMultitasking} {META_RestrictedPhysicalAccess} {VDMA} -->
 仮想割り込みフラグの管理。`REG_IRQ_FLAGS` のラッパー。
 割り込み処理とコルーチンベースの協調型マルチタスク（`{CooperativeMultitasking}`）が連動し、ISRによるフラグ操作時にREADYキューへの投入が行われる。これらのID呼び出しは `{META_RestrictedPhysicalAccess}` に基づき、権限のないゲストからのアクセスは遮断される。また、仮想DMA（`{VDMA}`）完了時の割り込みクリアなどにも使用される。
@@ -155,7 +155,7 @@ vMMIOアドレス空間全体への汎用アクセス。SYSCTL/IPCR/VDMA/SHM/DYN
 | `0x31` | `IRQ_CLEAR` | `mask` | `0` | 指定ビットのフラグクリア |
 | `0x32`〜`0x3F` | `IRQ_RESERVED` | — | — | 将来の割り込みベクタ拡張用（予約スロット） |
 
-### 5.6. IPC (`0x40`-`0x4F`)
+### 6.6. IPC (`0x40`-`0x4F`)
 <!-- traceability: {CSPCommunication} {IPC_HandleBased} -->
 CSPチャネルおよびハンドルベースのプロセス間通信。
 URIによる名前解決後の接続確立（`lookup`）によって取得した `handle_id` を用いて、以降は直接メッセージパッシングを行う（`{IPC_HandleBased}`）。メッセージの送受信は、ホーアのCSPモデルに基づくゼロコピー所有権移譲を伴う同期通信として処理される（`{CSPCommunication}`）。
@@ -166,7 +166,7 @@ URIによる名前解決後の接続確立（`lookup`）によって取得した
 | `0x41` | `IPC_RECV` | `handle_id`, `buf_offset`, `buf_len` | `recv_len` / errno | メッセージ受信（buf_offset: 受信バッファの相対オフセット）。指定したハンドルからメッセージを受け取る（バッファが空の場合はコルーチンがサスペンドされる）。 |
 | `0x42` | `IPC_LOOKUP` | `uri_offset`, `uri_len` | `handle_id` / errno | 名前解決とハンドル取得（uri_offset: URI文字列の相対オフセット）。URI文字列の相対オフセットから通信ハンドルを返却する。 `{IPC_HandleBased}` |
 
-### 5.7. WASI (`0x80`-`0xBF`)
+### 6.7. WASI (`0x80`-`0xBF`)
 <!-- traceability: {WASI_Implementation} -->
 WASI互換レイヤー。Shimライブラリが `wasi-libc` の呼び出しをこれらのIDに変換する。本ドキュメントは物理的なシステムコールのマッピング仕様に特化し、高レベルのWITインターフェース定義（ファイル構成や型バインディングポリシー等）については `{Syscall_Mapping}` にて分離して定義されている。
 WASI 0.2標準仕様に適合するように、各システムコールはShimによって `wasi_ciovec_t` レイアウトへ自動パッキングされ、ホスト側で `wasi:clocks` や `wasi:io` のリソース操作へと同期マッピングされる。 `{WASI_Implementation}`
@@ -216,12 +216,12 @@ WASI 0.2標準仕様に適合するように、各システムコールはShim�
 
 ## 7. Fireball Shim (`libfireball_shim`)
 
-### 6.1. 役割
+### 7.1. 役割
 
 <!-- traceability: {WIT_Interface_Purpose} -->
 ゲストのWASI互換ライブラリ（`wasi-libc`など）からの呼び出しを傍受し、`fireball_call`呼び出し規約に従ってホストの`fireball_call`へ変換する。
 
-### 6.2. 高応答 Trigger のマッピング例
+### 7.2. 高応答 Trigger のマッピング例
 <!-- traceability: {Trap_Interface} {Syscall_Mapping} {Fast_Path_GPIO} -->
 
 **本経路は `{Fast_Path_GPIO}` の高速パスそのものではない。** `{Fast_Path_GPIO}` の実体は vMMIO コンポーネントが定義する vMMIO 空間への直接ストアであり、トラップ命令もシステムコール ID のディスパッチも介さない（JIT は境界チェック付きストアとしてインライン展開できる）。以下に示す `fireball_call` 経由の Shim は、WASI 互換ライブラリから呼び出すための**移植性のある代替経路**であり、トラップ 1 回分のディスパッチコストを伴う。sub-µs 応答が要求される用途では vMMIO 直接ストアを用いること。
@@ -242,7 +242,7 @@ def fireball_trigger_set_pin(pin: int, value: bool):
 
 ## 8. WASIホスト側実装
 
-### 7.1. 役割
+### 8.1. 役割
 <!-- traceability: {Challenge_WasiFdWriteLoop} {WASI_Async_Bridge} -->
 `fireball_call` を捕捉し、`id` に基づいて適切なハンドラにディスパッチする。WASI関連の呼び出しに対しては、対応するサービスや下位レイヤーのハードウェアHAL（Zephyr/SoC SDKなど）の操作を実行する。
 
@@ -256,11 +256,11 @@ def fireball_trigger_set_pin(pin: int, value: bool):
 
 ホスト側で非同期に発生したイベント（例: ハードウェア割り込みの完了、タイマーイベント、非同期I/Oの完了など）をゲストに通知するために、`fireball_call`とは独立したメカニズムを定義する。 `{Asynchronous_Notification}`
 
-### 8.1. 仮想割り込み
+### 9.1. 仮想割り込み
 <!-- traceability: {Asynchronous_Notification} -->
 ホストは、ゲストに対して**仮想割り込み**をトリガーすることで、イベントの発生を通知する。これはvSoCの`notify_virtual_interrupt`機能を利用する。
 
-#### 8.1.1. 仮想割り込みID 一覧表
+#### 9.1.1. 仮想割り込みID 一覧表
 <!-- traceability: {Asynchronous_Notification} -->
 これらのIDは、WASI 0.2 の `pollable` リソースをホスト側で ready 状態にするためのトリガーとして使用される。
 
@@ -271,7 +271,7 @@ def fireball_trigger_set_pin(pin: int, value: bool):
 | `timer_expired` | `0x02` | タイマー満了 | WASI Clocks 用 |
 | `stream_ready` | `0x03` | ストリーム準備完了 | WASI I/O 用 |
 
-#### 8.1.2. 仮想割り込みペイロード
+#### 9.1.2. 仮想割り込みペイロード
 <!-- traceability: {Asynchronous_Notification} -->
 仮想割り込みに関する詳細な情報（例えば、UARTから受信したデータ、タイマーID、非同期操作の結果コードなど）は、vMMIOレジスタや共有メモリ上の事前に定義された領域を介してゲストに伝達される。ゲストは割り込みハンドラ内でこれらの情報を読み取り、適切な非同期イベント処理を行う。
 

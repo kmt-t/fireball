@@ -5,8 +5,8 @@ Fireball System Logging Engine mirroring docs/components/tier2_runtime/runtime_l
   only scalar u32 arguments, completely eliminating runtime string pointers and Use-After-Free.
 - LOG-GOTCHA-02: Bounded ring buffer safely overwrites oldest entries on full, maintaining
   system non-blocking invariant and preventing log-induced deadlocks.
-- LOG-GOTCHA-03: Log flush loops check interrupt_pending per entry, allowing immediate
-  preemption by high-priority interrupts.
+- LOG-GOTCHA-03: Log flush groups entries into batches and checks interrupt_pending only at
+  batch boundaries, never mid-batch, since a started transfer cannot be preempted.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ import bisect
 import re
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import TYPE_CHECKING, Sequence
+from typing import TYPE_CHECKING, Callable, Sequence
 
 from system_containers import FlatMapView, RingBuffer
 
@@ -170,15 +170,25 @@ class Logger:
         )
         return "OVERWRITTEN" if overwritten else "QUEUED"
 
-    def flush(self) -> int:
+    def flush(
+        self, batch_size: int = 32, interrupt_pending: Callable[[], bool] | None = None
+    ) -> int:
+        """LOG-GOTCHA-03: entries are grouped into batches of up to `batch_size`.
+        A started transfer cannot be preempted, so `interrupt_pending` (if given)
+        is checked only after each batch completes, never mid-batch."""
         flushed = 0
         while not self.ring.is_empty():
-            entry = self.ring.pop()
-            assert entry is not None
-            msg = self.dictionary.format(entry.dict_offset, entry.args)
-            line = f"[{entry.level.name}][tick:{entry.tick}] {msg}\n"
-            self.transport.write(line.encode("utf-8"))
-            flushed += 1
+            batch_count = 0
+            while not self.ring.is_empty() and batch_count < batch_size:
+                entry = self.ring.pop()
+                assert entry is not None
+                msg = self.dictionary.format(entry.dict_offset, entry.args)
+                line = f"[{entry.level.name}][tick:{entry.tick}] {msg}\n"
+                self.transport.write(line.encode("utf-8"))
+                flushed += 1
+                batch_count += 1
+            if interrupt_pending is not None and interrupt_pending():
+                break
         return flushed
 
 

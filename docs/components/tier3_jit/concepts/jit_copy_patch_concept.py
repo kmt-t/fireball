@@ -1431,8 +1431,7 @@ def test_variant_reconciliation_glue_rejects_missing_value() -> None:
 def test_variant_reconciliation_glue_emits_real_swap_bytes() -> None:
     """Structural check that a genuine register-layout mismatch (same role set,
     different physical registers -- what a future allocator could produce) emits the
-    real cycle-safe MOV sequence, not a placeholder. Semantic correctness on actual
-    hardware is proven separately in jit_trace_execution_verifier.py (Unicorn)."""
+    real cycle-safe MOV sequence, not a placeholder."""
     engine = CopyPatchJITEngine()
     asm = Thumb2Assembler()
     # A synthetic alt-Depth-2 layout (TOS=R4, NOS=R3) swapped relative to the real one,

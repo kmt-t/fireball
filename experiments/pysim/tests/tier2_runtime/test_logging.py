@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 """
-Unit tests for Tier 1 Core: System Logging & Ring Buffer
+Unit tests for Tier 2 Runtime: System Logging & Ring Buffer
 Traceability: runtime_logging_test_spec.md
 """
 
@@ -160,9 +160,36 @@ def test_log_04_coos_and_ipc_diagnostic_logging():
         sysv.shutdown()
 
 
+def test_log_05_gotcha_03_interrupt_checked_only_at_batch_boundary():
+    """LOG-GOTCHA-03: flush() checks interrupt_pending only after a batch
+    completes, never mid-batch, since a started transfer cannot be preempted."""
+    t = UartTransport()
+    try:
+        d = LogDictionary()
+        d.register(0x01, "event #%d")
+        logger = Logger(t, d, min_level=LogLevel.DEBUG, capacity=8)
+        for i in range(4):
+            logger.log_event(LogLevel.INFO, 0x01, i)
+
+        call_count = 0
+
+        def mock_interrupt() -> bool:
+            nonlocal call_count
+            call_count += 1
+            return True  # already pending once the first batch completes
+
+        flushed = logger.flush(batch_size=2, interrupt_pending=mock_interrupt)
+        assert flushed == 2, "only the first batch (2 entries) should be transmitted"
+        assert logger.ring.count == 2, "the second batch's entries remain buffered"
+        assert call_count == 1, "interrupt_pending must be checked once per batch, not per entry"
+    finally:
+        t.close()
+
+
 if __name__ == "__main__":
     test_log_01_dictionary_rejects_pointer_specifiers()
     test_log_02_logger_ring_buffer_overwrites()
     test_log_03_dictionary_storage_ownership_separation()
     test_log_04_coos_and_ipc_diagnostic_logging()
-    print("[PASS] All 4 System Logging & Ring Buffer tests passed.")
+    test_log_05_gotcha_03_interrupt_checked_only_at_batch_boundary()
+    print("[PASS] All 5 System Logging & Ring Buffer tests passed.")

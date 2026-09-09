@@ -8,10 +8,8 @@ Copy-and-Patch's whole premise is that compilation is just concatenating and
 patching pre-encoded stencils -- no optimization search, no register allocation
 solver, no instruction scheduling. "Zero cost" here means "cost proportional to
 trace length with a small constant factor", not literally zero: this benchmark
-drives the real compile_trace() (../concepts/jit_copy_patch_concept.py, the same
-function verified end-to-end on a real ARMv8-M emulator by
-jit_trace_execution_verifier.py) and checks compile time scales linearly with
-trace length rather than blowing up.
+drives the real compile_trace() (../concepts/jit_copy_patch_concept.py) and
+checks compile time scales linearly with trace length rather than blowing up.
 """
 
 import os

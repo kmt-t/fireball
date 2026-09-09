@@ -702,7 +702,7 @@ def test_mem_gotcha_02_release_and_flight_protection():
     b.write_u32(0, 0x12345678)
     assert b.read_u32(0) == 0x12345678
 
-    shm_id = b.release()
+    shm_id = b.release(caller_task_id=1)
     assert b._is_in_flight
     assert not b._is_active
     try:
@@ -712,11 +712,32 @@ def test_mem_gotcha_02_release_and_flight_protection():
         pass
 
     assert not mm.claim(receiver_task_id=2, shm_id=shm_id).is_ok
-    assert mm.grant_shared(shm_id=shm_id, new_owner_task_id=2)
 
-    b_claimed = mm.claim(receiver_task_id=2, shm_id=shm_id).unwrap()
-    assert b_claimed.read_u32(0) == 0x12345678
-    assert b_claimed.get_owner() == 2
+
+def test_mem_gotcha_02b_release_owner_only():
+    """MEM-GOTCHA-02: Non-owner task cannot release() or access another task's SharedBlock."""
+    mm = MemoryManager()
+    mm.init_manager(pool_base=0x20020000, pool_size=0x40000)
+    b = mm.allocate_shared(caller_task_id=1, size=64).unwrap()
+
+    try:
+        b.release(caller_task_id=2)
+        raise AssertionError("Non-owner must not be able to release() another task's SharedBlock")
+    except AssertionError as e:
+        assert "MEM-GOTCHA-02" in str(e)
+
+    try:
+        b.get_address(caller_task_id=2)
+        raise AssertionError(
+            "Non-owner must not be able to get_address() another task's SharedBlock"
+        )
+    except AssertionError as e:
+        assert "MEM-GOTCHA-02" in str(e)
+
+    assert b._is_active
+    assert b.get_owner() == 1
+    b.release(caller_task_id=1)
+    assert not b._is_active
 
 
 def test_hal_gotcha_01_hal_buffer_pool_bounds_violation_rejected():
@@ -733,7 +754,9 @@ def test_hal_gotcha_01_hal_buffer_pool_bounds_violation_rejected():
 
     try:
         pool.release_buffer(task_id=2, handle=handle)
-        raise AssertionError("Expected HalBufferTrap when task 2 attempts to release task 1's buffer")
+        raise AssertionError(
+            "Expected HalBufferTrap when task 2 attempts to release task 1's buffer"
+        )
     except HalBufferTrap:
         pass
 

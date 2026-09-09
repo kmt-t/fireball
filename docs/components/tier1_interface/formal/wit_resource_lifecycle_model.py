@@ -109,8 +109,18 @@ def properties():
 if __name__ == "__main__":
     from pyModelChecking.CTL import modelcheck
 
+    print("=== Formal Verification: WIT Resource Lifecycle Model (guards=True) ===")
     km = build_model(guards=True)
     for prop in properties():
         res = modelcheck(km, prop["formula"])
         passed = km.S0.issubset(res)
-        print(f"[{'PASS' if passed == prop['expect'] else 'FAIL'}] {prop['name']}")
+        assert passed == prop["expect"], f"Property {prop['name']} verification failed!"
+        print(f"  [{'PASS' if passed else 'FAIL'}] {prop['name']}")
+
+    print("=== Mutation Testing: WIT Resource Lifecycle Model (guards=False) ===")
+    km_mut = build_model(guards=False)
+    for prop in properties():
+        res_mut = modelcheck(km_mut, prop["formula"])
+        violated = not km_mut.S0.issubset(res_mut)
+        assert violated, f"Mutation for {prop['name']} was NOT detected!"
+        print(f"  [PASS (Refuted as expected)] {prop['name']}")

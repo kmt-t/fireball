@@ -41,6 +41,7 @@ from ipc_router import (
     kv_entries_to_bytes,
 )
 from system import (
+    FB_CONF_GUEST_RAM_SIZE,
     FB_CONF_VSOC_PASSTHROUGH_BASE,
     FbSyscallId,
     System,
@@ -61,6 +62,16 @@ def test_syscall_01_unknown_id_returns_nosys():
     sysv = System()
     try:
         assert sysv.fireball_call(0xDEAD, 0, 0, 0, 0, 0, 0) == WasiErrno.NOSYS
+    finally:
+        sysv.shutdown()
+
+
+def test_syscall_16_trigger_set_pin_reserved_nosys():
+    """SYS-16: TRIGGER_SET_PIN is a registered ID with no pysim GPIO register
+    backing yet; it must be safely undispatched (NOSYS), not crash or panic."""
+    sysv = System()
+    try:
+        assert sysv.fireball_call(FbSyscallId.TRIGGER_SET_PIN, 0, 1, 0, 0, 0, 0) == WasiErrno.NOSYS
     finally:
         sysv.shutdown()
 
@@ -86,6 +97,80 @@ def test_syscall_03_mmio_read_write():
             == WasiErrno.SUCCESS
         )
         assert sysv.fireball_call(FbSyscallId.MMIO_READ32, addr, 0, 0, 0, 0, 0) == 0xCAFEBABE
+    finally:
+        sysv.shutdown()
+
+
+def test_syscall_11_mmio_read32_out_of_bounds():
+    """SYS-11: MMIO_READ32 on a linear guest-RAM address beyond FB_CONF_GUEST_RAM_SIZE is rejected."""
+    sysv = System()
+    try:
+        oob_addr = FB_CONF_GUEST_RAM_SIZE + 0x1000  # bit31=0 (linear), past guest RAM
+        assert (
+            sysv.fireball_call(FbSyscallId.MMIO_READ32, oob_addr, 0, 0, 0, 0, 0) == WasiErrno.FAULT
+        )
+    finally:
+        sysv.shutdown()
+
+
+def test_syscall_12_mmio_write32_permission_denied():
+    """SYS-12: MMIO_WRITE32 to a page mapped read-only is rejected."""
+    sysv = System()
+    try:
+        vpn = (FB_CONF_VSOC_PASSTHROUGH_BASE >> 12) + 100  # fresh page, unused at startup
+        sysv.vmmio.map_passthrough_page(vpn=vpn, phys_page=0, write=False)
+        addr = vpn << 12
+        assert (
+            sysv.fireball_call(FbSyscallId.MMIO_WRITE32, addr, 0xDEAD, 0, 0, 0, 0) == WasiErrno.PERM
+        )
+    finally:
+        sysv.shutdown()
+
+
+def test_syscall_13_mmio_read8_write8():
+    """SYS-13: MMIO_READ8/MMIO_WRITE8 round-trip at 8-bit width."""
+    sysv = System()
+    try:
+        addr = FB_CONF_VSOC_PASSTHROUGH_BASE
+        assert (
+            sysv.fireball_call(FbSyscallId.MMIO_WRITE8, addr, 0xAB, 0, 0, 0, 0) == WasiErrno.SUCCESS
+        )
+        assert sysv.fireball_call(FbSyscallId.MMIO_READ8, addr, 0, 0, 0, 0, 0) == 0xAB
+    finally:
+        sysv.shutdown()
+
+
+def test_syscall_14_mmio_bulk_read_write_invalid_size():
+    """SYS-14: MMIO_BULK_READ/WRITE with an oversized byte_count is rejected."""
+    sysv = System()
+    try:
+        addr = FB_CONF_VSOC_PASSTHROUGH_BASE
+        huge_count = 0x20000  # exceeds the entire PASSTHROUGH backing array
+        assert (
+            sysv.fireball_call(FbSyscallId.MMIO_BULK_READ, addr, 0, huge_count, 0, 0, 0)
+            == WasiErrno.FAULT
+        )
+        assert (
+            sysv.fireball_call(FbSyscallId.MMIO_BULK_WRITE, addr, 0, huge_count, 0, 0, 0)
+            == WasiErrno.FAULT
+        )
+    finally:
+        sysv.shutdown()
+
+
+def test_syscall_15_mmio_bulk_read_dest_offset_out_of_bounds():
+    """SYS-15: MMIO_BULK_READ rejects a dest_offset beyond guest RAM and writes nothing."""
+    sysv = System()
+    try:
+        guest_mem = bytearray(b"\xaa" * 16)
+        sysv.bind_guest(guest_mem, task_id=1)
+        addr = FB_CONF_VSOC_PASSTHROUGH_BASE
+        assert (
+            sysv.fireball_call(FbSyscallId.MMIO_BULK_READ, addr, 100, 4, 0, 0, 0) == WasiErrno.FAULT
+        )
+        assert guest_mem == bytearray(b"\xaa" * 16), (
+            "no partial write should occur on out-of-bounds dest_offset"
+        )
     finally:
         sysv.shutdown()
 
@@ -345,8 +430,14 @@ def test_wasi_08_out_of_bounds_offset_returns_fault():
 
 if __name__ == "__main__":
     test_syscall_01_unknown_id_returns_nosys()
+    test_syscall_16_trigger_set_pin_reserved_nosys()
     test_syscall_02_sys_control_registers()
     test_syscall_03_mmio_read_write()
+    test_syscall_11_mmio_read32_out_of_bounds()
+    test_syscall_12_mmio_write32_permission_denied()
+    test_syscall_13_mmio_read8_write8()
+    test_syscall_14_mmio_bulk_read_write_invalid_size()
+    test_syscall_15_mmio_bulk_read_dest_offset_out_of_bounds()
     test_syscall_04_vdma_transfer()
     test_syscall_05_irq_flags()
     test_syscall_06_ipc_lookup_send_recv()
@@ -359,4 +450,4 @@ if __name__ == "__main__":
     test_wasi_06_random_get()
     test_wasi_07_invalid_fd_returns_badf()
     test_wasi_08_out_of_bounds_offset_returns_fault()
-    print("[PASS] All 15 Syscall & WASI Environment tests passed.")
+    print("[PASS] All 21 Syscall & WASI Environment tests passed.")

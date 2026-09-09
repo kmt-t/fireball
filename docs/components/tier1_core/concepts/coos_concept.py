@@ -109,7 +109,7 @@ class Channel(Generic[MsgT]):
     def __init__(self, kernel: "COOSKernel | None" = None):
         self.kernel = kernel
         self.waiter_task: str | None = None
-        self.waiter_dir: int = WaitDir.NONE
+        self.waiter_dir: WaitDir = WaitDir.NONE
 
     def send(self, data: MsgT) -> tuple[ChannelAction, str | None]:
         assert self.kernel is not None

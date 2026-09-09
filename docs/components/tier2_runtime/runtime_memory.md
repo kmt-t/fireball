@@ -29,14 +29,16 @@ graph TD
     Impl --> ShmAlloc[shm_allocator: dlmalloc mspace]
     SysAlloc --> KernelPool[Kernel Pool / Heap: MPU Region 2]
     ShmAlloc --> SharedRegion[Shared Memory Buffers: MPU Region 6]
+    Impl -.->|MPU保護ドメインのみ提供、確保ロジックは委譲| RuntimeArena["runtime_loader.md: bump allocator (Region 3)"]
+    Impl -.->|MPU保護ドメインのみ提供、確保ロジックは委譲| JitCache["jit_runtime.md: 3-Bank JIT cache (Region 4)"]
 ```
 
 ## 4. インターフェース実装
 [`system_memory.md`](docs/components/tier1_core/system_memory.md) のインターフェース設計節で定義された公開APIを、以下のアロケータ群を用いて実現する。
 
-- `init-manager`: `system_allocator`/`shm_allocator` それぞれに対応する `create_mspace_with_base` を実行する。
+- 起動時初期化: `system_allocator`/`shm_allocator` それぞれに対応する `create_mspace_with_base` を実行する（`system_config.md` の `FB_CONF_*` 静的構成に基づく）。
 - `host-alloc`/`host-free`: `system_allocator` の mspace 上で有界レイテンシの動的確保・個別解放を行う（ホスト用ヒープ）。
-- `acquire-task-heap`/`release-task-heap`/`acquire-slot`/`release-slot`/`deallocate`: `system_allocator` の mspace 上で固定長パーティション・型付きスロットを貸与・返却する（タスクヒープ）。
+- `acquire-task-heap`/`release-task-heap`/`acquire_slot`/`release_slot`: `system_allocator` の mspace 上で固定長パーティション・型付きスロットを貸与・返却する（タスクヒープ）。
 - `allocate-shared`/`claim`/`release`: `shm_allocator` の mspace 上で可変長 `shared_block` を切り出し、RAII 解放時に `mspace_free` へ返却・自動合体する（共有メモリ用ヒープ）。
 - `acquire-runtime-arena`/`bump-alloc`/`reset-runtime-arena`/`release-runtime-arena`: `{Runtime_BumpAllocator}`（[`runtime_loader.md`](docs/components/tier2_runtime/runtime_loader.md) 正本）へ委譲する（ランタイム用バンプアロケータ）。
 - `acquire-jit-cache`: MPU Region 4（7.1節）の固定長リージョンハンドルを返す。バンク分割・世代交代は `{JIT_MultiBuffer_Cache}`（[`jit_runtime.md`](docs/components/tier3_jit/jit_runtime.md) 正本）が管轄する（JITキャッシュアロケータ）。
@@ -74,7 +76,7 @@ graph TD
 [`system_memory.md`](docs/components/tier1_core/system_memory.md) の `{OwnershipTransfer}` 契約（所有権追跡・イベント通知インターフェース・ライフサイクルフェーズ）を、以下のとおり物理実装する。
 
 ### 6.1 所有権追跡の物理実装
-各メモリブロックは `memory-info.owner` で割り当て元 task-id を追跡する。`acquire-task-heap`/`acquire-slot`/`deallocate` や `RAII`/`drop` による解放は、用途別に事前確保された独立パーティション（固定長アリーナ）から `shm_allocator`/`system_allocator` を用いて有界に切り出し、使用後にアリーナへ返却・合体する。
+各メモリブロックは `memory-info.owner` で割り当て元 task-id を追跡する。`acquire-task-heap`/`acquire_slot`/`release-task-heap`/`release_slot` や `RAII`/`drop` による解放は、用途別に事前確保された独立パーティション（固定長アリーナ）から `shm_allocator`/`system_allocator` を用いて有界に切り出し、使用後にアリーナへ返却・合体する。
 
 ### 6.2 共有メモリマッピングと仮想化リスナーへのコールバック委譲（物理実装）
 <!-- traceability: {VmmioShmDelegation} {OwnerMismatchTrap} -->
@@ -96,67 +98,23 @@ Cortex-M33 MPU および vMMIO のハードウェア保護機構において、�
 
 ### 6.4 共有メモリライフサイクルと権限遷移プロトコル（物理実装）
 <!-- traceability: {OwnershipTransfer} {META_FaultIsolation} -->
-[`system_memory.md`](docs/components/tier1_core/system_memory.md) の `{OwnershipTransfer}` ライフサイクルフェーズ遷移表に対応する、vMMIO PTE / TLB の具体的な物理挙動を以下に示す。
+[`system_memory.md`](docs/components/tier1_core/system_memory.md) の `{OwnershipTransfer}` ライフサイクルフェーズ遷移表に対応する、物理メモリマネージャ自身の動作を以下に示す。§6.2 の DIP 設計に従い、各フェーズでのページテーブル（PTE）更新・TLB フラッシュの実行は仮想化層（vMMIO コントローラ）の自律的な責務であり、本コンポーネントはライフサイクル通知の発火のみを行う。vMMIO 側の具体的な PTE/TLB 挙動は [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md) を正本とする。
 
-| ステップ | フェーズ | 送信元(Task A) | 受信先(Task B) | vMMIO PTE & TLB 挙動 |
+| ステップ | フェーズ | 送信元(Task A) | 受信先(Task B) | 物理メモリマネージャの動作 |
 | :---: | :--- | :--- | :--- | :--- |
-| 1 | 確保 | 所有 (`TaskA`) | - | `TaskA` 用にマッピング登録、4KB 専用物理ページ確保 |
-| 2 | 書込 | 書込可能 | - | 正常アクセス |
-| 3 | 送信開始 | **無効化** (ハンドル返却) | - | **vMMIO アンマップ ＆ TLB 即時フラッシュ** (Revoke) |
+| 1 | 確保 | 所有 (`TaskA`) | - | 専用 4KB 物理ページを確保し `owner=TaskA` を記録、マッピング通知を発火 |
+| 2 | 書込 | 書込可能 | - | 正常アクセス（本コンポーネントの関与なし） |
+| 3 | 送信開始 | **無効化** (ハンドル返却) | - | `owner` を in-flight 状態へ更新し、アンマップ通知を発火 (Revoke) |
 | 4 | メッセージ化 | - | - | スコープ: `RESOURCE` |
-| 5 | ランデブー | サスペンド待機 | - | 送受信マッチング待ち (Rendezvous) |
+| 5 | ランデブー | サスペンド待機 | - | 送受信マッチング待ち (Rendezvous、IPC ルータの責務) |
 | 6 | 認可・受信 | 待機解除 | 受信完了 | 受信タスクへのハンドオフ確約 |
-| 7 | 所有権取得 | - | **所有** (`TaskB`) | `TaskB` 用に **マッピング登録** (Grant) |
-| 8 | 読出 | - | 読出可能 | 正常アクセス |
-| 9 | 自動解放 | - | **解放** | PTE アンマップ、TLB フラッシュ、ページプール返却 |
+| 7 | 所有権取得 | - | **所有** (`TaskB`) | `owner=TaskB` を記録し、マッピング通知を発火 (Grant) |
+| 8 | 読出 | - | 読出可能 | 正常アクセス（本コンポーネントの関与なし） |
+| 9 | 自動解放 | - | **解放** | ページをプールへ返却し、アンマップ通知を発火 |
 
-- **非所有タスク操作の完全遮断 (`MEM-GOTCHA-02`)**: 共有メモリブロックの操作時、ブロックの所有タスク ID を厳格に照合し、非所有タスクからの操作は即座にトラップ（`ShmTrap` / `ERR_PERMISSION_DENIED`）で遮断する。
-- **送信中ブロックの保護状態 (`MEM-GOTCHA-03`)**: 送信開始（`release()`）から受信完了（`claim()`）までの間、vMMIO から PTE をアンマップし、TLB を即時フラッシュすることで、送信元タスクからの旧アドレスアクセスを未登録ページフォルト（`TRAP_UNREGISTERED_PAGE`）として確実に遮断し、TOCTOU 競合や不正アクセスを構造的に排除する。
-- **障害時回復**: Rendezvous中に通信が中断された場合、`rollback_transfer(original_sender_id, shm_id)` により送信元タスクへ PTE を再マッピングし、リソースのダングリングを防止する。
-
-#### ページ単位権限分離と共有メモリ移譲プロトコル（責務シーケンス図）
-<!-- traceability: {PageGranularPermissionIsolation} {OwnershipTransfer} {VmmioShmDelegation} -->
-Task A、MemoryManager、vMMIO Controller、Task B 間での専用 4KB 物理ページ切り出しと所有権遷移（A $\to$ アンマップ $\to$ B）の責務分離を示す。
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor TaskA as Task A (Sender)
-    participant Mem as MemoryManager
-    participant vMMIO as vMMIO Controller (PTE & TLB)
-    actor TaskB as Task B (Receiver)
-
-    TaskA->>Mem: allocate_shared(size)
-    Note over Mem: MEM-GOTCHA-01: Page-Granular Isolation
-    alt Existing page owned by Task A has sufficient free capacity
-        Mem->>Mem: Carve out slot from existing dedicated Physical Page for Task A
-    else No suitable existing page
-        Mem->>Mem: Allocate fresh dedicated 4KB Physical Page for Task A
-        Mem->>vMMIO: Register PTE: VPN -> PPN (mapped for Task A)
-    end
-    Mem-->>TaskA: Return shared_block (local handle)
-
-    TaskA->>TaskA: Write data into shared buffer
-    TaskA->>Mem: release() (Revoke phase)
-    Note over Mem,vMMIO: MEM-GOTCHA-03: Unmap Page & Invalidate TLB
-    Mem->>vMMIO: Unmap Page: unmap_shm_page(vpn) & Flush TLB
-    vMMIO-->>Mem: TLB flushed & PTE removed
-    Mem-->>TaskA: Return shm_id (access revoked)
-
-    Note over TaskA,TaskB: IPC Router CSP Rendezvous (Zero-copy handoff shm_id)
-
-    TaskB->>Mem: claim(shm_id) (Grant phase)
-    Mem->>vMMIO: Map PTE for Task B: map_shm_page(vpn, ppn)
-    vMMIO-->>Mem: Mapping active
-    Mem-->>TaskB: Return new shared_block handle
-    TaskB->>TaskB: Read data safely (mapped in Task B)
-
-    Note over TaskB,vMMIO: Automatic Release (shared-block RAII drop)
-    TaskB->>Mem: shared-block RAII drop
-    Mem->>vMMIO: Unmap Page: unmap_shm_page(vpn) & Flush TLB
-    vMMIO-->>Mem: TLB flushed & PTE removed
-    Mem->>Mem: Return Physical Page to Free Pool
-```
+- **非所有タスク操作の完全遮断 (`MEM-GOTCHA-02`)**: 共有メモリブロックの操作時、ブロックの所有タスク ID を厳格に照合する。物理的な遮断機構は、所有権未取得（未マッピング）状態のページへのアクセスを未登録ページフォルト（`TRAP_UNREGISTERED_PAGE`）として検出する、アドレスベースの検知方式で実現する（8.1節参照、具体的な検知経路は `runtime_vmmio.md` を正本とする）。
+- **送信中ブロックの保護状態 (`MEM-GOTCHA-03`)**: 送信開始（`release()`）から受信完了（`claim()`）までの間、送信元タスクからの旧アドレスアクセスは未登録ページフォルト（`TRAP_UNREGISTERED_PAGE`）として確実に遮断され、TOCTOU 競合や不正アクセスを構造的に排除する。具体的な遮断メカニズム（PTE アンマップ・TLB 即時フラッシュ）は `runtime_vmmio.md` を正本とする。
+- **障害時回復**: Rendezvous中に通信が中断された場合、`rollback_transfer(original_sender_id, shm_id)` により送信元タスクへ所有権を復元し、リソースのダングリングを防止する。物理的なマッピング復元手順は `runtime_vmmio.md` を正本とする。
 
 ## 7. ハードウェアメモリ保護 (MPU) & W^X 設計
 <!-- traceability: {META_FaultIsolation} {WasmPageAlignment} {LowLatencyJIT} {System_Allocator} {Shm_Allocator} -->
@@ -176,40 +134,19 @@ Cortex-M33 (ARMv8-M Mainline) の PMSAv8 (Protected Memory System Architecture) 
 | **7** | Stack Guard Band | - | `No Access` | 不可 | 不可 | スタックオーバーフロー検出用ガードバンド |
 
 ### 7.2 JIT W^X (Write XOR Execute) 切替プロトコル
-JIT コードキャッシュ（Region 4）は、実行可能（Execute）と書き込み可能（Write）が同時に有効化される状態（`RWX`）をハードウェアレベルで恒常的に排除する。本領域は、データ用バンプアロケータ（`{Runtime_BumpAllocator}`）が管理する通常のデータ RAM パーティション（Region 3: `RW + XN`）とはハードウェア保護ドメインが厳格に分離された専用セクションであり、専用の JIT コードアロケータによって管理される。 `{LowLatencyJIT}` `{Runtime_BumpAllocator}`
+JIT コードキャッシュ（Region 4）は、実行可能（Execute）と書き込み可能（Write）が同時に有効化される状態（`RWX`）をハードウェアレベルで恒常的に排除する。本領域は、データ用バンプアロケータ（`{Runtime_BumpAllocator}`）が管理する通常のデータ RAM パーティション（Region 3: `RW + XN`）とはハードウェア保護ドメインが厳格に分離された専用セクションであり、専用の JIT コードアロケータによって管理される。本コンポーネントは `begin_jit_patch()`/`commit_jit_patch()` という MPU 属性切替プリミティブを提供するのみであり、いつ・どの単位（トレース／基本ブロック）でこれらを呼び出すかという JIT コンパイル手順は [`jit_compiler.md`](docs/components/tier3_jit/jit_compiler.md) を正本とする。 `{LowLatencyJIT}` `{Runtime_BumpAllocator}`
 
 #### 属性切替シーケンス
-JIT コンパイル開始から完了までの属性切替ステップを示す。ハードウェアレジスタ操作と目的を構造化して定義する。
+`begin_jit_patch()`/`commit_jit_patch()` 呼び出し時のレジスタ操作を示す。
 
 | ステップ | 操作名 | レジスタ設定内容 | 属性 / バリア | 目的と安全性不変条件 |
 | :---: | :--- | :--- | :--- | :--- |
 | 1 | パッチ生成開始 (`begin_jit_patch`) | `RNR = 4`<br>`RLAR.EN = 0`<br>`RBAR.AP = RW`, `RBAR.XN = 1`<br>`RLAR.EN = 1` | `RW + XN`<br>`__DSB(); __ISB();` | リージョン4を書き込み可能・実行不可へ移行し、パイプラインを同期。実行を禁止して改ざん時暴走を防止。 |
-| 2 | Copy-and-Patch 生成 | テンプレートコピー & 即値パッチ | `RW + XN` | 生成中は安全にメモリ書き込みのみを行う。 |
-| 3 | パッチ生成完了 (`commit_jit_patch`) | `RNR = 4`<br>`RLAR.EN = 0`<br>`RBAR.AP = RO`, `RBAR.XN = 0`<br>`RLAR.EN = 1` | `RO + X`<br>`__DSB(); __ISB();` | リージョン4を読み取り専用・実行可能へ復元し、命令キャッシュ・プリフェッチをフラッシュしてネイティブ実行を有効化。 |
+| 2 | パッチ生成完了 (`commit_jit_patch`) | `RNR = 4`<br>`RLAR.EN = 0`<br>`RBAR.AP = RO`, `RBAR.XN = 0`<br>`RLAR.EN = 1` | `RO + X`<br>`__DSB(); __ISB();` | リージョン4を読み取り専用・実行可能へ復元し、命令キャッシュ・プリフェッチをフラッシュしてネイティブ実行を有効化。 |
 
-#### トランザクションバッチ化によるレイテンシ両立
-Copy-and-Patch の各命令パッチごとに個別 MPU 切替を行うとバリアオーバーヘッドが増大するため、JIT コンパイル単位（WASM 関数または基本ブロック単位）で `begin_jit_patch()` と `commit_jit_patch()` を 1 回ずつ発行する**トランザクションバッチ化**を適用する。これにより、属性切替コストをコンパイルあたり 1 回のバリアに抑え、`{LowLatencyJIT}` のリアルタイム制約を達成する。
-
-##### JIT W^X バッチ切り替えトランザクション手順（手順アクティビティ図）
+#### トランザクションバッチ化によるレイテンシ両立 (`MEM-GOTCHA-04`)
 <!-- traceability: {MEM-GOTCHA-04} {GLOBAL_Policy_Memory} {META_RestrictedPhysicalAccess} -->
-JIT コンパイル時の MPU 属性切り替え（RW+XN $\to$ RO+X）と CPU キャッシュコヒーレンシバリア発行の決定論的手順を示す。
-
-```mermaid
-flowchart TD
-    Start(["JIT Compiler: Begin Trace Generation"]) --> MPU_RW["MPU: Switch Active Bank to RW+XN (Writeable, Execute-Never)"]
-    MPU_RW --> BarrierRW["Issue DSB (Data Synchronization) & ISB (Instruction Synchronization)"]
-    BarrierRW --> CopyPatch["Copy Stencil Machine Code & Apply Immediate/Register Patches"]
-    CopyPatch --> Complete{"Trace generation complete?"}
-
-    Complete -- "Yes" --> CleanD["ARM CMSIS: SCB_CleanDCache_by_Addr(trace_addr, size)"]
-    CleanD --> InvalI["ARM CMSIS: SCB_InvalidateICache_by_Addr(trace_addr, size)"]
-    InvalI --> Barrier["Issue DSB (Data Synchronization) & ISB (Instruction Synchronization)"]
-    Barrier --> MPU_RO["MPU: Switch Active Bank to RO+X (Read-Only, Executable)"]
-    MPU_RO --> CommitTrace(["Trace Committed: Safe Native Execution Enabled"])
-```
-
-- **バッチ化トランザクション (`MEM-GOTCHA-04`)**:
-  **設計理由と不変条件**: 1 命令の書き込みごとに MPU 属性の切り替え（実行不可・書き込み可 $\to$ 書き込み不可・実行可）を行うと、その都度 ARM D-Cache クリーン、I-Cache インバリデート、および DSB/ISB メモリバリア命令を発行する必要があり、パイプラインフラッシュの累積により JIT コンパイル性能が致命的に悪化する。そのため、W^X 切り替えは必ず「1 トレースまたは 1 バッチ」単位でトランザクション化し、トレース全体の生成完了後に一括してキャッシュクリーンとバリアを発行して実行可能属性へ遷移させる。
+命令パッチごとに個別 MPU 切替を行うとバリアオーバーヘッドが増大するため、`begin_jit_patch()`/`commit_jit_patch()` は 1 コンパイル単位（トレースまたは基本ブロック）につき 1 回ずつのみ呼び出される契約とする。1 命令ごとに切り替えを行うと、その都度 ARM D-Cache クリーン、I-Cache インバリデート、および DSB/ISB メモリバリア命令の発行が必要になり、パイプラインフラッシュの累積により JIT コンパイル性能が致命的に悪化するためである。具体的な呼び出しタイミング・トレース生成手順は [`jit_compiler.md`](docs/components/tier3_jit/jit_compiler.md) を正本とする。
 
 ### 7.3 アライメントおよび境界制約 (PMSAv8)
 - **PMSAv8 アライメント**: PMSAv7 と異なり、$2^n$ 乗サイズ境界制約は存在しない。Base アドレス（`RBAR`）および Limit アドレス（`RLAR`）は **32 バイトアライメント**（下位 5 ビットが `0`）を満たせば任意サイズで設定可能。
@@ -218,9 +155,9 @@ flowchart TD
 ## 8. 形式検証・テスト仕様との対応
 
 ### 8.1 検証対象の不変条件
-- **ページ単位権限分離**: 4KB 物理ページ内に異種タスクのスロットが共存しないこと（`MEM-14`, `MEM-GOTCHA-01`）。
-- **非所有者アクセストラップ**: 所有権未取得（未マッピング）スロットへのアクセスが `TRAP_UNREGISTERED_PAGE` で拒絶されること（`MEM-16`, `MEM-GOTCHA-02`）。
-- **W^X 不変条件**: JIT キャッシュ領域で `RWX` が同時に許可される状態が存在しないこと（[`jit_cache_model.py`](docs/components/tier3_jit/formal/jit_cache_model.py), `MEM-23`）。
+- **ページ単位権限分離**: 4KB 物理ページ内に異種タスクのスロットが共存しないこと（`MEM-14`, `MEM-GOTCHA-01`）。専用の形式モデルは現時点で存在せず、[`runtime_memory_test_spec.md`](docs/components/tier2_runtime/tests/runtime_memory_test_spec.md) のテストケースのみで検証される。
+- **非所有者アクセストラップ**: 所有権未取得（未マッピング）スロットへのアクセスが `TRAP_UNREGISTERED_PAGE` で拒絶されること（`MEM-16`, `MEM-GOTCHA-02`）。専用の形式モデルは現時点で存在せず、テストケースのみで検証される。
+- **W^X 不変条件**: JIT キャッシュ領域で `RWX` が同時に許可される状態が存在しないこと（[`jit_cache_model.py`](docs/components/tier3_jit/formal/jit_cache_model.py), `MEM-23`）。この形式モデルが証明する残り4命題（3面バンク回転・2ビットホットスポットFSM・遅延チェイニング）は [`jit_compiler.md`](docs/components/tier3_jit/jit_compiler.md)/[`jit_runtime.md`](docs/components/tier3_jit/jit_runtime.md) が対象であり、本コンポーネントの評価対象外である。
 
 ### 8.2 テスト仕様書との連携
 本コンポーネントのテストケース（MEM-01〜MEM-25, MEM-GOTCHA-01〜04）は、[`runtime_memory_test_spec.md`](docs/components/tier2_runtime/tests/runtime_memory_test_spec.md) を正本として定義する。

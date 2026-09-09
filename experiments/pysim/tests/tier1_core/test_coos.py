@@ -166,7 +166,8 @@ def test_coos_07_consecutive_handoff_limit_yields():
 
 
 def test_coos_08_interrupt_notification_and_drain():
-    """COOS-08: ISR notification queues interrupt without direct mutation; drain wakes task."""
+    """COOS-08 / COOS-GOTCHA-03: ISR notification queues interrupt without direct mutation
+    (non-blocking ISR-side enqueue); drain wakes the waiting task on the next idle pass."""
     sched = Scheduler()
     woken = []
 
@@ -194,6 +195,45 @@ def test_coos_09_interrupt_queue_overflow_drops():
     assert sched.dropped_irqs == 1
 
 
+def test_coos_10_idle_detection_when_all_blocked():
+    """COOS-10: the idle hook fires once the READY queue empties because every task is blocked
+    (SUSPENDED_CSP), not merely because the run loop happened to stop."""
+    sched = Scheduler()
+    ch = sched.create_channel()
+    idle_calls: list[int] = []
+    sched.set_idle_hook(lambda: idle_calls.append(1))
+
+    def blocked_receiver():
+        ch.recv()
+        yield (ChannelAction.BLOCK, None)
+
+    task_id = sched.spawn("blocked_receiver", blocked_receiver())
+    assert idle_calls == [], "idle hook must not fire before the run loop is driven"
+    sched.run_until_idle()
+    assert idle_calls == [1], "idle hook must fire exactly once when READY queue empties"
+    task = sched.get_task(task_id)
+    assert task.state == TaskState.SUSPENDED_CSP, "the sole task must be blocked, not terminated"
+
+
+def test_coos_11_no_double_ownership_sanity():
+    """COOS-11: at rendezvous completion, the sender's pending_val and the receiver's
+    received_val are never both populated at once (single-owner invariant; mirrors
+    coos_channel_model.py's AG(Not(double_owned)))."""
+    sched = Scheduler()
+    ch = sched.create_channel()
+    t1 = sched.get_task(sched.spawn("t1"))
+    t2 = sched.get_task(sched.spawn("t2"))
+    sched.current_task = t1
+    ch.send("PAYLOAD")
+    assert t1.pending_val == "PAYLOAD" and ch.waiter_task == t1
+    sched.current_task = t2
+    ch.recv()
+    # Immediately after rendezvous completes: sender no longer holds the value,
+    # receiver now holds it -- never both simultaneously.
+    assert t1.pending_val is None, "sender must relinquish the value at rendezvous completion"
+    assert t2.received_val == "PAYLOAD", "receiver must hold the value at rendezvous completion"
+
+
 # ===========================================================================
 # 2. Tier 1 Scheduler: Pure Round-Robin (os_scheduler_test_spec.md)
 # ===========================================================================
@@ -209,4 +249,6 @@ if __name__ == "__main__":
     test_coos_07_consecutive_handoff_limit_yields()
     test_coos_08_interrupt_notification_and_drain()
     test_coos_09_interrupt_queue_overflow_drops()
-    print("[PASS] All 9 COOS Rendezvous & Handoff tests passed.")
+    test_coos_10_idle_detection_when_all_blocked()
+    test_coos_11_no_double_ownership_sanity()
+    print("[PASS] All 11 COOS Rendezvous & Handoff tests passed.")

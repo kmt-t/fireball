@@ -24,12 +24,14 @@ T = TypeVar("T")
 # Configuration & Constants (FB_CONF_*)
 # -----------------------------------------------------------------------------
 
-FB_CONF_MEMORY_POOL_SIZE = 2 * 1024 * 1024  # 2MB physical pool
-FB_CONF_PARTITION_SIZE = 64 * 1024  # 64KB fixed partition per task
+FB_CONF_MEMORY_POOL_SIZE = 21504  # system_config.md: sum of all sub-pools (bytes)
+FB_CONF_TASK_HEAP_SIZE = 4096  # system_config.md FB_CONF_TASK_HEAP_SIZE: fixed partition per task
 FB_CONF_MAX_TASKS = 16
 FB_CONF_MAX_SHM_PAGES = 32
 FB_PAGE_SIZE = 4096  # 4KB SHM page size
 FB_WASM_PAGE_SIZE = 65536  # 64KB WASM page size
+# system_config.md "PMSAv8 MPU 物理アドレスマップ" 節: Region 6 (Shared Memory Buffers) の基点
+FB_CONF_MPU_R6_SHARED_MEMORY_BASE = 0x2008_0000
 FB_TASK_ID_FLIGHT = 0xFF  # Flight sentinel during IPC transfer (8-bit PTE owner_id compliant)
 FB_TASK_ID_KERNEL = 0x00
 
@@ -177,19 +179,22 @@ class SharedBlock:
         self._is_active = True
         self._is_in_flight = False
 
-    def get_address(self) -> int:
+    def get_address(self, caller_task_id: int) -> int:
         assert self._is_active, "Cannot access released or dropped SharedBlock"
+        assert self.owner == caller_task_id, "MEM-GOTCHA-02: non-owner cannot access SharedBlock"
         return self.base_address
 
-    def get_size(self) -> int:
+    def get_size(self, caller_task_id: int) -> int:
+        assert self.owner == caller_task_id, "MEM-GOTCHA-02: non-owner cannot access SharedBlock"
         return self.size
 
     def get_owner(self) -> int:
         return self.owner
 
-    def release(self) -> int:
+    def release(self, caller_task_id: int) -> int:
         """Revoke sender access and prepare for transfer (unmaps from vMMIO & flushes TLB)."""
         assert self._is_active, "Cannot release inactive SharedBlock"
+        assert self.owner == caller_task_id, "MEM-GOTCHA-02: non-owner cannot release SharedBlock"
         self._is_active = False
         self._is_in_flight = True
         # Unmap from vMMIO page table and invalidate TLB (Revoke phase)
@@ -220,7 +225,7 @@ class SharedBlock:
 
 
 # -----------------------------------------------------------------------------
-# PMSAv8 MPU Protection & W^X Switching (§9)
+# PMSAv8 MPU Protection & W^X Switching (runtime_memory.md §7)
 # -----------------------------------------------------------------------------
 
 
@@ -261,7 +266,9 @@ class PMSAv8MPU:
         self._setup_static_regions(pool_base)
 
     def _setup_static_regions(self, pool_base: int) -> None:
-        # 8 statically allocated regions matching §9.1 Table
+        # 8 statically allocated regions matching runtime_memory.md §7.1 Table.
+        # Base addresses (Regions 1/2/4/5/6/7) are system_config.md's
+        # FB_CONF_MPU_R*_BASE constants (PMSAv8 MPU 物理アドレスマップ節).
         # All base/limit adhere to 32-byte alignment
         self.regions = [
             # Region 0: Flash / Kernel Code (RO + X)
@@ -320,7 +327,14 @@ class PMSAv8MPU:
                 is_device=True,
             ),
             # Region 6: Shared Memory Buffers (RW + XN)
-            MPURegion(6, "Shared_Memory", 0x20080000, 0x200BFFE0, AccessPermission.RW, xn=True),
+            MPURegion(
+                6,
+                "Shared_Memory",
+                FB_CONF_MPU_R6_SHARED_MEMORY_BASE,
+                0x200BFFE0,
+                AccessPermission.RW,
+                xn=True,
+            ),
             # Region 7: Stack Guard Band (No Access)
             MPURegion(
                 7,
@@ -409,7 +423,7 @@ class MemoryManager:
                 )
             )
 
-        if self.total_allocated_bytes + FB_CONF_PARTITION_SIZE > self.pool_size:
+        if self.total_allocated_bytes + FB_CONF_TASK_HEAP_SIZE > self.pool_size:
             return Result(
                 error=MemoryErrorResult(
                     "ERR_POOL_EXHAUSTED",
@@ -417,16 +431,16 @@ class MemoryManager:
                 )
             )
 
-        offset = len(self.partition_owners) * FB_CONF_PARTITION_SIZE
+        offset = len(self.partition_owners) * FB_CONF_TASK_HEAP_SIZE
         base_addr = self.pool_base + offset
         pv = PartitionView(
             owner=owner,
             base_address=base_addr,
-            size=FB_CONF_PARTITION_SIZE,
-            data=bytearray(FB_CONF_PARTITION_SIZE),
+            size=FB_CONF_TASK_HEAP_SIZE,
+            data=bytearray(FB_CONF_TASK_HEAP_SIZE),
         )
         self.partition_owners[owner] = pv
-        self.total_allocated_bytes += FB_CONF_PARTITION_SIZE
+        self.total_allocated_bytes += FB_CONF_TASK_HEAP_SIZE
         return Result(value=pv)
 
     def release_task_heap(self, caller_task_id: int) -> None:
@@ -434,7 +448,7 @@ class MemoryManager:
         if caller_task_id not in self.partition_owners:
             return  # Non-owner or unallocated call is safely ignored / rejected
         del self.partition_owners[caller_task_id]
-        self.total_allocated_bytes -= FB_CONF_PARTITION_SIZE
+        self.total_allocated_bytes -= FB_CONF_TASK_HEAP_SIZE
 
     # --- Typed Slot Pool (§4 acquire-slot / release-slot) ---
     def acquire_slot(self, owner: int, cls: type[T]) -> Result[PoolRef[T]]:
@@ -465,7 +479,7 @@ class MemoryManager:
             slot_size = getattr(cls, "__size__", 256)
             self.total_allocated_bytes -= slot_size
 
-    # --- Shared Block IPC Allocation & Transfer (§4, §7) ---
+    # --- Shared Block IPC Allocation & Transfer (system_memory.md §4, §6) ---
     def allocate_shared(self, caller_task_id: int, size: int) -> Result[SharedBlock]:
         """Allocate an IPC shared memory buffer with RAII ownership."""
         assert caller_task_id != 0, "Shared block must be owned by an explicit task"
@@ -488,7 +502,7 @@ class MemoryManager:
         page_idx = len(self.shm_slots)
         slot_idx = 0
         shm_id = (page_idx << 8) | slot_idx
-        base_addr = 0x20080000 + (page_idx * FB_PAGE_SIZE)
+        base_addr = FB_CONF_MPU_R6_SHARED_MEMORY_BASE + (page_idx * FB_PAGE_SIZE)
         # Map page into vMMIO FC=14 table
         self.vmmio_registry.map_page(page_idx, base_addr)
         self.shm_slots[shm_id] = {
@@ -578,7 +592,11 @@ class HALBufferManager:
 
 # =============================================================================
 # Test Suite: system_memory_test_spec.md (MEM-01 ~ MEM-13, contract-level) and
-# runtime_memory_test_spec.md (MEM-14 ~ MEM-25, physical implementation)
+# runtime_memory_test_spec.md (MEM-20 ~ MEM-25, physical implementation: MPU/W^X).
+# MEM-14/15/16 (page-granular isolation, vMMIO FC=14 PTE/TLB sync, owner-mismatch
+# trap) are physical-implementation cases covered instead by pysim's real
+# MemoryManager/VMMIOController (experiments/pysim/tests/tier3_platform/
+# test_memory.py's test_mem_14_*/test_mem_15_*), not duplicated here.
 # =============================================================================
 
 
@@ -594,8 +612,8 @@ def test_mem_01_acquire_task_heap_fixed_size() -> None:
     res = mm.acquire_task_heap(owner=1)
     assert res.is_ok
     pv = res.unwrap()
-    assert pv.size == FB_CONF_PARTITION_SIZE, (
-        f"Must return fixed size partition {FB_CONF_PARTITION_SIZE}"
+    assert pv.size == FB_CONF_TASK_HEAP_SIZE, (
+        f"Must return fixed size partition {FB_CONF_TASK_HEAP_SIZE}"
     )
     assert pv.owner == 1
     # Verify no arbitrary allocate(size, category) API exists
@@ -625,7 +643,7 @@ def test_mem_02_recovery_strategy_on_exhaustion() -> None:
     """MEM-02: Failure returns MemoryErrorResult with actionable recovery strategy."""
     mm = MemoryManager()
     # Small pool that fits only 1 partition
-    mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_PARTITION_SIZE)
+    mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_TASK_HEAP_SIZE)
     r1 = mm.acquire_task_heap(owner=1)
     assert r1.is_ok
     # Second allocation must fail and return structured error
@@ -732,7 +750,7 @@ def test_mem_10_shared_block_ownership_transfer() -> None:
     assert sb_a.get_owner() == 1
     assert mm.vmmio_registry.is_mapped(sb_a.page_idx)
     # 2. Task A releases (Revoke): unmapped and TLB flushed
-    shm_id = sb_a.release()
+    shm_id = sb_a.release(caller_task_id=1)
     assert not sb_a._is_active
     assert not mm.vmmio_registry.is_mapped(sb_a.page_idx)
     # 3. Task B claims (Grant): mapped for receiver
@@ -742,6 +760,33 @@ def test_mem_10_shared_block_ownership_transfer() -> None:
     assert mm.vmmio_registry.is_mapped(sb_b.page_idx)
 
 
+def test_mem_gotcha_02_shared_block_release_owner_only() -> None:
+    """MEM-GOTCHA-02: non-owner task cannot release() or access another task's SharedBlock."""
+    mm = MemoryManager()
+    mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
+    sb = mm.allocate_shared(caller_task_id=1, size=1024).unwrap()
+    # Rogue task 2 attempts to release task 1's block
+    try:
+        sb.release(caller_task_id=2)
+        raise AssertionError("Non-owner must not be able to release() another task's SharedBlock")
+    except AssertionError as e:
+        assert "MEM-GOTCHA-02" in str(e)
+    # Rogue task 2 attempts to read task 1's block
+    try:
+        sb.get_address(caller_task_id=2)
+        raise AssertionError(
+            "Non-owner must not be able to get_address() another task's SharedBlock"
+        )
+    except AssertionError as e:
+        assert "MEM-GOTCHA-02" in str(e)
+    # The block is still active and owned by task 1
+    assert sb._is_active
+    assert sb.get_owner() == 1
+    # The rightful owner can still release it
+    sb.release(caller_task_id=1)
+    assert not sb._is_active
+
+
 def test_mem_10b_shared_block_vmmio_pte_flight_and_claim() -> None:
     """MEM-10b: release() unmaps PTE; claim() remaps PTE to receiver."""
     mm = MemoryManager()
@@ -749,7 +794,7 @@ def test_mem_10b_shared_block_vmmio_pte_flight_and_claim() -> None:
     sb = mm.allocate_shared(caller_task_id=1, size=1024).unwrap()
     page_idx = sb.page_idx
     assert mm.vmmio_registry.is_mapped(page_idx)
-    sb.release()
+    sb.release(caller_task_id=1)
     # During flight, page is unmapped (blocking stale access)
     assert not mm.vmmio_registry.is_mapped(page_idx)
     claimed_sb = mm.claim(receiver_task_id=2, shm_id=sb.shm_id).unwrap()
@@ -763,7 +808,7 @@ def test_mem_10c_rollback_transfer_restores_mapping() -> None:
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     sb = mm.allocate_shared(caller_task_id=1, size=1024).unwrap()
-    shm_id = sb.release()
+    shm_id = sb.release(caller_task_id=1)
     assert not mm.vmmio_registry.is_mapped(sb.page_idx)
     mm.rollback_transfer(original_sender_id=1, shm_id=shm_id)
     assert mm.vmmio_registry.is_mapped(sb.page_idx), "PTE mapping must be restored to sender"
@@ -785,14 +830,34 @@ def test_mem_11_shared_block_raii_auto_deallocate() -> None:
 
 
 def test_mem_12_shm_id_kv_pair_encoding() -> None:
-    """MEM-12: shm-id kv_pair encoding conforms to ipc_router.md vocabulary (scope=0b000, type=0b00001)."""
-    shm_id = 0x0102
-    scope_functional = 0b000
-    type_u32 = 0b00001
-    kv_type_byte = (scope_functional << 5) | type_u32
-    assert kv_type_byte == 0x01, "Functional u32 kv_pair type byte must be 0x01"
+    """MEM-12: shm-id kv_pair encoding conforms to ipc_router.md §3.3's type-scope vocabulary
+    table (上位3ビット=種別/下位5ビット=型). Two independent checks:
+    (1) the pack/unpack bit-layout formula itself, exercised on arbitrary non-canonical
+        values so it cannot pass by re-declaring the same numbers twice;
+    (2) the specific FUNCTIONAL(0b000)/uint32_t(0b00001) byte value ipc_router.md's table
+        assigns, which real kv_pair producers (experiments/pysim/core/ipc_router.py's
+        ScopeKind.FUNCTIONAL / DataType.UINT32) must independently reproduce as 0x01."""
+
+    def pack_type_byte(scope: int, dtype: int) -> int:
+        return ((scope & 0x7) << 5) | (dtype & 0x1F)
+
+    def unpack_type_byte(type_byte: int) -> tuple[int, int]:
+        return (type_byte >> 5) & 0x7, type_byte & 0x1F
+
+    # (1) Formula round-trips for arbitrary scope/type values, not just the canonical ones.
+    for scope, dtype in ((0b010, 0b00011), (0b001, 0b00010), (0b111, 0b11111)):
+        packed = pack_type_byte(scope, dtype)
+        assert unpack_type_byte(packed) == (scope, dtype), (
+            f"pack/unpack round-trip failed for scope={scope:#05b} dtype={dtype:#07b}"
+        )
+
+    # (2) ipc_router.md §3.3: 上位3ビット=0b000(機能的/Functional), 下位5ビット=0b00001(uint32_t)
+    scope_functional = 0b000  # 機能的 (Functional) -- メソッド呼び出しやコマンド指示
+    type_u32 = 0b00001  # uint32_t / 32ビット即値
+    kv_type_byte = pack_type_byte(scope_functional, type_u32)
+    assert kv_type_byte == 0x01, "Functional u32 kv_pair type byte must be 0x01 per ipc_router.md §3.3"
     # Ensure no custom unvocabularized dtype=handle is used
-    assert scope_functional != 0b010, "shm-id is not a hardware resource descriptor"
+    assert scope_functional != 0b010, "shm-id is not a hardware resource descriptor (ScopeKind.RESOURCE)"
 
 
 def test_mem_13_query_and_check_ownership_are_removed() -> None:
@@ -885,6 +950,7 @@ if __name__ == "__main__":
     test_mem_08_claim_requires_valid_shm_id()
     test_mem_09_hal_acquire_buffer_delegates_to_allocate_shared()
     test_mem_10_shared_block_ownership_transfer()
+    test_mem_gotcha_02_shared_block_release_owner_only()
     test_mem_10b_shared_block_vmmio_pte_flight_and_claim()
     test_mem_10c_rollback_transfer_restores_mapping()
     test_mem_11_shared_block_raii_auto_deallocate()

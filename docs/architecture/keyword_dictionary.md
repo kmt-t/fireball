@@ -66,7 +66,7 @@
 | キーワード | 定義元正本 | 対象コンポーネント | 仕様概要・検証内容 |
 | :--- | :--- | :--- | :--- |
 | `{GLOBAL_ComponentHarness}` | `document_structure.md` | `architecture_overview.md` | テスト・検証・サブコンポーネント統合のための共通ハーネスパターン |
-| `{GLOBAL_IdleDetection}` | `document_structure.md` | `os_coos.md` | アイドル状態の検出とログフラッシュ・バックグラウンド処理制御 |
+| `{GLOBAL_IdleDetection}` | `document_structure.md` | `os_coos.md` | アイドル状態の検出と、登録済みコールバックの起動（呼び出し先の内部処理内容には関与しない） |
 | `{GLOBAL_IndependentHeap}` | `document_structure.md` | `system_memory.md` | 各コンポーネントが互いに独立したヒープメモリ領域を確保する設計 |
 | `{GLOBAL_InterruptWakeup}` | `document_structure.md` | `os_coos.md` | 割り込み契機による待機タスクのウェイクアップ・復帰処理 |
 | `{GLOBAL_PeriodicTask}` | `document_structure.md` | `os_coos.md` | システムティックまたはアイドルループを利用した周期実行タスク |
@@ -146,7 +146,7 @@ Fireball の全体構造、依存性の方向、リソース予算、品質保�
 
 OSスケジューラ（`os_coos`, `os_scheduler`）、静的コンテナ（`system_containers`）、設定基盤（`system_config`）の機能要求と設計の勘所。
 
-#### 4.1.1 Tier 1 Core 要求キーワード (16 件)
+#### 4.1.1 Tier 1 Core 要求キーワード (15 件)
 
 | キーワード | 定義元正本 | 対象コンポーネント | 仕様概要・検証内容 | 結合テスト / テストID |
 | :--- | :--- | :--- | :--- | :--- |
@@ -161,7 +161,6 @@ OSスケジューラ（`os_coos`, `os_scheduler`）、静的コンテナ（`syst
 | `{TaskPollInterruptFlag}` | `requirement_list.md` | `os_scheduler.md` | タスク切り替え境界での割り込みフラグ安全ポーリング | - |
 | `{PackedBitView}` | `requirement_list.md` | `system_containers.md` | ビット単位でのパック構造とメモリ効率の高いフラットビットビュー | - |
 | `{FlatViewNarrowing}` | `requirement_list.md` | `system_containers.md` | フラットビューのスコープ限定・スライシングによる安全な部分アクセス | - |
-| `{System_Allocator}` | `requirement_list.md` | `system_containers.md` | システム基盤用 dlmalloc アロケータ。システムコンテナ内部ストレージの動的確保・個別解放 | - |
 | `{LightweightVerifier}` | `requirement_list.md` | `system_config.md` | 実行前バリデーションを行う軽量静的検証エンジン | - |
 | `{ServiceFacade}` | `requirement_list.md` | `system_config.md` | システム共通サービスへのアクセスを一元化するファサード | - |
 | `{ServiceSelfReboot}` | `requirement_list.md` | `system_config.md` | 異常検知時におけるサービス自己再起動シーケンス | - |
@@ -179,7 +178,7 @@ OSスケジューラ（`os_coos`, `os_scheduler`）、静的コンテナ（`syst
 
 マイクロカーネル間通信ルータ（`ipc_router`）、システムサービス・WASI（`system_service`）、WIT インターフェース定義（`interface_wit`）の機能要求。
 
-#### 4.2.1 Tier 1 Interface 要求キーワード (20 件)
+#### 4.2.1 Tier 1 Interface 要求キーワード (19 件)
 
 | キーワード | 定義元正本 | 対象コンポーネント | 仕様概要・検証内容 |
 | :--- | :--- | :--- | :--- |
@@ -242,11 +241,11 @@ WASM 実行エンジン（`runtime_vsoc`）、CPS スレッドインタープリ
 | `{DebuggerLabelTableSwitch}` | `requirement_list.md` | `debug_manager.md` | デバッガアタッチ時のインタープリタハンドラテーブル動的切り替え | Scenario 7 |
 | `{Debugger_Jit_Flush}` | `requirement_list.md` | `debug_manager.md` | デバッガからのメモリ書き込み（M パケット）時の JIT キャッシュ全バンク即時無効化 | Scenario 7, 8 (INT-62, INT-72) |
 | `{MemoryIsolation}` | `requirement_list.md` | `runtime_memory.md` | MPU によるコード領域・スタック領域・共有メモリ領域のハードウェア保護 | - |
+| `{System_Allocator}` | `requirement_list.md` | `runtime_memory.md` | システム基盤用 dlmalloc アロケータ（`system_allocator`）。システムコンテナ内部ストレージの動的確保・個別解放 | - |
 | `{Shm_Allocator}` | `requirement_list.md` | `runtime_memory.md` | IPC 共有メモリ領域（MPU Region 6）用 dlmalloc アロケータ。可変長 shared_block の切り出し・RAII解放時合体 | - |
 | `{HAL_Interface}` | `requirement_list.md` | `hal_dispatch.md` | 物理ハードウェアと上位層を抽象化する統一 HAL インターフェース | - |
 | `{BufferedLogging}` | `requirement_list.md` | `runtime_logging.md` | 実行時リングバッファ蓄積と COOS idle_hook での一括 UART フラッシュ | Scenario 9 (INT-82) |
 | `{DictionaryBasedIPC}` | `requirement_list.md` | `runtime_logging.md` | 静的 LogDictionary、危険書式（%s/%p）の登録時静的拒絶 | Scenario 9 (INT-82) |
-| `{HistoryBuffer}` | `requirement_list.md` | `runtime_logging.md` | 直近ログ履歴の固定長循環保持とクラッシュダンプ支援 | - |
 | `{Syscall_Mapping}` | `requirement_list.md` | `runtime_syscall.md` | WASM システムコール番号から内部ハンドラへの決定論的マッピング | - |
 | `{Syscall_Return_Value}` | `requirement_list.md` | `runtime_syscall.md` | システムコール実行結果・エラーコードの規格化された返却規約 | - |
 | `{Trap_Interface}` | `requirement_list.md` | `runtime_syscall.md` | ゲスト不正動作検知時のトラップ発行と安全停止インターフェース | - |
@@ -277,10 +276,11 @@ WASM 実行エンジン（`runtime_vsoc`）、CPS スレッドインタープリ
 
 Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キャッシュ・ホットスポット管理（`jit_runtime`）の機能要求と設計の勘所。
 
-#### 4.4.1 Tier 3 JIT 要求キーワード (13 件)
+#### 4.4.1 Tier 3 JIT 要求キーワード (14 件)
 
 | キーワード | 定義元正本 | 対象コンポーネント | 仕様概要・検証内容 | 結合テスト / テストID |
 | :--- | :--- | :--- | :--- | :--- |
+| `{HistoryBuffer}` | `requirement_list.md` | `jit_runtime.md` | JIT ホットスポット検出のための短期実行履歴保持リングバッファ | - |
 | `{JIT_CopyAndPatch}` | `requirement_list.md` | `jit_compiler.md` | ステンシル展開とバイナリパッチによる Copy-and-Patch 高速コード生成 | Scenario 4, 5, 8 (INT-30, INT-40) |
 | `{JIT_Encoder}` | `requirement_list.md` | `jit_compiler.md` | ターゲット命令セット向けパッチ埋め込みコードエンコーダ | - |
 | `{JIT_LazyChaining}` | `requirement_list.md` | `jit_compiler.md` | トレース実行完了時の後続ブロックへの遅延直接分岐チェイニング | - |
@@ -329,7 +329,7 @@ Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キ�
 
 ## 5. ドキュメント構造・内部連携用 リンクキーワード (LINK)
 
-ドキュメント間の物理メモリレイアウト整合、低層ディスパッチ規約、内部バイパス・状態連携のための専用リンクアンカー（全 41 件）。
+ドキュメント間の物理メモリレイアウト整合、低層ディスパッチ規約、内部バイパス・状態連携のための専用リンクアンカー（全 43 件）。
 
 ### 5.1 物理メモリレイアウト・実行環境アンカー (4 件)
 

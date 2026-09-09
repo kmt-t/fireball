@@ -247,7 +247,7 @@
 | `i32.rem_u` (`0x70`) | `STENCIL_I32_REM_U_D2` | R3=TOS, R4=NOS | R3=TOS | `cbz r3, <trap>; udiv r12, r4, r3; mls r3, r12, r3, r4` (ARM MLS: $Rd(r3) = Ra(r4) - Rn(r12) \times Rm(r3)$) | `00 B1 B4 FB F3 FC 0C FB 13 43` |
 
 ※ ARMv8-M Architecture Reference Manual 規定：`MLS Rd, Rn, Rm, Ra` 命令の動作は $Rd = Ra - (Rn \times Rm)$ である。したがって `mls r3, r12, r3, r4` は $Rd(r3) = Ra(r4) - Rn(r12) \times Rm(r3)$（$被除数 - 商 \times 除数 = 剰余$）を正しく算出する（検証仕様: [jit_compiler_test_spec.md](docs/components/tier3_jit/tests/jit_compiler_test_spec.md) `JITC-GOTCHA-06` を参照）。
-※ 16-bit Thumb-2 命令（`adds r3, r4, r3` 等）はリトルエンディアンバイト列（`E3 18` 等）として格納される。実機エミュレータ検証（[`jit_trace_execution_verifier.py`](docs/components/tier3_jit/concepts/jit_trace_execution_verifier.py)）にて全ステンシルの動作整合性を検証済みである。
+※ 16-bit Thumb-2 命令（`adds r3, r4, r3` 等）はリトルエンディアンバイト列（`E3 18` 等）として格納される。
 | `i32.and` (`0x71`) | `STENCIL_I32_AND_D2` | R3=TOS, R4=NOS | R3=TOS | `ands r3, r4, r3` | `23 40` |
 | `i32.or` (`0x72`) | `STENCIL_I32_OR_D2` | R3=TOS, R4=NOS | R3=TOS | `orrs r3, r4, r3` | `23 43` |
 | `i32.xor` (`0x73`) | `STENCIL_I32_XOR_D2` | R3=TOS, R4=NOS | R3=TOS | `eors r3, r4, r3` | `63 40` |

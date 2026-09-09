@@ -40,7 +40,6 @@ TEST_SUITES = [
     ("Tier 1 Core", "COOS Rendezvous & Handoff", TEST_DIR / "tier1_core" / "test_coos.py"),
     ("Tier 1 Core", "Round-Robin Scheduler", TEST_DIR / "tier1_core" / "test_scheduler.py"),
     ("Tier 1 Core", "System Containers & Views", TEST_DIR / "tier1_core" / "test_containers.py"),
-    ("Tier 1 Core", "System Logging & Ring Buffer", TEST_DIR / "tier1_core" / "test_logging.py"),
     # --- Tier 1: Interface ---
     (
         "Tier 1 Interface",
@@ -48,6 +47,11 @@ TEST_SUITES = [
         TEST_DIR / "tier1_interface" / "test_ipc_router.py",
     ),
     # --- Tier 2: Runtime ---
+    (
+        "Tier 2 Runtime",
+        "System Logging & Ring Buffer",
+        TEST_DIR / "tier2_runtime" / "test_logging.py",
+    ),
     ("Tier 2 Runtime", "WASM Loader & Segments", TEST_DIR / "tier2_runtime" / "test_loader.py"),
     (
         "Tier 2 Runtime",

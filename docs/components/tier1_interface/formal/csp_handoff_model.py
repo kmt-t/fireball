@@ -5,7 +5,7 @@ pyModelChecking による IPC CSP チャネル所有権移譲、事前検証（P
 """
 
 from pyModelChecking import Kripke
-from pyModelChecking.CTL import AG, And, AtomicProposition, Imply, Not
+from pyModelChecking.CTL import AG, And, AtomicProposition, Not
 
 BACKS = ["components/tier1_interface/ipc_router.md"]
 
@@ -83,8 +83,7 @@ def build_model(*, guards: bool = True) -> Kripke:
 def properties():
     bad = And(AtomicProposition("sender_owns"), AtomicProposition("receiver_owns"))
     orphaned = AtomicProposition("leaked")
-    rejected = AtomicProposition("rejected")
-    sender_owns = AtomicProposition("sender_owns")
+    preflight_leaked = AtomicProposition("preflight_leaked")
     return [
         {
             "name": "double_ownership_freedom_proof",
@@ -106,9 +105,9 @@ def properties():
             "name": "preflight_rejection_preserves_ownership",
             "kind": "safety",
             "logic": "CTL",
-            "formula": AG(Imply(rejected, sender_owns)),
-            "violation": AtomicProposition("preflight_leaked"),
-            "expect": True,  # IPCR-GOTCHA-02: 事前検証拒否時は送信者が所有権を保持しリークしない
+            "formula": AG(Not(preflight_leaked)),
+            "violation": preflight_leaked,
+            "expect": True,  # IPCR-GOTCHA-02: 事前検証前にRevokeしてしまうリークは到達不能
         },
     ]
 
@@ -116,8 +115,18 @@ def properties():
 if __name__ == "__main__":
     from pyModelChecking.CTL import modelcheck
 
+    print("=== Formal Verification: CSP Handoff Model (guards=True) ===")
     km = build_model(guards=True)
     for prop in properties():
         res = modelcheck(km, prop["formula"])
         passed = km.S0.issubset(res)
-        print(f"[{'PASS' if passed == prop['expect'] else 'FAIL'}] {prop['name']}")
+        assert passed == prop["expect"], f"Property {prop['name']} verification failed!"
+        print(f"  [{'PASS' if passed else 'FAIL'}] {prop['name']}")
+
+    print("=== Mutation Testing: CSP Handoff Model (guards=False) ===")
+    km_mut = build_model(guards=False)
+    for prop in properties():
+        res_mut = modelcheck(km_mut, prop["formula"])
+        violated = not km_mut.S0.issubset(res_mut)
+        assert violated, f"Mutation for {prop['name']} was NOT detected!"
+        print(f"  [PASS (Refuted as expected)] {prop['name']}")

@@ -22,12 +22,13 @@
 
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| SYS-10 | `MMIO_READ32`成功 | 許可された物理アドレスに値が存在 | `fireball_call(0x10, addr, ...)` | `value`(u32)を返す | runtime_syscall.md (MMIO) |
-| SYS-11 | `MMIO_READ32`境界外 | `addr`が`FB_CONF_VMMIO_ALLOWED_ADDRS`外 | 同上 | `ERR_OUT_OF_BOUNDS`相当のエラーコードを返す | `{META_RestrictedPhysicalAccess}` |
-| SYS-12 | `MMIO_WRITE32`成功/権限拒否 | 書き込み許可/不許可の2ケース | `fireball_call(0x11, addr, value,...)` | 許可時`0`、不許可時`ERR_ACCESS_DENIED`相当 | runtime_syscall.md (MMIO) |
-| SYS-13 | `MMIO_READ8`/`MMIO_WRITE8` | 同上をバイト単位で | 同様の手順 | 同様の結果（幅8bit） | runtime_syscall.md (MMIO) |
-| SYS-14 | `MMIO_BULK_READ`/`WRITE`のサイズ不正 | `byte_count`が不正（範囲外・0等） | 呼び出す | `ERR_INVALID_SIZE`相当を返す | runtime_syscall.md (MMIO) |
-| SYS-15 | `MMIO_BULK_READ`のゲスト書き込み先境界チェック | `dest_offset`がゲストメモリ範囲外 | 呼び出す | `ERR_OUT_OF_BOUNDS`相当を返し、ゲストメモリ外への書き込みが発生しない | fb_offset_t |
+| SYS-10 | `MMIO_READ32`成功 | 許可された物理アドレスに値が存在 | `fireball_call(0x10, addr, ...)` | `value`(u32)を返す | runtime_syscall.md (MMIO), `test_syscall_03_mmio_read_write` |
+| SYS-11 | `MMIO_READ32`境界外 | `addr`が`FB_CONF_VMMIO_ALLOWED_ADDRS`外 | 同上 | `ERR_OUT_OF_BOUNDS`相当のエラーコードを返す | `{META_RestrictedPhysicalAccess}`, `test_syscall_11_mmio_read32_out_of_bounds` |
+| SYS-12 | `MMIO_WRITE32`成功/権限拒否 | 書き込み許可/不許可の2ケース | `fireball_call(0x11, addr, value,...)` | 許可時`0`、不許可時`ERR_ACCESS_DENIED`相当 | runtime_syscall.md (MMIO), `test_syscall_03_mmio_read_write`(成功), `test_syscall_12_mmio_write32_permission_denied`(拒否) |
+| SYS-13 | `MMIO_READ8`/`MMIO_WRITE8` | 同上をバイト単位で | 同様の手順 | 同様の結果（幅8bit） | runtime_syscall.md (MMIO), `test_syscall_13_mmio_read8_write8` |
+| SYS-14 | `MMIO_BULK_READ`/`WRITE`のサイズ不正 | `byte_count`が不正（範囲外・0等） | 呼び出す | `ERR_INVALID_SIZE`相当を返す | runtime_syscall.md (MMIO), `test_syscall_14_mmio_bulk_read_write_invalid_size` |
+| SYS-15 | `MMIO_BULK_READ`のゲスト書き込み先境界チェック | `dest_offset`がゲストメモリ範囲外 | 呼び出す | `ERR_OUT_OF_BOUNDS`相当を返し、ゲストメモリ外への書き込みが発生しない | fb_offset_t, `test_syscall_15_mmio_bulk_read_dest_offset_out_of_bounds` |
+| SYS-16 | `TRIGGER_SET_PIN`(0x16)のpysim実験実装での安全なNOSYS復帰 | - | `fireball_call(0x16, pin, value, ...)` | 専用GPIOレジスタ配線が未実装のためディスパッチテーブル未登録であり、`SYS-GOTCHA-01`の規定通り`WasiErrno.NOSYS`(52)を安全に返す（クラッシュ・パニックしない） | runtime_syscall.md (MMIO), SYS-GOTCHA-01 |
 
 ### VDMA (`0x20`-`0x2F`)
 

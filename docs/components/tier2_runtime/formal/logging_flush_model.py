@@ -62,8 +62,10 @@ def build_model(*, guards: bool = True) -> Kripke:
         R = [*R, ("s_active_full", "s_blocked_caller")]
         # 2. Idle Hook 連携を外すと、保留ログが一度もフラッシュされずに終わる経路が生じる
         R = [*R, ("s_active_partial", "s_never_flushed")]
-        # 3. interrupt_pending 検査を外すと、外部割込がフラッシュ完了まで待たされブロックされる
-        R = [*R, ("s_idle_flushing", "s_irq_blocked")]
+        # 3. interrupt_pending 検査を外すと、割込発生中(s_irq_preempt)でもハンドラ実行に
+        # 進めずブロックされたまま停留する経路が生じる（irq_pending の当該状態自体から
+        # 分岐させないと、Imply(irq_pending, AF(irq_handled)) の前提が発火しない）
+        R = [*R, ("s_irq_preempt", "s_irq_blocked")]
 
     L = {
         "s_idle_empty": {"flushed"},
@@ -119,8 +121,18 @@ def properties():
 if __name__ == "__main__":
     from pyModelChecking.CTL import modelcheck
 
+    print("=== Formal Verification: Logging Flush Model (guards=True) ===")
     km = build_model(guards=True)
     for prop in properties():
         res = modelcheck(km, prop["formula"])
         passed = km.S0.issubset(res)
-        print(f"[{'PASS' if passed == prop['expect'] else 'FAIL'}] {prop['name']}")
+        assert passed == prop["expect"], f"Property {prop['name']} verification failed!"
+        print(f"  [{'PASS' if passed else 'FAIL'}] {prop['name']}")
+
+    print("=== Mutation Testing: Logging Flush Model (guards=False) ===")
+    km_mut = build_model(guards=False)
+    for prop in properties():
+        res_mut = modelcheck(km_mut, prop["formula"])
+        violated = not km_mut.S0.issubset(res_mut)
+        assert violated, f"Mutation for {prop['name']} was NOT detected!"
+        print(f"  [PASS (Refuted as expected)] {prop['name']}")

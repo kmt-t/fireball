@@ -75,7 +75,7 @@ IPC通信の最小単位。1つのメッセージで8個のペアを送信でき
 | | `0b00011` | `uint16_t` / 16ビット即値 |
 
 ##### スコープ定義
-- **機能的IPC**: キーを、受信側が定義する関数やリクエスト種類（WASI 0.3p ドライバ通信コマンド `CMD_STREAM_*`, `CMD_CLOCK_*`, `CMD_GPIO_*`, `CMD_BUS_*` 等）を特定する識別子として使用する。 `{TypeSafeMessaging}`
+- **機能的IPC**: キーを、受信側が定義する関数やリクエスト種類を特定する識別子として使用する（デバイス制御コマンド識別子の具体例は `hal_dispatch.md` 正本を参照）。 `{TypeSafeMessaging}`
 - **辞書参照IPC**: キーを、受信側が保持する静的な辞書内の文字列オフセットとして解釈する。 `{DictionaryBasedIPC}`
 - **階層URIルーティング**: 各デバイスおよびサービスは `fireball://<domain>/<type>/<instance>`（例: `fireball://device/uart/0`, `fireball://device/gpio/0`, `fireball://device/timer/0`, `fireball://device/i2c/0`）の正規化されたURIで登録され、IPCルータを介して $O(\log N)$ でディスパッチされる。 `{URIAbstraction}`
 
@@ -155,7 +155,7 @@ sequenceDiagram
 
 #### IPC ルータ フルセット・コンセプトコード (`concepts/ipc_router_concept.py`)
 ```python
-class Role:
+class Role(IntEnum):
     """Each HAL_* role is bound to exactly one device/service instance and one
     dedicated CSP channel ({ADR_RendezvousChannel}): a single shared role
     could not distinguish which of several same-type instances (e.g. the
@@ -267,9 +267,7 @@ _REGISTRY_ENTRIES = sorted(
         ("fireball://service/stdout/0", Role.HAL_STDOUT),
     ]
 )
-_REGISTRY = FlatMapView(
-    [uri for uri, _ in _REGISTRY_ENTRIES], [role for _, role in _REGISTRY_ENTRIES]
-)
+_REGISTRY = FlatMapView(_REGISTRY_ENTRIES)
 
 # Stage 2: FB_CONF_ROUTER_ROLE_MATRIX (9x9, rows=sender, cols=target); every
 # DENY cell is listed explicitly, matching the C++ constexpr array exactly.

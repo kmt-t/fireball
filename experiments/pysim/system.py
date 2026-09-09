@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import TYPE_CHECKING, Callable
 
-from hal import HalBufferPool, HalBufferHandle, UartTransport
+from hal import HalBufferHandle, HalBufferPool, UartTransport
 from ipc_router import (
     IPCMessage,
     IPCRouter,
@@ -62,8 +62,9 @@ class FbSyscallId(IntEnum):
     """
     runtime_syscall.md's real per-category ID table (not a subset picked
         for convenience -- every ID this experiment can plausibly back with real
-        behavior is included; ones it can't yet (see README's missing-spec list)
-        still route here and fail with a real WASI errno, not silently vanish).
+        behavior is included; ones it can't yet still route here and fail with
+        a real WASI errno (NOSYS), not silently vanish -- see TRIGGER_SET_PIN
+        below for the one currently-reserved exception).
     """
 
     RESERVED = 0x00
@@ -76,6 +77,13 @@ class FbSyscallId(IntEnum):
     MMIO_WRITE8 = 0x13
     MMIO_BULK_READ = 0x14
     MMIO_BULK_WRITE = 0x15
+    # Reserved: registered per runtime_syscall.md's ID table, but this
+    # experiment has no dedicated GPIO vMMIO register to back a real pin
+    # write with, so it is deliberately left out of syscall_handlers below
+    # and falls through fireball_call's NOSYS path (see SYS-GOTCHA-01 /
+    # test_syscall.py's test for this exact ID). GPIO in this experiment is
+    # instead reachable through the IPC-based HAL_GPIO device (fireball://
+    # device/gpio/0), not through fireball_call directly.
     TRIGGER_SET_PIN = 0x16
     VDMA_START = 0x20
     IRQ_READ_FLAGS = 0x30

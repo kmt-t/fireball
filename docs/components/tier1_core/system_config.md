@@ -71,6 +71,21 @@ static_assert(FB_CONF_MEMORY_POOL_SIZE <= FB_CONF_PHYSICAL_RAM_SIZE);
 static_assert(FB_CONF_GUEST_RAM_SIZE == FB_CONF_TASK_HEAP_SIZE);
 ```
 
+##### PMSAv8 MPU 物理アドレスマップ
+<!-- traceability: {META_FaultIsolation} {WasmPageAlignment} -->
+以下は [`runtime_memory.md`](docs/components/tier2_runtime/runtime_memory.md) §7.1 の PMSAv8 MPU 8リージョン配分（`PMSAv8MPU`）が用いる静的ベースアドレスの正本である。Cortex-M33 の一般的な SRAM 配置慣行（`0x2000_0000` 起点）・ペリフェラル配置慣行（`0x4000_0000` 起点）に従う**想定実機ターゲットのアドレスマップ**であり、上記「メモリ総量」節が定義する評価用最小構成（`FB_CONF_MEMORY_POOL_SIZE` = 21,504 Bytes）とは異なるスケールを表す（実機の物理 SRAM 総容量は本表のリージョン間隔を確保できる規模を想定し、評価用最小構成はその一部を静的に占有するに過ぎない）。
+
+| マクロ名 | 対象リージョン | 値 | 導出元 |
+| :--- | :--- | :--- | :--- |
+| `FB_CONF_MPU_R1_KERNEL_DATA_BASE` | Region 1: Kernel Data & BSS | `0x2000_0000` | Cortex-M33 SRAM 起点慣行 |
+| `FB_CONF_MPU_R2_KERNEL_POOL_BASE` | Region 2: Kernel Pool / Heap (`system_allocator`) | `0x2000_8000` | `{System_Allocator}` |
+| `FB_CONF_MPU_R4_JIT_CACHE_BASE` | Region 4: JIT Code Cache | `0x2004_0000` | `{JIT_MultiBuffer_Cache}` |
+| `FB_CONF_MPU_R5_PERIPHERAL_MMIO_BASE` | Region 5: Peripheral MMIO | `0x4000_0000` | Cortex-M33 ペリフェラル起点慣行（`FB_CONF_VSOC_PASSTHROUGH_BASE`と同一値） |
+| `FB_CONF_MPU_R6_SHARED_MEMORY_BASE` | Region 6: Shared Memory Buffers (`shm_allocator`) | `0x2008_0000` | `{Shm_Allocator}` |
+| `FB_CONF_MPU_R7_STACK_GUARD_BASE` | Region 7: Stack Guard Band | `0x200C_0000` | スタックオーバーフロー検出用ガードバンド |
+
+Region 0（Flash/Kernel Code, `0x0000_0000`）・Region 3（Guest WASM RAM, `pool_base` 実行時決定）は上記表に含まれない（それぞれ ROM 起点・`init_manager`の実行時引数のため）。
+
 #### 3.3.2 IPCルータ
 <!-- traceability: {META_ConfigurableSystem} {IPC_ZeroCopy} -->
 | マクロ名 | 説明 | デフォルト値 | 導出元 |

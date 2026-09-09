@@ -36,12 +36,14 @@ class PageMappingCallbacks:
 
 
 # Configuration & Constants (FB_CONF_*)
-FB_CONF_MEMORY_POOL_SIZE = 2 * 1024 * 1024  # 2MB physical pool
-FB_CONF_PARTITION_SIZE = 64 * 1024  # 64KB fixed partition per task
+FB_CONF_MEMORY_POOL_SIZE = 21504  # system_config.md: sum of all sub-pools (bytes)
+FB_CONF_TASK_HEAP_SIZE = 4096  # system_config.md FB_CONF_TASK_HEAP_SIZE: fixed partition per task
 FB_CONF_MAX_TASKS = 16
 FB_CONF_MAX_SHM_PAGES = 32
 FB_PAGE_SIZE = 4096  # 4KB SHM page size
 FB_WASM_PAGE_SIZE = 65536  # 64KB WASM page size
+# system_config.md "PMSAv8 MPU 物理アドレスマップ" 節: Region 6 (Shared Memory Buffers) の基点
+FB_CONF_MPU_R6_SHARED_MEMORY_BASE = 0x2008_0000
 FB_TASK_ID_FLIGHT = 0xFF  # Flight sentinel during IPC transfer (8-bit PTE owner_id compliant)
 FB_TASK_ID_KERNEL = 0x00
 
@@ -214,11 +216,13 @@ class SharedBlock:
         self._is_in_flight = False
         self.data: bytearray = data if data is not None else bytearray(size)
 
-    def get_address(self) -> int:
+    def get_address(self, caller_task_id: int) -> int:
         assert self._is_active, "Cannot access released or dropped SharedBlock"
+        assert self.owner == caller_task_id, "MEM-GOTCHA-02: non-owner cannot access SharedBlock"
         return self.base_address
 
-    def get_size(self) -> int:
+    def get_size(self, caller_task_id: int) -> int:
+        assert self.owner == caller_task_id, "MEM-GOTCHA-02: non-owner cannot access SharedBlock"
         return self.size
 
     def get_owner(self) -> int:
@@ -322,9 +326,10 @@ class SharedBlock:
         packed = ((key & 0xFFFFFFFF) << 32) | (val & 0xFFFFFFFF)
         self.write_u64(index, packed)
 
-    def release(self) -> int:
+    def release(self, caller_task_id: int) -> int:
         """Revoke sender access and prepare for transfer (marks FLIGHT)."""
         assert self._is_active, "Cannot release inactive SharedBlock"
+        assert self.owner == caller_task_id, "MEM-GOTCHA-02: non-owner cannot release SharedBlock"
         if self._manager is not None:
             self._is_active = False
             self._is_in_flight = True
@@ -428,6 +433,9 @@ class PMSAv8MPU:
         self._setup_static_regions(pool_base)
 
     def _setup_static_regions(self, pool_base: int) -> None:
+        # 8 statically allocated regions matching runtime_memory.md §7.1 Table.
+        # Base addresses (Regions 1/2/4/5/6/7) are system_config.md's
+        # FB_CONF_MPU_R*_BASE constants (PMSAv8 MPU 物理アドレスマップ節).
         self.regions = [
             MPURegion(
                 0,
@@ -478,7 +486,14 @@ class PMSAv8MPU:
                 xn=True,
                 is_device=True,
             ),
-            MPURegion(6, "Shared_Memory", 0x20080000, 0x200BFFE0, AccessPermission.RW, xn=True),
+            MPURegion(
+                6,
+                "Shared_Memory",
+                FB_CONF_MPU_R6_SHARED_MEMORY_BASE,
+                0x200BFFE0,
+                AccessPermission.RW,
+                xn=True,
+            ),
             MPURegion(
                 7,
                 "Stack_Guard",
@@ -580,7 +595,7 @@ class MemoryManager:
                 )
             )
 
-        if self.total_allocated_bytes + FB_CONF_PARTITION_SIZE > self.pool_size:
+        if self.total_allocated_bytes + FB_CONF_TASK_HEAP_SIZE > self.pool_size:
             return Result(
                 error=MemoryErrorResult(
                     "ERR_POOL_EXHAUSTED",
@@ -588,23 +603,23 @@ class MemoryManager:
                 )
             )
 
-        offset = len(self.partition_owners) * FB_CONF_PARTITION_SIZE
+        offset = len(self.partition_owners) * FB_CONF_TASK_HEAP_SIZE
         base_addr = self.pool_base + offset
         pv = PartitionView(
             owner=owner,
             base_address=base_addr,
-            size=FB_CONF_PARTITION_SIZE,
-            data=bytearray(FB_CONF_PARTITION_SIZE),
+            size=FB_CONF_TASK_HEAP_SIZE,
+            data=bytearray(FB_CONF_TASK_HEAP_SIZE),
         )
         self.partition_owners.insert(owner, pv)
-        self.total_allocated_bytes += FB_CONF_PARTITION_SIZE
+        self.total_allocated_bytes += FB_CONF_TASK_HEAP_SIZE
         return Result(value=pv)
 
     def release_task_heap(self, caller_task_id: int) -> None:
         if caller_task_id not in self.partition_owners:
             return
         self.partition_owners.remove(caller_task_id)
-        self.total_allocated_bytes -= FB_CONF_PARTITION_SIZE
+        self.total_allocated_bytes -= FB_CONF_TASK_HEAP_SIZE
 
     def allocate_shared(
         self,
@@ -661,7 +676,7 @@ class MemoryManager:
             self.total_allocated_bytes += FB_PAGE_SIZE
 
             # Register in page registry and notify listener
-            base_addr = 0x20080000 + (target_page.page_idx * FB_PAGE_SIZE)
+            base_addr = FB_CONF_MPU_R6_SHARED_MEMORY_BASE + (target_page.page_idx * FB_PAGE_SIZE)
             self.page_registry.register_page(target_page.page_idx, caller_task_id, base_addr)
             if self._page_mapping_callbacks is not None:
                 self._page_mapping_callbacks.on_map_page(
@@ -675,7 +690,9 @@ class MemoryManager:
         target_page.allocated_bytes += size
 
         shm_id = (target_page.page_idx << 8) | slot_idx
-        base_addr = 0x20080000 + (target_page.page_idx * FB_PAGE_SIZE) + slot_offset
+        base_addr = (
+            FB_CONF_MPU_R6_SHARED_MEMORY_BASE + (target_page.page_idx * FB_PAGE_SIZE) + slot_offset
+        )
         slot_data = bytearray(size)
         self.shm_slots.insert(
             shm_id,
@@ -794,6 +811,6 @@ class MemoryManager:
                 page.owner_id = 0
                 self.page_registry.unregister_page(page_idx)
                 if self._page_mapping_callbacks is not None:
-                    base_addr = 0x20080000 + (page_idx * FB_PAGE_SIZE)
+                    base_addr = FB_CONF_MPU_R6_SHARED_MEMORY_BASE + (page_idx * FB_PAGE_SIZE)
                     self._page_mapping_callbacks.on_unmap_page(page_idx, base_addr)
                 self.total_allocated_bytes -= FB_PAGE_SIZE

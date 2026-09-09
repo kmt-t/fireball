@@ -34,6 +34,11 @@ tiers:
     path_pattern: '(architecture|plans)/.*\.md'
     description: "全Tier横断メタ設計・開発計画"
 
+  - tier: "meta"
+    name: "Cross-cutting Physical Specs & Catalogs"
+    path_pattern: 'specs/.*\.md'
+    description: "全Tier横断・具象物理規格カタログ（WASM命令セット、WASI ABI、GDB RSP、JITステンシル等）。各ファイル冒頭の「アーキテクチャ分類」セクションで個別にTierラベルを自己申告するが、複数Tierから横断参照される性質上、Hierarchy Gateの逆流判定対象からはmeta同様に除外する。"
+
 keywords:
   meta:
     pattern: "^META_[A-Za-z0-9_]+$"

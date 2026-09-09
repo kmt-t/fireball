@@ -105,7 +105,7 @@ invoke_subagent(
   5. 最上位概要の JIT・キャッシュ・ディスパッチ関連図（Mermaid）と本文記述・下位仕様の完全一致性（図の陳腐化・追随漏れの排除）。
 
 #### サブエージェント 3: CSP 通信・共有メモリ・vMMIO 安全機構監査 (`arch-ipc-mem-auditor`)
-- **対象**: `architecture_overview.md` §3.4, §3.5, §3.6 ↔ `os_coos.md`, `ipc_router.md`, `runtime_vmmio.md`, `platform_memory.md`, `coos_channel_model.py`, `csp_handoff_model.py`
+- **対象**: `architecture_overview.md` §3.4, §3.5, §3.6 ↔ `os_coos.md`, `ipc_router.md`, `runtime_vmmio.md`, `system_memory.md`（Tier1契約）, `runtime_memory.md`（Tier2実装）, `coos_channel_model.py`, `csp_handoff_model.py`
 - **検証観点**:
   1. バッファなし純粋同期ランデブーおよび対称直接ハンドオフ（Symmetric Transfer）の制御プロトコルが、COOS 仕様書および形式検証モデルと完全一致しているか。
   2. 共有メモリ（SHM）の所有権移譲およびムーブセマンティクス（Move-only RAII）が、メモリ管理仕様および IPC ルータ仕様と整合しているか（旧ドラフト概念の混入がないか）。

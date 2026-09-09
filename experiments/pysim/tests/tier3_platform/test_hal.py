@@ -2,7 +2,7 @@ from __future__ import annotations
 
 """
 Unit tests for Tier 3 Platform: HAL Drivers & HalBufferPool
-Traceability: runtime_hal_test_spec.md / platform_driver_test_spec.md
+Traceability: hal_dispatch_test_spec.md / platform_driver_test_spec.md
 """
 
 import sys
@@ -116,7 +116,7 @@ def test_hal_task_ipc_communication():
 
     sysv = System()
     try:
-        sysv.spawn_hal_task()
+        sysv.spawn_hal_tasks()
         engine = Wasi03pEngine(sysv)
         # Send command via IPC
         nwritten = engine.send_ipc_command(
@@ -125,9 +125,9 @@ def test_hal_task_ipc_communication():
             FlatMapView([(ARG_LENGTH, 128), (ARG_OFFSET, 0)]),
         )
         assert nwritten == 128
-        assert sysv.hal_task.processed_count == 1
-        assert sysv.hal_task.last_handled_uri == "fireball://device/uart/0"
-        assert sysv.hal_task.last_handled_cmd == WasiIpcCmd.STREAM_WRITE_BUFFER
+        uart_task = sysv.hal_task_for("fireball://device/uart/0")
+        assert uart_task.processed_count == 1
+        assert uart_task.last_handled_cmd == WasiIpcCmd.STREAM_WRITE_BUFFER
     finally:
         sysv.shutdown()
 

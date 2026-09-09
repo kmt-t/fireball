@@ -1,6 +1,6 @@
 package fireball:ipc@0.1.0;
 
-/// IPC サブシステム型定義
+/// IPC ルータ 共通型定義
 interface types {
     /// システムセキュリティロール
     enum role {
@@ -30,7 +30,7 @@ interface types {
     }
 }
 
-/// IPC ルータ (ipc_router) サブシステムインターフェース
+/// IPC ルータ (ipc_router) インターフェース
 /// 階層URIルーティング・RBACアクセス制御・所有権移譲
 /// 呼び出し元の権限ロール（sender_role / receiver_role）は、偽装防止のため
 /// スケジューラが現在実行中の TCB（Task Control Block）から暗黙的・確定的に取得される。
@@ -50,7 +50,7 @@ interface router {
     receive-message: func() -> result<list<kv-pair>, ipc-status>;
 }
 
-/// IPC サブシステムワールド
-world ipc-subsystem {
+/// IPC ルータ ワールド
+world ipc-router {
     export router;
 }

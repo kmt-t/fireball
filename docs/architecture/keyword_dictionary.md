@@ -1,6 +1,6 @@
 # Fireball キーワード台帳 (Keyword Dictionary & Registry)
 
-この文書は、Fireball プロジェクトにおける**全仕様・アーキテクチャ・コンポーネント・リンクキーワード（全 211 件）の正本台帳**である。
+この文書は、Fireball プロジェクトにおける**全仕様・アーキテクチャ・コンポーネント・リンクキーワード（全 215 件）の正本台帳**である。
 
 章節項番号（`§3.3` 等）や見出し文字列、ファイルパスによる直接参照は、仕様改訂やリファクタリングに伴う見出し変更・章番号ズレによって容易に陳腐化・リンク切れを起こす。これを防ぐため、Fireball では中括弧で囲まれた一意なキーワード（`{...}`）をアンカーとして定義し、すべての設計書・テスト仕様書・結合テスト・形式検証モデルを機械的に相互リンクする。
 
@@ -30,13 +30,14 @@
 
 ## 2. システム横断 メタ & グローバルキーワード (META / GLOBAL)
 
-### 2.1 メタキーワード (`{META_*}`) (19 件)
+### 2.1 メタキーワード (`{META_*}`) (20 件)
 
 システム全体の非機能要件、アーキテクチャ方針、C++20/23 ゼロコスト抽象化の設計基準を定義する。
 
 | キーワード | 定義元正本 | 対象コンポーネント | 仕様概要・検証内容 |
 | :--- | :--- | :--- | :--- |
 | `{META_3TierSeparation}` | `document_structure.md` | `architecture_overview.md` | 設計複雑度に応じた3階層のデコンポジション（分解）とカプセル化された依存関係管理 |
+| `{META_ContractImplSplit}` | `document_structure.md` | `system_memory.md` | 抽象契約を上位Tier、物理実装を下位Tierへ意図的に分割するデコンポジションパターン |
 | `{META_AI_Native_Dev}` | `document_structure.md` | `architecture_overview.md` | 定型的な実装はLLMを活用し、設計と形式検証の品質を重視する開発方針 |
 | `{META_ServiceIsWasmResident}` | `document_structure.md` | `architecture_overview.md` | 「サービス」はWASM上で実行される常駐タスクを指し、HAL・ロギング等のネイティブ常駐基盤機能（サブシステム）とは区別する |
 | `{META_AccessDictionary}` | `document_structure.md` | `jit_runtime.md` | データの索引化と、それを用いたランタイムアクセスの最適化 |
@@ -199,7 +200,6 @@ OSスケジューラ（`os_coos`, `os_scheduler`）、システムログ（`syst
 | `{Asynchronous_Notification}` | `requirement_list.md` | `ipc_router.md` | 非同期イベント通知とタスクウェイクアップの連携 |
 | `{IPCRegistry}` | `requirement_list.md` | `ipc_router.md` | コンパイル時または初期化時に確定する静的サービスレジストリ |
 | `{WASI_Implementation}` | `requirement_list.md` | `interface_wit.md` | WASI (Preview 1) システムインターフェースの最小サブセット実装 |
-| `{WASI_ConsoleRawOutput}` | `requirement_list.md` | `interface_wit.md` | コンソール（stdout/stderr）への生バイト列直接出力サポート |
 | `{WASI_Async_Bridge}` | `requirement_list.md` | `interface_wit.md` | WASI 同期I/O呼び出しとCOOS協調マルチタスクの非同期ブリッジ |
 | `{WIT_Interface_Spec}` | `requirement_list.md` | `interface_wit.md` | WebAssembly Component Model WIT形式による型安全インターフェース定義 |
 | `{WIT_Common_Types}` | `requirement_list.md` | `interface_wit.md` | コンポーネント間で共通利用される標準型語彙定義 |
@@ -248,7 +248,7 @@ WASM 実行エンジン（`runtime_vsoc`）、CPS スレッドインタープリ
 | `{Debugger_Jit_Flush}` | `requirement_list.md` | `debug_manager.md` | デバッガからのメモリ書き込み（M パケット）時の JIT キャッシュ全バンク即時無効化 | Scenario 7, 8 (INT-62, INT-72) |
 | `{MemoryIsolation}` | `requirement_list.md` | `runtime_memory.md` | MPU によるコード領域・スタック領域・共有メモリ領域のハードウェア保護 | - |
 | `{Shm_Allocator}` | `requirement_list.md` | `runtime_memory.md` | IPC 共有メモリ領域（MPU Region 6）用 dlmalloc アロケータ。可変長 shared_block の切り出し・RAII解放時合体 | - |
-| `{HAL_Interface}` | `requirement_list.md` | `runtime_hal.md` | 物理ハードウェアと上位層を抽象化する統一 HAL インターフェース | - |
+| `{HAL_Interface}` | `requirement_list.md` | `hal_dispatch.md` | 物理ハードウェアと上位層を抽象化する統一 HAL インターフェース | - |
 
 #### 4.3.2 Tier 2 Runtime 設計の勘所 (GOTCHA) (15 件)
 
@@ -309,7 +309,7 @@ Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キ�
 
 ### 4.5 Tier 3 Platform: HAL ドライバ実装
 
-ハードウェア抽象化ドライバの機能要求と設計の勘所。契約/実装分割パターン（`document_structure.md` §2.1-4）により、抽象化層（URI Resolver、コマンドプロトコル）は Tier 2（`runtime_hal.md`）、物理ドライバ実装は Tier 3（`platform_driver.md`）に配置される。メモリマネージャも同パターンにより Tier 1（`system_memory.md`）と Tier 2（`runtime_memory.md`）へ移設済みのため、§4.1・§4.3 を参照。
+ハードウェア抽象化ドライバの機能要求と設計の勘所。契約/実装分割パターン（`{META_ContractImplSplit}`）により、抽象化層（URI Resolver、コマンドプロトコル）は Tier 2（`hal_dispatch.md`）、物理ドライバ実装は Tier 3（`platform_driver.md`）に配置される。メモリマネージャも同パターンにより Tier 1（`system_memory.md`）と Tier 2（`runtime_memory.md`）へ移設済みのため、本書内の Tier 1 Core（`system_memory.md`）および Tier 2 Runtime（`runtime_memory.md`）の項を参照。
 
 #### 4.5.1 Tier 3 Platform 要求キーワード (2 件)
 

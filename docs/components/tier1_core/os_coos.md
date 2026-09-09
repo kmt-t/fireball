@@ -244,7 +244,7 @@ def channel_send(self, channel: Channel, data: object) -> tuple[ChannelAction, s
 ### 4.2 状態遷移図 (SMD: COOS システムレベル)
 <!-- traceability: {CSP_Handoff} {DirectContextSwitch} {GLOBAL_IdleDetection} {GLOBAL_StrictMemoryLimit} {GLOBAL_IndependentHeap} {META_RecoveryStrategy} -->
 
-COOS 全体のシステムレベル状態遷移を以下に示す。各タスクの状態遷移については **[os_scheduler.md](docs/components/tier1_core/os_scheduler.md#42-状態遷移図-sysml-smd-scheduler-視点)** を参照。
+COOS 全体のシステムレベル状態遷移を以下に示す。各タスクのブロック要因ごとの詳細な状態遷移については **[os_scheduler.md](docs/components/tier1_core/os_scheduler.md)** の状態遷移図（Scheduler視点）を正本とする。
 
 ```mermaid
 stateDiagram-v2
@@ -278,9 +278,9 @@ stateDiagram-v2
 - **Recovery**: タスク障害（panic、メモリ保護例外等）が発生し、安全な状態への復旧処理中。`{META_RecoveryStrategy}` の分類との対応は次のとおり: `Recovery --> Operational`（recovery complete）は当該タスクの `restart`（TCB・ヒープ初期化、他サービス・カーネルのメモリ空間は隔離済みのため波及なし）に相当する。`Recovery --> Shutdown`（unrecoverable error）は `panic`（全タスク停止、クラッシュダンプ出力、フェイルセーフ停止）に相当し、`ignore`/`retry` では継続不能と判定された場合のみ到達する。
 - **Shutdown**: システム終了処理中。リソースの静的解放。`{META_RecoveryStrategy}` の `panic` が要求するフェイルセーフ停止の完了状態。
 
-### 4.3 タスク状態遷移図 (SMD: Task ライフサイクル)
+### 4.3 タスク状態遷移図 (SMD: Task ライフサイクル概要)
 
-個別タスクの詳細な状態遷移を以下に示す。
+個別タスクの大域的なライフサイクル概要を以下に示す。`Blocked` はブロック要因（CSP待機・イベント待機・割り込み待機）を集約した概念上の状態であり、その内訳ごとの詳細な遷移条件・トリガーは [os_scheduler.md](docs/components/tier1_core/os_scheduler.md) の状態遷移図（Scheduler視点）を正本とする——本図と重複する個別状態機械を再定義しない。
 
 ```mermaid
 stateDiagram-v2
@@ -289,21 +289,14 @@ stateDiagram-v2
     NotCreated --> Ready : spawn_and_enqueue
 
     Ready --> Running : scheduler_dispatch
-    Running --> Ready : yield_to_tail
-    Running --> Ready : forced_yield (Handoff Limit)
+    Running --> Ready : yield_to_tail / forced_yield (Handoff Limit)
 
-    Running --> WaitCSP : block_on_ipc
-    Running --> WaitEvent : block_on_event
-    Running --> WaitInterrupt : block_on_interrupt
-
-    WaitCSP --> Running : csp_handoff (Direct Context Switch)
-    WaitEvent --> Ready : event_dispatched
-    WaitInterrupt --> Ready : interrupt_notified
+    Running --> Blocked : block_on_ipc / block_on_event / block_on_interrupt
+    Blocked --> Running : csp_handoff (Direct Context Switch)
+    Blocked --> Ready : event_dispatched / interrupt_notified
 
     Running --> Terminated : task_exit
-    WaitCSP --> Terminated : task_killed
-    WaitEvent --> Terminated : task_killed
-    WaitInterrupt --> Terminated : task_killed
+    Blocked --> Terminated : task_killed
 
     Terminated --> [*] : destroyed
 ```
@@ -312,7 +305,7 @@ stateDiagram-v2
 - **Not Created**: タスク未生成の状態。
 - **Ready**: 実行可能であり、スケジューラのREADYキューに登録されている状態。
 - **Running**: 現在CPUを占有して実行中のコルーチンタスク。
-- **Blocked**: 以下のいずれかの要因により実行を中断し、待機中キューに登録されている状態。
+- **Blocked**: 以下のいずれかの要因により実行を中断し、待機中キューに登録されている状態（個別の遷移条件・トリガーは `os_scheduler.md` を正本とする）。
   - **Wait CSP**: チャネル通信（Send/Recv）の相手タスクが到着するのを待機。
   - **Wait Event**: 非同期イベント（システムコールやIPC応答）の到着を待機。
   - **Wait Interrupt**: ハードウェアからの仮想割り込み（ISRによる `notify_interrupt`）を待機。

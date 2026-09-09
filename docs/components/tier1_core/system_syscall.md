@@ -81,7 +81,7 @@ world fireball {
   * `buf_len`: データのバイト長（`uint32_t` / 4バイト）
 
 **境界検査先行と整数オーバーフロー防止 (`SYS-GOTCHA-02`)**:
-ゲスト空間のアドレス `fb_offset_t` は、カーネル側で物理アドレスに解決される前に必ず境界チェックを行う。整数オーバーフロー攻撃（`offset + size` の加算結果が 32bit を超えて小さな値にラップし、境界チェックをすり抜ける脆弱性）を完全に防ぐため、境界検査式は必ず `offset > guest_memory_size or size > guest_memory_size - offset` の減算形式で先行評価し、違反時はメモリアクセス前に即座に `EFAULT`（76）で拒絶する。
+ゲスト空間のアドレス `fb_offset_t` は、カーネル側で物理アドレスに解決される前に必ず境界チェックを行う。整数オーバーフロー攻撃（`offset + size` の加算結果が 32bit を超えて小さな値にラップし、境界チェックをすり抜ける脆弱性）を完全に防ぐため、境界検査式は必ず `offset > guest_memory_size or size > guest_memory_size - offset` の減算形式で先行評価し、違反時はメモリアクセス前に即座に WASI `errno_t` の `EFAULT` で拒絶する（具体的な数値は `{Syscall_Mapping}` の WASI 準拠定義を正本とする）。
 
 **WASI iovec 散在ギャザーの全要素事前検証 (`SYS-GOTCHA-03`)**:
 散在ギャザー（iovec 配列）の各バッファ要素（`buf + len`）は、実際の出力ストリームへの書き込みを開始する前に全数事前検証される。途中の要素に境界外アドレスが含まれている場合、先行する正常要素であっても 1 バイトも出力ストリームへ書き込まず即座に `EFAULT` を返却する。これにより、異常終了時に中途半端なデータが出力先に漏洩・残存することを防止する。
@@ -130,6 +130,7 @@ vMMIOアドレス空間全体への汎用アクセス。SYSCTL/IPCR/VDMA/SHM/DYN
 | `0x13` | `MMIO_WRITE8` | `addr` (`fb_val_t`: 物理アドレス), `value` (`fb_val_t`: 8bit値) | `0` (エラー時は `ERR_OUT_OF_BOUNDS` または `ERR_ACCESS_DENIED`) | 8bit書き込み |
 | `0x14` | `MMIO_BULK_READ` | `addr` (`fb_val_t`: 物理アドレス), `dest_offset` (`fb_offset_t`: ゲスト物理ベース相対), `byte_count` (`fb_val_t`: 転送バイト数) | `0` (エラー時は `ERR_OUT_OF_BOUNDS`, `ERR_ACCESS_DENIED` または `ERR_INVALID_SIZE`) | バルク読み出し（ゲストメモリへコピー） `{META_RestrictedPhysicalAccess}` |
 | `0x15` | `MMIO_BULK_WRITE` | `addr` (`fb_val_t`: 物理アドレス), `src_offset` (`fb_offset_t`: ゲスト物理ベース相対), `byte_count` (`fb_val_t`: 転送バイト数) | `0` (エラー時は `ERR_OUT_OF_BOUNDS`, `ERR_ACCESS_DENIED` または `ERR_INVALID_SIZE`) | バルク書き込み（ゲストメモリから書込） `{META_RestrictedPhysicalAccess}` |
+| `0x16` | `TRIGGER_SET_PIN` | `pin` (`fb_val_t`), `value` (`fb_val_t`: 0/1) | `0` (エラー時は `ERR_OUT_OF_BOUNDS` または `ERR_ACCESS_DENIED`) | GPIOピン出力設定（`{Fast_Path_GPIO}` vMMIO直接ストアの移植性代替 Shim 経路、`FB_SYSCALL_TRIGGER_SET_PIN`） |
 
 ### 5.4. VDMA (`0x20`-`0x2F`)
 <!-- traceability: {VDMA} -->
@@ -195,6 +196,7 @@ WASI 0.2標準仕様に適合するように、各システムコールはShim�
 | | `mmio_write8` | `0x13` | 8-bit MMIO 書き込み |
 | | `mmio_bulk_read` | `0x14` | 一括 MMIO 読み出し |
 | | `mmio_bulk_write`| `0x15` | 一括 MMIO 書き込み |
+| | `trigger_set_pin` (`FB_SYSCALL_TRIGGER_SET_PIN`) | `0x16` | GPIOピン出力設定（移植性代替 Shim 経路） |
 | **VDMA** | `vdma_start` | `0x20` | 仮想 DMA 転送開始 |
 | **IRQ** | `irq_read_flags` | `0x30` | 割り込みフラグ読み取り |
 | | `irq_clear` | `0x31` | 割り込みクリア |

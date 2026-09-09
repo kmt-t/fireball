@@ -19,7 +19,7 @@ interface environment {
     }
 }
 
-/// vSoC 仮想実行制御サブシステムインターフェース
+/// vSoC 仮想実行制御インターフェース
 /// ゲスト実行制御・Safepoint ポーリング・仮想割り込み通知
 interface execution {
     /// vSoC 実行状態
@@ -48,8 +48,8 @@ interface debug {
     get-execution-count: func(pc: u32) -> u32;
 }
 
-/// vSoC サブシステムワールド
-world vsoc-subsystem {
+/// vSoC ワールド
+world vsoc-runtime {
     export environment;
     export execution;
     export debug;

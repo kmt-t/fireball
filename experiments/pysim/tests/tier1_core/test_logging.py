@@ -139,7 +139,7 @@ def test_log_04_coos_and_ipc_diagnostic_logging():
         )
 
         def too_large_task():
-            _, ch = sysv.ipc.lookup("fireball://hal/gpio/0")
+            _, ch = sysv.ipc.lookup("fireball://device/gpio/0")
             assert ch is not None
             yield from sysv.ipc.send(ch, too_large_msg)
 

@@ -98,7 +98,7 @@ Key-Valueペアを複数集約した通信の基本単位。メッセージ自�
 | サービスURI | サービスを一意に特定するための正規化された文字列 | 文字列ビュー | - |
 | セキュリティロール | サービスに割り当てられた権限レベル。アクセス制御と CSP チャネル選択の両方に利用 | ビットフラグ | - |
 
-※ 待ち受けチャネルはレジストリエントリに個別の ID として保持しない。`FB_CONF_ROUTER_ROLE_MATRIX`（4x4）の ALLOW セル 1 つにつき、専用の CSP チャネル（`fireball::channel<ipc_message>`、バッファなし・単一送受信ペアのランデブー）が 1 本ずつ静的に対応付けられ、`(sender_role, target_role)` の組から一意に導出される。1 本のチャネルは 1 対の送受信方向にしか使えないため（`{ADR_RendezvousChannel}`）、同一の受信ロールへ複数の送信ロールから送る場合でも、エッジごとに別々のチャネルを持つ。
+※ 待ち受けチャネルはレジストリエントリに個別の ID として保持しない。`FB_CONF_ROUTER_ROLE_MATRIX`（9x9）の ALLOW セル 1 つにつき、専用の CSP チャネル（`fireball::channel<ipc_message>`、バッファなし・単一送受信ペアのランデブー）が 1 本ずつ静的に対応付けられ、`(sender_role, target_role)` の組から一意に導出される。1 本のチャネルは 1 対の送受信方向にしか使えないため（`{ADR_RendezvousChannel}`）、同一の受信ロールへ複数の送信ロールから送る場合でも、エッジごとに別々のチャネルを持つ。HAL の各デバイス/サービスインスタンスは専用ロール（`HAL_UART`, `HAL_STDOUT`, `HAL_GPIO`, `HAL_TIMER`, `HAL_I2C`, `HAL_SPI`）を個別に持つ——単一の共有ロールでは、同種インスタンスが複数存在する場合（例: 物理 UART と別登録のコンソール出力）にメッセージの宛先インスタンスを区別できないためである。
 
 ## 4. 動的モデル
 
@@ -156,13 +156,35 @@ sequenceDiagram
 #### IPC ルータ フルセット・コンセプトコード (`concepts/ipc_router_concept.py`)
 ```python
 class Role:
+    """Each HAL_* role is bound to exactly one device/service instance and one
+    dedicated CSP channel ({ADR_RendezvousChannel}): a single shared role
+    could not distinguish which of several same-type instances (e.g. the
+    physical UART vs. a separately-registered console stream) a message was
+    meant for, since only the receiving task's role -- never the URI --
+    selects a channel."""
+
     RUNTIME = 0
     CORE_SERVICE = 1
-    PLATFORM_HAL = 2
-    DEBUGGER = 3
+    HAL_UART = 2
+    HAL_STDOUT = 3
+    HAL_GPIO = 4
+    HAL_TIMER = 5
+    HAL_I2C = 6
+    HAL_SPI = 7
+    DEBUGGER = 8
 
 
-_ROLE_NAMES = ("RUNTIME", "CORE_SERVICE", "PLATFORM_HAL", "DEBUGGER")
+_ROLE_NAMES = (
+    "RUNTIME",
+    "CORE_SERVICE",
+    "HAL_UART",
+    "HAL_STDOUT",
+    "HAL_GPIO",
+    "HAL_TIMER",
+    "HAL_I2C",
+    "HAL_SPI",
+    "DEBUGGER",
+)
 
 
 class OwnershipState(IntEnum):
@@ -230,24 +252,53 @@ class Channel:
 
 
 # Stage 1: registry (URI -> role), a sorted array searched via flat_map_view.
+# URI -> Role is many-to-one, not 1:1: "fireball://device/uart/0" and
+# "fireball://service/stdout/0" each keep their own dedicated Role/channel
+# so two same-type instances never collide on one channel.
 _REGISTRY_ENTRIES = sorted(
     [
         ("fireball://core/coos/0", Role.CORE_SERVICE),
-        ("fireball://hal/gpio/0", Role.PLATFORM_HAL),
         ("fireball://dbg/manager/0", Role.DEBUGGER),
+        ("fireball://device/gpio/0", Role.HAL_GPIO),
+        ("fireball://device/i2c/0", Role.HAL_I2C),
+        ("fireball://device/spi/0", Role.HAL_SPI),
+        ("fireball://device/timer/0", Role.HAL_TIMER),
+        ("fireball://device/uart/0", Role.HAL_UART),
+        ("fireball://service/stdout/0", Role.HAL_STDOUT),
     ]
 )
 _REGISTRY = FlatMapView(
     [uri for uri, _ in _REGISTRY_ENTRIES], [role for _, role in _REGISTRY_ENTRIES]
 )
 
-# Stage 2: FB_CONF_ROUTER_ROLE_MATRIX (4x4, rows=sender, cols=target); every
+# Stage 2: FB_CONF_ROUTER_ROLE_MATRIX (9x9, rows=sender, cols=target); every
 # DENY cell is listed explicitly, matching the C++ constexpr array exactly.
+# Every HAL_* role is a leaf (all-DENY row) -- device/service instances never
+# initiate an IPC send themselves (see "全 DENY 行・列の意味" below).
+_HAL_ROLES = (
+    Role.HAL_UART,
+    Role.HAL_STDOUT,
+    Role.HAL_GPIO,
+    Role.HAL_TIMER,
+    Role.HAL_I2C,
+    Role.HAL_SPI,
+)
+
+
+def _role_row(allowed_targets: frozenset) -> tuple:
+    return tuple(role in allowed_targets for role in Role)
+
+
 _ROLE_MATRIX = (
-    (False, True, True, False),  # from RUNTIME
-    (False, False, True, False),  # from CORE_SERVICE
-    (False, False, False, False),  # from PLATFORM_HAL
-    (False, True, True, False),  # from DEBUGGER
+    _role_row(frozenset({Role.CORE_SERVICE, *_HAL_ROLES})),  # from RUNTIME
+    _role_row(frozenset(_HAL_ROLES)),  # from CORE_SERVICE
+    _role_row(frozenset()),  # from HAL_UART (leaf)
+    _role_row(frozenset()),  # from HAL_STDOUT (leaf)
+    _role_row(frozenset()),  # from HAL_GPIO (leaf)
+    _role_row(frozenset()),  # from HAL_TIMER (leaf)
+    _role_row(frozenset()),  # from HAL_I2C (leaf)
+    _role_row(frozenset()),  # from HAL_SPI (leaf)
+    _role_row(frozenset({Role.CORE_SERVICE, *_HAL_ROLES})),  # from DEBUGGER
 )
 
 
@@ -364,25 +415,31 @@ graph TD
 | :--- | :--- | :--- | :--- |
 | **Stage 1: URI Lookup** | `fireball::flat_map_view` による二分探索 | O(log N) | N = サービス数（通常 ≤ 16）。動的確保なし。 |
 | **Stage 2: Access Control** | TCB から取得した送信元ロールと対象ロールのマトリックス参照 `role_matrix[tcb_role][target_role]` | O(1) | 事前計算済みの2次元配列による静的検査。引数による自己申告ロールは完全排除（偽装防止）。 |
-| **Stage 3: Channel Grant** | `(sender_role, target_role)` エッジに対応する専用 CSP チャネルオブジェクトを返却 | O(1) | チャネルはロールの組から直接導出（4x4 配列参照）。送信側はこれを保持して直接 `send(channel, msg)` を実行。 |
+| **Stage 3: Channel Grant** | `(sender_role, target_role)` エッジに対応する専用 CSP チャネルオブジェクトを返却 | O(1) | チャネルはロールの組から直接導出（9x9 配列参照）。送信側はこれを保持して直接 `send(channel, msg)` を実行。 |
 
 #### ロール間通信許可マトリクス (FB_CONF_ROUTER_ROLE_MATRIX)
 <!-- traceability: {RoleBasedAccessControl} -->
 
-本表は `{META_ConfigurableSystem}` の `FB_CONF_ROUTER_ROLE_MATRIX` (4x4 `constexpr` 配列) を**そのまま**表現したものであり、全 DENY の行・列も省略しない。省略すると「そのロールの権限が未定義」と読めてしまい、C++ 定義との差分が生じるためである。
+本表は `{META_ConfigurableSystem}` の `FB_CONF_ROUTER_ROLE_MATRIX` (9x9 `constexpr` 配列) を**そのまま**表現したものであり、全 DENY の行・列も省略しない。省略すると「そのロールの権限が未定義」と読めてしまい、C++ 定義との差分が生じるためである。HAL は単一の共有ロールではなく、デバイス/サービスインスタンスごとに専用ロール（`HAL_UART`, `HAL_STDOUT`, `HAL_GPIO`, `HAL_TIMER`, `HAL_I2C`, `HAL_SPI`）を持つ——単一ロールでは同種インスタンスが複数存在する場合（物理 UART と別登録のコンソール出力ストリームなど）に宛先を区別できないためである。
 
-| 送信元ロール (Sender) \ 送信先ロール (Target) | RUNTIME | CORE_SERVICE | PLATFORM_HAL | DEBUGGER |
-| :--- | :---: | :---: | :---: | :---: |
-| **RUNTIME** | DENY | ALLOW | ALLOW | DENY |
-| **CORE_SERVICE** | DENY | DENY | ALLOW | DENY |
-| **PLATFORM_HAL** | DENY | DENY | DENY | DENY |
-| **DEBUGGER** | DENY | ALLOW | ALLOW | DENY |
+| 送信元ロール (Sender) \ 送信先ロール (Target) | RUNTIME | CORE_SERVICE | HAL_UART | HAL_STDOUT | HAL_GPIO | HAL_TIMER | HAL_I2C | HAL_SPI | DEBUGGER |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **RUNTIME** | DENY | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | DENY |
+| **CORE_SERVICE** | DENY | DENY | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | DENY |
+| **HAL_UART** | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY |
+| **HAL_STDOUT** | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY |
+| **HAL_GPIO** | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY |
+| **HAL_TIMER** | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY |
+| **HAL_I2C** | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY |
+| **HAL_SPI** | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY | DENY |
+| **DEBUGGER** | DENY | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | ALLOW | DENY |
 
 **全 DENY 行・列の意味**:
-- **PLATFORM_HAL 行が全 DENY**: HAL は通信グラフの葉であり、自発的な送信を一切行わない。デバイス側の事象は ISR による割り込み通知（`{GLOBAL_InterruptWakeup}`）として上位へ伝わり、IPC の送信としては表現されない。
+- **HAL_\* の全 6 ロール行が全 DENY**: HAL は通信グラフの葉であり、自発的な送信を一切行わない。デバイス側の事象は ISR による割り込み通知（`{GLOBAL_InterruptWakeup}`）として上位へ伝わり、IPC の送信としては表現されない。単一の "PLATFORM_HAL" ロールをデバイス/サービスインスタンスごとに 6 分割したのはアクセス制御の意味論を変えるためではなく、CSP の「1 チャネル 1 待機者」制約下で複数の同種インスタンスを区別可能にするためであり、各行の全 DENY 性質そのものは変わらない。
 - **RUNTIME 列が全 DENY**: RUNTIME（ゲスト実行をホストするランタイムタスク。ゲスト自身のコードが直接 IPC に触れるわけではない）を宛先とする IPC は存在しない。RUNTIME への応答は、RUNTIME 自身が発した要求に対する返信としてのみ返る。
+- **DEBUGGER 列が全 DENY**: DEBUGGER 自身を宛先とする IPC 送信経路は存在しない（デバッガタスクへの通知は RSP トランスポート経由であり、本ルータの管轄外）。
 
-※ 送信許可（ALLOW）の関係から構築される通信有向グラフ（`RUNTIME -> CORE_SERVICE`, `RUNTIME -> PLATFORM_HAL`, `CORE_SERVICE -> PLATFORM_HAL`, `DEBUGGER -> CORE_SERVICE`, `DEBUGGER -> PLATFORM_HAL`）は非循環（DAG）であり、循環通信待機（Circular Wait）によるデッドロックがトポロジ層で原理的に排除される。
+※ 送信許可（ALLOW）の関係から構築される通信有向グラフ（`RUNTIME -> CORE_SERVICE`, `RUNTIME -> HAL_*`（6 ロール）, `CORE_SERVICE -> HAL_*`（6 ロール）, `DEBUGGER -> CORE_SERVICE`, `DEBUGGER -> HAL_*`（6 ロール））は非循環（DAG）であり、循環通信待機（Circular Wait）によるデッドロックがトポロジ層で原理的に排除される。
 
 ### 4.2 状態遷移図 (SysML SMD: IPC Router ルーティングフロー)
 <!-- traceability: {LowLatencyLookup} {META_AccessDictionary} {META_FlatMapIndexed} {OwnershipTransfer} {IPC_ZeroCopy} -->

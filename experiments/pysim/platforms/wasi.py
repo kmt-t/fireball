@@ -2,7 +2,7 @@
 experiments/pysim/platforms/wasi.py
 HAL = WASI 0.3p Unified Core Engine and WASI 0.1p Compatibility Adapter.
 Implements docs/components/tier1_interface/interface_wit.md,
-docs/components/tier2_runtime/runtime_hal.md (contract) / docs/components/tier3_platform/platform_driver.md (impl), and
+docs/components/tier2_runtime/hal_dispatch.md (contract) / docs/components/tier3_platform/platform_driver.md (impl), and
 docs/specs/wasi_preview1_abi.md.
 
 - WASI 0.3p (Core): URI-based dynamic interface resolver (resolver.get-interface),
@@ -158,7 +158,7 @@ class Wasi03pEngine:
     def dispatch_command(self, uri: str, cmd_id: int, params: FlatMapView) -> object:
         """
         Dispatches a WASI 0.3p IPC Driver Command to the resolved device
-        interface. Matches runtime_hal.md §5.1's `control(id, cmd, params:
+        interface. Matches hal_dispatch.md §5.1's `control(id, cmd, params:
         ipc-message)`: `params` is always a FlatMapView over packed kv_pair
         keys (ipc_router.md §3.3) -- one statically-typed argument, no
         runtime inspection of what was passed.
@@ -276,14 +276,14 @@ class Wasi03pEngine:
 
     def send_ipc_command(self, uri: str, cmd_id: int, params: FlatMapView) -> object:
         """
-        Sends an IPC Driver Command to the HAL Server Task via IPCRouter ({runtime_hal.md}).
+        Sends an IPC Driver Command to the HAL Server Task via IPCRouter ({hal_dispatch.md}).
         HAL operates as a distinct task and communicates strictly over IPC rendezvous.
         """
         from hal import make_hal_ipc_message
         from ipc_router import IpcStatus, Role
 
-        # Ensure HAL task is spawned on the scheduler
-        self.sysv.spawn_hal_task()
+        # Ensure every HAL device/service instance's own task is spawned
+        self.sysv.spawn_hal_tasks()
 
         msg = make_hal_ipc_message(cmd_id, params.entries, memory_manager=self.sysv.memory_manager)
 
@@ -297,9 +297,8 @@ class Wasi03pEngine:
         self.sysv.scheduler.spawn("wasi_ipc_sender", sender_coro(), role=Role.RUNTIME)
         self.sysv.scheduler.run_until_idle()
 
-        if self.sysv.hal_task is not None:
-            return self.sysv.hal_task.last_result
-        return None
+        target_task = self.sysv.hal_task_for(uri)
+        return target_task.last_result if target_task is not None else None
 
     # Resource Methods
     def _stream_write(self, fd: int, data: bytes) -> int:

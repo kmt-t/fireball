@@ -7,7 +7,7 @@
 <!-- traceability: {META_3TierSeparation} {GLOBAL_Policy_Memory} {ConsolidatedHeap} {GLOBAL_IndependentHeap} {GLOBAL_StrictMemoryLimit} -->
 メモリマネージャ（`memory-manager`）は、システム全体の統合物理メモリプール（`ConsolidatedHeap`）を基礎とし、そこからホスト（WASMランタイム）用のヒープ、および各VM/タスク用のヒープを、それぞれ物理的・領域的に完全に独立した別個のヒープ（`GLOBAL_IndependentHeap`）として切り出して貸与するという**パーティション貸与ポリシー**の抽象契約（`co_mem`）を定義する。これにより、特定のVMでのメモリ不足が他のVMやホストランタイムを道連れにしてクラッシュすることを防止する。
 
-本コンポーネントは「何を提供するか（契約）」のみを定義する。`system_allocator`（システムコンテナ用）および `shm_allocator`（IPC共有メモリ用）による dlmalloc ベースの具体的な実装は、Tier 2 の [`runtime_memory.md`](docs/components/tier2_runtime/runtime_memory.md) を正本とする（`document_structure.md` §2.1-4「契約/実装分割パターン」）。 `{META_3TierSeparation}` `{GLOBAL_Policy_Memory}` `{ConsolidatedHeap}` `{GLOBAL_IndependentHeap}` `{GLOBAL_StrictMemoryLimit}`
+本コンポーネントは「何を提供するか（契約）」のみを定義する。`system_allocator`（システムコンテナ用）および `shm_allocator`（IPC共有メモリ用）による dlmalloc ベースの具体的な実装は、Tier 2 の [`runtime_memory.md`](docs/components/tier2_runtime/runtime_memory.md) を正本とする（`{META_ContractImplSplit}`「契約/実装分割パターン」）。 `{META_3TierSeparation}` `{GLOBAL_Policy_Memory}` `{ConsolidatedHeap}` `{GLOBAL_IndependentHeap}` `{GLOBAL_StrictMemoryLimit}`
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->
@@ -137,7 +137,7 @@ IPC転送のための共有メモリブロック確保は、上記の `acquire-p
   - **所有権移譲**: タスク間でのブロック受け渡し（Grant 等）に伴う所有タスクIDの変更時
   - **所有権回収（Revoke）**: メッセージ送信開始等に伴う所有権の一時無効化（移譲中状態の設定およびTLBフラッシュ契機）
   - **ページ解放**: 共有ブロック破棄に伴う物理ページの解放時
-- 物理実装（イベント発火の具体的トリガー・4KBページ粒度での執行手順）は [`runtime_memory.md`](docs/components/tier2_runtime/runtime_memory.md) §6 を正本とする。 `{OwnerMismatchTrap}`
+- 物理実装（イベント発火の具体的トリガー・4KBページ粒度での執行手順）は [`runtime_memory.md`](docs/components/tier2_runtime/runtime_memory.md) の物理ページマッピング節を正本とする。 `{OwnerMismatchTrap}`
 
 ### 6.3 共有メモリライフサイクルと権限遷移プロトコル（契約レベル）
 <!-- traceability: {OwnershipTransfer} {META_FaultIsolation} -->
@@ -156,7 +156,7 @@ IPC転送のための共有メモリブロック確保は、上記の `acquire-p
 | 8 | 読出 | `shm.read_*` | - | 読出可能 |
 | 9 | 自動解放 | `shared-block` の RAII drop | - | **解放** |
 
-物理層（vMMIO PTE / TLB）での各フェーズの具体的な執行内容は [`runtime_memory.md`](docs/components/tier2_runtime/runtime_memory.md) §6.4 を正本とする。
+物理層（vMMIO PTE / TLB）での各フェーズの具体的な執行内容は [`runtime_memory.md`](docs/components/tier2_runtime/runtime_memory.md) の共有メモリライフサイクルと権限遷移プロトコル（物理実装）節を正本とする。
 
 - **非所有タスク操作の完全遮断 (`MEM-GOTCHA-02`)**: 共有メモリブロックの操作時、ブロックの所有タスク ID を厳格に照合し、非所有タスクからの操作は即座にトラップ（`ShmTrap` / `ERR_PERMISSION_DENIED`）で遮断する。
 - **障害時回復**: Rendezvous中に通信が中断された場合、`rollback_transfer(original_sender_id, shm_id)` により送信元タスクへ所有権を再マッピングし、リソースのダングリングを防止する。

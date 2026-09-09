@@ -53,7 +53,7 @@ def task_console_writer(sysv: System):
     """
     A guest running wasi:cli/stdout's `print` with a string built at
         runtime -- a value the build-time dictionary could never have known
-        about. Proves {WASI_ConsoleRawOutput} actually carries it.
+        about. Proves the console raw-byte output path actually carries it.
     """
 
     computed = f"guest computed pi ~= {355 / 113:.6f} at runtime"

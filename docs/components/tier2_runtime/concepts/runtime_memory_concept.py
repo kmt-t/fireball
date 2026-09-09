@@ -562,12 +562,12 @@ class MemoryManager:
 
 
 # -----------------------------------------------------------------------------
-# HAL Integration Wrapper (runtime_hal.md §5.1 Delegation)
+# HAL Integration Wrapper (hal_dispatch.md §5.1 Delegation)
 # -----------------------------------------------------------------------------
 
 
 class HALBufferManager:
-    """Simulates runtime_hal.md acquire_buffer delegating to allocate_shared."""
+    """Simulates hal_dispatch.md acquire_buffer delegating to allocate_shared."""
 
     def __init__(self, memory_manager: MemoryManager):
         self.mem = memory_manager
@@ -712,7 +712,7 @@ def test_mem_08_claim_requires_valid_shm_id() -> None:
 
 
 def test_mem_09_hal_acquire_buffer_delegates_to_allocate_shared() -> None:
-    """MEM-09: runtime_hal acquire_buffer unifies with memory manager allocate_shared."""
+    """MEM-09: hal_dispatch acquire_buffer unifies with memory manager allocate_shared."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     hal = HALBufferManager(mm)

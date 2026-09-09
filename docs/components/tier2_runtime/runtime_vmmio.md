@@ -107,7 +107,7 @@ graph TD
 | :--- | :--- | :--- | :--- |
 | `0x0000_0000` – `0x7FFF_FFFF` | 0 | - | ゲスト RAM（WASM線形メモリ）— Stage 1 |
 | `0xC000_0000` – `0xC000_FFFF` | 1 | 12 (`0xC`) | Static Devices（SYSCTL, IPCR, VDMA）— Stage 2 |
-| `0xE000_0000` – `0xEFFF_FFFF` | 1 | 14 (`0xE`) | SHM（共有メモリ）— Stage 3 |
+| `0xE000_0000` – `0xEFFF_FFFF` | 1 | 14 (`0xE`) | SHM（共有メモリ）— Stage 3。この 256MB はアドレスデコード上の FC=14 全域であり、実際にビットマップアロケータが PTE を割り当てる範囲は先頭 128KB（`0xE000_0000`〜`0xE001_FFFF`、32ページ）のみに限られる。残りは PTE 未登録のまま予約され、アクセスは `TRAP_UNREGISTERED_PAGE` となる |
 | `0xF000_0000` – `0xFFFF_FFFF` | 1 | 15 (`0xF`) | PASSTHROUGH（物理アドレス直結）— Stage 3 |
 
 #### コントローラ群
@@ -326,7 +326,7 @@ FlatMap ページテーブル、ダイレクトマップ
 | `0xC000_0000` | `12` (`0xC`) | **SYSCTL** | システム制御（Yield, Halt, Syscall等） |
 | `0xC000_1000` | `12` (`0xC`) | **IPCR** | IPCルータ連携レジスタ |
 | `0xC000_2000` | `12` (`0xC`) | **VDMA** `{VDMA}` | 仮想DMA（バルク転送） |
-| `0xE000_0000` – `0xEFFF_FFFF` | `14` (`0xE`) | **SHM** | 共有メモリ（1領域=1ページ） |
+| `0xE000_0000` – `0xEFFF_FFFF` | `14` (`0xE`) | **SHM** | 共有メモリ（1領域=1ページ）。デコード上の全域は256MBだが、実際にPTEが割り当てられるのは先頭128KB（32ページ）のみ |
 | `0xF000_0000` – `0xFFFF_FFFF` | `15` (`0xF`) | **PASSTHROUGH** | 物理アドレス直結 |
 
 PASSTHROUGH アドレス変換:

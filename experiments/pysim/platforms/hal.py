@@ -17,7 +17,7 @@ Real (not mocked) HAL underlayer for the pysim experiment.
 This intentionally sets aside C++ naming/type conventions and is not wired
 into the C++ build. It exists to pressure-test whether the *design* in
 docs/components/tier1_interface/interface_wit.md and
-docs/components/tier2_runtime/runtime_hal.md (contract) / docs/components/tier3_platform/platform_driver.md (impl) actually holds together when
+docs/components/tier2_runtime/hal_dispatch.md (contract) / docs/components/tier3_platform/platform_driver.md (impl) actually holds together when
 something has to really run.
 """
 
@@ -39,7 +39,7 @@ from ipc_router import DataType, IPCMessage, IPCRouter, IpcStatus, ScopeKind, pa
 from scheduler import ChannelAction
 from system_containers import FlatMapView, FlatSetView
 
-# runtime_hal.md §4.2's kv_pair command arguments: each is a packed
+# hal_dispatch.md §4.2's kv_pair command arguments: each is a packed
 # (ScopeKind.FUNCTIONAL, DataType.UINT32, key_id) key per ipc_router.md §3.3,
 # never a string name -- a string key has no C++ counterpart once RTTI is
 # disabled, and the doc's argument names ("pin_no", "val", ...) are only the
@@ -64,7 +64,7 @@ ARG_FD = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=16)
 
 
 class WasiIpcCmd(IntEnum):
-    """WASI 0.3p IPC Driver Command Protocol IDs (runtime_hal.md §5.2)."""
+    """WASI 0.3p IPC Driver Command Protocol IDs (hal_dispatch.md §5.2)."""
 
     # Common Capability Query
     QUERY_CAPS = 0x00
@@ -178,7 +178,7 @@ class HalBufferPool:
     """
     `acquire_buffer()` backed by FB_CONF_HAL_MAX_BUFFERS fixed-size slots
         of at most FB_CONF_HAL_BUFFER_SIZE bytes each: a static pool, not a
-        dynamic allocator (runtime_hal.md 5.1's "静的固定長バッファプール"),
+        dynamic allocator (hal_dispatch.md 5.1's "静的固定長バッファプール"),
         MMIO'd into the vMMIO DYNAMIC region. Multiple client tasks may
         contend for the same device, so acquire_buffer() is the ownership-
         taking call a client must make before it may touch a slot at all --
@@ -292,7 +292,7 @@ class Timer:
 class HalDriver:
     """
     Base class for HAL device drivers supporting WASI 0.3p IPC Commands.
-    Matches runtime_hal.md §5.1's `control(id, cmd, params: ipc-message)`:
+    Matches hal_dispatch.md §5.1's `control(id, cmd, params: ipc-message)`:
     exactly one statically-typed params argument, always a FlatMapView over
     packed kv_pair keys (ipc_router.md §3.3) -- no kwargs escape hatch, no
     runtime inspection of what was passed (C++ has neither RTTI nor
@@ -340,7 +340,7 @@ class DummyUartDriver(HalDriver):
 
     def _handle_command(self, cmd_id: int, params: FlatMapView) -> object:
         if cmd_id == WasiIpcCmd.STREAM_WRITE_BUFFER:
-            # runtime_hal.md §4.2: buffer_handle/offset/len resolve a zero-copy
+            # hal_dispatch.md §4.2: buffer_handle/offset/len resolve a zero-copy
             # HAL buffer slice; this dummy has no pool reference to resolve one
             # against, so it stands in with the slice length only.
             length = params.find(ARG_LENGTH)
@@ -355,7 +355,7 @@ class DummyUartDriver(HalDriver):
 class DummyGpioDriver(HalDriver):
     """Dummy GPIO Driver supporting Pin R/W, Configuration, and Edge IRQ."""
 
-    # runtime_hal.md doesn't fix a pin count; a real MCU GPIO port is a
+    # hal_dispatch.md doesn't fix a pin count; a real MCU GPIO port is a
     # small, bounded set, so a fixed-size array (not a dict) models it.
     _MAX_PINS = 64
 
@@ -436,44 +436,33 @@ ARG_RESULT = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=0xFF)
 
 class HalTask:
     """
-    COOS Task for the Hardware Abstraction Layer ({META_3TierSeparation}, {runtime_hal.md}).
-    HAL operates as an independent cooperative task on COOS.
-    All communications with HAL (from Runtime, Debugger, Core Services) occur
-    strictly via IPC messages across CSP rendezvous channels.
-    HalTask listens for incoming IPC messages directed to HAL device URIs,
-    dispatches them to the corresponding registered HalDriver,
-    and records execution results.
+    COOS Task for one HAL device/service instance ({META_3TierSeparation},
+    {hal_dispatch.md}). HAL operates as one independent cooperative task
+    *per device instance*, not one shared task for the whole HAL layer: the
+    IPC router hands each task's role its own dedicated CSP channel (1
+    channel = 1 waiter, ipc_router.md), so a single shared task could not
+    have told two same-type instances (two UART-shaped endpoints, two
+    GPIO-shaped endpoints) apart -- only the *role* selects which channel a
+    message lands on, the URI itself never rides the hot transfer path. One
+    HalTask thus owns exactly one HalDriver and is spawned under exactly the
+    Role that URI resolves to (see system.py `spawn_hal_tasks`).
     """
 
-    def __init__(
-        self,
-        ipc: IPCRouter,
-        drivers: Sequence[HalDriver] | None = None,
-    ):
+    def __init__(self, ipc: IPCRouter, driver: HalDriver):
         self.ipc = ipc
-        self.drivers: dict[str, HalDriver] = {}
-        if drivers:
-            for d in drivers:
-                self.register_driver(d)
+        self.driver = driver
         self.running = True
-        self.last_handled_uri: str | None = None
         self.last_handled_cmd: int | None = None
         self.last_result: object = None
         self.processed_count: int = 0
 
-    def register_driver(self, driver: HalDriver) -> None:
-        self.drivers[driver.uri] = driver
-
-    def get_driver(self, uri: str) -> HalDriver | None:
-        return self.drivers.get(uri)
-
     def run(self):
         """
-        Coroutine body of the HAL server task.
-        Runs continuously in COOS, listening on registered device URIs via CSP rendezvous.
+        Coroutine body of one HAL device's server task.
+        Runs continuously in COOS, listening on this task's own dedicated
+        role channel via CSP rendezvous.
         """
         while self.running:
-            default_uri = next(iter(self.drivers.keys()), "fireball://device/uart/0")
             status, msg = yield from self.ipc.recv()
             if status != IpcStatus.COMPLETED or msg is None:
                 yield (ChannelAction.BLOCK, None)
@@ -484,26 +473,8 @@ class HalTask:
             if cmd_id is None:
                 cmd_id = msg.get(ARG_QUERY_CMD_ID, 0x00)
 
-            # Dispatch to appropriate driver based on command ID hierarchy
-            target_driver = None
-            if WasiIpcCmd.STREAM_WRITE_BUFFER <= cmd_id <= WasiIpcCmd.STREAM_CLOSE:
-                target_driver = self.drivers.get("fireball://device/uart/0")
-            elif WasiIpcCmd.CLOCK_GET_NOW <= cmd_id <= WasiIpcCmd.CLOCK_GET_RES:
-                target_driver = self.drivers.get("fireball://device/timer/0")
-            elif WasiIpcCmd.GPIO_SET_PIN <= cmd_id <= WasiIpcCmd.GPIO_SUBSCRIBE_EDGE:
-                target_driver = self.drivers.get("fireball://device/gpio/0")
-            elif WasiIpcCmd.BUS_TRANSFER_BUFFER <= cmd_id <= WasiIpcCmd.BUS_CONFIG:
-                target_driver = self.drivers.get("fireball://device/i2c/0")
-            else:
-                target_driver = self.drivers.get(default_uri)
-
-            result = None
-            if target_driver is not None:
-                result = target_driver.dispatch(cmd_id, msg.payload)
-
-            self.last_handled_uri = default_uri
+            self.last_result = self.driver.dispatch(cmd_id, msg.payload)
             self.last_handled_cmd = cmd_id
-            self.last_result = result
             yield (ChannelAction.YIELD, None)
 
 

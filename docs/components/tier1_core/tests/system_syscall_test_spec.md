@@ -62,7 +62,7 @@
 | SYS-80 | `WASI_FD_WRITE` | fd=1（stdout）、iovecが1件 | `fireball_call(0x80, fd, iovs_ptr, iovs_len, nwritten_ptr,...)` | `fireball://service/stdout/0`宛の`CMD_STREAM_WRITE_BUFFER`相当が呼ばれ、`nwritten_ptr`に書き込みバイト数が入り、`0`(errno)を返す | interface_wit.md |
 | SYS-81 | `WASI_FD_READ` | 実stdin相当のデータなし | `fireball_call(0x81,...)` | 0バイト読み取り(EOF)としてerrno `0`を返す | system_syscall.md (WASI) |
 | SYS-82 | `WASI_FD_CLOSE` | 任意のfd | `fireball_call(0x82, fd,...)` | `0`を返す | system_syscall.md (WASI) |
-| SYS-83 | `WASI_CLOCK_TIME_GET` | - | `fireball_call(0x83, clock_id, precision, time_ptr,...)` | `time_ptr`に単調増加するナノ秒値が書き込まれる | interface_wit.md /5.6 |
+| SYS-83 | `WASI_CLOCK_TIME_GET` | - | `fireball_call(0x83, clock_id, precision, time_ptr,...)` | `time_ptr`に単調増加するナノ秒値が書き込まれる | `hal_dispatch.md` 階層型 URI 命名規則 & WASI 0.3p IPC コマンド仕様 |
 | SYS-84 | `WASI_PROC_EXIT` | - | `fireball_call(0x84, exit_code,...)` | プロセス終了相当の状態変化（戻り値なし） | system_syscall.md (WASI) |
 | SYS-85 | `WASI_RANDOM_GET` | - | `fireball_call(0x85, buf_ptr, buf_len,...)` | `buf_ptr`に`buf_len`バイトのランダムデータが書き込まれ、`0`を返す | system_syscall.md (WASI) |
 

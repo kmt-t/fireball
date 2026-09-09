@@ -53,7 +53,7 @@ interface trap {
 /// GPIO・タイマー・バス・ストリーム・コンソール個別の WIT リソースは定義しない。
 /// HAL = WASI 0.3p であるため、`resolver.get-interface(uri)` で対象デバイス/サービスを
 /// 解決し、`acquire-buffer`/`release-buffer` で得た `hal-buffer-slice` に対して
-/// IPC コマンドID（`runtime_hal.md` §5.2 を正本とする）を発行することで、
+/// IPC コマンドID（`hal_dispatch.md` §5.2 を正本とする）を発行することで、
 /// あらゆる WASI 0.3p 相当の読み書き・バス転送・非同期通知（poll）を一本化して表現する。
 world fireball {
     import types;

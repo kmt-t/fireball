@@ -1,15 +1,15 @@
 # HAL 抽象化層（URI Resolver / トランスポート抽象） コンポーネント設計書 {VERIFY_LLM}
 <!-- evidence:
-     test: tests/runtime_hal_test_spec.md
+     test: tests/hal_dispatch_test_spec.md
 -->
 
-本コンポーネントは、Tier 3 の物理ドライバ実装 [`platform_driver.md`](docs/components/tier3_platform/platform_driver.md)（UART/SEGGER RTT 物理レジスタ操作、RSPパケットのバイト列エンコード/デコード）が実現すべき抽象契約（URI Resolver、コマンドプロトコル、ゼロコピー転送インターフェース）を定義する（`document_structure.md` §2.1-4 契約/実装分割パターン）。
+本コンポーネントは、Tier 3 の物理ドライバ実装 [`platform_driver.md`](docs/components/tier3_platform/platform_driver.md)（UART/SEGGER RTT 物理レジスタ操作、RSPパケットのバイト列エンコード/デコード）が実現すべき抽象契約（URI Resolver、コマンドプロトコル、ゼロコピー転送インターフェース）を定義する（`{META_ContractImplSplit}` 契約/実装分割パターン）。
 
 ## 1. コンセプト
 <!-- traceability: {IPCRouter} {URIAbstraction} {TypeSafeMessaging} {IPC_ZeroCopy} -->
-HAL (Hardware Abstraction Layer) は、COOS 上で稼働する独立したタスク（`hal_task`）として常駐し、物理ハードウェアおよび仮想ペリフェラルへのアクセスを抽象化して提供する。上位層（Runtime, Debugger, Guest 等）からの直接関数呼び出しは行わず、通信はすべて IPC ルータ（`ipc_router`）を介した CSP rendezvous メッセージパッシングによって行われる。ペリフェラル・ストリーム・GPIO 等は階層型 URI（`fireball://device/<driver-type>/<instance-id>`）経由で動的にバインド・解決される。
+HAL (Hardware Abstraction Layer) は、COOS 上で稼働する独立したタスク（`hal_task`）として常駐し、物理ハードウェアおよび仮想ペリフェラルへのアクセスを抽象化して提供する。**デバイス/サービスインスタンス 1 つにつき `hal_task` インスタンス 1 つが専用に対応する**（1 タスクは正確に 1 つの物理ドライバのみを所有する）。これは IPC ルータの「1 チャネル 1 待機者」制約（`{ADR_RendezvousChannel}`）に由来する契約であり、単一の共有タスクが複数の同種デバイスインスタンス（例: 物理 UART と、別登録されたコンソール出力ストリーム）を URI 単位で振り分けることはできない——受信側チャネルの選択はロール（IPC ルータの `Role`）でのみ行われ、メッセージ内の URI 情報では行われないためである。上位層（Runtime, Debugger, Guest 等）からの直接関数呼び出しは行わず、通信はすべて IPC ルータ（`ipc_router`）を介した CSP rendezvous メッセージパッシングによって行われる。ペリフェラル・ストリーム・GPIO 等は階層型 URI（`fireball://device/<driver-type>/<instance-id>`）経由で動的にバインド・解決され、解決されたインスタンスごとに専用ロール・専用チャネル・専用 `hal_task` が対応付けられる。
 
-HAL タスクは IPC ルータ（`ipc_router`）から WASI 0.3p ドライバ通信コマンド（`CMD_STREAM_*`, `CMD_CLOCK_*`, `CMD_GPIO_*`, `CMD_BUS_*`）を受信し、HALバッファプール（物理実体は Tier 3 の vMMIO/DYNAMIC 領域）のバッファスライス（`hal-buffer-slice`、本コンポーネントから見た不透明ハンドル）を介してゼロコピーで高速データ転送を実行する。 `{IPCRouter}` `{URIAbstraction}` `{TypeSafeMessaging}` `{IPC_ZeroCopy}`
+各 `hal_task` インスタンスは IPC ルータ（`ipc_router`）から自身が担当する 1 インスタンス宛ての WASI 0.3p ドライバ通信コマンド（`CMD_STREAM_*`, `CMD_CLOCK_*`, `CMD_GPIO_*`, `CMD_BUS_*`）を受信し、HALバッファプール（物理実体は Tier 3 の vMMIO/DYNAMIC 領域）のバッファスライス（`hal-buffer-slice`、本コンポーネントから見た不透明ハンドル）を介してゼロコピーで高速データ転送を実行する。 `{IPCRouter}` `{URIAbstraction}` `{TypeSafeMessaging}` `{IPC_ZeroCopy}`
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {IPCRouter} {URIAbstraction} {META_StaticDI} -->
@@ -24,25 +24,27 @@ HAL タスクは IPC ルータ（`ipc_router`）から WASI 0.3p ドライバ通
 ### 3.2 内部ブロック図
 ```mermaid
 graph TD
-    Client[Runtime / Guest / Debugger Task] -->|IPC send| IPCR[IPC Router]
-    IPCR -->|CSP Rendezvous| HALT[HAL Task: hal_task on COOS]
-    subgraph HALT [HAL Server Task: 抽象ディスパッチ]
-        HAL[HAL Dispatcher: URI Resolver]
-        HAL -.->|resolves via URI| Drivers[Tier3: platform_driver.md 物理ドライバ群]
-    end
+    Client[Runtime / Guest / Debugger Task] -->|resolver.get-interface URI| IPCR[IPC Router: URI Resolver]
+    IPCR -->|resolve URI to dedicated Role/Channel| Select{Role selection<br/>1 instance = 1 Role = 1 Channel}
+    Select -->|CSP Rendezvous| HT1["hal_task #1<br/>Role.HAL_UART"]
+    Select -->|CSP Rendezvous| HT2["hal_task #2<br/>Role.HAL_GPIO"]
+    Select -->|CSP Rendezvous| HT3["hal_task #N<br/>Role.HAL_*"]
+    HT1 -->|command dispatch, no IPC| D1[Tier3: platform_driver.md<br/>UART Driver]
+    HT2 -->|command dispatch, no IPC| D2[Tier3: platform_driver.md<br/>GPIO Driver]
+    HT3 -->|command dispatch, no IPC| D3[Tier3: platform_driver.md<br/>他物理ドライバ]
 ```
 
 ### 3.3 主要なクラス・構造体・配列・定数
 
 #### HAL サーバタスク（hal_task）
 <!-- traceability: {META_3TierSeparation} {IPCRouter} -->
-COOS 上で独立して実行される協調タスク。上位層からの直接関数呼び出しを禁止し、IPC ルータ（`fireball://device/...`）経由で CSP rendezvous 受信ループ（`ipc.recv`）を実行してコマンドをディスパッチする契約。
+COOS 上で独立して実行される協調タスク。**1 タスクインスタンスにつき 1 物理ドライバインスタンスのみを所有する**契約であり、複数デバイスをまたぐ URI ベースのディスパッチテーブルを内部に持たない。上位層からの直接関数呼び出しを禁止し、IPC ルータ（自身に割り当てられた専用ロール宛てのチャネル）経由で CSP rendezvous 受信ループ（`ipc.recv`）を実行してコマンドをディスパッチする契約。ドライバから物理ハードウェアへのアクセスは通常のメソッド呼び出しであり、二段目の IPC は発生しない。
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| タスクコルーチン | COOS スケジューラ上で IPC 受信を待機・処理する実行体 | コルーチン | 単一タスクスロット |
-| ドライバマップ | 階層 URI に対応するドライバインスタンス | 配列/FlatMap | 固定長 |
-| セキュリティロール | IPC ルータで検証される権限ロール | ロール | `Role.PLATFORM_HAL` |
+| タスクコルーチン | COOS スケジューラ上で、自インスタンス宛ての IPC 受信を待機・処理する実行体 | コルーチン | 1 デバイス/サービスインスタンスにつき 1 タスクスロット |
+| 所有ドライバ | このタスクが専有する単一の物理ドライバインスタンス（Tier 3 の [`platform_driver.md`](docs/components/tier3_platform/platform_driver.md) を正本とする） | ドライバインスタンス | 1 タスク = 1 ドライバ（1:1） |
+| セキュリティロール | IPC ルータで検証される、このインスタンス専用の権限ロール | ロール | `Role.HAL_*`（デバイス/サービスインスタンスごとに個別のロール値。例: `Role.HAL_UART`, `Role.HAL_GPIO`） |
 
 #### HAL構成（hal_config、契約レベル定数）
 <!-- traceability: {META_ConfigurableSystem} -->
@@ -58,7 +60,7 @@ HAL全体の制限値を定義する。物理値は Tier 3 で確定される。
 
 ### 4.1 コマンドルーティング（契約）
 <!-- traceability: {TaskPollInterruptFlag} {GLOBAL_InterruptWakeup} -->
-IPCで受信したコマンド（read/write/control）を、デバイスIDに基づいて適切なドライバへ振り分ける抽象ディスパッチ契約を定義する。物理ドライバのディスパッチ実装は Tier 3 を正本とする。
+デバイスインスタンスへの振り分けは、本コンポーネントの内部ディスパッチではなく IPC ルータの Stage 1（URI 解決）で完結する契約とする——`resolver.get-interface(uri)` が URI を専用ロールへ解決し、専用チャネル経由で対応する `hal_task` インスタンスへ直接ランデブーするため、`hal_task` 自身がコマンドに埋め込まれたデバイス ID を見て複数ドライバから振り分ける処理を持つ必要はない。`hal_task` が担うのは、受信した `read`/`write`/`control` コマンドを自身が専有する単一の物理ドライバへそのまま委譲する契約のみである。物理ドライバへの委譲実装は Tier 3 を正本とする。
 
 割り込み通知の push/pull 両経路（ISR → `notify_interrupt` → キュードレイン、および Safepoint での `vsoc_context.interrupt_flags` 確認）の抽象的な役割分担は `{TaskPollInterruptFlag}` `{GLOBAL_InterruptWakeup}` を正本とする。物理割り込みハンドラの実装は Tier 3 [`platform_driver.md`](docs/components/tier3_platform/platform_driver.md) を参照。
 
@@ -160,4 +162,4 @@ Fireball ではハードウェア制御のプリミティブを WASI 0.3p のリ
 - **ゼロコピー転送安全性**: 生ポインタ渡しを行わず、HALバッファハンドル（`hal-buf-id` / `hal-buffer-slice`）による境界検証を経由すること（`HAL-02`, `HAL-06`）。物理検証は Tier 3 を正本とする。
 
 ### 7.2 テスト仕様書との連携
-本コンポーネントのテストケースは、[`runtime_hal_test_spec.md`](docs/components/tier2_runtime/tests/runtime_hal_test_spec.md) を正本として定義する。物理ドライバ実装のテストケース（HAL-01〜HAL-10, HAL-GOTCHA-01〜03）は [`platform_driver_test_spec.md`](docs/components/tier3_platform/tests/platform_driver_test_spec.md) を参照。
+本コンポーネントのテストケースは、[`hal_dispatch_test_spec.md`](docs/components/tier2_runtime/tests/hal_dispatch_test_spec.md) を正本として定義する。物理ドライバ実装のテストケース（HAL-01〜HAL-10, HAL-GOTCHA-01〜03）は [`platform_driver_test_spec.md`](docs/components/tier3_platform/tests/platform_driver_test_spec.md) を参照。

@@ -4,15 +4,15 @@
      test: tests/platform_driver_test_spec.md
 -->
 
-本コンポーネントは、Tier 2 の抽象契約 [`runtime_hal.md`](docs/components/tier2_runtime/runtime_hal.md)（URI Resolver、コマンドプロトコル、ゼロコピー転送インターフェース）の物理ドライバ実装である。契約と実装の記述に食い違いがあれば `runtime_hal.md` を正とする（`document_structure.md` §2.1-4 契約/実装分割パターン）。
+本コンポーネントは、Tier 2 の抽象契約 [`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md)（URI Resolver、コマンドプロトコル、ゼロコピー転送インターフェース）の物理ドライバ実装である。契約と実装の記述に食い違いがあれば `hal_dispatch.md` を正とする（`{META_ContractImplSplit}` 契約/実装分割パターン）。
 
 ## 1. コンセプト
 <!-- traceability: {Challenge_InterruptSafety} {TaskPollInterruptFlag} {RSPMinimalSet} {Fast_Path_GPIO} -->
-[`runtime_hal.md`](docs/components/tier2_runtime/runtime_hal.md) が定義する `hal_task` コマンドディスパッチ契約を実現するため、UART・SEGGER RTT・GPIO・I2C・SPI・Timer の物理レジスタ操作ドライバ群を実装する。物理割り込みはフラグ通知とタスクウェイクアップによって安全に処理される。また、デバッグ用の GDB Remote Serial Protocol (RSP) のパケット物理エンコード/デコード（RSP Parser）を担い、解析済みデバッグコマンドを `debug_command_queue` へ供給する。 `{Challenge_InterruptSafety}` `{TaskPollInterruptFlag}` `{RSPMinimalSet}` `{Fast_Path_GPIO}`
+[`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) が定義する `hal_task` コマンドディスパッチ契約を実現するため、UART・SEGGER RTT・GPIO・I2C・SPI・Timer の物理レジスタ操作ドライバ群を実装する。物理割り込みはフラグ通知とタスクウェイクアップによって安全に処理される。また、デバッグ用の GDB Remote Serial Protocol (RSP) のパケット物理エンコード/デコード（RSP Parser）を担い、解析済みデバッグコマンドを `debug_command_queue` へ供給する。 `{Challenge_InterruptSafety}` `{TaskPollInterruptFlag}` `{RSPMinimalSet}` `{Fast_Path_GPIO}`
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->
-本コンポーネントは **Tier 3 (プラットフォーム / リーフコンポーネント: Leaf Component)** に属し、ハードウェアとハイパーバイザの物理境界を抽象化する物理ドライバ実装を担当する。抽象化層（URI Resolver、コマンドプロトコル）は Tier 2 の [`runtime_hal.md`](docs/components/tier2_runtime/runtime_hal.md) が担う。 `{META_3TierSeparation}`
+本コンポーネントは **Tier 3 (プラットフォーム / リーフコンポーネント: Leaf Component)** に属し、ハードウェアとハイパーバイザの物理境界を抽象化する物理ドライバ実装を担当する。抽象化層（URI Resolver、コマンドプロトコル）は Tier 2 の [`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) が担う。 `{META_3TierSeparation}`
 
 ## 3. 静的モデル
 
@@ -24,17 +24,20 @@
 ### 3.2 内部ブロック図
 ```mermaid
 graph TD
-    HALT["runtime_hal.md: HAL Dispatcher (Tier2)"] -->|resolved URI| HAL[Physical Driver Layer]
-    HAL --> UART[UART Driver: fireball://device/uart/0]
-    HAL --> RTT[RTT Driver: fireball://device/rtt/0]
-    HAL --> GPIO[GPIO Driver: fireball://device/gpio/0]
-    HAL --> I2C[I2C Driver: fireball://device/i2c/0]
-    HAL --> SPI[SPI Driver: fireball://device/spi/0]
-    HAL --> Timer[Timer Driver: fireball://device/timer/0]
-    HAL --> RSP[RSP Parser]
+    IPCR["Tier1: ipc_router (URI resolved to dedicated Role/Channel)"]
+    IPCR -->|CSP Rendezvous| T1["hal_task: Role.HAL_UART"] --> UART[UART Driver: fireball://device/uart/0]
+    IPCR -->|CSP Rendezvous| T2["hal_task: dedicated Role"] --> RTT[RTT Driver: fireball://device/rtt/0]
+    IPCR -->|CSP Rendezvous| T3["hal_task: Role.HAL_GPIO"] --> GPIO[GPIO Driver: fireball://device/gpio/0]
+    IPCR -->|CSP Rendezvous| T4["hal_task: Role.HAL_I2C"] --> I2C[I2C Driver: fireball://device/i2c/0]
+    IPCR -->|CSP Rendezvous| T5["hal_task: Role.HAL_SPI"] --> SPI[SPI Driver: fireball://device/spi/0]
+    IPCR -->|CSP Rendezvous| T6["hal_task: Role.HAL_TIMER"] --> Timer[Timer Driver: fireball://device/timer/0]
+    UART --> RSP[RSP Parser]
+    RTT --> RSP
     RSP --> Queue[debug_command_queue]
     Queue --> Debugger[Debugger Task]
 ```
+
+各 `hal_task` インスタンスは Tier 2 [`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) が定義する契約に従い、1 インスタンスにつき 1 物理ドライバのみを専有する（1 タスクが複数デバイスの URI を見て振り分けることはない）。RTT はデバッグトランスポートの代替経路であり、UART 同様 RSP Parser へ接続される（`{RSP_Transport_Selectable}`）。
 
 ### 3.3 主要なクラス・構造体・配列・定数
 
@@ -52,7 +55,7 @@ graph TD
 
 #### HAL構成（hal_config、物理値）
 <!-- traceability: {META_ConfigurableSystem} -->
-`runtime_hal.md` の契約上限を物理的な既定値として確定する。 `{META_ConfigurableSystem}`
+`hal_dispatch.md` の契約上限を物理的な既定値として確定する。 `{META_ConfigurableSystem}`
 
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
@@ -141,7 +144,7 @@ sequenceDiagram
 
 ### 5.1 物理実装の勘所・不変条件
 <!-- traceability: {HAL_Interface} {IPC_ZeroCopy} -->
-[`runtime_hal.md`](docs/components/tier2_runtime/runtime_hal.md) §5.1 で定義された契約API（`read`, `write`, `transfer`, `acquire_buffer`）を、以下の物理不変条件に従って実装する。
+[`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) の `{HAL_Interface}` で定義された契約API（`read`, `write`, `transfer`, `acquire_buffer`）を、以下の物理不変条件に従って実装する。
 
 **静的固定長バッファプールの境界厳格検査 (`HAL-GOTCHA-01`)**:
 `acquire_buffer`（`HalBufferPool`）は、固定サイズスロット（`FB_CONF_HAL_BUFFER_SIZE` = 256 バイト）の静的プールからバッファを切り出す。
@@ -176,4 +179,4 @@ UART および SEGGER RTT の双方において同一の RSP パケットエン�
 - **固定長スロット境界保護**: 要求サイズが 256 バイトを超える場合の即時拒絶（`HAL-GOTCHA-01`）。
 
 ### 7.2 テスト仕様書との連携
-本コンポーネントのテストケース（HAL-01〜HAL-10, HAL-GOTCHA-01〜03）は、[`platform_driver_test_spec.md`](docs/components/tier3_platform/tests/platform_driver_test_spec.md) を正本として定義する。契約レベルのテストは [`runtime_hal_test_spec.md`](docs/components/tier2_runtime/tests/runtime_hal_test_spec.md) を参照。
+本コンポーネントのテストケース（HAL-01〜HAL-10, HAL-GOTCHA-01〜03）は、[`platform_driver_test_spec.md`](docs/components/tier3_platform/tests/platform_driver_test_spec.md) を正本として定義する。契約レベルのテストは [`hal_dispatch_test_spec.md`](docs/components/tier2_runtime/tests/hal_dispatch_test_spec.md) を参照。

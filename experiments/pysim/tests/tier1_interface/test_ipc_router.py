@@ -76,15 +76,15 @@ def test_ipc_01_uri_lookup_and_permission_matrix():
     """IPC-01: Service URI lookup and role-based access control."""
     sched = Scheduler()
     router = IPCRouter(sched)
-    entry = router.find_service("fireball://hal/gpio/0")
+    entry = router.find_service("fireball://device/gpio/0")
     assert entry is not None
-    assert entry.role == Role.PLATFORM_HAL
+    assert entry.role == Role.HAL_GPIO
 
     sender_id = sched.spawn("sender", role=Role.RUNTIME)
     sched.current_task = sched.get_task(sender_id)
 
-    # RUNTIME has permission to send to PLATFORM_HAL
-    status1, ch1 = router.lookup("fireball://hal/gpio/0")
+    # RUNTIME has permission to send to HAL_GPIO
+    status1, ch1 = router.lookup("fireball://device/gpio/0")
     assert status1 == IpcStatus.COMPLETED and ch1 is not None
 
     msg1 = IPCMessage.from_entries([(_KEY_CMD, _CMD_PIN_HIGH)])
@@ -92,15 +92,15 @@ def test_ipc_01_uri_lookup_and_permission_matrix():
     assert next(gen) == (ChannelAction.BLOCK, None)
     assert msg1.ownership == OwnershipState.IN_FLIGHT
 
-    # PLATFORM_HAL has no outgoing edges at all (role matrix row is all-DENY).
-    hal_task_id = sched.spawn("hal_task", role=Role.PLATFORM_HAL)
+    # HAL_GPIO has no outgoing edges at all (role matrix row is all-DENY).
+    hal_task_id = sched.spawn("hal_task", role=Role.HAL_GPIO)
     sched.current_task = sched.get_task(hal_task_id)
 
-    status_bad, ch_bad = router.lookup("fireball://hal/gpio/0")
+    status_bad, ch_bad = router.lookup("fireball://device/gpio/0")
     assert status_bad == IpcStatus.ERR_PERMISSION_DENIED
     assert ch_bad is None
 
-    # Anti-spoofing verification: even if PLATFORM_HAL holds ch1 (from RUNTIME),
+    # Anti-spoofing verification: even if HAL_UART holds ch1 (from RUNTIME),
     # send() enforces TCB role check and denies transmission.
     msg2 = IPCMessage.from_entries([(_KEY_CMD, _CMD_PIN_HIGH)])
     gen_spoof = router.send(ch1, msg2)
@@ -131,7 +131,7 @@ def test_ipc_02_e2e_shared_block_transfer():
         sent: list[IpcStatus] = []
 
         def client_app_task():
-            status, ch = sysv.ipc.lookup("fireball://hal/gpio/0")
+            status, ch = sysv.ipc.lookup("fireball://device/gpio/0")
             assert status == IpcStatus.COMPLETED and ch is not None
             status, _ = yield from sysv.ipc.send(ch, msg)
             sent.append(status)
@@ -143,7 +143,7 @@ def test_ipc_02_e2e_shared_block_transfer():
             received.append(recv_msg)
 
         # Spawn receiver (task 1) then sender (task 2)
-        sysv.scheduler.spawn("gpio_receiver", gpio_receiver(), role=Role.PLATFORM_HAL)
+        sysv.scheduler.spawn("gpio_receiver", gpio_receiver(), role=Role.HAL_GPIO)
         sysv.scheduler.spawn("client_app", client_app_task(), role=Role.RUNTIME)
         sysv.scheduler.run_until_idle()
 
@@ -173,12 +173,12 @@ def test_ipc_03_send_failure_restores_owner():
             memory_manager=sysv.memory_manager,
             task_id=1,
         )
-        sender_id = sysv.scheduler.spawn("hal_sender", role=Role.PLATFORM_HAL)
+        sender_id = sysv.scheduler.spawn("hal_sender", role=Role.HAL_UART)
         sysv.scheduler.current_task = sysv.scheduler.get_task(sender_id)
 
-        # PLATFORM_HAL has no outgoing edges: rejected at Stage 2 before ever
+        # HAL_UART has no outgoing edges: rejected at Stage 2 before ever
         # touching a channel.
-        status, ch = sysv.ipc.lookup("fireball://hal/gpio/0")
+        status, ch = sysv.ipc.lookup("fireball://device/gpio/0")
         assert status == IpcStatus.ERR_PERMISSION_DENIED
         assert ch is None
         assert msg.ownership == OwnershipState.SENDER_OWNS
@@ -305,15 +305,15 @@ def test_ipc_06_router_create_channel_authorization():
     runtime_task_id = sched.spawn("runtime_task", role=Role.RUNTIME)
     sched.current_task = sched.get_task(runtime_task_id)
 
-    ch_hal = router.create_channel("fireball://hal/gpio/0")
-    assert ch_hal is not None, "RUNTIME -> PLATFORM_HAL must be allowed"
+    ch_hal = router.create_channel("fireball://device/gpio/0")
+    assert ch_hal is not None, "RUNTIME -> HAL_GPIO must be allowed"
 
-    # Task with Role.PLATFORM_HAL cannot open channel to DEBUGGER (DENIED)
-    hal_task_id = sched.spawn("hal_task", role=Role.PLATFORM_HAL)
+    # Task with Role.HAL_GPIO cannot open channel to DEBUGGER (DENIED)
+    hal_task_id = sched.spawn("hal_task", role=Role.HAL_GPIO)
     sched.current_task = sched.get_task(hal_task_id)
 
     ch_denied = router.create_channel("fireball://debugger/control")
-    assert ch_denied is None, "PLATFORM_HAL -> DEBUGGER must be denied by RBAC"
+    assert ch_denied is None, "HAL_GPIO -> DEBUGGER must be denied by RBAC"
 
     # Communication over the authorized channel
     msg = IPCMessage.from_entries([(1, 42)])
@@ -357,7 +357,7 @@ def test_ipc_07_message_in_shm_and_payload_shm_transfer():
         sent: list[IpcStatus] = []
 
         def client_sender():
-            status, ch = sysv.ipc.lookup("fireball://hal/gpio/0")
+            status, ch = sysv.ipc.lookup("fireball://device/gpio/0")
             assert status == IpcStatus.COMPLETED and ch is not None
             status, _ = yield from sysv.ipc.send(ch, msg)
             sent.append(status)
@@ -369,7 +369,7 @@ def test_ipc_07_message_in_shm_and_payload_shm_transfer():
             received.append(recv_msg)
 
         # Receiver is task 1, Sender is task 2
-        sysv.scheduler.spawn("hal_receiver", hal_receiver(), role=Role.PLATFORM_HAL)
+        sysv.scheduler.spawn("hal_receiver", hal_receiver(), role=Role.HAL_GPIO)
         sysv.scheduler.spawn("client_sender", client_sender(), role=Role.RUNTIME)
         sysv.scheduler.run_until_idle()
 

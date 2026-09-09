@@ -81,22 +81,35 @@ static_assert(FB_CONF_GUEST_RAM_SIZE == FB_CONF_TASK_HEAP_SIZE);
 
 ```cpp
 namespace fireball::config {
-    // ロール定義
+    // ロール定義: HAL_* の各ロールはデバイス/サービスインスタンス 1 つに専用のロール
+    // （＝専用チャネル）を割り当てる。「1 チャネル 1 待機者」制約下で複数の同種デバイス
+    // インスタンス（例: 物理UARTと、それとは別に登録されるコンソール出力ストリーム）を
+    // 区別するために必要である（{ADR_RendezvousChannel}）。
     enum class router_role : uint8_t {
         RUNTIME = 0,
         CORE_SERVICE = 1,
-        PLATFORM_HAL = 2,
-        DEBUGGER = 3,
-        COUNT = 4
+        HAL_UART = 2,
+        HAL_STDOUT = 3,
+        HAL_GPIO = 4,
+        HAL_TIMER = 5,
+        HAL_I2C = 6,
+        HAL_SPI = 7,
+        DEBUGGER = 8,
+        COUNT = 9
     };
 
-    // ロール間通信許可マトリクス (4x4 static bool table)
-    inline constexpr std::array<std::array<bool, 4>, 4> FB_CONF_ROUTER_ROLE_MATRIX {{
-        // Target:  RUNTIME, CORE_SERVICE, PLATFORM_HAL, DEBUGGER
-        /* RUNTIME   */ {false, true,  true,  false},
-        /* CORE_SERVICE */ {false, false, true,  false},
-        /* PLATFORM_HAL */ {false, false, false, false},
-        /* DEBUGGER     */ {false, true,  true,  false},
+    // ロール間通信許可マトリクス (9x9 static bool table)
+    inline constexpr std::array<std::array<bool, 9>, 9> FB_CONF_ROUTER_ROLE_MATRIX {{
+        // Target:            RUNTIME, CORE_SERVICE, HAL_UART, HAL_STDOUT, HAL_GPIO, HAL_TIMER, HAL_I2C, HAL_SPI, DEBUGGER
+        /* RUNTIME         */ {false,  true,         true,     true,       true,     true,      true,    true,    false},
+        /* CORE_SERVICE    */ {false,  false,        true,     true,       true,     true,      true,    true,    false},
+        /* HAL_UART        */ {false,  false,        false,    false,      false,    false,     false,   false,   false},
+        /* HAL_STDOUT      */ {false,  false,        false,    false,      false,    false,     false,   false,   false},
+        /* HAL_GPIO        */ {false,  false,        false,    false,      false,    false,     false,   false,   false},
+        /* HAL_TIMER       */ {false,  false,        false,    false,      false,    false,     false,   false,   false},
+        /* HAL_I2C         */ {false,  false,        false,    false,      false,    false,     false,   false,   false},
+        /* HAL_SPI         */ {false,  false,        false,    false,      false,    false,     false,   false,   false},
+        /* DEBUGGER        */ {false,  true,         true,     true,       true,     true,      true,    true,    false},
     }};
 }
 ```

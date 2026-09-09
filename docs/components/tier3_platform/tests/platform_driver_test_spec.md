@@ -5,7 +5,7 @@
 正本: [`platform_driver.md`](docs/components/tier3_platform/platform_driver.md)
 参考実装: なし
 
-物理割り込みのpush経路、GPIO直接ストアの高速パス、HALバッファプール(vMMIO/DYNAMIC)への物理マッピング、RSPトランスポートの物理エンコード/デコードを検証する。契約レベルの振る舞い（IPCルータ経由アクセス、hal-buf-id契約等）は [`runtime_hal_test_spec.md`](docs/components/tier2_runtime/tests/runtime_hal_test_spec.md) の責務とする。
+物理割り込みのpush経路、GPIO直接ストアの高速パス、HALバッファプール(vMMIO/DYNAMIC)への物理マッピング、RSPトランスポートの物理エンコード/デコードを検証する。契約レベルの振る舞い（IPCルータ経由アクセス、hal-buf-id契約等）は [`hal_dispatch_test_spec.md`](docs/components/tier2_runtime/tests/hal_dispatch_test_spec.md) の責務とする。
 
 ## 2. テストケース一覧
 
@@ -31,5 +31,5 @@
 
 ## 4. 未検証・スコープ外
 
-- 契約レベルの振る舞い（HAL-01, HAL-02, HAL-04, HAL-09, HAL-10）は [`runtime_hal_test_spec.md`](docs/components/tier2_runtime/tests/runtime_hal_test_spec.md) を参照。
+- 契約レベルの振る舞い（HAL-01, HAL-02, HAL-04, HAL-09, HAL-10）は [`hal_dispatch_test_spec.md`](docs/components/tier2_runtime/tests/hal_dispatch_test_spec.md) を参照。
 - 実ハードウェア（UART/RTT/GPIO/I2C）そのものの電気的特性。

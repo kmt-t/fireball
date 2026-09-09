@@ -84,12 +84,28 @@ class Role(IntEnum):
     not a string -- a fixed, small enum, so RBAC/channel lookup tables below
     can be plain constexpr-style arrays indexed by role value instead of a
     hash map.
+
+    Each HAL_* role is bound to exactly one device/service instance and one
+    dedicated HalTask (ipc_router.md {ISR_Safety} + "1 channel = 1 waiter"):
+    a single shared PLATFORM_HAL role could not distinguish which of several
+    same-type instances (two UART-shaped endpoints) a message was meant for,
+    since only the receiving task's role -- not the URI -- selects a channel.
+    Multiple URIs MAY alias the same role when they are genuinely the same
+    physical endpoint (e.g. a build where "console stdout" is wired directly
+    onto the UART device); the registry below is a URI -> Role table, not
+    1:1, so aliasing one role to several URIs is a matter of adding rows,
+    not restructuring this enum.
     """
 
     RUNTIME = 0
     CORE_SERVICE = 1
-    PLATFORM_HAL = 2
-    DEBUGGER = 3
+    HAL_UART = 2
+    HAL_STDOUT = 3
+    HAL_GPIO = 4
+    HAL_TIMER = 5
+    HAL_I2C = 6
+    HAL_SPI = 7
+    DEBUGGER = 8
 
 
 class ServiceDescriptor(tuple):
@@ -319,17 +335,24 @@ def kv_entries_to_bytes(entries: Sequence[tuple[int, int]], max_len: int | None 
 # array backing a flat_map_view<std::string_view, registry_entry>. URIs are
 # used as the flat_map_view key directly (no hashing): std::string_view
 # comparison is a bounded, allocation-free lexicographic compare.
+#
+# URI -> Role is many-to-one, not 1:1: "fireball://device/uart/0" and
+# "fireball://service/stdout/0" are kept on distinct HAL_UART/HAL_STDOUT
+# roles here because system.py currently wires them to two independent
+# DummyUartDriver instances (one raw device, one console-shaped service),
+# but a build that wires stdout directly onto the physical UART would alias
+# both URIs onto the same role/channel/task by adding a row, not by
+# restructuring Role.
 _SERVICE_TABLE: list[tuple[str, "ServiceDescriptor"]] = sorted(
     [
         ("fireball://core/coos/0", ServiceDescriptor(Role.CORE_SERVICE)),
         ("fireball://dbg/manager/0", ServiceDescriptor(Role.DEBUGGER)),
-        ("fireball://device/gpio/0", ServiceDescriptor(Role.PLATFORM_HAL)),
-        ("fireball://device/i2c/0", ServiceDescriptor(Role.PLATFORM_HAL)),
-        ("fireball://device/spi/0", ServiceDescriptor(Role.PLATFORM_HAL)),
-        ("fireball://device/timer/0", ServiceDescriptor(Role.PLATFORM_HAL)),
-        ("fireball://device/uart/0", ServiceDescriptor(Role.PLATFORM_HAL)),
-        ("fireball://hal/gpio/0", ServiceDescriptor(Role.PLATFORM_HAL)),
-        ("fireball://service/stdout/0", ServiceDescriptor(Role.PLATFORM_HAL)),
+        ("fireball://device/gpio/0", ServiceDescriptor(Role.HAL_GPIO)),
+        ("fireball://device/i2c/0", ServiceDescriptor(Role.HAL_I2C)),
+        ("fireball://device/spi/0", ServiceDescriptor(Role.HAL_SPI)),
+        ("fireball://device/timer/0", ServiceDescriptor(Role.HAL_TIMER)),
+        ("fireball://device/uart/0", ServiceDescriptor(Role.HAL_UART)),
+        ("fireball://service/stdout/0", ServiceDescriptor(Role.HAL_STDOUT)),
     ],
     key=lambda entry: entry[0],
 )
@@ -337,16 +360,38 @@ _SERVICE_TABLE: list[tuple[str, "ServiceDescriptor"]] = sorted(
 # Static ROM array owning the service table entries as (URI, ServiceDescriptor) pairs (AoS)
 _SERVICE_ENTRIES: tuple[tuple[str, "ServiceDescriptor"], ...] = tuple(_SERVICE_TABLE)
 
-# ipc_router.md §4.1.1's FB_CONF_ROUTER_ROLE_MATRIX (4x4 constexpr array,
+# ipc_router.md §4.1.1's FB_CONF_ROUTER_ROLE_MATRIX (9x9 constexpr array,
 # rows = sender, columns = target); every DENY cell is listed explicitly, per
 # the spec's own note that an absent cell must not be read as "undefined".
-# Row/column order matches Role's declaration order.
+# Row/column order matches Role's declaration order. Every HAL_* role is a
+# leaf (all-DENY row, never a sender), same as the single PLATFORM_HAL role
+# it replaces; RUNTIME/CORE_SERVICE/DEBUGGER's former single "-> PLATFORM_HAL"
+# ALLOW cell is now one ALLOW cell per HAL_* column, preserving the original
+# permission semantics exactly.
+_HAL_ROLES: tuple[Role, ...] = (
+    Role.HAL_UART,
+    Role.HAL_STDOUT,
+    Role.HAL_GPIO,
+    Role.HAL_TIMER,
+    Role.HAL_I2C,
+    Role.HAL_SPI,
+)
+
+
+def _role_row(allowed_targets: frozenset[Role]) -> tuple[bool, ...]:
+    return tuple(role in allowed_targets for role in Role)
+
+
 FB_CONF_ROUTER_ROLE_MATRIX: tuple[tuple[bool, ...], ...] = (
-    # to:  RUNTIME  CORE_SERVICE  PLATFORM_HAL  DEBUGGER
-    (False, True, True, False),  # from RUNTIME
-    (False, False, True, False),  # from CORE_SERVICE
-    (False, False, False, False),  # from PLATFORM_HAL
-    (False, True, True, False),  # from DEBUGGER
+    _role_row(frozenset({Role.CORE_SERVICE, *_HAL_ROLES})),  # from RUNTIME
+    _role_row(frozenset(_HAL_ROLES)),  # from CORE_SERVICE
+    _role_row(frozenset()),  # from HAL_UART (leaf)
+    _role_row(frozenset()),  # from HAL_STDOUT (leaf)
+    _role_row(frozenset()),  # from HAL_GPIO (leaf)
+    _role_row(frozenset()),  # from HAL_TIMER (leaf)
+    _role_row(frozenset()),  # from HAL_I2C (leaf)
+    _role_row(frozenset()),  # from HAL_SPI (leaf)
+    _role_row(frozenset({Role.CORE_SERVICE, *_HAL_ROLES})),  # from DEBUGGER
 )
 
 

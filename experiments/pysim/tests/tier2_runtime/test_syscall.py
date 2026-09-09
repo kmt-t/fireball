@@ -126,7 +126,7 @@ def test_syscall_06_ipc_lookup_send_recv():
     """
     sysv = System()
     try:
-        uri = "fireball://hal/gpio/0"
+        uri = "fireball://device/gpio/0"
         uri_bytes = uri.encode()
         payload = b"SET_GPIO"
 
@@ -137,7 +137,7 @@ def test_syscall_06_ipc_lookup_send_recv():
         handle = sysv.fireball_call(FbSyscallId.IPC_LOOKUP, 0, len(uri_bytes), 0, 0, 0, 0)
         assert handle > 0
 
-        # -- IPC_SEND: a PLATFORM_HAL receiver coroutine blocks first (nobody
+        # -- IPC_SEND: a HAL_GPIO receiver coroutine blocks first (nobody
         # is sending yet), then the guest's IPC_SEND completes the rendezvous
         # synchronously the instant it calls in.
         sent: list[IPCMessage] = []
@@ -146,7 +146,7 @@ def test_syscall_06_ipc_lookup_send_recv():
             status, msg = yield from sysv.ipc.recv()
             sent.append(msg)
 
-        recv_id = sysv.scheduler.spawn("hal_receiver", hal_receiver(), role=Role.PLATFORM_HAL)
+        recv_id = sysv.scheduler.spawn("hal_receiver", hal_receiver(), role=Role.HAL_GPIO)
         sysv.scheduler.run_until_idle()
         assert sysv.scheduler.get_task(recv_id).state.name == "SUSPENDED_CSP"
 

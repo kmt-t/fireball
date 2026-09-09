@@ -8,7 +8,7 @@
 <!-- traceability: {ThreadedInterpreter} {JIT_CopyAndPatch} {Wasm32Only} {META_ZeroCostAbstraction} -->
 本仕様書は、Fireball Hypervisor（インタープリタおよび Copy-and-Patch JIT コンパイラ）がサポートする **WASM MVP (v1, 32-bit)** 命令セットの物理マトリクスを定義する正本である。
 
-全バイトコードは Cortex-M33（ARMv8-M）ターゲットにおける `__fastcall` 継続渡し（CPS）4引数シグネチャ（`R0: ctx`, `R1: sp`, `R2: local_base`, `R3: tos`）ハンドラ、および JIT Stencil テンプレート（同じ `R0`〜`R3` の CPS 引数マッピングを共有し、加えて Callee-saved 任意割当プール `R4-R6, R8-R11`（`R4`: TOS 次段キャッシュ NOS、`R5`: NNOS、メモリアクセス時は `R8`/`R9` を `mem_base`/`mem_size` に固定）、`R12`: 一時スクラッチ）へのマッピングを一意に確定する。基本ブロック末尾では、スタックがプッシュされた場合に `TOS, NOS, NNOS` をスタック（`[R1, #offset]`）へフラッシュし、コンテキスト `R0` の `ip`（+0x00）および `sp_offset`（+0x0C）を同期する。 `{ThreadedInterpreter}` `{JIT_CopyAndPatch}` `{Wasm32Only}` `{META_ZeroCostAbstraction}`
+全バイトコードは Cortex-M33（ARMv8-M）ターゲットにおける `__fastcall` 継続渡し（CPS）4引数シグネチャ（`R0: ctx`, `R1: sp`, `R2: local_base`, `R3: tos`）ハンドラ、および JIT Stencil テンプレート（同じ `R0`〜`R3` の CPS 引数マッピングを共有し、トレース内部でも `R3` をそのまま TOS キャッシュとして流用する。加えて Callee-saved 任意割当プール `R4-R6, R8-R11`（`R4`: NOS（次段キャッシュ）、`R5`: NNOS（第3段キャッシュ）、`R6`: 一時スクラッチ、メモリアクセス時は `R8`/`R9` を `mem_base`/`mem_size` に固定）、`R12`: 一時スクラッチ）へのマッピングを一意に確定する。基本ブロック末尾では、スタックがプッシュされた場合に `TOS, NOS, NNOS` をスタック（`[R1, #offset]`）へフラッシュし、コンテキスト `R0` の `ip`（+0x00）および `sp_offset`（+0x0C）を同期する。 `{ThreadedInterpreter}` `{JIT_CopyAndPatch}` `{Wasm32Only}` `{META_ZeroCostAbstraction}`
 
 ---
 
@@ -39,7 +39,7 @@
 | `0x05` | `else` | `[] -> []` | 対応する end の直後へ無条件ジャンプ | あり (Unconditional Branch) | `B.W <end_label>` |
 | `0x0B` | `end` | `[] -> []` | `control_frame` をポップ | あり (Label Target) | スコープ終了ラベル |
 | `0x0C` | `br` | `[] -> []` | 指定深度のラベルへ無条件ジャンプ | あり (Branch) | `B.W <target_label>` |
-| `0x0D` | `br_if` | `[i32] -> []` | TOS $\ne 0$ ならラベルへジャンプ | あり (Branch Cond) | `CMP r4, #0; BNE.W <target>` |
+| `0x0D` | `br_if` | `[i32] -> []` | TOS $\ne 0$ ならラベルへジャンプ | あり (Branch Cond) | `CMP r3, #0; BNE.W <target>` |
 | `0x0E` | `br_table` | `[i32] -> []` | テーブルインデックス分岐 | あり (Jump Table) | `TBB` / `TBH` テーブル分岐 |
 | `0x10` | `call` | `[t1*] -> [t2*]`| `call_frame` を積んで関数呼出 | フォールバック (Runtime API / Interp Fallback) | JIT 複雑度低減のため `vsoc_call_function` へ委譲 |
 | `0x11` | `call_indirect`| `[t1*, i32] -> [t2*]`| 関数テーブル照合 $\to$ 間接呼出 | フォールバック (Runtime API / Interp Fallback) | 型シグネチャ照合＋ `vsoc_call_indirect` へ委譲 |
@@ -61,11 +61,11 @@
 
 | Opcode | 命令名 | スタック遷移 | インタープリタ実装 | JIT Stencil 提供 | 物理動作・備考 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `0x20` | `local.get` | `[] -> [t]` | ローカル配列 `[local_base + idx]` をロード | あり (Direct LDR / Mov) | `LDR r4, [r2, #offset]`（`r2=local_base` 起点の静的オフセット畳み込み——`{ContextPointerRegister}` `{JIT_RegisterMapping}` 参照） |
-| `0x21` | `local.set` | `[t] -> []` | ローカル配列 `[local_base + idx]` へストア | あり (Direct STR / Mov) | `STR r4, [r2, #offset]` |
-| `0x22` | `local.tee` | `[t] -> [t]` | ローカルへ保存しつつスタックに残す | あり (STR & Keep) | `STR r4, [r2, #offset]` (TOS維持) |
-| `0x23` | `global.get` | `[] -> [t]` | グローバル配列 `[execution_context.globals_base + idx]` ロード | あり (LDR via globals_base) | `LDR.W r12, [r0, #0x30]; LDR.W r4, [r12, #glob_off]`（`{ExecutionContext_Layout}` 参照） |
-| `0x24` | `global.set` | `[t] -> []` | グローバル配列へストア | あり (STR via globals_base) | `LDR.W r12, [r0, #0x30]; STR.W r4, [r12, #glob_off]` |
+| `0x20` | `local.get` | `[] -> [t]` | ローカル配列 `[local_base + idx]` をロード | あり (Direct LDR / Mov) | `LDR r3, [r2, #offset]`（`r2=local_base` 起点の静的オフセット畳み込み——`{ContextPointerRegister}` `{JIT_RegisterMapping}` 参照） |
+| `0x21` | `local.set` | `[t] -> []` | ローカル配列 `[local_base + idx]` へストア | あり (Direct STR / Mov) | `STR r3, [r2, #offset]` |
+| `0x22` | `local.tee` | `[t] -> [t]` | ローカルへ保存しつつスタックに残す | あり (STR & Keep) | `STR r3, [r2, #offset]` (TOS維持) |
+| `0x23` | `global.get` | `[] -> [t]` | グローバル配列 `[execution_context.globals_base + idx]` ロード | あり (LDR via globals_base) | `LDR.W r12, [r0, #0x30]; LDR.W r3, [r12, #glob_off]`（`{ExecutionContext_Layout}` 参照） |
+| `0x24` | `global.set` | `[t] -> []` | グローバル配列へストア | あり (STR via globals_base) | `LDR.W r12, [r0, #0x30]; STR.W r3, [r12, #glob_off]` |
 
 ---
 
@@ -115,6 +115,8 @@
 | `0x6C` | `i32.mul` | `[i32, i32] -> [i32]` | 乗算 | あり (MUL) | `MUL r4, r5, r4` |
 | `0x6D` | `i32.div_s` | `[i32, i32] -> [i32]` | 符号付き除算 (0除算トラップ)| あり (SDIV) | 0判定 $\to$ `SDIV r4, r5, r4` |
 | `0x6E` | `i32.div_u` | `[i32, i32] -> [i32]` | 符号なし除算 (0除算トラップ)| あり (UDIV) | 0判定 $\to$ `UDIV r4, r5, r4` |
+| `0x6F` | `i32.rem_s` | `[i32, i32] -> [i32]` | 符号付き剰余 (0除算トラップ)| あり (SDIV & MLS) | 0判定 $\to$ `SDIV r12, r5, r4; MLS r4, r12, r4, r5`（`JITC-GOTCHA-06`） |
+| `0x70` | `i32.rem_u` | `[i32, i32] -> [i32]` | 符号なし剰余 (0除算トラップ)| あり (UDIV & MLS) | 0判定 $\to$ `UDIV r12, r5, r4; MLS r4, r12, r4, r5`（`JITC-GOTCHA-06`） |
 | `0x71` | `i32.and` | `[i32, i32] -> [i32]` | ビット論理積 | あり (ANDS / AND) | `ANDS r4, r5, r4` |
 | `0x72` | `i32.or` | `[i32, i32] -> [i32]` | ビット論理和 | あり (ORRS / ORR) | `ORRS r4, r5, r4` |
 | `0x73` | `i32.xor` | `[i32, i32] -> [i32]` | ビット排他論理和 | あり (EORS / EOR) | `EORS r4, r5, r4` |
@@ -135,8 +137,8 @@ Fireball では、これらの命令をインライン展開で肥大化させ�
 
 | Opcode 群 | カテゴリ / 代表命令名 | スタック遷移 | インタープリタ実装 | JIT Stencil 方針 (`{JIT_RuntimeAPI_Fallback}`) | 物理動作・Libgcc 連携 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| `0x79`〜`0x8A` | **i64 算術・論理・シフト** (`i64.add`, `i64.sub`, `i64.mul`, `i64.div_s/u`, `i64.rem_s/u`, `i64.shl`, `i64.shr_s/u`, `i64.rotl/r`) | `[i64, i64] -> [i64]` | C++ `int64_t` / `libgcc` 呼び出し | ランタイムヘルパー呼び出し (`fireball_rt_i64_*`) | `__divdi3`, `__udivdi3`, `__moddi3`, `__umoddi3`, `__ashldi3` 等の呼出 |
-| `0x51`〜`0x5A` | **i64 比較命令** (`i64.eqz`, `i64.eq`, `i64.ne`, `i64.lt_s/u`, `i64.gt_s/u`, `i64.le_s/u`, `i64.ge_s/u`) | `[i64, i64] -> [i32]` | 64-bit 比較ハンドラ | ランタイムヘルパー呼び出し (`fireball_rt_i64_cmp`) | 上位・下位 32-bit ワード順次比較 |
+| `0x79`〜`0x8A` | **i64 算術・論理・シフト** (`i64.clz`, `i64.ctz`, `i64.popcnt`, `i64.add`, `i64.sub`, `i64.mul`, `i64.div_s/u`, `i64.rem_s/u`, `i64.and/or/xor`, `i64.shl`, `i64.shr_s/u`, `i64.rotl/r`) | `[i64, i64] -> [i64]` | C++ `int64_t` / `libgcc` 呼び出し | ランタイムヘルパー呼び出し (`fireball_rt_i64_*`) | `__divdi3`, `__udivdi3`, `__moddi3`, `__umoddi3`, `__ashldi3` 等の呼出 |
+| `0x50`〜`0x5A` | **i64 比較命令** (`i64.eqz`, `i64.eq`, `i64.ne`, `i64.lt_s/u`, `i64.gt_s/u`, `i64.le_s/u`, `i64.ge_s/u`) | `[i64, i64] -> [i32]` | 64-bit 比較ハンドラ | ランタイムヘルパー呼び出し (`fireball_rt_i64_cmp`) | 上位・下位 32-bit ワード順次比較 |
 | `0x8B`〜`0x98` | **f32 単精度浮動小数点** (`f32.add`, `f32.sub`, `f32.mul`, `f32.div`, `f32.sqrt`, `f32.min`, `f32.max`, `f32.ceil/floor/trunc/nearest`) | `[f32, f32] -> [f32]` | C++ `float` / ハードウェア FPU / soft-float | FPU 命令またはランタイムヘルパー | FPU 搭載時は単精度命令、非搭載時は `libgcc` soft-float |
 | `0x99`〜`0xA6` | **f64 倍精度浮動小数点** (`f64.add`, `f64.sub`, `f64.mul`, `f64.div`, `f64.sqrt`, `f64.min`, `f64.max`, `f64.ceil/floor/trunc/nearest`) | `[f64, f64] -> [f64]` | C++ `double` / `libgcc` soft-float | ランタイムヘルパー呼び出し (`fireball_rt_f64_*`) | `__adddf3`, `__subdf3`, `__muldf3`, `__divdf3` 等の呼出 |
 | `0x5B`〜`0x66` | **f32/f64 浮動小数点比較** (`f32/f64.eq`, `ne`, `lt`, `gt`, `le`, `ge`) | `[f*, f*] -> [i32]` | IEEE 754 準拠比較 | FPU 比較またはランタイムヘルパー | `__eqdf2`, `__ltdf2`, `__gtdf2` 等の呼出 |

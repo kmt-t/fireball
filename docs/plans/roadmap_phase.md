@@ -20,7 +20,7 @@
 - **C++ 実装着手（Phase 1）前の必須要件**:
   1. シミュレータ（`experiments/pysim`）のコード品質向上、堅牢化、および全ユニットテストスイートの高信頼化
   2. 実装の勘所（Gotchas）の網羅的抽出とテスト仕様書（`tests/*_test_spec.md`）へのフィードバック完了
-  3. 物理リソース（RAM 32KB / ROM 96KB）のバイト単位の再見積もりと整合性検証 `{Resource_Estimation_Model}`
+  3. 物理リソース（最小構成 RAM 32KB / ROM 96KB）のバイト単位の再見積もりと整合性検証 `{Resource_Estimation_Model}`
   4. C++23 ヘッダ（`inc/**/*.hxx`）における構造体メモリレイアウト、アライメント、constexpr 設計、POD ハーネス設計の確定
   5. 人間（オーナー/アーキテクト）による最終レビューおよびフェーズ移行の GO 判定
 
@@ -35,7 +35,7 @@
 | **Step 0: Bonsai Design & Documentation** | 静的・動的設計ペアリング、自然言語仕様徹底、Mermaid動的図解（シーケンス図／アクティビティ図）、ルール体系刷新 | **DONE** |
 | **Step 1: Early Validation** | 全16コンセプトコード（`Any`完全排除）、テスト仕様書、pyModelChecking形式検証（CTL論理式＋`guards=False`変異検査） | **DONE** |
 | **Step 2: Reference Simulation & Gotchas Feedback** | `experiments/pysim` シミュレータコードの品質向上・リファクタリング、未検証エッジケース・Gotchasの抽出、テスト仕様書およびユニットテストスイートへの還元 | **進行中 (ACTIVE)** |
-| **Step 2.4: Resource Budget & Header Review** | 物理リソース（RAM 32KB / ROM 128KB）再見積もり（[`resource_budget_estimation.md`](docs/architecture/resource_budget_estimation.md)）・C++23ヘッダレイアウト確認 | **待機中** |
+| **Step 2.4: Resource Budget & Header Review** | 物理リソース（最小構成 RAM 32KB / ROM 96KB）再見積もり（[`resource_budget_estimation.md`](docs/architecture/resource_budget_estimation.md)）・C++23ヘッダレイアウト確認 | **待機中** |
 | **Step 2.5: Gate Review & Go Decision** | オーナー（人間）による最終品質レビュー・Freeze・Phase 1 GO判定 | **待機中** |
 
 ---
@@ -55,7 +55,7 @@
   - バリデータ (V1〜V6) `{LightweightVerifier}`
   - 不正バイナリ検証失敗時のバンプポインタ完全ロールバック
 - **Phase 1.2: WASM Stackless Fast Interpreter (`runtime_interpreter`)**
-  - `execution_context` & 統合スタック（ARTスタイル） `{ContextPointerRegister}`
+  - `execution_context` & 独立3バッファスタック（`OperandStack`/`LocalStack`/`control_frame`） `{ContextPointerRegister}`
   - `__fastcall` CPS 4引数（`[[clang::musttail]]`）スレッド化ディスパッチャ `{ThreadedInterpreter}`
   - 全コア命令ハンドラ（算術・制御・メモリ境界トラップ） `{MemoryBoundaryCheck}`
   - 分岐脱出時のフレームプルーニングと TOS レジスタ復元
@@ -77,7 +77,7 @@
 - **COOS カーネル**: スタックレス C++20 コルーチンスケジューラ、対称ハンドオフ (`os_scheduler.hxx`, `os_coos.hxx`) `{GLOBAL_UseCpp20Coroutine}`
 - **IPC ルータ**: 3段階ルーティング、ゼロコピー CSP チャネル & RAII 所有権移譲 (`ipc_router.hxx`) `{CSP_Handoff}`
 - **vMMIO コントローラ**: 多段ダイレクトデコードページテーブル & ソフトウェア TLB (`runtime_vmmio.hxx`) `{FastAddressCheck}`
-- **HAL & WASI ドライバ**: GPIO / I2C / SPI / Timer / WASI Preview 1、`HalBufferPool` (`runtime_hal.hxx`, `platform_driver.hxx`, `platform_wasi.hxx`)
+- **HAL & WASI ドライバ**: GPIO / I2C / SPI / Timer / WASI Preview 1、`HalBufferPool` (`hal_dispatch.hxx`, `platform_driver.hxx`, `platform_wasi.hxx`)
 - **GDB Server**: GDB リモートシリアルプロトコル（RSP）デバッガ、メモリ書き換え時 JIT キャッシュフラッシュ (`runtime_debugger.hxx`)
 
 ---
@@ -87,7 +87,7 @@
 実機ターゲットボード移植と最終検証。
 
 - **ターゲットボード移植**: ARM Cortex-M33 (nRF5340 / STM32U5 / micro:bit v2 / Zephyr OS)
-- **実機性能・リアルタイム性評価**: sub-µs 割り込み応答、64KB RAM 適合、CoreMark 測定
+- **実機性能・リアルタイム性評価**: sub-µs 割り込み応答、想定構成 64KB RAM 適合、CoreMark 測定
 
 ---
 

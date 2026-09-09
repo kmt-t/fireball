@@ -5,7 +5,7 @@
 <!-- traceability: {Resource_Estimation_Model} {Size_15KLOC} {GLOBAL_StrictMemoryLimit} {ConsolidatedHeap} {ROMParsing} {META_ZeroCostAbstraction} -->
 本ドキュメントは、Python リファレンスシミュレータ（`experiments/pysim`）の検証結果および各コンポーネントのアルゴリズムに基づき、Clang 17+ 組み込み C++（静的配置、ゼロ動的アロケーション、AoS `flat_map_view`、`[[clang::musttail]]`）へ本実装した際の**実装規模（LOC）**および**物理リソース予算（ROM / RAM）**の厳密な見積もりを定義するアーキテクチャ仕様書である。 `{Resource_Estimation_Model}`
 
-Phase 0 の「Step 2.4: 物理リソース予算の厳密な再見積もり」における正本ドキュメントとして、ROM（`.rodata` / `.text`）に配置可能な不変データと、RAM（SRAM / `.data` / `.bss`）に配置すべき可変状態・バッファ・スタックを厳密に区別して算出する。
+`backlog_list.md` の物理リソース予算の厳密な再見積もりタスクにおける正本ドキュメントとして、ROM（`.rodata` / `.text`）に配置可能な不変データと、RAM（SRAM / `.data` / `.bss`）に配置すべき可変状態・バッファ・スタックを厳密に区別して算出する。
 
 ---
 
@@ -26,7 +26,7 @@ Python シミュレータ（`experiments/pysim`）の実装行数（実測 12,58
 | - `system_logging` | 192 | ~300 | 辞書参照リングバッファ、アイドル時 DMA フラッシュフック |
 | - `system_syscall` | (wasi/hal連携) | ~600 | `fireball_call` トラップハンドラ、引数レジスタ直接マッピング |
 | **Tier 1 Interface** | **582** | **~850** | |
-| - `ipc_router` | 582 | ~850 | URI レジストリ（ROM AoS FlatMap）、4x4 RBAC マトリックス、所有権移譲（Revoke/Grant） |
+| - `ipc_router` | 582 | ~850 | URI レジストリ（ROM AoS FlatMap）、9x9 RBAC マトリックス、所有権移譲（Revoke/Grant） |
 | **Tier 2 Runtime (vSoC)** | **6,552** | **~7,200** | |
 | - `runtime_loader` | 1,001 | ~1,100 | Zero-Copy ROM パーサー、128B `OpcodeBenefitTable`、`JITCandidateBitmap` スコアラー |
 | - `runtime_interpreter` | 1,948 | ~2,100 | CPS 継続渡し (`[[clang::musttail]]`)、テーブルディスパッチ、非候補 touch バイパス |
@@ -41,7 +41,7 @@ Python シミュレータ（`experiments/pysim`）の実装行数（実測 12,58
 | - JIT コードキャッシュ代謝 | 197 | ~300 | 3面世代交代（Active/Warm/Oldest）、Oldest限定昇格、MPU $W \oplus X$ 制御 |
 | **Tier 3 Platform & HAL** | **2,109** | **~1,800** | |
 | - `system_memory` / `runtime_memory` | 737 | ~700 | 統合物理プール（ConsolidatedHeap）、静的パーティショニング、SHM マネージャ |
-| - `runtime_hal` / `platform_driver` | 611 | ~600 | 協調 HAL タスク、UART/RTT/GPIO/I2C/SPI ドライバ、ISR リングバッファ |
+| - `hal_dispatch` / `platform_driver` | 611 | ~600 | 協調 HAL タスク、UART/RTT/GPIO/I2C/SPI ドライバ、ISR リングバッファ |
 | - WASI Preview 1 Adapter | 760 | ~500 | `fd_write`, `fd_read`, `clock_time_get` 等の薄い HAL ラッパー |
 | **合計** | **12,580** | **~14,500 LOC** | **`{Size_15KLOC}` (15,000 LOC 以内) を完全に達成** |
 
@@ -49,7 +49,7 @@ Python シミュレータ（`experiments/pysim`）の実装行数（実測 12,58
 
 ## 3. 物理リソース予算見積もり（ROM vs RAM）
 
-評価ターゲット環境：**最小構成 SRAM 32KB / Flash 128KB〜256KB**。
+評価ターゲット環境：**最小構成 SRAM 32KB / Flash 96KB**（想定構成: SRAM 64KB / Flash 128KB、`{Resource_Estimation_Model}`、`requirement_list.md` の制約事項を正本とする）。
 動的ヒープ確保（`malloc` / `new`）を一切排除し、全メモリをコンパイル時に静的割り当て（`constexpr` / `.bss` / `.data`）する。 `{GLOBAL_StrictMemoryLimit}` `{ConsolidatedHeap}`
 
 ### 3.1 RAM（SRAM: 可変状態・バッファ・スタック）予算内訳
@@ -62,7 +62,7 @@ RAM 領域は、主動作用の**統合物理メモリプール（`ConsolidatedH
 +-------------------------------------------------------+-----------------------+
 |  統合物理メモリプール (FB_CONF_MEMORY_POOL_SIZE): 21,504 B | OSスタック/静的変数:   |
 |  [Kernel] 4KB  [Runtime] 2KB  [Subsys] 3KB            | ~3,500 B              |
-|  [JIT Cache] 6KB  [Stack] 2KB  [Guest RAM] 4KB        | (安全余裕: ~7.7 KB)   |
+|  [JIT Cache] 6KB  [Stack] 2KB  [Guest RAM] 4KB        | (安全余裕: ~7.0 KB)   |
 +-------------------------------------------------------+-----------------------+
 ```
 
@@ -81,7 +81,7 @@ RAM 領域は、主動作用の**統合物理メモリプール（`ConsolidatedH
 | - ISR 割り込み通知リングバッファ | 64 B | 16 エントリ $\times$ 4B（原子キュー） |
 | - ベアメタル OS システムスタック（Cortex-M MSP） | 2,048 B | 例外・割り込みハンドラ（ISR）実行用ハードウェアスタック |
 | - グローバルポインタ・フラグ・TCBインデックス | ~500 B | カーネル・ディスパッチャ状態変数 |
-| **RAM 合計使用量** | **~25,000 B** | **32KB SRAM に対し ~7.7KB（約 24%）の安全マージンを確保** |
+| **RAM 合計使用量** | **~25,000 B** | **32KB SRAM に対し ~7.0KB（約 22%）の安全マージンを確保** |
 
 ---
 
@@ -96,7 +96,7 @@ ROM 領域は、コンパイル時に静的に確定する不変ルックアッ�
 | - **WASM 命令ハンドラテーブル** | 1,024 B | 256 命令 $\times$ 4B（インタープリタ CPS 関数ポインタ配列） |
 | - **JIT Stencil カタログ (Thumb-2)** | ~4,500 B | Copy-and-Patch 用の Thumb-2 機械語バイナリテンプレート群 |
 | - **IPC サービスレジストリ** | ~512 B | ソート済み `flat_map_entry<std::string_view, registry_entry>` 定数配列 |
-| - **IPC RBAC 権限マトリックス** | 16 B | 4 $\times$ 4 ロール間通信可否ビット配列（`constexpr`） |
+| - **IPC RBAC 権限マトリックス** | 81 B | 9 $\times$ 9 ロール間通信可否 `bool` 配列（ビットパックなし、1セル1バイト、`constexpr`） |
 | - **ログ辞書 (LogDictionary)** | ~1,500 B | ビルド時登録の `printf` フォーマット文字列テーブル（`{DictionaryBasedIPC}`） |
 | - **vMMIO 静的領域定義テーブル** | ~128 B | 静的デバイス領域（FC=12等）のベース・サイズ・アクセス権限定義 |
 | - **WASM ゲストバイナリ (Zero-Copy)** | (可変) | Flash 上のバイト列を直接パース・実行（RAM 展開不要） |
@@ -106,7 +106,7 @@ ROM 領域は、コンパイル時に静的に確定する不変ルックアッ�
 | - COOS カーネル & スケジューラ & IPC | ~8 KB | コルーチンスイッチ、同期ランデブー、所有権管理 |
 | - WASM ローダー & デコーダ | ~7 KB | セクション解析、型チェック、CandidateBitmap スコアリング |
 | - HAL / WASI ドライバ & GDB デバッガ | ~8 KB | UART/GPIO/Timer ドライバ、RSP パーサー、Shim レイヤ |
-| **ROM 合計使用量** | **~53〜63 KB** | **最小 Flash 128KB に対し約 50% の容量で収容可能** |
+| **ROM 合計使用量** | **~53〜63 KB** | **最小構成 Flash 96KB に対し約 34〜45% の空き容量で収容可能** |
 
 ---
 
@@ -116,8 +116,8 @@ ROM 領域は、コンパイル時に静的に確定する不変ルックアッ�
    - `pysim`（12,580 行）から算出した C++ 本実装は約 14,500 LOC であり、要求 `{Size_15KLOC}`（15,000 行以内）の制約を完全に充足する。
 2. **RAM リソースの成立性**:
    - 統合物理プール（21.5 KB）＋ システムスタック・静的変数（約 3.5 KB）＝ 約 25.0 KB。
-   - 32KB SRAM の評価ターゲット環境において、約 7.7 KB（24%）の安全マージンが確保されており、不測のスタック拡張やバッファ調整に十分耐えうる。
+   - 32KB SRAM の評価ターゲット環境において、約 7.0 KB（22%）の安全マージンが確保されており、不測のスタック拡張やバッファ調整に十分耐えうる。
 3. **ROM リソースの成立性**:
-   - 不変テーブル（約 8.2 KB）とコード本体（約 45〜55 KB）の合計は約 53〜63 KB であり、最小構成の 128KB Flash に対して約 50% の空き容量を残して安全に格納できる。
+   - 不変テーブル（約 8.2 KB）とコード本体（約 45〜55 KB）の合計は約 53〜63 KB であり、最小構成の 96KB Flash に対して約 34〜45% の空き容量を残して安全に格納できる。
 4. **JITCandidateBitmap 機能追加の影響**:
    - ロード時基本ブロック判定機能の追加による純増リソースは、ROM 128 バイト（`OpcodeBenefitTable`）および RAM 128 バイト（`JITCandidateBitmap`）のみであり、本予算計画の枠内に完全に収まる。

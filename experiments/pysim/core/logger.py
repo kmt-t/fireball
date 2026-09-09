@@ -183,7 +183,7 @@ class Logger:
 
 
 class ConsoleOutput:
-    """{WASI_ConsoleRawOutput}: raw bytes, no dictionary, no ring buffer."""
+    """Console raw-byte output path (interface_wit.md "console-output"): no dictionary, no ring buffer."""
 
     def __init__(self, transport: UartTransport):
         self.transport = transport

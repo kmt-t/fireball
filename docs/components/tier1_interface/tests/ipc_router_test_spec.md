@@ -12,11 +12,11 @@ URIベースのサービス検索（3段パイプライン）、ロールベー�
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | IPCR-01 | レジストリは実際にFlatMapView（O(log N)二分探索） | - | `_REGISTRY`の型を確認 | `dict`ではなく`FlatMapView`のインスタンスである | ipc_router_concept.py `test_registry_is_a_real_flat_map_view_not_a_dict` |
-| IPCR-02 | URI Lookup成功 | 登録済みURI（例: `fireball://hal/gpio/0`） | `router.lookup(uri)` | `(COMPLETED, channel)` オブジェクトを返す | Stage 1, Stage 2 |
+| IPCR-02 | URI Lookup成功 | 登録済みURI（例: `fireball://device/gpio/0`） | `router.lookup(uri)` | `(COMPLETED, channel)` オブジェクトを返す | Stage 1, Stage 2 |
 | IPCR-03 | URI Lookup失敗 | 未登録URI | `router.lookup(uri)` を呼ぶ | `(ERR_NOT_FOUND, None)` を返し、メッセージ所有権は送信側のまま(`SENDER_OWNS`) | Error1, ipc_router_concept.py `test_unregistered_uri_is_rejected` |
-| IPCR-04 | ロールベースアクセス制御・許可 | `RUNTIME`→`PLATFORM_HAL`（許可） | `lookup(uri)` でチャネル取得後 `send(channel, msg)` | `COMPLETED`を返す | 表, `{RoleBasedAccessControl}` |
+| IPCR-04 | ロールベースアクセス制御・許可 | `RUNTIME`→`HAL_GPIO`（許可） | `lookup(uri)` でチャネル取得後 `send(channel, msg)` | `COMPLETED`を返す | 表, `{RoleBasedAccessControl}` |
 | IPCR-05 | ロールベースアクセス制御・拒否 & 偽装防止 | `RUNTIME`→`DEBUGGER`（拒否） | `lookup(uri)` を呼ぶ。また他ロールのチャネルを直接指定して `send(channel, msg)` を試行 | `ERR_PERMISSION_DENIED`を返し、TCB ロール検査により偽装送信も拒否され、所有権が送信側のまま維持される | Error2, ipc_router_concept.py `test_permission_denied` |
-| IPCR-06 | 全DENY行・列の意味の確認 | `PLATFORM_HAL`を送信元にする | 任意の宛先へ`lookup` | 常に拒否される（HALは通信グラフの葉） | ipc_router.md「全DENY行・列の意味」 |
+| IPCR-06 | 全DENY行・列の意味の確認 | `HAL_*`（6ロールいずれか）を送信元にする | 任意の宛先へ`lookup` | 常に拒否される（HALは通信グラフの葉） | ipc_router.md「全DENY行・列の意味」 |
 | IPCR-07 | ゼロコピー所有権移譲の3段階 | 許可されたURIへの送信 | `lookup`→`send(channel, msg)`→`receive()` | `SENDER_OWNS`→`IN_FLIGHT`（Revoke直後、`send`が返った時点）→`RECEIVER_OWNS`（`receive`でGrant成立時）と遷移する | 「所有権移譲」, `{OwnershipTransfer}` |
 | IPCR-08 | 単一待機者制約（キュー化されないことの確認） | 同一エッジへ1件送信済み（未受信） | 同一エッジへさらに1件`send` | `ERR_QUEUE_FULL`のような差し戻しではなく、`AssertionError`（プログラミングエラー）となる——2件目を保持する「キュー」がそもそも存在しない | 「Revoke」, ipc_router_concept.py `test_no_queue_full_state_exists` |
 | IPCR-09 | Drop Handlerが存在しないことの確認 | メッセージがIN_FLIGHT中に受信側タスクが到達しない | （該当する強制回収APIは存在しない） | 送信側タスクがブロックし続けるのみで、キュー内メッセージの強制回収という概念自体が発生しない（回収すべきキューがないため） | 「キューが存在しないことの帰結」 |

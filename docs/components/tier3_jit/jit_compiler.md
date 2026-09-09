@@ -78,7 +78,7 @@ WASM バイトコードにおける制御フロー命令は、その内部動作
    - **スタック巻き戻しの本質**: WASM は検証済み静的型付けバイトコードであり、任意の `br depth` / `br_if depth` における巻き戻し量 $\Delta$（スタック深さの差分: 現在のスタック深さ − 分岐先ラベルの期待スタック深さ）は、**JIT コンパイル時に即値定数として完全確定** している。
    - **ネイティブ展開コード**: スタック巻き戻しは単なるスタックポインタ（SP）の即値加算であり、インタープリタ委譲は不要である。
      - `br`: `add sp, #(Δ * 4); b.w <rel_target>` の 2 命令で完結。
-     - `br_if`: `cmp r4, #0; it ne; addne sp, #(Δ * 4); bne.w <rel_target>` の 4 命令（多段脱出 `depth > 0` を含む）で完結。
+     - `br_if`: `cmp r3, #0; it ne; addne sp, #(Δ * 4); bne.w <rel_target>` の 4 命令（多段脱出 `depth > 0` を含む）で完結。
      - `return`: トレース末尾エピローグ（`pop.w {r4-r6, r8-r11, pc}`）を直接インライン展開。
 3. **境界トラップモデル（Trap Tail Emission）**:
    - **対象命令**: `unreachable` (`0x00`)
@@ -93,59 +93,59 @@ JIT コンパイラがフォールバックせずにネイティブバイナリ�
 | **制御・スタック** | `0x00` | `unreachable` | `bkpt #0x00` | トラップ | 2 Bytes |
 | | `0x01` | `nop` | (0 Byte 消去) | なし | 0 Bytes |
 | | `0x0C` | `br` | `add sp, #imm; b.w <target>` | SP巻き戻し + 相対分岐 | 6〜8 Bytes |
-| | `0x0D` | `br_if` | `cmp r4, #0; it ne; addne sp, #imm; bne.w <target>` | 条件判定 + SP巻き戻し + 相対分岐 | 8〜10 Bytes |
+| | `0x0D` | `br_if` | `cmp r3, #0; it ne; addne sp, #imm; bne.w <target>` | 条件判定 + SP巻き戻し + 相対分岐 | 8〜10 Bytes |
 | | `0x0F` | `return` | `pop.w {r4-r6, r8-r11, pc}` | エピローグ展開・復帰 | 4 Bytes |
 | **構文デリミタ** | `0x02` | `block` | (0 Byte 消去・ヘッダ `chain_next_pc` 解決) | なし | 0 Bytes |
 | | `0x03` | `loop` | (0 Byte 消去・ヘッダ `chain_next_pc` 解決) | なし | 0 Bytes |
 | | `0x05` | `else` | (0 Byte 消去・ヘッダ `chain_next_pc` 解決) | なし | 0 Bytes |
 | | `0x0B` | `end` | (0 Byte 消去・ヘッダ `chain_next_pc` 解決) | なし | 0 Bytes |
-| **定数ロード** | `0x41` | `i32.const` | `movw r4, #imm16; movt r4, #imm16` | $\to$ R4 (TOS) | 8 Bytes |
-| | `0x42` | `i64.const` | `movw/movt r4, #imm; movw/movt r5, #imm` | $\to$ R4:R5 (LO:HI) | 16 Bytes |
-| **変数アクセス** | `0x20` | `local.get` | `ldr r4, [r2, #offset]` | $\to$ R4 (TOS) | 2 Bytes |
-| | `0x21` | `local.set` | `str r4, [r2, #offset]` | R4 $\to$ Local | 2 Bytes |
-| | `0x22` | `local.tee` | `str r4, [r2, #offset]` | R4 $\to$ Local (R4維持) | 2 Bytes |
-| | `0x23` | `global.get`| `ldr.w r12, [r1, #0x28]; ldr.w r4, [r12, #offset]` | $\to$ R4 (TOS) | 8 Bytes |
-| | `0x24` | `global.set`| `ldr.w r12, [r1, #0x28]; str.w r4, [r12, #offset]` | R4 $\to$ Global | 8 Bytes |
+| **定数ロード** | `0x41` | `i32.const` | `movw r3, #imm16; movt r3, #imm16` | $\to$ R3 (TOS) | 8 Bytes |
+| | `0x42` | `i64.const` | `movw/movt r3, #imm; movw/movt r4, #imm` | $\to$ R3:R4 (LO:HI) | 16 Bytes |
+| **変数アクセス** | `0x20` | `local.get` | `ldr r3, [r2, #offset]` | $\to$ R3 (TOS) | 2 Bytes |
+| | `0x21` | `local.set` | `str r3, [r2, #offset]` | R3 $\to$ Local | 2 Bytes |
+| | `0x22` | `local.tee` | `str r3, [r2, #offset]` | R3 $\to$ Local (R3維持) | 2 Bytes |
+| | `0x23` | `global.get`| `ldr.w r12, [r1, #0x28]; ldr.w r3, [r12, #offset]` | $\to$ R3 (TOS) | 8 Bytes |
+| | `0x24` | `global.set`| `ldr.w r12, [r1, #0x28]; str.w r3, [r12, #offset]` | R3 $\to$ Global | 8 Bytes |
 | **スタック・選択** | `0x1A` | `drop` | (レジスタキャッシュポインタ破棄 / `pop`) | スタック破棄 | 0〜2 Bytes |
-| | `0x1B` | `select` | `cmp r4, #0; it ne; movne r5, r6; mov r4, r5` | 3値選択 $\to$ R4 | 8 Bytes |
-| **32bit 算術・論理** | `0x6A` | `i32.add` | `adds r4, r5, r4` | R5 + R4 $\to$ R4 | 2 Bytes |
-| | `0x6B` | `i32.sub` | `subs r4, r5, r4` | R5 - R4 $\to$ R4 | 2 Bytes |
-| | `0x6C` | `i32.mul` | `mul r4, r5, r4` | R5 * R4 $\to$ R4 | 4 Bytes |
-| | `0x6D` | `i32.div_s`| `cbz r4, <trap>; cmp r5, #0x80000000; it eq; cmpeq r4, #-1; beq <trap>; sdiv r4, r5, r4` | 符号付除算 | 14 Bytes |
-| | `0x6E` | `i32.div_u`| `cbz r4, <trap>; udiv r4, r5, r4` | 符号無除算 | 6 Bytes |
-| | `0x6F` | `i32.rem_s`| `cbz r4, <trap>; sdiv r12, r5, r4; mls r4, r12, r4, r5` | 符号付剰余 (`JITC-GOTCHA-06`) | 10 Bytes |
-| | `0x70` | `i32.rem_u`| `cbz r4, <trap>; udiv r12, r5, r4; mls r4, r12, r4, r5` | 符号無剰余 (`JITC-GOTCHA-06`) | 10 Bytes |
-| | `0x71` | `i32.and` | `ands r4, r5, r4` | R5 & R4 $\to$ R4 | 2 Bytes |
-| | `0x72` | `i32.or` | `orrs r4, r5, r4` | R5 \| R4 $\to$ R4 | 2 Bytes |
-| | `0x73` | `i32.xor` | `eors r4, r5, r4` | R5 ^ R4 $\to$ R4 | 2 Bytes |
-| | `0x74` | `i32.shl` | `lsl.w r4, r5, r4` | R5 << R4 $\to$ R4 | 4 Bytes |
-| | `0x75` | `i32.shr_s`| `asr.w r4, r5, r4` | R5 >> R4 (算術) $\to$ R4 | 4 Bytes |
-| | `0x76` | `i32.shr_u`| `lsr.w r4, r5, r4` | R5 >> R4 (論理) $\to$ R4 | 4 Bytes |
-| | `0x77` | `i32.rotl` | `rsb r12, r4, #32; ror.w r4, r5, r12` | 左循環シフト $\to$ R4 | 8 Bytes |
-| | `0x78` | `i32.rotr` | `ror.w r4, r5, r4` | 右循環シフト $\to$ R4 | 4 Bytes |
-| | `0x67` | `i32.clz` | `clz r4, r4` | 先頭ゼロカウント | 4 Bytes |
-| | `0x68` | `i32.ctz` | `rbit r4, r4; clz r4, r4` | 末尾ゼロカウント | 8 Bytes |
-| | `0x69` | `i32.popcnt`| `vmov s0, r4; vcnt.8 d0, d0; vpaddl.u8 d0, d0; vpaddl.u16 d0, d0; vmov r4, s0` (またはビット演算展開) | 立っているビット数 | 10〜16 Bytes |
-| **32bit 比較演算** | `0x45` | `i32.eqz` | `cmp r4, #0; it eq; moveq r4, #1; it ne; movne r4, #0` | R4 == 0 | 10 Bytes |
-| | `0x46` | `i32.eq` | `cmp r5, r4; it eq; moveq r4, #1; it ne; movne r4, #0` | R5 == R4 | 10 Bytes |
-| | `0x47` | `i32.ne` | `cmp r5, r4; it ne; movne r4, #1; it eq; moveq r4, #0` | R5 != R4 | 10 Bytes |
-| | `0x48` | `i32.lt_s` | `cmp r5, r4; it lt; movlt r4, #1; it ge; movge r4, #0` | R5 < R4 (符号付) | 10 Bytes |
-| | `0x49` | `i32.lt_u` | `cmp r5, r4; it lo; movlo r4, #1; it hs; movhs r4, #0` | R5 < R4 (符号無) | 10 Bytes |
-| | `0x4A` | `i32.gt_s` | `cmp r5, r4; it gt; movgt r4, #1; it le; movle r4, #0` | R5 > R4 (符号付) | 10 Bytes |
-| | `0x4B` | `i32.gt_u` | `cmp r5, r4; it hi; movhi r4, #1; it ls; movls r4, #0` | R5 > R4 (符号無) | 10 Bytes |
-| | `0x4C` | `i32.le_s` | `cmp r5, r4; it le; movle r4, #1; it gt; movgt r4, #0` | R5 <= R4 (符号付) | 10 Bytes |
-| | `0x4D` | `i32.le_u` | `cmp r5, r4; it ls; movls r4, #1; it hi; movhi r4, #0` | R5 <= R4 (符号無) | 10 Bytes |
-| | `0x4E` | `i32.ge_s` | `cmp r5, r4; it ge; movge r4, #1; it lt; movlt r4, #0` | R5 >= R4 (符号付) | 10 Bytes |
-| | `0x4F` | `i32.ge_u` | `cmp r5, r4; it hs; movhs r4, #1; it lo; movlo r4, #0` | R5 >= R4 (符号無) | 10 Bytes |
-| **リニアメモリアクセス** | `0x28` | `i32.load` | `cmp r4, r9; bhs.w <trap>; ldr.w r4, [r8, r4]` | 32bit ロード (`JITC-GOTCHA-04`) | 10 Bytes |
-| | `0x2C` | `i32.load8_s` | `cmp r4, r9; bhs.w <trap>; ldrsb.w r4, [r8, r4]`| 8bit 符号付ロード | 10 Bytes |
-| | `0x2D` | `i32.load8_u` | `cmp r4, r9; bhs.w <trap>; ldrb.w r4, [r8, r4]` | 8bit 符号無ロード | 10 Bytes |
-| | `0x2E` | `i32.load16_s`| `cmp r4, r9; bhs.w <trap>; ldrsh.w r4, [r8, r4]`| 16bit 符号付ロード | 10 Bytes |
-| | `0x2F` | `i32.load16_u`| `cmp r4, r9; bhs.w <trap>; ldrh.w r4, [r8, r4]` | 16bit 符号無ロード | 10 Bytes |
-| | `0x36` | `i32.store` | `cmp r5, r9; bhs.w <trap>; str.w r4, [r8, r5]` | 32bit ストア (`JITC-GOTCHA-04`) | 10 Bytes |
-| | `0x3A` | `i32.store8` | `cmp r5, r9; bhs.w <trap>; strb.w r4, [r8, r5]` | 8bit ストア | 10 Bytes |
-| | `0x3B` | `i32.store16`| `cmp r5, r9; bhs.w <trap>; strh.w r4, [r8, r5]` | 16bit ストア | 10 Bytes |
-| | `0x3F` | `memory.size`| `ldr.w r4, [r1, #0x24]` | ページ数取得 | 4 Bytes |
+| | `0x1B` | `select` | `cmp r3, #0; it ne; movne r4, r5; mov r3, r4` | 3値選択 $\to$ R3 | 8 Bytes |
+| **32bit 算術・論理** | `0x6A` | `i32.add` | `adds r3, r4, r3` | R4 + R3 $\to$ R3 | 2 Bytes |
+| | `0x6B` | `i32.sub` | `subs r3, r4, r3` | R4 - R3 $\to$ R3 | 2 Bytes |
+| | `0x6C` | `i32.mul` | `mul r3, r4, r3` | R4 * R3 $\to$ R3 | 4 Bytes |
+| | `0x6D` | `i32.div_s`| `cbz r3, <trap>; cmp r4, #0x80000000; it eq; cmpeq r3, #-1; beq <trap>; sdiv r3, r4, r3` | 符号付除算 | 14 Bytes |
+| | `0x6E` | `i32.div_u`| `cbz r3, <trap>; udiv r3, r4, r3` | 符号無除算 | 6 Bytes |
+| | `0x6F` | `i32.rem_s`| `cbz r3, <trap>; sdiv r12, r4, r3; mls r3, r12, r3, r4` | 符号付剰余 (`JITC-GOTCHA-06`) | 10 Bytes |
+| | `0x70` | `i32.rem_u`| `cbz r3, <trap>; udiv r12, r4, r3; mls r3, r12, r3, r4` | 符号無剰余 (`JITC-GOTCHA-06`) | 10 Bytes |
+| | `0x71` | `i32.and` | `ands r3, r4, r3` | R4 & R3 $\to$ R3 | 2 Bytes |
+| | `0x72` | `i32.or` | `orrs r3, r4, r3` | R4 \| R3 $\to$ R3 | 2 Bytes |
+| | `0x73` | `i32.xor` | `eors r3, r4, r3` | R4 ^ R3 $\to$ R3 | 2 Bytes |
+| | `0x74` | `i32.shl` | `lsl.w r3, r4, r3` | R4 << R3 $\to$ R3 | 4 Bytes |
+| | `0x75` | `i32.shr_s`| `asr.w r3, r4, r3` | R4 >> R3 (算術) $\to$ R3 | 4 Bytes |
+| | `0x76` | `i32.shr_u`| `lsr.w r3, r4, r3` | R4 >> R3 (論理) $\to$ R3 | 4 Bytes |
+| | `0x77` | `i32.rotl` | `rsb r12, r3, #32; ror.w r3, r4, r12` | 左循環シフト $\to$ R3 | 8 Bytes |
+| | `0x78` | `i32.rotr` | `ror.w r3, r4, r3` | 右循環シフト $\to$ R3 | 4 Bytes |
+| | `0x67` | `i32.clz` | `clz r3, r3` | 先頭ゼロカウント | 4 Bytes |
+| | `0x68` | `i32.ctz` | `rbit r3, r3; clz r3, r3` | 末尾ゼロカウント | 8 Bytes |
+| | `0x69` | `i32.popcnt`| `vmov s0, r3; vcnt.8 d0, d0; vpaddl.u8 d0, d0; vpaddl.u16 d0, d0; vmov r3, s0` (またはビット演算展開) | 立っているビット数 | 10〜16 Bytes |
+| **32bit 比較演算** | `0x45` | `i32.eqz` | `cmp r3, #0; it eq; moveq r3, #1; it ne; movne r3, #0` | R3 == 0 | 10 Bytes |
+| | `0x46` | `i32.eq` | `cmp r4, r3; it eq; moveq r3, #1; it ne; movne r3, #0` | R4 == R3 | 10 Bytes |
+| | `0x47` | `i32.ne` | `cmp r4, r3; it ne; movne r3, #1; it eq; moveq r3, #0` | R4 != R3 | 10 Bytes |
+| | `0x48` | `i32.lt_s` | `cmp r4, r3; it lt; movlt r3, #1; it ge; movge r3, #0` | R4 < R3 (符号付) | 10 Bytes |
+| | `0x49` | `i32.lt_u` | `cmp r4, r3; it lo; movlo r3, #1; it hs; movhs r3, #0` | R4 < R3 (符号無) | 10 Bytes |
+| | `0x4A` | `i32.gt_s` | `cmp r4, r3; it gt; movgt r3, #1; it le; movle r3, #0` | R4 > R3 (符号付) | 10 Bytes |
+| | `0x4B` | `i32.gt_u` | `cmp r4, r3; it hi; movhi r3, #1; it ls; movls r3, #0` | R4 > R3 (符号無) | 10 Bytes |
+| | `0x4C` | `i32.le_s` | `cmp r4, r3; it le; movle r3, #1; it gt; movgt r3, #0` | R4 <= R3 (符号付) | 10 Bytes |
+| | `0x4D` | `i32.le_u` | `cmp r4, r3; it ls; movls r3, #1; it hi; movhi r3, #0` | R4 <= R3 (符号無) | 10 Bytes |
+| | `0x4E` | `i32.ge_s` | `cmp r4, r3; it ge; movge r3, #1; it lt; movlt r3, #0` | R4 >= R3 (符号付) | 10 Bytes |
+| | `0x4F` | `i32.ge_u` | `cmp r4, r3; it hs; movhs r3, #1; it lo; movlo r3, #0` | R4 >= R3 (符号無) | 10 Bytes |
+| **リニアメモリアクセス** | `0x28` | `i32.load` | `cmp r3, r9; bhs.w <trap>; ldr.w r3, [r8, r3]` | 32bit ロード (`JITC-GOTCHA-04`) | 10 Bytes |
+| | `0x2C` | `i32.load8_s` | `cmp r3, r9; bhs.w <trap>; ldrsb.w r3, [r8, r3]`| 8bit 符号付ロード | 10 Bytes |
+| | `0x2D` | `i32.load8_u` | `cmp r3, r9; bhs.w <trap>; ldrb.w r3, [r8, r3]` | 8bit 符号無ロード | 10 Bytes |
+| | `0x2E` | `i32.load16_s`| `cmp r3, r9; bhs.w <trap>; ldrsh.w r3, [r8, r3]`| 16bit 符号付ロード | 10 Bytes |
+| | `0x2F` | `i32.load16_u`| `cmp r3, r9; bhs.w <trap>; ldrh.w r3, [r8, r3]` | 16bit 符号無ロード | 10 Bytes |
+| | `0x36` | `i32.store` | `cmp r4, r9; bhs.w <trap>; str.w r3, [r8, r4]` | 32bit ストア (`JITC-GOTCHA-04`) | 10 Bytes |
+| | `0x3A` | `i32.store8` | `cmp r4, r9; bhs.w <trap>; strb.w r3, [r8, r4]` | 8bit ストア | 10 Bytes |
+| | `0x3B` | `i32.store16`| `cmp r4, r9; bhs.w <trap>; strh.w r3, [r8, r4]` | 16bit ストア | 10 Bytes |
+| | `0x3F` | `memory.size`| `ldr.w r3, [r1, #0x24]` | ページ数取得 | 4 Bytes |
 
 ##### 3.3.3 インタープリタ委譲命令台帳（Delegated Opcode Specification）
 <!-- traceability: {JIT_RuntimeAPI_Fallback} {Libgcc_Runtime_Helper} -->
@@ -482,7 +482,7 @@ sequenceDiagram
 
 ### 7.1 検証対象の不変条件
 - **位置独立性 (PIC)**: 生成された Thumb-2 / RISC-V バイナリが絶対アドレスに依存せず、任意のキャッシュバンクで再コンパイル不要で動作すること（`INT-40`, `JITC-40`）。
-- **トレース境界メモリ同期**: トレースの真の脱出（後続の常駐トレースへ直接チェインしない場合）時に、キャッシュ中のスタックトップ（`R4: TOS`）・次段（`R5: NOS`）およびローカル変数がメモリへ確実に同期されること。直接チェイン分岐（`{JIT_LazyChaining}`）ではレジスタ状態がそのまま後続トレースへ引き継がれるため、この同期は発生しない（`INT-41`, `JITC-52`）。
+- **トレース境界メモリ同期**: トレースの真の脱出（後続の常駐トレースへ直接チェインしない場合）時に、キャッシュ中のスタックトップ（`R3: TOS`）・次段（`R4: NOS`）およびローカル変数がメモリへ確実に同期されること。直接チェイン分岐（`{JIT_LazyChaining}`）ではレジスタ状態がそのまま後続トレースへ引き継がれるため、この同期は発生しない（`INT-41`, `JITC-52`）。
 - **W^X メモリ保護**: JIT パッチ書き込み時の `RW+XN` と実行時の `RO+X` の分離（`jit_cache_model.py`, `JITC-42`）。
 
 ### 7.2 テスト仕様書との連携
@@ -499,7 +499,7 @@ sequenceDiagram
     - 案3: JIT トレース内部で `R3`/`R4`/`R5` を TOS/NOS/NNOS として使用し、基本ブロック末尾でプッシュされたダーティ値をオペランドスタック（`[R1, #offset]`）へフラッシュし、コンテキスト `R0` の `ip`（`+0x00`）および `sp_offset`（`+0x0C`）を書き換える。
   - **結論**: 案3を採用する。
   - **評価**: 基本ブロック末尾でプッシュされたスタックキャッシュ（`TOS, NOS, NNOS`）をスタック（`[R1, #offset]`）へフラッシュし、コンテキスト `R0` の `ip`（+0x00）および `sp_offset`（+0x0C）を書き換えて状態を完全同期する。JIT トレースは複数 WASM 命令にまたがるため、この同期命令はトレース長で償却され、トレース内部で得られるレジスタキャッシュの利得を下回る。
-  - **トレース境界の2種類のエントリと2種類のエグジット**: 境界の性質は「真の脱出/新規進入」と「直接チェイン」の2系統に分かれ、混同してはならない（[`jit_stencil_catalog.md`](docs/specs/jit_stencil_catalog.md) 3.1）。
+  - **トレース境界の2種類のエントリと2種類のエグジット**: 境界の性質は「真の脱出/新規進入」と「直接チェイン」の2系統に分かれ、混同してはならない（[`jit_stencil_catalog.md`](docs/specs/jit_stencil_catalog.md) のプロローグ & エピローグ・ステンシル節）。
     - **新規エントリ / 真の脱出**: インタープリタ・ディスパッチャから初めて呼び出される場合は Callee-saved 全域退避のプロローグを通過する。真の脱出（後続の常駐トレースが存在しない、またはこのトレースがチェインの終端）では、基本ブロック末尾でダーティなスタックキャッシュ（`R3/R4/R5`）をスタックメモリ（`[R1, #offset]`）へフラッシュし、`sp_offset`（`[R0, #0x0C]`）および `ip`（`[R0, #0x00]`）を同期した上で、Callee-saved レジスタを `POP` 復元してリターン（または `BX r12` でインタープリタへジャンプ）する。呼び出し規約上の戻り値レジスタは一切経由しない——VM のオペランドスタック状態と C/AAPCS の戻り値には何の関係もない（`{JITC-GOTCHA-07}`）。
     - **チェイン・エントリ / 直接チェイン分岐**: `{JIT_LazyChaining}` によって後続トレースが常駐と解決済みの場合、真の脱出の代わりに後続トレースのチェイン・エントリ（後続トレース自身のプロローグ直後のオフセット）への直接分岐（`B.W`、バックパッチ）を配置する。フラッシュも `POP` も発生せず、レジスタ状態（`R3-R5` のキャッシュ値を含む）は分岐を跨いでそのまま生き続ける。後続側もチェイン・エントリではプロローグを経由しないため、両者を合わせても Callee-saved の退避・復元は連結全体でちょうど1回ずつしか発生しない。
   - **ローカル変数アクセスの静的オフセット畳み込み (`ContextPointerRegister`)**: 各関数フレームにおけるローカル変数のアドレスは、カレントコールフレームのローカル変数基底レジスタ `R2 = local_base` 起点として `[R2, #offset]` でアクセスされる。これにより、余計なベースアドレス再計算なしに1命令で直接アクセスできる。

@@ -36,10 +36,10 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
 - [ ] **Step 2.3: ユニットテストコードの網羅性・品質強化**:
   - エッジケース・異常系・直交表組み合わせテストの拡充
   - テストランナー（[`run_all.py`](experiments/pysim/tests/run_all.py)）による全 22+ スイートの高速・高信頼実行の維持
-- [ ] **Step 2.4: 物理リソース予算（RAM 32KB / ROM 128KB）の厳密な再見積もり**:
+- [ ] **Step 2.4: 物理リソース予算（最小構成 RAM 32KB / ROM 96KB）の厳密な再見積もり**:
   - 詳細正本: [`resource_budget_estimation.md`](docs/architecture/resource_budget_estimation.md)
-  - **RAM (32KB)**: 統合物理メモリプール 21.5KB + OSスタック/静的変数 ~3.5KB $\to$ 静的合計 **~25.0 KB** (安全余白 ~7.7 KB / 24%) の実機適合確認 `{Resource_Estimation_Model}`
-  - **ROM (128KB)**: 不変ルックアップテーブル/辞書 ~8.2KB + 機械語コード ~45〜55KB $\to$ 静的合計 **~53〜63 KB** (空き余白 ~65〜75 KB / 約50%) の確認
+  - **RAM (32KB)**: 統合物理メモリプール 21.5KB + OSスタック/静的変数 ~3.5KB $\to$ 静的合計 **~25.0 KB** (安全余白 ~7.0 KB / 22%) の実機適合確認 `{Resource_Estimation_Model}`
+  - **ROM (96KB)**: 不変ルックアップテーブル/辞書 ~8.2KB + 機械語コード ~45〜55KB $\to$ 静的合計 **~53〜63 KB** (空き余白 ~33〜43 KB / 約34〜45%) の確認
 - [ ] **Step 2.5: オーナー（人間）による最終品質レビュー & Phase 1 GO 判定**:
   - 仕様・シミュレータコード・テスト設計・バジェットを Freeze し、C++23 実装フェーズ（Phase 1）への移行を最終承認 `{META_SpecificationFirst}`
 
@@ -108,7 +108,7 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
 - [ ] **COOS カーネル (`inc/core/os_coos.hxx`)**: スタックレス C++20 コルーチンスケジューラ、対称ハンドオフ (`COOS-GOTCHA-01`〜`03`)
 - [ ] **IPC ルータ (`inc/interface/ipc_router.hxx`)**: 3段階ルーティング、ゼロコピー CSP チャネル & RAII 所有権移譲 (`IPCR-GOTCHA-01`〜`03`)
 - [ ] **vMMIO コントローラ (`inc/runtime/vmmio.hxx`)**: 多段ダイレクトデコードページテーブル & ソフトウェア TLB (`VMMIO-GOTCHA-01`〜`03`)
-- [ ] **HAL & WASI ドライバ (`inc/runtime/hal.hxx`, `inc/platform/driver.hxx`, `inc/platform/wasi.hxx`)**: GPIO / I2C / SPI / Timer / WASI Preview 1、`HalBufferPool` (`HAL-GOTCHA-01`〜`03`)
+- [ ] **HAL & WASI ドライバ (`inc/runtime/hal_dispatch.hxx`, `inc/platform/driver.hxx`, `inc/platform/wasi.hxx`)**: GPIO / I2C / SPI / Timer / WASI Preview 1、`HalBufferPool` (`HAL-GOTCHA-01`〜`03`)
 - [ ] **GDB Server (`inc/runtime/debugger.hxx`)**: GDB リモートシリアルプロトコル（RSP）サーバー、メモリ書き換え時 JIT キャッシュフラッシュ (`DBG-GOTCHA-01`〜`03`)
 
 ---
@@ -116,7 +116,7 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
 ## Phase 3: PoC（ターゲットボード移植 / 将来予定）
 
 - [ ] **Cortex-M33 実機移植**: BBC micro:bit v2 / nRF5340 / STM32U5 / Zephyr OS 環境への移植
-- [ ] **実機性能・リアルタイム性評価**: sub-µs GPIO 割り込み応答および 64KB RAM 適合検証
+- [ ] **実機性能・リアルタイム性評価**: sub-µs GPIO 割り込み応答および想定構成 64KB RAM 適合検証
 
 ---
 

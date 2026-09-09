@@ -13,14 +13,14 @@
 
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| MEM-01 | `acquire-partition`はタスク固有の固定長パーティションを貸与する（汎用ヒープAPIではない） | 任意のタスクID | `acquire-partition(owner)` | `size`引数を取らない。固定長`partition-view`を返す。`allocate(size, category)`のような任意サイズ確保APIは存在しない | acquire-partition, os_coos.md 「汎用ヒープAPIではない」 |
+| MEM-01 | `acquire-partition`はタスク固有の固定長パーティションを貸与する（汎用ヒープAPIではない） | 任意のタスクID | `acquire-partition(owner)` | `size`引数を取らない。固定長`partition-view`を返す。`allocate(size, category)`のような任意サイズ確保APIは存在しない | acquire-partition, `{CooperativeMultitasking}` |
 | MEM-01b | `acquire-slot<T>`は型付きスロットを貸与する | - | `acquire-slot<T>()` | `pool-ref<T>`（型付きハンドル）を返す | acquire-slot |
 | MEM-02 | 割り当て失敗時のリカバリー戦略 | パーティション/スロット枯渇 | `acquire-partition`/`acquire-slot`失敗 | `memory-error`（`recovery-strategy`へ変換される）を返す（生のエラーコードのみを返して終わりにしない） | - |
-| MEM-03 | 総割当量の上限 | - | 複数回`acquire-partition`/`acquire-slot`/`allocate-shared` | `total_allocated_bytes <= FB_CONF_MEMORY_POOL_SIZE`を常に満たす | 「制約と不変条件」 |
+| MEM-03 | 総割当量の上限 | - | 複数回`acquire-partition`/`acquire-slot`/`allocate-shared` | `total_allocated_bytes <= FB_CONF_MEMORY_POOL_SIZE`を常に満たす | `{GLOBAL_StrictMemoryLimit}` |
 | MEM-04 | 所有者task-idの自動設定 | - | `acquire-partition`/`acquire-slot`/`allocate-shared` | 呼び出し元task-idが自動設定される（`block.owner != 0`） | - |
 | MEM-05 | `release-partition`/`deallocate`は所有者のみ実行可能 | 他タスクが確保したブロック | 別task-idから`release-partition`/`deallocate` | 拒否される | 「所有者タスクのみ実行可能」 |
 | MEM-06 | ゲストRAMの64KBアライメント | `pool-base`設定 | アドレスを確認 | WASMページ境界(64KB)に配置され、vMMIO/インタープリタの単一比較命令高速判定の前提を満たす | 「WasmPageAlignment」 |
-| MEM-07 | `allocate-shared`はvMMIO FC=14ページを実際にマッピング登録する | - | `allocate-shared(size)` | 対応するvMMIO PTEが呼び出し元タスクの仮想アドレス空間にマッピング登録される（`runtime_vmmio.md` `map_shm_page`相当） | allocate-shared 事後条件 |
+| MEM-07 | `allocate-shared`はvMMIO FC=14ページを実際にマッピング登録する | - | `allocate-shared(size)` | 対応するvMMIO PTEが呼び出し元タスクの仮想アドレス空間にマッピング登録される（`runtime_vmmio.md` `map_shm_page`相当） | `{Shm_Allocator}` |
 | MEM-08 | `claim`は有効なshm-idを要求する | 無効・解放済みshm-id | `claim(shm-id)` | 拒否される（`ERR_INVALID_SHM_ID`） | claim 事前条件 |
 | MEM-09 | HALの`acquire_buffer`との一本化 | HALがバッファを確保 | `acquire_buffer(size)`（HAL）を呼ぶ | 内部的に本コンポーネントの`allocate-shared`を呼び出しており、HALとメモリマネージャが独立にSHMページを確保しない | allocate-shared 補足 |
 
@@ -28,7 +28,7 @@
 
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| MEM-10 | `allocate-shared`→`release`→`claim`の所有権移動 | タスクAが`allocate-shared`済み | ライフサイクル手順を実行 | `release`後はA側で無効化され、`claim`後はB側が所有権を得る（二重所有なし） | ライフサイクル手順 |
+| MEM-10 | `allocate-shared`→`release`→`claim`の所有権移動 | タスクAが`allocate-shared`済み | ライフサイクル手順を実行 | `release`後はA側で無効化され、`claim`後はB側が所有権を得る（二重所有なし） | `{OwnershipTransfer}` |
 | MEM-10b | `release()`/`claim()`とvMMIO PTEマッピングの対応 | 同上 | `release()`直後・`claim()`直後それぞれでvMMIO PTEを確認 | `release()`直後はアンマップ（`is_mapped == False`）、`claim()`直後は受信タスク空間に再マッピング（`is_mapped == True`）される | runtime_vmmio.md |
 | MEM-10c | `rollback_transfer()`によるマッピングの復元 | `release()`済みでアンマップ状態 | `rollback_transfer(original_sender_id, shm_id)`を実行 | 対応するvMMIO PTEが送信元タスク空間へ再マッピングされる（アンマップ状態のまま放置されない） | ipc_router.md |
 | MEM-11 | `shared-block`のRAII自動解放 | Bがdropする | drop実行 | メモリが自動解放される（明示的`deallocate`不要） | 「ADR_SharedBlockRaii」 |

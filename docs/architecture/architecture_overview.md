@@ -216,7 +216,7 @@ ARM Cortex-M33 (ARMv8-M Mainline) における物理レジスタの厳格な役�
   - `+0x00`: `prev_frame_offset` (u32) — 親フレームオフセット
   - `+0x04`: `return_pc` (u32) — 呼び出し元復帰先 WASM PC
   - `+0x08`: `func_index` (u32) — 呼び出し先関数インデックス
-  - `+0x0C` 以降: 当該関数のローカル変数配列が連続配置される。詳細正本: `runtime_interpreter.md` (§3.3)。 `{CallFrame_Layout}`
+  - `+0x0C` 以降: 当該関数のローカル変数配列が連続配置される。詳細正本: `runtime_interpreter.md`。 `{CallFrame_Layout}`
 
 - **`control_frame`（独立固定容量バッファに配置、1フレーム計16バイト）**:
   - `+0x00`: `label_pc` (u32) — 分岐先/再試行ラベル PC
@@ -225,7 +225,7 @@ ARM Cortex-M33 (ARMv8-M Mainline) における物理レジスタの厳格な役�
   - `+0x0C`: `result_arity` (u16) — ブロック戻り値数
   - `+0x0E`: `is_loop` (u8) — ループ識別フラグ（1: loop, 0: block/if）
   - `+0x0F`: `reserved` (u8) — アライメント用パディング
-  - 制御ブロック（`block`, `loop`, `if`）の巻き戻し・分岐先脱出を管理する。詳細正本: `runtime_interpreter.md` (§3.3)。 `{ControlFrame_Layout}`
+  - 制御ブロック（`block`, `loop`, `if`）の巻き戻し・分岐先脱出を管理する。詳細正本: `runtime_interpreter.md`。 `{ControlFrame_Layout}`
 
 ---
 

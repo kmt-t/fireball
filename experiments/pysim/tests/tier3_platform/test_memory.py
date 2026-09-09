@@ -288,7 +288,7 @@ def test_mem_21_jit_code_cache_wx_switch_and_restore():
 
 
 # ===========================================================================
-# 4. HAL & UART / Timer (runtime_hal_test_spec.md / platform_driver_test_spec.md)
+# 4. HAL & UART / Timer (hal_dispatch_test_spec.md / platform_driver_test_spec.md)
 # ===========================================================================
 
 

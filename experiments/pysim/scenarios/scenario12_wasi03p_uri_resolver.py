@@ -65,7 +65,7 @@ _EMPTY_PARAMS = FlatMapView(())
 
 def _params(*pairs: tuple[int, object]) -> FlatMapView:
     """Builds a params FlatMapView from packed (key, value) pairs, matching
-    runtime_hal.md §5.1's control(id, cmd, params: ipc-message)."""
+    hal_dispatch.md §5.1's control(id, cmd, params: ipc-message)."""
     sorted_pairs = sorted(pairs, key=lambda kv: kv[0])
     return FlatMapView(sorted_pairs)
 
@@ -207,16 +207,17 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
     print(f"    [IPC FlatMapView DISPATCH] Written {nwritten_fmap} bytes -> {out_uart_fmap}")
 
     # 6.c Test Full HAL Task IPC Rendezvous Communication (Task-to-Task CSP)
-    sysv.spawn_hal_task()
+    sysv.spawn_hal_tasks()
     ipc_res = engine.send_ipc_command(
         "fireball://device/uart/0",
         WasiIpcCmd.STREAM_WRITE_BUFFER,
         _params((ARG_LENGTH, len(msg)), (ARG_OFFSET, 0)),
     )
     assert ipc_res == len(msg)
-    assert sysv.hal_task.processed_count >= 1
+    uart_task = sysv.hal_task_for("fireball://device/uart/0")
+    assert uart_task.processed_count >= 1
     print(
-        f"    [HAL Task IPC Rendezvous] Successfully received and dispatched command via HAL task (count={sysv.hal_task.processed_count})"
+        f"    [HAL Task IPC Rendezvous] Successfully received and dispatched command via HAL task (count={uart_task.processed_count})"
     )
 
     # 2) Key-Value Pair Array (Specification §3.3 Bit Assignment)

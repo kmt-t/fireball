@@ -110,7 +110,8 @@ DOMAINS = {
             "docs/components/tier1_core/os_coos.md",
             "docs/components/tier1_interface/ipc_router.md",
             "docs/components/tier2_runtime/runtime_vmmio.md",
-            "docs/components/tier3_platform/platform_memory.md",
+            "docs/components/tier1_core/system_memory.md",
+            "docs/components/tier2_runtime/runtime_memory.md",
         ],
         "formal_models": [
             "docs/components/tier1_core/formal/coos_channel_model.py",
@@ -120,7 +121,7 @@ DOMAINS = {
             "docs/components/tier1_core/concepts/coos_concept.py",
             "docs/components/tier1_interface/concepts/ipc_router_concept.py",
             "docs/components/tier2_runtime/concepts/vmmio_concept.py",
-            "docs/components/tier3_platform/concepts/platform_memory_concept.py",
+            "docs/components/tier2_runtime/concepts/runtime_memory_concept.py",
         ],
     },
     "traceability": {

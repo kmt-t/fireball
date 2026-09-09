@@ -5,7 +5,7 @@
 正本: [`interface_wit.md`](docs/components/tier1_interface/interface_wit.md)
 参考実装: なし（WIT定義そのものはコンセプトコードを持たない。`recovery-strategy-category` の実験的実装はバージョン管理外の `experiments/pysim` ディレクトリに置かれているが、本書の検証対象外である）。
 
-`recovery-strategy-category`（ignore/retry/restart/panic）、低レベルトラップインターフェース（`fireball-call`）、コンソール生バイト出力経路に関する契約を検証する。個別デバイスのIPCコマンドID実装（GPIO/タイマー/バス等）は [`runtime_hal_test_spec.md`](docs/components/tier2_runtime/tests/runtime_hal_test_spec.md) / [`platform_driver_test_spec.md`](docs/components/tier3_platform/tests/platform_driver_test_spec.md) の責務とする。
+`recovery-strategy-category`（ignore/retry/restart/panic）、低レベルトラップインターフェース（`fireball-call`）、コンソール生バイト出力経路に関する契約を検証する。個別デバイスのIPCコマンドID実装（GPIO/タイマー/バス等）は [`hal_dispatch_test_spec.md`](docs/components/tier2_runtime/tests/hal_dispatch_test_spec.md) / [`platform_driver_test_spec.md`](docs/components/tier3_platform/tests/platform_driver_test_spec.md) の責務とする。
 
 ## 2. テストケース一覧
 
@@ -40,6 +40,6 @@
 
 ## 4. 未検証・スコープ外
 
-- 個別デバイス（GPIO/タイマー/バス/ストリーム）のIPCコマンドID実装は [`runtime_hal_test_spec.md`](docs/components/tier2_runtime/tests/runtime_hal_test_spec.md) / [`platform_driver_test_spec.md`](docs/components/tier3_platform/tests/platform_driver_test_spec.md) を参照。
+- 個別デバイス（GPIO/タイマー/バス/ストリーム）のIPCコマンドID実装は [`hal_dispatch_test_spec.md`](docs/components/tier2_runtime/tests/hal_dispatch_test_spec.md) / [`platform_driver_test_spec.md`](docs/components/tier3_platform/tests/platform_driver_test_spec.md) を参照。
 - `input-stream`/`output-stream`の詳細な非同期セマンティクス（wasi:io標準への準拠度）。
 - `wasi:filesystem`のPASSTHROUGH/SHM「事前オープン済み仮想ファイル記述子」エミュレーション（-4）。

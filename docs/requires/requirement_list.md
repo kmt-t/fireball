@@ -107,7 +107,6 @@ graph LR
 | `{Syscall_Return_Value}` | システムコールの戻り値型とエラー伝播の標準。 | 高 | レビュー |
 | `{Errorcode_To_Strategy}` | errno 等を具体的なリカバリ戦略へ変換する仕組み。 | 高 | レビュー |
 | `{WASI_Implementation}` | WASI標準APIのFireball上での実装。 | 高 | テスト |
-| `{WASI_ConsoleRawOutput}` | `wasi:cli/stdout`/`stderr` の実行時生成・任意長の文字列出力を、`{DictionaryBasedIPC}`（ビルド時登録の辞書のみ）を経由せず `HAL_Transport` へ直接転送する経路。 | 高 | テスト |
 | `{TypeSafeMessaging}` | `fireball::flat_map_view` を用いた、IPCメッセージの型安全かつ検索効率の高い構造定義。 | 高 | レビュー |
 | `{PhysicalPassthrough}` | メモリコピーを介さず、物理リソースへ直接アクセスする高速パス。 | 高 | 計測 |
 
@@ -215,7 +214,7 @@ graph LR
     - 想定構成: Cortex-M33 / RAM 64KB / ROM 128KB
     - ※ 評価は最小構成（32KB/96KB）をターゲットとする。
 - **パフォーマンス制約**: AOTを使用しない条件下で、WAMRインタープリタを上回る実行速度。
-- **互換性**: WASM MVP準拠（浮動小数点除外）。
+- **互換性**: WASM MVP準拠（`{Wasm32Only}` の通り F32/F64 浮動小数点演算はサポートし、Wasm64・マルチスレッド等の非組込み拡張のみを除外する）。
 - **開発環境**: clang (C99, C++23, libstdc++)。
 - **依存性**: 標準C/C++ライブラリ以外の外部ライブラリは用いない。
 - **コード規模**: 15KLOC以内。

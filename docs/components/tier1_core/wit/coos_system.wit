@@ -1,6 +1,6 @@
 package fireball:core@0.1.0;
 
-/// COOS カーネルおよびコアサブシステム共通型定義
+/// COOS カーネルおよびコアコンポーネント共通型定義
 interface types {
     /// タスク識別子 (0〜15)
     type task-id = u32;
@@ -62,7 +62,7 @@ interface types {
     }
 }
 
-/// メモリマネージャ (co_mem) サブシステムインターフェース
+/// メモリマネージャ (co_mem) インターフェース
 /// システム統合物理メモリプールからタスク独立パーティションを静的貸与・返却する
 interface memory {
     use types.{task-id, partition-slice, memory-error};
@@ -74,7 +74,7 @@ interface memory {
     release-partition: func(owner: task-id) -> result<_, memory-error>;
 }
 
-/// 共有メモリマネージャ (co_shm / system_memory / runtime_memory) サブシステムインターフェース
+/// 共有メモリマネージャ (co_shm / system_memory / runtime_memory) インターフェース
 /// ゼロコピー IPC 通信および HAL デバイスデータ転送専用の共有メモリプール管理
 /// 所有権遷移（Revoke -> Rendezvous -> Grant）と連動し、vMMIO FC=14 マッピングを駆動する
 interface shared-memory {
@@ -90,7 +90,7 @@ interface shared-memory {
     release-shared: func(handle: u32) -> result<_, memory-error>;
 }
 
-/// CSP 通信エンジン (co_csp) サブシステムインターフェース
+/// CSP 通信エンジン (co_csp) インターフェース
 /// バッファを持たない純粋同期ランデブー通信（値スロット不在・ゼロコピー所有権移譲）
 interface csp {
     use types.{channel-id};
@@ -116,7 +116,7 @@ interface csp {
     get-channel-state: func(chan: channel-id) -> wait-direction;
 }
 
-/// COOS スケジューラ (os_scheduler) サブシステムインターフェース
+/// COOS スケジューラ (os_scheduler) インターフェース
 /// 協調型マルチタスク実行制御・アイドル検出・割り込み通知
 interface scheduler {
     use types.{task-id, scheduler-error};

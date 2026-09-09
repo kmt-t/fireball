@@ -486,7 +486,7 @@ def test_ipcr_gotcha_01_no_queue_assertion_on_duplicate_send():
     sender_id = sched.spawn("sender", role=Role.RUNTIME)
     sched.current_task = sched.get_task(sender_id)
 
-    status, ch = router.lookup("fireball://hal/gpio/0")
+    status, ch = router.lookup("fireball://device/gpio/0")
     assert status == IpcStatus.COMPLETED and ch is not None
 
     msg1 = IPCMessage.from_entries([(1, 100)])
@@ -513,7 +513,7 @@ def test_ipcr_gotcha_02_preflight_rejection_preserves_sender_ownership():
     """IPCR-GOTCHA-02: Preflight rejection (RBAC denial) keeps message in SENDER_OWNS."""
     sched = Scheduler()
     router = IPCRouter(sched)
-    sender_id = sched.spawn("sender_hal", role=Role.PLATFORM_HAL)
+    sender_id = sched.spawn("sender_hal", role=Role.HAL_UART)
     sched.current_task = sched.get_task(sender_id)
 
     msg = IPCMessage.from_entries([(1, 99)])
@@ -523,7 +523,7 @@ def test_ipcr_gotcha_02_preflight_rejection_preserves_sender_ownership():
     assert msg.ownership == OwnershipState.SENDER_OWNS
 
     # Even if an attacker obtains an unauthorized channel directly, send() rejects it based on TCB role
-    runtime_ch = router.channel_for_edge(Role.RUNTIME, Role.PLATFORM_HAL)
+    runtime_ch = router.channel_for_edge(Role.RUNTIME, Role.HAL_UART)
     assert runtime_ch is not None
     try:
         gen = router.send(runtime_ch, msg)

@@ -5,7 +5,7 @@
      concept: concepts/runtime_memory_concept.py
 -->
 
-本コンポーネントは、Tier 1 の抽象契約 [`system_memory.md`](docs/components/tier1_core/system_memory.md)（`co_mem` インターフェース、パーティション貸与ポリシー、独立ヒープ不変条件）の物理実装である。契約と実装の記述に食い違いがあれば `system_memory.md` を正とする（`document_structure.md` §2.1-4 契約/実装分割パターン）。
+本コンポーネントは、Tier 1 の抽象契約 [`system_memory.md`](docs/components/tier1_core/system_memory.md)（`co_mem` インターフェース、パーティション貸与ポリシー、独立ヒープ不変条件）の物理実装である。契約と実装の記述に食い違いがあれば `system_memory.md` を正とする（`{META_ContractImplSplit}` 契約/実装分割パターン）。
 
 ## 1. コンセプト
 <!-- traceability: {System_Allocator} {Shm_Allocator} {ConsolidatedHeap} -->
@@ -32,7 +32,7 @@ graph TD
 ```
 
 ## 4. インターフェース実装
-`system_memory.md` §4 で定義された公開API（`init-manager`, `acquire-partition`/`release-partition`, `acquire-slot`/`release-slot`, `allocate-shared`, `claim`, `deallocate`）を、以下のアロケータ群を用いて実現する。
+[`system_memory.md`](docs/components/tier1_core/system_memory.md) のインターフェース設計節で定義された公開API（`init-manager`, `acquire-partition`/`release-partition`, `acquire-slot`/`release-slot`, `allocate-shared`, `claim`, `deallocate`）を、以下のアロケータ群を用いて実現する。
 
 - `init-manager`: `system_allocator`/`shm_allocator` それぞれに対応する `create_mspace_with_base` を実行する。
 - `acquire-partition`/`release-partition`/`acquire-slot`/`release-slot`/`deallocate`: `system_allocator` の mspace 上で有界レイテンシの動的確保・解放を行う。
@@ -68,14 +68,14 @@ graph TD
 ## 6. 物理ページマッピングと共有メモリライフサイクルの物理実装
 <!-- traceability: {GLOBAL_Policy_Memory} {META_FaultIsolation} {OwnershipTransfer} {PageGranularPermissionIsolation} {VmmioShmDelegation} -->
 
-`system_memory.md` §6 が定義する契約（所有権追跡・イベント通知インターフェース・ライフサイクルフェーズ）を、以下のとおり物理実装する。
+[`system_memory.md`](docs/components/tier1_core/system_memory.md) の `{OwnershipTransfer}` 契約（所有権追跡・イベント通知インターフェース・ライフサイクルフェーズ）を、以下のとおり物理実装する。
 
 ### 6.1 所有権追跡の物理実装
 各メモリブロックは `memory-info.owner` で割り当て元 task-id を追跡する。`acquire-partition`/`acquire-slot`/`deallocate` や `RAII`/`drop` による解放は、用途別に事前確保された独立パーティション（固定長アリーナ）から `shm_allocator`/`system_allocator` を用いて有界に切り出し、使用後にアリーナへ返却・合体する。
 
 ### 6.2 共有メモリマッピングと仮想化リスナーへのコールバック委譲（物理実装）
 <!-- traceability: {VmmioShmDelegation} {OwnerMismatchTrap} -->
-物理メモリマネージャは、クリーンアーキテクチャ（依存性逆転の原則: DIP）に従い、特定の上位仮想化ハードウェア（vMMIO 等）の内部シンボルや特定の仮想アドレス体系（`0xE000_0000`）に直接依存しない。物理メモリマネージャは `system_memory.md` §6.2 が定義するイベント通知インターフェース（リスナー機構）を提供し、仮想化層（vMMIO コントローラ等）がこれを購読・登録する。 `{VmmioShmDelegation}`
+物理メモリマネージャは、クリーンアーキテクチャ（依存性逆転の原則: DIP）に従い、特定の上位仮想化ハードウェア（vMMIO 等）の内部シンボルや特定の仮想アドレス体系（`0xE000_0000`）に直接依存しない。物理メモリマネージャは [`system_memory.md`](docs/components/tier1_core/system_memory.md) の `{VmmioShmDelegation}` が定義するイベント通知インターフェース（リスナー機構）を提供し、仮想化層（vMMIO コントローラ等）がこれを購読・登録する。 `{VmmioShmDelegation}`
 
 物理メモリマネージャは物理ページ（4KB）のライフサイクル変化時にこの通知を発火し、仮想化層側が自身の仮想アドレス空間（VPN）に対応するページテーブル（PTE）更新や TLB エントリフラッシュを自律的に実施する。 `{OwnerMismatchTrap}`
 
@@ -93,7 +93,7 @@ Cortex-M33 MPU および vMMIO のハードウェア保護機構において、�
 
 ### 6.4 共有メモリライフサイクルと権限遷移プロトコル（物理実装）
 <!-- traceability: {OwnershipTransfer} {META_FaultIsolation} -->
-`system_memory.md` §6.3 のライフサイクルフェーズ遷移表に対応する、vMMIO PTE / TLB の具体的な物理挙動を以下に示す。
+[`system_memory.md`](docs/components/tier1_core/system_memory.md) の `{OwnershipTransfer}` ライフサイクルフェーズ遷移表に対応する、vMMIO PTE / TLB の具体的な物理挙動を以下に示す。
 
 | ステップ | フェーズ | 送信元(Task A) | 受信先(Task B) | vMMIO PTE & TLB 挙動 |
 | :---: | :--- | :--- | :--- | :--- |

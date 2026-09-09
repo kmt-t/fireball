@@ -11,9 +11,9 @@
 
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| CFG-01 | メモリパーティション総和の一致 | 既定値 | 各`FB_CONF_*_HEAP_SIZE`等を合計 | `KERNEL(4096)+RUNTIME(2048)+SUBSYS(3072)+JIT_CACHE(6144)+INTERP_STACK(2048)+TASK_HEAP(4096)×MAX_GUEST_VMS(1) == MEMORY_POOL_SIZE(21504)` | static_assert |
+| CFG-01 | メモリパーティション総和の一致 | 既定値 | 各`FB_CONF_*_HEAP_SIZE`等を合計 | `KERNEL(4096)+RUNTIME(2048)+SUBSYS(3072)+JIT_CACHE(6144)+INTERP_STACK(2048)+sum(TASK_HEAP_SIZES)(4096, 要素数=MAX_GUEST_VMS(1)) == MEMORY_POOL_SIZE(21504)` | static_assert |
 | CFG-02 | 統合プールが物理RAM以下 | 既定値 | 比較 | `FB_CONF_MEMORY_POOL_SIZE(21504) <= FB_CONF_PHYSICAL_RAM_SIZE(32768)` | static_assert |
-| CFG-03 | ゲストRAMサイズの一致 | 既定値 | 比較 | `FB_CONF_GUEST_RAM_SIZE == FB_CONF_TASK_HEAP_SIZE`（共に4096） | static_assert |
+| CFG-03 | ゲストRAMサイズの一致・配列長の一致 | 既定値 | 比較 | `FB_CONF_GUEST_RAM_SIZE == FB_CONF_TASK_HEAP_SIZES[0]`（共に4096）、`FB_CONF_TASK_HEAP_SIZES.size() == FB_CONF_MAX_GUEST_VMS` | static_assert |
 | CFG-04 | ロール間通信許可マトリクスの形状 | - | `FB_CONF_ROUTER_ROLE_MATRIX`を確認 | 9x9の`bool`表で、`ipc_router_concept.py`のrole_matrixと矛盾しない（RUNTIME→CORE_SERVICE/HAL_*(6ロール)=true、RUNTIME→DEBUGGER=false等） | - |
 | CFG-05 | タスクID予約値の非衝突 | - | `FB_CONF_MAX_TASKS`(16) ≤ 254であることを確認 | `FB_TASK_ID_FLIGHT`(0xFF=255)と衝突しない | - |
 | CFG-06 | JITキャッシュの3等分 | `FB_CONF_JIT_CACHE_SIZE`(6144), `FB_CONF_JIT_NUM_BUFFERS`(3) | 6144/3を計算 | 各バンク2048バイトで割り切れる | runtime_vsoc.md |

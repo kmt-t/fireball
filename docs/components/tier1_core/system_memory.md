@@ -62,7 +62,7 @@ WITインターフェース名は kebab-case で定義されるが、C++の公�
 
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | COOS がタスクを起動する際に、タスク固有の静的メモリパーティションを貸与する。**汎用ヒープAPIではない**: `{CooperativeMultitasking}`が明示するとおり、サイズ引数を取る動的確保も汎用ポインタの返却も提供せず、コンパイル時に確定した固定長パーティションのみを貸し出す。 |
+| 機能概要 | COOS がタスクを起動する際に、タスク固有の静的メモリパーティションを貸与する。**汎用ヒープAPIではない**: `{CooperativeMultitasking}`が明示するとおり、サイズ引数を取る動的確保も汎用ポインタの返却も提供せず、コンパイル時に確定した固定長パーティションのみを貸し出す。各タスクへの貸与サイズはタスク種別・搭載予定モジュール規模に応じて `system_config.md` の `FB_CONF_TASK_HEAP_SIZES` ROM配列でスロットごとに個別設定される（呼び出し元がサイズを指定するのではなく、あくまでコンパイル時に確定した値を参照するのみ）。 |
 | シグネチャ | `acquire-task-heap(owner: task-id) -> result<partition-slice, memory-error>`<br>(C++マッピング: `fireball::co_mem::acquire_task_heap`) |
 | 引数 | `owner`: パーティションの貸与先タスクID |
 | 戻り値 | 成功時は `partition-slice`（`coos_system.wit` `types.partition-slice`。基点アドレス・サイズ・所有タスクを持つ非所有ビュー相当のレコード）。失敗時は `memory-error` |
@@ -78,7 +78,7 @@ WITインターフェース名は kebab-case で定義されるが、C++の公�
 | 不変条件 | 所有者以外からの呼び出しは無効（返却されない） |
 
 #### 型付きプールスロットの貸与・返却（`acquire-slot` / `release-slot`）
-タスクヒープと同様に固定長・静的確保のみを行う、型付きスロット単位の貸与契約。**このAPIは `coos_system.wit` には現れない**: WIT はジェネリクスを表現できないため、`pool-ref<T>` はコンポーネント境界を越えない C++ 側のみの型付きラッパーとして提供される（WIT 側は `acquire-task-heap` の汎用パーティションを型無しで貸与し、型安全性は C++ テンプレートが実現する）。
+タスクヒープと同様に固定長・静的確保のみを行う、型付きスロット単位の貸与契約。**このAPIは `coos_system.wit` には現れない**: WIT はジェネリクスを表現できないため、`pool-ref<T>` はコンポーネント境界を越えない C++ 側のみの型付きラッパーとして提供される（WIT 側は `acquire-task-heap` の汎用パーティションを型無しで貸与し、型安全性は C++ テンプレートが実現する）。**主要な用途の一つ**: COOS タスクの C++20 コルーチンフレーム確保。`promise_type::operator new`/`operator delete` が本APIを介してホスト用ヒープではなくカーネルプール（`FB_CONF_KERNEL_HEAP_SIZE`）内の静的スロットからフレームを確保することで、`malloc`/`new` を使わずにコルーチンを起動する（`{CooperativeMultitasking}` `{GLOBAL_UseCpp20Coroutine}`、詳細は [`os_scheduler.md`](docs/components/tier1_core/os_scheduler.md) `spawn_task` を正本とする）。
 
 | 項目 | 内容 |
 | :--- | :--- |

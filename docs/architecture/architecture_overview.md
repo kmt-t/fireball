@@ -9,8 +9,12 @@ Fireballは、リソース制限の厳しい小規模組み込みデバイス（
 - **協調型マルチタスク (COOS)**: C++20/23コルーチンベースのスタックレス・タスク構造を採用し、低オーバーヘッドな切り替えを実現する。ホーアCSPモデルに基づき、所有権移譲によるゼロコピーメッセージパッシングによりデータ競合を原理的に排除する。 `{LowOverhead}` `{ServiceSelfReboot}` `{FaultTolerant}`
 - **高速JIT (Copy-and-Patch)**: コンパイルレイテンシを最小化し、小規模なコードキャッシュ（2KB x 3面 = 6KB）を循環活用する。
 - **Conceptベース・コンポーネントハーネス**: vSoC等の複合コンポーネントを独立したサブコンポーネントの集合体として定義し、C++20 Conceptsとハーネス構造体（`vsoc_harness`, `coos_harness`）による静的DIで結合する。仮想関数（vtable）のオーバーヘッドをゼロにする。 `{GLOBAL_ComponentHarness}` `{ConceptHarnessDI}` `{META_StaticDI}` `{ZeroRuntimeOverhead}`
-- **1ランタイム1ゲスト原則と専用バンプアロケータ**: 1つの WASM ランタイム（`vSoC`）は厳密に1つのゲストモジュールのみを担当し（`{OneRuntimeOneGuest}`）、各ランタイムが専用の固定長バンプアロケータ（`bump_allocator`）を所有する（`{Runtime_BumpAllocator}`）。モジュール内のシステムコンテナストレージはすべてこのアロケータから確保され、モジュール破棄・アンロード時にアリーナごと $O(1)$ で一括解放される。なお、JIT ネイティブコードキャッシュ（3-Bank）は MPU の W^X（ライト・実行権限排他）制御が適用された専用の実行可能セクションから専用アロケータ（`jit_code_allocator`）によって確保され、データ用バンプアロケータ（RAM/XN）とはハードウェア保護ドメインが厳格に分離される。マルチインスタンスは独立ランタイムの並行起動と CoOS IPC（CSP ランデブーおよびゼロコピー SHM 所有権移譲）により実現し、メモリと障害の完全直交分離を達成する。
-- **システムコンテナ用および共有メモリ用の dlmalloc アロケータ (`{System_Allocator}`, `{Shm_Allocator}`)**: WASM モジュール用のバンプアロケータとは独立して、カーネル・仮想化基盤（COOS, vMMIO, IPC Router, MemoryManager, Debugger 等）が常駐・運用するシステムコンテナの内部ストレージ（PTE表, チャネルテーブル, ブレークポイント等）は dlmalloc（`create_mspace_with_base`）ベースの**システム用アロケータ (`system_allocator`)** により動的確保・個別解放される。また、タスク間 IPC でゼロコピー転送される共有メモリ（MPU Region 6: `Shared Memory Buffers`）は、可変長（`size`）の要求に応じたバッファ切り出しと RAII 解放時の自動合体を提供する**SHM用アロケータ (`shm_allocator`)** により管理される。なお、タスク間メモリ保護のため、同一 4KB 物理ページ内には同一所有タスクの SHM チャンクのみが配置される（`{PageGranularPermissionIsolation}`）。
+- **メモリ管理: 5プールモデル (`{ADR_FivePoolMemoryModel}`)**: システム全体の統合物理メモリプール（`ConsolidatedHeap`）を、用途・ライフサイクル・アロケータ方式が異なる5つの独立プールへ静的に分割する（正本契約: [`system_memory.md`](docs/components/tier1_core/system_memory.md)）。各プールは物理的・領域的に完全に独立し、特定プールの枯渇が他プールを道連れにしない（`{GLOBAL_IndependentHeap}`）。
+  - **タスクヒープ**: COOS がタスク起動時に貸与する、タスク固有の固定長パーティション。サイズはゲストVMスロットごとに `system_config.md` の `FB_CONF_TASK_HEAP_SIZES` ROM配列で個別設定される（均等割りではない）。
+  - **ホスト用ヒープ (`{System_Allocator}`)**: dlmalloc（`create_mspace_with_base`）ベースの**システム用アロケータ (`system_allocator`)** が、カーネル・仮想化基盤（COOS, vMMIO, IPC Router, MemoryManager, Debugger 等）が常駐・運用するシステムコンテナの内部ストレージ（PTE表, チャネルテーブル, ブレークポイント等）を動的確保・個別解放する。
+  - **共有メモリ用ヒープ (`{Shm_Allocator}`)**: タスク間 IPC でゼロコピー転送される共有メモリ（MPU Region 6: `Shared Memory Buffers`）を、可変長（`size`）の要求に応じて切り出す**SHM用アロケータ (`shm_allocator`)** が管理し、RAII 解放時に自動合体する。同一 4KB 物理ページ内には同一所有タスクの SHM チャンクのみが配置される（`{PageGranularPermissionIsolation}`）。
+  - **ランタイム用バンプアロケータ (`{Runtime_BumpAllocator}`)**: 1つの WASM ランタイム（`vSoC`）は厳密に1つのゲストモジュールのみを担当し（`{OneRuntimeOneGuest}`）、各ランタイムが専用の固定長バンプアロケータ（`bump_allocator`）を所有する。モジュール内のシステムコンテナストレージはすべてこのアロケータから確保され、モジュール破棄・アンロード時にアリーナごと $O(1)$ で一括解放される。マルチインスタンスは独立ランタイムの並行起動と CoOS IPC（CSP ランデブーおよびゼロコピー SHM 所有権移譲）により実現し、メモリと障害の完全直交分離を達成する。
+  - **JITキャッシュアロケータ (`{JIT_MultiBuffer_Cache}`)**: JIT ネイティブコードキャッシュ（3-Bank）は MPU の W^X（ライト・実行権限排他）制御が適用された専用の実行可能セクションから専用アロケータ（`jit_code_allocator`）によって確保され、データ用バンプアロケータ（RAM/XN）とはハードウェア保護ドメインが厳格に分離される。
 - **静的構成**: システム構成値（バッファサイズ、タスク数、メモリ上限等）をヘッダマクロおよび `constexpr` 定数によりコンパイル時に静的確定し、実行時のメモリ競合や探索コストを抑制する。 `{META_ConfigurableSystem}` `{META_Static_Resolution}`
 
 ---
@@ -262,36 +266,29 @@ graph TD
 
 ### 6.1 メモリ予算 (RAM: 評価ターゲット 32KB = 32,768 Bytes)
 
-| パーティション | 最小構成 (Bytes) | 最小構成 (KB) | 想定構成 (KB) | 責務 / 縮退方針 |
-| :--- | ---: | ---: | ---: | :--- |
-| **JIT コードキャッシュ** | 6,784 | 6.63 | 6.63 | 2KB×3面 (Active/Warm/Oldest) + メタデータ。**縮退しない** |
-| **3独立スタック & コンテキスト** | 2,064 | 2.02 | 4.00 | `execution_context` + `OperandStack`/`LocalStack`（`call_frame`含む）/`control_frame`。縮退しない |
-| **WASM ゲストリニアメモリ** | 4,096 | 4.00 | 8.00 | ゲスト作業領域。4KB 部分ページへ縮退 |
-| **vSoC メタデータ & 索引** | 1,152 | 1.13 | 2.00 | モジュール・関数・グローバル・テーブル索引。縮退しない |
-| **COOS スケジューラ** | 1,344 | 1.31 | 2.00 | TCB 16個, READYキュー, CSPチャネル。縮退しない |
-| **IPC & vMMIO PTE / TLB** | 1,408 | 1.38 | 2.00 | SHMスロット, PTEテーブル, ダイレクトTLB。縮退しない |
-| **サブシステム (Log/HAL/GDB)** | 1,792 | 1.75 | 3.00 | 構造化ログ1KB, HALドライバ, GDB RSPバッファ。ログリングバッファを削減 |
-| **C++ Core / MSP スタック / .bss**| 3,072 | 3.00 | 4.00 | 割込みスタック(MSP 2KB), C++23 static変数(.bss 1KB)。縮退しない |
-| **静的合計** | **21,712** | **21.20** | **31.63** | - |
-| **安全マージン (未割当)** | **11,056** | **10.80** | **32.37** | 断片化防止・将来拡張余裕 (33.7% 余白) |
-| **総計 (Target RAM)** | **32,768** | **32.00** | **64.00** | - |
+以下は [`resource_budget_estimation.md`](docs/architecture/resource_budget_estimation.md) §3.1（詳細正本）から逆算した実配分値であり、`system_config.md` の `FB_CONF_*` 定数と 1 対 1 に対応する。数値は本概要ではなく詳細正本を常に正とする。
+
+| メモリ領域 | RAM サイズ (Bytes) | 責務 |
+| :--- | ---: | :--- |
+| **統合物理メモリプール** (`ConsolidatedHeap`) | **21,504** | 下記5プールの静的事前確保物理プール（`{ADR_FivePoolMemoryModel}`） |
+| — JIT キャッシュアロケータ (`FB_CONF_JIT_CACHE_SIZE`) | 6,144 | JITコードキャッシュ 2KB×3面（Active/Warm/Oldest）。MPU W^X 保護 |
+| — タスクヒープ (`sum(FB_CONF_TASK_HEAP_SIZES)`) | 4,096 | ゲスト WASM リニアメモリ実体（スロット別ROM配列の総和） |
+| — ホスト用ヒープ（カーネルプール）(`FB_CONF_KERNEL_HEAP_SIZE`) | 4,096 | TCB・コルーチンフレーム。共有メモリ用ヒープ（`FB_CONF_SHM_SIZE`: 1,024 B）を内包 |
+| — ホスト用ヒープ（サブシステムプール）(`FB_CONF_SUBSYS_HEAP_SIZE`) | 3,072 | HAL 通信バッファ・GDB RSP バッファ・ログリングバッファ |
+| — ランタイム用バンプアロケータ (`FB_CONF_RUNTIME_HEAP_SIZE`) | 2,048 | `execution_context`・モジュールインスタンス状態 |
+| — インタープリタ統合スタック (`FB_CONF_INTERP_STACK_SIZE`) | 2,048 | `OperandStack`/`LocalStack`/`control_frame` |
+| **システム静的変数 & OS スタック（プール外）** | **~3,500** | vMMIO TLB・ブレークポイント・ISRキュー・MSPスタック等 |
+| **RAM 合計使用量** | **~25,000** | 32KB SRAM に対し約 7.0 KB（約 22%）の安全マージンを確保 |
 
 ### 6.2 ストレージ予算 (ROM/Flash: 評価ターゲット 96KB = 98,304 Bytes)
 
-| コンポーネント | 最小構成 (KB) | 想定構成 (KB) | 備考 / 縮退方針 |
-| :--- | ---: | ---: | :--- |
-| **JIT ステンシル & Copy-and-Patch エンジン** | 8.0 | 12.0 | ステンシルバイト列, リロケーションテーブル, 代謝管理 |
-| **WASM Interpreter & ディスパッチャ** | 14.0 | 18.0 | 全172命令ハンドラ, `[[clang::musttail]]` CPSディスパッチャ |
-| **WASM Binary Loader & バリデータ** | 6.0 | 8.0 | ゼロコピー LEB128, V1〜V6 バリデータ |
-| **COOS カーネル & IPC ルータ** | 10.0 | 12.0 | コルーチンスケジューラ, ゼロコピー CSP チャネル, システムコール |
-| **vMMIO コントローラ & MPU W^X 管理** | 5.5 | 8.0 | 2段階ダイレクトデコード, ソフトウェアTLB, PMSAv8 MPU |
-| **HAL & WASI ドライバ & 構造化ログ** | 12.0 | 16.0 | 最小構成: UART/RTT/GPIO/Timer, WASI Preview 1, LogDictionary |
-| **GDB Remote RSP デバッガ** | 4.5 | 6.0 | パケットパーサ, レジスタ/メモリ読み書き, ソフトウェアBP |
-| **内蔵初期 WASM アプリケーション** | 20.0 | 32.0 | ROM 上のプリロード WASM バイナリイメージ |
-| **スタートアップ & C++23 コアランタイム** | 4.0 | 6.0 | Cortex-M33 ベクタテーブル, CMSIS, リンカスタブ |
-| **静的合計** | **84.0** | **118.0** | - |
-| **安全マージン (未割当)** | **12.0** | **10.0** | リンカ配置余裕・パディング (12.5% 余白) |
-| **総計 (Target Flash/ROM)** | **96.0** | **128.0** | - |
+以下は [`resource_budget_estimation.md`](docs/architecture/resource_budget_estimation.md) §3.2（詳細正本）から逆算した実配分値。数値は本概要ではなく詳細正本を常に正とする。
+
+| 領域 | ROM サイズ | 内容 |
+| :--- | ---: | :--- |
+| **不変ルックアップテーブル & 辞書** (`.rodata`) | **~8.2 KB** | JIT ステンシルカタログ・命令ハンドラテーブル・IPC レジストリ・RBAC マトリクス・ログ辞書等 |
+| **ハイパーバイザ機械語コード** (`.text`) | **~45〜55 KB** | インタープリタ・JIT コンパイラ・COOS カーネル・ローダー・HAL/WASI/デバッガ |
+| **ROM 合計使用量** | **~53〜63 KB** | 最小構成 Flash 96KB に対し約 34〜45% の空き容量で収容可能 |
 
 ### 6.3 コード規模予算 (SLOC)
 - ターゲット: `{Size_15KLOC}` (15,000行以内)
@@ -355,7 +352,7 @@ sequenceDiagram
 ---
 
 ## 8. アーキテクチャスタイルと設計判断 (ADR)
-<!-- traceability: {ADR_IntrusiveTcbList} {ADR_CoosPureRoundRobin} {ADR_EventDrivenWakeQueue} {ADR_SharedBlockRaii} {ADR_MemoryManagerMinimalSurface} {ADR_PageGranularPermissionIsolation} -->
+<!-- traceability: {ADR_IntrusiveTcbList} {ADR_CoosPureRoundRobin} {ADR_EventDrivenWakeQueue} {ADR_SharedBlockRaii} {ADR_MemoryManagerMinimalSurface} {ADR_PageGranularPermissionIsolation} {ADR_FivePoolMemoryModel} -->
 
 | 設計課題 | 採用スタイル | 選択理由 |
 | :--- | :--- | :--- |
@@ -363,7 +360,7 @@ sequenceDiagram
 | **通信モデル** | **同期メッセージング** | CSP ハンドオフも IPC ルータ経由も呼び出し側は応答待機。確定的な実行フロー |
 | **タスク制御** | **協調型マルチタスク** | スタックレス coroutine で RAM 削減、`co_yield` による主動的譲渡 |
 | **割り込み処理** | **イベント駆動 (ISR) + ポーリング (処理層)** | ISR は軽量通知のみ、実処理はメインループで安全に処理 |
-| **メモリ管理** | **パーティション分離と専用アロケータ** | 用途別アリーナ（dlmalloc mspace / bump / W^X）により、メモリ隔離と有界な動的メモリ管理を両立 |
+| **メモリ管理** (`{ADR_FivePoolMemoryModel}`) | **5プール分離と専用アロケータ** | 用途別5プール（ホスト用ヒープ・タスクヒープ・共有メモリ用ヒープ・ランタイム用バンプアロケータ・JITキャッシュアロケータ、dlmalloc mspace / bump / W^X）により、メモリ隔離と有界な動的メモリ管理を両立。設計根拠: `{ADR_FivePoolMemoryModel}` |
 | **依存関係解決** | **静的 DI (Harness)** | C++20 Concepts と Harness 構造体によりコンパイル時に確定 |
 | **TCB連結方式** (`{ADR_IntrusiveTcbList}`) | **侵入型リスト** | ノード確保が不要で `{GLOBAL_Policy_Memory}` に適合。設計根拠: `{ADR_IntrusiveTcbList}` |
 | **スケジューリングアルゴリズム** (`{ADR_CoosPureRoundRobin}`) | **純粋な協調型ラウンドロビン（優先度なし）** | 優先度逆転を根本排除し、`{NotRTOS}` 方針と整合。設計根拠: `{ADR_CoosPureRoundRobin}` |

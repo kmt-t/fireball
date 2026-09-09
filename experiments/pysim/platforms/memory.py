@@ -37,7 +37,7 @@ class PageMappingCallbacks:
 
 # Configuration & Constants (FB_CONF_*)
 FB_CONF_MEMORY_POOL_SIZE = 21504  # system_config.md: sum of all sub-pools (bytes)
-FB_CONF_TASK_HEAP_SIZE = 4096  # system_config.md FB_CONF_TASK_HEAP_SIZE: fixed partition per task
+FB_CONF_TASK_HEAP_SIZES = (4096,)  # system_config.md FB_CONF_TASK_HEAP_SIZES: per-VM-slot ROM size table
 FB_CONF_MAX_TASKS = 16
 FB_CONF_MAX_SHM_PAGES = 32
 FB_PAGE_SIZE = 4096  # 4KB SHM page size
@@ -595,7 +595,8 @@ class MemoryManager:
                 )
             )
 
-        if self.total_allocated_bytes + FB_CONF_TASK_HEAP_SIZE > self.pool_size:
+        slot_index = len(self.partition_owners)
+        if slot_index >= len(FB_CONF_TASK_HEAP_SIZES):
             return Result(
                 error=MemoryErrorResult(
                     "ERR_POOL_EXHAUSTED",
@@ -603,23 +604,33 @@ class MemoryManager:
                 )
             )
 
-        offset = len(self.partition_owners) * FB_CONF_TASK_HEAP_SIZE
+        slot_size = FB_CONF_TASK_HEAP_SIZES[slot_index]
+        if self.total_allocated_bytes + slot_size > self.pool_size:
+            return Result(
+                error=MemoryErrorResult(
+                    "ERR_POOL_EXHAUSTED",
+                    RecoveryStrategy(RecoveryAction.DEGRADE, "Physical memory pool exhausted"),
+                )
+            )
+
+        offset = sum(FB_CONF_TASK_HEAP_SIZES[:slot_index])
         base_addr = self.pool_base + offset
         pv = PartitionView(
             owner=owner,
             base_address=base_addr,
-            size=FB_CONF_TASK_HEAP_SIZE,
-            data=bytearray(FB_CONF_TASK_HEAP_SIZE),
+            size=slot_size,
+            data=bytearray(slot_size),
         )
         self.partition_owners.insert(owner, pv)
-        self.total_allocated_bytes += FB_CONF_TASK_HEAP_SIZE
+        self.total_allocated_bytes += slot_size
         return Result(value=pv)
 
     def release_task_heap(self, caller_task_id: int) -> None:
         if caller_task_id not in self.partition_owners:
             return
-        self.partition_owners.remove(caller_task_id)
-        self.total_allocated_bytes -= FB_CONF_TASK_HEAP_SIZE
+        pv = self.partition_owners.remove(caller_task_id)
+        if pv is not None:
+            self.total_allocated_bytes -= pv.size
 
     def allocate_shared(
         self,

@@ -257,7 +257,7 @@ stateDiagram-v2
 | 機能概要 | 新しいWASMタスクを生成し、実行可能キューの末尾に追加する。 | 操作定義 |
 | シグネチャ | `auto spawn(const char* name, wasm_entry_t entry) -> result<os_task_id_t, os_result_t>` | 関数プロトタイプ |
 | 引数 | - `name`: タスク名称。生存期間がプログラム起動から終了まで静的に保証されたヌル終端文字列（`const char*`）。動的ヒープ確保を避けるため、内部でのコピーは行わず、ポインタ参照のみを保持する。<br>- `entry`: WASMエントリポイントとなる関数ポインタ型 `wasm_entry_t`（C++での型エイリアス定義は `using wasm_entry_t = void(*)(void*);`。コルーチン生成時に初期コルーチンフレームの起動先として紐付けられる）。 | 引数定義 |
-| 戻り値 | 成功時は静的に割り当てられたタスクIDである `os_task_id_t` を返し、失敗時はエラーコードを示す `os_result_t` （例：`ERR_NO_MEMORY` = TCBプール領域満杯でメモリ確保不可、`ERR_MAX_TASKS_REACHED` = 登録タスク数がシステム上限に到達、`ERR_INVALID_ARG` = 引数不正）を返す `result<os_task_id_t, os_result_t>` 型。動的ヒープ確保は一切行われず、静的メモリ内の固定長配列（`std::array<TCB, FB_CONF_SCHED_MAX_TASKS>`）から空きスロットが割り当てられる。 | 結果型 |
+| 戻り値 | 成功時は静的に割り当てられたタスクIDである `os_task_id_t` を返し、失敗時はエラーコードを示す `os_result_t` （例：`ERR_NO_MEMORY` = TCBプール領域満杯でメモリ確保不可、`ERR_MAX_TASKS_REACHED` = 登録タスク数がシステム上限に到達、`ERR_INVALID_ARG` = 引数不正）を返す `result<os_task_id_t, os_result_t>` 型。動的ヒープ確保は一切行われず、静的メモリ内の固定長配列（`std::array<TCB, FB_CONF_MAX_TASKS>`）から空きスロットが割り当てられる。 | 結果型 |
 | 事前条件 | スケジューラが初期化済みであること。管理タスク数上限（scheduler_config）に達していないこと。 | 条件 |
 | 事後条件 | 新しいタスクが実行可能キューの末尾に追加される。 | 状態変化 |
 | 不変条件 | 生成されたシステムタスクIDはシステム内で一意であること。 | 制約 |
@@ -270,7 +270,7 @@ stateDiagram-v2
 | :--- | :--- | :--- |
 | 機能概要 | 既存のコルーチンオブジェクトからネイティブタスクを生成し、READY キューに追加する。 | 操作定義 |
 | シグネチャ | `auto fireball::spawn_task(task&& t) -> result<os_task_id_t, os_result_t>` | 関数プロトタイプ |
-| 引数 | `t`: 移動セマンティクスによるムーブ専用のコルーチンタスクオブジェクト。<br>※ コルーチンフレームの有界性を担保するため、`t` はコンパイル時コンセプト `is_heap_less<task>` を満たし、コルーチンフレームが事前割り当て領域（タスクプール）に配置可能なレイアウトを持つ型でなければならない（`std::is_trivially_copyable` またはカスタムアロケータ要件に基づく）。 | 引数定義 |
+| 引数 | `t`: 移動セマンティクスによるムーブ専用のコルーチンタスクオブジェクト。<br>※ コルーチンフレームの有界性を担保するため、`t` の `promise_type` は `operator new`/`operator delete` をオーバーライドし、[`system_memory.md`](docs/components/tier1_core/system_memory.md) §4.2 の型付きスロット貸与API（`acquire_slot<T>()`/`pool_ref<T>`、カーネルプール `FB_CONF_KERNEL_HEAP_SIZE` 内から確保）を介してコルーチンフレームを確保する（`malloc`/`new` を用いない）。`t` はこの静的スロット割り当てに適合するコンパイル時コンセプト `is_heap_less<task>` を満たす型でなければならない。 | 引数定義 |
 | 戻り値 | 成功時は割り当てられたタスクID `os_task_id_t` を返し、失敗時はエラーコードを示す `os_result_t` （例：`ERR_MEM_FULL`, `ERR_INVALID_ARG`）を返す `result<os_task_id_t, os_result_t>` 型。 | 結果型 |
 | 事前条件 | `t` が有効なコルーチンハンドルを保持していること。 | 条件 |
 | 事後条件 | タスクが READY キューに追加される。 | 状態変化 |
@@ -323,7 +323,7 @@ stateDiagram-v2
 | :--- | :--- | :--- |
 | 機能概要 | 外部から全タスクの待機・実行状態を安全に監視するためのメソッド。ロックフリーな読み取り専用構造（Double Buffering）を採用し、実行中タスクをブロックせずに $O(1)$ で状態スナップショットを取得可能。 | 操作定義 |
 | シグネチャ | `auto get_task_states() const noexcept -> task_state_snapshot_t` | 関数プロトタイプ |
-| 戻り値 | 全タスクの状態スナップショット配列（`std::array<os_task_state_t, FB_CONF_SCHED_MAX_TASKS>`） | 結果型 |
+| 戻り値 | 全タスクの状態スナップショット配列（`std::array<os_task_state_t, FB_CONF_MAX_TASKS>`） | 結果型 |
 | 事前条件 | スケジューラが初期化済みであること。 | 条件 |
 | 事後条件 | 実行中タスクの進行に影響を与えない。 | 状態変化 |
 
@@ -336,7 +336,7 @@ stateDiagram-v2
   - **背景**: TCBの連結方式を決定する必要がある。`{GLOBAL_Policy_Memory}` の有界メモリ管理方針に基づき、スケジューラ内部での不要なメモリ確保やフラグメンテーションは極小化すべきである。
   - **選択肢と評価**:
     - 案1: `std::list` 等のノードベースコンテナで連結する。標準的で扱いやすいが、リスト操作ごとにノード確保のオーバーヘッドとフラグメンテーションのリスクが発生する。
-    - 案2: TCB自体に `next` ポインタを持たせる侵入型リストで連結する。追加のノード確保が不要で、事前確保された TCB プール（`std::array<TCB, FB_CONF_SCHED_MAX_TASKS>`）の要素をそのまま連結できる。
+    - 案2: TCB自体に `next` ポインタを持たせる侵入型リストで連結する。追加のノード確保が不要で、事前確保された TCB プール（`std::array<TCB, FB_CONF_MAX_TASKS>`）の要素をそのまま連結できる。
   - **結論**: 案2を採用する。
   - **理由**: 不要なノード確保や断片化を排除し、RAM 64KB環境での決定論的動作と生存を確実にするため。 `{GLOBAL_Policy_Memory}`
 - **決定事項**: `{ADR_CoosPureRoundRobin}`

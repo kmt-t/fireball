@@ -25,7 +25,7 @@ T = TypeVar("T")
 # -----------------------------------------------------------------------------
 
 FB_CONF_MEMORY_POOL_SIZE = 21504  # system_config.md: sum of all sub-pools (bytes)
-FB_CONF_TASK_HEAP_SIZE = 4096  # system_config.md FB_CONF_TASK_HEAP_SIZE: fixed partition per task
+FB_CONF_TASK_HEAP_SIZES = (4096,)  # system_config.md FB_CONF_TASK_HEAP_SIZES: per-VM-slot ROM size table
 FB_CONF_MAX_TASKS = 16
 FB_CONF_MAX_SHM_PAGES = 32
 FB_PAGE_SIZE = 4096  # 4KB SHM page size
@@ -423,7 +423,8 @@ class MemoryManager:
                 )
             )
 
-        if self.total_allocated_bytes + FB_CONF_TASK_HEAP_SIZE > self.pool_size:
+        slot_index = len(self.partition_owners)
+        if slot_index >= len(FB_CONF_TASK_HEAP_SIZES):
             return Result(
                 error=MemoryErrorResult(
                     "ERR_POOL_EXHAUSTED",
@@ -431,24 +432,33 @@ class MemoryManager:
                 )
             )
 
-        offset = len(self.partition_owners) * FB_CONF_TASK_HEAP_SIZE
+        slot_size = FB_CONF_TASK_HEAP_SIZES[slot_index]
+        if self.total_allocated_bytes + slot_size > self.pool_size:
+            return Result(
+                error=MemoryErrorResult(
+                    "ERR_POOL_EXHAUSTED",
+                    RecoveryStrategy(RecoveryAction.DEGRADE, "Physical memory pool exhausted"),
+                )
+            )
+
+        offset = sum(FB_CONF_TASK_HEAP_SIZES[:slot_index])
         base_addr = self.pool_base + offset
         pv = PartitionView(
             owner=owner,
             base_address=base_addr,
-            size=FB_CONF_TASK_HEAP_SIZE,
-            data=bytearray(FB_CONF_TASK_HEAP_SIZE),
+            size=slot_size,
+            data=bytearray(slot_size),
         )
         self.partition_owners[owner] = pv
-        self.total_allocated_bytes += FB_CONF_TASK_HEAP_SIZE
+        self.total_allocated_bytes += slot_size
         return Result(value=pv)
 
     def release_task_heap(self, caller_task_id: int) -> None:
         """Release partition back to pool. Only owner can release."""
         if caller_task_id not in self.partition_owners:
             return  # Non-owner or unallocated call is safely ignored / rejected
-        del self.partition_owners[caller_task_id]
-        self.total_allocated_bytes -= FB_CONF_TASK_HEAP_SIZE
+        pv = self.partition_owners.pop(caller_task_id)
+        self.total_allocated_bytes -= pv.size
 
     # --- Typed Slot Pool (§4 acquire-slot / release-slot) ---
     def acquire_slot(self, owner: int, cls: type[T]) -> Result[PoolRef[T]]:
@@ -612,8 +622,8 @@ def test_mem_01_acquire_task_heap_fixed_size() -> None:
     res = mm.acquire_task_heap(owner=1)
     assert res.is_ok
     pv = res.unwrap()
-    assert pv.size == FB_CONF_TASK_HEAP_SIZE, (
-        f"Must return fixed size partition {FB_CONF_TASK_HEAP_SIZE}"
+    assert pv.size == FB_CONF_TASK_HEAP_SIZES[0], (
+        f"Must return fixed size partition {FB_CONF_TASK_HEAP_SIZES[0]} for slot 0"
     )
     assert pv.owner == 1
     # Verify no arbitrary allocate(size, category) API exists
@@ -643,7 +653,7 @@ def test_mem_02_recovery_strategy_on_exhaustion() -> None:
     """MEM-02: Failure returns MemoryErrorResult with actionable recovery strategy."""
     mm = MemoryManager()
     # Small pool that fits only 1 partition
-    mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_TASK_HEAP_SIZE)
+    mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_TASK_HEAP_SIZES[0])
     r1 = mm.acquire_task_heap(owner=1)
     assert r1.is_ok
     # Second allocation must fail and return structured error

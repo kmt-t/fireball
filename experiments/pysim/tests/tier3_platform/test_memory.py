@@ -33,7 +33,7 @@ for _p in [
 
 from memory import (
     FB_CONF_MEMORY_POOL_SIZE,
-    FB_CONF_TASK_HEAP_SIZE,
+    FB_CONF_TASK_HEAP_SIZES,
     FB_TASK_ID_FLIGHT,
     AccessPermission,
     MemoryManager,
@@ -62,7 +62,7 @@ def test_mem_01_acquire_task_heap_fixed_size():
     res = mm.acquire_task_heap(owner=1)
     assert res.is_ok
     pv = res.unwrap()
-    assert pv.size == FB_CONF_TASK_HEAP_SIZE
+    assert pv.size == FB_CONF_TASK_HEAP_SIZES[0]
     assert pv.owner == 1
     assert not hasattr(mm, "allocate"), "Generic heap allocate() must not exist"
 
@@ -70,7 +70,7 @@ def test_mem_01_acquire_task_heap_fixed_size():
 def test_mem_02_recovery_strategy_on_exhaustion():
     """MEM-02: Memory exhaustion returns structured error with recovery strategy."""
     mm = MemoryManager()
-    mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_TASK_HEAP_SIZE)
+    mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_TASK_HEAP_SIZES[0])
     assert mm.acquire_task_heap(owner=1).is_ok
     r2 = mm.acquire_task_heap(owner=2)
     assert r2.is_err

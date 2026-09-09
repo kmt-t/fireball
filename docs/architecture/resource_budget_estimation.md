@@ -70,7 +70,7 @@ RAM 領域は、主動作用の**統合物理メモリプール（`ConsolidatedH
 | :--- | :---: | :--- |
 | **1. 統合物理メモリプール (`ConsolidatedHeap`)** | **21,504 B** | システム共通の静的事前確保物理プール |
 | - **JIT コードキャッシュ** (`FB_CONF_JIT_CACHE_SIZE`) | 6,144 B | 2,048 B $\times$ 3面（Active / Warm / Oldest）。MPU $W \oplus X$ 保護 |
-| - **ゲスト仮想タスク RAM** (`FB_CONF_TASK_HEAP_SIZE`) | 4,096 B | ゲスト WASM リニアメモリ実体（`0x0000_0000`、FastAddressCheck 対象） |
+| - **ゲスト仮想タスク RAM** (`sum(FB_CONF_TASK_HEAP_SIZES)`) | 4,096 B | ゲスト WASM リニアメモリ実体（`0x0000_0000`起点、スロット別ROM配列の総和、FastAddressCheck 対象） |
 | - **カーネルプール** (`FB_CONF_KERNEL_HEAP_SIZE`) | 4,096 B | TCB（16件 $\times$ 96B $\approx$ 1.5KB）、コルーチンフレーム、<br>**共有メモリバッファ (`FB_CONF_SHM_SIZE`: 1,024 B)** を内包 |
 | - **サブシステムプール** (`FB_CONF_SUBSYS_HEAP_SIZE`) | 3,072 B | HAL 通信バッファ（256B $\times$ 4面 = 1KB）、GDB RSP バッファ（1KB）、<br>リングバッファロガー（512B） |
 | - **ランタイムプール** (`FB_CONF_RUNTIME_HEAP_SIZE`) | 2,048 B | `execution_context`（60B）、WASM モジュールインスタンス状態、<br>`HotspotBitmap`（128B）、`JITCandidateBitmap`（128B）、`HistoryRing`（64B） |

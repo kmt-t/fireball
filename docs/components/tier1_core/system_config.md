@@ -38,7 +38,7 @@ graph TD
 
 | マクロ名 | 説明 | デフォルト値 | 導出元 |
 | :--- | :--- | :--- | :--- |
-| `FB_CONF_TASK_HEAP_SIZE` | 各VM/タスクに対してコンパイル時に固定された独立静的プールサイズ | `4096` | `{GLOBAL_IndependentHeap}` `{GLOBAL_StrictMemoryLimit}` |
+| `FB_CONF_TASK_HEAP_SIZES` | ゲストVMスロットごとに個別設定するコンパイル時固定パーティションサイズのROM配列（要素数 `FB_CONF_MAX_GUEST_VMS`）。搭載予定WASMモジュールの規模に応じてスロットごとに異なる値を設定できる | `[4096]` | `{GLOBAL_IndependentHeap}` `{GLOBAL_StrictMemoryLimit}` |
 | `FB_CONF_RUNTIME_HEAP_SIZE` | ホスト（WASMランタイム）実行専用の独立静的プールサイズ | `2048` | `{GLOBAL_IndependentHeap}` `{GLOBAL_StrictMemoryLimit}` |
 | `FB_CONF_KERNEL_HEAP_SIZE` | COOSカーネル（スケジューラ、CSP、TCB、共有メモリ）用静的プールサイズ | `4096` | `{GLOBAL_IndependentHeap}` `{GLOBAL_StrictMemoryLimit}` |
 | `FB_CONF_SUBSYS_HEAP_SIZE` | IPCルータ・HAL・ログバッファ用静的プールサイズ | `3072` | `{GLOBAL_IndependentHeap}` `{GLOBAL_StrictMemoryLimit}` |
@@ -56,7 +56,7 @@ graph TD
 - サブシステムプール (`FB_CONF_SUBSYS_HEAP_SIZE`): 3,072 Bytes
 - JITコードキャッシュ (`FB_CONF_JIT_CACHE_SIZE`): 6,144 Bytes (2KB × 3面)
 - インタープリタ統合スタック (`FB_CONF_INTERP_STACK_SIZE`): 2,048 Bytes
-- ゲストタスクRAM (`FB_CONF_TASK_HEAP_SIZE` × `FB_CONF_MAX_GUEST_VMS`): 4,096 Bytes × 1 = 4,096 Bytes
+- ゲストタスクRAM (`sum(FB_CONF_TASK_HEAP_SIZES)`、スロット別ROM配列の総和): `[4096]` の総和 = 4,096 Bytes
 - **合計**: 4,096 + 2,048 + 3,072 + 6,144 + 2,048 + 4,096 = **21,504 Bytes**
 
 ```text
@@ -65,11 +65,13 @@ static_assert(FB_CONF_KERNEL_HEAP_SIZE
             + FB_CONF_SUBSYS_HEAP_SIZE
             + FB_CONF_JIT_CACHE_SIZE
             + FB_CONF_INTERP_STACK_SIZE
-            + FB_CONF_TASK_HEAP_SIZE * FB_CONF_MAX_GUEST_VMS
+            + sum(FB_CONF_TASK_HEAP_SIZES)
             == FB_CONF_MEMORY_POOL_SIZE);
+static_assert(FB_CONF_TASK_HEAP_SIZES.size() == FB_CONF_MAX_GUEST_VMS);
 static_assert(FB_CONF_MEMORY_POOL_SIZE <= FB_CONF_PHYSICAL_RAM_SIZE);
-static_assert(FB_CONF_GUEST_RAM_SIZE == FB_CONF_TASK_HEAP_SIZE);
+static_assert(FB_CONF_GUEST_RAM_SIZE == FB_CONF_TASK_HEAP_SIZES[0]);
 ```
+各ゲストVMスロット `i` の実際の物理配置（領域）は、`FB_CONF_GUEST_RAM_BASE` を起点に先行スロットのサイズを累積したオフセット（`sum(FB_CONF_TASK_HEAP_SIZES[0..i))`）に配置される。スロットの基点アドレスを個別に設定するコンフィグ項目は持たず、サイズ配列のみから一意に導出することで、パーティション間の重複を静的に排除する。
 
 ##### PMSAv8 MPU 物理アドレスマップ
 <!-- traceability: {META_FaultIsolation} {WasmPageAlignment} -->
@@ -150,7 +152,7 @@ namespace fireball::config {
 | `FB_CONF_JIT_CARD_SHIFT` | JITカードテーブルのビットシフト数（関数ごと、8バイト単位 = 3） | `3` | `{META_ConfigurableSystem}` |
 | `FB_CONF_JIT_ENTRY_GROUP_SHIFT` | JITエントリテーブルの粗粒度グループシフト数（64バイト単位 = 6） | `6` | `{META_ConfigurableSystem}` |
 | `FB_CONF_GUEST_RAM_BASE` | ゲストRAMの開始アドレス（64KB境界配置） | `0x00000000` | `{FastAddressCheck}` |
-| `FB_CONF_GUEST_RAM_SIZE` | ゲストRAMの物理割り当てサイズ（`FB_CONF_TASK_HEAP_SIZE` と同値、4KB部分ページ） | `4096` | `{GLOBAL_StrictMemoryLimit}` `{FastAddressCheck}` |
+| `FB_CONF_GUEST_RAM_SIZE` | 単一ゲストVMインスタンスに割り当てられるRAMの物理サイズ（対応スロットの `FB_CONF_TASK_HEAP_SIZES[vm_index]` と同値、4KB部分ページ） | `4096` | `{GLOBAL_StrictMemoryLimit}` `{FastAddressCheck}` |
 | `FB_CONF_VMMIO_BASE` | vMMIO領域の開始アドレス (Bit 31 == 1) | `0x80000000` | `{vMMIO_Isolation}` |
 | `FB_CONF_VSOC_PASSTHROUGH_BASE` | ゲスト仮想PASSTHROUGH領域（FC=15）のホスト実ペリフェラル基底アドレス | `0x40000000` | `{META_RestrictedPhysicalAccess}` |
 | `FB_CONF_VMMIO_MAX_REGIONS` | 登録可能な最大vMMIO領域数 | `8` | `{META_ConfigurableSystem}` |

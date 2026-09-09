@@ -395,8 +395,8 @@ class MemoryManager:
         self.mpu = PMSAv8MPU(pool_base)
         return Result(value=True)
 
-    # --- Partition Management (§4 acquire-partition / release-partition) ---
-    def acquire_partition(self, owner: int) -> Result[PartitionView]:
+    # --- Partition Management (§4 acquire-task-heap / release-task-heap) ---
+    def acquire_task_heap(self, owner: int) -> Result[PartitionView]:
         """Lease a fixed-size partition to a task (NOT a general-purpose heap allocator)."""
         if owner in self.partition_owners:
             return Result(
@@ -429,7 +429,7 @@ class MemoryManager:
         self.total_allocated_bytes += FB_CONF_PARTITION_SIZE
         return Result(value=pv)
 
-    def release_partition(self, caller_task_id: int) -> None:
+    def release_task_heap(self, caller_task_id: int) -> None:
         """Release partition back to pool. Only owner can release."""
         if caller_task_id not in self.partition_owners:
             return  # Non-owner or unallocated call is safely ignored / rejected
@@ -557,7 +557,7 @@ class MemoryManager:
         for owner, pv in list(self.partition_owners.items()):
             if pv.base_address == addr:
                 if owner == caller_task_id:
-                    self.release_partition(caller_task_id)
+                    self.release_task_heap(caller_task_id)
                 return
 
 
@@ -582,16 +582,16 @@ class HALBufferManager:
 # =============================================================================
 
 
-def test_mem_01_acquire_partition_fixed_size() -> None:
-    """MEM-01: acquire-partition provides task-specific fixed partition (no arbitrary size)."""
+def test_mem_01_acquire_task_heap_fixed_size() -> None:
+    """MEM-01: acquire-task-heap provides task-specific fixed partition (no arbitrary size)."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     # Signature must only take owner (task_id), NOT a size parameter
-    sig = inspect.signature(mm.acquire_partition)
+    sig = inspect.signature(mm.acquire_task_heap)
     assert list(sig.parameters.keys()) == ["owner"], (
-        "acquire_partition must only take 'owner' parameter"
+        "acquire_task_heap must only take 'owner' parameter"
     )
-    res = mm.acquire_partition(owner=1)
+    res = mm.acquire_task_heap(owner=1)
     assert res.is_ok
     pv = res.unwrap()
     assert pv.size == FB_CONF_PARTITION_SIZE, (
@@ -626,10 +626,10 @@ def test_mem_02_recovery_strategy_on_exhaustion() -> None:
     mm = MemoryManager()
     # Small pool that fits only 1 partition
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_PARTITION_SIZE)
-    r1 = mm.acquire_partition(owner=1)
+    r1 = mm.acquire_task_heap(owner=1)
     assert r1.is_ok
     # Second allocation must fail and return structured error
-    r2 = mm.acquire_partition(owner=2)
+    r2 = mm.acquire_task_heap(owner=2)
     assert r2.is_err
     err = r2.error
     assert err is not None
@@ -643,7 +643,7 @@ def test_mem_03_total_allocation_bound() -> None:
     pool_size = 256 * 1024
     mm.init_manager(pool_base=0x20020000, pool_size=pool_size)
     for i in range(1, 10):
-        res = mm.acquire_partition(owner=i)
+        res = mm.acquire_task_heap(owner=i)
         assert mm.total_allocated_bytes <= pool_size
         if res.is_err:
             break
@@ -653,25 +653,25 @@ def test_mem_04_owner_task_id_auto_set() -> None:
     """MEM-04: Caller task-id is automatically recorded on all allocations."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
-    p_res = mm.acquire_partition(owner=5)
+    p_res = mm.acquire_task_heap(owner=5)
     assert p_res.unwrap().owner == 5
     s_res = mm.allocate_shared(caller_task_id=5, size=1024)
     assert s_res.unwrap().owner == 5
 
 
 def test_mem_05_release_and_deallocate_owner_only() -> None:
-    """MEM-05: release-partition / deallocate is permitted ONLY by owner task."""
+    """MEM-05: release-task-heap / deallocate is permitted ONLY by owner task."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
-    mm.acquire_partition(owner=3)
+    mm.acquire_task_heap(owner=3)
     assert 3 in mm.partition_owners
     # Rogue task 4 attempts to release task 3's partition
-    mm.release_partition(caller_task_id=4)
+    mm.release_task_heap(caller_task_id=4)
     assert 3 in mm.partition_owners, (
         "Rogue task must not be able to release another task's partition"
     )
     # Owner task 3 releases its partition
-    mm.release_partition(caller_task_id=3)
+    mm.release_task_heap(caller_task_id=3)
     assert 3 not in mm.partition_owners
 
 
@@ -874,7 +874,7 @@ def test_mem_25_pmsav8_32byte_alignment() -> None:
 # =============================================================================
 
 if __name__ == "__main__":
-    test_mem_01_acquire_partition_fixed_size()
+    test_mem_01_acquire_task_heap_fixed_size()
     test_mem_01b_acquire_slot_typed()
     test_mem_02_recovery_strategy_on_exhaustion()
     test_mem_03_total_allocation_bound()

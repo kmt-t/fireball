@@ -105,7 +105,7 @@ def test_hal_04_hal_buffer_slice_bounds_and_ownership():
 
 
 # ===========================================================================
-# 5. Tier 1 Logging & Recovery (system_logging_test_spec.md)
+# 5. Tier 1 Logging & Recovery (runtime_logging_test_spec.md)
 # ===========================================================================
 
 

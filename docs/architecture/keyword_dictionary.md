@@ -102,7 +102,7 @@ Fireball の全体構造、依存性の方向、リソース予算、品質保�
 
 ---
 
-### 3.2 アーキテクチャ判定記録 (`{ADR_*}`) (11 件)
+### 3.2 アーキテクチャ判定記録 (`{ADR_*}`) (12 件)
 
 設計上の重大なトレードオフに対して下された技術的判定の記録。
 
@@ -110,6 +110,7 @@ Fireball の全体構造、依存性の方向、リソース予算、品質保�
 | :--- | :--- | :--- | :--- | :--- |
 | `{ADR_CoosPureRoundRobin}` | `requirement_list.md` | `os_scheduler.md` | COOS スケジューラにおける純粋ラウンドロビン方式の採用（複雑な動的優先度を排除） | - |
 | `{ADR_EventDrivenWakeQueue}` | `requirement_list.md` | `os_coos.md` | ポーリングを排しイベントドリブンなウェイクアップキューへの分離 | - |
+| `{ADR_FivePoolMemoryModel}` | `system_memory.md` | `system_memory.md` | メモリマネージャを5プール（ホスト用ヒープ・タスクヒープ・共有メモリ用ヒープ・ランタイム用バンプアロケータ・JITキャッシュアロケータ）の統一契約として再定義 | - |
 | `{ADR_IntrusiveTcbList}` | `requirement_list.md` | `os_scheduler.md` | 動的アロケーションを排除するための侵入型 TCB（Task Control Block）リスト構造 | - |
 | `{ADR_MemoryManagerMinimalSurface}` | `requirement_list.md` | `system_memory.md` | メモリマネージャの公開インターフェース最小化・内部詳細のカプセル化 | - |
 | `{ADR_PageGranularPermissionIsolation}` | `runtime_memory.md` | `runtime_memory.md` | 共有メモリの4KB物理ページ単位での排他所有権管理とアクセス権限分離（owner_idフィールドは持たず、マッピング有無で判定） | MEM-14, MEM-15 |
@@ -134,8 +135,8 @@ Fireball の全体構造、依存性の方向、リソース予算、品質保�
 | `{Challenge_DebuggerResource}` | `requirement_list.md` | `debug_manager.md` | リソース制約の厳しい組み込み環境におけるデバッガ常駐 RAM/ROM 最小化 |
 | `{Challenge_InterruptSafety}` | `requirement_list.md` | `os_coos.md` | 割り込みハンドラ（ISR）とスケジューラコルーチン間の非同期データ競合防止 |
 | `{Challenge_JITCacheEfficiency}` | `requirement_list.md` | `jit_runtime.md` | 固定容量リングバッファ/3面バンクにおけるキャッシュ局所性と代謝効率の最適化 |
-| `{Challenge_SyscallMemorySafety}` | `requirement_list.md` | `system_syscall.md` | システムコール境界を跨ぐゲストポインタの正当性検証とメモリ破壊防止 |
-| `{Challenge_WasiFdWriteLoop}` | `requirement_list.md` | `system_syscall.md` | WASI fd_write における多要素 iovec ギャザー出力ループのオーバーヘッド抑制 |
+| `{Challenge_SyscallMemorySafety}` | `requirement_list.md` | `runtime_syscall.md` | システムコール境界を跨ぐゲストポインタの正当性検証とメモリ破壊防止 |
+| `{Challenge_WasiFdWriteLoop}` | `requirement_list.md` | `runtime_syscall.md` | WASI fd_write における多要素 iovec ギャザー出力ループのオーバーヘッド抑制 |
 
 ---
 
@@ -143,9 +144,9 @@ Fireball の全体構造、依存性の方向、リソース予算、品質保�
 
 ### 4.1 Tier 1 Core: OS・スケジューラ・基盤
 
-OSスケジューラ（`os_coos`, `os_scheduler`）、システムログ（`system_logging`）、静的コンテナ（`system_containers`）、システムコール（`system_syscall`）、設定基盤（`system_config`）の機能要求と設計の勘所。
+OSスケジューラ（`os_coos`, `os_scheduler`）、静的コンテナ（`system_containers`）、設定基盤（`system_config`）の機能要求と設計の勘所。
 
-#### 4.1.1 Tier 1 Core 要求キーワード (22 件)
+#### 4.1.1 Tier 1 Core 要求キーワード (16 件)
 
 | キーワード | 定義元正本 | 対象コンポーネント | 仕様概要・検証内容 | 結合テスト / テストID |
 | :--- | :--- | :--- | :--- | :--- |
@@ -158,9 +159,6 @@ OSスケジューラ（`os_coos`, `os_scheduler`）、システムログ（`syst
 | `{DirectContextSwitch}` | `requirement_list.md` | `os_scheduler.md` | READYキューを経由しないコルーチン直接ジャンプ超低レイテンシ遷移 | Scenario 6, 9 (INT-50, INT-80) |
 | `{LowOverheadSwitch}` | `requirement_list.md` | `os_scheduler.md` | レジスタ退避を最小限に抑えた超高速コンテキストスイッチ | - |
 | `{TaskPollInterruptFlag}` | `requirement_list.md` | `os_scheduler.md` | タスク切り替え境界での割り込みフラグ安全ポーリング | - |
-| `{BufferedLogging}` | `requirement_list.md` | `system_logging.md` | 実行時リングバッファ蓄積と COOS idle_hook での一括 UART フラッシュ | Scenario 9 (INT-82) |
-| `{DictionaryBasedIPC}` | `requirement_list.md` | `system_logging.md` | 静的 LogDictionary、危険書式（%s/%p）の登録時静的拒絶 | Scenario 9 (INT-82) |
-| `{HistoryBuffer}` | `requirement_list.md` | `system_logging.md` | 直近ログ履歴の固定長循環保持とクラッシュダンプ支援 | - |
 | `{PackedBitView}` | `requirement_list.md` | `system_containers.md` | ビット単位でのパック構造とメモリ効率の高いフラットビットビュー | - |
 | `{FlatViewNarrowing}` | `requirement_list.md` | `system_containers.md` | フラットビューのスコープ限定・スライシングによる安全な部分アクセス | - |
 | `{System_Allocator}` | `requirement_list.md` | `system_containers.md` | システム基盤用 dlmalloc アロケータ。システムコンテナ内部ストレージの動的確保・個別解放 | - |
@@ -168,9 +166,6 @@ OSスケジューラ（`os_coos`, `os_scheduler`）、システムログ（`syst
 | `{ServiceFacade}` | `requirement_list.md` | `system_config.md` | システム共通サービスへのアクセスを一元化するファサード | - |
 | `{ServiceSelfReboot}` | `requirement_list.md` | `system_config.md` | 異常検知時におけるサービス自己再起動シーケンス | - |
 | `{SelfReboot_via_Event}` | `requirement_list.md` | `system_config.md` | イベント通知契機による協調的セルフリブート | - |
-| `{Syscall_Mapping}` | `requirement_list.md` | `system_syscall.md` | WASM システムコール番号から内部ハンドラへの決定論的マッピング | - |
-| `{Syscall_Return_Value}` | `requirement_list.md` | `system_syscall.md` | システムコール実行結果・エラーコードの規格化された返却規約 | - |
-| `{Trap_Interface}` | `requirement_list.md` | `system_syscall.md` | ゲスト不正動作検知時のトラップ発行と安全停止インターフェース | - |
 
 #### 4.1.2 Tier 1 Core 設計の勘所 (GOTCHA) (1 件)
 
@@ -212,9 +207,9 @@ OSスケジューラ（`os_coos`, `os_scheduler`）、システムログ（`syst
 
 ### 4.3 Tier 2 Runtime: vSoC・インタープリタ・ローダ・vMMIO・デバッガ
 
-WASM 実行エンジン（`runtime_vsoc`）、CPS スレッドインタープリタ（`runtime_interpreter`）、ゼロコピーローダ（`runtime_loader`）、仮想メモリ管理（`runtime_vmmio`）、GDB RSP デバッガ（`debug_manager`）の機能要求と設計の勘所。
+WASM 実行エンジン（`runtime_vsoc`）、CPS スレッドインタープリタ（`runtime_interpreter`）、ゼロコピーローダ（`runtime_loader`）、仮想メモリ管理（`runtime_vmmio`）、GDB RSP デバッガ（`debug_manager`）、ロギングサブシステム（`runtime_logging`）、システムコールランタイム（`runtime_syscall`）の機能要求と設計の勘所。
 
-#### 4.3.1 Tier 2 Runtime 要求キーワード (31 件)
+#### 4.3.1 Tier 2 Runtime 要求キーワード (37 件)
 
 | キーワード | 定義元正本 | 対象コンポーネント | 仕様概要・検証内容 | 結合テスト / テストID |
 | :--- | :--- | :--- | :--- | :--- |
@@ -225,7 +220,7 @@ WASM 実行エンジン（`runtime_vsoc`）、CPS スレッドインタープリ
 | `{MultiModule_Support}` | `requirement_list.md` | `runtime_vsoc.md` | 複数 WASM モジュールの独立インスタンス化と名前空間分離 | - |
 | `{JIT_Safepoint}` | `requirement_list.md` | `runtime_vsoc.md` | JIT 生成コードおよびインタープリタ内の協調的セーフポイントポーリング | - |
 | `{OneRuntimeOneGuest}` | `requirement_list.md` | `runtime_vsoc.md` | 1ランタイム1ゲストの直交分離。マルチインスタンスは独立ランタイム並行起動とIPC協調で実現 | - |
-| `{Runtime_BumpAllocator}` | `requirement_list.md` | `runtime_vsoc.md` | ランタイム単位の固定長データバンプアロケータ所有。モジュール内のシステムコンテナストレージ確保とアンロード時 $O(1)$ 一括解放（W^Xコード分離） | - |
+| `{Runtime_BumpAllocator}` | `requirement_list.md` | `runtime_loader.md` | ランタイム単位の固定長データバンプアロケータ所有。モジュール内のシステムコンテナストレージ確保とアンロード時 $O(1)$ 一括解放（W^Xコード分離） | - |
 | `{ThreadedInterpreter}` | `requirement_list.md` | `runtime_interpreter.md` | CPS 4引数ディスパッチ、UnifiedStack、レジスタ保持による高速命令実行 | Scenario 1〜11 |
 | `{MemoryBoundaryCheck}` | `requirement_list.md` | `runtime_interpreter.md` | ゲストリニアメモリ境界外アクセスのトラップ遮断 | Scenario 1, 8, 10 |
 | `{FastAddressCheck}` | `requirement_list.md` | `runtime_interpreter.md` | オフセット境界判定のビット演算による高速アドレスチェック | - |
@@ -249,6 +244,12 @@ WASM 実行エンジン（`runtime_vsoc`）、CPS スレッドインタープリ
 | `{MemoryIsolation}` | `requirement_list.md` | `runtime_memory.md` | MPU によるコード領域・スタック領域・共有メモリ領域のハードウェア保護 | - |
 | `{Shm_Allocator}` | `requirement_list.md` | `runtime_memory.md` | IPC 共有メモリ領域（MPU Region 6）用 dlmalloc アロケータ。可変長 shared_block の切り出し・RAII解放時合体 | - |
 | `{HAL_Interface}` | `requirement_list.md` | `hal_dispatch.md` | 物理ハードウェアと上位層を抽象化する統一 HAL インターフェース | - |
+| `{BufferedLogging}` | `requirement_list.md` | `runtime_logging.md` | 実行時リングバッファ蓄積と COOS idle_hook での一括 UART フラッシュ | Scenario 9 (INT-82) |
+| `{DictionaryBasedIPC}` | `requirement_list.md` | `runtime_logging.md` | 静的 LogDictionary、危険書式（%s/%p）の登録時静的拒絶 | Scenario 9 (INT-82) |
+| `{HistoryBuffer}` | `requirement_list.md` | `runtime_logging.md` | 直近ログ履歴の固定長循環保持とクラッシュダンプ支援 | - |
+| `{Syscall_Mapping}` | `requirement_list.md` | `runtime_syscall.md` | WASM システムコール番号から内部ハンドラへの決定論的マッピング | - |
+| `{Syscall_Return_Value}` | `requirement_list.md` | `runtime_syscall.md` | システムコール実行結果・エラーコードの規格化された返却規約 | - |
+| `{Trap_Interface}` | `requirement_list.md` | `runtime_syscall.md` | ゲスト不正動作検知時のトラップ発行と安全停止インターフェース | - |
 
 #### 4.3.2 Tier 2 Runtime 設計の勘所 (GOTCHA) (15 件)
 
@@ -363,7 +364,7 @@ Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キ�
 | `{ActiveDataSegments}` | `runtime_loader.md` | `runtime_loader.md` | ロード時のアクティブデータセグメント自動リニアメモリ展開 | Scenario 1 (INT-01) |
 | `{BitView_CardMarking}` | `system_containers.md` | `jit_runtime.md` | 関数ごと 8バイト/カード 2-bit カードマーキング Hotspot 検出（UNEXEC → EXEC → HOT → COMPILED） | Scenario 4 (INT-30) |
 | `{ControlFrameCleanup}` | `runtime_interpreter.md` | `runtime_interpreter.md` | br_table / block / loop / if 偽分岐時のスタックフレーム自動復元 | Scenario 3 (INT-20, INT-22) |
-| `{DeterministicRingBuffer}` | `system_logging.md` | `system_logging_test_spec.md` | リングバッファ満杯時、ブロックやエラーを起こさず最古エントリを上書きして直近ログを保存する非ブロック不変条件 | LOG-GOTCHA-02 |
+| `{DeterministicRingBuffer}` | `runtime_logging.md` | `runtime_logging_test_spec.md` | リングバッファ満杯時、ブロックやエラーを起こさず最古エントリを上書きして直近ログを保存する非ブロック不変条件 | LOG-GOTCHA-02 |
 | `{DirectBytecodeExecution}` | `runtime_interpreter.md` | `runtime_interpreter.md` | ROM/Flash バイトコード直接デコード、命令オブジェクト生成ゼロ、およびポインタ加算（ip + len）によるO(1)命令実行 | Scenario 1〜11 (INTP-50) |
 | `{DirectMappedJIT16}` | `jit_runtime.md` | `jit_runtime.md` | 32-bit UnifiedPC の 4-bit Folding XOR Hash による 16エントリ Direct-Mapped JIT キャッシュ一撃検索 | Scenario 4, 5 (JITR-26) |
 | `{DirectMappedTLB16}` | `runtime_vmmio.md` | `runtime_vmmio.md` | 20-bit VPN の 4-bit Folding XOR Hash による Direct-Mapped TLB | Scenario 10 (INT-92) |
@@ -371,7 +372,7 @@ Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キ�
 | `{FuelExhaustion_Yield}` | `os_scheduler.md` | `os_scheduler.md` | Fuel 枯渇（トレース境界での quantum 判定）での決定論的な中断と再開 | Scenario 6 (INT-50) |
 | `{HAL_PeripheralDrivers}` | `platform_driver.md` | `platform_driver.md` | GPIO（入出力・エッジIRQ）、I2C（LM75）、SPI（EEPROM）、Timer ダミードライバ | Scenario 11 (INT-100〜INT-102) |
 | `{ISR_Safety}` | `os_coos.md` | `os_coos_test_spec.md` | ISRコンテキストとスケジューラ境界の分離——ISRはイベントキューへの記録のみ行い、run_step 開始時の割り込みドレインで初めてタスクがREADYへ遷移する | COOS-GOTCHA-03 |
-| `{InterruptibleFlush}` | `system_logging.md` | `system_logging_test_spec.md` | flush 実行中に interrupt_pending() が真を返した時点で全フラッシュを強行せずループを抜けてスケジューラへ制御を戻す | LOG-GOTCHA-03 |
+| `{InterruptibleFlush}` | `runtime_logging.md` | `runtime_logging_test_spec.md` | flush 実行中に interrupt_pending() が真を返した時点で全フラッシュを強行せずループを抜けてスケジューラへ制御を戻す | LOG-GOTCHA-03 |
 | `{JIT_CandidateBitmap}` | `runtime_loader.md` | `runtime_loader.md` | WASMロード時にJITコンパイル対象と判定された基本ブロックをCard単位1bitでマーキングするJIT候補ビットマップ（非候補カードでのtouchスキップ連携） | LOAD-49, LOAD-50 |
 | `{JIT_StaticBenefitScoring}` | `runtime_loader.md` | `runtime_loader.md` | 128B BitView<4>のint4_tテーブルによる機械語短縮数ベースの静的基本ブロック適格性スコアリング（閾値9点判定） | LOAD-49 |
 | `{JitBranchChainingHandler}` | `jit_compiler.md` | `jit_compiler.md` | JIT 専用チェイニングハンドラと純粋インタープリタ分岐ハンドラの分離 | Scenario 4, 5 |
@@ -388,7 +389,7 @@ Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キ�
 | `{RadixBinaryTreeView_bswap32}` | `system_containers.md` | `jit_runtime.md` | UnifiedPC（func_idx << 20 | pc）の bswap32 による Radix 検索 | Scenario 5 (INT-40, INT-41) |
 | `{RingBuffer_Overwrite}` | `system_containers.md` | `system_containers.md` | 静的容量リングバッファ、満杯時の最古エントリ自動上書き | Scenario 9 (INT-82) |
 | `{SignZeroExtension}` | `runtime_interpreter.md` | `runtime_interpreter.md` | 8/16/32-bit メモリ読み書きの符号付き・符号なしゼロ/符号拡張 | Scenario 8 (INT-70) |
-| `{Syscall_ProcExit}` | `system_syscall.md` | `system_syscall.md` | proc_exit システムコールによるゲストタスク停止および終了コード伝播 | Scenario 2 (INT-11) |
+| `{Syscall_ProcExit}` | `runtime_syscall.md` | `runtime_syscall.md` | proc_exit システムコールによるゲストタスク停止および終了コード伝播 | Scenario 2 (INT-11) |
 | `{ThreeBankCacheEviction}` | `jit_runtime.md` | `jit_runtime.md` | 3面バンク代謝と Oldest ヒット時の Active 昇格・局所アンリンク | Scenario 4, 5 (INT-31, INT-41) |
 | `{ThreeStageRouting}` | `ipc_router.md` | `ipc_router.md` | Stage 1 URI検索 → Stage 2 RBAC判定 → Stage 3 Zero-Copy CSP Rendezvous 所有権移譲 | Scenario 9 (INT-80, INT-81) |
 | `{TraceBoundaryInvariant}` | `jit_compiler.md` | `jit_compiler.md` | トレース境界でのスタック自己完結性、メモリ同期、およびフォールバック | Scenario 4, 5 (INT-31, INT-41) |
@@ -396,4 +397,4 @@ Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キ�
 | `{VSOC_Lifecycle}` | `runtime_vsoc.md` | `runtime_vsoc.md` | vSoC Engine の状態遷移とインタープリタ／JIT切り替えライフサイクル | Scenario 7, 8 |
 | `{VmmioShmDelegation}` | `runtime_vmmio.md` | `runtime_memory.md` | vMMIO FC=14共有メモリマッピングと権限・TLB無効化のメモリマネージャリスナー移譲 | MEM-15 |
 | `{WASI_InMemVFS}` | `interface_wit.md` | `system_service.md` | WASI In-Memory VFS（fd_seek, fd_read, fd_write, random_get, clock_time_get） | Scenario 11 (INT-103〜INT-105) |
-| `{WASI_ScatteredIO}` | `system_syscall.md` | `system_syscall.md` | 分散ギャザー fd_write / スキャッター fd_read による多要素 iovec 転送 | Scenario 2, 11 (INT-10, INT-104) |
+| `{WASI_ScatteredIO}` | `runtime_syscall.md` | `runtime_syscall.md` | 分散ギャザー fd_write / スキャッター fd_read による多要素 iovec 転送 | Scenario 2, 11 (INT-10, INT-104) |

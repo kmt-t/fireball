@@ -2,7 +2,7 @@ from __future__ import annotations
 
 """
 Unit tests for Tier 1 Core: System Logging & Ring Buffer
-Traceability: system_logging_test_spec.md
+Traceability: runtime_logging_test_spec.md
 """
 
 import sys

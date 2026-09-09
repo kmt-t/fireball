@@ -392,7 +392,7 @@ graph LR
 - **コールバック登録**: TODO(未決): 仮想割り込みコールバック登録機構の検討。
 - **設定ファイル**: `vsoc_config` とは分離。`irq_mapping_config` として独立管理。
 
-関連仕様: [`system_syscall.md`](docs/components/tier1_core/system_syscall.md) の `{Syscall_Mapping}` を参照。
+関連仕様: [`runtime_syscall.md`](docs/components/tier2_runtime/runtime_syscall.md) の `{Syscall_Mapping}` を参照。
 
 ### 4.8 ソフトウェアTLB
 <!-- traceability: {VDMA} {OwnershipTransfer} {META_ConfigurableSystem} -->

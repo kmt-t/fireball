@@ -19,21 +19,21 @@ Python シミュレータ（`experiments/pysim`）の実装行数（実測 12,58
 
 | サブシステム | pysim 実装行数 (実測) | C++23 見積行数 (LOC) | 主な構成要素と C++ 実装設計方針 |
 | :--- | :---: | :---: | :--- |
-| **Tier 1 Core** | **1,993** | **~2,950** | |
+| **Tier 1 Core** | **1,801** | **~2,050** | |
 | - `system_containers` | 1,154 | ~1,200 | `flat_map_view`, `flat_set_view`, `radix_binary_tree_view`, `bit_view`, `mutable_*_storage`（ヘッダオンリー） |
 | - `os_coos` & `os_scheduler` | 483 | ~650 | C++20 コルーチン（対称遷移）、侵入型 READY/WAIT リスト、CSP チャネル同期 |
 | - `system_config` & `recovery` | 163 | ~200 | コンフィグマクロ、`constexpr` 定数群、リカバリー戦略列挙型 |
-| - `system_logging` | 192 | ~300 | 辞書参照リングバッファ、アイドル時 DMA フラッシュフック |
-| - `system_syscall` | (wasi/hal連携) | ~600 | `fireball_call` トラップハンドラ、引数レジスタ直接マッピング |
 | **Tier 1 Interface** | **582** | **~850** | |
 | - `ipc_router` | 582 | ~850 | URI レジストリ（ROM AoS FlatMap）、9x9 RBAC マトリックス、所有権移譲（Revoke/Grant） |
-| **Tier 2 Runtime (vSoC)** | **6,552** | **~7,200** | |
+| **Tier 2 Runtime (vSoC)** | **6,744** | **~8,100** | |
 | - `runtime_loader` | 1,001 | ~1,100 | Zero-Copy ROM パーサー、128B `OpcodeBenefitTable`、`JITCandidateBitmap` スコアラー |
 | - `runtime_interpreter` | 1,948 | ~2,100 | CPS 継続渡し (`[[clang::musttail]]`)、テーブルディスパッチ、非候補 touch バイパス |
 | - `runtime_control_flow` | 875 | ~900 | ブロック/ループ/IF 制御フレームスタック管理、ラベル脱出解決 |
 | - `runtime_vmmio` | 324 | ~450 | 16 エントリダイレクトマップ TLB、PTE FlatMap、Guest RAM バイパス |
 | - `runtime_engine` (ハーネス) | 1,415 | ~1,650 | `execution_context`、3本独立スタック、`HotspotBitmap`、`HistoryRing` |
 | - `debug_manager` & GDB RSP | 436 | ~500 | RSP パケットパーサー、ブレークポイント集合、実行頻度プロファイラ |
+| - `runtime_logging` | 192 | ~300 | 辞書参照リングバッファ、アイドル時 DMA フラッシュフック |
+| - `runtime_syscall` | (wasi/hal連携) | ~600 | `fireball_call` トラップハンドラ、引数レジスタ直接マッピング |
 | - その他 (LEB128/WASM型) | 553 | ~500 | 高速デコーダ、WASM 定数・シグネチャテーブル |
 | **Tier 3 JIT Compiler & Runtime** | **1,344** | **~1,700** | |
 | - Copy-and-Patch JIT コア | 530 | ~700 | Stencil 解決、リロケーション適用、逆順コンパイル（LIFO） |

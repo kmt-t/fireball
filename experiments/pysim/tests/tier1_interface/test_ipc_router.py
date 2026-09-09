@@ -395,7 +395,7 @@ def test_ipc_07_message_in_shm_and_payload_shm_transfer():
 
 
 # ===========================================================================
-# 9. fireball_call Full Syscall Surface (system_syscall_test_spec.md)
+# 9. fireball_call Full Syscall Surface (runtime_syscall_test_spec.md)
 # ===========================================================================
 
 

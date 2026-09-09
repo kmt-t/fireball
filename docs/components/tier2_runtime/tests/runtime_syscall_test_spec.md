@@ -2,7 +2,7 @@
 
 ## 1. 目的と対象範囲
 
-正本: [`system_syscall.md`](docs/components/tier1_core/system_syscall.md)
+正本: [`runtime_syscall.md`](docs/components/tier2_runtime/runtime_syscall.md)
 関連正本: [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md)（vMMIOアドレス空間・SYSCTL/VDMAレジスタ）、[`system_config.md`](docs/components/tier1_core/system_config.md)（アドレス定数）
 参考実装: [`vmmio_concept.py`](docs/components/tier2_runtime/concepts/vmmio_concept.py)
 
@@ -14,19 +14,19 @@
 
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| SYS-01 | `SYS_YIELD`(0x01) | - | `fireball_call(0x01, ...)` | `0`を返す（`{CooperativeMultitasking}`要求の協調的yield） | system_syscall.md (Lifecycle) |
-| SYS-02 | `SYS_HALT`(0x02) | - | `fireball_call(0x02, ...)` | システム停止状態になる（戻り値は規定なし） | system_syscall.md (Lifecycle) |
-| SYS-03 | `SYS_RESET`(0x03) | - | `fireball_call(0x03, ...)` | `0`を返し、ゲストリセット相当の状態変化が起こる | system_syscall.md (Lifecycle) |
+| SYS-01 | `SYS_YIELD`(0x01) | - | `fireball_call(0x01, ...)` | `0`を返す（`{CooperativeMultitasking}`要求の協調的yield） | runtime_syscall.md (Lifecycle) |
+| SYS-02 | `SYS_HALT`(0x02) | - | `fireball_call(0x02, ...)` | システム停止状態になる（戻り値は規定なし） | runtime_syscall.md (Lifecycle) |
+| SYS-03 | `SYS_RESET`(0x03) | - | `fireball_call(0x03, ...)` | `0`を返し、ゲストリセット相当の状態変化が起こる | runtime_syscall.md (Lifecycle) |
 
 ### vMMIO Generic (`0x10`-`0x1F`)
 
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| SYS-10 | `MMIO_READ32`成功 | 許可された物理アドレスに値が存在 | `fireball_call(0x10, addr, ...)` | `value`(u32)を返す | system_syscall.md (MMIO) |
+| SYS-10 | `MMIO_READ32`成功 | 許可された物理アドレスに値が存在 | `fireball_call(0x10, addr, ...)` | `value`(u32)を返す | runtime_syscall.md (MMIO) |
 | SYS-11 | `MMIO_READ32`境界外 | `addr`が`FB_CONF_VMMIO_ALLOWED_ADDRS`外 | 同上 | `ERR_OUT_OF_BOUNDS`相当のエラーコードを返す | `{META_RestrictedPhysicalAccess}` |
-| SYS-12 | `MMIO_WRITE32`成功/権限拒否 | 書き込み許可/不許可の2ケース | `fireball_call(0x11, addr, value,...)` | 許可時`0`、不許可時`ERR_ACCESS_DENIED`相当 | system_syscall.md (MMIO) |
-| SYS-13 | `MMIO_READ8`/`MMIO_WRITE8` | 同上をバイト単位で | 同様の手順 | 同様の結果（幅8bit） | system_syscall.md (MMIO) |
-| SYS-14 | `MMIO_BULK_READ`/`WRITE`のサイズ不正 | `byte_count`が不正（範囲外・0等） | 呼び出す | `ERR_INVALID_SIZE`相当を返す | system_syscall.md (MMIO) |
+| SYS-12 | `MMIO_WRITE32`成功/権限拒否 | 書き込み許可/不許可の2ケース | `fireball_call(0x11, addr, value,...)` | 許可時`0`、不許可時`ERR_ACCESS_DENIED`相当 | runtime_syscall.md (MMIO) |
+| SYS-13 | `MMIO_READ8`/`MMIO_WRITE8` | 同上をバイト単位で | 同様の手順 | 同様の結果（幅8bit） | runtime_syscall.md (MMIO) |
+| SYS-14 | `MMIO_BULK_READ`/`WRITE`のサイズ不正 | `byte_count`が不正（範囲外・0等） | 呼び出す | `ERR_INVALID_SIZE`相当を返す | runtime_syscall.md (MMIO) |
 | SYS-15 | `MMIO_BULK_READ`のゲスト書き込み先境界チェック | `dest_offset`がゲストメモリ範囲外 | 呼び出す | `ERR_OUT_OF_BOUNDS`相当を返し、ゲストメモリ外への書き込みが発生しない | fb_offset_t |
 
 ### VDMA (`0x20`-`0x2F`)
@@ -41,18 +41,18 @@
 
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| SYS-30 | `IRQ_READ_FLAGS` | 事前にフラグを立てておく | `fireball_call(0x30,...)` | 立っているフラグをそのまま返す | system_syscall.md (IRQ) |
-| SYS-31 | `IRQ_CLEAR`(mask) | フラグが立っている | `fireball_call(0x31, mask,...)` | 指定ビットのみクリアされ、`0`を返す | system_syscall.md (IRQ) |
+| SYS-30 | `IRQ_READ_FLAGS` | 事前にフラグを立てておく | `fireball_call(0x30,...)` | 立っているフラグをそのまま返す | runtime_syscall.md (IRQ) |
+| SYS-31 | `IRQ_CLEAR`(mask) | フラグが立っている | `fireball_call(0x31, mask,...)` | 指定ビットのみクリアされ、`0`を返す | runtime_syscall.md (IRQ) |
 
 ### IPC (`0x40`-`0x4F`)
 
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | SYS-40 | `IPC_LOOKUP`成功 | URIが登録済み | `fireball_call(0x42, uri_offset, uri_len,...)` | `handle_id`(u32)を返す | `{IPC_HandleBased}` |
-| SYS-41 | `IPC_LOOKUP`未登録URI | URI未登録 | 同上 | errno相当を返す | system_syscall.md (IPC) |
+| SYS-41 | `IPC_LOOKUP`未登録URI | URI未登録 | 同上 | errno相当を返す | runtime_syscall.md (IPC) |
 | SYS-42 | `IPC_SEND`成功 | 有効なhandle_id | `fireball_call(0x40, handle_id, msg_offset, msg_len,...)` | 受信側が既に待機していれば即座に、まだ到達していなければ呼び出し元タスクのコルーチンが協調スケジューラ上でブロックし、受信側到達後に`0`を返す（キューは存在しないため、待機はブロックのみで失敗経路はない） | ipc_router.md |
 | SYS-43 | `IPC_SEND`宛先未登録／RBAC拒否／サイズ超過 | 未登録URIから得たhandle_id、または許可されないロール、または9個以上のkv_pair | 同上 | errno相当（`ERR_NOT_FOUND`/`ERR_PERMISSION_DENIED`/`ERR_MSG_TOO_LARGE`のいずれかに対応）を即座に返す。所有権は最初から送信側のまま動いていない | ipc_router.md  |
-| SYS-44 | `IPC_RECV`成功 | 送信側が既に到達している、または有効なhandle_id | `fireball_call(0x41, handle_id, buf_offset, buf_len,...)` | 送信側が既に待機していれば即座に、まだ到達していなければブロックして待ち、到達後に`recv_len`(u32)を返し、`buf_offset`にメッセージがコピーされる | system_syscall.md (IPC) |
+| SYS-44 | `IPC_RECV`成功 | 送信側が既に到達している、または有効なhandle_id | `fireball_call(0x41, handle_id, buf_offset, buf_len,...)` | 送信側が既に待機していれば即座に、まだ到達していなければブロックして待ち、到達後に`recv_len`(u32)を返し、`buf_offset`にメッセージがコピーされる | runtime_syscall.md (IPC) |
 | SYS-45 | `IPC_RECV`相手未到達 | 送信側がまだ到達していない | 同上 | `fireball_call`の呼び出し元タスクのコルーチンが協調スケジューラ上でブロックし、送信側が到達するまで再開しない（EAGAINのような即時errnoは返さない。ブロックがCSPランデブーの本来の意味論であり、実装依存の妥協ではない） | 「バッファが空の場合はコルーチンがサスペンドされる」, [`system.py`](experiments/pysim/system.py) `_ipc_recv` |
 
 ### WASI (`0x80`-`0xBF`)
@@ -60,11 +60,11 @@
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | SYS-80 | `WASI_FD_WRITE` | fd=1（stdout）、iovecが1件 | `fireball_call(0x80, fd, iovs_ptr, iovs_len, nwritten_ptr,...)` | `fireball://service/stdout/0`宛の`CMD_STREAM_WRITE_BUFFER`相当が呼ばれ、`nwritten_ptr`に書き込みバイト数が入り、`0`(errno)を返す | interface_wit.md |
-| SYS-81 | `WASI_FD_READ` | 実stdin相当のデータなし | `fireball_call(0x81,...)` | 0バイト読み取り(EOF)としてerrno `0`を返す | system_syscall.md (WASI) |
-| SYS-82 | `WASI_FD_CLOSE` | 任意のfd | `fireball_call(0x82, fd,...)` | `0`を返す | system_syscall.md (WASI) |
+| SYS-81 | `WASI_FD_READ` | 実stdin相当のデータなし | `fireball_call(0x81,...)` | 0バイト読み取り(EOF)としてerrno `0`を返す | runtime_syscall.md (WASI) |
+| SYS-82 | `WASI_FD_CLOSE` | 任意のfd | `fireball_call(0x82, fd,...)` | `0`を返す | runtime_syscall.md (WASI) |
 | SYS-83 | `WASI_CLOCK_TIME_GET` | - | `fireball_call(0x83, clock_id, precision, time_ptr,...)` | `time_ptr`に単調増加するナノ秒値が書き込まれる | `hal_dispatch.md` 階層型 URI 命名規則 & WASI 0.3p IPC コマンド仕様 |
-| SYS-84 | `WASI_PROC_EXIT` | - | `fireball_call(0x84, exit_code,...)` | プロセス終了相当の状態変化（戻り値なし） | system_syscall.md (WASI) |
-| SYS-85 | `WASI_RANDOM_GET` | - | `fireball_call(0x85, buf_ptr, buf_len,...)` | `buf_ptr`に`buf_len`バイトのランダムデータが書き込まれ、`0`を返す | system_syscall.md (WASI) |
+| SYS-84 | `WASI_PROC_EXIT` | - | `fireball_call(0x84, exit_code,...)` | プロセス終了相当の状態変化（戻り値なし） | runtime_syscall.md (WASI) |
+| SYS-85 | `WASI_RANDOM_GET` | - | `fireball_call(0x85, buf_ptr, buf_len,...)` | `buf_ptr`に`buf_len`バイトのランダムデータが書き込まれ、`0`を返す | runtime_syscall.md (WASI) |
 
 ### 共通・エラー処理
 
@@ -78,9 +78,9 @@
 
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| SYS-GOTCHA-01 | 未定義 Syscall ID の非パニック・ENOSYS 安全復帰 | 存在しないシステムコール ID（例: `0xFF`） | `fireball_call(0xFF)` を実行 | システムが停止・パニックせず、WASI 準拠の `WasiErrno.NOSYS`（52）を返して安全に復帰する。**実装の勘所**: 未定義システムコールでホスト側が例外やアボートを発生させると、未サポート機能への問い合わせを行うゲストランタイムがクラッシュする | `system_syscall.md` |
-| SYS-GOTCHA-02 | `fb_offset_t` 境界チェックの完全先行（ホスト SEGV 防止） | ゲストメモリ終端を超えるオフセット | `fd_write` や `mmio_bulk_read` を実行 | ホスト側でのメモリアクセス前に `offset + len > mem_size` が評価され、`WasiErrno.FAULT`（21）で即座に拒絶される。**実装の勘所**: 整数オーバーフロー（`offset + len` が 32bit を超えて 0 付近にラップ）を考慮した境界判定式 `offset > mem_size or len > mem_size - offset` を使用しなければならない | `system_syscall.md` |
-| SYS-GOTCHA-03 | WASI iovec 散在ギャザー（Scatter-Gather）の全要素事前検証 | 一部要素が境界外を指す iovec 配列 | `fd_write` を実行 | 途中の正常要素も含めて 1 バイトも出力ストリームへ書き込まず、即座に `EFAULT` を返却する。**実装の勘所**: 検証しながら逐次出力すると、異常要素に到達した時点で途中までの中途半端なデータが出力先に漏洩・残存する | `system_syscall.md` |
+| SYS-GOTCHA-01 | 未定義 Syscall ID の非パニック・ENOSYS 安全復帰 | 存在しないシステムコール ID（例: `0xFF`） | `fireball_call(0xFF)` を実行 | システムが停止・パニックせず、WASI 準拠の `WasiErrno.NOSYS`（52）を返して安全に復帰する。**実装の勘所**: 未定義システムコールでホスト側が例外やアボートを発生させると、未サポート機能への問い合わせを行うゲストランタイムがクラッシュする | `runtime_syscall.md` |
+| SYS-GOTCHA-02 | `fb_offset_t` 境界チェックの完全先行（ホスト SEGV 防止） | ゲストメモリ終端を超えるオフセット | `fd_write` や `mmio_bulk_read` を実行 | ホスト側でのメモリアクセス前に `offset + len > mem_size` が評価され、`WasiErrno.FAULT`（21）で即座に拒絶される。**実装の勘所**: 整数オーバーフロー（`offset + len` が 32bit を超えて 0 付近にラップ）を考慮した境界判定式 `offset > mem_size or len > mem_size - offset` を使用しなければならない | `runtime_syscall.md` |
+| SYS-GOTCHA-03 | WASI iovec 散在ギャザー（Scatter-Gather）の全要素事前検証 | 一部要素が境界外を指す iovec 配列 | `fd_write` を実行 | 途中の正常要素も含めて 1 バイトも出力ストリームへ書き込まず、即座に `EFAULT` を返却する。**実装の勘所**: 検証しながら逐次出力すると、異常要素に到達した時点で途中までの中途半端なデータが出力先に漏洩・残存する | `runtime_syscall.md` |
 
 ## 3. テスト検証実績と網羅状況
 

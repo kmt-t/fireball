@@ -1,5 +1,5 @@
 """
-docs/components/tier1_core/formal/logging_flush_model.py
+docs/components/tier2_runtime/formal/logging_flush_model.py
 pyModelChecking による Logging コンポーネントの
 (1) log_event() が呼び出し側を決してブロックしないこと（overwrite-on-full, LOG-GOTCHA-02）
 (2) 保留中のログは COOS Idle Hook によるフラッシュで必ず出力されること
@@ -10,7 +10,7 @@ pyModelChecking による Logging コンポーネントの
 from pyModelChecking import Kripke
 from pyModelChecking.CTL import AF, AG, AtomicProposition, Imply, Not
 
-BACKS = ["components/tier1_core/system_logging.md"]
+BACKS = ["components/tier2_runtime/runtime_logging.md"]
 
 
 def build_model(*, guards: bool = True) -> Kripke:

@@ -20,7 +20,7 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 [ Tier 1: 主要システムコンポーネント (Primary Components) ] ─ (What)
   · COOS (os_coos, os_scheduler)
   · Interface (ipc_router, system_service, interface_wit)
-  · System Core (system_config, system_logging, system_syscall, system_containers)
+  · System Core (system_config, system_containers)
   · Memory Contract (system_memory) — パーティション貸与ポリシー・独立ヒープ不変条件の抽象契約（`co_mem`）
            │
            │  複雑な状態空間・機能のサブシステム分解 / 契約と実装の意図的分割
@@ -30,6 +30,8 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
   · Debug Subsystem (debug_manager)
   · Memory Implementation (runtime_memory) — `system_memory` 契約を実装する `system_allocator`/`shm_allocator`（dlmalloc アリーナ）
   · HAL Abstraction (hal_dispatch) — URI Resolver・トランスポート抽象、`{IPCRouter}` 経由のデバイス仲介
+  · Logging Subsystem (runtime_logging) — COOS上に常駐するリングバッファロギングタスク、COOSのタスクスケジューリングに依存
+  · Syscall Runtime (runtime_syscall) — `fireball_call`、ゲストからのみ呼ばれる vSoC ランタイムの機能
            │
            │  深層コンポーネント・プラットフォーム具象化への分解
            ▼

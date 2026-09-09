@@ -139,7 +139,7 @@ sequenceDiagram
         Caller->>Router: send(Channel, msg_block, [shm_id])
         Router->>Caller: Revoke access (msg.ownership = IN_FLIGHT)
         opt Bulk Shared Memory Transfer
-            Router->>Mem: release_shared(shm_id)
+            Router->>Mem: release(shm_id)
             Mem->>Mem: Unmap Caller PTE & Flush TLB (TRAP_UNREGISTERED_PAGE)
         end
         Router->>Ch: channel_send(msg_block)

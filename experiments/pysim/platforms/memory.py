@@ -568,7 +568,7 @@ class MemoryManager:
         self.mpu = PMSAv8MPU(pool_base)
         return Result(value=True)
 
-    def acquire_partition(self, owner: int) -> Result[PartitionView]:
+    def acquire_task_heap(self, owner: int) -> Result[PartitionView]:
         if owner in self.partition_owners:
             return Result(
                 error=MemoryErrorResult(
@@ -600,7 +600,7 @@ class MemoryManager:
         self.total_allocated_bytes += FB_CONF_PARTITION_SIZE
         return Result(value=pv)
 
-    def release_partition(self, caller_task_id: int) -> None:
+    def release_task_heap(self, caller_task_id: int) -> None:
         if caller_task_id not in self.partition_owners:
             return
         self.partition_owners.remove(caller_task_id)
@@ -771,7 +771,7 @@ class MemoryManager:
             pv = owners_view.values[i]
             if pv.base_address == addr:
                 if owner == caller_task_id:
-                    self.release_partition(caller_task_id)
+                    self.release_task_heap(caller_task_id)
                 return
 
     def _deallocate_shared_slot(self, page_idx: int, slot_idx: int, owner: int) -> None:

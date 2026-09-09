@@ -55,11 +55,11 @@ def wat_to_wasm(wat_text: str) -> bytes:
         return b""
 
 
-def test_mem_01_acquire_partition_fixed_size():
-    """MEM-01: acquire-partition provides task-specific fixed partition (no arbitrary size)."""
+def test_mem_01_acquire_task_heap_fixed_size():
+    """MEM-01: acquire-task-heap provides task-specific fixed partition (no arbitrary size)."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
-    res = mm.acquire_partition(owner=1)
+    res = mm.acquire_task_heap(owner=1)
     assert res.is_ok
     pv = res.unwrap()
     assert pv.size == FB_CONF_PARTITION_SIZE
@@ -71,8 +71,8 @@ def test_mem_02_recovery_strategy_on_exhaustion():
     """MEM-02: Memory exhaustion returns structured error with recovery strategy."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_PARTITION_SIZE)
-    assert mm.acquire_partition(owner=1).is_ok
-    r2 = mm.acquire_partition(owner=2)
+    assert mm.acquire_task_heap(owner=1).is_ok
+    r2 = mm.acquire_task_heap(owner=2)
     assert r2.is_err
     assert r2.error.error_code == "ERR_POOL_EXHAUSTED"
     assert r2.error.recovery.action in (RecoveryAction.DEGRADE, RecoveryAction.RETRY)
@@ -84,7 +84,7 @@ def test_mem_03_total_allocation_bound():
     pool_size = 128 * 1024
     mm.init_manager(pool_base=0x20020000, pool_size=pool_size)
     for i in range(1, 10):
-        res = mm.acquire_partition(owner=i)
+        res = mm.acquire_task_heap(owner=i)
         assert mm.total_allocated_bytes <= pool_size
         if res.is_err:
             break
@@ -94,7 +94,7 @@ def test_mem_04_owner_task_id_auto_set():
     """MEM-04: Caller task-id is automatically recorded on all allocations."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
-    p_res = mm.acquire_partition(owner=5)
+    p_res = mm.acquire_task_heap(owner=5)
     assert p_res.unwrap().owner == 5
     s_res = mm.allocate_shared(caller_task_id=5, size=1024)
     assert s_res.unwrap().owner == 5
@@ -104,13 +104,13 @@ def test_mem_05_release_and_deallocate_owner_only():
     """MEM-05: Partition release is permitted ONLY by owner task."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
-    mm.acquire_partition(owner=3)
+    mm.acquire_task_heap(owner=3)
     assert 3 in mm.partition_owners
     # Rogue task 4 attempts to release task 3's partition
-    mm.release_partition(caller_task_id=4)
+    mm.release_task_heap(caller_task_id=4)
     assert 3 in mm.partition_owners
     # Owner releases
-    mm.release_partition(caller_task_id=3)
+    mm.release_task_heap(caller_task_id=3)
     assert 3 not in mm.partition_owners
 
 
@@ -293,7 +293,7 @@ def test_mem_21_jit_code_cache_wx_switch_and_restore():
 
 
 if __name__ == "__main__":
-    test_mem_01_acquire_partition_fixed_size()
+    test_mem_01_acquire_task_heap_fixed_size()
     test_mem_02_recovery_strategy_on_exhaustion()
     test_mem_03_total_allocation_bound()
     test_mem_04_owner_task_id_auto_set()

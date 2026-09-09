@@ -1,6 +1,6 @@
 """
 experiments/pysim/core/logger.py
-Fireball System Logging Engine mirroring docs/components/tier1_core/system_logging.md:
+Fireball System Logging Engine mirroring docs/components/tier2_runtime/runtime_logging.md:
 - LOG-GOTCHA-01: Format strings are registered statically in LogDictionary. Log API accepts
   only scalar u32 arguments, completely eliminating runtime string pointers and Use-After-Free.
 - LOG-GOTCHA-02: Bounded ring buffer safely overwrites oldest entries on full, maintaining
@@ -38,7 +38,7 @@ class LogLevel(IntEnum):
 
 _DISALLOWED_SPECIFIERS = ("%s", "%p", "%c")
 
-# Standard Diagnostic Log Event IDs (system_logging.md §4.2.1)
+# Standard Diagnostic Log Event IDs (runtime_logging.md §4.2.1)
 LOG_EVT_COOS_HANDOFF_LIMIT = 0x0101
 LOG_EVT_COOS_TASK_CAPACITY = 0x0102
 LOG_EVT_COOS_DUPLICATE_TASK = 0x0103
@@ -65,7 +65,7 @@ STANDARD_DIAGNOSTIC_EVENTS: list[tuple[int, str]] = [
 
 class LogDictionary:
     """
-    ROM-resident, build-time-only format string table (system_logging.md 4.2).
+    ROM-resident, build-time-only format string table (runtime_logging.md 4.2).
     Storage ownership is separated: LogDictionary borrows entries storage
     and presents format strings via non-owning FlatMapView (AoS).
     """
@@ -110,7 +110,7 @@ class LogDictionary:
 
     def format(self, offset: int, args: tuple[int, int, int, int]) -> str:
         """
-        FINDING: system_logging.md 4.2 says a format string may reference
+        FINDING: runtime_logging.md 4.2 says a format string may reference
                 "最大4個" (up to 4) u32 args -- i.e. using fewer than 4 is normal and
                 expected (most messages need 1-2). A real C `vsnprintf` silently
                 ignores unused variadic arguments, but Python's `%` operator raises

@@ -20,7 +20,7 @@ COOSは、シングルスレッド環境向けのホーアCSPベースのグリ�
 - **`co_csp`**: 通信エンジン。チャネルベースの同期と所有権移譲（本設計書が正本）。
 - **`co_mem`**: メモリマネージャ。タスク独立な静的メモリバッファプール（メモリパーティション）の管理。
 
-ロギングは COOS の構成要素ではなく、独立した Tier 1 コンポーネント [`system_logging.md`](docs/components/tier1_core/system_logging.md) が担う。COOS は `set_idle_hook` によりアイドル時のフラッシュ契機のみを提供する。 `{BufferedLogging}` `{GLOBAL_IdleDetection}`
+ロギングは COOS の構成要素ではなく、独立した Tier 2 コンポーネント [`runtime_logging.md`](docs/components/tier2_runtime/runtime_logging.md) が担う。COOS は `set_idle_hook` によりアイドル時のフラッシュ契機のみを提供する。 `{BufferedLogging}` `{GLOBAL_IdleDetection}`
 
 ## 3. 静的モデル
 
@@ -380,7 +380,7 @@ class shared_block {
 | :--- | :--- | :--- |
 | `scheduler` | `auto spawn(void(*task_entry)(void*), void* arg) -> result<task_id_t, scheduler_error>;`<br>`auto yield() -> void;`<br>`auto exit() -> void;`<br>`auto set_idle_hook(void(*hook)()) -> void;`<br>`auto wake_up_direct(task_id_t task) -> void;`<br>`auto notify_interrupt(uint32_t irq_id) -> void;` | タスクの生成・一時譲渡・終了およびアイドル時コールバックの設定。`wake_up_direct` はCSP Handoffによる即時起床用、`notify_interrupt` はISRコンテキストから割り込み通知をイベントキューに投函する用。動的確保は行わず、静的プールからTCBスロットを割り当てる。 |
 | `csp` | `template <typename T = shared_block>`<br>`auto send(channel_id_t chan, T&& val) -> coos::task_coroutine;`<br>`template <typename T = shared_block>`<br>`auto receive(channel_id_t chan) -> coos::task_coroutine_recv<T>;` | チャネル経由の同期メッセージ送受信。右辺値参照（`&&`）による完全なムーブセマンティクス（ゼロコピー所有権移譲、`{IPC_ZeroCopy}` `{OwnershipTransfer}`）を行う。具象型としては `shared_block`（`{ADR_SharedBlockRaii}`）や `ipc_message` を渡す。 |
-| `memory` | `auto acquire_partition(task_id_t owner) -> result<partition_view, memory_error>;`<br>`auto release_partition(task_id_t owner) noexcept -> void;`<br>`template <class T> auto acquire_slot() -> result<pool_ref<T>, memory_error>;`<br>`template <class T> auto release_slot(pool_ref<T> ref) noexcept -> void;` | タスク固有の静的メモリパーティションの貸与・返却。**汎用ヒープ API ではない**: `size_t` 指定の任意サイズ確保も `void*` も提供せず、コンパイル時に確定した固定長パーティションと型付きプールスロットのみを扱う。`partition_view` は `std::span<std::byte>` 相当、`pool_ref<T>` は静的プール内スロットへの型付きハンドルである。 `{GLOBAL_Policy_Memory}` `{META_NoStdVector}` |
+| `memory` | `auto acquire_task_heap(task_id_t owner) -> result<partition_view, memory_error>;`<br>`auto release_task_heap(task_id_t owner) noexcept -> void;`<br>`template <class T> auto acquire_slot() -> result<pool_ref<T>, memory_error>;`<br>`template <class T> auto release_slot(pool_ref<T> ref) noexcept -> void;` | COOS がタスクを起動する際に貸与する、タスク固有の静的メモリパーティション（タスクヒープ）の貸与・返却。**汎用ヒープ API ではない**: `size_t` 指定の任意サイズ確保も `void*` も提供せず、コンパイル時に確定した固定長パーティションと型付きプールスロットのみを扱う。`partition_view` は `std::span<std::byte>` 相当、`pool_ref<T>` は静的プール内スロットへの型付きハンドルである。 `{GLOBAL_Policy_Memory}` `{META_NoStdVector}` |
 
 ## 6. 形式検証（pyModelChecking / 直交表）
 

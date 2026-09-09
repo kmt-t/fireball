@@ -2,7 +2,7 @@ from __future__ import annotations
 
 """
 Unit tests for Tier 2 Runtime: Syscall & WASI Environment
-Traceability: system_syscall_test_spec.md
+Traceability: runtime_syscall_test_spec.md
 """
 
 import struct
@@ -117,7 +117,7 @@ def test_syscall_05_irq_flags():
 def test_syscall_06_ipc_lookup_send_recv():
     """
     SYS-40..42: fireball_call's IPC_LOOKUP/SEND/RECV. The guest task's own
-    execution *is* the IPC_SEND/IPC_RECV call (system_syscall.md: a host call
+    execution *is* the IPC_SEND/IPC_RECV call (runtime_syscall.md: a host call
     runs inside the calling task's coroutine), so it genuinely waits for its
     CSP counterpart -- no EAGAIN/polling (ipc_router.md §5.1). The
     receiver/sender coroutines below are spawned before the guest's call only

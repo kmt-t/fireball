@@ -104,7 +104,7 @@ type routing-result = result<_, recovery-strategy-category>;
 
 ## 4. 低レベル・トラップ・インターフェース
 <!-- traceability: {Syscall_Mapping} -->
-WASI標準には存在しない、Fireball固有の高速システムコール。実体は `../tier1_core/system_syscall.md` で定義される `fireball::fireball_call` である。このインターフェース設計を通じて、低レベルなシステムコールがWITの世界とマッピングされる（`{Syscall_Mapping}`）。
+WASI標準には存在しない、Fireball固有の高速システムコール。実体は `../tier2_runtime/runtime_syscall.md` で定義される `fireball::fireball_call` である。このインターフェース設計を通じて、低レベルなシステムコールがWITの世界とマッピングされる（`{Syscall_Mapping}`）。
 
 ### 4.1. `fireball:host/trap` の定義
 <!-- traceability: {Syscall_Mapping} -->
@@ -127,13 +127,13 @@ def fireball_trigger_set_pin(pin: int, value: bool):
 
 ## 5. `console-output` の位置づけ
 <!-- traceability: {DictionaryBasedIPC} -->
-ゲストの `print`/`eprint` が書き込む文字列は実行時に組み立てられる任意長データであり、`system_logging.md` の内部ロガー（`{DictionaryBasedIPC}`、ビルド時登録の辞書オフセット＋固定4引数のみを扱い、実行時の辞書追加は不可）では表現できない。そのため、コンソール出力は内部ロガーとは独立した経路として扱う。
+ゲストの `print`/`eprint` が書き込む文字列は実行時に組み立てられる任意長データであり、`runtime_logging.md` の内部ロガー（`{DictionaryBasedIPC}`、ビルド時登録の辞書オフセット＋固定4引数のみを扱い、実行時の辞書追加は不可）では表現できない。そのため、コンソール出力は内部ロガーとは独立した経路として扱う。
 
 専用の `console-output` リソース型は設けない。ゲストは `resolver.get-interface("fireball://service/stdout/0")` で標準出力サービスを解決し、`acquire-buffer` で確保した `hal-buffer-slice` に任意長の生バイト列を書き込んだ上で、UART 等と同じ `CMD_STREAM_WRITE_BUFFER` コマンドを発行する。辞書変換もリングバッファへの構造化格納も行わず、`HAL_Transport`（UART/ITM 等）へそのまま渡される。
 
-物理トランスポート（`HAL_Transport`）は `system_logging.md` のロガーと共有するが、辞書・リングバッファは経由しない別経路であり、両者は排他的に出力順序が保証されるわけではない（インターリーブし得る）。
+物理トランスポート（`HAL_Transport`）は `runtime_logging.md` のロガーと共有するが、辞書・リングバッファは経由しない別経路であり、両者は排他的に出力順序が保証されるわけではない（インターリーブし得る）。
 
-`fireball_call(WASI_FD_WRITE, ...)`（`system_syscall.md` 正本）は、ゲストの `print`/`eprint` 呼び出しをこの `fireball://service/stdout/0` 経路へ自動的にルーティングする。
+`fireball_call(WASI_FD_WRITE, ...)`（`runtime_syscall.md` 正本）は、ゲストの `print`/`eprint` 呼び出しをこの `fireball://service/stdout/0` 経路へ自動的にルーティングする。
 
 ## 6. 非同期通知メカニズム
 

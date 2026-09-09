@@ -1,14 +1,18 @@
 # システムコール仕様 コンポーネント設計書 {VERIFY_FORMAL}
 <!-- evidence:
      formal: formal/syscall_trap_model.py
-     test: tests/system_syscall_test_spec.md
+     test: tests/runtime_syscall_test_spec.md
 -->
 
 ## 1. 目的
 <!-- traceability: {NativeAPI_Export} -->
 本ドキュメントは、WebAssemblyゲスト環境からホストの提供するサービスを呼び出すための汎用システムコール `fireball_call` のインターフェース仕様を定義する。特に、WASI (WebAssembly System Interface) 呼び出しを `fireball_call` にマッピングするための規約、および関連するShimライブラリとWASIホスト側実装の役割に焦点を当てる。 `{NativeAPI_Export}`
 
-## 2. 背景
+## 2. アーキテクチャ分類
+<!-- traceability: {META_3TierSeparation} -->
+本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属する。`fireball_call` はゲスト（WASM）からのみ呼び出される、ゲストをホストする vSoC ランタイムの機能であり、Tier 1 のコアコンポーネント（COOS、IPC ルータ等）が依存する汎用プリミティブではない。 `{META_3TierSeparation}`
+
+## 3. 背景
 <!-- traceability: {UnifiedAccessModel} -->
 `fireball_call` は、vMMIOアドレス空間（[`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md) の Stage 2/3、Bit 31 == 1）に対する**代理実行ラッパー**である。直接vMMIOアドレスにアクセスできないゲスト言語のために、シングル・トラップ命令経由でホストがvMMIO操作を代行する。ゲスト専用RAM（Stage 1, Bit 31 == 0）はこの対象外であり、`FastAddressCheck` による別経路の境界チェックのみで完結する。
 
@@ -19,7 +23,7 @@
 
 vMMIOアドレス空間（Stage 2/3）に対しては、どちらのパスも最終的に統一された vMMIO ページマッピング機構（PTE / TLB）を通る。アクセス権限のない領域（他タスク所有の共有メモリや未割当領域）は仮想アドレス空間から物理的に **unmap（マッピング解除）** されており、PTE 不在として未登録ページトラップ（`TRAP_UNREGISTERED_PAGE`）により即座に遮断される。セキュリティ境界は vMMIO のマッピング存在性により 1 箇所に統一される（ゲストRAMのFastAddressCheckとは独立した別ゲート）。 `{UnifiedAccessModel}`
 
-## 3. `fireball_call` WIT定義
+## 4. `fireball_call` WIT定義
 <!-- traceability: {WIT_Interface_Spec} -->
 `fireball_call`のWIT (WebAssembly Interface Type) 定義は以下の通りである。詳細は [`interface_wit.md`](docs/components/tier1_interface/interface_wit.md) を参照のこと。 `{WIT_Interface_Spec}`
 
@@ -48,7 +52,7 @@ world fireball {
 <!-- traceability: {Trap_Interface} -->
 `fireball_call` は、実行環境のJIT/Interpreterが提供するインポート関数呼び出しをインターセプトし、ホスト側の仮想レジスタ `REG_SYSCALL_*` に引数を直接複写（レジスタマッピング）することで、トラップ（`ecall` / `svc` 等）の処理オーバーヘッドを極限まで削減する高速パスを提供する。 `{Trap_Interface}`
 
-## 4. `fireball_call` 呼び出し規約
+## 5. `fireball_call` 呼び出し規約
 
 ### 4.1. 引数のパッキング
 <!-- traceability: {Type_Vocabulary} -->
@@ -93,7 +97,7 @@ world fireball {
 **未定義 Syscall ID の非パニック安全復帰 (`SYS-GOTCHA-01`)**:
 未定義または予約済みのシステムコール ID が呼び出された場合、ホスト側はアボートやカーネルパニックを発生させず、WASI 準拠の `WasiErrno.NOSYS`（52）を返却して安全に復帰する。これにより、新機能の有無を動的に問い合わせるゲストランタイムや標準ライブラリ（WASI libc 等）がフォールバック機構を安全に機能させることができる。
 
-## 5. システムコールID
+## 6. システムコールID
 システムコールIDは、`fireball_call`が実行する特定の操作を識別し、vMMIOの全機能をカバーする。カテゴリ別に管理される。
 
 ### 5.1. カテゴリ一覧
@@ -210,7 +214,7 @@ WASI 0.2標準仕様に適合するように、各システムコールはShim�
 | | `wasi_proc_exit` | `0x84` | プロセス終了 |
 | | `wasi_random_get` | `0x85` | 乱数取得 |
 
-## 6. Fireball Shim (`libfireball_shim`)
+## 7. Fireball Shim (`libfireball_shim`)
 
 ### 6.1. 役割
 
@@ -236,7 +240,7 @@ def fireball_trigger_set_pin(pin: int, value: bool):
 > [!IMPORTANT]
 > WASI 0.2 標準のリソース（`output-stream` 等）は、対応する WIT インターフェースの実装関数を通じて呼び出される。`fireball_call`はvMMIO機能全体の代理実行ラッパーであり、GPIOのような物理アクセスもMMIO Generic経由で行える。
 
-## 7. WASIホスト側実装
+## 8. WASIホスト側実装
 
 ### 7.1. 役割
 <!-- traceability: {Challenge_WasiFdWriteLoop} {WASI_Async_Bridge} -->
@@ -247,7 +251,7 @@ def fireball_trigger_set_pin(pin: int, value: bool):
 | **Scatter/Gather 分割処理** | WASI `fd_write` は `ciovec` 配列による一括書き込みを要求するが、ホスト側でベクタ解析ループを抱えるとホスト実装が肥大化する | **Shim 側ループ設計**: ゲスト側 Shim ライブラリがベクタを反復し、1 ベクタごとに `fireball_call` を発行する。ホスト側はステートレスな単一ブロックディスパッチに専念する | `{Challenge_WasiFdWriteLoop}` |
 | **同期WASI・非同期IPC ブリッジ** | ゲスト側の同期 WASI 呼び出しと Fireball の非同期 CSP IPC の実行モデル不一致 | **コルーチン Yield 連動**: ラッパー内の `wait_for_ipc_response` が内部で `co_yield()` を発行し、VSoC/COOS が I/O 完了までタスクを安全にサスペンドする | `{WASI_Async_Bridge}` |
 
-## 8. ホストからゲストへの非同期通知メカニズム
+## 9. ホストからゲストへの非同期通知メカニズム
 <!-- traceability: {Asynchronous_Notification} -->
 
 ホスト側で非同期に発生したイベント（例: ハードウェア割り込みの完了、タイマーイベント、非同期I/Oの完了など）をゲストに通知するために、`fireball_call`とは独立したメカニズムを定義する。 `{Asynchronous_Notification}`
@@ -271,11 +275,11 @@ def fireball_trigger_set_pin(pin: int, value: bool):
 <!-- traceability: {Asynchronous_Notification} -->
 仮想割り込みに関する詳細な情報（例えば、UARTから受信したデータ、タイマーID、非同期操作の結果コードなど）は、vMMIOレジスタや共有メモリ上の事前に定義された領域を介してゲストに伝達される。ゲストは割り込みハンドラ内でこれらの情報を読み取り、適切な非同期イベント処理を行う。
 
-## 9. メモリ安全性
+## 10. メモリ安全性
 <!-- traceability: {Challenge_SyscallMemorySafety} {OwnershipTransfer} {FastAddressCheck} -->
 `fireball_call` を介してゲストメモリへのポインタが渡される場合でも、アクセスしてはならない領域は仮想アドレス空間から物理的に **unmap（マッピング解除）** されている。他タスク所有の SHM 領域や転送中（`IN_FLIGHT`）のページ、未割当領域へのアクセスは、ソフトウェア的な許可チェックを待つまでもなく、PTE / TLB 不在による未登録ページトラップ（`TRAP_UNREGISTERED_PAGE`）としてハードウェア・仮想化境界で即座に遮断される。ゲストRAM（リニアメモリ）も単一の境界比較（`FastAddressCheck`）で保護されるため、ホスト側での二重のポインタ検証（`vsoc_validate_ptr` 等）は完全に不要であり、ゼロオーバーヘッドのメモリ安全性が保証される。 `{Challenge_SyscallMemorySafety}`
 
-## 10. トラップ状態プロトコル
+## 11. トラップ状態プロトコル
 <!-- traceability: {Trap_Interface} -->
 
 `fireball_call` は、トラップ命令（RISC-Vの `ecall` や ARMの `svc` 等）をベースにした同期通信インターフェースである。ゲストWASM実行環境においてインポート関数呼び出し（`call`）が行われると、実行エンジン（Interpreter/JIT）がこれをトラップし、ホスト側の対応するC++ハンドラに制御を同期的に移譲する（トラップ状態プロトコル）。

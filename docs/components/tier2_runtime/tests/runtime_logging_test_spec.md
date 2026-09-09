@@ -2,10 +2,10 @@
 
 ## 1. 目的と対象範囲
 
-正本: [`system_logging.md`](docs/components/tier1_core/system_logging.md)
-参考実装: [`logging_concept.py`](docs/components/tier1_core/concepts/logging_concept.py)
+正本: [`runtime_logging.md`](docs/components/tier2_runtime/runtime_logging.md)
+参考実装: [`logging_concept.py`](docs/components/tier2_runtime/concepts/logging_concept.py)
 
-**適用範囲外の明記**: `system_logging.md` 冒頭は「本コンポーネントが扱うのはビルド時に辞書登録された固定フォーマットの内部状態ログのみである」と明示し、ゲストの `wasi:cli/stdout`/`stderr`（`print`/`eprint`）は別経路（`interface_wit.md` の `console-output` の位置づけ節、`fireball://service/stdout/0`）で扱うとしている。したがって本テスト仕様書は **辞書ベースの内部ログ** のみを対象とし、生バイト出力は `../../tier1_interface/tests/interface_wit_test_spec.md` 側の責務とする。
+**適用範囲外の明記**: `runtime_logging.md` 冒頭は「本コンポーネントが扱うのはビルド時に辞書登録された固定フォーマットの内部状態ログのみである」と明示し、ゲストの `wasi:cli/stdout`/`stderr`（`print`/`eprint`）は別経路（`interface_wit.md` の `console-output` の位置づけ節、`fireball://service/stdout/0`）で扱うとしている。したがって本テスト仕様書は **辞書ベースの内部ログ** のみを対象とし、生バイト出力は `../../tier1_interface/tests/interface_wit_test_spec.md` 側の責務とする。
 
 ## 2. テストケース一覧
 
@@ -27,9 +27,9 @@
 
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| LOG-GOTCHA-01 | 実行時文字列ポインタの完全排除（ダングリングポインタ防止） | ログAPI呼び出し | 実行時文字列ポインタの受け渡しを試行 | ログAPIは固定長辞書オフセットと u32 スカラー引数4個のみを受け付け、任意長文字列を直接埋め込む手段が存在しない。**実装の勘所**: ログメッセージにポインタを含めると、対象タスクがクラッシュまたは終了した後にロガーが不正メモリを参照（Use-After-Free）する | `system_logging.md` , `{DictionaryBasedIPC}` |
-| LOG-GOTCHA-02 | リングバッファ満杯時の最古上書き（システム非ブロック不変条件） | リングバッファが満杯 | さらに `log_event` を実行 | エラーやブロックを起こさず、最も古いエントリを上書きして直近のログを保存する。**実装の勘所**: ログ出力でタスクをブロックさせると、高負荷時や異常発生時にシステム全体がデッドロックに陥る | `system_logging.md` , `{DeterministicRingBuffer}` |
-| LOG-GOTCHA-03 | 転送ループの割り込み即時応答性 | flush 実行中 | 現在のバッチ（DMA転送）完了後に `interrupt_pending()` が True を返す | バッファ全フラッシュを強行せず、現在のバッチ（DMA転送）完了時点で直ちにループを抜けてスケジューラへ制御を戻す。**実装の勘所**: DMA転送は開始後 `dma_complete` まで中断できないため、確認はエントリ単位ではなくバッチ境界でのみ行う。ログフラッシュをアトミックに実行すると、長大なログ転送中に外部割り込みレイテンシが大幅に悪化する | `system_logging.md` , `{InterruptibleFlush}` |
+| LOG-GOTCHA-01 | 実行時文字列ポインタの完全排除（ダングリングポインタ防止） | ログAPI呼び出し | 実行時文字列ポインタの受け渡しを試行 | ログAPIは固定長辞書オフセットと u32 スカラー引数4個のみを受け付け、任意長文字列を直接埋め込む手段が存在しない。**実装の勘所**: ログメッセージにポインタを含めると、対象タスクがクラッシュまたは終了した後にロガーが不正メモリを参照（Use-After-Free）する | `runtime_logging.md` , `{DictionaryBasedIPC}` |
+| LOG-GOTCHA-02 | リングバッファ満杯時の最古上書き（システム非ブロック不変条件） | リングバッファが満杯 | さらに `log_event` を実行 | エラーやブロックを起こさず、最も古いエントリを上書きして直近のログを保存する。**実装の勘所**: ログ出力でタスクをブロックさせると、高負荷時や異常発生時にシステム全体がデッドロックに陥る | `runtime_logging.md` , `{DeterministicRingBuffer}` |
+| LOG-GOTCHA-03 | 転送ループの割り込み即時応答性 | flush 実行中 | 現在のバッチ（DMA転送）完了後に `interrupt_pending()` が True を返す | バッファ全フラッシュを強行せず、現在のバッチ（DMA転送）完了時点で直ちにループを抜けてスケジューラへ制御を戻す。**実装の勘所**: DMA転送は開始後 `dma_complete` まで中断できないため、確認はエントリ単位ではなくバッチ境界でのみ行う。ログフラッシュをアトミックに実行すると、長大なログ転送中に外部割り込みレイテンシが大幅に悪化する | `runtime_logging.md` , `{InterruptibleFlush}` |
 
 ## 3. テスト検証実績と網羅状況
 

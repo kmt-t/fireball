@@ -9,7 +9,7 @@
 
 ## 1. コンセプト
 <!-- traceability: {System_Allocator} {Shm_Allocator} {ConsolidatedHeap} -->
-[`system_memory.md`](docs/components/tier1_core/system_memory.md) が定義するパーティション貸与契約を実現するため、固定長パーティション貸与に加え、システム基盤向けシステムコンテナの動的確保・個別解放を担う**システム用アロケータ (`system_allocator` / `{System_Allocator}`)**、およびタスク間ゼロコピー IPC 転送用の共有メモリ領域（MPU Region 6）から可変長バッファを切り出す**SHM用アロケータ (`shm_allocator` / `{Shm_Allocator}`)** を dlmalloc（`create_mspace_with_base`）により運用する。 `{System_Allocator}` `{Shm_Allocator}` `{ConsolidatedHeap}`
+[`system_memory.md`](docs/components/tier1_core/system_memory.md) が定義する5プール契約（ホスト用ヒープ・タスクヒープ・共有メモリ用ヒープ・ランタイム用バンプアロケータ・JITキャッシュアロケータ）のうち、ホスト用ヒープ・タスクヒープ・共有メモリ用ヒープの3プールを直接実装する。システム基盤向けシステムコンテナの動的確保・個別解放を担う**システム用アロケータ (`system_allocator` / `{System_Allocator}`、ホスト用ヒープの実装)**、タスク起動時に貸与する固定長パーティション（タスクヒープの実装）、およびタスク間ゼロコピー IPC 転送用の共有メモリ領域（MPU Region 6）から可変長バッファを切り出す**SHM用アロケータ (`shm_allocator` / `{Shm_Allocator}`、共有メモリ用ヒープの実装)** を dlmalloc（`create_mspace_with_base`）により運用する。残る2プール（ランタイム用バンプアロケータ・JITキャッシュアロケータ）は、それぞれ `{Runtime_BumpAllocator}`（[`runtime_loader.md`](docs/components/tier2_runtime/runtime_loader.md)）および `{JIT_MultiBuffer_Cache}`（[`jit_runtime.md`](docs/components/tier3_jit/jit_runtime.md)）が物理的に実現し、本コンポーネントは MPU リージョン配分（7章参照）を通じてそれらの保護ドメインを提供する。 `{System_Allocator}` `{Shm_Allocator}` `{ConsolidatedHeap}`
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->
@@ -32,11 +32,14 @@ graph TD
 ```
 
 ## 4. インターフェース実装
-[`system_memory.md`](docs/components/tier1_core/system_memory.md) のインターフェース設計節で定義された公開API（`init-manager`, `acquire-partition`/`release-partition`, `acquire-slot`/`release-slot`, `allocate-shared`, `claim`, `deallocate`）を、以下のアロケータ群を用いて実現する。
+[`system_memory.md`](docs/components/tier1_core/system_memory.md) のインターフェース設計節で定義された公開APIを、以下のアロケータ群を用いて実現する。
 
 - `init-manager`: `system_allocator`/`shm_allocator` それぞれに対応する `create_mspace_with_base` を実行する。
-- `acquire-partition`/`release-partition`/`acquire-slot`/`release-slot`/`deallocate`: `system_allocator` の mspace 上で有界レイテンシの動的確保・解放を行う。
-- `allocate-shared`/`claim`: `shm_allocator` の mspace 上で可変長 `shared_block` を切り出し、RAII 解放時に `mspace_free` へ返却・自動合体する。
+- `host-alloc`/`host-free`: `system_allocator` の mspace 上で有界レイテンシの動的確保・個別解放を行う（ホスト用ヒープ）。
+- `acquire-task-heap`/`release-task-heap`/`acquire-slot`/`release-slot`/`deallocate`: `system_allocator` の mspace 上で固定長パーティション・型付きスロットを貸与・返却する（タスクヒープ）。
+- `allocate-shared`/`claim`/`release`: `shm_allocator` の mspace 上で可変長 `shared_block` を切り出し、RAII 解放時に `mspace_free` へ返却・自動合体する（共有メモリ用ヒープ）。
+- `acquire-runtime-arena`/`bump-alloc`/`reset-runtime-arena`/`release-runtime-arena`: `{Runtime_BumpAllocator}`（[`runtime_loader.md`](docs/components/tier2_runtime/runtime_loader.md) 正本）へ委譲する（ランタイム用バンプアロケータ）。
+- `acquire-jit-cache`: MPU Region 4（7.1節）の固定長リージョンハンドルを返す。バンク分割・世代交代は `{JIT_MultiBuffer_Cache}`（[`jit_runtime.md`](docs/components/tier3_jit/jit_runtime.md) 正本）が管轄する（JITキャッシュアロケータ）。
 
 ## 5. 制約達成の方策
 <!-- traceability: {GLOBAL_Policy_Memory} {GLOBAL_StrictMemoryLimit} {WasmPageAlignment} {META_BumpAllocator} {META_FaultIsolation} {OneRuntimeOneGuest} {Runtime_BumpAllocator} {System_Allocator} {Shm_Allocator} -->
@@ -71,11 +74,11 @@ graph TD
 [`system_memory.md`](docs/components/tier1_core/system_memory.md) の `{OwnershipTransfer}` 契約（所有権追跡・イベント通知インターフェース・ライフサイクルフェーズ）を、以下のとおり物理実装する。
 
 ### 6.1 所有権追跡の物理実装
-各メモリブロックは `memory-info.owner` で割り当て元 task-id を追跡する。`acquire-partition`/`acquire-slot`/`deallocate` や `RAII`/`drop` による解放は、用途別に事前確保された独立パーティション（固定長アリーナ）から `shm_allocator`/`system_allocator` を用いて有界に切り出し、使用後にアリーナへ返却・合体する。
+各メモリブロックは `memory-info.owner` で割り当て元 task-id を追跡する。`acquire-task-heap`/`acquire-slot`/`deallocate` や `RAII`/`drop` による解放は、用途別に事前確保された独立パーティション（固定長アリーナ）から `shm_allocator`/`system_allocator` を用いて有界に切り出し、使用後にアリーナへ返却・合体する。
 
 ### 6.2 共有メモリマッピングと仮想化リスナーへのコールバック委譲（物理実装）
 <!-- traceability: {VmmioShmDelegation} {OwnerMismatchTrap} -->
-物理メモリマネージャは、クリーンアーキテクチャ（依存性逆転の原則: DIP）に従い、特定の上位仮想化ハードウェア（vMMIO 等）の内部シンボルや特定の仮想アドレス体系（`0xE000_0000`）に直接依存しない。物理メモリマネージャは [`system_memory.md`](docs/components/tier1_core/system_memory.md) の `{VmmioShmDelegation}` が定義するイベント通知インターフェース（リスナー機構）を提供し、仮想化層（vMMIO コントローラ等）がこれを購読・登録する。 `{VmmioShmDelegation}`
+物理メモリマネージャは、クリーンアーキテクチャ（依存性逆転の原則: DIP）に従い、特定の上位仮想化ハードウェア（vMMIO 等）の内部シンボルや特定の仮想アドレス体系（`0xE000_0000`）に直接依存しない。これは Tier 1 契約（[`system_memory.md`](docs/components/tier1_core/system_memory.md)）が要求する事項ではなく、本コンポーネント自身が DIP を維持するために自発的に採用する物理実装上の設計である。物理メモリマネージャは `{VmmioShmDelegation}` が定義するイベント通知インターフェース（リスナー機構）を提供し、仮想化層（vMMIO コントローラ等）がこれを購読・登録する。 `{VmmioShmDelegation}`
 
 物理メモリマネージャは物理ページ（4KB）のライフサイクル変化時にこの通知を発火し、仮想化層側が自身の仮想アドレス空間（VPN）に対応するページテーブル（PTE）更新や TLB エントリフラッシュを自律的に実施する。 `{OwnerMismatchTrap}`
 

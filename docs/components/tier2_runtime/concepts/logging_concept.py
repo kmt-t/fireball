@@ -1,5 +1,5 @@
 """
-docs/components/tier1_core/concepts/logging_concept.py
+docs/components/tier2_runtime/concepts/logging_concept.py
 Reference Concept Implementation: Fireball Logger Component
 Implementation Invariants & Gotchas:
 - LOG-GOTCHA-01: Log API accepts only scalar u32 arguments and static dictionary offsets,
@@ -39,8 +39,10 @@ import sys
 from pathlib import Path
 
 _DIR = Path(__file__).resolve().parent
-if str(_DIR) not in sys.path:
-    sys.path.insert(0, str(_DIR))
+_TIER1_CORE_CONCEPTS = _DIR.parent.parent / "tier1_core" / "concepts"
+for _p in (_DIR, _TIER1_CORE_CONCEPTS):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
 
 from flat_view_concept import FlatMapView
 

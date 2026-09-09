@@ -4,7 +4,7 @@ Wires HAL + Logger/ConsoleOutput + the recovery-strategy engine + the real
 fireball_call syscall surface into one running system.
 fireball_call's ID space, register layout and error-code convention adhere
 strictly to the architectural specifications:
-- `docs/components/tier1_core/system_syscall.md` §5 defines the real ID table
+- `docs/components/tier2_runtime/runtime_syscall.md` defines the real ID table
 - `docs/components/tier2_runtime/runtime_vmmio.md` defines the vMMIO address/register layout
 - `docs/components/tier1_interface/ipc_router.md` defines the URI-routed, zero-copy message queue
 This module uses self-contained simulation modules (`vmmio.py`, `ipc_router.py`,
@@ -12,7 +12,8 @@ This module uses self-contained simulation modules (`vmmio.py`, `ipc_router.py`,
 the actual register/byte-level storage and wire-level u32 handle numbering
 required for end-to-end execution.
 All guest output routes through WASI_FD_WRITE (console-output) to adhere strictly
-to system_logging.md and interface_wit.md §5.5 (dictionary logger is internal-only).
+to runtime_logging.md and interface_wit.md's "console-output" section (dictionary
+logger is internal-only).
 """
 
 from __future__ import annotations
@@ -59,7 +60,7 @@ from vmmio import (
 
 class FbSyscallId(IntEnum):
     """
-    system_syscall.md §5's real per-category ID table (not a subset picked
+    runtime_syscall.md's real per-category ID table (not a subset picked
         for convenience -- every ID this experiment can plausibly back with real
         behavior is included; ones it can't yet (see README's missing-spec list)
         still route here and fail with a real WASI errno, not silently vanish).
@@ -75,6 +76,7 @@ class FbSyscallId(IntEnum):
     MMIO_WRITE8 = 0x13
     MMIO_BULK_READ = 0x14
     MMIO_BULK_WRITE = 0x15
+    TRIGGER_SET_PIN = 0x16
     VDMA_START = 0x20
     IRQ_READ_FLAGS = 0x30
     IRQ_CLEAR = 0x31
@@ -91,7 +93,7 @@ class FbSyscallId(IntEnum):
 
 class WasiErrno(IntEnum):
     """
-    system_syscall.md §4.2: `fireball_call` returns 0 on success, else a
+    runtime_syscall.md's calling convention section: `fireball_call` returns 0 on success, else a
         "WASIのerrno_t に準拠" error code -- the real wasi_snapshot_preview1
         numeric table, not a project-invented sentinel. Only the subset this
         file actually returns is enumerated; values match the real table's
@@ -374,9 +376,10 @@ class System:
         """
         Must be called before invoking guest code that will use
                 `fb_offset_t` arguments (IPC_*/WASI_*): those are relative offsets
-                into "the calling task's own guest memory" (system_syscall.md
-                §4.1), which this single-tenant experiment models as one mutable
-                binding set by the embedder rather than a per-task table.
+                into "the calling task's own guest memory" (runtime_syscall.md's
+                calling convention section), which this single-tenant experiment
+                models as one mutable binding set by the embedder rather than a
+                per-task table.
         """
         self._guest_memory = memory
         self._current_task_id = task_id
@@ -404,8 +407,9 @@ class System:
     ) -> int:
         """
         The one host import a guest actually needs
-                (system_syscall.md §3-4): a single syscall-ID-dispatched bridge
-                carrying `id` plus six generic u32 args, dispatched via RadixBinaryTreeView.
+                (runtime_syscall.md's WIT definition and calling convention): a
+                single syscall-ID-dispatched bridge carrying `id` plus six
+                generic u32 args, dispatched via RadixBinaryTreeView.
         """
 
         handler = self._syscall_dispatch_tree.find(syscall_id)
@@ -435,10 +439,10 @@ class System:
     # --- System (SYS_YIELD/HALT/RESET, real REG_SYS_CONTROL semantics) --
     def _apply_sys_control(self, cmd: int) -> WasiErrno:
         """
-        runtime_vmmio.md §4.4's REG_SYS_CONTROL: `1`=Reset, `2`=Yield,
+        runtime_vmmio.md's REG_SYS_CONTROL: `1`=Reset, `2`=Yield,
                 `3`=Halt. `fireball_call`'s SYS_YIELD/HALT/RESET IDs are the
                 "cannot do a raw vMMIO store" proxy for writing this exact
-                register (system_syscall.md §2's "アクセスパスB"), so both paths
+                register (runtime_syscall.md's "アクセスパスB"), so both paths
                 funnel through this one real effect.
         """
         struct.pack_into("<I", self.sysctl_regs, REG_SYS_CONTROL, cmd & 0xFFFF_FFFF)
@@ -595,8 +599,9 @@ class System:
 
     def raise_irq(self, mask: int) -> None:
         """
-        Not itself a syscall (system_syscall.md §8: interrupts are a
-                host-to-guest notification, not a guest-initiated call) -- lets a
+        Not itself a syscall (runtime_syscall.md's async notification section:
+                interrupts are a host-to-guest notification, not a guest-initiated
+                call) -- lets a
                 test or the HAL demo set REG_IRQ_FLAGS bits for IRQ_READ_FLAGS/
                 IRQ_CLEAR to observe.
         """

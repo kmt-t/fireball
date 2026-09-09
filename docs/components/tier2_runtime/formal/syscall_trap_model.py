@@ -1,5 +1,5 @@
 """
-docs/components/tier1_core/formal/syscall_trap_model.py
+docs/components/tier2_runtime/formal/syscall_trap_model.py
 pyModelChecking による fireball_call トラップ状態プロトコルの
 (1) ホストハンドラが REG_SYSCALL_RET を設定して完了するまで、ゲストが再開されないこと
 (2) トラップは必ずいずれ完了し、ゲスト実行が再開されること
@@ -12,7 +12,7 @@ pyModelChecking による fireball_call トラップ状態プロトコルの
 from pyModelChecking import Kripke
 from pyModelChecking.CTL import AF, AG, AtomicProposition, Imply, Not
 
-BACKS = ["components/tier1_core/system_syscall.md"]
+BACKS = ["components/tier2_runtime/runtime_syscall.md"]
 
 
 def build_model(*, guards: bool = True) -> Kripke:

@@ -192,8 +192,8 @@ graph LR
 | `{Challenge_ApproximateYield}` | トレース数ベースの概算Yieldの精度とスターベーション対策。 | 検討中 |
 | `{Challenge_InterruptSafety}` | 割り込みハンドラとタスク間の競合回避と安全なウェイクアップ。 → ISRはフラグセットのみ行い、実処理はタスクコンテキストで実行する方策を採用（`platform_driver.md`）。 | 決定済 |
 | `{Challenge_JITCacheEfficiency}` | 小規模メモリ環境におけるJITキャッシュの代謝とヒット率の最適化。 → 3面リングローテーション（Active/Warm/Oldest）と世代Cookieによる代謝方式を採用し、形式検証済み（`runtime_vsoc.md` {Safepoint_JIT_Flush}, `components/tier2_runtime/formal/vsoc_cache_coherency_model.py`）。 | 決定済 |
-| `{Challenge_WasiFdWriteLoop}` | WASI `fd_write` の実装レイヤー分離とバッファ管理。 → Shim側でベクタをループし1ベクタごとに `fireball_call` を発行する設計を採用（`system_syscall.md` {Syscall_Mapping}）。 | 決定済 |
-| `{Challenge_SyscallMemorySafety}` | ゲストメモリアクセス時のセキュリティ保護方式。 → アクセス不可な領域は仮想アドレス空間から物理的に unmap され未マッピングトラップ（`TRAP_UNREGISTERED_PAGE`）で遮断されるため、別途の `vsoc_validate_ptr` は導入しない（`system_syscall.md` {Syscall_Mapping}）。 | 決定済 |
+| `{Challenge_WasiFdWriteLoop}` | WASI `fd_write` の実装レイヤー分離とバッファ管理。 → Shim側でベクタをループし1ベクタごとに `fireball_call` を発行する設計を採用（`runtime_syscall.md` {Syscall_Mapping}）。 | 決定済 |
+| `{Challenge_SyscallMemorySafety}` | ゲストメモリアクセス時のセキュリティ保護方式。 → アクセス不可な領域は仮想アドレス空間から物理的に unmap され未マッピングトラップ（`TRAP_UNREGISTERED_PAGE`）で遮断されるため、別途の `vsoc_validate_ptr` は導入しない（`runtime_syscall.md` {Syscall_Mapping}）。 | 決定済 |
 | `{Challenge_CoosBlockedList}` | `BLOCKED` タスクリストの管理コストとリアルタイム性のトレードオフ。 → `{ADR_EventDrivenWakeQueue}` として決定。 | 決定済 |
 | `{Challenge_CspHandoffStarvation}` | COOS の CSP Handoff 連鎖（IPCルータ含む）が特定のタスクセット間で閉じ、他タスクが実行機会を失うスターベーションリスク。緩和策は `FB_CONF_MAX_CONSECUTIVE_HANDOFFS` による連鎖の有界化。 | 検討中 |
 | `{Challenge_DebuggerResource}` | 極小メモリ環境でのデバッグ用バッファ確保とJIT併用の制約。 | 検討中 |

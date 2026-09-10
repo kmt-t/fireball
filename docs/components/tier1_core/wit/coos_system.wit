@@ -52,6 +52,16 @@ interface types {
         task-not-found,
     }
 
+    /// 協調スケジューラへ渡す汎用割り込みイベント
+    /// ベクタ実装や物理アドレスを含まず、固定5ワードの原因情報だけを保持する
+    record interrupt-event {
+        vector-id: u32,
+        source-id: u32,
+        cause-code: u32,
+        payload0: u32,
+        payload1: u32,
+    }
+
     /// ログレベル重要度
     enum log-level {
         trace,
@@ -154,13 +164,13 @@ interface csp {
 /// COOS スケジューラ (os_scheduler) インターフェース
 /// 協調型マルチタスク実行制御・アイドル検出・割り込み通知
 interface scheduler {
-    use types.{task-id, scheduler-error};
+    use types.{task-id, scheduler-error, interrupt-event};
 
     /// 実行権を自発的にスケジューラへ譲渡する
     yield-task: func();
 
-    /// 外部ハードウェア割り込み通知（ISR コンテキストから有界キューへ投函）
-    notify-interrupt: func(irq-id: u32);
+    /// 汎用割り込みイベントをISRコンテキストから固定長FIFOへ投函する
+    notify-interrupt: func(event: interrupt-event);
 
     /// アイドル時フックコールバックの登録（システムアイドル時のログフラッシュ等）
     trigger-idle: func();

@@ -326,6 +326,7 @@ FlatMap ページテーブル、ダイレクトマップ
 | `0xC000_0000` | `12` (`0xC`) | **SYSCTL** | システム制御（Yield, Halt, Syscall等） |
 | `0xC000_1000` | `12` (`0xC`) | **IPCR** | IPCルータ連携レジスタ |
 | `0xC000_2000` | `12` (`0xC`) | **VDMA** `{VDMA}` | 仮想DMA（バルク転送） |
+| `0xC000_3000` | `12` (`0xC`) | **vIRQ** | 原因付き仮想割り込みディスパッチャ専用ページ |
 | `0xE000_0000` – `0xEFFF_FFFF` | `14` (`0xE`) | **SHM** | 共有メモリ（1領域=1ページ）。デコード上の全域は256MBだが、実際にPTEが割り当てられるのは先頭128KB（32ページ）のみ |
 | `0xF000_0000` – `0xFFFF_FFFF` | `15` (`0xF`) | **PASSTHROUGH** | 物理アドレス直結 |
 
@@ -338,7 +339,7 @@ PASSTHROUGH アドレス変換:
 | :--- | :--- | :--- | :--- |
 | `0x00` | `REG_SYS_CONTROL` | W | `1`: Reset, `2`: Yield, `3`: Halt, `4`: Syscall |
 | `0x04` | `REG_SYS_STATUS` | R | システム状態フラグ |
-| `0x08` | `REG_IRQ_FLAGS` | R/W | 仮想割り込みフラグ |
+| `0x08` | `REG_IRQ_FLAGS` | R | 予約済みステータス。vIRQイベントのゲスト配送には使用しない |
 | `0x10` | `REG_SYSCALL_ID` | R/W | サービスID |
 | `0x14` | `REG_SYSCALL_CMD` | R/W | コマンドID |
 | `0x18` | `REG_SYSCALL_ARG0` | R/W | 第1引数 / 戻り値 |
@@ -383,16 +384,99 @@ graph LR
 4. **Grant (`claim(shm-id)`)**: ランデブーが成立した瞬間、受信タスク側で `claim()` を呼び出すことで受信タスクの仮想アドレス空間へ PTE がマッピングされ、有効な `shared-block` ハンドルが取得可能となる。
 5. **障害時回復 (`rollback_transfer`)**: 相手タスクが永久に到達しない場合、送信タスクはブロックし続ける。タスク異常終了やタイムアウト等によるフォールト発生時は、物理メモリ層の `rollback_transfer()` により送信元タスクの空間へ PTE を再マッピングし、リソースの回収・再利用を行う。
 
-### 4.7 仮想割り込みマッピング
-<!-- traceability: {META_ConfigurableSystem} -->
-物理割り込みから仮想割り込みIDへのマッピングは**静的1:1**とし、別コンフィグ（`irq_mapping_config`）で定義される。 `{META_ConfigurableSystem}`
+### 4.7 原因付き vIRQ ディスパッチ
+<!-- traceability: {META_ConfigurableSystem} {GLOBAL_InterruptWakeup} -->
 
-- **マッピング方式**: 物理IRQ 1: 仮想IRQ 1。集約しない。
-- **ゲスト側確認方式**: ポーリング。ゲストがstep再開時に `REG_IRQ_FLAGS` をチェック。
-- **コールバック登録**: TODO(未決): 仮想割り込みコールバック登録機構の検討。
-- **設定ファイル**: `vsoc_config` とは分離。`irq_mapping_config` として独立管理。
+vIRQ は、物理割り込みをゲストへ直接配送するための専用 vMMIO ページである。ゲストは [`libfireball.md`](docs/components/tier3_platform/libfireball.md) のラッパーを通じて、固定スロットへ WASM 関数インデックスを登録する。登録値は vSoC が検証し、Safepoint で原子的に反映する。`REG_IRQ_FLAGS` のポーリングは vIRQ の配送経路ではない。
 
-関連仕様: [`runtime_syscall.md`](docs/components/tier2_runtime/runtime_syscall.md) の `{Syscall_Mapping}` を参照。
+#### vIRQ ページ配置と固定スロット
+
+vIRQ ページは `FB_CONF_VMMIO_VIRQ_BASE`（`0xC000_3000`）から `FB_CONF_VMMIO_VIRQ_PAGE_SIZE`（4KB）を占有する。登録書込みは保留値として扱い、現在有効な関数インデックスを実行中のゲストから途中で観測できないようにする。
+
+| オフセット | 領域 | アクセス | 内容 |
+| :--- | :--- | :--- | :--- |
+| `0x000` – `0x0FF` | 静的原因源表 | R | 16バイトの原因源記述子。`vector_id`、分類ノード、`source_id`、属性を保持する |
+| `0x100` | root 登録スロット | R/W | root ディスパッチャの WASM 関数インデックス |
+| `0x104` | DEVICE 登録スロット | R/W | DEVICE 分類ディスパッチャの WASM 関数インデックス |
+| `0x108` | SYSTEM 登録スロット | R/W | SYSTEM 分類ディスパッチャの WASM 関数インデックス |
+| `0x10C` | RUNTIME 登録スロット | R/W | RUNTIME 分類ディスパッチャの WASM 関数インデックス |
+| `0x110` | FAULT 登録スロット | R/W | FAULT 分類ディスパッチャの WASM 関数インデックス |
+| `0x120` – `0x13F` | デバイス登録スロット | R/W | `device_index` ごとのデバイスディスパッチャ。最大 `FB_CONF_HAL_MAX_DEVICES` 件 |
+
+登録値 `0xFFFF_FFFF` は未登録を示す固定値である。固定スロットの範囲外、未登録値以外の不正な関数インデックス、または期待シグネチャを満たさない関数は vSoC が拒否する。登録対象は root、4分類、各デバイスの静的ノードに限り、親子関係と原因源表はホスト設定で固定する。
+
+#### 静的ノードと原因源表
+
+ノードIDは `root → 分類 → デバイス` の順に固定する。最大ノード数は `FB_CONF_VIRQ_MAX_NODES`（root 1件、分類4件、デバイス `FB_CONF_HAL_MAX_DEVICES` 件）であり、原因源表の最大件数は `FB_CONF_VIRQ_MAX_SOURCES`（SYSTEM/RUNTIME/FAULTの3系統とデバイス源）である。
+
+| ノード | ノードIDの範囲 | 役割 |
+| :--- | :--- | :--- |
+| root | `0` | すべての原因レコードを受け、登録済み分類へ伝播する最上位ディスパッチャ |
+| DEVICE | `1` | デバイス原因を対応する静的デバイスノードへ伝播する分類ディスパッチャ |
+| SYSTEM | `2` | システム原因を処理する分類ディスパッチャ |
+| RUNTIME | `3` | ランタイム原因を処理する分類ディスパッチャ |
+| FAULT | `4` | フォールト原因を処理する分類ディスパッチャ |
+| device[n] | `5 + n` | 物理デバイスごとの原因を集約するディスパッチャ |
+
+原因源表はホスト設定で固定され、代表的な割当は次のとおりである。
+
+| `vector_id` | 分類 | 対象ノード | `source_id` | 用途 |
+| :--- | :--- | :--- | :--- | :--- |
+| `0x0100 + n` | DEVICE | `device[n]` | `n` | デバイス`n`の複数原因を集約する |
+| `0x1000` | SYSTEM | SYSTEM | 固定値 | COOS・システム制御由来の原因 |
+| `0x2000` | RUNTIME | RUNTIME | 固定値 | vSoC・実行制御由来の原因 |
+| `0x3000` | FAULT | FAULT | 固定値 | vMMIOアクセス違反等のフォールト原因 |
+
+`n`の有効範囲は`0`から`FB_CONF_HAL_MAX_DEVICES - 1`までであり、表にない組合せは未登録として扱う。物理デバイスが複数の原因を持つ場合も、原因ごとにノードを増やさず、1つの `device[n]` ディスパッチャへ集約する。ディスパッチャは `source_id` と `cause_code` を検査し、同一デバイス内の原因をゲスト関数へ振り分ける。
+
+#### 原因レコードと戻り値
+
+原因レコードは、COOS の汎用 `interrupt-event` と同じ順序の固定5ワードである。可変長ペイロード、ポインタ、URIは含めない。
+
+| ワード | 内容 |
+| :--- | :--- |
+| `vector_id` | 静的原因源表で定義された vIRQ 識別子 |
+| `source_id` | 物理デバイスまたはシステム源の識別子 |
+| `cause_code` | 発生原因の分類コード |
+| `payload0` | 原因固有の第1引数 |
+| `payload1` | 原因固有の第2引数 |
+
+各ディスパッチャの戻り値は次の3値に固定する。
+
+| 戻り値 | 動作 |
+| :--- | :--- |
+| `HANDLED` | 現在のノードで処理済みとして終了する。子ノードへ伝播しない |
+| `PASS_THROUGH` | 現在のノードでは処理せず、静的な子ノードへ1段だけ伝播する |
+| `REJECT` | 不正な原因・登録・引数として診断およびフォールト記録へ進む。下位ノードへ流さず、REJECTを原因とする再帰的なFAULT配送は行わない |
+
+#### 物理割り込みからゲスト配送まで
+
+ISR はディスパッチャを実行せず、原因レコードを構築して COOS の汎用受付へ渡す。COOS は固定長FIFOへの投入、満杯時のドロップ、協調境界でのドレイン、待機タスクの起床を所有する。vSoC は Safepoint でイベントを受け取り、登録済みの vIRQ ノードを `root → 分類 → デバイス → ゲスト関数` の順に評価する。WASI の `poll-check` / `poll-wait` はこの経路に参加しない。
+
+```mermaid
+sequenceDiagram
+    participant ISR as Physical ISR
+    participant VMMIO as vMMIO source mapper
+    participant COOS as COOS interrupt FIFO
+    participant VSOC as vSoC Safepoint
+    participant Root as root dispatcher
+    participant Class as category dispatcher
+    participant Device as device dispatcher
+    participant Guest as guest function
+
+    ISR->>VMMIO: physical IRQ + source state
+    VMMIO->>COOS: notify-interrupt(interrupt-event[5 words])
+    COOS->>COOS: enqueue FIFO / drop if full
+    COOS->>VSOC: drain event at cooperative boundary
+    VSOC->>VSOC: commit pending registrations atomically
+    VSOC->>Root: call_indirect(event)
+    Root-->>VSOC: PASS_THROUGH
+    VSOC->>Class: call_indirect(event)
+    Class-->>VSOC: PASS_THROUGH
+    VSOC->>Device: call_indirect(event)
+    Device-->>VSOC: HANDLED / PASS_THROUGH / REJECT
+    VSOC->>Guest: call_indirect(event) when PASS_THROUGH reaches leaf
+```
 
 ### 4.8 ソフトウェアTLB
 <!-- traceability: {VDMA} {OwnershipTransfer} {META_ConfigurableSystem} -->

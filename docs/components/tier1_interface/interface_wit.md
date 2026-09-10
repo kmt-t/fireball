@@ -8,9 +8,9 @@
 ## 1. 目的
 
 <!-- traceability: {WIT_Interface_Purpose} {WIT_First} {WIT_Common_Types} {URIAbstraction} -->
-本ドキュメントは、Fireballプロジェクトにおいてゲスト（WASM）環境に公開されるシステムコールおよびハードウェア抽象化層（HAL）のインターフェース仕様を定義する。
+本ドキュメントは、Fireballプロジェクトにおいてゲスト（WASM）環境に公開されるシステムコールおよびハードウェア抽象化層（HAL）のインターフェース仕様を定義する。ゲスト側のWASI互換アダプタはTier 3に属し、本書はその依存先となる公開WIT契約を定義する。
 
-**HAL は WASI 0.3 Preview (WASI 0.3p / Component Model) そのものである。** GPIO・タイマー・バス通信・ストリーム・コンソール出力等の個別デバイス/サービスごとに専用の WIT リソース型を定義することはしない。ゲストは階層型 URI から対象を動的に解決する **URI Resolver** と、ゼロコピー転送用の **HALバッファプール** の2つの汎用機構のみを介して、あらゆる WASI 0.3p 相当の読み書き・バス転送・非同期通知を行う。個々のデバイス/サービスの振る舞いは、IPCコマンドID（[`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) の URI 命名規則・IPC コマンド仕様節を正本とする）によって決定される。レガシーな WASI 0.1p (`wasi_snapshot_preview1`) ABI は、この URI Resolver + HALバッファプール機構を背後で呼び出す薄いアダプタ/ラッパーレイヤーとして完全サポートする（[`wasi_preview1_abi.md`](docs/specs/wasi_preview1_abi.md) を正本とする）。 `{WIT_Interface_Purpose}` `{WIT_First}` `{WIT_Common_Types}` `{URIAbstraction}`
+**HAL は WASI 0.3 Preview (WASI 0.3p / Component Model) と親和性のある抽象IFである。** GPIO・タイマー・バス通信・ストリーム・コンソール出力等の個別デバイス/サービスごとに専用の WIT リソース型を定義することはしない。ゲストは階層型 URI から対象を動的に解決する **URI Resolver** と、ゼロコピー転送用の **HALバッファプール** の2つの汎用機構のみを介して、あらゆる WASI 0.3p 相当の読み書き・バス転送・非同期通知を行う。個々のデバイス/サービスの振る舞いは、IPCコマンドID（[`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) の URI 命名規則・IPC コマンド仕様節を正本とする）によって決定される。レガシーな WASI 0.1p (`wasi_snapshot_preview1`) ABI は、これらの公開IFを呼び出すTier 3ゲストアダプタとして提供する。 `{WIT_Interface_Purpose}` `{WIT_First}` `{WIT_Common_Types}` `{URIAbstraction}`
 
 ## 2. アーキテクチャ原則
 
@@ -18,7 +18,7 @@
 - **URI Resolver メソッド**: `resolver.get-interface(uri: string)` により、URI 文字列からインターフェースハンドルを取得可能とする。個別デバイスの WIT リソース型は存在しない——ハンドルに対する操作はすべて IPC コマンドID経由で行う。
 - **HALバッファプール（vMMIO/DYNAMIC）ゼロコピー I/O**: デバイス通信のデータ送受信は、`resolver.acquire-buffer` / `resolver.release-buffer` で貸与される HALバッファプール（vMMIO/DYNAMIC 領域の `hal-buffer-slice`）を通じてゼロコピー／極低レイテンシで実行される。 `{URIAbstraction}` `{META_RestrictedPhysicalAccess}`
 - **IPC 宛先 URI と階層命名規則**: URI は、`fireball://<domain>/<type>/<instance>`（例: `fireball://device/uart/0`, `fireball://device/gpio/0`, `fireball://device/timer/0`, `fireball://device/i2c/0`, `fireball://service/stdout/0`）の**階層型 URI 命名規則**に従い、**IPC ルータ（`ipc_router`）でデバイスやサービスと通信するための宛先 URI** として機能する。
-- **WASI 0.1p 互換ラッパー (Adapter Pattern)**: 既存の WASI Preview 1 (`fd_write`, `fd_read`, `clock_time_get`, `proc_exit` 等) は、上記の URI Resolver + HALバッファプール機構を呼び出すラッパーとして機能する。
+- **WASI 0.1p 互換ラッパー (Adapter Pattern)**: 既存の WASI Preview 1 (`fd_write`, `fd_read`, `clock_time_get`, `proc_exit` 等) は、Tier 3ゲストアダプタが上記の URI Resolver + HALバッファプール機構へ変換する。
 - **Stateless Interface**: リソースハンドルを通じた操作を行い、ホスト側で状態を管理する。
 
 ## 3. 共通データ構造
@@ -40,6 +40,22 @@ interface resolver {
     acquire-buffer: func(size-bytes: u32) -> result<hal-buffer-slice, recovery-strategy-category>;
     /// HALバッファプール（vMMIO/DYNAMIC）バッファの解放
     release-buffer: func(slice: hal-buffer-slice) -> operation-result;
+    /// ストリームからHALバッファへ読み込む
+    stream-read: func(handle: u32, buffer: hal-buffer-slice) -> operation-result;
+    /// HALバッファからストリームへ書き込む
+    stream-write: func(handle: u32, buffer: hal-buffer-slice) -> operation-result;
+    /// ストリームの保留データを送出する
+    stream-flush: func(handle: u32) -> operation-result;
+    /// ストリームハンドルを閉じる
+    stream-close: func(handle: u32) -> operation-result;
+    /// 単調クロックの現在値を取得する
+    clock-get-now: func(handle: u32) -> result<u64, recovery-strategy-category>;
+    /// クロック分解能を取得する
+    clock-get-resolution: func(handle: u32) -> result<u64, recovery-strategy-category>;
+    /// 操作完了または入力準備の状態を確認する
+    poll-check: func(handle: u32) -> result<bool, recovery-strategy-category>;
+    /// 準備完了まで待機する
+    poll-wait: func(handle: u32) -> operation-result;
 }
 ```
 
@@ -47,10 +63,10 @@ interface resolver {
 
 ```mermaid
 graph TD
-    Guest[Guest WASM Application] -->|1. resolver.get-interface URI: fireball://device/uart/0| Res[URI Resolver / IPC Router]
-    Guest -->|2. resolver.acquire-buffer size| HBP[HAL Buffer Pool vMMIO/DYNAMIC]
-    Guest -->|3. IPCコマンドID発行 例: CMD_STREAM_WRITE_BUFFER| W3Core[WASI 0.3p HAL Drivers]
-    W1Wrap[WASI 0.1p Adapter Layer] -->|Delegates fd_write/read via HAL Buffer + Command ID| W3Core
+    Guest[Guest WASM Application] -->|WASI call| Lib[libfireball guest adapter]
+    Lib -->|resolver.get-interface| Res[URI Resolver / IPC Router]
+    Lib -->|acquire-buffer / release-buffer| HBP[HAL Buffer Pool]
+    Lib -->|stream / clock / poll operation| W3Core[HAL public IF]
     W3Core --> UART[fireball://device/uart/0]
     W3Core --> GPIO[fireball://device/gpio/0]
     W3Core --> Timer[fireball://device/timer/0]
@@ -61,7 +77,7 @@ graph TD
 ### 3.2 リカバリー戦略とエラーハンドリング
 <!-- traceability: {META_RecoveryStrategy} {Errorcode_To_Strategy} -->
 
-本プロジェクトでは、エラーコードではなくリカバリー戦略を返すことで、呼び出し側が具体的なアクション（リトライ/諦める）を取れるようにする。低レイヤー（Syscall）の `errno` は、Shim層でこの戦略に変換される。 `{META_RecoveryStrategy}` `{Errorcode_To_Strategy}`
+本プロジェクトでは、エラーコードではなくリカバリー戦略を返すことで、呼び出し側が具体的なアクション（リトライ/諦める）を取れるようにする。低レイヤー（Syscall）の `errno` は、ゲスト側の `libfireball` でこの戦略に変換される。 `{META_RecoveryStrategy}` `{Errorcode_To_Strategy}`
 ※なお、ホスト内部で各デバイスドライバと通信する低レイヤーの IPC コマンドプロトコルおよび RSP デバッグ仕様は、Tier 2/3 の HAL コンポーネント設計書（[`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) / [`platform_driver.md`](docs/components/tier3_platform/platform_driver.md)）を正本とする。
 
 ```wit
@@ -114,16 +130,10 @@ WIT内では `fireball-call` という kebab-case 名で定義されるが、C++
 
 ### 4.2. 高応答トリガーインターフェース
 <!-- traceability: {Syscall_Mapping} -->
-GPIO のような割り込み応答性・ビットバンギング等の要求から、URI Resolver 経由のハンドルルックアップを介さず、`fireball-call` に直接マッピングされた ID を通じて操作するものとする。
+GPIO のような割り込み応答性・ビットバンギング等の要求から、URI Resolver 経由のハンドルルックアップを介さず、`fireball-call` に直接マッピングされた ID を通じて操作するものとする。ゲスト側の呼び出しラッパーはTier 3で定義し、本書では raw trap 契約だけを扱う。
 
 - **理由**: ハンドルルックアップのオーバーヘッド排除、レジスタ直結に近いレイテンシの確保。
-- **実装例**: `FB_SYSCALL_TRIGGER_SET_PIN` ID を直接指定（`{Syscall_Mapping}`）。
-
-```python
-# ゲスト側での trigger.set_pin の実装例 (Shim)
-def fireball_trigger_set_pin(pin: int, value: bool):
-    __fireball_call(fb_syscall_id.FB_SYSCALL_TRIGGER_SET_PIN, pin, int(value), 0, 0, 0, 0)
-```
+- **ID**: `FB_SYSCALL_TRIGGER_SET_PIN`（`{Syscall_Mapping}`）。
 
 ## 5. `console-output` の位置づけ
 <!-- traceability: {DictionaryBasedIPC} -->
@@ -133,20 +143,20 @@ def fireball_trigger_set_pin(pin: int, value: bool):
 
 物理トランスポート（`HAL_Transport`）は `runtime_logging.md` のロガーと共有するが、辞書・リングバッファは経由しない別経路であり、両者は排他的に出力順序が保証されるわけではない（インターリーブし得る）。
 
-`fireball_call(WASI_FD_WRITE, ...)`（`runtime_syscall.md` 正本）は、ゲストの `print`/`eprint` 呼び出しをこの `fireball://service/stdout/0` 経路へ自動的にルーティングする。
+ゲスト側アダプタが `fireball_call(WASI_FD_WRITE, ...)`（`runtime_syscall.md` 正本）を発行し、ゲストの `print`/`eprint` 呼び出しをこの `fireball://service/stdout/0` 経路へ変換する。ホスト側のディスパッチとHAL操作は、それぞれ `runtime_syscall.md` と `hal_dispatch.md` の契約に従う。
 
 ## 6. 非同期通知メカニズム
 
 <!-- traceability: {Asynchronous_Notification} {WASI_Async_Bridge} -->
-WASIでは割り込みを直接扱うのではなく、汎用ポーリングコマンドによるイベント待機としてモデル化する。専用の `pollable` リソース型は設けず、`resolver.get-interface`/IPCコマンド発行が返す `u32` ハンドルに対して `POLL_CHECK` / `POLL_WAIT`（`hal_dispatch.md` を正本とする）コマンドIDを発行することで、ready 状態を確認する。
+WASIでは割り込みベクタを直接扱わず、汎用ポーリングコマンドによる操作完了待機としてモデル化する。専用の `pollable` リソース型は設けず、`resolver.get-interface`/IPCコマンド発行が返す `u32` ハンドルに対して `POLL_CHECK` / `POLL_WAIT`（`hal_dispatch.md` を正本とする）コマンドIDを発行することで、ready 状態を確認する。vMMIOのvIRQ原因付き階層ディスパッチは、COOSの汎用割り込みイベント契約とvSoCのSafepoint配送で処理し、WASI契約には追加しない。
 
-- **Virtual Interrupts**: 物理割り込みはホストで処理され、対応するハンドル（GPIO エッジ購読、タイマー満了購読、バス受信購読等の IPC コマンドが返す `u32` ポーリングハンドル）が `POLL_CHECK` で ready を返すことでゲストに通知される。
+- **操作完了通知**: 物理デバイスの完了状態は、GPIOエッジ購読、タイマー満了購読、バス受信購読等のIPCコマンドが返す`u32`ポーリングハンドルに対する`POLL_CHECK`/`POLL_WAIT`で確認する。これはvIRQの原因レコード配送とは別の経路である。
 
 ## 7. フィードバック：WASI 準拠における制約事項
 WASI仕様と HAL の乖離および考慮点は以下の通り：
 
 1. **GPIO/Bus の不在**: WASI (CLI/Cloud) には GPIO や I2C/SPI の標準インターフェースがない。これらは専用 WIT リソース型を設けず、URI Resolver + HALバッファプール + IPCコマンドIDの汎用機構上で「Fireball 独自プロポーザル」として実現する。
-2. **リアルタイム性**: WASI 0.2 の `poll` モデルは非同期イベントの集約には優れるが、極めて高速なリアルタイム応答が必要な場合、`fireball_call` (Trap) を併用する方が効率的である可能性がある。
+2. **リアルタイム性**: WASI 0.3p のポーリングモデルは非同期イベントの集約に利用できるが、極めて高速なリアルタイム応答が必要な場合、`fireball_call` (Trap) を併用する方が効率的である可能性がある。
 3. **リソース管理のオーバーヘッド**: 専用 WIT リソース型（ハンドル管理）を廃したことで、単純な `u32` ID渡し + IPCコマンドIDのみの薄い構成となり、64KB RAM 環境でのホスト側オーバーヘッドを最小化している。
 
 ## 8. 命名規則 (Naming Conventions)

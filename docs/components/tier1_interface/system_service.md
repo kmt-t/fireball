@@ -22,14 +22,14 @@
 graph TD
     subgraph WasmLayer["WASM 実行層（サービス）"]
         Guest[WASM Guest] --> IPCService[Isolated IPC Service]
-        Guest --> WASI[WASI Shim Layer]
+        Guest --> Lib[libfireball guest adapter]
     end
     subgraph NativeLayer["ネイティブ常駐層（サブシステム）"]
         Logging[Logging Subsystem]
         HAL[HAL Subsystem]
     end
     IPCService --> Logging
-    WASI --> HAL
+    Lib --> HAL
 ```
 
 ### 3.3 主要なクラス・構造体・配列・定数
@@ -72,11 +72,11 @@ stateDiagram-v2
 
 図中の各ブロックは以下を指す：
 - **Isolated IPC Service**（サービス）: IPCルータ経由で隔離実行される、WASI以外の汎用サービス（本節冒頭で定義した「サービス」の実体。WASM上で実行される常駐タスクである）。
-- **WASI Shim Layer**（サービス）: ゲストの WASI 呼び出しを HAL/ロギング等のサブシステムへ中継する、WASM上で実行される常駐タスク。
-- **Logging Subsystem**（サブシステム）: `runtime_logging.md` の内部ロガーおよび `interface_wit.md` の `console-output` の位置づけ節が定めるコンソール生バイト出力経路（`fireball://service/stdout/0`）を介した出力を担う、ネイティブコードとして常駐する基盤機能。サービスではない。
+- **libfireball**（ゲスト側ライブラリ）: ゲストの WASI 呼び出しを公開WIT／HAL IFへ変換する静的ライブラリ。サービスやサブシステムではない。詳細はTier 3のゲストアダプタ仕様を参照する。
+- **Logging Subsystem**（サブシステム）: `runtime_logging.md` の内部ロガーおよび `interface_wit.md` のコンソール生バイト出力経路（`fireball://service/stdout/0`）を介した出力を担う、ネイティブコードとして常駐する基盤機能。サービスではない。
 - **HAL Subsystem**（サブシステム）: 4.3節で扱うHAL（ハードウェア抽象化層）ドライバ群全体。ネイティブコードとして常駐する基盤機能であり、サービスではない。
 
-WASIおよび独立アイソレーション・サービスは、起動時にそれぞれ独立した物理メモリパーティションを割り当てられ、メモリのハードウェア境界が確立される（障害伝播防止）。すべてのサービスへのアクセスおよびシステムコール呼び出しは、必ずIPCルータ（`IPCRouter`）のルックアップおよびアクセス制御チェックを経由してのみ開始される。 `{META_FaultIsolation}` `{IPCRouter}`
+ゲストWASMサービスは、起動時に独立した物理メモリパーティションを割り当てられ、メモリのハードウェア境界が確立される（障害伝播防止）。すべてのサービスへのアクセスおよびシステムコール呼び出しは、必ずIPCルータ（`IPCRouter`）のルックアップおよびアクセス制御チェックを経由してのみ開始される。 `{META_FaultIsolation}` `{IPCRouter}`
 
 ※ `load_service (static)` における `static` とは、システムビルド時にコンフィグによって登録されたサービス一覧に基づき、実行時の動的なURI追加を行わずに、起動時に固定配列からサービスをロードする静的ロード処理を意味する。
 
@@ -86,88 +86,26 @@ WASIおよび独立アイソレーション・サービスは、起動時にそ�
 ```mermaid
 sequenceDiagram
     participant G as WASM Guest
-    participant S as WASI Service (Tier 1)
+    participant L as libfireball
     participant R as IPC Router
     participant H as HAL
 
-    G->>S: WASI Call (e.g., fd_write)
-    S->>R: lookup("fireball://hal/uart/0")
-    R-->>S: Channel Object
-    S->>H: send(WRITE, data)
-    H-->>S: status
-    S-->>G: result
+    G->>L: WASI Call (e.g., fd_write)
+    L->>R: get-interface("fireball://device/uart/0")
+    R-->>L: interface handle
+    L->>H: stream-write(handle, buffer)
+    H-->>L: operation result
+    L-->>G: WASI result
 ```
 
-ゲストWASMタスクとWASIサービス、およびHAL間は、メモリ空間がメモリパーティションによって相互に保護されている。WASIサービスがゲストメモリ上のデータ（例: `fd_write` で書き込むバッファ）にアクセスする際は、ホストが提供するメモリ境界検証ロジックを通過した上で、IPCルータ（`IPCRouter`）が仲介する所有権移譲ベースのゼロコピー通信（Handoff）によって安全にデータが HAL に引き渡される。 `{META_FaultIsolation}` `{IPCRouter}`
+ゲストWASMタスクと `libfireball`、およびHAL間は、メモリ空間がメモリパーティションによって相互に保護されている。`libfireball` がゲストメモリ上のデータ（例: `fd_write` で書き込むバッファ）を公開IFへ渡す際は、ホストが提供するメモリ境界検証と、IPCルータ（`IPCRouter`）が仲介する所有権移譲ベースのゼロコピー通信によって安全にHALへ引き渡される。 `{META_FaultIsolation}` `{IPCRouter}`
 
-### 4.4 WASI API から HAL への変換ラッパー (コンセプトコード)
+### 4.4 WASI API と HAL IF の境界
 <!-- traceability: {META_FaultIsolation} {IPCRouter} -->
 
-WASMゲストが呼び出す同期的な標準インターフェース (WASI) を、非同期でロールベースな基盤である「HAL（IPCコマンド）」へ変換・中継する Tier 0 ラッパーのコア構造。
-この擬似コードは、同期I/O要求と非同期実行基盤のインピーダンスミスマッチを解消するプロトコルを示す。
+ゲスト側の WASI API を Fireball の公開 IF へ変換する責務は、Tier 3のゲストアダプタに属する。本コンポーネントはサービスのロード、障害隔離、再起動、およびサービスが利用する境界の説明に限定し、Preview1 の関数シグネチャ、iovec 走査、HAL コマンド生成を記述しない。
 
-```python
-# API プロトタイプおよび擬似型定義:
-# struct Context: タスクの実行コンテキスト情報を保持する構造体
-# struct ChannelID: 通信チャネルを一意に特定するID値
-# def get_current_execution_context() -> Context: 実行中のタスクコンテキストを取得する
-# def resolve_wasi_fd_to_channel(ctx: Context, fd: int) -> ChannelID: FDからチャネルIDを解決する
-
-# wasi_service.py (Tier 0: 直接リンクされるシステム関数)
-
-# WASI fd_write のシグネチャ (WASMから直接呼ばれるネイティブ関数)
-def wasi_fd_write(fd: int, iovs: std.span[WasiIov], iovs_len: int, nwritten_ptr: int) -> int:
-    # 1. 環境ポインタ（Context）の取得
-    ctx = get_current_execution_context()
-
-    # 2. FDからIPCチャネルへの解決 (Virtual File System Lookup)
-    target_channel = resolve_wasi_fd_to_channel(ctx, fd)
-    if target_channel == INVALID_CHANNEL:
-        return WASI_ERRNO_BADF
-
-    # 3. メモリ境界チェック (Stage 1 セキュリティゲートへの事前検証)
-    if not ctx.memory_bounds_check(iovs, sizeof(WasiIov) * iovs_len):
-        return WASI_ERRNO_FAULT
-
-    total_written = 0
-
-    # 4. I/O処理ループ (Scatter/Gather をシリアルなIPCメッセージに変換)
-    for i in range(iovs_len):
-        current_iov = iovs[i]
-        if not ctx.memory_bounds_check(current_iov.buf, current_iov.buf_len):
-            return WASI_ERRNO_FAULT
-
-        # --- IPC Handoff (所有権転送) ---
-        msg = ipc_message()
-        msg.pairs[0] = make_kv(SCOPE_FUNCTIONAL, KEY_COMMAND, CMD_HAL_WRITE)
-        msg.pairs[1] = make_kv(SCOPE_VALUE, KEY_SIZE, current_iov.buf_len)
-        # データのポインタを共有メモリハンドルとして付与 (Zero-copy)
-        msg.pairs[2] = make_kv(SCOPE_GUEST_MEM_PTR, KEY_BUFFER_ADDR, current_iov.buf)
-
-        # 5. IPCルータを経由してHAL（または上位レイヤ）へ送信 (ノンブロッキング)
-        # route_message はバッファなし同期ランデブーであり、キューが存在しないため
-        # 「キュー満杯」という失敗状態は原理的に発生しない（ipc_router.md 参照）。
-        res = ipc_router.route_message(ctx.task, target_channel, msg)
-        if res == ERR_MSG_TOO_LARGE || res == ERR_PERMISSION_DENIED:
-            return WASI_ERRNO_IO # 中断
-
-        # 6. 完了待機 (COOS yield)
-        # 実質的な同期I/Oの模倣。HALが完了通知を返すまでタスクをサスペンドする。
-        wait_for_ipc_response(ctx.task, target_channel)
-
-        total_written += ctx.task.last_response_message.get_value(KEY_WRITTEN_SIZE)
-
-    # 7. 書き戻しと終了
-    if ctx.memory_bounds_check(nwritten_ptr, sizeof(int)):
-        write_guest_memory(nwritten_ptr, total_written)
-
-    return WASI_ERRNO_SUCCESS
-```
-
-#### 検証対象となる制約事項 (形式検証 pyModelChecking モデリングポイント)
-- **非同期サスペンドの整合性**: `wait_for_ipc_response` 内部で `co_yield()` した場合、実行エンジン（Interpreter/JIT）側がそのタスクのサスペンド状態を正しく認識し、別タスクへスイッチできること。
-- **共有メモリアクセスのセキュリティ境界**: `SCOPE_GUEST_MEM_PTR` で送ったゲストメモリ上のポインタを、HAL側（UARTドライバ等）が読み書きする際の境界チェック責任（ラッパー側での事前検証への依存性）。
-- **仮想FDテーブルの所有権**: WebAssembly仕様の `wasi_fd_t` から内部チャネルへのマッピング状態（VFS）に、タスク間で競合が発生しないこと。
+`libfireball` は `get-interface`、`acquire-buffer`、`stream-write` 等の Tier 2 HAL IF を呼び出す。サービスの実行状態、COOS のスケジューリング、HAL タスクの待機状態は、それぞれの正本仕様に従う。
 
 ## 5. インターフェース定義
 

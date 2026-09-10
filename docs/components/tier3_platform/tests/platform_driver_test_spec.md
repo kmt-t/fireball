@@ -11,7 +11,7 @@
 
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| HAL-03 | 割り込みpush経路: ISRは状態を直接変更しない | 物理割り込み発生 | ISRが`notify_interrupt(irq_id)`を呼ぶ | INT イベントが有界キューへ投函されるのみで、タスク状態はスケジューラのyield点までREADYへ遷移しない | 「割り込み通知（push）」 |
+| HAL-03 | 割り込みpush経路: ISRは状態を直接変更しない | 物理割り込み発生 | ISRが5ワードの`interrupt-event`で`notify_interrupt(event)`を呼ぶ | 原因レコードが固定長FIFOへ投函されるのみで、タスク状態はスケジューラの協調境界までREADYへ遷移しない | 「割り込み通知（push）」 |
 | HAL-05 | GPIO直接ストアの高速パス | GPIOへの書き込み要求 | `{Fast_Path_GPIO}`経由でアクセス | IPCルータのメッセージパッシングを経由しない直接vMMIOストア（`fireball_call`経由の`control`とは別の、より低レイテンシな経路） | `{Fast_Path_GPIO}`, runtime_syscall.md |
 | HAL-06 | `acquire_buffer`のHALバッファプール(vMMIO/DYNAMIC)物理マッピング | - | `acquire_buffer(size)` | 確保されたバッファがHALバッファプール（vMMIO DYNAMIC領域）のスロットに物理マッピングされる | 「バッファの確保」, runtime_vmmio.md |
 | HAL-07 | RSPトランスポートの選択可能性 | - | UART/RTTそれぞれで接続 | 双方の物理層でRSPパケット送受信が可能 | - |

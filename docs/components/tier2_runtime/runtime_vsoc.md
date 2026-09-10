@@ -18,7 +18,7 @@ vSoC (Virtual System-on-Chip) は、WASM実行環境の統合マネージャで�
 ## 3. 静的モデル
 
 ### 3.1 データ構造
-<!-- traceability: {META_StaticDI} {Runtime_BumpAllocator} -->
+<!-- traceability: {META_StaticDI} {Runtime_BumpAllocator} {GLOBAL_InterruptWakeup} -->
 - **`vsoc_harness`**: vSoCが依存する各種エンジン（Loader, Interpreter, JIT等）のインターフェースを集約した構造体。 `{META_StaticDI}`
 - **`vsoc_context`**: 現在の実行状態、仮想割り込み、JITキャッシュの管理状態、専用データバンプアロケータおよびJITコードアロケータなど、可変なランタイム状態。 `{Runtime_BumpAllocator}`
 - **`vsoc_config`**: メモリ割り当てやJIT有効化フラグなどの不変な構成情報。
@@ -74,7 +74,7 @@ vSoC全体の可変な実行時状態を保持する構造体。
 | 項目名 | 機能と役割 | 備考（制約、型など） |
 | :--- | :--- | :--- |
 | 実行状態 | 現在のvSoCの実行状態（停止、実行中、ブレークポイント等）。 | `VsocState` 列挙型 |
-| 仮想割り込みフラグ | ゲストOSまたはタスクに対する保留中の割り込みビットマップ。 | `uint32_t` |
+| 割り込みイベント状態 | COOSから受け取った固定5ワードの`interrupt-event`とvIRQ配送状態。 | `interrupt_event` + 固定長状態 |
 | JITキャッシュ状態 | 現在アクティブなJITコードキャッシュの管理情報。 | `JitCacheManager` 構造体 |
 | WASMモジュール参照 | 現在ロードされているWASMモジュールのインスタンスへのポインタ。 | `WasmModule*` |
 | 専用データバンプアロケータ | モジュール内の全システムコンテナストレージ（RAM/XN）を切り出す専用アロケータ。アンロード時に一括リセットされる。 | `bump_allocator` インスタンス |
@@ -96,7 +96,7 @@ vSoC全体の可変な実行時状態を保持する構造体。
 > [!NOTE]
 > **構造体の役割分離**:
 > - **`execution_context` 内 `vsoc_runtime` 領域 (`[R0, #0x28]`〜`#0x37`)**: JIT トレースおよびインタープリタハンドラが実行ループ内で直接参照する**極小の物理実行環境（16バイト）**。最速パス上でのベース間接アクセスに特化。 `{VsocRuntime_Layout}`
-> - **`vsoc_context`**: タスク全体のライフサイクル、仮想割り込みフラグ、WASM モジュール構造体へのポインタを管理する**上位マネージャ層の制御構造体**。実行ループ外でのタスク切り替えやデバッガ連携時に参照される。両者は明確に役割分離して維持する。
+> - **`vsoc_context`**: タスク全体のライフサイクル、保留中の`interrupt-event`とvIRQ配送状態、WASM モジュール構造体へのポインタを管理する**上位マネージャ層の制御構造体**。実行ループ外でのタスク切り替えやデバッガ連携時に参照される。両者は明確に役割分離して維持する。
 
 #### vSoC構成（vsoc_config）
 <!-- traceability: {META_ConfigurableSystem} -->
@@ -122,7 +122,7 @@ vSoC コアエンジンの実行委譲、協調イールド、および外部介
 | :--- | :--- | :--- | :--- | :--- |
 | **実行エンジン委譲とステートレス化** | `step()` 実行時 | `exec_trace`（`__fastcall` CPS 4引数）によりプレーン関数としてディスパッチ | コルーチン化禁止による `[[clang::musttail]]` 阻害・スタック消費の防止（`VSOC-GOTCHA-01`） | `{ThreadedInterpreter}` `{JIT_CopyAndPatch}` |
 | **概算Yield (Approximate Yield)** | トレース境界脱出時 | `yield_threshold` を基準に vSoC が一括して `co_yield` 判定 | 命令ハンドラ内カウンタ埋め込みを排除し最速ホットパスを維持（`VSOC-GOTCHA-02`） | `{Challenge_ApproximateYield}` |
-| **JIT Safepoint** | ループバック（バックエッジ）到達時 | ソフトウェアフラグ（割り込み・ブレークポイント）をポーリングし、必要時フォールバック | JIT実行中の非同期イベント・Ctrl+Cへの即時応答性担保 | `{JIT_Safepoint}` |
+| **JIT Safepoint** | ループバック（バックエッジ）到達時 | 保留中の割り込みイベント（原因レコード）・ブレークポイントを確認し、必要時フォールバック | JIT実行中の非同期イベント・Ctrl+Cへの即時応答性担保 | `{JIT_Safepoint}` |
 | **デバッガ介入時キャッシュフラッシュ** | デバッガによるメモリ/変数書き換え時 | 該当タスクの JIT キャッシュ（Active/Warm/Oldest 全面）を一括無効化 | JIT コードと変更後メモリの整合性完全維持 | `{Debugger_Jit_Flush}` |
 | **1ランタイム1ゲスト・専用バンプ一括解放（W^Xコード分離）** | ランタイム生成時およびアンロード時 | 専用データアリーナ（RAM/XN）からコンテナストレージを確保し、専用W^XセクションからJITコードを確保。破棄時に $O(1)$ 一括リセット | 完全障害隔離、内部断片化ゼロ、ハードウェア実行保護（W^X/XN分離）の厳格維持 | `{OneRuntimeOneGuest}` `{Runtime_BumpAllocator}` |
 
@@ -278,9 +278,9 @@ stateDiagram-v2
 | Ready → InterpreterRun | step(pc) | exec_trace = interpreter | PC 登録、実行開始 | InterpreterRun |
 | Ready → JitRun | step(pc) | exec_trace = compiled code | ネイティブコード実行開始 | JitRun |
 | InterpreterRun → Ready | yield() [threshold] | 実行トレース数超過 | ホットスポット検出、JIT キュー投入 | Ready |
-| JitRun → SafepointCheck | [loop back edge] | JIT ループバックエッジ | 割り込みフラグ確認 | SafepointCheck |
-| SafepointCheck → JitRun | [no interrupt] | フラグなし | JIT 実行継続 | JitRun |
-| SafepointCheck → Ready | [interrupt pending] | 割り込みフラグ有り | インタープリタ フォールバック | Ready |
+| JitRun → SafepointCheck | [loop back edge] | JIT ループバックエッジ | 保留中の`interrupt-event`確認 | SafepointCheck |
+| SafepointCheck → JitRun | [no event] | 保留イベントなし | JIT 実行継続 | JitRun |
+| SafepointCheck → Ready | [interrupt pending] | 原因付きイベント有り | インタープリタ フォールバック | Ready |
 | (any) → Debugging | breakpoint [debugger] | RSP ブレークポイント | デバッガコマンド待ち | Debugging |
 | Debugging → InterpreterRun | resume(interp) | 再開要求（インタープリタ） | JIT キャッシュ flush、PC 保持 | InterpreterRun |
 | (any) → Error | trap() | ページフォルト / 不正オプコード | トラップハンドラ実行 | Error |
@@ -302,21 +302,18 @@ JIT生成ネイティブコードには、以下のポイントで割り込み�
 
 | Safepoint位置 | 目的 | 実装 | オーバーヘッド |
 | :--- | :--- | :--- | :--- |
-| **ループバックエッジ** | 無限ループ検出と割り込み確認 | フラグ確認 + 条件分岐 | ~2-3 機械語命令 |
-| **関数呼び出し前** | 外部サービス呼び出し時の割り込み確認 | 割り込みフラグチェック | ~1-2 命令 |
+| **ループバックエッジ** | 無限ループ検出と割り込み確認 | 保留イベント確認 + 条件分岐 | ~2-3 機械語命令 |
+| **関数呼び出し前** | 外部サービス呼び出し時の割り込み確認 | 保留イベントチェック | ~1-2 命令 |
 | **メモリアクセス後** | キャッシュ無効化（debugger flush）の確認 | 世代番号（generation cookie）検証 | ~1 命令 |
 
-**フラグの構造:**
+**保留イベントの構造:**
 ```
 ┌─────────────────────────────────────────┐
-│ vsoc_context.interrupt_flags (32-bit)   │
-├────────────────────────────────────────┤
-│ [0]: Async Break Request (Ctrl+C等)    │
-│ [1]: Debugger Intervention              │
-│ [2]: JIT Cache Invalid (Flush)          │
-│ [3]: Yield Request (Task Switch)        │
-│ [4-31]: Reserved                        │
-└────────────────────────────────────────┘
+│ pending interrupt-event                  │
+├─────────────────────────────────────────┤
+│ vector_id   | source_id                  │
+│ cause_code  | payload0 | payload1        │
+└─────────────────────────────────────────┘
 ```
 
 #### Active/Warm/Oldest 3面マルチバッファとキャッシュローテーション
@@ -351,9 +348,9 @@ JIT Code Cache (6 KB total: FB_CONF_JIT_CACHE_SIZE)
 
 デバッガがゲストメモリを変更した場合の処理フロー：
 
-1. **Debugger Writes Memory**: `gdb_write_memory(addr, data)` → `fireball::vsoc::request_debugger_interrupt(ctx)` を呼び出し、内部のデバッガ割り込みフラグをセット
+1. **Debugger Writes Memory**: `gdb_write_memory(addr, data)` → `fireball::vsoc::request_debugger_interrupt(ctx)` を呼び出し、保留中のデバッガイベントを記録
 2. **Safepoint Detection**: JIT実行の SafepointCheck で `fireball::vsoc::has_debugger_interrupt(ctx)` を検査
-3. **Cache Flush Trigger**: フラグ検出時、即座に以下を実行：
+3. **Cache Flush Trigger**: イベント検出時、即座に以下を実行：
    - 全バッファ（Active/Warm/Oldest）のメタデータを破棄（generation cookie インクリメント）
    - 登録済みの exec_trace ポインタを無効化
    - 次回 `step()` で Interpreter モードへフォールバック
@@ -453,19 +450,31 @@ sequenceDiagram
 | エラー時の挙動 | トラップ（例外）発生時は、トラップ要因を保持してエラーを返す。 `{META_RecoveryStrategy}` |
 | 補足 | 内部的にはインタープリタとJITコードを透過的に切り替えて実行する。 |
 
-#### `notify-interrupt`
+#### `dispatch-interrupt-event`
 <!-- traceability: {META_RecoveryStrategy} -->
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | 物理割り込み等の外部イベントをゲストOS/アプリに通知するための仮想フラグを設定し、[`runtime_interpreter.md`](docs/components/tier2_runtime/runtime_interpreter.md) の `sync_interrupts` へ中継する。 |
-| シグネチャ | `notify-interrupt(irq-id: u32) -> void` |
-| 引数 | `ctx`: vsoc_context, `irq-id`: 識別子 |
-| 期待する結果 | 所定のアドレス（SYSCTLレジスタ）にフラグが反映される。 |
-| 事前条件 | なし。 |
-| 事後条件 | 公開APIを介して、対象の仮想割り込みフラグがセットされる。 |
-| 不変条件 | 他の実行状態に副作用を及ぼさないこと。 |
-| エラー時の挙動 | 無効なIDの場合は無視される。 |
-| 補足 | ISRから呼び出されることを想定し、排他制御を考慮する。 |
+| 機能概要 | COOSが協調境界で取り出した`interrupt-event`をSafepointで受け、vIRQの静的階層をゲスト関数へ配送する。 |
+| シグネチャ | `dispatch-interrupt-event(ctx: 可変参照, event: interrupt-event) -> dispatch-result` |
+| 引数 | `ctx`: vsoc_context, `event`: `vector_id`、`source_id`、`cause_code`、`payload0`、`payload1`の固定5ワード |
+| 期待する結果 | `root → 分類 → デバイス → ゲスト関数`の順に、登録済みノードが必要な場合だけ`call_indirect`で呼び出される。 |
+| 事前条件 | `event`の`vector_id`が静的原因源表に登録され、実行がSafepointまたは協調境界にあること。 |
+| 事後条件 | `HANDLED`なら配送を終了し、`PASS_THROUGH`だけが子ノードへ進み、`REJECT`は診断記録後に終了する。 |
+| 不変条件 | ISRからゲスト関数を直接呼び出さず、REJECTを原因とする再帰的なFAULT配送を行わない。 |
+| エラー時の挙動 | 未登録ノード、無効な関数インデックス、WASMシグネチャ不一致は登録または配送を拒否し、下位ノードへ流さない。 |
+| 補足 | vMMIOのvIRQ登録値は保留表へ書き込み、Safepointで検証済みの関数インデックスを原子的に反映する。WASIの`poll-check`/`poll-wait`とは別経路である。 |
+
+#### `register-virq-dispatcher`
+<!-- traceability: {META_ConfigurableSystem} -->
+| 項目 | 内容 |
+| :--- | :--- |
+| 機能概要 | vMMIOのvIRQ固定スロットへ書き込まれたゲスト関数インデックスを検証し、次のSafepointで有効化する。 |
+| シグネチャ | `register-virq-dispatcher(node-id: u32, function-index: u32) -> registration-result` |
+| 引数 | `node-id`: root・4分類・静的デバイスのいずれか、`function-index`: WASM関数テーブルのインデックス |
+| 事前条件 | `node-id`がホスト設定の静的ノードで、関数が`(u32,u32,u32,u32,u32) -> u32`の期待シグネチャを満たすこと。 |
+| 事後条件 | 保留登録として記録され、Safepointで有効表へ原子的に反映される。 |
+| 不変条件 | 実行中のゲストからはSafepoint前の登録変更が観測できない。親子関係と原因源表は変更できない。 |
+| エラー時の挙動 | 範囲外ノード、未登録ノード、無効関数インデックス、シグネチャ不一致は拒否する。 |
 
 #### `register-hook`
 <!-- traceability: {vMMIO_TrapAndEmulate} -->
@@ -489,7 +498,7 @@ Fireballでは、ホスト側のコードサイズを極限まで削減するた
 - **トラップ命令**: `uint32_t fireball_call(uint32_t id, uint32_t arg0, uint32_t arg1, ... uint32_t arg5)`
   - ゲストはこの関数をインポートし、統合システムコールID `id`（上位16bit: `service_id`, 下位16bit: `command_id`）および最大6つの汎用引数を指定して呼び出す（`{Syscall_Mapping}` を正本とする）。
   - **この2つは同一階層の代替手段ではなく、層が異なる**。上記シグネチャはゲストから見た WASM インポート関数の ABI であり、ゲストは通常の関数呼び出しとして引数を渡す。トラップを受けたホスト側が、その引数を vMMIO の SYSCALL レジスタ群（`REG_SYSCALL_ARG0` 以降、`runtime_vmmio.md` を正本とする）へ転記してサービスへ渡す。戻り値は逆順に `REG_SYSCALL_ARG0` から読み出してゲストへ返る。ゲスト側コードが vMMIO レジスタを直接操作する必要はない。※整合性検証は [runtime_vsoc_test_spec.md](docs/components/tier2_runtime/tests/runtime_vsoc_test_spec.md) `VSOC-40` を参照。
-- **WASI互換性**: ゲスト側で `wasi-libc` と Fireball専用の Shim ライブラリをリンクすることで実現する。
+- **WASI互換性**: ゲスト側で `wasi-libc` と Tier 3 のゲストアダプタをリンクし、Tier 2 の `runtime_syscall` と `hal_dispatch` が定義する公開契約へ接続することで実現する。
 
 ### 5.3 マルチモジュール対応
 <!-- traceability: {MultiModule_Support} -->
@@ -522,7 +531,7 @@ Fireballでは、ホスト側のコードサイズを極限まで削減するた
 
 | 不変条件 | 説明 | 検証モデル / プロパティ名 |
 | :--- | :--- | :--- |
-| **Safepoint応答性** | 実行中のタスクは必ず Safepoint に到達し、割り込みフラグが検出されること。`{JIT_Safepoint}` | [`vsoc_state_model.py`](docs/components/tier2_runtime/formal/vsoc_state_model.py) `safepoint_reachable_definitively` |
+| **Safepoint応答性** | 実行中のタスクは必ず Safepoint に到達し、保留中の`interrupt-event`が検出されること。`{JIT_Safepoint}` | [`vsoc_state_model.py`](docs/components/tier2_runtime/formal/vsoc_state_model.py) `safepoint_reachable_definitively` |
 | **IRQ/JIT レース不在** | Safepoint 同期を経ずに JIT ネイティブ実行中の割り込み処理が始まらないこと。`{GLOBAL_InterruptWakeup}` | [`vsoc_state_model.py`](docs/components/tier2_runtime/formal/vsoc_state_model.py) `irq_jit_race_freedom_proof` |
 | **Debugger安全性** | デバッガがメモリを変更した後、キャッシュ flush が完了するまで旧世代コードが実行されないこと。`{Debugger_Jit_Flush}` | [`vsoc_cache_coherency_model.py`](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) `debugger_memory_write_invalidates_stale_traces` |
 | **キャッシュ整合性** | generation cookie が全バンク一括で更新され、バンク間で世代が逆行・不一致にならないこと。`{Challenge_JITCacheEfficiency}` | [`vsoc_cache_coherency_model.py`](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) `generation_monotonicity_across_banks` |

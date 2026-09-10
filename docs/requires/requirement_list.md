@@ -76,12 +76,12 @@ graph LR
 | `{COOS_Deterministic}` | コンテキストスイッチを明示的なポイントに限定し、確定的な実行を確保する。 | 高 | テスト |
 | `{CSPCommunication}` | ホーアCSPに基づき、所有権移譲によるゼロコピーメッセージパッシングを行う。 | 高 | テスト |
 | `{IPC_ZeroCopy}` | 通信時のデータコピーを排除する。 | 高 | テスト |
-| `{GLOBAL_InterruptWakeup}` | 割り込み発生時、関連タスクの割り込みハンドラをウェイクアップする。 | 高 | テスト |
+| `{GLOBAL_InterruptWakeup}` | 割り込み発生時、固定5ワードの原因付きイベントを有界FIFOへ記録し、協調境界で関連タスクをウェイクアップする。ゲスト配送の階層ディスパッチはvSoCへ委譲する。 | 高 | テスト |
 | `{CSP_Handoff}` | 送受信時に相手が待機状態であれば、相手タスクを READY へ遷移させ、スケジューラの READY キュー処理を**経由せずに**対称遷移で実行権を直接移譲する。連続移譲は `FB_CONF_MAX_CONSECUTIVE_HANDOFFS` で有界化し、上限到達時のみスケジューラへ復帰する。 | 高 | テスト |
 | `{GLOBAL_PeriodicTask}` | システムティックまたはアイドルループを利用した定期実行タスクをサポートする。 | 中 | テスト |
 | `{GLOBAL_IdleDetection}` | システムのアイドル状態を検知し、バックグラウンド処理（GC/ログ出力）を実行する. | 中 | テスト |
 | `{DirectContextSwitch}` | コルーチンの対称遷移により、スケジューラの READY キュー処理を**経由せずに**相手タスクのコルーチンハンドルへ直接ジャンプする超低レイテンシなタスク切り替え。 | 高 | ベンチマーク |
-| `{TaskPollInterruptFlag}` | ISR がタスク状態を直接書き換えない安全な通知モデル。ISR は有界キューへイベントを投函するのみとし、状態遷移は協調的な観測点でのみ発生する: COOS タスクはスケジューラが yield 点でキューをドレインした際に READY へ遷移し（push）、ゲスト実行エンジンは Safepoint で `vsoc_context.interrupt_flags` を自ら確認する（pull）。いずれも非同期な割り込み文脈から実行状態を破壊しないことを保証する。 | 高 | レビュー |
+| `{TaskPollInterruptEvent}` | ISRがタスク状態を直接書き換えない安全な通知モデル。ISRは固定長FIFOへ原因付きイベントを投函するのみとし、COOSの状態遷移は協調的な観測点で、ゲストの階層配送はvSoCのSafepointでのみ発生する。いずれも非同期な割り込み文脈から実行状態を破壊しないことを保証する。 | 高 | レビュー |
 
 #### 3.1.3 システム連携 (IPC/HAL/WIT)
 | キーワード | 内容 | 優先度 | 検証方法 |
@@ -190,9 +190,9 @@ graph LR
 | キーワード | 内容 | ステータス |
 | :--- | :--- | :--- |
 | `{Challenge_ApproximateYield}` | トレース数ベースの概算Yieldの精度とスターベーション対策。 | 検討中 |
-| `{Challenge_InterruptSafety}` | 割り込みハンドラとタスク間の競合回避と安全なウェイクアップ。 → ISRはフラグセットのみ行い、実処理はタスクコンテキストで実行する方策を採用（`platform_driver.md`）。 | 決定済 |
+| `{Challenge_InterruptSafety}` | 割り込みハンドラとタスク間の競合回避と安全なウェイクアップ。 → ISRは固定5ワードの原因イベントをFIFOへ投函するのみとし、実処理はCOOSの協調境界とvSoCのSafepointで実行する方策を採用（`platform_driver.md`）。 | 決定済 |
 | `{Challenge_JITCacheEfficiency}` | 小規模メモリ環境におけるJITキャッシュの代謝とヒット率の最適化。 → 3面リングローテーション（Active/Warm/Oldest）と世代Cookieによる代謝方式を採用し、形式検証済み（`runtime_vsoc.md` {Safepoint_JIT_Flush}, `components/tier2_runtime/formal/vsoc_cache_coherency_model.py`）。 | 決定済 |
-| `{Challenge_WasiFdWriteLoop}` | WASI `fd_write` の実装レイヤー分離とバッファ管理。 → Shim側でベクタをループし1ベクタごとに `fireball_call` を発行する設計を採用（`runtime_syscall.md` {Syscall_Mapping}）。 | 決定済 |
+| `{Challenge_WasiFdWriteLoop}` | WASI `fd_write` の実装レイヤー分離とバッファ管理。 → `libfireball`側でベクタをループし1ベクタごとに `fireball_call` を発行する設計を採用（`runtime_syscall.md` {Syscall_Mapping}）。 | 決定済 |
 | `{Challenge_SyscallMemorySafety}` | ゲストメモリアクセス時のセキュリティ保護方式。 → アクセス不可な領域は仮想アドレス空間から物理的に unmap され未マッピングトラップ（`TRAP_UNREGISTERED_PAGE`）で遮断されるため、別途の `vsoc_validate_ptr` は導入しない（`runtime_syscall.md` {Syscall_Mapping}）。 | 決定済 |
 | `{Challenge_CoosBlockedList}` | `BLOCKED` タスクリストの管理コストとリアルタイム性のトレードオフ。 → `{ADR_EventDrivenWakeQueue}` として決定。 | 決定済 |
 | `{Challenge_CspHandoffStarvation}` | COOS の CSP Handoff 連鎖（IPCルータ含む）が特定のタスクセット間で閉じ、他タスクが実行機会を失うスターベーションリスク。緩和策は `FB_CONF_MAX_CONSECUTIVE_HANDOFFS` による連鎖の有界化。 | 検討中 |

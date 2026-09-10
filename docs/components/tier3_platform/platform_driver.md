@@ -7,8 +7,8 @@
 本コンポーネントは、Tier 2 の抽象契約 [`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md)（URI Resolver、コマンドプロトコル、ゼロコピー転送インターフェース）の物理ドライバ実装である。契約と実装の記述に食い違いがあれば `hal_dispatch.md` を正とする（`{META_ContractImplSplit}` 契約/実装分割パターン）。
 
 ## 1. コンセプト
-<!-- traceability: {Challenge_InterruptSafety} {TaskPollInterruptFlag} {RSPMinimalSet} {Fast_Path_GPIO} -->
-[`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) が定義する `hal_task` コマンドディスパッチ契約を実現するため、UART・SEGGER RTT・GPIO・I2C・SPI・Timer の物理レジスタ操作ドライバ群を実装する。物理割り込みはフラグ通知とタスクウェイクアップによって安全に処理される。また、デバッグ用の GDB Remote Serial Protocol (RSP) のパケット物理エンコード/デコード（RSP Parser）を担い、解析済みデバッグコマンドを `debug_command_queue` へ供給する。 `{Challenge_InterruptSafety}` `{TaskPollInterruptFlag}` `{RSPMinimalSet}` `{Fast_Path_GPIO}`
+<!-- traceability: {Challenge_InterruptSafety} {TaskPollInterruptEvent} {RSPMinimalSet} {Fast_Path_GPIO} -->
+[`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) が定義する `hal_task` コマンドディスパッチ契約を実現するため、UART・SEGGER RTT・GPIO・I2C・SPI・Timer の物理レジスタ操作ドライバ群を実装する。物理割り込みは原因付きイベントの通知とタスクウェイクアップによって安全に処理される。また、デバッグ用の GDB Remote Serial Protocol (RSP) のパケット物理エンコード/デコード（RSP Parser）を担い、解析済みデバッグコマンドを `debug_command_queue` へ供給する。 `{Challenge_InterruptSafety}` `{TaskPollInterruptEvent}` `{RSPMinimalSet}` `{Fast_Path_GPIO}`
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->
@@ -68,9 +68,9 @@ graph TD
 ## 4. 動的モデル
 
 ### 4.1 割り込み処理の物理実装
-<!-- traceability: {RSP_Transport_Selectable} {TaskPollInterruptFlag} {GLOBAL_InterruptWakeup} -->
-- **割り込み通知（push）**: 物理割り込み発生時、ISR は COOS の `notify_interrupt(irq_id)` を呼び、INT イベントを有界キューへ投函するのみとする。**ISR がタスク状態を直接書き換えることはない。**実際の READY 遷移は、スケジューラが yield 点でキューをドレインする際に行われる（`{GLOBAL_InterruptWakeup}` を正本とする）。この非同期境界の分離は、[`vsoc_state_model.py`](docs/components/tier2_runtime/formal/vsoc_state_model.py) に定義された CTL 安全性検証項目 `irq_jit_race_freedom_proof`（`AG(Not(handling_irq & jit_mode))`）として証明されている性質である。
-- **割り込み確認（pull）**: `{TaskPollInterruptFlag}` が定義するもう一方の経路として、ゲスト実行エンジン（JIT/インタープリタ）は Safepoint で `vsoc_context.interrupt_flags` を自ら確認する。この pull 側の実装（Safepoint 埋め込み位置、フラグ構造）は本コンポーネントの管轄外であり、`{TaskPollInterruptFlag}` を正本とする。 `{TaskPollInterruptFlag}` `{GLOBAL_InterruptWakeup}`
+<!-- traceability: {RSP_Transport_Selectable} {TaskPollInterruptEvent} {GLOBAL_InterruptWakeup} -->
+- **割り込み通知（push）**: 物理割り込み発生時、ISRは原因情報を固定5ワードの`interrupt-event`へ変換し、COOSの`notify_interrupt(event)`で固定長FIFOへ投函するのみとする。物理デバイスの複数原因は、上位のイベント源マッピングで同じデバイス系統へ集約する。**ISRがタスク状態を直接書き換えることはない。**実際のREADY遷移は、スケジューラが協調境界でFIFOをドレインする際に行われる（`{GLOBAL_InterruptWakeup}`を正本とする）。この非同期境界の分離は、[`vsoc_state_model.py`](docs/components/tier2_runtime/formal/vsoc_state_model.py) に定義されたCTL安全性検証項目 `irq_jit_race_freedom_proof`（`AG(Not(handling_irq & jit_mode))`）として証明されている性質である。
+- **割り込み配送**: COOSから渡された`interrupt-event`は、vSoCがSafepointで受け取り、ゲスト配送またはドロップを行う。vIRQの分類・デバイスノード・ゲスト関数登録はvSoCとvMMIOの契約に従い、物理ドライバはゲスト関数を直接呼び出さない。 `{TaskPollInterruptEvent}` `{GLOBAL_InterruptWakeup}`
 
 #### HalBufferPool バッファ確保・境界検査手順（手順アクティビティ図）
 <!-- traceability: {HAL-GOTCHA-01} {HAL_Interface} {IPC_ZeroCopy} -->
@@ -97,7 +97,7 @@ flowchart TD
 ```
 
 ### 4.2 状態遷移図（物理デバイス状態）
-<!-- traceability: {RSP_Transport_Selectable} {TaskPollInterruptFlag} {GLOBAL_InterruptWakeup} -->
+<!-- traceability: {RSP_Transport_Selectable} {TaskPollInterruptEvent} {GLOBAL_InterruptWakeup} -->
 ```mermaid
 stateDiagram-v2
     [*] --> Uninitialized

@@ -34,8 +34,10 @@
 | COOS-05 | 1チャネル1待機者の強制（同方向多重待機は不可能） | (1) Aが送信待機中(SEND) または<br>(2) Bが受信待機中(RECV) | (1) 別タスクCが同チャネルへ`channel_send`<br>(2) 別タスクDが同チャネルへ`channel_recv` | 到達不能ケースとして`assert`で即座に検出される（設計違反フェイルファスト） | 直交表 ケース5/6 |
 | COOS-06 | CSP Handoffは対称遷移でREADYキューの先頭に挿入 | ランデブー成立 | `_handoff_or_yield`の返り値を観測 | `consecutive_handoffs < FB_CONF_MAX_CONSECUTIVE_HANDOFFS` の間は`("DIRECT_SWITCH", target)`を返し、target が READYキュー先頭に挿入される | `{CSP_Handoff}` |
 | COOS-07 | 連続ハンドオフの上限でスケジューラへ復帰 | `consecutive_handoffs`が`FB_CONF_MAX_CONSECUTIVE_HANDOFFS`（既定4）に到達 | さらにハンドオフが発生する状況を作る | `consecutive_handoffs`が0にリセットされ、`("YIELD", None)`を返してメインループへ復帰する（対称遷移しない） | 直交表 ケース7, `{Challenge_CspHandoffStarvation}` |
-| COOS-08 | 割り込みは状態を直接変更しない | タスクがirq_id待ち | `notify_interrupt(irq_id)`を呼ぶ | 呼び出し直後はイベントキューに追加されるのみで、タスク状態は変化しない。`drain_interrupts`実行後に初めてREADYへ遷移する | 直交表 ケース8, `{GLOBAL_InterruptWakeup}` |
-| COOS-09 | 割り込みイベントキュー枯渇時のドロップ | (該当する場合)イベントキュー満杯 | 追加でnotify_interrupt | ドロップされ、ドロップカウンタがインクリメントされる（os_scheduler.md `notify-interrupt`のキュー満杯時挙動と共通） | os_scheduler.md `notify-interrupt` |
+| COOS-08 | 割り込みは状態を直接変更しない | タスクが`vector_id`待ち | 固定5ワードの`interrupt-event`を`notify_interrupt`へ渡す | 呼び出し直後はFIFOに追加されるのみで、タスク状態は変化しない。`drain_interrupts`実行後に初めてREADYへ遷移する | 直交表 ケース8, `{GLOBAL_InterruptWakeup}` |
+| COOS-09 | 割り込みイベントFIFO満杯時のドロップ | FIFO満杯 | 原因レコードを追加で`notify_interrupt` | イベントがドロップされ、ドロップカウンタがインクリメントされる（os_scheduler.md `notify-interrupt`の挙動と共通） | os_scheduler.md `notify-interrupt` |
+| COOS-13 | 原因レコードのFIFO順序保持 | 複数の`interrupt-event`を同一FIFOへ投入 | 異なる`cause_code`とpayloadを順に投入してドレイン | 受付順と同じ順序でイベントが観測され、5ワードが欠落・混在しない | `{GLOBAL_InterruptWakeup}` |
+| COOS-14 | 未登録待機先のイベントドロップ | `vector_id`に対応する待機タスクなし | 原因レコードを投入してドレイン | ゲストや無関係なタスクを起床せず、イベントをドロップして診断カウンタだけを更新する | `{GLOBAL_InterruptWakeup}` |
 | COOS-10 | アイドル検出はREADYキュー空 かつ 全タスクBLOCKED | 全タスクをSUSPENDED_CSP/BLOCKEDにする | `run_step`を実行 | READYキューが空である限りアイドルフックが呼ばれる（`idle_hook_called`） | 4.1 Idle Detection, pysim `test_coos_10_idle_detection_when_all_blocked` |
 | COOS-11 | 二重所有不在（形式検証と整合するサニティ確認） | ランデブー成立の瞬間を観測 | 送信側の値保持フィールドと受信側の値保持フィールドを同時にチェック | どの時点でも送信側・受信側が同時に同じ値を「所有」している状態が存在しない | `../formal/coos_channel_model.py` AG(Not(double_owned)), pysim `test_coos_11_no_double_ownership_sanity` |
 | COOS-12 | デッドロック不在（クライアント・サーバ規律） | 循環しないチャネル依存グラフを構築 | 一連の送受信を実行 | 循環待ちが発生しない（形式モデルの結果が実装のふるまいと矛盾しない） | `../formal/coos_channel_model.py` AG(Not(deadlock)) |

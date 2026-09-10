@@ -158,6 +158,11 @@ namespace fireball::config {
 | `FB_CONF_VMMIO_MAX_REGIONS` | 登録可能な最大vMMIO領域数 | `8` | `{META_ConfigurableSystem}` |
 | `FB_CONF_VMMIO_MAX_PTES` | FlatMap ページテーブルに保持可能な PTE の最大件数 | `32` | `{META_FlatMapIndexed}` `{GLOBAL_StaticScalability}` |
 | `FB_CONF_VMMIO_ALLOWED_ADDRS` | ゲストからのアクセスを許可する物理アドレス範囲 | `constexpr`構造体配列 | `{META_RestrictedPhysicalAccess}` |
+| `FB_CONF_VMMIO_VIRQ_BASE` | 原因付き仮想割り込みディスパッチャ（vIRQ）専用ページの基底アドレス | `0xC0003000` | `{META_ConfigurableSystem}` |
+| `FB_CONF_VMMIO_VIRQ_PAGE_SIZE` | vIRQ専用ページの固定サイズ | `4096` | `{META_ConfigurableSystem}` |
+| `FB_CONF_VIRQ_CATEGORY_COUNT` | vIRQの固定分類ノード数（DEVICE/SYSTEM/RUNTIME/FAULT） | `4` | `{META_ConfigurableSystem}` |
+| `FB_CONF_VIRQ_MAX_NODES` | vIRQ静的ノード数（root + 4分類 + デバイスノード） | `1 + FB_CONF_VIRQ_CATEGORY_COUNT + FB_CONF_HAL_MAX_DEVICES` | `{META_ConfigurableSystem}` |
+| `FB_CONF_VIRQ_MAX_SOURCES` | vIRQ静的原因源数（SYSTEM/RUNTIME/FAULT + デバイス源） | `3 + FB_CONF_HAL_MAX_DEVICES` | `{META_ConfigurableSystem}` |
 
 #### 3.3.5 ロギング・デバッガ
 <!-- traceability: {BufferedLogging} {Challenge_DebuggerResource} -->
@@ -176,6 +181,12 @@ namespace fireball::config {
 | `FB_TASK_ID_INVALID` | 未割り当て・無効を示す予約値 | `0` | 初期値。「誰も所有していない」を表す |
 | `FB_TASK_ID_FLIGHT` | 所有権移譲中を示す予約値 (FLIGHT_SENTINEL) | `0xFF` | IPCルータ移譲中にセット |
 | `FB_CONF_MAX_TASKS` | 同時実行可能な最大タスク数 | `16` | `≤ 254`（`FB_TASK_ID_FLIGHT` との衝突防止） |
+
+#### 3.3.7 割り込みイベントFIFO
+<!-- traceability: {GLOBAL_InterruptWakeup} -->
+| マクロ名 | 説明 | デフォルト値 | 導出元 |
+| :--- | :--- | :--- | :--- |
+| `FB_CONF_INTERRUPT_QUEUE_SIZE` | COOSが所有する原因付き割り込みイベントFIFOの固定エントリ数 | `16` | `{GLOBAL_InterruptWakeup}` |
 
 ```python
 # コンパイル時検証

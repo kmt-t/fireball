@@ -128,14 +128,14 @@ sequenceDiagram
 ```mermaid
 flowchart TD
     Start(["Hardware Interrupt Triggered"]) --> ISR["HAL ISR: interrupt_handler()"]
-    ISR --> Post["Enqueue irq_id into lock-free Ring Buffer"]
+    ISR --> Post["Enqueue interrupt-event into fixed FIFO"]
     Post --> RetISR(["Return from Interrupt (Non-blocking)"])
 
     subgraph COOS Main Loop / Yield Point
         YieldPoint["Current Task calls co_yield() or blocks"] --> Drain["COOS Scheduler: drain_interrupts()"]
         Drain --> CheckRing{"Is Ring Buffer empty?"}
-        CheckRing -- "No (IRQ Pending)" --> Pop["Pop irq_id from Ring Buffer"]
-        Pop --> Lookup["Lookup Task waiting for irq_id in Registry"]
+        CheckRing -- "No (event pending)" --> Pop["Pop interrupt-event from FIFO"]
+        Pop --> Lookup["Lookup Task waiting for vector_id"]
         Lookup --> Wake["Mark Target Task as READY in Ring Queue"]
         Wake --> CheckRing
         CheckRing -- "Yes" --> SchedNext["Dispatch next READY Task via Round-Robin"]
@@ -207,13 +207,13 @@ COOS の動的スケジューリングおよび同期通信の基本アルゴリ
 | :--- | :--- | :--- | :--- | :--- |
 | **CSP Handoff** | `send`/`recv` 時に相手タスクが待機中 | スケジューラをバイパスして即座に相手タスクへ直接対称遷移 | ディスパッチオーバーヘッドの極小化 | `{CSP_Handoff}` |
 | **直接コンテキストスイッチ (Direct Context Switch)** | コルーチンの対称遷移 | コールスタックを消費せず相手タスクのコルーチンハンドルへ直接ジャンプ | 2KB極小スタックでのスタックオーバーフロー完全防止 | `{DirectContextSwitch}` |
-| **割り込みウェイクアップ (Interrupt Wakeup)** | 外部ハードウェア割り込み発生 | ISRは有界リングバッファへINTイベントを投函するのみ。スケジューラがyield点でドレインしてタスクをREADY化 | ISRクリティカルセクション極小化・多重割り込みロック競合防止（`COOS-GOTCHA-03`） | `{GLOBAL_InterruptWakeup}` |
+| **割り込みウェイクアップ (Interrupt Wakeup)** | 外部イベント発生 | ISRは固定長FIFOへ汎用`interrupt-event`を投函するのみ。スケジューラが協調境界でドレインして待機タスクをREADY化 | ISRクリティカルセクション極小化・多重割り込みロック競合防止（`COOS-GOTCHA-03`） | `{GLOBAL_InterruptWakeup}` |
 | **Idle Detection** | 全タスクがBLOCKEDかつイベントキュー空 | 登録済み `idle_hook` コールバック群を専用Idleタスクとして呼び出す（呼び出し先の内部状態・トリガー条件には関与しない） | CPU省電力化および低優先度保守タスクの安全実行 | `{GLOBAL_IdleDetection}` |
 | **Memory Management** | タスク生成時 | コンパイル時固定プールから独立したメモリパーティションを切り出して貸与 | タスク間ヒープ干渉の物理排除 | `{GLOBAL_StrictMemoryLimit}` `{GLOBAL_IndependentHeap}` |
 
 - **CSP Handoff (直接スイッチ)**: `send`/`recv` 時に相手タスクが既に待機状態であった場合、スケジューラを介さず即座に相手タスクへ実行権を移譲する。 `{CSP_Handoff}`
 - **直接コンテキストスイッチ (Direct Context Switch)**: コルーチンの対称遷移（Symmetric Transfer）により、コールスタックを消費せずに相手タスクのコルーチンハンドルへ直接ジャンプする。OSスケジューラのキュー処理オーバーヘッドを完全にバイパスし、極小スタック（2KB）環境下でもスタックオーバーフローを起こさない決定論的 $O(1)$ スイッチを実現する。実測は [`direct_context_switch_bench.py`](docs/components/tier1_core/benchmarks/direct_context_switch_bench.py) を参照。 `{DirectContextSwitch}`
-- **割り込みウェイクアップ (Interrupt Wakeup)**: 外部割り込みが発生した際、割り込みサービスルーチン（ISR）から `notify_interrupt` が呼び出され、INT イベントを有界キューに投函する。**実装の勘所と設計理由 (`COOS-GOTCHA-03`)**: ISR コンテキスト内ではタスク状態や優先度キューを一切直接書き換えない。ISR で直接キュー操作やコルーチン起床を行うと、ハードウェア割り込み無効化区間（クリティカルセクション）が肥大化し、最高優先度割り込みの応答レイテンシが劣化するだけでなく、多重割り込み時のロック競合を引き起こす。そのため、ISR はリングバッファへの原子的なイベント記録のみを行い、スケジューラが各 yield 点（`run_step` 開始時）でこれをドレイン（`drain_interrupts`）して初めて、特定の割り込みベクトル（`irq_id`）に登録されて待機しているタスクを READY 状態へ遷移させて実行可能キュー末尾に投入する。 `{GLOBAL_InterruptWakeup}`
+- **割り込みウェイクアップ (Interrupt Wakeup)**: 外部イベントが発生した際、割り込みサービスルーチン（ISR）から `notify_interrupt(interrupt-event)` が呼び出され、固定長FIFOへ原因レコードを投函する。**実装の勘所と設計理由 (`COOS-GOTCHA-03`)**: ISR コンテキスト内ではタスク状態や優先度キューを一切直接書き換えない。ISR で直接キュー操作やコルーチン起床を行うと、ハードウェア割り込み無効化区間（クリティカルセクション）が肥大化し、最高優先度割り込みの応答レイテンシが劣化するだけでなく、多重割り込み時のロック競合を引き起こす。そのため、ISR は固定長FIFOへの原子的なイベント記録のみを行い、スケジューラが各協調境界（`run_step` 開始時）でこれをドレイン（`drain_interrupts`）して初めて、`vector_id`に対応する待機タスクを READY 状態へ遷移させて実行可能キュー末尾に投入する。FIFO満杯または待機先が未登録の場合はドロップし、ドロップ数を記録する。 `{GLOBAL_InterruptWakeup}`
 - **Idle Detection**: 全ての実行中タスクがブロック状態にあり、かつイベントキューが空（割り込みや外部イベントによる起床待ちのみ）の場合にアイドル状態と判定する。この条件が成立した時のみ、登録済みの `idle_hook` コールバック群をREADYリング外の専用Idleタスクとして呼び出す。個々のコールバック（ログフラッシュ等）が実際にいつ・何を処理するかはコールバック側の内部実装事項であり、COOS はそれを規定・関知しない（登録・起動機構のみを提供する）。ログフラッシュの具体的なトリガー条件は [`runtime_logging.md`](docs/components/tier2_runtime/runtime_logging.md) を正本とする。 `{GLOBAL_IdleDetection}`
 - **Memory Management**: タスク生成時に独立したメモリパーティションを割り当てる。 `{GLOBAL_StrictMemoryLimit}` `{GLOBAL_IndependentHeap}`
 
@@ -307,7 +307,7 @@ stateDiagram-v2
 - **Blocked**: 以下のいずれかの要因により実行を中断し、待機中キューに登録されている状態（個別の遷移条件・トリガーは `os_scheduler.md` を正本とする）。
   - **Wait CSP**: チャネル通信（Send/Recv）の相手タスクが到着するのを待機。
   - **Wait Event**: 非同期イベント（システムコールやIPC応答）の到着を待機。
-  - **Wait Interrupt**: ハードウェアからの仮想割り込み（ISRによる `notify_interrupt`）を待機。
+  - **Wait Interrupt**: 汎用`interrupt-event`（ISRによる`notify_interrupt`）を待機。
 - **Terminated**: タスクの実行が終了し、静的に確保されたTCBスロットおよびパーティションメモリが再利用可能（解放）となった状態。`Running`（自然終了、`task_exit`）からのみ到達する。**`Blocked` タスクの強制終了（外部からの `task_killed`）は現時点で未実装**（チャネル待機者参照・イベント待機キューからの登録解除を伴う設計が必要であり、[backlog_list.md](docs/plans/backlog_list.md) で追跡対象とする）——本図はそれを実装済みの遷移として描かない。
 
 ## 5. インターフェース設計
@@ -377,7 +377,7 @@ class shared_block {
 
 | コンポーネント | C++ API プロトタイプ定義 | 説明 |
 | :--- | :--- | :--- |
-| `scheduler` | `auto spawn(void(*task_entry)(void*), void* arg) -> result<task_id_t, scheduler_error>;`<br>`auto yield() -> void;`<br>`auto exit() -> void;`<br>`auto set_idle_hook(void(*hook)()) -> void;`<br>`auto wake_up_direct(task_id_t task) -> void;`<br>`auto notify_interrupt(uint32_t irq_id) -> void;` | タスクの生成・一時譲渡・終了およびアイドル時コールバックの設定。`wake_up_direct` はCSP Handoffによる即時起床用、`notify_interrupt` はISRコンテキストから割り込み通知をイベントキューに投函する用。動的確保は行わず、静的プールからTCBスロットを割り当てる。 |
+| `scheduler` | `auto spawn(void(*task_entry)(void*), void* arg) -> result<task_id_t, scheduler_error>;`<br>`auto yield() -> void;`<br>`auto exit() -> void;`<br>`auto set_idle_hook(void(*hook)()) -> void;`<br>`auto wake_up_direct(task_id_t task) -> void;`<br>`auto notify_interrupt(interrupt_event event) -> void;` | タスクの生成・一時譲渡・終了およびアイドル時コールバックの設定。`wake_up_direct` はCSP Handoffによる即時起床用、`notify_interrupt` はISRコンテキストから固定長FIFOへ汎用原因レコードを投函する用。動的確保は行わず、静的プールからTCBスロットを割り当てる。 |
 | `csp` | `template <typename T = shared_block>`<br>`auto send(channel_id_t chan, T&& val) -> coos::task_coroutine;`<br>`template <typename T = shared_block>`<br>`auto receive(channel_id_t chan) -> coos::task_coroutine_recv<T>;` | チャネル経由の同期メッセージ送受信。右辺値参照（`&&`）による完全なムーブセマンティクス（ゼロコピー所有権移譲、`{IPC_ZeroCopy}` `{OwnershipTransfer}`）を行う。具象型としては `shared_block`（`{ADR_SharedBlockRaii}`）や `ipc_message` を渡す。 |
 | `memory` | `auto acquire_task_heap(task_id_t owner) -> result<partition_slice, memory_error>;`<br>`auto release_task_heap(task_id_t owner) -> result<void, memory_error>;`<br>`template <class T> auto acquire_slot() -> result<pool_ref<T>, memory_error>;`<br>`template <class T> auto release_slot(pool_ref<T> ref) noexcept -> void;` | COOS がタスクを起動する際に貸与する、タスク固有の静的メモリパーティション（タスクヒープ）の貸与・返却。**汎用ヒープ API ではない**: 任意サイズ確保も汎用ポインタも提供せず、コンパイル時に確定した固定長パーティションと型付きプールスロットのみを扱う。`partition_slice` は基点アドレス・サイズ・所有タスクを持つ非所有ビュー相当、`pool_ref<T>` は静的プール内スロットへの型付きハンドルである。 `{GLOBAL_Policy_Memory}` `{META_NoStdVector}` |
 

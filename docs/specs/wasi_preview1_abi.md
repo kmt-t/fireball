@@ -5,13 +5,13 @@
 
 ## 0. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->
-本仕様書は **Tier 3（横串物理仕様・具象カタログ: Cross-cutting Physical Specs & Catalogs）** に分類される（[`document_structure.md`](docs/architecture/document_structure.md) を正本とする）。WASI 0.1p ABI はホスト実装の物理的なアダプタ層であり、ディレクトリ配置は `docs/specs/` のまま変更しない。Fireball のネイティブ実行基盤である WASI 0.3p / Component Model は、専用の WIT リソース型ではなく URI Resolver + HAL バッファプール + IPC コマンドID による汎用機構として実現される。定義は Tier 1 の [`interface_wit.md`](docs/components/tier1_interface/interface_wit.md)（契約）および Tier 2 の [`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md)（IPC コマンドID カタログ）を正本とする。 `{META_3TierSeparation}`
+本仕様書は **Tier 3（横串物理仕様・具象カタログ: Cross-cutting Physical Specs & Catalogs）** に分類される（[`document_structure.md`](docs/architecture/document_structure.md) を正本とする）。WASI 0.1p ABI はゲスト側アダプタ `libfireball` が利用する物理仕様として `docs/specs/` に置く。Fireball のネイティブ実行基盤である WASI 0.3p / Component Model は、専用の WIT リソース型ではなく URI Resolver + HAL バッファプール + IPC コマンドID による汎用機構として実現される。公開契約は Tier 1 の [`interface_wit.md`](docs/components/tier1_interface/interface_wit.md)、HAL操作は Tier 2 の [`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md)、ゲスト側変換は Tier 3 の `libfireball` 仕様を正本とする。 `{META_3TierSeparation}`
 
 ## 1. 概要と基本思想
 <!-- traceability: {Type_Vocabulary} {TypeSafeMessaging} {META_ZeroCostAbstraction} -->
 本仕様書は、Fireball Hypervisor が WASM ゲストアプリケーションに対して提供する **WASI Preview 1 (`wasi_snapshot_preview1`, WASI 0.1p)** インターフェースの物理 ABI マッピング、サポート API セット、およびエラーコード規約を定義する正本である。
 
-Fireball ではネイティブなシステム基盤として **WASI 0.3 Preview (WASI 0.3p / HAL)** を採用しており、本 WASI Preview 1 ABI は、内部で WASI 0.3p のストリーム（`wasi:io/streams`）、タイマー（`wasi:clocks/monotonic-clock`）、コンソール出力（`wasi:cli/stdout`）を呼び出す**薄いアダプタ/ラッパーレイヤー（Adapter Pattern）**として動作する。これにより、既存の WASI 0.1p 向けコンパイル済みバイナリとの完全な下位互換性をゼロコストで維持する。 `{Type_Vocabulary}` `{TypeSafeMessaging}` `{META_ZeroCostAbstraction}`
+Fireball ではネイティブなシステム基盤として **WASI 0.3 Preview (WASI 0.3p / HAL)** を採用しており、本 WASI Preview 1 ABI は、Tier 3 の `libfireball` が公開HAL IFへ変換するゲスト側アダプタの入力仕様である。これにより、既存の WASI 0.1p 向けコンパイル済みバイナリとの互換性を提供する。 `{Type_Vocabulary}` `{TypeSafeMessaging}` `{META_ZeroCostAbstraction}`
 
 ---
 
@@ -40,8 +40,8 @@ WASI 32-bit (wasm32) における物理データ型およびメモリレイア�
 
 | API 名 | シグネチャ | 物理実装・ルーティング | 戻り値 / エラー |
 | :--- | :--- | :--- | :--- |
-| **`fd_write`** | `(fd: fd_t, iovs: ptr, iovs_len: size_t, nwritten: ptr) -> errno_t` | `fd=1/2`: UART HAL (`platform_driver`) または デバッグリングバッファへ文字出力。<br>`fd>=3`: IPC チャネル (`ipc_router`) へパケット送信。 | `SUCCESS` (0)<br>`EBADF` (不正なFD)<br>`EFAULT` (メモリ境界外) |
-| **`fd_read`** | `(fd: fd_t, iovs: ptr, iovs_len: size_t, nread: ptr) -> errno_t` | `fd=0`: UART RX バッファから文字読み出し。<br>`fd>=3`: IPC チャネルからメッセージ受信。 | `SUCCESS` (0)<br>`EAGAIN` (データ未着)<br>`EBADF` |
+| **`fd_write`** | `(fd: fd_t, iovs: ptr, iovs_len: size_t, nwritten: ptr) -> errno_t` | `libfireball` が `get-interface`、HALバッファ、`stream-write`へ変換する。 | `SUCCESS` (0)<br>`EBADF` (不正なFD)<br>`EFAULT` (メモリ境界外) |
+| **`fd_read`** | `(fd: fd_t, iovs: ptr, iovs_len: size_t, nread: ptr) -> errno_t` | `libfireball` が `get-interface`、HALバッファ、`stream-read`へ変換する。 | `SUCCESS` (0)<br>`EAGAIN` (データ未着)<br>`EBADF` |
 | **`fd_close`** | `(fd: fd_t) -> errno_t` | `fd>=3` の IPC 接続チャネルをクローズ。`fd=0..2` のクローズは無視して成功。 | `SUCCESS` (0)<br>`EBADF` |
 | **`fd_seek`** | `(fd: fd_t, offset: int64, whence: uint8, newoffset: ptr) -> errno_t` | ストリーム型デバイスのため非サポート。 | `ESPIPE` (パイプ/ストリームのためシーク不可) |
 | **`fd_fdstat_get`**| `(fd: fd_t, stat: ptr) -> errno_t` | `fd=0..2` に対し `FILETYPE_CHARACTER_DEVICE` と `RIGHTS_FD_READ/WRITE` を返却。 | `SUCCESS` (0)<br>`EBADF` |

@@ -103,7 +103,7 @@ COOS および IPC において、デバッグ時に重大な不整合・境界�
 | `0x0101` | COOS | `WARN` | `COOS: handoff limit reached (task=%d, count=%d)` | `task_id`, `handoff_count`, 0, 0 | 連続ハンドオフ上限（`FB_CONF_MAX_CONSECUTIVE_HANDOFFS`、`system_config.md` 正本）到達（詳細は `os_coos.md` 正本） |
 | `0x0102` | COOS | `ERROR` | `COOS: task capacity exceeded (max=%d, attempted=%d)` | `max_tasks`, `attempted_count`, 0, 0 | タスク上限（`FB_CONF_MAX_TASKS`、`system_config.md` 正本）超過によるタスク spawn 拒否 |
 | `0x0103` | COOS | `ERROR` | `COOS: duplicate task id rejected (task=%d)` | `task_id`, 0, 0, 0 | 既存タスクと同一 ID の spawn 試行の拒絶 |
-| `0x0104` | COOS | `WARN` | `COOS: irq queue overflow dropped (irq=%d, dropped_total=%d)` | `irq_id`, `dropped_count`, 0, 0 | 割込通知キュー上限溢れによるイベント破棄（詳細は `os_coos.md` 正本） |
+| `0x0104` | COOS | `WARN` | `COOS: interrupt event FIFO overflow dropped (vector=%d, dropped_total=%d)` | `vector_id`, `dropped_count`, 0, 0 | 原因付き割り込みFIFO上限溢れによるイベント破棄（詳細は `os_coos.md` 正本） |
 | `0x0201` | IPC | `WARN` | `IPC: rbac denied (sender_role=%d, target_role=%d)` | `sender_role`, `target_role`, 0, 0 | RBAC 権限マトリクス違反によるメッセージ遮断（詳細は `ipc_router.md` 正本） |
 | `0x0202` | IPC | `WARN` | `IPC: unknown uri routing failed (uri_handle=%d)` | `uri_handle`, 0, 0, 0 | サービスレジストリ未登録の URI への送信試行 |
 | `0x0203` | IPC | `ERROR` | `IPC: message too large (kv_count=%d, max=%d)` | `kv_count`, `max_kv_pairs`, 0, 0 | 許可された最大 KV ペア数（`FB_CONF_ROUTER_MAX_KV_PAIRS`、`system_config.md` 正本）を超過したメッセージ |

@@ -22,7 +22,7 @@ Loader/Interpreter/JIT/vMMIO/Debuggerを統合する`vsoc_harness`（静的DI）
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | VSOC-10 | Safepointはループ背進辺/関数呼出前/メモリアクセス後に埋め込まれる | JIT生成コード | コード生成を確認 | `{JIT_Safepoint}` の3箇所すべてにチェックが入る | `{JIT_Safepoint}` |
-| VSOC-11 | interrupt_flagsのビット構成 | - | フラグ構造を確認 | `[0]Async Break, [1]Debugger Intervention, [2]JIT Cache Invalid, [3]Yield Request`の32bit構成 | `{JIT_Safepoint}` |
+| VSOC-11 | 保留interrupt-eventの構成 | - | 保留イベント構造を確認 | `vector_id`、`source_id`、`cause_code`、`payload0`、`payload1`の固定5ワードで保持される | `{JIT_Safepoint}` |
 | VSOC-12 | デバッガのメモリ書き換えでキャッシュFlush | デバッガがメモリ変更 | `request_debugger_interrupt`相当を呼ぶ | 次のSafepointでフラグ検出され、Active/Warm/Oldest全バンクのメタデータが破棄される(generation cookie increment) | `{Debugger_Jit_Flush}` |
 | VSOC-13 | IRQ/JITレース不在 | JIT実行中に割り込み発生 | 形式検証プロパティを確認 | Safepoint同期を経ずに割り込み処理が開始されない(`AG(Not(handling_irq & jit_mode))`) | irq_jit_race_freedom_proof |
 | VSOC-14 | flush完了性 | dirty状態になったキャッシュ | 形式検証プロパティを確認 | `AG(dirty -> AF(flushed))`（dirtyになったflushは必ず完了する） | `../formal/vsoc_cache_coherency_model.py` |
@@ -35,7 +35,18 @@ Loader/Interpreter/JIT/vMMIO/Debuggerを統合する`vsoc_harness`（静的DI）
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | VSOC-20 | ロード失敗でError状態 | 不正なWASM | `prepare(module)` | `Loading→Error`に遷移 | `{VSOC_Lifecycle}` |
 | VSOC-21 | yield閾値到達でReadyへ復帰 | InterpreterRun中 | トレース数が閾値超過 | `InterpreterRun→Ready`、ホットスポット検出結果がJITキューに投入される | - |
-| VSOC-22 | Safepointで割り込み検出時はインタープリタへフォールバック | JitRun中 | 割り込みフラグが立つ | `JitRun→SafepointCheck→Ready`（インタープリタへ） | - |
+| VSOC-22 | Safepointで原因付き割り込みイベント検出時はインタープリタへフォールバック | JitRun中 | `interrupt-event`が保留される | `JitRun→SafepointCheck→Ready`（インタープリタへ） | - |
+
+### vIRQ登録と原因付き階層配送
+
+| ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| VSOC-50 | 静的vIRQノードの登録 | root・4分類・デバイスの固定ノード | 各ノードの関数インデックスを登録 | 静的ノードだけが受け付けられ、親子関係と原因源表は変更されない | `runtime_vsoc.md` `register-virq-dispatcher` |
+| VSOC-51 | WASM関数シグネチャ拒否 | 登録対象に不一致シグネチャの関数 | vIRQスロットへ登録 | `(u32,u32,u32,u32,u32) -> u32` 以外は拒否され、有効登録を上書きしない | `runtime_vsoc.md` `register-virq-dispatcher` |
+| VSOC-52 | Safepoint前の登録変更不可視性 | 有効登録A、保留登録B | Safepoint前とSafepoint後に同じイベントを配送 | 前半はA、Safepoint後はBだけが観測され、途中状態は観測されない | `{JIT_Safepoint}` |
+| VSOC-53 | 原因レコードの階層伝播 | root/category/deviceに登録済み関数 | `PASS_THROUGH`を返すイベントを配送 | `root → 分類 → デバイス → ゲスト関数`の順に1回ずつ呼ばれる | `runtime_vsoc.md` `dispatch-interrupt-event` |
+| VSOC-54 | HANDLEDとREJECTの終端 | 各階層の関数が結果を返す | `HANDLED`または`REJECT`を返す | `HANDLED`は子へ進まず、`REJECT`は診断後に終了し、FAULTへ再帰配送しない | `runtime_vsoc.md` `dispatch-interrupt-event` |
+| VSOC-55 | WASIポーリングとの分離 | vIRQイベントとHALポーリングハンドルが同時に存在 | 両経路を独立して処理 | vIRQ配送が`poll-check`/`poll-wait`を起動せず、ポーリングがvIRQ登録を変更しない | `interface_wit.md` §6 |
 | VSOC-23 | ブレークポイントヒットでDebugging状態へ | 任意の実行状態 | ブレークポイント到達 | `(any)→Debugging` | - |
 | VSOC-24 | resume(interp)でJITキャッシュflush | Debugging状態 | `resume(interp)`を呼ぶ | JITキャッシュがflushされ、PCを保持したままInterpreterRunへ | `{VSOC_Lifecycle}` |
 

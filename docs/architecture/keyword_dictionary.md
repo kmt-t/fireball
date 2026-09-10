@@ -158,7 +158,7 @@ OSスケジューラ（`os_coos`, `os_scheduler`）、静的コンテナ（`syst
 | `{CSP_Handoff}` | `requirement_list.md` | `os_coos.md` | チャネルランデブーによるタスク間所有権移譲と直接コンテキストスイッチ | - |
 | `{DirectContextSwitch}` | `requirement_list.md` | `os_scheduler.md` | READYキューを経由しないコルーチン直接ジャンプ超低レイテンシ遷移 | Scenario 6, 9 (INT-50, INT-80) |
 | `{LowOverheadSwitch}` | `requirement_list.md` | `os_scheduler.md` | レジスタ退避を最小限に抑えた超高速コンテキストスイッチ | - |
-| `{TaskPollInterruptFlag}` | `requirement_list.md` | `os_scheduler.md` | タスク切り替え境界での割り込みフラグ安全ポーリング | - |
+| `{TaskPollInterruptEvent}` | `requirement_list.md` | `os_scheduler.md` | タスク切り替え境界での原因付き割り込みイベント安全配送 | - |
 | `{PackedBitView}` | `requirement_list.md` | `system_containers.md` | ビット単位でのパック構造とメモリ効率の高いフラットビットビュー | - |
 | `{FlatViewNarrowing}` | `requirement_list.md` | `system_containers.md` | フラットビューのスコープ限定・スライシングによる安全な部分アクセス | - |
 | `{LightweightVerifier}` | `requirement_list.md` | `system_config.md` | 実行前バリデーションを行う軽量静的検証エンジン | - |
@@ -204,7 +204,7 @@ OSスケジューラ（`os_coos`, `os_scheduler`）、静的コンテナ（`syst
 
 ---
 
-### 4.3 Tier 2 Runtime: vSoC・インタープリタ・ローダ・vMMIO・デバッガ
+### 4.3 Tier 2 Runtime: vSoC・インタープリタ・ローダ・vMMIO・デバッガ・HAL公開IF
 
 WASM 実行エンジン（`runtime_vsoc`）、CPS スレッドインタープリタ（`runtime_interpreter`）、ゼロコピーローダ（`runtime_loader`）、仮想メモリ管理（`runtime_vmmio`）、GDB RSP デバッガ（`debug_manager`）、ロギングサブシステム（`runtime_logging`）、システムコールランタイム（`runtime_syscall`）の機能要求と設計の勘所。
 
@@ -272,7 +272,7 @@ WASM 実行エンジン（`runtime_vsoc`）、CPS スレッドインタープリ
 
 ---
 
-### 4.4 Tier 3 JIT: JIT コンパイラ & ランタイム
+### 4.4 Tier 3 JIT: JIT コンパイラ・ランタイム・ゲストアダプタ・プラットフォームドライバ
 
 Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キャッシュ・ホットスポット管理（`jit_runtime`）の機能要求と設計の勘所。
 
@@ -396,5 +396,5 @@ Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キ�
 | `{TrackableBlockMask}` | `jit_runtime.md` | `jit_runtime.md` | ロード時に一度だけ確定する 1-bit ブロック追跡可否マスク。カードマーキング表の更新対象かをディスパッチ時に $O(1)$ 判定 | Scenario 4, 5 (JITR-GOTCHA-07) |
 | `{VSOC_Lifecycle}` | `runtime_vsoc.md` | `runtime_vsoc.md` | vSoC Engine の状態遷移とインタープリタ／JIT切り替えライフサイクル | Scenario 7, 8 |
 | `{VmmioShmDelegation}` | `runtime_vmmio.md` | `runtime_memory.md` | vMMIO FC=14共有メモリマッピングと権限・TLB無効化のメモリマネージャリスナー移譲 | MEM-15 |
-| `{WASI_InMemVFS}` | `interface_wit.md` | `system_service.md` | WASI In-Memory VFS（fd_seek, fd_read, fd_write, random_get, clock_time_get） | Scenario 11 (INT-103〜INT-105) |
-| `{WASI_ScatteredIO}` | `runtime_syscall.md` | `runtime_syscall.md` | 分散ギャザー fd_write / スキャッター fd_read による多要素 iovec 転送 | Scenario 2, 11 (INT-10, INT-104) |
+| `{WASI_InMemVFS}` | `libfireball.md` | `libfireball.md` | WASI互換ゲストアダプタによる fd_seek, fd_read, fd_write, random_get, clock_time_get | Scenario 11 (INT-103〜INT-105) |
+| `{WASI_ScatteredIO}` | `libfireball.md` | `libfireball.md` | 分散ギャザー fd_write / スキャッター fd_read による多要素 iovec 転送 | Scenario 2, 11 (INT-10, INT-104) |

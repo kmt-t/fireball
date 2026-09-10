@@ -26,6 +26,7 @@ Fireballは、リソース制限の厳しい小規模組み込みデバイス（
 | レイヤー | 構成要素 | 説明 |
 | :--- | :--- | :--- |
 | **ゲストアプリケーション** | WASMバイナリ | ユーザー提供のWASMバイナリアプリケーション。 |
+| **ゲストアダプタ** | `libfireball` | WASMへ組み込まれるWASI／Fireball ABIアダプタ。サービスやサブシステムではない。 |
 | **サービス** | WASMプラグイン | システム機能を拡張するWASMサービス。 |
 | **vSoC** | ハーネス (Loader, Interpreter, JIT, vMMIO, Debugger) | WASM実行環境と仮想ハードウェア抽象化をプラグイン形式で提供。 |
 | **COOSカーネル** | スケジューラ, CSP, メモリ, IPCルータ | 協調型マルチタスクと安全な通信の基盤。 |
@@ -46,6 +47,7 @@ graph TD
     subgraph Guest["Guest Layer"]
         App["<b>block: Guest Application</b><br/>─ 入力: WASM binary<br/>─ 出力: execution result<br/>─ ポート: execute()"]:::blockStyle
         Svc["<b>block: WASM Service</b><br/>─ 入力: IPC request<br/>─ 出力: response<br/>─ ポート: handle_request()"]:::blockStyle
+        Lib["<b>block: libfireball</b><br/>─ WASI / Fireball ABI adapter<br/>─ URI / buffer / trap calls"]:::blockStyle
     end
 
     subgraph Runtime["Runtime Layer"]
@@ -74,6 +76,9 @@ graph TD
     %% 破線 = インターフェース実装 (realizes)
     App -->|"uses: execute()"| vSoC
     Svc -->|"uses: syscall(uri)"| vSoC
+    App -->|"links guest adapter"| Lib
+    Svc -->|"links guest adapter"| Lib
+    Lib -->|"uses public trap / HAL IF"| vSoC
 
     vSoC -->|"uses: yield()"| COOS
     vSoC -->|"uses: lookup(uri) / route(msg)"| IPCR
@@ -359,7 +364,7 @@ sequenceDiagram
 | **カーネル構造** | **マイクロカーネル** | COOS は最小限の機能に絞り、ドライバ・サービスは IPC 経由で提供 |
 | **通信モデル** | **同期メッセージング** | CSP ハンドオフも IPC ルータ経由も呼び出し側は応答待機。確定的な実行フロー |
 | **タスク制御** | **協調型マルチタスク** | スタックレス coroutine で RAM 削減、`co_yield` による主動的譲渡 |
-| **割り込み処理** | **イベント駆動 (ISR) + ポーリング (処理層)** | ISR は軽量通知のみ、実処理はメインループで安全に処理 |
+| **割り込み処理** | **原因付き階層ディスパッチ (ISR + COOS FIFO + vSoC Safepoint)** | ISRは固定5ワードのイベントを投函し、COOSが起床を所有、vSoCがvIRQのroot→分類→デバイス→ゲスト関数をSafepointで配送。WASIのpoll APIは独立 |
 | **メモリ管理** (`{ADR_FivePoolMemoryModel}`) | **5プール分離と専用アロケータ** | 用途別5プール（ホスト用ヒープ・タスクヒープ・共有メモリ用ヒープ・ランタイム用バンプアロケータ・JITキャッシュアロケータ、dlmalloc mspace / bump / W^X）により、メモリ隔離と有界な動的メモリ管理を両立。設計根拠: `{ADR_FivePoolMemoryModel}` |
 | **依存関係解決** | **静的 DI (Harness)** | C++20 Concepts と Harness 構造体によりコンパイル時に確定 |
 | **TCB連結方式** (`{ADR_IntrusiveTcbList}`) | **侵入型リスト** | ノード確保が不要で `{GLOBAL_Policy_Memory}` に適合。設計根拠: `{ADR_IntrusiveTcbList}` |

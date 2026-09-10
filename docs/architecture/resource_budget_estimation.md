@@ -42,7 +42,7 @@ Python シミュレータ（`experiments/pysim`）の実装行数（実測 12,58
 | **Tier 3 Platform & HAL** | **2,109** | **~1,800** | |
 | - `system_memory` / `runtime_memory` | 737 | ~700 | 統合物理プール（ConsolidatedHeap）、静的パーティショニング、SHM マネージャ |
 | - `hal_dispatch` / `platform_driver` | 611 | ~600 | 協調 HAL タスク、UART/RTT/GPIO/I2C/SPI ドライバ、ISR リングバッファ |
-| - WASI Preview 1 Adapter | 760 | ~500 | `fd_write`, `fd_read`, `clock_time_get` 等の薄い HAL ラッパー |
+| - `libfireball` ゲストアダプタ | 760 | ~500 | `fd_write`, `fd_read`, `clock_time_get` 等をTier 2の公開IFへ変換 |
 | **合計** | **12,580** | **~14,500 LOC** | **`{Size_15KLOC}` (15,000 LOC 以内) を完全に達成** |
 
 ---
@@ -105,7 +105,7 @@ ROM 領域は、コンパイル時に静的に確定する不変ルックアッ�
 | - JIT コンパイラ & アセンブラコア | ~12 KB | Stencil コピー、リロケーション計算、逆順キュー処理 |
 | - COOS カーネル & スケジューラ & IPC | ~8 KB | コルーチンスイッチ、同期ランデブー、所有権管理 |
 | - WASM ローダー & デコーダ | ~7 KB | セクション解析、型チェック、CandidateBitmap スコアリング |
-| - HAL / WASI ドライバ & GDB デバッガ | ~8 KB | UART/GPIO/Timer ドライバ、RSP パーサー、Shim レイヤ |
+| - HAL / `libfireball` / GDB デバッガ | ~8 KB | UART/GPIO/Timer ドライバ、RSP パーサー、ゲストABIアダプタ |
 | **ROM 合計使用量** | **~53〜63 KB** | **最小構成 Flash 96KB に対し約 34〜45% の空き容量で収容可能** |
 
 ---

@@ -65,7 +65,7 @@ graph TD
     - CSP通信のランデブー成立時、呼び出し元と呼び出し先は C++20 コルーチンの対称遷移（Symmetric Transfer）によりスケジューラをバイパスして直接遷移（`{CSP_Handoff}`）を行う。
     - **設計理由と不変条件**: 直接ハンドオフを無制限に許可すると、例えば2つの高頻度通信タスクが互いにメッセージをピンポン送受信し続けた場合に CPU を独占し、READY キュー内に待機している他のタスク（タイマー処理、システム監視、低優先度タスク等）が永久にディスパッチされず餓死（Starvation）に陥る。これを防ぐため、スケジューラは連続直接遷移カウンタ（`consecutive_handoffs`）を保持し、設定された上限（ビルド時定数 `FB_CONF_MAX_CONSECUTIVE_HANDOFFS`、既定値 `4` 回）に到達した瞬間に直接遷移を強制打ち切りとし、相手タスクを READY キュー末尾へ投入した上で `YIELD` を返却してスケジューラのメイン巡回ループへ強制復帰させる。これにより、いかなる通信パターンであっても全タスクへの公平な実行機会と有界な応答時間を形式的に保証する（形式検証モデル `formal/coos_channel_model.py` にて pyModelChecking CTL モデル検査により無餓死性・有界復帰性を証明済み）。 `{SCHED-GOTCHA-01}` `{Challenge_CspHandoffStarvation}` `{CSP_Handoff}`
 - **アイドル状態の検知**: 全ての管理タスクが「待機状態（BLOCKED/SUSPENDED_CSP）」となった場合にアイドル・ハンドラ（Periodic Task、ログフラッシュ、JITバッチコンパイル等）を実行する。 `{GLOBAL_IdleDetection}` `{GLOBAL_PeriodicTask}`
-- **割り込み処理**: HALからの割り込み通知（`notify_interrupt(irq_id)`）を受信し、INTイベントキューから回収して対象タスクを READY キュー末尾に追加する。 `{GLOBAL_InterruptWakeup}`
+- **割り込み処理**: HALからの原因付き`interrupt-event`通知（`notify_interrupt(event)`）を受信し、固定長FIFOから回収して`vector_id`に対応する対象タスクをREADYキュー末尾に追加する。 `{GLOBAL_InterruptWakeup}`
 
 
 #### 連続直接ハンドオフ上限判定とメインループ復帰手順（手順アクティビティ図）
@@ -302,12 +302,12 @@ stateDiagram-v2
 #### `notify-interrupt` (内部 API)
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | ハードウェア割り込みハンドラ（ISR）から呼び出され、Interrupt イベントをイベントキューに投入する。 |
-| シグネチャ | `notify_interrupt(irq_id: uint32) -> void` |
-| 引数 | `irq_id`: 発生した割り込みベクタ番号/IRQ ID |
+| 機能概要 | ISRから呼び出され、固定長FIFOへ汎用`interrupt-event`を投入する。 |
+| シグネチャ | `notify_interrupt(event: interrupt_event) -> void` |
+| 引数 | `event`: `vector_id`、`source_id`、`cause_code`、`payload0`、`payload1`からなる固定5ワードの原因レコード |
 | 事前条件 | ISR コンテキスト内からのみ呼び出されること。 |
-| 事後条件 | Interrupt イベントがイベントキューに投入される。キュー満杯の場合はドロップされ、ドロップカウントがインクリメントされる。イベントループが Interrupt イベントを処理する際、irq_id に紐づく待機タスクは BLOCKED 状態から READY 状態へと遷移し、READYキューの末尾に挿入される。スケジューラは純粋な協調型ラウンドロビン（FIFO順）でタスクを巡回し、実行中のタスクが自発的に `yield` した際に次のタスクが実行を開始する。 |
-| 設計注記 | 割り込み通知はイベント化され、スケジューラのメインループで安全に処理される。ISR は軽量に、イベント投入とログ用カウンタの更新のみを行う。 |
+| 事後条件 | `interrupt-event` がFIFOへ投入される。FIFO満杯の場合はドロップされ、ドロップカウントがインクリメントされる。ドレイン時に`vector_id`の待機先が未登録ならイベントをドロップし、登録済みの待機タスクだけをBLOCKEDからREADYへ遷移させてREADYキュー末尾へ挿入する。スケジューラは純粋な協調型ラウンドロビン（FIFO順）でタスクを巡回し、実行中のタスクが自発的に`yield`した際に次のタスクが実行を開始する。 |
+| 設計注記 | 割り込み通知は原因情報を保持したままイベント化され、スケジューラのメインループで安全に処理される。ISRは軽量に、イベント投入とドロップカウンタの更新だけを行う。 |
 
 #### タスク終了（terminate）
 | 項目 | 内容 |

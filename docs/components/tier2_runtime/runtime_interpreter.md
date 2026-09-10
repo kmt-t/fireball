@@ -223,7 +223,7 @@ WASM オプコードごとのスタック遷移およびハンドラ実装マト
   - `block`/`loop`/`if`/`call`/`call_indirect` および関数復帰は、インタープリタにとって単なる「制御を vSoC へ返す（return）」境界である。インタープリタの命令ハンドラは `exec_trace` を自分で取得・保持せず、次に実行すべき WASM PC を返すだけであり、JIT 済みかどうかの判断・キャッシュ参照は一切行わない。
   - vSoC の `step()`（実行エンジン委譲、`{ThreadedInterpreter}` `{JIT_CopyAndPatch}`）が、インタープリタから制御が戻るたびに現在の PC に対応する `exec_trace` を JIT キャッシュから引き直し、JIT 済みであればネイティブコードへ、未コンパイルであればインタープリタへディスパッチする。ループ先頭への分岐（`br` 等）で戻ってきた PC が新たに JIT 済みになっていた場合も、この同じ再判定によってネイティブ実行への切り替えが起こる——インタープリタ自身が「JIT キャッシュを再確認する」ことは決してない。 `{Interpreter_LazyJITSwitch}`
 - **Hotspot検知と JIT候補ビットマップによるバイパス (`{JIT_CandidateBitmap}`, `{LowLatencyJIT}`, `{SimpleJITArchitecture}`)**: インタープリタはトレース開始時の PC を戻り値としてのみ vSoC に伝える。その PC を履歴バッファに記録し、`yield_threshold` に基づいて HOT 判定を行うのは vSoC 側の責務であり、インタープリタ自身は履歴バッファを持たない。さらに、WASM ロード時に生成された `jit_candidate_bitmap`（1bit/カード）において該当ブロックの先頭 PC が候補外（`0`）とマークされている場合、vSoC は `HotspotBitmap.touch(pc)` および履歴リングへの追跡登録を完全にバイパス（スキップ）する。これにより、コンパイル投資対効果のないインタープリタ専任ブロックにおける実行時追跡オーバーヘッドを $O(1)$ で完全排除する。 `{JIT_CandidateBitmap}` `{LowLatencyJIT}` `{SimpleJITArchitecture}`
-- **トレース境界での協調的Yield (`{ADR_TraceBoundaryYield}`)**: インタープリタは命令ごとに精密なステップカウンタや割り込みフラグを評価・中断したりしない——**トレースの切れ目（基本ブロック末尾、ループ境界、関数呼出/復帰、または JIT トレース脱出境界）でのみ、インタープリタの命令ハンドラが呼び出し元（vSoC）へ制御を返す**。`yield_threshold` の判定と `co_yield` の発行は、この戻り値を受け取った vSoC 自身が行う（概算Yield、`{Challenge_ApproximateYield}`）——インタープリタは `co_yield` を発行するコルーチンではなく、ただの `__fastcall` 関数である。命令単位の検査オーバーヘッドを完全排除して `[[clang::musttail]]` 直結ディスパッチを最速化しつつ、トレース境界でレジスタとスタックが自然に整合するためステート退避を極小化する。 `{ADR_TraceBoundaryYield}` `{Challenge_ApproximateYield}`
+- **トレース境界での協調的Yield (`{ADR_TraceBoundaryYield}`)**: インタープリタは命令ごとに精密なステップカウンタや割り込みイベントを評価・中断したりしない——**トレースの切れ目（基本ブロック末尾、ループ境界、関数呼出/復帰、または JIT トレース脱出境界）でのみ、インタープリタの命令ハンドラが呼び出し元（vSoC）へ制御を返す**。`yield_threshold` の判定と `co_yield` の発行は、この戻り値を受け取った vSoC 自身が行う（概算Yield、`{Challenge_ApproximateYield}`）——インタープリタは `co_yield` を発行するコルーチンではなく、ただの `__fastcall` 関数である。命令単位の検査オーバーヘッドを完全排除して `[[clang::musttail]]` 直結ディスパッチを最速化しつつ、トレース境界でレジスタとスタックが自然に整合するためステート退避を極小化する。 `{ADR_TraceBoundaryYield}` `{Challenge_ApproximateYield}`
 - **デバッグ・プロファイラフック**: 命令実行前後でブレークポイント判定、実行時PC頻度サンプリング（プロファイラ統合）、およびメモリ/レジスタの動的アサーション検証を行い、Debugger/Profiler に制御を委譲する。 `{Debug_Integrated}`
 
 #### WASM インタープリタ フルセット・コンセプトコード (`concepts/interpreter_concept.py`)
@@ -362,21 +362,21 @@ sequenceDiagram
 | 戻り値 | 結果型 (正常終了時は SUCCESS、トラップ発生時はリカバリー戦略カテゴリ `recovery-strategy-category` `{META_RecoveryStrategy}`) |
 | 補足 | 必要に応じて内部的に JIT コードへのジャンプを行い、JIT/Interpreter を透過的に切り替える。 |
 
-#### 割り込み同期 (`sync_interrupts`)
+#### 割り込みイベント同期 (`sync_interrupts`)
 <!-- traceability: {META_RecoveryStrategy} -->
 
 | 項目 | 内容 |
 | :--- | :--- |
-| 機能概要 | 外部から通知された割り込みフラグを、実行コンテキストの仮想レジスタに反映する。 |
-| シグネチャ | `sync_interrupts(ctx: 可変参照, irq_id: アドレス値) -> void` |
-| 引数 | `ctx`: 実行コンテキスト (`execution_context`) への可変参照<br>`irq_id`: 割り込み識別子 (32bit) |
+| 機能概要 | Safepointで受け取った汎用`interrupt-event`を、実行コンテキストの保留イベント領域へ反映する。 |
+| シグネチャ | `sync_interrupts(ctx: 可変参照, event: interrupt-event) -> void` |
+| 引数 | `ctx`: 実行コンテキスト (`execution_context`) への可変参照<br>`event`: `vector_id`、`source_id`、`cause_code`、`payload0`、`payload1`の固定5ワード |
 | 戻り値 | void (なし) |
-| 期待する結果 | `ctx` 内の `interrupt_flags` が更新され、次回のyield機会で反映される。 |
+| 期待する結果 | `ctx` 内の保留イベントが更新され、vSoCのSafepoint処理で反映される。 |
 | 事前条件 | `ctx` が有効な `execution_context` を指していること。 |
 | 事後条件 | フラグがアトミックに書き込まれる。 |
 | 不変条件 | 実行中の命令ハンドラから安全に参照可能であること。 |
-| エラー時の挙動 | 未登録の `irq_id` やキュー満杯時は `recovery-strategy: ignore`（またはログ出力してドロップ）とし、ゲスト実行コンテキストの破壊を防ぐ。 `{META_RecoveryStrategy}` |
-| 補足 | vSoC からの通知を仲介する役割を持つ。 |
+| エラー時の挙動 | 未登録イベントやFIFO満杯はCOOS側でドロップされる。vSoCから渡された不正なイベントは`recovery-strategy: ignore`（またはログ出力してドロップ）とし、ゲスト実行コンテキストの破壊を防ぐ。 `{META_RecoveryStrategy}` |
+| 補足 | vSoCのSafepoint配送を補助するだけで、ゲスト関数の階層ディスパッチやWASIポーリングは担当しない。 |
 
 ### 5.2 URI/IPCインターフェース
 <!-- traceability: {META_RecoveryStrategy} -->
@@ -406,7 +406,7 @@ sequenceDiagram
 ### 6.3 安全性制約と方策
 <!-- traceability: {META_FaultIsolation} {MemoryBoundaryCheck} -->
 - **目標**: ゲストの暴走を隔離。 `{META_FaultIsolation}`
-- **方策**: `sp_boundary` と `memory_size`（WASM 64KB ページまたは部分ページ実サイズ）による境界チェック `{MemoryBoundaryCheck}`、`interrupt_flags` による安全な割り込み処理。
+- **方策**: `sp_boundary` と `memory_size`（WASM 64KB ページまたは部分ページ実サイズ）による境界チェック `{MemoryBoundaryCheck}`、Safepointでの`interrupt-event`保留処理による安全な割り込み処理。
 
 ## 7. 参考実装リスト
 
@@ -425,7 +425,7 @@ sequenceDiagram
 - **コンテキスト**:
   COOS 協調型マルチタスク環境において、ゲスト WASM のインタープリタ実行を中断する粒度と Safepoint ポーリング頻度の設計。インタープリタ自身をコルーチン（`co_yield` を発行する主体）にはしない——インタープリタは vSoC から呼ばれ、値を返して終わる普通の `__fastcall` 関数のままとし、実際にいつ協調的に中断するか（`co_yield`）を判断・発行するのは常に呼び出し元の vSoC である。この境界の置き方を決めるのが本 ADR の主題である。
 - **決定事項**:
-  インタープリタの命令ハンドラは命令ごとの精密な割り込みフラグチェックや命令数カウンタデクリメントを行わず、**「トレースの切れ目（基本ブロック末尾、ループバックエッジ、関数呼出/復帰、IPC/システムコール、または JIT トレース脱出境界）」でのみ vSoC へ制御を返す**。vSoC はこの戻り値を受け取るたびに Yield 判定（`yield_threshold` の評価）および JIT キャッシュの再判定（`{Interpreter_LazyJITSwitch}`）を行い、必要であれば `co_yield` を発行する。インタープリタ自身が Yield 判定や JIT キャッシュ参照を行うことはない。
+  インタープリタの命令ハンドラは命令ごとの精密な割り込みイベントチェックや命令数カウンタデクリメントを行わず、**「トレースの切れ目（基本ブロック末尾、ループバックエッジ、関数呼出/復帰、IPC/システムコール、または JIT トレース脱出境界）」でのみ vSoC へ制御を返す**。vSoC はこの戻り値を受け取るたびに Yield 判定（`yield_threshold` の評価）および JIT キャッシュの再判定（`{Interpreter_LazyJITSwitch}`）を行い、必要であれば `co_yield` を発行する。インタープリタ自身が Yield 判定や JIT キャッシュ参照を行うことはない。
 - **根拠とトレードオフ**:
   1. **ディスパッチ性能の最大化**: 命令ハンドラ（CPS 4引数）内での条件分岐を完全排除し、`[[clang::musttail]]` による最高速のダイレクトスレッド実行を維持する。
   2. **レジスタ・スタック整合性の保証**: トレース境界では TOS/NOS レジスタと統合スタック（`execution_context`）が規約通り自然に整合しているため、中途半端なステート退避・OSR ハンドラが不要となる。

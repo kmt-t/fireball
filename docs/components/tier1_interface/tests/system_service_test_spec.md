@@ -5,7 +5,7 @@
 正本: [`system_service.md`](docs/components/tier1_interface/system_service.md)
 参考実装: なし
 
-サービス分離・障害隔離・自己再起動、およびWASI呼び出しをHAL/IPCコマンドへ変換するラッパー（擬似コード）の振る舞いを検証する。
+サービス分離・障害隔離・自己再起動、およびサービス境界の振る舞いを検証する。WASI Preview1 からHAL IFへの変換はTier 3ゲストアダプタのテスト仕様の責務とする。
 
 ## 2. テストケース一覧
 
@@ -13,14 +13,14 @@
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | SVC-01 | サービスロード成功 | 有効なURI | `load_service(uri)` | `SUCCESS`を返し、Ready状態になる | load_service |
 | SVC-02 | サービスロード失敗時のリカバリー戦略 | 依存関係未解決等 | 同上 | `RETRY`/`RESTART`/`PANIC`のいずれかを返す（`IGNORE`は非適用） | 「IGNOREは非適用」 |
-| SVC-03 | WASI fd_write→IPCメッセージ変換 | fdが有効なチャネルに解決可能 | `wasi_fd_write(fd, iovs, iovs_len, nwritten_ptr)`相当を呼ぶ | 各iovecごとに`CMD_HAL_WRITE`のKVメッセージが構築され、`ipc_router.route_message`経由で送信される | 擬似コード |
-| SVC-04 | 無効なfdは`WASI_ERRNO_BADF` | `resolve_wasi_fd_to_channel`が`INVALID_CHANNEL`を返す | 同上 | `WASI_ERRNO_BADF`を返す | - |
-| SVC-05 | ゲストメモリ境界チェック（iovs自体） | iovsポインタが範囲外 | 同上 | `WASI_ERRNO_FAULT` | - |
-| SVC-06 | ゲストメモリ境界チェック（各iovの`buf`） | 個々のbufが範囲外 | 同上 | `WASI_ERRNO_FAULT` | - |
-| SVC-07 | メッセージ超過/アクセス拒否時の中断 | `route_message`が`ERR_MSG_TOO_LARGE`または`ERR_PERMISSION_DENIED`を返す（ipc_router.mdはキューを持たないため「キュー満杯」は発生しない） | 同上 | `WASI_ERRNO_IO`を返し中断する | - |
-| SVC-08 | 完了待機（co_yield相当のサスペンド） | 正常送信後 | `wait_for_ipc_response`相当 | HALからの完了通知までタスクがサスペンドする（同期I/Oの模倣） | - |
+| SVC-03 | サービスから公開IFへのアクセス境界 | サービスが稼働中 | サービスが公開インターフェースを呼び出す | サービスはゲスト側アダプタや物理ドライバの内部構造を保持しない | `{META_FaultIsolation}` |
+| SVC-04 | サービス障害の局所化 | サービスが異常終了 | 他サービスの状態を確認する | 失敗したサービス以外の状態は変更されない | `{META_FaultIsolation}` |
+| SVC-05 | サービス再起動後の隔離 | サービスが再起動する | 対象サービスを再ロードする | 対象のTCB・ヒープだけが初期化される | `{SelfReboot_via_Event}` |
+| SVC-06 | サービスから物理実装への非依存 | HALやドライバが差し替えられる | 同じ公開IFを利用する | サービス仕様の変更なしに実装を差し替えられる | `{CleanArchitecture}` |
+| SVC-07 | サービス境界の待機 | サービスがIPC応答を待つ | IPC境界で待機する | サービスの状態遷移だけが変化し、HAL内部の待機方式は漏れない | `{IPCRouter}` |
+| SVC-08 | サービスの公開URI利用 | 有効なサービスURI | `load_service(uri)`相当を呼ぶ | 固定構成のURIだけがロード対象になる | `{META_ConfigurableSystem}` |
 | SVC-09 | サービス障害の自己再起動 | サービスが異常終了 | 障害イベント通知 | TCBスロットがリセットされ、当該サービスのみ再初期化される（他サービス波及なし） | 「自己再起動」`{SelfReboot_via_Event}` |
-| SVC-10 | メッセージ形式のヘッダ/ペイロード分離 | - | メッセージ構築 | `arg0`=コマンドID, `arg1`=リカバリー戦略カテゴリ, `arg2`〜`arg5`=固有引数 | - |
+| SVC-10 | サービスメッセージ境界 | - | メッセージを公開境界へ渡す | サービス仕様はHALの内部コマンドIDを定義しない | `{IPCRouter}` |
 
 ## 3. テスト検証実績と網羅状況
 

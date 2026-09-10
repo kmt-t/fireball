@@ -38,6 +38,7 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 [ Tier 3: リーフ / プラットフォームコンポーネント (Leaf & Platform Components) ] ─ (How - Leaf / Physical)
   · JIT Subsystem (jit_compiler, jit_runtime) — vSoC の実行エンジンから分解された JIT コアおよびランタイム
   · Platform (platform_driver) — ドライバ物理実装（UART/SEGGER RTT 物理レジスタ操作、RSPエンコード/デコード）のみ
+  · Guest Adapter (libfireball) — WASMゲストへ組み込むWASI／Fireball ABIアダプタ。物理ドライバやCOOSタスクは実装しない
 
 [ Meta: 横断的メタ設計・開発計画 (Cross-cutting / Meta) ] ─ (全Tier横断)
   · Architecture (architecture_overview, combinatorial_test_spec, document_structure, integration_test_scenarios, keyword_dictionary, resource_budget_estimation)
@@ -54,7 +55,7 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 | **Tier 0** | `docs/requires/` | システム要求仕様書 (`requirement_list.md`) | **最上位要求 (Why)**<br>システム全体が満たすべき受入基準・機能要求。 |
 | **Tier 1** | `docs/components/tier1_core/`<br>`docs/components/tier1_interface/` | スケジューラ、チャネル通信、システムサービス、IPCルータ、共有静的コンテナ語彙、メモリマネージャ抽象契約（`system_memory.md`）等のコア仕様書 | **粗粒度主要コンポーネント (What)**<br>要求（Tier 0）を直接受け取る。単一仕様書で状態遷移・ポリシーを自己完結して記述可能なシステム要素。契約/実装分割パターン（`{META_ContractImplSplit}`）では抽象契約側を担う。 |
 | **Tier 2** | `docs/components/tier2_runtime/` | WASMインタープリタ、WASMローダー、vMMIO、デバッグマネージャ、メモリマネージャ実装（`runtime_memory.md`）、HAL抽象化層（`hal_dispatch.md`）等のサブコンポーネント仕様書 | **分解されたサブコンポーネント (How - Subsystem)**<br>Tier 1 で扱うには状態空間やアルゴリズムが複雑化するため、独立した責務としてブレークダウンされた要素。契約/実装分割パターン（`{META_ContractImplSplit}`）では実装側を担う場合がある。 |
-| **Tier 3** | `docs/components/tier3_platform/`<br>`docs/components/tier3_jit/` | HALドライバ実装（`platform_driver.md`）、JITコンパイラ一式（コード生成コア `jit_compiler.md`、ランタイム管理 `jit_runtime.md`）| **詳細リーフ / 物理コンポーネント (How - Leaf)**<br>Tier 2 からさらに責務が切り出された具象コンポーネント、またはハードウェア抽象化層の最終物理実装。 |
+| **Tier 3** | `docs/components/tier3_platform/`<br>`docs/components/tier3_jit/` | HALドライバ実装（`platform_driver.md`）、ゲストアダプタ（`libfireball.md`）、JITコンパイラ一式（コード生成コア `jit_compiler.md`、ランタイム管理 `jit_runtime.md`）| **詳細リーフ / 物理コンポーネント (How - Leaf)**<br>Tier 2 からさらに責務が切り出された具象コンポーネント、ハードウェア抽象化層の最終物理実装、またはゲストへ組み込むABIアダプタ。 |
 | **Specs** | `docs/specs/` | WASM命令セット、WASI Preview 1 ABI、GDB RSP、JITステンシルカタログ等の規格マトリクス | **横串物理規格・具象カタログ (How - Physical Specs)**<br>コンポーネントを横断して統一される具象バイナリ列、ABI、パケット形式、命令セットマトリクス。各ファイル冒頭にアーキテクチャ分類（Tierラベル）を明示する。 |
 | **Meta** | `docs/architecture/`<br>`docs/plans/` | 全体アーキテクチャ、設計方針、開発計画 | **全Tier横断メタ設計**<br>Hypervisor の機能コンポーネント自体には属さない共通ポリシー・計画。 |
 
@@ -72,6 +73,7 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 4. **契約（Interface / What）と実装（Implementation / How）の意図的分割（`{META_ContractImplSplit}`）**: 上記1〜3とは独立した、意図的な分割基準として、単一コンポーネントが「上位Tierが定義すべき抽象契約（インターフェース仕様、ポリシー、不変条件）」と「下位Tierが担うべき物理実装（具体的なアルゴリズム・データ構造・アロケータ実装）」の双方を含む場合、これらを別ファイル・別Tierへ明示的に分割する。判定基準は「単一仕様書に自己完結して書けるか」（項目1）ではなく、「契約と実装が異なる抽象度を持ち、クリーンアーキテクチャの依存方向規則と準同型にすることで実装詳細の変更が契約に波及しない構造を作れるか」である。 `{META_ContractImplSplit}`
    - 例: メモリマネージャは、パーティション貸与ポリシー・独立ヒープ不変条件という抽象契約（`co_mem`）を Tier 1（`system_memory.md`）に、`system_allocator`/`shm_allocator` の dlmalloc アリーナ実装を Tier 2（`runtime_memory.md`）に分割する。
    - 例: HAL は、URI Resolver・トランスポート抽象という抽象化層を Tier 2（`hal_dispatch.md`）に、UART/SEGGER RTT 等の物理ドライバ実装を Tier 3（`platform_driver.md`）に分割する。
+   - 例: ゲスト側の WASI／Fireball ABI アダプタは、Tier 2 の `runtime_syscall.md` と `hal_dispatch.md` が定義する公開契約を利用する Tier 3（`libfireball.md`）として分離する。これは HAL の物理ドライバ実装とは別のゲスト側アダプタである。
 
 ### 2.2 依存方向のルール
 1. **下り方向の依存（詳細化・具体化）**:

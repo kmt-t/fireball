@@ -20,7 +20,7 @@ interface environment {
 }
 
 /// vSoC 仮想実行制御インターフェース
-/// ゲスト実行制御・Safepoint ポーリング・仮想割り込み通知
+/// ゲスト実行制御・Safepoint・原因付き割り込みイベント配送
 interface execution {
     /// vSoC 実行状態
     enum vsoc-state {
@@ -31,8 +31,17 @@ interface execution {
         trapped,
     }
 
-    /// 仮想割り込みフラグ通知 (WASI pollable 連動)
-    notify-virtual-irq: func(irq-id: u32);
+    /// COOSから渡された汎用割り込みイベントをSafepointで配送する
+    record interrupt-event {
+        vector-id: u32,
+        source-id: u32,
+        cause-code: u32,
+        payload0: u32,
+        payload1: u32,
+    }
+
+    /// vIRQ階層へ原因イベントを渡す（WASI pollableとは別経路）
+    dispatch-interrupt-event: func(event: interrupt-event);
 
     /// 現在の実行状態を取得
     get-execution-state: func() -> vsoc-state;

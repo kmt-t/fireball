@@ -59,33 +59,33 @@ HAL全体の制限値を定義する。物理値は Tier 3 で確定される。
 ## 4. 動的モデル
 
 ### 4.1 コマンドルーティング（契約）
-<!-- traceability: {TaskPollInterruptFlag} {GLOBAL_InterruptWakeup} -->
+<!-- traceability: {TaskPollInterruptEvent} {GLOBAL_InterruptWakeup} -->
 デバイスインスタンスへの振り分けは、本コンポーネントの内部ディスパッチではなく IPC ルータの Stage 1（URI 解決）で完結する契約とする——`resolver.get-interface(uri)` が URI を専用ロールへ解決し、専用チャネル経由で対応する `hal_task` インスタンスへ直接ランデブーするため、`hal_task` 自身がコマンドに埋め込まれたデバイス ID を見て複数ドライバから振り分ける処理を持つ必要はない。`hal_task` が担うのは、受信した `read`/`write`/`control` コマンドを自身が専有する単一の物理ドライバへそのまま委譲する契約のみである。物理ドライバへの委譲実装は Tier 3 を正本とする。
 
-割り込み通知の push/pull 両経路（ISR → `notify_interrupt` → キュードレイン、および Safepoint での `vsoc_context.interrupt_flags` 確認）の抽象的な役割分担は `{TaskPollInterruptFlag}` `{GLOBAL_InterruptWakeup}` を正本とする。物理割り込みハンドラの実装は Tier 3 [`platform_driver.md`](docs/components/tier3_platform/platform_driver.md) を参照。
+割り込み通知の責務分担（ISR → 固定5ワードの`notify_interrupt` → COOS FIFO → vSoC Safepoint配送）の抽象契約は `{TaskPollInterruptEvent}` `{GLOBAL_InterruptWakeup}` を正本とする。WASIの`poll-check`/`poll-wait`は操作完了待機の別経路であり、vIRQの原因イベントを表さない。物理割り込みハンドラの実装は Tier 3 [`platform_driver.md`](docs/components/tier3_platform/platform_driver.md) を参照。
 
 ## 5. インターフェース定義
 
-### 5.1 公開 API（契約）
+### 5.1 公開 API（WASI親和性のある契約）
 <!-- traceability: {HAL_Interface} {IPC_ZeroCopy} -->
 
-#### データの読み出し (`read`)
-- **シグネチャ**: `read(id: device-id, dst: hal-buf-id) -> operation-result`
-- **機能**: 指定された物理デバイスからデータを取得し、HALバッファ（`hal-buf-id`）へ格納する。生ポインタ渡しは行わない。
+HAL の公開境界は、WASI 0.3p の interface / stream / pollable に対応しやすい汎用操作で構成する。ゲスト側の Preview1 API への変換は Tier 3 のゲストアダプタが担当し、HAL はその変換後の契約だけを受け取る。
 
-#### データの書き込み (`write`)
-- **シグネチャ**: `write(id: device-id, src: hal-buf-id) -> operation-result`
-- **機能**: HALバッファ（`hal-buf-id`）内のデータを指定された物理デバイスへ送信する。
+| 操作 | シグネチャ | 役割 |
+| :--- | :--- | :--- |
+| `get-interface` | `get-interface(uri: string) -> result<u32, recovery-strategy-category>` | URI からデバイスまたはサービスのインターフェースハンドルを取得する |
+| `acquire-buffer` | `acquire-buffer(size-bytes: u32) -> result<hal-buffer-slice, recovery-strategy-category>` | ゼロコピー転送用の HAL バッファスライスを確保する |
+| `release-buffer` | `release-buffer(slice: hal-buffer-slice) -> operation-result` | HAL バッファスライスの所有権を返却する |
+| `stream-read` | `stream-read(handle: u32, buffer: hal-buffer-slice) -> operation-result` | ストリームから HAL バッファへ読み込む |
+| `stream-write` | `stream-write(handle: u32, buffer: hal-buffer-slice) -> operation-result` | HAL バッファからストリームへ書き込む |
+| `stream-flush` | `stream-flush(handle: u32) -> operation-result` | ストリームの保留データを送出する |
+| `stream-close` | `stream-close(handle: u32) -> operation-result` | ストリームハンドルを閉じる |
+| `clock-get-now` | `clock-get-now(handle: u32) -> result<u64, recovery-strategy-category>` | 単調クロックの現在値を取得する |
+| `clock-get-resolution` | `clock-get-resolution(handle: u32) -> result<u64, recovery-strategy-category>` | クロック分解能を取得する |
+| `poll-check` | `poll-check(handle: u32) -> result<bool, recovery-strategy-category>` | 操作完了または入力準備の状態を確認する |
+| `poll-wait` | `poll-wait(handle: u32) -> operation-result` | 準備完了まで待機する |
 
-#### ゼロコピー転送 (`transfer`)
-<!-- traceability: {PhysicalPassthrough} -->
-- **シグネチャ**: `transfer(tx_buffer: hal-buf-id, rx_buffer: hal-buf-id) -> operation-result`
-- **機能**: アプリケーションのHALバッファを直接DMAエンジン等へ渡し、CPUコピーなしで高速転送する契約。物理DMA実行は Tier 3 を正本とする。 `{PhysicalPassthrough}`
-
-#### バッファの確保 (`acquire_buffer`)
-<!-- traceability: {HAL_Interface} {IPC_ZeroCopy} -->
-- **シグネチャ**: `acquire_buffer(size: uint32) -> result<hal-buf-id, recovery-strategy>`
-- **機能**: HALバッファプールから固定長バッファスロットを確保する契約。物理配置（vMMIO DYNAMIC 領域）と境界検査の実装は Tier 3（`HAL-GOTCHA-01`）を正本とする。 `{OwnerMismatchTrap}`
+GPIO、I2C、SPI 等の WASI 標準外機能も、`get-interface` で得たハンドルと同じバッファ／コマンド境界を使う拡張操作として定義する。個別デバイスの WIT resource 型やゲスト向け Preview1 ラッパーは定義しない。物理配置と境界検査は Tier 3 を正本とする。
 
 ### 5.2 階層型 URI 命名規則 & WASI 0.3p IPC コマンド仕様
 <!-- traceability: {URIAbstraction} {IPCRouter} {TypeSafeMessaging} {IPC_ZeroCopy} {HAL_Interface} -->
@@ -118,32 +118,14 @@ HAL が管轄するすべてのハードウェアドライバおよびコンソ�
 | **Bus (I2C/SPI)** | `CMD_BUS_TRANSFER_BUFFER` | `0x30` | `tx_buf_handle`, `rx_buf_handle`, `len` | `transferred_bytes` | TX/RX HALバッファ間の全二重/半二重転送 |
 | | `CMD_BUS_CONFIG` | `0x31` | `clock_hz`, `slave_addr`, `mode` | `0` (SUCCESS) | 通信速度・スレーブアドレス・転送モード設定 |
 
-### 5.3 WASI サポート体系 (WASI 0.3p Core & 0.1p Wrapper)
+### 5.3 WASI サポート体系（WASI 0.3p とゲストアダプタの境界）
 <!-- traceability: {WASI_Implementation} {URIAbstraction} {TypeSafeMessaging} {META_ZeroCostAbstraction} -->
 
-#### 「HAL ＝ WASI 0.3p」統合アーキテクチャ
-Fireball ではハードウェア制御のプリミティブを WASI 0.3p のリソース・ストリーム体系として直接実装する：
+#### HAL の公開契約
+Fireball の HAL は、WASI 0.3p と親和性のある汎用インターフェースとして URI 解決、バッファ所有権、ストリーム、クロック、ポーリングを提供する。`resolver` WIT の型と関数は [`interface_wit.md`](docs/components/tier1_interface/interface_wit.md) の契約に従う。
 
-- **動的インターフェース解決 (`resolver.get-interface`)**:
-  ゲスト WASM アプリケーションは、`resolver.get-interface("fireball://device/uart/0")` 等を呼び出すことで、対応するデバイスへの IPC チャネルハンドルを動的に取得できる。実装は [`scenario12_wasi03p_uri_resolver.py`](experiments/pysim/scenarios/scenario12_wasi03p_uri_resolver.py) を参照実装とする。
-- **HALバッファプールベースのデータ転送**:
-  WASI 0.3p の `streaming` / `bus` インターフェースは、`acquire-buffer` で取得したHALバッファハンドル（`hal-buffer-slice`）を受け渡しすることで、生ポインタ dereference を完全に排除した安全・ゼロコピーな転送を行う。
-
-#### WASI 0.1p (`wasi_snapshot_preview1`) 互換ラッパー
-既存の WASI Preview 1 向けコンパイル済みバイナリとの互換性をゼロコストで提供するため、以下の Preview 1 ABI を WASI 0.3p / HAL リソースへのアダプタとしてルーティングする：
-
-- **`fd_write`**:
-  - `fd=1` (stdout) / `fd=2` (stderr): `wasi:cli/stdout` または `fireball://device/uart/0` の `CMD_STREAM_WRITE_BUFFER` へ委譲。
-  - `fd>=3`: IPC チャネル経由のパケット送信へ委譲。
-- **`fd_read`**:
-  - `fd=0` (stdin): `fireball://device/uart/0` の `CMD_STREAM_READ_BUFFER` へ委譲。
-  - `fd>=3`: IPC チャネルからのパケット受信へ委譲。
-- **`clock_time_get`**:
-  - `fireball://device/timer/0` の `CMD_CLOCK_GET_NOW`（単調ナノ秒時刻）へ委譲。
-- **`proc_exit`**:
-  - ハイパーバイザのシステム停止・終了コード設定へ委譲。
-- **`random_get`**:
-  - ハードウェア TRNG（True Random Number Generator）ドライバへ委譲。
+#### ゲスト側アダプタ
+既存の WASI Preview1 バイナリとの互換性を提供する `fd_write` 等の変換は、Tier 3 のゲストアダプタが担当する。`hal_dispatch` は Preview1 ABI、ゲスト iovec の走査、errno 変換の順序を定義せず、変換後の HAL 操作だけを処理する。ホスト側の参照実装 `experiments/pysim` は将来のリファクタリング対象であり、この境界変更では移動しない。
 
 ## 6. 制約達成の方策
 

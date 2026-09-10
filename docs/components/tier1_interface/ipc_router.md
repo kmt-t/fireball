@@ -723,10 +723,9 @@ sender_ownership: {OWNED, REVOKED, IN_FLIGHT}
 receiver_ownership: {NOTOWNED, IN_FLIGHT, OWNED}
 channel_slot: message | None       # 高々1件、キューではない
 waiter_dir: {NONE, SEND, RECV}     # そのチャネルで待機中の方向
-interrupt_flags: bitmask
 ```
 
-**初期状態:** sender_ownership=OWNED, receiver_ownership=NOTOWNED, channel_slot=None, waiter_dir=NONE, interrupt_flags=0
+**初期状態:** sender_ownership=OWNED, receiver_ownership=NOTOWNED, channel_slot=None, waiter_dir=NONE
 
 **遷移:** Send → Revoke → Rendezvous（相手待機中なら即時 Grant、未到達ならブロックして相手の Recv/Send 到達を待つ）→ Grant
 

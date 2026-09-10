@@ -15,7 +15,7 @@
   - アーキテクチャの早期妥当性確認、状態遷移の探索、および Gotchas（実装上の勘所・不変条件）の抽出を目的とした Python 製の参照シミュレータ（`experiments/pysim`）。
   - 各シナリオには、この参照実装上で動作する実行可能なリファレンススクリプト（`experiments/pysim/scenarios/`）が提供されており、仕様が実行可能（Executable Specification）であることを実証している。
 
-- **対象 Tier**: Tier 1 Core (`os_coos`, `os_scheduler`, `system_config`, `system_containers`, `system_memory`), Tier 1 Interface (`interface_wit`, `ipc_router`, `system_service`), Tier 2 Runtime (`runtime_vsoc`, `runtime_loader`, `runtime_interpreter`, `runtime_vmmio`, `debug_manager`, `runtime_memory`, `runtime_logging`, `runtime_syscall`), Tier 3 Platform & JIT (`platform_driver`, `jit_compiler`, `jit_runtime`)
+- **対象 Tier**: Tier 1 Core (`os_coos`, `os_scheduler`, `system_config`, `system_containers`, `system_memory`), Tier 1 Interface (`interface_wit`, `ipc_router`, `system_service`), Tier 2 Runtime (`runtime_vsoc`, `runtime_loader`, `runtime_interpreter`, `runtime_vmmio`, `debug_manager`, `runtime_memory`, `runtime_logging`, `runtime_syscall`, `hal_dispatch`), Tier 3 Platform & JIT (`platform_driver`, `libfireball`, `jit_compiler`, `jit_runtime`)
 - **参照実装テストスイート**: `experiments/pysim/scenarios/`
 - **参照テストランナー**: [`run_all.py`](experiments/pysim/scenarios/run_all.py)
 
@@ -27,7 +27,7 @@
 | **Tier 1 Core** | [`os_scheduler.md`](docs/components/tier1_core/os_scheduler.md) | Fuel / `yield_every` 境界中断、DIRECT_SWITCH | Scenario 6, 9 |
 | **Tier 1 Core** | [`system_config.md`](docs/components/tier1_core/system_config.md) | システム静的定数、スタック・RAM容量制約 | Scenario 1, 10 |
 | **Tier 1 Core** | [`system_containers.md`](docs/components/tier1_core/system_containers.md) | `RadixBinaryTreeView` (bswap32), `FlatMapView`, `RingBuffer` | Scenario 1, 4, 5, 9 |
-| **Tier 1 Interface** | [`interface_wit.md`](docs/components/tier1_interface/interface_wit.md) | WASI Preview 1 ABI、型シグネチャ整合 | Scenario 2, 11 |
+| **Tier 1 Interface** | [`interface_wit.md`](docs/components/tier1_interface/interface_wit.md) | 公開WIT、URI Resolver、型シグネチャ整合 | Scenario 2, 11 |
 | | [`ipc_router.md`](docs/components/tier1_interface/ipc_router.md) | 3段階ルーティング、RBAC、Zero-Copy 所有権移譲 | Scenario 9 |
 | | [`system_service.md`](docs/components/tier1_interface/system_service.md) | システムサービス呼び出し、WASI トランスポート | Scenario 2, 11 |
 | **Tier 2 Runtime** | [`runtime_vsoc.md`](docs/components/tier2_runtime/runtime_vsoc.md) | 統合 ExecEnv、モジュールリンク、共有メモリ | Scenario 1, 4, 6, 8 |
@@ -37,7 +37,9 @@
 | | [`debug_manager.md`](docs/components/tier2_runtime/debug_manager.md) | GDB RSP TCP ソケット接続、ブレークポイント、レジスタ/メモリ改変 | Scenario 7, 8 |
 | | [`runtime_memory.md`](docs/components/tier2_runtime/runtime_memory.md) | リニアメモリページ拡張（`memory.grow`）、MPU 領域保護 | Scenario 1, 4, 8, 10 |
 | | [`runtime_logging.md`](docs/components/tier2_runtime/runtime_logging.md) | 構造化ロギング、LogDictionary、UART 出力 | Scenario 9 |
-| | [`runtime_syscall.md`](docs/components/tier2_runtime/runtime_syscall.md) | `fd_write` 分散ギャザー、`proc_exit`、`fireball_call` 代理 | Scenario 2, 10, 11 |
+| | [`runtime_syscall.md`](docs/components/tier2_runtime/runtime_syscall.md) | `fireball_call` ABI、syscallディスパッチ、ゲスト境界検証 | Scenario 2, 10, 11 |
+| | [`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) | WASI親和性のあるURI、バッファ、ストリーム、クロック、ポーリングIF | Scenario 2, 11 |
+| **Tier 3 Platform** | [`libfireball.md`](docs/components/tier3_platform/libfireball.md) | WASI Preview1からFireball公開IFへのゲスト側変換 | Scenario 2, 11 |
 | **Tier 3 Platform** | [`platform_driver.md`](docs/components/tier3_platform/platform_driver.md) | GPIO, I2C, SPI, Timer, UartTransport | Scenario 2, 7, 9, 11 |
 | **Tier 3 JIT** | [`jit_compiler.md`](docs/components/tier3_jit/jit_compiler.md) | Copy-and-Patch JIT 生成、PIC トレース、差分検証 | Scenario 4, 5, 8 |
 | | [`jit_runtime.md`](docs/components/tier3_jit/jit_runtime.md) | 3面キャッシュ代謝、2-bit Card Marking、UnifiedPC + bswap32 | Scenario 4, 5 |
@@ -56,7 +58,7 @@
 | `FuelExhaustion_Yield` | `os_scheduler.md`, `os_coos.md` | Fuel 枯渇（トレース境界での `quantum` 判定）での決定論的な中断と再開——判定・発行は駆動する側の責務 | `INT-50` | ✅ PASS |
 | `DictionaryBasedIPC` | `runtime_logging.md` | 静的 LogDictionary、危険書式（`%s` / `%p`）の登録時静的拒絶 | `INT-82` | ✅ PASS |
 | `BufferedLogging` | `runtime_logging.md` | 実行時リングバッファ蓄積 $\to$ COOS `idle_hook` での一括 UART フラッシュ | `INT-82` | ✅ PASS |
-| `WASI_ScatteredIO` | `runtime_syscall.md`, `interface_wit.md` | 分散ギャザー `fd_write` / スキャッター `fd_read` による多要素 iovec 転送 | `INT-10`, `INT-104` | ✅ PASS |
+| `WASI_ScatteredIO` | `libfireball.md` | 分散ギャザー `fd_write` / スキャッター `fd_read` による多要素 iovec 転送 | `INT-10`, `INT-104` | ✅ PASS |
 | `Syscall_ProcExit` | `runtime_syscall.md` | `proc_exit` システムコールによるゲストタスク停止および終了コード伝播 | `INT-11` | ✅ PASS |
 | `ThreeStageRouting` | `ipc_router.md` | Stage 1 URI検索 $\to$ Stage 2 RBAC判定 $\to$ Stage 3 Zero-Copy CSP Rendezvous 所有権移譲 | `INT-80`, `INT-81` | ✅ PASS |
 | `PreflightRejection` | `ipc_router.md` | Revoke前の静的チェック（RBAC拒否・メッセージサイズ超過）失敗時、所有権は送信側から一度も動かない | `INT-81` | ✅ PASS |
@@ -70,7 +72,7 @@
 | `RSPMinimalSet` | `debug_manager.md`, `gdb_rsp_protocol.md` | GDB RSP 最小コマンドセット（`?`, `g/G`, `m/M`, `Z0/z0`, `s`, `c`）の実ソケット対話 | `INT-60`〜`INT-64` | ✅ PASS |
 | `Debugger_Jit_Flush` | `debug_manager.md`, `jit_runtime.md` | デバッガからのメモリ書き込み（`M` パケット）時の JIT キャッシュ全バンク即時無効化 | `INT-62`, `INT-72` | ✅ PASS |
 | `HAL_PeripheralDrivers` | `platform_driver.md` | GPIO（入出力・エッジIRQ）、I2C（LM75）、SPI（EEPROM）、Timer | `INT-100`〜`INT-102` | ✅ PASS |
-| `WASI_InMemVFS` | `interface_wit.md`, `runtime_syscall.md` | WASI In-Memory VFS（`fd_seek`, `fd_read`, `fd_write`, `random_get`, `clock_time_get`） | `INT-103`〜`INT-105` | ✅ PASS |
+| `WASI_InMemVFS` | `libfireball.md` | WASI互換アダプタ（`fd_seek`, `fd_read`, `fd_write`, `random_get`, `clock_time_get`） | `INT-103`〜`INT-105` | ✅ PASS |
 | `CopyAndPatch_JIT` | `jit_compiler.md` | ステンシル展開による高速 Copy-and-Patch JIT コード生成 | `INT-30`, `INT-40` | ✅ PASS |
 | `TraceBoundaryInvariant` | `jit_compiler.md` | トレース境界でのスタック自己完結性、メモリ同期、およびフォールバック | `INT-31`, `INT-41` | ✅ PASS |
 | `ThreeBankCacheEviction` | `jit_runtime.md` | Active / Warm / Oldest 3面バンク代謝と Oldest ヒット時の Active 昇格 | `INT-31`, `INT-41` | ✅ PASS |
@@ -97,7 +99,7 @@
 ---
 
 ### シナリオ 2: Tier 2 Runtime + System Call & WASI I/O
-- **対象コンポーネント**: `runtime_interpreter`, `runtime_syscall`, `wasi`, `system`
+- **対象コンポーネント**: `runtime_interpreter`, `runtime_syscall`, `hal_dispatch`, `libfireball`
 - **参照実装スクリプト (Reference Script)**: [`scenario2_wasi_syscall_io.py`](experiments/pysim/scenarios/scenario2_wasi_syscall_io.py)
 - **WAT シナリオ**:
   - WASI 標準 ABI（`wasi_snapshot_preview1`）による `fd_write` および `proc_exit` のインポート解決
@@ -247,7 +249,7 @@
 ---
 
 ### シナリオ 11: HAL Peripheral Drivers & WASI Preview 1 Full Dummy Stack
-- **対象コンポーネント**: `platform_driver`, `interface_wit`, `system_service`, `runtime_syscall`, `runtime_interpreter`
+- **対象コンポーネント**: `platform_driver`, `interface_wit`, `hal_dispatch`, `libfireball`, `runtime_syscall`, `runtime_interpreter`
 - **参照実装スクリプト (Reference Script)**: [`scenario11_hal_and_wasi_drivers.py`](experiments/pysim/scenarios/scenario11_hal_and_wasi_drivers.py)
 - **検証シナリオ**:
   - **HAL 周辺機器ダミードライバ**:

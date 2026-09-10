@@ -63,6 +63,16 @@ Bit31によるRAM/vMMIO高速分岐、FlatMap PTE + 16エントリDirect-Mapped 
 | VMMIO-26 | ビット並列連続ビットマップアロケータ | 32ページの空き仮想空間 | `alloc_consecutive(k)` / `free_consecutive` | $O(1)$で連続$k$ページが確保・解放され、断片化時も正しく探索される | `vmmio_concept.py` `test_shm_virtual_address_allocator_consecutive` |
 | VMMIO-27 | マルチページ連続マッピングとアクセス | 連続3ページをアロケート・マップ | 3ページすべてのアドレスへアクセス | 全ページが正しい物理アドレスに変換され、一括アンマップ後は全て未登録トラップとなる | `vmmio_concept.py` `test_vmmio_alloc_and_map_multipage` |
 
+### vIRQ原因付き階層ディスパッチ
+
+| ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| VMMIO-40 | vIRQページと静的原因源表 | `0xC000_3000`の専用ページを有効化 | 原因源表を読み出す | 固定表が`vector_id`、分類、`source_id`、属性を持ち、動的に追加・削除できない | `runtime_vmmio.md` §4.7 |
+| VMMIO-41 | 原因レコードの固定形式 | 物理イベントを原因源へ変換 | 5ワードのイベントを生成してCOOSへ渡す | `vector_id`、`source_id`、`cause_code`、`payload0`、`payload1`の順序・値が保持され、ポインタや可変長領域を含まない | `runtime_vmmio.md` §4.7 |
+| VMMIO-42 | vIRQ登録スロットの範囲検証 | root・4分類・デバイスの静的スロット | 範囲外スロットへ書き込む | vSoCが拒否し、保留表・有効表を変更しない | `runtime_vmmio.md` §4.7 |
+| VMMIO-43 | 物理デバイスの原因集約 | 1デバイスに複数の`source_id`/`cause_code` | 複数原因を順に発生させる | 1つのデバイスディスパッチャへ集約され、原因値で振り分けられる | `runtime_vmmio.md` §4.7 |
+| VMMIO-44 | 未登録vIRQノードのドロップ | 原因源は有効だが対象ノード未登録 | イベントをCOOSへ投入してドレイン | ゲスト関数を呼び出さず、診断カウンタだけを更新する | `runtime_vmmio.md` §4.7 |
+
 ### VDMA ({VDMA})
 
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |

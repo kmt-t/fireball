@@ -41,6 +41,22 @@ interface resolver {
     acquire-buffer: func(size-bytes: u32) -> result<hal-buffer-slice, recovery-strategy-category>;
     /// HALバッファプール（vMMIO/DYNAMIC）バッファの解放
     release-buffer: func(slice: hal-buffer-slice) -> operation-result;
+    /// ストリームからHALバッファへ読み込む
+    stream-read: func(handle: u32, buffer: hal-buffer-slice) -> operation-result;
+    /// HALバッファからストリームへ書き込む
+    stream-write: func(handle: u32, buffer: hal-buffer-slice) -> operation-result;
+    /// ストリームの保留データを送出する
+    stream-flush: func(handle: u32) -> operation-result;
+    /// ストリームハンドルを閉じる
+    stream-close: func(handle: u32) -> operation-result;
+    /// 単調クロックの現在値を取得する
+    clock-get-now: func(handle: u32) -> result<u64, recovery-strategy-category>;
+    /// クロック分解能を取得する
+    clock-get-resolution: func(handle: u32) -> result<u64, recovery-strategy-category>;
+    /// 操作完了または入力準備の状態を確認する
+    poll-check: func(handle: u32) -> result<bool, recovery-strategy-category>;
+    /// 準備完了まで待機する
+    poll-wait: func(handle: u32) -> operation-result;
 }
 
 /// 低レベル・トラップ・インターフェース
@@ -48,10 +64,10 @@ interface trap {
     fireball-call: func(id: u32, arg0: u32, arg1: u32, arg2: u32, arg3: u32, arg4: u32, arg5: u32) -> u32;
 }
 
-/// Fireball ハイパーバイザ Host World (HAL = WASI 0.3p Core World)
+/// Fireball ハイパーバイザ Host World (HAL と WASI 0.3p の親和性)
 ///
 /// GPIO・タイマー・バス・ストリーム・コンソール個別の WIT リソースは定義しない。
-/// HAL = WASI 0.3p であるため、`resolver.get-interface(uri)` で対象デバイス/サービスを
+/// HAL は WASI 0.3p と親和性のある汎用IFであり、`resolver.get-interface(uri)` で対象デバイス/サービスを
 /// 解決し、`acquire-buffer`/`release-buffer` で得た `hal-buffer-slice` に対して
 /// IPC コマンドID（`hal_dispatch.md` §5.2 を正本とする）を発行することで、
 /// あらゆる WASI 0.3p 相当の読み書き・バス転送・非同期通知（poll）を一本化して表現する。

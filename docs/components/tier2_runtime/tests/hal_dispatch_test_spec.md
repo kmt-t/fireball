@@ -13,7 +13,7 @@ IPCルータ経由の全アクセス契約、`hal-buf-id`による生ポイン�
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | HAL-01 | 全アクセスはIPCルータ経由 | 任意のデバイスアクセス | `read`/`write`/`control`を呼ぶ | `device-id`によるキャッシュ済み参照であっても、必ず`role_matrix`照合を経由する（キャッシュが照合を代替・省略しない） | 「device-idとの対応」 |
 | HAL-02 | `read`/`write`はhal-buf-id経由（生ポインタ渡し禁止） | - | シグネチャを確認 | `dst`/`src`は`hal-buf-id`型であり、任意のアドレス/ポインタを直接渡す経路がない | read/write |
-| HAL-04 | 割り込みpull経路: Safepointでの自己確認（契約上の役割分担） | ゲスト実行エンジンが動作中 | Safepoint到達 | `vsoc_context.interrupt_flags`を自ら確認する（本コンポーネントの管轄外、`runtime_vsoc.md`が正本という契約上の境界） | 「割り込み確認（pull）」 |
+| HAL-04 | vIRQ配送とWASIポーリングの分離 | ゲスト実行エンジンが動作中 | Safepoint到達と`poll-check`/`poll-wait`を個別に実行 | vSoCは`interrupt-event`をvIRQ階層へ配送し、HALは操作完了ポーリングを提供する。どちらも他方を起動・変更しない | `runtime_vsoc.md`、`interface_wit.md` §6 |
 | HAL-09 | ゼロコピー転送(bus_master/streaming)の契約保証 | tx/rx共にHALバッファ | `transfer(tx, rx)` | CPUを介さずバッファ間データ移動が完了する契約が保たれる（物理DMA実装は platform_driver 側） | 「ゼロコピー転送」 |
 | HAL-10 | `control`はIPCオーバーヘッドを伴う非高速パス | デバイス固有操作 | `control(id, cmd, params)` | `ipc-message`経由で処理され、`{Fast_Path_GPIO}`の高速パスではないことが明示される | 「非標準制御」 |
 | HAL-11 | `CMD_CLOCK_GET_NOW`の単位契約 | - | 発行する | ナノ秒単位のu64を返す契約であることを確認する | `hal_dispatch.md` 階層型 URI 命名規則 & WASI 0.3p IPC コマンド仕様 |

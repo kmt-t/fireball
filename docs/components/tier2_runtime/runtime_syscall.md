@@ -6,7 +6,7 @@
 
 ## 1. 目的
 <!-- traceability: {NativeAPI_Export} -->
-本ドキュメントは、WebAssemblyゲスト環境からホストの提供するサービスを呼び出すための汎用システムコール `fireball_call` のインターフェース仕様を定義する。特に、WASI (WebAssembly System Interface) 呼び出しを `fireball_call` にマッピングするための規約、および関連するShimライブラリとWASIホスト側実装の役割に焦点を当てる。 `{NativeAPI_Export}`
+本ドキュメントは、WebAssemblyゲスト環境からホストの提供する機能を呼び出すための汎用システムコール `fireball_call` のホスト側インターフェース仕様を定義する。WASI呼び出しをこのABIへ接続するゲスト側アダプタは、Tier 3 の `libfireball` が担う。 `{NativeAPI_Export}`
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->
@@ -44,7 +44,7 @@ interface trap {
 
 world fireball {
   import trap;
-  // 他の高レベル・インターフェース（timer, bus, streams等）は、{Syscall_Mapping} においてリソース型として定義され、WASIバインディング経由で接続される。
+  // 高レベルのWASI/HAL操作は、Tier 2 HALの公開抽象IFへ接続される。
 }
 ```
 
@@ -92,7 +92,7 @@ world fireball {
 
 ### 5.2. 戻り値
 <!-- traceability: {Syscall_Return_Value} {Errorcode_To_Strategy} -->
-`fireball_call`は `u32` 型の値を返す。成功時は `0` を返し、失敗時は非0の定義されたエラーコード（WASIの `errno_t` に準拠）を返す。エラーコードの詳細は `{Syscall_Mapping}` の各定義および別紙参照。Shim層ではこのエラーコードがWITの `recovery-strategy` に変換されて上位に伝播する。 `{Syscall_Return_Value}` `{Errorcode_To_Strategy}`
+`fireball_call`は `u32` 型の値を返す。成功時は `0` を返し、失敗時は非0の定義されたエラーコード（WASIの `errno_t` に準拠）を返す。エラーコードの詳細は `{Syscall_Mapping}` の各定義および別紙参照。ゲスト側の `libfireball` は必要に応じてこの値をWASIの戻り値へ変換する。 `{Syscall_Return_Value}` `{Errorcode_To_Strategy}`
 
 **未定義 Syscall ID の非パニック安全復帰 (`SYS-GOTCHA-01`)**:
 未定義または予約済みのシステムコール ID が呼び出された場合、ホスト側はアボートやカーネルパニックを発生させず、WASI 準拠の `WasiErrno.NOSYS`（52）を返却して安全に復帰する。これにより、新機能の有無を動的に問い合わせるゲストランタイムや標準ライブラリ（WASI libc 等）がフォールバック機構を安全に機能させることができる。
@@ -134,7 +134,7 @@ vMMIOアドレス空間全体への汎用アクセス。SYSCTL/IPCR/VDMA/SHM/DYN
 | `0x13` | `MMIO_WRITE8` | `addr` (`fb_val_t`: 物理アドレス), `value` (`fb_val_t`: 8bit値) | `0` (エラー時は `ERR_OUT_OF_BOUNDS` または `ERR_ACCESS_DENIED`) | 8bit書き込み |
 | `0x14` | `MMIO_BULK_READ` | `addr` (`fb_val_t`: 物理アドレス), `dest_offset` (`fb_offset_t`: ゲスト物理ベース相対), `byte_count` (`fb_val_t`: 転送バイト数) | `0` (エラー時は `ERR_OUT_OF_BOUNDS`, `ERR_ACCESS_DENIED` または `ERR_INVALID_SIZE`) | バルク読み出し（ゲストメモリへコピー） `{META_RestrictedPhysicalAccess}` |
 | `0x15` | `MMIO_BULK_WRITE` | `addr` (`fb_val_t`: 物理アドレス), `src_offset` (`fb_offset_t`: ゲスト物理ベース相対), `byte_count` (`fb_val_t`: 転送バイト数) | `0` (エラー時は `ERR_OUT_OF_BOUNDS`, `ERR_ACCESS_DENIED` または `ERR_INVALID_SIZE`) | バルク書き込み（ゲストメモリから書込） `{META_RestrictedPhysicalAccess}` |
-| `0x16` | `TRIGGER_SET_PIN` | `pin` (`fb_val_t`), `value` (`fb_val_t`: 0/1) | `0` (エラー時は `ERR_OUT_OF_BOUNDS` または `ERR_ACCESS_DENIED`) | GPIOピン出力設定（`{Fast_Path_GPIO}` vMMIO直接ストアの移植性代替 Shim 経路、`FB_SYSCALL_TRIGGER_SET_PIN`）。**pysim実験実装での状態**: 専用のGPIO vMMIOレジスタ配線が未実装のため、`fireball_call` ディスパッチテーブルには未登録であり、呼び出すと `SYS-GOTCHA-01` の規定通り安全に `WasiErrno.NOSYS` を返す（GPIOはこの実験では IPC 経由の `fireball://device/gpio/0` デバイスとして到達可能）。実機ターゲットでの本ID実装は別途 vMMIO GPIO レジスタ配線を前提とする。 |
+| `0x16` | `TRIGGER_SET_PIN` | `pin` (`fb_val_t`), `value` (`fb_val_t`: 0/1) | `0` (エラー時は `ERR_OUT_OF_BOUNDS` または `ERR_ACCESS_DENIED`) | GPIOピン出力設定（`{Fast_Path_GPIO}` vMMIO直接ストアのゲストアダプタ経路、`FB_SYSCALL_TRIGGER_SET_PIN`）。**pysim実験実装での状態**: 専用のGPIO vMMIOレジスタ配線が未実装のため、`fireball_call` ディスパッチテーブルには未登録であり、呼び出すと `SYS-GOTCHA-01` の規定通り安全に `WasiErrno.NOSYS` を返す（GPIOはこの実験では IPC 経由の `fireball://device/gpio/0` デバイスとして到達可能）。実機ターゲットでの本ID実装は別途 vMMIO GPIO レジスタ配線を前提とする。 |
 
 ### 6.4. VDMA (`0x20`-`0x2F`)
 <!-- traceability: {VDMA} -->
@@ -146,14 +146,11 @@ vMMIOアドレス空間全体への汎用アクセス。SYSCTL/IPCR/VDMA/SHM/DYN
 
 ### 6.5. IRQ (`0x30`-`0x3F`)
 <!-- traceability: {CooperativeMultitasking} {META_RestrictedPhysicalAccess} {VDMA} -->
-仮想割り込みフラグの管理。`REG_IRQ_FLAGS` のラッパー。
-割り込み処理とコルーチンベースの協調型マルチタスク（`{CooperativeMultitasking}`）が連動し、ISRによるフラグ操作時にREADYキューへの投入が行われる。これらのID呼び出しは `{META_RestrictedPhysicalAccess}` に基づき、権限のないゲストからのアクセスは遮断される。また、仮想DMA（`{VDMA}`）完了時の割り込みクリアなどにも使用される。
+vIRQ は vMMIO の専用ページと COOS の汎用 `interrupt-event` を通じて配送する。システムコールから `REG_IRQ_FLAGS` を読み書きする旧方式は採用せず、WASIのpoll APIにも接続しない。 `{CooperativeMultitasking}`
 
 | ID | 名前 | 引数 | 戻り値 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
-| `0x30` | `IRQ_READ_FLAGS` | — | `flags` | 割り込みフラグ読み出し |
-| `0x31` | `IRQ_CLEAR` | `mask` | `0` | 指定ビットのフラグクリア |
-| `0x32`〜`0x3F` | `IRQ_RESERVED` | — | — | 将来の割り込みベクタ拡張用（予約スロット） |
+| `0x30`〜`0x3F` | `IRQ_RESERVED` | — | — | 旧フラグ操作を再導入せず、原因付きvIRQ配送はvMMIO vIRQページで行うため予約 |
 
 ### 6.6. IPC (`0x40`-`0x4F`)
 <!-- traceability: {CSPCommunication} {IPC_HandleBased} -->
@@ -168,8 +165,8 @@ URIによる名前解決後の接続確立（`lookup`）によって取得した
 
 ### 6.7. WASI (`0x80`-`0xBF`)
 <!-- traceability: {WASI_Implementation} -->
-WASI互換レイヤー。Shimライブラリが `wasi-libc` の呼び出しをこれらのIDに変換する。本ドキュメントは物理的なシステムコールのマッピング仕様に特化し、高レベルのWITインターフェース定義（ファイル構成や型バインディングポリシー等）については `{Syscall_Mapping}` にて分離して定義されている。
-WASI 0.2標準仕様に適合するように、各システムコールはShimによって `wasi_ciovec_t` レイアウトへ自動パッキングされ、ホスト側で `wasi:clocks` や `wasi:io` のリソース操作へと同期マッピングされる。 `{WASI_Implementation}`
+WASI互換レイヤー。Tier 3 の `libfireball` が `wasi-libc` 等のゲスト側呼び出しをこれらのIDに変換する。本ドキュメントはホスト側のシステムコールIDとディスパッチ仕様に限定し、高レベルのゲストバインディングは Tier 3 の `libfireball` 仕様を正本とする。 `{WASI_Implementation}`
+WASIの引数レイアウトとエラー変換は、`libfireball` が `runtime_syscall.md` のABI契約に従って実施する。ホスト側ディスパッチはゲストラッパーの呼び出し順序を知らない。 `{WASI_Implementation}`
 
 | ID | 名前 | 引数 | 戻り値 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
@@ -180,10 +177,10 @@ WASI 0.2標準仕様に適合するように、各システムコールはShim�
 | `0x84` | `WASI_PROC_EXIT` | `exit_code` | — | プロセス終了 |
 | `0x85` | `WASI_RANDOM_GET` | `buf_ptr`, `buf_len` | errno | 乱数取得 |
 
-本カテゴリのIDはすべてWASI 0.2標準仕様に適合するように Shim 側で適切に仲介・処理される。 `{WASI_Implementation}`
+本カテゴリのIDは、Tier 3 の `libfireball` がWASI互換呼び出しから適切に発行する。ホスト側では本書のディスパッチ契約に従って処理する。 `{WASI_Implementation}`
 
 > [!NOTE]
-> 最速のGPIOアクセスは `{Fast_Path_GPIO}` に従い vMMIO 空間への直接ストア（PASSTHROUGH領域経由、トラップ不要）を用いる。専用syscallは原則不要であるが、WASI互換レイヤ等の互換目的で MMIO Generic または移植性代替 Shim（`FB_SYSCALL_TRIGGER_SET_PIN` 等）を介した呼び出しもサポートされる。
+> 最速のGPIOアクセスは `{Fast_Path_GPIO}` に従い vMMIO 空間への直接ストア（PASSTHROUGH領域経由、トラップ不要）を用いる。専用syscallは原則不要であるが、WASI互換用途では `libfireball` が MMIO Generic または `FB_SYSCALL_TRIGGER_SET_PIN` を介した呼び出しを提供できる。
 
 ##### システムコール ID 定義一覧表 (`fb_syscall_id`)
 <!-- traceability: {Syscall_Mapping} -->
@@ -200,10 +197,9 @@ WASI 0.2標準仕様に適合するように、各システムコールはShim�
 | | `mmio_write8` | `0x13` | 8-bit MMIO 書き込み |
 | | `mmio_bulk_read` | `0x14` | 一括 MMIO 読み出し |
 | | `mmio_bulk_write`| `0x15` | 一括 MMIO 書き込み |
-| | `trigger_set_pin` (`FB_SYSCALL_TRIGGER_SET_PIN`) | `0x16` | GPIOピン出力設定（移植性代替 Shim 経路） |
+| | `trigger_set_pin` (`FB_SYSCALL_TRIGGER_SET_PIN`) | `0x16` | GPIOピン出力設定（ゲストアダプタ経路） |
 | **VDMA** | `vdma_start` | `0x20` | 仮想 DMA 転送開始 |
-| **IRQ** | `irq_read_flags` | `0x30` | 割り込みフラグ読み取り |
-| | `irq_clear` | `0x31` | 割り込みクリア |
+| **IRQ** | `IRQ_RESERVED` | `0x30`〜`0x3F` | 旧フラグ操作を再導入しないため予約。原因付きvIRQ配送はvMMIO vIRQページで行う |
 | **IPC** | `ipc_send` | `0x40` | IPC メッセージ送信 |
 | | `ipc_recv` | `0x41` | IPC メッセージ受信 |
 | | `ipc_lookup` | `0x42` | サービス/デバイス URI 検索 |
@@ -214,31 +210,17 @@ WASI 0.2標準仕様に適合するように、各システムコールはShim�
 | | `wasi_proc_exit` | `0x84` | プロセス終了 |
 | | `wasi_random_get` | `0x85` | 乱数取得 |
 
-## 7. Fireball Shim (`libfireball_shim`)
+## 7. ゲスト向けバインディングの境界
 
 ### 7.1. 役割
 
 <!-- traceability: {WIT_Interface_Purpose} -->
-ゲストのWASI互換ライブラリ（`wasi-libc`など）からの呼び出しを傍受し、`fireball_call`呼び出し規約に従ってホストの`fireball_call`へ変換する。
+ゲストのWASI互換呼び出しを `fireball_call` ABIへ変換する責務は、本コンポーネントには含めない。ゲスト側の静的ライブラリ `libfireball` が、Preview1 APIの引数整理、HALハンドル操作、戻り値変換を担当する。本節は両コンポーネントの境界を宣言する。
 
-### 7.2. 高応答 Trigger のマッピング例
-<!-- traceability: {Trap_Interface} {Syscall_Mapping} {Fast_Path_GPIO} -->
+### 7.2. 高レベルバインディングの参照先
+<!-- traceability: {Trap_Interface} {Syscall_Mapping} -->
 
-**本経路は `{Fast_Path_GPIO}` の高速パスそのものではない。** `{Fast_Path_GPIO}` の実体は vMMIO コンポーネントが定義する vMMIO 空間への直接ストアであり、トラップ命令もシステムコール ID のディスパッチも介さない（JIT は境界チェック付きストアとしてインライン展開できる）。以下に示す `fireball_call` 経由の Shim は、WASI 互換ライブラリから呼び出すための**移植性のある代替経路**であり、トラップ 1 回分のディスパッチコストを伴う。sub-µs 応答が要求される用途では vMMIO 直接ストアを用いること。
-
-| 項目 | 内容 |
-| :--- | :--- |
-| 機能概要 | WASI 互換ライブラリからの呼び出しを `fireball_call` へ変換してピン出力を設定する（移植性優先の経路。最小レイテンシが必要な場合は vMMIO 直接ストアを用いる）。 |
-| シグネチャ | `fireball_trigger_set_pin(pin: u32, value: bool) -> void` |
-| マッピング | `id`: `FB_SYSCALL_TRIGGER_SET_PIN`<br>`arg0`: `pin`<br>`arg1`: `value` (0/1) |
-
-```python
-# ゲスト側での trigger.set_pin の実装例 (Shim) `{Fast_Path_GPIO}`
-def fireball_trigger_set_pin(pin: int, value: bool):
-    __fireball_call(fb_syscall_id.FB_SYSCALL_TRIGGER_SET_PIN, pin, int(value), 0, 0, 0, 0)
-```
-> [!IMPORTANT]
-> WASI 0.2 標準のリソース（`output-stream` 等）は、対応する WIT インターフェースの実装関数を通じて呼び出される。`fireball_call`はvMMIO機能全体の代理実行ラッパーであり、GPIOのような物理アクセスもMMIO Generic経由で行える。
+`fireball_call` の raw trap ABI、システムコールID、引数境界検証は本書で定義する。WASI Preview1 の `fd_write` 等をこのABIへ変換するコード例やゲストライブラリのビルド形態は Tier 3 の `libfireball` 仕様に置く。HALのデバイス固有処理は [`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) の公開抽象IFを経由し、物理ドライバ詳細はその下位仕様へ委譲する。
 
 ## 8. WASIホスト側実装
 
@@ -248,7 +230,7 @@ def fireball_trigger_set_pin(pin: int, value: bool):
 
 | 機構名 | 課題と背景 | 解決方針・設計構造 | 関連キーワード |
 | :--- | :--- | :--- | :--- |
-| **Scatter/Gather 分割処理** | WASI `fd_write` は `ciovec` 配列による一括書き込みを要求するが、ホスト側でベクタ解析ループを抱えるとホスト実装が肥大化する | **Shim 側ループ設計**: ゲスト側 Shim ライブラリがベクタを反復し、1 ベクタごとに `fireball_call` を発行する。ホスト側はステートレスな単一ブロックディスパッチに専念する | `{Challenge_WasiFdWriteLoop}` |
+| **Scatter/Gather 分割処理** | WASI `fd_write` は `ciovec` 配列による一括書き込みを要求するが、ホスト側でベクタ解析ループを抱えるとホスト実装が肥大化する | **`libfireball` 側ループ設計**: ゲスト側ライブラリがベクタを反復し、1 ベクタごとに `fireball_call` を発行する。ホスト側はステートレスな単一ブロックディスパッチに専念する | `{Challenge_WasiFdWriteLoop}` |
 | **同期WASI・非同期IPC ブリッジ** | ゲスト側の同期 WASI 呼び出しと Fireball の非同期 CSP IPC の実行モデル不一致 | **コルーチン Yield 連動**: ラッパー内の `wait_for_ipc_response` が内部で `co_yield()` を発行し、VSoC/COOS が I/O 完了までタスクを安全にサスペンドする | `{WASI_Async_Bridge}` |
 
 ## 9. ホストからゲストへの非同期通知メカニズム
@@ -262,7 +244,7 @@ def fireball_trigger_set_pin(pin: int, value: bool):
 
 #### 9.1.1. 仮想割り込みID 一覧表
 <!-- traceability: {Asynchronous_Notification} -->
-これらのIDは、WASI 0.2 の `pollable` リソースをホスト側で ready 状態にするためのトリガーとして使用される。
+これらのIDは、WASI 0.3p のポーリング相当操作を `libfireball` が利用する際の通知トリガーとして使用される。
 
 | 仮想割り込み識別子名 | 値 (ID) | 説明 | 主な用途 |
 | :--- | :--- | :--- | :--- |

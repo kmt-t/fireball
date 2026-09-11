@@ -8,7 +8,7 @@ strictly to the architectural specifications:
 - `docs/components/tier2_runtime/runtime_vmmio.md` defines the vMMIO address/register layout
 - `docs/components/tier1_interface/ipc_router.md` defines the URI-routed, zero-copy message queue
 This module uses self-contained simulation modules (`vmmio.py`, `ipc_router.py`,
-`platforms/memory.py`) mirroring the authoritative concept models, and provides
+`tier2_runtime/memory.py`) mirroring the authoritative concept models, and provides
 the actual register/byte-level storage and wire-level u32 handle numbering
 required for end-to-end execution.
 All guest output routes through WASI_FD_WRITE (console-output) to adhere strictly
@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from enum import IntEnum
 from typing import TYPE_CHECKING, Callable
 
-from hal import HalBufferHandle, HalBufferPool, UartTransport
+from hal_dispatch import HalBufferHandle, HalBufferPool, UartTransport
 from ipc_router import (
     IPCMessage,
     IPCRouter,
@@ -38,7 +38,7 @@ from ipc_router import (
 if TYPE_CHECKING:
     from debugger import DebuggerManager
     from gdb_server import GDBServer
-    from hal import HalTask
+    from hal_dispatch import HalTask
     from interpreter import BasicBlock, WASMContext
     from wasi import WasiHostContext
 
@@ -804,7 +804,7 @@ class System:
         if self._hal_task_ids:
             return self._hal_task_ids
 
-        from hal import (
+        from hal_dispatch import (
             DummyBusDriver,
             DummyGpioDriver,
             DummyTimerDriver,

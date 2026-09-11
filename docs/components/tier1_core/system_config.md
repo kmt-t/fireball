@@ -185,6 +185,7 @@ namespace fireball::config {
 
 #### 3.3.7 割り込みイベントFIFO
 <!-- traceability: {GLOBAL_InterruptWakeup} -->
+本節はタスクID節（3.3.6）の直後に置く割り込みイベントFIFOの唯一の定義であり、次のリカバリー戦略節を3.3.8とする。
 | マクロ名 | 説明 | デフォルト値 | 導出元 |
 | :--- | :--- | :--- | :--- |
 | `FB_CONF_INTERRUPT_QUEUE_SIZE` | COOSが所有する原因付き割り込みイベントFIFOの固定エントリ数 | `16` | `{GLOBAL_InterruptWakeup}` |

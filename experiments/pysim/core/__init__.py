@@ -1,1 +1,0 @@
-"""pysim.core package"""

@@ -11,10 +11,11 @@ _REPO_ROOT = _PYSIM_DIR.parent.parent
 for _p in [
     _TESTS_DIR,
     _PYSIM_DIR,
-    _PYSIM_DIR / "core",
-    _PYSIM_DIR / "runtime",
-    _PYSIM_DIR / "jit",
-    _PYSIM_DIR / "platforms",
+    _PYSIM_DIR / "tier1_core",
+    _PYSIM_DIR / "tier1_interface",
+    _PYSIM_DIR / "tier2_runtime",
+    _PYSIM_DIR / "tier3_jit",
+    _PYSIM_DIR / "tier3_platform",
     _TEST_FILE.parent,
     _REPO_ROOT / "docs" / "components" / "tier1_core" / "concepts",
     _REPO_ROOT / "docs" / "components" / "tier1_interface" / "concepts",
@@ -30,17 +31,18 @@ import sys
 from pathlib import Path
 
 _PYSIM_DIR = Path(__file__).resolve().parent
-while not (_PYSIM_DIR / "core").is_dir():
+while not (_PYSIM_DIR / "tier1_core").is_dir():
     _PYSIM_DIR = _PYSIM_DIR.parent
 
 REPO_ROOT = _PYSIM_DIR.parent.parent
 
 for _p in [
     _PYSIM_DIR,
-    _PYSIM_DIR / "core",
-    _PYSIM_DIR / "runtime",
-    _PYSIM_DIR / "jit",
-    _PYSIM_DIR / "platforms",
+    _PYSIM_DIR / "tier1_core",
+    _PYSIM_DIR / "tier1_interface",
+    _PYSIM_DIR / "tier2_runtime",
+    _PYSIM_DIR / "tier3_jit",
+    _PYSIM_DIR / "tier3_platform",
     REPO_ROOT / "docs" / "components" / "tier3_jit" / "concepts",
 ]:
     _sp = str(_p)
@@ -51,7 +53,7 @@ import ctypes
 
 from control_flow import extract_basic_blocks
 from debugger import DebuggerManager, GDBRspProtocol
-from hal import HalBufferPool, HalBufferTrap, UartTransport
+from hal_dispatch import HalBufferPool, HalBufferTrap, UartTransport
 from interpreter import _HANDLERS, Interpreter
 from ipc_router import (
     IPCMessage,
@@ -803,7 +805,7 @@ def test_dbg_gotcha_01_memory_write_flushes_jit_cache():
 def test_load_gotcha_01_non_existent_symbol_fast_rejection():
     """GOTCHA-LOAD-01: Non-existent symbol rejection is O(k) without linear scan."""
     loader = WasmLoader()
-    from tier2_runtime.test_loader import _build_test_wasm_binary
+    from test_loader import _build_test_wasm_binary
 
     wasm_bytes = _build_test_wasm_binary(export_names=["foo", "bar"])
     view = loader.prepare("test_mod", wasm_bytes)

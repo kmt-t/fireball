@@ -75,7 +75,7 @@ stateDiagram-v2
 - **Isolated IPC Service**（サービス）: IPCルータ経由で隔離実行される、WASI以外の汎用サービス（本節冒頭で定義した「サービス」の実体。WASM上で実行される常駐タスクである）。
 - **libfireball**（ゲスト側ライブラリ）: ゲストの WASI 呼び出しを公開WIT／HAL IFへ変換する静的ライブラリ。サービスやサブシステムではない。詳細はTier 3のゲストアダプタ仕様を参照する。
 - **Logging Subsystem**（サブシステム）: `runtime_logging.md` の内部ロガーおよび `interface_wit.md` のコンソール生バイト出力経路（`fireball://service/stdout/0`）を介した出力を担う、ネイティブコードとして常駐する基盤機能。サービスではない。
-- **HAL Subsystem**（サブシステム）: 4.3節で扱うHAL（ハードウェア抽象化層）ドライバ群全体。ネイティブコードとして常駐する基盤機能であり、サービスではない。
+- **HAL Subsystem**（サブシステム）: HAL（ハードウェア抽象化層）ドライバ群全体。ネイティブコードとして常駐する基盤機能であり、サービスではない。
 
 ゲストWASMサービスは、起動時に独立した物理メモリパーティションを割り当てられ、メモリのハードウェア境界が確立される（障害伝播防止）。すべてのサービスへのアクセスおよびシステムコール呼び出しは、必ずIPCルータ（`IPCRouter`）のルックアップおよびアクセス制御チェックを経由してのみ開始される。 `{META_FaultIsolation}` `{IPCRouter}`
 
@@ -154,7 +154,7 @@ enum class service_load_result_t : uint32_t {
 ### 5.3 URI/IPCインターフェース
 <!-- traceability: {META_RecoveryStrategy} -->
 - **URI規則**: `fireball://<subsystem_id>/<service_name>/<instance_id>` に準拠する（例: `fireball://services/wasi/0`）。
-- **メッセージ形式**: 64ビットのKey-Value値を最大8個含むパケット。
+- **メッセージ形式**: 64ビットのKey-Value値を `arg0`〜`arg7` の計8スロット（最大8個）含むパケット。
   * **ヘッダ部**: `arg0` にコマンドID、`arg1` にリカバリー戦略カテゴリ `{META_RecoveryStrategy}`（`recovery-strategy-category` 値）を格納。
   * **ペイロード部**: `arg2`〜`arg5` にコマンド固有引数（または共有メモリハンドル等）を格納。
   * **拡張部**: `arg6`〜`arg7` は将来のコマンド固有引数用に予約し、未使用時はゼロを格納。

@@ -14,10 +14,10 @@ REPO_ROOT = PYSIM_ROOT.parent.parent
 
 for p in [
     PYSIM_ROOT,
-    PYSIM_ROOT / "core",
-    PYSIM_ROOT / "runtime",
-    PYSIM_ROOT / "jit",
-    PYSIM_ROOT / "platforms",
+    PYSIM_ROOT / "tier1_core",
+    PYSIM_ROOT / "tier2_runtime",
+    PYSIM_ROOT / "tier3_jit",
+    PYSIM_ROOT / "tier3_platform",
     REPO_ROOT / "docs" / "components" / "tier1_core" / "concepts",
     REPO_ROOT / "docs" / "components" / "tier1_interface" / "concepts",
     REPO_ROOT / "docs" / "components" / "tier2_runtime" / "concepts",

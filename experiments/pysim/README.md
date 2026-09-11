@@ -12,8 +12,8 @@
   - `isinstance`, `type()`, `hasattr`, `getattr` 等のランタイム型検査やリフレクションを一切使用しない。
   - ユニバーサルな引数型（何でも受け取れる万能型・両対応型）にして内部で動的に型を判定して分岐するコードを書かない。関数のシグネチャは意図された具象型に一本化し、異なる型を扱う場合は別名関数として明確に分離する。
 - **動的コンテナの完全禁止（`{GLOBAL_Policy_Memory}`）**:
-  - Python の `dict`/`set` を実装の型として使わない。固定長配列、`BitView`/`FlatMapView`/`FlatSetView`/`RadixBinaryTreeView`（読み取り専用）、または `MutableFlatMapStorage`/`MutableFlatSetStorage`/`MutableRadixBinaryTreeStorage`/`MutableBitStorage`（可変・固定容量）のような `core/system_containers.py` の固定容量コンテナに置き換える。
-  - `.append()`/`.insert()`/`.pop()` で無制限に伸縮する `list` も同様に禁止。伸縮方向が「末尾のみ・容量に上限がある」構造には `StaticVector`（順次アクセス、LIFO push_back/pop_back）を、「先頭から流れ落ちる／上書きされる」構造には `RingBuffer`（FIFO、オーバーフロー時上書き）を使う。どちらも `core/system_containers.py` にあり、容量はコンストラクタ引数として必ず明示し、その値の根拠（既存の上限値と一致させた、または `FB_CONF_*` 定数として新規に定義した、等）をコメントで残す。
+  - Python の `dict`/`set` を実装の型として使わない。固定長配列、`BitView`/`FlatMapView`/`FlatSetView`/`RadixBinaryTreeView`（読み取り専用）、または `MutableFlatMapStorage`/`MutableFlatSetStorage`/`MutableRadixBinaryTreeStorage`/`MutableBitStorage`（可変・固定容量）のような `tier1_core/system_containers.py` の固定容量コンテナに置き換える。
+  - `.append()`/`.insert()`/`.pop()` で無制限に伸縮する `list` も同様に禁止。伸縮方向が「末尾のみ・容量に上限がある」構造には `StaticVector`（順次アクセス、LIFO push_back/pop_back）を、「先頭から流れ落ちる／上書きされる」構造には `RingBuffer`（FIFO、オーバーフロー時上書き）を使う。どちらも `tier1_core/system_containers.py` にあり、容量はコンストラクタ引数として必ず明示し、その値の根拠（既存の上限値と一致させた、または `FB_CONF_*` 定数として新規に定義した、等）をコメントで残す。
   - どうしても `[None] * N` + 明示カウンタで自前実装する場合（`control_flow.py` の `open_stack`/`active_openers` の `FB_CONF_MAX_NESTING_DEPTH` 等、既存コンテナのAPIでは表現できない特殊なアクセスパターンのみ）も、伸縮は `.append`/`.pop` ではなくインデックス代入とカウンタ増減で行い、上限超過は明示的にエラーとする。
 - **例外制御フローの禁止**:
   - 例外を制御フローに使わない。失敗は戻り値（`None`、`Result`型、`IntEnum` ステータス等）で表現する。
@@ -37,14 +37,15 @@
 
 ```
 experiments/pysim/
-├── core/                  # Tier 1 Core OS & システム基盤
+├── tier1_core/            # Tier 1 Core OS & システム基盤
 │   ├── scheduler.py       # COOS コルーチンスケジューラ, READYキュー, 対称遷移, CSP 直接ハンドオフ
-│   ├── ipc_router.py      # ゼロコピー所有権移譲 & RBAC ルーティング
-│   ├── logger.py          # 構造化ログカタログ & アイドルフラッシュ
 │   ├── system_containers.py # BitView, FlatMapView, RadixBinaryTreeView, RingBuffer
-│   └── recovery.py        # 4つのリカバリー戦略 (ignore, retry, restart, panic)
+│   └── interrupt_event.py # 固定長割り込みイベント
 │
-├── runtime/               # Tier 2 Runtime & WASM 仮想マシン
+├── tier1_interface/       # Tier 1 Interface
+│   └── ipc_router.py      # ゼロコピー所有権移譲 & RBAC ルーティング
+│
+├── tier2_runtime/         # Tier 2 Runtime & WASM 仮想マシン
 │   ├── wasm_reader.py     # WASM バイナリパーサ & セクション検証 (ゼロコピー)
 │   ├── wasm_module.py     # Module, Function, Table, Memory, Global, Export
 │   ├── wasm_opcodes.py    # WASM 全オプコード定義 (i32, i64, f32, f64, 制御, メモリ)
@@ -52,22 +53,26 @@ experiments/pysim/
 │   ├── control_flow.py    # 静的ブロック解析 & 制御構造デコーダ
 │   ├── loader.py          # WASM モジュールローダー & アクティブセグメント展開
 │   ├── interpreter.py     # CPS 4引数 スレッド化インタープリタ (Threaded Interpreter)
-│   ├── runtime_engine.py  # 2-bit カードマーキング Hotspot 検出 & 3面キャッシュ管理
+│   ├── runtime_engine.py  # vSoC実行制御とTier 3 JITサービス連携
 │   ├── vmmio.py           # 2段階ダイレクトデコード ページテーブル & ソフトウェア TLB
+│   ├── logger.py          # 構造化ログカタログ & アイドルフラッシュ
+│   ├── memory.py          # Tier 1メモリ契約のTier 2実装
+│   ├── hal_dispatch.py    # HAL抽象ディスパッチ
+│   ├── wasi.py            # WASIホスト境界
+│   ├── recovery.py        # リカバリ戦略
 │   ├── debugger.py        # 統合デバッガコントローラ
 │   └── gdb_server.py      # GDB Remote Serial Protocol (RSP) ソケットサーバー
 │
-├── jit/                   # Tier 3 JIT コンパイラ & ネイティブ生成
+├── tier3_jit/             # Tier 3 JIT コンパイラ & ネイティブ生成
+│   ├── jit_cache.py       # ホットスポット状態・トレース記述子・3面キャッシュ
+│   ├── trace_compiler.py  # インタープリタ互換のフォールバックトレース生成
 │   ├── x64_jit.py         # Copy-and-Patch JIT コンパイラ (x64)
 │   ├── x64_asm.py         # constexpr x64 アセンブラ
 │   ├── x64_stencils.py    # 事前コンパイル済み JIT ネイティブステンシルカタログ
 │   └── exec_memory.py     # MPU W^X トランザクション & 実行可能メモリ (mprotect/VirtualProtect)
 │
-├── platforms/             # Tier 3 Platform & ハードウェア抽象化
-│   ├── memory.py          # 物理メモリパーティション (RAM/ROM) & PMSAv8 MPU
-│   ├── hal.py             # HAL バス & メモリプール
+├── tier3_platform/        # Tier 3 Platform & ハードウェア依存部
 │   ├── hal_dummy_drivers.py # HAL ダミードライバ (GPIO/I2C/SPI/Timer)
-│   ├── wasi.py            # WASI Preview 1 ホストコンテキスト & システムコール
 │   └── wasi_dummy_fs.py   # インメモリ VFS ファイルシステム
 │
 ├── scenarios/             # 全 11 コンポーネント統合シナリオ (End-to-End Scenarios)
@@ -178,21 +183,21 @@ uv run --system-certs --with wasmtime python experiments/pysim/aobench.py
 ```
 
 ### （任意）JIT トレース呼び出しの Cython ネイティブアクセラレータ
-`RuntimeEngine._invoke_trace` は既定で `ctypes.CFUNCTYPE`（libffi トランポリン、~1.1us/call）経由でコンパイル済みトレースを呼ぶ。`experiments/pysim/jit/native_trace_call.pyx` をビルドすると、同じ CPS 4引数呼び出し規約のまま生の C 関数ポインタ呼び出しに置き換わり、`bench_jit.py` の JIT 対インタープリタ比が実測で ~1.2x → ~1.8x に改善する。未ビルドでも自動的に ctypes 経路へフォールバックするため、素の Python 環境（`.pyd`/`.so` なし）でも通常どおり動作する。
+`RuntimeEngine._invoke_trace` は既定で `ctypes.CFUNCTYPE`（libffi トランポリン、~1.1us/call）経由でコンパイル済みトレースを呼ぶ。`experiments/pysim/tier3_jit/native_trace_call.pyx` をビルドすると、同じ CPS 4引数呼び出し規約のまま生の C 関数ポインタ呼び出しに置き換わり、`bench_jit.py` の JIT 対インタープリタ比が実測で ~1.2x → ~1.8x に改善する。未ビルドでも自動的に ctypes 経路へフォールバックするため、素の Python 環境（`.pyd`/`.so` なし）でも通常どおり動作する。
 ```bash
 # Windows: clang-cl + Visual Studio Build Tools + Windows SDK が必要
-powershell experiments/pysim/jit/build_native.ps1
+powershell experiments/pysim/tier3_jit/build_native.ps1
 
 # Linux/WSL: clang が必要
-./experiments/pysim/jit/build_native.sh
+./experiments/pysim/tier3_jit/build_native.sh
 ```
 
 ### （任意）インタープリタホットパスの Cython Pure-Python モードアクセラレータ
-`experiments/pysim/runtime/leb128.py`・`interpreter.py`・`runtime_engine.py` のディスパッチループ（`Interpreter.step()`）と最頻出ハンドラ（`local.get`/`local.set`/`i32.const`/`i32.add`/`i32.sub`/`i32.ge_s`/`br_if` 等）、および `_to_i32`/`_to_u32` 等のラップ関数は、Cython Pure-Python モード（`@cython.locals(...)` によるローカル変数の C 型付け）で書かれている。`import cython` は未ビルド時は無害な no-op シムとして動作するため、この 3 ファイルは常に素の Python として動作し、動作は一切変わらない。ビルドすると同じディレクトリに `.pyd`/`.so` が生成され、Python の import 解決が同名の `.py` より優先して読み込むため、他コードの変更なしに透過的に高速化される。`bench_jit.py` のインタープリタ実行時間が実測で無型コンパイル比 ~15〜20% 改善する（更なる高速化には `_HANDLERS` テーブル経由の多態的呼び出し自体の再設計が必要）。
+`experiments/pysim/tier2_runtime/leb128.py`・`interpreter.py`・`runtime_engine.py` のディスパッチループ（`Interpreter.step()`）と最頻出ハンドラ（`local.get`/`local.set`/`i32.const`/`i32.add`/`i32.sub`/`i32.ge_s`/`br_if` 等）、および `_to_i32`/`_to_u32` 等のラップ関数は、Cython Pure-Python モード（`@cython.locals(...)` によるローカル変数の C 型付け）で書かれている。`import cython` は未ビルド時は無害な no-op シムとして動作するため、この 3 ファイルは常に素の Python として動作し、動作は一切変わらない。ビルドすると同じディレクトリに `.pyd`/`.so` が生成され、Python の import 解決が同名の `.py` より優先して読み込むため、他コードの変更なしに透過的に高速化される。`bench_jit.py` のインタープリタ実行時間が実測で無型コンパイル比 ~15〜20% 改善する（更なる高速化には `_HANDLERS` テーブル経由の多態的呼び出し自体の再設計が必要）。
 ```bash
 # Windows: clang-cl + Visual Studio Build Tools + Windows SDK が必要
-powershell experiments/pysim/runtime/build_native.ps1
+powershell experiments/pysim/tier2_runtime/build_native.ps1
 
 # Linux/WSL: clang が必要
-./experiments/pysim/runtime/build_native.sh
+./experiments/pysim/tier2_runtime/build_native.sh
 ```

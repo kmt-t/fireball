@@ -43,11 +43,11 @@ GDB RSPコマンド処理（`?`, `g/G`, `m/M`, `Z0/z0`, `s`, `c`）、ブレー�
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-DBG-20 | TCP ソケットリッスンとクライアント接続 | GDBServer 起動 | クライアントが TCP 接続し `?` 送信 | `+` ACK と `$S05#b8` が返り、対話デバッグセッションが確立される | [`gdb_server.py`](experiments/pysim/runtime/gdb_server.py), [`scenario7_gdb_socket_debugger.py`](experiments/pysim/scenarios/scenario7_gdb_socket_debugger.py) |
+| TEST-DBG-20 | TCP ソケットリッスンとクライアント接続 | GDBServer 起動 | クライアントが TCP 接続し `?` 送信 | `+` ACK と `$S05#b8` が返り、対話デバッグセッションが確立される | [`gdb_server.py`](experiments/pysim/tier2_runtime/gdb_server.py), [`scenario7_gdb_socket_debugger.py`](experiments/pysim/scenarios/scenario7_gdb_socket_debugger.py) |
 | TEST-DBG-21 | ソケット経由の仮想レジスタ読み書き | セッション接続中 | `g` および `G` パケット送信 | TCP ストリーム経由で 20 個の仮想レジスタが正しく取得・変更される | [`gdb_rsp_protocol.md`](docs/specs/gdb_rsp_protocol.md), [`debug_manager.md`](docs/components/tier2_runtime/debug_manager.md) |
 | TEST-DBG-22 | ソケット経由のメモリ検査・書き換えと JIT Flush | セッション接続中 | `m` および `M` パケット送信 | TCP ストリーム経由でメモリが読み書きされ、JIT キャッシュ全バンクが無効化される | `{Debugger_Jit_Flush}` |
 | TEST-DBG-23 | ソケット経由のブレークポイント停止とステップ | セッション接続中 | `Z0` 設定後 `c` / `s` 送信 | 指定 PC で正確にトラップ停止し、単歩ステップ実行で 1 命令進む | [`debug_manager.md`](docs/components/tier2_runtime/debug_manager.md) |
-| TEST-DBG-24 | プログラム完走通知とソケット正常切断 | ブレークポイント解除 | `c` 送信後クローズ | 終了パケット `$W00#b7` を受信し、サーバーソケットがクリーンに終了・デタッチされる | [`gdb_server.py`](experiments/pysim/runtime/gdb_server.py) |
+| TEST-DBG-24 | プログラム完走通知とソケット正常切断 | ブレークポイント解除 | `c` 送信後クローズ | 終了パケット `$W00#b7` を受信し、サーバーソケットがクリーンに終了・デタッチされる | [`gdb_server.py`](experiments/pysim/tier2_runtime/gdb_server.py) |
 
 ### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
 

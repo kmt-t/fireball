@@ -40,55 +40,30 @@ Fireballは、リソース制限の厳しい小規模組み込みデバイス（
 <!-- traceability: {CleanArchitecture} {IoC} -->
 
 ```mermaid
-flowchart TD
-    classDef blockStyle fill:#e1f5ff,stroke:#01579b,stroke-width:2px,color:#000;
-    classDef hwStyle fill:#f3e5f5,stroke:#4a148c,stroke-width:1px,stroke-dasharray: 5 5,color:#000;
+classDiagram
+    class GuestApplication
+    class WasmService
+    class Libfireball
+    class VSoCRuntime
+    class COOSKernel
+    class IPCRouter
+    class HALSubsystem
+    class LoggingSubsystem
+    class DeviceDriver
+    class HardwarePlatform
 
-    subgraph Guest["Guest Layer"]
-        App["<b>block: Guest Application</b><br/>─ 入力: WASM binary<br/>─ 出力: execution result<br/>─ ポート: execute()"]:::blockStyle
-        Svc["<b>block: WASM Service</b><br/>─ 入力: IPC request<br/>─ 出力: response<br/>─ ポート: handle_request()"]:::blockStyle
-        Lib["<b>block: libfireball</b><br/>─ WASI / Fireball ABI adapter<br/>─ URI / buffer / trap calls"]:::blockStyle
-    end
-
-    subgraph Runtime["Runtime Layer"]
-        vSoC["<b>block: vSoC Runtime</b><br/>─ プロパティ:<br/>  · JIT cache (6KB)<br/>  · WASM linear memory<br/>─ ポート:<br/>  · execute(): code execution<br/>  · syscall(): IPC dispatch"]:::blockStyle
-    end
-
-    subgraph Kernel["Kernel Layer"]
-        COOS["<b>block: COOS Kernel</b><br/>─ プロパティ:<br/>  · task scheduler<br/>  · context manager<br/>─ ポート:<br/>  · spawn(): task creation<br/>  · yield(): execution yield"]:::blockStyle
-        IPCR["<b>block: IPC Router</b><br/>─ プロパティ:<br/>  · service registry<br/>  · channel lookup table<br/>─ ポート:<br/>  · lookup_service(uri): resolve<br/>  · route_message(chan, msg): forward"]:::blockStyle
-    end
-
-    subgraph Subsystem["Subsystem Layer"]
-        HAL["<b>block: HAL Layer</b><br/>─ 入力: device commands<br/>─ 出力: device status<br/>─ ポート: device I/O"]:::blockStyle
-        Log["<b>block: Logging</b><br/>─ 入力: log message<br/>─ 出力: persistent log<br/>─ ポート: log_write()"]:::blockStyle
-    end
-
-    subgraph Driver["Driver Layer"]
-        Drv["<b>block: Device Driver</b><br/>─ 入力: read/write/ioctl call<br/>─ 出力: register access result<br/>─ ポート: read()/write()/ioctl()"]:::blockStyle
-    end
-
-    subgraph Hardware["Hardware Layer"]
-        HW["<b>block: Hardware Platform</b><br/>─ CPU, Memory, Peripherals<br/>─ Cortex-M / RISC-V"]:::hwStyle
-    end
-
-    %% 実線 = 直接依存 (uses)
-    %% 破線 = インターフェース実装 (realizes)
-    App -->|"uses: execute()"| vSoC
-    Svc -->|"uses: syscall(uri)"| vSoC
-    App -->|"links guest adapter"| Lib
-    Svc -->|"links guest adapter"| Lib
-    Lib -->|"uses public trap / HAL IF"| vSoC
-
-    vSoC -->|"uses: yield()"| COOS
-    vSoC -->|"uses: lookup(uri) / route(msg)"| IPCR
-
-    IPCR -->|"uses: manage task lifecycle"| COOS
-    HAL -.->|"realizes: device-handler interface"| IPCR
-    Log -.->|"realizes: log-sink interface"| IPCR
-
-    HAL -->|"uses: read()/write()/ioctl()"| Drv
-    Drv -->|"uses: register access"| HW
+    GuestApplication --> VSoCRuntime : execute
+    WasmService --> VSoCRuntime : syscall
+    GuestApplication --> Libfireball : links adapter
+    WasmService --> Libfireball : links adapter
+    Libfireball --> VSoCRuntime : public trap and HAL IF
+    VSoCRuntime --> COOSKernel : yield
+    VSoCRuntime --> IPCRouter : URI lookup and routing
+    IPCRouter --> COOSKernel : task lifecycle
+    HALSubsystem ..|> IPCRouter : device-handler interface
+    LoggingSubsystem ..|> IPCRouter : log-sink interface
+    HALSubsystem --> DeviceDriver : device I/O
+    DeviceDriver --> HardwarePlatform : register access
 ```
 
 #### 依存性ルール
@@ -284,6 +259,8 @@ flowchart TD
 | — インタープリタ統合スタック (`FB_CONF_INTERP_STACK_SIZE`) | 2,048 | `OperandStack`/`LocalStack`/`control_frame` |
 | **システム静的変数 & OS スタック（プール外）** | **~3,500** | vMMIO TLB・ブレークポイント・ISRキュー・MSPスタック等 |
 | **RAM 合計使用量** | **~25,000** | 32KB SRAM に対し約 7.0 KB（約 22%）の安全マージンを確保 |
+
+`ConsolidatedHeap` の 21,504 Bytes は、5つの割当プール（JIT、タスク、カーネル、サブシステム、ランタイム）と、別枠の専用インタープリタ統合スタックの合計である。スタックは予約済み領域であり、6番目の割当プールではない。内訳は `6,144 + 4,096 + 4,096 + 3,072 + 2,048 + 2,048 = 21,504` Bytes となる。
 
 ### 6.2 ストレージ予算 (ROM/Flash: 評価ターゲット 96KB = 98,304 Bytes)
 

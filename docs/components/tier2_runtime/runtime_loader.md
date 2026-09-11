@@ -82,7 +82,7 @@ ROM上のバイナリデータに対する「窓」として機能し、WIT上�
 #### バイナリストリーム（BinaryStream）
 <!-- traceability: {ROMParsing} -->
 ROM上のデータストリームを管理し、LEB128可変長整数やプリミティブ型の読み出しを提供するユーティリティクラス。
-`std::span<const uint8_t>` をラップし、カレントポインタ（カーソル）管理と厳格な境界チェックを行う。
+ROM上の読み取り専用バイト列ビューをラップし、カレントポインタ（カーソル）管理と厳格な境界チェックを行う。
 
 | 機能 | 説明 |
 | :--- | :--- |
@@ -90,7 +90,7 @@ ROM上のデータストリームを管理し、LEB128可変長整数やプリ�
 | `read_s8/s16/s32/s64` | 固定長符号あり整数の読み出し |
 | `read_leb128_u32/s32` | 可変長整数 (LEB128) のデコード（最大 5 バイト制限。超過時またはストリーム終端時は即時パースエラー） |
 | `read_leb128_u64/s64` | 64bit 可変長整数 (LEB128) のデコード（最大 10 バイト制限。超過時は即時パースエラー） |
-| `read_bytes` | 指定バイト数の参照（`std::span<const uint8_t>`）を返す |
+| `read_bytes` | 指定バイト数の読み取り専用バイト列ビューを返す |
 | `remaining` | ストリームの残量チェック |
 
 #### 関数アクセサ（function_accessor）
@@ -133,11 +133,11 @@ ROM上のデータストリームを管理し、LEB128可変長整数やプリ�
     - セクションスキャン時に内容をRAMにコピーせず、ROM上の開始オフセットとサイズを索引化する。
     - 各セクション、関数コードブロック、グローバル変数、データセグメント等のデコード済みエントリを `decoded_entity_registry` に登録する。
     - 各エントリの開始ファイルオフセット `file_offset` をキーとして、基数2進探索木ビュー（`fireball::radix_binary_tree_view`）を構築する。粗い Radix Table で区間を特定後、狭めた区間に対する有界二分探索により $O(1) + O(\log n)$ でファイル内の任意バイト位置から該当するデコード済みエンティティ（関数メタデータ、セクション、データ定義）を高速逆引きできるようにする。
-    - エクスポートおよびインポートエントリをパースし、シンボル名の 32-bit ハッシュ値（FNV-1a）を算出。名前文字列は ROM 上のポインタ（`std::string_view`）として RAM コピーゼロで保持しつつ、ハッシュ値をキーとした `export_tree` / `import_tree`（`fireball::radix_binary_tree_view`）を構築する。
+    - エクスポートおよびインポートエントリをパースし、シンボル名の 32-bit ハッシュ値（FNV-1a）を算出。名前文字列は ROM 上の文字列ビューとして RAM コピーゼロで保持しつつ、ハッシュ値をキーとした `export_tree` / `import_tree`（`fireball::radix_binary_tree_view`）を構築する。
 - **シンボル検索とハッシュ衝突完全排除 (`GOTCHA-LOAD-01`, `{META_AccessDictionary}`, `{META_BinarySearch}`)**:
-  文字列比較ループを行わず、シンボル名ハッシュ（FNV-1a 32-bit）をキーとして `export_tree`（`radix_binary_tree_view`）を、粗索引 $O(1)$ と狭い区間の二分探索 $O(\log n)$ の組み合わせで探索する。
+  シンボル名ハッシュ（FNV-1a 32-bit）をキーとして `export_tree`（`radix_binary_tree_view`）を、粗索引 $O(1)$ と狭い区間の二分探索 $O(\log n)$ の組み合わせで探索する。候補が得られた後は ROM 上の元の名前を照合するため、照合込みの worst-case は $O(1) + O(\log n) + O(L)$（$L$ は名前長）である。
   **設計理由と不変条件**: 32-bit ハッシュ値による探索のみで関数解決を完了させると、万一のハッシュ衝突発生時に誤った関数がディスパッチされ、壊滅的な誤動作を引き起こす。そのため、ハッシュ探索で候補エントリがヒットした際は必ず ROM 上の元のシンボル名文字列と 1 回完全一致照合を行い、ハッシュ衝突によるシンボル誤認を完全に排除する。
-- **インポートテーブル検索と依存関係解決 (resolve_imports)**: インポートテーブルの各エントリに対し、インポート先モジュール名・フィールド名のハッシュ値を用いて対象モジュールの `export_tree`（`radix_binary_tree_view`）を $O(1) + O(\log n)$ で直接引き当てる。文字列走査を行わずに $O(1) + O(\log n)$ で依存関係を解決し、モジュールを実行可能状態へ遷移させる。 `{MultiModule_Support}` `{META_BinarySearch}`
+- **インポートテーブル検索と依存関係解決 (resolve_imports)**: インポートテーブルの各エントリに対し、インポート先モジュール名・フィールド名のハッシュ値で対象モジュールの `export_tree`（`radix_binary_tree_view`）を探索する。候補区間の索引探索は $O(1) + O(\log n)$、ROM上の元文字列による衝突照合を含む worst-case は $O(1) + O(\log n) + O(L)$ であり、照合後に依存関係を解決してモジュールを実行可能状態へ遷移させる。 `{MultiModule_Support}` `{META_BinarySearch}`
 - **ファイル位置逆引き (lookup_by_file_offset)**: 任意のファイル内バイトオフセットから `entity_offset_tree`（`radix_binary_tree_view`）を検索し、そのオフセットを包含するデコード済みエンティティ（セクション、関数、データ等）を即座に特定・返却する。
 - **メモリセクション検証**: Memory Section をパースし、論理ページサイズ（64KB単位）および初期要求ページ数を取得。物理割当が部分ページ（例: 8KB）の場合や複数ページ（`N * 64KB`）の場合でも、モジュール初期ページ要求とシステム物理予算（`FB_CONF_MAX_WASM_PAGES`）を照合し、実行時境界判定へ引き渡す。
 - **アンロードと専用バンプアロケータ一括回収 (`GOTCHA-LOAD-03`, `{OneRuntimeOneGuest}`, `{Runtime_BumpAllocator}`)**:
@@ -280,6 +280,8 @@ sequenceDiagram
 ### 5.1 公開API
 外部から利用可能なオブジェクト指向APIを定義する。
 
+以下で用いる `operation-result` は [`fireball.wit`](docs/components/tier1_interface/wit/fireball.wit) の `types.operation-result` 型別名であり、成功値または `recovery-strategy-category` を返す。
+
 #### 準備（prepare）
 
 | 項目 | 内容 |
@@ -346,7 +348,7 @@ sequenceDiagram
 | 機能概要 | モジュールが公開している関数を名前で検索し、そのインデックスを取得する。 |
 | シグネチャ | `lookup-export-func(name: string) -> result<u32, bool>` |
 | 戻り値 | 成功時はWASM関数インデックス、失敗時は `false` |
-| 不変条件 | Radix Table で候補区間を $O(1)$ に絞り、その区間長を $n$ とした有界二分探索 $O(\log n)$ で検索すること。 |
+| 不変条件 | Radix Table で候補区間を $O(1)$ に絞り、その区間長を $n$ とした有界二分探索 $O(\log n)$ を行い、候補名を ROM 上の元文字列と照合すること。照合込みの worst-case は $O(1) + O(\log n) + O(L)$ とする。 |
 
 #### `get-function`
 

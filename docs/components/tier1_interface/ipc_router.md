@@ -675,7 +675,7 @@ sequenceDiagram
 #### メッセージ受信（receive_message）
 <!-- traceability: {OwnershipTransfer} {IPC_ZeroCopy} {ADR_RendezvousChannel} -->
 
-**ガード付き外部選択（Guarded External Choice / Select）**: 受信側は自タスクのロール宛てへの全 ALLOW エッジ（RBAC マトリックスの該当列）を同時に待ち受け、最初に到達した送信側とランデブーする。自タスクのロールは TCB から確定取得され、URI や送信元ロールの引数指定を必要としない。複数チャネルへの同時登録は、成立した瞬間に他の全チャネルから解除される（[`scheduler.py`](experiments/pysim/core/scheduler.py) の `channel_select_recv` / `SelectGroup` 参照）ため、1 チャネル 1 待機者の不変条件は破られない。
+**ガード付き外部選択（Guarded External Choice / Select）**: 受信側は自タスクのロール宛てへの全 ALLOW エッジ（RBAC マトリックスの該当列）を同時に待ち受け、最初に到達した送信側とランデブーする。自タスクのロールは TCB から確定取得され、URI や送信元ロールの引数指定を必要としない。複数チャネルへの同時登録は、成立した瞬間に他の全チャネルから解除される（[`scheduler.py`](experiments/pysim/tier1_core/scheduler.py) の `channel_select_recv` / `SelectGroup` 参照）ため、1 チャネル 1 待機者の不変条件は破られない。
 
 | 項目 | 内容 |
 | :--- | :--- |

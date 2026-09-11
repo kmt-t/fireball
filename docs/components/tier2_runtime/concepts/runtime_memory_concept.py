@@ -845,7 +845,7 @@ def test_mem_12_shm_id_kv_pair_encoding() -> None:
     (1) the pack/unpack bit-layout formula itself, exercised on arbitrary non-canonical
         values so it cannot pass by re-declaring the same numbers twice;
     (2) the specific FUNCTIONAL(0b000)/uint32_t(0b00001) byte value ipc_router.md's table
-        assigns, which real kv_pair producers (experiments/pysim/core/ipc_router.py's
+        assigns, which real kv_pair producers (experiments/pysim/tier1_core/ipc_router.py's
         ScopeKind.FUNCTIONAL / DataType.UINT32) must independently reproduce as 0x01."""
 
     def pack_type_byte(scope: int, dtype: int) -> int:

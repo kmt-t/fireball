@@ -29,21 +29,22 @@ import sys
 from pathlib import Path
 
 _PYSIM_DIR = Path(__file__).resolve().parent
-while not (_PYSIM_DIR / "core").is_dir():
+while not (_PYSIM_DIR / "tier1_core").is_dir():
     _PYSIM_DIR = _PYSIM_DIR.parent
 
 for _p in [
     _PYSIM_DIR,
-    _PYSIM_DIR / "core",
-    _PYSIM_DIR / "runtime",
-    _PYSIM_DIR / "jit",
-    _PYSIM_DIR / "platforms",
+    _PYSIM_DIR / "tier1_core",
+    _PYSIM_DIR / "tier1_interface",
+    _PYSIM_DIR / "tier2_runtime",
+    _PYSIM_DIR / "tier3_jit",
+    _PYSIM_DIR / "tier3_platform",
 ]:
     _sp = str(_p)
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-from hal import (
+from hal_dispatch import (
     ARG_BUFFER_HANDLE,
     ARG_LENGTH,
     ARG_OFFSET,

@@ -20,10 +20,11 @@ for _p in [
     _TESTS_DIR,
     _TEST_FILE.parent,
     _PYSIM_DIR,
-    _PYSIM_DIR / "core",
-    _PYSIM_DIR / "runtime",
-    _PYSIM_DIR / "jit",
-    _PYSIM_DIR / "platforms",
+    _PYSIM_DIR / "tier1_core",
+    _PYSIM_DIR / "tier1_interface",
+    _PYSIM_DIR / "tier2_runtime",
+    _PYSIM_DIR / "tier3_jit",
+    _PYSIM_DIR / "tier3_platform",
     _REPO_ROOT / "docs" / "components" / "tier1_core" / "concepts",
     _REPO_ROOT / "docs" / "components" / "tier1_interface" / "concepts",
     _REPO_ROOT / "docs" / "components" / "tier2_runtime" / "concepts",
@@ -35,7 +36,7 @@ for _p in [
         sys.path.insert(0, _sp)
 
 from control_flow import extract_basic_blocks
-from hal import (
+from hal_dispatch import (
     UartTransport,
 )
 from interpreter import Interpreter
@@ -249,7 +250,7 @@ def test_virq_55_does_not_enter_wasi_polling_path():
 
 def test_hal_task_ipc_communication():
     """TEST-HAL-01: HAL operates as a distinct task on COOS and handles commands via IPC rendezvous."""
-    from hal import ARG_LENGTH, ARG_OFFSET
+    from hal_dispatch import ARG_LENGTH, ARG_OFFSET
     from wasi import Wasi03pEngine, WasiIpcCmd
 
     sysv = System()

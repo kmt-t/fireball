@@ -18,13 +18,14 @@ _PYSIM_DIR = _BENCH_DIR.parent
 for _p in [
     _BENCH_DIR / "linear_memory",
     _BENCH_DIR / "vmmio",
-    _BENCH_DIR / "jit",
+    _BENCH_DIR / "tier3_jit",
     _BENCH_DIR / "aobench",
     _PYSIM_DIR,
-    _PYSIM_DIR / "core",
-    _PYSIM_DIR / "runtime",
-    _PYSIM_DIR / "jit",
-    _PYSIM_DIR / "platforms",
+    _PYSIM_DIR / "tier1_core",
+    _PYSIM_DIR / "tier1_interface",
+    _PYSIM_DIR / "tier2_runtime",
+    _PYSIM_DIR / "tier3_jit",
+    _PYSIM_DIR / "tier3_platform",
 ]:
     _sp = str(_p)
     if _sp not in sys.path:

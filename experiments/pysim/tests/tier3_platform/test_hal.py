@@ -18,10 +18,11 @@ _REPO_ROOT = _PYSIM_DIR.parent.parent
 for _p in [
     _TESTS_DIR,
     _PYSIM_DIR,
-    _PYSIM_DIR / "core",
-    _PYSIM_DIR / "runtime",
-    _PYSIM_DIR / "jit",
-    _PYSIM_DIR / "platforms",
+    _PYSIM_DIR / "tier1_core",
+    _PYSIM_DIR / "tier1_interface",
+    _PYSIM_DIR / "tier2_runtime",
+    _PYSIM_DIR / "tier3_jit",
+    _PYSIM_DIR / "tier3_platform",
     _REPO_ROOT / "docs" / "components" / "tier1_core" / "concepts",
     _REPO_ROOT / "docs" / "components" / "tier1_interface" / "concepts",
     _REPO_ROOT / "docs" / "components" / "tier2_runtime" / "concepts",
@@ -32,7 +33,7 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-from hal import (
+from hal_dispatch import (
     FB_CONF_HAL_BUFFER_SIZE,
     FB_CONF_HAL_MAX_BUFFERS,
     HalBufferPool,
@@ -111,7 +112,7 @@ def test_hal_04_hal_buffer_slice_bounds_and_ownership():
 
 def test_hal_task_ipc_communication():
     """TEST-HAL-01: HAL operates as a distinct task on COOS and handles commands via IPC rendezvous."""
-    from hal import ARG_LENGTH, ARG_OFFSET
+    from hal_dispatch import ARG_LENGTH, ARG_OFFSET
     from wasi import Wasi03pEngine, WasiIpcCmd
 
     sysv = System()

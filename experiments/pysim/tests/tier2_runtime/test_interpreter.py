@@ -18,10 +18,11 @@ _REPO_ROOT = _PYSIM_DIR.parent.parent
 for _p in [
     _TESTS_DIR,
     _PYSIM_DIR,
-    _PYSIM_DIR / "core",
-    _PYSIM_DIR / "runtime",
-    _PYSIM_DIR / "jit",
-    _PYSIM_DIR / "platforms",
+    _PYSIM_DIR / "tier1_core",
+    _PYSIM_DIR / "tier1_interface",
+    _PYSIM_DIR / "tier2_runtime",
+    _PYSIM_DIR / "tier3_jit",
+    _PYSIM_DIR / "tier3_platform",
     _REPO_ROOT / "docs" / "components" / "tier1_core" / "concepts",
     _REPO_ROOT / "docs" / "components" / "tier1_interface" / "concepts",
     _REPO_ROOT / "docs" / "components" / "tier2_runtime" / "concepts",
@@ -324,7 +325,7 @@ def test_wasm_f32_arithmetic_min_max_and_precision():
 def test_wasm_loader_and_radix_binary_tree_view_indexes():
     """TEST-LOAD-01..47: Verifies WASM Loader zero-copy indexing, verification, and RadixBinaryTreeView file offset & hash symbol indexes."""
     from loader import WasmLoader, WasmVerifyError
-    from tier2_runtime.test_loader import _build_test_wasm_binary
+    from test_loader import _build_test_wasm_binary
 
     loader = WasmLoader()
     wasm_bytes = _build_test_wasm_binary(export_names=["zeta", "alpha", "beta"])

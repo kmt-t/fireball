@@ -48,7 +48,7 @@ flowchart TD
 | 出力トランスポート | HAL_Transport で定義された物理デバイス（UART等）への参照 | 構造体への参照 | `hal_transport` (非所有) |
 | 循環バッファ | ログデータを一時的に保持する領域 | リングバッファ | 固定長配列 |
 | 書き込み/読み出し索引 | バッファの現在の状態を示すポインタ | アトミック値 | 32bit |
-| 出力閾値 | 現在出力対象としている最小のログレベル | uint8_t | `log_level` |
+| 出力閾値 | 現在出力対象としている最小のログレベル | 8bit整数 | `log_level` |
 
 #### ログ構成（logging_config）
 <!-- traceability: {META_ConfigurableSystem} -->
@@ -124,14 +124,14 @@ COOSスケジューラの `set_idle_hook` で `logger.flush()` を登録する�
 ```mermaid
 stateDiagram-v2
     [*] --> Idle
-    Idle --> Validating: log_received(dict_id, args)
-    Validating --> Enqueuing: id_within_bounds / store raw entry (overwrite oldest on full)
+    Idle --> Validating: "log_received(dict_id, args)"
+    Validating --> Enqueuing: "id_within_bounds / store raw entry; overwrite oldest on full"
     Enqueuing --> Idle: enqueued
-    Idle --> Flushing: buffer_not_empty / idle_hook
-    Flushing --> DrainingBatch: start_dma_batch
-    DrainingBatch --> Flushing: dma_complete / buffer_not_empty & !interrupt_pending
-    DrainingBatch --> Idle: dma_complete & interrupt_pending / defer next batch, return to scheduler
-    DrainingBatch --> Idle: buffer_empty
+    Idle --> Flushing: "buffer_not_empty / idle_hook"
+    Flushing --> DrainingBatch: "start_dma_batch"
+    DrainingBatch --> Flushing: "dma_complete / buffer_not_empty and not interrupt_pending"
+    DrainingBatch --> Idle: "dma_complete and interrupt_pending / defer next batch"
+    DrainingBatch --> Idle: "buffer_empty"
 ```
 
 ### 4.5 内部シーケンス
@@ -167,8 +167,8 @@ sequenceDiagram
 | 項目 | 内容 |
 | :--- | :--- |
 | 機能概要 | 発生したイベントを、レベルと辞書オフセット形式で記録する。 |
-| シグネチャ | `auto log_event(level: uint8_t, offset: uint32_t, args: std::span<const uint32_t, 4>) -> log_result_t` |
-| 引数 | `level`: ログレベル重要度<br>`offset`: 辞書オフセット（API上は `uint32_t` で受け取るが、IPC送信時は下記 IPC 不変条件のとおり `kv_pair` の識別キー幅である24bitに収める）<br>`args`: ログパラメータとなる数値配列（最大4要素の `std::span`） |
+| シグネチャ | `log_event(level: log-level, offset: dictionary-offset, args: scalar-argument-view<4>) -> log-result` |
+| 引数 | `level`: ログレベル重要度<br>`offset`: 辞書オフセット（IPC送信時は `kv_pair` の識別キー幅である24bitに収める）<br>`args`: ログパラメータとなる最大4個のスカラー引数ビュー |
 | 戻り値 | `log_result_t` (常に `SUCCESS` を返し、バッファ満杯時は最古ログを自動上書きしてシステムの実行継続性を最優先する) |
 | 期待する結果 | 正常：ログ情報がリングバッファにキューイングされる。 |
 

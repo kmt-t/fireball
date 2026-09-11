@@ -98,7 +98,7 @@ Cortex-M33 MPU および vMMIO のハードウェア保護機構において、�
 
 ### 6.4 共有メモリライフサイクルと権限遷移プロトコル（物理実装）
 <!-- traceability: {OwnershipTransfer} {META_FaultIsolation} -->
-[`system_memory.md`](docs/components/tier1_core/system_memory.md) の `{OwnershipTransfer}` ライフサイクルフェーズ遷移表に対応する、物理メモリマネージャ自身の動作を以下に示す。§6.2 の DIP 設計に従い、各フェーズでのページテーブル（PTE）更新・TLB フラッシュの実行は仮想化層（vMMIO コントローラ）の自律的な責務であり、本コンポーネントはライフサイクル通知の発火のみを行う。vMMIO 側の具体的な PTE/TLB 挙動は [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md) を正本とする。
+[`system_memory.md`](docs/components/tier1_core/system_memory.md) の `{OwnershipTransfer}` ライフサイクルフェーズ遷移表に対応する、物理メモリマネージャ自身の動作を以下に示す。依存性逆転（DIP）の設計方針に従い、各フェーズでのページテーブル（PTE）更新・TLB フラッシュの実行は仮想化層（vMMIO コントローラ）の自律的な責務であり、本コンポーネントはライフサイクル通知の発火のみを行う。vMMIO 側の具体的な PTE/TLB 挙動は [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md) を正本とする。
 
 | ステップ | フェーズ | 送信元(Task A) | 受信先(Task B) | 物理メモリマネージャの動作 |
 | :---: | :--- | :--- | :--- | :--- |

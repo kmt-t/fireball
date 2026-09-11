@@ -124,6 +124,8 @@ AoS（Array of Structures）構造に基づく、昇順ソート済みの (Key, 
 <!-- traceability: {PackedBitView} {GLOBAL_StrictMemoryLimit} {META_ZeroCostAbstraction} -->
 1 要素が 1 バイト未満の密な状態表を指す非所有ビュー。**探索を行わない**——添字による直接参照のみであり、`{META_AccessDictionary}`（データの索引化に基づく検索最適化）の対象外である。 `{PackedBitView}`
 
+ビューが保持する状態は、裏打ちバイト列 `storage_`、論理要素 0 のビット位置 `origin_`、および論理要素数 `count_` の3メンバである。`storage_` は `put()` を許すため可変バイト列ビューだが、ビュー自身は記憶域を所有せず、区間情報も不変である。
+
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
 | 記憶域 | ビット詰めされた状態列の格納領域 | データ範囲 | `std::span<std::byte>` |
@@ -388,7 +390,7 @@ class RadixBinaryTreeView:
         radix_shift: int,
         key_transform=None,
     ):
-        self.map_view = FlatMapView(keys, values)
+        self.map_view = FlatMapView(list(zip(keys, values, strict=False)))
         self.radix_table = radix_table  # pure scalar offsets array [0, 3, 6, ...]
         self.radix_shift = radix_shift
         self.key_transform = key_transform

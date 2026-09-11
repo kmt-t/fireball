@@ -86,7 +86,7 @@ WASM バイトコードにおける制御フロー命令は、その内部動作
 
 ##### 3.3.2 JIT コンパイル対象命令セット仕様台帳（JIT Supported Opcode Specification）
 <!-- traceability: {JIT_CopyAndPatch} {JIT_ZeroCompileCostTheorem} {JIT_RegisterMapping} {PositionIndependentCode} -->
-JIT コンパイラがフォールバックせずにネイティブバイナリとしてインライン展開・生成する命令セット（全 54 命令）の仕様台帳を以下に定める。
+JIT コンパイラがフォールバックせずにネイティブバイナリとしてインライン展開・生成する命令セット（全 54 命令）の仕様台帳を以下に定める。内訳は制御・スタック 5、構文デリミタ 4、定数ロード 2、変数アクセス 6、32bit 算術・論理 17、32bit 比較 11、リニアメモリアクセス 9 の合計 `5 + 4 + 2 + 6 + 17 + 11 + 9 = 54` 命令である。
 
 | カテゴリ | WASM Opcode (Hex) | 命令名 | JIT ネイティブ展開形式 (Thumb-2) | スタック/レジスタ効果 | 生成バイト数 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -99,8 +99,8 @@ JIT コンパイラがフォールバックせずにネイティブバイナリ�
 | | `0x03` | `loop` | (0 Byte 消去・ヘッダ `chain_next_pc` 解決) | なし | 0 Bytes |
 | | `0x05` | `else` | (0 Byte 消去・ヘッダ `chain_next_pc` 解決) | なし | 0 Bytes |
 | | `0x0B` | `end` | (0 Byte 消去・ヘッダ `chain_next_pc` 解決) | なし | 0 Bytes |
-| **定数ロード** | `0x41` | `i32.const` | `movw r3, #imm16; movt r3, #imm16` | $\to$ R3 (TOS) | 4 Bytes |
-| | `0x42` | `i64.const` | `movw/movt r3, #imm; movw/movt r4, #imm` | $\to$ R3:R4 (LO:HI) | 8 Bytes |
+| **定数ロード** | `0x41` | `i32.const` | `movw r3, #imm16; movt r3, #imm16` | $\to$ R3 (TOS) | 8 Bytes |
+| | `0x42` | `i64.const` | `movw/movt r3, #imm; movw/movt r4, #imm` | $\to$ R3:R4 (LO:HI) | 16 Bytes |
 | **変数アクセス** | `0x20` | `local.get` | `ldr r3, [r2, #offset]` | $\to$ R3 (TOS) | 2 Bytes |
 | | `0x21` | `local.set` | `str r3, [r2, #offset]` | R3 $\to$ Local | 2 Bytes |
 | | `0x22` | `local.tee` | `str r3, [r2, #offset]` | R3 $\to$ Local (R3維持) | 2 Bytes |

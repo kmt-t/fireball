@@ -27,6 +27,7 @@ from collections.abc import Callable, Iterator
 
 from control_flow import iter_block_ops
 from interpreter import Interpreter, InterpreterCall
+from recovery import Result
 from system_containers import (
     BitView,
     FlatMapView,
@@ -37,6 +38,14 @@ from system_containers import (
     RingBuffer,
     StaticVector,
     bswap32,
+)
+from virq import (
+    DispatchResult,
+    InterruptEvent,
+    RegistrationError,
+    RegistrationStatus,
+    VirqDispatcher,
+    VirqDispatchResult,
 )
 from wasm_module import BasicBlock, Module, TraceBlock
 from wasm_opcodes import (
@@ -58,6 +67,8 @@ except ImportError:
 
 
 class CardState:
+    __slots__ = ()
+
     UNEXECUTED = 0
     EXECUTED = 1
     HOT = 2  # Queued for compilation
@@ -678,6 +689,8 @@ class RuntimeEngine:
         "__dict__",
         "_fast_block_slots",
         "_n_locals_by_func",
+        "_virq",
+        "_virq_interp",
         "bitmap",
         "cache",
         "compile_queue",
@@ -745,6 +758,8 @@ class RuntimeEngine:
         # already knows every function's exact local count at module-load
         # time, so there is nothing to defensively recompute at runtime.
         self._n_locals_by_func: list[int] = []
+        self._virq: VirqDispatcher | None = None
+        self._virq_interp: Interpreter | None = None
 
     def _handle_eviction(self, purged_pcs: list[int]) -> None:
         for pc in purged_pcs:
@@ -794,6 +809,7 @@ class RuntimeEngine:
         if module.block_tree is None:
             module.build_basic_block_index()
         self.module = module
+        self._virq = VirqDispatcher(module, self._invoke_virq)
         self.control_skip_tree = module.control_skip_tree
         self.cache.control_skip_tree = module.control_skip_tree
         self._fast_block_slots = [None] * 16
@@ -827,6 +843,44 @@ class RuntimeEngine:
             self.on_yield()
             return True
         return False
+
+    def register_virq_dispatcher(
+        self, node_id: int, function_index: int
+    ) -> Result[RegistrationStatus, RegistrationError]:
+        """Validate a static vIRQ registration for the next safepoint."""
+        if self._virq is None:
+            return Result.err(RegistrationError.MODULE_UNAVAILABLE)
+        return self._virq.register_dispatcher(node_id, function_index)
+
+    def commit_virq_safepoint(self) -> None:
+        """Publish validated vIRQ registrations at the execution boundary."""
+        if self._virq is not None:
+            self._virq.commit_safepoint()
+
+    def dispatch_interrupt_event(self, event: InterruptEvent) -> DispatchResult:
+        """Dispatch one COOS event through the vIRQ hierarchy."""
+        if self._virq is None:
+            return DispatchResult(VirqDispatchResult.REJECT, "VIRQ_UNAVAILABLE")
+        return self._virq.dispatch_interrupt_event(event)
+
+    def _invoke_virq(
+        self,
+        function_index: int,
+        vector_id: int,
+        source_id: int,
+        cause_code: int,
+        payload0: int,
+        payload1: int,
+    ) -> int:
+        if self._virq_interp is None:
+            return int(VirqDispatchResult.REJECT)
+        results = self._virq_interp.call(
+            function_index,
+            (vector_id, source_id, cause_code, payload0, payload1),
+        )
+        if not results:
+            return int(VirqDispatchResult.REJECT)
+        return results[0] & 0xFFFF_FFFF
 
     def on_yield(self) -> None:
         """Scans history ring, updates 2-bit card bitmap, and queues HOT traces."""
@@ -1060,6 +1114,7 @@ class RuntimeEngine:
         """
         if self.module is None and interp.module is not None:
             self.register_module_blocks(interp.module)
+        self._virq_interp = interp
 
         call_state = interp.start(func_index, args)
         COMPILED = CardState.COMPILED
@@ -1070,7 +1125,7 @@ class RuntimeEngine:
                 block_here = self.get_block(pc)
                 frame_here = call_state.cont[1]
                 if block_here is not None and len(frame_here.frames) > block_here.frame_depth:
-                    del frame_here.frames[block_here.frame_depth :]
+                    frame_here.frames.truncate(block_here.frame_depth)
                 frame_here.boundary_next_pc = block_here.next_pc if block_here is not None else None
                 frame_here.boundary_loops_to = (
                     block_here.loops_to if block_here is not None else None
@@ -1109,7 +1164,7 @@ class RuntimeEngine:
                     block_here = self.get_block(pc)
                     frame_here = call_state.cont[1]
                     if block_here is not None and len(frame_here.frames) > block_here.frame_depth:
-                        del frame_here.frames[block_here.frame_depth :]
+                        frame_here.frames.truncate(block_here.frame_depth)
                     frame_here.boundary_next_pc = (
                         block_here.next_pc if block_here is not None else None
                     )
@@ -1178,7 +1233,7 @@ class RuntimeEngine:
             next_unified = trace.loops_to if cond != 0 else trace.next_pc
         else:
             if trace.has_return_val and res is not None:
-                frame.values.append(res & 0xFFFF_FFFF)
+                frame.values.push_back(res & 0xFFFF_FFFF)
             next_unified = trace.next_pc
 
         # next_unified is None only for a JIT-compiled block whose
@@ -1205,6 +1260,7 @@ class WASMContext:
         "_c_result",
         "_cached_locals_view",
         "_n_locals",
+        "fault",
         "memory",
         "stack",
         "stack_capacity",
@@ -1212,17 +1268,14 @@ class WASMContext:
 
     def __init__(
         self,
-        locals_values: list[int] | None = None,
         memory: bytearray | None = None,
         stack_capacity: int = 64,
     ):
-        n_locals = max(len(locals_values or []), 16)
+        n_locals = 16
         self._c_locals = (ctypes.c_int64 * n_locals)()
-        if locals_values:
-            for i, v in enumerate(locals_values):
-                self._c_locals[i] = v
 
         self._n_locals = n_locals
+        self.fault: str | None = None
         self.stack_capacity = stack_capacity
         self.stack: StaticVector[int] = StaticVector(capacity=stack_capacity)
         self.memory = memory
@@ -1275,18 +1328,24 @@ class WASMContext:
         return self._cached_locals_view
 
     @locals.setter
-    def locals(self, values: list[int]) -> None:
+    def locals(self, values: tuple[int, ...]) -> None:
+        if len(values) > self._n_locals:
+            self.fault = "WASM_LOCAL_STACK_CAPACITY"
+            return
         for i, v in enumerate(values):
             self._c_locals[i] = v & 0xFFFF_FFFF
 
-    def push(self, val: int) -> None:
+    def push(self, val: int) -> bool:
         if not self.stack.push_back(val & 0xFFFF_FFFF):
-            raise RuntimeError("WASM execution stack overflow")
+            self.fault = "WASM_EXECUTION_STACK_OVERFLOW"
+            return False
+        return True
 
     def pop(self) -> int:
         val = self.stack.pop_back()
         if val is None:
-            raise RuntimeError("WASM execution stack underflow")
+            self.fault = "WASM_EXECUTION_STACK_UNDERFLOW"
+            return 0
         return val
 
 
@@ -1348,7 +1407,7 @@ class WASMTraceCompiler:
 
     __slots__ = ()
 
-    def compile_trace(self, head_pc: int, block: TraceBlock) -> JITTrace:
+    def compile_trace(self, head_pc: int, block: TraceBlock) -> JITTrace | None:
         # `ops` outlives this call, captured by `trace_fn` below for every
         # future invocation of the returned JITTrace, so it needs a fixed
         # capacity: `block.byte_span` (each op is at least 1 byte, so it can
@@ -1356,7 +1415,7 @@ class WASMTraceCompiler:
         ops: StaticVector[tuple[int, object]] = StaticVector(capacity=block.byte_span)
         for op, arg in block.ops:
             if not ops.push_back((op, arg)):
-                raise ValueError(f"trace at {head_pc:#x}: op count exceeds byte_span capacity")
+                return None
         has_ret = any(op in (I32_CONST, I32_ADD, I32_SUB, I32_MUL) for op, _ in ops)
 
         def trace_fn(ip: int, stack_bot: object, local_base: object, tos: int) -> int:
@@ -1627,8 +1686,12 @@ class IntegratedHybridEngine:
             handler = _INTERP_BLOCK_MAP.find(op)
             if handler is not None:
                 handler(ctx, arg)
+                if ctx.fault is not None:
+                    break
 
     def _next_pc(self, block: BasicBlock, ctx: WASMContext) -> int | None:
+        if ctx.fault is not None:
+            return None
         if block.loops_to is not None:
             # Condition at TOS: if non-zero, loop back; else fallthrough
             cond = ctx.pop()

@@ -1,6 +1,7 @@
 # サービス コンポーネント設計書 {VERIFY_LLM} {VERIFY_FORMAL}
 <!-- evidence:
      formal: formal/service_fault_isolation_model.py
+     concept: concepts/service_concept.py
      test: tests/system_service_test_spec.md
 -->
 

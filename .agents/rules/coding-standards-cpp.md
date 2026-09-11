@@ -1,6 +1,6 @@
 ---
 name: coding-standards-cpp
-description: 極小組み込み環境向け C23/C++23 コーディング標準（Clang 17+ 必須、[[clang::musttail]]、動的メモリ/例外/RTTI禁止、STLポリシー、独自ユーティリティ）
+description: 極小組み込み環境向け C23/C++23 コーディング標準（Clang 17+ 必須、[[clang::musttail]]、メモリ確保 API/例外/RTTI/STL ポリシー、独自ユーティリティ）
 globs: ["src/**", "inc/**", "tests/**/*.cxx", "tests/**/*.hxx"]
 scope: GLOBAL
 ---
@@ -20,10 +20,11 @@ scope: GLOBAL
 
 ## 2. 組み込みメモリ・安全制約 (Embedded & Safety Constraints)
 
-- **動的メモリ確保の完全禁止 `{Policy_Memory}`**:
-  - ヒープ確保関数（`malloc`, `free`, `realloc`, `calloc`）および演算子（`new`, `delete`）の使用を完全禁止する。
-  - 動的サイズ変更を伴う標準コンテナ（`std::vector`, `std::string`, `std::list`, `std::map` 等）を禁止する。
-  - すべてのメモリ割り当ては、コンパイル時固定の静的バッファ（`std::array`）、スタック、または事前確保された固定長プール（`bump_allocator`、スロットプール）から行う。
+- **メモリ確保 API とコンテナの制約 `{Policy_Memory}`**:
+  - ヒープ確保関数（`malloc`, `free`, `realloc`, `calloc`）および通常の演算子（`new`, `new[]`, `delete`, `delete[]`）の使用を禁止する。
+  - placement/in-place `new`（例: `::new (storage) T(...)`）は許可する。使用時は保存領域のサイズ、アラインメント、オブジェクト寿命、および破棄手順を保証する。
+  - プロジェクトで提供する独自ヒープ API および独自コンテナは許可する。それらは各コンポーネントの仕様、所有権、容量、寿命、および失敗時挙動に従う。
+  - 標準ライブラリの動的コンテナ（`std::vector`, `std::string`, `std::list`, `std::map`, `std::unordered_map` 等）は、システム提供アロケータを使用していても禁止する。
 - **例外および RTTI の完全禁止**:
   - 例外機構（`throw`, `try`, `catch`）を禁止する（`-fno-exceptions`）。エラー伝播は `result<T, E>`（`std::expected` 相当）による戻り値ハンドリングを徹底する。
   - 実行時型情報（RTTI: `typeid`, `dynamic_cast`）を禁止する（`-fno-rtti`）。
@@ -52,7 +53,7 @@ scope: GLOBAL
 
 ## 4. C++ 標準ライブラリ (STL) 利用規約
 
-libc++ 等の外部ランタイムへのリンクを排除し、コードサイズを最小化するため、原則として**ヘッダのみで完結し、ヒープを使用しない機能**のみを利用可能とする。
+標準ライブラリは、以下の許可一覧と禁止一覧に従って利用する。標準ライブラリの動的コンテナは、システム提供アロケータを使用していても利用してはならない。
 
 ### 4.1 利用可能ライブラリ (Allowed)
 - `<array>`: 固定長配列（`std::array`）。
@@ -67,7 +68,7 @@ libc++ 等の外部ランタイムへのリンクを排除し、コードサイ�
 - `<coroutine>`: コルーチン制御・対称遷移（Symmetric Transfer）。
 
 ### 4.2 禁止ライブラリ (Prohibited)
-- **動的コンテナ**: `std::vector`, `std::string`, `std::map`, `std::unordered_map` 等。
+- **動的コンテナ**: `std::vector`, `std::string`, `std::list`, `std::map`, `std::unordered_map` 等。
 - **入出力**: `std::iostream`, `std::format`（コードサイズ肥大化のため）。
 - **例外**: `std::exception` 関連。
 - **多相関数ラッパー**: `std::function`（ヒープ確保の可能性があるため禁止。後述の独自 `economic_function` を使用）。
@@ -76,7 +77,7 @@ libc++ 等の外部ランタイムへのリンクを排除し、コードサイ�
 
 ## 5. 独自ユーティリティ設計規約 (Fireball Custom Utilities)
 
-STL の使用禁止領域（ヒープ確保・例外）を補完するため、以下の独自ユーティリティを設計・実装して使用する。
+標準ライブラリの使用禁止領域（標準動的コンテナ・例外等）を補完するため、以下の独自ユーティリティを設計・実装して使用する。
 
 ### 5.1 固定 SBO 多相関数ラッパー (`economic_function<Sig>`)
 - **目的**: `std::function` はサイズ超過時に暗黙の動的ヒープ確保（`malloc`）を行うため、極小組み込み環境では使用できない。これを代替するため、**ヒープ確保を完全に排除した固定 SBO (Small Buffer Optimization) 多相関数ラッパー**を独自実装する。

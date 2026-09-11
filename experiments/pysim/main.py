@@ -185,7 +185,8 @@ def demo_wasmjit_hybrid_execution(sysv: System) -> None:
     mod = engine.load_wasm(FACTORIAL_WASM)
 
     # Run factorial(6) = 720
-    ctx = WASMContext(locals_values=[6, 0])
+    ctx = WASMContext()
+    ctx.locals = (6, 0)
     loop_pc = mod.blocks[1].head_pc  # 0x06 (the loop body)
     pc = engine.run_step(mod.blocks[0].head_pc, ctx)  # executes preamble block (local[1] = 1)
     print("  [Stage 1] Initial iterations running via Tier 2 Interpreter...")

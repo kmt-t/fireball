@@ -1,10 +1,10 @@
 """
 docs/components/tier2_runtime/concepts/interpreter_concept.py
-Reference Concept Implementation: Exhaustive WASM MVP (v1) Stack Interpreter & Android ART Unified Frame
+Reference Concept Implementation: Exhaustive WASM MVP (v1) Stack Interpreter with Independent Runtime Stacks
 - Complete WASM MVP opcode set matching docs/specs/wasm_instruction_set.md
-- Bottom-resident execution_context: CallFrame + Locals + Operands share one
-  inline growing region; ControlFrame lives in its own dedicated region,
-  never interleaved with it (ADR-INTERP-03, runtime_interpreter.md §8)
+- Bottom-resident execution_context: OperandStack, LocalStack (CallFrame +
+  Locals), and ControlFrame each use an independent logical region
+  (runtime_interpreter.md §3, ADR-INTERP-04)
 - Direct-Threaded __fastcall Continuation Passing Style (CPS) 4-argument dispatch (ip, stack_bot, local_base, tos)
 - Full stack pruning (Label Arity handling) on br / br_if / br_table
 - 64-bit integer arithmetic, memory loads/stores (8/16/32/64-bit), and type conversions
@@ -20,16 +20,15 @@ class WASMTrap(Exception):
 
 
 # ==============================================================================
-# 1. Unified Stack Frame & Execution Context Data Structures
+# 1. Independent Stack Regions & Execution Context Data Structures
 # ==============================================================================
 
 
 class CallFrame:
     """
-    Call frame resident inline on the call/locals/operand region of the
-    stack buffer (never the dedicated control_frame region -- ADR-INTERP-03,
-    since `call`/`call_indirect`/return always round-trip through the
-    interpreter and never need JIT-bypass safety).
+    Call frame header resident in the LocalStack immediately before its local
+    values. OperandStack and ControlFrame use independent regions; the
+    call-frame header is never interleaved with either of them.
     `{ContextPointerRegister}` `{PositionIndependentCode}`
     """
 
@@ -37,21 +36,24 @@ class CallFrame:
         self,
         parent_offset: int,
         return_pc: int,
-        local_base: int,
-        saved_sp: int,
+        frame_offset: int,
         func_idx: int,
     ):
         self.parent_offset = parent_offset
         self.return_pc = return_pc
-        self.local_base = local_base
-        self.saved_sp = saved_sp
+        self.frame_offset = frame_offset
         self.func_idx = func_idx
+
+    @property
+    def local_base(self) -> int:
+        """Return the first LocalStack slot after this frame header."""
+        return self.frame_offset + 1
 
 
 class ControlFrame:
     """
-    Control block/loop/if frame resident in its own dedicated region of the
-    stack buffer, never interleaved with the operand stack (ADR-INTERP-03):
+    Control block/loop/if frame resident in its own dedicated ControlFrame
+    region, never interleaved with the operand or local stack (ADR-INTERP-03):
     a JIT trace that resolves a loop/block exit never pops one of these, so
     letting it share the operand stack's growing region would let that
     leave the operand stack's own addressing corrupted.
@@ -80,10 +82,18 @@ class ExecutionContext:
     `{ContextPointerRegister}` `{EnvironmentPointer}` `{MemoryBoundaryCheck}`
     """
 
-    def __init__(self, memory_size: int = 65536, stack_capacity: int = 1024):
-        self.stack: list[int] = [0] * stack_capacity  # Unified stack buffer
+    def __init__(
+        self,
+        memory_size: int = 65536,
+        stack_capacity: int = 1024,
+        local_stack_capacity: int | None = None,
+    ):
+        self.operand_stack: list[int] = [0] * stack_capacity
         self.sp_offset: int = 0  # Operand stack growth length
-        self.call_frame_stack: list[CallFrame] = []
+        local_capacity = stack_capacity if local_stack_capacity is None else local_stack_capacity
+        self.local_stack: list[int | CallFrame] = [0] * local_capacity
+        self.local_offset: int = 0
+        self.call_frame_offsets: list[int] = []
         self.control_frame_stack: list[ControlFrame] = []
         self.globals: list[int] = [0] * 32
         self.memory: bytearray = bytearray(memory_size)
@@ -93,21 +103,58 @@ class ExecutionContext:
         self.funcs: list[list[tuple[str, int | object]]] = []
 
     def push(self, val: int) -> None:
-        if self.sp_offset >= len(self.stack):
+        if self.sp_offset >= len(self.operand_stack):
             raise WASMTrap("STACK_OVERFLOW")
-        self.stack[self.sp_offset] = val
+        self.operand_stack[self.sp_offset] = val
         self.sp_offset += 1
 
     def pop(self) -> int:
         if self.sp_offset <= 0:
             raise WASMTrap("STACK_UNDERFLOW")
         self.sp_offset -= 1
-        return self.stack[self.sp_offset]
+        return self.operand_stack[self.sp_offset]
 
     def peek(self) -> int:
         if self.sp_offset <= 0:
             raise WASMTrap("STACK_UNDERFLOW")
-        return self.stack[self.sp_offset - 1]
+        return self.operand_stack[self.sp_offset - 1]
+
+    def begin_call_frame(self, func_idx: int, args: list[int]) -> CallFrame:
+        """Push a CallFrame header and its locals into the LocalStack region."""
+        frame_offset = self.local_offset
+        required = 1 + len(args)
+        if frame_offset + required > len(self.local_stack):
+            raise WASMTrap("LOCAL_STACK_OVERFLOW")
+        parent_offset = self.call_frame_offsets[-1] if self.call_frame_offsets else 0
+        frame = CallFrame(
+            parent_offset=parent_offset,
+            return_pc=0,
+            frame_offset=frame_offset,
+            func_idx=func_idx,
+        )
+        self.local_stack[frame_offset] = frame
+        self.local_offset += 1
+        for arg in args:
+            self.local_stack[self.local_offset] = arg
+            self.local_offset += 1
+        self.call_frame_offsets.append(frame_offset)
+        return frame
+
+    def end_call_frame(self, frame: CallFrame) -> None:
+        """Pop the current CallFrame and its LocalStack payload."""
+        if not self.call_frame_offsets or self.call_frame_offsets[-1] != frame.frame_offset:
+            raise WASMTrap("CALL_FRAME_UNDERFLOW")
+        self.call_frame_offsets.pop()
+        self.local_offset = frame.frame_offset
+
+    def current_call_frame(self) -> CallFrame:
+        """Return the current CallFrame header from the LocalStack region."""
+        if not self.call_frame_offsets:
+            raise WASMTrap("CALL_FRAME_UNDERFLOW")
+        frame = self.local_stack[self.call_frame_offsets[-1]]
+        if not isinstance(frame, CallFrame):
+            raise WASMTrap("CALL_FRAME_CORRUPTED")
+        return frame
 
     def prune_stack(self, saved_sp: int, arity: int) -> None:
         """
@@ -128,28 +175,18 @@ class ExecutionContext:
 class WASMInterpreter:
     def execute_function(self, ctx: ExecutionContext, func_idx: int, args: list[int]) -> int:
         """
-        Pushes a new CallFrame on the unified stack and executes function bytecode.
+        Pushes a new CallFrame and its locals into LocalStack, then executes function bytecode.
         """
         bytecode = ctx.funcs[func_idx]
-        local_base = ctx.sp_offset
-        for arg in args:
-            ctx.push(arg)
-
-        frame = CallFrame(
-            parent_offset=0,
-            return_pc=0,
-            local_base=local_base,
-            saved_sp=local_base,
-            func_idx=func_idx,
-        )
-        ctx.call_frame_stack.append(frame)
-        status = self.execute_bytecode(ctx, bytecode)
-        ctx.call_frame_stack.pop()
-        if status == "RETURN":
-            res = ctx.pop() if ctx.sp_offset > frame.saved_sp else None
-            ctx.sp_offset = frame.saved_sp
-            return res
-        return None
+        operand_base = ctx.sp_offset
+        frame = ctx.begin_call_frame(func_idx, args)
+        try:
+            status = self.execute_bytecode(ctx, bytecode)
+            result = ctx.pop() if status == "RETURN" and ctx.sp_offset > operand_base else None
+            return result
+        finally:
+            ctx.sp_offset = operand_base
+            ctx.end_call_frame(frame)
 
     def execute_bytecode(
         self, ctx: ExecutionContext, bytecode: list[tuple[str, int | object]]
@@ -399,8 +436,11 @@ def _h_select(
 def _h_local_get(
     ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
 ) -> tuple[str | None, int | None]:
-    frame = ctx.call_frame_stack[-1]
-    ctx.push(ctx.stack[frame.local_base + int(arg)])
+    frame = ctx.current_call_frame()
+    local_value = ctx.local_stack[frame.local_base + int(arg)]
+    if not isinstance(local_value, int):
+        raise WASMTrap("LOCAL_STACK_CORRUPTED")
+    ctx.push(local_value)
     return (None, None)
 
 
@@ -408,8 +448,8 @@ def _h_local_get(
 def _h_local_set(
     ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
 ) -> tuple[str | None, int | None]:
-    frame = ctx.call_frame_stack[-1]
-    ctx.stack[frame.local_base + int(arg)] = ctx.pop()
+    frame = ctx.current_call_frame()
+    ctx.local_stack[frame.local_base + int(arg)] = ctx.pop()
     return (None, None)
 
 
@@ -417,8 +457,8 @@ def _h_local_set(
 def _h_local_tee(
     ctx: ExecutionContext, arg: int | object, pc: int, interp: WASMInterpreter
 ) -> tuple[str | None, int | None]:
-    frame = ctx.call_frame_stack[-1]
-    ctx.stack[frame.local_base + int(arg)] = ctx.peek()
+    frame = ctx.current_call_frame()
+    ctx.local_stack[frame.local_base + int(arg)] = ctx.peek()
     return (None, None)
 
 
@@ -1339,6 +1379,18 @@ def test_full_wasm_recursive_factorial() -> None:
     assert res == 120, f"Expected 120, got {res}"
 
 
+def test_independent_operand_and_local_stacks() -> None:
+    """Test that OperandStack and LocalStack have independent capacities."""
+    ctx = ExecutionContext(stack_capacity=2, local_stack_capacity=2)
+    interp = WASMInterpreter()
+    ctx.push(99)
+    ctx.funcs = [[("local.get", 0), ("return", None)]]
+    res = interp.execute_function(ctx, func_idx=0, args=[42])
+    assert res == 42
+    assert ctx.pop() == 99
+    assert ctx.local_offset == 0
+
+
 def test_block_loop_and_stack_pruning() -> None:
     """Test block/loop nesting and label arity pruning on br/br_if."""
     ctx = ExecutionContext()
@@ -1533,6 +1585,7 @@ def test_globals_and_memory_grow() -> None:
 
 if __name__ == "__main__":
     test_full_wasm_recursive_factorial()
+    test_independent_operand_and_local_stacks()
     test_block_loop_and_stack_pruning()
     test_br_table_and_parametric()
     test_64bit_integer_arithmetic()

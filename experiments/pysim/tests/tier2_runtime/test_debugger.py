@@ -76,7 +76,8 @@ def test_dbg_02_read_virtual_registers():
     dbg = DebuggerManager()
     dbg.attach()
     rsp = GDBRspProtocol(dbg)
-    ctx = WASMContext(locals_values=[10, 20, 30])
+    ctx = WASMContext()
+    ctx.locals = (10, 20, 30)
     ctx.push(999)  # tos
     res, pc = rsp.handle_packet("g", 0x100, ctx, {})
     # Strip framing
@@ -100,7 +101,8 @@ def test_dbg_03_write_virtual_registers():
     dbg = DebuggerManager()
     dbg.attach()
     rsp = GDBRspProtocol(dbg)
-    ctx = WASMContext(locals_values=[0] * 16)
+    ctx = WASMContext()
+    ctx.locals = (0,) * 16
     # Set new PC=0x200, locals[0]=55, locals[1]=77
     regs = [0x200, 0, 0, 0, 55, 77] + [0] * 14
     hex_payload = "G" + "".join(f"{r:08x}" for r in regs)
@@ -194,7 +196,8 @@ def test_dbg_08_09_breakpoints_and_hit():
     assert res_z.startswith("$OK#")
     assert dbg.has_breakpoint(block2.head_pc)
     # Continue from block1 -> should halt at block2 with SIGTRAP ($S05)
-    ctx = WASMContext(locals_values=[5])
+    ctx = WASMContext()
+    ctx.locals = (5,)
     res_c, stop_pc = rsp.handle_packet("c", block1.head_pc, ctx, blocks)
     assert res_c.startswith("$S05#")
     assert stop_pc == block2.head_pc
@@ -230,7 +233,8 @@ def test_dbg_10_11_single_step_and_termination():
     mod = engine.load_wasm(wat_to_wasm(wat))
     block1, block2 = mod.blocks[0], mod.blocks[1]
     blocks = {block1.head_pc: block1, block2.head_pc: block2}
-    ctx = WASMContext(locals_values=[5])
+    ctx = WASMContext()
+    ctx.locals = (5,)
     # Step 1 -> halts at block2 with S05
     res_s1, pc1 = rsp.handle_packet("s", block1.head_pc, ctx, blocks)
     assert res_s1.startswith("$S05#")

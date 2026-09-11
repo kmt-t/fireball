@@ -9,6 +9,9 @@ scope: GLOBAL
 
 本ドキュメントは、Fireball プロジェクトにおける参照シミュレータ（`experiments/pysim`）、コンセプトコード（`docs/**/concepts/`）、形式検証モデル（`docs/**/formal/`）、およびテストコードの Python 実装規約を定義する。
 
+- `docs/**/concepts/` のコンセプトコードでは、Python 標準の `dict` / `set` / `list` を使用してよい。
+- `experiments/pysim/` には専用の `pysim-review` 規約を適用し、`dict` / `set` / `list` を禁止する。両者の規約を混同しない。
+
 ## 1. 型安全性と `Any` 完全禁止規約 (Strict Type Safety)
 
 - **`typing.Any` の完全禁止 (アンチパターン I の防止)**:

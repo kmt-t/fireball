@@ -4,7 +4,7 @@
 
 正本: [`runtime_syscall.md`](docs/components/tier2_runtime/runtime_syscall.md)
 関連正本: [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md)（vMMIOアドレス空間・SYSCTL/VDMAレジスタ）、[`system_config.md`](docs/components/tier1_core/system_config.md)（アドレス定数）
-参考実装: [`vmmio_concept.py`](docs/components/tier2_runtime/concepts/vmmio_concept.py)
+参考実装: [`syscall_concept.py`](docs/components/tier2_runtime/concepts/syscall_concept.py)
 
 `fireball_call(id, arg0..arg5) -> u32` の実ID空間（System/vMMIO Generic/VDMA/IRQ/IPC/WASI）と、WASI `errno_t` 準拠の戻り値規約を検証する。
 
@@ -38,12 +38,11 @@
 | SYS-21 | VDMA転送先がSHM(FC=14)の場合の所有権チェック | `dst`がSHMアドレスで、呼び出し元が非所有者 | `VDMA_START`を呼ぶ | `dispatch_access`と同一の権限チェックにより拒否される | runtime_vmmio.md |
 | SYS-22 | VDMA完了時の仮想割り込み通知（該当する場合） | 完了通知が要求されている | 転送完了後の状態を確認 | `IRQ_VDMA_DONE`相当が立つ | runtime_vmmio.md  |
 
-### IRQ (`0x30`-`0x3F`)
+### IRQ予約領域 (`0x30`-`0x3F`)
 
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| SYS-30 | `IRQ_READ_FLAGS` | 事前にフラグを立てておく | `fireball_call(0x30,...)` | 立っているフラグをそのまま返す | runtime_syscall.md (IRQ) |
-| SYS-31 | `IRQ_CLEAR`(mask) | フラグが立っている | `fireball_call(0x31, mask,...)` | 指定ビットのみクリアされ、`0`を返す | runtime_syscall.md (IRQ) |
+| SYS-30 | 予約済みIRQ IDの安全な拒否 | `0x30`〜`0x3F`が予約済み | `fireball_call(0x30,...)`および範囲末尾のIDを呼び出す | `WasiErrno.NOSYS`相当を返し、`REG_IRQ_FLAGS`を読み書きしない。原因付きvIRQ配送はvMMIOの専用ページ経由でのみ行われる | runtime_syscall.md (IRQ), SYS-GOTCHA-01 |
 
 ### IPC (`0x40`-`0x4F`)
 
@@ -71,9 +70,9 @@
 
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| SYS-90 | 未定義ID | 予約済み範囲・未割当ID | `fireball_call(未定義ID,...)` | 定義されたエラーコード（WASI `errno_t`準拠、実装は`ENOSYS`相当）を返す | - |
+| SYS-90 | 未定義ID | 予約済み範囲・未割当ID | `fireball_call(未定義ID,...)` | 定義されたエラーコード（WASI `errno_t`準拠、実装は`ENOSYS`相当）を返す | `syscall_concept.py` `test_reserved_irq_and_unknown_id_return_nosys` |
 | SYS-91 | 戻り値は常にWASI `errno_t`準拠 | 任意の失敗ケース | 各失敗パスの戻り値を確認 | プロジェクト独自の非標準エラーコードを使わない | 「WASIの`errno_t`に準拠」 |
-| SYS-92 | `fb_offset_t`のゲスト境界チェック | offset引数がゲストメモリ範囲外 | 該当syscallを呼ぶ | 即座に境界外エラーを返す（ゲスト境界チェックで「瞬時に」判定、） | - |
+| SYS-92 | `fb_offset_t`のゲスト境界チェック | offset引数がゲストメモリ範囲外 | 該当syscallを呼ぶ | 即座に境界外エラーを返す（加算オーバーフローを起こさない減算形式で判定） | `syscall_concept.py` `test_guest_range_validation_precedes_access` |
 
 ### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
 
@@ -89,5 +88,5 @@
 
 ## 4. 未検証・スコープ外
 
-- `fireball-call0`〜`fireball-call6`の各アリティ別バリアント自体の呼び出し規約差異。
+- WIT生成バインディングが生成する言語別ラッパーのABI詳細。
 - WASI errnoの完全な数値表（`wasi_snapshot_preview1`標準）とのすべての対応関係の網羅。

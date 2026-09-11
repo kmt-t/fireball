@@ -5,7 +5,7 @@
 正本: [`runtime_interpreter.md`](docs/components/tier2_runtime/runtime_interpreter.md), [`wasm_instruction_set.md`](docs/specs/wasm_instruction_set.md)
 参考実装: [`interpreter_concept.py`](docs/components/tier2_runtime/concepts/interpreter_concept.py)
 
-`{ThreadedInterpreter}`（CPS 4引数ハンドラ方式）、統合スタック（`execution_context`）、ラベルアリティに基づくスタックプルーニング、i32/i64演算、境界チェック付きメモリアクセス、Safepointポーリングを検証する。
+`{ThreadedInterpreter}`（CPS 4引数ハンドラ方式）、`OperandStack`・`LocalStack`・`control_frame` の3本の独立スタック、ラベルアリティに基づくスタックプルーニング、i32/i64演算、境界チェック付きメモリアクセス、Safepointポーリングを検証する。
 
 ## 2. テストケース一覧
 
@@ -18,14 +18,16 @@
 | INTP-03 | インタープリタとJITトレースのCPS 4引数規約完全一致 | JITトレース生成 | JITエントリとハンドラシグネチャを比較 | `int64_t (*)(execution_context* ctx, uint32_t* sp, uint32_t* local_base, uint32_t tos)` で完全一致し、ディスパッチテーブルから直接 C 呼び出し可能 | `{ContextPointerRegister}` `{AAPCS_FastCall}` `{PositionIndependentCode}` |
 | INTP-04 | JITトレースからインタープリタへのシームレスフォールバック | 未コンパイルのブロックへ分岐 | トレース実行完了 | トレース末尾でインタープリタへスムーズに復帰し、後続ブロックをインタープリタが継続実行する | `{JIT_LazyChaining}` `{JIT_RuntimeAPI_Fallback}` |
 
-### 統合スタック・関数呼び出し ({ContextPointerRegister})
+### 3本の独立スタック・関数呼び出し ({ContextPointerRegister})
 
 | ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| INTP-10 | スタックオーバーフロートラップ | `stack_capacity`を超えるpush | 再帰呼び出し等でスタックを溢れさせる | `WASMTrap("STACK_OVERFLOW")`相当が発生する（無限にリストが伸びない） | interpreter_concept.py `ExecutionContext.push` |
-| INTP-11 | スタックアンダーフロートラップ | 空スタックでpop | pop操作 | `WASMTrap("STACK_UNDERFLOW")`相当 | interpreter_concept.py `ExecutionContext.pop` |
-| INTP-12 | 再帰呼び出し（call）とlocal_base | `fact(n)`のような再帰関数 | `execute_function`で呼び出す | 各呼び出しごとに新しい`local_base`が割り当てられ、ローカル変数が互いに独立する | interpreter_concept.py `test_full_wasm_recursive_factorial` |
+| INTP-10 | OperandStackオーバーフロートラップ | `stack_capacity`を超えるpush | 再帰呼び出し等でOperandStackを溢れさせる | `WASMTrap("STACK_OVERFLOW")`相当が発生する（無限に領域が伸びない） | interpreter_concept.py `ExecutionContext.push` |
+| INTP-11 | OperandStackアンダーフロートラップ | 空のOperandStackでpop | pop操作 | `WASMTrap("STACK_UNDERFLOW")`相当 | interpreter_concept.py `ExecutionContext.pop` |
+| INTP-12 | 再帰呼び出し（call）とLocalStack | `fact(n)`のような再帰関数 | `execute_function`で呼び出す | 各呼び出しごとに新しいLocalStackブロックが割り当てられ、ローカル変数が互いに独立する | interpreter_concept.py `test_full_wasm_recursive_factorial` |
 | INTP-13 | 戻り値の受け渡し | 関数が1個の結果を返す | `return`実行後の呼び出し元スタック | 呼び出し元のスタックに正しく結果が積まれる | interpreter_concept.py `execute_function` |
+| INTP-14 | OperandStackとLocalStackの容量独立性 | OperandStackの残容量が1、LocalStackに空きがある | 既存のOperandStack値を保持したまま引数付き関数を呼び出す | LocalStackへ引数を積め、関数結果と呼び出し元OperandStackの値が正しく保持される | interpreter_concept.py `test_independent_operand_and_local_stacks`, `../formal/interpreter_stack_model.py` |
+| INTP-15 | 3本のスタック独立性と関数復帰結果の形式検証 | 通常モデルと`guards=False`変異モデル | `interpreter_stack_model.py`を実行 | 通常モデルでは`interpreter_stacks_remain_independent`と`call_result_reaches_operand_stack`が成立し、変異モデルでは両方が反証される | `../formal/interpreter_stack_model.py` |
 
 ### ラベルアリティ・スタックプルーニング (`prune_stack`)
 
@@ -98,7 +100,7 @@
 
 ## 3. テスト検証実績と網羅状況
 
-- **CPSディスパッチ & 統合スタック (INTP-01〜13)**: 4引数規約、スタックアンダー/オーバーフロー、再帰呼び出し、戻り値。
+- **CPSディスパッチ & 3本の独立スタック (INTP-01〜14)**: 4引数規約、OperandStackのアンダー/オーバーフロー、LocalStack上の再帰呼び出し、戻り値、容量独立性。
 - **ラベルアリティ & プルーニング (INTP-20〜23)**: ブロック脱出、ループ背進辺、多重ネスト br_table。
 - **i64全演算 & メモリアクセス (INTP-30〜43)**: 64bit算術・シフト・ビットカウント・境界外トラップ。
 - **Safepointポーリング (INTP-50〜51)**: ループ背進辺での協調的ポーリング。

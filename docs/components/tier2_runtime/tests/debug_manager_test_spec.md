@@ -18,7 +18,7 @@ GDB RSPコマンド処理（`?`, `g/G`, `m/M`, `Z0/z0`, `s`, `c`）、ブレー�
 | DBG-03 | 仮想レジスタ全書き込み (`G`) | 20レジスタ分の hex 文字列 | `G <hex>` 送信 | 各レジスタ（pc, sp, fp, tos, local0..15）が正確に上書き更新され `OK` を返す | 「仮想レジスタセット」 |
 | DBG-04 | ゲストメモリ読み出し (`m`) | リニアメモリ初期化済み | `m <addr>,<len>` 送信 | 指定範囲のバイト列が hex 文字列として返却される | {RSPMinimalSet} |
 | DBG-05 | ゲストメモリ読み出し境界外エラー | 範囲外 `addr` 指定 | `m <addr>,<len>` 送信 | `E01` エラーパケットが返却される | `{MemoryBoundaryCheck}` |
-| DBG-06 | ゲストメモリ書き込み (`M`) と JIT Flush | JITキャッシュにトレース常駐 | `M <addr>,<len>:<hex>` 送信 | メモリが上書きされ `OK` が返却されるとともに、**JIT キャッシュ全バンクが無効化（Flush）** される | `{Debugger_Jit_Flush}` |
+| DBG-06 | ゲストメモリ書き込み (`M`) と JIT Flush | JITキャッシュにトレース常駐 | `M <addr>,<len>:<hex>` 送信、および [`vsoc_cache_coherency_model.py`](../formal/vsoc_cache_coherency_model.py) の通常モデル・`guards=False` 変異モデルを実行 | メモリが上書きされ `OK` が返却されるとともに、**JIT キャッシュ全バンクが無効化（Flush）** される。通常モデルでは `debugger_memory_write_invalidates_stale_traces` が成立し、変異モデルでは反証される | `{Debugger_Jit_Flush}`, `debugger_memory_write_invalidates_stale_traces` |
 | DBG-07 | ゲストメモリ書き込み境界外エラー | 範囲外 `addr` 指定 | `M <addr>,<len>:<hex>` 送信 | メモリは更新されず `E01` が返却される | `{MemoryBoundaryCheck}` |
 
 ### 実行制御 & ブレークポイント

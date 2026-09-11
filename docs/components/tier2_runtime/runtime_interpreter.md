@@ -1,6 +1,7 @@
 # Interpreter コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}
 <!-- evidence:
      formal: formal/vsoc_state_model.py
+     formal: formal/interpreter_stack_model.py
      concept: concepts/interpreter_concept.py
      test: tests/runtime_interpreter_test_spec.md
 -->
@@ -236,8 +237,8 @@ class WASMInterpreter:
     MAX_STACK_DEPTH = 64
 
     def __init__(self, memory_size: int = 65536):
-        self.stack: list[int] = []
-        self.locals: list[int] = []
+        self.operand_stack: list[int] = []
+        self.local_stack: list[int] = []
         self.memory: list[int] = [0] * (
             memory_size // 8
         )  # std::span<uint64_t> (linear memory backing array)
@@ -245,14 +246,14 @@ class WASMInterpreter:
         self.safepoints_hit: int = 0
 
     def push(self, val: int) -> None:
-        if len(self.stack) >= self.MAX_STACK_DEPTH:
+        if len(self.operand_stack) >= self.MAX_STACK_DEPTH:
             raise WASMTrap("STACK_OVERFLOW")
-        self.stack.append(val & 0xFFFF_FFFF)
+        self.operand_stack.append(val & 0xFFFF_FFFF)
 
     def pop(self) -> int:
-        if not self.stack:
+        if not self.operand_stack:
             raise WASMTrap("STACK_UNDERFLOW")
-        return self.stack.pop()
+        return self.operand_stack.pop()
 
     def check_safepoint(self) -> bool:
         """Cooperative safepoint polling at loop headers."""
@@ -428,7 +429,7 @@ sequenceDiagram
   インタープリタの命令ハンドラは命令ごとの精密な割り込みイベントチェックや命令数カウンタデクリメントを行わず、**「トレースの切れ目（基本ブロック末尾、ループバックエッジ、関数呼出/復帰、IPC/システムコール、または JIT トレース脱出境界）」でのみ vSoC へ制御を返す**。vSoC はこの戻り値を受け取るたびに Yield 判定（`yield_threshold` の評価）および JIT キャッシュの再判定（`{Interpreter_LazyJITSwitch}`）を行い、必要であれば `co_yield` を発行する。インタープリタ自身が Yield 判定や JIT キャッシュ参照を行うことはない。
 - **根拠とトレードオフ**:
   1. **ディスパッチ性能の最大化**: 命令ハンドラ（CPS 4引数）内での条件分岐を完全排除し、`[[clang::musttail]]` による最高速のダイレクトスレッド実行を維持する。
-  2. **レジスタ・スタック整合性の保証**: トレース境界では TOS/NOS レジスタと統合スタック（`execution_context`）が規約通り自然に整合しているため、中途半端なステート退避・OSR ハンドラが不要となる。
+  2. **レジスタ・スタック整合性の保証**: トレース境界では TOS/NOS レジスタと、`execution_context` が管理する3本の独立スタックが規約通り自然に整合しているため、中途半端なステート退避・OSR ハンドラが不要となる。
   3. **有界レイテンシ**: 組み込み WASM の基本ブロック長は通常数命令〜数十命令（サブマイクロ秒〜数マイクロ秒）であり、トレース境界での yield であってもリアルタイム応答性の要件を十分に満たす。
   4. **責務の分離**: インタープリタは実行のみを担当し、JIT キャッシュ・ホットスポット追跡・スケジューリング判断は一切持たない。これらはすべて vSoC（`runtime_vsoc.md`）の責務であり、ネストした WASM 関数呼び出し（`call`/`call_indirect`）を経由しても JIT ティアリングの適用に差が出ない。
 - **影響範囲**:
@@ -454,11 +455,11 @@ sequenceDiagram
 - **コンテキスト**:
   当初の設計では、`call_frame`・ローカル変数・オペランドスタック・`control_frame` のすべてを、ひとつの統合スタックバッファへインラインで、実行順に混ぜて積む Android ART ShadowFrame スタイルを採用していた。ところが `loop`/`block`/`if` の分岐は、JIT トレースが `{JIT_RuntimeAPI_Fallback}` の仕組みでインタープリタを一切介さずに解決できてしまう（`{TraceBoundaryInvariant}` が定める、制御命令をトレースへ含めない不変条件そのものの帰結）。このとき、その分岐に対応するフレームの積み下ろしは代行されない。もし control_frame がオペランドスタックと同じ領域に同居していれば、JIT が代行しなかった積み下ろしの分だけ、その領域の中身とオペランドスタックが本来占めるべき位置との対応がずれ、後から見たオペランドスタックの値そのものを巻き込んで壊しかねない。
 - **決定事項**:
-  `control_frame` を、`call_frame`・ローカル変数・オペランドスタックの領域とは完全に切り離した、専用の伸び縮みをする領域へ移す。ひとつの固定サイズバッファを、底から上へ伸びる呼び出し・値の領域と、天井から下へ伸びる制御構造専用の領域とで、互いに向かい合う形で共有する。両者の伸び縮みを示す値は独立して管理し、どちらか一方の変化がもう一方の記録位置に影響することは絶対にない。
+  `control_frame` を、`LocalStack`（`call_frame` + ローカル変数）および `OperandStack` の領域とは完全に切り離した、3本目の専用固定容量バッファへ配置する。`LocalStack` と `OperandStack` は ADR-INTERP-04 に従ってそれぞれ独立した固定容量バッファであり、3本の伸び縮みを示す値は独立して管理する。どのスタックの変化も、他のスタックの記録位置に影響することはない。
 - **根拠とトレードオフ**:
   1. **JIT の無関心を安全にする**: JIT トレースは元々 `control_frame` の存在を一切知らずに動作する設計であり、それ自体は変えない。変えるのは、その無関心さが物理的な事故につながらないようにすることである。専用領域へ分離すれば、JIT がどれだけオペランドスタックを伸び縮みさせようと、`control_frame` の記録位置は物理的に一切揺るがない。
   2. **論理的な整合はなお別途必要**: 専用領域への分離は「オペランドスタックの値が壊れない」ことは保証するが、「JIT が代行しなかった積み下ろし分のフレームが残留する」こと自体は防がない。フレームスタックを本来あるべき深さへ巻き戻す（切り詰める）だけでは、この残留分は取り除けても、逆方向（JIT がまたいだ側で構文に「入った」場面）のズレは直せない。したがって後続の深さ相対な分岐命令が誤った階層を指し示してしまう論理的な不整合は、フレームスタックの巻き戻しだけでは防げない——分岐先解決そのものを、フレームスタックの中身に頼らず、モジュールロード時に一度きり静的に決まるベーシックブロック単位の分岐先（ラベルPC / `exec_trace`）から直接行うことで防ぐ（`INTP-GOTCHA-06`）。この設計は pysim 参照実装で実際に検証されている（`{JIT_RuntimeAPI_Fallback}`, `JITR-GOTCHA-06`）——C++ 実装でも、深さ相対の `control_frame` スタック走査だけに頼った分岐先解決は同じ不整合を再現し得るため、同じ「静的解決を直接使う」方針を踏襲する必要がある。
-  3. **メモリオーバーヘッドは増えない**: 追加のバッファは不要で、ひとつの固定サイズバッファの両端を使うだけである。オーバーフロー検知も、両側の頂点が出会う一点を監視するだけでよい。
+  3. **メモリオーバーヘッドの扱い**: `control_frame` は3本目の固定容量バッファとして容量を独立管理する。3本の容量を個別に定義するため、いずれか1本の伸長が他のスタックの記録位置を侵食することはない。
   4. **`call_frame` はこの分離の対象外**: `call`/`call_indirect`/関数復帰は常にインタープリタへ制御が戻る境界であり、JIT が `call_frame` の積み下ろしを代行することは決してない。本 ADR が扱うリスクは `control_frame`（`loop`/`block`/`if`）に固有のものである（`call_frame` を独自の `LocalStack` へ分離する判断そのものは、別の動機に基づく ADR-INTERP-04 を参照）。
 - **影響範囲**:
   - `runtime_interpreter.md`（データ構造・execution_context・制御フレーム）, `jit_runtime.md`（pysim 参照実装、`{JIT_RuntimeAPI_Fallback}`）, `experiments/pysim`（参照実装での論理的整合の検証）

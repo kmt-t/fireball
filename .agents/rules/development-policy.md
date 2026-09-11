@@ -17,7 +17,7 @@ Fireball プロジェクトにおける開発方針、プロセス、および�
 - **Specification-First**: 実装に先立ち、対象領域の仕様を `docs/components/**` や `docs/requires/**` に記述する。
 - **Bonsai Design (盆栽デザイン)**: 最初から過密な実装を行わず、仕様・検証・シミュレーション・本実装と段階的に密度を引き上げる。
 - **Zero-Cost Abstraction (ゼロコスト抽象化)**: 言語機能やコンパイラ最適化を活用し、実行時のオーバーヘッドを排除する。
-- **Strict Memory Policy `{Policy_Memory}`**: 動的メモリ確保（ヒープ）を原則禁止し、静的またはスタック割り当てを優先する。
+- **Strict Memory Policy `{Policy_Memory}`**: `malloc` / `free` / `realloc` / `calloc` および通常の `new` / `delete` を禁止する。placement/in-place `new` と、プロジェクトで提供する独自ヒープ API・独自コンテナは許可する。標準の動的 STL コンテナは、システム提供アロケータを使用していても禁止する。
 - **Code Size Constraint (15KLOC制約)**: 全体のコード規模を 15,000 行 (SLOC) 以内に収める。
 - **Rule Independence**: ルール本文は個別ドキュメント名やツール実装詳細に依存させず、普遍的な原則・役割・分類を参照して記述する。
 

@@ -231,7 +231,8 @@ def test_scenario_comprehensive_storage_and_debugger():
     # Initial context: local0 = 7, memory 256 bytes with header "STORAGE_DATA"
     live_mem = bytearray(256)
     live_mem[0:12] = b"STORAGE_DATA"
-    ctx = WASMContext(locals_values=[7, 0, 0, 0], memory=live_mem)
+    ctx = WASMContext(memory=live_mem)
+    ctx.locals = (7, 0, 0, 0)
     port = server.start(current_pc=block100.head_pc, ctx=ctx, blocks=blocks)
     time.sleep(0.05)
     client = GDBClientHelper("127.0.0.1", port)

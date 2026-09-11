@@ -1,6 +1,7 @@
 # HAL ドライバ実装（UART/SEGGER RTT/GPIO/I2C/SPI/Timer 物理層） コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}
 <!-- evidence:
-     formal: ../tier2_runtime/formal/vsoc_state_model.py
+     formal: formal/interrupt_boundary_model.py
+     concept: concepts/platform_driver_concept.py
      test: tests/platform_driver_test_spec.md
 -->
 
@@ -69,7 +70,7 @@ graph TD
 
 ### 4.1 割り込み処理の物理実装
 <!-- traceability: {RSP_Transport_Selectable} {TaskPollInterruptEvent} {GLOBAL_InterruptWakeup} -->
-- **割り込み通知（push）**: 物理割り込み発生時、ISRは原因情報を固定5ワードの`interrupt-event`へ変換し、COOSの`notify_interrupt(event)`で固定長FIFOへ投函するのみとする。物理デバイスの複数原因は、上位のイベント源マッピングで同じデバイス系統へ集約する。**ISRがタスク状態を直接書き換えることはない。**実際のREADY遷移は、スケジューラが協調境界でFIFOをドレインする際に行われる（`{GLOBAL_InterruptWakeup}`を正本とする）。この非同期境界の分離は、[`vsoc_state_model.py`](docs/components/tier2_runtime/formal/vsoc_state_model.py) に定義されたCTL安全性検証項目 `irq_jit_race_freedom_proof`（`AG(Not(handling_irq & jit_mode))`）として証明されている性質である。
+- **割り込み通知（push）**: 物理割り込み発生時、ISRは原因情報を固定5ワードの`interrupt-event`へ変換し、COOSの`notify_interrupt(event)`で固定長FIFOへ投函するのみとする。物理デバイスの複数原因は、上位のイベント源マッピングで同じデバイス系統へ集約する。**ISRがタスク状態を直接書き換えることはない。**実際のREADY遷移は、スケジューラが協調境界でFIFOをドレインする際に行われる（`{GLOBAL_InterruptWakeup}`を正本とする）。この非同期境界の分離は、[`interrupt_boundary_model.py`](docs/components/tier3_platform/formal/interrupt_boundary_model.py) に定義されたCTL検証項目 `isr_does_not_update_task_state_directly` および `interrupt_event_reaches_scheduler_boundary` として証明されている性質である。
 - **割り込み配送**: COOSから渡された`interrupt-event`は、vSoCがSafepointで受け取り、ゲスト配送またはドロップを行う。vIRQの分類・デバイスノード・ゲスト関数登録はvSoCとvMMIOの契約に従い、物理ドライバはゲスト関数を直接呼び出さない。 `{TaskPollInterruptEvent}` `{GLOBAL_InterruptWakeup}`
 
 #### HalBufferPool バッファ確保・境界検査手順（手順アクティビティ図）
@@ -175,7 +176,7 @@ UART および SEGGER RTT の双方において同一の RSP パケットエン�
 ## 7. 形式検証・テスト仕様との対応
 
 ### 7.1 検証対象の不変条件
-- **非同期割り込み境界分離**: ISR からタスク状態を直接変更せずキュー経由で安全にディスパッチすること（`vsoc_state_model.py`）。
+- **非同期割り込み境界分離**: ISR からタスク状態を直接変更せずキュー経由で安全にディスパッチすること（`interrupt_boundary_model.py` の `isr_does_not_update_task_state_directly` および `interrupt_event_reaches_scheduler_boundary`）。
 - **固定長スロット境界保護**: 要求サイズが 256 バイトを超える場合の即時拒絶（`HAL-GOTCHA-01`）。
 
 ### 7.2 テスト仕様書との連携

@@ -34,6 +34,7 @@ for _p in [
 from hal import (
     UartTransport,
 )
+from interrupt_event import InterruptEvent
 from ipc_router import (
     IPCMessage,
     Role,
@@ -111,7 +112,7 @@ def test_log_04_coos_and_ipc_diagnostic_logging():
 
         # 2. COOS IRQ Queue Overflow -> 0x0104
         for irq_idx in range(20):
-            sysv.scheduler.notify_interrupt(irq_idx)
+            sysv.scheduler.notify_interrupt(InterruptEvent(irq_idx, 0, 0, 0, 0))
 
         # 3. IPC Unknown URI -> 0x0202
         def bad_uri_task():

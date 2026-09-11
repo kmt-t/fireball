@@ -28,7 +28,7 @@ from logger import (
     LogLevel,
 )
 from scheduler import Channel, ChannelAction, Scheduler
-from system_containers import FlatMapView
+from system_containers import FlatMapView, StaticVector
 
 # ipc_router.md {3.3}: a message is a static, fixed-size buffer of at most 8
 # kv_pair entries.
@@ -174,24 +174,24 @@ class IPCMessage:
         self._check_ownership()
         return self._block.data if self._block is not None else None
 
-    def _read_entries(self) -> list[tuple[int, int]]:
+    def _read_entries(self) -> StaticVector[tuple[int, int]]:
         self._check_ownership()
         if self._block is None or self._block.u64_capacity() < 1:
-            return []
+            return StaticVector(capacity=0)
         count = self._block.read_u64(0)
         count = min(count, FB_CONF_ROUTER_MAX_KV_PAIRS)
-        res = []
+        res: StaticVector[tuple[int, int]] = StaticVector(capacity=FB_CONF_ROUTER_MAX_KV_PAIRS)
         for i in range(count):
             if i + 1 < self._block.u64_capacity():
                 k, v = self._block.read_entry(i + 1)
-                res.append((k, v))
+                res.push_back((k, v))
         return res
 
     def write_entries(self, entries: Sequence[tuple[int, int]]) -> None:
         """Writes a batch of (key, value) pairs into the backing uint64_t shared memory array."""
         self._check_ownership()
         assert self._block is not None, "Cannot write entries without a backing SharedBlock"
-        sorted_entries = sorted(entries, key=lambda e: e[0])
+        sorted_entries = tuple(sorted(entries, key=lambda e: e[0]))
         self._block.write_u64(0, len(sorted_entries))
         for i, (k, v) in enumerate(sorted_entries):
             self._block.write_entry(i + 1, k, v)
@@ -299,32 +299,37 @@ class IPCMessage:
         return self._block.read_u64(0)
 
 
-def bytes_to_kv_entries(data: bytes) -> list[tuple[int, int]]:
+def bytes_to_kv_entries(data: bytes) -> StaticVector[tuple[int, int]]:
     """Packs arbitrary byte buffer into AoS (key32, val32) entries with length metadata."""
-    entries = [(0, len(data))]
+    entries: StaticVector[tuple[int, int]] = StaticVector(
+        capacity=(len(data) + 3) // 4 + 1
+    )
+    entries.push_back((0, len(data)))
     for i in range(0, len(data), 4):
         chunk = data[i : i + 4]
         v = int.from_bytes(chunk, "little")
-        entries.append((i // 4 + 1, v))
-    return sorted(entries, key=lambda kv: kv[0])
+        entries.push_back((i // 4 + 1, v))
+    return entries
 
 
-def bytes_to_kv_storage(data: bytes) -> list[tuple[int, int]]:
+def bytes_to_kv_storage(data: bytes) -> StaticVector[tuple[int, int]]:
     """Backward-compatible alias for bytes_to_kv_entries."""
     return bytes_to_kv_entries(data)
 
 
 def kv_entries_to_bytes(entries: Sequence[tuple[int, int]], max_len: int | None = None) -> bytes:
     """Unpacks AoS (key32, val32) entries back into raw bytes using length metadata."""
-    entries_dict = dict(entries)
-    total_len = entries_dict.get(0, 0)
+    entries_view = FlatMapView(entries)
+    length_value = entries_view.find(0)
+    total_len = 0 if length_value is None else length_value
     if max_len is not None:
         total_len = min(total_len, max_len)
 
     buf = bytearray()
     idx = 1
     while len(buf) < total_len:
-        v = entries_dict.get(idx, 0)
+        value = entries_view.find(idx)
+        v = 0 if value is None else value
         chunk = v.to_bytes(4, "little")
         buf.extend(chunk)
         idx += 1
@@ -378,20 +383,20 @@ _HAL_ROLES: tuple[Role, ...] = (
 )
 
 
-def _role_row(allowed_targets: frozenset[Role]) -> tuple[bool, ...]:
+def _role_row(allowed_targets: Sequence[Role]) -> tuple[bool, ...]:
     return tuple(role in allowed_targets for role in Role)
 
 
 FB_CONF_ROUTER_ROLE_MATRIX: tuple[tuple[bool, ...], ...] = (
-    _role_row(frozenset({Role.CORE_SERVICE, *_HAL_ROLES})),  # from RUNTIME
-    _role_row(frozenset(_HAL_ROLES)),  # from CORE_SERVICE
-    _role_row(frozenset()),  # from HAL_UART (leaf)
-    _role_row(frozenset()),  # from HAL_STDOUT (leaf)
-    _role_row(frozenset()),  # from HAL_GPIO (leaf)
-    _role_row(frozenset()),  # from HAL_TIMER (leaf)
-    _role_row(frozenset()),  # from HAL_I2C (leaf)
-    _role_row(frozenset()),  # from HAL_SPI (leaf)
-    _role_row(frozenset({Role.CORE_SERVICE, *_HAL_ROLES})),  # from DEBUGGER
+    _role_row((Role.CORE_SERVICE, *_HAL_ROLES)),  # from RUNTIME
+    _role_row(_HAL_ROLES),  # from CORE_SERVICE
+    _role_row(()),  # from HAL_UART (leaf)
+    _role_row(()),  # from HAL_STDOUT (leaf)
+    _role_row(()),  # from HAL_GPIO (leaf)
+    _role_row(()),  # from HAL_TIMER (leaf)
+    _role_row(()),  # from HAL_I2C (leaf)
+    _role_row(()),  # from HAL_SPI (leaf)
+    _role_row((Role.CORE_SERVICE, *_HAL_ROLES)),  # from DEBUGGER
 )
 
 

@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from logger import Logger
     from runtime.interpreter import Interpreter
 
+from interrupt_event import InterruptEvent
 from logger import (
     LOG_EVT_COOS_DUPLICATE_TASK,
     LOG_EVT_COOS_HANDOFF_LIMIT,
@@ -46,24 +47,18 @@ class BoundedReadyQueue:
 
     def __init__(self, capacity: int = FB_CONF_MAX_TASKS):
         self.capacity = capacity
-        self._items: list[Task] = []
+        self._items: StaticVector[Task] = StaticVector(capacity)
 
-    def append(self, task: Task) -> bool:
-        if len(self._items) >= self.capacity:
-            return False
-        self._items.append(task)
-        return True
+    def enqueue(self, task: Task) -> bool:
+        return self._items.push_back(task)
 
-    def appendleft(self, task: Task) -> bool:
-        if len(self._items) >= self.capacity:
-            return False
-        self._items.insert(0, task)
-        return True
+    def enqueue_front(self, task: Task) -> bool:
+        return self._items.insert_at(0, task)
 
-    def popleft(self) -> Task:
+    def dequeue(self) -> Task:
         if not self._items:
             raise IndexError("pop from an empty ready queue")
-        return self._items.pop(0)
+        return self._items.pop_at(0)
 
     def remove(self, task: Task) -> bool:
         try:
@@ -238,7 +233,7 @@ class Scheduler:
         self.idle_hooks: StaticVector[Callable[[], None]] = StaticVector(
             capacity=FB_CONF_MAX_IDLE_HOOKS
         )
-        self.interrupt_event_queue: RingBuffer[int] = RingBuffer(
+        self.interrupt_event_queue: RingBuffer[InterruptEvent] = RingBuffer(
             capacity=FB_CONF_INTERRUPT_QUEUE_SIZE
         )
         self.dropped_irqs = 0
@@ -290,7 +285,7 @@ class Scheduler:
 
         task = Task(assigned_id, name, coro, role=role)
         self._all.push_back(task)
-        self._ready.append(task)
+        self._ready.enqueue(task)
         if coro is not None:
             self._ready_coro_count += 1
         return task.task_id
@@ -323,7 +318,7 @@ class Scheduler:
         Puts an external/detached task back on the READY queue.
         """
         if task not in self._ready:
-            self._ready.append(task)
+            self._ready.enqueue(task)
             if task.coro is not None:
                 self._ready_coro_count += 1
 
@@ -430,8 +425,7 @@ class Scheduler:
                 self._ready.remove(target_task)
             elif target_task.coro is not None:
                 self._ready_coro_count += 1
-
-            self._ready.appendleft(target_task)
+            self._ready.enqueue_front(target_task)
             return (ChannelAction.DIRECT_SWITCH, target_task.task_id)
         if self.logger is not None:
             self.logger.log_event(
@@ -447,41 +441,41 @@ class Scheduler:
         # When consecutive handoff limit is reached, target_task was woken (state = READY),
         # but was NOT enqueued into self._ready if it wasn't already there!
         if target_task not in self._ready:
-            self._ready.append(target_task)
+            self._ready.enqueue(target_task)
             if target_task.coro is not None:
                 self._ready_coro_count += 1
         return (ChannelAction.YIELD, None)
 
-    def notify_interrupt(self, irq_id: int) -> bool:
-        """Non-blocking ISR notification to event queue."""
+    def notify_interrupt(self, event: InterruptEvent) -> bool:
+        """Non-blocking ISR notification of a fixed five-word event."""
         if len(self.interrupt_event_queue) >= FB_CONF_INTERRUPT_QUEUE_SIZE:
             self.dropped_irqs += 1
             if self.logger is not None:
                 self.logger.log_event(
                     LogLevel.WARN,
                     LOG_EVT_COOS_IRQ_OVERFLOW,
-                    irq_id,
+                    event.vector_id,
                     self.dropped_irqs,
                     0,
                     0,
                 )
             return False
-        self.interrupt_event_queue.push(irq_id)
+        self.interrupt_event_queue.push(event)
         return True
 
     def drain_interrupts(self) -> int:
         """Drain IRQ queue and wake registered tasks."""
         count = 0
         while len(self.interrupt_event_queue) > 0:
-            irq_id = self.interrupt_event_queue.pop()
-            if irq_id is None:
+            event = self.interrupt_event_queue.pop()
+            if event is None:
                 break
             count += 1
             for task in self._all:
-                if task.waiting_irq == irq_id and task.state == TaskState.BLOCKED:
+                if task.waiting_irq == event.vector_id and task.state == TaskState.BLOCKED:
                     task.waiting_irq = None
                     task.state = TaskState.READY
-                    self._ready.append(task)
+                    self._ready.enqueue(task)
                     if task.coro is not None:
                         self._ready_coro_count += 1
         return count
@@ -507,14 +501,14 @@ class Scheduler:
         self.drain_interrupts()
         if not self._ready:
             return None
-        task = self._ready.popleft()
+        task = self._ready.dequeue()
         if task.coro is not None:
             self._ready_coro_count -= 1
         self.current_task = task
         task.state = TaskState.RUNNING
         if task.coro is None:
             task.state = TaskState.READY
-            self._ready.append(task)
+            self._ready.enqueue(task)
             self.current_task = None
             return task
         try:
@@ -527,7 +521,7 @@ class Scheduler:
 
         if wait_on is None or wait_on[0] == ChannelAction.YIELD:
             task.state = TaskState.READY
-            self._ready.append(task)
+            self._ready.enqueue(task)
             if task.coro is not None:
                 self._ready_coro_count += 1
 
@@ -542,14 +536,14 @@ class Scheduler:
             step_budget -= 1
             if self._ready_coro_count == 0:
                 break
-            task = self._ready.popleft()
+            task = self._ready.dequeue()
             if task.coro is not None:
                 self._ready_coro_count -= 1
             self.current_task = task
             task.state = TaskState.RUNNING
             if task.coro is None:
                 task.state = TaskState.READY
-                self._ready.append(task)
+                self._ready.enqueue(task)
                 self.current_task = None
                 continue
             try:
@@ -561,12 +555,12 @@ class Scheduler:
                 continue
             if wait_on is None:
                 task.state = TaskState.READY
-                self._ready.append(task)
+                self._ready.enqueue(task)
                 if task.coro is not None:
                     self._ready_coro_count += 1
             elif wait_on[0] == ChannelAction.YIELD:
                 task.state = TaskState.READY
-                self._ready.append(task)
+                self._ready.enqueue(task)
                 if task.coro is not None:
                     self._ready_coro_count += 1
                 if self._ready_coro_count == 0:

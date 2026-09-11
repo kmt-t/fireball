@@ -128,7 +128,8 @@ def test_scenario_gdb_socket_debugger():
     # Initial guest state: local0 = 2, memory 128 bytes
     mem = bytearray(128)
     mem[0:8] = b"TESTDATA"
-    ctx = WASMContext(locals_values=[2, 0, 0, 0], memory=mem)
+    ctx = WASMContext(memory=mem)
+    ctx.locals = (2, 0, 0, 0)
     # Start TCP Server on dynamic port
     port = server.start(current_pc=block10.head_pc, ctx=ctx, blocks=blocks)
     time.sleep(0.05)

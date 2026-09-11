@@ -13,6 +13,8 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 
+from system_containers import MutableFlatMapStorage
+
 
 class PinMode:
     INPUT = 0
@@ -28,7 +30,9 @@ class DummyGpioDriver:
         self.pin_count = pin_count
         self.modes = [PinMode.INPUT] * pin_count
         self.levels = [0] * pin_count
-        self.irq_callbacks: dict[int, Callable[[int, int], None]] = {}
+        self.irq_callbacks: MutableFlatMapStorage[int, Callable[[int, int], None]] = (
+            MutableFlatMapStorage(capacity=pin_count)
+        )
 
     def set_pin_mode(self, pin: int, mode: int) -> bool:
         if not (0 <= pin < self.pin_count):
@@ -52,24 +56,27 @@ class DummyGpioDriver:
         return self.levels[pin]
 
     def register_irq(self, pin: int, callback: Callable[[int, int], None]):
-        self.irq_callbacks[pin] = callback
+        self.irq_callbacks.insert(pin, callback)
 
 
 class DummyI2cDriver:
     """Simulates an I2C bus controller with attached I2C devices."""
 
     def __init__(self):
-        self.devices: dict[int, dict[int, int]] = {
-            # Device 0x48: LM75 Temperature Sensor
-            # Register 0x00: Temperature = 25.5 C (0x1980 in 16-bit format)
-            # Register 0x01: Configuration = 0x00
-            0x48: {0x00: 0x1980, 0x01: 0x00}
-        }
+        # Device 0x48: LM75 Temperature Sensor. Register 0x00 is 25.5 C
+        # (0x1980 in 16-bit format); register 0x01 is the configuration.
+        registers: MutableFlatMapStorage[int, int] = MutableFlatMapStorage(capacity=2)
+        registers.insert(0x00, 0x1980)
+        registers.insert(0x01, 0x00)
+        self.devices: MutableFlatMapStorage[int, MutableFlatMapStorage[int, int]] = (
+            MutableFlatMapStorage(capacity=1)
+        )
+        self.devices.insert(0x48, registers)
 
     def write_register(self, dev_addr: int, reg_addr: int, value: int) -> bool:
         if dev_addr not in self.devices:
             return False
-        self.devices[dev_addr][reg_addr] = value & 0xFFFF
+        self.devices[dev_addr].insert(reg_addr, value & 0xFFFF)
         return True
 
     def read_register(self, dev_addr: int, reg_addr: int) -> int:

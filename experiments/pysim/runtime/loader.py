@@ -15,20 +15,34 @@ Implements:
 from __future__ import annotations
 
 import struct
+from typing import TypeVar
 
 from system_containers import (
     FlatMapView,
     MutableFlatMapStorage,
     RadixBinaryTreeView,
     ReadOnlyRadixBinaryTreeStorage,
+    StaticVector,
 )
 
 # Configuration Constants
 FB_CONF_MAX_MODULES = 4
 FB_CONF_MAX_FUNCTIONS = 256
+FB_CONF_MAX_TYPES = 256
 FB_CONF_MAX_EXPORTS = 64
 FB_CONF_MAX_GLOBALS = 32
 FB_CONF_MAX_IMPORTS = 32
+FB_CONF_MAX_TABLES = 16
+FB_CONF_MAX_MEMORIES = 4
+FB_CONF_MAX_ENTITIES = 512
+FB_CONF_MAX_FUNCTION_PARAMS = 16
+
+ItemT = TypeVar("ItemT")
+
+
+def _push_or_raise(target: StaticVector[ItemT], item: ItemT, label: str) -> None:
+    if not target.push_back(item):
+        raise WasmParseError(f"{label} capacity exceeded")
 FB_CONF_MAX_WASM_PAGES = 16
 FB_CONF_WASM_PAGE_SIZE = 65536
 
@@ -46,6 +60,7 @@ class WasmLinkError(Exception):
 
 
 class SectionID:
+    __slots__ = ()
     CUSTOM = 0
     TYPE = 1
     IMPORT = 2
@@ -62,6 +77,7 @@ class SectionID:
 
 
 class ValType:
+    __slots__ = ()
     I32 = 0x7F
     I64 = 0x7E
     F32 = 0x7D
@@ -71,6 +87,7 @@ class ValType:
 
 
 class ExternalKind:
+    __slots__ = ()
     FUNCTION = 0x00
     TABLE = 0x01
     MEMORY = 0x02
@@ -87,6 +104,8 @@ def fnv1a_32(data: str) -> int:
 
 class BumpAllocator:
     """Non-owning LIFO bump allocator simulating scratch allocation ({META_BumpAllocator})."""
+
+    __slots__ = ("capacity", "offset", "storage")
 
     def __init__(self, capacity: int = 16384):
         self.capacity = capacity
@@ -113,6 +132,8 @@ class BumpAllocator:
 
 class BinaryStream:
     """Stream reader over ROM data with bounds check and LEB128 guard ({ROMParsing})."""
+
+    __slots__ = ("cursor", "limit", "view")
 
     def __init__(
         self,
@@ -204,7 +225,9 @@ class BinaryStream:
 
 
 class FuncType:
-    def __init__(self, params: list[int], results: list[int]):
+    __slots__ = ("params", "results")
+
+    def __init__(self, params: StaticVector[int], results: StaticVector[int]):
         self.params = params
         self.results = results
 
@@ -213,6 +236,8 @@ class FuncType:
 
 
 class ImportEntry:
+    __slots__ = ("desc", "field_name", "kind", "module_name")
+
     def __init__(self, module_name: str, field_name: str, kind: int, desc: int):
         self.module_name = module_name
         self.field_name = field_name
@@ -221,6 +246,8 @@ class ImportEntry:
 
 
 class ExportEntry:
+    __slots__ = ("index", "kind", "name")
+
     def __init__(self, name: str, kind: int, index: int):
         self.name = name
         self.kind = kind
@@ -231,6 +258,8 @@ class ExportEntry:
 
 
 class GlobalEntry:
+    __slots__ = ("init_expr_offset", "init_expr_size", "mutable", "valtype")
+
     def __init__(self, valtype: int, mutable: bool, init_expr_offset: int, init_expr_size: int):
         self.valtype = valtype
         self.mutable = mutable
@@ -239,12 +268,16 @@ class GlobalEntry:
 
 
 class MemoryEntry:
+    __slots__ = ("initial_pages", "maximum_pages")
+
     def __init__(self, initial_pages: int, maximum_pages: int | None = None):
         self.initial_pages = initial_pages
         self.maximum_pages = maximum_pages
 
 
 class TableEntry:
+    __slots__ = ("elemtype", "initial", "maximum")
+
     def __init__(self, elemtype: int, initial: int, maximum: int | None = None):
         self.elemtype = elemtype
         self.initial = initial
@@ -252,6 +285,8 @@ class TableEntry:
 
 
 class SectionView:
+    __slots__ = ("offset", "payload_offset", "payload_size", "section_id", "size")
+
     def __init__(
         self,
         section_id: int,
@@ -268,6 +303,8 @@ class SectionView:
 
 
 class FunctionAccessor:
+    __slots__ = ("_code_offset", "_code_size", "_rom_data", "func_idx", "type_idx", "type_sig")
+
     def __init__(
         self,
         func_idx: int,
@@ -303,6 +340,8 @@ class FunctionAccessor:
 
 
 class GlobalAccessor:
+    __slots__ = ("_rom_data", "entry", "global_idx")
+
     def __init__(
         self,
         global_idx: int,
@@ -327,6 +366,8 @@ class GlobalAccessor:
 class DecodedEntity:
     """Decoded entity residing at file offset interval [start_offset, end_offset)."""
 
+    __slots__ = ("end_offset", "kind", "name_or_idx", "payload", "start_offset")
+
     def __init__(
         self,
         kind: str,
@@ -348,26 +389,58 @@ class ModuleView:
     `{ROMParsing}` `{ZeroCopyIndexing}` `{META_AccessDictionary}` `{META_BinarySearch}`
     """
 
+    __slots__ = (
+        "code_offsets",
+        "entity_offset_storage",
+        "entity_offset_tree",
+        "entity_registry",
+        "export_storage",
+        "export_tree",
+        "exports_dict",
+        "functions",
+        "globals",
+        "import_storage",
+        "import_tree",
+        "imports",
+        "is_ready",
+        "memories",
+        "module_name",
+        "registry",
+        "resolved_imports",
+        "rom_binary",
+        "sections",
+        "start_func_idx",
+        "tables",
+        "types",
+    )
+
     def __init__(self, module_name: str, rom_binary: bytes | bytearray | memoryview):
         self.module_name = module_name
         self.rom_binary = memoryview(rom_binary)
         # Section IDs are SectionID.CUSTOM(0)..DATA_COUNT(12): a fixed, dense
         # WASM-spec-defined range, so a fixed-size array indexed by ID -- not
         # a dict -- is the direct fit.
-        self.sections: list[SectionView | None] = [None] * (SectionID.DATA_COUNT + 1)
-        self.types: list[FuncType] = []
-        self.imports: list[ImportEntry] = []
-        self.functions: list[int] = []
-        self.tables: list[TableEntry] = []
-        self.memories: list[MemoryEntry] = []
-        self.globals: list[GlobalEntry] = []
-        self.exports_dict: list[ExportEntry] = []
-        self.code_offsets: list[tuple[int, int]] = []
+        self.sections: StaticVector[SectionView | None] = StaticVector.of(
+            tuple(None for _ in range(SectionID.DATA_COUNT + 1)),
+            capacity=SectionID.DATA_COUNT + 1,
+        )
+        self.types: StaticVector[FuncType] = StaticVector(capacity=FB_CONF_MAX_TYPES)
+        self.imports: StaticVector[ImportEntry] = StaticVector(capacity=FB_CONF_MAX_IMPORTS)
+        self.functions: StaticVector[int] = StaticVector(capacity=FB_CONF_MAX_FUNCTIONS)
+        self.tables: StaticVector[TableEntry] = StaticVector(capacity=FB_CONF_MAX_TABLES)
+        self.memories: StaticVector[MemoryEntry] = StaticVector(capacity=FB_CONF_MAX_MEMORIES)
+        self.globals: StaticVector[GlobalEntry] = StaticVector(capacity=FB_CONF_MAX_GLOBALS)
+        self.exports_dict: StaticVector[ExportEntry] = StaticVector(capacity=FB_CONF_MAX_EXPORTS)
+        self.code_offsets: StaticVector[tuple[int, int]] = StaticVector(
+            capacity=FB_CONF_MAX_FUNCTIONS
+        )
         self.start_func_idx: int | None = None
-        self.resolved_imports: FlatMapView[str, ExportEntry] = FlatMapView([])
+        self.resolved_imports: FlatMapView[str, ExportEntry] = FlatMapView(())
         self.is_ready: bool = False
         # Decoded entity registry & RadixBinaryTreeView indexes ({META_BinarySearch})
-        self.entity_registry: list[DecodedEntity] = []
+        self.entity_registry: StaticVector[DecodedEntity] = StaticVector(
+            capacity=FB_CONF_MAX_ENTITIES
+        )
         self.export_tree: RadixBinaryTreeView | None = None
         self.import_tree: RadixBinaryTreeView | None = None
         self.entity_offset_tree: RadixBinaryTreeView | None = None
@@ -382,24 +455,27 @@ class ModuleView:
     ) -> DecodedEntity:
 
         entity = DecodedEntity(kind, start_offset, end_offset, name_or_idx, payload)
-        self.entity_registry.append(entity)
+        if not self.entity_registry.push_back(entity):
+            raise WasmParseError("decoded entity registry capacity exceeded")
         return entity
 
     def build_indexes(self) -> None:
         """Constructs RadixBinaryTreeView indexes for exports, imports, and entity offsets."""
-        exp_keys = [fnv1a_32(exp.name) for exp in self.exports_dict]
+        exp_keys = tuple(fnv1a_32(exp.name) for exp in self.exports_dict)
         self.export_storage = ReadOnlyRadixBinaryTreeStorage.create(
             exp_keys, self.exports_dict, radix_shift=28
         )
         self.export_tree = self.export_storage.view()
 
-        imp_keys = [fnv1a_32(f"{imp.module_name}::{imp.field_name}") for imp in self.imports]
+        imp_keys = tuple(
+            fnv1a_32(f"{imp.module_name}::{imp.field_name}") for imp in self.imports
+        )
         self.import_storage = ReadOnlyRadixBinaryTreeStorage.create(
             imp_keys, self.imports, radix_shift=28
         )
         self.import_tree = self.import_storage.view()
 
-        ent_keys = [e.start_offset for e in self.entity_registry]
+        ent_keys = tuple(e.start_offset for e in self.entity_registry)
         self.entity_offset_storage = ReadOnlyRadixBinaryTreeStorage.create(
             ent_keys, self.entity_registry, radix_shift=4
         )
@@ -474,6 +550,8 @@ class WasmLoader:
     WASM Loader & Lightweight Verifier (V1-V6) with transactional rollback.
     `{ROMParsing}` `{LightweightVerifier}` `{MultiModule_Support}` `{META_BumpAllocator}`
     """
+
+    __slots__ = ("allocator", "max_modules", "max_wasm_pages", "registry")
 
     def __init__(
         self,
@@ -589,10 +667,18 @@ class WasmLoader:
                 if form != 0x60:
                     raise WasmParseError(f"Invalid type form 0x{form:02X}")
                 p_count = stream.read_leb128_u32()
-                params = [stream.read_u8() for _ in range(p_count)]
+                if p_count > FB_CONF_MAX_FUNCTION_PARAMS:
+                    raise WasmParseError("Function parameter count exceeds fixed capacity")
+                params = StaticVector[int](capacity=FB_CONF_MAX_FUNCTION_PARAMS)
+                for _ in range(p_count):
+                    _push_or_raise(params, stream.read_u8(), "function parameter")
                 r_count = stream.read_leb128_u32()
-                results = [stream.read_u8() for _ in range(r_count)]
-                view.types.append(FuncType(params, results))
+                if r_count > FB_CONF_MAX_FUNCTION_PARAMS:
+                    raise WasmParseError("Function result count exceeds fixed capacity")
+                results = StaticVector[int](capacity=FB_CONF_MAX_FUNCTION_PARAMS)
+                for _ in range(r_count):
+                    _push_or_raise(results, stream.read_u8(), "function result")
+                _push_or_raise(view.types, FuncType(params, results), "type")
         elif sec_id == SectionID.IMPORT:
             count = stream.read_leb128_u32()
             for _ in range(count):
@@ -601,31 +687,41 @@ class WasmLoader:
                 kind = stream.read_u8()
                 if kind == ExternalKind.FUNCTION:
                     type_idx = stream.read_leb128_u32()
-                    view.imports.append(ImportEntry(mod_name, field_name, kind, type_idx))
+                    _push_or_raise(
+                        view.imports,
+                        ImportEntry(mod_name, field_name, kind, type_idx),
+                        "import",
+                    )
                 elif kind == ExternalKind.TABLE:
                     elemtype = stream.read_u8()
                     flags = stream.read_leb128_u32()
                     initial = stream.read_leb128_u32()
                     maximum = stream.read_leb128_u32() if (flags & 1) else None
-                    view.tables.append(TableEntry(elemtype, initial, maximum))
-                    view.imports.append(ImportEntry(mod_name, field_name, kind, 0))
+                    _push_or_raise(view.tables, TableEntry(elemtype, initial, maximum), "table")
+                    _push_or_raise(
+                        view.imports, ImportEntry(mod_name, field_name, kind, 0), "import"
+                    )
                 elif kind == ExternalKind.MEMORY:
                     flags = stream.read_leb128_u32()
                     initial = stream.read_leb128_u32()
                     maximum = stream.read_leb128_u32() if (flags & 1) else None
-                    view.memories.append(MemoryEntry(initial, maximum))
-                    view.imports.append(ImportEntry(mod_name, field_name, kind, 0))
+                    _push_or_raise(view.memories, MemoryEntry(initial, maximum), "memory")
+                    _push_or_raise(
+                        view.imports, ImportEntry(mod_name, field_name, kind, 0), "import"
+                    )
                 elif kind == ExternalKind.GLOBAL:
                     valtype = stream.read_u8()
                     mutable = stream.read_u8() == 1
-                    view.globals.append(GlobalEntry(valtype, mutable, 0, 0))
-                    view.imports.append(ImportEntry(mod_name, field_name, kind, 0))
+                    _push_or_raise(view.globals, GlobalEntry(valtype, mutable, 0, 0), "global")
+                    _push_or_raise(
+                        view.imports, ImportEntry(mod_name, field_name, kind, 0), "import"
+                    )
         elif sec_id == SectionID.FUNCTION:
             count = stream.read_leb128_u32()
             if count > FB_CONF_MAX_FUNCTIONS:
                 raise WasmParseError("Function count exceeds FB_CONF_MAX_FUNCTIONS")
             for _ in range(count):
-                view.functions.append(stream.read_leb128_u32())
+                _push_or_raise(view.functions, stream.read_leb128_u32(), "function")
         elif sec_id == SectionID.TABLE:
             count = stream.read_leb128_u32()
             for _ in range(count):
@@ -633,14 +729,14 @@ class WasmLoader:
                 flags = stream.read_leb128_u32()
                 initial = stream.read_leb128_u32()
                 maximum = stream.read_leb128_u32() if (flags & 1) else None
-                view.tables.append(TableEntry(elemtype, initial, maximum))
+                _push_or_raise(view.tables, TableEntry(elemtype, initial, maximum), "table")
         elif sec_id == SectionID.MEMORY:
             count = stream.read_leb128_u32()
             for _ in range(count):
                 flags = stream.read_leb128_u32()
                 initial = stream.read_leb128_u32()
                 maximum = stream.read_leb128_u32() if (flags & 1) else None
-                view.memories.append(MemoryEntry(initial, maximum))
+                _push_or_raise(view.memories, MemoryEntry(initial, maximum), "memory")
         elif sec_id == SectionID.GLOBAL:
             count = stream.read_leb128_u32()
             for g_idx in range(count):
@@ -651,7 +747,7 @@ class WasmLoader:
                     pass
                 init_size = stream.tell() - init_start
                 g_entry = GlobalEntry(valtype, mutable, init_start, init_size)
-                view.globals.append(g_entry)
+                _push_or_raise(view.globals, g_entry, "global")
                 view.register_entity("GLOBAL", init_start, init_start + init_size, g_idx, g_entry)
         elif sec_id == SectionID.EXPORT:
             count = stream.read_leb128_u32()
@@ -661,7 +757,7 @@ class WasmLoader:
                 name = stream.read_string()
                 kind = stream.read_u8()
                 index = stream.read_leb128_u32()
-                view.exports_dict.append(ExportEntry(name, kind, index))
+                _push_or_raise(view.exports_dict, ExportEntry(name, kind, index), "export")
         elif sec_id == SectionID.START:
             view.start_func_idx = stream.read_leb128_u32()
         elif sec_id == SectionID.CODE:
@@ -669,7 +765,7 @@ class WasmLoader:
             for c_idx in range(count):
                 body_size = stream.read_leb128_u32()
                 body_start = stream.tell()
-                view.code_offsets.append((body_start, body_size))
+                _push_or_raise(view.code_offsets, (body_start, body_size), "code body")
                 func_idx = view.num_imported_functions() + c_idx
                 view.register_entity(
                     "FUNCTION",
@@ -681,7 +777,9 @@ class WasmLoader:
                 stream.seek(body_start + body_size)
 
     def resolve_imports(self, module: ModuleView) -> bool:
-        entries: list[tuple[str, ExportEntry]] = []
+        entries: StaticVector[tuple[str, ExportEntry]] = StaticVector(
+            capacity=FB_CONF_MAX_IMPORTS
+        )
         for imp in module.imports:
             target_mod = self.lookup(imp.module_name)
             if target_mod is None:
@@ -689,7 +787,11 @@ class WasmLoader:
             export_entry = target_mod.lookup_export(imp.field_name)
             if export_entry is None or export_entry.kind != imp.kind:
                 raise WasmLinkError(f"Unresolved import '{imp.module_name}.{imp.field_name}'")
-            entries.append((f"{imp.module_name}.{imp.field_name}", export_entry))
+            _push_or_raise(
+                entries,
+                (f"{imp.module_name}.{imp.field_name}", export_entry),
+                "resolved import",
+            )
 
         entries.sort(key=lambda e: e[0])
         module.resolved_imports = FlatMapView(entries)

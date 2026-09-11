@@ -1,6 +1,6 @@
 # Debug Manager コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}
 <!-- evidence:
-     formal: formal/vsoc_state_model.py
+     formal: formal/vsoc_cache_coherency_model.py
      concept: concepts/debugger_concept.py
      test: tests/debug_manager_test_spec.md
 -->
@@ -210,3 +210,13 @@ sequenceDiagram
 <!-- traceability: {MemoryBoundaryCheck} -->
 - **目標**: デバッガによる不正なメモリアクセスを防止する。
 - **方策**: `{MemoryBoundaryCheck}` デバッグコマンドによるメモリアクセスに対し、WASMリニアメモリの境界チェックを強制する。
+
+## 7. 形式検証・テスト仕様との対応
+
+### 7.1 JITキャッシュ無効化の形式検証
+
+デバッガによるゲストメモリ書き換え後に旧世代のJITコードを実行しないことは、[`vsoc_cache_coherency_model.py`](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) の `debugger_memory_write_invalidates_stale_traces` として検証する。通常モデルでは性質が成立し、`guards=False` の変異モデルでは旧世代コード実行状態が到達可能になり、性質が反証される。
+
+### 7.2 テスト仕様書との連携
+
+GDB RSP、ブレークポイント、ハンドラテーブル切替、およびJITキャッシュ協調のテストケースは [`debug_manager_test_spec.md`](docs/components/tier2_runtime/tests/debug_manager_test_spec.md) を正本とする。

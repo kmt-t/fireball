@@ -9,7 +9,6 @@ from pyModelChecking.CTL import AF, AG, AtomicProposition, Imply, Not
 BACKS = [
     "components/tier1_core/os_coos.md",
     "components/tier1_core/os_scheduler.md",
-    "components/tier1_core/system_config.md",
 ]
 
 

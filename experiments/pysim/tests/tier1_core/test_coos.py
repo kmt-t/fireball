@@ -31,6 +31,7 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
+from interrupt_event import InterruptEvent
 from scheduler import ChannelAction, Scheduler, TaskState, WaitDir
 
 
@@ -179,7 +180,7 @@ def test_coos_08_interrupt_notification_and_drain():
     sched.spawn("handler", irq_handler())
     sched.run_until_idle()
     assert len(woken) == 0
-    sched.notify_interrupt(16)
+    sched.notify_interrupt(InterruptEvent(16, 0, 0, 0, 0))
     sched.run_until_idle()
     assert woken == ["IRQ_PROCESSED"]
 
@@ -188,10 +189,10 @@ def test_coos_09_interrupt_queue_overflow_drops():
     """COOS-09: Overflowing ISR queue drops notification and increments dropped_irqs counter."""
     sched = Scheduler()
     for i in range(16):
-        assert sched.notify_interrupt(i)
+        assert sched.notify_interrupt(InterruptEvent(i, 0, 0, 0, 0))
 
     # 17th notification must drop
-    assert not sched.notify_interrupt(17)
+    assert not sched.notify_interrupt(InterruptEvent(17, 0, 0, 0, 0))
     assert sched.dropped_irqs == 1
 
 

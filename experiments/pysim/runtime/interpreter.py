@@ -30,11 +30,12 @@ control frames grow from the top in a dedicated region of their own --
 never interleaved with the operand values, since a JIT-resolved loop/block
 exit never pops a control frame at all, and letting the two share one
 growing region would let that leave operand-stack addressing corrupted.
-`CallFrame` is this activation's Python equivalent: `values` (operands)
-and `frames` (control frames, `_Frame`) are two independent lists, mirroring
-that separation, plus this activation's own decoded instruction table
-(needed to fetch the next instruction from `ip`) -- kept there rather than
-smuggled in as a 5th argument outside the declared signature.
+`InterpreterContext` owns the three fixed-capacity runtime stacks. A
+`CallFrame` is only an activation descriptor and a window into the
+context-owned OperandStack, LocalStack, and control-frame stack; it does not
+own a per-function stack. The descriptor also carries the decoded instruction
+table needed to fetch the next instruction from `ip`, without adding a fifth
+handler argument.
 """
 
 from __future__ import annotations
@@ -42,12 +43,14 @@ from __future__ import annotations
 import ctypes
 import math
 import struct
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
+from typing import cast
 
 import cython
-from control_flow import ControlMap, build_control_map
+from control_flow import FB_CONF_MAX_NESTING_DEPTH, ControlMap, build_control_map
 from leb128 import decode_signed, decode_unsigned
+from system_containers import StaticVector
 from wasm_module import F32, F64, I64, Module
 from wasm_opcodes import (
     BLOCK,
@@ -249,12 +252,89 @@ class Trap(Exception):
     pass
 
 
+FB_CONF_MAX_VALUE_STACK = 64
+FB_CONF_MAX_LOCAL_STACK = 64
+
+
+def _make_int_vector(values: Sequence[int], capacity: int = FB_CONF_MAX_VALUE_STACK) -> StaticVector[int]:
+    vector: StaticVector[int] = StaticVector(capacity=capacity)
+    if not vector.extend(values):
+        raise Trap("static vector capacity exceeded")
+    return vector
+
+
 @dataclass
-class _Frame:
+class ControlFrame:
     kind: str  # "block" | "loop" | "if"
     start: int  # opcode offset of the BLOCK/LOOP/IF
     match_end: int  # offset of the matching END
     stack_height: int  # operand-stack height at frame entry
+
+
+class _ControlFrameWindow:
+    """Current function's window into the context-owned control-frame stack."""
+
+    __slots__ = ("_base", "_storage")
+
+    def __init__(self, storage: StaticVector[ControlFrame], base: int):
+        self._storage = storage
+        self._base = base
+
+    def __len__(self) -> int:
+        return len(self._storage) - self._base
+
+    def __bool__(self) -> bool:
+        return len(self) != 0
+
+    def _absolute_index(self, index: int) -> int:
+        absolute = self._base + index if index >= 0 else len(self._storage) + index
+        if not (self._base <= absolute < len(self._storage)):
+            raise IndexError("control frame index out of range")
+        return absolute
+
+    def __getitem__(self, index: int) -> ControlFrame:
+        return self._storage[self._absolute_index(index)]
+
+    def push_back(self, frame: ControlFrame) -> bool:
+        return self._storage.push_back(frame)
+
+    def pop_back(self) -> ControlFrame:
+        if not self:
+            raise IndexError("control frame stack underflow")
+        return self._storage.pop_back()
+
+    def truncate(self, depth: int) -> None:
+        """Remove frames above the requested relative stack depth."""
+        if depth < 0 or depth > len(self):
+            return
+        while len(self) > depth:
+            self._storage.pop_back()
+
+
+class _LocalStackWindow:
+    """A typed window over one call-frame's locals in the context LocalStack."""
+
+    __slots__ = ("_base", "_count", "_storage")
+
+    def __init__(self, storage: StaticVector[object], base: int, count: int):
+        self._storage = storage
+        self._base = base
+        self._count = count
+
+    def __len__(self) -> int:
+        return self._count
+
+    def _absolute_index(self, index: int) -> int:
+        absolute = self._base + index if index >= 0 else self._base + self._count + index
+        if not (self._base <= absolute < self._base + self._count):
+            raise IndexError("local stack index out of range")
+        return absolute
+
+    def __getitem__(self, index: int) -> int:
+        return cast(int, self._storage[self._absolute_index(index)])
+
+    def __setitem__(self, index: int, value: int) -> None:
+        self._storage[self._absolute_index(index)] = value
 
 
 @dataclass
@@ -276,6 +356,82 @@ class ExecEnv:
     phys_mem: bytearray | None = None
 
 
+class InterpreterContext:
+    """Execution-context-owned stacks shared by the complete call chain."""
+
+    __slots__ = (
+        "call_frame_offsets",
+        "call_frame_stack",
+        "control_frame_stack",
+        "local_offset",
+        "local_stack",
+        "operand_stack",
+    )
+
+    def __init__(self):
+        self.operand_stack: StaticVector[int] = StaticVector(capacity=FB_CONF_MAX_VALUE_STACK)
+        self.local_stack: StaticVector[object] = StaticVector(capacity=FB_CONF_MAX_LOCAL_STACK)
+        self.local_offset = 0
+        self.call_frame_offsets: StaticVector[int] = StaticVector(
+            capacity=FB_CONF_MAX_NESTING_DEPTH
+        )
+        self.call_frame_stack: StaticVector[CallFrame] = StaticVector(
+            capacity=FB_CONF_MAX_NESTING_DEPTH
+        )
+        self.control_frame_stack: StaticVector[ControlFrame] = StaticVector(
+            capacity=FB_CONF_MAX_NESTING_DEPTH
+        )
+
+    def begin_call_frame(
+        self,
+        code: bytes,
+        control_map: ControlMap,
+        args: StaticVector[int],
+        env: ExecEnv,
+    ) -> CallFrame:
+        """Push one call-frame header and its locals into context-owned stacks."""
+        frame_offset = self.local_offset
+        required = 1 + len(args)
+        if frame_offset + required > self.local_stack.capacity:
+            raise Trap("local stack capacity exceeded")
+        if not self.call_frame_offsets.push_back(frame_offset):
+            raise Trap("call-frame offset stack capacity exceeded")
+        frame = CallFrame(
+            code,
+            control_map,
+            self,
+            frame_offset=frame_offset,
+            local_count=len(args),
+            env=env,
+        )
+        if not self.call_frame_stack.push_back(frame):
+            self.call_frame_offsets.pop_back()
+            raise Trap("call-frame stack capacity exceeded")
+        if not self.local_stack.push_back(frame):
+            self.call_frame_stack.pop_back()
+            self.call_frame_offsets.pop_back()
+            raise Trap("local stack capacity exceeded")
+        if not self.local_stack.extend(args):
+            self.local_stack.pop_back()
+            self.call_frame_stack.pop_back()
+            self.call_frame_offsets.pop_back()
+            raise Trap("local stack capacity exceeded")
+        self.local_offset += required
+        return frame
+
+    def end_call_frame(self, frame: CallFrame) -> None:
+        """Pop the active frame header and locals from the context stacks."""
+        if not self.call_frame_offsets or self.call_frame_offsets[-1] != frame.frame_offset:
+            raise Trap("call-frame offset stack mismatch")
+        if not self.call_frame_stack or self.call_frame_stack[-1] is not frame:
+            raise Trap("call-frame stack mismatch")
+        while len(self.local_stack) > frame.frame_offset:
+            self.local_stack.pop_back()
+        self.local_offset = frame.frame_offset
+        self.call_frame_offsets.pop_back()
+        self.call_frame_stack.pop_back()
+
+
 def _read_memarg(code: bytes, ip: int) -> tuple[int, int]:
     align, off = decode_unsigned(code, ip + 1)
     mem_offset, next_ip = decode_unsigned(code, off)
@@ -284,10 +440,9 @@ def _read_memarg(code: bytes, ip: int) -> tuple[int, int]:
 
 class CallFrame:
     """
-    R1 (`stack_bot` / execution_context) for one function activation: `values`
-        (operand stack) and `frames` (control frames, ADR-INTERP-03 -- never
-        the same region as `values`), plus the embedded runtime environment
-        (memory, globals, tables, etc.), control map, and raw code.
+    Activation descriptor for one function. `values`, `locals`, and `frames`
+    are windows into the three independent stacks owned by `InterpreterContext`;
+    this object never owns a per-function stack.
     """
 
     __slots__ = (
@@ -296,21 +451,27 @@ class CallFrame:
         "boundary_loops_to",
         "boundary_next_pc",
         "code",
+        "context",
+        "control_base",
         "control_map",
         "env",
-        "frames",
-        "values",
+        "frame_offset",
+        "local_count",
     )
 
     def __init__(
         self,
         code: bytes,
         control_map: ControlMap,
-        values: list[int],
+        context: InterpreterContext,
+        frame_offset: int,
+        local_count: int,
         env: ExecEnv | None = None,
     ):
-        self.values = values
-        self.frames: list[_Frame] = []
+        self.context = context
+        self.control_base = len(context.control_frame_stack)
+        self.frame_offset = frame_offset
+        self.local_count = local_count
         self.code = code
         self.control_map = control_map
         self.env = env
@@ -329,6 +490,18 @@ class CallFrame:
         # owning RuntimeEngine, so that path is byte-for-byte unchanged.
         self.boundary_next_pc: int | None = None
         self.boundary_loops_to: int | None = None
+
+    @property
+    def values(self) -> StaticVector[int]:
+        return self.context.operand_stack
+
+    @property
+    def frames(self) -> _ControlFrameWindow:
+        return _ControlFrameWindow(self.context.control_frame_stack, self.control_base)
+
+    @property
+    def locals(self) -> _LocalStackWindow:
+        return _LocalStackWindow(self.context.local_stack, self.frame_offset + 1, self.local_count)
 
     def jit_locals_buffer(
         self, n_locals: int
@@ -375,13 +548,13 @@ class CallFrame:
 
 # A handler's continuation: (next_ip, stack_bot, local_base, tos), or None
 # to end this call (RETURN, or branching past the outermost implicit block).
-_Cont = tuple[int, CallFrame, list[int], int] | None
+_Cont = tuple[int, CallFrame, _LocalStackWindow, int] | None
 
 # A raw per-opcode handler's own return shape (before `wrapper` below
 # reprojects it into `_Cont`): (next_ip, frame, env, local_base), or None.
-_HandlerResult = tuple[int, CallFrame, ExecEnv | None, list[int]] | None
-_HandlerFn = Callable[[int, CallFrame, ExecEnv | None, list[int]], _HandlerResult]
-_WrapperFn = Callable[[int, CallFrame, list[int], int], _Cont]
+_HandlerResult = tuple[int, CallFrame, ExecEnv | None, _LocalStackWindow] | None
+_HandlerFn = Callable[[int, CallFrame, ExecEnv | None, _LocalStackWindow], _HandlerResult]
+_WrapperFn = Callable[[int, CallFrame, _LocalStackWindow, int], _Cont]
 
 # Fixed 256-slot direct-indexed dispatch table for WASM byte opcodes (0x00..0xFF)
 _HANDLERS: list[_WrapperFn | None] = [None] * 256
@@ -389,7 +562,7 @@ _HANDLERS: list[_WrapperFn | None] = [None] * 256
 
 def _handler(opcode: int) -> Callable[[_HandlerFn], _HandlerFn]:
     def register(fn: _HandlerFn) -> _HandlerFn:
-        def wrapper(ip: int, frame: CallFrame, local_base: list[int], tos: int) -> _Cont:
+        def wrapper(ip: int, frame: CallFrame, local_base: _LocalStackWindow, tos: int) -> _Cont:
             env = frame.env
             res = fn(ip, frame, env, local_base)
             if res is None:
@@ -414,7 +587,7 @@ def _do_branch(depth: int, frame: CallFrame) -> int | None:
 
     cframes = frame.frames
     while depth > 0:
-        cframes.pop()
+        cframes.pop_back()
         depth -= 1
 
     if not cframes:
@@ -423,7 +596,7 @@ def _do_branch(depth: int, frame: CallFrame) -> int | None:
     del frame.values[target.stack_height :]
     if target.kind == "loop":
         return target.start + 2  # resume at the loop body (past opcode+blocktype)
-    cframes.pop()
+    cframes.pop_back()
     return target.match_end + 1
 
 
@@ -445,10 +618,13 @@ class InterpreterCall:
     """
 
     func_index: int
+    context: InterpreterContext
     cont: _Cont
-    call_stack: list[tuple[int, _Cont]] = field(default_factory=list)
+    call_stack: StaticVector[tuple[int, _Cont]] = field(
+        default_factory=lambda: StaticVector(capacity=FB_CONF_MAX_NESTING_DEPTH)
+    )
     finished: bool = False
-    results: list[int] | None = None
+    results: StaticVector[int] | None = None
 
     def current_pc(self) -> int | None:
         """
@@ -503,7 +679,7 @@ class Interpreter:
             phys_mem=phys_mem,
         )
         if self.module.start_function is not None:
-            self.call(self.module.start_function, [])
+            self.call(self.module.start_function, ())
 
     def attach_debugger(self, debugger: object) -> None:
         """
@@ -525,14 +701,14 @@ class Interpreter:
         treat an `Interpreter` and an `IntegratedHybridEngine` uniformly.
         """
 
-    def call(self, func_index: int, args: list[int]) -> list[int]:
+    def call(self, func_index: int, args: Sequence[int]) -> StaticVector[int]:
         """Runs a function to completion in one call."""
         call_state = self.start(func_index, args)
         while not call_state.finished:
             call_state = self.step(call_state)
         return call_state.results
 
-    def run_iter(self, func_index: int, args: list[int]) -> Iterator[InterpreterCall]:
+    def run_iter(self, func_index: int, args: Sequence[int]) -> Iterator[InterpreterCall]:
         """
         Drives a call basic-block by basic-block, yielding the (possibly still-unfinished)
         `call_state` after every `step()` and once more after it finishes.
@@ -543,21 +719,22 @@ class Interpreter:
             call_state = override if override is not None else self.step(call_state)
         yield call_state
 
-    def start(self, func_index: int, args: list[int]) -> InterpreterCall:
+    def start(self, func_index: int, args: Sequence[int]) -> InterpreterCall:
         """
         Sets up a resumable call, to be driven by repeated `step()` calls.
                 A host import has nothing to step through: it resolves synchronously
                 right here, so the returned call is already finished.
         """
+        context = InterpreterContext()
         if self.module.is_import(func_index):
             results = self._call_import(func_index, args)
-            return InterpreterCall(func_index, cont=None, finished=True, results=results)
+            return InterpreterCall(func_index, context, cont=None, finished=True, results=results)
 
-        frame, locals_arr = self._build_frame(func_index, args)
+        frame, locals_arr = self._build_frame(func_index, _make_int_vector(args), context)
         tos = frame.values[-1] if frame.values else 0
-        return InterpreterCall(func_index, cont=(0, frame, locals_arr, tos))
+        return InterpreterCall(func_index, context, cont=(0, frame, locals_arr, tos))
 
-    def _call_import(self, func_index: int, args: list[int]) -> list[int]:
+    def _call_import(self, func_index: int, args: Sequence[int]) -> StaticVector[int]:
         """Resolves a host import synchronously -- there is no bytecode to step through."""
         handler = self.host_functions[func_index] if func_index < len(self.host_functions) else None
         if handler is None:
@@ -567,11 +744,14 @@ class Interpreter:
             )
         result = handler(*[_to_i32(a) for a in args])
         ft = self.module.func_type(func_index)
-        return [_to_i32(result)] if ft.results else []
+        results: StaticVector[int] = StaticVector(capacity=FB_CONF_MAX_VALUE_STACK)
+        if ft.results and not results.push_back(_to_i32(result)):
+            raise Trap("result vector capacity exceeded")
+        return results
 
     def _build_frame(
-        self, func_index: int, args: list[int], values: list[int] | None = None
-    ) -> tuple[CallFrame, list[int]]:
+        self, func_index: int, args: StaticVector[int], context: InterpreterContext
+    ) -> tuple[CallFrame, _LocalStackWindow]:
         """
         Builds the initial frame + locals for a WASM (non-import) function
         activation. `args` -- already popped off the caller's operand stack
@@ -581,13 +761,9 @@ class Interpreter:
         reused directly as `locals_arr`, rather than copied into a second,
         freshly-allocated list of the same values.
 
-        `values` is the operand stack this new frame will push onto -- the
-        caller's own `frame.values`, shared unchanged, for a nested call via
-        `_enter_or_resolve_call`, or `None` (a fresh empty list) for a new
-        top-level `InterpreterCall`. The operand stack spans the whole call
-        chain rather than resetting per call: a callee's results end up
-        sitting exactly where the caller's own next pop/push already
-        expects them, so returning needs no value copy.
+        The frame header and locals are pushed into `context` by
+        `InterpreterContext.begin_call_frame`; the operand stack is also owned
+        by that same context and is shared across the complete call chain.
         """
         fn = self.module.functions[func_index - len(self.module.imports)]
         layout = self.module.locals_layout(func_index)
@@ -601,15 +777,18 @@ class Interpreter:
             else:
                 args[i] = _to_i32(args[i])
         if len(layout) > len(args):
-            args.extend([0] * (len(layout) - len(args)))
-        locals_arr = args
-
+            for _ in range(len(layout) - len(args)):
+                if not args.push_back(0):
+                    raise Trap("local vector capacity exceeded")
         if fn.control_map is None:
             fn.control_map = build_control_map(fn.code)
-        frame = CallFrame(
-            fn.code, fn.control_map, values if values is not None else [], env=self._env
+        frame = context.begin_call_frame(
+            fn.code,
+            fn.control_map,
+            args,
+            env=self._env,
         )
-        return frame, locals_arr
+        return frame, frame.locals
 
     @cython.locals(ip=cython.Py_ssize_t, op=cython.uchar)
     def step(self, call_state: InterpreterCall) -> InterpreterCall:
@@ -649,8 +828,16 @@ class Interpreter:
                 # below.
 
             ft = self.module.func_type(call_state.func_index)
+            # The context-owned control-frame window is independent from the
+            # LocalStack frame lifetime; discard any frames left by a JIT
+            # boundary before releasing this call activation.
+            while frame.frames:
+                frame.frames.pop_back()
+            call_state.context.end_call_frame(frame)
             if not call_state.call_stack:
-                results = [frame.values.pop()] if ft.results else []
+                results = StaticVector(capacity=FB_CONF_MAX_VALUE_STACK)
+                if ft.results and not results.push_back(frame.values.pop_back()):
+                    raise Trap("result vector capacity exceeded")
                 call_state.cont = None
                 call_state.finished = True
                 call_state.results = results
@@ -659,10 +846,10 @@ class Interpreter:
             # boundary, so the runtime gets the same chance to check its JIT
             # trace cache here as it does entering any other frame. The
             # operand stack is shared across this whole call chain (see
-            # _build_frame's `values` sharing in _enter_or_resolve_call), so
-            # the result -- already sitting on top of it -- needs no copy:
+            # the result -- already sitting on the context-owned operand
+            # stack -- needs no copy:
             # the caller's own next pop/push simply continues from here.
-            parent_func_index, parent_cont = call_state.call_stack.pop()
+            parent_func_index, parent_cont = call_state.call_stack.pop_back()
             p_ip, p_frame, p_locals, _ = parent_cont
             p_tos = p_frame.values[-1] if p_frame.values else 0
             call_state.func_index = parent_func_index
@@ -675,7 +862,7 @@ class Interpreter:
         opcode: int,
         ip: int,
         frame: CallFrame,
-        locals_arr: list[int],
+        locals_arr: StaticVector[int],
         tos: int,
     ) -> InterpreterCall:
         """
@@ -691,7 +878,7 @@ class Interpreter:
             typeidx, off = decode_unsigned(frame.code, ip + 1)
             tableidx, next_ip = decode_unsigned(frame.code, off)
             table = frame.env.tables[tableidx]
-            table_slot = _to_u32(frame.values.pop())
+            table_slot = _to_u32(frame.values.pop_back())
             if table_slot >= len(table):
                 raise Trap(
                     f"call_indirect: table index {table_slot} out of bounds (size {len(table)})"
@@ -708,21 +895,26 @@ class Interpreter:
                 )
             callee_ft = declared_type
 
-        call_args = [frame.values.pop() for _ in range(len(callee_ft.params))][::-1]
+        call_args = StaticVector.of(
+            tuple(frame.values.pop_back() for _ in range(len(callee_ft.params)))[::-1],
+            capacity=FB_CONF_MAX_VALUE_STACK,
+        )
         resume_tos = frame.values[-1] if frame.values else 0
         resume_cont = (next_ip, frame, locals_arr, resume_tos)
 
         if self.module.is_import(callee_func_index):
             results = self._call_import(callee_func_index, call_args)
-            frame.values.extend(results)
+            if not frame.values.extend(results):
+                raise Trap("operand stack capacity exceeded")
             r_tos = frame.values[-1] if frame.values else 0
             call_state.cont = (next_ip, frame, locals_arr, r_tos)
             return call_state
 
         callee_frame, callee_locals = self._build_frame(
-            callee_func_index, call_args, values=frame.values
+            callee_func_index, call_args, call_state.context
         )
-        call_state.call_stack.append((call_state.func_index, resume_cont))
+        if not call_state.call_stack.push_back((call_state.func_index, resume_cont)):
+            raise Trap("call stack capacity exceeded")
         call_state.func_index = callee_func_index
         callee_tos = callee_frame.values[-1] if callee_frame.values else 0
         call_state.cont = (0, callee_frame, callee_locals, callee_tos)
@@ -737,53 +929,57 @@ class Interpreter:
 
 @_handler(UNREACHABLE)
 def _h_unreachable(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     raise Trap("unreachable instruction executed")
 
 
 @_handler(NOP)
-def _h_nop(ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]) -> _HandlerResult:
+def _h_nop(ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow) -> _HandlerResult:
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(BLOCK)
 def _h_block(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     match_end = frame.control_map.blocks[ip][0]
-    frame.frames.append(_Frame("block", ip, match_end, len(frame.values)))
+    if not frame.frames.push_back(ControlFrame("block", ip, match_end, len(frame.values))):
+        raise Trap("control frame capacity exceeded")
     return (ip + 2, frame, env, local_base)
 
 
 @_handler(LOOP)
 def _h_loop(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     match_end = frame.control_map.blocks[ip][0]
-    frame.frames.append(_Frame("loop", ip, match_end, len(frame.values)))
+    if not frame.frames.push_back(ControlFrame("loop", ip, match_end, len(frame.values))):
+        raise Trap("control frame capacity exceeded")
     return (ip + 2, frame, env, local_base)
 
 
 @_handler(IF)
-def _h_if(ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]) -> _HandlerResult:
+def _h_if(ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow) -> _HandlerResult:
     match_end, else_off = frame.control_map.blocks[ip]
-    cond = frame.values.pop()
+    cond = frame.values.pop_back()
     if cond == 0:
         if else_off is not None:
-            frame.frames.append(_Frame("if", ip, match_end, len(frame.values)))
+            if not frame.frames.push_back(ControlFrame("if", ip, match_end, len(frame.values))):
+                raise Trap("control frame capacity exceeded")
             return (else_off + 1, frame, env, local_base)
         else:
             return (match_end + 1, frame, env, local_base)
-    frame.frames.append(_Frame("if", ip, match_end, len(frame.values)))
+    if not frame.frames.push_back(ControlFrame("if", ip, match_end, len(frame.values))):
+        raise Trap("control frame capacity exceeded")
     return (ip + 2, frame, env, local_base)
 
 
 @_handler(ELSE)
 def _h_else(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    popped = frame.frames.pop() if frame.frames else None
+    popped = frame.frames.pop_back() if frame.frames else None
     if frame.boundary_next_pc is not None:
         return (frame.boundary_next_pc & 0xFFFF, frame, env, local_base)
     if popped is not None:
@@ -792,15 +988,15 @@ def _h_else(
 
 
 @_handler(END)
-def _h_end(ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]) -> _HandlerResult:
+def _h_end(ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow) -> _HandlerResult:
     if frame.frames:
-        frame.frames.pop()
+        frame.frames.pop_back()
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(BR)
 @cython.locals(depth=cython.Py_ssize_t)
-def _h_br(ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]) -> _HandlerResult:
+def _h_br(ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow) -> _HandlerResult:
     if frame.boundary_next_pc is not None:
         return (frame.boundary_next_pc & 0xFFFF, frame, env, local_base)
     depth, _ = decode_unsigned(frame.code, ip + 1)
@@ -811,10 +1007,10 @@ def _h_br(ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int])
 @_handler(BR_IF)
 @cython.locals(depth=cython.Py_ssize_t, next_ip=cython.Py_ssize_t, cond=cython.longlong)
 def _h_br_if(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     depth, next_ip = decode_unsigned(frame.code, ip + 1)
-    cond = frame.values.pop()
+    cond = frame.values.pop_back()
     if cond == 0:
         return (next_ip, frame, env, local_base)
     if frame.boundary_loops_to is not None:
@@ -825,10 +1021,10 @@ def _h_br_if(
 
 @_handler(BR_TABLE)
 def _h_br_table(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     labels, default_lbl = frame.control_map.br_tables[ip]
-    index = _to_u32(frame.values.pop())
+    index = _to_u32(frame.values.pop_back())
     depth = labels[index] if index < len(labels) else default_lbl
     next_ip = _do_branch(depth, frame)
     return None if next_ip is None else (next_ip, frame, env, local_base)
@@ -836,7 +1032,7 @@ def _h_br_table(
 
 @_handler(RETURN)
 def _h_return(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     return None
 
@@ -850,47 +1046,47 @@ def _h_return(
 
 @_handler(DROP)
 def _h_drop(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    frame.values.pop()
+    frame.values.pop_back()
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(SELECT)
 def _h_select(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    c = frame.values.pop()
-    b = frame.values.pop()
-    a = frame.values.pop()
-    frame.values.append(a if c != 0 else b)
+    c = frame.values.pop_back()
+    b = frame.values.pop_back()
+    a = frame.values.pop_back()
+    frame.values.push_back(a if c != 0 else b)
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(LOCAL_GET)
 @cython.locals(idx=cython.Py_ssize_t, next_ip=cython.Py_ssize_t)
 def _h_local_get(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     idx, next_ip = decode_unsigned(frame.code, ip + 1)
-    frame.values.append(local_base[idx])
+    frame.values.push_back(local_base[idx])
     return (next_ip, frame, env, local_base)
 
 
 @_handler(LOCAL_SET)
 @cython.locals(idx=cython.Py_ssize_t, next_ip=cython.Py_ssize_t)
 def _h_local_set(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     idx, next_ip = decode_unsigned(frame.code, ip + 1)
-    local_base[idx] = frame.values.pop()
+    local_base[idx] = frame.values.pop_back()
     return (next_ip, frame, env, local_base)
 
 
 @_handler(LOCAL_TEE)
 @cython.locals(idx=cython.Py_ssize_t, next_ip=cython.Py_ssize_t)
 def _h_local_tee(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     idx, next_ip = decode_unsigned(frame.code, ip + 1)
     local_base[idx] = frame.values[-1]
@@ -900,55 +1096,55 @@ def _h_local_tee(
 @_handler(I32_CONST)
 @cython.locals(val=cython.longlong, next_ip=cython.Py_ssize_t)
 def _h_i32_const(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     val, next_ip = decode_signed(frame.code, ip + 1)
-    frame.values.append(_to_i32(val))
+    frame.values.push_back(_to_i32(val))
     return (next_ip, frame, env, local_base)
 
 
 @_handler(I64_CONST)
 def _h_i64_const(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     val, next_ip = decode_signed(frame.code, ip + 1)
-    frame.values.append(_to_i64(val))
+    frame.values.push_back(_to_i64(val))
     return (next_ip, frame, env, local_base)
 
 
 @_handler(F32_CONST)
 def _h_f32_const(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     val = struct.unpack("<f", frame.code[ip + 1 : ip + 5])[0]
-    frame.values.append(val)
+    frame.values.push_back(val)
     return (ip + 5, frame, env, local_base)
 
 
 @_handler(F64_CONST)
 def _h_f64_const(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     val = struct.unpack("<d", frame.code[ip + 1 : ip + 9])[0]
-    frame.values.append(val)
+    frame.values.push_back(val)
     return (ip + 9, frame, env, local_base)
 
 
 @_handler(GLOBAL_GET)
 def _h_global_get(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     idx, next_ip = decode_unsigned(frame.code, ip + 1)
-    frame.values.append(env.globals[idx])
+    frame.values.push_back(env.globals[idx])
     return (next_ip, frame, env, local_base)
 
 
 @_handler(GLOBAL_SET)
 def _h_global_set(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     idx, next_ip = decode_unsigned(frame.code, ip + 1)
-    env.globals[idx] = _to_i32(frame.values.pop())
+    env.globals[idx] = _to_i32(frame.values.pop_back())
     return (next_ip, frame, env, local_base)
 
 
@@ -990,76 +1186,76 @@ def _vmmio_store(env: ExecEnv, addr: int, val_bytes: bytes) -> None:
 
 @_handler(I32_LOAD)
 def _h_i32_load(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     mem_offset, next_ip = _read_memarg(frame.code, ip)
-    addr = _to_u32(frame.values.pop()) + mem_offset
+    addr = _to_u32(frame.values.pop_back()) + mem_offset
     if addr & 0x8000_0000:
-        frame.values.append(_vmmio_load(env, addr, 4, signed=True))
+        frame.values.push_back(_vmmio_load(env, addr, 4, signed=True))
     else:
         if env.memory is None or addr + 4 > len(env.memory):
             raise Trap(f"i32.load out of bounds at addr={addr}")
-        frame.values.append(int.from_bytes(env.memory[addr : addr + 4], "little", signed=True))
+        frame.values.push_back(int.from_bytes(env.memory[addr : addr + 4], "little", signed=True))
     return (next_ip, frame, env, local_base)
 
 
 @_handler(I32_LOAD8_S)
 def _h_i32_load8_s(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     mem_offset, next_ip = _read_memarg(frame.code, ip)
-    addr = _to_u32(frame.values.pop()) + mem_offset
+    addr = _to_u32(frame.values.pop_back()) + mem_offset
     if addr & 0x8000_0000:
-        frame.values.append(_vmmio_load(env, addr, 1, signed=True))
+        frame.values.push_back(_vmmio_load(env, addr, 1, signed=True))
     else:
         if env.memory is None or addr + 1 > len(env.memory):
             raise Trap(f"i32.load8_s out of bounds at addr={addr}")
-        frame.values.append(int.from_bytes(env.memory[addr : addr + 1], "little", signed=True))
+        frame.values.push_back(int.from_bytes(env.memory[addr : addr + 1], "little", signed=True))
     return (next_ip, frame, env, local_base)
 
 
 @_handler(I32_LOAD8_U)
 def _h_i32_load8_u(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     mem_offset, next_ip = _read_memarg(frame.code, ip)
-    addr = _to_u32(frame.values.pop()) + mem_offset
+    addr = _to_u32(frame.values.pop_back()) + mem_offset
     if addr & 0x8000_0000:
-        frame.values.append(_vmmio_load(env, addr, 1, signed=False))
+        frame.values.push_back(_vmmio_load(env, addr, 1, signed=False))
     else:
         if env.memory is None or addr + 1 > len(env.memory):
             raise Trap(f"i32.load8_u out of bounds at addr={addr}")
-        frame.values.append(env.memory[addr])
+        frame.values.push_back(env.memory[addr])
     return (next_ip, frame, env, local_base)
 
 
 @_handler(I32_LOAD16_S)
 def _h_i32_load16_s(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     mem_offset, next_ip = _read_memarg(frame.code, ip)
-    addr = _to_u32(frame.values.pop()) + mem_offset
+    addr = _to_u32(frame.values.pop_back()) + mem_offset
     if addr & 0x8000_0000:
-        frame.values.append(_vmmio_load(env, addr, 2, signed=True))
+        frame.values.push_back(_vmmio_load(env, addr, 2, signed=True))
     else:
         if env.memory is None or addr + 2 > len(env.memory):
             raise Trap(f"i32.load16_s out of bounds at addr={addr}")
-        frame.values.append(int.from_bytes(env.memory[addr : addr + 2], "little", signed=True))
+        frame.values.push_back(int.from_bytes(env.memory[addr : addr + 2], "little", signed=True))
     return (next_ip, frame, env, local_base)
 
 
 @_handler(I32_LOAD16_U)
 def _h_i32_load16_u(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     mem_offset, next_ip = _read_memarg(frame.code, ip)
-    addr = _to_u32(frame.values.pop()) + mem_offset
+    addr = _to_u32(frame.values.pop_back()) + mem_offset
     if addr & 0x8000_0000:
-        frame.values.append(_vmmio_load(env, addr, 2, signed=False))
+        frame.values.push_back(_vmmio_load(env, addr, 2, signed=False))
     else:
         if env.memory is None or addr + 2 > len(env.memory):
             raise Trap(f"i32.load16_u out of bounds at addr={addr}")
-        frame.values.append(int.from_bytes(env.memory[addr : addr + 2], "little", signed=False))
+        frame.values.push_back(int.from_bytes(env.memory[addr : addr + 2], "little", signed=False))
     return (next_ip, frame, env, local_base)
 
 
@@ -1068,11 +1264,11 @@ def _h_i32_load16_u(
 
 @_handler(I32_STORE)
 def _h_i32_store(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     mem_offset, next_ip = _read_memarg(frame.code, ip)
-    value = _to_i32(frame.values.pop())
-    addr = _to_u32(frame.values.pop()) + mem_offset
+    value = _to_i32(frame.values.pop_back())
+    addr = _to_u32(frame.values.pop_back()) + mem_offset
     raw_val = (value & 0xFFFFFFFF).to_bytes(4, "little")
     if addr & 0x8000_0000:
         _vmmio_store(env, addr, raw_val)
@@ -1085,11 +1281,11 @@ def _h_i32_store(
 
 @_handler(I32_STORE8)
 def _h_i32_store8(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     mem_offset, next_ip = _read_memarg(frame.code, ip)
-    value = frame.values.pop() & 0xFF
-    addr = _to_u32(frame.values.pop()) + mem_offset
+    value = frame.values.pop_back() & 0xFF
+    addr = _to_u32(frame.values.pop_back()) + mem_offset
     raw_val = bytes([value])
     if addr & 0x8000_0000:
         _vmmio_store(env, addr, raw_val)
@@ -1102,11 +1298,11 @@ def _h_i32_store8(
 
 @_handler(I32_STORE16)
 def _h_i32_store16(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     mem_offset, next_ip = _read_memarg(frame.code, ip)
-    value = frame.values.pop() & 0xFFFF
-    addr = _to_u32(frame.values.pop()) + mem_offset
+    value = frame.values.pop_back() & 0xFFFF
+    addr = _to_u32(frame.values.pop_back()) + mem_offset
     raw_val = value.to_bytes(2, "little")
     if addr & 0x8000_0000:
         _vmmio_store(env, addr, raw_val)
@@ -1122,25 +1318,25 @@ def _h_i32_store16(
 
 @_handler(MEMORY_SIZE)
 def _h_memory_size(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     if env.memory is None:
         raise Trap("memory.size with no memory section")
-    frame.values.append(len(env.memory) // PAGE_SIZE)
+    frame.values.push_back(len(env.memory) // PAGE_SIZE)
     return (ip + 2, frame, env, local_base)
 
 
 @_handler(MEMORY_GROW)
 def _h_memory_grow(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    delta_pages = _to_u32(frame.values.pop())
+    delta_pages = _to_u32(frame.values.pop_back())
     if env.memory is None:
-        frame.values.append(_to_i32(0xFFFFFFFF))
+        frame.values.push_back(_to_i32(0xFFFFFFFF))
     else:
         old_pages = len(env.memory) // PAGE_SIZE
         env.memory.extend(bytes(delta_pages * PAGE_SIZE))
-        frame.values.append(old_pages)
+        frame.values.push_back(old_pages)
     return (ip + 2, frame, env, local_base)
 
 
@@ -1149,110 +1345,110 @@ def _h_memory_grow(
 
 @_handler(I32_EQZ)
 def _h_i32_eqz(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    frame.values.append(1 if frame.values.pop() == 0 else 0)
+    frame.values.push_back(1 if frame.values.pop_back() == 0 else 0)
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I32_EQ)
 def _h_i32_eq(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b = frame.values.pop()
-    a = frame.values.pop()
-    frame.values.append(1 if _to_i32(a) == _to_i32(b) else 0)
+    b = frame.values.pop_back()
+    a = frame.values.pop_back()
+    frame.values.push_back(1 if _to_i32(a) == _to_i32(b) else 0)
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I32_NE)
 def _h_i32_ne(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b = frame.values.pop()
-    a = frame.values.pop()
-    frame.values.append(1 if _to_i32(a) != _to_i32(b) else 0)
+    b = frame.values.pop_back()
+    a = frame.values.pop_back()
+    frame.values.push_back(1 if _to_i32(a) != _to_i32(b) else 0)
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I32_LT_S)
 def _h_i32_lt_s(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b = frame.values.pop()
-    a = frame.values.pop()
-    frame.values.append(1 if _to_i32(a) < _to_i32(b) else 0)
+    b = frame.values.pop_back()
+    a = frame.values.pop_back()
+    frame.values.push_back(1 if _to_i32(a) < _to_i32(b) else 0)
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I32_LT_U)
 def _h_i32_lt_u(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b = frame.values.pop()
-    a = frame.values.pop()
-    frame.values.append(1 if _to_u32(a) < _to_u32(b) else 0)
+    b = frame.values.pop_back()
+    a = frame.values.pop_back()
+    frame.values.push_back(1 if _to_u32(a) < _to_u32(b) else 0)
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I32_GT_S)
 def _h_i32_gt_s(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b = frame.values.pop()
-    a = frame.values.pop()
-    frame.values.append(1 if _to_i32(a) > _to_i32(b) else 0)
+    b = frame.values.pop_back()
+    a = frame.values.pop_back()
+    frame.values.push_back(1 if _to_i32(a) > _to_i32(b) else 0)
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I32_GT_U)
 def _h_i32_gt_u(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b = frame.values.pop()
-    a = frame.values.pop()
-    frame.values.append(1 if _to_u32(a) > _to_u32(b) else 0)
+    b = frame.values.pop_back()
+    a = frame.values.pop_back()
+    frame.values.push_back(1 if _to_u32(a) > _to_u32(b) else 0)
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I32_LE_S)
 def _h_i32_le_s(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b = frame.values.pop()
-    a = frame.values.pop()
-    frame.values.append(1 if _to_i32(a) <= _to_i32(b) else 0)
+    b = frame.values.pop_back()
+    a = frame.values.pop_back()
+    frame.values.push_back(1 if _to_i32(a) <= _to_i32(b) else 0)
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I32_LE_U)
 def _h_i32_le_u(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b = frame.values.pop()
-    a = frame.values.pop()
-    frame.values.append(1 if _to_u32(a) <= _to_u32(b) else 0)
+    b = frame.values.pop_back()
+    a = frame.values.pop_back()
+    frame.values.push_back(1 if _to_u32(a) <= _to_u32(b) else 0)
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I32_GE_S)
 @cython.locals(a=cython.longlong, b=cython.longlong)
 def _h_i32_ge_s(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b = frame.values.pop()
-    a = frame.values.pop()
-    frame.values.append(1 if _to_i32(a) >= _to_i32(b) else 0)
+    b = frame.values.pop_back()
+    a = frame.values.pop_back()
+    frame.values.push_back(1 if _to_i32(a) >= _to_i32(b) else 0)
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I32_GE_U)
 def _h_i32_ge_u(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b = frame.values.pop()
-    a = frame.values.pop()
-    frame.values.append(1 if _to_u32(a) >= _to_u32(b) else 0)
+    b = frame.values.pop_back()
+    a = frame.values.pop_back()
+    frame.values.push_back(1 if _to_u32(a) >= _to_u32(b) else 0)
     return (ip + 1, frame, env, local_base)
 
 
@@ -1261,18 +1457,18 @@ def _h_i32_ge_u(
 
 @_handler(I32_CLZ)
 def _h_i32_clz(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    v = _to_u32(frame.values.pop())
-    frame.values.append(32 if v == 0 else 32 - v.bit_length())
+    v = _to_u32(frame.values.pop_back())
+    frame.values.push_back(32 if v == 0 else 32 - v.bit_length())
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I32_CTZ)
 def _h_i32_ctz(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    v = _to_u32(frame.values.pop())
+    v = _to_u32(frame.values.pop_back())
     if v == 0:
         res = 32
     else:
@@ -1283,16 +1479,16 @@ def _h_i32_ctz(
 
         res = n
 
-    frame.values.append(res)
+    frame.values.push_back(res)
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I32_POPCNT)
 def _h_i32_popcnt(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    v = _to_u32(frame.values.pop())
-    frame.values.append(bin(v).count("1"))
+    v = _to_u32(frame.values.pop_back())
+    frame.values.push_back(bin(v).count("1"))
     return (ip + 1, frame, env, local_base)
 
 
@@ -1302,168 +1498,168 @@ def _h_i32_popcnt(
 @_handler(I32_ADD)
 @cython.locals(a=cython.longlong, b=cython.longlong)
 def _h_i32_add(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b = frame.values.pop()
-    a = frame.values.pop()
-    frame.values.append(_to_i32(a + b))
+    b = frame.values.pop_back()
+    a = frame.values.pop_back()
+    frame.values.push_back(_to_i32(a + b))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I32_SUB)
 @cython.locals(a=cython.longlong, b=cython.longlong)
 def _h_i32_sub(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b = frame.values.pop()
-    a = frame.values.pop()
-    frame.values.append(_to_i32(a - b))
+    b = frame.values.pop_back()
+    a = frame.values.pop_back()
+    frame.values.push_back(_to_i32(a - b))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I32_MUL)
 def _h_i32_mul(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b = frame.values.pop()
-    a = frame.values.pop()
-    frame.values.append(_to_i32(a * b))
+    b = frame.values.pop_back()
+    a = frame.values.pop_back()
+    frame.values.push_back(_to_i32(a * b))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I32_DIV_S)
 def _h_i32_div_s(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b = _to_i32(frame.values.pop())
-    a = _to_i32(frame.values.pop())
+    b = _to_i32(frame.values.pop_back())
+    a = _to_i32(frame.values.pop_back())
     if b == 0:
         raise Trap("integer divide by zero")
     if a == -2147483648 and b == -1:
         raise Trap("integer overflow")
     q = abs(a) // abs(b)
-    frame.values.append(_to_i32(-q if (a < 0) != (b < 0) else q))
+    frame.values.push_back(_to_i32(-q if (a < 0) != (b < 0) else q))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I32_DIV_U)
 def _h_i32_div_u(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b = _to_u32(frame.values.pop())
-    a = _to_u32(frame.values.pop())
+    b = _to_u32(frame.values.pop_back())
+    a = _to_u32(frame.values.pop_back())
     if b == 0:
         raise Trap("integer divide by zero")
-    frame.values.append(_to_i32(a // b))
+    frame.values.push_back(_to_i32(a // b))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I32_REM_S)
 def _h_i32_rem_s(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b = _to_i32(frame.values.pop())
-    a = _to_i32(frame.values.pop())
+    b = _to_i32(frame.values.pop_back())
+    a = _to_i32(frame.values.pop_back())
     if b == 0:
         raise Trap("integer divide by zero")
     r = abs(a) % abs(b)
-    frame.values.append(_to_i32(-r if a < 0 else r))
+    frame.values.push_back(_to_i32(-r if a < 0 else r))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I32_REM_U)
 def _h_i32_rem_u(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b = _to_u32(frame.values.pop())
-    a = _to_u32(frame.values.pop())
+    b = _to_u32(frame.values.pop_back())
+    a = _to_u32(frame.values.pop_back())
     if b == 0:
         raise Trap("integer divide by zero")
-    frame.values.append(_to_i32(a % b))
+    frame.values.push_back(_to_i32(a % b))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I32_AND)
 def _h_i32_and(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b = frame.values.pop()
-    a = frame.values.pop()
-    frame.values.append(_to_i32(_to_u32(a) & _to_u32(b)))
+    b = frame.values.pop_back()
+    a = frame.values.pop_back()
+    frame.values.push_back(_to_i32(_to_u32(a) & _to_u32(b)))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I32_OR)
 def _h_i32_or(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b = frame.values.pop()
-    a = frame.values.pop()
-    frame.values.append(_to_i32(_to_u32(a) | _to_u32(b)))
+    b = frame.values.pop_back()
+    a = frame.values.pop_back()
+    frame.values.push_back(_to_i32(_to_u32(a) | _to_u32(b)))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I32_XOR)
 def _h_i32_xor(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b = frame.values.pop()
-    a = frame.values.pop()
-    frame.values.append(_to_i32(_to_u32(a) ^ _to_u32(b)))
+    b = frame.values.pop_back()
+    a = frame.values.pop_back()
+    frame.values.push_back(_to_i32(_to_u32(a) ^ _to_u32(b)))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I32_SHL)
 def _h_i32_shl(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b = frame.values.pop()
-    a = frame.values.pop()
-    frame.values.append(_to_i32(_to_u32(a) << (_to_u32(b) & 31)))
+    b = frame.values.pop_back()
+    a = frame.values.pop_back()
+    frame.values.push_back(_to_i32(_to_u32(a) << (_to_u32(b) & 31)))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I32_SHR_S)
 def _h_i32_shr_s(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b = frame.values.pop()
-    a = frame.values.pop()
-    frame.values.append(_to_i32(_to_i32(a) >> (_to_u32(b) & 31)))
+    b = frame.values.pop_back()
+    a = frame.values.pop_back()
+    frame.values.push_back(_to_i32(_to_i32(a) >> (_to_u32(b) & 31)))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I32_SHR_U)
 def _h_i32_shr_u(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b = frame.values.pop()
-    a = frame.values.pop()
-    frame.values.append(_to_i32(_to_u32(a) >> (_to_u32(b) & 31)))
+    b = frame.values.pop_back()
+    a = frame.values.pop_back()
+    frame.values.push_back(_to_i32(_to_u32(a) >> (_to_u32(b) & 31)))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I32_ROTL)
 def _h_i32_rotl(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b = frame.values.pop()
-    a = frame.values.pop()
+    b = frame.values.pop_back()
+    a = frame.values.pop_back()
     n = _to_u32(b) & 31
     v = _to_u32(a)
-    frame.values.append(_to_i32(((v << n) | (v >> (32 - n))) & I32_MASK if n else v))
+    frame.values.push_back(_to_i32(((v << n) | (v >> (32 - n))) & I32_MASK if n else v))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I32_ROTR)
 def _h_i32_rotr(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b = frame.values.pop()
-    a = frame.values.pop()
+    b = frame.values.pop_back()
+    a = frame.values.pop_back()
     n = _to_u32(b) & 31
     v = _to_u32(a)
-    frame.values.append(_to_i32(((v >> n) | (v << (32 - n))) & I32_MASK if n else v))
+    frame.values.push_back(_to_i32(((v >> n) | (v << (32 - n))) & I32_MASK if n else v))
     return (ip + 1, frame, env, local_base)
 
 
@@ -1487,27 +1683,27 @@ def _to_u64(v: int) -> int:
 
 @_handler(I64_LOAD)
 def _h_i64_load(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     offset, next_ip = _read_memarg(frame.code, ip)
-    addr = _to_u32(frame.values.pop()) + offset
+    addr = _to_u32(frame.values.pop_back()) + offset
     if addr & 0x8000_0000:
         val = _vmmio_load(env, addr, 8, signed=True)
     else:
         if env.memory is None or addr + 8 > len(env.memory):
             raise Trap("out of bounds memory access")
         val = struct.unpack("<q", env.memory[addr : addr + 8])[0]
-    frame.values.append(val)
+    frame.values.push_back(val)
     return (next_ip, frame, env, local_base)
 
 
 @_handler(I64_STORE)
 def _h_i64_store(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     offset, next_ip = _read_memarg(frame.code, ip)
-    val = frame.values.pop()
-    addr = _to_u32(frame.values.pop()) + offset
+    val = frame.values.pop_back()
+    addr = _to_u32(frame.values.pop_back()) + offset
     raw_val = struct.pack("<q", int(val))
     if addr & 0x8000_0000:
         _vmmio_store(env, addr, raw_val)
@@ -1520,24 +1716,24 @@ def _h_i64_store(
 
 @_handler(F32_LOAD)
 def _h_f32_load(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     offset, next_ip = _read_memarg(frame.code, ip)
-    addr = _to_u32(frame.values.pop()) + offset
+    addr = _to_u32(frame.values.pop_back()) + offset
     if env.memory is None or addr + 4 > len(env.memory):
         raise Trap("out of bounds memory access")
     val = struct.unpack("<f", env.memory[addr : addr + 4])[0]
-    frame.values.append(val)
+    frame.values.push_back(val)
     return (next_ip, frame, env, local_base)
 
 
 @_handler(F32_STORE)
 def _h_f32_store(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     offset, next_ip = _read_memarg(frame.code, ip)
-    val = float(frame.values.pop())
-    addr = _to_u32(frame.values.pop()) + offset
+    val = float(frame.values.pop_back())
+    addr = _to_u32(frame.values.pop_back()) + offset
     if env.memory is None or addr + 4 > len(env.memory):
         raise Trap("out of bounds memory access")
     env.memory[addr : addr + 4] = struct.pack("<f", val)
@@ -1546,24 +1742,24 @@ def _h_f32_store(
 
 @_handler(F64_LOAD)
 def _h_f64_load(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     offset, next_ip = _read_memarg(frame.code, ip)
-    addr = _to_u32(frame.values.pop()) + offset
+    addr = _to_u32(frame.values.pop_back()) + offset
     if env.memory is None or addr + 8 > len(env.memory):
         raise Trap("out of bounds memory access")
     val = struct.unpack("<d", env.memory[addr : addr + 8])[0]
-    frame.values.append(val)
+    frame.values.push_back(val)
     return (next_ip, frame, env, local_base)
 
 
 @_handler(F64_STORE)
 def _h_f64_store(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     offset, next_ip = _read_memarg(frame.code, ip)
-    val = float(frame.values.pop())
-    addr = _to_u32(frame.values.pop()) + offset
+    val = float(frame.values.pop_back())
+    addr = _to_u32(frame.values.pop_back()) + offset
     if env.memory is None or addr + 8 > len(env.memory):
         raise Trap("out of bounds memory access")
     env.memory[addr : addr + 8] = struct.pack("<d", val)
@@ -1575,28 +1771,28 @@ def _h_f64_store(
 
 @_handler(I64_CONST)
 def _h_i64_const(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     val, next_ip = decode_signed(frame.code, ip + 1)
-    frame.values.append(_to_i64(val))
+    frame.values.push_back(_to_i64(val))
     return (next_ip, frame, env, local_base)
 
 
 @_handler(F32_CONST)
 def _h_f32_const(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     val = struct.unpack("<f", frame.code[ip + 1 : ip + 5])[0]
-    frame.values.append(val)
+    frame.values.push_back(val)
     return (ip + 5, frame, env, local_base)
 
 
 @_handler(F64_CONST)
 def _h_f64_const(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     val = struct.unpack("<d", frame.code[ip + 1 : ip + 9])[0]
-    frame.values.append(val)
+    frame.values.push_back(val)
     return (ip + 9, frame, env, local_base)
 
 
@@ -1605,100 +1801,100 @@ def _h_f64_const(
 
 @_handler(I64_EQZ)
 def _h_i64_eqz(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    v = frame.values.pop()
-    frame.values.append(1 if v == 0 else 0)
+    v = frame.values.pop_back()
+    frame.values.push_back(1 if v == 0 else 0)
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I64_EQ)
 def _h_i64_eq(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(1 if _to_i64(a) == _to_i64(b) else 0)
+    b, a = frame.values.pop_back(), frame.values.pop_back()
+    frame.values.push_back(1 if _to_i64(a) == _to_i64(b) else 0)
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I64_NE)
 def _h_i64_ne(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(1 if _to_i64(a) != _to_i64(b) else 0)
+    b, a = frame.values.pop_back(), frame.values.pop_back()
+    frame.values.push_back(1 if _to_i64(a) != _to_i64(b) else 0)
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I64_LT_S)
 def _h_i64_lt_s(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(1 if _to_i64(a) < _to_i64(b) else 0)
+    b, a = frame.values.pop_back(), frame.values.pop_back()
+    frame.values.push_back(1 if _to_i64(a) < _to_i64(b) else 0)
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I64_LT_U)
 def _h_i64_lt_u(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(1 if _to_u64(a) < _to_u64(b) else 0)
+    b, a = frame.values.pop_back(), frame.values.pop_back()
+    frame.values.push_back(1 if _to_u64(a) < _to_u64(b) else 0)
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I64_ADD)
 def _h_i64_add(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(_to_i64(a + b))
+    b, a = frame.values.pop_back(), frame.values.pop_back()
+    frame.values.push_back(_to_i64(a + b))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I64_SUB)
 def _h_i64_sub(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(_to_i64(a - b))
+    b, a = frame.values.pop_back(), frame.values.pop_back()
+    frame.values.push_back(_to_i64(a - b))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I64_MUL)
 def _h_i64_mul(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(_to_i64(a * b))
+    b, a = frame.values.pop_back(), frame.values.pop_back()
+    frame.values.push_back(_to_i64(a * b))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I64_DIV_S)
 def _h_i64_div_s(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b = _to_i64(frame.values.pop())
-    a = _to_i64(frame.values.pop())
+    b = _to_i64(frame.values.pop_back())
+    a = _to_i64(frame.values.pop_back())
     if b == 0:
         raise Trap("integer divide by zero")
     if a == -0x8000_0000_0000_0000 and b == -1:
         raise Trap("integer overflow")
     q = abs(a) // abs(b)
-    frame.values.append(_to_i64(-q if (a < 0) != (b < 0) else q))
+    frame.values.push_back(_to_i64(-q if (a < 0) != (b < 0) else q))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I64_DIV_U)
 def _h_i64_div_u(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b = _to_u64(frame.values.pop())
-    a = _to_u64(frame.values.pop())
+    b = _to_u64(frame.values.pop_back())
+    a = _to_u64(frame.values.pop_back())
     if b == 0:
         raise Trap("integer divide by zero")
-    frame.values.append(_to_i64(a // b))
+    frame.values.push_back(_to_i64(a // b))
     return (ip + 1, frame, env, local_base)
 
 
@@ -1707,37 +1903,37 @@ def _h_i64_div_u(
 
 @_handler(F32_ADD)
 def _h_f32_add(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(_to_f32(a + b))
+    b, a = frame.values.pop_back(), frame.values.pop_back()
+    frame.values.push_back(_to_f32(a + b))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F32_SUB)
 def _h_f32_sub(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(_to_f32(a - b))
+    b, a = frame.values.pop_back(), frame.values.pop_back()
+    frame.values.push_back(_to_f32(a - b))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F32_MUL)
 def _h_f32_mul(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(_to_f32(a * b))
+    b, a = frame.values.pop_back(), frame.values.pop_back()
+    frame.values.push_back(_to_f32(a * b))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F32_DIV)
 def _h_f32_div(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(
+    b, a = frame.values.pop_back(), frame.values.pop_back()
+    frame.values.push_back(
         _to_f32(
             a / b
             if b != 0
@@ -1755,64 +1951,64 @@ def _h_f32_div(
 
 @_handler(F32_SQRT)
 def _h_f32_sqrt(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop()
-    frame.values.append(_to_f32(math.sqrt(a) if a >= 0 else float("nan")))
+    a = frame.values.pop_back()
+    frame.values.push_back(_to_f32(math.sqrt(a) if a >= 0 else float("nan")))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F32_MIN)
 def _h_f32_min(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(_to_f32(_f32_min(a, b)))
+    b, a = frame.values.pop_back(), frame.values.pop_back()
+    frame.values.push_back(_to_f32(_f32_min(a, b)))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F32_MAX)
 def _h_f32_max(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(_to_f32(_f32_max(a, b)))
+    b, a = frame.values.pop_back(), frame.values.pop_back()
+    frame.values.push_back(_to_f32(_f32_max(a, b)))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F32_LT)
 def _h_f32_lt(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(1 if a < b else 0)
+    b, a = frame.values.pop_back(), frame.values.pop_back()
+    frame.values.push_back(1 if a < b else 0)
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F32_LE)
 def _h_f32_le(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(1 if a <= b else 0)
+    b, a = frame.values.pop_back(), frame.values.pop_back()
+    frame.values.push_back(1 if a <= b else 0)
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F32_GT)
 def _h_f32_gt(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(1 if a > b else 0)
+    b, a = frame.values.pop_back(), frame.values.pop_back()
+    frame.values.push_back(1 if a > b else 0)
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F32_GE)
 def _h_f32_ge(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(1 if a >= b else 0)
+    b, a = frame.values.pop_back(), frame.values.pop_back()
+    frame.values.push_back(1 if a >= b else 0)
     return (ip + 1, frame, env, local_base)
 
 
@@ -1821,46 +2017,46 @@ def _h_f32_ge(
 
 @_handler(F64_ADD)
 def _h_f64_add(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(float(a + b))
+    b, a = frame.values.pop_back(), frame.values.pop_back()
+    frame.values.push_back(float(a + b))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F64_SUB)
 def _h_f64_sub(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(float(a - b))
+    b, a = frame.values.pop_back(), frame.values.pop_back()
+    frame.values.push_back(float(a - b))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F64_MUL)
 def _h_f64_mul(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(float(a * b))
+    b, a = frame.values.pop_back(), frame.values.pop_back()
+    frame.values.push_back(float(a * b))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F64_DIV)
 def _h_f64_div(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(float(a / b if b != 0 else float("inf")))
+    b, a = frame.values.pop_back(), frame.values.pop_back()
+    frame.values.push_back(float(a / b if b != 0 else float("inf")))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F64_SQRT)
 def _h_f64_sqrt(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop()
-    frame.values.append(float(math.sqrt(a) if a >= 0 else float("nan")))
+    a = frame.values.pop_back()
+    frame.values.push_back(float(math.sqrt(a) if a >= 0 else float("nan")))
     return (ip + 1, frame, env, local_base)
 
 
@@ -1869,336 +2065,336 @@ def _h_f64_sqrt(
 
 @_handler(I32_TRUNC_F32_S)
 def _h_i32_trunc_f32_s(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop()
-    frame.values.append(int(a) & I32_MASK)
+    a = frame.values.pop_back()
+    frame.values.push_back(int(a) & I32_MASK)
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I32_TRUNC_F64_S)
 def _h_i32_trunc_f64_s(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop()
-    frame.values.append(int(a) & I32_MASK)
+    a = frame.values.pop_back()
+    frame.values.push_back(int(a) & I32_MASK)
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F32_CONVERT_I32_S)
 def _h_f32_convert_i32_s(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = _to_i32(frame.values.pop())
-    frame.values.append(_to_f32(float(a)))
+    a = _to_i32(frame.values.pop_back())
+    frame.values.push_back(_to_f32(float(a)))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F32_CONVERT_I32_U)
 def _h_f32_convert_i32_u(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = _to_u32(frame.values.pop())
-    frame.values.append(_to_f32(float(a)))
+    a = _to_u32(frame.values.pop_back())
+    frame.values.push_back(_to_f32(float(a)))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F64_CONVERT_I32_S)
 def _h_f64_convert_i32_s(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = _to_i32(frame.values.pop())
-    frame.values.append(float(a))
+    a = _to_i32(frame.values.pop_back())
+    frame.values.push_back(float(a))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F64_CONVERT_I32_U)
 def _h_f64_convert_i32_u(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = _to_u32(frame.values.pop())
-    frame.values.append(float(a))
+    a = _to_u32(frame.values.pop_back())
+    frame.values.push_back(float(a))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F64_PROMOTE_F32)
 def _h_f64_promote_f32(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop()
-    frame.values.append(float(a))
+    a = frame.values.pop_back()
+    frame.values.push_back(float(a))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F32_DEMOTE_F64)
 def _h_f32_demote_f64(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop()
-    frame.values.append(_to_f32(float(a)))
+    a = frame.values.pop_back()
+    frame.values.push_back(_to_f32(float(a)))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F32_ABS)
 def _h_f32_abs(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop()
-    frame.values.append(_to_f32(abs(a)))
+    a = frame.values.pop_back()
+    frame.values.push_back(_to_f32(abs(a)))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F32_NEG)
 def _h_f32_neg(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop()
-    frame.values.append(_to_f32(-a))
+    a = frame.values.pop_back()
+    frame.values.push_back(_to_f32(-a))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F64_ABS)
 def _h_f64_abs(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop()
-    frame.values.append(float(abs(a)))
+    a = frame.values.pop_back()
+    frame.values.push_back(float(abs(a)))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F64_NEG)
 def _h_f64_neg(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop()
-    frame.values.append(float(-a))
+    a = frame.values.pop_back()
+    frame.values.push_back(float(-a))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F32_EQ)
 def _h_f32_eq(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(1 if a == b else 0)
+    b, a = frame.values.pop_back(), frame.values.pop_back()
+    frame.values.push_back(1 if a == b else 0)
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F32_NE)
 def _h_f32_ne(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(1 if a != b else 0)
+    b, a = frame.values.pop_back(), frame.values.pop_back()
+    frame.values.push_back(1 if a != b else 0)
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F64_EQ)
 def _h_f64_eq(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(1 if a == b else 0)
+    b, a = frame.values.pop_back(), frame.values.pop_back()
+    frame.values.push_back(1 if a == b else 0)
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F64_NE)
 def _h_f64_ne(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(1 if a != b else 0)
+    b, a = frame.values.pop_back(), frame.values.pop_back()
+    frame.values.push_back(1 if a != b else 0)
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I64_REM_S)
 def _h_i64_rem_s(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b = _to_i64(frame.values.pop())
-    a = _to_i64(frame.values.pop())
+    b = _to_i64(frame.values.pop_back())
+    a = _to_i64(frame.values.pop_back())
     if b == 0:
         raise Trap("integer divide by zero")
     r = abs(a) % abs(b)
-    frame.values.append(_to_i64(-r if a < 0 else r))
+    frame.values.push_back(_to_i64(-r if a < 0 else r))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I64_REM_U)
 def _h_i64_rem_u(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b = _to_u64(frame.values.pop())
-    a = _to_u64(frame.values.pop())
+    b = _to_u64(frame.values.pop_back())
+    a = _to_u64(frame.values.pop_back())
     if b == 0:
         raise Trap("integer divide by zero")
-    frame.values.append(_to_i64(a % b))
+    frame.values.push_back(_to_i64(a % b))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I64_AND)
 def _h_i64_and(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(_to_i64(a & b))
+    b, a = frame.values.pop_back(), frame.values.pop_back()
+    frame.values.push_back(_to_i64(a & b))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I64_OR)
 def _h_i64_or(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(_to_i64(a | b))
+    b, a = frame.values.pop_back(), frame.values.pop_back()
+    frame.values.push_back(_to_i64(a | b))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I64_XOR)
 def _h_i64_xor(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(_to_i64(a ^ b))
+    b, a = frame.values.pop_back(), frame.values.pop_back()
+    frame.values.push_back(_to_i64(a ^ b))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I64_SHL)
 def _h_i64_shl(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    k = frame.values.pop() % 64
-    v = frame.values.pop()
-    frame.values.append(_to_i64((v << k) & I64_MASK))
+    k = frame.values.pop_back() % 64
+    v = frame.values.pop_back()
+    frame.values.push_back(_to_i64((v << k) & I64_MASK))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I64_SHR_S)
 def _h_i64_shr_s(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    k = frame.values.pop() % 64
-    v = _to_i64(frame.values.pop())
-    frame.values.append(_to_i64(v >> k))
+    k = frame.values.pop_back() % 64
+    v = _to_i64(frame.values.pop_back())
+    frame.values.push_back(_to_i64(v >> k))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I64_SHR_U)
 def _h_i64_shr_u(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    k = frame.values.pop() % 64
-    v = _to_u64(frame.values.pop())
-    frame.values.append(_to_i64(v >> k))
+    k = frame.values.pop_back() % 64
+    v = _to_u64(frame.values.pop_back())
+    frame.values.push_back(_to_i64(v >> k))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I64_ROTL)
 def _h_i64_rotl(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    k = frame.values.pop() % 64
-    v = _to_u64(frame.values.pop())
+    k = frame.values.pop_back() % 64
+    v = _to_u64(frame.values.pop_back())
     rotated = ((v << k) | (v >> (64 - k))) & I64_MASK if k else v
-    frame.values.append(_to_i64(rotated))
+    frame.values.push_back(_to_i64(rotated))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I64_ROTR)
 def _h_i64_rotr(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    k = frame.values.pop() % 64
-    v = _to_u64(frame.values.pop())
+    k = frame.values.pop_back() % 64
+    v = _to_u64(frame.values.pop_back())
     rotated = ((v >> k) | (v << (64 - k))) & I64_MASK if k else v
-    frame.values.append(_to_i64(rotated))
+    frame.values.push_back(_to_i64(rotated))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I64_CLZ)
 def _h_i64_clz(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    v = _to_u64(frame.values.pop())
+    v = _to_u64(frame.values.pop_back())
     if v == 0:
-        frame.values.append(64)
+        frame.values.push_back(64)
     else:
-        frame.values.append(64 - v.bit_length())
+        frame.values.push_back(64 - v.bit_length())
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I64_CTZ)
 def _h_i64_ctz(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    v = _to_u64(frame.values.pop())
+    v = _to_u64(frame.values.pop_back())
     if v == 0:
-        frame.values.append(64)
+        frame.values.push_back(64)
     else:
-        frame.values.append((v & -v).bit_length() - 1)
+        frame.values.push_back((v & -v).bit_length() - 1)
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I64_POPCNT)
 def _h_i64_popcnt(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    v = _to_u64(frame.values.pop())
-    frame.values.append(bin(v).count("1"))
+    v = _to_u64(frame.values.pop_back())
+    frame.values.push_back(bin(v).count("1"))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I64_GT_S)
 def _h_i64_gt_s(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(1 if _to_i64(a) > _to_i64(b) else 0)
+    b, a = frame.values.pop_back(), frame.values.pop_back()
+    frame.values.push_back(1 if _to_i64(a) > _to_i64(b) else 0)
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I64_GT_U)
 def _h_i64_gt_u(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(1 if _to_u64(a) > _to_u64(b) else 0)
+    b, a = frame.values.pop_back(), frame.values.pop_back()
+    frame.values.push_back(1 if _to_u64(a) > _to_u64(b) else 0)
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I64_LE_S)
 def _h_i64_le_s(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(1 if _to_i64(a) <= _to_i64(b) else 0)
+    b, a = frame.values.pop_back(), frame.values.pop_back()
+    frame.values.push_back(1 if _to_i64(a) <= _to_i64(b) else 0)
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I64_LE_U)
 def _h_i64_le_u(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(1 if _to_u64(a) <= _to_u64(b) else 0)
+    b, a = frame.values.pop_back(), frame.values.pop_back()
+    frame.values.push_back(1 if _to_u64(a) <= _to_u64(b) else 0)
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I64_GE_S)
 def _h_i64_ge_s(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(1 if _to_i64(a) >= _to_i64(b) else 0)
+    b, a = frame.values.pop_back(), frame.values.pop_back()
+    frame.values.push_back(1 if _to_i64(a) >= _to_i64(b) else 0)
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I64_GE_U)
 def _h_i64_ge_u(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(1 if _to_u64(a) >= _to_u64(b) else 0)
+    b, a = frame.values.pop_back(), frame.values.pop_back()
+    frame.values.push_back(1 if _to_u64(a) >= _to_u64(b) else 0)
     return (ip + 1, frame, env, local_base)
 
 
@@ -2207,157 +2403,157 @@ def _h_i64_ge_u(
 
 @_handler(F32_CEIL)
 def _h_f32_ceil(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop()
-    frame.values.append(_to_f32(math.ceil(a) if not math.isnan(a) and not math.isinf(a) else a))
+    a = frame.values.pop_back()
+    frame.values.push_back(_to_f32(math.ceil(a) if not math.isnan(a) and not math.isinf(a) else a))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F32_FLOOR)
 def _h_f32_floor(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop()
-    frame.values.append(_to_f32(math.floor(a) if not math.isnan(a) and not math.isinf(a) else a))
+    a = frame.values.pop_back()
+    frame.values.push_back(_to_f32(math.floor(a) if not math.isnan(a) and not math.isinf(a) else a))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F32_TRUNC)
 def _h_f32_trunc(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop()
-    frame.values.append(_to_f32(math.trunc(a) if not math.isnan(a) and not math.isinf(a) else a))
+    a = frame.values.pop_back()
+    frame.values.push_back(_to_f32(math.trunc(a) if not math.isnan(a) and not math.isinf(a) else a))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F32_NEAREST)
 def _h_f32_nearest(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop()
-    frame.values.append(_to_f32(round(a) if not math.isnan(a) and not math.isinf(a) else a))
+    a = frame.values.pop_back()
+    frame.values.push_back(_to_f32(round(a) if not math.isnan(a) and not math.isinf(a) else a))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F32_COPYSIGN)
 def _h_f32_copysign(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(_to_f32(math.copysign(a, b)))
+    b, a = frame.values.pop_back(), frame.values.pop_back()
+    frame.values.push_back(_to_f32(math.copysign(a, b)))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F64_CEIL)
 def _h_f64_ceil(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop()
-    frame.values.append(float(math.ceil(a) if not math.isnan(a) and not math.isinf(a) else a))
+    a = frame.values.pop_back()
+    frame.values.push_back(float(math.ceil(a) if not math.isnan(a) and not math.isinf(a) else a))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F64_FLOOR)
 def _h_f64_floor(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop()
-    frame.values.append(float(math.floor(a) if not math.isnan(a) and not math.isinf(a) else a))
+    a = frame.values.pop_back()
+    frame.values.push_back(float(math.floor(a) if not math.isnan(a) and not math.isinf(a) else a))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F64_TRUNC)
 def _h_f64_trunc(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop()
-    frame.values.append(float(math.trunc(a) if not math.isnan(a) and not math.isinf(a) else a))
+    a = frame.values.pop_back()
+    frame.values.push_back(float(math.trunc(a) if not math.isnan(a) and not math.isinf(a) else a))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F64_NEAREST)
 def _h_f64_nearest(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop()
-    frame.values.append(float(round(a) if not math.isnan(a) and not math.isinf(a) else a))
+    a = frame.values.pop_back()
+    frame.values.push_back(float(round(a) if not math.isnan(a) and not math.isinf(a) else a))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F64_COPYSIGN)
 def _h_f64_copysign(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(float(math.copysign(a, b)))
+    b, a = frame.values.pop_back(), frame.values.pop_back()
+    frame.values.push_back(float(math.copysign(a, b)))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F64_MIN)
 def _h_f64_min(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop(), frame.values.pop()
+    b, a = frame.values.pop_back(), frame.values.pop_back()
     if math.isnan(a) or math.isnan(b):
         res = float("nan")
     elif a == b == 0.0:
         res = -0.0 if math.copysign(1.0, a) < 0 or math.copysign(1.0, b) < 0 else 0.0
     else:
         res = min(a, b)
-    frame.values.append(float(res))
+    frame.values.push_back(float(res))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F64_MAX)
 def _h_f64_max(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop(), frame.values.pop()
+    b, a = frame.values.pop_back(), frame.values.pop_back()
     if math.isnan(a) or math.isnan(b):
         res = float("nan")
     elif a == b == 0.0:
         res = 0.0 if math.copysign(1.0, a) > 0 or math.copysign(1.0, b) > 0 else -0.0
     else:
         res = max(a, b)
-    frame.values.append(float(res))
+    frame.values.push_back(float(res))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F64_LT)
 def _h_f64_lt(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(1 if a < b else 0)
+    b, a = frame.values.pop_back(), frame.values.pop_back()
+    frame.values.push_back(1 if a < b else 0)
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F64_LE)
 def _h_f64_le(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(1 if a <= b else 0)
+    b, a = frame.values.pop_back(), frame.values.pop_back()
+    frame.values.push_back(1 if a <= b else 0)
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F64_GT)
 def _h_f64_gt(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(1 if a > b else 0)
+    b, a = frame.values.pop_back(), frame.values.pop_back()
+    frame.values.push_back(1 if a > b else 0)
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F64_GE)
 def _h_f64_ge(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop(), frame.values.pop()
-    frame.values.append(1 if a >= b else 0)
+    b, a = frame.values.pop_back(), frame.values.pop_back()
+    frame.values.push_back(1 if a >= b else 0)
     return (ip + 1, frame, env, local_base)
 
 
@@ -2366,88 +2562,88 @@ def _h_f64_ge(
 
 @_handler(I32_WRAP_I64)
 def _h_i32_wrap_i64(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop()
-    frame.values.append(_to_i32(a))
+    a = frame.values.pop_back()
+    frame.values.push_back(_to_i32(a))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I32_TRUNC_F32_U)
 def _h_i32_trunc_f32_u(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop()
+    a = frame.values.pop_back()
     if math.isnan(a) or a <= -1.0 or a >= 4294967296.0:
         raise Trap("invalid conversion to integer")
-    frame.values.append(_to_i32(int(a)))
+    frame.values.push_back(_to_i32(int(a)))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I32_TRUNC_F64_U)
 def _h_i32_trunc_f64_u(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop()
+    a = frame.values.pop_back()
     if math.isnan(a) or a <= -1.0 or a >= 4294967296.0:
         raise Trap("invalid conversion to integer")
-    frame.values.append(_to_i32(int(a)))
+    frame.values.push_back(_to_i32(int(a)))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I64_EXTEND_I32_S)
 def _h_i64_extend_i32_s(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = _to_i32(frame.values.pop())
-    frame.values.append(_to_i64(a))
+    a = _to_i32(frame.values.pop_back())
+    frame.values.push_back(_to_i64(a))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I64_EXTEND_I32_U)
 def _h_i64_extend_i32_u(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = _to_u32(frame.values.pop())
-    frame.values.append(_to_i64(a))
+    a = _to_u32(frame.values.pop_back())
+    frame.values.push_back(_to_i64(a))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I32_REINTERPRET_F32)
 def _h_i32_reinterpret_f32(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop()
+    a = frame.values.pop_back()
     u = struct.unpack("<i", struct.pack("<f", float(a)))[0]
-    frame.values.append(_to_i32(u))
+    frame.values.push_back(_to_i32(u))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F32_REINTERPRET_I32)
 def _h_f32_reinterpret_i32(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = _to_u32(frame.values.pop())
+    a = _to_u32(frame.values.pop_back())
     f = struct.unpack("<f", struct.pack("<I", a))[0]
-    frame.values.append(_to_f32(f))
+    frame.values.push_back(_to_f32(f))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(I64_REINTERPRET_F64)
 def _h_i64_reinterpret_f64(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop()
+    a = frame.values.pop_back()
     u = struct.unpack("<q", struct.pack("<d", float(a)))[0]
-    frame.values.append(_to_i64(u))
+    frame.values.push_back(_to_i64(u))
     return (ip + 1, frame, env, local_base)
 
 
 @_handler(F64_REINTERPRET_I64)
 def _h_f64_reinterpret_i64(
-    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: list[int]
+    ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = _to_u64(frame.values.pop())
+    a = _to_u64(frame.values.pop_back())
     d = struct.unpack("<d", struct.pack("<Q", a))[0]
-    frame.values.append(float(d))
+    frame.values.push_back(float(d))
     return (ip + 1, frame, env, local_base)

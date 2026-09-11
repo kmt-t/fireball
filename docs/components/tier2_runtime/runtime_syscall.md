@@ -1,6 +1,7 @@
 # システムコール仕様 コンポーネント設計書 {VERIFY_FORMAL}
 <!-- evidence:
      formal: formal/syscall_trap_model.py
+     concept: concepts/syscall_concept.py
      test: tests/runtime_syscall_test_spec.md
 -->
 
@@ -31,15 +32,16 @@ vMMIOアドレス空間（Stage 2/3）に対しては、どちらのパスも最
 package fireball:host;
 
 interface trap {
-  /// Performs a low-level host call with raw arguments.
-  /// Variants for optimization based on argument count.
-  fireball-call0: func(id: u32) -> u32;
-  fireball-call1: func(id: u32, a0: u32) -> u32;
-  fireball-call2: func(id: u32, a0: u32, a1: u32) -> u32;
-  fireball-call3: func(id: u32, a0: u32, a1: u32, a2: u32) -> u32;
-  fireball-call4: func(id: u32, a0: u32, a1: u32, a2: u32, a3: u32) -> u32;
-  fireball-call5: func(id: u32, a0: u32, a1: u32, a2: u32, a3: u32, a4: u32) -> u32;
-  fireball-call6: func(id: u32, a0: u32, a1: u32, a2: u32, a3: u32, a4: u32, a5: u32) -> u32;
+  /// Performs a low-level host call with one fixed seven-word ABI.
+  fireball-call: func(
+    id: u32,
+    arg0: u32,
+    arg1: u32,
+    arg2: u32,
+    arg3: u32,
+    arg4: u32,
+    arg5: u32
+  ) -> u32;
 }
 
 world fireball {

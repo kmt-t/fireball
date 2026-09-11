@@ -404,7 +404,8 @@ def test_vsoc_gotcha_01_02_stateless_interp_and_yield_in_vsoc():
     mod = engine.load_wasm(wasm_bytes)
     loop_pc = mod.blocks[0].head_pc
 
-    ctx = WASMContext(locals_values=[5, 0])
+    ctx = WASMContext()
+    ctx.locals = (5, 0)
     pc = loop_pc
 
     # Iterations 1-3 run in Interpreter (interp is stateless)

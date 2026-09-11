@@ -16,7 +16,7 @@ from enum import Enum, auto
 from types import TracebackType
 from typing import Generic, TypeVar
 
-from system_containers import MutableFlatMapStorage
+from system_containers import MutableFlatMapStorage, StaticVector
 
 T = TypeVar("T")
 
@@ -151,7 +151,10 @@ class ShmPageRegistry:
     __slots__ = ("ptes",)
 
     def __init__(self):
-        self.ptes: list[ShmPagePTE | None] = [None] * _FB_CONF_MAX_SHM_PHYS_PAGES
+        self.ptes: StaticVector[ShmPagePTE | None] = StaticVector.of(
+            (None,) * _FB_CONF_MAX_SHM_PHYS_PAGES,
+            capacity=_FB_CONF_MAX_SHM_PHYS_PAGES,
+        )
 
     def register_page(self, page_idx: int, owner_id: int, physical_addr: int) -> None:
         self.ptes[page_idx] = ShmPagePTE(
@@ -426,7 +429,7 @@ class PMSAv8MPU:
     __slots__ = ("dsb_count", "isb_count", "patch_in_progress", "regions")
 
     def __init__(self, pool_base: int = 0x20020000):
-        self.regions: list[MPURegion] = []
+        self.regions: tuple[MPURegion, ...] = ()
         self.dsb_count = 0
         self.isb_count = 0
         self.patch_in_progress = False
@@ -436,7 +439,7 @@ class PMSAv8MPU:
         # 8 statically allocated regions matching runtime_memory.md §7.1 Table.
         # Base addresses (Regions 1/2/4/5/6/7) are system_config.md's
         # FB_CONF_MPU_R*_BASE constants (PMSAv8 MPU 物理アドレスマップ節).
-        self.regions = [
+        self.regions = (
             MPURegion(
                 0,
                 "Flash_KernelCode",
@@ -502,7 +505,7 @@ class PMSAv8MPU:
                 AccessPermission.NO_ACCESS,
                 xn=True,
             ),
-        ]
+        )
 
     def begin_jit_patch(self) -> None:
         assert not self.patch_in_progress, "Nested JIT patch transaction is invalid"
@@ -561,10 +564,10 @@ class MemoryManager:
             capacity=_FB_CONF_MAX_SHM_PHYS_PAGES
         )
         # Page-granular permission isolation: each 4KB physical page tracks its exclusive owner_id
-        self.shm_pages: list[ShmPageInfo] = [
+        self.shm_pages: tuple[ShmPageInfo, ...] = tuple(
             ShmPageInfo(page_idx=i, owner_id=0, allocated=False, allocated_bytes=0, slot_count=0)
             for i in range(_FB_CONF_MAX_SHM_PHYS_PAGES)
-        ]
+        )
 
     def register_page_mapping_callbacks(
         self,

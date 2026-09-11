@@ -42,20 +42,22 @@ if TYPE_CHECKING:
     from interpreter import BasicBlock, WASMContext
     from wasi import WasiHostContext
 
+from loader import fnv1a_32
 from logger import ConsoleOutput, LogDictionary, Logger, LogLevel
 from memory import (
     FB_CONF_MEMORY_POOL_SIZE,
     MemoryManager,
 )
 from runtime_engine import RuntimeEngine
-from scheduler import Channel, Scheduler, TaskState
-from system_containers import RadixBinaryTreeView
+from scheduler import FB_CONF_MAX_TASKS, Channel, Scheduler, TaskState
+from system_containers import MutableFlatMapStorage, RadixBinaryTreeView, StaticVector
 from vmmio import (
     FC_STATIC_DEVICE,
     TrapCode,
     VmmioAddress,
     VMMIOController,
 )
+from wasm_module import BasicBlock
 
 
 class FbSyscallId(IntEnum):
@@ -240,7 +242,7 @@ class System:
         self.memory_manager.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
         self.scheduler = Scheduler(logger=self.logger)
         self.ipc = IPCRouter(self.scheduler, logger=self.logger, memory_manager=self.memory_manager)
-        self._channel_table: list[Channel] = []
+        self._channel_table: StaticVector[Channel] = StaticVector(capacity=FB_CONF_MAX_TASKS)
         # Direct 1-based index mapping over sorted self.ipc.registry.keys array (no dynamic dict)
         self.runtime_engine = RuntimeEngine()
         self.scheduler.set_idle_hook(self._on_idle)
@@ -249,13 +251,16 @@ class System:
         self.exit_code: int | None = None
         self._guest_memory: bytearray | None = None
         self._current_task_id = 0
-        self.hal_tasks: dict[str, HalTask] = {}
-        self._hal_task_ids: dict[str, int] = {}
+        self.hal_tasks: MutableFlatMapStorage[int, HalTask] = MutableFlatMapStorage(capacity=8)
+        self._hal_task_ids: MutableFlatMapStorage[int, int] = MutableFlatMapStorage(capacity=8)
         self.gdb_server: GDBServer | None = None
         self._gdb_task_id: int | None = None
         self.wasi_context: WasiHostContext | None = None
         # Build fireball_call dispatch table via RadixBinaryTreeView
-        syscall_handlers: list[tuple[int, Callable[[int, int, int, int, int, int], int]]] = [
+        syscall_handlers: StaticVector[
+            tuple[int, Callable[[int, int, int, int, int, int], int]]
+        ] = StaticVector.of(
+            (
             (
                 FbSyscallId.SYS_YIELD,
                 lambda a0, a1, a2, a3, a4, a5: int(self._apply_sys_control(SYS_CONTROL_YIELD)),
@@ -340,13 +345,17 @@ class System:
                 FbSyscallId.WASI_RANDOM_GET,
                 lambda a0, a1, a2, a3, a4, a5: int(self._wasi_random_get(a0, a1)),
             ),
-        ]
+            ),
+            capacity=32,
+        )
         syscall_handlers.sort(key=lambda x: int(x[0]))
-        keys = [int(x[0]) for x in syscall_handlers]
-        values = [x[1] for x in syscall_handlers]
+        keys = tuple(int(x[0]) for x in syscall_handlers)
+        values = tuple(x[1] for x in syscall_handlers)
         radix_shift = 4
         max_prefix = max(keys) >> radix_shift
-        radix_table = [0] * (max_prefix + 2)
+        radix_table: StaticVector[int] = StaticVector.of(
+            (0,) * (max_prefix + 2), capacity=max_prefix + 2
+        )
         current_prefix = 0
         for idx, k in enumerate(keys):
             prefix = k >> radix_shift
@@ -357,8 +366,8 @@ class System:
             current_prefix += 1
             radix_table[current_prefix] = len(keys)
 
-        self._syscall_keys = tuple(keys)
-        self._syscall_values = tuple(values)
+        self._syscall_keys = keys
+        self._syscall_values = values
         self._syscall_radix_table = tuple(radix_table)
         self._syscall_dispatch_tree = RadixBinaryTreeView(
             self._syscall_keys,
@@ -475,13 +484,16 @@ class System:
     def _trap_to_errno(self, status: str) -> WasiErrno | None:
         if status in ("OK_SYSCALL", "OK_PHYSICAL", "OK_GUEST_RAM"):
             return None
-        return {
-            TrapCode.OUT_OF_BOUNDS: WasiErrno.FAULT,
-            TrapCode.UNDEFINED_FC: WasiErrno.NOENT,
-            TrapCode.UNREGISTERED_PAGE: WasiErrno.NOENT,
-            TrapCode.ACCESS_VIOLATION: WasiErrno.PERM,
-            TrapCode.OWNER_MISMATCH: WasiErrno.PERM,
-        }.get(status, WasiErrno.FAULT)
+        for trap_status, errno in (
+            (TrapCode.OUT_OF_BOUNDS, WasiErrno.FAULT),
+            (TrapCode.UNDEFINED_FC, WasiErrno.NOENT),
+            (TrapCode.UNREGISTERED_PAGE, WasiErrno.NOENT),
+            (TrapCode.ACCESS_VIOLATION, WasiErrno.PERM),
+            (TrapCode.OWNER_MISMATCH, WasiErrno.PERM),
+        ):
+            if status == trap_status:
+                return errno
+        return WasiErrno.FAULT
 
     def _mmio_touch(
         self, addr: int, is_write: bool
@@ -639,7 +651,8 @@ class System:
             return int(WasiErrno.NOENT)
         if status == IpcStatus.ERR_PERMISSION_DENIED:
             return int(WasiErrno.PERM)
-        self._channel_table.append(channel)
+        if not self._channel_table.push_back(channel):
+            return WasiErrno.NOMEM
         return len(self._channel_table)
 
     def _ipc_send(self, handle_id: int, msg_offset: int, msg_len: int) -> WasiErrno:
@@ -781,7 +794,7 @@ class System:
             return WasiErrno.FAULT
         return WasiErrno.SUCCESS
 
-    def spawn_hal_tasks(self) -> dict[str, int]:
+    def spawn_hal_tasks(self) -> MutableFlatMapStorage[int, int]:
         """Spawns one dedicated COOS task per HAL device/service instance
         (hal_dispatch.md). Each instance's URI resolves to its own Role and
         therefore its own CSP channel (ipc_router.md "1 channel = 1 waiter"),
@@ -800,28 +813,31 @@ class System:
             HalTask,
         )
 
-        self.hal_drivers = [
+        self.hal_drivers = (
             DummyUartDriver("fireball://device/uart/0", transport=self.transport),
             DummyUartDriver("fireball://service/stdout/0", transport=self.transport),
             DummyGpioDriver("fireball://device/gpio/0"),
             DummyTimerDriver("fireball://device/timer/0"),
             DummyBusDriver("fireball://device/i2c/0"),
             DummyBusDriver("fireball://device/spi/0"),
-        ]
+        )
         for driver in self.hal_drivers:
             desc = self.ipc.find_service(driver.uri)
             if desc is None:
                 raise HalError(f"HAL driver URI not registered in IPC router: {driver.uri}")
             task = HalTask(self.ipc, driver)
-            self.hal_tasks[driver.uri] = task
-            self._hal_task_ids[driver.uri] = self.scheduler.spawn(
+            uri_key = fnv1a_32(driver.uri)
+            if uri_key in self.hal_tasks:
+                raise HalError(f"HAL driver URI hash collision: {driver.uri}")
+            self.hal_tasks.insert(uri_key, task)
+            self._hal_task_ids.insert(uri_key, self.scheduler.spawn(
                 f"hal_task[{driver.uri}]", task.run(), role=desc.role
-            )
+            ))
         return self._hal_task_ids
 
     def hal_task_for(self, uri: str) -> HalTask | None:
         """Returns the dedicated HalTask instance bound to `uri`, if spawned."""
-        return self.hal_tasks.get(uri)
+        return self.hal_tasks.find(fnv1a_32(uri))
 
     def spawn_gdbserver_task(
         self,
@@ -843,7 +859,11 @@ class System:
         self.gdb_server = gdb_srv
         task_id = self.scheduler.spawn(
             "gdbserver_task",
-            gdb_srv.run_task(start_pc, ctx, blocks or {}),
+            gdb_srv.run_task(
+                start_pc,
+                ctx,
+                blocks or MutableFlatMapStorage[int, BasicBlock](capacity=0),
+            ),
         )
         self._gdb_task_id = task_id
         return (task_id, bound_port)
@@ -851,7 +871,7 @@ class System:
     def shutdown(self) -> None:
         if self.gdb_server is not None:
             self.gdb_server.stop()
-        for task in self.hal_tasks.values():
+        for _, task in self.hal_tasks.items():
             task.running = False
         self.pool.close_all()
         self.transport.close()

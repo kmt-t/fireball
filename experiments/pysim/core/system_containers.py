@@ -20,7 +20,7 @@ Implements the 4 fundamental non-owning views and their corresponding ReadOnly &
 from __future__ import annotations
 
 import bisect
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from typing import Generic, TypeVar
 
@@ -363,8 +363,12 @@ class ReadOnlyFlatSetStorage(Generic[KeyT]):
 
     @classmethod
     def create(cls, keys: Sequence[KeyT]) -> ReadOnlyFlatSetStorage[KeyT]:
-        sorted_keys = sorted(set(keys))
-        return cls(keys=tuple(sorted_keys))
+        sorted_keys = sorted(keys)
+        unique_keys: list[KeyT] = []
+        for key in sorted_keys:
+            if not unique_keys or unique_keys[-1] != key:
+                unique_keys.append(key)
+        return cls(keys=tuple(unique_keys))
 
     def view(self) -> FlatSetView[KeyT]:
         """Borrows a non-owning FlatSetView over this immutable storage."""
@@ -1111,6 +1115,28 @@ class StaticVector(Generic[T]):
         self._items.append(item)
         return True
 
+    def extend(self, items: Iterable[T]) -> bool:
+        pending = tuple(items)
+        if len(self._items) + len(pending) > self.capacity:
+            return False
+        for item in pending:
+            self._items.append(item)
+        return True
+
+    def insert_at(self, index: int, item: T) -> bool:
+        if not (0 <= index <= len(self._items)) or len(self._items) >= self.capacity:
+            return False
+        self._items.append(item)
+        for current in range(len(self._items) - 1, index, -1):
+            self._items[current] = self._items[current - 1]
+        self._items[index] = item
+        return True
+
+    def pop_at(self, index: int = -1) -> T:
+        if not self._items:
+            raise IndexError("pop from an empty StaticVector")
+        return self._items.pop(index)
+
     def pop_back(self) -> T | None:
         return self._items.pop() if self._items else None
 
@@ -1125,6 +1151,9 @@ class StaticVector(Generic[T]):
     def clear(self) -> None:
         self._items.clear()
 
+    def sort(self, *, key: Callable[[T], object] | None = None) -> None:
+        self._items.sort(key=key)
+
     def at(self, index: int) -> T:
         return self._items[index]
 
@@ -1136,6 +1165,12 @@ class StaticVector(Generic[T]):
 
     def __getitem__(self, index: int) -> T:
         return self._items[index]
+
+    def __setitem__(self, index: int, item: T) -> None:
+        self._items[index] = item
+
+    def __delitem__(self, index: int | slice) -> None:
+        del self._items[index]
 
     def __contains__(self, item: T) -> bool:
         return item in self._items

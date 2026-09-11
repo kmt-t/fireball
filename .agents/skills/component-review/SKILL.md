@@ -80,6 +80,8 @@ invoke_subagent(
 
 各サブエージェントへの指示プロンプトには、**対象ファイルの絶対パス**、評価ルーブリック [`references/evaluation_rubric.md`](./references/evaluation_rubric.md)、およびアンチパターンカタログ [`.agents/rules/verification-antipatterns.md`](../../rules/verification-antipatterns.md) を参照させます。
 
+> **コンセプトコードと pysim の規約分離**: `docs/**/concepts/` のコンセプトコードでは Python 標準の `dict` / `set` / `list` を使用してよい。`experiments/pysim/` 専用の `dict` / `set` / `list` 禁止規約や静的スキャナを、コンセプトコードのレビューへ適用してはならない。
+
 #### サブエージェント 1: 仕様・形式検証レビュー (`spec-formal-reviewer`)
 - **対象**: `specification` + `formal`
 - **検証項目**:

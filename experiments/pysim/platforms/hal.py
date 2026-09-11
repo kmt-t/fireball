@@ -37,7 +37,7 @@ if TYPE_CHECKING:
 
 from ipc_router import DataType, IPCMessage, IPCRouter, IpcStatus, ScopeKind, pack_key32
 from scheduler import ChannelAction
-from system_containers import FlatMapView, FlatSetView
+from system_containers import FlatMapView, FlatSetView, StaticVector
 
 # hal_dispatch.md §4.2's kv_pair command arguments: each is a packed
 # (ScopeKind.FUNCTIONAL, DataType.UINT32, key_id) key per ipc_router.md §3.3,
@@ -302,7 +302,7 @@ class HalDriver:
     def __init__(self, uri: str, supported_commands: Sequence[int] = ()):
         self.uri = uri
         # QUERY_CAPS is always supported.
-        self._supported_commands_storage = sorted({WasiIpcCmd.QUERY_CAPS, *supported_commands})
+        self._supported_commands_storage = sorted((WasiIpcCmd.QUERY_CAPS, *supported_commands))
         self.supported_commands = FlatSetView(self._supported_commands_storage)
 
     def is_supported(self, cmd_id: int) -> int:
@@ -369,8 +369,12 @@ class DummyGpioDriver(HalDriver):
                 WasiIpcCmd.GPIO_SUBSCRIBE_EDGE,
             ),
         )
-        self.pins: list[bool] = [False] * self._MAX_PINS
-        self.modes: list[int] = [0] * self._MAX_PINS
+        self.pins: StaticVector[bool] = StaticVector.of(
+            (False,) * self._MAX_PINS, capacity=self._MAX_PINS
+        )
+        self.modes: StaticVector[int] = StaticVector.of(
+            (0,) * self._MAX_PINS, capacity=self._MAX_PINS
+        )
 
     def _handle_command(self, cmd_id: int, params: FlatMapView) -> object:
         pin = params.find(ARG_PIN_NO) or 0

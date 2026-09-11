@@ -118,7 +118,7 @@ def ret() -> bytes:
     return bytes((0xC3,))
 
 
-_SCALE_BITS = {1: 0, 2: 1, 4: 2, 8: 3}
+_SCALE_BITS: FlatMapView[int, int] = FlatMapView(((1, 0), (2, 1), (4, 2), (8, 3)))
 
 
 def mov_load_scaled(dst: str, base: str, index: str, scale: int) -> bytes:
@@ -189,14 +189,16 @@ def jcc_rel32_placeholder(condition: str) -> tuple[bytes, int]:
         unsigned), "ae", "b", "be" -- the ones this codebase's glue code uses.
     """
 
-    opcode = {
-        "e": 0x84,
-        "z": 0x84,
-        "ne": 0x85,
-        "nz": 0x85,
-        "a": 0x87,
-        "ae": 0x83,
-        "b": 0x82,
-        "be": 0x86,
-    }[condition]
+    opcode = FlatMapView(
+        (
+            ("a", 0x87),
+            ("ae", 0x83),
+            ("b", 0x82),
+            ("be", 0x86),
+            ("e", 0x84),
+            ("ne", 0x85),
+            ("nz", 0x85),
+            ("z", 0x84),
+        )
+    )[condition]
     return bytes((0x0F, opcode, 0x00, 0x00, 0x00, 0x00)), 2

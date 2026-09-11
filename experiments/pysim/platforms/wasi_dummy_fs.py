@@ -12,6 +12,10 @@ from __future__ import annotations
 
 import os
 import time
+from collections.abc import Mapping, Sequence
+
+from loader import fnv1a_32
+from system_containers import MutableFlatMapStorage
 
 
 class WasiErrno:
@@ -67,18 +71,26 @@ class VirtualFile:
 class WasiDummyContext:
     """Simulates the host environment implementing WASI Preview 1 calls."""
 
-    def __init__(self, env: dict[str, str] | None = None, args: list[str] | None = None):
+    def __init__(self, env: Mapping[str, str] | None = None, args: Sequence[str] | None = None):
         self.stdin_buffer = bytearray(b"INPUT_STREAM_DATA\n")
         self.stdin_pos = 0
         self.stdout_buffer = bytearray()
         self.stderr_buffer = bytearray()
-        self.env = env or {"FIREBALL_PROFILE": "embedded", "MAX_STACK": "65536"}
-        self.args = args or ["fireball_runtime", "--tier=jit"]
+        self.env: MutableFlatMapStorage[int, str] = MutableFlatMapStorage(capacity=8)
+        if env:
+            for key, value in env.items():
+                self.env.insert(fnv1a_32(key), value)
+        else:
+            self.env.insert(fnv1a_32("FIREBALL_PROFILE"), "embedded")
+            self.env.insert(fnv1a_32("MAX_STACK"), "65536")
+        self.args: tuple[str, ...] = tuple(args) if args else ("fireball_runtime", "--tier=jit")
         # Virtual FD table
-        self.files: dict[int, VirtualFile] = {
-            3: VirtualFile("config.ini", b"[system]\nrate=1000\n", read_only=False),
-            4: VirtualFile("sensors.dat", b"\x01\x02\x03\x04\x05\x06\x07\x08", read_only=True),
-        }
+        self.files: MutableFlatMapStorage[int, VirtualFile] = MutableFlatMapStorage(capacity=8)
+        self.files.insert(3, VirtualFile("config.ini", b"[system]\nrate=1000\n", read_only=False))
+        self.files.insert(
+            4,
+            VirtualFile("sensors.dat", b"\x01\x02\x03\x04\x05\x06\x07\x08", read_only=True),
+        )
         self.next_fd = 5
 
     def fd_read(

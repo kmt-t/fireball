@@ -32,7 +32,8 @@ for _p in [
     if _sp not in sys.path:
         sys.path.insert(0, _sp)
 
-from interpreter import Interpreter, Trap
+from interpreter import Interpreter, InterpreterContext, Trap
+from system_containers import StaticVector
 from wasm_reader import WasmUnsupportedFeatureError, parse
 
 
@@ -376,11 +377,18 @@ def test_intp_70_to_72_direct_bytecode_execution():
     module = parse(wasm_bytes)
     interp = Interpreter(module)
 
-    # 1. INTP-70: _build_frame constructs CallFrame with raw code and static control_map
-    frame, locals_arr = interp._build_frame(0, [15])
+    # 1. INTP-70: the context owns the call-frame and LocalStack construction.
+    context = InterpreterContext()
+    frame, locals_arr = interp._build_frame(
+        0, StaticVector.of((15,), capacity=64), context
+    )
     assert frame.code == module.functions[0].code
     assert frame.control_map is not None
     assert frame.control_map is module.functions[0].control_map
+    assert context.call_frame_stack[-1] is frame
+    assert context.local_offset == 3
+    context.end_call_frame(frame)
+    assert context.local_offset == 0
 
     # 2. INTP-71 & INTP-72: Execution proceeds by direct byte reading and ip addition
     res = interp.call(0, [15])

@@ -143,7 +143,8 @@ def test_trace_compiler_cps_4arg_and_pic():
         reloc_buf.close()
 
     # 4. Context-based invocation via trace.invoke(ctx)
-    ctx = WASMContext(locals_values=[5, 0])
+    ctx = WASMContext()
+    ctx.locals = (5, 0)
     trace.invoke(ctx)
     assert ctx.locals[1] == 40
 
@@ -179,7 +180,8 @@ def test_trace_compiler_bitwise_and_shifts_pic():
         byte_span=byte_span,
     )
     trace = compiler.compile_block(code, block)
-    ctx = WASMContext(locals_values=[0x0F, 0x07, 0, 0])
+    ctx = WASMContext()
+    ctx.locals = (0x0F, 0x07, 0, 0)
     trace.invoke(ctx)
     assert ctx.locals[2] == (0x0F & 0x07)
     assert ctx.locals[3] == (0x0F << 2)
@@ -222,7 +224,8 @@ def test_trace_chaining_between_traces():
     engine.cache.insert(trace_a)
     engine.bitmap.mark_compiled(block_a.head_pc)
     assert trace_a.chain_next == block_b.head_pc
-    ctx = WASMContext(locals_values=[10])
+    ctx = WASMContext()
+    ctx.locals = (10,)
     pc = block_a.head_pc
     pc = engine.run_step(pc, ctx)
     assert pc == block_b.head_pc
@@ -260,7 +263,8 @@ def test_hybrid_interpreter_to_jit_trace_elevation():
     mod = engine.load_wasm(wasm_bytes)
     loop_pc = mod.blocks[0].head_pc
     # Sum 1..5: locals=[5, 0]
-    ctx = WASMContext(locals_values=[5, 0])
+    ctx = WASMContext()
+    ctx.locals = (5, 0)
     pc = loop_pc
     # Iteration 1-3 run in Interpreter
     for _ in range(3):
@@ -326,7 +330,8 @@ def test_jit_chaining_with_control_skip_table():
     assert trace_a.chain_next == block_b.head_pc
 
     # Execute from A: chains directly into B, (5 + 10) * 3 = 45
-    ctx = WASMContext(locals_values=[5])
+    ctx = WASMContext()
+    ctx.locals = (5,)
     pc = block_a.head_pc
     pc = engine.run_step(pc, ctx)
     assert pc == block_b.head_pc

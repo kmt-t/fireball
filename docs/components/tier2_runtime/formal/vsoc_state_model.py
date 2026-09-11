@@ -1,6 +1,6 @@
 """
 docs/components/tier2_runtime/formal/vsoc_state_model.py
-pyModelChecking による vSoC 実行状態・Safepoint 応答性・Debugger 整合性の形式検証（証明・変異検査対応）モデル
+pyModelChecking による vSoC 実行状態・Safepoint 応答性・IRQ/JIT 境界の形式検証（証明・変異検査対応）モデル
 """
 
 from pyModelChecking import Kripke
@@ -8,17 +8,13 @@ from pyModelChecking.CTL import AF, AG, And, AtomicProposition, Imply, Not
 
 BACKS = [
     "components/tier2_runtime/runtime_vsoc.md",
-    "components/tier2_runtime/runtime_vmmio.md",
     "components/tier2_runtime/runtime_interpreter.md",
-    "components/tier2_runtime/debug_manager.md",
-    "components/tier3_platform/platform_driver.md",
-    "components/tier1_core/system_config.md",
 ]
 
 
 def build_model(*, guards: bool = True) -> Kripke:
     """
-    vSoC 実行エンジン・割り込み Safepoint・デバッグフォールバックの保護証明・変異検査対応モデル
+    vSoC 実行エンジン・割り込み Safepoint・IRQ/JIT 境界の保護証明・変異検査対応モデル
     - s_interpreter_run: インタープリタ実行中 (interp_mode, running)
     - s_jit_run: JIT ネイティブ実行中 (jit_mode, running)
     - s_safepoint_check: Safepoint ポーリング確認 (safepoint)
@@ -116,4 +112,18 @@ if __name__ == "__main__":
     for prop in properties():
         res = modelcheck(km, prop["formula"])
         passed = km.S0.issubset(res)
-        print(f"[{'PASS' if passed == prop['expect'] else 'FAIL'}] {prop['name']}")
+        if passed != prop["expect"]:
+            raise AssertionError(
+                f"Normal model property failed: {prop['name']}"
+            )
+        print(f"[PASS] {prop['name']} (guards=True)")
+
+    mutation_km = build_model(guards=False)
+    for prop in properties():
+        res = modelcheck(mutation_km, prop["formula"])
+        passed = mutation_km.S0.issubset(res)
+        if passed == prop["expect"]:
+            raise AssertionError(
+                f"Mutation did not invalidate property: {prop['name']}"
+            )
+        print(f"[PASS] {prop['name']} mutation rejected (guards=False)")

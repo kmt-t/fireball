@@ -26,7 +26,7 @@
 - C++ は 2 スペース、100 桁、snake_case を基本にする。
 - 公開 API は `fireball` 名前空間に置く。
 - ヘッダは `.hxx`、C++ は `.cxx`、C は `.c` を使う。
-- 組み込みコードは静的/スタック主体とし、`malloc` / `new` / `void*` / 例外 / RTTI を避ける。
+- 組み込みコードでは `malloc` / `free` / `realloc` / `calloc` および通常の `new` / `delete` を禁止し、placement/in-place `new` とプロジェクトで提供する独自ヒープ API・独自コンテナを許可する。標準の動的 STL コンテナは、システム提供アロケータを使用していても禁止する。
 - Python（シミュレータ・概念コード・形式検証・テスト）は `typing.Any` を完全禁止し、具体型・代数的データ型を用いる。
 - ドキュメント本文は日本語（自然言語）、コード名・API 名・キーワード・URI は英語。
 - 複雑な動的アルゴリズムの図は、責務重視＝シーケンス図（`sequenceDiagram`）、手順重視＝アクティビティ図（`flowchart TD`）とする。
@@ -59,4 +59,3 @@
 - 最上位アーキテクチャレビュースキル（`architecture_overview.md` ↔ 下位仕様・形式モデル・WITの垂直一貫性・並行サブエージェント監査）は `.agents/skills/architecture-review/` を参照。
 - コンポーネントレビュースキル（各コンポーネントの仕様→形式検証→コード→テストの4層設計チェーン垂直一貫性・並行サブエージェント監査）は `.agents/skills/component-review/` を参照。
 - pysim ソースコードレビュースキル（組み込み C++ 移植性・8大評価軸監査）は `.agents/skills/pysim-review/` を参照。
-

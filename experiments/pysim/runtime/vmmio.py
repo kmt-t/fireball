@@ -17,7 +17,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from system_containers import MutableFlatMapStorage
+from system_containers import MutableFlatMapStorage, StaticVector
 
 if TYPE_CHECKING:
     from memory import MemoryManager
@@ -141,7 +141,9 @@ class VMMIOController:
             capacity=FB_CONF_VMMIO_MAX_PTES
         )
         # Direct-mapped TLB: 16 slots, keyed by 4-bit Folding XOR Hash over 20-bit VPN.
-        self.tlb: list[TLBSlot] = [TLBSlot() for _ in range(16)]
+        self.tlb: StaticVector[TLBSlot] = StaticVector.of(
+            tuple(TLBSlot() for _ in range(16)), capacity=16
+        )
         self.tlb_hits = 0
         self.tlb_misses = 0
 

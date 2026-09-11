@@ -56,10 +56,195 @@ from system_containers import (
     StaticVector,
 )
 from test_support import PcOnlyCompiler, wat_to_wasm
+from virq import (
+    DispatchResult,
+    InterruptEvent,
+    RegistrationError,
+    RegistrationStatus,
+    VirqDispatcher,
+    VirqDispatchResult,
+    VirqNode,
+)
 from wasi import WasiHostContext
+from wasm_module import I32, Function, FuncType, Module
 from wasm_opcodes import I32_CONST
 from wasm_reader import parse
 from x64_jit import TraceCompiler
+
+
+def _make_virq_module() -> Module:
+    valid = FuncType(params=(I32, I32, I32, I32, I32), results=(I32,))
+    invalid = FuncType(params=(I32,), results=(I32,))
+    return Module(
+        types=(valid, invalid),
+        imports=(),
+        functions=(
+            Function(type_index=0, locals_extra=(), code=b""),
+            Function(type_index=0, locals_extra=(), code=b""),
+            Function(type_index=0, locals_extra=(), code=b""),
+            Function(type_index=1, locals_extra=(), code=b""),
+        ),
+    )
+
+
+def _virq_event(vector_id: int, source_id: int = 0) -> InterruptEvent:
+    return InterruptEvent(vector_id, source_id, 7, 11, 13)
+
+
+def test_virq_50_static_nodes_and_safepoint_registration():
+    """VSOC-50: only the fixed root/category/device nodes are mutable."""
+    dispatcher = VirqDispatcher(
+        _make_virq_module(), lambda _index, _v, _s, _c, _p0, _p1: 1
+    )
+
+    root = dispatcher.register_dispatcher(int(VirqNode.ROOT), 0)
+    device = dispatcher.register_dispatcher(VirqNode.device(2), 1)
+    invalid = dispatcher.register_dispatcher(14, 0)
+
+    assert root.is_ok and root.value == RegistrationStatus.PENDING
+    assert device.is_ok and device.value == RegistrationStatus.PENDING
+    assert not invalid.is_ok and invalid.error == RegistrationError.NODE_OUT_OF_RANGE
+    assert dispatcher.active_functions[int(VirqNode.ROOT)] == 0xFFFF_FFFF
+
+    dispatcher.commit_safepoint()
+    assert dispatcher.active_functions[int(VirqNode.ROOT)] == 0
+    assert dispatcher.active_functions[VirqNode.device(2)] == 1
+    assert dispatcher.source_table[3].vector_id == 0x0100
+    assert dispatcher.source_table[3].category_node == int(VirqNode.DEVICE)
+
+
+def test_virq_51_rejects_wrong_wasm_signature_without_overwrite():
+    """VSOC-51: a signature mismatch does not replace an active registration."""
+    dispatcher = VirqDispatcher(
+        _make_virq_module(), lambda _index, _v, _s, _c, _p0, _p1: 0
+    )
+    accepted = dispatcher.register_dispatcher(int(VirqNode.ROOT), 0)
+    dispatcher.commit_safepoint()
+    rejected = dispatcher.register_dispatcher(int(VirqNode.ROOT), 3)
+
+    assert accepted.is_ok
+    assert not rejected.is_ok
+    assert rejected.error == RegistrationError.FUNCTION_SIGNATURE_INVALID
+    assert dispatcher.active_functions[int(VirqNode.ROOT)] == 0
+
+
+def test_virq_52_pending_registration_is_invisible_until_safepoint():
+    """VSOC-52: the active table changes only at the safepoint commit."""
+    calls = StaticVector[tuple[int, InterruptEvent]](capacity=4)
+
+    def invoke(
+        function_index: int,
+        vector_id: int,
+        source_id: int,
+        cause_code: int,
+        payload0: int,
+        payload1: int,
+    ) -> int:
+        calls.push_back(
+            (
+                function_index,
+                InterruptEvent(vector_id, source_id, cause_code, payload0, payload1),
+            )
+        )
+        return int(VirqDispatchResult.HANDLED)
+
+    dispatcher = VirqDispatcher(_make_virq_module(), invoke)
+    dispatcher.register_dispatcher(int(VirqNode.ROOT), 0)
+    dispatcher.commit_safepoint()
+    dispatcher.register_dispatcher(int(VirqNode.ROOT), 1)
+
+    first = dispatcher.dispatch_interrupt_event(_virq_event(0x1000))
+    dispatcher.commit_safepoint()
+    second = dispatcher.dispatch_interrupt_event(_virq_event(0x1000))
+
+    assert first == DispatchResult(VirqDispatchResult.HANDLED)
+    assert second == DispatchResult(VirqDispatchResult.HANDLED)
+    assert tuple(index for index, _event in calls) == (0, 1)
+
+
+def test_virq_53_dispatches_fixed_event_through_static_hierarchy():
+    """VSOC-53: PASS_THROUGH traverses root, category, device in order."""
+    calls = StaticVector[int](capacity=8)
+
+    def invoke(
+        function_index: int,
+        _vector_id: int,
+        _source_id: int,
+        _cause_code: int,
+        _payload0: int,
+        _payload1: int,
+    ) -> int:
+        calls.push_back(function_index)
+        return int(VirqDispatchResult.PASS_THROUGH)
+
+    dispatcher = VirqDispatcher(_make_virq_module(), invoke)
+    dispatcher.register_dispatcher(int(VirqNode.ROOT), 0)
+    dispatcher.register_dispatcher(int(VirqNode.DEVICE), 1)
+    dispatcher.register_dispatcher(VirqNode.device(0), 2)
+    dispatcher.commit_safepoint()
+
+    result = dispatcher.dispatch_interrupt_event(_virq_event(0x0100, source_id=0))
+
+    assert result.outcome == VirqDispatchResult.PASS_THROUGH
+    assert tuple(calls) == (0, 1, 2)
+    assert dispatcher.last_path == (int(VirqNode.ROOT), int(VirqNode.DEVICE), 5)
+
+
+def test_virq_54_handled_and_reject_are_terminal():
+    """VSOC-54: terminal outcomes do not propagate to child or FAULT nodes."""
+    calls = StaticVector[int](capacity=8)
+    modes = StaticVector[int](capacity=8)
+
+    def invoke(
+        function_index: int,
+        _vector_id: int,
+        _source_id: int,
+        _cause_code: int,
+        _payload0: int,
+        _payload1: int,
+    ) -> int:
+        calls.push_back(function_index)
+        return modes[function_index]
+
+    dispatcher = VirqDispatcher(_make_virq_module(), invoke)
+    dispatcher.register_dispatcher(int(VirqNode.ROOT), 0)
+    dispatcher.register_dispatcher(int(VirqNode.DEVICE), 1)
+    dispatcher.register_dispatcher(VirqNode.device(0), 2)
+    dispatcher.commit_safepoint()
+
+    modes.extend(
+        (
+            int(VirqDispatchResult.HANDLED),
+            int(VirqDispatchResult.PASS_THROUGH),
+            int(VirqDispatchResult.PASS_THROUGH),
+        )
+    )
+    handled = dispatcher.dispatch_interrupt_event(_virq_event(0x0100))
+    assert handled.outcome == VirqDispatchResult.HANDLED
+    assert tuple(calls) == (0,)
+
+    calls.clear()
+    modes[0] = int(VirqDispatchResult.REJECT)
+    rejected = dispatcher.dispatch_interrupt_event(_virq_event(0x0100))
+    assert rejected.outcome == VirqDispatchResult.REJECT
+    assert tuple(calls) == (0,)
+    assert dispatcher.last_path == (int(VirqNode.ROOT),)
+    assert dispatcher.faults[-1] == "ROOT_REJECT"
+
+
+def test_virq_55_does_not_enter_wasi_polling_path():
+    """VSOC-55: vIRQ dispatch invokes only its registered dispatcher callback."""
+    poll_calls = StaticVector[int](capacity=2)
+    dispatcher = VirqDispatcher(
+        _make_virq_module(),
+        lambda _index, _v, _s, _c, _p0, _p1: int(VirqDispatchResult.HANDLED),
+    )
+    dispatcher.register_dispatcher(int(VirqNode.ROOT), 0)
+    dispatcher.commit_safepoint()
+
+    result = dispatcher.dispatch_interrupt_event(_virq_event(0x2000))
+    assert result.outcome == VirqDispatchResult.HANDLED
+    assert len(poll_calls) == 0
 
 
 def test_hal_task_ipc_communication():
@@ -112,7 +297,7 @@ def test_gdbserver_task_coos_cooperative_execution():
     sysv = System()
     dbg = DebuggerManager()
     ctx = WASMContext()
-    ctx.locals = [10, 20]
+    ctx.locals = (10, 20)
     task_id, port = sysv.spawn_gdbserver_task(dbg, start_pc=0x10, ctx=ctx)
 
     try:
@@ -283,7 +468,8 @@ def test_tier_02_interpreter_to_jit_trace_transition():
     loop_pc = mod.blocks[1].head_pc
 
     # Compute factorial(5) with 5 iterations: locals=[5, 0]
-    ctx = WASMContext(locals_values=[5, 0])
+    ctx = WASMContext()
+    ctx.locals = (5, 0)
     pc = engine.run_step(mod.blocks[0].head_pc, ctx)  # preamble: local[1] = 1, enters loop
 
     # Step 1: First iteration runs in Interpreter
@@ -364,7 +550,8 @@ def test_tier_03_trace_chaining_and_interpreter_fallback():
     # Assert trace A chained directly into trace B
     assert trace_a.chain_next == block_b.head_pc
     # Run execution:
-    ctx = WASMContext(locals_values=[100])
+    ctx = WASMContext()
+    ctx.locals = (100,)
     pc = block_a.head_pc
     # Step 1: Run block A (JIT) -> returns block B head via direct chain
     pc = engine.run_step(pc, ctx)
@@ -494,7 +681,8 @@ def test_debugger_manager_gdb_rsp_integration():
     dbg.attach()
     rsp = GDBRspProtocol(dbg)
     mem = bytearray(64)
-    ctx = WASMContext(locals_values=[10, 20], memory=mem)
+    ctx = WASMContext(memory=mem)
+    ctx.locals = (10, 20)
     # 1. Query stop signal
     res, _ = rsp.handle_packet("?", 0x100, ctx, {})
     assert res == "$S05#b8"
@@ -591,7 +779,8 @@ def test_interpreter_debugger_handler_table_switch_and_hooks():
     # 1. Normal mode (INTP-60: zero overhead, normal handler table)
     assert engine.handler_table == "normal"
     assert engine.debugger is None
-    ctx_normal = WASMContext(locals_values=[5])
+    ctx_normal = WASMContext()
+    ctx_normal.locals = (5,)
     next_pc = engine.run_step(block1.head_pc, ctx_normal)
     assert next_pc == block2.head_pc
     assert ctx_normal.locals[0] == 6
@@ -601,7 +790,8 @@ def test_interpreter_debugger_handler_table_switch_and_hooks():
     assert engine.debugger is dbg
     # 3. Breakpoint hit (INTP-62: halts before execution)
     dbg.add_breakpoint(block2.head_pc)
-    ctx_debug = WASMContext(locals_values=[10], memory=bytearray([0x55, 0xAA]))
+    ctx_debug = WASMContext(memory=bytearray([0x55, 0xAA]))
+    ctx_debug.locals = (10,)
     dbg.add_memory_assertion(0, 0x55, "valid magic")
     dbg.add_memory_assertion(1, 0x00, "invalid magic")  # Will fail
     # Step block1 (stops at block2 due to BP)

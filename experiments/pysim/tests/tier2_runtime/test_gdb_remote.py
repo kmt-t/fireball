@@ -155,7 +155,8 @@ def test_gdb_remote_socket_session():
     # Initial guest state: local0 = 2, memory 128 bytes
     mem = bytearray(128)
     mem[0:8] = b"TESTDATA"
-    ctx = WASMContext(locals_values=[2, 0, 0, 0], memory=mem)
+    ctx = WASMContext(memory=mem)
+    ctx.locals = (2, 0, 0, 0)
     # Start TCP Server on dynamic port
     port = server.start(current_pc=block10.head_pc, ctx=ctx, blocks=blocks)
     print(f"    -> GDB Remote Server listening on 127.0.0.1:{port}")

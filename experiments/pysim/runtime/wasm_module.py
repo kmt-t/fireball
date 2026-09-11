@@ -17,6 +17,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 from system_containers import (
+    FlatMapView,
     RadixBinaryTreeView,
     ReadOnlyRadixBinaryTreeStorage,
     bswap32,
@@ -69,12 +70,9 @@ I32 = "i32"
 I64 = "i64"
 F32 = "f32"
 F64 = "f64"
-VALTYPE_BYTES = {
-    0x7F: I32,
-    0x7E: I64,
-    0x7D: F32,
-    0x7C: F64,
-}
+VALTYPE_BYTES: FlatMapView[int, str] = FlatMapView(
+    ((0x7C, F64), (0x7D, F32), (0x7E, I64), (0x7F, I32))
+)
 
 
 @dataclass(frozen=True)

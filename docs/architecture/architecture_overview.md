@@ -154,8 +154,8 @@ Fireball の実行コアは、以下の 6 つの物理メカニズムによっ�
   - バンク満杯時は世代スライド（Active $\to$ Warm $\to$ Oldest $\to$ Recycle）により一括代謝。
 - **MPU W^X 保護遷移**: コンパイル時は `RW + XN`、パッチ完了時に `__DSB(); __ISB();` を発行して `RO + X` に切り替え。
 - **ヘッダ駆動チェイニング（W^X 切り替え不要）**: トレース間ジャンプはトレースヘッダ内のデータスロット `chain_target_addr`（+0x0C）を不可分更新することで確立・アンリンクする。コード領域自体の MPU W^X 切り替えや `__ISB()` を完全バイパスし、ゼロコストでリンクを管理する。
-- **昇格時の逆引き移管 & LIFO 逆順コンパイル**: Oldest から昇格したトレースは被チェイン逆引きテーブル（`inbound_chains`）の登録先を新バンクへ移管（Transfer）してダングリングジャンプを排除（`JITR-GOTCHA-02`）。また、LIFO 逆順コンパイル（`{JIT_ReverseCompilationOrder}`）により後続ブロックから先行コンパイルして即時チェイニング成立を最大化。
-- **非常時一括フラッシュ**: デバッガ介入時（`Debugger_Jit_Flush`）や共有メモリ権限剥奪時（`VMMIO-GOTCHA-03`）は generation cookie をインクリメントし、全バンクのトレースを一括即時無効化。
+- **昇格時の逆引き移管 & LIFO 逆順コンパイル**: Oldest から昇格したトレースは被チェイン逆引きテーブル（`inbound_chains`）の登録先を新バンクへ移管（Transfer）してダングリングジャンプを排除（`GOTCHA-JITR-02`）。また、LIFO 逆順コンパイル（`{JIT_ReverseCompilationOrder}`）により後続ブロックから先行コンパイルして即時チェイニング成立を最大化。
+- **非常時一括フラッシュ**: デバッガ介入時（`Debugger_Jit_Flush`）や共有メモリ権限剥奪時（`GOTCHA-VMMIO-03`）は generation cookie をインクリメントし、全バンクのトレースを一括即時無効化。
 
 ### 3.4 Pillar 4: 対称直接ハンドオフ・エンジン (Symmetric Direct Handoff Engine)
 <!-- traceability: {ADR_RendezvousChannel} {CSP_Handoff} {DirectContextSwitch} {MainLoopReturnGuarantee} -->

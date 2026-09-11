@@ -12,10 +12,10 @@
 
 | ベンチマーク ID | 測定項目 | 前提条件 / 設定 | 計測指標 | 目標性能 / 合格基準 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **BENCH-AO-01** | プライマリレイ・球・平面交差判定 | 32 x 16 グリッド (512レイ) | レイ交差数, ms/frame | 272画素の球交差を正確に検出 | [`bench_aobench.py`](experiments/pysim/benchmarks/aobench/bench_aobench.py) |
-| **BENCH-AO-02** | 半球サンプリング・遮蔽積分 (AO Shading) | 4 サンプル/交差点 (1,088レイ) | 総レイトレース数 (1,600レイ) | 陰影計算の固定小数点誤差蓄積防止 | `{Wasm32Only}` |
-| **BENCH-AO-03** | レンダリング出力の差分検証 | WASI `fd_write` 出力バッファ | バイト一致 (528 B, 0 NUL) | Tier 2 と Tier 3 の描画結果がバイト完全一致 | `{LowLatencyJIT}` |
-| **BENCH-AO-04** | フレームスループット (Rays / Sec) | 1フレーム描画所要時間 | ms/frame, Rays/sec | インタープリタおよび JIT で安定完走 | `{ThreadedInterpreter}` |
+| **BENCHMARK-AO-01** | プライマリレイ・球・平面交差判定 | 32 x 16 グリッド (512レイ) | レイ交差数, ms/frame | 272画素の球交差を正確に検出 | [`bench_aobench.py`](experiments/pysim/benchmarks/aobench/bench_aobench.py) |
+| **BENCHMARK-AO-02** | 半球サンプリング・遮蔽積分 (AO Shading) | 4 サンプル/交差点 (1,088レイ) | 総レイトレース数 (1,600レイ) | 陰影計算の固定小数点誤差蓄積防止 | `{Wasm32Only}` |
+| **BENCHMARK-AO-03** | レンダリング出力の差分検証 | WASI `fd_write` 出力バッファ | バイト一致 (528 B, 0 NUL) | Tier 2 と Tier 3 の描画結果がバイト完全一致 | `{LowLatencyJIT}` |
+| **BENCHMARK-AO-04** | フレームスループット (Rays / Sec) | 1フレーム描画所要時間 | ms/frame, Rays/sec | インタープリタおよび JIT で安定完走 | `{ThreadedInterpreter}` |
 
 ## 3. 測定手順
 

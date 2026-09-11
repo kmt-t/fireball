@@ -1190,7 +1190,7 @@ def test_wasm_loader_lifecycle_and_verification() -> None:
 
 def test_wasm_loader_radix_binary_tree_offset_indexing() -> None:
     """
-    Verifies LOAD-40 ~ LOAD-44:
+    Verifies TEST-LOAD-40 ~ TEST-LOAD-44:
     - Registration of decoded entities in DecodedEntityRegistry
     - O(k) RadixBinaryTree file offset containment search
     - Reverse-lookup of FunctionAccessor, GlobalAccessor, SectionView by file byte offset
@@ -1199,13 +1199,13 @@ def test_wasm_loader_radix_binary_tree_offset_indexing() -> None:
     loader = WasmLoader()
     wasm_bytes = _build_test_wasm_binary(export_names=["alpha", "beta"])
     view = loader.prepare("radix_test_module", wasm_bytes)
-    # 1. LOAD-40: Entities registered
+    # 1. TEST-LOAD-40: Entities registered
     assert len(view.entity_registry) > 0
     kinds = [e.kind for e in view.entity_registry]
     assert "SECTION" in kinds
     assert "FUNCTION" in kinds
     assert "GLOBAL" in kinds
-    # 2. LOAD-41 & LOAD-42: RadixBinaryTree offset lookup for function code
+    # 2. TEST-LOAD-41 & TEST-LOAD-42: RadixBinaryTree offset lookup for function code
     func_start, func_size = view.code_offsets[0]
     # Lookup exactly at start of function body
     entity_at_start = view.lookup_by_file_offset(func_start)
@@ -1217,13 +1217,13 @@ def test_wasm_loader_radix_binary_tree_offset_indexing() -> None:
     assert entity_in_mid is not None
     assert entity_in_mid.kind == "FUNCTION"
     assert entity_in_mid.name_or_idx == 0
-    # 3. LOAD-43: Lookup global entity
+    # 3. TEST-LOAD-43: Lookup global entity
     global_entry = view.globals[0]
     entity_global = view.lookup_by_file_offset(global_entry.init_expr_offset)
     assert entity_global is not None
     assert entity_global.kind == "GLOBAL"
     assert entity_global.name_or_idx == 0
-    # 4. LOAD-44: Invalid / out-of-range offsets
+    # 4. TEST-LOAD-44: Invalid / out-of-range offsets
     assert view.lookup_by_file_offset(len(wasm_bytes) + 100) is None
     assert view.lookup_by_file_offset(0xFFFFFFFF) is None
     print("[PASS] RadixBinaryTreeView file offset indexing verified successfully.")
@@ -1231,7 +1231,7 @@ def test_wasm_loader_radix_binary_tree_offset_indexing() -> None:
 
 def test_wasm_loader_hash_radix_binary_tree_view_symbol_lookup() -> None:
     """
-    Verifies LOAD-13, LOAD-21, LOAD-45 ~ LOAD-47:
+    Verifies TEST-LOAD-13, TEST-LOAD-21, TEST-LOAD-45 ~ TEST-LOAD-47:
     - Hash + RadixBinaryTreeView symbol lookup (O(k))
     - Hash + RadixBinaryTreeView import table lookup and multi-module linking
     - Hash collision resistance (string verification)
@@ -1240,7 +1240,7 @@ def test_wasm_loader_hash_radix_binary_tree_view_symbol_lookup() -> None:
     loader = WasmLoader()
     wasm_bytes = _build_test_wasm_binary(export_names=["alpha", "beta", "gamma", "compute"])
     view = loader.prepare("sym_mod", wasm_bytes)
-    # LOAD-13: Hash + RadixBinaryTreeView symbol lookup
+    # TEST-LOAD-13: Hash + RadixBinaryTreeView symbol lookup
     exp_alpha = view.lookup_export("alpha")
     assert exp_alpha is not None
     assert exp_alpha.name == "alpha"
@@ -1248,10 +1248,10 @@ def test_wasm_loader_hash_radix_binary_tree_view_symbol_lookup() -> None:
     exp_gamma = view.lookup_export("gamma")
     assert exp_gamma is not None
     assert exp_gamma.name == "gamma"
-    # LOAD-47: Fast non-existent symbol rejection
+    # TEST-LOAD-47: Fast non-existent symbol rejection
     assert view.lookup_export("non_existent_func") is None
     assert view.lookup_export("") is None
-    # LOAD-45 & LOAD-21: Multi-module import resolution via Hash + RadixBinaryTreeView
+    # TEST-LOAD-45 & TEST-LOAD-21: Multi-module import resolution via Hash + RadixBinaryTreeView
     app_buf = bytearray()
     app_buf.extend(b"\x00asm\x01\x00\x00\x00")
     app_type = bytearray()

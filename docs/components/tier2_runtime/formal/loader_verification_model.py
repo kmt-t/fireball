@@ -3,7 +3,7 @@ docs/components/tier2_runtime/formal/loader_verification_model.py
 pyModelChecking による WASM ローダの
 (1) 検証（V1-V6 軽量検証）に合格していないモジュールは決して実行されないこと
 (2) パースされたモジュールは、検証がスタックしたまま放置されず必ず合否いずれかへ収束すること
-(3) 検証失敗時にはバンプポインタが完全ロールバックされ物理メモリリークが絶対に生じないこと（LOAD-GOTCHA-02）
+(3) 検証失敗時にはバンプポインタが完全ロールバックされ物理メモリリークが絶対に生じないこと（GOTCHA-LOAD-02）
 の形式検証（証明・変異検査対応）モデル
 """
 
@@ -23,7 +23,7 @@ def build_model(*, guards: bool = True) -> Kripke:
     - s_verified_ok: 検証合格 (settled)
     - s_verified_bad: 検証不合格 (settled, rejected)
     - s_executable: 検証合格モジュールが実行可能状態へ遷移 (settled, executable)
-    - s_rollback_done: LOAD-GOTCHA-02: 不合格時にバンプポインタを完全ロールバック (settled, rolled_back)
+    - s_rollback_done: GOTCHA-LOAD-02: 不合格時にバンプポインタを完全ロールバック (settled, rolled_back)
     - s_executing_unverified: 違反状態（検証を経ずに、または不合格のまま実行された）
     - s_stuck_verifying: 違反状態（検証が合否いずれにも収束せず放置される）
     - s_leaked_bump: 違反状態（不合格時にロールバックされずメモリが消費されたまま残存）
@@ -49,7 +49,7 @@ def build_model(*, guards: bool = True) -> Kripke:
         ("s_verifying", "s_verified_ok"),
         ("s_verifying", "s_verified_bad"),
         ("s_verified_ok", "s_executable"),
-        # LOAD-GOTCHA-02: 検証不合格時は必ずバンプポインタをロールバックして安全終了
+        # GOTCHA-LOAD-02: 検証不合格時は必ずバンプポインタをロールバックして安全終了
         ("s_verified_bad", "s_rollback_done"),
         ("s_executable", "s_executable"),
         ("s_rollback_done", "s_rollback_done"),
@@ -66,7 +66,7 @@ def build_model(*, guards: bool = True) -> Kripke:
         R = [*R, ("s_verified_bad", "s_executing_unverified")]
         # 3. V1-V6 の境界を外すと、検証が合否に収束しないままになりうる
         R = [*R, ("s_verifying", "s_stuck_verifying")]
-        # 4. LOAD-GOTCHA-02: ロールバック処理を怠ると、不合格時にメモリが消費されたままリーク
+        # 4. GOTCHA-LOAD-02: ロールバック処理を怠ると、不合格時にメモリが消費されたままリーク
         R = [*R, ("s_verified_bad", "s_leaked_bump")]
 
     L = {
@@ -116,7 +116,7 @@ def properties():
             "logic": "CTL",
             "formula": AG(Imply(rejected, AF(rolled_back))),
             "violation": bad_leaked,
-            "expect": True,  # LOAD-GOTCHA-02: 検証不合格時は必ずバンプポインタがロールバックされリークゼロ
+            "expect": True,  # GOTCHA-LOAD-02: 検証不合格時は必ずバンプポインタがロールバックされリークゼロ
         },
     ]
 

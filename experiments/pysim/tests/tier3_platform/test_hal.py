@@ -110,7 +110,7 @@ def test_hal_04_hal_buffer_slice_bounds_and_ownership():
 
 
 def test_hal_task_ipc_communication():
-    """HAL-01: HAL operates as a distinct task on COOS and handles commands via IPC rendezvous."""
+    """TEST-HAL-01: HAL operates as a distinct task on COOS and handles commands via IPC rendezvous."""
     from hal import ARG_LENGTH, ARG_OFFSET
     from wasi import Wasi03pEngine, WasiIpcCmd
 

@@ -113,8 +113,8 @@ JIT コンパイラがフォールバックせずにネイティブバイナリ�
 | | `0x6C` | `i32.mul` | `mul r3, r4, r3` | R4 * R3 $\to$ R3 | 4 Bytes |
 | | `0x6D` | `i32.div_s`| `cbz r3, <trap>; cmp r4, #0x80000000; it eq; cmpeq r3, #-1; beq <trap>; sdiv r3, r4, r3` | 符号付除算 | 14 Bytes |
 | | `0x6E` | `i32.div_u`| `cbz r3, <trap>; udiv r3, r4, r3` | 符号無除算 | 6 Bytes |
-| | `0x6F` | `i32.rem_s`| `cbz r3, <trap>; sdiv r12, r4, r3; mls r3, r12, r3, r4` | 符号付剰余 (`JITC-GOTCHA-06`) | 10 Bytes |
-| | `0x70` | `i32.rem_u`| `cbz r3, <trap>; udiv r12, r4, r3; mls r3, r12, r3, r4` | 符号無剰余 (`JITC-GOTCHA-06`) | 10 Bytes |
+| | `0x6F` | `i32.rem_s`| `cbz r3, <trap>; sdiv r12, r4, r3; mls r3, r12, r3, r4` | 符号付剰余 (`GOTCHA-JITC-06`) | 10 Bytes |
+| | `0x70` | `i32.rem_u`| `cbz r3, <trap>; udiv r12, r4, r3; mls r3, r12, r3, r4` | 符号無剰余 (`GOTCHA-JITC-06`) | 10 Bytes |
 | | `0x71` | `i32.and` | `ands r3, r4, r3` | R4 & R3 $\to$ R3 | 2 Bytes |
 | | `0x72` | `i32.or` | `orrs r3, r4, r3` | R4 \| R3 $\to$ R3 | 2 Bytes |
 | | `0x73` | `i32.xor` | `eors r3, r4, r3` | R4 ^ R3 $\to$ R3 | 2 Bytes |
@@ -137,12 +137,12 @@ JIT コンパイラがフォールバックせずにネイティブバイナリ�
 | | `0x4D` | `i32.le_u` | `cmp r4, r3; it ls; movls r3, #1; it hi; movhi r3, #0` | R4 <= R3 (符号無) | 10 Bytes |
 | | `0x4E` | `i32.ge_s` | `cmp r4, r3; it ge; movge r3, #1; it lt; movlt r3, #0` | R4 >= R3 (符号付) | 10 Bytes |
 | | `0x4F` | `i32.ge_u` | `cmp r4, r3; it hs; movhs r3, #1; it lo; movlo r3, #0` | R4 >= R3 (符号無) | 10 Bytes |
-| **リニアメモリアクセス** | `0x28` | `i32.load` | `cmp r3, r9; bhs.w <trap>; ldr.w r3, [r8, r3]` | 32bit ロード (`JITC-GOTCHA-04`) | 10 Bytes |
+| **リニアメモリアクセス** | `0x28` | `i32.load` | `cmp r3, r9; bhs.w <trap>; ldr.w r3, [r8, r3]` | 32bit ロード (`GOTCHA-JITC-04`) | 10 Bytes |
 | | `0x2C` | `i32.load8_s` | `cmp r3, r9; bhs.w <trap>; ldrsb.w r3, [r8, r3]`| 8bit 符号付ロード | 10 Bytes |
 | | `0x2D` | `i32.load8_u` | `cmp r3, r9; bhs.w <trap>; ldrb.w r3, [r8, r3]` | 8bit 符号無ロード | 10 Bytes |
 | | `0x2E` | `i32.load16_s`| `cmp r3, r9; bhs.w <trap>; ldrsh.w r3, [r8, r3]`| 16bit 符号付ロード | 10 Bytes |
 | | `0x2F` | `i32.load16_u`| `cmp r3, r9; bhs.w <trap>; ldrh.w r3, [r8, r3]` | 16bit 符号無ロード | 10 Bytes |
-| | `0x36` | `i32.store` | `cmp r4, r9; bhs.w <trap>; str.w r3, [r8, r4]` | 32bit ストア (`JITC-GOTCHA-04`) | 10 Bytes |
+| | `0x36` | `i32.store` | `cmp r4, r9; bhs.w <trap>; str.w r3, [r8, r4]` | 32bit ストア (`GOTCHA-JITC-04`) | 10 Bytes |
 | | `0x3A` | `i32.store8` | `cmp r4, r9; bhs.w <trap>; strb.w r3, [r8, r4]` | 8bit ストア | 10 Bytes |
 | | `0x3B` | `i32.store16`| `cmp r4, r9; bhs.w <trap>; strh.w r3, [r8, r4]` | 16bit ストア | 10 Bytes |
 | | `0x3F` | `memory.size`| `ldr.w r3, [r1, #0x24]` | ページ数取得 | 4 Bytes |
@@ -162,10 +162,10 @@ JIT トレース内にインライン展開せず、トレース境界でイン�
 | **ハードウェア非対応演算** | - | `f32.*`, `f64.*` | 浮動小数点演算ユニット（FPU）非搭載環境における `libgcc`（`__adddf3` 等）ソフトエミュレーション委譲 |
 | | - | `i64.div_*`, `rem_*`| 64bit 整数除算・剰余における `libgcc`（`__divdi3`, `__moddi3` 等）ランタイムヘルパー委譲 |
 
-**ABI 規約と境界チェック・バックパッチング (`JITC-GOTCHA-01`〜`05`)**:
-- **レジスタ整合性 (`JITC-GOTCHA-01`, `02`, `03`)**: JIT トレースとインタープリタは `__fastcall`（R0=ctx, R1=SP, R2=local_base, R3=tos）により共通の物理レジスタ規約を保持する。基本ブロック末尾では、スタックがプッシュされた場合に `TOS, NOS, NNOS` をスタック（`[R1, #offset]`）へフラッシュし、コンテキスト `R0` の `ip`（+0x00）および `sp_offset`（+0x0C）を書き換える。トレース生成時はホストアーキテクチャ（ARM/x64）の不変条件（呼び出し側退避レジスタの保全、スタックアライメント境界）を厳格に維持する。
-- **境界チェックとバックパッチング (`JITC-GOTCHA-04`, `05`)**: トレース末尾の直接ジャンプ（チェイニング）およびインタープリタへの脱出境界において、PC の境界検査を必ず先行させる。前方参照ブロックへのジャンプオフセットは、コード生成完了後にバックパッチングにより不可分に書き換えられ、未解決ジャンプによる迷走実行を完全に防止する。
-- **ARM MLS 命令のオペランド配置順序 (`JITC-GOTCHA-06`)**: ARM Thumb-2 の積和減算命令 `MLS Rd, Rn, Rm, Ra`（$Rd = Ra - Rn \times Rm$）を生成する際、減算の引かれる数（アキュムレータ）が第4オペランド $Ra$ に配置されるハードウェア仕様を遵守し、通常の乗算命令（$Rn, Rm$）との取り違えによる計算誤りを防ぐ。
+**ABI 規約と境界チェック・バックパッチング (`GOTCHA-JITC-01`〜`05`)**:
+- **レジスタ整合性 (`GOTCHA-JITC-01`, `02`, `03`)**: JIT トレースとインタープリタは `__fastcall`（R0=ctx, R1=SP, R2=local_base, R3=tos）により共通の物理レジスタ規約を保持する。基本ブロック末尾では、スタックがプッシュされた場合に `TOS, NOS, NNOS` をスタック（`[R1, #offset]`）へフラッシュし、コンテキスト `R0` の `ip`（+0x00）および `sp_offset`（+0x0C）を書き換える。トレース生成時はホストアーキテクチャ（ARM/x64）の不変条件（呼び出し側退避レジスタの保全、スタックアライメント境界）を厳格に維持する。
+- **境界チェックとバックパッチング (`GOTCHA-JITC-04`, `05`)**: トレース末尾の直接ジャンプ（チェイニング）およびインタープリタへの脱出境界において、PC の境界検査を必ず先行させる。前方参照ブロックへのジャンプオフセットは、コード生成完了後にバックパッチングにより不可分に書き換えられ、未解決ジャンプによる迷走実行を完全に防止する。
+- **ARM MLS 命令のオペランド配置順序 (`GOTCHA-JITC-06`)**: ARM Thumb-2 の積和減算命令 `MLS Rd, Rn, Rm, Ra`（$Rd = Ra - Rn \times Rm$）を生成する際、減算の引かれる数（アキュムレータ）が第4オペランド $Ra$ に配置されるハードウェア仕様を遵守し、通常の乗算命令（$Rn, Rm$）との取り違えによる計算誤りを防ぐ。
 
 #### コピーアンドパッチエンジン（CopyAndPatchEngine）クラス
 <!-- traceability: {JIT_RegisterMapping} {ContextPointerRegister} {EnvironmentPointer} {ADR_TosCacheAsymmetry} {PositionIndependentCode} -->
@@ -192,7 +192,7 @@ typedef int64_t (*opcode_handler_t)(
 
 ##### 物理レジスタマッピング一覧表
 <!-- traceability: {JIT_RegisterMapping} {AAPCS_FastCall} -->
-JIT トレースとインタープリタは呼び出し境界において CPS 4引数規約を共有し、トレース内部では assignable pool を用いることで物理競合を防止する（`JITC-GOTCHA-01`）。
+JIT トレースとインタープリタは呼び出し境界において CPS 4引数規約を共有し、トレース内部では assignable pool を用いることで物理競合を防止する（`GOTCHA-JITC-01`）。
 
 | アーキテクチャ | 物理レジスタ | 規約上の役割 / CPS引数 | トレース内部での用途 | 退避・保護責務 |
 | :--- | :--- | :--- | :--- | :--- |
@@ -318,7 +318,7 @@ graph TD
 
 
 #### Copy-and-Patch ステンシル結合 & バックパッチング手順（手順アクティビティ図）
-<!-- traceability: {JITC-GOTCHA-01} {JITC-GOTCHA-02} {JITC-GOTCHA-05} {JIT_CopyAndPatch} -->
+<!-- traceability: {GOTCHA-JITC-01} {GOTCHA-JITC-02} {GOTCHA-JITC-05} {JIT_CopyAndPatch} -->
 BasicBlock 走査、事前コンパイル済みステンシルのコピー、即値・レジスタパッチ、およびトレース末尾バックパッチングの決定論的手順を示す。
 
 ```mermaid
@@ -481,15 +481,15 @@ sequenceDiagram
 ## 7. 形式検証・テスト仕様との対応
 
 ### 7.1 検証対象の不変条件
-- **位置独立性 (PIC)**: 生成された Thumb-2 / RISC-V バイナリが絶対アドレスに依存せず、任意のキャッシュバンクで再コンパイル不要で動作すること（`INT-40`, `JITC-40`）。
-- **トレース境界メモリ同期**: トレースの真の脱出（後続の常駐トレースへ直接チェインしない場合）時に、キャッシュ中のスタックトップ（`R3: TOS`）・次段（`R4: NOS`）およびローカル変数がメモリへ確実に同期されること。直接チェイン分岐（`{JIT_LazyChaining}`）ではレジスタ状態がそのまま後続トレースへ引き継がれるため、この同期は発生しない（`INT-41`, `JITC-52`）。
-- **W^X メモリ保護**: JIT パッチ書き込み時の `RW+XN` と実行時の `RO+X` の分離（`jit_cache_model.py`, `JITC-42`）。
+- **位置独立性 (PIC)**: 生成された Thumb-2 / RISC-V バイナリが絶対アドレスに依存せず、任意のキャッシュバンクで再コンパイル不要で動作すること（`TEST-INT-40`, `TEST-JITC-40`）。
+- **トレース境界メモリ同期**: トレースの真の脱出（後続の常駐トレースへ直接チェインしない場合）時に、キャッシュ中のスタックトップ（`R3: TOS`）・次段（`R4: NOS`）およびローカル変数がメモリへ確実に同期されること。直接チェイン分岐（`{JIT_LazyChaining}`）ではレジスタ状態がそのまま後続トレースへ引き継がれるため、この同期は発生しない（`TEST-INT-41`, `TEST-JITC-52`）。
+- **W^X メモリ保護**: JIT パッチ書き込み時の `RW+XN` と実行時の `RO+X` の分離（`jit_cache_model.py`, `TEST-JITC-42`）。
 
 ### 7.2 テスト仕様書との連携
-本コンポーネントの単体テストケース（JITC-01〜JITC-56, JITC-GOTCHA-01〜06）は、[`jit_compiler_test_spec.md`](docs/components/tier3_jit/tests/jit_compiler_test_spec.md) を正本として定義する。なお、3面キャッシュの検索・昇格・代謝の組み合わせ直交表は、ランタイム管理のテスト仕様書 [`jit_runtime_test_spec.md`](docs/components/tier3_jit/tests/jit_runtime_test_spec.md) を正本とする。
+本コンポーネントの単体テストケース（TEST-JITC-01〜TEST-JITC-56, GOTCHA-JITC-01〜06）は、[`jit_compiler_test_spec.md`](docs/components/tier3_jit/tests/jit_compiler_test_spec.md) を正本として定義する。なお、3面キャッシュの検索・昇格・代謝の組み合わせ直交表は、ランタイム管理のテスト仕様書 [`jit_runtime_test_spec.md`](docs/components/tier3_jit/tests/jit_runtime_test_spec.md) を正本とする。
 
 ## 8. 設計判断 (ADR)
-<!-- traceability: {ADR_ScalableCodeOffset} {ADR_SafeQueuingOnHotMiss} {ADR_TosCacheAsymmetry} {JIT_LazyChaining} {JITC-GOTCHA-07} -->
+<!-- traceability: {ADR_ScalableCodeOffset} {ADR_SafeQueuingOnHotMiss} {ADR_TosCacheAsymmetry} {JIT_LazyChaining} {GOTCHA-JITC-07} -->
 
 - **決定事項**: `{ADR_TosCacheAsymmetry}`
   - **背景**: JIT トレースはスタックマシンである WASM のオペランドを `R3`/`R4`/`R5` に TOS/NOS/NNOS としてキャッシュするが、インタープリタのオプコードハンドラは AAPCS 引数レジスタ `R0`〜`R3` を CPS 境界の呼び出し引数 `(ctx, sp, local_base, tos)` で使用している。両者は `__fastcall` CPS シグネチャを共有するため、トレース境界での状態同期を決定論的に定義する必要がある。
@@ -500,7 +500,7 @@ sequenceDiagram
   - **結論**: 案3を採用する。
   - **評価**: 基本ブロック末尾でプッシュされたスタックキャッシュ（`TOS, NOS, NNOS`）をスタック（`[R1, #offset]`）へフラッシュし、コンテキスト `R0` の `ip`（+0x00）および `sp_offset`（+0x0C）を書き換えて状態を完全同期する。JIT トレースは複数 WASM 命令にまたがるため、この同期命令はトレース長で償却され、トレース内部で得られるレジスタキャッシュの利得を下回る。
   - **トレース境界の2種類のエントリと2種類のエグジット**: 境界の性質は「真の脱出/新規進入」と「直接チェイン」の2系統に分かれ、混同してはならない（[`jit_stencil_catalog.md`](docs/specs/jit_stencil_catalog.md) のプロローグ & エピローグ・ステンシル節）。
-    - **新規エントリ / 真の脱出**: インタープリタ・ディスパッチャから初めて呼び出される場合は Callee-saved 全域退避のプロローグを通過する。真の脱出（後続の常駐トレースが存在しない、またはこのトレースがチェインの終端）では、基本ブロック末尾でダーティなスタックキャッシュ（`R3/R4/R5`）をスタックメモリ（`[R1, #offset]`）へフラッシュし、`sp_offset`（`[R0, #0x0C]`）および `ip`（`[R0, #0x00]`）を同期した上で、Callee-saved レジスタを `POP` 復元してリターン（または `BX r12` でインタープリタへジャンプ）する。呼び出し規約上の戻り値レジスタは一切経由しない——VM のオペランドスタック状態と C/AAPCS の戻り値には何の関係もない（`{JITC-GOTCHA-07}`）。
+    - **新規エントリ / 真の脱出**: インタープリタ・ディスパッチャから初めて呼び出される場合は Callee-saved 全域退避のプロローグを通過する。真の脱出（後続の常駐トレースが存在しない、またはこのトレースがチェインの終端）では、基本ブロック末尾でダーティなスタックキャッシュ（`R3/R4/R5`）をスタックメモリ（`[R1, #offset]`）へフラッシュし、`sp_offset`（`[R0, #0x0C]`）および `ip`（`[R0, #0x00]`）を同期した上で、Callee-saved レジスタを `POP` 復元してリターン（または `BX r12` でインタープリタへジャンプ）する。呼び出し規約上の戻り値レジスタは一切経由しない——VM のオペランドスタック状態と C/AAPCS の戻り値には何の関係もない（`{GOTCHA-JITC-07}`）。
     - **チェイン・エントリ / 直接チェイン分岐**: `{JIT_LazyChaining}` によって後続トレースが常駐と解決済みの場合、真の脱出の代わりに後続トレースのチェイン・エントリ（後続トレース自身のプロローグ直後のオフセット）への直接分岐（`B.W`、バックパッチ）を配置する。フラッシュも `POP` も発生せず、レジスタ状態（`R3-R5` のキャッシュ値を含む）は分岐を跨いでそのまま生き続ける。後続側もチェイン・エントリではプロローグを経由しないため、両者を合わせても Callee-saved の退避・復元は連結全体でちょうど1回ずつしか発生しない。
   - **ローカル変数アクセスの静的オフセット畳み込み (`ContextPointerRegister`)**: 各関数フレームにおけるローカル変数のアドレスは、カレントコールフレームのローカル変数基底レジスタ `R2 = local_base` 起点として `[R2, #offset]` でアクセスされる。これにより、余計なベースアドレス再計算なしに1命令で直接アクセスできる。
 

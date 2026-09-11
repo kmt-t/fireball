@@ -44,7 +44,7 @@ def wat_to_wasm(wat_text: str) -> bytes:
 
 
 def test_sched_01_pure_round_robin_fifo():
-    """SCHED-01: Pure round-robin execution without priority bias."""
+    """TEST-SCHED-01: Pure round-robin execution without priority bias."""
     order: list[str] = []
 
     def worker(name: str, steps: int):
@@ -60,7 +60,7 @@ def test_sched_01_pure_round_robin_fifo():
 
 
 def test_sched_02_task_capacity_limit():
-    """SCHED-02: Scheduler enforces FB_CONF_MAX_TASKS (16) limit."""
+    """TEST-SCHED-02: Scheduler enforces FB_CONF_MAX_TASKS (16) limit."""
     sched = Scheduler(max_tasks=4)
     for i in range(4):
         sched.spawn(f"t{i}")
@@ -73,7 +73,7 @@ def test_sched_02_task_capacity_limit():
 
 
 def test_sched_03_duplicate_task_id_rejected():
-    """SCHED-03: Attempting to spawn with an existing task_id is rejected."""
+    """TEST-SCHED-03: Attempting to spawn with an existing task_id is rejected."""
     sched = Scheduler()
     sched.spawn("t1", task_id=10)
     try:
@@ -89,7 +89,7 @@ def test_sched_03_duplicate_task_id_rejected():
 
 
 def test_sched_04_shared_block_move_semantics_csp_rendezvous():
-    """MEM-10 / IPC_ZeroCopy: Move-only SharedBlock transfer across CSP channel.
+    """TEST-MEM-10 / IPC_ZeroCopy: Move-only SharedBlock transfer across CSP channel.
     Upon rendezvous, ownership moves directly from sender to receiver.
     Sender instance is invalidated (use-after-move triggers assertion),
     while receiver acquires full ownership of the backing buffer."""

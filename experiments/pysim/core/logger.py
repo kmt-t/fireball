@@ -1,11 +1,11 @@
 """
 experiments/pysim/core/logger.py
 Fireball System Logging Engine mirroring docs/components/tier2_runtime/runtime_logging.md:
-- LOG-GOTCHA-01: Format strings are registered statically in LogDictionary. Log API accepts
+- GOTCHA-LOG-01: Format strings are registered statically in LogDictionary. Log API accepts
   only scalar u32 arguments, completely eliminating runtime string pointers and Use-After-Free.
-- LOG-GOTCHA-02: Bounded ring buffer safely overwrites oldest entries on full, maintaining
+- GOTCHA-LOG-02: Bounded ring buffer safely overwrites oldest entries on full, maintaining
   system non-blocking invariant and preventing log-induced deadlocks.
-- LOG-GOTCHA-03: Log flush groups entries into batches and checks interrupt_pending only at
+- GOTCHA-LOG-03: Log flush groups entries into batches and checks interrupt_pending only at
   batch boundaries, never mid-batch, since a started transfer cannot be preempted.
 """
 
@@ -173,7 +173,7 @@ class Logger:
     def flush(
         self, batch_size: int = 32, interrupt_pending: Callable[[], bool] | None = None
     ) -> int:
-        """LOG-GOTCHA-03: entries are grouped into batches of up to `batch_size`.
+        """GOTCHA-LOG-03: entries are grouped into batches of up to `batch_size`.
         A started transfer cannot be preempted, so `interrupt_pending` (if given)
         is checked only after each batch completes, never mid-batch."""
         flushed = 0

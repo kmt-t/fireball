@@ -45,7 +45,7 @@ def wat_to_wasm(wat_text: str) -> bytes:
 
 
 def test_coos_01_send_first_suspends_csp():
-    """COOS-01: Sender arriving first transitions to SUSPENDED_CSP; value stays in frame."""
+    """TEST-COOS-01: Sender arriving first transitions to SUSPENDED_CSP; value stays in frame."""
     sched = Scheduler()
     ch = sched.create_channel()
     t1_id = sched.spawn("t1")
@@ -60,7 +60,7 @@ def test_coos_01_send_first_suspends_csp():
 
 
 def test_coos_02_recv_after_send_completes_rendezvous():
-    """COOS-02: Receiver arriving second completes rendezvous and takes ownership."""
+    """TEST-COOS-02: Receiver arriving second completes rendezvous and takes ownership."""
     sched = Scheduler()
     ch = sched.create_channel()
     t1 = sched.get_task(sched.spawn("t1"))
@@ -77,7 +77,7 @@ def test_coos_02_recv_after_send_completes_rendezvous():
 
 
 def test_coos_03_recv_first_suspends_csp():
-    """COOS-03: Receiver arriving first transitions to SUSPENDED_CSP."""
+    """TEST-COOS-03: Receiver arriving first transitions to SUSPENDED_CSP."""
     sched = Scheduler()
     ch = sched.create_channel()
     t2 = sched.get_task(sched.spawn("t2"))
@@ -90,7 +90,7 @@ def test_coos_03_recv_first_suspends_csp():
 
 
 def test_coos_04_send_after_recv_completes_rendezvous():
-    """COOS-04: Sender arriving second completes rendezvous and transfers ownership."""
+    """TEST-COOS-04: Sender arriving second completes rendezvous and transfers ownership."""
     sched = Scheduler()
     ch = sched.create_channel()
     t1 = sched.get_task(sched.spawn("t1"))
@@ -106,7 +106,7 @@ def test_coos_04_send_after_recv_completes_rendezvous():
 
 
 def test_coos_05_one_waiter_per_channel_enforced():
-    """COOS-05: Only one waiter per channel direction; second waiter asserts."""
+    """TEST-COOS-05: Only one waiter per channel direction; second waiter asserts."""
     sched = Scheduler()
     ch = sched.create_channel()
     t1 = sched.get_task(sched.spawn("t1"))
@@ -122,7 +122,7 @@ def test_coos_05_one_waiter_per_channel_enforced():
 
 
 def test_coos_06_csp_handoff_direct_switch():
-    """COOS-06: Rendezvous completion performs direct symmetric handoff to head of READY queue."""
+    """TEST-COOS-06: Rendezvous completion performs direct symmetric handoff to head of READY queue."""
     sched = Scheduler()
     ch = sched.create_channel()
     t1 = sched.get_task(sched.spawn("t1"))
@@ -137,7 +137,7 @@ def test_coos_06_csp_handoff_direct_switch():
 
 
 def test_coos_07_consecutive_handoff_limit_yields():
-    """COOS-07: Consecutive handoff limit (4) forces yield back to main loop."""
+    """TEST-COOS-07: Consecutive handoff limit (4) forces yield back to main loop."""
     sched = Scheduler(max_handoffs=2)
     ch1 = sched.create_channel()
     ch2 = sched.create_channel()
@@ -167,7 +167,7 @@ def test_coos_07_consecutive_handoff_limit_yields():
 
 
 def test_coos_08_interrupt_notification_and_drain():
-    """COOS-08 / COOS-GOTCHA-03: ISR notification queues interrupt without direct mutation
+    """TEST-COOS-08 / GOTCHA-COOS-03: ISR notification queues interrupt without direct mutation
     (non-blocking ISR-side enqueue); drain wakes the waiting task on the next idle pass."""
     sched = Scheduler()
     woken = []
@@ -186,7 +186,7 @@ def test_coos_08_interrupt_notification_and_drain():
 
 
 def test_coos_09_interrupt_queue_overflow_drops():
-    """COOS-09: Overflowing ISR queue drops notification and increments dropped_irqs counter."""
+    """TEST-COOS-09: Overflowing ISR queue drops notification and increments dropped_irqs counter."""
     sched = Scheduler()
     for i in range(16):
         assert sched.notify_interrupt(InterruptEvent(i, 0, 0, 0, 0))
@@ -197,7 +197,7 @@ def test_coos_09_interrupt_queue_overflow_drops():
 
 
 def test_coos_10_idle_detection_when_all_blocked():
-    """COOS-10: the idle hook fires once the READY queue empties because every task is blocked
+    """TEST-COOS-10: the idle hook fires once the READY queue empties because every task is blocked
     (SUSPENDED_CSP), not merely because the run loop happened to stop."""
     sched = Scheduler()
     ch = sched.create_channel()
@@ -217,7 +217,7 @@ def test_coos_10_idle_detection_when_all_blocked():
 
 
 def test_coos_11_no_double_ownership_sanity():
-    """COOS-11: at rendezvous completion, the sender's pending_val and the receiver's
+    """TEST-COOS-11: at rendezvous completion, the sender's pending_val and the receiver's
     received_val are never both populated at once (single-owner invariant; mirrors
     coos_channel_model.py's AG(Not(double_owned)))."""
     sched = Scheduler()

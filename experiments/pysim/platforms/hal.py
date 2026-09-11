@@ -183,14 +183,14 @@ class HalBufferPool:
         contend for the same device, so acquire_buffer() is the ownership-
         taking call a client must make before it may touch a slot at all --
         every other method re-checks that ownership before honoring a
-        request (HAL-GOTCHA-01).
+        request (GOTCHA-HAL-01).
     """
 
     def __init__(self):
         self._slots: list[HalBufferHandle | None] = [None] * FB_CONF_HAL_MAX_BUFFERS
 
     def acquire_buffer(self, task_id: int, size: int) -> HalBufferHandle:
-        """Claims ownership of one free static slot for `task_id` (HAL-GOTCHA-01)."""
+        """Claims ownership of one free static slot for `task_id` (GOTCHA-HAL-01)."""
         if size <= 0 or size > FB_CONF_HAL_BUFFER_SIZE:
             raise ValueError(
                 f"acquire_buffer(size={size}) exceeds FB_CONF_HAL_BUFFER_SIZE={FB_CONF_HAL_BUFFER_SIZE}"

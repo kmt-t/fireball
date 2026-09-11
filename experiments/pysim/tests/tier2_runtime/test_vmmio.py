@@ -52,7 +52,7 @@ def wat_to_wasm(wat_text: str) -> bytes:
 
 
 def test_vmmio_01_three_tier_gate_dispatch():
-    """VMMIO-01: 3-tier address gate resolves Linear RAM, Static Devices, and SHM/Passthrough."""
+    """TEST-VMMIO-01: 3-tier address gate resolves Linear RAM, Static Devices, and SHM/Passthrough."""
     ctrl = VMMIOController(guest_ram_size=64 * 1024)
     ctrl.map_static_device(0xC0000)
     ctrl.map_passthrough_page(vpn=0xF0000, phys_page=1)
@@ -71,7 +71,7 @@ def test_vmmio_01_three_tier_gate_dispatch():
 
 
 def test_vmmio_02_fc14_shm_owner_isolation_and_flight():
-    """VMMIO-02: FC=14 shared memory enforces owner_id match and traps FLIGHT state."""
+    """TEST-VMMIO-02: FC=14 shared memory enforces owner_id match and traps FLIGHT state."""
     ctrl = VMMIOController(guest_ram_size=64 * 1024)
     ctrl.map_shm_page(vpn=0xE0000, phys_page=2, owner_id=1)
     # Owner 1 access OK
@@ -87,7 +87,7 @@ def test_vmmio_02_fc14_shm_owner_isolation_and_flight():
 
 
 def test_vmmio_03_undefined_function_code_traps():
-    """VMMIO-03: Undefined FC (0x0..0xB, 0xD) immediately traps."""
+    """TEST-VMMIO-03: Undefined FC (0x0..0xB, 0xD) immediately traps."""
     ctrl = VMMIOController(guest_ram_size=64 * 1024)
     stat, _ = ctrl.access(raw_addr=0xD000_0000, is_write=False, current_task_id=1)
     assert stat == TrapCode.UNDEFINED_FC

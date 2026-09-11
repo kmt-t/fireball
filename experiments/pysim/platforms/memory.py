@@ -221,11 +221,11 @@ class SharedBlock:
 
     def get_address(self, caller_task_id: int) -> int:
         assert self._is_active, "Cannot access released or dropped SharedBlock"
-        assert self.owner == caller_task_id, "MEM-GOTCHA-02: non-owner cannot access SharedBlock"
+        assert self.owner == caller_task_id, "GOTCHA-MEM-02: non-owner cannot access SharedBlock"
         return self.base_address
 
     def get_size(self, caller_task_id: int) -> int:
-        assert self.owner == caller_task_id, "MEM-GOTCHA-02: non-owner cannot access SharedBlock"
+        assert self.owner == caller_task_id, "GOTCHA-MEM-02: non-owner cannot access SharedBlock"
         return self.size
 
     def get_owner(self) -> int:
@@ -332,7 +332,7 @@ class SharedBlock:
     def release(self, caller_task_id: int) -> int:
         """Revoke sender access and prepare for transfer (marks FLIGHT)."""
         assert self._is_active, "Cannot release inactive SharedBlock"
-        assert self.owner == caller_task_id, "MEM-GOTCHA-02: non-owner cannot release SharedBlock"
+        assert self.owner == caller_task_id, "GOTCHA-MEM-02: non-owner cannot release SharedBlock"
         if self._manager is not None:
             self._is_active = False
             self._is_in_flight = True

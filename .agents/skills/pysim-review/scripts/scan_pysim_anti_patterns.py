@@ -97,14 +97,29 @@ class PySimASTVisitor(ast.NodeVisitor):
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         # Check __slots__ definition for non-enum/non-exception classes
         base_names = [b.id for b in node.bases if isinstance(b, ast.Name)]
-        is_exempt = any(name in ("IntEnum", "Enum", "Exception", "RuntimeError", "ValueError", "TypedDict") for name in base_names)
+        is_exempt = any(
+            name in ("IntEnum", "IntFlag", "Enum", "Exception", "RuntimeError", "ValueError", "TypedDict")
+            for name in base_names
+        )
+        dataclass_slots = any(
+            isinstance(decorator, ast.Call)
+            and isinstance(decorator.func, ast.Name)
+            and decorator.func.id == "dataclass"
+            and any(
+                keyword.arg == "slots"
+                and isinstance(keyword.value, ast.Constant)
+                and keyword.value.value is True
+                for keyword in decorator.keywords
+            )
+            for decorator in node.decorator_list
+        )
         if not is_exempt:
             has_slots = any(
                 isinstance(stmt, ast.Assign)
                 and any(isinstance(target, ast.Name) and target.id == "__slots__" for target in stmt.targets)
                 for stmt in node.body
             )
-            if not has_slots:
+            if not has_slots and not dataclass_slots:
                 self._add_issue(
                     "NO_SLOTS",
                     "WARNING",

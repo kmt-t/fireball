@@ -82,7 +82,7 @@ class FbSyscallId(IntEnum):
     # Reserved: registered per runtime_syscall.md's ID table, but this
     # experiment has no dedicated GPIO vMMIO register to back a real pin
     # write with, so it is deliberately left out of syscall_handlers below
-    # and falls through fireball_call's NOSYS path (see SYS-GOTCHA-01 /
+    # and falls through fireball_call's NOSYS path (see GOTCHA-SYS-01 /
     # test_syscall.py's test for this exact ID). GPIO in this experiment is
     # instead reachable through the IPC-based HAL_GPIO device (fireball://
     # device/gpio/0), not through fireball_call directly.

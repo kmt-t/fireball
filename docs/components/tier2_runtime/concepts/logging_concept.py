@@ -2,11 +2,11 @@
 docs/components/tier2_runtime/concepts/logging_concept.py
 Reference Concept Implementation: Fireball Logger Component
 Implementation Invariants & Gotchas:
-- LOG-GOTCHA-01: Log API accepts only scalar u32 arguments and static dictionary offsets,
+- GOTCHA-LOG-01: Log API accepts only scalar u32 arguments and static dictionary offsets,
   completely eliminating runtime string pointers and Use-After-Free hazards.
-- LOG-GOTCHA-02: Ring buffer safely overwrites oldest entries when full, preventing
+- GOTCHA-LOG-02: Ring buffer safely overwrites oldest entries when full, preventing
   log-induced deadlocks and preserving system availability.
-- LOG-GOTCHA-03: Log flush groups entries into DMA batches and verifies interrupt_pending
+- GOTCHA-LOG-03: Log flush groups entries into DMA batches and verifies interrupt_pending
   only at batch boundaries (after each batch's dma_complete), never mid-batch, since a
   started DMA transfer cannot be preempted.
 """
@@ -204,7 +204,7 @@ class Logger:
         Entries are grouped into DMA batches of up to `batch_size`. A started DMA
         transfer cannot be preempted, so `interrupt_pending` is checked only after
         each batch completes (dma_complete), never while a batch is being collected
-        or transmitted (LOG-GOTCHA-03). If interrupt_pending() is true after a batch,
+        or transmitted (GOTCHA-LOG-03). If interrupt_pending() is true after a batch,
         remaining entries stay buffered and control returns to the scheduler.
         """
         total_flushed = 0
@@ -323,7 +323,7 @@ def test_logger_ipc_message_handling() -> None:
 
 
 def test_logger_flush_interruption() -> None:
-    """LOG-GOTCHA-03: interrupt_pending is checked only at batch boundaries
+    """GOTCHA-LOG-03: interrupt_pending is checked only at batch boundaries
     (after a batch's dma_complete), never mid-batch or per entry."""
     dictionary = LogDictionary([(0x01, "Message %d")])
     transport = MockHALTransport()

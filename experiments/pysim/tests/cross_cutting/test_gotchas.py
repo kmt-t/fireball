@@ -83,12 +83,12 @@ from wasm_reader import parse
 from x64_jit import TraceCompiler
 
 # ==============================================================================
-# 1. Interpreter Gotchas (INTP-GOTCHA-01 ~ 04)
+# 1. Interpreter Gotchas (GOTCHA-INTP-01 ~ 04)
 # ==============================================================================
 
 
 def test_intp_gotcha_01_tos_stack_sync():
-    """INTP-GOTCHA-01: R3 (tos) and operand stack memory remain synchronized across individual instructions."""
+    """GOTCHA-INTP-01: R3 (tos) and operand stack memory remain synchronized across individual instructions."""
     wat = """
     (module
       (func (export "main") (result i32)
@@ -126,7 +126,7 @@ def test_intp_gotcha_01_tos_stack_sync():
 
 
 def test_intp_gotcha_02_label_arity_pruning_restores_tos():
-    """INTP-GOTCHA-02: Stack pruning on block exit (br 0) accurately preserves values and restores tos."""
+    """GOTCHA-INTP-02: Stack pruning on block exit (br 0) accurately preserves values and restores tos."""
     wat = """
     (module
       (func (export "main") (result i32)
@@ -152,7 +152,7 @@ def test_intp_gotcha_02_label_arity_pruning_restores_tos():
 
 
 def test_intp_gotcha_03_if_false_no_else_no_frame_leak():
-    """INTP-GOTCHA-03: if with false condition and no else does not leak a control frame on stack."""
+    """GOTCHA-INTP-03: if with false condition and no else does not leak a control frame on stack."""
     wat = """
     (module
       (func (export "main") (result i32)
@@ -182,7 +182,7 @@ def test_intp_gotcha_03_if_false_no_else_no_frame_leak():
 
 
 def test_intp_gotcha_04_unified_pc_multi_module():
-    """INTP-GOTCHA-04: UnifiedPC ((func_index << 16) | offset) prevents cross-function collision in FlatMapView."""
+    """GOTCHA-INTP-04: UnifiedPC ((func_index << 16) | offset) prevents cross-function collision in FlatMapView."""
     pc_fn0 = (0 << 16) | 0x0010
     pc_fn1 = (1 << 16) | 0x0010
     assert pc_fn0 != pc_fn1
@@ -202,7 +202,7 @@ def test_intp_gotcha_04_unified_pc_multi_module():
 
 
 def test_jitc_gotcha_01_02_03_conventions():
-    """JITC-GOTCHA-01, 02, 03: Verify JIT conforms to CPS 4-arg convention, mem load offsets, and TOS unspilled."""
+    """GOTCHA-JITC-01, 02, 03: Verify JIT conforms to CPS 4-arg convention, mem load offsets, and TOS unspilled."""
     # 1. Test x64 JIT CPS 4-arg invocation -- real WASM bytecode for
     # `local.get 0; i32.const 5; i32.add; local.set 0`, run through the same
     # extract_basic_blocks + compile_block path production JIT compilation uses.
@@ -229,15 +229,15 @@ def test_jitc_gotcha_01_02_03_conventions():
     )
     assert locals_arr[0] == 15
 
-    # 2. Test Thumb-2 JIT Copy-Patch Engine: JITC-GOTCHA-01 (register isolation),
-    # JITC-GOTCHA-02 (mem_base/size loaded from [R0, #0x28] and [R0, #0x2C]),
-    # and JITC-GOTCHA-03 (Basic block end stack flush & IP/SP context sync).
+    # 2. Test Thumb-2 JIT Copy-Patch Engine: GOTCHA-JITC-01 (register isolation),
+    # GOTCHA-JITC-02 (mem_base/size loaded from [R0, #0x28] and [R0, #0x2C]),
+    # and GOTCHA-JITC-03 (Basic block end stack flush & IP/SP context sync).
     engine = CopyPatchJITEngine()
     ops = [("i32.const", 42), ("local.set", 4), ("i32.load", None)]
     start_pos, count = engine.compile_trace(ops)
     code = engine.execute_native(start_pos, count)
 
-    # JITC-GOTCHA-01: Shared CPS argument registers R0/R1/R2 are preserved and never used as scratch
+    # GOTCHA-JITC-01: Shared CPS argument registers R0/R1/R2 are preserved and never used as scratch
     # destination registers inside the trace body (R3 is TOS).
     for inst in code:
         mnemonic, _, operands = inst.partition(" ")
@@ -259,11 +259,11 @@ def test_jitc_gotcha_01_02_03_conventions():
         dest = operands.split(",")[0].strip()
         assert dest not in ("r0", "r1", "r2"), f"CPS argument register {dest} clobbered by {inst}"
 
-    # JITC-GOTCHA-02: mem_base and mem_size loaded from [R0, #0x28] and [R0, #0x2C]
+    # GOTCHA-JITC-02: mem_base and mem_size loaded from [R0, #0x28] and [R0, #0x2C]
     assert code[1] == "LDR.W r8, [r0, #0x28]"
     assert code[2] == "LDR.W r9, [r0, #0x2C]"
 
-    # JITC-GOTCHA-03: Basic block end flushes SP and IP to execution_context R0 (+0x0C and +0x00),
+    # GOTCHA-JITC-03: Basic block end flushes SP and IP to execution_context R0 (+0x0C and +0x00),
     # and epilogue pops callee-saved registers {r4-r6, r8-r11, pc}.
     assert "STR.W r1, [r0, #0x0C]" in code
     assert "STR.W r6, [r0, #0x00]" in code
@@ -271,13 +271,13 @@ def test_jitc_gotcha_01_02_03_conventions():
 
 
 def test_jitc_gotcha_04_05_boundary_check_and_backpatch():
-    """JITC-GOTCHA-04, 05: Boundary check precedes memory access, and BHS.W is accurately backpatched."""
+    """GOTCHA-JITC-04, 05: Boundary check precedes memory access, and BHS.W is accurately backpatched."""
     engine = CopyPatchJITEngine()
     ops = [("i32.const", 10), ("i32.load", None), ("local.set", 4)]
     start_pos, count = engine.compile_trace(ops)
     code = engine.execute_native(start_pos, count)
 
-    # JITC-GOTCHA-04: CMP addr, r9 and BHS.W precede LDR.W
+    # GOTCHA-JITC-04: CMP addr, r9 and BHS.W precede LDR.W
     cmp_idx = -1
     bhs_idx = -1
     ldr_idx = -1
@@ -291,12 +291,12 @@ def test_jitc_gotcha_04_05_boundary_check_and_backpatch():
 
     assert 0 <= cmp_idx < bhs_idx < ldr_idx, "Boundary check does not precede memory load!"
 
-    # JITC-GOTCHA-05: Trap tail exists at the end with BX r12 fallback
+    # GOTCHA-JITC-05: Trap tail exists at the end with BX r12 fallback
     assert code[-1] == "BX r12"
 
 
 def test_jitc_gotcha_06_arm_mls_instruction_ordering():
-    """JITC-GOTCHA-06: ARM MLS ordering Rd = Ra - Rn * Rm computes remainder correctly."""
+    """GOTCHA-JITC-06: ARM MLS ordering Rd = Ra - Rn * Rm computes remainder correctly."""
     asm = Thumb2Assembler()
     encoded = asm.mls(Reg.R4, Reg.R12, Reg.R4, Reg.R5)
     engine = CopyPatchJITEngine()
@@ -306,7 +306,7 @@ def test_jitc_gotcha_06_arm_mls_instruction_ordering():
 
 
 def test_jitr_gotcha_01_idle_hook_skips_recompiling_already_resident_trace():
-    """JITR-GOTCHA-01: idle_hook skips recompilation if trace is already resident in cache."""
+    """GOTCHA-JITR-01: idle_hook skips recompilation if trace is already resident in cache."""
     compile_calls = []
 
     def fake_compile(pc):
@@ -329,7 +329,7 @@ def test_jitr_gotcha_01_idle_hook_skips_recompiling_already_resident_trace():
 
 
 def test_jitr_gotcha_02_promotion_transfers_inbound_sources():
-    """JITR-GOTCHA-02: Promoting a trace from Oldest to Active preserves inbound sources avoiding dangling jump."""
+    """GOTCHA-JITR-02: Promoting a trace from Oldest to Active preserves inbound sources avoiding dangling jump."""
     cache = JITMultiBufferCache(bank_capacity=512)
     t2 = JITTrace(head_pc=0x200, native_fn=lambda: 2, size_bytes=64)
     cache.insert(t2)  # t2 -> Active
@@ -352,7 +352,7 @@ def test_jitr_gotcha_02_promotion_transfers_inbound_sources():
 
 
 def test_jitr_gotcha_03_lifo_reverse_compilation_order():
-    """JITR-GOTCHA-03: Compile queue processes in LIFO order maximizing immediate forward chaining."""
+    """GOTCHA-JITR-03: Compile queue processes in LIFO order maximizing immediate forward chaining."""
     compiled_traces = []
 
     def dummy_compiler(pc: int) -> JITTrace:
@@ -373,12 +373,12 @@ def test_jitr_gotcha_03_lifo_reverse_compilation_order():
 
 
 # ==============================================================================
-# 3. vSoC Gotchas (VSOC-GOTCHA-01 ~ 03)
+# 3. vSoC Gotchas (GOTCHA-VSOC-01 ~ 03)
 # ==============================================================================
 
 
 def test_vsoc_gotcha_01_02_stateless_interp_and_yield_in_vsoc():
-    """VSOC-GOTCHA-01, 02: Interpreter is stateless; JIT check and dispatch occur in vSoC engine."""
+    """GOTCHA-VSOC-01, 02: Interpreter is stateless; JIT check and dispatch occur in vSoC engine."""
     wat = """
     (module
       (func (export "sum") (param i32) (result i32)
@@ -433,12 +433,12 @@ def test_vsoc_gotcha_01_02_stateless_interp_and_yield_in_vsoc():
 
 
 # ==============================================================================
-# 4. vMMIO Gotchas (VMMIO-GOTCHA-01 ~ 03)
+# 4. vMMIO Gotchas (GOTCHA-VMMIO-01 ~ 03)
 # ==============================================================================
 
 
 def test_vmmio_gotcha_01_ram_bypass_never_touches_tlb():
-    """VMMIO-GOTCHA-01: Bit 31 == 0 is Guest RAM bypass and never increments TLB hit/miss."""
+    """GOTCHA-VMMIO-01: Bit 31 == 0 is Guest RAM bypass and never increments TLB hit/miss."""
     ctrl = VMMIOController(guest_ram_size=64 * 1024)
     hits_before = ctrl.tlb_hits
     misses_before = ctrl.tlb_misses
@@ -450,7 +450,7 @@ def test_vmmio_gotcha_01_ram_bypass_never_touches_tlb():
 
 
 def test_vmmio_gotcha_02_folding_xor_hash_disperses_function_codes():
-    """VMMIO-GOTCHA-02: 4-bit Folding XOR Hash disperses different Function Codes of same lower page."""
+    """GOTCHA-VMMIO-02: 4-bit Folding XOR Hash disperses different Function Codes of same lower page."""
     vpn_c = 0x8000C
     vpn_e = 0x8000E
     idx_c = (vpn_c ^ (vpn_c >> 4) ^ (vpn_c >> 8) ^ (vpn_c >> 12)) & 0x0F
@@ -459,7 +459,7 @@ def test_vmmio_gotcha_02_folding_xor_hash_disperses_function_codes():
 
 
 def test_vmmio_gotcha_03_revoke_invalidates_tlb_blocks_inflight():
-    """VMMIO-GOTCHA-03: Revoke immediately invalidates TLB entry and blocks access in-flight."""
+    """GOTCHA-VMMIO-03: Revoke immediately invalidates TLB entry and blocks access in-flight."""
     ctrl = VMMIOController(guest_ram_size=64 * 1024)
     vpn = 0xE0000
     ctrl.map_shm_page(vpn=vpn, phys_page=2, owner_id=1)
@@ -481,7 +481,7 @@ def test_vmmio_gotcha_03_revoke_invalidates_tlb_blocks_inflight():
 
 
 def test_ipcr_gotcha_01_no_queue_assertion_on_duplicate_send():
-    """IPCR-GOTCHA-01: CSP rendezvous channel has no queue; duplicate send raises assertion, not QUEUE_FULL."""
+    """GOTCHA-IPCR-01: CSP rendezvous channel has no queue; duplicate send raises assertion, not QUEUE_FULL."""
     sched = Scheduler()
     router = IPCRouter(sched)
     sender_id = sched.spawn("sender", role=Role.RUNTIME)
@@ -511,7 +511,7 @@ def test_ipcr_gotcha_01_no_queue_assertion_on_duplicate_send():
 
 
 def test_ipcr_gotcha_02_preflight_rejection_preserves_sender_ownership():
-    """IPCR-GOTCHA-02: Preflight rejection (RBAC denial) keeps message in SENDER_OWNS."""
+    """GOTCHA-IPCR-02: Preflight rejection (RBAC denial) keeps message in SENDER_OWNS."""
     sched = Scheduler()
     router = IPCRouter(sched)
     sender_id = sched.spawn("sender_hal", role=Role.HAL_UART)
@@ -537,7 +537,7 @@ def test_ipcr_gotcha_02_preflight_rejection_preserves_sender_ownership():
 
 
 def test_sched_gotcha_01_handoff_limit_forces_return_to_main_loop():
-    """SCHED-GOTCHA-01: Direct CSP handoff limit forces return to main scheduling loop to prevent starvation."""
+    """GOTCHA-SCHED-01: Direct CSP handoff limit forces return to main scheduling loop to prevent starvation."""
     sched = Scheduler(max_handoffs=2)
     ch1 = sched.create_channel()
     ch2 = sched.create_channel()
@@ -575,7 +575,7 @@ def test_sched_gotcha_01_handoff_limit_forces_return_to_main_loop():
 
 
 def test_coos_gotcha_01_no_data_slot_in_channel():
-    """COOS-GOTCHA-01: Channel has no internal value buffer; zero-copy handoff guarantees single ownership."""
+    """GOTCHA-COOS-01: Channel has no internal value buffer; zero-copy handoff guarantees single ownership."""
     sched = Scheduler()
     ch = sched.create_channel()
     assert not hasattr(ch, "buffer"), "Channel must not contain a message buffer queue"
@@ -599,7 +599,7 @@ def test_coos_gotcha_01_no_data_slot_in_channel():
 
 
 def test_coos_gotcha_02_single_waiter_assert():
-    """COOS-GOTCHA-02: 1-channel-1-waiter constraint triggers assertion on duplicate wait direction."""
+    """GOTCHA-COOS-02: 1-channel-1-waiter constraint triggers assertion on duplicate wait direction."""
     sched = Scheduler()
     ch = sched.create_channel()
     t1 = sched.get_task(sched.spawn("sender1"))
@@ -617,7 +617,7 @@ def test_coos_gotcha_02_single_waiter_assert():
 
 
 def test_cont_gotcha_01_bit_view_power_of_two_factors():
-    """CONT-GOTCHA-01: bit_view rejects non-divisor-of-8 widths (1, 2, 4 only)."""
+    """GOTCHA-CONT-01: bit_view rejects non-divisor-of-8 widths (1, 2, 4 only)."""
     buf = bytearray(8)
     bv1 = BitView(buf, bits=1)
     bv2 = BitView(buf, bits=2)
@@ -633,7 +633,7 @@ def test_cont_gotcha_01_bit_view_power_of_two_factors():
 
 
 def test_cont_gotcha_02_narrowing_never_expands_bounds():
-    """CONT-GOTCHA-02: View slicing is strictly monotonic narrowing and cannot expand outside parent span."""
+    """GOTCHA-CONT-02: View slicing is strictly monotonic narrowing and cannot expand outside parent span."""
     sm = MutableFlatMapStorage(capacity=16)
     for k, v in enumerate([10, 20, 30, 40, 50]):
         sm.insert(k, v)
@@ -652,7 +652,7 @@ def test_cont_gotcha_02_narrowing_never_expands_bounds():
 
 
 def test_log_gotcha_01_no_runtime_pointer_scalar_args_only():
-    """LOG-GOTCHA-01: Logging interface rejects string specifiers and accepts only scalar u32 arguments."""
+    """GOTCHA-LOG-01: Logging interface rejects string specifiers and accepts only scalar u32 arguments."""
     d = LogDictionary()
     for bad_fmt in ["Message: %s", "Pointer: %p", "Char: %c"]:
         try:
@@ -669,7 +669,7 @@ def test_log_gotcha_01_no_runtime_pointer_scalar_args_only():
 
 
 def test_log_gotcha_02_ring_buffer_oldest_overwrite():
-    """LOG-GOTCHA-02: Ring buffer overwrite on full preserves system non-blocking invariant."""
+    """GOTCHA-LOG-02: Ring buffer overwrite on full preserves system non-blocking invariant."""
     d = LogDictionary()
     d.register(0x10, "Event %d")
     uart = UartTransport()
@@ -685,7 +685,7 @@ def test_log_gotcha_02_ring_buffer_oldest_overwrite():
 
 
 def test_mem_gotcha_01_page_granular_isolation():
-    """MEM-GOTCHA-01: Page-granular permission isolation ensures distinct tasks never share the same 4KB physical page."""
+    """GOTCHA-MEM-01: Page-granular permission isolation ensures distinct tasks never share the same 4KB physical page."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=0x40000)
     b1 = mm.allocate_shared(caller_task_id=1, size=64).unwrap()
@@ -696,7 +696,7 @@ def test_mem_gotcha_01_page_granular_isolation():
 
 
 def test_mem_gotcha_02_release_and_flight_protection():
-    """MEM-GOTCHA-02: Releasing a SharedBlock marks it in-flight and revokes access until claimed."""
+    """GOTCHA-MEM-02: Releasing a SharedBlock marks it in-flight and revokes access until claimed."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=0x40000)
     b = mm.allocate_shared(caller_task_id=1, size=64).unwrap()
@@ -716,7 +716,7 @@ def test_mem_gotcha_02_release_and_flight_protection():
 
 
 def test_mem_gotcha_02b_release_owner_only():
-    """MEM-GOTCHA-02: Non-owner task cannot release() or access another task's SharedBlock."""
+    """GOTCHA-MEM-02: Non-owner task cannot release() or access another task's SharedBlock."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=0x40000)
     b = mm.allocate_shared(caller_task_id=1, size=64).unwrap()
@@ -725,7 +725,7 @@ def test_mem_gotcha_02b_release_owner_only():
         b.release(caller_task_id=2)
         raise AssertionError("Non-owner must not be able to release() another task's SharedBlock")
     except AssertionError as e:
-        assert "MEM-GOTCHA-02" in str(e)
+        assert "GOTCHA-MEM-02" in str(e)
 
     try:
         b.get_address(caller_task_id=2)
@@ -733,7 +733,7 @@ def test_mem_gotcha_02b_release_owner_only():
             "Non-owner must not be able to get_address() another task's SharedBlock"
         )
     except AssertionError as e:
-        assert "MEM-GOTCHA-02" in str(e)
+        assert "GOTCHA-MEM-02" in str(e)
 
     assert b._is_active
     assert b.get_owner() == 1
@@ -742,7 +742,7 @@ def test_mem_gotcha_02b_release_owner_only():
 
 
 def test_hal_gotcha_01_hal_buffer_pool_bounds_violation_rejected():
-    """HAL-GOTCHA-01: HalBufferPool rejects slice requests exceeding maximum buffer size and non-owner releases."""
+    """GOTCHA-HAL-01: HalBufferPool rejects slice requests exceeding maximum buffer size and non-owner releases."""
     pool = HalBufferPool()
     handle = pool.acquire_buffer(task_id=1, size=128)
     assert handle.capacity == 128
@@ -765,14 +765,14 @@ def test_hal_gotcha_01_hal_buffer_pool_bounds_violation_rejected():
 
 
 def test_sys_gotcha_01_undefined_syscall_returns_enosys():
-    """SYS-GOTCHA-01: Undefined syscall ID safely returns WasiErrno.NOSYS instead of aborting or panicking."""
+    """GOTCHA-SYS-01: Undefined syscall ID safely returns WasiErrno.NOSYS instead of aborting or panicking."""
     sys_inst = System()
     res = sys_inst.fireball_call(0xFE, 0, 0, 0, 0, 0, 0)
     assert res == int(WasiErrno.NOSYS), f"Expected NOSYS (52), got {res}"
 
 
 def test_dbg_gotcha_01_memory_write_flushes_jit_cache():
-    """DBG-GOTCHA-01: Debugger memory write immediately invalidates all JIT cache banks."""
+    """GOTCHA-DBG-01: Debugger memory write immediately invalidates all JIT cache banks."""
     engine = IntegratedHybridEngine(compiler=TraceCompiler())
     dbg = DebuggerManager(engine=engine)
     dbg.attach()
@@ -801,7 +801,7 @@ def test_dbg_gotcha_01_memory_write_flushes_jit_cache():
 
 
 def test_load_gotcha_01_non_existent_symbol_fast_rejection():
-    """LOAD-GOTCHA-01: Non-existent symbol rejection is O(k) without linear scan."""
+    """GOTCHA-LOAD-01: Non-existent symbol rejection is O(k) without linear scan."""
     loader = WasmLoader()
     from tier2_runtime.test_loader import _build_test_wasm_binary
 

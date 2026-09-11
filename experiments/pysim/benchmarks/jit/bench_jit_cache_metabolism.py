@@ -1,7 +1,7 @@
 """
 experiments/pysim/benchmarks/jit/bench_jit_cache_metabolism.py
 JIT Code Cache Metabolism, Hit-Rate, Oldest-Only Promotion & Corner Cases Benchmark.
-Conforms strictly to docs/components/tier3_jit/benchmarks/jit_cache_metabolism_bench_spec.md (BENCH-METAB-01 ~ BENCH-METAB-05).
+Conforms strictly to docs/components/tier3_jit/benchmarks/jit_cache_metabolism_bench_spec.md (BENCHMARK-METAB-01 ~ BENCHMARK-METAB-05).
 """
 
 from __future__ import annotations

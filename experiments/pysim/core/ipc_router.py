@@ -4,9 +4,9 @@ Fireball IPC Router: URI/RBAC front-end over the CSP rendezvous engine.
 - Stage 1: Static URI Lookup to Service Descriptor via FlatMapView (binary search)
 - Stage 2: Role-Based Access Control (RBAC)
 - Stage 3: Bufferless synchronous CSP handoff (scheduler.Channel).
-  - IPCR-GOTCHA-01: Duplicate send on a waiting channel triggers assertion error
+  - GOTCHA-IPCR-01: Duplicate send on a waiting channel triggers assertion error
     (no queue overflow error, as queue does not exist).
-  - IPCR-GOTCHA-02: Preflight validation failure preserves sender ownership
+  - GOTCHA-IPCR-02: Preflight validation failure preserves sender ownership
     (never revoke ownership before target and permissions are verified).
 """
 

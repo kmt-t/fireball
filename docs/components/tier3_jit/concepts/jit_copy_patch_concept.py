@@ -477,7 +477,7 @@ class CopyPatchJITEngine:
           every dirty cached value (TOS/NOS, ...) to its stack_bot-relative
           canonical address first, since nothing preserves R4-R6 past the
           POP/BX that follows -- WASM operand-stack state and the C return value
-          are unrelated ({JITC-GOTCHA-07}).
+          are unrelated ({GOTCHA-JITC-07}).
         - "chain": a direct backpatched B.W to a resident successor trace's chain
           entry point (`chain_target_addr` must be that successor's
           `last_chain_entry_byte_offset`, not its trace-start address). No flush,
@@ -695,7 +695,7 @@ class CopyPatchJITEngine:
         # - If unresolved (chain_target_addr == 0): falls through, flushes dirty spills,
         #   and executes epilogue_return (POP {..., pc}) to return to the interpreter.
         # This completely avoids in-place machine code rewriting ({ADR_TosCacheAsymmetry},
-        # {JIT_LazyChaining}, {JITC-GOTCHA-07}).
+        # {JIT_LazyChaining}, {GOTCHA-JITC-07}).
         self.last_chain_branch_byte_addr = None
         if exit_kind in ("chain", "dynamic_chain"):
             # 1. Dynamically load chain_target_addr from the inlined trace header (+0x0C)

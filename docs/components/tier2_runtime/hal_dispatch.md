@@ -136,12 +136,12 @@ Fireball の HAL は、WASI 0.3p と親和性のある汎用インターフェ�
 
 ### 6.2 安全性制約と方策
 - **目標**: ゼロコピー転送における境界安全性を契約として保証する。
-- **方策**: HALバッファハンドル（`hal-buf-id`）経由のみでデータを受け渡し、生ポインタの直接受け渡し経路を契約上排除する。物理的な境界検査（`HAL-GOTCHA-01`）は Tier 3 を正本とする。
+- **方策**: HALバッファハンドル（`hal-buf-id`）経由のみでデータを受け渡し、生ポインタの直接受け渡し経路を契約上排除する。物理的な境界検査（`GOTCHA-HAL-01`）は Tier 3 を正本とする。
 
 ## 7. 形式検証・テスト仕様との対応
 
 ### 7.1 検証対象の不変条件
-- **ゼロコピー転送安全性**: 生ポインタ渡しを行わず、HALバッファハンドル（`hal-buf-id` / `hal-buffer-slice`）による境界検証を経由すること（`HAL-02`, `HAL-06`）。物理検証は Tier 3 を正本とする。
+- **ゼロコピー転送安全性**: 生ポインタ渡しを行わず、HALバッファハンドル（`hal-buf-id` / `hal-buffer-slice`）による境界検証を経由すること（`TEST-HAL-02`, `TEST-HAL-06`）。物理検証は Tier 3 を正本とする。
 
 ### 7.2 テスト仕様書との連携
-本コンポーネントのテストケースは、[`hal_dispatch_test_spec.md`](docs/components/tier2_runtime/tests/hal_dispatch_test_spec.md) を正本として定義する。物理ドライバ実装のテストケース（HAL-01〜HAL-10, HAL-GOTCHA-01〜03）は [`platform_driver_test_spec.md`](docs/components/tier3_platform/tests/platform_driver_test_spec.md) を参照。
+本コンポーネントのテストケースは、[`hal_dispatch_test_spec.md`](docs/components/tier2_runtime/tests/hal_dispatch_test_spec.md) を正本として定義する。物理ドライバ実装のテストケース（TEST-HAL-01〜TEST-HAL-10, GOTCHA-HAL-01〜03）は [`platform_driver_test_spec.md`](docs/components/tier3_platform/tests/platform_driver_test_spec.md) を参照。

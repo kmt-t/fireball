@@ -50,32 +50,32 @@
 
 | 仕様キーワード / 不変条件 | 定義元設計書 | 仕様上の定義・要件 | カバーテスト ID | 実装実証 |
 | :--- | :--- | :--- | :--- | :---: |
-| `RadixBinaryTreeView_bswap32` | `system_containers.md`, `jit_runtime.md` | UnifiedPC（`func_idx << 20 \| pc`）の bswap32 によるリトルエンディアン上位集約インデックス検索 | `INT-40`, `INT-41` | ✅ PASS |
-| `FlatMapView_BinarySearch` | `system_containers.md`, `ipc_router.md` | 静的ソート配列に対する $O(\log N)$ バイナリサーチ（動的割当なし） | `INT-01`, `INT-80` | ✅ PASS |
-| `RingBuffer_Overwrite` | `system_containers.md`, `runtime_logging.md` | 静的容量リングバッファ、満杯時の最古エントリ自動上書き | `INT-82` | ✅ PASS |
-| `BitView_CardMarking` | `system_containers.md`, `jit_runtime.md` | 関数ごと 8バイト/カード 2-bit カードマーキング（UNEXEC $\to$ EXEC $\to$ HOT $\to$ COMPILED） | `INT-30`, `INT-31` | ✅ PASS |
-| `DirectSwitch` | `os_coos.md`, `os_scheduler.md` | コンテキストスイッチスタック退避なしの CPS 関数呼び出し継続 | `INT-50`, `INT-51` | ✅ PASS |
-| `FuelExhaustion_Yield` | `os_scheduler.md`, `os_coos.md` | Fuel 枯渇（トレース境界での `quantum` 判定）での決定論的な中断と再開——判定・発行は駆動する側の責務 | `INT-50` | ✅ PASS |
-| `DictionaryBasedIPC` | `runtime_logging.md` | 静的 LogDictionary、危険書式（`%s` / `%p`）の登録時静的拒絶 | `INT-82` | ✅ PASS |
-| `BufferedLogging` | `runtime_logging.md` | 実行時リングバッファ蓄積 $\to$ COOS `idle_hook` での一括 UART フラッシュ | `INT-82` | ✅ PASS |
-| `WASI_ScatteredIO` | `libfireball.md` | 分散ギャザー `fd_write` / スキャッター `fd_read` による多要素 iovec 転送 | `INT-10`, `INT-104` | ✅ PASS |
-| `Syscall_ProcExit` | `runtime_syscall.md` | `proc_exit` システムコールによるゲストタスク停止および終了コード伝播 | `INT-11` | ✅ PASS |
-| `ThreeStageRouting` | `ipc_router.md` | Stage 1 URI検索 $\to$ Stage 2 RBAC判定 $\to$ Stage 3 Zero-Copy CSP Rendezvous 所有権移譲 | `INT-80`, `INT-81` | ✅ PASS |
-| `PreflightRejection` | `ipc_router.md` | Revoke前の静的チェック（RBAC拒否・メッセージサイズ超過）失敗時、所有権は送信側から一度も動かない | `INT-81` | ✅ PASS |
-| `RAM_Bypass_Bit31` | `runtime_vmmio.md` | Bit 31 == 0 アドレスに対するページテーブル不使用 $O(1)$ 高速バイパス | `INT-90` | ✅ PASS |
-| `DirectMappedTLB16` | `runtime_vmmio.md` | 20-bit VPN の 4-bit Folding XOR Hash による Direct-Mapped TLB キャッシュ | `INT-92` | ✅ PASS |
-| `OwnerMismatchTrap` | `runtime_vmmio.md` | タスク間共有メモリ（FC=0xE）の所有権移動に伴うアンマップによる未登録ページフォルト（`TRAP_UNREGISTERED_PAGE`）遮断 | `INT-93` | ✅ PASS |
-| `ActiveDataSegments` | `runtime_loader.md` | モジュールロード時のアクティブデータセグメント自動リニアメモリ展開 | `INT-01` | ✅ PASS |
-| `CPS_4Args` | `runtime_interpreter.md` | `ctx, sp, local_base, tos` 4引数による CPS 関数ポインタディスパッチ | `INT-01`〜`INT-105` | ✅ PASS |
-| `SignZeroExtension` | `runtime_interpreter.md` | 8/16/32-bit メモリ読み書きにおける符号付き・符号なしゼロ/符号拡張の完全性 | `INT-70` | ✅ PASS |
-| `ControlFrameCleanup` | `runtime_interpreter.md` | `br_table` / `block` / `loop` / `if` 偽分岐時のスタックフレーム不変性・リーク防止 | `INT-20`, `INT-22` | ✅ PASS |
-| `RSPMinimalSet` | `debug_manager.md`, `gdb_rsp_protocol.md` | GDB RSP 最小コマンドセット（`?`, `g/G`, `m/M`, `Z0/z0`, `s`, `c`）の実ソケット対話 | `INT-60`〜`INT-64` | ✅ PASS |
-| `Debugger_Jit_Flush` | `debug_manager.md`, `jit_runtime.md` | デバッガからのメモリ書き込み（`M` パケット）時の JIT キャッシュ全バンク即時無効化 | `INT-62`, `INT-72` | ✅ PASS |
-| `HAL_PeripheralDrivers` | `platform_driver.md` | GPIO（入出力・エッジIRQ）、I2C（LM75）、SPI（EEPROM）、Timer | `INT-100`〜`INT-102` | ✅ PASS |
-| `WASI_InMemVFS` | `libfireball.md` | WASI互換アダプタ（`fd_seek`, `fd_read`, `fd_write`, `random_get`, `clock_time_get`） | `INT-103`〜`INT-105` | ✅ PASS |
-| `CopyAndPatch_JIT` | `jit_compiler.md` | ステンシル展開による高速 Copy-and-Patch JIT コード生成 | `INT-30`, `INT-40` | ✅ PASS |
-| `TraceBoundaryInvariant` | `jit_compiler.md` | トレース境界でのスタック自己完結性、メモリ同期、およびフォールバック | `INT-31`, `INT-41` | ✅ PASS |
-| `ThreeBankCacheEviction` | `jit_runtime.md` | Active / Warm / Oldest 3面バンク代謝と Oldest ヒット時の Active 昇格 | `INT-31`, `INT-41` | ✅ PASS |
+| `RadixBinaryTreeView_bswap32` | `system_containers.md`, `jit_runtime.md` | UnifiedPC（`func_idx << 20 \| pc`）の bswap32 によるリトルエンディアン上位集約インデックス検索 | `TEST-INT-40`, `TEST-INT-41` | ✅ PASS |
+| `FlatMapView_BinarySearch` | `system_containers.md`, `ipc_router.md` | 静的ソート配列に対する $O(\log N)$ バイナリサーチ（動的割当なし） | `TEST-INT-01`, `TEST-INT-80` | ✅ PASS |
+| `RingBuffer_Overwrite` | `system_containers.md`, `runtime_logging.md` | 静的容量リングバッファ、満杯時の最古エントリ自動上書き | `TEST-INT-82` | ✅ PASS |
+| `BitView_CardMarking` | `system_containers.md`, `jit_runtime.md` | 関数ごと 8バイト/カード 2-bit カードマーキング（UNEXEC $\to$ EXEC $\to$ HOT $\to$ COMPILED） | `TEST-INT-30`, `TEST-INT-31` | ✅ PASS |
+| `DirectSwitch` | `os_coos.md`, `os_scheduler.md` | コンテキストスイッチスタック退避なしの CPS 関数呼び出し継続 | `TEST-INT-50`, `TEST-INT-51` | ✅ PASS |
+| `FuelExhaustion_Yield` | `os_scheduler.md`, `os_coos.md` | Fuel 枯渇（トレース境界での `quantum` 判定）での決定論的な中断と再開——判定・発行は駆動する側の責務 | `TEST-INT-50` | ✅ PASS |
+| `DictionaryBasedIPC` | `runtime_logging.md` | 静的 LogDictionary、危険書式（`%s` / `%p`）の登録時静的拒絶 | `TEST-INT-82` | ✅ PASS |
+| `BufferedLogging` | `runtime_logging.md` | 実行時リングバッファ蓄積 $\to$ COOS `idle_hook` での一括 UART フラッシュ | `TEST-INT-82` | ✅ PASS |
+| `WASI_ScatteredIO` | `libfireball.md` | 分散ギャザー `fd_write` / スキャッター `fd_read` による多要素 iovec 転送 | `TEST-INT-10`, `TEST-INT-104` | ✅ PASS |
+| `Syscall_ProcExit` | `runtime_syscall.md` | `proc_exit` システムコールによるゲストタスク停止および終了コード伝播 | `TEST-INT-11` | ✅ PASS |
+| `ThreeStageRouting` | `ipc_router.md` | Stage 1 URI検索 $\to$ Stage 2 RBAC判定 $\to$ Stage 3 Zero-Copy CSP Rendezvous 所有権移譲 | `TEST-INT-80`, `TEST-INT-81` | ✅ PASS |
+| `PreflightRejection` | `ipc_router.md` | Revoke前の静的チェック（RBAC拒否・メッセージサイズ超過）失敗時、所有権は送信側から一度も動かない | `TEST-INT-81` | ✅ PASS |
+| `RAM_Bypass_Bit31` | `runtime_vmmio.md` | Bit 31 == 0 アドレスに対するページテーブル不使用 $O(1)$ 高速バイパス | `TEST-INT-90` | ✅ PASS |
+| `DirectMappedTLB16` | `runtime_vmmio.md` | 20-bit VPN の 4-bit Folding XOR Hash による Direct-Mapped TLB キャッシュ | `TEST-INT-92` | ✅ PASS |
+| `OwnerMismatchTrap` | `runtime_vmmio.md` | タスク間共有メモリ（FC=0xE）の所有権移動に伴うアンマップによる未登録ページフォルト（`TRAP_UNREGISTERED_PAGE`）遮断 | `TEST-INT-93` | ✅ PASS |
+| `ActiveDataSegments` | `runtime_loader.md` | モジュールロード時のアクティブデータセグメント自動リニアメモリ展開 | `TEST-INT-01` | ✅ PASS |
+| `CPS_4Args` | `runtime_interpreter.md` | `ctx, sp, local_base, tos` 4引数による CPS 関数ポインタディスパッチ | `TEST-INT-01`〜`TEST-INT-105` | ✅ PASS |
+| `SignZeroExtension` | `runtime_interpreter.md` | 8/16/32-bit メモリ読み書きにおける符号付き・符号なしゼロ/符号拡張の完全性 | `TEST-INT-70` | ✅ PASS |
+| `ControlFrameCleanup` | `runtime_interpreter.md` | `br_table` / `block` / `loop` / `if` 偽分岐時のスタックフレーム不変性・リーク防止 | `TEST-INT-20`, `TEST-INT-22` | ✅ PASS |
+| `RSPMinimalSet` | `debug_manager.md`, `gdb_rsp_protocol.md` | GDB RSP 最小コマンドセット（`?`, `g/G`, `m/M`, `Z0/z0`, `s`, `c`）の実ソケット対話 | `TEST-INT-60`〜`TEST-INT-64` | ✅ PASS |
+| `Debugger_Jit_Flush` | `debug_manager.md`, `jit_runtime.md` | デバッガからのメモリ書き込み（`M` パケット）時の JIT キャッシュ全バンク即時無効化 | `TEST-INT-62`, `TEST-INT-72` | ✅ PASS |
+| `HAL_PeripheralDrivers` | `platform_driver.md` | GPIO（入出力・エッジIRQ）、I2C（LM75）、SPI（EEPROM）、Timer | `TEST-INT-100`〜`TEST-INT-102` | ✅ PASS |
+| `WASI_InMemVFS` | `libfireball.md` | WASI互換アダプタ（`fd_seek`, `fd_read`, `fd_write`, `random_get`, `clock_time_get`） | `TEST-INT-103`〜`TEST-INT-105` | ✅ PASS |
+| `CopyAndPatch_JIT` | `jit_compiler.md` | ステンシル展開による高速 Copy-and-Patch JIT コード生成 | `TEST-INT-30`, `TEST-INT-40` | ✅ PASS |
+| `TraceBoundaryInvariant` | `jit_compiler.md` | トレース境界でのスタック自己完結性、メモリ同期、およびフォールバック | `TEST-INT-31`, `TEST-INT-41` | ✅ PASS |
+| `ThreeBankCacheEviction` | `jit_runtime.md` | Active / Warm / Oldest 3面バンク代謝と Oldest ヒット時の Active 昇格 | `TEST-INT-31`, `TEST-INT-41` | ✅ PASS |
 
 ---
 
@@ -90,11 +90,11 @@
   - 動的メモリ拡張（`memory.grow` / `memory.size`）と拡張ページ（Page 2: offset 131,072）への境界超過アクセス
   - グローバル変数（`global.get` / `global.set`）の変更と状態保持
 
-| ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| INT-01 | データセグメント初期展開 | WASMロード完了 | メモリ特定番地を参照 | `256` 番地に文字列、`1024` 番地にバイト列が正確に配置される | `ActiveDataSegments`, `ThreadedInterpreter` |
-| INT-02 | 動的メモリ拡張とページ境界アクセス | 1ページ（64KB）で起動 | `test_grow(2)` を実行し Page 2 へストア | メモリが3ページ（192KB）に拡張され、新領域への書き込み・読み出しが成功する | `WasmPageAlignment`, `MemoryBoundaryCheck` |
-| INT-03 | グローバル変数ミューテーション | 初期値 100 | `inc_global(25)`, `inc_global(-50)` | `125`, `75` が返却され、モジュール内グローバル状態が保持される | `ThreadedInterpreter` |
+| TEST-INT-01 | データセグメント初期展開 | WASMロード完了 | メモリ特定番地を参照 | `256` 番地に文字列、`1024` 番地にバイト列が正確に配置される | `ActiveDataSegments`, `ThreadedInterpreter` |
+| TEST-INT-02 | 動的メモリ拡張とページ境界アクセス | 1ページ（64KB）で起動 | `test_grow(2)` を実行し Page 2 へストア | メモリが3ページ（192KB）に拡張され、新領域への書き込み・読み出しが成功する | `WasmPageAlignment`, `MemoryBoundaryCheck` |
+| TEST-INT-03 | グローバル変数ミューテーション | 初期値 100 | `inc_global(25)`, `inc_global(-50)` | `125`, `75` が返却され、モジュール内グローバル状態が保持される | `ThreadedInterpreter` |
 
 ---
 
@@ -106,10 +106,10 @@
   - 複数 iovec 構造体（分散ギャザー I/O: Header + Payload）の stdout フラッシュ
   - `proc_exit` システムコールによるゲストタスク停止および終了コード伝播
 
-| ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| INT-10 | 分散ギャザー `fd_write` | iovec 配列2要素を構成 | `fd_write(fd=1, iovs, 2)` を実行 | 合計 23 バイトが書き込まれ、ホストトランスポートから `"HELLO-WASI [SYSTEM_OK]\n"` が得られる | `WASI_ScatteredIO` |
-| INT-11 | ゲスト `proc_exit` 停止 | 実行中 | `proc_exit(42)` を実行 | システムが `halted=True` に遷移し、`exit_code=42` が正確に記録される | `Syscall_ProcExit` |
+| TEST-INT-10 | 分散ギャザー `fd_write` | iovec 配列2要素を構成 | `fd_write(fd=1, iovs, 2)` を実行 | 合計 23 バイトが書き込まれ、ホストトランスポートから `"HELLO-WASI [SYSTEM_OK]\n"` が得られる | `WASI_ScatteredIO` |
+| TEST-INT-11 | ゲスト `proc_exit` 停止 | 実行中 | `proc_exit(42)` を実行 | システムが `halted=True` に遷移し、`exit_code=42` が正確に記録される | `Syscall_ProcExit` |
 
 ---
 
@@ -121,11 +121,11 @@
   - WASM テーブル（`table` / `elem`）と `call_indirect` による動的関数ポインタディスパッチ（加算・減算・乗算・XOR）
   - `br_table` による多分岐ジャンプテーブル処理
 
-| ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| INT-20 | 深い再帰呼び出しとフレーム巻き戻し | 統合スタック初期化 | `fib(12)` を実行 | スタックオーバーフローやフレーム破壊を起こさず、正確に `144` を返す | `ThreadedInterpreter`, `ControlFrameCleanup` |
-| INT-21 | テーブル動的ディスパッチ (`call_indirect`) | 関数テーブル登録済み | `dispatch_calc(op_id, a, b)` | 指定した演算関数（add/sub/mul/xor）が型安全にディスパッチされて正しい値を返す | `ThreadedInterpreter`, `CPS_4Args` |
-| INT-22 | 多段ジャンプスイッチ (`br_table`) | ブロックネスト | `test_br_table(selector)` | セレクタ値（0/1/2/default）に応じて対応するブロック外へ正確にジャンプする | `ControlFrameCleanup` |
+| TEST-INT-20 | 深い再帰呼び出しとフレーム巻き戻し | 統合スタック初期化 | `fib(12)` を実行 | スタックオーバーフローやフレーム破壊を起こさず、正確に `144` を返す | `ThreadedInterpreter`, `ControlFrameCleanup` |
+| TEST-INT-21 | テーブル動的ディスパッチ (`call_indirect`) | 関数テーブル登録済み | `dispatch_calc(op_id, a, b)` | 指定した演算関数（add/sub/mul/xor）が型安全にディスパッチされて正しい値を返す | `ThreadedInterpreter`, `CPS_4Args` |
+| TEST-INT-22 | 多段ジャンプスイッチ (`br_table`) | ブロックネスト | `test_br_table(selector)` | セレクタ値（0/1/2/default）に応じて対応するブロック外へ正確にジャンプする | `ControlFrameCleanup` |
 
 ---
 
@@ -138,10 +138,10 @@
   - COOS `idle_hook` での JIT トレース自動コンパイルと Active キャッシュバンク格納
   - Tier 2 インタープリタ単独実行と Tier 3 ハイブリッド実行の計算結果完全一致（Differential Testing）
 
-| ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| INT-30 | ホットスポット検出と JIT 自動コンパイル | ループ実行 | `idle_hook` を呼び出す | ループ内の BasicBlock が HOT 昇格し、JIT キャッシュバンクに登録される | `BitView_CardMarking`, `JIT_MultiBuffer_Cache` |
-| INT-31 | JIT / インタープリタ差分検証 | 同一ワークロード | Tier 2 と Tier 3 の結果を比較 | 双方が正確に `168`（1000未満の素数の個数）を返し、値が 100% 一致する | `JIT_CopyAndPatch`, `TraceBoundaryInvariant` |
+| TEST-INT-30 | ホットスポット検出と JIT 自動コンパイル | ループ実行 | `idle_hook` を呼び出す | ループ内の BasicBlock が HOT 昇格し、JIT キャッシュバンクに登録される | `BitView_CardMarking`, `JIT_MultiBuffer_Cache` |
+| TEST-INT-31 | JIT / インタープリタ差分検証 | 同一ワークロード | Tier 2 と Tier 3 の結果を比較 | 双方が正確に `168`（1000未満の素数の個数）を返し、値が 100% 一致する | `JIT_CopyAndPatch`, `TraceBoundaryInvariant` |
 
 ---
 
@@ -153,10 +153,10 @@
   - `UnifiedPC = (func_index << 16) | bytecode_offset` による関数間 PC 衝突防止
   - `bswap32` キー投影による Radix テーブルの完全一様分散と $O(1)$ 高速検索
 
-| ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| INT-40 | 複数関数にまたがる UnifiedPC JIT トレース | 複数関数がホット化 | `cache.active.traces` を検査 | 異なる `func_index`（上位16bit）を持つ複数の JIT トレースが正常に共存・実行される | `RadixBinaryTreeView_bswap32` |
-| INT-41 | `RadixBinaryTreeView` による UnifiedPC 検索 | トレース登録済み | `radix_tree.find(unified_pc)` | 全 UnifiedPC に対し $O(1)$ 粗索引＋有界二分探索で正しく JIT トレースが取得できる | `RadixBinaryTreeView_bswap32`, `ThreeBankCacheEviction` |
+| TEST-INT-40 | 複数関数にまたがる UnifiedPC JIT トレース | 複数関数がホット化 | `cache.active.traces` を検査 | 異なる `func_index`（上位16bit）を持つ複数の JIT トレースが正常に共存・実行される | `RadixBinaryTreeView_bswap32` |
+| TEST-INT-41 | `RadixBinaryTreeView` による UnifiedPC 検索 | トレース登録済み | `radix_tree.find(unified_pc)` | 全 UnifiedPC に対し $O(1)$ 粗索引＋有界二分探索で正しく JIT トレースが取得できる | `RadixBinaryTreeView_bswap32`, `ThreeBankCacheEviction` |
 
 ---
 
@@ -168,10 +168,10 @@
   - コンシューマ・タスク（メモリから 100 件のデータを読み込み合計 50,500 を算出）
   - Fuel 制限（`quantum=16`）による決定論的な中断の繰り返し。中断・再開の意思決定はランタイム（vSoC / COOS）側の責務であり、Fireball インタープリタ（`Interpreter`）自身はコルーチンではない——`step()` は境界に達するたびに値を返却し、そのつど中断（`co_yield`）するかどうかを決定するのは呼び出し側（ランタイム）である
 
-| ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| INT-50 | Fuel 境界での決定論的中断と状態保持 | `quantum=16` 設定 | `Interpreter.step()` を `finished` になるまで反復実行 | 途中で複数回中断しながらも、ローカル変数やスタック状態を保持して完走する | `CooperativeMultitasking`, `FuelExhaustion_Yield` |
-| INT-51 | 共有メモリを介したタスク間データ受け渡し | 同一 ExecEnv 共有 | プロデューサ完走後にコンシューマ実行 | プロデューサが書き込んだデータが正しく読み取られ、合計値 `50500` が得られる | `CooperativeMultitasking`, `DirectContextSwitch` |
+| TEST-INT-50 | Fuel 境界での決定論的中断と状態保持 | `quantum=16` 設定 | `Interpreter.step()` を `finished` になるまで反復実行 | 途中で複数回中断しながらも、ローカル変数やスタック状態を保持して完走する | `CooperativeMultitasking`, `FuelExhaustion_Yield` |
+| TEST-INT-51 | 共有メモリを介したタスク間データ受け渡し | 同一 ExecEnv 共有 | プロデューサ完走後にコンシューマ実行 | プロデューサが書き込んだデータが正しく読み取られ、合計値 `50500` が得られる | `CooperativeMultitasking`, `DirectContextSwitch` |
 
 ---
 
@@ -186,13 +186,13 @@
   - メモリ書き換え時の JIT キャッシュ自動 Flush（`{Debugger_Jit_Flush}`）
   - 単歩ステップ実行（`s`）と正常終了（`$W00`）
 
-| ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| INT-60 | TCP ソケット接続と停止理由クエリ | GDBServer 稼働中 | `?` パケット送信 | クライアント接続が受理され、`$S05#b8`（SIGTRAP）が返却される | `RSPMinimalSet` |
-| INT-61 | 20 仮想レジスタ読み出し・書き換え | 停止中 | `g` および `G` パケット送信 | 160文字 HEX 列で全仮想レジスタが正しく取得・変更される | `RSPMinimalSet` |
-| INT-62 | メモリ検査・書き換えと JIT Flush | 停止中 | `m` および `M` パケット送信 | 指定オフセットのバイト列が読み書きされ、JIT キャッシュ全バンクが無効化される | `Debugger_Jit_Flush` |
-| INT-63 | ブレークポイント停止とステップ実行 | 実行中 | `Z0` でブレークポイント設定後 `c` / `s` | 指定 PC で正確にトラップ停止し、単歩ステップ実行で 1 命令進む | `RSPMinimalSet` |
-| INT-64 | プログラム正常完走とデタッチ | ブレークポイント解除済み | `c` パケット送信 | プログラムが最後まで完走し、`$W00#b7`（終了）が返る | `RSPMinimalSet` |
+| TEST-INT-60 | TCP ソケット接続と停止理由クエリ | GDBServer 稼働中 | `?` パケット送信 | クライアント接続が受理され、`$S05#b8`（SIGTRAP）が返却される | `RSPMinimalSet` |
+| TEST-INT-61 | 20 仮想レジスタ読み出し・書き換え | 停止中 | `g` および `G` パケット送信 | 160文字 HEX 列で全仮想レジスタが正しく取得・変更される | `RSPMinimalSet` |
+| TEST-INT-62 | メモリ検査・書き換えと JIT Flush | 停止中 | `m` および `M` パケット送信 | 指定オフセットのバイト列が読み書きされ、JIT キャッシュ全バンクが無効化される | `Debugger_Jit_Flush` |
+| TEST-INT-63 | ブレークポイント停止とステップ実行 | 実行中 | `Z0` でブレークポイント設定後 `c` / `s` | 指定 PC で正確にトラップ停止し、単歩ステップ実行で 1 命令進む | `RSPMinimalSet` |
+| TEST-INT-64 | プログラム正常完走とデタッチ | ブレークポイント解除済み | `c` パケット送信 | プログラムが最後まで完走し、`$W00#b7`（終了）が返る | `RSPMinimalSet` |
 
 ---
 
@@ -205,12 +205,12 @@
   - ローカル変数パイプライン演算（`local.get`, `local.set`, パラメータ保持）
   - リアルタイム GDB RSP ソケット経由でのブレークポイント捕捉、ローカル変数改変、リニアメモリ書き換えと JIT キャッシュ無効化
 
-| ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| INT-70 | 全幅メモリ読み書きと符号/ゼロ拡張 | モジュールロード完了 | `test_memory_widths()` 実行 | 8/16/32-bit の符号/ゼロ拡張が正しく反映され期待値 `65757` を返す | `SignZeroExtension` |
-| INT-71 | グローバル変数パイプライン演算 | 初期値 100 | `pipeline_process(5, 200)` | メモリ配列との乗算累積が正確に実行され、グローバル値が `550` $\to$ `1000` へ更新保持される | `ThreadedInterpreter` |
-| INT-72 | デバッガからのストレージ動的改変 | ブレークポイント停止中 | `G` でローカル変数変更、`M` でメモリパッチ | 実行コンテキストとリニアメモリが即座に更新され、後続ステップに正確に反映される | `RSPMinimalSet`, `Debugger_Jit_Flush` |
-| INT-73 | ストレージ改変後の単歩ステップと完走 | 改変完了後 | `s` でステップ実行後 `c` で完走 | 改変後のローカル変数とメモリに基づき正確に完走（結果 `150`）し正常終了する | `RSPMinimalSet` |
+| TEST-INT-70 | 全幅メモリ読み書きと符号/ゼロ拡張 | モジュールロード完了 | `test_memory_widths()` 実行 | 8/16/32-bit の符号/ゼロ拡張が正しく反映され期待値 `65757` を返す | `SignZeroExtension` |
+| TEST-INT-71 | グローバル変数パイプライン演算 | 初期値 100 | `pipeline_process(5, 200)` | メモリ配列との乗算累積が正確に実行され、グローバル値が `550` $\to$ `1000` へ更新保持される | `ThreadedInterpreter` |
+| TEST-INT-72 | デバッガからのストレージ動的改変 | ブレークポイント停止中 | `G` でローカル変数変更、`M` でメモリパッチ | 実行コンテキストとリニアメモリが即座に更新され、後続ステップに正確に反映される | `RSPMinimalSet`, `Debugger_Jit_Flush` |
+| TEST-INT-73 | ストレージ改変後の単歩ステップと完走 | 改変完了後 | `s` でステップ実行後 `c` で完走 | 改変後のローカル変数とメモリに基づき正確に完走（結果 `150`）し正常終了する | `RSPMinimalSet` |
 
 ---
 
@@ -222,11 +222,11 @@
   - キュー溢れ時の Rollback 復元とターゲットフォールト時の Drop Handler リソース回収
   - `LogDictionary` によるポインタ書式（`%s`）の静的拒絶と、COOS アイドルフラッシュによる UART 出力
 
-| ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| INT-80 | IPC 3段階ルーティングと所有権移譲 | 送信元 `RUNTIME` | `send` 実行後 `receive` | 所有権が `SENDER_OWNS` $\to$ `IN_FLIGHT` $\to$ `RECEIVER_OWNS` へ遷移する | `ThreeStageRouting` |
-| INT-81 | RBAC 権限拒絶とメッセージサイズ超過 | 未許可ロール / kv_pair数が8個を超過 | メッセージ送信 | `ERR_PERMISSION_DENIED` / `ERR_MSG_TOO_LARGE` で安全に拒絶され、所有権は送信側のまま維持される | `PreflightRejection` |
-| INT-82 | 構造化ロギングと安全書式検証 | LogDictionary 登録 | `log_event` 後 `flush()` | 不正書式 `%s` が拒絶され、ログレベルフィルタを経て UART へ正常出力される | `DictionaryBasedIPC`, `BufferedLogging` |
+| TEST-INT-80 | IPC 3段階ルーティングと所有権移譲 | 送信元 `RUNTIME` | `send` 実行後 `receive` | 所有権が `SENDER_OWNS` $\to$ `IN_FLIGHT` $\to$ `RECEIVER_OWNS` へ遷移する | `ThreeStageRouting` |
+| TEST-INT-81 | RBAC 権限拒絶とメッセージサイズ超過 | 未許可ロール / kv_pair数が8個を超過 | メッセージ送信 | `ERR_PERMISSION_DENIED` / `ERR_MSG_TOO_LARGE` で安全に拒絶され、所有権は送信側のまま維持される | `PreflightRejection` |
+| TEST-INT-82 | 構造化ロギングと安全書式検証 | LogDictionary 登録 | `log_event` 後 `flush()` | 不正書式 `%s` が拒絶され、ログレベルフィルタを経て UART へ正常出力される | `DictionaryBasedIPC`, `BufferedLogging` |
 
 ---
 
@@ -239,12 +239,12 @@
   - 4-bit Folding XOR Hash による Direct-Mapped Software TLB[16] ヒット/ミス遷移
   - タスク間共有メモリの所有権分離とアンマップによる未登録ページ遮断
 
-| ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| INT-90 | Bit 31 RAM Bypass 高速パス | リニア RAM アドレス | `access()` 実行 | ページテーブルを介さず `OK_GUEST_RAM` で即時バイパスされる | `RAM_Bypass_Bit31` |
-| INT-91 | 仮想デバイス書き込みとハンドラディスパッチ | デバイスページ登録済み | `access()` で書き込み | `OK_SYSCALL` が返り登録ハンドラが呼び出される | `vMMIO_TrapAndEmulate` |
-| INT-92 | 16エントリ Direct-Mapped TLB キャッシュ | 同一ページ反復アクセス | 連続 `access()` | 2回目以降が TLB ヒットとなり `tlb_hits` が増加する | `DirectMappedTLB16` |
-| INT-93 | タスク間共有メモリ所有権分離 | 非所有（未マッピング）タスクのSHMアクセス | `access()` 実行 | `TRAP_UNREGISTERED_PAGE` で安全にトラップ遮断される | `OwnerMismatchTrap` |
+| TEST-INT-90 | Bit 31 RAM Bypass 高速パス | リニア RAM アドレス | `access()` 実行 | ページテーブルを介さず `OK_GUEST_RAM` で即時バイパスされる | `RAM_Bypass_Bit31` |
+| TEST-INT-91 | 仮想デバイス書き込みとハンドラディスパッチ | デバイスページ登録済み | `access()` で書き込み | `OK_SYSCALL` が返り登録ハンドラが呼び出される | `vMMIO_TrapAndEmulate` |
+| TEST-INT-92 | 16エントリ Direct-Mapped TLB キャッシュ | 同一ページ反復アクセス | 連続 `access()` | 2回目以降が TLB ヒットとなり `tlb_hits` が増加する | `DirectMappedTLB16` |
+| TEST-INT-93 | タスク間共有メモリ所有権分離 | 非所有（未マッピング）タスクのSHMアクセス | `access()` 実行 | `TRAP_UNREGISTERED_PAGE` で安全にトラップ遮断される | `OwnerMismatchTrap` |
 
 ---
 
@@ -262,14 +262,14 @@
     - 標準入出力（stdin バッファ入力、stdout/stderr キャプチャ）
     - ユーティリティ（`random_get` 乱数エントロピ充填、`clock_time_get` 高精度タイムスタンプ）
 
-| ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| INT-100 | HAL GPIO 入出力とエッジ IRQ | GPIO ドライバ初期化 | ピン出力設定後値トグル | ピン状態が正しく反転し、登録された IRQ コールバックがトリガされる | `HAL_PeripheralDrivers` |
-| INT-101 | HAL I2C 仮想温度センサ読み書き | I2C バス初期化 | 0x48 のレジスタ R/W | 温度値 `0x1980` が読み出され、設定レジスタが正常に更新される | `HAL_PeripheralDrivers` |
-| INT-102 | HAL SPI 4KB EEPROM 書き込み・読み出し | SPI ドライバ初期化 | WREN $\to$ Write $\to$ Read | 指定アドレスに書き込んだバイト列が 100% 一致して読み出される | `HAL_PeripheralDrivers` |
-| INT-103 | WASI In-Memory VFS シークと読み書き | 仮想 FD 3 (config.ini) | `fd_seek` 後 `fd_read`/`fd_write` | ファイルポインタが移動し、指定位置から正確に読み書きできる | `WASI_InMemVFS` |
-| INT-104 | WASI 標準ストリームバッファリング | stdin にデータ充填 | `fd_read(fd=0)` 実行 | ストリームバッファから指定バイト数が正しく読み込まれる | `WASI_ScatteredIO` |
-| INT-105 | WASI 乱数取得 & 高精度クロック | ゲストリニアメモリ指定 | `random_get`, `clock_time_get` | 乱数バッファが充填され、単調増加ナノ秒タイムスタンプが得られる | `WASI_InMemVFS` |
+| TEST-INT-100 | HAL GPIO 入出力とエッジ IRQ | GPIO ドライバ初期化 | ピン出力設定後値トグル | ピン状態が正しく反転し、登録された IRQ コールバックがトリガされる | `HAL_PeripheralDrivers` |
+| TEST-INT-101 | HAL I2C 仮想温度センサ読み書き | I2C バス初期化 | 0x48 のレジスタ R/W | 温度値 `0x1980` が読み出され、設定レジスタが正常に更新される | `HAL_PeripheralDrivers` |
+| TEST-INT-102 | HAL SPI 4KB EEPROM 書き込み・読み出し | SPI ドライバ初期化 | WREN $\to$ Write $\to$ Read | 指定アドレスに書き込んだバイト列が 100% 一致して読み出される | `HAL_PeripheralDrivers` |
+| TEST-INT-103 | WASI In-Memory VFS シークと読み書き | 仮想 FD 3 (config.ini) | `fd_seek` 後 `fd_read`/`fd_write` | ファイルポインタが移動し、指定位置から正確に読み書きできる | `WASI_InMemVFS` |
+| TEST-INT-104 | WASI 標準ストリームバッファリング | stdin にデータ充填 | `fd_read(fd=0)` 実行 | ストリームバッファから指定バイト数が正しく読み込まれる | `WASI_ScatteredIO` |
+| TEST-INT-105 | WASI 乱数取得 & 高精度クロック | ゲストリニアメモリ指定 | `random_get`, `clock_time_get` | 乱数バッファが充填され、単調増加ナノ秒タイムスタンプが得られる | `WASI_InMemVFS` |
 
 ---
 

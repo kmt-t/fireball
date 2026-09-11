@@ -117,10 +117,10 @@
       "sec:architecture/keyword_dictionary.md#2.2 タスク管理・スケジューリング・通信 (COOS / Scheduler / IPC)": "214590386f07192628f9056e7014e6d92031d850acd4dc7c2d8f9131c780a553",
       "sec:requires/requirement_list.md#3.1.2 タスク管理・通信 (COOS)": "7bcde198a34f54f23371ff8cd0c38b943a4f67ee735ea21b29f0f1459aa2365a"
     },
-    "DBG-GOTCHA-01": {
+    "GOTCHA-DBG-01": {
       "sec:architecture/keyword_dictionary.md#2.4 デバッガ & システムコア & プラットフォーム (Debug / Syscall / Logging / HAL)": "8baa905f4e75e44caee2c5893a2b7688f17efd239d949508179553a9f9c48c03"
     },
-    "DBG-GOTCHA-03": {
+    "GOTCHA-DBG-03": {
       "sec:architecture/keyword_dictionary.md#2.4 デバッガ & システムコア & プラットフォーム (Debug / Syscall / Logging / HAL)": "9b8315913115fa0375d61b7ac78980ec781f7be942875f3e131079ed1d4404d9"
     },
     "Debug_Integrated": {
@@ -236,7 +236,7 @@
       "sec:architecture/keyword_dictionary.md#3. システム横断 メタキーワード (Meta & Global Keywords)": "b5c8ed5d698c8a0f9a64b9b6d1185c347e8d925c54faeac717ee04476f49163a",
       "sec:requires/requirement_list.md#3.1.2 タスク管理・通信 (COOS)": "47b840dca8c7510b7fdcf085afbb583e1481bf1b8b3c80b87af49e21174ac440"
     },
-    "HAL-GOTCHA-01": {
+    "GOTCHA-HAL-01": {
       "sec:architecture/keyword_dictionary.md#2.4 デバッガ & システムコア & プラットフォーム (Debug / Syscall / Logging / HAL)": "917f95820d3efa0b3aba1e541069f0670f66e1266babc9a5d2638d80ca6a9875"
     },
     "HAL_Interface": {
@@ -248,13 +248,13 @@
     "HistoryBuffer": {
       "sec:requires/requirement_list.md#3.1.5 共通基盤・実装パターン": "01ab8f46f13da2a442a64feec60e7f0e0aa101d48cbe4e0c61d52e39e041b8f9"
     },
-    "INTP-GOTCHA-01": {
+    "GOTCHA-INTP-01": {
       "sec:architecture/keyword_dictionary.md#2.1 WASM実行 & ランタイム (vSoC / Interpreter / Loader / vMMIO)": "d345883f77b4b99af8319c308f2c0c5b526a6aad728c7127b621e8b37a03bb9e"
     },
-    "INTP-GOTCHA-02": {
+    "GOTCHA-INTP-02": {
       "sec:architecture/keyword_dictionary.md#2.1 WASM実行 & ランタイム (vSoC / Interpreter / Loader / vMMIO)": "48cc8faf9e8667a83632fa605e54572c04e9ad6c24d3a56e893e3752f73467e8"
     },
-    "INTP-GOTCHA-03": {
+    "GOTCHA-INTP-03": {
       "sec:architecture/keyword_dictionary.md#2.1 WASM実行 & ランタイム (vSoC / Interpreter / Loader / vMMIO)": "976867afe8857100012d6137432d4a8f827aae3d9a5aa37e3f687663850d0525"
     },
     "IPCDI": {
@@ -290,22 +290,22 @@
     "IoC": {
       "sec:requires/requirement_list.md#3.2.2 開発方針・品質": "314c224d4392ff3594ae1ee04c9501d2b45c2649e955b06924c07913d1ae8b5a"
     },
-    "JITC-GOTCHA-01": {
+    "GOTCHA-JITC-01": {
       "sec:architecture/keyword_dictionary.md#2.3 JIT コンパイラ & ランタイム (JIT Compiler / Runtime)": "d9980e83c3124bb242a515c4883d4a054d02238fef0c978c27369205f62ab6ee"
     },
-    "JITC-GOTCHA-02": {
+    "GOTCHA-JITC-02": {
       "sec:architecture/keyword_dictionary.md#2.3 JIT コンパイラ & ランタイム (JIT Compiler / Runtime)": "b5ef66f0b03305ce8fe112e29029efa7924c1b6ef82bd391713266a4103d54ef"
     },
-    "JITC-GOTCHA-05": {
+    "GOTCHA-JITC-05": {
       "sec:architecture/keyword_dictionary.md#2.3 JIT コンパイラ & ランタイム (JIT Compiler / Runtime)": "74b14c9a03df0fb9f51ffcfb9e645fa60c828e7d99f7ea42ddc388c105faf5cb"
     },
-    "JITC-GOTCHA-07": {
+    "GOTCHA-JITC-07": {
       "sec:architecture/keyword_dictionary.md#2.3 JIT コンパイラ & ランタイム (JIT Compiler / Runtime)": "79963f7a7689ae9976769ea2e8d8ab20a34cdf55a2f0ee2f6d2d46baf6324245"
     },
-    "JITR-GOTCHA-02": {
+    "GOTCHA-JITR-02": {
       "sec:architecture/keyword_dictionary.md#2.3 JIT コンパイラ & ランタイム (JIT Compiler / Runtime)": "5fe0b7bfaf81664ebc213286000ad81c8c34ed29e8750d901cab8d7e3d830e89"
     },
-    "JITR-GOTCHA-03": {
+    "GOTCHA-JITR-03": {
       "sec:architecture/keyword_dictionary.md#2.3 JIT コンパイラ & ランタイム (JIT Compiler / Runtime)": "b93eca8b243868da70cde29c559a5d1c53bd32e6923c0fde08d8b7e3cfca4167"
     },
     "JIT_CopyAndPatch": {
@@ -344,10 +344,10 @@
     "JitBranchChainingHandler": {
       "sec:architecture/keyword_dictionary.md#2.3 JIT コンパイラ & ランタイム (JIT Compiler / Runtime)": "7b02ba6c04f694beb5ef95c0c61645d085ae5ad7582fed3911927e75b84edf11"
     },
-    "LOAD-GOTCHA-01": {
+    "GOTCHA-LOAD-01": {
       "sec:architecture/keyword_dictionary.md#2.1 WASM実行 & ランタイム (vSoC / Interpreter / Loader / vMMIO)": "a0b07fd4fc87edfead451a66411074ae225c79df7cfd5dcbb7b009ea7def881b"
     },
-    "LOAD-GOTCHA-02": {
+    "GOTCHA-LOAD-02": {
       "sec:architecture/keyword_dictionary.md#2.1 WASM実行 & ランタイム (vSoC / Interpreter / Loader / vMMIO)": "bf6490405858688bd2fa37282de694e332e6b1ca47c8aa760363e3f87452c89c"
     },
     "Libgcc_Runtime_Helper": {
@@ -371,10 +371,10 @@
     "LowOverheadSwitch": {
       "sec:requires/requirement_list.md#3.1.2 タスク管理・通信 (COOS)": "6625af4e787cfa59ed0602fe3d8e7d0b95e031b0641bf5a0a1e3517a4437780c"
     },
-    "MEM-GOTCHA-03": {
+    "GOTCHA-MEM-03": {
       "sec:architecture/keyword_dictionary.md#2.4 デバッガ & システムコア & プラットフォーム (Debug / Syscall / Logging / HAL)": "cb38351b584f43d5557cc5fe5ad6ff0a96b99d3199f172f2b695138e8da61ebb"
     },
-    "MEM-GOTCHA-04": {
+    "GOTCHA-MEM-04": {
       "sec:architecture/keyword_dictionary.md#2.4 デバッガ & システムコア & プラットフォーム (Debug / Syscall / Logging / HAL)": "bbe8616591cad6cb4e996997bc3d047a5373a59ec3cf3fec4d44fbeb9e1f1772"
     },
     "META_3TierSeparation": {
@@ -517,7 +517,7 @@
     "RoleBasedAccessControl": {
       "sec:requires/requirement_list.md#3.1.3 システム連携 (IPC/HAL/WIT)": "b5449165c15bfb64e8022f61e81bebef5f0d1e968c1e08b415dff77bfa463e13"
     },
-    "SCHED-GOTCHA-01": {
+    "GOTCHA-SCHED-01": {
       "sec:architecture/keyword_dictionary.md#2.2 タスク管理・スケジューリング・通信 (COOS / Scheduler / IPC)": "4fa73d452f7dbb39bedddf9eea79351fcc2571d63a5d551eeab429dbb6c949f5"
     },
     "SelfReboot_via_Event": {
@@ -587,19 +587,19 @@
     "VDMA": {
       "sec:requires/requirement_list.md#3.1.1 WASM実行 (vSoC)": "45e401c8310d3659eb57f279862c8c495cac13246e651c12302f016cff05039c"
     },
-    "VMMIO-GOTCHA-01": {
+    "GOTCHA-VMMIO-01": {
       "sec:architecture/keyword_dictionary.md#2.1 WASM実行 & ランタイム (vSoC / Interpreter / Loader / vMMIO)": "f61b5ff1eb2fd3eae97a1e06f8591903eb99b8a3ee88e9eed7b2ad5740ca7023"
     },
-    "VMMIO-GOTCHA-02": {
+    "GOTCHA-VMMIO-02": {
       "sec:architecture/keyword_dictionary.md#2.1 WASM実行 & ランタイム (vSoC / Interpreter / Loader / vMMIO)": "1000aaad7e8fe5a95c448bda58f62ea23dd3727487160992f82cd287f1b3cc98"
     },
-    "VMMIO-GOTCHA-03": {
+    "GOTCHA-VMMIO-03": {
       "sec:architecture/keyword_dictionary.md#2.1 WASM実行 & ランタイム (vSoC / Interpreter / Loader / vMMIO)": "c5ceefb0a00901963d264fda19d01253955418460b440e2cab51d193adec4bb7"
     },
-    "VSOC-GOTCHA-01": {
+    "GOTCHA-VSOC-01": {
       "sec:architecture/keyword_dictionary.md#2.4 デバッガ & システムコア & プラットフォーム (Debug / Syscall / Logging / HAL)": "d6684366bb15e93566adab66bbd83ef3743c0b4e7cc7cbb90de542ec7d9bdb90"
     },
-    "VSOC-GOTCHA-02": {
+    "GOTCHA-VSOC-02": {
       "sec:architecture/keyword_dictionary.md#2.4 デバッガ & システムコア & プラットフォーム (Debug / Syscall / Logging / HAL)": "c90babe45e6bf4eb10cd0ea3b7121d6783dbffc38962fcf694b31b87b0d44f6f"
     },
     "VSOC_Lifecycle": {
@@ -918,10 +918,10 @@
       "sec:components/tier1_interface/interface_wit.md#3.1 基礎インターフェース & IPC URI Resolver",
       "sec:components/tier3_platform/platform_memory.md#パーティションの貸与（acquire-partition）"
     ],
-    "DBG-GOTCHA-01": [
+    "GOTCHA-DBG-01": [
       "sec:components/tier2_runtime/debug_manager.md#GDB メモリ書き換え時の JIT キャッシュ即時フラッシュ（責務シーケンス図）"
     ],
-    "DBG-GOTCHA-03": [
+    "GOTCHA-DBG-03": [
       "sec:components/tier2_runtime/debug_manager.md#GDB メモリ書き換え時の JIT キャッシュ即時フラッシュ（責務シーケンス図）"
     ],
     "Debug_Integrated": [
@@ -1221,7 +1221,7 @@
       "sec:components/tier1_core/os_coos.md#1. コンセプト",
       "sec:components/tier1_core/os_scheduler.md#1. コンセプト"
     ],
-    "HAL-GOTCHA-01": [
+    "GOTCHA-HAL-01": [
       "sec:components/tier3_platform/platform_hal.md#ShmBufferPool バッファ確保・境界検査手順（手順アクティビティ図）"
     ],
     "HAL_Interface": [
@@ -1237,13 +1237,13 @@
       "sec:components/tier3_jit/jit_runtime.md#3.1 データ構造",
       "sec:components/tier3_jit/jit_runtime.md#JITエントリインデックス（JitEntryIndex）クラス"
     ],
-    "INTP-GOTCHA-01": [
+    "GOTCHA-INTP-01": [
       "sec:components/tier2_runtime/runtime_interpreter.md#分岐脱出時のフレームプルーニングと TOS 復元手順（手順アクティビティ図）"
     ],
-    "INTP-GOTCHA-02": [
+    "GOTCHA-INTP-02": [
       "sec:components/tier2_runtime/runtime_interpreter.md#分岐脱出時のフレームプルーニングと TOS 復元手順（手順アクティビティ図）"
     ],
-    "INTP-GOTCHA-03": [
+    "GOTCHA-INTP-03": [
       "sec:components/tier2_runtime/runtime_interpreter.md#分岐脱出時のフレームプルーニングと TOS 復元手順（手順アクティビティ図）"
     ],
     "IPCDI": [
@@ -1329,23 +1329,23 @@
       "sec:architecture/architecture_overview.md#2.2 コンポーネント定義図 (BDD)",
       "sec:components/tier1_interface/ipc_router.md#5.3 サービスファサード"
     ],
-    "JITC-GOTCHA-01": [
+    "GOTCHA-JITC-01": [
       "sec:components/tier3_jit/jit_compiler.md#Copy-and-Patch ステンシル結合 & バックパッチング手順（手順アクティビティ図）"
     ],
-    "JITC-GOTCHA-02": [
+    "GOTCHA-JITC-02": [
       "sec:components/tier3_jit/jit_compiler.md#Copy-and-Patch ステンシル結合 & バックパッチング手順（手順アクティビティ図）"
     ],
-    "JITC-GOTCHA-05": [
+    "GOTCHA-JITC-05": [
       "sec:components/tier3_jit/jit_compiler.md#Copy-and-Patch ステンシル結合 & バックパッチング手順（手順アクティビティ図）"
     ],
-    "JITC-GOTCHA-07": [
+    "GOTCHA-JITC-07": [
       "sec:components/tier3_jit/jit_compiler.md#8. 設計判断 (ADR)",
       "sec:specs/jit_stencil_catalog.md#3.1 プロローグ & エピローグ・ステンシル (Prologue, Epilogue & Spill Flush)"
     ],
-    "JITR-GOTCHA-02": [
+    "GOTCHA-JITR-02": [
       "sec:components/tier3_jit/jit_runtime.md#3面世代交代ローテーションと被チェイン局所アンリンク（責務シーケンス図）"
     ],
-    "JITR-GOTCHA-03": [
+    "GOTCHA-JITR-03": [
       "sec:components/tier3_jit/jit_runtime.md#3面世代交代ローテーションと被チェイン局所アンリンク（責務シーケンス図）"
     ],
     "JIT_CopyAndPatch": [
@@ -1499,10 +1499,10 @@
       "sec:components/tier3_jit/jit_compiler.md#1. コンセプト",
       "sec:specs/jit_stencil_catalog.md#1. 概要と基本思想"
     ],
-    "LOAD-GOTCHA-01": [
+    "GOTCHA-LOAD-01": [
       "sec:components/tier2_runtime/runtime_loader.md#FNV-1a シンボル検索 & 生文字列完全一致照合（手順アクティビティ図）"
     ],
-    "LOAD-GOTCHA-02": [
+    "GOTCHA-LOAD-02": [
       "sec:components/tier2_runtime/runtime_loader.md#トランザクション的パース & ロールバック手順（手順アクティビティ図）"
     ],
     "Libgcc_Runtime_Helper": [
@@ -1573,10 +1573,10 @@
       "sec:components/tier1_core/os_scheduler.md#実行譲渡（yield）",
       "sec:components/tier1_core/os_scheduler.md#実行（run）"
     ],
-    "MEM-GOTCHA-03": [
+    "GOTCHA-MEM-03": [
       "sec:components/tier2_runtime/runtime_vmmio.md#共有メモリ権限剥奪と TLB 即時無効化（責務シーケンス図）"
     ],
-    "MEM-GOTCHA-04": [
+    "GOTCHA-MEM-04": [
       "sec:components/tier3_platform/platform_memory.md#JIT W^X バッチ切り替えトランザクション手順（手順アクティビティ図）"
     ],
     "META_3TierSeparation": [
@@ -2063,7 +2063,7 @@
       "sec:components/tier1_interface/ipc_router.md#ロール間通信許可マトリクス (FB_CONF_ROUTER_ROLE_MATRIX)",
       "sec:components/tier1_interface/tests/ipc_router_test_spec.md#2. テストケース一覧"
     ],
-    "SCHED-GOTCHA-01": [
+    "GOTCHA-SCHED-01": [
       "sec:components/tier1_core/os_scheduler.md#連続直接ハンドオフ上限判定とメインループ復帰手順（手順アクティビティ図）"
     ],
     "SelfReboot_via_Event": [
@@ -2221,19 +2221,19 @@
       "sec:components/tier2_runtime/runtime_vmmio.md#4.5 VDMA レジスタ詳細 (FC=12)",
       "sec:components/tier2_runtime/runtime_vmmio.md#4.8 ソフトウェアTLB"
     ],
-    "VMMIO-GOTCHA-01": [
+    "GOTCHA-VMMIO-01": [
       "sec:components/tier2_runtime/runtime_vmmio.md#多段アドレスデコード & TLB ルックアップ（手順アクティビティ図）"
     ],
-    "VMMIO-GOTCHA-02": [
+    "GOTCHA-VMMIO-02": [
       "sec:components/tier2_runtime/runtime_vmmio.md#多段アドレスデコード & TLB ルックアップ（手順アクティビティ図）"
     ],
-    "VMMIO-GOTCHA-03": [
+    "GOTCHA-VMMIO-03": [
       "sec:components/tier2_runtime/runtime_vmmio.md#共有メモリ権限剥奪と TLB 即時無効化（責務シーケンス図）"
     ],
-    "VSOC-GOTCHA-01": [
+    "GOTCHA-VSOC-01": [
       "sec:components/tier2_runtime/runtime_vsoc.md#vSoC 実行エンジン委譲とトレース境界イールド判定（責務シーケンス図）"
     ],
-    "VSOC-GOTCHA-02": [
+    "GOTCHA-VSOC-02": [
       "sec:components/tier2_runtime/runtime_vsoc.md#vSoC 実行エンジン委譲とトレース境界イールド判定（責務シーケンス図）"
     ],
     "VSOC_Lifecycle": [

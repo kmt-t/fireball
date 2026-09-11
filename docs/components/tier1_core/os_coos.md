@@ -61,9 +61,9 @@ graph TD
 | 待機方向 | 待機タスクが送信側か受信側かの区別 | 列挙 | `NONE` / `SEND` / `RECV` |
 
 **チャネルがバッファも待機列も持たない設計理由と不変条件 (`{ADR_RendezvousChannel}`)**:
-- **値スロット完全不在による二重所有排除 (`COOS-GOTCHA-01`)**:
+- **値スロット完全不在による二重所有排除 (`GOTCHA-COOS-01`)**:
   チャネル構造体自身はメッセージバッファ（値スロット）を一切保持しない。送信側タスクは相手が現れるまで自身のコルーチンフレーム上に値を留めたまま待機し、受信側タスクが到着した瞬間にフレーム間で直接手渡し（ゼロコピー所有権移譲）を行う。これにより、チャネル満杯（overflow）や送信失敗時の複雑なロールバック処理が原理的に不要となり、さらに「チャネルが中間的に値を保持している状態」が存在しないため、二重所有（Double Ownership）やメモリリークが構造的・形式的に排除される。
-- **1チャネル1待機者制約とキューイングの排除 (`COOS-GOTCHA-02`)**:
+- **1チャネル1待機者制約とキューイングの排除 (`GOTCHA-COOS-02`)**:
   同一チャネルに対して複数の送信側タスク（または複数の受信側タスク）が同時に待機を試みることは、アーキテクチャ上の重大な設計違反（プログラミングエラー）であり、エラー返却やキューイングによる差し戻しではなく `assert` により即座に停止させる。もし待機列を設けてキューイングを許容すると、未制限な実行時メモリ確保（`malloc`/`new`）や優先度逆転、待機順序調停のためのロック競合が不可避となる。これを防ぐため、Fireball ではサービス URI とロールベースの直交設計により「1 チャネル＝単一の待機者スロット」を静的制約として厳格に強制する。複数のクライアントが同一サービスを利用する場合は、IPC ルータの受信選択（`select`）機構を用いてチャネルを個別に分離する。
 
 ##### チャネル送受信動作の挙動定義
@@ -207,13 +207,13 @@ COOS の動的スケジューリングおよび同期通信の基本アルゴリ
 | :--- | :--- | :--- | :--- | :--- |
 | **CSP Handoff** | `send`/`recv` 時に相手タスクが待機中 | スケジューラをバイパスして即座に相手タスクへ直接対称遷移 | ディスパッチオーバーヘッドの極小化 | `{CSP_Handoff}` |
 | **直接コンテキストスイッチ (Direct Context Switch)** | コルーチンの対称遷移 | コールスタックを消費せず相手タスクのコルーチンハンドルへ直接ジャンプ | 2KB極小スタックでのスタックオーバーフロー完全防止 | `{DirectContextSwitch}` |
-| **割り込みウェイクアップ (Interrupt Wakeup)** | 外部イベント発生 | ISRは固定長FIFOへ汎用`interrupt-event`を投函するのみ。スケジューラが協調境界でドレインして待機タスクをREADY化 | ISRクリティカルセクション極小化・多重割り込みロック競合防止（`COOS-GOTCHA-03`） | `{GLOBAL_InterruptWakeup}` |
+| **割り込みウェイクアップ (Interrupt Wakeup)** | 外部イベント発生 | ISRは固定長FIFOへ汎用`interrupt-event`を投函するのみ。スケジューラが協調境界でドレインして待機タスクをREADY化 | ISRクリティカルセクション極小化・多重割り込みロック競合防止（`GOTCHA-COOS-03`） | `{GLOBAL_InterruptWakeup}` |
 | **Idle Detection** | 全タスクがBLOCKEDかつイベントキュー空 | 登録済み `idle_hook` コールバック群を専用Idleタスクとして呼び出す（呼び出し先の内部状態・トリガー条件には関与しない） | CPU省電力化および低優先度保守タスクの安全実行 | `{GLOBAL_IdleDetection}` |
 | **Memory Management** | タスク生成時 | コンパイル時固定プールから独立したメモリパーティションを切り出して貸与 | タスク間ヒープ干渉の物理排除 | `{GLOBAL_StrictMemoryLimit}` `{GLOBAL_IndependentHeap}` |
 
 - **CSP Handoff (直接スイッチ)**: `send`/`recv` 時に相手タスクが既に待機状態であった場合、スケジューラを介さず即座に相手タスクへ実行権を移譲する。 `{CSP_Handoff}`
 - **直接コンテキストスイッチ (Direct Context Switch)**: コルーチンの対称遷移（Symmetric Transfer）により、コールスタックを消費せずに相手タスクのコルーチンハンドルへ直接ジャンプする。OSスケジューラのキュー処理オーバーヘッドを完全にバイパスし、極小スタック（2KB）環境下でもスタックオーバーフローを起こさない決定論的 $O(1)$ スイッチを実現する。実測は [`direct_context_switch_bench.py`](docs/components/tier1_core/benchmarks/direct_context_switch_bench.py) を参照。 `{DirectContextSwitch}`
-- **割り込みウェイクアップ (Interrupt Wakeup)**: 外部イベントが発生した際、割り込みサービスルーチン（ISR）から `notify_interrupt(interrupt-event)` が呼び出され、固定長FIFOへ原因レコードを投函する。**実装の勘所と設計理由 (`COOS-GOTCHA-03`)**: ISR コンテキスト内ではタスク状態や優先度キューを一切直接書き換えない。ISR で直接キュー操作やコルーチン起床を行うと、ハードウェア割り込み無効化区間（クリティカルセクション）が肥大化し、最高優先度割り込みの応答レイテンシが劣化するだけでなく、多重割り込み時のロック競合を引き起こす。そのため、ISR は固定長FIFOへの原子的なイベント記録のみを行い、スケジューラが各協調境界（`run_step` 開始時）でこれをドレイン（`drain_interrupts`）して初めて、`vector_id`に対応する待機タスクを READY 状態へ遷移させて実行可能キュー末尾に投入する。FIFO満杯または待機先が未登録の場合はドロップし、ドロップ数を記録する。 `{GLOBAL_InterruptWakeup}`
+- **割り込みウェイクアップ (Interrupt Wakeup)**: 外部イベントが発生した際、割り込みサービスルーチン（ISR）から `notify_interrupt(interrupt-event)` が呼び出され、固定長FIFOへ原因レコードを投函する。**実装の勘所と設計理由 (`GOTCHA-COOS-03`)**: ISR コンテキスト内ではタスク状態や優先度キューを一切直接書き換えない。ISR で直接キュー操作やコルーチン起床を行うと、ハードウェア割り込み無効化区間（クリティカルセクション）が肥大化し、最高優先度割り込みの応答レイテンシが劣化するだけでなく、多重割り込み時のロック競合を引き起こす。そのため、ISR は固定長FIFOへの原子的なイベント記録のみを行い、スケジューラが各協調境界（`run_step` 開始時）でこれをドレイン（`drain_interrupts`）して初めて、`vector_id`に対応する待機タスクを READY 状態へ遷移させて実行可能キュー末尾に投入する。FIFO満杯または待機先が未登録の場合はドロップし、ドロップ数を記録する。 `{GLOBAL_InterruptWakeup}`
 - **Idle Detection**: 全ての実行中タスクがブロック状態にあり、かつイベントキューが空（割り込みや外部イベントによる起床待ちのみ）の場合にアイドル状態と判定する。この条件が成立した時のみ、登録済みの `idle_hook` コールバック群をREADYリング外の専用Idleタスクとして呼び出す。個々のコールバック（ログフラッシュ等）が実際にいつ・何を処理するかはコールバック側の内部実装事項であり、COOS はそれを規定・関知しない（登録・起動機構のみを提供する）。ログフラッシュの具体的なトリガー条件は [`runtime_logging.md`](docs/components/tier2_runtime/runtime_logging.md) を正本とする。 `{GLOBAL_IdleDetection}`
 - **Memory Management**: タスク生成時に独立したメモリパーティションを割り当てる。 `{GLOBAL_StrictMemoryLimit}` `{GLOBAL_IndependentHeap}`
 
@@ -357,7 +357,7 @@ class shared_block {
   shared_block& operator=(const shared_block&) = delete;
   shared_block(shared_block&& other) noexcept;
   shared_block& operator=(shared_block&& other) noexcept;
-  ~shared_block() noexcept;  // スコープ終了時に自動解放 (MEM-11)
+  ~shared_block() noexcept;  // スコープ終了時に自動解放 (TEST-MEM-11)
 
   [[nodiscard]] auto shm_id() const noexcept -> uint32_t;
   [[nodiscard]] auto size() const noexcept -> uint32_t;

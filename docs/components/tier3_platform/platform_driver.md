@@ -74,7 +74,7 @@ graph TD
 - **割り込み配送**: COOSから渡された`interrupt-event`は、vSoCがSafepointで受け取り、ゲスト配送またはドロップを行う。vIRQの分類・デバイスノード・ゲスト関数登録はvSoCとvMMIOの契約に従い、物理ドライバはゲスト関数を直接呼び出さない。 `{TaskPollInterruptEvent}` `{GLOBAL_InterruptWakeup}`
 
 #### HalBufferPool バッファ確保・境界検査手順（手順アクティビティ図）
-<!-- traceability: {HAL-GOTCHA-01} {HAL_Interface} {IPC_ZeroCopy} -->
+<!-- traceability: {GOTCHA-HAL-01} {HAL_Interface} {IPC_ZeroCopy} -->
 デバイス通信用バッファスロットの固定長境界検証、タスク所有権照合、および不正アクセス防御手順を示す。
 
 ```mermaid
@@ -91,7 +91,7 @@ flowchart TD
 
     subgraph Buffer Release / Destruction
         RelStart(["HAL Driver: release_buffer(hal_buf_id)"]) --> VerifyOwner{"caller_task_id == slot.owner_id?"}
-        VerifyOwner -- "No (Unauthorized Task!)" --> TrapOwner(["HAL-GOTCHA-01 Trap: HalBufferTrap / ERR_PERMISSION_DENIED"])
+        VerifyOwner -- "No (Unauthorized Task!)" --> TrapOwner(["GOTCHA-HAL-01 Trap: HalBufferTrap / ERR_PERMISSION_DENIED"])
         VerifyOwner -- "Yes" --> ClearSlot["Zero slot memory & Reset slot.owner_id = 0"]
         ClearSlot --> ReturnPool(["Slot returned to Free Pool"])
     end
@@ -147,14 +147,14 @@ sequenceDiagram
 <!-- traceability: {HAL_Interface} {IPC_ZeroCopy} -->
 [`hal_dispatch.md`](docs/components/tier2_runtime/hal_dispatch.md) の `{HAL_Interface}` で定義された契約API（`read`, `write`, `transfer`, `acquire_buffer`）を、以下の物理不変条件に従って実装する。
 
-**静的固定長バッファプールの境界厳格検査 (`HAL-GOTCHA-01`)**:
+**静的固定長バッファプールの境界厳格検査 (`GOTCHA-HAL-01`)**:
 `acquire_buffer`（`HalBufferPool`）は、固定サイズスロット（`FB_CONF_HAL_BUFFER_SIZE` = 256 バイト）の静的プールからバッファを切り出す。
 **設計理由と不変条件**: 要求サイズが 256 バイトを超過した場合（`size > FB_CONF_HAL_BUFFER_SIZE`）は即座に `ValueError` で拒絶する。また、バッファ解放時（`release_buffer`）は呼び出し元タスク ID が割り当て時の所有タスク ID と一致することを厳格に検査し、不一致時は `HalBufferTrap` により即時停止させる。これにより、隣接する固定長スロットの汚染や不正解放を完全に防止する。
 
-**UART トランスポートの双方向独立性 (`HAL-GOTCHA-02`)**:
+**UART トランスポートの双方向独立性 (`GOTCHA-HAL-02`)**:
 UART デバイスドライバにおける送信リングバッファと受信リングバッファは、メモリ領域・ポインタ共に完全に独立したデータ構造として管理される。送受信でバッファや状態変数を不用意に共有・使い回すことを禁止し、全二重シリアル通信時における送受信ポインタ競合やデータ化けを防止する。
 
-**単調増加タイマーの差分計算安全性 (`HAL-GOTCHA-03`)**:
+**単調増加タイマーの差分計算安全性 (`GOTCHA-HAL-03`)**:
 32-bit ハードウェアカウンタ（SysTick / タイマー）による経過時間計測は、絶対時刻比較（`t2 > t1`）ではなく、必ず符号なし差分減算（`elapsed = t2 - t1`）により評価する。32-bit カウンタが 0xFFFFFFFF から 0x00000000 へラップアラウンドした場合であっても、2の補数演算のモジュロ代数によりアンダーフロー減算が正しく正確な経過時間を導出し、タイマーの単調増加性を保証する。
 
 ### 5.4 RSP デバッグトランスポート仕様
@@ -177,7 +177,7 @@ UART および SEGGER RTT の双方において同一の RSP パケットエン�
 
 ### 7.1 検証対象の不変条件
 - **非同期割り込み境界分離**: ISR からタスク状態を直接変更せずキュー経由で安全にディスパッチすること（`interrupt_boundary_model.py` の `isr_does_not_update_task_state_directly` および `interrupt_event_reaches_scheduler_boundary`）。
-- **固定長スロット境界保護**: 要求サイズが 256 バイトを超える場合の即時拒絶（`HAL-GOTCHA-01`）。
+- **固定長スロット境界保護**: 要求サイズが 256 バイトを超える場合の即時拒絶（`GOTCHA-HAL-01`）。
 
 ### 7.2 テスト仕様書との連携
-本コンポーネントのテストケース（HAL-01〜HAL-10, HAL-GOTCHA-01〜03）は、[`platform_driver_test_spec.md`](docs/components/tier3_platform/tests/platform_driver_test_spec.md) を正本として定義する。契約レベルのテストは [`hal_dispatch_test_spec.md`](docs/components/tier2_runtime/tests/hal_dispatch_test_spec.md) を参照。
+本コンポーネントのテストケース（TEST-HAL-01〜TEST-HAL-10, GOTCHA-HAL-01〜03）は、[`platform_driver_test_spec.md`](docs/components/tier3_platform/tests/platform_driver_test_spec.md) を正本として定義する。契約レベルのテストは [`hal_dispatch_test_spec.md`](docs/components/tier2_runtime/tests/hal_dispatch_test_spec.md) を参照。

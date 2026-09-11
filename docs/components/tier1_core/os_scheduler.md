@@ -61,15 +61,15 @@ graph TD
 <!-- traceability: {GLOBAL_IdleDetection} {GLOBAL_PeriodicTask} {GLOBAL_InterruptWakeup} {Challenge_CspHandoffStarvation} {CSP_Handoff} -->
 - **スケジューリング**: ラウンドロビン方式。
     - スケジューラ・コンテキスト内の「実行可能タスク列」を固定長リングキューで管理し、定数時間 $O(1)$ でのタスク切り替えを実現する。
-- **連続直接ハンドオフ上限とメインループ強制復帰 (`SCHED-GOTCHA-01`, `{Challenge_CspHandoffStarvation}`)**:
+- **連続直接ハンドオフ上限とメインループ強制復帰 (`GOTCHA-SCHED-01`, `{Challenge_CspHandoffStarvation}`)**:
     - CSP通信のランデブー成立時、呼び出し元と呼び出し先は C++20 コルーチンの対称遷移（Symmetric Transfer）によりスケジューラをバイパスして直接遷移（`{CSP_Handoff}`）を行う。
-    - **設計理由と不変条件**: 直接ハンドオフを無制限に許可すると、例えば2つの高頻度通信タスクが互いにメッセージをピンポン送受信し続けた場合に CPU を独占し、READY キュー内に待機している他のタスク（タイマー処理、システム監視、低優先度タスク等）が永久にディスパッチされず餓死（Starvation）に陥る。これを防ぐため、スケジューラは連続直接遷移カウンタ（`consecutive_handoffs`）を保持し、設定された上限（ビルド時定数 `FB_CONF_MAX_CONSECUTIVE_HANDOFFS`、既定値 `4` 回）に到達した瞬間に直接遷移を強制打ち切りとし、相手タスクを READY キュー末尾へ投入した上で `YIELD` を返却してスケジューラのメイン巡回ループへ強制復帰させる。これにより、いかなる通信パターンであっても全タスクへの公平な実行機会と有界な応答時間を形式的に保証する（形式検証モデル `formal/coos_channel_model.py` にて pyModelChecking CTL モデル検査により無餓死性・有界復帰性を証明済み）。 `{SCHED-GOTCHA-01}` `{Challenge_CspHandoffStarvation}` `{CSP_Handoff}`
+    - **設計理由と不変条件**: 直接ハンドオフを無制限に許可すると、例えば2つの高頻度通信タスクが互いにメッセージをピンポン送受信し続けた場合に CPU を独占し、READY キュー内に待機している他のタスク（タイマー処理、システム監視、低優先度タスク等）が永久にディスパッチされず餓死（Starvation）に陥る。これを防ぐため、スケジューラは連続直接遷移カウンタ（`consecutive_handoffs`）を保持し、設定された上限（ビルド時定数 `FB_CONF_MAX_CONSECUTIVE_HANDOFFS`、既定値 `4` 回）に到達した瞬間に直接遷移を強制打ち切りとし、相手タスクを READY キュー末尾へ投入した上で `YIELD` を返却してスケジューラのメイン巡回ループへ強制復帰させる。これにより、いかなる通信パターンであっても全タスクへの公平な実行機会と有界な応答時間を形式的に保証する（形式検証モデル `formal/coos_channel_model.py` にて pyModelChecking CTL モデル検査により無餓死性・有界復帰性を証明済み）。 `{GOTCHA-SCHED-01}` `{Challenge_CspHandoffStarvation}` `{CSP_Handoff}`
 - **アイドル状態の検知**: 全ての管理タスクが「待機状態（BLOCKED/SUSPENDED_CSP）」となった場合にアイドル・ハンドラ（Periodic Task、ログフラッシュ、JITバッチコンパイル等）を実行する。 `{GLOBAL_IdleDetection}` `{GLOBAL_PeriodicTask}`
 - **割り込み処理**: HALからの原因付き`interrupt-event`通知（`notify_interrupt(event)`）を受信し、固定長FIFOから回収して`vector_id`に対応する対象タスクをREADYキュー末尾に追加する。 `{GLOBAL_InterruptWakeup}`
 
 
 #### 連続直接ハンドオフ上限判定とメインループ復帰手順（手順アクティビティ図）
-<!-- traceability: {SCHED-GOTCHA-01} {Challenge_CspHandoffStarvation} {CSP_Handoff} -->
+<!-- traceability: {GOTCHA-SCHED-01} {Challenge_CspHandoffStarvation} {CSP_Handoff} -->
 高頻度ピンポン通信による CPU 独占・他タスク餓死を防止し、メインループへの有界復帰を保証する制御フローを示す。
 
 ```mermaid

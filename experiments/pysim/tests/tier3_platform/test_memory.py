@@ -56,7 +56,7 @@ def wat_to_wasm(wat_text: str) -> bytes:
 
 
 def test_mem_01_acquire_task_heap_fixed_size():
-    """MEM-01: acquire-task-heap provides task-specific fixed partition (no arbitrary size)."""
+    """TEST-MEM-01: acquire-task-heap provides task-specific fixed partition (no arbitrary size)."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     res = mm.acquire_task_heap(owner=1)
@@ -68,7 +68,7 @@ def test_mem_01_acquire_task_heap_fixed_size():
 
 
 def test_mem_02_recovery_strategy_on_exhaustion():
-    """MEM-02: Memory exhaustion returns structured error with recovery strategy."""
+    """TEST-MEM-02: Memory exhaustion returns structured error with recovery strategy."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_TASK_HEAP_SIZES[0])
     assert mm.acquire_task_heap(owner=1).is_ok
@@ -79,7 +79,7 @@ def test_mem_02_recovery_strategy_on_exhaustion():
 
 
 def test_mem_03_total_allocation_bound():
-    """MEM-03: Total allocated bytes never exceeds FB_CONF_MEMORY_POOL_SIZE."""
+    """TEST-MEM-03: Total allocated bytes never exceeds FB_CONF_MEMORY_POOL_SIZE."""
     mm = MemoryManager()
     pool_size = 128 * 1024
     mm.init_manager(pool_base=0x20020000, pool_size=pool_size)
@@ -91,7 +91,7 @@ def test_mem_03_total_allocation_bound():
 
 
 def test_mem_04_owner_task_id_auto_set():
-    """MEM-04: Caller task-id is automatically recorded on all allocations."""
+    """TEST-MEM-04: Caller task-id is automatically recorded on all allocations."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     p_res = mm.acquire_task_heap(owner=5)
@@ -101,7 +101,7 @@ def test_mem_04_owner_task_id_auto_set():
 
 
 def test_mem_05_release_and_deallocate_owner_only():
-    """MEM-05: Partition release is permitted ONLY by owner task."""
+    """TEST-MEM-05: Partition release is permitted ONLY by owner task."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     mm.acquire_task_heap(owner=3)
@@ -115,7 +115,7 @@ def test_mem_05_release_and_deallocate_owner_only():
 
 
 def test_mem_06_guest_ram_64kb_alignment():
-    """MEM-06: pool_base is strictly 64KB aligned."""
+    """TEST-MEM-06: pool_base is strictly 64KB aligned."""
     mm = MemoryManager()
     assert mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE).is_ok
     try:
@@ -126,7 +126,7 @@ def test_mem_06_guest_ram_64kb_alignment():
 
 
 def test_mem_10_shared_block_ownership_transfer():
-    """MEM-10: allocate-shared -> release -> claim moves ownership cleanly without double-ownership."""
+    """TEST-MEM-10: allocate-shared -> release -> claim moves ownership cleanly without double-ownership."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     sb_a = mm.allocate_shared(caller_task_id=1, size=1024).unwrap()
@@ -192,7 +192,7 @@ def test_mem_10_shared_block_ownership_transfer():
 
 
 def test_mem_10c_rollback_transfer_restores_owner_id():
-    """MEM-10c: rollback_transfer() restores PTE owner_id to the original sender."""
+    """TEST-MEM-10c: rollback_transfer() restores PTE owner_id to the original sender."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     sb = mm.allocate_shared(caller_task_id=1, size=1024).unwrap()
@@ -203,7 +203,7 @@ def test_mem_10c_rollback_transfer_restores_owner_id():
 
 
 def test_mem_11_shared_block_raII_auto_deallocate():
-    """MEM-11: SharedBlock RAII automatically deallocates buffer on drop."""
+    """TEST-MEM-11: SharedBlock RAII automatically deallocates buffer on drop."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     initial_alloc = mm.total_allocated_bytes
@@ -215,7 +215,7 @@ def test_mem_11_shared_block_raII_auto_deallocate():
 
 
 def test_mem_14_page_granular_permission_isolation():
-    """MEM-14: Different tasks cannot share the same 4KB page; separate pages allocated."""
+    """TEST-MEM-14: Different tasks cannot share the same 4KB page; separate pages allocated."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
 
@@ -234,7 +234,7 @@ def test_mem_14_page_granular_permission_isolation():
 
 
 def test_mem_15_vmmio_fc14_tlb_sync():
-    """MEM-15: vMMIO FC=14 mapping, update and TLB flush driven by MemoryManager."""
+    """TEST-MEM-15: vMMIO FC=14 mapping, update and TLB flush driven by MemoryManager."""
 
     vmmio = VMMIOController(guest_ram_size=8192)
     mm = MemoryManager()
@@ -266,7 +266,7 @@ def test_mem_15_vmmio_fc14_tlb_sync():
 
 
 def test_mem_20_mpu_8_regions_static_allocation():
-    """MEM-20: 8 MPU regions match the PMSAv8 static allocation table."""
+    """TEST-MEM-20: 8 MPU regions match the PMSAv8 static allocation table."""
     mpu = PMSAv8MPU(pool_base=0x20020000)
     assert len(mpu.regions) == 8
     assert mpu.regions[0].ap == AccessPermission.RO and not mpu.regions[0].xn
@@ -276,7 +276,7 @@ def test_mem_20_mpu_8_regions_static_allocation():
 
 
 def test_mem_21_jit_code_cache_wx_switch_and_restore():
-    """MEM-21 & MEM-22: JIT code cache W^X transaction switching and permanent non-RWX."""
+    """TEST-MEM-21 & TEST-MEM-22: JIT code cache W^X transaction switching and permanent non-RWX."""
     mpu = PMSAv8MPU(pool_base=0x20020000)
     mpu.assert_no_rwx()
     mpu.begin_jit_patch()
@@ -288,7 +288,7 @@ def test_mem_21_jit_code_cache_wx_switch_and_restore():
 
 
 def test_mem_24_transaction_batching_barrier_efficiency():
-    """MEM-24: Batching emits exactly 1 begin / 1 commit barrier pair per compilation unit,
+    """TEST-MEM-24: Batching emits exactly 1 begin / 1 commit barrier pair per compilation unit,
     regardless of how many instruction patches are applied within it."""
     mpu = PMSAv8MPU(pool_base=0x20020000)
     mpu.begin_jit_patch()
@@ -301,7 +301,7 @@ def test_mem_24_transaction_batching_barrier_efficiency():
 
 
 def test_mem_25_pmsav8_32byte_alignment():
-    """MEM-25: All MPU base and limit addresses adhere to 32-byte alignment."""
+    """TEST-MEM-25: All MPU base and limit addresses adhere to 32-byte alignment."""
     mpu = PMSAv8MPU(pool_base=0x20020000)
     for r in mpu.regions:
         assert r.base_address % 32 == 0, f"Region {r.region_no} base must be 32-byte aligned"

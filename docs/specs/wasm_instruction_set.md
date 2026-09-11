@@ -115,8 +115,8 @@
 | `0x6C` | `i32.mul` | `[i32, i32] -> [i32]` | 乗算 | あり (MUL) | `MUL r3, r4, r3` |
 | `0x6D` | `i32.div_s` | `[i32, i32] -> [i32]` | 符号付き除算 (0除算トラップ)| あり (SDIV) | 0判定 $\to$ `SDIV r3, r4, r3` |
 | `0x6E` | `i32.div_u` | `[i32, i32] -> [i32]` | 符号なし除算 (0除算トラップ)| あり (UDIV) | 0判定 $\to$ `UDIV r3, r4, r3` |
-| `0x6F` | `i32.rem_s` | `[i32, i32] -> [i32]` | 符号付き剰余 (0除算トラップ)| あり (SDIV & MLS) | 0判定 $\to$ `SDIV r12, r4, r3; MLS r3, r12, r3, r4`（`JITC-GOTCHA-06`） |
-| `0x70` | `i32.rem_u` | `[i32, i32] -> [i32]` | 符号なし剰余 (0除算トラップ)| あり (UDIV & MLS) | 0判定 $\to$ `UDIV r12, r4, r3; MLS r3, r12, r3, r4`（`JITC-GOTCHA-06`） |
+| `0x6F` | `i32.rem_s` | `[i32, i32] -> [i32]` | 符号付き剰余 (0除算トラップ)| あり (SDIV & MLS) | 0判定 $\to$ `SDIV r12, r4, r3; MLS r3, r12, r3, r4`（`GOTCHA-JITC-06`） |
+| `0x70` | `i32.rem_u` | `[i32, i32] -> [i32]` | 符号なし剰余 (0除算トラップ)| あり (UDIV & MLS) | 0判定 $\to$ `UDIV r12, r4, r3; MLS r3, r12, r3, r4`（`GOTCHA-JITC-06`） |
 | `0x71` | `i32.and` | `[i32, i32] -> [i32]` | ビット論理積 | あり (ANDS / AND) | `ANDS r3, r4, r3` |
 | `0x72` | `i32.or` | `[i32, i32] -> [i32]` | ビット論理和 | あり (ORRS / ORR) | `ORRS r3, r4, r3` |
 | `0x73` | `i32.xor` | `[i32, i32] -> [i32]` | ビット排他論理和 | あり (EORS / EOR) | `EORS r3, r4, r3` |

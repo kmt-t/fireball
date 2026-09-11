@@ -76,13 +76,13 @@ GDB等の外部クライアントに提示する WASM 仮想レジスタ番号�
 
 ### 4.1 アルゴリズム
 <!-- traceability: {DebuggerLabelTableSwitch} {RSPMinimalSet} {Debug_Integrated} -->
-1. **コマンド取得とチェックサム照合 (`DBG-GOTCHA-03`)**:
+1. **コマンド取得とチェックサム照合 (`GOTCHA-DBG-03`)**:
    - HAL層が `$`〜`#`のパケットフレーミングとチェックサム検証（一致時 ACK (`+`)、不一致時 NAK (`-`)）を完了させた上で供給する `debug_command` を、コマンドキューから取得する。
    **設計理由と不変条件**: GDB RSP はシリアル通信等の低信頼通信路での利用を想定しているため、パケット末尾の 2 桁の 16 進チェックサムを厳格に照合する。万一チェックサムが不一致であった場合は一切のコマンド解釈・実行を行わず、直ちに NAK（`-`）を返信してホスト側の GDB クライアントへ再送を要求する。
-2. **コマンドディスパッチと JIT キャッシュ即時フラッシュ (`DBG-GOTCHA-01`, `{Debugger_Jit_Flush}`)**:
+2. **コマンドディスパッチと JIT キャッシュ即時フラッシュ (`GOTCHA-DBG-01`, `{Debugger_Jit_Flush}`)**:
    - 取得したコマンド（`?`, `g/G`, `m/M`, `c`, `s`, `Z0/z0` 等）の GDB コマンド構文を解析し、ディスパッチする。
    **設計理由と不変条件**: メモリ書き込みコマンド（`M` パケット）によってゲスト RAM 上のバイト列やコード領域が書き換えられた場合、直ちに JIT キャッシュの全バンク（Active / Warm / Oldest）を無効化（`invalidate_all_banks()`）する。書き換え前の古いネイティブコードが JIT キャッシュに残存していると、デバッガでパッチを当てた処理が反映されず、自己書き換えコード的不整合を引き起こすためである。
-3. **ハンドラテーブル切替によるゼロオーバーヘッド・デバッグ (`DBG-GOTCHA-02`, `{DebuggerLabelTableSwitch}`)**:
+3. **ハンドラテーブル切替によるゼロオーバーヘッド・デバッグ (`GOTCHA-DBG-02`, `{DebuggerLabelTableSwitch}`)**:
    - デバッガアタッチ中は命令粒度の実行制御のためインタープリタのハンドラテーブルをデバッグ用テーブル（`debug_handler_table`）へ切り替えて 1 命令ずつステップ実行またはブレークポイントまで連続実行する。
    **設計理由と不変条件**: 通常実行時のインタープリタハンドラ内に `if (debug_enabled)` やブレークポイント検査の条件分岐を埋め込むと、非デバッグ時の実行性能が恒常的に数〜十数% 劣化する。そのため、通常実行時は分岐ゼロの高速ハンドラテーブルを使用し、デバッグセッション開始時にのみ関数ポインタテーブルをアトミックに差し替えることで、非デバッグ時のオーバーヘッドを完全にゼロに保つ。
 4. **ステップ実行**:
@@ -96,7 +96,7 @@ GDB等の外部クライアントに提示する WASM 仮想レジスタ番号�
 
 
 #### GDB メモリ書き換え時の JIT キャッシュ即時フラッシュ（責務シーケンス図）
-<!-- traceability: {DBG-GOTCHA-01} {DBG-GOTCHA-03} {Debugger_Jit_Flush} {RSPChecksumVerify} -->
+<!-- traceability: {GOTCHA-DBG-01} {GOTCHA-DBG-03} {Debugger_Jit_Flush} {RSPChecksumVerify} -->
 GDB ホストからのチェックサム検証付きパケット受信、ゲストメモリ更新、および JIT キャッシュ全バンク即時フラッシュの責務連携を示す。
 
 ```mermaid
@@ -109,14 +109,14 @@ sequenceDiagram
     participant JIT as JIT Code Cache (Active/Warm/Oldest)
 
     Host->>HAL: '$M<addr>,<len>:<data>#<chksum>'
-    Note over HAL: DBG-GOTCHA-03: Compute 2-digit Hex Checksum
+    Note over HAL: GOTCHA-DBG-03: Compute 2-digit Hex Checksum
     alt Checksum Mismatch
         HAL-->>Host: '-' (NAK: request retransmission)
     else Checksum Valid
         HAL-->>Host: '+' (ACK)
         HAL->>Dbg: Push verified command (WRITE_MEMORY, addr, data)
         Dbg->>RAM: Write new bytes into Guest RAM
-        Note over Dbg,JIT: DBG-GOTCHA-01: Memory modified -> Stale JIT traces invalid!
+        Note over Dbg,JIT: GOTCHA-DBG-01: Memory modified -> Stale JIT traces invalid!
         Dbg->>JIT: invalidate_all_banks()
         Note over JIT: Increment generation cookie & wipe Active/Warm/Oldest
         JIT-->>Dbg: Cache flushed: fallback to Interpreter

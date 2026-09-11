@@ -73,7 +73,7 @@ def _run_immediate(gen):
 
 
 def test_ipc_01_uri_lookup_and_permission_matrix():
-    """IPC-01: Service URI lookup and role-based access control."""
+    """TEST-IPC-01: Service URI lookup and role-based access control."""
     sched = Scheduler()
     router = IPCRouter(sched)
     entry = router.find_service("fireball://device/gpio/0")
@@ -113,7 +113,7 @@ def test_ipc_01_uri_lookup_and_permission_matrix():
 
 
 def test_ipc_02_e2e_shared_block_transfer():
-    """IPC-02: End-to-end zero-copy SharedBlock transfer via IPC router (CSP rendezvous)."""
+    """TEST-IPC-02: End-to-end zero-copy SharedBlock transfer via IPC router (CSP rendezvous)."""
     sysv = System()
     try:
         # Sender allocates SharedBlock
@@ -163,7 +163,7 @@ def test_ipc_02_e2e_shared_block_transfer():
 
 
 def test_ipc_03_send_failure_restores_owner():
-    """IPC-03: If IPC send is rejected (e.g. RBAC denial), sender can rollback."""
+    """TEST-IPC-03: If IPC send is rejected (e.g. RBAC denial), sender can rollback."""
     sysv = System()
     try:
         sb = sysv.memory_manager.allocate_shared(caller_task_id=1, size=256).unwrap()
@@ -191,7 +191,7 @@ def test_ipc_03_send_failure_restores_owner():
 
 def test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group():
     """
-    IPC-04: recv()'s guarded external choice (select) completes with
+    TEST-IPC-04: recv()'s guarded external choice (select) completes with
     whichever allowed sender arrives first -- CORE_SERVICE is reachable from
     both RUNTIME and DEBUGGER, so a receiver must not commit to just one
     upfront. After the select resolves, the losing edge must be cleared (not
@@ -258,7 +258,7 @@ def test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group():
 
 
 def test_ipc_05_message_storage_ownership_and_access_check():
-    """IPC-05: IPCMessage owns its SharedBlock storage and enforces ownership checks upon access."""
+    """TEST-IPC-05: IPCMessage owns its SharedBlock storage and enforces ownership checks upon access."""
     from ipc_router import OwnershipState
 
     msg = IPCMessage.from_entries([(10, 100), (20, 200)])
@@ -297,7 +297,7 @@ def test_ipc_05_message_storage_ownership_and_access_check():
 
 
 def test_ipc_06_router_create_channel_authorization():
-    """IPC-06: router.create_channel() resolves destination, binds current task, checks RBAC, and returns Channel."""
+    """TEST-IPC-06: router.create_channel() resolves destination, binds current task, checks RBAC, and returns Channel."""
     sched = Scheduler()
     router = IPCRouter(sched)
 
@@ -324,7 +324,7 @@ def test_ipc_06_router_create_channel_authorization():
 
 
 def test_ipc_07_message_in_shm_and_payload_shm_transfer():
-    """IPC-07: The message is resident in shared memory, and can carry another payload SHM ID inside its entries."""
+    """TEST-IPC-07: The message is resident in shared memory, and can carry another payload SHM ID inside its entries."""
     from ipc_router import DataType, ScopeKind, pack_key32
 
     sysv = System()

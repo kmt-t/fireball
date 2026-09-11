@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
+from enum import IntFlag
 
 from leb128 import decode_signed, decode_unsigned
 from system_containers import (
@@ -24,7 +25,9 @@ from system_containers import (
     RadixBinaryTreeView,
     ReadOnlyBitStorage,
     ReadOnlyFlatMapStorage,
+    ReadOnlyFlatSetStorage,
     ReadOnlyRadixBinaryTreeStorage,
+    StaticVector,
     bswap32,
     build_radix_table,
 )
@@ -190,6 +193,15 @@ from wasm_opcodes import (
 from wasm_reader import WasmUnsupportedFeatureError
 
 
+class OpcodeAttribute(IntFlag):
+    """Static attributes attached to each byte-sized WASM opcode."""
+
+    CONTROL_LOOP = 1
+    BASIC_BLOCK_BOUNDARY = 2
+    CALL = 4
+    BRANCH = 8
+
+
 def _opcode_bitview(*opcodes: int) -> BitView:
     """
     Builds a frozen, read-only 1-bit-per-opcode (32 bytes total) membership
@@ -200,6 +212,34 @@ def _opcode_bitview(*opcodes: int) -> BitView:
     for _op in opcodes:
         storage.put(_op, 1)
     return ReadOnlyBitStorage(bytes(storage.buffer), bits=1, count=256).view()
+
+
+_OPCODE_ATTRIBUTE_STORAGE = MutableBitStorage(count=256, bits=4)
+for _opcode, _attributes in (
+    (BLOCK, OpcodeAttribute.BASIC_BLOCK_BOUNDARY),
+    (LOOP, OpcodeAttribute.CONTROL_LOOP | OpcodeAttribute.BASIC_BLOCK_BOUNDARY),
+    (IF, OpcodeAttribute.BASIC_BLOCK_BOUNDARY),
+    (ELSE, OpcodeAttribute.BASIC_BLOCK_BOUNDARY),
+    (END, OpcodeAttribute.BASIC_BLOCK_BOUNDARY),
+    (BR, OpcodeAttribute.BRANCH | OpcodeAttribute.BASIC_BLOCK_BOUNDARY),
+    (BR_IF, OpcodeAttribute.BRANCH | OpcodeAttribute.BASIC_BLOCK_BOUNDARY),
+    (BR_TABLE, OpcodeAttribute.BASIC_BLOCK_BOUNDARY),
+    (RETURN, OpcodeAttribute.BASIC_BLOCK_BOUNDARY),
+    (CALL, OpcodeAttribute.CALL | OpcodeAttribute.BASIC_BLOCK_BOUNDARY),
+    (CALL_INDIRECT, OpcodeAttribute.CALL | OpcodeAttribute.BASIC_BLOCK_BOUNDARY),
+):
+    _OPCODE_ATTRIBUTE_STORAGE.put(_opcode, int(_attributes))
+
+# Immutable ROM-style opcode metadata: 256 opcodes x 4 bits = 128 bytes.
+OPCODE_ATTRIBUTES: BitView = ReadOnlyBitStorage(
+    bytes(_OPCODE_ATTRIBUTE_STORAGE.buffer), bits=4, count=256
+).view()
+
+
+def opcode_has_attribute(opcode: int, attribute: OpcodeAttribute) -> bool:
+    """Returns whether the loader's immutable opcode metadata has ``attribute``."""
+
+    return bool(OpcodeAttribute(OPCODE_ATTRIBUTES.at(opcode)) & attribute)
 
 
 _MEMARG_OPCODES = _opcode_bitview(
@@ -386,7 +426,7 @@ _BLOCK_OPENERS = _opcode_bitview(BLOCK, LOOP, IF)
 FB_CONF_MAX_NESTING_DEPTH = 32
 
 
-@dataclass
+@dataclass(slots=True)
 class Instr:
     """
     Minimal per-instruction descriptor for basic-block/control-flow
@@ -406,7 +446,7 @@ class Instr:
     )
 
 
-@dataclass
+@dataclass(slots=True)
 class ControlMap:
     """Pre-indexed block delimiters and br_table labels for direct bytecode interpretation.
     A sorted (key, value) array with O(log N) binary search lookup (`FlatMapView`, matching
@@ -414,18 +454,32 @@ class ControlMap:
     no dynamically-resized hash table to reach for."""
 
     blocks: FlatMapView[int, tuple[int, int | None]]  # opener_ip -> (match_end_ip, else_offset)
-    br_tables: FlatMapView[int, tuple[list[int], int]]  # br_table_ip -> (labels, default_label)
+    br_tables: FlatMapView[int, tuple[tuple[int, ...], int]]  # br_table_ip -> (labels, default_label)
+
+
+@dataclass(slots=True)
+class _OpenBlock:
+    opcode: int
+    start: int
+    else_offset: int | None
 
 
 def build_control_map(code: bytes) -> ControlMap:
     """Single linear scan over WASM bytecode to resolve block structure and br_tables once per function."""
-    block_entries: list[tuple[int, tuple[int, int | None]]] = []
-    br_table_entries: list[tuple[int, tuple[list[int], int]]] = []
+    block_entries: StaticVector[tuple[int, tuple[int, int | None]]] = StaticVector(
+        capacity=len(code)
+    )
+    br_table_entries: StaticVector[
+        tuple[int, tuple[tuple[int, ...], int]]
+    ] = StaticVector(capacity=len(code))
     # [opcode, start_offset, else_offset] per still-open BLOCK/LOOP/IF, in a
     # fixed-size buffer indexed by `depth` (see FB_CONF_MAX_NESTING_DEPTH) --
     # else_offset is filled in place when this entry's own ELSE is reached,
     # read back when its own END pops it.
-    open_stack: list[list[int | None] | None] = [None] * FB_CONF_MAX_NESTING_DEPTH
+    open_stack: StaticVector[_OpenBlock | None] = StaticVector.of(
+        (None,) * FB_CONF_MAX_NESTING_DEPTH,
+        capacity=FB_CONF_MAX_NESTING_DEPTH,
+    )
     depth = 0
 
     off = 0
@@ -443,7 +497,7 @@ def build_control_map(code: bytes) -> ControlMap:
                     "ERR_WASM_UNSUPPORTED_FEATURE: block/loop/if nesting exceeds "
                     f"FB_CONF_MAX_NESTING_DEPTH={FB_CONF_MAX_NESTING_DEPTH} at offset {start}"
                 )
-            open_stack[depth] = [opcode, start, None]
+            open_stack[depth] = _OpenBlock(opcode, start, None)
             depth += 1
         elif _LEB_UNSIGNED_OPERAND.at(opcode):
             _, off = decode_unsigned(code, off)
@@ -460,27 +514,35 @@ def build_control_map(code: bytes) -> ControlMap:
             off += 1  # reserved
         elif opcode == BR_TABLE:
             n_labels, off = decode_unsigned(code, off)
-            labels = []
+            labels: StaticVector[int] = StaticVector(capacity=len(code))
             for _ in range(n_labels):
                 lbl, off = decode_unsigned(code, off)
-                labels.append(lbl)
+                if not labels.push_back(lbl):
+                    raise WasmUnsupportedFeatureError(
+                        "ERR_WASM_UNSUPPORTED_FEATURE: br_table label count exceeds code capacity"
+                    )
             default_lbl, off = decode_unsigned(code, off)
-            br_table_entries.append((start, (labels, default_lbl)))
+            if not br_table_entries.push_back((start, (tuple(labels), default_lbl))):
+                raise WasmUnsupportedFeatureError(
+                    "ERR_WASM_UNSUPPORTED_FEATURE: br_table count exceeds code capacity"
+                )
         elif opcode == CALL_INDIRECT:
             _, off = decode_unsigned(code, off)
             _, off = decode_unsigned(code, off)
         elif opcode == ELSE:
             opener = open_stack[depth - 1]
-            assert opener is not None and opener[0] == IF, "ELSE without matching IF"
-            opener[2] = start
+            assert opener is not None and opener.opcode == IF, "ELSE without matching IF"
+            opener.else_offset = start
         elif opcode == END:
             if depth > 0:
                 depth -= 1
                 opener = open_stack[depth]
                 assert opener is not None
-                _opener_op, opener_start, else_offset = opener
                 open_stack[depth] = None
-                block_entries.append((opener_start, (start, else_offset)))
+                if not block_entries.push_back((opener.start, (start, opener.else_offset))):
+                    raise WasmUnsupportedFeatureError(
+                        "ERR_WASM_UNSUPPORTED_FEATURE: block count exceeds code capacity"
+                    )
         elif _NO_OPERAND.at(opcode):
             pass
         else:
@@ -650,7 +712,7 @@ def iter_block_ops(code: bytes, head_offset: int, byte_span: int) -> Iterator[tu
 
 def extract_basic_blocks(
     code: bytes, func_index: int = 0
-) -> list[tuple[int, int | None, int | None, int, int]]:
+) -> StaticVector[tuple[int, int | None, int | None, int, int]]:
     """Extracts straight-line BasicBlock PC ranges from WASM bytecode as a flat list.
     Each entry is: (head_pc, next_pc, loops_to, frame_depth, byte_span).
     head_pc = (func_index << 16) | start_offset. frame_depth is the count of
@@ -667,7 +729,7 @@ def extract_basic_blocks(
     `wasm_module.BasicBlock` for why this is never precomputed and stored
     here for every block up front.
     """
-    from wasm_opcodes import BLOCK, BR, BR_IF, ELSE, END, IF, LOOP, RETURN
+    from wasm_opcodes import BR, BR_IF, ELSE, END, IF, RETURN
 
     control_map = build_control_map(code)
     instr_stream = iter_scan_instrs(code)
@@ -688,7 +750,9 @@ def extract_basic_blocks(
         return offset
 
     base_pc = func_index << 16
-    blocks: list[tuple[int, int | None, int | None, int, int]] = []
+    blocks: StaticVector[tuple[int, int | None, int | None, int, int]] = StaticVector(
+        capacity=len(code)
+    )
     cur_op_count = 0  # count only -- the ops themselves are never materialized here
     cur_head: int | None = None
     cur_frame_depth = 0
@@ -696,7 +760,10 @@ def extract_basic_blocks(
     # Fixed-size buffer of still-open BLOCK/LOOP/IF instructions, indexed by
     # active_openers_depth (see FB_CONF_MAX_NESTING_DEPTH) -- never a
     # dynamically-growing list ({Policy_Memory}).
-    active_openers: list[Instr | None] = [None] * FB_CONF_MAX_NESTING_DEPTH
+    active_openers: StaticVector[Instr | None] = StaticVector.of(
+        (None,) * FB_CONF_MAX_NESTING_DEPTH,
+        capacity=FB_CONF_MAX_NESTING_DEPTH,
+    )
     active_openers_depth = 0
 
     for ins in instr_stream:
@@ -726,28 +793,17 @@ def extract_basic_blocks(
             cur_span_end = ins.end_offset
 
         # Check if this instruction ends the basic block
-        if ins.opcode in (
-            BR,
-            BR_IF,
-            RETURN,
-            END,
-            ELSE,
-            LOOP,
-            BLOCK,
-            IF,
-            CALL,
-            CALL_INDIRECT,
-        ):
+        if opcode_has_attribute(ins.opcode, OpcodeAttribute.BASIC_BLOCK_BOUNDARY):
             if cur_op_count:
                 branch_target = None
                 if (
-                    ins.opcode in (BR, BR_IF)
+                    opcode_has_attribute(ins.opcode, OpcodeAttribute.BRANCH)
                     and ins.operand is not None
                     and ins.operand < active_openers_depth
                 ):
                     target = active_openers[active_openers_depth - 1 - ins.operand]
                     assert target is not None
-                    if target.opcode == LOOP:
+                    if opcode_has_attribute(target.opcode, OpcodeAttribute.CONTROL_LOOP):
                         # Backward continuation: br/br_if taken jumps to the
                         # loop's own start (re-enter the loop body).
                         branch_target = base_pc | target.end_offset
@@ -804,7 +860,10 @@ def extract_basic_blocks(
                     loops_to = branch_target if ins.opcode == BR_IF else None
 
                 byte_span = cur_span_end - (cur_head & 0xFFFF)
-                blocks.append((cur_head, next_pc, loops_to, cur_frame_depth, byte_span))
+                if not blocks.push_back((cur_head, next_pc, loops_to, cur_frame_depth, byte_span)):
+                    raise WasmUnsupportedFeatureError(
+                        "ERR_WASM_UNSUPPORTED_FEATURE: basic-block count exceeds code capacity"
+                    )
                 cur_op_count = 0
 
             cur_head = None
@@ -815,7 +874,10 @@ def extract_basic_blocks(
 
     if cur_head is not None and cur_op_count:
         byte_span = cur_span_end - (cur_head & 0xFFFF)
-        blocks.append((cur_head, None, None, cur_frame_depth, byte_span))
+        if not blocks.push_back((cur_head, None, None, cur_frame_depth, byte_span)):
+            raise WasmUnsupportedFeatureError(
+                "ERR_WASM_UNSUPPORTED_FEATURE: basic-block count exceeds code capacity"
+            )
     return blocks
 
 
@@ -827,7 +889,9 @@ def build_control_skip_storage(
     Key byte order is inverted using bswap32 to maximize entropy in the upper bits
     for uniform Radix Table prefix distribution. Backing buffers are owned by this storage.
     """
-    pairs: list[tuple[int, int]] = []
+    pairs: StaticVector[tuple[int, int]] = StaticVector(
+        capacity=sum(len(fn.code) for fn in functions)
+    )
     for idx, fn in enumerate(functions):
         func_idx = n_imports + idx
         base_pc = func_idx << 16
@@ -835,7 +899,7 @@ def build_control_skip_storage(
         if not code:
             continue
         blocks = extract_basic_blocks(code, func_index=func_idx)
-        heads = {b[0] for b in blocks}
+        heads = ReadOnlyFlatSetStorage.create(tuple(b[0] for b in blocks)).view()
         for _head_pc, delim_pc, _loops_to, _frame_depth, _byte_span in blocks:
             if delim_pc is not None:
                 offset = delim_pc & 0xFFFF
@@ -844,16 +908,20 @@ def build_control_skip_storage(
                     # never the whole function up to it.
                     ins = next(iter_scan_instrs(code, offset))
                     fallthrough_pc = base_pc | ins.end_offset
-                    if fallthrough_pc in heads:
-                        pairs.append((delim_pc, fallthrough_pc))
+                    if heads.contains(fallthrough_pc) and not pairs.push_back(
+                        (delim_pc, fallthrough_pc)
+                    ):
+                        raise WasmUnsupportedFeatureError(
+                            "ERR_WASM_UNSUPPORTED_FEATURE: control-skip pair count exceeds code capacity"
+                        )
 
     if not pairs:
         return None
 
     # Key byte order is inverted via bswap32
-    sorted_pairs = sorted(pairs, key=lambda p: bswap32(p[0]))
-    inv_keys = [bswap32(p[0]) for p in sorted_pairs]
-    fallthrough_heads = [p[1] for p in sorted_pairs]
+    sorted_pairs = tuple(sorted(pairs, key=lambda p: bswap32(p[0])))
+    inv_keys = tuple(bswap32(p[0]) for p in sorted_pairs)
+    fallthrough_heads = tuple(p[1] for p in sorted_pairs)
 
     # Compact 4-bit prefix Radix Table (<= 16 buckets / 17 entries)
     radix_shift = 28
@@ -863,7 +931,7 @@ def build_control_skip_storage(
         values=fallthrough_heads,
         radix_table=radix_table,
         radix_shift=radix_shift,
-        entries=list(zip(inv_keys, fallthrough_heads, strict=False)),
+        entries=tuple(zip(inv_keys, fallthrough_heads, strict=False)),
     )
 
 

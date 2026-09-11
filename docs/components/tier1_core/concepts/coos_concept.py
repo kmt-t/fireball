@@ -2,13 +2,13 @@
 docs/components/tier1_core/concepts/coos_concept.py
 Reference Concept Implementation: COOS (Cooperative OS)
 Implementation Invariants & Gotchas:
-- COOS-GOTCHA-01: Channel has no internal value slot (ADR_RendezvousChannel). Values stay
+- GOTCHA-COOS-01: Channel has no internal value slot (ADR_RendezvousChannel). Values stay
   in sender frame until receiver handoff, preventing double-ownership.
-- COOS-GOTCHA-02: 1-channel-1-waiter constraint enforces single-waiter per direction;
+- GOTCHA-COOS-02: 1-channel-1-waiter constraint enforces single-waiter per direction;
   concurrent senders or receivers trigger assertion error.
-- COOS-GOTCHA-03: ISR interrupt notification queue is non-blocking; task wake-up is
+- GOTCHA-COOS-03: ISR interrupt notification queue is non-blocking; task wake-up is
   deferred to cooperative drain_interrupts at scheduler yield points.
-- SCHED-GOTCHA-01: Consecutive direct handoff bound forces yield back to main loop to
+- GOTCHA-SCHED-01: Consecutive direct handoff bound forces yield back to main loop to
   prevent starvation of periodic/monitoring tasks.
 - ADR-SharedBlockRaii: Move-only RAII shared memory block guarantees zero-copy ownership transfer
   via C++23 move semantics (rvalue reference &&), eliminating double-ownership.
@@ -401,7 +401,7 @@ def test_one_waiter_per_channel_is_enforced() -> None:
 
 
 def test_consecutive_handoff_limit_forces_yield() -> None:
-    """SCHED-GOTCHA-01 / COOS-07: Consecutive handoff limit forces yield back to main loop."""
+    """GOTCHA-SCHED-01 / TEST-COOS-07: Consecutive handoff limit forces yield back to main loop."""
     kernel = COOSKernel(max_consecutive_handoffs=2)
     ch1 = kernel.create_channel()
     ch2 = kernel.create_channel()
@@ -461,7 +461,7 @@ def test_coos_interrupt_wakeup() -> None:
     assert kernel.idle_hook_called
     # Step 3: External ISR fires notify_interrupt(16)
     kernel.notify_interrupt(16)
-    # COOS-GOTCHA-03 invariant: ISR does not wake task immediately; status remains BLOCKED
+    # GOTCHA-COOS-03 invariant: ISR does not wake task immediately; status remains BLOCKED
     assert kernel.tasks["worker"].state == TaskState.BLOCKED
     assert kernel.interrupt_event_queue == [16]
     assert "worker" not in kernel.ready_queue

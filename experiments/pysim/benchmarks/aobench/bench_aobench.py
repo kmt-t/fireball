@@ -1,7 +1,7 @@
 """
 experiments/pysim/benchmarks/aobench/bench_aobench.py
 3D Raytracing Ambient Occlusion Benchmark (AO-Bench).
-Conforms to docs/components/tier3_jit/benchmarks/aobench_spec.md (BENCH-AO-01 ~ BENCH-AO-04).
+Conforms to docs/components/tier3_jit/benchmarks/aobench_spec.md (BENCHMARK-AO-01 ~ BENCHMARK-AO-04).
 """
 
 from __future__ import annotations

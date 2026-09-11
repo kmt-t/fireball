@@ -47,7 +47,7 @@ def wat_to_wasm(wat_text: str) -> bytes:
 
 
 def test_intp_01_02_cps_handlers_and_dispatch_table():
-    """INTP-01, 02: Opcode handlers use CPS 4-arg signature (ip, frame, env, locals) and direct array table dispatch."""
+    """TEST-INTP-01, 02: Opcode handlers use CPS 4-arg signature (ip, frame, env, locals) and direct array table dispatch."""
     import inspect
 
     from interpreter import _HANDLERS
@@ -70,8 +70,22 @@ def test_intp_01_02_cps_handlers_and_dispatch_table():
     )
 
 
+def test_intp_03_control_frame_enum_and_opcode_attribute_table():
+    """TEST-INTP-03: Control-frame kinds and loader opcode metadata are typed and shared."""
+    from control_flow import OpcodeAttribute, opcode_has_attribute
+    from interpreter import ControlFrame, ControlFrameKind
+    from wasm_opcodes import BR_IF, CALL, I32_ADD, LOOP
+
+    frame = ControlFrame(ControlFrameKind.LOOP, start=0, match_end=4, stack_height=0)
+    assert frame.kind is ControlFrameKind.LOOP
+    assert opcode_has_attribute(CALL, OpcodeAttribute.CALL)
+    assert opcode_has_attribute(BR_IF, OpcodeAttribute.BRANCH)
+    assert opcode_has_attribute(LOOP, OpcodeAttribute.BASIC_BLOCK_BOUNDARY)
+    assert not opcode_has_attribute(I32_ADD, OpcodeAttribute.BASIC_BLOCK_BOUNDARY)
+
+
 def test_wasm_01_to_06_unsupported_features_rejected():
-    """WASM-01..06: Unsupported features (SIMD, threads, tail-call) are rejected with error code."""
+    """TEST-WASM-01..06: Unsupported features (SIMD, threads, tail-call) are rejected with error code."""
     # Module with unsupported SIMD opcode 0xFD
     wasm_bytes = (
         b"\x00asm\x01\x00\x00\x00"
@@ -90,7 +104,7 @@ def test_wasm_01_to_06_unsupported_features_rejected():
 
 
 def test_wasm_10_to_15_control_flow_and_calls():
-    """WASM-10..15: Unreachable trap, block/loop/if/br_table, call, and call_indirect."""
+    """TEST-WASM-10..15: Unreachable trap, block/loop/if/br_table, call, and call_indirect."""
     wat = """
     (module
       (table 2 2 funcref)
@@ -120,22 +134,22 @@ def test_wasm_10_to_15_control_flow_and_calls():
         return
     mod = parse(wasm_bytes)
     interp = Interpreter(mod)
-    # WASM-10: unreachable traps
+    # TEST-WASM-10: unreachable traps
     try:
         interp.call(mod.export_func_index("unreachable_fn"), [])
         raise AssertionError("Expected Trap for unreachable")
     except Trap:
         pass
-    # WASM-13: br_table branch resolution
+    # TEST-WASM-13: br_table branch resolution
     assert interp.call(mod.export_func_index("calc_fn"), [0]) == [100]
     assert interp.call(mod.export_func_index("calc_fn"), [1]) == [200]
-    # WASM-15: call_indirect
+    # TEST-WASM-15: call_indirect
     assert interp.call(mod.export_func_index("call_ind"), [0, 0]) == [100]
     assert interp.call(mod.export_func_index("call_ind"), [1, 1]) == [200]
 
 
 def test_wasm_20_21_drop_and_select():
-    """WASM-20..21: drop and select parametric instructions."""
+    """TEST-WASM-20..21: drop and select parametric instructions."""
     wat = """
     (module
       (func $sel (export "sel") (param $cond i32) (param $val1 i32) (param $val2 i32) (result i32)
@@ -155,7 +169,7 @@ def test_wasm_20_21_drop_and_select():
 
 
 def test_wasm_30_31_locals_and_globals():
-    """WASM-30..31: local.get/set/tee and global.get/set."""
+    """TEST-WASM-30..31: local.get/set/tee and global.get/set."""
     wat = """
     (module
       (global $g (mut i32) (i32.const 42))
@@ -178,7 +192,7 @@ def test_wasm_30_31_locals_and_globals():
 
 
 def test_wasm_40_to_46_memory_load_store_grow_and_data():
-    """WASM-40..46 & WASM-60: Linear memory load, store, size, grow, bounds traps, and Data segments."""
+    """TEST-WASM-40..46 & TEST-WASM-60: Linear memory load, store, size, grow, bounds traps, and Data segments."""
     wat = """
     (module
       (memory 1 2)
@@ -216,7 +230,7 @@ def test_wasm_40_to_46_memory_load_store_grow_and_data():
 
 
 def test_wasm_50_to_56_integer_arithmetic_and_bitwise():
-    """WASM-50..56: 32-bit integer arithmetic, div-by-zero trap, popcnt, clz, rotl, rotr."""
+    """TEST-WASM-50..56: 32-bit integer arithmetic, div-by-zero trap, popcnt, clz, rotl, rotr."""
     wat = """
     (module
       (func $div_s (export "div_s") (param $a i32) (param $b i32) (result i32)
@@ -236,7 +250,7 @@ def test_wasm_50_to_56_integer_arithmetic_and_bitwise():
         return
     mod = parse(wasm_bytes)
     interp = Interpreter(mod)
-    # WASM-54: Div by zero traps
+    # TEST-WASM-54: Div by zero traps
     try:
         interp.call(mod.export_func_index("div_s"), [10, 0])
         raise AssertionError("Expected Trap on division by zero")
@@ -244,13 +258,13 @@ def test_wasm_50_to_56_integer_arithmetic_and_bitwise():
         pass
     # Normal div
     assert interp.call(mod.export_func_index("div_s"), [10, 2]) == [5]
-    # WASM-52, 55, 56: Bit ops
+    # TEST-WASM-52, 55, 56: Bit ops
     # x = 0x80000001 -> popcnt=2, clz=0 -> sum=2. rotl(x, 4) = 0x00000018. 2 ^ 0x18 = 0x1A (26)
     assert interp.call(mod.export_func_index("bit_ops"), [0x80000001]) == [26]
 
 
 def test_wasm_f32_arithmetic_min_max_and_precision():
-    """WASM-57: F32 single-precision rounding, IEEE 754 min/max with NaNs and signed zeroes."""
+    """TEST-WASM-57: F32 single-precision rounding, IEEE 754 min/max with NaNs and signed zeroes."""
     import math
 
     wat = """
@@ -303,19 +317,19 @@ def test_wasm_f32_arithmetic_min_max_and_precision():
 
 
 # ===========================================================================
-# System Containers (CONT-01 .. CONT-10)
+# System Containers (TEST-CONT-01 .. TEST-CONT-10)
 # ===========================================================================
 
 
 def test_wasm_loader_and_radix_binary_tree_view_indexes():
-    """LOAD-01..47: Verifies WASM Loader zero-copy indexing, verification, and RadixBinaryTreeView file offset & hash symbol indexes."""
+    """TEST-LOAD-01..47: Verifies WASM Loader zero-copy indexing, verification, and RadixBinaryTreeView file offset & hash symbol indexes."""
     from loader import WasmLoader, WasmVerifyError
     from tier2_runtime.test_loader import _build_test_wasm_binary
 
     loader = WasmLoader()
     wasm_bytes = _build_test_wasm_binary(export_names=["zeta", "alpha", "beta"])
     view = loader.prepare("test_module", wasm_bytes)
-    # 1. Zero-copy & Hash + RadixBinaryTreeView export lookup (LOAD-13)
+    # 1. Zero-copy & Hash + RadixBinaryTreeView export lookup (TEST-LOAD-13)
     assert [e.name for e in view.exports_dict] == ["alpha", "beta", "zeta"]
     assert view.lookup_export_func("alpha") == 0
     assert view.lookup_export_func("beta") == 0
@@ -329,7 +343,7 @@ def test_wasm_loader_and_radix_binary_tree_view_indexes():
     except WasmVerifyError:
         pass
     assert loader.allocator.offset == watermark
-    # 3. RadixBinaryTreeView file offset reverse-lookup (LOAD-40..44)
+    # 3. RadixBinaryTreeView file offset reverse-lookup (TEST-LOAD-40..44)
     assert len(view.entity_registry) > 0
     func_start, func_size = view.code_offsets[0]
     entity_fn = view.lookup_by_file_offset(func_start)
@@ -350,7 +364,7 @@ def test_wasm_loader_and_radix_binary_tree_view_indexes():
 
 
 def test_intp_70_to_72_direct_bytecode_execution():
-    """INTP-70..72 & INTP-GOTCHA-05: Direct bytecode decoding without instruction objects or binary search."""
+    """TEST-INTP-70..72 & GOTCHA-INTP-05: Direct bytecode decoding without instruction objects or binary search."""
     wat = """
     (module
       (func (export "calc") (param $x i32) (result i32)
@@ -377,7 +391,7 @@ def test_intp_70_to_72_direct_bytecode_execution():
     module = parse(wasm_bytes)
     interp = Interpreter(module)
 
-    # 1. INTP-70: the context owns the call-frame and LocalStack construction.
+    # 1. TEST-INTP-70: the context owns the call-frame and LocalStack construction.
     context = InterpreterContext()
     frame, locals_arr = interp._build_frame(
         0, StaticVector.of((15,), capacity=64), context
@@ -390,7 +404,7 @@ def test_intp_70_to_72_direct_bytecode_execution():
     context.end_call_frame(frame)
     assert context.local_offset == 0
 
-    # 2. INTP-71 & INTP-72: Execution proceeds by direct byte reading and ip addition
+    # 2. TEST-INTP-71 & TEST-INTP-72: Execution proceeds by direct byte reading and ip addition
     res = interp.call(0, [15])
     # 15 + 10 + 100 = 125
     assert res == [125]

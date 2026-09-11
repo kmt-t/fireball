@@ -47,7 +47,7 @@ for _p in [
 """
 experiments/pysim/tests/tier2_runtime/test_loader.py
 Tests for WASM Loader, Zero-Copy Indexing, and Hash + RadixBinaryTreeView Symbol/Import/Offset Indexes.
-Conforms strictly to docs/components/tier2_runtime/tests/runtime_loader_test_spec.md (LOAD-01 ~ LOAD-47).
+Conforms strictly to docs/components/tier2_runtime/tests/runtime_loader_test_spec.md (TEST-LOAD-01 ~ TEST-LOAD-47).
 """
 
 import struct
@@ -178,7 +178,7 @@ def _build_test_wasm_binary(
 
 
 def test_load_01_to_07_lightweight_verification():
-    """LOAD-01..07: Verifies V1-V6 lightweight checks and transactional rollback."""
+    """TEST-LOAD-01..07: Verifies V1-V6 lightweight checks and transactional rollback."""
     loader = WasmLoader()
     # Normal prepare
     valid_wasm = _build_test_wasm_binary(export_names=["zeta", "alpha", "beta"])
@@ -230,14 +230,14 @@ def test_load_01_to_07_lightweight_verification():
 
 
 def test_load_10_to_15_zero_copy_and_accessors():
-    """LOAD-10..15: Verifies ROM direct references, Hash + RadixBinaryTreeView export lookup, and lazy accessors."""
+    """TEST-LOAD-10..15: Verifies ROM direct references, Hash + RadixBinaryTreeView export lookup, and lazy accessors."""
     loader = WasmLoader()
     wasm_bytes = _build_test_wasm_binary(export_names=["zeta", "alpha", "beta"])
     view = loader.prepare("zc_mod", wasm_bytes)
     # Exports sorted
     exp_names = [e.name for e in view.exports_dict]
     assert exp_names == ["alpha", "beta", "zeta"]
-    # Hash + RadixBinaryTreeView lookup (LOAD-13)
+    # Hash + RadixBinaryTreeView lookup (TEST-LOAD-13)
     assert view.lookup_export_func("alpha") == 0
     assert view.lookup_export_func("beta") == 0
     assert view.lookup_export_func("zeta") == 0
@@ -257,7 +257,7 @@ def test_load_10_to_15_zero_copy_and_accessors():
 
 
 def test_load_20_to_25_multi_module_import_resolution():
-    """LOAD-20..25: Verifies multi-module imports, readiness, linking via Hash + RadixBinaryTreeView, and unloading."""
+    """TEST-LOAD-20..25: Verifies multi-module imports, readiness, linking via Hash + RadixBinaryTreeView, and unloading."""
     loader = WasmLoader()
     # 1. Prepare target library module
     lib_wasm = _build_test_wasm_binary(export_names=["helper"])
@@ -290,7 +290,7 @@ def test_load_20_to_25_multi_module_import_resolution():
     app_buf.extend(app_imp)
     app_view = loader.prepare("app_mod", bytes(app_buf))
     assert app_view.is_ready is False  # Pending resolution
-    # LOAD-21: Hash + RadixBinaryTreeView import resolution
+    # TEST-LOAD-21: Hash + RadixBinaryTreeView import resolution
     assert loader.resolve_imports(app_view) is True
     assert app_view.is_ready is True
     assert "lib_mod.helper" in app_view.resolved_imports
@@ -300,17 +300,17 @@ def test_load_20_to_25_multi_module_import_resolution():
 
 
 def test_load_40_to_47_radix_binary_tree_view_indexes():
-    """LOAD-40..47: Verifies RadixBinaryTreeView file offset and Hash symbol/import indexes."""
+    """TEST-LOAD-40..47: Verifies RadixBinaryTreeView file offset and Hash symbol/import indexes."""
     loader = WasmLoader()
     wasm_bytes = _build_test_wasm_binary(export_names=["alpha", "beta", "gamma", "compute"])
     view = loader.prepare("radix_mod", wasm_bytes)
-    # 1. LOAD-40: Entities registered in DecodedEntityRegistry
+    # 1. TEST-LOAD-40: Entities registered in DecodedEntityRegistry
     assert len(view.entity_registry) > 0
     kinds = [e.kind for e in view.entity_registry]
     assert "SECTION" in kinds
     assert "FUNCTION" in kinds
     assert "GLOBAL" in kinds
-    # 2. LOAD-41 & 42: Function body reverse lookup
+    # 2. TEST-LOAD-41 & 42: Function body reverse lookup
     func_start, func_size = view.code_offsets[0]
     entity_start = view.lookup_by_file_offset(func_start)
     assert entity_start is not None
@@ -319,15 +319,15 @@ def test_load_40_to_47_radix_binary_tree_view_indexes():
     entity_mid = view.lookup_by_file_offset(func_start + 2)
     assert entity_mid is not None
     assert entity_mid.kind == "FUNCTION"
-    # 3. LOAD-43: Global entry reverse lookup
+    # 3. TEST-LOAD-43: Global entry reverse lookup
     global_entry = view.globals[0]
     entity_glob = view.lookup_by_file_offset(global_entry.init_expr_offset)
     assert entity_glob is not None
     assert entity_glob.kind == "GLOBAL"
-    # 4. LOAD-44: Invalid / out-of-bounds offsets
+    # 4. TEST-LOAD-44: Invalid / out-of-bounds offsets
     assert view.lookup_by_file_offset(len(wasm_bytes) + 100) is None
     assert view.lookup_by_file_offset(0xFFFFFFFF) is None
-    # 5. LOAD-45: Import table RadixBinaryTreeView search
+    # 5. TEST-LOAD-45: Import table RadixBinaryTreeView search
     app_buf = bytearray()
     app_buf.extend(b"\x00asm\x01\x00\x00\x00")
     app_type = bytearray()
@@ -367,16 +367,16 @@ def test_load_40_to_47_radix_binary_tree_view_indexes():
     assert imp_compute is not None
     assert imp_compute.field_name == "compute"
     assert app_view.find_import("radix_mod", "unknown") is None
-    # 6. LOAD-46: Hash collision verification
+    # 6. TEST-LOAD-46: Hash collision verification
     exp_entry = view.lookup_export("gamma")
     assert exp_entry is not None
     assert exp_entry.name == "gamma"
-    # 7. LOAD-47: Fast non-existent symbol rejection
+    # 7. TEST-LOAD-47: Fast non-existent symbol rejection
     assert view.lookup_export("totally_fake_symbol") is None
 
 
 def test_load_48_loader_basic_block_index():
-    """LOAD-48: Verifies loader owns basic block metadata and ReadOnlyRadixBinaryTreeStorage index."""
+    """TEST-LOAD-48: Verifies loader owns basic block metadata and ReadOnlyRadixBinaryTreeStorage index."""
     import wasmtime
     from wasm_reader import parse
 

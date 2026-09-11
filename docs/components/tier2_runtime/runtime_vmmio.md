@@ -182,21 +182,21 @@ vMMIO SHM 領域（`0xE000_0000`〜`0xE001_FFFF`、最大 32 ページ = 128KB�
 ### 4.1 アルゴリズム
 
 #### 多段アドレスデコード & TLB ルックアップ（手順アクティビティ図）
-<!-- traceability: {VMMIO-GOTCHA-01} {VMMIO-GOTCHA-02} {META_Static_Resolution} -->
+<!-- traceability: {GOTCHA-VMMIO-01} {GOTCHA-VMMIO-02} {META_Static_Resolution} -->
 32ビットゲストアドレスの Guest RAM 高速バイパス、20-bit VPN の Folding XOR による 16 エントリ TLB 探索、および PTE 二分探索の手順を示す。
 
 ```mermaid
 flowchart TD
     Start(["32-bit Guest Virtual Address"]) --> CheckBit31{"Address Bit 31 == 0?"}
 
-    CheckBit31 -- "Yes (Bit 31 == 0)" --> RAMBypass["VMMIO-GOTCHA-01: Guest RAM Bypass (Stage 1)"]
+    CheckBit31 -- "Yes (Bit 31 == 0)" --> RAMBypass["GOTCHA-VMMIO-01: Guest RAM Bypass (Stage 1)"]
     RAMBypass --> CheckRAMBounds{"addr < guest_ram_size?<br/>(FastAddressCheck CMP)"}
     CheckRAMBounds -- "No (Out of Bounds)" --> TrapOOB(["Trap: ERR_OUT_OF_BOUNDS"])
     CheckRAMBounds -- "Yes" --> CalcRAM["Physical Address = guest_ram_base + addr"]
     CalcRAM --> DirectAccess(["Direct O(1) Memory Access (Zero MMU Overhead)"])
 
     CheckBit31 -- "No (Bit 31 == 1)" --> ExtractVPN["Extract 20-bit VPN (raw >> 12) & Offset (raw & 0xFFF)"]
-    ExtractVPN --> FoldingXOR["VMMIO-GOTCHA-02: Hash = (VPN ^ (VPN >> 4) ^ (VPN >> 8) ^ (VPN >> 12) ^ (VPN >> 16)) & 15"]
+    ExtractVPN --> FoldingXOR["GOTCHA-VMMIO-02: Hash = (VPN ^ (VPN >> 4) ^ (VPN >> 8) ^ (VPN >> 12) ^ (VPN >> 16)) & 15"]
     FoldingXOR --> ProbeTLB["Probe Direct-Mapped TLB at index [Hash]"]
 
     ProbeTLB --> TLBHit{"TLB Entry.vpn == VPN?"}
@@ -215,7 +215,7 @@ flowchart TD
 ```
 
 #### 共有メモリ権限剥奪と TLB 即時無効化（責務シーケンス図）
-<!-- traceability: {VMMIO-GOTCHA-03} {MEM-GOTCHA-03} {OwnershipTransfer} -->
+<!-- traceability: {GOTCHA-VMMIO-03} {GOTCHA-MEM-03} {OwnershipTransfer} -->
 タスク間共有メモリ転送における、Sender Task、MemoryManager、vMMIO Controller、Receiver Task の責務分離と TLB 即時フラッシュを示す。
 
 ```mermaid
@@ -229,7 +229,7 @@ sequenceDiagram
     Sender->>Mem: shm.release(shm_id)
     Note over Sender: Relinquishes local ownership
     Mem->>vMMIO: Unmap Page: unmap_shm_page(vpn)
-    vMMIO->>vMMIO: VMMIO-GOTCHA-03: Remove PTE & Immediate TLB Flush
+    vMMIO->>vMMIO: GOTCHA-VMMIO-03: Remove PTE & Immediate TLB Flush
     Note over vMMIO: Delete PTE from FlatMap & Invalidate TLB slot
     vMMIO-->>Mem: Page unmapped
     Mem-->>Sender: Release committed
@@ -482,13 +482,13 @@ sequenceDiagram
 <!-- traceability: {VDMA} {OwnershipTransfer} {META_ConfigurableSystem} -->
 Stage 3 アクセス（FC=14/15）において毎回 FlatMap の二分探索を走らせる遅延を排除するため、仮想ページ番号（VPN = `raw >> 12`）に基づくマッピングを16エントリのダイレクトマップキャッシュに保持する。
 
-- **Guest RAM アクセス時の TLB 完全バイパス (`VMMIO-GOTCHA-01`)**:
+- **Guest RAM アクセス時の TLB 完全バイパス (`GOTCHA-VMMIO-01`)**:
   **設計理由と不変条件**: 最上位ビットが 0 のアドレス空間（`0x0000_0000`〜`0x7FFF_FFFF`）はゲスト RAM 専用領域である。全メモリアクセスの 99% 以上を占める最頻パスにおいて毎回 TLB ルックアップやハッシュ計算を行うと、実行性能が致命的に劣化する。そのため、最上位ビットが 0 のアクセスは TLB を一切参照せず、直接ゲストベースアドレス加算＋サイズ境界検査のみで即時メモリアクセスを完結させる。TLB は最上位ビットが 1 の vMMIO / ペリフェラル領域にのみ適用される。
-- **Folding XOR ハッシュによる機能コード（FC）の均等分散 (`VMMIO-GOTCHA-02`)**:
+- **Folding XOR ハッシュによる機能コード（FC）の均等分散 (`GOTCHA-VMMIO-02`)**:
   - キー（VPN）: `raw >> 12`（20-bit）
   - HASH / インデックス計算: `tlb_idx = (vpn ^ (vpn >> 4) ^ (vpn >> 8) ^ (vpn >> 12) ^ (vpn >> 16)) & 15`
   - **設計理由と不変条件**: 単純なビットマスク（`vpn & 15`）や剰余を用いると、同一オフセットを持つ異なる機能コード（FC=14 SHM と FC=15 PASSTHROUGH など）が同一スロットに衝突し、TLB スラッシング（頻繁な追い出し）が発生する。上位 4-bit の FC フィールドから下位ページインデックスまでの全 20 ビットを 4-bit 幅で均等に折りたたんで XOR 合成することで、異なるデバイス領域間でのキャッシュ競合を極小化し、16 スロットの利用効率を最大化する。
-- **アクセス権限剥奪（Revoke）時の TLB 即時無効化 (`VMMIO-GOTCHA-03`)**:
+- **アクセス権限剥奪（Revoke）時の TLB 即時無効化 (`GOTCHA-VMMIO-03`)**:
   - **設計理由と不変条件**: 共有メモリブロックの送信（`shm.release()`）や権限剥奪トランザクションにおいて、ページテーブル上の所有者 ID を `FB_TASK_ID_FLIGHT` へ変更する際、該当 VPN に対応する TLB エントリを直ちに無効化（フラッシュ）しなければならない。TLB の無効化を怠ると、キャッシュが残存している間に古いタスクからデータが読み書き可能となり、所有権移譲プロトコルの安全性（ゼロコピー手渡しと二重所有防止）が破壊される。
 - **キャッシュ更新 & 押し出し (Eviction & Refill)**:
   TLBミス時に FlatMap から取得した PTE を `vmmio_tlb_cache[tlb_idx]` に上書き（同一ハッシュに別のアドレスが割り当てられた場合は以前のエントリを自動無効化・上書きする完全O(1)方式）。

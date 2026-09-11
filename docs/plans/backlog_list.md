@@ -67,7 +67,7 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
   - ROM 上のセクション直接参照構造体の構築 `{META_AccessDictionary}`
 - [ ] **WASM バリデータ (V1〜V6) & ロールバック**:
   - マジックナンバー、バージョン、セクション順序、型シグネチャの検証 `{LightweightVerifier}`
-  - 検証失敗時のバンプポインタ完全ロールバック (`LOAD-GOTCHA-02`)
+  - 検証失敗時のバンプポインタ完全ロールバック (`GOTCHA-LOAD-02`)
 - [ ] **Loader 単体テストスイート (`tests/test_loader.cxx`)**:
   - 正常系 WASM バイナリおよび各種不正バイナリの拒絶テスト
 
@@ -77,7 +77,7 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
 - [ ] **コア命令ハンドラ群 (`src/runtime/opcode_handlers.cxx`)**:
   - `__fastcall` 継続渡し（CPS）4引数シグネチャ（R0=IP, R1=stack_bot, R2=local_base, R3=tos） `{ThreadedInterpreter}`
   - 算術・比較・変換・制御・メモリ操作ハンドラと `MemoryBoundaryCheck` トラップ `{MemoryBoundaryCheck}`
-  - 分岐脱出時のフレームプルーニングと TOS 復元 (`INTR-GOTCHA-02`)
+  - 分岐脱出時のフレームプルーニングと TOS 復元 (`GOTCHA-INTR-02`)
 - [ ] **スレッド化ディスパッチャ (`src/runtime/dispatch.cxx`)**:
   - `[[clang::musttail]]` によるダイレクトスレッド実行と JIT レジスタ整合 `{ThreadedInterpreter}`
 - [ ] **Interpreter 単体テストスイート (`tests/test_interpreter.cxx`)**:
@@ -106,11 +106,11 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
 ## Phase 2: Integration（周辺サブシステム統合 / 次期予定）
 <!-- traceability: {META_3TierSeparation} {GLOBAL_UseCpp20Coroutine} {UnifiedAccessModel} -->
 
-- [ ] **COOS カーネル (`inc/core/os_coos.hxx`)**: スタックレス C++20 コルーチンスケジューラ、対称ハンドオフ (`COOS-GOTCHA-01`〜`03`)
-- [ ] **IPC ルータ (`inc/interface/ipc_router.hxx`)**: 3段階ルーティング、ゼロコピー CSP チャネル & RAII 所有権移譲 (`IPCR-GOTCHA-01`〜`03`)
-- [ ] **vMMIO コントローラ (`inc/runtime/vmmio.hxx`)**: 多段ダイレクトデコードページテーブル & ソフトウェア TLB (`VMMIO-GOTCHA-01`〜`03`)
-- [ ] **HAL & WASI ドライバ (`inc/runtime/hal_dispatch.hxx`, `inc/platform/driver.hxx`, `inc/platform/wasi.hxx`)**: GPIO / I2C / SPI / Timer / WASI Preview 1、`HalBufferPool` (`HAL-GOTCHA-01`〜`03`)
-- [ ] **GDB Server (`inc/runtime/debugger.hxx`)**: GDB リモートシリアルプロトコル（RSP）サーバー、メモリ書き換え時 JIT キャッシュフラッシュ (`DBG-GOTCHA-01`〜`03`)
+- [ ] **COOS カーネル (`inc/core/os_coos.hxx`)**: スタックレス C++20 コルーチンスケジューラ、対称ハンドオフ (`GOTCHA-COOS-01`〜`03`)
+- [ ] **IPC ルータ (`inc/interface/ipc_router.hxx`)**: 3段階ルーティング、ゼロコピー CSP チャネル & RAII 所有権移譲 (`GOTCHA-IPCR-01`〜`03`)
+- [ ] **vMMIO コントローラ (`inc/runtime/vmmio.hxx`)**: 多段ダイレクトデコードページテーブル & ソフトウェア TLB (`GOTCHA-VMMIO-01`〜`03`)
+- [ ] **HAL & WASI ドライバ (`inc/runtime/hal_dispatch.hxx`, `inc/platform/driver.hxx`, `inc/platform/wasi.hxx`)**: GPIO / I2C / SPI / Timer / WASI Preview 1、`HalBufferPool` (`GOTCHA-HAL-01`〜`03`)
+- [ ] **GDB Server (`inc/runtime/debugger.hxx`)**: GDB リモートシリアルプロトコル（RSP）サーバー、メモリ書き換え時 JIT キャッシュフラッシュ (`GOTCHA-DBG-01`〜`03`)
 
 ---
 

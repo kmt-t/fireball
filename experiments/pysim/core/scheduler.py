@@ -4,13 +4,13 @@ Cooperative round-robin scheduler and Hoare CSP rendezvous engine, mirroring
 docs/components/tier1_core/os_scheduler.md and docs/components/tier1_core/os_coos.md.
 
 Implementation Invariants & Gotchas:
-- COOS-GOTCHA-01: Channel has no internal value buffer (ADR_RendezvousChannel).
+- GOTCHA-COOS-01: Channel has no internal value buffer (ADR_RendezvousChannel).
   Values stay in sender frame until receiver handoff, eliminating double-ownership.
-- COOS-GOTCHA-02: 1-channel-1-waiter constraint triggers assertion on duplicate wait
+- GOTCHA-COOS-02: 1-channel-1-waiter constraint triggers assertion on duplicate wait
   direction (no queues, no priority inversion, no dynamic allocation).
-- COOS-GOTCHA-03: ISR interrupt notification queue is non-blocking (drain_interrupts
+- GOTCHA-COOS-03: ISR interrupt notification queue is non-blocking (drain_interrupts
   wakes tasks deterministically at scheduler yield points).
-- SCHED-GOTCHA-01: Consecutive direct handoff bound (FB_CONF_MAX_CONSECUTIVE_HANDOFFS)
+- GOTCHA-SCHED-01: Consecutive direct handoff bound (FB_CONF_MAX_CONSECUTIVE_HANDOFFS)
   forces yield back to main loop to guarantee fair round-robin and prevent starvation.
 """
 
@@ -437,7 +437,7 @@ class Scheduler:
                 0,
             )
         self.consecutive_handoffs = 0
-        # CRITICAL FIX (SCHED-GOTCHA-01):
+        # CRITICAL FIX (GOTCHA-SCHED-01):
         # When consecutive handoff limit is reached, target_task was woken (state = READY),
         # but was NOT enqueued into self._ready if it wasn't already there!
         if target_task not in self._ready:

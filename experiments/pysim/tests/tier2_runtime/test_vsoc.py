@@ -92,7 +92,7 @@ def _virq_event(vector_id: int, source_id: int = 0) -> InterruptEvent:
 
 
 def test_virq_50_static_nodes_and_safepoint_registration():
-    """VSOC-50: only the fixed root/category/device nodes are mutable."""
+    """TEST-VSOC-50: only the fixed root/category/device nodes are mutable."""
     dispatcher = VirqDispatcher(
         _make_virq_module(), lambda _index, _v, _s, _c, _p0, _p1: 1
     )
@@ -114,7 +114,7 @@ def test_virq_50_static_nodes_and_safepoint_registration():
 
 
 def test_virq_51_rejects_wrong_wasm_signature_without_overwrite():
-    """VSOC-51: a signature mismatch does not replace an active registration."""
+    """TEST-VSOC-51: a signature mismatch does not replace an active registration."""
     dispatcher = VirqDispatcher(
         _make_virq_module(), lambda _index, _v, _s, _c, _p0, _p1: 0
     )
@@ -129,7 +129,7 @@ def test_virq_51_rejects_wrong_wasm_signature_without_overwrite():
 
 
 def test_virq_52_pending_registration_is_invisible_until_safepoint():
-    """VSOC-52: the active table changes only at the safepoint commit."""
+    """TEST-VSOC-52: the active table changes only at the safepoint commit."""
     calls = StaticVector[tuple[int, InterruptEvent]](capacity=4)
 
     def invoke(
@@ -163,7 +163,7 @@ def test_virq_52_pending_registration_is_invisible_until_safepoint():
 
 
 def test_virq_53_dispatches_fixed_event_through_static_hierarchy():
-    """VSOC-53: PASS_THROUGH traverses root, category, device in order."""
+    """TEST-VSOC-53: PASS_THROUGH traverses root, category, device in order."""
     calls = StaticVector[int](capacity=8)
 
     def invoke(
@@ -191,7 +191,7 @@ def test_virq_53_dispatches_fixed_event_through_static_hierarchy():
 
 
 def test_virq_54_handled_and_reject_are_terminal():
-    """VSOC-54: terminal outcomes do not propagate to child or FAULT nodes."""
+    """TEST-VSOC-54: terminal outcomes do not propagate to child or FAULT nodes."""
     calls = StaticVector[int](capacity=8)
     modes = StaticVector[int](capacity=8)
 
@@ -233,7 +233,7 @@ def test_virq_54_handled_and_reject_are_terminal():
 
 
 def test_virq_55_does_not_enter_wasi_polling_path():
-    """VSOC-55: vIRQ dispatch invokes only its registered dispatcher callback."""
+    """TEST-VSOC-55: vIRQ dispatch invokes only its registered dispatcher callback."""
     poll_calls = StaticVector[int](capacity=2)
     dispatcher = VirqDispatcher(
         _make_virq_module(),
@@ -248,7 +248,7 @@ def test_virq_55_does_not_enter_wasi_polling_path():
 
 
 def test_hal_task_ipc_communication():
-    """HAL-01: HAL operates as a distinct task on COOS and handles commands via IPC rendezvous."""
+    """TEST-HAL-01: HAL operates as a distinct task on COOS and handles commands via IPC rendezvous."""
     from hal import ARG_LENGTH, ARG_OFFSET
     from wasi import Wasi03pEngine, WasiIpcCmd
 
@@ -291,7 +291,7 @@ def _recv_rsp_frame(client: socket.socket, sysv: System, max_steps: int = 32) ->
 
 
 def test_gdbserver_task_coos_cooperative_execution():
-    """DBG-01, DBG-GOTCHA-04: GDBServer operates as an independent task on COOS and handles multi-yield RSP packets."""
+    """TEST-DBG-01, GOTCHA-DBG-04: GDBServer operates as an independent task on COOS and handles multi-yield RSP packets."""
     from debugger import DebuggerManager
 
     sysv = System()
@@ -327,7 +327,7 @@ def test_gdbserver_task_coos_cooperative_execution():
 
 
 def test_coop_01_wasm_coroutine_yields_on_quantum():
-    """YIELD-01: Long-running WASM task yields every `yield_every` instructions, interleaving with other tasks."""
+    """TEST-YIELD-01: Long-running WASM task yields every `yield_every` instructions, interleaving with other tasks."""
     wat = """
     (module
       (func $busy_loop (export "busy_loop") (param $x i32) (result i32)
@@ -361,7 +361,7 @@ def test_coop_01_wasm_coroutine_yields_on_quantum():
 
 
 def test_idle_01_jit_batch_compilation_on_idle():
-    """IDLE-01: Compile queue is drained and compiled in LIFO order when scheduler fires idle_hook."""
+    """TEST-IDLE-01: Compile queue is drained and compiled in LIFO order when scheduler fires idle_hook."""
     compiled_log = []
 
     def mock_compiler(pc: int) -> JITTrace:
@@ -387,7 +387,7 @@ def test_idle_01_jit_batch_compilation_on_idle():
 
 
 def test_idle_02_logging_flush_on_idle():
-    """IDLE-02: Deferred logs in RingBuffer are flushed to UART transport upon scheduler idle."""
+    """TEST-IDLE-02: Deferred logs in RingBuffer are flushed to UART transport upon scheduler idle."""
     transport = UartTransport()
     dictionary = LogDictionary()
     dictionary.register(0x01, "event payload=%d")
@@ -407,7 +407,7 @@ def test_idle_02_logging_flush_on_idle():
 
 
 def test_tier_01_interpreter_to_jit_cooperative_flow():
-    """TIER-01: End-to-end integration of cooperative WASM execution on COOS with idle JIT compilation and log flush."""
+    """TEST-TIER-01: End-to-end integration of cooperative WASM execution on COOS with idle JIT compilation and log flush."""
     sysv = System()
     sysv.dictionary.register(0x10, "wasm iteration=%d")
     executed_steps = []
@@ -439,7 +439,7 @@ def test_tier_01_interpreter_to_jit_cooperative_flow():
 
 
 def test_tier_02_interpreter_to_jit_trace_transition():
-    """TIER-02: Loop executes via Interpreter first -> promotes to HOT -> idle_hook compiles trace -> executes as JIT."""
+    """TEST-TIER-02: Loop executes via Interpreter first -> promotes to HOT -> idle_hook compiles trace -> executes as JIT."""
     wat = """
     (module
       (func (export "fac") (param i32) (result i32)
@@ -504,7 +504,7 @@ def test_tier_02_interpreter_to_jit_trace_transition():
 
 
 def test_tier_03_trace_chaining_and_interpreter_fallback():
-    """TIER-03: Traces chain directly into resident successors, and fall back to Interpreter when chain ends."""
+    """TEST-TIER-03: Traces chain directly into resident successors, and fall back to Interpreter when chain ends."""
     wat = """
     (module
       (func (export "f") (param i32) (result i32)
@@ -576,7 +576,7 @@ def test_tier_03_trace_chaining_and_interpreter_fallback():
 
 
 def test_guest_wasi_01_interpreter_fd_write():
-    """GUEST-WASI-01: WASM guest invoking wasi_snapshot_preview1.fd_write in Interpreter outputs to host UART."""
+    """TEST-GUEST-WASI-01: WASM guest invoking wasi_snapshot_preview1.fd_write in Interpreter outputs to host UART."""
     wat = """
     (module
       (import "wasi_snapshot_preview1" "fd_write" (func $fd_write (param i32 i32 i32 i32) (result i32)))
@@ -612,7 +612,7 @@ def test_guest_wasi_01_interpreter_fd_write():
 
 
 def test_guest_wasi_02_interpreter_clock_and_random():
-    """GUEST-WASI-02: WASM guest invoking clock_time_get and random_get stores valid data in guest memory."""
+    """TEST-GUEST-WASI-02: WASM guest invoking clock_time_get and random_get stores valid data in guest memory."""
     wat = """
     (module
       (import "wasi_snapshot_preview1" "clock_time_get" (func $clock (param i32 i32 i32) (result i32)))
@@ -645,7 +645,7 @@ def test_guest_wasi_02_interpreter_clock_and_random():
 
 
 def test_guest_wasi_03_interpreter_proc_exit():
-    """GUEST-WASI-03: WASM guest invoking proc_exit(99) halts the host system with exit code."""
+    """TEST-GUEST-WASI-03: WASM guest invoking proc_exit(99) halts the host system with exit code."""
     wat = """
     (module
       (import "wasi_snapshot_preview1" "proc_exit" (func $exit (param i32)))
@@ -673,7 +673,7 @@ def test_guest_wasi_03_interpreter_proc_exit():
 
 
 def test_debugger_manager_gdb_rsp_integration():
-    """DBG-01..15: Verifies Debug Manager GDB RSP protocol, breakpoints, registers and JIT flush."""
+    """TEST-DBG-01..15: Verifies Debug Manager GDB RSP protocol, breakpoints, registers and JIT flush."""
     from debugger import DebuggerManager, GDBRspProtocol
 
     engine = IntegratedHybridEngine(compiler=TraceCompiler())
@@ -749,7 +749,7 @@ def test_debugger_manager_gdb_rsp_integration():
 
 
 def test_interpreter_debugger_handler_table_switch_and_hooks():
-    """INTP-60..65: Verifies Interpreter DebuggerLabelTableSwitch, JIT bypass, PC sampling and assertions."""
+    """TEST-INTP-60..65: Verifies Interpreter DebuggerLabelTableSwitch, JIT bypass, PC sampling and assertions."""
     from debugger import DebuggerManager
 
     wat = """
@@ -776,7 +776,7 @@ def test_interpreter_debugger_handler_table_switch_and_hooks():
     mod = engine.load_wasm(wasm_bytes)
     block1 = mod.blocks[0]
     block2 = mod.blocks[1]
-    # 1. Normal mode (INTP-60: zero overhead, normal handler table)
+    # 1. Normal mode (TEST-INTP-60: zero overhead, normal handler table)
     assert engine.handler_table == "normal"
     assert engine.debugger is None
     ctx_normal = WASMContext()
@@ -784,11 +784,11 @@ def test_interpreter_debugger_handler_table_switch_and_hooks():
     next_pc = engine.run_step(block1.head_pc, ctx_normal)
     assert next_pc == block2.head_pc
     assert ctx_normal.locals[0] == 6
-    # 2. Attach debugger (INTP-61: switches to debug handler table)
+    # 2. Attach debugger (TEST-INTP-61: switches to debug handler table)
     dbg.attach()
     assert engine.handler_table == "debug"
     assert engine.debugger is dbg
-    # 3. Breakpoint hit (INTP-62: halts before execution)
+    # 3. Breakpoint hit (TEST-INTP-62: halts before execution)
     dbg.add_breakpoint(block2.head_pc)
     ctx_debug = WASMContext(memory=bytearray([0x55, 0xAA]))
     ctx_debug.locals = (10,)
@@ -800,10 +800,10 @@ def test_interpreter_debugger_handler_table_switch_and_hooks():
     assert dbg.halted is True
     assert dbg.stop_signal == 5
     assert ctx_debug.locals[0] == 11
-    # 4. Profiler & Assertions (INTP-63, INTP-64)
+    # 4. Profiler & Assertions (TEST-INTP-63, TEST-INTP-64)
     assert dbg.pc_sample_counts[block1.head_pc] == 1
     assert len(dbg.assertion_violations) == 1
-    # 5. JIT Bypass under debug mode (INTP-65: JIT trace exists but interpreter debug table runs)
+    # 5. JIT Bypass under debug mode (TEST-INTP-65: JIT trace exists but interpreter debug table runs)
     trace = engine.compiler.compile_trace(
         block1.head_pc, engine.resolve_trace_block(block1.head_pc)
     )
@@ -821,14 +821,14 @@ def test_interpreter_debugger_handler_table_switch_and_hooks():
 
 
 def test_wasm_loader_and_radix_binary_tree_view_indexes():
-    """LOAD-01..47: Verifies WASM Loader zero-copy indexing, verification, and RadixBinaryTreeView file offset & hash symbol indexes."""
+    """TEST-LOAD-01..47: Verifies WASM Loader zero-copy indexing, verification, and RadixBinaryTreeView file offset & hash symbol indexes."""
     from loader import WasmLoader, WasmVerifyError
     from test_loader import _build_test_wasm_binary
 
     loader = WasmLoader()
     wasm_bytes = _build_test_wasm_binary(export_names=["zeta", "alpha", "beta"])
     view = loader.prepare("test_module", wasm_bytes)
-    # 1. Zero-copy & Hash + RadixBinaryTreeView export lookup (LOAD-13)
+    # 1. Zero-copy & Hash + RadixBinaryTreeView export lookup (TEST-LOAD-13)
     assert [e.name for e in view.exports_dict] == ["alpha", "beta", "zeta"]
     assert view.lookup_export_func("alpha") == 0
     assert view.lookup_export_func("beta") == 0
@@ -842,7 +842,7 @@ def test_wasm_loader_and_radix_binary_tree_view_indexes():
     except WasmVerifyError:
         pass
     assert loader.allocator.offset == watermark
-    # 3. RadixBinaryTreeView file offset reverse-lookup (LOAD-40..44)
+    # 3. RadixBinaryTreeView file offset reverse-lookup (TEST-LOAD-40..44)
     assert len(view.entity_registry) > 0
     func_start, func_size = view.code_offsets[0]
     entity_fn = view.lookup_by_file_offset(func_start)

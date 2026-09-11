@@ -84,7 +84,7 @@ def test_log_02_logger_ring_buffer_overwrites():
 
 
 def test_log_03_dictionary_storage_ownership_separation():
-    """LOG-03: LogDictionary borrows entries storage without owning/duplicating it."""
+    """TEST-LOG-03: LogDictionary borrows entries storage without owning/duplicating it."""
     storage = [(0x01, "event #%d"), (0x02, "value %d %d")]
     d = LogDictionary(storage=storage)
 
@@ -96,7 +96,7 @@ def test_log_03_dictionary_storage_ownership_separation():
 
 
 def test_log_04_coos_and_ipc_diagnostic_logging():
-    """LOG-04: COOS and IPC emit strict diagnostic log events upon anomalies/boundary conditions."""
+    """TEST-LOG-04: COOS and IPC emit strict diagnostic log events upon anomalies/boundary conditions."""
     sysv = System()
     try:
         # 1. COOS Duplicate Task ID -> 0x0103
@@ -162,7 +162,7 @@ def test_log_04_coos_and_ipc_diagnostic_logging():
 
 
 def test_log_05_gotcha_03_interrupt_checked_only_at_batch_boundary():
-    """LOG-GOTCHA-03: flush() checks interrupt_pending only after a batch
+    """GOTCHA-LOG-03: flush() checks interrupt_pending only after a batch
     completes, never mid-batch, since a started transfer cannot be preempted."""
     t = UartTransport()
     try:

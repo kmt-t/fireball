@@ -185,7 +185,7 @@ def properties():
                 )
             ),
             "violation": AtomicProposition("bad_permanent_deopt"),
-            "expect": True,  # キャッシュ破棄(Eviction)後は UNEXECUTED を経て EXECUTED(再コンパイル可能)へ復帰する (JITR-04)
+            "expect": True,  # キャッシュ破棄(Eviction)後は UNEXECUTED を経て EXECUTED(再コンパイル可能)へ復帰する (TEST-JITR-04)
         },
     ]
 

@@ -2,11 +2,11 @@
 docs/components/tier2_runtime/concepts/vmmio_concept.py
 Reference Concept Implementation: vMMIO FlatMap Page Table & Direct-Mapped TLB
 Implementation Invariants & Gotchas:
-- VMMIO-GOTCHA-01: Guest RAM access (Bit 31 == 0) completely bypasses TLB with direct
+- GOTCHA-VMMIO-01: Guest RAM access (Bit 31 == 0) completely bypasses TLB with direct
   base addition and bound check, preserving peak memory throughput.
-- VMMIO-GOTCHA-02: Folding XOR hash uniformly diffuses all 20 VPN bits across 16 slots,
+- GOTCHA-VMMIO-02: Folding XOR hash uniformly diffuses all 20 VPN bits across 16 slots,
   preventing inter-device cache conflict and TLB thrashing.
-- VMMIO-GOTCHA-03: Shared memory revocation unmaps the PTE and immediately
+- GOTCHA-VMMIO-03: Shared memory revocation unmaps the PTE and immediately
   flushes TLB entry, blocking subsequent access with TRAP_UNREGISTERED_PAGE.
 """
 
@@ -526,7 +526,7 @@ def test_vmmio_alloc_and_map_multipage() -> None:
 
 
 def test_passthrough_page_access() -> None:
-    """VMMIO-25: PASSTHROUGH (FC=15) physical address translation."""
+    """TEST-VMMIO-25: PASSTHROUGH (FC=15) physical address translation."""
     ctrl = VMMIOController()
     ctrl.map_passthrough_page(vpn=0xF0005, phys_page=0x9ABC, read=True, write=True)
     addr = 0xF000_5080
@@ -537,7 +537,7 @@ def test_passthrough_page_access() -> None:
 
 
 def test_permission_checks_enforced_even_on_tlb_hit() -> None:
-    """VMMIO-17: Permission checks run unconditionally even when TLB hits."""
+    """TEST-VMMIO-17: Permission checks run unconditionally even when TLB hits."""
     ctrl = VMMIOController()
     # Read-only SHM page
     ctrl.map_shm_page(vpn=0xE0005, phys_page=0x1111, read=True, write=False)

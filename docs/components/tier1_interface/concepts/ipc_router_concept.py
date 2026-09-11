@@ -2,9 +2,9 @@
 docs/components/tier1_interface/concepts/ipc_router_concept.py
 Reference Concept Implementation: IPC Router & Zero-Copy Ownership Handoff
 Implementation Invariants & Gotchas:
-- IPCR-GOTCHA-01: Duplicate send on an already-waiting CSP channel triggers an assertion
+- GOTCHA-IPCR-01: Duplicate send on an already-waiting CSP channel triggers an assertion
   error, stopping illegal concurrent access (no queue exists in pure CSP).
-- IPCR-GOTCHA-02: Preflight validation failure preserves sender ownership; permissions
+- GOTCHA-IPCR-02: Preflight validation failure preserves sender ownership; permissions
   and destination must be fully verified before revoking resource ownership.
 """
 

@@ -15,7 +15,7 @@ def build_model(*, guards: bool = True) -> Kripke:
     CSP チャネル所有権移譲モデル（Revoke/Rendezvous/Grant による二重所有防止と
     単一待機者制約、および事前検証拒否時の所有権保全の証明・変異検査対応）。
     - s_sender_holds: 送信者が所有 (sender_owns)
-    - s_preflight_check: IPCR-GOTCHA-02: RBAC/URI 事前検証中 (sender_owns)
+    - s_preflight_check: GOTCHA-IPCR-02: RBAC/URI 事前検証中 (sender_owns)
     - s_preflight_rejected: 事前検証拒否、送信元が所有権を完全保持して終了 (sender_owns)
     - s_in_flight: Revoke 済み・チャネル上でランデブーを試みる (in_flight)
     - s_awaiting_peer: 受信者がまだ到達しておらずブロック中 (in_flight)
@@ -39,7 +39,7 @@ def build_model(*, guards: bool = True) -> Kripke:
     R = [
         # 正常フロー: 送信要求 ➔ まず事前検証（Preflight Check）
         ("s_sender_holds", "s_preflight_check"),
-        # IPCR-GOTCHA-02: 事前検証失敗時は所有権を維持したまま終了
+        # GOTCHA-IPCR-02: 事前検証失敗時は所有権を維持したまま終了
         ("s_preflight_check", "s_preflight_rejected"),
         ("s_preflight_rejected", "s_sender_holds"),
         # 事前検証パス ➔ Revoke して in_flight へ
@@ -61,9 +61,9 @@ def build_model(*, guards: bool = True) -> Kripke:
         # ガード無効時（変異検査）:
         # 1. 送信時に Revoke によるアトミック剥奪を行わず直接 Grant すると二重所有
         R = [*R, ("s_sender_holds", "s_both_owns")]
-        # 2. IPCR-GOTCHA-01: 待機中チャネルへの二重送信制約を外すとメッセージ迷子
+        # 2. GOTCHA-IPCR-01: 待機中チャネルへの二重送信制約を外すとメッセージ迷子
         R = [*R, ("s_awaiting_peer", "s_orphaned")]
-        # 3. IPCR-GOTCHA-02: 検証前に先に Revoke してしまうと、検証失敗時にリソースが in-flight でリーク
+        # 3. GOTCHA-IPCR-02: 検証前に先に Revoke してしまうと、検証失敗時にリソースが in-flight でリーク
         R = [*R, ("s_preflight_check", "s_preflight_leak")]
 
     L = {
@@ -99,7 +99,7 @@ def properties():
             "logic": "CTL",
             "formula": AG(Not(orphaned)),
             "violation": orphaned,
-            "expect": True,  # IPCR-GOTCHA-01: 単一待機者制約により迷子メッセージは発生しない
+            "expect": True,  # GOTCHA-IPCR-01: 単一待機者制約により迷子メッセージは発生しない
         },
         {
             "name": "preflight_rejection_preserves_ownership",
@@ -107,7 +107,7 @@ def properties():
             "logic": "CTL",
             "formula": AG(Not(preflight_leaked)),
             "violation": preflight_leaked,
-            "expect": True,  # IPCR-GOTCHA-02: 事前検証前にRevokeしてしまうリークは到達不能
+            "expect": True,  # GOTCHA-IPCR-02: 事前検証前にRevokeしてしまうリークは到達不能
         },
     ]
 

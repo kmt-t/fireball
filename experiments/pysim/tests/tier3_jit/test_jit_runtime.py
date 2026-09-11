@@ -66,7 +66,7 @@ def wat_to_wasm(wat_text: str) -> bytes:
 
 
 def test_hotspot_01_2bit_card_marking_state_transitions():
-    """HOTSPOT-01 / JITR-02: 2-bit state machine: UNEXECUTED (00) -> EXECUTED (01) -> HOT (10) -> COMPILED (11)."""
+    """TEST-HOTSPOT-01 / TEST-JITR-02: 2-bit state machine: UNEXECUTED (00) -> EXECUTED (01) -> HOT (10) -> COMPILED (11)."""
     bitmap = HotspotBitmap(card_shift=4)
     pc = 0x100
     assert bitmap.get_state(pc) == CardState.UNEXECUTED
@@ -79,11 +79,11 @@ def test_hotspot_01_2bit_card_marking_state_transitions():
     # Mark COMPILED
     bitmap.mark_compiled(pc)
     assert bitmap.get_state(pc) == CardState.COMPILED
-    assert bitmap.touch(pc) == CardState.COMPILED  # JITR-03: COMPILED touch remains COMPILED
+    assert bitmap.touch(pc) == CardState.COMPILED  # TEST-JITR-03: COMPILED touch remains COMPILED
 
 
 def test_jitr_01_card_marking_granularity():
-    """JITR-01: Card marking granularity is 64-byte card, not individual instruction."""
+    """TEST-JITR-01: Card marking granularity is 64-byte card, not individual instruction."""
     bitmap = HotspotBitmap(card_shift=6)  # 64-byte cards
     pc1 = 0x1000
     pc2 = 0x1020  # Same 64-byte card (0x1000..0x103F)
@@ -95,7 +95,7 @@ def test_jitr_01_card_marking_granularity():
 
 
 def test_hotspot_02_history_ring_buffered_yield_drain():
-    """HOTSPOT-02 / JITR-05: Interpreter records basic-block heads to HistoryRing, drained on yield."""
+    """TEST-HOTSPOT-02 / TEST-JITR-05: Interpreter records basic-block heads to HistoryRing, drained on yield."""
     ring = HistoryRing(capacity=8)
     for i in range(10):
         ring.record(0x1000 + i * 4)
@@ -107,7 +107,7 @@ def test_hotspot_02_history_ring_buffered_yield_drain():
 
 
 def test_hotspot_03_lifo_compile_queue_batch_drain():
-    """HOTSPOT-03 / JITR-12: HOT traces are queued to LIFO compile queue and batch-compiled into Active bank."""
+    """TEST-HOTSPOT-03 / TEST-JITR-12: HOT traces are queued to LIFO compile queue and batch-compiled into Active bank."""
     compiled_traces = []
 
     def dummy_compiler(pc: int) -> JITTrace:
@@ -130,7 +130,7 @@ def test_hotspot_03_lifo_compile_queue_batch_drain():
 
 
 def test_hotspot_04_3bank_cache_oldest_only_promotion():
-    """HOTSPOT-04 / JITR-22, 23: 3-bank cache: Warm hit never promotes; Oldest hit promotes to Active."""
+    """TEST-HOTSPOT-04 / TEST-JITR-22, 23: 3-bank cache: Warm hit never promotes; Oldest hit promotes to Active."""
     cache = JITMultiBufferCache(bank_capacity=512)
     t1 = JITTrace(head_pc=0x100, native_fn=lambda: 1, size_bytes=64)
     t2 = JITTrace(head_pc=0x200, native_fn=lambda: 2, size_bytes=64)
@@ -262,7 +262,7 @@ def test_jitr_bitmap_checked_before_cache_lookup():
 
 
 def test_jitr_31_to_35_trace_chaining_and_ok_unlinking():
-    """JITR-31..35: Direct chaining into resident Active/Warm successors and O(k) unlinking on Oldest purge."""
+    """TEST-JITR-31..35: Direct chaining into resident Active/Warm successors and O(k) unlinking on Oldest purge."""
     cache = JITMultiBufferCache(bank_capacity=512)
     # t1 falls through to t2
     t2 = JITTrace(head_pc=0x200, native_fn=lambda: 2, size_bytes=64)
@@ -284,7 +284,7 @@ def test_jitr_31_to_35_trace_chaining_and_ok_unlinking():
 
 
 def test_jitc_20_trace_header_16byte_physical_layout():
-    """JITC-20: Trace header is strictly 16 bytes: u32 pc, u16 size, u8 flags, u8 variant, u32 next, u32 target."""
+    """TEST-JITC-20: Trace header is strictly 16 bytes: u32 pc, u16 size, u8 flags, u8 variant, u32 next, u32 target."""
     hdr = JITTraceHeader(head_wasm_pc=0x12345678, trace_byte_size=128, flags=0x01, variant_id=0x02)
     hdr.chain_next_pc = 0x87654321
     hdr.chain_target_addr = 0x20001000
@@ -301,7 +301,7 @@ def test_jitc_20_trace_header_16byte_physical_layout():
 
 
 def test_hotspot_05_3bank_cache_rotation_and_eviction_resets_card():
-    """HOTSPOT-05: Oldest bank eviction unlinks inbound sources and resets card state to UNEXECUTED."""
+    """TEST-HOTSPOT-05: Oldest bank eviction unlinks inbound sources and resets card state to UNEXECUTED."""
     bitmap = HotspotBitmap()
     cache = JITMultiBufferCache(bank_capacity=256)
     cache.on_evict = lambda pcs: [bitmap.mark_evicted(p) for p in pcs]
@@ -321,7 +321,7 @@ def test_hotspot_05_3bank_cache_rotation_and_eviction_resets_card():
 
 def test_hotspot_06_short_blocks_never_tracked_avoiding_card_aliasing():
     """
-    HOTSPOT-06: a card's 2-bit state can only ever describe one block. Two
+    TEST-HOTSPOT-06: a card's 2-bit state can only ever describe one block. Two
     distinct block heads sharing a card would otherwise let compiling one
     falsely read back as "already compiled" for the other, or let evicting
     one falsely reset the other's still-resident COMPILED state. Blocks
@@ -352,7 +352,7 @@ def test_hotspot_06_short_blocks_never_tracked_avoiding_card_aliasing():
 
 def test_hotspot_07_idle_hook_skips_recompiling_an_already_resident_trace():
     """
-    HOTSPOT-07: if a pc is queued for compilation while a trace already
+    TEST-HOTSPOT-07: if a pc is queued for compilation while a trace already
     resides in the cache under that exact pc (e.g. re-queued before an
     earlier compile's mark_compiled() landed), idle_hook must trust the
     cache -- the authority on whether *this* pc has a trace -- over the
@@ -463,7 +463,7 @@ def test_jitr_control_skip_radix_tree_chaining():
 
 
 def test_jitr_26_direct_mapped_folding_xor_jit_cache():
-    """JITR-26 & JITR-GOTCHA-05: Direct-Mapped Folding XOR JIT Cache[16] O(1) hit and rotation invalidation."""
+    """TEST-JITR-26 & GOTCHA-JITR-05: Direct-Mapped Folding XOR JIT Cache[16] O(1) hit and rotation invalidation."""
     cache = JITMultiBufferCache(bank_capacity=1024)
     # PC with function index 1, offset 0x20 -> (1 << 16) | 0x20 = 0x00010020
     pc1 = 0x00010020
@@ -485,7 +485,7 @@ def test_jitr_26_direct_mapped_folding_xor_jit_cache():
     # 3. Lookup hits fast slot
     assert cache.lookup(pc1) is t1
 
-    # 4. Rotation invalidates fast slot (JITR-GOTCHA-05)
+    # 4. Rotation invalidates fast slot (GOTCHA-JITR-05)
     cache.rotate()  # t1 moves to Warm
     for slot in cache._fast_slots:
         assert slot is None, (
@@ -562,7 +562,7 @@ def test_jitr_block_capacity_from_wasm_loader_and_no_set():
 
 def test_jitr_br_if_loop_exit_jit_result_correct():
     """
-    JITR-40: once RuntimeEngine._invoke_trace compiles the loop's br_if
+    TEST-JITR-40: once RuntimeEngine._invoke_trace compiles the loop's br_if
     exit-condition block, the native trace's boolean result must still
     decide between looping (trace.next_pc) and exiting (trace.loops_to) --
     a regression guard for a `_invoke_trace` that always took next_pc and
@@ -610,7 +610,7 @@ def test_jitr_br_if_loop_exit_jit_result_correct():
 
 def test_jitr_backward_branch_block_byte_span_not_disqualified():
     """
-    JITR-41 / JITR-GOTCHA-07: the loop body block (sum/increment, ending in
+    TEST-JITR-41 / GOTCHA-JITR-07: the loop body block (sum/increment, ending in
     an unconditional `br` back to the loop's own condition-check block) has
     `next_pc < head_pc` -- a regression guard for `record_block_head` sizing
     this block via `next_pc - pc` (negative for any backward branch), which
@@ -659,7 +659,7 @@ def test_jitr_backward_branch_block_byte_span_not_disqualified():
 
 def test_jitr_if_then_skipped_when_condition_false_after_jit():
     """
-    JITR-42: once the `if (cond) (then ...)` condition-check block compiles,
+    TEST-JITR-42: once the `if (cond) (then ...)` condition-check block compiles,
     the then-body must run only when the native trace's condition is true --
     a regression guard for a `_invoke_trace` that treated IF exactly like an
     unconditional fallthrough, always executing the then-body regardless of
@@ -712,7 +712,7 @@ def test_jitr_if_then_skipped_when_condition_false_after_jit():
 
 def test_jitr_nested_loop_in_if_frame_stack_reconciliation():
     """
-    JITR-42: a loop nested inside an if nested inside an outer loop --
+    TEST-JITR-42: a loop nested inside an if nested inside an outer loop --
     RuntimeEngine._invoke_trace's computed jumps bypass _h_block/_h_loop/
     _h_if entirely, so once the inner loop's exit-condition block compiles,
     the frame.frames pushed for it during any earlier cold (interpreted)
@@ -778,12 +778,12 @@ def test_jitr_nested_loop_in_if_frame_stack_reconciliation():
 
 def test_jitr_return_terminated_block_jit_result_correct():
     """
-    JITR-43: a JIT-compiled block whose terminator is RETURN has
+    TEST-JITR-43: a JIT-compiled block whose terminator is RETURN has
     `trace.next_pc is None` (the function is ending, not falling through to
     another block). `_invoke_trace` must resolve this via O(1)
     `len(frame.code)` -- the same "past the end" sentinel `current_pc()`
     already checks for -- never by decoding an `Instr` at runtime, which
-    `{DirectBytecodeExecution}` (INTP-GOTCHA-05) forbids: no
+    `{DirectBytecodeExecution}` (GOTCHA-INTP-05) forbids: no
     instruction-object generation at runtime, ever.
     """
     wat = """

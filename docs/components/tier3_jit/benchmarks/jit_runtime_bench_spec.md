@@ -12,11 +12,11 @@ Copy-and-Patch 方式による JIT コンパイル速度（トレース結合＋
 
 | ベンチマーク ID | 測定項目 | 前提条件 / 設定 | 計測指標 | 目標性能 / 合格基準 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **BENCH-JIT-01** | Copy-and-Patch コンパイル速度 | 基本ブロック (BasicBlock) 4命令 | Traces/sec, µs/trace | 高速なステンシル結合（ゼロ最適化コスト） | `{JIT_CopyAndPatch}`, `{JIT_ZeroCompileCostTheorem}` |
-| **BENCH-JIT-02** | 1命令あたりコンパイル時間 | 各 WASM オプコードのパッチ時間 | ns/opcode | 線形スケール（$O(N)$）でパッチ完了 | `{LowLatencyJIT}` |
-| **BENCH-JIT-03** | 2-Bit カードマーキング状態判定 ($O(1)$) | `HotspotBitmap` / `bit_view<2>` | ns/check, M ops/sec | インタープリタ実行ループを阻害しない極低コスト | `jit_runtime.md` |
-| **BENCH-JIT-04** | `bswap32` RadixBinaryTreeView 区間検索 | 64エントリの JIT エントリインデックス | ns/lookup, M ops/sec | 下位ビット均等分散による有界二分探索 | `{META_BinarySearch}` |
-| **BENCH-JIT-05** | ループ演算スループット比 (Interp vs JIT) | 100,000回算術ループ実行 | 実行時間 (ms), Speedup比 | 差分結果が完全一致し、ネイティブ実行が成立すること | `jit_compiler.md` |
+| **BENCHMARK-JIT-01** | Copy-and-Patch コンパイル速度 | 基本ブロック (BasicBlock) 4命令 | Traces/sec, µs/trace | 高速なステンシル結合（ゼロ最適化コスト） | `{JIT_CopyAndPatch}`, `{JIT_ZeroCompileCostTheorem}` |
+| **BENCHMARK-JIT-02** | 1命令あたりコンパイル時間 | 各 WASM オプコードのパッチ時間 | ns/opcode | 線形スケール（$O(N)$）でパッチ完了 | `{LowLatencyJIT}` |
+| **BENCHMARK-JIT-03** | 2-Bit カードマーキング状態判定 ($O(1)$) | `HotspotBitmap` / `bit_view<2>` | ns/check, M ops/sec | インタープリタ実行ループを阻害しない極低コスト | `jit_runtime.md` |
+| **BENCHMARK-JIT-04** | `bswap32` RadixBinaryTreeView 区間検索 | 64エントリの JIT エントリインデックス | ns/lookup, M ops/sec | 下位ビット均等分散による有界二分探索 | `{META_BinarySearch}` |
+| **BENCHMARK-JIT-05** | ループ演算スループット比 (Interp vs JIT) | 100,000回算術ループ実行 | 実行時間 (ms), Speedup比 | 差分結果が完全一致し、ネイティブ実行が成立すること | `jit_compiler.md` |
 
 ## 3. 測定手順
 

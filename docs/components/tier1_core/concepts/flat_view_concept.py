@@ -22,7 +22,7 @@ ALLOWED_BITS = (1, 2, 4)
 class BitView:
     """
     bit_view<Bits>: a dense, index-addressed table of sub-byte states.
-        CONT-GOTCHA-01: Bits must strictly divide 8 (1, 2, or 4) so that an element never
+        GOTCHA-CONT-01: Bits must strictly divide 8 (1, 2, or 4) so that an element never
         straddles a byte boundary, ensuring atomic single-byte load/shift/mask.
     """
 

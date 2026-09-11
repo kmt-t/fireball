@@ -1,7 +1,7 @@
 """
 experiments/pysim/benchmarks/linear_memory/bench_linear_memory.py
 Linear Memory Benchmark (Guest RAM Fast Path, Single-Comparison Bounds, Widths).
-Conforms to docs/components/tier2_runtime/benchmarks/linear_memory_bench_spec.md (BENCH-MEM-01 ~ BENCH-MEM-05).
+Conforms to docs/components/tier2_runtime/benchmarks/linear_memory_bench_spec.md (BENCHMARK-MEM-01 ~ BENCHMARK-MEM-05).
 """
 
 from __future__ import annotations

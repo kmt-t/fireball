@@ -48,7 +48,7 @@ for _p in [
 experiments/pysim/tests/tier2_runtime/test_debugger.py
 Comprehensive tests for Debug Manager & GDB RSP Protocol Engine (debugger.py).
 Strictly implements and verifies all test cases from:
-docs/components/tier2_runtime/tests/debug_manager_test_spec.md (DBG-01 ~ DBG-15).
+docs/components/tier2_runtime/tests/debug_manager_test_spec.md (TEST-DBG-01 ~ TEST-DBG-15).
 """
 
 from control_flow import extract_basic_blocks
@@ -60,7 +60,7 @@ from x64_jit import TraceCompiler
 
 
 def test_dbg_01_query_halt_reason():
-    """DBG-01: '?' command returns last stop reason (S05 = SIGTRAP)."""
+    """TEST-DBG-01: '?' command returns last stop reason (S05 = SIGTRAP)."""
     dbg = DebuggerManager()
     dbg.attach()
     dbg.stop_signal = 5
@@ -72,7 +72,7 @@ def test_dbg_01_query_halt_reason():
 
 
 def test_dbg_02_read_virtual_registers():
-    """DBG-02: 'g' command reads 20 virtual registers (0:pc, 1:sp, 2:fp, 3:tos, 4..19:local0..15)."""
+    """TEST-DBG-02: 'g' command reads 20 virtual registers (0:pc, 1:sp, 2:fp, 3:tos, 4..19:local0..15)."""
     dbg = DebuggerManager()
     dbg.attach()
     rsp = GDBRspProtocol(dbg)
@@ -97,7 +97,7 @@ def test_dbg_02_read_virtual_registers():
 
 
 def test_dbg_03_write_virtual_registers():
-    """DBG-03: 'G' command writes all 20 virtual registers."""
+    """TEST-DBG-03: 'G' command writes all 20 virtual registers."""
     dbg = DebuggerManager()
     dbg.attach()
     rsp = GDBRspProtocol(dbg)
@@ -114,7 +114,7 @@ def test_dbg_03_write_virtual_registers():
 
 
 def test_dbg_04_05_read_memory_and_bounds_check():
-    """DBG-04, DBG-05: 'm' command reads guest memory with strict bounds check."""
+    """TEST-DBG-04, TEST-DBG-05: 'm' command reads guest memory with strict bounds check."""
     dbg = DebuggerManager()
     dbg.attach()
     rsp = GDBRspProtocol(dbg)
@@ -130,7 +130,7 @@ def test_dbg_04_05_read_memory_and_bounds_check():
 
 
 def test_dbg_06_07_write_memory_flush_jit_and_bounds_check():
-    """DBG-06, DBG-07: 'M' command writes memory, flushes JIT cache, and checks bounds."""
+    """TEST-DBG-06, TEST-DBG-07: 'M' command writes memory, flushes JIT cache, and checks bounds."""
     engine = IntegratedHybridEngine(compiler=TraceCompiler())
     dbg = DebuggerManager(engine=engine)
     dbg.attach()
@@ -163,7 +163,7 @@ def test_dbg_06_07_write_memory_flush_jit_and_bounds_check():
 
 
 def test_dbg_08_09_breakpoints_and_hit():
-    """DBG-08, DBG-09: 'Z0' and 'z0' manage breakpoints; 'c' halts on hit."""
+    """TEST-DBG-08, TEST-DBG-09: 'Z0' and 'z0' manage breakpoints; 'c' halts on hit."""
     engine = IntegratedHybridEngine()
     dbg = DebuggerManager(engine=engine)
     dbg.attach()
@@ -211,7 +211,7 @@ def test_dbg_08_09_breakpoints_and_hit():
 
 
 def test_dbg_10_11_single_step_and_termination():
-    """DBG-10, DBG-11: 's' single-steps one instruction; ends with W00."""
+    """TEST-DBG-10, TEST-DBG-11: 's' single-steps one instruction; ends with W00."""
     engine = IntegratedHybridEngine()
     dbg = DebuggerManager(engine=engine)
     dbg.attach()
@@ -246,7 +246,7 @@ def test_dbg_10_11_single_step_and_termination():
 
 
 def test_dbg_12_to_15_integrated_profiler_and_assertions():
-    """DBG-12 ~ DBG-15: Integrated Profiler PC sampling and memory assertions ({Debug_Integrated})."""
+    """TEST-DBG-12 ~ TEST-DBG-15: Integrated Profiler PC sampling and memory assertions ({Debug_Integrated})."""
     engine = IntegratedHybridEngine()
     dbg = DebuggerManager(engine=engine)
     dbg.attach()

@@ -112,8 +112,8 @@ Cortex-M33 MPU および vMMIO のハードウェア保護機構において、�
 | 8 | 読出 | - | 読出可能 | 正常アクセス（本コンポーネントの関与なし） |
 | 9 | 自動解放 | - | **解放** | ページをプールへ返却し、アンマップ通知を発火 |
 
-- **非所有タスク操作の完全遮断 (`MEM-GOTCHA-02`)**: 共有メモリブロックの操作時、ブロックの所有タスク ID を厳格に照合する。物理的な遮断機構は、所有権未取得（未マッピング）状態のページへのアクセスを未登録ページフォルト（`TRAP_UNREGISTERED_PAGE`）として検出する、アドレスベースの検知方式で実現する（8.1節参照、具体的な検知経路は `runtime_vmmio.md` を正本とする）。
-- **送信中ブロックの保護状態 (`MEM-GOTCHA-03`)**: 送信開始（`release()`）から受信完了（`claim()`）までの間、送信元タスクからの旧アドレスアクセスは未登録ページフォルト（`TRAP_UNREGISTERED_PAGE`）として確実に遮断され、TOCTOU 競合や不正アクセスを構造的に排除する。具体的な遮断メカニズム（PTE アンマップ・TLB 即時フラッシュ）は `runtime_vmmio.md` を正本とする。
+- **非所有タスク操作の完全遮断 (`GOTCHA-MEM-02`)**: 共有メモリブロックの操作時、ブロックの所有タスク ID を厳格に照合する。物理的な遮断機構は、所有権未取得（未マッピング）状態のページへのアクセスを未登録ページフォルト（`TRAP_UNREGISTERED_PAGE`）として検出する、アドレスベースの検知方式で実現する（8.1節参照、具体的な検知経路は `runtime_vmmio.md` を正本とする）。
+- **送信中ブロックの保護状態 (`GOTCHA-MEM-03`)**: 送信開始（`release()`）から受信完了（`claim()`）までの間、送信元タスクからの旧アドレスアクセスは未登録ページフォルト（`TRAP_UNREGISTERED_PAGE`）として確実に遮断され、TOCTOU 競合や不正アクセスを構造的に排除する。具体的な遮断メカニズム（PTE アンマップ・TLB 即時フラッシュ）は `runtime_vmmio.md` を正本とする。
 - **障害時回復**: Rendezvous中に通信が中断された場合、`rollback_transfer(original_sender_id, shm_id)` により送信元タスクへ所有権を復元し、リソースのダングリングを防止する。物理的なマッピング復元手順は `runtime_vmmio.md` を正本とする。
 
 ## 7. ハードウェアメモリ保護 (MPU) & W^X 設計
@@ -144,8 +144,8 @@ JIT コードキャッシュ（Region 4）は、実行可能（Execute）と書�
 | 1 | パッチ生成開始 (`begin_jit_patch`) | `RNR = 4`<br>`RLAR.EN = 0`<br>`RBAR.AP = RW`, `RBAR.XN = 1`<br>`RLAR.EN = 1` | `RW + XN`<br>`__DSB(); __ISB();` | リージョン4を書き込み可能・実行不可へ移行し、パイプラインを同期。実行を禁止して改ざん時暴走を防止。 |
 | 2 | パッチ生成完了 (`commit_jit_patch`) | `RNR = 4`<br>`RLAR.EN = 0`<br>`RBAR.AP = RO`, `RBAR.XN = 0`<br>`RLAR.EN = 1` | `RO + X`<br>`__DSB(); __ISB();` | リージョン4を読み取り専用・実行可能へ復元し、命令キャッシュ・プリフェッチをフラッシュしてネイティブ実行を有効化。 |
 
-#### トランザクションバッチ化によるレイテンシ両立 (`MEM-GOTCHA-04`)
-<!-- traceability: {MEM-GOTCHA-04} {GLOBAL_Policy_Memory} {META_RestrictedPhysicalAccess} -->
+#### トランザクションバッチ化によるレイテンシ両立 (`GOTCHA-MEM-04`)
+<!-- traceability: {GOTCHA-MEM-04} {GLOBAL_Policy_Memory} {META_RestrictedPhysicalAccess} -->
 命令パッチごとに個別 MPU 切替を行うとバリアオーバーヘッドが増大するため、`begin_jit_patch()`/`commit_jit_patch()` は 1 コンパイル単位（トレースまたは基本ブロック）につき 1 回ずつのみ呼び出される契約とする。1 命令ごとに切り替えを行うと、その都度 ARM D-Cache クリーン、I-Cache インバリデート、および DSB/ISB メモリバリア命令の発行が必要になり、パイプラインフラッシュの累積により JIT コンパイル性能が致命的に悪化するためである。具体的な呼び出しタイミング・トレース生成手順は [`jit_compiler.md`](docs/components/tier3_jit/jit_compiler.md) を正本とする。
 
 ### 7.3 アライメントおよび境界制約 (PMSAv8)
@@ -155,12 +155,12 @@ JIT コードキャッシュ（Region 4）は、実行可能（Execute）と書�
 ## 8. 形式検証・テスト仕様との対応
 
 ### 8.1 検証対象の不変条件
-- **ページ単位権限分離**: 4KB 物理ページ内に異種タスクのスロットが共存しないこと（`MEM-14`, `MEM-GOTCHA-01`）。専用の形式モデルは現時点で存在せず、[`runtime_memory_test_spec.md`](docs/components/tier2_runtime/tests/runtime_memory_test_spec.md) のテストケースのみで検証される。
-- **非所有者アクセストラップ**: 所有権未取得（未マッピング）スロットへのアクセスが `TRAP_UNREGISTERED_PAGE` で拒絶されること（`MEM-16`, `MEM-GOTCHA-02`）。専用の形式モデルは現時点で存在せず、テストケースのみで検証される。
-- **W^X 不変条件**: JIT キャッシュ領域で `RWX` が同時に許可される状態が存在しないこと（[`jit_cache_model.py`](docs/components/tier3_jit/formal/jit_cache_model.py), `MEM-23`）。この形式モデルが証明する残り4命題（3面バンク回転・2ビットホットスポットFSM・遅延チェイニング）は [`jit_compiler.md`](docs/components/tier3_jit/jit_compiler.md)/[`jit_runtime.md`](docs/components/tier3_jit/jit_runtime.md) が対象であり、本コンポーネントの評価対象外である。
+- **ページ単位権限分離**: 4KB 物理ページ内に異種タスクのスロットが共存しないこと（`TEST-MEM-14`, `GOTCHA-MEM-01`）。専用の形式モデルは現時点で存在せず、[`runtime_memory_test_spec.md`](docs/components/tier2_runtime/tests/runtime_memory_test_spec.md) のテストケースのみで検証される。
+- **非所有者アクセストラップ**: 所有権未取得（未マッピング）スロットへのアクセスが `TRAP_UNREGISTERED_PAGE` で拒絶されること（`TEST-MEM-16`, `GOTCHA-MEM-02`）。専用の形式モデルは現時点で存在せず、テストケースのみで検証される。
+- **W^X 不変条件**: JIT キャッシュ領域で `RWX` が同時に許可される状態が存在しないこと（[`jit_cache_model.py`](docs/components/tier3_jit/formal/jit_cache_model.py), `TEST-MEM-23`）。この形式モデルが証明する残り4命題（3面バンク回転・2ビットホットスポットFSM・遅延チェイニング）は [`jit_compiler.md`](docs/components/tier3_jit/jit_compiler.md)/[`jit_runtime.md`](docs/components/tier3_jit/jit_runtime.md) が対象であり、本コンポーネントの評価対象外である。
 
 ### 8.2 テスト仕様書との連携
-本コンポーネントのテストケース（MEM-01〜MEM-25, MEM-GOTCHA-01〜04）は、[`runtime_memory_test_spec.md`](docs/components/tier2_runtime/tests/runtime_memory_test_spec.md) を正本として定義する。
+本コンポーネントのテストケース（TEST-MEM-01〜TEST-MEM-25, GOTCHA-MEM-01〜04）は、[`runtime_memory_test_spec.md`](docs/components/tier2_runtime/tests/runtime_memory_test_spec.md) を正本として定義する。
 
 ## 9. 設計判断 (ADR)
 <!-- traceability: {ADR_PageGranularPermissionIsolation} -->

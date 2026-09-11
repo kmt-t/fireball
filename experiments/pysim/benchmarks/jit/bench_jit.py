@@ -1,7 +1,7 @@
 """
 experiments/pysim/benchmarks/jit/bench_jit.py
 JIT Compiler & Runtime Performance Benchmark.
-Conforms to docs/components/tier3_jit/benchmarks/jit_runtime_bench_spec.md (BENCH-JIT-01 ~ BENCH-JIT-05).
+Conforms to docs/components/tier3_jit/benchmarks/jit_runtime_bench_spec.md (BENCHMARK-JIT-01 ~ BENCHMARK-JIT-05).
 """
 
 from __future__ import annotations

@@ -67,7 +67,7 @@ def test_syscall_01_unknown_id_returns_nosys():
 
 
 def test_syscall_16_trigger_set_pin_reserved_nosys():
-    """SYS-16: TRIGGER_SET_PIN is a registered ID with no pysim GPIO register
+    """TEST-SYS-16: TRIGGER_SET_PIN is a registered ID with no pysim GPIO register
     backing yet; it must be safely undispatched (NOSYS), not crash or panic."""
     sysv = System()
     try:
@@ -102,7 +102,7 @@ def test_syscall_03_mmio_read_write():
 
 
 def test_syscall_11_mmio_read32_out_of_bounds():
-    """SYS-11: MMIO_READ32 on a linear guest-RAM address beyond FB_CONF_GUEST_RAM_SIZE is rejected."""
+    """TEST-SYS-11: MMIO_READ32 on a linear guest-RAM address beyond FB_CONF_GUEST_RAM_SIZE is rejected."""
     sysv = System()
     try:
         oob_addr = FB_CONF_GUEST_RAM_SIZE + 0x1000  # bit31=0 (linear), past guest RAM
@@ -114,7 +114,7 @@ def test_syscall_11_mmio_read32_out_of_bounds():
 
 
 def test_syscall_12_mmio_write32_permission_denied():
-    """SYS-12: MMIO_WRITE32 to a page mapped read-only is rejected."""
+    """TEST-SYS-12: MMIO_WRITE32 to a page mapped read-only is rejected."""
     sysv = System()
     try:
         vpn = (FB_CONF_VSOC_PASSTHROUGH_BASE >> 12) + 100  # fresh page, unused at startup
@@ -128,7 +128,7 @@ def test_syscall_12_mmio_write32_permission_denied():
 
 
 def test_syscall_13_mmio_read8_write8():
-    """SYS-13: MMIO_READ8/MMIO_WRITE8 round-trip at 8-bit width."""
+    """TEST-SYS-13: MMIO_READ8/MMIO_WRITE8 round-trip at 8-bit width."""
     sysv = System()
     try:
         addr = FB_CONF_VSOC_PASSTHROUGH_BASE
@@ -141,7 +141,7 @@ def test_syscall_13_mmio_read8_write8():
 
 
 def test_syscall_14_mmio_bulk_read_write_invalid_size():
-    """SYS-14: MMIO_BULK_READ/WRITE with an oversized byte_count is rejected."""
+    """TEST-SYS-14: MMIO_BULK_READ/WRITE with an oversized byte_count is rejected."""
     sysv = System()
     try:
         addr = FB_CONF_VSOC_PASSTHROUGH_BASE
@@ -159,7 +159,7 @@ def test_syscall_14_mmio_bulk_read_write_invalid_size():
 
 
 def test_syscall_15_mmio_bulk_read_dest_offset_out_of_bounds():
-    """SYS-15: MMIO_BULK_READ rejects a dest_offset beyond guest RAM and writes nothing."""
+    """TEST-SYS-15: MMIO_BULK_READ rejects a dest_offset beyond guest RAM and writes nothing."""
     sysv = System()
     try:
         guest_mem = bytearray(b"\xaa" * 16)
@@ -201,7 +201,7 @@ def test_syscall_05_irq_flags():
 
 def test_syscall_06_ipc_lookup_send_recv():
     """
-    SYS-40..42: fireball_call's IPC_LOOKUP/SEND/RECV. The guest task's own
+    TEST-SYS-40..42: fireball_call's IPC_LOOKUP/SEND/RECV. The guest task's own
     execution *is* the IPC_SEND/IPC_RECV call (runtime_syscall.md: a host call
     runs inside the calling task's coroutine), so it genuinely waits for its
     CSP counterpart -- no EAGAIN/polling (ipc_router.md §5.1). The
@@ -281,7 +281,7 @@ def test_syscall_06_ipc_lookup_send_recv():
 
 
 def test_syscall_07_wasi_fd_write():
-    """SYS-80: WASI_FD_WRITE writes single iovec to UART stdout and reports written bytes."""
+    """TEST-SYS-80: WASI_FD_WRITE writes single iovec to UART stdout and reports written bytes."""
     sysv = System()
     try:
         guest_mem = bytearray(64)
@@ -298,7 +298,7 @@ def test_syscall_07_wasi_fd_write():
 
 
 def test_wasi_01_fd_write_scatter_gather():
-    """SYS-80: WASI_FD_WRITE supports scatter-gather output with multiple iovecs."""
+    """TEST-SYS-80: WASI_FD_WRITE supports scatter-gather output with multiple iovecs."""
     sysv = System()
     try:
         guest_mem = bytearray(128)
@@ -322,7 +322,7 @@ def test_wasi_01_fd_write_scatter_gather():
 
 
 def test_wasi_02_fd_read_eof():
-    """SYS-81: WASI_FD_READ reports 0 bytes read (EOF) without crashing."""
+    """TEST-SYS-81: WASI_FD_READ reports 0 bytes read (EOF) without crashing."""
     sysv = System()
     try:
         guest_mem = bytearray(64)
@@ -336,7 +336,7 @@ def test_wasi_02_fd_read_eof():
 
 
 def test_wasi_03_fd_close():
-    """SYS-82: WASI_FD_CLOSE returns SUCCESS for any fd."""
+    """TEST-SYS-82: WASI_FD_CLOSE returns SUCCESS for any fd."""
     sysv = System()
     try:
         assert sysv.fireball_call(FbSyscallId.WASI_FD_CLOSE, 3, 0, 0, 0, 0, 0) == WasiErrno.SUCCESS
@@ -345,7 +345,7 @@ def test_wasi_03_fd_close():
 
 
 def test_wasi_04_clock_time_get_monotonic():
-    """SYS-83: WASI_CLOCK_TIME_GET writes monotonic 64-bit nanosecond timestamp to guest memory."""
+    """TEST-SYS-83: WASI_CLOCK_TIME_GET writes monotonic 64-bit nanosecond timestamp to guest memory."""
     sysv = System()
     try:
         guest_mem = bytearray(64)
@@ -368,7 +368,7 @@ def test_wasi_04_clock_time_get_monotonic():
 
 
 def test_wasi_05_proc_exit():
-    """SYS-84: WASI_PROC_EXIT sets system halted state and exit code."""
+    """TEST-SYS-84: WASI_PROC_EXIT sets system halted state and exit code."""
     sysv = System()
     try:
         assert sysv.halted is False
@@ -382,7 +382,7 @@ def test_wasi_05_proc_exit():
 
 
 def test_wasi_06_random_get():
-    """SYS-85: WASI_RANDOM_GET fills guest buffer with cryptographically secure random bytes."""
+    """TEST-SYS-85: WASI_RANDOM_GET fills guest buffer with cryptographically secure random bytes."""
     sysv = System()
     try:
         guest_mem = bytearray(64)
@@ -398,7 +398,7 @@ def test_wasi_06_random_get():
 
 
 def test_wasi_07_invalid_fd_returns_badf():
-    """SYS-91: WASI_FD_WRITE to invalid fd (e.g. fd=99) returns EBADF."""
+    """TEST-SYS-91: WASI_FD_WRITE to invalid fd (e.g. fd=99) returns EBADF."""
     sysv = System()
     try:
         guest_mem = bytearray(64)
@@ -411,7 +411,7 @@ def test_wasi_07_invalid_fd_returns_badf():
 
 
 def test_wasi_08_out_of_bounds_offset_returns_fault():
-    """SYS-92: Out-of-bounds guest memory offset in WASI call returns EFAULT instantly."""
+    """TEST-SYS-92: Out-of-bounds guest memory offset in WASI call returns EFAULT instantly."""
     sysv = System()
     try:
         guest_mem = bytearray(64)

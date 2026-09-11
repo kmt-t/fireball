@@ -4,10 +4,10 @@ Reference Concept Implementation & Test Suite: Memory Manager Implementation
 (system_allocator / shm_allocator), realizing the abstract contract defined in
 docs/components/tier1_core/system_memory.md (co_mem).
 Implementation Invariants & Gotchas:
-- MEM-GOTCHA-01: 4KB page granularity permission isolation (different tasks never share a page).
-- MEM-GOTCHA-02: Strict ownership enforcement prevents non-owners from releasing or accessing blocks.
-- MEM-GOTCHA-03: In-flight blocks are unmapped from vMMIO and TLB is flushed immediately.
-- MEM-GOTCHA-04: JIT code cache W^X mode switching is batched per trace to minimize barrier latency.
+- GOTCHA-MEM-01: 4KB page granularity permission isolation (different tasks never share a page).
+- GOTCHA-MEM-02: Strict ownership enforcement prevents non-owners from releasing or accessing blocks.
+- GOTCHA-MEM-03: In-flight blocks are unmapped from vMMIO and TLB is flushed immediately.
+- GOTCHA-MEM-04: JIT code cache W^X mode switching is batched per trace to minimize barrier latency.
 """
 
 from __future__ import annotations
@@ -181,11 +181,11 @@ class SharedBlock:
 
     def get_address(self, caller_task_id: int) -> int:
         assert self._is_active, "Cannot access released or dropped SharedBlock"
-        assert self.owner == caller_task_id, "MEM-GOTCHA-02: non-owner cannot access SharedBlock"
+        assert self.owner == caller_task_id, "GOTCHA-MEM-02: non-owner cannot access SharedBlock"
         return self.base_address
 
     def get_size(self, caller_task_id: int) -> int:
-        assert self.owner == caller_task_id, "MEM-GOTCHA-02: non-owner cannot access SharedBlock"
+        assert self.owner == caller_task_id, "GOTCHA-MEM-02: non-owner cannot access SharedBlock"
         return self.size
 
     def get_owner(self) -> int:
@@ -194,7 +194,7 @@ class SharedBlock:
     def release(self, caller_task_id: int) -> int:
         """Revoke sender access and prepare for transfer (unmaps from vMMIO & flushes TLB)."""
         assert self._is_active, "Cannot release inactive SharedBlock"
-        assert self.owner == caller_task_id, "MEM-GOTCHA-02: non-owner cannot release SharedBlock"
+        assert self.owner == caller_task_id, "GOTCHA-MEM-02: non-owner cannot release SharedBlock"
         self._is_active = False
         self._is_in_flight = True
         # Unmap from vMMIO page table and invalidate TLB (Revoke phase)
@@ -601,9 +601,9 @@ class HALBufferManager:
 
 
 # =============================================================================
-# Test Suite: system_memory_test_spec.md (MEM-01 ~ MEM-13, contract-level) and
-# runtime_memory_test_spec.md (MEM-20 ~ MEM-25, physical implementation: MPU/W^X).
-# MEM-14/15/16 (page-granular isolation, vMMIO FC=14 PTE/TLB sync, owner-mismatch
+# Test Suite: system_memory_test_spec.md (TEST-MEM-01 ~ TEST-MEM-13, contract-level) and
+# runtime_memory_test_spec.md (TEST-MEM-20 ~ TEST-MEM-25, physical implementation: MPU/W^X).
+# TEST-MEM-14/15/16 (page-granular isolation, vMMIO FC=14 PTE/TLB sync, owner-mismatch
 # trap) are physical-implementation cases covered instead by pysim's real
 # MemoryManager/VMMIOController (experiments/pysim/tests/tier3_platform/
 # test_memory.py's test_mem_14_*/test_mem_15_*), not duplicated here.
@@ -611,7 +611,7 @@ class HALBufferManager:
 
 
 def test_mem_01_acquire_task_heap_fixed_size() -> None:
-    """MEM-01: acquire-task-heap provides task-specific fixed partition (no arbitrary size)."""
+    """TEST-MEM-01: acquire-task-heap provides task-specific fixed partition (no arbitrary size)."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     # Signature must only take owner (task_id), NOT a size parameter
@@ -631,7 +631,7 @@ def test_mem_01_acquire_task_heap_fixed_size() -> None:
 
 
 def test_mem_01b_acquire_slot_typed() -> None:
-    """MEM-01b: acquire-slot<T> leases a typed handle."""
+    """TEST-MEM-01b: acquire-slot<T> leases a typed handle."""
 
     class TCB:
         __size__ = 128
@@ -650,7 +650,7 @@ def test_mem_01b_acquire_slot_typed() -> None:
 
 
 def test_mem_02_recovery_strategy_on_exhaustion() -> None:
-    """MEM-02: Failure returns MemoryErrorResult with actionable recovery strategy."""
+    """TEST-MEM-02: Failure returns MemoryErrorResult with actionable recovery strategy."""
     mm = MemoryManager()
     # Small pool that fits only 1 partition
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_TASK_HEAP_SIZES[0])
@@ -666,7 +666,7 @@ def test_mem_02_recovery_strategy_on_exhaustion() -> None:
 
 
 def test_mem_03_total_allocation_bound() -> None:
-    """MEM-03: Total allocated bytes never exceeds FB_CONF_MEMORY_POOL_SIZE."""
+    """TEST-MEM-03: Total allocated bytes never exceeds FB_CONF_MEMORY_POOL_SIZE."""
     mm = MemoryManager()
     pool_size = 256 * 1024
     mm.init_manager(pool_base=0x20020000, pool_size=pool_size)
@@ -678,7 +678,7 @@ def test_mem_03_total_allocation_bound() -> None:
 
 
 def test_mem_04_owner_task_id_auto_set() -> None:
-    """MEM-04: Caller task-id is automatically recorded on all allocations."""
+    """TEST-MEM-04: Caller task-id is automatically recorded on all allocations."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     p_res = mm.acquire_task_heap(owner=5)
@@ -688,7 +688,7 @@ def test_mem_04_owner_task_id_auto_set() -> None:
 
 
 def test_mem_05_release_and_deallocate_owner_only() -> None:
-    """MEM-05: release-task-heap / deallocate is permitted ONLY by owner task."""
+    """TEST-MEM-05: release-task-heap / deallocate is permitted ONLY by owner task."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     mm.acquire_task_heap(owner=3)
@@ -704,7 +704,7 @@ def test_mem_05_release_and_deallocate_owner_only() -> None:
 
 
 def test_mem_06_guest_ram_64kb_alignment() -> None:
-    """MEM-06: pool_base and Guest WASM RAM is strictly 64KB aligned."""
+    """TEST-MEM-06: pool_base and Guest WASM RAM is strictly 64KB aligned."""
     mm = MemoryManager()
     aligned_base = 0x20020000
     assert aligned_base % FB_WASM_PAGE_SIZE == 0
@@ -720,7 +720,7 @@ def test_mem_06_guest_ram_64kb_alignment() -> None:
 
 
 def test_mem_07_allocate_shared_registers_vmmio_pte() -> None:
-    """MEM-07: allocate-shared maps corresponding vMMIO FC=14 PTE."""
+    """TEST-MEM-07: allocate-shared maps corresponding vMMIO FC=14 PTE."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     res = mm.allocate_shared(caller_task_id=1, size=2048)
@@ -730,7 +730,7 @@ def test_mem_07_allocate_shared_registers_vmmio_pte() -> None:
 
 
 def test_mem_08_claim_requires_valid_shm_id() -> None:
-    """MEM-08: claim fails if shm_id is invalid or deallocated."""
+    """TEST-MEM-08: claim fails if shm_id is invalid or deallocated."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     # Attempt claim with non-existent SHM ID
@@ -740,7 +740,7 @@ def test_mem_08_claim_requires_valid_shm_id() -> None:
 
 
 def test_mem_09_hal_acquire_buffer_delegates_to_allocate_shared() -> None:
-    """MEM-09: hal_dispatch acquire_buffer unifies with memory manager allocate_shared."""
+    """TEST-MEM-09: hal_dispatch acquire_buffer unifies with memory manager allocate_shared."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     hal = HALBufferManager(mm)
@@ -752,7 +752,7 @@ def test_mem_09_hal_acquire_buffer_delegates_to_allocate_shared() -> None:
 
 
 def test_mem_10_shared_block_ownership_transfer() -> None:
-    """MEM-10: allocate-shared -> release -> claim moves ownership cleanly without double-ownership."""
+    """TEST-MEM-10: allocate-shared -> release -> claim moves ownership cleanly without double-ownership."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     # 1. Task A allocates: mapped in vMMIO
@@ -771,7 +771,7 @@ def test_mem_10_shared_block_ownership_transfer() -> None:
 
 
 def test_mem_gotcha_02_shared_block_release_owner_only() -> None:
-    """MEM-GOTCHA-02: non-owner task cannot release() or access another task's SharedBlock."""
+    """GOTCHA-MEM-02: non-owner task cannot release() or access another task's SharedBlock."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     sb = mm.allocate_shared(caller_task_id=1, size=1024).unwrap()
@@ -780,7 +780,7 @@ def test_mem_gotcha_02_shared_block_release_owner_only() -> None:
         sb.release(caller_task_id=2)
         raise AssertionError("Non-owner must not be able to release() another task's SharedBlock")
     except AssertionError as e:
-        assert "MEM-GOTCHA-02" in str(e)
+        assert "GOTCHA-MEM-02" in str(e)
     # Rogue task 2 attempts to read task 1's block
     try:
         sb.get_address(caller_task_id=2)
@@ -788,7 +788,7 @@ def test_mem_gotcha_02_shared_block_release_owner_only() -> None:
             "Non-owner must not be able to get_address() another task's SharedBlock"
         )
     except AssertionError as e:
-        assert "MEM-GOTCHA-02" in str(e)
+        assert "GOTCHA-MEM-02" in str(e)
     # The block is still active and owned by task 1
     assert sb._is_active
     assert sb.get_owner() == 1
@@ -798,7 +798,7 @@ def test_mem_gotcha_02_shared_block_release_owner_only() -> None:
 
 
 def test_mem_10b_shared_block_vmmio_pte_flight_and_claim() -> None:
-    """MEM-10b: release() unmaps PTE; claim() remaps PTE to receiver."""
+    """TEST-MEM-10b: release() unmaps PTE; claim() remaps PTE to receiver."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     sb = mm.allocate_shared(caller_task_id=1, size=1024).unwrap()
@@ -814,7 +814,7 @@ def test_mem_10b_shared_block_vmmio_pte_flight_and_claim() -> None:
 
 
 def test_mem_10c_rollback_transfer_restores_mapping() -> None:
-    """MEM-10c: rollback_transfer() remaps PTE to original sender."""
+    """TEST-MEM-10c: rollback_transfer() remaps PTE to original sender."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     sb = mm.allocate_shared(caller_task_id=1, size=1024).unwrap()
@@ -825,7 +825,7 @@ def test_mem_10c_rollback_transfer_restores_mapping() -> None:
 
 
 def test_mem_11_shared_block_raii_auto_deallocate() -> None:
-    """MEM-11: SharedBlock RAII automatically deallocates buffer on drop."""
+    """TEST-MEM-11: SharedBlock RAII automatically deallocates buffer on drop."""
     mm = MemoryManager()
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     initial_alloc = mm.total_allocated_bytes
@@ -840,7 +840,7 @@ def test_mem_11_shared_block_raii_auto_deallocate() -> None:
 
 
 def test_mem_12_shm_id_kv_pair_encoding() -> None:
-    """MEM-12: shm-id kv_pair encoding conforms to ipc_router.md §3.3's type-scope vocabulary
+    """TEST-MEM-12: shm-id kv_pair encoding conforms to ipc_router.md §3.3's type-scope vocabulary
     table (上位3ビット=種別/下位5ビット=型). Two independent checks:
     (1) the pack/unpack bit-layout formula itself, exercised on arbitrary non-canonical
         values so it cannot pass by re-declaring the same numbers twice;
@@ -871,14 +871,14 @@ def test_mem_12_shm_id_kv_pair_encoding() -> None:
 
 
 def test_mem_13_query_and_check_ownership_are_removed() -> None:
-    """MEM-13: query() and check_ownership() are removed per ADR_MemoryManagerMinimalSurface."""
+    """TEST-MEM-13: query() and check_ownership() are removed per ADR_MemoryManagerMinimalSurface."""
     mm = MemoryManager()
     assert not hasattr(mm, "query"), "query() API must be removed"
     assert not hasattr(mm, "check_ownership"), "check_ownership() API must be removed"
 
 
 def test_mem_20_mpu_8_regions_static_allocation() -> None:
-    """MEM-20: 8 MPU regions match the PMSAv8 static allocation table."""
+    """TEST-MEM-20: 8 MPU regions match the PMSAv8 static allocation table."""
     mpu = PMSAv8MPU(pool_base=0x20020000)
     assert len(mpu.regions) == 8
     # Region 0: Flash RO+X
@@ -892,7 +892,7 @@ def test_mem_20_mpu_8_regions_static_allocation() -> None:
 
 
 def test_mem_21_jit_code_cache_wx_switch_on_begin() -> None:
-    """MEM-21: begin_jit_patch switches JIT cache to RW+XN and issues DSB/ISB."""
+    """TEST-MEM-21: begin_jit_patch switches JIT cache to RW+XN and issues DSB/ISB."""
     mpu = PMSAv8MPU(pool_base=0x20020000)
     assert mpu.regions[4].is_executable and not mpu.regions[4].is_writable
     mpu.begin_jit_patch()
@@ -902,7 +902,7 @@ def test_mem_21_jit_code_cache_wx_switch_on_begin() -> None:
 
 
 def test_mem_22_jit_code_cache_wx_restore_on_commit() -> None:
-    """MEM-22: commit_jit_patch restores JIT cache to RO+X and issues barriers."""
+    """TEST-MEM-22: commit_jit_patch restores JIT cache to RO+X and issues barriers."""
     mpu = PMSAv8MPU(pool_base=0x20020000)
     mpu.begin_jit_patch()
     mpu.commit_jit_patch()
@@ -912,7 +912,7 @@ def test_mem_22_jit_code_cache_wx_restore_on_commit() -> None:
 
 
 def test_mem_23_rwx_state_permanently_eliminated() -> None:
-    """MEM-23: RWX permissions are permanently eliminated in all MPU states."""
+    """TEST-MEM-23: RWX permissions are permanently eliminated in all MPU states."""
     mpu = PMSAv8MPU(pool_base=0x20020000)
     mpu.assert_no_rwx()
     mpu.begin_jit_patch()
@@ -922,7 +922,7 @@ def test_mem_23_rwx_state_permanently_eliminated() -> None:
 
 
 def test_mem_24_transaction_batching_barrier_efficiency() -> None:
-    """MEM-24: Batching emits exactly 1 begin / 1 commit pair per compilation unit."""
+    """TEST-MEM-24: Batching emits exactly 1 begin / 1 commit pair per compilation unit."""
     mpu = PMSAv8MPU(pool_base=0x20020000)
     # 10 patches applied in a single compilation unit
     mpu.begin_jit_patch()
@@ -935,7 +935,7 @@ def test_mem_24_transaction_batching_barrier_efficiency() -> None:
 
 
 def test_mem_25_pmsav8_32byte_alignment() -> None:
-    """MEM-25: All MPU base and limit addresses adhere to 32-byte alignment."""
+    """TEST-MEM-25: All MPU base and limit addresses adhere to 32-byte alignment."""
     mpu = PMSAv8MPU(pool_base=0x20020000)
     for r in mpu.regions:
         assert r.base_address % 32 == 0, f"Region {r.region_no} base must be 32-byte aligned"
@@ -972,4 +972,4 @@ if __name__ == "__main__":
     test_mem_23_rwx_state_permanently_eliminated()
     test_mem_24_transaction_batching_barrier_efficiency()
     test_mem_25_pmsav8_32byte_alignment()
-    print("[PASS] All runtime memory concept tests (MEM-01 ~ MEM-25) passed successfully.")
+    print("[PASS] All runtime memory concept tests (TEST-MEM-01 ~ TEST-MEM-25) passed successfully.")

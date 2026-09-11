@@ -1,7 +1,7 @@
 """
 docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py
 pyModelChecking による vSoC JIT キャッシュ整合性・Debugger 介入安全性・
-共有メモリ権限剥奪時 TLB フラッシュ（VMMIO-GOTCHA-03）・常駐トレース二重コンパイル抑止（JITR-GOTCHA-01）
+共有メモリ権限剥奪時 TLB フラッシュ（GOTCHA-VMMIO-03）・常駐トレース二重コンパイル抑止（GOTCHA-JITR-01）
 およびローテーションリソース有界性の形式検証（証明・変異検査対応）モデル
 """
 
@@ -21,12 +21,12 @@ def build_model(*, guards: bool = True) -> Kripke:
     JIT キャッシュ世代管理・デバッガ flush 因果順序・共有メモリ Revoke 連動・バンク回収の保護証明モデル
     - s_interp: インタープリタ実行中（JIT キャッシュは参照のみ）
     - s_exec_fresh: 現行世代 (generation cookie 一致) の JIT トレースを実行中
-    - s_check_resident: JITR-GOTCHA-01: コンパイル前にキャッシュ常駐を確認中
+    - s_check_resident: GOTCHA-JITR-01: コンパイル前にキャッシュ常駐を確認中
     - s_skip_compile: 既に常駐済みのためコンパイルを抑止して直接実行へ
     - s_rotate: Active 満杯による 3面リングローテーション実行中
     - s_reclaimed: Oldest バンクの Purge とエントリ表スロット回収が完了
     - s_dbg_write: デバッガがゲストメモリを書き換え、全既存トレースが陳腐化 (dirty)
-    - s_shm_revoke: VMMIO-GOTCHA-03: 共有メモリ権限剥奪トランザクション発生 (dirty)
+    - s_shm_revoke: GOTCHA-VMMIO-03: 共有メモリ権限剥奪トランザクション発生 (dirty)
     - s_safepoint: Safepoint でデバッガ介入または Revoke フラグを検出
     - s_flushing: 全バンク無効化および TLB フラッシュ実行中
     - s_flushed: flush 完了、キャッシュ整合性回復
@@ -61,7 +61,7 @@ def build_model(*, guards: bool = True) -> Kripke:
         # 通常実行サイクル
         ("s_interp", "s_exec_fresh"),  # lookup ヒット ➔ 現行世代トレースへ
         ("s_exec_fresh", "s_interp"),  # トレース脱出
-        # JITR-GOTCHA-01: 常駐済みトレースの二重コンパイル抑止
+        # GOTCHA-JITR-01: 常駐済みトレースの二重コンパイル抑止
         ("s_interp", "s_check_resident"),
         ("s_check_resident", "s_skip_compile"),
         ("s_skip_compile", "s_exec_fresh"),
@@ -73,7 +73,7 @@ def build_model(*, guards: bool = True) -> Kripke:
         ("s_interp", "s_dbg_write"),
         ("s_exec_fresh", "s_dbg_write"),
         ("s_dbg_write", "s_safepoint"),
-        # VMMIO-GOTCHA-03: 共有メモリ Revoke ➔ Safepoint ➔ flush
+        # GOTCHA-VMMIO-03: 共有メモリ Revoke ➔ Safepoint ➔ flush
         ("s_interp", "s_shm_revoke"),
         ("s_exec_fresh", "s_shm_revoke"),
         ("s_shm_revoke", "s_safepoint"),
@@ -98,7 +98,7 @@ def build_model(*, guards: bool = True) -> Kripke:
         R = [*R, ("s_rotate", "s_leaked_bank")]
         # 4. flush を遅延可能にすると dirty のまま未完了
         R = [*R, ("s_safepoint", "s_flush_stalled")]
-        # 5. JITR-GOTCHA-01: キャッシュ常駐確認を怠ると二重コンパイルが発生
+        # 5. GOTCHA-JITR-01: キャッシュ常駐確認を怠ると二重コンパイルが発生
         R = [*R, ("s_check_resident", "s_duplicate_compile")]
 
     L = {
@@ -175,7 +175,7 @@ def properties():
             "logic": "CTL",
             "formula": AG(Not(bad_duplicate)),
             "violation": bad_duplicate,
-            "expect": True,  # JITR-GOTCHA-01: 常駐済みトレースに対する二重コンパイルは完全に抑止される
+            "expect": True,  # GOTCHA-JITR-01: 常駐済みトレースに対する二重コンパイルは完全に抑止される
         },
     ]
 

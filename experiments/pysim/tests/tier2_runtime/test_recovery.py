@@ -50,7 +50,7 @@ def wat_to_wasm(wat_text: str) -> bytes:
 
 
 def test_recovery_01_retry_success_within_limit():
-    """RECOVERY-01: Transient failure succeeds within 3 retries (10ms backoff) without exceptions."""
+    """TEST-RECOVERY-01: Transient failure succeeds within 3 retries (10ms backoff) without exceptions."""
     mgr = RecoveryManager(sleep_fn=lambda _s: None)
     attempts = [0]
 
@@ -70,7 +70,7 @@ def test_recovery_01_retry_success_within_limit():
 
 
 def test_recovery_02_retry_exhaustion_escalates_to_restart():
-    """RECOVERY-02: 3-attempt retry exhaustion automatically escalates to RESTART."""
+    """TEST-RECOVERY-02: 3-attempt retry exhaustion automatically escalates to RESTART."""
     mgr = RecoveryManager(sleep_fn=lambda _s: None)
     attempts = [0]
     reset_called = [False]
@@ -95,7 +95,7 @@ def test_recovery_02_retry_exhaustion_escalates_to_restart():
 
 
 def test_recovery_03_panic_triggers_immediate_failsafe():
-    """RECOVERY-03: Fatal safety violation (MPU fault/permission) triggers PANIC immediately without retry."""
+    """TEST-RECOVERY-03: Fatal safety violation (MPU fault/permission) triggers PANIC immediately without retry."""
     mgr = RecoveryManager(sleep_fn=lambda _s: None)
     panic_msg = []
 
@@ -115,7 +115,7 @@ def test_recovery_03_panic_triggers_immediate_failsafe():
 
 
 def test_recovery_04_errorcode_to_strategy_mapping():
-    """RECOVERY-04: Error code to RecoveryStrategy mapping matches {Errorcode_To_Strategy} spec."""
+    """TEST-RECOVERY-04: Error code to RecoveryStrategy mapping matches {Errorcode_To_Strategy} spec."""
     # WASI Errno mappings
     assert classify_errno_strategy(0) == RecoveryStrategy.IGNORE  # SUCCESS
     assert classify_errno_strategy(6) == RecoveryStrategy.RETRY  # EAGAIN

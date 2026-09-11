@@ -73,13 +73,13 @@ graph TD
    - `radix_key = bswap32(pc)` に対し基数シフト（`prefix = radix_key >> radix_shift`）を行い、コンパクトな開始インデックス配列から `first = radix_table[prefix]`, `last = radix_table[prefix + 1]` を $O(1)$ で取得（ペア保持が不要でメモリフットプリント半減）。下位ビットの分散により偏りを抑えた区間検索を実現する。
 4. **有界二分探索 ($O(\log n)$)**: `radix_binary_tree_view` 内の有界区間から対象の命令オフセットを二分探索し、ヒットした場合はネイティブコードのアドレス（`exec_trace`）を返し、高速スロットへ次回用として格納（Fill）。
 5. **ホットスポット昇格判定**: yield 時等に履歴バッファを走査し、実行頻度が閾値に達したカードを `HOT` $\to$ `COMPILED` に遷移させてコンパイル待ち列へ登録。
-6. **最小トレース長フィルタ**: 推定コンパイル後サイズが 1 カード分（`1 << card_shift`）未満のベーシックブロックは、履歴記録・`touch`・コンパイル待ち列登録のいずれの対象にもしない（`jit_runtime_test_spec.md` JITR-06）。
-7. **3面世代交代ローテーション＆局所アンリンク (`JITR-GOTCHA-03`, `{JIT_MultiBuffer_Cache}`, `{JIT_OldestOnly_Promote}`)**:
-   Active バンク満杯時、`Oldest` バンクをパージして新 `Active` に再利用する直前に、該当バンクの被チェイン逆引きテーブルに登録されたソースエントリ（$k$ 件）のみを参照し、昇格済みなら再チェイニング、完全破棄なら復帰スタブへアンパッチする。全件走査を行わない。また、`rotate()` および `flush_all()` 実行時には 16 スロットの Folding XOR 高速キャッシュを無効化（クリア）し、古いバンクへの誤参照やダングリングを防止する（`JITR-GOTCHA-05`）。
+6. **最小トレース長フィルタ**: 推定コンパイル後サイズが 1 カード分（`1 << card_shift`）未満のベーシックブロックは、履歴記録・`touch`・コンパイル待ち列登録のいずれの対象にもしない（`jit_runtime_test_spec.md` TEST-JITR-06）。
+7. **3面世代交代ローテーション＆局所アンリンク (`GOTCHA-JITR-03`, `{JIT_MultiBuffer_Cache}`, `{JIT_OldestOnly_Promote}`)**:
+   Active バンク満杯時、`Oldest` バンクをパージして新 `Active` に再利用する直前に、該当バンクの被チェイン逆引きテーブルに登録されたソースエントリ（$k$ 件）のみを参照し、昇格済みなら再チェイニング、完全破棄なら復帰スタブへアンパッチする。全件走査を行わない。また、`rotate()` および `flush_all()` 実行時には 16 スロットの Folding XOR 高速キャッシュを無効化（クリア）し、古いバンクへの誤参照やダングリングを防止する（`GOTCHA-JITR-05`）。
    **設計理由と不変条件**: 3 面キャッシュの全エントリを線形走査してリンクを解除すると、GC（ガベージコレクション）と同様の実行停止レイテンシ（Stop-the-World）が発生する。被チェイン逆引きテーブルにより影響範囲を定数 $k$ 件に局所化することで、決定論的 $O(k)$ 時間での世代交代を保証する。
-8. **トレース昇格時のインバウンドソース付け替え (`JITR-GOTCHA-02`)**:
+8. **トレース昇格時のインバウンドソース付け替え (`GOTCHA-JITR-02`)**:
    Oldest バンクのトレースが再実行されて新 Active バンクへ昇格（Promotion）した際、当該トレースを指していた先行ブロックのチェインリンク先アドレスを新バンクのアドレスへ不可分に更新し、かつ逆引きテーブルの登録先も新バンクへ確実に付け替える。これにより、古い Oldest バンクがパージされた後に先行ブロックが解放済み領域へ飛び込むダングリングジャンプを完全に防止する。
-9. **キュー処理時のキャッシュ再確認と二重コンパイル抑止 (`JITR-GOTCHA-01`)**:
+9. **キュー処理時のキャッシュ再確認と二重コンパイル抑止 (`GOTCHA-JITR-01`)**:
    コンパイル待ち列から取り出した PC が、既に 3 面キャッシュ（Active / Warm / Oldest）のいずれかに常駐済みであれば再コンパイルを行わず、カード状態のみ `COMPILED` へ同期する。
    **設計理由と不変条件**: 複数回のアイドル走査や非同期イベントにより同一 PC に対するコンパイル要求が重複してエンキューされた場合でも、二重コンパイルによる貴重なキャッシュ容量の浪費と CPU 時間の損失を完全に防止する。
 
@@ -109,7 +109,7 @@ flowchart TD
 ```
 
 #### 3面世代交代ローテーションと被チェイン局所アンリンク（責務シーケンス図）
-<!-- traceability: {JITR-GOTCHA-02} {JITR-GOTCHA-03} {JIT_MultiBuffer_Cache} {JIT_LazyChaining} -->
+<!-- traceability: {GOTCHA-JITR-02} {GOTCHA-JITR-03} {JIT_MultiBuffer_Cache} {JIT_LazyChaining} -->
 Active バンク満杯時の世代交代において、Oldest バンクをパージし新 Active として再利用する際の、JIT Runtime、Inbound Table、Source Traces 間の局所アンリンク・再チェイニング連携を示す。
 
 ```mermaid
@@ -122,16 +122,16 @@ sequenceDiagram
     participant Oldest as Oldest Cache Bank (Purged)
 
     Active->>Mgr: Allocation request exceeds bank capacity
-    Note over Mgr: JITR-GOTCHA-03: Trigger 3-Bank Rotation
+    Note over Mgr: GOTCHA-JITR-03: Trigger 3-Bank Rotation
     Note over Mgr: Shift roles: Oldest -> New Active, Warm -> Oldest, Active -> Warm
 
     Mgr->>Mgr: Invalidate Direct-Mapped Folding XOR Cache (16 slots)
-    Note over Mgr: JITR-GOTCHA-05: Clear fast cache to prevent stale/dangling references to rotated banks
+    Note over Mgr: GOTCHA-JITR-05: Clear fast cache to prevent stale/dangling references to rotated banks
 
     Mgr->>Inbound: Inspect registered inbound source traces (k entries)
     loop For each source trace index in Inbound Table
         Inbound->>Source: Inspect target trace promotion status
-        alt Target was Promoted to Active/Warm (JITR-GOTCHA-02)
+        alt Target was Promoted to Active/Warm (GOTCHA-JITR-02)
             Source->>Source: Re-chain: Update chain_target_addr to Promoted Address
             Source->>Mgr: Transfer inbound registration to new Bank
             Note over Source: Direct native jump maintained!
@@ -155,7 +155,7 @@ stateDiagram-v2
     COMPILED --> UNEXECUTED: Cache evicted
 ```
 
-Eviction resets to `UNEXECUTED`, not `EXECUTED`（`jit_runtime_test_spec.md` JITR-04）。
+Eviction resets to `UNEXECUTED`, not `EXECUTED`（`jit_runtime_test_spec.md` TEST-JITR-04）。
 
 ### 4.3 トレース実行時の分岐解決とインタープリタ復帰（pysim参照実装）
 <!-- traceability: {JIT_RuntimeAPI_Fallback} {DirectBytecodeExecution} -->
@@ -189,9 +189,9 @@ flowchart TD
 ```
 
 - **分岐条件の扱い**: 分岐条件を持つ終端命令（`BR_IF`・`IF`）で終わっていたブロックでは、その条件の計算結果を WASM のオペランドスタックへ絶対に積まない。積んでしまうと、後続の演算が本来存在しないはずのその値を誤って消費してしまう。
-- **関数終了の定数時間解決 (`JITR-GOTCHA-08`)**: `RETURN` で終わるブロックのように進む先のアドレスが存在しない場合、命令列を読み直して終端位置を割り出すことは絶対にしない。実行時に命令を事前デコードしたり命令オブジェクトを生成したりすることは一切許されない設計方針（`{DirectBytecodeExecution}`、`runtime_interpreter_test_spec.md` INTP-GOTCHA-05）があるため、コード全体の長さという一つの数値だけで「関数の終わり」を表し、その後の復帰処理（呼び出し元への戻りなど）はインタープリタ側の既存ロジックに委ねる。
-- **制御フレームの整合 (`JITR-GOTCHA-06`)**: JITトレースの実行は、ブロック・ループ・if の開始や終了に対応するインタープリタ側のフレーム操作を一切経由しない。そのため、以前インタープリタが直接その構文を実行していた際に積まれた制御フレームが、JIT側でその構文を抜けた後も回収されずに残ってしまうことがある。この残留は深さが「多すぎる」方向にしか起こらないとは限らず、逆に「本来もっと積まれているべき」場面もあり得るため、制御フレームを本来の深さまで巻き戻すだけでは正しさは保証できない。そこで、実行がインタープリタに戻ったとき、分岐命令（`BR`・`BR_IF`・`ELSE`）の飛び先解決は制御フレームの中身を一切参照せず、そのブロックの「後続アドレス」「分岐先アドレス」（本節冒頭の付帯情報、静的解析で解決済み）を直接使う。制御フレームの深さ切り詰め自体は行うが、これは正しさのためではなく、JIT がフレーム操作を代行し続けることでスタックが際限なく伸びるのを防ぐ安全策としてのみ残す。
-- **短小判定の符号 (`JITR-GOTCHA-07`)**: 「短すぎてコンパイルする価値がない」というブロックの足切り判定は、そのブロック自身の命令バイト数で行う。後続アドレスとの差分で代用すると、ループ本体末尾のような後方分岐ブロックでは差分が負になり、関数中で最も実行頻度の高いブロックが二度とコンパイルされないまま取り残されてしまう。
+- **関数終了の定数時間解決 (`GOTCHA-JITR-08`)**: `RETURN` で終わるブロックのように進む先のアドレスが存在しない場合、命令列を読み直して終端位置を割り出すことは絶対にしない。実行時に命令を事前デコードしたり命令オブジェクトを生成したりすることは一切許されない設計方針（`{DirectBytecodeExecution}`、`runtime_interpreter_test_spec.md` GOTCHA-INTP-05）があるため、コード全体の長さという一つの数値だけで「関数の終わり」を表し、その後の復帰処理（呼び出し元への戻りなど）はインタープリタ側の既存ロジックに委ねる。
+- **制御フレームの整合 (`GOTCHA-JITR-06`)**: JITトレースの実行は、ブロック・ループ・if の開始や終了に対応するインタープリタ側のフレーム操作を一切経由しない。そのため、以前インタープリタが直接その構文を実行していた際に積まれた制御フレームが、JIT側でその構文を抜けた後も回収されずに残ってしまうことがある。この残留は深さが「多すぎる」方向にしか起こらないとは限らず、逆に「本来もっと積まれているべき」場面もあり得るため、制御フレームを本来の深さまで巻き戻すだけでは正しさは保証できない。そこで、実行がインタープリタに戻ったとき、分岐命令（`BR`・`BR_IF`・`ELSE`）の飛び先解決は制御フレームの中身を一切参照せず、そのブロックの「後続アドレス」「分岐先アドレス」（本節冒頭の付帯情報、静的解析で解決済み）を直接使う。制御フレームの深さ切り詰め自体は行うが、これは正しさのためではなく、JIT がフレーム操作を代行し続けることでスタックが際限なく伸びるのを防ぐ安全策としてのみ残す。
+- **短小判定の符号 (`GOTCHA-JITR-07`)**: 「短すぎてコンパイルする価値がない」というブロックの足切り判定は、そのブロック自身の命令バイト数で行う。後続アドレスとの差分で代用すると、ループ本体末尾のような後方分岐ブロックでは差分が負になり、関数中で最も実行頻度の高いブロックが二度とコンパイルされないまま取り残されてしまう。
 
 ## 5. インターフェース定義
 

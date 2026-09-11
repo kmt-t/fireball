@@ -120,18 +120,18 @@ vSoC コアエンジンの実行委譲、協調イールド、および外部介
 
 | アルゴリズム / 機構 | 契機・条件 | 動作内容 | 目的・安全性不変条件 | 関連キーワード |
 | :--- | :--- | :--- | :--- | :--- |
-| **実行エンジン委譲とステートレス化** | `step()` 実行時 | `exec_trace`（`__fastcall` CPS 4引数）によりプレーン関数としてディスパッチ | コルーチン化禁止による `[[clang::musttail]]` 阻害・スタック消費の防止（`VSOC-GOTCHA-01`） | `{ThreadedInterpreter}` `{JIT_CopyAndPatch}` |
-| **概算Yield (Approximate Yield)** | トレース境界脱出時 | `yield_threshold` を基準に vSoC が一括して `co_yield` 判定 | 命令ハンドラ内カウンタ埋め込みを排除し最速ホットパスを維持（`VSOC-GOTCHA-02`） | `{Challenge_ApproximateYield}` |
+| **実行エンジン委譲とステートレス化** | `step()` 実行時 | `exec_trace`（`__fastcall` CPS 4引数）によりプレーン関数としてディスパッチ | コルーチン化禁止による `[[clang::musttail]]` 阻害・スタック消費の防止（`GOTCHA-VSOC-01`） | `{ThreadedInterpreter}` `{JIT_CopyAndPatch}` |
+| **概算Yield (Approximate Yield)** | トレース境界脱出時 | `yield_threshold` を基準に vSoC が一括して `co_yield` 判定 | 命令ハンドラ内カウンタ埋め込みを排除し最速ホットパスを維持（`GOTCHA-VSOC-02`） | `{Challenge_ApproximateYield}` |
 | **JIT Safepoint** | ループバック（バックエッジ）到達時 | 保留中の割り込みイベント（原因レコード）・ブレークポイントを確認し、必要時フォールバック | JIT実行中の非同期イベント・Ctrl+Cへの即時応答性担保 | `{JIT_Safepoint}` |
 | **デバッガ介入時キャッシュフラッシュ** | デバッガによるメモリ/変数書き換え時 | 該当タスクの JIT キャッシュ（Active/Warm/Oldest 全面）を一括無効化 | JIT コードと変更後メモリの整合性完全維持 | `{Debugger_Jit_Flush}` |
 | **1ランタイム1ゲスト・専用バンプ一括解放（W^Xコード分離）** | ランタイム生成時およびアンロード時 | 専用データアリーナ（RAM/XN）からコンテナストレージを確保し、専用W^XセクションからJITコードを確保。破棄時に $O(1)$ 一括リセット | 完全障害隔離、内部断片化ゼロ、ハードウェア実行保護（W^X/XN分離）の厳格維持 | `{OneRuntimeOneGuest}` `{Runtime_BumpAllocator}` |
 
 - **1ランタイム1ゲストのライフサイクル管理と専用バンプ一括解放 (`{OneRuntimeOneGuest}`, `{Runtime_BumpAllocator}`)**:
   vSoC インスタンス生成時、メモリマネージャより固定長 RAM パーティション（データアリーナ: `RW + XN`）および JIT コードキャッシュ用セクション（MPU `W^X` 制御対象: 6KB）の貸与を受け、専用の `bump_allocator`（データ用）および `jit_code_allocator`（コード用）を初期化する。WASM ローダ経由でモジュールコンストラクタにデータ用バンプアロケータを渡し、モジュール内の全システムコンテナストレージ（`ReadOnlyRadixBinaryTreeStorage`, `MutableBitStorage` 等）を順次切り出す。一方、JIT コンパイラは MPU の `W^X` 保護が適用された JIT コードセクションから専用アロケータによりネイティブトレースを確保・管理する。モジュール実行終了・アンロード時は、JIT キャッシュを無効化（3-Bank Flush）した上で、バンプアロケータのアリーナごと $O(1)$ で一括リセット・返還し、JIT コードセクションも解放する。個別の `free()` や複雑なオブジェクトデストラクタ走査を一切行わないため、動的メモリ断片化および他モジュールからのダングリングトレースチェインが原理的に根絶される。
-- **実行エンジン委譲とステートレス化 (`VSOC-GOTCHA-01`, `{ThreadedInterpreter}`, `{JIT_CopyAndPatch}`)**:
+- **実行エンジン委譲とステートレス化 (`GOTCHA-VSOC-01`, `{ThreadedInterpreter}`, `{JIT_CopyAndPatch}`)**:
   vSoCは `step()` で現在のPCに対応する `exec_trace`（`void __fastcall (execution_context* ctx, uint32_t* sp, uint32_t* local_base, uint32_t tos)`）を呼び出す。 `exec_trace` はインタープリタのディスパッチャまたはJITコードを指し、`__fastcall` 呼び出し規約（R0=ctx, R1=sp, R2=local_base, R3=tos）によってレジスタ上で高速に実行エンジンへ制御を委譲する。
   **設計理由と不変条件**: インタープリタおよび JIT トレース自身を C++20 コルーチン化することは厳禁とする。コルーチン化すると命令ディスパッチごとにコルーチンフレームの割り当てや退避・復帰が発生し、コンパイラによる末尾呼び出し最適化（`[[clang::musttail]]`）が阻害されてスタックを急速に消費してしまう。そのため、インタープリタは完全ステートレスなプレーン関数として設計し、次に実行すべき PC を返却して vSoC のメインループへ戻る規約とする。
-- **概算Yield と明示的イールド点 (`VSOC-GOTCHA-02`, `{Challenge_ApproximateYield}`)**:
+- **概算Yield と明示的イールド点 (`GOTCHA-VSOC-02`, `{Challenge_ApproximateYield}`)**:
   vSoC は `exec_trace` から制御が戻るたび（`runtime_interpreter.md` `{ADR_TraceBoundaryYield}` のトレース境界）に、監視対象の `yield_threshold` を基準として自ら `co_yield` を発行するかどうかを判定する。
   **設計理由と不変条件**: 命令実行ハンドラの内部に命令数カウンタのインクリメントやイールド判定を埋め込むと、最速パスのホットループに不要な条件分岐とレジスタ退避が加わり、JIT やインタープリタの実行性能が著しく低下する。そのため、イールド判定はトレース境界（ブロック末尾や基本ブロックの切れ目）でのみ vSoC が一括して行い、タイムスライス消費時に初めて協調的 yield を発行する。
 - **デバッグ連携**: `step()` 前後で Debugger を呼び出し、HAL層からのコマンドを処理する。
@@ -183,7 +183,7 @@ sequenceDiagram
 
 
 #### vSoC 実行エンジン委譲とトレース境界イールド判定（責務シーケンス図）
-<!-- traceability: {VSOC-GOTCHA-01} {VSOC-GOTCHA-02} {ADR_TraceBoundaryYield} {ThreadedInterpreter} {JIT_CopyAndPatch} -->
+<!-- traceability: {GOTCHA-VSOC-01} {GOTCHA-VSOC-02} {ADR_TraceBoundaryYield} {ThreadedInterpreter} {JIT_CopyAndPatch} -->
 COOS Scheduler、vSoC Engine、Execution Engine（Interpreter / JIT）、HAL/Debugger 間の実行委譲と、トレース境界での一括タイムスライス判定を示す。
 
 ```mermaid
@@ -201,13 +201,13 @@ sequenceDiagram
     end
 
     vSoC->>vSoC: Lookup exec_trace for current PC
-    Note over vSoC,Exec: VSOC-GOTCHA-01: Pass (R0=ctx, R1=sp, R2=local_base, R3=tos)
+    Note over vSoC,Exec: GOTCHA-VSOC-01: Pass (R0=ctx, R1=sp, R2=local_base, R3=tos)
     vSoC->>Exec: Call exec_trace via __fastcall (Stateless Plain Function)
 
     Note over Exec: Executes instructions in pure C++ musttail / Native JIT
     Exec-->>vSoC: Return next PC at Trace Boundary (ADR_TraceBoundaryYield)
 
-    Note over vSoC: VSOC-GOTCHA-02: Batch Timeslice & Approximate Yield Check
+    Note over vSoC: GOTCHA-VSOC-02: Batch Timeslice & Approximate Yield Check
     vSoC->>vSoC: executed_instructions += trace_length
     alt Timeslice Expired (executed_instructions >= yield_threshold)
         vSoC->>vSoC: executed_instructions = 0
@@ -497,7 +497,7 @@ Fireballでは、ホスト側のコードサイズを極限まで削減するた
 
 - **トラップ命令**: `uint32_t fireball_call(uint32_t id, uint32_t arg0, uint32_t arg1, ... uint32_t arg5)`
   - ゲストはこの関数をインポートし、統合システムコールID `id`（上位16bit: `service_id`, 下位16bit: `command_id`）および最大6つの汎用引数を指定して呼び出す（`{Syscall_Mapping}` を正本とする）。
-  - **この2つは同一階層の代替手段ではなく、層が異なる**。上記シグネチャはゲストから見た WASM インポート関数の ABI であり、ゲストは通常の関数呼び出しとして引数を渡す。トラップを受けたホスト側が、その引数を vMMIO の SYSCALL レジスタ群（`REG_SYSCALL_ARG0` 以降、`runtime_vmmio.md` を正本とする）へ転記してサービスへ渡す。戻り値は逆順に `REG_SYSCALL_ARG0` から読み出してゲストへ返る。ゲスト側コードが vMMIO レジスタを直接操作する必要はない。※整合性検証は [runtime_vsoc_test_spec.md](docs/components/tier2_runtime/tests/runtime_vsoc_test_spec.md) `VSOC-40` を参照。
+  - **この2つは同一階層の代替手段ではなく、層が異なる**。上記シグネチャはゲストから見た WASM インポート関数の ABI であり、ゲストは通常の関数呼び出しとして引数を渡す。トラップを受けたホスト側が、その引数を vMMIO の SYSCALL レジスタ群（`REG_SYSCALL_ARG0` 以降、`runtime_vmmio.md` を正本とする）へ転記してサービスへ渡す。戻り値は逆順に `REG_SYSCALL_ARG0` から読み出してゲストへ返る。ゲスト側コードが vMMIO レジスタを直接操作する必要はない。※整合性検証は [runtime_vsoc_test_spec.md](docs/components/tier2_runtime/tests/runtime_vsoc_test_spec.md) `TEST-VSOC-40` を参照。
 - **WASI互換性**: ゲスト側で `wasi-libc` と Tier 3 のゲストアダプタをリンクし、Tier 2 の `runtime_syscall` と `hal_dispatch` が定義する公開契約へ接続することで実現する。
 
 ### 5.3 マルチモジュール対応

@@ -9,26 +9,26 @@
 
 ## 2. テストケース一覧
 
-| ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| SCHED-01 | 純粋ラウンドロビン公平性 | タスクA・Bをspawn | A→yield→B→yield→A(継続)→B(継続) の順で実行 | 実行順が spawn 順のFIFOで、優先度による割り込みが一切発生しない | `{ADR_CoosPureRoundRobin}` |
-| SCHED-02 | spawn直後はREADYキュー末尾 | タスクA実行中に新規タスクCをspawn | Cのspawn後、現在のRUNNING(A)がyield | 次に実行されるのはREADYキューの先頭（Cがその時点で末尾にいた場合は他のREADYタスクが先） | `os_scheduler.md` 実行可能列 |
-| SCHED-03 | yield はREADYキュー末尾へ移動 | 単一タスクが2回yield | yieldごとに状態を観測 | yield直後はREADY、次サイクルで再度RUNNINGに戻る | `os_scheduler.md` 状態遷移図 |
-| SCHED-04 | block/unblockサイクル | タスクがBLOCKされる原因(reason)付きでblock | block直後にunblock_taskを呼ぶ | BLOCKED→READYに遷移し、READYキュー末尾に追加される | `os_scheduler.md` 状態遷移図 |
-| SCHED-05 | 終了(StopIteration)でTERMINATED | コルーチンが正常終了 | run_cycle/run_until_idle を実行 | タスク状態がTERMINATEDになり、以後READYキューにもBLOCKEDリストにも現れない | `os_scheduler.md` terminate |
-| SCHED-06 | 全タスクBLOCKEDでアイドル検出 | 全タスクをblock | 1サイクル実行 | `schedule_next` が `None` を返し、`idle_handler`（設定済みの場合）が呼び出される | `{GLOBAL_IdleDetection}` |
-| SCHED-07 | 割り込み通知によるREADY復帰 | タスクが`vector_id`待ちでBLOCKED | 固定5ワードの`interrupt-event`を`notify_interrupt`へ渡す | 呼び出し直後はFIFOに投入されるのみで対象タスクの状態は変化せず、イベントループがイベントを処理した時点で対象タスクのみREADYキュー末尾に追加される（他のBLOCKEDタスクは無関係） | `{GLOBAL_InterruptWakeup}` |
-| SCHED-08 | イベント駆動起床はO(1)（線形スキャン禁止） | 多数のBLOCKEDタスクが異なるevent_keyで待機 | 1つのevent_keyのみnotify | notifyされたevent_keyのタスクのみが起床し、他のBLOCKEDタスクの状態には一切触れない（実装が全BLOCKEDタスクを走査していないことをコード/モックで確認） | `{ADR_EventDrivenWakeQueue}` |
-| SCHED-09 | 最大タスク数の上限 | `FB_CONF_MAX_TASKS`（既定16）に達するまでspawn | 上限+1個目をspawn | 拒否される（アサーション相当のエラー） | scheduler_concept.py `assert len(self.tasks) < self.max_tasks` |
-| SCHED-10 | 重複task_idの拒否 | 既存のtask_idを再度spawn | 同一IDでspawn | 拒否される | scheduler_concept.py `assert task_id not in self.tasks` |
-| SCHED-11 | run_until_idle/run_to_completionの停止性 | 相互にnotifyし合わないBLOCKEDタスクが残る | run_to_completionを実行 | 無限ループにならず、上限到達で明示的なエラーを返す | 実装固有の安全策 |
-| SCHED-12 | 原因レコードの順序と未登録ドロップ | FIFOに複数イベント、待機先が一部未登録 | `notify_interrupt`とドレインを実行 | 登録済みの待機先だけが受付順に起床し、未登録イベントはドロップされる | `{GLOBAL_InterruptWakeup}` |
+| TEST-SCHED-01 | 純粋ラウンドロビン公平性 | タスクA・Bをspawn | A→yield→B→yield→A(継続)→B(継続) の順で実行 | 実行順が spawn 順のFIFOで、優先度による割り込みが一切発生しない | `{ADR_CoosPureRoundRobin}` |
+| TEST-SCHED-02 | spawn直後はREADYキュー末尾 | タスクA実行中に新規タスクCをspawn | Cのspawn後、現在のRUNNING(A)がyield | 次に実行されるのはREADYキューの先頭（Cがその時点で末尾にいた場合は他のREADYタスクが先） | `os_scheduler.md` 実行可能列 |
+| TEST-SCHED-03 | yield はREADYキュー末尾へ移動 | 単一タスクが2回yield | yieldごとに状態を観測 | yield直後はREADY、次サイクルで再度RUNNINGに戻る | `os_scheduler.md` 状態遷移図 |
+| TEST-SCHED-04 | block/unblockサイクル | タスクがBLOCKされる原因(reason)付きでblock | block直後にunblock_taskを呼ぶ | BLOCKED→READYに遷移し、READYキュー末尾に追加される | `os_scheduler.md` 状態遷移図 |
+| TEST-SCHED-05 | 終了(StopIteration)でTERMINATED | コルーチンが正常終了 | run_cycle/run_until_idle を実行 | タスク状態がTERMINATEDになり、以後READYキューにもBLOCKEDリストにも現れない | `os_scheduler.md` terminate |
+| TEST-SCHED-06 | 全タスクBLOCKEDでアイドル検出 | 全タスクをblock | 1サイクル実行 | `schedule_next` が `None` を返し、`idle_handler`（設定済みの場合）が呼び出される | `{GLOBAL_IdleDetection}` |
+| TEST-SCHED-07 | 割り込み通知によるREADY復帰 | タスクが`vector_id`待ちでBLOCKED | 固定5ワードの`interrupt-event`を`notify_interrupt`へ渡す | 呼び出し直後はFIFOに投入されるのみで対象タスクの状態は変化せず、イベントループがイベントを処理した時点で対象タスクのみREADYキュー末尾に追加される（他のBLOCKEDタスクは無関係） | `{GLOBAL_InterruptWakeup}` |
+| TEST-SCHED-08 | イベント駆動起床はO(1)（線形スキャン禁止） | 多数のBLOCKEDタスクが異なるevent_keyで待機 | 1つのevent_keyのみnotify | notifyされたevent_keyのタスクのみが起床し、他のBLOCKEDタスクの状態には一切触れない（実装が全BLOCKEDタスクを走査していないことをコード/モックで確認） | `{ADR_EventDrivenWakeQueue}` |
+| TEST-SCHED-09 | 最大タスク数の上限 | `FB_CONF_MAX_TASKS`（既定16）に達するまでspawn | 上限+1個目をspawn | 拒否される（アサーション相当のエラー） | scheduler_concept.py `assert len(self.tasks) < self.max_tasks` |
+| TEST-SCHED-10 | 重複task_idの拒否 | 既存のtask_idを再度spawn | 同一IDでspawn | 拒否される | scheduler_concept.py `assert task_id not in self.tasks` |
+| TEST-SCHED-11 | run_until_idle/run_to_completionの停止性 | 相互にnotifyし合わないBLOCKEDタスクが残る | run_to_completionを実行 | 無限ループにならず、上限到達で明示的なエラーを返す | 実装固有の安全策 |
+| TEST-SCHED-12 | 原因レコードの順序と未登録ドロップ | FIFOに複数イベント、待機先が一部未登録 | `notify_interrupt`とドレインを実行 | 登録済みの待機先だけが受付順に起床し、未登録イベントはドロップされる | `{GLOBAL_InterruptWakeup}` |
 
 ### 実装の勘所・不変条件（Gotchas & Implementation Invariants）
 
-| ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
+| GOTCHA ID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| SCHED-GOTCHA-01 | 連続直接ハンドオフ上限とメインループ強制復帰 | 2つのタスクが CSP Rendezvous で互いにピンポン通信を継続 | 連続ハンドオフ上限（既定4回）まで通信を実行 | 上限到達時に直接遷移が打ち切られ、タスクが READY キュー末尾へ戻されてスケジューラのメイン巡回ループへ強制復帰する。**実装の勘所**: 直接ハンドオフを無制限に許可すると、特定タスクペアが CPU を独占して他の READY タスク（タイマーや監視など）が永久に餓死（Starvation）する | `os_scheduler.md` , `{Challenge_CspHandoffStarvation}` |
+| GOTCHA-SCHED-01 | 連続直接ハンドオフ上限とメインループ強制復帰 | 2つのタスクが CSP Rendezvous で互いにピンポン通信を継続 | 連続ハンドオフ上限（既定4回）まで通信を実行 | 上限到達時に直接遷移が打ち切られ、タスクが READY キュー末尾へ戻されてスケジューラのメイン巡回ループへ強制復帰する。**実装の勘所**: 直接ハンドオフを無制限に許可すると、特定タスクペアが CPU を独占して他の READY タスク（タイマーや監視など）が永久に餓死（Starvation）する | `os_scheduler.md` , `{Challenge_CspHandoffStarvation}` |
 
 ## 3. テスト検証実績と網羅状況
 

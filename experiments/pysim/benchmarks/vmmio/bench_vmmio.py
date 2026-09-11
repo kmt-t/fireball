@@ -1,7 +1,7 @@
 """
 experiments/pysim/benchmarks/vmmio/bench_vmmio.py
 vMMIO Address Translation & Software TLB Benchmark.
-Conforms to docs/components/tier2_runtime/benchmarks/vmmio_bench_spec.md (BENCH-VMMIO-01 ~ BENCH-VMMIO-06).
+Conforms to docs/components/tier2_runtime/benchmarks/vmmio_bench_spec.md (BENCHMARK-VMMIO-01 ~ BENCHMARK-VMMIO-06).
 """
 
 from __future__ import annotations

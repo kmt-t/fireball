@@ -58,7 +58,7 @@ def wat_to_wasm(wat_text: str) -> bytes:
 
 
 def test_cont_01_flat_map_view_find_binary_search():
-    """CONT-01: flat_map_view.find performs O(log n) binary search returning value or None."""
+    """TEST-CONT-01: flat_map_view.find performs O(log n) binary search returning value or None."""
     entries = [(10, 100), (20, 200), (30, 300), (40, 400), (50, 500), (60, 600)]
     view = FlatMapView(entries)
     assert view.find(30) == 300
@@ -72,7 +72,7 @@ def test_cont_01_flat_map_view_find_binary_search():
 
 
 def test_cont_02_narrow_monotonic_shrinkage():
-    """CONT-02: narrow(lo, hi) produces monotonic sub-window subset."""
+    """TEST-CONT-02: narrow(lo, hi) produces monotonic sub-window subset."""
     entries = [(10, 1), (20, 2), (30, 3), (40, 4), (50, 5), (60, 6), (70, 7), (80, 8)]
     v0 = FlatMapView(entries)
     v1 = v0.narrow(20, 60)
@@ -89,7 +89,7 @@ def test_cont_02_narrow_monotonic_shrinkage():
 
 
 def test_cont_03_slice_monotonic_shrinkage_and_bounds():
-    """CONT-03: slice must only ever shrink within parent view bounds."""
+    """TEST-CONT-03: slice must only ever shrink within parent view bounds."""
     entries = [(10, 1), (20, 2), (30, 3), (40, 4), (50, 5)]
     v0 = FlatMapView(entries)
     v1 = v0.slice(1, 4)
@@ -104,7 +104,7 @@ def test_cont_03_slice_monotonic_shrinkage_and_bounds():
 
 
 def test_cont_04_flat_set_view_membership_only():
-    """CONT-04: flat_set_view answers contains(key) with bool, carries no value span."""
+    """TEST-CONT-04: flat_set_view answers contains(key) with bool, carries no value span."""
     keys = [100, 200, 300, 400]
     set_view = FlatSetView(keys)
     assert set_view.contains(200) is True
@@ -115,7 +115,7 @@ def test_cont_04_flat_set_view_membership_only():
 
 
 def test_cont_05_bit_view_adjacent_element_non_destructive():
-    """CONT-05: bit_view put/at modifies targeted sub-byte element without corrupting adjacent elements."""
+    """TEST-CONT-05: bit_view put/at modifies targeted sub-byte element without corrupting adjacent elements."""
     storage = bytearray(4)  # 4 bytes = 16 2-bit elements
     bv = BitView(storage, bits=2, origin=0, count=16)
     # Initial state all 0
@@ -142,7 +142,7 @@ def test_cont_05_bit_view_adjacent_element_non_destructive():
 
 
 def test_cont_06_bit_view_unaligned_slice_origin_absorption():
-    """CONT-06: bit_view.slice absorbs non-byte-aligned bit origins."""
+    """TEST-CONT-06: bit_view.slice absorbs non-byte-aligned bit origins."""
     storage = bytearray(2)  # 8 2-bit elements
     bv = BitView(storage, bits=2, origin=0, count=8)
     for i in range(8):
@@ -159,7 +159,7 @@ def test_cont_06_bit_view_unaligned_slice_origin_absorption():
 
 
 def test_cont_07_bit_view_allowed_bits_enforced():
-    """CONT-07: bit_view allows only 1, 2, 4 bits dividing 8."""
+    """TEST-CONT-07: bit_view allows only 1, 2, 4 bits dividing 8."""
     storage = bytearray(4)
     # Valid
     BitView(storage, bits=1, count=32)
@@ -175,7 +175,7 @@ def test_cont_07_bit_view_allowed_bits_enforced():
 
 
 def test_cont_08_radix_binary_tree_view_coarse_radix_lookup():
-    """CONT-08: radix_binary_tree_view uses O(1) Radix Table prefix + local binary search."""
+    """TEST-CONT-08: radix_binary_tree_view uses O(1) Radix Table prefix + local binary search."""
     keys = [0x0010, 0x0020, 0x0110, 0x0120, 0x0130, 0x0210]
     values = ["T0_A", "T0_B", "T1_A", "T1_B", "T1_C", "T2_A"]
     # Radix shift = 8 -> prefix = pc >> 8
@@ -190,7 +190,7 @@ def test_cont_08_radix_binary_tree_view_coarse_radix_lookup():
 
 
 def test_cont_09_jit_entry_lookup_card_table_prefilter():
-    """CONT-09: lookup_jit_entry performs O(1) Card Marking check before searching (card_shift=3, 8B/card)."""
+    """TEST-CONT-09: lookup_jit_entry performs O(1) Card Marking check before searching (card_shift=3, 8B/card)."""
     card_storage = bytearray(4)
     card_table = BitView(card_storage, bits=2, origin=0, count=16)
     keys = [0x0010, 0x0020]
@@ -206,7 +206,7 @@ def test_cont_09_jit_entry_lookup_card_table_prefilter():
 
 
 def test_cont_10_container_type_separation():
-    """CONT-10: flat_map_view and flat_set_view have strictly separated type responsibilities."""
+    """TEST-CONT-10: flat_map_view and flat_set_view have strictly separated type responsibilities."""
     keys = [1, 2, 3]
     vals = [10, 20, 30]
     entries = list(zip(keys, vals, strict=False))
@@ -220,7 +220,7 @@ def test_cont_10_container_type_separation():
 
 
 def test_cont_11_storage_and_view_ownership_separation():
-    """CONT-11: Data storage ownership is strictly separated from non-owning views (AoS, Set, Radix, Bit).
+    """TEST-CONT-11: Data storage ownership is strictly separated from non-owning views (AoS, Set, Radix, Bit).
     Mutations (insert, remove, put, fill) are performed strictly on Mutable Storages, never on Views."""
     # 1. FlatMap: ReadOnly vs Mutable Storage vs non-owning View
     ro_map = ReadOnlyFlatMapStorage.create([(10, "A"), (20, "B"), (30, "C")])
@@ -306,7 +306,7 @@ def test_cont_11_storage_and_view_ownership_separation():
 
 
 def test_cont_12_mutable_flat_map_storage_standard_sort():
-    """CONT-12: MutableFlatMapStorage manages fixed-capacity sorted entries (AoS) and presents FlatMapView."""
+    """TEST-CONT-12: MutableFlatMapStorage manages fixed-capacity sorted entries (AoS) and presents FlatMapView."""
     entries = [(50, "E"), (10, "A"), (40, "D"), (20, "B"), (30, "C")]
     sorted_entries = sorted(entries, key=lambda x: x[0])
     map_storage = MutableFlatMapStorage(capacity=8)
@@ -326,7 +326,7 @@ def test_cont_12_mutable_flat_map_storage_standard_sort():
 
 
 def test_cont_13_mutable_flat_map_sorted_insert_remove():
-    """CONT-13: MutableFlatMapStorage maintains sorted order across arbitrary insert and remove calls."""
+    """TEST-CONT-13: MutableFlatMapStorage maintains sorted order across arbitrary insert and remove calls."""
     storage = MutableFlatMapStorage(capacity=16)
     assert len(storage) == 0
 
@@ -376,7 +376,7 @@ def test_cont_13_mutable_flat_map_sorted_insert_remove():
 
 
 def test_cont_14_mutable_storages_fixed_array_and_entry_count():
-    """CONT-14: Mutable storages allocate fixed-length arrays upfront, track valid entry count,
+    """TEST-CONT-14: Mutable storages allocate fixed-length arrays upfront, track valid entry count,
 
     and allow insertions up to capacity without dynamic array reallocation.
     """

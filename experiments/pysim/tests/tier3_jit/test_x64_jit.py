@@ -75,7 +75,7 @@ from x64_jit import TraceCompiler
 
 
 def test_trace_compiler_cps_4arg_and_pic():
-    """JITC-01: TraceCompiler emits 16-byte header + PIC code callable via CPS 4-arg convention."""
+    """TEST-JITC-01: TraceCompiler emits 16-byte header + PIC code callable via CPS 4-arg convention."""
     compiler = TraceCompiler()
     # Block: local[1] = (local[0] + 10) * 3 - 5 -- real WASM bytecode, run through
     # the same extract_basic_blocks + compile_block path production JIT compilation uses.
@@ -150,7 +150,7 @@ def test_trace_compiler_cps_4arg_and_pic():
 
 
 def test_trace_compiler_bitwise_and_shifts_pic():
-    """JITC-02: TraceCompiler compiles bitwise ops into PIC code."""
+    """TEST-JITC-02: TraceCompiler compiles bitwise ops into PIC code."""
     compiler = TraceCompiler()
     # local[2] = local[0] & local[1]; local[3] = local[0] << 2
     code = bytes(
@@ -188,7 +188,7 @@ def test_trace_compiler_bitwise_and_shifts_pic():
 
 
 def test_trace_chaining_between_traces():
-    """JITC-04: Resident consecutive traces chain directly via chain_next."""
+    """TEST-JITC-04: Resident consecutive traces chain directly via chain_next."""
     wat = """
     (module
       (func (export "f") (param i32) (result i32)
@@ -237,7 +237,7 @@ def test_trace_chaining_between_traces():
 
 
 def test_hybrid_interpreter_to_jit_trace_elevation():
-    """JITC-05: Hotspot loop starts in Interpreter -> JIT trace compiles on idle -> runs native."""
+    """TEST-JITC-05: Hotspot loop starts in Interpreter -> JIT trace compiles on idle -> runs native."""
     wat = """
     (module
       (func (export "sum") (param i32) (result i32)
@@ -288,7 +288,7 @@ def test_hybrid_interpreter_to_jit_trace_elevation():
 
 
 def test_jit_chaining_with_control_skip_table():
-    """JITC-54: JIT trace chaining resolves fallthrough target via control_skip_tree (bswap32 RadixBinaryTreeView)."""
+    """TEST-JITC-54: JIT trace chaining resolves fallthrough target via control_skip_tree (bswap32 RadixBinaryTreeView)."""
     wat = """
     (module
       (func (export "f") (param i32) (result i32)

@@ -45,10 +45,17 @@ import math
 import struct
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
+from enum import IntEnum
 from typing import cast
 
 import cython
-from control_flow import FB_CONF_MAX_NESTING_DEPTH, ControlMap, build_control_map
+from control_flow import (
+    FB_CONF_MAX_NESTING_DEPTH,
+    ControlMap,
+    OpcodeAttribute,
+    build_control_map,
+    opcode_has_attribute,
+)
 from leb128 import decode_signed, decode_unsigned
 from system_containers import StaticVector
 from wasm_module import F32, F64, I64, Module
@@ -58,7 +65,6 @@ from wasm_opcodes import (
     BR_IF,
     BR_TABLE,
     CALL,
-    CALL_INDIRECT,
     DROP,
     ELSE,
     END,
@@ -263,9 +269,15 @@ def _make_int_vector(values: Sequence[int], capacity: int = FB_CONF_MAX_VALUE_ST
     return vector
 
 
-@dataclass
+class ControlFrameKind(IntEnum):
+    BLOCK = 0
+    LOOP = 1
+    IF = 2
+
+
+@dataclass(slots=True)
 class ControlFrame:
-    kind: str  # "block" | "loop" | "if"
+    kind: ControlFrameKind
     start: int  # opcode offset of the BLOCK/LOOP/IF
     match_end: int  # offset of the matching END
     stack_height: int  # operand-stack height at frame entry
@@ -337,7 +349,7 @@ class _LocalStackWindow:
         self._storage[self._absolute_index(index)] = value
 
 
-@dataclass
+@dataclass(slots=True)
 class ExecEnv:
     """
     R2 (`env`): state shared across every call in this run -- the
@@ -594,13 +606,13 @@ def _do_branch(depth: int, frame: CallFrame) -> int | None:
         return None
     target = cframes[-1]
     del frame.values[target.stack_height :]
-    if target.kind == "loop":
+    if target.kind is ControlFrameKind.LOOP:
         return target.start + 2  # resume at the loop body (past opcode+blocktype)
     cframes.pop_back()
     return target.match_end + 1
 
 
-@dataclass
+@dataclass(slots=True)
 class InterpreterCall:
     """
     Resumable state for one in-progress `Interpreter.call()`, stepped by
@@ -643,6 +655,19 @@ class InterpreterCall:
 
 
 class Interpreter:
+    __slots__ = (
+        "_env",
+        "debugger",
+        "globals",
+        "host_functions",
+        "memory",
+        "module",
+        "phys_mem",
+        "tables",
+        "task_id",
+        "vmmio",
+    )
+
     def __init__(
         self,
         module: Module,
@@ -802,19 +827,9 @@ class Interpreter:
             ip, frame, locals_arr, tos = call_state.cont
             if ip < len(frame.code):
                 op = frame.code[ip]
-                if op in (CALL, CALL_INDIRECT):
+                if opcode_has_attribute(op, OpcodeAttribute.CALL):
                     return self._enter_or_resolve_call(call_state, op, ip, frame, locals_arr, tos)
-                is_boundary = op in (
-                    BLOCK,
-                    LOOP,
-                    IF,
-                    ELSE,
-                    END,
-                    BR,
-                    BR_IF,
-                    BR_TABLE,
-                    RETURN,
-                )
+                is_boundary = opcode_has_attribute(op, OpcodeAttribute.BASIC_BLOCK_BOUNDARY)
                 handler = _HANDLERS[op]
                 if handler is None:
                     raise NotImplementedError(f"interpreter: unhandled opcode 0x{op:02X}")
@@ -944,7 +959,9 @@ def _h_block(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     match_end = frame.control_map.blocks[ip][0]
-    if not frame.frames.push_back(ControlFrame("block", ip, match_end, len(frame.values))):
+    if not frame.frames.push_back(
+        ControlFrame(ControlFrameKind.BLOCK, ip, match_end, len(frame.values))
+    ):
         raise Trap("control frame capacity exceeded")
     return (ip + 2, frame, env, local_base)
 
@@ -954,7 +971,9 @@ def _h_loop(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     match_end = frame.control_map.blocks[ip][0]
-    if not frame.frames.push_back(ControlFrame("loop", ip, match_end, len(frame.values))):
+    if not frame.frames.push_back(
+        ControlFrame(ControlFrameKind.LOOP, ip, match_end, len(frame.values))
+    ):
         raise Trap("control frame capacity exceeded")
     return (ip + 2, frame, env, local_base)
 
@@ -965,12 +984,16 @@ def _h_if(ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStac
     cond = frame.values.pop_back()
     if cond == 0:
         if else_off is not None:
-            if not frame.frames.push_back(ControlFrame("if", ip, match_end, len(frame.values))):
+            if not frame.frames.push_back(
+                ControlFrame(ControlFrameKind.IF, ip, match_end, len(frame.values))
+            ):
                 raise Trap("control frame capacity exceeded")
             return (else_off + 1, frame, env, local_base)
         else:
             return (match_end + 1, frame, env, local_base)
-    if not frame.frames.push_back(ControlFrame("if", ip, match_end, len(frame.values))):
+    if not frame.frames.push_back(
+        ControlFrame(ControlFrameKind.IF, ip, match_end, len(frame.values))
+    ):
         raise Trap("control frame capacity exceeded")
     return (ip + 2, frame, env, local_base)
 

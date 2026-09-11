@@ -227,7 +227,7 @@ class IPCMessage:
 class Channel:
     """Bufferless synchronous CSP rendezvous (`{ADR_RendezvousChannel}`): a
     single in-flight slot, never a bounded queue, so there is no "queue
-    full" state to roll back from (`IPCR-GOTCHA-01`).
+    full" state to roll back from (`GOTCHA-IPCR-01`).
 
     同一 CSP エッジへ送信待機中の状態でさらに別の送信要求が重なった場合、
     ルータは ERR_QUEUE_FULL のような差し戻しエラーを返さず、即座に
@@ -330,7 +330,7 @@ class IPCRouter:
         Stage 3: Zero-Copy CSP Handoff directly on pre-authorized Channel object.
         URI is eliminated from this hot transfer path. Caller's TCB role is verified.
 
-        事前検証拒否による所有権保全 (IPCR-GOTCHA-02):
+        事前検証拒否による所有権保全 (GOTCHA-IPCR-02):
         権限・URI・サイズ検証などの事前検査（Preflight Check）は lookup 時に先行して行われ、
         エラー時はメッセージ所有権が送信元（SENDER_OWNS）のまま保全される。
         先にリソースを剥奪してから送信先を検証すると、エラー時にリソースが

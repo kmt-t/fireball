@@ -126,7 +126,7 @@ ROM上のデータストリームを管理し、LEB128可変長整数やプリ�
 
 ### 4.1 アルゴリズム
 <!-- traceability: {ZeroCopyIndexing} {META_AccessDictionary} {META_BumpAllocator} -->
-- **バイナリパース & トランザクション保護 (`LOAD-GOTCHA-02`, `{META_BumpAllocator}`)**:
+- **バイナリパース & トランザクション保護 (`GOTCHA-LOAD-02`, `{META_BumpAllocator}`)**:
   ROM上のデータを `BinaryStream` でラップし、`read_leb128`（最大 5/10 バイトガード）等を用いて境界チェックを行いながら順次読み取る。パース開始前に `bump_allocator::save()` でアロケータ位置を記憶し、パースや検証が失敗した場合は `bump_allocator::restore()` により確保途中の RAM 領域を完全にロールバックする。
   **設計理由と不変条件**: WASM バイナリの検証エラー（セクション長不整合、未定義型参照、リソース上限超過等）が発生した際、途中まで確保した内部メタデータやインデックス領域が残留すると、静的バンプアロケータの物理メモリが永久に枯渇・リークする。そのため、検証失敗時は例外なくアロケータ位置を開始前のスナップショットへ完全に巻き戻し、不正バイナリによるリソース断片化をゼロにする。
 - **module_view 構築 & デコード値レジストリ登録 (Zero-Copy & Radix-Indexed)**: `{ZeroCopyIndexing}` `{META_BinarySearch}`
@@ -134,13 +134,13 @@ ROM上のデータストリームを管理し、LEB128可変長整数やプリ�
     - 各セクション、関数コードブロック、グローバル変数、データセグメント等のデコード済みエントリを `decoded_entity_registry` に登録する。
     - 各エントリの開始ファイルオフセット `file_offset` をキーとして、基数2進探索木ビュー（`fireball::radix_binary_tree_view`）を構築する。粗い Radix Table で区間を特定後、有界二分探索により $O(1) + O(\log n)$ でファイル内の任意バイト位置から該当するデコード済みエンティティ（関数メタデータ、セクション、データ定義）を高速逆引きできるようにする。
     - エクスポートおよびインポートエントリをパースし、シンボル名の 32-bit ハッシュ値（FNV-1a）を算出。名前文字列は ROM 上のポインタ（`std::string_view`）として RAM コピーゼロで保持しつつ、ハッシュ値をキーとした `export_tree` / `import_tree`（`fireball::radix_binary_tree_view`）を構築する。
-- **シンボル検索とハッシュ衝突完全排除 (`LOAD-GOTCHA-01`, `{META_AccessDictionary}`, `{META_BinarySearch}`)**:
+- **シンボル検索とハッシュ衝突完全排除 (`GOTCHA-LOAD-01`, `{META_AccessDictionary}`, `{META_BinarySearch}`)**:
   文字列比較ループを行わず、シンボル名ハッシュ（FNV-1a 32-bit）をキーとして `export_tree`（`radix_binary_tree_view`）を $O(1) + O(\log n)$ で探索。
   **設計理由と不変条件**: 32-bit ハッシュ値による探索のみで関数解決を完了させると、万一のハッシュ衝突発生時に誤った関数がディスパッチされ、壊滅的な誤動作を引き起こす。そのため、ハッシュ探索で候補エントリがヒットした際は必ず ROM 上の元のシンボル名文字列と 1 回完全一致照合を行い、ハッシュ衝突によるシンボル誤認を完全に排除する。
 - **インポートテーブル検索と依存関係解決 (resolve_imports)**: インポートテーブルの各エントリに対し、インポート先モジュール名・フィールド名のハッシュ値を用いて対象モジュールの `export_tree`（`radix_binary_tree_view`）を $O(1) + O(\log n)$ で直接引き当てる。文字列走査を行わずに $O(1) + O(\log n)$ で依存関係を解決し、モジュールを実行可能状態へ遷移させる。 `{MultiModule_Support}` `{META_BinarySearch}`
 - **ファイル位置逆引き (lookup_by_file_offset)**: 任意のファイル内バイトオフセットから `entity_offset_tree`（`radix_binary_tree_view`）を検索し、そのオフセットを包含するデコード済みエンティティ（セクション、関数、データ等）を即座に特定・返却する。
 - **メモリセクション検証**: Memory Section をパースし、論理ページサイズ（64KB単位）および初期要求ページ数を取得。物理割当が部分ページ（例: 8KB）の場合や複数ページ（`N * 64KB`）の場合でも、モジュール初期ページ要求とシステム物理予算（`FB_CONF_MAX_WASM_PAGES`）を照合し、実行時境界判定へ引き渡す。
-- **アンロードと専用バンプアロケータ一括回収 (`LOAD-GOTCHA-03`, `{OneRuntimeOneGuest}`, `{Runtime_BumpAllocator}`)**:
+- **アンロードと専用バンプアロケータ一括回収 (`GOTCHA-LOAD-03`, `{OneRuntimeOneGuest}`, `{Runtime_BumpAllocator}`)**:
   `unload` はモジュールをアンロードし、親ランタイムの `bump_allocator` を一括リセットまたは返還する。
   **設計理由と不変条件**: 1ランタイム1ゲストの直交分離原則（`{OneRuntimeOneGuest}`）により、各ランタイムは独立した専用バンプアロケータアリーナ（`{Runtime_BumpAllocator}`）を所有する。これにより、旧来の共有アロケータで課題となっていた「他ランタイムのモジュールとの生存競合」は完全に排除される。ただし、単一ランタイム内で複数モジュール（メインアプリ＋ライブラリ、`FB_CONF_MAX_MODULES` 件まで）が同一アリーナを共有する場合、単一バンプアロケータの物理特性上、個々のモジュールを完全にメモリ回収するにはロード順の逆順（LIFO）でのアンロードが引き続き必要である（後述の `unload` インターフェースを参照）。一方、ランタイム全体（アリーナ内の全モジュール）を一括破棄する場合は、生存モジュールの有無やロード順に関わらず、常に $O(1)$ でアリーナごと一括リセット・解放できる。単一ランタイム内でローダ検証エラーが発生した場合も、`save()` / `restore()` により当該アリーナのみが即座にロールバックされ、断片化ゼロが維持される。
 - **基本ブロック適格性静的評価 & JIT 候補ビットマップ生成 (`{JIT_StaticBenefitScoring}`, `{JIT_CandidateBitmap}`)**:
@@ -169,7 +169,7 @@ ROM 上に配置される 128 バイトルックアップテーブル（256 オ�
 
 
 #### トランザクション的パース & ロールバック手順（手順アクティビティ図）
-<!-- traceability: {LOAD-GOTCHA-02} {LightweightVerifier} {META_BumpAllocator} -->
+<!-- traceability: {GOTCHA-LOAD-02} {LightweightVerifier} {META_BumpAllocator} -->
 WASM バイナリパース中の軽量検証（V1-V6）判定と、エラー発生時のバンプアロケータ完全ロールバックによるメモリリーク防止手順を示す。
 
 ```mermaid
@@ -200,7 +200,7 @@ flowchart TD
 ```
 
 #### FNV-1a シンボル検索 & 生文字列完全一致照合（手順アクティビティ図）
-<!-- traceability: {LOAD-GOTCHA-01} {META_AccessDictionary} {META_BinarySearch} -->
+<!-- traceability: {GOTCHA-LOAD-01} {META_AccessDictionary} {META_BinarySearch} -->
 32-bit FNV-1a ハッシュ探索の高速性と、万一のハッシュ衝突によるシンボル誤認を完全に排除する照合手順を示す。
 
 ```mermaid

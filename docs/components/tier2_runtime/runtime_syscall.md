@@ -86,17 +86,17 @@ world fireball {
   * `buf`: データの開始アドレスを示すポインタ（`uint32_t` / 4バイト）
   * `buf_len`: データのバイト長（`uint32_t` / 4バイト）
 
-**境界検査先行と整数オーバーフロー防止 (`SYS-GOTCHA-02`)**:
+**境界検査先行と整数オーバーフロー防止 (`GOTCHA-SYS-02`)**:
 ゲスト空間のアドレス `fb_offset_t` は、カーネル側で物理アドレスに解決される前に必ず境界チェックを行う。整数オーバーフロー攻撃（`offset + size` の加算結果が 32bit を超えて小さな値にラップし、境界チェックをすり抜ける脆弱性）を完全に防ぐため、境界検査式は必ず `offset > guest_memory_size or size > guest_memory_size - offset` の減算形式で先行評価し、違反時はメモリアクセス前に即座に WASI `errno_t` の `EFAULT` で拒絶する（具体的な数値は `{Syscall_Mapping}` の WASI 準拠定義を正本とする）。
 
-**WASI iovec 散在ギャザーの全要素事前検証 (`SYS-GOTCHA-03`)**:
+**WASI iovec 散在ギャザーの全要素事前検証 (`GOTCHA-SYS-03`)**:
 散在ギャザー（iovec 配列）の各バッファ要素（`buf + len`）は、実際の出力ストリームへの書き込みを開始する前に全数事前検証される。途中の要素に境界外アドレスが含まれている場合、先行する正常要素であっても 1 バイトも出力ストリームへ書き込まず即座に `EFAULT` を返却する。これにより、異常終了時に中途半端なデータが出力先に漏洩・残存することを防止する。
 
 ### 5.2. 戻り値
 <!-- traceability: {Syscall_Return_Value} {Errorcode_To_Strategy} -->
 `fireball_call`は `u32` 型の値を返す。成功時は `0` を返し、失敗時は非0の定義されたエラーコード（WASIの `errno_t` に準拠）を返す。エラーコードの詳細は `{Syscall_Mapping}` の各定義および別紙参照。ゲスト側の `libfireball` は必要に応じてこの値をWASIの戻り値へ変換する。 `{Syscall_Return_Value}` `{Errorcode_To_Strategy}`
 
-**未定義 Syscall ID の非パニック安全復帰 (`SYS-GOTCHA-01`)**:
+**未定義 Syscall ID の非パニック安全復帰 (`GOTCHA-SYS-01`)**:
 未定義または予約済みのシステムコール ID が呼び出された場合、ホスト側はアボートやカーネルパニックを発生させず、WASI 準拠の `WasiErrno.NOSYS`（52）を返却して安全に復帰する。これにより、新機能の有無を動的に問い合わせるゲストランタイムや標準ライブラリ（WASI libc 等）がフォールバック機構を安全に機能させることができる。
 
 ## 6. システムコールID
@@ -136,7 +136,7 @@ vMMIOアドレス空間全体への汎用アクセス。SYSCTL/IPCR/VDMA/SHM/DYN
 | `0x13` | `MMIO_WRITE8` | `addr` (`fb_val_t`: 物理アドレス), `value` (`fb_val_t`: 8bit値) | `0` (エラー時は `ERR_OUT_OF_BOUNDS` または `ERR_ACCESS_DENIED`) | 8bit書き込み |
 | `0x14` | `MMIO_BULK_READ` | `addr` (`fb_val_t`: 物理アドレス), `dest_offset` (`fb_offset_t`: ゲスト物理ベース相対), `byte_count` (`fb_val_t`: 転送バイト数) | `0` (エラー時は `ERR_OUT_OF_BOUNDS`, `ERR_ACCESS_DENIED` または `ERR_INVALID_SIZE`) | バルク読み出し（ゲストメモリへコピー） `{META_RestrictedPhysicalAccess}` |
 | `0x15` | `MMIO_BULK_WRITE` | `addr` (`fb_val_t`: 物理アドレス), `src_offset` (`fb_offset_t`: ゲスト物理ベース相対), `byte_count` (`fb_val_t`: 転送バイト数) | `0` (エラー時は `ERR_OUT_OF_BOUNDS`, `ERR_ACCESS_DENIED` または `ERR_INVALID_SIZE`) | バルク書き込み（ゲストメモリから書込） `{META_RestrictedPhysicalAccess}` |
-| `0x16` | `TRIGGER_SET_PIN` | `pin` (`fb_val_t`), `value` (`fb_val_t`: 0/1) | `0` (エラー時は `ERR_OUT_OF_BOUNDS` または `ERR_ACCESS_DENIED`) | GPIOピン出力設定（`{Fast_Path_GPIO}` vMMIO直接ストアのゲストアダプタ経路、`FB_SYSCALL_TRIGGER_SET_PIN`）。**pysim実験実装での状態**: 専用のGPIO vMMIOレジスタ配線が未実装のため、`fireball_call` ディスパッチテーブルには未登録であり、呼び出すと `SYS-GOTCHA-01` の規定通り安全に `WasiErrno.NOSYS` を返す（GPIOはこの実験では IPC 経由の `fireball://device/gpio/0` デバイスとして到達可能）。実機ターゲットでの本ID実装は別途 vMMIO GPIO レジスタ配線を前提とする。 |
+| `0x16` | `TRIGGER_SET_PIN` | `pin` (`fb_val_t`), `value` (`fb_val_t`: 0/1) | `0` (エラー時は `ERR_OUT_OF_BOUNDS` または `ERR_ACCESS_DENIED`) | GPIOピン出力設定（`{Fast_Path_GPIO}` vMMIO直接ストアのゲストアダプタ経路、`FB_SYSCALL_TRIGGER_SET_PIN`）。**pysim実験実装での状態**: 専用のGPIO vMMIOレジスタ配線が未実装のため、`fireball_call` ディスパッチテーブルには未登録であり、呼び出すと `GOTCHA-SYS-01` の規定通り安全に `WasiErrno.NOSYS` を返す（GPIOはこの実験では IPC 経由の `fireball://device/gpio/0` デバイスとして到達可能）。実機ターゲットでの本ID実装は別途 vMMIO GPIO レジスタ配線を前提とする。 |
 
 ### 6.4. VDMA (`0x20`-`0x2F`)
 <!-- traceability: {VDMA} -->

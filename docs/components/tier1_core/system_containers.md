@@ -28,7 +28,7 @@
 メモリ所有権とビューを厳格に分離し、要素の追加（`insert`）や削除（`remove`）等の変更操作はすべて **可変ストレージ（Mutable Storage）** の責務とする。非所有ビュー（View）は探索・走査に専念し、一切の変更操作を提供しない。また、下位互換用のエイリアスは全廃し、正規のクラス名のみを直接使用する。
 
 | コンテナ種別 | 非所有ビュー (View)<br/>※探索・絞り込み専用 | 読み取り専用ストレージ (ReadOnly Storage)<br/>※静的イミュータブル実体 | 可変ストレージ (Mutable Storage)<br/>※要素追加(`insert`)・削除(`remove`) | 実体所有権 | 変更操作の責務 |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| :--- | :--- | :--- | :--- | :--- | :--- |
 | **FlatMap** (疎マップ) | `flat_map_view<K, V>` | `read_only_flat_map_storage<K, V>` | `mutable_flat_map_storage<K, V, Capacity>` | Storage が AoS 配列を完全所有 | **Mutable Storage のみ** (`insert`, `remove`) |
 | **FlatSet** (疎集合) | `flat_set_view<K>` | `read_only_flat_set_storage<K>` | `mutable_flat_set_storage<K, Capacity>` | Storage が キー配列を完全所有 | **Mutable Storage のみ** (`insert`, `remove`) |
 | **RadixBinaryTree** (基数木) | `radix_binary_tree_view<K, V, RadixShift>` | `read_only_radix_binary_tree_storage<V>` | `mutable_radix_binary_tree_storage<V, Capacity>` | Storage が キー・値・Radix表を完全所有 | **Mutable Storage のみ** (`insert`, `remove` + Radix表自動更新) |

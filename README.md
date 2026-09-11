@@ -1,25 +1,24 @@
 # Fireball Hypervisor
 
-Fireball is a lightweight WebAssembly (WASM) hypervisor designed for resource-constrained embedded systems. It targets Cortex-M33, RISC-V/32, and Linux platforms, aiming to provide safe virtualization with a minimal footprint using standard C23 and C++23 runtimes without dynamic memory allocation (`malloc`/`new`), exceptions, or RTTI.
+Fireball is a lightweight WebAssembly (WASM) hypervisor designed for resource-constrained embedded systems. It targets Cortex-M33, RISC-V/32, and Linux platforms, aiming to provide safe virtualization with a minimal footprint using C23 and C++23. Standard dynamic allocation APIs (`malloc`/`new`), exceptions, RTTI, and dynamic STL containers are prohibited; bounded project-managed allocators are used only where the architecture explicitly requires them.
 
-## Concepts and Features
+## Concept
 
-The design of Fireball is built on three core pillars:
+Fireball is designed around one idea: make a small WebAssembly runtime predictable enough for constrained embedded systems without giving up useful virtualization and isolation. The project follows a specification-first workflow: requirements, architecture, component contracts, formal models, reference implementations, and tests are kept as a traceable design chain.
 
-- **Safe Cooperative Multitasking**: Data races are prevented through FIFO Round-Robin scheduling by COOS (Cooperative OS) and Hoare CSP rendezvous message passing. Interrupts are posted asynchronously to ring buffers and processed cleanly at trace boundary yield points (`{ADR_TraceBoundaryYield}`).
-- **Ownership-Aware Zero-Copy IPC**: By combining explicit ownership transfer (Revoke -> Rendezvous -> Grant) over a bufferless synchronous CSP channel with shared memory management by the IPC Router, memory and channels can be safely passed between subsystems without copying data.
-- **Predictable Behavior & Safety**: Heap and buffer sizes are fixed upfront through header-based static configurations (`constexpr`). JIT code cache enforces MPU W^X separation (RW+XN during compilation, RO+X during execution with `__DSB()/__ISB()` barriers).
+The runtime is layered so that policy stays separate from mechanism. A cooperative kernel provides bounded task switching and bufferless CSP rendezvous. Ownership moves explicitly across IPC boundaries, allowing shared data to be transferred without copying while preventing accidental data races. Runtime components execute WASM through a compact interpreter and selectively use Copy-and-Patch JIT code, with protected code and data regions.
 
-## Key Components (3-Tier Architecture)
+The design favors static resolution and bounded resources. Configuration fixes capacities at build time, memory is divided by purpose, and access to guest memory and virtual devices is checked at the boundary. The implementation policy excludes exceptions, RTTI, and unbounded standard containers; the detailed memory and allocator contracts are defined in `docs/`.
 
-- **COOS Kernel & IPC Router (Tier 1)**: Single-threaded cooperative OS running a pure FIFO Round-Robin scheduler with an isolated Idle slot, managing coroutines (`co_yield`), interrupt flags, role-based IPC routing, and zero-copy rendezvous channel handoffs (`docs/components/tier1_core/`, `docs/components/tier1_interface/`).
-- **vSoC Subsystem & Interpreter (Tier 2)**: WASM execution engine featuring a stackless fast interpreter with a unified stack layout (inlining context, CallFrames, locals, and operands), vMMIO virtual address router with TLB cache, and GDB RSP debug controller (`docs/components/tier2_runtime/`).
-- **Copy-and-Patch JIT Subsystem (Tier 3)**: Near-zero compilation cost JIT engine decomposed from vSoC, utilizing precompiled Thumb-2 / x64 stencil templates, constexpr assembler, and a 3-bank rotating code cache (Active / Inactive / Reserve) with MPU-enforced W^X protection (`docs/components/tier3_jit/`).
-- **Platform & Hardware Abstraction Layer (Tier 3)**: Low-level hardware drivers (UART, GPIO, Timers) and physical memory manager exposed via IPC and WIT (WebAssembly Interface Types) specifications (`docs/components/tier3_platform/`).
+The architecture is organized into three tiers:
+
+- **Tier 1**: COOS, IPC, configuration, static containers, memory contracts, services, and WIT interfaces.
+- **Tier 2**: vSoC runtime, loader, interpreter, system calls, logging, vMMIO, debugger, and HAL dispatch.
+- **Tier 3**: JIT compilation/runtime, the `libfireball` guest adapter, and physical platform drivers.
 
 ## Development Environment and Build
 
-Fireball uses standard CMake and Ninja build systems. C23 and C++23 code (leveraging C++23 coroutines, concepts, `constexpr`, and `[[clang::musttail]]`) is compiled with **Clang 17+**, with primary targets for Cortex-M33 (ARMv8-M Mainline with TrustZone and MPU), RISC-V/32, and host development environments (x86_64 / Linux).
+Fireball uses standard CMake and Ninja build systems. C23 and C++23 code (using C++20 coroutine facilities, C++23 concepts, `constexpr`, and `[[clang::musttail]]`) is compiled with **Clang 17+**, with primary targets for Cortex-M33 (ARMv8-M Mainline with TrustZone and MPU), RISC-V/32, and host development environments (x86_64 / Linux).
 
 > [!IMPORTANT]
 > **Clang is strictly required**. Fireball's interpreter dispatch and execution engine rely on `[[clang::musttail]]` for zero-stack overhead direct tail calls. GCC and MSVC are not supported.
@@ -101,8 +100,9 @@ All Fireball development is strictly governed by the specifications in `docs/` a
 
 - **Top-Level Requirements**: `docs/requires/requirement_list.md`
 - **Keyword Dictionary (Link Registry)**: `docs/architecture/keyword_dictionary.md`
-- **Architecture & Document Structure**: `docs/architecture/architecture_overview.md`, `docs/architecture/document_structure.md`
-- **Component Specifications**: `docs/components/` (Tier 1 Core/Interface, Tier 2 Runtime, Tier 3 Platform/JIT)
+- **Architecture, Document Structure, and Resource Budget**: `docs/architecture/architecture_overview.md`, `docs/architecture/document_structure.md`, `docs/architecture/resource_budget_estimation.md`
+- **Component Specifications**: `docs/components/` (Tier 1 Core/Interface, Tier 2 Runtime, Tier 3 JIT/Platform)
+- **Physical Specifications**: `docs/specs/` (WASM, WASI, GDB RSP, and JIT stencil catalogs)
 - **Integration Test Scenarios**: `docs/architecture/integration_test_scenarios.md`
 - **Roadmap & Backlog**: `docs/plans/roadmap_phase.md`, `docs/plans/backlog_list.md`
 - **Tooling and Validation**: `tools/README.md`, `.agents/skills/document-validation/`

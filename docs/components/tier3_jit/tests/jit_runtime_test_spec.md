@@ -4,7 +4,8 @@
 
 正本: [`jit_runtime.md`](docs/components/tier3_jit/jit_runtime.md)
 関連正本: [`jit_compiler.md`](docs/components/tier3_jit/jit_compiler.md)（{JIT_LazyChaining}、{JIT_CopyAndPatch}はjit_runtimeと共同責務）
-参考実装: [`runtime_engine_concept.py`](docs/components/tier2_runtime/concepts/runtime_engine_concept.py)（統合シミュレーション。[`stack_cache_concept.py`](docs/components/tier3_jit/concepts/stack_cache_concept.py)は未読のため別途確認要）
+統合参考実装: [`runtime_engine_concept.py`](docs/components/tier2_runtime/concepts/runtime_engine_concept.py)。スタックキャッシュ固有の参考実装は [`stack_cache_concept.py`](docs/components/tier3_jit/concepts/stack_cache_concept.py) とする。
+3面キャッシュ・ホットスポット・チェイニングの統合ケースは `runtime_engine_concept.py` および pysim のJITランタイムテストを参照し、スタックキャッシュ固有ケースは `stack_cache_concept.py` で検証する。
 
 WASM PC→ネイティブコードの3段検索（カードマーキング→Radix→二分探索）、2-bitホットスポット検出、3面世代交代キャッシュ（Active/Warm/Oldest）、Oldest-Only Promotion、局所チェイン解決(O(k))、MPU W^X保護を検証する。
 
@@ -102,6 +103,6 @@ JITトレース検索時の内部状態と期待される挙動を検証する�
 
 ## 4. 未検証・スコープ外
 
-- [`stack_cache_concept.py`](docs/components/tier3_jit/concepts/stack_cache_concept.py)（未読。TOS/NOSキャッシュのトレース境界での書き戻しに関するテストが含まれる可能性が高く、別途読了・反映が必要）。
-- `../formal/jit_cache_model.py`による3面キャッシュ代謝・MPU W^X・2-bit FSMの形式検証そのもの。
+- [`stack_cache_concept.py`](docs/components/tier3_jit/concepts/stack_cache_concept.py): TOS/NOSキャッシュ、トレース境界、境界チェック、およびバックエッジSafepointのConcept実装。固有テスト8件を実行済み。
+- [`jit_cache_model.py`](docs/components/tier3_jit/formal/jit_cache_model.py)による3面キャッシュ代謝・MPU W^X・2-bit FSMの形式検証そのもの。
 - Cortex-M33実機でのPMSAv8 MPU切り替えの実際のレイテンシ。

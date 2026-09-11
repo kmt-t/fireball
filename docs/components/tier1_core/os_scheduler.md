@@ -25,7 +25,7 @@ COOSスケジューラは、協調型OS COOS（[`os_coos.md`](docs/components/ti
 ### 3.2 内部ブロック図
 <!-- traceability: {COOS_Transparent} -->
 ```mermaid
-graph TD
+flowchart TD
     subgraph Scheduler_Layer
         Engine[Scheduler Engine]
         TCB[task_context]
@@ -190,15 +190,15 @@ class RoundRobinScheduler:
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Ready: spawn(task) / allocate TCB, insert at tail
+    [*] --> Ready: "spawn(task) / allocate TCB, insert at tail"
 
     Ready --> Running: [schedule] ready queue not empty / resume at head
     Running --> Ready: yield() / push to ready queue tail
 
-    Running --> CSPWait: send() to empty / push sender to wait
-    Running --> CSPWait: recv() no data / push receiver to wait
-    Running --> EventWait: wait_event(id) / push to event queue
-    Running --> InterruptWait: [interrupt occurs] / ISR posts INT event
+    Running --> CSPWait: "send() to empty / push sender to wait"
+    Running --> CSPWait: "recv() no data / push receiver to wait"
+    Running --> EventWait: "wait_event(id) / push to event queue"
+    Running --> InterruptWait: "interrupt occurs / ISR posts INT event"
 
     CSPWait --> Running: **CSP Handoff** [opposite ready]
     CSPWait --> Ready: [opposite not ready] / wake partner

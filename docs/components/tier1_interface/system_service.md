@@ -20,7 +20,7 @@
 
 ### 3.2 内部ブロック図
 ```mermaid
-graph TD
+flowchart TD
     subgraph WasmLayer["WASM 実行層（サービス）"]
         Guest[WASM Guest] --> IPCService[Isolated IPC Service]
         Guest --> Lib[libfireball guest adapter]
@@ -149,7 +149,7 @@ enum class service_load_result_t : uint32_t {
     PANIC = 3      // 起動不可、システム停止
 };
 ```
-サービスロード処理において `IGNORE` は非適用（ロード失敗を無視して未初期化のまま続行することは許容されない）であり、`SUCCESS` または 3 つのエラーリカバリー戦略（`RETRY`, `RESTART`, `PANIC`）のいずれかを返却する。各ステータスに応じて、呼び出し側（システムマネージャなど）は 5.1節 で定義したリカバリーアクションを決定し、実行する。 `{META_RecoveryStrategy}`
+サービスロード処理において `IGNORE` は非適用（ロード失敗を無視して未初期化のまま続行することは許容されない）であり、`SUCCESS` または 3 つのエラーリカバリー戦略（`RETRY`, `RESTART`, `PANIC`）のいずれかを返却する。各ステータスに応じて、呼び出し側（システムマネージャなど）は本書のリカバリー戦略ポリシーに従うアクションを決定し、実行する。 `{META_RecoveryStrategy}`
 
 ### 5.3 URI/IPCインターフェース
 <!-- traceability: {META_RecoveryStrategy} -->
@@ -157,6 +157,7 @@ enum class service_load_result_t : uint32_t {
 - **メッセージ形式**: 64ビットのKey-Value値を最大8個含むパケット。
   * **ヘッダ部**: `arg0` にコマンドID、`arg1` にリカバリー戦略カテゴリ `{META_RecoveryStrategy}`（`recovery-strategy-category` 値）を格納。
   * **ペイロード部**: `arg2`〜`arg5` にコマンド固有引数（または共有メモリハンドル等）を格納。
+  * **拡張部**: `arg6`〜`arg7` は将来のコマンド固有引数用に予約し、未使用時はゼロを格納。
 
 ## 6. 制約達成の方策
 

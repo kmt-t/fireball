@@ -1,5 +1,6 @@
-# HAL 抽象化層（URI Resolver / トランスポート抽象） コンポーネント設計書 {VERIFY_LLM}
+# HAL 抽象化層（URI Resolver / トランスポート抽象） コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}
 <!-- evidence:
+     formal: formal/hal_dispatch_contract_model.py
      test: tests/hal_dispatch_test_spec.md
 -->
 
@@ -23,7 +24,7 @@ HAL (Hardware Abstraction Layer) は、COOS 上で稼働する独立したタス
 
 ### 3.2 内部ブロック図
 ```mermaid
-graph TD
+flowchart TD
     Client[Runtime / Guest / Debugger Task] -->|resolver.get-interface URI| IPCR[IPC Router: URI Resolver]
     IPCR -->|resolve URI to dedicated Role/Channel| Select{Role selection<br/>1 instance = 1 Role = 1 Channel}
     Select -->|CSP Rendezvous| HT1["hal_task #1<br/>Role.HAL_UART"]
@@ -141,7 +142,8 @@ Fireball の HAL は、WASI 0.3p と親和性のある汎用インターフェ�
 ## 7. 形式検証・テスト仕様との対応
 
 ### 7.1 検証対象の不変条件
-- **ゼロコピー転送安全性**: 生ポインタ渡しを行わず、HALバッファハンドル（`hal-buf-id` / `hal-buffer-slice`）による境界検証を経由すること（`TEST-HAL-02`, `TEST-HAL-06`）。物理検証は Tier 3 を正本とする。
+- **ゼロコピー転送安全性**: 生ポインタ渡しを行わず、HALバッファハンドル（`hal-buf-id` / `hal-buffer-slice`）による境界検証を経由すること（`TEST-HAL-02`, `TEST-HAL-12`）。物理検証は Tier 3 を正本とする。
+- **IPCルーティングと事前検査**: デバイスアクセスはIPCルータを迂回せず、バッファ転送は生ポインタを使わず、事前検査で拒否された要求は所有権を先取りして剥奪しないことを [`hal_dispatch_contract_model.py`](docs/components/tier2_runtime/formal/hal_dispatch_contract_model.py) でCTL検証する。`guards=False` では各違反経路が反証されることを確認する。
 
 ### 7.2 テスト仕様書との連携
-本コンポーネントのテストケースは、[`hal_dispatch_test_spec.md`](docs/components/tier2_runtime/tests/hal_dispatch_test_spec.md) を正本として定義する。物理ドライバ実装のテストケース（TEST-HAL-01〜TEST-HAL-10, GOTCHA-HAL-01〜03）は [`platform_driver_test_spec.md`](docs/components/tier3_platform/tests/platform_driver_test_spec.md) を参照。
+本コンポーネントの契約テストケース（TEST-HAL-01, TEST-HAL-02, TEST-HAL-04, TEST-HAL-09〜TEST-HAL-13）は、[`hal_dispatch_test_spec.md`](docs/components/tier2_runtime/tests/hal_dispatch_test_spec.md) を正本として定義する。物理ドライバ実装のテストケース（TEST-HAL-03, TEST-HAL-05〜TEST-HAL-08, GOTCHA-HAL-01〜03）は [`platform_driver_test_spec.md`](docs/components/tier3_platform/tests/platform_driver_test_spec.md) を参照する。

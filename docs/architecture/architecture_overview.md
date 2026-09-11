@@ -9,7 +9,7 @@ Fireballは、リソース制限の厳しい小規模組み込みデバイス（
 - **協調型マルチタスク (COOS)**: C++20/23コルーチンベースのスタックレス・タスク構造を採用し、低オーバーヘッドな切り替えを実現する。ホーアCSPモデルに基づき、所有権移譲によるゼロコピーメッセージパッシングによりデータ競合を原理的に排除する。 `{LowOverhead}` `{ServiceSelfReboot}` `{FaultTolerant}`
 - **高速JIT (Copy-and-Patch)**: コンパイルレイテンシを最小化し、小規模なコードキャッシュ（2KB x 3面 = 6KB）を循環活用する。
 - **Conceptベース・コンポーネントハーネス**: vSoC等の複合コンポーネントを独立したサブコンポーネントの集合体として定義し、C++20 Conceptsとハーネス構造体（`vsoc_harness`, `coos_harness`）による静的DIで結合する。仮想関数（vtable）のオーバーヘッドをゼロにする。 `{GLOBAL_ComponentHarness}` `{ConceptHarnessDI}` `{META_StaticDI}` `{ZeroRuntimeOverhead}`
-- **メモリ管理: 5プールモデル (`{ADR_FivePoolMemoryModel}`)**: システム全体の統合物理メモリプール（`ConsolidatedHeap`）を、用途・ライフサイクル・アロケータ方式が異なる5つの独立プールへ静的に分割する（正本契約: [`system_memory.md`](docs/components/tier1_core/system_memory.md)）。各プールは物理的・領域的に完全に独立し、特定プールの枯渇が他プールを道連れにしない（`{GLOBAL_IndependentHeap}`）。
+- **メモリ管理: 5プール＋専用インタープリタスタック (`{ADR_FivePoolMemoryModel}`)**: システム全体の統合物理メモリプール（`ConsolidatedHeap`）を、用途・ライフサイクル・アロケータ方式が異なる5つの独立プールへ静的に分割し、インタープリタスタックを専用領域として併設する（正本契約: [`system_memory.md`](docs/components/tier1_core/system_memory.md)）。各領域は物理的・領域的に完全に独立し、特定領域の枯渇が他領域を道連れにしない（`{GLOBAL_IndependentHeap}`）。
   - **タスクヒープ**: COOS がタスク起動時に貸与する、タスク固有の固定長パーティション。サイズはゲストVMスロットごとに `system_config.md` の `FB_CONF_TASK_HEAP_SIZES` ROM配列で個別設定される（均等割りではない）。
   - **ホスト用ヒープ (`{System_Allocator}`)**: dlmalloc（`create_mspace_with_base`）ベースの**システム用アロケータ (`system_allocator`)** が、カーネル・仮想化基盤（COOS, vMMIO, IPC Router, MemoryManager, Debugger 等）が常駐・運用するシステムコンテナの内部ストレージ（PTE表, チャネルテーブル, ブレークポイント等）を動的確保・個別解放する。
   - **共有メモリ用ヒープ (`{Shm_Allocator}`)**: タスク間 IPC でゼロコピー転送される共有メモリ（MPU Region 6: `Shared Memory Buffers`）を、可変長（`size`）の要求に応じて切り出す**SHM用アロケータ (`shm_allocator`)** が管理し、RAII 解放時に自動合体する。同一 4KB 物理ページ内には同一所有タスクの SHM チャンクのみが配置される（`{PageGranularPermissionIsolation}`）。
@@ -40,7 +40,7 @@ Fireballは、リソース制限の厳しい小規模組み込みデバイス（
 <!-- traceability: {CleanArchitecture} {IoC} -->
 
 ```mermaid
-graph TD
+flowchart TD
     classDef blockStyle fill:#e1f5ff,stroke:#01579b,stroke-width:2px,color:#000;
     classDef hwStyle fill:#f3e5f5,stroke:#4a148c,stroke-width:1px,stroke-dasharray: 5 5,color:#000;
 
@@ -244,7 +244,7 @@ ARM Cortex-M33 (ARMv8-M Mainline) における物理レジスタの厳格な役�
 Tier 2 複合コンポーネント（vSoC等）における依存性注入をゼロコストで実現するため、C++20/23 Concepts と POD ハーネス構造体による設計基盤を採用する。
 
 ```mermaid
-graph TD
+flowchart TD
     subgraph Component_Logic [Component Logic]
         C[Class Template] -- requires --> Concept[C++ Concept]
     end
@@ -271,11 +271,11 @@ graph TD
 
 ### 6.1 メモリ予算 (RAM: 評価ターゲット 32KB = 32,768 Bytes)
 
-以下は [`resource_budget_estimation.md`](docs/architecture/resource_budget_estimation.md) §3.1（詳細正本）から逆算した実配分値であり、`system_config.md` の `FB_CONF_*` 定数と 1 対 1 に対応する。数値は本概要ではなく詳細正本を常に正とする。
+以下は [`resource_budget_estimation.md`](docs/architecture/resource_budget_estimation.md) のRAM詳細（正本）から逆算した実配分値であり、`system_config.md` の `FB_CONF_*` 定数と 1 対 1 に対応する。数値は本概要ではなく詳細正本を常に正とする。
 
 | メモリ領域 | RAM サイズ (Bytes) | 責務 |
 | :--- | ---: | :--- |
-| **統合物理メモリプール** (`ConsolidatedHeap`) | **21,504** | 下記5プールの静的事前確保物理プール（`{ADR_FivePoolMemoryModel}`） |
+| **統合物理メモリプール** (`ConsolidatedHeap`) | **21,504** | 下記5プールと専用インタープリタスタックの静的事前確保物理プール（`{ADR_FivePoolMemoryModel}`） |
 | — JIT キャッシュアロケータ (`FB_CONF_JIT_CACHE_SIZE`) | 6,144 | JITコードキャッシュ 2KB×3面（Active/Warm/Oldest）。MPU W^X 保護 |
 | — タスクヒープ (`sum(FB_CONF_TASK_HEAP_SIZES)`) | 4,096 | ゲスト WASM リニアメモリ実体（スロット別ROM配列の総和） |
 | — ホスト用ヒープ（カーネルプール）(`FB_CONF_KERNEL_HEAP_SIZE`) | 4,096 | TCB・コルーチンフレーム。共有メモリ用ヒープ（`FB_CONF_SHM_SIZE`: 1,024 B）を内包 |
@@ -287,7 +287,7 @@ graph TD
 
 ### 6.2 ストレージ予算 (ROM/Flash: 評価ターゲット 96KB = 98,304 Bytes)
 
-以下は [`resource_budget_estimation.md`](docs/architecture/resource_budget_estimation.md) §3.2（詳細正本）から逆算した実配分値。数値は本概要ではなく詳細正本を常に正とする。
+以下は [`resource_budget_estimation.md`](docs/architecture/resource_budget_estimation.md) のROM詳細（正本）から逆算した実配分値。数値は本概要ではなく詳細正本を常に正とする。
 
 | 領域 | ROM サイズ | 内容 |
 | :--- | ---: | :--- |

@@ -208,6 +208,11 @@ class bit_view {
   constexpr void put(std::size_t i, std::uint8_t v) const noexcept;
   constexpr auto slice(std::size_t first, std::size_t last) const noexcept -> bit_view;
   constexpr auto size() const noexcept -> std::size_t;
+
+ private:
+  std::span<std::byte> storage_;
+  std::size_t origin_;
+  std::size_t count_;
 };
 
 // 読み取り専用 AoS 実体ストレージ: 不変ソート済みペア配列を所有、非所有ビュー生成
@@ -383,7 +388,7 @@ class RadixBinaryTreeView:
         radix_shift: int,
         key_transform=None,
     ):
-        self.map_view = FlatMapView(list(zip(keys, values)))
+        self.map_view = FlatMapView(keys, values)
         self.radix_table = radix_table  # pure scalar offsets array [0, 3, 6, ...]
         self.radix_shift = radix_shift
         self.key_transform = key_transform

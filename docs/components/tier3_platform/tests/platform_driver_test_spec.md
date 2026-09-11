@@ -11,9 +11,9 @@
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-HAL-03 | 割り込みpush経路: ISRは状態を直接変更しない | 物理割り込み発生 | [`platform_driver_concept.py`](../concepts/platform_driver_concept.py)で5ワードの`interrupt-event`を`notify_interrupt(event)`相当で投函し、[`interrupt_boundary_model.py`](../formal/interrupt_boundary_model.py)を通常モデルと`guards=False`で実行する | 原因レコードが固定長FIFOへ投函されるのみで、タスク状態はスケジューラの協調境界までREADYへ遷移しない。通常モデルでは2つの性質が成立し、変異モデルでは両方が反証される | 「割り込み通知（push）」、`platform_driver_concept.py`、`interrupt_boundary_model.py` |
+| TEST-HAL-03 | 割り込みpush経路: ISRは状態を直接変更しない | 物理割り込み発生 | [`platform_driver_concept.py`](docs/components/tier3_platform/concepts/platform_driver_concept.py)で5ワードの`interrupt-event`を`notify_interrupt(event)`相当で投函し、[`interrupt_boundary_model.py`](docs/components/tier3_platform/formal/interrupt_boundary_model.py)を通常モデルと`guards=False`で実行する | 原因レコードが固定長FIFOへ投函されるのみで、タスク状態はスケジューラの協調境界までREADYへ遷移しない。通常モデルでは2つの性質が成立し、変異モデルでは両方が反証される | 「割り込み通知（push）」、`platform_driver_concept.py`、`interrupt_boundary_model.py` |
 | TEST-HAL-05 | GPIO直接ストアの高速パス | GPIOへの書き込み要求 | `{Fast_Path_GPIO}`経由でアクセス | IPCルータのメッセージパッシングを経由しない直接vMMIOストア（`fireball_call`経由の`control`とは別の、より低レイテンシな経路） | `{Fast_Path_GPIO}`, runtime_syscall.md |
-| TEST-HAL-06 | `acquire_buffer`のHALバッファプール(vMMIO/DYNAMIC)物理マッピング | - | `acquire_buffer(size)` | 確保されたバッファがHALバッファプール（vMMIO DYNAMIC領域）のスロットに物理マッピングされる | 「バッファの確保」, runtime_vmmio.md |
+| TEST-HAL-06 | `acquire_buffer`のHALバッファプール(vMMIO/DYNAMIC)物理マッピングと境界検査 | - | `acquire_buffer(size)`、および256バイトを超えるサイズを要求 | 確保されたバッファがHALバッファプール（vMMIO DYNAMIC領域）のスロットに物理マッピングされ、上限超過要求は拒絶される（`GOTCHA-HAL-01`） | 「バッファの確保」, runtime_vmmio.md |
 | TEST-HAL-07 | RSPトランスポートの選択可能性 | - | UART/RTTそれぞれで接続 | 双方の物理層でRSPパケット送受信が可能 | - |
 | TEST-HAL-08 | RSPチェックサム検証とACK/NAK | 正常/不正なチェックサムのパケット | 受信処理 | 一致時ACK(`+`)、不一致時NAK(`-`)を返す | 「コマンド取得」 |
 
@@ -31,5 +31,5 @@
 
 ## 4. 未検証・スコープ外
 
-- 契約レベルの振る舞い（TEST-HAL-01, TEST-HAL-02, TEST-HAL-04, TEST-HAL-09, TEST-HAL-10）は [`hal_dispatch_test_spec.md`](docs/components/tier2_runtime/tests/hal_dispatch_test_spec.md) を参照。
+- 契約レベルの振る舞い（TEST-HAL-01, TEST-HAL-02, TEST-HAL-04, TEST-HAL-09〜TEST-HAL-13）は [`hal_dispatch_test_spec.md`](docs/components/tier2_runtime/tests/hal_dispatch_test_spec.md) を参照。
 - 実ハードウェア（UART/RTT/GPIO/I2C）そのものの電気的特性。

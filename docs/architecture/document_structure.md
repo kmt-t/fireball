@@ -200,8 +200,11 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 
 | 形式検証モデルファイル | 検証・証明する対象性質 | `BACKS` 正本ドキュメント一覧 |
 | :--- | :--- | :--- |
-| [`coos_channel_model.py`](docs/components/tier1_core/formal/coos_channel_model.py) | - CSP チャネル純粋ランデブー<br>- デッドロック不在・二重所有不在<br>- 連続ハンドオフ有界復帰 | - `components/tier1_core/os_coos.md`<br>- `components/tier1_core/os_scheduler.md`<br>- `components/tier1_core/system_config.md` |
+| [`coos_channel_model.py`](docs/components/tier1_core/formal/coos_channel_model.py) | - CSP チャネル純粋ランデブー<br>- デッドロック不在・二重所有不在<br>- 連続ハンドオフ有界復帰 | - `components/tier1_core/os_coos.md`<br>- `components/tier1_core/os_scheduler.md` |
+| [`system_config_model.py`](docs/components/tier1_core/formal/system_config_model.py) | - 構成値の実行時変更禁止<br>- 定義済みリソース予算内の構成 | - `components/tier1_core/system_config.md` |
+| [`system_memory_model.py`](docs/components/tier1_core/formal/system_memory_model.py) | - 共有ブロックの二重所有禁止<br>- 5プール総予算超過禁止<br>- 所有権移譲またはロールバックの有限完了 | - `components/tier1_core/system_memory.md` |
 | [`csp_handoff_model.py`](docs/components/tier1_interface/formal/csp_handoff_model.py) | - 所有権移譲と Drop ハンドラによる二重所有・リーク防止 | - `components/tier1_interface/ipc_router.md` |
+| [`hal_dispatch_contract_model.py`](docs/components/tier2_runtime/formal/hal_dispatch_contract_model.py) | - HALアクセスのIPCルーティング強制<br>- 生ポインタ転送禁止<br>- 事前拒否時の所有権保全 | - `components/tier2_runtime/hal_dispatch.md` |
 | [`vsoc_cache_coherency_model.py`](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) | - vSoC JIT キャッシュ整合性・Debugger 介入安全性・ローテーション有界性 | - `components/tier2_runtime/runtime_vsoc.md`<br>- `components/tier2_runtime/debug_manager.md`<br>- `components/tier3_jit/jit_compiler.md`<br>- `components/tier2_runtime/runtime_memory.md` |
 | [`vsoc_state_model.py`](docs/components/tier2_runtime/formal/vsoc_state_model.py) | - vSoC 実行状態<br>- Safepoint ポーリング応答性<br>- 割り込み/デバッグフォールバック | - `components/tier2_runtime/runtime_vsoc.md`<br>- `components/tier2_runtime/runtime_vmmio.md`<br>- `components/tier2_runtime/runtime_interpreter.md`<br>- `components/tier2_runtime/debug_manager.md`<br>- `components/tier3_platform/platform_driver.md`<br>- `components/tier1_core/system_config.md` |
 | [`jit_cache_model.py`](docs/components/tier3_jit/formal/jit_cache_model.py) | - 3面キャッシュ代謝<br>- MPU W^X 保護<br>- 遅延チェイニング局所アンリンク安全性<br>- 2-bit Hotspot FSM | - `components/tier3_jit/jit_compiler.md`<br>- `components/tier3_jit/jit_runtime.md`<br>- `components/tier2_runtime/runtime_memory.md` |

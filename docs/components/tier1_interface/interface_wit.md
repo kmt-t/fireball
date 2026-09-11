@@ -62,7 +62,7 @@ interface resolver {
 非同期通知（GPIOエッジ、タイマー満了等の待機）は、専用の `pollable` リソース型を設けず、IPCコマンドID（`POLL_CHECK` / `POLL_WAIT`、`hal_dispatch.md` を正本とする）による汎用ポーリングとして表現する（後述の非同期通知メカニズムを参照）。 `{CooperativeMultitasking}` `{Asynchronous_Notification}`
 
 ```mermaid
-graph TD
+flowchart TD
     Guest[Guest WASM Application] -->|WASI call| Lib[libfireball guest adapter]
     Lib -->|resolver.get-interface| Res[URI Resolver / IPC Router]
     Lib -->|acquire-buffer / release-buffer| HBP[HAL Buffer Pool]

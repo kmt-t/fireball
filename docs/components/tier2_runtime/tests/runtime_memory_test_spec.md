@@ -16,6 +16,8 @@
 | TEST-MEM-14 | ページ単位権限分離 | タスク1とタスク2が`allocate-shared`実行 | 割り当てられた`page_idx`を比較 | 異なるタスクのスロットは同一ページに混在せず、必ず別個の4KB物理ページ（異なる`page_idx`）に割り当てられる | 「ページ単位権限分離仕様」, 「ADR_PageGranularPermissionIsolation」, pysim `test_mem_14_page_granular_permission_isolation` |
 | TEST-MEM-15 | vMMIO FC=14マッピングとTLBフラッシュ連動 | 共有メモリ操作 | `allocate_shared`/`release`/`claim`/`drop`実行 | vMMIO FC=14 PTEのマップ／アンマップと連動して対応VPNのTLBスロットが即座にフラッシュされる | 「共有メモリマッピングと仮想化リスナーへのコールバック委譲」, pysim `test_mem_15_vmmio_fc14_tlb_sync` |
 | TEST-MEM-16 | 他タスク所有SHMページへのvMMIOアクセス遮断 | タスク1がSHM確保 | タスク2のコンテキスト（未マッピング状態）でvMMIO経由アクセス | `TRAP_UNREGISTERED_PAGE`（未登録ページフォルト）により安全に遮断される | runtime_vmmio.md, pysim `test_mem_15_vmmio_fc14_tlb_sync`（同テスト内でTask 2の`OWNER_MISMATCH`遮断として検証済み） |
+| TEST-MEM-10b | 送信中共有ブロックのPTE/TLB遮断とclaim再マッピング | 送信タスクが`release()`を実行 | 送信中にアクセスし、受信タスクが`claim()` | 送信中は旧PTE/TLBが無効化され、`claim()`後は受信側へ再マッピングされる | `runtime_memory_concept.py` `test_mem_10b_shared_block_vmmio_pte_flight_and_claim` |
+| TEST-MEM-10c | 転送失敗時の所有権・PTEロールバック | `release()`済みで転送失敗 | `rollback_transfer(original_sender_id, shm_id)`を実行 | 所有権とPTEが送信元へ復元される | `runtime_memory_concept.py` `test_mem_10c_rollback_transfer_restores_mapping` |
 
 ### MPU / W^X
 

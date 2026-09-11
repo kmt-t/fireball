@@ -31,7 +31,7 @@ JITサブシステムは、以下の2つの独立した設計書に責務を分�
 
 ### 3.2 内部ブロック図
 ```mermaid
-graph TD
+flowchart TD
     subgraph JIT_Compiler_Core
         Pipeline[jit_pipeline]
         Engine[CopyAndPatchEngine]
@@ -56,7 +56,7 @@ graph TD
 - **関数/モジュール一括コンパイルの完全禁止**: 極小リソース環境（RAM 32KB〜64KB）におけるコンパイル遅延とメモリ消費をゼロ化するため、関数全体やモジュール全体の事前一括コンパイルは一切行わない。
 - **純粋ベーシックブロック/トレース単位コンパイル**: 2-bit カードテーブル（カードマーキング表）で HOT（`10`）に達した直線命令列（基本ブロック / トレース）のみを、スケジューラのアイドル時（`idle_hook` 等）に Copy-and-Patch により 1 トレースずつオンデマンド生成する。
 - **制御フロー・スタック操作・演算の最適インライン展開方針 (`{JIT_RuntimeAPI_Fallback}`)**:
-  - **JIT ネイティブ実行（インライン展開）対象（48命令）**:
+  - **JIT ネイティブ実行（インライン展開）対象（54命令）**:
     高頻度な直線演算（定数、変数、算術、論理、比較、リニアメモリアクセス）に加え、**構文デリミタ（0バイト消去・ヘッダ直結）**、および**スタック巻き戻し（即値定数SP更新）を伴う多段分岐（`br`, `br_if`）** を JIT ネイティブ命令としてインライン展開する。
   - **インタープリタ委譲・ランタイムヘルパー対象（真のJIT境界命令）**:
     1. 関数間コール・フレーム生成: `call`, `call_indirect` (別フレームアロケーション、シグネチャ照合、WASI/ホスト呼出)
@@ -86,7 +86,7 @@ WASM バイトコードにおける制御フロー命令は、その内部動作
 
 ##### 3.3.2 JIT コンパイル対象命令セット仕様台帳（JIT Supported Opcode Specification）
 <!-- traceability: {JIT_CopyAndPatch} {JIT_ZeroCompileCostTheorem} {JIT_RegisterMapping} {PositionIndependentCode} -->
-JIT コンパイラがフォールバックせずにネイティブバイナリとしてインライン展開・生成する命令セット（全 48 命令）の仕様台帳を以下に定める。
+JIT コンパイラがフォールバックせずにネイティブバイナリとしてインライン展開・生成する命令セット（全 54 命令）の仕様台帳を以下に定める。
 
 | カテゴリ | WASM Opcode (Hex) | 命令名 | JIT ネイティブ展開形式 (Thumb-2) | スタック/レジスタ効果 | 生成バイト数 |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -99,14 +99,13 @@ JIT コンパイラがフォールバックせずにネイティブバイナリ�
 | | `0x03` | `loop` | (0 Byte 消去・ヘッダ `chain_next_pc` 解決) | なし | 0 Bytes |
 | | `0x05` | `else` | (0 Byte 消去・ヘッダ `chain_next_pc` 解決) | なし | 0 Bytes |
 | | `0x0B` | `end` | (0 Byte 消去・ヘッダ `chain_next_pc` 解決) | なし | 0 Bytes |
-| **定数ロード** | `0x41` | `i32.const` | `movw r3, #imm16; movt r3, #imm16` | $\to$ R3 (TOS) | 8 Bytes |
-| | `0x42` | `i64.const` | `movw/movt r3, #imm; movw/movt r4, #imm` | $\to$ R3:R4 (LO:HI) | 16 Bytes |
+| **定数ロード** | `0x41` | `i32.const` | `movw r3, #imm16; movt r3, #imm16` | $\to$ R3 (TOS) | 4 Bytes |
+| | `0x42` | `i64.const` | `movw/movt r3, #imm; movw/movt r4, #imm` | $\to$ R3:R4 (LO:HI) | 8 Bytes |
 | **変数アクセス** | `0x20` | `local.get` | `ldr r3, [r2, #offset]` | $\to$ R3 (TOS) | 2 Bytes |
 | | `0x21` | `local.set` | `str r3, [r2, #offset]` | R3 $\to$ Local | 2 Bytes |
 | | `0x22` | `local.tee` | `str r3, [r2, #offset]` | R3 $\to$ Local (R3維持) | 2 Bytes |
 | | `0x23` | `global.get`| `ldr.w r12, [r1, #0x28]; ldr.w r3, [r12, #offset]` | $\to$ R3 (TOS) | 8 Bytes |
 | | `0x24` | `global.set`| `ldr.w r12, [r1, #0x28]; str.w r3, [r12, #offset]` | R3 $\to$ Global | 8 Bytes |
-| **スタック・選択** | `0x1A` | `drop` | (レジスタキャッシュポインタ破棄 / `pop`) | スタック破棄 | 0〜2 Bytes |
 | | `0x1B` | `select` | `cmp r3, #0; it ne; movne r4, r5; mov r3, r4` | 3値選択 $\to$ R3 | 8 Bytes |
 | **32bit 算術・論理** | `0x6A` | `i32.add` | `adds r3, r4, r3` | R4 + R3 $\to$ R3 | 2 Bytes |
 | | `0x6B` | `i32.sub` | `subs r3, r4, r3` | R4 - R3 $\to$ R3 | 2 Bytes |
@@ -125,7 +124,6 @@ JIT コンパイラがフォールバックせずにネイティブバイナリ�
 | | `0x78` | `i32.rotr` | `ror.w r3, r4, r3` | 右循環シフト $\to$ R3 | 4 Bytes |
 | | `0x67` | `i32.clz` | `clz r3, r3` | 先頭ゼロカウント | 4 Bytes |
 | | `0x68` | `i32.ctz` | `rbit r3, r3; clz r3, r3` | 末尾ゼロカウント | 8 Bytes |
-| | `0x69` | `i32.popcnt`| `vmov s0, r3; vcnt.8 d0, d0; vpaddl.u8 d0, d0; vpaddl.u16 d0, d0; vmov r3, s0` (またはビット演算展開) | 立っているビット数 | 10〜16 Bytes |
 | **32bit 比較演算** | `0x45` | `i32.eqz` | `cmp r3, #0; it eq; moveq r3, #1; it ne; movne r3, #0` | R3 == 0 | 10 Bytes |
 | | `0x46` | `i32.eq` | `cmp r4, r3; it eq; moveq r3, #1; it ne; movne r3, #0` | R4 == R3 | 10 Bytes |
 | | `0x47` | `i32.ne` | `cmp r4, r3; it ne; movne r3, #1; it eq; moveq r3, #0` | R4 != R3 | 10 Bytes |
@@ -273,7 +271,7 @@ JIT キャッシュ内に書き込まれる各トレースは、**先頭に 16 �
 検索オーバーヘッドを排除し、ネイティブコード同士を直接接続（チェイニング）するため、**純粋インタープリタ用のジャンプハンドラと、JIT トレースから呼び出される専用チェイニングハンドラ（`jit_chain_branch_handler`）を明確に分離**する。
 
 ```mermaid
-graph TD
+flowchart TD
     JITTrace[JIT Trace Body Exec] --> CheckHdr[Check chain_target_addr in Trace Header]
     CheckHdr -->|Target != 0: Resolved| DirectBranch[BX r12: Direct Jump to Successor Body]
     DirectBranch --> NextTrace[Successor JIT Trace Native Exec Skip Prologue]

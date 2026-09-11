@@ -25,7 +25,7 @@ IPCルータは、URIベースのサービスディスカバリとロールベ�
 <!-- traceability: {IPCRegistry} {META_FlatMapIndexed} {RoleBasedAccessControl} -->
 ```mermaid
 %% not-a-topology: Internal component block diagram and lookup pipeline within IPC router subsystem
-graph TB
+flowchart TB
     subgraph "IPC Router Layer"
         subgraph "Lookup Pipeline"
             Reg["Registry<br/>URI → role → Registry Entry (security role)<br/>FlatMap O(log N)"]
@@ -377,7 +377,7 @@ class IPCRouter:
 IPC ルータの名前解決は、URI からサービスディスクリプタ（チャネルIDと権限情報）を導出するクリティカルパスである。以下の 3 段階パイプラインで実現される。
 
 ```mermaid
-graph TD
+flowchart TD
     Client["<<block>> Client Task<br/>─ Discovery: lookup(URI)"]
 
     Lookup["<b>Stage 1: URI Lookup</b><br/>─ Input: URI string view<br/>─ Query: flat_map_view<br/>─ Output: registry_entry (target_role)"]

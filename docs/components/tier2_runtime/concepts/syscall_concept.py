@@ -45,7 +45,7 @@ class SyscallDispatcher:
     def pack_args(args: tuple[int, ...]) -> tuple[int, int, int, int, int, int]:
         if len(args) > 6:
             raise ValueError("fireball_call accepts at most six arguments")
-        return (args + (0, 0, 0, 0, 0, 0))[:6]
+        return (*args, 0, 0, 0, 0, 0, 0)[:6]
 
     def validate_guest_range(self, offset: int, size: int) -> bool:
         """Validate without evaluating an overflowing offset + size expression."""

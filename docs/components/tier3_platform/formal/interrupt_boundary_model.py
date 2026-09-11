@@ -19,7 +19,8 @@ def build_model(*, guards: bool = True) -> Kripke:
     - s_idle: 割り込み待機中
     - s_isr_capture: ISR が固定 5 ワードの interrupt-event を構成中
     - s_fifo_enqueued: interrupt-event を固定長 FIFO へ投函済み
-    - s_scheduler_boundary: スケジューラが協調境界で FIFO をドレイン中
+    - s_scheduler_boundary: スケジューラが通常の協調境界で FIFO をドレイン中
+    - s_scheduler_boundary_deferred: 別の協調境界経路で FIFO をドレイン中
     - s_task_ready: FIFO のイベントによりタスクを READY として観測可能
     - s_isr_direct_ready: 違反状態（ISR がタスク状態を直接 READY に変更）
     - s_fifo_stalled: 違反状態（FIFO 投函後にスケジューラ境界へ復帰しない）
@@ -29,6 +30,7 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_isr_capture",
         "s_fifo_enqueued",
         "s_scheduler_boundary",
+        "s_scheduler_boundary_deferred",
         "s_task_ready",
         "s_isr_direct_ready",
         "s_fifo_stalled",
@@ -39,8 +41,12 @@ def build_model(*, guards: bool = True) -> Kripke:
         ("s_idle", "s_isr_capture"),
         ("s_isr_capture", "s_fifo_enqueued"),
         # スケジューラの協調境界で FIFO をドレインして READY へ反映
+        # スケジューラの2つの合法な境界経路をモデル化する。
+        # どちらも同じ協調境界契約を満たし、一本道モデル化を避ける。
         ("s_fifo_enqueued", "s_scheduler_boundary"),
+        ("s_fifo_enqueued", "s_scheduler_boundary_deferred"),
         ("s_scheduler_boundary", "s_task_ready"),
+        ("s_scheduler_boundary_deferred", "s_task_ready"),
         ("s_task_ready", "s_idle"),
         # 違反状態の自己ループ
         ("s_isr_direct_ready", "s_isr_direct_ready"),
@@ -58,6 +64,7 @@ def build_model(*, guards: bool = True) -> Kripke:
         "s_isr_capture": {"isr_running", "event_constructing"},
         "s_fifo_enqueued": {"event_queued", "interrupt_pending"},
         "s_scheduler_boundary": {"scheduler_boundary", "fifo_draining"},
+        "s_scheduler_boundary_deferred": {"scheduler_boundary", "fifo_draining"},
         "s_task_ready": {"task_ready"},
         "s_isr_direct_ready": {"isr_direct_task_update"},
         "s_fifo_stalled": {"event_queued", "interrupt_pending", "fifo_stalled"},

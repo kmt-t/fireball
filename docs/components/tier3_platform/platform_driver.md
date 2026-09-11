@@ -24,7 +24,7 @@
 
 ### 3.2 内部ブロック図
 ```mermaid
-graph TD
+flowchart TD
     IPCR["Tier1: ipc_router (URI resolved to dedicated Role/Channel)"]
     IPCR -->|CSP Rendezvous| T1["hal_task: Role.HAL_UART"] --> UART[UART Driver: fireball://device/uart/0]
     IPCR -->|CSP Rendezvous| T2["hal_task: dedicated Role"] --> RTT[RTT Driver: fireball://device/rtt/0]
@@ -81,7 +81,7 @@ graph TD
 flowchart TD
     Start(["HAL Driver: acquire_buffer(size)"]) --> CheckSize{"Requested size <= FB_CONF_HAL_BUFFER_SIZE (256B)?"}
 
-    CheckSize -- "No (> 256B)" --> RejectSize(["Reject with ValueError: Dynamic resizing prohibited"])
+    CheckSize -- "No (> 256B)" --> RejectSize(["Reject: HAL_ERROR_INVALID_SIZE"])
     CheckSize -- "Yes" --> AllocSlot["Find Free Slot in Fixed-Capacity HalBufferPool (FB_CONF_HAL_MAX_BUFFERS = 4 slots)"]
     AllocSlot --> SlotFound{"Available slot found?"}
 
@@ -149,7 +149,7 @@ sequenceDiagram
 
 **静的固定長バッファプールの境界厳格検査 (`GOTCHA-HAL-01`)**:
 `acquire_buffer`（`HalBufferPool`）は、固定サイズスロット（`FB_CONF_HAL_BUFFER_SIZE` = 256 バイト）の静的プールからバッファを切り出す。
-**設計理由と不変条件**: 要求サイズが 256 バイトを超過した場合（`size > FB_CONF_HAL_BUFFER_SIZE`）は即座に `ValueError` で拒絶する。また、バッファ解放時（`release_buffer`）は呼び出し元タスク ID が割り当て時の所有タスク ID と一致することを厳格に検査し、不一致時は `HalBufferTrap` により即時停止させる。これにより、隣接する固定長スロットの汚染や不正解放を完全に防止する。
+**設計理由と不変条件**: 要求サイズが 256 バイトを超過した場合（`size > FB_CONF_HAL_BUFFER_SIZE`）は即座に `HAL_ERROR_INVALID_SIZE` で拒絶する。また、バッファ解放時（`release_buffer`）は呼び出し元タスク ID が割り当て時の所有タスク ID と一致することを厳格に検査し、不一致時は `HalBufferTrap` により即時停止させる。これにより、隣接する固定長スロットの汚染や不正解放を完全に防止する。
 
 **UART トランスポートの双方向独立性 (`GOTCHA-HAL-02`)**:
 UART デバイスドライバにおける送信リングバッファと受信リングバッファは、メモリ領域・ポインタ共に完全に独立したデータ構造として管理される。送受信でバッファや状態変数を不用意に共有・使い回すことを禁止し、全二重シリアル通信時における送受信ポインタ競合やデータ化けを防止する。
@@ -180,4 +180,4 @@ UART および SEGGER RTT の双方において同一の RSP パケットエン�
 - **固定長スロット境界保護**: 要求サイズが 256 バイトを超える場合の即時拒絶（`GOTCHA-HAL-01`）。
 
 ### 7.2 テスト仕様書との連携
-本コンポーネントのテストケース（TEST-HAL-01〜TEST-HAL-10, GOTCHA-HAL-01〜03）は、[`platform_driver_test_spec.md`](docs/components/tier3_platform/tests/platform_driver_test_spec.md) を正本として定義する。契約レベルのテストは [`hal_dispatch_test_spec.md`](docs/components/tier2_runtime/tests/hal_dispatch_test_spec.md) を参照。
+本コンポーネントの物理実装テストケース（TEST-HAL-03, TEST-HAL-05〜TEST-HAL-08, GOTCHA-HAL-01〜03）は、[`platform_driver_test_spec.md`](docs/components/tier3_platform/tests/platform_driver_test_spec.md) を正本として定義する。HAL契約レベルのテストケース（TEST-HAL-01, TEST-HAL-02, TEST-HAL-04, TEST-HAL-09〜TEST-HAL-13）は [`hal_dispatch_test_spec.md`](docs/components/tier2_runtime/tests/hal_dispatch_test_spec.md) を参照する。

@@ -19,7 +19,7 @@ Fireball Hypervisor の現行作業および次期フェーズのタスク一覧
   - `.agents/rules/` の 4 コア体系（docs, cpp, python, dev/antipatterns）への再編および Claude Code 互換 YAML frontmatter 付与
 - [x] **Step 1: コンセプトコード・初期テスト仕様・形式検証 (DONE)**:
   - 全 16 コンセプトコードの実装および最新仕様同期（`typing.Any` 完全排除、具体型・代数的データ型徹底）
-  - 全 10 形式検証モデル（`pyModelChecking`）の CTL 論理式証明および `guards=False` 変異検査による反証性担保（28/28 変異検出）
+  - 全 16 形式検証モデル（`pyModelChecking`）の CTL 論理式証明、および各モデルの対象安全性特性に対する `guards=False` 変異検査による反証性担保
   - 全 22 ユニットテストスイート（[`test_gotchas.py`](experiments/pysim/tests/cross_cutting/test_gotchas.py) 含む 22/22 PASS）
 
 ---

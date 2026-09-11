@@ -1169,9 +1169,9 @@ def test_arithmetic_and_logic_traces() -> None:
     assert code[-1] == "BX r12"
 
 
-def test_control_flow_and_all_48_opcodes() -> None:
+def test_control_flow_and_all_54_opcodes() -> None:
     """Verifies inlined control flow (delimiters eliminated, return, br with SP rewind)
-    and full coverage of all 48 WASM opcodes supported by the JIT compiler."""
+    and full coverage of all 54 WASM opcodes supported by the JIT compiler."""
     engine = CopyPatchJITEngine()
 
     # 1. Delimiters (block, loop, end, else, nop) must be eliminated at compile time (zero cost)
@@ -1213,14 +1213,15 @@ def test_control_flow_and_all_48_opcodes() -> None:
     assert "STR.W r1, [r0, #0x0C]" in code_br
     assert "B.W 0x00001000" in code_br
 
-    # 4. Full 48 Opcode Coverage Sweep
-    all_48_opcodes = [
-        # Control flow (7)
+    # 4. Full 54 Opcode Coverage Sweep
+    all_54_opcodes = [
+        # Control flow and delimiters (9)
         ("unreachable", None),
         ("nop", None),
         ("block", None),
         ("loop", None),
         ("end", None),
+        ("else", None),
         ("br", (0x200, 0)),
         ("br_if", (0x300, 0)),
         ("return", None),
@@ -1263,7 +1264,7 @@ def test_control_flow_and_all_48_opcodes() -> None:
         ("i32.le_u", None),
         ("i32.ge_s", None),
         ("i32.ge_u", None),
-        # Linear Memory (8)
+        # Linear Memory (9)
         ("i32.load", None),
         ("i32.load8_s", None),
         ("i32.load8_u", None),
@@ -1272,9 +1273,10 @@ def test_control_flow_and_all_48_opcodes() -> None:
         ("i32.store", None),
         ("i32.store8", None),
         ("i32.store16", None),
+        ("memory.size", None),
     ]
     # Verify every single opcode compiles without raising ValueError
-    for op, arg in all_48_opcodes:
+    for op, arg in all_54_opcodes:
         engine_single = CopyPatchJITEngine()
         start, cnt = engine_single.compile_trace([(op, arg)], exit_kind="return")
         assert cnt > 0, f"Opcode {op} produced 0 instructions"
@@ -1684,7 +1686,7 @@ if __name__ == "__main__":
     test_stencil_variant_ids_match_the_documented_table()
     test_stencil_catalog_matches_assembler()
     test_arithmetic_and_logic_traces()
-    test_control_flow_and_all_48_opcodes()
+    test_control_flow_and_all_54_opcodes()
     test_external_aapcs_call_stub()
     test_epilogue_spill_variable_flush()
     test_epilogue_flush_d1_before_return()

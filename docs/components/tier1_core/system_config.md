@@ -1,5 +1,6 @@
-# システムコンフィグ コンポーネント設計書 {VERIFY_LLM}
+# システムコンフィグ コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}
 <!-- evidence:
+     formal: formal/system_config_model.py
      test: tests/system_config_test_spec.md
 -->
 
@@ -193,7 +194,7 @@ namespace fireball::config {
 assert FB_CONF_MAX_TASKS <= 254, "FB_CONF_MAX_TASKS must be <= 254"
 ```
 
-#### 3.3.7 リカバリー戦略
+#### 3.3.8 リカバリー戦略
 <!-- traceability: {META_RecoveryStrategy} {Errorcode_To_Strategy} -->
 | マクロ名 | 説明 | デフォルト値 | 導出元 |
 | :--- | :--- | :--- | :--- |
@@ -216,3 +217,7 @@ assert FB_CONF_MAX_TASKS <= 254, "FB_CONF_MAX_TASKS must be <= 254"
 ### 5.2 安全性制約と方策
 <!-- traceability: {META_ConfigurableSystem} -->
 - **方策**: `{META_ConfigurableSystem}` システム構成定数はすべて `constexpr` / `const` として ROM / Flash（`.rodata`）に静的配置され、実行時の不正な書き換えから保護される。
+
+## 6. 形式検証との対応
+
+[`system_config_model.py`](docs/components/tier1_core/formal/system_config_model.py) は、構成値の実行時変更禁止と、定義済みリソース予算内への収束をCTLで検証する。`guards=False` では実行時上書きおよび予算超過の遷移を追加し、両特性が反証されることを確認する。

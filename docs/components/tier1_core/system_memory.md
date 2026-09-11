@@ -1,5 +1,6 @@
-# メモリマネージャ 抽象契約 コンポーネント設計書 {VERIFY_LLM}
+# メモリマネージャ 抽象契約 コンポーネント設計書 {VERIFY_FORMAL} {VERIFY_LLM}
 <!-- evidence:
+     formal: formal/system_memory_model.py
      test: tests/system_memory_test_spec.md
 -->
 
@@ -233,4 +234,8 @@ JIT コード生成専用に予約された固定長リージョン（`FB_CONF_J
     - 案1: 汎用パーティション貸与契約のまま据え置き、ランタイム用バンプアロケータ・JITキャッシュアロケータは各コンポーネントが独自契約として個別に定義し続ける。実装の自由度は高いが、`{GLOBAL_Policy_Memory}`が既に「ホスト・システム・共有メモリ・WASMゲスト・JIT」の5ドメインを要求として明示しているにもかかわらず、その正本契約が存在しない状態が続く。
     - 案2: 本コンポーネントを5プール（ホスト用ヒープ・タスクヒープ・共有メモリ用ヒープ・ランタイム用バンプアロケータ・JITキャッシュアロケータ）の統一契約として再定義し、各プールの貸与・返却インターフェースを本ドキュメントに集約する。
   - **結論**: 案2を採用する。
-  - **理由**: `{GLOBAL_Policy_Memory}`が要求する5ドメイン分離ポリシーの正本契約を一箇所に集約することで、`system_config.md`の物理メモリ予算（`FB_CONF_*_HEAP_SIZE`等）との対応関係が一望でき、将来のプール追加・境界見直しの影響範囲を本コンポーネント1つに限定できる。各プールの物理実装（dlmalloc mspace / bump allocator / W^Xコードアロケータ）は引き続き `runtime_memory.md` が担い、契約と実装の分離（`{META_ContractImplSplit}`）は維持される。
+- **理由**: `{GLOBAL_Policy_Memory}`が要求する5ドメイン分離ポリシーの正本契約を一箇所に集約することで、`system_config.md`の物理メモリ予算（`FB_CONF_*_HEAP_SIZE`等）との対応関係が一望でき、将来のプール追加・境界見直しの影響範囲を本コンポーネント1つに限定できる。各プールの物理実装（dlmalloc mspace / bump allocator / W^Xコードアロケータ）は引き続き `runtime_memory.md` が担い、契約と実装の分離（`{META_ContractImplSplit}`）は維持される。
+
+## 8. 形式検証との対応
+
+[`system_memory_model.py`](docs/components/tier1_core/formal/system_memory_model.py) は、共有ブロックの二重所有禁止、全プールの総予算超過禁止、および所有権移譲またはロールバックの有限完了をCTLで検証する。`guards=False` では各不変条件を破る遷移を追加し、通常モデルの性質が反証されることを確認する。

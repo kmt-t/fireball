@@ -38,7 +38,7 @@ JIT ランタイム管理は、WASM PC とネイティブコードの紐付け�
 
 ### 3.2 内部ブロック図
 ```mermaid
-graph TD
+flowchart TD
     Search[Search Request WASM PC] --> Stage1[Stage 1: Card Marking bit_view check O1]
     Stage1 -->|COMPILED| Stage2[Stage 2: Direct-Mapped Folding XOR Cache 16 slots O1]
     Stage1 -->|NOT COMPILED| Interp[Interpreter Fast-Exit]
@@ -93,7 +93,7 @@ flowchart TD
     Start(["Input UnifiedPC: (func_index << 16) | bytecode_offset"]) --> Stage1["[Stage 1] Card Marking: Check bit_view<2>[pc >> card_shift] (O(1))"]
     Stage1 --> CheckCompiled{"Card State == COMPILED?"}
 
-    CheckCompiled -- "No" --> ExitInterp(["Fast Exit: Dispatch to Interpreter Handler (Zero Overhead)"])
+    CheckCompiled -- "No" --> ExitInterp(["Fast Exit: Dispatch to Interpreter Handler"])
     CheckCompiled -- "Yes" --> StageFast["[Stage 1.5] Direct-Mapped Folding XOR JIT Cache[16] (O(1))"]
 
     StageFast --> FastHit{"Cache Tag == head_pc ?"}

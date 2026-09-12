@@ -467,11 +467,15 @@ def test_vmmio_gotcha_01_ram_bypass_never_touches_tlb():
 
 
 def test_vmmio_gotcha_02_folding_xor_hash_disperses_function_codes():
-    """GOTCHA-VMMIO-02: 4-bit Folding XOR Hash disperses different Function Codes of same lower page."""
+    """GOTCHA-VMMIO-02: 5-bit Folding XOR Hash disperses different Function Codes of same lower page."""
     vpn_c = 0x8000C
     vpn_e = 0x8000E
-    idx_c = (vpn_c ^ (vpn_c >> 4) ^ (vpn_c >> 8) ^ (vpn_c >> 12)) & 0x0F
-    idx_e = (vpn_e ^ (vpn_e >> 4) ^ (vpn_e >> 8) ^ (vpn_e >> 12)) & 0x0F
+    temp_c = vpn_c ^ (vpn_c >> 10)
+    temp_c = temp_c ^ (temp_c >> 5)
+    idx_c = temp_c & 0x1F
+    temp_e = vpn_e ^ (vpn_e >> 10)
+    temp_e = temp_e ^ (temp_e >> 5)
+    idx_e = temp_e & 0x1F
     assert idx_c != idx_e
 
 

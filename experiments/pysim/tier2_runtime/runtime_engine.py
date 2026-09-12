@@ -92,7 +92,6 @@ class RuntimeEngine:
 
     __slots__ = (
         "_fast_block_slots",
-        "_n_locals_by_func",
         "_virq",
         "_virq_interp",
         "bitmap",
@@ -156,12 +155,6 @@ class RuntimeEngine:
         # the interpreter is already faster than a compiled-trace dispatch
         # would be.
         self.min_trace_bytes = min_trace_bytes if min_trace_bytes is not None else (1 << card_shift)
-        # Loader-known local counts per function index (params + declared
-        # locals), a fixed table built once in register_module_blocks --
-        # never derived per JIT call via len(locals_arr)/max(): the loader
-        # already knows every function's exact local count at module-load
-        # time, so there is nothing to defensively recompute at runtime.
-        self._n_locals_by_func: list[int] = []
         self._virq: VirqDispatcher | None = None
         self._virq_interp: Interpreter | None = None
 
@@ -178,7 +171,12 @@ class RuntimeEngine:
         return module
 
     def get_block(self, pc: int) -> BasicBlock | None:
-        slot = ((pc >> 24) ^ (pc >> 16) ^ (pc >> 8) ^ pc) & 0x0F
+        # Fold UnifiedPC 32 -> 16 -> 8 -> 4 with exactly three XORs for the
+        # 16-slot locality cache.
+        temp = pc ^ (pc >> 16)
+        temp = temp ^ (temp >> 8)
+        temp = temp ^ (temp >> 4)
+        slot = temp & 0x0F
         cached = self._fast_block_slots[slot]
         if cached is not None and cached[0] == pc:
             return cached[1]
@@ -225,10 +223,6 @@ class RuntimeEngine:
         for b in module.blocks:
             if b.next_pc is not None and b.byte_span >= self.min_trace_bytes:
                 self.trackable.mark(b.head_pc)
-        total_funcs = len(module.imports) + len(module.functions)
-        self._n_locals_by_func = [
-            max(len(module.locals_layout(idx)), 16) for idx in range(total_funcs)
-        ]
 
     def record_block_head(self, pc: int) -> bool:
         """
@@ -610,10 +604,10 @@ class RuntimeEngine:
         advancing that same stack's pointer.
         """
         ip, frame, locals_arr, tos = call_state.cont
-        local_layout = interp.module.locals_layout(call_state.func_index)
-        # The current x64 trace emitters support i32 locals only. The storage
-        # itself remains raw and is shared with the interpreter.
-        assert all(value_type == I32 for value_type in local_layout)
+        # The current x64 trace emitters support i32 locals only.  This is
+        # validated once while creating the common interpreter frame; the
+        # storage itself remains raw and is shared with both tiers.
+        assert frame.local_i32_only
         result_slot = len(frame.values)
         locals_ptr = frame.context.local_stack.value_ptr(frame.frame_offset)
         result_ptr = frame.values.value_ptr(result_slot)
@@ -647,8 +641,7 @@ class RuntimeEngine:
         # handling (step(), ip >= len(code))
         # is what must process the actual return-to-caller mechanics next.
         next_ip = (next_unified & 0xFFFF) if next_unified is not None else len(frame.code)
-        new_tos = frame.values[-1] if frame.values else 0
-        call_state.cont = (next_ip, frame, locals_arr, new_tos)
+        call_state.cont = (next_ip, frame, locals_arr, 0)
         return call_state
 
 

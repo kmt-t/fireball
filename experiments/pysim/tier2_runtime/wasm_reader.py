@@ -22,6 +22,7 @@ from wasm_module import (
     Module,
     Table,
 )
+from wasm_opcodes import CALL, CALL_INDIRECT
 
 MAGIC = b"\x00asm"
 VERSION = b"\x01\x00\x00\x00"
@@ -51,6 +52,22 @@ class WasmUnsupportedFeatureError(WasmParseError):
 
 def _read_vec_len(data: bytes, off: int) -> tuple[int, int]:
     return decode_unsigned(data, off)
+
+
+def _has_nested_calls(code: bytes) -> bool:
+    """Return whether decoded function instructions contain a call opcode."""
+    from control_flow import iter_scan_instrs
+
+    try:
+        for instruction in iter_scan_instrs(code):
+            if instruction.opcode == CALL or instruction.opcode == CALL_INDIRECT:
+                return True
+    except WasmUnsupportedFeatureError:
+        # Keep parsing unsupported modules for the existing execution-time
+        # rejection contract. Do not select the no-call fast path when the
+        # instruction stream could not be fully classified.
+        return True
+    return False
 
 
 def _parse_functype(data: bytes, off: int) -> tuple[FuncType, int]:
@@ -222,7 +239,12 @@ def _parse_code_section(
 
         code = data[loff:body_end]  # instruction stream, including the trailing 0x0B (end)
         module.functions.append(
-            Function(type_index=type_indices[i], locals_extra=locals_extra, code=code)
+            Function(
+                type_index=type_indices[i],
+                locals_extra=locals_extra,
+                code=code,
+                has_nested_calls=_has_nested_calls(code),
+            )
         )
         off = body_end
 

@@ -86,6 +86,17 @@ def test_intp_03_control_frame_enum_and_opcode_attribute_table():
     assert not opcode_has_attribute(I32_ADD, OpcodeAttribute.BASIC_BLOCK_BOUNDARY)
 
 
+def test_intp_04_control_map_uses_four_entry_locality_caches():
+    """The small per-function ControlMap keeps only four direct-mapped cache slots."""
+    from control_flow import build_control_map
+
+    control_map = build_control_map(b"\x02\x40\x0B")
+    assert len(control_map.block_cache) == 4
+    assert len(control_map.br_table_cache) == 4
+    for ip in (0, 1, 2, 0xFFFF):
+        assert 0 <= control_map._cache_slot(ip) < 4
+
+
 def test_wasm_01_to_06_unsupported_features_rejected():
     """TEST-WASM-01..06: Unsupported features (SIMD, threads, tail-call) are rejected with error code."""
     # Module with unsupported SIMD opcode 0xFD

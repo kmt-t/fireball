@@ -7,8 +7,8 @@
 -->
 
 ## 1. コンセプト
-<!-- traceability: {SimpleJITArchitecture} {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} {META_AccessDictionary} {META_BinarySearch} {LowLatencyJIT} {HistoryBuffer} {GLOBAL_PeriodicTask} {DirectMappedJIT16} {Runtime_BumpAllocator} -->
-JIT ランタイム管理は、WASM PC とネイティブコードの紐付け検索、3面世代交代コードキャッシュのローテーション、およびホットスポット検出を一括して担う。インタープリタ実行ループ内の超高頻度パスにおいて、**カードマーキング表 (`bit_view<2>`)** による $O(1)$ 事前判定、**Direct-Mapped Folding XOR キャッシュ**（16スロット）による $O(1)$ バイパス、**JITエントリグループインデックス** による $O(1)$ 探索区間絞り込み、およびソート済みエントリ配列に対する有界二分探索（`fireball::radix_binary_tree_view`）を組み合わせた 4 段パイプラインにより、動的キャッシュ代謝と低遅延検索を両立する。なお、3面コードキャッシュはデータ用バンプアロケータ（`{Runtime_BumpAllocator}`）が管理するデータ RAM（`RW + XN`）とは異なり、MPU W^X 制御された専用実行可能セクションから専用コードアロケータによって確保され、ハードウェア保護境界が厳格に保たれる。 `{SimpleJITArchitecture}` `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}` `{META_AccessDictionary}` `{META_BinarySearch}` `{LowLatencyJIT}` `{HistoryBuffer}` `{GLOBAL_PeriodicTask}` `{DirectMappedJIT16}` `{Runtime_BumpAllocator}`
+<!-- traceability: {SimpleJITArchitecture} {JIT_MultiBuffer_Cache} {JIT_OldestOnly_Promote} {META_AccessDictionary} {META_BinarySearch} {LowLatencyJIT} {HistoryBuffer} {GLOBAL_PeriodicTask} {DirectMappedJIT4} {Runtime_BumpAllocator} -->
+JIT ランタイム管理は、WASM PC とネイティブコードの紐付け検索、3面世代交代コードキャッシュのローテーション、およびホットスポット検出を一括して担う。インタープリタ実行ループ内の超高頻度パスにおいて、**カードマーキング表 (`bit_view<2>`)** による $O(1)$ 事前判定、**Direct-Mapped Folding XOR キャッシュ**（4スロット）による $O(1)$ バイパス、**JITエントリグループインデックス** による $O(1)$ 探索区間絞り込み、およびソート済みエントリ配列に対する有界二分探索（`fireball::radix_binary_tree_view`）を組み合わせた 4 段パイプラインにより、動的キャッシュ代謝と低遅延検索を両立する。なお、3面コードキャッシュはデータ用バンプアロケータ（`{Runtime_BumpAllocator}`）が管理するデータ RAM（`RW + XN`）とは異なり、MPU W^X 制御された専用実行可能セクションから専用コードアロケータによって確保され、ハードウェア保護境界が厳格に保たれる。 `{SimpleJITArchitecture}` `{JIT_MultiBuffer_Cache}` `{JIT_OldestOnly_Promote}` `{META_AccessDictionary}` `{META_BinarySearch}` `{LowLatencyJIT}` `{HistoryBuffer}` `{GLOBAL_PeriodicTask}` `{DirectMappedJIT4}` `{Runtime_BumpAllocator}`
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} {SimpleJITArchitecture} -->
@@ -40,7 +40,7 @@ JIT ランタイム管理は、WASM PC とネイティブコードの紐付け�
 ```mermaid
 flowchart TD
     Search[Search Request WASM PC] --> Stage1[Stage 1: Card Marking bit_view check O1]
-    Stage1 -->|COMPILED| Stage2[Stage 2: Direct-Mapped Folding XOR Cache 16 slots O1]
+    Stage1 -->|COMPILED| Stage2[Stage 2: Direct-Mapped Folding XOR Cache 4 slots O1]
     Stage1 -->|NOT COMPILED| Interp[Interpreter Fast-Exit]
     Stage2 -->|Hit| Exec[exec_trace native code]
     Stage2 -->|Miss| Stage3[Stage 3: JIT Entry Group slice Radix Table O1]
@@ -54,7 +54,7 @@ flowchart TD
 #### JITエントリインデックス（JitEntryIndex）クラス
 | 項目名 | 機能と役割 | 型分類 | サイズ・制約 |
 | :--- | :--- | :--- | :--- |
-| 高速スロット配列 | 4-bit Folding XOR Hash による Direct-Mapped キャッシュ | 固定長配列 | 16スロット (`{DirectMappedJIT16}`) |
+| 高速スロット配列 | 2-bit スロット選択を行う Folding XOR Hash による Direct-Mapped キャッシュ | 固定長配列 | 4スロット (`{DirectMappedJIT4}`) |
 | エントリ配列 | ソート済みの `jit_entry` 群を保持する | ソート済み配列 | `radix_binary_tree_view` で参照 |
 | エントリグループ索引 | JITエントリグループごとの開始・終了インデックス（Radix Table） | 固定長配列 | $O(1)$ 直接参照 |
 | カードマーキング表 | カードごとの 2-bit 状態表 | 密ビュー | `fireball::bit_view<2>` |
@@ -65,8 +65,8 @@ flowchart TD
 
 ### 4.1 アルゴリズム
 1. **カードマーキング確認 ($O(1)$)**: カードマーキング表 (`bit_view<2>`) を $O(1)$ で確認し、状態が `COMPILED` でなければ即座に終了。
-2. **Direct-Mapped Folding XOR キャッシュ確認 ($O(1)$, `{DirectMappedJIT16}`)**:
-   - `UnifiedPC` に対し 4-bit Folding XOR Hash `slot = ((pc >> 24) ^ (pc >> 16) ^ (pc >> 8) ^ pc) & 0x0F` を計算し、16 スロットの高速テーブルを照合。
+2. **Direct-Mapped Folding XOR キャッシュ確認 ($O(1)$, `{DirectMappedJIT4}`)**:
+   - `UnifiedPC` を 32→16→8→4 bit と3回の XORで折りたたみ、さらに `temp = temp ^ (temp >> 2)` を行い、`slot = temp & 0x03` を計算して4スロットの高速テーブルを照合。
    - スロットのタグが `head_pc` と一致（Hit）した場合、Radix Table および二分探索を完全バイパスし、$O(1)$ でトレースを即時返却。
 3. **Radix Table 絞り込み ($O(1)$)**:
    - キャッシュミス時、`UnifiedPC`（`(func_index << 16) | bytecode_offset`）の最下位バイト（最も変動頻度が高い `bytecode_offset` 下位ビット）を最上位へ投影するため、**32-bit バイトオーダー逆転（`bswap32(pc)`）** を適用する。
@@ -75,7 +75,7 @@ flowchart TD
 5. **ホットスポット昇格判定**: yield 時等に履歴バッファを走査し、実行頻度が閾値に達したカードを `HOT` $\to$ `COMPILED` に遷移させてコンパイル待ち列へ登録。
 6. **最小トレース長フィルタ**: 推定コンパイル後サイズが 1 カード分（`1 << card_shift`）未満のベーシックブロックは、履歴記録・`touch`・コンパイル待ち列登録のいずれの対象にもしない（`jit_runtime_test_spec.md` TEST-JITR-06）。
 7. **3面世代交代ローテーション＆局所アンリンク (`GOTCHA-JITR-03`, `{JIT_MultiBuffer_Cache}`, `{JIT_OldestOnly_Promote}`)**:
-   Active バンク満杯時、`Oldest` バンクをパージして新 `Active` に再利用する直前に、該当バンクの被チェイン逆引きテーブルに登録されたソースエントリ（$k$ 件）のみを参照し、昇格済みなら再チェイニング、完全破棄なら復帰スタブへアンパッチする。全件走査を行わない。また、`rotate()` および `flush_all()` 実行時には 16 スロットの Folding XOR 高速キャッシュを無効化（クリア）し、古いバンクへの誤参照やダングリングを防止する（`GOTCHA-JITR-05`）。
+   Active バンク満杯時、`Oldest` バンクをパージして新 `Active` に再利用する直前に、該当バンクの被チェイン逆引きテーブルに登録されたソースエントリ（$k$ 件）のみを参照し、昇格済みなら再チェイニング、完全破棄なら復帰スタブへアンパッチする。全件走査を行わない。また、`rotate()` および `flush_all()` 実行時には 4 スロットの Folding XOR 高速キャッシュを無効化（クリア）し、古いバンクへの誤参照やダングリングを防止する（`GOTCHA-JITR-05`）。
    **設計理由と不変条件**: 3 面キャッシュの全エントリを線形走査してリンクを解除すると、GC（ガベージコレクション）と同様の実行停止レイテンシ（Stop-the-World）が発生する。被チェイン逆引きテーブルにより影響範囲を定数 $k$ 件に局所化することで、決定論的 $O(k)$ 時間での世代交代を保証する。
 8. **トレース昇格時のインバウンドソース付け替え (`GOTCHA-JITR-02`)**:
    Oldest バンクのトレースが再実行されて新 Active バンクへ昇格（Promotion）した際、当該トレースを指していた先行ブロックのチェインリンク先アドレスを新バンクのアドレスへ不可分に更新し、かつ逆引きテーブルの登録先も新バンクへ確実に付け替える。これにより、古い Oldest バンクがパージされた後に先行ブロックが解放済み領域へ飛び込むダングリングジャンプを完全に防止する。
@@ -85,7 +85,7 @@ flowchart TD
 
 
 #### 4段高速検索パイプライン手順（手順アクティビティ図）
-<!-- traceability: {JIT_MultiBuffer_Cache} {LowLatencyJIT} {DirectMappedJIT16} {META_BinarySearch} -->
+<!-- traceability: {JIT_MultiBuffer_Cache} {LowLatencyJIT} {DirectMappedJIT4} {META_BinarySearch} -->
 実行時 PC からネイティブ `exec_trace` アドレスを極小オーバーヘッドで特定する 4 段探索パイプラインを示す。
 
 ```mermaid
@@ -94,7 +94,7 @@ flowchart TD
     Stage1 --> CheckCompiled{"Card State == COMPILED?"}
 
     CheckCompiled -- "No" --> ExitInterp(["Fast Exit: Dispatch to Interpreter Handler"])
-    CheckCompiled -- "Yes" --> StageFast["[Stage 2] Direct-Mapped Folding XOR JIT Cache[16] (O(1))"]
+    CheckCompiled -- "Yes" --> StageFast["[Stage 2] Direct-Mapped Folding XOR JIT Cache[4] (O(1))"]
 
     StageFast --> FastHit{"Cache Tag == head_pc ?"}
     FastHit -- "HIT" --> ReturnTrace(["Return Native Code Entry: exec_trace (O(1) Direct)"])
@@ -125,7 +125,7 @@ sequenceDiagram
     Note over Mgr: GOTCHA-JITR-03: Trigger 3-Bank Rotation
     Note over Mgr: Shift roles: Oldest -> New Active, Warm -> Oldest, Active -> Warm
 
-    Mgr->>Mgr: Invalidate Direct-Mapped Folding XOR Cache (16 slots)
+    Mgr->>Mgr: Invalidate Direct-Mapped Folding XOR Cache (4 slots)
     Note over Mgr: GOTCHA-JITR-05: Clear fast cache to prevent stale/dangling references to rotated banks
 
     Mgr->>Inbound: Inspect registered inbound source traces (k entries)

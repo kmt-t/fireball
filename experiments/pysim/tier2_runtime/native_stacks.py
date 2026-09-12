@@ -49,8 +49,9 @@ class NativeControlStack:
         return self._native.size != 0
 
     def _index(self, index: int) -> int:
-        normalized = index if index >= 0 else len(self) + index
-        if not 0 <= normalized < len(self):
+        size = int(self._native.size)
+        normalized = index if index >= 0 else size + index
+        if not 0 <= normalized < size:
             raise IndexError("native control stack index out of range")
         return normalized
 
@@ -60,7 +61,7 @@ class NativeControlStack:
     def push_back(
         self, kind: ControlFrameKind, start: int, match_end: int, stack_height: int
     ) -> bool:
-        size = len(self)
+        size = int(self._native.size)
         if size >= self._capacity:
             return False
         native_frame = self._native.frames[size]
@@ -75,7 +76,7 @@ class NativeControlStack:
     def pop_back(self) -> ControlFrameNative:
         if not self:
             raise IndexError("native control frame stack underflow")
-        index = len(self) - 1
+        index = int(self._native.size) - 1
         frame = self._native.frames[index]
         self._native.size = index
         return frame
@@ -107,8 +108,9 @@ class ControlFrameWindow:
         return len(self) != 0
 
     def _absolute_index(self, index: int) -> int:
-        absolute = self._base + index if index >= 0 else len(self._storage) + index
-        if not (self._base <= absolute < len(self._storage)):
+        storage_size = int(self._storage.native.size)
+        absolute = self._base + index if index >= 0 else storage_size + index
+        if not (self._base <= absolute < storage_size):
             raise IndexError("control frame index out of range")
         return absolute
 
@@ -165,8 +167,9 @@ class LocalStackWindow:
         return len(self._offsets)
 
     def _local_index(self, index: int) -> int:
-        normalized = index if index >= 0 else len(self) + index
-        if not 0 <= normalized < len(self):
+        local_count = len(self._offsets)
+        normalized = index if index >= 0 else local_count + index
+        if not 0 <= normalized < local_count:
             raise IndexError("local stack index out of range")
         return normalized
 
@@ -178,6 +181,20 @@ class LocalStackWindow:
         """Return the absolute raw-slot position for a logical local."""
 
         return self._slot_index(index)
+
+    def raw_span(self, index: int) -> tuple[int, int]:
+        """Return one logical local's absolute slot and raw width together."""
+
+        normalized = self._local_index(index)
+        start = self._offsets[normalized]
+        next_offset = (
+            self._offsets[normalized + 1]
+            if normalized + 1 < len(self._offsets)
+            else self._slot_count
+        )
+        width = next_offset - start
+        assert width in (1, 2)
+        return self._base + start, width
 
     def raw_width(self, index: int) -> int:
         """Return the raw slot count without interpreting the value."""

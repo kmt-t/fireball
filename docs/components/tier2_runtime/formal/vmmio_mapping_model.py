@@ -18,7 +18,7 @@ def build_model(*, guards: bool = True) -> Kripke:
     - s_guest_ram_eval: Bit 31 == 0 のリニア RAM バイパス境界判定 (FastAddressCheck)
     - s_guest_ram_ok: RAM 境界内 (addr + access_width - 1 < guest_ram_size) 物理アクセス成功
     - s_trap_ram_oob: RAM 境界外 (addr + access_width - 1 >= guest_ram_size) トラップ
-    - s_tlb_lookup: Bit 31 == 1 の 4-bit Folding XOR TLB 探索
+    - s_tlb_lookup: Bit 31 == 1 の 5-bit Folding XOR TLB 探索（32エントリ）
     - s_tlb_hit_check_perm: TLB ヒット時のインライン権限チェック
     - s_flatmap_walk: TLB ミス時の PTE 探索 (二分探索)
     - s_flatmap_check_perm: PTE 解決後の権限チェック & TLB リフィル

@@ -239,7 +239,13 @@ OPCODE_ATTRIBUTES: BitView = ReadOnlyBitStorage(
 def opcode_has_attribute(opcode: int, attribute: OpcodeAttribute) -> bool:
     """Returns whether the loader's immutable opcode metadata has ``attribute``."""
 
-    return bool(OpcodeAttribute(OPCODE_ATTRIBUTES.at(opcode)) & attribute)
+    # Keep the immutable table as the single metadata source.  This is a
+    # fixed four-bit packed table, so decode it in place instead of paying for
+    # BitView.at() and an IntFlag construction on every dispatch.
+    assert 0 <= opcode < 256
+    bit = opcode << 2
+    packed = (OPCODE_ATTRIBUTES.storage[bit >> 3] >> (bit & 7)) & 0x0F
+    return (packed & int(attribute)) != 0
 
 
 _MEMARG_OPCODES = _opcode_bitview(
@@ -448,15 +454,44 @@ class Instr:
 
 @dataclass(slots=True)
 class ControlMap:
-    """Pre-indexed block delimiters and br_table labels for direct bytecode interpretation.
-    A sorted (key, value) array with O(log N) binary search lookup (`FlatMapView`, matching
-    `{Type_Vocabulary}`/`{META_BinarySearch}`), never a hash map -- a real embedded target has
-    no dynamically-resized hash table to reach for."""
+    """Pre-indexed control metadata with a fixed locality cache."""
 
-    blocks: FlatMapView[int, tuple[int, int | None]]  # opener_ip -> (match_end_ip, else_offset)
-    br_tables: FlatMapView[
-        int, tuple[tuple[int, ...], int]
-    ]  # br_table_ip -> (labels, default_label)
+    blocks: FlatMapView[int, tuple[int, int | None]]
+    br_tables: FlatMapView[int, tuple[tuple[int, ...], int]]
+    block_cache: StaticVector[tuple[int, tuple[int, int | None]] | None]
+    br_table_cache: StaticVector[tuple[int, tuple[tuple[int, ...], int]] | None]
+
+    @staticmethod
+    def _cache_slot(ip: int) -> int:
+        """Fold a 16-bit bytecode offset to the fixed 2-bit cache index."""
+
+        assert 0 <= ip <= 0xFFFF
+        temp = ip ^ (ip >> 8)
+        temp = temp ^ (temp >> 4)
+        temp = temp ^ (temp >> 2)
+        return temp & 0x03
+
+    def block(self, ip: int) -> tuple[int, int | None]:
+        """Return a block delimiter, using the fixed O(1) locality cache."""
+
+        slot = self._cache_slot(ip)
+        cached = self.block_cache[slot]
+        if cached is not None and cached[0] == ip:
+            return cached[1]
+        value = self.blocks[ip]
+        self.block_cache[slot] = (ip, value)
+        return value
+
+    def br_table(self, ip: int) -> tuple[tuple[int, ...], int]:
+        """Return a br_table descriptor, using the fixed O(1) locality cache."""
+
+        slot = self._cache_slot(ip)
+        cached = self.br_table_cache[slot]
+        if cached is not None and cached[0] == ip:
+            return cached[1]
+        value = self.br_tables[ip]
+        self.br_table_cache[slot] = (ip, value)
+        return value
 
 
 @dataclass(slots=True)
@@ -556,6 +591,8 @@ def build_control_map(code: bytes) -> ControlMap:
     return ControlMap(
         blocks=ReadOnlyFlatMapStorage.create(block_entries).view(),
         br_tables=ReadOnlyFlatMapStorage.create(br_table_entries).view(),
+        block_cache=StaticVector.of((None,) * 4, capacity=4),
+        br_table_cache=StaticVector.of((None,) * 4, capacity=4),
     )
 
 
@@ -813,7 +850,7 @@ def extract_basic_blocks(
                         # Forward exit: br/br_if taken jumps past the block/if's
                         # matching END (block/if labels resume after, unlike
                         # loop labels which resume at the top).
-                        match = control_map.blocks.find(target.offset)
+                        match = control_map.block(target.offset)
                         if match is not None:
                             match_end_ip, _else_offset = match
                             branch_target = base_pc | _skip_trailing_ends(match_end_ip + 1)
@@ -834,7 +871,7 @@ def extract_basic_blocks(
                     # / cond==0 -> next_pc contract as BR_IF.
                     then_target = base_pc | ins.end_offset
                     skip_target = then_target
-                    match = control_map.blocks.find(ins.offset)
+                    match = control_map.block(ins.offset)
                     if match is not None:
                         match_end_ip, else_offset = match
                         skip_target = base_pc | (
@@ -850,7 +887,7 @@ def extract_basic_blocks(
                     # END.
                     if_opener = active_openers[active_openers_depth - 1]
                     assert if_opener is not None
-                    match = control_map.blocks.find(if_opener.offset)
+                    match = control_map.block(if_opener.offset)
                     next_pc = (
                         base_pc | _skip_trailing_ends(match[0] + 1)
                         if match is not None

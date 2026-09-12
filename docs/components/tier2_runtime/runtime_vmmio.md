@@ -15,7 +15,7 @@ WASM ゲストのリニアメモリは、WebAssembly 標準仕様に準拠して
 
 標準の `std::flat_map` を素のまま用いない理由: C++23 の `std::flat_map` はコンテナアダプタであり、既定の下位コンテナが `std::vector` であるため、そのままでは `{META_NoStdVector}` および `{GLOBAL_Policy_Memory}`（無制約な動的再確保に伴うレイテンシ揺らぎとメモリ断片化の排除）に抵触する。本プロジェクトは表の実体を用途別アロケータまたは静的配列から確保し、`fireball::flat_map_view` で引く（`{META_FlatMapIndexed}` を正本とする）。 `{META_NoStdVector}` `{GLOBAL_Policy_Memory}`
 
-FlatMap 単体での探索は $O(\log N)$（またはハッシュ探索）となるが、本アーキテクチャでは手前に **「ダイレクトマップ方式のソフトウェアTLB（16エントリ、完全 $O(1)$ キャッシュ）」** を配置する。JIT 実行やホットな共有メモリ操作などのクリティカルパスでは、大半のアクセス（目標 90% 以上）が TLB キャッシュヒット（$O(1)$）で高速解決されるため、FlatMap 化に伴うテーブル探索の遅延は十分に吸収・容認される。
+FlatMap 単体での探索は $O(\log N)$（またはハッシュ探索）となるが、本アーキテクチャでは手前に **「ダイレクトマップ方式のソフトウェアTLB（32エントリ、完全 $O(1)$ キャッシュ）」** を配置する。JIT 実行やホットな共有メモリ操作などのクリティカルパスでは、大半のアクセス（目標 90% 以上）が TLB キャッシュヒット（$O(1)$）で高速解決されるため、FlatMap 化に伴うテーブル探索の遅延は十分に吸収・容認される。
 
 1. **リニアアドレス空間フィルタ（高速バイパス & 境界チェック）**:
    32ビットゲストアドレスの最上位ビット（Bit 31）が `0` の場合、そのアドレスは vMMIO 管理対象外として、Stage 1（ゲストRAM）への直接アクセスとして高速バイパス（O(1) 処理）を実行する。 `{FastAddressCheck}`
@@ -25,9 +25,9 @@ FlatMap 単体での探索は $O(\log N)$（またはハッシュ探索）とな
    - 仮想ページ番号（VPN = `raw >> 12`）をキーとして、FlatMap（`vmmio_ptes`）に PTE を格納する。
    - 動的 SHM ページや物理パススルーページをフラットに登録・管理できる。
 3. **ダイレクトマップ方式ソフトウェアTLB（完全O(1)キャッシュ）**:
-   ホットパス高速化のため、一発でインデックスが決まるダイレクトマッピング（ハッシュ方式、16エントリ固定サイズ）を採用する。
-   - 仮想ページ番号（20-bit: `vpn = raw >> 12`）の全ビットを 4-bit（16スロット）に均等拡散する Folding XOR Hash `tlb_idx = (vpn ^ (vpn >> 4) ^ (vpn >> 8) ^ (vpn >> 12) ^ (vpn >> 16)) & 15` を算出し、TLBに一撃でアクセスする。ヒット時は権限チェックを通過した後に即時実行する。 `{META_RestrictedPhysicalAccess}`
-   - **全ビット拡散**: FC[31:28] や中間ページ番号ビット、下位ページ番号ビットのすべてが 4-bit 幅で折り畳まれるため、FC 間やページ番号の変動に対して TLB スロットが均等に分散する。
+   ホットパス高速化のため、一発でインデックスが決まるダイレクトマッピング（ハッシュ方式、32エントリ固定サイズ）を採用する。
+   - 仮想ページ番号（20-bit: `vpn = raw >> 12`）を 20→10→5 bit と2回の XORで折りたたみ、`temp = vpn ^ (vpn >> 10); temp = temp ^ (temp >> 5); tlb_idx = temp & 0x1F` を算出してTLBに一撃でアクセスする。ヒット時は権限チェックを通過した後に即時実行する。 `{META_RestrictedPhysicalAccess}`
+  - **全ビット拡散**: FC[19:15] から下位ページ番号ビットまでの VPN 全20ビットが 5-bit 幅へ折り畳まれるため、FC 間やページ番号の変動に対して TLB スロットが均等に分散する。
 
 vMMIO領域（Stage 2/3）のセキュリティモデルは**PTEに埋め込まれた権限フィールドがゲート**である。アクセス権限は PTE に保持され、ルックアップと権限チェックを1パスで完結させる。ゲストRAM（Stage 1）はPTEを経由せず、`FastAddressCheck` による境界チェックのみをゲートとする別経路である。アクセス特性に応じてセキュリティゲートを以下の3段階に階層化する。 `{META_RestrictedPhysicalAccess}`
 
@@ -52,7 +52,7 @@ IPC経由のデータ交換は行わない — GPIOのようなsub-µs応答が�
 | :--- | :--- | :--- |
 | ROM | `vmmio_address` | アドレスビットフィールド定義（C++23 ヘルパー構造体、実体なし） |
 | ROM/RAM | `vmmio_ptes` | 仮想ページ番号 (VPN) → 32bit PTE の FlatMap（`fireball::flat_map_view<uint32_t, uint32_t>`） |
-| RAM | ソフトウェアTLB配列 | `vmmio_tlb_cache[16]` 16エントリのダイレクトマップ型高速TLBキャッシュ配列 |
+| RAM | ソフトウェアTLB配列 | `vmmio_tlb_cache[32]` 32エントリのダイレクトマップ型高速TLBキャッシュ配列 |
 
 - **`VmmioController`**: アドレス境界デコード、FlatMap PTE ルックアップ、TLBキャッシュ管理、動的マッピング管理を担う主要クラス。
 - **`vmmio_config`**: 静的な領域定義 (`vmmio_static_region`) の不変なテーブル。 `{META_Static_Resolution}`
@@ -65,7 +65,7 @@ graph TD
         Filter["MSB Address Filter<br/>Bit 31 == 0 vs 1"]
         Decoder["Address Decoder<br/>FC(31:28) + VPN(31:12) + Offset(11:0)"]
         FlatMap["vmmio_ptes (FlatMap)<br/>Key: VPN -> Value: PTE"]
-        TLB["Direct-Mapped TLB (16)<br/>Index = Hash(VPN) & 15"]
+        TLB["Direct-Mapped TLB (32)<br/>Index = Hash(VPN) & 31"]
         Controller["VmmioController"]
         PermGate{"Permission Check<br/>Valid, R/W"}
     end
@@ -117,7 +117,7 @@ graph TD
 | 項目名 | 機能と役割 | 備考（制約、型など） |
 | :--- | :--- | :--- |
 | FlatMap ページテーブル | 仮想ページ番号 (VPN) → 32bit PTE のマッピング。 | `vmmio_ptes`（`fireball::flat_map_view<uint32_t, uint32_t>`） |
-| ソフトウェアTLB（グローバル） | 仮想ページ番号 (VPN) → PTE マッピングをダイレクトマップハッシュでキャッシュ。ホットパスを完全 O(1) に高速化する。 | `vmmio_tlb_cache[16]`（固定16エントリ、ハッシュ結合） |
+| ソフトウェアTLB（グローバル） | 仮想ページ番号 (VPN) → PTE マッピングをダイレクトマップハッシュでキャッシュ。ホットパスを完全 O(1) に高速化する。 | `vmmio_tlb_cache[32]`（固定32エントリ、ハッシュ結合） |
 
 #### 静的デバイスページテーブルエントリ
 <!-- traceability: {META_Static_Resolution} -->
@@ -183,7 +183,7 @@ vMMIO SHM 領域（`0xE000_0000`〜`0xE001_FFFF`、最大 32 ページ = 128KB�
 
 #### 多段アドレスデコード & TLB ルックアップ（手順アクティビティ図）
 <!-- traceability: {GOTCHA-VMMIO-01} {GOTCHA-VMMIO-02} {META_Static_Resolution} -->
-32ビットゲストアドレスの Guest RAM 高速バイパス、20-bit VPN の Folding XOR による 16 エントリ TLB 探索、および PTE 二分探索の手順を示す。
+32ビットゲストアドレスの Guest RAM 高速バイパス、20-bit VPN の Folding XOR による 32 エントリ TLB 探索、および PTE 二分探索の手順を示す。
 
 ```mermaid
 flowchart TD
@@ -196,7 +196,7 @@ flowchart TD
     CalcRAM --> DirectAccess(["Direct O(1) Memory Access (Zero MMU Overhead)"])
 
     CheckBit31 -- "No (Bit 31 == 1)" --> ExtractVPN["Extract 20-bit VPN (raw >> 12) & Offset (raw & 0xFFF)"]
-    ExtractVPN --> FoldingXOR["GOTCHA-VMMIO-02: Hash = (VPN ^ (VPN >> 4) ^ (VPN >> 8) ^ (VPN >> 12) ^ (VPN >> 16)) & 15"]
+    ExtractVPN --> FoldingXOR["GOTCHA-VMMIO-02: temp = VPN ^ (VPN >> 10); temp = temp ^ (temp >> 5); Hash = temp & 31"]
     FoldingXOR --> ProbeTLB["Probe Direct-Mapped TLB at index [Hash]"]
 
     ProbeTLB --> TLBHit{"TLB Entry.vpn == VPN?"}
@@ -279,7 +279,7 @@ sequenceDiagram
                 C-->>G: Trap (Unregistered Page / Undefined FC)
             end
             F-->>C: resolved PTE
-            C->>T: Refill entry at Hash(vpn) & 15
+            C->>T: Refill entry at Hash(vpn) & 31
         end
 
         C->>C: perm_check(PTE, is_write)
@@ -480,14 +480,14 @@ sequenceDiagram
 
 ### 4.8 ソフトウェアTLB
 <!-- traceability: {VDMA} {OwnershipTransfer} {META_ConfigurableSystem} -->
-Stage 3 アクセス（FC=14/15）において毎回 FlatMap の二分探索を走らせる遅延を排除するため、仮想ページ番号（VPN = `raw >> 12`）に基づくマッピングを16エントリのダイレクトマップキャッシュに保持する。
+Stage 3 アクセス（FC=14/15）において毎回 FlatMap の二分探索を走らせる遅延を排除するため、仮想ページ番号（VPN = `raw >> 12`）に基づくマッピングを32エントリのダイレクトマップキャッシュに保持する。
 
 - **Guest RAM アクセス時の TLB 完全バイパス (`GOTCHA-VMMIO-01`)**:
   **設計理由と不変条件**: 最上位ビットが 0 のアドレス空間（`0x0000_0000`〜`0x7FFF_FFFF`）はゲスト RAM 専用領域である。全メモリアクセスの 99% 以上を占める最頻パスにおいて毎回 TLB ルックアップやハッシュ計算を行うと、実行性能が致命的に劣化する。そのため、最上位ビットが 0 のアクセスは TLB を一切参照せず、直接ゲストベースアドレス加算＋サイズ境界検査のみで即時メモリアクセスを完結させる。TLB は最上位ビットが 1 の vMMIO / ペリフェラル領域にのみ適用される。
 - **Folding XOR ハッシュによる機能コード（FC）の均等分散 (`GOTCHA-VMMIO-02`)**:
   - キー（VPN）: `raw >> 12`（20-bit）
-  - HASH / インデックス計算: `tlb_idx = (vpn ^ (vpn >> 4) ^ (vpn >> 8) ^ (vpn >> 12) ^ (vpn >> 16)) & 15`
-  - **設計理由と不変条件**: 単純なビットマスク（`vpn & 15`）や剰余を用いると、同一オフセットを持つ異なる機能コード（FC=14 SHM と FC=15 PASSTHROUGH など）が同一スロットに衝突し、TLB スラッシング（頻繁な追い出し）が発生する。上位 4-bit の FC フィールドから下位ページインデックスまでの全 20 ビットを 4-bit 幅で均等に折りたたんで XOR 合成することで、異なるデバイス領域間でのキャッシュ競合を極小化し、16 スロットの利用効率を最大化する。
+  - HASH / インデックス計算: `temp = vpn ^ (vpn >> 10); temp = temp ^ (temp >> 5); tlb_idx = temp & 0x1F`（20→10→5 bit、2回の XOR）
+  - **設計理由と不変条件**: 単純なビットマスク（`vpn & 0x1F`）や剰余を用いると、同一オフセットを持つ異なる機能コード（FC=14 SHM と FC=15 PASSTHROUGH など）が同一スロットに衝突し、TLB スラッシング（頻繁な追い出し）が発生する。上位の FC フィールドから下位ページインデックスまでの全 20 ビットを 5-bit 幅で折りたたんで XOR 合成することで、異なるデバイス領域間でのキャッシュ競合を極小化し、32 スロットの利用効率を最大化する。
 - **アクセス権限剥奪（Revoke）時の TLB 即時無効化 (`GOTCHA-VMMIO-03`)**:
   - **設計理由と不変条件**: 共有メモリブロックの送信（`shm.release()`）や権限剥奪トランザクションにおいて、ページテーブル上の所有者 ID を `FB_TASK_ID_FLIGHT` へ変更する際、該当 VPN に対応する TLB エントリを直ちに無効化（フラッシュ）しなければならない。TLB の無効化を怠ると、キャッシュが残存している間に古いタスクからデータが読み書き可能となり、所有権移譲プロトコルの安全性（ゼロコピー手渡しと二重所有防止）が破壊される。
 - **キャッシュ更新 & 押し出し (Eviction & Refill)**:

@@ -76,7 +76,7 @@ RAM 領域は、主動作用の**統合物理メモリプール（`ConsolidatedH
 | - **ランタイムプール** (`FB_CONF_RUNTIME_HEAP_SIZE`) | 2,048 B | `execution_context`（60B）、WASM モジュールインスタンス状態、<br>`HotspotBitmap`（128B）、`JITCandidateBitmap`（128B）、`HistoryRing`（64B） |
 | - **インタープリタ統合スタック** (`FB_CONF_INTERP_STACK_SIZE`) | 2,048 B | `OperandStack`（1KB）、`LocalStack`（768B）、`ControlFrame`（256B） |
 | **2. システム静的変数 & OS スタック（プール外）** | **~3,500 B** | |
-| - vMMIO ソフトウェア TLB キャッシュ配列 | 128 B | 16 エントリ $\times$ 8B（VPN + PTE）ダイレクトマップ高速 TLB |
+| - vMMIO ソフトウェア TLB キャッシュ配列 | 256 B | 32 エントリ $\times$ 8B（VPN + PTE）ダイレクトマップ高速 TLB |
 | - ブレークポイント集合 / プロファイラバッファ | 320 B | ブレークポイント（8件 $\times$ 4B）＋ PC サンプル配列（64件 $\times$ 4B） |
 | - ISR 割り込み通知リングバッファ | 64 B | 16 エントリ $\times$ 4B（原子キュー） |
 | - ベアメタル OS システムスタック（Cortex-M MSP） | 2,048 B | 例外・割り込みハンドラ（ISR）実行用ハードウェアスタック |

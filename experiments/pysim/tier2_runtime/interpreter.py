@@ -67,13 +67,14 @@ from native_stacks import (
 )
 from system_containers import StaticVector
 from vmmio import VMMIOController
-from wasm_module import F32, F64, I64, Module
+from wasm_module import F32, F64, I32, I64, Function, Module
 from wasm_opcodes import (
     BLOCK,
     BR,
     BR_IF,
     BR_TABLE,
     CALL,
+    CALL_INDIRECT,
     DROP,
     ELSE,
     END,
@@ -272,7 +273,7 @@ FB_CONF_MAX_LOCAL_STACK = 64
 
 
 def _value_slot_width(value_type: str) -> int:
-    return 2 if value_type in (I64, F64) else 1
+    return 2 if value_type == I64 or value_type == F64 else 1
 
 
 def _layout_offsets(local_layout: Sequence[str]) -> tuple[tuple[int, ...], int]:
@@ -329,6 +330,7 @@ class InterpreterContext:
 
     __slots__ = (
         "_c_context",
+        "_context_ptr",
         "call_frame_offsets",
         "call_frame_stack",
         "control_frame_stack",
@@ -342,6 +344,7 @@ class InterpreterContext:
         # value, local, and control stacks are Native fixed-capacity records;
         # activation metadata remains a Python-side simulator detail.
         self._c_context = ExecutionContextNative()
+        self._context_ptr = ctypes.cast(ctypes.pointer(self._c_context), ctypes.c_void_p)
         self.operand_stack: NativeValueStack = NativeValueStack(FB_CONF_MAX_VALUE_STACK)
         self.local_stack: NativeValueStack = NativeValueStack(FB_CONF_MAX_LOCAL_STACK)
         self.local_offset = 0
@@ -356,7 +359,7 @@ class InterpreterContext:
     @property
     def context_ptr(self) -> ctypes.c_void_p:
         """Pointer to the fixed-size native execution-context backing store."""
-        return ctypes.cast(ctypes.pointer(self._c_context), ctypes.c_void_p)
+        return self._context_ptr
 
     @property
     def native_context(self) -> ExecutionContextNative:
@@ -365,12 +368,12 @@ class InterpreterContext:
 
     def begin_call_frame(
         self,
-        code: bytes,
-        control_map: ControlMap,
+        function: Function,
         raw_args: StaticVector[int],
         func_index: int,
         local_offsets: tuple[int, ...],
         local_slot_count: int,
+        local_i32_only: bool,
         env: ExecEnv,
     ) -> CallFrame:
         """Push one frame's locals into the context-owned Native local stack."""
@@ -381,14 +384,14 @@ class InterpreterContext:
         if not self.call_frame_offsets.push_back(frame_offset):
             raise Trap("call-frame offset stack capacity exceeded")
         frame = CallFrame(
-            code,
-            control_map,
+            function,
             self,
             func_index=func_index,
             frame_offset=frame_offset,
             local_count=len(local_offsets),
             local_offsets=local_offsets,
             local_slot_count=local_slot_count,
+            local_i32_only=local_i32_only,
             env=env,
         )
         if not self.call_frame_stack.push_back(frame):
@@ -435,33 +438,45 @@ class CallFrame:
         "control_map",
         "env",
         "frame_offset",
+        "_frames",
         "func_index",
+        "has_nested_calls",
         "local_count",
+        "local_i32_only",
+        "_locals",
         "local_offsets",
         "local_slot_count",
+        "values",
     )
 
     def __init__(
         self,
-        code: bytes,
-        control_map: ControlMap,
+        function: Function,
         context: InterpreterContext,
         func_index: int,
         frame_offset: int,
         local_count: int,
         local_offsets: tuple[int, ...],
         local_slot_count: int,
+        local_i32_only: bool,
         env: ExecEnv | None = None,
     ):
         self.context = context
+        self.values = context.operand_stack
         self.control_base = len(context.control_frame_stack)
+        self._frames = _ControlFrameWindow(context.control_frame_stack, self.control_base)
         self.func_index = func_index
+        self.has_nested_calls = function.has_nested_calls
         self.frame_offset = frame_offset
         self.local_count = local_count
         self.local_offsets = local_offsets
         self.local_slot_count = local_slot_count
-        self.code = code
-        self.control_map = control_map
+        self.local_i32_only = local_i32_only
+        self._locals = _LocalStackWindow(
+            context.local_stack, frame_offset, local_offsets, local_slot_count
+        )
+        self.code = function.code
+        self.control_map = function.control_map
         self.env = env
         # Set by RuntimeEngine.run() right before each interp.step() call,
         # from that step's BasicBlock's own statically-computed next_pc /
@@ -478,25 +493,16 @@ class CallFrame:
         self.boundary_loops_to: int | None = None
 
     @property
-    def values(self) -> NativeValueStack:
-        return self.context.operand_stack
-
-    @property
     def context_ptr(self) -> ctypes.c_void_p:
         return self.context.context_ptr
 
     @property
     def frames(self) -> _ControlFrameWindow:
-        return _ControlFrameWindow(self.context.control_frame_stack, self.control_base)
+        return self._frames
 
     @property
     def locals(self) -> _LocalStackWindow:
-        return _LocalStackWindow(
-            self.context.local_stack,
-            self.frame_offset,
-            self.local_offsets,
-            self.local_slot_count,
-        )
+        return self._locals
 
 # A handler's logical continuation: (next_ip, frame, local_base, tos), or None
 # to end this call (RETURN, or branching past the outermost implicit block).
@@ -510,6 +516,10 @@ _WrapperFn = Callable[[int, CallFrame, _LocalStackWindow, int], _Cont]
 
 # Fixed 256-slot direct-indexed dispatch table for WASM byte opcodes (0x00..0xFF)
 _HANDLERS: list[_WrapperFn | None] = [None] * 256
+_RAW_HANDLERS: list[_HandlerFn | None] = [None] * 256
+_BASIC_BLOCK_BOUNDARY: tuple[bool, ...] = tuple(
+    opcode_has_attribute(opcode, OpcodeAttribute.BASIC_BLOCK_BOUNDARY) for opcode in range(256)
+)
 
 
 def _handler(opcode: int) -> Callable[[_HandlerFn], _HandlerFn]:
@@ -520,10 +530,14 @@ def _handler(opcode: int) -> Callable[[_HandlerFn], _HandlerFn]:
             if res is None:
                 return None
             next_ip, r_frame, _, r_locals = res
-            r_tos = r_frame.values[-1] if r_frame.values else 0
-            return (next_ip, r_frame, r_locals, r_tos)
+            # The Native value-stack size is authoritative.  Re-read the raw
+            # top slot only when the instruction leaves one; the CPS field is
+            # a view of the same Native storage, never a second value stack.
+            next_tos = r_frame.values.raw_top() if r_frame.values else 0
+            return (next_ip, r_frame, r_locals, next_tos)
 
         _HANDLERS[opcode] = wrapper
+        _RAW_HANDLERS[opcode] = fn
         return fn
 
     return register
@@ -649,9 +663,49 @@ class Interpreter:
     def call(self, func_index: int, args: Sequence[int]) -> StaticVector[int]:
         """Runs a function to completion in one call."""
         call_state = self.start(func_index, args)
+        if not call_state.finished:
+            _, frame, _, _ = call_state.cont
+            if not frame.has_nested_calls:
+                return self._call_without_nested_calls(call_state)
         while not call_state.finished:
-            call_state = self.step(call_state)
+            call_state = self._step(call_state, stop_at_boundary=False)
         return call_state.results
+
+    def _call_without_nested_calls(self, call_state: InterpreterCall) -> StaticVector[int]:
+        """Complete a call without materializing CPS state at every instruction."""
+        ip, frame, locals_arr, _ = call_state.cont
+        while True:
+            if ip >= len(frame.code):
+                break
+            opcode = frame.code[ip]
+            raw_handler = _RAW_HANDLERS[opcode]
+            if raw_handler is None:
+                raise NotImplementedError(f"interpreter: unhandled opcode 0x{opcode:02X}")
+            result = raw_handler(ip, frame, frame.env, locals_arr)
+            if result is None:
+                break
+            ip, frame, _, locals_arr = result
+
+        func_type = self.module.func_type(call_state.func_index)
+        while frame.frames:
+            frame.frames.pop_back()
+        call_state.context.end_call_frame(frame)
+        results: StaticVector[int | float] = StaticVector(capacity=4)
+        if func_type.results:
+            result_type = func_type.results[0]
+            if result_type == I64:
+                result_value = frame.values.pop_i64()
+            elif result_type == F32:
+                result_value = frame.values.pop_f32()
+            elif result_type == F64:
+                result_value = frame.values.pop_f64()
+            else:
+                result_value = frame.values.pop_i32()
+            assert results.push_back(result_value)
+        call_state.cont = None
+        call_state.finished = True
+        call_state.results = results
+        return results
 
     def run_iter(self, func_index: int, args: Sequence[int]) -> Iterator[InterpreterCall]:
         """
@@ -677,8 +731,7 @@ class Interpreter:
 
         raw_args = _encode_public_args(args, self.module.func_type(func_index).params)
         frame, locals_arr = self._build_frame(func_index, raw_args, context)
-        tos = frame.values[-1] if frame.values else 0
-        return InterpreterCall(func_index, context, cont=(0, frame, locals_arr, tos))
+        return InterpreterCall(func_index, context, cont=(0, frame, locals_arr, 0))
 
     def _call_import(
         self, func_index: int, args: Sequence[int | float]
@@ -723,23 +776,38 @@ class Interpreter:
         """
         fn = self.module.functions[func_index - len(self.module.imports)]
         layout = self.module.locals_layout(func_index)
-        local_offsets, local_slot_count = _layout_offsets(layout)
-        param_slot_count = sum(
-            _value_slot_width(value_type) for value_type in self.module.func_type(func_index).params
-        )
+        if fn.local_offsets_cache is None:
+            offsets, slot_count = _layout_offsets(layout)
+            fn.local_offsets_cache = offsets
+            fn.local_slot_count_cache = slot_count
+            fn.local_i32_only_cache = all(value_type == I32 for value_type in layout)
+        if fn.param_slot_count_cache is None:
+            fn.param_slot_count_cache = sum(
+                _value_slot_width(value_type)
+                for value_type in self.module.func_type(func_index).params
+            )
+        local_offsets = fn.local_offsets_cache
+        local_slot_count = fn.local_slot_count_cache
+        local_i32_only = fn.local_i32_only_cache
+        param_slot_count = fn.param_slot_count_cache
+        assert local_offsets is not None
+        assert local_slot_count is not None
+        assert local_i32_only is not None
+        assert param_slot_count is not None
         assert len(raw_args) == param_slot_count
         for _ in range(local_slot_count - param_slot_count):
             if not raw_args.push_back(0):
                 raise Trap("local vector capacity exceeded")
         if fn.control_map is None:
             fn.control_map = build_control_map(fn.code)
+        assert fn.control_map is not None
         frame = context.begin_call_frame(
-            fn.code,
-            fn.control_map,
+            fn,
             raw_args,
             func_index=func_index,
             local_offsets=local_offsets,
             local_slot_count=local_slot_count,
+            local_i32_only=local_i32_only,
             env=self._env,
         )
         return frame, frame.locals
@@ -752,19 +820,33 @@ class Interpreter:
         `.cont`, or `finished == True` with `.results` set once the outermost call
         actually returns.
         """
+        return self._step(call_state, stop_at_boundary=True)
+
+    @cython.locals(ip=cython.Py_ssize_t, op=cython.uchar, stop_at_boundary=cython.bint)
+    def _step(self, call_state: InterpreterCall, stop_at_boundary: bool) -> InterpreterCall:
+        """Run until a boundary or completion, depending on the driving caller."""
         while True:
             ip, frame, locals_arr, tos = call_state.cont
             if ip < len(frame.code):
                 op = frame.code[ip]
-                if opcode_has_attribute(op, OpcodeAttribute.CALL):
-                    return self._enter_or_resolve_call(call_state, op, ip, frame, locals_arr, tos)
-                is_boundary = opcode_has_attribute(op, OpcodeAttribute.BASIC_BLOCK_BOUNDARY)
-                handler = _HANDLERS[op]
-                if handler is None:
+                if op == CALL or op == CALL_INDIRECT:
+                    self._enter_or_resolve_call(call_state, op, ip, frame, locals_arr, tos)
+                    if stop_at_boundary:
+                        return call_state
+                    continue
+                is_boundary = _BASIC_BLOCK_BOUNDARY[op]
+                raw_handler = _RAW_HANDLERS[op]
+                if raw_handler is None:
                     raise NotImplementedError(f"interpreter: unhandled opcode 0x{op:02X}")
-                call_state.cont = handler(ip, frame, locals_arr, tos)
+                result = raw_handler(ip, frame, frame.env, locals_arr)
+                if result is None:
+                    call_state.cont = None
+                else:
+                    next_ip, result_frame, _, result_locals = result
+                    next_tos = result_frame.values.raw_top() if result_frame.values else 0
+                    call_state.cont = (next_ip, result_frame, result_locals, next_tos)
                 if call_state.cont is not None:
-                    if is_boundary:
+                    if is_boundary and stop_at_boundary:
                         return call_state
                     continue
                 # cont is None: this frame just ended (RETURN, or a branch
@@ -809,10 +891,10 @@ class Interpreter:
             # the caller's own next pop/push simply continues from here.
             parent_func_index, parent_cont = call_state.call_stack.pop_back()
             p_ip, p_frame, p_locals, _ = parent_cont
-            p_tos = p_frame.values[-1] if p_frame.values else 0
             call_state.func_index = parent_func_index
-            call_state.cont = (p_ip, p_frame, p_locals, p_tos)
-            return call_state
+            call_state.cont = (p_ip, p_frame, p_locals, 0)
+            if stop_at_boundary:
+                return call_state
 
     def _enter_or_resolve_call(
         self,
@@ -934,7 +1016,7 @@ def _h_nop(
 def _h_block(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    match_end = frame.control_map.blocks[ip][0]
+    match_end = frame.control_map.block(ip)[0]
     if not frame.frames.push_back(ControlFrameKind.BLOCK, ip, match_end, len(frame.values)):
         raise Trap("control frame capacity exceeded")
     return (ip + 2, frame, env, local_base)
@@ -944,7 +1026,7 @@ def _h_block(
 def _h_loop(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    match_end = frame.control_map.blocks[ip][0]
+    match_end = frame.control_map.block(ip)[0]
     if not frame.frames.push_back(ControlFrameKind.LOOP, ip, match_end, len(frame.values)):
         raise Trap("control frame capacity exceeded")
     return (ip + 2, frame, env, local_base)
@@ -954,7 +1036,7 @@ def _h_loop(
 def _h_if(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    match_end, else_off = frame.control_map.blocks[ip]
+    match_end, else_off = frame.control_map.block(ip)
     cond = frame.values.pop_back()
     if cond == 0:
         if else_off is not None:
@@ -1020,7 +1102,7 @@ def _h_br_if(
 def _h_br_table(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    labels, default_lbl = frame.control_map.br_tables[ip]
+    labels, default_lbl = frame.control_map.br_table(ip)
     index = _to_u32(frame.values.pop_back())
     depth = labels[index] if index < len(labels) else default_lbl
     next_ip = _do_branch(depth, frame)
@@ -1066,10 +1148,11 @@ def _h_local_get(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     idx, next_ip = decode_unsigned(frame.code, ip + 1)
+    raw_slot, raw_width = local_base.raw_span(idx)
     assert frame.values.push_raw_from(
         frame.context.local_stack,
-        local_base.raw_slot(idx),
-        local_base.raw_width(idx),
+        raw_slot,
+        raw_width,
     )
     return (next_ip, frame, env, local_base)
 
@@ -1080,10 +1163,11 @@ def _h_local_set(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     idx, next_ip = decode_unsigned(frame.code, ip + 1)
+    raw_slot, raw_width = local_base.raw_span(idx)
     frame.values.pop_raw_to(
         frame.context.local_stack,
-        local_base.raw_slot(idx),
-        local_base.raw_width(idx),
+        raw_slot,
+        raw_width,
     )
     return (next_ip, frame, env, local_base)
 
@@ -1094,10 +1178,11 @@ def _h_local_tee(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     idx, next_ip = decode_unsigned(frame.code, ip + 1)
+    raw_slot, raw_width = local_base.raw_span(idx)
     frame.values.copy_raw_to(
         frame.context.local_stack,
-        local_base.raw_slot(idx),
-        local_base.raw_width(idx),
+        raw_slot,
+        raw_width,
     )
     return (next_ip, frame, env, local_base)
 

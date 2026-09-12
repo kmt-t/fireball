@@ -36,7 +36,7 @@ _CARD_STATE_NAMES = ("UNEXECUTED", "EXECUTED", "HOT", "COMPILED")
 # gives a merge/loop head only a handful of real predecessors (a loop
 # back-edge plus its fallthrough entry, or a few br_table cases), so this
 # is sized generously against that, matching this file's other small
-# FB_CONF-style bounds (JITMultiBufferCache.NUM_FAST_SLOTS=16,
+# FB_CONF-style bounds (JITMultiBufferCache.NUM_FAST_SLOTS=4,
 # RuntimeEngine.compile_queue_capacity=4).
 FB_CONF_MAX_INBOUND_SOURCES = 16
 
@@ -465,7 +465,7 @@ class JITMultiBufferCache:
         "warm_idx",
     )
 
-    NUM_FAST_SLOTS = 16
+    NUM_FAST_SLOTS = 4
 
     def __init__(self, bank_capacity: int = 2048):
         self.banks = [JITCacheBank(i, bank_capacity) for i in range(3)]
@@ -474,12 +474,17 @@ class JITMultiBufferCache:
         self.evictions = 0
         self.on_evict: Callable[[list[int]], None] | None = None
         self.control_skip_tree: RadixBinaryTreeView[int] | None = None
-        # Direct-mapped 16-slot cache keyed by 4-bit Folding XOR Hash over UnifiedPC
+        # Direct-mapped 4-slot cache keyed by a repeatedly folded XOR over
+        # UnifiedPC.
         self._fast_slots: list[tuple[int, JITTrace] | None] = [None] * self.NUM_FAST_SLOTS
 
     def _hash_slot(self, pc: int) -> int:
-        """4-bit Folding XOR Hash over 32-bit UnifiedPC."""
-        return ((pc >> 24) ^ (pc >> 16) ^ (pc >> 8) ^ pc) & (self.NUM_FAST_SLOTS - 1)
+        """Fold a 32-bit UnifiedPC with four XORs and select two bits."""
+        temp = pc ^ (pc >> 16)
+        temp = temp ^ (temp >> 8)
+        temp = temp ^ (temp >> 4)
+        temp = temp ^ (temp >> 2)
+        return temp & (self.NUM_FAST_SLOTS - 1)
 
     @property
     def active(self) -> JITCacheBank:

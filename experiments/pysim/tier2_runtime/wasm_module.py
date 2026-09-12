@@ -87,6 +87,9 @@ class Function:
     locals_extra: list[str]  # declared (non-parameter) locals, in order
     code: bytes  # raw instruction bytes (the function body, sans locals decl)
     name: str = ""
+    # Determined by the loader from decoded instructions. CallFrame uses this
+    # metadata to select the non-nested-call fast path without rescanning code.
+    has_nested_calls: bool = False
     control_map: object | None = None
     # Params + locals_extra -- a pure function of this Function's own static
     # fields, lazily built once on first call and reused after, exactly like
@@ -94,6 +97,10 @@ class Function:
     # module.locals_layout(func_index)` would rebuild this same list (a
     # fresh concat allocation) on every single WASM call to this function.
     locals_layout_cache: list[str] | None = None
+    local_offsets_cache: tuple[int, ...] | None = None
+    local_slot_count_cache: int | None = None
+    local_i32_only_cache: bool | None = None
+    param_slot_count_cache: int | None = None
 
 
 @dataclass

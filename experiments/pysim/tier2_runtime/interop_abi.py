@@ -145,12 +145,13 @@ class NativeValueStack:
     performed by the WASM opcode handler, not stored beside each slot.
     """
 
-    __slots__ = ("_capacity", "_native")
+    __slots__ = ("_capacity", "_native", "_values_address")
 
     def __init__(self, capacity: int = NATIVE_VALUE_STACK_CAPACITY):
         assert 0 <= capacity <= NATIVE_VALUE_STACK_CAPACITY
         self._capacity = capacity
         self._native = ValueStackNative()
+        self._values_address = ctypes.addressof(self._native) + ValueStackNative.values.offset
 
     @property
     def capacity(self) -> int:
@@ -175,8 +176,9 @@ class NativeValueStack:
         return int(self._native.values[index])
 
     def _index(self, index: int) -> int:
-        normalized = index if index >= 0 else len(self) + index
-        if not 0 <= normalized < len(self):
+        size = int(self._native.size)
+        normalized = index if index >= 0 else size + index
+        if not 0 <= normalized < size:
             raise IndexError("native value stack index out of range")
         return normalized
 
@@ -195,6 +197,12 @@ class NativeValueStack:
         assert 0 <= index < self._capacity
         return int(self._native.values[index])
 
+    def raw_top(self) -> int:
+        """Read the raw top slot for the interpreter's CPS continuation."""
+
+        assert self
+        return int(self._native.values[int(self._native.size) - 1])
+
     def __iter__(self) -> Iterator[int]:
         for index in range(len(self)):
             yield self._decode(index)
@@ -207,7 +215,7 @@ class NativeValueStack:
         return False
 
     def push_back(self, value: int) -> bool:
-        size = len(self)
+        size = int(self._native.size)
         if size >= self._capacity:
             return False
         self._native.values[size] = self._encode(value)
@@ -216,7 +224,7 @@ class NativeValueStack:
 
     def extend(self, values: Iterable[int]) -> bool:
         pending = tuple(values)
-        if len(self) + len(pending) > self._capacity:
+        if int(self._native.size) + len(pending) > self._capacity:
             return False
         for value in pending:
             assert self.push_back(value)
@@ -236,16 +244,20 @@ class NativeValueStack:
 
     def _validate_range(self, start: int, count: int) -> None:
         assert count >= 0
-        if not 0 <= start or start + count > len(self):
+        if not 0 <= start or start + count > int(self._native.size):
             raise IndexError("native value stack range out of bounds")
 
     def push_raw_from(self, source: NativeValueStack, start: int, count: int) -> bool:
         """Copy raw slots from another Native stack onto this stack."""
 
         source._validate_range(start, count)
-        if len(self) + count > self._capacity:
+        destination_start = int(self._native.size)
+        if destination_start + count > self._capacity:
             return False
-        destination_start = len(self)
+        if count == 1:
+            self._native.values[destination_start] = source._native.values[start]
+            self._native.size = destination_start + 1
+            return True
         for index in range(count):
             self._native.values[destination_start + index] = source._native.values[start + index]
         self._native.size = destination_start + count
@@ -254,9 +266,12 @@ class NativeValueStack:
     def copy_raw_to(self, destination: NativeValueStack, start: int, count: int) -> None:
         """Copy the top raw slots to an existing range in another stack."""
 
-        source_start = len(self) - count
+        source_start = int(self._native.size) - count
         self._validate_range(source_start, count)
         destination._validate_range(start, count)
+        if count == 1:
+            destination._native.values[start] = self._native.values[source_start]
+            return
         for index in range(count):
             destination._native.values[start + index] = self._native.values[source_start + index]
 
@@ -268,7 +283,7 @@ class NativeValueStack:
 
     def pop_back(self) -> int:
         assert self
-        index = len(self) - 1
+        index = int(self._native.size) - 1
         value = self._decode(index)
         self._native.size = index
         self._native.values[index] = 0
@@ -279,7 +294,7 @@ class NativeValueStack:
 
     def push_i64(self, value: int) -> bool:
         raw = value & 0xFFFF_FFFF_FFFF_FFFF
-        if len(self) + 2 > self._capacity:
+        if int(self._native.size) + 2 > self._capacity:
             return False
         return self.push_back(raw & 0xFFFF_FFFF) and self.push_back(raw >> 32)
 
@@ -289,7 +304,7 @@ class NativeValueStack:
 
     def push_f64(self, value: float) -> bool:
         bits = struct.unpack("<Q", struct.pack("<d", value))[0]
-        if len(self) + 2 > self._capacity:
+        if int(self._native.size) + 2 > self._capacity:
             return False
         return self.push_back(bits & 0xFFFF_FFFF) and self.push_back(bits >> 32)
 
@@ -404,8 +419,7 @@ class NativeValueStack:
         """Return a pointer to the Native raw value words."""
 
         assert 0 <= start <= self._capacity
-        address = ctypes.addressof(self._native) + ValueStackNative.values.offset + start * 4
-        return ctypes.c_void_p(address)
+        return ctypes.c_void_p(self._values_address + start * 4)
 
 
 def _offset(struct_type: type[ctypes.Structure], field_name: str) -> int:

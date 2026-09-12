@@ -94,7 +94,7 @@ Fireball の実行コアは、以下の 6 つの物理メカニズムによっ�
 |             └─ 純粋同期ランデブー (容量0/1待機者) + 対称遷移 (Symmetric Transfer) + 有界ハンドオフ  |
 +---------------------------------------------------------------------------------------------------+
 |  [Pillar 5] 折りたたみXOR TLB ＆ 平坦ページ表 (Folding XOR TLB & FlatMap Page Table)               |
-|             └─ 20-bit VPN Folding XOR (16 entries) + FlatMap + unmap遮断 (TRAP_UNREGISTERED_PAGE) |
+|             └─ 20-bit VPN Folding XOR (32 entries) + FlatMap + unmap遮断 (TRAP_UNREGISTERED_PAGE) |
 +---------------------------------------------------------------------------------------------------+
 |  [Pillar 6] ゼロコピー CSP ランデブー・ハンドオフ (Zero-Copy CSP Rendezvous Handoff)               |
 |             └─ Revoke (unmap/TLB flush) -> Rendezvous (&& move) -> Grant (map)                    |
@@ -112,9 +112,9 @@ Fireball の実行コアは、以下の 6 つの物理メカニズムによっ�
 - **レジスタ規約**: `R0: ctx`（`execution_context` 構造体ポインタ）、`R1: sp`（`OperandStack` スタックポインタ）、`R2: local_base`（カレント `call_frame` のローカル変数配列先頭）、`R3: tos`（最上位オペランド値）が全ハンドラおよびJITトレースへ渡され、CPS 第1〜第4引数（`ctx`, `sp`, `local_base`, `tos`）として直接引き継がれる。基本ブロック末尾で `tos, nos, nnos` をスタック（`[R1, #offset]`）にフラッシュし、コンテキスト `R0` の `ip`（+0x00）および `sp_offset`（+0x0C）を書き戻す。 `{ContextPointerRegister}` `{JIT_RegisterMapping}`
 
 ### 3.2 Pillar 2: 4段直接 JIT 検索パイプライン (4-Stage Direct JIT Lookup Pipeline)
-<!-- traceability: {SimpleJITArchitecture} {JIT_MultiBuffer_Cache} {FlatViewNarrowing} {META_FlatMapIndexed} {META_BinarySearch} {DirectMappedJIT16} -->
+<!-- traceability: {SimpleJITArchitecture} {JIT_MultiBuffer_Cache} {FlatViewNarrowing} {META_FlatMapIndexed} {META_BinarySearch} {DirectMappedJIT4} -->
 - **Stage 1 (カードマーキング表: `bit_view<2>`) [$O(1)$]**: バイトコード位置に対し `card_idx = bytecode_offset >> FB_CONF_JIT_CARD_SHIFT`（`card_shift = 3`、8バイト単位）で 2-bit 状態表を参照し、`COMPILED` でなければ即座にインタープリタ継続（Fast Exit）。
-- **Stage 2 (Direct-Mapped 4-bit Folding XOR キャッシュ: 16 entries) [$O(1)$]**: カードマーク済みの場合は 16 エントリのダイレクトマップキャッシュ（`{DirectMappedJIT16}`）を `UnifiedPC` の Folding XOR で参照し、ヒット時は即座にトレース実行アドレスを返却して探索を終了。
+- **Stage 2 (Direct-Mapped Folding XOR キャッシュ: 4 entries) [$O(1)$]**: カードマーク済みの場合は 4 エントリのダイレクトマップキャッシュ（`{DirectMappedJIT4}`）を `UnifiedPC` の3段折りたたみ（32→16→8→4 bit）に4段目のXORを加えた2-bitスロットで参照し、ヒット時は即座にトレース実行アドレスを返却して探索を終了。
 - **Stage 3 & 4 (基数二分探索木索引: `radix_binary_tree_view`) [$O(1) + O(\log n)$]**:
   - キャッシュミスの際、関数間衝突を防ぐ `UnifiedPC`（`(func_index << 16) | bytecode_offset`）に対し、最下位ビットの変動を上位に分散させる `radix_key = bswap32(pc)` を算出。
   - **Stage 3 (Radix Table) [$O(1)$]**: 基数粗索引テーブルを参照し、有界区間 `[first, last]` を $O(1)$ で特定。
@@ -141,7 +141,7 @@ Fireball の実行コアは、以下の 6 つの物理メカニズムによっ�
 ### 3.5 Pillar 5: 折りたたみXOR TLB ＆ 平坦ページ表 (Folding XOR TLB & FlatMap Page Table)
 <!-- traceability: {FastAddressCheck} {META_RestrictedPhysicalAccess} {LowLatencyLookup} {UnifiedAccessModel} {ADR_PageGranularPermissionIsolation} -->
 - **Fast-path (Bit 31 = 0)**: ゲストRAMアクセス。ベースポインタ加算と、開始アドレスおよびアクセス末尾（`addr + width - 1`）を `mem_size` と比較する境界保護（1バイトアクセスは単一比較、複数バイトアクセスは加算後の比較を追加。マスクなし）による高速変換。
-- **vMMIO-path (Bit 31 = 1)**: VPN（20 bits）に対し 4-bit Folding XOR を計算し、16エントリ TLB を直接参照。ミス時は `flat_map_view` を二分探索。 `{FastAddressCheck}` `{LowLatencyLookup}`
+- **vMMIO-path (Bit 31 = 1)**: VPN（20 bits）に対し 5-bit Folding XOR（20→10→5）を計算し、32エントリ TLB を直接参照。ミス時は `flat_map_view` を二分探索。 `{FastAddressCheck}` `{LowLatencyLookup}`
 - **unmap によるハードウェア/仮想化境界遮断**: アクセス権限のない領域（他タスク所有SHM、FLIGHT中、未登録）は仮想アドレス空間から物理的・論理的に unmap される。PTE に `owner_id` フィールドを持たせず、未登録ページフォルト（`TRAP_UNREGISTERED_PAGE`）により最速かつ確実に遮断する。 `{UnifiedAccessModel}` `{ADR_PageGranularPermissionIsolation}`
 
 ### 3.6 Pillar 6: ゼロコピー CSP ランデブー・ハンドオフ (Zero-Copy CSP Rendezvous Handoff)

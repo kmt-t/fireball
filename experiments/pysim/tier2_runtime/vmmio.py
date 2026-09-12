@@ -3,8 +3,8 @@ experiments/pysim/tier2_runtime/vmmio.py
 vMMIO FlatMap Page Table & Direct-Mapped TLB simulation.
 - RAM Bypass Flag (Bit 31): O(1) linear-RAM fast path, no table lookup
 - FlatMap PTE storage: maps 20-bit VPN -> PTE
-- Direct-mapped Software TLB[16] keyed by Folding XOR Hash over 20-bit VPN:
-  diffuses all 20 bits (including Function Code) into a 4-bit slot index (0..15)
+- Direct-mapped Software TLB[32] keyed by Folding XOR Hash over 20-bit VPN:
+  folds 20 -> 10 -> 5 and selects a 5-bit slot index (0..31)
 - Tier 1 linear RAM: Bit31 bypass PLUS a size-comparison bound check (no mask, no
   power-of-two constraint on guest_ram_size) — traps to the interpreter on OOB
 - PTE permission check (VALID/READ/WRITE/EXEC + Owner ID) on every access,
@@ -124,7 +124,7 @@ class TLBSlot:
 
 class VMMIOController:
     """
-    FlatMap Page Table (vpn -> PTE) with a direct-mapped 16-entry software TLB.
+    FlatMap Page Table (vpn -> PTE) with a direct-mapped 32-entry software TLB.
         TLB hits provide O(1) hot-path access, while TLB misses look up the FlatMap.
     """
 
@@ -142,9 +142,10 @@ class VMMIOController:
         self.ptes: MutableFlatMapStorage[int, StaticDevicePTE | Tier3PTE] = MutableFlatMapStorage(
             capacity=FB_CONF_VMMIO_MAX_PTES
         )
-        # Direct-mapped TLB: 16 slots, keyed by 4-bit Folding XOR Hash over 20-bit VPN.
+        # Direct-mapped TLB: 32 slots, keyed by a repeatedly folded XOR over
+        # the 20-bit VPN.
         self.tlb: StaticVector[TLBSlot] = StaticVector.of(
-            tuple(TLBSlot() for _ in range(16)), capacity=16
+            tuple(TLBSlot() for _ in range(32)), capacity=32
         )
         self.tlb_hits = 0
         self.tlb_misses = 0
@@ -242,7 +243,7 @@ class VMMIOController:
         )
 
     def flush_tlb(self) -> None:
-        """In-place flush of all 16 TLB slots without reallocation."""
+        """In-place flush of all 32 TLB slots without reallocation."""
         for slot in self.tlb:
             slot.vpn = 0xFFFF_FFFF
             slot.pte = None
@@ -259,11 +260,13 @@ class VMMIOController:
     @staticmethod
     def tlb_index(vpn: int) -> int:
         """
-        4-bit Folding XOR Hash over 20-bit VPN.
-                Diffuses all 20 bits of the VPN (FC, Page, Subfields) into a 4-bit TLB slot (0..15).
+        Fold the 20-bit VPN 20 -> 10 -> 5 with two XORs and select a 5-bit
+        slot for the 32-entry TLB.
         """
 
-        return (vpn ^ (vpn >> 4) ^ (vpn >> 8) ^ (vpn >> 12) ^ (vpn >> 16)) & 15
+        temp = vpn ^ (vpn >> 10)
+        temp = temp ^ (temp >> 5)
+        return temp & 0x1F
 
     def _lookup_pte(self, addr: VmmioAddress) -> StaticDevicePTE | Tier3PTE | None:
         """Returns the PTE from TLB (O(1)) or falls back to FlatMap."""

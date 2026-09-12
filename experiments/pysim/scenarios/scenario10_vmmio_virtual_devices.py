@@ -25,7 +25,7 @@ Tests:
 - Bit 31 RAM Bypass: Linear RAM (Bit 31 == 0) fast bypass vs vMMIO (Bit 31 == 1)
 - FlatMap Page Table & PTE Permission Checking (VALID, READ, WRITE, EXEC)
 - Function Code (FC) Decoding: Static Device (0xC), Shared Memory (0xE), Passthrough (0xF)
-- Direct-mapped Software TLB[16] with Folding XOR Hash, Hit/Miss counter & Invalidation
+- Direct-mapped Software TLB[32] with Folding XOR Hash, Hit/Miss counter & Invalidation
 - Task Ownership Isolation & TRAP_OWNER_MISMATCH detection
 - Static Device syscall dispatch and handler callback
 """
@@ -94,7 +94,7 @@ def test_scenario_vmmio_virtual_devices():
     assert len(handled_events) == 1
     assert handled_events[0] == (0, 0x010, True)
     print("    [Phase 3.2] vMMIO Device Page Write & Syscall Dispatch -> OK_SYSCALL [PASS]")
-    # 3.3 TLB Hit Verification (4-bit Folding XOR Hash)
+    # 3.3 TLB Hit Verification (5-bit Folding XOR Hash, 32 entries)
     tlb_idx = controller.tlb_index(dev_vpn)
     assert controller.tlb[tlb_idx].vpn == dev_vpn
     initial_hits = controller.tlb_hits

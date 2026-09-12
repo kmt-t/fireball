@@ -464,7 +464,7 @@ def test_jitr_control_skip_radix_tree_chaining():
 
 
 def test_jitr_26_direct_mapped_folding_xor_jit_cache():
-    """TEST-JITR-26 & GOTCHA-JITR-05: Direct-Mapped Folding XOR JIT Cache[16] O(1) hit and rotation invalidation."""
+    """TEST-JITR-26 & GOTCHA-JITR-05: Direct-Mapped Folding XOR JIT Cache[4] O(1) hit and rotation invalidation."""
     cache = JITMultiBufferCache(bank_capacity=1024)
     # PC with function index 1, offset 0x20 -> (1 << 16) | 0x20 = 0x00010020
     pc1 = 0x00010020
@@ -472,10 +472,14 @@ def test_jitr_26_direct_mapped_folding_xor_jit_cache():
     t1 = JITTrace(head_pc=pc1, native_fn=lambda: 10, size_bytes=64)
     t2 = JITTrace(head_pc=pc2, native_fn=lambda: 20, size_bytes=64)
 
-    # 1. Verify hash slot uniformly folds all 4 bytes
+    # 1. Verify hash slot folds UnifiedPC 32 -> 16 -> 8 -> 4 with 3 XORs
     h1 = cache._hash_slot(pc1)
     h2 = cache._hash_slot(pc2)
-    expected_h1 = ((pc1 >> 24) ^ (pc1 >> 16) ^ (pc1 >> 8) ^ pc1) & 0x0F
+    temp_h1 = pc1 ^ (pc1 >> 16)
+    temp_h1 = temp_h1 ^ (temp_h1 >> 8)
+    temp_h1 = temp_h1 ^ (temp_h1 >> 4)
+    temp_h1 = temp_h1 ^ (temp_h1 >> 2)
+    expected_h1 = temp_h1 & 0x03
     assert h1 == expected_h1
     assert h1 != h2, "Different function index should produce distinct hash slot"
 

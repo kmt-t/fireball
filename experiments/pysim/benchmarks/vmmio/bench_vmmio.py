@@ -72,13 +72,15 @@ class VMMIOBenchmark:
         t0 = time.perf_counter()
         for i in range(iterations):
             vpn = 0xE0000 + (i & 0xFF)
-            _idx = (vpn ^ (vpn >> 4) ^ (vpn >> 8) ^ (vpn >> 12) ^ (vpn >> 16)) & 15
+            temp = vpn ^ (vpn >> 10)
+            temp = temp ^ (temp >> 5)
+            _idx = temp & 0x1F
         t1 = time.perf_counter()
         results["folding_xor_hash_mops"] = iterations / (t1 - t0) / 1e6
         results["folding_xor_hash_ns"] = (t1 - t0) / iterations * 1e9
 
         # 2.3 TLB Miss -> FlatMap Walk (O(log N) Lookup & Refill)
-        # Cycle through 32 different pages to exceed 16-entry TLB capacity and induce misses
+        # Cycle through 32 different pages to fill the 32-entry TLB.
         t0 = time.perf_counter()
         for i in range(iterations):
             addr = 0xE000_0000 + ((i % 32) << 12)

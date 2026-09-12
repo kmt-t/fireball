@@ -11,9 +11,9 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 import re
 import sys
+from pathlib import Path
 
 _SCRIPT_DIR = Path(__file__).resolve().parent
 _SKILL_DIR = _SCRIPT_DIR.parent
@@ -85,7 +85,10 @@ DOMAINS = {
             "docs/components/tier3_jit/formal/jit_cache_model.py",
         ],
         "concept_files": [
-            "docs/components/tier3_jit/concepts/jit_runtime_concept.py",
+            # jit_runtime.md explicitly delegates the integrated runtime concept
+            # to the Tier 2 runtime component. Keep the architecture context
+            # collector aligned with that documented evidence location.
+            "docs/components/tier2_runtime/concepts/runtime_engine_concept.py",
         ],
     },
     "ipc_mem": {
@@ -110,7 +113,7 @@ DOMAINS = {
             "docs/components/tier1_core/os_coos.md",
             "docs/components/tier1_interface/ipc_router.md",
             "docs/components/tier2_runtime/runtime_vmmio.md",
-            "docs/components/tier1_core/system_memory.md",
+            "docs/components/tier1_interface/system_memory.md",
             "docs/components/tier2_runtime/runtime_memory.md",
         ],
         "formal_models": [
@@ -152,7 +155,7 @@ def extract_keywords(file_path: Path) -> list[str]:
     if not file_path.is_file():
         return []
     content = file_path.read_text(encoding="utf-8")
-    return sorted(list(set(re.findall(r"\{([A-Za-z0-9_]+)\}", content))))
+    return sorted(set(re.findall(r"\{([A-Za-z0-9_]+)\}", content)))
 
 
 def main() -> int:

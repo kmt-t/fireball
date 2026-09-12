@@ -1,0 +1,88 @@
+package fireball:memory@0.1.0;
+
+/// メモリ契約専用の共通型定義
+interface types {
+    /// タスク識別子
+    type task-id = u32;
+
+    /// メモリパーティションスライス
+    record partition-slice {
+        base-address: u32,
+        size-bytes: u32,
+        owner-task: task-id,
+    }
+
+    /// 共有メモリスライスハンドル
+    record shm-handle {
+        handle: u32,
+        base-address: u32,
+        size-bytes: u32,
+        owner-task: task-id,
+    }
+
+    /// ランタイムインスタンス識別子
+    type runtime-id = u32;
+
+    /// ランタイム用バンプアロケータのアリーナハンドル
+    type runtime-arena = u32;
+
+    /// JITキャッシュアロケータの固定長リージョンハンドル
+    type jit-cache-region = u32;
+
+    /// メモリエラーカテゴリ
+    enum memory-error {
+        /// メモリ枯渇・パーティション不足
+        out-of-memory,
+        /// 不正な所有権・二重解放
+        invalid-owner,
+        /// アドレス境界超過
+        out-of-bounds,
+    }
+}
+
+/// 独立したメモリ貸与・返却・所有権移譲契約
+interface memory {
+    use types.{task-id, runtime-id, runtime-arena, jit-cache-region, partition-slice, shm-handle, memory-error};
+
+    /// ホスト用ヒープからブロックを確保する
+    host-alloc: func(size-bytes: u32) -> result<u32, memory-error>;
+
+    /// ホスト用ヒープのブロックを解放する
+    host-free: func(addr: u32) -> result<_, memory-error>;
+
+    /// タスク固有の静的メモリパーティションを貸与する
+    acquire-task-heap: func() -> result<partition-slice, memory-error>;
+
+    /// タスク終了時にパーティションを返却する
+    release-task-heap: func() -> result<_, memory-error>;
+
+    /// 実行中タスクを初期所有者として共有メモリを割り当てる
+    allocate-shared: func(size-bytes: u32) -> result<shm-handle, memory-error>;
+
+    /// 移譲済み共有メモリの所有権を実行中タスクへ確立する
+    claim: func(handle: u32) -> result<shm-handle, memory-error>;
+
+    /// 実行中タスクが所有する共有メモリを解放する
+    release: func(handle: u32) -> result<_, memory-error>;
+
+    /// ランタイム専用アリーナを貸与する
+    acquire-runtime-arena: func(runtime: runtime-id) -> result<runtime-arena, memory-error>;
+
+    /// アリーナから固定長データを切り出す
+    bump-alloc: func(arena: runtime-arena, size-bytes: u32) -> result<u32, memory-error>;
+
+    /// アリーナ内の全確保を一括リセットする
+    reset-runtime-arena: func(arena: runtime-arena);
+
+    /// ランタイム終了時にアリーナを返却する
+    release-runtime-arena: func(arena: runtime-arena);
+
+    /// JITコード生成専用リージョンを貸与する
+    acquire-jit-cache: func() -> result<jit-cache-region, memory-error>;
+}
+
+/// メモリ契約ワールド
+world memory {
+    import types;
+    export memory;
+}

@@ -53,7 +53,7 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 | レイヤー | ディレクトリ | 定義される設計書 | 複雑度・責務の範囲 |
 | :--- | :--- | :--- | :--- |
 | **Tier 0** | `docs/requires/` | システム要求仕様書 (`requirement_list.md`) | **最上位要求 (Why)**<br>システム全体が満たすべき受入基準・機能要求。 |
-| **Tier 1** | `docs/components/tier1_core/`<br>`docs/components/tier1_interface/` | スケジューラ、チャネル通信、システムサービス、IPCルータ、共有静的コンテナ語彙、メモリマネージャ抽象契約（`system_memory.md`）等のコア仕様書 | **粗粒度主要コンポーネント (What)**<br>要求（Tier 0）を直接受け取る。単一仕様書で状態遷移・ポリシーを自己完結して記述可能なシステム要素。契約/実装分割パターン（`{META_ContractImplSplit}`）では抽象契約側を担う。 |
+| **Tier 1** | `docs/components/tier1_core/`<br>`docs/components/tier1_interface/` | スケジューラ、チャネル通信、システムサービス、独立したインターフェイス契約、IPCルータ、共有静的コンテナ語彙等のコア仕様書 | **粗粒度主要コンポーネント (What)**<br>要求（Tier 0）を直接受け取る。単一仕様書で状態遷移・ポリシーを自己完結して記述可能なシステム要素。契約/実装分割パターン（`{META_ContractImplSplit}`）では抽象契約側を担う。 |
 | **Tier 2** | `docs/components/tier2_runtime/` | WASMインタープリタ、WASMローダー、vMMIO、デバッグマネージャ、メモリマネージャ実装（`runtime_memory.md`）、HAL抽象化層（`hal_dispatch.md`）等のサブコンポーネント仕様書 | **分解されたサブコンポーネント (How - Subsystem)**<br>Tier 1 で扱うには状態空間やアルゴリズムが複雑化するため、独立した責務としてブレークダウンされた要素。契約/実装分割パターン（`{META_ContractImplSplit}`）では実装側を担う場合がある。 |
 | **Tier 3** | `docs/components/tier3_platform/`<br>`docs/components/tier3_jit/` | HALドライバ実装（`platform_driver.md`）、ゲストアダプタ（`libfireball.md`）、JITコンパイラ一式（コード生成コア `jit_compiler.md`、ランタイム管理 `jit_runtime.md`）| **詳細リーフ / 物理コンポーネント (How - Leaf)**<br>Tier 2 からさらに責務が切り出された具象コンポーネント、ハードウェア抽象化層の最終物理実装、またはゲストへ組み込むABIアダプタ。 |
 | **Specs** | `docs/specs/` | WASM命令セット、WASI Preview 1 ABI、GDB RSP、JITステンシルカタログ等の規格マトリクス | **横串物理規格・具象カタログ (How - Physical Specs)**<br>コンポーネントを横断して統一される具象バイナリ列、ABI、パケット形式、命令セットマトリクス。各ファイル冒頭にアーキテクチャ分類（Tierラベル）を明示する。 |
@@ -71,7 +71,7 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 2. **検証可能性（Verification Tractability）の維持**: 形式検証（pyModelChecking等）において状態空間が爆発しない単位に状態遷移モデルを区切る。
 3. **親コンポーネントのカプセル化**: 分解元（上位Tier）は、分解先（下位Tier）の内部実装パラメータに依存せず、抽象インターフェースのみで統合する。
 4. **契約（Interface / What）と実装（Implementation / How）の意図的分割（`{META_ContractImplSplit}`）**: 上記1〜3とは独立した、意図的な分割基準として、単一コンポーネントが「上位Tierが定義すべき抽象契約（インターフェース仕様、ポリシー、不変条件）」と「下位Tierが担うべき物理実装（具体的なアルゴリズム・データ構造・アロケータ実装）」の双方を含む場合、これらを別ファイル・別Tierへ明示的に分割する。判定基準は「単一仕様書に自己完結して書けるか」（項目1）ではなく、「契約と実装が異なる抽象度を持ち、クリーンアーキテクチャの依存方向規則と準同型にすることで実装詳細の変更が契約に波及しない構造を作れるか」である。 `{META_ContractImplSplit}`
-   - 例: メモリマネージャは、パーティション貸与ポリシー・独立ヒープ不変条件という抽象契約（`co_mem`）を Tier 1（`system_memory.md`）に、`system_allocator`/`shm_allocator` の dlmalloc アリーナ実装を Tier 2（`runtime_memory.md`）に分割する。
+   - 例: メモリマネージャは、パーティション貸与ポリシー・独立ヒープ不変条件という抽象契約（`co_mem`）を Tier 1 Interface（`system_memory.md`）に、`system_allocator`/`shm_allocator` の dlmalloc アリーナ実装を Tier 2（`runtime_memory.md`）に分割する。
    - 例: HAL は、URI Resolver・トランスポート抽象という抽象化層を Tier 2（`hal_dispatch.md`）に、UART/SEGGER RTT 等の物理ドライバ実装を Tier 3（`platform_driver.md`）に分割する。
    - 例: ゲスト側の WASI／Fireball ABI アダプタは、Tier 2 の `runtime_syscall.md` と `hal_dispatch.md` が定義する公開契約を利用する Tier 3（`libfireball.md`）として分離する。これは HAL の物理ドライバ実装とは別のゲスト側アダプタである。
 
@@ -82,7 +82,7 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 2. **上り方向の依存禁止（カプセル化・逆流禁止）**:
    - 上位 Tier (N) が、より下位の Tier (N+1, N+2) の内部具象構造や下位パラメータに直接依存してはならない。
    - 上位コンポーネントが下位の機能を束ねる場合（例: vSoC ハーネス）、必ず定義されたインターフェース（Stateless Interface / Harness）を介して統合すること。
-3. **契約/実装分割ペアの参照関係**: `{META_ContractImplSplit}` の契約/実装分割パターンを適用したコンポーネント（例: `system_memory.md` ↔ `runtime_memory.md`、HAL の抽象化層 ↔ ドライバ実装）では、実装側ファイルが契約側ファイルを冒頭の `<!-- evidence: ... -->` またはトレーサビリティコメントで明示的に参照し、「どの上位契約を実装しているか」を宣言すること。契約側ファイルは実装側の具象データ構造・アロケータ実装詳細を記述しない（項目2の逆流禁止に従う）。
+3. **契約/実装分割ペアの参照関係**: `{META_ContractImplSplit}` の契約/実装分割パターンを適用したコンポーネント（例: `components/tier1_interface/system_memory.md` ↔ `components/tier2_runtime/runtime_memory.md`、HAL の抽象化層 ↔ ドライバ実装）では、実装側ファイルが契約側ファイルを冒頭の `<!-- evidence: ... -->` またはトレーサビリティコメントで明示的に参照し、「どの上位契約を実装しているか」を宣言すること。契約側ファイルは実装側の具象データ構造・アロケータ実装詳細を記述しない（項目2の逆流禁止に従う）。
 
 ### 2.3 矛盾が見つかった場合の解決規則（Clean Architecture の依存ルールに基づく）
 
@@ -168,7 +168,7 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 - **定義元コンポーネント（上位Tier）**: 当該キーワードをセクション見出し（`###`/`####`）に明示する。
 - **参照側コンポーネント（下位Tier）**: 本文インラインで当該キーワードを引用する。
 
-契約/実装分割パターン（`{META_ContractImplSplit}`）で分割されたコンポーネント対（例: `system_memory.md` が定義元、`runtime_memory.md` が参照側）に特に適用される。既存の慣行（定義側・参照側ともに本文インライン記述）から変更となるため、移行は契約/実装分割の対象キーワードから段階的に行い、`spec-integrator` のキーワード抽出ロジックが見出し形式のキーワードも正しく解釈できることを確認しながら適用範囲を広げる。
+契約/実装分割パターン（`{META_ContractImplSplit}`）で分割されたコンポーネント対（例: `components/tier1_interface/system_memory.md` が定義元、`components/tier2_runtime/runtime_memory.md` が参照側）に特に適用される。既存の慣行（定義側・参照側ともに本文インライン記述）から変更となるため、移行は契約/実装分割の対象キーワードから段階的に行い、`spec-integrator` のキーワード抽出ロジックが見出し形式のキーワードも正しく解釈できることを確認しながら適用範囲を広げる。
 
 ### 4.5 キーワードとテストケースIDの区別
 
@@ -202,7 +202,7 @@ Tier は単なる「OSやハードウェアの実行レイヤ」ではなく、*
 | :--- | :--- | :--- |
 | [`coos_channel_model.py`](docs/components/tier1_core/formal/coos_channel_model.py) | - CSP チャネル純粋ランデブー<br>- デッドロック不在・二重所有不在<br>- 連続ハンドオフ有界復帰 | - `components/tier1_core/os_coos.md`<br>- `components/tier1_core/os_scheduler.md` |
 | [`system_config_model.py`](docs/components/tier1_core/formal/system_config_model.py) | - 構成値の実行時変更禁止<br>- 定義済みリソース予算内の構成 | - `components/tier1_core/system_config.md` |
-| [`system_memory_model.py`](docs/components/tier1_core/formal/system_memory_model.py) | - 共有ブロックの二重所有禁止<br>- 5プール総予算超過禁止<br>- 所有権移譲またはロールバックの有限完了 | - `components/tier1_core/system_memory.md` |
+| [`system_memory_model.py`](docs/components/tier1_interface/formal/system_memory_model.py) | - 共有ブロックの二重所有禁止<br>- 5プール総予算超過禁止<br>- 所有権移譲またはロールバックの有限完了 | - `components/tier1_interface/system_memory.md` |
 | [`csp_handoff_model.py`](docs/components/tier1_interface/formal/csp_handoff_model.py) | - 所有権移譲と Drop ハンドラによる二重所有・リーク防止 | - `components/tier1_interface/ipc_router.md` |
 | [`hal_dispatch_contract_model.py`](docs/components/tier2_runtime/formal/hal_dispatch_contract_model.py) | - HALアクセスのIPCルーティング強制<br>- 生ポインタ転送禁止<br>- 事前拒否時の所有権保全 | - `components/tier2_runtime/hal_dispatch.md` |
 | [`vsoc_cache_coherency_model.py`](docs/components/tier2_runtime/formal/vsoc_cache_coherency_model.py) | - vSoC JIT キャッシュ整合性・Debugger 介入安全性・ローテーション有界性 | - `components/tier2_runtime/runtime_vsoc.md`<br>- `components/tier2_runtime/debug_manager.md`<br>- `components/tier3_jit/jit_compiler.md`<br>- `components/tier2_runtime/runtime_memory.md` |

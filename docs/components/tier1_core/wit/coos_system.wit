@@ -8,40 +8,6 @@ interface types {
     /// チャンネル識別子
     type channel-id = u32;
 
-    /// メモリパーティションスライス（固定長事前確保ブロック）
-    record partition-slice {
-        base-address: u32,
-        size-bytes: u32,
-        owner-task: task-id,
-    }
-
-    /// 共有メモリスライスハンドル (16-bit: page_idx << 8 | slot_idx)
-    record shm-handle {
-        handle: u32,
-        base-address: u32,
-        size-bytes: u32,
-        owner-task: task-id,
-    }
-
-    /// ランタイムインスタンス識別子
-    type runtime-id = u32;
-
-    /// ランタイム用バンプアロケータのアリーナハンドル
-    type runtime-arena = u32;
-
-    /// JITキャッシュアロケータの固定長リージョンハンドル
-    type jit-cache-region = u32;
-
-    /// メモリエラーカテゴリ
-    enum memory-error {
-        /// メモリ枯渇・パーティション不足
-        out-of-memory,
-        /// 不正な所有権・二重解放
-        invalid-owner,
-        /// アドレス境界超過
-        out-of-bounds,
-    }
-
     /// スケジューラエラーカテゴリ
     enum scheduler-error {
         /// タスク上限超過
@@ -79,60 +45,6 @@ interface types {
         /// トランスポートビジー（DMA転送中）
         transporter-busy,
     }
-}
-
-/// メモリマネージャ (co_mem) インターフェース
-/// system_memory.md が定義する5プール（ホスト用ヒープ、タスクヒープ、共有メモリ用ヒープ、
-/// ランタイム用バンプアロケータ、JITキャッシュアロケータ）を静的貸与・返却する
-interface memory {
-    use types.{task-id, runtime-id, runtime-arena, jit-cache-region, partition-slice, shm-handle, memory-error};
-
-    // --- 1. ホスト用ヒープ ---
-
-    /// ホスト用ヒープから任意サイズのブロックを確保する（システムコンテナ専用、汎用ヒープではない）
-    host-alloc: func(size-bytes: u32) -> result<u32, memory-error>;
-
-    /// ホスト用ヒープのブロックを個別に解放する
-    host-free: func(addr: u32) -> result<_, memory-error>;
-
-    // --- 2. タスクヒープ ---
-
-    /// COOS がタスクを起動する際に、タスク固有の静的メモリパーティションを貸与する
-    acquire-task-heap: func(owner: task-id) -> result<partition-slice, memory-error>;
-
-    /// タスク終了時に、貸与されたパーティションを返却する
-    release-task-heap: func(owner: task-id) -> result<_, memory-error>;
-
-    // --- 3. 共有メモリ用ヒープ ---
-
-    /// IPC データ転送用の共有メモリスライスを割り当てる（呼出元タスクが初期所有者）
-    allocate-shared: func(size-bytes: u32) -> result<shm-handle, memory-error>;
-
-    /// IPC 経由で移譲された共有メモリの所有権を自タスクへ確立（Grant）する
-    claim: func(handle: u32) -> result<shm-handle, memory-error>;
-
-    /// 共有メモリスライスを解放しプールへ返却する（所有者タスクのみ実行可能）
-    release: func(handle: u32) -> result<_, memory-error>;
-
-    // --- 4. ランタイム用バンプアロケータ ---
-
-    /// ランタイムインスタンスに専用のバンプアロケータアリーナを貸与する（1ランタイム1アリーナ）
-    acquire-runtime-arena: func(runtime: runtime-id) -> result<runtime-arena, memory-error>;
-
-    /// アリーナ内で固定長データを一括確保方向へ切り出す
-    bump-alloc: func(arena: runtime-arena, size-bytes: u32) -> result<u32, memory-error>;
-
-    /// アリーナ内の全確保を個別解放なしで O(1) 一括リセットする
-    reset-runtime-arena: func(arena: runtime-arena);
-
-    /// ランタイム終了時に、アリーナ全体をプールへ返却する
-    release-runtime-arena: func(arena: runtime-arena);
-
-    // --- 5. JITキャッシュアロケータ ---
-
-    /// JIT コード生成専用の固定長リージョン（FB_CONF_JIT_CACHE_SIZE）を貸与する
-    /// バンク分割・世代交代ローテーションは JIT サブシステム（jit_runtime.md）の管轄
-    acquire-jit-cache: func() -> result<jit-cache-region, memory-error>;
 }
 
 /// CSP 通信エンジン (co_csp) インターフェース
@@ -192,7 +104,6 @@ interface logging {
 
 /// COOS コアワールド
 world coos-kernel {
-    export memory;
     export csp;
     export scheduler;
     export logging;

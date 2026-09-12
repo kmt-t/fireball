@@ -37,7 +37,7 @@ from ipc_router import (
     DataType,
     IPCMessage,
     IPCRouter,
-    IpcStatus,
+    IPCStatus,
     OwnershipState,
     Role,
     ScopeKind,
@@ -66,7 +66,7 @@ _CMD_PIN_HIGH = 1
 def _run_immediate(gen):
     """Drives an IPCRouter.send()/recv() generator that is expected to reject
     at Stage 1/2 (URI lookup / RBAC) -- i.e. never touch a CSP channel and so
-    never actually block -- and returns its final (IpcStatus, ...) value."""
+    never actually block -- and returns its final (IPCStatus, ...) value."""
     try:
         next(gen)
     except StopIteration as e:
@@ -87,7 +87,7 @@ def test_ipc_01_uri_lookup_and_permission_matrix():
 
     # RUNTIME has permission to send to HAL_GPIO
     status1, ch1 = router.lookup("fireball://device/gpio/0")
-    assert status1 == IpcStatus.COMPLETED and ch1 is not None
+    assert status1 == IPCStatus.COMPLETED and ch1 is not None
 
     msg1 = make_test_ipc_message([(_KEY_CMD, _CMD_PIN_HIGH)])
     gen = router.send(ch1, msg1)
@@ -99,7 +99,7 @@ def test_ipc_01_uri_lookup_and_permission_matrix():
     sched.current_task = sched.get_task(hal_task_id)
 
     status_bad, ch_bad = router.lookup("fireball://device/gpio/0")
-    assert status_bad == IpcStatus.ERR_PERMISSION_DENIED
+    assert status_bad == IPCStatus.ERR_PERMISSION_DENIED
     assert ch_bad is None
 
     # Anti-spoofing verification: even if HAL_GPIO holds ch1 (from RUNTIME),
@@ -110,7 +110,7 @@ def test_ipc_01_uri_lookup_and_permission_matrix():
         next(gen_spoof)
     except StopIteration as e:
         status_spoof, _ = e.value
-        assert status_spoof == IpcStatus.ERR_PERMISSION_DENIED
+        assert status_spoof == IPCStatus.ERR_PERMISSION_DENIED
     assert msg2.ownership == OwnershipState.SENDER_OWNS
 
 
@@ -118,38 +118,39 @@ def test_ipc_02_e2e_shared_block_transfer():
     """TEST-IPC-02: End-to-end zero-copy SharedBlock transfer via IPC router (CSP rendezvous)."""
     sysv = System()
     try:
+        sent: list[IPCStatus] = []
+        received: list[IPCMessage] = []
+        msg: IPCMessage
+
+        def client_app_task():
+            status, ch = sysv.ipc.lookup("fireball://device/gpio/0")
+            assert status == IPCStatus.COMPLETED and ch is not None
+            status, _ = yield from sysv.ipc.send(ch, msg)
+            sent.append(status)
+
+        def gpio_receiver():
+            status, recv_msg = yield from sysv.ipc.recv()
+            received.append(recv_msg)
+
+        sysv.scheduler.spawn("client_app", client_app_task(), task_id=2, role=Role.RUNTIME)
+        sysv.scheduler.current_task = sysv.scheduler.get_task(2)
         # Sender allocates SharedBlock
-        sb = sysv.memory_manager.allocate_shared(caller_task_id=2, size=256).unwrap()
+        sb = sysv.memory_manager.allocate_shared(size=256).unwrap()
         assert sb.get_owner() == 2
-        addr = sb.get_address(caller_task_id=2)
+        addr = sb.get_address()
         assert addr >= 0x20020000
 
         # Sender puts shm_id directly in the message entry's value inside shared memory!
         msg = IPCMessage.from_entries(
             [(_KEY_SHM_ID, sb.shm_id)],
             memory_manager=sysv.memory_manager,
-            task_id=2,
         )
-        sent: list[IpcStatus] = []
-
-        def client_app_task():
-            status, ch = sysv.ipc.lookup("fireball://device/gpio/0")
-            assert status == IpcStatus.COMPLETED and ch is not None
-            status, _ = yield from sysv.ipc.send(ch, msg)
-            sent.append(status)
-
-        received: list[IPCMessage] = []
-
-        def gpio_receiver():
-            status, recv_msg = yield from sysv.ipc.recv()
-            received.append(recv_msg)
 
         # Spawn receiver (task 1) then sender (task 2)
-        sysv.scheduler.spawn("gpio_receiver", gpio_receiver(), role=Role.HAL_GPIO)
-        sysv.scheduler.spawn("client_app", client_app_task(), role=Role.RUNTIME)
+        sysv.scheduler.spawn("gpio_receiver", gpio_receiver(), task_id=1, role=Role.HAL_GPIO)
         sysv.scheduler.run_until_idle()
 
-        assert sent == [IpcStatus.COMPLETED]
+        assert sent == [IPCStatus.COMPLETED]
         assert received and received[0] is msg
         recv_msg = received[0]
 
@@ -157,9 +158,10 @@ def test_ipc_02_e2e_shared_block_transfer():
         recv_shm_id = recv_msg[_KEY_SHM_ID]
         assert recv_shm_id == sb.shm_id
 
-        recv_sb = sysv.memory_manager.claim(receiver_task_id=1, shm_id=recv_shm_id).unwrap()
+        sysv.scheduler.current_task = sysv.scheduler.get_task(1)
+        recv_sb = sysv.memory_manager.claim(recv_shm_id).unwrap()
         assert recv_sb.get_owner() == 1
-        assert recv_sb.get_address(caller_task_id=1) == addr
+        assert recv_sb.get_address() == addr
     finally:
         sysv.shutdown()
 
@@ -168,24 +170,27 @@ def test_ipc_03_send_failure_restores_owner():
     """TEST-IPC-03: If IPC send is rejected (e.g. RBAC denial), sender can rollback."""
     sysv = System()
     try:
-        sb = sysv.memory_manager.allocate_shared(caller_task_id=1, size=256).unwrap()
-        shm_id = sb.release(caller_task_id=1)
+        sender_id = sysv.scheduler.spawn("message_builder", task_id=1, role=Role.RUNTIME)
+        sysv.scheduler.current_task = sysv.scheduler.get_task(sender_id)
+        sb = sysv.memory_manager.allocate_shared(size=256).unwrap()
+        shm_id = sb.release()
         msg = IPCMessage.from_entries(
             [(_KEY_SHM_ID, shm_id)],
             memory_manager=sysv.memory_manager,
-            task_id=1,
         )
-        sender_id = sysv.scheduler.spawn("hal_sender", role=Role.HAL_UART)
+        sender_id = sysv.scheduler.spawn("hal_sender", task_id=2, role=Role.HAL_UART)
         sysv.scheduler.current_task = sysv.scheduler.get_task(sender_id)
 
         # HAL_UART has no outgoing edges: rejected at Stage 2 before ever
         # touching a channel.
         status, ch = sysv.ipc.lookup("fireball://device/gpio/0")
-        assert status == IpcStatus.ERR_PERMISSION_DENIED
+        assert status == IPCStatus.ERR_PERMISSION_DENIED
         assert ch is None
         assert msg.ownership == OwnershipState.SENDER_OWNS
         # Rollback
-        sysv.memory_manager.rollback_transfer(original_sender_id=1, shm_id=shm_id)
+        sysv.scheduler.current_task = sysv.scheduler.get_task(1)
+        assert sysv.scheduler.current_task is not None
+        sysv.memory_manager.rollback_transfer(shm_id=shm_id)
         assert sysv.memory_manager.page_registry.get_owner(sb.page_idx) == 1
     finally:
         sysv.shutdown()
@@ -202,7 +207,7 @@ def test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group():
     sched = Scheduler()
     router = IPCRouter(sched)
 
-    received: list[tuple[IpcStatus, IPCMessage]] = []
+    received: list[tuple[IPCStatus, IPCMessage]] = []
 
     def core_receiver():
         status, msg = yield from router.recv()
@@ -210,9 +215,9 @@ def test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group():
 
     def debugger_sender():
         status, ch = router.lookup("fireball://core/coos/0")
-        assert status == IpcStatus.COMPLETED and ch is not None
+        assert status == IPCStatus.COMPLETED and ch is not None
         status, _ = yield from router.send(ch, make_test_ipc_message([(1, 99)]))
-        assert status == IpcStatus.COMPLETED
+        assert status == IPCStatus.COMPLETED
 
     recv_id = sched.spawn("core_receiver", core_receiver(), role=Role.CORE_SERVICE)
     sched.run_until_idle()
@@ -231,7 +236,7 @@ def test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group():
 
     assert len(received) == 1
     status, msg = received[0]
-    assert status == IpcStatus.COMPLETED
+    assert status == IPCStatus.COMPLETED
     assert msg.get(1) == 99
     # The losing edge (RUNTIME->CORE_SERVICE) must have been cleared, not
     # left pointing at the now-terminated receiver.
@@ -239,7 +244,7 @@ def test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group():
     assert runtime_ch.waiter_task is None
 
     # That edge must still be independently usable by a fresh receiver.
-    received2: list[tuple[IpcStatus, IPCMessage]] = []
+    received2: list[tuple[IPCStatus, IPCMessage]] = []
 
     def core_receiver2():
         status, msg = yield from router.recv()
@@ -247,9 +252,9 @@ def test_ipc_04_select_recv_picks_first_ready_sender_and_clears_group():
 
     def runtime_sender():
         status, ch = router.lookup("fireball://core/coos/0")
-        assert status == IpcStatus.COMPLETED and ch is not None
+        assert status == IPCStatus.COMPLETED and ch is not None
         status, _ = yield from router.send(ch, make_test_ipc_message([(1, 7)]))
-        assert status == IpcStatus.COMPLETED
+        assert status == IPCStatus.COMPLETED
 
     sched.spawn("core_receiver2", core_receiver2(), role=Role.CORE_SERVICE)
     sched.spawn("runtime_sender", runtime_sender(), role=Role.RUNTIME)
@@ -334,15 +339,31 @@ def test_ipc_07_message_in_shm_and_payload_shm_transfer():
     try:
         sender_id = 2
         receiver_id = 1
+        sent: list[IPCStatus] = []
+        received: list[IPCMessage] = []
+        msg: IPCMessage
+
+        def client_sender():
+            status, ch = sysv.ipc.lookup("fireball://device/gpio/0")
+            assert status == IPCStatus.COMPLETED and ch is not None
+            status, _ = yield from sysv.ipc.send(ch, msg)
+            sent.append(status)
+
+        def hal_receiver():
+            status, recv_msg = yield from sysv.ipc.recv()
+            received.append(recv_msg)
+
+        sysv.scheduler.spawn("hal_receiver", hal_receiver(), task_id=receiver_id, role=Role.HAL_GPIO)
+        sysv.scheduler.spawn("client_sender", client_sender(), task_id=sender_id, role=Role.RUNTIME)
+        sysv.scheduler.current_task = sysv.scheduler.get_task(sender_id)
 
         # 1. Allocate SharedBlock for the message itself (message is shared memory!)
-        msg_sb = sysv.memory_manager.allocate_shared(caller_task_id=sender_id, size=256).unwrap()
+        sysv.scheduler.current_task = sysv.scheduler.get_task(sender_id)
+        msg_sb = sysv.memory_manager.allocate_shared(size=256).unwrap()
         assert msg_sb.get_owner() == sender_id
 
         # 2. Allocate another SharedBlock for payload bulk data
-        payload_sb = sysv.memory_manager.allocate_shared(
-            caller_task_id=sender_id, size=1024
-        ).unwrap()
+        payload_sb = sysv.memory_manager.allocate_shared(size=1024).unwrap()
         assert payload_sb.get_owner() == sender_id
         payload_shm_id = payload_sb.shm_id
 
@@ -357,26 +378,10 @@ def test_ipc_07_message_in_shm_and_payload_shm_transfer():
         assert msg.block is msg_sb
         assert msg[k_payload_id] == payload_shm_id
 
-        sent: list[IpcStatus] = []
-
-        def client_sender():
-            status, ch = sysv.ipc.lookup("fireball://device/gpio/0")
-            assert status == IpcStatus.COMPLETED and ch is not None
-            status, _ = yield from sysv.ipc.send(ch, msg)
-            sent.append(status)
-
-        received: list[IPCMessage] = []
-
-        def hal_receiver():
-            status, recv_msg = yield from sysv.ipc.recv()
-            received.append(recv_msg)
-
-        # Receiver is task 1, Sender is task 2
-        sysv.scheduler.spawn("hal_receiver", hal_receiver(), role=Role.HAL_GPIO)
-        sysv.scheduler.spawn("client_sender", client_sender(), role=Role.RUNTIME)
+        # Receiver is task 1, Sender is task 2.
         sysv.scheduler.run_until_idle()
 
-        assert sent == [IpcStatus.COMPLETED]
+        assert sent == [IPCStatus.COMPLETED]
         assert received and received[0] is msg
         recv_msg = received[0]
 
@@ -389,7 +394,8 @@ def test_ipc_07_message_in_shm_and_payload_shm_transfer():
         assert retrieved_shm_id == payload_shm_id
 
         # Receiver claims the payload SharedBlock
-        recv_payload_sb = recv_msg.claim_resource(sysv.memory_manager, receiver_id, key_id=0x14)
+        sysv.scheduler.current_task = sysv.scheduler.get_task(receiver_id)
+        recv_payload_sb = recv_msg.claim_resource(sysv.memory_manager, key_id=0x14)
         assert recv_payload_sb is not None
         assert recv_payload_sb.get_owner() == receiver_id
         assert recv_payload_sb.shm_id == payload_shm_id

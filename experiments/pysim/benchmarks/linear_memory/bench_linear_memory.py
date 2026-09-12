@@ -26,6 +26,7 @@ for _p in [
         sys.path.insert(0, _sp)
 
 from vmmio import VMMIOController
+from scheduler import Scheduler
 
 
 class LinearMemoryBenchmark:
@@ -34,7 +35,10 @@ class LinearMemoryBenchmark:
     def __init__(self, ram_size: int = 65536):
         self.ram_size = ram_size
         self.ram = bytearray(ram_size)
-        self.vmmio = VMMIOController(guest_ram_size=ram_size)
+        scheduler = Scheduler()
+        task_id = scheduler.spawn("benchmark_task")
+        scheduler.current_task = scheduler.get_task(task_id)
+        self.vmmio = VMMIOController(guest_ram_size=ram_size, scheduler=scheduler)
 
     def run_all(self, iterations: int = 250_000) -> dict[str, float]:
         results = {}

@@ -3,7 +3,7 @@
 from pyModelChecking import Kripke
 from pyModelChecking.CTL import AF, AG, AtomicProposition, Imply, Not
 
-BACKS = ["components/tier1_core/system_memory.md"]
+BACKS = ["components/tier1_interface/system_memory.md"]
 
 
 def build_model(*, guards: bool = True) -> Kripke:

@@ -2,7 +2,7 @@
 
 ## 1. 目的と対象範囲
 
-正本: [`system_memory.md`](docs/components/tier1_core/system_memory.md)
+正本: [`system_memory.md`](docs/components/tier1_interface/system_memory.md)
 参考実装: [`runtime_memory_concept.py`](docs/components/tier2_runtime/concepts/runtime_memory_concept.py)（実装は Tier 2 側にあるが、本書は契約（`co_mem`）レベルの振る舞いのみを検証する）
 
 パーティション貸与ポリシー、型付きスロット貸与、共有ブロックのRAII所有権契約、および公開APIの最小面（`{ADR_MemoryManagerMinimalSurface}`）を検証する。ハードウェア（MPU/PMSAv8）や dlmalloc アリーナの物理実装は [`runtime_memory_test_spec.md`](docs/components/tier2_runtime/tests/runtime_memory_test_spec.md) の責務とする。
@@ -13,7 +13,7 @@
 
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| TEST-MEM-01 | `acquire-task-heap`はタスク固有の固定長パーティションを貸与する（汎用ヒープAPIではない） | 任意のタスクID | `acquire-task-heap(owner)` | `size`引数を取らない。固定長`partition-slice`を返す。`allocate(size, category)`のような任意サイズ確保APIは存在しない | acquire-task-heap, `{CooperativeMultitasking}` |
+| TEST-MEM-01 | `acquire-task-heap`はタスク固有の固定長パーティションを貸与する（汎用ヒープAPIではない） | スケジューラが選択した実行中タスク | `acquire-task-heap()` | `owner`/`size`引数を取らない。固定長`partition-slice`を返す。`allocate(size, category)`のような任意サイズ確保APIは存在しない | acquire-task-heap, `{CooperativeMultitasking}` |
 | TEST-MEM-01b | `acquire-slot<T>`は型付きスロットを貸与する（C++専用API、WIT対応なし） | - | `acquire_slot<T>()` | `pool_ref<T>`（型付きハンドル）を返す | acquire-slot |
 | TEST-MEM-02 | 割り当て失敗時のエラー | パーティション/スロット枯渇 | `acquire-task-heap`/`acquire-slot`失敗 | `memory-error`（`out-of-memory`）を返す（生のエラーコードのみを返して終わりにしない） | - |
 | TEST-MEM-03 | 総割当量の上限 | - | 複数回`acquire-task-heap`/`acquire-slot`/`allocate-shared` | `total_allocated_bytes <= FB_CONF_MEMORY_POOL_SIZE`を常に満たす | `{GLOBAL_StrictMemoryLimit}` |
@@ -27,7 +27,7 @@
 | テストケースID | 検証項目 | 前提条件 | 手順 | 期待結果 | 紐付け |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | TEST-MEM-10 | `allocate-shared`→`release`→`claim`の所有権移動 | タスクAが`allocate-shared`済み | ライフサイクル手順を実行 | `release`後はA側で無効化され、`claim`後はB側が所有権を得る（二重所有なし） | `{OwnershipTransfer}` |
-| TEST-MEM-10c | `rollback_transfer()`による所有権の復元 | `release()`済みで送信中断 | `rollback_transfer(original_sender_id, handle)`を実行 | 所有権が送信元タスクへ復元される（ダングリングのまま放置されない）。物理的なページ再マッピング挙動の検証は [`runtime_memory_test_spec.md`](docs/components/tier2_runtime/tests/runtime_memory_test_spec.md) TEST-MEM-10c(物理)を正本とする | ipc_router.md |
+| TEST-MEM-10c | `rollback_transfer()`による所有権の復元 | `release()`済みで送信中断 | `rollback_transfer(handle)`を送信タスクの実行コンテキストから実行 | 所有権が送信元タスクへ復元される（ダングリングのまま放置されない）。物理的なページ再マッピング挙動の検証は [`runtime_memory_test_spec.md`](docs/components/tier2_runtime/tests/runtime_memory_test_spec.md) TEST-MEM-10c(物理)を正本とする | ipc_router.md |
 | TEST-MEM-11 | `shared-block`のRAII自動解放 | Bがdropする | drop実行 | メモリが自動解放される（明示的`release`呼び出し不要） | 「ADR_SharedBlockRaii」 |
 | TEST-MEM-12 | `shm-id`のkv_pairエンコーディング | IPC送信 | メッセージ構築 | 型スコープ上位3bit=`0b000`（機能的）、下位5bit=`0b00001`（u32）のkv_pairとして格納される。`ipc_router.md`の型語彙表にない独自の`dtype=handle`は使わない | ipc_router.md |
 | TEST-MEM-13 | `query()`/`check_ownership()`が削除されている | - | APIサーフェスを確認 | これらのAPIは存在しない（`shared_block.get_size()`/`get_owner()`で代替） | ADR_MemoryManagerMinimalSurface |

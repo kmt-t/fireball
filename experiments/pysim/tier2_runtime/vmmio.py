@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from system_containers import MutableFlatMapStorage, StaticVector
+from scheduler import Scheduler
 
 if TYPE_CHECKING:
     from memory import MemoryManager
@@ -127,12 +128,13 @@ class VMMIOController:
         TLB hits provide O(1) hot-path access, while TLB misses look up the FlatMap.
     """
 
-    __slots__ = ("guest_ram_size", "ptes", "tlb", "tlb_hits", "tlb_misses")
+    __slots__ = ("guest_ram_size", "ptes", "tlb", "tlb_hits", "tlb_misses", "scheduler")
 
-    def __init__(self, guest_ram_size: int = 8192):  # FB_CONF_GUEST_RAM_SIZE
+    def __init__(self, guest_ram_size: int = 8192, *, scheduler: Scheduler):  # FB_CONF_GUEST_RAM_SIZE
 
         if guest_ram_size <= 0:
             raise ValueError("guest RAM size must be positive")
+        self.scheduler = scheduler
         self.guest_ram_size = guest_ram_size
         # FlatMap PTE storage: vpn (20-bit) -> PTE, capacity-bounded per
         # system_config.md's FB_CONF_VMMIO_MAX_PTES (a fixed static array in
@@ -281,13 +283,14 @@ class VMMIOController:
         slot.pte = pte
         return pte
 
-    def access(self, raw_addr: int, is_write: bool, current_task_id: int = 0) -> tuple[str, str]:
+    def access(self, raw_addr: int, is_write: bool) -> tuple[str, str]:
         """
         Full dispatch: RAM bypass -> TLB/FlatMap -> permission check (always,
         TLB hit or not) -> syscall dispatch or physical access.
         Returns (status_code, detail).
         """
 
+        current_task_id = self.scheduler.current_task_id
         addr = VmmioAddress(raw_addr)
         # 1. Fast RAM bypass (Tier 1) — O(1), never touches the page table.
         if addr.is_linear():

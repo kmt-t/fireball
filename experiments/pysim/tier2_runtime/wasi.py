@@ -34,7 +34,6 @@ from hal_dispatch import (
     ARG_QUERY_CMD_ID,
     ARG_RX_BUFFER_HANDLE,
     ARG_SLAVE_ADDR,
-    ARG_TASK_ID,
     ARG_TX_BUFFER_HANDLE,
     ARG_VAL,
     WasiIpcCmd,
@@ -206,19 +205,17 @@ class Wasi03pEngine:
         if cmd_id == WasiIpcCmd.STREAM_WRITE_BUFFER:
             if iface.write_buffer is None:
                 return 0
-            task_id = _get_val(ARG_TASK_ID, 1)
             handle = _get_val(ARG_BUFFER_HANDLE)
             offset = _get_val(ARG_OFFSET, 0)
             length = _get_val(ARG_LENGTH, 0)
-            return iface.write_buffer(task_id, handle, offset, length)
+            return iface.write_buffer(handle, offset, length)
         elif cmd_id == WasiIpcCmd.STREAM_READ_BUFFER:
             if iface.read_buffer is None:
                 return 0
-            task_id = _get_val(ARG_TASK_ID, 1)
             handle = _get_val(ARG_BUFFER_HANDLE)
             offset = _get_val(ARG_OFFSET, 0)
             max_len = _get_val(ARG_MAX_LEN, 0)
-            return iface.read_buffer(task_id, handle, offset, max_len)
+            return iface.read_buffer(handle, offset, max_len)
         elif cmd_id == WasiIpcCmd.STREAM_FLUSH:
             return iface.flush() if iface.flush is not None else 0
         elif cmd_id == WasiIpcCmd.STREAM_CLOSE:
@@ -282,18 +279,18 @@ class Wasi03pEngine:
         HAL operates as a distinct task and communicates strictly over IPC rendezvous.
         """
         from hal_dispatch import make_hal_ipc_message
-        from ipc_router import IpcStatus, Role
+        from ipc_router import IPCStatus, Role
 
         # Ensure every HAL device/service instance's own task is spawned
         self.sysv.spawn_hal_tasks()
 
-        msg = make_hal_ipc_message(cmd_id, params.entries, memory_manager=self.sysv.memory_manager)
-
-        status, channel = self.sysv.ipc.lookup(uri)
-        if status != IpcStatus.COMPLETED or channel is None:
-            return None
-
         def sender_coro():
+            status, channel = self.sysv.ipc.lookup(uri)
+            assert status == IPCStatus.COMPLETED
+            assert channel is not None
+            msg = make_hal_ipc_message(
+                cmd_id, params.entries, memory_manager=self.sysv.memory_manager
+            )
             yield from self.sysv.ipc.send(channel, msg)
 
         self.sysv.scheduler.spawn("wasi_ipc_sender", sender_coro(), role=Role.RUNTIME)
@@ -315,15 +312,15 @@ class Wasi03pEngine:
     def _stream_close(self, fd: int) -> int:
         return 0
 
-    def _write_buffer(self, task_id: int, handle: object, offset: int, length: int) -> int:
+    def _write_buffer(self, handle: object, offset: int, length: int) -> int:
         """Writes data from shared memory (FC=14) to device transport."""
-        if not self.sysv.pool.can_view(task_id, handle, offset, length):
+        if not self.sysv.pool.can_view(handle, offset, length):
             return 0
-        view = self.sysv.pool.view(task_id, handle, offset, length)
+        view = self.sysv.pool.view(handle, offset, length)
         self.sysv.transport.write(bytes(view))
         return len(view)
 
-    def _read_buffer(self, task_id: int, handle: object, offset: int, max_len: int) -> int:
+    def _read_buffer(self, handle: object, offset: int, max_len: int) -> int:
         """Reads data from device transport into shared memory (FC=14)."""
         return 0
 
@@ -348,11 +345,10 @@ class WasiHostContext:
     Transparently adapts wasi_snapshot_preview1 function calls to WASI 0.3p / HAL Core.
     """
 
-    def __init__(self, sysv: System, guest_memory: bytearray | None = None, task_id: int = 1):
+    def __init__(self, sysv: System, guest_memory: bytearray | None = None):
         self.sysv = sysv
-        self.task_id = task_id
         self.guest_memory = guest_memory if guest_memory is not None else bytearray(64 * 1024)
-        self.sysv.bind_guest(self.guest_memory, task_id=self.task_id)
+        self.sysv.bind_guest(self.guest_memory)
         self.core03p = Wasi03pEngine(sysv)
         self.sysv.wasi_context = self
         self._keepalive_trampolines: list[object] = []

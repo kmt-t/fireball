@@ -270,7 +270,7 @@ stateDiagram-v2
 | :--- | :--- | :--- |
 | 機能概要 | 既存のコルーチンオブジェクトからネイティブタスクを生成し、READY キューに追加する。 | 操作定義 |
 | シグネチャ | `auto fireball::spawn_task(task&& t) -> result<os_task_id_t, os_result_t>` | 関数プロトタイプ |
-| 引数 | `t`: 移動セマンティクスによるムーブ専用のコルーチンタスクオブジェクト。<br>※ コルーチンフレームの有界性を担保するため、`t` の `promise_type` は `operator new`/`operator delete` をオーバーライドし、[`system_memory.md`](docs/components/tier1_core/system_memory.md) §4.2 の型付きスロット貸与API（`acquire_slot<T>()`/`pool_ref<T>`、カーネルプール `FB_CONF_KERNEL_HEAP_SIZE` 内から確保）を介してコルーチンフレームを確保する（`malloc`/`new` を用いない）。`t` はこの静的スロット割り当てに適合するコンパイル時コンセプト `is_heap_less<task>` を満たす型でなければならない。 | 引数定義 |
+| 引数 | `t`: 移動セマンティクスによるムーブ専用のコルーチンタスクオブジェクト。<br>※ コルーチンフレームの有界性を担保するため、`t` の `promise_type` は `operator new`/`operator delete` をオーバーライドし、[`system_memory.md`](docs/components/tier1_interface/system_memory.md) §4.2 の型付きスロット貸与API（`acquire_slot<T>()`/`pool_ref<T>`、カーネルプール `FB_CONF_KERNEL_HEAP_SIZE` 内から確保）を介してコルーチンフレームを確保する（`malloc`/`new` を用いない）。`t` はこの静的スロット割り当てに適合するコンパイル時コンセプト `is_heap_less<task>` を満たす型でなければならない。 | 引数定義 |
 | 戻り値 | 成功時は割り当てられたタスクID `os_task_id_t` を返し、失敗時はエラーコードを示す `os_result_t` （例：`ERR_MEM_FULL`, `ERR_INVALID_ARG`）を返す `result<os_task_id_t, os_result_t>` 型。 | 結果型 |
 | 事前条件 | `t` が有効なコルーチンハンドルを保持していること。 | 条件 |
 | 事後条件 | タスクが READY キューに追加される。 | 状態変化 |

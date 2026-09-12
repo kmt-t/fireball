@@ -2,7 +2,7 @@
 docs/components/tier2_runtime/concepts/runtime_memory_concept.py
 Reference Concept Implementation & Test Suite: Memory Manager Implementation
 (system_allocator / shm_allocator), realizing the abstract contract defined in
-docs/components/tier1_core/system_memory.md (co_mem).
+docs/components/tier1_interface/system_memory.md (co_mem).
 Implementation Invariants & Gotchas:
 - GOTCHA-MEM-01: 4KB page granularity permission isolation (different tasks never share a page).
 - GOTCHA-MEM-02: Strict ownership enforcement prevents non-owners from releasing or accessing blocks.
@@ -85,7 +85,7 @@ class Result(Generic[T]):
 
 
 # -----------------------------------------------------------------------------
-# Memory Views & Handles (system_memory.md Tier 1 co_mem Contract Compliant)
+# Memory Views & Handles (tier1_interface/system_memory.md Tier 1 co_mem Contract Compliant)
 # -----------------------------------------------------------------------------
 
 
@@ -390,7 +390,7 @@ class PMSAv8MPU:
 
 class MemoryManager:
     """Tier 2 physical implementation of the Tier 1 co_mem contract
-    (system_memory.md), realized via system_allocator / shm_allocator
+    (tier1_interface/system_memory.md), realized via system_allocator / shm_allocator
     (runtime_memory.md)."""
 
     def __init__(self):

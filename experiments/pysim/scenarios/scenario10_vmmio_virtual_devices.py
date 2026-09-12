@@ -43,6 +43,7 @@ from vmmio import (
     VMMIOController,
 )
 from wasm_reader import parse
+from scheduler import Scheduler
 
 
 def test_scenario_vmmio_virtual_devices():
@@ -61,7 +62,10 @@ def test_scenario_vmmio_virtual_devices():
     # -------------------------------------------------------------------------
     # Phase 2: vMMIO Page Table Registration & PTE Permission Checks
     # -------------------------------------------------------------------------
-    controller = VMMIOController(guest_ram_size=64 * 1024)
+    scheduler = Scheduler()
+    task_id = scheduler.spawn("scenario_task")
+    scheduler.current_task = scheduler.get_task(task_id)
+    controller = VMMIOController(guest_ram_size=64 * 1024, scheduler=scheduler)
     # Handlers tracking
     handled_events = []
 
@@ -81,11 +85,11 @@ def test_scenario_vmmio_virtual_devices():
     # Phase 3: Access Validation, TLB Caching & Owner Isolation
     # -------------------------------------------------------------------------
     # 3.1 Linear RAM Fast-Bypass Access (Bit 31 == 0)
-    status_ram, _ = controller.access(raw_addr=0x0000_0100, is_write=False, current_task_id=1)
+    status_ram, _ = controller.access(raw_addr=0x0000_0100, is_write=False)
     assert status_ram == "OK_GUEST_RAM"
     print("    [Phase 3.1] Linear RAM O(1) Fast-Bypass Access -> OK_GUEST_RAM [PASS]")
     # 3.2 Device Page Read/Write by Owner & Handler Dispatch
-    status_dev_w, _ = controller.access(raw_addr=0xC000_1010, is_write=True, current_task_id=1)
+    status_dev_w, _ = controller.access(raw_addr=0xC000_1010, is_write=True)
     assert status_dev_w == "OK_SYSCALL"
     assert len(handled_events) == 1
     assert handled_events[0] == (0, 0x010, True)
@@ -94,31 +98,39 @@ def test_scenario_vmmio_virtual_devices():
     tlb_idx = controller.tlb_index(dev_vpn)
     assert controller.tlb[tlb_idx].vpn == dev_vpn
     initial_hits = controller.tlb_hits
-    status_dev_r, _ = controller.access(raw_addr=0xC000_1010, is_write=False, current_task_id=1)
+    status_dev_r, _ = controller.access(raw_addr=0xC000_1010, is_write=False)
     assert status_dev_r == "OK_SYSCALL"
     assert controller.tlb_hits == initial_hits + 1
     print("    [Phase 3.3] Direct-Mapped Software TLB Hit (Folding XOR Hash) -> TLB_HIT [PASS]")
     # 3.4 Permission Violation: Write to Read-Only SHM
     # First access to SHM (Owner 2) write check
-    status_shm_w, _ = controller.access(raw_addr=0xE000_2008, is_write=True, current_task_id=2)
+    task2_id = controller.scheduler.spawn("task2")
+    controller.scheduler.current_task = controller.scheduler.get_task(task2_id)
+    status_shm_w, _ = controller.access(raw_addr=0xE000_2008, is_write=True)
     # SHM was mapped with write=True by default in map_shm_page; verify owner mismatch for task 1
-    status_owner_err, _ = controller.access(raw_addr=0xE000_2008, is_write=False, current_task_id=1)
+    controller.scheduler.current_task = controller.scheduler.get_task(1)
+    assert controller.scheduler.current_task is not None
+    status_owner_err, _ = controller.access(raw_addr=0xE000_2008, is_write=False)
     assert status_owner_err == TrapCode.OWNER_MISMATCH
     print(
         "    [Phase 3.4] Task Isolation Check (Task 1 accessing Task 2 SHM) -> TRAP_OWNER_MISMATCH [PASS]"
     )
     # 3.5 Revoke Ownership to In-Flight & TLB Invalidation
     controller.revoke_shm_owner(shm_vpn)
-    status_flight, _ = controller.access(raw_addr=0xE000_2008, is_write=False, current_task_id=2)
+    controller.scheduler.current_task = controller.scheduler.get_task(task2_id)
+    assert controller.scheduler.current_task is not None
+    status_flight, _ = controller.access(raw_addr=0xE000_2008, is_write=False)
     assert status_flight == TrapCode.OWNER_MISMATCH
     print("    [Phase 3.5] IPC Revoke & In-Flight TLB Invalidation -> TRAP_OWNER_MISMATCH [PASS]")
     # 3.6 Passthrough Physical Memory Access (FC=0xF)
-    status_pass, detail = controller.access(raw_addr=0xF000_3040, is_write=True, current_task_id=1)
+    controller.scheduler.current_task = controller.scheduler.get_task(1)
+    assert controller.scheduler.current_task is not None
+    status_pass, detail = controller.access(raw_addr=0xF000_3040, is_write=True)
     assert status_pass == "OK_PHYSICAL"
     assert "0x00030040" in detail
     print("    [Phase 3.6] Passthrough Direct Physical Access -> OK_PHYSICAL [PASS]")
     # 3.7 Unregistered Page Trap
-    status_unreg, _ = controller.access(raw_addr=0xC000_9000, is_write=False, current_task_id=1)
+    status_unreg, _ = controller.access(raw_addr=0xC000_9000, is_write=False)
     assert status_unreg == TrapCode.UNREGISTERED_PAGE
     print("    [Phase 3.7] Unregistered vMMIO Address Access -> TRAP_UNREGISTERED_PAGE [PASS]")
 
@@ -148,7 +160,6 @@ def test_scenario_vmmio_virtual_devices():
             module,
             memory=guest_ram,
             vmmio=controller,
-            task_id=1,
             phys_mem=phys_memory,
         )
 

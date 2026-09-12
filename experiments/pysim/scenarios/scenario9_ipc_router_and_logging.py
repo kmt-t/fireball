@@ -35,7 +35,7 @@ from ipc_router import (
     DataType,
     IPCMessage,
     IPCRouter,
-    IpcStatus,
+    IPCStatus,
     OwnershipState,
     Role,
     ScopeKind,
@@ -54,9 +54,15 @@ _CMD_KILL = 2
 
 def _make_test_ipc_message(entries: Sequence[tuple[int, int]] = ()) -> IPCMessage:
     """Constructs message storage through the Tier 2 adapter for this scenario."""
-    manager = MemoryManager()
+    scheduler = Scheduler()
+    task_id = scheduler.spawn("scenario_message_owner")
+    scheduler.current_task = scheduler.get_task(task_id)
+    assert scheduler.current_task is not None
+    manager = MemoryManager(scheduler)
     assert manager.init_manager(0x20020000, FB_CONF_MEMORY_POOL_SIZE).is_ok
-    return IPCMessage.from_entries(entries, memory_manager=manager)
+    message = IPCMessage.from_entries(entries, memory_manager=manager)
+    scheduler.current_task = None
+    return message
 
 
 def test_scenario_ipc_router_and_logging():
@@ -70,14 +76,14 @@ def test_scenario_ipc_router_and_logging():
     # IPC is inter-*task* communication: both parties below are genuine
     # scheduler tasks, each performing its own sequence of sends/recvs as its
     # own coroutine -- never a bare top-level function call.
-    sent: list[tuple[str, IpcStatus, IPCMessage]] = []
+    sent: list[tuple[str, IPCStatus, IPCMessage]] = []
 
     def client_app_task():
         # 1. Full CSP rendezvous with coos_receiver (spawned alongside this
         #    task below): whichever of the two runs first genuinely blocks,
         #    and the other's matching call completes the handoff.
         status1, ch1 = router.lookup("fireball://core/coos/0")
-        assert status1 == IpcStatus.COMPLETED and ch1 is not None
+        assert status1 == IPCStatus.COMPLETED and ch1 is not None
 
         msg1 = _make_test_ipc_message([(_KEY_CMD, _CMD_START_TASK), (_KEY_TASK_ID, 10)])
         status, _ = yield from router.send(ch1, msg1)
@@ -113,7 +119,7 @@ def test_scenario_ipc_router_and_logging():
 
     results = {name: (status, msg) for name, status, msg in sent}
     status1, msg1 = results["1_rendezvous"]
-    assert status1 == IpcStatus.COMPLETED
+    assert status1 == IPCStatus.COMPLETED
     assert msg1.ownership == OwnershipState.RECEIVER_OWNS, (
         "ownership transfers atomically the instant the rendezvous completes"
     )
@@ -125,16 +131,16 @@ def test_scenario_ipc_router_and_logging():
     )
 
     status2, msg2 = results["2_permission_denied"]
-    assert status2 == IpcStatus.ERR_PERMISSION_DENIED
+    assert status2 == IPCStatus.ERR_PERMISSION_DENIED
     assert msg2.ownership == OwnershipState.SENDER_OWNS
     print("    [Stage 1.2] IPC RBAC Check (RUNTIME -> DEBUGGER) -> ERR_PERMISSION_DENIED [PASS]")
 
     status3, _ = results["3_not_found"]
-    assert status3 == IpcStatus.ERR_NOT_FOUND
+    assert status3 == IPCStatus.ERR_NOT_FOUND
     print("    [Stage 1.3] IPC URI Lookup (Unknown URI) -> ERR_NOT_FOUND [PASS]")
 
     status4, msg4 = results["4_too_large"]
-    assert status4 == IpcStatus.ERR_MSG_TOO_LARGE
+    assert status4 == IPCStatus.ERR_MSG_TOO_LARGE
     assert msg4.ownership == OwnershipState.SENDER_OWNS
     print("    [Stage 1.4] IPC Message KV-pair Limit (9 > 8) -> ERR_MSG_TOO_LARGE [PASS]")
 

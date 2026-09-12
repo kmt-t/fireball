@@ -16,6 +16,7 @@ from enum import Enum, auto
 from types import TracebackType
 from typing import Generic, TypeVar
 
+from scheduler import Scheduler
 from system_containers import MutableFlatMapStorage, StaticVector
 
 T = TypeVar("T")
@@ -221,13 +222,18 @@ class SharedBlock:
         self._is_in_flight = False
         self.data: bytearray = data if data is not None else bytearray(size)
 
-    def get_address(self, caller_task_id: int) -> int:
+    def get_address(self) -> int:
         assert self._is_active, "Cannot access released or dropped SharedBlock"
-        assert self.owner == caller_task_id, "GOTCHA-MEM-02: non-owner cannot access SharedBlock"
+        assert self.owner == self._manager.current_task_id, (
+            "GOTCHA-MEM-02: non-owner cannot access SharedBlock"
+        )
         return self.base_address
 
-    def get_size(self, caller_task_id: int) -> int:
-        assert self.owner == caller_task_id, "GOTCHA-MEM-02: non-owner cannot access SharedBlock"
+    def get_size(self) -> int:
+        assert self._is_active, "Cannot access released or dropped SharedBlock"
+        assert self.owner == self._manager.current_task_id, (
+            "GOTCHA-MEM-02: non-owner cannot access SharedBlock"
+        )
         return self.size
 
     def get_owner(self) -> int:
@@ -331,10 +337,12 @@ class SharedBlock:
         packed = ((key & 0xFFFFFFFF) << 32) | (val & 0xFFFFFFFF)
         self.write_u64(index, packed)
 
-    def release(self, caller_task_id: int) -> int:
+    def release(self) -> int:
         """Revoke sender access and prepare for transfer (marks FLIGHT)."""
         assert self._is_active, "Cannot release inactive SharedBlock"
-        assert self.owner == caller_task_id, "GOTCHA-MEM-02: non-owner cannot release SharedBlock"
+        assert self.owner == self._manager.current_task_id, (
+            "GOTCHA-MEM-02: non-owner cannot release SharedBlock"
+        )
         if self._manager is not None:
             self._is_active = False
             self._is_in_flight = True
@@ -548,6 +556,7 @@ class MemoryManager:
 
     __slots__ = (
         "_page_mapping_callbacks",
+        "_scheduler",
         "mpu",
         "page_registry",
         "partition_owners",
@@ -558,7 +567,8 @@ class MemoryManager:
         "total_allocated_bytes",
     )
 
-    def __init__(self):
+    def __init__(self, scheduler: Scheduler):
+        self._scheduler = scheduler
         self.pool_base: int = 0
         self.pool_size: int = 0
         self.total_allocated_bytes: int = 0
@@ -577,6 +587,11 @@ class MemoryManager:
             for i in range(_FB_CONF_MAX_SHM_PHYS_PAGES)
         )
 
+    @property
+    def current_task_id(self) -> int:
+        """Returns the scheduler-authenticated identity for the active task."""
+        return self._scheduler.current_task_id
+
     def register_page_mapping_callbacks(
         self,
         callbacks: PageMappingCallbacks,
@@ -594,7 +609,8 @@ class MemoryManager:
         self.mpu = PMSAv8MPU(pool_base)
         return Result(value=True)
 
-    def acquire_task_heap(self, owner: int) -> Result[PartitionView]:
+    def acquire_task_heap(self) -> Result[PartitionView]:
+        owner = self._scheduler.current_task_id
         if owner in self.partition_owners:
             return Result(
                 error=MemoryErrorResult(
@@ -636,7 +652,8 @@ class MemoryManager:
         self.total_allocated_bytes += slot_size
         return Result(value=pv)
 
-    def release_task_heap(self, caller_task_id: int) -> None:
+    def release_task_heap(self) -> None:
+        caller_task_id = self._scheduler.current_task_id
         if caller_task_id not in self.partition_owners:
             return
         pv = self.partition_owners.remove(caller_task_id)
@@ -645,9 +662,9 @@ class MemoryManager:
 
     def allocate_shared(
         self,
-        caller_task_id: int,
         size: int,
     ) -> Result[SharedBlock]:
+        caller_task_id = self._scheduler.current_task_id
         assert caller_task_id != 0, "Shared block must be owned by an explicit task"
         if size <= 0 or size > FB_PAGE_SIZE:
             return Result(
@@ -732,11 +749,22 @@ class MemoryManager:
         )
         return Result(value=sb)
 
-    def grant_shared(self, shm_id: int, new_owner_task_id: int) -> bool:
+    def grant_shared(self, shm_id: int) -> bool:
         """Grants in-flight SHM block to the receiver task in page table (Grant phase)."""
+        new_owner_task_id = self._scheduler.current_task_id
+        assert new_owner_task_id not in (0, FB_TASK_ID_FLIGHT), (
+            "Grant target must be a concrete task identity"
+        )
+        assert self._scheduler.get_task(new_owner_task_id) is not None, (
+            "Grant target must be a registered scheduler task"
+        )
         slot = self.shm_slots.find(shm_id)
         if slot is None or not slot.allocated:
             return False
+        current_owner = self.page_registry.get_owner(slot.page_idx)
+        assert current_owner in (FB_TASK_ID_FLIGHT, new_owner_task_id), (
+            "Shared block must be in flight before grant"
+        )
         slot.owner = new_owner_task_id
         if slot.page_idx < len(self.shm_pages):
             self.shm_pages[slot.page_idx].owner_id = new_owner_task_id
@@ -747,7 +775,8 @@ class MemoryManager:
             )
         return True
 
-    def claim(self, receiver_task_id: int, shm_id: int) -> Result[SharedBlock]:
+    def claim(self, shm_id: int) -> Result[SharedBlock]:
+        receiver_task_id = self._scheduler.current_task_id
         slot = self.shm_slots.find(shm_id)
         if slot is None or not slot.allocated:
             return Result(
@@ -780,8 +809,9 @@ class MemoryManager:
         )
         return Result(value=sb)
 
-    def rollback_transfer(self, original_sender_id: int, shm_id: int) -> None:
+    def rollback_transfer(self, shm_id: int) -> None:
         """Restores a shared block's original owner in the page table."""
+        original_sender_id = self._scheduler.current_task_id
         slot = self.shm_slots.find(shm_id)
         if slot is not None:
             slot.owner = original_sender_id
@@ -793,15 +823,16 @@ class MemoryManager:
                     slot.page_idx, slot.base_address, original_sender_id
                 )
 
-    def deallocate(self, caller_task_id: int, addr: int) -> None:
+    def deallocate(self, addr: int) -> None:
         """Deallocate local static partition or slot. Owner enforced."""
+        caller_task_id = self._scheduler.current_task_id
         owners_view = self.partition_owners.view()
         for i in range(len(owners_view.keys)):
             owner = owners_view.keys[i]
             pv = owners_view.values[i]
             if pv.base_address == addr:
                 if owner == caller_task_id:
-                    self.release_task_heap(caller_task_id)
+                    self.release_task_heap()
                 return
 
     def _deallocate_shared_slot(self, page_idx: int, slot_idx: int, owner: int) -> None:

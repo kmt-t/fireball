@@ -48,6 +48,7 @@ uv run python .agents/skills/component-review/scripts/collect_chain.py <componen
 - `concept`: コンセプトコード Python パス
 - `test_spec`: テスト仕様書 Markdown パス
 - `wit`: WIT インターフェース定義
+- `contract_only`: `true` の場合、独立インターフェイス契約としてコンセプト実装層を持たないことを明示
 - `missing_evidences`: 仕様書ヘッダーで参照されているが存在しないファイル（未結線・リンク切れ）
 
 ---
@@ -80,6 +81,8 @@ invoke_subagent(
 
 各サブエージェントへの指示プロンプトには、**対象ファイルの絶対パス**、評価ルーブリック [`references/evaluation_rubric.md`](./references/evaluation_rubric.md)、およびアンチパターンカタログ [`.agents/rules/verification-antipatterns.md`](../../rules/verification-antipatterns.md) を参照させます。
 
+> **契約のみのコンポーネント**: 独立したインターフェイス契約は、仕様書の evidence ブロックに `contract-only: true` を宣言できる。この場合、コンセプト実装は契約側のコンポーネント配下へ置かず、実装コンポーネント側の4層チェーンで監査する。形式検証・テスト仕様・WITの結線と `BACKS` は引き続き必須である。
+>
 > **コンセプトコードと pysim の規約分離**: `docs/**/concepts/` のコンセプトコードでは Python 標準の `dict` / `set` / `list` を使用してよい。`experiments/pysim/` 専用の `dict` / `set` / `list` 禁止規約や静的スキャナを、コンセプトコードのレビューへ適用してはならない。
 
 #### サブエージェント 1: 仕様・形式検証レビュー (`spec-formal-reviewer`)

@@ -29,7 +29,7 @@ from hal_dispatch import HalBufferHandle, HalBufferPool, UartTransport
 from ipc_router import (
     IPCMessage,
     IPCRouter,
-    IpcStatus,
+    IPCStatus,
     Role,
     bytes_to_kv_storage,
     kv_entries_to_bytes,
@@ -49,7 +49,7 @@ from memory import (
     MemoryManager,
 )
 from runtime_engine import RuntimeEngine
-from scheduler import FB_CONF_MAX_TASKS, Channel, Scheduler, TaskState
+from scheduler import FB_CONF_MAX_TASKS, Channel, Scheduler, Task, TaskState
 from system_containers import MutableFlatMapStorage, RadixBinaryTreeView, StaticVector
 from vmmio import (
     FC_STATIC_DEVICE,
@@ -167,13 +167,12 @@ class BusMaster:
         real shared-memory pool.
     """
 
-    def __init__(self, pool: HalBufferPool, task_id: int):
+    def __init__(self, pool: HalBufferPool):
         self.pool = pool
-        self.task_id = task_id
 
     def transfer_data(self, tx: ShmSlice, rx: ShmSlice) -> int:
-        tx_view = self.pool.view(self.task_id, tx.handle, tx.offset, tx.len)
-        rx_view = self.pool.view(self.task_id, rx.handle, rx.offset, rx.len)
+        tx_view = self.pool.view(tx.handle, tx.offset, tx.len)
+        rx_view = self.pool.view(rx.handle, rx.offset, rx.len)
         n = min(len(tx_view), len(rx_view))
         rx_view[:n] = bytes(tx_view[:n])
         return n
@@ -182,17 +181,16 @@ class BusMaster:
 class BusSlave:
     """`fireball:host/bus`'s `bus-slave.set-response` / `get-received`."""
 
-    def __init__(self, pool: HalBufferPool, task_id: int):
+    def __init__(self, pool: HalBufferPool):
         self.pool = pool
-        self.task_id = task_id
         self._pending_response: bytes = b""
 
     def set_response(self, data: ShmSlice) -> None:
-        view = self.pool.view(self.task_id, data.handle, data.offset, data.len)
+        view = self.pool.view(data.handle, data.offset, data.len)
         self._pending_response = bytes(view)
 
     def get_received(self, dest: ShmSlice) -> int:
-        view = self.pool.view(self.task_id, dest.handle, dest.offset, dest.len)
+        view = self.pool.view(dest.handle, dest.offset, dest.len)
         n = min(len(view), len(self._pending_response))
         view[:n] = self._pending_response[:n]
         return n
@@ -210,15 +208,16 @@ class System:
 
     def __init__(self):
         self.transport = UartTransport()
-        self.pool = HalBufferPool()
         self.dictionary = LogDictionary()
         self.logger = Logger(self.transport, self.dictionary, min_level=LogLevel.DEBUG)
         self.console = ConsoleOutput(self.transport)
+        self.scheduler = Scheduler(logger=self.logger)
+        self.pool = HalBufferPool(self.scheduler)
         # --- vMMIO: real FlatMap+TLB dispatch, this file's own register/byte
         # storage behind it (vmmio_concept.access() deliberately stops at the
         # dispatch decision -- see its module docstring -- it carries no
         # value/buffer of its own).
-        self.vmmio = VMMIOController(guest_ram_size=FB_CONF_GUEST_RAM_SIZE)
+        self.vmmio = VMMIOController(guest_ram_size=FB_CONF_GUEST_RAM_SIZE, scheduler=self.scheduler)
         self.sysctl_regs = bytearray(0x30)
         self.ipcr_regs = bytearray(0x10)
         self.vdma_regs = bytearray(0x10)
@@ -237,10 +236,11 @@ class System:
             )
 
         # Physical Memory Manager (system_memory.md contract / runtime_memory.md impl) with 64KB aligned pool
-        self.memory_manager = MemoryManager()
+        # The scheduler is the sole source of the current task identity used by
+        # ownership-sensitive memory operations.
+        self.memory_manager = MemoryManager(self.scheduler)
         self.vmmio.register_to_memory_manager(self.memory_manager)
         self.memory_manager.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
-        self.scheduler = Scheduler(logger=self.logger)
         self.ipc = IPCRouter(self.scheduler, logger=self.logger, memory_manager=self.memory_manager)
         self._channel_table: StaticVector[Channel] = StaticVector(capacity=FB_CONF_MAX_TASKS)
         # Direct 1-based index mapping over sorted self.ipc.registry.keys array (no dynamic dict)
@@ -250,7 +250,7 @@ class System:
         self.reset_requested = False
         self.exit_code: int | None = None
         self._guest_memory: bytearray | None = None
-        self._current_task_id = 0
+        self._bound_guest_task: Task | None = None
         self.hal_tasks: MutableFlatMapStorage[int, HalTask] = MutableFlatMapStorage(capacity=8)
         self._hal_task_ids: MutableFlatMapStorage[int, int] = MutableFlatMapStorage(capacity=8)
         self.gdb_server: GDBServer | None = None
@@ -381,15 +381,23 @@ class System:
         self.logger.flush()
         self.runtime_engine.idle_hook(budget=4)
 
-    def bus_master(self, task_id: int) -> BusMaster:
-        return BusMaster(self.pool, task_id)
+    def start_runtime_task(self, name: str = "runtime_host", role: Role = Role.RUNTIME) -> Task:
+        """Starts an explicitly scheduler-owned task for a runtime host entrypoint."""
+        assert self.scheduler.current_task is None, "A scheduler task is already active"
+        task_id = self.scheduler.spawn(name, role=role)
+        task = self.scheduler.get_task(task_id)
+        assert task is not None
+        self.scheduler.detach(task)
+        self.scheduler.current_task = task
+        return task
 
-    def bus_slave(self, task_id: int) -> BusSlave:
-        return BusSlave(self.pool, task_id)
+    def bus_master(self) -> BusMaster:
+        return BusMaster(self.pool)
 
-    def bind_guest(
-        self, memory: bytearray | None, task_id: int = 1, role: Role = Role.RUNTIME
-    ) -> None:
+    def bus_slave(self) -> BusSlave:
+        return BusSlave(self.pool)
+
+    def bind_guest(self, memory: bytearray | None, role: Role = Role.RUNTIME) -> None:
         """
         Must be called before invoking guest code that will use
                 `fb_offset_t` arguments (IPC_*/WASI_*): those are relative offsets
@@ -399,17 +407,16 @@ class System:
                 per-task table.
         """
         self._guest_memory = memory
-        self._current_task_id = task_id
         # fireball_call's IPC_SEND/IPC_RECV delegate to scheduler.Channel,
         # which rendezvous on registered Task objects, not bare task_id ints.
         # This task is driven directly by fireball_call, never by the
         # scheduler's own run_until_idle() loop, so it must not sit in READY.
-        task = self.scheduler.get_task(task_id)
+        task = self.scheduler.current_task
         if task is None:
-            self.scheduler.spawn(name=f"guest_task_{task_id}", task_id=task_id, role=role)
-            self.scheduler.detach(self.scheduler.get_task(task_id))
-        else:
-            task.role = role
+            task = self.start_runtime_task(name="guest_task", role=role)
+        assert task.role == role, "Guest binding role must match the current scheduler task"
+        self.scheduler.current_task = task
+        self._bound_guest_task = task
 
     # --- fireball_call ------------------------------------------------
     def fireball_call(
@@ -429,6 +436,9 @@ class System:
                 generic u32 args, dispatched via RadixBinaryTreeView.
         """
 
+        assert self.scheduler.current_task is not None, (
+            "fireball_call requires an active scheduler task"
+        )
         handler = self._syscall_dispatch_tree.find(syscall_id)
         if handler is not None:
             return handler(arg0, arg1, arg2, arg3, arg4, arg5)
@@ -505,7 +515,7 @@ class System:
                 Returns (errno_or_None, backing_bytearray_or_None, local_offset).
         """
 
-        status, _ = self.vmmio.access(addr, is_write, current_task_id=self._current_task_id)
+        status, _ = self.vmmio.access(addr, is_write)
         errno = self._trap_to_errno(status)
         if errno is not None:
             return errno, None, None
@@ -638,18 +648,12 @@ class System:
             uri = raw.decode("utf-8")
         except UnicodeDecodeError:
             return int(WasiErrno.INVAL)
-        task = self.scheduler.get_task(self._current_task_id)
-        if task is None:
-            task = self.scheduler.get_task(
-                self.scheduler.spawn(
-                    name=f"guest_task_{self._current_task_id}", task_id=self._current_task_id
-                )
-            )
-        self.scheduler.current_task = task
+        task = self.scheduler.current_task
+        assert task is not None, "IPC lookup requires an active scheduler task"
         status, channel = self.ipc.lookup(uri)
-        if status == IpcStatus.ERR_NOT_FOUND or channel is None:
+        if status == IPCStatus.ERR_NOT_FOUND or channel is None:
             return int(WasiErrno.NOENT)
-        if status == IpcStatus.ERR_PERMISSION_DENIED:
+        if status == IPCStatus.ERR_PERMISSION_DENIED:
             return int(WasiErrno.PERM)
         if not self._channel_table.push_back(channel):
             return WasiErrno.NOMEM
@@ -662,19 +666,12 @@ class System:
         payload = self._read_guest(msg_offset, msg_len)
         if payload is None:
             return WasiErrno.FAULT
+        task = self.scheduler.current_task
+        assert task is not None, "IPC send requires an active scheduler task"
         msg = IPCMessage.from_entries(
             bytes_to_kv_storage(payload),
             memory_manager=self.memory_manager,
-            task_id=self._current_task_id,
         )
-        task = self.scheduler.get_task(self._current_task_id)
-        if task is None:
-            task = self.scheduler.get_task(
-                self.scheduler.spawn(
-                    name=f"guest_task_{self._current_task_id}", task_id=self._current_task_id
-                )
-            )
-        self.scheduler.current_task = task
 
         gen = self.ipc.send(channel, msg)
         try:
@@ -686,30 +683,25 @@ class System:
                 task.state not in (TaskState.TERMINATED, TaskState.READY) and task.coro is not None
             ):
                 self.scheduler.step()
-            status, _ = task.result if task.result else (IpcStatus.COMPLETED, None)
+            status, _ = task.result if task.result else (IPCStatus.COMPLETED, None)
         except StopIteration as e:
             # Direct O(1) rendezvous handoff (atomic ownership transfer)
             try:
                 status, _ = e.value
             except (TypeError, ValueError):
-                status = IpcStatus.COMPLETED
+                status = IPCStatus.COMPLETED
             self.scheduler.run_until_idle()
 
-        if status == IpcStatus.COMPLETED:
+        self.scheduler.current_task = task
+        if status == IPCStatus.COMPLETED:
             return WasiErrno.SUCCESS
-        if status == IpcStatus.ERR_PERMISSION_DENIED:
+        if status == IPCStatus.ERR_PERMISSION_DENIED:
             return WasiErrno.PERM
         return WasiErrno.NOENT
 
     def _ipc_recv(self, handle_id: int, buf_offset: int, buf_len: int) -> int:
-        task = self.scheduler.get_task(self._current_task_id)
-        if task is None:
-            task = self.scheduler.get_task(
-                self.scheduler.spawn(
-                    name=f"guest_task_{self._current_task_id}", task_id=self._current_task_id
-                )
-            )
-        self.scheduler.current_task = task
+        task = self.scheduler.current_task
+        assert task is not None, "IPC receive requires an active scheduler task"
 
         gen = self.ipc.recv()
         try:
@@ -721,16 +713,17 @@ class System:
                 task.state not in (TaskState.TERMINATED, TaskState.READY) and task.coro is not None
             ):
                 self.scheduler.step()
-            status, msg = task.result if task.result else (IpcStatus.COMPLETED, None)
+            status, msg = task.result if task.result else (IPCStatus.COMPLETED, None)
         except StopIteration as e:
             # Direct O(1) rendezvous handoff
             try:
                 status, msg = e.value
             except (TypeError, ValueError):
-                status, msg = IpcStatus.COMPLETED, None
+                status, msg = IPCStatus.COMPLETED, None
             self.scheduler.run_until_idle()
 
-        if status in (IpcStatus.ERR_NOT_FOUND, IpcStatus.ERR_PERMISSION_DENIED) or msg is None:
+        self.scheduler.current_task = task
+        if status in (IPCStatus.ERR_NOT_FOUND, IPCStatus.ERR_PERMISSION_DENIED) or msg is None:
             return int(WasiErrno.NOENT)
         data = kv_entries_to_bytes(msg.entries, max_len=buf_len)
         n = len(data)

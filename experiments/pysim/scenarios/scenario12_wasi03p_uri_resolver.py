@@ -50,7 +50,6 @@ from hal_dispatch import (
     ARG_OFFSET,
     ARG_PIN_NO,
     ARG_QUERY_CMD_ID,
-    ARG_TASK_ID,
     ARG_VAL,
     DummyBusDriver,
     DummyGpioDriver,
@@ -173,8 +172,8 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
     print(f"    [IPC CMD:GPIO_SET_PIN] Verified output: {out_gpio}")
 
     # 6. Test WASI 0.3p IPC Command Protocol: Stream Write via HAL buffer (0x01)
-    buffer_handle = sysv.pool.acquire_buffer(task_id=1, size=64)
-    buffer_view = sysv.pool.view(task_id=1, handle=buffer_handle, offset=0, length=24)
+    buffer_handle = sysv.pool.acquire_buffer(size=64)
+    buffer_view = sysv.pool.view(buffer_handle, offset=0, length=24)
     msg = b"IPC-CMD-SHM-STREAM-OK!"
     buffer_view[0 : len(msg)] = msg
 
@@ -182,7 +181,6 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
         "fireball://device/uart/0",
         WasiIpcCmd.STREAM_WRITE_BUFFER,
         _params(
-            (ARG_TASK_ID, 1),
             (ARG_BUFFER_HANDLE, buffer_handle),
             (ARG_OFFSET, 0),
             (ARG_LENGTH, len(msg)),
@@ -200,7 +198,6 @@ def test_wasi03p_hierarchical_uri_and_ipc_commands():
         (ARG_LENGTH, len(msg)),
         (ARG_OFFSET, 0),
         (ARG_BUFFER_HANDLE, buffer_handle),
-        (ARG_TASK_ID, 1),
     )
     nwritten_fmap = engine.dispatch_command(
         "fireball://device/uart/0", WasiIpcCmd.STREAM_WRITE_BUFFER, fmap_view

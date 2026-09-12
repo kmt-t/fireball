@@ -319,7 +319,7 @@ Copy-and-Patch JIT コンパイラ（`jit_compiler`）および 3 面循環キ�
 
 ### 4.5 Tier 3 Platform: HAL ドライバ実装
 
-ハードウェア抽象化ドライバの機能要求と設計の勘所。契約/実装分割パターン（`{META_ContractImplSplit}`）により、抽象化層（URI Resolver、コマンドプロトコル）は Tier 2（`hal_dispatch.md`）、物理ドライバ実装は Tier 3（`platform_driver.md`）に配置される。メモリマネージャも同パターンにより Tier 1（`system_memory.md`）と Tier 2（`runtime_memory.md`）へ移設済みのため、本書内の Tier 1 Core（`system_memory.md`）および Tier 2 Runtime（`runtime_memory.md`）の項を参照。
+ハードウェア抽象化ドライバの機能要求と設計の勘所。契約/実装分割パターン（`{META_ContractImplSplit}`）により、抽象化層（URI Resolver、コマンドプロトコル）は Tier 2（`hal_dispatch.md`）、物理ドライバ実装は Tier 3（`platform_driver.md`）に配置される。メモリマネージャも同パターンにより Tier 1 Interface（`system_memory.md`）と Tier 2（`runtime_memory.md`）へ移設済みのため、本書内の Tier 1 Interface（`system_memory.md`）および Tier 2 Runtime（`runtime_memory.md`）の項を参照。
 
 #### 4.5.1 Tier 3 Platform 要求キーワード (2 件)
 

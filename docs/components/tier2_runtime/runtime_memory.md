@@ -5,15 +5,15 @@
      concept: concepts/runtime_memory_concept.py
 -->
 
-本コンポーネントは、Tier 1 の抽象契約 [`system_memory.md`](docs/components/tier1_core/system_memory.md)（`co_mem` インターフェース、パーティション貸与ポリシー、独立ヒープ不変条件）の物理実装である。契約と実装の記述に食い違いがあれば `system_memory.md` を正とする（`{META_ContractImplSplit}` 契約/実装分割パターン）。
+本コンポーネントは、Tier 1 Interface の抽象契約 [`system_memory.md`](docs/components/tier1_interface/system_memory.md)（`co_mem` インターフェース、パーティション貸与ポリシー、独立ヒープ不変条件）の物理実装である。契約と実装の記述に食い違いがあれば `system_memory.md` を正とする（`{META_ContractImplSplit}` 契約/実装分割パターン）。
 
 ## 1. コンセプト
 <!-- traceability: {System_Allocator} {Shm_Allocator} {ConsolidatedHeap} -->
-[`system_memory.md`](docs/components/tier1_core/system_memory.md) が定義する5プール契約（ホスト用ヒープ・タスクヒープ・共有メモリ用ヒープ・ランタイム用バンプアロケータ・JITキャッシュアロケータ）のうち、ホスト用ヒープ・タスクヒープ・共有メモリ用ヒープの3プールを直接実装する。システム基盤向けシステムコンテナの動的確保・個別解放を担う**システム用アロケータ (`system_allocator` / `{System_Allocator}`、ホスト用ヒープの実装)**、タスク起動時に貸与する固定長パーティション（タスクヒープの実装）、およびタスク間ゼロコピー IPC 転送用の共有メモリ領域（MPU Region 6）から可変長バッファを切り出す**SHM用アロケータ (`shm_allocator` / `{Shm_Allocator}`、共有メモリ用ヒープの実装)** を dlmalloc（`create_mspace_with_base`）により運用する。残る2プール（ランタイム用バンプアロケータ・JITキャッシュアロケータ）は、それぞれ `{Runtime_BumpAllocator}`（[`runtime_loader.md`](docs/components/tier2_runtime/runtime_loader.md)）および `{JIT_MultiBuffer_Cache}`（[`jit_runtime.md`](docs/components/tier3_jit/jit_runtime.md)）が物理的に実現し、本コンポーネントは本書の「Cortex-M33 PMSAv8 MPU リージョン配分」を正本として、それらの保護ドメインを提供する。 `{System_Allocator}` `{Shm_Allocator}` `{ConsolidatedHeap}`
+[`system_memory.md`](docs/components/tier1_interface/system_memory.md) が定義する5プール契約（ホスト用ヒープ・タスクヒープ・共有メモリ用ヒープ・ランタイム用バンプアロケータ・JITキャッシュアロケータ）のうち、ホスト用ヒープ・タスクヒープ・共有メモリ用ヒープの3プールを直接実装する。システム基盤向けシステムコンテナの動的確保・個別解放を担う**システム用アロケータ (`system_allocator` / `{System_Allocator}`、ホスト用ヒープの実装)**、タスク起動時に貸与する固定長パーティション（タスクヒープの実装）、およびタスク間ゼロコピー IPC 転送用の共有メモリ領域（MPU Region 6）から可変長バッファを切り出す**SHM用アロケータ (`shm_allocator` / `{Shm_Allocator}`、共有メモリ用ヒープの実装)** を dlmalloc（`create_mspace_with_base`）により運用する。残る2プール（ランタイム用バンプアロケータ・JITキャッシュアロケータ）は、それぞれ `{Runtime_BumpAllocator}`（[`runtime_loader.md`](docs/components/tier2_runtime/runtime_loader.md)）および `{JIT_MultiBuffer_Cache}`（[`jit_runtime.md`](docs/components/tier3_jit/jit_runtime.md)）が物理的に実現し、本コンポーネントは本書の「Cortex-M33 PMSAv8 MPU リージョン配分」を正本として、それらの保護ドメインを提供する。 `{System_Allocator}` `{Shm_Allocator}` `{ConsolidatedHeap}`
 
 ## 2. アーキテクチャ分類
 <!-- traceability: {META_3TierSeparation} -->
-本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属し、Tier 1 の `system_memory.md` 契約を dlmalloc ベースのアロケータ群として物理実装する。 `{META_3TierSeparation}`
+本コンポーネントは **Tier 2 (分解されたサブコンポーネント: Decomposed Subcomponent)** に属し、Tier 1 Interface の `system_memory.md` 契約を dlmalloc ベースのアロケータ群として物理実装する。 `{META_3TierSeparation}`
 
 ## 3. 静的モデル
 
@@ -24,7 +24,7 @@
 ### 3.2 内部ブロック図
 ```mermaid
 flowchart TD
-    Contract["system_memory.md (Tier1 契約: co_mem)"] -.->|realizes| Impl[runtime_memory: MemoryManagerImpl]
+    Contract["tier1_interface/system_memory.md (Tier1 契約: co_mem)"] -.->|realizes| Impl[runtime_memory: MemoryManagerImpl]
     Impl --> SysAlloc[system_allocator: dlmalloc mspace]
     Impl --> ShmAlloc[shm_allocator: dlmalloc mspace]
     SysAlloc --> KernelPool[Kernel Pool / Heap: MPU Region 2]
@@ -34,7 +34,7 @@ flowchart TD
 ```
 
 ## 4. インターフェース実装
-[`system_memory.md`](docs/components/tier1_core/system_memory.md) のインターフェース設計節で定義された公開APIを、以下のアロケータ群を用いて実現する。
+[`system_memory.md`](docs/components/tier1_interface/system_memory.md) のインターフェース設計節で定義された公開APIを、以下のアロケータ群を用いて実現する。
 
 - 起動時初期化: `system_allocator`/`shm_allocator` それぞれに対応する `create_mspace_with_base` を実行する（`system_config.md` の `FB_CONF_*` 静的構成に基づく）。
 - `host-alloc`/`host-free`: `system_allocator` の mspace 上で有界レイテンシの動的確保・個別解放を行う（ホスト用ヒープ）。
@@ -52,7 +52,7 @@ flowchart TD
   - `{META_BumpAllocator}`: 固定長パーティションおよび型付きプールスロットによる断片化なき高速貸与。
   - `{Runtime_BumpAllocator}`: 1ランタイム1ゲスト（`{OneRuntimeOneGuest}`）の実行モデルにおいて、各ランタイムに対して固定長 RAM パーティション（データアリーナ: `RW + XN`）を一括貸与する。ランタイム内部のシステムコンテナストレージ確保はすべてこのアリーナから順次切り出され、アンロード時は個別オブジェクトの破棄なしに $O(1)$ でアリーナ全体が回収・リセットされる。なお、JIT ネイティブコードキャッシュ（3-Bank）は MPU の `W^X`（ライト・実行権限排他）制御が適用された専用の実行可能セクションから専用の JIT コードアロケータによって確保され、データ用バンプアロケータ（RAM/XN）とはハードウェア保護ドメインが厳格に分離される。
   - `{System_Allocator}`: システム層（カーネル、vMMIO、IPC ルータ等）のシステムコンテナストレージ向けに、固定長システムヒープアリーナを dlmalloc（`mspace`）により運用する。システム稼働中の動的な登録・破棄に柔軟対応し、$O(\log n)$ の有界レイテンシで個別解放と断片化の自動合体を提供する。
-  - `{Shm_Allocator}`: 共有メモリ領域（MPU Region 6）を固定長アリーナとして dlmalloc（`mspace`）により運用し、`allocate_shared(caller_task_id, size)` 要求に即座に応じる。RAII 解放時の自動合体により、長時間のゼロコピー IPC 通信下でも断片化を最小化する。
+  - `{Shm_Allocator}`: 共有メモリ領域（MPU Region 6）を固定長アリーナとして dlmalloc（`mspace`）により運用し、実行中タスクをスケジューラから取得して `allocate_shared(size)` 要求に即座に応じる。RAII 解放時の自動合体により、長時間のゼロコピー IPC 通信下でも断片化を最小化する。
   - `{WasmPageAlignment}`: ゲスト RAM（Region 3）を WASM ページサイズである **64KB アライメント**（`0x10000` 境界）に配置し、単一の比較命令による $O(1)$ 高速境界検査（`FastAddressCheck`）と PMSAv8 リージョン境界を完全一致させる。
 
 ### 5.2 メモリ制約と方策
@@ -73,14 +73,14 @@ flowchart TD
 ## 6. 物理ページマッピングと共有メモリライフサイクルの物理実装
 <!-- traceability: {GLOBAL_Policy_Memory} {META_FaultIsolation} {OwnershipTransfer} {PageGranularPermissionIsolation} {VmmioShmDelegation} -->
 
-[`system_memory.md`](docs/components/tier1_core/system_memory.md) の `{OwnershipTransfer}` 契約（所有権追跡・イベント通知インターフェース・ライフサイクルフェーズ）を、以下のとおり物理実装する。
+[`system_memory.md`](docs/components/tier1_interface/system_memory.md) の `{OwnershipTransfer}` 契約（所有権追跡・イベント通知インターフェース・ライフサイクルフェーズ）を、以下のとおり物理実装する。
 
 ### 6.1 所有権追跡の物理実装
 各メモリブロックは `memory-info.owner` で割り当て元 task-id を追跡する。`acquire-task-heap`/`acquire_slot`/`release-task-heap`/`release_slot` や `RAII`/`drop` による解放は、用途別に事前確保された独立パーティション（固定長アリーナ）から `shm_allocator`/`system_allocator` を用いて有界に切り出し、使用後にアリーナへ返却・合体する。
 
 ### 6.2 共有メモリマッピングと仮想化リスナーへのコールバック委譲（物理実装）
 <!-- traceability: {VmmioShmDelegation} {OwnerMismatchTrap} -->
-物理メモリマネージャは、クリーンアーキテクチャ（依存性逆転の原則: DIP）に従い、特定の上位仮想化ハードウェア（vMMIO 等）の内部シンボルや特定の仮想アドレス体系（`0xE000_0000`）に直接依存しない。これは Tier 1 契約（[`system_memory.md`](docs/components/tier1_core/system_memory.md)）が要求する事項ではなく、本コンポーネント自身が DIP を維持するために自発的に採用する物理実装上の設計である。物理メモリマネージャは `{VmmioShmDelegation}` が定義するイベント通知インターフェース（リスナー機構）を提供し、仮想化層（vMMIO コントローラ等）がこれを購読・登録する。 `{VmmioShmDelegation}`
+物理メモリマネージャは、クリーンアーキテクチャ（依存性逆転の原則: DIP）に従い、特定の上位仮想化ハードウェア（vMMIO 等）の内部シンボルや特定の仮想アドレス体系（`0xE000_0000`）に直接依存しない。これは Tier 1 Interface 契約（[`system_memory.md`](docs/components/tier1_interface/system_memory.md)）が要求する事項ではなく、本コンポーネント自身が DIP を維持するために自発的に採用する物理実装上の設計である。物理メモリマネージャは `{VmmioShmDelegation}` が定義するイベント通知インターフェース（リスナー機構）を提供し、仮想化層（vMMIO コントローラ等）がこれを購読・登録する。 `{VmmioShmDelegation}`
 
 物理メモリマネージャは物理ページ（4KB）のライフサイクル変化時にこの通知を発火し、仮想化層側が自身の仮想アドレス空間（VPN）に対応するページテーブル（PTE）更新や TLB エントリフラッシュを自律的に実施する。 `{OwnerMismatchTrap}`
 
@@ -91,14 +91,14 @@ Cortex-M33 MPU および vMMIO のハードウェア保護機構において、�
 
 1. **他タスクとのページ混在の禁止**:
    - 異なるタスクに属する共有メモリスロットを同一 4KB 物理ページ内に共存（相乗り）させることは厳格に禁止される。
-   - `allocate_shared(caller_task_id, size)` は、`size` が 1〜4KB の範囲であることを確認し、1ブロックにつき新規の 4KB 物理ページを `caller_task_id` 専用として払い出す。そのページ境界内でのみメモリを切り出し、4KB を超える要求は拒否する。同一所有者のブロックもページを共有しないため、ページ単位の Revoke/Grant で所有権が分裂しない。 `{Shm_Allocator}` `{PageGranularPermissionIsolation}`
+   - `allocate_shared(size)` は、スケジューラの current task を所有者として認証し、`size` が 1〜4KB の範囲であることを確認する。1ブロックにつき新規の 4KB 物理ページを払い出し、そのページ境界内でのみメモリを切り出す。4KB を超える要求は拒否し、同一所有者のブロックもページを共有しないため、ページ単位の Revoke/Grant で所有権が分裂しない。 `{Shm_Allocator}` `{PageGranularPermissionIsolation}`
 2. **ページ単位の所有権移譲**:
    - IPC 転送時、所有権の移譲（Revoke $\to$ Grant）はページ全体を単位として連動する。
    - ページ内の全スロットは常に同一の所有者（または移譲中アンマップ状態）であり、一部のスロットのみが別タスクへ移譲されてページ内で所有者が分裂する状態は生じない。
 
 ### 6.4 共有メモリライフサイクルと権限遷移プロトコル（物理実装）
 <!-- traceability: {OwnershipTransfer} {META_FaultIsolation} -->
-[`system_memory.md`](docs/components/tier1_core/system_memory.md) の `{OwnershipTransfer}` ライフサイクルフェーズ遷移表に対応する、物理メモリマネージャ自身の動作を以下に示す。依存性逆転（DIP）の設計方針に従い、各フェーズでのページテーブル（PTE）更新・TLB フラッシュの実行は仮想化層（vMMIO コントローラ）の自律的な責務であり、本コンポーネントはライフサイクル通知の発火のみを行う。vMMIO 側の具体的な PTE/TLB 挙動は [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md) を正本とする。
+[`system_memory.md`](docs/components/tier1_interface/system_memory.md) の `{OwnershipTransfer}` ライフサイクルフェーズ遷移表に対応する、物理メモリマネージャ自身の動作を以下に示す。依存性逆転（DIP）の設計方針に従い、各フェーズでのページテーブル（PTE）更新・TLB フラッシュの実行は仮想化層（vMMIO コントローラ）の自律的な責務であり、本コンポーネントはライフサイクル通知の発火のみを行う。vMMIO 側の具体的な PTE/TLB 挙動は [`runtime_vmmio.md`](docs/components/tier2_runtime/runtime_vmmio.md) を正本とする。
 
 | ステップ | フェーズ | 送信元(Task A) | 受信先(Task B) | 物理メモリマネージャの動作 |
 | :---: | :--- | :--- | :--- | :--- |
@@ -165,7 +165,7 @@ JIT コードキャッシュ（Region 4）は、実行可能（Execute）と書�
 
 ## 9. 設計判断 (ADR)
 <!-- traceability: {ADR_PageGranularPermissionIsolation} -->
-このコンポーネントのADRは `{ADR_PageGranularPermissionIsolation}` のキーワードで参照される。公開API設計に関する `{ADR_SharedBlockRaii}` / `{ADR_MemoryManagerMinimalSurface}` は契約側 [`system_memory.md`](docs/components/tier1_core/system_memory.md) を正本とする。
+このコンポーネントのADRは `{ADR_PageGranularPermissionIsolation}` のキーワードで参照される。公開API設計に関する `{ADR_SharedBlockRaii}` / `{ADR_MemoryManagerMinimalSurface}` は契約側 [`system_memory.md`](docs/components/tier1_interface/system_memory.md) を正本とする。
 
 - **決定事項**: `{ADR_PageGranularPermissionIsolation}` (2026-09-02)
   - **背景**: vMMIO FC=14 の PTE および MPU は 4KB ページ単位でしかマッピング・権限（RW許可）を設定できない。同一ページ内に異なるタスクのスロットが混在すると、タスク間のメモリ隔離が破綻し、他タスクのデータが読み書きされる危険があった。

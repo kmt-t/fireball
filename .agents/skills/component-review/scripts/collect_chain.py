@@ -25,6 +25,7 @@ class ChainArtifacts(TypedDict):
     test_spec: list[str]
     wit: list[str]
     benchmark: list[str]
+    contract_only: bool
     missing_evidences: list[str]
 
 
@@ -77,6 +78,7 @@ def find_component_files(repo_root: Path, target: str) -> ChainArtifacts:
     # 仕様書読み込み
     content = spec_file.read_text(encoding="utf-8")
     evidences = parse_evidence_block(content)
+    contract_only = any(value.lower() == "true" for value in evidences.get("contract-only", []))
 
     formal_files: list[Path] = []
     concept_files: list[Path] = []
@@ -121,7 +123,7 @@ def find_component_files(repo_root: Path, target: str) -> ChainArtifacts:
             if p.is_file():
                 formal_files.append(p)
     # concepts
-    if not concept_files:
+    if not concept_files and not contract_only:
         for p in tier_dir.glob(f"concepts/*{component_name}*.py"):
             if p.is_file():
                 concept_files.append(p)
@@ -157,6 +159,7 @@ def find_component_files(repo_root: Path, target: str) -> ChainArtifacts:
         "test_spec": to_rel(test_spec_files),
         "wit": to_rel(wit_files),
         "benchmark": to_rel(benchmark_files),
+        "contract_only": contract_only,
         "missing_evidences": missing_evidences,
     }
 
@@ -183,6 +186,8 @@ def main() -> int:
     print(f"  [1. Specification] : {data['specification']}")
     print(f"  [2. Formal Model]  : {', '.join(data['formal']) if data['formal'] else '(None)'}")
     print(f"  [3. Concept Code]  : {', '.join(data['concept']) if data['concept'] else '(None)'}")
+    if data["contract_only"]:
+        print("  [Contract Only]    : true (concept implementation is maintained by the implementation component)")
     print(f"  [4. Test Spec]     : {', '.join(data['test_spec']) if data['test_spec'] else '(None)'}")
     if data["wit"]:
         print(f"  [Wit Interface]    : {', '.join(data['wit'])}")

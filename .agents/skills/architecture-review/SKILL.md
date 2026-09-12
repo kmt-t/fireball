@@ -87,7 +87,7 @@ invoke_subagent(
 各サブエージェントには、**評価ルーブリック [`references/architecture_review_rubric.md`](./references/architecture_review_rubric.md)** および対象ドキュメントの絶対パスを参照させます。
 
 #### サブエージェント 1: ABI・コンテキスト・物理レジスタ規約監査 (`arch-abi-auditor`)
-- **対象**: `architecture_overview.md` §4, §4.1 ↔ `runtime_interpreter.md`, `runtime_vsoc.md`, `jit_compiler.md`, `jit_stencil_catalog.md`, `vsoc_runtime.wit`
+- **対象**: [`architecture_overview.md`](../../../docs/architecture/architecture_overview.md) の「Physical Register & ABI Map」「メモリ常駐構造体の物理バイトオフセット」 ↔ `runtime_interpreter.md`, `runtime_vsoc.md`, `jit_compiler.md`, `jit_stencil_catalog.md`, `vsoc_runtime.wit`
 - **検証観点**:
   1. コンテキスト構造体（`execution_context`）のバイトサイズ、全フィールドオフセット、基底レジスタ、内包環境領域が、下位仕様書群および WIT 定義と完全一致しているか（仕様分裂やオフセットズレの有無）。
   2. 物理レジスタマップ（引数レジスタ、役割任意割当プール、保全レジスタ、スクラッチ等）の役割定義が、JIT トレース生成規約およびインタープリタハンドラ定義と矛盾・競合していないか。
@@ -96,7 +96,7 @@ invoke_subagent(
   5. 最上位概要の ABI・メモリレイアウト図（Mermaid）と本文記述・下位仕様の完全一致性（図の陳腐化・追随漏れの排除）。
 
 #### サブエージェント 2: JIT パイプライン・キャッシュ・ディスパッチ監査 (`arch-jit-auditor`)
-- **対象**: `architecture_overview.md` §3.2, §3.3 ↔ `jit_runtime.md`, `jit_compiler.md`, `runtime_vsoc.md`, `vsoc_cache_coherency_model.py`, `jit_cache_model.py`
+- **対象**: [`architecture_overview.md`](../../../docs/architecture/architecture_overview.md) の「Pillar 2: 4段直接 JIT 検索パイプライン」「Pillar 3: 3面世代交代回転コードキャッシュ」 ↔ `jit_runtime.md`, `jit_compiler.md`, `runtime_vsoc.md`, `vsoc_cache_coherency_model.py`, `jit_cache_model.py`
 - **検証観点**:
   1. 世代交代コードキャッシュのバンク構成、役割分担、および昇格規則が、形式モデルおよび下位 JIT ランタイム仕様と論理的に完全一致しているか。
   2. 多段ディスパッチパイプライン（直前キャッシュ、粗索引、有界探索）の各段の計算量、探索手順、および境界条件の整合性。
@@ -105,7 +105,7 @@ invoke_subagent(
   5. 最上位概要の JIT・キャッシュ・ディスパッチ関連図（Mermaid）と本文記述・下位仕様の完全一致性（図の陳腐化・追随漏れの排除）。
 
 #### サブエージェント 3: CSP 通信・共有メモリ・vMMIO 安全機構監査 (`arch-ipc-mem-auditor`)
-- **対象**: `architecture_overview.md` §3.4, §3.5, §3.6 ↔ `os_coos.md`, `ipc_router.md`, `runtime_vmmio.md`, `system_memory.md`（Tier1契約）, `runtime_memory.md`（Tier2実装）, `coos_channel_model.py`, `csp_handoff_model.py`
+- **対象**: [`architecture_overview.md`](../../../docs/architecture/architecture_overview.md) の「Pillar 4: 対称直接ハンドオフ・エンジン」「Pillar 5: 折りたたみXOR TLB ＆ 平坦ページ表」「Pillar 6: ゼロコピー CSP ランデブー・ハンドオフ」 ↔ `os_coos.md`, `ipc_router.md`, `runtime_vmmio.md`, `system_memory.md`（Tier1 Interface契約）, `runtime_memory.md`（Tier2実装）, `coos_channel_model.py`, `csp_handoff_model.py`
 - **検証観点**:
   1. バッファなし純粋同期ランデブーおよび対称直接ハンドオフ（Symmetric Transfer）の制御プロトコルが、COOS 仕様書および形式検証モデルと完全一致しているか。
   2. 共有メモリ（SHM）の所有権移譲およびムーブセマンティクス（Move-only RAII）が、メモリ管理仕様および IPC ルータ仕様と整合しているか（旧ドラフト概念の混入がないか）。

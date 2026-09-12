@@ -145,7 +145,7 @@ sequenceDiagram
         Router->>Ch: channel_send(msg_block)
         Ch->>Callee: Synchronous CSP Rendezvous (Direct Handoff to Callee receive())
         opt Bulk Shared Memory Transfer
-            Ch->>Mem: grant_shared(shm_id, callee_task_id)
+            Ch->>Mem: grant_shared(shm_id)
             Mem->>Mem: Map Callee PTE
         end
         Ch->>Callee: Grant access (msg.ownership = RECEIVER_OWNS)

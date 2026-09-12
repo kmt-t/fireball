@@ -32,7 +32,6 @@ from hal_dispatch import HalBufferTrap
 from logger import LogLevel
 from recovery import RecoveryManager, RecoveryStrategy, Result
 from runtime_engine import IntegratedHybridEngine, WASMContext
-from scheduler import Scheduler
 from system import ShmSlice, System
 
 findings: list[str] = []
@@ -63,20 +62,20 @@ def task_console_writer(sysv: System):
     yield
 
 
-def task_bus_owner(sysv: System, task_id: int):
+def task_bus_owner(sysv: System):
     """
     Acquires a real SHM buffer, does a zero-copy bus transfer within its
         own ownership, and then tries two things that must fail: handing a
         bounds-violating slice to itself, and touching another task's handle.
     """
 
-    master = sysv.bus_master(task_id)
-    tx = sysv.pool.acquire_buffer(task_id, size=64)
-    rx = sysv.pool.acquire_buffer(task_id, size=64)
-    tx_view = sysv.pool.view(task_id, tx, 0, 8)
+    master = sysv.bus_master()
+    tx = sysv.pool.acquire_buffer(size=64)
+    rx = sysv.pool.acquire_buffer(size=64)
+    tx_view = sysv.pool.view(tx, 0, 8)
     tx_view[:8] = b"HELLOHAL"
     n = master.transfer_data(ShmSlice(tx, 0, 8), ShmSlice(rx, 0, 8))
-    rx_view = sysv.pool.view(task_id, rx, 0, 8)
+    rx_view = sysv.pool.view(rx, 0, 8)
     print(f"  [bus-owner] handle-resolved zero-copy transfer moved {n} bytes: {bytes(rx_view)!r}")
     assert bytes(rx_view) == b"HELLOHAL"
     try:
@@ -89,7 +88,7 @@ def task_bus_owner(sysv: System, task_id: int):
     return tx, rx
 
 
-def task_hostile_neighbor(sysv: System, my_task_id: int, other_handle):
+def task_hostile_neighbor(sysv: System, other_handle):
     """
     A different task trying to use someone else's shm-id -- the direct
         experiment for "can a guest hand HAL something that isn't really a
@@ -97,9 +96,9 @@ def task_hostile_neighbor(sysv: System, my_task_id: int, other_handle):
     """
 
     try:
-        sysv.pool.view(my_task_id, other_handle, 0, 8)
+        sysv.pool.view(other_handle, 0, 8)
         findings.append(
-            f"BUG: task {my_task_id} could read another task's SHM handle {other_handle.name} -- "
+            f"BUG: current task could read another task's SHM handle {other_handle.name} -- "
             "ownership isolation is broken"
         )
     except HalBufferTrap as e:
@@ -226,14 +225,14 @@ def demo_wasmjit_hybrid_execution(sysv: System) -> None:
 
 def main() -> None:
     sysv = System()
-    sched = Scheduler()
+    sched = sysv.scheduler
     sched.set_idle_hook(
         lambda: print(f"  [idle_hook] flushed {sysv.logger.flush()} log entr(y/ies)")
     )
     print("== pysim: spawning guest tasks ==")
     sched.spawn("structured-logger", task_structured_logger(sysv))
     sched.spawn("console-writer", task_console_writer(sysv))
-    owner_gen = task_bus_owner(sysv, task_id=100)
+    owner_gen = task_bus_owner(sysv)
     sched.spawn("bus-owner", owner_gen)
     sched.spawn("retry-then-succeed", task_retry_then_succeed(sysv))
     sched.spawn("retry-exhausted", task_retry_exhausted(sysv))
@@ -243,7 +242,7 @@ def main() -> None:
     # spawn the hostile neighbor now that a real handle exists to attack.
     tx_handle = next(s for s in sysv.pool._slots if s is not None)
     print("\n== pysim: a second task attacks the first task's SHM handle ==")
-    for gen in [task_hostile_neighbor(sysv, my_task_id=200, other_handle=tx_handle)]:
+    for gen in [task_hostile_neighbor(sysv, other_handle=tx_handle)]:
         sched.spawn("hostile-neighbor", gen)
 
     sched.run_to_completion()

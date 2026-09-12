@@ -366,7 +366,6 @@ class ExecEnv:
     tables: list[list[int | None]]
     host_functions: list[Callable[..., int | None] | None]
     vmmio: object | None = None
-    task_id: int = 1
     phys_mem: bytearray | None = None
 
 
@@ -681,7 +680,6 @@ class Interpreter:
         "module",
         "phys_mem",
         "tables",
-        "task_id",
         "vmmio",
     )
 
@@ -691,7 +689,6 @@ class Interpreter:
         memory: bytearray | None = None,
         host_functions: list[Callable[..., int | None] | None] | None = None,
         vmmio: object | None = None,
-        task_id: int = 1,
         phys_mem: bytearray | None = None,
     ):
         self.module = module
@@ -708,7 +705,6 @@ class Interpreter:
         ]
         self.debugger: object | None = None
         self.vmmio = vmmio
-        self.task_id = task_id
         self.phys_mem = phys_mem
         self._env = ExecEnv(
             module,
@@ -717,7 +713,6 @@ class Interpreter:
             self.tables,
             self.host_functions,
             vmmio=vmmio,
-            task_id=task_id,
             phys_mem=phys_mem,
         )
         if self.module.start_function is not None:
@@ -1202,7 +1197,7 @@ def _h_global_set(
 def _vmmio_load(env: ExecEnv, addr: int, width: int, signed: bool) -> int:
     if env.vmmio is None:
         raise Trap(f"memory access out of bounds at addr={addr:#x} (no vMMIO configured)")
-    status, detail = env.vmmio.access(addr, is_write=False, current_task_id=env.task_id)
+    status, detail = env.vmmio.access(addr, is_write=False)
     if status.startswith("TRAP_"):
         raise Trap(f"vMMIO load trap: {status} ({detail}) at addr={addr:#x}")
     if status == "OK_PHYSICAL" and env.phys_mem is not None:
@@ -1220,7 +1215,7 @@ def _vmmio_load(env: ExecEnv, addr: int, width: int, signed: bool) -> int:
 def _vmmio_store(env: ExecEnv, addr: int, val_bytes: bytes) -> None:
     if env.vmmio is None:
         raise Trap(f"memory access out of bounds at addr={addr:#x} (no vMMIO configured)")
-    status, detail = env.vmmio.access(addr, is_write=True, current_task_id=env.task_id)
+    status, detail = env.vmmio.access(addr, is_write=True)
     if status.startswith("TRAP_"):
         raise Trap(f"vMMIO store trap: {status} ({detail}) at addr={addr:#x}")
     if status == "OK_PHYSICAL" and env.phys_mem is not None:

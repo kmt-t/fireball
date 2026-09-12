@@ -58,7 +58,7 @@ from helpers import make_test_ipc_message
 from interpreter import _HANDLERS, Interpreter
 from ipc_router import (
     IPCRouter,
-    IpcStatus,
+    IPCStatus,
     OwnershipState,
     Role,
 )
@@ -78,6 +78,16 @@ from runtime_engine import (
 from scheduler import ChannelAction, Scheduler, WaitDir
 from system import System, WasiErrno
 from system_containers import BitView, FlatMapView, MutableFlatMapStorage, StaticVector
+
+
+def _make_memory_manager() -> tuple[MemoryManager, Scheduler]:
+    scheduler = Scheduler()
+    scheduler.spawn("task_1", task_id=1)
+    scheduler.spawn("task_2", task_id=2)
+    scheduler.current_task = scheduler.get_task(1)
+    manager = MemoryManager(scheduler)
+    manager.init_manager(pool_base=0x20020000, pool_size=0x40000)
+    return manager, scheduler
 from test_support import PcOnlyCompiler, wat_to_wasm
 from vmmio import TrapCode, VMMIOController
 from wasm_opcodes import I32_ADD, I32_CONST, LOCAL_GET, LOCAL_SET
@@ -443,11 +453,14 @@ def test_vsoc_gotcha_01_02_stateless_interp_and_yield_in_vsoc():
 
 def test_vmmio_gotcha_01_ram_bypass_never_touches_tlb():
     """GOTCHA-VMMIO-01: Bit 31 == 0 is Guest RAM bypass and never increments TLB hit/miss."""
-    ctrl = VMMIOController(guest_ram_size=64 * 1024)
+    scheduler = Scheduler()
+    task_id = scheduler.spawn("test_task")
+    scheduler.current_task = scheduler.get_task(task_id)
+    ctrl = VMMIOController(guest_ram_size=64 * 1024, scheduler=scheduler)
     hits_before = ctrl.tlb_hits
     misses_before = ctrl.tlb_misses
 
-    stat, _ = ctrl.access(raw_addr=0x100, is_write=False, current_task_id=1)
+    stat, _ = ctrl.access(raw_addr=0x100, is_write=False)
     assert stat == "OK_GUEST_RAM"
     assert ctrl.tlb_hits == hits_before
     assert ctrl.tlb_misses == misses_before
@@ -464,17 +477,22 @@ def test_vmmio_gotcha_02_folding_xor_hash_disperses_function_codes():
 
 def test_vmmio_gotcha_03_revoke_invalidates_tlb_blocks_inflight():
     """GOTCHA-VMMIO-03: Revoke immediately invalidates TLB entry and blocks access in-flight."""
-    ctrl = VMMIOController(guest_ram_size=64 * 1024)
+    scheduler = Scheduler()
+    owner_id = scheduler.spawn("owner")
+    scheduler.current_task = scheduler.get_task(owner_id)
+    ctrl = VMMIOController(guest_ram_size=64 * 1024, scheduler=scheduler)
     vpn = 0xE0000
     ctrl.map_shm_page(vpn=vpn, phys_page=2, owner_id=1)
 
-    stat, _ = ctrl.access(raw_addr=0xE000_0000, is_write=True, current_task_id=1)
+    stat, _ = ctrl.access(raw_addr=0xE000_0000, is_write=True)
     assert stat == "OK_PHYSICAL"
 
     ctrl.revoke_shm_owner(vpn=vpn)
 
-    stat1, _ = ctrl.access(raw_addr=0xE000_0000, is_write=True, current_task_id=1)
-    stat2, _ = ctrl.access(raw_addr=0xE000_0000, is_write=True, current_task_id=2)
+    stat1, _ = ctrl.access(raw_addr=0xE000_0000, is_write=True)
+    task2_id = ctrl.scheduler.spawn("rogue")
+    ctrl.scheduler.current_task = ctrl.scheduler.get_task(task2_id)
+    stat2, _ = ctrl.access(raw_addr=0xE000_0000, is_write=True)
     assert stat1 == TrapCode.OWNER_MISMATCH
     assert stat2 == TrapCode.OWNER_MISMATCH
 
@@ -492,7 +510,7 @@ def test_ipcr_gotcha_01_no_queue_assertion_on_duplicate_send():
     sched.current_task = sched.get_task(sender_id)
 
     status, ch = router.lookup("fireball://device/gpio/0")
-    assert status == IpcStatus.COMPLETED and ch is not None
+    assert status == IPCStatus.COMPLETED and ch is not None
 
     msg1 = make_test_ipc_message([(1, 100)])
     gen1 = router.send(ch, msg1)
@@ -524,7 +542,7 @@ def test_ipcr_gotcha_02_preflight_rejection_preserves_sender_ownership():
 
     msg = make_test_ipc_message([(1, 99)])
     status, ch = router.lookup("fireball://dbg/manager/0")
-    assert status == IpcStatus.ERR_PERMISSION_DENIED
+    assert status == IPCStatus.ERR_PERMISSION_DENIED
     assert ch is None
     assert msg.ownership == OwnershipState.SENDER_OWNS
 
@@ -536,7 +554,7 @@ def test_ipcr_gotcha_02_preflight_rejection_preserves_sender_ownership():
         next(gen)
     except StopIteration as e:
         status, _ = e.value
-        assert status == IpcStatus.ERR_PERMISSION_DENIED
+        assert status == IPCStatus.ERR_PERMISSION_DENIED
 
     assert msg.ownership == OwnershipState.SENDER_OWNS
 
@@ -693,10 +711,10 @@ def test_log_gotcha_02_ring_buffer_oldest_overwrite():
 
 def test_mem_gotcha_01_page_granular_isolation():
     """GOTCHA-MEM-01: Page-granular permission isolation ensures distinct tasks never share the same 4KB physical page."""
-    mm = MemoryManager()
-    mm.init_manager(pool_base=0x20020000, pool_size=0x40000)
-    b1 = mm.allocate_shared(caller_task_id=1, size=64).unwrap()
-    b2 = mm.allocate_shared(caller_task_id=2, size=64).unwrap()
+    mm, scheduler = _make_memory_manager()
+    b1 = mm.allocate_shared(size=64).unwrap()
+    scheduler.current_task = scheduler.get_task(2)
+    b2 = mm.allocate_shared(size=64).unwrap()
     assert b1.page_idx != b2.page_idx, (
         f"Task 1 (page {b1.page_idx}) and Task 2 (page {b2.page_idx}) must not share physical page"
     )
@@ -704,13 +722,12 @@ def test_mem_gotcha_01_page_granular_isolation():
 
 def test_mem_gotcha_02_release_and_flight_protection():
     """GOTCHA-MEM-02: Releasing a SharedBlock marks it in-flight and revokes access until claimed."""
-    mm = MemoryManager()
-    mm.init_manager(pool_base=0x20020000, pool_size=0x40000)
-    b = mm.allocate_shared(caller_task_id=1, size=64).unwrap()
+    mm, scheduler = _make_memory_manager()
+    b = mm.allocate_shared(size=64).unwrap()
     b.write_u32(0, 0x12345678)
     assert b.read_u32(0) == 0x12345678
 
-    shm_id = b.release(caller_task_id=1)
+    shm_id = b.release()
     assert b._is_in_flight
     assert not b._is_active
     access_rejected = False
@@ -720,18 +737,25 @@ def test_mem_gotcha_02_release_and_flight_protection():
         access_rejected = True
     assert access_rejected, "Expected access to in-flight block to be rejected"
 
-    assert not mm.claim(receiver_task_id=2, shm_id=shm_id).is_ok
+    scheduler.current_task = scheduler.get_task(2)
+    assert not mm.claim(shm_id).is_ok
+    size_rejected = False
+    try:
+        b.get_size()
+    except AssertionError:
+        size_rejected = True
+    assert size_rejected, "get_size() must reject an in-flight block"
 
 
 def test_mem_gotcha_02b_release_owner_only():
     """GOTCHA-MEM-02: Non-owner task cannot release() or access another task's SharedBlock."""
-    mm = MemoryManager()
-    mm.init_manager(pool_base=0x20020000, pool_size=0x40000)
-    b = mm.allocate_shared(caller_task_id=1, size=64).unwrap()
+    mm, scheduler = _make_memory_manager()
+    b = mm.allocate_shared(size=64).unwrap()
+    scheduler.current_task = scheduler.get_task(2)
 
     release_rejected = False
     try:
-        b.release(caller_task_id=2)
+        b.release()
     except AssertionError as e:
         release_rejected = True
         assert "GOTCHA-MEM-02" in str(e)
@@ -739,7 +763,7 @@ def test_mem_gotcha_02b_release_owner_only():
 
     address_rejected = False
     try:
-        b.get_address(caller_task_id=2)
+        b.get_address()
     except AssertionError as e:
         address_rejected = True
         assert "GOTCHA-MEM-02" in str(e)
@@ -749,36 +773,44 @@ def test_mem_gotcha_02b_release_owner_only():
 
     assert b._is_active
     assert b.get_owner() == 1
-    b.release(caller_task_id=1)
+    scheduler.current_task = scheduler.get_task(1)
+    b.release()
     assert not b._is_active
 
 
 def test_hal_gotcha_01_hal_buffer_pool_bounds_violation_rejected():
     """GOTCHA-HAL-01: HalBufferPool rejects slice requests exceeding maximum buffer size and non-owner releases."""
-    pool = HalBufferPool()
-    handle = pool.acquire_buffer(task_id=1, size=128)
+    scheduler = Scheduler()
+    owner_id = scheduler.spawn("owner")
+    other_id = scheduler.spawn("other")
+    scheduler.current_task = scheduler.get_task(owner_id)
+    pool = HalBufferPool(scheduler)
+    handle = pool.acquire_buffer(size=128)
     assert handle.capacity == 128
 
     try:
-        pool.acquire_buffer(task_id=1, size=512)
+        pool.acquire_buffer(size=512)
         raise AssertionError("Expected HalBufferPool.acquire_buffer to reject size > 256")
     except ValueError:
         pass
 
     try:
-        pool.release_buffer(task_id=2, handle=handle)
+        scheduler.current_task = scheduler.get_task(other_id)
+        pool.release_buffer(handle)
         raise AssertionError(
             "Expected HalBufferTrap when task 2 attempts to release task 1's buffer"
         )
     except HalBufferTrap:
         pass
 
-    pool.release_buffer(task_id=1, handle=handle)
+    scheduler.current_task = scheduler.get_task(owner_id)
+    pool.release_buffer(handle)
 
 
 def test_sys_gotcha_01_undefined_syscall_returns_enosys():
     """GOTCHA-SYS-01: Undefined syscall ID safely returns WasiErrno.NOSYS instead of aborting or panicking."""
     sys_inst = System()
+    sys_inst.start_runtime_task(name="test_runtime_task")
     res = sys_inst.fireball_call(0xFE, 0, 0, 0, 0, 0, 0)
     assert res == int(WasiErrno.NOSYS), f"Expected NOSYS (52), got {res}"
 

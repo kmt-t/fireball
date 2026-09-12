@@ -244,6 +244,12 @@ class Scheduler:
                 return t
         return None
 
+    @property
+    def current_task_id(self) -> int:
+        """Returns the authenticated identity of the task currently running."""
+        assert self.current_task is not None, "No task is currently running"
+        return self.current_task.task_id
+
     def spawn(
         self,
         name: str,

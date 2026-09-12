@@ -14,21 +14,11 @@ from __future__ import annotations
 
 from collections.abc import Generator, Sequence
 from enum import IntEnum
-from typing import Protocol
 
-from scheduler import Channel, ChannelAction, Scheduler
+from logging_interface import LogLevel, Logger
+from memory_interface import MemoryManager, SharedBlock
+from scheduler import Channel, ChannelAction, Scheduler, Task
 from system_containers import FlatMapView, StaticVector
-
-
-class LogLevel(IntEnum):
-    """Tier 1 logging contract; the runtime logger supplies the concrete sink."""
-
-    DEBUG = 0
-    INFO = 1
-    WARN = 2
-    ERROR = 3
-    FATAL = 4
-
 
 LOG_EVT_IPC_RBAC_DENIED = 0x0201
 LOG_EVT_IPC_UNKNOWN_URI = 0x0202
@@ -36,70 +26,6 @@ LOG_EVT_IPC_MSG_TOO_LARGE = 0x0203
 LOG_EVT_IPC_INVALID_OWNERSHIP = 0x0204
 LOG_EVT_IPC_CHANNEL_COLLISION = 0x0205
 
-
-class Logger(Protocol):
-    """Minimal logging port owned by the Tier 1 interface."""
-
-    def log_event(
-        self,
-        level: LogLevel,
-        dict_offset: int,
-        arg0: int = 0,
-        arg1: int = 0,
-        arg2: int = 0,
-        arg3: int = 0,
-    ) -> str: ...
-
-
-class SharedBlock(Protocol):
-    """Shared-memory block operations required by the IPC ownership contract."""
-
-    data: bytearray
-    owner: int
-
-    def u64_capacity(self) -> int: ...
-
-    def read_u64(self, index: int) -> int: ...
-
-    def read_entry(self, index: int) -> tuple[int, int]: ...
-
-    def write_u64(self, index: int, value: int) -> None: ...
-
-    def write_entry(self, index: int, key: int, value: int) -> None: ...
-
-    def release(self, caller_task_id: int) -> int: ...
-
-
-class _MemoryResult(Protocol):
-    is_err: bool
-
-    def unwrap(self) -> SharedBlock: ...
-
-
-class _SharedSlot(Protocol):
-    allocated: bool
-    page_idx: int
-
-
-class _SharedSlotTable(Protocol):
-    def find(self, key: int) -> _SharedSlot | None: ...
-
-
-class _PageRegistry(Protocol):
-    def update_owner(self, page_idx: int, owner_id: int) -> None: ...
-
-
-class MemoryManager(Protocol):
-    """Tier 1 memory port; Tier 2 owns the allocator implementation."""
-
-    shm_slots: _SharedSlotTable
-    page_registry: _PageRegistry
-
-    def allocate_shared(self, caller_task_id: int, size: int) -> _MemoryResult: ...
-
-    def claim(self, task_id: int, shm_id: int) -> _MemoryResult: ...
-
-    def grant_shared(self, shm_id: int, task_id: int) -> None: ...
 
 # ipc_router.md {3.3}: a message is a static, fixed-size buffer of at most 8
 # kv_pair entries.
@@ -278,14 +204,13 @@ class IPCMessage:
         cls,
         entries: Sequence[tuple[int, int]] = (),
         memory_manager: MemoryManager | None = None,
-        task_id: int = 1,
     ) -> IPCMessage:
-        """Helper to allocate a SharedBlock memory block and populate it with entries."""
+        """Allocate and populate a message for the scheduler's current task."""
         assert memory_manager is not None, (
             "IPCMessage.from_entries requires an injected memory manager; "
             "test callers must construct the adapter on the test side"
         )
-        sb = memory_manager.allocate_shared(caller_task_id=task_id, size=256).unwrap()
+        sb = memory_manager.allocate_shared(size=256).unwrap()
         msg = cls(sb)
         if entries:
             msg.write_entries(entries)
@@ -309,7 +234,6 @@ class IPCMessage:
     def claim_resource(
         self,
         memory_manager: MemoryManager,
-        receiver_task_id: int,
         key_id: int,
         scope_kind: int = ScopeKind.RESOURCE,
         data_type: int = DataType.UINT32,
@@ -319,7 +243,7 @@ class IPCMessage:
         shm_id = self.get_by_key_id(key_id, scope_kind=scope_kind, data_type=data_type)
         if shm_id is None:
             return None
-        res = memory_manager.claim(receiver_task_id, shm_id)
+        res = memory_manager.claim(shm_id)
         return res.unwrap() if not res.is_err else None
 
     def get_by_key_id(
@@ -452,7 +376,7 @@ FB_CONF_ROUTER_ROLE_MATRIX: tuple[tuple[bool, ...], ...] = (
 )
 
 
-class IpcStatus(IntEnum):
+class IPCStatus(IntEnum):
     """
     Outcome of IPCRouter.send()/recv(). Blocking is never part of this
     vocabulary: send()/recv() are generators that wait out a CSP block
@@ -491,6 +415,17 @@ class IPCRouter:
             for row in FB_CONF_ROUTER_ROLE_MATRIX
         )
 
+    def _grant_for_task(self, shm_id: int, task: Task | None) -> bool:
+        """Run the grant under the scheduler-selected receiver context."""
+        assert task is not None, "Grant requires a scheduler-registered receiver"
+        previous = self.scheduler.current_task
+        self.scheduler.current_task = task
+        try:
+            assert self.memory_manager is not None
+            return self.memory_manager.grant_shared(shm_id)
+        finally:
+            self.scheduler.current_task = previous
+
     def lookup_service_handle(self, uri: str) -> int:
         """Resolves URI to integer service handle via FlatMapView binary search (O(log N))."""
         return self.registry.find_index(uri)
@@ -510,14 +445,15 @@ class IPCRouter:
         """The dedicated CSP Channel for one specific (sender_role, target_role) RBAC edge."""
         return self._edge_channels[int(sender_role)][int(target_role)]
 
-    def lookup(self, destination_uri: str) -> tuple[IpcStatus, Channel | None]:
+    def lookup(self, destination_uri: str) -> tuple[IPCStatus, Channel | None]:
         """
         Stage 1 URI lookup + Stage 2 RBAC authorization.
         Derives caller's security role strictly from current_task.role (preventing spoofing).
-        Returns (IpcStatus.COMPLETED, Channel) if permitted, or (error_status, None).
+        Returns (IPCStatus.COMPLETED, Channel) if permitted, or (error_status, None).
         """
         current = self.scheduler.current_task
-        sender_role = Role(current.role) if current is not None else Role.RUNTIME
+        assert current is not None, "IPC lookup requires an active scheduler task"
+        sender_role = Role(current.role)
 
         handle = self.lookup_service_handle(destination_uri)
         desc = self.get_service_descriptor(handle)
@@ -526,7 +462,7 @@ class IPCRouter:
                 self.logger.log_event(
                     LogLevel.WARN, LOG_EVT_IPC_UNKNOWN_URI, handle if handle >= 0 else 0, 0, 0, 0
                 )
-            return (IpcStatus.ERR_NOT_FOUND, None)
+            return (IPCStatus.ERR_NOT_FOUND, None)
 
         if not FB_CONF_ROUTER_ROLE_MATRIX[int(sender_role)][int(desc.role)]:
             if self.logger is not None:
@@ -538,9 +474,9 @@ class IPCRouter:
                     0,
                     0,
                 )
-            return (IpcStatus.ERR_PERMISSION_DENIED, None)
+            return (IPCStatus.ERR_PERMISSION_DENIED, None)
 
-        return (IpcStatus.COMPLETED, self._edge_channels[int(sender_role)][int(desc.role)])
+        return (IPCStatus.COMPLETED, self._edge_channels[int(sender_role)][int(desc.role)])
 
     def create_channel(
         self,
@@ -551,11 +487,11 @@ class IPCRouter:
         Role is always obtained from current_task.role.
         """
         status, ch = self.lookup(destination_uri)
-        return ch if status == IpcStatus.COMPLETED else None
+        return ch if status == IPCStatus.COMPLETED else None
 
     def send(
         self, channel: Channel, message: IPCMessage
-    ) -> Generator[tuple[ChannelAction, None], None, tuple[IpcStatus, object]]:
+    ) -> Generator[tuple[ChannelAction, None], None, tuple[IPCStatus, object]]:
         """
         Stage 3: synchronous CSP send on the pre-authorized Channel object.
         Zero-copy: `message` itself is never duplicated, only its `ownership`
@@ -563,7 +499,8 @@ class IPCRouter:
         Caller role is verified against the channel's allowed edges.
         """
         current = self.scheduler.current_task
-        sender_role = Role(current.role) if current is not None else Role.RUNTIME
+        assert current is not None, "IPC send requires an active scheduler task"
+        sender_role = Role(current.role)
         allowed_channels = [ch for ch in self._edge_channels[int(sender_role)] if ch is not None]
         if channel not in allowed_channels:
             if self.logger is not None:
@@ -576,7 +513,7 @@ class IPCRouter:
                     0,
                 )
             return (
-                IpcStatus.ERR_PERMISSION_DENIED,
+                IPCStatus.ERR_PERMISSION_DENIED,
                 f"Role {sender_role.name} not authorized to send on this channel",
             )
 
@@ -604,7 +541,7 @@ class IPCRouter:
                     0,
                 )
             return (
-                IpcStatus.ERR_MSG_TOO_LARGE,
+                IPCStatus.ERR_MSG_TOO_LARGE,
                 f"message has {len(message)} KV pairs, exceeds {FB_CONF_ROUTER_MAX_KV_PAIRS}",
             )
 
@@ -614,9 +551,7 @@ class IPCRouter:
         # Revoke phase: prepare message's own SharedBlock and any entry-embedded shm_id for transfer
         if self.memory_manager is not None:
             if message._block is not None:
-                message._in_flight_shm_id = message._block.release(
-                    caller_task_id=message._block.owner
-                )
+                message._in_flight_shm_id = message._block.release()
 
             for k, val in entries_to_grant:
                 sk, _, _ = unpack_key32(k)
@@ -629,44 +564,46 @@ class IPCRouter:
 
         message.ownership = OwnershipState.IN_FLIGHT
         action, target = channel.send(message)
-        if action == ChannelAction.BLOCK:
+        was_blocked = action == ChannelAction.BLOCK
+        if was_blocked:
             yield (ChannelAction.BLOCK, None)
         message.ownership = OwnershipState.RECEIVER_OWNS
 
         # Grant phase: update PTE ownership and claim receiver-side SharedBlock
-        if self.memory_manager is not None:
+        # A blocked sender has no authenticated receiver target yet. The receiver
+        # coroutine performs this phase after the rendezvous; repeating it here
+        # would overwrite the grant with an invented task id.
+        if self.memory_manager is not None and not was_blocked:
             recv_task = self.scheduler.get_task(target) if target is not None else None
-            recv_task_id = recv_task.task_id if recv_task is not None else 0
 
             if message._in_flight_shm_id is not None:
-                self.memory_manager.grant_shared(message._in_flight_shm_id, recv_task_id)
-                res = self.memory_manager.claim(recv_task_id, message._in_flight_shm_id)
-                if not res.is_err:
-                    message._block = res.unwrap()
-                message._in_flight_shm_id = None
+                self._grant_for_task(message._in_flight_shm_id, recv_task)
+                # Keep the id until the receiver claims the newly granted
+                # block and replaces the released sender-side view.
 
             # Grant any shm_id passed in entries (ScopeKind.RESOURCE)
             for k, val in entries_to_grant:
                 sk, _, _ = unpack_key32(k)
                 if sk == ScopeKind.RESOURCE and val >= 0:
-                    self.memory_manager.grant_shared(val, recv_task_id)
+                    self._grant_for_task(val, recv_task)
 
-        return (IpcStatus.COMPLETED, target)
+        return (IPCStatus.COMPLETED, target)
 
     def recv(
         self,
-    ) -> Generator[tuple[ChannelAction, None], None, tuple[IpcStatus, IPCMessage | None]]:
+    ) -> Generator[tuple[ChannelAction, None], None, tuple[IPCStatus, IPCMessage | None]]:
         """
         Guarded external choice (select) across every incoming Channel allowed
         for current running task's role.
         URI is never used in the hot transfer path.
         """
         receiver = self.scheduler.current_task
-        current_role = Role(receiver.role) if receiver is not None else Role.RUNTIME
+        assert receiver is not None, "IPC receive requires an active scheduler task"
+        current_role = Role(receiver.role)
 
         channels = [ch for row in self._edge_channels if (ch := row[int(current_role)]) is not None]
         if not channels:
-            return (IpcStatus.ERR_PERMISSION_DENIED, None)
+            return (IPCStatus.ERR_PERMISSION_DENIED, None)
 
         action, target = self.scheduler.channel_select_recv(channels)
         if action == ChannelAction.BLOCK:
@@ -678,8 +615,8 @@ class IPCRouter:
         # Grant phase: if message's own SHM block or entry-embedded shm_id are present, grant to receiver
         if self.memory_manager is not None:
             if message._in_flight_shm_id is not None:
-                self.memory_manager.grant_shared(message._in_flight_shm_id, receiver.task_id)
-                res = self.memory_manager.claim(receiver.task_id, message._in_flight_shm_id)
+                self.memory_manager.grant_shared(message._in_flight_shm_id)
+                res = self.memory_manager.claim(message._in_flight_shm_id)
                 if not res.is_err:
                     message._block = res.unwrap()
                 message._in_flight_shm_id = None
@@ -688,6 +625,6 @@ class IPCRouter:
             for k, val in message.entries:
                 sk, _, _ = unpack_key32(k)
                 if sk == ScopeKind.RESOURCE and val >= 0:
-                    self.memory_manager.grant_shared(val, receiver.task_id)
+                    self.memory_manager.grant_shared(val)
 
-        return (IpcStatus.COMPLETED, message)
+        return (IPCStatus.COMPLETED, message)

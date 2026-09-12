@@ -41,6 +41,7 @@ from memory import (
     PMSAv8MPU,
     RecoveryAction,
 )
+from scheduler import Scheduler
 from vmmio import (
     TrapCode,
     VMMIOController,
@@ -56,11 +57,22 @@ def wat_to_wasm(wat_text: str) -> bytes:
         return b""
 
 
+def _make_memory_manager(*task_ids: int) -> tuple[MemoryManager, Scheduler]:
+    """Create a manager whose scheduler owns all test task identities."""
+    ids = task_ids or (1,)
+    scheduler = Scheduler()
+    for task_id in ids:
+        scheduler.spawn(f"test_task_{task_id}", task_id=task_id)
+    scheduler.current_task = scheduler.get_task(ids[0])
+    assert scheduler.current_task is not None
+    return MemoryManager(scheduler), scheduler
+
+
 def test_mem_01_acquire_task_heap_fixed_size():
     """TEST-MEM-01: acquire-task-heap provides task-specific fixed partition (no arbitrary size)."""
-    mm = MemoryManager()
+    mm, _ = _make_memory_manager(1)
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
-    res = mm.acquire_task_heap(owner=1)
+    res = mm.acquire_task_heap()
     assert res.is_ok
     pv = res.unwrap()
     assert pv.size == FB_CONF_TASK_HEAP_SIZES[0]
@@ -70,10 +82,12 @@ def test_mem_01_acquire_task_heap_fixed_size():
 
 def test_mem_02_recovery_strategy_on_exhaustion():
     """TEST-MEM-02: Memory exhaustion returns structured error with recovery strategy."""
-    mm = MemoryManager()
+    mm, scheduler = _make_memory_manager(1, 2)
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_TASK_HEAP_SIZES[0])
-    assert mm.acquire_task_heap(owner=1).is_ok
-    r2 = mm.acquire_task_heap(owner=2)
+    assert mm.acquire_task_heap().is_ok
+    scheduler.current_task = scheduler.get_task(2)
+    assert scheduler.current_task is not None
+    r2 = mm.acquire_task_heap()
     assert r2.is_err
     assert r2.error.error_code == "ERR_POOL_EXHAUSTED"
     assert r2.error.recovery.action in (RecoveryAction.DEGRADE, RecoveryAction.RETRY)
@@ -81,12 +95,14 @@ def test_mem_02_recovery_strategy_on_exhaustion():
 
 def test_mem_03_total_allocation_bound():
     """TEST-MEM-03: Total allocated bytes never exceeds FB_CONF_MEMORY_POOL_SIZE."""
-    mm = MemoryManager()
+    mm, scheduler = _make_memory_manager(*range(1, 10))
     pool_size = FB_CONF_MEMORY_POOL_SIZE
     mm.init_manager(pool_base=0x20020000, pool_size=pool_size)
     allocation_failed = False
     for i in range(1, 10):
-        res = mm.acquire_task_heap(owner=i)
+        scheduler.current_task = scheduler.get_task(i)
+        assert scheduler.current_task is not None
+        res = mm.acquire_task_heap()
         assert mm.total_allocated_bytes <= pool_size
         if res.is_err:
             allocation_failed = True
@@ -96,31 +112,35 @@ def test_mem_03_total_allocation_bound():
 
 def test_mem_04_owner_task_id_auto_set():
     """TEST-MEM-04: Caller task-id is automatically recorded on all allocations."""
-    mm = MemoryManager()
+    mm, sched = _make_memory_manager(5)
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
-    p_res = mm.acquire_task_heap(owner=5)
+    p_res = mm.acquire_task_heap()
     assert p_res.unwrap().owner == 5
-    s_res = mm.allocate_shared(caller_task_id=5, size=1024)
+    s_res = mm.allocate_shared(size=1024)
     assert s_res.unwrap().owner == 5
 
 
 def test_mem_05_release_and_deallocate_owner_only():
     """TEST-MEM-05: Partition release is permitted ONLY by owner task."""
-    mm = MemoryManager()
+    mm, scheduler = _make_memory_manager(3, 4)
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
-    mm.acquire_task_heap(owner=3)
+    scheduler.current_task = scheduler.get_task(3)
+    assert scheduler.current_task is not None
+    mm.acquire_task_heap()
     assert 3 in mm.partition_owners
     # Rogue task 4 attempts to release task 3's partition
-    mm.release_task_heap(caller_task_id=4)
+    scheduler.current_task = scheduler.get_task(4)
+    mm.release_task_heap()
     assert 3 in mm.partition_owners
     # Owner releases
-    mm.release_task_heap(caller_task_id=3)
+    scheduler.current_task = scheduler.get_task(3)
+    mm.release_task_heap()
     assert 3 not in mm.partition_owners
 
 
 def test_mem_06_guest_ram_64kb_alignment():
     """TEST-MEM-06: pool_base is strictly 64KB aligned."""
-    mm = MemoryManager()
+    mm, _ = _make_memory_manager()
     assert mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE).is_ok
     caught = False
     try:
@@ -133,9 +153,9 @@ def test_mem_06_guest_ram_64kb_alignment():
 
 def test_mem_10_shared_block_ownership_transfer():
     """TEST-MEM-10: allocate-shared -> release -> claim moves ownership cleanly without double-ownership."""
-    mm = MemoryManager()
+    mm, sched = _make_memory_manager(1, 2)
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
-    sb_a = mm.allocate_shared(caller_task_id=1, size=1024).unwrap()
+    sb_a = mm.allocate_shared(size=1024).unwrap()
     assert sb_a.get_owner() == 1
 
     # Verify bytearray accessors on active SharedBlock
@@ -171,7 +191,7 @@ def test_mem_10_shared_block_ownership_transfer():
     assert raw_ba[0] == 0xAB
 
     page_idx = sb_a.page_idx
-    shm_id = sb_a.release(caller_task_id=1)
+    shm_id = sb_a.release()
     assert not sb_a._is_active
     assert mm.page_registry.get_owner(page_idx) == FB_TASK_ID_FLIGHT
 
@@ -185,7 +205,9 @@ def test_mem_10_shared_block_ownership_transfer():
 
     # Simulate IPC Router Grant phase
     mm.page_registry.update_owner(page_idx, 2)
-    sb_b = mm.claim(receiver_task_id=2, shm_id=shm_id).unwrap()
+    sched.current_task = sched.get_task(2)
+    assert sched.current_task is not None
+    sb_b = mm.claim(shm_id).unwrap()
     assert sb_b.get_owner() == 2
     assert sb_b._is_active
     assert mm.page_registry.get_owner(page_idx) == 2
@@ -200,21 +222,23 @@ def test_mem_10_shared_block_ownership_transfer():
 
 def test_mem_10c_rollback_transfer_restores_owner_id():
     """TEST-MEM-10c: rollback_transfer() restores PTE owner_id to the original sender."""
-    mm = MemoryManager()
+    mm, scheduler = _make_memory_manager(1, 2)
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
-    sb = mm.allocate_shared(caller_task_id=1, size=1024).unwrap()
-    shm_id = sb.release(caller_task_id=1)
+    sb = mm.allocate_shared(size=1024).unwrap()
+    shm_id = sb.release()
     assert mm.page_registry.get_owner(sb.page_idx) == FB_TASK_ID_FLIGHT
-    mm.rollback_transfer(original_sender_id=1, shm_id=shm_id)
+    scheduler.current_task = scheduler.get_task(1)
+    assert scheduler.current_task is not None
+    mm.rollback_transfer(shm_id=shm_id)
     assert mm.page_registry.get_owner(sb.page_idx) == 1
 
 
 def test_mem_11_shared_block_raII_auto_deallocate():
     """TEST-MEM-11: SharedBlock RAII automatically deallocates buffer on drop."""
-    mm = MemoryManager()
+    mm, sched = _make_memory_manager(2)
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     initial_alloc = mm.total_allocated_bytes
-    with mm.allocate_shared(caller_task_id=2, size=1024).unwrap() as sb:
+    with mm.allocate_shared(size=1024).unwrap() as sb:
         assert mm.total_allocated_bytes > initial_alloc
         assert sb.shm_id in mm.shm_slots
     assert mm.total_allocated_bytes == initial_alloc
@@ -223,19 +247,21 @@ def test_mem_11_shared_block_raII_auto_deallocate():
 
 def test_mem_14_page_granular_permission_isolation():
     """TEST-MEM-14: Different tasks cannot share the same 4KB page; separate pages allocated."""
-    mm = MemoryManager()
+    mm, sched = _make_memory_manager(1, 2)
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
 
     # Task 1 allocates a small block (256 bytes)
-    sb_t1_a = mm.allocate_shared(caller_task_id=1, size=256).unwrap()
+    sb_t1_a = mm.allocate_shared(size=256).unwrap()
     # Task 1 allocates another small block (256 bytes) -> a separate page is
     # required so page-granular ownership transfer cannot split a page.
-    sb_t1_b = mm.allocate_shared(caller_task_id=1, size=256).unwrap()
+    sb_t1_b = mm.allocate_shared(size=256).unwrap()
     assert sb_t1_a.page_idx != sb_t1_b.page_idx
     assert sb_t1_a.slot_idx == sb_t1_b.slot_idx == 0
 
     # Task 2 allocates a small block (256 bytes) -> MUST allocate a separate 4KB page!
-    sb_t2 = mm.allocate_shared(caller_task_id=2, size=256).unwrap()
+    sched.current_task = sched.get_task(2)
+    assert sched.current_task is not None
+    sb_t2 = mm.allocate_shared(size=256).unwrap()
     assert sb_t2.page_idx != sb_t1_a.page_idx
     assert mm.shm_pages[sb_t1_a.page_idx].owner_id == 1
     assert mm.shm_pages[sb_t2.page_idx].owner_id == 2
@@ -244,32 +270,39 @@ def test_mem_14_page_granular_permission_isolation():
 def test_mem_15_vmmio_fc14_tlb_sync():
     """TEST-MEM-15: vMMIO FC=14 mapping, update and TLB flush driven by MemoryManager."""
 
-    vmmio = VMMIOController(guest_ram_size=8192)
-    mm = MemoryManager()
+    mm, sched = _make_memory_manager(1, 2)
+    vmmio = VMMIOController(guest_ram_size=8192, scheduler=sched)
     vmmio.register_to_memory_manager(mm)
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
 
-    sb = mm.allocate_shared(caller_task_id=1, size=512).unwrap()
+    sb = mm.allocate_shared(size=512).unwrap()
     raw_addr = 0xE000_0000 + (sb.page_idx * 4096)
 
     # Verify task 1 can access its own SHM page
-    status, _ = vmmio.access(raw_addr, is_write=False, current_task_id=1)
+    status, _ = vmmio.access(raw_addr, is_write=False)
     assert status == "OK_PHYSICAL"
 
     # Task 2 access traps with the canonical unregistered-page fault.
-    status, _ = vmmio.access(raw_addr, is_write=False, current_task_id=2)
+    sched.current_task = sched.get_task(2)
+    assert sched.current_task is not None
+    status, _ = vmmio.access(raw_addr, is_write=False)
     assert status == TrapCode.UNREGISTERED_PAGE
 
     # Release puts page in flight -> Task 1 also traps!
-    shm_id = sb.release(caller_task_id=1)
-    status, _ = vmmio.access(raw_addr, is_write=False, current_task_id=1)
+    sched.current_task = sched.get_task(1)
+    assert sched.current_task is not None
+    shm_id = sb.release()
+    status, _ = vmmio.access(raw_addr, is_write=False)
     assert status == TrapCode.UNREGISTERED_PAGE
 
     # Grant to Task 2 -> Task 2 can access, Task 1 cannot!
-    assert mm.grant_shared(shm_id, 2)
-    status, _ = vmmio.access(raw_addr, is_write=False, current_task_id=2)
+    sched.current_task = sched.get_task(2)
+    assert mm.grant_shared(shm_id)
+    status, _ = vmmio.access(raw_addr, is_write=False)
     assert status == "OK_PHYSICAL"
-    status, _ = vmmio.access(raw_addr, is_write=False, current_task_id=1)
+    sched.current_task = sched.get_task(1)
+    assert sched.current_task is not None
+    status, _ = vmmio.access(raw_addr, is_write=False)
     assert status == TrapCode.UNREGISTERED_PAGE
 
 

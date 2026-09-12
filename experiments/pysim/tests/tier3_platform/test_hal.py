@@ -44,6 +44,7 @@ from hal_dispatch import (
 from system import (
     System,
 )
+from scheduler import Scheduler
 from system_containers import (
     FlatMapView,
 )
@@ -77,28 +78,36 @@ def test_hal_02_timer_monotonic_ns():
 
 
 def test_hal_03_hal_buffer_pool_rejects_oversized():
-    pool = HalBufferPool()
+    scheduler = Scheduler()
+    task_id = scheduler.spawn("test_task")
+    scheduler.current_task = scheduler.get_task(task_id)
+    pool = HalBufferPool(scheduler)
     try:
         try:
-            pool.acquire_buffer(1, size=FB_CONF_HAL_BUFFER_SIZE + 1)
+            pool.acquire_buffer(size=FB_CONF_HAL_BUFFER_SIZE + 1)
             raise AssertionError("expected ValueError for oversized acquire_buffer")
         except ValueError:
             pass
-        handles = [pool.acquire_buffer(1, size=32) for _ in range(FB_CONF_HAL_MAX_BUFFERS)]
+        handles = [pool.acquire_buffer(size=32) for _ in range(FB_CONF_HAL_MAX_BUFFERS)]
         assert len(handles) == FB_CONF_HAL_MAX_BUFFERS
     finally:
         pool.close_all()
 
 
 def test_hal_04_hal_buffer_slice_bounds_and_ownership():
-    pool = HalBufferPool()
+    scheduler = Scheduler()
+    owner_id = scheduler.spawn("owner")
+    other_id = scheduler.spawn("other")
+    scheduler.current_task = scheduler.get_task(owner_id)
+    pool = HalBufferPool(scheduler)
     try:
-        h = pool.acquire_buffer(task_id=1, size=16)
-        view = pool.view(1, h, 0, 16)
+        h = pool.acquire_buffer(size=16)
+        view = pool.view(h, 0, 16)
         assert len(view) == 16
+        scheduler.current_task = scheduler.get_task(other_id)
         try:
-            pool.view(2, h, 0, 16)
-            raise AssertionError("expected HalBufferTrap: task 2 does not own handle")
+            pool.view(h, 0, 16)
+            raise AssertionError("expected HalBufferTrap: non-owner does not own handle")
         except HalBufferTrap:
             pass
     finally:

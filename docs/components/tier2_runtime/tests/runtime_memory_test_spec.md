@@ -2,10 +2,10 @@
 
 ## 1. 目的と対象範囲
 
-正本: [`runtime_memory.md`](docs/components/tier2_runtime/runtime_memory.md)（契約は [`system_memory.md`](docs/components/tier1_core/system_memory.md) を正本とする）
+正本: [`runtime_memory.md`](docs/components/tier2_runtime/runtime_memory.md)（契約は [`system_memory.md`](docs/components/tier1_interface/system_memory.md) を正本とする）
 参考実装: [`runtime_memory_concept.py`](docs/components/tier2_runtime/concepts/runtime_memory_concept.py)
 
-ページ単位権限分離、`shared-block`と物理 vMMIO PTE/TLB との連動、Cortex-M33 PMSAv8 MPUリージョン配分とJIT W^X切替プロトコルという、`system_allocator`/`shm_allocator` の物理実装レベルの振る舞いを検証する。契約レベルの公開API振る舞い（TEST-MEM-01〜13）は [`system_memory_test_spec.md`](docs/components/tier1_core/tests/system_memory_test_spec.md) の責務とする。
+ページ単位権限分離、`shared-block`と物理 vMMIO PTE/TLB との連動、Cortex-M33 PMSAv8 MPUリージョン配分とJIT W^X切替プロトコルという、`system_allocator`/`shm_allocator` の物理実装レベルの振る舞いを検証する。契約レベルの公開API振る舞い（TEST-MEM-01〜13）は [`system_memory_test_spec.md`](docs/components/tier1_interface/tests/system_memory_test_spec.md) の責務とする。
 
 ## 2. テストケース一覧
 
@@ -46,4 +46,4 @@
 ## 4. 未検証・スコープ外
 
 - Cortex-M33 実機での MPU レジスタ操作そのもの。
-- 契約レベルの公開API振る舞い（TEST-MEM-01〜13）は [`system_memory_test_spec.md`](docs/components/tier1_core/tests/system_memory_test_spec.md) を参照。
+- 契約レベルの公開API振る舞い（TEST-MEM-01〜13）は [`system_memory_test_spec.md`](docs/components/tier1_interface/tests/system_memory_test_spec.md) を参照。

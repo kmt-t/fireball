@@ -98,7 +98,16 @@ class PySimASTVisitor(ast.NodeVisitor):
         # Check __slots__ definition for non-enum/non-exception classes
         base_names = [b.id for b in node.bases if isinstance(b, ast.Name)]
         is_exempt = any(
-            name in ("IntEnum", "IntFlag", "Enum", "Exception", "RuntimeError", "ValueError", "TypedDict")
+            name in (
+                "IntEnum",
+                "IntFlag",
+                "Enum",
+                "Exception",
+                "RuntimeError",
+                "ValueError",
+                "TypedDict",
+                "Protocol",
+            )
             for name in base_names
         )
         dataclass_slots = any(

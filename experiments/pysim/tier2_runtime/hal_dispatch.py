@@ -34,8 +34,9 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from memory import MemoryManager
+    from scheduler import Scheduler
 
-from ipc_router import DataType, IPCMessage, IPCRouter, IpcStatus, ScopeKind, pack_key32
+from ipc_router import DataType, IPCMessage, IPCRouter, IPCStatus, ScopeKind, pack_key32
 from scheduler import ChannelAction
 from system_containers import FlatMapView, FlatSetView, StaticVector
 
@@ -59,7 +60,6 @@ ARG_TX_BUFFER_HANDLE = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=
 ARG_RX_BUFFER_HANDLE = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=12)
 ARG_CLOCK_HZ = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=13)
 ARG_SLAVE_ADDR = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=14)
-ARG_TASK_ID = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=15)
 ARG_FD = pack_key32(ScopeKind.FUNCTIONAL, DataType.UINT32, key_id=16)
 
 
@@ -186,11 +186,17 @@ class HalBufferPool:
         request (GOTCHA-HAL-01).
     """
 
-    def __init__(self):
+    def __init__(self, scheduler: Scheduler):
+        self._scheduler = scheduler
         self._slots: list[HalBufferHandle | None] = [None] * FB_CONF_HAL_MAX_BUFFERS
 
-    def acquire_buffer(self, task_id: int, size: int) -> HalBufferHandle:
-        """Claims ownership of one free static slot for `task_id` (GOTCHA-HAL-01)."""
+    @property
+    def current_task_id(self) -> int:
+        return self._scheduler.current_task_id
+
+    def acquire_buffer(self, size: int) -> HalBufferHandle:
+        """Claims ownership of one free static slot for the running task."""
+        task_id = self.current_task_id
         if size <= 0 or size > FB_CONF_HAL_BUFFER_SIZE:
             raise ValueError(
                 f"acquire_buffer(size={size}) exceeds FB_CONF_HAL_BUFFER_SIZE={FB_CONF_HAL_BUFFER_SIZE}"
@@ -210,7 +216,8 @@ class HalBufferPool:
         self._slots[slot_idx] = handle
         return handle
 
-    def release_buffer(self, task_id: int, handle: HalBufferHandle) -> None:
+    def release_buffer(self, handle: HalBufferHandle) -> None:
+        task_id = self.current_task_id
         for i, s in enumerate(self._slots):
             if s is not None and s.name == handle.name:
                 if s.owner_task != task_id:
@@ -221,7 +228,8 @@ class HalBufferPool:
                 return
         raise HalBufferTrap(f"task {task_id} cannot release {handle.name}: not found")
 
-    def _resolve(self, task_id: int, handle: HalBufferHandle) -> HalBufferHandle:
+    def _resolve(self, handle: HalBufferHandle) -> HalBufferHandle:
+        task_id = self.current_task_id
         for s in self._slots:
             if s is not None and s.name == handle.name:
                 if s.owner_task != task_id:
@@ -236,13 +244,14 @@ class HalBufferPool:
         for i in range(len(self._slots)):
             self._slots[i] = None
 
-    def can_view(self, task_id: int, handle: HalBufferHandle, offset: int, length: int) -> bool:
+    def can_view(self, handle: HalBufferHandle, offset: int, length: int) -> bool:
         """
         Non-throwing precondition check for view(): same ownership/bounds
         rules, but a bool return instead of raising HalBufferTrap, for callers
         that must not depend on catching an exception (exceptions disabled
         in the target C++ build).
         """
+        task_id = self.current_task_id
         for s in self._slots:
             if s is not None and s.name == handle.name:
                 if s.owner_task != task_id:
@@ -250,14 +259,14 @@ class HalBufferPool:
                 return 0 <= offset and 0 <= length and offset + length <= s.capacity
         return False
 
-    def view(self, task_id: int, handle: HalBufferHandle, offset: int, length: int) -> memoryview:
+    def view(self, handle: HalBufferHandle, offset: int, length: int) -> memoryview:
         """
         Resolves a bounds-checked (offset, length) window inside `handle`.
                 This is what interface_wit.md 5.3's `hal-buffer-slice{handle, offset, len}`
                 actually resolves to at the HAL layer.
         """
 
-        record = self._resolve(task_id, handle)
+        record = self._resolve(handle)
         if offset < 0 or length < 0 or offset + length > record.capacity:
             raise HalBufferTrap(
                 f"hal-buffer-slice(offset={offset}, len={length}) escapes {handle.name}'s "
@@ -468,7 +477,7 @@ class HalTask:
         """
         while self.running:
             status, msg = yield from self.ipc.recv()
-            if status != IpcStatus.COMPLETED or msg is None:
+            if status != IPCStatus.COMPLETED or msg is None:
                 yield (ChannelAction.BLOCK, None)
                 continue
 
@@ -486,10 +495,9 @@ def make_hal_ipc_message(
     cmd_id: int,
     params: Sequence[tuple[int, int]] = (),
     memory_manager: MemoryManager | None = None,
-    task_id: int = 1,
 ) -> IPCMessage:
     """Builds a standardized IPCMessage for communicating with HalTask."""
     entries = list(params)
     entries.append((ARG_CMD_ID, cmd_id))
     sorted_entries = sorted(entries, key=lambda kv: kv[0])
-    return IPCMessage.from_entries(sorted_entries, memory_manager=memory_manager, task_id=task_id)
+    return IPCMessage.from_entries(sorted_entries, memory_manager=memory_manager)

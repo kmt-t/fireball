@@ -97,7 +97,7 @@ def test_sched_04_shared_block_move_semantics_csp_rendezvous():
     from memory import FB_CONF_MEMORY_POOL_SIZE, MemoryManager, SharedBlock
 
     sched = Scheduler()
-    mm = MemoryManager()
+    mm = MemoryManager(sched)
     mm.init_manager(pool_base=0x20020000, pool_size=FB_CONF_MEMORY_POOL_SIZE)
     ch = sched.create_channel()
 
@@ -105,7 +105,8 @@ def test_sched_04_shared_block_move_semantics_csp_rendezvous():
     t2 = sched.get_task(sched.spawn("receiver", task_id=2))
 
     # Task 1 allocates a SharedBlock
-    sb = mm.allocate_shared(caller_task_id=1, size=64).unwrap()
+    sched.current_task = t1
+    sb = mm.allocate_shared(size=64).unwrap()
     sb.write_bytes(0, b"Hello Fireball CSP Move Semantics!")
 
     # Step 1: Task 1 sends the SharedBlock directly via channel
@@ -145,7 +146,8 @@ def test_sched_04_shared_block_move_semantics_csp_rendezvous():
 
     # Sub-case 2: Receiver waits first, Sender arrives second
     ch2 = sched.create_channel()
-    sb2 = mm.allocate_shared(caller_task_id=1, size=64).unwrap()
+    sched.current_task = t1
+    sb2 = mm.allocate_shared(size=64).unwrap()
     sb2.write_bytes(0, b"Subcase 2 Move!")
 
     sched.current_task = t2

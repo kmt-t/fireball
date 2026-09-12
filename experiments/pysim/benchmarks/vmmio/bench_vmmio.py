@@ -26,13 +26,17 @@ for _p in [
         sys.path.insert(0, _sp)
 
 from vmmio import VMMIOController
+from scheduler import Scheduler
 
 
 class VMMIOBenchmark:
     """Measures TLB Hit O(1), FlatMap Walk O(log N), and FC=0xC/0xE/0xF dispatch."""
 
     def __init__(self):
-        self.vmmio = VMMIOController(guest_ram_size=65536)
+        scheduler = Scheduler()
+        task_id = scheduler.spawn("benchmark_task")
+        scheduler.current_task = scheduler.get_task(task_id)
+        self.vmmio = VMMIOController(guest_ram_size=65536, scheduler=scheduler)
         # Register static device (FC=0xC)
         self.device_writes = 0
 
@@ -59,7 +63,7 @@ class VMMIOBenchmark:
         t0 = time.perf_counter()
         vmmio = self.vmmio
         for _ in range(iterations):
-            _ = vmmio.access(shm_addr, is_write=False, current_task_id=1)
+            _ = vmmio.access(shm_addr, is_write=False)
         t1 = time.perf_counter()
         results["tlb_hit_mops"] = iterations / (t1 - t0) / 1e6
         results["tlb_hit_latency_ns"] = (t1 - t0) / iterations * 1e9
@@ -78,7 +82,7 @@ class VMMIOBenchmark:
         t0 = time.perf_counter()
         for i in range(iterations):
             addr = 0xE000_0000 + ((i % 32) << 12)
-            _ = vmmio.access(addr, is_write=False, current_task_id=1)
+            _ = vmmio.access(addr, is_write=False)
         t1 = time.perf_counter()
         results["tlb_miss_flatmap_mops"] = iterations / (t1 - t0) / 1e6
         results["tlb_miss_flatmap_ns"] = (t1 - t0) / iterations * 1e9
@@ -94,9 +98,12 @@ class VMMIOBenchmark:
 
         # 2.5 Security Isolation Check (TRAP_OWNER_MISMATCH detection)
         mismatch_traps = 0
+        task2_id = vmmio.scheduler.spawn("isolation_probe")
+        vmmio.scheduler.current_task = vmmio.scheduler.get_task(task2_id)
+        assert vmmio.scheduler.current_task is not None
         t0 = time.perf_counter()
         for _ in range(iterations):
-            res, _ = vmmio.access(shm_addr, is_write=False, current_task_id=2)
+            res, _ = vmmio.access(shm_addr, is_write=False)
             if res == "TRAP_OWNER_MISMATCH":
                 mismatch_traps += 1
         t1 = time.perf_counter()

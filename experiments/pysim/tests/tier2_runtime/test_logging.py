@@ -135,12 +135,11 @@ def test_log_04_coos_and_ipc_diagnostic_logging():
         sysv.scheduler.run_until_idle()
 
         # 5. IPC Message Too Large -> 0x0203
-        too_large_msg = IPCMessage.from_entries(
-            [(i, i) for i in range(1, 10)],  # 9 pairs > 8
-            memory_manager=sysv.memory_manager,
-        )
-
         def too_large_task():
+            too_large_msg = IPCMessage.from_entries(
+                [(i, i) for i in range(1, 10)],  # 9 pairs > 8
+                memory_manager=sysv.memory_manager,
+            )
             _, ch = sysv.ipc.lookup("fireball://device/gpio/0")
             assert ch is not None
             yield from sysv.ipc.send(ch, too_large_msg)

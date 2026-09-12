@@ -36,7 +36,7 @@ for _p in [
 
 from ipc_router import (
     IPCMessage,
-    IpcStatus,
+    IPCStatus,
     Role,
     bytes_to_kv_storage,
     kv_entries_to_bytes,
@@ -61,6 +61,7 @@ def wat_to_wasm(wat_text: str) -> bytes:
 
 def test_syscall_01_unknown_id_returns_nosys():
     sysv = System()
+    sysv.start_runtime_task(name="test_runtime_task")
     try:
         assert sysv.fireball_call(0xDEAD, 0, 0, 0, 0, 0, 0) == WasiErrno.NOSYS
     finally:
@@ -71,6 +72,7 @@ def test_syscall_16_trigger_set_pin_reserved_nosys():
     """TEST-SYS-16: TRIGGER_SET_PIN is a registered ID with no pysim GPIO register
     backing yet; it must be safely undispatched (NOSYS), not crash or panic."""
     sysv = System()
+    sysv.start_runtime_task(name="test_runtime_task")
     try:
         assert sysv.fireball_call(FbSyscallId.TRIGGER_SET_PIN, 0, 1, 0, 0, 0, 0) == WasiErrno.NOSYS
     finally:
@@ -79,6 +81,7 @@ def test_syscall_16_trigger_set_pin_reserved_nosys():
 
 def test_syscall_02_sys_control_registers():
     sysv = System()
+    sysv.start_runtime_task(name="test_runtime_task")
     try:
         assert sysv.fireball_call(FbSyscallId.SYS_YIELD, 0, 0, 0, 0, 0, 0) == WasiErrno.SUCCESS
         assert sysv.fireball_call(FbSyscallId.SYS_RESET, 0, 0, 0, 0, 0, 0) == WasiErrno.SUCCESS
@@ -91,6 +94,7 @@ def test_syscall_02_sys_control_registers():
 
 def test_syscall_03_mmio_read_write():
     sysv = System()
+    sysv.start_runtime_task(name="test_runtime_task")
     try:
         addr = FB_CONF_VSOC_PASSTHROUGH_BASE
         assert (
@@ -105,6 +109,7 @@ def test_syscall_03_mmio_read_write():
 def test_syscall_11_mmio_read32_out_of_bounds():
     """TEST-SYS-11: MMIO_READ32 on a linear guest-RAM address beyond FB_CONF_GUEST_RAM_SIZE is rejected."""
     sysv = System()
+    sysv.start_runtime_task(name="test_runtime_task")
     try:
         oob_addr = FB_CONF_GUEST_RAM_SIZE + 0x1000  # bit31=0 (linear), past guest RAM
         assert (
@@ -117,6 +122,7 @@ def test_syscall_11_mmio_read32_out_of_bounds():
 def test_syscall_12_mmio_write32_permission_denied():
     """TEST-SYS-12: MMIO_WRITE32 to a page mapped read-only is rejected."""
     sysv = System()
+    sysv.start_runtime_task(name="test_runtime_task")
     try:
         vpn = (FB_CONF_VSOC_PASSTHROUGH_BASE >> 12) + 100  # fresh page, unused at startup
         sysv.vmmio.map_passthrough_page(vpn=vpn, phys_page=0, write=False)
@@ -131,6 +137,7 @@ def test_syscall_12_mmio_write32_permission_denied():
 def test_syscall_13_mmio_read8_write8():
     """TEST-SYS-13: MMIO_READ8/MMIO_WRITE8 round-trip at 8-bit width."""
     sysv = System()
+    sysv.start_runtime_task(name="test_runtime_task")
     try:
         addr = FB_CONF_VSOC_PASSTHROUGH_BASE
         assert (
@@ -144,6 +151,7 @@ def test_syscall_13_mmio_read8_write8():
 def test_syscall_14_mmio_bulk_read_write_invalid_size():
     """TEST-SYS-14: MMIO_BULK_READ/WRITE with an oversized byte_count is rejected."""
     sysv = System()
+    sysv.start_runtime_task(name="test_runtime_task")
     try:
         addr = FB_CONF_VSOC_PASSTHROUGH_BASE
         huge_count = 0x20000  # exceeds the entire PASSTHROUGH backing array
@@ -162,9 +170,10 @@ def test_syscall_14_mmio_bulk_read_write_invalid_size():
 def test_syscall_15_mmio_bulk_read_dest_offset_out_of_bounds():
     """TEST-SYS-15: MMIO_BULK_READ rejects a dest_offset beyond guest RAM and writes nothing."""
     sysv = System()
+    sysv.start_runtime_task(name="test_runtime_task")
     try:
         guest_mem = bytearray(b"\xaa" * 16)
-        sysv.bind_guest(guest_mem, task_id=1)
+        sysv.bind_guest(guest_mem)
         addr = FB_CONF_VSOC_PASSTHROUGH_BASE
         assert (
             sysv.fireball_call(FbSyscallId.MMIO_BULK_READ, addr, 100, 4, 0, 0, 0) == WasiErrno.FAULT
@@ -178,10 +187,11 @@ def test_syscall_15_mmio_bulk_read_dest_offset_out_of_bounds():
 
 def test_syscall_04_vdma_transfer():
     sysv = System()
+    sysv.start_runtime_task(name="test_runtime_task")
     try:
         guest_mem = bytearray(64)
         guest_mem[0:4] = struct.pack("<I", 0x11223344)
-        sysv.bind_guest(guest_mem, task_id=1)
+        sysv.bind_guest(guest_mem)
         dst = FB_CONF_VSOC_PASSTHROUGH_BASE + 0x1000
         assert sysv.fireball_call(FbSyscallId.VDMA_START, 0, dst, 4, 0, 0, 0) == WasiErrno.SUCCESS
         assert sysv.fireball_call(FbSyscallId.MMIO_READ32, dst, 0, 0, 0, 0, 0) == 0x11223344
@@ -191,6 +201,7 @@ def test_syscall_04_vdma_transfer():
 
 def test_syscall_05_irq_flags():
     sysv = System()
+    sysv.start_runtime_task(name="test_runtime_task")
     try:
         sysv.raise_irq(0x4)
         assert sysv.fireball_call(FbSyscallId.IRQ_READ_FLAGS, 0, 0, 0, 0, 0, 0) == 0x4
@@ -211,6 +222,7 @@ def test_syscall_06_ipc_lookup_send_recv():
     call itself would otherwise fail.
     """
     sysv = System()
+    sysv.start_runtime_task(name="test_runtime_task")
     try:
         uri = "fireball://device/gpio/0"
         uri_bytes = uri.encode()
@@ -219,7 +231,9 @@ def test_syscall_06_ipc_lookup_send_recv():
         guest_mem = bytearray(128)
         guest_mem[0 : len(uri_bytes)] = uri_bytes
         guest_mem[64 : 64 + len(payload)] = payload
-        sysv.bind_guest(guest_mem, task_id=1)
+        sysv.bind_guest(guest_mem)
+        guest_task = sysv.scheduler.current_task
+        assert guest_task is not None
         handle = sysv.fireball_call(FbSyscallId.IPC_LOOKUP, 0, len(uri_bytes), 0, 0, 0, 0)
         assert handle > 0
 
@@ -235,6 +249,7 @@ def test_syscall_06_ipc_lookup_send_recv():
         recv_id = sysv.scheduler.spawn("hal_receiver", hal_receiver(), role=Role.HAL_GPIO)
         sysv.scheduler.run_until_idle()
         assert sysv.scheduler.get_task(recv_id).state.name == "SUSPENDED_CSP"
+        sysv.scheduler.current_task = guest_task
 
         assert (
             sysv.fireball_call(FbSyscallId.IPC_SEND, handle, 64, len(payload), 0, 0, 0)
@@ -245,8 +260,6 @@ def test_syscall_06_ipc_lookup_send_recv():
         # -- IPC_RECV: a DEBUGGER sender coroutine blocks first, so the
         # guest's IPC_RECV completes the rendezvous the instant it calls in.
         # Set guest task role to CORE_SERVICE so it is authorized to receive on DEBUGGER->CORE_SERVICE edge
-        guest_task = sysv.scheduler.get_task(1)
-        assert guest_task is not None
         guest_task.role = Role.CORE_SERVICE
 
         core_uri = "fireball://core/coos/0"
@@ -257,7 +270,7 @@ def test_syscall_06_ipc_lookup_send_recv():
 
         def debugger_sender():
             status, ch = sysv.ipc.lookup(core_uri)
-            assert status == IpcStatus.COMPLETED and ch is not None
+            assert status == IPCStatus.COMPLETED and ch is not None
             status, _ = yield from sysv.ipc.send(
                 ch,
                 IPCMessage.from_entries(
@@ -268,6 +281,7 @@ def test_syscall_06_ipc_lookup_send_recv():
 
         sysv.scheduler.spawn("debugger_sender", debugger_sender(), role=Role.DEBUGGER)
         sysv.scheduler.run_until_idle()
+        sysv.scheduler.current_task = guest_task
 
         core_handle = sysv.fireball_call(
             FbSyscallId.IPC_LOOKUP, 32, len(core_uri_bytes), 0, 0, 0, 0
@@ -276,7 +290,7 @@ def test_syscall_06_ipc_lookup_send_recv():
         recv_len = sysv.fireball_call(FbSyscallId.IPC_RECV, core_handle, 96, 32, 0, 0, 0)
         assert recv_len == len(reply)
         assert bytes(guest_mem[96 : 96 + recv_len]) == reply
-        assert sent_status == [IpcStatus.COMPLETED]
+        assert sent_status == [IPCStatus.COMPLETED]
     finally:
         sysv.shutdown()
 
@@ -284,12 +298,13 @@ def test_syscall_06_ipc_lookup_send_recv():
 def test_syscall_07_wasi_fd_write():
     """TEST-SYS-80: WASI_FD_WRITE writes single iovec to UART stdout and reports written bytes."""
     sysv = System()
+    sysv.start_runtime_task(name="test_runtime_task")
     try:
         guest_mem = bytearray(64)
         message = b"hello from wasm\n"
         guest_mem[32 : 32 + len(message)] = message
         struct.pack_into("<II", guest_mem, 0, 32, len(message))
-        sysv.bind_guest(guest_mem, task_id=1)
+        sysv.bind_guest(guest_mem)
         assert sysv.fireball_call(FbSyscallId.WASI_FD_WRITE, 1, 0, 1, 48, 0, 0) == WasiErrno.SUCCESS
         assert sysv.transport.drain() == message
         nwritten = struct.unpack_from("<I", guest_mem, 48)[0]
@@ -301,6 +316,7 @@ def test_syscall_07_wasi_fd_write():
 def test_wasi_01_fd_write_scatter_gather():
     """TEST-SYS-80: WASI_FD_WRITE supports scatter-gather output with multiple iovecs."""
     sysv = System()
+    sysv.start_runtime_task(name="test_runtime_task")
     try:
         guest_mem = bytearray(128)
         chunk1 = b"FIREBALL_"
@@ -310,7 +326,7 @@ def test_wasi_01_fd_write_scatter_gather():
         # 2 iovecs at offset 0 and 8
         struct.pack_into("<II", guest_mem, 0, 32, len(chunk1))
         struct.pack_into("<II", guest_mem, 8, 64, len(chunk2))
-        sysv.bind_guest(guest_mem, task_id=1)
+        sysv.bind_guest(guest_mem)
         # Write to stdout (fd=1) with 2 iovecs, result at offset 100
         assert (
             sysv.fireball_call(FbSyscallId.WASI_FD_WRITE, 1, 0, 2, 100, 0, 0) == WasiErrno.SUCCESS
@@ -325,10 +341,11 @@ def test_wasi_01_fd_write_scatter_gather():
 def test_wasi_02_fd_read_eof():
     """TEST-SYS-81: WASI_FD_READ reports 0 bytes read (EOF) without crashing."""
     sysv = System()
+    sysv.start_runtime_task(name="test_runtime_task")
     try:
         guest_mem = bytearray(64)
         struct.pack_into("<II", guest_mem, 0, 16, 32)
-        sysv.bind_guest(guest_mem, task_id=1)
+        sysv.bind_guest(guest_mem)
         assert sysv.fireball_call(FbSyscallId.WASI_FD_READ, 0, 0, 1, 48, 0, 0) == WasiErrno.SUCCESS
         nread = struct.unpack_from("<I", guest_mem, 48)[0]
         assert nread == 0  # Standard WASI EOF
@@ -339,6 +356,7 @@ def test_wasi_02_fd_read_eof():
 def test_wasi_03_fd_close():
     """TEST-SYS-82: WASI_FD_CLOSE returns SUCCESS for any fd."""
     sysv = System()
+    sysv.start_runtime_task(name="test_runtime_task")
     try:
         assert sysv.fireball_call(FbSyscallId.WASI_FD_CLOSE, 3, 0, 0, 0, 0, 0) == WasiErrno.SUCCESS
     finally:
@@ -348,9 +366,10 @@ def test_wasi_03_fd_close():
 def test_wasi_04_clock_time_get_monotonic():
     """TEST-SYS-83: WASI_CLOCK_TIME_GET writes monotonic 64-bit nanosecond timestamp to guest memory."""
     sysv = System()
+    sysv.start_runtime_task(name="test_runtime_task")
     try:
         guest_mem = bytearray(64)
-        sysv.bind_guest(guest_mem, task_id=1)
+        sysv.bind_guest(guest_mem)
         assert (
             sysv.fireball_call(FbSyscallId.WASI_CLOCK_TIME_GET, 0, 0, 16, 0, 0, 0)
             == WasiErrno.SUCCESS
@@ -371,6 +390,7 @@ def test_wasi_04_clock_time_get_monotonic():
 def test_wasi_05_proc_exit():
     """TEST-SYS-84: WASI_PROC_EXIT sets system halted state and exit code."""
     sysv = System()
+    sysv.start_runtime_task(name="test_runtime_task")
     try:
         assert sysv.halted is False
         assert (
@@ -385,9 +405,10 @@ def test_wasi_05_proc_exit():
 def test_wasi_06_random_get():
     """TEST-SYS-85: WASI_RANDOM_GET fills guest buffer with cryptographically secure random bytes."""
     sysv = System()
+    sysv.start_runtime_task(name="test_runtime_task")
     try:
         guest_mem = bytearray(64)
-        sysv.bind_guest(guest_mem, task_id=1)
+        sysv.bind_guest(guest_mem)
         assert (
             sysv.fireball_call(FbSyscallId.WASI_RANDOM_GET, 8, 16, 0, 0, 0, 0) == WasiErrno.SUCCESS
         )
@@ -401,10 +422,11 @@ def test_wasi_06_random_get():
 def test_wasi_07_invalid_fd_returns_badf():
     """TEST-SYS-91: WASI_FD_WRITE to invalid fd (e.g. fd=99) returns EBADF."""
     sysv = System()
+    sysv.start_runtime_task(name="test_runtime_task")
     try:
         guest_mem = bytearray(64)
         struct.pack_into("<II", guest_mem, 0, 16, 8)
-        sysv.bind_guest(guest_mem, task_id=1)
+        sysv.bind_guest(guest_mem)
         res = sysv.fireball_call(FbSyscallId.WASI_FD_WRITE, 99, 0, 1, 48, 0, 0)
         assert res == WasiErrno.BADF
     finally:
@@ -414,9 +436,10 @@ def test_wasi_07_invalid_fd_returns_badf():
 def test_wasi_08_out_of_bounds_offset_returns_fault():
     """TEST-SYS-92: Out-of-bounds guest memory offset in WASI call returns EFAULT instantly."""
     sysv = System()
+    sysv.start_runtime_task(name="test_runtime_task")
     try:
         guest_mem = bytearray(64)
-        sysv.bind_guest(guest_mem, task_id=1)
+        sysv.bind_guest(guest_mem)
         # iovs_ptr way past 64 bytes
         res = sysv.fireball_call(FbSyscallId.WASI_FD_WRITE, 1, 0x10000, 1, 48, 0, 0)
         assert res == WasiErrno.FAULT

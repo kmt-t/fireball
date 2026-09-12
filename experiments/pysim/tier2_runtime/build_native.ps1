@@ -13,6 +13,10 @@ $ErrorActionPreference = "Stop"
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $scriptDir
+# Keep generated C outside the repository. The tracked *.c files are not
+# source files and must never be edited or overwritten by this build.
+$nativeBuildDir = Join-Path $env:TEMP "fireball-pysim-native"
+New-Item -ItemType Directory -Force $nativeBuildDir | Out-Null
 
 # Compile in dependency order: leb128 has no local deps; interpreter and
 # runtime_engine import other pysim modules at the Python level (normal
@@ -31,18 +35,20 @@ $pyInc = & uv run python -c "import sysconfig; print(sysconfig.get_path('include
 $pyLibDir = & uv run python -c "import sys, os; print(os.path.join(sys.base_prefix, 'libs'))"
 
 foreach ($mod in $modules) {
-    Write-Host ">>> Transpiling $mod.py -> .c (Cython)" -ForegroundColor Yellow
-    & uv run cython "$mod.py" -3 -o "$mod.c"
+    $generatedC = Join-Path $nativeBuildDir "$mod.c"
+    $outputPyd = Join-Path $scriptDir "$mod.pyd"
+    Write-Host ">>> Transpiling $mod.py -> $nativeBuildDir/$mod.c (Cython)" -ForegroundColor Yellow
+    & uv run cython "$mod.py" -3 -o $generatedC
     if ($LASTEXITCODE -ne 0) { throw "cython transpile failed for $mod" }
 
-    Write-Host ">>> Compiling $mod.c -> .pyd (clang-cl)" -ForegroundColor Yellow
+    Write-Host ">>> Compiling $nativeBuildDir/$mod.c -> .pyd (clang-cl)" -ForegroundColor Yellow
     & clang-cl.exe /O2 /LD /EHsc `
         "-I$pyInc" `
         "-I$vsDir\VC\Tools\MSVC\$msvcVer\include" `
         "-I$sdkRoot\Include\$sdkVer\ucrt" `
         "-I$sdkRoot\Include\$sdkVer\shared" `
         "-I$sdkRoot\Include\$sdkVer\um" `
-        "$mod.c" /Fe:"$mod.pyd" `
+        $generatedC /Fe:$outputPyd `
         /link `
         "/LIBPATH:$pyLibDir" `
         "/LIBPATH:$vsDir\VC\Tools\MSVC\$msvcVer\lib\x64" `

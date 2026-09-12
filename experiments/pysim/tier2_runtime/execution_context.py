@@ -7,7 +7,10 @@ from __future__ import annotations
 import ctypes
 from collections.abc import Iterator
 
-from system_containers import StaticVector
+from interop_abi import ExecutionContextNative, NativeValueStack
+from jit_abi import (
+    JIT_CONTEXT_SIZE_BYTES,
+)
 
 
 class WASMContext:
@@ -18,6 +21,7 @@ class WASMContext:
         "_c_locals",
         "_c_mem",
         "_c_result",
+        "_jit_helper_keepalive",
         "_cached_locals_view",
         "_n_locals",
         "fault",
@@ -37,7 +41,7 @@ class WASMContext:
         self._n_locals = n_locals
         self.fault: str | None = None
         self.stack_capacity = stack_capacity
-        self.stack: StaticVector[int] = StaticVector(capacity=stack_capacity)
+        self.stack: NativeValueStack = NativeValueStack(capacity=stack_capacity)
         self.memory = memory
         if memory is not None:
             self._c_mem = (ctypes.c_char * len(memory)).from_buffer(memory)
@@ -47,12 +51,22 @@ class WASMContext:
         # value ({ExecutionContext_Layout}), so SPILL_RESULT_TO_SP writes it
         # here via the CPS sp argument.
         self._c_result = ctypes.c_int64()
-        self._c_context = (ctypes.c_uint32 * 15)()
+        # This is the Python mirror of wasm_interop.hxx. It is a
+        # fixed-layout Native structure, not a Python object graph. Word 8 remains the
+        # 64-bit process-local helper pointer used by PIC JIT delegation.
+        self._c_context = ExecutionContextNative()
+        assert ctypes.sizeof(self._c_context) == JIT_CONTEXT_SIZE_BYTES
+        self._jit_helper_keepalive: object | None = None
         self._cached_locals_view = self._LocalsView(self)
 
     @property
     def context_ptr(self) -> ctypes.c_void_p:
-        return ctypes.cast(self._c_context, ctypes.c_void_p)
+        return ctypes.cast(ctypes.pointer(self._c_context), ctypes.c_void_p)
+
+    @property
+    def native_context(self) -> ExecutionContextNative:
+        """Return the Native ABI record consumed by interpreter and JIT."""
+        return self._c_context
 
     @property
     def sp_ptr(self) -> ctypes.c_void_p:
@@ -67,6 +81,32 @@ class WASMContext:
         if self._c_mem is not None:
             return ctypes.c_void_p(ctypes.addressof(self._c_mem))
         return ctypes.c_void_p(0)
+
+    @property
+    def jit_helper_ptr(self) -> int:
+        """Return the context-owned address used by a complex JIT tail jump."""
+
+        return int(self._c_context.complex_helper_ptr)
+
+    def set_jit_helper(self, helper_addr: int, keepalive: object | None = None) -> None:
+        """Install a non-zero CPS helper address in the execution context.
+
+        ``keepalive`` is only for the Python simulator (for example a
+        ``ctypes`` callback); the embedded implementation owns its function
+        image independently.  The generated JIT code reads this slot through
+        ``ctx`` and therefore remains position independent.
+        """
+
+        assert helper_addr > 0, "JIT helper address must be non-zero"
+        assert helper_addr <= 0xFFFF_FFFF_FFFF_FFFF, "JIT helper address exceeds ABI width"
+        self._c_context.complex_helper_ptr = helper_addr
+        self._jit_helper_keepalive = keepalive
+
+    def clear_jit_helper(self) -> None:
+        """Remove the installed helper and release the simulator keepalive."""
+
+        self._c_context.complex_helper_ptr = 0
+        self._jit_helper_keepalive = None
 
     class _LocalsView:
         __slots__ = ("_ctx",)

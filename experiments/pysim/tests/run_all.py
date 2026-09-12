@@ -61,6 +61,11 @@ TEST_SUITES = [
     ),
     (
         "Tier 2 Runtime",
+        "Python/C++ ABI Native Layout",
+        TEST_DIR / "tier2_runtime" / "test_interop_abi.py",
+    ),
+    (
+        "Tier 2 Runtime",
         "WASM Differential Oracle (wasmtime)",
         TEST_DIR / "tier2_runtime" / "test_wasm_differential.py",
     ),

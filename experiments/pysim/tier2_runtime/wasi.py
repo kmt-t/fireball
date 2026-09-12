@@ -53,7 +53,7 @@ class WasiInterfaceVTable:
     One URI's set of WASI 0.3p operations as a fixed-shape struct of
     function-pointer fields -- the C++ analogue of a struct-of-function-
     pointers vtable. A command *name* ("write-buffer", "get-now", ...) is not
-    a URI and not log output, so under the POD rule it cannot be a string
+    a URI and not log output, so under the Native ABI rule it cannot be a string
     dict key; each name instead becomes one statically-named field,
     resolved at compile time exactly like C++ member access. Unpopulated
     fields default to None; dispatch_command checks that directly rather

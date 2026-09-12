@@ -18,7 +18,7 @@ _PYSIM_DIR = _BENCH_DIR.parent
 for _p in [
     _BENCH_DIR / "linear_memory",
     _BENCH_DIR / "vmmio",
-    _BENCH_DIR / "tier3_jit",
+    _BENCH_DIR / "jit",
     _BENCH_DIR / "aobench",
     _PYSIM_DIR,
     _PYSIM_DIR / "tier1_core",
@@ -134,6 +134,9 @@ def main():
         f"  * Differential Result Check:          Interp={jit_res['interp_loop_result']:,} | JIT={jit_res['jit_loop_result']:,} (MATCH)"
     )
     print(f"  * Measured JIT Speedup:               {jit_res['jit_speedup_ratio']:.2f}x faster")
+    print(
+        f"  * PIC Context Helper Tail Jump:       {jit_res['context_helper_tail_mops']:.2f} M ops/s  ({jit_res['context_helper_tail_ns']:.1f} ns/dispatch; {jit_res['context_helper_tail_invocations']:,} calls)"
+    )
 
     print("\n[Section 4: JIT Cache Metabolism & Corner Cases]")
     print("-" * 80)

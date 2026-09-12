@@ -399,7 +399,7 @@ def test_intp_70_to_72_direct_bytecode_execution():
     assert frame.control_map is not None
     assert frame.control_map is module.functions[0].control_map
     assert context.call_frame_stack[-1] is frame
-    assert context.local_offset == 3
+    assert context.local_offset == 2
     context.end_call_frame(frame)
     assert context.local_offset == 0
 

@@ -17,6 +17,7 @@ Copy-and-Patch 方式による JIT コンパイル速度（トレース結合＋
 | **BENCHMARK-JIT-03** | 2-Bit カードマーキング状態判定 ($O(1)$) | `HotspotBitmap` / `bit_view<2>` | ns/check, M ops/sec | インタープリタ実行ループを阻害しない極低コスト | `jit_runtime.md` |
 | **BENCHMARK-JIT-04** | `bswap32` RadixBinaryTreeView 区間検索 | 64エントリの JIT エントリインデックス | ns/lookup, M ops/sec | 下位ビット均等分散による有界二分探索 | `{META_BinarySearch}` |
 | **BENCHMARK-JIT-05** | ループ演算スループット比 (Interp vs JIT) | 100,000回算術ループ実行 | 実行時間 (ms), Speedup比 | 差分結果が完全一致し、ネイティブ実行が成立すること | `jit_compiler.md` |
+| **BENCHMARK-JIT-06** | コンテキスト所有Cヘルパー末尾遷移 | `ctx + 0x40` の関数ポインタ、空スタック境界 | ns/dispatch, M dispatch/sec, 副作用回数 | 移転先アドレスをコードへ埋め込まず、PICコピー後も同じヘルパーへ到達すること | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) `{PositionIndependentCode}` |
 
 ## 3. 測定手順
 
@@ -26,3 +27,7 @@ Copy-and-Patch 方式による JIT コンパイル速度（トレース結合＋
    - `HotspotBitmap.get_state()` および `RadixBinaryTreeView.find()` の単体スループットを $N=100,000$ 回計測。
 3. **実行速度比較 (Differential Execution)**:
    - 同一の WASM 算術ループモジュールを Pure Interpreter (Tier 2) と Hybrid JIT (Tier 3) で実行し、計算結果の等価性と実行所要時間を比較。
+4. **複雑処理の委譲測定**:
+   - `TraceCompiler` に空のネイティブスタック境界と `tail_context_helper=True` を指定し、`WASMContext.set_jit_helper()` でCPS関数ポインタを `+0x40` に設定する。
+   - 同一のトレースバイナリを別の実行可能バッファへコピーして呼び出し、コンテキスト内の関数へ到達することと副作用を直接 `assert` する。
+   - pysimでは `ctypes` コールバックのPython遷移コストを含むため、組込みCの性能値とは分離して報告する。

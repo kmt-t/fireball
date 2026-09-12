@@ -30,6 +30,7 @@ import sys
 from collections.abc import Generator, Iterable
 from dataclasses import dataclass, field
 
+from jit_abi import JIT_CONTEXT_HELPER_PTR_OFFSET
 from system_containers import FlatMapView
 
 IS_WINDOWS = sys.platform == "win32"
@@ -564,6 +565,35 @@ def _gen_global_set() -> Generator[int, None, None]:
     yield from (0x89, 0x18)
 
 
+def _gen_context_helper_tail_jump() -> Generator[int, None, None]:
+    """Tail-jump to a complex-operation helper selected by ``ctx``.
+
+    The helper uses the same CPS four-argument ABI as a trace.  The target
+    address is loaded from ``[r13 + JIT_CONTEXT_HELPER_PTR_OFFSET]`` after
+    the prologue has preserved ``ctx`` in r13; no process address is present
+    in the generated code.  Restoring the JIT frame before ``jmp rax`` makes
+    the helper a true tail destination and preserves the caller's return
+    address.  The helper must return with the same CPS ABI.
+    """
+
+    if IS_WINDOWS:
+        # Windows x64 ABI: rcx=ctx, rdx=sp, r8=local_base, r9=tos.
+        yield from (0x4C, 0x89, 0xE9)  # mov rcx, r13
+        yield from (0x4C, 0x89, 0xE2)  # mov rdx, r12
+        yield from (0x4D, 0x89, 0xD0)  # mov r8, r10
+    else:
+        # System V AMD64 ABI: rdi=ctx, rsi=sp, rdx=local_base, rcx=tos.
+        yield from (0x4C, 0x89, 0xEF)  # mov rdi, r13
+        yield from (0x4C, 0x89, 0xE6)  # mov rsi, r12
+        yield from (0x4D, 0x89, 0xD2)  # mov rdx, r10
+
+    # mov rax, [r13 + disp32] -- disp is a context-layout constant.
+    yield from (0x49, 0x8B, 0x85)
+    yield from JIT_CONTEXT_HELPER_PTR_OFFSET.to_bytes(4, "little")
+    yield from _gen_restore_unwind_only()
+    yield from (0xFF, 0xE0)  # jmp rax
+
+
 # ---------------------------------------------------------------------------
 # Stencil table -- every generator above is drained exactly once here.
 # ---------------------------------------------------------------------------
@@ -623,3 +653,6 @@ BR_IF = _materialize("br_if", _gen_br_if(), rel32=5)
 CALL = _materialize("call", _gen_call(), rel32=1)
 UNREACHABLE = _materialize("unreachable", _gen_unreachable())
 TRAP = _materialize("trap", _gen_trap())
+CONTEXT_HELPER_TAIL_JUMP = _materialize(
+    "context_helper_tail_jump", _gen_context_helper_tail_jump()
+)

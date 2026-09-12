@@ -10,19 +10,24 @@
 # identical behavior when no .so is present.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
+# Keep generated C outside the repository. The tracked *.c files are not
+# source files and must never be edited or overwritten by this build.
+native_build_dir="${TMPDIR:-/tmp}/fireball-pysim-native"
+mkdir -p "${native_build_dir}"
 
 PY_INC=$(uv run python -c "import sysconfig; print(sysconfig.get_path('include'))")
 PY_LDLIB=$(uv run python -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR') or '')")
 
 # Dependency order: see build_native.ps1's comment.
 for mod in leb128 interpreter runtime_engine; do
-    echo ">>> Transpiling ${mod}.py -> .c (Cython)"
-    uv run cython "${mod}.py" -3 -o "${mod}.c"
+    generated_c="${native_build_dir}/${mod}.c"
+    echo ">>> Transpiling ${mod}.py -> ${generated_c} (Cython)"
+    uv run cython "${mod}.py" -3 -o "${generated_c}"
 
-    echo ">>> Compiling ${mod}.c -> .so (clang)"
+    echo ">>> Compiling ${generated_c} -> .so (clang)"
     clang -O2 -shared -fPIC \
         -I"${PY_INC}" \
-        "${mod}.c" -o "${mod}.so" \
+        "${generated_c}" -o "${mod}.so" \
         ${PY_LDLIB:+-L"${PY_LDLIB}"}
 
     echo "Built ${mod}.so"

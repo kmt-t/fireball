@@ -45,8 +45,6 @@ import math
 import struct
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
-from enum import IntEnum
-from typing import cast
 
 import cython
 from control_flow import (
@@ -57,6 +55,17 @@ from control_flow import (
     opcode_has_attribute,
 )
 from leb128 import decode_signed, decode_unsigned
+from interop_abi import (
+    ExecutionContextNative,
+    NativeValueStack,
+)
+from native_stacks import (
+    ControlFrame,
+    ControlFrameKind,
+    NativeControlStack,
+    _ControlFrameWindow,
+    _LocalStackWindow,
+)
 from system_containers import StaticVector
 from wasm_module import F32, F64, I64, Module
 from wasm_opcodes import (
@@ -271,86 +280,6 @@ def _make_int_vector(
     return vector
 
 
-class ControlFrameKind(IntEnum):
-    BLOCK = 0
-    LOOP = 1
-    IF = 2
-
-
-@dataclass(slots=True)
-class ControlFrame:
-    kind: ControlFrameKind
-    start: int  # opcode offset of the BLOCK/LOOP/IF
-    match_end: int  # offset of the matching END
-    stack_height: int  # operand-stack height at frame entry
-
-
-class _ControlFrameWindow:
-    """Current function's window into the context-owned control-frame stack."""
-
-    __slots__ = ("_base", "_storage")
-
-    def __init__(self, storage: StaticVector[ControlFrame], base: int):
-        self._storage = storage
-        self._base = base
-
-    def __len__(self) -> int:
-        return len(self._storage) - self._base
-
-    def __bool__(self) -> bool:
-        return len(self) != 0
-
-    def _absolute_index(self, index: int) -> int:
-        absolute = self._base + index if index >= 0 else len(self._storage) + index
-        if not (self._base <= absolute < len(self._storage)):
-            raise IndexError("control frame index out of range")
-        return absolute
-
-    def __getitem__(self, index: int) -> ControlFrame:
-        return self._storage[self._absolute_index(index)]
-
-    def push_back(self, frame: ControlFrame) -> bool:
-        return self._storage.push_back(frame)
-
-    def pop_back(self) -> ControlFrame:
-        if not self:
-            raise IndexError("control frame stack underflow")
-        return self._storage.pop_back()
-
-    def truncate(self, depth: int) -> None:
-        """Remove frames above the requested relative stack depth."""
-        if depth < 0 or depth > len(self):
-            return
-        while len(self) > depth:
-            self._storage.pop_back()
-
-
-class _LocalStackWindow:
-    """A typed window over one call-frame's locals in the context LocalStack."""
-
-    __slots__ = ("_base", "_count", "_storage")
-
-    def __init__(self, storage: StaticVector[object], base: int, count: int):
-        self._storage = storage
-        self._base = base
-        self._count = count
-
-    def __len__(self) -> int:
-        return self._count
-
-    def _absolute_index(self, index: int) -> int:
-        absolute = self._base + index if index >= 0 else self._base + self._count + index
-        if not (self._base <= absolute < self._base + self._count):
-            raise IndexError("local stack index out of range")
-        return absolute
-
-    def __getitem__(self, index: int) -> int:
-        return cast(int, self._storage[self._absolute_index(index)])
-
-    def __setitem__(self, index: int, value: int) -> None:
-        self._storage[self._absolute_index(index)] = value
-
-
 @dataclass(slots=True)
 class ExecEnv:
     """
@@ -383,9 +312,12 @@ class InterpreterContext:
     )
 
     def __init__(self):
-        self._c_context = (ctypes.c_uint32 * 15)()
-        self.operand_stack: StaticVector[int] = StaticVector(capacity=FB_CONF_MAX_VALUE_STACK)
-        self.local_stack: StaticVector[object] = StaticVector(capacity=FB_CONF_MAX_LOCAL_STACK)
+        # The interpreter and JIT share the same Native ABI record. Runtime
+        # value, local, and control stacks are Native fixed-capacity records;
+        # activation metadata remains a Python-side simulator detail.
+        self._c_context = ExecutionContextNative()
+        self.operand_stack: NativeValueStack = NativeValueStack(FB_CONF_MAX_VALUE_STACK)
+        self.local_stack: NativeValueStack = NativeValueStack(FB_CONF_MAX_LOCAL_STACK)
         self.local_offset = 0
         self.call_frame_offsets: StaticVector[int] = StaticVector(
             capacity=FB_CONF_MAX_NESTING_DEPTH
@@ -393,25 +325,30 @@ class InterpreterContext:
         self.call_frame_stack: StaticVector[CallFrame] = StaticVector(
             capacity=FB_CONF_MAX_NESTING_DEPTH
         )
-        self.control_frame_stack: StaticVector[ControlFrame] = StaticVector(
-            capacity=FB_CONF_MAX_NESTING_DEPTH
-        )
+        self.control_frame_stack: NativeControlStack = NativeControlStack(FB_CONF_MAX_NESTING_DEPTH)
 
     @property
     def context_ptr(self) -> ctypes.c_void_p:
         """Pointer to the fixed-size native execution-context backing store."""
-        return ctypes.cast(self._c_context, ctypes.c_void_p)
+        return ctypes.cast(ctypes.pointer(self._c_context), ctypes.c_void_p)
+
+    @property
+    def native_context(self) -> ExecutionContextNative:
+        """Return the shared Native ABI record used by interpreter and JIT."""
+        return self._c_context
 
     def begin_call_frame(
         self,
         code: bytes,
         control_map: ControlMap,
         args: StaticVector[int],
+        local_types: tuple[str, ...],
         env: ExecEnv,
     ) -> CallFrame:
-        """Push one call-frame header and its locals into context-owned stacks."""
+        """Push one frame's locals into the context-owned Native local stack."""
+        assert len(args) == len(local_types)
         frame_offset = self.local_offset
-        required = 1 + len(args)
+        required = sum(2 if value_type in (I64, F64) else 1 for value_type in local_types)
         if frame_offset + required > self.local_stack.capacity:
             raise Trap("local stack capacity exceeded")
         if not self.call_frame_offsets.push_back(frame_offset):
@@ -422,25 +359,33 @@ class InterpreterContext:
             self,
             frame_offset=frame_offset,
             local_count=len(args),
+            local_types=local_types,
             env=env,
         )
         if not self.call_frame_stack.push_back(frame):
             self.call_frame_offsets.pop_back()
             raise Trap("call-frame stack capacity exceeded")
-        if not self.local_stack.push_back(frame):
-            self.call_frame_stack.pop_back()
-            self.call_frame_offsets.pop_back()
-            raise Trap("local stack capacity exceeded")
-        if not self.local_stack.extend(args):
-            self.local_stack.pop_back()
-            self.call_frame_stack.pop_back()
-            self.call_frame_offsets.pop_back()
-            raise Trap("local stack capacity exceeded")
+        for index, value in enumerate(args):
+            value_type = local_types[index]
+            if value_type == I64:
+                pushed = self.local_stack.push_i64(int(value))
+            elif value_type == F32:
+                pushed = self.local_stack.push_f32(float(value))
+            elif value_type == F64:
+                pushed = self.local_stack.push_f64(float(value))
+            else:
+                pushed = self.local_stack.push_i32(int(value))
+            if not pushed:
+                while len(self.local_stack) > frame_offset:
+                    self.local_stack.pop_back()
+                self.call_frame_stack.pop_back()
+                self.call_frame_offsets.pop_back()
+                raise Trap("local stack capacity exceeded")
         self.local_offset += required
         return frame
 
     def end_call_frame(self, frame: CallFrame) -> None:
-        """Pop the active frame header and locals from the context stacks."""
+        """Pop the active frame and its locals from the context stacks."""
         if not self.call_frame_offsets or self.call_frame_offsets[-1] != frame.frame_offset:
             raise Trap("call-frame offset stack mismatch")
         if not self.call_frame_stack or self.call_frame_stack[-1] is not frame:
@@ -477,6 +422,7 @@ class CallFrame:
         "env",
         "frame_offset",
         "local_count",
+        "local_types",
     )
 
     def __init__(
@@ -486,12 +432,14 @@ class CallFrame:
         context: InterpreterContext,
         frame_offset: int,
         local_count: int,
+        local_types: tuple[str, ...],
         env: ExecEnv | None = None,
     ):
         self.context = context
         self.control_base = len(context.control_frame_stack)
         self.frame_offset = frame_offset
         self.local_count = local_count
+        self.local_types = local_types
         self.code = code
         self.control_map = control_map
         self.env = env
@@ -512,7 +460,7 @@ class CallFrame:
         self.boundary_loops_to: int | None = None
 
     @property
-    def values(self) -> StaticVector[int]:
+    def values(self) -> NativeValueStack:
         return self.context.operand_stack
 
     @property
@@ -529,7 +477,7 @@ class CallFrame:
 
     @property
     def locals(self) -> _LocalStackWindow:
-        return _LocalStackWindow(self.context.local_stack, self.frame_offset + 1, self.local_count)
+        return _LocalStackWindow(self.context.local_stack, self.frame_offset, self.local_types)
 
     def jit_locals_buffer(
         self, n_locals: int
@@ -652,7 +600,7 @@ class InterpreterCall:
         default_factory=lambda: StaticVector(capacity=FB_CONF_MAX_NESTING_DEPTH)
     )
     finished: bool = False
-    results: StaticVector[int] | None = None
+    results: StaticVector[int | float] | None = None
 
     def current_pc(self) -> int | None:
         """
@@ -771,7 +719,9 @@ class Interpreter:
         tos = frame.values[-1] if frame.values else 0
         return InterpreterCall(func_index, context, cont=(0, frame, locals_arr, tos))
 
-    def _call_import(self, func_index: int, args: Sequence[int]) -> StaticVector[int]:
+    def _call_import(
+        self, func_index: int, args: Sequence[int | float]
+    ) -> StaticVector[int | float]:
         """Resolves a host import synchronously -- there is no bytecode to step through."""
         handler = self.host_functions[func_index] if func_index < len(self.host_functions) else None
         if handler is None:
@@ -779,15 +729,25 @@ class Interpreter:
             raise NotImplementedError(
                 f"no host handler registered for import {imp.module}.{imp.name}"
             )
-        result = handler(*[_to_i32(a) for a in args])
+        result = handler(*[_to_i32(int(a)) for a in args])
         ft = self.module.func_type(func_index)
-        results: StaticVector[int] = StaticVector(capacity=FB_CONF_MAX_VALUE_STACK)
-        if ft.results and not results.push_back(_to_i32(result)):
-            raise Trap("result vector capacity exceeded")
+        results: StaticVector[int | float] = StaticVector(capacity=4)
+        if ft.results:
+            result_type = ft.results[0]
+            if result_type == I64:
+                result_value: int | float = _to_i64(int(result))
+            elif result_type == F32:
+                result_value = _to_f32(float(result))
+            elif result_type == F64:
+                result_value = float(result)
+            else:
+                result_value = _to_i32(int(result))
+            if not results.push_back(result_value):
+                raise Trap("result vector capacity exceeded")
         return results
 
     def _build_frame(
-        self, func_index: int, args: StaticVector[int], context: InterpreterContext
+        self, func_index: int, args: StaticVector[int | float], context: InterpreterContext
     ) -> tuple[CallFrame, _LocalStackWindow]:
         """
         Builds the initial frame + locals for a WASM (non-import) function
@@ -798,7 +758,7 @@ class Interpreter:
         reused directly as `locals_arr`, rather than copied into a second,
         freshly-allocated list of the same values.
 
-        The frame header and locals are pushed into `context` by
+        The Native local slots are pushed into `context` by
         `InterpreterContext.begin_call_frame`; the operand stack is also owned
         by that same context and is shared across the complete call chain.
         """
@@ -823,6 +783,7 @@ class Interpreter:
             fn.code,
             fn.control_map,
             args,
+            local_types=tuple(layout),
             env=self._env,
         )
         return frame, frame.locals
@@ -862,9 +823,23 @@ class Interpreter:
                 frame.frames.pop_back()
             call_state.context.end_call_frame(frame)
             if not call_state.call_stack:
-                results = StaticVector(capacity=FB_CONF_MAX_VALUE_STACK)
-                if ft.results and not results.push_back(frame.values.pop_back()):
-                    raise Trap("result vector capacity exceeded")
+                results: StaticVector[int | float] = StaticVector(capacity=4)
+                # The Native operand stack contains raw slots only. The
+                # caller's function signature selects the typed read here;
+                # no return type is stored in the result buffer.
+                if ft.results:
+                    result_type = ft.results[0]
+                    if result_type == I64:
+                        result_value = frame.values.pop_i64()
+                    elif result_type == F32:
+                        result_value = frame.values.pop_f32()
+                    elif result_type == F64:
+                        result_value = frame.values.pop_f64()
+                    else:
+                        result_value = frame.values.pop_i32()
+                    assert result_value is not None
+                    if not results.push_back(result_value):
+                        raise Trap("result vector capacity exceeded")
                 call_state.cont = None
                 call_state.finished = True
                 call_state.results = results
@@ -922,17 +897,38 @@ class Interpreter:
                 )
             callee_ft = declared_type
 
-        call_args = StaticVector.of(
-            tuple(frame.values.pop_back() for _ in range(len(callee_ft.params)))[::-1],
-            capacity=FB_CONF_MAX_VALUE_STACK,
-        )
+        popped_args: StaticVector[int | float] = StaticVector(capacity=FB_CONF_MAX_VALUE_STACK)
+        for value_type in reversed(callee_ft.params):
+            if value_type == I64:
+                value = frame.values.pop_i64()
+            elif value_type == F32:
+                value = frame.values.pop_f32()
+            elif value_type == F64:
+                value = frame.values.pop_f64()
+            else:
+                value = frame.values.pop_i32()
+            assert value is not None
+            assert popped_args.push_back(value)
+        call_args: StaticVector[int | float] = StaticVector(capacity=FB_CONF_MAX_VALUE_STACK)
+        for index in range(len(popped_args) - 1, -1, -1):
+            assert call_args.push_back(popped_args[index])
         resume_tos = frame.values[-1] if frame.values else 0
         resume_cont = (next_ip, frame, locals_arr, resume_tos)
 
         if self.module.is_import(callee_func_index):
             results = self._call_import(callee_func_index, call_args)
-            if not frame.values.extend(results):
-                raise Trap("operand stack capacity exceeded")
+            for index, result in enumerate(results):
+                result_type = callee_ft.results[index]
+                if result_type == I64:
+                    pushed = frame.values.push_i64(int(result))
+                elif result_type == F32:
+                    pushed = frame.values.push_f32(float(result))
+                elif result_type == F64:
+                    pushed = frame.values.push_f64(float(result))
+                else:
+                    pushed = frame.values.push_i32(int(result))
+                if not pushed:
+                    raise Trap("operand stack capacity exceeded")
             r_tos = frame.values[-1] if frame.values else 0
             call_state.cont = (next_ip, frame, locals_arr, r_tos)
             return call_state
@@ -1112,7 +1108,15 @@ def _h_local_get(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     idx, next_ip = decode_unsigned(frame.code, ip + 1)
-    frame.values.push_back(local_base[idx])
+    value_type = local_base.value_type(idx)
+    if value_type == I64:
+        assert frame.values.push_i64(local_base.get_i64(idx))
+    elif value_type == F32:
+        assert frame.values.push_f32(local_base.get_f32(idx))
+    elif value_type == F64:
+        assert frame.values.push_f64(local_base.get_f64(idx))
+    else:
+        assert frame.values.push_i32(local_base.get_i32(idx))
     return (next_ip, frame, env, local_base)
 
 
@@ -1122,7 +1126,23 @@ def _h_local_set(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     idx, next_ip = decode_unsigned(frame.code, ip + 1)
-    local_base[idx] = frame.values.pop_back()
+    value_type = local_base.value_type(idx)
+    if value_type == I64:
+        value = frame.values.pop_i64()
+        assert value is not None
+        local_base.set_i64(idx, value)
+    elif value_type == F32:
+        value = frame.values.pop_f32()
+        assert value is not None
+        local_base.set_f32(idx, value)
+    elif value_type == F64:
+        value = frame.values.pop_f64()
+        assert value is not None
+        local_base.set_f64(idx, value)
+    else:
+        value = frame.values.pop_i32()
+        assert value is not None
+        local_base.set_i32(idx, value)
     return (next_ip, frame, env, local_base)
 
 
@@ -1132,7 +1152,15 @@ def _h_local_tee(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     idx, next_ip = decode_unsigned(frame.code, ip + 1)
-    local_base[idx] = frame.values[-1]
+    value_type = local_base.value_type(idx)
+    if value_type == I64:
+        local_base.set_i64(idx, frame.values.peek_i64())
+    elif value_type == F32:
+        local_base.set_f32(idx, frame.values.peek_f32())
+    elif value_type == F64:
+        local_base.set_f64(idx, frame.values.peek_f64())
+    else:
+        local_base.set_i32(idx, frame.values.peek_i32())
     return (next_ip, frame, env, local_base)
 
 
@@ -1151,7 +1179,7 @@ def _h_i64_const(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     val, next_ip = decode_signed(frame.code, ip + 1)
-    frame.values.push_back(_to_i64(val))
+    assert frame.values.push_i64(_to_i64(val))
     return (next_ip, frame, env, local_base)
 
 
@@ -1160,7 +1188,7 @@ def _h_f32_const(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     val = struct.unpack("<f", frame.code[ip + 1 : ip + 5])[0]
-    frame.values.push_back(val)
+    assert frame.values.push_f32(val)
     return (ip + 5, frame, env, local_base)
 
 
@@ -1169,7 +1197,7 @@ def _h_f64_const(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     val = struct.unpack("<d", frame.code[ip + 1 : ip + 9])[0]
-    frame.values.push_back(val)
+    assert frame.values.push_f64(val)
     return (ip + 9, frame, env, local_base)
 
 
@@ -1736,7 +1764,7 @@ def _h_i64_load(
         if env.memory is None or addr + 8 > len(env.memory):
             raise Trap("out of bounds memory access")
         val = struct.unpack("<q", env.memory[addr : addr + 8])[0]
-    frame.values.push_back(val)
+    assert frame.values.push_i64(val)
     return (next_ip, frame, env, local_base)
 
 
@@ -1745,7 +1773,8 @@ def _h_i64_store(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     offset, next_ip = _read_memarg(frame.code, ip)
-    val = frame.values.pop_back()
+    val = frame.values.pop_i64()
+    assert val is not None
     addr = _to_u32(frame.values.pop_back()) + offset
     raw_val = struct.pack("<q", int(val))
     if addr & 0x8000_0000:
@@ -1766,7 +1795,7 @@ def _h_f32_load(
     if env.memory is None or addr + 4 > len(env.memory):
         raise Trap("out of bounds memory access")
     val = struct.unpack("<f", env.memory[addr : addr + 4])[0]
-    frame.values.push_back(val)
+    assert frame.values.push_f32(val)
     return (next_ip, frame, env, local_base)
 
 
@@ -1775,7 +1804,8 @@ def _h_f32_store(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     offset, next_ip = _read_memarg(frame.code, ip)
-    val = float(frame.values.pop_back())
+    val = frame.values.pop_f32()
+    assert val is not None
     addr = _to_u32(frame.values.pop_back()) + offset
     if env.memory is None or addr + 4 > len(env.memory):
         raise Trap("out of bounds memory access")
@@ -1792,7 +1822,7 @@ def _h_f64_load(
     if env.memory is None or addr + 8 > len(env.memory):
         raise Trap("out of bounds memory access")
     val = struct.unpack("<d", env.memory[addr : addr + 8])[0]
-    frame.values.push_back(val)
+    assert frame.values.push_f64(val)
     return (next_ip, frame, env, local_base)
 
 
@@ -1801,7 +1831,8 @@ def _h_f64_store(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     offset, next_ip = _read_memarg(frame.code, ip)
-    val = float(frame.values.pop_back())
+    val = frame.values.pop_f64()
+    assert val is not None
     addr = _to_u32(frame.values.pop_back()) + offset
     if env.memory is None or addr + 8 > len(env.memory):
         raise Trap("out of bounds memory access")
@@ -1817,7 +1848,7 @@ def _h_i64_const(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     val, next_ip = decode_signed(frame.code, ip + 1)
-    frame.values.push_back(_to_i64(val))
+    assert frame.values.push_i64(_to_i64(val))
     return (next_ip, frame, env, local_base)
 
 
@@ -1826,7 +1857,7 @@ def _h_f32_const(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     val = struct.unpack("<f", frame.code[ip + 1 : ip + 5])[0]
-    frame.values.push_back(val)
+    assert frame.values.push_f32(val)
     return (ip + 5, frame, env, local_base)
 
 
@@ -1835,7 +1866,7 @@ def _h_f64_const(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     val = struct.unpack("<d", frame.code[ip + 1 : ip + 9])[0]
-    frame.values.push_back(val)
+    assert frame.values.push_f64(val)
     return (ip + 9, frame, env, local_base)
 
 
@@ -1846,7 +1877,8 @@ def _h_f64_const(
 def _h_i64_eqz(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    v = frame.values.pop_back()
+    v = frame.values.pop_i64()
+    assert v is not None
     frame.values.push_back(1 if v == 0 else 0)
     return (ip + 1, frame, env, local_base)
 
@@ -1855,7 +1887,8 @@ def _h_i64_eqz(
 def _h_i64_eq(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop_back(), frame.values.pop_back()
+    b, a = frame.values.pop_i64(), frame.values.pop_i64()
+    assert b is not None and a is not None
     frame.values.push_back(1 if _to_i64(a) == _to_i64(b) else 0)
     return (ip + 1, frame, env, local_base)
 
@@ -1864,7 +1897,8 @@ def _h_i64_eq(
 def _h_i64_ne(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop_back(), frame.values.pop_back()
+    b, a = frame.values.pop_i64(), frame.values.pop_i64()
+    assert b is not None and a is not None
     frame.values.push_back(1 if _to_i64(a) != _to_i64(b) else 0)
     return (ip + 1, frame, env, local_base)
 
@@ -1873,7 +1907,8 @@ def _h_i64_ne(
 def _h_i64_lt_s(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop_back(), frame.values.pop_back()
+    b, a = frame.values.pop_i64(), frame.values.pop_i64()
+    assert b is not None and a is not None
     frame.values.push_back(1 if _to_i64(a) < _to_i64(b) else 0)
     return (ip + 1, frame, env, local_base)
 
@@ -1882,7 +1917,8 @@ def _h_i64_lt_s(
 def _h_i64_lt_u(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop_back(), frame.values.pop_back()
+    b, a = frame.values.pop_i64(), frame.values.pop_i64()
+    assert b is not None and a is not None
     frame.values.push_back(1 if _to_u64(a) < _to_u64(b) else 0)
     return (ip + 1, frame, env, local_base)
 
@@ -1891,8 +1927,9 @@ def _h_i64_lt_u(
 def _h_i64_add(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop_back(), frame.values.pop_back()
-    frame.values.push_back(_to_i64(a + b))
+    b, a = frame.values.pop_i64(), frame.values.pop_i64()
+    assert b is not None and a is not None
+    assert frame.values.push_i64(_to_i64(a + b))
     return (ip + 1, frame, env, local_base)
 
 
@@ -1900,8 +1937,9 @@ def _h_i64_add(
 def _h_i64_sub(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop_back(), frame.values.pop_back()
-    frame.values.push_back(_to_i64(a - b))
+    b, a = frame.values.pop_i64(), frame.values.pop_i64()
+    assert b is not None and a is not None
+    assert frame.values.push_i64(_to_i64(a - b))
     return (ip + 1, frame, env, local_base)
 
 
@@ -1909,8 +1947,9 @@ def _h_i64_sub(
 def _h_i64_mul(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop_back(), frame.values.pop_back()
-    frame.values.push_back(_to_i64(a * b))
+    b, a = frame.values.pop_i64(), frame.values.pop_i64()
+    assert b is not None and a is not None
+    assert frame.values.push_i64(_to_i64(a * b))
     return (ip + 1, frame, env, local_base)
 
 
@@ -1918,14 +1957,17 @@ def _h_i64_mul(
 def _h_i64_div_s(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b = _to_i64(frame.values.pop_back())
-    a = _to_i64(frame.values.pop_back())
+    b = frame.values.pop_i64()
+    a = frame.values.pop_i64()
+    assert b is not None and a is not None
+    b = _to_i64(b)
+    a = _to_i64(a)
     if b == 0:
         raise Trap("integer divide by zero")
     if a == -0x8000_0000_0000_0000 and b == -1:
         raise Trap("integer overflow")
     q = abs(a) // abs(b)
-    frame.values.push_back(_to_i64(-q if (a < 0) != (b < 0) else q))
+    assert frame.values.push_i64(_to_i64(-q if (a < 0) != (b < 0) else q))
     return (ip + 1, frame, env, local_base)
 
 
@@ -1933,11 +1975,14 @@ def _h_i64_div_s(
 def _h_i64_div_u(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b = _to_u64(frame.values.pop_back())
-    a = _to_u64(frame.values.pop_back())
+    b = frame.values.pop_i64()
+    a = frame.values.pop_i64()
+    assert b is not None and a is not None
+    b = _to_u64(b)
+    a = _to_u64(a)
     if b == 0:
         raise Trap("integer divide by zero")
-    frame.values.push_back(_to_i64(a // b))
+    assert frame.values.push_i64(_to_i64(a // b))
     return (ip + 1, frame, env, local_base)
 
 
@@ -1948,8 +1993,9 @@ def _h_i64_div_u(
 def _h_f32_add(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop_back(), frame.values.pop_back()
-    frame.values.push_back(_to_f32(a + b))
+    b, a = frame.values.pop_f32(), frame.values.pop_f32()
+    assert b is not None and a is not None
+    assert frame.values.push_f32(_to_f32(a + b))
     return (ip + 1, frame, env, local_base)
 
 
@@ -1957,8 +2003,9 @@ def _h_f32_add(
 def _h_f32_sub(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop_back(), frame.values.pop_back()
-    frame.values.push_back(_to_f32(a - b))
+    b, a = frame.values.pop_f32(), frame.values.pop_f32()
+    assert b is not None and a is not None
+    assert frame.values.push_f32(_to_f32(a - b))
     return (ip + 1, frame, env, local_base)
 
 
@@ -1966,8 +2013,9 @@ def _h_f32_sub(
 def _h_f32_mul(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop_back(), frame.values.pop_back()
-    frame.values.push_back(_to_f32(a * b))
+    b, a = frame.values.pop_f32(), frame.values.pop_f32()
+    assert b is not None and a is not None
+    assert frame.values.push_f32(_to_f32(a * b))
     return (ip + 1, frame, env, local_base)
 
 
@@ -1975,8 +2023,9 @@ def _h_f32_mul(
 def _h_f32_div(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop_back(), frame.values.pop_back()
-    frame.values.push_back(
+    b, a = frame.values.pop_f32(), frame.values.pop_f32()
+    assert b is not None and a is not None
+    assert frame.values.push_f32(
         _to_f32(
             a / b
             if b != 0
@@ -1996,8 +2045,9 @@ def _h_f32_div(
 def _h_f32_sqrt(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop_back()
-    frame.values.push_back(_to_f32(math.sqrt(a) if a >= 0 else float("nan")))
+    a = frame.values.pop_f32()
+    assert a is not None
+    assert frame.values.push_f32(_to_f32(math.sqrt(a) if a >= 0 else float("nan")))
     return (ip + 1, frame, env, local_base)
 
 
@@ -2005,8 +2055,9 @@ def _h_f32_sqrt(
 def _h_f32_min(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop_back(), frame.values.pop_back()
-    frame.values.push_back(_to_f32(_f32_min(a, b)))
+    b, a = frame.values.pop_f32(), frame.values.pop_f32()
+    assert b is not None and a is not None
+    assert frame.values.push_f32(_to_f32(_f32_min(a, b)))
     return (ip + 1, frame, env, local_base)
 
 
@@ -2014,8 +2065,9 @@ def _h_f32_min(
 def _h_f32_max(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop_back(), frame.values.pop_back()
-    frame.values.push_back(_to_f32(_f32_max(a, b)))
+    b, a = frame.values.pop_f32(), frame.values.pop_f32()
+    assert b is not None and a is not None
+    assert frame.values.push_f32(_to_f32(_f32_max(a, b)))
     return (ip + 1, frame, env, local_base)
 
 
@@ -2023,7 +2075,8 @@ def _h_f32_max(
 def _h_f32_lt(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop_back(), frame.values.pop_back()
+    b, a = frame.values.pop_f32(), frame.values.pop_f32()
+    assert b is not None and a is not None
     frame.values.push_back(1 if a < b else 0)
     return (ip + 1, frame, env, local_base)
 
@@ -2032,7 +2085,8 @@ def _h_f32_lt(
 def _h_f32_le(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop_back(), frame.values.pop_back()
+    b, a = frame.values.pop_f32(), frame.values.pop_f32()
+    assert b is not None and a is not None
     frame.values.push_back(1 if a <= b else 0)
     return (ip + 1, frame, env, local_base)
 
@@ -2041,7 +2095,8 @@ def _h_f32_le(
 def _h_f32_gt(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop_back(), frame.values.pop_back()
+    b, a = frame.values.pop_f32(), frame.values.pop_f32()
+    assert b is not None and a is not None
     frame.values.push_back(1 if a > b else 0)
     return (ip + 1, frame, env, local_base)
 
@@ -2050,7 +2105,8 @@ def _h_f32_gt(
 def _h_f32_ge(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop_back(), frame.values.pop_back()
+    b, a = frame.values.pop_f32(), frame.values.pop_f32()
+    assert b is not None and a is not None
     frame.values.push_back(1 if a >= b else 0)
     return (ip + 1, frame, env, local_base)
 
@@ -2062,8 +2118,9 @@ def _h_f32_ge(
 def _h_f64_add(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop_back(), frame.values.pop_back()
-    frame.values.push_back(float(a + b))
+    b, a = frame.values.pop_f64(), frame.values.pop_f64()
+    assert b is not None and a is not None
+    assert frame.values.push_f64(float(a + b))
     return (ip + 1, frame, env, local_base)
 
 
@@ -2071,8 +2128,9 @@ def _h_f64_add(
 def _h_f64_sub(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop_back(), frame.values.pop_back()
-    frame.values.push_back(float(a - b))
+    b, a = frame.values.pop_f64(), frame.values.pop_f64()
+    assert b is not None and a is not None
+    assert frame.values.push_f64(float(a - b))
     return (ip + 1, frame, env, local_base)
 
 
@@ -2080,8 +2138,9 @@ def _h_f64_sub(
 def _h_f64_mul(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop_back(), frame.values.pop_back()
-    frame.values.push_back(float(a * b))
+    b, a = frame.values.pop_f64(), frame.values.pop_f64()
+    assert b is not None and a is not None
+    assert frame.values.push_f64(float(a * b))
     return (ip + 1, frame, env, local_base)
 
 
@@ -2089,8 +2148,9 @@ def _h_f64_mul(
 def _h_f64_div(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop_back(), frame.values.pop_back()
-    frame.values.push_back(float(a / b if b != 0 else float("inf")))
+    b, a = frame.values.pop_f64(), frame.values.pop_f64()
+    assert b is not None and a is not None
+    assert frame.values.push_f64(float(a / b if b != 0 else float("inf")))
     return (ip + 1, frame, env, local_base)
 
 
@@ -2098,8 +2158,9 @@ def _h_f64_div(
 def _h_f64_sqrt(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop_back()
-    frame.values.push_back(float(math.sqrt(a) if a >= 0 else float("nan")))
+    a = frame.values.pop_f64()
+    assert a is not None
+    assert frame.values.push_f64(float(math.sqrt(a) if a >= 0 else float("nan")))
     return (ip + 1, frame, env, local_base)
 
 
@@ -2110,7 +2171,8 @@ def _h_f64_sqrt(
 def _h_i32_trunc_f32_s(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop_back()
+    a = frame.values.pop_f32()
+    assert a is not None
     frame.values.push_back(int(a) & I32_MASK)
     return (ip + 1, frame, env, local_base)
 
@@ -2119,7 +2181,8 @@ def _h_i32_trunc_f32_s(
 def _h_i32_trunc_f64_s(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop_back()
+    a = frame.values.pop_f64()
+    assert a is not None
     frame.values.push_back(int(a) & I32_MASK)
     return (ip + 1, frame, env, local_base)
 
@@ -2129,7 +2192,7 @@ def _h_f32_convert_i32_s(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     a = _to_i32(frame.values.pop_back())
-    frame.values.push_back(_to_f32(float(a)))
+    assert frame.values.push_f32(_to_f32(float(a)))
     return (ip + 1, frame, env, local_base)
 
 
@@ -2138,7 +2201,7 @@ def _h_f32_convert_i32_u(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     a = _to_u32(frame.values.pop_back())
-    frame.values.push_back(_to_f32(float(a)))
+    assert frame.values.push_f32(_to_f32(float(a)))
     return (ip + 1, frame, env, local_base)
 
 
@@ -2147,7 +2210,7 @@ def _h_f64_convert_i32_s(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     a = _to_i32(frame.values.pop_back())
-    frame.values.push_back(float(a))
+    assert frame.values.push_f64(float(a))
     return (ip + 1, frame, env, local_base)
 
 
@@ -2156,7 +2219,7 @@ def _h_f64_convert_i32_u(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
     a = _to_u32(frame.values.pop_back())
-    frame.values.push_back(float(a))
+    assert frame.values.push_f64(float(a))
     return (ip + 1, frame, env, local_base)
 
 
@@ -2164,8 +2227,9 @@ def _h_f64_convert_i32_u(
 def _h_f64_promote_f32(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop_back()
-    frame.values.push_back(float(a))
+    a = frame.values.pop_f32()
+    assert a is not None
+    assert frame.values.push_f64(float(a))
     return (ip + 1, frame, env, local_base)
 
 
@@ -2173,8 +2237,9 @@ def _h_f64_promote_f32(
 def _h_f32_demote_f64(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop_back()
-    frame.values.push_back(_to_f32(float(a)))
+    a = frame.values.pop_f64()
+    assert a is not None
+    assert frame.values.push_f32(_to_f32(float(a)))
     return (ip + 1, frame, env, local_base)
 
 
@@ -2182,8 +2247,9 @@ def _h_f32_demote_f64(
 def _h_f32_abs(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop_back()
-    frame.values.push_back(_to_f32(abs(a)))
+    a = frame.values.pop_f32()
+    assert a is not None
+    assert frame.values.push_f32(_to_f32(abs(a)))
     return (ip + 1, frame, env, local_base)
 
 
@@ -2191,8 +2257,9 @@ def _h_f32_abs(
 def _h_f32_neg(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop_back()
-    frame.values.push_back(_to_f32(-a))
+    a = frame.values.pop_f32()
+    assert a is not None
+    assert frame.values.push_f32(_to_f32(-a))
     return (ip + 1, frame, env, local_base)
 
 
@@ -2200,8 +2267,9 @@ def _h_f32_neg(
 def _h_f64_abs(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop_back()
-    frame.values.push_back(float(abs(a)))
+    a = frame.values.pop_f64()
+    assert a is not None
+    assert frame.values.push_f64(float(abs(a)))
     return (ip + 1, frame, env, local_base)
 
 
@@ -2209,8 +2277,9 @@ def _h_f64_abs(
 def _h_f64_neg(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop_back()
-    frame.values.push_back(float(-a))
+    a = frame.values.pop_f64()
+    assert a is not None
+    assert frame.values.push_f64(float(-a))
     return (ip + 1, frame, env, local_base)
 
 
@@ -2218,7 +2287,8 @@ def _h_f64_neg(
 def _h_f32_eq(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop_back(), frame.values.pop_back()
+    b, a = frame.values.pop_f32(), frame.values.pop_f32()
+    assert b is not None and a is not None
     frame.values.push_back(1 if a == b else 0)
     return (ip + 1, frame, env, local_base)
 
@@ -2227,7 +2297,8 @@ def _h_f32_eq(
 def _h_f32_ne(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop_back(), frame.values.pop_back()
+    b, a = frame.values.pop_f32(), frame.values.pop_f32()
+    assert b is not None and a is not None
     frame.values.push_back(1 if a != b else 0)
     return (ip + 1, frame, env, local_base)
 
@@ -2236,7 +2307,8 @@ def _h_f32_ne(
 def _h_f64_eq(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop_back(), frame.values.pop_back()
+    b, a = frame.values.pop_f64(), frame.values.pop_f64()
+    assert b is not None and a is not None
     frame.values.push_back(1 if a == b else 0)
     return (ip + 1, frame, env, local_base)
 
@@ -2245,7 +2317,8 @@ def _h_f64_eq(
 def _h_f64_ne(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop_back(), frame.values.pop_back()
+    b, a = frame.values.pop_f64(), frame.values.pop_f64()
+    assert b is not None and a is not None
     frame.values.push_back(1 if a != b else 0)
     return (ip + 1, frame, env, local_base)
 
@@ -2254,12 +2327,15 @@ def _h_f64_ne(
 def _h_i64_rem_s(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b = _to_i64(frame.values.pop_back())
-    a = _to_i64(frame.values.pop_back())
+    b = frame.values.pop_i64()
+    a = frame.values.pop_i64()
+    assert b is not None and a is not None
+    b = _to_i64(b)
+    a = _to_i64(a)
     if b == 0:
         raise Trap("integer divide by zero")
     r = abs(a) % abs(b)
-    frame.values.push_back(_to_i64(-r if a < 0 else r))
+    assert frame.values.push_i64(_to_i64(-r if a < 0 else r))
     return (ip + 1, frame, env, local_base)
 
 
@@ -2267,11 +2343,14 @@ def _h_i64_rem_s(
 def _h_i64_rem_u(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b = _to_u64(frame.values.pop_back())
-    a = _to_u64(frame.values.pop_back())
+    b = frame.values.pop_i64()
+    a = frame.values.pop_i64()
+    assert b is not None and a is not None
+    b = _to_u64(b)
+    a = _to_u64(a)
     if b == 0:
         raise Trap("integer divide by zero")
-    frame.values.push_back(_to_i64(a % b))
+    assert frame.values.push_i64(_to_i64(a % b))
     return (ip + 1, frame, env, local_base)
 
 
@@ -2279,8 +2358,9 @@ def _h_i64_rem_u(
 def _h_i64_and(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop_back(), frame.values.pop_back()
-    frame.values.push_back(_to_i64(a & b))
+    b, a = frame.values.pop_i64(), frame.values.pop_i64()
+    assert b is not None and a is not None
+    assert frame.values.push_i64(_to_i64(a & b))
     return (ip + 1, frame, env, local_base)
 
 
@@ -2288,8 +2368,9 @@ def _h_i64_and(
 def _h_i64_or(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop_back(), frame.values.pop_back()
-    frame.values.push_back(_to_i64(a | b))
+    b, a = frame.values.pop_i64(), frame.values.pop_i64()
+    assert b is not None and a is not None
+    assert frame.values.push_i64(_to_i64(a | b))
     return (ip + 1, frame, env, local_base)
 
 
@@ -2297,8 +2378,9 @@ def _h_i64_or(
 def _h_i64_xor(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop_back(), frame.values.pop_back()
-    frame.values.push_back(_to_i64(a ^ b))
+    b, a = frame.values.pop_i64(), frame.values.pop_i64()
+    assert b is not None and a is not None
+    assert frame.values.push_i64(_to_i64(a ^ b))
     return (ip + 1, frame, env, local_base)
 
 
@@ -2306,9 +2388,10 @@ def _h_i64_xor(
 def _h_i64_shl(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    k = frame.values.pop_back() % 64
-    v = frame.values.pop_back()
-    frame.values.push_back(_to_i64((v << k) & I64_MASK))
+    k = frame.values.pop_i64()
+    v = frame.values.pop_i64()
+    assert k is not None and v is not None
+    assert frame.values.push_i64(_to_i64((v << (k % 64)) & I64_MASK))
     return (ip + 1, frame, env, local_base)
 
 
@@ -2316,9 +2399,10 @@ def _h_i64_shl(
 def _h_i64_shr_s(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    k = frame.values.pop_back() % 64
-    v = _to_i64(frame.values.pop_back())
-    frame.values.push_back(_to_i64(v >> k))
+    k = frame.values.pop_i64()
+    v = frame.values.pop_i64()
+    assert k is not None and v is not None
+    assert frame.values.push_i64(_to_i64(_to_i64(v) >> (k % 64)))
     return (ip + 1, frame, env, local_base)
 
 
@@ -2326,9 +2410,10 @@ def _h_i64_shr_s(
 def _h_i64_shr_u(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    k = frame.values.pop_back() % 64
-    v = _to_u64(frame.values.pop_back())
-    frame.values.push_back(_to_i64(v >> k))
+    k = frame.values.pop_i64()
+    v = frame.values.pop_i64()
+    assert k is not None and v is not None
+    assert frame.values.push_i64(_to_i64(_to_u64(v) >> (k % 64)))
     return (ip + 1, frame, env, local_base)
 
 
@@ -2336,10 +2421,13 @@ def _h_i64_shr_u(
 def _h_i64_rotl(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    k = frame.values.pop_back() % 64
-    v = _to_u64(frame.values.pop_back())
+    k = frame.values.pop_i64()
+    v = frame.values.pop_i64()
+    assert k is not None and v is not None
+    k %= 64
+    v = _to_u64(v)
     rotated = ((v << k) | (v >> (64 - k))) & I64_MASK if k else v
-    frame.values.push_back(_to_i64(rotated))
+    assert frame.values.push_i64(_to_i64(rotated))
     return (ip + 1, frame, env, local_base)
 
 
@@ -2347,10 +2435,13 @@ def _h_i64_rotl(
 def _h_i64_rotr(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    k = frame.values.pop_back() % 64
-    v = _to_u64(frame.values.pop_back())
+    k = frame.values.pop_i64()
+    v = frame.values.pop_i64()
+    assert k is not None and v is not None
+    k %= 64
+    v = _to_u64(v)
     rotated = ((v >> k) | (v << (64 - k))) & I64_MASK if k else v
-    frame.values.push_back(_to_i64(rotated))
+    assert frame.values.push_i64(_to_i64(rotated))
     return (ip + 1, frame, env, local_base)
 
 
@@ -2358,11 +2449,13 @@ def _h_i64_rotr(
 def _h_i64_clz(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    v = _to_u64(frame.values.pop_back())
+    value = frame.values.pop_i64()
+    assert value is not None
+    v = _to_u64(value)
     if v == 0:
-        frame.values.push_back(64)
+        assert frame.values.push_i64(64)
     else:
-        frame.values.push_back(64 - v.bit_length())
+        assert frame.values.push_i64(64 - v.bit_length())
     return (ip + 1, frame, env, local_base)
 
 
@@ -2370,11 +2463,13 @@ def _h_i64_clz(
 def _h_i64_ctz(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    v = _to_u64(frame.values.pop_back())
+    value = frame.values.pop_i64()
+    assert value is not None
+    v = _to_u64(value)
     if v == 0:
-        frame.values.push_back(64)
+        assert frame.values.push_i64(64)
     else:
-        frame.values.push_back((v & -v).bit_length() - 1)
+        assert frame.values.push_i64((v & -v).bit_length() - 1)
     return (ip + 1, frame, env, local_base)
 
 
@@ -2382,8 +2477,10 @@ def _h_i64_ctz(
 def _h_i64_popcnt(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    v = _to_u64(frame.values.pop_back())
-    frame.values.push_back(bin(v).count("1"))
+    value = frame.values.pop_i64()
+    assert value is not None
+    v = _to_u64(value)
+    assert frame.values.push_i64(bin(v).count("1"))
     return (ip + 1, frame, env, local_base)
 
 
@@ -2391,7 +2488,8 @@ def _h_i64_popcnt(
 def _h_i64_gt_s(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop_back(), frame.values.pop_back()
+    b, a = frame.values.pop_i64(), frame.values.pop_i64()
+    assert b is not None and a is not None
     frame.values.push_back(1 if _to_i64(a) > _to_i64(b) else 0)
     return (ip + 1, frame, env, local_base)
 
@@ -2400,7 +2498,8 @@ def _h_i64_gt_s(
 def _h_i64_gt_u(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop_back(), frame.values.pop_back()
+    b, a = frame.values.pop_i64(), frame.values.pop_i64()
+    assert b is not None and a is not None
     frame.values.push_back(1 if _to_u64(a) > _to_u64(b) else 0)
     return (ip + 1, frame, env, local_base)
 
@@ -2409,7 +2508,8 @@ def _h_i64_gt_u(
 def _h_i64_le_s(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop_back(), frame.values.pop_back()
+    b, a = frame.values.pop_i64(), frame.values.pop_i64()
+    assert b is not None and a is not None
     frame.values.push_back(1 if _to_i64(a) <= _to_i64(b) else 0)
     return (ip + 1, frame, env, local_base)
 
@@ -2418,7 +2518,8 @@ def _h_i64_le_s(
 def _h_i64_le_u(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop_back(), frame.values.pop_back()
+    b, a = frame.values.pop_i64(), frame.values.pop_i64()
+    assert b is not None and a is not None
     frame.values.push_back(1 if _to_u64(a) <= _to_u64(b) else 0)
     return (ip + 1, frame, env, local_base)
 
@@ -2427,7 +2528,8 @@ def _h_i64_le_u(
 def _h_i64_ge_s(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop_back(), frame.values.pop_back()
+    b, a = frame.values.pop_i64(), frame.values.pop_i64()
+    assert b is not None and a is not None
     frame.values.push_back(1 if _to_i64(a) >= _to_i64(b) else 0)
     return (ip + 1, frame, env, local_base)
 
@@ -2436,7 +2538,8 @@ def _h_i64_ge_s(
 def _h_i64_ge_u(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop_back(), frame.values.pop_back()
+    b, a = frame.values.pop_i64(), frame.values.pop_i64()
+    assert b is not None and a is not None
     frame.values.push_back(1 if _to_u64(a) >= _to_u64(b) else 0)
     return (ip + 1, frame, env, local_base)
 
@@ -2448,8 +2551,11 @@ def _h_i64_ge_u(
 def _h_f32_ceil(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop_back()
-    frame.values.push_back(_to_f32(math.ceil(a) if not math.isnan(a) and not math.isinf(a) else a))
+    a = frame.values.pop_f32()
+    assert a is not None
+    assert frame.values.push_f32(
+        _to_f32(math.ceil(a) if not math.isnan(a) and not math.isinf(a) else a)
+    )
     return (ip + 1, frame, env, local_base)
 
 
@@ -2457,8 +2563,11 @@ def _h_f32_ceil(
 def _h_f32_floor(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop_back()
-    frame.values.push_back(_to_f32(math.floor(a) if not math.isnan(a) and not math.isinf(a) else a))
+    a = frame.values.pop_f32()
+    assert a is not None
+    assert frame.values.push_f32(
+        _to_f32(math.floor(a) if not math.isnan(a) and not math.isinf(a) else a)
+    )
     return (ip + 1, frame, env, local_base)
 
 
@@ -2466,8 +2575,11 @@ def _h_f32_floor(
 def _h_f32_trunc(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop_back()
-    frame.values.push_back(_to_f32(math.trunc(a) if not math.isnan(a) and not math.isinf(a) else a))
+    a = frame.values.pop_f32()
+    assert a is not None
+    assert frame.values.push_f32(
+        _to_f32(math.trunc(a) if not math.isnan(a) and not math.isinf(a) else a)
+    )
     return (ip + 1, frame, env, local_base)
 
 
@@ -2475,8 +2587,11 @@ def _h_f32_trunc(
 def _h_f32_nearest(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop_back()
-    frame.values.push_back(_to_f32(round(a) if not math.isnan(a) and not math.isinf(a) else a))
+    a = frame.values.pop_f32()
+    assert a is not None
+    assert frame.values.push_f32(
+        _to_f32(round(a) if not math.isnan(a) and not math.isinf(a) else a)
+    )
     return (ip + 1, frame, env, local_base)
 
 
@@ -2484,8 +2599,9 @@ def _h_f32_nearest(
 def _h_f32_copysign(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop_back(), frame.values.pop_back()
-    frame.values.push_back(_to_f32(math.copysign(a, b)))
+    b, a = frame.values.pop_f32(), frame.values.pop_f32()
+    assert b is not None and a is not None
+    assert frame.values.push_f32(_to_f32(math.copysign(a, b)))
     return (ip + 1, frame, env, local_base)
 
 
@@ -2493,8 +2609,11 @@ def _h_f32_copysign(
 def _h_f64_ceil(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop_back()
-    frame.values.push_back(float(math.ceil(a) if not math.isnan(a) and not math.isinf(a) else a))
+    a = frame.values.pop_f64()
+    assert a is not None
+    assert frame.values.push_f64(
+        float(math.ceil(a) if not math.isnan(a) and not math.isinf(a) else a)
+    )
     return (ip + 1, frame, env, local_base)
 
 
@@ -2502,8 +2621,11 @@ def _h_f64_ceil(
 def _h_f64_floor(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop_back()
-    frame.values.push_back(float(math.floor(a) if not math.isnan(a) and not math.isinf(a) else a))
+    a = frame.values.pop_f64()
+    assert a is not None
+    assert frame.values.push_f64(
+        float(math.floor(a) if not math.isnan(a) and not math.isinf(a) else a)
+    )
     return (ip + 1, frame, env, local_base)
 
 
@@ -2511,8 +2633,11 @@ def _h_f64_floor(
 def _h_f64_trunc(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop_back()
-    frame.values.push_back(float(math.trunc(a) if not math.isnan(a) and not math.isinf(a) else a))
+    a = frame.values.pop_f64()
+    assert a is not None
+    assert frame.values.push_f64(
+        float(math.trunc(a) if not math.isnan(a) and not math.isinf(a) else a)
+    )
     return (ip + 1, frame, env, local_base)
 
 
@@ -2520,8 +2645,9 @@ def _h_f64_trunc(
 def _h_f64_nearest(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop_back()
-    frame.values.push_back(float(round(a) if not math.isnan(a) and not math.isinf(a) else a))
+    a = frame.values.pop_f64()
+    assert a is not None
+    assert frame.values.push_f64(float(round(a) if not math.isnan(a) and not math.isinf(a) else a))
     return (ip + 1, frame, env, local_base)
 
 
@@ -2529,8 +2655,9 @@ def _h_f64_nearest(
 def _h_f64_copysign(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop_back(), frame.values.pop_back()
-    frame.values.push_back(float(math.copysign(a, b)))
+    b, a = frame.values.pop_f64(), frame.values.pop_f64()
+    assert b is not None and a is not None
+    assert frame.values.push_f64(float(math.copysign(a, b)))
     return (ip + 1, frame, env, local_base)
 
 
@@ -2538,14 +2665,15 @@ def _h_f64_copysign(
 def _h_f64_min(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop_back(), frame.values.pop_back()
+    b, a = frame.values.pop_f64(), frame.values.pop_f64()
+    assert b is not None and a is not None
     if math.isnan(a) or math.isnan(b):
         res = float("nan")
     elif a == b == 0.0:
         res = -0.0 if math.copysign(1.0, a) < 0 or math.copysign(1.0, b) < 0 else 0.0
     else:
         res = min(a, b)
-    frame.values.push_back(float(res))
+    assert frame.values.push_f64(float(res))
     return (ip + 1, frame, env, local_base)
 
 
@@ -2553,14 +2681,15 @@ def _h_f64_min(
 def _h_f64_max(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop_back(), frame.values.pop_back()
+    b, a = frame.values.pop_f64(), frame.values.pop_f64()
+    assert b is not None and a is not None
     if math.isnan(a) or math.isnan(b):
         res = float("nan")
     elif a == b == 0.0:
         res = 0.0 if math.copysign(1.0, a) > 0 or math.copysign(1.0, b) > 0 else -0.0
     else:
         res = max(a, b)
-    frame.values.push_back(float(res))
+    assert frame.values.push_f64(float(res))
     return (ip + 1, frame, env, local_base)
 
 
@@ -2568,7 +2697,8 @@ def _h_f64_max(
 def _h_f64_lt(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop_back(), frame.values.pop_back()
+    b, a = frame.values.pop_f64(), frame.values.pop_f64()
+    assert b is not None and a is not None
     frame.values.push_back(1 if a < b else 0)
     return (ip + 1, frame, env, local_base)
 
@@ -2577,7 +2707,8 @@ def _h_f64_lt(
 def _h_f64_le(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop_back(), frame.values.pop_back()
+    b, a = frame.values.pop_f64(), frame.values.pop_f64()
+    assert b is not None and a is not None
     frame.values.push_back(1 if a <= b else 0)
     return (ip + 1, frame, env, local_base)
 
@@ -2586,7 +2717,8 @@ def _h_f64_le(
 def _h_f64_gt(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop_back(), frame.values.pop_back()
+    b, a = frame.values.pop_f64(), frame.values.pop_f64()
+    assert b is not None and a is not None
     frame.values.push_back(1 if a > b else 0)
     return (ip + 1, frame, env, local_base)
 
@@ -2595,7 +2727,8 @@ def _h_f64_gt(
 def _h_f64_ge(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    b, a = frame.values.pop_back(), frame.values.pop_back()
+    b, a = frame.values.pop_f64(), frame.values.pop_f64()
+    assert b is not None and a is not None
     frame.values.push_back(1 if a >= b else 0)
     return (ip + 1, frame, env, local_base)
 
@@ -2607,7 +2740,8 @@ def _h_f64_ge(
 def _h_i32_wrap_i64(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop_back()
+    a = frame.values.pop_i64()
+    assert a is not None
     frame.values.push_back(_to_i32(a))
     return (ip + 1, frame, env, local_base)
 
@@ -2616,7 +2750,8 @@ def _h_i32_wrap_i64(
 def _h_i32_trunc_f32_u(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop_back()
+    a = frame.values.pop_f32()
+    assert a is not None
     if math.isnan(a) or a <= -1.0 or a >= 4294967296.0:
         raise Trap("invalid conversion to integer")
     frame.values.push_back(_to_i32(int(a)))
@@ -2627,7 +2762,8 @@ def _h_i32_trunc_f32_u(
 def _h_i32_trunc_f64_u(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop_back()
+    a = frame.values.pop_f64()
+    assert a is not None
     if math.isnan(a) or a <= -1.0 or a >= 4294967296.0:
         raise Trap("invalid conversion to integer")
     frame.values.push_back(_to_i32(int(a)))
@@ -2638,8 +2774,9 @@ def _h_i32_trunc_f64_u(
 def _h_i64_extend_i32_s(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = _to_i32(frame.values.pop_back())
-    frame.values.push_back(_to_i64(a))
+    a = frame.values.pop_i32()
+    assert a is not None
+    assert frame.values.push_i64(_to_i64(a))
     return (ip + 1, frame, env, local_base)
 
 
@@ -2647,8 +2784,9 @@ def _h_i64_extend_i32_s(
 def _h_i64_extend_i32_u(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = _to_u32(frame.values.pop_back())
-    frame.values.push_back(_to_i64(a))
+    a = frame.values.pop_i32()
+    assert a is not None
+    assert frame.values.push_i64(_to_i64(_to_u32(a)))
     return (ip + 1, frame, env, local_base)
 
 
@@ -2656,8 +2794,9 @@ def _h_i64_extend_i32_u(
 def _h_i32_reinterpret_f32(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop_back()
-    u = struct.unpack("<i", struct.pack("<f", float(a)))[0]
+    a = frame.values.pop_f32()
+    assert a is not None
+    u = struct.unpack("<i", struct.pack("<f", a))[0]
     frame.values.push_back(_to_i32(u))
     return (ip + 1, frame, env, local_base)
 
@@ -2666,9 +2805,11 @@ def _h_i32_reinterpret_f32(
 def _h_f32_reinterpret_i32(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = _to_u32(frame.values.pop_back())
+    a = frame.values.pop_i32()
+    assert a is not None
+    a = _to_u32(a)
     f = struct.unpack("<f", struct.pack("<I", a))[0]
-    frame.values.push_back(_to_f32(f))
+    assert frame.values.push_f32(_to_f32(f))
     return (ip + 1, frame, env, local_base)
 
 
@@ -2676,9 +2817,10 @@ def _h_f32_reinterpret_i32(
 def _h_i64_reinterpret_f64(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = frame.values.pop_back()
-    u = struct.unpack("<q", struct.pack("<d", float(a)))[0]
-    frame.values.push_back(_to_i64(u))
+    a = frame.values.pop_f64()
+    assert a is not None
+    u = struct.unpack("<q", struct.pack("<d", a))[0]
+    assert frame.values.push_i64(_to_i64(u))
     return (ip + 1, frame, env, local_base)
 
 
@@ -2686,7 +2828,9 @@ def _h_i64_reinterpret_f64(
 def _h_f64_reinterpret_i64(
     ip: int, frame: CallFrame, env: ExecEnv | None, local_base: _LocalStackWindow
 ) -> _HandlerResult:
-    a = _to_u64(frame.values.pop_back())
+    a = frame.values.pop_i64()
+    assert a is not None
+    a = _to_u64(a)
     d = struct.unpack("<d", struct.pack("<Q", a))[0]
-    frame.values.push_back(float(d))
+    assert frame.values.push_f64(float(d))
     return (ip + 1, frame, env, local_base)

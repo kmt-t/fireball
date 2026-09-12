@@ -6,6 +6,7 @@ Conforms to docs/components/tier3_jit/benchmarks/jit_runtime_bench_spec.md (BENC
 
 from __future__ import annotations
 
+import ctypes
 import sys
 import time
 from pathlib import Path
@@ -28,7 +29,7 @@ for _p in [
 import wasm_opcodes as op
 from control_flow import extract_basic_blocks, iter_block_ops
 from interpreter import Interpreter
-from runtime_engine import HotspotBitmap, RuntimeEngine, TraceBlock
+from runtime_engine import HotspotBitmap, RuntimeEngine, TraceBlock, WASMContext
 from system_containers import RadixBinaryTreeView, bswap32
 from wasm_reader import parse
 from x64_jit import TraceCompiler
@@ -40,8 +41,8 @@ class JITCompilerBenchmark:
     def __init__(self):
         self.compiler = TraceCompiler()
 
-    def run_all(self, iterations: int = 100_000) -> dict[str, float]:
-        results = {}
+    def run_all(self, iterations: int = 100_000) -> dict[str, float | int]:
+        results: dict[str, float | int] = {}
 
         # 3.1 Copy-and-Patch Compilation Throughput (Arithmetic Basic Block) --
         # real WASM bytecode, via the same extract_basic_blocks + iter_block_ops
@@ -133,6 +134,58 @@ class JITCompilerBenchmark:
         results["jit_speedup_ratio"] = interp_time_ms / jit_time_ms if jit_time_ms > 0 else 1.0
         results["interp_loop_result"] = res_interp[0]
         results["jit_loop_result"] = res_jit[0]
+
+        # 3.5 PIC context-owned helper tail dispatch.  This is the terminal
+        # boundary used when a complex operation is implemented by C: the
+        # machine code loads the target from ctx(+0x40), restores its frame,
+        # and tail-jumps.  The callback is a C ABI function pointer supplied
+        # by ctypes in pysim; the measured result includes the simulator's
+        # Python callback cost and must not be presented as embedded C speed.
+        helper_type = ctypes.CFUNCTYPE(
+            None,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_uint32,
+        )
+
+        def helper(
+            _ctx: ctypes.c_void_p,
+            _sp: ctypes.c_void_p,
+            local_base: ctypes.c_void_p,
+            _tos: int,
+        ) -> None:
+            locals_ptr = ctypes.cast(local_base, ctypes.POINTER(ctypes.c_int64))
+            locals_ptr[0] += 1
+
+        helper_fn = helper_type(helper)
+        helper_ctx = WASMContext()
+        helper_ctx.locals = (0,)
+        helper_ctx.set_jit_helper(
+            ctypes.cast(helper_fn, ctypes.c_void_p).value or 0,
+            keepalive=helper_fn,
+        )
+        helper_trace = self.compiler.compile_trace(
+            head_pc=0xF000,
+            block=TraceBlock(
+                head_pc=0xF000,
+                ops=((op.LOCAL_GET, 0), (op.LOCAL_SET, 0)),
+                next_pc=None,
+                loops_to=None,
+                byte_span=4,
+            ),
+            tail_context_helper=True,
+        )
+        assert helper_trace is not None
+        helper_iterations = max(1, iterations // 10)
+        t0 = time.perf_counter()
+        for _ in range(helper_iterations):
+            helper_trace.invoke(helper_ctx)
+        t1 = time.perf_counter()
+        assert helper_ctx.locals[0] == helper_iterations
+        results["context_helper_tail_mops"] = helper_iterations / (t1 - t0) / 1e6
+        results["context_helper_tail_ns"] = (t1 - t0) / helper_iterations * 1e9
+        results["context_helper_tail_invocations"] = helper_iterations
 
         return results
 
@@ -234,6 +287,9 @@ def main():
         f"  * Differential Result Check:          Interp={res['interp_loop_result']:,} | JIT={res['jit_loop_result']:,} (MATCH)"
     )
     print(f"  * Measured JIT Speedup:               {res['jit_speedup_ratio']:.2f}x faster")
+    print(
+        f"  * PIC Context Helper Tail Jump:       {res['context_helper_tail_mops']:.2f} M ops/s  ({res['context_helper_tail_ns']:.1f} ns/dispatch; {res['context_helper_tail_invocations']:,} calls)"
+    )
     print("=" * 80)
     print("[PASS] JIT Compiler benchmark completed successfully.")
 

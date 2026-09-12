@@ -254,7 +254,13 @@ class TraceCompiler:
             ),
         )
 
-    def compile_trace(self, head_pc: int, block: TraceBlock | None) -> JITTrace | None:
+    def compile_trace(
+        self,
+        head_pc: int,
+        block: TraceBlock | None,
+        *,
+        tail_context_helper: bool = False,
+    ) -> JITTrace | None:
         """
         Compiles a single TraceBlock op stream into a PIC native JITTrace
         using `_EMIT_TABLE` dispatch. `block.ops` is streamed exactly once,
@@ -296,9 +302,16 @@ class TraceCompiler:
         # value -- {ExecutionContext_Layout} -- so it is written to memory
         # (via R12 / sp) rather than returned in RAX; the trace itself always
         # returns void.
-        if stack_depth == 1:
-            code += st.SPILL_RESULT_TO_SP.code
-        code += st.EPILOGUE_RETURN_VOID.code
+        if tail_context_helper:
+            # A helper is a terminal complex-operation boundary.  The current
+            # x64 implementation only delegates once the native operand stack
+            # is empty, so the helper observes fully synchronized locals/SP.
+            assert stack_depth == 0, "context-helper tail jump requires an empty native stack"
+            code += st.CONTEXT_HELPER_TAIL_JUMP.code
+        else:
+            if stack_depth == 1:
+                code += st.SPILL_RESULT_TO_SP.code
+            code += st.EPILOGUE_RETURN_VOID.code
 
         total_size = len(header_bytes) + len(code)
         header.trace_byte_size = total_size

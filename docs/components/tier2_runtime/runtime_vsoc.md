@@ -91,7 +91,7 @@ vSoC全体の可変な実行時状態を保持する構造体。
 | グローバル変数基底 | WASM `global` 配列（4バイト単位でインデックス付け）の開始アドレス | アドレス値 | 32bit符号なし (`[R0, #0x30]`) |
 | グローバル変数終端 | WASM `global` 配列の終端アドレス | アドレス値 | 32bit符号なし (`[R0, #0x34]`) |
 
-`vsoc_runtime` メンバを含む `execution_context` は計60バイト（`+0x00`〜`+0x3B`、15フィールド）。`OperandStack`・`LocalStack`・`control_frame` はそれぞれ専用の頂点・境界オフセットペアを持つ独立した固定容量バッファであり、いずれか1本の伸び縮みが他の記録位置へ影響することはない（ADR-INTERP-03）。正本は [`vsoc_runtime.wit`](docs/components/tier2_runtime/wit/vsoc_runtime.wit)、物理配置は `{ExecutionContext_Layout}` `{VsocRuntime_Layout}`。
+`vsoc_runtime` メンバを含む `execution_context` は既存の15フィールド、予約領域、JITの `complex_helper_ptr` を含む計72バイト（`+0x00`〜`+0x47`）。`OperandStack`・`LocalStack`・`control_frame` はそれぞれ専用の頂点・境界オフセットペアを持つ独立した固定容量バッファであり、いずれか1本の伸び縮みが他の記録位置へ影響することはない（ADR-INTERP-03）。JITの複雑処理先は実行コンテキストの `+0x40` に保持し、JITコードへ絶対アドレスを埋め込まない。正本は [`vsoc_runtime.wit`](docs/components/tier2_runtime/wit/vsoc_runtime.wit)、物理配置は `{ExecutionContext_Layout}` `{VsocRuntime_Layout}`。 `{PositionIndependentCode}`
 
 > [!NOTE]
 > **構造体の役割分離**:

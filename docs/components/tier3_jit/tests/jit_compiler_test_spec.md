@@ -51,6 +51,7 @@ Copy-and-Patchエンジンによるネイティブコード生成、`__fastcall`
 | TEST-JITC-41 | ゲストメモリ境界チェックのインライン埋め込み | メモリアクセス命令を含むトレース | コンパイル | 開始アドレスを `CMP addr, mem_size; BHS.W <trap>` で検査し、2バイト以上のアクセスは `addr + width - 1` も同じ比較で検査して、境界外で安全にトラップする | `{MemoryBoundaryCheck}` `{FastAddressCheck}` |
 | TEST-JITC-42 | キャッシュ溢れの3面ローテーション処理 | キャッシュ容量超過 | コンパイル試行 | Oldestバンクを破棄して再利用し、破棄されたトレースへのインバウンドチェインをO(k)でアンリンクする | 「Cache Capacity Check」, `{JIT_LazyChaining}` |
 | TEST-JITC-43 | ホストコール (WASI / fireball_call) の ABI 整合 | 0〜6引数のホスト関数呼び出し | トレース実行 | 32バイトシャドウスペース・16バイトスタックアライメントおよびCaller-savedレジスタ（R10/R11）が退避・復元される |  `{JIT_RuntimeAPI_Fallback}` |
+| TEST-JITC-44 | Cヘルパー関数ポインタのコンテキスト保持 | 複雑処理の末尾委譲トレース | `complex_helper_ptr`を設定して実行し、トレースを別アドレスへコピーして再実行 | JITコードに移転先アドレスを埋め込まず、`ctx + 0x40` から同一CPSヘルパーへ末尾ジャンプし、状態副作用が一致する | [`jit_abi.md`](docs/components/tier2_runtime/jit_abi.md) `{PositionIndependentCode}` |
 
 ### トレース境界不変条件とハンドラ委譲
 

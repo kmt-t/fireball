@@ -61,7 +61,7 @@ import ctypes
 
 from control_flow import extract_basic_blocks
 from exec_memory import ExecutableBuffer
-from runtime_engine import BasicBlock, IntegratedHybridEngine, WASMContext
+from runtime_engine import BasicBlock, IntegratedHybridEngine, TraceBlock, WASMContext
 from test_support import wat_to_wasm
 from wasm_opcodes import (
     I32_ADD,
@@ -187,6 +187,63 @@ def test_trace_compiler_bitwise_and_shifts_pic():
     trace.invoke(ctx)
     assert ctx.locals[2] == (0x0F & 0x07)
     assert ctx.locals[3] == (0x0F << 2)
+
+
+def test_context_helper_tail_jump_is_pic_and_uses_context_pointer():
+    """Complex JIT boundaries load the helper target from the execution context."""
+
+    compiler = TraceCompiler()
+    code = bytes([LOCAL_GET, 0, LOCAL_SET, 0])
+    head_pc, next_pc, loops_to, frame_depth, byte_span = extract_basic_blocks(code)[0]
+    trace = compiler.compile_trace(
+        head_pc,
+        TraceBlock(
+            head_pc=head_pc,
+            ops=((LOCAL_GET, 0), (LOCAL_SET, 0)),
+            next_pc=next_pc,
+            loops_to=loops_to,
+            byte_span=byte_span,
+        ),
+        tail_context_helper=True,
+    )
+    assert trace is not None
+
+    helper_type = ctypes.CFUNCTYPE(
+        None,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_void_p,
+        ctypes.c_uint32,
+    )
+
+    def helper(_ctx: ctypes.c_void_p, _sp: ctypes.c_void_p, local_base: ctypes.c_void_p, _tos: int) -> None:
+        locals_ptr = ctypes.cast(local_base, ctypes.POINTER(ctypes.c_int64))
+        locals_ptr[0] += 1
+
+    helper_fn = helper_type(helper)
+    ctx = WASMContext()
+    ctx.locals = (10,)
+    ctx.set_jit_helper(ctypes.cast(helper_fn, ctypes.c_void_p).value or 0, keepalive=helper_fn)
+    trace.invoke(ctx)
+    assert ctx.locals[0] == 11
+    assert ctx.jit_helper_ptr != 0
+
+    raw_blob = trace._exec_buf.read(0, trace.size_bytes)
+    helper_addr_bytes = (ctx.jit_helper_ptr & 0xFFFF_FFFF_FFFF_FFFF).to_bytes(8, "little")
+    assert helper_addr_bytes not in raw_blob, "helper address was embedded in PIC code"
+    relocated = ExecutableBuffer(len(raw_blob) + 96)
+    try:
+        relocated.write(48, raw_blob)
+        pic_fn = relocated.function_at(
+            48 + 16,
+            None,
+            [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint32],
+        )
+        ctx.locals = (20,)
+        pic_fn(ctx.context_ptr, ctx.sp_ptr, ctx.locals_ptr, 0)
+        assert ctx.locals[0] == 21
+    finally:
+        relocated.close()
 
 
 def test_trace_chaining_between_traces():

@@ -177,7 +177,7 @@ JIT トレース内にインライン展開せず、トレース境界でイン�
 // この4本は呼び出し境界でのみ使われ、jit_stencil_catalog.md のトレース本体内 assignable pool
 // (ARM R4-R6, R8-R11 / RISC-V s1-s7) とは物理レジスタが重ならない別の割り当てである。
 typedef void (*opcode_handler_t)(
-    execution_context* ctx,        // ARM R0 / RISC-V a0 / x86-64 RCX: 実行コンテキスト (60バイト 15フィールド)
+    execution_context* ctx,        // ARM R0 / RISC-V a0 / x86-64 RCX: 実行コンテキスト (72バイト)
     uint32_t*          sp,         // ARM R1 / RISC-V a1 / x86-64 RDX: オペランドスタックポインタ
     void*              local_base, // ARM R2 / RISC-V a2 / x86-64 R8:  ローカル変数配列基底ポインタ
     uint32_t           tos         // ARM R3 / RISC-V a3 / x86-64 R9:  スタックトップ値 (Top of Stack)
@@ -188,7 +188,7 @@ typedef void (*opcode_handler_t)(
 | :--- | :--- | :--- | :--- |
 | テンプレート辞書 | WASM命令に対応するJITテンプレートの検索索引 | アクセス辞書 | `jit_template_map` |
 | 命令テンプレート | WASM命令に対応するネイティブバイナリの雛形 | バイナリビュー | ROM参照（[jit_stencil_catalog.md](docs/specs/jit_stencil_catalog.md) 準拠。Thumb-2 のみを収録し、RISC-V の物理ステンシルは別カタログとして今後定義する） |
-| 位置独立性 (PIC) | 任意アドレス・キャッシュバンクで再コンパイル不要で動作 | 設計制約 | 絶対アドレス埋め込み禁止。`local_base` 相対、`R1(sp)` 相対、`rel32` 相対分岐のみ `{PositionIndependentCode}` |
+| 位置独立性 (PIC) | 任意アドレス・キャッシュバンクで再コンパイル不要で動作 | 設計制約 | プロセス絶対アドレス埋め込み禁止。`local_base` 相対、`R1(sp)` 相対、`ctx` 内の `complex_helper_ptr` 間接参照、`rel32` 相対分岐のみ `{PositionIndependentCode}` |
 
 ##### 物理レジスタマッピング一覧表
 <!-- traceability: {JIT_RegisterMapping} {AAPCS_FastCall} -->
@@ -262,6 +262,7 @@ JIT キャッシュ内に書き込まれる各トレースは、**先頭に 16 �
    - JIT トレースとインタープリタの命令ハンドラ（`opcode_handler`）は完全に同一の CPS 4引数呼び出し規約（`R0: ctx, R1: sp, R2: local_base, R3: tos`）を共有する。
    - JIT トレースは直線的な算術・ローカル変数演算、構文デリミタ消去、および SP 即値巻き戻しを伴う多段分岐（`br`, `br_if`）をネイティブインライン展開する。
    - コールフレーム生成や動的解決が必要な真の境界命令（`call`, `call_indirect`, `br_table`）やホストシステムコールに達した際は、直接インタープリタのハンドラテーブル（`handler_table[opcode]`）へ末尾ジャンプ（Tail Jump / `BX`）するか、`execution_context.ip`（`R0` の `+0x00`）を更新して `void` でインタープリタへ即座にフォールバックする。
+   - Cで実装する複雑処理へ委譲する場合は、同一CPS 4引数シグネチャの関数ポインタを `execution_context + 0x40` の `complex_helper_ptr` に保持する。JITは `ctx` 相対でポインタをロードし、フレームを復元してから末尾ジャンプするため、関数アドレスはPICコードへ埋め込まれない。 `{PositionIndependentCode}`
    - レジスタ規約が完全一致しているためコンテキスト再構築コストはゼロであり、JIT の軽量性（Zero Compile Cost）と完全な制御フロー安全性を両立する。 `{JIT_RuntimeAPI_Fallback}` `{ADR_TosCacheAsymmetry}`
 
 #### JIT トレース検索 & 3面キャッシュ代謝オーケストレーション
